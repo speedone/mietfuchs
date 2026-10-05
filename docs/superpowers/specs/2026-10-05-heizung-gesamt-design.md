@@ -2483,7 +2483,7 @@ Hier gibt es Quellen, aber keine Entscheidung. Mietfuchs wählt die vorsichtige 
 
 ### 15.2 Verbleibende Festlegungen ohne Primärquelle
 
-Für jede Festlegung stehen hier der Rechercheweg, die konservativste oder verbreitetste Lösung und der Hinweis, den der Vermieter sieht. **Die Liste umfasst sechs Punkte.**
+Für jede Festlegung stehen hier der Rechercheweg, die konservativste oder verbreitetste Lösung und der Hinweis, den der Vermieter sieht. **Die Liste umfasst sieben Punkte.**
 
 **F1: Gradtage als rechnerische Abgrenzung einer Versorgerrechnung** (Stufen 4 und 5 in 3.2)
 
@@ -2534,6 +2534,15 @@ Für jede Festlegung stehen hier der Rechercheweg, die konservativste oder verbr
 - *Recherche:* keine Quelle.
 - *Lösung:* nur Hinweise ohne Rechtsfolge.
 - *Hinweis:* `heating.dhw-share-implausible`, `co2.cost-implausible`, `co2.service-fuel-mismatch`.
+
+**F7: Flächenformel des § 9 Abs. 2 Satz 4 in einer Heizperiode unter zwölf Monaten** (8.3, PR 11; nachgetragen nach der Prüfung vom 05.10.2026)
+
+- *Belegt ist:*
+  - Die Formel liefert „Kilowattstunden pro Jahr“ ([G] § 9 Abs. 2 Satz 4 HeizkostenV); für einen kürzeren Zeitraum stimmt das Verhältnis zur Energie des Zeitraums nur nach einer Umrechnung.
+  - Beim Nutzerwechsel sind die Kosten des Warmwasserverbrauchs „zeitanteilig“ aufzuteilen ([G] § 9b Abs. 2 HeizkostenV); Warmwasser hängt nicht an der Witterung.
+- *Nicht belegt:* eine Regel eines Messdienstes oder der VDI 2077 für den Rumpf (Suche ohne Treffer, VDI 2077 Bl. 3.1 nicht eingesehen).
+- *Lösung:* 32 · A · Tage der Heizperiode / Tage des Jahres ab ihrem Beginn, nach Tagen und nicht nach Gradtagen, mit der Begründung aus § 9b Abs. 2. Die Volumenformel braucht das nicht, denn V ist das gemessene Volumen des Zeitraums. ⟨Norm offen: VDI 2077⟩
+- *Hinweis:* kein eigener Code; der Rechenweg im Ausweis nennt Tage und § 9b Abs. 2.
 
 **Gegenüber der ersten Fassung belegt und gestrichen:**
 

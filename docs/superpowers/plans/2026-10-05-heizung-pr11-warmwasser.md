@@ -12,10 +12,11 @@ ungewöhnlichen Anteil als Hinweis.
 
 **Architecture:** Die ganze Rechnung steht als reine Funktionen in der neuen Datei
 `server/src/dhw.ts` (`formulaHeat`, `formulaFactor`, `heatingValueOf`, `generatorEnergyOf`,
-`dhwShareOf`). Sie ersetzt die Stelle, an der PR 10 den gemessenen Anteil bestimmt (Naht N1, siehe
-„Annahmen über PR 10“), und liefert für alle drei Verfahren ein `DhwStatement` mit Rechenweg, das in
-`HeatingStatement.dhw` steht und im Druckblock erscheint. Die Rechtswerte (zwei Formeln, drei Faktoren,
-Heizwerttabelle) kommen als vier Parameter in `shared/law/heizkostenv.ts`. Zwei neue Spalten, beide
+`dhwShareOf`). `hotWaterShareOf` (PR 10, heating.ts) bleibt die eine Stelle für α und ruft sie auf;
+für alle drei Verfahren entsteht ein `DhwStatement` mit Rechenweg, das als `self.dhw` neben `self.alpha`
+(PR 10) im Ausweis steht und im Druckblock erscheint. Die Rechtswerte (zwei Formeln, drei Faktoren,
+Heizwerttabelle, die Ausnahme des § 11 Abs. 1 Nr. 3 Buchst. a in zwei Fassungen) kommen als fünf Parameter
+in `shared/law/heizkostenv.ts`. Zwei neue Spalten, beide
 nullbar: `fuel_deliveries.fuel_grade` (welche Zeile der Heizwerttabelle) und
 `heating_plants.heat_generation` (ein Erzeuger oder mehrere, § 9 Abs. 1 Satz 5). Die Karte
 „Warmwasser“ auf der Seite Heizkosten bekommt bei `self` die Eingaben der Formeln.
@@ -39,14 +40,56 @@ PR 10 (Plan `…-pr10-kernrechnung.md`; lag beim Schreiben dieses Plans **nicht*
 „Annahmen über PR 10“). Gearbeitet wird auf `feat/heizung-pr11-warmwasser`, abgezweigt von der Spitze
 von PR 10; der PR wird gestapelt auf PR 10 gestellt und nach dessen Merge auf `main` umgestellt.
 
+## Änderungen nach Prüfung vom 05.10.2026
+
+Der Prüfbericht vom 05.10.2026 (Rechtsrichtigkeit der Abweichungen und Schnittstellen zu PR 10 in der
+Fassung von Commit `81828af`) hat diesen Plan an sieben Stellen geändert. Jede Änderung steht im Task an
+ihrer Stelle; diese Liste sagt, wo, damit die Durchsicht sie findet.
+
+1. **Abgleich mit PR 10 statt Annahmen.** Der Plan benutzt die Namen von PR 10 unmittelbar:
+   `hotWaterShareOf(i: AlphaInput)` bleibt die eine Stelle für α (heating.ts) und ruft jetzt
+   `dhwShareOf(dhwInputOf(i), i.log)`; das Ergebnis behält die Gestalt von PR 10
+   (`{ ok: true; alpha: Alpha | null } | { ok: false; problem: AlphaProblem; … }`), `Alpha` bekommt den
+   Rechenweg als `statement: DhwStatement`, `ALPHA_TEXT` weicht `dhwProblemText` (dhw.ts). Der Ausweis
+   führt α weiter als `self.alpha` (Prozent, PR 10) und den Rechenweg als `self.dhw`; eine zweite
+   Stelle für α (`HeatingStatement.dhw`) gibt es nicht. Task 4 ist danach neu gefasst.
+2. **Regeln aus PR 10 bleiben** (Task 3): Rechnungen müssen die Heizperiode ganz abdecken (`fuelGap`),
+   α auf der Schätzung beim Abschluss heißt `estimated` (für `heating.dhw-share-estimated`), und α
+   außerhalb von (0, 1) ist `outOfRange`. Alle drei stehen jetzt in dhw.ts, mit den Tests aus PR 10.
+3. **Die vier Sperren von PR 10 fallen**, und zwar die, die es dort wirklich gibt: `formulaLater` und
+   `heatingValueLater` in heating.ts (Task 4), `LATER.dhwHeatingValue` samt Zeile und
+   `KWH_ENERGIES`-Abfrage in `guardHeatingPlant` (Task 4), die Sperre `kwhEnergy` in
+   `heatingSelfForm.ts` (`HOT_WATER_OPTIONS`, `emptySelfSetup`, `selfSetupBody`, Task 6). Dazu die Sperre
+   von PR 6 in `saveHotWater` (`method !== 'service'`, Task 5). Eine Sperre `LATER.dhwFormula` gibt es
+   nicht; der Plan nennt sie nicht mehr.
+4. **Schnappschuss vollständig** (Task 2 Step 7): Lieferungen picken zusätzlich `invoiceDate`,
+   `quantity`, `quantityUnit`, `gasBasis`, `heatingValue`, `fuelGrade`, Zeilen der Heizperiode
+   `dhwVolumeM3`, `dhwTempC`, die Anlage `heatGeneration`; ein Typtest in schema.test.ts hält es fest.
+5. **Testhelfer `server/testing/selfHeating.ts`** (Task 4 Step 1): reiner Builder von Beispiel A mit
+   festen Kennungen über `snapshotFor`, ohne Datenbank, mit einem Gleichheitstest gegen `beispielA` aus
+   PR 10. PR 12 bis PR 14 bauen darauf.
+6. **Stromheizung (`electric`)** (Abweichung 7 neu, Prüfbericht A6): gemessen rechnet Mietfuchs wie in
+   PR 10 gegen die kWh laut Rechnung; gesperrt sind nur die Formeln. Eine Anlage, die nach PR 10
+   abrechenbar war, bleibt es.
+7. **Wärmepumpe vor dem 01.10.2024** (Abweichung 9 neu, Review Focus 5, Prüfbericht A3): § 11 Abs. 1
+   Nr. 3 Buchst. a a. F. nahm überwiegend mit Wärmepumpen versorgte Gebäude von den §§ 3 bis 7 aus.
+   Statt `heating.dhw-share-invalid` gibt es den Hinweis `heating.heat-pump-old-exemption`, keine
+   Kürzungsbeträge, und ohne bestimmbares α wird nicht gesperrt; nur bei `heatGeneration = 'mixed'`
+   bleibt es beim Fehler. Der Parameter `hkv.exemption.renewable` hat dafür zwei Fassungen (Task 1);
+   PR 14 benutzt ihn für die Ausnahme `renewable`.
+8. **Rumpf-Flächenformel begründet** (Abweichung 3): nach Tagen, weil § 9b Abs. 2 die Kosten des
+   Warmwasserverbrauchs zeitanteilig teilt; als Festlegung F7 im Entwurf 15.2 geführt, ⟨Norm offen:
+   VDI 2077⟩.
+9. **`andList` aus `shared/wording.ts`** statt einer zweiten Fassung in dhw.ts (eine Quelle).
+
 ## Global Constraints
 
 - **Wer nichts einstellt, merkt nichts** (Entwurf 1.2 Nr. 1, 11.1): Ohne Anlage mit `self`, und bei
   `self` mit Wärmezähler und Brennstoff in kWh, ist jede Zahl, jeder Hinweis und
-  `legalBasis.values` gleich dem Stand nach PR 10. Golden F01–F16 bleiben wortgleich; F16
-  (Beispiel A, α = 15 %) ändert sich nicht. F17 (Heizöl mit Vorrat) ändert sich nur, wenn PR 10 dort
-  den Anteil bei Brennstoff in Litern gesperrt hatte (Annahme B4); dann mit Begründung im README des
-  Fixtures (Task 4 Step 7).
+  `legalBasis.values` gleich dem Stand nach PR 10. Golden F01–F17 bleiben wortgleich: F16 (Beispiel A,
+  α = 15 %) rechnet gemessen mit Gas in kWh, F17 (Heizöl mit Vorrat) hat kein Warmwasser (PR 10
+  Abweichung 20). Eine Anlage, die nach PR 10 abrechenbar war, bleibt es; das gilt ausdrücklich für die
+  Stromheizung (Abweichung 7).
 - **Wortlaut des § 9 HeizkostenV**, gelesen am 05.10.2026 auf
   https://www.gesetze-im-internet.de/heizkostenv/__9.html (Fassung Art. 3 G v. 16.10.2023, BGBl. 2023
   I Nr. 280, in Kraft am 01.10.2024; die Gleichung in Abs. 3 ist dort als Bild
@@ -74,8 +117,9 @@ von PR 10; der PR wird gestapelt auf PR 10 gestellt und nach dessen Merge auf `m
     ausschließlich durch Heizkessel, durch Wärmepumpen oder durch eigenständige gewerbliche
     Wärmelieferung mit Wärme versorgt werden, können anerkannte Regeln der Technik zur Aufteilung der
     Kosten verwendet werden“.
-- **Rechtswerte nur aus dem Register** (4.3, 4.7): 2,5, 10, 32, 1,11, 1,15, 0,30 und jeder Heizwert
-  der Tabelle stehen nur in `shared/law/heizkostenv.ts`. `server/src/dhw.ts` kommt in
+- **Rechtswerte nur aus dem Register** (4.3, 4.7): 2,5, 10, 32, 1,11, 1,15, 0,30, jeder Heizwert
+  der Tabelle und der Stichtag der Ausnahme für Wärmepumpen (`hkv.exemption.renewable`, Abweichung 9)
+  stehen nur in `shared/law/heizkostenv.ts`. `server/src/dhw.ts` kommt in
   `ENGINE_FILES` von `law-literals.test.ts`. Die Plausibilitätsgrenze (5 und 50 %) ist **kein**
   Rechtswert (15.2 F6) und steht als benannte Konstante `DHW_PLAUSIBLE` in dhw.ts; Texte setzen sie
   über `${…}` ein.
@@ -126,10 +170,15 @@ von PR 10; der PR wird gestapelt auf PR 10 gestellt und nach dessen Merge auf `m
    Jahr“. Erwartet: zeitanteilig nach Tagen gekürzt und im Rechenweg genannt (Abweichung 3), nicht der
    volle Jahreswert gegen die Energie von vier Monaten. Test in Task 3.
 5. **Wärmepumpe in einer Heizperiode, die vor dem 01.10.2024 beginnt, mit Formel.** Der Faktor 0,30
-   steht erst seit 01.10.2024 im Gesetz. Erwartet: kein Faktor erfunden, sondern
-   `heating.dhw-share-invalid` mit dem Satz, dass für diesen Zeitraum nur gemessen oder nach
-   anerkannten Regeln der Technik aufgeteilt werden kann (§ 9 Abs. 1 Satz 5 a. F.). Test in Task 1 und
-   Task 3.
+   steht erst seit 01.10.2024 im Gesetz, und bis dahin nahm § 11 Abs. 1 Nr. 3 Buchst. a a. F. Gebäude,
+   die überwiegend mit Wärme aus Wärmepumpen versorgt werden, von den §§ 3 bis 7 ganz aus (Prüfbericht
+   vom 05.10.2026, A3). Erwartet: kein Faktor erfunden und kein Fehler, der die Kosten beim Vermieter
+   lässt, sondern der Hinweis `heating.heat-pump-old-exemption` ohne Kürzungsbeträge; die Kosten von
+   Heizung und Warmwasser gehen gemeinsam nach dem Heizschlüssel (Abweichung 9). Erzeugt die Anlage
+   die Wärme mit einem weiteren Erzeuger (`heatGeneration = 'mixed'`), bleibt `heating.dhw-share-invalid`
+   mit dem Satz, dass nur gemessen oder nach anerkannten Regeln der Technik aufgeteilt werden kann (§ 9
+   Abs. 1 Satz 5 a. F.). Test in Task 1 (Register), Task 3 (`dhw.test.ts`, kein Faktor) und Task 4
+   (`calc-warmwasser.test.ts`).
 
 ---
 
@@ -137,18 +186,19 @@ von PR 10; der PR wird gestapelt auf PR 10 gestellt und nach dessen Merge auf `m
 
 | Datei | Verantwortung | Task |
 |---|---|---|
-| `shared/types.ts` | `FuelGrade`, `HeatGeneration`, `HeatingValueUnit`, `HeatingValueTable`, `DhwHeatingValue`, `DhwFactorKind`, `DhwDenominator`, `DhwStatement`; Felder an `FuelDelivery`, `HeatingPlant`, `HeatingStatement`, `HeatingPeriodView` | 1, 2 |
+| `shared/types.ts` | `FuelGrade`, `HeatGeneration`, `HeatingValueUnit`, `HeatingValueTable`, `DhwHeatingValue`, `DhwFactorKind`, `DhwDenominator`, `DhwStatement`; Felder an `FuelDelivery`, `HeatingPlant`, `SelfHeatingStatement` (`dhw`), `HeatingPeriodView` | 1, 2, 3, 4, 5 |
 | `shared/fuelGrades.ts` (neu) | Tabellenzeilen, Beschriftungen nach dem Wortlaut, Heizkessel, Zeilen je Energie | 1 |
-| `shared/law/heizkostenv.ts`, `shared/law/params.ts` | vier Parameter | 1 |
+| `shared/law/heizkostenv.ts`, `shared/law/params.ts` | fünf Parameter (vier zu § 9, `hkv.exemption.renewable`) | 1 |
 | `shared/glossary.ts` | `hotWaterShare` mit Formeln, Faktoren, Tabelle und beiden Lesarten zu Q | 1 |
 | `server/src/db/schema.ts`, `server/drizzle/00xx_warmwasser.sql`, `00xx_warmwasser_bedingungen.sql`, `meta/*` (erzeugt) | zwei Spalten, Bedingungen | 2 |
 | `server/src/db/fuel.ts`, `server/src/db/heating.ts`, `server/src/snapshot.ts` | Felder schreiben, prüfen, in den Schnappschuss | 2 |
 | `server/src/dhw.ts` (neu) | Formeln, Faktoren, Heizwert, Energie des Erzeugers, α mit Rechenweg | 3 |
-| `server/src/heating.ts`, `server/src/calc.ts` | Naht N1, Hinweise, `HeatingStatement.dhw` | 4 |
-| `server/src/db/co2.ts` | Warmwasser bei `self` speichern, Ansicht | 5 |
-| `client/src/heatingForm.ts`, `client/src/components/HotWaterCard.tsx`, `client/src/fuelForm.ts`, `client/src/components/FuelDeliveriesCard.tsx`, `client/src/dhwView.ts` (neu), `client/src/components/DhwBlock.tsx` (neu), `client/src/pages/Abrechnung.tsx` | Eingaben, Druckblock | 6 |
+| `server/testing/selfHeating.ts` (neu) | Beispiel A als Schnappschuss ohne Datenbank, für PR 11 bis PR 14 | 4 |
+| `server/src/heating.ts`, `server/src/calc.ts`, `server/src/db/heating.ts` | `hotWaterShareOf` über dhw.ts, Sperren von PR 10 fallen, Hinweise, `self.dhw` | 4 |
+| `server/src/db/co2.ts` | Warmwasser bei `self` speichern (Sperre von PR 6 fällt), Ansicht | 5 |
+| `client/src/heatingForm.ts`, `client/src/components/HotWaterCard.tsx`, `client/src/fuelForm.ts`, `client/src/components/FuelDeliveriesCard.tsx`, `client/src/dhwView.ts` (neu), `client/src/components/DhwBlock.tsx` (neu), `client/src/pages/Abrechnung.tsx`, `client/src/pages/Heizkosten.tsx`, `client/src/heatingSelfForm.ts`, `client/src/components/HeatingSelfSetup.tsx` | Eingaben, Sperre der Einrichtung fällt, Druckblock | 6 |
 | `CHANGELOG.md`, `CLAUDE.md` | Doku | 7 |
-| Tests: `law.test.ts`, `law-history.test.ts`, `law-literals.test.ts`, `glossary.test.ts`, `schema.test.ts`, `migrations.test.ts`, `dhw.test.ts` (neu), `db-warmwasser.test.ts` (neu), `calc-warmwasser.test.ts` (neu), `api.test.ts`, `client/src/heatingForm.test.ts`, `client/src/fuelForm.test.ts`, `client/src/components/HotWaterCard.test.tsx` (neu), `client/src/dhwView.test.ts` (neu) | | je Task |
+| Tests: `law.test.ts`, `law-history.test.ts`, `law-literals.test.ts`, `glossary.test.ts`, `schema.test.ts`, `migrations.test.ts`, `dhw.test.ts` (neu), `db-warmwasser.test.ts` (neu), `calc-warmwasser.test.ts` (neu), `heating.test.ts`, `calc-heizkosten.test.ts`, `db-heizkosten.test.ts` (Tests von PR 10), `api.test.ts`, `client/src/heatingForm.test.ts`, `client/src/fuelForm.test.ts`, `client/src/heatingSelfForm.test.ts`, `client/src/components/HotWaterCard.test.tsx` (neu), `client/src/dhwView.test.ts` (neu) | | je Task |
 
 ## Schnittstellen der Vorgänger, auf die dieser Plan baut
 
@@ -177,13 +227,21 @@ Task 1 beginnt.
 - **PR 7** `FuelDelivery` (mit `energyKwh`, `quantity`, `quantityUnit`, `gasBasis`, `heatingValue`),
   `FuelQuantityUnit`, `GasBasis`, `FuelAssessment`, `FuelDeliveryLine` (`deliveryId`, `sharePermille`);
   schema.ts `fuelDeliveries`, `FUEL_QUANTITY_UNITS`; db/fuel.ts `mergeDelivery`, `emptyDelivery`,
-  `guardFuelDelivery`, `PlantFacts`; read.ts `readFuelDeliveries` (übernimmt jede Spalte über `...d`);
-  snapshot.ts `SnapshotFuelDelivery`; `client/src/fuelForm.ts` mit `FuelForm`, `fuelToForm`,
-  `fuelBody`; `client/src/components/FuelDeliveriesCard.tsx`.
-- **PR 8** `HeatingStockStatement` (`unit`, `consumed.quantity`), `StockUnit`; `shared/fuelStock.ts`
-  `STOCK_ENERGIES`, `isStockEnergy`.
+  `guardDelivery(db, plant, before, after)`, `createDelivery(db, id, plantId, body)`,
+  `updateDelivery(db, id, body)`, `PlantFacts`; read.ts `readFuelDeliveries` (übernimmt jede Spalte über
+  `...d`); snapshot.ts `SnapshotFuelDelivery`, `SnapshotFuel` (`snapshot.fuel.deliveries`), `FuelSource`
+  (`fuelDeliveries`); `FuelResult` (`lines`, `coveragePermille`); `client/src/fuelForm.ts` mit `FuelForm`,
+  `fuelToForm`, `fuelBody`; `client/src/components/FuelDeliveriesCard.tsx`.
+- **PR 8** `HeatingStockStatement` (`unit`, `consumed.quantity`), `StockUnit`, `StockResult`; in
+  `computeSettlement` `stockOfPlant`; `shared/fuelStock.ts` `STOCK_ENERGIES`, `isStockEnergy`.
+- **PR 10** (Plan, Commit `81828af`): siehe „Annahmen über PR 10“, Abschnitt „Auflösung“, und Task 4.
 
 ## Annahmen über PR 10
+
+**Stand nach der Prüfung vom 05.10.2026: abgeglichen.** Die Tasks benutzen die Namen von PR 10 (Plan
+`2026-10-05-heizung-pr10-kernrechnung.md`, Commit `81828af`) unmittelbar. Die Tabelle B1–B10 und der
+Vermerk bleiben als Herkunft stehen; wo sie einem Task widersprechen, gilt der Task. Die Auflösung je
+Annahme steht unter dem Vermerk.
 
 Der Plan von PR 10 lag beim Schreiben dieses Plans nicht vor; er entstand parallel. Die folgenden
 Namen sind aus dem Entwurf (5.3, 6.1 Nr. 4.3, 8.3 bis 8.6, 10.1, 13 PR 10) und den Gewohnheiten der
@@ -218,6 +276,22 @@ tatsächlichen Namen dort, die die Annahmen ersetzen:
 - **B9:** zwei Schritte, `0026_heizkostenabrechnung` und `0027_heizkostenabrechnung_bedingungen`.
 - **B10:** `HeatingPeriodView` bekommt in PR 10 nur `distribution`; `HotWaterCard` bleibt von PR 6.
 
+**Auflösung (Prüfung vom 05.10.2026):**
+
+- **B2/B3:** Task 4 fasst `hotWaterShareOf` neu: `AlphaInput = DhwContext & { hotWater; log }`, das
+  Ergebnis bleibt in der Gestalt von PR 10 und trägt in `Alpha.statement` den Rechenweg; `ALPHA_TEXT`
+  weicht `dhwProblemText`. Die Regeln von PR 10 (`fuelGap`, `estimated`, `outOfRange`) stehen in dhw.ts
+  (Task 3).
+- **B4:** Die tatsächlichen Sperren sind `formulaLater` und `heatingValueLater` (heating.ts),
+  `LATER.dhwHeatingValue` samt Zeile in `guardHeatingPlant` (Task 4), `kwhEnergy` in
+  `heatingSelfForm.ts` (Task 6) und die Sperre von PR 6 in `saveHotWater` (`method !== 'service'`,
+  Task 5). Eine Sperre `LATER.dhwFormula` gibt es nicht.
+- **B6:** Task 2 Step 7 ergänzt alle Felder, die dhw.ts liest, mit Typtest.
+- **B7:** α bleibt `self.alpha` (Prozent); der Rechenweg ist `self.dhw` (`SelfHeatingStatement`), kein
+  `HeatingStatement.dhw`. `DhwBlock` liest `self.dhw`.
+- **B8:** Task 4 Step 1 legt `server/testing/selfHeating.ts` an, mit Gleichheitstest gegen `beispielA`.
+- **B10:** Task 5 und 6 ergänzen die Felder der Ansicht selbst; die Karte wird bei `self` eingebunden.
+
 | Nr. | Annahme | Wo benutzt |
 |---|---|---|
 | B1 | `HeatingPlant` hat `hotWater: 'combined' \| 'separate' \| 'none'` (Spalte `hot_water`) und `capture: 'heatMeter' \| 'hca' \| 'serviceValues' \| null`; `SnapshotHeatingPlant` pickt `energy`, `method`, `hotWater`, `units`, `name` | Task 2, 4 |
@@ -242,10 +316,14 @@ entscheidet.
 1. **Zwei Fassungen bei `hkv.dhw.factors`** (4.3 nennt eine). Der Faktor 0,30 für die monovalente
    Wärmepumpe (§ 9 Abs. 2 Satz 6 Nr. 3) kam mit Art. 3 G v. 16.10.2023 (BGBl. 2023 I Nr. 280) und gilt
    seit 01.10.2024 (buzer.de, „Frühere Fassungen von § 9 HeizkostenV“: „m.W.v. 1. Oktober 2024“,
-   gelesen 05.10.2026). Für Heizperioden, die davor beginnen, ist `heatPump: null`: Die Formel bei einer
-   Wärmepumpe ergibt dann `heating.dhw-share-invalid`, und Satz 5 a. F. („nicht ausschließlich durch
-   Heizkessel oder durch eigenständige gewerbliche Wärmelieferung“) verweist auf die anerkannten Regeln
-   der Technik.
+   gelesen 05.10.2026). Für Heizperioden, die davor beginnen, ist `heatPump: null`: Die Formel rechnet
+   bei einer Wärmepumpe dann nicht. Eine Wärmepumpe ohne weiteren Erzeuger fiel in diesen Zeiträumen
+   ohnehin nicht unter die Verordnung (Abweichung 9); nur bei `heatGeneration = 'mixed'` bleibt es bei
+   `heating.dhw-share-invalid`, und Satz 5 a. F. („nicht ausschließlich durch Heizkessel oder durch
+   eigenständige gewerbliche Wärmelieferung“) verweist auf die anerkannten Regeln der Technik. Offen und
+   vor dem Bau zu lesen (Prüfbericht A.2): ob Q · 0,30 gegen den Strom oder gegen die Gesamtwärme zu
+   setzen ist; der Plan folgt dem Entwurf (Strom, F1), die Begründung zum Gesetz vom 16.10.2023 steht als
+   Prüfpunkt in der PR-Beschreibung.
 2. **Holzhackschnitzel geklärt, zwei Fassungen bei `hkv.heating-values`** (4.3: „welche
    Hackschnitzelangabe gilt, ungeprüft (BGBl. 2021 I S. 4964 vor PR 11 lesen)“). Gelesen am 05.10.2026
    in der Wiedergabe von buzer.de (Art. 1 Nr. 5 Buchst. c der Verordnung vom 24.11.2021, BGBl. I
@@ -262,10 +340,14 @@ entscheidet.
    von B, ab 01.12.2021 4 kWh/kg und keine Schüttraummeter. **Vor dem Merge** liest die Durchsicht die
    Seite im amtlichen BGBl.-PDF (bgbl.de, 2021 Teil I S. 4964) gegen; das steht als Punkt in der
    PR-Beschreibung.
-3. **Flächenformel im Rumpf zeitanteilig.** § 9 Abs. 2 Satz 4 liefert kWh „pro Jahr“; für eine
-   Heizperiode unter zwölf Monaten rechnet Mietfuchs 32 · A · Tage / Tage des Jahres ab Beginn. Die
-   Volumenformel braucht das nicht, denn V ist das gemessene Volumen des Zeitraums. Keine Quelle;
-   konservativ, weil ein Jahreswert gegen vier Monate Energie α verdreifachte. Der Rechenweg nennt es.
+3. **Flächenformel im Rumpf zeitanteilig, nach Tagen (Festlegung F7 im Entwurf 15.2).** § 9 Abs. 2
+   Satz 4 liefert kWh „pro Jahr“; für eine Heizperiode unter zwölf Monaten rechnet Mietfuchs
+   32 · A · Tage / Tage des Jahres ab Beginn, denn sonst stimmt das Verhältnis zur Energie des Zeitraums
+   nicht (ein Jahreswert gegen vier Monate Energie verdreifachte α). **Begründung für Tage:** § 9b Abs. 2
+   HeizkostenV teilt die Kosten des Warmwasserverbrauchs beim Nutzerwechsel „zeitanteilig“; Warmwasser
+   hängt nicht an der Witterung, Gradtage wären falsch. Eine Regel eines Messdienstes oder der VDI 2077
+   dazu ist nicht bekannt (⟨Norm offen: VDI 2077⟩, Prüfbericht A.2). Die Volumenformel braucht das nicht,
+   denn V ist das gemessene Volumen des Zeitraums. Rechenweg und Lexikon nennen § 9b Abs. 2.
 4. **Neue Spalte `fuel_deliveries.fuel_grade`** (in 5.4 nicht genannt). Die Tabelle unterscheidet
    Erdgas H und L, leichtes und schweres Heizöl, Koks, Braun- und Steinkohle, Brennholz und
    Hackschnitzel; der Energieträger der Anlage (`gas`, `oil`, `coal`, `wood`) gibt das nicht her. Ohne
@@ -281,16 +363,48 @@ entscheidet.
    Energie der gelieferten Mengen geteilt durch ihre Menge. Liegt in der Heizperiode keine Lieferung (nur
    Vorrat), gilt der Heizwert der jüngsten früheren Lieferung derselben Einheit. Keine Quelle; physikalisch
    die Energie des Brennstoffs.
-7. **Strom-Direktheizung (`electric`) und `other`** gelten nicht als Heizkessel: Die Formel rechnet dort
-   nicht, gemessen nur mit gemessener Gesamtwärme (wie Satz 5). Keine Quelle; vorsichtig.
+7. **Strom-Direktheizung (`electric`): gemessen wie PR 10, Formeln gesperrt; `other` nur gegen
+   gemessene Gesamtwärme** (Prüfbericht A6, neu gefasst). PR 10 stellt bei `electric` die gemessene
+   Wärme gegen die kWh laut Rechnung (`KWH_ENERGIES`); das bleibt, denn eine Anlage, die nach PR 10
+   abrechenbar war, darf durch PR 11 nicht gesperrt werden. Rechtlich ist ein Elektrokessel als
+   Heizkessel mit „Energieverbrauch“ (§ 9 Abs. 1 Satz 2 HeizkostenV) gut vertretbar; wer ihn nicht so
+   liest, landet bei Satz 5 (anerkannte Regeln der Technik), und Wärme gegen Strom ist bei einem
+   Wirkungsgrad nahe 1 eine solche Regel. Eine Quelle für eine strengere Lesart gibt es nicht. Gesperrt
+   sind bei `electric` nur die Formeln: Satz 6 nennt für sie keinen Faktor, und Mietfuchs erfindet keinen
+   (**Festlegung**). Die Tabelle des § 9 Abs. 3 gilt bei `electric` ohnehin nicht (kein Heizkessel im
+   Sinne der Tabelle, `BOILER_ENERGIES`). Bei `other` (unbekannter Energieträger) rechnet Mietfuchs nur
+   gemessen gegen gemessene Gesamtwärme (§ 9 Abs. 1 Satz 5).
 8. **Wiederverwendung von `heating.dhw-share-invalid`** (PR 10) für jede fehlende oder widersprüchliche
    Eingabe der Formeln und des Heizwerts, statt eines neuen Codes. Der Text nennt je Fall, was fehlt.
+9. **Wärmepumpe in Zeiträumen vor dem 01.10.2024: Hinweis statt Fehler** (Prüfbericht A3). § 11 Abs. 1
+   Nr. 3 Buchst. a HeizkostenV in der Fassung bis 30.09.2024 nahm Räume in Gebäuden aus, „die überwiegend
+   versorgt werden a) mit Wärme aus Anlagen zur Rückgewinnung von Wärme oder aus Wärmepumpen- oder
+   Solaranlagen“; Art. 3 G v. 16.10.2023 hat die Wärmepumpe dort gestrichen (Wortlaut beider Fassungen
+   bei buzer.de, `gesetz/3769/al206559-0`, gelesen 05.10.2026). Der neue Parameter
+   `hkv.exemption.renewable` hält beide Fassungen (`{ heatPump: true }` bis 30.09.2024, danach
+   `false`); PR 14 benutzt ihn für die Ausnahme `renewable`. Mietfuchs fragt ihn bei einer Wärmepumpe,
+   deren Anlage die Wärme nicht mit einem weiteren Erzeuger teilt (`heatGeneration` nicht `mixed`, also
+   auch ohne Antwort), und meldet dann `heating.heat-pump-old-exemption` (hint): keine Kürzungsbeträge
+   nach § 12 (wie bei `notYet`, PR 10), und ist α nicht bestimmbar (etwa Formel ohne Faktor 0,30), kein
+   Fehler. Die Positionen „Heizung und Warmwasser“ gehen dann ganz in den Topf Heizung (**Festlegung**:
+   Die Verordnung bindet in diesem Fall nicht, und die gemeinsame Verteilung nach dem Heizschlüssel
+   trägt dem erfassten Verbrauch Rechnung, § 556a Abs. 1 Satz 2 BGB). `mixed` liest Mietfuchs als
+   „nicht überwiegend“ (Prüfbericht A3); dann bleibt § 9 Abs. 1 Satz 5 a. F. und der Fehler. Ob der
+   Nachsatz „sofern der Wärmeverbrauch des Gebäudes nicht erfasst wird“ auch Buchst. a betrifft, lässt
+   der Satzbau offen (ungeprüft); der Hinweis nennt die Bedingung „überwiegend“ und lässt die
+   Entscheidung beim Vermieter.
+10. **Regeln von PR 10 in dhw.ts** (Prüfbericht B.1): Die Rechnungen müssen die Heizperiode ganz
+    abdecken (`fuelGap`; nicht beim Vorrat, dort zählt die verbrauchte Menge), α auf der Schätzung beim
+    Abschluss ist `estimated` (Hinweis `heating.dhw-share-estimated`, PR 10), und α außerhalb von (0, 1)
+    ist `outOfRange`. Die harte Grenze (0, 1) bleibt ein Fehler neben dem Plausibilitätshinweis
+    5–50 %.
 
 
 ---
 ### Task 1: Rechtsregister, Tabellenzeilen und Lexikon
 
-Vier Parameter (Entwurf 4.3, Spalte „PR 11“) mit den Fassungen aus Abweichung 1 und 2, die
+Vier Parameter (Entwurf 4.3, Spalte „PR 11“) mit den Fassungen aus Abweichung 1 und 2, dazu
+`hkv.exemption.renewable` mit zwei Fassungen (Abweichung 9, Prüfbericht A3), die
 Tabellenzeilen als gemeinsamer Laufzeitanteil in `shared/` und der Lexikoneintrag `hotWaterShare` mit
 Formeln, Faktoren und den beiden Lesarten zu Q (15.1 Nr. 9, „beide Lesarten gleichwertig“).
 
@@ -305,14 +419,14 @@ Formeln, Faktoren und den beiden Lesarten zu Q (15.1 Nr. 9, „beide Lesarten gl
 - Produces:
   - `shared/types.ts`: `type FuelGrade = 'heatingOilEL' | 'heavyFuelOil' | 'naturalGasH' | 'naturalGasL' | 'lpg' | 'coke' | 'lignite' | 'hardCoal' | 'firewood' | 'woodPellets' | 'woodChips'`, `type HeatGeneration = 'single' | 'mixed'`, `type HeatingValueUnit = 'l' | 'm3' | 'kg' | 'srm'`, `type HeatingValueRow = { readonly kwh: number; readonly per: HeatingValueUnit }`, `type HeatingValueTable = { readonly units: readonly HeatingValueUnit[]; readonly values: { readonly [grade: string]: HeatingValueRow } }`
   - `shared/fuelGrades.ts`: `FUEL_GRADES: readonly FuelGrade[]`, `FUEL_GRADE_LABELS: Record<FuelGrade, string>`, `BOILER_ENERGIES: readonly HeatingEnergy[]`, `GRADES_BY_ENERGY: Readonly<Record<HeatingEnergy, readonly FuelGrade[]>>`, `HEATING_VALUE_UNIT_TEXT: Record<HeatingValueUnit, string>`, `isBoiler(energy): boolean`
-  - `shared/law/heizkostenv.ts`: `hkvDhwVolumeFormula: LawParam<{ readonly effort: number; readonly coldWaterC: number }, 'periodStart'>`, `hkvDhwAreaFormula: LawParam<{ readonly kwhPerM2: number }, 'periodStart'>`, `hkvDhwFactors: LawParam<{ readonly gasCalorific: number; readonly heatSupplyDivisor: number; readonly heatPump: number | null }, 'periodStart'>`, `hkvHeatingValues: LawParam<HeatingValueTable, 'periodStart'>`
+  - `shared/law/heizkostenv.ts`: `hkvDhwVolumeFormula: LawParam<{ readonly effort: number; readonly coldWaterC: number }, 'periodStart'>`, `hkvDhwAreaFormula: LawParam<{ readonly kwhPerM2: number }, 'periodStart'>`, `hkvDhwFactors: LawParam<{ readonly gasCalorific: number; readonly heatSupplyDivisor: number; readonly heatPump: number | null }, 'periodStart'>`, `hkvHeatingValues: LawParam<HeatingValueTable, 'periodStart'>`, `hkvRenewableExemption: LawParam<{ readonly heatPump: boolean }, 'periodStart'>` (`'hkv.exemption.renewable'`)
 
 - [ ] **Step 1: Failing tests schreiben**
 
 (a) `server/test/law.test.ts`: Den Import aus `'../../shared/law/heizkostenv.ts'` um
-`hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvHeatingValues` ergänzen und dieselben vier
-Namen in das Objekt `modules` des Tests „jede Konstante vom Typ LawParam in shared/law/ steht in
-LAW_PARAMS“ aufnehmen. Ans Dateiende:
+`hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvHeatingValues, hkvRenewableExemption`
+ergänzen und dieselben fünf Namen in das Objekt `modules` des Tests „jede Konstante vom Typ LawParam in
+shared/law/ steht in LAW_PARAMS“ aufnehmen. Ans Dateiende:
 
 ```ts
 // ---------- Warmwasser ohne Wärmezähler (Heizung PR 11, Entwurf 4.3, 8.3) ----------
@@ -354,6 +468,16 @@ test('Stichtag hkv.heating-values: Hackschnitzel bis 30.11.2021 650 kWh/SRm, ab 
     { kwh: 8, per: 'kg' }, { kwh: 5.5, per: 'kg' }, { kwh: 8, per: 'kg' }, { kwh: 4.1, per: 'kg' }, { kwh: 5, per: 'kg' },
   ])
 })
+
+test('Stichtag hkv.exemption.renewable: Wärmepumpen bis 30.09.2024 in der Ausnahme des § 11 Abs. 1 Nr. 3 Buchst. a, danach nicht (Abweichung 9)', () => {
+  const log = createLawLog()
+  assert.deepEqual(law(hkvRenewableExemption, year(2024), log), { heatPump: true })
+  assert.deepEqual(law(hkvRenewableExemption, { period: { from: '2024-09-01', to: '2025-08-31' } }, log), { heatPump: true })
+  assert.deepEqual(law(hkvRenewableExemption, { period: { from: '2024-10-01', to: '2025-09-30' } }, log), { heatPump: false })
+  assert.deepEqual(law(hkvRenewableExemption, year(2025), log), { heatPump: false })
+  assert.match(hkvRenewableExemption.describe({ heatPump: true }), /Wärmepumpen.*in der Fassung bis 30\.09\.2024/)
+  assert.doesNotMatch(hkvRenewableExemption.describe({ heatPump: false }), /Wärmepumpe/)
+})
 ```
 
 (b) `server/test/law-history.test.ts`: in `SHIPPED` hinter den Zeilen von PR 10 anhängen:
@@ -366,6 +490,8 @@ test('Stichtag hkv.heating-values: Hackschnitzel bis 30.11.2021 650 kWh/SRm, ab 
   'hkv.dhw.factors|2024-10-01||{"gasCalorific":1.11,"heatSupplyDivisor":1.15,"heatPump":0.3}',
   'hkv.heating-values||2021-11-30|{"units":["l","m3","kg","srm"],"values":{"heatingOilEL":{"kwh":10,"per":"l"},"heavyFuelOil":{"kwh":10.9,"per":"l"},"naturalGasH":{"kwh":10,"per":"m3"},"naturalGasL":{"kwh":9,"per":"m3"},"lpg":{"kwh":13,"per":"kg"},"coke":{"kwh":8,"per":"kg"},"lignite":{"kwh":5.5,"per":"kg"},"hardCoal":{"kwh":8,"per":"kg"},"firewood":{"kwh":4.1,"per":"kg"},"woodPellets":{"kwh":5,"per":"kg"},"woodChips":{"kwh":650,"per":"srm"}}}',
   'hkv.heating-values|2021-12-01||{"units":["l","m3","kg"],"values":{"heatingOilEL":{"kwh":10,"per":"l"},"heavyFuelOil":{"kwh":10.9,"per":"l"},"naturalGasH":{"kwh":10,"per":"m3"},"naturalGasL":{"kwh":9,"per":"m3"},"lpg":{"kwh":13,"per":"kg"},"coke":{"kwh":8,"per":"kg"},"lignite":{"kwh":5.5,"per":"kg"},"hardCoal":{"kwh":8,"per":"kg"},"firewood":{"kwh":4.1,"per":"kg"},"woodPellets":{"kwh":5,"per":"kg"},"woodChips":{"kwh":4,"per":"kg"}}}',
+  'hkv.exemption.renewable||2024-09-30|{"heatPump":true}',
+  'hkv.exemption.renewable|2024-10-01||{"heatPump":false}',
 ```
 
 (c) `server/test/glossary.test.ts` ans Dateiende (der Test von PR 6 zu `hotWaterShare` bleibt und muss
@@ -591,6 +717,39 @@ export const hkvHeatingValues: LawParam<HeatingValueTable, 'periodStart'> = {
   describe: (v) =>
     `Heizwerte für ${Object.keys(v.values).length} Brennstoffe; Brennstoffverbrauch in ${v.units.map((u) => ({ l: 'Litern', m3: 'Kubikmetern', kg: 'Kilogramm', srm: 'Schüttraummetern' })[u]).join(', ')}`,
 }
+
+// § 11 Abs. 1 Nr. 3 Buchst. a HeizkostenV (Heizung PR 11, Abweichung 9; Prüfbericht vom 05.10.2026, A3):
+// Ausgenommen sind Räume in Gebäuden, die überwiegend mit Wärme aus Anlagen zur Rückgewinnung von Wärme
+// oder aus Solaranlagen versorgt werden. Bis 30.09.2024 stand dort auch „aus Wärmepumpen- … anlagen“;
+// Art. 3 G v. 16.10.2023 (BGBl. 2023 I Nr. 280) hat die Wärmepumpe gestrichen und in § 12 Abs. 3 neu
+// geregelt. PR 11 fragt den Parameter bei Wärmepumpen, PR 14 für die Ausnahme `renewable`.
+const URL_11 = 'https://www.gesetze-im-internet.de/heizkostenv/__11.html'
+export const hkvRenewableExemption: LawParam<{ readonly heatPump: boolean }, 'periodStart'> = {
+  id: 'hkv.exemption.renewable',
+  title: 'Ausnahme für Gebäude mit Wärme aus Rückgewinnung, Solaranlagen oder Wärmepumpen',
+  norm: '§ 11 Abs. 1 Nr. 3 Buchst. a HeizkostenV',
+  timing: 'periodStart',
+  versions: [
+    {
+      validTo: '2024-09-30',
+      value: { heatPump: true },
+      source: {
+        rank: 'law', cite: '§ 11 Abs. 1 Nr. 3 Buchst. a HeizkostenV in der Fassung bis 30.09.2024 (Wortlaut über buzer.de)',
+        url: 'https://www.buzer.de/gesetz/3769/al206559-0.htm', retrieved: '2026-10-05', checked: 'checked',
+      },
+      enacted: 'HeizkostenV i. d. F. der Bekanntmachung vom 05.10.2009 (BGBl. I S. 3250), zuletzt geändert durch VO v. 24.11.2021 (BGBl. I S. 4964)',
+    },
+    {
+      validFrom: '2024-10-01',
+      value: { heatPump: false },
+      source: checked('§ 11 Abs. 1 Nr. 3 Buchst. a HeizkostenV', URL_11),
+      enacted: ENACTED,
+    },
+  ],
+  describe: (v) => (v.heatPump
+    ? 'Wärmerückgewinnung, Wärmepumpen oder Solaranlagen (§ 11 Abs. 1 Nr. 3 Buchst. a HeizkostenV in der Fassung bis 30.09.2024)'
+    : 'Wärmerückgewinnung oder Solaranlagen (§ 11 Abs. 1 Nr. 3 Buchst. a HeizkostenV)'),
+}
 ```
 
 `TABLE_2021.values` übernimmt die zehn unveränderten Zeilen mit Spread; die Reihenfolge der Schlüssel
@@ -600,7 +759,8 @@ bleibt dabei die von `OLD_TABLE` (JavaScript ersetzt den Wert von `woodChips` an
 - [ ] **Step 6: Parameterliste (`shared/law/params.ts`)**
 
 Den Import aus `'./heizkostenv.ts'` um `hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula,
-hkvHeatingValues` ergänzen und dieselben vier Namen ans Ende von `LAW_PARAMS` anhängen.
+hkvHeatingValues, hkvRenewableExemption` ergänzen und dieselben fünf Namen ans Ende von `LAW_PARAMS`
+anhängen.
 
 - [ ] **Step 7: Lexikon (`shared/glossary.ts`)**
 
@@ -641,7 +801,8 @@ Den Eintrag `hotWaterShare` (PR 6) ganz ersetzen durch:
     norm: '§ 9 Abs. 2, 3 HeizkostenV; BGH VIII ZR 151/20',
     needed:
       'Wenn Ihre Heizung auch das Warmwasser bereitet. Rechnet ein Messdienst ab, tragen Sie auf der Seite Heizkosten ein, wie er die Wärme für das Warmwasser bestimmt hat. ' +
-      'Rechnen Sie selbst ab, tragen Sie dort den gemessenen Wert ein oder, wenn kein Wärmezähler da ist, das Warmwasser in m³ und seine Temperatur.',
+      'Rechnen Sie selbst ab, tragen Sie dort den gemessenen Wert ein oder, wenn kein Wärmezähler da ist, das Warmwasser in m³ und seine Temperatur. ' +
+      'Ist die Heizperiode kürzer als ein Jahr, kürzt Mietfuchs den Jahreswert der Flächenformel nach Tagen, so wie die Verordnung Warmwasserkosten beim Nutzerwechsel zeitanteilig teilt (§ 9b Abs. 2 HeizkostenV).',
   },
 ```
 
@@ -664,7 +825,8 @@ git commit -m "Rechtsregister: Formeln, Faktoren und Heizwerte des § 9 Heizkost
 
 Zwei Zahlenwertgleichungen, die Faktoren nur für Formelwerte (0,30 der Wärmepumpe erst für
 Zeiträume ab 01.10.2024) und die Heizwerttabelle in zwei Fassungen: Hackschnitzel bis 30.11.2021
-650 kWh/SRm, seither 4 kWh/kg. Lexikon nennt beide Lesarten zur gemessenen Wärme.
+650 kWh/SRm, seither 4 kWh/kg. Dazu die Ausnahme des § 11 Abs. 1 Nr. 3 Buchst. a, bis 30.09.2024
+mit Wärmepumpen. Lexikon nennt beide Lesarten zur gemessenen Wärme.
 
 Refs #99
 Refs #211"
@@ -680,14 +842,14 @@ Refs #211"
 - Test: `server/test/schema.test.ts`, `server/test/migrations.test.ts`, `server/test/db-warmwasser.test.ts` (neu)
 
 **Interfaces:**
-- Consumes: Task 1 `FuelGrade`, `HeatGeneration`, `FUEL_GRADES`, `GRADES_BY_ENERGY`, `FUEL_GRADE_LABELS`; PR 4 `mergeHeatingPlant`, `emptyHeatingPlant`, `plantRow`, `createHeatingPlant`, `updateHeatingPlant`; PR 7 `mergeDelivery`, `emptyDelivery`, `guardFuelDelivery`, `PlantFacts`, `createFuelDelivery`, `updateFuelDelivery`.
+- Consumes: Task 1 `FuelGrade`, `HeatGeneration`, `FUEL_GRADES`, `GRADES_BY_ENERGY`, `FUEL_GRADE_LABELS`; PR 4 `mergeHeatingPlant`, `emptyHeatingPlant`, `plantRow`, `createHeatingPlant`, `updateHeatingPlant`; PR 7 `mergeDelivery`, `emptyDelivery`, `guardDelivery(db, plant, before, after)`, `PlantFacts`, `createDelivery(db, id, plantId, body)`, `updateDelivery(db, id, body)`.
 - Produces:
   - `FuelDelivery.fuelGrade: FuelGrade | null`, `HeatingPlant.heatGeneration: HeatGeneration | null`
   - schema.ts: `FUEL_GRADE_VALUES = exactly<FuelGrade>()([...])`, `HEAT_GENERATIONS = exactly<HeatGeneration>()(['single', 'mixed'] as const)`, Spalten `fuelDeliveries.fuelGrade` (`fuel_grade`), `heatingPlants.heatGeneration` (`heat_generation`)
-  - `SnapshotHeatingPlant` pickt zusätzlich `'heatGeneration'` (optional), `SnapshotFuelDelivery` zusätzlich `'fuelGrade'`
+  - `SnapshotHeatingPlant` pickt zusätzlich `'heatGeneration'` (optional); `SnapshotFuelDelivery` zusätzlich `'invoiceDate' | 'quantity' | 'quantityUnit' | 'gasBasis' | 'heatingValue' | 'fuelGrade'`; `SnapshotHeatingPeriodRow` zusätzlich `'dhwVolumeM3' | 'dhwTempC'` (optional) — alles, was dhw.ts liest (Prüfbericht B.1, Zeile B6)
 
-Die Namen `createFuelDelivery`, `updateFuelDelivery` (db/fuel.ts) und `updateHeatingPlant`
-(db/heating.ts) sind die Schreibfunktionen von PR 7 bzw. PR 4; heißen sie dort anders, hier anpassen.
+`createDelivery`, `updateDelivery` und `guardDelivery` (db/fuel.ts) sind die Namen von PR 7 (PR 10 ruft
+`createDelivery(db, 'd1', 'hp', …)` so auf); `updateHeatingPlant` (db/heating.ts) der von PR 4.
 
 - [ ] **Step 1: Failing tests schreiben**
 
@@ -716,6 +878,22 @@ test('Heizung PR 11: Tabellenzeile an der Lieferung, Erzeuger an der Anlage, bei
 hat (Plan PR 4, Task 1); fehlen Spalten mit Vorgabe in `fuel_deliveries` (PR 7), ergänzt das
 `INSERT` sie mit deren Vorgaben, wie es die Tests von PR 7 dort tun.
 
+Dazu, ebenfalls in schema.test.ts (Import `type SnapshotFuelDelivery, type SnapshotHeatingPeriodRow,
+type SnapshotHeatingPlant` aus `'../src/snapshot.ts'`), ein Test, der beim Übersetzen prüft, dass der
+Schnappschuss führt, was dhw.ts liest: `Pick` mit einem Schlüssel, den der Typ nicht hat, ist ein
+Typfehler, und `npm run typecheck` prüft die Tests mit.
+
+```ts
+test('Heizung PR 11: Der Schnappschuss führt, was der Warmwasseranteil liest (Prüfbericht B.1, B6)', () => {
+  const lieferung = {
+    invoiceDate: null, energyKwh: null, quantity: 3000, quantityUnit: 'l', gasBasis: null, heatingValue: 9.8, fuelGrade: 'heatingOilEL',
+  } satisfies Pick<SnapshotFuelDelivery, 'invoiceDate' | 'energyKwh' | 'quantity' | 'quantityUnit' | 'gasBasis' | 'heatingValue' | 'fuelGrade'>
+  const zeile = { dhwMethod: 'volumeFormula', dhwVolumeM3: 120, dhwTempC: 60 } satisfies Pick<SnapshotHeatingPeriodRow, 'dhwMethod' | 'dhwVolumeM3' | 'dhwTempC'>
+  const anlage = { heatGeneration: 'single' } satisfies Pick<SnapshotHeatingPlant, 'heatGeneration'>
+  assert.deepEqual([lieferung.fuelGrade, zeile.dhwTempC, anlage.heatGeneration], ['heatingOilEL', 60, 'single'])
+})
+```
+
 (b) `server/test/migrations.test.ts`: in der Liste der Marken je Schritt die beiden neuen Schritte
 ergänzen. Die Marke ist die Prüfsumme, die der Test beim ersten Lauf in seiner Meldung nennt; sie wird
 nach dem Erzeugen in Step 5 aus der Meldung übernommen, nicht geraten.
@@ -731,7 +909,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { createHeatingPlant, updateHeatingPlant } from '../src/db/heating.ts'
-import { createFuelDelivery, updateFuelDelivery } from '../src/db/fuel.ts'
+import { createDelivery, updateDelivery } from '../src/db/fuel.ts'
 import { openDatabase } from '../src/db/open.ts'
 import { readFuelDeliveries, readHeatingPlants } from '../src/db/read.ts'
 import { createEntity, HeatingError } from '../src/db/repository.ts'
@@ -779,13 +957,13 @@ test('Tabellenzeile an der Lieferung: nur eine Zeile, die zum Energieträger pas
   await withDatabase(async (opened) => {
     await oelheizung(opened)
     const lieferung = { label: 'Öl Oktober', deliveredAt: '2025-10-12', quantity: 3000, quantityUnit: 'l' }
-    const d = await opened.write((db) => createFuelDelivery(db, 'hp', { ...lieferung, fuelGrade: 'heatingOilEL' })) ?? assert.fail('keine Anlage')
+    const d = await opened.write((db) => createDelivery(db, 'o1', 'hp', { ...lieferung, fuelGrade: 'heatingOilEL' })) ?? assert.fail('keine Anlage')
     assert.equal(d.fuelGrade, 'heatingOilEL')
     await assert.rejects(
-      opened.write((db) => updateFuelDelivery(db, d.id, { fuelGrade: 'naturalGasH' })),
+      opened.write((db) => updateDelivery(db, d.id, { fuelGrade: 'naturalGasH' })),
       heatingError(400, /Erdgas H.*passt nicht zu einer Heizung mit Heizöl.*Leichtes Heizöl extra leichtflüssig oder Schweres Heizöl/),
     )
-    await opened.write((db) => updateFuelDelivery(db, d.id, { fuelGrade: '' }))
+    await opened.write((db) => updateDelivery(db, d.id, { fuelGrade: '' }))
     assert.equal((await opened.read(readFuelDeliveries)).find((x) => x.id === d.id)?.fuelGrade, null)
   })
 })
@@ -794,7 +972,7 @@ test('Tabellenzeile an der Lieferung: bei Fernwärme gibt es keine, denn die Tab
   await withDatabase(async (opened) => {
     await oelheizung(opened, 'districtHeating')
     await assert.rejects(
-      opened.write((db) => createFuelDelivery(db, 'hp', { label: 'Fernwärme', invoiceFrom: '2025-01-01', invoiceTo: '2025-12-31', energyKwh: 40000, fuelGrade: 'naturalGasH' })),
+      opened.write((db) => createDelivery(db, 'f1', 'hp', { label: 'Fernwärme', invoiceFrom: '2025-01-01', invoiceTo: '2025-12-31', energyKwh: 40000, fuelGrade: 'naturalGasH' })),
       heatingError(400, /nur bei Heizkesseln/),
     )
   })
@@ -804,8 +982,9 @@ test('Tabellenzeile an der Lieferung: bei Fernwärme gibt es keine, denn die Tab
 - [ ] **Step 2: Tests ausführen, sie müssen scheitern**
 
 Run: `npm --prefix server test -- test/schema.test.ts test/db-warmwasser.test.ts`
-Expected: FAIL; schema.test.ts mit „no such column: heat_generation“, db-warmwasser.test.ts mit
-`undefined` statt `null` bei `heatGeneration`.
+Expected: FAIL; schema.test.ts mit „no such column: heat_generation“ (und beim Übersetzen mit den
+fehlenden Schlüsseln im Typtest), db-warmwasser.test.ts mit `undefined` statt `null` bei
+`heatGeneration`.
 
 - [ ] **Step 3: Typen (`shared/types.ts`)**
 
@@ -907,12 +1086,14 @@ hinter `heatingValue: …`:
 
 In `emptyDelivery` `fuelGrade: null` hinter `heatingValue: null`. Die Zeile, die `fuel_deliveries`
 schreibt, übernimmt das Feld (schreibt PR 7 mit `...d`, ist nichts zu tun; sonst
-`fuelGrade: d.fuelGrade` ergänzen). In `guardFuelDelivery` hinter der Prüfung des Heizwerts:
+`fuelGrade: d.fuelGrade` ergänzen). In `guardDelivery(db, plant, before, after)` (PR 7) als letzte
+Prüfung:
 
 ```ts
   // Die Zeile der Heizwerttabelle (Heizung PR 11): nur bei Heizkesseln (§ 9 Abs. 3 HeizkostenV) und nur
   // eine, die zum Energieträger der Anlage passt.
   if (after.fuelGrade !== null) {
+    const what = `„${after.label || 'ohne Bezeichnung'}“`
     if (!isBoiler(plant.energy)) {
       throw new HeatingError(400, `Die Tabelle der Heizwerte gilt nur bei Heizkesseln (§ 9 Abs. 3 HeizkostenV). Bei dieser Heizung zählen die Kilowattstunden laut Rechnung; lassen Sie die Tabellenzeile bei ${what} leer.`)
     }
@@ -924,8 +1105,8 @@ schreibt, übernimmt das Feld (schreibt PR 7 mit `...d`, ist nichts zu tun; sons
   }
 ```
 
-`what` ist die Bezeichnung der Lieferung, die `guardFuelDelivery` (PR 7) für seine Sätze schon bildet.
-Als Konstante in fuel.ts über `guardFuelDelivery`:
+`plant` ist `PlantFacts` (PR 7: `id`, `energy`, `method`). Als Konstante in fuel.ts über
+`guardDelivery`:
 
 ```ts
 // Der Energieträger im Satz („einer Heizung mit Heizöl“).
@@ -939,16 +1120,33 @@ const ENERGY_WORDS: Record<HeatingEnergy, string> = {
 
 - [ ] **Step 7: Schnappschuss (`server/src/snapshot.ts`)**
 
-`SnapshotHeatingPlant` (Fassung nach PR 10): in den optionalen Teil `Partial<Pick<HeatingPlant, …>>`
-`'heatGeneration'` aufnehmen. `SnapshotFuelDelivery` (PR 7, nach PR 10 mit den Feldern aus Annahme
-B6): `'fuelGrade'` in die Liste der gepickten Felder aufnehmen. Die Stellen, die beide füllen
-(`snapshotFor`, `heatingSnapshotFor`), reichen die Datensätze aus read.ts durch; pickt eine Stelle die
-Felder einzeln, dort `heatGeneration: p.heatGeneration` bzw. `fuelGrade: d.fuelGrade` ergänzen.
+PR 10 holt von der Lieferung nur `energyKwh` und von der Zeile der Heizperiode nur Anteil, Dämmung und
+gemessene Wärme in den Schnappschuss (Prüfbericht B.1, Zeile B6). dhw.ts liest mehr; ergänzt wird alles,
+was es liest:
+
+- `SnapshotHeatingPlant`: in den optionalen Teil `Partial<Pick<HeatingPlant, …>>` von PR 10
+  `'heatGeneration'` aufnehmen.
+- `SnapshotFuelDelivery` (PR 7, nach PR 10 mit `'energyKwh'`): in die Liste des `Pick`
+  `'invoiceDate' | 'quantity' | 'quantityUnit' | 'gasBasis' | 'heatingValue' | 'fuelGrade'` aufnehmen
+  (`deliveredAt` und `invoiceTo` pickt PR 7 schon). Steht eines davon schon darin (PR 8 nimmt
+  `invoiceDate` für den Vorrat), bleibt es einmal.
+- `SnapshotHeatingPeriodRow` (PR 6, PR 8, PR 10) bekommt als weiteren Teil der Schnittmenge:
+
+```ts
+  // Eingaben der Volumenformel (Heizung PR 11).
+  & Partial<Pick<HeatingPeriodData, 'dhwVolumeM3' | 'dhwTempC'>>
+```
+
+`readHeatingPeriodRows` (PR 6) und `readFuelDeliveries` (PR 7) lesen ganze Zeilen; `snapshotFor`,
+`heatingSnapshotFor` und `fuelSnapshotOf` (PR 5, PR 7) reichen Anlagen, Zeilen und Lieferungen als
+Datensätze durch. Bildet eine dieser Stellen Felder einzeln ab, kommen die neuen dort dazu
+(`heatGeneration: p.heatGeneration`, `fuelGrade: d.fuelGrade`, `quantity: d.quantity` und so fort). Der
+Typtest aus Step 1 (a) hält die Liste fest.
 
 - [ ] **Step 8: Tests ausführen, sie müssen bestehen**
 
 Run: `npm --prefix server test -- test/schema.test.ts test/migrations.test.ts test/db-warmwasser.test.ts && npm run typecheck`
-Expected: PASS (`db-warmwasser.test.ts`: 3 Tests).
+Expected: PASS (`db-warmwasser.test.ts`: 3 Tests; der Typtest in schema.test.ts übersetzt).
 
 - [ ] **Step 9: Alle Tests und Commit**
 
@@ -961,7 +1159,8 @@ git commit -m "Heizwerttabelle an der Lieferung, Erzeuger an der Anlage
 
 Zwei nullbare Spalten in zwei erzeugten Schritten: die Zeile der Tabelle des § 9 Abs. 3
 HeizkostenV (nur bei Heizkesseln, passend zum Energieträger) und ob die Anlage die Wärme allein
-erzeugt (§ 9 Abs. 1 Satz 5, Abs. 2 Satz 6 Nr. 3).
+erzeugt (§ 9 Abs. 1 Satz 5, Abs. 2 Satz 6 Nr. 3). Der Schnappschuss führt alles, was der
+Warmwasseranteil liest.
 
 Refs #99
 Refs #211"
@@ -979,21 +1178,22 @@ prüft `dhw.test.ts` jede Regel des § 9 einzeln, und die Naht zu PR 10 (Task 4)
 - Test: `server/test/dhw.test.ts` (neu)
 
 **Interfaces:**
-- Consumes: Task 1 `hkvDhwVolumeFormula`, `hkvDhwAreaFormula`, `hkvDhwFactors`, `hkvHeatingValues`, `FUEL_GRADE_LABELS`, `HEATING_VALUE_UNIT_TEXT`, `isBoiler`, `HeatingValueTable`, `HeatGeneration`, `HeatingValueUnit`, `FuelGrade`; PR 1 `law`, `LawLog`, `Period`; PR 4 `DhwMethod`, `HeatingEnergy`; PR 7 `FuelDelivery`, `GasBasis`; `SnapshotUnit` (snapshot.ts).
+- Consumes: Task 1 `hkvDhwVolumeFormula`, `hkvDhwAreaFormula`, `hkvDhwFactors`, `hkvHeatingValues`, `FUEL_GRADE_LABELS`, `HEATING_VALUE_UNIT_TEXT`, `isBoiler`, `HeatingValueTable`, `HeatGeneration`, `HeatingValueUnit`, `FuelGrade`; PR 1 `law`, `LawLog`, `Period`; PR 4 `DhwMethod`, `HeatingEnergy`; PR 7 `FuelDelivery`, `GasBasis`; `SnapshotUnit` (snapshot.ts); `andList` (`shared/wording.ts`, Bestand).
 - Produces:
-  - `shared/types.ts`: `type DhwHeatingValue = { label: string; kwh: number; per: HeatingValueUnit; source: 'invoice' | 'table'; grade: FuelGrade | null }`, `type DhwFactorKind = 'gasCalorific' | 'heatSupply' | 'heatPump'`, `type DhwDenominator = 'fuelKwh' | 'fuelQuantity' | 'deliveredHeat' | 'electricity' | 'measuredTotalHeat'`, `type DhwStatement = { method: DhwMethod; alpha: number; heatKwh: number; formulaKwh: number | null; factor: { kind: DhwFactorKind; value: number } | null; denominator: { kind: DhwDenominator; value: number; unit: 'kWh' | HeatingValueUnit }; fuelForDhw: { quantity: number; unit: HeatingValueUnit; heatingValue: number } | null; heatingValues: DhwHeatingValue[]; steps: string[] }`
+  - `shared/types.ts`: `type DhwHeatingValue = { label: string; kwh: number; per: HeatingValueUnit; source: 'invoice' | 'table'; grade: FuelGrade | null }`, `type DhwFactorKind = 'gasCalorific' | 'heatSupply' | 'heatPump'`, `type DhwDenominator = 'fuelKwh' | 'fuelQuantity' | 'deliveredHeat' | 'electricity' | 'measuredTotalHeat'`, `type DhwStatement = { method: DhwMethod; alpha: number; heatKwh: number; formulaKwh: number | null; factor: { kind: DhwFactorKind; value: number } | null; denominator: { kind: DhwDenominator; value: number; unit: 'kWh' | HeatingValueUnit }; energyKwh: number; fuelForDhw: { quantity: number; unit: HeatingValueUnit; heatingValue: number } | null; heatingValues: DhwHeatingValue[]; estimated: boolean; steps: string[] }`
   - `server/src/dhw.ts`:
     - `DHW_PLAUSIBLE = { min: 0.05, max: 0.5 }`, `fmtShare(alpha: number): string`
     - `type EnergyDelivery = Pick<FuelDelivery, 'id' | 'label' | 'invoiceTo' | 'deliveredAt' | 'invoiceDate' | 'energyKwh' | 'quantity' | 'quantityUnit' | 'gasBasis' | 'heatingValue' | 'fuelGrade'> & { share: number }`
     - `type GeneratorInput = { deliveries: readonly EnergyDelivery[]; stock: { unit: HeatingValueUnit; consumed: number } | null; earlier: EnergyDelivery | null }`
-    - `type DhwInput = { energy: HeatingEnergy; heatGeneration: HeatGeneration | null; h: Period; method: DhwMethod; measured: { dhwKwh: number | null; totalKwh: number | null }; volumeM3: number | null; tempC: number | null; suppliedAreaM2: number; generator: GeneratorInput }`
-    - `type DhwOutcome = { ok: true; statement: DhwStatement } | { ok: false; code: 'heating.dhw-share-invalid' | 'heating.heat-pump-dhw-basis'; reasons: string[] }`
+    - `type DhwProblem = 'noDhwHeat' | 'heatPumpBasis' | 'noFuelEnergy' | 'fuelGap' | 'outOfRange' | 'formulaInput' | 'totalHeatMissing'` (die ersten fünf aus PR 10 `AlphaProblem`)
+    - `type DhwInput = { energy: HeatingEnergy; heatGeneration: HeatGeneration | null; h: Period; method: DhwMethod; measured: { dhwKwh: number | null; totalKwh: number | null }; volumeM3: number | null; tempC: number | null; suppliedAreaM2: number; generator: GeneratorInput; fuelCoveragePermille: number | null; fuelEstimated: boolean }`
+    - `type DhwOutcome = { ok: true; statement: DhwStatement } | { ok: false; code: 'heating.dhw-share-invalid' | 'heating.heat-pump-dhw-basis'; problem: DhwProblem; reasons: string[] }`
     - `yearShare(h: Period): { share: number; days: number; yearDays: number }`
     - `type Failure = { ok: false; reasons: string[] }`, `type Energy = { ok: true; kind: 'kwh'; kwh: number; basis: 'hs' | 'hi' | null } | { ok: true; kind: 'quantity'; kwh: number; quantity: number; unit: HeatingValueUnit; heatingValue: number; values: DhwHeatingValue[] }`
     - `formulaHeat(i: FormulaInput, log: LawLog)`, `generatorEnergyOf(energy: HeatingEnergy, h: Period, g: GeneratorInput, log: LawLog): Energy | Failure`, `dhwShareOf(i: DhwInput, log: LawLog): DhwOutcome`
     - `suppliedAreaOf(units: readonly Pick<SnapshotUnit, 'areaM2' | 'noConnection'>[]): number`
     - `deliveryDate(d)`, `deliveriesInPeriod(ds, h)`, `latestBefore(ds, h, unit)`
-    - `andList(items: readonly string[]): string`
+    - kein eigenes `andList`: dhw.ts nimmt das aus `shared/wording.ts` (eine Quelle, Prüfbericht B.1)
 
 - [ ] **Step 1: Failing test schreiben**
 
@@ -1017,6 +1217,7 @@ const input = (over: Partial<DhwInput> = {}): DhwInput => ({
   energy: 'gas', heatGeneration: 'single', h: H2025, method: 'heatMeter',
   measured: { dhwKwh: 9000, totalKwh: null }, volumeM3: 120, tempC: 60, suppliedAreaM2: 200,
   generator: { deliveries: [gasKwh(60000)], stock: null, earlier: null },
+  fuelCoveragePermille: 1000, fuelEstimated: false,
   ...over,
 })
 const share = (over: Partial<DhwInput> = {}, log = createLawLog()) => {
@@ -1158,7 +1359,7 @@ test('Rumpf (Abweichung 3): Flächenformel nach Tagen gekürzt, Volumenformel ni
   // 6.400 · 120 / 365 = 2.104,11 kWh · 1,11 = 2.335,56 kWh; / 20.000 = 11,68 %.
   const flaeche = share({ method: 'areaFormula', h: rumpf, generator: gas })
   assert.equal(pct(flaeche.alpha), 11.68)
-  assert.ok(flaeche.steps.some((s) => /120 von 365 Tagen/.test(s)), flaeche.steps.join('\n'))
+  assert.ok(flaeche.steps.some((s) => /120 von 365 Tagen.*§ 9b Abs\. 2/.test(s)), flaeche.steps.join('\n'))
   // 2,5 · 40 · 50 = 5.000 · 1,11 = 5.550; / 20.000 = 27,75 %.
   assert.equal(pct(share({ method: 'volumeFormula', volumeM3: 40, h: rumpf, generator: gas }).alpha), 27.75)
 })
@@ -1190,6 +1391,39 @@ test('Protokoll: nur die Rechtswerte, mit denen gerechnet wurde', () => {
 test('Versorgte Fläche: angeschlossene Wohnungen ohne „kein Anschluss: Warmwasser“', () => {
   assert.equal(suppliedAreaOf([{ areaM2: 80 }, { areaM2: 60, noConnection: ['warmwasser'] }, { areaM2: 45, noConnection: ['kaltwasser'] }]), 125)
 })
+
+test('Aus PR 10 übernommen: Lücke in den Rechnungen, Schätzung beim Abschluss, Anteil außerhalb von 0 bis 100 %', () => {
+  // PR 10 Abweichung 11: Der Anteil braucht Rechnungen über die ganze Heizperiode.
+  const luecke = failure({ fuelCoveragePermille: 848.71 })
+  assert.deepEqual([luecke.code, luecke.problem], ['heating.dhw-share-invalid', 'fuelGap'])
+  assert.match(luecke.reasons.join(' '), /Folgerechnung.*Schätzung/)
+  assert.equal(failure({ fuelCoveragePermille: null }).problem, 'fuelGap')
+  // Beim Vorrat zählt die verbrauchte Menge; die Abdeckung der Rechnungen spielt dort keine Rolle.
+  assert.equal(pct(share(oilInput({ fuelCoveragePermille: null })).alpha), 25.51)
+  // Die Schätzung beim Abschluss trägt die kWh der fehlenden Rechnung; α beruht dann auf ihr.
+  assert.equal(share({ fuelEstimated: true }).estimated, true)
+  assert.equal(share().estimated, false)
+  assert.equal(share({ energy: 'districtHeating', measured: { dhwKwh: 6000, totalKwh: 30000 }, fuelEstimated: true }).estimated, false, 'gegen gemessene Gesamtwärme')
+  // α außerhalb von (0, 1) ist ein Widerspruch, kein Anteil.
+  assert.deepEqual([failure({ measured: { dhwKwh: 0, totalKwh: null } }).problem, failure({ measured: { dhwKwh: 60000, totalKwh: null } }).problem], ['outOfRange', 'outOfRange'])
+  assert.equal(failure({ measured: { dhwKwh: null, totalKwh: null } }).problem, 'noDhwHeat')
+  assert.equal(failure({ generator: { deliveries: [delivery({ label: 'Gas' })], stock: null, earlier: null } }).problem, 'noFuelEnergy')
+  // Die Energie des Nenners in kWh, auch bei Brennstoff als Menge: 6.000 l · 9,8 kWh/l = 58.800 kWh.
+  assert.equal(share().energyKwh, 60000)
+  assert.equal(Math.round(share(oilInput()).energyKwh), 58800)
+})
+
+test('Stromheizung (Abweichung 7, Prüfbericht A6): gemessen gegen den Strom laut Rechnung wie in PR 10; die Formeln rechnen nicht', () => {
+  const strom = { deliveries: [delivery({ label: 'Strom 2025', energyKwh: 30000 })], stock: null, earlier: null }
+  // 4.500 kWh am Wärmezähler des Speichers gegen 30.000 kWh Strom: 15 %. Ein Elektrokessel setzt Strom
+  // nahezu ohne Verlust in Wärme um; das ist der Fall des § 9 Abs. 1 Satz 2 („Energieverbrauch“).
+  const gemessen = share({ energy: 'electric', measured: { dhwKwh: 4500, totalKwh: null }, generator: strom })
+  assert.equal(gemessen.alpha, 0.15)
+  assert.deepEqual(gemessen.denominator, { kind: 'electricity', value: 30000, unit: 'kWh' })
+  const formel = failure({ energy: 'electric', method: 'volumeFormula', generator: strom })
+  assert.equal(formel.problem, 'formulaInput')
+  assert.match(formel.reasons.join(' '), /Stromheizung.*keinen Faktor.*Wärmezähler am Warmwasserspeicher/)
+})
 ```
 
 - [ ] **Step 2: Test ausführen, er muss scheitern**
@@ -1220,8 +1454,13 @@ export type DhwStatement = {
   formulaKwh: number | null
   factor: { kind: DhwFactorKind; value: number } | null
   denominator: { kind: DhwDenominator; value: number; unit: 'kWh' | HeatingValueUnit }
+  // Die Energie des Nenners in kWh, auch bei Brennstoff als Menge (Menge · Heizwert); für `self.alpha`
+  // (PR 10: `referenceKwh`).
+  energyKwh: number
   fuelForDhw: { quantity: number; unit: HeatingValueUnit; heatingValue: number } | null
   heatingValues: DhwHeatingValue[]
+  // α beruht auf der Schätzung beim Abschluss (PR 7, PR 10 Abweichung 11).
+  estimated: boolean
   steps: string[]
 }
 ```
@@ -1237,8 +1476,13 @@ export type DhwStatement = {
 // **nur für die Formelwerte** (Entwurf G-B1 abgelehnt, 15.1 Nr. 9). Wogegen Q gestellt wird, hängt am
 // Erzeuger: bei Heizkesseln der Brennstoff (in kWh laut Rechnung oder als Menge mit B = Q / Hᵢ nach
 // Abs. 3), bei Fernwärme die gelieferte Wärme, bei der Wärmepumpe mit Formel der Strom (der Faktor 0,30
-// rechnet auf den Strom um, Entwurf 8.3, F1) und gemessen die gemessene Gesamtwärme (Abs. 1 Satz 2,
-// A8). Erzeugt die Anlage die Wärme nicht allein, gibt es nur gemessen gegen gemessen (Abs. 1 Satz 5).
+// rechnet auf den Strom um, Entwurf 8.3, F1), bei der Stromheizung gemessen der Strom (wie PR 10,
+// Abweichung 7) und gemessen bei Wärmepumpe und Mischanlage die gemessene Gesamtwärme (Abs. 1 Satz 2
+// und 5, A8).
+//
+// Aus PR 10 übernommen (Abgleich nach der Prüfung vom 05.10.2026): Die Rechnungen müssen die Heizperiode
+// ganz abdecken (`fuelGap`, PR 10 Abweichung 11), α auf der Schätzung beim Abschluss heißt `estimated`,
+// und α außerhalb von (0, 1) ist `outOfRange`.
 //
 // Alle Rechtswerte kommen aus dem Register; diese Datei steht in `ENGINE_FILES` des Wächters
 // (law-literals.test.ts). Fehlt eine Angabe, wird nicht geraten, sondern gesagt, was fehlt.
@@ -1248,19 +1492,23 @@ import type {
 import { law, type LawLog, type Period } from '../../shared/law/register.ts'
 import { hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvHeatingValues } from '../../shared/law/heizkostenv.ts'
 import { FUEL_GRADE_LABELS, HEATING_VALUE_UNIT_TEXT, isBoiler } from '../../shared/fuelGrades.ts'
+import { andList } from '../../shared/wording.ts'
 import type { SnapshotUnit } from './snapshot.ts'
 
 // Plausibilität (Entwurf 15.2 F6): keine Rechtsgrenze, nur ein Anlass zu prüfen.
 export const DHW_PLAUSIBLE = { min: 0.05, max: 0.5 } as const
+// Volle Abdeckung der Heizperiode durch Rechnungen, in Promille (PR 10, `COVERAGE_FULL`).
+const COVERAGE_FULL = 1000
 
 const fmt = (n: number, digits = 0) => n.toLocaleString('de-DE', { minimumFractionDigits: digits, maximumFractionDigits: digits })
 const fmtUpTo = (n: number, digits = 2) => n.toLocaleString('de-DE', { maximumFractionDigits: digits })
 export const fmtShare = (alpha: number): string => `${fmt(alpha * 100, 2)} %`
 
-export function andList(items: readonly string[]): string {
-  if (items.length <= 1) return items[0] ?? ''
-  return `${items.slice(0, -1).join(', ')} und ${items[items.length - 1]}`
-}
+// Was den Warmwasseranteil verhindert. Die ersten fünf stammen aus PR 10 (`AlphaProblem` dort, ohne die
+// beiden Sperren `formulaLater` und `heatingValueLater`, die mit dieser PR fallen); `formulaInput` ist
+// eine fehlende oder widersprüchliche Eingabe einer Formel oder des Erzeugers, `totalHeatMissing` eine
+// Anlage, die nur gegen gemessene Gesamtwärme rechnen darf und keine hat.
+export type DhwProblem = 'noDhwHeat' | 'heatPumpBasis' | 'noFuelEnergy' | 'fuelGap' | 'outOfRange' | 'formulaInput' | 'totalHeatMissing'
 
 // ---------- Tage (UTC, inklusive Grenzen, wie calc.ts) ----------
 
@@ -1276,7 +1524,9 @@ function yearEndFrom(from: string): string {
 }
 
 // Welcher Teil eines Jahres die Heizperiode ist. Eine Heizperiode von zwölf Monaten ist genau ein Jahr,
-// auch im Schaltjahr; nur ein Rumpf ist kürzer (Abweichung 3 des Plans PR 11).
+// auch im Schaltjahr; nur ein Rumpf ist kürzer. Nach Tagen und nicht nach Gradtagen, weil § 9b Abs. 2
+// HeizkostenV die Kosten des Warmwasserverbrauchs zeitanteilig teilt: Warmwasser hängt nicht an der
+// Witterung (Abweichung 3, Festlegung F7 im Entwurf 15.2, ⟨Norm offen: VDI 2077⟩).
 export function yearShare(h: Period): { share: number; days: number; yearDays: number } {
   const end = yearEndFrom(h.from)
   const yearDays = daysInclusive(h.from, end)
@@ -1351,7 +1601,7 @@ export function formulaHeat(i: FormulaInput, log: LawLog): { ok: true; kwh: numb
   const ys = yearShare(i.h)
   if (ys.share === 1) return { ok: true, kwh: year, steps }
   const kwh = year * ys.share
-  steps.push(`Die Heizperiode umfasst ${ys.days} von ${ys.yearDays} Tagen: ${fmtUpTo(year)} kWh · ${ys.days} / ${ys.yearDays} = ${fmtUpTo(kwh)} kWh`)
+  steps.push(`Die Heizperiode umfasst ${ys.days} von ${ys.yearDays} Tagen; Warmwasser wird wie in § 9b Abs. 2 HeizkostenV zeitanteilig gerechnet: ${fmtUpTo(year)} kWh · ${ys.days} / ${ys.yearDays} = ${fmtUpTo(kwh)} kWh`)
   return { ok: true, kwh, steps }
 }
 
@@ -1446,8 +1696,14 @@ export function generatorEnergyOf(energy: HeatingEnergy, h: Period, g: Generator
 type Factor = { kind: DhwFactorKind; value: number; q: (kwh: number) => number; step: (from: number, to: number) => string }
 
 function formulaFactor(energy: HeatingEnergy, e: Energy, h: Period, log: LawLog): { ok: true; factor: Factor | null } | Failure {
-  if (energy === 'electric' || energy === 'other') {
-    return fail('bei einer Stromheizung oder einem unbekannten Energieträger regelt § 9 HeizkostenV keine Formel; der Anteil lässt sich nur mit gemessener Gesamtwärme bestimmen (§ 9 Abs. 1 Satz 5)')
+  // Stromheizung: Satz 6 nennt keinen Faktor, und eine Formelwärme gegen Strom zu stellen wäre eine eigene
+  // Regel. Gemessen rechnet sie wie in PR 10 (Abweichung 7). Unbekannter Energieträger: nur gemessen
+  // gegen gemessen (§ 9 Abs. 1 Satz 5).
+  if (energy === 'electric') {
+    return fail('für eine Stromheizung nennt § 9 Abs. 2 Satz 6 HeizkostenV keinen Faktor; bestimmen Sie den Warmwasseranteil mit einem Wärmezähler am Warmwasserspeicher, er wird dann gegen den Strom laut Rechnung gestellt')
+  }
+  if (energy === 'other') {
+    return fail('bei einem unbekannten Energieträger regelt § 9 HeizkostenV keine Formel; der Anteil lässt sich nur mit gemessener Gesamtwärme bestimmen (§ 9 Abs. 1 Satz 5)')
   }
   const f = law(hkvDhwFactors, { period: h }, log)
   if (energy === 'gas' && e.kind === 'kwh') {
@@ -1497,40 +1753,62 @@ export type DhwInput = {
   h: Period
   method: DhwMethod
   // Gemessen: Wärme für das Warmwasser und Gesamtwärme der Anlage in kWh (Zähler mit Rolle `dhwHeat`
-  // bzw. `totalHeat` oder eingetragen, PR 10).
+  // bzw. `totalHeat` oder eingetragen, PR 10 Abweichung 12).
   measured: { dhwKwh: number | null; totalKwh: number | null }
   volumeM3: number | null
   tempC: number | null
   suppliedAreaM2: number
   generator: GeneratorInput
+  // Aus der Bewertung der Lieferungen (PR 7): wie viel der Heizperiode die Rechnungen abdecken, in
+  // Promille, und ob eine davon die Schätzung beim Abschluss ist (PR 10 Abweichung 11).
+  fuelCoveragePermille: number | null
+  fuelEstimated: boolean
 }
 
 export type DhwOutcome =
   | { ok: true; statement: DhwStatement }
-  | { ok: false; code: 'heating.dhw-share-invalid' | 'heating.heat-pump-dhw-basis'; reasons: string[] }
+  | { ok: false; code: 'heating.dhw-share-invalid' | 'heating.heat-pump-dhw-basis'; problem: DhwProblem; reasons: string[] }
 
-const invalid = (reasons: string[]): DhwOutcome => ({ ok: false, code: 'heating.dhw-share-invalid', reasons })
+const failed = (problem: DhwProblem, reasons: string[]): DhwOutcome =>
+  ({ ok: false, code: problem === 'heatPumpBasis' ? 'heating.heat-pump-dhw-basis' : 'heating.dhw-share-invalid', problem, reasons })
+
+// α außerhalb von (0, 1) ist ein Widerspruch in den Angaben (PR 10, `outOfRange`).
+const outOfRange = (alpha: number): DhwOutcome => failed('outOfRange', [alpha > 0
+  ? `der Warmwasseranteil ergäbe ${fmtShare(alpha)}, also mindestens die ganze Energie der Anlage; bitte prüfen Sie die Werte`
+  : 'die Wärme für das Warmwasser ist 0 kWh; das passt nicht zu einer Anlage, die das Warmwasser bereitet. Bitte prüfen Sie die Stände und Werte'])
+
+// Die Rechnungen müssen die ganze Heizperiode abdecken; eine Lücke hochzurechnen wäre eine Schätzung
+// (PR 10 Abweichung 11). Beim Vorrat zählt die verbrauchte Menge, dort gibt es diese Frage nicht.
+function gapOf(i: DhwInput): DhwOutcome | null {
+  if (i.generator.stock !== null) return null
+  if (i.fuelCoveragePermille !== null && i.fuelCoveragePermille >= COVERAGE_FULL - 1e-6) return null
+  return failed('fuelGap', ['die Rechnungen des Versorgers decken die Heizperiode nicht ganz ab, und der Warmwasseranteil braucht den Verbrauch der ganzen Heizperiode; tragen Sie die Folgerechnung ein oder schließen Sie die Abrechnung mit einer Schätzung der fehlenden Rechnung ab'])
+}
 
 const DENOMINATOR_WORDS: Record<'fuelKwh' | 'deliveredHeat' | 'electricity', string> = {
-  fuelKwh: 'Brennstoff laut Rechnung', deliveredHeat: 'gelieferte Wärme laut Rechnung', electricity: 'Strom der Wärmepumpe laut Rechnung',
+  fuelKwh: 'Brennstoff laut Rechnung', deliveredHeat: 'gelieferte Wärme laut Rechnung', electricity: 'Strom laut Rechnung',
 }
 
 // Q gegen die Energie stellen und α prüfen. `formula` ist null bei gemessenem Q.
-function finish(method: DhwMethod, q: number, formula: { kwh: number; factor: Factor | null } | null, e: Energy, energy: HeatingEnergy, steps: string[]): DhwOutcome {
+function finish(i: DhwInput, method: DhwMethod, q: number, formula: { kwh: number; factor: Factor | null } | null, e: Energy, steps: string[]): DhwOutcome {
   const factor = formula?.factor ? { kind: formula.factor.kind, value: formula.factor.value } : null
   const values = e.kind === 'quantity' ? e.values : []
+  const estimated = i.generator.stock === null && i.fuelEstimated
   if (e.kind === 'kwh') {
-    if (!(e.kwh > 0)) return invalid(['die Rechnungen der Heizperiode ergeben 0 kWh'])
-    const kind = energy === 'districtHeating' ? 'deliveredHeat' : energy === 'heatPump' ? 'electricity' : 'fuelKwh'
+    if (!(e.kwh > 0)) return failed('noFuelEnergy', ['die Rechnungen der Heizperiode ergeben 0 kWh'])
+    const kind = i.energy === 'districtHeating' ? 'deliveredHeat' : i.energy === 'heatPump' || i.energy === 'electric' ? 'electricity' : 'fuelKwh'
     const alpha = q / e.kwh
-    if (alpha >= 1) return invalid([`der Warmwasseranteil ergäbe ${fmtShare(alpha)}, also mindestens die ganze Energie der Anlage; bitte prüfen Sie die Werte`])
+    if (!(alpha > 0 && alpha < 1)) return outOfRange(alpha)
     steps.push(`Warmwasseranteil = ${fmtUpTo(q)} kWh / ${fmtUpTo(e.kwh)} kWh ${DENOMINATOR_WORDS[kind]} = ${fmtShare(alpha)}`)
-    return { ok: true, statement: { method, alpha, heatKwh: q, formulaKwh: formula?.kwh ?? null, factor, denominator: { kind, value: e.kwh, unit: 'kWh' }, fuelForDhw: null, heatingValues: values, steps } }
+    return {
+      ok: true,
+      statement: { method, alpha, heatKwh: q, formulaKwh: formula?.kwh ?? null, factor, denominator: { kind, value: e.kwh, unit: 'kWh' }, energyKwh: e.kwh, fuelForDhw: null, heatingValues: values, estimated, steps },
+    }
   }
-  if (!(e.quantity > 0) || !(e.heatingValue > 0)) return invalid(['in der Heizperiode wurde kein Brennstoff verbraucht'])
+  if (!(e.quantity > 0) || !(e.heatingValue > 0)) return failed('noFuelEnergy', ['in der Heizperiode wurde kein Brennstoff verbraucht'])
   const b = q / e.heatingValue
   const alpha = b / e.quantity
-  if (alpha >= 1) return invalid([`der Warmwasseranteil ergäbe ${fmtShare(alpha)}, also mindestens die ganze Energie der Anlage; bitte prüfen Sie die Werte`])
+  if (!(alpha > 0 && alpha < 1)) return outOfRange(alpha)
   const unit = HEATING_VALUE_UNIT_TEXT[e.unit]
   steps.push(`Heizwert: ${fmtUpTo(e.heatingValue, 3)} kWh je ${unit}${e.values.length > 1 ? ' (Mittel der Rechnungen nach Menge)' : ''}${e.values.some((v) => v.source === 'table') ? ' (Tabelle des § 9 Abs. 3 HeizkostenV, weil die Rechnung keinen nennt)' : ''}`)
   steps.push(`B = Q / Hᵢ = ${fmtUpTo(q)} kWh / ${fmtUpTo(e.heatingValue, 3)} kWh je ${unit} = ${fmtUpTo(b)} ${unit} (§ 9 Abs. 3 HeizkostenV)`)
@@ -1540,55 +1818,71 @@ function finish(method: DhwMethod, q: number, formula: { kwh: number; factor: Fa
     statement: {
       method, alpha, heatKwh: q, formulaKwh: formula?.kwh ?? null, factor,
       denominator: { kind: 'fuelQuantity', value: e.quantity, unit: e.unit },
+      energyKwh: e.kwh,
       fuelForDhw: { quantity: b, unit: e.unit, heatingValue: e.heatingValue },
-      heatingValues: values, steps,
+      heatingValues: values, estimated, steps,
     },
   }
 }
 
 function measuredShare(i: DhwInput, log: LawLog): DhwOutcome {
   const q = i.measured.dhwKwh
-  if (q === null || q < 0) return invalid(['die gemessene Wärme für das Warmwasser fehlt (Wärmezähler am Speicher oder eingetragener Wert)'])
+  if (q === null || q < 0) {
+    return failed('noDhwHeat', ['die gemessene Wärme für das Warmwasser fehlt; tragen Sie die Stände des Wärmezählers am Warmwasserspeicher zu Beginn und Ende der Heizperiode ein'])
+  }
   const steps = [`Gemessene Wärme für das Warmwasser: ${fmtUpTo(q)} kWh (§ 9 Abs. 2 Satz 1 HeizkostenV)`]
   const total = i.measured.totalKwh
   // Wärmepumpe: Anteil am Wärmeverbrauch (§ 9 Abs. 1 Satz 2). Gemessene Wärme durch Strom ergäbe etwa
   // das Dreifache (Entwurf 8.3, A8).
-  if (i.energy === 'heatPump' && total === null) return { ok: false, code: 'heating.heat-pump-dhw-basis', reasons: [] }
-  const needsTotal = i.energy === 'heatPump' || i.energy === 'electric' || i.energy === 'other' || i.heatGeneration === 'mixed'
+  if (i.energy === 'heatPump' && total === null) return failed('heatPumpBasis', [])
+  // Nur gegen gemessene Gesamtwärme: Wärmepumpe, unbekannter Energieträger und eine Anlage mit weiterem
+  // Erzeuger (§ 9 Abs. 1 Satz 5). Die Stromheizung nicht: Sie rechnet wie in PR 10 gegen den Strom laut
+  // Rechnung (Abweichung 7).
+  const needsTotal = i.energy === 'heatPump' || i.energy === 'other' || i.heatGeneration === 'mixed'
   if (total !== null && (needsTotal || i.energy === 'districtHeating')) {
-    if (!(total > 0)) return invalid(['die gemessene Gesamtwärme ist 0 kWh'])
+    if (!(total > 0)) return failed('totalHeatMissing', ['die gemessene Gesamtwärme ist 0 kWh; bitte prüfen Sie die Stände des Gesamtwärmezählers'])
     const alpha = q / total
-    if (alpha >= 1) return invalid([`der Warmwasseranteil ergäbe ${fmtShare(alpha)}, also mindestens die ganze Energie der Anlage; bitte prüfen Sie die Werte`])
+    if (!(alpha > 0 && alpha < 1)) return outOfRange(alpha)
     steps.push(`Warmwasseranteil = ${fmtUpTo(q)} kWh / ${fmtUpTo(total)} kWh gemessene Gesamtwärme = ${fmtShare(alpha)} (§ 9 Abs. 1 Satz 2 HeizkostenV)`)
-    return { ok: true, statement: { method: 'heatMeter', alpha, heatKwh: q, formulaKwh: null, factor: null, denominator: { kind: 'measuredTotalHeat', value: total, unit: 'kWh' }, fuelForDhw: null, heatingValues: [], steps } }
+    return {
+      ok: true,
+      statement: {
+        method: 'heatMeter', alpha, heatKwh: q, formulaKwh: null, factor: null, denominator: { kind: 'measuredTotalHeat', value: total, unit: 'kWh' },
+        energyKwh: total, fuelForDhw: null, heatingValues: [], estimated: false, steps,
+      },
+    }
   }
   if (needsTotal) {
-    return invalid([i.heatGeneration === 'mixed'
+    return failed('totalHeatMissing', [i.heatGeneration === 'mixed'
       ? 'die Anlage erzeugt die Wärme nicht allein; dann braucht es die gemessene Gesamtwärme (Gesamtwärmezähler), und die fehlt (§ 9 Abs. 1 Satz 5 HeizkostenV)'
-      : 'bei einer Stromheizung oder einem unbekannten Energieträger braucht es die gemessene Gesamtwärme (Gesamtwärmezähler), und die fehlt (§ 9 Abs. 1 Satz 5 HeizkostenV)'])
+      : 'bei einem unbekannten Energieträger braucht es die gemessene Gesamtwärme (Gesamtwärmezähler), und die fehlt (§ 9 Abs. 1 Satz 5 HeizkostenV)'])
   }
   const e = generatorEnergyOf(i.energy, i.h, i.generator, log)
-  if (!e.ok) return invalid(e.reasons)
-  return finish('heatMeter', q, null, e, i.energy, steps)
+  if (!e.ok) return failed('noFuelEnergy', e.reasons)
+  const gap = gapOf(i)
+  if (gap) return gap
+  return finish(i, 'heatMeter', q, null, e, steps)
 }
 
 function formulaShare(i: DhwInput, method: 'volumeFormula' | 'areaFormula', log: LawLog): DhwOutcome {
   if (i.heatGeneration === null) {
-    return invalid(['es fehlt die Antwort, ob die Anlage die Wärme allein erzeugt; sie entscheidet, ob eine Formel zulässig ist (§ 9 Abs. 1 Satz 5, Abs. 2 Satz 6 Nr. 3 HeizkostenV)'])
+    return failed('formulaInput', ['es fehlt die Antwort, ob die Anlage die Wärme allein erzeugt; sie entscheidet, ob eine Formel zulässig ist (§ 9 Abs. 1 Satz 5, Abs. 2 Satz 6 Nr. 3 HeizkostenV)'])
   }
   if (i.heatGeneration === 'mixed') {
-    return invalid(['die Anlage erzeugt die Wärme nicht allein (etwa mit Solaranlage, Heizstab oder zweitem Kessel); dann lässt sich der Anteil nur mit gemessener Gesamtwärme bestimmen (§ 9 Abs. 1 Satz 5 HeizkostenV) und nicht nach einer Formel'])
+    return failed('formulaInput', ['die Anlage erzeugt die Wärme nicht allein (etwa mit Solaranlage, Heizstab oder zweitem Kessel); dann lässt sich der Anteil nur mit gemessener Gesamtwärme bestimmen (§ 9 Abs. 1 Satz 5 HeizkostenV) und nicht nach einer Formel'])
   }
   const formula = formulaHeat({ method, volumeM3: i.volumeM3, tempC: i.tempC, areaM2: i.suppliedAreaM2, h: i.h }, log)
-  if (!formula.ok) return invalid(formula.reasons)
+  if (!formula.ok) return failed('formulaInput', formula.reasons)
   const e = generatorEnergyOf(i.energy, i.h, i.generator, log)
-  if (!e.ok) return invalid(e.reasons)
+  if (!e.ok) return failed('noFuelEnergy', e.reasons)
+  const gap = gapOf(i)
+  if (gap) return gap
   const f = formulaFactor(i.energy, e, i.h, log)
-  if (!f.ok) return invalid(f.reasons)
+  if (!f.ok) return failed('formulaInput', f.reasons)
   const steps = [...formula.steps]
   const q = f.factor ? f.factor.q(formula.kwh) : formula.kwh
   if (f.factor) steps.push(f.factor.step(formula.kwh, q))
-  return finish(method, q, { kwh: formula.kwh, factor: f.factor }, e, i.energy, steps)
+  return finish(i, method, q, { kwh: formula.kwh, factor: f.factor }, e, steps)
 }
 
 export function dhwShareOf(i: DhwInput, log: LawLog): DhwOutcome {
@@ -1607,8 +1901,8 @@ Satz 1 es sagt.
 - [ ] **Step 6: Tests ausführen, sie müssen bestehen**
 
 Run: `npm --prefix server test -- test/dhw.test.ts test/law-literals.test.ts && npm run typecheck`
-Expected: PASS (`dhw.test.ts`: 14 Tests). Der Wächter findet in dhw.ts kein Datum und keine
-Prozentangabe einer Rechtsfolge.
+Expected: PASS (`dhw.test.ts`: 16 Tests). Der Wächter findet in dhw.ts kein Datum und keine
+Prozentangabe einer Rechtsfolge; `COVERAGE_FULL` (1000 ‰) ist wie in PR 10 kein Rechtswert.
 
 - [ ] **Step 7: Commit**
 
@@ -1619,35 +1913,219 @@ Expected: PASS (dhw.ts wird noch von niemandem aufgerufen).
 git add shared/types.ts server/src/dhw.ts server/test/dhw.test.ts server/test/law-literals.test.ts
 git commit -m "Warmwasseranteil nach § 9 HeizkostenV als reine Funktionen
 
-Gemessen gegen Brennstoff, gelieferte Wärme oder gemessene Gesamtwärme; nach Volumen- und
+Gemessen gegen Brennstoff, gelieferte Wärme, Strom oder gemessene Gesamtwärme; nach Volumen- und
 Flächenformel mit den Faktoren nur für Formelwerte; Brennstoff als Menge mit B = Q / Hi, Heizwert
-laut Rechnung vor der Tabelle, die nur bei Heizkesseln gilt. Was fehlt, wird gesagt.
+laut Rechnung vor der Tabelle, die nur bei Heizkesseln gilt. Die Regeln von PR 10 (Lücke,
+Schätzung, Anteil außerhalb von 0 bis 100 %) bleiben. Was fehlt, wird gesagt.
 
 Refs #99
 Refs #211"
 ```
 
 ---
-### Task 4: Naht zu PR 10: α aus dhw.ts, Hinweise, Ausweis
+### Task 4: Naht zu PR 10: Testhelfer, α aus dhw.ts, Sperren, Hinweise, Ausweis
 
-Die Stelle, an der PR 10 α bestimmt (Annahme B2), ruft jetzt `dhwShareOf`. Dazu die Hinweise
-`heating.heat-pump-dhw-basis` (error), `heating.heating-value-from-table` (hint),
-`heating.dhw-share-implausible` (hint) und `heating.dhw-not-metered` auch bei `self` (warning, 15 % auf
-den ganzen Anteil an Heiz- und Warmwasserkosten, Entwurf 6.5, R-A6).
+Neu gefasst nach der Prüfung vom 05.10.2026 (Abgleich mit PR 10, Commit `81828af`). Die Stelle, an der
+PR 10 α bestimmt, ist `hotWaterShareOf(i: AlphaInput)` in heating.ts mit dem einen Aufruf `alphaResult`
+im Block des Plans von `computeSettlement` (PR 10 Task 8 Step 7). Sie bleibt die eine Stelle und ruft
+jetzt dhw.ts; Gestalt und Namen von PR 10 bleiben (`Alpha`, `AlphaProblem`, `self.alpha`), dazu kommt
+der Rechenweg. Die Sperren `formulaLater`, `heatingValueLater` und `LATER.dhwHeatingValue` fallen. Neu
+sind die Hinweise `heating.heating-value-from-table` (hint), `heating.dhw-share-implausible` (hint) und
+`heating.heat-pump-old-exemption` (hint, Abweichung 9) und `heating.dhw-not-metered` auch bei `self`
+(warning, 15 % auf den ganzen Anteil an Heiz- und Warmwasserkosten, Entwurf 6.5, R-A6).
+`heating.heat-pump-dhw-basis` gibt es seit PR 10 (dort Abweichung 6); diese PR legt den Code nicht noch
+einmal an.
 
 **Files:**
-- Modify: `server/src/dhw.ts` (Naht), `server/src/heating.ts`, `server/src/calc.ts`, `shared/types.ts` (`HeatingStatement.dhw`)
-- Test: `server/test/dhw.test.ts` (ergänzen), `server/test/calc-warmwasser.test.ts` (neu)
+- Create: `server/testing/selfHeating.ts`
+- Modify: `server/src/dhw.ts` (Naht), `server/src/heating.ts`, `server/src/calc.ts`, `server/src/db/heating.ts`, `shared/types.ts` (`SelfHeatingStatement.dhw`)
+- Test: `server/test/dhw.test.ts` (ergänzen), `server/test/heating.test.ts` (Tests von PR 10 zum Warmwasseranteil ersetzen), `server/test/calc-heizkosten.test.ts` (ergänzen), `server/test/db-heizkosten.test.ts` (ein Test von PR 10 ändert sich), `server/test/calc-warmwasser.test.ts` (neu)
 
 **Interfaces:**
-- Consumes: Task 3 `dhwShareOf`, `DhwInput`, `DhwOutcome`, `EnergyDelivery`, `GeneratorInput`, `suppliedAreaOf`, `deliveriesInPeriod`, `latestBefore`, `andList`, `DHW_PLAUSIBLE`, `fmtShare`; Task 1 `FUEL_GRADE_LABELS`, `HEATING_VALUE_UNIT_TEXT`; PR 10 (B2, B3, B5, B7, B8); PR 6 im CO₂-Block `report`, `where`, `plantSubject`, `hPeriod`, `warn`, `cutsOn`, `ids`, `FORMULA_METHODS`, `lawLog`, `hkvCutNotByConsumption`.
+- Consumes: Task 1 `hkvRenewableExemption`; Task 3 `dhwShareOf`, `DhwInput`, `DhwOutcome`, `DhwProblem`, `EnergyDelivery`, `GeneratorInput`, `suppliedAreaOf`, `deliveriesInPeriod`, `latestBefore`, `DHW_PLAUSIBLE`, `fmtShare`; Task 1 `FUEL_GRADE_LABELS`, `HEATING_VALUE_UNIT_TEXT`; `andList` (`shared/wording.ts`).
+  PR 10 (Plan, Commit `81828af`): heating.ts `hotWaterShareOf`, `AlphaInput`, `AlphaProblem`, `Alpha`, `KWH_ENERGIES`; calc.ts im Block des Plans `plant`, `own`, `served`, `hotWater`, `plantMeterKwh`, `fuelOfPlant`, `alphaResult`, `ALPHA_TEXT`, `blocked`, `where`, `weights`, `selfPlans.set(…)`, `type SelfPlantPlan`, `stockOfPlant`; `selfStatementOf`; in der Hinweisschleife `const notYet = sp.verdict?.kind === 'notYet'`; db/heating.ts `LATER.dhwHeatingValue`, `guardHeatingPlant`; Test `server/test/calc-heizkosten.test.ts` mit `withDatabase`, `beispielA`, `ITEMS`, `shareOf`, `sumOf`; `server/test/db-heizkosten.test.ts` mit `haus`, `SETUP`, `setUpSelf`, `status`, `newId`.
+  PR 6/7: CO₂-Block `pot`, `hw`, `FORMULA_METHODS`, `cutsOn`, `where`, `ids`, `hPeriod`, `lawLog`, `hkvCutNotByConsumption`; `snapshot.fuel?.deliveries` (`SnapshotFuel`, PR 7); `FuelResult.lines` (`deliveryId`, `sharePermille`, `estimated`), `FuelResult.coveragePermille`; PR 8 `stockOfPlant.get(id)?.result` (`StockResult`, `statement.unit`, `statement.consumed.quantity`).
 - Produces:
-  - `dhw.ts`: `type DhwContext = { plant: { energy: HeatingEnergy; heatGeneration?: HeatGeneration | null }; row: { dhwMethod: DhwMethod | null; dhwVolumeM3?: number | null; dhwTempC?: number | null } | null; h: Period; fuelLines: readonly { deliveryId: string; sharePermille: number }[]; stock: { unit: HeatingValueUnit; consumedQuantity: number } | null; deliveries: readonly Omit<EnergyDelivery, 'share'>[]; units: readonly Pick<SnapshotUnit, 'areaM2' | 'noConnection'>[]; measured: { dhwKwh: number | null; totalKwh: number | null } }`, `dhwInputOf(c: DhwContext): DhwInput`, `dhwProblemText(where: string, o: Extract<DhwOutcome, { ok: false }>): string`
-  - `heating.ts`: `type DhwShare = { ok: true; alpha: number; statement: DhwStatement } | { ok: false; code: 'heating.dhw-share-invalid' | 'heating.heat-pump-dhw-basis'; reasons: string[] }`
-  - `shared/types.ts`: `HeatingStatement.dhw?: DhwStatement`
-  - `noticeKinds` + `'heating.heat-pump-dhw-basis'` (error), `'heating.heating-value-from-table'` (hint), `'heating.dhw-share-implausible'` (hint)
+  - `server/testing/selfHeating.ts`: `SELF_ITEMS`, `type SelfSnapshotOptions = { year?: number; plant?: Partial<HeatingPlant>; row?: Partial<HeatingPeriodData>; rows?: HeatingPeriodData[]; units?: Unit[]; tenancies?: Tenancy[]; meters?: Meter[]; readings?: Reading[]; deliveries?: FuelDelivery[]; costItems?: CostItem[] }`, `selfRow(over?, year?): HeatingPeriodData`, `selfDelivery(over?, year?): FuelDelivery`, `selfSnapshot(o?: SelfSnapshotOptions): Snapshot`. Feste Kennungen: Objekt `objekt-1`, Wohnungen `a`, `b`, `c`; Mietverhältnisse `A`, `B`, `C1` (bis 30.09.), `C2`; Anlage `hp`; Wärmezähler `wz-a`, `wz-b`, `wz-c`; Warmwasserzähler `xw-a`, `xw-b`, `xw-c`; Wärmezähler am Speicher `ww` (Rolle `dhwHeat`); Lieferung `d1`; Positionen `gas`, `strom`, `wartung`, `imm`, `wz`, `wwz`.
+  - `dhw.ts`: `type DhwContext = { plant: { energy: HeatingEnergy; heatGeneration?: HeatGeneration | null }; row: { dhwMethod: DhwMethod | null; dhwVolumeM3?: number | null; dhwTempC?: number | null } | null; h: Period; fuelLines: readonly { deliveryId: string; sharePermille: number }[]; stock: { unit: HeatingValueUnit; consumedQuantity: number } | null; deliveries: readonly Omit<EnergyDelivery, 'share'>[]; units: readonly Pick<SnapshotUnit, 'areaM2' | 'noConnection'>[]; measured: { dhwKwh: number | null; totalKwh: number | null }; fuelCoveragePermille: number | null; fuelEstimated: boolean }`, `dhwInputOf(c: DhwContext): DhwInput`, `dhwProblemText(o: { problem: DhwProblem; reasons: readonly string[] }): string`
+  - `heating.ts`: `type AlphaInput = DhwContext & { hotWater: HotWater; log: LawLog }`, `type AlphaProblem = DhwProblem`, `type Alpha = { value: number; dhwHeatKwh: number; referenceKwh: number; reference: 'fuel' | 'totalHeat'; estimated: boolean; statement: DhwStatement }`, `hotWaterShareOf(i: AlphaInput): { ok: true; alpha: Alpha | null } | { ok: false; problem: AlphaProblem; reasons: string[] }`; `KWH_ENERGIES` entfällt.
+  - `shared/types.ts`: `SelfHeatingStatement.dhw?: DhwStatement`
+  - calc.ts: `SelfPlantPlan.oldHeatPumpExemption: boolean`; `noticeKinds` + `'heating.heating-value-from-table'` (hint), `'heating.dhw-share-implausible'` (hint), `'heating.heat-pump-old-exemption'` (hint)
 
-- [ ] **Step 1: Failing tests schreiben**
+- [ ] **Step 1: Testhelfer und Gleichheitstest gegen Beispiel A über die Datenbank**
+
+Datei `server/testing/selfHeating.ts` (Helfer der Tests liegen in `server/testing/`, CLAUDE.md):
+
+```ts
+// Beispiel A (Entwurf 8.6) als Schnappschuss ohne Datenbank, für die Tests der eigenen
+// Heizkostenabrechnung ab Heizung PR 11 (Prüfbericht vom 05.10.2026, B.1). Dieselben Zahlen wie
+// `beispielA` in server/test/calc-heizkosten.test.ts (PR 10), das dieselbe Lage über die Datenbank baut;
+// ein Test dort hält beide gleich. Feste Kennungen, damit Tests einzelne Datensätze treffen: Wohnungen
+// `a`, `b`, `c`; Mietverhältnisse `A`, `B`, `C1` (bis 30.09.), `C2`; Anlage `hp`; Wärmezähler `wz-a`,
+// `wz-b`, `wz-c`; Warmwasserzähler `xw-a`, `xw-b`, `xw-c`; Wärmezähler am Speicher `ww`; Lieferung `d1`;
+// Positionen `gas`, `strom`, `wartung`, `imm`, `wz`, `wwz`.
+//
+// Gebaut wird über `snapshotFor`, damit jedes abgeleitete Feld (Lieferungen, Zeilen der Heizperiode,
+// Zwischenablesungen, eingefrorene Stände) so entsteht wie im Betrieb. Die Datensätze sind vollständig
+// nach den Typen des Modells gebaut, nicht als freies Objektliteral (CLAUDE.md). Bekommt ein Typ in einer
+// späteren PR ein Pflichtfeld, nennt der Übersetzer die Stelle hier; die PR ergänzt es mit dem Wert, den
+// ihre Vorgabe (`emptyHeatingPlant`, `emptyDelivery`, Spaltenvorgabe) setzt.
+import type {
+  CostItem, FuelDelivery, HeatingPart, HeatingPeriodData, HeatingPlant, HeatingTarget, Meter, MeterType, Reading, Tenancy, Unit,
+} from '../../shared/types.ts'
+import { HEATING_CATEGORY } from '../../shared/heating.ts'
+import { CALENDAR_RULES, periodKey, periodOfKey } from '../../shared/period.ts'
+import { snapshotFor, type Snapshot } from '../src/snapshot.ts'
+
+export const SELF_ITEMS = ['gas', 'strom', 'wartung', 'imm', 'wz', 'wwz'] as const
+
+export type SelfSnapshotOptions = {
+  // Das Kalenderjahr der Heizperiode; alle Daten verschieben sich mit. Vorgabe 2025.
+  year?: number
+  plant?: Partial<HeatingPlant>
+  // Felder der Zeile dieser Heizperiode (Vorgabe: 70/70 %, Dämmung „trifft nicht zu“, gemessen).
+  row?: Partial<HeatingPeriodData>
+  // Weitere Zeilen, etwa die der Vorperiode.
+  rows?: HeatingPeriodData[]
+  units?: Unit[]
+  tenancies?: Tenancy[]
+  meters?: Meter[]
+  readings?: Reading[]
+  deliveries?: FuelDelivery[]
+  costItems?: CostItem[]
+}
+
+const P = 'objekt-1'
+
+// Die Anlage nach der Einrichtung (PR 10 `setUpSelf`): Gas, eigene Abrechnung, verbundenes Warmwasser,
+// Wärmezähler, Grundkosten nach Wohnfläche, Wechsel nach Gradtagen.
+const PLANT: HeatingPlant = {
+  id: 'hp', propertyId: P, name: '', energy: 'gas', supply: 'central', method: 'self', separateSettlement: null,
+  devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null, capturedOnOct2024: null,
+  warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null, periodChanges: [], separateSpans: [], units: null,
+  nonResidential: false, restriction: 'none', districtEtsNew: false,
+  hotWater: 'combined', capture: 'heatMeter', areaBasisHeat: 'area', heatPumpInstalledOn: null,
+  heatGeneration: null,
+}
+
+// Die Zeile einer Heizperiode, wie `setUpSelf` (PR 10) sie schreibt; alle übrigen Spalten leer.
+export function selfRow(over: Partial<HeatingPeriodData> = {}, year = 2025): HeatingPeriodData {
+  return {
+    id: `hp-${year}`, plantId: 'hp', period: periodKey(`${year}-01`),
+    heatConsumptionPct: 70, waterConsumptionPct: 70, above70Agreed: null, insulationRule: 'notApplies',
+    dhwMethod: 'heatMeter', dhwHeatKwh: null, totalHeatKwh: null, dhwVolumeM3: null, dhwTempC: null, dhwUnmeasurable: null,
+    infoTaxesText: null, infoDistrictGhg: null, infoDistrictPef: null, climateFactor: null, climateFactorPrev: null, consumerContract: null, infoContactsConfirmed: null,
+    stockUnit: null, openingQuantity: null, openingCostCents: null, openingEmissionsKg: null, openingCo2Cents: null, openingInvoicedBefore2023: null,
+    closingQuantity: null, closingMeasuredOn: null,
+    ...over,
+  }
+}
+
+// Die Gasrechnung von Beispiel A: 60.000 kWh über das ganze Jahr, mit CO₂-Angaben (PR 7). Ob nach
+// Brennwert oder Heizwert, lässt Beispiel A offen (`gasBasis: null`); für eine Formel setzt der Test es.
+export function selfDelivery(over: Partial<FuelDelivery> = {}, year = 2025): FuelDelivery {
+  return {
+    id: 'd1', plantId: 'hp', label: 'Erdgas', invoiceDate: `${year + 1}-01-15`, deliveredAt: null, invoiceFrom: `${year}-01-01`, invoiceTo: `${year}-12-31`,
+    unitId: null, amountCents: null, quantity: null, quantityUnit: null, energyKwh: 60000, gasBasis: null, heatingValue: null,
+    emissionsKg: 10883.4, co2CostCents: 59859, emissionFactor: null, gridFeeCents: null, bioCostCents: null, sharePermille: null, fixedCents: 0,
+    estimated: false, usedByService: true, parts: [], fuelGrade: null,
+    ...over,
+  }
+}
+
+const unit = (id: string, areaM2: number): Unit => ({ id, propertyId: P, name: id.toUpperCase(), areaM2, participates: true, selfUsed: false })
+const tenancy = (id: string, unitId: string, start: string, end: string | null): Tenancy => ({
+  id, unitId, tenantName: `Mieter ${id}`, persons: 1, personHistory: [{ from: start, persons: 1 }], start, end,
+  prepayments: [], prepaymentOverrides: {}, baseRents: [], costModel: 'settlement', heatingModel: 'settlement',
+})
+const meter = (id: string, unitId: string | null, name: string, type: MeterType, over: Partial<Meter> = {}): Meter =>
+  ({ id, propertyId: P, name, unitId, type, unit: type === 'warmwasser' ? 'm³' : 'kWh', ...over })
+const reading = (meterId: string, date: string, value: number): Reading => ({ id: `${meterId}@${date}`, meterId, date, value })
+
+export function selfSnapshot(o: SelfSnapshotOptions = {}): Snapshot {
+  const year = o.year ?? 2025
+  const key = periodKey(`${year}-01`)
+  const period = periodOfKey(CALENDAR_RULES, key)
+  if (!period) throw new Error(`Den Zeitraum ${key} gibt es im Kalenderjahr nicht.`)
+  const start = `${year - 1}-12-31`
+  const change = `${year}-09-30`
+  const end = `${year}-12-31`
+  const units = o.units ?? [unit('a', 60), unit('b', 80), unit('c', 60)]
+  const tenancies = o.tenancies ?? [
+    tenancy('A', 'a', '2020-01-01', null),
+    tenancy('B', 'b', '2020-01-01', null),
+    tenancy('C1', 'c', '2020-01-01', change),
+    tenancy('C2', 'c', `${year}-10-01`, null),
+  ]
+  const meters = o.meters ?? [
+    meter('wz-a', 'a', 'Wärme A', 'waerme'), meter('xw-a', 'a', 'Warmwasser A', 'warmwasser'),
+    meter('wz-b', 'b', 'Wärme B', 'waerme'), meter('xw-b', 'b', 'Warmwasser B', 'warmwasser'),
+    meter('wz-c', 'c', 'Wärme C', 'waerme'), meter('xw-c', 'c', 'Warmwasser C', 'warmwasser'),
+    meter('ww', null, 'Wärmezähler Warmwasserspeicher', 'waerme', { heatingPlantId: 'hp', heatingRole: 'dhwHeat' }),
+  ]
+  const readings = o.readings ?? [
+    reading('wz-a', start, 1000), reading('wz-a', end, 13000),
+    reading('wz-b', start, 0), reading('wz-b', end, 16000),
+    reading('wz-c', start, 500), reading('wz-c', change, 7700), reading('wz-c', end, 12500),
+    reading('xw-a', start, 10), reading('xw-a', end, 40),
+    reading('xw-b', start, 0), reading('xw-b', end, 40),
+    reading('xw-c', start, 5), reading('xw-c', change, 43), reading('xw-c', end, 55),
+    reading('ww', start, 0), reading('ww', end, 9000),
+  ]
+  const item = (id: string, description: string, amountCents: number, heatingPart: HeatingPart, heatingTarget: HeatingTarget, extra: Partial<CostItem> = {}): CostItem => ({
+    id, propertyId: P, period: key, category: HEATING_CATEGORY, description, amountCents, key: 'heatingSystem',
+    heatingPlantId: 'hp', heatingPart, heatingTarget, ...extra,
+  })
+  const costItems = o.costItems ?? [
+    item('gas', 'Erdgas', 600000, 'fuel', 'both', { fuelDeliveryId: 'd1' }),
+    item('strom', 'Betriebsstrom', 18000, 'operating', 'both'),
+    item('wartung', 'Wartung', 24000, 'operating', 'both'),
+    item('imm', 'Immissionsmessung', 6000, 'operating', 'both'),
+    item('wz', 'Miete Wärmezähler', 12000, 'metering', 'heating'),
+    item('wwz', 'Miete Warmwasserzähler', 6000, 'metering', 'water'),
+  ]
+  const plant: HeatingPlant = { ...PLANT, ...o.plant }
+  const rows: HeatingPeriodData[] = [selfRow(o.row, year), ...(o.rows ?? [])]
+  const deliveries = o.deliveries ?? [selfDelivery({}, year)]
+  const source: Parameters<typeof snapshotFor>[0] = {
+    units, tenancies, costItems, meters, readings, payments: [], closedSettlements: [],
+    heatingPlants: [plant], heatingPeriodRows: rows, fuelDeliveries: deliveries,
+  }
+  return snapshotFor(source, P, period)
+}
+```
+
+Die Felder von `HeatingPlant` sind die von PR 4 (Plan Task 2), PR 5 (`periodChanges`, `separateSpans`),
+PR 7 (`nonResidential`, `restriction`, `districtEtsNew`), PR 10 (`hotWater`, `capture`, `areaBasisHeat`,
+`heatPumpInstalledOn`) und Task 2 dieses Plans (`heatGeneration`); `HeatingPeriodData` die von PR 4 und
+PR 8 (Vorrat); `FuelDelivery` die von PR 7, PR 10 (`energyKwh`) und Task 2 (`fuelGrade`). Heißt das Feld
+des Bestands für die Lieferungen in `snapshotFor` nicht `fuelDeliveries` (PR 7, `FuelSource`), gilt
+dessen Name.
+
+In `server/test/calc-heizkosten.test.ts` (PR 10) den Import `import { selfSnapshot } from '../testing/selfHeating.ts'`
+ergänzen und anhängen:
+
+```ts
+test('Testhelfer selfSnapshot (server/testing/selfHeating.ts) rechnet wie Beispiel A über die Datenbank', async () => {
+  await withDatabase(async (opened) => {
+    const ueberDb = computeSettlement(await beispielA(opened))
+    const rein = computeSettlement(selfSnapshot())
+    for (const t of ['A', 'B', 'C1', 'C2']) {
+      for (const id of ITEMS) assert.equal(shareOf(rein, t, id), shareOf(ueberDb, t, id), `${t} ${id}`)
+    }
+    assert.deepEqual(['A', 'B', 'C1', 'C2'].map((t) => sumOf(rein, t)), [196189, 261584, 133152, 75075])
+    const relief = (s: ComputedSettlement, t: string) => s.statements.find((st) => st.tenancyId === t)?.rows.find((r) => r.kind === 'co2Relief')?.shareCents ?? 0
+    assert.deepEqual(['A', 'B', 'C1', 'C2'].map((t) => relief(rein, t)), [-16761, -22348, -11340, -6417])
+    assert.deepEqual(rein.heating?.[0]?.self?.alpha, ueberDb.heating?.[0]?.self?.alpha)
+    assert.deepEqual(rein.notices.map((n) => n.code).sort(), ueberDb.notices.map((n) => n.code).sort())
+  })
+})
+```
+
+Weicht eine Zahl ab, ist der Helfer falsch und nicht Beispiel A: Die Zahlen stehen im Entwurf 8.6 und in
+PR 10 Task 8.
+
+- [ ] **Step 2: Failing tests schreiben**
 
 (a) `server/test/dhw.test.ts`: Import um `dhwInputOf, dhwProblemText` ergänzen; ans Dateiende:
 
@@ -1657,11 +2135,13 @@ test('Naht zu PR 10: Anteile der Rechnungen aus der Bewertung, beim Vorrat die L
   const ctx = {
     plant: { energy: 'gas' as const }, row: null, h: H2025, fuelLines: [{ deliveryId: 'g', sharePermille: 500 }], stock: null,
     deliveries: [lieferung], units: [{ areaM2: 80 }, { areaM2: 70 }], measured: { dhwKwh: 9000, totalKwh: null },
+    fuelCoveragePermille: 1000, fuelEstimated: false,
   }
   const i = dhwInputOf(ctx)
   assert.equal(i.method, 'heatMeter')
   assert.equal(i.heatGeneration, null)
   assert.equal(i.suppliedAreaM2, 150)
+  assert.deepEqual([i.fuelCoveragePermille, i.fuelEstimated], [1000, false])
   assert.deepEqual(i.generator.deliveries.map((d) => [d.id, d.share]), [['g', 0.5]])
   const oel = (id: string, date: string) => ({ ...lieferung, id, label: id, invoiceTo: null, deliveredAt: date, energyKwh: null, gasBasis: null, quantity: 1000, quantityUnit: 'l' as const, heatingValue: 10 })
   const vorrat = { ...ctx, plant: { energy: 'oil' as const }, fuelLines: [], stock: { unit: 'l' as const, consumedQuantity: 6000 } }
@@ -1672,113 +2152,235 @@ test('Naht zu PR 10: Anteile der Rechnungen aus der Bewertung, beim Vorrat die L
   assert.deepEqual(ohne.generator.stock, { unit: 'l', consumed: 6000 })
 })
 
-test('Meldung ohne Anteil: nennt, was fehlt, und dass die Anlage nicht verteilt wird', () => {
-  const t = dhwProblemText('Heizung, Heizperiode 2025', { ok: false, code: 'heating.dhw-share-invalid', reasons: ['a fehlt', 'b fehlt'] })
-  assert.equal(t, 'Heizung, Heizperiode 2025: Mietfuchs kann den Warmwasseranteil nicht bestimmen, denn a fehlt und b fehlt. Bis das geklärt ist, verteilt Mietfuchs die Heiz- und Warmwasserkosten dieser Anlage nicht (§ 9 HeizkostenV).')
-  assert.match(dhwProblemText('Wärmepumpe', { ok: false, code: 'heating.heat-pump-dhw-basis', reasons: [] }), /Gesamtwärmezähler.*§ 9 Abs. 1 Satz 2/s)
+test('Satz ohne Anteil: nennt, was fehlt; die Wärmepumpe ohne Gesamtwärme mit eigenem Satz', () => {
+  assert.equal(
+    dhwProblemText({ problem: 'formulaInput', reasons: ['a fehlt', 'b fehlt'] }),
+    'Mietfuchs kann den Warmwasseranteil nicht bestimmen, denn a fehlt und b fehlt (§ 9 HeizkostenV).',
+  )
+  assert.match(dhwProblemText({ problem: 'heatPumpBasis', reasons: [] }), /Gesamtwärmezähler.*§ 9 Abs\. 1 Satz 2/s)
+  assert.match(dhwProblemText(failure({ fuelCoveragePermille: 848.71 })), /Folgerechnung.*Schätzung/s)
 })
 ```
 
-(b) Datei `server/test/calc-warmwasser.test.ts`:
+(b) `server/test/heating.test.ts`: Die vier Tests von PR 10 zum Warmwasseranteil („α gemessen: 9.000 von
+60.000 kWh …“, „α bei Fernwärme …“, „α bei Wärmepumpe …“, „α: Formeln, Heizöl und Lücken …“) samt
+ihrem Helfer `gas` ersetzen durch die folgenden; der Import von `AlphaInput` bleibt,
+`import { createLawLog } from '../../shared/law/register.ts'` kommt dazu (in den vorhandenen Import aus
+register.ts aufnehmen):
+
+```ts
+// ---------- Warmwasseranteil (Entwurf 8.3; ab Heizung PR 11 über dhw.ts) ----------
+
+const gasRechnung = {
+  id: 'g', label: 'Gas 2025', invoiceTo: '2025-12-31', deliveredAt: null, invoiceDate: '2026-01-15', energyKwh: 60000,
+  quantity: null, quantityUnit: null, gasBasis: 'hs' as const, heatingValue: null, fuelGrade: null,
+}
+const gas = (over: Partial<AlphaInput> = {}): AlphaInput => ({
+  hotWater: 'combined', log: createLawLog(), plant: { energy: 'gas', heatGeneration: null }, row: { dhwMethod: 'heatMeter' },
+  h: { from: '2025-01-01', to: '2025-12-31' }, fuelLines: [{ deliveryId: 'g', sharePermille: 1000 }], stock: null, deliveries: [gasRechnung],
+  units: [{ areaM2: 200 }], measured: { dhwKwh: 9000, totalKwh: null }, fuelCoveragePermille: 1000, fuelEstimated: false, ...over,
+})
+const problemOf = (r: ReturnType<typeof hotWaterShareOf>): string => (r.ok ? 'ok' : r.problem)
+
+test('α gemessen (PR 10, ab PR 11 über dhw.ts): 9.000 von 60.000 kWh = 15,0 %, ohne Faktor (Wortlaut, G-B1 abgelehnt)', () => {
+  const r = hotWaterShareOf(gas())
+  assert.ok(r.ok && r.alpha)
+  near(r.alpha.value, 0.15, 'α')
+  assert.deepEqual([r.alpha.reference, r.alpha.referenceKwh, r.alpha.dhwHeatKwh, r.alpha.estimated], ['fuel', 60000, 9000, false])
+  assert.deepEqual([r.alpha.statement.method, r.alpha.statement.factor], ['heatMeter', null])
+  // Mit der Schätzung beim Abschluss beruht α auf geschätzter Energie (PR 10 Abweichung 11).
+  const geschaetzt = hotWaterShareOf(gas({ fuelEstimated: true }))
+  assert.ok(geschaetzt.ok && geschaetzt.alpha?.estimated === true)
+})
+
+test('α bei Fernwärme und Wärmepumpe wie in PR 10: Gesamtwärme, wenn gemessen; Wärmepumpe nur gegen sie (A8)', () => {
+  const mitZaehler = hotWaterShareOf(gas({ plant: { energy: 'districtHeating' }, measured: { dhwKwh: 9000, totalKwh: 45000 } }))
+  assert.ok(mitZaehler.ok && mitZaehler.alpha)
+  near(mitZaehler.alpha.value, 0.2, 'Q / Gesamtwärme')
+  assert.equal(mitZaehler.alpha.reference, 'totalHeat')
+  const ohne = hotWaterShareOf(gas({ plant: { energy: 'districtHeating' } }))
+  assert.ok(ohne.ok && ohne.alpha)
+  near(ohne.alpha.value, 0.15, 'Q / Lieferung')
+  const strom = [{ ...gasRechnung, label: 'Strom 2025', energyKwh: 12000, gasBasis: null }]
+  const wp = hotWaterShareOf(gas({ plant: { energy: 'heatPump' }, deliveries: strom, measured: { dhwKwh: 4500, totalKwh: 36000 } }))
+  assert.ok(wp.ok && wp.alpha)
+  near(wp.alpha.value, 0.125, 'Q / Wärme, nicht Q / Strom')
+  assert.equal(problemOf(hotWaterShareOf(gas({ plant: { energy: 'heatPump' }, deliveries: strom, measured: { dhwKwh: 4500, totalKwh: null } }))), 'heatPumpBasis')
+})
+
+test('α: Lücke, fehlende Werte und Werte außerhalb sind Fehler wie in PR 10; Formel und Heizöl rechnen ab PR 11; ohne verbundenes Warmwasser kein α', () => {
+  assert.equal(problemOf(hotWaterShareOf(gas({ fuelCoveragePermille: 848.71 }))), 'fuelGap')
+  assert.equal(problemOf(hotWaterShareOf(gas({ deliveries: [{ ...gasRechnung, energyKwh: null }] }))), 'noFuelEnergy')
+  assert.equal(problemOf(hotWaterShareOf(gas({ measured: { dhwKwh: null, totalKwh: null } }))), 'noDhwHeat')
+  assert.equal(problemOf(hotWaterShareOf(gas({ measured: { dhwKwh: 60000, totalKwh: null } }))), 'outOfRange')
+  assert.equal(problemOf(hotWaterShareOf(gas({ measured: { dhwKwh: 0, totalKwh: null } }))), 'outOfRange')
+  assert.deepEqual(hotWaterShareOf(gas({ hotWater: 'none' })), { ok: true, alpha: null })
+  assert.deepEqual(hotWaterShareOf(gas({ hotWater: 'separate', plant: { energy: 'oil' } })), { ok: true, alpha: null })
+  // Die Sperren `formulaLater` und `heatingValueLater` aus PR 10 fallen: 15.000 · 1,11 / 60.000 = 27,75 %.
+  const formel = hotWaterShareOf(gas({ plant: { energy: 'gas', heatGeneration: 'single' }, row: { dhwMethod: 'volumeFormula', dhwVolumeM3: 120, dhwTempC: 60 } }))
+  assert.ok(formel.ok && formel.alpha)
+  near(formel.alpha.value, 0.2775, 'Volumenformel')
+  assert.deepEqual(formel.alpha.statement.factor, { kind: 'gasCalorific', value: 1.11 })
+  // Heizöl aus dem Vorrat: 9.000 kWh / 9,8 kWh/l = 918,37 l von 6.000 l = 15,31 %; Energie 58.800 kWh.
+  const oel = { ...gasRechnung, id: 'o1', label: 'Öl Oktober', invoiceTo: null, deliveredAt: '2025-10-12', invoiceDate: null, energyKwh: null, gasBasis: null, quantity: 3000, quantityUnit: 'l' as const, heatingValue: 9.8 }
+  const heizoel = hotWaterShareOf(gas({ plant: { energy: 'oil' }, fuelLines: [], stock: { unit: 'l', consumedQuantity: 6000 }, deliveries: [oel] }))
+  assert.ok(heizoel.ok && heizoel.alpha)
+  near(heizoel.alpha.value, 9000 / 58800, 'B / verbrauchte Menge')
+  assert.equal(Math.round(heizoel.alpha.referenceKwh), 58800)
+})
+```
+
+(c) `server/test/db-heizkosten.test.ts` (PR 10): Im Test „Einrichtung: …“ den zweiten Block
+`await withDatabase(async (opened) => { await haus(opened, 'oil') … })` ganz ersetzen durch (die Sperre aus
+PR 10 Abweichung 10 fällt):
+
+```ts
+  await withDatabase(async (opened) => {
+    await haus(opened, 'oil')
+    // Heizung PR 11: Warmwasseranteil mit dem Heizwert laut Rechnung (§ 9 Abs. 3 HeizkostenV); die Sperre
+    // aus PR 10 (Abweichung 10) fällt.
+    const verbunden = await opened.write((db) => setUpSelf(db, 'hp', { ...SETUP, items: [{ id: 'gas', heatingPart: 'fuel', heatingTarget: 'both' }] }, '2026-02-01', newId))
+    assert.deepEqual([verbunden?.plant.method, verbunden?.plant.hotWater], ['self', 'combined'])
+  })
+```
+
+(d) Datei `server/test/calc-warmwasser.test.ts`:
 
 ```ts
 // Warmwasser ohne Zähler in der eigenen Heizkostenabrechnung (Heizung PR 11): die Hinweise und der
 // Ausweis. Die Zahlen von α prüft dhw.test.ts; hier geht es um die Naht zu PR 10 und um das, was der
-// Vermieter liest. Grundlage ist Beispiel A aus dem Entwurf 8.6 (Annahme B8).
+// Vermieter liest. Grundlage ist Beispiel A aus dem Entwurf 8.6 (server/testing/selfHeating.ts).
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement, type ComputedSettlement } from '../src/calc.ts'
-import { selfSnapshot } from '../testing/selfHeating.ts'
+import { selfDelivery, selfSnapshot } from '../testing/selfHeating.ts'
 
 const codes = (s: ComputedSettlement) => s.notices.map((n) => n.code)
-const heatingOf = (s: ComputedSettlement) => s.heating?.find((h) => h.plantId === 'hp') ?? assert.fail('keine Heizabrechnung der Anlage hp')
+const selfOf = (s: ComputedSettlement) => s.heating?.find((h) => h.plantId === 'hp')?.self ?? assert.fail('kein Ausweis der Anlage hp')
+const partsOf = (s: ComputedSettlement, itemId: string) => s.landlord.rows.find((r) => r.costItemId === itemId)?.landlordParts ?? []
+// `self.alpha.percent` ist α · 100 (PR 10); 0,15 · 100 ergibt im Gleitkomma 15,000000000000002.
+const percentOf = (s: ComputedSettlement) => Math.round((selfOf(s).alpha?.percent ?? -1) * 100) / 100
 const formel = { dhwMethod: 'volumeFormula' as const, dhwVolumeM3: 120, dhwTempC: 60, dhwUnmeasurable: null }
+const brennwert = [selfDelivery({ gasBasis: 'hs' })]
 
-test('Wärmezähler und Gas in kWh (Beispiel A, F16): α 15 %, keine neuen Hinweise, keine neuen Rechtswerte', () => {
+test('Wärmezähler und Gas in kWh (Beispiel A, F16): α 15 % mit Rechenweg, keine neuen Hinweise, keine neuen Rechtswerte', () => {
   const s = computeSettlement(selfSnapshot())
-  const dhw = heatingOf(s).dhw ?? assert.fail('kein Warmwasseranteil')
-  assert.equal(dhw.alpha, 0.15)
-  assert.equal(dhw.factor, null)
-  assert.ok(!(s.legalBasis.values ?? []).some((v) => v.id.startsWith('hkv.dhw.') || v.id === 'hkv.heating-values'))
-  for (const c of ['heating.dhw-not-metered', 'heating.dhw-share-implausible', 'heating.heating-value-from-table', 'heating.heat-pump-dhw-basis']) {
+  const self = selfOf(s)
+  assert.equal(percentOf(s), 15)
+  const dhw = self.dhw ?? assert.fail('kein Rechenweg')
+  assert.deepEqual([dhw.alpha, dhw.factor, dhw.method], [0.15, null, 'heatMeter'])
+  assert.ok(!(s.legalBasis.values ?? []).some((v) => v.id.startsWith('hkv.dhw.') || v.id === 'hkv.heating-values' || v.id === 'hkv.exemption.renewable'))
+  for (const c of ['heating.dhw-not-metered', 'heating.dhw-share-implausible', 'heating.heating-value-from-table', 'heating.heat-pump-dhw-basis', 'heating.heat-pump-old-exemption']) {
     assert.ok(!codes(s).includes(c), c)
   }
 })
 
 test('Formel ohne bestätigten Aufwand bei eigener Abrechnung: 15 % auf den ganzen Anteil, je Mieter beziffert (BGH VIII ZR 151/20)', () => {
-  const s = computeSettlement(selfSnapshot({ plant: { heatGeneration: 'single' }, row: formel }))
-  assert.equal(heatingOf(s).dhw?.method, 'volumeFormula')
+  const s = computeSettlement(selfSnapshot({ plant: { heatGeneration: 'single' }, row: formel, deliveries: brennwert }))
+  assert.equal(selfOf(s).dhw?.method, 'volumeFormula')
   const n = s.notices.find((x) => x.code === 'heating.dhw-not-metered') ?? assert.fail('kein Hinweis')
   assert.equal(n.level, 'warning')
   assert.match(n.text, /Die Wärme für das Warmwasser ist mit einer Formel bestimmt und nicht mit einem Wärmezähler gemessen/)
   assert.match(n.text, /um 15 % kürzen \(BGH VIII ZR 151\/20\), hier: /)
   assert.ok((s.legalBasis.values ?? []).some((v) => v.id === 'hkv.dhw.volume-formula'))
-  const bestaetigt = computeSettlement(selfSnapshot({ plant: { heatGeneration: 'single' }, row: { ...formel, dhwUnmeasurable: true } }))
+  const bestaetigt = computeSettlement(selfSnapshot({ plant: { heatGeneration: 'single' }, row: { ...formel, dhwUnmeasurable: true }, deliveries: brennwert }))
   assert.ok(!codes(bestaetigt).includes('heating.dhw-not-metered'))
 })
 
 test('Formel ohne Antwort zum Erzeuger: kein Anteil, Anlage nicht verteilt, Satz mit der Frage', () => {
-  const s = computeSettlement(selfSnapshot({ row: formel }))
+  const s = computeSettlement(selfSnapshot({ row: formel, deliveries: brennwert }))
   const n = s.notices.find((x) => x.code === 'heating.dhw-share-invalid') ?? assert.fail('kein Fehler')
   assert.equal(n.level, 'error')
-  assert.match(n.text, /ob die Anlage die Wärme allein erzeugt/)
-  assert.equal(heatingOf(s).dhw, undefined)
+  assert.match(n.text, /ob die Anlage die Wärme allein erzeugt.*Bis dahin verteilt Mietfuchs die Heizkosten dieser Anlage nicht/s)
+  assert.equal(selfOf(s).dhw, undefined)
+  assert.deepEqual(partsOf(s, 'gas'), [{ reason: 'noBasis', cents: 600000 }])
 })
 
 test('Ungewöhnlicher Anteil: Hinweis ohne Rechtsfolge', () => {
-  // 2,5 · 2 · 50 · 1,11 = 277,5 kWh gegen das Gas von Beispiel A: weit unter 5 %.
-  const s = computeSettlement(selfSnapshot({ plant: { heatGeneration: 'single' }, row: { ...formel, dhwVolumeM3: 2, dhwUnmeasurable: true } }))
+  // 2,5 · 2 · 50 · 1,11 = 277,5 kWh gegen 60.000 kWh: weit unter 5 %.
+  const s = computeSettlement(selfSnapshot({ plant: { heatGeneration: 'single' }, row: { ...formel, dhwVolumeM3: 2, dhwUnmeasurable: true }, deliveries: brennwert }))
   const n = s.notices.find((x) => x.code === 'heating.dhw-share-implausible') ?? assert.fail('kein Hinweis')
   assert.equal(n.level, 'hint')
   assert.match(n.text, /Üblich sind Werte zwischen 5,00 % und 50,00 %; das ist keine Grenze des Gesetzes/)
 })
 
-test('Gas in m³ ohne Heizwert auf der Rechnung: Wert der Tabelle (Erdgas H) mit Hinweis', () => {
-  const m3 = {
-    id: 'gas-m3', plantId: 'hp', label: 'Gas 2025 in m³', invoiceDate: '2026-01-10', invoiceFrom: '2025-01-01', invoiceTo: '2025-12-31', deliveredAt: null,
-    amountCents: null, fixedCents: null, sharePermille: null, emissionsKg: null, co2CostCents: null, estimated: false, usedByService: true, parts: [],
-    energyKwh: null, quantity: 6000, quantityUnit: 'm3' as const, gasBasis: null, heatingValue: null, fuelGrade: 'naturalGasH' as const,
-  }
+test('Gas in m³ ohne Heizwert auf der Rechnung: Wert der Tabelle (Erdgas H) mit Hinweis; die frühere Sperre aus PR 10 fällt', () => {
+  const m3 = selfDelivery({ label: 'Gas 2025 in m³', energyKwh: null, quantity: 6000, quantityUnit: 'm3', fuelGrade: 'naturalGasH' })
   const s = computeSettlement(selfSnapshot({ deliveries: [m3] }))
   const n = s.notices.find((x) => x.code === 'heating.heating-value-from-table') ?? assert.fail('kein Hinweis')
   assert.equal(n.level, 'hint')
   assert.match(n.text, /„Gas 2025 in m³“ nennt keinen Heizwert.*Erdgas H: 10 kWh je Kubikmeter \(§ 9 Abs\. 3 HeizkostenV, hilfsweise\)/)
+  // 9.000 kWh / 10 kWh je m³ = 900 m³ von 6.000 m³ = 15 %.
+  assert.equal(percentOf(s), 15)
 })
 
-test('Wärmepumpe mit Wärmezähler am Warmwasser ohne Gesamtwärme (A8): Fehler, keine Verteilung', () => {
-  const strom = {
-    id: 'strom', plantId: 'hp', label: 'Strom 2025', invoiceDate: '2026-01-10', invoiceFrom: '2025-01-01', invoiceTo: '2025-12-31', deliveredAt: null,
-    amountCents: null, fixedCents: null, sharePermille: null, emissionsKg: null, co2CostCents: null, estimated: false, usedByService: true, parts: [],
-    energyKwh: 12000, quantity: null, quantityUnit: null, gasBasis: null, heatingValue: null, fuelGrade: null,
-  }
-  const s = computeSettlement(selfSnapshot({ plant: { energy: 'heatPump' }, deliveries: [strom], row: { dhwMethod: 'heatMeter', dhwHeatKwh: 4500, totalHeatKwh: null } }))
+test('Wärmepumpe mit Wärmezähler am Warmwasser ohne Gesamtwärme (A8, PR 10): Fehler, keine Verteilung', () => {
+  const strom = selfDelivery({ label: 'Strom 2025', energyKwh: 12000, emissionsKg: null, co2CostCents: null })
+  const s = computeSettlement(selfSnapshot({ plant: { energy: 'heatPump' }, deliveries: [strom], row: { dhwHeatKwh: 4500, totalHeatKwh: null } }))
   const n = s.notices.find((x) => x.code === 'heating.heat-pump-dhw-basis') ?? assert.fail('kein Fehler')
   assert.equal(n.level, 'error')
   assert.match(n.text, /etwa dreimal zu großen Warmwasseranteil/)
-  assert.equal(heatingOf(s).dhw, undefined)
+  assert.equal(selfOf(s).dhw, undefined)
+})
+
+test('Review Focus 5: Wärmepumpe 2024 (§ 11 Abs. 1 Nr. 3 Buchst. a a. F.): Hinweis statt Fehler, ohne Kürzung; mit weiterem Erzeuger bleibt der Fehler', () => {
+  const strom = selfDelivery({ label: 'Strom 2024', energyKwh: 12000, emissionsKg: null, co2CostCents: null }, 2024)
+  const wp = { energy: 'heatPump' as const, heatGeneration: 'single' as const }
+  const s = computeSettlement(selfSnapshot({ year: 2024, plant: wp, deliveries: [strom], row: formel }))
+  assert.deepEqual(s.notices.filter((n) => n.level === 'error').map((n) => n.code), [])
+  const n = s.notices.find((x) => x.code === 'heating.heat-pump-old-exemption') ?? assert.fail('kein Hinweis')
+  assert.equal(n.level, 'hint')
+  assert.match(n.text, /überwiegend mit Wärme aus Wärmerückgewinnung, Wärmepumpen oder Solaranlagen \(§ 11 Abs\. 1 Nr\. 3 Buchst\. a HeizkostenV in der Fassung bis 30\.09\.2024\).*Kürzungen nach § 12 HeizkostenV entfallen/s)
+  assert.match(n.text, /gemeinsam wie die Heizkosten \(Festlegung von Mietfuchs\)/)
+  assert.equal(selfOf(s).alpha, null)
+  assert.deepEqual(partsOf(s, 'gas'), [], 'verteilt, nichts beim Vermieter')
+  assert.ok(!codes(s).includes('heating.dhw-not-metered'), 'keine Kürzung')
+  assert.ok((s.legalBasis.values ?? []).some((v) => v.id === 'hkv.exemption.renewable'))
+  const gemischt = computeSettlement(selfSnapshot({ year: 2024, plant: { ...wp, heatGeneration: 'mixed' }, deliveries: [strom], row: formel }))
+  assert.ok(codes(gemischt).includes('heating.dhw-share-invalid'))
+  assert.ok(!codes(gemischt).includes('heating.heat-pump-old-exemption'))
+  // Ab dem 01.10.2024 gilt die Ausnahme nicht mehr: 2025 rechnet die Formel mit 0,30.
+  const neu = computeSettlement(selfSnapshot({ plant: wp, deliveries: [selfDelivery({ label: 'Strom 2025', energyKwh: 12000, emissionsKg: null, co2CostCents: null })], row: formel }))
+  assert.ok(!codes(neu).includes('heating.heat-pump-old-exemption'))
+  assert.equal(selfOf(neu).dhw?.factor?.kind, 'heatPump')
+})
+
+test('Stromheizung gemessen (Abweichung 7): rechnet wie in PR 10 gegen den Strom laut Rechnung', () => {
+  const strom = selfDelivery({ label: 'Strom 2025', energyKwh: 60000, emissionsKg: null, co2CostCents: null })
+  const s = computeSettlement(selfSnapshot({ plant: { energy: 'electric' }, deliveries: [strom] }))
+  assert.deepEqual(s.notices.filter((n) => n.level === 'error').map((n) => n.code), [])
+  assert.equal(percentOf(s), 15)
+  assert.equal(selfOf(s).dhw?.denominator.kind, 'electricity')
 })
 ```
 
-Fehlen in `SnapshotFuelDelivery` (nach PR 10) Felder, die die beiden Lieferungen oben setzen, oder hat
-es weitere Pflichtfelder, folgen die Literale dem Typ; der Übersetzer nennt jedes.
+Die Zahlen der Wärmepumpe 2024 (Review Focus 5): Ohne Faktor gibt es kein α; die Positionen „Heizung und
+Warmwasser“ gehen ganz in den Topf Heizung (Abweichung 9), die Miete der Warmwasserzähler in den Topf
+Warmwasser. Ein Betrag wird hier nicht festgehalten, weil er an den Gradtagen von 2024 hängt; der Test hält
+fest, dass nichts beim Vermieter bleibt.
 
-- [ ] **Step 2: Tests ausführen, sie müssen scheitern**
+- [ ] **Step 3: Tests ausführen, sie müssen scheitern**
 
-Run: `npm --prefix server test -- test/dhw.test.ts test/calc-warmwasser.test.ts`
-Expected: FAIL; dhw.test.ts mit „does not provide an export named 'dhwInputOf'“, calc-warmwasser mit
-`heating.dhw-share-invalid` (PR 10 sperrt die Formel, B4) statt `heating.dhw-not-metered`.
+Run: `npm --prefix server test -- test/dhw.test.ts test/heating.test.ts test/calc-heizkosten.test.ts test/db-heizkosten.test.ts test/calc-warmwasser.test.ts`
+Expected: FAIL; dhw.test.ts mit „does not provide an export named 'dhwInputOf'“, heating.test.ts mit
+Typfehlern an `AlphaInput` (zur Laufzeit `problem: 'formulaLater'`), db-heizkosten.test.ts mit 400
+„…späteren Version…Heizwert“, calc-warmwasser.test.ts mit `heating.dhw-share-invalid` statt
+`heating.dhw-not-metered`. Der Gleichheitstest in calc-heizkosten.test.ts ist schon grün (er prüft nur
+den Helfer).
 
-- [ ] **Step 3: Naht in `server/src/dhw.ts`**
+- [ ] **Step 4: Naht in `server/src/dhw.ts`**
 
-Den Typimport um `HeatingEnergy` (schon da), `HeatGeneration`, `DhwMethod` prüfen. Ans Dateiende:
+Den Typimport prüfen (`HeatGeneration`, `DhwMethod`, `HeatingValueUnit` sind seit Task 3 da). Ans
+Dateiende:
 
 ```ts
 // ---------- Naht zur eigenen Heizkostenabrechnung (PR 10) ----------
 
-// Was die eigene Heizkostenabrechnung an der Stelle hat, an der sie α bestimmt (Annahme B3 des Plans
-// PR 11). Ohne Vorrat kommen die Anteile der Rechnungen aus der Bewertung von PR 7 (`sharePermille`);
-// mit Vorrat zählt die verbrauchte Menge (PR 8), und der Heizwert kommt von den Lieferungen der
-// Heizperiode oder, ohne sie, von der jüngsten früheren (Abweichung 6).
+// Was die eigene Heizkostenabrechnung an der Stelle hat, an der sie α bestimmt (`hotWaterShareOf` in
+// heating.ts, aufgerufen im Block des Plans von `computeSettlement`). Ohne Vorrat kommen die Anteile der
+// Rechnungen aus der Bewertung von PR 7 (`sharePermille`); mit Vorrat zählt die verbrauchte Menge (PR 8),
+// und der Heizwert kommt von den Lieferungen der Heizperiode oder, ohne sie, von der jüngsten früheren
+// (Abweichung 6).
 export type DhwContext = {
   plant: { energy: HeatingEnergy; heatGeneration?: HeatGeneration | null }
   row: { dhwMethod: DhwMethod | null; dhwVolumeM3?: number | null; dhwTempC?: number | null } | null
@@ -1788,6 +2390,8 @@ export type DhwContext = {
   deliveries: readonly Omit<EnergyDelivery, 'share'>[]
   units: readonly Pick<SnapshotUnit, 'areaM2' | 'noConnection'>[]
   measured: { dhwKwh: number | null; totalKwh: number | null }
+  fuelCoveragePermille: number | null
+  fuelEstimated: boolean
 }
 
 export function dhwInputOf(c: DhwContext): DhwInput {
@@ -1818,128 +2422,203 @@ export function dhwInputOf(c: DhwContext): DhwInput {
     tempC: c.row?.dhwTempC ?? null,
     suppliedAreaM2: suppliedAreaOf(c.units),
     generator,
+    fuelCoveragePermille: c.fuelCoveragePermille,
+    fuelEstimated: c.fuelEstimated,
   }
 }
 
-// Der Satz zu einem Anteil, den Mietfuchs nicht bestimmen kann (Entwurf 10.1: `error` heißt, die
-// Kosten werden nicht verteilt).
-export function dhwProblemText(where: string, o: Extract<DhwOutcome, { ok: false }>): string {
-  if (o.code === 'heating.heat-pump-dhw-basis') {
-    return `${where}: Der Wärmezähler misst die Wärme für das Warmwasser, aber die gesamte Wärme der Wärmepumpe kennt Mietfuchs nicht. ` +
+// Der Satz zu einem Anteil, den Mietfuchs nicht bestimmen kann. Ohne Ort und ohne Folge: Beides setzt
+// `computeSettlement` davor bzw. dahinter („Bis dahin verteilt Mietfuchs …“, PR 10 Task 8).
+export function dhwProblemText(o: { problem: DhwProblem; reasons: readonly string[] }): string {
+  if (o.problem === 'heatPumpBasis') {
+    return 'Der Wärmezähler misst die Wärme für das Warmwasser, aber die gesamte Wärme der Wärmepumpe kennt Mietfuchs nicht. ' +
       'Geteilt durch den Strom ergäbe das einen etwa dreimal zu großen Warmwasseranteil, denn die Wärmepumpe macht aus einer Kilowattstunde Strom mehrere Kilowattstunden Wärme; ' +
       'bei Wärmepumpen richtet sich die Aufteilung nach dem Wärmeverbrauch (§ 9 Abs. 1 Satz 2 HeizkostenV). ' +
-      'Tragen Sie einen Gesamtwärmezähler (Rolle „Gesamtwärmezähler“) oder die gemessene Gesamtwärme ein, oder wählen Sie die Formel nach § 9 Abs. 2 HeizkostenV. ' +
-      'Bis dahin verteilt Mietfuchs die Heiz- und Warmwasserkosten dieser Anlage nicht.'
+      'Legen Sie einen Gesamtwärmezähler an (Rolle „Gesamtwärme“) oder tragen Sie die gemessene Gesamtwärme der Heizperiode auf der Seite Heizkosten ein, oder wählen Sie eine Formel nach § 9 Abs. 2 HeizkostenV.'
   }
-  return `${where}: Mietfuchs kann den Warmwasseranteil nicht bestimmen, denn ${andList(o.reasons)}. Bis das geklärt ist, verteilt Mietfuchs die Heiz- und Warmwasserkosten dieser Anlage nicht (§ 9 HeizkostenV).`
+  return `Mietfuchs kann den Warmwasseranteil nicht bestimmen, denn ${andList(o.reasons)} (§ 9 HeizkostenV).`
 }
 ```
 
-- [ ] **Step 4: Naht in `server/src/heating.ts` (Annahme B2, B3)**
+- [ ] **Step 5: Naht in `server/src/heating.ts` und die Sperren von PR 10**
 
-Import: `import { dhwInputOf, dhwShareOf } from './dhw.ts'` und `DhwStatement` zum Typimport aus
-`'../../shared/types.ts'`. Den Typ `DhwShare` ersetzen durch:
-
-```ts
-// Der Warmwasseranteil α einer Anlage in einer Heizperiode (Heizung PR 10, ab PR 11 für alle drei
-// Verfahren des § 9 Abs. 2 HeizkostenV aus dhw.ts).
-export type DhwShare =
-  | { ok: true; alpha: number; statement: DhwStatement }
-  | { ok: false; code: 'heating.dhw-share-invalid' | 'heating.heat-pump-dhw-basis'; reasons: string[] }
-```
-
-und den Rumpf von `dhwShare` durch:
+`server/src/heating.ts`: Importe `import { dhwInputOf, dhwShareOf, type DhwContext, type DhwProblem } from './dhw.ts'`;
+`DhwStatement` zum Typimport aus `'../../shared/types.ts'`; `type LawLog` in den Import aus
+`'../../shared/law/register.ts'`. Im Abschnitt „Warmwasseranteil“ von PR 10 (Task 4) alles von
+`export const KWH_ENERGIES` bis zum Ende von `hotWaterShareOf` (also `KWH_ENERGIES`, `AlphaInput`,
+`AlphaProblem`, `Alpha`, `COVERAGE_FULL` und `hotWaterShareOf`) ersetzen durch:
 
 ```ts
-export function dhwShare(i: DhwShareInput): DhwShare {
-  const outcome = dhwShareOf(dhwInputOf({
-    plant: i.plant,
-    row: i.row,
-    h: i.h,
-    fuelLines: i.fuel?.deliveries ?? [],
-    stock: i.stock ? { unit: i.stock.unit, consumedQuantity: i.stock.consumed.quantity } : null,
-    deliveries: i.deliveries,
-    units: i.units,
-    measured: i.measured,
-  }), i.log)
-  return outcome.ok ? { ok: true, alpha: outcome.statement.alpha, statement: outcome.statement } : outcome
+// ---------- Warmwasseranteil (Entwurf 8.3; ab Heizung PR 11 aus dhw.ts) ----------
+
+// Was die eigene Heizkostenabrechnung zum Warmwasseranteil hineinreicht (dhw.ts `DhwContext`), dazu die
+// Warmwasserbereitung der Anlage und das Protokoll der Rechtswerte, denn die Formeln fragen das Register.
+// Die Sperren `formulaLater` und `heatingValueLater` aus PR 10 (Abweichung 10 dort) fallen: dhw.ts rechnet
+// alle drei Verfahren des § 9 Abs. 2 und Brennstoff als Menge mit dem Heizwert (Abs. 3).
+export type AlphaInput = DhwContext & { hotWater: HotWater; log: LawLog }
+export type AlphaProblem = DhwProblem
+// α mit dem Rechenweg aus dhw.ts. `referenceKwh` ist die Energie des Nenners in kWh, auch bei Brennstoff
+// als Menge: B / Menge = Q / (Menge · Hᵢ).
+export type Alpha = { value: number; dhwHeatKwh: number; referenceKwh: number; reference: 'fuel' | 'totalHeat'; estimated: boolean; statement: DhwStatement }
+
+// α nach § 9 Abs. 1 Satz 2, Abs. 2 und 3 HeizkostenV. Ohne verbundene Warmwasserbereitung gibt es kein α.
+export function hotWaterShareOf(i: AlphaInput): { ok: true; alpha: Alpha | null } | { ok: false; problem: AlphaProblem; reasons: string[] } {
+  if (i.hotWater !== 'combined') return { ok: true, alpha: null }
+  const o = dhwShareOf(dhwInputOf(i), i.log)
+  if (!o.ok) return { ok: false, problem: o.problem, reasons: o.reasons }
+  const st = o.statement
+  return {
+    ok: true,
+    alpha: {
+      value: st.alpha, dhwHeatKwh: st.heatKwh, referenceKwh: st.energyKwh,
+      reference: st.denominator.kind === 'measuredTotalHeat' ? 'totalHeat' : 'fuel',
+      estimated: st.estimated, statement: st,
+    },
+  }
 }
 ```
 
-Die Sperre der Formeln und der Brennstoffe ohne kWh (Annahme B4) entfällt damit in heating.ts; steht
-sie dort als eigener Zweig vor dem Rechnen, wird sie gelöscht. `SnapshotHeatingPeriodRow` und
-`SnapshotFuelDelivery` erfüllen `DhwContext['row']` bzw. `DhwContext['deliveries']`, sobald Task 2
-(`fuelGrade`) und Task 5 (`dhwVolumeM3`, `dhwTempC` in der Zeile) da sind; bis Task 5 sind die beiden
-Felder in `DhwContext['row']` optional und fehlen einfach.
+`DhwMethod` und `HeatingEnergy` bleiben im Typimport, solange heating.ts sie sonst braucht (`OIL_OR_GAS`,
+`consumptionSharesOf`); `grep -n "KWH_ENERGIES" server client shared` muss danach nur noch die Stelle in
+db/heating.ts finden, die der nächste Absatz löscht.
 
-`SnapshotHeatingPeriodRow` (snapshot.ts) jetzt schon um `'dhwVolumeM3' | 'dhwTempC'` erweitern; die
-Stelle, die die Zeilen liest (`readHeatingPeriodRows` in read.ts, PR 6), übernimmt die Spalten mit
-(liest sie einzeln, `dhwVolumeM3: r.dhwVolumeM3, dhwTempC: r.dhwTempC` ergänzen).
+`server/src/db/heating.ts` (PR 10 Task 5): In `guardHeatingPlant` die Zeile
+`if (after.hotWater === 'combined' && !KWH_ENERGIES.includes(after.energy)) throw new HeatingError(400, LATER.dhwHeatingValue)`
+löschen, in `LATER` den Eintrag `dhwHeatingValue` löschen und `KWH_ENERGIES` aus dem Import von
+`'../heating.ts'` nehmen (steht danach nichts mehr in dem Import, fällt er ganz).
 
-- [ ] **Step 5: Hinweise und Ausweis (`server/src/calc.ts`, `shared/types.ts`)**
+- [ ] **Step 6: Hinweise und Ausweis (`server/src/calc.ts`, `shared/types.ts`)**
 
-`shared/types.ts`, in `HeatingStatement` (PR 6) als letztes Feld:
+`shared/types.ts`, in `SelfHeatingStatement` (PR 10) hinter `alpha`:
 
 ```ts
-  // Der Warmwasseranteil mit Rechenweg (Heizung PR 11, Entwurf 8.8 „α mit Methode“); nur bei eigener
-  // Abrechnung mit gemeinsamer Warmwasserbereitung.
+  // Der Rechenweg zum Warmwasseranteil (Heizung PR 11, Entwurf 8.8 „α mit Methode“); fehlt ohne α.
   dhw?: DhwStatement
 ```
 
-`server/src/calc.ts`: Import `import { DHW_PLAUSIBLE, dhwProblemText, fmtShare } from './dhw.ts'` und
-`import { FUEL_GRADE_LABELS, HEATING_VALUE_UNIT_TEXT } from '../../shared/fuelGrades.ts'`. In
-`noticeKinds` hinter `'heating.dhw-share-invalid'` (PR 10):
+`server/src/calc.ts`, Importe: `import { DHW_PLAUSIBLE, dhwProblemText, fmtShare } from './dhw.ts'`,
+`import { FUEL_GRADE_LABELS, HEATING_VALUE_UNIT_TEXT } from '../../shared/fuelGrades.ts'`,
+`hkvRenewableExemption` in den Import aus `'../../shared/law/heizkostenv.ts'`. `AlphaProblem` aus dem
+Import aus `'./heating.ts'` nehmen, wenn es danach nicht mehr gebraucht wird.
+
+In `noticeKinds` hinter den Codes von PR 10:
 
 ```ts
-  // Heizung PR 11 (Entwurf 8.3, 10.1)
-  'heating.heat-pump-dhw-basis': { level: 'error', title: 'Warmwasseranteil der Wärmepumpe nicht bestimmbar', rule: 'heating-dhw-split', terms: ['hotWaterShare'] },
+  // Heizung PR 11 (Entwurf 8.3, 10.1; Abweichung 9)
   'heating.heating-value-from-table': { level: 'hint', title: 'Heizwert aus der Tabelle der Heizkostenverordnung', rule: 'heating-dhw-split', terms: ['hotWaterShare'] },
   // Plausibilität ohne Rechtsfolge (Entwurf 15.2 F6), deshalb ohne Regel.
   'heating.dhw-share-implausible': { level: 'hint', title: 'Warmwasseranteil ungewöhnlich', terms: ['hotWaterShare'] },
+  'heating.heat-pump-old-exemption': { level: 'hint', title: 'Wärmepumpe: Heizkostenverordnung galt in diesem Zeitraum nicht', rule: 'heating-own-settlement', terms: ['heatingSystem', 'heatMeter'] },
 ```
 
-An der Stelle, an der `computeSettlement` `dhwShare(…)` aufruft (Annahme B2): Den Zweig für
-`ok: false` so fassen, dass er den Text aus dhw.ts nimmt (der Code ist `share.code`, bisher immer
-`heating.dhw-share-invalid`):
+`type SelfPlantPlan` (PR 10 Task 8) bekommt als letztes Feld:
 
 ```ts
-    if (!share.ok) {
-      warn(share.code, dhwProblemText(where, share), plantSubject)
+    // § 11 Abs. 1 Nr. 3 Buchst. a a. F. (Heizung PR 11, Abweichung 9): Wärmepumpe ohne weiteren Erzeuger in
+    // einem Zeitraum, der vor dem 01.10.2024 beginnt. Dann keine Kürzungsbeträge und kein Fehler zu α.
+    oldHeatPumpExemption: boolean
+```
+
+`ALPHA_TEXT` (PR 10 Task 8 Step 7) löschen. Im Block des Plans die Zeilen von
+`const fuelKwh = fuelOfPlant && …` bis zum Ende des Aufrufs `const alphaResult = hotWaterShareOf({ … })`
+ersetzen durch:
+
+```ts
+    // Heizung PR 11: der Warmwasseranteil nach allen drei Verfahren des § 9 Abs. 2 (dhw.ts). Beim Vorrat
+    // (PR 8) zählt die verbrauchte Menge, sonst die Bewertung der Rechnungen (PR 7).
+    const stockOfThis = stockOfPlant.get(plant.id)?.result
+    const alphaResult = hotWaterShareOf({
+      hotWater,
+      log: lawLog,
+      plant: { energy: plant.energy, heatGeneration: plant.heatGeneration ?? null },
+      row: own ? { dhwMethod: own.dhwMethod ?? null, dhwVolumeM3: own.dhwVolumeM3 ?? null, dhwTempC: own.dhwTempC ?? null } : null,
+      h: { from: period.from, to: period.to },
+      fuelLines: fuelOfPlant?.lines ?? [],
+      stock: stockOfThis?.ok ? { unit: stockOfThis.statement.unit, consumedQuantity: stockOfThis.statement.consumed.quantity } : null,
+      deliveries: (snapshot.fuel?.deliveries ?? []).filter((d) => d.plantId === plant.id),
+      units: served,
+      measured: { dhwKwh: own?.dhwHeatKwh ?? plantMeterKwh('dhwHeat'), totalKwh: own?.totalHeatKwh ?? plantMeterKwh('totalHeat') },
+      fuelCoveragePermille: fuelOfPlant?.coveragePermille ?? null,
+      // Die Schätzung beim Abschluss (PR 7) trägt bei der Lieferung `estimated` (PR 10 Abweichung 11).
+      fuelEstimated: fuelOfPlant?.lines.some((l) => l.estimated) ?? false,
+    })
+    // § 11 Abs. 1 Nr. 3 Buchst. a a. F. (Abweichung 9): Das Register wird nur bei einer Wärmepumpe ohne
+    // weiteren Erzeuger gefragt; so steht der Wert nur dann im Rechtsstand.
+    const renewable = plant.energy === 'heatPump' && (plant.heatGeneration ?? null) !== 'mixed'
+      ? law(hkvRenewableExemption, { period: lawPeriod }, lawLog)
+      : null
+    const oldHeatPumpExemption = renewable?.heatPump === true
+    // Unter dieser Ausnahme bindet § 9 nicht: Ohne bestimmbares α gehen „Heizung und Warmwasser“ ganz in
+    // den Topf Heizung (Festlegung, Abweichung 9), und es gibt keinen Fehler.
+    const alpha = alphaResult.ok ? alphaResult.alpha : null
+```
+
+Die Zeile
+`if (!alphaResult.ok) blocked.push({ code: alphaResult.problem === 'heatPumpBasis' ? 'heating.heat-pump-dhw-basis' : 'heating.dhw-share-invalid', text: ALPHA_TEXT[alphaResult.problem] })`
+ersetzen durch:
+
+```ts
+    if (!alphaResult.ok && !oldHeatPumpExemption) {
+      blocked.push({ code: alphaResult.problem === 'heatPumpBasis' ? 'heating.heat-pump-dhw-basis' : 'heating.dhw-share-invalid', text: dhwProblemText(alphaResult) })
     }
 ```
 
-und unmittelbar hinter der Stelle, an der PR 10 im Zweig `ok: true` mit `share.alpha` weiterrechnet:
+Direkt hinter der Zeile `for (const b of blocked) warn(b.code, …)`:
 
 ```ts
-    if (share.ok) {
-      // Ausweis (Entwurf 8.8): α mit Methode und Rechenweg.
-      report.dhw = share.statement
+    const plantSubjectSelf: NoticeSubject = { kind: 'heatingCosts', id: plant.id }
+    if (renewable && oldHeatPumpExemption) {
+      warn('heating.heat-pump-old-exemption',
+        `${where}: Für diesen Abrechnungszeitraum galten die Vorschriften der Heizkostenverordnung zur Erfassung und Verteilung nicht für Räume in Gebäuden, die überwiegend mit Wärme aus ${hkvRenewableExemption.describe(renewable)} versorgt werden. ` +
+          'Dann gilt die Verteilung laut Mietvertrag, und Kürzungen nach § 12 HeizkostenV entfallen. Mietfuchs verteilt nach den erfassten Werten, wie Sie es eingerichtet haben' +
+          (alpha === null && hotWater === 'combined'
+            ? '; einen Warmwasseranteil nach § 9 HeizkostenV verlangt die Verordnung dann nicht, und die Kosten von Heizung und Warmwasser verteilt Mietfuchs gemeinsam wie die Heizkosten (Festlegung von Mietfuchs)'
+            : '') +
+          '. Erzeugt ein weiterer Erzeuger einen erheblichen Teil der Wärme, wählen Sie bei der Anlage „mit einem weiteren Erzeuger“; dann galt die Verordnung.',
+        plantSubjectSelf)
+    }
+    if (alpha) {
       // Heizwert hilfsweise aus der Tabelle (§ 9 Abs. 3 HeizkostenV, Entwurf R-A13).
-      for (const v of share.statement.heatingValues.filter((x) => x.source === 'table')) {
+      for (const v of alpha.statement.heatingValues.filter((x) => x.source === 'table')) {
         warn('heating.heating-value-from-table',
           `${where}: Die Rechnung „${v.label}“ nennt keinen Heizwert. Mietfuchs rechnet deshalb mit dem Wert der Heizkostenverordnung für ` +
             `${v.grade ? FUEL_GRADE_LABELS[v.grade] : 'diesen Brennstoff'}: ${v.kwh.toLocaleString('de-DE')} kWh je ${HEATING_VALUE_UNIT_TEXT[v.per]} (§ 9 Abs. 3 HeizkostenV, hilfsweise). ` +
             'Steht ein Heizwert auf der Rechnung, tragen Sie ihn an der Lieferung ein; er geht vor.',
-          plantSubject)
+          plantSubjectSelf)
       }
       // Plausibilität (Entwurf 15.2 F6): kein Recht, nur ein Anlass zu prüfen.
-      const alpha = share.statement.alpha
-      if (alpha < DHW_PLAUSIBLE.min || alpha > DHW_PLAUSIBLE.max) {
+      if (alpha.value < DHW_PLAUSIBLE.min || alpha.value > DHW_PLAUSIBLE.max) {
         warn('heating.dhw-share-implausible',
-          `${where}: Der Warmwasseranteil liegt bei ${fmtShare(alpha)}. Üblich sind Werte zwischen ${fmtShare(DHW_PLAUSIBLE.min)} und ${fmtShare(DHW_PLAUSIBLE.max)}; das ist keine Grenze des Gesetzes, ` +
+          `${where}: Der Warmwasseranteil liegt bei ${fmtShare(alpha.value)}. Üblich sind Werte zwischen ${fmtShare(DHW_PLAUSIBLE.min)} und ${fmtShare(DHW_PLAUSIBLE.max)}; das ist keine Grenze des Gesetzes, ` +
             'sondern nur ein Anlass, die Angaben zu prüfen: die Wärme oder das Warmwasser und seine Temperatur, die Wohnflächen und die Energie der Rechnungen.',
-          plantSubject)
+          plantSubjectSelf)
       }
     }
 ```
 
-`report`, `where` und `plantSubject` sind die Namen, die PR 6 im Block je Anlage und Heizperiode führt
-(PR 10 rechnet dort); heißen sie in PR 10 anders, hier anpassen. Der Heizwert steht mit
-`toLocaleString('de-DE')` da („10“, „10,9“), nicht mit `fmtNum`, das zwei Nachkommastellen erzwingen
-kann.
+Die Gewichte: In `const weights = blocked.length === 0 && shares !== null && alphaResult.ok ? weightsOf(…, alphaResult.alpha?.value ?? null) : null`
+die Bedingung `alphaResult.ok` durch `(alphaResult.ok || oldHeatPumpExemption)` und
+`alphaResult.alpha?.value ?? null` durch `alpha?.value ?? null` ersetzen. Im Objekt von
+`selfPlans.set(plant.id, { … })` `alpha: alphaResult.ok ? alphaResult.alpha : null` durch `alpha` ersetzen
+und `oldHeatPumpExemption,` anhängen.
 
-Im CO₂-Block (PR 6) die Bedingung des Hinweises `heating.dhw-not-metered` und seinen ersten Satz
-ersetzen. Bisher:
+Die Ausnahme wirkt wie eine Wärmepumpe, für die die Verordnung noch nicht gilt (PR 10, `notYet`): In der
+Hinweisschleife der eigenen Abrechnung (PR 10 Task 9 Step 8) die Zeile
+`const notYet = sp.verdict?.kind === 'notYet'` ersetzen durch
+
+```ts
+    // § 12 Abs. 3 (PR 10) oder § 11 Abs. 1 Nr. 3 Buchst. a a. F. (Heizung PR 11): keine Kürzungsbeträge.
+    const notYet = sp.verdict?.kind === 'notYet' || sp.oldHeatPumpExemption
+```
+
+In `selfStatementOf` (PR 10 Task 9 Step 7) im zurückgegebenen Objekt hinter `alpha: …`:
+
+```ts
+      ...(sp.alpha ? { dhw: sp.alpha.statement } : {}),
+```
+
+Im CO₂-Block (PR 6) die Bedingung des Hinweises `heating.dhw-not-metered` und seinen ersten Satz ersetzen.
+Bisher:
 
 ```ts
     if (pot.method === 'service' && hw && hw.dhwMethod !== null && FORMULA_METHODS.includes(hw.dhwMethod) && hw.dhwUnmeasurable !== true) {
@@ -1951,9 +2630,11 @@ ersetzen. Bisher:
 Neu:
 
 ```ts
-    // Bei eigener Abrechnung nur, wenn Mietfuchs den Anteil nach der Formel gerechnet hat (`report.dhw`),
-    // also bei gemeinsamer Warmwasserbereitung (Heizung PR 11, Entwurf 8.3).
-    const formulaHere = pot.method === 'service' || (pot.method === 'self' && report.dhw !== undefined && report.dhw.method !== 'heatMeter')
+    // Bei eigener Abrechnung nur, wenn Mietfuchs den Anteil nach einer Formel gerechnet hat, und nicht unter
+    // der Ausnahme des § 11 Abs. 1 Nr. 3 Buchst. a a. F. (Heizung PR 11, Entwurf 8.3, Abweichung 9).
+    const selfOfPot = selfPlans.get(pot.plantId)
+    const formulaHere = pot.method === 'service' ||
+      (pot.method === 'self' && selfOfPot !== undefined && !selfOfPot.oldHeatPumpExemption && (selfOfPot.alpha?.statement.method ?? 'heatMeter') !== 'heatMeter')
     if (formulaHere && hw && hw.dhwMethod !== null && FORMULA_METHODS.includes(hw.dhwMethod) && hw.dhwUnmeasurable !== true) {
       const cut = law(hkvCutNotByConsumption, { period: hPeriod }, lawLog)
       warn('heating.dhw-not-metered',
@@ -1963,32 +2644,36 @@ Neu:
 Der Rest des Aufrufs bleibt wortgleich (der Satz zum Wortlaut, „um ${cut} % kürzen (BGH VIII ZR
 151/20)${cutsOn(ids, cut)}“, die Bestätigung). `ids` sind die Positionen des Topfs der Anlage in der
 Heizperiode: der ganze Anteil an Heiz- und Warmwasserkosten (Entwurf 6.5, R-A6). Der Satz für den
-Messdienst bleibt Wort für Wort; die Tests von PR 6 bleiben grün. Läuft in PR 10 der CO₂-Block nicht
-nach der Bestimmung von α, steht `report.dhw` dort noch nicht: Dann wird die Bedingung auf
-`pot.method === 'self' && hw.dhwMethod !== 'heatMeter'` plus die Prüfung „Anlage mit gemeinsamer
-Warmwasserbereitung“ (`plant.hotWater === 'combined'`, Annahme B1) umgestellt; die Tests unten halten
-beides fest.
+Messdienst bleibt Wort für Wort; die Tests von PR 6 bleiben grün. `selfPlans` steht vor dem CO₂-Block
+(PR 10 Task 8 Step 7: „vor der Zeile `const co2Pots = co2PotsOf(…)`“).
 
-- [ ] **Step 6: Tests ausführen, sie müssen bestehen**
+`NoticeSubject` steht im Typimport von calc.ts seit #112. Heißt das Feld mit den Lieferungen im
+Schnappschuss nicht `snapshot.fuel?.deliveries` (PR 7, `SnapshotFuel`), gilt dessen Name.
 
-Run: `npm --prefix server test -- test/dhw.test.ts test/calc-warmwasser.test.ts test/law-literals.test.ts test/glossary.test.ts && npm run typecheck`
-Expected: PASS (`dhw.test.ts`: 16, `calc-warmwasser.test.ts`: 6).
+- [ ] **Step 7: Tests ausführen, sie müssen bestehen**
 
-- [ ] **Step 7: Alle Tests, Golden und Commit**
+Run: `npm --prefix server test -- test/dhw.test.ts test/heating.test.ts test/calc-heizkosten.test.ts test/db-heizkosten.test.ts test/calc-warmwasser.test.ts test/law-literals.test.ts test/glossary.test.ts test/anrede.test.ts && npm run typecheck`
+Expected: PASS (`dhw.test.ts`: 18, `calc-warmwasser.test.ts`: 8). Der Test von PR 10 „Review Focus 5:
+deckt die Gasrechnung die Heizperiode nicht ab …“ prüft `/Folgerechnung.*Schätzung/s` und bleibt grün:
+Der Satz kommt jetzt aus `gapOf` in dhw.ts. Ebenso „A8: Wärmepumpe mit Wärmezähler am Warmwasser …“
+(`heating.heat-pump-dhw-basis`).
+
+- [ ] **Step 8: Alle Tests, Golden und Commit**
 
 Run: `npm test`
-Expected: PASS; `settlement-golden.test.ts` und `db-golden.test.ts` unverändert (F16 rechnet gemessen
-mit Gas in kWh; ohne Rechtswert aus Task 1). Ändert sich F17, weil PR 10 dort bei Heizöl in Litern den
-Anteil gesperrt hat (B4), ist das die angekündigte Änderung: Das Fixture bekommt den neuen Stand, und
-sein README nennt den Grund („Warmwasseranteil seit PR 11 mit B = Q / Hᵢ“) samt Herleitung von Hand.
+Expected: PASS; `settlement-golden.test.ts`, `db-golden.test.ts` und `heating-golden.test.ts`
+unverändert: F16 rechnet gemessen mit Gas in kWh und fragt kein neues Register, F17 hat kein Warmwasser
+(PR 10 Abweichung 20).
 
 ```bash
-git add server/src/dhw.ts server/src/heating.ts server/src/calc.ts server/src/snapshot.ts server/src/db/read.ts shared/types.ts server/test/dhw.test.ts server/test/calc-warmwasser.test.ts
+git add server/testing/selfHeating.ts server/src/dhw.ts server/src/heating.ts server/src/calc.ts server/src/db/heating.ts shared/types.ts server/test/dhw.test.ts server/test/heating.test.ts server/test/calc-heizkosten.test.ts server/test/db-heizkosten.test.ts server/test/calc-warmwasser.test.ts
 git commit -m "Eigene Heizkostenabrechnung: Warmwasseranteil auch nach Formel und mit Heizwert
 
-Die Stelle, an der der Anteil bestimmt wird, rechnet jetzt alle drei Verfahren des § 9 Abs. 2
-HeizkostenV. Neue Hinweise: Heizwert aus der Tabelle, Wärmepumpe ohne Gesamtwärme, ungewöhnlicher
-Anteil; die Kürzung um 15 % bei einer Formel ohne Grund gilt jetzt auch bei eigener Abrechnung.
+Die Stelle, an der PR 10 den Anteil bestimmt, rechnet jetzt alle drei Verfahren des § 9 Abs. 2
+HeizkostenV; die Sperren für Formel und Heizwert fallen. Neue Hinweise: Heizwert aus der Tabelle,
+ungewöhnlicher Anteil, Wärmepumpe vor dem 01.10.2024 (§ 11 Abs. 1 Nr. 3 a. F.); die Kürzung um
+15 % bei einer Formel ohne Grund gilt jetzt auch bei eigener Abrechnung. Testhelfer selfSnapshot
+mit Gleichheitstest gegen Beispiel A über die Datenbank.
 
 Refs #99
 Refs #211"
@@ -2000,10 +2685,10 @@ Refs #211"
 
 **Files:**
 - Modify: `server/src/db/co2.ts` (`saveHotWater`, `heatingPeriodViews`), `shared/types.ts` (`HeatingPeriodView`)
-- Test: `server/test/db-warmwasser.test.ts` (ergänzen), `server/test/api.test.ts` (ergänzen)
+- Test: `server/test/db-warmwasser.test.ts` (ergänzen), `server/test/api.test.ts` (ergänzen), `server/test/db-co2.test.ts` (ein Test von PR 6, falls er `self` prüft)
 
 **Interfaces:**
-- Consumes: Task 3 `suppliedAreaOf`; PR 6 `saveHotWater`, `heatingPeriodViews`, `plantContext`, `heatingPeriodOf`, `heatingPeriodClosed`, `ensureHeatingPeriod`, `closedText`; repository.ts `has`, `raw`, `nullableNumber`, `HeatingError`; read.ts `readUnits`, `readMeters`, `readReadings`; calc.ts `consumptionInPeriod`; PR 5 `servesUnit(plant, unit)` (shared/heatingPeriod.ts).
+- Consumes: Task 3 `suppliedAreaOf`; PR 6 `saveHotWater`, `heatingPeriodViews`, `plantContext`, `heatingPeriodOf`, `heatingPeriodClosed`, `ensureHeatingPeriod`, `closedText`; repository.ts `has`, `raw`, `nullableNumber`, `HeatingError`; read.ts `readUnits`, `readMeters`, `readReadings`; calc.ts `consumptionInPeriod`; PR 5 `servesUnit(plant, unit)` (shared/heatingPeriod.ts); PR 10 `setUpSelf(db, plantId, body, today, newId)` (db/heatingSelf.ts) und die Route `PUT /api/heating-plants/:id/self` (eine Anlage wird nur über die Einrichtung zur eigenen Abrechnung, PR 10 Abweichung 17).
 - Produces:
   - `HeatingPeriodView.hotWater: Pick<HeatingPeriodData, 'dhwMethod' | 'dhwUnmeasurable' | 'dhwHeatKwh' | 'totalHeatKwh' | 'dhwVolumeM3' | 'dhwTempC'>`
   - `HeatingPeriodView.hotWaterBasis: { volumeFromMetersM3: number | null; suppliedAreaM2: number }`
@@ -2016,19 +2701,27 @@ angeschlossenen Wohnungen so gebildet, wie PR 10 sie für die Verteilung bildet.
 
 - [ ] **Step 1: Failing tests schreiben**
 
-(a) `server/test/db-warmwasser.test.ts`: Import um `heatingPeriodViews, saveHotWater` aus
-`'../src/db/co2.ts'` ergänzen; ans Dateiende:
+(a) `server/test/db-warmwasser.test.ts`: Importe um `heatingPeriodViews, saveHotWater` aus
+`'../src/db/co2.ts'` und `setUpSelf` aus `'../src/db/heatingSelf.ts'` ergänzen; ans Dateiende:
 
 ```ts
+let ids = 0
+const newId = () => `m-${++ids}`
+// Eine Anlage wird nur über die Einrichtung zur eigenen Abrechnung (PR 10 Abweichung 17): erst „Niemand“,
+// dann Schritt 7. Die Einrichtung legt die fehlenden Zähler an; der Warmwasserzähler von A steht schon da.
 async function eigeneAnlage(opened: Opened): Promise<void> {
   await opened.write(async (db) => {
     await createEntity(db, 'units', 'a', { propertyId: 'objekt-1', name: 'A', areaM2: 80, participates: true })
     await createEntity(db, 'units', 'b', { propertyId: 'objekt-1', name: 'B', areaM2: 60, participates: true, noConnection: ['warmwasser'] })
-    await createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'gas', method: 'self', hotWater: 'combined', capture: 'heatMeter' })
+    await createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'gas', method: 'manual' })
     await createEntity(db, 'meters', 'ww-a', { propertyId: 'objekt-1', unitId: 'a', name: 'WW A', type: 'warmwasser', unit: 'm³' })
     await createEntity(db, 'readings', 'r1', { meterId: 'ww-a', date: '2024-12-31', value: 100 })
     await createEntity(db, 'readings', 'r2', { meterId: 'ww-a', date: '2025-12-31', value: 132.5 })
   })
+  await opened.write((db) => setUpSelf(db, 'hp', {
+    period: '2025-01', heatConsumptionPct: 70, waterConsumptionPct: 70, insulationRule: 'notApplies', hotWater: 'combined', capture: 'heatMeter',
+    dhwHeatMeter: false, totalHeatMeter: false,
+  }, '2026-02-01', newId))
 }
 
 test('Warmwasser bei eigener Abrechnung: Formel mit Volumen und Temperatur; ergänzend gespeichert; Vorschlag aus den Zählern und versorgte Fläche', async () => {
@@ -2061,9 +2754,9 @@ test('Warmwasser beim Messdienst: Volumen und Temperatur werden nicht gespeicher
 })
 ```
 
-`createHeatingPlant(… { method: 'self', hotWater: 'combined', capture: 'heatMeter' })` sind die Felder,
-mit denen PR 10 eine eigene Abrechnung anlegt (Annahme B1); braucht PR 10 weitere Pflichtangaben
-(etwa den Anteil nach Verbrauch), kommen sie in dieses Literal.
+Der Rumpf von `setUpSelf` ist der von PR 10 (`SETUP` in db-heizkosten.test.ts) ohne Zähler an der
+Anlage. Die Einrichtung legt für B einen Warmwasserzähler ohne Ablesung an; er trägt 0 m³ bei und ändert
+die Summe 32,5 m³ nicht.
 
 (b) `server/test/api.test.ts`, im Block der Heizanlagen (PR 6: „Routen für CO₂-Angaben und
 Warmwasser“) ergänzen:
@@ -2071,7 +2764,12 @@ Warmwasser“) ergänzen:
 ```ts
 test('Warmwasser (Heizung PR 11): PUT nimmt bei eigener Abrechnung Volumen und Temperatur, GET der Heizperioden zeigt sie', async () => {
   await withServer(async (base, send) => {
-    const plant = await jsonOf<{ id: string }>(await send(`${base}/api/heating-plants`, { method: 'POST', body: JSON.stringify({ energy: 'gas', method: 'self', hotWater: 'combined', capture: 'heatMeter' }) }))
+    // POST liefert `{ plant, assigned }` (PR 4); zur eigenen Abrechnung über die Einrichtung (PR 10).
+    const { plant } = await jsonOf<{ plant: { id: string } }>(await send(`${base}/api/heating-plants`, { method: 'POST', body: JSON.stringify({ energy: 'gas', method: 'manual' }) }))
+    const setup = await send(`${base}/api/heating-plants/${plant.id}/self`, { method: 'PUT', body: JSON.stringify({
+      period: '2025-01', heatConsumptionPct: 70, waterConsumptionPct: 70, insulationRule: 'notApplies', hotWater: 'combined', capture: 'heatMeter', dhwHeatMeter: false, totalHeatMeter: false,
+    }) })
+    assert.equal(setup.status, 200)
     const put = await send(`${base}/api/heating-plants/${plant.id}/periods/2025-01/hot-water`, { method: 'PUT', body: JSON.stringify({ dhwMethod: 'volumeFormula', dhwVolumeM3: 120, dhwTempC: 60 }) })
     assert.equal(put.status, 200)
     assert.deepEqual(pick(await jsonOf<Record<string, unknown>>(put), ['dhwMethod', 'dhwVolumeM3', 'dhwTempC']), { dhwMethod: 'volumeFormula', dhwVolumeM3: 120, dhwTempC: 60 })
@@ -2089,7 +2787,9 @@ angelegt. Die Route der Heizperioden heißt so, wie PR 6 sie angelegt hat (`GET
 - [ ] **Step 2: Tests ausführen, sie müssen scheitern**
 
 Run: `npm --prefix server test -- test/db-warmwasser.test.ts test/api.test.ts`
-Expected: FAIL; mit 400 „…kommt mit einer späteren Version“ (B4) bzw. `undefined` bei `dhwVolumeM3`.
+Expected: FAIL; mit 400 aus `saveHotWater` (PR 6 lässt die Angabe nur bei `method = 'service'` zu:
+„… gibt es hier nur bei einer Heizanlage, die ein Messdienst oder die Gemeinschaft abrechnet …“) bzw.
+`undefined` bei `dhwVolumeM3`.
 
 - [ ] **Step 3: Typen (`shared/types.ts`)**
 
@@ -2133,9 +2833,11 @@ function readFormulaInputs(body: unknown): { dhwVolumeM3?: number | null; dhwTem
 
 In `saveHotWater` (Fassung PR 10):
 
-1. Die Sperre der Formeln bei `self` (B4) löschen. Die Ablehnung bei freien Schlüsseln bleibt; ihr Satz
+1. Die Sperre von PR 6 fällt für `self` (Prüfbericht B.1, Zeile B4): Die Zeile
+   `if (ctx.plant.method !== 'service') {` wird zu `if (ctx.plant.method === 'manual') {`, und ihr Satz
    wird zu: `'Die Angaben zum Warmwasser gibt es nur bei einer Heizanlage, die ein Messdienst oder die Gemeinschaft abrechnet, oder bei eigener Heizkostenabrechnung. Bei freien Schlüsseln verteilen die Positionen selbst.'`
-   (der Test von PR 6 prüft `/Messdienst oder die Gemeinschaft/` und bleibt grün).
+   Der Test von PR 6 prüft `/Messdienst oder die Gemeinschaft/` und bleibt grün. Prüft ein Test von PR 6
+   die Ablehnung bei `self` (`/späteren Version selbst/`), wird er auf `method: 'manual'` umgestellt.
 2. Vor `await db.transaction(…)`:
 
 ```ts
@@ -2202,8 +2904,8 @@ Expected: PASS.
 git add shared/types.ts server/src/db/co2.ts server/test/db-warmwasser.test.ts server/test/api.test.ts
 git commit -m "Warmwasser bei eigener Abrechnung: Volumen und Temperatur speichern
 
-Die Sperre der Formeln fällt. Die Ansicht der Heizperiode schlägt das Volumen aus den
-Warmwasserzählern der Wohnungen vor und nennt die versorgte Fläche.
+Die Sperre aus PR 6 fällt für die eigene Abrechnung. Die Ansicht der Heizperiode schlägt das
+Volumen aus den Warmwasserzählern der Wohnungen vor und nennt die versorgte Fläche.
 
 Refs #99
 Refs #211"
@@ -2213,16 +2915,17 @@ Refs #211"
 ### Task 6: Oberfläche: Eingaben der Formeln, Heizwert an der Lieferung, Druckblock
 
 **Files:**
-- Modify: `client/src/heatingForm.ts`, `client/src/components/HotWaterCard.tsx`, `client/src/fuelForm.ts`, `client/src/components/FuelDeliveriesCard.tsx`, `client/src/pages/Abrechnung.tsx`
+- Modify: `client/src/heatingForm.ts`, `client/src/components/HotWaterCard.tsx`, `client/src/fuelForm.ts`, `client/src/components/FuelDeliveriesCard.tsx`, `client/src/pages/Abrechnung.tsx`, `client/src/pages/Heizkosten.tsx`, `client/src/heatingSelfForm.ts` (PR 10), `client/src/components/HeatingSelfSetup.tsx` (PR 10)
 - Create: `client/src/dhwView.ts`, `client/src/components/DhwBlock.tsx`
-- Test: `client/src/heatingForm.test.ts`, `client/src/fuelForm.test.ts`, `client/src/dhwView.test.ts` (neu), `client/src/components/HotWaterCard.test.tsx` (neu)
+- Test: `client/src/heatingForm.test.ts`, `client/src/fuelForm.test.ts`, `client/src/heatingSelfForm.test.ts` (ein Test von PR 10 ändert sich), `client/src/dhwView.test.ts` (neu), `client/src/components/HotWaterCard.test.tsx` (neu)
 
 **Interfaces:**
-- Consumes: Task 1 `FUEL_GRADE_LABELS`, `GRADES_BY_ENERGY`, `isBoiler`, `HEATING_VALUE_UNIT_TEXT`; Task 2 `HeatGeneration`, `FuelGrade`, `HeatingPlant.heatGeneration`, `FuelDelivery.fuelGrade`; Task 3 `DhwStatement`; Task 5 `HeatingPeriodView.hotWater`, `hotWaterBasis`; PR 6 `HOT_WATER_OPTIONS`, `hotWaterBody`, `isFormula`, `HotWaterChoice`; PR 7 `FuelForm`, `fuelToForm`, `fuelBody`; PR 10 (B7, B10) `HotWaterCard` mit Prop `plant: HeatingPlant`, `SelfHeatingBlock`.
+- Consumes: Task 1 `FUEL_GRADE_LABELS`, `GRADES_BY_ENERGY`, `isBoiler`, `HEATING_VALUE_UNIT_TEXT`; Task 2 `HeatGeneration`, `FuelGrade`, `HeatingPlant.heatGeneration`, `FuelDelivery.fuelGrade`; Task 3 `DhwStatement`; Task 5 `HeatingPeriodView.hotWater`, `hotWaterBasis`; PR 6 `HOT_WATER_OPTIONS`, `hotWaterBody`, `isFormula`, `HotWaterChoice`; PR 7 `FuelForm`, `fuelToForm`, `fuelBody`; PR 10 `SelfHeatingBlock`, `heatingSelfForm.ts` (`HOT_WATER_OPTIONS`, `kwhEnergy`, `emptySelfSetup`, `selfSetupBody`), `HeatingSelfSetup.tsx`; PR 6 `HotWaterCard` (bekommt hier die Prop `plant: HeatingPlant`, falls sie fehlt) und ihre Einbindung in `Heizkosten.tsx`.
 - Produces:
   - `heatingForm.ts`: `HEAT_GENERATION_OPTIONS`, `type FormulaForm = { volume: string; temp: string }`, `formulaFormOf(hw)`, `selfFormulaBody(choice, form): { body: { dhwVolumeM3?: number | null; dhwTempC?: number | null } } | { error: string }`, `numberText(n)`, `parseDecimal(s)`
   - `fuelForm.ts`: `FuelForm.heatingValue: string`, `FuelForm.grade: FuelGrade | ''`, `gradeOptions(energy)`, `defaultGrade(energy)`, `unitWordFor(unit: string): string`
-  - `dhwView.ts`: `DHW_METHOD_TEXT`, `type DhwBlockView = { title: string; method: string; steps: string[]; values: string[] }`, `dhwBlock(h: Pick<HeatingStatement, 'dhw'>): DhwBlockView | null`
+  - `dhwView.ts`: `DHW_METHOD_TEXT`, `type DhwBlockView = { title: string; method: string; steps: string[]; values: string[] }`, `dhwBlock(d: DhwStatement | undefined): DhwBlockView | null` (liest `self.dhw`, Prüfbericht B.1)
+  - `heatingSelfForm.ts`: `kwhEnergy` entfällt (Sperre von PR 10, Abweichung 10 dort)
 
 - [ ] **Step 1: Failing tests schreiben**
 
@@ -2270,7 +2973,8 @@ import type { DhwStatement } from './types'
 
 const formel: DhwStatement = {
   method: 'volumeFormula', alpha: 0.255102, heatKwh: 15000, formulaKwh: 15000, factor: null,
-  denominator: { kind: 'fuelQuantity', value: 6000, unit: 'l' }, fuelForDhw: { quantity: 1530.61, unit: 'l', heatingValue: 9.8 },
+  denominator: { kind: 'fuelQuantity', value: 6000, unit: 'l' }, energyKwh: 58800, estimated: false,
+  fuelForDhw: { quantity: 1530.61, unit: 'l', heatingValue: 9.8 },
   heatingValues: [
     { label: 'Öl Oktober', kwh: 9.8, per: 'l', source: 'invoice', grade: 'heatingOilEL' },
     { label: 'Öl Dezember', kwh: 10, per: 'l', source: 'table', grade: 'heatingOilEL' },
@@ -2279,7 +2983,7 @@ const formel: DhwStatement = {
 }
 
 test('Druckblock Warmwasseranteil: α mit Methode, Rechenweg und Heizwerte samt Herkunft (Entwurf 8.8)', () => {
-  expect(dhwBlock({ dhw: formel })).toEqual({
+  expect(dhwBlock(formel)).toEqual({
     title: 'Warmwasseranteil 25,51 %',
     method: 'aus dem gemessenen Warmwasser berechnet (§ 9 Abs. 2 Satz 2 HeizkostenV)',
     steps: formel.steps,
@@ -2288,7 +2992,7 @@ test('Druckblock Warmwasseranteil: α mit Methode, Rechenweg und Heizwerte samt 
       'Heizwert „Öl Dezember“: 10 kWh je Liter aus der Tabelle der Heizkostenverordnung (Leichtes Heizöl extra leichtflüssig), weil die Rechnung keinen nennt',
     ],
   })
-  expect(dhwBlock({})).toBe(null)
+  expect(dhwBlock(undefined)).toBe(null)
 })
 ```
 
@@ -2315,7 +3019,9 @@ const view = (over: Partial<HeatingPeriodView> = {}): HeatingPeriodView => ({
 const plant = (over: Partial<HeatingPlant> = {}): HeatingPlant => ({
   id: 'hp', propertyId: 'objekt-1', name: '', energy: 'gas', supply: 'central', method: 'self', separateSettlement: null,
   devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null, capturedOnOct2024: null,
-  warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null, units: null, heatGeneration: 'mixed',
+  warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null, periodChanges: [], separateSpans: [], units: null,
+  nonResidential: false, restriction: 'none', districtEtsNew: false,
+  hotWater: 'combined', capture: 'heatMeter', areaBasisHeat: 'area', heatPumpInstalledOn: null, heatGeneration: 'mixed',
   ...over,
 })
 
@@ -2353,10 +3059,21 @@ test('Ohne Antwort zum Erzeuger steht „bitte wählen“, und nichts wird vorge
 })
 ```
 
-Die Literale von `HeatingPeriodView` und `HeatingPlant` folgen den Typen nach PR 10; Pflichtfelder
-späterer PRs, die hier fehlen (etwa Lieferungen und Vorrat der Ansicht, `capture` und `hotWater` der
-Anlage: `capture: 'heatMeter'`, `hotWater: 'combined'`), bekommen ihre leeren bzw. passenden Werte; der
-Übersetzer nennt jedes. Kein `as`: Die Testdaten folgen dem Modell (CLAUDE.md).
+Das Literal von `HeatingPlant` hat die Felder von PR 4, 5, 7, 10 und Task 2 (wie
+`server/testing/selfHeating.ts`); das von `HeatingPeriodView` die von PR 6 und Task 5. Führt die Ansicht
+nach PR 7 bis PR 10 weitere Pflichtfelder (Lieferungen, Vorrat, `distribution`), bekommen sie ihre leeren
+Werte; der Übersetzer nennt jedes. Kein `as`: Die Testdaten folgen dem Modell (CLAUDE.md).
+
+(e) `client/src/heatingSelfForm.test.ts` (PR 10): den Test „Warmwasser über die Anlage nur bei Abrechnung in
+kWh (Abweichung 10)“ ersetzen durch (die Sperre fällt, Prüfbericht B.1, Zeile B4):
+
+```ts
+  it('Warmwasser über die Anlage auch bei Heizöl (Heizung PR 11: Heizwert laut Rechnung, § 9 Abs. 3 HeizkostenV)', () => {
+    expect('body' in selfSetupBody(filled(), 'oil')).toBe(true)
+    expect(emptySelfSetup({ ...plant, energy: 'oil', hotWater: 'combined' }, '2025-01').hotWater).toBe('combined')
+    expect('body' in selfSetupBody(filled({ hotWater: 'none' }), 'oil')).toBe(true)
+  })
+```
 
 - [ ] **Step 2: Tests ausführen, sie müssen scheitern**
 
@@ -2472,7 +3189,13 @@ Im JSX hinter dem Kästchen zur Bestätigung des Aufwands:
       )}
 ```
 
-Die Beschriftung der Auswahl „Wie hat der Messdienst …“ fasst PR 10 bei `self` schon anders; sie bleibt.
+Die Beschriftung der Auswahl „Wie hat der Messdienst …“ lautet bei `self` „Wie wird die Wärme für das
+Warmwasser bestimmt?“ (`self ? … : …` am Label).
+
+`client/src/pages/Heizkosten.tsx`: Die Karte „Warmwasser“ steht nach PR 6 nur bei `plant.method ===
+'service'` (Prüfbericht B.1, Zeile B10). Die Bedingung wird zu `plant.method !== 'manual'`, und die Karte
+bekommt `plant={plant}`. Hat `HotWaterCard` die Prop `plant` noch nicht, kommt sie mit dieser PR dazu:
+`{ view, plant, onSaved }: { view: HeatingPeriodView; plant: HeatingPlant; onSaved: () => void }`.
 
 - [ ] **Step 5: `client/src/fuelForm.ts` und `FuelDeliveriesCard.tsx`**
 
@@ -2549,7 +3272,7 @@ defaultGrade(plant.energy)` setzen. Im Formular hinter dem Feld der Menge:
 
 ```ts
 // Der Druckblock „Warmwasseranteil“ (Heizung PR 11, Entwurf 8.8: „α mit Methode“). Logik ohne DOM.
-import type { DhwMethod, HeatingStatement } from './types'
+import type { DhwMethod, DhwStatement } from './types'
 import { FUEL_GRADE_LABELS, HEATING_VALUE_UNIT_TEXT } from '../../shared/fuelGrades.ts'
 
 export const DHW_METHOD_TEXT: Record<DhwMethod, string> = {
@@ -2562,8 +3285,8 @@ export type DhwBlockView = { title: string; method: string; steps: string[]; val
 
 const pct = (alpha: number) => `${(alpha * 100).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} %`
 
-export function dhwBlock(h: Pick<HeatingStatement, 'dhw'>): DhwBlockView | null {
-  const d = h.dhw
+// Liest den Rechenweg der eigenen Abrechnung (`HeatingStatement.self.dhw`, Prüfbericht B.1).
+export function dhwBlock(d: DhwStatement | undefined): DhwBlockView | null {
   if (!d) return null
   return {
     title: `Warmwasseranteil ${pct(d.alpha)}`,
@@ -2585,7 +3308,7 @@ import Term from './Term'
 import type { HeatingStatement } from '../types'
 
 export default function DhwBlock({ heating }: { heating: HeatingStatement }) {
-  const b = dhwBlock(heating)
+  const b = dhwBlock(heating.self?.dhw)
   if (!b) return null
   return (
     <div className="print-block">
@@ -2601,26 +3324,54 @@ export default function DhwBlock({ heating }: { heating: HeatingStatement }) {
 ```
 
 `client/src/pages/Abrechnung.tsx`: `import DhwBlock from '../components/DhwBlock'`; unmittelbar hinter
-`<SelfHeatingBlock … />` (Annahme B7) `<DhwBlock heating={h} />` einfügen, mit derselben Variablen `h`
+`<SelfHeatingBlock … />` (PR 10 Task 13) `<DhwBlock heating={h} />` einfügen, mit derselben Variablen `h`
 für die `HeatingStatement` der Schleife.
 
-- [ ] **Step 7: Tests ausführen, sie müssen bestehen**
+- [ ] **Step 7: Sperre der Einrichtung fällt (`client/src/heatingSelfForm.ts`, `HeatingSelfSetup.tsx`)**
 
-Run: `npm --prefix client test -- heatingForm fuelForm dhwView HotWaterCard && npm run typecheck && npm run build`
+PR 10 (Abweichung 10 dort) sperrt „verbundenes Warmwasser“ bei Energien, die nicht in kWh abgerechnet
+werden. Mit dem Heizwert laut Rechnung (Task 3) fällt das. In `client/src/heatingSelfForm.ts` die
+Konstante `kwhEnergy` samt Kommentar löschen; in `emptySelfSetup` die Zeile `hotWater: …` ersetzen durch
+
+```ts
+    hotWater: plant.hotWater ?? 'combined',
+```
+
+und in `selfSetupBody` den Block
+
+```ts
+  if (form.hotWater === 'combined' && !kwhEnergy(energy)) {
+    return { error: 'Bereitet die Heizung auch das Warmwasser, braucht die Aufteilung den Heizwert des Brennstoffs laut Rechnung (§ 9 Abs. 3 HeizkostenV); das kommt mit einer späteren Version. Bis dahin geht es mit getrennter Warmwasserbereitung oder ohne zentrales Warmwasser.' }
+  }
+```
+
+löschen. In `client/src/components/HeatingSelfSetup.tsx` `kwhEnergy` aus dem Import nehmen und die
+Auswahl der Warmwasserbereitung ohne Sperre rendern:
+
+```tsx
+          {HOT_WATER_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+```
+
+`grep -rn "kwhEnergy" client/src` findet danach nichts mehr.
+
+- [ ] **Step 8: Tests ausführen, sie müssen bestehen**
+
+Run: `npm --prefix client test -- heatingForm fuelForm heatingSelfForm HeatingSelfSetup dhwView HotWaterCard && npm run typecheck && npm run build`
 Expected: PASS; der Build bündelt `shared/fuelGrades.ts`.
 
-- [ ] **Step 8: Alle Tests und Commit**
+- [ ] **Step 9: Alle Tests und Commit**
 
 Run: `npm test`
 Expected: PASS.
 
 ```bash
-git add client/src/heatingForm.ts client/src/heatingForm.test.ts client/src/components/HotWaterCard.tsx client/src/components/HotWaterCard.test.tsx client/src/fuelForm.ts client/src/fuelForm.test.ts client/src/components/FuelDeliveriesCard.tsx client/src/dhwView.ts client/src/dhwView.test.ts client/src/components/DhwBlock.tsx client/src/pages/Abrechnung.tsx
+git add client/src/heatingForm.ts client/src/heatingForm.test.ts client/src/components/HotWaterCard.tsx client/src/components/HotWaterCard.test.tsx client/src/fuelForm.ts client/src/fuelForm.test.ts client/src/components/FuelDeliveriesCard.tsx client/src/dhwView.ts client/src/dhwView.test.ts client/src/components/DhwBlock.tsx client/src/pages/Abrechnung.tsx client/src/pages/Heizkosten.tsx client/src/heatingSelfForm.ts client/src/heatingSelfForm.test.ts client/src/components/HeatingSelfSetup.tsx
 git commit -m "Oberfläche: Warmwasser nach Formel, Heizwert an der Lieferung, Druckblock
 
 Volumen (mit Vorschlag aus den Zählern) und Temperatur, die Frage nach dem Erzeuger ohne Vorgabe,
 der Heizwert laut Rechnung und sonst die Zeile der Tabelle; der Ausweis nennt Anteil, Verfahren,
-Rechenweg und die Herkunft jedes Heizwerts.
+Rechenweg und die Herkunft jedes Heizwerts. Die Einrichtung lässt verbundenes Warmwasser jetzt
+auch bei Heizöl, Flüssiggas, Pellets, Holz und Kohle zu.
 
 Refs #99
 Refs #211"
@@ -2646,9 +3397,12 @@ Im Abschnitt „Unveröffentlicht“ unter „Hinzugefügt“:
   Verordnung. Wird ohne zulässigen Grund nach einer Formel abgerechnet, nennt die Abrechnung die
   Kürzung um 15 % je Mieter ([#211](https://github.com/speedone/mietfuchs/issues/211),
   [#99](https://github.com/speedone/mietfuchs/issues/99)).
-- Hinweise, wenn der Heizwert aus der Tabelle stammt, wenn der Warmwasseranteil ungewöhnlich ist (unter
-  5 oder über 50 %, nur zur Prüfung) und wenn bei einer Wärmepumpe mit Wärmezähler am Warmwasser die
-  Gesamtwärme fehlt.
+- Hinweise, wenn der Heizwert aus der Tabelle stammt und wenn der Warmwasseranteil ungewöhnlich ist
+  (unter 5 oder über 50 %, nur zur Prüfung).
+- Wärmepumpe in Abrechnungszeiträumen, die vor dem 01.10.2024 beginnen: ein Hinweis, dass die
+  Heizkostenverordnung für überwiegend mit Wärmepumpen versorgte Gebäude damals nicht galt (§ 11 Abs. 1
+  Nr. 3 Buchst. a in der alten Fassung); keine Kürzungsbeträge, und Heizung und Warmwasser werden dann
+  gemeinsam nach dem Heizschlüssel verteilt.
 ```
 
 Unter „Geändert“:
@@ -2657,6 +3411,8 @@ Unter „Geändert“:
 - Holzhackschnitzel: Seit 01.12.2021 nennt die Heizkostenverordnung 4 kWh je Kilogramm; die frühere
   Angabe 650 kWh je Schüttraummeter gilt nur für Zeiträume davor, und den Brennstoffverbrauch bestimmt
   die Verordnung seither in Litern, Kubikmetern oder Kilogramm.
+- Eigene Heizkostenabrechnung: Die Heizung darf jetzt auch bei Heizöl, Flüssiggas, Pellets, Holz und
+  Kohle das Warmwasser bereiten; die Einrichtung sperrt das nicht mehr.
 ```
 
 - [ ] **Step 2: CLAUDE.md**
@@ -2681,8 +3437,17 @@ Punkt, den PR 10 zur eigenen Heizkostenabrechnung angelegt hat) einfügen:
   Eine Formel verlangt die Antwort, ob die Anlage die Wärme **allein** erzeugt (`heat_generation`); ohne
   sie und bei mehreren Erzeugern rechnet sie nicht, denn Satz 6 Nr. 3 meint die monovalente Wärmepumpe,
   und Satz 5 lässt bei Mischanlagen nur gemessen gegen gemessen. Die Flächenformel liefert kWh „pro
-  Jahr“ und wird im Rumpf nach Tagen gekürzt. Was fehlt, ergibt `heating.dhw-share-invalid` mit dem
-  Satz, was fehlt, und die Anlage wird in dieser Heizperiode nicht verteilt.
+  Jahr“ und wird im Rumpf nach Tagen gekürzt, wie § 9b Abs. 2 Warmwasser zeitanteilig teilt (Festlegung
+  F7, Entwurf 15.2). Was fehlt, ergibt `heating.dhw-share-invalid` mit dem Satz, was fehlt, und die
+  Anlage wird in dieser Heizperiode nicht verteilt. **Eine Stelle für α** bleibt `hotWaterShareOf`
+  (heating.ts, PR 10); sie ruft dhw.ts, und der Ausweis führt α als `self.alpha`, den Rechenweg als
+  `self.dhw`. Die **Stromheizung** rechnet gemessen gegen den Strom laut Rechnung wie in PR 10, nur die
+  Formeln sind dort gesperrt: Eine Anlage, die vorher abrechenbar war, darf eine spätere PR nicht
+  sperren. Die **Wärmepumpe vor dem 01.10.2024** fiel nach § 11 Abs. 1 Nr. 3 Buchst. a a. F. nicht
+  unter die Verordnung (`hkv.exemption.renewable`, zwei Fassungen): Hinweis statt Fehler, keine
+  Kürzungsbeträge. Tests der eigenen Abrechnung bauen Beispiel A mit `selfSnapshot()`
+  ([server/testing/selfHeating.ts](server/testing/selfHeating.ts)); ein Test hält den Helfer gleich mit
+  dem Weg über die Datenbank.
 ```
 
 - [ ] **Step 3: Gesamtprüfung**
@@ -2691,7 +3456,7 @@ Run: `npm test && npm run typecheck && npm run build`
 Expected: Exit-Status 0 bei allen drei.
 
 Run: `npm --prefix server test -- --test-name-pattern "Golden|golden"`
-Expected: PASS, Golden F01–F16 unverändert (F17 nur nach Task 4 Step 7, mit README).
+Expected: PASS, Golden F01–F17 unverändert.
 
 - [ ] **Step 4: Commit**
 
@@ -2706,14 +3471,19 @@ Refs #211"
 - [ ] **Step 5: PR-Beschreibung**
 
 Die Beschreibung des Pull Requests (gestapelt auf PR 10) nennt `Refs #99` und `Refs #211`, die
-Abweichungen 1 bis 8 dieses Plans und als Prüfpunkte der Durchsicht:
+Abweichungen 1 bis 10 dieses Plans, den Abschnitt „Änderungen nach Prüfung vom 05.10.2026“ und als
+Prüfpunkte der Durchsicht:
 
 - § 9 Abs. 3 im amtlichen BGBl.-PDF (2021 Teil I S. 4964, Art. 1 Nr. 5 Buchst. c) gegen Abweichung 2
   lesen; bis dahin stützt sich die Fassung auf die Wiedergabe bei buzer.de.
 - Inkrafttreten von Art. 3 G v. 16.10.2023 (01.10.2024) im BGBl. 2023 I Nr. 280 gegen Abweichung 1
   lesen.
 - ⟨Norm offen: VDI 2077⟩ für die Frage, ob gemessene Wärme gegen Brennwert- oder Heizwert-kWh steht
-  (15.1 Nr. 9, 15.3); bis dahin nach Wortlaut.
+  (15.1 Nr. 9, 15.3); bis dahin nach Wortlaut. Ebenso für die Rumpf-Flächenformel nach Tagen (F7).
+- Begründung zum Gesetz vom 16.10.2023 (BT-Drs. 20/7619) zu § 9 Abs. 2 Satz 6 Nr. 3: ob Q · 0,30 gegen den
+  Strom oder gegen die Gesamtwärme zu setzen ist (Prüfbericht A.2, Abweichung 1).
+- § 11 Abs. 1 Nr. 3 HeizkostenV a. F.: ob der Nachsatz „sofern der Wärmeverbrauch des Gebäudes nicht
+  erfasst wird“ auch Buchst. a betrifft (Abweichung 9).
 
 ---
 
@@ -2727,6 +3497,10 @@ Abweichungen 1 bis 8 dieses Plans und als Prüfpunkte der Durchsicht:
 | Formeln exakt nach Wortlaut § 9 Abs. 2 Satz 2, 4, Faktoren Satz 6 Nr. 1–3 | Global Constraints, Task 1, Task 3 |
 | Faktoren nur für Formelwerte (8.3, G-B1) | Task 3 (Test „Beispiel 8.3“, „15.1 Nr. 9“) |
 | α = Q / abgerechnete Energie des Erzeugers, Wärmepumpe gegen Strom (8.3, D-F1, F1 37,5 %) | Task 3 |
+| Regeln von PR 10 bleiben: Lücke der Rechnungen, Schätzung beim Abschluss, α außerhalb von (0, 1) | Task 3 (Test „Aus PR 10 übernommen“), Task 4 |
+| Stromheizung gemessen wie PR 10 (Prüfbericht A6) | Task 3, Task 4 |
+| Wärmepumpe vor dem 01.10.2024: § 11 Abs. 1 Nr. 3 Buchst. a a. F. (Prüfbericht A3) | Task 1, Task 4 |
+| Sperren von PR 10 und PR 6 fallen | Task 4 (heating.ts, db/heating.ts), Task 5 (`saveHotWater`), Task 6 (Einrichtung) |
 | Wärmepumpe mit Warmwasserzähler ohne Gesamtwärmezähler → `heating.heat-pump-dhw-basis` (A8) | Task 3, Task 4 |
 | Mischanlagen nur `heatMeter` mit gemessener Gesamtwärme (8.3) | Task 3 (Abweichung 5) |
 | Heizwert laut Rechnung vor Tabelle, Tabelle nur bei Kesseln, `heating.heating-value-from-table` (R-A13, 8.3) | Task 3, Task 4 |
@@ -2734,25 +3508,30 @@ Abweichungen 1 bis 8 dieses Plans und als Prüfpunkte der Durchsicht:
 | Formel ohne `dhw_unmeasurable` → `heating.dhw-not-metered` mit 15 % auf den ganzen Anteil bei `self` (6.5, 8.3, 7.7) | Task 4 |
 | Plausibilität `heating.dhw-share-implausible` unter 5 / über 50 % (10.1, 15.2 F6) | Task 4 |
 | 15.1 Nr. 9 m³ gegen kWh: nach Wortlaut, Lexikon nennt beide Lesarten | Task 1 (Lexikon), Task 3 (Test 13,51 % / 15,00 %) |
-| Ausweis „α mit Methode“ (8.8) | Task 4 (`HeatingStatement.dhw`), Task 6 (Druckblock) |
+| Ausweis „α mit Methode“ (8.8) | Task 4 (`self.dhw` neben `self.alpha`), Task 6 (Druckblock) |
 | Beispiele 15,0 / 27,75 / 11,84 % (12.2) | Task 3 Test 1, Task 1 Lexikon |
 | Rechtsstand und benutzte Werte (4.4) | Task 3 Test „Protokoll“ |
-| Wer nichts einstellt, merkt nichts (1.2 Nr. 1) | Task 4 Step 7, Task 7 Step 3 |
+| Wer nichts einstellt, merkt nichts (1.2 Nr. 1) | Task 4 Step 8, Task 7 Step 3 |
 
 Nicht in diesem Plan, weil eine andere PR sie trägt: § 9a Schätzung (PR 13), § 6a-Angaben (PR 14),
 Wärmelieferung als Merkmal für Contracting (PR 16; die ÷ 1,15 greift hier für `districtHeating`, und
 PR 16 muss sein Merkmal an dieselbe Stelle in `formulaFactor` anschließen), Warmwasser beim Messdienst
 (PR 6, unverändert bis auf den gemeinsamen Hinweis).
 
-**2. Platzhalter.** Keine „TBD“, kein „wie Task N“. Wo Namen von PR 10 in den Code eingehen, nennt die
-Tabelle „Annahmen über PR 10“ jede Stelle; Abgleich vor Task 1.
+**2. Platzhalter.** Keine „TBD“, kein „wie Task N“. Die Namen von PR 10 sind nach der Prüfung vom
+05.10.2026 abgeglichen (Commit `81828af`); Tasks benutzen sie unmittelbar.
 
 **3. Typen.** `DhwStatement`, `DhwHeatingValue`, `EnergyDelivery`, `GeneratorInput`, `DhwInput`,
-`DhwOutcome`, `DhwContext`, `DhwShare` werden in Task 3/4 definiert und in Task 4–6 mit denselben
-Feldnamen benutzt (`alpha`, `heatKwh`, `formulaKwh`, `factor`, `denominator`, `fuelForDhw`,
-`heatingValues`, `steps`; `share`, `stock.consumed` in `GeneratorInput`, `stock.consumedQuantity` in
-`DhwContext`). `FuelGrade`, `HeatGeneration`, `fuelGrade`, `heatGeneration` durchgehend gleich.
+`DhwOutcome`, `DhwProblem`, `DhwContext` werden in Task 3/4 definiert und in Task 4–6 mit denselben
+Feldnamen benutzt (`alpha`, `heatKwh`, `formulaKwh`, `factor`, `denominator`, `energyKwh`, `fuelForDhw`,
+`heatingValues`, `estimated`, `steps`; `share`, `stock.consumed` in `GeneratorInput`,
+`stock.consumedQuantity` in `DhwContext`; `fuelCoveragePermille`, `fuelEstimated` in beiden). In
+heating.ts bleiben die Namen von PR 10: `AlphaInput = DhwContext & { hotWater; log }`,
+`AlphaProblem = DhwProblem`, `Alpha` mit `statement`. `FuelGrade`, `HeatGeneration`, `fuelGrade`,
+`heatGeneration` durchgehend gleich. `selfSnapshot`, `selfDelivery`, `selfRow` (Task 4) sind die Namen,
+die PR 12 bis PR 14 benutzen.
 
 **4. Review Focus.** Jede der fünf Zeilen hat ihren Test: 1 → `dhw.test.ts` „Heizwert laut Rechnung vor
 Tabelle“ (ohne Zeile) und calc-Test „Gas in m³“; 2 → „Flüssiggas in Litern“; 3 → „Holzhackschnitzel“;
-4 → „Rumpf“; 5 → „Wärmepumpe (F1)“ mit dem Zeitraum 2024 und law.test.ts „Stichtag hkv.dhw.factors“.
+4 → „Rumpf“; 5 → „Wärmepumpe (F1)“ mit dem Zeitraum 2024 (kein Faktor), law.test.ts „Stichtag
+hkv.dhw.factors“ und „Stichtag hkv.exemption.renewable“, calc-warmwasser.test.ts „Review Focus 5“.

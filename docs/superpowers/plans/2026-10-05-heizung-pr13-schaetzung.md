@@ -5,15 +5,17 @@
 **Goal:** Fällt bei der eigenen Heizkostenabrechnung ein Gerät aus oder lässt sich ein Wert aus einem
 anderen zwingenden Grund nicht mehr ablesen, schätzt der Vermieter den Verbrauch der Wohnung nach
 einem der drei Wege des § 9a Abs. 1 HeizkostenV (Vorgabe: Durchschnitt des Gebäudes je m²) mit
-Begründung und Bestätigung; Mietfuchs setzt den geschätzten Verbrauch an die Stelle des erfassten,
+Begründung und Bestätigung; Mietfuchs setzt den geschätzten Verbrauch an die Stelle des nicht erfassten
+(gültige Ablesungen eines Nutzers bleiben),
 verteilt einen Topf ausschließlich nach Fläche, wenn die geschätzte Fläche 25 % der maßgeblichen
 Fläche **überschreitet** (je Topf getrennt), und sagt im Dialog vorher, welcher Flächenanteil das
 tatsächlich ist.
 
 **Architecture:** Eine neue Tabelle `heating_estimates` (Entwurf 5.6) in einem erzeugten Schritt
 `0032_schaetzung`. Die Rechnung bleibt in `server/src/heating.ts`: `planSelf` (PR 10) nimmt je
-`Wohnung:Topf` einen geschätzten Verbrauch entgegen, der die Ablesungen dieser Wohnung in diesem Topf
-ersetzt und unter ihren Nutzern wie eine Gruppe nach § 9b geteilt wird, und meldet je Topf die
+`Wohnung:Topf` einen geschätzten Verbrauch für die ganze Heizperiode entgegen; Nutzer der Wohnung ohne
+erfassten Verbrauch bekommen ihren Anteil daran nach Gradtagen bzw. Tagen, Nutzer mit gültigen Ablesungen
+behalten ihren Messwert, und meldet je Topf die
 geschätzte Fläche und ob sie die Grenze des § 9a Abs. 2 überschreitet; `weightsOf` setzt dann den
 Anteil nach Verbrauch dieses Topfs auf 0. Eine reine Funktion `estimateProposals` rechnet die drei
 Vorschläge. `computeSettlement` liest die Schätzungen aus dem Schnappschuss, rechnet die Vorperiode
@@ -38,6 +40,28 @@ vor dem Markieren“), 13 (PR 13), 14.1 (Zeile „Geräteausfall“), **15.1 Nr.
 Commit `81828af`. Gearbeitet wird auf `feat/heizung-pr13-schaetzung`, abgezweigt von der Spitze von
 PR 12; der PR wird gestapelt auf PR 12 gestellt und nach dessen Merge auf `main` umgestellt
 (`git rebase --onto`).
+
+## Änderungen nach Prüfung vom 05.10.2026
+
+Der Prüfbericht vom 05.10.2026 hat an diesem Plan zwei Rechtsfolgen und eine Naht geändert:
+
+1. **Die Schätzung ersetzt nur den nicht erfassten Teil** (Prüfbericht A5, Abweichungen 2 und 3, Review
+   Focus 2). § 9a Abs. 1 Satz 2 setzt den ermittelten Verbrauch „anstelle des erfassten Verbrauchs“. Hat
+   ein Nutzer der Wohnung gültige Ablesungen (etwa der Vormieter bis zur Zwischenablesung), behält er
+   seinen Messwert; die Nutzer ohne erfassten Verbrauch bekommen zusammen ihren Anteil an der Schätzung
+   für die ganze Heizperiode nach Gradtagen bzw. Tagen. Sonst wanderte Geld zwischen Vor- und Nachmieter
+   ohne Rechtsgrund. Fehlt die Zwischenablesung selbst (Gerät fiel vor dem Wechsel aus), teilen beide wie
+   nach § 9b Abs. 3. Task 3 Step 4 (d) ist neu gefasst, mit Test „C1 behält 7.200 kWh“.
+2. **Schätzung neben vollständiger Ablesung ist eine Warnung** (Prüfbericht A9, Review Focus 1): neuer
+   Code `heating.estimate-complete` (warning). Die Schätzung bleibt dann maßgeblich (Markierung
+   „unbrauchbar“, etwa bei einem Gerät, das falsch anzeigt), aber der Satz sagt, dass § 9a nur greift,
+   wenn nicht ordnungsgemäß erfasst werden kann, und dass die Abrechnung sonst insoweit falsch ist.
+3. **Naht zu PR 12 und Testhelfer:** PR 12 ist auf das Grenzmodell von PR 10 umgestellt (`metersOf` mit
+   `meterTypeOf`, Faktor am Zähler); dieser Plan setzt an derselben Stelle an und schreibt die Schleife des
+   Verbrauchs mit dem Faktor vollständig hin. `selfSnapshot()` kommt aus `server/testing/selfHeating.ts`
+   (PR 11) mit den festen Kennungen `wz-c`, `C1`, `C2`; `selfProblemText` bekommt die Erfassung (PR 12).
+4. **Festlegung benannt:** Für die Grenze des § 9a Abs. 2 zählt die Fläche einer Wohnung ganz, auch wenn
+   nur ein Teil ihrer Heizperiode geschätzt ist; betroffen ist die Fläche, nicht die Zeit (Abweichung 2).
 
 **Wortlaut, gelesen am 05.10.2026 auf gesetze-im-internet.de** (HeizkostenV in der Fassung Art. 3
 G v. 16.10.2023):
@@ -80,7 +104,7 @@ G v. 16.10.2023):
 - **Rechtswerte nur aus dem Register** (4.3, 4.7): genau ein neuer Parameter,
   `hkv.estimate-threshold`. Die Zahl 25 kommt in `CODE_PATTERN` von `law-literals.test.ts`.
 - **Fassungen nie ändern** (4.4): eine neue Zeile in `law-history.test.ts`, keine geänderte.
-- **Stufe hängt am Code** (#112): drei Codes, je mit genau einer Stufe in `noticeKinds` und mindestens
+- **Stufe hängt am Code** (#112): vier Codes, je mit genau einer Stufe in `noticeKinds` und mindestens
   einem Begriff (`heatingEstimate`).
 - **Migrationen:** nur mit `npm --prefix server run db:generate -- --name schaetzung`, nie von Hand.
   Genau ein Schritt hinter `0031_hkv_bedingungen` (PR 12): `0032_schaetzung` mit der neuen Tabelle und
@@ -105,15 +129,18 @@ G v. 16.10.2023):
 ## Review Focus
 
 1. **Der Vermieter schätzt, weil der Endstand fehlt, und findet ihn eine Woche später doch noch.**
-   Er erwartet, dass der abgelesene Wert gilt. Erwartet: Die Schätzung bleibt maßgeblich, bis er sie
-   entfernt (sie ist zugleich die Markierung „unbrauchbar“ aus Entwurf 8.7), und der Hinweis
-   `heating.estimated` sagt in jedem Fall, dass eine Schätzung nur zulässig ist, solange sich der Wert
-   nicht ablesen lässt, und dass sie zu entfernen ist, wenn der Wert doch vorliegt; nach dem Entfernen
-   rechnet Mietfuchs mit dem Ablesewert. Test in Task 5.
-2. **Die geschätzte Wohnung hatte einen Mieterwechsel.** Erwartet: Der geschätzte Verbrauch der ganzen
-   Heizperiode wird unter den Nutzern der Wohnung geteilt wie nach § 9b Abs. 3 (Heizung nach Gradtagen
-   bzw. Tagen, Warmwasser nach Tagen), der Ausweis nennt beide als „gemeinsam“, und der Hinweis sagt
-   das. Test in Task 3 (C1 = 12.000 · 640/1.000 = 7.680 kWh).
+   Er erwartet, dass der abgelesene Wert gilt. Erwartet (nach der Prüfung vom 05.10.2026, A9): Liegen
+   dann vollständige, widerspruchsfreie Ablesungen vor, meldet Mietfuchs die **Warnung**
+   `heating.estimate-complete`: § 9a greift nur, wenn nicht ordnungsgemäß erfasst werden kann, und die
+   Abrechnung wäre insoweit falsch; der Satz sagt, die Schätzung zu entfernen. Bis dahin bleibt sie
+   maßgeblich (sie ist zugleich die Markierung „unbrauchbar“ aus Entwurf 8.7, etwa bei einem Gerät, das
+   falsch anzeigt); nach dem Entfernen rechnet Mietfuchs mit dem Ablesewert. Test in Task 3 und Task 5.
+2. **Die geschätzte Wohnung hatte einen Mieterwechsel, und die Zwischenablesung liegt vor** (Prüfbericht
+   A5). Erwartet: Der Vormieter behält seinen gemessenen Verbrauch bis zur Zwischenablesung, denn der ist
+   erfasst; nur der Nachmieter bekommt seinen Anteil an der Schätzung nach Gradtagen. Kein Geld wandert
+   zwischen beiden. Fehlt auch die Zwischenablesung, teilen beide den geschätzten Verbrauch wie nach
+   § 9b Abs. 3. Test in Task 3 (C1 behält 7.200 kWh; C2 = 12.000 · 360/1.000 = 4.320 kWh; ohne
+   Zwischenablesung C1 = 7.680 kWh) und Task 5.
 3. **Vier gleich große Wohnungen, eine fällt aus** (R-A22). Erwartet: genau 25 %, **keine**
    Überschreitung, verteilt wird weiter nach Verbrauch; der Dialog sagt „genau … %, also keine
    Überschreitung“. Ist eine von vier Wohnungen größer als ein Viertel der Gesamtfläche, überschreitet
@@ -160,15 +187,16 @@ Task 1 beginnt.
 | PR 10 `shared/types.ts` | `SelfPot`, `SelfPotView`, `SelfUserView`, `SelfUnitView`, `SelfHeatingStatement`, `CaptureMethod`, `HotWater` | Plan PR 10 Task 2 |
 | PR 10 Client | `client/src/heatingSelfView.ts` (`potLines`, `userLine`), `client/src/components/SelfHeatingCards.tsx` (Props `{ plant, view, self, onChanged }`), `client/src/notices.ts` (`INFORMATIONAL`) | Plan PR 10 Task 13 |
 | PR 10 Tests | `server/test/heating.test.ts` mit `UNITS`, `TENANCIES`, `METERS`, `READINGS`, `r`, `input`, `without`, `userOf`, `near`, `table`, `offRule`; `server/test/schema.test.ts` mit `freshDb`, `rejects`, `einWohnung` | Plan PR 10 Task 2, 3 |
-| PR 11, PR 12 | Test-Helfer `server/testing/selfHeating.ts` mit `selfSnapshot(o?)` (Beispiel A, Anlage `hp`, Heizperiode `'2025-01'`, Wohnungen `a`, `b`, `c`, Mietverhältnisse wie in PR 10 `beispielA`); `HeatingServiceValue`, `heatingServiceValues` | Plan PR 11 B8, PR 12 C6 |
+| PR 11 | Testhelfer `server/testing/selfHeating.ts` mit `selfSnapshot(o?)` (Beispiel A, Anlage `hp`, Heizperiode `'2025-01'`, Wohnungen `a`, `b`, `c`, Mietverhältnisse `A`, `B`, `C1`, `C2`, Wärmezähler `wz-a`, `wz-b`, `wz-c`, Warmwasserzähler `xw-a`, `xw-b`, `xw-c`) | Plan PR 11 Task 4 |
+| PR 12 | `SelfMeter.factor`, `SelfInput.capture`, in `planSelf` `meterTypeOf` und `v += result.value * (m.factor ?? 1)`; calc.ts `capture` im Block des Plans, `selfProblemText(p, areaBasisHeat, capture)`, `potUnitOf(sp, pot)`; `HeatingServiceValue`, `heatingServiceValues` | Plan PR 12 Task 3, 4 |
 
-**Naht zu PR 12.** PR 12 lässt die Verbrauchswerte der Raumwärme je nach Erfassung aus
-Wärmezählern, Heizkostenverteilern oder Werten eines Ablesedienstes entstehen. Dieser Plan setzt an
-der Stelle an, an der `planSelf` (PR 10) je Wohnung und Topf die Geräte nimmt (`metersOf(unit.id, p)`).
-Hat PR 12 diese Stelle anders gebaut (etwa über `heatDevicesOf`), gilt dieselbe Regel dort: **Für eine
-geschätzte Wohnung in einem Topf zählt kein Gerät und keine Ablesung; der geschätzte Wert tritt an die
-Stelle.** Vor Task 3 gleicht die ausführende Sitzung das mit dem Code von PR 12 ab und nennt jede
-Anpassung in der PR-Beschreibung.
+**Naht zu PR 12.** PR 12 lässt die Verbrauchswerte der Raumwärme je nach Erfassung aus Wärmezählern,
+Heizkostenverteilern oder Werten eines Ablesedienstes entstehen, und zwar im Grenzmodell von PR 10: Der
+Gerätetyp folgt der Erfassung (`meterTypeOf` in `metersOf`), jede Differenz zählt mal dem Faktor des
+Zählers, und die Werte eines Ablesedienstes sind gedachte Zähler mit kumulierten Ständen (Abgleich nach
+der Prüfung vom 05.10.2026). Dieser Plan setzt an derselben Stelle an (`metersOf(unit.id, p)`) und
+schreibt die Schleife des Verbrauchs samt Faktor vollständig hin (Task 3 Step 4 (d)). **Der geschätzte
+Wert tritt an die Stelle des nicht erfassten Verbrauchs; gültige Ablesungen eines Nutzers bleiben.**
 
 ## Abweichungen vom Entwurf und Festlegungen dieses Plans
 
@@ -179,14 +207,25 @@ entscheidet.
    die Töpfe `heating` und `water` nennt. Die Zuordnung steht einmal in `shared/heating.ts`
    (`POT_OF_PART`, `PART_OF_POT`). Keine Abweichung in der Sache, nur die Naht benannt.
 2. **Eine Schätzung gilt für die ganze Heizperiode einer Wohnung in einem Topf** (Primärschlüssel nach
-   Entwurf 5.6 ohne Nutzer). Hat die Wohnung in der Heizperiode mehrere Nutzer, wird der geschätzte
-   Wert unter ihnen geteilt wie eine Gruppe nach § 9b Abs. 3: Heizung nach Gradtagen bzw. Tagen
-   (`change_split`), Warmwasser nach Tagen. **Festlegung ohne Quelle:** § 9a spricht vom Verbrauch „von
-   Nutzern“, regelt aber nicht, wie ein für eine Wohnung geschätzter Verbrauch auf mehrere Nutzer geht;
-   § 9b Abs. 2 und 3 ist die einzige Teilungsregel der Verordnung für diesen Fall. Der Hinweis sagt es.
-3. **Die Schätzung ist zugleich die Markierung „unbrauchbar“** (Entwurf 8.7: „vom Vermieter als
-   unbrauchbar markiert“). Es gibt dafür kein eigenes Feld: Liegt eine Schätzung vor, zählen die
-   Ablesungen dieser Wohnung in diesem Topf nicht, auch wenn sie vollständig sind (Review Focus 1).
+   Entwurf 5.6 ohne Nutzer). Hat die Wohnung in der Heizperiode mehrere Nutzer, bekommen die Nutzer
+   **ohne erfassten Verbrauch** zusammen ihren Anteil daran nach Gradtagen bzw. Tagen (`change_split`;
+   Warmwasser nach Tagen), unter sich geteilt wie eine Gruppe nach § 9b Abs. 3. Nutzer mit gültigen
+   Ablesungen behalten ihren Messwert (Abweichung 3). **Festlegung ohne Quelle:** § 9a spricht vom
+   Verbrauch „von Nutzern“, regelt aber nicht, wie ein für eine Wohnung geschätzter Verbrauch auf mehrere
+   Nutzer geht; § 9b Abs. 2 und 3 ist die einzige Teilungsregel der Verordnung für diesen Fall. Der
+   Hinweis sagt es. Für die Grenze des § 9a Abs. 2 zählt die Fläche der Wohnung ganz, auch wenn nur ein
+   Teil ihrer Heizperiode geschätzt ist: Die Verordnung fragt nach der „betroffenen Wohn- oder
+   Nutzfläche“, nicht nach der Zeit (**Festlegung**, vorsichtig: im Zweifel nur nach Fläche).
+3. **Die Schätzung ersetzt nur, was nicht erfasst ist; bei vollständiger Ablesung ist sie die Markierung
+   „unbrauchbar“ und wird gewarnt** (nach der Prüfung vom 05.10.2026, A5 und A9). § 9a Abs. 1 Satz 2 setzt
+   den ermittelten Verbrauch „anstelle des erfassten“, also nur, soweit nicht ordnungsgemäß erfasst wurde.
+   Liegt für einen Nutzer der Wohnung eine gültige Anfangs- und Endablesung vor (etwa die
+   Zwischenablesung des Vormieters, das Gerät fiel erst danach aus), bleibt sein Messwert; § 9b Abs. 3
+   greift nur, wenn die Zwischenablesung selbst nicht möglich war. Sind **alle** Ablesungen der Wohnung im
+   Topf vollständig und widerspruchsfrei, ersetzt die Schätzung alle (Entwurf 8.7: „vom Vermieter als
+   unbrauchbar markiert“, etwa ein Gerät, das falsch anzeigt); dann warnt `heating.estimate-complete`,
+   denn ohne einen solchen Grund fehlt die Voraussetzung des § 9a, und die Abrechnung wäre insoweit
+   falsch (Review Focus 1). Ein eigenes Feld „unbrauchbar“ gibt es nicht.
 4. **Keine Schätzung für eine Wohnung ohne Gerät.** Der Entwurf zählt in 8.7 die Fälle auf und nennt den
    fehlenden Zähler nicht; § 9a setzt ein Gerät voraus, das ausfällt („Geräteausfall“). Der Server
    lehnt eine Schätzung ab, wenn die Wohnung bei Wärmezählern keinen Wärmezähler, bei
@@ -220,6 +259,9 @@ entscheidet.
    rechnet den tatsächlichen Anteil aus (N5). Die Zahl kommt aus dem Register.
 10. **`25` kommt in `CODE_PATTERN` des Wächters** (`law-literals.test.ts`): Die Zahl steht ab dieser PR
     im Register; ohne den Eintrag fiele eine `25` im Code der Berechnung nicht auf.
+11. **Neuer Code `heating.estimate-complete`** (warning, nach der Prüfung vom 05.10.2026, A9) neben den
+    drei Codes des Entwurfs (10.1). Er steht statt `heating.estimated` bzw. neben dem Satz zur fehlenden
+    Bestätigung, wenn die Ablesungen der Wohnung im Topf vollständig sind.
 
 ---
 
@@ -424,7 +466,7 @@ Refs #99"
 **Interfaces:**
 - Consumes: `heatingPeriods`, `heatingPlants`, `units`, `exactly`, `oneOf`, `notNegative` (PR 4); `PeriodKey`; `SelfPot`, `SelfPotView`, `SelfUserView`, `SelfHeatingStatement` (PR 10).
 - Produces:
-  - `shared/types.ts`: `type EstimatePart = 'heat' | 'water'`; `type EstimateMethod = 'previousPeriod' | 'comparableUnit' | 'buildingAverage'`; `type HeatingEstimate = { plantId: string; period: PeriodKey; unitId: string; part: EstimatePart; value: number; method: EstimateMethod; reason: string; confirmed: boolean }`; `type EstimateProposal = { method: EstimateMethod; value: number | null; perM2: number | null; why: 'ok' | 'noPrevious' | 'lengthDiffers' | 'noMeasured' }`; `type ComparableUnit = { unitId: string; unitName: string; perM2: number; value: number }`; `type SelfEstimateView = { unitId: string; unitName: string; part: EstimatePart; value: number; method: EstimateMethod; reason: string; confirmed: boolean; users: number }`; `type SelfEstimateOption = { unitId: string; unitName: string; part: EstimatePart; areaM2: number; why: 'noReading' | 'replacement' | 'negative' | null; boundary: string | null; estimated: boolean; proposals: EstimateProposal[]; comparable: ComparableUnit[] }`; `SelfPotView.overThreshold: boolean`, `SelfPotView.estimatedAreaM2: number`; `SelfUserView.heatingEstimated?: boolean`, `SelfUserView.waterEstimated?: boolean`; `SelfHeatingStatement.estimates: SelfEstimateView[]`, `SelfHeatingStatement.estimateOptions: SelfEstimateOption[]`, `SelfHeatingStatement.threshold: number | null`
+  - `shared/types.ts`: `type EstimatePart = 'heat' | 'water'`; `type EstimateMethod = 'previousPeriod' | 'comparableUnit' | 'buildingAverage'`; `type HeatingEstimate = { plantId: string; period: PeriodKey; unitId: string; part: EstimatePart; value: number; method: EstimateMethod; reason: string; confirmed: boolean }`; `type EstimateProposal = { method: EstimateMethod; value: number | null; perM2: number | null; why: 'ok' | 'noPrevious' | 'lengthDiffers' | 'noMeasured' }`; `type ComparableUnit = { unitId: string; unitName: string; perM2: number; value: number }`; `type SelfEstimateView = { unitId: string; unitName: string; part: EstimatePart; value: number; method: EstimateMethod; reason: string; confirmed: boolean; users: number; kept: number; complete: boolean }`; `type SelfEstimateOption = { unitId: string; unitName: string; part: EstimatePart; areaM2: number; why: 'noReading' | 'replacement' | 'negative' | null; boundary: string | null; estimated: boolean; proposals: EstimateProposal[]; comparable: ComparableUnit[] }`; `SelfPotView.overThreshold: boolean`, `SelfPotView.estimatedAreaM2: number`; `SelfUserView.heatingEstimated?: boolean`, `SelfUserView.waterEstimated?: boolean`; `SelfHeatingStatement.estimates: SelfEstimateView[]`, `SelfHeatingStatement.estimateOptions: SelfEstimateOption[]`, `SelfHeatingStatement.threshold: number | null`
   - `shared/heating.ts`: `POT_OF_PART: Record<EstimatePart, SelfPot>`, `PART_OF_POT: Record<SelfPot, EstimatePart>`
   - schema.ts: `ESTIMATE_PARTS`, `ESTIMATE_METHODS`, `heatingEstimates`
   - read.ts: `readHeatingEstimates(db: Database): Promise<HeatingEstimate[]>`, `Stock.heatingEstimates`
@@ -594,9 +636,11 @@ export type HeatingEstimate = {
 // Verbrauch der übrigen Wohnungen.
 export type EstimateProposal = { method: EstimateMethod; value: number | null; perM2: number | null; why: 'ok' | 'noPrevious' | 'lengthDiffers' | 'noMeasured' }
 export type ComparableUnit = { unitId: string; unitName: string; perM2: number; value: number }
-// Im Ausweis (Entwurf 8.8: „Schätzungen mit Methode“). `users`: Zahl der Nutzer der Wohnung in der
-// Heizperiode; mehr als einer heißt, der Wert ist wie nach § 9b Abs. 3 geteilt (Abweichung 2 des Plans).
-export type SelfEstimateView = { unitId: string; unitName: string; part: EstimatePart; value: number; method: EstimateMethod; reason: string; confirmed: boolean; users: number }
+// Im Ausweis (Entwurf 8.8: „Schätzungen mit Methode“). `users`: Zahl der Nutzer der Wohnung, deren
+// Verbrauch aus der Schätzung kommt (mehr als einer heißt: wie nach § 9b Abs. 3 geteilt); `kept`: Zahl
+// der Nutzer, die ihren abgelesenen Verbrauch behalten (Abweichung 3); `complete`: Die Ablesungen waren
+// vollständig, die Schätzung ersetzt alle (`heating.estimate-complete`).
+export type SelfEstimateView = { unitId: string; unitName: string; part: EstimatePart; value: number; method: EstimateMethod; reason: string; confirmed: boolean; users: number; kept: number; complete: boolean }
 // Für den Dialog der Seite Heizkosten: je Wohnung und Topf mit Gerät, was fehlt (`why`, null heißt:
 // nichts, eine Schätzung wäre die Markierung „unbrauchbar“), die Fläche des Topfs und die Vorschläge.
 export type SelfEstimateOption = {
@@ -815,7 +859,8 @@ Refs #99"
 - Produces (`server/src/heating.ts`):
   - `SelfInput.estimates?: ReadonlyMap<string, number>` (Schlüssel `` `${unitId}:${pot}` ``), `SelfInput.estimateThreshold?: () => number`
   - `SelfPlan['totals'][pot]` + `estimatedArea: number`, `overThreshold: boolean`
-  - `SelfUnitPlan` + `estimated: Record<SelfPot, boolean>`, `measured: Record<SelfPot, boolean>`
+  - `SelfUnitPlan` + `estimated: Record<SelfPot, boolean>`, `measured: Record<SelfPot, boolean>`, `estimateComplete: Record<SelfPot, boolean>`
+  - `SelfUserPot` + `estimated?: boolean` (der Verbrauch dieses Nutzers kommt aus der Schätzung)
   - `estimateKey(unitId: string, pot: SelfPot): string`
   - `estimateProposals(plan: SelfPlan, prev: SelfPlan | null, sameLength: boolean, unitId: string, pot: SelfPot): { proposals: EstimateProposal[]; comparable: ComparableUnit[] }`
   - `estimateDeviceType(capture: CaptureMethod | null, part: EstimatePart): MeterType | null`
@@ -860,9 +905,10 @@ test('§ 9a: ohne Schätzung ist ein fehlender Endstand ein Fehler, mit Schätzu
   assert.equal(mit.totals.heating.consumption, 32500)
   assert.deepEqual([mit.totals.heating.estimatedArea, mit.totals.heating.overThreshold], [40, false])
   const unit = mit.units.find((u) => u.unit.id === 'd0') ?? assert.fail('d0')
-  assert.deepEqual([unit.estimated.heating, unit.measured.heating], [true, false])
-  // Keine Ablesung der geschätzten Wohnung erscheint im Ausweis.
-  assert.deepEqual(unit.readings, [])
+  assert.deepEqual([unit.estimated.heating, unit.measured.heating, unit.estimateComplete.heating], [true, false, false])
+  assert.equal(userOf(mit, 'T0').pots.heating.estimated, true)
+  // Der Ausweis zeigt die Ablesungen, wie sie sind: Anfangsstand da, Endstand fehlt.
+  assert.deepEqual(unit.readings.map((x) => [x.boundary, x.value]), [['2024-12-31', 0], ['2025-12-31', null]])
 })
 
 test('12.2: Schätzung für 20 % der Fläche → nach Verbrauch; für 40 % → nur nach Fläche (§ 9a Abs. 2)', () => {
@@ -906,9 +952,35 @@ test('Review Focus 4: je Topf getrennt; beheizte Fläche zählt nur beim Topf He
   assert.deepEqual([plan.totals.water.estimatedArea, plan.totals.water.area, plan.totals.water.overThreshold], [60, 200, true])
 })
 
-test('Review Focus 2: Schätzung in einer Wohnung mit Mieterwechsel wird wie nach § 9b Abs. 3 geteilt', () => {
+test('Review Focus 2 (Prüfbericht A5): Zwischenablesung vorhanden, Endstand fehlt: C1 behält 7.200 kWh gemessen, nur C2 wird geschätzt', () => {
   const plan = planSelf(input({
     readings: READINGS.filter((x) => !(x.meterId === 'wc' && x.date === '2025-12-31')),
+    estimates: est([[estimateKey('c', 'heating'), 12000]]),
+    estimateThreshold: withLimit(),
+  }))
+  assert.deepEqual(plan.problems, [])
+  // C1 bis 30.09. abgelesen: 7.700 − 500 = 7.200 kWh. C2 ohne Endstand: vom geschätzten Verbrauch der
+  // Wohnung für die Heizperiode (12.000 kWh) der Anteil nach Gradtagen Oktober bis Dezember, 360 ‰.
+  const c1 = userOf(plan, 'C1').pots.heating
+  const c2 = userOf(plan, 'C2').pots.heating
+  assert.deepEqual([c1.value, c1.estimated ?? false, c1.group], [7200, false, false])
+  near(c2.value ?? -1, 12000 * 0.36, 'C2')
+  assert.deepEqual([c2.estimated, c2.group], [true, false])
+  near(plan.totals.heating.consumption, 12000 + 16000 + 7200 + 4320, 'Summe')
+  const c = plan.units.find((u) => u.unit.id === 'c') ?? assert.fail('C')
+  assert.deepEqual([c.estimated.heating, c.measured.heating, c.estimateComplete.heating], [true, false, false])
+  // Kein Geld wandert: Der Anteil von C1 am Verbrauch ist sein Messwert, nicht 12.000 · 640 ‰ = 7.680 kWh.
+  near(userOf(plan, 'C1').pots.heating.consumption, 7200 / 39520, 'Bruchteil C1')
+  // Warmwasser bleibt gemessen.
+  assert.deepEqual([userOf(plan, 'C1').pots.water.value, userOf(plan, 'C2').pots.water.value], [38, 12])
+  // 60 von 200 m² = 30 %: Topf Heizung nur nach Fläche.
+  assert.equal(plan.totals.heating.overThreshold, true)
+})
+
+test('Ohne verwertbare Zwischenablesung (Gerät fiel vor dem Wechsel aus) teilen Vormieter und Nachmieter den geschätzten Verbrauch wie nach § 9b Abs. 3', () => {
+  const plan = planSelf(input({
+    readings: READINGS.filter((x) => !(x.meterId === 'wc' && (x.date === '2025-12-31' || x.date === '2025-09-30'))),
+    gaps: [{ unitId: 'c', date: '2025-09-30', status: 'impossible', reason: 'Zähler defekt' }],
     estimates: est([[estimateKey('c', 'heating'), 12000]]),
     estimateThreshold: withLimit(),
   }))
@@ -917,10 +989,15 @@ test('Review Focus 2: Schätzung in einer Wohnung mit Mieterwechsel wird wie nac
   near(userOf(plan, 'C1').pots.heating.value ?? -1, 12000 * 0.64, 'C1')
   near(userOf(plan, 'C2').pots.heating.value ?? -1, 12000 * 0.36, 'C2')
   assert.deepEqual([userOf(plan, 'C1').pots.heating.group, userOf(plan, 'C2').pots.heating.group], [true, true])
-  // Warmwasser bleibt gemessen.
-  assert.deepEqual([userOf(plan, 'C1').pots.water.value, userOf(plan, 'C2').pots.water.value], [38, 12])
-  // 60 von 200 m² = 30 %: Topf Heizung nur nach Fläche.
-  assert.equal(plan.totals.heating.overThreshold, true)
+  assert.deepEqual([userOf(plan, 'C1').pots.heating.estimated, userOf(plan, 'C2').pots.heating.estimated], [true, true])
+})
+
+test('Prüfbericht A9: Schätzung neben vollständigen Ablesungen ersetzt alles (Markierung „unbrauchbar“) und ist als vollständig erkannt', () => {
+  const plan = planSelf(input({ estimates: est([[estimateKey('c', 'heating'), 10000]]), estimateThreshold: withLimit() }))
+  const c = plan.units.find((u) => u.unit.id === 'c') ?? assert.fail('C')
+  assert.equal(c.estimateComplete.heating, true)
+  near(userOf(plan, 'C1').pots.heating.value ?? -1, 6400, 'C1: 10.000 · 640 ‰')
+  near(userOf(plan, 'C2').pots.heating.value ?? -1, 3600, 'C2: 10.000 · 360 ‰')
 })
 
 test('Vorschläge: Durchschnitt des Gebäudes je m², vergleichbare Wohnungen je m², Vorperiode nur bei gleicher Länge', () => {
@@ -975,10 +1052,20 @@ EstimateProposal` ergänzen. In `SelfInput` als letzte Felder:
 `SelfUnitPlan` bekommt als letzte Felder:
 
 ```ts
-  // Schätzung (Heizung PR 13): geschätzt, und ob der Verbrauch ohne Fehler erfasst ist (für die
-  // Vorschläge der Schätzung anderer Wohnungen).
+  // Schätzung (Heizung PR 13): geschätzt, ob der Verbrauch ohne Fehler erfasst ist (für die Vorschläge
+  // der Schätzung anderer Wohnungen) und ob eine Schätzung neben vollständigen Ablesungen steht
+  // (`heating.estimate-complete`, Prüfbericht A9).
   estimated: Record<SelfPot, boolean>
   measured: Record<SelfPot, boolean>
+  estimateComplete: Record<SelfPot, boolean>
+```
+
+`SelfUserPot` wird:
+
+```ts
+// `estimated` (Heizung PR 13): Der Verbrauch dieses Nutzers in diesem Topf kommt aus einer Schätzung nach
+// § 9a; fehlt, wenn er abgelesen ist.
+export type SelfUserPot = { base: number; consumption: number; value: number | null; group: boolean; estimated?: boolean }
 ```
 
 `SelfPlan['totals']` wird:
@@ -998,15 +1085,18 @@ export const estimateKey = (unitId: string, pot: SelfPot): string => `${unitId}:
 
 - [ ] **Step 4: Der Plan mit Schätzungen (`server/src/heating.ts`, `planSelf`)**
 
-Die Änderungen in `planSelf` (Fassung PR 10 Task 3; hat PR 12 die Geräte anders gebildet, gilt die
-„Naht zu PR 12“ oben):
+Neu gefasst nach der Prüfung vom 05.10.2026 (Prüfbericht A5, A9; Abweichung 3). Die Änderungen in
+`planSelf` setzen auf die Fassung von PR 10 Task 3 mit der Naht von PR 12 (`meterTypeOf`, `metersOf`,
+`v += result.value * (m.factor ?? 1)`):
 
 (a) Hinter `const metersOf = …`:
 
 ```ts
-  // Schätzung (Heizung PR 13): Für eine geschätzte Wohnung in einem Topf zählt kein Gerät und keine
-  // Ablesung; das gilt auch für vollständige Ablesungen (die Schätzung ist die Markierung „unbrauchbar“,
-  // Abweichung 3 des Plans).
+  // Schätzung (Heizung PR 13): der geschätzte Verbrauch einer Wohnung in einem Topf für die ganze
+  // Heizperiode. Er tritt nur an die Stelle des nicht erfassten Verbrauchs (§ 9a Abs. 1 Satz 2); die
+  // Ablesungen der Wohnung bleiben deshalb in der Rechnung. Für Hinweise neben einem Wechsel und fehlende
+  // Zwischenablesungen zählen die Zähler einer geschätzten Wohnung nicht mit (`liveMetersOf`): Ein Hinweis
+  // auf eine Ablesung an einem ausgefallenen Gerät sagte nichts.
   const estimateOf = (unitId: string, p: SelfPot): number | undefined => input.estimates?.get(estimateKey(unitId, p))
   const liveMetersOf = (unitId: string, p: SelfPot) => (estimateOf(unitId, p) === undefined ? metersOf(unitId, p) : [])
 ```
@@ -1020,29 +1110,134 @@ Die Änderungen in `planSelf` (Fassung PR 10 Task 3; hat PR 12 die Geräte ander
 ```
 
 (c) In der Schleife `for (const p of pots) { for (const m of metersOf(unit.id, p)) { … } }`, die
-`readingAt` füllt und `sameDay` prüft, `metersOf(unit.id, p)` durch `liveMetersOf(unit.id, p)`
-ersetzen. Ebenso in der Bestimmung von `offAt`
-(`const dates = pots.flatMap((p) => metersOf(unit.id, p)).map(…)`), in `bounds`
-(`const all = pots.flatMap((p) => metersOf(unit.id, p)).map(…)`), in `missingPots` (beide Zweige) und in
-`readings` (`pots.flatMap((p) => metersOf(unit.id, p).flatMap(…))`).
-
-(d) In der Schleife `for (const p of pots) { const meters = metersOf(unit.id, p) … }` als erste
-Anweisungen des Rumpfs, vor `const meters = …`:
+`readingAt` füllt, den Rumpf der inneren Schleife über `boundaries` (Prüfung `sameDayConflict`) ersetzen
+durch:
 
 ```ts
+        for (const b of boundaries) {
+          const chosen = at.get(b) ?? null
+          if (chosen && !(o && b === startBoundary) && sameDayConflict(sorted, chosen)) {
+            // Bei einer geschätzten Wohnung ist diese Grenze dann nicht erfasst, und die Schätzung deckt sie
+            // (Heizung PR 13); sonst ein Befund (PR 10 Abweichung 9).
+            if (estimateOf(unit.id, p) !== undefined) at.set(b, null)
+            else problems.push({ kind: 'missing', pot: p, unitId: unit.id, unitName: unit.name, boundary: b, reason: 'sameDay', meterName: m.name })
+          }
+        }
+```
+
+In der Bestimmung von `offAt` (`const dates = pots.flatMap((p) => metersOf(unit.id, p)).map(…)`), in `bounds`
+(`const all = pots.flatMap((p) => metersOf(unit.id, p)).map(…)`) und in `missingPots` (beide Zweige)
+`metersOf(unit.id, p)` durch `liveMetersOf(unit.id, p)` ersetzen. Die Liste `readings` (Ausweis der
+Ablesungen) bleibt bei `metersOf`: Die gültigen Ablesungen einer geschätzten Wohnung stehen im Ausweis,
+denn sie tragen den Verbrauch des Vormieters.
+
+Vor der Schleife über die Töpfe, die den Verbrauch bildet (hinter `const consumption: Record<SelfPot, number> = …`):
+
+```ts
+    const estimateComplete: Record<SelfPot, boolean> = { heating: false, water: false }
+```
+
+(d) Die Schleife `for (const p of pots) { const meters = metersOf(unit.id, p) … }` (Verbrauch je Gruppe)
+ganz ersetzen durch:
+
+```ts
+    for (const p of pots) {
+      const meters = metersOf(unit.id, p)
       const estimated = estimateOf(unit.id, p)
-      if (estimated !== undefined) {
-        // § 9a Abs. 1 Satz 2: der geschätzte Verbrauch anstelle des erfassten. Mehrere Nutzer teilen ihn
-        // wie eine Gruppe nach § 9b Abs. 3 (Abweichung 2 des Plans).
-        consumption[p] += estimated
-        const splitSum = users.reduce((a, u) => a + splitOf(p, u), 0)
-        for (const u of users) {
-          u.pots[p].value = users.length === 1 ? estimated : splitSum > 0 ? (estimated * splitOf(p, u)) / splitSum : 0
-          u.pots[p].group = users.length > 1
+      if (meters.length === 0 && estimated === undefined) {
+        if (potHasMeters[p] && areaOf(p, unit) > 0) problems.push({ kind: 'missing', pot: p, unitId: unit.id, unitName: unit.name, boundary: null, reason: 'noMeter', meterName: null })
+        continue
+      }
+      // „Nach § 9b Abs. 3“ gewählt: die Ablesung gilt als nicht hinreichend genau (PR 10 Abweichung 22).
+      const has = (b: string): boolean => answerAt(b) !== 'imprecise' && meters.every((m) => (readingAt.get(m.id)?.get(b) ?? null) !== null)
+      // Ohne Schätzung fehlt ein Stand zu Beginn oder Ende (ein Fall des § 9a); mit Schätzung deckt sie ihn.
+      if (estimated === undefined) {
+        for (const b of [startBoundary, h.to]) {
+          for (const m of meters) {
+            if ((readingAt.get(m.id)?.get(b) ?? null) === null) problems.push({ kind: 'missing', pot: p, unitId: unit.id, unitName: unit.name, boundary: b, reason: 'noReading', meterName: m.name })
+          }
+        }
+      }
+      // Gruppen: Nutzer, zwischen denen die Ablesung fehlt (§ 9b Abs. 3).
+      const groups: SelfUserPlan[][] = []
+      users.forEach((u, i) => {
+        const prev = users[i - 1]
+        const clean = prev !== undefined && prev.to === dayBefore(u.from)
+        const last = groups[groups.length - 1]
+        if (prev && clean && !has(prev.to) && last) last.push(u)
+        else groups.push([u])
+      })
+      // Verbrauch einer Gruppe zwischen ihren äußeren Grenzen; `null`, wenn er nicht erfasst ist.
+      const measuredOf = (g: readonly SelfUserPlan[]): number | null => {
+        const first = g[0]
+        const lastUser = g[g.length - 1]
+        if (!first || !lastUser || meters.length === 0) return null
+        const from = dayBefore(first.from)
+        const to = lastUser.to
+        let v = 0
+        let ok = true
+        for (const m of meters) {
+          const a = readingAt.get(m.id)?.get(from) ?? null
+          const b = readingAt.get(m.id)?.get(to) ?? null
+          if (a === null || b === null) {
+            ok = false
+            if (estimated === undefined && from !== startBoundary && to !== h.to) problems.push({ kind: 'missing', pot: p, unitId: unit.id, unitName: unit.name, boundary: a === null ? from : to, reason: 'noReading', meterName: m.name })
+            continue
+          }
+          const result = measuredBetween(sortedOf.get(m.id) ?? [], a, b)
+          if ('problem' in result) {
+            ok = false
+            if (estimated === undefined) problems.push({ kind: 'missing', pot: p, unitId: unit.id, unitName: unit.name, boundary: to, reason: result.problem, meterName: m.name })
+            continue
+          }
+          v += result.value * (m.factor ?? 1)
+        }
+        return ok ? v : null
+      }
+      // Ein Verbrauch für eine Gruppe: allein ganz, sonst nach Gradtagen bzw. Tagen geteilt (§ 9b Abs. 3).
+      const assign = (g: readonly SelfUserPlan[], v: number, fromEstimate: boolean): void => {
+        const splitSum = g.reduce((a, u) => a + splitOf(p, u), 0)
+        for (const u of g) {
+          u.pots[p].value = g.length === 1 ? v : splitSum > 0 ? (v * splitOf(p, u)) / splitSum : 0
+          u.pots[p].group = g.length > 1
+          if (fromEstimate) u.pots[p].estimated = true
+        }
+      }
+      const results = groups.map((g) => ({ g, v: measuredOf(g) }))
+      if (estimated === undefined) {
+        for (const { g, v } of results) {
+          if (v === null) continue
+          consumption[p] += v
+          assign(g, v, false)
         }
         continue
       }
+      // § 9a Abs. 1 Satz 2 (Heizung PR 13, Prüfbericht A5): Der geschätzte Verbrauch tritt nur an die Stelle
+      // des nicht erfassten. Er gilt für die ganze Heizperiode der Wohnung; Nutzer ohne erfassten Verbrauch
+      // bekommen zusammen ihren Anteil daran nach Gradtagen bzw. Tagen (wie § 9b Abs. 3), Nutzer mit gültigen
+      // Ablesungen (etwa der Vormieter bis zur Zwischenablesung) behalten ihren Messwert, und kein Geld
+      // wandert zwischen ihnen. Ist alles vollständig abgelesen, ersetzt die Schätzung alles (sie ist dann die
+      // Markierung „unbrauchbar“, Abweichung 3) und wird gemeldet (Prüfbericht A9).
+      const complete = results.length > 0 && results.every((x) => x.v !== null)
+      estimateComplete[p] = complete
+      if (!complete) {
+        for (const { g, v } of results) {
+          if (v === null) continue
+          consumption[p] += v
+          assign(g, v, false)
+        }
+      }
+      const takers = complete ? users : results.filter((x) => x.v === null).flatMap((x) => x.g)
+      const splitAll = users.reduce((a, u) => a + splitOf(p, u), 0)
+      const part = splitAll > 0 ? (estimated * takers.reduce((a, u) => a + splitOf(p, u), 0)) / splitAll : 0
+      consumption[p] += part
+      assign(takers, part, true)
+    }
 ```
+
+`splitOf`, `answerAt`, `readingAt`, `sortedOf`, `consumption`, `users`, `startBoundary` sind die Namen aus
+`planSelf` (PR 10). Die Nutzer einer Wohnung decken die Heizperiode lückenlos ab (Leerstand ist ein
+Nutzer, PR 10 `usersOf`), `splitAll` ist also die ganze Heizperiode in Gradtagen bzw. Tagen.
 
 (e) Die Rückgabe der Wohnung `return { unit, heatArea: heatAreaOf(unit), users, boundaries: bounds, readings, consumption }`
 ersetzen durch:
@@ -1053,7 +1248,7 @@ ersetzen durch:
       pots.includes(p) && !estimatedPots[p] && metersOf(unit.id, p).length > 0 &&
       !problems.some((x) => x.kind === 'missing' && x.unitId === unit.id && x.pot === p),
     ])) as Record<SelfPot, boolean>
-    return { unit, heatArea: heatAreaOf(unit), users, boundaries: bounds, readings, consumption, estimated: estimatedPots, measured: measuredPots }
+    return { unit, heatArea: heatAreaOf(unit), users, boundaries: bounds, readings, consumption, estimated: estimatedPots, measured: measuredPots, estimateComplete }
 ```
 
 (f) In der Schleife „Summe des Verbrauchs je Topf, dann die Bruchteile“ hinter
@@ -1062,7 +1257,8 @@ ersetzen durch:
 ```ts
     // § 9a Abs. 2 (Heizung PR 13): Überschreitet die geschätzte Fläche die Grenze der für die Verteilung
     // maßgeblichen Fläche dieses Topfs, wird er ausschließlich nach Fläche verteilt. „Überschreitet“:
-    // streng größer, verglichen über Produkte, nie über einen gerundeten Anteil.
+    // streng größer, verglichen über Produkte, nie über einen gerundeten Anteil. Betroffen ist die Fläche
+    // der Wohnung, auch wenn nur ein Teil der Heizperiode geschätzt ist (Festlegung, Abweichung 2).
     totals[p].estimatedArea = units.filter((u) => u.estimated[p]).reduce((a, u) => a + areaOf(p, u.unit), 0)
     if (totals[p].estimatedArea > 0) {
       const limit = input.estimateThreshold?.()
@@ -1140,7 +1336,8 @@ export function estimateDeviceType(capture: CaptureMethod | null, part: Estimate
 
 Run: `npm --prefix server test -- test/heating.test.ts test/law-literals.test.ts && npm run typecheck`
 Expected: PASS. Alle Tests von PR 10 bis PR 12 in heating.test.ts bleiben grün: Ohne `estimates` gibt
-`liveMetersOf` dieselben Geräte wie `metersOf`, und `overThreshold` bleibt falsch.
+`liveMetersOf` dieselben Geräte wie `metersOf`, die Schleife des Verbrauchs rechnet wie bei PR 10 und
+PR 12, und `overThreshold` bleibt falsch.
 
 - [ ] **Step 8: Commit**
 
@@ -1149,7 +1346,8 @@ git add server/src/heating.ts server/test/heating.test.ts
 git commit -m "Schätzung nach § 9a in der Rechnung: geschätzter Verbrauch statt Ablesung, Grenze je Topf, drei Vorschläge
 
 Bei mehr als 25 % geschätzter Fläche eines Topfs nur nach Fläche (§ 9a Abs. 2), genau 25 % bleibt
-nach Verbrauch (R-A22). Mehrere Nutzer einer geschätzten Wohnung teilen wie nach § 9b Abs. 3.
+nach Verbrauch (R-A22). Die Schätzung ersetzt nur den nicht erfassten Teil: Ein Vormieter mit gültiger
+Zwischenablesung behält seinen Messwert; ohne sie teilen die Nutzer wie nach § 9b Abs. 3.
 
 Refs #99"
 ```
@@ -1413,7 +1611,7 @@ Refs #99"
 - Consumes (Task 1–3; PR 10 Task 8, 9): `hkvEstimateThreshold`; `estimateKey`, `estimateProposals`, `planSelf`, `SelfPlan`; `POT_OF_PART`, `PART_OF_POT`; `Snapshot.heatingEstimates`; in `computeSettlement` `selfPlans`, `SelfPlantPlan`, `input`, `plan`, `plant`, `rules`, `prev`, `period`, `servedIds`, `blocked`, `selfProblemText`, `selfSteps`, `selfStatementOf`, `POT_NAME`, `POT_UNIT`, `label`, `lawPeriod`, `lawLog`, `warn`, `fmtNum`, `fmtPercent`, `fmtDay`; `previousPeriod`, `periodDays`, `dayBefore`, `createLawLog`.
 - Produces:
   - `SelfPlantPlan` + `estimates: HeatingEstimate[]`, `prev: SelfPlan | null`, `prevSameLength: boolean`
-  - Codes `heating.estimate-unconfirmed` (warning), `heating.estimated` (hint), `heating.estimate-over-25` (hint)
+  - Codes `heating.estimate-unconfirmed` (warning), `heating.estimated` (hint), `heating.estimate-over-25` (hint), `heating.estimate-complete` (warning, Abweichung 11)
   - `SelfHeatingStatement.estimates`, `.estimateOptions`, `.threshold`; `SelfPotView.overThreshold`, `.estimatedAreaM2`; `SelfUserView.heatingEstimated`, `.waterEstimated`
 
 - [ ] **Step 1: Write the failing test**
@@ -1472,12 +1670,18 @@ test('Mit Schätzung: verteilt, Topf Heizung nur nach Fläche (30 % > 25 %), War
   assert.deepEqual([ids.A, ids.B, ids.C1, ids.C2].map((t) => shareOf(s, t, wwz.id)), [ids.A, ids.B, ids.C1, ids.C2].map((t) => shareOf(ohne, t, wwz.id)))
   assert.match(textOf(s, 'heating.estimate-over-25'), /60 von 200 m² \(30 %\).*überschreitet 25 %.*ausschließlich nach Fläche.*§ 9a Abs\. 2.*Auslegung/s)
   assert.ok(!codes(s).includes('heating.no-consumption'), 'keine Kürzung nach § 12 Abs. 1 Satz 1 (15.1 Nr. 7)')
-  assert.match(textOf(s, 'heating.estimated'), /C.*12\.000 kWh.*Durchschnitt.*Wärmezähler defekt.*Gradtagen/s)
+  // Prüfbericht A5: Der Vormieter behält seinen abgelesenen Verbrauch; geschätzt ist nur der Teil des
+  // Nachmieters (12.000 kWh · 360 ‰ = 4.320 kWh).
+  assert.match(textOf(s, 'heating.estimated'), /C.*12\.000 kWh.*Durchschnitt.*Wärmezähler defekt.*C1 behält seinen abgelesenen Verbrauch.*4\.320 kWh/s)
+  assert.ok(!codes(s).includes('heating.estimate-complete'))
   const self = s.heating?.find((h) => h.self)?.self ?? assert.fail('kein Ausweis')
   const heating = self.pots.find((p) => p.pot === 'heating') ?? assert.fail('Topf Heizung')
   assert.deepEqual([heating.overThreshold, heating.estimatedAreaM2, heating.consumptionPct], [true, 60, 0])
   assert.equal(self.threshold, 25)
-  assert.deepEqual(self.estimates.map((e) => [e.unitId, e.part, e.value, e.users]), [['c', 'heat', 12000, 2]])
+  assert.deepEqual(self.estimates.map((e) => [e.unitId, e.part, e.value, e.users, e.kept, e.complete]), [['c', 'heat', 12000, 1, 1, false]])
+  const [c1, c2] = self.units.find((u) => u.unitId === 'c')?.users ?? []
+  assert.deepEqual([c1?.heatingConsumption, c1?.heatingEstimated], [7200, false])
+  assert.ok(c2 && c2.heatingEstimated === true && Math.abs((c2.heatingConsumption ?? 0) - 4320) < 1e-9)
   assert.ok(s.legalBasis.values?.some((v) => v.id === 'hkv.estimate-threshold'))
 })
 
@@ -1488,13 +1692,17 @@ test('Unbestätigt: Warnung statt Hinweis', () => {
   assert.equal(s.notices.find((n) => n.code === 'heating.estimate-unconfirmed')?.level, 'warning')
 })
 
-test('Review Focus 1: Die Schätzung gilt auch neben einer vollständigen Ablesung; der Hinweis sagt, wann sie zu entfernen ist', () => {
+test('Review Focus 1 (Prüfbericht A9): Schätzung neben vollständiger Ablesung: Warnung, § 9a greift dann nicht; bis zum Entfernen gilt sie', () => {
   const s = computeSettlement(mitSchaetzung(selfSnapshot(), { value: 10000 }))
-  assert.match(textOf(s, 'heating.estimated'), /Lässt sich der Wert doch ablesen, entfernen Sie die Schätzung/)
+  const n = s.notices.find((x) => x.code === 'heating.estimate-complete') ?? assert.fail('keine Warnung')
+  assert.equal(n.level, 'warning')
+  assert.match(n.text, /vollständige.*Ablesungen.*§ 9a.*nicht ordnungsgemäß erfasst.*insoweit falsch.*Entfernen Sie die Schätzung/s)
+  assert.ok(!codes(s).includes('heating.estimated'))
   const self = s.heating?.find((h) => h.self)?.self ?? assert.fail('kein Ausweis')
   const c1 = self.units.find((u) => u.unitId === 'c')?.users[0] ?? assert.fail('C1')
   assert.equal(c1.heatingEstimated, true)
   assert.equal(c1.heatingConsumption, 6400)
+  assert.equal(self.estimates[0]?.complete, true)
 })
 
 test('Ohne Schätzung kein Wert der Grenze im Rechtsstand und keine neuen Felder mit Inhalt', () => {
@@ -1517,17 +1725,18 @@ test('Optionen für den Dialog: fehlender Endstand bei C mit Vorschlag Durchschn
 })
 ```
 
-(`selfSnapshot()` ist Beispiel A aus `server/testing/selfHeating.ts` (PR 11 B8, PR 12 C6): Mieter A, B, C1
-bis 30.09.2025, C2 ab 01.10.2025, Wärme- und Warmwasserzähler je Wohnung, Stände am 31.12.2024 und
-31.12.2025, bei C auch am 30.09.2025. Review Focus 1 prüft, dass die Schätzung von 10.000 kWh auch neben
-vollständigen Ablesungen gilt: C1 trägt 10.000 · 640 ‰ = 6.400 kWh statt der abgelesenen 7.200 kWh. Hat
-der Helfer andere Namen, gelten seine.)
+(`selfSnapshot()` ist Beispiel A aus `server/testing/selfHeating.ts` (PR 11 Task 4): Mieter A, B, C1
+bis 30.09.2025, C2 ab 01.10.2025, Wärmezähler `wz-a`, `wz-b`, `wz-c` und Warmwasserzähler je Wohnung,
+Stände am 31.12.2024 und 31.12.2025, bei C auch am 30.09.2025. Mit fehlendem Endstand bei C behält C1 die
+abgelesenen 7.200 kWh (Prüfbericht A5). Review Focus 1 prüft, dass die Schätzung von 10.000 kWh neben
+vollständigen Ablesungen gilt und gewarnt wird: C1 trägt 10.000 · 640 ‰ = 6.400 kWh statt der
+abgelesenen 7.200 kWh, bis der Vermieter die Schätzung entfernt.)
 
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run: `npm --prefix server test -- test/calc-schaetzung.test.ts`
 Expected: FAIL; der Text von `heating.self-incomplete` nennt die spätere Version, `heatingEstimates` wird
-nicht gelesen, die Codes fehlen.
+nicht gelesen, die vier Codes fehlen.
 
 - [ ] **Step 3: Codes und Importe (`server/src/calc.ts`)**
 
@@ -1543,6 +1752,8 @@ In `noticeKinds` hinter den Codes von PR 12:
   'heating.estimate-unconfirmed': { level: 'warning', title: 'Schätzung nicht bestätigt', rule: 'heating-estimate', terms: ['heatingEstimate'] },
   'heating.estimated': { level: 'hint', title: 'Verbrauch geschätzt', rule: 'heating-estimate', terms: ['heatingEstimate'] },
   'heating.estimate-over-25': { level: 'hint', title: 'Geschätzte Fläche über der Grenze: nur nach Fläche', rule: 'heating-estimate', terms: ['heatingEstimate', 'baseCosts'] },
+  // Prüfbericht vom 05.10.2026, A9 (Abweichung 11 des Plans).
+  'heating.estimate-complete': { level: 'warning', title: 'Schätzung trotz vollständiger Ablesung', rule: 'heating-estimate', terms: ['heatingEstimate'] },
 ```
 
 - [ ] **Step 4: Schätzungen in den Plan (`server/src/calc.ts`, Block des Plans von PR 10)**
@@ -1599,7 +1810,7 @@ Im Objekt von `selfPlans.set(plant.id, { … })` als letzte Felder:
 ```
 
 (`prev` ist die vorige Heizperiode aus dem Block von PR 10 (`previousPeriod(rules, period)`); `hotWater`
-steht dort seit PR 10.)
+steht dort seit PR 10, `capture` seit PR 12.)
 
 Den Text der Fehler aus dem Plan (PR 10, Zeile `for (const p of plan.problems) blocked.push(…)`) ersetzen
 durch:
@@ -1612,7 +1823,7 @@ durch:
     for (const p of plan.problems) {
       blocked.push({
         code: 'heating.self-incomplete',
-        text: `${selfProblemText(p, plant.areaBasisHeat ?? 'area')}${p.kind === 'missing' && ESTIMABLE.includes(p.reason)
+        text: `${selfProblemText(p, plant.areaBasisHeat ?? 'area', capture)}${p.kind === 'missing' && ESTIMABLE.includes(p.reason)
           ? ' Lässt sich der Wert nicht mehr ablesen, weil das Gerät ausgefallen ist oder ein anderer zwingender Grund vorliegt, schätzen Sie den Verbrauch auf der Seite Heizkosten unter „Schätzung (§ 9a)“.'
           : ''}`,
       })
@@ -1626,7 +1837,8 @@ Verbrauch“ ersetzen durch:
 
 ```ts
       const v = u.pots[p].value
-      const estimatedHere = unit.estimated[p]
+      // Nur der Teil des Nutzers ohne gültige Ablesung ist geschätzt (Abweichung 3).
+      const estimatedHere = u.pots[p].estimated === true
       if (total.overThreshold) {
         // § 9a Abs. 2 (Heizung PR 13): der Topf ausschließlich nach Fläche.
         steps.push({ label: `Verbrauchskosten ${POT_NAME[p]}`, value: `geschätzt für ${fmtNum(total.estimatedArea)} von ${fmtNum(total.area)} m², mehr als die Grenze: nur nach Fläche verteilt (§ 9a Abs. 2 HeizkostenV)`, term: 'heatingEstimate' })
@@ -1634,7 +1846,7 @@ Verbrauch“ ersetzen durch:
         steps.push(total.measured && v !== null
           ? {
             label: `Verbrauchskosten ${POT_NAME[p]}`,
-            value: `${fmtNum(Math.round(v * 1000) / 1000)} von ${fmtNum(Math.round(total.consumption * 1000) / 1000)} ${POT_UNIT[p]}` +
+            value: `${fmtNum(Math.round(v * 1000) / 1000)} von ${fmtNum(Math.round(total.consumption * 1000) / 1000)} ${potUnitOf(sp, p)}` +
               `${estimatedHere ? ' (geschätzt nach § 9a HeizkostenV)' : ''}` +
               `${u.pots[p].group ? (estimatedHere ? ', auf die Nutzer der Wohnung nach § 9b Abs. 3 HeizkostenV geteilt' : ' (ohne Zwischenablesung nach § 9b Abs. 3 HeizkostenV geteilt)') : ''}`,
             term: estimatedHere ? 'heatingEstimate' : 'consumptionCosts',
@@ -1644,7 +1856,7 @@ Verbrauch“ ersetzen durch:
       steps.push({ label: `Anteil nach Verbrauch ${POT_NAME[p]}`, value: `${fmtNum(total.measured && !total.overThreshold ? sp.shares[p] ?? 0 : 0)} %`, term: 'consumptionCosts' })
 ```
 
-(`unit` ist in `selfSteps` die Wohnung des Nutzers, `total` der Topf; so heißen sie in PR 10.)
+(`u` ist in `selfSteps` der Nutzer, `total` der Topf; so heißen sie in PR 10. `potUnitOf` kommt aus PR 12.)
 
 - [ ] **Step 6: Ausweis (`server/src/calc.ts`, `selfStatementOf`)**
 
@@ -1683,8 +1895,8 @@ und im zurückgegebenen Objekt `consumptionCentsPerUnit` sowie die beiden neuen 
 Im Objekt eines Nutzers (`users: u.users.map((x): SelfUserView => { … })`) als letzte Felder:
 
 ```ts
-            heatingEstimated: u.estimated.heating,
-            waterEstimated: u.estimated.water,
+            heatingEstimated: x.pots.heating.estimated === true,
+            waterEstimated: x.pots.water.estimated === true,
 ```
 
 Im zurückgegebenen Objekt von `selfStatementOf` die Felder aus Task 2 Step 8 ersetzen durch:
@@ -1692,7 +1904,13 @@ Im zurückgegebenen Objekt von `selfStatementOf` die Felder aus Task 2 Step 8 er
 ```ts
       estimates: sp.estimates.map((e): SelfEstimateView => {
         const u = sp.plan.units.find((x) => x.unit.id === e.unitId)
-        return { unitId: e.unitId, unitName: u?.unit.name ?? e.unitId, part: e.part, value: e.value, method: e.method, reason: e.reason, confirmed: e.confirmed, users: u?.users.length ?? 0 }
+        const pot = POT_OF_PART[e.part]
+        return {
+          unitId: e.unitId, unitName: u?.unit.name ?? e.unitId, part: e.part, value: e.value, method: e.method, reason: e.reason, confirmed: e.confirmed,
+          users: u?.users.filter((x) => x.pots[pot].estimated === true).length ?? 0,
+          kept: u?.users.filter((x) => x.pots[pot].estimated !== true && x.pots[pot].value !== null).length ?? 0,
+          complete: u?.estimateComplete[pot] ?? false,
+        }
       }),
       estimateOptions: estimateOptionsOf(sp),
       threshold: sp.estimates.length > 0 ? law(hkvEstimateThreshold, { period: lawPeriod }, lawLog) : null,
@@ -1719,10 +1937,30 @@ Schätzungen auch bei einer nicht verteilbaren Anlage genannt werden:
       const pot = POT_OF_PART[e.part]
       const unit = sp.plan.units.find((u) => u.unit.id === e.unitId)
       if (!unit) continue
-      const head = `${where}: Der Verbrauch ${pot === 'heating' ? 'für die Heizung' : 'für das Warmwasser'} von ${unit.unit.name} ist nach § 9a HeizkostenV geschätzt: ${fmtNum(Math.round(e.value * 1000) / 1000)} ${POT_UNIT[pot]} nach ${METHOD_TEXT[e.method]} (Begründung: ${e.reason}).`
-      const split = unit.users.length > 1
-        ? ` In dieser Wohnung haben ${unit.users.length} Nutzer gewohnt; der geschätzte Verbrauch ist unter ihnen ${pot === 'heating' ? 'nach Gradtagen bzw. Tagen' : 'nach Tagen'} geteilt wie nach § 9b Abs. 3 HeizkostenV.`
-        : ''
+      const unitOfPot = potUnitOf(sp, pot)
+      const head = `${where}: Der Verbrauch ${pot === 'heating' ? 'für die Heizung' : 'für das Warmwasser'} von ${unit.unit.name} ist nach § 9a HeizkostenV geschätzt: ${fmtNum(Math.round(e.value * 1000) / 1000)} ${unitOfPot} für die Heizperiode nach ${METHOD_TEXT[e.method]} (Begründung: ${e.reason}).`
+      // Prüfbericht A5 (Abweichung 3): Nutzer mit gültiger Ablesung behalten ihren Verbrauch; die übrigen
+      // tragen ihren Anteil an der Schätzung, mehrere unter sich wie nach § 9b Abs. 3.
+      const takers = unit.users.filter((x) => x.pots[pot].estimated === true)
+      const kept = unit.users.filter((x) => x.pots[pot].estimated !== true && x.pots[pot].value !== null)
+      const timeWord = pot === 'heating' ? 'Gradtagen bzw. Tagen' : 'Tagen'
+      const takerSum = takers.reduce((a, x) => a + (x.pots[pot].value ?? 0), 0)
+      const split =
+        (kept.length > 0
+          ? ` ${andList(kept.map((x) => x.label))} ${kept.length === 1 ? 'behält seinen' : 'behalten ihren'} abgelesenen Verbrauch, denn der ist erfasst (§ 9a Abs. 1 Satz 2 HeizkostenV: „anstelle des erfassten Verbrauchs“); für ${andList(takers.map((x) => x.label))} gilt der Anteil der Schätzung nach ${timeWord}: ${fmtNum(Math.round(takerSum * 1000) / 1000)} ${unitOfPot}.`
+          : '') +
+        (takers.length > 1
+          ? ` Auf ${andList(takers.map((x) => x.label))} ist der geschätzte Verbrauch nach ${timeWord} geteilt wie nach § 9b Abs. 3 HeizkostenV.`
+          : '')
+      if (unit.estimateComplete[pot]) {
+        // Prüfbericht A9: Ohne einen Grund, aus dem die vollständigen Ablesungen unbrauchbar sind, greift § 9a
+        // nicht.
+        warn('heating.estimate-complete',
+          `${head}${split} Für ${unit.unit.name} liegen aber vollständige, widerspruchsfreie Ablesungen vor. Geschätzt werden darf nur, wenn der Verbrauch wegen Geräteausfalls oder aus einem anderen zwingenden Grund nicht ordnungsgemäß erfasst werden kann (§ 9a Abs. 1 HeizkostenV); zeigt das Gerät richtig an, greift § 9a nicht, und die Abrechnung wäre insoweit falsch. ` +
+            `Entfernen Sie die Schätzung, oder halten Sie in der Begründung fest, warum die Ablesungen unbrauchbar sind, etwa weil das Gerät falsch anzeigt.${e.confirmed ? '' : ' Die Schätzung ist außerdem noch nicht bestätigt.'}`,
+          subject)
+        continue
+      }
       if (!e.confirmed) {
         warn('heating.estimate-unconfirmed',
           `${head}${split} Die Schätzung ist noch nicht bestätigt. Geschätzt werden darf nur, wenn der Verbrauch wegen Geräteausfalls oder aus einem anderen zwingenden Grund nicht ordnungsgemäß erfasst werden kann (§ 9a Abs. 1 HeizkostenV); zwingend ist ein Grund erst, wenn sich der Fehler nicht mehr beheben lässt (BGH VIII ZR 373/04). ` +
@@ -1749,12 +1987,15 @@ Schätzungen auch bei einer nicht verteilbaren Anlage genannt werden:
 ```
 
 (`NoticeSubject` steht im Typimport von calc.ts seit #112; `fmtPercent` liefert die Zahl ohne „%“, wie in
-PR 10. `hkvEstimateThreshold.describe(25)` ergibt „überschreitet 25 %“.)
+PR 10. `hkvEstimateThreshold.describe(25)` ergibt „überschreitet 25 %“. `andList` ist in calc.ts aus
+`shared/wording.ts` importiert (Bestand), `potUnitOf` kommt aus PR 12; `label` eines Nutzers ist sein
+Name im Ausweis (PR 10 `usersOf`, etwa „Mieter C1“).)
 
 - [ ] **Step 8: Run tests to verify they pass**
 
 Run: `npm --prefix server test -- test/calc-schaetzung.test.ts test/calc-heizkosten.test.ts test/calc-hkv.test.ts test/heating.test.ts test/glossary.test.ts test/law-literals.test.ts test/anrede.test.ts test/calc.test.ts test/settlement-golden.test.ts test/heating-golden.test.ts test/calc-wortlaut.test.ts && npm run typecheck`
-Expected: PASS (calc-schaetzung.test.ts: 6 Tests). Der Test von PR 10 „Review Focus 4: fehlt ein Stand
+Expected: PASS (calc-schaetzung.test.ts: 6 Tests). Der Satz `heating.estimate-complete` ist gesiezt
+(`anrede.test.ts`). Der Test von PR 10 „Review Focus 4: fehlt ein Stand
 am Ende der Heizperiode …“ prüft `/Wärme C.*31\.12\.2025.*§ 9a/s`; der neue Text nennt „Schätzung
 (§ 9a)“ und bleibt damit grün.
 
@@ -1774,7 +2015,8 @@ git add server/src/calc.ts server/test/calc-schaetzung.test.ts
 git commit -m "Schätzung nach § 9a in der Abrechnung: Hinweise, Rechenweg, Ausweis und Vorschläge
 
 Beispiel A mit ausgefallenem Wärmezähler in C: 30 % der Fläche, der Topf Heizung nach Fläche,
-Warmwasser unverändert, kein Kürzungsbetrag (Auslegung, 15.1 Nr. 7).
+Warmwasser unverändert, kein Kürzungsbetrag (Auslegung, 15.1 Nr. 7). Der Vormieter behält seinen
+abgelesenen Verbrauch; eine Schätzung neben vollständigen Ablesungen ist eine Warnung.
 
 Refs #99"
 ```
@@ -1878,7 +2120,7 @@ const self = {
   ok: false, heatPump: null, changeSplit: 'degreeDays', areaBasisHeat: 'area', hotWater: 'none', alpha: null, shares: null,
   pots: [{ pot: 'heating', costCents: 0, consumptionPct: 70, byAreaOnly: false, areaM2: 200, consumption: 28000, consumptionUnit: 'kWh', baseCentsPerM2: 0, consumptionCentsPerUnit: null, overThreshold: false, estimatedAreaM2: 0 }],
   units: [], threshold: null,
-  estimates: [{ unitId: 'a', unitName: 'A', part: 'heat', value: 9000, method: 'previousPeriod', reason: 'Zähler defekt', confirmed: true, users: 1 }],
+  estimates: [{ unitId: 'a', unitName: 'A', part: 'heat', value: 9000, method: 'previousPeriod', reason: 'Zähler defekt', confirmed: true, users: 1, kept: 0, complete: false }],
   estimateOptions: [
     { unitId: 'a', unitName: 'A', part: 'heat', areaM2: 60, why: null, boundary: null, estimated: true, proposals: [{ method: 'buildingAverage', value: 9500, perM2: 158.33, why: 'ok' }], comparable: [] },
     { unitId: 'c', unitName: 'C', part: 'heat', areaM2: 60, why: 'noReading', boundary: '2025-12-31', estimated: false, proposals: [{ method: 'buildingAverage', value: 12000, perM2: 200, why: 'ok' }], comparable: [] },
@@ -2231,9 +2473,13 @@ eigener Absatz:
 
 ```markdown
 - **Schätzung nach § 9a** (Heizung PR 13): Tabelle `heating_estimates` (Heizperiode, Wohnung, Topf
-  `heat`/`water`, Wert, Weg, Begründung Pflicht, Bestätigung). Eine Schätzung ersetzt in `planSelf`
-  die Ablesungen dieser Wohnung in diesem Topf, auch vollständige (sie ist die Markierung
-  „unbrauchbar“); mehrere Nutzer der Wohnung teilen sie wie nach § 9b Abs. 3. Überschreitet die
+  `heat`/`water`, Wert, Weg, Begründung Pflicht, Bestätigung). Eine Schätzung gilt für die ganze
+  Heizperiode der Wohnung und tritt in `planSelf` **nur an die Stelle des nicht erfassten Verbrauchs**
+  (§ 9a Abs. 1 Satz 2): Ein Nutzer mit gültigen Ablesungen, etwa der Vormieter bis zur Zwischenablesung,
+  behält seinen Messwert, sonst wanderte Geld zwischen Vor- und Nachmieter; die übrigen tragen ihren
+  Anteil nach Gradtagen bzw. Tagen, mehrere unter sich wie nach § 9b Abs. 3. Sind alle Ablesungen
+  vollständig, ersetzt die Schätzung alles (Markierung „unbrauchbar“) und warnt
+  `heating.estimate-complete`. Überschreitet die
   geschätzte Fläche eines Topfs die Grenze `hkv.estimate-threshold` (streng größer, über Produkte
   verglichen, je Topf, Heizung mit der Fläche nach § 7 Abs. 1 Satz 5), wird der Topf nur nach Fläche
   verteilt, ohne Kürzungsbetrag (Auslegung, Entwurf 15.1 Nr. 7). Keine Schätzung für eine Wohnung ohne
@@ -2260,8 +2506,8 @@ Refs #99"
 ```
 
 - [ ] **Step 5: Durchsicht mit frischem Kontext vor dem PR** (CLAUDE.md): Befunde mit einem Test
-  beheben, der vorher rot war; PR mit `Refs #99`, gestapelt auf PR 12, Abweichungen 1 bis 10 in der
-  Beschreibung.
+  beheben, der vorher rot war; PR mit `Refs #99`, gestapelt auf PR 12, Abweichungen 1 bis 11 und der
+  Abschnitt „Änderungen nach Prüfung vom 05.10.2026“ in der Beschreibung.
 
 ---
 
@@ -2279,7 +2525,9 @@ Refs #99"
 | 5.6 `heating_estimates` mit PK `(heating_period_id, unit_id, part)` | 2 |
 | 5.8 Schätzungen im Schnappschuss; 5.9 Wiederherstellen | 2 |
 | 8.8 Schätzungen mit Methode im Ausweis | 5 (`estimates`), 6 (`potLines`, `userLine`) |
-| 10.1 drei Codes, 10.2 Regel, 10.3 Begriff | 1, 5 |
+| 10.1 drei Codes (dazu `heating.estimate-complete`, Abweichung 11), 10.2 Regel, 10.3 Begriff | 1, 5 |
+| § 9a Abs. 1 Satz 2 „anstelle des erfassten“: gültige Zwischenablesung bleibt (Prüfbericht A5) | 3 (Test „C1 behält 7.200 kWh“), 5 |
+| Schätzung neben vollständiger Ablesung ist eine Warnung (Prüfbericht A9) | 3, 5 |
 | 12.2 „40 % → Fläche; 20 % → bleibt“, R-A22 | 3 |
 | 12.4 Client: 25-%-Warnung vor dem Markieren | 6 |
 | 14.1 Geräteausfall | alle |
@@ -2291,7 +2539,10 @@ Refs #99"
 `heatingEstimates`, `readHeatingEstimates`, `saveEstimate`, `removeEstimate`, `thresholdLines`,
 `estimateBody`, `emptyEstimate`, `proposalValue`, `parseAmount` sind in Task 2 bis 6 durchgehend gleich;
 `SelfPlan['totals'][pot].estimatedArea` und `.overThreshold` in Task 3 eingeführt und in Task 5 und 6
-gelesen; `SelfPotView.overThreshold`, `.estimatedAreaM2` in Task 2 und 5.
+gelesen; `SelfPotView.overThreshold`, `.estimatedAreaM2` in Task 2 und 5; `SelfUserPot.estimated`,
+`SelfUnitPlan.estimateComplete` in Task 3, gelesen in Task 5 (`selfSteps`, `selfStatementOf`, Hinweise);
+`SelfEstimateView.users`, `.kept`, `.complete` in Task 2 und 5. Aus PR 12: `capture`, `potUnitOf`,
+`SelfMeter.factor`.
 
 **Review Focus:** jede der fünf Zeilen hat ihren Test (Task 3, 4, 5, 6).
 

@@ -4,21 +4,25 @@
 
 **Goal:** Die eigene Heizkostenabrechnung enthält die Informationen nach § 6a Abs. 3 HeizkostenV
 (Energieträger und bei Fernwärme Treibhausgasemissionen und Primärenergiefaktor, Steuern und Abgaben,
-Entgelte der Erfassung, Kontaktinformationen, Streitbeilegung beim Verbrauchervertrag, Vergleich mit dem
-Hausdurchschnitt, witterungsbereinigter Vergleich mit dem Vorzeitraum mit dem Klimafaktor des DWD je
-Postleitzahl, grafisch); jede fehlende Nummer nennt die Kürzung um 3 % je Mieter. Dazu die Warnung zur
-monatlichen Verbrauchsinformation bei fernablesbaren Geräten, die Ausnahmen des § 11 (keine
-Kürzungshinweise, CO₂ nach § 2 Abs. 7 CO2KostAufG), die Vereinbarung nach § 2 im Zweifamilienhaus, der
-Hinweis zu § 7 Abs. 1 Satz 2 und mehr als 70 % nach Verbrauch nur mit Vereinbarung (§ 10).
+Entgelte der Erfassung, Kontaktinformationen, Streitbeilegung beim Verbrauchervertrag, Vergleich mit einem
+Durchschnittsnutzer aus dem Vergleichswert, den der Vermieter mit Quelle einträgt, witterungsbereinigter
+Vergleich mit dem Vorzeitraum mit dem Klimafaktor des DWD je Postleitzahl, grafisch); jede fehlende Nummer nennt die Kürzung um 3 % je Mieter. Dazu die Warnung zur
+monatlichen Verbrauchsinformation bei fernablesbaren Geräten, die Ausnahmen des § 11 je Topf (keine
+Kürzungshinweise für den ausgenommenen Topf, CO₂ nach § 2 Abs. 7 CO2KostAufG), die Vereinbarung nach § 2
+im Zweifamilienhaus (nur ohne die Kürzung nach § 12 Abs. 1 Satz 1), der Hinweis zu § 7 Abs. 1 Satz 2 und
+mehr als 70 % nach Verbrauch nur mit Vereinbarung (§ 10). Der Umfang (§ 6a Abs. 3 oder 5) folgt den
+Schlüsseln der Positionen, auch bei freien Schlüsseln.
 
-**Architecture:** Vier Spalten an `heating_plants` (`exemption`, `exemption_billing_agreed`,
-`agreed_otherwise`, `monthly_info_elsewhere`) in zwei erzeugten Schritten `0033_pflichtangaben` und
-`0034_pflichtangaben_bedingungen`; die Spalten des § 6a an `heating_periods` gibt es seit PR 4. Die
+**Architecture:** Fünf Spalten an `heating_plants` (`exemption`, `exemption_scope`, `exemption_billing_agreed`,
+`agreed_otherwise`, `monthly_info_elsewhere`) und zwei an `heating_periods` (`info_reference_kwh_per_m2`,
+`info_reference_source`, Vergleichswert nach Nr. 4) in zwei erzeugten Schritten `0033_pflichtangaben` und
+`0034_pflichtangaben_bedingungen`; die übrigen Spalten des § 6a an `heating_periods` gibt es seit PR 4. Die
 Rechnung der Angaben steht als reine Funktion in der neuen Datei `server/src/heatingInfo.ts`
 (`heatingInfoOf`); `computeSettlement` hängt das Ergebnis je Anlage und Heizperiode an
 `Settlement.heating[].info`, meldet `heating.info-incomplete`, `heating.monthly-info`,
-`heating.exemption` und `heating.insulation-rule-unknown` und nennt für Anlagen mit Ausnahme oder
-wirksamer Vereinbarung an keiner Stelle eine Kürzung nach § 12 (`suspendedBy`). Die Seite Heizkosten
+`heating.exemption` und `heating.insulation-rule-unknown`; unter einer Ausnahme nach § 11 nennt es für den
+ausgenommenen Topf keine Kürzung nach § 12, unter einer wirksamen Vereinbarung nach § 2 keine nach § 12
+Abs. 1 Satz 1 (`exemptionScopeOf`, `agreedFor`, `noCutFor`). Die Seite Heizkosten
 bekommt die Karte „Angaben zur Abrechnung (§ 6a)“, die Stammdaten der Heizung die Fragen zu § 11, § 2 und
 zur monatlichen Information, die Abrechnung den Druckblock mit Balken.
 
@@ -34,16 +38,77 @@ zur monatlichen Information, die Abrechnung den Druckblock mit Balken.
 `heating.exemption`), 10.2 (`heating-info`), 10.3 (`billingInfo`, `climateFactor`), 11.2 Schritt 7,
 13 (PR 14, PR 22), 14.1 (Zeilen „Pflichtangaben § 6a Abs. 3“, „Monatliche Verbrauchsinformation“,
 „Zweifamilienhaus mit Eigennutzung“, „Ausnahmen § 11“), **15.1 Nr. 8 und 14**, **15.2 F5**, **15.3**
-(Zeile „Durchschnittsnutzer und Witterungsbereinigung“, ⟨Norm offen: DIN 94680⟩).
+(Zeile „Durchschnittsnutzer und Witterungsbereinigung“, ⟨Norm offen: DIN 94680⟩). **8.8 Nr. 4
+(„Hausdurchschnitt je m²“) ist überholt**, siehe „Änderungen nach Prüfung“ Nr. 8; maßgeblich ist dort die
+amtliche Begründung BR-Drs. 643/21, S. 18 bis 21.
 
 **Baut auf:** PR 1 und PR 2 (Code auf `feat/heizung`), PR 3 bis PR 13 nach ihren Plänen
-`docs/superpowers/plans/2026-10-05-heizung-pr{3..13}-*.md`, maßgeblich PR 10 (Commit `81828af`) und
-PR 13 (Vorperiode `SelfPlantPlan.prev`). Gearbeitet wird auf `feat/heizung-pr14-pflichtangaben`,
-abgezweigt von der Spitze von PR 13; gestapelt auf PR 13, nach dessen Merge auf `main` umgestellt.
+`docs/superpowers/plans/2026-10-05-heizung-pr{3..13}-*.md`, maßgeblich PR 10 (Commit `81828af`), PR 11
+(`hkv.exemption.renewable`, `heatGeneration`, Testhelfer `server/testing/selfHeating.ts`), PR 12
+(`potUnitOf`) und PR 13 (Vorperiode `SelfPlantPlan.prev`). Mit dem Plan PR 22
+(`docs/superpowers/plans/2026-10-05-heizung-pr22-verbrauchsinfo.md`) teilt er die Regel zum Vergleichswert
+(`reference_kwh_per_m2`, `reference_source`, Pflichtquelle) und den Satz zur Bestätigung der monatlichen
+Information. Gearbeitet wird auf
+`feat/heizung-pr14-pflichtangaben`, abgezweigt von der Spitze von PR 13; gestapelt auf PR 13, nach dessen
+Merge auf `main` umgestellt.
+
+## Änderungen nach Prüfung vom 05.10.2026
+
+Der Prüfbericht vom 05.10.2026 (Teil A, Rechtsrichtigkeit der Abweichungen) hat an diesem Plan vier
+Rechtsfolgen und zwei Angaben geändert (Nr. 1 bis 7); dazu kommt der Rechtsbefund des Koordinators vom
+selben Tag zu Nr. 4 und zum „Mitteilen“ (Nr. 8 und 9). Jede Änderung steht im Task an ihrer Stelle:
+
+1. **Umfang nach § 6a Abs. 3 oder Abs. 5 aus den Schlüsseln der Positionen** (Prüfbericht A1,
+   Abweichung 16 neu). Eine Anlage mit freien Schlüsseln (`manual`), deren Heizpositionen nach Verbrauch
+   verteilt werden (`meter`, `amounts`, `external`, also `heatingByConsumption`), beruht auf dem
+   Verbrauch: volle Pflicht, und weil Mietfuchs die Vergleiche Nr. 4 und 5 nur aus dem Plan der eigenen
+   Abrechnung rechnet, fehlen sie dort mit „3 %“ und einem Satz dazu. Positionen mit `heatingSystem`
+   zählen, wenn ein Topf der eigenen Abrechnung nach Verbrauch verteilt wird. Nur bei reiner Verteilung
+   nach Fläche, Einheiten oder Anteilen gilt Abs. 5.
+2. **Vereinbarung nach § 2 hebt nur die 15 % nach § 12 Abs. 1 Satz 1 auf** (Prüfbericht A2, Abweichung 8
+   neu, Review Focus 3). Die Pflicht zur fernablesbaren Ausstattung (Satz 2), die monatliche
+   Information und die Angaben nach § 6a (Satz 3) bleiben; der Umfang folgt dem vereinbarten Maßstab
+   (`consumption` volle Pflicht, `area` und `fixedPercent` Abs. 5). `suspendedBy` ist aufgeteilt in
+   `exemptionScopeOf`, `agreedFor` und `noCutFor`.
+3. **Ausnahme nach § 11 je Topf** (Prüfbericht A4, Abweichung 7 neu): neue Spalte
+   `heating_plants.exemption_scope` (`heat` oder `both`); ohne Antwort gilt nur die Wärme als
+   ausgenommen, bei Nr. 1 a („Heizwärmebedarf“) ist das die Vorgabe. Ist nur die Wärme ausgenommen,
+   bleibt das Warmwasser unter der Verordnung, mit § 6a und Kürzungshinweisen. Die Ausnahme gilt für die
+   ganze Anlage, obwohl die Verordnung auf Räume abstellt; der Hinweis nennt das eine Vereinfachung.
+4. **Ausnahme „Wärmerückgewinnung, Solar“ in zwei Fassungen** (Prüfbericht A3): Der Text liest
+   `hkv.exemption.renewable` aus PR 11; für Zeiträume, die vor dem 01.10.2024 beginnen, nennt er die
+   Wärmepumpen mit.
+5. **Nr. 1 a bei einer Anlage mit weiterem Erzeuger** (Prüfbericht A7): `heatGeneration = 'mixed'`
+   (PR 11) heißt, der Anteil der Energieträger ist unbekannt; Nr. 1 a fehlt, statt 100 % zu drucken.
+6. **Treibhausgasemissionen der Fernwärme als jährliche Menge** (Prüfbericht A8, Abweichung 13 neu):
+   Der Faktor laut Versorger (g CO₂-Äquivalent je kWh) wird eingegeben, gedruckt wird zusätzlich die
+   jährliche Menge (Faktor mal gelieferte kWh der Heizperiode) und je Mieter sein Anteil; beide mit
+   Einheit. **Festlegung**, so benannt.
+7. **Testhelfer** `server/testing/selfHeating.ts` aus PR 11 (feste Kennungen, Option `year`); er bekommt
+   hier die fünf neuen Felder der Anlage.
+8. **Nr. 4: Vergleichswert des Durchschnittsnutzers vom Vermieter, mit Quelle; kein Hausdurchschnitt**
+   (Rechtsbefund des Koordinators vom 05.10.2026, Abweichung 14 neu, Review Focus 6). Die amtliche
+   Begründung, BR-Drs. 643/21, S. 19 zu § 6a Abs. 2 Nr. 3: „Gemeint ist damit nicht ein Vergleich mit den
+   Nutzern im selben Gebäude. Für den Vergleich sollen anonymisierte Verbraucher aus den
+   Gebäudeportfolios der Ablesedienstleister dienen.“ S. 21 zu Abs. 3 Nr. 4: „Zu dem Vergleich gilt das zu
+   Absatz 2 Nummer 3 Ausgeführte entsprechend.“ (am 05.10.2026 im Wortlaut der Drucksache gelesen; die
+   Seitenzahlen sind die gedruckten der Drucksache). Der „Hausdurchschnitt je m², so benannt“ aus
+   **Entwurf 8.8 Nr. 4 und 15.2 F5 ist an dieser Stelle überholt**; der Koordinator zieht die
+   Spezifikation nach. Neu: zwei Spalten `heating_periods.info_reference_kwh_per_m2` und
+   `info_reference_source`, mit denselben Regeln wie `reference_kwh_per_m2`/`reference_source` der
+   monatlichen Information im Plan PR 22 (Wert über 0, nur mit Quelle, gleicher Fehlertext). Mietfuchs
+   rechnet den Wert auf Wohnfläche und Tage des Mieters um und stellt ihn neben dessen Wärmeverbrauch in
+   kWh. Fehlt er, fehlt Nr. 4 mit 3 % je Mieter und dem Satz, dass ein Durchschnitt des eigenen Hauses
+   kein zulässiger Vergleich ist; einen Hausdurchschnitt rechnet Mietfuchs nicht mehr.
+9. **„Mitteilen“ der monatlichen Information** (BR-Drs. 643/21, S. 18 f.): Ein Portal genügt nur, wenn der
+   Mieter in den Abständen eine Nachricht bekommt, dass die Information dort steht; sonst ist sie nur
+   „zur Verfügung gestellt“. Der Hinweis `heating.monthly-info` und der Satz am Kontrollkästchen
+   `monthlyInfoElsewhere` sagen das (wortgleich mit `MONTHLY_ELSEWHERE_LABEL` aus PR 22). Für die
+   Angaben nach Abs. 3 genügt dagegen „zugänglich machen“ (S. 19), ein Portal ohne Nachricht reicht dort.
 
 **Norm ⟨Norm offen: DIN 94680⟩:** Vor PR 14 soll DIN 94680:2024-05 vorliegen (Entwurf 13 Phase C, 15.3).
-Fehlt sie, wird dieser Plan unverändert gebaut; die Marke steht dann im Druckblock (Nr. 4 und 5), im
-Lexikon (`climateFactor`) und im Code an `heatingInfoOf`. Weicht die Norm ab, ist das ein Befund für die
+Fehlt sie, wird dieser Plan unverändert gebaut; die Marke steht dann im Lexikon (`climateFactor`) und im
+Code an `heatingInfoOf`; der Druck nennt bei Nr. 4 die Quelle des Vergleichswerts. Weicht die Norm ab, ist das ein Befund für die
 Durchsicht, kein stiller Umbau.
 
 **Wortlaut, gelesen am 05.10.2026 auf gesetze-im-internet.de** (HeizkostenV in der Fassung Art. 3 G v.
@@ -123,9 +188,11 @@ Durchsicht, kein stiller Umbau.
 
 - **Wer nichts einstellt, merkt nichts** (Entwurf 1.2 Nr. 1, 11.1): Ohne Heizanlage ist jede Zahl, jeder
   Hinweis und `legalBasis.values` gleich dem Stand nach PR 13. Golden F01–F11 bleiben wortgleich.
-  **Angekündigte Änderungen** (CHANGELOG): Bei einer Anlage mit eigener Abrechnung erscheint
-  `heating.info-incomplete`, solange die Angaben fehlen (Golden F16 und F17 bekommen den Hinweis; keine
-  Zahl ändert sich); bei jeder Anlage, deren Geräte fernablesbar sind oder deren Fernablesbarkeit
+  **Angekündigte Änderungen** (CHANGELOG): Bei einer Anlage mit eigener Abrechnung und bei einer Anlage
+  mit freien Schlüsseln, deren Heizpositionen nach Verbrauch verteilt werden (Prüfbericht A1), erscheint
+  `heating.info-incomplete`, solange die Angaben fehlen (Golden F16 und F17 bekommen den Hinweis, ebenso
+  ein Golden mit Anlage `manual` und Schlüssel nach Verbrauch; keine Zahl ändert sich); bei jeder Anlage,
+  deren Geräte fernablesbar sind oder deren Fernablesbarkeit
   unbekannt ist, erscheint `heating.monthly-info` (Entwurf 8.8: `devices_remote` „nicht `none`“), bis
   der Vermieter bestätigt, dass die Mieter die Information anders bekommen. Golden F12 bis F15 bekommen
   den Hinweis, wenn ihre Anlage `devices_remote` nicht auf `none` hat; die README nennt den Grund.
@@ -133,12 +200,14 @@ Durchsicht, kein stiller Umbau.
   die gedruckten Zeilen nach CO₂-Abzug. Der Satz `hkv.cut.information` (3) aus dem Register.
 - **Rechtswerte nur aus dem Register** (4.3, 4.7): fünf neue Parameter, `hkv.cut.information`,
   `hkv.info.applicable-from`, `hkv.info.district-emissions`, `hkv.monthly-info`, `hkv.exemptions`
-  (Abweichung 1). Keine Zahl des § 11 und kein Stichtag des § 6a steht außerhalb von `shared/law/`.
+  (Abweichung 1), dazu `hkv.exemption.renewable` aus PR 11 (zwei Fassungen). Keine Zahl des § 11 und kein
+  Stichtag des § 6a steht außerhalb von `shared/law/`.
 - **Fassungen nie ändern** (4.4): sieben neue Zeilen in `law-history.test.ts`, keine geänderte.
 - **Stufe hängt am Code** (#112): vier Codes, je mit genau einer Stufe und mindestens einem Begriff.
 - **Migrationen:** nur mit `npm --prefix server run db:generate -- --name <name>`, nie von Hand. Zwei
-  Schritte hinter `0032_schaetzung` (PR 13): `pflichtangaben` (vier `ALTER TABLE heating_plants ADD`)
-  und `pflichtangaben_bedingungen` (Bedingungen an `heating_plants`, Neubau). Die Nummern vergibt
+  Schritte hinter `0032_schaetzung` (PR 13): `pflichtangaben` (fünf `ALTER TABLE heating_plants ADD`,
+  zwei `ALTER TABLE heating_periods ADD`) und `pflichtangaben_bedingungen` (Bedingungen an
+  `heating_plants` und `heating_periods`, je ein Neubau). Die Nummern vergibt
   drizzle-kit: `0033_…` und `0034_…`. Keine Datenanweisung. Marken in `migrations.test.ts`.
 - **Eingefrorener Eingang:** `server/src/legacy/{schema,write,migrate,validate}.ts` unverändert.
 - **Sprache, Importe, Auswahlfelder, Serverstart, Commit nur bei Grün:** wie in den Plänen PR 10 bis
@@ -160,14 +229,25 @@ Durchsicht, kein stiller Umbau.
 3. **Zweifamilienhaus mit Vereinbarung nach § 2, später kommt eine dritte Wohnung dazu.** Erwartet:
    Setzen lässt sich die Vereinbarung nur, solange das Haus höchstens zwei Wohnungen hat und der
    Vermieter eine selbst bewohnt (400 sonst); wird das Haus größer, wirkt die gespeicherte Vereinbarung
-   nicht mehr, und die Kürzungshinweise kommen zurück. Test in Task 4 und Task 5.
-4. **Ausnahme nach § 11 bei einer Anlage mit CO₂-Angaben.** Erwartet: keine Kürzungshinweise nach § 12,
-   keine Angaben nach § 6a gefordert (§ 6a liegt in §§ 3 bis 7), keine CO₂-Aufteilung, außer eine
-   Abrechnung der Heiz- und Warmwasserkosten ist vereinbart (§ 2 Abs. 7 CO2KostAufG); der Hinweis
-   `heating.exemption` sagt beides. Test in Task 5.
+   nicht mehr, und die Kürzungshinweise kommen zurück. Solange sie wirkt, entfällt nur die Kürzung nach
+   § 12 Abs. 1 Satz 1; monatliche Information und Angaben nach § 6a bleiben, im Umfang des vereinbarten
+   Maßstabs (Prüfbericht A2). Test in Task 4 und Task 5.
+4. **Ausnahme nach § 11 bei einer Anlage mit CO₂-Angaben.** Erwartet: keine Kürzungshinweise nach § 12
+   für den ausgenommenen Topf, keine Angaben nach § 6a gefordert, wenn Wärme und Warmwasser ausgenommen
+   sind (§ 6a liegt in §§ 3 bis 7), keine CO₂-Aufteilung, außer eine Abrechnung der Heiz- und
+   Warmwasserkosten ist vereinbart (§ 2 Abs. 7 CO2KostAufG); der Hinweis `heating.exemption` sagt beides.
+   Ist nur die Wärme ausgenommen (Nr. 1 a, Prüfbericht A4), bleibt das Warmwasser mit § 6a und
+   Kürzungshinweisen. Test in Task 5.
 5. **80 % nach Verbrauch.** Erwartet: ohne Häkchen „vereinbart“ 400 mit Satz zu § 10; mit Häkchen
    gespeichert und verteilt; über 100 % nie; bei Öl- und Gasheizung nach § 7 Abs. 1 Satz 2 nie unter dem
    Pflichtanteil. Test in Task 4 und Task 5.
+6. **Der Vermieter hat keinen Vergleichswert und möchte den Durchschnitt seines Hauses nehmen.** Die
+   Begründung schließt das aus (BR-Drs. 643/21, S. 19, 21). Erwartet: Mietfuchs rechnet keinen
+   Hausdurchschnitt; ein Wert ohne Quelle wird abgelehnt (Server, Client und Datenbank mit demselben
+   Satz); ohne Wert fehlt Nr. 4 mit 3 % je Mieter. Bei Heizkostenverteilern (Einheiten) und bei
+   ausgenommener Wärme fehlt Nr. 4 ebenfalls, mit dem Rat, den Vergleich des Ablesedienstes beizulegen;
+   ob die Durchsicht dafür eine Bestätigung „liegt bei“ verlangt (wie `monthlyInfoElsewhere`), ist offen.
+   Test in Task 2, 3, 4, 5 und 6.
 
 ---
 
@@ -195,7 +275,9 @@ Namen genau so; wer einen davon anders umgesetzt hat, zieht ihn hier nach, bevor
 | PR 4 | `HeatingPlant` (`devicesRemote`, `units`, `energy`, `method`, `propertyId`), `HeatingPeriodData` mit `above70Agreed`, `insulationRule`, `infoTaxesText`, `infoDistrictGhg`, `infoDistrictPef`, `climateFactor`, `climateFactorPrev`, `consumerContract`, `infoContactsConfirmed`; schema.ts `heatingPlants`, `heatingPeriods`, `exactly`, `oneOf`; db/heating.ts `mergeHeatingPlant`, `emptyHeatingPlant`, `plantRow`, `guardHeatingPlant(db, before, after)`, `readHeatingPlants`; repository.ts `HeatingError`, `raw`, `has`, `merged`, `oneOfOrUndefined`; read.ts `readUnits`, `readTenancies`; calc.ts (Task 8 von PR 4) `remoteReadingVerdict(plants, meters, units, period, log)` mit `remote` und `retrofit`; Client `HeatingCard.tsx`, `heatingForm.ts` (`HeatingForm`, `heatingPlantBody`, `heatingToForm`) | Plan PR 4 |
 | PR 6, 7, 11 | im CO₂-Block `co2Pots` (`pot.plantId`, `pot.items`, `pot.reliefKey`, `pot.period`), `report`, `heatingStatements`, `cutsOn(ids, pct)`, `applicable` mit `etsExempt` (PR 7), `co2DeductionsOf(pots, units, applicable)`; die Bedingung von `heating.dhw-not-metered` (PR 6, PR 11); `HeatingStatement`, `HeatingPeriodView`; db/co2.ts `heatingPeriodViews(db, plantId, periodParam, today)` mit `rows`, `h`, `ctx`; db/heatingPeriodContext.ts `plantContext`, `heatingPeriodOf`, `heatingPeriodClosed`, `ensureHeatingPeriod`, `closedText` | Plan PR 6, 7, 8, 11 |
 | PR 10 | heating.ts `ShareRow`, `ConsumptionShares`, `consumptionSharesOf(rows, key, energy, forced)`, `OIL_OR_GAS`, `SelfPlan`; db/heatingSelf.ts `checkShares`, `shareRows`, `saveDistribution`, `setUpSelf`, `distributionOf`; calc.ts `selfPlans`, `SelfPlantPlan`, `selfStatementOf`, `cutOf`, `nameOf`, `POT_UNIT`, im Block des Plans `rows` (Zeilen der Heizperioden der Anlage), `shares`, `blocked`, `where`; die Hinweisschleife mit `notYet`, `list`, `unmeasured`; `HeatingDistribution`, `SelfHeatingStatement` (`shares`); Client `heatingSelfForm.ts` (`SelfSetupForm`, `SelfSetupBody`, `emptySelfSetup`, `selfSetupBody`, `shareBounds`, `forcedShare`), `HeatingSelfSetup.tsx`, `SelfHeatingCards.tsx`, `SelfHeatingBlock.tsx`, `heatingSelfView.ts` (`distributionLines`, `shareEditable`) | Plan PR 10 |
-| PR 13 | `SelfPlantPlan.prev: SelfPlan \| null`, `SelfPlantPlan.prevSameLength`; `SelfPlan['totals'][pot].overThreshold`; `server/testing/selfHeating.ts` `selfSnapshot()` | Plan PR 13 |
+| PR 11 | `hkvRenewableExemption` (`'hkv.exemption.renewable'`, `{ heatPump: boolean }`, zwei Fassungen, `describe`); `HeatingPlant.heatGeneration`; `server/testing/selfHeating.ts` mit `selfSnapshot(o)` (Optionen `year`, `plant`, `row`, `rows`, `costItems`, …), `PLANT`, feste Kennungen | Plan PR 11 Task 1, 2, 4 |
+| PR 12 | `potUnitOf(sp, pot)` in calc.ts | Plan PR 12 Task 4 |
+| PR 13 | `SelfPlantPlan.prev: SelfPlan \| null`, `SelfPlantPlan.prevSameLength`; `SelfPlan['totals'][pot].overThreshold` | Plan PR 13 |
 
 ## Abweichungen vom Entwurf und Festlegungen dieses Plans
 
@@ -226,12 +308,29 @@ Jede steht im Task an ihrer Stelle und kommt in die PR-Beschreibung.
 6. **§ 11 Abs. 1 Nr. 2 (Heime) und Nr. 4 (Hausanlagen bei Wärmelieferung) stehen nicht zur Wahl.** Der
    Entwurf (5.3) zählt sie nicht auf; Heime gehören nicht zum Zielbild (#91), Nr. 4 betrifft
    Contracting (PR 16). Nr. 3 a und b sind eine Wahl („überwiegend aus Wärmerückgewinnung, Solar, KWK
-   oder Abwärme, sofern der Wärmeverbrauch des Gebäudes nicht erfasst wird“), Nr. 1 a, b, c je eine.
-7. **Unter § 11 fordert Mietfuchs keine Angaben nach § 6a**, denn § 6a liegt in den §§ 3 bis 7, die
-   § 11 Abs. 1 (und für Warmwasser Abs. 2) ausnimmt. Gedruckt wird der Block nicht.
-8. **Vereinbarung nach § 2:** wirksam nur, solange `mayAgreeOtherwise` im Zeitraum gilt; dann nennt
-   Mietfuchs für diese Anlage keine Kürzung nach § 12 (Entwurf 8.9: „gibt keinen § 12-Hinweis“), auch
-   nicht nach Satz 2 und 3. Der Server prüft beim Setzen mit einer eigenen Fassung von „Wohnung“ (Fläche,
+   oder Abwärme, sofern der Wärmeverbrauch des Gebäudes nicht erfasst wird“), Nr. 1 a, b, c je eine. Nr. 3
+   Buchst. a hat zwei Fassungen (Prüfbericht A3): bis 30.09.2024 nannte sie auch Wärmepumpen. Der Text
+   der Ausnahme liest dafür `hkv.exemption.renewable` aus PR 11 nach dem Beginn des Zeitraums.
+7. **Ausnahme nach § 11 je Topf** (neu gefasst nach der Prüfung vom 05.10.2026, A4). § 11 Abs. 1 nimmt
+   die §§ 3 bis 7 aus, „soweit sie sich auf die Versorgung mit Wärme beziehen“; für das Warmwasser gilt
+   Abs. 1 nach Abs. 2 nur „entsprechend“, also mit eigener Prüfung. Ein Passivhaus (Nr. 1 a,
+   Heizwärmebedarf) mit zentralem Warmwasser bleibt beim Warmwasser unter § 8, § 12 und § 6a. Neue Spalte
+   `heating_plants.exemption_scope` (`heat` oder `both`): Ohne Antwort und bei Nr. 1 a als Vorgabe gilt nur
+   die Wärme als ausgenommen; die Stammdaten fragen bei den übrigen Ausnahmen, ob auch das Warmwasser
+   betroffen ist. **Unter § 11 fordert Mietfuchs keine Angaben nach § 6a, wenn beide Töpfe ausgenommen
+   sind** (§ 6a liegt in den §§ 3 bis 7); ist nur die Wärme ausgenommen, gelten sie für das Warmwasser
+   (ob § 6a in „§§ 3 bis 6“ des Abs. 2 liegt, lässt der Wortlaut offen; beruht die Abrechnung insoweit auf
+   dem Verbrauch, gilt jedenfalls § 6a Abs. 3). Die Verordnung stellt in Nr. 1 b, c, 3 und 5 auf „Räume“
+   ab; Mietfuchs wendet die Ausnahme auf die ganze Anlage an (**Vereinfachung**, im Hinweis so benannt).
+8. **Vereinbarung nach § 2:** wirksam nur, solange `mayAgreeOtherwise` im Zeitraum gilt. Sie regelt den
+   **Verteilungsmaßstab**; § 2 lässt rechtsgeschäftliche Bestimmungen nur vorgehen, soweit sie etwas
+   regeln (neu gefasst nach der Prüfung vom 05.10.2026, A2). Deshalb entfällt nur die Kürzung nach § 12
+   Abs. 1 Satz 1 (keine Verteilung „entgegen den Vorschriften“), nicht die nach Satz 2 (fernablesbare
+   Ausstattung, § 5 Abs. 2 und 3) und Satz 3 (Informationen nach § 6a); die monatliche Information bleibt
+   ebenso. Der Umfang der Angaben folgt dem vereinbarten Maßstab: `consumption` volle Pflicht nach
+   Abs. 3, `area` und `fixedPercent` Abs. 5 (Nr. 2 und 3). Der Hinweis sagt: „Eine Vereinbarung über die
+   Verteilung ersetzt die Informationspflichten nicht.“ Der Entwurf (8.9: „gibt keinen § 12-Hinweis“) ist
+   insoweit enger gelesen. Der Server prüft beim Setzen mit einer eigenen Fassung von „Wohnung“ (Fläche,
    Eigennutzung oder je ein Mietverhältnis), denn `isDwelling` in calc.ts kennt nur den Zeitraum der
    Berechnung; calc.ts prüft im Zeitraum erneut. Eine Vereinbarung über die Verteilung lässt das
    CO2KostAufG unberührt (§ 2 Abs. 5 CO2KostAufG: dessen Bestimmungen gehen rechtsgeschäftlichen
@@ -253,12 +352,33 @@ Jede steht im Task an ihrer Stelle und kommt in die PR-Beschreibung.
     zuständig ist und ob der Vermieter teilnimmt (§§ 36, 37 VSBG), entscheidet er.
 13. **Nr. 1 b Steuern, Abgaben und Zölle** als Freitext laut Rechnung des Versorgers; **Nr. 1 c**
     automatisch aus den Positionen mit Teil „Erfassung“ (`heating_part = 'metering'`); **Nr. 1 a** aus der
-    Anlage (eine Anlage, ein Energieträger: 100 %), bei Fernwärme mit den eingetragenen Werten.
+    Anlage (eine Anlage, ein Energieträger: 100 %). Erzeugt die Anlage die Wärme mit einem weiteren
+    Erzeuger (`heatGeneration = 'mixed'`, PR 11), kennt Mietfuchs die Anteile nicht: Nr. 1 a fehlt dann
+    (Prüfbericht A7), statt 100 % zu drucken. Bei Fernwärme mit den eingetragenen Werten:
     `info_district_ghg` beschriftet die Oberfläche als „Treibhausgasemissionen laut Versorger
-    (g CO₂-Äquivalent je kWh)“; **Festlegung ohne Quelle**, denn der Wortlaut nennt „die damit
-    verbundenen jährlichen Treibhausgasemissionen“ ohne Einheit. Der Druck nennt die Einheit.
-14. **Nr. 4: Hausdurchschnitt je m², so benannt** (Entwurf 8.8, 15.2 F5) als Ersatz für den
-    „normierten oder durch Vergleichstests ermittelten Durchschnittsnutzer“; ⟨Norm offen: DIN 94680⟩.
+    (g CO₂-Äquivalent je kWh)“; weil der Wortlaut „die damit verbundenen **jährlichen**
+    Treibhausgasemissionen“ verlangt, also eine Menge je Jahr, druckt Mietfuchs zusätzlich die jährliche
+    Menge (Faktor mal gelieferte kWh der Heizperiode laut Rechnung, in kg CO₂-Äquivalent) und je Mieter
+    seinen Anteil daran (nach seinem Anteil an den Kosten der Anlage); ohne gelieferte kWh fehlt Nr. 1 a
+    (Prüfbericht A8). **Festlegung**: Eine amtliche Vorgabe zur Einheit ist nicht gefunden
+    (Erläuterungen zu Art. 10a und Anhang VIIa der Energieeffizienz-Richtlinie ungeprüft); der Druck nennt
+    beide Größen mit Einheit.
+14. **Nr. 4: Vergleichswert des Durchschnittsnutzers mit Quelle, eingetragen vom Vermieter** (neu gefasst
+    nach dem Rechtsbefund vom 05.10.2026; Entwurf 8.8 Nr. 4 und 15.2 F5 sind insoweit überholt). Der
+    „normierte oder durch Vergleichstests ermittelte Durchschnittsnutzer“ ist nach der Begründung „nicht
+    ein Vergleich mit den Nutzern im selben Gebäude“, sondern stammt aus anonymisierten Vergleichsdaten,
+    etwa der Ablesedienste (BR-Drs. 643/21, S. 19 zu Abs. 2 Nr. 3; S. 21 zu Abs. 3 Nr. 4 „entsprechend“).
+    Mietfuchs hat keine Vergleichsdaten. Der Vermieter trägt je Heizperiode einen Wert in kWh je m²
+    Wohnfläche mit Pflichtfeld „Quelle“ ein (`info_reference_kwh_per_m2`, `info_reference_source`, die
+    Regeln wie bei `reference_kwh_per_m2`/`reference_source` in PR 22). **Festlegungen:** Gerechnet wird
+    Wert × Wohnfläche × Tage des Mieters / Tage der Heizperiode (die Verordnung nennt keine Rechenart; wie
+    PR 22 je Monat); verglichen wird der Wärmeverbrauch in kWh, denn Vergleichswerte werden in kWh je m²
+    angegeben. Misst der Topf Wärme in Einheiten (Heizkostenverteiler, PR 12) oder ist die Wärme nach § 11
+    ausgenommen, rechnet Mietfuchs keinen Vergleich: Nr. 4 fehlt, der Hinweis rät, den Vergleich des
+    Ablesedienstes beizulegen (dieselbe Lesart wie PR 22, Abweichung 4). Die Begründung erlaubt bei
+    elektronischer Abrechnung, den Vergleich online bereitzustellen und in der Rechnung darauf zu
+    verweisen (S. 21); die Quelle steht deshalb im Druck. ⟨Norm offen: DIN 94680⟩, die laut Inhaltsangabe
+    Vergleichswerte enthält.
 15. **Nr. 5: Klimafaktor des DWD je Postleitzahl, abgefragt** (Entwurf 8.8, 15.2 F5): witterungsbereinigt
     ist der Wärmeverbrauch mal dem Klimafaktor; der Warmwasserverbrauch wird nicht bereinigt (Satz 3
     bereinigt nur den Wärmeverbrauch) und steht daneben (Satz 2: „umfasst den Wärmeverbrauch und den
@@ -267,9 +387,17 @@ Jede steht im Task an ihrer Stelle und kommt in die PR-Beschreibung.
     Heizperiode neu gerechnet (PR 13, `prev`), nicht aus einer abgeschlossenen Abrechnung gelesen
     (**Festlegung**: eine Information, keine Abrechnungszahl). Bei Heizkostenverteilern wird in
     Einheiten verglichen.
-16. **Bei `method = 'manual'` druckt Mietfuchs Nr. 2 und 3** (das Mindeste nach Abs. 5, zugleich Teil
-    von Abs. 3) **ohne Hinweis**; ob eine solche Abrechnung „auf dem tatsächlichen Verbrauch beruht“,
-    entscheiden die Schlüssel, und die Hinweise aus #140 behandeln die Verteilung ohne Verbrauch schon.
+16. **Ob die Abrechnung auf dem Verbrauch beruht, entscheiden die Schlüssel der Positionen** (neu gefasst
+    nach der Prüfung vom 05.10.2026, A1). § 6a Abs. 5 erlaubt die Kurzform (Nr. 2 und 3) nur für
+    Abrechnungen, die „nicht auf dem tatsächlichen Verbrauch oder auf den Ablesewerten von
+    Heizkostenverteilern beruhen“. Eine Anlage mit freien Schlüsseln (`manual`), deren Heizpositionen nach
+    Zählern, Einzelbeträgen des Messdienstes oder laut Gemeinschaft verteilt werden
+    (`heatingByConsumption`), beruht auf dem Verbrauch: volle Pflicht nach Abs. 3. Die Vergleiche Nr. 4
+    und 5 rechnet Mietfuchs nur aus dem Plan der eigenen Abrechnung; dort fehlen sie deshalb, mit „3 %“ je
+    Mieter und dem Satz, dass Mietfuchs sie nur bei eigener Heizkostenabrechnung erstellt. Positionen mit
+    `heatingSystem` zählen, wenn ein Topf der eigenen Abrechnung nach Verbrauch verteilt wird
+    (`byConsumption`). Nur bei Verteilung nach Fläche, Einheiten oder vereinbarten Anteilen gilt Abs. 5,
+    ohne Hinweis. Unter einer Vereinbarung nach § 2 entscheidet der vereinbarte Maßstab (Abweichung 8).
     Bei `service` liefert der Messdienst die Angaben.
 
 ---
@@ -609,9 +737,9 @@ Refs #99"
 
 **Interfaces:**
 - Produces:
-  - `shared/types.ts`: `type HeatingExemption = 'none' | 'lowDemand' | 'disproportionate' | 'pre1981' | 'renewable' | 'authority'`; `type AgreedOtherwise = 'area' | 'fixedPercent' | 'consumption'`; `HeatingPlant.exemption: HeatingExemption`, `.exemptionBillingAgreed: boolean | null`, `.agreedOtherwise: AgreedOtherwise | null`, `.monthlyInfoElsewhere: boolean`; `type InfoItem = '1a' | '1b' | '1c' | '2' | '3' | '4' | '5'`; `type InfoComparison`; `type HeatingInfoStatement`; `HeatingStatement.info?: HeatingInfoStatement`; `HeatingPeriodView.info: HeatingInfoInputs`; `type HeatingInfoInputs`; `HeatingDistribution.own.above70Agreed?`, `.effective.above70Agreed?`; `SelfHeatingStatement['shares']` + `above70Agreed?: boolean`
-  - schema.ts: `HEATING_EXEMPTIONS`, `AGREED_OTHERWISE`, Spalten `heatingPlants.exemption`, `.exemptionBillingAgreed`, `.agreedOtherwise`, `.monthlyInfoElsewhere`
-  - `SnapshotHeatingPlant` pickt zusätzlich `'exemption' | 'exemptionBillingAgreed' | 'agreedOtherwise' | 'monthlyInfoElsewhere'` (optional); `SnapshotHeatingPeriodRow` + `'above70Agreed' | 'infoTaxesText' | 'infoDistrictGhg' | 'infoDistrictPef' | 'climateFactor' | 'climateFactorPrev' | 'consumerContract'` (optional)
+  - `shared/types.ts`: `type HeatingExemption = 'none' | 'lowDemand' | 'disproportionate' | 'pre1981' | 'renewable' | 'authority'`; `type ExemptionScope = 'heat' | 'both'`; `type AgreedOtherwise = 'area' | 'fixedPercent' | 'consumption'`; `HeatingPlant.exemption: HeatingExemption`, `.exemptionScope: ExemptionScope | null`, `.exemptionBillingAgreed: boolean | null`, `.agreedOtherwise: AgreedOtherwise | null`, `.monthlyInfoElsewhere: boolean`; `type InfoItem = '1a' | '1b' | '1c' | '2' | '3' | '4' | '5'`; `type InfoComparison`; `type HeatingInfoStatement`; `HeatingStatement.info?: HeatingInfoStatement`; `HeatingPeriodView.info: HeatingInfoInputs`; `type HeatingInfoInputs`; `HeatingPeriodData.infoReferenceKwhPerM2: number | null`, `.infoReferenceSource: string | null` (Nr. 4, Abweichung 14); `HeatingDistribution.own.above70Agreed?`, `.effective.above70Agreed?`; `SelfHeatingStatement['shares']` + `above70Agreed?: boolean`
+  - schema.ts: `HEATING_EXEMPTIONS`, `EXEMPTION_SCOPES`, `AGREED_OTHERWISE`, Spalten `heatingPlants.exemption`, `.exemptionScope`, `.exemptionBillingAgreed`, `.agreedOtherwise`, `.monthlyInfoElsewhere`, `heatingPeriods.infoReferenceKwhPerM2`, `.infoReferenceSource`
+  - `SnapshotHeatingPlant` pickt zusätzlich `'exemption' | 'exemptionScope' | 'exemptionBillingAgreed' | 'agreedOtherwise' | 'monthlyInfoElsewhere'` (optional); `SnapshotHeatingPeriodRow` + `'above70Agreed' | 'infoTaxesText' | 'infoDistrictGhg' | 'infoDistrictPef' | 'climateFactor' | 'climateFactorPrev' | 'consumerContract' | 'infoReferenceKwhPerM2' | 'infoReferenceSource'` (optional)
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -620,15 +748,32 @@ Refs #99"
 ```ts
 // ---------- Pflichtangaben und Ausnahmen (Heizung PR 14) ----------
 
-test('Heizanlage: Ausnahme nach § 11 mit Vorgabe none, Vereinbarung nach § 2, monatliche Information', async () => {
+test('Heizanlage: Ausnahme nach § 11 mit Vorgabe none und Umfang je Topf, Vereinbarung nach § 2, monatliche Information', async () => {
   const { connection, cleanup } = await freshDb()
   try {
     connection.exec("INSERT INTO heating_plants (id, property_id, energy) VALUES ('hp1', 'objekt-1', 'gas')")
-    assert.deepEqual(connection.rows('SELECT exemption, exemption_billing_agreed, agreed_otherwise, monthly_info_elsewhere FROM heating_plants')[0], ['none', null, null, 0])
+    assert.deepEqual(connection.rows('SELECT exemption, exemption_scope, exemption_billing_agreed, agreed_otherwise, monthly_info_elsewhere FROM heating_plants')[0], ['none', null, null, null, 0])
     assert.ok(rejects(connection, "UPDATE heating_plants SET exemption = 'heim' WHERE id = 'hp1'"), 'unbekannte Ausnahme')
     assert.ok(rejects(connection, "UPDATE heating_plants SET agreed_otherwise = 'pauschal' WHERE id = 'hp1'"), 'unbekannte Vereinbarung')
     assert.ok(rejects(connection, "UPDATE heating_plants SET exemption_billing_agreed = 1 WHERE id = 'hp1'"), 'Abrechnung vereinbart ohne Ausnahme')
-    assert.equal(rejects(connection, "UPDATE heating_plants SET exemption = 'lowDemand', exemption_billing_agreed = 1, agreed_otherwise = 'area' WHERE id = 'hp1'"), null)
+    assert.ok(rejects(connection, "UPDATE heating_plants SET exemption_scope = 'heat' WHERE id = 'hp1'"), 'Umfang ohne Ausnahme')
+    assert.ok(rejects(connection, "UPDATE heating_plants SET exemption = 'lowDemand', exemption_scope = 'water' WHERE id = 'hp1'"), 'unbekannter Umfang')
+    assert.equal(rejects(connection, "UPDATE heating_plants SET exemption = 'lowDemand', exemption_scope = 'heat', exemption_billing_agreed = 1, agreed_otherwise = 'area' WHERE id = 'hp1'"), null)
+  } finally {
+    cleanup()
+  }
+})
+
+test('Heizperiode: Vergleichswert des Durchschnittsnutzers (§ 6a Abs. 3 Nr. 4) nur über 0 und nur mit Quelle', async () => {
+  const { connection, cleanup } = await freshDb()
+  try {
+    connection.exec("INSERT INTO heating_plants (id, property_id, energy) VALUES ('hp1', 'objekt-1', 'gas')")
+    connection.exec("INSERT INTO heating_periods (id, plant_id, period) VALUES ('h1', 'hp1', '2025-01')")
+    assert.deepEqual(connection.rows("SELECT info_reference_kwh_per_m2, info_reference_source FROM heating_periods WHERE id = 'h1'")[0], [null, null])
+    assert.match(rejects(connection, "UPDATE heating_periods SET info_reference_kwh_per_m2 = 0, info_reference_source = 'x' WHERE id = 'h1'") ?? '', /heating_periods_info_reference_positive/)
+    assert.match(rejects(connection, "UPDATE heating_periods SET info_reference_kwh_per_m2 = 120 WHERE id = 'h1'") ?? '', /heating_periods_info_reference_source/)
+    assert.match(rejects(connection, "UPDATE heating_periods SET info_reference_kwh_per_m2 = 120, info_reference_source = '  ' WHERE id = 'h1'") ?? '', /heating_periods_info_reference_source/)
+    assert.equal(rejects(connection, "UPDATE heating_periods SET info_reference_kwh_per_m2 = 120, info_reference_source = 'Vergleichswerte des Ablesedienstes 2025' WHERE id = 'h1'"), null)
   } finally {
     cleanup()
   }
@@ -645,12 +790,14 @@ Expected: FAIL mit `no such column: exemption`.
 `HeatingPlant` als letzte Felder:
 
 ```ts
-  // Heizung PR 14 (Entwurf 5.3, 8.8, 8.9). Ausnahme nach § 11 HeizkostenV (`none`: keine); bei einer
-  // Ausnahme, ob mit den Mietern eine Abrechnung der Heiz- und Warmwasserkosten vereinbart ist
-  // (§ 2 Abs. 7 CO2KostAufG, Abweichung 3); die Vereinbarung nach § 2 HeizkostenV im Gebäude mit höchstens
-  // zwei Wohnungen, eine selbst bewohnt; und ob die Mieter die monatliche Verbrauchsinformation anders
-  // bekommen (§ 6a Abs. 1, Abweichung 4).
+  // Heizung PR 14 (Entwurf 5.3, 8.8, 8.9). Ausnahme nach § 11 HeizkostenV (`none`: keine) und ob sie nur
+  // die Wärme oder auch das Warmwasser betrifft (`null`: nicht beantwortet, gilt als nur die Wärme,
+  // Abweichung 7); bei einer Ausnahme, ob mit den Mietern eine Abrechnung der Heiz- und
+  // Warmwasserkosten vereinbart ist (§ 2 Abs. 7 CO2KostAufG, Abweichung 3); die Vereinbarung nach § 2
+  // HeizkostenV im Gebäude mit höchstens zwei Wohnungen, eine selbst bewohnt; und ob die Mieter die
+  // monatliche Verbrauchsinformation anders bekommen (§ 6a Abs. 1, Abweichung 4).
   exemption: HeatingExemption
+  exemptionScope: ExemptionScope | null
   exemptionBillingAgreed: boolean | null
   agreedOtherwise: AgreedOtherwise | null
   monthlyInfoElsewhere: boolean
@@ -677,28 +824,41 @@ Ans Dateiende (hinter `InfoContact` aus Task 1):
 
 ```ts
 export type HeatingExemption = 'none' | 'lowDemand' | 'disproportionate' | 'pre1981' | 'renewable' | 'authority'
+// Welche Töpfe eine Ausnahme nach § 11 betrifft: nur die Wärme (Abs. 1) oder auch das Warmwasser (Abs. 2,
+// „entsprechend“). Prüfbericht vom 05.10.2026, A4.
+export type ExemptionScope = 'heat' | 'both'
 export type AgreedOtherwise = 'area' | 'fixedPercent' | 'consumption'
 // Die Nummern des § 6a Abs. 3 Satz 1.
 export type InfoItem = '1a' | '1b' | '1c' | '2' | '3' | '4' | '5'
-export type HeatingInfoInputs = Pick<HeatingPeriodData, 'infoTaxesText' | 'infoDistrictGhg' | 'infoDistrictPef' | 'climateFactor' | 'climateFactorPrev' | 'consumerContract'> & { postalCode: string | null }
+export type HeatingInfoInputs = Pick<HeatingPeriodData, 'infoTaxesText' | 'infoDistrictGhg' | 'infoDistrictPef' | 'climateFactor' | 'climateFactorPrev' | 'consumerContract' | 'infoReferenceKwhPerM2' | 'infoReferenceSource'> & { postalCode: string | null }
 // Vergleich je Mieter (Nr. 4, 5). Verbrauch in der Einheit des Topfs; `null`: nicht erfasst.
+// `referenceKwh`: der Vergleichswert des Durchschnittsnutzers, umgerechnet auf Wohnfläche und Tage des
+// Mieters (Abweichung 14); kein Hausdurchschnitt.
 export type InfoComparison = {
   tenancyId: string
   label: string
   days: number
   prevDays: number | null
-  heating: { now: number | null; perM2: number | null; houseAvgPerM2: number | null; prev: number | null; nowAdjusted: number | null; prevAdjusted: number | null } | null
-  water: { now: number | null; perM2: number | null; houseAvgPerM2: number | null; prev: number | null } | null
+  heating: { now: number | null; perM2: number | null; referenceKwh: number | null; prev: number | null; nowAdjusted: number | null; prevAdjusted: number | null } | null
+  water: { now: number | null; perM2: number | null; prev: number | null } | null
   // Kein Verbrauch dieses Mieters im vorhergehenden Zeitraum (Entwurf 15.1 Nr. 14).
   firstPeriod: boolean
+  // Sein Anteil an den jährlichen Treibhausgasemissionen der Fernwärme in kg CO₂-Äquivalent (Abweichung 13).
+  ghgKg: number | null
 }
 export type HeatingInfoStatement = {
   // `full`: § 6a Abs. 3; `minimal`: Abs. 5, nur Nr. 2 und 3.
   scope: 'full' | 'minimal'
   energy: HeatingEnergy
-  district: { ghg: number | null; pef: number | null } | null
+  // Bei Fernwärme: Faktor laut Versorger (g CO₂-Äquivalent je kWh), Primärenergiefaktor und die jährliche
+  // Menge in kg CO₂-Äquivalent (Faktor mal gelieferte kWh; Abweichung 13).
+  district: { ghg: number | null; pef: number | null; annualKg: number | null } | null
   taxesText: string | null
   meteringCents: number
+  // Nr. 4: der eingetragene Vergleichswert mit Quelle (`null`: fehlt) und ob Mietfuchs ihn mit dem
+  // Verbrauch vergleichen kann (Wärme in kWh; nicht bei Heizkostenverteilern oder ausgenommener Wärme).
+  reference: { kwhPerM2: number; source: string } | null
+  referenceComparable: boolean
   contacts: InfoContact[]
   contactsChecked: string
   // Nr. 3: `none` kein Verbrauchervertrag, `text` die Information, `unknown` unbeantwortet.
@@ -709,17 +869,37 @@ export type HeatingInfoStatement = {
   // Sicher fehlend, und vielleicht fehlend (Fernwärme vor 2022, Verbrauchervertrag unbeantwortet).
   missing: InfoItem[]
   uncertain: InfoItem[]
+  // Nach der Prüfung vom 05.10.2026: ob Mietfuchs die Vergleiche Nr. 4 und 5 gerechnet hat (nur aus der
+  // eigenen Abrechnung, A1), ob die Anlage einen weiteren Erzeuger hat (Nr. 1 a unbekannt, A7) und ob die
+  // Wärme nach § 11 ausgenommen ist (die Angaben betreffen dann das Warmwasser, A4).
+  comparisons: boolean
+  mixedGeneration: boolean
+  heatExempt: boolean
 }
 ```
 
-(`HeatingEnergy`, `HeatingPeriodData` stehen in shared/types.ts seit PR 4.)
+In `HeatingPeriodData` (PR 4) hinter `consumerContract`:
+
+```ts
+  // § 6a Abs. 3 Nr. 4 (Heizung PR 14, Abweichung 14): Vergleichswert des Durchschnittsnutzers in kWh je m²
+  // Wohnfläche für die Heizperiode, mit Quelle (etwa die Vergleichswerte des Ablesedienstes). Wie
+  // `referenceKwhPerM2`/`referenceSource` der monatlichen Information (PR 22), hier für den Zeitraum.
+  infoReferenceKwhPerM2: number | null
+  infoReferenceSource: string | null
+```
+
+(`HeatingEnergy`, `HeatingPeriodData` stehen in shared/types.ts seit PR 4. Jede Stelle, die eine
+`HeatingPeriodData` vollständig baut (read.ts, db/co2.ts, Testdaten), bekommt die beiden Felder mit `null`;
+der Übersetzer nennt jede.)
 
 - [ ] **Step 4: Erster Schritt (`server/src/db/schema.ts`)**
 
-Den Typimport um `AgreedOtherwise, HeatingExemption` ergänzen; bei den Listen der Heizanlage:
+Den Typimport um `AgreedOtherwise, ExemptionScope, HeatingExemption` ergänzen; bei den Listen der
+Heizanlage:
 
 ```ts
 export const HEATING_EXEMPTIONS = exactly<HeatingExemption>()(['none', 'lowDemand', 'disproportionate', 'pre1981', 'renewable', 'authority'] as const)
+export const EXEMPTION_SCOPES = exactly<ExemptionScope>()(['heat', 'both'] as const)
 export const AGREED_OTHERWISE = exactly<AgreedOtherwise>()(['area', 'fixedPercent', 'consumption'] as const)
 ```
 
@@ -728,15 +908,24 @@ In `heatingPlants` als letzte Spalten:
 ```ts
     // Ausnahmen und Vereinbarungen (Heizung PR 14). Bedingungen im zweiten Schritt.
     exemption: text('exemption', { enum: HEATING_EXEMPTIONS }).notNull().default('none'),
+    exemptionScope: text('exemption_scope', { enum: EXEMPTION_SCOPES }),
     exemptionBillingAgreed: integer('exemption_billing_agreed', { mode: 'boolean' }),
     agreedOtherwise: text('agreed_otherwise', { enum: AGREED_OTHERWISE }),
     monthlyInfoElsewhere: integer('monthly_info_elsewhere', { mode: 'boolean' }).notNull().default(false),
 ```
 
+In `heatingPeriods` hinter `consumerContract` (PR 4):
+
+```ts
+    // § 6a Abs. 3 Nr. 4: Vergleichswert des Durchschnittsnutzers mit Quelle (Heizung PR 14, Abweichung 14).
+    infoReferenceKwhPerM2: real('info_reference_kwh_per_m2'),
+    infoReferenceSource: text('info_reference_source'),
+```
+
 Run: `npm --prefix server run db:generate -- --name pflichtangaben`
 
-Expected: `server/drizzle/0033_pflichtangaben.sql` mit genau vier `ALTER TABLE \`heating_plants\` ADD`.
-Kein `__new_`.
+Expected: `server/drizzle/0033_pflichtangaben.sql` mit genau fünf `ALTER TABLE \`heating_plants\` ADD`
+und zwei `ALTER TABLE \`heating_periods\` ADD`. Kein `__new_`.
 
 - [ ] **Step 5: Zweiter Schritt**
 
@@ -744,16 +933,28 @@ In den Bedingungen von `heatingPlants` hinter denen von PR 10:
 
 ```ts
     oneOf('heating_plants_exemption_known', 'exemption', HEATING_EXEMPTIONS),
+    oneOf('heating_plants_exemption_scope_known', 'exemption_scope', EXEMPTION_SCOPES),
+    // Der Umfang gehört zu einer Ausnahme (Prüfbericht A4).
+    check('heating_plants_exemption_scope_with_exemption', sql.raw(`"exemption_scope" IS NULL OR "exemption" <> 'none'`)),
     oneOf('heating_plants_agreed_otherwise_known', 'agreed_otherwise', AGREED_OTHERWISE),
     // Die Frage nach der vereinbarten Abrechnung gibt es nur bei einer Ausnahme (§ 2 Abs. 7 CO2KostAufG).
     check('heating_plants_billing_agreed_with_exemption', sql.raw(`"exemption_billing_agreed" IS NULL OR "exemption" <> 'none'`)),
 ```
 
+In den Bedingungen von `heatingPeriods` hinter denen von PR 4 (dieselben Namen wie in
+`heating_monthly_info` von PR 22, mit dem Präfix der Tabelle):
+
+```ts
+    // Nr. 4: ein Vergleichswert über 0 und nur mit Quelle (Abweichung 14).
+    check('heating_periods_info_reference_positive', sql.raw('"info_reference_kwh_per_m2" IS NULL OR "info_reference_kwh_per_m2" > 0')),
+    check('heating_periods_info_reference_source', sql.raw(`"info_reference_kwh_per_m2" IS NULL OR length(trim(coalesce("info_reference_source", ''))) > 0`)),
+```
+
 Run: `npm --prefix server run db:generate -- --name pflichtangaben_bedingungen`
 
-Expected: `server/drizzle/0034_pflichtangaben_bedingungen.sql` mit `PRAGMA foreign_keys=OFF`, einem
-Neubau `__new_heating_plants` samt `INSERT INTO … SELECT`, `DROP TABLE`, `RENAME`, `PRAGMA
-foreign_keys=ON`. Kein `ALTER TABLE … ADD`.
+Expected: `server/drizzle/0034_pflichtangaben_bedingungen.sql` mit `PRAGMA foreign_keys=OFF`, je einem
+Neubau `__new_heating_plants` und `__new_heating_periods` samt `INSERT INTO … SELECT`, `DROP TABLE`,
+`RENAME`, `PRAGMA foreign_keys=ON`. Kein `ALTER TABLE … ADD`.
 
 - [ ] **Step 6: Marken (`server/test/migrations.test.ts`)**
 
@@ -772,38 +973,59 @@ In `VEROEFFENTLICHT` hinter `'0032_schaetzung'` die beiden Zeilen, darüber
 
 ```ts
     exemption: p.exemption,
+    exemptionScope: p.exemptionScope,
     exemptionBillingAgreed: p.exemptionBillingAgreed,
     agreedOtherwise: p.agreedOtherwise,
     monthlyInfoElsewhere: p.monthlyInfoElsewhere,
 ```
 
-`server/src/db/heating.ts`: Importe `AGREED_OTHERWISE, HEATING_EXEMPTIONS` aus `'./schema.ts'`. In
-`mergeHeatingPlant` hinter den Feldern von PR 10:
+`server/src/db/heating.ts`: Importe `AGREED_OTHERWISE, EXEMPTION_SCOPES, HEATING_EXEMPTIONS` aus
+`'./schema.ts'`. In `mergeHeatingPlant` hinter den Feldern von PR 10 bis PR 12:
 
 ```ts
     exemption: merged(body, 'exemption', current.exemption, (v) => oneOfOrUndefined(HEATING_EXEMPTIONS, v) ?? current.exemption),
+    exemptionScope: merged(body, 'exemptionScope', current.exemptionScope, (v) => (v === null ? null : oneOfOrUndefined(EXEMPTION_SCOPES, v) ?? current.exemptionScope)),
     exemptionBillingAgreed: merged(body, 'exemptionBillingAgreed', current.exemptionBillingAgreed, (v) => (v === null ? null : typeof v === 'boolean' ? v : current.exemptionBillingAgreed)),
     agreedOtherwise: merged(body, 'agreedOtherwise', current.agreedOtherwise, (v) => (v === null ? null : oneOfOrUndefined(AGREED_OTHERWISE, v) ?? current.agreedOtherwise)),
     monthlyInfoElsewhere: merged(body, 'monthlyInfoElsewhere', current.monthlyInfoElsewhere, (v) => (typeof v === 'boolean' ? v : current.monthlyInfoElsewhere)),
 ```
 
-und direkt danach, im zurückgegebenen Objekt oder als Nachbearbeitung (je nach Gestalt von
-`mergeHeatingPlant`): Ist `exemption` `'none'`, ist `exemptionBillingAgreed` `null` (die Frage gibt es
-dann nicht). In `emptyHeatingPlant` als letzte Felder `exemption: 'none', exemptionBillingAgreed: null,
-agreedOtherwise: null, monthlyInfoElsewhere: false,`; in `plantRow` dieselben vier Felder.
+und direkt danach als Nachbearbeitung des zurückgegebenen Objekts (`const merged = { … }`, dann):
+
+```ts
+  // Ohne Ausnahme gibt es weder die Frage nach der vereinbarten Abrechnung noch den Umfang; bei Nr. 1 a
+  // („Heizwärmebedarf“) betrifft die Ausnahme nach dem Wortlaut nur die Wärme (Abweichung 7).
+  if (merged.exemption === 'none') {
+    merged.exemptionBillingAgreed = null
+    merged.exemptionScope = null
+  } else if (merged.exemption === 'lowDemand' && merged.exemptionScope === null) {
+    merged.exemptionScope = 'heat'
+  }
+```
+
+(Heißt das Objekt in `mergeHeatingPlant` anders oder wird es unmittelbar zurückgegeben, wird es vorher in
+einer Konstante gehalten.) In `emptyHeatingPlant` als letzte Felder `exemption: 'none', exemptionScope: null,
+exemptionBillingAgreed: null, agreedOtherwise: null, monthlyInfoElsewhere: false,`; in `plantRow`
+dieselben fünf Felder.
+
+`server/testing/selfHeating.ts` (PR 11): in `PLANT` hinter den Feldern von PR 11 und PR 12
+`exemption: 'none', exemptionScope: null, exemptionBillingAgreed: null, agreedOtherwise: null, monthlyInfoElsewhere: false,`;
+ebenso in den vollständigen Literalen von `HeatingPlant` in den Tests des Clients (PR 4, 10, 11); der
+Übersetzer nennt jedes.
 
 `server/src/snapshot.ts`: `SnapshotHeatingPlant` als weiteren Teil der Schnittmenge
 
 ```ts
-  // Ausnahmen und Vereinbarungen (Heizung PR 14); fehlt ein Feld, gilt die Vorgabe der Spalte.
-  & Partial<Pick<HeatingPlant, 'exemption' | 'exemptionBillingAgreed' | 'agreedOtherwise' | 'monthlyInfoElsewhere'>>
+  // Ausnahmen und Vereinbarungen (Heizung PR 14); fehlt ein Feld, gilt die Vorgabe der Spalte. Der
+  // Erzeuger (`heatGeneration`) kommt seit PR 11 mit.
+  & Partial<Pick<HeatingPlant, 'exemption' | 'exemptionScope' | 'exemptionBillingAgreed' | 'agreedOtherwise' | 'monthlyInfoElsewhere'>>
 ```
 
 und `SnapshotHeatingPeriodRow`:
 
 ```ts
   // § 10 und § 6a (Heizung PR 14).
-  & Partial<Pick<HeatingPeriodData, 'above70Agreed' | 'infoTaxesText' | 'infoDistrictGhg' | 'infoDistrictPef' | 'climateFactor' | 'climateFactorPrev' | 'consumerContract'>>
+  & Partial<Pick<HeatingPeriodData, 'above70Agreed' | 'infoTaxesText' | 'infoDistrictGhg' | 'infoDistrictPef' | 'climateFactor' | 'climateFactorPrev' | 'consumerContract' | 'infoReferenceKwhPerM2' | 'infoReferenceSource'>>
 ```
 
 (Reicht `snapshotFor` Anlagen und Zeilen als ganze Datensätze durch, kommen die Felder von selbst.)
@@ -813,7 +1035,7 @@ und `SnapshotHeatingPeriodRow`:
 Run: `npm --prefix server test -- test/schema.test.ts test/migrations.test.ts test/db-heizanlage.test.ts test/db-golden.test.ts && npm run typecheck`
 Expected: PASS. Der Übersetzer verlangt `info` an `HeatingPeriodView` in `heatingPeriodViews` (db/co2.ts);
 bis Task 4 steht dort
-`info: { infoTaxesText: null, infoDistrictGhg: null, infoDistrictPef: null, climateFactor: null, climateFactorPrev: null, consumerContract: null, postalCode: null },`
+`info: { infoTaxesText: null, infoDistrictGhg: null, infoDistrictPef: null, climateFactor: null, climateFactorPrev: null, consumerContract: null, infoReferenceKwhPerM2: null, infoReferenceSource: null, postalCode: null },`
 mit dem Kommentar „Heizung PR 14, gefüllt in Task 4“; ebenso in Testdaten des Clients.
 
 - [ ] **Step 9: Run all tests and commit**
@@ -822,10 +1044,11 @@ Run: `npm test`
 Expected: PASS.
 
 ```bash
-git add shared/types.ts server/src/db server/drizzle server/src/snapshot.ts client/src server/test/schema.test.ts server/test/migrations.test.ts
-git commit -m "Pflichtangaben: Ausnahme nach § 11, Vereinbarung nach § 2 und monatliche Information an der Heizanlage
+git add shared/types.ts server/src/db server/drizzle server/src/snapshot.ts server/testing/selfHeating.ts client/src server/test/schema.test.ts server/test/migrations.test.ts
+git commit -m "Pflichtangaben: Ausnahme nach § 11 je Topf, Vereinbarung nach § 2 und monatliche Information an der Heizanlage
 
-Zwei erzeugte Schritte, erst die Spalten, dann die Bedingungen.
+Dazu der Vergleichswert des Durchschnittsnutzers mit Quelle je Heizperiode. Zwei erzeugte Schritte,
+erst die Spalten, dann die Bedingungen.
 
 Refs #99"
 ```
@@ -840,7 +1063,7 @@ Refs #99"
 - Test: `server/test/heating-info.test.ts` (neu), `server/test/heating.test.ts`
 
 **Interfaces:**
-- Consumes: `SelfPlan` (PR 10, PR 13: `units[].measured`, `totals[].overThreshold`); `HeatingInfoStatement`, `InfoComparison`, `InfoItem`, `InfoContact`, `HeatingEnergy`, `SelfPot`; `CONSUMER_CONTRACT_NONE`.
+- Consumes: `SelfPlan` (PR 10, PR 13: `units[].measured`, `totals[].overThreshold`); `HeatingInfoStatement`, `InfoComparison`, `InfoItem`, `InfoContact`, `HeatingEnergy`, `SelfPot`; `CONSUMER_CONTRACT_NONE`; die Einheit des Topfs Wärme (`potUnitOf`, PR 12: `'kWh'` oder `'Einheiten'`).
 - Produces:
   - `heatingInfo.ts`: `type InfoRow`, `type InfoInput`, `byConsumption(plan: SelfPlan | null): boolean`, `heatingInfoOf(i: InfoInput): HeatingInfoStatement`
   - `heating.ts`: `ShareRow.above70Agreed?: boolean | null`; `ConsumptionShares.above70Agreed: boolean`, `ConsumptionShares.insulationRule: InsulationRule | null`
@@ -891,20 +1114,26 @@ const READINGS = [
 ]
 const plan: SelfPlan = planSelf(base({ from: '2025-01-01', to: '2025-12-31' }, READINGS))
 const prev: SelfPlan = planSelf(base({ from: '2024-01-01', to: '2024-12-31' }, READINGS))
-const row = { infoTaxesText: 'Energiesteuer 312,00 €, Umsatzsteuer 19 %', infoDistrictGhg: null, infoDistrictPef: null, climateFactor: 1.08, climateFactorPrev: 1.15, consumerContract: 'none' }
+const SOURCE = 'Vergleichswerte des Ablesedienstes Beispiel 2025'
+const row = {
+  infoTaxesText: 'Energiesteuer 312,00 €, Umsatzsteuer 19 %', infoDistrictGhg: null, infoDistrictPef: null, climateFactor: 1.08, climateFactorPrev: 1.15, consumerContract: 'none',
+  infoReferenceKwhPerM2: 150, infoReferenceSource: SOURCE,
+}
 const input = (over: Partial<InfoInput> = {}): InfoInput => ({
   byConsumption: true, energy: 'gas', districtRequired: 'yes', row, prevClimateFactor: null, meteringCents: 18000, contacts: INFO_CONTACTS, plan, prev,
-  units: { heating: 'kWh', water: 'm³' }, ...over,
+  units: { heating: 'kWh', water: 'm³' }, periodDays: 365, ...over,
 })
 
-test('vollständig: nichts fehlt; Vergleich je Mieter mit Hausdurchschnitt und Witterungsbereinigung', () => {
+test('vollständig: nichts fehlt; Vergleich je Mieter mit dem Vergleichswert und Witterungsbereinigung', () => {
   const info = heatingInfoOf(input())
   assert.deepEqual([info.scope, info.missing, info.uncertain], ['full', [], []])
   assert.deepEqual(info.dispute, { kind: 'none' })
+  assert.deepEqual([info.reference, info.referenceComparable], [{ kwhPerM2: 150, source: SOURCE }, true])
   const a = info.users.find((u) => u.tenancyId === 'A') ?? assert.fail('A')
   near(a.heating?.now, 12000, 'A jetzt')
   near(a.heating?.perM2, 200, 'A je m²')
-  near(a.heating?.houseAvgPerM2, 40000 / 200, 'Haus je m²')
+  // 150 kWh je m² · 60 m² Wohnfläche · 365 / 365 Tage
+  near(a.heating?.referenceKwh, 9000, 'A Durchschnittsnutzer')
   near(a.heating?.prev, 1000, 'A Vorjahr')
   near(a.heating?.nowAdjusted, 12960, 'A bereinigt')
   near(a.heating?.prevAdjusted, 1150, 'A Vorjahr bereinigt')
@@ -915,6 +1144,23 @@ test('Review Focus 1: C2 ohne Vorjahr ist erstes Jahr, nur für ihn; die anderen
   const info = heatingInfoOf(input())
   assert.deepEqual(info.users.filter((u) => u.firstPeriod).map((u) => u.tenancyId), ['C2'])
   assert.equal(info.missing.includes('5'), false)
+  // Der Vergleichswert gilt für seine 92 Tage (01.10. bis 31.12.2025).
+  near(info.users.find((u) => u.tenancyId === 'C2')?.heating?.referenceKwh, (150 * 60 * 92) / 365, 'C2 Durchschnittsnutzer')
+})
+
+test('Rechtsbefund 05.10.2026 (BR-Drs. 643/21, S. 19, 21): ohne Vergleichswert mit Quelle fehlt Nr. 4, kein Hausdurchschnitt', () => {
+  const ohne = heatingInfoOf(input({ row: { ...row, infoReferenceKwhPerM2: null, infoReferenceSource: null } }))
+  assert.deepEqual([ohne.missing, ohne.reference], [['4'], null])
+  assert.equal(ohne.users.find((u) => u.tenancyId === 'A')?.heating?.referenceKwh, null)
+  // Ein Wert ohne Quelle ist kein Vergleichswert.
+  const ohneQuelle = heatingInfoOf(input({ row: { ...row, infoReferenceSource: '  ' } }))
+  assert.deepEqual([ohneQuelle.missing, ohneQuelle.reference], [['4'], null])
+})
+
+test('Nr. 4 bei Heizkostenverteilern: Einheiten lassen sich nicht mit kWh vergleichen; Nr. 4 fehlt', () => {
+  const info = heatingInfoOf(input({ units: { heating: 'Einheiten', water: 'm³' } }))
+  assert.deepEqual([info.missing, info.referenceComparable], [['4'], false])
+  assert.equal(info.users.find((u) => u.tenancyId === 'A')?.heating?.referenceKwh, null)
 })
 
 test('Review Focus 2: Vorjahresfaktor fehlt → Nr. 5 fehlt, kein halber Vergleich; Faktor der vorigen Zeile gilt', () => {
@@ -932,8 +1178,8 @@ test('Steuern fehlen (1 b), Fernwärme ohne Emissionen (1 a), Verbrauchervertrag
   assert.deepEqual(info.uncertain, ['3'])
   const frueh = heatingInfoOf(input({ energy: 'districtHeating', districtRequired: 'maybe' }))
   assert.deepEqual([frueh.missing, frueh.uncertain], [[], ['1a']])
-  const mit = heatingInfoOf(input({ energy: 'districtHeating', row: { ...row, infoDistrictGhg: 180, infoDistrictPef: 0.7, consumerContract: 'Wir nehmen an Streitbeilegungsverfahren nicht teil.' } }))
-  assert.deepEqual([mit.missing, mit.district, mit.dispute], [[], { ghg: 180, pef: 0.7 }, { kind: 'text', text: 'Wir nehmen an Streitbeilegungsverfahren nicht teil.' }])
+  const mit = heatingInfoOf(input({ energy: 'districtHeating', deliveredKwh: 40000, row: { ...row, infoDistrictGhg: 180, infoDistrictPef: 0.7, consumerContract: 'Wir nehmen an Streitbeilegungsverfahren nicht teil.' } }))
+  assert.deepEqual([mit.missing, mit.district, mit.dispute], [[], { ghg: 180, pef: 0.7, annualKg: 7200 }, { kind: 'text', text: 'Wir nehmen an Streitbeilegungsverfahren nicht teil.' }])
 })
 
 test('Ohne Vorperiode: alle Mieter im ersten Jahr, Nr. 5 nicht „sicher fehlend“', () => {
@@ -948,6 +1194,39 @@ test('Abs. 5: ohne Verteilung nach Verbrauch nur Nr. 2 und 3', () => {
   assert.ok(info.contacts.length >= 3)
   assert.equal(byConsumption(null), false)
   assert.equal(byConsumption(plan), true)
+})
+
+test('Prüfbericht A1: nach Verbrauch ohne Plan der eigenen Abrechnung (freie Schlüssel nach Zählern): volle Pflicht, Nr. 4 und 5 fehlen', () => {
+  const info = heatingInfoOf(input({ plan: null, prev: null }))
+  assert.deepEqual([info.scope, info.missing, info.comparisons, info.users], ['full', ['4', '5'], false, []])
+})
+
+test('Prüfbericht A4: Ausnahme nur für die Wärme: kein Vergleich der Heizung, Nr. 5 ohne Klimafaktor nicht fehlend', () => {
+  const info = heatingInfoOf(input({ pots: ['water'], row: { ...row, climateFactor: null, climateFactorPrev: null } }))
+  assert.equal(info.heatExempt, true)
+  assert.ok(info.users.every((u) => u.heating === null))
+  assert.equal(info.missing.includes('5'), false)
+  // Nr. 4 vergleicht den Wärmeverbrauch in kWh; für das Warmwasser allein kann Mietfuchs nicht vergleichen
+  // (Festlegung, Abweichung 14).
+  assert.deepEqual([info.missing, info.referenceComparable], [['4'], false])
+})
+
+test('Prüfbericht A7: Anlage mit weiterem Erzeuger: der Anteil der Energieträger (Nr. 1 a) fehlt', () => {
+  const info = heatingInfoOf(input({ mixedGeneration: true }))
+  assert.deepEqual([info.missing, info.mixedGeneration], [['1a'], true])
+})
+
+test('Prüfbericht A8: Fernwärme mit jährlicher Menge: Faktor mal gelieferte kWh, je Mieter nach seinem Anteil an den Kosten', () => {
+  // 180 g je kWh · 40.000 kWh = 7.200 kg; Mieter A mit einem Viertel der Kosten: 1.800 kg.
+  const info = heatingInfoOf(input({
+    energy: 'districtHeating', row: { ...row, infoDistrictGhg: 180, infoDistrictPef: 0.7 }, deliveredKwh: 40000, costShares: new Map([['A', 0.25]]),
+  }))
+  assert.deepEqual([info.missing, info.district], [[], { ghg: 180, pef: 0.7, annualKg: 7200 }])
+  assert.equal(info.users.find((u) => u.tenancyId === 'A')?.ghgKg, 1800)
+  assert.equal(info.users.find((u) => u.tenancyId === 'B')?.ghgKg, null)
+  // Ohne gelieferte kWh lässt sich die jährliche Menge nicht angeben: Nr. 1 a fehlt.
+  const ohneKwh = heatingInfoOf(input({ energy: 'districtHeating', row: { ...row, infoDistrictGhg: 180, infoDistrictPef: 0.7 } }))
+  assert.deepEqual([ohneKwh.missing, ohneKwh.district?.annualKg], [['1a'], null])
 })
 ```
 
@@ -1014,17 +1293,19 @@ In `consumptionSharesOf` die Rückgabe ersetzen durch:
 aus PR 10. Die Tests von PR 10 vergleichen einzelne Felder, nicht das ganze Objekt; vergleicht einer das
 ganze Objekt mit `assert.deepEqual`, kommen die beiden neuen Felder in seine Erwartung.)
 
-- [ ] **Step 4: Angaben nach § 6a (`server/src/heatingInfo.ts`, neu)**
-
 ```ts
 // Die Informationen nach § 6a Abs. 3 und 5 HeizkostenV (Heizung PR 14, Entwurf 8.8) als reine Funktion.
 // Kein Geld außer Nr. 1 c, keine Uhr, keine Locale. Was fehlt, sagt `missing` (sicher) und `uncertain`
 // (vielleicht: Fernwärme vor 2022, Verbrauchervertrag unbeantwortet); das erste Jahr eines Mieters steht
 // je Mieter (`firstPeriod`, Entwurf 15.1 Nr. 14).
 //
-// Nr. 4: Hausdurchschnitt je m², so benannt, als Ersatz für den normierten Durchschnittsnutzer
-// (15.2 F5). Nr. 5: Wärmeverbrauch mal Klimafaktor des DWD, Warmwasser unbereinigt daneben (Satz 2, 3).
-// Beides ⟨Norm offen: DIN 94680⟩.
+// Nr. 4: der Vergleichswert des Durchschnittsnutzers, den der Vermieter mit Quelle einträgt (etwa vom
+// Ablesedienst), umgerechnet auf Wohnfläche und Tage des Mieters. Kein Hausdurchschnitt: Die Begründung
+// schließt den Vergleich „mit den Nutzern im selben Gebäude“ aus (BR-Drs. 643/21, S. 19 und 21;
+// Abweichung 14). Nr. 5: Wärmeverbrauch mal Klimafaktor des DWD, Warmwasser unbereinigt daneben
+// (Satz 2, 3). Beides ⟨Norm offen: DIN 94680⟩. Ob die Abrechnung auf dem Verbrauch beruht (Abs. 3 oder Abs. 5),
+// entscheidet der Aufrufer aus den Schlüsseln der Positionen (Prüfbericht vom 05.10.2026, A1); Nr. 4 und 5
+// rechnet Mietfuchs nur aus dem Plan der eigenen Abrechnung, ohne ihn fehlen sie.
 import type { HeatingEnergy, HeatingInfoStatement, InfoComparison, InfoContact, InfoItem, SelfPot } from '../../shared/types.ts'
 import { CONSUMER_CONTRACT_NONE } from '../../shared/heatingInfo.ts'
 import type { SelfPlan, SelfUnitPlan } from './heating.ts'
@@ -1036,6 +1317,9 @@ export type InfoRow = {
   climateFactor: number | null
   climateFactorPrev: number | null
   consumerContract: string | null
+  // Nr. 4: Vergleichswert in kWh je m² Wohnfläche für die Heizperiode und seine Quelle (Abweichung 14).
+  infoReferenceKwhPerM2: number | null
+  infoReferenceSource: string | null
 }
 export type InfoInput = {
   // § 6a Abs. 3 (beruht auf dem Verbrauch) oder Abs. 5
@@ -1049,13 +1333,27 @@ export type InfoInput = {
   meteringCents: number
   contacts: readonly InfoContact[]
   contactsChecked?: string
+  // Der Plan der eigenen Abrechnung und der der Vorperiode (PR 13); `null` bei freien Schlüsseln.
   plan: SelfPlan | null
   prev: SelfPlan | null
   units: { heating: string; water: string }
+  // Tage der Heizperiode, für die Umrechnung des Vergleichswerts auf die Tage des Mieters.
+  periodDays: number
+  // Die Töpfe, für die die Verordnung gilt: ohne `heating`, wenn § 11 nur die Wärme ausnimmt
+  // (Prüfbericht A4). Fehlt: beide.
+  pots?: readonly SelfPot[]
+  // Die Anlage erzeugt die Wärme mit einem weiteren Erzeuger (`heatGeneration = 'mixed'`, PR 11); den
+  // Anteil der Energieträger nach Nr. 1 a kennt Mietfuchs dann nicht (Prüfbericht A7).
+  mixedGeneration?: boolean
+  // Bei Fernwärme die gelieferten kWh der Heizperiode und je Mietverhältnis sein Anteil an den Kosten der
+  // Anlage, für die jährlichen Treibhausgasemissionen (Prüfbericht A8).
+  deliveredKwh?: number | null
+  costShares?: ReadonlyMap<string, number>
 }
 
-// Beruht die Abrechnung auf dem Verbrauch? Ja, sobald ein Topf nach Verbrauch verteilt wird; ein Topf nur
-// nach Fläche (nicht erfasst oder § 9a Abs. 2) zählt nicht.
+// Beruht die eigene Abrechnung auf dem Verbrauch? Ja, sobald ein Topf nach Verbrauch verteilt wird; ein
+// Topf nur nach Fläche (nicht erfasst oder § 9a Abs. 2) zählt nicht. Für Positionen mit dem Schlüssel
+// `heatingSystem` (Aufrufer in calc.ts, `infoOf`).
 export function byConsumption(plan: SelfPlan | null): boolean {
   return plan !== null && plan.pots.some((p) => plan.totals[p].measured && !plan.totals[p].overThreshold)
 }
@@ -1081,6 +1379,7 @@ function sumFor(plan: SelfPlan | null, tenancyId: string, p: SelfPot): { value: 
 export function heatingInfoOf(i: InfoInput): HeatingInfoStatement {
   const missing: InfoItem[] = []
   const uncertain: InfoItem[] = []
+  const pots = i.pots ?? ['heating', 'water']
   const row = i.row
   const contract = row?.consumerContract ?? null
   const dispute: HeatingInfoStatement['dispute'] = contract === null ? { kind: 'unknown' } : contract === CONSUMER_CONTRACT_NONE ? { kind: 'none' } : filled(contract) ? { kind: 'text', text: contract.trim() } : { kind: 'unknown' }
@@ -1094,22 +1393,41 @@ export function heatingInfoOf(i: InfoInput): HeatingInfoStatement {
     dispute,
     units: i.units,
     climate: { factor, factorPrev },
+    heatExempt: !pots.includes('heating'),
   }
-  if (!i.byConsumption || !i.plan) {
-    return { ...base, scope: 'minimal', district: null, taxesText: null, meteringCents: 0, users: [], missing, uncertain }
+  if (!i.byConsumption) {
+    return { ...base, scope: 'minimal', district: null, taxesText: null, meteringCents: 0, reference: null, referenceComparable: false, users: [], missing, uncertain, comparisons: false, mixedGeneration: false }
   }
-  const plan = i.plan
-  // Nr. 1 a: Fernwärme mit Emissionen und Primärenergiefaktor des Netzes.
-  const district = i.energy === 'districtHeating' ? { ghg: row?.infoDistrictGhg ?? null, pef: row?.infoDistrictPef ?? null } : null
-  if (district && (district.ghg === null || district.pef === null)) (i.districtRequired === 'yes' ? missing : uncertain).push('1a')
+  // Nr. 1 a: der Anteil der eingesetzten Energieträger; mit einem weiteren Erzeuger unbekannt (A7).
+  const mixedGeneration = i.mixedGeneration === true
+  if (mixedGeneration) missing.push('1a')
+  // Bei Fernwärme dazu die „jährlichen Treibhausgasemissionen“ als Menge (A8): Faktor laut Versorger
+  // (g CO₂-Äquivalent je kWh) mal gelieferte kWh; und der Primärenergiefaktor.
+  const ghg = row?.infoDistrictGhg ?? null
+  const annualKg = ghg !== null && i.deliveredKwh !== null && i.deliveredKwh !== undefined ? (ghg * i.deliveredKwh) / 1000 : null
+  const district = i.energy === 'districtHeating' ? { ghg, pef: row?.infoDistrictPef ?? null, annualKg } : null
+  if (district && (district.ghg === null || district.pef === null || district.annualKg === null) && !missing.includes('1a')) {
+    (i.districtRequired === 'yes' ? missing : uncertain).push('1a')
+  }
   // Nr. 1 b: Steuern, Abgaben, Zölle laut Rechnung.
   const taxesText = row && filled(row.infoTaxesText) ? (row.infoTaxesText ?? '').trim() : null
   if (taxesText === null) missing.push('1b')
-  // Nr. 4 und 5 je Mieter.
-  const avg = (p: SelfPot): number | null => {
-    const t = plan.totals[p]
-    return plan.pots.includes(p) && t.measured && !t.overThreshold && t.area > 0 ? t.consumption / t.area : null
+  // Nr. 4: der Vergleichswert gilt nur mit Quelle; ohne Quelle ist er keiner (wie PR 22,
+  // `heating_monthly_info`).
+  const refValue = row?.infoReferenceKwhPerM2 ?? null
+  const refSource = row && filled(row.infoReferenceSource) ? (row.infoReferenceSource ?? '').trim() : null
+  const reference = refValue !== null && refValue > 0 && refSource !== null ? { kwhPerM2: refValue, source: refSource } : null
+  // Nr. 4 und 5 nur aus dem Plan der eigenen Abrechnung (A1). Beruht die Abrechnung auf dem Verbrauch und
+  // gibt es keinen Plan (freie Schlüssel nach Zählern), fehlen sie.
+  const plan = i.plan
+  if (!plan) {
+    missing.push('4', '5')
+    return { ...base, scope: 'full', district, taxesText, meteringCents: i.meteringCents, reference, referenceComparable: false, users: [], missing, uncertain, comparisons: false, mixedGeneration }
   }
+  const inPots = (p: SelfPot): boolean => pots.includes(p) && plan.pots.includes(p)
+  // Verglichen wird der Wärmeverbrauch in kWh (Festlegung, Abweichung 14). Misst der Topf in Einheiten
+  // (Heizkostenverteiler, PR 12) oder ist die Wärme nach § 11 ausgenommen, kann Mietfuchs nicht vergleichen.
+  const referenceComparable = inPots('heating') && i.units.heating === 'kWh'
   const tenancyIds = [...new Set(plan.units.flatMap((u) => u.users.flatMap((x) => (x.role === 'tenancy' && x.tenancyId ? [x.tenancyId] : []))))]
   const users: InfoComparison[] = tenancyIds.map((id) => {
     const unit = plan.units.find((u) => u.users.some((x) => x.tenancyId === id))
@@ -1118,33 +1436,45 @@ export function heatingInfoOf(i: InfoInput): HeatingInfoStatement {
     const before = { heating: sumFor(i.prev, id, 'heating'), water: sumFor(i.prev, id, 'water') }
     const area = (p: SelfPot) => (unit ? potArea(unit, p) : 0)
     const perM2 = (v: number | null, p: SelfPot) => (v !== null && area(p) > 0 ? v / area(p) : null)
-    const firstPeriod = before.heating.value === null
+    // Das erste Jahr misst Mietfuchs am Topf, der unter der Verordnung steht: die Wärme, sonst das Warmwasser.
+    const firstPeriod = inPots('heating') ? before.heating.value === null : before.water.value === null
     const adjusted = factor !== null && factorPrev !== null && !firstPeriod
+    const share = i.costShares?.get(id)
+    // Vergleichswert × Wohnfläche × Tage des Mieters / Tage der Heizperiode (Festlegung wie PR 22).
+    const dwelling = unit ? unit.unit.areaM2 || 0 : 0
+    const referenceKwh = referenceComparable && reference && dwelling > 0 && i.periodDays > 0
+      ? (reference.kwhPerM2 * dwelling * now.heating.days) / i.periodDays
+      : null
     return {
       tenancyId: id,
       label,
       days: now.heating.days,
       prevDays: firstPeriod ? null : before.heating.days,
-      heating: avg('heating') === null && now.heating.value === null ? null : {
+      heating: !inPots('heating') || (now.heating.value === null && referenceKwh === null) ? null : {
         now: now.heating.value,
         perM2: perM2(now.heating.value, 'heating'),
-        houseAvgPerM2: avg('heating'),
+        referenceKwh,
         prev: before.heating.value,
         nowAdjusted: adjusted && now.heating.value !== null ? now.heating.value * factor : null,
         prevAdjusted: adjusted && before.heating.value !== null ? before.heating.value * factorPrev : null,
       },
-      water: !plan.pots.includes('water') ? null : {
+      water: !inPots('water') ? null : {
         now: now.water.value,
         perM2: perM2(now.water.value, 'water'),
-        houseAvgPerM2: avg('water'),
         prev: before.water.value,
       },
       firstPeriod,
+      ghgKg: annualKg !== null && share !== undefined ? annualKg * share : null,
     }
   })
-  // Nr. 5 sicher fehlend, wenn es Mieter mit Vorjahr gibt und ein Klimafaktor fehlt.
-  if (users.some((u) => !u.firstPeriod) && (factor === null || factorPrev === null)) missing.push('5')
-  return { ...base, scope: 'full', district, taxesText, meteringCents: i.meteringCents, users, missing, uncertain }
+  // Nr. 4 fehlt ohne Vergleichswert mit Quelle, ohne vergleichbaren Wärmeverbrauch in kWh und für jeden
+  // Mieter, für den sich der Wert nicht umrechnen lässt (Wohnfläche 0). Ein selbst errechneter
+  // Hausdurchschnitt ersetzt ihn nicht.
+  if (!referenceComparable || reference === null || users.some((u) => u.heating?.referenceKwh === null || u.heating?.referenceKwh === undefined)) missing.push('4')
+  // Nr. 5 sicher fehlend, wenn es Mieter mit Vorjahr gibt und ein Klimafaktor fehlt; bereinigt wird nur die
+  // Wärme (Satz 3), ohne sie braucht es keinen Faktor.
+  if (inPots('heating') && users.some((u) => !u.firstPeriod) && (factor === null || factorPrev === null)) missing.push('5')
+  return { ...base, scope: 'full', district, taxesText, meteringCents: i.meteringCents, reference, referenceComparable, users, missing, uncertain, comparisons: true, mixedGeneration }
 }
 ```
 
@@ -1154,7 +1484,7 @@ export function heatingInfoOf(i: InfoInput): HeatingInfoStatement {
 
 Run: `npm --prefix server test -- test/heating-info.test.ts test/heating.test.ts test/law-literals.test.ts && npm run typecheck`
 Expected: PASS. Die Werte: A 2025 13.000 − 1.000 = 12.000 kWh, 2024 1.000 − 0 = 1.000; 12.000 · 1,08 =
-12.960; 1.000 · 1,15 = 1.150; Haus 40.000 kWh auf 200 m² = 200 kWh je m².
+12.960; 1.000 · 1,15 = 1.150; Vergleichswert 150 kWh je m² · 60 m² = 9.000 kWh (C2: · 92/365 = 2.268,49 kWh).
 
 - [ ] **Step 6: Commit**
 
@@ -1162,8 +1492,8 @@ Expected: PASS. Die Werte: A 2025 13.000 − 1.000 = 12.000 kWh, 2024 1.000 − 
 git add server/src/heatingInfo.ts server/src/heating.ts server/test/heating-info.test.ts server/test/heating.test.ts server/test/law-literals.test.ts
 git commit -m "Pflichtangaben nach § 6a als reine Rechnung; § 10 erbt mit dem Anteil
 
-Hausdurchschnitt je m² und witterungsbereinigter Vergleich je Mieter, das erste Jahr je Mieter;
-sicher und vielleicht fehlende Angaben getrennt.
+Vergleich mit dem eingetragenen Vergleichswert des Durchschnittsnutzers und witterungsbereinigter
+Vergleich je Mieter, das erste Jahr je Mieter; sicher und vielleicht fehlende Angaben getrennt.
 
 Refs #99"
 ```
@@ -1241,8 +1571,16 @@ test('Angaben nach § 6a speichern; Klimafaktor über 0; Verbrauchervertrag none
     await opened.write((db) => setUpSelf(db, 'hp', SETUP, '2025-12-01', newId))
     const save = (body: Record<string, unknown>) => opened.write((db) => saveHeatingInfo(db, 'hp', '2026-01', body))
     const saved = await save({ infoTaxesText: ' Energiesteuer 312,00 € ', climateFactor: 1.08, climateFactorPrev: 1.15, consumerContract: 'none' })
-    assert.deepEqual(saved, { infoTaxesText: 'Energiesteuer 312,00 €', infoDistrictGhg: null, infoDistrictPef: null, climateFactor: 1.08, climateFactorPrev: 1.15, consumerContract: 'none', postalCode: null })
+    assert.deepEqual(saved, { infoTaxesText: 'Energiesteuer 312,00 €', infoDistrictGhg: null, infoDistrictPef: null, climateFactor: 1.08, climateFactorPrev: 1.15, consumerContract: 'none', infoReferenceKwhPerM2: null, infoReferenceSource: null, postalCode: null })
     await assert.rejects(save({ climateFactor: 0 }), status(400, /Klimafaktor.*größer als 0/))
+    // Nr. 4 (Abweichung 14): Vergleichswert über 0 und nur mit Quelle; ein Hausdurchschnitt ist keiner.
+    await assert.rejects(save({ infoReferenceKwhPerM2: 120 }), status(400, /Quelle des Vergleichswerts.*eigenen Haus/))
+    await assert.rejects(save({ infoReferenceKwhPerM2: 0, infoReferenceSource: 'Ablesedienst' }), status(400, /Vergleichswert.*größer als 0/))
+    const ref = await save({ infoReferenceKwhPerM2: 120, infoReferenceSource: ' Vergleichswerte des Ablesedienstes 2026 ' })
+    assert.deepEqual([ref?.infoReferenceKwhPerM2, ref?.infoReferenceSource], [120, 'Vergleichswerte des Ablesedienstes 2026'])
+    // Die Quelle allein zu leeren geht nicht, solange ein Wert dasteht; beides zusammen schon.
+    await assert.rejects(save({ infoReferenceSource: '' }), status(400, /Quelle des Vergleichswerts/))
+    assert.equal((await save({ infoReferenceKwhPerM2: null, infoReferenceSource: null }))?.infoReferenceKwhPerM2, null)
     await assert.rejects(save({ infoDistrictPef: -1 }), status(400, /Primärenergiefaktor.*ab 0/))
     await assert.rejects(save({ consumerContract: '   ' }), status(400, /Streitbeilegung/))
     assert.equal((await save({ consumerContract: null }))?.consumerContract, null)
@@ -1369,8 +1707,9 @@ export function postalCodeOf(address: string | null | undefined): string | null 
 
 ```ts
 // Eingaben zu den Informationen nach § 6a Abs. 3 HeizkostenV je Heizperiode (Heizung PR 14, Entwurf 8.8).
-// Die Spalten stehen seit PR 4 in `heating_periods`. Bei eigener Abrechnung und bei freien Schlüsseln;
-// beim Messdienst liefert dieser die Angaben mit seiner Abrechnung.
+// Die Spalten stehen seit PR 4 in `heating_periods`, der Vergleichswert nach Nr. 4 seit diesem PR
+// (Abweichung 14). Bei eigener Abrechnung und bei freien Schlüsseln; beim Messdienst liefert dieser die
+// Angaben mit seiner Abrechnung.
 import { eq } from 'drizzle-orm'
 import type { HeatingInfoInputs } from '../../../shared/types.ts'
 import { CONSUMER_CONTRACT_NONE, postalCodeOf } from '../../../shared/heatingInfo.ts'
@@ -1414,15 +1753,35 @@ export async function saveHeatingInfo(db: Database, plantId: string, period: str
     else if (typeof c === 'string' && c.trim() !== '') next.consumerContract = c.trim()
     else throw new HeatingError(400, 'Bei einem Verbrauchervertrag tragen Sie die Information zur Streitbeilegung ein (§ 6a Abs. 3 Satz 1 Nr. 3 HeizkostenV); sonst wählen Sie „kein Verbrauchervertrag“.')
   }
+  // Nr. 4 (Abweichung 14): Vergleichswert des Durchschnittsnutzers in kWh je m² Wohnfläche, mit Quelle.
+  // Dieselben Sätze wie bei der monatlichen Information (PR 22, `saveMonthlyInfoRow`).
+  if (has(body, 'infoReferenceKwhPerM2')) {
+    const v = raw(body, 'infoReferenceKwhPerM2')
+    if (v === null || v === undefined || v === '') next.infoReferenceKwhPerM2 = null
+    else if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0) throw new HeatingError(400, 'Der Vergleichswert ist eine Zahl größer als 0 (kWh je m² Wohnfläche in der Heizperiode).')
+    else next.infoReferenceKwhPerM2 = v
+  }
+  if (has(body, 'infoReferenceSource')) {
+    const t = raw(body, 'infoReferenceSource')
+    next.infoReferenceSource = typeof t === 'string' && t.trim() !== '' ? t.trim() : null
+  }
   let saved: Inputs | null = null
   await db.transaction(async (tx) => {
     if (await heatingPeriodClosed(tx, ctx, h)) throw new HeatingError(409, closedText(h))
     const id = await ensureHeatingPeriod(tx, plantId, h.key)
+    const [before] = await tx.select().from(heatingPeriods).where(eq(heatingPeriods.id, id))
+    // Geprüft wird der Stand nach dem Zusammenführen: Ein Rumpf kann nur die Quelle oder nur den Wert ändern.
+    const refAfter = next.infoReferenceKwhPerM2 !== undefined ? next.infoReferenceKwhPerM2 : before?.infoReferenceKwhPerM2 ?? null
+    const sourceAfter = next.infoReferenceSource !== undefined ? next.infoReferenceSource : before?.infoReferenceSource ?? null
+    if (refAfter !== null && sourceAfter === null) {
+      throw new HeatingError(400, 'Bitte nennen Sie die Quelle des Vergleichswerts, etwa die Vergleichsdaten Ihres Ablesedienstes. Ein Durchschnitt aus Ihrem eigenen Haus ist kein zulässiger Vergleich.')
+    }
     if (Object.keys(next).length > 0) await tx.update(heatingPeriods).set(next).where(eq(heatingPeriods.id, id))
     const [r] = await tx.select().from(heatingPeriods).where(eq(heatingPeriods.id, id))
     saved = {
       infoTaxesText: r?.infoTaxesText ?? null, infoDistrictGhg: r?.infoDistrictGhg ?? null, infoDistrictPef: r?.infoDistrictPef ?? null,
       climateFactor: r?.climateFactor ?? null, climateFactorPrev: r?.climateFactorPrev ?? null, consumerContract: r?.consumerContract ?? null,
+      infoReferenceKwhPerM2: r?.infoReferenceKwhPerM2 ?? null, infoReferenceSource: r?.infoReferenceSource ?? null,
     }
   })
   const property = (await readProperties(db)).find((p) => p.id === ctx.plant.propertyId)
@@ -1443,6 +1802,7 @@ In `heatingPeriodViews` die Zeile aus Task 2 Step 8 ersetzen durch:
       info: {
         infoTaxesText: row?.infoTaxesText ?? null, infoDistrictGhg: row?.infoDistrictGhg ?? null, infoDistrictPef: row?.infoDistrictPef ?? null,
         climateFactor: row?.climateFactor ?? null, climateFactorPrev: row?.climateFactorPrev ?? null, consumerContract: row?.consumerContract ?? null,
+        infoReferenceKwhPerM2: row?.infoReferenceKwhPerM2 ?? null, infoReferenceSource: row?.infoReferenceSource ?? null,
         postalCode,
       },
 ```
@@ -1547,10 +1907,10 @@ Refs #99"
 - Test: `server/test/calc-pflichtangaben.test.ts` (neu)
 
 **Interfaces:**
-- Consumes: Task 1–4; im Bestand `heatingAgreeable`, `heatingCuts`, `heating.shareOutside`, Block `heating.flat-rate`; PR 4 `remoteReadingVerdict`; PR 6/7 CO₂-Block (`co2Pots`, `applicable`, `etsExempt`, `co2DeductionsOf`, `report`, `cutsOn`); PR 6/11 Bedingung `heating.dhw-not-metered`; PR 10 `selfPlans`, Hinweisschleife (`notYet`, `list`, `unmeasured`), `cutOf`, `nameOf`, `POT_UNIT`, Block des Plans (`rows`, `shares`, `blocked`); PR 13 `SelfPlantPlan.prev`.
+- Consumes: Task 1–4; im Bestand `heatingAgreeable`, `heatingCuts`, `heating.shareOutside`, Block `heating.flat-rate`, `heatingByConsumption`, `rangeOverlapDays`; PR 4 `remoteReadingVerdict`; PR 6/7 CO₂-Block (`co2Pots`, `applicable`, `etsExempt`, `co2DeductionsOf`, `report`, `cutsOn`), `fuelResults` (`lines[].energyKwh`, PR 7/10); PR 6/11 Bedingung `heating.dhw-not-metered`; PR 10 `selfPlans`, Hinweisschleife (`notYet`, `list`, `unmeasured`), `cutOf`, `nameOf`, `POT_UNIT`, Block des Plans (`rows`, `shares`, `blocked`, `weights`); PR 11 `hkvRenewableExemption`, `SelfPlantPlan.oldHeatPumpExemption`; PR 12 `potUnitOf`; PR 13 `SelfPlantPlan.prev`.
 - Produces:
   - Codes `heating.info-incomplete` (warning), `heating.monthly-info` (warning), `heating.exemption` (hint), `heating.insulation-rule-unknown` (hint)
-  - `suspendedBy(plantId): 'exemption' | 'agreement' | null` in `computeSettlement`
+  - in `computeSettlement`: `exemptionScopeOf(plantId): ExemptionScope | null`, `exemptPot(plantId, pot): boolean`, `agreedFor(plantId): AgreedOtherwise | null`, `noCutFor(plantId, target): boolean`, `co2OffByExemption(plantId): boolean`
   - `HeatingStatement.info`; `SelfHeatingStatement.shares.above70Agreed`; `SelfPlantPlan.prevKey`
 
 - [ ] **Step 1: Write the failing test**
@@ -1577,17 +1937,22 @@ function mitVorperiode(s: Snapshot): Snapshot {
 }
 function mitAngaben(s: Snapshot, over: Record<string, unknown> = {}): Snapshot {
   const rows = (s.heatingPeriodRows ?? []).map((r) => (r.period === s.period.key
-    ? { ...r, infoTaxesText: 'Energiesteuer 312,00 €', climateFactor: 1.08, climateFactorPrev: 1.15, consumerContract: 'none', ...over }
+    ? {
+      ...r, infoTaxesText: 'Energiesteuer 312,00 €', climateFactor: 1.08, climateFactorPrev: 1.15, consumerContract: 'none',
+      infoReferenceKwhPerM2: 150, infoReferenceSource: 'Vergleichswerte des Ablesedienstes Beispiel 2025', ...over,
+    }
     : r))
   return { ...s, heatingPeriodRows: rows }
 }
 const mitAnlage = (s: Snapshot, over: Record<string, unknown>): Snapshot => ({ ...s, heatingPlants: (s.heatingPlants ?? []).map((p) => ({ ...p, ...over })) })
 
-test('Ohne Angaben: Nr. 1 b und 5 fehlen sicher (3 % je Mieter), Nr. 3 vielleicht', () => {
+test('Ohne Angaben: Nr. 1 b, 4 und 5 fehlen sicher (3 % je Mieter), Nr. 3 vielleicht; kein Hausdurchschnitt', () => {
   const s = computeSettlement(mitVorperiode(selfSnapshot()))
   const n = s.notices.find((x) => x.code === 'heating.info-incomplete') ?? assert.fail('kein Hinweis')
   assert.equal(n.level, 'warning')
-  assert.match(n.text, /Es fehlen: die erhobenen Steuern, Abgaben und Zölle \(Nr\. 1 b\) und der witterungsbereinigte Vergleich mit dem Vorzeitraum \(Nr\. 5\)/)
+  assert.match(n.text, /Es fehlen: die erhobenen Steuern, Abgaben und Zölle \(Nr\. 1 b\), der Vergleich mit einem normierten oder durch Vergleichstests ermittelten Durchschnittsnutzer \(Nr\. 4\) und der witterungsbereinigte Vergleich mit dem Vorzeitraum \(Nr\. 5\)/)
+  // Rechtsbefund vom 05.10.2026: Der Vergleichswert kommt mit Quelle vom Vermieter (BR-Drs. 643/21, S. 19, 21).
+  assert.match(n.text, /Vergleichswert.*Quelle.*eigenen Haus ist kein zulässiger Vergleich/s)
   assert.match(n.text, /um 3 % kürzen \(§ 12 Abs\. 1 Satz 3 HeizkostenV\)/)
   assert.match(n.text, /Verbrauchervertrag.*bis zu 3 %/s)
   assert.ok(s.legalBasis.values?.some((v) => v.id === 'hkv.cut.information'))
@@ -1602,6 +1967,9 @@ test('Vollständig: kein Hinweis außer dem ersten Jahr von C2 („bis zu“, Au
   assert.deepEqual([info.scope, info.missing, info.taxesText], ['full', [], 'Energiesteuer 312,00 €'])
   const a = info.users.find((u) => u.label === 'Mieter A') ?? assert.fail('A')
   assert.ok(a.heating && Math.abs((a.heating.nowAdjusted ?? 0) - 12000 * 1.08) < 1e-6)
+  // Vergleichswert 150 kWh je m² auf die 60 m² von A, ganzes Jahr.
+  assert.ok(a.heating && Math.abs((a.heating.referenceKwh ?? 0) - 150 * 60) < 1e-6)
+  assert.deepEqual(info.reference, { kwhPerM2: 150, source: 'Vergleichswerte des Ablesedienstes Beispiel 2025' })
   assert.ok(info.meteringCents > 0)
 })
 
@@ -1611,26 +1979,55 @@ test('Monatliche Information: bei fernablesbarem Zähler eine Warnung „bis zu 
   const fern: Snapshot = { ...base, meters: base.meters.map((m) => (m.id === erster.id ? { ...m, remoteReadable: true } : m)) }
   const n = computeSettlement(fern).notices.find((x) => x.code === 'heating.monthly-info') ?? assert.fail('kein Hinweis')
   assert.equal(n.level, 'warning')
-  assert.match(n.text, /monatliche Verbrauchsinformationen.*seit dem 01\.01\.2022.*bis zu 3 %.*Portal des Messdienstes/s)
+  assert.match(n.text, /monatliche Verbrauchsinformationen.*seit dem 01\.01\.2022.*bis zu 3 %.*Portal des Messdienstes mit jeden Monat einer Nachricht/s)
   assert.ok(!codes(computeSettlement(mitAnlage(fern, { monthlyInfoElsewhere: true }))).includes('heating.monthly-info'))
   assert.ok(!codes(computeSettlement(base)).includes('heating.monthly-info'), 'ohne fernablesbaren Zähler keine Warnung')
 })
 
-test('Review Focus 4: Ausnahme nach § 11 – keine § 6a-Angaben, keine Kürzung, CO₂ nur mit vereinbarter Abrechnung', () => {
+test('Review Focus 4: Ausnahme nach § 11 für Wärme und Warmwasser – keine § 6a-Angaben, keine Kürzung, CO₂ nur mit vereinbarter Abrechnung', () => {
   const base = mitVorperiode(selfSnapshot())
   const relief = (s: ComputedSettlement) => s.statements.flatMap((st) => st.rows).filter((r) => r.kind === 'co2Relief').length
   assert.ok(relief(computeSettlement(base)) > 0, 'Beispiel A hat CO₂-Abzüge')
-  const ex = computeSettlement(mitAnlage(base, { exemption: 'lowDemand', exemptionBillingAgreed: null }))
+  const ex = computeSettlement(mitAnlage(base, { exemption: 'lowDemand', exemptionScope: 'both', exemptionBillingAgreed: null }))
   assert.match(textOf(ex, 'heating.exemption'), /§ 11.*Heizwärmebedarf von weniger als 15 kWh.*§ 556a Abs\. 1 BGB.*nicht nach dem CO2KostAufG aufgeteilt \(§ 2 Abs\. 7 CO2KostAufG\)/s)
   for (const c of ['heating.info-incomplete', 'heating.monthly-info', 'heating.no-consumption']) assert.ok(!codes(ex).includes(c), c)
   assert.equal(relief(ex), 0)
   assert.equal(ex.heating?.find((h) => h.info), undefined)
-  const vereinbart = computeSettlement(mitAnlage(base, { exemption: 'lowDemand', exemptionBillingAgreed: true }))
+  const vereinbart = computeSettlement(mitAnlage(base, { exemption: 'lowDemand', exemptionScope: 'both', exemptionBillingAgreed: true }))
   assert.ok(relief(vereinbart) > 0)
   assert.match(textOf(vereinbart, 'heating.exemption'), /vereinbart.*teilt Mietfuchs die CO₂-Kosten/s)
 })
 
-test('Review Focus 3: Vereinbarung nach § 2 wirkt nur im Zweifamilienhaus mit Eigennutzung', () => {
+test('Prüfbericht A4: Ausnahme nur für die Wärme – das Warmwasser bleibt mit § 6a unter der Verordnung', () => {
+  const ex = computeSettlement(mitAngaben(mitAnlage(mitVorperiode(selfSnapshot()), { exemption: 'lowDemand', exemptionScope: 'heat' })))
+  assert.match(textOf(ex, 'heating.exemption'), /betrifft hier nur die Wärme.*Warmwasser.*Angaben nach § 6a/s)
+  const info = ex.heating?.find((h) => h.info)?.info ?? assert.fail('kein Ausweis')
+  assert.equal(info.heatExempt, true)
+  assert.ok(info.users.every((u) => u.heating === null))
+})
+
+test('Prüfbericht A3: „Wärmerückgewinnung, Solar“ nennt die Wärmepumpen nur für Zeiträume vor dem 01.10.2024', () => {
+  const mit = (year: number) => textOf(computeSettlement(mitAnlage(selfSnapshot({ year }), { exemption: 'renewable', exemptionScope: 'both' })), 'heating.exemption')
+  assert.match(mit(2024), /Wärmepumpen/)
+  assert.doesNotMatch(mit(2025), /Wärmepumpen/)
+})
+
+test('Prüfbericht A1: freie Schlüssel nach Zählern – volle Pflicht, Nr. 4 und 5 fehlen mit Satz; nach Fläche Abs. 5', () => {
+  const base = mitAngaben(mitVorperiode(selfSnapshot()))
+  const frei: Snapshot = {
+    ...mitAnlage(base, { method: 'manual' }),
+    costItems: base.costItems.map((c) => (c.heatingPlantId ? { ...c, key: 'meter', meterType: 'waerme' } : c)),
+  }
+  const s = computeSettlement(frei)
+  const info = s.heating?.find((h) => h.info)?.info ?? assert.fail('kein Ausweis')
+  assert.deepEqual([info.scope, info.comparisons, info.missing], ['full', false, ['4', '5']])
+  assert.match(textOf(s, 'heating.info-incomplete'), /Nr\. 4 und 5 erstellt Mietfuchs nur bei eigener Heizkostenabrechnung/)
+  const flaeche = computeSettlement({ ...frei, costItems: base.costItems.map((c) => (c.heatingPlantId ? { ...c, key: 'area' } : c)) })
+  assert.equal(flaeche.heating?.find((h) => h.info)?.info?.scope, 'minimal')
+  assert.ok(!codes(flaeche).includes('heating.info-incomplete'))
+})
+
+test('Review Focus 3: Vereinbarung nach § 2 wirkt nur im Zweifamilienhaus mit Eigennutzung, und nur gegen die Kürzung nach Satz 1', () => {
   const base = mitVorperiode(selfSnapshot())
   // Drei Wohnungen: die Vereinbarung wirkt nicht, die Angaben werden weiter verlangt.
   assert.ok(codes(computeSettlement(mitAnlage(base, { agreedOtherwise: 'area' }))).includes('heating.info-incomplete'))
@@ -1641,10 +2038,16 @@ test('Review Focus 3: Vereinbarung nach § 2 wirkt nur im Zweifamilienhaus mit E
     tenancies: base.tenancies.filter((t) => t.unitId === 'b'),
     meters: base.meters.filter((m) => m.unitId !== 'c'),
   }
-  const ohne = computeSettlement(zfh)
-  const mit = computeSettlement(mitAnlage(zfh, { agreedOtherwise: 'area' }))
-  assert.ok(codes(ohne).includes('heating.info-incomplete'))
-  for (const c of ['heating.info-incomplete', 'heating.monthly-info']) assert.ok(!codes(mit).includes(c), c)
+  assert.ok(codes(computeSettlement(zfh)).includes('heating.info-incomplete'))
+  // Nach Fläche vereinbart: Abs. 5 (nur Nr. 2 und 3), die monatliche Information bleibt (Prüfbericht A2).
+  const fern = (s: Snapshot): Snapshot => ({ ...s, meters: s.meters.map((m) => (m.unitId === 'b' ? { ...m, remoteReadable: true } : m)) })
+  const flaeche = computeSettlement(fern(mitAnlage(zfh, { agreedOtherwise: 'area' })))
+  assert.ok(!codes(flaeche).includes('heating.info-incomplete'))
+  assert.equal(flaeche.heating?.find((h) => h.info)?.info?.scope, 'minimal')
+  assert.ok(codes(flaeche).includes('heating.monthly-info'), 'die monatliche Information bleibt')
+  // Nach Verbrauch vereinbart: volle Pflicht, mit dem Satz zur Vereinbarung.
+  const verbrauch = computeSettlement(mitAnlage(zfh, { agreedOtherwise: 'consumption' }))
+  assert.match(textOf(verbrauch, 'heating.info-incomplete'), /Vereinbarung über die Verteilung nach § 2 HeizkostenV ersetzt die Informationspflichten nicht/)
 })
 
 test('Review Focus 5: 80 % nach Verbrauch nur mit Vereinbarung; sonst nicht verteilbar', () => {
@@ -1665,7 +2068,8 @@ test('§ 7 Abs. 1 Satz 2 unbekannt bei Gas und 60 %: Hinweis; bei 70 % ohne Folg
 
 (Beispiel A hat Gas, 70/70 % und eine Lieferung mit CO₂-Angaben, sodass Abzugszeilen entstehen
 (PR 10 Task 8). Hat `selfSnapshot` die Wohnungszähler unter anderen Namen, findet `mitVorperiode` sie
-über `unitId`.)
+über `unitId`. Die Zählerart der Wärmezähler heißt im Bestand `waerme`; der Test A1 braucht das Feld
+`meterType` der Kostenposition (Bestand).)
 
 - [ ] **Step 2: Run tests to verify they fail**
 
@@ -1675,9 +2079,11 @@ Expected: FAIL; die Codes fehlen, `info` ist `undefined`.
 - [ ] **Step 3: Codes und Importe (`server/src/calc.ts`)**
 
 Importe: `hkvCutInformation, hkvExemptions, hkvInfoApplicable, hkvInfoDistrict, hkvMonthlyInfo` aus
-`'../../shared/law/heizkostenv.ts'`; `heatingInfoOf, byConsumption` aus `'./heatingInfo.ts'`;
-`INFO_CONTACTS, INFO_CONTACTS_CHECKED` aus `'../../shared/heatingInfo.ts'`; `OIL_OR_GAS` aus
-`'./heating.ts'`; `HeatingExemption, InfoItem` in den Typimport aus `'../../shared/types.ts'`.
+`'../../shared/law/heizkostenv.ts'` (`hkvRenewableExemption` steht dort seit PR 11 im Import);
+`heatingInfoOf, byConsumption` aus `'./heatingInfo.ts'`; `INFO_CONTACTS, INFO_CONTACTS_CHECKED` aus
+`'../../shared/heatingInfo.ts'`; `OIL_OR_GAS` aus `'./heating.ts'`; `AgreedOtherwise, ExemptionScope,
+HeatingExemption, HeatingInfoStatement, InfoItem` in den Typimport aus `'../../shared/types.ts'`
+(`SelfPot`, `HeatingTarget` sind seit PR 10 da).
 
 In `noticeKinds` hinter den Codes von PR 13:
 
@@ -1691,54 +2097,82 @@ In `noticeKinds` hinter den Codes von PR 13:
 
 - [ ] **Step 4: Ausnahme und Vereinbarung (`server/src/calc.ts`)**
 
-Direkt hinter `const heatingAgreeable = mayAgreeOtherwise(snapshot.units, isDwelling)`:
+Neu gefasst nach der Prüfung vom 05.10.2026 (A2, A4): Ausnahme und Vereinbarung haben verschiedene
+Folgen, und die Ausnahme gilt je Topf. Direkt hinter `const heatingAgreeable = mayAgreeOtherwise(snapshot.units, isDwelling)`:
 
 ```ts
-  // Heizung PR 14 (Entwurf 8.9): Für eine Anlage mit Ausnahme nach § 11 oder mit wirksamer Vereinbarung
-  // nach § 2 nennt Mietfuchs keine Kürzung nach § 12 HeizkostenV. Die Vereinbarung wirkt nur, solange das
-  // Haus im Zeitraum die Voraussetzung des § 2 erfüllt (Abweichung 8). Ohne Anlage: null, wie bisher.
+  // Heizung PR 14 (Entwurf 8.9; Prüfbericht vom 05.10.2026, A2 und A4). Zwei Fälle mit verschiedenen Folgen:
+  // - Ausnahme nach § 11: Die §§ 3 bis 7 gelten nicht, soweit sie die Wärme betreffen (Abs. 1); für das
+  //   Warmwasser „entsprechend“ mit eigener Prüfung (Abs. 2). `exemptionScope` sagt, ob nur die Wärme oder
+  //   beides ausgenommen ist; ohne Antwort nur die Wärme (Abweichung 7).
+  // - Vereinbarung nach § 2: Sie regelt den Verteilungsmaßstab. Es entfällt die Kürzung nach § 12 Abs. 1
+  //   Satz 1, nicht die nach Satz 2 (fernablesbare Ausstattung) und Satz 3 (Informationen nach § 6a).
+  //   Wirksam nur, solange das Haus im Zeitraum die Voraussetzung des § 2 erfüllt (Abweichung 8).
+  // Ohne Anlage: keine Ausnahme, keine Vereinbarung, wie bisher.
   const plantById = new Map((snapshot.heatingPlants ?? []).map((p) => [p.id, p]))
-  const suspendedBy = (plantId: string | null | undefined): 'exemption' | 'agreement' | null => {
+  const exemptionScopeOf = (plantId: string | null | undefined): ExemptionScope | null => {
     const p = plantId ? plantById.get(plantId) : undefined
-    if (!p) return null
-    if ((p.exemption ?? 'none') !== 'none') return 'exemption'
-    if ((p.agreedOtherwise ?? null) !== null && heatingAgreeable) return 'agreement'
-    return null
+    if (!p || (p.exemption ?? 'none') === 'none') return null
+    return p.exemptionScope ?? 'heat'
   }
-  // § 2 Abs. 7 CO2KostAufG: bei einer Ausnahme nach § 11 keine CO₂-Aufteilung, außer eine Abrechnung der
-  // Heiz- und Warmwasserkosten ist vereinbart.
+  const exemptPot = (plantId: string, pot: SelfPot): boolean => {
+    const s = exemptionScopeOf(plantId)
+    return s === 'both' || (s === 'heat' && pot === 'heating')
+  }
+  const agreedFor = (plantId: string | null | undefined): AgreedOtherwise | null => {
+    const p = plantId ? plantById.get(plantId) : undefined
+    return p && (p.agreedOtherwise ?? null) !== null && heatingAgreeable ? (p.agreedOtherwise ?? null) : null
+  }
+  // Keine Kürzung nach § 12 Abs. 1 Satz 1 für Kosten mit diesem Ziel: Vereinbarung nach § 2, oder jeder Topf,
+  // den das Ziel trifft, ist nach § 11 ausgenommen. Ohne Ziel (freie Schlüssel, „beides“) trifft eine
+  // Position beide Töpfe.
+  const noCutFor = (plantId: string | null | undefined, target: HeatingTarget | null | undefined): boolean => {
+    if (!plantId) return false
+    if (agreedFor(plantId) !== null) return true
+    const s = exemptionScopeOf(plantId)
+    return s === 'both' || (s === 'heat' && target === 'heating')
+  }
+  // § 2 Abs. 7 CO2KostAufG: in den Fällen des § 11 keine CO₂-Aufteilung, außer eine Abrechnung der Heiz- und
+  // Warmwasserkosten ist vereinbart.
   const co2OffByExemption = (plantId: string): boolean => {
     const p = plantById.get(plantId)
     return p !== undefined && (p.exemption ?? 'none') !== 'none' && p.exemptionBillingAgreed !== true
   }
 ```
 
-Dann an diesen Stellen (jede mit einem Kommentar „Heizung PR 14: keine Kürzung bei Ausnahme oder
-Vereinbarung“):
+Dann an diesen Stellen (jede mit einem Kommentar „Heizung PR 14: keine Kürzung nach § 12 Abs. 1 Satz 1 bei
+Ausnahme oder Vereinbarung“):
 
 (a) Schleife `for (const { item, rows } of heatingCuts) {` (Bestand #140): als erste Zeile des Rumpfs
-`if (suspendedBy(item.heatingPlantId) !== null) continue`.
+`if (noCutFor(item.heatingPlantId, item.heatingTarget)) continue`.
 
 (b) Schleife `for (const g of heating.shareOutside) {` (Bestand): als erste Zeile
-`if (g.itemIds.every((id) => suspendedBy(items.find((c) => c.id === id)?.heatingPlantId) !== null)) continue`.
+
+```ts
+    if (g.itemIds.every((id) => {
+      const c = items.find((x) => x.id === id)
+      return noCutFor(c?.heatingPlantId, c?.heatingTarget)
+    })) continue
+```
 
 (c) Block `heating.flat-rate` (Bestand): in der Bedingung
 `items.some((c) => c.category === HEATING_CATEGORY)` ersetzen durch
-`items.some((c) => c.category === HEATING_CATEGORY && suspendedBy(c.heatingPlantId) === null)`.
+`items.some((c) => c.category === HEATING_CATEGORY && !noCutFor(c.heatingPlantId, c.heatingTarget))`.
 
-(d) Fernablesbarkeit (PR 4 Task 8): im Aufruf
+(d) Fernablesbarkeit (PR 4 Task 8, § 12 Abs. 1 Satz 2): Die Vereinbarung nach § 2 lässt sie unberührt, die
+Ausnahme nur, wenn beide Töpfe ausgenommen sind. Im Aufruf
 `remoteReadingVerdict(snapshot.heatingPlants ?? [], …)` die Liste durch
-`(snapshot.heatingPlants ?? []).filter((p) => suspendedBy(p.id) === null)` ersetzen; hat das Objekt
-Anlagen und sind alle ausgenommen, gibt es weder `remote` noch `retrofit`:
+`(snapshot.heatingPlants ?? []).filter((p) => exemptionScopeOf(p.id) !== 'both')` ersetzen; hat das Objekt
+Anlagen und sind alle ganz ausgenommen, gibt es weder `remote` noch `retrofit`:
 
 ```ts
-  const allSuspended = (snapshot.heatingPlants ?? []).length > 0 && (snapshot.heatingPlants ?? []).every((p) => suspendedBy(p.id) !== null)
+  const allExempt = (snapshot.heatingPlants ?? []).length > 0 && (snapshot.heatingPlants ?? []).every((p) => exemptionScopeOf(p.id) === 'both')
 ```
 
-und in beiden Zeilen von PR 4 `heatingBilledItem ?` durch `heatingBilledItem && !allSuspended ?`.
+und in beiden Zeilen von PR 4 `heatingBilledItem ?` durch `heatingBilledItem && !allExempt ?`.
 
 (e) `heating.dhw-not-metered` (PR 6, PR 11): in jeder der Bedingungen, die den Hinweis melden,
-`&& suspendedBy(pot.plantId) === null` anhängen.
+`&& !noCutFor(pot.plantId, 'water')` anhängen (der Hinweis betrifft den Topf Warmwasser).
 
 (f) CO₂-Block (PR 6, PR 7): die Zeile
 `const applicable = !etsExempt && (st !== null || heatingSettled) && law(co2ApplicableFrom, { period: hPeriod }, lawLog)`
@@ -1747,15 +2181,22 @@ ersetzen durch
 im Aufruf `co2DeductionsOf(co2Pots, …)` die Töpfe durch `co2Pots.filter((p) => !co2OffByExemption(p.plantId))`
 ersetzen.
 
-(g) Hinweisschleife der eigenen Abrechnung (PR 10 Task 9 Step 8): hinter `const notYet = …`
+(g) Hinweisschleife der eigenen Abrechnung (PR 10 Task 9 Step 8, nach PR 11 mit
+`const notYet = sp.verdict?.kind === 'notYet' || sp.oldHeatPumpExemption`): hinter `const notYet = …`
 
 ```ts
-    const noCut = notYet || suspendedBy(plant.id) !== null
+    // Keine Kürzungsbeträge nach § 12 Abs. 1 Satz 1: Wärmepumpe (PR 10, PR 11), Vereinbarung nach § 2 oder
+    // jeder betroffene Topf nach § 11 ausgenommen (Heizung PR 14).
+    const noCutPots = (ps: readonly SelfPot[]): boolean => notYet || agreedFor(plant.id) !== null || ps.every((p) => exemptPot(plant.id, p))
 ```
 
-und `notYet` in `const list = notYet ? [] : …` sowie in `if (unmeasured.length > 0 && !notYet)` durch
-`noCut` ersetzen. Im Text von `heating.no-interim-reading-missed` den Ausdruck
-`(list.length > 0 ? … : …)` ersetzen durch:
+Im Zweig für `heating.no-interim-reading-missed` als erste Zeile `const noCut = noCutPots(f.pots)` und dort
+`const list = notYet ? [] : …` durch `const list = noCut ? [] : …` ersetzen. Die Zeile
+`const unmeasured = sp.plan.pots.filter((p) => !sp.plan.totals[p].measured)` ersetzen durch
+`const unmeasured = sp.plan.pots.filter((p) => !sp.plan.totals[p].measured && !exemptPot(plant.id, p))`
+und die Bedingung `if (unmeasured.length > 0 && !notYet)` durch
+`if (unmeasured.length > 0 && !noCutPots(unmeasured))`. Im Text von `heating.no-interim-reading-missed`
+den Ausdruck `(list.length > 0 ? … : …)` ersetzen durch:
 
 ```ts
             (noCut
@@ -1794,20 +2235,35 @@ und den Text darin um `Mehr als ${max} % gehen nur mit einer Vereinbarung (§ 10
 Vor der Schleife `for (const pot of co2Pots)`:
 
 ```ts
-  // Informationen nach § 6a (Heizung PR 14, Entwurf 8.8): bei eigener Abrechnung nach Abs. 3 oder 5, bei
-  // freien Schlüsseln nur Nr. 2 und 3 (Abweichung 16), nicht beim Messdienst und nicht unter § 11
-  // (Abweichung 7). Gilt erst für Zeiträume ab dem 01.12.2021 (`hkv.info.applicable-from`).
+  // Informationen nach § 6a (Heizung PR 14, Entwurf 8.8): bei eigener Abrechnung und bei freien Schlüsseln,
+  // nicht beim Messdienst und nicht, wenn Wärme und Warmwasser nach § 11 ausgenommen sind (Abweichung 7).
+  // Gilt erst für Zeiträume ab dem 01.12.2021 (`hkv.info.applicable-from`). Ob die Abrechnung auf dem
+  // Verbrauch beruht (Abs. 3) oder nicht (Abs. 5), entscheiden die Schlüssel der Positionen (Prüfbericht A1,
+  // Abweichung 16), unter einer Vereinbarung nach § 2 der vereinbarte Maßstab (A2, Abweichung 8).
   const infoOf = (plantId: string, potItems: readonly SnapshotCostItem[], h: { key: string; from: string; to: string }): HeatingInfoStatement | null => {
     const hPeriod = { from: h.from, to: h.to }
     const p = plantById.get(plantId)
-    if (!p || p.method === 'service' || suspendedBy(plantId) === 'exemption') return null
+    if (!p || p.method === 'service' || exemptionScopeOf(plantId) === 'both') return null
     if (!law(hkvInfoApplicable, { period: hPeriod }, lawLog)) return null
     const sp = selfPlans.get(plantId)
     const rowsOfPlant = (snapshot.heatingPeriodRows ?? []).filter((r) => r.plantId === plantId)
     const own = rowsOfPlant.find((r) => r.period === h.key)
     const prevRow = sp ? rowsOfPlant.find((r) => r.period === sp.prevKey) : undefined
-    const full = sp !== undefined && byConsumption(sp.plan)
+    const agreement = agreedFor(plantId)
+    const byKeys = potItems.some((c) => heatingByConsumption(c.key) && (c.key !== 'heatingSystem' || (sp !== undefined && byConsumption(sp.plan))))
+    const full = agreement !== null ? agreement === 'consumption' : byKeys
     const district = full && p.energy === 'districtHeating' ? law(hkvInfoDistrict, { period: hPeriod }, lawLog) : null
+    // Jährliche Treibhausgasemissionen der Fernwärme (Abweichung 13): gelieferte kWh der Heizperiode laut
+    // Bewertung der Rechnungen (PR 7, `FuelDeliveryLine.energyKwh`, PR 10) und der Anteil jedes Mieters an
+    // den Kosten der Anlage (Gewicht „Heizung und Warmwasser“ der eigenen Abrechnung).
+    const lines = fuelResults.get(plantId)?.result.lines ?? []
+    const deliveredKwh = lines.length > 0 && lines.every((l) => l.energyKwh !== null) ? lines.reduce((a, l) => a + (l.energyKwh ?? 0), 0) : null
+    const costShares = sp && sp.weights
+      ? new Map(sp.plan.units.flatMap((u) => u.users.flatMap((x): [string, number][] => {
+        const w = sp.weights?.get(x.key)
+        return x.tenancyId && w ? [[x.tenancyId, w.both]] : []
+      })))
+      : undefined
     return heatingInfoOf({
       byConsumption: full,
       energy: p.energy,
@@ -1815,6 +2271,7 @@ Vor der Schleife `for (const pot of co2Pots)`:
       row: own ? {
         infoTaxesText: own.infoTaxesText ?? null, infoDistrictGhg: own.infoDistrictGhg ?? null, infoDistrictPef: own.infoDistrictPef ?? null,
         climateFactor: own.climateFactor ?? null, climateFactorPrev: own.climateFactorPrev ?? null, consumerContract: own.consumerContract ?? null,
+        infoReferenceKwhPerM2: own.infoReferenceKwhPerM2 ?? null, infoReferenceSource: own.infoReferenceSource ?? null,
       } : null,
       prevClimateFactor: prevRow?.climateFactor ?? null,
       meteringCents: potItems.filter((c) => c.heatingPart === 'metering').reduce((a, c) => a + c.amountCents, 0),
@@ -1822,13 +2279,20 @@ Vor der Schleife `for (const pot of co2Pots)`:
       contactsChecked: INFO_CONTACTS_CHECKED,
       plan: full && sp ? sp.plan : null,
       prev: full && sp ? sp.prev : null,
-      units: { heating: POT_UNIT.heating, water: POT_UNIT.water },
+      units: { heating: sp ? potUnitOf(sp, 'heating') : POT_UNIT.heating, water: POT_UNIT.water },
+      periodDays: rangeOverlapDays(h.from, h.to, h.from, h.to),
+      pots: exemptionScopeOf(plantId) === 'heat' ? ['water'] : ['heating', 'water'],
+      mixedGeneration: (p.heatGeneration ?? null) === 'mixed',
+      deliveredKwh,
+      costShares,
     })
   }
 ```
 
-(`HeatingInfoStatement` und `SnapshotCostItem` in den Typimport; `pot.period` ist die Heizperiode des
-Topfs (`BillingPeriod` mit `key`, `from`, `to`, PR 6).) In der Schleife hinter
+(`SnapshotCostItem` in den Typimport; `pot.period` ist die Heizperiode des Topfs (`BillingPeriod` mit
+`key`, `from`, `to`, PR 6). `sp.weights` ist die Gewichtung je Nutzer aus dem Block des Plans (PR 10,
+`both` für „Heizung und Warmwasser“); heißt sie anders, gilt deren Name. `rangeOverlapDays` zählt die
+Tage mit beiden Grenzen, wie die Tage der Nutzer im Plan.) In der Schleife hinter
 `if (selfOf) report.self = selfStatementOf(…)` (PR 10):
 
 ```ts
@@ -1844,21 +2308,22 @@ Direkt hinter der Hinweisschleife der eigenen Abrechnung (PR 10) und dem Block v
 ```ts
   // ---------- Pflichtangaben und Ausnahmen (Heizung PR 14, Entwurf 8.8, 8.9) ----------
   const ITEM_TEXT: Record<InfoItem, string> = {
-    '1a': 'bei Fernwärme die Treibhausgasemissionen und der Primärenergiefaktor des Netzes (Nr. 1 a)',
+    '1a': 'die Anteile der eingesetzten Energieträger, bei Fernwärme mit den jährlichen Treibhausgasemissionen und dem Primärenergiefaktor des Netzes (Nr. 1 a)',
     '1b': 'die erhobenen Steuern, Abgaben und Zölle (Nr. 1 b)',
     '1c': 'die Entgelte für Erfassung, Ablesung und Abrechnung (Nr. 1 c)',
     '2': 'die Kontaktinformationen (Nr. 2)',
     '3': 'beim Verbrauchervertrag die Information zur Streitbeilegung (Nr. 3)',
-    '4': 'der Vergleich mit einem Durchschnittsnutzer (Nr. 4)',
+    '4': 'der Vergleich mit einem normierten oder durch Vergleichstests ermittelten Durchschnittsnutzer (Nr. 4)',
     '5': 'der witterungsbereinigte Vergleich mit dem Vorzeitraum (Nr. 5)',
   }
-  const EXEMPTION_TEXT = (e: HeatingExemption): string => {
-    const v = law(hkvExemptions, { period: lawPeriod }, lawLog)
+  const EXEMPTION_TEXT = (e: HeatingExemption, hPeriod: { from: string; to: string }): string => {
+    const v = law(hkvExemptions, { period: hPeriod }, lawLog)
     switch (e) {
       case 'lowDemand': return `Räume in einem Gebäude mit einem Heizwärmebedarf von weniger als ${v.lowDemandKwhPerM2Year} kWh je m² und Jahr (§ 11 Abs. 1 Nr. 1 Buchst. a HeizkostenV)`
       case 'disproportionate': return `Räume, bei denen Erfassung oder Verteilung nur mit unverhältnismäßig hohen Kosten möglich ist, die sich nicht in der Regel innerhalb von ${v.paybackYears} Jahren durch Einsparungen erwirtschaften lassen (§ 11 Abs. 1 Nr. 1 Buchst. b)`
       case 'pre1981': return `Räume, die vor dem ${fmtDay(v.readyBefore)} bezugsfertig geworden sind und in denen der Nutzer den Wärmeverbrauch nicht beeinflussen kann (§ 11 Abs. 1 Nr. 1 Buchst. c)`
-      case 'renewable': return 'Räume in einem Gebäude, das überwiegend mit Wärme aus Wärmerückgewinnung, Solaranlagen, Kraft-Wärme-Kopplung oder Abwärme versorgt wird, sofern der Wärmeverbrauch des Gebäudes nicht erfasst wird (§ 11 Abs. 1 Nr. 3)'
+      // Zwei Fassungen (Prüfbericht A3): für Zeiträume, die vor dem 01.10.2024 beginnen, mit Wärmepumpen.
+      case 'renewable': return `Räume in einem Gebäude, das überwiegend mit Wärme aus ${law(hkvRenewableExemption, { period: hPeriod }, lawLog).heatPump ? 'Wärmepumpen, ' : ''}Wärmerückgewinnung, Solaranlagen, Kraft-Wärme-Kopplung oder Abwärme versorgt wird, sofern der Wärmeverbrauch des Gebäudes nicht erfasst wird (§ 11 Abs. 1 Nr. 3)`
       case 'authority': return 'eine Befreiung durch die nach Landesrecht zuständige Stelle (§ 11 Abs. 1 Nr. 5)'
       case 'none': return ''
     }
@@ -1870,21 +2335,27 @@ Direkt hinter der Hinweisschleife der eigenen Abrechnung (PR 10) und dem Block v
     const where = `${plant.name ? `Heizanlage „${plant.name}“` : 'Heizanlage'}, Heizperiode ${periodLabel(pot.period)}`
     const subject: NoticeSubject = { kind: 'heatingCosts', id: plant.id }
     const ids = new Set<string>([...pot.items.map((c) => c.id), pot.reliefKey])
-    const suspended = suspendedBy(plant.id)
-    // § 11 (Abweichung 5, 7): Hinweis mit § 556a BGB und § 2 Abs. 7 CO2KostAufG.
-    if (suspended === 'exemption') {
+    const scope = exemptionScopeOf(plant.id)
+    const agreement = agreedFor(plant.id)
+    // § 11 (Abweichung 5, 7): Hinweis mit § 556a BGB und § 2 Abs. 7 CO2KostAufG; je Topf (Prüfbericht A4).
+    if (scope !== null) {
       warn('heating.exemption',
-        `${where}: Sie haben angegeben, dass die Heizkostenverordnung für diese Anlage nach § 11 HeizkostenV nicht gilt: ${EXEMPTION_TEXT(plant.exemption ?? 'none')}. ` +
-          'Dann gelten ihre Vorschriften zur Erfassung, zur Verteilung und zu den Informationen nicht, und Mietfuchs nennt keine Kürzung nach § 12 HeizkostenV. ' +
+        `${where}: Sie haben angegeben, dass die Heizkostenverordnung für diese Anlage nach § 11 HeizkostenV nicht gilt: ${EXEMPTION_TEXT(plant.exemption ?? 'none', hPeriod)}. ` +
+          'Soweit die Ausnahme reicht, gelten ihre Vorschriften zur Erfassung, zur Verteilung und zu den Informationen nicht, und Mietfuchs nennt dafür keine Kürzung nach § 12 HeizkostenV. ' +
           'Verteilt wird nach dem Mietvertrag; ist dort nichts anderes vereinbart, nach der Wohnfläche, und Kosten mit erfasstem Verbrauch nach einem Maßstab, der dem Verbrauch Rechnung trägt (§ 556a Abs. 1 BGB). Mietfuchs verteilt, wie Sie die Positionen erfasst haben. Bewahren Sie den Nachweis für die Ausnahme auf. ' +
           (plant.exemptionBillingAgreed === true
             ? 'Weil Sie mit den Mietern eine Abrechnung der Heiz- und Warmwasserkosten vereinbart haben, teilt Mietfuchs die CO₂-Kosten nach dem CO2KostAufG auf (§ 2 Abs. 7 CO2KostAufG).'
-            : 'Die CO₂-Kosten werden in diesem Fall nicht nach dem CO2KostAufG aufgeteilt (§ 2 Abs. 7 CO2KostAufG), außer Sie haben mit den Mietern eine Abrechnung der Heiz- und Warmwasserkosten vereinbart; dann geben Sie das unter Stammdaten bei der Heizung an.'),
+            : 'Die CO₂-Kosten werden in diesem Fall nicht nach dem CO2KostAufG aufgeteilt (§ 2 Abs. 7 CO2KostAufG), außer Sie haben mit den Mietern eine Abrechnung der Heiz- und Warmwasserkosten vereinbart; dann geben Sie das unter Stammdaten bei der Heizung an.') +
+          (scope === 'heat'
+            ? ' Die Ausnahme betrifft hier nur die Wärme. Für das Warmwasser gilt § 11 Abs. 1 nach Abs. 2 nur „entsprechend“, mit eigener Prüfung; Mietfuchs rechnet das Warmwasser deshalb weiter nach der Verordnung ab, mit den Angaben nach § 6a und den Kürzungsrechten. Ist auch das Warmwasser ausgenommen, geben Sie das unter Stammdaten bei der Heizung an.'
+            : '') +
+          ' Die Verordnung stellt auf Räume ab; Mietfuchs wendet die Ausnahme auf die ganze Anlage an (Vereinfachung).',
         subject)
     }
-    if (suspended !== null) continue
-    // Monatliche Verbrauchsinformation (§ 6a Abs. 1, 2; Entwurf 8.8): fernablesbar oder unbekannt. Das
-    // Register wird erst gefragt, wenn ein Gerät in Frage kommt; so steht der Wert nur dann im Rechtsstand.
+    if (scope === 'both') continue
+    // Monatliche Verbrauchsinformation (§ 6a Abs. 1, 2; Entwurf 8.8): fernablesbar oder unbekannt; auch unter
+    // einer Vereinbarung nach § 2 (Prüfbericht A2). Das Register wird erst gefragt, wenn ein Gerät in Frage
+    // kommt; so steht der Wert nur dann im Rechtsstand.
     const spOfPlant = selfPlans.get(plant.id)
     const servedIds = new Set(spOfPlant ? spOfPlant.plan.units.map((u) => u.unit.id) : [])
     const remote = plant.monthlyInfoElsewhere !== true && (spOfPlant
@@ -1895,9 +2366,10 @@ Direkt hinter der Hinweisschleife der eigenen Abrechnung (PR 10) und dem Block v
       const cut = law(hkvCutInformation, { period: hPeriod }, lawLog)
       const unknown = !spOfPlant && (plant.devicesRemote ?? 'unknown') === 'unknown'
       warn('heating.monthly-info',
-        `${where}: ${unknown ? 'Ob Zähler und Heizkostenverteiler fernablesbar sind, ist an der Anlage nicht angegeben. ' : ''}Sind sie fernablesbar, stehen den Mietern seit dem ${fmtDay(monthly.validFrom ?? '')} monatliche Verbrauchsinformationen zu: der Verbrauch des letzten Monats in Kilowattstunden, der Vergleich mit dem Vormonat und dem Vorjahresmonat und mit einem Durchschnittsnutzer (§ 6a Abs. 1 und 2 HeizkostenV). ` +
+        `${where}: ${unknown ? 'Ob Zähler und Heizkostenverteiler fernablesbar sind, ist an der Anlage nicht angegeben. ' : ''}Sind sie fernablesbar, stehen den Mietern seit dem ${fmtDay(monthly.validFrom ?? '')} monatliche Verbrauchsinformationen zu: der Verbrauch des letzten Monats in Kilowattstunden, der Vergleich mit dem Vormonat und dem Vorjahresmonat und mit einem Durchschnittsnutzer aus Vergleichsdaten, nicht aus dem eigenen Haus (§ 6a Abs. 1 und 2 HeizkostenV). ` +
           `Fehlen sie, darf jeder Mieter seinen Anteil an den Heizkosten um bis zu ${cut} % kürzen (§ 12 Abs. 1 Satz 3 HeizkostenV)${cutsOn(ids, cut)}. ` +
-          'Mietfuchs erstellt diese Informationen noch nicht. Bekommen Ihre Mieter sie anders, etwa über das Portal des Messdienstes, bestätigen Sie das unter Stammdaten bei der Heizung.',
+          'Mietfuchs erstellt diese Informationen noch nicht. Bekommen Ihre Mieter sie anders, etwa im Portal des Messdienstes mit jeden Monat einer Nachricht, dass sie dort steht, bestätigen Sie das unter Stammdaten bei der Heizung. ' +
+          'Ein Portal ohne diese Nachricht genügt nicht: Mitgeteilt ist die Information erst, wenn sie den Mieter erreicht (Begründung zu § 6a Abs. 1, BR-Drs. 643/21, S. 18 f.).',
         subject)
     }
     // Angaben nach § 6a Abs. 3 (Entwurf 8.8, 15.1 Nr. 14): je fehlende Nummer 3 % je Mieter.
@@ -1909,6 +2381,20 @@ Direkt hinter der Hinweisschleife der eigenen Abrechnung (PR 10) und dem Block v
       if (info.missing.length > 0) {
         parts.push(`Es fehlen: ${andList(info.missing.map((x) => ITEM_TEXT[x]))}. Fehlt eine Angabe ganz oder teilweise, darf jeder Mieter seinen Anteil an den Heizkosten um ${cut} % kürzen (§ 12 Abs. 1 Satz 3 HeizkostenV)${cutsOn(ids, cut)}.`)
       }
+      if (info.mixedGeneration) parts.push('Ihre Anlage erzeugt die Wärme mit einem weiteren Erzeuger; die Anteile der Energieträger (Nr. 1 a) kennt Mietfuchs dann nicht. Legen Sie sie der Abrechnung bei.')
+      // Nr. 4 und 5 (Prüfbericht A1; Rechtsbefund vom 05.10.2026 zu Nr. 4, Abweichung 14).
+      if (!info.comparisons) {
+        parts.push('Die Vergleiche nach Nr. 4 und 5 erstellt Mietfuchs nur bei eigener Heizkostenabrechnung; legen Sie die Vergleiche Ihres Ablesedienstes der Abrechnung bei.')
+      } else if (info.missing.includes('4')) {
+        parts.push(!info.referenceComparable
+          ? (info.heatExempt
+            ? 'Den Vergleich mit einem Durchschnittsnutzer (Nr. 4) rechnet Mietfuchs mit dem Wärmeverbrauch in kWh; für das Warmwasser allein kann es ihn nicht erstellen. Legen Sie den Vergleich Ihres Ablesedienstes bei.'
+            : 'Heizkostenverteiler zeigen Einheiten, keine Kilowattstunden; den Vergleich mit einem Durchschnittsnutzer (Nr. 4) kann Mietfuchs deshalb nicht rechnen. Legen Sie den Vergleich Ihres Ablesedienstes bei.')
+          : info.reference === null
+            ? 'Für den Vergleich mit einem Durchschnittsnutzer (Nr. 4) tragen Sie einen Vergleichswert in kWh je m² Wohnfläche mit seiner Quelle ein, etwa die Vergleichsdaten Ihres Ablesedienstes. Ein Durchschnitt aus Ihrem eigenen Haus ist kein zulässiger Vergleich (Begründung der Verordnung, BR-Drs. 643/21, S. 19 und 21).'
+            : 'Für eine Wohnung ohne Wohnfläche lässt sich der Vergleichswert (Nr. 4) nicht umrechnen; tragen Sie die Wohnfläche unter Stammdaten ein.')
+      }
+      if (agreement !== null) parts.push('Eine Vereinbarung über die Verteilung nach § 2 HeizkostenV ersetzt die Informationspflichten nicht.')
       if (info.uncertain.includes('1a')) parts.push(`Bei einem Fernwärmesystem ab ${law(hkvInfoDistrict, { period: hPeriod }, lawLog).thresholdMw} MW gehören Treibhausgasemissionen und Primärenergiefaktor schon in diese Abrechnung; dann bis zu ${cut} %.`)
       if (info.uncertain.includes('3')) parts.push(`Ist Ihr Mietvertrag ein Verbrauchervertrag (§ 310 Abs. 3 BGB: Sie vermieten als Unternehmer), gehört die Information zur Streitbeilegung dazu; geben Sie auf der Seite Heizkosten an, ob das zutrifft. Sonst bis zu ${cut} %.`)
       if (firsts.length > 0) {
@@ -1927,7 +2413,8 @@ Direkt hinter der Hinweisschleife der eigenen Abrechnung (PR 10) und dem Block v
     // § 7 Abs. 1 Satz 2 ungeklärt (Abweichung 10): nur bei Öl und Gas und wenn der Anteil nicht schon dem
     // Pflichtanteil entspricht.
     const sp = spOfPlant
-    if (sp?.shares && OIL_OR_GAS.includes(plant.energy) && (sp.shares.insulationRule ?? 'unknown') === 'unknown') {
+    // Nicht unter einer Ausnahme oder Vereinbarung: dort gilt der Pflichtanteil nicht oder ist geregelt.
+    if (scope === null && agreement === null && sp?.shares && OIL_OR_GAS.includes(plant.energy) && (sp.shares.insulationRule ?? 'unknown') === 'unknown') {
       const forced = law(hkvConsumptionShareForced, { period: hPeriod }, lawLog)
       if (sp.shares.heating !== forced) {
         warn('heating.insulation-rule-unknown',
@@ -1946,13 +2433,15 @@ seit PR 4. `periodLabel` ist aus `'../../shared/period.ts'` importiert.)
 - [ ] **Step 8: Run tests to verify they pass**
 
 Run: `npm --prefix server test -- test/calc-pflichtangaben.test.ts test/calc-heizkosten.test.ts test/calc-schaetzung.test.ts test/calc-co2.test.ts test/calc-heizanlage.test.ts test/glossary.test.ts test/law-literals.test.ts test/anrede.test.ts test/calc.test.ts test/settlement-golden.test.ts test/calc-wortlaut.test.ts && npm run typecheck`
-Expected: PASS (calc-pflichtangaben.test.ts: 7 Tests).
+Expected: PASS (calc-pflichtangaben.test.ts: 10 Tests).
 
 - [ ] **Step 9: Golden nachziehen (`server/test/heating-golden.test.ts`, Fixtures F12–F17)**
 
 Run: `npm --prefix server test -- test/heating-golden.test.ts`
-Expected: FAIL nur in `warnings`/`notices` von F16 und F17 (`heating.info-incomplete`) und bei F12 bis F15,
-deren Anlage `devices_remote` nicht `none` hat (`heating.monthly-info`). In jedem dieser Fixtures die
+Expected: FAIL nur in `warnings`/`notices` von F16 und F17 (`heating.info-incomplete`), bei jedem Golden
+mit Anlage `manual`, deren Heizpositionen nach Verbrauch verteilt werden (`heating.info-incomplete` mit Nr. 4
+und 5, Prüfbericht A1), und bei F12 bis F15, deren Anlage `devices_remote` nicht `none` hat
+(`heating.monthly-info`). In jedem dieser Fixtures die
 Erwartung um genau diese Hinweise ergänzen und im README den Absatz anhängen: „Ab Heizung PR 14 steht hier
 `heating.info-incomplete` bzw. `heating.monthly-info` (Entwurf 8.8, R-A17); keine Zahl ändert sich.“
 Ändert sich eine Zahl oder ein anderer Hinweis, ist das ein Befund. F01–F11 bleiben wortgleich (ohne
@@ -1967,8 +2456,9 @@ Expected: PASS.
 git add server/src/calc.ts server/test/calc-pflichtangaben.test.ts server/test/heating-golden.test.ts server/test/fixtures
 git commit -m "Pflichtangaben in der Abrechnung: § 6a je Nummer mit 3 %, monatliche Information, § 11, § 2, § 10
 
-Ausnahme und wirksame Vereinbarung nennen an keiner Stelle eine Kürzung nach § 12; unter § 11 keine
-CO₂-Aufteilung ohne vereinbarte Abrechnung (§ 2 Abs. 7 CO2KostAufG).
+Ausnahme nach § 11 je Topf ohne Kürzung nach § 12 für den ausgenommenen Topf; Vereinbarung nach § 2
+nur ohne die Kürzung nach § 12 Abs. 1 Satz 1. Unter § 11 keine CO₂-Aufteilung ohne vereinbarte
+Abrechnung (§ 2 Abs. 7 CO2KostAufG). Nr. 4 aus dem Vergleichswert mit Quelle, kein Hausdurchschnitt.
 
 Refs #99"
 ```
@@ -1983,7 +2473,7 @@ Refs #99"
 
 **Interfaces:**
 - Produces:
-  - `heatingRulesForm.ts`: `EXEMPTION_OPTIONS`, `AGREED_OPTIONS`, `type Answer = 'yes' | 'no' | 'unknown' | ''`, `ANSWER_OPTIONS`, `INSULATION_QUESTIONS`, `insulationFrom(old: Answer, pipes: Answer): InsulationRule | ''`
+  - `heatingRulesForm.ts`: `EXEMPTION_OPTIONS`, `EXEMPTION_SCOPE_OPTIONS`, `AGREED_OPTIONS`, `type Answer = 'yes' | 'no' | 'unknown' | ''`, `ANSWER_OPTIONS`, `INSULATION_QUESTIONS`, `insulationFrom(old: Answer, pipes: Answer): InsulationRule | ''`
   - `heatingInfoForm.ts`: `type InfoForm`, `infoToForm(info)`, `infoBody(form)`, `dwdHint(postalCode, from, to)`, `CONTRACT_OPTIONS`
   - `heatingInfoView.ts`: `infoLines(info)`, `comparisonOf(info, tenancyId)`, `barWidths(values)`
   - `HeatingRulesFields({ plant, onSaved })`, `HeatingInfoCard({ plant, view, onChanged })`, `HeatingInfoBlock({ info, tenancyId, plantName })`
@@ -1995,7 +2485,7 @@ Refs #99"
 
 ```ts
 import { describe, expect, it } from 'vitest'
-import { AGREED_OPTIONS, EXEMPTION_OPTIONS, insulationFrom } from './heatingRulesForm'
+import { AGREED_OPTIONS, EXEMPTION_OPTIONS, EXEMPTION_SCOPE_OPTIONS, insulationFrom } from './heatingRulesForm'
 
 describe('§ 7 Abs. 1 Satz 2 in zwei Fragen (Entwurf 11.2 Schritt 7, A10)', () => {
   it('beides ja → trifft zu; eines nein → trifft nicht zu; sonst weiß nicht', () => {
@@ -2013,6 +2503,11 @@ describe('§ 11 und § 2 (Entwurf 8.9)', () => {
     expect(EXEMPTION_OPTIONS.find((o) => o.value === 'lowDemand')?.label).toMatch(/weniger als 15 kWh je m² und Jahr/)
     expect(EXEMPTION_OPTIONS.find((o) => o.value === 'pre1981')?.label).toMatch(/vor dem 01\.07\.1981 bezugsfertig/)
     expect(EXEMPTION_OPTIONS.find((o) => o.value === 'disproportionate')?.label).toMatch(/10 Jahren/)
+    // Zwei Fassungen der Nr. 3 a (Prüfbericht A3), das Datum aus dem Register.
+    expect(EXEMPTION_OPTIONS.find((o) => o.value === 'renewable')?.label).toMatch(/bis 30\.09\.2024 auch Wärmepumpen/)
+  })
+  it('Umfang der Ausnahme je Topf (Prüfbericht A4)', () => {
+    expect(EXEMPTION_SCOPE_OPTIONS.map((o) => o.value)).toEqual(['heat', 'both'])
   })
   it('Vereinbarungen nach § 2', () => {
     expect(AGREED_OPTIONS.map((o) => o.value)).toEqual(['', 'area', 'fixedPercent', 'consumption'])
@@ -2026,7 +2521,7 @@ describe('§ 11 und § 2 (Entwurf 8.9)', () => {
 import { describe, expect, it } from 'vitest'
 import { dwdHint, infoBody, infoToForm } from './heatingInfoForm'
 
-const info = { infoTaxesText: null, infoDistrictGhg: null, infoDistrictPef: null, climateFactor: 1.08, climateFactorPrev: null, consumerContract: 'none', postalCode: '79100' }
+const info = { infoTaxesText: null, infoDistrictGhg: null, infoDistrictPef: null, climateFactor: 1.08, climateFactorPrev: null, consumerContract: 'none', infoReferenceKwhPerM2: null, infoReferenceSource: null, postalCode: '79100' }
 
 describe('Angaben nach § 6a (Heizung PR 14)', () => {
   it('Formular aus der Ansicht und zurück; Komma als Dezimalzeichen', () => {
@@ -2034,7 +2529,13 @@ describe('Angaben nach § 6a (Heizung PR 14)', () => {
     expect([f.climateFactor, f.contract]).toEqual(['1,08', 'none'])
     expect(infoBody({ ...f, climateFactorPrev: '1,15', taxes: 'Energiesteuer 312,00 €' })).toEqual({ body: {
       infoTaxesText: 'Energiesteuer 312,00 €', infoDistrictGhg: null, infoDistrictPef: null, climateFactor: 1.08, climateFactorPrev: 1.15, consumerContract: 'none',
+      infoReferenceKwhPerM2: null, infoReferenceSource: null,
     } })
+  })
+  it('Nr. 4: Vergleichswert über 0 und nur mit Quelle (Rechtsbefund vom 05.10.2026)', () => {
+    expect(infoBody({ ...infoToForm(info), reference: '120' })).toEqual({ error: expect.stringMatching(/Quelle des Vergleichswerts.*eigenen Haus/) })
+    expect(infoBody({ ...infoToForm(info), reference: '0', referenceSource: 'Ablesedienst' })).toEqual({ error: expect.stringMatching(/Vergleichswert.*größer als 0/) })
+    expect(infoBody({ ...infoToForm(info), reference: '120,5', referenceSource: ' Ablesedienst 2025 ' })).toMatchObject({ body: { infoReferenceKwhPerM2: 120.5, infoReferenceSource: 'Ablesedienst 2025' } })
   })
   it('Verbrauchervertrag: Text Pflicht, wenn „ja“', () => {
     expect(infoBody({ ...infoToForm(info), contract: 'yes', disputeText: ' ' })).toEqual({ error: expect.stringMatching(/Streitbeilegung/) })
@@ -2058,12 +2559,14 @@ import { barWidths, comparisonOf, infoLines } from './heatingInfoView'
 import { fmtEuro } from './api'
 import type { HeatingInfoStatement } from './types'
 
+const SOURCE = 'Vergleichswerte des Ablesedienstes Beispiel 2025'
 const info: HeatingInfoStatement = {
   scope: 'full', energy: 'gas', district: null, taxesText: 'Energiesteuer 312,00 €', meteringCents: 18000,
+  reference: { kwhPerM2: 150, source: SOURCE }, referenceComparable: true,
   contacts: [{ name: 'Deutsche Energie-Agentur (dena)', url: 'https://www.dena.de', what: 'Energieagentur' }], contactsChecked: '2026-10-05',
   dispute: { kind: 'none' }, climate: { factor: 1.08, factorPrev: 1.15 }, units: { heating: 'kWh', water: 'm³' },
-  users: [{ tenancyId: 'A', label: 'Mieter A', days: 365, prevDays: 366, heating: { now: 12000, perM2: 200, houseAvgPerM2: 200, prev: 1000, nowAdjusted: 12960, prevAdjusted: 1150 }, water: null, firstPeriod: false }],
-  missing: [], uncertain: [],
+  users: [{ tenancyId: 'A', label: 'Mieter A', days: 365, prevDays: 366, heating: { now: 12000, perM2: 200, referenceKwh: 9000, prev: 1000, nowAdjusted: 12960, prevAdjusted: 1150 }, water: null, firstPeriod: false, ghgKg: null }],
+  missing: [], uncertain: [], comparisons: true, mixedGeneration: false, heatExempt: false,
 }
 
 describe('Druckblock § 6a (Heizung PR 14)', () => {
@@ -2075,10 +2578,18 @@ describe('Druckblock § 6a (Heizung PR 14)', () => {
       'Kontakt für Informationen zum Energiesparen (Stand 05.10.2026): Deutsche Energie-Agentur (dena), https://www.dena.de – Energieagentur',
     ])
   })
-  it('Vergleich je Mieter: Hausdurchschnitt je m² (so benannt) und witterungsbereinigt', () => {
+  it('Prüfbericht A7, A8, A4: weiterer Erzeuger, jährliche Treibhausgasemissionen, ausgenommene Wärme', () => {
+    expect(infoLines({ ...info, mixedGeneration: true })[0]).toBe('Energieträger: Erdgas und ein weiterer Wärmeerzeuger; die Anteile liegen Mietfuchs nicht vor')
+    const fern = infoLines({ ...info, energy: 'districtHeating', district: { ghg: 180, pef: 0.7, annualKg: 7200 } })
+    expect(fern[1]).toBe('Fernwärme laut Versorger: Treibhausgasemissionen 180 g CO₂-Äquivalent je kWh, in dieser Heizperiode zusammen 7.200 kg CO₂-Äquivalent; Primärenergiefaktor 0,7')
+    expect(infoLines({ ...info, heatExempt: true })[0]).toBe('Die Heizung ist nach § 11 HeizkostenV ausgenommen; die folgenden Angaben betreffen das Warmwasser.')
+    const anteil = comparisonOf({ ...info, users: info.users.map((u) => ({ ...u, ghgKg: 1800 })) }, 'A') ?? expect.unreachable()
+    expect(anteil.lines).toContain('Ihr Anteil an den Treibhausgasemissionen der Fernwärme: 1.800 kg CO₂-Äquivalent')
+  })
+  it('Vergleich je Mieter: Durchschnittsnutzer aus dem Vergleichswert mit Quelle, witterungsbereinigt', () => {
     const c = comparisonOf(info, 'A') ?? expect.unreachable()
     expect(c.lines).toEqual([
-      'Ihr Verbrauch Heizung: 200 kWh je m²; Durchschnitt aller Wohnungen dieses Hauses: 200 kWh je m² (Vergleichsmaßstab nach DIN 94680 noch offen)',
+      `Ihr Wärmeverbrauch: 12.000 kWh; Durchschnittsnutzer: 9.000 kWh (150 kWh je m² Wohnfläche laut ${SOURCE}, auf Ihre Wohnfläche und Ihre Tage umgerechnet)`,
       'Heizung witterungsbereinigt (Klimafaktor des DWD): dieser Zeitraum 12.960 kWh, vorhergehender Zeitraum 1.150 kWh',
     ])
     const [jetzt, vorher] = barWidths([12960, 1150])
@@ -2100,12 +2611,19 @@ import type { HeatingPlant } from '../types'
 afterEach(cleanup)
 
 test('die Auswahlfelder zeigen die gespeicherten Werte', () => {
-  const plant = { id: 'hp', exemption: 'pre1981', exemptionBillingAgreed: true, agreedOtherwise: 'fixedPercent', monthlyInfoElsewhere: true } as HeatingPlant
+  const plant = { id: 'hp', exemption: 'pre1981', exemptionScope: 'both', exemptionBillingAgreed: true, agreedOtherwise: 'fixedPercent', monthlyInfoElsewhere: true } as HeatingPlant
   render(<HeatingRulesFields plant={plant} onSaved={() => {}} />)
   expect((screen.getByLabelText(/Ausnahme nach § 11/) as HTMLSelectElement).value).toBe('pre1981')
+  expect((screen.getByLabelText(/auch das Warmwasser/) as HTMLSelectElement).value).toBe('both')
   expect((screen.getByLabelText(/Vereinbarung nach § 2/) as HTMLSelectElement).value).toBe('fixedPercent')
   expect((screen.getByLabelText(/Abrechnung der Heiz- und Warmwasserkosten vereinbart/) as HTMLInputElement).checked).toBe(true)
   expect((screen.getByLabelText(/monatliche Verbrauchsinformation anders/) as HTMLInputElement).checked).toBe(true)
+})
+
+test('ohne Antwort zum Umfang zeigt das Feld „nur die Wärme“, wie es gilt', () => {
+  const plant = { id: 'hp', exemption: 'lowDemand', exemptionScope: null, exemptionBillingAgreed: null, agreedOtherwise: null, monthlyInfoElsewhere: false } as HeatingPlant
+  render(<HeatingRulesFields plant={plant} onSaved={() => {}} />)
+  expect((screen.getByLabelText(/auch das Warmwasser/) as HTMLSelectElement).value).toBe('heat')
 })
 ```
 
@@ -2130,18 +2648,25 @@ Expected: FAIL; die Module fehlen.
 ```ts
 // Stammdaten der Heizung zu § 11, § 2 und § 7 Abs. 1 Satz 2 (Heizung PR 14, Entwurf 8.9, 11.2), ohne DOM
 // prüfbar. Die Zahlen des § 11 kommen aus dem Register.
-import type { AgreedOtherwise, HeatingExemption, InsulationRule } from './types'
-import { hkvExemptions } from '../../shared/law/heizkostenv.ts'
+import type { AgreedOtherwise, ExemptionScope, HeatingExemption, InsulationRule } from './types'
+import { hkvExemptions, hkvRenewableExemption } from '../../shared/law/heizkostenv.ts'
 import { germanDate, LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
 
 const EX = valueAt(hkvExemptions, LAW_AS_OF)
+// Bis wann Nr. 3 a auch Wärmepumpen nannte (Prüfbericht A3, PR 11).
+const HEAT_PUMP_UNTIL = hkvRenewableExemption.versions.find((v) => v.value.heatPump)?.validTo
 export const EXEMPTION_OPTIONS: { value: HeatingExemption; label: string }[] = [
   { value: 'none', label: 'Keine Ausnahme: die Heizkostenverordnung gilt' },
   { value: 'lowDemand', label: `Gebäude mit einem Heizwärmebedarf von weniger als ${EX.lowDemandKwhPerM2Year} kWh je m² und Jahr (§ 11 Abs. 1 Nr. 1 a)` },
   { value: 'disproportionate', label: `Erfassung nur mit Kosten möglich, die sich nicht in der Regel innerhalb von ${EX.paybackYears} Jahren durch Einsparungen erwirtschaften lassen (§ 11 Abs. 1 Nr. 1 b)` },
   { value: 'pre1981', label: `Räume, die vor dem ${germanDate(EX.readyBefore)} bezugsfertig wurden und in denen der Mieter den Verbrauch nicht beeinflussen kann (§ 11 Abs. 1 Nr. 1 c)` },
-  { value: 'renewable', label: 'Überwiegend Wärme aus Wärmerückgewinnung, Solaranlagen, Kraft-Wärme-Kopplung oder Abwärme, und der Verbrauch des Gebäudes wird nicht erfasst (§ 11 Abs. 1 Nr. 3)' },
+  { value: 'renewable', label: `Überwiegend Wärme aus Wärmerückgewinnung, Solaranlagen${HEAT_PUMP_UNTIL ? ` (bis ${germanDate(HEAT_PUMP_UNTIL)} auch Wärmepumpen)` : ''}, Kraft-Wärme-Kopplung oder Abwärme, und der Verbrauch des Gebäudes wird nicht erfasst (§ 11 Abs. 1 Nr. 3)` },
   { value: 'authority', label: 'Befreiung durch die zuständige Stelle des Landes (§ 11 Abs. 1 Nr. 5)' },
+]
+// Prüfbericht A4: § 11 Abs. 1 nimmt die Wärme aus, für das Warmwasser gilt er nach Abs. 2 „entsprechend“.
+export const EXEMPTION_SCOPE_OPTIONS: { value: ExemptionScope; label: string }[] = [
+  { value: 'heat', label: 'Nein, nur die Wärme; das Warmwasser rechnet Mietfuchs weiter nach der Verordnung ab' },
+  { value: 'both', label: 'Ja, Wärme und Warmwasser (§ 11 Abs. 2 HeizkostenV)' },
 ]
 export const AGREED_OPTIONS: { value: AgreedOtherwise | ''; label: string }[] = [
   { value: '', label: 'Keine abweichende Vereinbarung: die Heizkostenverordnung gilt' },
@@ -2178,7 +2703,7 @@ import type { HeatingInfoInputs } from './types'
 import { CONSUMER_CONTRACT_NONE } from '../../shared/heatingInfo.ts'
 import { germanDate } from '../../shared/law/register.ts'
 
-export type InfoForm = { taxes: string; ghg: string; pef: string; climateFactor: string; climateFactorPrev: string; contract: 'none' | 'yes' | ''; disputeText: string }
+export type InfoForm = { taxes: string; ghg: string; pef: string; climateFactor: string; climateFactorPrev: string; contract: 'none' | 'yes' | ''; disputeText: string; reference: string; referenceSource: string }
 export const CONTRACT_OPTIONS: { value: InfoForm['contract']; label: string }[] = [
   { value: '', label: 'Bitte wählen' },
   { value: 'none', label: 'Nein, ich vermiete nicht als Unternehmer (kein Verbrauchervertrag)' },
@@ -2197,6 +2722,7 @@ export function infoToForm(i: HeatingInfoInputs): InfoForm {
     taxes: i.infoTaxesText ?? '', ghg: text(i.infoDistrictGhg), pef: text(i.infoDistrictPef),
     climateFactor: text(i.climateFactor), climateFactorPrev: text(i.climateFactorPrev),
     contract: c === null ? '' : c === CONSUMER_CONTRACT_NONE ? 'none' : 'yes', disputeText: c !== null && c !== CONSUMER_CONTRACT_NONE ? c : '',
+    reference: text(i.infoReferenceKwhPerM2), referenceSource: i.infoReferenceSource ?? '',
   }
 }
 
@@ -2208,9 +2734,15 @@ export function infoBody(f: InfoForm): { body: Omit<HeatingInfoInputs, 'postalCo
   const pef = num(f.pef)
   if (ghg === 'bad' || pef === 'bad' || (ghg !== null && ghg < 0) || (pef !== null && pef < 0)) return { error: 'Treibhausgasemissionen und Primärenergiefaktor sind Zahlen ab 0.' }
   if (f.contract === 'yes' && f.disputeText.trim() === '') return { error: 'Bei einem Verbrauchervertrag tragen Sie die Information zur Streitbeilegung ein (§ 6a Abs. 3 Satz 1 Nr. 3 HeizkostenV).' }
+  // Nr. 4 (Abweichung 14): dieselben Sätze wie der Server.
+  const reference = num(f.reference)
+  if (reference === 'bad' || (reference !== null && reference <= 0)) return { error: 'Der Vergleichswert ist eine Zahl größer als 0 (kWh je m² Wohnfläche in der Heizperiode).' }
+  const source = f.referenceSource.trim()
+  if (reference !== null && source === '') return { error: 'Bitte nennen Sie die Quelle des Vergleichswerts, etwa die Vergleichsdaten Ihres Ablesedienstes. Ein Durchschnitt aus Ihrem eigenen Haus ist kein zulässiger Vergleich.' }
   return { body: {
     infoTaxesText: f.taxes.trim() === '' ? null : f.taxes.trim(), infoDistrictGhg: ghg, infoDistrictPef: pef, climateFactor: factor, climateFactorPrev: prev,
     consumerContract: f.contract === '' ? null : f.contract === 'none' ? CONSUMER_CONTRACT_NONE : f.disputeText.trim(),
+    infoReferenceKwhPerM2: reference, infoReferenceSource: source === '' ? null : source,
   } }
 }
 
@@ -2236,9 +2768,15 @@ const n = (v: number): string => v.toLocaleString('de-DE', { maximumFractionDigi
 
 export function infoLines(info: HeatingInfoStatement): string[] {
   const lines: string[] = []
+  if (info.heatExempt) lines.push('Die Heizung ist nach § 11 HeizkostenV ausgenommen; die folgenden Angaben betreffen das Warmwasser.')
   if (info.scope === 'full') {
-    lines.push(`Energieträger: ${ENERGY_TEXT[info.energy]} 100 %`)
-    if (info.district) lines.push(`Fernwärme: Treibhausgasemissionen ${info.district.ghg === null ? 'nicht angegeben' : `${n(info.district.ghg)} g CO₂-Äquivalent je kWh`}, Primärenergiefaktor ${info.district.pef === null ? 'nicht angegeben' : n(info.district.pef)} (laut Versorger)`)
+    // Nr. 1 a: mit einem weiteren Erzeuger sind die Anteile unbekannt (Prüfbericht A7).
+    lines.push(info.mixedGeneration ? `Energieträger: ${ENERGY_TEXT[info.energy]} und ein weiterer Wärmeerzeuger; die Anteile liegen Mietfuchs nicht vor` : `Energieträger: ${ENERGY_TEXT[info.energy]} 100 %`)
+    // Bei Fernwärme der Faktor und die jährliche Menge, beide mit Einheit (Prüfbericht A8, Abweichung 13).
+    if (info.district) {
+      const ghg = info.district.ghg === null ? 'nicht angegeben' : `${n(info.district.ghg)} g CO₂-Äquivalent je kWh${info.district.annualKg !== null ? `, in dieser Heizperiode zusammen ${n(info.district.annualKg)} kg CO₂-Äquivalent` : ''}`
+      lines.push(`Fernwärme laut Versorger: Treibhausgasemissionen ${ghg}; Primärenergiefaktor ${info.district.pef === null ? 'nicht angegeben' : n(info.district.pef)}`)
+    }
     lines.push(`Steuern, Abgaben und Zölle laut Rechnung: ${info.taxesText ?? 'nicht angegeben'}`)
     lines.push(`Entgelte für Erfassungsgeräte, Eichung, Ablesung und Abrechnung: ${fmtEuro(info.meteringCents)}`)
   }
@@ -2253,8 +2791,9 @@ export function comparisonOf(info: HeatingInfoStatement, tenancyId: string): { l
   const lines: string[] = []
   const bars: { label: string; values: [number, number] }[] = []
   const h = u.heating
-  if (h && h.perM2 !== null && h.houseAvgPerM2 !== null) {
-    lines.push(`Ihr Verbrauch Heizung: ${n(h.perM2)} ${info.units.heating} je m²; Durchschnitt aller Wohnungen dieses Hauses: ${n(h.houseAvgPerM2)} ${info.units.heating} je m² (Vergleichsmaßstab nach DIN 94680 noch offen)`)
+  // Nr. 4: Durchschnittsnutzer aus dem Vergleichswert mit Quelle, kein Hausdurchschnitt (Abweichung 14).
+  if (h && h.now !== null && h.referenceKwh !== null && info.reference) {
+    lines.push(`Ihr Wärmeverbrauch: ${n(h.now)} kWh; Durchschnittsnutzer: ${n(h.referenceKwh)} kWh (${n(info.reference.kwhPerM2)} kWh je m² Wohnfläche laut ${info.reference.source}, auf Ihre Wohnfläche und Ihre Tage umgerechnet)`)
   }
   if (h && h.nowAdjusted !== null && h.prevAdjusted !== null) {
     lines.push(`Heizung witterungsbereinigt (Klimafaktor des DWD): dieser Zeitraum ${n(h.nowAdjusted)} ${info.units.heating}, vorhergehender Zeitraum ${n(h.prevAdjusted)} ${info.units.heating}`)
@@ -2266,6 +2805,7 @@ export function comparisonOf(info: HeatingInfoStatement, tenancyId: string): { l
     bars.push({ label: 'Warmwasser', values: [w.now, w.prev] })
   }
   if (u.firstPeriod) lines.push('Für den vorhergehenden Zeitraum liegt kein Verbrauch für Sie vor.')
+  if (u.ghgKg !== null) lines.push(`Ihr Anteil an den Treibhausgasemissionen der Fernwärme: ${n(u.ghgKg)} kg CO₂-Äquivalent`)
   return { lines, bars }
 }
 
@@ -2276,8 +2816,8 @@ export function barWidths(values: readonly number[]): number[] {
 }
 ```
 
-(„Vergleichsmaßstab nach DIN 94680 noch offen“ ist die Marke ⟨Norm offen: DIN 94680⟩ in Worten für den
-Mieter.)
+(Die Marke ⟨Norm offen: DIN 94680⟩ steht im Code an `heatingInfoOf`; der Druck nennt die Quelle, die der
+Vermieter eingetragen hat, denn sie ist es, die der Mieter nachprüfen kann.)
 
 - [ ] **Step 5: Komponenten**
 
@@ -2285,16 +2825,16 @@ Mieter.)
 
 ```tsx
 import { useState } from 'react'
-import type { AgreedOtherwise, HeatingExemption, HeatingPlant } from '../types'
+import type { AgreedOtherwise, ExemptionScope, HeatingExemption, HeatingPlant } from '../types'
 import { api, errorText } from '../api'
 import Term from './Term'
-import { AGREED_OPTIONS, EXEMPTION_OPTIONS } from '../heatingRulesForm'
+import { AGREED_OPTIONS, EXEMPTION_OPTIONS, EXEMPTION_SCOPE_OPTIONS } from '../heatingRulesForm'
 
 // Stammdaten der Heizung (Heizung PR 14, Entwurf 8.8, 8.9): Ausnahme nach § 11, Vereinbarung nach § 2,
 // monatliche Verbrauchsinformation. Jede Änderung geht sofort an den Server.
 export default function HeatingRulesFields({ plant, onSaved }: { plant: HeatingPlant; onSaved: (p: HeatingPlant) => void }) {
   const [error, setError] = useState('')
-  async function save(body: Partial<Pick<HeatingPlant, 'exemption' | 'exemptionBillingAgreed' | 'agreedOtherwise' | 'monthlyInfoElsewhere'>>) {
+  async function save(body: Partial<Pick<HeatingPlant, 'exemption' | 'exemptionScope' | 'exemptionBillingAgreed' | 'agreedOtherwise' | 'monthlyInfoElsewhere'>>) {
     try {
       const p = await api<HeatingPlant>(`/api/heating-plants/${plant.id}`, { method: 'PUT', body: JSON.stringify(body) })
       setError('')
@@ -2313,6 +2853,13 @@ export default function HeatingRulesFields({ plant, onSaved }: { plant: HeatingP
         </select>
       </label>
       {plant.exemption !== 'none' && (
+        <label className="field grow">Betrifft die Ausnahme auch das Warmwasser?
+          <select value={plant.exemptionScope ?? 'heat'} onChange={(e) => save({ exemptionScope: e.target.value as ExemptionScope })}>
+            {EXEMPTION_SCOPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        </label>
+      )}
+      {plant.exemption !== 'none' && (
         <label className="check">
           <input type="checkbox" checked={plant.exemptionBillingAgreed === true} onChange={(e) => save({ exemptionBillingAgreed: e.target.checked })} />
           Mit den Mietern ist eine Abrechnung der Heiz- und Warmwasserkosten vereinbart (§ 2 Abs. 7 CO2KostAufG: dann werden die CO₂-Kosten aufgeteilt)
@@ -2325,7 +2872,8 @@ export default function HeatingRulesFields({ plant, onSaved }: { plant: HeatingP
       </label>
       <label className="check">
         <input type="checkbox" checked={plant.monthlyInfoElsewhere} onChange={(e) => save({ monthlyInfoElsewhere: e.target.checked })} />
-        Die Mieter bekommen die monatliche Verbrauchsinformation anders, etwa über das Portal des Messdienstes (§ 6a Abs. 1 HeizkostenV)
+        {/* „Mitteilen“: in einem Portal nur mit einer Nachricht jeden Monat (BR-Drs. 643/21, S. 18 f.); PR 22 zieht den Satz in MONTHLY_ELSEWHERE_LABEL. */}
+        Die Mieter bekommen die monatliche Verbrauchsinformation anders mitgeteilt, etwa vom Messdienst als Brief oder E-Mail oder in einem Portal mit jeden Monat einer Nachricht, dass sie dort steht (§ 6a Abs. 1 HeizkostenV)
       </label>
     </fieldset>
   )
@@ -2381,6 +2929,12 @@ export default function HeatingInfoCard({ plant, view, onChanged }: { plant: Hea
           <div className="row">
             <label className="field">Klimafaktor dieser Heizperiode<input inputMode="decimal" value={form.climateFactor} onChange={(e) => setForm({ ...form, climateFactor: e.target.value })} /></label>
             <label className="field">Klimafaktor der vorigen Heizperiode<input inputMode="decimal" value={form.climateFactorPrev} onChange={(e) => setForm({ ...form, climateFactorPrev: e.target.value })} /></label>
+          </div>
+          {/* Nr. 4 (Abweichung 14): kein Hausdurchschnitt, sondern ein Vergleichswert mit Quelle. */}
+          <p className="muted">Für den Vergleich mit einem Durchschnittsnutzer brauchen Sie einen Vergleichswert aus Vergleichsdaten, etwa vom Ablesedienst. Ein Durchschnitt aus Ihrem eigenen Haus ist kein zulässiger Vergleich.</p>
+          <div className="row">
+            <label className="field">Vergleichswert (kWh je m² Wohnfläche in der Heizperiode)<input inputMode="decimal" value={form.reference} onChange={(e) => setForm({ ...form, reference: e.target.value })} /></label>
+            <label className="field grow">Quelle des Vergleichswerts<input value={form.referenceSource} onChange={(e) => setForm({ ...form, referenceSource: e.target.value })} /></label>
           </div>
         </>
       )}
@@ -2439,7 +2993,7 @@ export default function HeatingInfoBlock({ info, tenancyId, plantName }: { info:
 `client/src/pages/Heizkosten.tsx` hinter `SelfHeatingCards` (PR 10):
 
 ```tsx
-      {plant && plant.method !== 'service' && plant.exemption === 'none' && view && (
+      {plant && plant.method !== 'service' && (plant.exemption === 'none' || plant.exemptionScope !== 'both') && view && (
         <HeatingInfoCard key={view.period} plant={plant} view={view} onChanged={reload} />
       )}
 ```
@@ -2519,12 +3073,16 @@ Unter „Hinzugefügt“:
 ```markdown
 - Eigene Heizkostenabrechnung: die Informationen nach § 6a HeizkostenV im Ausdruck (Energieträger,
   Steuern und Abgaben, Entgelte der Erfassung, Kontaktadressen, Streitbeilegung beim
-  Verbrauchervertrag, Vergleich mit dem Hausdurchschnitt, witterungsbereinigter Vergleich mit dem
-  Vorjahr als Balken mit dem Klimafaktor des DWD). Fehlt eine Angabe, nennt Mietfuchs die Kürzung um
-  3 % je Mieter. Mehr als 70 % nach Verbrauch mit Vereinbarung (§ 10). ([#99](https://github.com/speedone/mietfuchs/issues/99))
-- Heizung in den Stammdaten: Ausnahme nach § 11 HeizkostenV und abweichende Vereinbarung im
-  Zweifamilienhaus (§ 2); dann nennt Mietfuchs keine Kürzungen nach § 12, und unter § 11 werden die
-  CO₂-Kosten nur bei vereinbarter Abrechnung aufgeteilt (§ 2 Abs. 7 CO2KostAufG). ([#99](https://github.com/speedone/mietfuchs/issues/99))
+  Verbrauchervertrag, Vergleich mit einem Durchschnittsnutzer aus dem Vergleichswert, den Sie mit Quelle
+  eintragen, etwa vom Ablesedienst, witterungsbereinigter Vergleich mit dem Vorjahr als Balken mit dem
+  Klimafaktor des DWD; bei Fernwärme die jährlichen Treibhausgasemissionen). Fehlt eine Angabe, nennt
+  Mietfuchs die Kürzung um 3 % je Mieter. Die Pflicht folgt den Schlüsseln der Positionen, auch bei
+  freien Schlüsseln nach Zählern. Mehr als 70 % nach Verbrauch mit Vereinbarung (§ 10). ([#99](https://github.com/speedone/mietfuchs/issues/99))
+- Heizung in den Stammdaten: Ausnahme nach § 11 HeizkostenV, für die Wärme oder für Wärme und Warmwasser,
+  und abweichende Vereinbarung im Zweifamilienhaus (§ 2). Unter der Ausnahme nennt Mietfuchs für den
+  ausgenommenen Teil keine Kürzungen nach § 12, und die CO₂-Kosten werden nur bei vereinbarter Abrechnung
+  aufgeteilt (§ 2 Abs. 7 CO2KostAufG); die Vereinbarung nach § 2 hebt nur die Kürzung um 15 % auf, die
+  Informationspflichten bleiben. ([#99](https://github.com/speedone/mietfuchs/issues/99))
 ```
 
 Unter „Geändert“:
@@ -2532,8 +3090,10 @@ Unter „Geändert“:
 ```markdown
 - Neue Warnung „Monatliche Verbrauchsinformation“ bei jeder Heizanlage, deren Geräte fernablesbar sind
   oder deren Fernablesbarkeit nicht angegeben ist: Seit 2022 stehen den Mietern dann monatliche
-  Informationen zu, sonst bis zu 3 % Kürzung. Bekommen Ihre Mieter sie über den Messdienst, bestätigen Sie
-  das unter Stammdaten bei der Heizung. ([#99](https://github.com/speedone/mietfuchs/issues/99))
+  Informationen zu, sonst bis zu 3 % Kürzung. Bekommen Ihre Mieter sie über den Messdienst (in einem Portal
+  nur mit einer Nachricht jeden Monat), bestätigen Sie das unter Stammdaten bei der Heizung. Ebenso der
+  Hinweis zu den Angaben nach § 6a bei einer Heizanlage mit freien Schlüsseln, deren Heizkosten nach
+  Zählern verteilt werden. ([#99](https://github.com/speedone/mietfuchs/issues/99))
 ```
 
 - [ ] **Step 2: CLAUDE.md**
@@ -2543,12 +3103,17 @@ Im Abschnitt der Berechnungs-Engine hinter dem Absatz zur Schätzung (PR 13):
 ```markdown
 - **Pflichtangaben und Ausnahmen** (Heizung PR 14): `heatingInfoOf` (server/src/heatingInfo.ts) rechnet
   die Informationen nach § 6a Abs. 3 bzw. Abs. 5 je Anlage und Heizperiode (`Settlement.heating[].info`);
-  Nr. 4 als Hausdurchschnitt je m², Nr. 5 Wärme mal Klimafaktor des DWD, Warmwasser unbereinigt, der
+  Abs. 3 oder 5 entscheiden die Schlüssel der Positionen, auch bei freien Schlüsseln. **Nr. 4 ist nie ein
+  Hausdurchschnitt**: Die Begründung schließt den Vergleich mit den Nutzern desselben Gebäudes aus
+  (BR-Drs. 643/21, S. 19, 21); der Vermieter trägt einen Vergleichswert mit Pflichtquelle ein, wie bei der
+  monatlichen Information (PR 22). Nr. 5 Wärme mal Klimafaktor des DWD, Warmwasser unbereinigt, der
   Vorjahreswert aus der neu gerechneten Vorperiode; ⟨Norm offen: DIN 94680⟩. Jede sicher fehlende Nummer
   ergibt `heating.info-incomplete` mit 3 % je Mieter, das erste Jahr eines Mieters „bis zu“ (Auslegung).
-  `suspendedBy` in computeSettlement: Unter einer Ausnahme nach § 11 oder einer wirksamen Vereinbarung
-  nach § 2 nennt Mietfuchs an keiner Stelle eine Kürzung nach § 12; unter § 11 keine CO₂-Aufteilung ohne
-  vereinbarte Abrechnung (§ 2 Abs. 7 CO2KostAufG). Mehr als 70 % nur mit `above_70_agreed` (§ 10), auch
+  In computeSettlement: Eine Ausnahme nach § 11 gilt je Topf (`exemptionScopeOf`, `exemptPot`); für den
+  ausgenommenen Topf nennt Mietfuchs keine Kürzung nach § 12, unter § 11 keine CO₂-Aufteilung ohne
+  vereinbarte Abrechnung (§ 2 Abs. 7 CO2KostAufG). Eine wirksame Vereinbarung nach § 2 (`agreedFor`)
+  hebt nur die Kürzung nach § 12 Abs. 1 Satz 1 auf (`noCutFor`); fernablesbare Ausstattung, monatliche
+  Information und § 6a bleiben. Mehr als 70 % nur mit `above_70_agreed` (§ 10), auch
   über dem Pflichtanteil des § 7 Abs. 1 Satz 2 (Auslegung). Kontaktadressen in `shared/heatingInfo.ts`,
   jährlich prüfen.
 ```
@@ -2585,11 +3150,13 @@ Refs #99"
 | 8.8 § 6a Abs. 3 Nr. 1 a–c, 2, 3, 4, 5, je Nummer mit 3 % | 1, 3, 5, 6 |
 | 8.8 erstes Jahr ohne Vorjahr „bis zu 3 %“ (15.1 Nr. 14) | 3, 5 |
 | 8.8 Klimafaktor des DWD je Postleitzahl, abgefragt (15.2 F5) | 2, 4, 6 |
-| 8.8 Vergleich mit Durchschnittsnutzer, ⟨Norm offen: DIN 94680⟩ | 3, 6 |
+| 8.8 Vergleich mit Durchschnittsnutzer, ⟨Norm offen: DIN 94680⟩; Vergleichswert mit Quelle statt Hausdurchschnitt (Rechtsbefund, Abweichung 14; 8.8 insoweit überholt) | 2, 3, 4, 5, 6 |
 | 8.8 `heating.monthly-info` bei `remote_readable = true` bzw. `devices_remote` nicht `none`, bis PR 22 oder Bestätigung | 2, 5, 6 |
 | 8.8 Abs. 5: ohne Verbrauch nur Nr. 2 und 3 | 3, 5 |
-| 8.9 § 11: Hinweis, kein § 12-Hinweis, § 2 Abs. 7 CO2KostAufG | 2, 5, 6; Abweichung 5 zur Verteilung |
-| 8.9 § 2: nur bei `mayAgreeOtherwise`, kein § 12-Hinweis, ohne Vereinbarung gilt die Verordnung (15.1 Nr. 8) | 4, 5, 6 |
+| 8.9 § 11: Hinweis, kein § 12-Hinweis für den ausgenommenen Topf, § 2 Abs. 7 CO2KostAufG | 2, 5, 6; Abweichung 5 zur Verteilung, 7 je Topf |
+| 8.9 § 2: nur bei `mayAgreeOtherwise`, ohne Kürzung nach § 12 Abs. 1 Satz 1, Informationspflichten bleiben, ohne Vereinbarung gilt die Verordnung (15.1 Nr. 8) | 4, 5, 6; Abweichung 8 |
+| Prüfbericht A1 (Umfang aus den Schlüsseln), A3 (zwei Fassungen Nr. 3 a), A7 (weiterer Erzeuger), A8 (jährliche Menge) | 3, 5, 6 |
+| BR-Drs. 643/21, S. 18 f.: „Mitteilen“ im Portal nur mit Nachricht | 5, 6 |
 | 8.5 § 7 Abs. 1 Satz 2 zwingend 70 % (PR 10), Frage in zwei Teilen, `heating.insulation-rule-unknown` | 3, 5, 6 |
 | 8.5 § 10 über 70 % mit `above_70_agreed` | 3, 4, 5, 6 |
 | 6.5 Zeile „Informationen § 6a“: Grundlage gedruckte Zeilen nach Abzug | 5 (`cutsOn`, `cutOf`) |
@@ -2601,13 +3168,14 @@ Refs #99"
 Regel („heißt er anders, gilt dessen Name“) und den Namen aus dessen Plan.
 
 **Namen:** `heatingInfoOf`, `byConsumption`, `InfoInput`, `InfoRow`, `HeatingInfoStatement`,
-`InfoComparison`, `InfoItem`, `HeatingInfoInputs`, `saveHeatingInfo`, `postalCodeOf`, `suspendedBy`,
-`co2OffByExemption`, `infoOf`, `INFO_CONTACTS`, `CONSUMER_CONTRACT_NONE`, `insulationFrom`,
-`EXEMPTION_OPTIONS`, `AGREED_OPTIONS`, `infoToForm`, `infoBody`, `dwdHint`, `infoLines`, `comparisonOf`,
+`InfoComparison`, `InfoItem`, `HeatingInfoInputs`, `saveHeatingInfo`, `postalCodeOf`, `exemptionScopeOf`,
+`exemptPot`, `agreedFor`, `noCutFor`, `co2OffByExemption`, `infoOf`, `INFO_CONTACTS`,
+`CONSUMER_CONTRACT_NONE`, `insulationFrom`, `EXEMPTION_OPTIONS`, `EXEMPTION_SCOPE_OPTIONS`, `AGREED_OPTIONS`,
+`infoReferenceKwhPerM2`, `infoReferenceSource`, `referenceKwh`, `referenceComparable`, `infoToForm`, `infoBody`, `dwdHint`, `infoLines`, `comparisonOf`,
 `barWidths` durchgehend gleich; `ConsumptionShares.above70Agreed` und `.insulationRule` in Task 3
 eingeführt, in Task 4 und 5 gelesen.
 
-**Review Focus:** jede der fünf Zeilen hat ihren Test (Task 3, 4, 5).
+**Review Focus:** jede der sechs Zeilen hat ihren Test (Task 2 bis 6).
 
 **Nicht in diesem Plan:** die monatliche Verbrauchsinformation selbst (PR 22), Contracting und § 11 Abs. 1
 Nr. 4 (PR 16), Heime nach § 11 Abs. 1 Nr. 2 (nicht im Zielbild), Vorerfassung (#218).
