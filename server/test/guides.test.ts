@@ -324,6 +324,20 @@ const checks: Record<GuideId, () => void> = {
     if (!tax) return assert.fail('Heizposition fehlt in der Steuerübersicht')
     assert.equal(tax.deductibleCents, S + L)
     inOrder(GUIDES.co2Costs.example, ['3.540,00 €', eur(L), eur(S), eur(S), eur(L), eur(S), eur(L), eur(S + L), eur(L), eur(S + L)], 'co2Costs')
+    // Der zweite Weg der Anleitung (Durchsicht C1): ohne Abzugszeile ist der Betrag S, die Beträge
+    // der Mieter stehen wie in der Abrechnung, und Mietfuchs zieht den Anteil mit eigener Zeile ab.
+    const brutto = { ta: 112837, tb: 98045, tc: 103794, td: 78625 }
+    const S2 = 393301
+    const shown = { ...snapshotOf(source({ ...src, costItems: [item('heiz', { category: 'Heizung und Warmwasser', amountCents: S2, key: 'amounts', tenancyAmounts: brutto, heatingPlantId: 'hp' })] }), 2025),
+      heatingPlants: [HP], co2Statements: [co2Statement({ method: 'serviceShown', serviceUsersTotalCents: S2, serviceLandlordCents: L, serviceUnitsCount: 4 })] }
+    const r2 = computeSettlement(shown)
+    assert.ok(!r2.notices.some((n) => n.code === 'co2.sum-check'), 'ohne Abzugszeile geht die Probe mit Betrag S auf')
+    const abzug = r2.statements.flatMap((st) => st.rows.filter((row) => row.kind === 'co2Relief')).reduce((a, row) => a - row.shareCents, 0)
+    assert.equal(abzug, L)
+    const schritte = GUIDES.co2Costs.steps.map((x) => x.text)
+    const frage = schritte.findIndex((t) => /Abzüglich CO₂-Kosten Vermieter/.test(t))
+    const betrag = schritte.findIndex((t) => /Ohne diese Zeile ist der Betrag die Summe der Kosten aller Nutzer/.test(t))
+    assert.ok(frage >= 0 && betrag > frage, 'erst die Frage nach der Abzugszeile, dann der Betrag je nach Antwort')
   },
   tenantChange: () => {
     const r = settle(source({
@@ -409,8 +423,10 @@ test('Messdienst mit Vorwegabzug (#209): Der Betrag ist, was bezahlt wurde, der 
   assert.match(amount ?? '', /vor dem Abzug/)
   assert.match(amount ?? '', /Summe aller Nutzerbeträge für Heizung und Warmwasser \(einschließlich Leerstand\) \+ CO₂-Anteil des Vermieters/)
   assert.doesNotMatch(amount ?? '', /Gesamtbetrag der Abrechnung/, 'der Gesamtbetrag ist beim Vorwegabzug netto')
-  // Schritt 2: der Betrag, den der Mieter zahlen soll, also netto; weitere Kostenblöcke als eigene Positionen.
-  assert.match(perTenancy ?? '', /Tragen Sie den Betrag ein, den der Mieter zahlen soll, also nach Abzug des CO₂-Anteils des Vermieters\./)
+  // Schritt 2: der Betrag, den die Abrechnung für den Mieter nennt, ohne selbst abzuziehen; sonst
+  // entlastete Mietfuchs ihn bei „nur ausgewiesen“ ein zweites Mal (Durchsicht C1).
+  assert.match(perTenancy ?? '', /Tragen Sie den Betrag ein, den die Abrechnung für den Mieter nennt; ziehen Sie selbst nichts ab\./)
+  assert.doesNotMatch(perTenancy ?? '', /nach Abzug des CO₂-Anteils/)
   assert.match(perTenancy ?? '', /Kaltwasser/)
   assert.match(perTenancy ?? '', /eigene Positionen/)
   // Schritt 3: Eigenbetrag wie in der Abrechnung; der CO₂-Teil der eigenen Wohnung in die Karte.
