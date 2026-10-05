@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'vitest'
-import { anchorOf, answersOf, changeLabel, conflictPreview, initialAnswers, labelOfKey, nextRules, periodSpanText, periodView, rhythmText, withoutChange } from './periodForm'
+import { anchorOf, answersAfterConflict, answersOf, changeLabel, conflictPreview, initialAnswers, labelOfKey, nextRules, periodSpanText, periodView, rhythmText, withoutChange } from './periodForm'
 import { CALENDAR_RULES, periodKey, periodOfKey } from '../../shared/period.ts'
 import type { PeriodChangePreview, PeriodRules } from './types'
+import type { AnswerForm } from './periodForm'
 import { ApiError } from './api'
 
 const TODAY = '2026-10-05'
@@ -89,5 +90,31 @@ describe('Durchsicht von #226 (M2, M5)', () => {
   })
   test('Ein Wechsel heißt mit Monatsnamen', () => {
     expect(changeLabel('2025-05')).toBe('Mai 2025')
+  })
+})
+
+describe('Nachprüfung von #226 (3): Antworten nach einer 409', () => {
+  const vorschau = (token: string, extra = false): PeriodChangePreview => ({
+    rules: WECHSEL, periods: [], newShort: [], blocked: [], moves: [], assessments: [], token,
+    taxYears: [{ key: 'mu|2025-05', costItemId: 'mu', description: 'Müll', period: periodKey('2025-05'), label: '2025/2026', suggested: 2025, options: [2025, 2026, 2027] }],
+    groups: [{ from: periodKey('2025-01'), fromLabel: '2025', items: [{ costItemId: 'mu', description: 'Müll', amountCents: 1 }, ...(extra ? [{ costItemId: 'wa', description: 'Wasser', amountCents: 2 }] : [])], options: [{ key: periodKey('2025-01'), label: 'R' }, { key: periodKey('2025-05'), label: '2025/2026' }], suggested: periodKey('2025-01') }],
+    overrides: [{ tenancyId: 't-a', tenantName: 'A', from: [], ask: [{ period: periodKey('2025-01'), label: 'R', months: '01–04/2025' }] }],
+  })
+  const eingetragen = (): AnswerForm => ({ groups: { '2025-01': '2025-05' }, overrides: { 't-a': { '2025-01': { amount: '700,00', none: false } } }, taxYears: { 'mu|2025-05': '2026' } })
+  test('gleiche Marke (fehlende Angaben): die Antworten bleiben', () => {
+    expect(answersAfterConflict(vorschau('m'), 'm', eingetragen())).toEqual(eingetragen())
+  })
+  test('neue Marke: Antworten zu gleichen Schlüsseln werden übernommen, Neues vorbelegt', () => {
+    const neu = { ...vorschau('n', true), overrides: [...vorschau('n').overrides, { tenancyId: 't-b', tenantName: 'B', from: [], ask: [{ period: periodKey('2025-01'), label: 'R', months: '01–04/2025' }] }] }
+    expect(answersAfterConflict(neu, 'm', eingetragen())).toEqual({
+      groups: { '2025-01': '2025-05' },
+      overrides: { 't-a': { '2025-01': { amount: '700,00', none: false } }, 't-b': { '2025-01': { amount: '', none: false } } },
+      taxYears: { 'mu|2025-05': '2026' },
+    })
+  })
+  test('eine Antwort, die es in der neuen Vorschau nicht mehr gibt, fällt weg', () => {
+    const gruppe = vorschau('n').groups[0] ?? expect.unreachable('keine Gruppe')
+    const neu = { ...vorschau('n'), groups: [{ ...gruppe, options: [{ key: periodKey('2025-01'), label: 'R' }] }] }
+    expect(answersAfterConflict(neu, 'm', eingetragen()).groups).toEqual({ '2025-01': '2025-01' })
   })
 })

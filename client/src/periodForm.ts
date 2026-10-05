@@ -170,6 +170,27 @@ export function answersOf(preview: PeriodChangePreview, form: AnswerForm): Perio
   return { groups: { ...form.groups }, overrides, taxYears, token: preview.token }
 }
 
+// Die Antworten nach einer 409 (Nachprüfung von #226, 3). Gleiche Marke heißt: Es fehlten nur
+// Angaben, die Vorschau ist dieselbe, und alles Eingetragene bleibt. Eine neue Marke heißt: Der
+// Bestand hat sich geändert; was zu einem Schlüssel gehört, den es weiter gibt, wird übernommen,
+// alles Neue vorbelegt, und eine Antwort, die nicht mehr passt, fällt weg.
+export function answersAfterConflict(fresh: PeriodChangePreview, previousToken: string, previous: AnswerForm): AnswerForm {
+  if (fresh.token === previousToken) return previous
+  const start = initialAnswers(fresh)
+  const groups = Object.fromEntries(Object.entries(start.groups).map(([from, suggested]) => {
+    const was = previous.groups[from]
+    const fits = was !== undefined && fresh.groups.some((g) => g.from === from && g.options.some((o) => o.key === was))
+    return [from, fits ? was : suggested]
+  }))
+  const overrides = Object.fromEntries(Object.entries(start.overrides).map(([tenancyId, asks]) =>
+    [tenancyId, Object.fromEntries(Object.entries(asks).map(([period, empty]) => [period, previous.overrides[tenancyId]?.[period] ?? empty]))]))
+  const taxYears = Object.fromEntries(fresh.taxYears.map((t) => {
+    const was = previous.taxYears[t.key]
+    return [t.key, was !== undefined && t.options.includes(Number(was)) ? was : String(t.suggested)]
+  }))
+  return { groups, overrides, taxYears }
+}
+
 // Die neue Vorschau aus der 409 eines Wechsels (M2), sonst `null`.
 export function conflictPreview(e: unknown): PeriodChangePreview | null {
   if (!(e instanceof ApiError) || e.status !== 409) return null

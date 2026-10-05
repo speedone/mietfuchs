@@ -4,7 +4,7 @@ import { api, errorText, fmtEuro } from '../api'
 import { useOpenForm, useProperty } from '../property'
 import { useToast } from './feedback'
 import Term from './Term'
-import { answersOf, changeLabel, conflictPreview, initialAnswers, MONTH_OPTIONS, nextRules, rhythmText, withoutChange, type AnswerForm, type RhythmForm } from '../periodForm'
+import { answersAfterConflict, answersOf, changeLabel, conflictPreview, initialAnswers, MONTH_OPTIONS, nextRules, rhythmText, withoutChange, type AnswerForm, type RhythmForm } from '../periodForm'
 import { rulesOf } from '../../../shared/period.ts'
 
 // Die Karte „Abrechnungszeitraum“ in den Stammdaten (#208, Entwurf 3.6, 11.4). Jede Änderung geht
@@ -139,7 +139,7 @@ export default function PeriodCard() {
       const fresh = conflictPreview(e)
       if (fresh) {
         setPreview(fresh)
-        setAnswers(initialAnswers(fresh))
+        setAnswers(answersAfterConflict(fresh, preview.token, answers))
       }
       setError(`${errorText(e)} Bitte prüfen Sie die Vorschau erneut.`)
     } finally {
