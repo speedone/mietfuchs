@@ -30,7 +30,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 
 const PERCENT_PATTERNS = [/um \d+ ?%/g, /\d+ ?% kürzen/g, /\d+ bis \d+ ?%/g, /\d+ und höchstens \d+ ?%/g, /\d+ Prozent/g, /\d+ vom Hundert/g, /\d+–\d+ ?%/g]
 const DATE_PATTERNS = [/\d{4}-\d{2}-\d{2}/g, /\d{2}\.\d{2}\.\d{4}/g]
-const ENGINE_FILES = ['server/src/calc.ts', 'server/src/snapshot.ts', 'shared/heating.ts', 'shared/period.ts']
+const ENGINE_FILES = ['server/src/calc.ts', 'server/src/snapshot.ts', 'shared/heating.ts', 'shared/period.ts', 'shared/degreeDays.ts']
 // Rechtszahlen als Zahl im Code (Durchsicht von #221, I2): Die Muster oben sehen nur Texte, eine
 // Zeile wie `Math.round((share * 15) / 100)` oder `year >= 2021` fiele durch. Geprüft wird der Code
 // ohne Zeichenketten und Kommentare, in den Dateien der Berechnung und in invoiceAmounts.ts, auf die
@@ -162,4 +162,13 @@ test('Rechtszahlen-Wächter: „vom Hundert“ und Spannen mit Halbgeviertstrich
   const found = matchesIn('probe.ts', textsOf(sample, false), PERCENT_PATTERNS).map((f) => `${f.line}:${f.match}`)
   assert.ok(found.includes('1:15 vom Hundert'), found.join(', '))
   assert.ok(found.includes('2:50–70 %'), found.join(', '))
+})
+
+// Die Gradtagstabelle steht nur im Register (Entwurf 4.7: „die Zahlen von Stufen- und
+// Gradtagstabelle als Feld“). Geprüft wird der Code ohne Kommentare, nicht nur die Texte: Eine
+// Tabelle wäre ein Objekt aus Zahlen und fiele dem Scanner der Zeichenketten nicht auf.
+test('Rechtszahlen: die Gradtagstabelle steht nur im Register (#208)', () => {
+  const code = fs.readFileSync(path.join(ROOT, 'shared/degreeDays.ts'), 'utf8')
+    .split('\n').filter((line) => !line.trim().startsWith('//')).join('\n')
+  assert.doesNotMatch(code, /\b(170|150|130|160|120)\b/, 'shared/degreeDays.ts enthält einen Wert der Gradtagstabelle')
 })

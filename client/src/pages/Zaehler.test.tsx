@@ -4,7 +4,7 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { Meter, Reading, Unit } from '../types'
-import { YearProvider } from '../year'
+import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
 import Zaehler from './Zaehler'
 
@@ -38,11 +38,11 @@ afterEach(() => {
 
 async function openReadings() {
   render(
-    <YearProvider>
+    <PeriodProvider>
       <PropertyProvider>
         <Zaehler units={UNITS} />
       </PropertyProvider>
-    </YearProvider>,
+    </PeriodProvider>,
   )
   fireEvent.click(await screen.findByRole('button', { name: /Ablesungen \(0\)/ }, { timeout: 5000 }))
   fireEvent.change(screen.getByLabelText(/^Datum/), { target: { value: '2025-06-30' } })
@@ -65,11 +65,11 @@ test('leerer Zählerstand: Meldung statt einer gespeicherten 0', async () => {
 })
 
 const renderPage = () => render(
-  <YearProvider>
+  <PeriodProvider>
     <PropertyProvider>
       <Zaehler units={UNITS} />
     </PropertyProvider>
-  </YearProvider>,
+  </PeriodProvider>,
 )
 
 test('Zählerwechsel ohne Endstand: die Tabelle sagt „fehlt“ statt eines leeren Werts (#142)', async () => {

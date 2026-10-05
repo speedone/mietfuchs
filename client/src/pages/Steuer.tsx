@@ -1,12 +1,13 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
 import type { Settings, TaxExpenseItem, TaxReport } from '../types'
 import { api, fmtArea, fmtEuro } from '../api'
-import { useYear, YEAR_OPTIONS } from '../year'
-import { useProperty, withProperty, useSwitchYear } from '../property'
+import { usePeriod } from '../period'
+import { CalendarYearSelect } from '../components/PeriodSelect'
+import { useProperty, withProperty } from '../property'
 import { effectiveLandlord, letterhead } from '../landlord'
 import PageHeader from '../components/PageHeader'
 import Table from '../components/Table'
-import { allocationLabel, assignedUnitItems, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, prepaymentNote, showsSplit, surplusCentsFor, taxHints, type Basis } from '../taxView'
+import { allocationLabel, assignedUnitItems, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, prepaymentNote, settlementSourcesText, showsSplit, surplusCentsFor, taxHints, type Basis } from '../taxView'
 import { StepList } from '../components/CalcSteps'
 import Term from '../components/Term'
 import { andList } from '../../../shared/wording.ts'
@@ -14,9 +15,8 @@ import { andList } from '../../../shared/wording.ts'
 type Props = { settings: Settings | null }
 
 export default function Steuer({ settings }: Props) {
-  const { year } = useYear()
-  // Fragt bei offenem Formular nach, wie der Objektwechsel (Durchsicht zu #141).
-  const switchYear = useSwitchYear()
+  // Die Steuer rechnet im Kalenderjahr (#208, Entwurf 3.10).
+  const { calendarYear: year } = usePeriod()
   const { property } = useProperty()
   const propertyId = property?.id
   // Vermieter, IBAN und Frist: am Objekt abweichend, sonst aus den Einstellungen (#92).
@@ -52,6 +52,7 @@ export default function Steuer({ settings }: Props) {
     : null
   const hints = data ? taxHints(data, basis, property?.kind) : []
   const note = data ? prepaymentNote(data) : null
+  const sources = data ? settlementSourcesText(data) : null
   // Teilweise Eigennutzung (#163): Spalten privat und abziehbar nur, wenn es etwas Privates gibt.
   const split = data ? showsSplit(data) : false
   const keyDiff = data ? keyNotAreaDifference(data) : null
@@ -67,12 +68,7 @@ export default function Steuer({ settings }: Props) {
 
       <div className="card no-print">
         <div className="row" style={{ alignItems: 'flex-end' }}>
-          <label className="field">
-            Jahr
-            <select value={year} onChange={(e) => void switchYear(Number(e.target.value))}>
-              {YEAR_OPTIONS.map((y) => <option key={y} value={y}>{y}</option>)}
-            </select>
-          </label>
+          <CalendarYearSelect />
           <label className="field">
             Einnahmen ansetzen als
             <select value={basis} onChange={(e) => setBasis(e.target.value as Basis)}>
@@ -201,6 +197,7 @@ export default function Steuer({ settings }: Props) {
                 daraus, dass ein Mietverhältnis auf einer Wohnung außerhalb der Abrechnungseinheit
                 liegt, und meistens aus beidem zu unbekannten Teilen. Der erste Entwurf schrieb ihn
                 der Korrektur zu; gemessen kamen von 1.500 € Abstand nur 600 € von dort. */}
+            {sources && <p className="muted">{sources}</p>}
             {note && (
               <p className="muted" style={{ marginTop: 10, fontSize: 12 }}>
                 Die Abrechnung {year} setzt bei den Vorauszahlungen{' '}

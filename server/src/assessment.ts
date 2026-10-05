@@ -3,14 +3,14 @@
 // Prüfung zu ihr macht. Ohne Datenbank und Netz, damit der Server und die Tests des Browsers
 // (client/src/testing/fakeBooking.ts) dieselben Regeln benutzen.
 import type {
-  AssessmentLine, AssessmentLineState, AssessmentView, CostItem, Extraction, LineFields, LineSuggestion, Meter, PropertyKind,
+  AssessmentLine, AssessmentLineState, AssessmentView, CostItem, Extraction, LineFields, LineSuggestion, Meter, PeriodKey, PeriodRules, PropertyKind,
   StoredAssessment, StoredAssessmentLine, Unit,
 } from '../../shared/types.ts'
 import { isNotAllocable, matchCategory } from '../../shared/categories.ts'
-import { calendarContext, calendarPeriod } from '../../shared/period.ts'
+import { calendarPeriod, periodContext, periodLabel, periodOfKey } from '../../shared/period.ts'
 import { normalizedText, sameCostCandidates } from '../../shared/duplicates.ts'
 import { costItemBody, type CostItemDraft } from '../../shared/costItem.ts'
-import { aiPositionDefaults, aiPositionPreselect, aiRowPreselected, categoryDeviationPct, invoiceSumCheck, scorePosition } from '../../shared/assessment.ts'
+import { aiPositionDefaults, aiPositionPreselect, aiRowPreselected, bookingPeriod, bookingTaxYear, categoryDeviationPct, invoiceSumCheck, scorePosition } from '../../shared/assessment.ts'
 
 // Eine Zeile, wie sie aus der KI kommt, noch ohne Nummer und ohne Buchung.
 export type NewLine = Pick<StoredAssessmentLine, 'description' | 'category' | 'categoryGuessed' | 'amountCents' | 'labor35aCents'>
@@ -73,7 +73,9 @@ export function lineCandidates<T extends CostItem>(
   a: Pick<StoredAssessment, 'propertyId' | 'year' | 'vendor' | 'file'>,
   line: { category: string; description: string; amountCents: number | null },
   booked: readonly Pick<BookedLine, 'costItemId' | 'amountCents'>[],
-  receipt: { own: readonly T[]; twinFiles: readonly string[] } = { own: [], twinFiles: [] },
+  // `target`: der Zeitraum, in den gebucht wird (#208, `bookingPeriod`); fehlt er, der
+  // Kalenderzeitraum des Jahres.
+  receipt: { own: readonly T[]; twinFiles: readonly string[]; target?: PeriodKey } = { own: [], twinFiles: [] },
 ): { candidates: T[] } & ReceiptHolders<T> {
   if (a.propertyId === null) return { candidates: [], attached: [], twin: [], own: [] }
   const attached = others.filter((i) => i.invoiceFile === a.file)
@@ -81,10 +83,10 @@ export function lineCandidates<T extends CostItem>(
   const own = [...receipt.own]
   const pool = candidatePool(others, line.amountCents, booked)
   const ownPool = candidatePool(own, line.amountCents, booked)
-  // Brücke Kalenderjahr (#208): bis PR 3
-  const same = sameCostCandidates(pool, { propertyId: a.propertyId, period: calendarPeriod(a.year), category: line.category, description: line.description, vendor: a.vendor ?? '' })
+  const target = receipt.target ?? calendarPeriod(a.year)
+  const same = sameCostCandidates(pool, { propertyId: a.propertyId, period: target, category: line.category, description: line.description, vendor: a.vendor ?? '' })
   const extra = [...own.filter((i) => ownPool.includes(i)), ...[...attached, ...twin].filter((i) => pool.includes(i))]
-    .filter((i) => i.period === calendarPeriod(a.year) && !same.includes(i))
+    .filter((i) => i.period === target && !same.includes(i))
   return { candidates: [...extra, ...same], attached, twin, own }
 }
 
@@ -162,7 +164,7 @@ export function withoutBooked(fresh: readonly NewLine[], booked: readonly Stored
 // Prüfung (shared/costItem.ts). Der gemerkte Schlüssel gilt nur, solange die Zeile ihn noch
 // führt; Wohnungen, die es nicht mehr gibt, fallen heraus, wie bisher im Formular
 // (`applyAllocation`). Einzelbeträge hat eine KI-Zeile nie.
-export function lineDraft(fields: LineFields, extra: { vendor: string; invoiceFile: string }, units: readonly Unit[]): CostItemDraft {
+export function lineDraft(fields: LineFields, extra: { vendor: string; invoiceFile: string; taxYear?: number | null }, units: readonly Unit[]): CostItemDraft {
   const known = new Set(units.map((u) => u.id))
   // Bei „Nicht umlagefähig“ gilt kein gemerkter Schlüssel: Dort hieße eine Wohnung „betrifft (für die
   // Steuer)“ (#163), und die Zeile zeigt keine; gewählt wird das nur im Formular.
@@ -182,6 +184,9 @@ export function lineDraft(fields: LineFields, extra: { vendor: string; invoiceFi
     external: { measure: a?.externalBasis?.measure ?? 'mea', total: a?.externalBasis?.total ?? null, totalCents: fields.externalTotalCents },
     tenancyAmounts: {},
     selfAmounts: {},
+    // Die Belegbuchung kennt keinen Leistungszeitraum je Zeile (#208); das Jahr der Zahlung kommt
+    // aus `bookingTaxYear` (Rechnungsdatum), nur bei einem Zeitraum über zwei Kalenderjahre.
+    serviceFrom: null, serviceTo: null, taxYear: extra.taxYear ?? null, heatingPart: null,
   }
 }
 
@@ -203,12 +208,12 @@ export function lineDraft(fields: LineFields, extra: { vendor: string; invoiceFi
 // Eine Gutschrift wird nie verknüpft und ersetzt nichts. Zielen mehrere offene Zeilen auf dieselbe
 // Position, rechnen sie in `describeAssessment` gemeinsam.
 export function replacedByLinking<T extends CostItem>(
-  candidates: readonly T[], line: Pick<StoredAssessmentLine, 'category' | 'amountCents'>, year: number,
+  candidates: readonly T[], line: Pick<StoredAssessmentLine, 'category' | 'amountCents'>, period: PeriodKey,
   booked: readonly Pick<BookedLine, 'costItemId'>[],
 ): T | null {
   if (line.amountCents === null || line.amountCents <= 0) return null
   const fits = candidates.filter((c) =>
-    c.period === calendarPeriod(year) && c.category === line.category && !c.invoiceFile && c.key !== 'amounts' && c.key !== 'external' &&
+    c.period === period && c.category === line.category && !c.invoiceFile && c.key !== 'amounts' && c.key !== 'external' &&
     !booked.some((l) => l.costItemId === c.id))
   return fits.length === 1 ? fits[0] ?? null : null
 }
@@ -226,6 +231,9 @@ export type DescribeContext = {
   twinNames: ReadonlyMap<string, string>
   // Alle gebuchten Zeilen (für `carriesCredit`)
   booked: readonly Pick<BookedLine, 'costItemId' | 'amountCents'>[]
+  // Die Regeln der Zeiträume des Objekts (#208). Pflicht (Durchsicht von #226, M1): Ein vergessener
+  // Aufrufer rechnete sonst still im Kalenderjahr.
+  rules: PeriodRules
   // Offene Zeilen **anderer** Auswertungen desselben Objekts, die eine Schätzung eindeutig ersetzen
   // (`openTargets`). Sie rechnen mit den eigenen gemeinsam (#170, Abnahme): Kommt die Wasserrechnung
   // in zwei Belegen, ersetzen beide zusammen dieselbe Schätzung.
@@ -235,17 +243,18 @@ export type DescribeContext = {
 // Eine offene Zeile, die beim Verknüpfen genau eine Schätzung ersetzte (`replacedByLinking`).
 export type OpenTarget = { assessmentId: string, idx: number, costItemId: string, amountCents: number }
 
-type TargetContext = Pick<DescribeContext, 'items' | 'booked' | 'twinNames'>
+type TargetContext = Pick<DescribeContext, 'items' | 'booked' | 'twinNames' | 'rules'>
 
 // Die Position, die jede offene oder verworfene Zeile beim Verknüpfen ersetzte, nach Zeile.
 function targetsOf(record: { assessment: StoredAssessment; lines: readonly StoredAssessmentLine[] }, ctx: TargetContext, openOnly = false): Map<number, CostItem | null> {
   const a = record.assessment
+  const target = bookingPeriod(ctx.rules, a).key
   const own = new Set(ownItemIds(record.lines))
   const others = ctx.items.filter((i) => !own.has(i.id))
   const ownItems = ctx.items.filter((i) => own.has(i.id))
   return new Map(record.lines.filter((l) => lineState(l) === 'open' || (!openOnly && lineState(l) === 'dismissed')).map((l) => {
-    const { candidates } = lineCandidates(others, a, l, ctx.booked, { own: l.reassessed ? ownItems : [], twinFiles: [...ctx.twinNames.keys()] })
-    return [l.idx, replacedByLinking(candidates, l, a.year, ctx.booked)] as const
+    const { candidates } = lineCandidates(others, a, l, ctx.booked, { own: l.reassessed ? ownItems : [], twinFiles: [...ctx.twinNames.keys()], target })
+    return [l.idx, replacedByLinking(candidates, l, target, ctx.booked)] as const
   }))
 }
 
@@ -267,34 +276,38 @@ export function openTargets(record: { assessment: StoredAssessment; lines: reado
 // bisher in der Schnellerfassung, jetzt für alle drei Wege.
 function suggestLine(line: StoredAssessmentLine, a: StoredAssessment, others: readonly CostItem[], ownItems: readonly CostItem[], ctx: DescribeContext, deviation: { amountCents: number, replacedCents: number }): LineSuggestion {
   const vendor = a.vendor ?? ''
-  const defaults = aiPositionDefaults(line.category, ctx.units, ctx.meters, { items: ctx.items, year: a.year, propertyKind: ctx.propertyKind }, line.description)
+  const rules = ctx.rules
+  const target = bookingPeriod(rules, a)
+  const at = periodContext(rules, target)
+  const defaults = aiPositionDefaults(line.category, ctx.units, ctx.meters, { items: ctx.items, year: a.year, at, propertyKind: ctx.propertyKind }, line.description)
   const fields: LineFields = {
     description: line.description, category: line.category, amountCents: line.amountCents, labor35aCents: line.labor35aCents,
     key: defaults.key, allocation: defaults.allocation, externalTotalCents: null,
   }
   const pool = candidatePool(others, line.amountCents, ctx.booked)
-  const { candidates, ...holders } = lineCandidates(others, a, line, ctx.booked, { own: line.reassessed ? ownItems : [], twinFiles: [...ctx.twinNames.keys()] })
+  const { candidates, ...holders } = lineCandidates(others, a, line, ctx.booked, { own: line.reassessed ? ownItems : [], twinFiles: [...ctx.twinNames.keys()], target: target.key })
   const amount = line.amountCents ?? 0
   const score = scorePosition({
     category: line.category, description: line.description, amountCents: amount, labor35aCents: line.labor35aCents ?? 0,
-    matchedByDesc: line.categoryGuessed, vendor, detectedYear: a.detectedYear, targetYear: a.year, existingItems: pool,
-    // Brücke Kalenderjahr (#208): bis PR 3
-    priorYearDeviationPct: categoryDeviationPct(ctx.items, line.category, calendarContext(a.year), deviation.amountCents, deviation.replacedCents),
+    matchedByDesc: line.categoryGuessed, vendor, detectedYear: a.detectedYear, targetYear: a.year, targetPeriod: target.key, existingItems: pool,
+    priorYearDeviationPct: categoryDeviationPct(ctx.items, line.category, at, deviation.amountCents, deviation.replacedCents),
   })
   // Das Jahr aus dem Beleg weicht vom gewählten ab (Schlussdurchsicht, I1): Gebucht wird im Jahr
   // des Belegs, aber nie ungesehen. Eine Jahresrechnung vom Februar, deren Leistungszeitraum die KI
   // nicht gelesen hat, landete sonst mit „Alle grünen übernehmen“ in der Abrechnung des Folgejahres.
-  // Verglichen wird das gewählte Kalenderjahr, das auch ohne Objekt feststeht (#208).
+  // Verglichen wird der gewählte Zeitraum mit dem, in den gebucht wird (#208); ohne Objekt gibt es
+  // keinen Zeitraum, dann das gewählte Kalenderjahr. Beim Kalenderobjekt sind es die Jahreszahlen
+  // wie bisher.
+  const requested = a.requestedPeriod === null ? null : periodOfKey(rules, a.requestedPeriod)
   const requestedYear = a.requestedYear
-  const otherYear = requestedYear !== null && requestedYear !== a.year
-  // Brücke Kalenderjahr (#208): bis PR 3
-  const built = costItemBody(lineDraft(fields, { vendor, invoiceFile: a.file }, ctx.units), ctx.units, calendarPeriod(a.year))
+  const otherYear = requested !== null ? requested.key !== target.key : requestedYear !== null && requestedYear !== a.year
+  const built = costItemBody(lineDraft(fields, { vendor, invoiceFile: a.file, taxYear: bookingTaxYear(target, a) }, ctx.units), ctx.units, target.key)
   const problem = 'error' in built ? built.error : null
   let level = score.level
   const reasons = [...score.reasons]
   if (otherYear) {
     if (level === 'gruen') level = 'gelb'
-    reasons.push(`Beleg aus ${a.year}, gewählt war ${requestedYear} — gebucht wird in ${a.year}; sonst das Jahr der Buchung ändern`)
+    reasons.push(`Beleg aus ${a.year}, gewählt war ${requested ? periodLabel(requested) : requestedYear} — gebucht wird in ${periodLabel(target)}; sonst das Jahr der Buchung ändern`)
   }
   const held = holderReasons(holders, (f) => ctx.twinNames.get(f) ?? f)
   if (held.length > 0) {
@@ -360,5 +373,9 @@ export function describeAssessment(record: { assessment: StoredAssessment; lines
     }
   })
   const sum = record.lines.reduce((s, l) => s + (l.amountCents ?? 0), 0)
-  return { ...a, originalName: ctx.originalName, lines, open: lines.some((l) => l.state === 'open'), sumWarning: invoiceSumCheck(sum, a.totalGrossCents) }
+  const target = bookingPeriod(ctx.rules, a)
+  return {
+    ...a, originalName: ctx.originalName, lines, open: lines.some((l) => l.state === 'open'), sumWarning: invoiceSumCheck(sum, a.totalGrossCents),
+    targetPeriod: target.key, targetLabel: periodLabel(target),
+  }
 }

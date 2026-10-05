@@ -62,6 +62,12 @@ export type SnapshotCostItem = Pick<
   CostItem,
   | 'id'
   | 'period'
+  // Leistungszeitraum, Jahr der Zahlung und Brennstoffmerkmal (#208): für die Hinweise zum
+  // Zeitraum, den Vorschlag nach § 560 im Rumpf und die Steuer.
+  | 'serviceFrom'
+  | 'serviceTo'
+  | 'taxYear'
+  | 'heatingPart'
   | 'category'
   | 'description'
   | 'amountCents'

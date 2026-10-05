@@ -13,6 +13,7 @@ import type { AssessmentView, BookingPreview, CostItem, LineDecision } from '../
 import { describeAssessment, openTargets, type BookedLine, type OpenTarget } from '../assessment.ts'
 import { planBooking, previewWith, settle, tokenSource, type BookingOutcome, type Planned } from '../bookingPlan.ts'
 import { narrowToProperty } from '../snapshot.ts'
+import { rulesOf } from '../../../shared/period.ts'
 import type { Database } from './client.ts'
 import { bookedLines, listAssessments, readAssessment, writeLine, type AssessmentRecord } from './assessments.ts'
 import { readStock, type Stock } from './read.ts'
@@ -63,11 +64,14 @@ const twinNamesOf = (ctx: Context, file: string): Map<string, string> => new Map
 // quadratisch, und das in der Leseschlange.
 type Peer = { id: string, file: string, targets: OpenTarget[] }
 
+// Die Regeln der Zeiträume des Objekts einer Auswertung (#208); ohne Objekt das Kalenderjahr.
+const rulesFor = (ctx: Context, propertyId: string | null) => rulesOf(ctx.stock.properties.find((p) => p.id === propertyId))
+
 function peersFrom(records: readonly AssessmentRecord[], ctx: Context): Peer[] {
   return records.flatMap((r) => {
     const scoped = scopeOf(ctx, r.assessment.propertyId)
     if (!scoped) return []
-    return [{ id: r.assessment.id, file: r.assessment.file, targets: openTargets(r, { items: scoped.costItems, booked: ctx.booked, twinNames: twinNamesOf(ctx, r.assessment.file) }) }]
+    return [{ id: r.assessment.id, file: r.assessment.file, targets: openTargets(r, { items: scoped.costItems, booked: ctx.booked, twinNames: twinNamesOf(ctx, r.assessment.file), rules: rulesFor(ctx, r.assessment.propertyId) }) }]
   })
 }
 
@@ -112,6 +116,7 @@ function viewOf(record: AssessmentRecord, ctx: Context, peers: readonly Peer[]):
     twinNames: new Map(twins.map((f) => [f, nameOf(ctx, f)])),
     booked: ctx.booked,
     peerTargets: peerTargetsFor(record, peers, ctx),
+    rules: rulesFor(ctx, a.propertyId),
   })
 }
 
@@ -150,6 +155,7 @@ async function plannedFor(db: Database, id: string, decisions: readonly LineDeci
     units: scoped?.units ?? [], twinFiles,
     fileNames: new Map([...ctx.booked.map((l) => l.file), ...twinFiles].map((f) => [f, nameOf(ctx, f)])),
     closed: ctx.stock.closedSettlements,
+    rules: rulesFor(ctx, record.assessment.propertyId),
   }, decisions, newId)
   return { record, ctx, planned }
 }

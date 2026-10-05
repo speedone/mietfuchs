@@ -19,7 +19,7 @@ import { applyMigrations, connect, loadMigrations, type Database } from '../src/
 import { migrateLegacy, straightenForDatabase } from '../src/legacy/migrate.ts'
 import { writeStock } from '../src/legacy/write.ts'
 import { readClosedSettlements, readStock } from '../src/db/read.ts'
-import { assessments as assessmentsTable, properties as propertiesTable, uploads as uploadsTable } from '../src/db/schema.ts'
+import { assessments as assessmentsTable, periodChanges as periodChangesTable, properties as propertiesTable, uploads as uploadsTable } from '../src/db/schema.ts'
 import { eq } from 'drizzle-orm'
 import { LAW_AS_OF } from '../../shared/law/register.ts'
 import { tenancyOverlaps } from '../../shared/tenancyOverlap.ts'
@@ -5425,7 +5425,7 @@ test('Alter Tab: Die Kostenliste eines Kalenderobjekts nennt weiter das Jahr (#2
   }
 })
 
-test('Zeitraum (#208): die Jahreszahl nur beim Kalenderobjekt, JJJJ-MM mit Zeitraum und Frist, Steuer folgt später', async () => {
+test('Zeitraum (#208): die Jahreszahl nur beim Kalenderobjekt, JJJJ-MM mit Zeitraum und Frist, Steuer im Kalenderjahr', async () => {
   const s = await startServer()
   try {
     const kalender = await s.api<Settlement>('/api/settlement/2025')
@@ -5440,7 +5440,7 @@ test('Zeitraum (#208): die Jahreszahl nur beim Kalenderobjekt, JJJJ-MM mit Zeitr
 
     const alt = await fetch(`${s.base}/api/settlement/2025${q}`)
     assert.equal(alt.status, 404)
-    assert.equal(await errorFrom(alt), 'Den Zeitraum 2025 gibt es für dieses Objekt nicht; meinen Sie 2025/2026?')
+    assert.equal(await errorFrom(alt), 'Den Zeitraum 2025 gibt es für dieses Objekt nicht; meinen Sie 2025/2026 (2025-05)?')
     const neu = await s.api<Settlement>(`/api/settlement/2025-05${q}`)
     assert.deepEqual([neu.period.from, neu.period.to, neu.period.label, neu.deadline, neu.daysInYear], ['2025-05-01', '2026-04-30', '2025/2026', '2027-04-30', 365])
     assert.equal((await fetch(`${s.base}/api/settlement/2025-13${q}`)).status, 400)
@@ -5458,14 +5458,14 @@ test('Zeitraum (#208): die Jahreszahl nur beim Kalenderobjekt, JJJJ-MM mit Zeitr
     await s.api(`/api/settlement/2025-05/close${q}`, { method: 'DELETE' })
     assert.equal((await s.api<unknown[]>(`/api/settlement/2025-05/history${q}`)).length, 1)
 
-    // Verbrauch über denselben Zeitraum; das Mietkonto bleibt Kalenderjahr; die Steuer kommt mit PR 3.
+    // Verbrauch über denselben Zeitraum; das Mietkonto bleibt Kalenderjahr.
     assert.equal((await fetch(`${s.base}/api/consumption/2025${q}`)).status, 404)
     assert.equal((await fetch(`${s.base}/api/consumption/2025-05${q}`)).status, 200)
     assert.equal((await s.api<{ year: number }>(`/api/rentledger/2025${q}`)).year, 2025)
-    const steuer = await fetch(`${s.base}/api/taxreport/2025${q}`)
-    assert.equal(steuer.status, 400)
-    assert.equal(await errorFrom(steuer), 'Die Steuerübersicht für ein Objekt mit abweichendem Abrechnungszeitraum kommt mit einer späteren Version.')
-    assert.equal((await fetch(`${s.base}/api/receipts/tax/2025${q}`)).status, 400)
+    // Die Steuer rechnet im Kalenderjahr und schöpft aus den Abrechnungen 2024/2025 und 2025/2026 (#208, PR 3).
+    const steuer = await s.api<{ settlementPeriods: { label: string }[] }>(`/api/taxreport/2025${q}`)
+    assert.deepEqual(steuer.settlementPeriods.map((p) => p.label), ['2024/2025', '2025/2026'])
+    assert.equal((await fetch(`${s.base}/api/receipts/tax/2025${q}`)).status, 200)
 
     // Ein alter Tab schreibt mit Jahreszahl: abgelehnt statt still in einen anderen Zeitraum
     // (Review Focus 1). Die Liste nennt für dieses Objekt kein Jahr, es gäbe keines, das stimmte.
@@ -5475,7 +5475,7 @@ test('Zeitraum (#208): die Jahreszahl nur beim Kalenderobjekt, JJJJ-MM mit Zeitr
     })
     assert.equal(altTab.status, 400)
     assert.match(await errorFrom(altTab), /älter als das Programm/)
-    await s.api(`/api/costItems${q}`, { method: 'POST', body: JSON.stringify({ period: '2025-05', category: 'Grundsteuer', description: 'G', amountCents: 100, key: 'area' }) })
+    await s.api(`/api/costItems${q}`, { method: 'POST', body: JSON.stringify({ period: '2025-05', category: 'Grundsteuer', description: 'G', amountCents: 100, key: 'area', taxYear: 2025 }) })
     const [item] = await s.api<(CostItem & { year?: number })[]>(`/api/costItems${q}`)
     assert.deepEqual([item?.period, item?.year], ['2025-05', undefined])
   } finally {
@@ -5544,6 +5544,216 @@ test('Alter Tab: Jahreskorrektur nach Jahreszahl lesen und zurücksetzen; ungül
     })
     assert.equal(kaputt.status, 400)
     assert.match(await errorFrom(kaputt), /Ungültiger Zeitraum/)
+  } finally {
+    s.stop()
+  }
+})
+
+test('Aufteilen (#208): Vorschau und Speichern über HTTP, 409 bei abgeschlossenem Zeitraum', async () => {
+  const s = await startServer()
+  try {
+    await inDatabase(s, async (db) => { await db.update(propertiesTable).set({ periodStartMonth: 5 }).where(eq(propertiesTable.id, 'objekt-1')) })
+    const rumpf = { category: 'Grundsteuer', description: 'Grundsteuer 2025', amountCents: 48000, key: 'area', serviceFrom: '2025-01-01', serviceTo: '2025-12-31', taxYear: 2025 }
+    const vorschau = await s.api<{ parts: { period: string; amountCents: number }[] }>('/api/costItems/split/preview', { method: 'POST', body: JSON.stringify(rumpf) })
+    assert.deepEqual(vorschau.parts.map((p) => [p.period, p.amountCents]), [['2024-05', 15781], ['2025-05', 32219]])
+    // Ohne Aufteilen lehnt die gewöhnliche Route ab und nennt den Knopf.
+    const einzeln = await fetch(`${s.base}/api/costItems`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...rumpf, period: '2025-05' }) })
+    assert.equal(einzeln.status, 400)
+    assert.match(await errorFrom(einzeln), /„Aufteilen und speichern“/)
+    const angelegt = await s.api<CostItem[]>('/api/costItems/split', { method: 'POST', body: JSON.stringify(rumpf) })
+    assert.equal(angelegt.length, 2)
+    await s.api('/api/settlement/2025-05/close', { method: 'POST', body: '{}' })
+    const zu = await fetch(`${s.base}/api/costItems/split`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(rumpf) })
+    assert.equal(zu.status, 409)
+  } finally {
+    s.stop()
+  }
+})
+
+test('Wechsel des Zeitraums (#208): Vorschau und Speichern über HTTP, 409 ohne Antworten', async () => {
+  const s = await startServer()
+  try {
+    const unit = await s.api<{ id: string }>('/api/units', { method: 'POST', body: JSON.stringify({ name: 'EG', areaM2: 60, participates: true }) })
+    await s.api('/api/tenancies', { method: 'POST', body: JSON.stringify({ unitId: unit.id, tenantName: 'A', persons: 1, start: '2024-01-01', prepaymentOverrides: { '2025-01': 220000 } }) })
+    const [objekt] = await s.api<{ id: string }[]>('/api/properties')
+    const id = objekt?.id ?? assert.fail('kein Objekt')
+    const next = { startMonth: 1, changes: ['2025-05'] }
+    const vorschau = await s.api<{ token: string; overrides: { ask: { period: string }[] }[] }>(`/api/properties/${id}/period/preview`, { method: 'POST', body: JSON.stringify({ rules: next }) })
+    assert.deepEqual(vorschau.overrides[0]?.ask.map((a) => a.period), ['2025-01', '2025-05'])
+    const ohne = await fetch(`${s.base}/api/properties/${id}/period`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ rules: next }) })
+    assert.equal(ohne.status, 409)
+    const tenancyId = (await s.api<{ id: string }[]>('/api/tenancies'))[0]?.id ?? assert.fail('kein Mietverhältnis')
+    const property = await s.api<{ periodRules: unknown }>(`/api/properties/${id}`, {
+      method: 'PUT', body: JSON.stringify({ periodRules: { startMonth: 5, changes: [] } }),
+    })
+    assert.deepEqual(property.periodRules, { startMonth: 1, changes: [] }, 'PUT /api/properties setzt den Rhythmus nicht')
+    const gewechselt = await s.api<{ periodRules: unknown }>(`/api/properties/${id}/period`, {
+      method: 'PUT', body: JSON.stringify({ rules: next, answers: { token: vorschau.token, overrides: { [tenancyId]: { '2025-01': 70000, '2025-05': null } } } }),
+    })
+    assert.deepEqual(gewechselt.periodRules, next)
+    assert.equal((await s.api<{ period: { label: string } }>('/api/settlement/2025-01')).period.label, '01.01.–30.04.2025')
+    const falsch = await fetch(`${s.base}/api/properties/${id}/period/preview`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ rules: { startMonth: 0, changes: [] } }) })
+    assert.equal(falsch.status, 400)
+  } finally {
+    s.stop()
+  }
+})
+
+// Durchsicht von #226 (C1): Ein schon aufgeteilter Teil trägt den ganzen Leistungszeitraum der
+// Rechnung, sein Betrag ist aber nur der Anteil seines Zeitraums. Wurde er erneut aufgeteilt, als
+// wäre er die ganze Rechnung, wanderten 106,22 € zu den Mietern des anderen Zeitraums.
+test('Aufteilen (#208): Ein Teil einer aufgeteilten Rechnung wird nur berichtigt, nie noch einmal aufgeteilt', async () => {
+  const s = await startServer()
+  try {
+    await inDatabase(s, async (db) => { await db.update(propertiesTable).set({ periodStartMonth: 5 }).where(eq(propertiesTable.id, 'objekt-1')) })
+    const rumpf = { category: 'Grundsteuer', description: 'Grundsteuer 2025', amountCents: 48000, key: 'area', serviceFrom: '2025-01-01', serviceTo: '2025-12-31', taxYear: 2025 }
+    await s.api<CostItem[]>('/api/costItems/split', { method: 'POST', body: JSON.stringify(rumpf) })
+    const teile = async () => (await s.api<CostItem[]>('/api/costItems')).map((c) => [c.period, c.amountCents]).sort()
+    assert.deepEqual(await teile(), [['2024-05', 15781], ['2025-05', 32219]])
+    const zweiter = (await s.api<CostItem[]>('/api/costItems')).find((c) => c.period === '2025-05') ?? assert.fail('kein Teil 2025-05')
+    const json = { 'content-type': 'application/json' }
+    // Den Leistungszeitraum eines Teils ändern: weder über das Aufteilen noch über die gewöhnliche Route.
+    const geteilt = await fetch(`${s.base}/api/costItems/${zweiter.id}/split`, { method: 'PUT', headers: json, body: JSON.stringify({ serviceTo: '2025-12-30' }) })
+    assert.equal(geteilt.status, 400)
+    assert.match(await errorFrom(geteilt), /ist ein Teil einer aufgeteilten Rechnung/)
+    const vorschau = await fetch(`${s.base}/api/costItems/${zweiter.id}/split/preview`, { method: 'POST', headers: json, body: JSON.stringify({ serviceTo: '2025-12-30' }) })
+    assert.equal(vorschau.status, 400)
+    const direkt = await fetch(`${s.base}/api/costItems/${zweiter.id}`, { method: 'PUT', headers: json, body: JSON.stringify({ serviceTo: '2025-12-30' }) })
+    assert.equal(direkt.status, 400)
+    assert.match(await errorFrom(direkt), /ist ein Teil einer aufgeteilten Rechnung/)
+    const umziehen = await fetch(`${s.base}/api/costItems/${zweiter.id}`, { method: 'PUT', headers: json, body: JSON.stringify({ period: '2024-05' }) })
+    assert.equal(umziehen.status, 400)
+    assert.deepEqual(await teile(), [['2024-05', 15781], ['2025-05', 32219]], 'nichts gewandert')
+    // Berichtigen geht: Rechnungssteller und Beleg ändern, Leistungszeitraum und Zeitraum bleiben.
+    await s.api(`/api/costItems/${zweiter.id}`, { method: 'PUT', body: JSON.stringify({ vendor: 'Stadtkasse' }) })
+    assert.deepEqual(await teile(), [['2024-05', 15781], ['2025-05', 32219]])
+  } finally {
+    s.stop()
+  }
+})
+
+// Durchsicht von #226 (I1, M2, M4): das Jahr der Zahlung beim Wechsel des Rhythmus, und die Marke der
+// Vorschau.
+type Vorschau = { token: string; taxYears: { key: string; suggested: number; options: number[] }[] }
+const wechsel = async (s: { base: string }, id: string, body: unknown) =>
+  fetch(`${s.base}/api/properties/${id}/period`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+
+test('Wechsel des Zeitraums (#208): Das Jahr der Zahlung bleibt in seiner Spanne, die Vorschau fragt es, eine falsche Angabe ist 409', async () => {
+  const s = await startServer()
+  try {
+    await inDatabase(s, async (db) => { await db.update(propertiesTable).set({ periodStartMonth: 5 }).where(eq(propertiesTable.id, 'objekt-1')) })
+    // 2024/2025, im Jahr 2026 bezahlt (erlaubt: 2024 bis 2026).
+    const [item] = [await s.api<CostItem>('/api/costItems', { method: 'POST', body: JSON.stringify({ period: '2024-05', category: 'Müllabfuhr', description: 'Müll', amountCents: 10000, key: 'area', taxYear: 2026 }) })]
+    const id = (await s.api<{ id: string }[]>('/api/properties'))[0]?.id ?? assert.fail('kein Objekt')
+    const regeln = { startMonth: 9, changes: [] }
+    const vorschau = await s.api<Vorschau>(`/api/properties/${id}/period/preview`, { method: 'POST', body: JSON.stringify({ rules: regeln }) })
+    const frage = vorschau.taxYears.find((t) => t.key === `${item?.id}|2023-09`) ?? assert.fail('keine Frage nach dem Jahr der Zahlung')
+    // September 2023 bis August 2024: 2023 bis 2025; 2026 wird auf 2025 geklemmt.
+    assert.deepEqual([frage.suggested, frage.options], [2025, [2023, 2024, 2025]])
+    const falsch = await wechsel(s, id, { rules: regeln, answers: { token: vorschau.token, groups: { '2024-05': '2023-09' }, taxYears: { [`${item?.id}|2023-09`]: 2026 } } })
+    assert.equal(falsch.status, 409)
+    assert.ok((await jsonOf<{ preview?: unknown }>(falsch)).preview, 'die 409 bringt die Vorschau mit')
+    const ok = await wechsel(s, id, { rules: regeln, answers: { token: vorschau.token, groups: { '2024-05': '2023-09' } } })
+    assert.equal(ok.status, 200)
+    const nachher = (await s.api<CostItem[]>('/api/costItems')).find((c) => c.id === item?.id)
+    assert.deepEqual([nachher?.period, nachher?.taxYear], ['2023-09', 2025])
+    // Sie steht in genau einer Steuerübersicht.
+    const jahre = await Promise.all([2023, 2024, 2025, 2026].map(async (y) => (await s.api<{ expenses: { items: { costItemId: string }[] } }>(`/api/taxreport/${y}`)).expenses.items.some((i) => i.costItemId === item?.id)))
+    assert.deepEqual(jahre, [false, false, true, false])
+  } finally {
+    s.stop()
+  }
+})
+
+test('Wechsel des Zeitraums (#208): Wächst ein Zeitraum über zwei Kalenderjahre, bekommt jede Position ihr Jahr der Zahlung', async () => {
+  const s = await startServer()
+  try {
+    await inDatabase(s, async (db) => {
+      await db.update(propertiesTable).set({ periodStartMonth: 1 }).where(eq(propertiesTable.id, 'objekt-1'))
+      await db.insert(periodChangesTable).values([{ propertyId: 'objekt-1', fromMonth: '2025-05' }, { propertyId: 'objekt-1', fromMonth: '2026-01' }])
+    })
+    // Mai bis Dezember 2025 ist ein Kalenderjahr; ohne den Wechsel ab Januar 2026 reicht der Zeitraum bis April 2026.
+    const item = await s.api<CostItem>('/api/costItems', { method: 'POST', body: JSON.stringify({ period: '2025-05', category: 'Müllabfuhr', description: 'Müll', amountCents: 10000, key: 'area' }) })
+    const id = (await s.api<{ id: string }[]>('/api/properties'))[0]?.id ?? assert.fail('kein Objekt')
+    const regeln = { startMonth: 1, changes: ['2025-05'] }
+    const vorschau = await s.api<Vorschau>(`/api/properties/${id}/period/preview`, { method: 'POST', body: JSON.stringify({ rules: regeln }) })
+    assert.equal(vorschau.taxYears.find((t) => t.key === `${item.id}|2025-05`)?.suggested, 2025)
+    assert.equal((await wechsel(s, id, { rules: regeln, answers: { token: vorschau.token } })).status, 200)
+    assert.equal((await s.api<CostItem[]>('/api/costItems')).find((c) => c.id === item.id)?.taxYear, 2025)
+    // Danach lässt sie sich speichern.
+    await s.api(`/api/costItems/${item.id}`, { method: 'PUT', body: JSON.stringify({ vendor: 'Stadt' }) })
+  } finally {
+    s.stop()
+  }
+})
+
+test('Wechsel des Zeitraums (#208): Eine veraltete Vorschau zieht keine gewachsene Gruppe ungesehen mit (409 mit neuer Vorschau)', async () => {
+  const s = await startServer()
+  try {
+    await s.api('/api/costItems', { method: 'POST', body: JSON.stringify({ period: '2025-01', category: 'Müllabfuhr', description: 'Müll', amountCents: 10000, key: 'area' }) })
+    const id = (await s.api<{ id: string }[]>('/api/properties'))[0]?.id ?? assert.fail('kein Objekt')
+    const regeln = { startMonth: 1, changes: ['2025-05'] }
+    const vorschau = await s.api<Vorschau>(`/api/properties/${id}/period/preview`, { method: 'POST', body: JSON.stringify({ rules: regeln }) })
+    // In einem zweiten Tab kommt eine Position dazu.
+    await s.api('/api/costItems', { method: 'POST', body: JSON.stringify({ period: '2025-01', category: 'Wasser/Abwasser', description: 'Wasser', amountCents: 20000, key: 'area' }) })
+    const alt = await wechsel(s, id, { rules: regeln, answers: { token: vorschau.token, groups: { '2025-01': '2025-01' } } })
+    assert.equal(alt.status, 409)
+    const antwort = await jsonOf<{ error: string; preview: Vorschau }>(alt)
+    assert.match(antwort.error, /Vorschau ist nicht mehr aktuell/)
+    assert.notEqual(antwort.preview.token, vorschau.token)
+    assert.deepEqual((await s.api<{ periodRules: unknown }[]>('/api/properties'))[0]?.periodRules, { startMonth: 1, changes: [] }, 'nichts geschrieben')
+    const ohneMarke = await wechsel(s, id, { rules: regeln, answers: { groups: { '2025-01': '2025-01' } } })
+    assert.equal(ohneMarke.status, 409)
+    assert.equal((await wechsel(s, id, { rules: regeln, answers: { token: antwort.preview.token, groups: { '2025-01': '2025-01' } } })).status, 200)
+  } finally {
+    s.stop()
+  }
+})
+
+// Nachprüfung von #226 (1): Ein Wechsel der Kostenart zwischen Heizung und kalten Kosten ist kein
+// „unverändert“. Sonst stünde eine Heizposition über zwei Zeiträume als kalte ungeteilt in einem,
+// und ein Teil einer aufgeteilten Rechnung würde zur Heizposition.
+test('Aufteilen (#208): Heizung ↔ kalt über die Kostenart, nicht am Aufteilen vorbei', async () => {
+  const s = await startServer()
+  try {
+    await inDatabase(s, async (db) => { await db.update(propertiesTable).set({ periodStartMonth: 5 }).where(eq(propertiesTable.id, 'objekt-1')) })
+    const json = { 'content-type': 'application/json' }
+    const heizung = await s.api<CostItem>('/api/costItems', { method: 'POST', body: JSON.stringify({ period: '2024-05', category: 'Heizung und Warmwasser', description: 'Wartung', amountCents: 100000, key: 'area', taxYear: 2025, serviceFrom: '2025-01-01', serviceTo: '2025-12-31' }) })
+    const kalt = await fetch(`${s.base}/api/costItems/${heizung.id}`, { method: 'PUT', headers: json, body: JSON.stringify({ category: 'Grundsteuer' }) })
+    assert.equal(kalt.status, 400)
+    assert.match(await errorFrom(kalt), /„Aufteilen und speichern“/)
+    // Über das Aufteilen geht es.
+    const geteilt = await s.api<CostItem[]>(`/api/costItems/${heizung.id}/split`, { method: 'PUT', body: JSON.stringify({ category: 'Grundsteuer' }) })
+    assert.deepEqual(geteilt.map((c) => [c.period, c.amountCents]).sort(), [['2024-05', 32877], ['2025-05', 67123]])
+    const teil = geteilt.find((c) => c.period === '2025-05') ?? assert.fail('kein Teil')
+    const warm = await fetch(`${s.base}/api/costItems/${teil.id}`, { method: 'PUT', headers: json, body: JSON.stringify({ category: 'Heizung und Warmwasser' }) })
+    assert.equal(warm.status, 400)
+    assert.match(await errorFrom(warm), /ist ein Teil einer aufgeteilten Rechnung/)
+  } finally {
+    s.stop()
+  }
+})
+
+// Nachprüfung von #226 (2): Ein Wechsel teilt eine aufgeteilte Rechnung als Ganzes neu und nicht
+// jeden Teil für sich, sonst summieren sich die Rundungen; nach Mai → Januar → Mai → September →
+// Mai stand ein Cent im falschen Zeitraum.
+test('Wechsel des Zeitraums (#208): hin und zurück steht die Rechnung wieder exakt im Schnitt nach Tagen', async () => {
+  const s = await startServer()
+  try {
+    await inDatabase(s, async (db) => { await db.update(propertiesTable).set({ periodStartMonth: 5 }).where(eq(propertiesTable.id, 'objekt-1')) })
+    await s.api('/api/costItems/split', { method: 'POST', body: JSON.stringify({ category: 'Grundsteuer', description: 'Grundsteuer 2025', amountCents: 48000, key: 'area', serviceFrom: '2025-01-01', serviceTo: '2025-12-31', taxYear: 2025 }) })
+    const id = (await s.api<{ id: string }[]>('/api/properties'))[0]?.id ?? assert.fail('kein Objekt')
+    const teile = async () => (await s.api<CostItem[]>('/api/costItems')).map((c) => [c.period, c.amountCents]).sort()
+    assert.deepEqual(await teile(), [['2024-05', 15781], ['2025-05', 32219]])
+    for (const startMonth of [1, 5, 9, 5]) {
+      const regeln = { startMonth, changes: [] }
+      const vorschau = await s.api<{ token: string; groups: { from: string; suggested: string }[] }>(`/api/properties/${id}/period/preview`, { method: 'POST', body: JSON.stringify({ rules: regeln }) })
+      const groups = Object.fromEntries(vorschau.groups.map((g) => [g.from, g.suggested]))
+      await s.api(`/api/properties/${id}/period`, { method: 'PUT', body: JSON.stringify({ rules: regeln, answers: { token: vorschau.token, groups } }) })
+      const summe = (await s.api<CostItem[]>('/api/costItems')).reduce((a, c) => a + c.amountCents, 0)
+      assert.equal(summe, 48000, `nach Beginn ${startMonth}: die Summe bleibt`)
+    }
+    assert.deepEqual(await teile(), [['2024-05', 15781], ['2025-05', 32219]])
   } finally {
     s.stop()
   }

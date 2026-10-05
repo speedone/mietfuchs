@@ -4,6 +4,7 @@ import { afterEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import Hilfe from './Hilfe'
 import { GUIDES } from '../../../shared/guides.ts'
+import { GLOSSARY } from '../../../shared/glossary.ts'
 
 afterEach(cleanup)
 
@@ -45,10 +46,12 @@ test('die Suche durchsucht Anleitungen und Begriffe gemeinsam', () => {
   expect(screen.queryByText(GUIDES.granny.title)).toBeNull()
   // Bei einer Suche sind die Treffer aufgeklappt, sonst sähe man nicht, wo das Wort steht.
   expect(screen.getByText(GUIDES.meteringService.title).closest('details')?.open).toBe(true)
-  // Kein Begriff nennt § 9b: Die Begriffe sagen das, die Anleitungen stehen trotzdem da.
-  expect(screen.getByText(/Kein Begriff passt/)).toBeTruthy()
+  // Seit #208 nennt der Begriff „Gradtagszahlen“ § 9b HeizkostenV; er steht neben den Anleitungen.
+  expect(screen.getAllByText(GLOSSARY.degreeDays.title).length).toBeGreaterThan(0)
   fireEvent.change(screen.getByLabelText(/Suchen/), { target: { value: '' } })
   expect(screen.getByText(GUIDES.meteringService.title).closest('details')?.open).toBe(false)
   fireEvent.change(screen.getByLabelText(/Suchen/), { target: { value: 'gibt es nicht' } })
   expect(screen.getByText(/Keine Anleitung passt/)).toBeTruthy()
+  // Passt kein Begriff, sagt die Seite das, die Anleitungen stehen trotzdem da.
+  expect(screen.getByText(/Kein Begriff passt/)).toBeTruthy()
 })

@@ -209,7 +209,8 @@ test('Schreiben: eine Position braucht einen Zeitraum ihres Objekts; year eines 
     // Mai bis April: '2025-05' geht; '2025-01' gibt es nicht; die Jahreszahl eines alten Tabs fiele
     // still in einen Zeitraum, der zufällig im Januar beginnt, und wird abgelehnt.
     await setStartMonth(opened, 5)
-    await opened.write((db) => createEntity(db, 'costItems', 'c3', position({ period: '2025-05' })))
+    // Seit PR 3 (#208) ist das Jahr der Zahlung bei einem Zeitraum über zwei Kalenderjahre Pflicht.
+    await opened.write((db) => createEntity(db, 'costItems', 'c3', position({ period: '2025-05', taxYear: 2025 })))
     await assert.rejects(opened.write((db) => createEntity(db, 'costItems', 'c4', position({ period: '2025-01' }))), PeriodError)
     await assert.rejects(opened.write((db) => createEntity(db, 'costItems', 'c5', position({ year: 2025 }))),
       (err: unknown) => err instanceof PeriodError && /älter als das Programm/.test(err.message))
@@ -261,7 +262,7 @@ test('Ein Objekt löschen, an dem eine Auswertung mit gewähltem Zeitraum hängt
   }
 })
 
-test('Der Rhythmus lässt sich in dieser Version nicht über die Objekte setzen (Bedienung: PR 3)', async () => {
+test('Der Rhythmus lässt sich nicht über PUT /api/properties setzen, nur über den Wechsel mit Vorschau (#208)', async () => {
   // Bleibt grün und hält fest, dass es keine Hintertür gibt: Ein Wechsel ohne Vorschau ließe
   // Positionen und Jahreskorrekturen ohne Zeitraum zurück.
   const dir = tempDir()

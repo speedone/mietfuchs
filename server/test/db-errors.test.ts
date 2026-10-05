@@ -254,3 +254,27 @@ test('Jede Prüfbedingung im Schema folgt der Namenskonvention', async () => {
     fs.rmSync(dataDir, { recursive: true, force: true })
   }
 })
+
+test('Leistungszeitraum, Jahr der Zahlung und Brennstoff: jede Bedingung hat ihren eigenen Satz (#208)', async () => {
+  // Die Schreibprüfung in repository.ts fängt das vorher ab; die Bedingungen sind das Netz
+  // darunter, und auch dort soll niemand einen Satz über die Gemeinschaftsabrechnung oder über
+  // „JJJJ-MM“ lesen, wenn ein Tagesdatum gemeint ist.
+  await withDatabase(async (opened) => {
+    const insert = (id: string, columns: string, values: string) => messageOfFailure(opened, () =>
+      opened.write((db) => db.run(sql.raw(
+        `INSERT INTO cost_items (id, property_id, period, category, description, amount_cents, key${columns}) VALUES ('${id}', 'objekt-1', '2025-01', 'Grundsteuer', 'G', 1, 'area'${values})`,
+      ))))
+    const paar = await insert('a', ', service_from', ", '2025-01-01'")
+    assert.match(paar, /Leistungszeitraum/, paar)
+    assert.doesNotMatch(paar, /Gemeinschaft/, paar)
+    const datum = await insert('b', ', service_from, service_to', ", '01.01.2025', '31.12.2025'")
+    assert.match(datum, /Leistungszeitraum/, datum)
+    assert.match(datum, /JJJJ-MM-TT/, datum)
+    const folge = await insert('c', ', service_from, service_to', ", '2025-12-31', '2025-01-01'")
+    assert.match(folge, /endet vor seinem Beginn/, folge)
+    const jahr = await insert('d', ', tax_year', ', 1899')
+    assert.match(jahr, /Jahr der Zahlung/, jahr)
+    const art = await insert('e', ', heating_part', ", 'fuel'")
+    assert.match(art, /Heizung und Warmwasser/, art)
+  })
+})

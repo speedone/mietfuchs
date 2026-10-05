@@ -108,7 +108,20 @@ function uniqueMessage(details: string): string {
   return 'Diesen Datensatz gibt es schon. Bitte laden Sie die Seite neu.'
 }
 
+// Bedingungen, deren Endung allein den falschen Satz ergäbe (#208): `_complete` spräche von der
+// Gemeinschaftsabrechnung, `_valid` von einem Monat in der Form JJJJ-MM.
+const OWN_CHECK_MESSAGES: Readonly<Record<string, string>> = {
+  cost_items_service_complete: 'Zum Leistungszeitraum gehören Beginn und Ende. Bitte tragen Sie beide ein oder lassen Sie beide leer.',
+  cost_items_service_from_valid: 'Der Beginn des Leistungszeitraums ist kein Datum in der Form JJJJ-MM-TT. Bitte laden Sie die Seite neu und versuchen Sie es noch einmal.',
+  cost_items_service_to_valid: 'Das Ende des Leistungszeitraums ist kein Datum in der Form JJJJ-MM-TT. Bitte laden Sie die Seite neu und versuchen Sie es noch einmal.',
+  cost_items_service_order_valid: 'Der Leistungszeitraum endet vor seinem Beginn. Bitte prüfen Sie die beiden Daten.',
+  cost_items_tax_year_valid: 'Das Jahr der Zahlung liegt außerhalb dessen, was es geben kann. Bitte tragen Sie ein Jahr wie 2025 ein.',
+  cost_items_heating_part_category_valid: '„Brennstoff/Energie“ gibt es nur bei der Kostenart „Heizung und Warmwasser“.',
+}
+
 function checkMessage(name: string): string {
+  const own = OWN_CHECK_MESSAGES[name]
+  if (own !== undefined) return own
   if (name.endsWith('_not_negative')) {
     return `Für ${fieldOfConstraint(name, '_not_negative')} ist ein negativer Wert angekommen. Das ergibt hier keinen Sinn; bitte tragen Sie null oder mehr ein.`
   }

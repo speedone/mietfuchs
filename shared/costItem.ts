@@ -6,7 +6,8 @@
 // Die Funktionen nehmen **Cent und Codes** und keine Eingabetexte: Was „54,00“ heißt, liest die
 // Oberfläche (parseEuro), und was sie nicht lesen konnte, kommt als `null` herein. Die Meldungen
 // sind dieselben Sätze wie bisher im Formular; client/src/costForm.test.ts hält sie fest.
-import type { CostKey, ExternalBasis, ExternalMeasure, MeterType, PeriodKey, Unit } from './types.ts'
+import type { CostKey, ExternalBasis, ExternalMeasure, HeatingPart, MeterType, PeriodKey, Unit } from './types.ts'
+import { HEATING_CATEGORY } from './heating.ts'
 import { PARTICIPANT_KEYS } from './allocation.ts'
 import { isNotAllocable } from './categories.ts'
 
@@ -69,6 +70,11 @@ export type CostItemDraft = {
   // Nur die Beträge, deren Feld die Oberfläche zeigt; `null` unlesbar
   tenancyAmounts: Record<string, number | null>
   selfAmounts: Record<string, number | null>
+  // Leistungszeitraum, Jahr der Zahlung, Brennstoffmerkmal (#208). `null` heißt keine Angabe.
+  serviceFrom: string | null
+  serviceTo: string | null
+  taxYear: number | null
+  heatingPart: HeatingPart | null
 }
 
 // Der Rumpf, der an die Datenbank geht. Felder, die zum Schlüssel nicht gehören, stehen
@@ -90,6 +96,11 @@ export type CostItemBody = {
   tenancyAmounts: Record<string, number> | null
   selfAmounts: Record<string, number> | null
   invoiceFile: string | null
+  // #208, siehe CostItemDraft
+  serviceFrom: string | null
+  serviceTo: string | null
+  taxYear: number | null
+  heatingPart: HeatingPart | null
 }
 
 // **Nicht umlagefähig, aber einer Einheit zuzuordnen** (#163): Für die Abrechnung bleibt es dabei,
@@ -127,6 +138,13 @@ export function costItemBody(d: CostItemDraft, units: readonly Unit[], period: P
   const labor = d.labor35aCents
   const problem = amountProblem(amount, labor, d.category)
   if (problem !== null || amount === null) return { error: problem ?? 'Bitte einen Betrag angeben.' }
+  // Leistungszeitraum (#208): dieselben Sätze wie die Schreibprüfung in server/src/db/repository.ts.
+  if ((d.serviceFrom === null) !== (d.serviceTo === null)) {
+    return { error: `Für „${d.description.trim()}“ fehlt ein Ende des Leistungszeitraums. Bitte tragen Sie Beginn und Ende ein oder lassen Sie beide leer.` }
+  }
+  if (d.serviceFrom !== null && d.serviceTo !== null && d.serviceFrom > d.serviceTo) {
+    return { error: `Der Leistungszeitraum von „${d.description.trim()}“ endet vor seinem Beginn.` }
+  }
   const common = {
     period,
     category: d.category,
@@ -135,6 +153,12 @@ export function costItemBody(d: CostItemDraft, units: readonly Unit[], period: P
     amountCents: amount,
     labor35aCents: labor || undefined,
     invoiceFile: d.invoiceFile,
+    serviceFrom: d.serviceFrom,
+    serviceTo: d.serviceTo,
+    taxYear: d.taxYear,
+    // Das Merkmal gibt es nur bei Heizkosten (A1); bei anderer Kostenart fällt es weg, wie eine
+    // Zuordnung, die zum Schlüssel nicht gehört.
+    heatingPart: d.category === HEATING_CATEGORY ? d.heatingPart : null,
   }
   // Nicht umlagefähig (#142): Gespeichert wird die neutrale Vorgabe ohne jede Zuordnung. Die
   // Spalte verlangt einen Schlüssel, die Berechnung liest ihn hier aber nicht. Eine Zuordnung, die

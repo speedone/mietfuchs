@@ -26,14 +26,15 @@ import { GUIDES, GUIDE_PAGES, type GuideId } from '../../shared/guides.ts'
 import { computeSettlement, taxReport } from '../src/calc.ts'
 import { snapshotOf, type SnapshotCostItem, type SnapshotSource, type SnapshotTenancy, type SnapshotUnit } from '../src/snapshot.ts'
 import type { ComputedSettlement } from '../src/calc.ts'
+import { splitByService } from '../src/serviceSplit.ts'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const ids = Object.keys(GUIDES) as GuideId[]
 
 // ---------- Aufbau ----------
 
-test('Anleitungen: die acht Vermietungsarten aus #164, jede mit allen fünf Abschnitten', () => {
-  assert.deepEqual(ids, ['granny', 'multiFamily', 'condo', 'properties', 'garage', 'flatRate', 'meteringService', 'tenantChange'])
+test('Anleitungen: die Vermietungsarten aus #164 und der Abrechnungszeitraum (#208), jede mit allen fünf Abschnitten', () => {
+  assert.deepEqual(ids, ['granny', 'multiFamily', 'condo', 'properties', 'garage', 'flatRate', 'meteringService', 'tenantChange', 'periodMayApril'])
   const titles = ids.map((id) => GUIDES[id].title)
   assert.equal(new Set(titles).size, titles.length, 'doppelter Titel')
   for (const id of ids) {
@@ -72,7 +73,7 @@ test('Anleitungen: Rechtliches nur mit Norm, und jede Norm nennt Paragraf oder A
     for (const c of GUIDES[id].caveats) {
       if (c.norm === undefined) continue
       withNorm++
-      assert.match(c.norm, /§|IX R \d+\/\d+/, `${id}: Norm ohne Paragraf: ${c.norm}`)
+      assert.match(c.norm, /§|IX R \d+\/\d+|VIII ZR \d+\/\d+/, `${id}: Norm ohne Paragraf: ${c.norm}`)
     }
     // Kein Paragraf im Fließtext ohne Normangabe daneben: Wer ein Gesetz zitiert, nennt es.
     for (const c of GUIDES[id].caveats) {
@@ -314,6 +315,12 @@ const checks: Record<GuideId, () => void> = {
       '60', '180 m²', eur(180000), eur(60000), '90 Tage', eur(share(r, 'alt', 'gs')), '61 Tage', eur(vacancy[0]?.cents ?? -1),
       '214 Tage', eur(share(r, 'neu', 'gs')),
     ], 'tenantChange')
+  },
+  // #208: die Aufteilung der Grundsteuer nach Tagen, mit derselben Funktion wie beim Speichern.
+  periodMayApril: () => {
+    const parts = splitByService({ startMonth: 1, changes: ['2025-05'] }, { id: 'g', description: 'Grundsteuer 2025', amountCents: 48000, serviceFrom: '2025-01-01', serviceTo: '2025-12-31' })
+    assert.deepEqual(parts.map((p) => p.amountCents), [15781, 32219])
+    inOrder(GUIDES.periodMayApril.example, ['01.01.', '30.04.2025', '30.04.2026', eur(48000), eur(15781), eur(32219)], 'periodMayApril')
   },
 }
 

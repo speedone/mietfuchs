@@ -72,6 +72,10 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // 0015 vor dem Push neu erzeugt, hier die neue Marke eintragen.
   '0014_zeitraum': '1ecbae16aa915909c1ad530ab2bbc8d2696df0fb1caca86539d0f618fc2727bf',
   '0015_zeitraum_pflicht': 'e535b04eab6a8bee3e0c3acaf25e89c5592c8166490e89b670aed4f928d19442',
+  // Leistungszeitraum, Jahr der Zahlung, Brennstoffmerkmal (#208, PR 3). Eingetragen vor dem
+  // Merge; werden 0016 oder 0017 vor dem ersten Push neu erzeugt, hier die neue Marke eintragen.
+  '0016_leistungszeitraum': '2bed08c8351a3f4f5406e5029cda357d3fa6f4bc9416c3030251b65002d01588',
+  '0017_leistungszeitraum_pruefung': '704a4352ea7810cd18325a9ce8e8443a96313908b9688492cc7db61c076c3991',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

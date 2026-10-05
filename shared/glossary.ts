@@ -13,8 +13,8 @@
 // Rechtszahlen kommen aus dem Rechtsregister (shared/law/, Heizung PR 1), und zwar in der Fassung
 // von `LAW_AS_OF`: Das Lexikon erklärt das geltende Recht. Die Zahlen einer Beispielrechnung („70 %
 // nach Verbrauch“) sind gewählt und bleiben stehen.
-import { hkvConsumptionShare, hkvCutNotByConsumption, hkvCutRemoteReading } from './law/heizkostenv.ts'
-import { LAW_AS_OF, valueAt } from './law/register.ts'
+import { hkvConsumptionShare, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays } from './law/heizkostenv.ts'
+import { LAW_AS_OF, onlyVersion, valueAt } from './law/register.ts'
 
 const SHARE = valueAt(hkvConsumptionShare, LAW_AS_OF)
 const CUT = valueAt(hkvCutNotByConsumption, LAW_AS_OF)
@@ -31,6 +31,11 @@ export type Term = {
   // „Brauche ich das?“
   needed: string
 }
+
+// Die Gradtagstabelle kommt aus dem Register (Entwurf 10.3: „Die Zahlen kommen aus dem Register“).
+const DEGREE_DAYS = onlyVersion(hkvDegreeDays).value
+const winterPermille = ['01', '02', '03', '04'].reduce((a, m) => a + (DEGREE_DAYS.months[m] ?? 0), 0)
+const deEuro = (cents: number): string => (cents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 export const GLOSSARY = {
   allocable: {
@@ -242,7 +247,39 @@ export const GLOSSARY = {
     example: 'Abrechnung für 2025: Sie muss bis zum 31.12.2026 beim Mieter sein. Kommt sie am 02.01.2027, entfällt eine Nachzahlung von 200 €; ein Guthaben des Mieters bleibt fällig.',
     norm: '§ 556 Abs. 3 BGB; BGH, Urteil vom 20.05.2026, VIII ZR 6/24',
     needed: 'Ja, für jede Abrechnung. Es zählt der Zugang beim Mieter, nicht das Absenden. Bei einer Eigentumswohnung gilt die Frist auch, wenn die Hausgeldabrechnung noch fehlt. Liegt der Grundsteuerbescheid ohne Ihr Verschulden noch nicht vor, oder haben Sie gegen ihn, den Grundsteuerwert- oder den Messbescheid Einspruch eingelegt, dürfen Sie mit der Grundsteuer warten, bis der endgültige Bescheid da oder über den Einspruch entschieden ist. Rechnen Sie das Übrige trotzdem fristgerecht ab, behalten Sie sich die Grundsteuer ausdrücklich vor und fordern Sie sie im Regelfall innerhalb von drei Monaten danach. Mietfuchs zeigt die Frist auf der Seite Abrechnung.',
+  },  // #208: Abrechnungszeitraum, Rumpf und Leistungsprinzip. § 556 Abs. 3 BGB und VIII ZR 316/10,
+  // VIII ZR 49/07, VIII ZR 156/11 gelesen am 05.10.2026 (Entwurf 2).
+  billingPeriod: {
+    title: 'Abrechnungszeitraum',
+    short: 'Die Zeit, über die Sie die Nebenkosten abrechnen: höchstens zwölf Monate, meist das Kalenderjahr, auf Wunsch etwa Mai bis April wie Ihr Messdienst.',
+    example: 'Ein Objekt rechnet von Mai bis April ab: Der Zeitraum 2025/2026 läuft vom 01.05.2025 bis 30.04.2026, und die Abrechnung muss den Mietern bis 30.04.2027 zugehen.',
+    norm: '§ 556 Abs. 3 BGB',
+    needed: 'Nur wenn Ihr Messdienst oder Ihr Mietvertrag einen anderen Zeitraum als das Kalenderjahr nennt. Mietkonto und Steuer bleiben beim Kalenderjahr.',
   },
+  shortPeriod: {
+    title: 'Rumpfzeitraum',
+    short: 'Ein kürzerer Abrechnungszeitraum vor einem Wechsel, damit kein Zeitraum länger als zwölf Monate wird.',
+    example: 'Umstellung vom Kalenderjahr auf Mai bis April ab Mai 2025: 01.01.–30.04.2025 ist ein Rumpfzeitraum mit 120 Tagen; seine Abrechnung muss bis 30.04.2026 zugehen.',
+    norm: '§ 556 Abs. 3 BGB; BGH, Urteil vom 27.07.2011, VIII ZR 316/10',
+    needed: 'Nur beim Wechsel des Zeitraums. Eine Verkürzung braucht einen sachlichen Grund, etwa die Angleichung an den Messdienst; legt der Mietvertrag den Zeitraum fest, braucht sie die Zustimmung der Mieter. Eine Verlängerung über zwölf Monate gibt es nicht.',
+  },
+  accrualPrinciple: {
+    title: 'Leistungsprinzip',
+    short: 'Eine Rechnung gehört in den Abrechnungszeitraum, in dem die Leistung erbracht wurde; reicht sie über zwei Zeiträume, teilt Mietfuchs kalte Betriebskosten nach Tagen auf. Heizkosten richten sich nach dem Verbrauch im Zeitraum und werden nicht nach Tagen geteilt.',
+    example: 'Grundsteuer 2025 über 480 € bei einer Abrechnung von Mai bis April: 120 von 365 Tagen gehören in 2024/2025 (157,81 €), 245 Tage in 2025/2026 (322,19 €).',
+    norm: 'BGH, Urteil vom 20.02.2008, VIII ZR 49/07; BGH, Urteil vom 01.02.2012, VIII ZR 156/11',
+    needed: 'Nur wenn eine Rechnung einen anderen Zeitraum hat als Ihre Abrechnung. Tragen Sie dann unter „Weitere Angaben“ den Leistungszeitraum ein.',
+  },
+  // #208: Gradtage, für den Vorschlag nach § 560 BGB im Rumpf. Werte aus dem Register
+  // (`hkv.degree-days`), Herkunft dort.
+  degreeDays: {
+    title: 'Gradtagszahlen',
+    short: 'Eine Tabelle, die ein Jahr Heizwärme auf die Monate verteilt: Im Winter wird viel geheizt, im Sommer kaum. Ein Jahr hat 1.000 Promille.',
+    example: `Januar bis April zusammen ${winterPermille} Promille. Eine Gasrechnung über 700 € für diese vier Monate entspricht 700 € / ${(winterPermille / 1000).toLocaleString('de-DE')} ≈ ${deEuro(Math.round(70000 / (winterPermille / 1000)))} € im Jahr, also rund ${deEuro(Math.round(70000 / (winterPermille / 1000) / 12))} € im Monat.`,
+    norm: '§ 9b Abs. 2 HeizkostenV',
+    needed: 'Nur im Rumpfzeitraum: Mietfuchs rechnet damit den Vorschlag für die neue Vorauszahlung hoch, wenn eine Brennstoffrechnung nur einen Teil des Jahres abdeckt. Die Werte stammen aus der Praxis der Messdienste; die Norm DIN 94680, in der sie heute stehen, hat Mietfuchs nicht gelesen.',
+  },
+
   largestRemainder: {
     title: 'Restcent-Verfahren',
     short: 'Beim Runden auf Cent fehlen oder bleiben oft einzelne Cent übrig; Mietfuchs gibt sie an die Anteile mit dem größten Rest hinter dem Komma, damit die Summe genau dem Rechnungsbetrag entspricht. Ihr eigener Anteil (Eigennutzung, Leerstand) zählt dabei mit; bei gleichem Rest bekommen Sie den Cent vor einem Mieter.',

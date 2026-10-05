@@ -6,6 +6,20 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+### Neu
+
+- Abrechnungszeitraum wählbar: In den Stammdaten stellen Sie unter „Abrechnungszeitraum“ ein, ob ein
+  Objekt im Kalenderjahr oder etwa von Mai bis April abrechnet. Ein Wechsel zeigt vorher, was
+  geschieht: den Rumpfzeitraum davor, welche Rechnungen nach Tagen aufgeteilt werden, und er fragt
+  die tatsächlich gezahlten Vorauszahlungen neu ab, wo eine Jahreskorrektur nicht mehr passt.
+  Abgeschlossene Abrechnungen bleiben unangetastet. Rechnungen tragen auf Wunsch ihren
+  Leistungszeitraum; kalte Betriebskosten über zwei Abrechnungszeiträume teilt Mietfuchs beim
+  Speichern nach Tagen auf, Heizkosten nicht. Reicht ein Zeitraum über zwei Kalenderjahre, fragt das
+  Formular nach dem Jahr der Zahlung, und die Steuerübersicht bleibt beim Kalenderjahr. Im
+  Rumpfzeitraum gibt es einen Vorschlag für die neue Vorauszahlung, Brennstoff nach
+  Gradtagen. Wer im Kalenderjahr abrechnet, merkt davon nichts
+  ([#208](https://github.com/speedone/mietfuchs/issues/208)).
+
 ### Geändert
 
 - Abrechnungszeiträume werden intern als Zeitraum geführt und nicht mehr als Kalenderjahr:

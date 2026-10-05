@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import type { Meter, PropertyKind, Tenancy, Unit, UnitDependents } from '../types'
-import { YearProvider } from '../year'
+import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
 import { UIProvider } from '../components/feedback'
 import Stammdaten from './Stammdaten'
@@ -50,13 +50,13 @@ afterEach(() => {
 
 const page = (tenancies: Tenancy[] = []) =>
   render(
-    <YearProvider>
+    <PeriodProvider>
       <PropertyProvider>
         <UIProvider>
           <Stammdaten units={UNITS} tenancies={tenancies} settings={null} reload={async () => {}} />
         </UIProvider>
       </PropertyProvider>
-    </YearProvider>,
+    </PeriodProvider>,
   )
 
 const rowOf = (text: string) => {
@@ -89,13 +89,13 @@ test('Wohnungen: die Miteigentumsanteile stehen in der Liste, sobald eine Wohnun
 
 test('Wohnungen: ohne Miteigentumsanteile und außerhalb einer Eigentumswohnung keine Spalte dafür', async () => {
   render(
-    <YearProvider>
+    <PeriodProvider>
       <PropertyProvider>
         <UIProvider>
           <Stammdaten units={UNITS.map(({ mea: _mea, ...u }) => u)} tenancies={[]} settings={null} reload={async () => {}} />
         </UIProvider>
       </PropertyProvider>
-    </YearProvider>,
+    </PeriodProvider>,
   )
   await screen.findByText('EG', undefined, SLOW)
   expect(screen.queryByRole('columnheader', { name: /MEA/ })).toBeNull()
@@ -116,13 +116,13 @@ const meter = (type: Meter['type'], unitId: string | null = 'u2'): Meter => ({ i
 
 const openUnit = async (units: Unit[] = UNITS) => {
   render(
-    <YearProvider>
+    <PeriodProvider>
       <PropertyProvider>
         <UIProvider>
           <Stammdaten units={units} tenancies={[]} settings={null} reload={async () => {}} />
         </UIProvider>
       </PropertyProvider>
-    </YearProvider>,
+    </PeriodProvider>,
   )
   const [first] = await screen.findAllByRole('button', { name: /Wohnung bearbeiten/i }, SLOW)
   if (!first) throw new Error('kein Bearbeiten-Knopf')
@@ -166,13 +166,13 @@ test('Anschlüsse: eine gesetzte Ausnahme ohne Zähler dieser Art bleibt sichtba
 
 test('Wohnungsliste: eine Ausnahme steht als Kennzeichen an der Wohnung', async () => {
   render(
-    <YearProvider>
+    <PeriodProvider>
       <PropertyProvider>
         <UIProvider>
           <Stammdaten units={[UNITS[0]!, { ...UNITS[1]!, noConnection: ['kaltwasser'] }]} tenancies={[]} settings={null} reload={async () => {}} />
         </UIProvider>
       </PropertyProvider>
-    </YearProvider>,
+    </PeriodProvider>,
   )
   await screen.findByText('OG', undefined, SLOW)
   expect(rowOf('OG').getByText('ohne Wasseranschluss')).toBeTruthy()

@@ -113,6 +113,20 @@
       "when": 1791174671187,
       "tag": "0015_zeitraum_pflicht",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1791176451960,
+      "tag": "0016_leistungszeitraum",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1791176459597,
+      "tag": "0017_leistungszeitraum_pruefung",
+      "breakpoints": true
     }
   ]
 }

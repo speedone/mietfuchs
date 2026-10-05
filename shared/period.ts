@@ -190,10 +190,15 @@ const orList = (items: string[]): string =>
 // `JJJJ-MM`, oder die nackte Jahreszahl **nur bei einem reinen Kalenderobjekt** (G-C6). Sonst nennt
 // die Ablehnung, was gemeint sein könnte: Ein Tab von vor einem Wechsel bekäme sonst still den
 // Rumpf, der zufällig im Januar beginnt.
+// Bezeichnung und Schlüssel: „2024 (2024-01)“. Die Bezeichnung allein reicht nicht, denn ein
+// Zeitraum vor einem Wechsel heißt wie die Jahreszahl, die gerade abgelehnt wird (Durchsicht von
+// #222, M4); die Route erwartet den Schlüssel.
+const labelWithKey = (p: BillingPeriod): string => `${periodLabel(p)} (${p.key})`
+
 export function resolvePeriodParam(rules: PeriodRules, text: string): PeriodResolution {
   if (/^\d{4}$/.test(text)) {
     if (isCalendarRules(rules)) return { period: calendarYearPeriod(Number(text)) }
-    const starting = periodsBetween(rules, `${text}-01-01`, `${text}-12-31`).filter((p) => p.from.startsWith(`${text}-`)).map(periodLabel)
+    const starting = periodsBetween(rules, `${text}-01-01`, `${text}-12-31`).filter((p) => p.from.startsWith(`${text}-`)).map(labelWithKey)
     return { status: 404, error: `Den Zeitraum ${text} gibt es für dieses Objekt nicht; meinen Sie ${orList(starting)}?` }
   }
   const key = parsePeriodKey(text)
@@ -203,6 +208,18 @@ export function resolvePeriodParam(rules: PeriodRules, text: string): PeriodReso
   const month = MONTH_NAMES[Number(key.slice(5, 7)) - 1] ?? key.slice(5, 7)
   return {
     status: 404,
-    error: `Einen Abrechnungszeitraum, der im ${month} ${key.slice(0, 4)} beginnt, gibt es für dieses Objekt nicht; meinen Sie ${periodLabel(periodContaining(rules, `${key}-01`))}?`,
+    error: `Einen Abrechnungszeitraum, der im ${month} ${key.slice(0, 4)} beginnt, gibt es für dieses Objekt nicht; meinen Sie ${labelWithKey(periodContaining(rules, `${key}-01`))}?`,
   }
+}
+
+// Reicht ein Zeitraum über zwei Kalenderjahre? Dann ist das Jahr der Zahlung einer Position Pflicht
+// (#208, Entwurf 3.10), und die Steuer schöpft aus zwei Abrechnungen.
+export const spansTwoYears = (p: Pick<BillingPeriod, 'from' | 'to'>): boolean => p.from.slice(0, 4) !== p.to.slice(0, 4)
+
+// Eine Tagesspanne in Worten: „01.01.–30.04.2025“, über den Jahreswechsel „01.11.2025–30.04.2026“,
+// ein einzelner Tag „15.03.2025“. Für Leistungszeiträume und Anteile; einen Abrechnungszeitraum
+// bezeichnet `periodLabel`.
+export function formatDayRange(from: string, to: string): string {
+  if (from === to) return germanDate(from)
+  return from.slice(0, 4) === to.slice(0, 4) ? `${from.slice(8, 10)}.${from.slice(5, 7)}.–${germanDate(to)}` : `${germanDate(from)}–${germanDate(to)}`
 }

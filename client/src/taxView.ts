@@ -19,6 +19,7 @@
 // `selfOccupiedExists`, die Seite zeigt ihn nur an.
 
 import type { PropertyKind, TaxExpenseItem, TaxReport } from './types'
+import { andList } from '../../shared/wording.ts'
 
 export type Basis = 'soll' | 'ist'
 
@@ -180,12 +181,25 @@ export type PrepaymentNote = {
 
 export function prepaymentNote(report: TaxReport): PrepaymentNote | null {
   const { prepaymentSettlementCents, prepaymentSollCents, prepaymentOverridden } = report.income
-  if (prepaymentSettlementCents === prepaymentSollCents) return null
+  // Ohne Zeitraum gleich dem Kalenderjahr gibt es keine Abrechnung zum Vergleich (#208).
+  if (prepaymentSettlementCents === null || prepaymentSettlementCents === prepaymentSollCents) return null
   return {
     settlementCents: prepaymentSettlementCents,
     sollCents: prepaymentSollCents,
     jahreskorrektur: prepaymentOverridden,
   }
+}
+
+// Aus welchen Abrechnungen die Eigenanteile stammen (#208). Nur bei einem Objekt mit eigenem
+// Rhythmus ein Satz; im Kalenderjahr ist es die eine Abrechnung des Jahres, und das sagt die Seite
+// schon.
+export function settlementSourcesText(report: TaxReport): string | null {
+  const labels = report.settlementPeriods.map((p) => p.label)
+  if (report.income.prepaymentSettlementCents !== null && labels.length <= 1) return null
+  const sources = `Die Eigenanteile stammen aus den Abrechnungen ${andList(labels)}.`
+  return report.income.prepaymentSettlementCents === null
+    ? `${sources} Weil kein Abrechnungszeitraum dem Kalenderjahr entspricht, steht hier kein Vergleich der Vorauszahlungen mit einer Abrechnung.`
+    : sources
 }
 
 // Die angesetzten Einnahmen und die Einkünfte, je nach Grundlage. Beides steht hier, damit die

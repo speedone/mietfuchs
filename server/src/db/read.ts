@@ -223,6 +223,13 @@ export async function readCostItems(db: Database): Promise<CostItem[]> {
         : {}),
       labor35aCents: orUndefined(c.labor35aCents),
       invoiceFile: orUndefined(c.invoiceFile),
+      // Leistungszeitraum, Jahr der Zahlung, Brennstoffmerkmal (#208): der Schlüssel nur, wenn es
+      // den Wert gibt, wie bei den Angaben aus #94. Ein Bestand ohne sie liest sich Schlüssel für
+      // Schlüssel wie vorher (die Rundreise in db-stock.test.ts vergleicht streng).
+      ...(c.serviceFrom !== null ? { serviceFrom: c.serviceFrom } : {}),
+      ...(c.serviceTo !== null ? { serviceTo: c.serviceTo } : {}),
+      ...(c.taxYear !== null ? { taxYear: c.taxYear } : {}),
+      ...(c.heatingPart !== null ? { heatingPart: c.heatingPart } : {}),
     }
   })
 }

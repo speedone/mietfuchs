@@ -33,10 +33,13 @@
 // nächste, der eine Spalte hinzufügt.
 
 import { and, count, desc, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm'
-import type { CostItem, ExternalBasis, Meter, MeterType, Payment, PeriodKey, PeriodRules, PersonEntry, PrepaymentEntry, Property, Reading, RentEntry, Tenancy, Unit, UnitDependents } from '../../../shared/types.ts'
-import { calendarPeriod, isCalendarRules, parsePeriodKey, periodOfKey, rulesOf } from '../../../shared/period.ts'
+import type { BillingPeriod, CostItem, ExternalBasis, Meter, MeterType, Payment, PeriodKey, PeriodRules, PersonEntry, PrepaymentEntry, Property, Reading, RentEntry, SplitPreviewPart, Tenancy, Unit, UnitDependents } from '../../../shared/types.ts'
+import { calendarPeriod, formatDayRange, isCalendarRules, parsePeriodKey, periodLabel, periodOfKey, periodsBetween, rulesOf, spansTwoYears } from '../../../shared/period.ts'
+import { HEATING_CATEGORY } from '../../../shared/heating.ts'
+import { andList } from '../../../shared/wording.ts'
 import type { MigratedSettings } from '../ai/settings.ts'
 import { lastPerFrom, straightenPersonHistory } from '../schedule.ts'
+import { splitByService } from '../serviceSplit.ts'
 import type { Database, Executor } from './client.ts'
 import {
   readClosedSettlements, readCostItems, readMeters, readPayments, readProperties, readReadings, readTenancies,
@@ -44,6 +47,7 @@ import {
 } from './read.ts'
 import {
   aiSlots, assessmentLines, assessments, baseRents, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, DEPOSIT_STATUS, EXTERNAL_MEASURES,
+  HEATING_PARTS,
   flatRates, METER_TYPES, meters, payments, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, PROPERTY_KINDS,
   readings, settings, tenancies, unitNoConnection, units,
 } from './schema.ts'
@@ -318,6 +322,11 @@ function mergeCostItem(current: CostItem, body: unknown): CostItem {
     ...(selfAmounts === undefined ? {} : { selfAmounts }),
     labor35aCents: merged(body, 'labor35aCents', current.labor35aCents, asOptionalNumber),
     invoiceFile: merged(body, 'invoiceFile', current.invoiceFile, asOptionalText),
+    // `null` leert, wie bei den übrigen optionalen Feldern (#208).
+    serviceFrom: merged(body, 'serviceFrom', current.serviceFrom, asOptionalText),
+    serviceTo: merged(body, 'serviceTo', current.serviceTo, asOptionalText),
+    taxYear: merged(body, 'taxYear', current.taxYear, asOptionalNumber),
+    heatingPart: merged(body, 'heatingPart', current.heatingPart, (v) => oneOfOrUndefined(HEATING_PARTS, v)),
   }
 }
 
@@ -396,13 +405,19 @@ export class PeriodError extends Error {
   status = 400
 }
 
+// Ein Vorgang, der eine abgeschlossene Abrechnung träfe (#208). Wie bei `findClosedSettlement`
+// bleibt der eingefrorene Stand maßgeblich; wer ändern will, öffnet sie wieder (#56).
+export class PeriodConflict extends Error {
+  status = 409
+}
+
 const OLD_TAB =
   'Diese Seite ist älter als das Programm und kennt die Abrechnungszeiträume dieses Objekts noch nicht. ' +
   'Bitte laden Sie die Seite neu; gespeichert wurde nichts.'
 
 const YEAR_ONLY = /^\d{4}$/
 
-async function rulesForProperty(db: Executor, propertyId: string): Promise<PeriodRules> {
+export async function rulesForProperty(db: Executor, propertyId: string): Promise<PeriodRules> {
   const [row] = await db.select({ startMonth: properties.periodStartMonth }).from(properties).where(eq(properties.id, propertyId))
   const changes = await db.select({ fromMonth: periodChanges.fromMonth }).from(periodChanges)
     .where(eq(periodChanges.propertyId, propertyId)).orderBy(periodChanges.fromMonth)
@@ -425,6 +440,95 @@ async function requirePeriods(db: Executor, propertyId: string, keys: readonly s
           'Bitte wählen Sie einen Abrechnungszeitraum des Objekts.',
       )
     }
+  }
+}
+
+// Was eine Kostenposition mit Leistungszeitraum und Zeitraum über zwei Kalenderjahre braucht
+// (#208, Entwurf 3.4, 3.10). Die Datenbank prüft Form und Reihenfolge (0017), nicht aber, was an
+// den Zeiträumen des Objekts hängt.
+//
+// **Eine kalte Rechnung über zwei Zeiträume wird nicht als eine Position angenommen.** Nach dem
+// Leistungsprinzip gehört sie anteilig in jeden (VIII ZR 49/07 lässt beides zu, Mietfuchs wählt
+// das Leistungsprinzip, Entwurf 3.4); als eine Position stünde sie ganz in einem und fehlte im
+// anderen. Aufgeteilt wird sie mit `saveCostItemSplit` (Task 3), dessen Teile `splitPart` tragen.
+// Ein Teil, dessen Leistungszeitraum und Zeitraum unverändert bleiben (der Betrag wird berichtigt),
+// ist weiter erlaubt. **Heizkosten werden nie nach Tagen geteilt** (G-C1, VIII ZR 156/11); sie
+// nimmt die Prüfung an, und die Abrechnung warnt (`period.heating-mismatch`).
+export type CostItemGuardOptions = { splitPart?: boolean }
+
+async function requireServiceAndTax(db: Executor, before: CostItem | null, after: CostItem, options: CostItemGuardOptions): Promise<void> {
+  const what = `„${after.description}“`
+  const from = after.serviceFrom
+  const to = after.serviceTo
+  if ((from === undefined) !== (to === undefined)) {
+    throw new PeriodError(`Für ${what} fehlt ein Ende des Leistungszeitraums. Bitte tragen Sie Beginn und Ende ein oder lassen Sie beide leer.`)
+  }
+  if (from !== undefined && to !== undefined) {
+    if (!isIsoDate(from) || !isIsoDate(to)) throw new PeriodError(`Der Leistungszeitraum von ${what} ist kein gültiges Datum.`)
+    if (from > to) throw new PeriodError(`Der Leistungszeitraum von ${what} endet vor seinem Beginn.`)
+  }
+  if (after.heatingPart !== undefined && after.category !== HEATING_CATEGORY) {
+    throw new PeriodError(`„Brennstoff/Energie“ gibt es nur bei der Kostenart „${HEATING_CATEGORY}“.`)
+  }
+  const rules = await rulesForProperty(db, after.propertyId)
+  const period = periodOfKey(rules, after.period)
+  // Einen Zeitraum, den es nicht gibt, hat `requirePeriods` schon abgelehnt.
+  if (period === null) return
+  requireTaxYear(period, after, what)
+  // Ein Teil einer aufgeteilten Rechnung wird nur berichtigt (Durchsicht von #226, C1): Mit einem
+  // anderen Leistungszeitraum oder Zeitraum stimmte sein Anteil nicht mehr zum Schnitt nach Tagen,
+  // und die Geschwisterteile blieben stehen. Den Wechsel des Rhythmus (`splitPart`) betrifft das nicht.
+  // Auch nicht zur Heizposition (Nachprüfung von #226): Heizkosten werden nie nach Tagen geteilt.
+  if (before !== null && !options.splitPart && isSplitPart(rules, before) &&
+    (before.serviceFrom !== from || before.serviceTo !== to || before.period !== after.period || after.category === HEATING_CATEGORY)) {
+    throw new PeriodError(splitPartMessage(before))
+  }
+  if (from === undefined || to === undefined || after.category === HEATING_CATEGORY || options.splitPart) return
+  // Wird aus einer Heizposition eine kalte, ist das keine unveränderte Position (Nachprüfung von
+  // #226): Die Heizposition durfte über zwei Zeiträume reichen, die kalte muss aufgeteilt werden.
+  const unchanged = before !== null && before.serviceFrom === from && before.serviceTo === to && before.period === after.period &&
+    before.category !== HEATING_CATEGORY
+  if (unchanged) return
+  const touched = periodsBetween(rules, from, to)
+  if (touched.length > 1) {
+    throw new PeriodError(
+      `Die Rechnung ${what} betrifft die Abrechnungszeiträume ${andList(touched.map(periodLabel))} (Leistungszeitraum ${formatDayRange(from, to)}). ` +
+        'Kalte Betriebskosten gehören anteilig in jeden dieser Zeiträume; speichern Sie die Rechnung mit „Aufteilen und speichern“.',
+    )
+  }
+}
+
+// Ein Teil einer aufgeteilten Rechnung (#208): eine kalte Position, deren Leistungszeitraum mehr
+// als einen Zeitraum des Objekts berührt. Anders entsteht so eine Position nicht, denn das
+// gewöhnliche Speichern lehnt sie ab (oben); sie kommt aus `saveCostItemSplit` oder dem Wechsel des
+// Rhythmus, und jeder Teil trägt den ganzen Leistungszeitraum der Rechnung.
+export function isSplitPart(rules: PeriodRules, c: Pick<CostItem, 'category' | 'serviceFrom' | 'serviceTo'>): boolean {
+  if (c.category === HEATING_CATEGORY || c.serviceFrom === undefined || c.serviceTo === undefined || c.serviceFrom > c.serviceTo) return false
+  return periodsBetween(rules, c.serviceFrom, c.serviceTo).length > 1
+}
+
+const splitPartMessage = (c: CostItem): string =>
+  `„${c.description}“ ist ein Teil einer aufgeteilten Rechnung (Leistungszeitraum ${formatDayRange(c.serviceFrom ?? '', c.serviceTo ?? '')}). ` +
+  'Leistungszeitraum und Abrechnungszeitraum ändern Sie nicht an einem einzelnen Teil, sonst passten die Anteile nicht mehr zusammen. ' +
+  'Betrag, Rechnungssteller und Beleg lassen sich berichtigen; für einen anderen Leistungszeitraum löschen Sie alle Teile und erfassen die Rechnung neu mit „Aufteilen und speichern“.'
+
+// Das Jahr der Zahlung (Entwurf 3.10): Liegt der Zeitraum in einem Kalenderjahr, ist es dieses und
+// darf nur leer oder genau dieses sein. Reicht er über zwei, ist es Pflicht und liegt zwischen dem
+// Jahr des Beginns und dem Jahr nach dem Ende (eine Messdienstabrechnung kommt oft erst danach).
+function requireTaxYear(period: BillingPeriod, after: CostItem, what: string): void {
+  const startYear = Number(period.from.slice(0, 4))
+  const endYear = Number(period.to.slice(0, 4))
+  if (!spansTwoYears(period)) {
+    if (after.taxYear !== undefined && after.taxYear !== startYear) {
+      throw new PeriodError(`Der Abrechnungszeitraum ${periodLabel(period)} liegt im Kalenderjahr ${startYear}; für die Steuer zählt ${what} deshalb zu ${startYear}.`)
+    }
+    return
+  }
+  if (after.taxYear === undefined) {
+    throw new PeriodError(`Der Abrechnungszeitraum ${periodLabel(period)} reicht über zwei Kalenderjahre. Bitte geben Sie bei ${what} das Jahr der Zahlung an (für die Steuer, § 11 Abs. 2 EStG).`)
+  }
+  if (after.taxYear < startYear || after.taxYear > endYear + 1) {
+    throw new PeriodError(`Das Jahr der Zahlung von ${what} muss zwischen ${startYear} und ${endYear + 1} liegen.`)
   }
 }
 
@@ -457,9 +561,10 @@ async function guardMeter(db: Executor, _before: Meter | null, after: Meter): Pr
   await sameProperty(db, after.propertyId, after.unitId ? [after.unitId] : [], 'Der Zähler')
 }
 
-async function guardCostItem(db: Executor, _before: CostItem | null, after: CostItem, body: unknown): Promise<void> {
+async function guardCostItem(db: Executor, before: CostItem | null, after: CostItem, body: unknown, options: CostItemGuardOptions = {}): Promise<void> {
   // Der Zeitraum (#208) muss zum Objekt gehören. `year` ohne `period` schickt nur ein alter Tab.
   await requirePeriods(db, after.propertyId, [after.period], has(body, 'year') && !has(body, 'period'), 'Die Kostenposition')
+  await requireServiceAndTax(db, before, after, options)
   // Die Wohnungen der Einzelbeträge über ihr Mietverhältnis (#94).
   const mietverhaeltnisse = Object.keys(after.tenancyAmounts ?? {})
   const ihreWohnungen = mietverhaeltnisse.length === 0
@@ -731,6 +836,7 @@ const costItemRow = (c: CostItem) => ({
   externalMeasure: c.externalBasis?.measure ?? null, externalTotal: c.externalBasis?.total ?? null,
   externalTotalCents: c.externalBasis?.totalCents ?? null,
   participantsLimited: Array.isArray(c.participantUnitIds),
+  serviceFrom: orNull(c.serviceFrom), serviceTo: orNull(c.serviceTo), taxYear: orNull(c.taxYear), heatingPart: orNull(c.heatingPart),
 })
 const meterRow = (m: Meter) => ({
   id: m.id, propertyId: m.propertyId, name: m.name, unitId: m.unitId, type: m.type, meterNumber: orNull(m.meterNumber), unit: m.unit,
@@ -1005,6 +1111,132 @@ export async function patchCostItemIn(tx: Executor, current: CostItem, body: unk
   const entity = mergeCostItem(current, body)
   await guardCostItem(tx, current, entity, body)
   await costItemCollection.replace(tx, entity)
+}
+
+// ---------- Eine Rechnung aufteilen (#208, Entwurf 3.4) ----------
+
+export type PartWrite = { period: PeriodKey; amountCents: number; labor35aCents: number | null; description: string; taxYear: number | null }
+
+// Schreibt die Teile einer Rechnung durch dieselbe Verschmelzung, denselben Wächter und dasselbe
+// Schreiben wie das gewöhnliche Anlegen; `base` gibt alles Übrige (Schlüssel, Anteile, Beleg).
+// `keepId`: Die Kennung bleibt am Teil dieses Zeitraums, sonst am ersten. Ohne Transaktion, denn
+// beide Aufrufer (Aufteilen, Wechsel des Rhythmus) laufen schon in einer.
+export async function writeCostItemParts(tx: Executor, base: CostItem, parts: readonly PartWrite[], newId: () => string, keepId: string | null): Promise<string[]> {
+  const keepAt = Math.max(0, parts.findIndex((p) => p.period === base.period))
+  const written: string[] = []
+  for (const [i, part] of parts.entries()) {
+    const id = keepId !== null && i === keepAt ? keepId : newId()
+    const entity = mergeCostItem(keepId !== null && i === keepAt ? base : { ...base, id }, {
+      period: part.period, amountCents: part.amountCents, labor35aCents: part.labor35aCents, description: part.description, taxYear: part.taxYear,
+    })
+    await guardCostItem(tx, keepId !== null && i === keepAt ? base : null, entity, {}, { splitPart: true })
+    if (keepId !== null && i === keepAt) await costItemCollection.replace(tx, entity)
+    else await costItemCollection.insert(tx, entity)
+    written.push(id)
+  }
+  return written
+}
+
+// Schreibt eine aufgeteilte Rechnung neu (Nachprüfung von #226, 2): `members` sind ihre bisherigen
+// Teile, `parts` die neuen. Ein Teil behält die Kennung des bisherigen Teils desselben Zeitraums,
+// sonst die eines übrigen; was übrig bleibt, wird gelöscht. Vorher wandern die gebuchten Zeilen
+// einer Belegauswertung und der Beleg auf einen verbleibenden Teil derselben Rechnung: Mit
+// `SET NULL` stünde die schon gebuchte Rechnung sonst wieder offen im Posteingang und ließe sich ein
+// zweites Mal buchen (#184). Ohne Transaktion, der Aufrufer läuft in einer.
+export async function rewriteCostItemFamily(tx: Executor, members: readonly CostItem[], parts: readonly PartWrite[], newId: () => string): Promise<string[]> {
+  const first = members[0]
+  if (first === undefined) return []
+  const unused = [...members]
+  const take = (m: CostItem | undefined): CostItem | undefined => {
+    if (m !== undefined) unused.splice(unused.indexOf(m), 1)
+    return m
+  }
+  const exact = parts.map((p) => take(unused.find((m) => m.period === p.period)))
+  const chosen = exact.map((m) => m ?? take(unused[0]))
+  const written: string[] = []
+  for (const [i, part] of parts.entries()) {
+    const fields = { period: part.period, amountCents: part.amountCents, labor35aCents: part.labor35aCents, description: part.description, taxYear: part.taxYear }
+    const member = chosen[i]
+    if (member !== undefined) {
+      const entity = mergeCostItem(member, fields)
+      await guardCostItem(tx, member, entity, {}, { splitPart: true })
+      await costItemCollection.replace(tx, entity)
+      written.push(member.id)
+    } else {
+      const id = newId()
+      const entity = mergeCostItem({ ...first, id }, fields)
+      await guardCostItem(tx, null, entity, {}, { splitPart: true })
+      await costItemCollection.insert(tx, entity)
+      written.push(id)
+    }
+  }
+  const keep = chosen.find((m) => m !== undefined)
+  for (const m of unused) {
+    const booked = await tx.select({ idx: assessmentLines.idx }).from(assessmentLines).where(eq(assessmentLines.costItemId, m.id))
+    if (keep === undefined && (booked.length > 0 || m.invoiceFile !== undefined)) {
+      throw new PeriodConflict(`An „${m.description}“ hängen ein Beleg oder gebuchte Zeilen einer Belegauswertung, und nach dem Wechsel bliebe kein Teil dieser Rechnung, der sie übernehmen könnte. Gespeichert wurde nichts.`)
+    }
+    if (keep !== undefined) {
+      await tx.update(assessmentLines).set({ costItemId: keep.id }).where(eq(assessmentLines.costItemId, m.id))
+      if (m.invoiceFile !== undefined && keep.invoiceFile === undefined) await tx.update(costItems).set({ invoiceFile: m.invoiceFile }).where(eq(costItems.id, keep.id))
+    }
+    await costItemCollection.remove(tx, m.id)
+  }
+  return written
+}
+
+// Die Rechnung, wie sie aufgeteilt würde: aus der gespeicherten Position (`currentId`) und dem
+// Rumpf, sonst aus dem Rumpf allein. Das Objekt kommt bei einer vorhandenen Position von ihr.
+async function splitBase(db: Database, propertyId: string | null, body: unknown, currentId: string | null): Promise<{ base: CostItem; from: string; to: string }> {
+  const current = currentId === null ? undefined : (await readCostItems(db)).find((c) => c.id === currentId)
+  if (currentId !== null && !current) throw new PeriodError('Diese Kostenposition gibt es nicht (mehr). Bitte laden Sie die Seite neu.')
+  // Ein schon aufgeteilter Teil ist nicht die ganze Rechnung (Durchsicht von #226, C1): Ihn noch
+  // einmal aufzuteilen, verteilte seinen Anteil ein zweites Mal über beide Zeiträume.
+  if (current && isSplitPart(await rulesForProperty(db, current.propertyId), current)) throw new PeriodError(splitPartMessage(current))
+  const base = mergeCostItem(current ?? emptyCostItem(currentId ?? 'vorschau'), current ? body : { ...Object(body), propertyId })
+  if (base.category === HEATING_CATEGORY) {
+    throw new PeriodError('Heizkosten teilt Mietfuchs nicht nach Tagen auf: Sie müssen den Verbrauch im Abrechnungszeitraum abbilden (BGH VIII ZR 156/11).')
+  }
+  if (base.serviceFrom === undefined || base.serviceTo === undefined || !isIsoDate(base.serviceFrom) || !isIsoDate(base.serviceTo) || base.serviceFrom > base.serviceTo) {
+    throw new PeriodError(`Zum Aufteilen braucht „${base.description}“ einen Leistungszeitraum mit Beginn und Ende.`)
+  }
+  return { base, from: base.serviceFrom, to: base.serviceTo }
+}
+
+export async function previewCostItemSplit(db: Database, propertyId: string | null, body: unknown, currentId: string | null): Promise<SplitPreviewPart[]> {
+  const { base, from, to } = await splitBase(db, propertyId, body, currentId)
+  const rules = await rulesForProperty(db, base.propertyId)
+  const closed = new Set((await readClosedSettlements(db)).filter((c) => c.propertyId === base.propertyId).map((c) => c.period))
+  return splitByService(rules, { ...base, serviceFrom: from, serviceTo: to }).map((p) => ({
+    period: p.period.key,
+    label: periodLabel(p.period),
+    days: p.days,
+    amountCents: p.amountCents,
+    labor35aCents: p.labor35aCents,
+    description: p.description,
+    needsTaxYear: spansTwoYears(p.period),
+    closed: closed.has(p.period.key),
+  }))
+}
+
+// Speichert eine Rechnung als ihre Teile, in einer Transaktion: alle oder keiner. Ein Teil in
+// einem abgeschlossenen Zeitraum lehnt ab (409), bevor etwas geschrieben ist. Das Jahr der Zahlung
+// des Rumpfes gilt für jeden Teil über zwei Kalenderjahre; ein Teil in einem Kalenderjahr hat
+// keines (Entwurf 3.10). Gelesen wird vor der Transaktion: Die Lesefunktionen aus read.ts nehmen
+// die Verbindung und keine Transaktion, und die Schlange in open.ts lässt zwischen Lesen und
+// Schreiben keine andere Anfrage herein.
+export async function saveCostItemSplit(db: Database, propertyId: string | null, body: unknown, currentId: string | null, newId: () => string): Promise<CostItem[]> {
+  const parts = await previewCostItemSplit(db, propertyId, body, currentId)
+  if (parts.length < 2) throw new PeriodError('Diese Rechnung liegt in einem einzigen Abrechnungszeitraum; speichern Sie sie bitte gewöhnlich.')
+  const zu = parts.find((p) => p.closed)
+  if (zu) throw new PeriodConflict(`Die Abrechnung ${zu.label} ist abgeschlossen und bleibt, wie sie verschickt wurde. Öffnen Sie sie wieder, wenn die Rechnung anteilig hinein soll.`)
+  const { base } = await splitBase(db, propertyId, body, currentId)
+  const ids = await db.transaction((tx) => writeCostItemParts(tx, base, parts.map((p) => ({
+    period: p.period, amountCents: p.amountCents, labor35aCents: p.labor35aCents, description: p.description,
+    taxYear: p.needsTaxYear ? base.taxYear ?? null : null,
+  })), newId, currentId))
+  const all = await readCostItems(db)
+  return ids.map((id) => all.find((c) => c.id === id)).filter((c): c is CostItem => c !== undefined)
 }
 
 // ---------- Der Mieterwechsel (#150) ----------

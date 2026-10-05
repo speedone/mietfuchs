@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { TaxExpenseItem, TaxReport } from './types'
-import { allocationLabel, assignedUnitItems, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, prepaymentNote, showsSplit, surplusCentsFor, taxHints } from './taxView'
+import { allocationLabel, assignedUnitItems, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, prepaymentNote, settlementSourcesText, showsSplit, surplusCentsFor, taxHints } from './taxView'
+import { periodKey } from '../../shared/period.ts'
 
 // Ein Bericht, in dem nur das steht, was die Hinweise lesen. Die übrigen Felder füllt der Typ
 // ab, damit der Übersetzer mitprüft, dass die Hinweise wirklich einen TaxReport lesen.
@@ -33,6 +34,7 @@ const report = (income: Partial<TaxReport['income']>, rest: Partial<TaxReport> =
   surplusSollCents: 1100000,
   surplusPaidCents: 900000,
   costModels: { tenancies: 1, inclusive: 0, partlyInclusive: 0, flatRate: 0 },
+  settlementPeriods: [],
   ...rest,
 })
 
@@ -268,5 +270,16 @@ describe('Teilweise Eigennutzung (#163)', () => {
   it('meldet Positionen, die nach dem Abschluss erfasst oder geändert wurden (Durchsicht)', () => {
     expect(taxHints(mixed([], { closedItemsChanged: 2 }), 'ist')).toContain('mixedUseClosedItemsChanged')
     expect(taxHints(mixed([]), 'ist')).not.toContain('mixedUseClosedItemsChanged')
+  })
+})
+
+describe('Steuer über mehrere Abrechnungen (#208)', () => {
+  it('ohne Zeitraum gleich dem Kalenderjahr: kein Vergleich, dafür die Quellen', () => {
+    const r = { ...report({ prepaymentSettlementCents: null }), settlementPeriods: [{ key: periodKey('2024-05'), label: '2024/2025' }, { key: periodKey('2025-05'), label: '2025/2026' }] }
+    expect(prepaymentNote(r)).toBeNull()
+    expect(settlementSourcesText(r)).toBe('Die Eigenanteile stammen aus den Abrechnungen 2024/2025 und 2025/2026. Weil kein Abrechnungszeitraum dem Kalenderjahr entspricht, steht hier kein Vergleich der Vorauszahlungen mit einer Abrechnung.')
+  })
+  it('Kalenderjahr: kein Satz', () => {
+    expect(settlementSourcesText({ ...report({}), settlementPeriods: [{ key: periodKey('2025-01'), label: '2025' }] })).toBeNull()
   })
 })

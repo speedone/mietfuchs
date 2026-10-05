@@ -113,11 +113,15 @@ test('Alias: eine nackte Jahreszahl nur beim reinen Kalenderobjekt (G-C6)', () =
   assert.deepEqual(resolvePeriodParam(CALENDAR_RULES, '2025-01'), { period: calendarYearPeriod(2025) })
   assert.deepEqual(resolvePeriodParam(MAI, '2025-05'), { period: of(MAI, '2025-05') })
   assert.deepEqual(resolvePeriodParam(MAI, '2025'),
-    { status: 404, error: 'Den Zeitraum 2025 gibt es für dieses Objekt nicht; meinen Sie 2025/2026?' })
+    { status: 404, error: 'Den Zeitraum 2025 gibt es für dieses Objekt nicht; meinen Sie 2025/2026 (2025-05)?' })
   assert.deepEqual(resolvePeriodParam({ startMonth: 1, changes: ['2025-05'] }, '2025'),
-    { status: 404, error: 'Den Zeitraum 2025 gibt es für dieses Objekt nicht; meinen Sie 01.01.–30.04.2025 oder 2025/2026?' })
+    { status: 404, error: 'Den Zeitraum 2025 gibt es für dieses Objekt nicht; meinen Sie 01.01.–30.04.2025 (2025-01) oder 2025/2026 (2025-05)?' })
+  // Durchsicht von #222 (M4): Heißt der Zeitraum wie die Jahreszahl, nennt erst der Schlüssel, was
+  // die Route erwartet; „2024? meinen Sie 2024?“ hilft niemandem.
+  assert.deepEqual(resolvePeriodParam({ startMonth: 1, changes: ['2025-05'] }, '2024'),
+    { status: 404, error: 'Den Zeitraum 2024 gibt es für dieses Objekt nicht; meinen Sie 2024 (2024-01)?' })
   assert.deepEqual(resolvePeriodParam(MAI, '2025-03'),
-    { status: 404, error: 'Einen Abrechnungszeitraum, der im März 2025 beginnt, gibt es für dieses Objekt nicht; meinen Sie 2024/2025?' })
+    { status: 404, error: 'Einen Abrechnungszeitraum, der im März 2025 beginnt, gibt es für dieses Objekt nicht; meinen Sie 2024/2025 (2024-05)?' })
   const ungueltig = { status: 400, error: 'Ungültiger Zeitraum: erwartet wird der Monat des Beginns als JJJJ-MM, etwa 2025-05.' }
   assert.deepEqual(resolvePeriodParam(CALENDAR_RULES, '2025-13'), ungueltig)
   assert.deepEqual(resolvePeriodParam(CALENDAR_RULES, 'abc'), ungueltig)

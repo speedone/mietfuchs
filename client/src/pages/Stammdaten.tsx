@@ -8,6 +8,7 @@ import PropertyCard from '../components/PropertyCard'
 import { COST_MODEL_LABELS, buildPersonHistory, costModelBadge, costModelBody, defaultTenancyUnitId, overlapQuestion, showsFlatRates } from '../tenancyModel'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import { buildTenantChange, defaultStart, EMPTY_NEW_TENANT, endProblem, meterProblem, parseMeterValue, type NewTenantForm } from '../tenantChange'
+import PeriodCard from '../components/PeriodCard'
 import PageHeader from '../components/PageHeader'
 import { emptyUnitsText } from '../propertyView'
 import Term from '../components/Term'
@@ -297,6 +298,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
       {error && !unitForm && !tenForm && <div className="error">{error}</div>}
 
       <PropertyCard />
+      <PeriodCard />
 
       <div className="card">
         <h2>Wohnungen</h2>

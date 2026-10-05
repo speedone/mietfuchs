@@ -9,7 +9,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import type { Meter, Tenancy, Unit } from '../types'
-import { YearProvider } from '../year'
+import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
 import { UIProvider } from '../components/feedback'
 import Kosten from './Kosten'
@@ -60,11 +60,11 @@ afterEach(() => {
 
 const shell = (page: ReactNode) =>
   render(
-    <YearProvider>
+    <PeriodProvider>
       <PropertyProvider>
         <UIProvider>{page}</UIProvider>
       </PropertyProvider>
-    </YearProvider>,
+    </PeriodProvider>,
   )
 
 const expectShownInDialog = async () => {

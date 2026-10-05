@@ -9,9 +9,8 @@
 // Wahrheiten, die auseinanderlaufen, sobald jemand die Position verschiebt. Nur ein Beleg im
 // Posteingang (an keiner Position) trägt sie selbst.
 //
-// Brücke Kalenderjahr (#208): bis PR 3, für die ganze Datei. Der Belegordner gliedert nach
-// Kalenderjahren, weil Belege Kalenderjahre tragen; das Jahr einer Position ist das Jahr, in dem ihr
-// Zeitraum beginnt.
+// Der Belegordner gliedert nach Kalenderjahren, denn Belege tragen Kalenderjahre (#208, Entwurf 5.2:
+// `uploads.year` bleibt); das Jahr einer Position ist das Jahr, in dem ihr Zeitraum beginnt.
 import type { CostItem, UploadInfo, UploadLinks } from './types'
 import { CATEGORIES, matchCategory } from './types'
 import { fmtEuro, parseEuro } from './api'

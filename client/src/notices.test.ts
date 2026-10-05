@@ -152,3 +152,9 @@ describe('Cockpit: Text der Zeile „Hinweise der Berechnung“', () => {
     expect(attentionDetail({ warnings: ['a', 'b'] })).toBe('a · b')
   })
 })
+
+test('Ein Rumpfzeitraum färbt die Ampel nicht (#208)', () => {
+  const s = { warnings: ['Rumpfzeitraum …'], notices: [n({ code: 'period.short', level: 'hint', title: 'Rumpfzeitraum', text: 'Rumpfzeitraum …' })] }
+  expect(noticesNeedAttention(s)).toBe(false)
+  expect(attentionLevel(s)).toBe('gruen')
+})

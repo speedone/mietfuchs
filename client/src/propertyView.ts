@@ -75,7 +75,7 @@ export function emptyUnitsText(kind: PropertyKind): string {
 
 // ---------- Der Abschlussdialog der Abrechnung ----------
 
-export function closeSettlementTitle(year: number, properties: Property[], property: Property | null): string {
+export function closeSettlementTitle(label: string | number, properties: Property[], property: Property | null): string {
   const name = propertyHeading(properties, property)
-  return name ? `Abrechnung ${year} für „${name}“ abschließen?` : `Abrechnung ${year} abschließen?`
+  return name ? `Abrechnung ${label} für „${name}“ abschließen?` : `Abrechnung ${label} abschließen?`
 }

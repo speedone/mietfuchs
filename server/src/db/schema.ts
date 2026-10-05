@@ -20,6 +20,7 @@ import type {
   CostModel,
   DepositStatus,
   ExternalMeasure,
+  HeatingPart,
   MeterType,
   PeriodKey,
   PropertyKind,
@@ -49,6 +50,7 @@ export const COST_KEYS = exactly<CostKey>()(['area', 'persons', 'units', 'direct
 export const EXTERNAL_MEASURES = exactly<ExternalMeasure>()(['mea', 'area', 'units'] as const)
 export const COST_MODELS = exactly<CostModel>()(['settlement', 'flatRate', 'inclusive'] as const)
 export const METER_TYPES = exactly<MeterType>()(['kaltwasser', 'strom', 'waerme', 'sonstig'] as const)
+export const HEATING_PARTS = exactly<HeatingPart>()(['fuel', 'operating', 'metering'] as const)
 export const DEPOSIT_STATUS = exactly<DepositStatus>()(['offen', 'erhalten', 'teilweise', 'zurückgezahlt'] as const)
 const AI_PROVIDERS = exactly<AiProviderKind>()(['ollama', 'openai'] as const)
 const AI_JSON_MODES = exactly<AiJsonMode>()(['auto', 'schema', 'object', 'prompt'] as const)
@@ -352,6 +354,16 @@ export const costItems = sqliteTable(
     // ihre Kosten verteilten sich still auf alle Wohnungen. So bleibt es eine leere Liste, und die
     // Berechnung meldet sie.
     participantsLimited: integer('participants_limited', { mode: 'boolean' }),
+    // Der Leistungszeitraum der Rechnung (#208, Entwurf 3.4), beide oder keines. Bei einer
+    // aufgeteilten kalten Rechnung steht an jedem Teil der ganze Leistungszeitraum.
+    serviceFrom: text('service_from'),
+    serviceTo: text('service_to'),
+    // Das Jahr der Zahlung für die Steuer (#208, Entwurf 3.10); NULL heißt das Kalenderjahr des
+    // Zeitraums, wenn er in einem liegt. Pflicht bei einem Zeitraum über zwei Jahre prüft
+    // repository.ts, denn die Datenbank kennt die Zeiträume nicht.
+    taxYear: integer('tax_year'),
+    // Teil der Heizkosten (#208, Entwurf 5.3, A1), nur bei „Heizung und Warmwasser“.
+    heatingPart: text('heating_part', { enum: HEATING_PARTS }),
   },
   (t) => [
     // Der einzige Filter, den der Schnappschuss wirklich setzt: die Kostenpositionen eines
@@ -363,6 +375,18 @@ export const costItems = sqliteTable(
     oneOf('cost_items_key_known', 'key', COST_KEYS),
     oneOf('cost_items_meter_type_known', 'meter_type', METER_TYPES),
     oneOf('cost_items_external_measure_known', 'external_measure', EXTERNAL_MEASURES),
+    // Leistungszeitraum (#208): beide oder keines, als Datum, Beginn nicht nach dem Ende.
+    // Die Namen folgen der Konvention aus errors.ts (db-errors.test.ts); die Sätze dazu stehen
+    // dort je Bedingung, weil `_complete` und `_valid` sonst von etwas anderem sprächen.
+    check('cost_items_service_complete', sql.raw('("service_from" IS NULL) = ("service_to" IS NULL)')),
+    check('cost_items_service_from_valid', sql.raw(`"service_from" IS NULL OR "service_from" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`)),
+    check('cost_items_service_to_valid', sql.raw(`"service_to" IS NULL OR "service_to" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`)),
+    check('cost_items_service_order_valid', sql.raw('"service_from" IS NULL OR "service_from" <= "service_to"')),
+    // Ein Jahr der Zahlung, das es geben kann; die genaue Spanne je Zeitraum prüft repository.ts.
+    check('cost_items_tax_year_valid', sql.raw('"tax_year" IS NULL OR "tax_year" BETWEEN 1900 AND 2200')),
+    oneOf('cost_items_heating_part_known', 'heating_part', HEATING_PARTS),
+    // Ein Brennstoffmerkmal an Müllabfuhr hätte keine Bedeutung und verwirrte den Vorschlag nach § 560.
+    check('cost_items_heating_part_category_valid', sql.raw(`"heating_part" IS NULL OR "category" = 'Heizung und Warmwasser'`)),
     // Eine Summe der Anlage von null ergäbe eine Division durch null im Rechenweg.
     check('cost_items_external_total_positive', sql.raw('"external_total" > 0')),
     check(

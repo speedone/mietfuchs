@@ -4,8 +4,9 @@ import { METER_TYPE_LABELS } from '../types'
 import { buildReadingBody, EMPTY_READING, type ReadingForm } from '../readingForm'
 import { defaultMeterUnit, emptyMeterForm, oldEndText, withMeterType, type MeterForm } from '../meterForm'
 import { api, errorText, fmtDate } from '../api'
-import { useYear } from '../year'
-import { useOpenForm, useProperty, withProperty, useSwitchYear } from '../property'
+import { usePeriod } from '../period'
+import { PeriodSelect } from '../components/PeriodSelect'
+import { useOpenForm, useProperty, withProperty } from '../property'
 import Drawer from '../components/Drawer'
 import PageHeader from '../components/PageHeader'
 import Term from '../components/Term'
@@ -18,9 +19,7 @@ type Props = { units: Unit[] } & FocusProps
 type Consumption = { meterId: string; consumption: number; readingCount: number; warnings: string[] }
 
 export default function Zaehler({ units, focus, onFocusDone }: Props) {
-  const { year } = useYear()
-  // Fragt bei offenem Formular nach, wie der Objektwechsel (Durchsicht zu #141).
-  const switchYear = useSwitchYear()
+  const { param, label, calendar } = usePeriod()
   const { property } = useProperty()
   const propertyId = property?.id
   const toast = useToast()
@@ -44,12 +43,12 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
     const [m, r, c] = await Promise.all([
       api<Meter[]>(withProperty('/api/meters', propertyId)),
       api<Reading[]>(withProperty('/api/readings', propertyId)),
-      api<Consumption[]>(withProperty(`/api/consumption/${year}`, propertyId)),
+      api<Consumption[]>(withProperty(`/api/consumption/${param}`, propertyId)),
     ])
     setMeters(m)
     setReadings(r)
     setConsumption(c)
-  }, [year, propertyId])
+  }, [param, propertyId])
 
   useEffect(() => {
     load().catch(() => setError('Server nicht erreichbar.'))
@@ -154,14 +153,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
       <div className="card">
         <div className="row" style={{ marginBottom: 14 }}>
           <h2 style={{ margin: 0 }} className="grow">Zähler</h2>
-          <label className="field">
-            Verbrauchsjahr
-            <select value={year} onChange={(e) => void switchYear(Number(e.target.value))}>
-              {Array.from({ length: 8 }, (_, k) => new Date().getFullYear() - k).map((y) => (
-                <option key={y} value={y}>{y}</option>
-              ))}
-            </select>
-          </label>
+          <PeriodSelect label={calendar ? 'Verbrauchsjahr' : undefined} />
         </div>
         {meters.length === 0 && (
           <div className="empty">
@@ -176,7 +168,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
                 <th>Zähler</th>
                 <th>Zuordnung</th>
                 <th>Sparte</th>
-                <th className="num">Verbrauch {year}</th>
+                <th className="num">Verbrauch {label}</th>
                 <th className="no-print"></th>
               </tr>
             </thead>
