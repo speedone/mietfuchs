@@ -28,6 +28,9 @@ const SHIPPED: readonly string[] = [
   // 0.11.0 (Heizung PR 3, #208). JSON.stringify stellt die Monate 10 bis 12 voran: Sie sind
   // ganzzahlige Schlüssel, „01“ bis „09“ wegen der führenden Null nicht.
   'hkv.degree-days|||{"months":{"10":80,"11":120,"12":160,"01":170,"02":150,"03":130,"04":80,"05":40,"09":30},"summer":40,"summerMonths":["06","07","08"]}',
+  // 0.11.0 (Heizung PR 4)
+  'hkv.remote-reading.new-devices||2021-12-01|{"required":false,"installedAfter":"2021-12-01"}',
+  'hkv.remote-reading.new-devices|2021-12-02||{"required":true,"installedAfter":"2021-12-01"}',
 ]
 
 const current = (): string[] =>
