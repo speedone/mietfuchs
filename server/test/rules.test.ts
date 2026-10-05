@@ -3,7 +3,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { RULES, RULES_AS_OF, ruleCoverage, rulesFor } from '../src/rules.ts'
+import { RULES, RULES_AS_OF, ruleCoverage, rulesFor } from '../../shared/law/rules.ts'
 
 test('Regeln: jede hat Code, Titel, Rechtsgrundlage und Kurzfassung, jeder Code einmal', () => {
   assert.ok(RULES.length > 0)

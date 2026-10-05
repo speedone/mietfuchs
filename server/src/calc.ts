@@ -29,7 +29,7 @@ import type {
 // Die Berechnung kennt den Speicher nicht mehr, sondern nur noch den Schnappschuss eines
 // Abrechnungsjahres (siehe snapshot.ts). Welche Sammlung darin nach Jahr eingegrenzt sein darf,
 // entscheidet dort die Ablage und nicht hier.
-import { RULES_AS_OF, ruleCoverage, rulesFor } from './rules.ts'
+import { RULES_AS_OF, ruleCoverage, rulesFor } from '../../shared/law/rules.ts'
 import { HEATING_CATEGORY, heatingByConsumption, heatingFindings, mayAgreeOtherwise } from '../../shared/heating.ts'
 import { andList, meterTypeLabel, plural } from '../../shared/wording.ts'
 import type { TermId } from '../../shared/glossary.ts'

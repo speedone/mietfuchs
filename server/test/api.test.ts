@@ -20,7 +20,7 @@ import { migrateLegacy, straightenForDatabase } from '../src/legacy/migrate.ts'
 import { writeStock } from '../src/legacy/write.ts'
 import { readClosedSettlements, readStock } from '../src/db/read.ts'
 import { assessments as assessmentsTable, uploads as uploadsTable } from '../src/db/schema.ts'
-import { RULES_AS_OF } from '../src/rules.ts'
+import { RULES_AS_OF } from '../../shared/law/rules.ts'
 import { tenancyOverlaps } from '../../shared/tenancyOverlap.ts'
 import type { JsonSchema } from '../src/ai/ollama.ts'
 import type {

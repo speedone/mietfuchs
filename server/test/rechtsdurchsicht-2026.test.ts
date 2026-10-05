@@ -11,7 +11,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement, type ComputedSettlement } from '../src/calc.ts'
-import { ruleCoverage, rulesFor } from '../src/rules.ts'
+import { ruleCoverage, rulesFor } from '../../shared/law/rules.ts'
 import { GLOSSARY } from '../../shared/glossary.ts'
 import { snapshotOf, type SnapshotCostItem, type SnapshotSource, type SnapshotTenancy, type SnapshotUnit } from '../src/snapshot.ts'
 

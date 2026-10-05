@@ -10,7 +10,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement, NOTICE_KINDS, type ComputedSettlement } from '../src/calc.ts'
 import { snapshotOf, type Snapshot, type SnapshotCostItem, type SnapshotSource, type SnapshotTenancy, type SnapshotUnit } from '../src/snapshot.ts'
-import { RULES } from '../src/rules.ts'
+import { RULES } from '../../shared/law/rules.ts'
 import { GLOSSARY } from '../../shared/glossary.ts'
 import { GUIDES } from '../../shared/guides.ts'
 

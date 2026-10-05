@@ -3,7 +3,16 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { createLawLog, dayAfter, dayBefore, germanDate, law, onlyVersion, valueAt, versionAt, type LawParam } from '../../shared/law/register.ts'
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { createLawLog, dayAfter, dayBefore, germanDate, law, LAW_AS_OF, onlyVersion, valueAt, versionAt, type LawParam } from '../../shared/law/register.ts'
+import { LAW_PARAMS } from '../../shared/law/params.ts'
+import { RULES_AS_OF } from '../../shared/law/rules.ts'
+import { betrkvTvSignal } from '../../shared/law/bgb-betrkv.ts'
+import { hkvConsumptionShare, hkvCutNotByConsumption, hkvCutRemoteReading, hkvRemoteReadingRetrofit } from '../../shared/law/heizkostenv.ts'
+import { practiceVacancyPersons } from '../../shared/law/practice.ts'
+import { ustgStandardRate } from '../../shared/law/ustg.ts'
 
 const year = (y: number) => ({ period: { from: `${y}-01-01`, to: `${y}-12-31` } })
 
@@ -93,4 +102,108 @@ test('Register: Datumshelfer', () => {
 test('Register: onlyVersion verlangt genau eine Fassung', () => {
   assert.equal(onlyVersion(window).validTo, '2024-06-30')
   assert.throws(() => onlyVersion(rate), /nicht genau eine Fassung/)
+})
+
+// ---------- Vollständigkeit (4.7) ----------
+
+const ISO = /^\d{4}-\d{2}-\d{2}$/
+
+test('Register: jede Fassung hat Fundstelle, Adresse, Abrufdatum und Prüfstand', () => {
+  for (const p of LAW_PARAMS) {
+    assert.ok(p.id && p.title && p.norm, p.id)
+    assert.ok(p.versions.length > 0, `${p.id} ohne Fassung`)
+    for (const v of p.versions) {
+      assert.ok(v.source.cite.trim(), `${p.id}: cite`)
+      assert.match(v.source.url, /^https:\/\//, `${p.id}: url`)
+      assert.match(v.source.retrieved, ISO, `${p.id}: retrieved`)
+      assert.ok(v.enacted.trim(), `${p.id}: enacted`)
+      assert.ok(typeof p.describe(v.value) === 'string' && p.describe(v.value).trim(), `${p.id}: describe`)
+    }
+  }
+})
+
+test('Register: die Fassungen eines Parameters sind aufsteigend, lückenlos und überlappen nicht', () => {
+  for (const p of LAW_PARAMS) {
+    for (const v of p.versions) {
+      if (v.validFrom !== undefined) assert.match(v.validFrom, ISO, p.id)
+      if (v.validTo !== undefined) assert.match(v.validTo, ISO, p.id)
+      if (v.validFrom !== undefined && v.validTo !== undefined) assert.ok(v.validFrom <= v.validTo, `${p.id}: ${v.validFrom} nach ${v.validTo}`)
+    }
+    for (let i = 1; i < p.versions.length; i++) {
+      const before = p.versions[i - 1]
+      const next = p.versions[i]
+      if (!before?.validTo || !next?.validFrom) assert.fail(`${p.id}: Fassung ${i} hat keine Grenze zur vorigen`)
+      assert.equal(next.validFrom, dayAfter(before.validTo), `${p.id}: Lücke oder Überschneidung vor Fassung ${i}`)
+    }
+  }
+})
+
+test('Register: null nur bei einem überschreibbaren Parameter, jede Kennung einmal', () => {
+  for (const p of LAW_PARAMS) {
+    if (!p.overridable) for (const v of p.versions) assert.notEqual(v.value, null, `${p.id}: null ohne overridable`)
+  }
+  assert.equal(new Set(LAW_PARAMS.map((p) => p.id)).size, LAW_PARAMS.length)
+})
+
+test('Register: LAW_AS_OF ist das jüngste Abrufdatum und nicht älter als das Regelverzeichnis', () => {
+  const newest = LAW_PARAMS.flatMap((p) => p.versions.map((v) => v.source.retrieved)).sort().at(-1)
+  assert.equal(LAW_AS_OF, newest)
+  assert.ok(LAW_AS_OF >= RULES_AS_OF, `${LAW_AS_OF} vor ${RULES_AS_OF}`)
+})
+
+test('Register: jede Konstante vom Typ LawParam in shared/law/ steht in LAW_PARAMS', () => {
+  const dir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../shared/law')
+  const declared = fs.readdirSync(dir).filter((f) => f.endsWith('.ts'))
+    .flatMap((f) => [...fs.readFileSync(path.join(dir, f), 'utf8').matchAll(/^export const (\w+): LawParam</gm)].map((m) => m[1]))
+  assert.ok(declared.length >= 7, `nur ${declared.length} Parameter gefunden`)
+  const listed = new Set<unknown>(LAW_PARAMS)
+  const modules = { betrkvTvSignal, hkvConsumptionShare, hkvCutNotByConsumption, hkvCutRemoteReading, hkvRemoteReadingRetrofit, practiceVacancyPersons, ustgStandardRate }
+  for (const name of declared) {
+    assert.ok(name && Object.hasOwn(modules, name), `${name} fehlt in diesem Test`)
+    assert.ok(listed.has(Reflect.get(modules, name)), `${name} fehlt in LAW_PARAMS`)
+  }
+})
+
+// ---------- Stichtage je Parameter (4.7) ----------
+
+test('Stichtag betrkv.tv-signal: 2023 voll, 2024 teilweise, ab 2025 nicht mehr; Anlagen ab 01.12.2021 nie', () => {
+  const log = createLawLog()
+  assert.equal(law(betrkvTvSignal, year(2023), log).coverage, 'full')
+  assert.equal(law(betrkvTvSignal, year(2024), log).coverage, 'partial')
+  assert.equal(law(betrkvTvSignal, { period: { from: '2024-01-01', to: '2024-06-30' } }, log).coverage, 'full')
+  assert.equal(law(betrkvTvSignal, { period: { from: '2024-07-01', to: '2024-12-31' } }, log).coverage, 'none')
+  const later = law(betrkvTvSignal, year(2025), log)
+  assert.equal(later.coverage, 'none')
+  assert.equal(later.validTo, '2024-06-30')
+  assert.equal(later.value.newSystemsFrom, '2021-12-01')
+})
+
+test('Stichtag hkv.remote-reading.retrofit: Zeitraum 2026-01 nicht, 2027-01 ganz, Mitte 2026 bis Mitte 2027 teilweise', () => {
+  const log = createLawLog()
+  assert.equal(law(hkvRemoteReadingRetrofit, year(2026), log).coverage, 'none')
+  assert.equal(law(hkvRemoteReadingRetrofit, year(2027), log).coverage, 'full')
+  assert.equal(law(hkvRemoteReadingRetrofit, { period: { from: '2026-07-01', to: '2027-06-30' } }, log).coverage, 'partial')
+  assert.equal(law(hkvRemoteReadingRetrofit, year(2027), log).value.installedUpTo, '2021-12-01')
+})
+
+test('Stichtag: die Werte ohne Zeitgrenze gelten 2020 wie 2030', () => {
+  for (const y of [2020, 2025, 2030]) {
+    const log = createLawLog()
+    assert.deepEqual(law(hkvConsumptionShare, year(y), log), { min: 50, max: 70 })
+    assert.equal(law(hkvCutNotByConsumption, year(y), log), 15)
+    assert.equal(law(hkvCutRemoteReading, year(y), log), 3)
+    assert.equal(law(practiceVacancyPersons, year(y), log), 1)
+  }
+})
+
+test('Stichtag ustg.standard-rate: 16 % nur vom 01.07. bis 31.12.2020', () => {
+  assert.equal(law(ustgStandardRate, { date: '2020-06-30' }, createLawLog()), 19)
+  assert.equal(law(ustgStandardRate, { date: '2020-12-31' }, createLawLog()), 16)
+  assert.equal(valueAt(ustgStandardRate, '2019-12-31'), 19)
+  assert.equal(valueAt(ustgStandardRate, '2020-07-01'), 16)
+  assert.equal(valueAt(ustgStandardRate, '2021-01-01'), 19)
+  assert.equal(valueAt(ustgStandardRate, '2026-10-05'), 19)
+  // Vor 2007 galten 16 % (Art. 4 HBeglG 2006); das Register führt keinen Wert davor.
+  assert.equal(valueAt(ustgStandardRate, '2007-01-01'), 19)
+  assert.throws(() => valueAt(ustgStandardRate, '2006-12-31'), /Kein Rechtswert/)
 })
