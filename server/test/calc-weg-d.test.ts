@@ -15,7 +15,7 @@ const of = (rules: PeriodRules, key: string): BillingPeriod => periodOfKey(rules
 
 const anlage = (separateSpans: SeparateSpan[], units: { unitId: string; heatedAreaM2: null }[] | null = null) => ({
   id: 'hp1', propertyId: 'objekt-1', name: '', method: 'service' as const, source: 'building' as const,
-  devicesRemote: 'unknown' as const, devicesInstalledAfter2021: 'unknown' as const, newDevicesInstall: null, units,
+  energy: 'gas' as const, devicesRemote: 'unknown' as const, devicesInstalledAfter2021: 'unknown' as const, newDevicesInstall: null, units,
   periodStartMonth: 5, periodChanges: [], separateSpans, separateSettlement: true,
 })
 const offen: SeparateSpan[] = [{ from: '2025-05', until: null }]

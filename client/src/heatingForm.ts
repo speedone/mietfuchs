@@ -4,7 +4,7 @@
 // ob die Geräte aus der Ferne ablesbar sind (5) und bei einer Wärmepumpe, seit wann ihr Verbrauch
 // erfasst wird (6). Schritt 3 (eigener Zeitraum) kommt mit Heizung PR 5, Schritt 7 (eigene
 // Abrechnung) mit PR 10. Nichts davon ändert eine Zahl der Abrechnung.
-import type { DevicesInstalledAfter, DevicesRemote, HeatingEnergy, HeatingPlant, NewDevicesInstall, PropertyKind, Unit } from './types'
+import type { DevicesInstalledAfter, DevicesRemote, DhwMethod, HeatingEnergy, HeatingPlant, NewDevicesInstall, PropertyKind, Unit } from './types'
 import { parseEuro } from './api'
 import { hkvConsumptionShare, hkvCutNotByConsumption, hkvRemoteReadingNewDevices } from '../../shared/law/heizkostenv.ts'
 import { germanDate, LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
@@ -199,4 +199,28 @@ export function heatingSummary(plant: HeatingPlant, units: readonly Pick<Unit, '
       : plant.units.map((u) => units.find((x) => x.id === u.unitId)?.name ?? u.unitId).join(', ')
   const remote = REMOTE_OPTIONS.find((o) => o.value === plant.devicesRemote)?.label ?? plant.devicesRemote
   return [`Energie: ${energy}`, `Abrechnung: ${who}`, `Angeschlossen: ${served}`, `Aus der Ferne ablesbar: ${remote}`]
+}
+
+// ---------- Warmwasser laut Messdienst (Heizung PR 6, #211, Entwurf 7.7) ----------
+
+export type HotWaterChoice = DhwMethod | ''
+export const HOT_WATER_OPTIONS: readonly { value: HotWaterChoice; label: string }[] = [
+  { value: '', label: 'keine Angabe' },
+  { value: 'heatMeter', label: 'mit einem Wärmezähler gemessen' },
+  { value: 'volumeFormula', label: 'mit einer Formel aus dem Warmwasserverbrauch' },
+  { value: 'areaFormula', label: 'mit einer Formel aus der Wohnfläche' },
+]
+export const isFormula = (choice: HotWaterChoice): boolean => choice === 'volumeFormula' || choice === 'areaFormula'
+// Die Bestätigung des unzumutbaren Aufwands (§ 9 Abs. 2 Satz 2 HeizkostenV) gibt es nur zu einer Formel.
+export function hotWaterBody(choice: HotWaterChoice, unmeasurable: boolean): { dhwMethod: DhwMethod | null; dhwUnmeasurable: boolean | null } {
+  return { dhwMethod: choice === '' ? null : choice, dhwUnmeasurable: isFormula(choice) ? unmeasurable : null }
+}
+
+// Die Bestätigung nennt die Voraussetzung der gewählten Formel (Durchsicht M1): die nach dem
+// Warmwasserverbrauch bei unzumutbar hohem Aufwand (§ 9 Abs. 2 Satz 2), die nach der Wohnfläche nur,
+// wenn auch das Volumen nicht gemessen werden kann (Satz 4).
+export function unmeasurableLabel(choice: HotWaterChoice): string {
+  return choice === 'areaFormula'
+    ? 'Weder die Wärmemenge noch das Volumen des verbrauchten Warmwassers lässt sich messen (Nachweis aufbewahren)'
+    : 'Die Wärmemenge ließe sich nur mit unzumutbar hohem Aufwand messen (Nachweis aufbewahren)'
 }

@@ -8,6 +8,7 @@ import { computeSettlement, rentLedger, type ComputedSettlement } from '../src/c
 import { snapshotFor } from '../src/snapshot.ts'
 import { CALENDAR_RULES, calendarYearPeriod, periodKey, periodOfKey } from '../../shared/period.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
+import { withoutCo2 } from '../testing/co2.ts'
 import type { BillingPeriod, PeriodRules, SeparateSpan } from '../../shared/types.ts'
 
 type Source = Parameters<typeof snapshotFor>[0]
@@ -15,7 +16,7 @@ const of = (rules: PeriodRules, key: string): BillingPeriod => periodOfKey(rules
 
 const anlage = (over: { periodStartMonth?: number | null; periodChanges?: string[]; separateSpans?: SeparateSpan[]; separateSettlement?: boolean | null } = {}) => ({
   id: 'hp1', propertyId: 'objekt-1', name: '', method: 'service' as const, source: 'building' as const,
-  devicesRemote: 'unknown' as const, devicesInstalledAfter2021: 'unknown' as const, newDevicesInstall: null, units: null,
+  energy: 'gas' as const, devicesRemote: 'unknown' as const, devicesInstalledAfter2021: 'unknown' as const, newDevicesInstall: null, units: null,
   periodStartMonth: 5, periodChanges: [], separateSpans: [], separateSettlement: false, ...over,
 })
 const mieter = (id: string, start: string, end: string | null, prepayments: { from: string; monthlyCents: number }[], over: Record<string, unknown> = {}) => ({
@@ -69,7 +70,8 @@ test('Ohne eigene Heizperiode bleibt jede Zahl und jedes Feld gleich (Entwurf 1.
     tenancies: [mieter('A', '2024-01-01', null, [{ from: '2024-01', monthlyCents: 25000 }])],
     costItems: [position('gas', '2025-01', 150000, { category: HEATING_CATEGORY, heatingPlantId: 'hp1' }), position('grundsteuer', '2025-01', 50000)],
   })
-  assert.deepEqual(settle(src([anlage({ periodStartMonth: null, separateSettlement: false })]), '2025-01'), settle(src([]), '2025-01'))
+  // Die CO₂-Aufteilung (Heizung PR 6) kommt mit der Anlage hinzu; sonst ändert sich nichts.
+  assert.deepEqual(withoutCo2(settle(src([anlage({ periodStartMonth: null, separateSettlement: false })]), '2025-01')), withoutCo2(settle(src([]), '2025-01')))
 })
 
 test('Weg d: P lässt die getrennte Heizperiode weg und rechnet die Heizstaffel nur in ihren übrigen Monaten an (6.1 Nr. 5, D1 Fall 1, B3)', () => {

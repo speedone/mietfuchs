@@ -26,11 +26,12 @@ import { tenancyOverlaps } from '../../shared/tenancyOverlap.ts'
 import { calendarPeriod } from '../../shared/period.ts'
 import type { JsonSchema } from '../src/ai/ollama.ts'
 import type {
-  AiKeyInfo, AiPreset, AiRecommendations, AiSettings, AiSlot, AiSlotName, AiStatus, AssessmentLine, AssignableHeatingItem, HeatingPlant, AssessmentView, BookingPreview, CostItem, Extraction, LineDecision, LineFields,
+  AiKeyInfo, AiPreset, AiRecommendations, AiSettings, AiSlot, AiSlotName, AiStatus, AssessmentLine, AssignableHeatingItem, Co2Statement, HeatingPeriodView, HeatingPlant, AssessmentView, BookingPreview, CostItem, Extraction, LineDecision, LineFields,
   Meter, MeterReadingExtraction, OllamaStatus, Payment, Property, Reading, Settings, Settlement, TaxReport, Tenancy, Unit, UnitDependents,
   UpdateStatus, UploadEntry, UploadInfo,
 } from '../../shared/types.ts'
 import type { Db } from '../src/store.ts'
+import { withoutCo2 } from '../testing/co2.ts'
 import type { MigratedSettings } from '../src/ai/settings.ts'
 
 const serverRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -5785,7 +5786,7 @@ test('Heizanlage: anlegen samt Zuordnung offener Heizpositionen, und die Abrechn
     const [gespeichert] = await s.api<CostItem[]>('/api/costItems')
     assert.equal(gespeichert?.heatingPlantId, plant.id)
     // Entwurf 11.2: Das Anlegen ändert keine Zahl und keinen Hinweis.
-    assert.deepEqual(await s.api<Settlement>('/api/settlement/2025-01'), vorher)
+    assert.deepEqual(withoutCo2(await s.api<Settlement>('/api/settlement/2025-01')), withoutCo2(vorher))
   } finally {
     s.stop()
   }
@@ -5931,6 +5932,68 @@ test('Heizkostenabrechnung (Heizung PR 5): rechnen, eigene Frist, abschließen; 
     assert.equal((await send(`/api/heating-plants/${plant.id}`, 'DELETE')).status, 409)
     assert.equal((await send(`${url}/close`, 'DELETE')).status, 200)
     assert.equal((await s.api<unknown[]>(`${url}/history`)).length, 1)
+  } finally {
+    s.stop()
+  }
+})
+
+// ---------- CO₂-Angaben (Heizung PR 6) ----------
+
+test('CO₂-Angaben über die Routen: speichern, lesen, entfernen, Sperren und 404', async () => {
+  const s = await startServer()
+  try {
+    const send = (url: string, init: RequestInit) => fetch(`${s.base}${url}`, { ...init, headers: { 'content-type': 'application/json' } })
+    const unit = await s.api<Unit>('/api/units', jsonPost({ name: 'EG', areaM2: 80, participates: true }))
+    const mieter = await s.api<Tenancy>('/api/tenancies', jsonPost({
+      unitId: unit.id, tenantName: 'Mieter', personHistory: [{ from: '2025-01-01', persons: 1 }], start: '2025-01-01', end: null,
+      prepayments: [], prepaymentOverrides: {}, baseRents: [],
+    }))
+    const { plant } = await jsonOf<{ plant: HeatingPlant }>(await send('/api/heating-plants', jsonPost({ energy: 'gas', method: 'service' })))
+    await s.api<CostItem>('/api/costItems', jsonPost({
+      period: '2025-01', category: 'Heizung und Warmwasser', description: 'Messdienst', amountCents: 100500, key: 'amounts', tenancyAmounts: { [mieter.id]: 100000 },
+    }))
+    const base = `/api/heating-plants/${plant.id}/periods`
+    const gespeichert = await send(`${base}/2025-01/co2`, { method: 'PUT', body: JSON.stringify({ method: 'serviceDeducted', serviceUsersTotalCents: 100000, serviceLandlordCents: 500, serviceUnitsCount: 1 }) })
+    assert.equal(gespeichert.status, 200)
+    assert.equal((await jsonOf<Co2Statement>(gespeichert)).serviceLandlordCents, 500)
+    const [view] = await s.api<HeatingPeriodView[]>(`${base}?period=2025`)
+    assert.deepEqual([view?.period, view?.co2?.method, view?.items.length], ['2025-01', 'serviceDeducted', 1])
+    const selbst = await send(`${base}/2025-01/co2`, { method: 'PUT', body: JSON.stringify({ method: 'self' }) })
+    assert.equal(selbst.status, 400)
+    assert.match(await errorFrom(selbst), /späteren Version/)
+    const wasser = await send(`${base}/2025-01/hot-water`, { method: 'PUT', body: JSON.stringify({ dhwMethod: 'areaFormula' }) })
+    assert.deepEqual(await jsonOf<unknown>(wasser), { dhwMethod: 'areaFormula', dhwUnmeasurable: null })
+    const blockiert = await send(`/api/heating-plants/${plant.id}`, { method: 'DELETE' })
+    assert.equal(blockiert.status, 409)
+    assert.match(await errorFrom(blockiert), /CO₂-Angaben erfasst/)
+    assert.deepEqual(await jsonOf<unknown>(await send(`${base}/2025-01/co2`, { method: 'DELETE' })), { ok: true, removed: true })
+    assert.equal((await send('/api/heating-plants/gibt-es-nicht/periods?period=2025', { method: 'GET' })).status, 404)
+    assert.equal((await send('/api/heating-plants/gibt-es-nicht/periods/2025-01/co2', { method: 'PUT', body: '{}' })).status, 404)
+  } finally {
+    s.stop()
+  }
+})
+
+test('Abrechnung mit CO₂ über die Routen: ohne Angaben co2.missing, mit Vorwegabzug co2Share (Heizung PR 6)', async () => {
+  const s = await startServer()
+  try {
+    const send = (url: string, init: RequestInit) => fetch(`${s.base}${url}`, { ...init, headers: { 'content-type': 'application/json' } })
+    const unit = await s.api<Unit>('/api/units', jsonPost({ name: 'EG', areaM2: 80, participates: true }))
+    const mieter = await s.api<Tenancy>('/api/tenancies', jsonPost({
+      unitId: unit.id, tenantName: 'Mieter', personHistory: [{ from: '2025-01-01', persons: 1 }], start: '2025-01-01', end: null,
+      prepayments: [], prepaymentOverrides: {}, baseRents: [],
+    }))
+    const { plant } = await jsonOf<{ plant: HeatingPlant }>(await send('/api/heating-plants', jsonPost({ energy: 'gas', method: 'service' })))
+    const pos = await s.api<CostItem>('/api/costItems', jsonPost({
+      period: '2025-01', category: 'Heizung und Warmwasser', description: 'Messdienst', amountCents: 100500, key: 'amounts', tenancyAmounts: { [mieter.id]: 100000 },
+    }))
+    const ohne = await s.api<Settlement>('/api/settlement/2025-01')
+    assert.equal(ohne.notices?.find((n) => n.code === 'co2.missing')?.subject?.id, plant.id)
+    await send(`/api/heating-plants/${plant.id}/periods/2025-01/co2`, { method: 'PUT', body: JSON.stringify({ method: 'serviceDeducted', serviceUsersTotalCents: 100000, serviceLandlordCents: 500, serviceUnitsCount: 1 }) })
+    const mit = await s.api<Settlement>('/api/settlement/2025-01')
+    assert.ok(!mit.notices?.some((n) => n.code === 'co2.missing'))
+    assert.deepEqual(mit.landlord.rows.find((r) => r.costItemId === pos.id)?.landlordParts, [{ reason: 'co2Share', cents: 500 }])
+    assert.equal(mit.heating?.[0]?.co2?.booked, true)
   } finally {
     s.stop()
   }

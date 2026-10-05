@@ -162,3 +162,10 @@ test('Ein Rumpfzeitraum färbt die Ampel nicht (#208)', () => {
 test('Hinweis an der Heizanlage führt in die Stammdaten (Heizung PR 5)', () => {
   expect(noticeTarget({ kind: 'heatingPlant', id: 'hp1' })).toEqual({ tab: 'stammdaten', label: 'Hier beheben → Stammdaten', focus: { kind: 'heatingPlant', id: 'hp1' } })
 })
+
+test('Heizanlage als Ziel: ohne Anlage zur Einrichtung, CO₂-Angaben auf der Seite Heizkosten (Heizung PR 6)', () => {
+  expect(noticeTarget({ kind: 'heatingPlant', id: '' })).toEqual({ tab: 'stammdaten', label: 'Heizung einrichten →', focus: { kind: 'heatingPlant', id: '' } })
+  // Mit Anlage bleibt das Ziel aus PR 5 (Zeitraum der Heizung in den Stammdaten).
+  expect(noticeTarget({ kind: 'heatingPlant', id: 'hp1' })?.tab).toBe('stammdaten')
+  expect(noticeTarget({ kind: 'heatingCosts', id: 'hp1' })).toEqual({ tab: 'heizkosten', label: 'Hier beheben → Heizkosten', focus: { kind: 'heatingCosts', id: 'hp1' } })
+})

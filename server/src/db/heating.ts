@@ -22,13 +22,16 @@
 import { and, count, eq, inArray, isNull, ne } from 'drizzle-orm'
 import type { AssignableHeatingItem, HeatingPlant, HeatingPlantUnit } from '../../../shared/types.ts'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
+import { plantRules } from '../../../shared/heatingPeriod.ts'
+import { CO2_FUELS } from '../co2.ts'
+import { openCo2Periods } from './co2.ts'
 import { parsePeriodKey, periodKey, periodOfKey, rulesOf } from '../../../shared/period.ts'
 import type { Database, Executor } from './client.ts'
 import { readHeatingPlants, readProperties, readUnits } from './read.ts'
 import { asNullableFilled, asNullableText, asText, guardServedChange, HeatingError, ISO_DATE, merged, oneOfOrUndefined, raw, sameProperty } from './repository.ts'
 import { servesUnit } from '../../../shared/heatingPeriod.ts'
 import {
-  CHANGE_SPLITS, closedHeatingSettlementHistory, closedHeatingSettlements, closedSettlements, costItems, DEVICES_INSTALLED_AFTER, DEVICES_REMOTE, HEATING_ENERGIES, HEATING_METHODS,
+  CHANGE_SPLITS, closedHeatingSettlementHistory, co2Statements, closedHeatingSettlements, closedSettlements, costItems, DEVICES_INSTALLED_AFTER, DEVICES_REMOTE, HEATING_ENERGIES, HEATING_METHODS,
   HEATING_SOURCES, HEATING_SUPPLIES, NEW_DEVICES_INSTALLS, heatingPeriods, heatingPlants, heatingPlantUnits, heatingPrepaymentOverrides, heatingSeparateSpans, meters, units,
 } from './schema.ts'
 
@@ -199,9 +202,11 @@ export async function updateHeatingPlant(db: Database, id: string, body: unknown
   const next = mergeHeatingPlant(current, body)
   // Welche Wohnungen die Anlage danach anders versorgt (Durchsicht von #231, Critical 1).
   const changed = (await readUnits(db)).filter((u) => u.propertyId === current.propertyId && servesUnit(current, u) !== servesUnit(next, u)).map((u) => u.id)
+  const openCo2 = await openCo2Periods(db, id)
   await db.transaction(async (tx) => {
     await guardHeatingPlant(tx, current, next)
     await guardServedChange(tx, id, changed)
+    guardCo2Plant(current, next, openCo2)
     const { id: _id, ...rest } = plantRow(next)
     await tx.update(heatingPlants).set(rest).where(eq(heatingPlants.id, id))
     await writePlantUnits(tx, next)
@@ -209,11 +214,26 @@ export async function updateHeatingPlant(db: Database, id: string, body: unknown
   return (await readHeatingPlants(db)).find((p) => p.id === id) ?? null
 }
 
+// Mit CO₂-Angaben (Heizung PR 6, Durchsicht M-3) gelten sie nur für eine Anlage beim Messdienst mit
+// einem Energieträger, für den CO₂-Kosten anfallen können. Ein Wechsel weg davon ließe sie still
+// stehen; ein vertippter Brennstoff (Öl statt Gas) bleibt änderbar. Gezählt werden nur Heizperioden, die
+// nicht abgeschlossen sind: Nur deren Angaben lassen sich entfernen, die übrigen sind eingefroren.
+function guardCo2Plant(current: HeatingPlant, next: HeatingPlant, openCo2: readonly string[]): void {
+  const leavesService = current.method === 'service' && next.method !== 'service'
+  const leavesCo2 = next.energy !== current.energy && !CO2_FUELS.includes(next.energy) && next.energy !== 'districtHeating'
+  if ((!leavesService && !leavesCo2) || openCo2.length === 0) return
+  throw new HeatingError(409,
+    `Zu dieser Heizanlage sind CO₂-Angaben erfasst (Heizperiode ${openCo2.join(', ')}). ` +
+      `${leavesService ? 'Sie gelten nur für eine Anlage, die ein Messdienst oder die Gemeinschaft abrechnet' : 'Sie gelten nur für einen Energieträger, für den CO₂-Kosten anfallen'}. ` +
+      'Entfernen Sie die Angaben auf der Seite Heizkosten, wenn die Änderung so stimmt; gespeichert wurde nichts.')
+}
+
 export type PlantRemoval =
   | { removed: true; released: number }
   | { removed: false; reason: 'missing' }
   | { removed: false; reason: 'meters'; meters: string[] }
   | { removed: false; reason: 'separate' }
+  | { removed: false; reason: 'co2'; periods: string[] }
 
 // Entfernt wird eine Anlage samt Liste der Wohnungen und Heizperioden (CASCADE). Ihre
 // Kostenpositionen bleiben, nur ohne Anlage; an Beträgen und Verteilung ändert das in dieser Version
@@ -225,6 +245,14 @@ export async function removeHeatingPlant(db: Database, id: string): Promise<Plan
   return db.transaction(async (tx): Promise<PlantRemoval> => {
     const [plant] = await tx.select({ id: heatingPlants.id }).from(heatingPlants).where(eq(heatingPlants.id, id))
     if (!plant) return { removed: false, reason: 'missing' }
+    // CO₂-Angaben (Heizung PR 6) fielen mit den Heizperioden (CASCADE). Sie sind erfasste Arbeit des
+    // Vermieters; entfernen soll er sie selbst, wenn die Anlage wirklich entfällt.
+    const co2 = await tx
+      .select({ period: heatingPeriods.period })
+      .from(co2Statements)
+      .innerJoin(heatingPeriods, eq(co2Statements.heatingPeriodId, heatingPeriods.id))
+      .where(eq(heatingPeriods.plantId, id))
+    if (co2.length > 0) return { removed: false, reason: 'co2', periods: co2.map((c) => String(c.period)) }
     // Getrennte Heizkostenabrechnung (Heizung PR 5): Spannen, Heizkorrekturen und abgeschlossene
     // Heizkostenabrechnungen hängen an der Anlage. Ohne sie fiele jede getrennte Heizperiode still in
     // die Betriebskostenabrechnung zurück.
@@ -285,15 +313,17 @@ export async function heatingPlantViolations(db: Database): Promise<string[]> {
     }
   }
 
-  // Heizperioden: In dieser Version ist jede Heizperiode ein Abrechnungszeitraum des Objekts (eine
-  // eigene kommt mit PR 5).
+  // Heizperioden: ein Zeitraum nach dem Rhythmus der Anlage, also ihrer eigenen Heizperiode (PR 5)
+  // oder, ohne eigene, dem des Objekts. Zeilen entstehen seit PR 6 auch für eine eigene Heizperiode
+  // (CO₂-Angaben, Warmwasser); geprüft am Objekt, lehnte das Wiederherstellen sie ab.
   const rulesById = new Map((await readProperties(db)).map((p) => [p.id, rulesOf(p)]))
+  const plantRulesById = new Map((await readHeatingPlants(db)).map((p) => [p.id, plantRules(p, rulesById.get(p.propertyId) ?? rulesOf(undefined))]))
   const perioden = await db
-    .select({ period: heatingPeriods.period, propertyId: heatingPlants.propertyId, name: heatingPlants.name })
+    .select({ period: heatingPeriods.period, plantId: heatingPeriods.plantId, name: heatingPlants.name })
     .from(heatingPeriods)
     .innerJoin(heatingPlants, eq(heatingPeriods.plantId, heatingPlants.id))
   for (const h of perioden) {
-    const rules = rulesById.get(h.propertyId)
+    const rules = plantRulesById.get(h.plantId)
     const key = parsePeriodKey(h.period)
     if (!rules || key === null || periodOfKey(rules, key) === null) {
       befunde.push(`Die Heizanlage ${plantName(h.name)} hat Angaben zur Heizperiode ${h.period}, die es für ihr Objekt nicht gibt.`)

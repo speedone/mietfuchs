@@ -111,7 +111,7 @@ Jeder Befund ist entschieden. Eine Ablehnung nennt ihre Quelle.
 | G-A2 | Heizpositionen verwaisen bei eigener Heizperiode | **Übernommen.** Umschlüsseln mit Vorschau; die Schreibprüfung lehnt einen Schlüssel ohne Heizperiode ab (400) | 3.0, 5.3, 12.2 |
 | G-A3 | C wird bei Messdienst und `manual` abgegrenzt, die Mieter haben aber die ganze Lieferung bezahlt | **Übernommen.** C folgt dem, was im Topf berechnet ist; abgegrenzt wird nur E | 3.3, 7.6, 9.4 |
 | G-A4 | `fuelCarry` ist nicht eingefroren und wird zweimal oder gar nicht gebucht | **Übernommen.** Übertrag frieren, Lieferung sperren, Anteil einer abgeschlossenen Periode beim Vermieter | 8.2 |
-| G-A5 | Golden F06 bleibt nicht wortgleich | **Übernommen.** F06 ändert in PR 6 einen Hinweis, keine Zahl, und das ist begründet | 1.2, 12.1 |
+| G-A5 | Golden F06 bleibt nicht wortgleich | **Übernommen.** F06 ändert in PR 6 einen Hinweis, keine Zahl, und das ist begründet. **Nachtrag nach PR 6: F06 bleibt doch wortgleich** (Kostenart „Heizung“ ist keine Heizposition, siehe 12.1) | 1.2, 12.1 |
 | G-B1 | Gemessenes Q gegen Hᵢ | **Abgelehnt.** § 9 Abs. 2 S. 6 gilt nach dem Wortlaut nur für „die nach den Zahlenwertgleichungen in Satz 2 oder 4 bestimmte Wärmemenge“, und § 9 Abs. 3 letzter Satz: „Soweit die Abrechnung über Kilowattstunden-Werte erfolgt, ist eine Umrechnung in Brennstoffverbrauch nicht erforderlich“ (geprüft 05.10.). Offene Frage 15.1 Nr. 9 mit Hinweis, ⟨Norm offen: VDI 2077⟩ | 8.3, 15.1 |
 | G-B2 | L_self anteilig zu kürzen widerspricht #203 | **Übernommen.** L_self ist exakt, nur `co2Share` läuft über `take()`. W10 der ersten Fassung ist aufgehoben | 7.4 |
 | G-B3 | Toleranz der Probe zu eng hergeleitet, S unklar | **Übernommen.** S ist die gedruckte Kostensumme, Betrag = S + L exakt ± 1 ct; Toleranz nur für die Einzelbeträge | 5.5, 7.3 |
@@ -383,7 +383,7 @@ Grundlage sind die Prüfungen der Pläne PR 10–22 vom 05.10.2026 und die Ände
 
 ### 1.2 Was sich insgesamt ergibt
 
-1. **Wer nichts einstellt, merkt nichts.** Ohne Heizanlage, ohne CO₂-Angaben und mit Kalenderjahr bleibt jede Zahl centgenau gleich. Golden F01–F11 bleiben bis PR 5 wortgleich, ebenso die db.json-Fixtures. Ab PR 6 bekommt **F06** (Heizposition 2025 ohne Anlage) den Hinweis `co2.fuel-unknown`; damit ändert sich die Liste `warnings` um einen Text, keine Zahl. Die Änderung steht begründet im README von F06 (G-A5). Der Hinweis wird im CHANGELOG angekündigt.
+1. **Wer nichts einstellt, merkt nichts.** Ohne Heizanlage, ohne CO₂-Angaben und mit Kalenderjahr bleibt jede Zahl centgenau gleich. Golden F01–F11 bleiben bis PR 5 wortgleich, ebenso die db.json-Fixtures. Ab PR 6 bekommt **F06** (Heizposition 2025 ohne Anlage) den Hinweis `co2.fuel-unknown`; damit ändert sich die Liste `warnings` um einen Text, keine Zahl. Die Änderung steht begründet im README von F06 (G-A5). Der Hinweis wird im CHANGELOG angekündigt. **Nachtrag nach PR 6:** F06 bleibt wortgleich. Seine Position trägt die Kostenart „Heizung“, nicht „Heizung und Warmwasser“ (`HEATING_CATEGORY`), und ist für die Berechnung keine Heizposition, wie schon für die Regeln aus #140; den Hinweis `co2.fuel-unknown` halten Tests in calc-co2.test.ts wörtlich fest.
 2. **Drei Wege durch die Heizung**, gewählt an der Anlage. `method` legt den Weg fest:
    - `service`: Messdienst oder Hausverwaltung liefern Einzelbeträge;
    - `self`: eigene Heizkostenabrechnung nach HeizkostenV;
@@ -1453,7 +1453,7 @@ Die Anleitung `meteringService` wird sofort berichtigt (PR 0).
 
 ### 7.2 Die Methode: eine sichtbare Tatsache, ohne Vorgabe
 
-Die Frage lautet: „Steht in der Kostenaufstellung eine Zeile wie ‚Abzüglich CO₂-Kosten Vermieter‘, oder bei Ihren Mietern ‚vom Vermieter übernommen‘?“ Darunter steht die Beispielzeile aus dem Techem-Muster: „Anlieferung Brennstoff 3.540,00 · Abzüglich CO₂-Kosten Vermieter −87,50 · Verbrauch 3.452,50“ ([M] Techem-Musterabrechnung, übernommen).
+Die Frage lautet: „Steht in der Kostenaufstellung der Heizkosten eine Zeile, die den CO₂-Anteil des Vermieters vor der Verteilung abzieht, etwa ‚Abzüglich CO₂-Kosten Vermieter‘?“ Darunter steht ausdrücklich, dass ein Betrag „vom Vermieter übernommen“ bei den einzelnen Mietern kein Zeichen dafür ist, denn den weisen Messdienste auch ohne Abzug aus (Nachtrag nach der Durchsicht von PR 6, I1: Die erste Fassung nannte ihn als Erkennungszeichen, und ein Laie antwortete dann bei einer nur ausweisenden Abrechnung „Ja“). Dazu steht die Beispielzeile aus dem Techem-Muster: „Anlieferung Brennstoff 3.540,00 · Abzüglich CO₂-Kosten Vermieter −87,50 · Verbrauch 3.452,50“ ([M] Techem-Musterabrechnung, übernommen).
 
 Die Antworten führen zu diesen Methoden:
 
@@ -1480,7 +1480,7 @@ Belege für die Praxis der Messdienste:
 | `serviceShown` | Σ Messdienstpositionen = S | 0 |
 | beide | Σ eingetragene Einzel- und Eigenbeträge ≤ S | NE · 4 · 0,5 ct = NE · 2 ct |
 
-**Wo S steht, und wenn man es nicht findet** (R6 der dritten Prüfung). Die Anleitung zeigt S je Messdienst an einer Musterabrechnung mit markierter Zeile: Techem („Summe der Nutzerkosten Heizungsanlage“, Muster vorhanden), ista, Brunata, Minol, KALO. Die Muster der vier Letztgenannten sind vor PR 6 zu beschaffen (öffentliche Musterabrechnungen der Messdienste); fehlt eines, nennt die Anleitung den Messdienst ohne Muster. Im Formular gibt es „Ich finde diese Zeile nicht“: Dann gilt S := Σ der Einzelbeträge aller Nutzeinheiten laut Messdienst (auch Leerstand, die Oberfläche fragt sie ab), die Probe wird zum hint `co2.sum-check-approx` mit Toleranz NE · 2 ct, und die CO₂-Buchung wird ausgeführt. Die Lücke „nein, obwohl abgezogen“ wird damit nicht größer, denn sie war schon mit exaktem S nicht zu erkennen (7.4).
+**Wo S steht, und wenn man es nicht findet** (R6 der dritten Prüfung). Die Anleitung zeigt S je Messdienst an einer Musterabrechnung mit markierter Zeile: Techem („Summe der Nutzerkosten Heizungsanlage“, Muster vorhanden), ista, Brunata, Minol, KALO. Die Muster der vier Letztgenannten sind vor PR 6 zu beschaffen (öffentliche Musterabrechnungen der Messdienste); fehlt eines, nennt die Anleitung den Messdienst ohne Muster. Im Formular gibt es „Ich finde diese Zeile nicht“: Dann gilt S := Σ der Einzelbeträge aller Nutzeinheiten laut Messdienst (auch Leerstand, die Oberfläche fragt sie ab), die Probe gilt für den Betrag mit derselben Toleranz NE · 2 ct wie für die Einzelbeträge. Geht sie so auf, wird gebucht, mit dem hint `co2.sum-check-approx`; geht sie nicht auf, ist das `co2.sum-check` wie mit gedrucktem S, und **gebucht wird nichts** (Nachtrag nach der Durchsicht von PR 6, I-2: Mit Buchung trotz gescheiterter Probe stand der CO₂-Teil der eigenen Wohnung zweimal privat; ein sichtbarer Fehler geht einem stillen Geldfehler vor). Die Lücke „nein, obwohl abgezogen“ wird damit nicht größer, denn sie war schon mit exaktem S nicht zu erkennen (7.4).
 
 Zur Toleranz der dritten Prüfung:
 
@@ -2177,7 +2177,7 @@ Nach Schritt 2 legt Mietfuchs die Anlage an. Zeitraum, Wohnungen und Fernablesba
 **Bestehende Fixtures:**
 
 - F01–F11 bleiben bis PR 5 wortgleich (db.json und expected.json).
-- **Ab PR 6 ändert sich F06** (Heizposition 2025 nach Zählern, ohne Anlage): `warnings` und `notices` bekommen `co2.fuel-unknown`. Keine Zahl ändert sich. README und Commit nennen den Grund (G-A5).
+- **Ab PR 6 ändert sich F06** (Heizposition 2025 nach Zählern, ohne Anlage): `warnings` und `notices` bekommen `co2.fuel-unknown`. Keine Zahl ändert sich. README und Commit nennen den Grund (G-A5). **Nachtrag nach PR 6:** F06 bleibt wortgleich. Seine Position trägt die Kostenart „Heizung“, nicht „Heizung und Warmwasser“ (`HEATING_CATEGORY`), und ist für die Berechnung keine Heizposition, wie schon für die Regeln aus #140; den Hinweis `co2.fuel-unknown` halten Tests in calc-co2.test.ts wörtlich fest.
 - Ein Gleichheitstest prüft, dass `snapshotFor` mit Regeln `{ startMonth: 1, changes: [] }` und ohne Anlage dasselbe ergibt wie `snapshotOf(…, year)`, über das ganze Ergebnis außer `legalBasis.values` und den neuen CO₂-Hinweisen.
 
 **Neue Fixtures:**

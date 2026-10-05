@@ -28,7 +28,7 @@ const haus = (separateSpans: SeparateSpan[]): Source => ({
   ],
   meters: [], readings: [], payments: [], closedSettlements: [],
   heatingPlants: [{
-    id: 'hp1', propertyId: 'objekt-1', name: '', method: 'service', source: 'building', devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', newDevicesInstall: null,
+    id: 'hp1', propertyId: 'objekt-1', name: '', energy: 'gas', method: 'service', source: 'building', devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', newDevicesInstall: null,
     units: null, periodStartMonth: 5, periodChanges: [], separateSpans, separateSettlement: separateSpans.length > 0,
   }],
 } as Source)

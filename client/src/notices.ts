@@ -66,7 +66,7 @@ export function noticeClass(level: NoticeLevel): 'error' | 'notice' | 'hint' {
   return level === 'error' ? 'error' : level === 'warning' ? 'notice' : 'hint'
 }
 
-export type NoticeTab = 'kosten' | 'stammdaten' | 'zaehler' | 'mietkonto'
+export type NoticeTab = 'kosten' | 'stammdaten' | 'zaehler' | 'mietkonto' | 'heizkosten'
 const TARGETS: Record<NoticeSubject['kind'], { tab: NoticeTab, page: string }> = {
   costItem: { tab: 'kosten', page: 'Kosten' },
   unit: { tab: 'stammdaten', page: 'Stammdaten' },
@@ -74,12 +74,19 @@ const TARGETS: Record<NoticeSubject['kind'], { tab: NoticeTab, page: string }> =
   meter: { tab: 'zaehler', page: 'Zähler' },
   rentLedger: { tab: 'mietkonto', page: 'Mietkonto' },
   heatingPlant: { tab: 'stammdaten', page: 'Stammdaten' },
+  // Heizung PR 6: die CO₂-Angaben und das Warmwasser stehen auf der Seite Heizkosten.
+  heatingCosts: { tab: 'heizkosten', page: 'Heizkosten' },
 }
 
 // Wohin „Hier beheben →“ führt: zur Seite und dort zum Eintrag (#142). `focus` reicht die App an
 // die Zielseite weiter; die öffnet den Eintrag, sobald er geladen ist (useFocusTarget in focus.ts).
 export function noticeTarget(subject: NoticeSubject | undefined): { tab: NoticeTab, label: string, focus: NoticeSubject } | null {
   if (!subject) return null
+  // Noch keine Heizanlage (Heizung PR 6, Entwurf 11.1): Der Knopf führt zur Einrichtung in den
+  // Stammdaten und heißt so.
+  if (subject.kind === 'heatingPlant' && subject.id === '') {
+    return { tab: 'stammdaten', label: 'Heizung einrichten →', focus: { kind: subject.kind, id: subject.id } }
+  }
   // Eine Art, die diese Fassung nicht kennt (eingefrorene oder neuere Abrechnung), ergibt keinen
   // Knopf statt eines Absturzes.
   const target: { tab: NoticeTab, page: string } | undefined = Object.hasOwn(TARGETS, subject.kind) ? TARGETS[subject.kind] : undefined

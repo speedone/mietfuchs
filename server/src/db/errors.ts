@@ -132,6 +132,10 @@ const OWN_CHECK_MESSAGES: Readonly<Record<string, string>> = {
     'Die Monate der Korrektur der Heizvorauszahlung enden vor ihrem Beginn. Bitte laden Sie die Seite neu; gespeichert wurde nichts.',
   heating_periods_heat_pct_valid: 'Der Verbrauchsanteil der Heizkosten ist ein Anteil am Ganzen, also nicht negativ und nicht größer als das Ganze.',
   heating_periods_water_pct_valid: 'Der Verbrauchsanteil der Warmwasserkosten ist ein Anteil am Ganzen, also nicht negativ und nicht größer als das Ganze.',
+  // CO₂ beim Messdienst (Heizung PR 6)
+  co2_statements_service_complete:
+    'Zu den CO₂-Angaben des Messdienstes gehören die Summe der Kosten aller Nutzer, der CO₂-Anteil des Vermieters und die Zahl der Nutzeinheiten. Bitte tragen Sie alle drei ein.',
+  co2_statements_permille_valid: 'Der Anteil des Vermieters an den CO₂-Kosten ist ein Anteil am Ganzen, also nicht negativ und nicht größer als das Ganze.',
 }
 
 function checkMessage(name: string): string {

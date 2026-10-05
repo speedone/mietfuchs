@@ -12,17 +12,20 @@
 
 import type { TermId } from './glossary.ts'
 // Rechtszahlen aus dem Rechtsregister (Heizung PR 1), in der Fassung von `LAW_AS_OF` wie im Lexikon.
-// Die CO₂-Kürzung von 3 Prozent folgt mit PR 6 (`co2.cut.missing`); bis dahin ist sie im Wächter
-// law-literals.test.ts als erlaubte Stelle benannt.
 import { hkvConsumptionShare, hkvCutNotByConsumption } from './law/heizkostenv.ts'
-import { LAW_AS_OF, valueAt } from './law/register.ts'
+import { germanDate, LAW_AS_OF, valueAt } from './law/register.ts'
+import { co2CutMissing, co2FirstPeriodStart } from './law/co2kostaufg.ts'
 
 const SHARE = valueAt(hkvConsumptionShare, LAW_AS_OF)
 const CUT = valueAt(hkvCutNotByConsumption, LAW_AS_OF)
+// Heizung PR 6: die Kürzung bei fehlender CO₂-Aufteilung (§ 7 Abs. 4 CO2KostAufG) und der Beginn der
+// Aufteilung (§ 11 Abs. 2 Satz 1) aus dem Register.
+const CO2_CUT = valueAt(co2CutMissing, LAW_AS_OF)
+const CO2_FROM = germanDate(co2FirstPeriodStart())
 
 // Die Seiten, auf die eine Anleitung springen kann. Dieselben Kennungen wie die Navigation;
 // client/src/nav.ts prüft beim Übersetzen, dass jede davon dort vorkommt.
-export const GUIDE_PAGES = ['stammdaten', 'zaehler', 'kosten', 'mietkonto', 'abrechnung', 'steuer', 'einstellungen', 'belege'] as const
+export const GUIDE_PAGES = ['stammdaten', 'zaehler', 'kosten', 'mietkonto', 'heizkosten', 'abrechnung', 'steuer', 'einstellungen', 'belege'] as const
 export type GuidePage = (typeof GUIDE_PAGES)[number]
 
 export type GuideStep = {
@@ -119,7 +122,7 @@ const GUIDE_DATA = {
       { text: 'Die Abrechnung muss dem Mieter spätestens bis zum Ablauf des zwölften Monats nach Ende des Abrechnungszeitraums zugehen; danach können Sie eine Nachzahlung in der Regel nicht mehr verlangen.', norm: '§ 556 Abs. 3 Satz 2 und 3 BGB' },
       { text: `Bei einer Zentralheizung sind mindestens ${SHARE.min} und höchstens ${SHARE.max} Prozent der Heiz- und Warmwasserkosten nach Verbrauch zu verteilen. Wird nicht nach Verbrauch abgerechnet, darf der Mieter seinen Anteil um ${CUT} Prozent kürzen.`, norm: '§ 7 Abs. 1, § 8 Abs. 1, § 12 Abs. 1 HeizkostenV' },
       { text: 'Verwaltungskosten sowie Instandhaltung und Instandsetzung sind keine Betriebskosten; erfassen Sie sie als „Nicht umlagefähig“.', norm: '§ 1 Abs. 2 BetrKV' },
-      { text: 'Fallen für die Heizung CO₂-Kosten an, sind sie zwischen Ihnen und dem Mieter nach dem CO₂-Ausstoß des Gebäudes aufzuteilen. Die Heizkostenabrechnung muss den Anteil des Mieters, die Einstufung des Gebäudes und die Berechnungsgrundlagen ausweisen; fehlt das, darf der Mieter seinen Anteil an den Heizkosten um 3 Prozent kürzen. Mietfuchs rechnet das noch nicht (#97); nehmen Sie den Vermieteranteil aus der Abrechnung des Messdienstes.', norm: '§ 5 Abs. 2, § 7 Abs. 3 und 4 CO2KostAufG' },
+      { text: `Fallen für die Heizung CO₂-Kosten an, sind sie zwischen Ihnen und dem Mieter nach dem CO₂-Ausstoß des Gebäudes aufzuteilen. Die Heizkostenabrechnung muss den Anteil des Mieters, die Einstufung des Gebäudes und die Berechnungsgrundlagen ausweisen; fehlt das, darf der Mieter seinen Anteil an den Heizkosten um ${CO2_CUT} Prozent kürzen. Selbst rechnet Mietfuchs die Aufteilung noch nicht (#97); rechnet ein Messdienst ab, übernehmen Sie seine Angaben auf der Seite Heizkosten.`, norm: '§ 5 Abs. 2, § 7 Abs. 3 und 4 CO2KostAufG' },
     ],
     gaps: [
       { text: 'Eine eigene Heizkostenabrechnung mit Wärmemengenzählern nach Grund- und Verbrauchskosten.', issue: 99 },
@@ -250,31 +253,66 @@ const GUIDE_DATA = {
     applies: 'Ein Messdienst wie Techem, ista, Brunata oder Minol rechnet Heizung und Warmwasser ab und nennt für jede Wohnung oder jeden Nutzer einen Betrag.',
     steps: [
       { page: 'kosten', text: 'Legen Sie mit „+ Kostenposition manuell erfassen“ eine Position mit der Kostenart „Heizung und Warmwasser“ an. Unter „Betrag €“ tragen Sie ein, was Sie für Heizung und Warmwasser bezahlt haben, also die Kosten vor dem Abzug des CO₂-Anteils, den Sie als Vermieter tragen. Viele Messdienste ziehen diesen Anteil schon in der Kostenaufstellung ab; dann ist ihre Summe um ihn zu niedrig, und Sie rechnen: Summe aller Nutzerbeträge für Heizung und Warmwasser (einschließlich Leerstand) + CO₂-Anteil des Vermieters.' },
-      { page: 'kosten', text: 'Wählen Sie den Umlageschlüssel „Einzelbeträge je Mieter (z. B. Messdienst)“ und füllen Sie bei jedem Mietverhältnis das Feld für Heizung und Warmwasser aus. Tragen Sie den Betrag ein, den der Mieter zahlen soll, also nach Abzug des CO₂-Anteils des Vermieters. Ist ein Mieter im Jahr ausgezogen, bekommen alter und neuer Mieter je ihren Betrag. Rechnet der Messdienst auch Kaltwasser oder weitere Nebenkosten ab, erfassen Sie diese als eigene Positionen mit ihrer Kostenart und ihren Einzelbeträgen.' },
-      { page: 'kosten', text: 'Bewohnen Sie selbst eine Wohnung, tragen Sie deren Betrag in das Feld Ihrer selbstgenutzten Wohnung ein. Hat der Messdienst einen CO₂-Anteil abgezogen, gehört der Teil davon, der auf Ihre Wohnung entfällt, dazu. Steht auf der Einzelabrechnung Ihrer Wohnung ein vom Vermieter übernommener CO₂-Betrag, nehmen Sie diesen. Nennt die Abrechnung solche Beträge bei den Mietern, aber nicht bei Ihrer Wohnung, gehört nichts davon ins Private. Nur wenn sie gar keine Beträge je Wohnung nennt, rechnen Sie näherungsweise: CO₂-Anteil × Betrag Ihrer Wohnung ÷ Summe aller Nutzerbeträge für Heizung und Warmwasser. Die Zeile darunter zeigt die Summe und was beim Vermieter bleibt.' },
+      { page: 'kosten', text: 'Wählen Sie den Umlageschlüssel „Einzelbeträge je Mieter (z. B. Messdienst)“ und füllen Sie bei jedem Mietverhältnis das Feld für Heizung und Warmwasser aus. Tragen Sie den Betrag ein, den die Abrechnung für den Mieter nennt; ziehen Sie selbst nichts ab. Weist die Abrechnung den CO₂-Anteil des Vermieters nur aus, ohne ihn vorab abzuziehen, zieht Mietfuchs ihn mit einer eigenen Zeile ab. Ist ein Mieter im Jahr ausgezogen, bekommen alter und neuer Mieter je ihren Betrag. Rechnet der Messdienst auch Kaltwasser oder weitere Nebenkosten ab, erfassen Sie diese als eigene Positionen mit ihrer Kostenart und ihren Einzelbeträgen.' },
+      { page: 'kosten', text: 'Bewohnen Sie selbst eine Wohnung, tragen Sie in deren Feld den Betrag ein, den die Abrechnung für Ihre Wohnung nennt, ohne etwas dazuzurechnen. Den Teil des CO₂-Anteils, der auf Ihre Wohnung entfällt, tragen Sie auf der Seite Heizkosten in der Karte „CO₂-Kosten“ unter „davon für Ihre Wohnung“ ein: Steht auf der Einzelabrechnung Ihrer Wohnung ein vom Vermieter übernommener CO₂-Betrag, nehmen Sie diesen. Nennt die Abrechnung solche Beträge bei den Mietern, aber nicht bei Ihrer Wohnung, tragen Sie 0 ein; dann gehört nichts davon ins Private. Nur wenn sie gar keine Beträge je Wohnung nennt, lassen Sie das Feld leer, und Mietfuchs rechnet näherungsweise: CO₂-Anteil × Betrag Ihrer Wohnung ÷ Summe aller Nutzerbeträge für Heizung und Warmwasser.' },
       { page: 'kosten', text: 'Nennt die Abrechnung Arbeitskosten, tragen Sie sie unter „§35a-Lohn“ ein. Die Abrechnung selbst hängen Sie unter „Beleg (Rechnungskopie)“ an.' },
+      { page: 'heizkosten', text: `Für Abrechnungszeiträume, die am oder nach dem ${CO2_FROM} beginnen, öffnen Sie die Seite Heizkosten und füllen die Karte „CO₂-Kosten“ aus: die Antwort auf die Frage nach der Abzugszeile, die Summe der Kosten aller Nutzer und die Zahlen der CO₂-Seite der Abrechnung. Die Zeile „Probe“ zeigt, ob der Betrag Ihrer Position dazu passt. Die Seite erscheint, sobald unter Stammdaten eine Heizanlage eingerichtet ist.` },
       { page: 'abrechnung', text: 'Prüfen Sie in der Abrechnung, ob für jeden Mieter ein Betrag eingetragen ist.' },
     ],
     result: [
       'Jeder Mieter trägt genau seinen Betrag, ohne Tagesanteil; bei einem Wechsel teilt der Messdienst selbst auf.',
-      'Was nicht auf Mieter entfällt, bleibt beim Vermieter, mit dem Grund „Rest nach Einzelbeträgen“. Dazu gehört der CO₂-Anteil des Vermieters für die vermieteten Wohnungen; er steht so in der Steuerübersicht als Werbungskosten. Der Betrag Ihrer selbstgenutzten Wohnung ist Ihr Eigenanteil und in der Steuerübersicht privat.',
+      'Mit den CO₂-Angaben prüft Mietfuchs, ob der Betrag der Position zur Abrechnung passt. Beim Vorwegabzug steht der CO₂-Anteil des Vermieters für die vermieteten Wohnungen mit dem Grund „CO₂-Anteil des Vermieters“ beim Vermieter und in der Steuerübersicht als Werbungskosten; der Teil, der auf Ihre selbstgenutzte Wohnung entfällt, gehört zu Ihrem Eigenanteil und ist privat.',
+      'Weist der Messdienst die CO₂-Kosten nur aus, ohne sie abzuziehen, bekommt jeder Mieter eine eigene Zeile „CO₂-Kosten: Anteil des Vermieters“.',
       'Fehlt für einen Mieter ein Betrag, sagt die Abrechnung es. Mehr als der Rechnungsbetrag lässt sich nicht verteilen, und eine Gutschrift nicht nach Einzelbeträgen.',
       'Für die Prüfung nach der Heizkostenverordnung zählen Einzelbeträge als Verteilung nach Verbrauch.',
     ],
-    example: 'Die Heizkostenabrechnung nennt 1.200 € für Wohnung A, 1.100 € für Wohnung B und 600 € für Ihre eigene Wohnung, zusammen 2.900 €. Vorher abgezogen hat der Messdienst unter „abzüglich CO₂-Kosten Vermieter“ 100 €, die Sie als Vermieter tragen. Bezahlt haben Sie also 3.000 €, und das ist der Betrag der Position. Die Mieter tragen 1.200 € und 1.100 €. Von den 100 € nennt die Einzelabrechnung Ihrer Wohnung 20,69 € als vom Vermieter übernommen (die Näherung 100 × 600 ÷ 2.900 ergäbe dasselbe); in ihr Feld kommen 620,69 €, Ihr Eigenanteil. Die übrigen 79,31 € bleiben als Rest beim Vermieter und stehen in der Steuerübersicht als Werbungskosten. Mit 2.900 € als Betrag fehlten sie dort.',
+    example: 'Die Heizkostenabrechnung nennt 1.200 € für Wohnung A, 1.100 € für Wohnung B und 600 € für Ihre eigene Wohnung, zusammen 2.900 €. Vorher abgezogen hat der Messdienst unter „abzüglich CO₂-Kosten Vermieter“ 100 €, die Sie als Vermieter tragen. Bezahlt haben Sie also 3.000 €, und das ist der Betrag der Position. Die Mieter tragen 1.200 € und 1.100 €; in das Feld Ihrer Wohnung kommen 600 €. In der Karte „CO₂-Kosten“ tragen Sie 2.900 € als Summe der Kosten aller Nutzer und 100 € als CO₂-Anteil des Vermieters ein; die Probe erwartet 3.000 € und findet sie. Die Einzelabrechnung Ihrer Wohnung nennt 20,69 € als vom Vermieter übernommen (die Näherung 100 × 600 ÷ 2.900 ergäbe dasselbe); Ihr Eigenanteil ist damit 620,69 €. Die übrigen 79,31 € stehen als CO₂-Anteil des Vermieters in der Steuerübersicht als Werbungskosten. Mit 2.900 € als Betrag fehlten sie dort.',
     caveats: [
       { text: `Bei einer Zentralheizung sind mindestens ${SHARE.min} und höchstens ${SHARE.max} Prozent der Kosten nach Verbrauch zu verteilen; das erledigt der Messdienst. Wird nicht nach Verbrauch abgerechnet, darf der Mieter um ${CUT} Prozent kürzen.`, norm: '§ 7 Abs. 1, § 8 Abs. 1, § 12 Abs. 1 HeizkostenV' },
       { text: 'Beim Mieterwechsel muss eine Zwischenablesung stattfinden; melden Sie dem Messdienst den Auszug rechtzeitig.', norm: '§ 9b HeizkostenV' },
-      { text: 'Fallen für die Heizung CO₂-Kosten an, sind sie zwischen Ihnen und dem Mieter nach dem CO₂-Ausstoß des Gebäudes aufzuteilen. Die Heizkostenabrechnung muss den Anteil des Mieters, die Einstufung des Gebäudes und die Berechnungsgrundlagen ausweisen; fehlt das, darf der Mieter seinen Anteil an den Heizkosten um 3 Prozent kürzen. Die großen Messdienste teilen auf, wenn Sie ihnen die CO₂-Angaben Ihrer Brennstoffrechnung melden, und weisen die Angaben in ihrer Abrechnung aus; legen Sie sie dem Mieter mit Ihrer Abrechnung bei.', norm: '§ 5 Abs. 2, § 7 Abs. 3 und 4 CO2KostAufG' },
+      { text: `Fallen für die Heizung CO₂-Kosten an, sind sie zwischen Ihnen und dem Mieter nach dem CO₂-Ausstoß des Gebäudes aufzuteilen. Die Heizkostenabrechnung muss den Anteil des Mieters, die Einstufung des Gebäudes und die Berechnungsgrundlagen ausweisen; fehlt das, darf der Mieter seinen Anteil an den Heizkosten um ${CO2_CUT} Prozent kürzen. Die großen Messdienste teilen auf, wenn Sie ihnen die CO₂-Angaben Ihrer Brennstoffrechnung melden, und weisen die Angaben in ihrer Abrechnung aus; legen Sie sie dem Mieter mit Ihrer Abrechnung bei.`, norm: '§ 5 Abs. 2, § 7 Abs. 3 und 4 CO2KostAufG' },
       { text: 'Weist die Abrechnung keinen CO₂-Anteil des Vermieters aus, fragen Sie beim Messdienst nach, bevor Sie abrechnen; selbst rechnet Mietfuchs die Aufteilung noch nicht (#97).' },
-      { text: 'Nicht jeder Messdienst setzt für eine selbstgenutzte Wohnung einen vom Vermieter übernommenen CO₂-Anteil an. Sehen Sie deshalb in die Einzelabrechnung Ihrer Wohnung, bevor Sie etwas dazurechnen (Schritt 3).' },
+      { text: 'Nicht jeder Messdienst setzt für eine selbstgenutzte Wohnung einen vom Vermieter übernommenen CO₂-Anteil an. Sehen Sie deshalb in die Einzelabrechnung Ihrer Wohnung, bevor Sie in der Karte „CO₂-Kosten“ etwas eintragen (Schritt 3).' },
+      { text: 'Wo in der Abrechnung die Summe der Kosten aller Nutzer steht, beschreibt die Anleitung zum Aufteilen der CO₂-Kosten.' },
     ],
     gaps: [
       { text: 'Die Abrechnung des Messdienstes per KI auslesen und den Mietverhältnissen zuordnen; heute tragen Sie die Beträge von Hand ein.', issue: 103 },
-      { text: 'Den CO₂-Anteil des Vermieters als eigene Zeile übernehmen und prüfen, ob er im Betrag der Position steht.', issue: 97 },
+      { text: 'Die CO₂-Kosten selbst aus der Brennstoffrechnung aufteilen, wenn der Messdienst es nicht tut.', issue: 97 },
       { text: 'Die Heizkosten ohne Messdienst selbst nach der Heizkostenverordnung abrechnen.', issue: 99 },
     ],
-    terms: ['individualAmounts', 'heatingCostOrdinance', 'ownShare', 'labor35a'],
+    terms: ['individualAmounts', 'heatingCostOrdinance', 'ownShare', 'labor35a', 'co2Deducted'],
+  },
+  co2Costs: {
+    title: 'CO₂-Kosten der Heizung aufteilen',
+    applies: `Sie heizen mit Gas, Heizöl, Flüssiggas oder Kohle, oder Ihr Wärmelieferant weist CO₂-Kosten aus, und ein Messdienst oder die Hausverwaltung erstellt die Heizkostenabrechnung. Für Abrechnungszeiträume, die am oder nach dem ${CO2_FROM} beginnen, sind die CO₂-Kosten zwischen Ihnen und den Mietern aufzuteilen.`,
+    steps: [
+      { page: 'stammdaten', text: 'Richten Sie in der Karte „Heizung“ die Heizanlage ein, falls noch nicht geschehen: den Energieträger und bei der Frage, wer abrechnet, „Ein Messdienst oder die Hausverwaltung“.' },
+      { page: 'kosten', text: 'Sehen Sie zuerst in der Kostenaufstellung des Messdienstes nach, ob eine Zeile den CO₂-Anteil des Vermieters vor der Verteilung abzieht, etwa „Abzüglich CO₂-Kosten Vermieter“. Ein Betrag „vom Vermieter übernommen“ bei den einzelnen Mietern ist dafür kein Zeichen.' },
+      { page: 'kosten', text: 'Erfassen Sie die Abrechnung des Messdienstes wie in der Anleitung zur fertigen Abrechnung eines Messdienstes. Mit dieser Zeile ist der Betrag die Summe der Kosten aller Nutzer plus den CO₂-Anteil des Vermieters. Ohne diese Zeile ist der Betrag die Summe der Kosten aller Nutzer. Als Einzelbeträge tragen Sie die Beträge der Mieter wie in der Abrechnung ein, ohne selbst etwas abzuziehen.' },
+      { page: 'heizkosten', text: 'Öffnen Sie die Seite Heizkosten und beantworten Sie in der Karte „CO₂-Kosten“ die Frage nach der Abzugszeile. Darunter steht eine Beispielzeile, an der Sie die Zeile erkennen.' },
+      { page: 'heizkosten', text: 'Tragen Sie die Summe der Kosten aller Nutzer für Heizung und Warmwasser ein, so wie sie gedruckt ist. Finden Sie diese Zeile nicht, setzen Sie den Haken „Ich finde diese Zeile nicht“ und tragen die Beträge der leeren oder nicht eingetragenen Einheiten ein; dann rechnet Mietfuchs die Summe aus den Einzelbeträgen.' },
+      { page: 'heizkosten', text: 'Übertragen Sie von der CO₂-Seite der Abrechnung den Ausstoß je Quadratmeter, den Anteil des Vermieters in Prozent, die CO₂-Kosten insgesamt und den Anteil des Vermieters in Euro. Die Zeile „Probe“ zeigt, ob der Betrag Ihrer Position dazu passt.' },
+      { page: 'heizkosten', text: 'Nennt die Abrechnung je Mieter einen Betrag „vom Vermieter übernommen“, tragen Sie ihn beim Mieter ein; sonst rechnet Mietfuchs ihn nach dem Anteil an den Heizkosten.' },
+    ],
+    result: [
+      'Bei einer Abzugszeile bleibt jeder Mieter bei seinem Betrag; der CO₂-Anteil des Vermieters steht beim Vermieter mit dem Grund „CO₂-Anteil des Vermieters“ und in der Steuerübersicht als Werbungskosten, der Teil Ihrer eigenen Wohnung im Eigenanteil.',
+      'Ohne Abzugszeile bekommt jeder Mieter eine eigene Zeile „CO₂-Kosten: Anteil des Vermieters“ mit seinem Abzug.',
+      `Geht die Probe nicht auf, bucht Mietfuchs nichts und nennt die Kürzung von ${CO2_CUT} % je Mieter; ebenso, wenn der Messdienst gar nicht aufgeteilt hat.`,
+      'Die Abrechnung jedes Mieters enthält den Block „CO₂-Kostenaufteilung“ mit Einstufung und Grundlagen.',
+    ],
+    example: 'Die Kostenaufstellung eines Messdienstes nennt „Anlieferung Brennstoff“ 3.540,00 €, darunter „Abzüglich CO₂-Kosten Vermieter“ 87,50 €; die Kosten aller Nutzer ergeben 3.845,51 €. Sie beantworten die Frage nach der Abzugszeile mit „Ja“ und tragen 3.845,51 € und 87,50 € ein. Der Betrag Ihrer Position ist 3.845,51 € + 87,50 € = 3.933,01 €, und die Probe geht auf. Die Mieter tragen ihre Beträge unverändert; die 87,50 € stehen beim Vermieter als CO₂-Anteil, und in der Steuerübersicht stehen 3.933,01 € als Werbungskosten.',
+    caveats: [
+      { text: `Fehlt die Aufteilung oder der Ausweis der CO₂-Kosten in der Heizkostenabrechnung, darf jeder Mieter seinen Anteil an den Heizkosten um ${CO2_CUT} Prozent kürzen.`, norm: '§ 7 Abs. 3 und 4 CO2KostAufG' },
+      { text: 'Wo die Summe der Kosten aller Nutzer steht, ist je Messdienst verschieden. Bei Techem heißt die Zeile „Summe der Nutzerkosten Heizungsanlage“. Für ista, Brunata, Minol und KALO liegt Mietfuchs keine Musterabrechnung vor; suchen Sie die gedruckte Summe der Kosten aller Nutzer für Heizung und Warmwasser, bei einer Abzugszeile die Summe nach dem Abzug.' },
+      { text: 'Ob ein Messdienst den Anteil des Vermieters vorab abzieht, ist nicht bei allen Messdiensten gleich; deshalb fragt Mietfuchs danach, statt es je Messdienst anzunehmen.' },
+      { text: 'Ist ein Abrechnungszeitraum von unter einem Jahr vereinbart, werden die Grenzen der Stufentabelle anteilig gekürzt.', norm: '§ 5 Abs. 1 Satz 4 CO2KostAufG' },
+    ],
+    gaps: [
+      { text: 'Die CO₂-Kosten selbst aus der Brennstoffrechnung aufteilen, auch ohne Messdienst.', issue: 97 },
+      { text: 'Die CO₂-Angaben für den Messdienst ausdrucken.', issue: 210 },
+      { text: 'Die Abrechnung des Messdienstes per KI auslesen.', issue: 103 },
+    ],
+    terms: ['co2Split', 'co2Stage', 'co2Deducted', 'co2Area'],
   },
   tenantChange: {
     title: 'Mieterwechsel und Leerstand im Jahr',
