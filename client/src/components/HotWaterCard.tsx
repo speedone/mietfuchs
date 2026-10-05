@@ -5,7 +5,7 @@ import { useState } from 'react'
 import { api, errorText } from '../api'
 import { useToast } from './feedback'
 import Term from './Term'
-import { HOT_WATER_OPTIONS, hotWaterBody, isFormula, type HotWaterChoice } from '../heatingForm'
+import { HOT_WATER_OPTIONS, hotWaterBody, isFormula, unmeasurableLabel, type HotWaterChoice } from '../heatingForm'
 import type { HeatingPeriodView } from '../types'
 
 export default function HotWaterCard({ view, onSaved }: { view: HeatingPeriodView; onSaved: () => void }) {
@@ -37,7 +37,7 @@ export default function HotWaterCard({ view, onSaved }: { view: HeatingPeriodVie
       {isFormula(choice) && (
         <label className="field">
           <input type="checkbox" checked={unmeasurable} disabled={view.closed} onChange={(e) => setUnmeasurable(e.target.checked)} />
-          Messen wäre nur mit unzumutbar hohem Aufwand möglich (Nachweis aufbewahren)
+          {unmeasurableLabel(choice)}
         </label>
       )}
       {error && <div className="error">{error}</div>}

@@ -1,6 +1,6 @@
 // Die Einrichtung „Heizung“ (Heizung PR 4, Entwurf 11.2), ohne DOM.
 import { describe, expect, test } from 'vitest'
-import { asksNewInstall, emptyHeatingForm, HOT_WATER_OPTIONS, hotWaterBody, isFormula, heatingPlantBody, heatingSummary, heatingToForm, whoHint, whoOptions, type HeatingForm } from './heatingForm'
+import { asksNewInstall, emptyHeatingForm, HOT_WATER_OPTIONS, hotWaterBody, isFormula, unmeasurableLabel, heatingPlantBody, heatingSummary, heatingToForm, whoHint, whoOptions, type HeatingForm } from './heatingForm'
 import type { HeatingPlant, Unit } from './types'
 
 const UNITS: Pick<Unit, 'id' | 'name' | 'noConnection'>[] = [{ id: 'eg', name: 'EG' }, { id: 'og', name: 'OG' }, { id: 'garage', name: 'Garage', noConnection: ['waerme'] }]
@@ -100,4 +100,9 @@ test('Warmwasser laut Messdienst (Heizung PR 6): die Bestätigung des Aufwands g
   expect(hotWaterBody('areaFormula', true)).toEqual({ dhwMethod: 'areaFormula', dhwUnmeasurable: true })
   expect(hotWaterBody('heatMeter', true)).toEqual({ dhwMethod: 'heatMeter', dhwUnmeasurable: null })
   expect(hotWaterBody('', false)).toEqual({ dhwMethod: null, dhwUnmeasurable: null })
+})
+
+test('Bestätigung je Formel nach ihrer Voraussetzung (§ 9 Abs. 2 Satz 2 und 4 HeizkostenV, Durchsicht M1)', () => {
+  expect(unmeasurableLabel('volumeFormula')).toMatch(/Wärmemenge ließe sich nur mit unzumutbar hohem Aufwand messen/)
+  expect(unmeasurableLabel('areaFormula')).toMatch(/Weder die Wärmemenge noch das Volumen des verbrauchten Warmwassers lässt sich messen/)
 })

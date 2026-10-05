@@ -145,3 +145,8 @@ test('Nutzeinheit (Heizung PR 6, Durchsicht M3): Beispiel mit dem Spielraum der 
   assert.equal(4 * 2, 8)
   assert.match(t.example, /vier Nutzeinheiten.*8 ct/s)
 })
+
+test('Durchsicht M1, M4: Flächenformel mit ihrer Voraussetzung; S umfasst neben dem Brennstoff die übrigen Heizkosten', () => {
+  assert.match(GLOSSARY.hotWaterShare.short, /weder die Wärmemenge noch das Volumen des verbrauchten Warmwassers gemessen werden kann/)
+  assert.match(GLOSSARY.co2Deducted.example, /Zusammen mit Strom, Wartung und Messdienstkosten/i)
+})

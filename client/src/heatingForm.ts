@@ -215,3 +215,12 @@ export const isFormula = (choice: HotWaterChoice): boolean => choice === 'volume
 export function hotWaterBody(choice: HotWaterChoice, unmeasurable: boolean): { dhwMethod: DhwMethod | null; dhwUnmeasurable: boolean | null } {
   return { dhwMethod: choice === '' ? null : choice, dhwUnmeasurable: isFormula(choice) ? unmeasurable : null }
 }
+
+// Die Bestätigung nennt die Voraussetzung der gewählten Formel (Durchsicht M1): die nach dem
+// Warmwasserverbrauch bei unzumutbar hohem Aufwand (§ 9 Abs. 2 Satz 2), die nach der Wohnfläche nur,
+// wenn auch das Volumen nicht gemessen werden kann (Satz 4).
+export function unmeasurableLabel(choice: HotWaterChoice): string {
+  return choice === 'areaFormula'
+    ? 'Weder die Wärmemenge noch das Volumen des verbrauchten Warmwassers lässt sich messen (Nachweis aufbewahren)'
+    : 'Die Wärmemenge ließe sich nur mit unzumutbar hohem Aufwand messen (Nachweis aufbewahren)'
+}
