@@ -47,7 +47,7 @@ import {
 } from './read.ts'
 import {
   aiSlots, assessmentLines, assessments, baseRents, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, DEPOSIT_STATUS, EXTERNAL_MEASURES,
-  HEATING_PARTS, heatingPlants,
+  HEATING_PARTS, HEATING_ROLES, heatingPlants,
   flatRates, METER_TYPES, meters, payments, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, PROPERTY_KINDS,
   readings, settings, tenancies, unitNoConnection, units,
 } from './schema.ts'
@@ -310,11 +310,12 @@ function mergeCostItem(current: CostItem, body: unknown): CostItem {
   const external = merged(body, 'externalBasis', current.externalBasis, readExternalBasis)
   const amounts = merged(body, 'tenancyAmounts', current.tenancyAmounts, (v) => (v === null ? null : readAmounts(v)))
   const selfAmounts = merged(body, 'selfAmounts', current.selfAmounts, (v) => (v === null ? null : readAmounts(v)))
+  const category = merged(body, 'category', current.category, (v) => asText(v, ''))
   return {
     id: current.id,
     propertyId: mergedProperty(body, current.propertyId),
     period,
-    category: merged(body, 'category', current.category, (v) => asText(v, '')),
+    category,
     description: merged(body, 'description', current.description, (v) => asText(v, '')),
     vendor: merged(body, 'vendor', current.vendor, asOptionalText),
     amountCents: merged(body, 'amountCents', current.amountCents, (v) => asNumber(v, 0)),
@@ -337,10 +338,15 @@ function mergeCostItem(current: CostItem, body: unknown): CostItem {
     serviceTo: merged(body, 'serviceTo', current.serviceTo, asOptionalText),
     taxYear: merged(body, 'taxYear', current.taxYear, asOptionalNumber),
     heatingPart: merged(body, 'heatingPart', current.heatingPart, (v) => oneOfOrUndefined(HEATING_PARTS, v)),
+    // Die Heizanlage der Position (Heizung PR 4). Nur die Kostenart Heizung und Warmwasser gehört zu
+    // einer Anlage; wechselt die Kostenart, fällt die Anlage weg. Fehlt das Feld bei einer neuen
+    // Position, setzt `insert` die Anlage des Objekts (`defaultHeatingPlant`).
+    heatingPlantId: category === HEATING_CATEGORY ? merged(body, 'heatingPlantId', current.heatingPlantId, asNullableFilled) : null,
   }
 }
 
 function mergeMeter(current: Meter, body: unknown): Meter {
+  const heatingPlantId = merged(body, 'heatingPlantId', current.heatingPlantId ?? null, asNullableFilled)
   return {
     id: current.id,
     propertyId: mergedProperty(body, current.propertyId),
@@ -351,6 +357,12 @@ function mergeMeter(current: Meter, body: unknown): Meter {
     type: merged(body, 'type', current.type, (v) => oneOfOrUndefined(METER_TYPES, v) ?? current.type),
     meterNumber: merged(body, 'meterNumber', current.meterNumber, asOptionalText),
     unit: merged(body, 'unit', current.unit, (v) => asText(v, '')),
+    // Zähler der Heizanlage selbst (Heizung PR 4). Ohne Anlage keine Rolle.
+    heatingPlantId,
+    heatingRole: heatingPlantId === null ? null : merged(body, 'heatingRole', current.heatingRole ?? null, (v) => oneOfOrUndefined(HEATING_ROLES, v) ?? null),
+    // Fernablesbar und eingebaut am (§ 5 Abs. 2, 3 HeizkostenV); `null` heißt unbekannt.
+    remoteReadable: merged(body, 'remoteReadable', current.remoteReadable ?? null, (v) => (typeof v === 'boolean' ? v : null)),
+    installedOn: merged(body, 'installedOn', current.installedOn ?? null, asNullableFilled),
   }
 }
 
@@ -424,6 +436,56 @@ export class HeatingError extends Error {
   constructor(status: 400 | 409, message: string) {
     super(message)
     this.status = status
+  }
+}
+
+const PLANT_GONE = 'Diese Heizanlage gibt es nicht (mehr). Bitte laden Sie die Seite neu; gespeichert wurde nichts.'
+
+// Nach Heizkostenverteilern verteilt Mietfuchs erst mit deren Bewertungsfaktoren (PR 12); rohe
+// Einheiten verschiedener Heizkörper sind nicht vergleichbar.
+const HKV_KEY =
+  'Nach Heizkostenverteilern verteilt Mietfuchs noch nicht selbst; dafür braucht es die Bewertungsfaktoren der Geräte, und die kommen mit einer späteren Version. ' +
+  'Übernehmen Sie bis dahin die Abrechnung des Messdienstes als Einzelbeträge (Schlüssel „Einzelbeträge“).'
+
+async function plantOf(db: Executor, plantId: string): Promise<{ propertyId: string } | undefined> {
+  return (await db.select({ propertyId: heatingPlants.propertyId }).from(heatingPlants).where(eq(heatingPlants.id, plantId)))[0]
+}
+
+async function isPeriodClosed(db: Executor, propertyId: string, period: CostItem['period']): Promise<boolean> {
+  const rows = await db.select({ id: closedSettlements.id }).from(closedSettlements)
+    .where(and(eq(closedSettlements.propertyId, propertyId), eq(closedSettlements.period, period)))
+  return rows.length > 0
+}
+
+// Die Anlage, die eine neue Heizposition ohne Angabe bekommt: die einzige ihres Objekts, außer ihr
+// Zeitraum ist abgeschlossen (dort bleibt der eingefrorene Stand maßgeblich, Entwurf 3.0). So gehört
+// auch eine Position, die ein Tab von vor dem Update oder die Belegbuchung anlegt, zur Anlage, und ab
+// PR 5 steht sie im Topf ihrer Heizperiode. Bei mehreren Anlagen (PR 9) entscheidet der Vermieter.
+async function defaultHeatingPlant(db: Executor, c: CostItem): Promise<string | null> {
+  if (c.category !== HEATING_CATEGORY) return null
+  const [einzige, ...weitere] = await db.select({ id: heatingPlants.id }).from(heatingPlants).where(eq(heatingPlants.propertyId, c.propertyId))
+  if (!einzige || weitere.length > 0) return null
+  return (await isPeriodClosed(db, c.propertyId, c.period)) ? null : einzige.id
+}
+
+// Eine Heizposition an der Anlage (Heizung PR 4): dieselbe Objektgrenze wie bei den Wohnungen, und in
+// einem abgeschlossenen Zeitraum keine neue Zuordnung.
+async function guardCostItemHeating(db: Executor, before: CostItem | null, after: CostItem): Promise<void> {
+  if (after.key === 'meter' && after.meterType === 'hkv') throw new HeatingError(400, HKV_KEY)
+  const plantId = after.heatingPlantId
+  if (!plantId) return
+  const plant = await plantOf(db, plantId)
+  if (!plant) throw new HeatingError(400, PLANT_GONE)
+  if (plant.propertyId !== after.propertyId) {
+    throw new CrossPropertyError(
+      `Die Kostenposition gehört zu Objekt ${await propertyName(db, after.propertyId)}, die Heizanlage aber zu ` +
+        `${await propertyName(db, plant.propertyId)}. Eine Heizposition gehört zur Heizanlage ihres eigenen Objekts.`,
+    )
+  }
+  if ((before?.heatingPlantId ?? null) !== plantId && (await isPeriodClosed(db, after.propertyId, after.period))) {
+    throw new HeatingError(409,
+      'Die Abrechnung dieses Zeitraums ist abgeschlossen; ihre Positionen bekommen keine Heizanlage mehr, denn der eingefrorene Stand bleibt maßgeblich. ' +
+        'Öffnen Sie die Abrechnung wieder, wenn Sie die Position zuordnen wollen.')
   }
 }
 
@@ -581,6 +643,34 @@ const noGuard = async (): Promise<void> => {}
 
 async function guardMeter(db: Executor, _before: Meter | null, after: Meter): Promise<void> {
   await sameProperty(db, after.propertyId, after.unitId ? [after.unitId] : [], 'Der Zähler')
+  if (after.type === 'hkv' && !after.unitId) {
+    throw new HeatingError(400, 'Ein Heizkostenverteiler sitzt an einem Heizkörper einer Wohnung. Bitte wählen Sie bei der Zuordnung die Wohnung.')
+  }
+  if (after.installedOn && !ISO_DATE.test(after.installedOn)) {
+    throw new HeatingError(400, 'Das Einbaudatum ist kein Datum. Bitte wählen Sie es im Kalender oder lassen Sie das Feld leer.')
+  }
+  const plantId = after.heatingPlantId
+  if (!plantId) return
+  // Ein Zähler der Anlage hängt an keiner Wohnung; sonst lehnte die Prüfbedingung ab, ohne Satz.
+  if (after.unitId) {
+    throw new HeatingError(400,
+      'Ein Zähler an einer Wohnung gehört nicht zur Heizanlage selbst. Zur Anlage gehören nur Zähler ohne Wohnung, etwa der Gaszähler oder ein Wärmezähler am Warmwasserspeicher. ' +
+        'Wählen Sie „Haus (Hauptzähler)“ oder nehmen Sie den Zähler aus der Anlage.')
+  }
+  const plant = await plantOf(db, plantId)
+  if (!plant) throw new HeatingError(400, PLANT_GONE)
+  if (plant.propertyId !== after.propertyId) {
+    throw new CrossPropertyError(
+      `Der Zähler gehört zu Objekt ${await propertyName(db, after.propertyId)}, die Heizanlage aber zu ` +
+        `${await propertyName(db, plant.propertyId)}. Ein Zähler gehört zur Heizanlage seines eigenen Objekts.`,
+    )
+  }
+  if (!after.heatingRole) {
+    throw new HeatingError(400, 'Was misst der Zähler an der Heizanlage? Bitte wählen Sie Versorgungszähler, Wärmezähler Warmwasser oder Gesamtwärmezähler.')
+  }
+  if (after.heatingRole !== 'supply' && after.type !== 'waerme') {
+    throw new HeatingError(400, 'Ein Wärmezähler an der Heizanlage hat die Sparte „Wärme“.')
+  }
 }
 
 async function guardCostItem(db: Executor, before: CostItem | null, after: CostItem, body: unknown, options: CostItemGuardOptions = {}): Promise<void> {
@@ -600,6 +690,7 @@ async function guardCostItem(db: Executor, before: CostItem | null, after: CostI
     ...Object.keys(after.selfAmounts ?? {}),
   ]
   await sameProperty(db, after.propertyId, ziele, 'Die Kostenposition')
+  await guardCostItemHeating(db, before, after)
 }
 
 // Eine Wohnung darf das Objekt wechseln, solange nichts Objektgebundenes an ihr hängt. Ihr
@@ -860,9 +951,11 @@ const costItemRow = (c: CostItem) => ({
   externalTotalCents: c.externalBasis?.totalCents ?? null,
   participantsLimited: Array.isArray(c.participantUnitIds),
   serviceFrom: orNull(c.serviceFrom), serviceTo: orNull(c.serviceTo), taxYear: orNull(c.taxYear), heatingPart: orNull(c.heatingPart),
+  heatingPlantId: c.heatingPlantId ?? null,
 })
 const meterRow = (m: Meter) => ({
   id: m.id, propertyId: m.propertyId, name: m.name, unitId: m.unitId, type: m.type, meterNumber: orNull(m.meterNumber), unit: m.unit,
+  heatingPlantId: m.heatingPlantId ?? null, heatingRole: m.heatingRole ?? null, remoteReadable: m.remoteReadable ?? null, installedOn: m.installedOn ?? null,
 })
 const readingRow = (r: Reading) => ({
   id: r.id, meterId: r.meterId, date: r.date, value: r.value,
@@ -991,8 +1084,11 @@ const costItemCollection: Collection<CostItem> = {
   empty: emptyCostItem,
   merge: mergeCostItem,
   insert: async (db, c) => {
-    await db.insert(costItems).values(costItemRow(c))
-    await writeCostItemShares(db, c)
+    // Eine neue Heizposition ohne Angabe gehört zur Anlage ihres Objekts (Heizung PR 4). `undefined`
+    // heißt „nicht angegeben“, `null` „ausdrücklich ohne“; nur das Erste wird ergänzt.
+    const entity = c.heatingPlantId === undefined ? { ...c, heatingPlantId: await defaultHeatingPlant(db, c) } : c
+    await db.insert(costItems).values(costItemRow(entity))
+    await writeCostItemShares(db, entity)
   },
   replace: async (db, c) => {
     await db.update(costItems).set(costItemRow(c)).where(eq(costItems.id, c.id))

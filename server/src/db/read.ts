@@ -247,6 +247,12 @@ export async function readMeters(db: Database): Promise<Meter[]> {
     type: m.type,
     meterNumber: orUndefined(m.meterNumber),
     unit: m.unit,
+    // Heizanlage, Fernablesbarkeit und Einbau (Heizung PR 4): der Schlüssel nur, wenn es den Wert
+    // gibt, wie bei den Kostenpositionen.
+    ...(m.heatingPlantId !== null ? { heatingPlantId: m.heatingPlantId } : {}),
+    ...(m.heatingRole !== null ? { heatingRole: m.heatingRole } : {}),
+    ...(m.remoteReadable !== null ? { remoteReadable: m.remoteReadable } : {}),
+    ...(m.installedOn !== null ? { installedOn: m.installedOn } : {}),
   }))
 }
 

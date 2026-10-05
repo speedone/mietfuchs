@@ -9,7 +9,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { openDatabase, type OpenedDatabase } from '../src/db/open.ts'
 import type { Database } from '../src/db/client.ts'
-import { closeSettlement, createEntity, createProperty, findEntity, HeatingError, removeEntity, removeProperty } from '../src/db/repository.ts'
+import { closeSettlement, createEntity, createProperty, CrossPropertyError, findEntity, HeatingError, removeEntity, removeProperty, updateEntity } from '../src/db/repository.ts'
 import { assignableHeatingItems, createHeatingPlant, listHeatingPlants, removeHeatingPlant, updateHeatingPlant } from '../src/db/heating.ts'
 import { meters } from '../src/db/schema.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
@@ -170,5 +170,109 @@ test('Objekt löschen: eine Heizanlage hält es, wie eine Wohnung', async () => 
       await createHeatingPlant(db, 'hp1', 'objekt-2', { energy: 'gas' })
     })
     assert.deepEqual(await opened.write((db) => removeProperty(db, 'objekt-2')), { removed: false, reason: 'inUse', inUse: '1 Heizanlage' })
+  })
+})
+
+// ---------- Kostenpositionen und Zähler an der Anlage ----------
+
+test('Heizposition: eine neue gehört der einzigen Anlage, auch ohne Feld (alter Tab, Belegbuchung)', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write(async (db) => {
+      await closeSettlement(db, { id: 's1', propertyId: 'objekt-1', period: periodKey('2024-01'), closedAt: '2025-03-01', sentAt: null, settlement: {} })
+      await createHeatingPlant(db, 'hp1', 'objekt-1', { energy: 'gas' })
+    })
+    assert.equal(fieldOf(await opened.write((db) => heizposition(db, 'c-neu')), 'heatingPlantId'), 'hp1')
+    assert.equal(
+      fieldOf(await opened.write((db) => heizposition(db, 'c-ohne', '2025-01', { heatingPlantId: null })), 'heatingPlantId'),
+      undefined,
+      'ausdrücklich ohne Anlage bleibt ohne',
+    )
+    assert.equal(
+      fieldOf(await opened.write((db) => heizposition(db, 'c-alt', '2024-01')), 'heatingPlantId'),
+      undefined,
+      'ein abgeschlossener Zeitraum bekommt keine Anlage',
+    )
+    const kalt = await opened.write((db) => createEntity(db, 'costItems', 'c-kalt', {
+      propertyId: 'objekt-1', period: '2025-01', category: 'Müllabfuhr', description: 'Müll', amountCents: 30000, key: 'area',
+    }))
+    assert.equal(fieldOf(kalt, 'heatingPlantId'), undefined)
+  })
+})
+
+test('Heizposition: wechselt die Kostenart, fällt die Anlage weg; beim Ändern wird nicht still zugeordnet', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => createHeatingPlant(db, 'hp1', 'objekt-1', { energy: 'gas' }))
+    await opened.write((db) => heizposition(db, 'c1'))
+    assert.equal(fieldOf(await opened.write((db) => updateEntity(db, 'costItems', 'c1', { category: 'Müllabfuhr' })), 'heatingPlantId'), undefined)
+    assert.equal(fieldOf(await opened.write((db) => updateEntity(db, 'costItems', 'c1', { category: HEATING_CATEGORY })), 'heatingPlantId'), undefined)
+    assert.equal(fieldOf(await opened.write((db) => updateEntity(db, 'costItems', 'c1', { heatingPlantId: 'hp1' })), 'heatingPlantId'), 'hp1')
+  })
+})
+
+test('Heizposition: in einem abgeschlossenen Zeitraum keine neue Zuordnung', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write(async (db) => {
+      await heizposition(db, 'c-zu', '2024-01')
+      await closeSettlement(db, { id: 's1', propertyId: 'objekt-1', period: periodKey('2024-01'), closedAt: '2025-03-01', sentAt: null, settlement: {} })
+      await createHeatingPlant(db, 'hp1', 'objekt-1', { energy: 'gas' })
+    })
+    await assert.rejects(() => opened.write((db) => updateEntity(db, 'costItems', 'c-zu', { heatingPlantId: 'hp1' })), refused(409, /abgeschlossen/))
+  })
+})
+
+test('Zähler und Heizposition: die Anlage eines anderen Objekts wird abgelehnt', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write(async (db) => {
+      await createProperty(db, 'objekt-2', { name: 'Zweites Haus', kind: 'mfh', address: '' })
+      await createHeatingPlant(db, 'hp2', 'objekt-2', { energy: 'oil' })
+    })
+    const fremd = (err: unknown) => err instanceof CrossPropertyError && /Heizanlage aber zu/.test(err.message)
+    await assert.rejects(() => opened.write((db) => heizposition(db, 'c1', '2025-01', { heatingPlantId: 'hp2' })), fremd)
+    await assert.rejects(() => opened.write((db) => createEntity(db, 'meters', 'm1', {
+      propertyId: 'objekt-1', name: 'Gas', unitId: null, type: 'sonstig', unit: 'm³', heatingPlantId: 'hp2', heatingRole: 'supply',
+    })), fremd)
+  })
+})
+
+test('Verbrauchsschlüssel nach Heizkostenverteilern: abgelehnt mit Verweis auf die Einzelbeträge', async () => {
+  await withDatabase(async (opened) => {
+    await assert.rejects(() => opened.write((db) => heizposition(db, 'c1', '2025-01', { key: 'meter', meterType: 'hkv' })), refused(400, /Einzelbeträge/))
+  })
+})
+
+test('Zähler der Anlage: mit Rolle und ohne Wohnung; jede Abweichung mit einem Satz', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write(async (db) => {
+      await wohnung(db, 'u1')
+      await createHeatingPlant(db, 'hp1', 'objekt-1', { energy: 'gas' })
+    })
+    const speicher = await opened.write((db) => createEntity(db, 'meters', 'm1', {
+      propertyId: 'objekt-1', name: 'Speicher', unitId: null, type: 'waerme', unit: 'kWh',
+      heatingPlantId: 'hp1', heatingRole: 'dhwHeat', remoteReadable: false, installedOn: '2022-03-01',
+    }))
+    assert.deepEqual(
+      ['heatingPlantId', 'heatingRole', 'remoteReadable', 'installedOn'].map((k) => fieldOf(speicher, k)),
+      ['hp1', 'dhwHeat', false, '2022-03-01'],
+    )
+    await assert.rejects(() => opened.write((db) => updateEntity(db, 'meters', 'm1', { unitId: 'u1' })), refused(400, /Wohnung gehört nicht zur Heizanlage/))
+    await assert.rejects(() => opened.write((db) => createEntity(db, 'meters', 'm2', {
+      propertyId: 'objekt-1', name: 'Gas', unitId: null, type: 'sonstig', unit: 'm³', heatingPlantId: 'hp1',
+    })), refused(400, /Was misst der Zähler/))
+    await assert.rejects(() => opened.write((db) => createEntity(db, 'meters', 'm3', {
+      propertyId: 'objekt-1', name: 'Gesamt', unitId: null, type: 'kaltwasser', unit: 'm³', heatingPlantId: 'hp1', heatingRole: 'totalHeat',
+    })), refused(400, /Sparte „Wärme“/))
+    await assert.rejects(() => opened.write((db) => createEntity(db, 'meters', 'm4', {
+      propertyId: 'objekt-1', name: 'HKV', unitId: null, type: 'hkv', unit: 'Einheiten',
+    })), refused(400, /Heizkörper/))
+    await assert.rejects(() => opened.write((db) => createEntity(db, 'meters', 'm5', {
+      propertyId: 'objekt-1', name: 'HKV Bad', unitId: 'u1', type: 'hkv', unit: 'Einheiten', installedOn: '15.12.2021',
+    })), refused(400, /kein Datum/))
+    const hkv = await opened.write((db) => createEntity(db, 'meters', 'm6', {
+      propertyId: 'objekt-1', name: 'HKV Bad', unitId: 'u1', type: 'hkv', unit: 'Einheiten', remoteReadable: true,
+    }))
+    assert.equal(fieldOf(hkv, 'remoteReadable'), true)
+    assert.equal(fieldOf(hkv, 'heatingPlantId'), undefined)
+    const geloest = await opened.write((db) => updateEntity(db, 'meters', 'm1', { heatingPlantId: null }))
+    assert.equal(fieldOf(geloest, 'heatingRole'), undefined, 'ohne Anlage keine Rolle')
   })
 })

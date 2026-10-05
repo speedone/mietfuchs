@@ -26,6 +26,7 @@ import {
   prepayments, readings, tenancies, units,
 } from '../src/db/schema.ts'
 import { calendarPeriod } from '../../shared/period.ts'
+import { createHeatingPlant } from '../src/db/heating.ts'
 
 const tempDir = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-repo-'))
 
@@ -373,9 +374,6 @@ test('Wieder öffnen verwirft den eingefrorenen Stand', async () => {
 // ---------- Der Wächter über die Verschmelzung ----------
 
 const EXTERNAL_COLUMNS = new Set(['externalMeasure', 'externalTotal', 'externalTotalCents', 'participantsLimited'])
-// Die Spalten der Heizanlage (Heizung PR 4) verschmilzt repository.ts erst mit dem Schritt, der
-// Zähler und Kostenpositionen an die Anlage hängt; dort verschwindet diese Ausnahme wieder.
-const HEATING_COLUMNS_LATER = new Set(['heatingPlantId', 'heatingRole', 'remoteReadable', 'installedOn'])
 
 test('Die Verschmelzung erreicht jede Spalte des Schemas', async () => {
   // **Der Test, der diese Datei am Leben hält.** Die Verschmelzung liest Feld für Feld; wer eine
@@ -407,11 +405,15 @@ test('Die Verschmelzung erreicht jede Spalte des Schemas', async () => {
         key: 'direct', directUnitId: 'u1', meterType: 'kaltwasser', labor35aCents: 400, invoiceFile: 'b.pdf',
         // #208: Leistungszeitraum im Jahr der Position, das Jahr der Zahlung ist dann dieses.
         serviceFrom: '2024-01-01', serviceTo: '2024-12-31', taxYear: 2024, heatingPart: 'fuel',
+        heatingPlantId: 'hp1',
       },
     },
     {
       coll: 'meters', table: meters,
-      body: { propertyId: 'objekt-1', name: 'Küche', unitId: 'u1', type: 'kaltwasser', meterNumber: 'ABC', unit: 'm³' },
+      body: {
+        propertyId: 'objekt-1', name: 'Speicher', unitId: null, type: 'waerme', meterNumber: 'ABC', unit: 'kWh',
+        heatingPlantId: 'hp1', heatingRole: 'dhwHeat', remoteReadable: false, installedOn: '2022-03-01',
+      },
     },
     {
       coll: 'readings', table: readings,
@@ -429,6 +431,7 @@ test('Die Verschmelzung erreicht jede Spalte des Schemas', async () => {
       await createEntity(db, 'units', 'u1', { propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true })
       await createEntity(db, 'tenancies', 't1', { unitId: 'u1', tenantName: 'A', persons: 1, start: '2024-01-01' })
       await createEntity(db, 'meters', 'm1', { propertyId: 'objekt-1', name: 'K', unitId: 'u1', type: 'kaltwasser', unit: 'm³' })
+      await createHeatingPlant(db, 'hp1', 'objekt-1', { energy: 'gas' })
     })
 
     for (const { coll, table, body } of proben) {
@@ -442,7 +445,6 @@ test('Die Verschmelzung erreicht jede Spalte des Schemas', async () => {
         // Die drei Spalten der Angaben einer Gemeinschaft stehen im Modell als ein Wert
         // `externalBasis`; dass jede davon ankommt, prüft der Vergleich darunter.
         if (coll === 'costItems' && EXTERNAL_COLUMNS.has(spalte)) continue
-        if (HEATING_COLUMNS_LATER.has(spalte)) continue
         assert.ok(
           Object.hasOwn(body, spalte),
           `${coll}: Die Probe belegt die Spalte „${spalte}" nicht, der Test bewacht sie deshalb nicht`,
