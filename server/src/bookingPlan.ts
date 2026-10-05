@@ -21,6 +21,7 @@ import { sameCostCandidates } from '../../shared/duplicates.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import { heatingPeriodsEndingIn } from '../../shared/heatingPeriod.ts'
 import { paymentYear, spansTwoYears } from '../../shared/period.ts'
+import { isSplitPart } from '../../shared/splitPart.ts'
 import { attachedText, candidatePool, carriesCredit, changeOf, lineCandidates, lineDraft, lineState, ownItemIds, twinText, type BookedLine, type LineChange } from './assessment.ts'
 
 export type PlanInput = {
@@ -216,6 +217,13 @@ export function planBooking(input: PlanInput, decisions: readonly LineDecision[]
       }
       if (carriesCredit(target, input.booked)) {
         errors.push({ idx: d.idx, message: `${quote(target.description)} ist eine Gutschrift. Eine Gutschrift wird nie mit einer Rechnung verrechnet, damit sie auf der Abrechnung sichtbar bleibt; legen Sie ${named(line)} als eigene Position an.` })
+        continue
+      }
+      // Review der Laienprobe (Runde 1): Ein Teil einer nach Tagen aufgeteilten Rechnung ist kein Ziel.
+      // Die Summenregel setzte seinen Betrag auf die Summe der Zeilen, also auf die ganze Rechnung, und
+      // die übrigen Teile stünden zusätzlich da (gemessen 681,73 € statt 470 €).
+      if (isSplitPart(input.rules, target)) {
+        errors.push({ idx: d.idx, openItemId: target.id, message: `${quote(target.description)} ist ein Teil einer nach Tagen aufgeteilten Rechnung; ihr Betrag ist nur der Anteil dieses Zeitraums. Verknüpfen lässt sich eine Zeile damit nicht. Öffnen Sie die Position, wenn sich der Betrag der Rechnung geändert hat, oder legen Sie ${named(line)} als eigene Position an.` })
         continue
       }
       if (FORM_ONLY.includes(target.key)) {

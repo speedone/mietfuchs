@@ -54,12 +54,12 @@ const valueOf = (label: RegExp): string => {
 }
 
 test('Bearbeiten: jedes Auswahlfeld zeigt den gespeicherten Wert', async () => {
-  plants = [PLANT]
+  plants = [{ ...PLANT, method: 'service' }]
   renderCard()
   await waitFor(() => expect(screen.getByRole('button', { name: 'Ändern' })).toBeTruthy())
   fireEvent.click(screen.getByRole('button', { name: 'Ändern' }))
   expect(valueOf(/Womit wird geheizt/)).toBe('districtHeating')
-  expect(valueOf(/Wer erstellt Ihre Heizkostenabrechnung/)).toBe('manual')
+  expect(valueOf(/Wer erstellt Ihre Heizkostenabrechnung/)).toBe('service')
   expect(valueOf(/aus der Ferne ablesbar/)).toBe('partial')
   expect(valueOf(/nach dem 01\.12\.2021 eingebaut/)).toBe('some')
   expect(valueOf(/einzeln als Ersatz oder Ergänzung/)).toBe('single')
@@ -80,4 +80,21 @@ test('Einrichten: Fragen ohne Vorauswahl, und das Anlegen nimmt die Positionen d
   await waitFor(() => expect(sent).toHaveLength(1))
   expect(sent[0]?.method).toBe('POST')
   expect(sent[0]?.body).toMatchObject({ energy: 'gas', method: 'service', source: 'building', units: null, assignItemIds: ['c1'] })
+})
+
+// Laienprobe B8, B9: Ohne Messdienst keine Frage nach der Fernablesung; jede Frage hat ihr „Woran erkenne ich das?“.
+test('Laienprobe B8, B9: „Niemand“ fragt nicht nach Fernablesung; Hilfesätze zu Energie, Abrechnung und Wohnungen', async () => {
+  plants = [PLANT]
+  renderCard()
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Ändern' })).toBeTruthy())
+  expect(screen.queryByText(/Aus der Ferne ablesbar/)).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Ändern' }))
+  expect(valueOf(/Wer erstellt Ihre Heizkostenabrechnung/)).toBe('manual')
+  expect(screen.queryByLabelText(/aus der Ferne ablesbar/)).toBeNull()
+  expect(screen.queryByLabelText(/nach dem 01\.12\.2021 eingebaut/)).toBeNull()
+  expect(screen.getByText(/wählen Sie Fernwärme, auch wenn im Keller ein Kessel steht/)).toBeTruthy()
+  expect(screen.getByText(/etwa von ista, Techem, Brunata, Minol oder KALO/)).toBeTruthy()
+  expect(screen.getByText(/Angeschlossen ist jede Wohnung, die von dieser Heizung warm wird/)).toBeTruthy()
+  fireEvent.change(screen.getByLabelText(/Wer erstellt Ihre Heizkostenabrechnung/), { target: { value: 'service' } })
+  expect(screen.getByLabelText(/aus der Ferne ablesbar/)).toBeTruthy()
 })

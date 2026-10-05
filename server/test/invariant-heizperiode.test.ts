@@ -89,7 +89,7 @@ async function scenario(seed: number): Promise<void> {
     const vorschau = await opened.read((db) => previewSeparate(db, 'hp1', { separate: true, month: x }, TODAY)) ?? assert.fail('keine Anlage')
     assert.deepEqual(vorschau.blocked, [], `Fall ${seed}: Einschalten ab ${x}`)
     const steps = Object.fromEntries(vorschau.steps.map((s) => [s.tenancyId, Object.fromEntries(s.rows.map((row) => [row.from, row.heatingCents]))]))
-    const ein = await opened.write((db) => applySeparate(db, 'hp1', { separate: true, month: x, answers: { steps, token: vorschau.token } }, TODAY))
+    const ein = await opened.write((db) => applySeparate(db, 'hp1', { separate: true, month: x, answers: { steps, token: vorschau.token, understood: true } }, TODAY))
     assert.ok(ein && 'plant' in ein, `Fall ${seed}: eingeschaltet`)
     if (r() < 0.5 && !closedP.has('2025-01')) await closeP('2025-01')
     if (r() < 0.4) {
@@ -101,7 +101,7 @@ async function scenario(seed: number): Promise<void> {
     if (r() < 0.6) {
       const merge = r() < 0.5
       const ausVorschau = await opened.read((db) => previewSeparate(db, 'hp1', { separate: false }, TODAY)) ?? assert.fail('keine Anlage')
-      const aus = await opened.write((db) => applySeparate(db, 'hp1', { separate: false, answers: { merge, token: ausVorschau.token } }, TODAY))
+      const aus = await opened.write((db) => applySeparate(db, 'hp1', { separate: false, answers: { merge, token: ausVorschau.token, understood: true } }, TODAY))
       assert.ok(aus && 'plant' in aus, `Fall ${seed}: ausgeschaltet`)
     }
     if (r() < 0.5 && !closedP.has('2026-01')) await closeP('2026-01')

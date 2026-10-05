@@ -252,7 +252,7 @@ test('Gutschrift (#139): der Hinweis am Betragsfeld steht da, und „−54,00“
   expect(sent[0].body).toMatchObject({ amountCents: -5400 })
 })
 
-test('Heizposition mit eigener Heizperiode (Durchsicht von #231): Heizperiode, Jahr der Zahlung sichtbar und vorbelegt mit dem Jahr ihres Endes', async () => {
+test('Heizposition mit eigener Heizperiode (Durchsicht von #231, Laienprobe B15): Heizperiode, Jahr der Zahlung sichtbar, ohne Beleg nicht vorbelegt und Pflicht', async () => {
   plants = [{
   id: 'hp1', propertyId: 'objekt-1', name: '', energy: 'gas', supply: 'central', method: 'service', separateSettlement: null,
   devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null, capturedOnOct2024: null,
@@ -265,9 +265,30 @@ test('Heizposition mit eigener Heizperiode (Durchsicht von #231): Heizperiode, J
   const [, beginn, ende] = /(\d{4})\/(\d{4})/.exec(option) ?? []
   if (!beginn || !ende) throw new Error(`keine Heizperiode über zwei Jahre: ${option}`)
   const jahr = await waitFor(() => select(/Jahr der Zahlung/i))
-  expect(jahr.value).toBe(ende)
+  expect(jahr.value).toBe('')
   expect([...jahr.options].map((o) => o.value).filter(Boolean)).toEqual([beginn, ende, String(Number(ende) + 1)])
+  expect(screen.getByText(/in Abschlägen über zwei Kalenderjahre bezahlt/)).toBeTruthy()
+  expect(screen.getByText(/der um den\s+Jahreswechsel \(bis zehn Tage davor oder danach\) fällig ist und in dieser Zeit gezahlt wird, zählt zu dem Jahr, zu dem er gehört/)).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/i }))
+  expect(await screen.findByText(/Bitte geben Sie das Jahr der Zahlung an/)).toBeTruthy()
+  expect(sent).toHaveLength(0)
+  fireEvent.change(jahr, { target: { value: ende } })
   fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/i }))
   await waitFor(() => expect(sent).toHaveLength(1))
   expect(sent[0].body).toMatchObject({ period: heizperiode.value, heatingPlantId: 'hp1', taxYear: Number(ende) })
+})
+
+// Laienprobe B19: Der Betrag der Messdienstposition ist der vor dem Abzug; das Formular sagt es dort.
+test('Laienprobe B19: Heizung mit Einzelbeträgen bei Messdienst-Anlage nennt den Betrag vor dem CO₂-Abzug', async () => {
+  plants = [{
+    id: 'hp1', propertyId: 'objekt-1', name: '', energy: 'gas', supply: 'central', method: 'service', separateSettlement: null,
+    devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null, capturedOnOct2024: null,
+    warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null, periodChanges: [], separateSpans: [], units: null, newDevicesInstall: null,
+  }]
+  await openForm()
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Heizung und Warmwasser' } })
+  expect(screen.queryByText(/Kosten vor „Abzüglich CO₂-Kosten Vermieter“/)).toBeNull()
+  await waitFor(() => expect([...select(/Umlageschlüssel/i).options].some((o) => o.value === 'amounts')).toBe(true))
+  fireEvent.change(select(/Umlageschlüssel/i), { target: { value: 'amounts' } })
+  expect(await screen.findByText(/Tragen Sie die Kosten vor „Abzüglich CO₂-Kosten Vermieter“ ein/)).toBeTruthy()
 })

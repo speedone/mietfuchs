@@ -5,6 +5,7 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import Co2Card from './Co2Card'
+import { UIProvider } from './feedback'
 import { CO2_QUESTION } from '../co2Form'
 import { periodKey } from '../../../shared/period.ts'
 import type { Co2Statement, HeatingPeriodView, Tenancy } from '../types'
@@ -69,4 +70,32 @@ test('Felder mit Fundort statt Formelzeichen (Durchsicht M3, I3)', () => {
   expect(screen.getByText(/Summe der Nutzerkosten Heizungsanlage/)).toBeTruthy()
   expect(screen.getByLabelText(/CO₂-Ausstoß insgesamt laut Abrechnung \(kg\)/)).toBeTruthy()
   expect(screen.getByLabelText(/Wohnfläche laut Abrechnung \(m²\)/)).toBeTruthy()
+})
+
+// Laienprobe B20, B21, B22.
+test('B20: Geht die Probe nicht auf, fragt Speichern nach, statt still zu speichern', async () => {
+  render(<UIProvider><Co2Card view={view({ ...shown, serviceUsersTotalCents: 90000 })} tenancies={TENANCIES} unitsCount={1} onSaved={() => {}} /></UIProvider>)
+  expect(screen.getByText(/^Probe:/).textContent).toMatch(/✗/)
+  fireEvent.click(screen.getByText('CO₂-Angaben speichern'))
+  expect(await screen.findByText('Die Probe geht nicht auf')).toBeTruthy()
+  expect(sent).toHaveLength(0)
+  fireEvent.click(screen.getByRole('button', { name: 'Trotzdem speichern' }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+})
+
+test('B21: Ohne Ausstoß insgesamt und Fläche sagt die Karte, dass sie für den Ausweis nötig sind', () => {
+  render(<Co2Card view={view(shown)} tenancies={TENANCIES} unitsCount={1} onSaved={() => {}} />)
+  expect(screen.getByText(/Für den Ausweis in der Abrechnung mindestens nötig: der CO₂-Ausstoß insgesamt \(kg\) und die Wohnfläche/)).toBeTruthy()
+  cleanup()
+  render(<Co2Card view={view({ ...shown, serviceEmissionsKg: 3000, serviceAreaM2: 100 })} tenancies={TENANCIES} unitsCount={1} onSaved={() => {}} />)
+  expect(screen.queryByText(/Für den Ausweis in der Abrechnung mindestens nötig/)).toBeNull()
+})
+
+test('B22: Das Feld für die eigene Wohnung gibt es nur mit selbst bewohnter Wohnung', () => {
+  const deducted = { ...shown, method: 'serviceDeducted' as const }
+  render(<Co2Card view={view(deducted)} tenancies={TENANCIES} unitsCount={1} onSaved={() => {}} />)
+  expect(screen.queryByLabelText(/davon für Ihre selbst bewohnte Wohnung/)).toBeNull()
+  cleanup()
+  render(<Co2Card view={view(deducted)} tenancies={TENANCIES} unitsCount={1} hasSelfUsed onSaved={() => {}} />)
+  expect(screen.getByLabelText(/davon für Ihre selbst bewohnte Wohnung/)).toBeTruthy()
 })

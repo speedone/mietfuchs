@@ -28,15 +28,17 @@ import { and, eq, inArray } from 'drizzle-orm'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 import { plantRules, settledSeparately } from '../../../shared/heatingPeriod.ts'
 import {
-  formatDayRange, parsePeriodKey, periodContaining, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, spansTwoYears, startYearOf,
+  formatDayRange, parsePeriodKey, periodContaining, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, settlementDeadline, spansTwoYears, startYearOf,
 } from '../../../shared/period.ts'
 import { dayAfter } from '../../../shared/law/register.ts'
-import type { BillingPeriod, CostItem, PeriodChangePreview, PeriodKey, PeriodRules, Property, Tenancy } from '../../../shared/types.ts'
+import type { BillingPeriod, CostItem, PeriodChangePreview, PeriodEffect, PeriodKey, PeriodRules, Property, Tenancy } from '../../../shared/types.ts'
 import { baseDescription, splitByService, type ServicePart } from '../serviceSplit.ts'
-import type { Database } from './client.ts'
-import { readClosedSettlements, readCostItems, readHeatingPlants, readProperties, readTenancies, readUnits } from './read.ts'
+import type { Database, Transaction } from './client.ts'
+import { readClosedSettlements, readCostItems, readHeatingPlants, readProperties, readStock, readTenancies, readUnits } from './read.ts'
+import { dryRun, earliestTenancyStart, lostClaims, outcomeOf } from './dryRun.ts'
 import { PeriodConflict, PeriodError, rewriteCostItemFamily, writeCostItemParts } from './repository.ts'
-import { assessments, closedSettlementHistory, periodChanges, prepaymentOverrides, properties } from './schema.ts'
+import { assessmentLines, assessments, closedSettlementHistory, periodChanges, prepaymentOverrides, properties } from './schema.ts'
+import { euro } from '../../../shared/costItem.ts'
 
 const MONTH_NAMES = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember']
 const monthName = (key: string): string => `${MONTH_NAMES[Number(key.slice(5, 7)) - 1] ?? key.slice(5, 7)} ${key.slice(0, 4)}`
@@ -114,13 +116,21 @@ function bestFor(a: Affected, options: readonly BillingPeriod[]): BillingPeriod 
   return best
 }
 
+type Group = { from: PeriodKey; old: BillingPeriod; heating: boolean; items: CostItem[]; options: BillingPeriod[]; split: Map<string, ServicePart[]> | null }
+
+// Das Jahr der Zahlung, das eine Position heute für die Steuer hat (Entwurf 3.10): das gespeicherte,
+// sonst das Kalenderjahr ihres Zeitraums.
+const effectiveTaxYear = (item: Pick<CostItem, 'taxYear' | 'period'>): number => item.taxYear ?? startYearOf(item.period)
+
 type OverrideAsk = { tenancy: Tenancy; drop: Set<PeriodKey>; from: { key: PeriodKey; label: string; cents: number }[]; ask: Map<PeriodKey, { period: BillingPeriod; months: string[] }> }
 
 type Plan = {
   preview: PeriodChangePreview
   // `family`: die bisherigen Teile einer aufgeteilten Rechnung, die als Ganzes neu geteilt wird.
   splits: { item: CostItem; parts: ServicePart[]; family?: CostItem[] }[]
-  groups: Map<PeriodKey, { items: CostItem[]; options: BillingPeriod[] }>
+  // Je Gruppe (Laienprobe B2): kalte Kosten und Heizkosten eines bisherigen Zeitraums getrennt, die
+  // kalten mit den Teilen, in die sie nach Tagen aufgeteilt würden.
+  groups: Map<string, Group>
   overrideRekeys: { tenancyId: string; from: PeriodKey; to: PeriodKey }[]
   overrideAsks: OverrideAsk[]
   assessmentMoves: { id: string; to: PeriodKey }[]
@@ -128,6 +138,7 @@ type Plan = {
   regrows: { item: CostItem; target: BillingPeriod }[]
   taxEntries: Map<string, PeriodChangePreview['taxYears'][number]>
   next: PeriodRules
+  before: PeriodRules
 }
 
 // Das Jahr der Zahlung einer Position in einem Zeitraum über zwei Kalenderjahre (Entwurf 3.10,
@@ -171,6 +182,9 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
   const closed = (await readClosedSettlements(db)).filter((c) => c.propertyId === propertyId)
   const history = await db.select({ period: closedSettlementHistory.period }).from(closedSettlementHistory).where(eq(closedSettlementHistory.propertyId, propertyId))
   const assessmentRows = await db.select({ id: assessments.id, file: assessments.file, period: assessments.requestedPeriod }).from(assessments).where(eq(assessments.propertyId, propertyId))
+  // Positionen mit gebuchten Belegzeilen (Review der Laienprobe, Runde 1): Ihr Betrag ist die Summe
+  // der Zeilen (Summenregel der Belegbuchung); geteilt stünde ein Teil gegen die ganze Summe.
+  const bookedIds = new Set((await db.select({ id: assessmentLines.costItemId }).from(assessmentLines)).flatMap((r) => (r.id === null ? [] : [r.id])))
 
   const memo = new Map<PeriodKey, Affected | null>()
   const changed = (key: PeriodKey): Affected | null => {
@@ -292,9 +306,20 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
       splits.push({ item, parts })
       continue
     }
-    const g = groups.get(a.key) ?? { items: [], options: optionsFor(a) }
+    // Laienprobe B2: Kalte Kosten ohne Leistungszeitraum standen im bisherigen Zeitraum und sind nach
+    // dem Leistungsprinzip (Entwurf 3.4) dessen Kosten. Ganz in einen Rumpf gelegt, stünde dort die
+    // Jahresrechnung gegen wenige Monate Vorauszahlung; deshalb wird das Aufteilen nach Tagen über den
+    // bisherigen Zeitraum angeboten und vorbelegt. Heizkosten nie (VIII ZR 156/11, Entwurf 3.4).
+    const heating = item.category === HEATING_CATEGORY
+    const id = heating ? `${a.key}|heizung` : a.key
+    const g = groups.get(id) ?? { from: a.key, old: a.old, heating, items: [], options: optionsFor(a), split: heating ? null : new Map<string, ServicePart[]>() }
     g.items.push(item)
-    groups.set(a.key, g)
+    if (g.split !== null) {
+      const parts = splitByService(next, { ...item, serviceFrom: a.old.from, serviceTo: a.old.to })
+      if (parts.length > 1) g.split.set(item.id, parts)
+      else g.split = null
+    }
+    groups.set(id, g)
   }
 
   const overrideRekeys: Plan['overrideRekeys'] = []
@@ -349,16 +374,46 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
       amountCents: (family ?? [item]).reduce((sum, c) => sum + c.amountCents, 0),
       parts: parts.map((p) => ({ period: p.period.key, label: periodLabel(p.period), amountCents: p.amountCents })),
     })),
-    groups: [...groups.entries()].map(([from, g]) => {
-      const a = changed(from) ?? noFinding(from)
+    groups: [...groups.entries()].map(([id, g]) => {
+      const a = changed(g.from) ?? noFinding(g.from)
+      const yearIn = (item: CostItem, p: BillingPeriod): number => (spansTwoYears(p) ? taxEntry(item, p).suggested : Number(p.from.slice(0, 4)))
+      const { notes, taxShift: taxShiftBySplit } = g.split === null ? { notes: [], taxShift: false } : splitNotes(g, bookedIds, yearIn)
+      const advisable = g.split !== null && notes.length === 0
+      // Ganz verschoben: vorbelegt ist ein Zeitraum, in dem jede Position ihr Jahr der Zahlung behält,
+      // sonst der mit der größten Überschneidung (Review der Laienprobe, Runde 1).
+      const shiftOf = (p: BillingPeriod): number => g.items.reduce((sum, i) => sum + (yearIn(i, p) !== effectiveTaxYear(i) ? i.amountCents : 0), 0)
+      const keeping = g.options.filter((p) => shiftOf(p) === 0)
+      // Verschöbe das Teilen das Jahr der Zahlung, gibt es keine Vorgabe: Ganz in einen Zeitraum
+      // gelegt, verschöbe sich entweder ebenfalls das Steuerjahr oder die Abrechnung; entscheiden muss
+      // der Vermieter, und die Vorschau nennt beides. Bei gebuchten Belegzeilen gilt ein Zeitraum, der
+      // das Steuerjahr behält. Ohne Teilen (Heizkosten) wie bisher.
+      const whole = g.split === null ? bestFor(a, g.options).key
+        : taxShiftBySplit ? ''
+          : keeping.length > 0 ? bestFor(a, keeping).key : ''
       return {
-        from,
+        id,
+        from: g.from,
         fromLabel: periodLabel(a.old),
+        heating: g.heating,
         items: g.items.map((i) => ({ costItemId: i.id, description: i.description, amountCents: i.amountCents })),
         options: g.options.map((p) => ({ key: p.key, label: periodLabel(p) })),
-        suggested: bestFor(a, g.options).key,
+        split: g.split === null ? null : {
+          range: formatDayRange(g.old.from, g.old.to),
+          items: [...g.split.entries()].map(([costItemId, parts]) => ({ costItemId, parts: parts.map((p) => ({ period: p.period.key, label: periodLabel(p.period), amountCents: p.amountCents })) })),
+          notes,
+        },
+        taxShifts: g.options.flatMap((p) => {
+          const cents = shiftOf(p)
+          if (cents === 0) return []
+          // Je Position mit ihrem eigenen Jahr (Review Runde 2): Positionen einer Gruppe können verschiedene haben.
+          const moved = g.items.filter((i) => yearIn(i, p) !== effectiveTaxYear(i))
+            .map((i) => `„${i.description}“ ${euro(i.amountCents)} von ${effectiveTaxYear(i)} nach ${yearIn(i, p)}`)
+          return [{ key: p.key, text: `Ganz nach ${periodLabel(p)} verschoben, wechselten für die Steuer ${moved.length === 1 ? 'das Jahr der Zahlung' : `zusammen ${euro(cents)} das Jahr der Zahlung`}: ${moved.join('; ')}, obwohl sich an der Zahlung nichts ändert.` }]
+        }),
+        suggested: advisable ? 'split' : whole,
       }
     }),
+    effects: [],
     overrides: [...asks.values()].map((o) => ({
       tenancyId: o.tenancy.id,
       tenantName: o.tenancy.tenantName,
@@ -376,8 +431,42 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
   for (const { item, target } of regrows) ask(item, target)
   preview.taxYears = [...taxEntries.values()]
   preview.token = tokenOf(preview)
-  return { preview, splits, groups, overrideRekeys, overrideAsks: [...asks.values()], assessmentMoves, regrows, taxEntries, next }
+  return { preview, splits, groups, overrideRekeys, overrideAsks: [...asks.values()], assessmentMoves, regrows, taxEntries, next, before }
 }
+
+// Warum das Aufteilen einer Gruppe nicht vorbelegt wird (Review der Laienprobe, Runde 1): Eine
+// Position mit gebuchten Belegzeilen hätte danach Teile, deren Summe die Belegbuchung nicht kennt;
+// und ein Teil, der in ein anderes Jahr der Zahlung fiele, verschöbe Werbungskosten zwischen zwei
+// Steuererklärungen, ohne dass sich an der Zahlung etwas geändert hat. Wählbar bleibt es; die Sätze
+// sagen dann, was es bewirkt, die Verschiebung in Euro.
+function splitNotes(g: Group, bookedIds: ReadonlySet<string>, partYear: (item: CostItem, p: BillingPeriod) => number): { notes: string[]; taxShift: boolean } {
+  const notes: string[] = []
+  const booked = g.items.filter((i) => bookedIds.has(i.id))
+  if (booked.length > 0) {
+    notes.push(`${booked.map((i) => `„${i.description}“`).join(', ')} ${booked.length === 1 ? 'ist' : 'sind'} aus einem Beleg gebucht. Geteilt ließe sich ein Teil nicht mehr mit einer weiteren Zeile dieses Belegs verknüpfen; vorbelegt ist deshalb, die Rechnung ganz zu verschieben.`)
+  }
+  const shifts = new Map<string, number>()
+  for (const item of g.items) {
+    const was = effectiveTaxYear(item)
+    for (const part of g.split?.get(item.id) ?? []) {
+      const year = partYear(item, part.period)
+      if (year !== was) shifts.set(`${was}→${year}`, (shifts.get(`${was}→${year}`) ?? 0) + part.amountCents)
+    }
+  }
+  for (const [move, cents] of shifts) {
+    const [from, to] = move.split('→')
+    notes.push(`Geteilt kämen für die Steuer ${euro(cents)} aus dem Jahr der Zahlung ${from} nach ${to}, obwohl sich an der Zahlung nichts ändert. Wählen Sie das Teilen nur, wenn das stimmt, und prüfen Sie danach das Jahr der Zahlung der Teile.`)
+  }
+  return { notes, taxShift: shifts.size > 0 }
+}
+
+// Laienprobe B3, Review Runde 1: begründet, nicht absolut. § 556 Abs. 3 S. 3 BGB schließt die
+// Nachforderung aus, „es sei denn, der Vermieter hat die verspätete Geltendmachung nicht zu
+// vertreten“; wer den Zeitraum selbst rückwirkend umstellt, hat die Verspätung zu vertreten.
+export function passedDeadlineText(labels: readonly string[], cause = 'den Zeitraum selbst umstellen'): string {
+  return `Die Abrechnungsfrist für ${labels.join(', ')} ist schon abgelaufen. Weil Sie ${cause}, haben Sie die Verspätung zu vertreten; eine Nachzahlung aus diesem Zeitraum können Sie deshalb nicht mehr verlangen (§ 556 Abs. 3 Satz 3 BGB).`
+}
+
 
 // Eine Gruppe ohne betroffenen Zeitraum gibt es nicht; der Aufruf oben fragt nur bekannte.
 function noFinding(key: PeriodKey): never {
@@ -385,24 +474,94 @@ function noFinding(key: PeriodKey): never {
 }
 
 export async function previewPeriodChange(db: Database, propertyId: string, rawRules: unknown, today: string): Promise<PeriodChangePreview | null> {
-  return (await planPeriodChange(db, propertyId, rawRules, today))?.preview ?? null
+  const plan = await planPeriodChange(db, propertyId, rawRules, today)
+  return plan === null ? null : withEffects(db, propertyId, plan, today)
 }
 
-type Answers = { groups: Record<string, unknown>; overrides: Record<string, unknown>; taxYears: Record<string, unknown>; token: unknown }
+// Laienprobe B3: Was der Wechsel mit Abrechnungen macht, die schon begonnen haben. Ein Wechsel mit
+// Beginn in der Vergangenheit legt einen Rumpf an, dessen Frist (§ 556 Abs. 3 S. 2 BGB) schon
+// abgelaufen sein kann; eine Nachforderung daraus ist dann ausgeschlossen (S. 3), auch wenn die
+// bisherige Abrechnung über das ganze Jahr noch offen war. Die Vorschau nennt je solchem Zeitraum die
+// Frist und, im Probelauf mit den Vorschlägen dieser Vorschau gerechnet, das Ergebnis je Mieter vorher
+// und nachher. Ein abgeschlossener Zeitraum kommt hier nicht vor: Ihn ändert der Wechsel nie (blocked).
+//
+// Mit `given` (beim Speichern) wird mit den Antworten des Vermieters gerechnet, sonst mit den
+// Vorschlägen; wo es keinen gibt, mit dem Aufteilen nach Tagen bzw. dem ersten Zeitraum.
+async function withEffects(db: Database, propertyId: string, plan: Plan, today: string, given?: Answers): Promise<PeriodChangePreview> {
+  const { before, next } = plan
+  const touched = (p: BillingPeriod): boolean => {
+    const old = periodOfKey(before, p.key)
+    return old === null || old.from !== p.from || old.to !== p.to
+  }
+  const firstOld = periodsBetween(before, '2000-01-01', today).find((p) => {
+    const now = periodOfKey(next, p.key)
+    return now === null || now.from !== p.from || now.to !== p.to
+  })
+  if (firstOld === undefined) return plan.preview
+  const stockBefore = await readStock(db)
+  const moved = await earliestTenancyStart(db, propertyId)
+  if (moved === null) return plan.preview
+  const targets = periodsBetween(next, moved > firstOld.from ? moved : firstOld.from, today).filter((p) => p.from <= today && touched(p))
+  if (targets.length === 0) return plan.preview
+  const answers: Answers = given ?? {
+    groups: Object.fromEntries(plan.preview.groups.map((g) => [g.id, g.suggested || (g.split !== null ? 'split' : g.options[0]?.key ?? '')])),
+    overrides: Object.fromEntries(plan.overrideAsks.map((o) => [o.tenancy.id, Object.fromEntries([...o.ask.keys()].map((k) => [k, null]))])),
+    taxYears: {},
+    token: plan.preview.token,
+  }
+  const taxYearIn = (target: BillingPeriod, item: CostItem): number | null => {
+    const entry = plan.taxEntries.get(taxKey(item, target))
+    if (entry === undefined) return null
+    const chosen = answers.taxYears[entry.key]
+    return typeof chosen === 'number' && entry.options.includes(chosen) ? chosen : entry.suggested
+  }
+  const after = await dryRun(db, (tx) => writeChangeIn(tx, plan, answers, propertyId, next, () => crypto.randomUUID(), taxYearIn),
+    (stock) => targets.map((p) => outcomeOf(stock, propertyId, p)))
+  const effects = targets.map((p, i): PeriodEffect => {
+    const deadline = settlementDeadline(p)
+    const passed = deadline < today
+    const old = periodOfKey(before, p.key)
+    const beforeOutcome = old === null ? null : outcomeOf(stockBefore, propertyId, old)
+    const now = after?.[i] ?? null
+    const tenants = (now?.tenants ?? []).map((t) => ({
+      tenantName: t.tenantName,
+      beforeCents: beforeOutcome?.tenants.find((b) => b.tenancyId === t.tenancyId)?.balanceCents ?? null,
+      afterCents: t.balanceCents,
+    }))
+    return {
+      label: periodLabel(p),
+      deadline,
+      passed,
+      replaces: periodsBetween(before, p.from, p.to).filter((o) => {
+        const n = periodOfKey(next, o.key)
+        return n === null || n.from !== o.from || n.to !== o.to
+      }).map((o) => ({ label: periodLabel(o), deadline: settlementDeadline(o) })),
+      tenants,
+      lostClaimsCents: passed ? lostClaims(tenants, old !== null && settlementDeadline(old) < today) : 0,
+    }
+  })
+  return { ...plan.preview, effects }
+}
+
+type Answers = { groups: Record<string, unknown>; overrides: Record<string, unknown>; taxYears: Record<string, unknown>; token: unknown; understood?: unknown }
 const objectOr = (value: unknown): Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value) ? Object.fromEntries(Object.entries(value)) : {}
 const readAnswers = (raw: unknown): Answers => {
   const a = objectOr(raw)
-  return { groups: objectOr(a.groups), overrides: objectOr(a.overrides), taxYears: objectOr(a.taxYears), token: a.token }
+  return { groups: objectOr(a.groups), overrides: objectOr(a.overrides), taxYears: objectOr(a.taxYears), token: a.token, understood: a.understood }
 }
 const isCents = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0
 
-// Was an Antworten fehlt oder nicht passt, als Sätze für die Meldung.
+// Was an Antworten fehlt oder nicht passt, als Sätze für die Meldung. Ein Tab von vor der Laienprobe
+// antwortet je bisherigem Zeitraum (`from`); seit kalte und Heizkosten getrennte Gruppen mit gleichem
+// `from` haben, fehlt ihm die Antwort der Heizgruppe (`<from>|heizung`), und es gibt die 409 mit
+// Satz. Absichtlich: Die Heizkosten still dem Zeitraum der kalten Gruppe zu folgen ließe, wäre die
+// Warnung aus B2 umgangen.
 function missingAnswers(plan: Plan, answers: Answers): string[] {
   const missing: string[] = []
-  for (const [from, g] of plan.groups) {
-    const chosen = answers.groups[from]
-    if (!g.options.some((p) => p.key === chosen)) {
+  for (const [id, g] of plan.groups) {
+    const chosen = answers.groups[id]
+    if (!(chosen === 'split' && g.split !== null) && !g.options.some((p) => p.key === chosen)) {
       missing.push(`Zeitraum für ${g.items.map((i) => `„${i.description}“`).join(', ')} wählen.`)
     }
   }
@@ -429,13 +588,22 @@ export async function applyPeriodChange(
 ): Promise<{ property: Property } | { error: string; preview: PeriodChangePreview } | null> {
   const plan = await planPeriodChange(db, propertyId, rawRules, today)
   if (plan === null) return null
-  if (plan.preview.blocked.length > 0) return { error: `${plan.preview.blocked.join(' ')} Gespeichert wurde nichts.`, preview: plan.preview }
+  // Jede Antwort mit Vorschau trägt deren Fristen und Ergebnisse (Review der Laienprobe, Runde 1):
+  // Sonst fehlte nach einer 409 die rote Zeile, und die Bestätigung ließe sich umgehen.
+  if (plan.preview.blocked.length > 0) return { error: `${plan.preview.blocked.join(' ')} Gespeichert wurde nichts.`, preview: await withEffects(db, propertyId, plan, today) }
   const answers = readAnswers(rawAnswers)
   if (answers.token !== plan.preview.token) {
-    return { error: 'Die Vorschau ist nicht mehr aktuell: Seit sie erstellt wurde, hat sich am Bestand etwas geändert. Bitte prüfen Sie die neue Vorschau; gespeichert wurde nichts.', preview: plan.preview }
+    return { error: 'Die Vorschau ist nicht mehr aktuell: Seit sie erstellt wurde, hat sich am Bestand etwas geändert. Bitte prüfen Sie die neue Vorschau; gespeichert wurde nichts.', preview: await withEffects(db, propertyId, plan, today) }
   }
   const missing = missingAnswers(plan, answers)
-  if (missing.length > 0) return { error: `Für den Wechsel fehlen Angaben: ${missing.join(' ')} Gespeichert wurde nichts.`, preview: plan.preview }
+  if (missing.length > 0) return { error: `Für den Wechsel fehlen Angaben: ${missing.join(' ')} Gespeichert wurde nichts.`, preview: await withEffects(db, propertyId, plan, today) }
+  // Laienprobe B3, Review Runde 1: Entsteht oder ändert sich eine Abrechnung mit abgelaufener Frist,
+  // speichert der Server nur mit ausdrücklicher Bestätigung (`understood`), gerechnet mit den Antworten.
+  const checked = await withEffects(db, propertyId, plan, today, answers)
+  const passed = checked.effects.filter((e) => e.passed)
+  if (passed.length > 0 && answers.understood !== true) {
+    return { error: `${passedDeadlineText(passed.map((e) => e.label))} Bitte bestätigen Sie das in der Vorschau; gespeichert wurde nichts.`, preview: checked }
+  }
   // Das Jahr der Zahlung im neuen Zeitraum: die Antwort, sonst der Vorschlag; in einem Zeitraum in
   // einem Kalenderjahr keines (Entwurf 3.10).
   const taxYearIn = (target: BillingPeriod, item: CostItem): number | null => {
@@ -450,8 +618,8 @@ export async function applyPeriodChange(
   } catch (err) {
     // Eine Schreibprüfung, die im Wechsel scheitert, ist ein Konflikt mit dem Bestand und keine
     // falsche Anfrage (I1): 409 mit der Vorschau, die Transaktion hat nichts geschrieben.
-    if (err instanceof PeriodError) return { error: `${err.message} Gespeichert wurde nichts.`, preview: plan.preview }
-    if (err instanceof PeriodConflict) return { error: err.message, preview: plan.preview }
+    if (err instanceof PeriodError) return { error: `${err.message} Gespeichert wurde nichts.`, preview: checked }
+    if (err instanceof PeriodConflict) return { error: err.message, preview: checked }
     throw err
   }
   const property = (await readProperties(db)).find((p) => p.id === propertyId)
@@ -462,12 +630,19 @@ async function writeChange(
   db: Database, plan: Plan, answers: Answers, propertyId: string, next: PeriodRules, newId: () => string,
   taxYearIn: (target: BillingPeriod, item: CostItem) => number | null,
 ): Promise<void> {
+  await db.transaction(async (tx) => writeChangeIn(tx, plan, answers, propertyId, next, newId, taxYearIn))
+}
+
+async function writeChangeIn(
+  tx: Transaction, plan: Plan, answers: Answers, propertyId: string, next: PeriodRules, newId: () => string,
+  taxYearIn: (target: BillingPeriod, item: CostItem) => number | null,
+): Promise<void> {
   // Positionen gehen durch dieselbe Verschmelzung und Schreibprüfung wie beim Speichern
   // (`writeCostItemParts`), auch die verschobenen: ein rohes Update umginge die Prüfung des Jahres
   // der Zahlung (Durchsicht von #226, I1).
-  const move = (tx: Parameters<Parameters<Database['transaction']>[0]>[0], item: CostItem, target: BillingPeriod) =>
+  const move = (item: CostItem, target: BillingPeriod) =>
     writeCostItemParts(tx, item, [{ period: target.key, amountCents: item.amountCents, labor35aCents: item.labor35aCents ?? null, description: item.description, taxYear: taxYearIn(target, item) }], newId, item.id)
-  await db.transaction(async (tx) => {
+  {
     await tx.update(properties).set({ periodStartMonth: next.startMonth }).where(eq(properties.id, propertyId))
     await tx.delete(periodChanges).where(eq(periodChanges.propertyId, propertyId))
     if (next.changes.length > 0) await tx.insert(periodChanges).values(next.changes.map((fromMonth) => ({ propertyId, fromMonth })))
@@ -478,12 +653,21 @@ async function writeChange(
       if (family) await rewriteCostItemFamily(tx, family, writes, newId)
       else await writeCostItemParts(tx, item, writes, newId, item.id)
     }
-    for (const [from, g] of plan.groups) {
-      const target = g.options.find((p) => p.key === answers.groups[from]) ?? null
+    for (const [id, g] of plan.groups) {
+      if (answers.groups[id] === 'split' && g.split !== null) {
+        for (const item of g.items) {
+          const parts = g.split.get(item.id) ?? []
+          await writeCostItemParts(tx, { ...item, serviceFrom: g.old.from, serviceTo: g.old.to }, parts.map((p) => ({
+            period: p.period.key, amountCents: p.amountCents, labor35aCents: p.labor35aCents, description: p.description, taxYear: taxYearIn(p.period, item),
+          })), newId, item.id)
+        }
+        continue
+      }
+      const target = g.options.find((p) => p.key === answers.groups[id]) ?? null
       if (target === null) continue
-      for (const item of g.items) await move(tx, item, target)
+      for (const item of g.items) await move(item, target)
     }
-    for (const { item, target } of plan.regrows) await move(tx, item, target)
+    for (const { item, target } of plan.regrows) await move(item, target)
     for (const r of plan.overrideRekeys) {
       await tx.update(prepaymentOverrides).set({ period: r.to }).where(and(eq(prepaymentOverrides.tenancyId, r.tenancyId), eq(prepaymentOverrides.period, r.from)))
     }
@@ -497,5 +681,5 @@ async function writeChange(
       if (rows.length > 0) await tx.insert(prepaymentOverrides).values(rows)
     }
     for (const m of plan.assessmentMoves) await tx.update(assessments).set({ requestedPeriod: m.to }).where(eq(assessments.id, m.id))
-  })
+  }
 }

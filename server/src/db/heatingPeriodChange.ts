@@ -23,12 +23,13 @@
 import crypto from 'node:crypto'
 import { and, eq, inArray } from 'drizzle-orm'
 import { heatingPeriodsEndingIn, plantRules, separateOwner, servesUnit, settledSeparately, type PlantWay } from '../../../shared/heatingPeriod.ts'
-import { parsePeriodKey, periodContaining, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, spansTwoYears, startYearOf } from '../../../shared/period.ts'
-import type { BillingPeriod, CostItem, HeatingPeriodChangePreview, HeatingPlant, PeriodKey, PeriodRules, Tenancy } from '../../../shared/types.ts'
-import type { Database } from './client.ts'
-import { checkRules, monthsText } from './periodChange.ts'
-import { readClosedSettlements, readCostItems, readHeatingPlants, readProperties, readTenancies, readUnits } from './read.ts'
-import { PeriodError } from './repository.ts'
+import { formatDayRange, parsePeriodKey, periodContaining, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, settlementDeadline, spansTwoYears, startYearOf } from '../../../shared/period.ts'
+import type { BillingPeriod, CostItem, HeatingPeriodChangePreview, HeatingPlant, PeriodEffect, PeriodKey, PeriodRules, Tenancy } from '../../../shared/types.ts'
+import type { Database, Transaction } from './client.ts'
+import { dryRun, earliestTenancyStart, lostClaims, outcomeOf, shownEffects, type Outcome } from './dryRun.ts'
+import { checkRules, monthsText, passedDeadlineText } from './periodChange.ts'
+import { readClosedSettlements, readCostItems, readHeatingPlants, readProperties, readStock, readTenancies, readUnits } from './read.ts'
+import { patchCostItemIn, PeriodError } from './repository.ts'
 import {
   closedHeatingSettlementHistory, closedHeatingSettlements, costItems, heatingPeriodChanges, heatingPeriods, heatingPlants, heatingPrepaymentOverrides, prepaymentOverrides,
 } from './schema.ts'
@@ -54,9 +55,16 @@ const overlapDays = (a: BillingPeriod, b: BillingPeriod): number => {
   const to = a.to < b.to ? a.to : b.to
   return from > to ? 0 : Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000) + 1
 }
-// Das Jahr der Zahlung in der neuen Heizperiode, dieselbe Regel wie beim Wechsel des Objektzeitraums.
-const taxYearIn = (target: BillingPeriod, item: CostItem): number | null =>
-  spansTwoYears(target) ? item.taxYear ?? startYearOf(item.period) : null
+// Das Jahr der Zahlung in der neuen Heizperiode, dieselbe Regel wie beim Wechsel des Objektzeitraums
+// (`taxEntry` in periodChange.ts): das bisherige, in die erlaubte Spanne vom Jahr des Beginns bis ein
+// Jahr nach dem Ende geklemmt (Review der Laienprobe, Runde 1). Ohne Klemme lehnte die Schreibprüfung
+// ab oder, vorher am Wächter vorbei geschrieben, verschwände die Position aus jeder Steuerübersicht.
+export const taxYearIn = (target: Pick<BillingPeriod, 'from' | 'to'>, item: Pick<CostItem, 'taxYear' | 'period'>): number | null => {
+  if (!spansTwoYears(target)) return null
+  const start = Number(target.from.slice(0, 4))
+  const end = Number(target.to.slice(0, 4)) + 1
+  return Math.min(Math.max(item.taxYear ?? startYearOf(item.period), start), end)
+}
 
 type Ask = { kind: 'heating' | 'total'; period: BillingPeriod; months: string[] }
 type OverrideAsk = {
@@ -70,10 +78,14 @@ type Plan = {
   preview: HeatingPeriodChangePreview
   plant: HeatingPlant
   own: PeriodRules | null
-  moves: { item: CostItem; to: BillingPeriod }[]
+  moves: { item: CostItem; to: BillingPeriod; options: BillingPeriod[] }[]
   groups: Map<PeriodKey, { items: CostItem[]; options: BillingPeriod[] }>
   overrideRekeys: { tenancyId: string; from: PeriodKey; to: PeriodKey }[]
   overrideAsks: OverrideAsk[]
+  objectRules: PeriodRules
+  before: PeriodRules
+  next: PeriodRules
+  closedKeys: ReadonlySet<string>
 }
 
 async function planHeatingPeriodChange(db: Database, plantId: string, rawRules: unknown, today: string): Promise<Plan | null> {
@@ -142,7 +154,13 @@ async function planHeatingPeriodChange(db: Database, plantId: string, rawRules: 
     const candidates = heatingPeriodsEndingIn(next, periodContaining(objectRules, a.old.to))
     const only = candidates.length === 1 ? candidates[0] : undefined
     if (only) {
-      if (only.key !== item.period) moves.push({ item, to: only })
+      // Laienprobe B12: Vorbelegt bleibt die Heizperiode, die im bisherigen Zeitraum endet; so steht die
+      // Position weiter in derselben Gesamtabrechnung (Weg b). Wählbar ist jede Heizperiode, die den
+      // bisherigen Zeitraum berührt, denn eine Versorgerrechnung über ein Kalenderjahr ist nicht die
+      // Abrechnung einer Heizperiode, und welche es ist, weiß nur der Vermieter.
+      const options = periodsBetween(next, a.old.from, a.old.to)
+      if (!options.some((o) => o.key === only.key)) options.push(only)
+      if (only.key !== item.period) moves.push({ item, to: only, options })
       continue
     }
     const g = groups.get(a.key) ?? { items: [], options: candidates.length > 0 ? candidates : periodsBetween(next, a.old.from, a.old.to) }
@@ -222,17 +240,23 @@ async function planHeatingPeriodChange(db: Database, plantId: string, rawRules: 
     periods: periods.map((p) => ({ key: p.key, label: periodLabel(p), short: p.short, separate: separateNow(p) })),
     newShort: periods.filter((p) => p.short && !wasShort(p)).map((p) => ({ key: p.key, label: periodLabel(p) })),
     blocked: [...blocked],
-    moves: moves.map(({ item, to }) => ({
-      costItemId: item.id, description: item.description, amountCents: item.amountCents,
-      from: item.period, fromLabel: periodLabel(changed(item.period)?.old ?? to), to: to.key, toLabel: periodLabel(to),
-    })),
+    moves: moves.map(({ item, to, options }) => {
+      const old = changed(item.period)?.old ?? to
+      return {
+        costItemId: item.id, description: item.description, amountCents: item.amountCents,
+        from: item.period, fromLabel: periodLabel(old), to: to.key, toLabel: periodLabel(to),
+        fromRange: formatDayRange(old.from, old.to), toRange: formatDayRange(to.from, to.to),
+        options: options.map((o) => ({ key: o.key, label: periodLabel(o), range: formatDayRange(o.from, o.to) })),
+        check: item.serviceFrom === undefined || item.serviceTo === undefined,
+      }
+    }),
     groups: [...groups.entries()].map(([from, g]) => {
       const old = changed(from)?.old ?? g.options[0]
       if (old === undefined) throw new Error(`Heizperiode ${from} ohne Befund in der Vorschau`)
       return {
         from, fromLabel: periodLabel(old),
         items: g.items.map((i) => ({ costItemId: i.id, description: i.description, amountCents: i.amountCents })),
-        options: g.options.map((p) => ({ key: p.key, label: periodLabel(p) })),
+        options: g.options.map((p) => ({ key: p.key, label: periodLabel(p), range: formatDayRange(p.from, p.to) })),
         suggested: bestFor(old, g.options).key,
       }
     }),
@@ -243,16 +267,79 @@ async function planHeatingPeriodChange(db: Database, plantId: string, rawRules: 
     endsSeparate: periods
       .filter((p) => !separateNow(p) && periodMonths(p).some((m) => separateOwner(plant, objectRules, m) !== null))
       .map((p) => ({ key: p.key, label: periodLabel(p) })),
+    effects: [],
   }
   // Die Marke über alles, was der Wechsel schreibt (wie `tokenOf` in periodChange.ts).
   preview.token = crypto.createHash('sha256')
     .update(JSON.stringify([preview.rules, preview.blocked, preview.moves, preview.groups, preview.overrides, preview.endsSeparate, overrideRekeys]))
     .digest('hex')
-  return { preview, plant, own, moves, groups, overrideRekeys, overrideAsks: [...asks.values()] }
+  return { preview, plant, own, moves, groups, overrideRekeys, overrideAsks: [...asks.values()], objectRules, before, next, closedKeys }
 }
 
 export async function previewHeatingPeriodChange(db: Database, plantId: string, rawRules: unknown, today: string): Promise<HeatingPeriodChangePreview | null> {
-  return (await planHeatingPeriodChange(db, plantId, rawRules, today))?.preview ?? null
+  const plan = await planHeatingPeriodChange(db, plantId, rawRules, today)
+  return plan === null ? null : withEffects(db, plantId, plan, today)
+}
+
+// Review der Laienprobe, Runde 2: Auch der Wechsel der Heizperiode ändert Abrechnungen, die schon
+// begonnen haben oder vorbei sind, die des Objekts (Weg b: welche Heizperiode darin steht) und die
+// Heizkostenabrechnungen nach Weg d. Die Vorschau nennt Frist und Ergebnis vorher und nachher, im
+// Probelauf gerechnet, mit `given` beim Speichern mit den Antworten, sonst mit den Vorgaben.
+async function withEffects(db: Database, plantId: string, plan: Plan, today: string, given?: Record<string, unknown>): Promise<HeatingPeriodChangePreview> {
+  const { before, next, objectRules } = plan
+  const differs = (rulesA: PeriodRules, rulesB: PeriodRules) => (p: BillingPeriod): boolean => {
+    const o = periodOfKey(rulesB, p.key)
+    return o === null || o.from !== p.from || o.to !== p.to
+  }
+  const firstOld = periodsBetween(before, '2000-01-01', today).find(differs(before, next))
+  const firstNew = periodsBetween(next, '2000-01-01', today).find(differs(next, before))
+  const first = [firstOld?.from, firstNew?.from].filter((x): x is string => x !== undefined).sort()[0]
+  if (first === undefined || first > today) return plan.preview
+  const stockBefore = await readStock(db)
+  const moved = await earliestTenancyStart(db, plan.plant.propertyId)
+  if (moved === null) return plan.preview
+  const from = moved > first ? moved : first
+  const objectPeriods = periodsBetween(objectRules, from, today).filter((p) => !plan.closedKeys.has(p.key))
+  const heatPeriods = periodsBetween(next, from, today)
+  const answers = given ?? {
+    groups: Object.fromEntries([...plan.preview.groups].map((g) => [g.from, g.suggested])),
+    moves: {}, overrides: {}, totals: {}, token: plan.preview.token,
+  }
+  const after = await dryRun(db, (tx) => writeHeatingChangeIn(tx, plantId, plan, answers), (stock) => {
+    const p = stock.heatingPlants?.find((x) => x.id === plantId)
+    return {
+      object: objectPeriods.map((q) => outcomeOf(stock, plan.plant.propertyId, q)),
+      heating: heatPeriods.map((h) => (p && settledSeparately(p, objectRules, h) ? outcomeOf(stock, plan.plant.propertyId, h, plantId) : null)),
+    }
+  })
+  const effect = (q: BillingPeriod, label: string, beforeOutcome: Outcome | null, afterOutcome: Outcome | null, beforeBarred: boolean): PeriodEffect => {
+    const deadline = settlementDeadline(q)
+    const passed = deadline < today
+    const tenants = (afterOutcome?.tenants ?? []).map((t) => ({
+      tenantName: t.tenantName,
+      beforeCents: beforeOutcome?.tenants.find((b) => b.tenancyId === t.tenancyId)?.balanceCents ?? null,
+      afterCents: t.balanceCents,
+    }))
+    return { label, deadline, passed, replaces: [], tenants, lostClaimsCents: passed ? lostClaims(tenants, beforeBarred) : 0 }
+  }
+  const effects: PeriodEffect[] = [
+    // Derselbe Abrechnungszeitraum des Objekts vorher und nachher, also dieselbe Frist.
+    ...objectPeriods.map((q, i) => effect(q, periodLabel(q), outcomeOf(stockBefore, plan.plant.propertyId, q), after?.object[i] ?? null, true)),
+    ...heatPeriods.flatMap((h, i) => {
+      const now = after?.heating[i] ?? null
+      // Gescheiterter Probelauf: die Frist jeder Heizperiode, die danach getrennt abgerechnet wird.
+      const nextWay = { periodStartMonth: plan.own?.startMonth ?? null, periodChanges: plan.own?.changes ?? [], separateSpans: plan.plant.separateSpans }
+      if (now === null && (after !== null || !settledSeparately(nextWay, objectRules, h))) return []
+      // Verglichen wird wie beim Wechsel des Abrechnungszeitraums (periodChange.ts) mit dem bisherigen
+      // Zeitraum gleichen Schlüssels, auch wenn er kürzer oder länger war (Review Runde 3); verloren ist
+      // nur das Mehr, wenn dessen Frist selbst schon abgelaufen war.
+      const old = periodOfKey(before, h.key)
+      const wasSeparate = old !== null && settledSeparately(plan.plant, objectRules, old)
+      const barred = old !== null && wasSeparate && settlementDeadline(old) < today
+      return [effect(h, `Heizkosten ${periodLabel(h)}`, wasSeparate ? outcomeOf(stockBefore, plan.plant.propertyId, old, plantId) : null, now, barred)]
+    }),
+  ]
+  return { ...plan.preview, effects: shownEffects(effects, after !== null) }
 }
 
 const objectOr = (value: unknown): Record<string, unknown> =>
@@ -264,12 +351,13 @@ export async function applyHeatingPeriodChange(
 ): Promise<{ plant: HeatingPlant } | { error: string; preview: HeatingPeriodChangePreview } | null> {
   const plan = await planHeatingPeriodChange(db, plantId, rawRules, today)
   if (plan === null) return null
-  if (plan.preview.blocked.length > 0) return { error: `${plan.preview.blocked.join(' ')} Gespeichert wurde nichts.`, preview: plan.preview }
+  if (plan.preview.blocked.length > 0) return { error: `${plan.preview.blocked.join(' ')} Gespeichert wurde nichts.`, preview: await withEffects(db, plantId, plan, today) }
   const answers = objectOr(rawAnswers)
   if (answers.token !== plan.preview.token) {
-    return { error: 'Die Vorschau ist nicht mehr aktuell: Seit sie erstellt wurde, hat sich am Bestand etwas geändert. Bitte prüfen Sie die neue Vorschau; gespeichert wurde nichts.', preview: plan.preview }
+    return { error: 'Die Vorschau ist nicht mehr aktuell: Seit sie erstellt wurde, hat sich am Bestand etwas geändert. Bitte prüfen Sie die neue Vorschau; gespeichert wurde nichts.', preview: await withEffects(db, plantId, plan, today) }
   }
   const groupAnswers = objectOr(answers.groups)
+  const moveTarget = (m: Plan['moves'][number]): BillingPeriod | undefined => moveTargetOf(m, objectOr(answers.moves))
   const overrideAnswers = objectOr(answers.overrides)
   const totalAnswers = objectOr(answers.totals)
   const missing: string[] = []
@@ -288,20 +376,43 @@ export async function applyHeatingPeriodChange(
       }
     }
   }
-  if (missing.length > 0) return { error: `Für den Wechsel fehlen Angaben: ${missing.join(' ')} Gespeichert wurde nichts.`, preview: plan.preview }
+  for (const m of plan.moves) if (moveTarget(m) === undefined) missing.push(`Heizperiode für „${m.item.description}“ wählen.`)
+  if (missing.length > 0) return { error: `Für den Wechsel fehlen Angaben: ${missing.join(' ')} Gespeichert wurde nichts.`, preview: await withEffects(db, plantId, plan, today) }
+  // Review Runde 2: Bei abgelaufener Frist nur mit Bestätigung, gerechnet mit den Antworten.
+  const checked = await withEffects(db, plantId, plan, today, answers)
+  const passed = checked.effects.filter((e) => e.passed)
+  if (passed.length > 0 && answers.understood !== true) {
+    return { error: `${passedDeadlineText(passed.map((e) => e.label), 'den Zeitraum der Heizung selbst umstellen')} Bitte bestätigen Sie das in der Vorschau; gespeichert wurde nichts.`, preview: checked }
+  }
+  await db.transaction(async (tx) => writeHeatingChangeIn(tx, plantId, plan, answers))
+  const plant = (await readHeatingPlants(db)).find((p) => p.id === plantId)
+  return plant ? { plant } : null
+}
 
-  await db.transaction(async (tx) => {
+const moveTargetOf = (m: Plan['moves'][number], moveAnswers: Record<string, unknown>): BillingPeriod | undefined => {
+  const chosen = moveAnswers[m.item.id]
+  return chosen === undefined ? m.to : m.options.find((o) => o.key === chosen)
+}
+
+async function writeHeatingChangeIn(tx: Transaction, plantId: string, plan: Plan, answers: Record<string, unknown>): Promise<void> {
+  const groupAnswers = objectOr(answers.groups)
+  const overrideAnswers = objectOr(answers.overrides)
+  const totalAnswers = objectOr(answers.totals)
+  const moveTarget = (m: Plan['moves'][number]): BillingPeriod | undefined => moveTargetOf(m, objectOr(answers.moves))
+  {
     await tx.update(heatingPlants).set({ periodStartMonth: plan.own?.startMonth ?? null }).where(eq(heatingPlants.id, plantId))
     await tx.delete(heatingPeriodChanges).where(eq(heatingPeriodChanges.plantId, plantId))
     if (plan.own && plan.own.changes.length > 0) await tx.insert(heatingPeriodChanges).values(plan.own.changes.map((fromMonth) => ({ plantId, fromMonth })))
-    for (const { item, to } of plan.moves) {
-      await tx.update(costItems).set({ period: to.key, taxYear: taxYearIn(to, item) }).where(eq(costItems.id, item.id))
+    for (const m of plan.moves) {
+      const to = moveTarget(m) ?? m.to
+      // Durch dieselbe Verschmelzung und Schreibprüfung wie beim Speichern, nicht am Wächter vorbei.
+      await patchCostItemIn(tx, m.item, { period: to.key, taxYear: taxYearIn(to, m.item) })
     }
     for (const g of plan.groups.values()) {
       const from = g.items[0]?.period
       const target = g.options.find((p) => p.key === (from === undefined ? undefined : groupAnswers[from]))
       if (!target) continue
-      for (const item of g.items) await tx.update(costItems).set({ period: target.key, taxYear: taxYearIn(target, item) }).where(eq(costItems.id, item.id))
+      for (const item of g.items) await patchCostItemIn(tx, item, { period: target.key, taxYear: taxYearIn(target, item) })
     }
     for (const r of plan.overrideRekeys) {
       await tx.update(heatingPrepaymentOverrides).set({ period: r.to })
@@ -327,7 +438,5 @@ export async function applyHeatingPeriodChange(
         }
       }
     }
-  })
-  const plant = (await readHeatingPlants(db)).find((p) => p.id === plantId)
-  return plant ? { plant } : null
+  }
 }

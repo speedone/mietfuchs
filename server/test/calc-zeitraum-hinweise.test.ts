@@ -55,3 +55,18 @@ test('Kalenderjahr mit Leistungszeitraum im Jahr: kein Hinweis (Review Focus 4)'
   const s = computeSettlement(snapshotOf(haus([{ ...item({ category: 'Wasser/Abwasser', key: 'meter', meterType: 'kaltwasser', serviceFrom: '2025-01-01', serviceTo: '2025-12-31' }) }]), 2025))
   assert.deepEqual(codes(s), [])
 })
+
+// Laienprobe B2: Eine Heizrechnung ohne Leistungszeitraum, die beim Wechsel ganz in den Rumpf kam,
+// stand dort still gegen wenige Monate Vorauszahlung. Die Abrechnung des Rumpfs sagt es jetzt, mit Betrag.
+test('Laienprobe B2: Heizkosten ohne Leistungszeitraum im Rumpf ergeben eine warning mit Betrag', () => {
+  const s = settle(WECHSEL, '2025-01', [item({ category: 'Heizung und Warmwasser', description: 'Erdgas 2025', amountCents: 260000 })])
+  const n = s.notices.find((x) => x.code === 'period.short-heating-whole') ?? assert.fail('kein Hinweis')
+  assert.equal(n.level, 'warning')
+  assert.match(n.text, /^„Erdgas 2025“ \(2\.600,00 €\) steht ohne Leistungszeitraum ganz im Rumpfzeitraum 01\.01\.–30\.04\.2025\./)
+  assert.deepEqual(n.subject, { kind: 'costItem', id: 'k' })
+  // Mit Leistungszeitraum im Rumpf ist es eine Rechnung des Rumpfs, ohne Hinweis; im vollen Zeitraum ebenso.
+  assert.ok(!codes(settle(WECHSEL, '2025-01', [item({ category: 'Heizung und Warmwasser', serviceFrom: '2025-01-01', serviceTo: '2025-04-30' })])).includes('period.short-heating-whole'))
+  assert.ok(!codes(settle(WECHSEL, '2025-05', [item({ period: periodKey('2025-05'), category: 'Heizung und Warmwasser' })])).includes('period.short-heating-whole'))
+  // Kalte Kosten bekommen ihn nicht: Sie teilt der Wechsel nach Tagen auf.
+  assert.ok(!codes(settle(WECHSEL, '2025-01', [item({})])).includes('period.short-heating-whole'))
+})

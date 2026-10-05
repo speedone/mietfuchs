@@ -3,7 +3,7 @@ import type { CostModel, DepositStatus, HeatingPlant, Meter, MeterType, Settings
 import { DEPOSIT_STATUS_LABELS, METER_TYPE_LABELS, UNIT_USAGE_LABELS, usageOf } from '../types'
 import { EMPTY_UNIT_FORM, buildUnitBody, connectionSummary, connectionTypes, setConnected, unitDeleteMessage, unitToForm, type UnitForm } from '../unitForm'
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
-import { scheduleOf, separateHeatingFor } from '../heatingSettlementView'
+import { scheduleOf, separateHeatingFor, separateHeatingPlant } from '../heatingSettlementView'
 import Drawer from '../components/Drawer'
 import PropertyCard from '../components/PropertyCard'
 import { COST_MODEL_LABELS, buildPersonHistory, costModelBadge, costModelBody, defaultTenancyUnitId, overlapQuestion, showsFlatRates } from '../tenancyModel'
@@ -17,6 +17,7 @@ import { useToast, useConfirm } from '../components/feedback'
 import Table from '../components/Table'
 import HeatingCard from '../components/HeatingCard'
 import { useFocusTarget, type FocusProps } from '../focus'
+import { tenancyStamp } from '../../../shared/tenancyStamp.ts'
 
 type Props = {
   units: Unit[]
@@ -50,6 +51,8 @@ type TenancyForm = {
   // Nebenkostenmodell (#93)
   costModel: CostModel
   heatingModel: CostModel
+  // Die Marke des Stands, aus dem das Formular gefüllt wurde (Laienprobe B1, shared/tenancyStamp.ts).
+  stamp?: string
 }
 
 const EMPTY_UNIT: UnitForm = EMPTY_UNIT_FORM
@@ -106,6 +109,7 @@ function tenancyToForm(t: Tenancy): TenancyForm {
       from: p.from,
       amount: (p.monthlyCents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 }),
     })),
+    stamp: tenancyStamp(t),
   }
 }
 
@@ -131,6 +135,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
   // Die Heizanlagen (Heizung PR 5): Rechnet die Anlage einer Wohnung die Heizkosten getrennt ab, fragen
   // Mietverhältnis und Mieterwechsel die Heizvorauszahlung mit ab (Durchsicht von #231).
   const [plants, setPlants] = useState<HeatingPlant[]>([])
+  const [plantsVersion, setPlantsVersion] = useState(0)
   useEffect(() => {
     if (!propertyId) return
     let alive = true
@@ -138,7 +143,14 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
       .then((all) => { if (alive) setPlants(Array.isArray(all) ? all : []) })
       .catch(() => { if (alive) setPlants([]) })
     return () => { alive = false }
-  }, [propertyId])
+  }, [propertyId, plantsVersion])
+  // Laienprobe B1: Das Einschalten der getrennten Heizkostenabrechnung teilt die Staffeln der
+  // Mietverhältnisse auf, ein Wechsel des Zeitraums schreibt ihre Jahreskorrekturen neu. Danach lädt
+  // die Seite beides neu; sonst zeigte das Formular den alten Stand und schriebe ihn beim Speichern zurück.
+  async function afterHeatingOrPeriodChange() {
+    setPlantsVersion((v) => v + 1)
+    await reload()
+  }
   // „Hier beheben →“ aus der Abrechnung (#142): die betroffene Wohnung oder das Mietverhältnis öffnen.
   useFocusTarget(focus, 'unit', units, (u) => u.id, (u) => { setError(''); setUnitForm(unitToForm(u)) }, onFocusDone)
   useFocusTarget(focus, 'tenancy', tenancies, (t) => t.id, (t) => { setError(''); setTenForm(tenancyToForm(t)) }, onFocusDone)
@@ -275,6 +287,8 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
       ...costModelBody(tenForm.costModel, tenForm.heatingModel),
       flatRates,
       heatingPrepayments: heating,
+      // Laienprobe B1: Hat sich der Stand inzwischen geändert, lehnt der Server ab, statt ihn zu ersetzen.
+      ...(tenForm.stamp ? { ifUnchanged: tenForm.stamp } : {}),
     })
     const editing = !!tenForm.id
     // Überschneidung mit einem anderen Mietverhältnis derselben Wohnung (#204): nachfragen, nicht
@@ -325,7 +339,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
       {error && !unitForm && !tenForm && <div className="error">{error}</div>}
 
       <PropertyCard />
-      <PeriodCard />
+      <PeriodCard onChanged={afterHeatingOrPeriodChange} />
 
       <div className="card">
         <h2>Wohnungen</h2>
@@ -385,7 +399,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
       </div>
 
       {/* Heizung PR 4: optional, nach den Wohnungen, weil Schritt 4 nach ihnen fragt. */}
-      <HeatingCard units={units} focus={focus} onFocusDone={onFocusDone} />
+      <HeatingCard units={units} focus={focus} onFocusDone={onFocusDone} onChanged={afterHeatingOrPeriodChange} />
 
       <div className="card">
         <h2>Mietverhältnisse</h2>
@@ -607,29 +621,40 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                 </div>
               ))}
               <button className="btn small secondary field-add" onClick={() => setTenForm({ ...tenForm, prepayments: [...tenForm.prepayments, { from: '', amount: '' }] })}>+ Erhöhung ab Monat …</button>
-              {(tenForm.heatingPrepayments.length > 0 || separateHeatingFor(units.find((u) => u.id === tenForm.unitId) ?? { id: tenForm.unitId }, plants)) && (() => {
-                // Bei getrennter Heizkostenabrechnung gehört zu jedem Mietverhältnis seine Heizvorauszahlung,
-                // auch zu einem neuen (Durchsicht von #231); die Staffel oben ist dann die übrige Vorauszahlung.
-                const rows = tenForm.heatingPrepayments.length > 0 ? tenForm.heatingPrepayments : [{ from: '', amount: '' }]
-                return (
-                  <>
-                    <div className="field-group-label">Heizvorauszahlung je Monat (neben der übrigen Vorauszahlung) — Staffel</div>
-                    <p className="muted">Die Heizkosten rechnen Sie getrennt ab. Die Staffel „NK-Vorauszahlung“ oben ist dann die übrige Vorauszahlung; ändert sich eine der beiden, tragen Sie die neue ab demselben Monat hier oder oben ein.</p>
-                    {rows.map((p, i) => (
-                      <div key={i} className="row">
-                        <label className="field">ab Monat
-                          <input type="month" value={p.from} placeholder="Einzugsmonat" onChange={(e) => setTenForm({ ...tenForm, heatingPrepayments: rows.map((x, k) => (k === i ? { ...x, from: e.target.value } : x)) })} />
-                        </label>
-                        <label className="field">€ je Monat
-                          <input value={p.amount} placeholder="z. B. 120,00" onChange={(e) => setTenForm({ ...tenForm, heatingPrepayments: rows.map((x, k) => (k === i ? { ...x, amount: e.target.value } : x)) })} />
-                        </label>
-                      </div>
-                    ))}
-                    <button className="btn small secondary field-add" onClick={() => setTenForm({ ...tenForm, heatingPrepayments: [...rows, { from: '', amount: '' }] })}>+ Änderung ab Monat …</button>
-                  </>
-                )
-              })()}
             </div>
+
+            {(() => {
+              // Bei getrennter Heizkostenabrechnung gehört zu jedem Mietverhältnis seine Heizvorauszahlung,
+              // auch zu einem neuen (Durchsicht von #231); die Staffel oben ist dann die übrige Vorauszahlung.
+              // Eine eigene Feldgruppe mit dem Abstand der übrigen, und der Satz nennt den Grund
+              // (Rückmeldung zur Laienprobe).
+              const plant = separateHeatingPlant(units.find((u) => u.id === tenForm.unitId) ?? { id: tenForm.unitId }, plants)
+              if (tenForm.heatingPrepayments.length === 0 && plant === null) return null
+              const rows = tenForm.heatingPrepayments.length > 0 ? tenForm.heatingPrepayments : [{ from: '', amount: '' }]
+              return (
+                <div className="field-group">
+                  <div className="field-group-label">Heizvorauszahlung je Monat (neben der übrigen Vorauszahlung) — Staffel</div>
+                  <p className="muted">
+                    {plant
+                      ? <>Erscheint, weil die Heizung „{plant.name || 'Heizanlage'}“ die Heizkosten getrennt abrechnet (<Term id="separateHeatingSettlement">getrennte Heizkostenabrechnung</Term> mit eigener Vorauszahlung). Ändern unter Stammdaten → Heizung.</>
+                      : <>Erscheint, weil für dieses Mietverhältnis eine Heizvorauszahlung eingetragen ist.</>}
+                    {' '}Die Staffel „NK-Vorauszahlung“ oben ist dann die übrige Vorauszahlung; ändert sich eine der beiden, tragen Sie die neue ab demselben Monat hier oder oben ein.
+                  </p>
+                  {rows.map((p, i) => (
+                    <div key={i} className="staffel-row">
+                      <label className="field">gültig ab
+                        <input type="month" value={p.from} placeholder="Einzugsmonat" onChange={(e) => setTenForm({ ...tenForm, heatingPrepayments: rows.map((x, k) => (k === i ? { ...x, from: e.target.value } : x)) })} />
+                      </label>
+                      <label className="field">Betrag €/Monat
+                        <input value={p.amount} placeholder="z. B. 120,00" onChange={(e) => setTenForm({ ...tenForm, heatingPrepayments: rows.map((x, k) => (k === i ? { ...x, amount: e.target.value } : x)) })} />
+                      </label>
+                      <span />
+                    </div>
+                  ))}
+                  <button className="btn small secondary field-add" onClick={() => setTenForm({ ...tenForm, heatingPrepayments: [...rows, { from: '', amount: '' }] })}>+ Änderung ab Monat …</button>
+                </div>
+              )
+            })()}
 
             <details className="extra-details" style={{ width: '100%' }}>
               <summary>Weitere Angaben — Nebenkosten-Modell, Kontakt, Kaution, Vertrag (optional)</summary>

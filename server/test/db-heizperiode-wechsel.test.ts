@@ -9,7 +9,7 @@ import path from 'node:path'
 import { eq } from 'drizzle-orm'
 import { openDatabase, type OpenedDatabase } from '../src/db/open.ts'
 import type { Database } from '../src/db/client.ts'
-import { applyHeatingPeriodChange, previewHeatingPeriodChange } from '../src/db/heatingPeriodChange.ts'
+import { applyHeatingPeriodChange, previewHeatingPeriodChange, taxYearIn } from '../src/db/heatingPeriodChange.ts'
 import { applyPeriodChange, previewPeriodChange } from '../src/db/periodChange.ts'
 import { closeSettlement, createEntity, findEntity, listCollection, PeriodError, updateEntity } from '../src/db/repository.ts'
 import { createHeatingPlant, listHeatingPlants } from '../src/db/heating.ts'
@@ -66,7 +66,7 @@ test('G-A2: Beim ersten Einstellen kommt die Messdienstabrechnung 2025/26 von 20
     assert.deepEqual(v.moves.map((m) => [m.costItemId, m.from, m.to, m.toLabel]), [['c2026', '2026-01', '2025-05', '2025/2026']])
     assert.deepEqual(v.groups, [])
     const r = await wechseln(opened, MAI, {})
-    assert.ok(r && 'plant' in r)
+    assert.ok(r && 'plant' in r, JSON.stringify(r))
     assert.deepEqual([r.plant.periodStartMonth, r.plant.periodChanges], [5, []])
     const nachher = Object.fromEntries((await items(opened)).map((c) => [c.id, [c.period, c.taxYear, c.heatingPlantId]]))
     assert.deepEqual(nachher, { c2024: ['2024-01', undefined, undefined], c2026: ['2025-05', 2026, 'hp1'] })
@@ -172,7 +172,7 @@ test('Wechsel des Objektzeitraums, der Weg d für eine Heizperiode umschalten w�
     })
     const v = await opened.read((db) => previewPeriodChange(db, 'objekt-1', MAI, TODAY)) ?? assert.fail('kein Objekt')
     assert.match(v.blocked.join(' '), /nicht mehr getrennt abgerechnet\. Stellen Sie zuerst unter Stammdaten → Heizung/)
-    const r = await opened.write((db) => applyPeriodChange(db, 'objekt-1', MAI, {}, () => 'neu', TODAY))
+    const r = await opened.write((db) => applyPeriodChange(db, 'objekt-1', MAI, { understood: true }, () => 'neu', TODAY))
     assert.ok(r && 'error' in r)
   })
 })
@@ -210,5 +210,83 @@ test('Rhythmuswechsel bei Weg d ab Monat X: gefragt werden nur Monate, die die H
     const v = await preview(opened, { startMonth: 5, changes: ['2025-11'] })
     const asks = v.overrides.flatMap((o) => o.ask.map((a) => [a.kind, a.period, a.months]))
     assert.deepEqual(asks.filter(([kind]) => kind === 'heating'), [['heating', '2025-11', '01–10/2026']], JSON.stringify(asks))
+  })
+})
+
+// Laienprobe B12: „Erdgas 2024“ (Kalenderjahr, ohne Leistungszeitraum) kam beim Umstellen auf Mai bis
+// April still in die Heizperiode 05/2023–04/2024, mit der es nur vier Monate teilt. Vorbelegt bleibt
+// sie (sie endet in 2024, so steht die Position weiter in der Abrechnung 2024); wählbar ist jede
+// Heizperiode, die 2024 berührt, mit Tagen beschriftet, und die Vorschau bittet um Prüfung.
+test('Laienprobe B12: Heizpositionen ohne Leistungszeitraum: Auswahl der Heizperiode mit Tagen, Hinweis zum Prüfen', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write(async (db) => {
+      await haus(db)
+      await createHeatingPlant(db, 'hp1', 'objekt-1', { energy: 'gas', method: 'manual' })
+      await heizposition(db, 'gas2024', '2024-01', { description: 'Erdgas 2024' })
+    })
+    const v = await preview(opened, MAI)
+    const m = v.moves.find((x) => x.costItemId === 'gas2024') ?? assert.fail('keine Verschiebung')
+    assert.deepEqual([m.to, m.toRange, m.fromRange, m.check], ['2023-05', '01.05.2023–30.04.2024', '01.01.–31.12.2024', true])
+    assert.deepEqual(m.options.map((o) => [o.key, o.range]), [['2023-05', '01.05.2023–30.04.2024'], ['2024-05', '01.05.2024–30.04.2025']])
+    // Review Runde 2: Die Abrechnung 2024 (Frist 31.12.2025 abgelaufen) verlöre das Erdgas; ohne Bestätigung nichts.
+    const ohne = await wechseln(opened, MAI, { moves: { gas2024: '2024-05' } })
+    assert.ok(ohne && 'error' in ohne && /Weil Sie den Zeitraum der Heizung selbst umstellen/.test(ohne.error), JSON.stringify(ohne))
+    const e2024 = ohne.preview.effects.find((e) => e.label === '2024') ?? assert.fail('keine Frist für 2024')
+    assert.deepEqual([e2024.passed, e2024.tenants], [true, [{ tenantName: 'Müller', beforeCents: 260000, afterCents: 360000 }]])
+    const r = await wechseln(opened, MAI, { moves: { gas2024: '2024-05' }, understood: true })
+    assert.ok(r && 'plant' in r, JSON.stringify(r))
+    assert.equal((await items(opened)).find((c) => c.id === 'gas2024')?.period, '2024-05')
+    const falsch = await wechseln(opened, { startMonth: 9, changes: [] }, { moves: { gas2024: '1999-05' }, understood: true })
+    assert.ok(falsch && 'error' in falsch && /Heizperiode für „Erdgas 2024“ wählen/.test(falsch.error))
+  })
+})
+
+// Review der Laienprobe, Runde 1: das Jahr der Zahlung wie beim Wechsel des Objektzeitraums geklemmt.
+test('Review Runde 1: Jahr der Zahlung in der neuen Heizperiode in die erlaubte Spanne geklemmt', () => {
+  const h = { from: '2025-05-01', to: '2026-04-30' }
+  assert.equal(taxYearIn(h, { taxYear: 2028, period: periodKey('2026-01') }), 2027)
+  assert.equal(taxYearIn(h, { taxYear: 2023, period: periodKey('2026-01') }), 2025)
+  assert.equal(taxYearIn(h, { period: periodKey('2026-01') }), 2026)
+  assert.equal(taxYearIn({ from: '2025-01-01', to: '2025-12-31' }, { taxYear: 2026, period: periodKey('2024-05') }), null)
+})
+
+// Review Runde 2: Der Wechsel der Heizperiode schreibt Positionen über `patchCostItemIn` (Verschmelzung
+// und Schreibprüfung), nicht mit einem rohen Update am Wächter vorbei. Geprüft am Quelltext, denn
+// solange beide dasselbe schreiben, unterscheidet sie kein Verhalten; und am Ergebnis.
+test('Review Runde 2: Heizpositionen wandern durch die Schreibprüfung', async () => {
+  const quelle = fs.readFileSync(new URL('../src/db/heatingPeriodChange.ts', import.meta.url), 'utf8')
+  assert.doesNotMatch(quelle, /tx\.update\(costItems\)/)
+  assert.match(quelle, /patchCostItemIn\(tx, m\.item/)
+  await withDatabase(async (opened) => {
+    await opened.write(async (db) => {
+      await haus(db)
+      await createHeatingPlant(db, 'hp1', 'objekt-1', { energy: 'gas', method: 'service' })
+      await heizposition(db, 'c2026', '2026-01', { vendor: 'Messdienst', invoiceFile: 'm.pdf' })
+    })
+    assert.ok(await wechseln(opened, MAI, {}))
+    const c = (await items(opened)).find((x) => x.id === 'c2026') ?? assert.fail('weg')
+    assert.deepEqual([c.period, c.taxYear, c.vendor, c.invoiceFile], ['2025-05', 2026, 'Messdienst', 'm.pdf'])
+    // Die gespeicherte Position besteht die Schreibprüfung erneut.
+    await opened.write((db) => updateEntity(db, 'costItems', 'c2026', {}))
+  })
+})
+
+// Review Runde 3 (N2): Dieselbe Abrechnung des Objekts vorher und nachher, also dieselbe Frist; verloren
+// ist nur das Mehr der Nachzahlung. Am 15.01.2027 ist die Frist 2025 abgelaufen.
+test('Review Runde 3: Wechsel der Heizperiode, verlorene Nachforderung der Abrechnung 2025 ist das Mehr', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write(async (db) => {
+      await haus(db)
+      await createHeatingPlant(db, 'hp1', 'objekt-1', { energy: 'gas', method: 'manual' })
+      await heizposition(db, 'gas2024', '2024-01', { description: 'Erdgas 2024' })
+      await createEntity(db, 'costItems', 'gs2025', { propertyId: 'objekt-1', period: '2025-01', category: 'Grundsteuer', description: 'Grundsteuer 2025', amountCents: 400000, key: 'area' })
+    })
+    const heute = '2027-01-15'
+    const v = (await opened.read((db) => previewHeatingPeriodChange(db, 'hp1', MAI, heute))) ?? assert.fail('keine Anlage')
+    const r = await opened.write((db) => applyHeatingPeriodChange(db, 'hp1', MAI, { token: v.token, moves: { gas2024: '2024-05' } }, heute))
+    assert.ok(r && 'error' in r, 'ohne Bestätigung abgelehnt')
+    const e = r.preview.effects.find((x) => x.label === '2025') ?? assert.fail(JSON.stringify(r.preview.effects))
+    assert.deepEqual(e.tenants, [{ tenantName: 'Müller', beforeCents: 360000 - 400000, afterCents: 360000 - 500000 }])
+    assert.equal(e.lostClaimsCents, 100000, 'nur das Mehr, nicht die ganze Nachzahlung von 1.400 €')
   })
 })

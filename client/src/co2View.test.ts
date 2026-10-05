@@ -24,7 +24,7 @@ test('Druckblock (§ 7 Abs. 3 CO2KostAufG): Anteil des Mieters, Einstufung mit m
   ])
   expect(v.lines.find((l) => l.label === 'CO₂-Ausstoß je m² und Jahr')?.value).toBe('46,4 kg')
   expect(v.lines.find((l) => l.label === 'Anteil des Vermieters laut Abrechnung')?.value).toBe('35 %')
-  expect(v.lines.find((l) => l.label === 'vom Vermieter übernommen (bereits abgezogen)')?.value).toBe(`${fmtEuro(2511)} (nach Ihrem Anteil an den Heizkosten)`)
+  expect(v.lines.find((l) => l.label === 'vom Vermieter übernommen (bereits abgezogen)')?.value).toBe(`${fmtEuro(2511)} (näherungsweise nach Ihrem Anteil an den Heizkosten; maßgeblich ist der Betrag in der Einzelabrechnung des Messdienstes)`)
   expect(v.table.filter((s) => s.marked)).toEqual([{ range: '42 bis unter 47 kg', percent: '70 %', marked: true }])
   expect(v.table.at(-1)).toEqual({ range: 'ab 52 kg', percent: '95 %', marked: false })
   expect(v.notes).toEqual(['Angaben laut Abrechnung des Messdienstes oder der Gemeinschaft (§ 7 Abs. 3 CO2KostAufG).'])

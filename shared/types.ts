@@ -297,7 +297,28 @@ export type PeriodChangePreview = {
   newShort: { key: PeriodKey; label: string }[]
   blocked: string[]
   moves: { costItemId: string; description: string; amountCents: number; parts: { period: PeriodKey; label: string; amountCents: number }[] }[]
-  groups: { from: PeriodKey; fromLabel: string; items: { costItemId: string; description: string; amountCents: number }[]; options: { key: PeriodKey; label: string }[]; suggested: PeriodKey }[]
+  // Je bisherigem Zeitraum eine Gruppe für kalte Kosten und eine für Heizkosten (Laienprobe B2);
+  // geantwortet wird unter `id`. Kalte Kosten ohne Leistungszeitraum lassen sich nach Tagen auf die
+  // neuen Zeiträume aufteilen (`split`, Antwort 'split', Vorgabe): Die Rechnung stand im bisherigen
+  // Zeitraum und gilt als dessen Kosten (Leistungsprinzip, Entwurf 3.4). Heizkosten teilt Mietfuchs
+  // nie nach Tagen (VIII ZR 156/11); dort wählt der Vermieter, und die Oberfläche warnt mit Betrag.
+  groups: {
+    id: string
+    from: PeriodKey
+    fromLabel: string
+    heating: boolean
+    items: { costItemId: string; description: string; amountCents: number }[]
+    options: { key: PeriodKey; label: string }[]
+    // `notes` (Review der Laienprobe, Runde 1): warum das Aufteilen nicht vorbelegt ist (gebuchte
+    // Belegzeilen, anderes Jahr der Zahlung) und wie viel Euro es zwischen Steuerjahren verschöbe.
+    split: { range: string; items: { costItemId: string; parts: { period: PeriodKey; label: string; amountCents: number }[] }[]; notes: string[] } | null
+    // Je Ziel „ganz nach …“, das Werbungskosten in ein anderes Jahr der Zahlung verschöbe, der Satz dazu.
+    taxShifts: { key: PeriodKey; text: string }[]
+    suggested: string
+  }[]
+  // Fristen und Ergebnisse der Zeiträume, die der Wechsel verändert und die schon begonnen haben
+  // (Laienprobe B3). Bei abgelaufener Frist ist eine Nachforderung ausgeschlossen (§ 556 Abs. 3 S. 3 BGB).
+  effects: PeriodEffect[]
   overrides: { tenancyId: string; tenantName: string; from: { key: PeriodKey; label: string; cents: number }[]; ask: { period: PeriodKey; label: string; months: string }[] }[]
   assessments: { assessmentId: string; file: string; from: PeriodKey; to: PeriodKey; toLabel: string }[]
   // Das Jahr der Zahlung (Entwurf 3.10) je Position und Zeitraum über zwei Kalenderjahre, in den sie
@@ -309,6 +330,20 @@ export type PeriodChangePreview = {
   token: string
 }
 
+// Was eine Änderung an Zeiträumen oder Vorauszahlungen mit einer Abrechnung macht, die schon
+// begonnen hat (Laienprobe B3, B3a): Frist, Ergebnis je Mieter vorher und nachher (> 0 Guthaben,
+// < 0 Nachzahlung; `beforeCents` null, wenn es den Zeitraum vorher so nicht gab) und, bei
+// abgelaufener Frist, die Nachzahlungen, die nicht mehr verlangt werden dürfen (§ 556 Abs. 3 S. 3 BGB).
+// Gerechnet nach den Vorschlägen der Vorschau; `tenants` leer, wenn sich nichts rechnen ließ.
+export type PeriodEffect = {
+  label: string
+  deadline: string
+  passed: boolean
+  replaces: { label: string; deadline: string }[]
+  tenants: { tenantName: string; beforeCents: number | null; afterCents: number }[]
+  lostClaimsCents: number
+}
+
 // Die Antworten zur Vorschau: je Gruppe (bisheriger Zeitraum) der neue Zeitraum; je
 // Mietverhältnis und gefragtem Zeitraum der tatsächlich gezahlte Betrag in Cent, `null` heißt
 // „keine Korrektur, es gilt die Staffel“. Eine fehlende Antwort ist keine Antwort (409).
@@ -318,6 +353,8 @@ export type PeriodChangeAnswers = {
   // Das Jahr der Zahlung je Eintrag aus `taxYears`; fehlt es, gilt der Vorschlag.
   taxYears?: Record<string, number>
   token?: string
+  // Bestätigung, dass eine Abrechnung mit abgelaufener Frist entsteht oder sich ändert (Review, Runde 1).
+  understood?: boolean
 }
 
 // Die Vorschau eines Wechsels der eigenen Heizperiode (Heizung PR 5, Entwurf 3.0, 3.6, B2).
@@ -331,8 +368,16 @@ export type HeatingPeriodChangePreview = {
   periods: { key: PeriodKey; label: string; short: boolean; separate: boolean }[]
   newShort: { key: PeriodKey; label: string }[]
   blocked: string[]
-  moves: { costItemId: string; description: string; amountCents: number; from: PeriodKey; fromLabel: string; to: PeriodKey; toLabel: string }[]
-  groups: { from: PeriodKey; fromLabel: string; items: { costItemId: string; description: string; amountCents: number }[]; options: { key: PeriodKey; label: string }[]; suggested: PeriodKey }[]
+  // Laienprobe B12, B13: `to` ist vorbelegt mit der Heizperiode, die im bisherigen Abrechnungszeitraum
+  // endet (Entwurf 3.0, BGH VIII ZR 240/07); `options` sind alle Heizperioden, die den bisherigen
+  // Zeitraum berühren, gewählt wird unter `answers.moves`. `range` nennt die Tage, denn „2024/2025“
+  // heißt bei der Heizung etwas anderes als beim Objekt. `check`: Die Position hat keinen
+  // Leistungszeitraum; ob sie zur Heizperiode passt, weiß nur der Vermieter.
+  moves: {
+    costItemId: string; description: string; amountCents: number; from: PeriodKey; fromLabel: string; to: PeriodKey; toLabel: string
+    fromRange: string; toRange: string; options: { key: PeriodKey; label: string; range: string }[]; check: boolean
+  }[]
+  groups: { from: PeriodKey; fromLabel: string; items: { costItemId: string; description: string; amountCents: number }[]; options: { key: PeriodKey; label: string; range: string }[]; suggested: PeriodKey }[]
   overrides: {
     tenancyId: string
     tenantName: string
@@ -340,6 +385,9 @@ export type HeatingPeriodChangePreview = {
     ask: { kind: 'heating' | 'total'; period: PeriodKey; label: string; months: string }[]
   }[]
   endsSeparate: { key: PeriodKey; label: string }[]
+  // Fristen und Ergebnisse schon begonnener Abrechnungen vorher und nachher (Review Runde 2, wie beim
+  // Wechsel des Abrechnungszeitraums und beim Aufteilen).
+  effects: PeriodEffect[]
   // Die Marke dieser Vorschau, wie beim Wechsel des Objektzeitraums (PR 3): Stimmt sie beim Wechsel
   // nicht mehr, hat sich der Bestand geändert, und es gibt 409 mit der neuen Vorschau.
   token: string
@@ -351,6 +399,9 @@ export type HeatingPeriodChangePreview = {
 // Staffel gilt“.
 export type HeatingPeriodChangeAnswers = {
   groups?: Record<string, string>
+  understood?: boolean
+  // Laienprobe B12: je verschobener Position die gewählte Heizperiode; fehlt sie, gilt die vorbelegte.
+  moves?: Record<string, string>
   overrides?: Record<string, Record<string, number | null>>
   totals?: Record<string, Record<string, number | null>>
   token?: string
@@ -382,6 +433,9 @@ export type SeparatePreview = {
     remainder: { period: PeriodKey; label: string; months: string } | null
   }[]
   deadlines: { period: PeriodKey; label: string; deadline: string; passed: boolean }[]
+  // Die Abrechnungen, deren Ergebnis sich durch das Aufteilen ändert und die schon begonnen haben
+  // (Laienprobe B3a), vorher und nachher nach den Vorschlägen dieser Vorschau.
+  effects: PeriodEffect[]
   keep: { period: PeriodKey; label: string; deadline: string }[]
   merge: { tenancyId: string; tenantName: string; rows: { from: string; prepaymentCents: number }[] }[]
   blocked: string[]
@@ -401,6 +455,8 @@ export type SeparateAnswers = {
   totals?: Record<string, Record<string, number | null>>
   merge?: boolean
   token?: string
+  // Bestätigung, dass eine Abrechnung mit abgelaufener Frist betroffen ist (Review der Laienprobe, Runde 1).
+  understood?: boolean
 }
 
 export type Settings = {

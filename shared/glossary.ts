@@ -345,6 +345,14 @@ export const GLOSSARY = {
     needed: 'Nur wenn Ihr Messdienst nicht im Zeitraum Ihrer Abrechnung abrechnet und Sie den Zeitraum nicht umstellen wollen. Zulässig ist das, wenn Heizkosten und übrige Kosten mit einer gemeinsamen Vorauszahlung abgerechnet werden. Werden die Heizkosten mit eigener Vorauszahlung getrennt abgerechnet, bekommt jede Heizperiode ihre eigene Heizkostenabrechnung mit eigener Frist; das ist eine Auslegung des Gesetzes. Legt Ihr Mietvertrag den Zeitraum fest, braucht eine Änderung die Zustimmung der Mieter.',
   },
 
+  separateHeatingSettlement: {
+    title: 'Getrennte Heizkostenabrechnung',
+    short: 'Die Heizkosten werden mit einer eigenen Heizkostenvorauszahlung in einer eigenen Abrechnung je Heizperiode abgerechnet, getrennt von den übrigen Betriebskosten.',
+    example: 'Der Mieter zahlt 300,00 € im Monat, davon 123,00 € Heizkostenvorauszahlung und 177,00 € für die übrigen Nebenkosten. Die Heizkostenabrechnung 01.05.2025–30.04.2026 rechnet 12 × 123,00 € = 1.476,00 € gegen Heizkosten von 1.500,00 € an: Nachzahlung 24,00 €, zuzustellen bis 30.04.2027. Die Betriebskostenabrechnung rechnet nur die 177,00 € im Monat an.',
+    norm: '§ 556 Abs. 3 BGB; dass eine eigene Heizkostenvorauszahlung eine eigene Abrechnung mit eigener Frist erlaubt, ist eine Auslegung (BGH, Urteil vom 30.04.2008, VIII ZR 240/07, gilt für die gemeinsame Vorauszahlung)',
+    needed: 'Meist nein. Nur wenn Ihr Mietvertrag eine eigene Heizkostenvorauszahlung und eine eigene Heizkostenabrechnung vorsieht. Zahlen Ihre Mieter eine Vorauszahlung für alle Nebenkosten, rechnen Sie die Heizkosten in der Betriebskostenabrechnung mit ab.',
+  },
+
   shortPeriod: {
     title: 'Rumpfzeitraum',
     short: 'Ein kürzerer Abrechnungszeitraum vor einem Wechsel, damit kein Zeitraum länger als zwölf Monate wird.',

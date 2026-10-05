@@ -23,6 +23,7 @@ import { assessments as assessmentsTable, periodChanges as periodChangesTable, p
 import { eq } from 'drizzle-orm'
 import { LAW_AS_OF } from '../../shared/law/register.ts'
 import { tenancyOverlaps } from '../../shared/tenancyOverlap.ts'
+import { tenancyStamp } from '../../shared/tenancyStamp.ts'
 import { calendarPeriod } from '../../shared/period.ts'
 import type { JsonSchema } from '../src/ai/ollama.ts'
 import type {
@@ -5589,7 +5590,7 @@ test('Wechsel des Zeitraums (#208): Vorschau und Speichern über HTTP, 409 ohne 
     })
     assert.deepEqual(property.periodRules, { startMonth: 1, changes: [] }, 'PUT /api/properties setzt den Rhythmus nicht')
     const gewechselt = await s.api<{ periodRules: unknown }>(`/api/properties/${id}/period`, {
-      method: 'PUT', body: JSON.stringify({ rules: next, answers: { token: vorschau.token, overrides: { [tenancyId]: { '2025-01': 70000, '2025-05': null } } } }),
+      method: 'PUT', body: JSON.stringify({ rules: next, answers: { understood: true, token: vorschau.token, overrides: { [tenancyId]: { '2025-01': 70000, '2025-05': null } } } }),
     })
     assert.deepEqual(gewechselt.periodRules, next)
     assert.equal((await s.api<{ period: { label: string } }>('/api/settlement/2025-01')).period.label, '01.01.–30.04.2025')
@@ -5651,10 +5652,10 @@ test('Wechsel des Zeitraums (#208): Das Jahr der Zahlung bleibt in seiner Spanne
     const frage = vorschau.taxYears.find((t) => t.key === `${item?.id}|2023-09`) ?? assert.fail('keine Frage nach dem Jahr der Zahlung')
     // September 2023 bis August 2024: 2023 bis 2025; 2026 wird auf 2025 geklemmt.
     assert.deepEqual([frage.suggested, frage.options], [2025, [2023, 2024, 2025]])
-    const falsch = await wechsel(s, id, { rules: regeln, answers: { token: vorschau.token, groups: { '2024-05': '2023-09' }, taxYears: { [`${item?.id}|2023-09`]: 2026 } } })
+    const falsch = await wechsel(s, id, { rules: regeln, answers: { understood: true, token: vorschau.token, groups: { '2024-05': '2023-09' }, taxYears: { [`${item?.id}|2023-09`]: 2026 } } })
     assert.equal(falsch.status, 409)
     assert.ok((await jsonOf<{ preview?: unknown }>(falsch)).preview, 'die 409 bringt die Vorschau mit')
-    const ok = await wechsel(s, id, { rules: regeln, answers: { token: vorschau.token, groups: { '2024-05': '2023-09' } } })
+    const ok = await wechsel(s, id, { rules: regeln, answers: { understood: true, token: vorschau.token, groups: { '2024-05': '2023-09' } } })
     assert.equal(ok.status, 200)
     const nachher = (await s.api<CostItem[]>('/api/costItems')).find((c) => c.id === item?.id)
     assert.deepEqual([nachher?.period, nachher?.taxYear], ['2023-09', 2025])
@@ -5679,7 +5680,7 @@ test('Wechsel des Zeitraums (#208): Wächst ein Zeitraum über zwei Kalenderjahr
     const regeln = { startMonth: 1, changes: ['2025-05'] }
     const vorschau = await s.api<Vorschau>(`/api/properties/${id}/period/preview`, { method: 'POST', body: JSON.stringify({ rules: regeln }) })
     assert.equal(vorschau.taxYears.find((t) => t.key === `${item.id}|2025-05`)?.suggested, 2025)
-    assert.equal((await wechsel(s, id, { rules: regeln, answers: { token: vorschau.token } })).status, 200)
+    assert.equal((await wechsel(s, id, { rules: regeln, answers: { understood: true, token: vorschau.token } })).status, 200)
     assert.equal((await s.api<CostItem[]>('/api/costItems')).find((c) => c.id === item.id)?.taxYear, 2025)
     // Danach lässt sie sich speichern.
     await s.api(`/api/costItems/${item.id}`, { method: 'PUT', body: JSON.stringify({ vendor: 'Stadt' }) })
@@ -5697,7 +5698,7 @@ test('Wechsel des Zeitraums (#208): Eine veraltete Vorschau zieht keine gewachse
     const vorschau = await s.api<Vorschau>(`/api/properties/${id}/period/preview`, { method: 'POST', body: JSON.stringify({ rules: regeln }) })
     // In einem zweiten Tab kommt eine Position dazu.
     await s.api('/api/costItems', { method: 'POST', body: JSON.stringify({ period: '2025-01', category: 'Wasser/Abwasser', description: 'Wasser', amountCents: 20000, key: 'area' }) })
-    const alt = await wechsel(s, id, { rules: regeln, answers: { token: vorschau.token, groups: { '2025-01': '2025-01' } } })
+    const alt = await wechsel(s, id, { rules: regeln, answers: { understood: true, token: vorschau.token, groups: { '2025-01': '2025-01' } } })
     assert.equal(alt.status, 409)
     const antwort = await jsonOf<{ error: string; preview: Vorschau }>(alt)
     assert.match(antwort.error, /Vorschau ist nicht mehr aktuell/)
@@ -5705,7 +5706,7 @@ test('Wechsel des Zeitraums (#208): Eine veraltete Vorschau zieht keine gewachse
     assert.deepEqual((await s.api<{ periodRules: unknown }[]>('/api/properties'))[0]?.periodRules, { startMonth: 1, changes: [] }, 'nichts geschrieben')
     const ohneMarke = await wechsel(s, id, { rules: regeln, answers: { groups: { '2025-01': '2025-01' } } })
     assert.equal(ohneMarke.status, 409)
-    assert.equal((await wechsel(s, id, { rules: regeln, answers: { token: antwort.preview.token, groups: { '2025-01': '2025-01' } } })).status, 200)
+    assert.equal((await wechsel(s, id, { rules: regeln, answers: { understood: true, token: antwort.preview.token, groups: { '2025-01': '2025-01' } } })).status, 200)
   } finally {
     s.stop()
   }
@@ -5748,9 +5749,9 @@ test('Wechsel des Zeitraums (#208): hin und zurück steht die Rechnung wieder ex
     assert.deepEqual(await teile(), [['2024-05', 15781], ['2025-05', 32219]])
     for (const startMonth of [1, 5, 9, 5]) {
       const regeln = { startMonth, changes: [] }
-      const vorschau = await s.api<{ token: string; groups: { from: string; suggested: string }[] }>(`/api/properties/${id}/period/preview`, { method: 'POST', body: JSON.stringify({ rules: regeln }) })
-      const groups = Object.fromEntries(vorschau.groups.map((g) => [g.from, g.suggested]))
-      await s.api(`/api/properties/${id}/period`, { method: 'PUT', body: JSON.stringify({ rules: regeln, answers: { token: vorschau.token, groups } }) })
+      const vorschau = await s.api<{ token: string; groups: { id: string; suggested: string }[] }>(`/api/properties/${id}/period/preview`, { method: 'POST', body: JSON.stringify({ rules: regeln }) })
+      const groups = Object.fromEntries(vorschau.groups.map((g) => [g.id, g.suggested]))
+      await s.api(`/api/properties/${id}/period`, { method: 'PUT', body: JSON.stringify({ rules: regeln, answers: { understood: true, token: vorschau.token, groups } }) })
       const summe = (await s.api<CostItem[]>('/api/costItems')).reduce((a, c) => a + c.amountCents, 0)
       assert.equal(summe, 48000, `nach Beginn ${startMonth}: die Summe bleibt`)
     }
@@ -5864,7 +5865,7 @@ test('Zeitraum der Heizung (Heizung PR 5): Vorschau und Wechsel über HTTP, PUT 
     assert.deepEqual(vorschau.moves.map((m) => m.to), ['2025-05'])
     const per = await send(`/api/heating-plants/${plant.id}`, 'PUT', { periodStartMonth: 5 })
     assert.equal(per.status, 400)
-    const ok = await send(`/api/heating-plants/${plant.id}/period`, 'PUT', { rules: { startMonth: 5, changes: [] }, answers: { token: vorschau.token } })
+    const ok = await send(`/api/heating-plants/${plant.id}/period`, 'PUT', { rules: { startMonth: 5, changes: [] }, answers: { understood: true, token: vorschau.token } })
     assert.equal(ok.status, 200)
     assert.equal((await jsonOf<HeatingPlant>(ok)).periodStartMonth, 5)
     assert.equal((await s.api<CostItem[]>('/api/costItems')).find((c) => c.id === position.id)?.period, '2025-05')
@@ -5884,11 +5885,11 @@ test('Getrennte Heizkostenabrechnung (Heizung PR 5): Vorschau und Einschalten ü
     const mieter = await s.api<{ id: string }>('/api/tenancies', { method: 'POST', body: JSON.stringify({ unitId: unit.id, tenantName: 'A', persons: 1, start: '2024-01-01', prepayments: [{ from: '2024-01', monthlyCents: 30000 }] }) })
     const { plant } = await jsonOf<{ plant: HeatingPlant }>(await send('/api/heating-plants', 'POST', { energy: 'gas', method: 'service' }))
     const zeitraum = await jsonOf<{ token: string }>(await send(`/api/heating-plants/${plant.id}/period/preview`, 'POST', { rules: { startMonth: 5, changes: [] } }))
-    await send(`/api/heating-plants/${plant.id}/period`, 'PUT', { rules: { startMonth: 5, changes: [] }, answers: { token: zeitraum.token } })
+    await send(`/api/heating-plants/${plant.id}/period`, 'PUT', { rules: { startMonth: 5, changes: [] }, answers: { understood: true, token: zeitraum.token } })
     const vorschau = await jsonOf<{ way: string; token: string; steps: { rows: { from: string }[] }[] }>(await send(`/api/heating-plants/${plant.id}/separate/preview`, 'POST', { separate: true, month: '2025-05' }))
     assert.deepEqual([vorschau.way, vorschau.steps[0]?.rows.map((r) => r.from)], ['separate', ['2025-05']])
     assert.equal((await send(`/api/heating-plants/${plant.id}/separate`, 'PUT', { separate: true, month: '2025-05' })).status, 409)
-    const ok = await send(`/api/heating-plants/${plant.id}/separate`, 'PUT', { separate: true, month: '2025-05', answers: { steps: { [mieter.id]: { '2025-05': 12300 } }, token: vorschau.token } })
+    const ok = await send(`/api/heating-plants/${plant.id}/separate`, 'PUT', { separate: true, month: '2025-05', answers: { understood: true, steps: { [mieter.id]: { '2025-05': 12300 } }, token: vorschau.token } })
     assert.equal(ok.status, 200)
     assert.deepEqual((await jsonOf<HeatingPlant>(ok)).separateSpans, [{ from: '2025-05', until: null }])
     assert.equal((await send(`/api/heating-plants/${plant.id}/separate/preview`, 'POST', { separate: 'ja' })).status, 400)
@@ -5908,9 +5909,9 @@ test('Heizkostenabrechnung (Heizung PR 5): rechnen, eigene Frist, abschließen; 
     const { plant } = await jsonOf<{ plant: HeatingPlant }>(await send('/api/heating-plants', 'POST', { energy: 'gas', method: 'service' }))
     const marke = async (url: string, body: unknown) => (await jsonOf<{ token: string }>(await send(url, 'POST', body))).token
     const regeln = { startMonth: 5, changes: [] }
-    await send(`/api/heating-plants/${plant.id}/period`, 'PUT', { rules: regeln, answers: { token: await marke(`/api/heating-plants/${plant.id}/period/preview`, { rules: regeln }) } })
+    await send(`/api/heating-plants/${plant.id}/period`, 'PUT', { rules: regeln, answers: { understood: true, token: await marke(`/api/heating-plants/${plant.id}/period/preview`, { rules: regeln }) } })
     const getrennt = { separate: true, month: '2025-05' }
-    const ein = await send(`/api/heating-plants/${plant.id}/separate`, 'PUT', { ...getrennt, answers: { steps: { [mieter.id]: { '2025-05': 12300 } }, token: await marke(`/api/heating-plants/${plant.id}/separate/preview`, getrennt) } })
+    const ein = await send(`/api/heating-plants/${plant.id}/separate`, 'PUT', { ...getrennt, answers: { understood: true, steps: { [mieter.id]: { '2025-05': 12300 } }, token: await marke(`/api/heating-plants/${plant.id}/separate/preview`, getrennt) } })
     assert.equal(ein.status, 200)
     await s.api('/api/costItems', { method: 'POST', body: JSON.stringify({ period: '2025-05', category: 'Heizung und Warmwasser', description: 'Messdienst', amountCents: 150000, key: 'area', heatingPlantId: plant.id, taxYear: 2026 }) })
     const url = `/api/heating-settlement/${plant.id}/2025-05`
@@ -5996,5 +5997,78 @@ test('Abrechnung mit CO₂ über die Routen: ohne Angaben co2.missing, mit Vorwe
     assert.equal(mit.heating?.[0]?.co2?.booked, true)
   } finally {
     s.stop()
+  }
+})
+
+// Laienprobe B1 über die Route: Die Marke eines älteren Stands ergibt 409 mit Satz, nicht 500, und
+// gespeichert wird nichts.
+test('Laienprobe B1: PUT mit veralteter Marke antwortet 409 und ändert nichts', async () => {
+  await withProperties(async (s) => {
+    const u = await s.api<Unit>('/api/units?property=objekt-1', { method: 'POST', body: JSON.stringify({ name: 'EG', areaM2: 80, participates: true }) })
+    const t = await s.api<Tenancy>('/api/tenancies?property=objekt-1', { method: 'POST', body: JSON.stringify({
+      unitId: u.id, tenantName: 'Beispiel', persons: 1, personHistory: [], start: '2025-01-01', end: null,
+      prepayments: [{ from: '2025-01', monthlyCents: 25000 }], prepaymentOverrides: {}, baseRents: [],
+    }) })
+    const alt = tenancyStamp(t)
+    await s.api(`/api/tenancies/${t.id}`, { method: 'PUT', body: JSON.stringify({ prepayments: [{ from: '2025-01', monthlyCents: 3500 }], heatingPrepayments: [{ from: '2025-01', monthlyCents: 21500 }] }) })
+    const r = await fetch(`${s.base}/api/tenancies/${t.id}`, {
+      method: 'PUT', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prepayments: [{ from: '2025-01', monthlyCents: 25000 }], heatingPrepayments: [], ifUnchanged: alt }),
+    })
+    assert.equal(r.status, 409)
+    assert.match((await jsonOf<{ error: string }>(r)).error, /inzwischen an anderer Stelle geändert/)
+    const jetzt = (await s.api<Tenancy[]>('/api/tenancies?property=objekt-1')).find((x) => x.id === t.id) ?? assert.fail('weg')
+    assert.deepEqual(jetzt.heatingPrepayments, [{ from: '2025-01', monthlyCents: 21500 }])
+  })
+})
+
+// Review der Laienprobe, Runde 2: Die Prüfbestände mit festen Jahren kippen nicht, wenn die Frist der
+// Abrechnung 2025 abgelaufen ist (ab 01.01.2027). Mit `understood` geht das Einschalten ab 05/2025 auch
+// dann durch; ohne sagt der Server, welche Frist abgelaufen ist.
+test('Review Runde 2: Weg d ab 05/2025 am 02.01.2027: ohne Bestätigung 409 mit Frist, mit Bestätigung 200', async () => {
+  const s = await startServerIn(fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-')), { NKA_TEST_TODAY: '2027-01-02' })
+  try {
+    const send = (url: string, method: string, body: unknown) =>
+      fetch(`${s.base}${url}`, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    const unit = await s.api<{ id: string }>('/api/units', { method: 'POST', body: JSON.stringify({ name: 'EG', areaM2: 60, participates: true }) })
+    const mieter = await s.api<{ id: string }>('/api/tenancies', { method: 'POST', body: JSON.stringify({ unitId: unit.id, tenantName: 'A', persons: 1, start: '2024-01-01', prepayments: [{ from: '2024-01', monthlyCents: 30000 }] }) })
+    const { plant } = await jsonOf<{ plant: HeatingPlant }>(await send('/api/heating-plants', 'POST', { energy: 'gas', method: 'service' }))
+    const zeitraum = await jsonOf<{ token: string }>(await send(`/api/heating-plants/${plant.id}/period/preview`, 'POST', { rules: { startMonth: 5, changes: [] } }))
+    assert.equal((await send(`/api/heating-plants/${plant.id}/period`, 'PUT', { rules: { startMonth: 5, changes: [] }, answers: { understood: true, token: zeitraum.token } })).status, 200)
+    const vorschau = await jsonOf<{ token: string }>(await send(`/api/heating-plants/${plant.id}/separate/preview`, 'POST', { separate: true, month: '2025-05' }))
+    const answers = { steps: { [mieter.id]: { '2025-05': 12300 } }, token: vorschau.token }
+    const ohne = await send(`/api/heating-plants/${plant.id}/separate`, 'PUT', { separate: true, month: '2025-05', answers })
+    assert.equal(ohne.status, 409)
+    // Gerechnet mit den Antworten: Die Abrechnung 2025 verliert den Heizanteil Mai bis Dezember.
+    const antwort = await jsonOf<{ error: string; preview: { effects: { label: string; passed: boolean }[] } }>(ohne)
+    assert.match(antwort.error, /Abrechnungsfrist für 2025 ist schon abgelaufen/)
+    assert.ok(antwort.preview.effects.some((e) => e.label === '2025' && e.passed))
+    assert.equal((await send(`/api/heating-plants/${plant.id}/separate`, 'PUT', { separate: true, month: '2025-05', answers: { ...answers, understood: true } })).status, 200)
+  } finally {
+    s.stop()
+  }
+})
+
+// Review Runde 3 (N1): Der Testgriff NKA_TEST_TODAY nur mit einem echten Kalenderdatum; sonst bricht
+// der Start ab. Ist er gesetzt, sagt es die Konsole.
+test('Start: NKA_TEST_TODAY mit ungültigem Datum bricht ab; ein gültiges nennt die Konsole', async () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-heute-'))
+  const { child, out } = startServerRaw(dataDir, { NKA_TEST_TODAY: '2027-02-30' })
+  try {
+    assert.equal(await waitForExit(child), 1, out())
+    assert.match(out(), /NKA_TEST_TODAY „2027-02-30“ ist kein Kalenderdatum/)
+    assert.doesNotMatch(out(), /läuft auf/)
+  } finally {
+    child.kill()
+    removeDataDir(dataDir)
+  }
+  const okDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-heute-'))
+  const ok = startServerRaw(okDir, { NKA_TEST_TODAY: '2027-01-02' })
+  try {
+    for (let i = 0; i < 100 && !/Testgriff NKA_TEST_TODAY aktiv/.test(ok.out()); i++) await new Promise((r) => setTimeout(r, 100))
+    assert.match(ok.out(), /Testgriff NKA_TEST_TODAY aktiv: Der Server rechnet mit dem 2027-01-02 als heute\./)
+  } finally {
+    ok.child.kill()
+    removeDataDir(okDir)
   }
 })

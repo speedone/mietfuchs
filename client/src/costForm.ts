@@ -207,6 +207,9 @@ export function amountsSumText(form: ItemForm, units: Unit[], tenancies?: Tenanc
   const tenants = sumOf(visibleTenancyAmounts(form, units, tenancies, period))
   const own = sumOf(visibleSelfAmounts(form, units))
   const sum = tenants + own
+  // Laienprobe B24: Ohne Betrag oder ohne eingetragene Beträge ist nichts „vollständig verteilt“.
+  if (form.amount.trim() === '' || parseEuro(form.amount) === null) return sum > 0 ? `Summe ${fmtCentsInput(sum)} € — bitte oben den Rechnungsbetrag eintragen` : 'Noch keine Beträge eingetragen.'
+  if (sum === 0) return 'Noch keine Beträge eingetragen.'
   if (sum > amount) return `${fmtCentsInput(sum)} € — mehr als der Rechnungsbetrag ist nicht möglich`
   const ownText = own > 0 ? `, davon ${fmtCentsInput(own)} € Ihre eigene Wohnung` : ''
   // Gerundet wird bei Einzelbeträgen nichts (#142); ein Rest entsteht, wenn für einen Zeitraum

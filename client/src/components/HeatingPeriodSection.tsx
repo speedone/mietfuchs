@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import type { HeatingPeriodChangePreview, HeatingPlant, PeriodRules, SeparatePreview } from '../types'
 import { ApiError, api, errorText, fmtDate, fmtEuro } from '../api'
-import { MONTH_OPTIONS } from '../periodForm'
+import { earliestOpenChange, localToday, MONTH_OPTIONS } from '../periodForm'
+import { EffectsList } from './PeriodCard'
+import Term from './Term'
 import { hasOwnRhythm } from '../../../shared/heatingPeriod.ts'
 import {
   PERIOD_CHOICE_OPTIONS, SEPARATE_OPTIONS, heatingPeriodAnswersOf, heatingPeriodForm, heatingPeriodSummary, heatingRulesBody, initialHeatingPeriodAnswers,
@@ -37,6 +39,8 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
   const [separatePreview, setSeparatePreview] = useState<SeparatePreview | null>(null)
   const [separateAnswers, setSeparateAnswers] = useState<SeparateAnswerForm | null>(null)
   const [month, setMonth] = useState('')
+  const [understood, setUnderstood] = useState(false)
+  const [periodUnderstood, setPeriodUnderstood] = useState(false)
   const [error, setError] = useState('')
   const own = hasOwnRhythm(plant)
   const openSpan = plant.separateSpans.some((s) => s.until === null)
@@ -56,6 +60,7 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
       const p = await api<HeatingPeriodChangePreview>(`/api/heating-plants/${plant.id}/period/preview`, { method: 'POST', body: JSON.stringify(body) })
       setPeriodPreview(p)
       setPeriodAnswers(initialHeatingPeriodAnswers(p))
+      setPeriodUnderstood(false)
       setError('')
     } catch (e) {
       setError(errorText(e))
@@ -68,13 +73,15 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
     const answers = heatingPeriodAnswersOf(periodPreview, periodAnswers)
     if ('error' in answers) return setError(answers.error)
     try {
-      await api(`/api/heating-plants/${plant.id}/period`, { method: 'PUT', body: JSON.stringify({ rules: body.rules, answers }) })
+      await api(`/api/heating-plants/${plant.id}/period`, { method: 'PUT', body: JSON.stringify({ rules: body.rules, answers: { ...answers, understood: periodUnderstood } }) })
     } catch (e) {
       const fresh = freshPreview<HeatingPeriodChangePreview>(e)
       if (fresh) {
         setPeriodPreview(fresh)
         setPeriodAnswers({ ...initialHeatingPeriodAnswers(fresh), amounts: periodAnswers.amounts, none: periodAnswers.none })
       }
+      // Review Runde 2: Die Bestätigung galt der alten Vorschau.
+      setPeriodUnderstood(false)
       setError(fresh ? `${errorText(e)} Bitte prüfen Sie die Vorschau erneut.` : errorText(e))
       return
     }
@@ -82,16 +89,24 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
     // Heizperiode geht es mit der Vorschau zum Aufteilen weiter (Weg d), sonst wird sie gespeichert.
     close()
     await onChanged()
+    // Laienprobe B11: Bei „ja“ ist die getrennte Abrechnung erst nach dem Aufteilen der Vorauszahlung
+    // eingeschaltet. Die Vorschau dazu öffnet sich gleich, und die Meldung sagt, dass noch etwas fehlt.
+    if (form.choice === 'own' && form.separate === 'yes' && !openSpan) {
+      notify('Zeitraum der Heizung gespeichert. Noch nicht eingeschaltet ist die getrennte Heizkostenabrechnung: Prüfen Sie unten die Aufteilung der Vorauszahlung und klicken Sie „Übernehmen“.')
+      setOpen('separate')
+      await loadSeparatePreview(true)
+      return
+    }
     notify('Zeitraum der Heizung gespeichert.')
-    if (form.choice === 'own' && form.separate === 'yes' && !openSpan) setOpen('separate')
   }
 
-  async function loadSeparatePreview() {
-    const body = separateOn ? { separate: false, ...(month ? { until: month } : {}) } : { separate: true, ...(month ? { month } : {}) }
+  async function loadSeparatePreview(switchOn = false) {
+    const body = separateOn && !switchOn ? { separate: false, ...(month ? { until: month } : {}) } : { separate: true, ...(month ? { month } : {}) }
     try {
       const p = await api<SeparatePreview>(`/api/heating-plants/${plant.id}/separate/preview`, { method: 'POST', body: JSON.stringify(body) })
       setSeparatePreview(p)
       setSeparateAnswers(initialSeparateAnswers(p))
+      setUnderstood(false)
       setMonth(p.separate ? p.month ?? '' : p.until ?? p.month ?? '')
       setError('')
     } catch (e) {
@@ -103,9 +118,10 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
     if (!separatePreview || !separateAnswers) return
     const answers = separateAnswersOf(separatePreview, separateAnswers)
     if ('error' in answers) return setError(answers.error)
+    const confirmed = { ...answers, understood }
     const body = separatePreview.separate
-      ? { separate: true, month: separatePreview.month, answers }
-      : { separate: false, ...(separatePreview.until ? { until: separatePreview.until } : { month: separatePreview.month }), answers }
+      ? { separate: true, month: separatePreview.month, answers: confirmed }
+      : { separate: false, ...(separatePreview.until ? { until: separatePreview.until } : { month: separatePreview.month }), answers: confirmed }
     try {
       await api(`/api/heating-plants/${plant.id}/separate`, { method: 'PUT', body: JSON.stringify(body) })
     } catch (e) {
@@ -114,6 +130,8 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
         setSeparatePreview(fresh)
         setSeparateAnswers({ ...initialSeparateAnswers(fresh), amounts: separateAnswers.amounts, none: separateAnswers.none, merge: separateAnswers.merge })
       }
+      // Review Runde 1: Nach einer 409 gilt die alte Bestätigung nicht für die neue Vorschau.
+      setUnderstood(false)
       setError(fresh ? `${errorText(e)} Bitte prüfen Sie die Vorschau erneut.` : errorText(e))
       return
     }
@@ -148,7 +166,7 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
             </select>
           </label>
           {/* Der Satz steht außerhalb des label, sonst gehörte er zum Namen des Auswahlfelds. */}
-          <small className="muted">Woran erkenne ich das? Am Zeitraum auf der Abrechnung Ihres Messdienstes, etwa „01.05.2025–30.04.2026“.</small>
+          <small className="muted">Woran erkenne ich das? Am Zeitraum auf der Abrechnung Ihres Messdienstes, etwa „01.05.2025–30.04.2026“. Ohne Messdienst: am Tag, an dem Sie die Zähler ablesen oder an dem Ihre Gas- oder Ölrechnung endet.</small>
           {form.choice === 'own' && (
             <>
               {/* Die drei Wege (Nutzerwunsch zu Schritt 3): jeder mit Vor- und Nachteilen, Weg 1 als Vorgabe. */}
@@ -168,25 +186,26 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
                 </ol>
               </div>
               <fieldset className="field grow">
-                <legend className="field-legend">Seit wann?</legend>
+                <legend className="field-legend">Gilt dieser Zeitraum schon immer oder erst ab einem Monat?</legend>
                 <label className="checkline"><input type="radio" checked={form.mode === 'start'} onChange={() => setForm({ ...form, mode: 'start' })} /> Schon immer</label>
                 <label className="checkline"><input type="radio" checked={form.mode === 'change'} onChange={() => setForm({ ...form, mode: 'change' })} /> Ab einem Monat</label>
               </fieldset>
+              {/* Laienprobe B14: „Ab Monat“ wurde als „seit wann“ gelesen; gemeint ist der Beginn jeder Heizperiode. */}
               {form.mode === 'start' ? (
                 <label className="field">
-                  Ab Monat
+                  Heizperiode beginnt im
                   <select value={String(form.month)} onChange={(e) => setForm({ ...form, month: Number(e.target.value) })}>
                     {MONTH_OPTIONS.map((o) => <option key={o.value} value={String(o.value)}>{o.label}</option>)}
                   </select>
                 </label>
               ) : (
                 <label className="field">
-                  Neuer Zeitraum ab
-                  <input type="month" value={form.from} onChange={(e) => setForm({ ...form, from: e.target.value })} />
+                  Neue Heizperiode beginnt ab (Monat/Jahr)
+                  <input type="month" placeholder="JJJJ-MM" value={form.from} onChange={(e) => setForm({ ...form, from: e.target.value })} />
                 </label>
               )}
               <label className="field grow">
-                Rechnen Sie die Heizkosten getrennt ab, mit eigener Heizkostenvorauszahlung?
+                <span>Rechnen Sie die Heizkosten <Term id="separateHeatingSettlement">getrennt ab</Term>, mit eigener Heizkostenvorauszahlung?</span>
                 <select value={form.separate} onChange={(e) => setForm({ ...form, separate: e.target.value as SeparateChoice })}>
                   <option value="">— bitte wählen —</option>
                   {SEPARATE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -203,14 +222,27 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
           {periodPreview && periodAnswers && (
             <div className="preview">
               {periodPreview.blocked.map((b) => <div key={b} className="error">{b}</div>)}
-              {periodPreview.moves.length > 0 && (
-                <ul>{periodPreview.moves.map((m) => <li key={m.costItemId}>{m.description}: von {m.fromLabel} nach {m.toLabel} ({fmtEuro(m.amountCents)})</li>)}</ul>
-              )}
+              {/* Laienprobe B12, B13: je Position die Heizperiode mit Tagen, vorbelegt mit der, die im bisherigen Zeitraum endet. */}
+              {periodPreview.moves.map((m) => (
+                <div key={m.costItemId}>
+                  <label className="field grow">
+                    {`Heizperiode für „${m.description}“ (${fmtEuro(m.amountCents)}, bisher ${m.fromRange})`}
+                    <select value={periodAnswers.moves[m.costItemId] ?? m.to} onChange={(e) => setPeriodAnswers({ ...periodAnswers, moves: { ...periodAnswers.moves, [m.costItemId]: e.target.value } })}>
+                      {m.options.map((o) => <option key={o.key} value={o.key}>{`Heizperiode ${o.range}${o.key === m.to ? ' (Vorgabe)' : ''}`}</option>)}
+                    </select>
+                  </label>
+                  {m.check && (
+                    <small className="muted">
+                      {`Prüfen Sie, welchen Zeitraum die Rechnung abdeckt. Vorgeschlagen ist die Heizperiode, die in ${m.fromLabel} endet; so bleibt sie in derselben Abrechnung. Ist es eine Rechnung des Versorgers über ${m.fromRange}, deckt sie keine Heizperiode genau ab: Tragen Sie danach ihren Leistungszeitraum ein; Mietfuchs warnt dann, wenn er über die Heizperiode hinausreicht.`}
+                    </small>
+                  )}
+                </div>
+              ))}
               {periodPreview.groups.map((g) => (
                 <label key={g.from} className="field grow">
                   {`Heizperiode für ${g.items.map((i) => i.description).join(', ')}`}
                   <select value={periodAnswers.groups[g.from] ?? ''} onChange={(e) => setPeriodAnswers({ ...periodAnswers, groups: { ...periodAnswers.groups, [g.from]: e.target.value } })}>
-                    {g.options.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+                    {g.options.map((o) => <option key={o.key} value={o.key}>{`Heizperiode ${o.range}`}</option>)}
                   </select>
                 </label>
               ))}
@@ -231,7 +263,14 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
               {periodPreview.endsSeparate.length > 0 && (
                 <p className="muted">{`Danach in der Betriebskostenabrechnung statt getrennt: ${periodPreview.endsSeparate.map((e) => e.label).join(', ')}.`}</p>
               )}
-              <button className="btn" disabled={periodPreview.blocked.length > 0} onClick={() => void savePeriod()}>Übernehmen</button>
+              {/* Review Runde 2: Fristen und Bestätigung wie beim Zeitraum des Objekts. */}
+              <EffectsList effects={periodPreview.effects} earliest={earliestOpenChange(localToday())} />
+              {periodPreview.effects.some((e) => e.passed) && (
+                <label className="checkline">
+                  <input type="checkbox" checked={periodUnderstood} onChange={(e) => setPeriodUnderstood(e.target.checked)} /> Ich habe verstanden, dass ich aus einer Abrechnung mit abgelaufener Frist keine Nachzahlung mehr verlangen kann.
+                </label>
+              )}
+              <button className="btn" disabled={periodPreview.blocked.length > 0 || (periodPreview.effects.some((e) => e.passed) && !periodUnderstood)} onClick={() => void savePeriod()}>Übernehmen</button>
             </div>
           )}
         </div>
@@ -287,16 +326,22 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
               ))}
               {separatePreview.deadlines.map((d) => (
                 <p key={d.period} className={d.passed ? 'error' : 'muted'}>
-                  {`Heizkostenabrechnung ${d.label}: Frist ${fmtDate(d.deadline)}${d.passed ? ' – abgelaufen; eine Nachforderung ist ausgeschlossen (§ 556 Abs. 3 Satz 3 BGB).' : ''}`}
+                  {`Heizkostenabrechnung ${d.label}: Frist ${fmtDate(d.deadline)}${d.passed ? ' – abgelaufen; eine Nachforderung ist in der Regel ausgeschlossen, außer Sie haben die Verspätung nicht zu vertreten (§ 556 Abs. 3 Satz 3 BGB).' : ''}`}
                 </p>
               ))}
+              <EffectsList effects={separatePreview.effects} />
+              {separatePreview.effects.some((e) => e.passed) && (
+                <label className="checkline">
+                  <input type="checkbox" checked={understood} onChange={(e) => setUnderstood(e.target.checked)} /> Ich habe verstanden, dass ich aus einer Abrechnung mit abgelaufener Frist keine Nachzahlung mehr verlangen kann.
+                </label>
+              )}
               {separatePreview.keep.length > 0 && <p className="muted">{`Getrennt bleiben: ${separatePreview.keep.map((k) => `${k.label} (Frist ${fmtDate(k.deadline)})`).join(', ')}.`}</p>}
               {separatePreview.merge.length > 0 && (
                 <label className="checkline">
                   <input type="checkbox" checked={separateAnswers.merge} onChange={(e) => setSeparateAnswers({ ...separateAnswers, merge: e.target.checked })} /> Heizvorauszahlung und übrige Vorauszahlung wieder zu einer zusammenführen
                 </label>
               )}
-              <button className="btn" disabled={separatePreview.blocked.length > 0} onClick={() => void saveSeparate()}>Übernehmen</button>
+              <button className="btn" disabled={separatePreview.blocked.length > 0 || (separatePreview.effects.some((e) => e.passed) && !understood)} onClick={() => void saveSeparate()}>Übernehmen</button>
             </div>
           )}
         </div>

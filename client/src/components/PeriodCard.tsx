@@ -1,10 +1,13 @@
 import { useState } from 'react'
-import type { PeriodChangePreview, Property } from '../types'
-import { api, errorText, fmtEuro } from '../api'
+import type { PeriodChangePreview, PeriodEffect, Property } from '../types'
+import { api, errorText, fmtDate, fmtEuro } from '../api'
 import { useOpenForm, useProperty } from '../property'
 import { useToast } from './feedback'
 import Term from './Term'
-import { answersAfterConflict, answersOf, changeLabel, conflictPreview, initialAnswers, MONTH_OPTIONS, nextRules, rhythmText, withoutChange, type AnswerForm, type RhythmForm } from '../periodForm'
+import {
+  answersAfterConflict, answersOf, changeLabel, conflictPreview, earliestOpenChange, initialAnswers, localToday, MONTH_OPTIONS, nextRules, periodChangedText, rhythmText, withoutChange,
+  type AnswerForm, type RhythmForm,
+} from '../periodForm'
 import { rulesOf } from '../../../shared/period.ts'
 
 // Die Karte „Abrechnungszeitraum“ in den Stammdaten (#208, Entwurf 3.6, 11.4). Jede Änderung geht
@@ -13,12 +16,13 @@ import { rulesOf } from '../../../shared/period.ts'
 
 export function RhythmFields({ form, onChange }: { form: RhythmForm; onChange: (next: RhythmForm) => void }) {
   return (
+    <>
     <div className="row">
       <label className="field">
         Was möchten Sie ändern?
         <select value={form.mode} onChange={(e) => onChange({ ...form, mode: e.target.value === 'change' ? 'change' : 'start' })}>
-          <option value="start">Beginnmonat von Anfang an</option>
-          <option value="change">Wechsel ab einem Monat</option>
+          <option value="change">Wechsel ab einem Monat (frühere Zeiträume bleiben)</option>
+          <option value="start">Beginnmonat von Anfang an (auch alle früheren Zeiträume)</option>
         </select>
       </label>
       {form.mode === 'start' ? (
@@ -30,31 +34,122 @@ export function RhythmFields({ form, onChange }: { form: RhythmForm; onChange: (
         </label>
       ) : (
         <label className="field">
-          Ab (Monat und Jahr)
-          <input type="month" value={form.from} onChange={(e) => onChange({ ...form, from: e.target.value })} />
+          Neuer Zeitraum beginnt ab (Monat/Jahr)
+          <input type="month" placeholder="JJJJ-MM" value={form.from} onChange={(e) => onChange({ ...form, from: e.target.value })} />
+          <span className="muted">Danach läuft jeder Zeitraum von diesem Monat bis zum Vormonat im Folgejahr; davor entsteht ein kürzerer Rumpfzeitraum.</span>
         </label>
       )}
+    </div>
+    {/* Laienprobe B4: „von Anfang an“ deutet die Vergangenheit um, auch schon verschickte Abrechnungen. */}
+    {form.mode === 'start' && (
+      <div className="warn">
+        Das ändert auch alle früheren Abrechnungszeiträume, nicht nur künftige. Haben Sie eine Abrechnung davon schon verschickt,
+        wählen Sie „Wechsel ab einem Monat“; sonst stimmen die Zahlen hier nicht mehr mit der verschickten Abrechnung überein.
+      </div>
+    )}
+    </>
+  )
+}
+
+// Laienprobe B3, B3a: Fristen und Ergebnisse der Abrechnungen, die die Änderung trifft und die schon
+// begonnen haben, vorher und nachher. Abgelaufene Frist: rot, mit der Folge (§ 556 Abs. 3 S. 3 BGB)
+// und dem Betrag. Auch die Vorschau der Heizung nutzt die Liste.
+const balance = (cents: number): string => (cents >= 0 ? `Guthaben ${fmtEuro(cents)}` : `Nachzahlung ${fmtEuro(-cents)}`)
+
+export function EffectsList({ effects, earliest }: { effects: PeriodEffect[]; earliest?: string }) {
+  if (effects.length === 0) return null
+  return (
+    <div>
+      <h4>Was sich an schon begonnenen Abrechnungen ändert</h4>
+      <p className="muted">Gerechnet mit den Vorschlägen dieser Vorschau; wo keiner steht, mit dem Aufteilen nach Tagen. Wählen Sie anders, ändern sich die Beträge.</p>
+      {effects.map((e) => (
+        <div key={e.label} className={e.passed ? 'error' : 'muted'}>
+          <p>
+            <strong>{e.label}</strong>: Abrechnung bis {fmtDate(e.deadline)} zustellen
+            {e.passed ? ' – diese Frist ist schon abgelaufen.' : '.'}
+            {e.replaces.length > 0 && ` Bisher: ${e.replaces.map((r) => `${r.label} (Frist ${fmtDate(r.deadline)})`).join(', ')}.`}
+          </p>
+          {e.tenants.length > 0 && (
+            <ul>
+              {e.tenants.map((t) => (
+                <li key={t.tenantName}>
+                  {t.tenantName}: {t.beforeCents === null ? '' : `vorher ${balance(t.beforeCents)}, `}nachher {balance(t.afterCents)}
+                </li>
+              ))}
+            </ul>
+          )}
+          {e.passed && (
+            <p>
+              Weil Sie selbst umstellen, haben Sie die Verspätung zu vertreten; eine Nachzahlung aus diesem Zeitraum können Sie deshalb nicht mehr
+              verlangen (§ 556 Abs. 3 Satz 3 BGB){e.lostClaimsCents > 0 ? `; das sind hier ${fmtEuro(e.lostClaimsCents)} mehr als bisher` : ''}.
+              {' '}Vorsicht auch aus einem zweiten Grund: Ob sich der Abrechnungszeitraum für einen schon abgelaufenen Zeitraum nachträglich ändern
+              lässt, ist nicht geklärt; üblich ist ein Wechsel nur für die Zukunft.
+              {earliest && ` Damit keine abgelaufene Abrechnung entsteht, wechseln Sie frühestens ab ${changeLabel(earliest)}.`}
+            </p>
+          )}
+        </div>
+      ))}
     </div>
   )
 }
 
 export function PreviewAnswers({ preview, answers, onChange }: { preview: PeriodChangePreview; answers: AnswerForm; onChange: (next: AnswerForm) => void }) {
   // Das Jahr der Zahlung einer Position einer Gruppe nur für den gewählten Zeitraum (I1).
-  const groupOf = new Map(preview.groups.flatMap((g) => g.items.map((i) => [i.costItemId, g.from] as const)))
+  const groupOf = new Map(preview.groups.flatMap((g) => g.items.map((i) => [i.costItemId, g] as const)))
+  const chosenOf = (g: PeriodChangePreview['groups'][number]): string => answers.groups[g.id] ?? g.suggested
   const shownTax = preview.taxYears.filter((t) => {
-    const from = groupOf.get(t.costItemId)
-    return from === undefined || (answers.groups[from] ?? preview.groups.find((g) => g.from === from)?.suggested) === t.period
+    const g = groupOf.get(t.costItemId)
+    if (g === undefined) return true
+    const chosen = chosenOf(g)
+    return chosen === 'split' ? true : chosen === t.period
   })
   return (
     <>
-      {preview.groups.map((g) => (
-        <label key={g.from} className="field">
-          Zeitraum für {g.items.map((i) => `„${i.description}“`).join(', ')} (bisher {g.fromLabel})
-          <select value={answers.groups[g.from] ?? g.suggested} onChange={(e) => onChange({ ...answers, groups: { ...answers.groups, [g.from]: e.target.value } })}>
-            {g.options.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
-          </select>
-        </label>
-      ))}
+      {preview.groups.map((g) => {
+        const chosen = chosenOf(g)
+        const target = g.options.find((o) => o.key === chosen)
+        const total = g.items.reduce((sum, i) => sum + i.amountCents, 0)
+        const short = target !== undefined && preview.periods.some((p) => p.key === target.key && p.short)
+        return (
+          <div key={g.id}>
+            <label className="field">
+              Zeitraum für {g.items.map((i) => `„${i.description}“`).join(', ')} (bisher {g.fromLabel})
+              <select value={chosen} onChange={(e) => onChange({ ...answers, groups: { ...answers.groups, [g.id]: e.target.value } })}>
+                {chosen === '' && <option value="">– bitte wählen –</option>}
+                {g.split !== null && <option value="split">{g.suggested === 'split' ? 'Nach Tagen auf die neuen Zeiträume aufteilen (Vorgabe)' : 'Nach Tagen auf die neuen Zeiträume aufteilen'}</option>}
+                {g.options.map((o) => <option key={o.key} value={o.key}>ganz nach {o.label}</option>)}
+              </select>
+            </label>
+            {/* Review Runde 1: warum das Teilen nicht vorbelegt ist, und was es zwischen Steuerjahren verschöbe. */}
+            {g.split !== null && (chosen === 'split' || chosen === '') && g.split.notes.map((n) => <div key={n} className="warn">{n}</div>)}
+            {g.taxShifts.filter((t) => t.key === chosen).map((t) => <div key={t.key} className="warn">{t.text}</div>)}
+            {/* Laienprobe B2: was das Aufteilen ergibt, und was das Nicht-Aufteilen bedeutet. */}
+            {g.split !== null && chosen === 'split' && (
+              <p className="muted">
+                Die Rechnungen gelten als Kosten von {g.split.range} und werden nach Tagen geteilt:{' '}
+                {g.split.items.map((it) => {
+                  const d = g.items.find((i) => i.costItemId === it.costItemId)?.description ?? ''
+                  return `„${d}“ ${it.parts.map((p) => `${p.label}: ${fmtEuro(p.amountCents)}`).join(', ')}`
+                }).join('; ')}.
+              </p>
+            )}
+            {g.split !== null && chosen !== 'split' && (
+              <div className="warn">
+                {fmtEuro(total)} kommen ganz nach {target?.label ?? chosen}. Wählen Sie das nur, wenn die Rechnungen ausschließlich diesen Zeitraum betreffen;
+                eine Jahresrechnung stünde sonst ganz in {target?.label ?? chosen}.
+              </div>
+            )}
+            {g.heating && (
+              <div className="warn">
+                Heizkosten teilt Mietfuchs nicht nach Tagen, denn im Winter wird mehr verbraucht als im Sommer (BGH VIII ZR 156/11).
+                {short
+                  ? ` ${fmtEuro(total)} stehen danach ganz im Rumpfzeitraum ${target?.label ?? ''}. Ist das eine Rechnung über ein ganzes Jahr, zahlen die Mieter dort die Heizkosten eines Jahres gegen die Vorauszahlungen weniger Monate. Tragen Sie danach den Leistungszeitraum der Rechnung ein und lassen Sie sie zum Stichtag abgrenzen (Zählerstand oder Zwischenrechnung des Versorgers).`
+                  : ' Wählen Sie den Zeitraum, in dem die Wärme verbraucht wurde.'}
+              </div>
+            )}
+          </div>
+        )
+      })}
       {shownTax.map((t) => (
         <label key={t.key} className="field">
           Jahr der Zahlung (Steuer) für „{t.description}“ in {t.label}
@@ -92,10 +187,12 @@ export function PreviewAnswers({ preview, answers, onChange }: { preview: Period
   )
 }
 
-export default function PeriodCard() {
+export default function PeriodCard({ onChanged }: { onChanged?: () => Promise<void> } = {}) {
   const { property, reload } = useProperty()
   const toast = useToast()
-  const [form, setForm] = useState<RhythmForm>({ mode: 'start', month: 1, from: '' })
+  // Laienprobe B4: Vorgabe ist der Wechsel ab dem laufenden Monat; frühere Zeiträume bleiben, wie sie sind.
+  const [form, setForm] = useState<RhythmForm>({ mode: 'change', month: 1, from: localToday().slice(0, 7) })
+  const [understood, setUnderstood] = useState(false)
   const [preview, setPreview] = useState<PeriodChangePreview | null>(null)
   const [answers, setAnswers] = useState<AnswerForm | null>(null)
   const [error, setError] = useState('')
@@ -114,6 +211,7 @@ export default function PeriodCard() {
       const p = await api<PeriodChangePreview>(`/api/properties/${property.id}/period/preview`, { method: 'POST', body: JSON.stringify({ rules: next }) })
       setPreview(p)
       setAnswers(initialAnswers(p))
+      setUnderstood(false)
     } catch (e) {
       setError(errorText(e))
     } finally {
@@ -127,12 +225,15 @@ export default function PeriodCard() {
     if ('error' in given) { setError(given.error); return }
     setBusy(true)
     try {
-      await api<Property>(`/api/properties/${property.id}/period`, { method: 'PUT', body: JSON.stringify({ rules: preview.rules, answers: given }) })
+      await api<Property>(`/api/properties/${property.id}/period`, { method: 'PUT', body: JSON.stringify({ rules: preview.rules, answers: { ...given, understood } }) })
+      const done = preview
       setPreview(null)
       setAnswers(null)
       setError('')
       await reload()
-      toast('Abrechnungszeitraum umgestellt.')
+      await onChanged?.()
+      // Laienprobe B7: was jetzt gilt und bis wann der Rumpf zugehen muss.
+      toast(periodChangedText(done))
     } catch (e) {
       // 409: veraltete Vorschau oder fehlende Angaben. Die Antwort bringt die neue Vorschau mit
       // (Durchsicht von #226, M2); sie ersetzt die alte, die Antworten werden neu vorbelegt.
@@ -141,6 +242,8 @@ export default function PeriodCard() {
         setPreview(fresh)
         setAnswers(answersAfterConflict(fresh, preview.token, answers))
       }
+      // Review Runde 1: Die Bestätigung galt der alten Vorschau.
+      setUnderstood(false)
       setError(`${errorText(e)} Bitte prüfen Sie die Vorschau erneut.`)
     } finally {
       setBusy(false)
@@ -150,7 +253,13 @@ export default function PeriodCard() {
   return (
     <div className="card">
       <h2><Term id="billingPeriod">Abrechnungszeitraum</Term></h2>
-      <p>{rhythmText(rules)}. <span className="muted">Januar heißt Kalenderjahr. Wählen Sie den Monat, mit dem Ihr Messdienst abrechnet.</span></p>
+      <p>
+        {rhythmText(rules)}.{' '}
+        <span className="muted">
+          Wählen Sie einen anderen Beginn nur, wenn Ihr Mietvertrag oder Ihr Messdienst ihn vorgibt. Weicht nur die Heizung ab,
+          stellen Sie das in der Karte „Heizung“ ein; der Zeitraum der übrigen Kosten bleibt dann, wie er ist.
+        </span>
+      </p>
       {rules.changes.map((c) => (
         <button key={c} className="btn secondary" disabled={busy} onClick={() => void ask(withoutChange(rules, c))}>Wechsel ab {changeLabel(c)} entfernen …</button>
       ))}
@@ -173,8 +282,15 @@ export default function PeriodCard() {
           ))}
           {preview.assessments.map((a) => <p key={a.assessmentId} className="muted">Belegauswertung „{a.file}“: künftig {a.toLabel}.</p>)}
           <PreviewAnswers preview={preview} answers={answers} onChange={setAnswers} />
+          <EffectsList effects={preview.effects} earliest={earliestOpenChange(localToday())} />
+          {preview.effects.some((e) => e.passed) && (
+            <label className="field checkline">
+              <input type="checkbox" checked={understood} onChange={(e) => setUnderstood(e.target.checked)} />
+              <span>Ich habe verstanden, dass ich aus einem Zeitraum mit abgelaufener Frist keine Nachzahlung mehr verlangen kann.</span>
+            </label>
+          )}
           <div className="row">
-            <button className="btn" disabled={busy || preview.blocked.length > 0} onClick={() => void apply()}>Zeitraum wechseln</button>
+            <button className="btn" disabled={busy || preview.blocked.length > 0 || (preview.effects.some((e) => e.passed) && !understood)} onClick={() => void apply()}>Zeitraum wechseln</button>
             <button className="btn secondary" disabled={busy} onClick={() => { setPreview(null); setAnswers(null); setError('') }}>Abbrechen</button>
           </div>
         </div>

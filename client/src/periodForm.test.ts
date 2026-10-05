@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { anchorOf, answersAfterConflict, answersOf, changeLabel, conflictPreview, initialAnswers, labelOfKey, nextRules, periodSpanText, periodView, rhythmText, withoutChange } from './periodForm'
+import { anchorOf, answersAfterConflict, answersOf, changeLabel, conflictPreview, earliestOpenChange, initialAnswers, periodChangedText, labelOfKey, nextRules, periodSpanText, periodView, rhythmText, withoutChange } from './periodForm'
 import { CALENDAR_RULES, periodKey, periodOfKey } from '../../shared/period.ts'
 import type { PeriodChangePreview, PeriodRules } from './types'
 import type { AnswerForm } from './periodForm'
@@ -63,9 +63,9 @@ describe('Rhythmus ändern (#208)', () => {
     expect(withoutChange(WECHSEL, '2025-05')).toEqual({ startMonth: 1, changes: [] })
   })
   const vorschau: PeriodChangePreview = {
-    rules: WECHSEL, periods: [], newShort: [], blocked: [], moves: [], assessments: [], token: 'marke',
+    rules: WECHSEL, periods: [], newShort: [], blocked: [], moves: [], effects: [], assessments: [], token: 'marke',
     taxYears: [{ key: 'mu|2025-05', costItemId: 'mu', description: 'Müll 2025', period: periodKey('2025-05'), label: '2025/2026', suggested: 2025, options: [2025, 2026, 2027] }],
-    groups: [{ from: periodKey('2025-01'), fromLabel: '2025', items: [{ costItemId: 'mu', description: 'Müll 2025', amountCents: 30000 }], options: [{ key: periodKey('2025-01'), label: '01.01.–30.04.2025' }, { key: periodKey('2025-05'), label: '2025/2026' }], suggested: periodKey('2025-01') }],
+    groups: [{ id: '2025-01', heating: false, split: null, taxShifts: [], from: periodKey('2025-01'), fromLabel: '2025', items: [{ costItemId: 'mu', description: 'Müll 2025', amountCents: 30000 }], options: [{ key: periodKey('2025-01'), label: '01.01.–30.04.2025' }, { key: periodKey('2025-05'), label: '2025/2026' }], suggested: periodKey('2025-01') }],
     overrides: [{ tenancyId: 't-a', tenantName: 'A', from: [{ key: periodKey('2025-01'), label: '2025', cents: 220000 }], ask: [{ period: periodKey('2025-01'), label: '01.01.–30.04.2025', months: '01–04/2025' }, { period: periodKey('2025-05'), label: '2025/2026', months: '05/2025–04/2026' }] }],
   }
   test('Antworten: Zuordnung vorbelegt, jede Korrektur verlangt einen Betrag oder „keine Korrektur“ (N4)', () => {
@@ -95,9 +95,9 @@ describe('Durchsicht von #226 (M2, M5)', () => {
 
 describe('Nachprüfung von #226 (3): Antworten nach einer 409', () => {
   const vorschau = (token: string, extra = false): PeriodChangePreview => ({
-    rules: WECHSEL, periods: [], newShort: [], blocked: [], moves: [], assessments: [], token,
+    rules: WECHSEL, periods: [], newShort: [], blocked: [], moves: [], effects: [], assessments: [], token,
     taxYears: [{ key: 'mu|2025-05', costItemId: 'mu', description: 'Müll', period: periodKey('2025-05'), label: '2025/2026', suggested: 2025, options: [2025, 2026, 2027] }],
-    groups: [{ from: periodKey('2025-01'), fromLabel: '2025', items: [{ costItemId: 'mu', description: 'Müll', amountCents: 1 }, ...(extra ? [{ costItemId: 'wa', description: 'Wasser', amountCents: 2 }] : [])], options: [{ key: periodKey('2025-01'), label: 'R' }, { key: periodKey('2025-05'), label: '2025/2026' }], suggested: periodKey('2025-01') }],
+    groups: [{ id: '2025-01', heating: false, split: null, taxShifts: [], from: periodKey('2025-01'), fromLabel: '2025', items: [{ costItemId: 'mu', description: 'Müll', amountCents: 1 }, ...(extra ? [{ costItemId: 'wa', description: 'Wasser', amountCents: 2 }] : [])], options: [{ key: periodKey('2025-01'), label: 'R' }, { key: periodKey('2025-05'), label: '2025/2026' }], suggested: periodKey('2025-01') }],
     overrides: [{ tenancyId: 't-a', tenantName: 'A', from: [], ask: [{ period: periodKey('2025-01'), label: 'R', months: '01–04/2025' }] }],
   })
   const eingetragen = (): AnswerForm => ({ groups: { '2025-01': '2025-05' }, overrides: { 't-a': { '2025-01': { amount: '700,00', none: false } } }, taxYears: { 'mu|2025-05': '2026' } })
@@ -116,5 +116,16 @@ describe('Nachprüfung von #226 (3): Antworten nach einer 409', () => {
     const gruppe = vorschau('n').groups[0] ?? expect.unreachable('keine Gruppe')
     const neu = { ...vorschau('n'), groups: [{ ...gruppe, options: [{ key: periodKey('2025-01'), label: 'R' }] }] }
     expect(answersAfterConflict(neu, 'm', eingetragen()).groups).toEqual({ '2025-01': '2025-01' })
+  })
+})
+
+describe('Laienprobe B3, B7', () => {
+  test('frühester Wechsel mit offener Frist des Rumpfs: elf Monate vor dem laufenden', () => {
+    expect(earliestOpenChange('2026-10-05')).toBe('2025-11')
+    expect(earliestOpenChange('2026-01-31')).toBe('2025-02')
+  })
+  test('Bestätigung nach dem Wechsel nennt Zeitraum, Rumpf und seine Frist', () => {
+    expect(periodChangedText({ rules: { startMonth: 1, changes: ['2026-11'] }, newShort: [{ key: periodKey('2026-01'), label: '01.01.–31.10.2026' }] }))
+      .toBe('Abrechnungszeitraum umgestellt: Kalenderjahr (Januar bis Dezember), ab November 2026: November bis Oktober. Neuer Rumpfzeitraum 01.01.–31.10.2026 (Abrechnung bis 31.10.2027 zustellen). Den Zeitraum wählen Sie in der Seitenleiste unter „Abrechnungszeitraum“.')
   })
 })

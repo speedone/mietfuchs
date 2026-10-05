@@ -27,7 +27,8 @@ export function co2Block(h: HeatingStatement, tenancyId: string): Co2BlockView |
   if (c.landlordPermille !== null) lines.push({ label: 'Anteil des Vermieters laut Abrechnung', value: `${num(c.landlordPermille / 10)} %` })
   if (c.totalCents !== null) lines.push({ label: 'CO₂-Kosten insgesamt', value: fmtEuro(c.totalCents) })
   if (c.landlordCents !== null) lines.push({ label: 'davon trägt der Vermieter', value: fmtEuro(c.landlordCents) })
-  const approx = ' (nach Ihrem Anteil an den Heizkosten)'
+  // Laienprobe B23: eine Näherung, die der Mieter neben der Einzelabrechnung des Messdienstes liest.
+  const approx = ' (näherungsweise nach Ihrem Anteil an den Heizkosten; maßgeblich ist der Betrag in der Einzelabrechnung des Messdienstes)'
   // Aus dem gerundeten Betrag laut Abrechnung berechnet ist der Anteil nicht centgenau (bei 10 % bis
   // ±4,5 ct); er steht deshalb als berechnet da (Nachprüfung 3), sonst als Näherung.
   if (tenant.tenantCents !== null) {
