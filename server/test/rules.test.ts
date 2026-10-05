@@ -3,7 +3,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { RULES, RULES_AS_OF, ruleCoverage, rulesFor } from '../../shared/law/rules.ts'
+import { RULES, ruleCoverage, rulesFor } from '../../shared/law/rules.ts'
 
 test('Regeln: jede hat Code, Titel, Rechtsgrundlage und Kurzfassung, jeder Code einmal', () => {
   assert.ok(RULES.length > 0)
@@ -12,7 +12,6 @@ test('Regeln: jede hat Code, Titel, Rechtsgrundlage und Kurzfassung, jeder Code 
     if (r.validFrom && r.validTo) assert.ok(r.validFrom <= r.validTo, r.code)
   }
   assert.equal(new Set(RULES.map((r) => r.code)).size, RULES.length)
-  assert.match(RULES_AS_OF, /^\d{4}-\d{2}-\d{2}$/)
 })
 
 test('Kabelfernsehen: 2023 voll, 2024 teilweise, ab 2025 nicht mehr', () => {

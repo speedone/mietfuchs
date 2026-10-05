@@ -15,7 +15,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   denen sie gerechnet wurde; die Abrechnung zeigt sie unter „Rechtsstand“, und weicht ein Wert
   später ab, sagt es der Vergleich mit der heutigen Berechnung. Abgeschlossene Abrechnungen
   bleiben unverändert; bei einer Abrechnung von vor dieser Version steht „Rechtswerte nicht
-  gespeichert“. Keine Zahl und kein Text einer Abrechnung ändert sich.
+  gespeichert“. Keine Zahl und kein Hinweistext einer Abrechnung ändert sich; neu gesetzt ist nur
+  der angezeigte Rechtsstand, jetzt das Datum des Rechtsregisters (05.10.2026 statt 02.10.2026).
   ([#97](https://github.com/speedone/mietfuchs/issues/97), [#110](https://github.com/speedone/mietfuchs/issues/110))
 - **KI-Belegauswertung:** Ob der Abstand zwischen Positionen und Rechnungsbetrag Umsatzsteuer
   ist, misst Mietfuchs jetzt am Satz des Rechnungsdatums, für das zweite Halbjahr 2020 also an

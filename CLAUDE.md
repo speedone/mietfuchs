@@ -971,9 +971,11 @@ Anleitungen, Cockpit) lesen `valueAt(param, LAW_AS_OF)`. Das Regelverzeichnis li
 ausgelieferte Fassung als Zahl fest. `law-literals.test.ts` verbietet Prozentangaben einer
 Rechtsfolge außerhalb des Registers und Datumsliterale in den Dateien der Berechnung; erlaubte
 Stellen stehen dort mit Grund. Beim Tag bricht release.yml ab, solange ein Wert
-`checked: 'unchecked'` hat (`law-release.test.ts`). Wer eine Regel oder einen Wert prüft, setzt
-`retrieved` und `LAW_AS_OF` (bei Regeln `RULES_AS_OF`) auf den Tag der Durchsicht (#110);
-`LAW_AS_OF` ist das jüngste `retrieved` und steht als Rechtsstand in jeder Abrechnung. Die
+`checked: 'unchecked'` hat (`law-release.test.ts`). **Es gibt nur ein Stichtagsdatum**,
+`LAW_AS_OF`; das frühere `RULES_AS_OF` des Regelverzeichnisses ist entfallen. Wer eine Regel oder
+einen Wert prüft, setzt `retrieved` der betroffenen Parameter und `LAW_AS_OF` auf den Tag der
+Durchsicht (#110); `LAW_AS_OF` ist das jüngste `retrieved` und steht als Rechtsstand in jeder
+Abrechnung. Die
 jährliche Durchsicht (Entwurf 4.8) geht jeden Parameter an seiner Fundstelle durch, legt bei
 einer Änderung eine neue Fassung an statt die alte zu ändern, trägt veröffentlichte Werte ein,
 sieht Bundesgesetzblatt (HeizkostenV, CO2KostAufG, GModG, BetrKV, MessEV) und neue Urteile des
