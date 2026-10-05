@@ -68,3 +68,17 @@ describe('Mieterwechsel (#150)', () => {
     expect(endProblem('', { start: '2024-01-01' })).not.toBeNull()
   })
 })
+
+describe('Nachmieter unter getrennter Heizkostenabrechnung (Durchsicht von #231, Important 2)', () => {
+  test('Die Heizvorauszahlung wird mit abgefragt und als eigene Staffel geschickt', () => {
+    const r = buildTenantChange({ ...input({}, { prepayment: '177,00', heatingPrepayment: '123,00' }), askHeating: true })
+    if ('error' in r) throw new Error(r.error)
+    expect([r.body.newTenancy?.prepayments, r.body.newTenancy?.heatingPrepayments]).toEqual([[{ from: '2025-07', monthlyCents: 17700 }], [{ from: '2025-07', monthlyCents: 12300 }]])
+    expect(buildTenantChange({ ...input({}, { prepayment: '177,00', heatingPrepayment: '' }), askHeating: true })).toEqual({ error: 'Bitte die Heizvorauszahlung des neuen Mieters angeben (0,00, wenn er keine zahlt).' })
+  })
+  test('Ohne getrennte Abrechnung bleibt der Rumpf wie bisher', () => {
+    const r = buildTenantChange(input({}, { prepayment: '300,00' }))
+    if ('error' in r) throw new Error(r.error)
+    expect(Object.hasOwn(r.body.newTenancy ?? {}, 'heatingPrepayments')).toBe(false)
+  })
+})

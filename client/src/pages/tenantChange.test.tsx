@@ -24,10 +24,12 @@ const SLOW = { timeout: 5000 }
 
 let sent: { url: string; method: string; body: unknown }[]
 let changeStatus: number
+let plants: unknown[] = []
 
 beforeEach(() => {
   sent = []
   changeStatus = 400
+  plants = []
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
     const method = init?.method ?? 'GET'
     const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
@@ -39,6 +41,7 @@ beforeEach(() => {
     const responses: Record<string, unknown> = {
       '/api/properties': [{ id: 'objekt-1', name: 'A', kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null }],
       '/api/meters': METERS,
+      '/api/heating-plants': plants,
     }
     return json(responses[path] ?? [])
   })
@@ -86,4 +89,30 @@ test('Mieterwechsel: gespeichert, aber die Ansicht lädt nicht neu — Hinweis s
   await waitFor(() => expect(screen.getByText(/Der Mieterwechsel ist gespeichert; die Ansicht ließ sich nicht neu laden/)).toBeTruthy(), SLOW)
   expect(screen.queryByRole('button', { name: /Mieterwechsel durchführen/i })).toBeNull()
   expect(sent).toHaveLength(1)
+})
+
+test('Mieterwechsel unter getrennter Heizkostenabrechnung (Durchsicht von #231): die Heizvorauszahlung des Nachmieters geht mit', async () => {
+  plants = [{
+  id: 'hp1', propertyId: 'objekt-1', name: '', energy: 'gas', supply: 'central', method: 'service', separateSettlement: true,
+  devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null, capturedOnOct2024: null,
+  warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: 5, periodChanges: [], separateSpans: [{ from: '2025-05', until: null }], units: null, newDevicesInstall: null,
+}]
+  render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <UIProvider><Stammdaten units={UNITS} tenancies={TENANCIES} settings={null} reload={async () => {}} /></UIProvider>
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  fireEvent.click(await screen.findByRole('button', { name: /^Mieterwechsel$/i }, SLOW))
+  fireEvent.change(screen.getByLabelText(/Auszugsdatum/i), { target: { value: '2025-06-30' } })
+  fireEvent.click(screen.getByRole('button', { name: /^Weiter$/i }))
+  fireEvent.change(await screen.findByLabelText(/Wasser EG/i, {}, SLOW), { target: { value: '1.234' } })
+  fireEvent.click(screen.getByRole('button', { name: /^Weiter$/i }))
+  fireEvent.change(await screen.findByLabelText(/^Mieter$/i, {}, SLOW), { target: { value: 'Schmidt' } })
+  fireEvent.change(screen.getByLabelText(/Übrige Vorauszahlung/i), { target: { value: '177' } })
+  fireEvent.change(screen.getByLabelText(/^Heizvorauszahlung/i), { target: { value: '123' } })
+  fireEvent.click(screen.getByRole('button', { name: /Mieterwechsel durchführen/i }))
+  await waitFor(() => expect(sent).toHaveLength(1), SLOW)
+  expect(sent[0]?.body).toMatchObject({ newTenancy: { prepayments: [{ from: '2025-07', monthlyCents: 17700 }], heatingPrepayments: [{ from: '2025-07', monthlyCents: 12300 }] } })
 })

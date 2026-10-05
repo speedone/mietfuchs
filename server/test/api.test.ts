@@ -5851,3 +5851,87 @@ test('Heizanlage: eine angeschlossene Wohnung wechselt nicht still das Objekt (D
     s.stop()
   }
 })
+
+test('Zeitraum der Heizung (Heizung PR 5): Vorschau und Wechsel über HTTP, PUT der Anlage setzt ihn nicht', async () => {
+  const s = await startServer()
+  try {
+    const send = (url: string, method: string, body: unknown) =>
+      fetch(`${s.base}${url}`, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    const { plant } = await jsonOf<{ plant: HeatingPlant }>(await send('/api/heating-plants', 'POST', { energy: 'gas', method: 'service' }))
+    const position = await s.api<CostItem>('/api/costItems', { method: 'POST', body: JSON.stringify({ period: '2026-01', category: 'Heizung und Warmwasser', description: 'Messdienst', amountCents: 100000, key: 'amounts' }) })
+    const vorschau = await jsonOf<{ moves: { to: string }[]; token: string }>(await send(`/api/heating-plants/${plant.id}/period/preview`, 'POST', { rules: { startMonth: 5, changes: [] } }))
+    assert.deepEqual(vorschau.moves.map((m) => m.to), ['2025-05'])
+    const per = await send(`/api/heating-plants/${plant.id}`, 'PUT', { periodStartMonth: 5 })
+    assert.equal(per.status, 400)
+    const ok = await send(`/api/heating-plants/${plant.id}/period`, 'PUT', { rules: { startMonth: 5, changes: [] }, answers: { token: vorschau.token } })
+    assert.equal(ok.status, 200)
+    assert.equal((await jsonOf<HeatingPlant>(ok)).periodStartMonth, 5)
+    assert.equal((await s.api<CostItem[]>('/api/costItems')).find((c) => c.id === position.id)?.period, '2025-05')
+    assert.equal((await send(`/api/heating-plants/${plant.id}/period/preview`, 'POST', { rules: { startMonth: 13, changes: [] } })).status, 400)
+    assert.equal((await send('/api/heating-plants/gibt-es-nicht/period/preview', 'POST', { rules: null })).status, 404)
+  } finally {
+    s.stop()
+  }
+})
+
+test('Getrennte Heizkostenabrechnung (Heizung PR 5): Vorschau und Einschalten über HTTP, 409 ohne Antworten', async () => {
+  const s = await startServer()
+  try {
+    const send = (url: string, method: string, body: unknown) =>
+      fetch(`${s.base}${url}`, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    const unit = await s.api<{ id: string }>('/api/units', { method: 'POST', body: JSON.stringify({ name: 'EG', areaM2: 60, participates: true }) })
+    const mieter = await s.api<{ id: string }>('/api/tenancies', { method: 'POST', body: JSON.stringify({ unitId: unit.id, tenantName: 'A', persons: 1, start: '2024-01-01', prepayments: [{ from: '2024-01', monthlyCents: 30000 }] }) })
+    const { plant } = await jsonOf<{ plant: HeatingPlant }>(await send('/api/heating-plants', 'POST', { energy: 'gas', method: 'service' }))
+    const zeitraum = await jsonOf<{ token: string }>(await send(`/api/heating-plants/${plant.id}/period/preview`, 'POST', { rules: { startMonth: 5, changes: [] } }))
+    await send(`/api/heating-plants/${plant.id}/period`, 'PUT', { rules: { startMonth: 5, changes: [] }, answers: { token: zeitraum.token } })
+    const vorschau = await jsonOf<{ way: string; token: string; steps: { rows: { from: string }[] }[] }>(await send(`/api/heating-plants/${plant.id}/separate/preview`, 'POST', { separate: true, month: '2025-05' }))
+    assert.deepEqual([vorschau.way, vorschau.steps[0]?.rows.map((r) => r.from)], ['separate', ['2025-05']])
+    assert.equal((await send(`/api/heating-plants/${plant.id}/separate`, 'PUT', { separate: true, month: '2025-05' })).status, 409)
+    const ok = await send(`/api/heating-plants/${plant.id}/separate`, 'PUT', { separate: true, month: '2025-05', answers: { steps: { [mieter.id]: { '2025-05': 12300 } }, token: vorschau.token } })
+    assert.equal(ok.status, 200)
+    assert.deepEqual((await jsonOf<HeatingPlant>(ok)).separateSpans, [{ from: '2025-05', until: null }])
+    assert.equal((await send(`/api/heating-plants/${plant.id}/separate/preview`, 'POST', { separate: 'ja' })).status, 400)
+    assert.equal((await send('/api/heating-plants/gibt-es-nicht/separate/preview', 'POST', { separate: true })).status, 404)
+  } finally {
+    s.stop()
+  }
+})
+
+test('Heizkostenabrechnung (Heizung PR 5): rechnen, eigene Frist, abschließen; der Abschluss von P friert sie nicht ein', async () => {
+  const s = await startServer()
+  try {
+    const send = (url: string, method: string, body?: unknown) =>
+      fetch(`${s.base}${url}`, { method, headers: { 'content-type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) })
+    const unit = await s.api<{ id: string }>('/api/units', { method: 'POST', body: JSON.stringify({ name: 'EG', areaM2: 60, participates: true }) })
+    const mieter = await s.api<{ id: string }>('/api/tenancies', { method: 'POST', body: JSON.stringify({ unitId: unit.id, tenantName: 'A', persons: 1, start: '2024-01-01', prepayments: [{ from: '2024-01', monthlyCents: 30000 }] }) })
+    const { plant } = await jsonOf<{ plant: HeatingPlant }>(await send('/api/heating-plants', 'POST', { energy: 'gas', method: 'service' }))
+    const marke = async (url: string, body: unknown) => (await jsonOf<{ token: string }>(await send(url, 'POST', body))).token
+    const regeln = { startMonth: 5, changes: [] }
+    await send(`/api/heating-plants/${plant.id}/period`, 'PUT', { rules: regeln, answers: { token: await marke(`/api/heating-plants/${plant.id}/period/preview`, { rules: regeln }) } })
+    const getrennt = { separate: true, month: '2025-05' }
+    const ein = await send(`/api/heating-plants/${plant.id}/separate`, 'PUT', { ...getrennt, answers: { steps: { [mieter.id]: { '2025-05': 12300 } }, token: await marke(`/api/heating-plants/${plant.id}/separate/preview`, getrennt) } })
+    assert.equal(ein.status, 200)
+    await s.api('/api/costItems', { method: 'POST', body: JSON.stringify({ period: '2025-05', category: 'Heizung und Warmwasser', description: 'Messdienst', amountCents: 150000, key: 'area', heatingPlantId: plant.id, taxYear: 2026 }) })
+    const url = `/api/heating-settlement/${plant.id}/2025-05`
+    const h = await s.api<Settlement>(url)
+    assert.deepEqual([h.deadline, h.scope?.kind, h.statements[0]?.scope, h.statements[0]?.prepaymentCents, h.closed], ['2027-04-30', 'heating', 'heating', 147600, null])
+    const liste = await s.api<{ period: { key: string }; deadline: string; closed: unknown }[]>('/api/heating-settlements')
+    // Die Liste reicht bis zur Heizperiode, die heute läuft; geprüft werden die ersten beiden.
+    assert.deepEqual(liste.slice(0, 2).map((x) => [x.period.key, x.deadline, x.closed]), [['2025-05', '2027-04-30', null], ['2026-05', '2028-04-30', null]])
+    const nichtGetrennt = await send(`/api/heating-settlement/${plant.id}/2024-05`, 'GET')
+    assert.equal(nichtGetrennt.status, 404)
+    assert.match(await errorFrom(nichtGetrennt), /stehen in der Betriebskostenabrechnung 2025/)
+    // B3: Der Abschluss von P 2026 friert die Heizkostenabrechnung nicht ein.
+    assert.equal((await send('/api/settlement/2026/close', 'POST', {})).status, 201)
+    assert.equal((await s.api<Settlement>(url)).closed, null)
+    assert.equal((await send(`${url}/close`, 'POST', {})).status, 201)
+    assert.equal((await send(`${url}/close`, 'POST', {})).status, 409)
+    assert.equal((await send(`${url}/close`, 'PUT', { sentAt: '2027-03-01' })).status, 200)
+    assert.deepEqual((await s.api<Settlement>(url)).closed?.sentAt, '2027-03-01')
+    assert.equal((await send(`/api/heating-plants/${plant.id}`, 'DELETE')).status, 409)
+    assert.equal((await send(`${url}/close`, 'DELETE')).status, 200)
+    assert.equal((await s.api<unknown[]>(`${url}/history`)).length, 1)
+  } finally {
+    s.stop()
+  }
+})

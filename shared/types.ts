@@ -100,6 +100,13 @@ export type Tenancy = {
   end: string | null
   prepayments: PrepaymentEntry[]
   prepaymentOverrides: Record<string, number> // Zeitraum ('JJJJ-MM', #208) → tatsächlich gezahlter Betrag
+  // Die Heizvorauszahlung, getrennt von den übrigen (Heizung PR 5, Entwurf 3.1, 5.3): Bei getrennter
+  // Heizkostenabrechnung steht hier ab dem Umstellen der Heizanteil, in `prepayments` der Rest; je
+  // Monat bleibt die Summe gleich. Fehlt die Staffel, ist die ganze Vorauszahlung in `prepayments`.
+  heatingPrepayments?: PrepaymentEntry[]
+  // Was an Heizvorauszahlungen einer Heizperiode tatsächlich gezahlt wurde, endgültig oder vorläufig
+  // für einige Monate (D2). Je Anlage und Heizperiode höchstens eine.
+  heatingPrepaymentOverrides?: HeatingPrepaymentOverride[]
   baseRents: RentEntry[] // Kaltmiete-Staffel (leer = nicht erfasst)
   // Erweiterte Stammdaten (optional, ohne Einfluss auf die Berechnung) — Kontakt, Kaution, Vertrag
   email?: string
@@ -133,7 +140,8 @@ export type RentMonth = {
   baseRentCents: number
   prepaymentCents: number
   flatRateCents: number // Pauschale (#93)
-  sollCents: number // Bruttomiete = Kaltmiete + Vorauszahlung + Pauschale
+  heatingPrepaymentCents?: number // Heizvorauszahlung (Heizung PR 5), nur mit Heizstaffel
+  sollCents: number // Bruttomiete = Kaltmiete + Vorauszahlung + Heizvorauszahlung + Pauschale
   paidCents: number // dem Monat zugeordneter Zahlungseingang
   status: RentMonthStatus
 }
@@ -147,6 +155,7 @@ export type RentLedgerRow = {
   baseRentYearCents: number // davon Kaltmiete (Netto)
   prepaymentYearCents: number // davon NK-Vorauszahlung
   flatRateYearCents: number // davon Pauschale (#93)
+  heatingPrepaymentYearCents?: number // davon Heizvorauszahlung (Heizung PR 5), nur mit Heizstaffel
   paidYearCents: number
   balanceCents: number // paid − soll des ganzen Jahres: >0 Guthaben/Überzahlung
   // Soll der fälligen Monate und was davon offen ist (#133): im laufenden Jahr nur die Monate vor
@@ -308,6 +317,89 @@ export type PeriodChangeAnswers = {
   overrides?: Record<string, Record<string, number | null>>
   // Das Jahr der Zahlung je Eintrag aus `taxYears`; fehlt es, gilt der Vorschlag.
   taxYears?: Record<string, number>
+  token?: string
+}
+
+// Die Vorschau eines Wechsels der eigenen Heizperiode (Heizung PR 5, Entwurf 3.0, 3.6, B2).
+// `rules` null heißt „wie das Objekt“. `moves`: Heizpositionen, die in eine andere Heizperiode
+// kommen; `groups`: solche, bei denen der Vermieter wählt; `overrides`: Korrekturen, die neu erfasst
+// werden, je Mietverhältnis mit den bisherigen (`from`) und den gefragten (`ask`): `heating` je
+// getrennt abgerechneter Heizperiode, `total` je Abrechnung P für alles, was sie anrechnet (3.7);
+// `endsSeparate`: Heizperioden, die danach in der Gesamtabrechnung stehen.
+export type HeatingPeriodChangePreview = {
+  rules: PeriodRules | null
+  periods: { key: PeriodKey; label: string; short: boolean; separate: boolean }[]
+  newShort: { key: PeriodKey; label: string }[]
+  blocked: string[]
+  moves: { costItemId: string; description: string; amountCents: number; from: PeriodKey; fromLabel: string; to: PeriodKey; toLabel: string }[]
+  groups: { from: PeriodKey; fromLabel: string; items: { costItemId: string; description: string; amountCents: number }[]; options: { key: PeriodKey; label: string }[]; suggested: PeriodKey }[]
+  overrides: {
+    tenancyId: string
+    tenantName: string
+    from: { kind: 'heating' | 'total'; key: PeriodKey; label: string; cents: number }[]
+    ask: { kind: 'heating' | 'total'; period: PeriodKey; label: string; months: string }[]
+  }[]
+  endsSeparate: { key: PeriodKey; label: string }[]
+  // Die Marke dieser Vorschau, wie beim Wechsel des Objektzeitraums (PR 3): Stimmt sie beim Wechsel
+  // nicht mehr, hat sich der Bestand geändert, und es gibt 409 mit der neuen Vorschau.
+  token: string
+}
+
+// Die Antworten: je Gruppe die neue Heizperiode; je Mietverhältnis und gefragter Heizperiode die
+// tatsächlich gezahlte Heizvorauszahlung (`overrides`) und je gefragter Abrechnung P die tatsächlich
+// gezahlten Vorauszahlungen insgesamt (`totals`), in Cent; `null` heißt „keine Korrektur, die
+// Staffel gilt“.
+export type HeatingPeriodChangeAnswers = {
+  groups?: Record<string, string>
+  overrides?: Record<string, Record<string, number | null>>
+  totals?: Record<string, Record<string, number | null>>
+  token?: string
+}
+
+// Die Vorschau zum Ein- und Ausschalten der getrennten Heizkostenabrechnung (Heizung PR 5, Entwurf
+// 3.1). `way`: 'separate' bei eigener Heizperiode, die kein Abrechnungszeitraum ist (Weg d), sonst
+// 'samePeriod' (H = P, nur getrennter Ausweis). Einschalten: `month` ist X, `steps` jede Stufe ab X
+// mit dem vorgeschlagenen Heizanteil, `overrides` die Jahreskorrekturen offener Abrechnungen mit
+// Monaten ab X, `deadlines` die Fristen der getrennten Heizperioden (R-g). Ausschalten: `until` ist
+// W, `keep` die Heizperioden, die getrennt bleiben, `merge` die zusammengeführte Staffel ab `month`,
+// `overrides` die Jahreskorrekturen, die neu erfasst werden.
+export type SeparatePreview = {
+  separate: boolean
+  way: 'separate' | 'samePeriod'
+  month: string | null
+  earliestMonth: string | null
+  until: PeriodKey | null
+  earliestUntil: PeriodKey | null
+  share: { permille: number; source: string } | null
+  steps: { tenancyId: string; tenantName: string; rows: { from: string; totalCents: number; heatingCents: number }[] }[]
+  overrides: {
+    tenancyId: string
+    tenantName: string
+    period: PeriodKey
+    label: string
+    cents: number | null
+    asks: { kind: 'total' | 'heating' | 'provisional'; period: PeriodKey; label: string; months: string }[]
+    remainder: { period: PeriodKey; label: string; months: string } | null
+  }[]
+  deadlines: { period: PeriodKey; label: string; deadline: string; passed: boolean }[]
+  keep: { period: PeriodKey; label: string; deadline: string }[]
+  merge: { tenancyId: string; tenantName: string; rows: { from: string; prepaymentCents: number }[] }[]
+  blocked: string[]
+  // Die Marke dieser Vorschau (wie beim Wechsel des Zeitraums): Stimmt sie beim Speichern nicht
+  // mehr, gibt es 409 mit der neuen Vorschau.
+  token: string
+}
+
+// Die Antworten, Beträge in Cent: je Mietverhältnis und Stufe der Heizanteil (`steps`), je
+// Heizperiode die Heizkorrektur (`overrides`, endgültig; bei einer Frage der Art `provisional`
+// vorläufig für deren Monate), je Abrechnung P die Jahreskorrektur (`totals`; beim Einschalten
+// „davon übrige“, beim Ausschalten „insgesamt“; `null` heißt keine Korrektur). `merge` false lässt
+// beim Ausschalten beide Staffeln stehen.
+export type SeparateAnswers = {
+  steps?: Record<string, Record<string, number>>
+  overrides?: Record<string, Record<string, number>>
+  totals?: Record<string, Record<string, number | null>>
+  merge?: boolean
   token?: string
 }
 
@@ -532,6 +624,17 @@ export type Statement = {
   prepaymentOverridden: boolean
   suggestedMonthlyCents: number
   balanceCents: number
+  // Heizung PR 5 (Entwurf 5.7). `scope`: 'heating' in der Heizkostenabrechnung einer Heizperiode
+  // (Weg d); fehlt es, ist es die Betriebskostenabrechnung. `heatingOnly`: Das Mietverhältnis hat im
+  // Abrechnungszeitraum nicht mehr gewohnt, die Abrechnung enthält nur seine Heizkosten (3.1, R-A4);
+  // `recommendedDeadline` ist dann die empfohlene, frühere Frist. `heatingPrepaymentCents`: der in
+  // `prepaymentCents` enthaltene Teil der Heizvorauszahlung, nur wenn es eine Heizstaffel gibt.
+  // `prepaymentNote`: wo Vorauszahlungen von Monaten dieser Abrechnung angerechnet sind (C3).
+  scope?: 'all' | 'heating'
+  heatingOnly?: boolean
+  recommendedDeadline?: string
+  heatingPrepaymentCents?: number
+  prepaymentNote?: string
 }
 
 export type NotSettled = {
@@ -549,7 +652,7 @@ export type NotSettled = {
 export type NoticeLevel = 'info' | 'hint' | 'warning' | 'error'
 // Wo man den Hinweis behebt. Daraus wird der Knopf „Hier beheben →“.
 // `rentLedger` (#133): das Mietkonto eines Mietverhältnisses, `id` ist die Kennung des Mietverhältnisses.
-export type NoticeSubject = { kind: 'costItem' | 'unit' | 'tenancy' | 'meter' | 'rentLedger'; id: string }
+export type NoticeSubject = { kind: 'costItem' | 'unit' | 'tenancy' | 'meter' | 'rentLedger' | 'heatingPlant'; id: string }
 export type Notice = {
   code: string
   level: NoticeLevel
@@ -597,6 +700,12 @@ export type Settlement = {
   // abgeschlossene Abrechnung kennt beide nicht; die Route ergänzt sie aus dem Zeitraum.
   period: SettlementPeriod
   deadline: string
+  // Heizung PR 5. `heatingPeriods`: die eigenen Heizperioden, deren Heizkosten in dieser Abrechnung
+  // stehen (Weg b). `separateHeating`: Heizperioden, die in diesem Zeitraum enden, aber getrennt
+  // abgerechnet werden (Weg d), mit ihrer Frist. `scope`: gesetzt in der Heizkostenabrechnung.
+  heatingPeriods?: HeatingPeriodRef[]
+  separateHeating?: SeparateHeatingRef[]
+  scope?: HeatingScopeRef
   statements: Statement[]
   landlord: { rows: SettlementRow[]; totalCents: number }
   // im Vermieteranteil enthaltener Eigenanteil selbstgenutzter Wohnungen
@@ -1078,7 +1187,7 @@ export type HeatingPlant = {
   energy: HeatingEnergy
   supply: HeatingSupply
   method: HeatingMethod
-  // Getrennte Heizkostenabrechnung mit eigener Vorauszahlung (3.1, Weg d); kommt mit PR 5.
+  // Werden die Heizkosten getrennt abgerechnet, mit eigener Vorauszahlung (3.1)? `null` unbekannt.
   separateSettlement: boolean | null
   devicesRemote: DevicesRemote
   devicesInstalledAfter2021: DevicesInstalledAfter
@@ -1090,8 +1199,13 @@ export type HeatingPlant = {
   // Durchschnittliche Heizkosten 2022 bis 2024 bei Bruttowarmmiete (§ 12 Abs. 3 Satz 3), in Cent.
   warmRentAverageCents: number | null
   changeSplit: ChangeSplit
-  // Eigene Heizperiode (#217); `null` heißt wie das Objekt. Kommt mit PR 5.
+  // Eigene Heizperiode (#217, Heizung PR 5); `null` heißt wie das Objekt. Gesetzt nur über den Wechsel mit Vorschau.
   periodStartMonth: number | null
+  // Die Wechsel der eigenen Heizperiode als 'JJJJ-MM', aufsteigend, wie beim Objekt (Heizung PR 5).
+  // Ohne eigene Heizperiode leer.
+  periodChanges: string[]
+  // Die Zeitspannen, in denen die Heizkosten getrennt abgerechnet werden (Weg d), aufsteigend.
+  separateSpans: SeparateSpan[]
   // `null`: alle Wohnungen des Objekts ohne „kein Anschluss: Wärme“ (#117). Eine Liste, auch eine
   // leere, nennt die angeschlossenen.
   units: HeatingPlantUnit[] | null
@@ -1124,3 +1238,33 @@ export type HeatingPeriodData = {
 
 // Eine Heizposition, die beim Anlegen der Anlage zugeordnet werden kann (Vorschau, 11.2).
 export type AssignableHeatingItem = Pick<CostItem, 'id' | 'period' | 'description' | 'amountCents'>
+
+// ---------- Eigene Heizperiode und getrennte Heizkostenabrechnung (Heizung PR 5) ----------
+
+// Ein Zeitraum, in dem die Heizkosten einer Anlage getrennt abgerechnet werden (Weg d, Entwurf 3.1).
+// `from` ist der Monat X ('JJJJ-MM'), ab dem die Heizstaffel der getrennten Abrechnung gehört;
+// `until` die erste Heizperiode, die wieder in der Gesamtabrechnung steht (W), `null` heißt: bis auf
+// Weiteres. Getrennt abgerechnet wird jede Heizperiode, die in diese Spanne reicht und kein
+// Abrechnungszeitraum des Objekts ist (`settledSeparately` in shared/heatingPeriod.ts). Gespeichert,
+// weil Ein- und Ausschalten nicht rückwirkend wirken dürfen (C3, D1).
+export type SeparateSpan = { from: string; until: PeriodKey | null }
+
+// Die Korrektur der Heizvorauszahlung einer Heizperiode (Entwurf 3.1, D2 der achten Fassung).
+// Endgültig (`provisional` false, ohne Monate) ersetzt sie die Anrechnung der ganzen Heizperiode;
+// vorläufig gilt sie nur für die Monate `fromMonth` bis `toMonth`, die übrigen rechnen nach der
+// Staffel. Eine vorläufige entsteht beim Aufteilen der Korrektur eines Abrechnungszeitraums und wird
+// beim Abrechnen der Heizperiode durch die endgültige ersetzt.
+export type HeatingPrepaymentOverride = {
+  plantId: string
+  period: PeriodKey
+  cents: number
+  provisional: boolean
+  fromMonth: string | null
+  toMonth: string | null
+}
+
+export type HeatingPeriodRef = { plantId: string; period: SettlementPeriod }
+export type SeparateHeatingRef = { plantId: string; plantName: string; period: SettlementPeriod; deadline: string }
+export type HeatingScopeRef = { kind: 'heating'; plantId: string; plantName: string }
+// Eine Heizkostenabrechnung nach Weg d in der Liste für Cockpit und Abrechnungsseite (Heizung PR 5).
+export type HeatingSettlementInfo = SeparateHeatingRef & { closed: { closedAt: string; sentAt: string | null } | null }

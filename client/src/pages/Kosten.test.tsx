@@ -21,10 +21,12 @@ const METERS: Meter[] = [{ id: 'm1', propertyId: 'objekt-1', name: 'Zähler EG',
 
 let sent: { url: string; method: string; body: Record<string, unknown> }[]
 let gets: string[]
+let plants: unknown[] = []
 
 beforeEach(() => {
   sent = []
   gets = []
+  plants = []
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
     const method = init?.method ?? 'GET'
     if (method !== 'GET') {
@@ -37,6 +39,7 @@ beforeEach(() => {
       '/api/costItems': [],
       '/api/meters': METERS,
       '/api/uploads': [],
+      '/api/heating-plants': plants,
     }
     return new Response(JSON.stringify(responses[url.split('?')[0] ?? url] ?? []), { status: 200, headers: { 'content-type': 'application/json' } })
   })
@@ -247,4 +250,24 @@ test('Gutschrift (#139): der Hinweis am Betragsfeld steht da, und „−54,00“
   fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/i }))
   await waitFor(() => expect(sent).toHaveLength(1))
   expect(sent[0].body).toMatchObject({ amountCents: -5400 })
+})
+
+test('Heizposition mit eigener Heizperiode (Durchsicht von #231): Heizperiode, Jahr der Zahlung sichtbar und vorbelegt mit dem Jahr ihres Endes', async () => {
+  plants = [{
+  id: 'hp1', propertyId: 'objekt-1', name: '', energy: 'gas', supply: 'central', method: 'service', separateSettlement: null,
+  devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null, capturedOnOct2024: null,
+  warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: 5, periodChanges: [], separateSpans: [], units: null, newDevicesInstall: null,
+}]
+  await openForm()
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Heizung und Warmwasser' } })
+  const heizperiode = await waitFor(() => select(/^Heizperiode$/))
+  const option = heizperiode.selectedOptions[0]?.textContent ?? ''
+  const [, beginn, ende] = /(\d{4})\/(\d{4})/.exec(option) ?? []
+  if (!beginn || !ende) throw new Error(`keine Heizperiode über zwei Jahre: ${option}`)
+  const jahr = await waitFor(() => select(/Jahr der Zahlung/i))
+  expect(jahr.value).toBe(ende)
+  expect([...jahr.options].map((o) => o.value).filter(Boolean)).toEqual([beginn, ende, String(Number(ende) + 1)])
+  fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/i }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0].body).toMatchObject({ period: heizperiode.value, heatingPlantId: 'hp1', taxYear: Number(ende) })
 })

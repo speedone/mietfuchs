@@ -1,5 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import type { AssessmentView, CostItem, CostKey, ExternalMeasure, ExtractResult, Meter, MeterType, Settlement, Settings, SplitPreviewPart, Tenancy, Unit } from '../types'
+import type { AssessmentView, CostItem, CostKey, ExternalMeasure, ExtractResult, HeatingPlant, Meter, MeterType, Settlement, Settings, SplitPreviewPart, Tenancy, Unit, UploadEntry } from '../types'
+import HeatingPeriodSelect from '../components/HeatingPeriodSelect'
+import { heatingItemPeriods, heatingTaxYear, itemsOfPeriod } from '../heatingSettlementView'
 import { calendarPeriod, periodContext, periodOfKey, spansTwoYears } from '../../../shared/period.ts'
 import { CATEGORIES, KEY_LABELS, METER_TYPE_LABELS, isNotAllocable, usageOf } from '../types'
 import {
@@ -91,6 +93,36 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   const [needsTaxYear, setNeedsTaxYear] = useState(false)
   useEffect(() => { if (!form) setNeedsTaxYear(false) }, [form])
   const [error, setError] = useState('')
+  // Heizung PR 5: Heizpositionen einer Anlage mit eigener Heizperiode tragen deren Schlüssel.
+  const [plants, setPlants] = useState<HeatingPlant[]>([])
+  const [heatingPeriod, setHeatingPeriod] = useState('')
+  useEffect(() => {
+    api<HeatingPlant[]>(withProperty('/api/heating-plants', propertyId)).then(setPlants).catch(() => setPlants([]))
+  }, [propertyId])
+  const heatingOptions = heatingItemPeriods(plants, view.rules, period)
+  const heatingKeys = heatingOptions.flatMap((h) => h.options.map((o) => ({ plantId: h.plantId, key: o.value })))
+  const ownPlant = heatingOptions[0]
+  // Beim Öffnen einer bestehenden Position ihre Heizperiode, sonst die Vorgabe der Auswahl.
+  const formId = form?.id
+  useEffect(() => { setHeatingPeriod(formId ? items.find((i) => i.id === formId)?.period ?? '' : '') }, [formId, items])
+  // Das Jahr der Zahlung einer Heizposition richtet sich nach ihrer Heizperiode (Durchsicht von #231):
+  // Pflicht und vorbelegt, wenn sie über zwei Jahre reicht, sonst kein Feld. Vorbelegt mit dem Jahr
+  // des Rechnungsdatums des angehängten Belegs, wenn der Belegordner eines kennt, sonst mit dem Jahr
+  // des Endes der Heizperiode; dieselbe Regel wie Belegbuchung und Server (`paymentYear`).
+  const [invoiceDates, setInvoiceDates] = useState<Map<string, string>>(new Map())
+  useEffect(() => {
+    api<UploadEntry[]>('/api/uploads')
+      .then((list) => setInvoiceDates(new Map((Array.isArray(list) ? list : []).flatMap((u) => (u.invoiceDate ? [[u.file, u.invoiceDate] as const] : [])))))
+      .catch(() => setInvoiceDates(new Map()))
+  }, [propertyId])
+  const heatingOption = form?.category === HEATING_CATEGORY && ownPlant
+    ? ownPlant.options.find((o) => o.value === (heatingPeriod || ownPlant.options[0]?.value)) : undefined
+  const heatTax = heatingOption && form ? heatingTaxYear(heatingOption, form.taxYear, form.invoiceFile ? invoiceDates.get(form.invoiceFile) : undefined) : null
+  // Vorbelegt wird nur, solange kein gültiges Jahr dasteht: Ein vom Vermieter gewähltes Jahr bleibt,
+  // auch wenn das Rechnungsdatum später ein anderes nahelegt.
+  useEffect(() => {
+    if (form && heatTax?.show && !heatTax.valid) setForm({ ...form, taxYear: heatTax.fallback })
+  }, [form, heatTax?.show, heatTax?.valid, heatTax?.fallback])
 
   // „Aus dem Vorjahr übernehmen“ (#141): die Vorlagen, solange die Liste offen ist. Eingetragene
   // Beträge gehen beim Verlassen verloren, deshalb zählt die Liste als offenes Formular.
@@ -147,7 +179,9 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     }
   }
 
-  const yearItems = useMemo(() => items.filter((i) => i.period === key), [items, key])
+  // Die Positionen des Zeitraums und die Heizpositionen der Heizperioden, die darin enden (Heizung PR 5).
+  const heatingKeysText = JSON.stringify(heatingKeys)
+  const yearItems = useMemo(() => itemsOfPeriod(items, key, JSON.parse(heatingKeysText) as { plantId: string; key: string }[]), [items, key, heatingKeysText])
   // Woraus eine neue Position ihren Schlüssel vorgeschlagen bekommt (#141): die Positionen des
   // Objekts, das Jahr und die Art des Objekts.
   const keyCtx: KeyContext = useMemo(() => ({ items, year, at, propertyKind: property?.kind ?? null }), [items, year, at, property?.kind])
@@ -268,7 +302,17 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
       return
     }
     setError('')
-    const body = JSON.stringify(built.body)
+    // Eine Heizposition der Anlage mit eigener Heizperiode steht unter deren Heizperiode (G-A2). Reicht
+    // die Heizperiode über zwei Kalenderjahre, ist das Jahr der Zahlung Pflicht (vorbelegt, siehe
+    // `heatTax`); liegt sie in einem Kalenderjahr, gibt es keines.
+    if (heatTax?.show && !heatTax.valid) {
+      setError('Bitte geben Sie das Jahr der Zahlung an (für die Steuer, § 11 Abs. 2 EStG); die Heizperiode reicht über zwei Kalenderjahre.')
+      return
+    }
+    const heating = heatingOption && ownPlant
+      ? { period: heatingOption.value, heatingPlantId: ownPlant.plantId, taxYear: heatTax?.show ? Number(form.taxYear) : null }
+      : {}
+    const body = JSON.stringify({ ...built.body, ...heating })
     const editing = !!form.id
     // Eine kalte Rechnung über zwei Abrechnungszeiträume (#208, Entwurf 3.4): erst die Vorschau,
     // dann nach Rückfrage alle Teile auf einmal.
@@ -689,6 +733,9 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                 {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
               </select>
             </label>
+            {form.category === HEATING_CATEGORY && ownPlant && ownPlant.options.length > 0 && (
+              <HeatingPeriodSelect options={ownPlant.options} value={heatingPeriod || (ownPlant.options[0]?.value ?? '')} onChange={setHeatingPeriod} />
+            )}
             <label className="field grow">
               Beschreibung
               <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="z. B. Grundsteuer 2025" />
@@ -707,9 +754,9 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
               <span>davon <Term id="labor35a">§35a-Lohn</Term> €</span>
               <input value={form.labor35a} onChange={(e) => setForm({ ...form, labor35a: e.target.value })} placeholder="optional" />
             </label>
-            <details className="field grow" style={{ flexBasis: '100%' }} open={!!(form.serviceFrom || form.serviceTo || form.taxYear || form.heatingFuel || showsTaxYear(period, needsTaxYear))}>
-              <summary>Weitere Angaben — Leistungszeitraum{showsTaxYear(period, needsTaxYear) ? ', Jahr der Zahlung' : ''}{form.category === HEATING_CATEGORY ? ', Brennstoff/Energie' : ''} (optional)</summary>
-              <CostPeriodFields form={form} onChange={setForm} showTaxYear={showsTaxYear(period, needsTaxYear)} years={taxYearOptions(year)} />
+            <details className="field grow" style={{ flexBasis: '100%' }} open={!!(form.serviceFrom || form.serviceTo || form.taxYear || form.heatingFuel || (heatTax ? heatTax.show : showsTaxYear(period, needsTaxYear)))}>
+              <summary>Weitere Angaben — Leistungszeitraum{(heatTax ? heatTax.show : showsTaxYear(period, needsTaxYear)) ? ', Jahr der Zahlung' : ''}{form.category === HEATING_CATEGORY ? ', Brennstoff/Energie' : ''} (optional)</summary>
+              <CostPeriodFields form={form} onChange={setForm} showTaxYear={heatTax ? heatTax.show : showsTaxYear(period, needsTaxYear)} years={heatTax?.show ? heatTax.years : taxYearOptions(year)} />
             </details>
             {/* Nicht umlagefähig (#142): nichts zu verteilen, also keine Auswahl, die etwas anderes verspräche. */}
             {!showsKeyFields(form.category) && (

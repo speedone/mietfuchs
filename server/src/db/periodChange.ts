@@ -26,6 +26,7 @@
 import crypto from 'node:crypto'
 import { and, eq, inArray } from 'drizzle-orm'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
+import { plantRules, settledSeparately } from '../../../shared/heatingPeriod.ts'
 import {
   formatDayRange, parsePeriodKey, periodContaining, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, spansTwoYears, startYearOf,
 } from '../../../shared/period.ts'
@@ -33,7 +34,7 @@ import { dayAfter } from '../../../shared/law/register.ts'
 import type { BillingPeriod, CostItem, PeriodChangePreview, PeriodKey, PeriodRules, Property, Tenancy } from '../../../shared/types.ts'
 import { baseDescription, splitByService, type ServicePart } from '../serviceSplit.ts'
 import type { Database } from './client.ts'
-import { readClosedSettlements, readCostItems, readProperties, readTenancies, readUnits } from './read.ts'
+import { readClosedSettlements, readCostItems, readHeatingPlants, readProperties, readTenancies, readUnits } from './read.ts'
 import { PeriodConflict, PeriodError, rewriteCostItemFamily, writeCostItemParts } from './repository.ts'
 import { assessments, closedSettlementHistory, periodChanges, prepaymentOverrides, properties } from './schema.ts'
 
@@ -162,6 +163,11 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
   const unitIds = new Set((await readUnits(db)).filter((u) => u.propertyId === propertyId).map((u) => u.id))
   const tenancies = (await readTenancies(db)).filter((t) => unitIds.has(t.unitId))
   const items = (await readCostItems(db)).filter((c) => c.propertyId === propertyId)
+  // Heizung PR 5: Heizpositionen einer Anlage mit eigener Heizperiode tragen deren Schlüssel und
+  // bleiben beim Wechsel des Objektzeitraums, wo sie sind; in welcher Abrechnung ihre Heizperiode
+  // steht, ergibt sich danach von selbst (Entwurf 3.0).
+  const plants = (await readHeatingPlants(db)).filter((p) => p.propertyId === propertyId)
+  const ownPlantIds = new Set(plants.filter((p) => p.periodStartMonth !== null).map((p) => p.id))
   const closed = (await readClosedSettlements(db)).filter((c) => c.propertyId === propertyId)
   const history = await db.select({ period: closedSettlementHistory.period }).from(closedSettlementHistory).where(eq(closedSettlementHistory.propertyId, propertyId))
   const assessmentRows = await db.select({ id: assessments.id, file: assessments.file, period: assessments.requestedPeriod }).from(assessments).where(eq(assessments.propertyId, propertyId))
@@ -182,6 +188,23 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
   for (const h of history) {
     const a = changed(h.period)
     if (a?.status === 'gone') blocked.add(`Für ${periodLabel(a.old)} gibt es frühere Abschlüsse im Verlauf; diesen Zeitraum gäbe es nach dem Wechsel nicht mehr. Wählen Sie einen späteren Beginn.`)
+  }
+  // Heizung PR 5: Ob eine Heizperiode getrennt abgerechnet wird, hängt auch am Objektzeitraum (bei
+  // H = P gibt es eine Gesamtabrechnung, Entwurf 3.1). Ein Wechsel, der das für eine Heizperiode
+  // umschaltet, ginge an der Vorschau der Heizung vorbei, die die Vorauszahlungen aufteilt.
+  for (const plant of plants) {
+    const first = plant.separateSpans[0]
+    if (plant.periodStartMonth === null || first === undefined) continue
+    const rules = plantRules(plant, before)
+    for (const h of periodsBetween(rules, `${first.from}-01`, `${Number(today.slice(0, 4)) + 2}-12-31`)) {
+      const vorher = settledSeparately(plant, before, h)
+      if (vorher === settledSeparately(plant, next, h)) continue
+      blocked.add(
+        `Die Heizkosten ${periodLabel(h)}${plant.name ? ` der Heizanlage „${plant.name}“` : ''} würden nach dem Wechsel ${vorher ? 'nicht mehr getrennt' : 'getrennt'} abgerechnet. ` +
+          'Stellen Sie zuerst unter Stammdaten → Heizung den Zeitraum der Heizung oder die getrennte Heizkostenabrechnung um; dort zeigt eine Vorschau, was mit den Vorauszahlungen geschieht.',
+      )
+      break
+    }
   }
 
   const splits: Plan['splits'] = []
@@ -239,6 +262,7 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
   }
   const done = new Set<string>()
   for (const item of items) {
+    if (item.heatingPlantId && ownPlantIds.has(item.heatingPlantId)) continue
     const a = changed(item.period)
     if (a === null) continue
     // Ein Zeitraum, der nur wächst, behält seine Positionen: Sie gehören weiter hinein. Reicht er
