@@ -96,14 +96,14 @@ test('Fall a: H trägt 5.516,61 €, H−1 983,39 €; je Mieter nach dem Schlü
   const h = settle('2025-05')
   assert.deepEqual([anteilVon(h, 'ta', 'gas'), anteilVon(h, 'tb', 'gas')], [390000, 260000])
   assert.deepEqual([anteilVon(h, 'ta', 'fuel:d:'), anteilVon(h, 'tb', 'fuel:d:')], [-59003, -39336])
-  assert.deepEqual(teileVon(h, 'fuel:d:2025-05'), [{ reason: 'fuelCarry', cents: 98339 }])
+  assert.deepEqual(teileVon(h, 'fuel:d:2025-05:2024-05'), [{ reason: 'fuelCarry', cents: 98339 }])
   assert.equal(summe(h), 650000)
   const zeile = h.statements[0]?.rows.find((row) => row.kind === 'fuelCarry') ?? assert.fail('keine Übertragszeile')
   assert.equal(zeile.description, 'Gas: Anteil für 2024/2025 (voriger Zeitraum)')
   assert.deepEqual(zeile.steps?.[0], { label: 'Anteil der Rechnung', value: '6.500,00 € × 151,29 ‰ (nach der Gradtagszahlentabelle) = 983,39 €', term: 'degreeDays' })
   const h1 = settle('2024-05')
   assert.deepEqual([anteilVon(h1, 'ta', 'fuel:d:'), anteilVon(h1, 'tb', 'fuel:d:')], [59003, 39336])
-  assert.deepEqual(teileVon(h1, 'fuel:d:2024-05'), [{ reason: 'fuelCarry', cents: -98339 }])
+  assert.deepEqual(teileVon(h1, 'fuel:d:2024-05:2025-05'), [{ reason: 'fuelCarry', cents: -98339 }])
   assert.equal(summe(h1), 0)
   assert.equal(h.statements.reduce((a, st) => a + st.totalShareCents, 0) + h1.statements.reduce((a, st) => a + st.totalShareCents, 0), 650000)
 })
@@ -115,7 +115,7 @@ test('Fall b: Schätzung 907,74 € eingefroren; 75,65 € beim Vermieter, vor u
     closedSettlements: [abgeschlossen('2024-05', { fuelCarryRows: zeilenDerSchaetzung(54464, 36310) })],
   }
   const vorher = settle('2025-05', ueber, '2026-03-20')
-  assert.deepEqual(teileVon(vorher, 'fuel:d:2025-05'), [{ reason: 'fuelCarry', cents: 90774 }, { reason: 'fuelEstimateDiff', cents: 7565 }])
+  assert.deepEqual(teileVon(vorher, 'fuel:d:2025-05:2024-05'), [{ reason: 'fuelCarry', cents: 90774 }, { reason: 'fuelEstimateDiff', cents: 7565 }])
   assert.equal(summe(vorher), 650000)
   assert.match(textOf(vorher, 'fuel.estimate-settled'), /war 907,74 € geschätzt; tatsächlich entfallen 983,39 €\. Die Differenz von 75,65 € steht bei Ihnen\./)
   assert.match(textOf(vorher, 'fuel.estimate-settled'), /berichtigten Abrechnung 2024\/2025; sie muss den Mietern bis 30\.04\.2026 zugehen/)
@@ -126,8 +126,8 @@ test('Fall b: Schätzung 907,74 € eingefroren; 75,65 € beim Vermieter, vor u
 
 test('Fall c: ohne Schätzung abgeschlossen; 983,39 € beim Vermieter mit Hinweis', () => {
   const h = settle('2025-05', { closedSettlements: [abgeschlossen('2024-05')] })
-  assert.deepEqual(teileVon(h, 'fuel:d:2025-05'), [{ reason: 'fuelClosedPeriod', cents: 98339 }])
-  assert.match(textOf(h, 'fuel.closed-period-part'), /für 2024\/2025 \(983,39 €\) gehört in die Abrechnung 2024\/2025, die ohne Schätzung abgeschlossen wurde\. Sie tragen ihn selbst\./)
+  assert.deepEqual(teileVon(h, 'fuel:d:2025-05:2024-05'), [{ reason: 'fuelClosedPeriod', cents: 98339 }])
+  assert.match(textOf(h, 'fuel.closed-period-part'), /für 2024\/2025 \(983,39 €\) gehört in die Abrechnung 2024\/2025, die ohne Schätzung abgeschlossen wurde; bis Sie ihn nachfordern, steht er bei Ihnen\./)
   assert.equal(summe(h), 650000)
 })
 
@@ -137,7 +137,7 @@ test('Fall e: Schätzung 1.050,00 € zu hoch; −66,61 € und die Gutschrift j
     fuelCarryFrozen: [eingefroren('e', '2024-05', 105000)],
     closedSettlements: [abgeschlossen('2024-05', { fuelCarryRows: zeilenDerSchaetzung(63000, 42000) })],
   })
-  assert.deepEqual(teileVon(h, 'fuel:d:2025-05'), [{ reason: 'fuelCarry', cents: 105000 }, { reason: 'fuelEstimateDiff', cents: -6661 }])
+  assert.deepEqual(teileVon(h, 'fuel:d:2025-05:2024-05'), [{ reason: 'fuelCarry', cents: 105000 }, { reason: 'fuelEstimateDiff', cents: -6661 }])
   const n = h.notices.find((x) => x.code === 'fuel.estimate-overcharged') ?? assert.fail('kein Hinweis')
   assert.equal(n.level, 'warning')
   assert.match(n.text, /haben 66,61 € zu viel getragen, hier: Mieter A \(A\) 39,97 € und Mieter B \(B\) 26,64 €\. Eine Gutschrift ist jederzeit zulässig und wird empfohlen\./)
@@ -146,7 +146,7 @@ test('Fall e: Schätzung 1.050,00 € zu hoch; −66,61 € und die Gutschrift j
 
 test('Fall f: H−1 wieder offen; die Schätzung zählt nicht mehr, H−1 bucht die echte Rechnung herein (Review Focus 3)', () => {
   const ueber = { fuelDeliveries: [lieferung(), schaetzung(90774)] }
-  assert.deepEqual(teileVon(settle('2025-05', ueber), 'fuel:d:2025-05'), [{ reason: 'fuelCarry', cents: 98339 }])
+  assert.deepEqual(teileVon(settle('2025-05', ueber), 'fuel:d:2025-05:2024-05'), [{ reason: 'fuelCarry', cents: 98339 }])
   const h1 = settle('2024-05', ueber)
   assert.equal(anteilVon(h1, 'ta', 'fuel:e:'), 0)
   assert.equal(anteilVon(h1, 'ta', 'fuel:d:'), 59003)
@@ -157,7 +157,7 @@ test('Gutschrift derselben Rechnung: beide Positionen im selben Verhältnis, Sum
   const ueber = { costItems: [position({ id: 'gas', amountCents: 700000 }), position({ id: 'gs', description: 'Gutschrift Gas', amountCents: -50000 })] }
   const h = settle('2025-05', ueber)
   assert.equal(summe(h), 650000)
-  assert.deepEqual(teileVon(h, 'fuel:d:2025-05'), [{ reason: 'fuelCarry', cents: 98339 }])
+  assert.deepEqual(teileVon(h, 'fuel:d:2025-05:2024-05'), [{ reason: 'fuelCarry', cents: 98339 }])
   assert.equal(anteilVon(h, 'ta', 'fuel:d:') + anteilVon(h, 'tb', 'fuel:d:'), -98339)
   const h1 = settle('2024-05', ueber)
   assert.equal(anteilVon(h1, 'ta', 'fuel:d:') + anteilVon(h1, 'tb', 'fuel:d:'), 98339)
@@ -182,7 +182,7 @@ test('Hinweise: Gradtage, fester Teil, Lücke; Bewertung mit Abdeckung und Über
   assert.match(textOf(h, 'fuel.share-by-degree-days'), /Den Teil für 2025\/2026 \(848,71 ‰ des Verbrauchs\) bestimmt Mietfuchs nach der Gradtagszahlentabelle/)
   assert.match(textOf(h, 'fuel.share-by-degree-days'), /Zählerstand des Versorgungszählers zum 30\.04\.2025/)
   assert.ok(codes(h).includes('fuel.fixed-unknown'))
-  assert.equal(textOf(h, 'fuel.uncovered'), 'Heizanlage „Gas“, Heizperiode 2025/2026: Für 15.03.–30.04.2026 (47 Tage, 151,3 ‰ der Gradtage) fehlt eine Rechnung. Tragen Sie die Folgerechnung ein oder lesen Sie den Gaszähler zum 30.04.2026 ab.')
+  assert.match(textOf(h, 'fuel.uncovered'), /^Heizanlage „Gas“, Heizperiode 2025\/2026: Für 15\.03\.–30\.04\.2026 \(47 Tage, 151,3 ‰ der Gradtage\) liegt keine Rechnung vor; diesen Teil verteilt Mietfuchs nicht\. .*Lesen Sie den Gaszähler zum 30\.04\.2026 ab und tragen Sie den Stand auf der Seite Zähler ein/)
   assert.deepEqual(h.notices.find((n) => n.code === 'fuel.uncovered')?.subject, { kind: 'heatingCosts', id: 'hp' })
   const fuel = h.heating?.[0]?.fuel ?? assert.fail('keine Bewertung')
   assert.equal(fuel.coveragePermille.toFixed(2), '848.71')
@@ -354,7 +354,9 @@ test('Ohne Verknüpfung: nach dem ganzen Topf und co2.share-approximated; ohne C
 test('Ohne Lieferung bei freien Schlüsseln: co2.missing führt zu den Lieferungen; Emissionshandel ab 2023 ohne Hinweis', () => {
   assert.match(textOf(settle('2025-05', drei({ fuelDeliveries: [] })), 'co2.missing'), /als Lieferungen ein; dann teilt Mietfuchs die CO₂-Kosten selbst auf/)
   const ets = settle('2025-05', drei({ fuelDeliveries: [], heatingPlants: [anlage({ energy: 'districtHeating', districtEtsNew: true })] }))
-  assert.ok(!codes(ets).some((c) => c.startsWith('co2.')))
+  // Durchsicht von #233: Die Abrechnung sagt, warum nicht aufgeteilt wird.
+  assert.deepEqual(codes(ets).filter((c) => c.startsWith('co2.')), ['co2.district-ets-exempt'])
+  assert.match(textOf(ets, 'co2.district-ets-exempt'), /erstmals nach dem 01\.01\.2023 .*nicht aufgeteilt \(§ 2 Abs\. 4 Satz 2 CO2KostAufG\)/)
   assert.ok(ets.legalBasis.values?.some((v) => v.id === 'co2.district-ets-new'))
 })
 
@@ -380,4 +382,180 @@ test('G-A3 (F13): Messdienst ohne Aufteilung, Gasrechnung als Lieferung; Entlast
   // Ohne angesetzte Rechnung bleibt es bei der Warnung aus PR 6.
   const nicht = settle('2025-05', { ...ueber(), fuelDeliveries: [lieferung({ amountCents: 311747, emissionsKg: 2950, co2CostCents: 60000, usedByService: false })] })
   assert.ok(codes(nicht).includes('co2.service-unsplit'))
+})
+
+// ---------- Durchsicht PR #233: Geld ----------
+
+const mieterSumme = (r: ComputedSettlement) => r.statements.reduce((a, st) => a + st.totalShareCents, 0)
+
+test('Durchsicht I1: Lieferung ohne Position mit 0 eingefroren, Position später verknüpft: 983,39 € beim Vermieter, Mieter von H 5.516,61 € statt 6.500,00 €', () => {
+  const ohne = settle('2024-05', { costItems: [] })
+  const ueber = { fuelCarryFrozen: [eingefroren('d', '2024-05', 0)], closedSettlements: [abgeschlossen('2024-05', { fuelCarryRows: frozenFuelRowsOf(ohne) })] }
+  const h = settle('2025-05', ueber)
+  assert.equal(mieterSumme(h), 551661)
+  assert.deepEqual(teileVon(h, 'fuel:d:2025-05:2024-05'), [{ reason: 'fuelClosedPeriod', cents: 98339 }])
+  assert.match(textOf(h, 'fuel.closed-period-part'), /983,39 €/)
+  assert.equal(summe(h), 650000)
+})
+
+test('Durchsicht I3: Schätzung, deren Tage eine echte Rechnung teilweise abdeckt, zählt nur für die übrigen Tage', () => {
+  const ueber = {
+    fuelDeliveries: [lieferung({ id: 'd1', label: 'Schlussrechnung alt', invoiceFrom: '2024-05-01', invoiceTo: '2025-04-15' }), schaetzung(90774)],
+    costItems: [position({ id: 'alt', fuelDeliveryId: 'd1', period: periodKey('2024-05'), amountCents: 500000 })],
+  }
+  const h1 = settle('2024-05', ueber)
+  // 16.–30.04.2025: 15 · 80/30 = 40 Gradtage von 71,29 + 80 = 151,29 der Schätzung.
+  const rest = Math.round((90774 * 40) / ((17 * 130) / 31 + 80))
+  assert.equal(mieterSumme(h1), 500000 + rest)
+  assert.deepEqual(h1.heating?.[0]?.fuel?.gaps, [])
+})
+
+test('Durchsicht I4: unverknüpfte Heizposition ohne Leistungszeitraum: kein Schätzvorschlag, sondern die Frage nach der Verknüpfung', () => {
+  const ohneZeitraum = { costItems: [position({ id: 'gas' }), position({ id: 'alt', description: 'Gas alt', period: periodKey('2024-05'), amountCents: 520000, fuelDeliveryId: null })] }
+  const h1 = settle('2024-05', ohneZeitraum)
+  assert.ok((h1.heating?.[0]?.fuel?.gaps ?? []).every((g) => g.estimate === null), JSON.stringify(h1.heating?.[0]?.fuel?.gaps))
+  assert.match(textOf(h1, 'fuel.loose-item'), /Ist die Rechnung schon als Position erfasst\?/)
+  // Mit Leistungszeitraum deckt die Position ihre Tage ab; es bleibt keine Lücke.
+  const mitZeitraum = { costItems: [position({ id: 'gas' }), position({ id: 'alt', description: 'Gas alt', period: periodKey('2024-05'), amountCents: 520000, fuelDeliveryId: null, serviceFrom: '2024-03-15', serviceTo: '2025-03-14' })] }
+  assert.deepEqual(settle('2024-05', mitZeitraum).heating?.[0]?.fuel?.gaps, [])
+})
+
+test('Durchsicht M1: Lieferung über drei Heizperioden: je Heizperiode eine eigene Kennung und der richtige Rechenweg', () => {
+  const ueber = { fuelDeliveries: [lieferung({ invoiceFrom: '2024-03-15', invoiceTo: '2025-05-14' })], costItems: [position({ id: 'gas', period: periodKey('2025-05') })] }
+  const h = settle('2025-05', ueber)
+  const ids = h.statements[0]?.rows.map((r) => r.costItemId) ?? []
+  assert.equal(new Set(ids).size, ids.length, ids.join(', '))
+  const landlord = h.landlord.rows.map((r) => r.costItemId)
+  assert.equal(new Set(landlord).size, landlord.length, landlord.join(', '))
+  const sum = mieterSumme(settle('2023-05', ueber)) + mieterSumme(settle('2024-05', ueber)) + mieterSumme(h)
+  assert.equal(sum, 650000)
+})
+
+test('Durchsicht M4: Hinweise an Übertragszeilen zeigen auf die Position, nicht auf die Kennung der Zeile', () => {
+  const h = settle('2024-05', { costItems: [position({ id: 'gas', key: 'direct', directUnitId: 'gibt-es-nicht' })] })
+  for (const n of h.notices) if (n.subject?.kind === 'costItem') assert.ok(!n.subject.id.startsWith('fuel:'), JSON.stringify(n))
+})
+
+test('Durchsicht C1: Wärmepumpe mit Lieferung: keine CO₂-Aufteilung, kein CO₂-Hinweis (§ 2 Abs. 1 CO2KostAufG: nur Brennstoffe mit Standardwerten nach § 7 Abs. 4 BEHG)', () => {
+  const wp = settle('2025-05', drei({ heatingPlants: [anlage({ energy: 'heatPump' })], fuelDeliveries: [lieferung({ invoiceFrom: '2025-05-01', invoiceTo: '2026-04-30' })] }))
+  assert.ok(!codes(wp).some((c) => c.startsWith('co2.')), codes(wp).join(', '))
+  assert.equal(abzugVon(wp, 'ta'), 0)
+  assert.equal(wp.heating?.[0]?.co2 ?? null, null)
+  // Fernwärme ohne CO₂-Angaben der Rechnung: der bedingte Hinweis wie ohne Lieferung, keine Aufteilung.
+  const fw = settle('2025-05', drei({ heatingPlants: [anlage({ energy: 'districtHeating' })], fuelDeliveries: [lieferung({ invoiceFrom: '2025-05-01', invoiceTo: '2026-04-30' })] }))
+  assert.ok(!codes(fw).includes('co2.incomplete'), codes(fw).join(', '))
+  assert.match(textOf(fw, 'co2.missing'), /Weist Ihr Wärmelieferant CO₂-Kosten aus/)
+})
+
+test('Durchsicht Recht I1: Ohne Schätzung abgeschlossen heißt nicht „tragen Sie selbst“; Nachforderung nach § 556 Abs. 3 Satz 3 BGB genannt', () => {
+  const h = settle('2025-05', { closedSettlements: [abgeschlossen('2024-05')] })
+  const t = textOf(h, 'fuel.closed-period-part')
+  assert.doesNotMatch(t, /Sie tragen ihn selbst/)
+  assert.match(t, /nicht zu vertreten haben \(§ 556 Abs\. 3 Satz 3 BGB/)
+  assert.match(t, /binnen drei Monaten/)
+  const nachher = settle('2025-05', {
+    fuelDeliveries: [lieferung(), schaetzung(90774)],
+    fuelCarryFrozen: [eingefroren('e', '2024-05', 90774)],
+    closedSettlements: [abgeschlossen('2024-05', { fuelCarryRows: zeilenDerSchaetzung(54464, 36310) })],
+  }, '2026-06-01')
+  const s = textOf(nachher, 'fuel.estimate-settled')
+  assert.doesNotMatch(s, /freiwillig/)
+  assert.match(s, /Lag die Rechnung schon vor Ablauf der Frist vor, ist die Verspätung in der Regel zu vertreten\./)
+})
+
+test('Durchsicht Recht I2: Die Schätzung nennt ihre Grundlage und sagt, dass ihre Zulässigkeit nicht entschieden ist', () => {
+  const h = settle('2024-05', { fuelDeliveries: [lieferung({ id: 'e', label: 'Schätzung 15.03.–30.04.2025: 151,29 ‰ der Rechnung „Gas 2024/2025“ nach Gradtagen', invoiceFrom: '2025-03-15', invoiceTo: '2025-04-30', amountCents: 90774, estimated: true })], costItems: [] })
+  const t = textOf(h, 'fuel.estimated')
+  assert.match(t, /Grundlage: Schätzung 15\.03\.–30\.04\.2025: 151,29 ‰ der Rechnung „Gas 2024\/2025“ nach Gradtagen/)
+  assert.match(t, /höchstrichterlich nicht entschieden/)
+  // Grundsatz der Verbrauchsabgrenzung (VIII ZR 156/11) ja, aber nicht als Beleg für die Schätzung einer fehlenden Rechnung.
+  assert.doesNotMatch(t, /156\/11/)
+})
+
+test('Durchsicht Recht Minor: Gradtage-Hinweis ohne unbelegte Aussage über die Versorger, GasGVV nur für die Grundversorgung', () => {
+  const t = textOf(settle('2025-05'), 'fuel.share-by-degree-days')
+  assert.doesNotMatch(t, /Deutschen Wetterdienstes/)
+  assert.match(t, /Grundversorgung/)
+})
+
+// ---------- Invariante der Durchsicht von #233: jede Rechnung genau einmal, über Abschluss, Wiederöffnen und Verknüpfen ----------
+
+// Ein Bestand mit drei Rechnungen hintereinander, je 300 bis 800 Tage (also über zwei oder drei
+// Heizperioden), und in zufälliger Reihenfolge: Positionen verknüpfen, eine Gutschrift dazu, eine
+// Verknüpfung lösen, eine Position löschen, eine Heizperiode abschließen (mit Einfrieren wie
+// `freezeFuelCarries`) oder wieder öffnen. Was die Schreibprüfungen sperren (Position in
+// abgeschlossener Heizperiode, Lieferung mit eingefrorenem Teil ungleich 0), unterbleibt wie in der
+// Anwendung. Am Ende muss gelten: Je Abrechnung Σ Zeilen = Σ ihrer Positionen, und über alle
+// Heizperioden tragen Mieter und Vermieter (ohne die Gegenzeilen `fuelCarry`, die sich aufheben)
+// zusammen genau die Summe aller Positionen. Vor der Durchsicht fiel hier Geld doppelt an (I1, I2).
+test('Invariante: Abschluss, Wiederöffnen und Verknüpfen in wechselnder Reihenfolge verteilen jede Rechnung genau einmal', () => {
+  const rnd = zufall(233)
+  const int = (lo: number, hi: number) => lo + Math.floor(rnd() * (hi - lo + 1))
+  const pick = <T,>(list: readonly T[]): T | undefined => list[Math.floor(rnd() * list.length)]
+  for (let lauf = 0; lauf < 40; lauf++) {
+    const deliveries: FuelDelivery[] = []
+    let start = isoOf(Date.UTC(2024, 1, 1) + int(0, 120) * DAY)
+    for (let k = 0; k < 3; k++) {
+      const end = isoOf(Date.parse(`${start}T00:00:00Z`) + (int(300, 800) - 1) * DAY)
+      deliveries.push(lieferung({ id: `d${k}`, label: `Rechnung ${k}`, invoiceFrom: start, invoiceTo: end, fixedCents: rnd() < 0.5 ? int(0, 20000) : null }))
+      start = isoOf(Date.parse(`${end}T00:00:00Z`) + DAY)
+    }
+    const keys: string[] = []
+    for (let p = periodContaining(MAI, deliveries[0]?.invoiceFrom ?? ''); p.from <= (deliveries[2]?.invoiceTo ?? ''); p = periodContaining(MAI, isoOf(Date.parse(`${p.to}T00:00:00Z`) + DAY))) keys.push(p.key)
+    let items: (SnapshotCostItem & { propertyId: string })[] = []
+    const frozen: FrozenFuelCarry[] = []
+    const closed = new Map<string, { result: ComputedSettlement; positions: number }>()
+    const ownerOf = (d: FuelDelivery) => periodContaining(MAI, d.invoiceTo ?? '').key
+    const frozenNonZero = (id: string) => frozen.some((f) => f.deliveryId === id && f.cents !== 0)
+    const source = () => ({
+      costItems: items,
+      fuelDeliveries: deliveries,
+      fuelCarryFrozen: frozen,
+      closedSettlements: [...closed.entries()].map(([k, c]) => abgeschlossen(k, { fuelCarryRows: frozenFuelRowsOf(c.result) })),
+    })
+    const log: string[] = []
+    let n = 0
+    for (let step = 0; step < 14; step++) {
+      const op = pick(['link', 'link', 'link', 'credit', 'unlink', 'delete', 'close', 'close', 'reopen'] as const)
+      const d = pick(deliveries)
+      if (!d) continue
+      const owner = ownerOf(d)
+      const linked = items.filter((c) => c.fuelDeliveryId === d.id)
+      if ((op === 'link' && linked.length === 0) || (op === 'credit' && linked.length > 0)) {
+        if (closed.has(owner) || frozenNonZero(d.id)) continue
+        items = [...items, position({ id: `p${n++}`, fuelDeliveryId: d.id, period: periodKey(owner), amountCents: op === 'credit' ? -int(1000, 50000) : int(100000, 900000), key: rnd() < 0.5 ? 'area' : 'units' })]
+        log.push(`${op} ${d.id}`)
+      } else if ((op === 'unlink' || op === 'delete') && linked.length > 0) {
+        const c = pick(linked)
+        if (!c || closed.has(owner) || frozenNonZero(d.id)) continue
+        items = op === 'delete' ? items.filter((x) => x.id !== c.id) : items.map((x) => (x.id === c.id ? { ...x, fuelDeliveryId: null } : x))
+        log.push(`${op} ${c.id}`)
+      } else if (op === 'close') {
+        const key = pick(keys.filter((k) => !closed.has(k)))
+        if (!key) continue
+        const result = settle(key, source())
+        for (const id of new Set([...(result.heating?.[0]?.fuel?.deliveries ?? []).map((x) => x.deliveryId), ...(result.heating?.[0]?.fuel?.carries ?? []).map((x) => x.deliveryId)])) {
+          frozen.push(eingefroren(id, key, (result.heating?.[0]?.fuel?.carries ?? []).filter((x) => x.deliveryId === id).reduce((a, x) => a + x.cents, 0)))
+        }
+        closed.set(key, { result, positions: items.filter((c) => c.period === key).reduce((a, c) => a + c.amountCents, 0) })
+        log.push(`close ${key}`)
+      } else if (op === 'reopen') {
+        const key = pick([...closed.keys()])
+        if (!key) continue
+        closed.delete(key)
+        for (let i = frozen.length - 1; i >= 0; i--) if (frozen[i]?.period === key) frozen.splice(i, 1)
+        log.push(`reopen ${key}`)
+      }
+    }
+    const fall = `Lauf ${lauf}: ${JSON.stringify(deliveries.map((d) => [d.invoiceFrom, d.invoiceTo]))} ${log.join(', ')}`
+    let total = 0
+    for (const key of keys) {
+      const stored = closed.get(key)
+      const r = stored?.result ?? settle(key, source())
+      const positions = stored?.positions ?? items.filter((c) => c.period === key).reduce((a, c) => a + c.amountCents, 0)
+      assert.equal(summe(r), positions, `${fall}; Σ Zeilen in ${key}`)
+      total += mieterSumme(r) + r.landlord.rows.flatMap((row) => row.landlordParts ?? []).filter((p) => p.reason !== 'fuelCarry').reduce((a, p) => a + p.cents, 0)
+    }
+    assert.equal(total, items.reduce((a, c) => a + c.amountCents, 0), fall)
+  }
 })

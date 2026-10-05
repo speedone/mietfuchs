@@ -18,13 +18,19 @@ export const FUEL_METHOD_LABELS: Record<FuelMethod, string> = {
 }
 
 const num = (n: number, digits: number): string => n.toLocaleString('de-DE', { maximumFractionDigits: digits })
+// Die Grundlage einer Schätzung steht in ihrer Bezeichnung hinter dem Doppelpunkt (db/fuel.ts,
+// `createEstimates`; Durchsicht von #233): Der Mieter soll sehen, woraus geschätzt ist.
+const basisOf = (label: string): string => {
+  const i = label.indexOf(': ')
+  return i >= 0 ? ` (Grundlage: ${label.slice(i + 2)})` : ''
+}
 
 export function fuelBlock(h: HeatingStatement): FuelBlockView | null {
   const f = h.fuel
   if (!f || (f.deliveries.length === 0 && f.carries.length === 0)) return null
   const rows = f.deliveries.map((d) => {
     const range = d.from && d.to ? ` (${formatDayRange(d.from, d.to)})` : ''
-    const label = `${d.label || 'Lieferung'}${range}`
+    const label = `${(d.estimated ? d.label.split(': ')[0] : d.label) || 'Lieferung'}${range}`
     if (d.estimated) return { label, value: `geschätzt, ${fmtEuro(d.inPeriodCents ?? d.amountCents ?? 0)}` }
     const amount = d.inPeriodCents !== null && d.amountCents !== null ? ` = ${fmtEuro(d.inPeriodCents)} von ${fmtEuro(d.amountCents)}` : ''
     const kg = d.emissionsKg !== null ? `, ${num(d.emissionsKg, 1)} kg CO₂` : ''
@@ -35,8 +41,8 @@ export function fuelBlock(h: HeatingStatement): FuelBlockView | null {
   }
   const notes = [
     ...f.deliveries.filter((d) => d.estimated && d.from && d.to).map((d) =>
-      `Die Brennstoffkosten vom ${fmtDate(d.from ?? '')} bis ${fmtDate(d.to ?? '')} sind geschätzt, weil die Rechnung des Versorgers noch nicht vorlag. Eine Nachberechnung bleibt vorbehalten.`),
-    ...f.gaps.map((g) => `Für ${formatDayRange(g.from, g.to)} lag keine Rechnung vor.`),
+      `Die Brennstoffkosten vom ${fmtDate(d.from ?? '')} bis ${fmtDate(d.to ?? '')} sind geschätzt, weil die Rechnung des Versorgers noch nicht vorlag${basisOf(d.label)}. Eine Nachberechnung bleibt vorbehalten.`),
+    ...f.gaps.map((g) => `Für ${formatDayRange(g.from, g.to)} lag keine Rechnung vor; diese Kosten sind nicht enthalten, eine Nachberechnung bleibt vorbehalten.`),
   ]
   return { title: `Brennstoff ${h.plantName || 'Heizanlage'}, Heizperiode ${fmtDate(h.from)} – ${fmtDate(h.to)}`, rows, notes }
 }

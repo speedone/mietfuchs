@@ -3,7 +3,13 @@
 import { fmtEuro, parseEuro } from './api'
 import { parseDecimal } from './co2Form'
 import { formatDayRange } from '../../shared/period.ts'
-import type { Co2Restriction, DegreeDayValue, FuelDelivery, HeatingMethod } from './types'
+import type { Co2Restriction, DegreeDayValue, FuelDelivery, HeatingEnergy, HeatingMethod } from './types'
+
+// Energieträger, bei denen CO₂-Kosten aufzuteilen sind: Brennstoffe mit Standardwerten nach § 7 Abs. 4
+// BEHG (§ 2 Abs. 1 CO2KostAufG) und Fernwärme, wenn der Lieferant CO₂-Kosten ausweist. Dieselbe Liste
+// wie `CO2_FUELS` in server/src/co2.ts, dazu Fernwärme (Durchsicht von #233, C1). Strom einer Wärmepumpe
+// gehört nicht dazu.
+export const CO2_ENERGIES: readonly HeatingEnergy[] = ['gas', 'oil', 'lpg', 'coal', 'districtHeating']
 
 export type FuelForm = {
   label: string

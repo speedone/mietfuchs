@@ -55,25 +55,25 @@ export default function Co2FactsCard({ plant, view, servedAreaM2, onSaved }: { p
   return (
     <div className="card">
       <h2>CO₂: Angaben zum Gebäude <Term id="co2Stage" /></h2>
-      <p className="muted">Gilt für alle Heizperioden dieser Anlage.</p>
-      <label className="field">
-        <input type="checkbox" checked={nonResidential} disabled={view.closed} onChange={(e) => setNonResidential(e.target.checked)} />
+      <p className="muted">Gilt für alle Heizperioden dieser Anlage. Die Angaben wirken auf Heizperioden, die noch nicht abgeschlossen sind; eine abgeschlossene Abrechnung bleibt, wie sie ist.</p>
+      <label className="checkline">
+        <input type="checkbox" checked={nonResidential} onChange={(e) => setNonResidential(e.target.checked)} />
         Das Gebäude dient überwiegend nicht dem Wohnen (§ 8 CO2KostAufG)
       </label>
       <label className="field">
         Beschränkungen (§ 9 CO2KostAufG)
-        <select aria-label="Beschränkungen (§ 9 CO2KostAufG)" value={restriction} disabled={view.closed} onChange={(e) => setRestriction(RESTRICTION_OPTIONS.find((o) => o.value === e.target.value)?.value ?? 'none')}>
+        <select aria-label="Beschränkungen (§ 9 CO2KostAufG)" value={restriction} onChange={(e) => setRestriction(RESTRICTION_OPTIONS.find((o) => o.value === e.target.value)?.value ?? 'none')}>
           {RESTRICTION_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
       </label>
       {restriction !== 'none' && <p className="notice">Darauf können Sie sich nur berufen, wenn Sie den Mietern die Umstände nachweisen (§ 9 Abs. 3 CO2KostAufG).</p>}
       {plant.energy === 'districtHeating' && (
-        <label className="field">
-          <input type="checkbox" checked={districtEtsNew} disabled={view.closed} onChange={(e) => setDistrictEtsNew(e.target.checked)} />
+        <label className="checkline">
+          <input type="checkbox" checked={districtEtsNew} onChange={(e) => setDistrictEtsNew(e.target.checked)} />
           {`Das Gebäude wurde erstmals nach dem ${stichtag} an ein Wärmenetz angeschlossen, dessen Wärme aus dem Emissionshandel stammt (§ 2 Abs. 4 Satz 2 CO2KostAufG)`}
         </label>
       )}
-      {!view.closed && <button className="btn" onClick={() => void saveFacts()}>Angaben speichern</button>}
+      <button className="btn" onClick={() => void saveFacts()}>Angaben speichern</button>
       {plant.method === 'manual' && (
         <div className="field-group">
           <label className="field">

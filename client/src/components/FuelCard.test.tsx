@@ -63,3 +63,11 @@ test('Beim Messdienst gibt es keine Verknüpfung, aber den Betrag und „vom Mes
   expect(screen.getByLabelText('Rechnungsbetrag')).toBeTruthy()
   expect(screen.getByLabelText('vom Messdienst angesetzt')).toBeTruthy()
 })
+
+test('Durchsicht: Die Karte sagt, dass ohne Verknüpfung nichts abgegrenzt wird; bei einer Wärmepumpe keine CO₂-Felder', () => {
+  render(<FuelCard plant={{ id: 'hp', method: 'manual', energy: 'heatPump' }} view={view} deliveries={[gas]} onSaved={() => {}} />)
+  expect(screen.getByText(/Ohne Verknüpfung grenzt Mietfuchs nichts ab/)).toBeTruthy()
+  fireEvent.click(screen.getByText('Lieferung eintragen'))
+  expect(screen.queryByLabelText('CO₂-Ausstoß laut Rechnung (kg)')).toBeNull()
+  expect(screen.queryByLabelText('CO₂-Kosten laut Rechnung')).toBeNull()
+})

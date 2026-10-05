@@ -814,7 +814,7 @@ const sentAtOf = (req: Request): string | null | false => {
 type FuelAnswer = 'estimate' | 'none'
 const FUEL_ANSWER_INVALID = 'Die Antwort auf die Rückfrage zur Schätzung ist „estimate“ oder „none“.'
 const FUEL_GAPS_TEXT =
-  'Für einen Teil der Heizperiode fehlt eine Rechnung. Mietfuchs kann die Kosten bis dahin mit Vorbehalt schätzen; ohne Schätzung tragen Sie diesen Teil selbst, auch wenn die Rechnung später kommt.'
+  'Für einen Teil der Heizperiode fehlt eine Rechnung. Sie können abwarten, bis sie da ist, die Kosten mit Vorbehalt schätzen lassen oder ohne Schätzung abschließen; ohne Schätzung steht dieser Teil zunächst bei Ihnen.'
 const fuelAnswerOf = (req: Request): FuelAnswer | null | false => {
   const value: unknown = bodyObject(req).fuelEstimates
   if (value === undefined || value === null) return null

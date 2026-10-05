@@ -243,7 +243,7 @@ function itemTotalsOf(settlement: object): Record<string, number> | null {
 // Notlösung: Was nicht auf dem Papier stand, hat der Mieter auch nicht bekommen. Ein
 // Schnappschuss von vor v0.3.0 kennt den Eigenanteil noch gar nicht.
 // Eine Übertragszeile eines eingefrorenen Stands (Heizung PR 7): `costItemId` ist
-// `fuel:<Lieferung>:<Heizperiode>:<Position>`.
+// `fuel:<Lieferung>:<Heizperiode>:<andere Heizperiode>:<Position>`.
 export type FrozenFuelRow = { costItemId: string; tenancyId: string; tenantName: string; unitName: string; shareCents: number }
 
 // Die Übertragszeilen aus einem Archivstück, wie `frozenSettlementOf` es liest: Was keine Zeile der Art

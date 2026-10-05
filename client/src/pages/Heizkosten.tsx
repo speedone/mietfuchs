@@ -14,7 +14,7 @@ import DegreeDaysCard from '../components/DegreeDaysCard'
 import FuelCard from '../components/FuelCard'
 import HotWaterCard from '../components/HotWaterCard'
 import Term from '../components/Term'
-import { monthsOf, ownedBy } from '../fuelForm'
+import { CO2_ENERGIES, monthsOf, ownedBy } from '../fuelForm'
 import { co2FirstPeriodStart } from '../../../shared/law/co2kostaufg.ts'
 import { servesUnit } from '../../../shared/heatingPeriod.ts'
 import { germanDate } from '../../../shared/law/register.ts'
@@ -68,7 +68,7 @@ export default function Heizkosten({ units, tenancies }: { units: Unit[]; tenanc
               <ManualCo2Advice />
             </div>
           ) : (<>
-            {plant.method === 'manual' && (data?.deliveries[plant.id] ?? []).length === 0 && (
+            {plant.method === 'manual' && CO2_ENERGIES.includes(plant.energy) && (data?.deliveries[plant.id] ?? []).length === 0 && (
               <div className="card">
                 <p>Verteilen Sie die Heizkosten selbst nach einem <Term id="allocationKey">Umlageschlüssel</Term> (bei der Frage, wer abrechnet: „Niemand“), teilt Mietfuchs die CO₂-Kosten selbst auf, sobald Sie die Gas- oder Ölrechnung unten als Lieferung eintragen; Gutschrift und Position „Nicht umlagefähig“ entfallen dann.</p>
                 <ManualCo2Advice />
@@ -84,7 +84,7 @@ export default function Heizkosten({ units, tenancies }: { units: Unit[]; tenanc
                 ))}
                 {plant.method === 'service' && <HotWaterCard view={v} onSaved={() => void load()} />}
                 <FuelCard plant={plant} view={v} deliveries={ownedBy(data?.deliveries[plant.id] ?? [], v)} onSaved={() => void load()} />
-                {v.from >= first && <Co2FactsCard plant={plant} view={v} servedAreaM2={servedArea(plant)} onSaved={() => void load()} />}
+                {v.from >= first && CO2_ENERGIES.includes(plant.energy) && <Co2FactsCard plant={plant} view={v} servedAreaM2={servedArea(plant)} onSaved={() => void load()} />}
               </div>
             ))}
           </>)}

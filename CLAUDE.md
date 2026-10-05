@@ -1026,9 +1026,9 @@ mehrere je Lieferung (Abschlag, Schlussrechnung, Gutschrift). Abgegrenzt wird in
   gefragt, wenn eine Anlage Lieferungen hat; sonst stünde sie im Rechtsstand jeder Abrechnung.
 - **Die Positionen stehen in der Heizperiode, die das Ende der Rechnung enthält** (die Verknüpfung
   wird sonst abgelehnt, `guardFuelLink`). Der Teil einer anderen Heizperiode ist eine Zeile ohne
-  Position (`kind: 'fuelCarry'`, Kennung `fuel:<Lieferung>:<Heizperiode>:<Position>`), mit dem
+  Position (`kind: 'fuelCarry'`, Kennung `fuel:<Lieferung>:<Heizperiode>:<andere>:<Position>`), mit dem
   Schlüssel der Position verteilt, und eine Gegenzeile beim Vermieter (`fuelCarry`, Kennung
-  `fuel:<Lieferung>:<Heizperiode>`). Über die Zeiträume hinweg ist jede Rechnung genau einmal
+  `fuel:<Lieferung>:<Heizperiode>:<andere>`). Über die Zeiträume hinweg ist jede Rechnung genau einmal
   verteilt; eine Invariante in calc-fuel.test.ts prüft das an Zufallsbeständen, auch über einen
   Abschluss. Eine Heizperiode ohne eigene Positionen rechnet trotzdem, wenn die Anlage Lieferungen
   hat (Topf und Teilabrechnung nach Weg b), sonst fehlte ihr der Übertrag.
@@ -1042,7 +1042,13 @@ mehrere je Lieferung (Abschlag, Schlussrechnung, Gutschrift). Abgegrenzt wird in
   eingefrorenem Teil (außer der Bezeichnung) und Ablesungen des Versorgungszählers mit Datum in
   einer abgeschlossenen Heizperiode (`guardSupplyReading`, `heatingPeriodAt`).
 - **Rückfrage beim Abschluss:** Bei einer Lücke mit Schätzvorschlag antwortet der Abschluss mit 409
-  und `fuelGaps`; `fuelEstimates: 'estimate' | 'none'` entscheidet. Rechnen, Schätzungen anlegen,
+  und `fuelGaps` (samt Frist); `fuelEstimates: 'estimate' | 'none'` entscheidet. In der Oberfläche
+  ist **Abwarten** die Vorgabe (`defaultChoice: 'cancel'` im Bestätigungsdialog), weil die Schätzung
+  einer noch fehlenden Versorgerrechnung höchstrichterlich nicht entschieden ist; die Schätzung
+  trägt ihre Grundlage in der Bezeichnung. Eine Heizposition der Anlage ohne Lieferung deckt mit
+  ihrem Leistungszeitraum ab; ohne Leistungszeitraum gibt es keinen Schätzvorschlag, sondern
+  `fuel.loose-item`. Eine Schätzung, deren Tage eine echte Rechnung teilweise abdeckt, zählt nur für
+  die übrigen Tage. Rechnen, Schätzungen anlegen,
   neu rechnen, Abschließen und Einfrieren laufen in **einer** Transaktion (`closeWithFuel` in
   index.ts); deshalb nehmen die Leser in read.ts ein `Executor`, und `readStock(tx)` sieht die eben
   angelegten Schätzungen.
@@ -1051,6 +1057,17 @@ mehrere je Lieferung (Abschlag, Schlussrechnung, Gutschrift). Abgegrenzt wird in
   Brennstoffs (G-B5, `bookReliefs`), § 8 und § 9 aus dem Register (`co2.non-residential`,
   `co2.restriction`), Wärme aus dem Emissionshandel bei Anschluss nach dem Stichtag
   (`co2.district-ets-new`) ohne Aufteilung.
+- **Was die Durchsicht von #233 festhält:** Eine mit 0 eingefrorene Lieferung (beim Abschluss noch
+  ohne Position) lässt sich verknüpfen; ihr Teil der abgeschlossenen Heizperiode geht an den
+  Vermieter (`fuelClosedPeriod`). Hat eine abgeschlossene Heizperiode einen Teil ungleich 0
+  eingefroren, sind Lösen, Umhängen, Verschieben und Löschen ihrer Positionen und eine weitere
+  Position gesperrt (409). Eine Position zeigt nur auf eine Lieferung ihres Objekts. Die Kennung einer
+  Übertragszeile nennt beide Heizperioden (`fuel:<Lieferung>:<Heizperiode>:<andere>:<Position>`),
+  Hinweise an ihr führen zur Position. Die CO₂-Aufteilung gilt nur für Brennstoffe mit Standardwerten
+  (§ 2 Abs. 1 CO2KostAufG): nicht für Strom einer Wärmepumpe, bei Fernwärme nur mit ausgewiesenen
+  CO₂-Kosten. Die Nachstufung beim Messdienst erwartet § 8 und § 9 nach den Angaben zum Gebäude.
+  Eine Invariante über Zufallsbestände mit Abschluss, Wiederöffnen und Verknüpfen in wechselnder
+  Reihenfolge prüft, dass jede Rechnung genau einmal verteilt ist.
 - **Gesperrt bis zu ihren PRs:** Vorratsenergien (PR 8), Lieferungen je Wohnung (PR 9), Netzentgelte
   und Biobrennstoff (PR 18), Methode `self` (PR 10); jeder Satz sagt, was bis dahin geht.
 - **Golden F15 und F12** ([server/test/fixtures/heating/](server/test/fixtures/heating/)): F15 ist das

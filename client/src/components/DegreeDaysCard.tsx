@@ -1,6 +1,6 @@
 // Die Karte „Gradtagzahlen Ihres Orts“ (Heizung PR 7, Stufe 4 in 3.2): die Monatswerte des Deutschen
-// Wetterdienstes für den Ort des Objekts. Fehlt ein Monat, rechnet Mietfuchs mit der Tabelle der
-// Heizkostenverordnung.
+// Wetterdienstes für den Ort des Objekts. Fehlt ein Monat, rechnet Mietfuchs mit der
+// Gradtagszahlentabelle (nach den anerkannten Regeln der Technik, § 9b Abs. 2 HeizkostenV).
 import { useState } from 'react'
 import { api, errorText } from '../api'
 import { useToast } from './feedback'
@@ -34,7 +34,7 @@ export default function DegreeDaysCard({ propertyId, months, values, onSaved }: 
       <h2>Gradtagzahlen Ihres Orts <Term id="degreeDays" /></h2>
       <p className="muted">
         Freiwillig. Mit den Monatswerten des Deutschen Wetterdienstes für Ihren Ort teilt Mietfuchs eine Rechnung genauer auf als mit der
-        Tabelle der Heizkostenverordnung. Ein Zählerstand zum Stichtag ist noch genauer.
+        Gradtagszahlentabelle. Ein Zählerstand zum Stichtag ist noch genauer. Gemeint ist die Gradtagzahl G20/15 (Raumtemperatur 20 °C, Heizgrenze 15 °C, VDI 3807), die Monatssumme Ihrer nächsten Wetterstation; der Deutsche Wetterdienst veröffentlicht sie in seinem Open-Data-Angebot (Climate Data Center), viele Versorger nennen sie auch.
       </p>
       <div className="row wrap">
         {months.map((m) => (

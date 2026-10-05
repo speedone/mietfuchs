@@ -1,18 +1,22 @@
 // Die Rückfrage beim Abschließen (Heizung PR 7, Entwurf 8.2, N1): Fehlt für einen Teil der Heizperiode
-// eine Rechnung, antwortet der Server mit 409 und den Lücken. Vorgabe ist die Schätzung mit Vorbehalt;
-// lehnt der Vermieter ab, fragt ein zweiter Dialog, ob er ohne Schätzung abschließt und den Teil selbst
-// trägt. Ohne DOM prüfbar; die Seite reicht `api` und `confirm` herein.
-import { ApiError, fmtEuro } from './api'
+// eine Rechnung, antwortet der Server mit 409 und den Lücken. Drei Wege, Vorgabe ist das Abwarten
+// (Durchsicht von #233): Ob eine noch fehlende Versorgerrechnung geschätzt werden darf, ist
+// höchstrichterlich nicht entschieden, und bis zum Ende der Frist kostet Abwarten nichts. „Mit
+// Schätzung“ und „Ohne Schätzung abschließen“ bleiben wählbar, keine von beiden ist vorausgewählt.
+// Ohne DOM prüfbar; die Seite reicht `api` und die Rückfrage herein.
+import { ApiError, fmtDate, fmtEuro } from './api'
 import { formatDayRange } from '../../shared/period.ts'
 import type { FuelGapQuestion } from './types'
 
-export type FuelQuestion = { title: string; message: string; confirmLabel: string; cancelLabel: string }
+export type FuelQuestion = { title: string; message: string; confirmLabel: string; alternativeLabel: string; cancelLabel: string }
+export type FuelAnswer = 'estimate' | 'none' | 'wait'
 
 const isGap = (g: unknown): g is FuelGapQuestion =>
   g !== null && typeof g === 'object' &&
   'plantId' in g && typeof g.plantId === 'string' && 'plantName' in g && typeof g.plantName === 'string' &&
   'period' in g && typeof g.period === 'string' && 'from' in g && typeof g.from === 'string' &&
-  'to' in g && typeof g.to === 'string' && 'amountCents' in g && typeof g.amountCents === 'number'
+  'to' in g && typeof g.to === 'string' && 'amountCents' in g && typeof g.amountCents === 'number' &&
+  'deadline' in g && typeof g.deadline === 'string'
 
 // Die Lücken aus einer Ablehnung, `null` bei jeder anderen.
 export function fuelGapsOf(e: unknown): FuelGapQuestion[] | null {
@@ -23,36 +27,29 @@ export function fuelGapsOf(e: unknown): FuelGapQuestion[] | null {
 
 const listOf = (gaps: readonly FuelGapQuestion[]): string =>
   gaps.map((g) => `${g.plantName || 'Heizanlage'}: ${formatDayRange(g.from, g.to)} (${fmtEuro(g.amountCents)})`).join('; ')
-const totalOf = (gaps: readonly FuelGapQuestion[]): number => gaps.reduce((a, g) => a + g.amountCents, 0)
 
-export function estimateQuestion(gaps: readonly FuelGapQuestion[]): FuelQuestion {
+export function fuelQuestion(gaps: readonly FuelGapQuestion[]): FuelQuestion {
+  const deadline = gaps.map((g) => g.deadline).filter((d) => d !== '').sort()[0]
+  const wait = deadline
+    ? `Sicher ist abzuwarten: Die Abrechnung muss den Mietern bis ${fmtDate(deadline)} zugehen; kommt die Rechnung vorher, braucht es keine Schätzung.`
+    : 'Sicher ist abzuwarten, bis die Rechnung da ist, solange die Frist der Abrechnung läuft.'
   return {
-    title: 'Trotzdem abschließen?',
+    title: 'Rechnung des Versorgers fehlt',
     message:
-      `Für einen Teil der Heizperiode fehlt die Rechnung des Versorgers: ${listOf(gaps)}. Mietfuchs schätzt diese Kosten aus der letzten Rechnung ` +
-      'und weist sie in der Abrechnung mit Vorbehalt aus. Kommt die Rechnung, zählt die Schätzung nicht mehr; eine Differenz steht bei Ihnen, ' +
-      'und solange die Frist läuft, können Sie mit einer berichtigten Abrechnung nachfordern.',
+      `Für einen Teil der Heizperiode fehlt die Rechnung des Versorgers: ${listOf(gaps)}. ${wait} ` +
+      'Mit Schätzung weist Mietfuchs diese Kosten aus der letzten Rechnung mit Vorbehalt aus und nennt die Grundlage; ob eine solche Schätzung zulässig ist, ist höchstrichterlich nicht entschieden. ' +
+      'Ohne Schätzung steht dieser Teil zunächst bei Ihnen. Nachfordern können Sie mit einer berichtigten Abrechnung bis zum Ende der Frist, danach nur, wenn Sie die Verspätung nicht zu vertreten haben (§ 556 Abs. 3 Satz 3 BGB).',
+    cancelLabel: 'Abwarten (nicht abschließen)',
+    alternativeLabel: 'Ohne Schätzung abschließen',
     confirmLabel: 'Mit Schätzung abschließen',
-    cancelLabel: 'Nicht schätzen',
   }
 }
 
-export function withoutEstimateQuestion(gaps: readonly FuelGapQuestion[]): FuelQuestion {
-  return {
-    title: 'Ohne Schätzung abschließen?',
-    message:
-      `Ohne Schätzung tragen Sie ${fmtEuro(totalOf(gaps))} selbst, auch wenn die Rechnung später kommt: Ihr Teil für diese Heizperiode gehört dann ` +
-      'in eine abgeschlossene Abrechnung. Solange deren Frist läuft, können Sie sie wieder öffnen.',
-    confirmLabel: 'Ohne Schätzung abschließen',
-    cancelLabel: 'Abbrechen',
-  }
-}
-
-// Schließt ab und fragt bei einer Lücke nach. `true`, wenn abgeschlossen ist; `false` nach Abbruch.
+// Schließt ab und fragt bei einer Lücke nach. `true`, wenn abgeschlossen ist; `false` beim Abwarten.
 // Jede andere Ablehnung geht unverändert an den Aufrufer.
 export async function closeWithFuelQuestion(
   post: (body: Record<string, unknown>) => Promise<unknown>,
-  ask: (q: FuelQuestion) => Promise<boolean>,
+  ask: (q: FuelQuestion) => Promise<FuelAnswer>,
 ): Promise<boolean> {
   try {
     await post({})
@@ -60,14 +57,9 @@ export async function closeWithFuelQuestion(
   } catch (e) {
     const gaps = fuelGapsOf(e)
     if (gaps === null) throw e
-    if (await ask(estimateQuestion(gaps))) {
-      await post({ fuelEstimates: 'estimate' })
-      return true
-    }
-    if (await ask(withoutEstimateQuestion(gaps))) {
-      await post({ fuelEstimates: 'none' })
-      return true
-    }
-    return false
+    const answer = await ask(fuelQuestion(gaps))
+    if (answer === 'wait') return false
+    await post({ fuelEstimates: answer })
+    return true
   }
 }

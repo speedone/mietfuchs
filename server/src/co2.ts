@@ -68,7 +68,9 @@ type ServiceValues = Pick<Co2Statement, 'serviceKgPerM2' | 'serviceEmissionsKg' 
 // die Tabelle ein. Ein ganzzahlig gedruckter Wert kann jeder Wert in [w − 0,5; w + 0,5) gewesen
 // sein; passt der Anteil laut Messdienst zu einer Stufe darin, ist er stimmig. Dazu muss L zu C · ‰
 // passen. `null` heißt: nicht zu prüfen, weil eine Angabe fehlt.
-export function restage(st: ServiceValues, ranges: readonly Co2StageRange[], decimals: number): Restage {
+// `adjust`: § 8 und § 9 CO2KostAufG nach den Angaben zum Gebäude (Heizung PR 7, Durchsicht von #233); aus
+// dem Anteil der Stufe in Promille der erwartete Anteil.
+export function restage(st: ServiceValues, ranges: readonly Co2StageRange[], decimals: number, adjust: (permille: number) => number = (x) => x): Restage {
   const area = st.serviceAreaM2 ?? st.areaM2
   const printed = st.serviceKgPerM2 ?? (st.serviceEmissionsKg !== null && area !== null && area > 0 ? st.serviceEmissionsKg / area : null)
   if (printed === null) return { value: null, stage: null, percentOk: null, sumOk: null }
@@ -79,7 +81,7 @@ export function restage(st: ServiceValues, ranges: readonly Co2StageRange[], dec
   const candidates = st.serviceKgPerM2 !== null && Number.isInteger(st.serviceKgPerM2)
     ? ranges.filter((r) => r.from < value + 0.5 && (r.to === null || r.to > value - 0.5))
     : [stage]
-  const percentOk = candidates.some((r) => r.landlordPercent * 10 === permille)
+  const percentOk = candidates.some((r) => adjust(r.landlordPercent * 10) === permille)
   const sumOk = st.serviceTotalCents === null || st.serviceLandlordCents === null
     ? null
     : Math.abs(st.serviceLandlordCents - (st.serviceTotalCents * permille) / 1000) <= L_TOLERANCE_CENTS

@@ -643,7 +643,7 @@ export type SettlementRow = {
   // der dem Mieter als eigene Zeile abgezogen wird (Entwurf 7.5, 9.4). `costItemId` trägt dann die
   // Kennung des Topfs (`co2:<Anlage>:<Heizperiode>`), die keiner Position gehört. `fuelCarry`
   // (Heizung PR 7): der Teil einer Brennstoffrechnung aus einer anderen Heizperiode, verteilt mit
-  // dem Schlüssel ihrer Position; `costItemId` ist `fuel:<Lieferung>:<Heizperiode>:<Position>`.
+  // dem Schlüssel ihrer Position; `costItemId` ist `fuel:<Lieferung>:<Heizperiode>:<andere Heizperiode>:<Position>`.
   // Spätere PRs ergänzen `co2Refund`.
   kind?: 'co2Relief' | 'fuelCarry'
 }
@@ -1565,6 +1565,9 @@ export type FuelEstimateProposal = {
   co2CostCents: number | null
   basedOn: string
   byMeter: boolean
+  // Der Anteil der Rechnung `basedOn`, der für die Lücke angesetzt ist, in Promille (Durchsicht von #233,
+  // Recht I2: Die Abrechnung nennt die Grundlage der Schätzung).
+  factorPermille: number
 }
 
 export type FuelGap = { from: string; to: string; days: number; permille: number; estimate: FuelEstimateProposal | null }
@@ -1579,4 +1582,5 @@ export type FuelAssessment = {
 }
 
 // Die Rückfrage beim Abschluss (8.2, Dialog „Trotzdem abschließen?“).
-export type FuelGapQuestion = { plantId: string; plantName: string; period: PeriodKey; from: string; to: string; amountCents: number }
+// `deadline`: bis wann die Abrechnung, die abgeschlossen werden soll, den Mietern zugehen muss (Abwarten).
+export type FuelGapQuestion = { plantId: string; plantName: string; period: PeriodKey; from: string; to: string; amountCents: number; deadline: string }

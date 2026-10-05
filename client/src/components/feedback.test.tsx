@@ -45,3 +45,20 @@ test('Laienprobe (Kleinigkeit): die Rückfrage ist ein Dialog mit Namen', async 
   fireEvent.click(screen.getByRole('button', { name: 'Fragen' }))
   expect(await screen.findByRole('dialog', { name: 'Rechnung aufteilen?' })).toBeTruthy()
 })
+
+// Rückfrage zur Schätzung (Heizung PR 7, Durchsicht von #233): Abwarten ist die Vorgabe; Enter wählt es
+// und der Fokus liegt darauf, nicht auf „Mit Schätzung abschließen“.
+function Frage({ onAnswer }: { onAnswer: (ok: boolean) => void }) {
+  const confirm = useConfirm()
+  return <button onClick={() => void confirm({ title: 'Rechnung fehlt', confirmLabel: 'Mit Schätzung', cancelLabel: 'Abwarten', alternativeLabel: 'Ohne Schätzung', defaultChoice: 'cancel' }).then(onAnswer)}>Fragen</button>
+}
+
+test('Vorgabe Abbrechen: Fokus auf Abwarten, Enter bestätigt nicht', async () => {
+  const answers: boolean[] = []
+  render(<UIProvider><Frage onAnswer={(ok) => answers.push(ok)} /></UIProvider>)
+  fireEvent.click(screen.getByRole('button', { name: 'Fragen' }))
+  expect(document.activeElement?.textContent).toBe('Abwarten')
+  fireEvent.keyDown(window, { key: 'Enter' })
+  await act(async () => {})
+  expect(answers).toEqual([false])
+})

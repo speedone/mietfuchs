@@ -172,7 +172,12 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
     if (!(await attempt(async () => {
       closed = await closeWithFuelQuestion(
         (body) => api(withProperty(paths.close, propertyId), { method: 'POST', body: JSON.stringify(body) }),
-        (q) => confirm(q),
+        // Drei Wege; Abwarten ist die Vorgabe (Enter, Fokus), „Ohne Schätzung“ die dritte Wahl.
+        (q) => new Promise((resolve) => {
+          let without = false
+          void confirm({ ...q, defaultChoice: 'cancel', onAlternative: () => { without = true } })
+            .then((ok) => resolve(ok ? 'estimate' : without ? 'none' : 'wait'))
+        }),
       )
     }))) return
     if (!closed) return

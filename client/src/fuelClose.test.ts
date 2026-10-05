@@ -1,10 +1,10 @@
 import { expect, test } from 'vitest'
 import { ApiError, fmtEuro } from './api'
-import { closeWithFuelQuestion, estimateQuestion, fuelGapsOf, withoutEstimateQuestion } from './fuelClose'
+import { closeWithFuelQuestion, fuelGapsOf, fuelQuestion, type FuelAnswer } from './fuelClose'
 import { periodKey } from '../../shared/period.ts'
 import type { FuelGapQuestion } from './types'
 
-const luecke: FuelGapQuestion = { plantId: 'hp', plantName: 'Gas', period: periodKey('2025-05'), from: '2026-03-15', to: '2026-04-30', amountCents: 90774 }
+const luecke: FuelGapQuestion = { plantId: 'hp', plantName: 'Gas', period: periodKey('2025-05'), from: '2026-03-15', to: '2026-04-30', amountCents: 90774, deadline: '2027-04-30' }
 const abgelehnt = new ApiError('Für einen Teil der Heizperiode fehlt eine Rechnung.', 409, { fuelGaps: [luecke] })
 
 test('Lücken aus der Antwort 409 lesen; jede andere Ablehnung ist keine Rückfrage', () => {
@@ -14,30 +14,29 @@ test('Lücken aus der Antwort 409 lesen; jede andere Ablehnung ist keine Rückfr
   expect(fuelGapsOf(new ApiError('x', 409, { fuelGaps: [{ plantId: 1 }] }))).toEqual([])
 })
 
-test('Dialog: Vorgabe ist die Schätzung; ohne sie nennt er den Betrag, den der Vermieter trägt', () => {
-  const q = estimateQuestion([luecke])
-  expect(q).toMatchObject({ title: 'Trotzdem abschließen?', confirmLabel: 'Mit Schätzung abschließen', cancelLabel: 'Nicht schätzen' })
+test('Dialog (Durchsicht von #233): Vorgabe ist Abwarten mit Frist; Schätzung ungeklärt, ohne Schätzung nach § 556 Abs. 3 Satz 3 BGB', () => {
+  const q = fuelQuestion([luecke])
+  expect(q).toMatchObject({ cancelLabel: 'Abwarten (nicht abschließen)', alternativeLabel: 'Ohne Schätzung abschließen', confirmLabel: 'Mit Schätzung abschließen' })
   expect(q.message).toContain(`Gas: 15.03.–30.04.2026 (${fmtEuro(90774)})`)
-  expect(q.message).toContain('mit Vorbehalt')
-  const ohne = withoutEstimateQuestion([luecke])
-  expect(ohne).toMatchObject({ title: 'Ohne Schätzung abschließen?', confirmLabel: 'Ohne Schätzung abschließen', cancelLabel: 'Abbrechen' })
-  expect(ohne.message).toContain(`tragen Sie ${fmtEuro(90774)} selbst`)
+  expect(q.message).toContain('bis 30.04.2027 zugehen')
+  expect(q.message).toContain('höchstrichterlich nicht entschieden')
+  expect(q.message).toContain('§ 556 Abs. 3 Satz 3 BGB')
+  expect(q.message).not.toContain('selbst, auch wenn')
 })
 
-test('Ablauf: ohne Lücke einmal; mit Lücke Schätzung, ohne Schätzung oder Abbruch', async () => {
-  const lauf = async (antworten: boolean[], ersteAntwort: 'ok' | 'luecke') => {
+test('Ablauf: ohne Lücke einmal; mit Lücke Schätzung, ohne Schätzung oder Abwarten', async () => {
+  const lauf = async (antwort: FuelAnswer, ersteAntwort: 'ok' | 'luecke') => {
     const bodies: Record<string, unknown>[] = []
     const post = async (body: Record<string, unknown>) => {
       bodies.push(body)
       if (bodies.length === 1 && ersteAntwort === 'luecke') throw abgelehnt
     }
-    const fragen = [...antworten]
-    const ok = await closeWithFuelQuestion(post, async () => fragen.shift() ?? false)
+    const ok = await closeWithFuelQuestion(post, async () => antwort)
     return { ok, bodies }
   }
-  expect(await lauf([], 'ok')).toEqual({ ok: true, bodies: [{}] })
-  expect(await lauf([true], 'luecke')).toEqual({ ok: true, bodies: [{}, { fuelEstimates: 'estimate' }] })
-  expect(await lauf([false, true], 'luecke')).toEqual({ ok: true, bodies: [{}, { fuelEstimates: 'none' }] })
-  expect(await lauf([false, false], 'luecke')).toEqual({ ok: false, bodies: [{}] })
-  await expect(closeWithFuelQuestion(async () => { throw new Error('Netz weg') }, async () => true)).rejects.toThrow('Netz weg')
+  expect(await lauf('wait', 'ok')).toEqual({ ok: true, bodies: [{}] })
+  expect(await lauf('estimate', 'luecke')).toEqual({ ok: true, bodies: [{}, { fuelEstimates: 'estimate' }] })
+  expect(await lauf('none', 'luecke')).toEqual({ ok: true, bodies: [{}, { fuelEstimates: 'none' }] })
+  expect(await lauf('wait', 'luecke')).toEqual({ ok: false, bodies: [{}] })
+  await expect(closeWithFuelQuestion(async () => { throw new Error('Netz weg') }, async () => 'estimate')).rejects.toThrow('Netz weg')
 })

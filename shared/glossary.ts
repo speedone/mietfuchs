@@ -15,7 +15,7 @@
 // nach Verbrauch“) sind gewählt und bleiben stehen.
 import { hkvConsumptionShare, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit } from './law/heizkostenv.ts'
 import { germanDate, LAW_AS_OF, onlyVersion, valueAt } from './law/register.ts'
-import { co2CutMissing, co2FirstPeriodStart, co2RoundingDecimals, co2StageTable } from './law/co2kostaufg.ts'
+import { co2CutMissing, co2DistrictEtsNew, co2FirstPeriodStart, co2NonResidential, co2Restriction, co2RoundingDecimals, co2StageTable } from './law/co2kostaufg.ts'
 
 const SHARE = valueAt(hkvConsumptionShare, LAW_AS_OF)
 const CUT = valueAt(hkvCutNotByConsumption, LAW_AS_OF)
@@ -29,6 +29,11 @@ const RETROFIT_FROM = germanDate(onlyVersion(hkvRemoteReadingRetrofit).validFrom
 const CO2_CUT = valueAt(co2CutMissing, LAW_AS_OF)
 const CO2_FROM = germanDate(co2FirstPeriodStart())
 const CO2_DECIMALS = valueAt(co2RoundingDecimals, LAW_AS_OF)
+// Heizung PR 7: § 8, § 9 und § 2 Abs. 4 Satz 2 CO2KostAufG aus dem Register.
+const NON_RES_PERCENT = valueAt(co2NonResidential, LAW_AS_OF) / 10
+const RESTRICTION = valueAt(co2Restriction, LAW_AS_OF)
+const ETS_AFTER = germanDate(valueAt(co2DistrictEtsNew, LAW_AS_OF).connectedAfter)
+const deCents = (cents: number): string => (cents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const STAGES = valueAt(co2StageTable, LAW_AS_OF)
 function stageText(value: number): { range: string; percent: number } {
   let i = 0
@@ -373,10 +378,51 @@ export const GLOSSARY = {
     title: 'Gradtagszahlen',
     short: 'Eine Tabelle, die ein Jahr Heizwärme auf die Monate verteilt: Im Winter wird viel geheizt, im Sommer kaum. Ein Jahr hat 1.000 Promille.',
     example: `Januar bis April zusammen ${winterPermille} Promille. Eine Gasrechnung über 700 € für diese vier Monate entspricht 700 € / ${(winterPermille / 1000).toLocaleString('de-DE')} ≈ ${deEuro(Math.round(70000 / (winterPermille / 1000)))} € im Jahr, also rund ${deEuro(Math.round(70000 / (winterPermille / 1000) / 12))} € im Monat.`,
-    norm: '§ 9b Abs. 2 HeizkostenV',
+    norm: '§ 9b Abs. 2 HeizkostenV (Gradtagszahlen nach den anerkannten Regeln der Technik)',
     needed: 'Im Rumpfzeitraum rechnet Mietfuchs damit den Vorschlag für die neue Vorauszahlung hoch. Reicht eine Gas-, Fernwärme- oder Stromrechnung über das Ende der Heizperiode hinaus, teilt es damit den Verbrauch auf die Heizperioden auf, wenn weder ein Zählerstand zum Stichtag noch eine Zwischenrechnung des Versorgers vorliegt. Die Werte stammen aus der Praxis der Messdienste; die Norm DIN 94680, in der sie heute stehen, hat Mietfuchs nicht gelesen.',
   },
 
+  fuelDelivery: {
+    title: 'Lieferung (Rechnung des Versorgers)',
+    short: 'Eine Gas-, Fernwärme- oder Stromrechnung, auf der Seite Heizkosten mit ihrem Rechnungszeitraum eingetragen. Reicht sie über die Heizperiode hinaus, teilt Mietfuchs sie auf die Heizperioden auf; bei freien Schlüsseln verknüpfen Sie die Kostenposition mit ihr.',
+    example: 'Gasrechnung 15.03.2025–14.03.2026 über 6.500,00 €, Heizperiode Mai bis April: Nach Gradtagen gehören 848,71 ‰ in 2025/2026 (5.516,61 €), der Rest von 983,39 € in 2024/2025.',
+    norm: '§ 7 Abs. 2 HeizkostenV',
+    needed: 'Wenn eine Rechnung über die Heizperiode hinausreicht oder Mietfuchs die CO₂-Kosten selbst aufteilen soll. Ohne Verknüpfung verteilt Mietfuchs die Position ganz in ihrem Zeitraum und grenzt nichts ab.',
+  },
+  fixedPriceComponent: {
+    title: 'Fester Preisbestandteil',
+    short: 'Grund-, Leistungs-, Mess- und Verrechnungspreis einer Versorgerrechnung. Er hängt an der Zeit, nicht an der Menge, und wird deshalb nach Tagen auf die Heizperioden geteilt.',
+    example: 'Grund- und Leistungspreis 2.000,00 € für 15.03.2025–14.03.2026; auf 2025 entfallen 292 von 365 Tagen, also 1.600,00 €. Nach Gradtagen wären es 1.242,58 €.',
+    needed: 'Nur wenn eine Rechnung über die Heizperiode hinausreicht. Ohne Angabe teilt Mietfuchs die ganze Rechnung nach dem Verbrauch.',
+  },
+  fuelEstimate: {
+    title: 'Schätzung mit Vorbehalt',
+    short: 'Fehlt beim Abschließen die Rechnung für einen Teil der Heizperiode, kann Mietfuchs diesen Teil aus der letzten Rechnung schätzen und mit Vorbehalt ausweisen. Ob ein Vermieter eine noch fehlende Versorgerrechnung so schätzen darf, ist höchstrichterlich nicht entschieden; sicher ist, abzuwarten, solange die Frist läuft.',
+    example: 'Letzte Rechnung 6.000,00 €, die Lücke hat 151,29 ‰ ihrer Gradtage: geschätzt 6.000,00 € × 151,29 ‰ = 907,74 €. Kommt die Rechnung mit 983,39 € für diese Tage, stehen 75,65 € bei Ihnen.',
+    norm: '§ 556 Abs. 3 Satz 2 und 3 BGB',
+    needed: 'Nur wenn Sie abschließen wollen, bevor die Rechnung da ist.',
+  },
+  nonResidential: {
+    title: 'Nichtwohngebäude (CO₂)',
+    short: `Ein Gebäude, das nach seiner Zweckbestimmung nicht überwiegend dem Wohnen dient. Dort gilt keine Stufentabelle: Vereinbarungen, nach denen der Mieter mehr als die Hälfte der CO₂-Kosten trägt, sind unwirksam; Mietfuchs rechnet mit ${NON_RES_PERCENT} % beim Vermieter.`,
+    example: `CO₂-Kosten 800,00 €: Der Vermieter trägt ${deCents(80000 * NON_RES_PERCENT)} €.`,
+    norm: '§ 8 Abs. 1 CO2KostAufG',
+    needed: 'Nur wenn das Gebäude überwiegend gewerblich oder anders als zum Wohnen genutzt wird.',
+  },
+  co2Restriction: {
+    title: 'Beschränkungen (CO₂)',
+    short: 'Stehen öffentlich-rechtliche Vorgaben, etwa Denkmalschutz, ein Anschluss- und Benutzungszwang oder eine Erhaltungssatzung, einer wesentlichen energetischen Verbesserung des Gebäudes oder seiner Wärmeversorgung entgegen, wird der Anteil des Vermieters gekürzt; stehen sie beidem entgegen, werden die CO₂-Kosten nicht aufgeteilt. Berufen darf sich der Vermieter darauf nur mit Nachweis gegenüber dem Mieter.',
+    example: `Anteil des Vermieters laut Stufe 60 %; bei Denkmalschutz ${(60 * RESTRICTION.factor).toLocaleString('de-DE')} %. Bei beiden Vorgaben trägt der Vermieter nichts.`,
+    norm: '§ 9 CO2KostAufG',
+    needed: 'Nur wenn solche Vorgaben für Ihr Gebäude bestehen und Sie sie nachweisen können.',
+  },
+  districtEts: {
+    title: 'Fernwärme aus dem Emissionshandel',
+    short: `Das CO2KostAufG gilt auch für Wärme aus Anlagen im Europäischen Emissionshandel, aber nicht für Gebäude, die erstmals nach dem ${ETS_AFTER} einen Wärmeanschluss erhalten haben. Dann werden die CO₂-Kosten nicht aufgeteilt.`,
+    example: 'Anschluss an das Wärmenetz im März 2023: keine Aufteilung. Anschluss 2015: Aufteilung nach der Stufentabelle wie bei Gas.',
+    norm: '§ 2 Abs. 4 CO2KostAufG',
+    needed: 'Nur bei Fernwärme, deren Wärme aus einer Anlage im Emissionshandel stammt.',
+  },
   largestRemainder: {
     title: 'Restcent-Verfahren',
     short: 'Beim Runden auf Cent fehlen oder bleiben oft einzelne Cent übrig; Mietfuchs gibt sie an die Anteile mit dem größten Rest hinter dem Komma, damit die Summe genau dem Rechnungsbetrag entspricht. Ihr eigener Anteil (Eigennutzung, Leerstand) zählt dabei mit; bei gleichem Rest bekommen Sie den Cent vor einem Mieter.',

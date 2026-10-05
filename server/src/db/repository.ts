@@ -51,7 +51,7 @@ import {
   aiSlots, assessmentLines, assessments, baseRents, co2Statements, co2TenantReliefs, heatingPeriods, closedHeatingSettlementHistory, closedHeatingSettlements, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, DEPOSIT_STATUS, EXTERNAL_MEASURES,
   HEATING_PARTS, HEATING_ROLES, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingPrepaymentOverrides, heatingPrepayments, heatingSeparateSpans,
   flatRates, METER_TYPES, meters, payments, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, PROPERTY_KINDS,
-  readings, settings, tenancies, unitNoConnection, units, fuelDeliveries,
+  readings, settings, tenancies, unitNoConnection, units, fuelCarryFrozen, fuelDeliveries,
 } from './schema.ts'
 import { aiSlotRows, settingsRow } from './write.ts'
 
@@ -542,7 +542,40 @@ async function guardReading(db: Executor, before: Reading | null, after: Reading
 // echte Lieferung der eigenen Anlage mit freien Schlüsseln, und die Position steht in der
 // Heizperiode, die das Ende der Rechnung enthält. Sonst stünde die Rechnung in einer Heizperiode, in
 // die sie nicht gehört, und ihr Teil liefe in die falsche Richtung (N1).
-async function guardFuelLink(db: Executor, after: CostItem): Promise<void> {
+// Der Satz, wenn ein Teil einer Lieferung in einer abgeschlossenen Heizperiode eingefroren ist (db/fuel.ts
+// nimmt ihn von hier, denn repository.ts kennt db/fuel.ts nicht).
+export const frozenDeliveryText = (label: string): string =>
+  `Ein Teil der Lieferung „${label}“ ist in einer abgeschlossenen Heizperiode eingefroren; Mengen, Zeiträume und Beträge lassen sich deshalb nicht mehr ändern, und ihre Positionen bleiben mit ihr verknüpft. Öffnen Sie die Abrechnung dieser Heizperiode wieder, um etwas zu ändern.`
+
+// Hat eine abgeschlossene Heizperiode einen Teil der Lieferung herein- oder hinausgebucht (nicht 0)?
+// Dann hängt an ihren Positionen Geld, das schon verteilt ist (Durchsicht von #233, I2). Eine 0 heißt:
+// Beim Abschluss hatte die Lieferung noch keine Position; dann ist Verknüpfen ungefährlich, die
+// Abrechnung trägt den Teil dieser Heizperiode beim Vermieter (I1).
+async function frozenDeliveryLabel(db: Executor, deliveryId: string): Promise<string | null> {
+  const rows = await db.select({ cents: fuelCarryFrozen.cents }).from(fuelCarryFrozen).where(eq(fuelCarryFrozen.deliveryId, deliveryId))
+  if (!rows.some((r) => r.cents !== 0)) return null
+  const [d] = await db.select({ label: fuelDeliveries.label }).from(fuelDeliveries).where(eq(fuelDeliveries.id, deliveryId))
+  return d?.label || 'Lieferung'
+}
+
+// Lösen, Umhängen, Verschieben in eine andere Heizperiode und Löschen einer Position, deren Lieferung
+// einen eingefrorenen Teil hat, verteilte dieselbe Rechnung doppelt (Durchsicht I2: 9.210,22 € für
+// 6.500,00 €); ebenso eine weitere Position an einer solchen Lieferung.
+async function guardFrozenLink(db: Executor, before: CostItem | null, after: CostItem | null): Promise<void> {
+  const was = before?.fuelDeliveryId ?? null
+  const now = after?.fuelDeliveryId ?? null
+  if (was && (now !== was || after === null || after.period !== before?.period)) {
+    const label = await frozenDeliveryLabel(db, was)
+    if (label) throw new HeatingError(409, frozenDeliveryText(label))
+  }
+  if (now && now !== was) {
+    const label = await frozenDeliveryLabel(db, now)
+    if (label) throw new HeatingError(409, frozenDeliveryText(label))
+  }
+}
+
+async function guardFuelLink(db: Executor, before: CostItem | null, after: CostItem): Promise<void> {
+  await guardFrozenLink(db, before, after)
   if (!after.fuelDeliveryId) return
   if (after.category !== HEATING_CATEGORY) {
     throw new HeatingError(400, `Eine Lieferung gehört nur zu einer Position der Kostenart „${HEATING_CATEGORY}“.`)
@@ -560,7 +593,13 @@ async function guardFuelLink(db: Executor, after: CostItem): Promise<void> {
   if (after.heatingPlantId != null && after.heatingPlantId !== d.plantId) {
     throw new HeatingError(400, 'Die Lieferung gehört zu einer anderen Heizanlage als die Position.')
   }
-  const [plant] = await db.select({ method: heatingPlants.method }).from(heatingPlants).where(eq(heatingPlants.id, d.plantId))
+  const [plant] = await db.select({ method: heatingPlants.method, propertyId: heatingPlants.propertyId }).from(heatingPlants).where(eq(heatingPlants.id, d.plantId))
+  // Objektgrenze (Durchsicht I5): Sonst ließe sich auch das eigene Backup nicht mehr einspielen.
+  if (plant && plant.propertyId !== after.propertyId) {
+    throw new CrossPropertyError(
+      `Die Kostenposition gehört zu Objekt ${await propertyName(db, after.propertyId)}, die Lieferung aber zur Heizanlage von Objekt ${await propertyName(db, plant.propertyId)}. ` +
+        'Eine Position zeigt nur auf eine Lieferung einer Heizanlage desselben Objekts.')
+  }
   if (plant?.method !== 'manual') {
     throw new HeatingError(400,
       'Rechnet ein Messdienst oder die Gemeinschaft ab, steckt der Brennstoff in deren Einzelbeträgen; eine Lieferung wird dort mit keiner Position verknüpft. Tragen Sie die Rechnung nur als Lieferung ein.')
@@ -868,7 +907,7 @@ async function guardCostItem(db: Executor, before: CostItem | null, after: CostI
   ]
   await sameProperty(db, after.propertyId, ziele, 'Die Kostenposition')
   await guardCostItemHeating(db, before, after)
-  await guardFuelLink(db, after)
+  await guardFuelLink(db, before, after)
 }
 
 // Eine Wohnung darf das Objekt wechseln, solange nichts Objektgebundenes an ihr hängt. Ihr
@@ -1476,7 +1515,14 @@ const costItemCollection: Collection<CostItem> = {
     await db.update(costItems).set(costItemRow(entity)).where(eq(costItems.id, entity.id))
     await writeCostItemShares(db, entity)
   },
-  remove: async (db, id) => { await db.delete(costItems).where(eq(costItems.id, id)) },
+  remove: async (db, id) => {
+    const [c] = await db.select({ fuelDeliveryId: costItems.fuelDeliveryId }).from(costItems).where(eq(costItems.id, id))
+    if (c?.fuelDeliveryId) {
+      const label = await frozenDeliveryLabel(db, c.fuelDeliveryId)
+      if (label) throw new HeatingError(409, frozenDeliveryText(label))
+    }
+    await db.delete(costItems).where(eq(costItems.id, id))
+  },
 }
 
 const meterCollection: Collection<Meter> = {

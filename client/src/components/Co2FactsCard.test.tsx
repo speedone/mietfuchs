@@ -49,3 +49,12 @@ test('Bei freien Schlüsseln die Fläche der Einstufung; leer gilt die Wohnfläc
   fireEvent.click(screen.getByText('Fläche speichern'))
   await waitFor(() => expect(sent.at(-1)).toEqual({ url: '/api/heating-plants/hp/periods/2025-05/co2', method: 'PUT', body: { method: 'self', areaM2: 612.5 } }))
 })
+
+test('Durchsicht: Die Angaben zum Gebäude gelten für alle Heizperioden und bleiben auch bei einer abgeschlossenen änderbar', () => {
+  render(<Co2FactsCard plant={facts} view={{ ...view, closed: true }} servedAreaM2={600} onSaved={() => {}} />)
+  const box = screen.getByLabelText('Das Gebäude dient überwiegend nicht dem Wohnen (§ 8 CO2KostAufG)')
+  if (!(box instanceof HTMLInputElement)) throw new Error('kein Kästchen')
+  expect(box.disabled).toBe(false)
+  expect(screen.getByText('Angaben speichern')).toBeTruthy()
+  expect(screen.getByText(/wirken auf Heizperioden, die noch nicht abgeschlossen sind/)).toBeTruthy()
+})

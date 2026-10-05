@@ -5,13 +5,13 @@ import { useState } from 'react'
 import { api, errorText } from '../api'
 import { useConfirm, useToast } from './feedback'
 import Term from './Term'
-import { deliveryLine, deliveryOptions, emptyFuelForm, fuelBody, fuelToForm, type FuelForm } from '../fuelForm'
-import type { FuelDelivery, HeatingMethod, HeatingPeriodView } from '../types'
+import { CO2_ENERGIES, deliveryLine, deliveryOptions, emptyFuelForm, fuelBody, fuelToForm, type FuelForm } from '../fuelForm'
+import type { FuelDelivery, HeatingEnergy, HeatingMethod, HeatingPeriodView } from '../types'
 
 type TextKey = Exclude<keyof FuelForm, 'usedByService'>
 
 export default function FuelCard({ plant, view, deliveries, onSaved }: {
-  plant: { id: string; method: HeatingMethod }
+  plant: { id: string; method: HeatingMethod; energy?: HeatingEnergy }
   view: HeatingPeriodView
   deliveries: FuelDelivery[]
   onSaved: () => void
@@ -106,7 +106,7 @@ export default function FuelCard({ plant, view, deliveries, onSaved }: {
       </ul>
       {!service && view.items.length > 0 && (
         <div className="field-group">
-          <div className="field-group-label">Welche Position gehört zu welcher Rechnung? Abschläge, Schlussrechnung und Gutschrift einer Rechnung gehören zur selben Lieferung.</div>
+          <div className="field-group-label">Welche Position gehört zu welcher Rechnung? Abschläge, Schlussrechnung und Gutschrift einer Rechnung gehören zur selben Lieferung. Ohne Verknüpfung grenzt Mietfuchs nichts ab und verteilt die Position ganz in ihrem Zeitraum.</div>
           {view.items.map((i) => (
             <label className="field" key={i.id}>
               {i.description}
@@ -129,10 +129,13 @@ export default function FuelCard({ plant, view, deliveries, onSaved }: {
             {text('fixed', 'davon fester Preisbestandteil (Grund-, Mess-, Verrechnungspreis)')}
             {text('energyKwh', 'Energie (kWh)')}
           </div>
-          <div className="row">
-            {text('emissionsKg', 'CO₂-Ausstoß laut Rechnung (kg)')}
-            {text('co2Cost', 'CO₂-Kosten laut Rechnung')}
-          </div>
+          {/* Bei Strom einer Wärmepumpe gibt es keine CO₂-Kosten aufzuteilen (§ 2 Abs. 1 CO2KostAufG). */}
+          {(plant.energy === undefined || CO2_ENERGIES.includes(plant.energy)) && (
+            <div className="row">
+              {text('emissionsKg', 'CO₂-Ausstoß laut Rechnung (kg)')}
+              {text('co2Cost', 'CO₂-Kosten laut Rechnung')}
+            </div>
+          )}
           <details>
             <summary>Weitere Angaben</summary>
             {text('sharePercent', 'Anteil dieser Heizperiode am Verbrauch (%), wenn bekannt')}

@@ -106,11 +106,16 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Zeile bei den Mietern und als Gegenbuchung bei Ihnen, und jede Rechnung ist über die Jahre genau
   einmal verteilt. Heizkosten gehören in die Heizperiode, in der der Brennstoff verbraucht wurde
   (BGH VIII ZR 156/11) ([#97](https://github.com/speedone/mietfuchs/issues/97)).
-- **Schätzung mit Vorbehalt beim Abschließen.** Fehlt für einen Teil der Heizperiode noch eine
-  Rechnung, fragt Mietfuchs beim Abschließen nach und schlägt eine Schätzung aus der letzten Rechnung
-  vor. Kommt die Rechnung später, nennt die Abrechnung die Differenz, vor und nach Ablauf der Frist
-  mit dem, was Sie tun können; bei zu hoher Schätzung die Gutschrift je Mieter
+- **Rückfrage beim Abschließen, wenn eine Rechnung fehlt.** Fehlt für einen Teil der Heizperiode
+  noch eine Rechnung, fragt Mietfuchs nach: abwarten (die Vorgabe, mit dem Ende der Frist), mit
+  Vorbehalt schätzen oder ohne Schätzung abschließen. Eine Schätzung nennt ihre Grundlage; ob eine
+  noch fehlende Versorgerrechnung geschätzt werden darf, ist höchstrichterlich nicht entschieden.
+  Kommt die Rechnung später, nennt die Abrechnung die Differenz, vor und nach Ablauf der Frist mit
+  dem, was Sie tun können (§ 556 Abs. 3 Satz 3 BGB); bei zu hoher Schätzung die Gutschrift je Mieter
   ([#97](https://github.com/speedone/mietfuchs/issues/97)).
+- Anleitung „Gasrechnung über die Heizperiode hinaus“ und Lexikon-Einträge zu Lieferung, festem
+  Preisbestandteil, Schätzung mit Vorbehalt, Nichtwohngebäude, Beschränkungen und Fernwärme aus dem
+  Emissionshandel.
 - **CO₂-Kosten selbst aufteilen.** Mit den Lieferungen teilt Mietfuchs die CO₂-Kosten bei freien
   Schlüsseln selbst auf, und auch dann, wenn der Messdienst nicht aufgeteilt hat: Einstufung nach
   dem auf die Heizperiode umgerechneten Ausstoß, § 8 (Nichtwohngebäude) und § 9 (Beschränkungen)
@@ -173,7 +178,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - Ablesungen des Versorgungszählers in einer abgeschlossenen Heizperiode und Lieferungen, von denen
   eine abgeschlossene Heizperiode einen Teil eingefroren hat, lassen sich erst nach dem Wiederöffnen
   ändern; eine Heizanlage mit Lieferungen lässt sich erst entfernen, wenn die Lieferungen entfernt
-  sind.
+  sind. Ebenso bleiben die Positionen einer solchen Lieferung mit ihr verknüpft, und die
+  Gradtagzahlen des Orts für Monate einer abgeschlossenen Heizperiode bleiben, wie sie sind.
 
 ### Behoben
 

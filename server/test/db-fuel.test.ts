@@ -13,7 +13,7 @@ import type { HeatingStatement } from '../../shared/types.ts'
 import { ensureHeatingPeriod } from '../src/db/co2.ts'
 import { createHeatingPlant, removeHeatingPlant, updateHeatingPlant } from '../src/db/heating.ts'
 import { openDatabase } from '../src/db/open.ts'
-import { closeSettlement, createEntity, createProperty, crossPropertyViolations, findEntity, HeatingError, removeEntity, updateEntity } from '../src/db/repository.ts'
+import { closeSettlement, createEntity, createProperty, CrossPropertyError, crossPropertyViolations, findEntity, HeatingError, removeEntity, updateEntity } from '../src/db/repository.ts'
 import { costItems, fuelCarryFrozen, heatingPlants } from '../src/db/schema.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import { periodKey } from '../../shared/period.ts'
@@ -191,7 +191,8 @@ test('Ortswerte der Gradtage: je Monat ein Wert über 0, ganz ersetzt; Objektgre
 
 // Die Bewertung einer Heizperiode, wie computeSettlement sie liefert, mit den Zahlen von Fall a und der
 // Lücke aus 3.3; die Heizperiode ist hier das Kalenderjahr des Bestands.
-const bewertung = (over: Partial<NonNullable<HeatingStatement['fuel']>> = {}): { heating: HeatingStatement[] } => ({
+const bewertung = (over: Partial<NonNullable<HeatingStatement['fuel']>> = {}): { heating: HeatingStatement[]; deadline: string } => ({
+  deadline: '2026-12-31',
   heating: [{
     plantId: 'hp', plantName: 'Gas', energy: 'gas', period: periodKey('2025-01'), from: '2025-01-01', to: '2025-12-31', co2: null,
     fuel: {
@@ -203,7 +204,7 @@ const bewertung = (over: Partial<NonNullable<HeatingStatement['fuel']>> = {}): {
       carries: [{ deliveryId: 'd1', period: periodKey('2024-01'), cents: -98339 }],
       gaps: [{
         from: '2026-03-15', to: '2026-04-30', days: 47, permille: 151.29,
-        estimate: { from: '2026-03-15', to: '2026-04-30', amountCents: 90774, emissionsKg: 1815.5, co2CostCents: 9077, basedOn: 'Gas 2025/2026', byMeter: false },
+        estimate: { from: '2026-03-15', to: '2026-04-30', amountCents: 90774, emissionsKg: 1815.5, co2CostCents: 9077, basedOn: 'Gas 2025/2026', byMeter: false, factorPermille: 151.29 },
       }],
       ...over,
     },
@@ -214,7 +215,7 @@ test('Abschluss: Rückfrage je Lücke mit Vorschlag, Schätzung anlegen und wied
   await withDatabase(async (opened) => {
     await bestand(opened)
     await opened.write((db) => createDelivery(db, 'd1', 'hp', gas))
-    assert.deepEqual(fuelGapQuestions(bewertung()), [{ plantId: 'hp', plantName: 'Gas', period: '2025-01', from: '2026-03-15', to: '2026-04-30', amountCents: 90774 }])
+    assert.deepEqual(fuelGapQuestions(bewertung()), [{ plantId: 'hp', plantName: 'Gas', period: '2025-01', from: '2026-03-15', to: '2026-04-30', amountCents: 90774, deadline: '2026-12-31' }])
     assert.deepEqual(fuelGapQuestions({}), [])
     assert.deepEqual(fuelGapQuestions(bewertung({ gaps: [{ from: '2026-03-15', to: '2026-04-30', days: 47, permille: 151.29, estimate: null }] })), [])
     let n = 0
@@ -223,7 +224,7 @@ test('Abschluss: Rückfrage je Lücke mit Vorschlag, Schätzung anlegen und wied
     const e = (await opened.read((db) => readFuelDeliveries(db))).find((d) => d.id === 'e1') ?? assert.fail('keine Schätzung')
     assert.deepEqual(
       [e.label, e.estimated, e.invoiceFrom, e.invoiceTo, e.amountCents, e.emissionsKg, e.co2CostCents],
-      ['Schätzung 15.03.–30.04.2026', true, '2026-03-15', '2026-04-30', 90774, 1815.5, 9077],
+      ['Schätzung 15.03.–30.04.2026: 151,29 ‰ der Rechnung „Gas 2025/2026“ nach Gradtagen', true, '2026-03-15', '2026-04-30', 90774, 1815.5, 9077],
     )
     await opened.write((db) => removeEstimates(db, ids))
     assert.deepEqual((await opened.read((db) => readFuelDeliveries(db))).map((d) => d.id), ['d1'])
@@ -246,5 +247,77 @@ test('Einfrieren und Freigeben: je Lieferung Übertrag, Ausstoß und CO₂-Koste
     await opened.write((db) => unfreezeFuelCarries(db, JSON.parse(JSON.stringify(bewertung()))))
     assert.deepEqual(await opened.read((db) => readFuelCarryFrozen(db)), [])
     assert.equal((await opened.write((db) => updateDelivery(db, 'd1', { fixedCents: 1 })))?.fixedCents, 1)
+  })
+})
+
+// ---------- Durchsicht PR #233: Geld und Daten ----------
+
+async function eingefroren(opened: Opened, cents: number): Promise<void> {
+  await opened.write(async (db) => {
+    const h = await ensureHeatingPeriod(db, 'hp', periodKey('2025-01'))
+    await db.insert(fuelCarryFrozen).values({ deliveryId: 'd1', heatingPeriodId: h, cents })
+    await closeSettlement(db, { id: 's1', propertyId: 'objekt-1', period: periodKey('2025-01'), closedAt: '2026-02-01', sentAt: null, settlement: {} })
+  })
+}
+const gasPosition = (over: Record<string, unknown> = {}) =>
+  ({ propertyId: 'objekt-1', period: '2026-01', category: HEATING_CATEGORY, description: 'Gas', amountCents: 650000, key: 'area', fuelDeliveryId: 'd1', ...over })
+
+test('Durchsicht I2: Mit eingefrorenem Teil lässt sich eine verknüpfte Position nicht lösen, umhängen, löschen oder verschieben', async () => {
+  await withDatabase(async (opened) => {
+    await bestand(opened)
+    await opened.write((db) => createDelivery(db, 'd1', 'hp', gas))
+    await opened.write((db) => createDelivery(db, 'd2', 'hp', { ...gas, label: 'andere' }))
+    await opened.write((db) => createEntity(db, 'costItems', 'c1', gasPosition()))
+    await eingefroren(opened, 403839)
+    await assert.rejects(opened.write((db) => updateEntity(db, 'costItems', 'c1', { fuelDeliveryId: null })), heatingError(409, /eingefroren/))
+    await assert.rejects(opened.write((db) => updateEntity(db, 'costItems', 'c1', { fuelDeliveryId: 'd2' })), heatingError(409, /eingefroren/))
+    await assert.rejects(opened.write((db) => removeEntity(db, 'costItems', 'c1')), heatingError(409, /eingefroren/))
+    // Eine weitere Position an derselben Lieferung änderte ihren Betrag nachträglich.
+    await assert.rejects(opened.write((db) => createEntity(db, 'costItems', 'c2', gasPosition({ description: 'Gutschrift', amountCents: -1000 }))), heatingError(409, /eingefroren/))
+    // Der Betrag darf sich ändern: Die Summe bleibt über die Zeiträume stimmig.
+    assert.equal(Reflect.get((await opened.write((db) => updateEntity(db, 'costItems', 'c1', { amountCents: 660000 }))) ?? {}, 'amountCents'), 660000)
+  })
+})
+
+test('Durchsicht I1: Mit 0 eingefroren (noch ohne Position) lässt sich die Position verknüpfen', async () => {
+  await withDatabase(async (opened) => {
+    await bestand(opened)
+    await opened.write((db) => createDelivery(db, 'd1', 'hp', gas))
+    await eingefroren(opened, 0)
+    assert.equal(Reflect.get(await opened.write((db) => createEntity(db, 'costItems', 'c1', gasPosition())), 'fuelDeliveryId'), 'd1')
+  })
+})
+
+test('Durchsicht I5: Eine Lieferung eines anderen Objekts lässt sich nicht verknüpfen', async () => {
+  await withDatabase(async (opened) => {
+    await bestand(opened)
+    await opened.write((db) => createDelivery(db, 'd1', 'hp', gas))
+    await opened.write((db) => createProperty(db, 'objekt-2', { name: 'Zweites Haus', kind: 'mfh', address: '' }))
+    await assert.rejects(
+      opened.write((db) => createEntity(db, 'costItems', 'c1', gasPosition({ propertyId: 'objekt-2' }))),
+      (err: unknown) => err instanceof CrossPropertyError && /desselben Objekts/.test(err.message),
+    )
+  })
+})
+
+test('Durchsicht M3: Ein neues Rechnungsende in einer anderen Heizperiode als die Positionen wird abgelehnt', async () => {
+  await withDatabase(async (opened) => {
+    await bestand(opened)
+    await opened.write((db) => createDelivery(db, 'd1', 'hp', gas))
+    await opened.write((db) => createEntity(db, 'costItems', 'c1', gasPosition()))
+    await assert.rejects(opened.write((db) => updateDelivery(db, 'd1', { invoiceTo: '2025-12-31' })), heatingError(409, /Heizperiode 2025;/))
+    assert.equal((await opened.write((db) => updateDelivery(db, 'd1', { invoiceTo: '2026-03-31' })))?.invoiceTo, '2026-03-31')
+  })
+})
+
+test('Durchsicht M2: Gradtagzahlen des Orts für Monate einer abgeschlossenen Heizperiode mit Lieferungen sind gesperrt', async () => {
+  await withDatabase(async (opened) => {
+    await bestand(opened)
+    await opened.write((db) => saveDegreeDays(db, 'objekt-1', { values: [{ month: '2025-03', value: 100 }, { month: '2026-03', value: 90 }] }))
+    await opened.write((db) => createDelivery(db, 'd1', 'hp', gas))
+    await eingefroren(opened, 403839)
+    await assert.rejects(opened.write((db) => saveDegreeDays(db, 'objekt-1', { values: [{ month: '2025-03', value: 120 }, { month: '2026-03', value: 90 }] })), heatingError(409, /03\/2025/))
+    // Ein Monat einer offenen Heizperiode geht.
+    assert.deepEqual(await opened.write((db) => saveDegreeDays(db, 'objekt-1', { values: [{ month: '2025-03', value: 100 }, { month: '2026-03', value: 95 }] })), [{ month: '2025-03', value: 100 }, { month: '2026-03', value: 95 }])
   })
 })

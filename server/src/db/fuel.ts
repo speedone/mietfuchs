@@ -11,13 +11,13 @@
 //
 // Diese Datei importiert aus repository.ts und read.ts, nie umgekehrt.
 import { and, count, eq, inArray } from 'drizzle-orm'
-import { formatDayRange, parsePeriodKey, periodsBetween } from '../../../shared/period.ts'
+import { formatDayRange, parsePeriodKey, periodContaining, periodLabel, periodsBetween } from '../../../shared/period.ts'
 import type { DegreeDayValue, FuelDelivery, FuelDeliveryPart, FuelGapQuestion, HeatingEnergy, HeatingMethod, HeatingStatement, PeriodKey } from '../../../shared/types.ts'
 import { STOCK_ENERGIES } from '../fuel.ts'
 import type { Database, Executor } from './client.ts'
 import { dropIfEmpty, ensureHeatingPeriod } from './co2.ts'
 import { readDegreeDayValues, readFuelDeliveries } from './read.ts'
-import { asNullableFilled, asText, HeatingError, heatingRulesOf, ISO_DATE, merged, oneOfOrUndefined, raw } from './repository.ts'
+import { asNullableFilled, asText, frozenDeliveryText, HeatingError, heatingPeriodAt, heatingRulesOf, ISO_DATE, merged, oneOfOrUndefined, raw } from './repository.ts'
 import { costItems, degreeDayValues, FUEL_QUANTITY_UNITS, fuelCarryFrozen, fuelDeliveries, fuelDeliveryParts, GAS_BASES, heatingPeriods, heatingPlants, properties } from './schema.ts'
 
 const LATER = {
@@ -27,8 +27,7 @@ const LATER = {
   halfSplit: 'Netzentgelte und Biobrennstoff nach § 5a CO2KostAufG kommen mit einer späteren Version.',
   self: 'Die eigene Heizkostenabrechnung kommt mit einer späteren Version.',
 }
-const frozenText = (label: string): string =>
-  `Ein Teil der Lieferung „${label}“ ist in einer abgeschlossenen Heizperiode eingefroren; Mengen, Zeiträume und Beträge lassen sich deshalb nicht mehr ändern. Öffnen Sie die Abrechnung dieser Heizperiode wieder, um etwas zu ändern.`
+const frozenText = frozenDeliveryText
 
 const nullableNumber = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
 const nullableInt = (v: unknown): number | null => (typeof v === 'number' && Number.isInteger(v) ? v : null)
@@ -143,6 +142,22 @@ async function guardDelivery(db: Executor, plant: PlantFacts, before: FuelDelive
     if ((p.fixedCents ?? 0) < 0 || (p.emissionsKg ?? 0) < 0 || (p.co2CostCents ?? 0) < 0 || (p.energyKwh ?? 0) < 0) throw new HeatingError(400, 'Die Zahlen einer Teilmenge sind Zahlen ab 0, nur der Betrag darf negativ sein.')
     last = p.to
   }
+  // Ein neues Rechnungsende muss in der Heizperiode der Positionen bleiben (Durchsicht M3), sonst
+  // stünde die Rechnung in einer Heizperiode, in die sie nicht gehört, und ihr Teil liefe falsch.
+  if (before !== null && (before.invoiceTo ?? before.deliveredAt) !== (after.invoiceTo ?? after.deliveredAt)) {
+    const end = after.invoiceTo ?? after.deliveredAt
+    const heating = await heatingRulesOf(db, plant.id)
+    const linked = await db.select({ period: costItems.period, description: costItems.description }).from(costItems).where(eq(costItems.fuelDeliveryId, before.id))
+    if (end !== null && heating !== null && linked.length > 0) {
+      const h = periodContaining(heating.rules, end)
+      const fremd = linked.find((c) => c.period !== h.key)
+      if (fremd) {
+        throw new HeatingError(409,
+          `Mit diesem Rechnungsende gehört ${what} in die Heizperiode ${periodLabel(h)}; die verknüpfte Position „${fremd.description}“ steht aber in einem anderen Zeitraum. ` +
+            'Lösen Sie zuerst die Verknüpfung oder ändern Sie den Zeitraum der Position.')
+      }
+    }
+  }
   if (before !== null && (await frozenCount(db, before.id)) > 0) {
     const same = (d: FuelDelivery) => JSON.stringify({ ...d, label: '', usedByService: true })
     if (same(before) !== same(after)) throw new HeatingError(409, frozenText(before.label || 'Lieferung'))
@@ -233,6 +248,23 @@ export async function saveDegreeDays(db: Database, propertyId: string, body: unk
     seen.add(month)
     values.push({ month, value })
   }
+  // Monate einer abgeschlossenen Heizperiode einer Anlage mit Lieferungen bleiben (Durchsicht M2): Die
+  // Aufteilung der Rechnungen dieser Heizperiode ist eingefroren.
+  const before = new Map((await readDegreeDayValues(db)).filter((v) => v.propertyId === propertyId).map((v) => [v.month, v.value]))
+  const after = new Map(values.map((v) => [v.month, v.value]))
+  const changed = [...new Set([...before.keys(), ...after.keys()])].filter((m) => before.get(m) !== after.get(m)).sort()
+  if (changed.length > 0) {
+    const plants = await db.select({ id: heatingPlants.id }).from(heatingPlants).innerJoin(fuelDeliveries, eq(fuelDeliveries.plantId, heatingPlants.id)).where(eq(heatingPlants.propertyId, propertyId))
+    for (const month of changed) {
+      for (const plant of new Set(plants.map((x) => x.id))) {
+        const at = await heatingPeriodAt(db, plant, `${month}-01`)
+        if (at?.closed) {
+          throw new HeatingError(409,
+            `Die Gradtagzahl für ${month.slice(5, 7)}/${month.slice(0, 4)} gehört zur abgeschlossenen Heizperiode ${periodLabel(at.period)}; die Aufteilung ihrer Rechnungen ist eingefroren. Öffnen Sie die Abrechnung wieder, um sie zu ändern.`)
+        }
+      }
+    }
+  }
   await db.transaction(async (tx) => {
     await tx.delete(degreeDayValues).where(eq(degreeDayValues.propertyId, propertyId))
     if (values.length > 0) await tx.insert(degreeDayValues).values(values.map((v) => ({ propertyId, ...v })))
@@ -242,14 +274,14 @@ export async function saveDegreeDays(db: Database, propertyId: string, body: unk
 
 // ---------- Abschluss (Heizung PR 7, Entwurf 8.2, N1, G-A4) ----------
 
-type WithHeating = { heating?: HeatingStatement[] }
+type WithHeating = { heating?: HeatingStatement[]; deadline?: string }
 
 // Die Lücken einer Berechnung, für die Mietfuchs eine Schätzung vorschlagen kann. Der Betrag ist
 // zugleich, was der Vermieter ohne Schätzung trägt, wenn die Rechnung nach dem Abschluss kommt.
 export function fuelGapQuestions(s: WithHeating): FuelGapQuestion[] {
   return (s.heating ?? []).flatMap((h) =>
     (h.fuel?.gaps ?? []).flatMap((g) =>
-      g.estimate ? [{ plantId: h.plantId, plantName: h.plantName, period: h.period, from: g.from, to: g.to, amountCents: g.estimate.amountCents }] : []))
+      g.estimate ? [{ plantId: h.plantId, plantName: h.plantName, period: h.period, from: g.from, to: g.to, amountCents: g.estimate.amountCents, deadline: s.deadline ?? '' }] : []))
 }
 
 // Je Lücke mit Vorschlag eine geschätzte Lieferung, ohne Kostenposition: verteilt wird sie mit dem
@@ -263,7 +295,8 @@ export async function createEstimates(db: Executor, s: WithHeating, newId: () =>
       const id = newId()
       await db.insert(fuelDeliveries).values(rowOf({
         ...emptyDelivery(id, h.plantId),
-        label: `Schätzung ${formatDayRange(e.from, e.to)}`,
+        // Die Grundlage steht in der Bezeichnung; der Druckblock „Brennstoff“ nennt sie (Durchsicht, Recht I2).
+        label: `Schätzung ${formatDayRange(e.from, e.to)}: ${e.factorPermille.toLocaleString('de-DE', { maximumFractionDigits: 2 })} ‰ der Rechnung „${e.basedOn}“ ${e.byMeter ? 'nach Zählerstand' : 'nach Gradtagen'}`,
         invoiceFrom: e.from,
         invoiceTo: e.to,
         amountCents: e.amountCents,

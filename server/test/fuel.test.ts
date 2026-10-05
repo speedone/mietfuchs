@@ -180,7 +180,7 @@ test('Schätzvorschlag (Entwurf 8.2 Fall b): 6.000 € · 151,29 ‰ = 907,74 �
   const r = plantFuel(input({ h: H1, deliveries: [VORJAHR], items: [vorjahrItem] })) ?? assert.fail('kein Ergebnis')
   const lücke = r.gaps.find((g) => g.from === '2025-03-15') ?? assert.fail('keine Lücke')
   assert.deepEqual([lücke.to, lücke.days, lücke.permille.toFixed(2)], ['2025-04-30', 47, '151.29'])
-  assert.deepEqual(lücke.estimate, { from: '2025-03-15', to: '2025-04-30', amountCents: 90774, emissionsKg: 1815.5, co2CostCents: 9077, basedOn: 'Gas 2024/2025', byMeter: false })
+  assert.deepEqual(lücke.estimate, { from: '2025-03-15', to: '2025-04-30', amountCents: 90774, emissionsKg: 1815.5, co2CostCents: 9077, basedOn: 'Gas 2024/2025', byMeter: false, factorPermille: 151.29 })
   // Beim Messdienst gibt es keinen Vorschlag: Seine Beträge sind schon da, geschätzt würde nur Geld,
   // das niemand verteilt.
   assert.equal(plantFuel(input({ method: 'service', h: H1, deliveries: [{ ...VORJAHR, amountCents: 600000 }], items: [] }))?.gaps[0]?.estimate, null)

@@ -47,6 +47,18 @@ const intersect = (a: DayRange, b: DayRange): DayRange | null => {
 // Kaufmännisch, auch für negative Beträge (eine Gutschrift ist das Spiegelbild der Rechnung).
 const roundHalf = (x: number): number => (Math.sign(x) * Math.round(Math.abs(x))) || 0
 const isRange = (r: DayRange | null): r is DayRange => r !== null
+// Die Tage von `r`, die keine der (vereinigten, aufsteigenden) Spannen abdeckt.
+function subtractRanges(r: DayRange, union: readonly DayRange[]): DayRange[] {
+  const out: DayRange[] = []
+  let cursor = r.from
+  for (const u of union) {
+    if (u.to < cursor || u.from > r.to) continue
+    if (u.from > cursor) out.push({ from: cursor, to: dayBefore(u.from) })
+    if (u.to >= cursor) cursor = dayAfter(u.to)
+  }
+  if (cursor <= r.to) out.push({ from: cursor, to: r.to })
+  return out
+}
 
 // Der Zeitraum einer Lieferung: der Rechnungszeitraum, sonst der Tag der Lieferung.
 export function rangeOf(d: Pick<FuelDelivery, 'invoiceFrom' | 'invoiceTo' | 'deliveredAt'>): DayRange | null {
@@ -182,6 +194,9 @@ export type FuelPlantInput = {
   frozen: readonly FuelFrozen[]
   closed: ReadonlySet<string>
   ctx: ShareContext
+  // Die Heizpositionen der Anlage in dieser Heizperiode ohne Lieferung, mit ihrem Leistungszeitraum
+  // (Durchsicht I4). Fehlt die Angabe, gibt es keine.
+  loose?: readonly { from: string | null; to: string | null }[]
 }
 
 // Ein Übertrag der Mieterseite dieser Heizperiode: `out` hinaus in die frühere (die Positionen stehen
@@ -212,6 +227,8 @@ export type FuelResult = {
   serviceCo2Cents: number | null
   serviceGrossCents: number | null
   missingCo2: string[]
+  // Eine Heizposition ohne Lieferung und ohne Leistungszeitraum steht neben einer Lücke (Durchsicht I4).
+  looseWithoutRange: boolean
 }
 
 // Die Lieferungen einer Anlage in einer Heizperiode. `null`, wenn keine die Heizperiode berührt und
@@ -222,15 +239,23 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
   const ranged = input.deliveries.filter((d) => rangeOf(d) !== null)
   const real = ranged.filter((d) => !d.estimated)
   const realUnion = unionOf(real.map(rangeOf).filter(isRange))
-  const coveredByReal = (r: DayRange): boolean => realUnion.some((u) => u.from <= r.from && u.to >= r.to)
-  // Eine Schätzung zählt, solange keine echte Rechnung ihre Tage abdeckt (8.2, Wiederöffnen).
-  const effective = ranged.filter((d) => {
+  // Eine Schätzung zählt nur für die Tage, die keine echte Rechnung abdeckt (8.2, Wiederöffnen;
+  // Durchsicht von #233, I3): ganz abgedeckt gar nicht, teilweise im Verhältnis der Gradtage der
+  // übrigen Tage, dieselbe Regel wie `estimatesIn` unten.
+  const estimateFactor = new Map<string, number>()
+  for (const d of ranged.filter((x) => x.estimated)) {
     const r = rangeOf(d)
-    return r !== null && (!d.estimated || !coveredByReal(r))
-  })
+    if (!r) continue
+    const rest = subtractRanges(r, realUnion)
+    const all = degreeDayPermille([r], ctx.table)
+    estimateFactor.set(d.id, all > 0 ? degreeDayPermille(rest, ctx.table) / all : rest.reduce((a, x) => a + daysOf(x), 0) / daysOf(r))
+  }
+  const effective = ranged.filter((d) => !d.estimated || (estimateFactor.get(d.id) ?? 0) > 0)
   const itemsOf = (id: string): FuelItem[] => input.items.filter((c) => c.fuelDeliveryId === id)
   const totalOf = (d: FuelDeliveryInput): number =>
-    d.estimated || !withItems ? (d.amountCents ?? 0) : itemsOf(d.id).reduce((a, c) => a + c.amountCents, 0)
+    d.estimated
+      ? roundHalf((d.amountCents ?? 0) * (estimateFactor.get(d.id) ?? 1))
+      : !withItems ? (d.amountCents ?? 0) : itemsOf(d.id).reduce((a, c) => a + c.amountCents, 0)
   // Ein eingefrorener Wert gilt nur für eine abgeschlossene Heizperiode (Abweichung 7).
   const frozenOf = (id: string, key: string): FuelFrozen | null =>
     input.closed.has(key) ? (input.frozen.find((f) => f.deliveryId === id && f.period === key) ?? null) : null
@@ -255,8 +280,10 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
   for (const d of effective.filter(touchesH)) {
     const s = share(d, h)
     const f = frozenOf(d.id, h.key)
-    const e = f ? f.emissionsKg : d.emissionsKg === null ? null : d.emissionsKg * s.kgShare
-    const c = f ? f.co2Cents : d.co2CostCents === null ? null : d.co2CostCents * s.kgShare
+    // Bei einer teilweise abgedeckten Schätzung nur der Teil der übrigen Tage (Durchsicht I3).
+    const part = d.estimated ? (estimateFactor.get(d.id) ?? 1) : 1
+    const e = f ? f.emissionsKg : d.emissionsKg === null ? null : d.emissionsKg * s.kgShare * part
+    const c = f ? f.co2Cents : d.co2CostCents === null ? null : d.co2CostCents * s.kgShare * part
     if (e !== null) {
       kg += e
       kgKnown = true
@@ -276,6 +303,13 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
   }
   const coverage = coverageOf(h, effective.map(rangeOf).filter(isRange), ctx.table)
   const emissionsKg = kgKnown ? (coverage.permille > 0 ? (kg * 1000) / coverage.permille : kg) : null
+  // Lücken (Durchsicht I4): Eine Heizposition der Anlage in dieser Heizperiode ohne Lieferung deckt mit
+  // ihrem Leistungszeitraum ebenfalls ab; ohne Leistungszeitraum weiß Mietfuchs nicht, welche Tage sie
+  // bezahlt, und schlägt keine Schätzung vor, sonst stünde dieselbe Rechnung zweimal da.
+  const loose = input.loose ?? []
+  const looseRanges = loose.flatMap((l) => (l.from && l.to ? [{ from: l.from, to: l.to }] : []))
+  const looseWithoutRange = loose.some((l) => !l.from || !l.to)
+  const billCoverage = looseRanges.length > 0 ? coverageOf(h, [...effective.map(rangeOf).filter(isRange), ...looseRanges], ctx.table) : coverage
 
   // Messdienst (7.6, G-A3): C sind die CO₂-Kosten der Rechnungen, die er angesetzt hat, ganz; gezählt
   // in der Heizperiode, in der die Rechnung endet.
@@ -321,7 +355,7 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
         const template = templateFor(r.from)
         if (!template) continue
         const f = frozenOf(d.id, h.key)
-        const cents = f ? f.cents : (d.amountCents ?? 0)
+        const cents = f ? f.cents : totalOf(d)
         const T = totalOf(template)
         if (cents === 0) continue
         carries.push({
@@ -343,8 +377,13 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
         for (const other of touched) {
           if (other.key === h.key) continue
           const s = share(d, other)
-          const f = frozenOf(d.id, other.key)
-          const X = f ? f.cents : roundHalf(T * s.ratio)
+          const found = frozenOf(d.id, other.key)
+          const calc = roundHalf(T * s.ratio)
+          // Hat die andere Heizperiode 0 eingefroren, obwohl ihr Teil heute nicht 0 ist, hatte die
+          // Lieferung beim Abschluss noch keine Position (Durchsicht von #233, I1). Dann hat diese
+          // Heizperiode nichts hereingebucht; ihr Teil geht an den Vermieter wie im Fall c.
+          const f = found !== null && found.cents === 0 && calc !== 0 ? null : found
+          const X = f ? f.cents : calc
           if (X === 0) continue
           let landlord: FuelCarry['landlord'] = [{ reason: 'fuelCarry', cents: X }]
           let estimate: FuelCarry['estimate'] = null
@@ -382,10 +421,10 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
   // Lücken (3.3) und, bei freien Schlüsseln, der Vorschlag einer Schätzung aus der letzten Rechnung
   // (8.2 Nr. 2): verbrauchsabhängiger Teil nach dem eigenen Zählerstand, sonst nach Gradtagen; fester
   // Teil nach Tagen; kg und CO₂-Kosten im Verhältnis des verbrauchsabhängigen Teils.
-  const gaps: FuelGap[] = coverage.gaps.map((g) => {
+  const gaps: FuelGap[] = billCoverage.gaps.map((g) => {
     const permille = degreeDayPermille([g], ctx.table)
     let estimate: FuelGap['estimate'] = null
-    const t = withItems ? templateFor(g.from) : null
+    const t = withItems && !looseWithoutRange ? templateFor(g.from) : null
     if (t) {
       const tr = rangeFor(t)
       const T = totalOf(t)
@@ -400,7 +439,7 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
         amountCents: roundHalf((T - fixed) * factor + (fixed * daysOf(g)) / daysOf(tr)),
         emissionsKg: t.emissionsKg === null ? null : Math.round(t.emissionsKg * factor * 10) / 10,
         co2CostCents: t.co2CostCents === null ? null : roundHalf(t.co2CostCents * factor),
-        basedOn: labelOf(t), byMeter,
+        basedOn: labelOf(t), byMeter, factorPermille: Math.round(factor * 100000) / 100,
       }
     }
     return { from: g.from, to: g.to, days: daysOf(g), permille, estimate }
@@ -409,5 +448,6 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
   return {
     lines, carries, coveragePermille: coverage.permille, gaps, emissionsKg,
     co2Cents: co2Known ? roundHalf(co2) : null, serviceCo2Cents, serviceGrossCents, missingCo2,
+    looseWithoutRange: looseWithoutRange && gaps.length > 0,
   }
 }

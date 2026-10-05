@@ -15,7 +15,8 @@
 // <Term> mitten im Satz, ein `{year}` im Knopf); solche Stellen zitiert die Anleitung nicht. HTML-
 // Entitäten im JSX-Text werden vor dem Vergleich aufgelöst (`&amp;` ist `&`).
 
-import { calendarPeriod } from '../../shared/period.ts'
+import { calendarPeriod, periodKey, periodOfKey } from '../../shared/period.ts'
+import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
@@ -24,7 +25,7 @@ import { fileURLToPath } from 'node:url'
 import { GLOSSARY } from '../../shared/glossary.ts'
 import { GUIDES, GUIDE_PAGES, type GuideId } from '../../shared/guides.ts'
 import { computeSettlement, taxReport } from '../src/calc.ts'
-import { snapshotOf, type SnapshotCostItem, type SnapshotHeatingPlant, type SnapshotSource, type SnapshotTenancy, type SnapshotUnit } from '../src/snapshot.ts'
+import { snapshotFor, snapshotOf, type SnapshotCostItem, type SnapshotHeatingPlant, type SnapshotSource, type SnapshotTenancy, type SnapshotUnit } from '../src/snapshot.ts'
 import type { ComputedSettlement } from '../src/calc.ts'
 import type { Co2Statement } from '../../shared/types.ts'
 import { splitByService } from '../src/serviceSplit.ts'
@@ -35,7 +36,7 @@ const ids = Object.keys(GUIDES) as GuideId[]
 // ---------- Aufbau ----------
 
 test('Anleitungen: die Vermietungsarten aus #164 und der Abrechnungszeitraum (#208), jede mit allen fünf Abschnitten', () => {
-  assert.deepEqual(ids, ['granny', 'multiFamily', 'condo', 'properties', 'garage', 'flatRate', 'meteringService', 'co2Costs', 'tenantChange', 'periodMayApril'])
+  assert.deepEqual(ids, ['granny', 'multiFamily', 'condo', 'properties', 'garage', 'flatRate', 'meteringService', 'co2Costs', 'tenantChange', 'periodMayApril', 'supplierInvoice'])
   const titles = ids.map((id) => GUIDES[id].title)
   assert.equal(new Set(titles).size, titles.length, 'doppelter Titel')
   for (const id of ids) {
@@ -355,6 +356,32 @@ const checks: Record<GuideId, () => void> = {
       '214 Tage', eur(share(r, 'neu', 'gs')),
     ], 'tenantChange')
   },
+  // Heizung PR 7 (Durchsicht von #233): die Gasrechnung über die Heizperiode hinaus als Lieferung.
+  supplierInvoice: () => {
+    const mai = { startMonth: 5, changes: [] }
+    const quelle = {
+      properties: [{ id: 'o', kind: 'mfh' as const, cableBuiltBeforeDec2021: null, periodRules: mai }],
+      units: [{ ...rented('a', 60), propertyId: 'o' }, { ...rented('b', 40), propertyId: 'o' }],
+      tenancies: [tenancy('ta', 'a'), tenancy('tb', 'b')],
+      costItems: [{ ...item('gas', { category: HEATING_CATEGORY, amountCents: 650000, heatingPlantId: 'hp', fuelDeliveryId: 'd', period: periodKey('2025-05') }), propertyId: 'o' }],
+      meters: [], readings: [], payments: [], closedSettlements: [],
+      heatingPlants: [{ ...HP, method: 'manual' as const, propertyId: 'o' }],
+      fuelDeliveries: [{
+        id: 'd', plantId: 'hp', label: 'Gas', invoiceDate: null, deliveredAt: null, invoiceFrom: '2025-03-15', invoiceTo: '2026-03-14', unitId: null, amountCents: null,
+        quantity: null, quantityUnit: null, energyKwh: null, gasBasis: null, heatingValue: null, emissionsKg: null, co2CostCents: null, emissionFactor: null,
+        gridFeeCents: null, bioCostCents: null, sharePermille: null, fixedCents: null, estimated: false, usedByService: true, parts: [],
+      }],
+    }
+    const at = (key: string) => computeSettlement(snapshotFor(quelle, 'o', periodOfKey(mai, periodKey(key)) ?? assert.fail(`kein Zeitraum ${key}`)))
+    const h = at('2025-05')
+    const h1 = at('2024-05')
+    const mieter = (r: ComputedSettlement, id: string) => r.statements.find((st) => st.tenancyId === id)?.totalShareCents ?? 0
+    assert.equal(mieter(h, 'ta') + mieter(h, 'tb') + mieter(h1, 'ta') + mieter(h1, 'tb'), 650000)
+    inOrder(GUIDES.supplierInvoice.example, [
+      '15.03.2025', '14.03.2026', eur(650000), '60', '40 m²', '848,71 ‰', eur(mieter(h, 'ta') + mieter(h, 'tb')), eur(mieter(h, 'ta')), eur(mieter(h, 'tb')),
+      eur(mieter(h1, 'ta') + mieter(h1, 'tb')), eur(mieter(h1, 'ta')), eur(mieter(h1, 'tb')),
+    ], 'supplierInvoice')
+  },
   // #208: die Aufteilung der Grundsteuer nach Tagen, mit derselben Funktion wie beim Speichern.
   periodMayApril: () => {
     const parts = splitByService({ startMonth: 1, changes: ['2025-05'] }, { id: 'g', description: 'Grundsteuer 2025', amountCents: 48000, serviceFrom: '2025-01-01', serviceTo: '2025-12-31' })
@@ -411,8 +438,11 @@ test('Durchsicht: CO₂-Kosten mit belegter Norm beim Mehrfamilienhaus und beim 
   // Beim Mehrfamilienhaus ohne Messdienst rechnet Mietfuchs die Aufteilung noch nicht selbst (#97);
   // beim Messdienst übernimmt die Karte „CO₂-Kosten“ dessen Angaben. Die eigene Aufteilung bleibt eine
   // Lücke mit Issue.
-  assert.match(GUIDES.multiFamily.caveats.find((x) => /CO₂/.test(x.text))?.text ?? '', /#97/)
-  assert.ok(GUIDES.meteringService.gaps.some((g) => g.issue === 97 && /selbst/.test(g.text)), 'die eigene Aufteilung bleibt eine Lücke')
+  // Seit Heizung PR 7 teilt Mietfuchs mit den Lieferungen selbst auf (Durchsicht von #233, Recht I3);
+  // Lücke bleibt nur die Bestandsrechnung für Vorräte.
+  assert.match(GUIDES.multiFamily.caveats.find((x) => /CO₂/.test(x.text))?.text ?? '', /als Lieferungen ein/)
+  for (const id of ids) assert.doesNotMatch(JSON.stringify(GUIDES[id]), /rechnet Mietfuchs die Aufteilung noch nicht|selbst aus der Brennstoffrechnung aufteilen/, id)
+  assert.ok(GUIDES.co2Costs.gaps.some((g) => g.issue === 97 && /Bestandsrechnung/.test(g.text)), 'die Bestandsrechnung bleibt eine Lücke')
 })
 
 test('Messdienst mit Vorwegabzug (#209): Der Betrag ist, was bezahlt wurde, der CO₂-Anteil des Vermieters wird dazugerechnet', () => {
@@ -456,7 +486,7 @@ test('Messdienst (#209): selbstgenutzte Wohnung ohne CO₂-Anteil, Abrechnung oh
   // Weist die Abrechnung keinen Anteil aus: nachfragen, Mietfuchs rechnet es noch nicht, 3 % Kürzung.
   const missing = g.caveats.find((c) => /keinen CO₂-Anteil des Vermieters aus/.test(c.text))
   if (!missing) return assert.fail('Hinweis für eine Abrechnung ohne CO₂-Aufteilung fehlt')
-  assert.equal(missing.text, 'Weist die Abrechnung keinen CO₂-Anteil des Vermieters aus, fragen Sie beim Messdienst nach, bevor Sie abrechnen; selbst rechnet Mietfuchs die Aufteilung noch nicht (#97).')
+  assert.equal(missing.text, 'Weist die Abrechnung keinen CO₂-Anteil des Vermieters aus, fragen Sie beim Messdienst nach, bevor Sie abrechnen. Oder beantworten Sie die Frage nach der Abzugszeile mit „gar nicht aufgeteilt“ und tragen die Rechnung des Versorgers auf der Seite Heizkosten als Lieferung ein, „vom Messdienst angesetzt“; dann teilt Mietfuchs selbst auf.')
   // Das Kürzungsrecht von 3 Prozent steht genau einmal, im Hinweis zur CO₂-Aufteilung mit seiner Norm.
   const threePercent = [...g.steps.map((x) => x.text), ...g.caveats.map((c) => c.text)].filter((t) => /3 (%|Prozent)/.test(t))
   assert.equal(threePercent.length, 1, `3 % steht ${threePercent.length}-mal`)
