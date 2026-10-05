@@ -17,6 +17,7 @@
 // `LAW_AS_OF` aus register.ts. Wer eine Regel ändert oder ergänzt, prüft die Parameter, aus denen sie
 // liest, setzt deren `retrieved` und `LAW_AS_OF` auf den Tag der Durchsicht (#110).
 import { betrkvTvSignal } from './bgb-betrkv.ts'
+import { co2CutMissing, co2FirstPeriodStart } from './co2kostaufg.ts'
 import { hkvConsumptionShare, hkvCutNotByConsumption, hkvCutRemoteReading, hkvRemoteReadingRetrofit } from './heizkostenv.ts'
 import { dayBefore, germanDate, LAW_AS_OF, onlyVersion, valueAt } from './register.ts'
 
@@ -32,6 +33,8 @@ const RETROFIT_FROM = retrofit.validFrom
 const share = valueAt(hkvConsumptionShare, LAW_AS_OF)
 const cut = valueAt(hkvCutNotByConsumption, LAW_AS_OF)
 const remoteCut = valueAt(hkvCutRemoteReading, LAW_AS_OF)
+const CO2_FROM = co2FirstPeriodStart()
+const co2Cut = valueAt(co2CutMissing, LAW_AS_OF)
 
 export type Rule = {
   code: string
@@ -97,6 +100,29 @@ export const RULES: readonly Rule[] = [
       'Ausgenommen sind Fälle, in denen die Nachrüstung technisch nicht möglich ist, einen unangemessenen Aufwand bedeutet oder in sonstiger Weise eine unbillige Härte wäre.',
     // Der Zeitpunkt kommt aus `hkv.remote-reading.retrofit` (N6 der dritten Fassung).
     validFrom: RETROFIT_FROM,
+  },
+  {
+    // Heizung PR 6 (#97): Wortlaut §§ 5, 7, 11 und Anlage CO2KostAufG geprüft am 05.10.2026. Bei
+    // Nichtwohngebäuden (§ 8) und Einschränkungen (§ 9) gelten eigene Regeln; sie kommen mit PR 7.
+    code: 'co2-split',
+    title: 'Aufteilung der CO₂-Kosten',
+    norm: '§§ 5, 7, 11 CO2KostAufG',
+    summary:
+      `Für Abrechnungszeiträume, die am oder nach dem ${germanDate(CO2_FROM)} beginnen, werden bei Wohngebäuden die CO₂-Kosten der Heizung zwischen Vermieter und Mieter aufgeteilt, ` +
+      'und zwar nach dem CO₂-Ausstoß des Gebäudes je Quadratmeter Wohnfläche und Jahr: Je höher der Ausstoß, desto größer der Anteil des Vermieters (Stufentabelle in der Anlage des Gesetzes). ' +
+      `Die Heizkostenabrechnung muss den Anteil des Mieters, die Einstufung und die Berechnungsgrundlagen ausweisen; fehlt das, darf der Mieter seinen Anteil an den Heizkosten um ${co2Cut} % kürzen.`,
+    validFrom: CO2_FROM,
+  },
+  {
+    // Heizung PR 6 (#211): § 9 Abs. 2 HeizkostenV im Wortlaut geprüft am 05.10.2026; das Urteil
+    // kürzt den gesamten Anteil an Heiz- und Warmwasserkosten (Entwurf R-A6, G-B9).
+    code: 'heating-dhw-split',
+    title: 'Warmwasser mit Wärmezähler',
+    norm: '§ 9 Abs. 2 HeizkostenV; BGH, Urteil vom 12.01.2022, VIII ZR 151/20',
+    summary:
+      'Versorgt die Heizung auch das Warmwasser, ist die Wärme für das Warmwasser mit einem Wärmezähler zu messen. ' +
+      'Eine Formel darf nur verwenden, wer sie nur mit unzumutbar hohem Aufwand messen könnte. ' +
+      `Wird ohne diesen Grund nach einer Formel abgerechnet, darf der Mieter seinen gesamten Anteil an den Heiz- und Warmwasserkosten um ${cut} % kürzen.`,
   },
 ]
 

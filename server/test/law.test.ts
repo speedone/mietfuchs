@@ -13,6 +13,8 @@ import { betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths } from '../../sha
 import { hkvConsumptionShare, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit } from '../../shared/law/heizkostenv.ts'
 import { practiceVacancyPersons } from '../../shared/law/practice.ts'
 import { ustgStandardRate } from '../../shared/law/ustg.ts'
+import { co2ApplicableFrom, co2CutMissing, co2FirstPeriodStart, co2RoundingDecimals, co2StageTable } from '../../shared/law/co2kostaufg.ts'
+import { RULES } from '../../shared/law/rules.ts'
 
 const year = (y: number) => ({ period: { from: `${y}-01-01`, to: `${y}-12-31` } })
 
@@ -174,7 +176,7 @@ test('Register: jede Konstante vom Typ LawParam in shared/law/ steht in LAW_PARA
     .flatMap((f) => [...fs.readFileSync(path.join(dir, f), 'utf8').matchAll(/^export const (\w+): LawParam</gm)].map((m) => m[1]))
   assert.ok(declared.length >= 7, `nur ${declared.length} Parameter gefunden`)
   const listed = new Set<unknown>(LAW_PARAMS)
-  const modules = { betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths, hkvConsumptionShare, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, practiceVacancyPersons, ustgStandardRate }
+  const modules = { betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths, co2ApplicableFrom, co2CutMissing, co2RoundingDecimals, co2StageTable, hkvConsumptionShare, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, practiceVacancyPersons, ustgStandardRate }
   for (const name of declared) {
     assert.ok(name && Object.hasOwn(modules, name), `${name} fehlt in diesem Test`)
     assert.ok(listed.has(Reflect.get(modules, name)), `${name} fehlt in LAW_PARAMS`)
@@ -244,4 +246,37 @@ test('Stichtag hkv.remote-reading.new-devices: Einbau bis 01.12.2021 ohne, ab 02
     ['hkv.remote-reading.new-devices', '', 'Einbau bis 01.12.2021: keine Pflicht ab Einbau'],
     ['hkv.remote-reading.new-devices', '2021-12-02', 'Einbau nach dem 01.12.2021: fernablesbar ab Einbau'],
   ])
+})
+
+// ---------- CO2KostAufG (Heizung PR 6) ----------
+
+test('co2.applicable-from: Zeitraum ab Dezember 2022 nicht anwendbar, ab Januar 2023 schon (§ 11 Abs. 2 Satz 1, Entwurf 4.7)', () => {
+  const log = createLawLog()
+  // Zeiträume beginnen am Monatsersten; deshalb `2022-12` gegen `2023-01` (G-F).
+  assert.equal(law(co2ApplicableFrom, { period: { from: '2022-12-01', to: '2023-11-30' } }, log), false)
+  assert.equal(law(co2ApplicableFrom, { period: { from: '2023-01-01', to: '2023-12-31' } }, log), true)
+  assert.equal(co2FirstPeriodStart(), '2023-01-01')
+  assert.deepEqual(log.values.map((v) => [v.id, v.value]), [['co2.applicable-from', false], ['co2.applicable-from', true]])
+})
+
+test('co2.stage-table: zehn Stufen, unten einschließend, Vermieteranteil 0 bis 95 % (Anlage CO2KostAufG)', () => {
+  const table = valueAt(co2StageTable, LAW_AS_OF)
+  assert.deepEqual(table.map((s) => [s.from, s.landlordPercent]), [
+    [0, 0], [12, 10], [17, 20], [22, 30], [27, 40], [32, 50], [37, 60], [42, 70], [47, 80], [52, 95],
+  ])
+  assert.equal(valueAt(co2RoundingDecimals, LAW_AS_OF), 1)
+  assert.equal(valueAt(co2CutMissing, LAW_AS_OF), 3)
+  assert.equal(co2StageTable.describe(table), '10 Stufen, Vermieteranteil 0 bis 95 %')
+})
+
+test('Regeln: CO₂-Aufteilung ab dem Beginn der Anwendbarkeit, Warmwasser mit Wärmezähler ohne Grenze', () => {
+  const co2 = RULES.find((r) => r.code === 'co2-split') ?? assert.fail('Regel co2-split fehlt')
+  assert.equal(co2.validFrom, co2FirstPeriodStart())
+  assert.equal(co2.norm, '§§ 5, 7, 11 CO2KostAufG')
+  assert.match(co2.summary, /am oder nach dem 01\.01\.2023 beginnen/)
+  assert.match(co2.summary, /um 3 % kürzen/)
+  const dhw = RULES.find((r) => r.code === 'heating-dhw-split') ?? assert.fail('Regel heating-dhw-split fehlt')
+  assert.equal(dhw.norm, '§ 9 Abs. 2 HeizkostenV; BGH, Urteil vom 12.01.2022, VIII ZR 151/20')
+  assert.match(dhw.summary, /um 15 % kürzen/)
+  assert.equal(dhw.validFrom, undefined)
 })

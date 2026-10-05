@@ -31,6 +31,12 @@ const SHIPPED: readonly string[] = [
   // 0.11.0 (Heizung PR 4)
   'hkv.remote-reading.new-devices||2021-12-01|{"required":false,"installedAfter":"2021-12-01"}',
   'hkv.remote-reading.new-devices|2021-12-02||{"required":true,"installedAfter":"2021-12-01"}',
+  // 0.11.0 (Heizung PR 6)
+  'co2.applicable-from||2022-12-31|false',
+  'co2.applicable-from|2023-01-01||true',
+  'co2.cut.missing|||3',
+  'co2.rounding-decimals|||1',
+  'co2.stage-table|||[{"from":0,"landlordPercent":0},{"from":12,"landlordPercent":10},{"from":17,"landlordPercent":20},{"from":22,"landlordPercent":30},{"from":27,"landlordPercent":40},{"from":32,"landlordPercent":50},{"from":37,"landlordPercent":60},{"from":42,"landlordPercent":70},{"from":47,"landlordPercent":80},{"from":52,"landlordPercent":95}]',
 ]
 
 const current = (): string[] =>
