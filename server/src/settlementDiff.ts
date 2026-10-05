@@ -8,9 +8,39 @@
 // sich nicht lesen, ist das Ergebnis „nicht vergleichbar“ und nicht „keine Abweichung“, denn das
 // zweite wäre eine Auskunft, die niemand geprüft hat.
 
-import type { SettlementComparison, SettlementDeviation } from '../../shared/types.ts'
+import type { AppliedValue, LawValueChange, SettlementComparison, SettlementDeviation } from '../../shared/types.ts'
 
 type Saldo = { tenancyId: string, tenantName: string, unitName: string, balanceCents: number }
+type Current = { statements: Saldo[], legalBasis?: { values?: readonly AppliedValue[] } }
+type FrozenValue = { id: string, title: string, text: string, value: unknown }
+
+// Die eingefrorenen Rechtswerte (Heizung PR 1). Fehlt das Feld, wurde vor 0.11.0 abgeschlossen;
+// dann gibt es nichts zu vergleichen. Ein Eintrag, der sich nicht lesen lässt, fällt weg, statt
+// eine Änderung zu behaupten.
+function readValues(value: unknown): FrozenValue[] {
+  if (value === null || typeof value !== 'object') return []
+  const basis = Reflect.get(value, 'legalBasis')
+  if (basis === null || typeof basis !== 'object') return []
+  const values = Reflect.get(basis, 'values')
+  if (!Array.isArray(values)) return []
+  return values.flatMap((v): FrozenValue[] => {
+    if (v === null || typeof v !== 'object') return []
+    const id = Reflect.get(v, 'id')
+    const title = Reflect.get(v, 'title')
+    const text = Reflect.get(v, 'text')
+    return typeof id === 'string' && typeof title === 'string' && typeof text === 'string' ? [{ id, title, text, value: Reflect.get(v, 'value') }] : []
+  })
+}
+
+// Nur Werte, die auf beiden Seiten stehen und verschieden sind. Ein Wert, den nur eine Seite
+// benutzt, ist eine Folge geänderter Daten und keine Änderung des Rechts.
+function valueChanges(frozen: FrozenValue[], current: readonly AppliedValue[]): LawValueChange[] {
+  return frozen.flatMap((f) => {
+    const now = current.find((c) => c.id === f.id)
+    if (!now || JSON.stringify(now.value) === JSON.stringify(f.value)) return []
+    return [{ id: f.id, title: f.title, frozenText: f.text, currentText: now.text }]
+  })
+}
 
 function readStatements(value: unknown): Saldo[] | null {
   if (value === null || typeof value !== 'object') return null
@@ -32,17 +62,17 @@ function readStatements(value: unknown): Saldo[] | null {
 // `today` als JJJJ-MM-TT, hineingereicht, damit der Test nicht vom Kalender abhängt.
 // `current` darf auch eine Funktion sein, die rechnet: Scheitert die heutige Berechnung, bleibt der
 // eingefrorene Stand trotzdem lesbar, und das Ergebnis heißt „nicht vergleichbar“.
-export function compareWithFrozen(frozen: unknown, currentOrCompute: { statements: Saldo[] } | (() => { statements: Saldo[] }), year: number, today: string): SettlementComparison {
+export function compareWithFrozen(frozen: unknown, currentOrCompute: Current | (() => Current), year: number, today: string): SettlementComparison {
   // § 556 Abs. 3 BGB: zwölf Monate nach Ende des Abrechnungszeitraums, hier des Kalenderjahres.
   const deadline = `${year + 1}-12-31`
   const deadlinePassed = today > deadline
   const before = readStatements(frozen)
-  if (!before) return { comparable: false, deviations: [], deadline, deadlinePassed }
-  let current: { statements: Saldo[] }
+  if (!before) return { comparable: false, deviations: [], valueChanges: [], deadline, deadlinePassed }
+  let current: Current
   try {
     current = typeof currentOrCompute === 'function' ? currentOrCompute() : currentOrCompute
   } catch {
-    return { comparable: false, deviations: [], deadline, deadlinePassed }
+    return { comparable: false, deviations: [], valueChanges: [], deadline, deadlinePassed }
   }
   const now = new Map(current.statements.map((s) => [s.tenancyId, s]))
   const then = new Map(before.map((s) => [s.tenancyId, s]))
@@ -66,5 +96,5 @@ export function compareWithFrozen(frozen: unknown, currentOrCompute: { statement
       direction: !a ? 'added' : !b ? 'removed' : difference > 0 ? 'tenant' : 'landlord',
     })
   }
-  return { comparable: true, deviations, deadline, deadlinePassed }
+  return { comparable: true, deviations, valueChanges: valueChanges(readValues(frozen), current.legalBasis?.values ?? []), deadline, deadlinePassed }
 }
