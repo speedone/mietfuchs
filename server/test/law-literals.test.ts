@@ -4,7 +4,7 @@
 // Bedingung überleben, wenn das Register eine neue Fassung bekommt.
 //
 // Geprüft wird der Quelltext mit demselben Scanner wie die Anrede (testing/sourceScan.ts): nur
-// Zeichenketten und JSX-Text, keine Kommentare, keine Prompts an das Modell. Zwei Prüfungen:
+// Zeichenketten und JSX-Text, keine Kommentare, keine Prompts an das Modell. Drei Prüfungen:
 //
 // - **Prozentangaben im Muster einer Rechtsfolge** („um 15 %“, „15 % kürzen“, „50 bis 70 %“,
 //   „mindestens 50 und höchstens 70 %“, „15 Prozent“) in Server, Oberfläche und shared/, außer
@@ -12,6 +12,8 @@
 //   nicht auf; so bleiben Nutzerdaten wie die vereinbarten Anteile (`custom`) außen vor.
 // - **Datumsliterale** (ISO und deutsch) in den Dateien der Berechnung. Spätere PRs ergänzen ihre
 //   Dateien (co2.ts, fuel.ts, period.ts) in ENGINE_FILES.
+// - **Zahlen im Code** (15, 50, 70, 19, 16, 2021, 2024, 2027) in den Dateien der Berechnung und in
+//   invoiceAmounts.ts, ohne Zeichenketten und Kommentare (Durchsicht von #221, I2).
 //
 // Erlaubte Stellen stehen unten benannt, jede mit Grund. Eine erlaubte Stelle, die es nicht mehr
 // gibt, ist ein Fehler: Sonst bliebe die Ausnahme stehen und deckte später etwas anderes.
@@ -26,9 +28,16 @@ import { scan } from '../testing/sourceScan.ts'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 
-const PERCENT_PATTERNS = [/um \d+ ?%/g, /\d+ ?% kürzen/g, /\d+ bis \d+ ?%/g, /\d+ und höchstens \d+ ?%/g, /\d+ Prozent/g]
+const PERCENT_PATTERNS = [/um \d+ ?%/g, /\d+ ?% kürzen/g, /\d+ bis \d+ ?%/g, /\d+ und höchstens \d+ ?%/g, /\d+ Prozent/g, /\d+ vom Hundert/g, /\d+–\d+ ?%/g]
 const DATE_PATTERNS = [/\d{4}-\d{2}-\d{2}/g, /\d{2}\.\d{2}\.\d{4}/g]
 const ENGINE_FILES = ['server/src/calc.ts', 'server/src/snapshot.ts', 'shared/heating.ts']
+// Rechtszahlen als Zahl im Code (Durchsicht von #221, I2): Die Muster oben sehen nur Texte, eine
+// Zeile wie `Math.round((share * 15) / 100)` oder `year >= 2021` fiele durch. Geprüft wird der Code
+// ohne Zeichenketten und Kommentare, in den Dateien der Berechnung und in invoiceAmounts.ts, auf die
+// Zahlen, die heute im Register stehen. Eine Zahl in einem Bezeichner oder eine Dezimalzahl zählt
+// nicht.
+const CODE_FILES = [...ENGINE_FILES, 'server/src/invoiceAmounts.ts']
+const CODE_PATTERN = /(?<![\w.])(15|50|70|19|16|2021|2024|2027)(?![\w.])/g
 
 type Allowed = { file: string; match: string; reason: string }
 const ALLOWED: readonly Allowed[] = [
@@ -37,6 +46,7 @@ const ALLOWED: readonly Allowed[] = [
   { file: 'shared/guides.ts', match: '3 Prozent', reason: 'CO₂-Kürzung nach § 7 Abs. 4 CO2KostAufG; `co2.cut.missing` kommt mit PR 6 ins Register (4.3, G-C7)' },
   { file: 'server/src/calc.ts', match: '31.05.2006', reason: 'Datum einer Entscheidung im Zitat (BGH VIII ZR 159/05), kein Rechtswert' },
   { file: 'server/src/calc.ts', match: '08.01.2013', reason: 'Datum einer Entscheidung im Zitat (BGH VIII ZR 180/12), kein Rechtswert' },
+  { file: 'server/src/invoiceAmounts.ts', match: 'Math.max(50,', reason: 'Rundungstoleranz der Schnellerfassung (mindestens 0,50 €), keine Rechtszahl' },
 ]
 
 type Finding = { file: string; line: number; match: string }
@@ -55,6 +65,15 @@ const texts = (file: string) => textsOf(fs.readFileSync(path.join(ROOT, file), '
 
 const matchesIn = (file: string, fragments: { text: string; line: number }[], patterns: readonly RegExp[]): Finding[] =>
   fragments.flatMap((s) => patterns.flatMap((p) => [...s.text.matchAll(p)].map((m) => ({ file, line: s.line, match: m[0] }))))
+
+// Treffer im Code: `match` ist die ganze Zeile, damit eine erlaubte Stelle sie am Ausdruck erkennt
+// und nicht an der Zahl allein. Der Scanner ersetzt Zeichenketten und Kommentare durch Leerzeichen
+// und behält die Zeilenumbrüche, die Zeilennummern stimmen also.
+function codeMatchesIn(file: string, source: string): Finding[] {
+  return scan(source, file.endsWith('.tsx')).code.split('\n').flatMap((text, i) =>
+    [...text.matchAll(CODE_PATTERN)].map(() => ({ file, line: i + 1, match: text.trim() })))
+}
+const codeFindings = (): Finding[] => CODE_FILES.flatMap((file) => codeMatchesIn(file, fs.readFileSync(path.join(ROOT, file), 'utf8')))
 
 function findings(files: readonly string[], patterns: readonly RegExp[]): Finding[] {
   return files.flatMap((file) => matchesIn(file, texts(file), patterns))
@@ -77,8 +96,14 @@ test('Rechtszahlen: kein Datumsliteral in den Dateien der Berechnung', () => {
   assert.equal(open.length, 0, `Datum als Literal, bitte aus shared/law/ nehmen:\n${report(open)}`)
 })
 
+test('Rechtszahlen: keine Zahl einer Rechtsregel im Code der Berechnung', () => {
+  for (const file of CODE_FILES) assert.ok(fs.existsSync(path.join(ROOT, file)), `${file} gibt es nicht; die Liste ist veraltet`)
+  const open = codeFindings().filter((f) => !isAllowed(f))
+  assert.equal(open.length, 0, `Rechtszahl im Code, bitte aus shared/law/ nehmen:\n${report(open)}`)
+})
+
 test('Rechtszahlen: jede erlaubte Stelle gibt es noch, und jede hat einen Grund', () => {
-  const all = [...findings(percentFiles(), PERCENT_PATTERNS), ...findings(ENGINE_FILES, DATE_PATTERNS)]
+  const all = [...findings(percentFiles(), PERCENT_PATTERNS), ...findings(ENGINE_FILES, DATE_PATTERNS), ...codeFindings()]
   for (const a of ALLOWED) {
     assert.ok(a.reason.trim(), `${a.file}: „${a.match}“ ohne Grund`)
     assert.ok(all.some((f) => f.file === a.file && f.match.includes(a.match)), `erlaubte Stelle nicht mehr da: ${a.file} „${a.match}“`)
@@ -107,4 +132,34 @@ test('Rechtszahlen-Wächter: er liest Server, Oberfläche, shared/ und die Datei
   for (const f of ['server/src/calc.ts', 'client/src/pages/Cockpit.tsx', 'shared/glossary.ts', 'shared/guides.ts']) assert.ok(files.includes(f), `${f} fehlt`)
   assert.ok(!files.some((f) => f.startsWith('shared/law/')), 'das Register selbst ist ausgenommen')
   assert.ok(texts('server/src/calc.ts').length > 200, 'der Scanner findet in calc.ts kaum Texte')
+})
+
+// ---------- Rechtszahlen im Code (Durchsicht von #221, I2) ----------
+
+// Ohne diese Probe könnte die Prüfung des Codes grün sein, weil sie die Zahlen gar nicht sieht: Jede
+// der vier Stellen stand vor dem Rechtsregister so im Code und muss den Wächter rot machen.
+test('Rechtszahlen-Wächter: eine Rechtszahl im Code der Berechnung fällt auf (Mutationsprobe)', () => {
+  const mutations: [string, string][] = [
+    ['server/src/calc.ts', 'const probe = Math.round((r.share * 15) / 100)'],
+    ['server/src/calc.ts', 'const probe = year >= 2021'],
+    ['shared/heating.ts', 'const probe = { min: 50, max: 70 }'],
+    ['server/src/invoiceAmounts.ts', 'const VAT_PERCENT = 19'],
+  ]
+  for (const [file, line] of mutations) {
+    const source = `${fs.readFileSync(path.join(ROOT, file), 'utf8')}\n${line}\n`
+    const lastLine = source.split('\n').length - 1
+    const hit = codeMatchesIn(file, source).filter((f) => !isAllowed(f) && f.line === lastLine)
+    assert.ok(hit.length > 0, `nicht erkannt: ${file} „${line}“`)
+  }
+  // Kommentare und Zeichenketten gehören nicht zum Code; Zahlen in Bezeichnern und Dezimalzahlen
+  // auch nicht.
+  const quiet = "// um 15 Prozent\nconst a = 'ab 2027'\nconst x15 = 0.15 + 150 + 1.5\n"
+  assert.deepEqual(codeMatchesIn('probe.ts', quiet), [])
+})
+
+test('Rechtszahlen-Wächter: „vom Hundert“ und Spannen mit Halbgeviertstrich sind Rechtsfolgen-Muster', () => {
+  const sample = "const a = 'um 15 vom Hundert'\nconst b = 'zu 50–70 % nach Verbrauch'"
+  const found = matchesIn('probe.ts', textsOf(sample, false), PERCENT_PATTERNS).map((f) => `${f.line}:${f.match}`)
+  assert.ok(found.includes('1:15 vom Hundert'), found.join(', '))
+  assert.ok(found.includes('2:50–70 %'), found.join(', '))
 })
