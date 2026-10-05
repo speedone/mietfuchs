@@ -141,6 +141,7 @@ export async function heatingPeriodViews(db: Database, plantId: string, periodPa
       items: items
         .filter((c) => c.period === h.key)
         .map((c) => ({ id: c.id, description: c.description, amountCents: c.amountCents, key: c.key, tenancyAmounts: c.tenancyAmounts, selfAmounts: c.selfAmounts, fuelDeliveryId: c.fuelDeliveryId })),
+      stock: null,
     })
   }
   return views

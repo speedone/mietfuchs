@@ -90,6 +90,10 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // neu erzeugt und die Marken hier ersetzt.
   '0022_lieferungen': '1fead047c247bb489df09a25a5f2dcba6eae96d2ee94ff1c04e14cc9eb7370db',
   '0023_lieferungen_bedingungen': '0e73c25626805e01fb878d234ab71f42736917ce967196bc96aa713117daad6a',
+  // Heizung PR 8. Wird PR 8 vor dem Push neu erzeugt, werden diese beiden Schritte neu erzeugt und die
+  // Marken hier ersetzt.
+  '0024_vorrat': '29716bd83ab7f1cb4f37d176d2b59de24e69a91dc2bd787b8c7abbbfd7d0ae8f',
+  '0025_vorrat_bedingungen': '434083a865e1be97a00485cc7713793739006b772fb0b9300d71aa3bdd2ccfc8',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

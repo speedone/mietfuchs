@@ -169,6 +169,20 @@
       "when": 1791215510473,
       "tag": "0023_lieferungen_bedingungen",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1791243399535,
+      "tag": "0024_vorrat",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1791243407168,
+      "tag": "0025_vorrat_bedingungen",
+      "breakpoints": true
     }
   ]
 }

@@ -933,3 +933,30 @@ test('CO₂-Merkmale der Anlage und Ortswerte der Gradtage', async () => {
     cleanup()
   }
 })
+
+// ---------- Vorrat (Heizung PR 8) ----------
+
+test('Vorrat: Einheit aus der Liste, Mengen, Beträge und kg ab 0, Peildatum als Datum', async () => {
+  const { connection, cleanup } = await freshDb()
+  try {
+    connection.exec("INSERT INTO heating_plants (id, property_id, energy, method) VALUES ('hp1', 'objekt-1', 'oil', 'manual')")
+    connection.exec("INSERT INTO heating_periods (id, plant_id, period) VALUES ('h1', 'hp1', '2025-01')")
+    assert.deepEqual(
+      connection.rows('SELECT stock_unit, opening_quantity, opening_cost_cents, opening_emissions_kg, opening_co2_cents, opening_invoiced_before_2023, closing_quantity, closing_measured_on FROM heating_periods')[0],
+      [null, null, null, null, null, null, null, null],
+    )
+    assert.equal(
+      rejects(connection, "UPDATE heating_periods SET stock_unit = 'l', opening_quantity = 2000, opening_cost_cents = 190000, opening_emissions_kg = 5352.6, opening_co2_cents = 0, opening_invoiced_before_2023 = 1, closing_quantity = 1800, closing_measured_on = '2025-12-31'"),
+      null,
+    )
+    assert.ok(rejects(connection, "UPDATE heating_periods SET stock_unit = 'm3'"), 'Einheit m³ gibt es beim Vorrat nicht')
+    assert.ok(rejects(connection, 'UPDATE heating_periods SET opening_quantity = -1'), 'negative Menge')
+    assert.ok(rejects(connection, 'UPDATE heating_periods SET opening_cost_cents = -1'), 'negativer Betrag')
+    assert.ok(rejects(connection, 'UPDATE heating_periods SET opening_emissions_kg = -0.1'), 'negative kg')
+    assert.ok(rejects(connection, 'UPDATE heating_periods SET opening_co2_cents = -1'), 'negative CO₂-Kosten')
+    assert.ok(rejects(connection, 'UPDATE heating_periods SET closing_quantity = -5'), 'negativer Endbestand')
+    assert.ok(rejects(connection, "UPDATE heating_periods SET closing_measured_on = '31.12.2025'"), 'Peildatum kein ISO-Datum')
+  } finally {
+    cleanup()
+  }
+})

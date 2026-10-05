@@ -936,6 +936,10 @@ export type TaxReport = {
     privateCents: number
     deductibleCents: number
     labor35aCents: number // Summe der §35a-Arbeitskosten (Lohnanteile)
+    // Heizung PR 8: Eigenanteil am Übertrag aus dem Brennstoffvorrat in den Abrechnungen dieses Jahres.
+    // Die Abrechnung zeigt den Verbrauch, die Steuerübersicht das Bezahlte (Entwurf 8.2, N8); um diesen
+    // Betrag liegen beide beim Eigenanteil auseinander. Fehlt das Feld, gibt es keinen Übertrag.
+    stockCarrySelfCents?: number
     // Jede Position mit ihrer Aufteilung, in der Reihenfolge der Erfassung (#163)
     items: TaxExpenseItem[]
   }
@@ -1298,7 +1302,7 @@ export type HeatingPlant = {
   units: HeatingPlantUnit[] | null
 }
 
-// Die Angaben einer Heizperiode (Entwurf 5.3, ohne Vorrat). Geschrieben werden sie ab PR 6 (Warmwasser
+// Die Angaben einer Heizperiode (Entwurf 5.3; den Vorrat seit Heizung PR 8). Geschrieben werden sie ab PR 6 (Warmwasser
 // laut Messdienst), PR 10 (Verteilung) und PR 14 (§ 6a); PR 4 legt nur die Tabelle an.
 export type HeatingPeriodData = {
   id: string
@@ -1321,6 +1325,18 @@ export type HeatingPeriodData = {
   climateFactorPrev: number | null
   consumerContract: string | null
   infoContactsConfirmed: boolean | null
+  // Vorrat (Heizung PR 8, Entwurf 5.3, 8.2): Einheit, Anfangsbestand mit Wert, kg und CO₂-Kosten, ob
+  // er vor dem 01.01.2023 in Rechnung gestellt wurde, Endbestand und Tag der Peilung. Eingetragen wird
+  // der Anfangsbestand nur in der ersten Heizperiode mit Vorrat; danach ist er der Endbestand der
+  // Vorperiode.
+  stockUnit: StockUnit | null
+  openingQuantity: number | null
+  openingCostCents: number | null
+  openingEmissionsKg: number | null
+  openingCo2Cents: number | null
+  openingInvoicedBefore2023: boolean | null
+  closingQuantity: number | null
+  closingMeasuredOn: string | null
 }
 
 // Eine Heizposition, die beim Anlegen der Anlage zugeordnet werden kann (Vorschau, 11.2).
@@ -1455,6 +1471,10 @@ export type HeatingStatement = {
   co2: Co2Assessment | null
   // Lieferungen, Abgrenzung, Überträge und Lücken dieser Heizperiode (Heizung PR 7); fehlt ohne Lieferungen.
   fuel?: FuelAssessment
+  // Die Bestandsrechnung dieser Heizperiode (Heizung PR 8). Sie friert mit dem Abschluss ein; die
+  // Folgeperiode liest daraus ihren Anfangsbestand, die Vorperiode ihren Endbestand (G-A4). Fehlt
+  // sie, gibt es keinen Vorrat oder er ließ sich nicht rechnen.
+  stock?: HeatingStockStatement | null
 }
 
 // Was die Seite Heizkosten zu einer Heizperiode lädt (Heizung PR 6): die Angabe zum Warmwasser, die
@@ -1470,6 +1490,8 @@ export type HeatingPeriodView = {
   hotWater: Pick<HeatingPeriodData, 'dhwMethod' | 'dhwUnmeasurable'>
   co2: Co2Statement | null
   items: Pick<CostItem, 'id' | 'description' | 'amountCents' | 'key' | 'tenancyAmounts' | 'selfAmounts' | 'fuelDeliveryId'>[]
+  // Der Vorrat dieser Heizperiode (Heizung PR 8); `null` bei einer Anlage ohne Vorratsenergie.
+  stock: StockView | null
 }
 
 // ---------- Brennstofflieferungen (Heizung PR 7, Entwurf 5.4, 8.2) ----------
@@ -1587,3 +1609,69 @@ export type FuelAssessment = {
 // Die Rückfrage beim Abschluss (8.2, Dialog „Trotzdem abschließen?“).
 // `deadline`: bis wann die Abrechnung, die abgeschlossen werden soll, den Mietern zugehen muss (Abwarten).
 export type FuelGapQuestion = { plantId: string; plantName: string; period: PeriodKey; from: string; to: string; amountCents: number; deadline: string; zeroInvoices?: string[] }
+
+// ---------- Brennstoffvorrat (Heizung PR 8, Entwurf 5.3, 8.2) ----------
+
+// Die Einheit eines Vorrats: Liter (Heizöl, Flüssiggas), Kilogramm (Flüssiggas, Pellets, Holz, Kohle),
+// Schüttraummeter (Holzhackschnitzel).
+export type StockUnit = 'l' | 'kg' | 'srm'
+
+// Ein Teil eines Vorrats mit seiner Herkunft. `costCents` null: Der Betrag ist unbekannt (Messdienst
+// ohne Rechnungsbetrag). `co2Counted` false: in Rechnung gestellt vor dem 01.01.2023; die kg zählen,
+// die CO₂-Kosten nicht (§ 11 Abs. 2 Satz 2 CO2KostAufG). `co2Cents` ist der Betrag laut Rechnung.
+export type StockLayer = {
+  label: string
+  date: string | null
+  quantity: number
+  costCents: number | null
+  emissionsKg: number
+  co2Cents: number
+  co2Counted: boolean
+}
+
+// Ein bewerteter Bestand, zusammen und je Teil. `co2Cents` zählt nur die berücksichtigten CO₂-Kosten;
+// `costCents` ist null, wenn ein Teil keinen Betrag hat.
+export type StockValue = {
+  quantity: number
+  costCents: number | null
+  emissionsKg: number
+  co2Cents: number
+  layers: StockLayer[]
+}
+
+// Die Bestandsrechnung einer Heizperiode.
+export type HeatingStockStatement = {
+  unit: StockUnit
+  opening: StockValue
+  // Woher der Anfangsbestand kommt: eingetragen (erste Heizperiode mit Vorrat), aus dem Endbestand
+  // der offenen Vorperiode oder aus dem eingefrorenen einer abgeschlossenen.
+  openingSource: 'own' | 'previous' | 'frozen'
+  deliveries: StockLayer[]
+  closing: StockValue
+  // Der Endbestand ist der eingefrorene Anfangsbestand der abgeschlossenen Folgeperiode (G-A4).
+  closingFrozen?: boolean
+  closingMeasuredOn: string | null
+  consumed: { quantity: number; costCents: number | null; emissionsKg: number; co2Cents: number }
+  // Σ der Lieferungen dieser Heizperiode; null, wenn eine keinen Betrag hat.
+  paidCents: number | null
+  // kg aus Brennstoff mit Rechnung vor dem 01.01.2023, die in dieser Heizperiode verbraucht wurden.
+  oldStockKg: number
+}
+
+// Was die Karte „Vorrat“ zu einer Heizperiode lädt.
+export type StockRow = Pick<
+  HeatingPeriodData,
+  'stockUnit' | 'openingQuantity' | 'openingCostCents' | 'openingEmissionsKg' | 'openingCo2Cents' | 'openingInvoicedBefore2023' | 'closingQuantity' | 'closingMeasuredOn'
+>
+export type StockView = {
+  row: StockRow
+  // Der Anfangsbestand aus der Vorperiode; dann ist keiner einzutragen. `frozen`: aus einer
+  // abgeschlossenen Vorperiode.
+  derived: { value: StockValue; period: PeriodKey; label: string; frozen: boolean } | null
+  // Die Folgeperiode ist abgeschlossen und hat diesen Endbestand als Anfangsbestand übernommen;
+  // dann ist der Endbestand gesperrt (G-A4).
+  closingLockedBy: { period: PeriodKey; label: string } | null
+  statement: HeatingStockStatement | null
+  // Was fehlt oder nicht passt, als Satz für die Karte.
+  problem: string | null
+}
