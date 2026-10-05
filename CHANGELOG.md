@@ -182,7 +182,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Gradtagzahlen des Orts für Monate einer abgeschlossenen Heizperiode bleiben, wie sie sind.
 - Wird eine Rechnung nach dem Abschluss einer Heizperiode storniert oder auf 0 € gesetzt, sperrt
   Mietfuchs nichts: Der Teil, den die Mieter der abgeschlossenen Abrechnung zu viel getragen haben,
-  steht beim Vermieter, und eine Warnung rät, jene Abrechnung wieder zu öffnen und neu abzuschließen.
+  steht beim Vermieter, und eine Warnung nennt den Betrag und rät, jene Abrechnung wieder zu öffnen und
+  neu abzuschließen; das gilt auch, wenn jene Abrechnung mit einer Schätzung abgeschlossen wurde. Die
+  stornierte Rechnung deckt danach keine Tage mehr ab, die Lücke wird wieder gemeldet.
   Wurde die Position einer Rechnung erst nach dem Abschluss ihrer Heizperiode mit der Lieferung
   verknüpft, sagt es ein Hinweis in der anderen Heizperiode.
 

@@ -65,13 +65,13 @@ export default function Heizkosten({ units, tenancies }: { units: Unit[]; tenanc
           {plant.method === 'self' ? (
             <div className="card">
               <p>Die eigene Heizkostenabrechnung kommt mit einer späteren Version.</p>
-              <ManualCo2Advice />
+              {CO2_ENERGIES.includes(plant.energy) && <ManualCo2Advice energy={plant.energy} />}
             </div>
           ) : (<>
             {plant.method === 'manual' && CO2_ENERGIES.includes(plant.energy) && (data?.deliveries[plant.id] ?? []).length === 0 && (
               <div className="card">
-                <p>Verteilen Sie die Heizkosten selbst nach einem <Term id="allocationKey">Umlageschlüssel</Term> (bei der Frage, wer abrechnet: „Niemand“), teilt Mietfuchs die CO₂-Kosten selbst auf, sobald Sie die Gas- oder Ölrechnung unten als Lieferung eintragen; Gutschrift und Position „Nicht umlagefähig“ entfallen dann.</p>
-                <ManualCo2Advice />
+                <p>Verteilen Sie die Heizkosten selbst nach einem <Term id="allocationKey">Umlageschlüssel</Term> (bei der Frage, wer abrechnet: „Niemand“), teilt Mietfuchs die CO₂-Kosten selbst auf, sobald Sie die {invoiceName(plant.energy)} unten als Lieferung eintragen; Gutschrift und Position „Nicht umlagefähig“ entfallen dann.</p>
+                <ManualCo2Advice energy={plant.energy} />
               </div>
             )}
             {(data?.views[plant.id] ?? []).map((v) => (
@@ -99,10 +99,13 @@ export default function Heizkosten({ units, tenancies }: { units: Unit[]; tenanc
 
 // Der Rat aus der Laienprobe, solange Mietfuchs die CO₂-Kosten nicht selbst aufteilt (ohne Lieferungen
 // oder bei der eigenen Heizkostenabrechnung): was zu tun ist, damit niemand kürzen darf.
-function ManualCo2Advice() {
+// Bei Fernwärme gibt es keine Gas- oder Ölrechnung, sondern die Rechnung für die Fernwärme.
+const invoiceName = (energy: HeatingPlant['energy']): string => (energy === 'districtHeating' ? 'Fernwärmerechnung' : 'Gas- oder Ölrechnung')
+
+function ManualCo2Advice({ energy }: { energy: HeatingPlant['energy'] }) {
   return (
     <p>
-      Bis dahin teilen Sie die CO₂-Kosten selbst auf: Der CO₂-Ausstoß laut Gas- oder Ölrechnung, geteilt durch die Wohnfläche, ergibt die
+      Bis dahin teilen Sie die CO₂-Kosten selbst auf: Der CO₂-Ausstoß laut {invoiceName(energy)}, geteilt durch die Wohnfläche, ergibt die
       Stufe und damit Ihren Anteil an den CO₂-Kosten der Rechnung (<Term id="co2Split">CO₂-Kosten aufteilen</Term>). Lassen Sie die
       Heizposition, wie sie ist. Erfassen Sie Ihren Anteil als Gutschrift „CO₂-Anteil Vermieter“ in der Kostenart „Heizung und Warmwasser“
       mit demselben Umlageschlüssel (Betrag mit Minus) und denselben Betrag noch einmal als Position der Kostenart „Nicht umlagefähig“. So

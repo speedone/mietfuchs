@@ -186,7 +186,7 @@ test('Hinweise: Gradtage, fester Teil, Lücke; Bewertung mit Abdeckung und Über
   assert.deepEqual(h.notices.find((n) => n.code === 'fuel.uncovered')?.subject, { kind: 'heatingCosts', id: 'hp' })
   const fuel = h.heating?.[0]?.fuel ?? assert.fail('keine Bewertung')
   assert.equal(fuel.coveragePermille.toFixed(2), '848.71')
-  assert.deepEqual(fuel.carries, [{ deliveryId: 'd', period: '2024-05', cents: -98339 }])
+  assert.deepEqual(fuel.carries, [{ deliveryId: 'd', period: '2024-05', cents: -98339, totalCents: 650000 }])
   assert.deepEqual([fuel.deliveries[0]?.method, fuel.deliveries[0]?.inPeriodCents], ['degreeDays', 551661])
   assert.ok(h.legalBasis.values?.some((v) => v.id === 'hkv.degree-days'))
 })
@@ -573,5 +573,36 @@ test('Nachprüfung W1, Gegenstück: Storno nach Abschluss der Heizperiode der Po
   assert.equal(mieterSumme(h1), 0)
   assert.equal(summe(h1), 0)
   assert.deepEqual(teileVon(h1, 'fuel:d:2024-05:2025-05'), [{ reason: 'fuelCarry', cents: -98339 }, { reason: 'fuelClosedPeriod', cents: 98339 }])
-  assert.match(textOf(h1, 'fuel.cancelled-after-close'), /ist storniert oder auf 0 € gesetzt\. Die abgeschlossene Abrechnung 2025\/2026, in der sie steht, hat 983,39 € als Anteil dieser Heizperiode hinausgebucht/)
+  assert.match(textOf(h1, 'fuel.cancelled-after-close'), /ist storniert oder auf 0 € gesetzt\. Die abgeschlossene Abrechnung 2025\/2026, in der sie steht, enthält dafür 5\.516,61 €, die die Mieter zu viel getragen haben; 983,39 € hatte sie als Anteil dieser Heizperiode hinausgebucht/)
+  // Ein eingefrorener Stand ohne die Summe der Rechnung nennt nur den hinausgebuchten Teil.
+  const alt = { closedSettlements: [abgeschlossen('2025-05', { fuelCarryRows: frozenFuelRowsOf(h2), fuelCarries: frozenFuelCarriesOf(h2).map(({ totalCents: _t, ...c }) => c) })] }
+  assert.match(textOf(settle('2024-05', { ...alt, costItems: [position({ id: 'gas', amountCents: 0 })] }), 'fuel.cancelled-after-close'), /in der sie steht, hat 983,39 € als Anteil dieser Heizperiode hinausgebucht/)
+})
+
+// ---------- Nachprüfung von 47f2373 (Korrekturrunde 4) ----------
+
+test('Nachprüfung M2: 2024/2025 mit Schätzung 907,74 € abgeschlossen, die Rechnung kommt und wird storniert: Gegenbuchung beim Vermieter und Warnung', () => {
+  const ueber = {
+    fuelDeliveries: [lieferung(), schaetzung(90774)],
+    fuelCarryFrozen: [eingefroren('e', '2024-05', 90774)],
+    closedSettlements: [abgeschlossen('2024-05', { fuelCarryRows: zeilenDerSchaetzung(54464, 36310) })],
+  }
+  for (const costItems of [
+    [position({ id: 'gas' }), position({ id: 'gs', description: 'Storno', amountCents: -650000 })],
+    [position({ id: 'gas', amountCents: 0 })],
+  ]) {
+    const h = settle('2025-05', { ...ueber, costItems })
+    assert.equal(summe(h), 0)
+    assert.deepEqual(teileVon(h, 'fuel:d:2025-05:2024-05'), [{ reason: 'fuelCarry', cents: 90774 }, { reason: 'fuelEstimateDiff', cents: -90774 }])
+    assert.match(textOf(h, 'fuel.cancelled-after-close'), /ist storniert oder auf 0 € gesetzt\. Die abgeschlossene Abrechnung 2024\/2025 enthält dafür 907,74 €, die die Mieter zu viel getragen haben/)
+  }
+})
+
+test('Nachprüfung G1: Storno ohne abgeschlossene andere Heizperiode: die Rechnung deckt nichts mehr ab, die Lücke steht wieder da', () => {
+  const h = settle('2025-05', { costItems: [position({ id: 'gas', amountCents: 0 })] })
+  assert.match(textOf(h, 'fuel.uncovered'), /Für 01\.05\.2025–30\.04\.2026 \(365 Tage/)
+  assert.deepEqual(h.heating?.[0]?.fuel?.deliveries, [])
+  // Eine Rechnung ohne Positionen (noch nicht verknüpft) deckt weiter ab.
+  const offen = settle('2025-05', { costItems: [] })
+  assert.match(textOf(offen, 'fuel.uncovered'), /Für 15\.03\.–30\.04\.2026/)
 })

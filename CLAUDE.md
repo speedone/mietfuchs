@@ -1072,7 +1072,11 @@ mehrere je Lieferung (Abschlag, Schlussrechnung, Gutschrift). Abgegrenzt wird in
   nichts verteilt; hat eine abgeschlossene Heizperiode einen Teil hereingebucht oder die
   abgeschlossene Heizperiode der Positionen einen hinausgebucht, steht beim Vermieter die
   Gegenbuchung und ihr Gegenteil als `fuelClosedPeriod` (Summe 0, ausgewiesen), dazu die Warnung
-  `fuel.cancelled-after-close`. Ihr Satz zur Frist hält sich an den Wortlaut von § 556 Abs. 3 Satz 3
+  `fuel.cancelled-after-close`; das Gegenstück nennt, was die Mieter der abgeschlossenen Heizperiode zu
+  viel getragen haben (dafür führt der eingefrorene Übertrag `totalCents`). War die andere Heizperiode
+  mit Schätzung abgeschlossen, steht die Schätzung als `fuelEstimateDiff` gegen. Eine stornierte
+  Rechnung (Positionen mit Summe 0) verdrängt keine Schätzung, deckt keine Tage ab und zählt nicht in
+  der Bewertung; die Lücke steht wieder da. Ihr Satz zur Frist hält sich an den Wortlaut von § 556 Abs. 3 Satz 3
   BGB (ausgeschlossen ist nur die Nachforderung durch den Vermieter). Wurde eine Position erst nach
   dem Abschluss ihrer Heizperiode verknüpft, nimmt die andere nichts und sagt es
   (`fuel.owner-closed-unlinked`, Stufe `hint`).
@@ -1080,7 +1084,9 @@ mehrere je Lieferung (Abschlag, Schlussrechnung, Gutschrift). Abgegrenzt wird in
   Gutschriften bis zum Storno, geänderten Beträgen und später eintreffenden Rechnungen
   (fuel-invariant.test.ts, über die echten Schreibwege der Datenbank, ohne nachgebildete Sperren)
   prüft, dass jede Rechnung genau einmal verteilt ist: Die Mieter tragen die Positionen bis auf die
-  ausgewiesenen Teile, nach oben wie nach unten. Feste Startwerte, mehr mit `INV_FROM`/`INV_TO`; jede
+  ausgewiesenen Teile, nach oben wie nach unten, und je Lieferung und Paar von Heizperioden heben sich
+  die Gegenbuchungen auf oder ein ausgewiesener Teil desselben Paars deckt sie genau (eine Summe über
+  alle Lieferungen ließe eine falsche Gegenbuchung hinter einem berechtigten Teil verschwinden). Feste Startwerte, mehr mit `INV_FROM`/`INV_TO`; jede
   Rücknahme der Befunde der Durchsicht macht sie rot (Mutationsprobe).
 - **Gesperrt bis zu ihren PRs:** Vorratsenergien (PR 8), Lieferungen je Wohnung (PR 9), Netzentgelte
   und Biobrennstoff (PR 18), Methode `self` (PR 10); jeder Satz sagt, was bis dahin geht.

@@ -3044,7 +3044,11 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     for (const carry of result.carries) {
       if (carry.kind === 'in' && carry.cancelled !== undefined) {
         warn('fuel.cancelled-after-close',
-          `${where}: Die Rechnung „${nameOf(carry.deliveryId)}“ ist storniert oder auf 0 € gesetzt. Die abgeschlossene Abrechnung ${closedOf(carry.other.key)?.label ?? periodLabel(carry.other)}, in der sie steht, hat ${fmtCents(carry.cancelled)} als Anteil dieser Heizperiode hinausgebucht; hier wird davon nichts mehr verteilt, und die Mieter jener Abrechnung haben ihren Teil der Rechnung zu viel getragen. Öffnen Sie sie wieder und schließen Sie neu ab; ` +
+          `${where}: Die Rechnung „${nameOf(carry.deliveryId)}“ ist storniert oder auf 0 € gesetzt. Die abgeschlossene Abrechnung ${closedOf(carry.other.key)?.label ?? periodLabel(carry.other)}, in der sie steht, ` +
+            (carry.cancelledOut !== undefined && carry.cancelledOut !== carry.cancelled
+              ? `enthält dafür ${fmtCents(carry.cancelled)}, die die Mieter zu viel getragen haben; ${fmtCents(carry.cancelledOut)} hatte sie als Anteil dieser Heizperiode hinausgebucht, hier wird davon nichts mehr verteilt. `
+              : `hat ${fmtCents(carry.cancelled)} als Anteil dieser Heizperiode hinausgebucht; hier wird davon nichts mehr verteilt, und die Mieter jener Abrechnung haben ihren Teil der Rechnung zu viel getragen. `) +
+            'Öffnen Sie sie wieder und schließen Sie neu ab; ' +
             '§ 556 Abs. 3 Satz 3 BGB schließt nach Ablauf der Frist nur eine Nachforderung durch den Vermieter aus, eine Berichtigung zugunsten der Mieter hindert er nicht.',
           subject)
         continue
@@ -3207,7 +3211,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     if (fuelOf) {
       report.fuel = {
         coveragePermille: fuelOf.coveragePermille, emissionsKg: fuelOf.emissionsKg, co2Cents: fuelOf.co2Cents, deliveries: fuelOf.lines,
-        carries: fuelOf.carries.map((c) => ({ deliveryId: c.deliveryId, period: c.other.key, cents: c.cents })), gaps: fuelOf.gaps,
+        carries: fuelOf.carries.map((c) => ({ deliveryId: c.deliveryId, period: c.other.key, cents: c.cents, ...(c.kind === 'out' && c.cancelled === undefined ? { totalCents: c.totalCents } : {}) })), gaps: fuelOf.gaps,
       }
     }
     const settledHere = settledOn(ids)

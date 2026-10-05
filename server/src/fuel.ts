@@ -198,7 +198,7 @@ export type FuelPlantInput = {
   // (Durchsicht I4). Fehlt die Angabe, gibt es keine.
   loose?: readonly { from: string | null; to: string | null }[]
   // Was abgeschlossene Heizperioden je Lieferung in andere übertragen haben (`period` die abgeschlossene).
-  closedCarries?: readonly { period: string; deliveryId: string; other: string; cents: number }[]
+  closedCarries?: readonly { period: string; deliveryId: string; other: string; cents: number; totalCents?: number }[]
 }
 
 // Ein Übertrag der Mieterseite dieser Heizperiode: `out` hinaus in die frühere (die Positionen stehen
@@ -218,6 +218,8 @@ export type FuelCarry = {
   zeroFrozen: boolean
   // Storniert (Summe der Positionen 0): was die abgeschlossene Heizperiode `other` hereingebucht hatte.
   cancelled?: number
+  // Beim Gegenstück: der Teil, den die abgeschlossene Heizperiode der Positionen hierher hinausgebucht hat.
+  cancelledOut?: number
   landlord: { reason: 'fuelCarry' | 'fuelClosedPeriod' | 'fuelEstimateDiff'; cents: number }[]
   templates: { itemId: string; raw: number }[]
   estimate: { cents: number; ids: string[] } | null
@@ -246,7 +248,13 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
   const { h, rules, ctx } = input
   const withItems = input.method === 'manual'
   const ranged = input.deliveries.filter((d) => rangeOf(d) !== null)
-  const real = ranged.filter((d) => !d.estimated)
+  const itemsOf = (id: string): FuelItem[] => input.items.filter((c) => c.fuelDeliveryId === id)
+  // Storniert (Nachprüfung von 47f2373, M2/G1): Bei freien Schlüsseln ergeben die Positionen einer
+  // Rechnung 0. Sie verdrängt keine Schätzung, deckt keine Tage ab und zählt nicht in der Bewertung; ihre
+  // Überträge bleiben, damit eine abgeschlossene Heizperiode ihre Gegenbuchung bekommt.
+  const cancelled = (d: FuelDeliveryInput): boolean =>
+    withItems && !d.estimated && itemsOf(d.id).length > 0 && itemsOf(d.id).reduce((a, c) => a + c.amountCents, 0) === 0
+  const real = ranged.filter((d) => !d.estimated && !cancelled(d))
   const realUnion = unionOf(real.map(rangeOf).filter(isRange))
   // Eine Schätzung zählt nur für die Tage, die keine echte Rechnung abdeckt (8.2, Wiederöffnen;
   // Durchsicht von #233, I3): ganz abgedeckt gar nicht, teilweise im Verhältnis der Gradtage der
@@ -260,7 +268,7 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
     estimateFactor.set(d.id, all > 0 ? degreeDayPermille(rest, ctx.table) / all : rest.reduce((a, x) => a + daysOf(x), 0) / daysOf(r))
   }
   const effective = ranged.filter((d) => !d.estimated || (estimateFactor.get(d.id) ?? 0) > 0)
-  const itemsOf = (id: string): FuelItem[] => input.items.filter((c) => c.fuelDeliveryId === id)
+  const counted = effective.filter((d) => !cancelled(d))
   const totalOf = (d: FuelDeliveryInput): number =>
     d.estimated
       ? roundHalf((d.amountCents ?? 0) * (estimateFactor.get(d.id) ?? 1))
@@ -286,7 +294,7 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
   let co2 = 0
   let co2Known = false
   const missingCo2: string[] = []
-  for (const d of effective.filter(touchesH)) {
+  for (const d of counted.filter(touchesH)) {
     const s = share(d, h)
     const f = frozenOf(d.id, h.key)
     // Bei einer teilweise abgedeckten Schätzung nur der Teil der übrigen Tage (Durchsicht I3).
@@ -310,7 +318,7 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
       emissionsKg: e, co2Cents: c === null ? null : roundHalf(c),
     })
   }
-  const coverage = coverageOf(h, effective.map(rangeOf).filter(isRange), ctx.table)
+  const coverage = coverageOf(h, counted.map(rangeOf).filter(isRange), ctx.table)
   const emissionsKg = kgKnown ? (coverage.permille > 0 ? (kg * 1000) / coverage.permille : kg) : null
   // Lücken (Durchsicht I4): Eine Heizposition der Anlage in dieser Heizperiode ohne Lieferung deckt mit
   // ihrem Leistungszeitraum ebenfalls ab; ohne Leistungszeitraum weiß Mietfuchs nicht, welche Tage sie
@@ -318,7 +326,7 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
   const loose = input.loose ?? []
   const looseRanges = loose.flatMap((l) => (l.from && l.to ? [{ from: l.from, to: l.to }] : []))
   const looseWithoutRange = loose.some((l) => !l.from || !l.to)
-  const billCoverage = looseRanges.length > 0 ? coverageOf(h, [...effective.map(rangeOf).filter(isRange), ...looseRanges], ctx.table) : coverage
+  const billCoverage = looseRanges.length > 0 ? coverageOf(h, [...counted.map(rangeOf).filter(isRange), ...looseRanges], ctx.table) : coverage
 
   // Messdienst (7.6, G-A3): C sind die CO₂-Kosten der Rechnungen, die er angesetzt hat, ganz; gezählt
   // in der Heizperiode, in der die Rechnung endet.
@@ -391,12 +399,16 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
         if (owner.key !== h.key) {
           // Gegenstück: Die Heizperiode der Positionen ist abgeschlossen und hat einen Teil hierher
           // hinausgebucht. Hier wird nichts verteilt; die Gegenbuchung steht ausgewiesen beim Vermieter.
-          const out = touchesH(d) && input.closed.has(owner.key) && input.closedCarries !== undefined
-            ? (input.closedCarries.find((c) => c.period === owner.key && c.deliveryId === d.id && c.other === h.key)?.cents ?? 0)
-            : 0
+          const frozenOut = touchesH(d) && input.closed.has(owner.key) && input.closedCarries !== undefined
+            ? input.closedCarries.find((c) => c.period === owner.key && c.deliveryId === d.id && c.other === h.key)
+            : undefined
+          const out = frozenOut?.cents ?? 0
           if (out !== 0) {
+            // `cancelled`: was die Mieter jener Heizperiode von der Rechnung getragen haben (Summe beim Abschluss
+            // ohne den hinausgebuchten Teil); fehlt die Summe im eingefrorenen Stand, der hinausgebuchte Teil.
             carries.push({
-              deliveryId: d.id, kind: 'in', other: owner, cents: 0, totalCents: 0, ratio: 0, method: 'inside', frozen: true, zeroFrozen: false, cancelled: -out,
+              deliveryId: d.id, kind: 'in', other: owner, cents: 0, totalCents: 0, ratio: 0, method: 'inside', frozen: true, zeroFrozen: false,
+              cancelled: frozenOut?.totalCents !== undefined ? frozenOut.totalCents + out : -out, cancelledOut: -out,
               landlord: [{ reason: 'fuelCarry', cents: out }, { reason: 'fuelClosedPeriod', cents: -out }], templates: [], estimate: null,
             })
           }
@@ -405,7 +417,17 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
         for (const other of touched) {
           if (other.key === h.key) continue
           const f = frozenOf(d.id, other.key)
-          if (!f || f.cents === 0) continue
+          if (!f || f.cents === 0) {
+            // Mit Schätzung abgeschlossen (Nachprüfung von 47f2373, M2): Die Mieter jener Heizperiode haben
+            // die Schätzung getragen; die Abweichung ist die ganze Schätzung, wie X − Schätzung bei X = 0.
+            const est = f ? { cents: 0, ids: [] } : input.closed.has(other.key) ? estimatesIn(other, r) : { cents: 0, ids: [] }
+            if (est.cents === 0) continue
+            carries.push({
+              deliveryId: d.id, kind: 'out', other, cents: 0, totalCents: 0, ratio: 0, method: 'inside', frozen: true, zeroFrozen: false, cancelled: est.cents,
+              landlord: [{ reason: 'fuelCarry', cents: est.cents }, { reason: 'fuelEstimateDiff', cents: -est.cents }], templates: [], estimate: est,
+            })
+            continue
+          }
           carries.push({
             deliveryId: d.id, kind: 'out', other, cents: 0, totalCents: 0, ratio: 0, method: 'inside', frozen: true, zeroFrozen: false, cancelled: f.cents,
             landlord: [{ reason: 'fuelCarry', cents: f.cents }, { reason: 'fuelClosedPeriod', cents: -f.cents }], templates: [], estimate: null,
@@ -469,7 +491,8 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
     }
   }
 
-  if (lines.length === 0 && carries.length === 0) return null
+  // Eine stornierte Rechnung, die die Heizperiode berührt, lässt die Lücke sichtbar (Nachprüfung, G1).
+  if (lines.length === 0 && carries.length === 0 && !effective.some(touchesH)) return null
 
   // Lücken (3.3) und, bei freien Schlüsseln, der Vorschlag einer Schätzung aus der letzten Rechnung
   // (8.2 Nr. 2): verbrauchsabhängiger Teil nach dem eigenen Zählerstand, sonst nach Gradtagen; fester

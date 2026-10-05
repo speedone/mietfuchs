@@ -276,7 +276,7 @@ export function frozenFuelRowsOf(settlement: unknown): FrozenFuelRow[] {
 // Was ein eingefrorener Stand je Anlage, Heizperiode und Lieferung in eine andere Heizperiode übertragen
 // hat (`heating[].fuel.carries`; Heizung PR 7, Nachprüfung der Durchsicht von #233). Die Heizperiode, in
 // die übertragen wurde, nimmt genau diesen Betrag, auch wenn sich die Positionen danach ändern.
-export type FrozenFuelCarryOut = { plantId: string; period: string; deliveryId: string; other: string; cents: number }
+export type FrozenFuelCarryOut = { plantId: string; period: string; deliveryId: string; other: string; cents: number; totalCents?: number }
 
 export function frozenFuelCarriesOf(settlement: unknown): FrozenFuelCarryOut[] {
   if (settlement === null || typeof settlement !== 'object') return []
@@ -295,7 +295,10 @@ export function frozenFuelCarriesOf(settlement: unknown): FrozenFuelCarryOut[] {
       const deliveryId: unknown = Reflect.get(c, 'deliveryId')
       const other: unknown = Reflect.get(c, 'period')
       const cents: unknown = Reflect.get(c, 'cents')
-      if (typeof deliveryId === 'string' && typeof other === 'string' && typeof cents === 'number') out.push({ plantId, period, deliveryId, other, cents })
+      const totalCents: unknown = Reflect.get(c, 'totalCents')
+      if (typeof deliveryId === 'string' && typeof other === 'string' && typeof cents === 'number') {
+        out.push({ plantId, period, deliveryId, other, cents, ...(typeof totalCents === 'number' ? { totalCents } : {}) })
+      }
     }
   }
   return out
@@ -412,7 +415,7 @@ type FuelSource = {
 // Weg d mit ihrer Heizkostenabrechnung (W1, B3). Ohne Lieferung `undefined`: Dann bleibt der
 // Schnappschuss, wie er war, und keine Abrechnung ändert sich.
 const carriesOf = (list: FrozenFuelCarryOut[] | undefined, plantId: string, period: string) =>
-  (list ?? []).filter((x) => x.plantId === plantId && x.period === period).map(({ deliveryId, other, cents }) => ({ deliveryId, other, cents }))
+  (list ?? []).filter((x) => x.plantId === plantId && x.period === period).map(({ deliveryId, other, cents, totalCents }) => ({ deliveryId, other, cents, ...(totalCents !== undefined ? { totalCents } : {}) }))
 
 function fuelSnapshotOf(
   source: FuelSource,

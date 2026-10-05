@@ -18,11 +18,11 @@
 //         Teile (eine zu hohe Schätzung, ein Storno nach Abschluss; dann nennt die Abrechnung den Betrag).
 //   (vii) Untergrenze: Die Mieter tragen mindestens die Positionen abzüglich der ausgewiesenen Teile beim
 //         Vermieter (`fuelClosedPeriod`, `fuelEstimateDiff`).
-//   (iii) Ohne Schätzungen heben sich die Gegenbuchungen `fuelCarry` über alle Zeiträume auf, soweit kein
-//         ausgewiesener Teil sie deckt: Was eine Heizperiode hereinbucht, bucht eine andere hinaus. Nicht
-//         genau 0, denn eine abgeschlossene Heizperiode kann einen Teil ausgewiesen haben, den eine später
-//         wieder geöffnete und neu abgeschlossene doch hereinbucht (dann tragen die Mieter die Rechnung
-//         genau einmal, und der ausgewiesene Teil steht im eingefrorenen Stand).
+//   (iii) Ohne Schätzungen, je Lieferung und Paar von Heizperioden: Die Gegenbuchungen `fuelCarry` heben
+//         sich auf (was die eine hereinbucht, bucht die andere hinaus), oder ein ausgewiesener Teil desselben
+//         Paars deckt sie genau. Das Zweite, wenn eine abgeschlossene Heizperiode einen Teil ausgewiesen hat,
+//         den eine später wieder geöffnete und neu abgeschlossene doch hereinbucht (dann tragen die Mieter
+//         die Rechnung genau einmal, und der ausgewiesene Teil steht im eingefrorenen Stand).
 // Dazu die Zuordnungsprüfung (I1): Hat eine abgeschlossene Heizperiode eine Lieferung mit 0
 // eingefroren, bucht die Heizperiode ihrer Positionen deren Teil trotzdem hinaus. Mit Schätzungen
 // gelten (ii) und (vii) nur, wenn am Ende jede Schätzung von echten verknüpften Rechnungen abgedeckt ist.
@@ -67,7 +67,14 @@ const rejected = (err: unknown): boolean => {
 // Mieterzeilen und Vermieterteile einer Abrechnung, auch einer eingefrorenen (JSON).
 const flaggedReason = (r: unknown): boolean => r === 'fuelClosedPeriod' || r === 'fuelEstimateDiff'
 
-function totals(s: unknown): { tenants: number; landlord: number; carry: number; up: number; down: number } {
+// Je Paar {Lieferung, zwei Heizperioden}: die Gegenzeile trägt die Kennung `fuel:<Lieferung>:<Heizperiode>:<andere>`.
+const pairOf = (rowId: unknown): string | null => {
+  if (typeof rowId !== 'string' || !rowId.startsWith('fuel:')) return null
+  const [, d, p, o] = rowId.split(':')
+  return d && p && o ? `${d}|${[p, o].sort().join('|')}` : null
+}
+
+function totals(s: unknown): { tenants: number; landlord: number; carry: number; up: number; down: number; pairs: Map<string, { carry: number; flagged: number }> } {
   const num = (v: unknown): number => (typeof v === 'number' ? v : 0)
   const list = (o: unknown, key: string): unknown[] => {
     const v: unknown = o !== null && typeof o === 'object' ? Reflect.get(o, key) : undefined
@@ -75,9 +82,21 @@ function totals(s: unknown): { tenants: number; landlord: number; carry: number;
   }
   const tenants = list(s, 'statements').reduce<number>((a, st) => a + num(st !== null && typeof st === 'object' ? Reflect.get(st, 'totalShareCents') : 0), 0)
   const landlordObj: unknown = s !== null && typeof s === 'object' ? Reflect.get(s, 'landlord') : undefined
-  const parts = list(landlordObj, 'rows').flatMap((r) => list(r, 'landlordParts'))
+  const rows = list(landlordObj, 'rows')
+  const parts = rows.flatMap((r) => list(r, 'landlordParts'))
   const reasonOf = (p: unknown): unknown => (p !== null && typeof p === 'object' ? Reflect.get(p, 'reason') : undefined)
   const centsOf = (p: unknown): number => num(p !== null && typeof p === 'object' ? Reflect.get(p, 'cents') : 0)
+  const pairs = new Map<string, { carry: number; flagged: number }>()
+  for (const r of rows) {
+    const key = pairOf(r !== null && typeof r === 'object' ? Reflect.get(r, 'costItemId') : undefined)
+    if (!key) continue
+    const acc = pairs.get(key) ?? { carry: 0, flagged: 0 }
+    for (const p of list(r, 'landlordParts')) {
+      if (reasonOf(p) === 'fuelCarry') acc.carry += centsOf(p)
+      else if (flaggedReason(reasonOf(p))) acc.flagged += centsOf(p)
+    }
+    pairs.set(key, acc)
+  }
   return {
     tenants,
     landlord: parts.reduce<number>((a, p) => a + centsOf(p), 0),
@@ -86,16 +105,19 @@ function totals(s: unknown): { tenants: number; landlord: number; carry: number;
     // negativer haben die Mieter zu viel getragen.
     up: parts.reduce<number>((a, p) => a + (flaggedReason(reasonOf(p)) ? Math.max(0, centsOf(p)) : 0), 0),
     down: parts.reduce<number>((a, p) => a + (flaggedReason(reasonOf(p)) ? Math.min(0, centsOf(p)) : 0), 0),
+    pairs,
   }
 }
 
-// Ohne Angabe die Startwerte 1 bis 10 und drei festgehaltene, an denen die Mutationsprobe der Durchsicht
-// von #233 je eine Rücknahme gefunden hat, die die ersten zehn nicht finden (23: Storno nach Abschluss der
-// Heizperiode der Positionen, 26: Gegenbuchung der Schätzung, 29: Schätzfaktor). Mit INV_FROM/INV_TO
-// ein Bereich, z. B. INV_TO=60.
+// Ohne Angabe die Startwerte 1 bis 10 und zwei festgehaltene, an denen die Mutationsprobe der
+// Nachprüfungen von #233 je eine Rücknahme findet, die die ersten zehn nicht finden (16: Storno nach
+// Abschluss der Heizperiode der Positionen; 81: Schätzfaktor). Ein Storno neben einer Schätzung (M2) und
+// die Lücke nach einem Storno (G1) sieht die Invariante nicht, weil am Ende jede Schätzung von einer echten
+// Rechnung abgedeckt sein muss; dafür stehen Einzeltests in calc-fuel.test.ts. Mit INV_FROM/INV_TO ein
+// Bereich, z. B. INV_TO=60.
 const SEEDS: number[] = process.env.INV_FROM !== undefined || process.env.INV_TO !== undefined
   ? Array.from({ length: Math.max(0, Number(process.env.INV_TO ?? 10) - Number(process.env.INV_FROM ?? 1) + 1) }, (_, k) => Number(process.env.INV_FROM ?? 1) + k)
-  : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 23, 26, 29]
+  : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 16, 81]
 const STEPS = Number(process.env.INV_STEPS ?? 30)
 
 type Variant = { name: string; lazy: boolean; estimate: boolean }
@@ -153,6 +175,7 @@ for (const variant of VARIANTS) {
         let n = 0
         // Die Positionen je abgeschlossenem Zeitraum beim Abschluss.
         const atClose = new Map<string, number>()
+        const unlinkedFrom = new Map<string, string>()
         const positionsIn = async (key: string) => (await opened.read((db) => readCostItems(db))).filter((c) => c.category === HEATING_CATEGORY && c.period === key).reduce((a, c) => a + c.amountCents, 0)
         const link = (id: string, d: { id: string; to: string }, amountCents: number, key: 'area' | 'units') => {
           const owner = periodContaining(MAI, d.to)
@@ -168,7 +191,7 @@ for (const variant of VARIANTS) {
           log.push(`${mark} ${next.id}`)
         }
         for (let step = 0; step < STEPS; step++) {
-          const op = pick(['link', 'link', 'link', 'credit', 'unlink', 'delete', 'close', 'close', 'reopen', 'amount', 'arrive'] as const)
+          const op = pick(['link', 'link', 'link', 'credit', 'unlink', 'delete', 'close', 'close', 'reopen', 'amount', 'arrive', 'relink', 'storno'] as const)
           const d = pick(deliveries)
           if (!d) continue
           const items = (await opened.read((db) => readCostItems(db))).filter((c) => c.fuelDeliveryId === d.id)
@@ -192,6 +215,21 @@ for (const variant of VARIANTS) {
             const c = pick(credits.length > 0 ? credits : items)
             if (!c) continue
             await attempt(`${op} ${c.id}`, () => (op === 'delete' ? opened.write((db) => removeEntity(db, 'costItems', c.id)) : opened.write((db) => updateEntity(db, 'costItems', c.id, { fuelDeliveryId: null }))))
+            if (op === 'unlink') unlinkedFrom.set(c.id, d.id)
+          } else if (op === 'storno') {
+            // Die Rechnung storniert: eine Gutschrift über die Summe ihrer Positionen, danach ergeben sie 0
+            // (W1, auch nach dem Abschluss einer der Heizperioden, auch neben einer Schätzung).
+            const T = items.reduce((a, c) => a + c.amountCents, 0)
+            if (T <= 0) continue
+            const id = `p${n++}`
+            await attempt(`storno ${id}→${d.id}=${-T}`, () => link(id, d, -T, rnd() < 0.5 ? 'area' : 'units'))
+          } else if (op === 'relink') {
+            // Eine gelöste Position wieder mit ihrer Lieferung verknüpfen, auch nach einem Abschluss dazwischen.
+            const all = await opened.read((db) => readCostItems(db))
+            const c = pick(all.filter((x) => x.fuelDeliveryId == null && unlinkedFrom.has(x.id)))
+            const to = c ? unlinkedFrom.get(c.id) : undefined
+            if (!c || !to) continue
+            await attempt(`relink ${c.id}→${to}`, () => opened.write((db) => updateEntity(db, 'costItems', c.id, { fuelDeliveryId: to })))
           } else if (op === 'close') {
             const key = pick(keys)
             if (!key) continue
@@ -224,7 +262,7 @@ for (const variant of VARIANTS) {
           for (const next of pending.splice(0)) await arrive(next, 'arrive*')
           for (const d of deliveries) {
             const its = (await opened.read((db) => readCostItems(db))).filter((c) => c.fuelDeliveryId === d.id)
-            if (its.some((c) => c.amountCents > 0)) continue
+            if (its.reduce((a, c) => a + c.amountCents, 0) > 0) continue
             const id = `p${n++}`
             await attempt(`link* ${id}→${d.id}`, () => link(id, d, int(100000, 900000), 'area'))
           }
@@ -236,7 +274,7 @@ for (const variant of VARIANTS) {
         let positions = 0
         let tenants = 0
         let landlord = 0
-        let carrySum = 0
+        const pairs = new Map<string, { carry: number; flagged: number }>()
         let up = 0
         let down = 0
         const live = new Map<string, ReturnType<typeof computeSettlement>>()
@@ -250,7 +288,12 @@ for (const variant of VARIANTS) {
           positions += here
           tenants += t.tenants
           landlord += t.landlord
-          carrySum += t.carry
+          for (const [k, v] of t.pairs) {
+            const acc = pairs.get(k) ?? { carry: 0, flagged: 0 }
+            acc.carry += v.carry
+            acc.flagged += v.flagged
+            pairs.set(k, acc)
+          }
           up += t.up
           down += t.down
         }
@@ -258,14 +301,20 @@ for (const variant of VARIANTS) {
         assert.equal(tenants + landlord, positions, `${fall}; (i)`)
         const deliveriesNow = await opened.read((db) => readFuelDeliveries(db))
         const estimates = deliveriesNow.filter((x) => x.estimated)
-        const linkedReal = deliveries.filter((d) => items.some((c) => c.fuelDeliveryId === d.id && c.amountCents > 0))
+        // Eine stornierte Rechnung (Positionen ergeben 0 oder weniger) ersetzt keine Schätzung (Nachprüfung, M2).
+        const linkedReal = deliveries.filter((d) => items.filter((c) => c.fuelDeliveryId === d.id).reduce((a, c) => a + c.amountCents, 0) > 0)
         const coveredDay = (day: string) => linkedReal.some((d) => d.from <= day && day <= d.to)
         const estimatesCovered = estimates.every((e) => coveredDay(e.invoiceFrom ?? '') && coveredDay(e.invoiceTo ?? ''))
         if (estimates.length === 0 || estimatesCovered) {
           assert.ok(tenants >= positions - up, `${fall}; (vii) Mieter ${tenants} < Positionen ${positions} − ausgewiesen ${up}`)
           assert.ok(tenants <= positions - down, `${fall}; (ii) Mieter ${tenants} > Positionen ${positions} + ausgewiesen ${-down}`)
         }
-        if (estimates.length === 0) assert.ok(-up <= carrySum && carrySum <= -down, `${fall}; (iii) Gegenbuchungen ${carrySum} nicht durch ausgewiesene Teile (${up}, ${down}) gedeckt`)
+        // (iii) je Lieferung und Paar von Heizperioden: Die Gegenbuchungen heben sich auf, oder ein
+        // ausgewiesener Teil deckt sie genau (Nachprüfung von 47f2373, H1: über alle Lieferungen summiert
+        // deckte ein berechtigter Teil einer Lieferung die falsche Gegenbuchung einer anderen).
+        if (estimates.length === 0) {
+          for (const [k, v] of pairs) assert.ok(v.carry === 0 || v.carry === -v.flagged, `${fall}; (iii) ${k}: Gegenbuchungen ${v.carry}, ausgewiesen ${v.flagged}`)
+        }
         // Zuordnung (I1): eine mit 0 eingefrorene Heizperiode bekommt trotzdem ihren Teil hinausgebucht.
         const frozen = await opened.read((db) => readFuelCarryFrozen(db))
         for (const d of deliveries) {
