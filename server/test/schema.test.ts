@@ -16,7 +16,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { AiSettings, AiSlot, CostItem, HeatingPeriodData, HeatingPlant, HeatingPlantUnit, HeatingPrepaymentOverride, SeparateSpan, PeriodKey, PeriodRules, Meter, Payment, PersonEntry, PrepaymentEntry, Reading, RentEntry, Settings, Tenancy, Unit, ExternalBasis, UploadInfo, StoredAssessment, StoredAssessmentLine } from '../../shared/types.ts'
+import type { AiSettings, AiSlot, Co2Statement, Co2TenantRelief, CostItem, HeatingPeriodData, HeatingPlant, HeatingPlantUnit, HeatingPrepaymentOverride, SeparateSpan, PeriodKey, PeriodRules, Meter, Payment, PersonEntry, PrepaymentEntry, Reading, RentEntry, Settings, Tenancy, Unit, ExternalBasis, UploadInfo, StoredAssessment, StoredAssessmentLine } from '../../shared/types.ts'
 import type { ClosedSettlement } from '../src/store.ts'
 import { applyMigrations, connect, loadMigrations } from '../src/db/client.ts'
 import * as schema from '../src/db/schema.ts'
@@ -139,6 +139,13 @@ type _HeatingPrepayments = Assert<Matches<Omit<typeof schema.heatingPrepayments.
 type _HeatingPrepaymentOverrides = Assert<Matches<Omit<typeof schema.heatingPrepaymentOverrides.$inferSelect, 'tenancyId'>, HeatingPrepaymentOverride>>
 type _HeatingSeparateSpans = Assert<Matches<Omit<typeof schema.heatingSeparateSpans.$inferSelect, 'plantId'>, SeparateSpan>>
 
+// --- CO₂ (Heizung PR 6) ---
+// Anlage und Heizperiode liest die Datenbank über `heating_period_id`; die Beträge je
+// Mietverhältnis stehen in einer eigenen Tabelle.
+type Co2StatementColumns = Omit<Co2Statement, 'plantId' | 'period' | 'reliefs'>
+type _Co2Statements = Assert<Matches<typeof schema.co2Statements.$inferSelect, Co2StatementColumns>>
+type _Co2Reliefs = Assert<Matches<Omit<typeof schema.co2TenantReliefs.$inferSelect, 'statementId'>, Co2TenantRelief>>
+
 // --- Abgeschlossene Abrechnungen ---
 // `ClosedSettlement` steht in store.ts und nicht in shared/types.ts, weil nur der Server sie
 // kennt. Geprüft wird sie trotzdem, denn sie beschreibt eine Tabelle.
@@ -246,6 +253,8 @@ test('Migration lässt sich anwenden und legt alle Tabellen an', async () => {
       'closed_heating_settlements',
       'closed_settlement_history',
       'closed_settlements',
+      'co2_statements',
+      'co2_tenant_reliefs',
       'cost_item_amounts',
       'cost_item_participants',
       'cost_item_self_amounts',
@@ -792,6 +801,57 @@ test('Abgeschlossene Heizkostenabrechnung: eindeutig je Anlage und Heizperiode, 
     assert.ok(rejects(connection, abschluss('a4', '2026-13')), 'Monat 13')
     assert.equal(rejects(connection, "INSERT INTO closed_heating_settlement_history (id, plant_id, period, closed_at, reopened_at, settlement) VALUES ('v1', 'hp1', '2025-05', '2027-01-10', '2027-02-01', '{}')"), null)
     assert.ok(rejects(connection, "DELETE FROM heating_plants WHERE id = 'hp1'"), 'ein Abschluss hält die Anlage')
+  } finally {
+    cleanup()
+  }
+})
+
+// ---------- CO₂ (Heizung PR 6) ----------
+
+const eineHeizperiode = [
+  "INSERT INTO heating_plants (id, property_id, energy, method) VALUES ('hp1', 'objekt-1', 'gas', 'service')",
+  "INSERT INTO heating_periods (id, plant_id, period) VALUES ('h1', 'hp1', '2025-01')",
+]
+
+test('CO₂: eine Zeile je Heizperiode, Summen beim Messdienst Pflicht, Grenzen der Werte', async () => {
+  const { connection, cleanup } = await freshDb()
+  try {
+    for (const sql of eineHeizperiode) connection.exec(sql)
+    assert.ok(rejects(connection, "INSERT INTO co2_statements (heating_period_id, method) VALUES ('h1', 'serviceDeducted')"), 'Vorwegabzug ohne S, L und NE')
+    assert.equal(rejects(connection, "INSERT INTO co2_statements (heating_period_id, method, service_users_total_cents, service_landlord_cents, service_units_count) VALUES ('h1', 'serviceDeducted', 384551, 8750, 4)"), null)
+    assert.ok(rejects(connection, "INSERT INTO co2_statements (heating_period_id, method) VALUES ('h1', 'selfAfterService')"), 'eine zweite Zeile für dieselbe Heizperiode')
+    assert.deepEqual(connection.rows("SELECT service_users_total_approx FROM co2_statements")[0], [0])
+    assert.ok(rejects(connection, "UPDATE co2_statements SET method = 'geschaetzt'"), 'unbekannte Methode')
+    assert.ok(rejects(connection, 'UPDATE co2_statements SET service_landlord_permille = 1001'), 'über 1000 ‰')
+    assert.ok(rejects(connection, 'UPDATE co2_statements SET service_units_count = 0'), 'keine Nutzeinheit')
+    assert.ok(rejects(connection, 'UPDATE co2_statements SET service_landlord_cents = -1'), 'negativer CO₂-Anteil')
+    assert.ok(rejects(connection, 'UPDATE co2_statements SET area_m2 = 0'), 'Fläche 0')
+    assert.equal(rejects(connection, "UPDATE co2_statements SET method = 'selfAfterService', service_users_total_cents = NULL, service_landlord_cents = NULL, service_units_count = NULL"), null)
+  } finally {
+    cleanup()
+  }
+})
+
+test('CO₂: Beträge je Mietverhältnis fallen mit Mietverhältnis und Datensatz, die Position wird nur gelöst', async () => {
+  const { connection, cleanup } = await freshDb()
+  try {
+    connection.exec(einWohnung)
+    connection.exec("INSERT INTO tenancies (id, unit_id, tenant_name, persons, start) VALUES ('t1', 'u1', 'Meier', 2, '2025-01-01')")
+    for (const sql of eineHeizperiode) connection.exec(sql)
+    connection.exec(
+      "INSERT INTO cost_items (id, property_id, period, category, description, amount_cents, key, heating_plant_id) VALUES ('c1', 'objekt-1', '2025-01', 'Heizung und Warmwasser', 'Messdienst', 100000, 'amounts', 'hp1')",
+    )
+    connection.exec("INSERT INTO co2_statements (heating_period_id, method, service_users_total_cents, service_landlord_cents, service_units_count, service_cost_item_id) VALUES ('h1', 'serviceShown', 100000, 5000, 1, 'c1')")
+    connection.exec("INSERT INTO co2_tenant_reliefs (statement_id, tenancy_id, cents) VALUES ('h1', 't1', 2500)")
+    assert.ok(rejects(connection, "INSERT INTO co2_tenant_reliefs (statement_id, tenancy_id, cents) VALUES ('h1', 't1', 100)"), 'derselbe Mieter zweimal')
+    assert.ok(rejects(connection, "UPDATE co2_tenant_reliefs SET cents = -1"), 'negativer Betrag')
+    const zahl = (table: string) => Number(connection.rows(`SELECT count(*) FROM ${table}`)[0]?.[0])
+    connection.exec("DELETE FROM cost_items WHERE id = 'c1'")
+    assert.deepEqual(connection.rows('SELECT service_cost_item_id FROM co2_statements')[0], [null])
+    connection.exec("DELETE FROM tenancies WHERE id = 't1'")
+    assert.equal(zahl('co2_tenant_reliefs'), 0, 'der Betrag fällt mit dem Mietverhältnis')
+    connection.exec("DELETE FROM heating_periods WHERE id = 'h1'")
+    assert.equal(zahl('co2_statements'), 0, 'der Datensatz fällt mit der Heizperiode')
   } finally {
     cleanup()
   }

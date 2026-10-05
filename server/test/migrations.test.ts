@@ -83,6 +83,9 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // Heizung PR 5. Wird PR 4 vor dem Push neu erzeugt, wird dieser Schritt neu erzeugt und die Marke
   // hier ersetzt.
   '0020_heizperiode': '3ea767aa7c4597181555eeda5b781ce48c144e46421244fe0d5dc3060c36d83e',
+  // Heizung PR 6. Wird PR 5 vor dem Push neu erzeugt, wird dieser Schritt neu erzeugt und die
+  // Marke hier ersetzt.
+  '0021_co2_messdienst': 'e4b544dd481fd450ea2b09f9c26ef9d6a04af39aaab90f3d2867b11de7ddc43a',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

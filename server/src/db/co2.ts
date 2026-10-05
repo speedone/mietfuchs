@@ -1,0 +1,312 @@
+// CO₂-Angaben und Warmwasser je Heizperiode (Heizung PR 6, #97, #209, #211; Entwurf 5.5, 7, 11.3).
+//
+// Eine Heizperiode bekommt ihre Zeile in `heating_periods` (PR 4), sobald jemand etwas zu ihr
+// speichert. Daran hängen die CO₂-Angaben (`co2_statements`, eine Zeile je Heizperiode) und die
+// Beträge „vom Vermieter übernommen“ je Mietverhältnis (`co2_tenant_reliefs`).
+//
+// Welche Heizperioden es gibt, rechnet shared/period.ts aus dem Rhythmus der Anlage (eigene
+// Heizperiode, PR 5) oder, ohne eigenen, aus dem des Objekts. Eine Heizperiode gehört in die
+// Abrechnung des Objektzeitraums, der ihr Ende enthält (Entwurf 3.0, W1).
+//
+// Gespeichert wird nur, was diese Version rechnet: Angaben eines Messdienstes oder der Gemeinschaft
+// (Methode der Anlage `service`). Die eigene Aufteilung (`self`, freie Schlüssel) kommt mit PR 7.
+//
+// Diese Datei importiert aus repository.ts und read.ts, nie umgekehrt.
+import { and, count, eq, inArray } from 'drizzle-orm'
+import type { BillingPeriod, Co2Statement, Co2TenantRelief, HeatingPeriodView, HeatingPlant, PeriodKey, PeriodRules } from '../../../shared/types.ts'
+import { HEATING_CATEGORY } from '../../../shared/heating.ts'
+import { co2ApplicableFrom, co2FirstPeriodStart } from '../../../shared/law/co2kostaufg.ts'
+import { germanDate, valueAt } from '../../../shared/law/register.ts'
+import { heatingPeriodsEndingIn, plantRules, settledSeparately } from '../../../shared/heatingPeriod.ts'
+import { parsePeriodKey, periodContaining, periodLabel, periodOfKey, resolvePeriodParam, rulesOf } from '../../../shared/period.ts'
+import { newId } from '../store.ts'
+import type { Database, Executor } from './client.ts'
+import { readCo2Statements, readCostItems, readHeatingPlants, readProperties } from './read.ts'
+import { asNullableFilled, CrossPropertyError, has, HeatingError, merged, oneOfOrUndefined, raw } from './repository.ts'
+import {
+  closedHeatingSettlements, closedSettlements, CO2_METHODS, co2Statements, co2TenantReliefs, costItems, DHW_METHODS, heatingPeriods, tenancies,
+  units,
+} from './schema.ts'
+
+const ASK_METHOD = 'Bitte beantworten Sie zuerst die Frage, ob die Kostenaufstellung eine Zeile wie „Abzüglich CO₂-Kosten Vermieter“ enthält.'
+const LATER_SELF = 'Die eigene Aufteilung der CO₂-Kosten aus der Brennstoffrechnung kommt mit einer späteren Version. Übernehmen Sie bis dahin die Angaben Ihres Messdienstes.'
+const LATER_MANUAL = 'Bei freien Schlüsseln teilt Mietfuchs die CO₂-Kosten erst mit einer späteren Version selbst auf. CO₂-Angaben eines Messdienstes gehören zu einer Heizanlage, die ein Messdienst oder die Gemeinschaft abrechnet.'
+const closedText = (h: BillingPeriod) =>
+  `Die Heizperiode ${periodLabel(h)} ist abgeschlossen; ihre Angaben bleiben, wie sie beim Abschluss waren. Öffnen Sie die Abrechnung wieder, um etwas zu ändern.`
+
+type PlantContext = { plant: HeatingPlant; objectRules: PeriodRules; plantRules: PeriodRules }
+
+// Die Anlage mit dem Rhythmus ihres Objekts und ihrem eigenen. Ohne eigenen Beginnmonat folgt die
+// Heizperiode dem Objekt samt seinen Wechseln (Entwurf 3.0); mit eigenem gelten Beginnmonat und
+// Wechsel der Anlage (`plantRules`, PR 5; `periodChanges` füllt `readHeatingPlants`).
+async function plantContext(db: Database, plantId: string): Promise<PlantContext | null> {
+  const plant = (await readHeatingPlants(db)).find((p) => p.id === plantId)
+  if (!plant) return null
+  const objectRules = rulesOf((await readProperties(db)).find((p) => p.id === plant.propertyId))
+  return { plant, objectRules, plantRules: plantRules(plant, objectRules) }
+}
+
+function heatingPeriodOf(ctx: PlantContext, text: string): BillingPeriod {
+  const key = parsePeriodKey(text)
+  const h = key === null ? null : periodOfKey(ctx.plantRules, key)
+  if (!h) throw new HeatingError(400, `Eine Heizperiode „${text}“ gibt es für diese Heizanlage nicht. Bitte laden Sie die Seite neu.`)
+  return h
+}
+
+// Abgeschlossen ist eine Heizperiode nach Weg d mit ihrer eigenen Heizkostenabrechnung
+// (`closed_heating_settlements`, PR 5); der Abschluss von P friert sie nicht ein (B3). Jede andere mit
+// der Abrechnung des Objektzeitraums, der ihr Ende enthält (W1).
+async function heatingPeriodClosed(db: Executor, ctx: PlantContext, h: BillingPeriod): Promise<boolean> {
+  if (settledSeparately(ctx.plant, ctx.objectRules, h)) {
+    const [heizung] = await db
+      .select({ n: count() })
+      .from(closedHeatingSettlements)
+      .where(and(eq(closedHeatingSettlements.plantId, ctx.plant.id), eq(closedHeatingSettlements.period, h.key)))
+    return (heizung?.n ?? 0) > 0
+  }
+  const p = periodContaining(ctx.objectRules, h.to)
+  const [gesamt] = await db
+    .select({ n: count() })
+    .from(closedSettlements)
+    .where(and(eq(closedSettlements.propertyId, ctx.plant.propertyId), eq(closedSettlements.period, p.key)))
+  return (gesamt?.n ?? 0) > 0
+}
+
+async function ensureHeatingPeriod(db: Executor, plantId: string, key: PeriodKey): Promise<string> {
+  const [row] = await db.select({ id: heatingPeriods.id }).from(heatingPeriods).where(and(eq(heatingPeriods.plantId, plantId), eq(heatingPeriods.period, key)))
+  if (row) return row.id
+  const id = newId()
+  await db.insert(heatingPeriods).values({ id, plantId, period: key })
+  return id
+}
+
+// Eine Zeile in `heating_periods` ohne jede Angabe wird wieder entfernt. Sie entstand nur, damit
+// etwas an ihr hängen konnte; bliebe sie leer stehen, sperrte sie den Wechsel des Zeitraums der
+// Heizung (PR 5, heatingPeriodChange.ts: jede Zeile gilt dort als erfasste Angabe).
+async function dropIfEmpty(db: Executor, heatingPeriodId: string): Promise<void> {
+  const [row] = await db.select().from(heatingPeriods).where(eq(heatingPeriods.id, heatingPeriodId))
+  if (!row) return
+  const { id: _id, plantId: _plant, period: _period, ...data } = row
+  if (Object.values(data).some((v) => v !== null)) return
+  const [co2] = await db.select({ n: count() }).from(co2Statements).where(eq(co2Statements.heatingPeriodId, heatingPeriodId))
+  if ((co2?.n ?? 0) > 0) return
+  await db.delete(heatingPeriods).where(eq(heatingPeriods.id, heatingPeriodId))
+}
+
+// Die Heizperioden einer Anlage mit CO₂-Angaben, die noch nicht abgeschlossen sind. Abgeschlossene
+// sind eingefroren und lassen sich nicht mehr entfernen; sie dürfen einen Wechsel der Anlage
+// (Kesseltausch, andere Abrechnung) deshalb nicht sperren (Nachprüfung von PR 6).
+export async function openCo2Periods(db: Database, plantId: string): Promise<string[]> {
+  const ctx = await plantContext(db, plantId)
+  if (!ctx) return []
+  const open: string[] = []
+  for (const st of (await readCo2Statements(db)).filter((s) => s.plantId === plantId)) {
+    const h = periodOfKey(ctx.plantRules, st.period)
+    if (h === null || !(await heatingPeriodClosed(db, ctx, h))) open.push(st.period)
+  }
+  return open
+}
+
+// ---------- Lesen ----------
+
+// Die Heizperioden der Anlage, die im Abrechnungszeitraum P enden, mit ihren Angaben und den
+// Positionen der Anlage in dieser Heizperiode (für die Probe der Oberfläche). Ohne eigenen Rhythmus
+// genau P.
+export async function heatingPeriodViews(db: Database, plantId: string, periodParam: string): Promise<HeatingPeriodView[] | null> {
+  const ctx = await plantContext(db, plantId)
+  if (!ctx) return null
+  const resolved = resolvePeriodParam(ctx.objectRules, periodParam)
+  if ('error' in resolved) throw new HeatingError(400, resolved.error)
+  const p = resolved.period
+  const hs = heatingPeriodsEndingIn(ctx.plantRules, p)
+  const statements = (await readCo2Statements(db)).filter((s) => s.plantId === plantId)
+  const rows = await db.select().from(heatingPeriods).where(eq(heatingPeriods.plantId, plantId))
+  const items = (await readCostItems(db)).filter((c) => c.heatingPlantId === plantId && c.category === HEATING_CATEGORY)
+  const views: HeatingPeriodView[] = []
+  for (const h of hs) {
+    const row = rows.find((r) => r.period === h.key)
+    views.push({
+      plantId,
+      period: h.key,
+      label: periodLabel(h),
+      from: h.from,
+      to: h.to,
+      short: h.short,
+      closed: await heatingPeriodClosed(db, ctx, h),
+      hotWater: { dhwMethod: row?.dhwMethod ?? null, dhwUnmeasurable: row?.dhwUnmeasurable ?? null },
+      co2: statements.find((s) => s.period === h.key) ?? null,
+      items: items
+        .filter((c) => c.period === h.key)
+        .map((c) => ({ id: c.id, description: c.description, amountCents: c.amountCents, key: c.key, tenancyAmounts: c.tenancyAmounts, selfAmounts: c.selfAmounts })),
+    })
+  }
+  return views
+}
+
+// ---------- CO₂-Angaben ----------
+
+const nullableInt = (v: unknown): number | null => (typeof v === 'number' && Number.isInteger(v) ? v : null)
+const nullableNumber = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
+
+// Beträge je Mietverhältnis aus dem Rumpf: jede Kennung einmal, ganze Cent ab 0. Ein leerer Betrag
+// ist keine Angabe; ein ungültiger ist ein Fehler mit Satz, kein stilles Weglassen.
+function readReliefs(value: unknown): Co2TenantRelief[] {
+  if (!Array.isArray(value)) return []
+  const seen = new Set<string>()
+  const result: Co2TenantRelief[] = []
+  for (const row of value) {
+    const tenancyId = asNullableFilled(raw(row, 'tenancyId'))
+    const cents = raw(row, 'cents')
+    if (tenancyId === null || seen.has(tenancyId) || cents === null || cents === undefined || cents === '') continue
+    if (typeof cents !== 'number' || !Number.isInteger(cents) || cents < 0) {
+      throw new HeatingError(400, 'Ein Betrag „vom Vermieter übernommen“ ist ein Betrag ab 0 €.')
+    }
+    seen.add(tenancyId)
+    result.push({ tenancyId, cents })
+  }
+  return result
+}
+
+// Ein neuer Datensatz braucht die Antwort auf die Frage nach der Abzugszeile; eine Vorgabe gibt es
+// bewusst nicht (Entwurf 7.2).
+function newStatement(plantId: string, period: PeriodKey, body: unknown): Co2Statement {
+  const method = oneOfOrUndefined(CO2_METHODS, raw(body, 'method'))
+  if (method === undefined) throw new HeatingError(400, ASK_METHOD)
+  return {
+    heatingPeriodId: '', plantId, period, method, areaM2: null, serviceEmissionsKg: null, serviceAreaM2: null, serviceKgPerM2: null,
+    serviceLandlordPermille: null, serviceTotalCents: null, serviceLandlordCents: null, serviceUsersTotalCents: null,
+    serviceUsersTotalApprox: false, serviceUnitsCount: null, serviceCostItemId: null, serviceSelfLandlordCents: null,
+    serviceFuelGrossCents: null, serviceFuelNetCents: null, reliefs: [],
+  }
+}
+
+// Ergänzt, wie die Sammlungen in repository.ts: Was im Rumpf steht, ersetzt; was fehlt, bleibt.
+function mergeCo2(current: Co2Statement, body: unknown): Co2Statement {
+  return {
+    ...current,
+    method: merged(body, 'method', current.method, (v) => oneOfOrUndefined(CO2_METHODS, v) ?? current.method),
+    areaM2: merged(body, 'areaM2', current.areaM2, nullableNumber),
+    serviceEmissionsKg: merged(body, 'serviceEmissionsKg', current.serviceEmissionsKg, nullableNumber),
+    serviceAreaM2: merged(body, 'serviceAreaM2', current.serviceAreaM2, nullableNumber),
+    serviceKgPerM2: merged(body, 'serviceKgPerM2', current.serviceKgPerM2, nullableNumber),
+    serviceLandlordPermille: merged(body, 'serviceLandlordPermille', current.serviceLandlordPermille, nullableInt),
+    serviceTotalCents: merged(body, 'serviceTotalCents', current.serviceTotalCents, nullableInt),
+    serviceLandlordCents: merged(body, 'serviceLandlordCents', current.serviceLandlordCents, nullableInt),
+    serviceUsersTotalCents: merged(body, 'serviceUsersTotalCents', current.serviceUsersTotalCents, nullableInt),
+    serviceUsersTotalApprox: merged(body, 'serviceUsersTotalApprox', current.serviceUsersTotalApprox, (v) => v === true),
+    serviceUnitsCount: merged(body, 'serviceUnitsCount', current.serviceUnitsCount, nullableInt),
+    serviceCostItemId: merged(body, 'serviceCostItemId', current.serviceCostItemId, asNullableFilled),
+    serviceSelfLandlordCents: merged(body, 'serviceSelfLandlordCents', current.serviceSelfLandlordCents, nullableInt),
+    serviceFuelGrossCents: merged(body, 'serviceFuelGrossCents', current.serviceFuelGrossCents, nullableInt),
+    serviceFuelNetCents: merged(body, 'serviceFuelNetCents', current.serviceFuelNetCents, nullableInt),
+    reliefs: merged(body, 'reliefs', current.reliefs, readReliefs),
+  }
+}
+
+async function guardCo2(db: Executor, ctx: PlantContext, h: BillingPeriod, st: Co2Statement): Promise<void> {
+  if (st.method === 'self') throw new HeatingError(400, LATER_SELF)
+  if (ctx.plant.method !== 'service') throw new HeatingError(400, LATER_MANUAL)
+  if (!valueAt(co2ApplicableFrom, h.from)) {
+    throw new HeatingError(400, `Die CO₂-Kosten sind erst für Abrechnungszeiträume aufzuteilen, die am oder nach dem ${germanDate(co2FirstPeriodStart())} beginnen (§ 11 Abs. 2 Satz 1 CO2KostAufG); diese Heizperiode beginnt früher.`)
+  }
+  if (st.method === 'serviceDeducted' || st.method === 'serviceShown') {
+    if (st.serviceUsersTotalCents === null || st.serviceUsersTotalCents < 0) {
+      throw new HeatingError(400, 'Bitte tragen Sie die Summe der Kosten aller Nutzer für Heizung und Warmwasser ein, so wie sie in der Kostenaufstellung steht, oder kreuzen Sie „Ich finde diese Zeile nicht“ an.')
+    }
+    if (st.serviceLandlordCents === null || st.serviceLandlordCents < 0) {
+      throw new HeatingError(400, 'Bitte tragen Sie den CO₂-Anteil des Vermieters in Euro ein, wie ihn die Abrechnung nennt.')
+    }
+    if (st.serviceUnitsCount === null || st.serviceUnitsCount < 1) {
+      throw new HeatingError(400, 'Bitte tragen Sie die Zahl der Nutzeinheiten laut Abrechnung ein, mindestens 1.')
+    }
+  }
+  if (st.serviceCostItemId !== null) {
+    const [c] = await db.select({ plantId: costItems.heatingPlantId, period: costItems.period, key: costItems.key }).from(costItems).where(eq(costItems.id, st.serviceCostItemId))
+    if (!c || c.plantId !== ctx.plant.id || String(c.period) !== h.key || c.key !== 'amounts') {
+      throw new HeatingError(400, 'Die gewählte Position gehört nicht zu den Einzelbeträgen des Messdienstes dieser Heizperiode. Bitte wählen Sie eine Position der Heizanlage mit dem Schlüssel Einzelbeträge.')
+    }
+  }
+  // Beträge je Mietverhältnis nur für Mietverhältnisse desselben Objekts (Objektgrenze, #92).
+  const ids = st.reliefs.map((r) => r.tenancyId)
+  if (ids.length > 0) {
+    const rows = await db.select({ id: tenancies.id, propertyId: units.propertyId }).from(tenancies).innerJoin(units, eq(tenancies.unitId, units.id)).where(inArray(tenancies.id, ids))
+    if (rows.some((r) => r.propertyId !== ctx.plant.propertyId)) {
+      throw new CrossPropertyError('Ein Betrag „vom Vermieter übernommen“ gehört zu einem Mietverhältnis eines anderen Objekts als die Heizanlage. Bitte wählen Sie ein Mietverhältnis desselben Objekts.')
+    }
+    if (rows.length < ids.length) {
+      throw new HeatingError(400, 'Ein Mietverhältnis, für das ein Betrag „vom Vermieter übernommen“ eingetragen ist, gibt es nicht (mehr). Bitte laden Sie die Seite neu.')
+    }
+  }
+}
+
+const co2Row = (st: Co2Statement, heatingPeriodId: string) => ({
+  heatingPeriodId, method: st.method, areaM2: st.areaM2, serviceEmissionsKg: st.serviceEmissionsKg, serviceAreaM2: st.serviceAreaM2,
+  serviceKgPerM2: st.serviceKgPerM2, serviceLandlordPermille: st.serviceLandlordPermille, serviceTotalCents: st.serviceTotalCents,
+  serviceLandlordCents: st.serviceLandlordCents, serviceUsersTotalCents: st.serviceUsersTotalCents, serviceUsersTotalApprox: st.serviceUsersTotalApprox,
+  serviceUnitsCount: st.serviceUnitsCount, serviceCostItemId: st.serviceCostItemId, serviceSelfLandlordCents: st.serviceSelfLandlordCents,
+  serviceFuelGrossCents: st.serviceFuelGrossCents, serviceFuelNetCents: st.serviceFuelNetCents,
+})
+
+// `null`, wenn es die Anlage nicht gibt; die Route macht daraus ihre 404.
+export async function saveCo2Statement(db: Database, plantId: string, period: string, body: unknown): Promise<Co2Statement | null> {
+  const ctx = await plantContext(db, plantId)
+  if (!ctx) return null
+  const h = heatingPeriodOf(ctx, period)
+  const current = (await readCo2Statements(db)).find((s) => s.plantId === plantId && s.period === h.key) ?? null
+  const next = mergeCo2(current ?? newStatement(plantId, h.key, body), body)
+  await db.transaction(async (tx) => {
+    if (await heatingPeriodClosed(tx, ctx, h)) throw new HeatingError(409, closedText(h))
+    await guardCo2(tx, ctx, h, next)
+    const heatingPeriodId = await ensureHeatingPeriod(tx, plantId, h.key)
+    const { heatingPeriodId: _id, ...rest } = co2Row(next, heatingPeriodId)
+    if (current) await tx.update(co2Statements).set(rest).where(eq(co2Statements.heatingPeriodId, heatingPeriodId))
+    else await tx.insert(co2Statements).values(co2Row(next, heatingPeriodId))
+    await tx.delete(co2TenantReliefs).where(eq(co2TenantReliefs.statementId, heatingPeriodId))
+    if (next.reliefs.length > 0) {
+      await tx.insert(co2TenantReliefs).values(next.reliefs.map((r) => ({ statementId: heatingPeriodId, tenancyId: r.tenancyId, cents: r.cents })))
+    }
+  })
+  return (await readCo2Statements(db)).find((s) => s.plantId === plantId && s.period === h.key) ?? null
+}
+
+// `true` entfernt, `false` gab es nicht, `null` keine Anlage.
+export async function removeCo2Statement(db: Database, plantId: string, period: string): Promise<boolean | null> {
+  const ctx = await plantContext(db, plantId)
+  if (!ctx) return null
+  const h = heatingPeriodOf(ctx, period)
+  const current = (await readCo2Statements(db)).find((s) => s.plantId === plantId && s.period === h.key)
+  if (!current) return false
+  await db.transaction(async (tx) => {
+    if (await heatingPeriodClosed(tx, ctx, h)) throw new HeatingError(409, closedText(h))
+    await tx.delete(co2Statements).where(eq(co2Statements.heatingPeriodId, current.heatingPeriodId))
+    await dropIfEmpty(tx, current.heatingPeriodId)
+  })
+  return true
+}
+
+// ---------- Warmwasser laut Messdienst (#211, Entwurf 7.7) ----------
+
+// Wie der Messdienst die Wärme für das Warmwasser ermittelt hat, und bei einer Formel, ob das Messen
+// nur mit unzumutbar hohem Aufwand möglich wäre (§ 9 Abs. 2 Satz 2 HeizkostenV). Die Bestätigung
+// gibt es nur zu einer Formel.
+export async function saveHotWater(db: Database, plantId: string, period: string, body: unknown): Promise<HeatingPeriodView['hotWater'] | null> {
+  const ctx = await plantContext(db, plantId)
+  if (!ctx) return null
+  if (ctx.plant.method !== 'service') {
+    throw new HeatingError(400, 'Die Angabe, wie die Wärme für das Warmwasser ermittelt wurde, gibt es hier nur bei einer Heizanlage, die ein Messdienst oder die Gemeinschaft abrechnet. Bei eigener Abrechnung rechnet Mietfuchs den Warmwasseranteil mit einer späteren Version selbst.')
+  }
+  const h = heatingPeriodOf(ctx, period)
+  const text = raw(body, 'dhwMethod')
+  const dhwMethod = text === null || text === undefined || text === '' ? null : oneOfOrUndefined(DHW_METHODS, text)
+  if (dhwMethod === undefined) throw new HeatingError(400, 'Dieses Verfahren für das Warmwasser kennt Mietfuchs nicht. Bitte wählen Sie aus der Liste.')
+  const formula = dhwMethod === 'volumeFormula' || dhwMethod === 'areaFormula'
+  const answer = raw(body, 'dhwUnmeasurable')
+  const dhwUnmeasurable = formula && has(body, 'dhwUnmeasurable') && typeof answer === 'boolean' ? answer : null
+  await db.transaction(async (tx) => {
+    if (await heatingPeriodClosed(tx, ctx, h)) throw new HeatingError(409, closedText(h))
+    const heatingPeriodId = await ensureHeatingPeriod(tx, plantId, h.key)
+    await tx.update(heatingPeriods).set({ dhwMethod, dhwUnmeasurable }).where(eq(heatingPeriods.id, heatingPeriodId))
+    await dropIfEmpty(tx, heatingPeriodId)
+  })
+  return { dhwMethod, dhwUnmeasurable }
+}

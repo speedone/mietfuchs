@@ -302,3 +302,19 @@ test('Heizanlage: jede Bedingung, deren Endung allein den falschen Satz ergäbe,
     assert.doesNotMatch(wasser, /JJJJ-MM/, wasser)
   })
 })
+
+test('CO₂-Angaben: jede Bedingung, deren Endung allein den falschen Satz ergäbe, hat ihren eigenen (Heizung PR 6)', async () => {
+  // Die Schreibprüfung in db/co2.ts fängt das vorher ab; die Bedingungen sind das Netz darunter.
+  // „Gemeinschaftsabrechnung“ oder „JJJJ-MM“ wären hier falsch.
+  await withDatabase(async (opened) => {
+    const run = (statement: string) => messageOfFailure(opened, () => opened.write((db) => db.run(sql.raw(statement))))
+    await opened.write((db) => db.run(sql.raw("INSERT INTO heating_plants (id, property_id, energy, method) VALUES ('hp1', 'objekt-1', 'gas', 'service')")))
+    await opened.write((db) => db.run(sql.raw("INSERT INTO heating_periods (id, plant_id, period) VALUES ('h1', 'hp1', '2025-01')")))
+    const summen = await run("INSERT INTO co2_statements (heating_period_id, method) VALUES ('h1', 'serviceDeducted')")
+    assert.match(summen, /Summe der Kosten aller Nutzer/, summen)
+    assert.doesNotMatch(summen, /Gemeinschaft/, summen)
+    const anteil = await run("INSERT INTO co2_statements (heating_period_id, method, service_landlord_permille) VALUES ('h1', 'selfAfterService', 1001)")
+    assert.match(anteil, /Anteil des Vermieters/, anteil)
+    assert.doesNotMatch(anteil, /JJJJ-MM/, anteil)
+  })
+})

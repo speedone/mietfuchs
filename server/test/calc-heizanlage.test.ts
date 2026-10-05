@@ -12,6 +12,7 @@ import {
 } from '../src/snapshot.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import { calendarPeriod } from '../../shared/period.ts'
+import { withoutCo2 } from '../testing/co2.ts'
 
 const unit = (id: string, over: Partial<SnapshotUnit> = {}): SnapshotUnit => ({ id, name: id, areaM2: 50, participates: true, ...over })
 const tenancy = (id: string, unitId: string, over: Partial<SnapshotTenancy> = {}): SnapshotTenancy => ({
@@ -35,7 +36,7 @@ const settle = (s: Partial<SnapshotSource>, y = 2025, plants?: SnapshotHeatingPl
 const share = (r: ComputedSettlement, tenancyId: string, itemId: string): number | undefined =>
   r.statements.find((st) => st.tenancyId === tenancyId)?.rows.find((row) => row.costItemId === itemId)?.shareCents
 const plant = (over: Partial<SnapshotHeatingPlant> = {}): SnapshotHeatingPlant => ({
-  id: 'hp1', method: 'manual', source: 'building', devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', newDevicesInstall: null, units: null, ...over,
+  id: 'hp1', name: 'Heizung', energy: 'gas', method: 'manual', source: 'building', devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', newDevicesInstall: null, units: null, ...over,
 })
 
 // ---------- Wasserschlüssel (G-B8) ----------
@@ -123,8 +124,8 @@ test('Anlage mit Vorgaben: jede Abrechnung bleibt gleich, über das ganze Ergebn
     }
     const ohne = settle(s, y)
     const anlagen = [plant(), plant({ method: 'service' }), plant({ method: 'service', source: 'homeowners' }), plant({ units: [{ unitId: 'a', heatedAreaM2: null }] })]
-    for (const p of anlagen) assert.deepEqual(settle(s, y, [p]), ohne, `${y}: ${JSON.stringify(p)}`)
-    assert.deepEqual(settle(s, y, []), ohne, `${y}: leere Liste`)
+    for (const p of anlagen) assert.deepEqual(withoutCo2(settle(s, y, [p])), withoutCo2(ohne), `${y}: ${JSON.stringify(p)}`)
+    assert.deepEqual(withoutCo2(settle(s, y, [])), withoutCo2(ohne), `${y}: leere Liste`)
   }
 })
 

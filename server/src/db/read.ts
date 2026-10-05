@@ -17,14 +17,15 @@
 // zwar in aller Regel die rowid-Reihenfolge, zugesichert ist das aber nicht; sobald ein Index
 // die Abfrage bedient, kann es anders kommen.
 
-import { sql } from 'drizzle-orm'
-import type { AiConsent, AiSettings, AiSlot, CostItem, HeatingPlant, Meter, Payment, PeriodKey, Property, Reading, Settings, Tenancy, Unit } from '../../../shared/types.ts'
+import { eq, sql } from 'drizzle-orm'
+import type { AiConsent, AiSettings, AiSlot, Co2Statement, CostItem, HeatingPeriodData, HeatingPlant, Meter, Payment, PeriodKey, Property, Reading, Settings, Tenancy, Unit } from '../../../shared/types.ts'
+import { periodKey } from '../../../shared/period.ts'
 import { migrateAi, type MigratedSettings } from '../ai/settings.ts'
 import { DEFAULT_SETTINGS } from '../defaults.ts'
 import { frozenSettlementOf, type FrozenItemSelfUse, type SnapshotSource } from '../snapshot.ts'
 import type { Database } from './client.ts'
 import {
-  aiSlots, baseRents, closedHeatingSettlements, closedSettlements, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, unitNoConnection, meters, payments,
+  aiSlots, baseRents, closedHeatingSettlements, co2Statements, co2TenantReliefs, heatingPeriods, closedSettlements, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, unitNoConnection, meters, payments,
   flatRates, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingPrepaymentOverrides, heatingPrepayments, heatingSeparateSpans, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, readings, settings, tenancies, units,
 } from './schema.ts'
 
@@ -58,6 +59,9 @@ export type Stock = SnapshotSource & {
   costItems: CostItem[]
   meters: Meter[]
   heatingPlants: HeatingPlant[]
+  // CO₂-Angaben und Zeilen der Heizperioden (Heizung PR 6)
+  co2Statements: Co2Statement[]
+  heatingPeriodRows: HeatingPeriodData[]
   readings: Reading[]
   payments: Payment[]
   closedSettlements: StoredClosedSettlement[]
@@ -299,6 +303,29 @@ export async function readHeatingPlants(db: Database): Promise<HeatingPlant[]> {
   }))
 }
 
+// Die CO₂-Angaben je Heizperiode (Heizung PR 6), mit Anlage und Heizperiode aus `heating_periods`
+// und den Beträgen „vom Vermieter übernommen“ je Mietverhältnis.
+export async function readCo2Statements(db: Database): Promise<Co2Statement[]> {
+  const rows = await db
+    .select({ statement: co2Statements, plantId: heatingPeriods.plantId, period: heatingPeriods.period })
+    .from(co2Statements)
+    .innerJoin(heatingPeriods, eq(co2Statements.heatingPeriodId, heatingPeriods.id))
+    .orderBy(sql`"co2_statements".rowid`)
+  const reliefs = await db.select().from(co2TenantReliefs).orderBy(INSERTION_ORDER)
+  const byStatement = groupBy(reliefs, (r) => r.statementId, (r) => ({ tenancyId: r.tenancyId, cents: r.cents }))
+  return rows.map(({ statement, plantId, period }) => ({
+    ...statement,
+    plantId,
+    period: periodKey(String(period)),
+    reliefs: byStatement.get(statement.heatingPeriodId) ?? [],
+  }))
+}
+
+// Die Zeilen der Heizperioden (PR 4), für die Angaben zum Warmwasser im Schnappschuss.
+export async function readHeatingPeriodRows(db: Database): Promise<HeatingPeriodData[]> {
+  return await db.select().from(heatingPeriods).orderBy(INSERTION_ORDER)
+}
+
 export async function readReadings(db: Database): Promise<Reading[]> {
   const rows = await db.select().from(readings).orderBy(INSERTION_ORDER)
   return rows.map((r) => ({
@@ -366,6 +393,8 @@ export async function readStock(db: Database): Promise<Stock> {
     costItems: await readCostItems(db),
     meters: await readMeters(db),
     heatingPlants: await readHeatingPlants(db),
+    co2Statements: await readCo2Statements(db),
+    heatingPeriodRows: await readHeatingPeriodRows(db),
     readings: await readReadings(db),
     payments: await readPayments(db),
     closedSettlements: await readClosedSettlements(db),

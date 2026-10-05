@@ -408,6 +408,40 @@ async function heatingPlant() {
     'die Abrechnung bleibt mit Heizanlage dieselbe', { vorher: vorher.totalCostsCents, nachher: nachher.totalCostsCents })
 }
 
+// CO₂ beim Messdienst (Heizung PR 6): ohne Angaben nennt die Abrechnung die Kürzung, mit Vorwegabzug
+// bucht sie den CO₂-Anteil des Vermieters. Das Objekt der Prüfung rechnet im Kalenderjahr. Danach
+// werden Angaben und Position wieder entfernt, damit die Prüfung der eigenen Heizperiode (PR 5)
+// denselben Bestand vorfindet wie vorher.
+async function co2Statement() {
+  const [anlage] = (await request('/api/heating-plants')).body
+  const [mieter] = (await request('/api/tenancies')).body
+  const posten = await request('/api/costItems', json('POST', {
+    period: '2025-01', category: 'Heizung und Warmwasser', description: 'Messdienst', amountCents: 100500, key: 'amounts', tenancyAmounts: { [mieter.id]: 100000 },
+  }))
+  assert(posten.body.heatingPlantId === anlage?.id, 'die Messdienstposition gehört zur Heizanlage', posten.body)
+  const ohne = (await request('/api/settlement/2025')).body
+  assert(ohne.notices?.some((n) => n.code === 'co2.missing'), 'ohne CO₂-Angaben nennt die Abrechnung die Kürzung', ohne.notices)
+  const gespeichert = await request(`/api/heating-plants/${anlage.id}/periods/2025-01/co2`, json('PUT', {
+    method: 'serviceDeducted', serviceUsersTotalCents: 100000, serviceLandlordCents: 500, serviceUnitsCount: 1,
+  }))
+  assert(gespeichert.status === 200 && gespeichert.body.method === 'serviceDeducted', 'CO₂-Angaben speichern', gespeichert.body)
+  const mit = (await request('/api/settlement/2025')).body
+  const anteil = mit.landlord?.rows?.find((r) => r.costItemId === posten.body.id)?.landlordParts?.find((p) => p.reason === 'co2Share')?.cents
+  assert(anteil === 500 && mit.heating?.[0]?.co2?.booked === true, 'die Abrechnung bucht den CO₂-Anteil des Vermieters', { anteil, heating: mit.heating })
+  const weg = await request(`/api/heating-plants/${anlage.id}/periods/2025-01/co2`, { method: 'DELETE' })
+  assert(weg.status === 200 && weg.body.removed === true, 'CO₂-Angaben entfernen', weg.body)
+  await request(`/api/costItems/${posten.body.id}`, { method: 'DELETE' })
+}
+
+// Nach der eigenen Heizperiode (Mai bis April): eine Angabe für die Heizperiode, die in 2025 endet,
+// damit die Wiederherstellung sie mitprüfen kann.
+async function co2ForBackup() {
+  const [anlage] = (await request('/api/heating-plants')).body
+  const [periode] = (await request(`/api/heating-plants/${anlage.id}/periods?period=2025`)).body
+  const gespeichert = await request(`/api/heating-plants/${anlage.id}/periods/${periode?.period}/co2`, json('PUT', { method: 'selfAfterService' }))
+  assert(gespeichert.status === 200 && gespeichert.body.method === 'selfAfterService', 'CO₂-Angaben der Heizperiode 2024/2025', gespeichert.body)
+}
+
 // Eigene Heizperiode und getrennte Heizkostenabrechnung (Heizung PR 5): Zeitraum der Heizung über die
 // Vorschau, Weg d ab 05/2025 einschalten, Heizkostenabrechnung 2025/2026 mit eigener Frist lesen.
 async function heatingPeriod() {
@@ -453,6 +487,8 @@ async function backupAndRestore(unit) {
   const anlagen = (await request('/api/heating-plants')).body
   assert(Array.isArray(anlagen) && anlagen.length === 1, 'die Heizanlage ist nach der Wiederherstellung da', anlagen)
   assert(anlagen[0]?.periodStartMonth === 5 && anlagen[0]?.separateSpans?.length === 1, 'Heizperiode und getrennte Abrechnung sind nach der Wiederherstellung da', anlagen)
+  const perioden = (await request(`/api/heating-plants/${anlagen[0].id}/periods?period=2025`)).body
+  assert(perioden?.[0]?.co2?.method === 'selfAfterService', 'die CO₂-Angaben sind nach der Wiederherstellung da', perioden)
   const uploads = (await request('/api/uploads')).body.map((u) => u.file)
   assert(uploads.some((f) => /Gebührenbescheid_Müll\.pdf$/.test(f)), 'Belege sind nach der Wiederherstellung da', uploads)
   // Das Wiederherstellen schließt die Datenbank, tauscht die Datei und öffnet sie neu. Ob das
@@ -497,7 +533,9 @@ async function main() {
   await openAiExtraction()
   const unit = await uploadsAndSettlement()
   await heatingPlant()
+  await co2Statement()
   await heatingPeriod()
+  await co2ForBackup()
   await backupAndRestore(unit)
   console.log(`\nAlle ${passed} Prüfungen bestanden.`)
 }

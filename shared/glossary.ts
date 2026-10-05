@@ -15,12 +15,34 @@
 // nach Verbrauch“) sind gewählt und bleiben stehen.
 import { hkvConsumptionShare, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit } from './law/heizkostenv.ts'
 import { germanDate, LAW_AS_OF, onlyVersion, valueAt } from './law/register.ts'
+import { co2CutMissing, co2FirstPeriodStart, co2RoundingDecimals, co2StageTable } from './law/co2kostaufg.ts'
 
 const SHARE = valueAt(hkvConsumptionShare, LAW_AS_OF)
 const CUT = valueAt(hkvCutNotByConsumption, LAW_AS_OF)
 const REMOTE_CUT = valueAt(hkvCutRemoteReading, LAW_AS_OF)
 const NEW_DEVICES_AFTER = germanDate(valueAt(hkvRemoteReadingNewDevices, LAW_AS_OF).installedAfter)
 const RETROFIT_FROM = germanDate(onlyVersion(hkvRemoteReadingRetrofit).validFrom ?? '')
+
+// CO₂ (Heizung PR 6): die Stufentabelle, die Rundung und die 3 % aus dem Register. Die Stufe eines
+// Beispielwerts wird hier nachgeschlagen wie in server/src/co2.ts (unten einschließend), damit das
+// Beispiel dieselbe Stufe nennt wie die Rechnung.
+const CO2_CUT = valueAt(co2CutMissing, LAW_AS_OF)
+const CO2_FROM = germanDate(co2FirstPeriodStart())
+const CO2_DECIMALS = valueAt(co2RoundingDecimals, LAW_AS_OF)
+const STAGES = valueAt(co2StageTable, LAW_AS_OF)
+function stageText(value: number): { range: string; percent: number } {
+  let i = 0
+  for (let k = 0; k < STAGES.length; k++) if (value >= (STAGES[k]?.from ?? Infinity)) i = k
+  const stage = STAGES[i]
+  const next = STAGES[i + 1]
+  if (!stage) throw new Error('Stufentabelle leer')
+  return { range: next ? `${stage.from} bis unter ${next.from} kg` : `ab ${stage.from} kg`, percent: stage.landlordPercent }
+}
+const B1 = stageText(40.2)
+const FIRST = STAGES[0]
+const SECOND = STAGES[1]
+const LAST = STAGES[STAGES.length - 1]
+if (!FIRST || !SECOND || !LAST) throw new Error('Stufentabelle unvollständig')
 
 export type Term = {
   title: string
@@ -164,6 +186,47 @@ export const GLOSSARY = {
     example: `Im Wohnzimmer zeigt der Verteiler 420 Einheiten, im ganzen Haus sind es 4.200. Auf diesen Heizkörper entfällt damit ein Zehntel der Kosten nach Verbrauch, bei 2.100 € also 210 €. Ist das Gerät nicht fernablesbar, obwohl es das sein müsste, darf der Mieter seinen Anteil an den Heizkosten um ${REMOTE_CUT} % kürzen.`,
     norm: '§§ 5, 12 HeizkostenV',
     needed: 'Wenn Ihr Messdienst die Heizkosten nach Heizkostenverteilern abrechnet. Mietfuchs wertet ihre Einheiten noch nicht selbst aus; übernehmen Sie dafür die Abrechnung des Messdienstes als Einzelbeträge. Tragen Sie am Zähler ein, ob das Gerät fernablesbar ist und wann es eingebaut wurde; dann sagt die Abrechnung, ob Mieter kürzen dürfen.',
+  },
+  co2Split: {
+    title: 'CO₂-Kostenaufteilung',
+    short: 'Seit 2023 tragen Vermieter einen Teil der CO₂-Kosten der Heizung, und zwar umso mehr, je mehr CO₂ das Gebäude je Quadratmeter Wohnfläche ausstößt. Die Heizkostenabrechnung muss den Anteil des Mieters, die Einstufung des Gebäudes und die Berechnungsgrundlagen ausweisen.',
+    example: `600 € CO₂-Kosten in der Gasrechnung, 24.105,6 kg CO₂ bei 600 m² Wohnfläche: 40,2 kg je m², Stufe ${B1.range}. Der Vermieter trägt ${B1.percent} % der CO₂-Kosten, also ${(600 * B1.percent) / 100} €, die Mieter tragen ${600 - (600 * B1.percent) / 100} €. Fehlt die Aufteilung in der Heizkostenabrechnung, darf jeder Mieter seinen Anteil an den Heizkosten um ${CO2_CUT} % kürzen.`,
+    norm: '§§ 5, 7 CO2KostAufG',
+    needed: `Ja, wenn Sie mit Gas, Heizöl, Flüssiggas oder Kohle heizen oder Ihr Wärmelieferant CO₂-Kosten ausweist, für jeden Abrechnungszeitraum, der am oder nach dem ${CO2_FROM} beginnt. Rechnet ein Messdienst oder die Gemeinschaft ab, übernehmen Sie deren Angaben auf der Seite Heizkosten.`,
+  },
+  co2Stage: {
+    title: 'Einstufung (CO₂-Stufe)',
+    short: `Der CO₂-Ausstoß des Gebäudes in Kilogramm je Quadratmeter Wohnfläche und Jahr, auf ${CO2_DECIMALS === 1 ? 'eine Nachkommastelle' : `${CO2_DECIMALS} Nachkommastellen`} gerundet, ordnet das Gebäude einer von ${STAGES.length} Stufen zu. Die Stufe sagt, welchen Anteil der CO₂-Kosten der Vermieter trägt: von ${FIRST.landlordPercent} % unter ${SECOND.from} kg bis ${LAST.landlordPercent} % ab ${LAST.from} kg.`,
+    example: `24.105,6 kg CO₂ bei 600 m² ergeben 40,176 kg je m², gerundet 40,2: Stufe ${B1.range}, der Vermieter trägt ${B1.percent} %. Ist ein Abrechnungszeitraum von unter einem Jahr vereinbart, werden die Grenzen der Tabelle anteilig gekürzt.`,
+    norm: '§ 5 Abs. 1 und 2, Anlage CO2KostAufG',
+    needed: 'Nur zum Prüfen: Die Stufe steht in der Abrechnung des Messdienstes. Mietfuchs ordnet den Wert nach und meldet, wenn der Anteil des Vermieters nicht zur Tabelle passt.',
+  },
+  co2Area: {
+    title: 'Fläche der CO₂-Einstufung',
+    short: 'Die Wohnfläche, durch die der CO₂-Ausstoß des Gebäudes geteilt wird. Das Gesetz sagt nicht, nach welcher Berechnung sie zu bestimmen ist; Mietfuchs nimmt im Zweifel die Fläche aus der Abrechnung des Messdienstes, damit beide Angaben übereinstimmen.',
+    example: '5.421 kg CO₂ bei 200,6 m² laut Messdienst ergeben 27,02 kg je m², gerundet 27,0.',
+    norm: '§ 5 Abs. 1 CO2KostAufG',
+    needed: 'Nur, wenn Sie die Einstufung prüfen oder die Fläche des Messdienstes von Ihrer abweicht.',
+  },
+  serviceUnits: {
+    title: 'Nutzeinheit',
+    short: 'Jede Wohnung oder sonstige Einheit, die der Messdienst in seiner Heizkostenabrechnung einzeln abrechnet, auch eine leerstehende und Ihre eigene. Die Zahl steht in der Abrechnung, meist in der Kostenaufstellung oder auf dem Deckblatt.',
+    example: 'Ein Haus mit vier Wohnungen, eine davon steht leer: Der Messdienst rechnet vier Nutzeinheiten ab. Für die Probe in der Karte „CO₂-Kosten“ darf die Summe der eingetragenen Beträge wegen der Rundung je Nutzeinheit um bis zu 4 · 2 ct = 8 ct über der gedruckten Summe liegen.',
+    needed: 'Nur für die Probe der CO₂-Angaben auf der Seite Heizkosten.',
+  },
+  co2Deducted: {
+    title: 'Abzugszeile (Vorwegabzug)',
+    short: 'Manche Messdienste ziehen den CO₂-Anteil des Vermieters schon in der Kostenaufstellung ab, mit einer Zeile wie „Abzüglich CO₂-Kosten Vermieter“. Die Beträge der Mieter sind dann schon entlastet, und bezahlt haben Sie die Summe der Nutzerkosten plus diesen Anteil.',
+    example: 'Die Kostenaufstellung nennt „Anlieferung Brennstoff“ 3.540,00 €, darunter „Abzüglich CO₂-Kosten Vermieter“ 87,50 €, und verteilt 3.452,50 €. Zusammen mit Strom, Wartung und Messdienstkosten ergeben die Kosten aller Nutzer 3.845,51 €; bezahlt haben Sie 3.845,51 € + 87,50 € = 3.933,01 €, und das ist der Betrag Ihrer Position.',
+    norm: '§ 7 Abs. 1 CO2KostAufG',
+    needed: 'Ja, wenn Ihre Abrechnung eine solche Zeile hat: Dann beantworten Sie die Frage in der Karte „CO₂-Kosten“ auf der Seite Heizkosten mit „Ja“.',
+  },
+  hotWaterShare: {
+    title: 'Warmwasseranteil',
+    short: 'Bereitet die Heizung auch das Warmwasser, wird ein Teil ihrer Kosten dem Warmwasser zugerechnet. Die Wärme dafür ist mit einem Wärmezähler zu messen. Die Formel nach dem Warmwasserverbrauch ist nur erlaubt, wenn das Messen nur mit unzumutbar hohem Aufwand möglich wäre; die Formel nach der Wohnfläche nur, wenn weder die Wärmemenge noch das Volumen des verbrauchten Warmwassers gemessen werden kann.',
+    example: `Ein Mieter trägt 1.000 € Heiz- und Warmwasserkosten. Hat der Messdienst die Wärme für das Warmwasser ohne diesen Grund mit einer Formel bestimmt, darf der Mieter seinen Anteil um ${CUT} % kürzen, also um ${(1000 * CUT) / 100} €.`,
+    norm: '§ 9 Abs. 2 Satz 1, § 12 Abs. 1 Satz 1 HeizkostenV; BGH, Urteil vom 12.01.2022, VIII ZR 151/20',
+    needed: 'Nur, wenn die Abrechnung des Messdienstes sagt, dass die Wärme für das Warmwasser nach einer Formel bestimmt wurde. Dann tragen Sie das auf der Seite Heizkosten ein.',
   },
   cableTv: {
     title: 'Kabelfernsehen',

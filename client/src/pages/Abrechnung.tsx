@@ -22,6 +22,8 @@ import CalcSteps from '../components/CalcSteps'
 import { suggestionBasis, totalColumnLabel, totalNote } from '../calcSteps'
 import { useToast, useConfirm } from '../components/feedback'
 import Table from '../components/Table'
+import Co2Block from '../components/Co2Block'
+import { co2Block } from '../co2View'
 import { countOf } from '../../../shared/wording.ts'
 import { calendarPeriod } from '../../../shared/period.ts'
 
@@ -557,6 +559,8 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
                   </tfoot>
                 </Table>
               )}
+              {/* Der Ausweis nach § 7 Abs. 3 CO2KostAufG (Heizung PR 6) wird mitgedruckt. */}
+              {(data?.heating ?? []).map((h) => <Co2Block key={`${h.plantId}:${h.period}`} view={co2Block(h, st.tenancyId)} />)}
               {st.rows.length > 0 && (
                 <>
                   <p style={{ marginTop: 16 }}>

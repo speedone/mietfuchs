@@ -17,6 +17,7 @@ import type {
   AiSlotName,
   AssessmentBooking,
   ChangeSplit,
+  Co2Method,
   CostKey,
   CostModel,
   DepositStatus,
@@ -1130,4 +1131,75 @@ export const assessmentLines = sqliteTable(
     // Eine gebuchte Zeile sagt, wie sie gebucht ist.
     check('assessment_lines_booking_complete', sql.raw('"cost_item_id" IS NULL OR "booking" IS NOT NULL')),
   ],
+)
+
+// ---------- CO₂ (Heizung PR 6, Entwurf 5.5) ----------
+
+export const CO2_METHODS = exactly<Co2Method>()(['serviceDeducted', 'serviceShown', 'selfAfterService', 'self'] as const)
+
+// Die CO₂-Angaben einer Heizperiode, eine Zeile je Heizperiode (Primärschlüssel ist die
+// Heizperiode). Die Methode hat keine Vorgabe: Der Vermieter beantwortet die Frage nach der
+// Abzugszeile selbst (Entwurf 7.2). Beim Messdienst sind S, L und die Zahl der Nutzeinheiten
+// Pflicht, denn ohne sie gibt es keine Probe (7.3).
+export const co2Statements = sqliteTable(
+  'co2_statements',
+  {
+    heatingPeriodId: text('heating_period_id')
+      .primaryKey()
+      .notNull()
+      .references(() => heatingPeriods.id, { onDelete: 'cascade' }),
+    method: text('method', { enum: CO2_METHODS }).notNull(),
+    areaM2: real('area_m2'),
+    serviceEmissionsKg: real('service_emissions_kg'),
+    serviceAreaM2: real('service_area_m2'),
+    serviceKgPerM2: real('service_kg_per_m2'),
+    serviceLandlordPermille: integer('service_landlord_permille'),
+    serviceTotalCents: integer('service_total_cents'),
+    serviceLandlordCents: integer('service_landlord_cents'),
+    serviceUsersTotalCents: integer('service_users_total_cents'),
+    serviceUsersTotalApprox: integer('service_users_total_approx', { mode: 'boolean' }).notNull().default(false),
+    serviceUnitsCount: integer('service_units_count'),
+    // Die Position, in der L steckt. `SET NULL`: Wird sie gelöscht, bleibt der Datensatz, und die
+    // Berechnung nimmt die größte Messdienstposition des Topfs.
+    serviceCostItemId: text('service_cost_item_id').references(() => costItems.id, { onDelete: 'set null' }),
+    serviceSelfLandlordCents: integer('service_self_landlord_cents'),
+    serviceFuelGrossCents: integer('service_fuel_gross_cents'),
+    serviceFuelNetCents: integer('service_fuel_net_cents'),
+  },
+  () => [
+    oneOf('co2_statements_method_known', 'method', CO2_METHODS),
+    check(
+      'co2_statements_service_complete',
+      sql.raw(`"method" NOT IN ('serviceDeducted', 'serviceShown') OR ("service_users_total_cents" IS NOT NULL AND "service_landlord_cents" IS NOT NULL AND "service_units_count" IS NOT NULL)`),
+    ),
+    notNegative('co2_statements_users_total_not_negative', 'service_users_total_cents'),
+    notNegative('co2_statements_landlord_not_negative', 'service_landlord_cents'),
+    notNegative('co2_statements_total_not_negative', 'service_total_cents'),
+    notNegative('co2_statements_self_landlord_not_negative', 'service_self_landlord_cents'),
+    notNegative('co2_statements_fuel_gross_not_negative', 'service_fuel_gross_cents'),
+    notNegative('co2_statements_fuel_net_not_negative', 'service_fuel_net_cents'),
+    notNegative('co2_statements_emissions_not_negative', 'service_emissions_kg'),
+    notNegative('co2_statements_kg_per_m2_not_negative', 'service_kg_per_m2'),
+    check('co2_statements_permille_valid', sql.raw('"service_landlord_permille" BETWEEN 0 AND 1000')),
+    check('co2_statements_units_positive', sql.raw('"service_units_count" > 0')),
+    check('co2_statements_area_positive', sql.raw('"area_m2" > 0')),
+    check('co2_statements_service_area_positive', sql.raw('"service_area_m2" > 0')),
+  ],
+)
+
+// „Vom Vermieter übernommen“ je Mietverhältnis, laut Messdienst. Fällt mit dem Datensatz und mit
+// dem Mietverhältnis; die Objektgrenze prüft repository.ts (`guardTenancy`,
+// `crossPropertyViolations`).
+export const co2TenantReliefs = sqliteTable(
+  'co2_tenant_reliefs',
+  {
+    statementId: text('statement_id')
+      .notNull()
+      .references(() => co2Statements.heatingPeriodId, { onDelete: 'cascade' }),
+    tenancyId: text('tenancy_id')
+      .notNull()
+      .references(() => tenancies.id, { onDelete: 'cascade' }),
+    cents: integer('cents').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.statementId, t.tenancyId] }), notNegative('co2_tenant_reliefs_cents_not_negative', 'cents')],
 )

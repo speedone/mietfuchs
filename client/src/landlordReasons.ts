@@ -16,6 +16,7 @@ const LABELS: Record<LandlordReason, string> = {
   amountsRest: 'Rest nach Einzelbeträgen',
   customRest: 'nicht vereinbarter Anteil',
   mainMeterRest: 'Rest des Hauptzählers',
+  co2Share: 'CO₂-Anteil des Vermieters',
   rounding: 'Rundungsrest',
 }
 

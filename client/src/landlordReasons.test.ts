@@ -20,7 +20,7 @@ test('mehrere Gründe: jeder mit seinem Betrag', () => {
 })
 
 test('jeder Grund hat eine Beschriftung', () => {
-  const reasons = ['notAllocable', 'noBasis', 'selfUse', 'vacancy', 'flatRate', 'inclusive', 'outsideUnit', 'amountsRest', 'customRest', 'mainMeterRest', 'rounding'] as const
+  const reasons = ['notAllocable', 'noBasis', 'selfUse', 'vacancy', 'flatRate', 'inclusive', 'outsideUnit', 'amountsRest', 'customRest', 'mainMeterRest', 'co2Share', 'rounding'] as const
   for (const reason of reasons) {
     const text = landlordReasonText(row({ landlordParts: [{ reason, cents: 50000 }] }))
     expect(text).not.toBe('')
@@ -31,4 +31,8 @@ test('jeder Grund hat eine Beschriftung', () => {
 test('eine vorher abgeschlossene Abrechnung ohne Zerlegung: die Gründe pauschal wie bisher', () => {
   expect(landlordReasonText(row({}))).toBe('Eigennutzung / Leerstand / Rundung / keine Verteilbasis')
   expect(landlordReasonText(row({ category: 'Nicht umlagefähig' }))).toBe('nicht umlagefähig')
+})
+
+test('CO₂-Anteil des Vermieters beim Vorwegabzug (Heizung PR 6)', () => {
+  expect(landlordReasonText(row({ landlordParts: [{ reason: 'co2Share', cents: 8750 }] }))).toBe('CO₂-Anteil des Vermieters')
 })

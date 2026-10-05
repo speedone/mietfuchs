@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import type { ReceiptUpload } from './receipts'
-import type { CostItem, NoticeSubject, Settings, Tenancy, Unit, UploadInfo } from './types'
+import type { CostItem, HeatingPlant, NoticeSubject, Settings, Tenancy, Unit, UploadInfo } from './types'
 import { api } from './api'
 import { PeriodProvider, usePeriod } from './period'
 import { PeriodSelect } from './components/PeriodSelect'
@@ -24,7 +24,8 @@ import Abrechnung from './pages/Abrechnung'
 import Hilfe from './pages/Hilfe'
 import Steuer from './pages/Steuer'
 import Einstellungen from './pages/Einstellungen'
-import { NAV, type Tab } from './nav'
+import { navFor, type Tab } from './nav'
+import Heizkosten from './pages/Heizkosten'
 
 // ---------- Dark Mode ----------
 type ThemeChoice = 'system' | 'light' | 'dark'
@@ -191,6 +192,22 @@ function Shell() {
     reload().catch((e) => console.error(e))
   }, [reload])
 
+  // Die Seite Heizkosten erscheint erst mit einer Heizanlage (Heizung PR 6, Entwurf 11.4). Neu
+  // gefragt wird bei jedem Seitenwechsel, so erscheint sie, sobald die Anlage in den Stammdaten
+  // angelegt ist.
+  const [hasHeatingPlant, setHasHeatingPlant] = useState(false)
+  useEffect(() => {
+    if (!propertyId) {
+      setHasHeatingPlant(false)
+      return
+    }
+    let current = true
+    api<HeatingPlant[]>(withProperty('/api/heating-plants', propertyId))
+      .then((list) => { if (current) setHasHeatingPlant(list.length > 0) })
+      .catch(() => { if (current) setHasHeatingPlant(false) })
+    return () => { current = false }
+  }, [propertyId, tab])
+
   const clearNoticeFocus = useCallback(() => setFocusNoticeFor(null), [setFocusNoticeFor])
 
   if (stopped) return <Stopped />
@@ -226,7 +243,7 @@ function Shell() {
 
         <PeriodSelect className="year-switcher no-print" />
 
-        {NAV.map((group, gi) => (
+        {navFor(hasHeatingPlant).map((group, gi) => (
           <div key={gi} className="nav-group">
             {group.section && <div className="nav-section">{group.section}</div>}
             {group.items.map((it) => (
@@ -286,6 +303,7 @@ function Shell() {
         {tab === 'abrechnung' && (
           <Abrechnung settings={settings} units={units} tenancies={tenancies} reload={reload} onNavigate={(t, f) => setTab(t, f ?? null)} />
         )}
+        {tab === 'heizkosten' && <Heizkosten units={units} tenancies={tenancies} />}
         {tab === 'steuer' && <Steuer settings={settings} />}
         {tab === 'hilfe' && <Hilfe onNavigate={(t) => setTab(t)} />}
         {tab === 'einstellungen' && settings && (

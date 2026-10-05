@@ -35,7 +35,8 @@ test('Rechtswerte: ohne Heizung, Kabel und Leerstand keine, und der Rechtsstand 
 test('Rechtswerte: Heizung nach Fläche friert 50 bis 70 % und 15 % ein, mit Fundstelle und Text', () => {
   const s = computeSettlement(snap(2025, { ...two, costItems: [item(2025, { category: 'Heizung und Warmwasser', description: 'Heizöl' })] }))
   // Die Fernablesbarkeit gilt erst ab 2027 und steht deshalb nicht dabei (Durchsicht von #221, I1).
-  assert.deepEqual(ids(s), ['hkv.consumption-share', 'hkv.cut.not-by-consumption'])
+  // Ab 2023 nennt die Abrechnung ohne Heizanlage die CO₂-Kürzung (Heizung PR 6, co2.fuel-unknown).
+  assert.deepEqual(ids(s), ['co2.applicable-from', 'co2.cut.missing', 'hkv.consumption-share', 'hkv.cut.not-by-consumption'])
   const cut = s.legalBasis.values.find((v) => v.id === 'hkv.cut.not-by-consumption')
   assert.deepEqual(cut, {
     id: 'hkv.cut.not-by-consumption',
@@ -55,12 +56,14 @@ test('Rechtswerte: Kabel 2024 und 2025 frieren die Kabelregel ein, auch wenn sie
   }
 })
 
-test('Rechtswerte: Messdienst 2023 und 2026 ohne Fernablesungshinweis frieren nichts ein, 2027 den Zeitpunkt und die 3 %', () => {
+test('Rechtswerte: Messdienst 2023 und 2026 ohne Fernablesungshinweis frieren nur die CO₂-Kürzung ein, 2027 dazu den Zeitpunkt und die 3 %', () => {
   const heat = (year: number) => item(year, { category: 'Heizung und Warmwasser', key: 'amounts', tenancyAmounts: { A: 60000, B: 60000 } })
   // Ein Wert, der im Zeitraum nicht gilt, ist kein angewandter Rechtswert (Durchsicht von #221, I1).
-  assert.deepEqual(ids(computeSettlement(snap(2023, { ...two, costItems: [heat(2023)] }))), [])
-  assert.deepEqual(ids(computeSettlement(snap(2026, { ...two, costItems: [heat(2026)] }))), [])
-  assert.deepEqual(ids(computeSettlement(snap(2027, { ...two, costItems: [heat(2027)] }))), ['hkv.cut.remote-reading', 'hkv.remote-reading.retrofit'])
+  // Ab 2023 nennt die Abrechnung ohne Heizanlage die CO₂-Kürzung (Heizung PR 6, co2.fuel-unknown).
+  const co2 = ['co2.applicable-from', 'co2.cut.missing']
+  assert.deepEqual(ids(computeSettlement(snap(2023, { ...two, costItems: [heat(2023)] }))), co2)
+  assert.deepEqual(ids(computeSettlement(snap(2026, { ...two, costItems: [heat(2026)] }))), co2)
+  assert.deepEqual(ids(computeSettlement(snap(2027, { ...two, costItems: [heat(2027)] }))), [...co2, 'hkv.cut.remote-reading', 'hkv.remote-reading.retrofit'])
 })
 
 test('Rechtswerte: Leerstand beim Personenschlüssel friert die eine Person ein, ohne Leerstand nicht', () => {

@@ -17,7 +17,7 @@
 // geschnitten und nicht neu erfunden: Was dort dazukommt, kommt hier nur an, wenn es jemand
 // bewusst aufnimmt.
 
-import type { BillingPeriod, CostItem, HeatingPlant, Meter, Payment, PeriodKey, PeriodRules, Property, Reading, Tenancy, Unit } from '../../shared/types.ts'
+import type { BillingPeriod, Co2Statement, CostItem, HeatingPeriodData, HeatingPlant, Meter, Payment, PeriodKey, PeriodRules, Property, Reading, Tenancy, Unit } from '../../shared/types.ts'
 import { calendarPeriod, calendarYearPeriod, parsePeriodKey, previousPeriod, rulesOf } from '../../shared/period.ts'
 import { heatingPeriodsEndingIn, plantRules, settledSeparately, type PlantWay } from '../../shared/heatingPeriod.ts'
 import type { Db } from './store.ts'
@@ -101,9 +101,12 @@ export type SnapshotMeter = Pick<Meter, 'id' | 'unitId' | 'type' | 'heatingPlant
 
 // Die Heizanlagen des Objekts (Heizung PR 4), eingedampft auf das, was die Berechnung liest. Seit
 // Heizung PR 5 dazu Name, eigene Heizperiode und die Spannen nach Weg d; fehlen sie (ein von Hand
-// gebauter Schnappschuss), folgt die Anlage dem Objekt und rechnet nichts getrennt ab.
-export type SnapshotHeatingPlant = Pick<HeatingPlant, 'id' | 'method' | 'source' | 'devicesRemote' | 'devicesInstalledAfter2021' | 'newDevicesInstall' | 'units'>
+// gebauter Schnappschuss), folgt die Anlage dem Objekt und rechnet nichts getrennt ab. Seit PR 6 der
+// Energieträger, Pflicht: Von ihm hängt ab, ob CO₂-Kosten aufzuteilen sind.
+export type SnapshotHeatingPlant = Pick<HeatingPlant, 'id' | 'energy' | 'method' | 'source' | 'devicesRemote' | 'devicesInstalledAfter2021' | 'newDevicesInstall' | 'units'>
   & Partial<Pick<HeatingPlant, 'name' | 'periodStartMonth' | 'periodChanges' | 'separateSpans' | 'separateSettlement'>>
+// Die Angabe zum Warmwasser je Heizperiode (Heizung PR 6, #211).
+export type SnapshotHeatingPeriodRow = Pick<HeatingPeriodData, 'plantId' | 'period' | 'dhwMethod' | 'dhwUnmeasurable'>
 
 export const wayOf = (p: SnapshotHeatingPlant): PlantWay => ({
   periodStartMonth: p.periodStartMonth ?? null, periodChanges: p.periodChanges ?? [], separateSpans: p.separateSpans ?? [],
@@ -285,6 +288,10 @@ export type Snapshot = {
   // gebauter Schnappschuss), rechnet die Berechnung wie ohne Anlage, und dasselbe gilt für eine
   // leere Liste.
   heatingPlants?: SnapshotHeatingPlant[]
+  // CO₂-Angaben und Warmwasser je Heizperiode (Heizung PR 6). Fehlt die Angabe, rechnet die
+  // Berechnung wie ohne Angaben: Hinweise ja, Buchung nein.
+  co2Statements?: Co2Statement[]
+  heatingPeriodRows?: SnapshotHeatingPeriodRow[]
   // Heizung PR 5. Der Rhythmus des Objekts (für die empfohlene Frist und die Frage H = P), die
   // Heizperioden, die in P enden, und was der Schnappschuss rechnet. Fehlt alles (db.json, Umstieg,
   // Regression, ein von Hand gebauter Schnappschuss), rechnet die Berechnung wie bisher.
@@ -381,6 +388,9 @@ export function snapshotFor(
   source: PropertyScopedSource & {
     properties?: (SnapshotProperty & { id: string, periodRules?: PeriodRules })[]
     heatingPlants?: (SnapshotHeatingPlant & { propertyId: string })[]
+    // CO₂-Angaben und Zeilen der Heizperioden (Heizung PR 6); sie erben das Objekt über die Anlage.
+    co2Statements?: Co2Statement[]
+    heatingPeriodRows?: SnapshotHeatingPeriodRow[]
     // Die abgeschlossenen Heizkostenabrechnungen (Heizung PR 5), für `heatingSnapshotFor`.
     closedHeatingSettlements?: (SnapshotClosedSettlement & { plantId: string; period: PeriodKey })[]
   },
@@ -414,6 +424,8 @@ export function snapshotFor(
     property: found ? { kind: found.kind, cableBuiltBeforeDec2021: found.cableBuiltBeforeDec2021 ?? null } : null,
     // Die Anlagen tragen ihr Objekt wie die Wurzeln in `narrowToProperty`; eingegrenzt wird hier.
     heatingPlants: plants,
+    co2Statements: (source.co2Statements ?? []).filter((c) => plants.some((p) => p.id === c.plantId)),
+    heatingPeriodRows: (source.heatingPeriodRows ?? []).filter((r) => plants.some((p) => p.id === r.plantId)),
     objectRules,
     ...(heatingParts.length > 0 ? { heatingParts } : {}),
   }
@@ -439,6 +451,8 @@ export function heatingSnapshotFor(source: Parameters<typeof snapshotFor>[0], pr
     propertyId,
     property: found ? { kind: found.kind, cableBuiltBeforeDec2021: found.cableBuiltBeforeDec2021 ?? null } : null,
     heatingPlants: plants,
+    co2Statements: (source.co2Statements ?? []).filter((c) => c.plantId === plantId),
+    heatingPeriodRows: (source.heatingPeriodRows ?? []).filter((r) => r.plantId === plantId),
     objectRules,
     closedSettlement: frozen
       ? {
