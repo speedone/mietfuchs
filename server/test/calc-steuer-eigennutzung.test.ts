@@ -10,6 +10,7 @@ import assert from 'node:assert/strict'
 import { computeSettlement, RESERVE_CATEGORY, taxReport } from '../src/calc.ts'
 import { frozenSettlementOf, snapshotOf, type SnapshotCostItem, type SnapshotSource, type SnapshotTenancy, type SnapshotUnit } from '../src/snapshot.ts'
 import type { TaxExpenseItem, TaxReport } from '../../shared/types.ts'
+import { calendarPeriod } from '../../shared/period.ts'
 
 const tenancy = (id: string, unitId: string, start = '2020-01-01', end: string | null = null, persons = 1): SnapshotTenancy => ({
   id, unitId, tenantName: id, persons, personHistory: [{ from: start, persons }], start, end,
@@ -314,7 +315,7 @@ test('Abgeschlossene Abrechnung: privat je Position aus dem eingefrorenen Stand'
   const later = {
     ...src,
     units: [own('eg', 120), rented('og', 120)],
-    closedSettlements: [{ year: 2025, ...frozenSettlementOf(frozen) }],
+    closedSettlements: [{ period: calendarPeriod(2025), ...frozenSettlementOf(frozen) }],
   }
   const r = tax(later)
   assert.equal(split(r, 'gs').privat, 40000, 'der eingefrorene Eigenanteil, nicht 50.000')
@@ -323,7 +324,7 @@ test('Abgeschlossene Abrechnung: privat je Position aus dem eingefrorenen Stand'
   assert.equal(r.closedSelfUseDiffers, true)
   assert.equal(r.closedItemsChanged, 0)
   // Unverändert: kein Hinweis.
-  assert.equal(tax({ ...src, closedSettlements: [{ year: 2025, ...frozenSettlementOf(frozen) }] }).closedSelfUseDiffers, false)
+  assert.equal(tax({ ...src, closedSettlements: [{ period: calendarPeriod(2025), ...frozenSettlementOf(frozen) }] }).closedSelfUseDiffers, false)
 })
 
 // Die Einliegerwohnung (120 m² eigen, 45 m² vermietet), abgeschlossen mit der Grundsteuer allein.
@@ -335,7 +336,7 @@ const einlieger = (costItems: SnapshotCostItem[]) => source({
 const closedWith = (base: SnapshotSource, later: SnapshotCostItem[]): SnapshotSource => ({
   ...base,
   costItems: later,
-  closedSettlements: [{ year: 2025, ...frozenSettlementOf(computeSettlement(snapshotOf(base, 2025))) }],
+  closedSettlements: [{ period: calendarPeriod(2025), ...frozenSettlementOf(computeSettlement(snapshotOf(base, 2025))) }],
 })
 
 test('Abgeschlossene Abrechnung: eine danach erfasste Position wird heute gerechnet, nicht als 0 privat', () => {
@@ -370,7 +371,7 @@ test('Abgeschlossene Abrechnung: eine 0-€-Position zählt nicht als nach dem A
   }
   const frozenAlt = frozenSettlementOf(alt)
   if (frozenAlt.itemTotals === null || Object.hasOwn(frozenAlt.itemTotals, 'leer')) assert.fail('der nachgestellte Altbestand muss Beträge ohne die leere Position führen')
-  const r = tax({ ...base, closedSettlements: [{ year: 2025, ...frozenAlt }] })
+  const r = tax({ ...base, closedSettlements: [{ period: calendarPeriod(2025), ...frozenAlt }] })
   assert.equal(r.closedItemsChanged, 0)
   assert.deepEqual([split(r, 'leer').privat, split(r, 'leer').abziehbar], [0, 0])
   // Wird sie danach mit einem Betrag erfasst, ist sie geändert.
@@ -383,7 +384,7 @@ test('Abgeschlossene Abrechnung von vor #142: die eingefrorene Summe wird auf di
   // Ein Archivstück ist für den Auszug `unknown`; gebaut wird es deshalb über JSON.
   const ohneZerlegung: unknown = JSON.parse(JSON.stringify(frozen, (key, value: unknown) => (key === 'landlordParts' ? undefined : value)))
   const archiv = { ...(ohneZerlegung !== null && typeof ohneZerlegung === 'object' ? ohneZerlegung : {}), selfUsedShareCents: 30001 }
-  const r = tax({ ...src, closedSettlements: [{ year: 2025, ...frozenSettlementOf(archiv) }] })
+  const r = tax({ ...src, closedSettlements: [{ period: calendarPeriod(2025), ...frozenSettlementOf(archiv) }] })
   // Heute 40.000 und 20.000; die 30.001 im Verhältnis 2:1 → 20.000,67 und 10.000,33 → 20.001 und 10.000.
   assert.deepEqual([split(r, 'gs').privat, split(r, 'vers').privat], [20001, 10000])
   assert.equal(r.closedSelfUseDiffers, true)

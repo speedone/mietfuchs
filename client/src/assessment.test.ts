@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AssessmentLine, AssessmentView, BookingPreview, LineCandidate, LineSuggestion } from './types'
 import { bookDecisions, categoryOptions, decisionsOf, greenDecisions, initialRow, initialRows, isAssessment, isGreen, isPreview, linkChoices, previewLines, shownRow, withConfirmed, type RowDraft } from './assessment'
 import { CATEGORIES } from './types'
+import { calendarPeriod } from '../../shared/period.ts'
 
 const suggestion = (patch: Partial<LineSuggestion> = {}): LineSuggestion => ({
   fields: { description: 'Frischwasser', category: 'Wasser/Abwasser', amountCents: 70000, labor35aCents: null, key: 'persons', allocation: null, externalTotalCents: null },
@@ -13,7 +14,7 @@ const line = (idx: number, patch: Partial<AssessmentLine> = {}): AssessmentLine 
   booking: null, costItemId: null, dismissed: false, reassessed: false, state: 'open', itemDescription: null, suggestion: suggestion(), ...patch,
 })
 const view = (lines: AssessmentLine[]): AssessmentView => ({
-  id: 'a1', file: 'w.pdf', propertyId: 'objekt-1', year: 2025, detectedYear: 2025, requestedYear: 2025, vendor: 'Stadtwerke', invoiceDate: null,
+  id: 'a1', file: 'w.pdf', propertyId: 'objekt-1', year: 2025, detectedYear: 2025, requestedPeriod: calendarPeriod(2025), vendor: 'Stadtwerke', invoiceDate: null,
   totalGrossCents: null, amountsAdjusted: null, laborFromTotal: false, nextIdx: lines.length, createdAt: '2026-10-02T00:00:00.000Z',
   originalName: 'w.pdf', lines, open: true, sumWarning: null,
 })

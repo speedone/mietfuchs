@@ -17,7 +17,8 @@
 // geschnitten und nicht neu erfunden: Was dort dazukommt, kommt hier nur an, wenn es jemand
 // bewusst aufnimmt.
 
-import type { CostItem, Meter, Payment, Property, Reading, Tenancy, Unit } from '../../shared/types.ts'
+import type { CostItem, Meter, Payment, PeriodKey, Property, Reading, Tenancy, Unit } from '../../shared/types.ts'
+import { calendarPeriod, parsePeriodKey } from '../../shared/period.ts'
 import type { Db } from './store.ts'
 
 // Gelesen werden Kennung, Name (für Abrechnung und Warnungen), Wohnfläche und die beiden
@@ -256,7 +257,7 @@ export type SnapshotSource = {
   readings: SnapshotReading[]
   payments: SnapshotPayment[]
   // Alle Jahre, jedes eingedampft auf das, was die Berechnung daraus liest.
-  closedSettlements: (SnapshotClosedSettlement & { year: number })[]
+  closedSettlements: (SnapshotClosedSettlement & { period: PeriodKey })[]
 }
 
 // Ein Bestand, dessen Wurzeln ihr Objekt tragen (#92). db/read.ts `Stock` erfüllt ihn.
@@ -271,7 +272,7 @@ export type ScopedSource<
   M extends SnapshotMeter & { propertyId: string } = SnapshotMeter & { propertyId: string },
   R extends SnapshotReading = SnapshotReading,
   P extends SnapshotPayment = SnapshotPayment,
-  X extends SnapshotClosedSettlement & { year: number, propertyId: string } = SnapshotClosedSettlement & { year: number, propertyId: string },
+  X extends SnapshotClosedSettlement & { period: PeriodKey, propertyId: string } = SnapshotClosedSettlement & { period: PeriodKey, propertyId: string },
 > = { units: U[], tenancies: T[], costItems: C[], meters: M[], readings: R[], payments: P[], closedSettlements: X[] }
 
 export type PropertyScopedSource = ScopedSource
@@ -294,7 +295,7 @@ export function narrowToProperty<
   M extends SnapshotMeter & { propertyId: string },
   R extends SnapshotReading,
   P extends SnapshotPayment,
-  X extends SnapshotClosedSettlement & { year: number, propertyId: string },
+  X extends SnapshotClosedSettlement & { period: PeriodKey, propertyId: string },
 >(source: ScopedSource<U, T, C, M, R, P, X>, propertyId: string): ScopedSource<U, T, C, M, R, P, X> {
   const units = source.units.filter((u) => u.propertyId === propertyId)
   const unitIds = new Set(units.map((u) => u.id))
@@ -353,7 +354,7 @@ export function snapshotOf(source: SnapshotSource, year: number): Snapshot {
   // Warnung, in der jeder Mieter seine Vorauszahlung voll erstattet bekommt. Sie sähe stimmig
   // aus und wäre falsch, und das ist der schlimmere der beiden Ausgänge. Ein Test in
   // calc.test.ts hält das fest.
-  const closed = source.closedSettlements.find((c) => c.year === year)
+  const closed = source.closedSettlements.find((c) => c.period === calendarPeriod(year))
   return {
     year,
     propertyId: null,
@@ -378,12 +379,26 @@ export function snapshotOf(source: SnapshotSource, year: number): Snapshot {
   }
 }
 
-// Der Schnappschuss aus dem Bestand der JSON-Datei.
+// Die Jahreskorrektur der db.json und der Datenbank von 0000 ist nach Jahr geschlüsselt („2024“),
+// die Berechnung fragt nach dem Zeitraum (#208). Ein Jahr ist dort immer ein Kalenderjahr. Ein
+// Schlüssel, der schon ein Zeitraum ist, bleibt; alles andere las die Berechnung nie und fällt weg.
+export function overridesByPeriod(overrides: Record<string, number>): Record<string, number> {
+  const result: Record<string, number> = {}
+  for (const [schluessel, betrag] of Object.entries(overrides)) {
+    if (/^\d{4}$/.test(schluessel)) result[calendarPeriod(Number(schluessel))] = betrag
+    else if (parsePeriodKey(schluessel) !== null) result[schluessel] = betrag
+  }
+  return result
+}
+
+// Der Schnappschuss aus dem Bestand der JSON-Datei. Der Schnappschuss reicht die Datensätze durch
+// und kopiert sie nicht. Die Mietverhältnisse der Datei sind die Ausnahme: Ihre Jahreskorrektur
+// wird auf Zeiträume umgeschlüsselt (#208), und das geht nur an einer Kopie.
 export function snapshotFromDb(db: Db, year: number): Snapshot {
   return snapshotOf(
     {
       units: db.units,
-      tenancies: db.tenancies,
+      tenancies: db.tenancies.map((t) => ({ ...t, prepaymentOverrides: overridesByPeriod(t.prepaymentOverrides ?? {}) })),
       costItems: db.costItems,
       meters: db.meters,
       readings: db.readings,
@@ -391,7 +406,7 @@ export function snapshotFromDb(db: Db, year: number): Snapshot {
       // Der Auszug steht in `frozenSettlementOf` und gilt für beide Wege; die Begründung dort.
       // Kein `?? []` um die Sammlung selbst: Ist sie `null`, soll es krachen, und `map` tut das.
       closedSettlements: db.closedSettlements.map((c) => ({
-        year: c.year,
+        period: calendarPeriod(c.year),
         ...frozenSettlementOf(c.settlement),
       })),
     },

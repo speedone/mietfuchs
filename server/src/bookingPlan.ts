@@ -11,9 +11,10 @@
 // **Eine Zeile, die nicht offen ist, wird nie noch einmal gebucht.** Ist sie genau so gebucht,
 // ist das ohne Änderung (Doppelklick, Wiederholung); anders gebucht ist ein Widerspruch.
 import type {
-  AssessmentLineState, AssessmentView, BookingPreview, CostItem, CostKey, ExternalMeasure, LineDecision, LineFields, MeterType, PreviewItem, PreviewProblem, StoredAssessment, StoredAssessmentLine, Unit,
+  AssessmentLineState, AssessmentView, BookingPreview, CostItem, CostKey, ExternalMeasure, LineDecision, LineFields, MeterType, PeriodKey, PreviewItem, PreviewProblem, StoredAssessment, StoredAssessmentLine, Unit,
 } from '../../shared/types.ts'
 import type { Allocation } from '../../shared/allocation.ts'
+import { calendarPeriod } from '../../shared/period.ts'
 import { amountProblem, closedYearNotice, costItemBody, euro, type CostItemBody } from '../../shared/costItem.ts'
 import { candidateText } from '../../shared/assessment.ts'
 import { sameCostCandidates } from '../../shared/duplicates.ts'
@@ -33,8 +34,8 @@ export type PlanInput = {
   // Der Name eines Belegs, wie der Nutzer ihn kennt (für Hinweise); fehlt er, gilt der Dateiname
   fileNames: ReadonlyMap<string, string>
   // Abgeschlossene Abrechnungen aller Objekte (Integrationsdurchsicht vor 0.10): Ändert die Buchung
-  // den Betrag einer Position in einem solchen Jahr, sagt die Vorschau es
-  closed: readonly { propertyId: string; year: number }[]
+  // den Betrag einer Position in einem solchen Zeitraum, sagt die Vorschau es
+  closed: readonly { propertyId: string; period: PeriodKey }[]
 }
 
 export type BookingWrite =
@@ -295,7 +296,7 @@ export function planBooking(input: PlanInput, decisions: readonly LineDecision[]
     // Gesperrt wird nicht: Die Abrechnung bleibt eingefroren, und die Abweichung zeigt sie selbst.
     // Gesagt wird es, denn das Jahr aus dem Beleg geht dem gewählten vor, und eine Rechnung vom
     // Vorjahr landet leicht in einem abgeschlossenen.
-    if ((sum !== t.amountCents || labor !== (t.labor35aCents ?? null)) && input.closed.some((c) => c.propertyId === t.propertyId && c.year === t.year)) {
+    if ((sum !== t.amountCents || labor !== (t.labor35aCents ?? null)) && input.closed.some((c) => c.propertyId === t.propertyId && c.period === (t.period ?? calendarPeriod(t.year)))) {
       notices.push(`${quote(t.description)}: ${closedYearNotice(t.year)}`)
     }
     // Der Beleg der Position. Beim Verknüpfen: Trägt sie keinen, den dieses Belegs. Beim Lösen

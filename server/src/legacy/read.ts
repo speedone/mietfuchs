@@ -31,11 +31,12 @@
 // beim Import bewegt dagegen genau eine Seite und fällt weiterhin auf.
 
 import { sql } from 'drizzle-orm'
-import type { AiConsent, AiSettings, AiSlot, Payment, Reading, Settings, Tenancy } from '../../../shared/types.ts'
+import type { AiConsent, AiSettings, AiSlot, Payment, PeriodKey, Reading, Settings, Tenancy } from '../../../shared/types.ts'
+import { calendarPeriod } from '../../../shared/period.ts'
 import type { LegacyCostItem as CostItem, LegacyMeter as Meter, LegacyUnit as Unit } from '../store.ts'
 import { migrateAi, type MigratedSettings } from '../ai/settings.ts'
 import { DEFAULT_SETTINGS } from '../defaults.ts'
-import { frozenSettlementOf, type FrozenItemSelfUse, type SnapshotSource } from '../snapshot.ts'
+import { frozenSettlementOf, overridesByPeriod, type FrozenItemSelfUse, type SnapshotSource } from '../snapshot.ts'
 import type { Database } from '../db/client.ts'
 import {
   aiSlots, baseRents, closedSettlements, costItemShares, costItems, meters, payments,
@@ -54,6 +55,8 @@ import {
 export type StoredClosedSettlement = {
   id: string
   year: number
+  // Der Zeitraum, nach dem `SnapshotSource` sie findet (#208); auf 0000 immer ein Kalenderjahr.
+  period: PeriodKey
   closedAt: string
   sentAt: string | null
   selfUsedShareCents: number
@@ -150,7 +153,7 @@ export async function readTenancies(db: Database): Promise<Tenancy[]> {
     start: t.start,
     end: t.end,
     prepayments: prepaid.get(t.id) ?? [],
-    prepaymentOverrides: Object.fromEntries(overrides.get(t.id) ?? []),
+    prepaymentOverrides: overridesByPeriod(Object.fromEntries(overrides.get(t.id) ?? [])),
     baseRents: rents.get(t.id) ?? [],
     email: orUndefined(t.email),
     phone: orUndefined(t.phone),
@@ -229,6 +232,7 @@ export async function readClosedSettlements(db: Database): Promise<StoredClosedS
   return rows.map((c) => ({
     id: c.id,
     year: c.year,
+    period: calendarPeriod(c.year),
     closedAt: c.closedAt,
     sentAt: c.sentAt,
     ...frozenSettlementOf(c.settlement),

@@ -22,6 +22,7 @@ import { readClosedSettlements, readStock } from '../src/db/read.ts'
 import { assessments as assessmentsTable, uploads as uploadsTable } from '../src/db/schema.ts'
 import { LAW_AS_OF } from '../../shared/law/register.ts'
 import { tenancyOverlaps } from '../../shared/tenancyOverlap.ts'
+import { calendarPeriod } from '../../shared/period.ts'
 import type { JsonSchema } from '../src/ai/ollama.ts'
 import type {
   AiKeyInfo, AiPreset, AiRecommendations, AiSettings, AiSlot, AiSlotName, AiStatus, AssessmentLine, AssessmentView, BookingPreview, CostItem, Extraction, LineDecision, LineFields,
@@ -835,7 +836,7 @@ test('Vor dieser Version eingefrorene Abrechnung liefert einen Eigenanteil von 0
 // gespeicherte Fassung und nicht die Sicht des Schnappschusses: Geprüft wird hier `sentAt`,
 // und das liest die Berechnung gar nicht.
 const closedOf = async (s: { dataDir: string }, year: number) =>
-  (await inDatabase(s, readClosedSettlements)).find((c) => c.year === year)
+  (await inDatabase(s, readClosedSettlements)).find((c) => c.period === calendarPeriod(year))
 
 // Alles, was kein Datum als JJJJ-MM-TT ist: falscher Typ, deutsche Schreibweise, Zeitstempel
 // und Tage, die es im Kalender nicht gibt.
@@ -4958,7 +4959,7 @@ test('Belegbuchung: das Jahr der Auswertung wird zum Jahr des Belegs im Posteing
 test('Belegbuchung: eine Rechnung vom Februar ohne Leistungszeitraum, ausgewertet aus dem Vorjahr, ist gelb und nicht vorab angehakt', async () => {
   await withOllama(async (s) => {
     const a = assessmentOf(await evaluate(s, 'VORJAHR', { year: '2024' }))
-    assert.deepEqual([a.detectedYear, a.year, a.requestedYear], [2025, 2025, 2024], 'gebucht wird im Jahr des Belegs, das gewählte ist gespeichert')
+    assert.deepEqual([a.detectedYear, a.year, a.requestedPeriod], [2025, 2025, '2024-01'], 'gebucht wird im Jahr des Belegs, das gewählte ist gespeichert')
     const s0 = a.lines[0]?.suggestion ?? assert.fail('kein Vorschlag')
     assert.deepEqual([s0.level, s0.preselected], ['gelb', false])
     assert.ok(s0.reasons.some((r) => /2025/.test(r) && /2024/.test(r)), s0.reasons.join('\n'))
@@ -4969,7 +4970,7 @@ test('Belegbuchung: eine Rechnung vom Februar ohne Leistungszeitraum, ausgewerte
     const put = await putJson(s, `/api/assessments/${a.id}`, { year: 2025 })
     assert.equal(put.status, 200)
     const chosen = await jsonOf<AssessmentView>(put)
-    assert.deepEqual([chosen.requestedYear, chosen.lines[0]?.suggestion?.level, chosen.lines[0]?.suggestion?.preselected], [2025, 'gruen', true])
+    assert.deepEqual([chosen.requestedPeriod, chosen.lines[0]?.suggestion?.level, chosen.lines[0]?.suggestion?.preselected], ['2025-01', 'gruen', true])
   }, { invoices: RECHNUNGEN })
 })
 
@@ -5097,12 +5098,12 @@ test('Belegbuchung: aus dem Posteingang gilt das Jahr am Beleg als gewähltes, n
     const file = await plainUpload(s, 'hausmeister.pdf')
     assert.equal((await putJson(s, `/api/uploads/${file}`, { year: 2023, propertyId: 'objekt-1' })).status, 200)
     const a = assessmentOf(await evaluate(s, 'HAUSMEISTER', { existingFile: file, year: '2026' }))
-    assert.deepEqual([a.detectedYear, a.year, a.requestedYear], [null, 2023, 2023])
+    assert.deepEqual([a.detectedYear, a.year, a.requestedPeriod], [null, 2023, '2023-01'])
     // Nennt der Beleg selbst ein Jahr, geht es weiter vor; verglichen wird mit dem Jahr am Beleg.
     const other = await plainUpload(s, 'vorjahr.pdf')
     assert.equal((await putJson(s, `/api/uploads/${other}`, { year: 2025, propertyId: 'objekt-1' })).status, 200)
     const b = assessmentOf(await evaluate(s, 'VORJAHR', { existingFile: other, year: '2026' }))
-    assert.deepEqual([b.detectedYear, b.year, b.requestedYear], [2025, 2025, 2025])
+    assert.deepEqual([b.detectedYear, b.year, b.requestedPeriod], [2025, 2025, '2025-01'])
     assert.ok(!b.lines.some((l) => l.suggestion?.reasons.some((r) => /gewählt war/.test(r))), 'kein Hinweis auf ein anderes Jahr')
   }, { invoices: RECHNUNGEN })
 })
@@ -5114,16 +5115,16 @@ test('Belegbuchung: aus dem Posteingang gilt das Jahr am Beleg als gewähltes, n
 test('Belegbuchung: erneut ausgewertet bleibt das gewählte Jahr der früheren Auswertung', async () => {
   await withOllama(async (s) => {
     const a = assessmentOf(await evaluate(s, 'WASSER', { year: '2024' }))
-    assert.deepEqual([a.year, a.requestedYear], [2026, 2024])
+    assert.deepEqual([a.year, a.requestedPeriod], [2026, '2024-01'])
     assert.equal((await uploadOf(s, a.file)).year, 2026, 'der Beleg liegt im Jahr aus dem Beleg')
     const again = assessmentOf(await evaluate(s, 'WASSER', { existingFile: a.file, year: '2025' }))
-    assert.deepEqual([again.year, again.requestedYear], [2026, 2024])
+    assert.deepEqual([again.year, again.requestedPeriod], [2026, '2024-01'])
     assert.ok(again.lines.every((l) => l.suggestion?.level !== 'gruen' && l.suggestion?.preselected !== true), 'nicht grün, nicht angehakt')
     assert.ok(again.lines.some((l) => l.suggestion?.reasons.some((r) => /gewählt war 2024/.test(r))))
     // Stellt der Nutzer das Jahr am Beleg um (Belegordner, Posteingang), gilt danach dieses.
     assert.equal((await putJson(s, `/api/uploads/${a.file}`, { year: 2026 })).status, 200)
     const moved = assessmentOf(await evaluate(s, 'WASSER', { existingFile: a.file, year: '2025' }))
-    assert.deepEqual([moved.year, moved.requestedYear], [2026, 2026])
+    assert.deepEqual([moved.year, moved.requestedPeriod], [2026, '2026-01'])
     assert.ok(!moved.lines.some((l) => l.suggestion?.reasons.some((r) => /gewählt war/.test(r))))
   }, { invoices: RECHNUNGEN })
 })

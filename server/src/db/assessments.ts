@@ -6,6 +6,7 @@ import type { StoredAssessment, StoredAssessmentLine, UploadLinks } from '../../
 import { withoutBooked, type BookedLine, type LineChange, type NewLine } from '../assessment.ts'
 import type { Database, Executor } from './client.ts'
 import { assessmentLines, assessments } from './schema.ts'
+import { calendarPeriod } from '../../../shared/period.ts'
 
 export type AssessmentRecord = { assessment: StoredAssessment; lines: StoredAssessmentLine[] }
 export type NewAssessment = Omit<StoredAssessment, 'id' | 'createdAt' | 'nextIdx'> & { lines: NewLine[] }
@@ -64,7 +65,7 @@ export async function saveAssessment(db: Database, input: NewAssessment, ids: { 
     // Zeilen einer erneuten Auswertung neben gebuchten gekennzeichnet (Integrationsdurchsicht, H1).
     const added = withoutBooked(lines, booked)
     await insertLines(tx, id, added, next, booked.length > 0)
-    const placement = booked.length > 0 ? {} : { propertyId: head.propertyId, year: head.year, requestedYear: head.requestedYear }
+    const placement = booked.length > 0 ? {} : { propertyId: head.propertyId, year: head.year, requestedPeriod: head.requestedPeriod }
     await tx.update(assessments).set({
       detectedYear: head.detectedYear, vendor: head.vendor, invoiceDate: head.invoiceDate, totalGrossCents: head.totalGrossCents,
       amountsAdjusted: head.amountsAdjusted, laborFromTotal: head.laborFromTotal, createdAt: ids.now, nextIdx: next + added.length, ...placement,
@@ -105,7 +106,14 @@ export async function placeAssessment(db: Database, id: string, change: { year?:
     (change.year !== undefined && change.year !== current.assessment.year)
   if (moves && current.lines.some((l) => l.costItemId !== null)) return 'booked'
   if (change.year === undefined && change.propertyId === undefined) return 'ok'
-  await db.update(assessments).set(change.year !== undefined ? { ...change, requestedYear: change.year } : change).where(eq(assessments.id, id))
+  const propertyId = change.propertyId !== undefined ? change.propertyId : current.assessment.propertyId
+  // Der gewählte Zeitraum hängt am Objekt (#208, Prüfbedingung „nur mit Objekt“): ohne Objekt
+  // keiner; ein von Hand gesetztes Jahr ist zugleich das gewählte.
+  // Brücke Kalenderjahr (#208): bis PR 3
+  const requestedPeriod = propertyId === null ? null
+    : change.year !== undefined ? calendarPeriod(change.year)
+      : current.assessment.requestedPeriod
+  await db.update(assessments).set({ ...change, requestedPeriod }).where(eq(assessments.id, id))
   return 'ok'
 }
 

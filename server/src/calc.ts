@@ -43,6 +43,7 @@ import type { TermId } from '../../shared/glossary.ts'
 import { allocationOf, comparablePrevious, sameAllocation, sameUnits } from '../../shared/allocation.ts'
 import { possibleDuplicates } from '../../shared/duplicates.ts'
 import { commonPeriod, tenancyOverlaps } from '../../shared/tenancyOverlap.ts'
+import { calendarPeriod } from '../../shared/period.ts'
 import type { FrozenItemSelfUse, Snapshot, SnapshotCostItem, SnapshotMeter, SnapshotReading, SnapshotTenancy, SnapshotUnit } from './snapshot.ts'
 
 export const KEY_LABELS: Record<CostKey, string> = {
@@ -476,7 +477,8 @@ export function consumptionOverview(snapshot: Snapshot): ConsumptionOverviewRow[
 // Korrektur pro Jahr (tatsächlich gezahlter Betrag) hat immer Vorrang, denn rechtlich
 // sind die tatsächlich geleisteten Vorauszahlungen anzusetzen.
 export function computePrepaymentCents(tenancy: SnapshotTenancy, year: number): { cents: number, overridden: boolean } {
-  const override = tenancy.prepaymentOverrides?.[String(year)]
+  // Die Jahreskorrektur steht unter dem Schlüssel des Zeitraums (#208).
+  const override = tenancy.prepaymentOverrides?.[calendarPeriod(year)]
   if (override != null) return { cents: override, overridden: true }
   // `prepaymentMonthlyCents` gibt es im heutigen Tenancy-Typ nicht mehr (Altformat, siehe
   // Migration in store.ts). Diese Funktion wird aber auch mit ungewanderten Altbeständen

@@ -15,6 +15,7 @@ import { BookingRefusal, bookAssessment, previewBooking, viewAssessment, viewAss
 import { parseDecisions } from '../src/bookingPlan.ts'
 import { recordUpload } from '../src/db/uploads.ts'
 import type { NewLine } from '../src/assessment.ts'
+import { calendarPeriod } from '../../shared/period.ts'
 
 type World = { opened: OpenedDatabase; uploadDir: string }
 
@@ -42,7 +43,7 @@ const fields = (description: string, category: string, amountCents: number | nul
 async function receipt(w: World, file: string, lines: NewLine[], extra: Partial<NewAssessment> = {}): Promise<AssessmentRecord> {
   fs.writeFileSync(path.join(w.uploadDir, file), `%PDF ${file}`)
   return w.opened.write((db) => saveAssessment(db, {
-    file, propertyId: 'objekt-1', year: 2025, detectedYear: 2025, requestedYear: 2025, vendor: 'Stadtwerke', invoiceDate: '2026-02-15',
+    file, propertyId: 'objekt-1', year: 2025, detectedYear: 2025, requestedPeriod: calendarPeriod(2025), vendor: 'Stadtwerke', invoiceDate: '2026-02-15',
     totalGrossCents: null, amountsAdjusted: null, laborFromTotal: false, lines, ...extra,
   }, { id: `a-${file}`, now: new Date(Date.UTC(2026, 9, 2, 0, 0, ++seq)).toISOString() }))
 }
@@ -286,7 +287,7 @@ test('Zeile mit Kandidat: Anlegen nur nach ausdrücklicher Bestätigung', async 
 
 test('Eine Auswertung ohne Objekt lässt sich nicht buchen', async () => {
   await withWorld(async (w) => {
-    const r = await receipt(w, 'w.pdf', [line('Frischwasser', 'Wasser/Abwasser', 70000)], { propertyId: null })
+    const r = await receipt(w, 'w.pdf', [line('Frischwasser', 'Wasser/Abwasser', 70000)], { propertyId: null, requestedPeriod: null })
     const p = await plan(w, r, [{ idx: 0, action: 'create', fields: fields('Frischwasser', 'Wasser/Abwasser', 70000) }])
     assert.match(p.errors[0]?.message ?? '', /Zu welchem Objekt gehört dieser Beleg/)
   })
@@ -637,13 +638,13 @@ test('Dasselbe Anlegen mit Verteilung (direkt, laut Gemeinschaftsabrechnung) noc
 test('I1: Ein Beleg aus einem anderen Jahr als dem gewählten ist gelb und nicht vorab angehakt', async () => {
   await withWorld(async (w) => {
     // Rechnung vom 10.02.2025 ohne Leistungszeitraum, ausgewertet auf der Seite des Jahres 2024
-    const r = await receipt(w, 'wasser.pdf', [line('Hausmeister', 'Hauswart', 30000)], { year: 2025, detectedYear: 2025, requestedYear: 2024, invoiceDate: '2025-02-10' })
+    const r = await receipt(w, 'wasser.pdf', [line('Hausmeister', 'Hauswart', 30000)], { year: 2025, detectedYear: 2025, requestedPeriod: calendarPeriod(2024), invoiceDate: '2025-02-10' })
     const s = (await view(w, r)).lines[0]?.suggestion ?? assert.fail('kein Vorschlag')
     assert.equal(s.level, 'gelb')
     assert.equal(s.preselected, false)
     assert.ok(s.reasons.some((x) => /2025/.test(x) && /2024/.test(x)), s.reasons.join('\n'))
     // Aus dem Jahr des Belegs ausgewertet: grün und vorab angehakt, wie bisher.
-    const g = await receipt(w, 'gleich.pdf', [line('Hausmeister', 'Hauswart', 30000)], { year: 2025, detectedYear: 2025, requestedYear: 2025 })
+    const g = await receipt(w, 'gleich.pdf', [line('Hausmeister', 'Hauswart', 30000)], { year: 2025, detectedYear: 2025, requestedPeriod: calendarPeriod(2025) })
     const t = (await view(w, g)).lines[0]?.suggestion ?? assert.fail('kein Vorschlag')
     assert.deepEqual([t.level, t.preselected], ['gruen', true])
   })
@@ -698,7 +699,7 @@ test('Verknüpfen in ein Jahr mit abgeschlossener Abrechnung: die Vorschau sagt 
     const r = await receipt(w, 'wasser.pdf', [line('Frischwasser', 'Wasser/Abwasser', 160000)])
     const ohne = await plan(w, r, [link(0, 'wa')])
     assert.equal(ohne.notices.some((n) => n.includes('abgeschlossen')), false, 'offenes Jahr: kein Hinweis')
-    await w.opened.write((db) => closeSettlement(db, { id: 's', propertyId: 'objekt-1', year: 2025, closedAt: '2026-03-01T00:00:00.000Z', sentAt: null, settlement: {} }))
+    await w.opened.write((db) => closeSettlement(db, { id: 's', propertyId: 'objekt-1', period: calendarPeriod(2025), closedAt: '2026-03-01T00:00:00.000Z', sentAt: null, settlement: {} }))
     const mit = await plan(w, r, [link(0, 'wa')])
     assert.ok(mit.notices.includes('„Wasser/Abwasser 2025“: Die Abrechnung 2025 ist abgeschlossen und bleibt, wie sie verschickt wurde; ändert sich dadurch der Saldo eines Mieters, zeigt die Abrechnungsseite das als Abweichung.'), JSON.stringify(mit.notices))
     // Bleibt der Betrag, wie er ist, ändert sich nichts, und es gibt nichts zu sagen.

@@ -32,6 +32,9 @@ export type Property = {
   // Kabel- oder Antennenanlage vor dem 01.12.2021 errichtet (#121, § 2 Satz 2 BetrKV)? `null` heißt
   // unbekannt. Bei einer späteren Anlage war das TV-Signal nie umlagefähig.
   cableBuiltBeforeDec2021?: boolean | null
+  // Der Rhythmus der Abrechnungszeiträume (#208). Der Server liefert ihn immer mit; fehlt er, gilt
+  // das Kalenderjahr (`rulesOf` in shared/period.ts). Ändern lässt er sich in dieser Version nicht.
+  periodRules?: PeriodRules
 }
 
 export type Unit = {
@@ -95,7 +98,7 @@ export type Tenancy = {
   start: string
   end: string | null
   prepayments: PrepaymentEntry[]
-  prepaymentOverrides: Record<string, number> // Jahr → tatsächlich gezahlter Betrag
+  prepaymentOverrides: Record<string, number> // Zeitraum ('JJJJ-MM', #208) → tatsächlich gezahlter Betrag
   baseRents: RentEntry[] // Kaltmiete-Staffel (leer = nicht erfasst)
   // Erweiterte Stammdaten (optional, ohne Einfluss auf die Berechnung) — Kontakt, Kaution, Vertrag
   email?: string
@@ -202,7 +205,12 @@ export type ExternalBasis = {
 export type CostItem = {
   id: string
   propertyId: string
+  // Das Kalenderjahr, in dem `period` beginnt. Gespeichert wird es nicht mehr, sondern aus `period`
+  // abgeleitet (#208), für Leser, die noch nicht auf `period` umgestellt sind.
   year: number
+  // Der Abrechnungszeitraum (#208), dem die Position ganz gehört. Aus der Datenbank kommt er immer
+  // (`StoredCostItem` in server/src/db/read.ts); optional nur, solange `year` daneben steht.
+  period?: PeriodKey
   category: string
   description: string
   vendor?: string
@@ -804,10 +812,11 @@ export type StoredAssessment = {
   year: number
   // Das Jahr, das die KI aus dem Beleg gelesen hat (Leistungszeitraum, sonst Rechnungsdatum)
   detectedYear: number | null
-  // Das gewählte Jahr: beim Auswerten mitgeschickt (die Seite, von der aus ausgewertet wurde),
-  // danach das von Hand gesetzte; `null`, wenn keines mitkam. Weicht `year` davon ab, steht die
-  // Ampel auf gelb und nichts ist vorab angehakt.
-  requestedYear: number | null
+  // Der gewählte Abrechnungszeitraum (#208): beim Auswerten mitgeschickt (die Seite, von der aus
+  // ausgewertet wurde), danach der von Hand gesetzte. Nur mit Objekt, denn ein Zeitraum ist nur am
+  // Objekt bestimmt (G-B7); `null`, wenn keiner gewählt ist. Weicht `year` davon ab, steht die Ampel
+  // auf gelb und nichts ist vorab angehakt.
+  requestedPeriod: PeriodKey | null
   vendor: string | null
   invoiceDate: string | null
   totalGrossCents: number | null

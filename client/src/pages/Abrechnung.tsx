@@ -19,6 +19,7 @@ import { suggestionBasis, totalColumnLabel, totalNote } from '../calcSteps'
 import { useToast, useConfirm } from '../components/feedback'
 import Table from '../components/Table'
 import { countOf } from '../../../shared/wording.ts'
+import { calendarPeriod } from '../../../shared/period.ts'
 
 type Props = {
   settings: Settings | null
@@ -157,8 +158,11 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
   async function savePpOverride(tenancyId: string, cents: number | null) {
     const ten = tenancies.find((t) => t.id === tenancyId)
     const overrides = { ...(ten?.prepaymentOverrides ?? {}) }
-    if (cents === null) delete overrides[String(year)]
-    else overrides[String(year)] = cents
+    // Die Korrektur steht unter dem Zeitraum (#208).
+    // Brücke Kalenderjahr (#208): bis PR 3
+    const key = calendarPeriod(year)
+    if (cents === null) delete overrides[key]
+    else overrides[key] = cents
     if (!(await attempt(() => api(`/api/tenancies/${tenancyId}`, { method: 'PUT', body: JSON.stringify({ prepaymentOverrides: overrides }) })))) return
     setPpEdit(null)
     await Promise.all([load(), reload()])

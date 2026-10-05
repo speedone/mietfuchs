@@ -33,7 +33,8 @@
 // nächste, der eine Spalte hinzufügt.
 
 import { and, count, desc, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm'
-import type { CostItem, ExternalBasis, Meter, MeterType, Payment, PersonEntry, PrepaymentEntry, Property, Reading, RentEntry, Tenancy, Unit, UnitDependents } from '../../../shared/types.ts'
+import type { CostItem, ExternalBasis, Meter, MeterType, Payment, PeriodKey, PersonEntry, PrepaymentEntry, Property, Reading, RentEntry, Tenancy, Unit, UnitDependents } from '../../../shared/types.ts'
+import { calendarPeriod, parsePeriodKey, startYearOf } from '../../../shared/period.ts'
 import type { MigratedSettings } from '../ai/settings.ts'
 import { lastPerFrom, straightenPersonHistory } from '../schedule.ts'
 import type { Database, Executor } from './client.ts'
@@ -127,25 +128,34 @@ const moneyEntry = (row: unknown): PrepaymentEntry | null => {
   return from === undefined ? null : { from, monthlyCents: asNumber(raw(row, 'monthlyCents'), 0) }
 }
 
-// Jahr zu Betrag. In der Datei steht der Schlüssel als Text („2024“), in der Spalte als Zahl.
+// Jahreskorrektur: Zeitraumschlüssel ('JJJJ-MM') auf Betrag (#208). Ein Tab von vor dem Update
+// schickt noch die nackte Jahreszahl („2024“); sie ist der Kalenderzeitraum 'JJJJ-01' und geht
+// einem gleichzeitig mitgeschickten 'JJJJ-01' vor, denn nur ein alter Tab schreibt sie, und dann
+// ist sie seine Eingabe. Ob das Objekt diesen Zeitraum hat, prüft `guardTenancy`.
 //
-// **Verlangt wird genau eine vierstellige Jahreszahl**, dieselbe Grenze, die der Validator beim
-// Umstieg zieht. `Number.isInteger(Number(…))` genügte nicht und war zweifach undicht: `Number('')`
+// **Verlangt wird genau eine dieser beiden Formen**; für die Jahreszahl gilt dieselbe Grenze, die
+// der Validator beim Umstieg zieht. `Number.isInteger(Number(…))` genügte nicht und war zweifach undicht: `Number('')`
 // und `Number(' ')` sind 0, ein leerer Schlüssel ergäbe also eine Jahreskorrektur für das Jahr 0.
 // Und zwei verschiedene Schlüssel können auf dieselbe Zahl führen („2024“ und „2024.0“), womit
 // der zusammengesetzte Primärschlüssel den ganzen Vorgang scheitern ließe: Das Mietverhältnis
 // wäre dann überhaupt nicht zu speichern.
 const YEAR_KEY = /^\d{4}$/
 
-function readAmountsByYear(value: unknown): Record<string, number> {
+function readOverrides(value: unknown): Record<string, number> {
   if (!isObject(value)) return {}
   const rows: Record<string, number> = {}
+  const legacy: Record<string, number> = {}
   for (const [schluessel, betrag] of Object.entries(Object(value))) {
-    if (!YEAR_KEY.test(schluessel)) continue
     const zahl = asOptionalNumber(betrag)
-    if (zahl !== undefined) rows[schluessel] = zahl
+    if (zahl === undefined) continue
+    if (YEAR_KEY.test(schluessel)) {
+      legacy[calendarPeriod(Number(schluessel))] = zahl
+      continue
+    }
+    const key = parsePeriodKey(schluessel)
+    if (key !== null) rows[key] = zahl
   }
-  return rows
+  return { ...rows, ...legacy }
 }
 
 // Wohnungs-Kennung zu Prozentanteil. Ein Anteil, der keine Zahl ist, fällt weg.
@@ -243,7 +253,7 @@ function mergeTenancy(current: Tenancy, body: unknown): Tenancy {
     end: merged(body, 'end', current.end, asNullableText),
     prepayments: merged(body, 'prepayments', current.prepayments, (v) => readSchedule<PrepaymentEntry>(v, moneyEntry)),
     flatRates: merged(body, 'flatRates', current.flatRates, (v) => (v === null ? undefined : readSchedule<PrepaymentEntry>(v, moneyEntry))),
-    prepaymentOverrides: merged(body, 'prepaymentOverrides', current.prepaymentOverrides, readAmountsByYear),
+    prepaymentOverrides: merged(body, 'prepaymentOverrides', current.prepaymentOverrides, readOverrides),
     baseRents: merged(body, 'baseRents', current.baseRents, (v) => readSchedule<RentEntry>(v, moneyEntry)),
     email: merged(body, 'email', current.email, asOptionalText),
     phone: merged(body, 'phone', current.phone, asOptionalText),
@@ -259,7 +269,17 @@ function mergeTenancy(current: Tenancy, body: unknown): Tenancy {
   }
 }
 
+// Der Zeitraum einer Kostenposition (#208). `period` geht vor; ein Tab von vor dem Update schickt
+// stattdessen `year`, und das ist der Kalenderzeitraum dieses Jahres. Ob das Objekt den Zeitraum
+// hat, prüft `guardCostItem`.
+function mergedPeriod(body: unknown, current: PeriodKey): PeriodKey {
+  if (has(body, 'period')) return parsePeriodKey(raw(body, 'period')) ?? current
+  const year = raw(body, 'year')
+  return typeof year === 'number' && Number.isInteger(year) && year > 0 && year < 10000 ? calendarPeriod(year) : current
+}
+
 function mergeCostItem(current: CostItem, body: unknown): CostItem {
+  const period = mergedPeriod(body, current.period ?? calendarPeriod(current.year))
   const shares = merged(body, 'customShares', current.customShares, (v) => (v === null ? null : readShares(v)))
   const participants = merged(body, 'participantUnitIds', current.participantUnitIds, (v) => (v === null ? null : readParticipants(v)))
   const external = merged(body, 'externalBasis', current.externalBasis, readExternalBasis)
@@ -268,7 +288,8 @@ function mergeCostItem(current: CostItem, body: unknown): CostItem {
   return {
     id: current.id,
     propertyId: mergedProperty(body, current.propertyId),
-    year: merged(body, 'year', current.year, (v) => asNumber(v, current.year)),
+    period,
+    year: startYearOf(period),
     category: merged(body, 'category', current.category, (v) => asText(v, '')),
     description: merged(body, 'description', current.description, (v) => asText(v, '')),
     vendor: merged(body, 'vendor', current.vendor, asOptionalText),
@@ -337,7 +358,7 @@ const emptyTenancy = (id: string): Tenancy => ({
   prepayments: [], prepaymentOverrides: {}, baseRents: [],
 })
 const emptyCostItem = (id: string): CostItem => ({
-  id, propertyId: '', year: new Date().getUTCFullYear(), category: '', description: '', amountCents: 0, key: 'area',
+  id, propertyId: '', period: calendarPeriod(new Date().getUTCFullYear()), year: new Date().getUTCFullYear(), category: '', description: '', amountCents: 0, key: 'area',
   directUnitId: null, meterType: null,
 })
 const emptyMeter = (id: string): Meter => ({ id, propertyId: '', name: '', unitId: null, type: 'sonstig', unit: '' })
@@ -605,7 +626,7 @@ const tenancyRow = (t: Tenancy) => ({
   costModel: orNull(t.costModel), heatingModel: orNull(t.heatingModel),
 })
 const costItemRow = (c: CostItem) => ({
-  id: c.id, propertyId: c.propertyId, year: c.year, category: c.category, description: c.description, vendor: orNull(c.vendor),
+  id: c.id, propertyId: c.propertyId, period: c.period ?? calendarPeriod(c.year), category: c.category, description: c.description, vendor: orNull(c.vendor),
   amountCents: c.amountCents, key: c.key, directUnitId: c.directUnitId ?? null,
   meterType: c.meterType ?? null, labor35aCents: orNull(c.labor35aCents), invoiceFile: orNull(c.invoiceFile),
   externalMeasure: c.externalBasis?.measure ?? null, externalTotal: c.externalBasis?.total ?? null,
@@ -643,10 +664,11 @@ async function writeTenancyChildren(db: Executor, t: Tenancy): Promise<void> {
   if (t.baseRents.length > 0) {
     await db.insert(baseRents).values(t.baseRents.map((e) => ({ tenancyId: t.id, from: e.from, monthlyCents: e.monthlyCents })))
   }
-  const jahre = Object.entries(t.prepaymentOverrides)
-  if (jahre.length > 0) {
-    await db.insert(prepaymentOverrides).values(jahre.map(([jahr, betrag]) => ({ tenancyId: t.id, year: Number(jahr), amountCents: betrag })))
-  }
+  const korrekturen = Object.entries(t.prepaymentOverrides).flatMap(([schluessel, betrag]) => {
+    const period = parsePeriodKey(schluessel)
+    return period === null ? [] : [{ tenancyId: t.id, period, amountCents: betrag }]
+  })
+  if (korrekturen.length > 0) await db.insert(prepaymentOverrides).values(korrekturen)
 }
 
 // Die Untertabellen einer Kostenposition, ganz ersetzt: vereinbarte Anteile, Teilnehmer (#94)
@@ -1032,54 +1054,54 @@ export async function writeSettings(db: Database, settingsToStore: MigratedSetti
 // Schema: Er ist ein Archivstück, das wortgleich erhalten bleiben soll, auch wenn spätere
 // Versionen anders rechnen.
 
-// Immer je Objekt und Jahr (#92): Vorher genügte das Jahr, und mit einem zweiten Objekt hätten
-// Versanddatum und Wiederöffnen die Abrechnung des falschen Hauses getroffen.
-export async function findClosedSettlement(db: Database, propertyId: string, year: number): Promise<StoredClosedSettlement | undefined> {
-  return (await readClosedSettlements(db)).find((eintrag) => eintrag.propertyId === propertyId && eintrag.year === year)
+// Immer je Objekt und Zeitraum (#92, #208): Vorher genügte das Jahr, und mit einem zweiten Objekt
+// hätten Versanddatum und Wiederöffnen die Abrechnung des falschen Hauses getroffen.
+export async function findClosedSettlement(db: Database, propertyId: string, period: PeriodKey): Promise<StoredClosedSettlement | undefined> {
+  return (await readClosedSettlements(db)).find((eintrag) => eintrag.propertyId === propertyId && eintrag.period === period)
 }
 
-const closedOf = (propertyId: string, year: number) =>
-  and(eq(closedSettlements.propertyId, propertyId), eq(closedSettlements.year, year))
+const closedOf = (propertyId: string, period: PeriodKey) =>
+  and(eq(closedSettlements.propertyId, propertyId), eq(closedSettlements.period, period))
 
 export async function closeSettlement(
   db: Database,
-  entry: { id: string, propertyId: string, year: number, closedAt: string, sentAt: string | null, settlement: unknown },
+  entry: { id: string, propertyId: string, period: PeriodKey, closedAt: string, sentAt: string | null, settlement: unknown },
 ): Promise<void> {
   await db.insert(closedSettlements).values(entry)
 }
 
-// `false`, wenn es für das Jahr keine abgeschlossene Abrechnung gibt; die Route macht daraus
+// `false`, wenn es für den Zeitraum keine abgeschlossene Abrechnung gibt; die Route macht daraus
 // ihre 404.
-export async function setSentAt(db: Database, propertyId: string, year: number, sentAt: string | null): Promise<boolean> {
-  if (!(await findClosedSettlement(db, propertyId, year))) return false
-  await db.update(closedSettlements).set({ sentAt }).where(closedOf(propertyId, year))
+export async function setSentAt(db: Database, propertyId: string, period: PeriodKey, sentAt: string | null): Promise<boolean> {
+  if (!(await findClosedSettlement(db, propertyId, period))) return false
+  await db.update(closedSettlements).set({ sentAt }).where(closedOf(propertyId, period))
   return true
 }
 
 // Wiederöffnen verschiebt den Stand in den Verlauf (#56, Teil 2), statt ihn zu löschen, und zwar
-// in einer Transaktion: Scheiterte das Löschen nach dem Einfügen, stünde das Jahr sonst zugleich
+// in einer Transaktion: Scheiterte das Löschen nach dem Einfügen, stünde der Zeitraum sonst zugleich
 // als abgeschlossen und im Verlauf da (Befund der Durchsicht).
-export async function reopenSettlement(db: Database, propertyId: string, year: number, historyId: string): Promise<boolean> {
-  const eintrag = await findClosedSettlement(db, propertyId, year)
+export async function reopenSettlement(db: Database, propertyId: string, period: PeriodKey, historyId: string): Promise<boolean> {
+  const eintrag = await findClosedSettlement(db, propertyId, period)
   if (!eintrag) return false
   await db.transaction(async (tx) => {
     await tx.insert(closedSettlementHistory).values({
-      id: historyId, propertyId, year, closedAt: eintrag.closedAt, sentAt: eintrag.sentAt,
+      id: historyId, propertyId, period, closedAt: eintrag.closedAt, sentAt: eintrag.sentAt,
       reopenedAt: new Date().toISOString(), settlement: eintrag.settlement,
     })
-    await tx.delete(closedSettlements).where(closedOf(propertyId, year))
+    await tx.delete(closedSettlements).where(closedOf(propertyId, period))
   })
   return true
 }
 
 export type SettlementHistoryEntry = { id: string, closedAt: string, sentAt: string | null, reopenedAt: string, settlement: unknown }
 
-// Frühere Abschlüsse eines Jahres, der zuletzt wiedergeöffnete zuerst.
-export async function settlementHistory(db: Database, propertyId: string, year: number): Promise<SettlementHistoryEntry[]> {
+// Frühere Abschlüsse eines Zeitraums, der zuletzt wiedergeöffnete zuerst.
+export async function settlementHistory(db: Database, propertyId: string, period: PeriodKey): Promise<SettlementHistoryEntry[]> {
   const rows = await db
     .select()
     .from(closedSettlementHistory)
-    .where(and(eq(closedSettlementHistory.propertyId, propertyId), eq(closedSettlementHistory.year, year)))
+    .where(and(eq(closedSettlementHistory.propertyId, propertyId), eq(closedSettlementHistory.period, period)))
     .orderBy(desc(closedSettlementHistory.reopenedAt), desc(sql`rowid`))
   return rows.map((r) => ({ id: r.id, closedAt: r.closedAt, sentAt: r.sentAt, reopenedAt: r.reopenedAt, settlement: r.settlement }))
 }

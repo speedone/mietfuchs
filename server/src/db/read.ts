@@ -18,14 +18,15 @@
 // die Abfrage bedient, kann es anders kommen.
 
 import { sql } from 'drizzle-orm'
-import type { AiConsent, AiSettings, AiSlot, CostItem, Meter, Payment, Property, Reading, Settings, Tenancy, Unit } from '../../../shared/types.ts'
+import type { AiConsent, AiSettings, AiSlot, CostItem, Meter, Payment, PeriodKey, Property, Reading, Settings, Tenancy, Unit } from '../../../shared/types.ts'
+import { startYearOf } from '../../../shared/period.ts'
 import { migrateAi, type MigratedSettings } from '../ai/settings.ts'
 import { DEFAULT_SETTINGS } from '../defaults.ts'
 import { frozenSettlementOf, type FrozenItemSelfUse, type SnapshotSource } from '../snapshot.ts'
 import type { Database } from './client.ts'
 import {
   aiSlots, baseRents, closedSettlements, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, unitNoConnection, meters, payments,
-  flatRates, personHistory, prepaymentOverrides, prepayments, properties, readings, settings, tenancies, units,
+  flatRates, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, readings, settings, tenancies, units,
 } from './schema.ts'
 
 // Eine abgeschlossene Abrechnung, wie sie in der Datenbank steht. `settlement` bleibt
@@ -36,7 +37,8 @@ import {
 export type StoredClosedSettlement = {
   id: string
   propertyId: string
-  year: number
+  // Der Zeitraum der Abrechnung (#208).
+  period: PeriodKey
   closedAt: string
   sentAt: string | null
   selfUsedShareCents: number
@@ -48,13 +50,16 @@ export type StoredClosedSettlement = {
   settlement: unknown
 }
 
+// Eine Kostenposition, wie sie aus der Datenbank kommt: mit Zeitraum (#208).
+export type StoredCostItem = CostItem & { period: PeriodKey }
+
 // Der Bestand, wie er in der Datenbank liegt. Er erfüllt `SnapshotSource` (snapshot.ts), lässt
 // sich also unmittelbar zu einem Schnappschuss eines Jahres machen.
 export type Stock = SnapshotSource & {
   properties: Property[]
   units: Unit[]
   tenancies: Tenancy[]
-  costItems: CostItem[]
+  costItems: StoredCostItem[]
   meters: Meter[]
   readings: Reading[]
   payments: Payment[]
@@ -94,6 +99,9 @@ const INSERTION_ORDER = sql`rowid`
 
 export async function readProperties(db: Database): Promise<Property[]> {
   const rows = await db.select().from(properties).orderBy(INSERTION_ORDER)
+  // Die Wechsel aufsteigend nach Monat, nicht nach Anlage: shared/period.ts verlangt sie so.
+  const changeRows = await db.select().from(periodChanges).orderBy(periodChanges.fromMonth)
+  const changes = groupBy(changeRows, (r) => r.propertyId, (r) => r.fromMonth)
   return rows.map((p) => ({
     id: p.id,
     name: p.name,
@@ -105,6 +113,8 @@ export async function readProperties(db: Database): Promise<Property[]> {
     iban: p.iban,
     paymentDeadlineDays: p.paymentDeadlineDays,
     cableBuiltBeforeDec2021: p.cableBuiltBeforeDec2021,
+    // Der Rhythmus (#208). Immer mitgeliefert, damit niemand ihn erraten muss.
+    periodRules: { startMonth: p.periodStartMonth, changes: changes.get(p.id) ?? [] },
   }))
 }
 
@@ -146,10 +156,11 @@ export async function readTenancies(db: Database): Promise<Tenancy[]> {
   const prepaid = groupBy(prepaymentRows, (r) => r.tenancyId, (r) => ({ from: r.from, monthlyCents: r.monthlyCents }))
   const flat = groupBy(flatRateRows, (r) => r.tenancyId, (r) => ({ from: r.from, monthlyCents: r.monthlyCents }))
   const rents = groupBy(baseRentRows, (r) => r.tenancyId, (r) => ({ from: r.from, monthlyCents: r.monthlyCents }))
-  // Die Jahreskorrektur wird gleich zu einem Objekt (`Object.fromEntries`), deshalb Paare. Der
+  // Die Jahreskorrektur wird gleich zu einem Objekt (`Object.fromEntries`), deshalb Paare,
+  // geschlüsselt nach Zeitraum (#208). Der
   // angeschriebene Rückgabetyp macht daraus ein Paar statt einer Liste, ohne etwas zu behaupten:
   // Er beschreibt, was danebensteht, und der Übersetzer rechnet es nach.
-  const overrides = groupBy(overrideRows, (r) => r.tenancyId, (r): [string, number] => [String(r.year), r.amountCents])
+  const overrides = groupBy(overrideRows, (r) => r.tenancyId, (r): [string, number] => [r.period, r.amountCents])
 
   return rows.map((t) => ({
     id: t.id,
@@ -178,7 +189,7 @@ export async function readTenancies(db: Database): Promise<Tenancy[]> {
   }))
 }
 
-export async function readCostItems(db: Database): Promise<CostItem[]> {
+export async function readCostItems(db: Database): Promise<StoredCostItem[]> {
   const rows = await db.select().from(costItems).orderBy(INSERTION_ORDER)
   const shareRows = await db.select().from(costItemShares).orderBy(INSERTION_ORDER)
   const shares = groupBy(shareRows, (r) => r.costItemId, (r): [string, number] => [r.unitId, r.percent])
@@ -196,7 +207,9 @@ export async function readCostItems(db: Database): Promise<CostItem[]> {
     return {
       id: c.id,
       propertyId: c.propertyId,
-      year: c.year,
+      period: c.period,
+      // abgeleitet, siehe CostItem in shared/types.ts
+      year: startYearOf(c.period),
       category: c.category,
       description: c.description,
       vendor: orUndefined(c.vendor),
@@ -262,7 +275,7 @@ export async function readClosedSettlements(db: Database): Promise<StoredClosedS
   return rows.map((c) => ({
     id: c.id,
     propertyId: c.propertyId,
-    year: c.year,
+    period: c.period,
     closedAt: c.closedAt,
     sentAt: c.sentAt,
     // Derselbe Auszug wie auf dem Weg über die Datei (snapshot.ts). Zwei Leser desselben

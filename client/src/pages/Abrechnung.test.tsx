@@ -9,6 +9,7 @@ import { PropertyProvider } from '../property'
 import { UIProvider } from '../components/feedback'
 import Abrechnung from './Abrechnung'
 import type { HistoryEntry } from '../settlementHistory'
+import { calendarPeriod } from '../../../shared/period.ts'
 
 // Die Seite rendert ganz; unter Last braucht das mehr als die voreingestellten Zeiten.
 vi.setConfig({ testTimeout: 20000 })
@@ -18,7 +19,7 @@ const YEAR = new Date().getFullYear() - 1
 const TENANCIES: Tenancy[] = [{
   id: 't1', unitId: 'u1', tenantName: 'Meier', persons: 2,
   personHistory: [{ from: '2020-01-01', persons: 1 }, { from: `${YEAR}-10-01`, persons: 2 }],
-  start: '2020-01-01', end: null, prepayments: [], prepaymentOverrides: { [String(YEAR)]: 50000 }, baseRents: [],
+  start: '2020-01-01', end: null, prepayments: [], prepaymentOverrides: { [calendarPeriod(YEAR)]: 50000 }, baseRents: [],
 }]
 const daysIn = (y: number) => ((y % 4 === 0 && y % 100 !== 0) || y % 400 === 0 ? 366 : 365)
 const bisSept = daysIn(YEAR) - 92

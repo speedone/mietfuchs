@@ -356,7 +356,7 @@ test('Vorauszahlungen: manuelle Jahres-Korrektur hat Vorrang', () => {
   const t = tenancy({
     id: 't1', unitId: 'u1', start: '2024-01-01',
     prepayments: [{ from: '2024-01', monthlyCents: 15000 }],
-    prepaymentOverrides: { '2025': 165000 }, // ein Monat nicht gezahlt
+    prepaymentOverrides: { '2025-01': 165000 }, // ein Monat nicht gezahlt
   })
   assert.deepEqual(computePrepaymentCents(t, 2025), { cents: 165000, overridden: true })
   assert.equal(computePrepaymentCents(t, 2024).cents, 180000)

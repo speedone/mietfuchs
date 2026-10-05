@@ -15,6 +15,7 @@ import { DEFAULT_SETTINGS } from './defaults.ts'
 import { compareWithFrozen } from './settlementDiff.ts'
 import { computeSettlement, consumptionOverview, rentLedger, taxReport } from './calc.ts'
 import { narrowToProperty, snapshotFor } from './snapshot.ts'
+import { calendarPeriod, startYearOf } from '../../shared/period.ts'
 import { extractFromFile, classifyDocType, extractMeterReading, type AskProgressEvent, type AskStats } from './extract.ts'
 import { listOllamaModels, findOllama, defaultCandidates, pullOllamaModel } from './ai/ollama.ts'
 import { createRecommendations } from './ai/recommendations.ts'
@@ -450,7 +451,7 @@ app.get('/api/settlement/:year', async (req, res) => {
   if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
   const { closed, stock, property } = await readData(async (db) => {
     const property = await propertyOf(db, req)
-    return { property, closed: await findClosedSettlement(db, property, year), stock: await readStock(db) }
+    return { property, closed: await findClosedSettlement(db, property, calendarPeriod(year)), stock: await readStock(db) }
   })
   // Vor dieser Version eingefrorene Snapshots kennen selfUsedShareCents noch nicht — mit 0
   // vorbelegen, damit die Antwort immer der Form in types.ts entspricht. Genau deshalb ist das
@@ -500,11 +501,11 @@ app.post('/api/settlement/:year/close', async (req, res) => {
   // Kostenposition durch, fröre Mietfuchs einen Stand ein, den es so nie gegeben hat.
   const schonDa = await writeData(async (db) => {
     const property = await propertyOf(db, req)
-    if (await findClosedSettlement(db, property, year)) return true
+    if (await findClosedSettlement(db, property, calendarPeriod(year))) return true
     await closeSettlement(db, {
       id: newId(),
       propertyId: property,
-      year,
+      period: calendarPeriod(year),
       closedAt: new Date().toISOString(),
       sentAt,
       settlement: computeSettlement(snapshotFor(await readStock(db), property, year), { asOf: today() }),
@@ -518,9 +519,10 @@ app.post('/api/settlement/:year/close', async (req, res) => {
 // Versanddatum nachtragen (für die §556-Frist)
 app.put('/api/settlement/:year/close', async (req, res) => {
   const year = Number(req.params.year)
+  if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
   const sentAt = sentAtOf(req)
   if (sentAt === false) return res.status(400).json({ error: SENT_AT_INVALID })
-  const gefunden = await writeData(async (db) => setSentAt(db, await propertyOf(db, req), year, sentAt))
+  const gefunden = await writeData(async (db) => setSentAt(db, await propertyOf(db, req), calendarPeriod(year), sentAt))
   if (!gefunden) return res.status(404).json({ error: 'Abrechnung ist nicht abgeschlossen.' })
   res.json({ ok: true })
 })
@@ -531,13 +533,14 @@ app.put('/api/settlement/:year/close', async (req, res) => {
 app.get('/api/settlement/:year/history', async (req, res) => {
   const year = Number(req.params.year)
   if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
-  res.json(await readData(async (db) => settlementHistory(db, await propertyOf(db, req), year)))
+  res.json(await readData(async (db) => settlementHistory(db, await propertyOf(db, req), calendarPeriod(year))))
 })
 
 // Wieder öffnen: Der Stand wandert in den Verlauf, es gilt wieder die laufende Berechnung (#56).
 app.delete('/api/settlement/:year/close', async (req, res) => {
   const year = Number(req.params.year)
-  const gefunden = await writeData(async (db) => reopenSettlement(db, await propertyOf(db, req), year, newId()))
+  if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
+  const gefunden = await writeData(async (db) => reopenSettlement(db, await propertyOf(db, req), calendarPeriod(year), newId()))
   if (!gefunden) return res.status(404).json({ error: 'Abrechnung ist nicht abgeschlossen.' })
   res.json({ ok: true })
 })
@@ -844,24 +847,28 @@ async function rememberAssessment(req: Request, file: DocumentSource, extraction
       //    Nach der ersten Auswertung liegt der Beleg im Jahr **aus dem Beleg**; nähme eine zweite
       //    Auswertung dieses als gewähltes, würde eine gelbe Zeile grün und „Alle grünen übernehmen“
       //    buchte ungesehen in ein anderes Jahr. Stellt der Nutzer das Jahr am Beleg um, zieht die
-      //    Auswertung mit (`placeAssessment` setzt `requestedYear`), sein Wille gilt also auch hier.
+      //    Auswertung mit (`placeAssessment` setzt `requestedPeriod`), sein Wille gilt also auch hier.
       // 2. Sonst das Jahr am Beleg im Posteingang: Ohne Auswertung hat es der Nutzer oder der Ordner
       //    gesetzt, nie eine Platzierung nach einer Auswertung (Abnahme B3). Das Jahr der
       //    Seitenleiste, das der Browser mitschickt, überschreibt es nicht.
       // 3. Sonst das mitgeschickte.
       const previous = await readAssessmentOfFile(db, file.filename)
+      const previousYear = previous?.assessment.requestedPeriod ? startYearOf(previous.assessment.requestedPeriod) : null
       const chosen = previous
-        ? previous.assessment.requestedYear ?? (sent || null)
+        ? previousYear ?? (sent || null)
         : row?.year ?? (sent || null)
+      const propertyId = row?.propertyId ?? asked ?? (only && more.length === 0 ? only.id : null)
       if (signal.aborted) return null
       const record = await saveAssessment(db, {
         file: file.filename,
-        propertyId: row?.propertyId ?? asked ?? (only && more.length === 0 ? only.id : null),
+        propertyId,
         year: detected ?? chosen ?? new Date().getUTCFullYear(),
         detectedYear: detected,
-        // Das gewählte Jahr bleibt gespeichert: Weicht das Jahr aus dem Beleg davon ab, ist die Ampel
-        // gelb, und „Alle grünen übernehmen“ bucht die Zeile nicht ungesehen in ein anderes Jahr.
-        requestedYear: chosen,
+        // Das gewählte Jahr bleibt gespeichert, als Kalenderzeitraum am Objekt (#208): Weicht das
+        // Jahr aus dem Beleg davon ab, ist die Ampel gelb, und „Alle grünen übernehmen“ bucht die
+        // Zeile nicht ungesehen in ein anderes Jahr.
+        // Brücke Kalenderjahr (#208): bis PR 3
+        requestedPeriod: chosen !== null && propertyId !== null ? calendarPeriod(chosen) : null,
         vendor: extraction.vendor ?? null,
         invoiceDate: isDateOnly(extraction.invoiceDate) ? extraction.invoiceDate : null,
         totalGrossCents: typeof extraction.totalGrossEur === 'number' ? Math.round(extraction.totalGrossEur * 100) : null,

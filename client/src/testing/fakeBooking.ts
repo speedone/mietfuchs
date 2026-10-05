@@ -6,6 +6,7 @@
 // Bewusst kein `*.test.ts`: vitest führt diese Datei nicht als Test aus.
 import type { AssessmentView, CostItem, Extraction, Meter, StoredAssessment, StoredAssessmentLine, Unit } from '../types'
 import { describeAssessment, detectedYear, linesFromExtraction, withoutBooked, type BookedLine } from '../../../server/src/assessment.ts'
+import { calendarPeriod } from '../../../shared/period.ts'
 import { bookingResponse, parseDecisions, planBooking, previewWith, settle, tokenSource, type BookingWrite } from '../../../server/src/bookingPlan.ts'
 
 type Stored = { assessment: StoredAssessment; lines: StoredAssessmentLine[] }
@@ -55,7 +56,8 @@ export function fakeBooking(start: { items: CostItem[]; units: Unit[]; meters?: 
       const fresh = linesFromExtraction(ex)
       const r: Stored = {
         assessment: {
-          id, file, propertyId, year: detected ?? opts.year, detectedYear: detected, requestedYear: opts.year, vendor: ex.vendor ?? null,
+          id, file, propertyId, year: detected ?? opts.year, detectedYear: detected,
+          requestedPeriod: propertyId === null ? null : calendarPeriod(opts.year), vendor: ex.vendor ?? null,
           invoiceDate: ex.invoiceDate ?? null, totalGrossCents: typeof ex.totalGrossEur === 'number' ? Math.round(ex.totalGrossEur * 100) : null,
           amountsAdjusted: ex.amountsAdjusted ?? null, laborFromTotal: ex.laborFromTotal === true, nextIdx: fresh.length,
           createdAt: new Date(Date.UTC(2026, 9, 2, 0, 0, next)).toISOString(),
@@ -99,7 +101,9 @@ export function fakeBooking(start: { items: CostItem[]; units: Unit[]; meters?: 
       if (!m[2]) {
         const year = fieldOf(body, 'year')
         // Wie placeAssessment: ein von Hand gesetztes Jahr ist zugleich das gewählte.
-        if (method === 'PUT' && typeof year === 'number') r.assessment = { ...r.assessment, year, requestedYear: year }
+        if (method === 'PUT' && typeof year === 'number') {
+          r.assessment = { ...r.assessment, year, requestedPeriod: r.assessment.propertyId === null ? null : calendarPeriod(year) }
+        }
         return json(view(r))
       }
       requests.push({ path, body })

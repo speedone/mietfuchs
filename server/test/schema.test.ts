@@ -16,7 +16,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { AiSettings, AiSlot, CostItem, Meter, Payment, PersonEntry, PrepaymentEntry, Reading, RentEntry, Settings, Tenancy, Unit, ExternalBasis, UploadInfo, StoredAssessment, StoredAssessmentLine } from '../../shared/types.ts'
+import type { AiSettings, AiSlot, CostItem, PeriodKey, PeriodRules, Meter, Payment, PersonEntry, PrepaymentEntry, Reading, RentEntry, Settings, Tenancy, Unit, ExternalBasis, UploadInfo, StoredAssessment, StoredAssessmentLine } from '../../shared/types.ts'
 import type { ClosedSettlement } from '../src/store.ts'
 import { applyMigrations, connect, loadMigrations } from '../src/db/client.ts'
 import * as schema from '../src/db/schema.ts'
@@ -84,13 +84,11 @@ type _PersonHistory = Assert<Matches<Omit<typeof schema.personHistory.$inferSele
 type _Prepayments = Assert<Matches<Omit<typeof schema.prepayments.$inferSelect, 'tenancyId'>, PrepaymentEntry>>
 type _BaseRents = Assert<Matches<Omit<typeof schema.baseRents.$inferSelect, 'tenancyId'>, RentEntry>>
 
-// `prepaymentOverrides` ist im Modell `Record<string, number>`, also Jahr auf Betrag. In der
-// Tabelle sind daraus zwei Spalten geworden. Ein Namensvergleich ginge hier ins Leere; geprüft
-// wird deshalb, dass Schlüssel und Wert die Typen behalten, die der Record vorgibt. Das Jahr
-// wird dabei zur Zahl, was es inhaltlich immer war. Als Schlüssel eines JSON-Objekts konnte es
-// nur nicht anders als eine Zeichenkette dastehen.
+// `prepaymentOverrides` ist im Modell `Record<string, number>`, Zeitraum auf Betrag (#208). In der
+// Tabelle sind daraus zwei Spalten geworden; geprüft wird, dass der Schlüssel ein Zeitraumschlüssel
+// ist und der Wert den Typ behält, den der Record vorgibt.
 type OverrideRow = typeof schema.prepaymentOverrides.$inferSelect
-type _Overrides = Assert<Equals<OverrideRow['year'], number>>
+type _Overrides = Assert<Equals<OverrideRow['period'], PeriodKey>>
 type _OverrideAmount = Assert<Equals<OverrideRow['amountCents'], Tenancy['prepaymentOverrides'][string]>>
 
 // --- Kostenpositionen ---
@@ -98,7 +96,10 @@ type _OverrideAmount = Assert<Equals<OverrideRow['amountCents'], Tenancy['prepay
 // die Angaben der Gemeinschaft als drei Spalten statt eines Objekts. An ihrer Stelle stehen
 // deshalb die drei Spalten im Vergleich. Die Eigenbeträge (#104) stehen ebenfalls in einer
 // eigenen Tabelle.
-type CostItemColumns = Omit<CostItem, 'customShares' | 'participantUnitIds' | 'tenancyAmounts' | 'selfAmounts' | 'externalBasis'> & {
+// `year` ist abgeleitet und keine Spalte; `period` ist im Modell noch optional, in der Tabelle
+// Pflicht (#208).
+type CostItemColumns = Omit<CostItem, 'year' | 'period' | 'customShares' | 'participantUnitIds' | 'tenancyAmounts' | 'selfAmounts' | 'externalBasis'> & {
+  period: PeriodKey
   externalMeasure?: ExternalBasis['measure']
   externalTotal?: ExternalBasis['total']
   externalTotalCents?: ExternalBasis['totalCents']
@@ -136,10 +137,10 @@ type _Payments = Assert<Matches<typeof schema.payments.$inferSelect, Payment>>
 // selbst, dass sie überhaupt da ist und wirklich `unknown` liefert. Wer ihr später einen
 // engeren Typ anschreibt, muss diese Zeile anfassen und sich die Frage dabei stellen.
 //
-// `ClosedSettlement` beschreibt die db.json und kennt kein Objekt; die Tabelle trägt es seit #92.
-// Geprüft wird deshalb gegen die Gestalt mit Objekt.
+// `ClosedSettlement` beschreibt die db.json mit Jahr; die Tabelle trägt seit #92 ein Objekt und
+// seit #208 den Zeitraum statt des Jahres. Geprüft wird deshalb gegen diese Gestalt.
 type ClosedRow = typeof schema.closedSettlements.$inferSelect
-type ClosedWithProperty = ClosedSettlement & { propertyId: string }
+type ClosedWithProperty = Omit<ClosedSettlement, 'year'> & { propertyId: string, period: PeriodKey }
 type _ClosedNames = Assert<Equals<keyof ClosedRow, keyof ClosedWithProperty>>
 type _ClosedRahmen = Assert<Matches<Omit<ClosedRow, 'settlement'>, Omit<ClosedWithProperty, 'settlement'>>>
 type _ClosedJson = Assert<Equals<ClosedRow['settlement'], unknown>>
@@ -181,6 +182,10 @@ type _Uploads = Assert<Matches<typeof schema.uploads.$inferSelect, Omit<UploadIn
 // --- Belegbuchung (#170) ---
 type _Assessments = Assert<Matches<typeof schema.assessments.$inferSelect, StoredAssessment>>
 type _AssessmentLines = Assert<Matches<typeof schema.assessmentLines.$inferSelect, StoredAssessmentLine>>
+
+// --- Wechsel des Rhythmus (#208) ---
+type PeriodChangeRow = typeof schema.periodChanges.$inferSelect
+type _PeriodChangeMonth = Assert<Equals<PeriodChangeRow['fromMonth'], PeriodRules['changes'][number]>>
 
 // ---------- Ebene 2: die Zusicherungen an einer echten Datenbank ----------
 
@@ -234,6 +239,7 @@ test('Migration lässt sich anwenden und legt alle Tabellen an', async () => {
       'flat_rates',
       'meters',
       'payments',
+      'period_changes',
       'person_history',
       'prepayment_overrides',
       'prepayments',
@@ -308,7 +314,7 @@ test('Löschen einer Wohnung räumt ab, was ohne sie sinnlos wäre', async () =>
     connection.exec("INSERT INTO prepayments (tenancy_id, `from`, monthly_cents) VALUES ('t1', '2025-01', 20000)")
     connection.exec("INSERT INTO meters (id, property_id, name, unit_id, type, unit) VALUES ('m1', 'objekt-1', 'Kaltwasser', 'u1', 'kaltwasser', 'm³')")
     connection.exec("INSERT INTO readings (id, meter_id, date, value) VALUES ('r1', 'm1', '2025-01-01', 100)")
-    connection.exec("INSERT INTO cost_items (id, property_id, year, category, description, amount_cents, key) VALUES ('c1', 'objekt-1', 2025, 'Gartenpflege', 'Garten', 60000, 'custom')")
+    connection.exec("INSERT INTO cost_items (id, property_id, period, category, description, amount_cents, key) VALUES ('c1', 'objekt-1', '2025-01', 'Gartenpflege', 'Garten', 60000, 'custom')")
     connection.exec("INSERT INTO cost_item_shares (cost_item_id, unit_id, percent) VALUES ('c1', 'u1', 50)")
 
     connection.exec("DELETE FROM units WHERE id = 'u1'")
@@ -334,7 +340,7 @@ test('Direktzuordnung überlebt das Löschen ihrer Wohnung, nur der Verweis fäl
   try {
     connection.exec(einWohnung)
     connection.exec(
-      "INSERT INTO cost_items (id, property_id, year, category, description, amount_cents, key, direct_unit_id) VALUES ('c1', 'objekt-1', 2025, 'Sonstige Betriebskosten', 'Reparatur', 40000, 'direct', 'u1')",
+      "INSERT INTO cost_items (id, property_id, period, category, description, amount_cents, key, direct_unit_id) VALUES ('c1', 'objekt-1', '2025-01', 'Sonstige Betriebskosten', 'Reparatur', 40000, 'direct', 'u1')",
     )
     connection.exec("DELETE FROM units WHERE id = 'u1'")
     const row = connection.rows("SELECT amount_cents, direct_unit_id FROM cost_items WHERE id = 'c1'")[0]
@@ -370,7 +376,7 @@ test('Prüfbedingungen: was nicht negativ sein darf, ist es auch nicht', async (
       'negative Personenzahl',
     )
     assert.ok(
-      rejects(connection, "INSERT INTO prepayment_overrides (tenancy_id, year, amount_cents) VALUES ('t1', 2025, -1)"),
+      rejects(connection, "INSERT INTO prepayment_overrides (tenancy_id, period, amount_cents) VALUES ('t1', '2025-01', -1)"),
       'negative Jahreszahlung',
     )
   } finally {
@@ -384,13 +390,13 @@ test('eine Gutschrift darf negativ sein, und ein gemeldeter §35a-Lohnanteil auc
   const { connection, cleanup } = await freshDb()
   try {
     connection.exec(
-      "INSERT INTO cost_items (id, property_id, year, category, description, amount_cents, key) VALUES ('c1', 'objekt-1', 2025, 'Sonstige Betriebskosten', 'Gutschrift', -5000, 'units')",
+      "INSERT INTO cost_items (id, property_id, period, category, description, amount_cents, key) VALUES ('c1', 'objekt-1', '2025-01', 'Sonstige Betriebskosten', 'Gutschrift', -5000, 'units')",
     )
     // calc.ts meldet einen Lohnanteil außerhalb von 0 bis zum Rechnungsbetrag als Warnung und
     // rechnet weiter. Verböte die Datenbank ihn, bekäme der Nutzer die erklärende Warnung nie
     // zu sehen, weil er den Beleg gar nicht erst speichern könnte.
     connection.exec(
-      "INSERT INTO cost_items (id, property_id, year, category, description, amount_cents, key, labor_35a_cents) VALUES ('c2', 'objekt-1', 2025, 'Gartenpflege', 'Garten', 60000, 'units', -3000)",
+      "INSERT INTO cost_items (id, property_id, period, category, description, amount_cents, key, labor_35a_cents) VALUES ('c2', 'objekt-1', '2025-01', 'Gartenpflege', 'Garten', 60000, 'units', -3000)",
     )
     // Eine Rücklastschrift ist ein echter Vorgang.
     connection.exec(einWohnung)
@@ -408,7 +414,7 @@ test('Aufzählungen: ein unbekannter Umlageschlüssel kommt nicht hinein', async
     assert.ok(
       rejects(
         connection,
-        "INSERT INTO cost_items (id, property_id, year, category, description, amount_cents, key) VALUES ('c1', 'objekt-1', 2025, 'X', 'X', 100, 'ausgedacht')",
+        "INSERT INTO cost_items (id, property_id, period, category, description, amount_cents, key) VALUES ('c1', 'objekt-1', '2025-01', 'X', 'X', 100, 'ausgedacht')",
       ),
       'unbekannter Umlageschlüssel',
     )
@@ -431,9 +437,9 @@ test('je Stichtag nur ein Staffeleintrag', async () => {
       rejects(connection, "INSERT INTO prepayments (tenancy_id, `from`, monthly_cents) VALUES ('t1', '2025-01', 25000)"),
       'zwei Vorauszahlungen ab demselben Monat',
     )
-    connection.exec("INSERT INTO prepayment_overrides (tenancy_id, year, amount_cents) VALUES ('t1', 2025, 240000)")
+    connection.exec("INSERT INTO prepayment_overrides (tenancy_id, period, amount_cents) VALUES ('t1', '2025-01', 240000)")
     assert.ok(
-      rejects(connection, "INSERT INTO prepayment_overrides (tenancy_id, year, amount_cents) VALUES ('t1', 2025, 250000)"),
+      rejects(connection, "INSERT INTO prepayment_overrides (tenancy_id, period, amount_cents) VALUES ('t1', '2025-01', 250000)"),
       'zwei Jahreskorrekturen für dasselbe Jahr',
     )
   } finally {
@@ -444,9 +450,9 @@ test('je Stichtag nur ein Staffeleintrag', async () => {
 test('je Jahr höchstens eine abgeschlossene Abrechnung', async () => {
   const { connection, cleanup } = await freshDb()
   try {
-    connection.exec("INSERT INTO closed_settlements (id, property_id, year, closed_at, settlement) VALUES ('s1', 'objekt-1', 2025, '2026-03-01', '{}')")
+    connection.exec("INSERT INTO closed_settlements (id, property_id, period, closed_at, settlement) VALUES ('s1', 'objekt-1', '2025-01', '2026-03-01', '{}')")
     assert.ok(
-      rejects(connection, "INSERT INTO closed_settlements (id, property_id, year, closed_at, settlement) VALUES ('s2', 'objekt-1', 2025, '2026-04-01', '{}')"),
+      rejects(connection, "INSERT INTO closed_settlements (id, property_id, period, closed_at, settlement) VALUES ('s2', 'objekt-1', '2025-01', '2026-04-01', '{}')"),
       'zwei abgeschlossene Abrechnungen für 2025',
     )
   } finally {
@@ -461,17 +467,17 @@ test('der eingefrorene Berechnungsstand muss gültiges JSON sein', async () => {
   const { connection, cleanup } = await freshDb()
   try {
     connection.exec(
-      `INSERT INTO closed_settlements (id, property_id, year, closed_at, settlement) VALUES ('s1', 'objekt-1', 2025, '2026-03-01', '{"year":2025,"statements":[]}')`,
+      `INSERT INTO closed_settlements (id, property_id, period, closed_at, settlement) VALUES ('s1', 'objekt-1', '2025-01', '2026-03-01', '{"year":2025,"statements":[]}')`,
     )
     assert.ok(
       rejects(
         connection,
-        `INSERT INTO closed_settlements (id, property_id, year, closed_at, settlement) VALUES ('s2', 'objekt-1', 2024, '2026-03-01', '{"year":2024,"statem')`,
+        `INSERT INTO closed_settlements (id, property_id, period, closed_at, settlement) VALUES ('s2', 'objekt-1', '2024-01', '2026-03-01', '{"year":2024,"statem')`,
       ),
       'eine abgeschnittene Abrechnung',
     )
     assert.ok(
-      rejects(connection, "INSERT INTO closed_settlements (id, property_id, year, closed_at, settlement) VALUES ('s3', 'objekt-1', 2023, '2026-03-01', 'kein JSON')"),
+      rejects(connection, "INSERT INTO closed_settlements (id, property_id, period, closed_at, settlement) VALUES ('s3', 'objekt-1', '2023-01', '2026-03-01', 'kein JSON')"),
       'gar kein JSON',
     )
   } finally {

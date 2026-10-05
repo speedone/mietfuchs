@@ -45,7 +45,7 @@ test('Rückstand im Mietkonto ohne Jahreskorrektur: Hinweis mit offenem Betrag, 
 })
 
 test('Rückstand mit gesetzter Jahreskorrektur: kein Hinweis, der Vermieter hat entschieden', () => {
-  const s = settle({ tenancies: [tenancy({ prepaymentOverrides: { '2025': 72000 } })], payments: paidMarchToNovember() })
+  const s = settle({ tenancies: [tenancy({ prepaymentOverrides: { '2025-01': 72000 } })], payments: paidMarchToNovember() })
   assert.equal(arrears(s).length, 0)
 })
 

@@ -7,6 +7,7 @@ import { categoryDeviationPct } from '../../shared/assessment.ts'
 import type { CostItem, StoredAssessment, StoredAssessmentLine, Unit } from '../../shared/types.ts'
 import type { Allocation } from '../../shared/allocation.ts'
 import { costItemBody } from '../../shared/costItem.ts'
+import { calendarPeriod } from '../../shared/period.ts'
 
 test('Zeilen aus der KI: Kostenart zugeordnet, Cent, nicht gelesener Lohnanteil bleibt null, 0 bleibt 0', () => {
   const lines = linesFromExtraction({
@@ -103,7 +104,7 @@ test('Entwurf einer KI-Zeile „Nicht umlagefähig“: ein gemerkter Schlüssel 
 // ---------- Abweichung zum Vorjahr beim Verknüpfen mit einer Schätzung ----------
 
 const assessmentOf = (patch: Partial<StoredAssessment> = {}): StoredAssessment => ({
-  id: 'a1', file: 'grundsteuer.pdf', propertyId: 'objekt-1', year: 2026, detectedYear: 2026, requestedYear: 2026, vendor: 'Stadt Musterstadt',
+  id: 'a1', file: 'grundsteuer.pdf', propertyId: 'objekt-1', year: 2026, detectedYear: 2026, requestedPeriod: calendarPeriod(2026), vendor: 'Stadt Musterstadt',
   invoiceDate: '2026-02-15', totalGrossCents: 51240, amountsAdjusted: null, laborFromTotal: false, nextIdx: 1, createdAt: '2026-02-20T10:00:00Z', ...patch,
 })
 const grundsteuer = (patch: Partial<CostItem>): CostItem => ({
