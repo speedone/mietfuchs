@@ -6,11 +6,11 @@ import os from 'node:os'
 import path from 'node:path'
 import { eq } from 'drizzle-orm'
 import { heatingPeriodViews, removeCo2Statement, saveCo2Statement, saveHotWater } from '../src/db/co2.ts'
-import { createHeatingPlant, removeHeatingPlant } from '../src/db/heating.ts'
+import { createHeatingPlant, heatingPlantViolations, removeHeatingPlant } from '../src/db/heating.ts'
 import { openDatabase } from '../src/db/open.ts'
 import { readCo2Statements, readHeatingPeriodRows } from '../src/db/read.ts'
 import { closeSettlement, createEntity, createProperty, crossPropertyViolations, CrossPropertyError, HeatingError, updateEntity } from '../src/db/repository.ts'
-import { units } from '../src/db/schema.ts'
+import { heatingPeriods, heatingPlants, units } from '../src/db/schema.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import { periodKey } from '../../shared/period.ts'
 
@@ -164,5 +164,19 @@ test('Entfernen lässt keine leere Heizperiode zurück: sonst sperrte sie den We
     await opened.write((db) => saveCo2Statement(db, 'hp', '2025-01', vorwegabzug))
     await opened.write((db) => removeCo2Statement(db, 'hp', '2025-01'))
     assert.deepEqual((await opened.read(readHeatingPeriodRows)).map((r) => r.dhwMethod), ['heatMeter'])
+  })
+})
+
+test('Eigene Heizperiode: Angaben zur Heizperiode 2024/2025 sind kein Befund beim Wiederherstellen (Prüfung nach dem Rhythmus der Anlage)', async () => {
+  await withDatabase(async (opened) => {
+    await bestand(opened)
+    // Die Anlage rechnet Mai bis April, das Objekt im Kalenderjahr. Gesetzt an den Routen vorbei,
+    // der Wechsel mit Vorschau ist Sache von PR 5.
+    await opened.write(async (db) => { await db.update(heatingPlants).set({ periodStartMonth: 5 }).where(eq(heatingPlants.id, 'hp')) })
+    await opened.write((db) => saveCo2Statement(db, 'hp', '2024-05', { method: 'selfAfterService' }))
+    assert.deepEqual(await opened.read(heatingPlantViolations), [])
+    // Ein Schlüssel, den es für die Anlage nicht gibt, bleibt ein Befund.
+    await opened.write(async (db) => { await db.update(heatingPeriods).set({ period: periodKey('2024-07') }).where(eq(heatingPeriods.plantId, 'hp')) })
+    assert.ok((await opened.read(heatingPlantViolations)).some((b) => /2024-07/.test(b)))
   })
 })

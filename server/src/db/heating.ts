@@ -22,6 +22,7 @@
 import { and, count, eq, inArray, isNull, ne } from 'drizzle-orm'
 import type { AssignableHeatingItem, HeatingPlant, HeatingPlantUnit } from '../../../shared/types.ts'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
+import { plantRules } from '../../../shared/heatingPeriod.ts'
 import { parsePeriodKey, periodKey, periodOfKey, rulesOf } from '../../../shared/period.ts'
 import type { Database, Executor } from './client.ts'
 import { readHeatingPlants, readProperties, readUnits } from './read.ts'
@@ -294,15 +295,17 @@ export async function heatingPlantViolations(db: Database): Promise<string[]> {
     }
   }
 
-  // Heizperioden: In dieser Version ist jede Heizperiode ein Abrechnungszeitraum des Objekts (eine
-  // eigene kommt mit PR 5).
+  // Heizperioden: ein Zeitraum nach dem Rhythmus der Anlage, also ihrer eigenen Heizperiode (PR 5)
+  // oder, ohne eigene, dem des Objekts. Zeilen entstehen seit PR 6 auch für eine eigene Heizperiode
+  // (CO₂-Angaben, Warmwasser); geprüft am Objekt, lehnte das Wiederherstellen sie ab.
   const rulesById = new Map((await readProperties(db)).map((p) => [p.id, rulesOf(p)]))
+  const plantRulesById = new Map((await readHeatingPlants(db)).map((p) => [p.id, plantRules(p, rulesById.get(p.propertyId) ?? rulesOf(undefined))]))
   const perioden = await db
-    .select({ period: heatingPeriods.period, propertyId: heatingPlants.propertyId, name: heatingPlants.name })
+    .select({ period: heatingPeriods.period, plantId: heatingPeriods.plantId, name: heatingPlants.name })
     .from(heatingPeriods)
     .innerJoin(heatingPlants, eq(heatingPeriods.plantId, heatingPlants.id))
   for (const h of perioden) {
-    const rules = rulesById.get(h.propertyId)
+    const rules = plantRulesById.get(h.plantId)
     const key = parsePeriodKey(h.period)
     if (!rules || key === null || periodOfKey(rules, key) === null) {
       befunde.push(`Die Heizanlage ${plantName(h.name)} hat Angaben zur Heizperiode ${h.period}, die es für ihr Objekt nicht gibt.`)
