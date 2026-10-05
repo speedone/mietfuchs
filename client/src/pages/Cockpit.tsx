@@ -5,6 +5,8 @@ import { cockpitSubtitle, itemsDetail, meterTypesInUse, tenanciesDetail, usesUni
 import { coverageCheck, filesByItem } from '../receipts'
 import { api, fmtEuro, fmtDate } from '../api'
 import { andList } from '../../../shared/wording.ts'
+import { hkvCutNotByConsumption } from '../../../shared/law/heizkostenv.ts'
+import { LAW_AS_OF, valueAt } from '../../../shared/law/register.ts'
 import { useYear } from '../year'
 import { useProperty, withProperty } from '../property'
 import { consentPending } from '../update'
@@ -148,7 +150,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
     if (meterTypes.size === 0 && heatingWithout.length > 0) {
       // #140: Heizung ohne Verbrauchsschlüssel. Ablesungen wären nötig, nicht entbehrlich.
       list.push({ title: 'Zählerstände', level: 'gelb', tab: 'kosten', cta: 'Heizkosten prüfen',
-        detail: `${andList(heatingWithout.map((c) => `„${c.description}“`))} ${heatingWithout.length === 1 ? 'wird' : 'werden'} nicht nach Verbrauch verteilt. Die Heizkostenverordnung verlangt das (§ 7 Abs. 1, § 8 Abs. 1 HeizkostenV); sonst darf der Mieter seinen Anteil um 15 % kürzen. Nötig sind Ablesungen der Wärmezähler oder die Abrechnung des Messdienstes.` })
+        detail: `${andList(heatingWithout.map((c) => `„${c.description}“`))} ${heatingWithout.length === 1 ? 'wird' : 'werden'} nicht nach Verbrauch verteilt. Die Heizkostenverordnung verlangt das (§ 7 Abs. 1, § 8 Abs. 1 HeizkostenV); sonst darf der Mieter seinen Anteil um ${valueAt(hkvCutNotByConsumption, LAW_AS_OF)} % kürzen. Nötig sind Ablesungen der Wärmezähler oder die Abrechnung des Messdienstes.` })
     } else if (meterTypes.size === 0) {
       list.push({ title: 'Zählerstände', level: 'leer',
         detail: 'Keine verbrauchsabhängige Umlage — Ablesungen nicht erforderlich.' })
