@@ -36,7 +36,7 @@ import { rulesFor } from '../../shared/law/rules.ts'
 // nicht als Literal; server/test/law-literals.test.ts wacht darüber.
 import { createLawLog, dayAfter, dayBefore, law, LAW_AS_OF, onlyVersion, recordVersionAt, valueAt, type Period } from '../../shared/law/register.ts'
 import { betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths } from '../../shared/law/bgb-betrkv.ts'
-import { hkvConsumptionShare, hkvCutNotByConsumption, hkvCutRemoteReading, hkvRemoteReadingRetrofit } from '../../shared/law/heizkostenv.ts'
+import { hkvConsumptionShare, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvRemoteReadingRetrofit } from '../../shared/law/heizkostenv.ts'
 import { practiceVacancyPersons } from '../../shared/law/practice.ts'
 import { HEATING_CATEGORY, heatingByConsumption, heatingFindings, mayAgreeOtherwise } from '../../shared/heating.ts'
 import { andList, meterTypeLabel, plural } from '../../shared/wording.ts'
@@ -45,6 +45,7 @@ import { allocationOf, comparablePrevious, sameAllocation, sameUnits } from '../
 import { possibleDuplicates } from '../../shared/duplicates.ts'
 import { commonPeriod, tenancyOverlaps } from '../../shared/tenancyOverlap.ts'
 import { calendarYearPeriod, contextOf, formatDayRange, periodDays, periodLabel, periodMonths, settlementDeadline, settlementPeriod, type PeriodContext } from '../../shared/period.ts'
+import { annualFactors } from './prepaymentSuggestion.ts'
 import type { FrozenItemSelfUse, Snapshot, SnapshotCostItem, SnapshotMeter, SnapshotReading, SnapshotTenancy, SnapshotUnit } from './snapshot.ts'
 
 export const KEY_LABELS: Record<CostKey, string> = {
@@ -238,6 +239,7 @@ const noticeKinds = {
   'period.item-outside': { level: 'warning', title: 'Leistungszeitraum außerhalb des Abrechnungszeitraums', terms: ['accrualPrinciple', 'billingPeriod'] },
   'period.heating-mismatch': { level: 'warning', title: 'Heizkosten aus einem anderen Zeitraum', terms: ['accrualPrinciple', 'heatingCostOrdinance'] },
   'period.split-by-days-meter': { level: 'hint', title: 'Verbrauch nach Tagen aufgeteilt', terms: ['accrualPrinciple', 'meterReading'] },
+  'prepayment.no-suggestion': { level: 'hint', title: 'Kein Vorschlag für die Vorauszahlung', terms: ['prepayment', 'degreeDays'] },
 } satisfies Record<string, NoticeKind>
 export type NoticeCode = keyof typeof noticeKinds
 export const NOTICE_KINDS: Readonly<Record<string, NoticeKind | undefined>> = noticeKinds
@@ -2761,6 +2763,25 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
 
   // Die Höchstdauer hat P gebildet (shared/period.ts); eingefroren wird sie hier.
   law(bgbMaxPeriodMonths, { period: lawPeriod }, lawLog)
+  // Vorschlag nach § 560 Abs. 4 BGB im Rumpfzeitraum (#208, Entwurf 3.7): je Position ein Faktor
+  // auf zwölf Monate, siehe prepaymentSuggestion.ts. Die Gradtagstabelle wird nur gefragt (und
+  // friert dann ein), wenn eine Brennstoffrechnung mit Leistungszeitraum da ist.
+  const shortBasis = period.short
+    ? annualFactors(
+      period,
+      items,
+      snapshot.previousCostItems ? { period: snapshot.previousPeriod, items: snapshot.previousCostItems } : null,
+      () => law(hkvDegreeDays, { period: lawPeriod }, lawLog),
+    )
+    : null
+  const continuing = partTenancies.some((t) => !(t.end != null && t.end <= yTo))
+  if (shortBasis && !shortBasis.ok && continuing) {
+    const which = items.find((c) => c.id === shortBasis.costItemId)
+    warn('prepayment.no-suggestion', shortBasis.reason === 'unmarked'
+      ? `Für den Rumpfzeitraum ${label} schlägt Mietfuchs keine neue Vorauszahlung vor: Keine Position der Heizkosten ist als Brennstoff gekennzeichnet. Kennzeichnen Sie die Brennstoffrechnung (Gas, Öl, Fernwärme, Strom der Wärmepumpe) unter „Weitere Angaben“ mit „Brennstoff/Energie“ und tragen Sie ihren Leistungszeitraum ein; dann rechnet Mietfuchs den Vorschlag nach Gradtagen hoch.`
+      : `Für den Rumpfzeitraum ${label} schlägt Mietfuchs keine neue Vorauszahlung vor: „${which?.description ?? ''}“ ist eine Lieferung ohne Leistungszeitraum. Aus einer Lieferung lässt sich der Jahresverbrauch nicht ableiten; den Vorschlag gibt es nach der nächsten vollen Abrechnung.`,
+    which ? itemSubject(which) : undefined)
+  }
   const result: ComputedSettlement = {
     year,
     daysInYear: diy,
@@ -2805,14 +2826,21 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // fallen nicht gleichmäßig übers Jahr an, ein Winterhalbjahr ergibt also zu viel, ein Sommer
     // zu wenig. Es bleibt ein Vorschlag, den der Vermieter vor dem Versand prüft.
     // Endet das Mietverhältnis im Jahr, auch zum 31.12., gibt es keine künftige Vorauszahlung und
-    // keinen Vorschlag; 0 heißt für die Oberfläche „nichts anzeigen“.
+    // keinen Vorschlag; 0 heißt für die Oberfläche „nichts anzeigen“. Im Rumpfzeitraum rechnet
+    // `annualFactors` je Position hoch (#208).
     const end = tenancyEnd.get(st.tenancyId)
-    // Im Rumpfzeitraum gibt es keinen Vorschlag (#208): vier Monate Kosten auf zwölf Monate
-    // hochgerechnet verschöben Winter und Sommer; PR 3 rechnet ihn nach Gradtagen und Tagen.
-    st.suggestedMonthlyCents = (end != null && end <= yTo) || st.days <= 0 || period.short
-      ? 0
+    const noFuture = (end != null && end <= yTo) || st.days <= 0
+    if (noFuture || (shortBasis !== null && !shortBasis.ok)) {
+      st.suggestedMonthlyCents = 0
+    } else if (shortBasis !== null) {
+      // Im Rumpf: jede Zeile mit ihrem Faktor auf zwölf Monate, dann wie im vollen Zeitraum auf die
+      // Tage des Mieters bezogen (#134) und auf volle Euro gerundet.
+      const annual = st.rows.reduce((a, row) => a + row.shareCents * (shortBasis.factors.get(row.costItemId) ?? 0), 0)
+      st.suggestedMonthlyCents = Math.max(0, Math.round((annual * diy) / st.days / 12 / 100) * 100)
+    } else {
       // Nie negativ: Überwiegen Gutschriften, gibt es keine Vorauszahlung unter 0 (Integrationsdurchsicht).
-      : Math.max(0, Math.round((st.totalShareCents * diy) / st.days / 12 / 100) * 100)
+      st.suggestedMonthlyCents = Math.max(0, Math.round((st.totalShareCents * diy) / st.days / 12 / 100) * 100)
+    }
   }
   return result
 }
