@@ -74,7 +74,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Speichern eines veralteten Formulars ab, statt die Heizvorauszahlung still zu löschen. Die
   Heizkostenabrechnung spricht von Heizkosten und Heizkostenvorauszahlung, die
   Betriebskostenabrechnung daneben von der Vorauszahlung für die übrigen Nebenkosten. Jeder Monat der
-  Vorauszahlung wird genau einmal angerechnet. Mietkonto und Mietverhältnis zeigen beide
+  Vorauszahlung wird genau einmal angerechnet. Am Mietverhältnis steht die Heizvorauszahlung in einer
+  eigenen Gruppe, die nennt, welche Heizung sie verlangt; das Lexikon erklärt den Begriff. Mietkonto und Mietverhältnis zeigen beide
   Vorauszahlungen, das Cockpit jede Heizkostenabrechnung mit ihrer Frist
   ([#217](https://github.com/speedone/mietfuchs/issues/217)).
 

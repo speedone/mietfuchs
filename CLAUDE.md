@@ -1400,6 +1400,12 @@ beiden Seiten), die dreimal einen Geldfehler hatte.
 - **Testgriff `NKA_TEST_ASSESSMENT_DELAY_MS`**: verzögert das Speichern einer Auswertung um so
   viele Millisekunden, nur für Tests (api.test.ts legt damit einen Abbruch in das Fenster zwischen
   Antwort der KI und Speichern). Ohne die Variable gibt es keine Pause; ein Nutzer setzt sie nie.
+- **Testgriff `NKA_TEST_TODAY`** (Laienprobe Heizung, Durchsicht): ein fester Tag als JJJJ-MM-TT für
+  die Uhr des Servers (`today()` in index.ts, server/src/testToday.ts), nur für Tests. Prüfbestände mit
+  festen Jahren kippen sonst an einem bestimmten Datum, weil eine Frist abläuft und Zeitraumwechsel,
+  Aufteilen und Heizperiodenwechsel dann eine Bestätigung verlangen. Er wirkt nur auf den Server,
+  nicht auf die Uhr des Browsers. Ist er gesetzt, nennt die Konsole ihn beim Start; ein Wert, der kein
+  echtes Kalenderdatum ist, bricht den Start mit Meldung ab. Ein Nutzer setzt ihn nie.
 
 **Berechnungs-Engine** ([server/src/calc.ts](server/src/calc.ts)) — das Herzstück, hier liegt
 die ganze fachliche Komplexität:

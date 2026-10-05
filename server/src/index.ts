@@ -48,6 +48,7 @@ import {
 import { heatingPeriodViews, removeCo2Statement, saveCo2Statement, saveHotWater } from './db/co2.ts'
 import { assignableHeatingItems, createHeatingPlant, listHeatingPlants, removeHeatingPlant, updateHeatingPlant } from './db/heating.ts'
 import { applyHeatingPeriodChange, previewHeatingPeriodChange } from './db/heatingPeriodChange.ts'
+import { testTodayOf } from './testToday.ts'
 import { applySeparate, previewSeparate } from './db/separateSettlement.ts'
 import { applyPeriodChange, previewPeriodChange } from './db/periodChange.ts'
 import {
@@ -482,11 +483,9 @@ app.put('/api/properties/:id', async (req, res) => {
 // Der Stichtag der Abrechnung (#133): heute, als JJJJ-MM-TT in UTC wie überall in calc.ts. Er
 // begrenzt nur den Hinweis auf einen Rückstand auf die schon fälligen Monate. Der Wechsel des
 // Zeitraums (#208) braucht ihn für die Liste der Zeiträume in der Vorschau.
-// Testgriff `NKA_TEST_TODAY` (Review der Laienprobe, Runde 2): ein fester Tag als JJJJ-MM-TT, nur für
-// Tests, damit Prüfbestände mit festen Jahren nicht an einem bestimmten Datum kippen (Fristen,
-// Bestätigung abgelaufener Fristen). Ohne die Variable gilt der wirkliche Tag; ein Nutzer setzt sie nie.
-const TEST_TODAY = /^\d{4}-\d{2}-\d{2}$/.test(process.env.NKA_TEST_TODAY ?? '') ? process.env.NKA_TEST_TODAY ?? null : null
-const today = (): string => TEST_TODAY ?? new Date().toISOString().slice(0, 10)
+// Testgriff `NKA_TEST_TODAY` (testToday.ts): ein fester Tag nur für Tests. Ohne ihn der wirkliche Tag.
+const TEST_TODAY = testTodayOf(process.env.NKA_TEST_TODAY)
+const today = (): string => TEST_TODAY.value ?? new Date().toISOString().slice(0, 10)
 
 app.delete('/api/properties/:id', async (req, res) => {
   const result = await writeData((db) => removeProperty(db, req.params.id))
@@ -2136,7 +2135,7 @@ const portProblem = Number.isInteger(PORT) && PORT >= 0 && PORT <= 65535
 
 // Eine falsch gesetzte Variable für den KI-Anbieter oder den Schlüssel (siehe ai/settings.ts und
 // secrets.ts) fiele sonst erst bei der ersten Auswertung auf
-const startProblem = AI_ENV.error ?? checkKeyEnvironment() ?? portProblem
+const startProblem = AI_ENV.error ?? checkKeyEnvironment() ?? portProblem ?? TEST_TODAY.error
 if (startProblem) {
   console.error(startProblem)
   process.exit(1)
@@ -2313,6 +2312,7 @@ const server = app.listen(PORT, (err) => {
   const address = server.address()
   const url = `http://127.0.0.1:${typeof address === 'object' && address ? address.port : PORT}`
   console.log(`Mietfuchs-Server läuft auf ${url}`)
+  if (TEST_TODAY.value !== null) console.log(`Testgriff NKA_TEST_TODAY aktiv: Der Server rechnet mit dem ${TEST_TODAY.value} als heute.`)
   // Wo die Daten liegen, hängt an der Betriebsart (siehe chooseDataDir in store.ts): neben der
   // Programmdatei oder, aus einem Paket installiert, im Benutzerordner. Wer den Ordner sichern
   // oder umziehen will, soll ihn nicht suchen müssen.

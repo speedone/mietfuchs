@@ -26,7 +26,7 @@ import { heatingPeriodsEndingIn, plantRules, separateOwner, servesUnit, settledS
 import { formatDayRange, parsePeriodKey, periodContaining, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, settlementDeadline, spansTwoYears, startYearOf } from '../../../shared/period.ts'
 import type { BillingPeriod, CostItem, HeatingPeriodChangePreview, HeatingPlant, PeriodEffect, PeriodKey, PeriodRules, Tenancy } from '../../../shared/types.ts'
 import type { Database, Transaction } from './client.ts'
-import { dryRun, lostClaims, outcomeOf, type Outcome } from './dryRun.ts'
+import { dryRun, earliestTenancyStart, lostClaims, outcomeOf, shownEffects, type Outcome } from './dryRun.ts'
 import { checkRules, monthsText, passedDeadlineText } from './periodChange.ts'
 import { readClosedSettlements, readCostItems, readHeatingPlants, readProperties, readStock, readTenancies, readUnits } from './read.ts'
 import { patchCostItemIn, PeriodError } from './repository.ts'
@@ -295,9 +295,12 @@ async function withEffects(db: Database, plantId: string, plan: Plan, today: str
   const firstNew = periodsBetween(next, '2000-01-01', today).find(differs(next, before))
   const first = [firstOld?.from, firstNew?.from].filter((x): x is string => x !== undefined).sort()[0]
   if (first === undefined || first > today) return plan.preview
-  const objectPeriods = periodsBetween(objectRules, first, today).filter((p) => !plan.closedKeys.has(p.key))
-  const heatPeriods = periodsBetween(next, first, today)
   const stockBefore = await readStock(db)
+  const moved = await earliestTenancyStart(db, plan.plant.propertyId)
+  if (moved === null) return plan.preview
+  const from = moved > first ? moved : first
+  const objectPeriods = periodsBetween(objectRules, from, today).filter((p) => !plan.closedKeys.has(p.key))
+  const heatPeriods = periodsBetween(next, from, today)
   const answers = given ?? {
     groups: Object.fromEntries([...plan.preview.groups].map((g) => [g.from, g.suggested])),
     moves: {}, overrides: {}, totals: {}, token: plan.preview.token,
@@ -324,13 +327,19 @@ async function withEffects(db: Database, plantId: string, plan: Plan, today: str
     ...objectPeriods.map((q, i) => effect(q, periodLabel(q), outcomeOf(stockBefore, plan.plant.propertyId, q), after?.object[i] ?? null, true)),
     ...heatPeriods.flatMap((h, i) => {
       const now = after?.heating[i] ?? null
-      if (now === null) return []
+      // Gescheiterter Probelauf: die Frist jeder Heizperiode, die danach getrennt abgerechnet wird.
+      const nextWay = { periodStartMonth: plan.own?.startMonth ?? null, periodChanges: plan.own?.changes ?? [], separateSpans: plan.plant.separateSpans }
+      if (now === null && (after !== null || !settledSeparately(nextWay, objectRules, h))) return []
+      // Verglichen wird wie beim Wechsel des Abrechnungszeitraums (periodChange.ts) mit dem bisherigen
+      // Zeitraum gleichen Schlüssels, auch wenn er kürzer oder länger war (Review Runde 3); verloren ist
+      // nur das Mehr, wenn dessen Frist selbst schon abgelaufen war.
       const old = periodOfKey(before, h.key)
-      const wasSeparate = old !== null && old.from === h.from && old.to === h.to && settledSeparately(plan.plant, objectRules, old)
-      return [effect(h, `Heizkosten ${periodLabel(h)}`, wasSeparate ? outcomeOf(stockBefore, plan.plant.propertyId, old, plantId) : null, now, wasSeparate)]
+      const wasSeparate = old !== null && settledSeparately(plan.plant, objectRules, old)
+      const barred = old !== null && wasSeparate && settlementDeadline(old) < today
+      return [effect(h, `Heizkosten ${periodLabel(h)}`, wasSeparate ? outcomeOf(stockBefore, plan.plant.propertyId, old, plantId) : null, now, barred)]
     }),
   ]
-  return { ...plan.preview, effects: effects.filter((e) => e.tenants.some((t) => t.beforeCents !== t.afterCents)) }
+  return { ...plan.preview, effects: shownEffects(effects, after !== null) }
 }
 
 const objectOr = (value: unknown): Record<string, unknown> =>

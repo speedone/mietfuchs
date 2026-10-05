@@ -6048,3 +6048,27 @@ test('Review Runde 2: Weg d ab 05/2025 am 02.01.2027: ohne Bestätigung 409 mit 
     s.stop()
   }
 })
+
+// Review Runde 3 (N1): Der Testgriff NKA_TEST_TODAY nur mit einem echten Kalenderdatum; sonst bricht
+// der Start ab. Ist er gesetzt, sagt es die Konsole.
+test('Start: NKA_TEST_TODAY mit ungültigem Datum bricht ab; ein gültiges nennt die Konsole', async () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-heute-'))
+  const { child, out } = startServerRaw(dataDir, { NKA_TEST_TODAY: '2027-02-30' })
+  try {
+    assert.equal(await waitForExit(child), 1, out())
+    assert.match(out(), /NKA_TEST_TODAY „2027-02-30“ ist kein Kalenderdatum/)
+    assert.doesNotMatch(out(), /läuft auf/)
+  } finally {
+    child.kill()
+    removeDataDir(dataDir)
+  }
+  const okDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-heute-'))
+  const ok = startServerRaw(okDir, { NKA_TEST_TODAY: '2027-01-02' })
+  try {
+    for (let i = 0; i < 100 && !/Testgriff NKA_TEST_TODAY aktiv/.test(ok.out()); i++) await new Promise((r) => setTimeout(r, 100))
+    assert.match(ok.out(), /Testgriff NKA_TEST_TODAY aktiv: Der Server rechnet mit dem 2027-01-02 als heute\./)
+  } finally {
+    ok.child.kill()
+    removeDataDir(okDir)
+  }
+})

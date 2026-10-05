@@ -9,7 +9,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { openDatabase, type OpenedDatabase } from '../src/db/open.ts'
 import { applyPeriodChange, monthsText, previewPeriodChange } from '../src/db/periodChange.ts'
-import { lostClaims } from '../src/db/dryRun.ts'
+import { lostClaims, shownEffects } from '../src/db/dryRun.ts'
 import { closeSettlement, createEntity, listCollection, listProperties, PeriodError, saveCostItemSplit, updateEntity } from '../src/db/repository.ts'
 import { eq } from 'drizzle-orm'
 import { assessmentLines, assessments, properties } from '../src/db/schema.ts'
@@ -364,4 +364,13 @@ test('Review Runde 2: taxShifts mit zwei Positionen verschiedener Jahre der Zahl
     const rumpf = g.taxShifts.find((t) => t.key === '2024-05') ?? assert.fail('Rumpf fehlt')
     assert.match(rumpf.text, /„Müll A“ 100,00.€ von 2025 nach 2024/)
   })
+})
+
+// Review Runde 3 (N4): Ohne Zahlen (Probelauf gescheitert) bleibt eine Abrechnung mit ihrer Frist in der
+// Vorschau; mit Zahlen nur, wenn sich für einen Mieter etwas ändert.
+test('Review Runde 3: shownEffects behält Fristen ohne Zahlen', () => {
+  const e = (tenants: { tenantName: string; beforeCents: number | null; afterCents: number }[]) => ({ label: 'x', deadline: '2026-12-31', passed: true, replaces: [], tenants, lostClaimsCents: 0 })
+  const alle = [e([]), e([{ tenantName: 'A', beforeCents: 1, afterCents: 1 }]), e([{ tenantName: 'B', beforeCents: 1, afterCents: 2 }])]
+  assert.deepEqual(shownEffects(alle, true).map((x) => x.tenants[0]?.tenantName), ['B'], 'gerechnet: nur, was sich ändert')
+  assert.equal(shownEffects(alle, false).length, 3, 'Probelauf gescheitert: jede Frist bleibt')
 })

@@ -121,6 +121,8 @@ test('Review Runde 2: Wechsel der Heizperiode mit abgelaufener Frist erst nach B
   fireEvent.change(screen.getByRole('combobox', { name: 'Für welchen Zeitraum rechnet die Heizung ab?' }), { target: { value: 'object' } })
   fireEvent.click(screen.getByRole('button', { name: 'Vorschau' }))
   await screen.findByText(/Müller: vorher Guthaben 2\.600,00.€, nachher Guthaben 3\.600,00.€/)
+  // Review Runde 3 (N4): auch hier der früheste Wechsel mit offener Frist.
+  expect(screen.getByText(/wechseln Sie frühestens ab/)).toBeTruthy()
   const uebernehmen = screen.getByRole('button', { name: 'Übernehmen' }) as HTMLButtonElement
   expect(uebernehmen.disabled).toBe(true)
   fireEvent.click(screen.getByRole('checkbox', { name: /Ich habe verstanden/ }))

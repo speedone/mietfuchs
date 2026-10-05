@@ -66,7 +66,7 @@ test('G-A2: Beim ersten Einstellen kommt die Messdienstabrechnung 2025/26 von 20
     assert.deepEqual(v.moves.map((m) => [m.costItemId, m.from, m.to, m.toLabel]), [['c2026', '2026-01', '2025-05', '2025/2026']])
     assert.deepEqual(v.groups, [])
     const r = await wechseln(opened, MAI, {})
-    assert.ok(r && 'plant' in r)
+    assert.ok(r && 'plant' in r, JSON.stringify(r))
     assert.deepEqual([r.plant.periodStartMonth, r.plant.periodChanges], [5, []])
     const nachher = Object.fromEntries((await items(opened)).map((c) => [c.id, [c.period, c.taxYear, c.heatingPlantId]]))
     assert.deepEqual(nachher, { c2024: ['2024-01', undefined, undefined], c2026: ['2025-05', 2026, 'hp1'] })
@@ -268,5 +268,25 @@ test('Review Runde 2: Heizpositionen wandern durch die Schreibprüfung', async (
     assert.deepEqual([c.period, c.taxYear, c.vendor, c.invoiceFile], ['2025-05', 2026, 'Messdienst', 'm.pdf'])
     // Die gespeicherte Position besteht die Schreibprüfung erneut.
     await opened.write((db) => updateEntity(db, 'costItems', 'c2026', {}))
+  })
+})
+
+// Review Runde 3 (N2): Dieselbe Abrechnung des Objekts vorher und nachher, also dieselbe Frist; verloren
+// ist nur das Mehr der Nachzahlung. Am 15.01.2027 ist die Frist 2025 abgelaufen.
+test('Review Runde 3: Wechsel der Heizperiode, verlorene Nachforderung der Abrechnung 2025 ist das Mehr', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write(async (db) => {
+      await haus(db)
+      await createHeatingPlant(db, 'hp1', 'objekt-1', { energy: 'gas', method: 'manual' })
+      await heizposition(db, 'gas2024', '2024-01', { description: 'Erdgas 2024' })
+      await createEntity(db, 'costItems', 'gs2025', { propertyId: 'objekt-1', period: '2025-01', category: 'Grundsteuer', description: 'Grundsteuer 2025', amountCents: 400000, key: 'area' })
+    })
+    const heute = '2027-01-15'
+    const v = (await opened.read((db) => previewHeatingPeriodChange(db, 'hp1', MAI, heute))) ?? assert.fail('keine Anlage')
+    const r = await opened.write((db) => applyHeatingPeriodChange(db, 'hp1', MAI, { token: v.token, moves: { gas2024: '2024-05' } }, heute))
+    assert.ok(r && 'error' in r, 'ohne Bestätigung abgelehnt')
+    const e = r.preview.effects.find((x) => x.label === '2025') ?? assert.fail(JSON.stringify(r.preview.effects))
+    assert.deepEqual(e.tenants, [{ tenantName: 'Müller', beforeCents: 360000 - 400000, afterCents: 360000 - 500000 }])
+    assert.equal(e.lostClaimsCents, 100000, 'nur das Mehr, nicht die ganze Nachzahlung von 1.400 €')
   })
 })

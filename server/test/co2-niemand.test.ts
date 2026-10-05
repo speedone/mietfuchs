@@ -36,3 +36,21 @@ test('Punkt 8: Eine spätere Belegbuchung zur Heizung findet die Gutschrift nich
   const items = [{ id: 'heizung', amountCents: 300000 }, { id: 'co2', amountCents: -15000 }]
   assert.deepEqual(candidatePool(items, 310000, []).map((i) => i.id), ['heizung'])
 })
+
+// Review Runde 3 (M1): Mit Einzelbeträgen geht keine Gutschrift. Der Rat zieht jedem Mieter den auf ihn
+// entfallenden CO₂-Anteil des Vermieters vom Einzelbetrag ab; der Rest der Position bleibt beim
+// Vermieter, die Werbungskosten bleiben 3.000 €. Eine zusätzliche Position „Nicht umlagefähig“ machte
+// daraus 3.150 €: Deshalb schließt der Rat sie bei diesem Weg aus.
+const messdienst = (ta: number, tb: number): SnapshotCostItem => ({
+  id: 'heizung', period: P, category: HEATING_CATEGORY, description: 'Heizung', amountCents: 300000, key: 'amounts', tenancyAmounts: { ta, tb },
+})
+test('Punkt 8 mit Einzelbeträgen: Abzug je Mieter, Werbungskosten 3.000 €; mit „Nicht umlagefähig“ wären es 3.150 €', () => {
+  const vorher = computeSettlement(snapshotOf(haus([messdienst(150000, 140000)]), 2025))
+  const rat = haus([messdienst(150000 - 7800, 140000 - 7200)])
+  const nachher = computeSettlement(snapshotOf(rat, 2025))
+  const mieter = (s: typeof nachher) => s.statements.reduce((sum, st) => sum + st.totalShareCents, 0)
+  assert.equal(mieter(vorher) - mieter(nachher), 15000, 'die Mieter tragen 150 € weniger')
+  assert.equal(taxReport(snapshotOf(rat, 2025)).expenses.deductibleCents, 300000)
+  const doppelt = haus([messdienst(150000 - 7800, 140000 - 7200), item('nu', 'Nicht umlagefähig', 15000)])
+  assert.equal(taxReport(snapshotOf(doppelt, 2025)).expenses.deductibleCents, 315000, 'zusätzlich „Nicht umlagefähig“: 150 € zu viel')
+})

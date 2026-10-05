@@ -34,7 +34,7 @@ import {
 import { parsePeriodKey, periodContaining, periodLabel, periodMonths, periodOfKey, periodsBetween, previousPeriod, rulesOf, settlementDeadline } from '../../../shared/period.ts'
 import type { BillingPeriod, CostItem, HeatingPlant, PeriodEffect, PeriodKey, PeriodRules, PrepaymentEntry, SeparatePreview, Tenancy } from '../../../shared/types.ts'
 import type { Database, Executor, Transaction } from './client.ts'
-import { dryRun, lostClaims, outcomeOf, type Outcome } from './dryRun.ts'
+import { dryRun, lostClaims, outcomeOf, shownEffects, type Outcome } from './dryRun.ts'
 import { monthsText, passedDeadlineText } from './periodChange.ts'
 import { readClosedSettlements, readCostItems, readHeatingPlants, readProperties, readStock, readTenancies, readUnits } from './read.ts'
 import { PeriodError } from './repository.ts'
@@ -352,7 +352,7 @@ async function withEffects(db: Database, plantId: string, p: Plan, today: string
     }),
   ]
   // Nur, was sich wirklich ändert: eine Abrechnung mit gleichem Ergebnis bei jedem Mieter fällt weg.
-  return { ...p.preview, effects: effects.filter((e) => e.tenants.length === 0 || e.tenants.some((t) => t.beforeCents !== t.afterCents)) }
+  return { ...p.preview, effects: shownEffects(effects, after !== null) }
 }
 
 // Eine Staffel ab einem Monat ersetzen: Einträge davor bleiben, ab dort gelten die neuen.

@@ -133,9 +133,14 @@ export function scheduleOf(rows: readonly { from: string; amount: string }[], de
 // oder H = P mit getrennter Vorauszahlung)? Dann fragen Mietverhältnis und Mieterwechsel die
 // Heizvorauszahlung mit ab (Durchsicht von #231, Important 2).
 export function separateHeatingFor(unit: Pick<Unit, 'id' | 'noConnection'>, plants: readonly HeatingPlant[]): boolean {
+  return separateHeatingPlant(unit, plants) !== null
+}
+
+// Die Anlage, die die Heizkosten der Wohnung getrennt abrechnet, für den Satz am Mietverhältnis.
+export function separateHeatingPlant(unit: Pick<Unit, 'id' | 'noConnection'>, plants: readonly HeatingPlant[]): HeatingPlant | null {
   const plant = plants.find((p) => servesUnit(p, unit))
-  if (!plant) return false
-  return plant.separateSpans.some((s) => s.until === null) || (!hasOwnRhythm(plant) && plant.separateSettlement === true)
+  if (!plant) return null
+  return plant.separateSpans.some((s) => s.until === null) || (!hasOwnRhythm(plant) && plant.separateSettlement === true) ? plant : null
 }
 
 // Das Jahr der Zahlung einer Heizposition unter ihrer Heizperiode (Entwurf 3.10, Durchsicht von #231):

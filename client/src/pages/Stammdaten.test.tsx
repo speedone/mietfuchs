@@ -270,3 +270,28 @@ test('Laienprobe B1: nach einer Änderung am Zeitraum der Heizung lädt die Seit
   fireEvent.click(await heizung.findByRole('button', { name: 'Übernehmen' }, SLOW))
   await vi.waitFor(() => expect(reload).toHaveBeenCalled(), SLOW)
 })
+
+// Rückmeldung zur Laienprobe: Die Heizvorauszahlung steht in einer eigenen Feldgruppe und nennt den
+// Grund samt Anlage; ohne getrennte Abrechnung und ohne eingetragene Heizvorauszahlung fehlt sie.
+test('Heizvorauszahlung: eigene Gruppe mit Grund und Anlagenname, sonst gar nicht', async () => {
+  plants = [{ ...PLANT_MAI, name: 'Gaskessel Keller', separateSettlement: true, separateSpans: [{ from: '2025-05', until: null }] }]
+  page([tenancy('t1', 'Beispiel', { prepayments: [{ from: '2025-01', monthlyCents: 25000 }] })])
+  fireEvent.click(await screen.findByRole('button', { name: 'Mietverhältnis bearbeiten' }, SLOW))
+  const dialog = await screen.findByRole('dialog', undefined, SLOW)
+  const label = await within(dialog).findByText(/Heizvorauszahlung je Monat/, undefined, SLOW)
+  const gruppe = label.closest('.field-group') as HTMLElement
+  expect(gruppe).toBeTruthy()
+  expect(gruppe.textContent).not.toMatch(/NK-Vorauszahlung je Monat/)
+  expect(within(gruppe).getByText(/Erscheint, weil die Heizung „Gaskessel Keller“ die Heizkosten getrennt abrechnet/)).toBeTruthy()
+  expect(within(gruppe).getByRole('button', { name: 'getrennte Heizkostenabrechnung' })).toBeTruthy()
+  expect(within(gruppe).getByText(/Ändern unter Stammdaten → Heizung/)).toBeTruthy()
+})
+
+test('Heizvorauszahlung: ohne getrennte Abrechnung und ohne Eintrag keine Gruppe', async () => {
+  plants = [PLANT_MAI]
+  page([tenancy('t1', 'Beispiel', { prepayments: [{ from: '2025-01', monthlyCents: 25000 }] })])
+  fireEvent.click(await screen.findByRole('button', { name: 'Mietverhältnis bearbeiten' }, SLOW))
+  const dialog = await screen.findByRole('dialog', undefined, SLOW)
+  await within(dialog).findByText(/NK-/, undefined, SLOW)
+  expect(within(dialog).queryByText(/Heizvorauszahlung je Monat/)).toBeNull()
+})

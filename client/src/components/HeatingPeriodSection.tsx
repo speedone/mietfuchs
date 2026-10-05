@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import type { HeatingPeriodChangePreview, HeatingPlant, PeriodRules, SeparatePreview } from '../types'
 import { ApiError, api, errorText, fmtDate, fmtEuro } from '../api'
-import { MONTH_OPTIONS } from '../periodForm'
+import { earliestOpenChange, localToday, MONTH_OPTIONS } from '../periodForm'
 import { EffectsList } from './PeriodCard'
+import Term from './Term'
 import { hasOwnRhythm } from '../../../shared/heatingPeriod.ts'
 import {
   PERIOD_CHOICE_OPTIONS, SEPARATE_OPTIONS, heatingPeriodAnswersOf, heatingPeriodForm, heatingPeriodSummary, heatingRulesBody, initialHeatingPeriodAnswers,
@@ -204,7 +205,7 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
                 </label>
               )}
               <label className="field grow">
-                Rechnen Sie die Heizkosten getrennt ab, mit eigener Heizkostenvorauszahlung?
+                <span>Rechnen Sie die Heizkosten <Term id="separateHeatingSettlement">getrennt ab</Term>, mit eigener Heizkostenvorauszahlung?</span>
                 <select value={form.separate} onChange={(e) => setForm({ ...form, separate: e.target.value as SeparateChoice })}>
                   <option value="">— bitte wählen —</option>
                   {SEPARATE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -263,7 +264,7 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
                 <p className="muted">{`Danach in der Betriebskostenabrechnung statt getrennt: ${periodPreview.endsSeparate.map((e) => e.label).join(', ')}.`}</p>
               )}
               {/* Review Runde 2: Fristen und Bestätigung wie beim Zeitraum des Objekts. */}
-              <EffectsList effects={periodPreview.effects} />
+              <EffectsList effects={periodPreview.effects} earliest={earliestOpenChange(localToday())} />
               {periodPreview.effects.some((e) => e.passed) && (
                 <label className="checkline">
                   <input type="checkbox" checked={periodUnderstood} onChange={(e) => setPeriodUnderstood(e.target.checked)} /> Ich habe verstanden, dass ich aus einer Abrechnung mit abgelaufener Frist keine Nachzahlung mehr verlangen kann.

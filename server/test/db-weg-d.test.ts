@@ -13,6 +13,7 @@ import { applySeparate, previewSeparate } from '../src/db/separateSettlement.ts'
 import { closeSettlement, createEntity, findEntity, HeatingError, StaleTenancyError, updateEntity } from '../src/db/repository.ts'
 import { tenancyStamp } from '../../shared/tenancyStamp.ts'
 import { createHeatingPlant, listHeatingPlants, updateHeatingPlant } from '../src/db/heating.ts'
+import { previewHeatingPeriodChange } from '../src/db/heatingPeriodChange.ts'
 import { readStock } from '../src/db/read.ts'
 import { closedHeatingSettlements, heatingPlants } from '../src/db/schema.ts'
 import { computeSettlement, rentLedger } from '../src/calc.ts'
@@ -347,5 +348,37 @@ test('Review Runde 1: Weg d rückwirkend über eine abgelaufene Frist nur mit Be
     assert.equal(await tenancyField(opened, 'heatingPrepayments'), undefined)
     const mit = await opened.write((db) => applySeparate(db, 'hp1', { ...body, answers: { steps: { t1: { '2025-05': 12300 } }, token, understood: true } }, '2027-01-15'))
     assert.ok(mit && 'plant' in mit)
+  })
+})
+
+// Review Runde 3 (N2): Weg d rückwirkend, die Abrechnung 2025 hatte schon eine Nachzahlung; verloren ist
+// nur das Mehr (der Heizanteil Mai bis Dezember), nicht die ganze Nachzahlung.
+test('Review Runde 3: Weg d, verlorene Nachforderung der Abrechnung 2025 ist das Mehr', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write(async (db) => {
+      await haus(db, { start: '2025-01-01', prepayments: [{ from: '2025-01', monthlyCents: 30000 }] })
+      await createEntity(db, 'costItems', 'gs2025', { propertyId: 'objekt-1', period: '2025-01', category: 'Grundsteuer', description: 'Grundsteuer 2025', amountCents: 500000, key: 'area' })
+    })
+    const v = await preview(opened, { separate: true, month: '2025-05' }, '2027-01-15')
+    const e = v.effects.find((x) => x.label === '2025') ?? assert.fail(JSON.stringify(v.effects))
+    const [m] = e.tenants
+    assert.ok(m && m.beforeCents !== null && m.beforeCents < 0 && m.afterCents < m.beforeCents, JSON.stringify(e.tenants))
+    assert.equal(e.lostClaimsCents, m.beforeCents - m.afterCents)
+  })
+})
+
+// Review Runde 3 (N3): Ein Wechsel der Heizperiode verkürzt die getrennt abgerechnete Heizperiode
+// 2025/2026 auf 05/2025–02/2026. Verglichen wird wie beim Zeitraumwechsel mit dem bisherigen Zeitraum
+// gleichen Schlüssels; war dessen Frist (30.04.2027) am 01.06.2027 schon abgelaufen, ist nur das Mehr verloren.
+test('Review Runde 3: verkürzte Heizperiode nach Weg d, verglichen mit dem bisherigen Zeitraum gleichen Schlüssels', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => haus(db, { start: '2025-01-01', prepayments: [{ from: '2025-01', monthlyCents: 30000 }] }))
+    await ein(opened, '2025-05', { '2025-05': 12300 })
+    const heute = '2027-06-01'
+    const regeln = { startMonth: 5, changes: ['2026-03'] }
+    const v = (await opened.read((db) => previewHeatingPeriodChange(db, 'hp1', regeln, heute))) ?? assert.fail('keine Anlage')
+    const e = v.effects.find((x) => x.label === 'Heizkosten 01.05.2025–28.02.2026') ?? assert.fail(JSON.stringify(v.effects.map((x) => x.label)))
+    assert.deepEqual(e.tenants, [{ tenantName: 'Müller', beforeCents: 12 * 12300 - 150000, afterCents: 10 * 12300 - 150000 }])
+    assert.equal(e.lostClaimsCents, 2 * 12300)
   })
 })

@@ -35,7 +35,7 @@ import type { BillingPeriod, CostItem, PeriodChangePreview, PeriodEffect, Period
 import { baseDescription, splitByService, type ServicePart } from '../serviceSplit.ts'
 import type { Database, Transaction } from './client.ts'
 import { readClosedSettlements, readCostItems, readHeatingPlants, readProperties, readStock, readTenancies, readUnits } from './read.ts'
-import { dryRun, lostClaims, outcomeOf } from './dryRun.ts'
+import { dryRun, earliestTenancyStart, lostClaims, outcomeOf } from './dryRun.ts'
 import { PeriodConflict, PeriodError, rewriteCostItemFamily, writeCostItemParts } from './repository.ts'
 import { assessmentLines, assessments, closedSettlementHistory, periodChanges, prepaymentOverrides, properties } from './schema.ts'
 import { euro } from '../../../shared/costItem.ts'
@@ -498,9 +498,11 @@ async function withEffects(db: Database, propertyId: string, plan: Plan, today: 
     return now === null || now.from !== p.from || now.to !== p.to
   })
   if (firstOld === undefined) return plan.preview
-  const targets = periodsBetween(next, firstOld.from, today).filter((p) => p.from <= today && touched(p))
-  if (targets.length === 0) return plan.preview
   const stockBefore = await readStock(db)
+  const moved = await earliestTenancyStart(db, propertyId)
+  if (moved === null) return plan.preview
+  const targets = periodsBetween(next, moved > firstOld.from ? moved : firstOld.from, today).filter((p) => p.from <= today && touched(p))
+  if (targets.length === 0) return plan.preview
   const answers: Answers = given ?? {
     groups: Object.fromEntries(plan.preview.groups.map((g) => [g.id, g.suggested || (g.split !== null ? 'split' : g.options[0]?.key ?? '')])),
     overrides: Object.fromEntries(plan.overrideAsks.map((o) => [o.tenancy.id, Object.fromEntries([...o.ask.keys()].map((k) => [k, null]))])),

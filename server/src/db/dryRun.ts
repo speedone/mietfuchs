@@ -10,9 +10,9 @@
 import { computeSettlement } from '../calc.ts'
 import { heatingSnapshotFor, snapshotFor } from '../snapshot.ts'
 import { periodLabel } from '../../../shared/period.ts'
-import type { BillingPeriod } from '../../../shared/types.ts'
+import type { BillingPeriod, PeriodEffect } from '../../../shared/types.ts'
 import type { Database, Transaction } from './client.ts'
-import { readStock, type Stock } from './read.ts'
+import { readStock, readTenancies, readUnits, type Stock } from './read.ts'
 
 class Rollback extends Error {
   readonly value: unknown
@@ -30,8 +30,9 @@ export async function dryRun<T>(db: Database, write: (tx: Transaction) => Promis
     })
   } catch (err) {
     if (err instanceof Rollback) return err.value as T
-    // Scheitert der Probelauf (eine Schreibprüfung lehnt ab), gibt es keine Zahl; die Vorschau sagt
-    // dann nur die Frist, und das eigentliche Speichern meldet den Grund.
+    // Scheitert der Probelauf (eine Schreibprüfung lehnt ab), gibt es keine Zahl; die Vorschau nennt
+    // dann je betroffener Abrechnung nur die Frist (`shownEffects` behält sie), und das eigentliche
+    // Speichern meldet den Grund.
     return null
   }
   return null
@@ -52,6 +53,20 @@ export function lostClaims(tenants: readonly { beforeCents: number | null; after
     const before = t.beforeCents === null || !beforeBarred ? 0 : Math.max(0, -t.beforeCents)
     return sum + Math.max(0, after - before)
   }, 0)
+}
+
+// Welche Abrechnungen die Vorschau nennt: mit gerechneten Zahlen jede, deren Ergebnis sich für einen
+// Mieter ändert; ohne Zahlen (Probelauf gescheitert oder nicht rechenbar) jede, denn ihre Frist gehört
+// trotzdem dazu (Review Runde 3).
+export const shownEffects = (effects: readonly PeriodEffect[], computed: boolean): PeriodEffect[] =>
+  computed ? effects.filter((e) => e.tenants.some((t) => t.beforeCents !== t.afterCents)) : [...effects]
+
+// Ab wann es überhaupt Abrechnungen gibt: der früheste Einzug in eine Wohnung des Objekts. Davor
+// gibt es nichts zu ändern und keine Frist zu nennen; sonst listete ein Wechsel „von Anfang an“ jedes
+// Jahr seit 2000 (Review Runde 3).
+export async function earliestTenancyStart(db: Database, propertyId: string): Promise<string | null> {
+  const units = new Set((await readUnits(db)).filter((u) => u.propertyId === propertyId).map((u) => u.id))
+  return (await readTenancies(db)).filter((t) => units.has(t.unitId)).map((t) => t.start).sort()[0] ?? null
 }
 
 export function outcomeOf(stock: Stock, propertyId: string, period: BillingPeriod, heatingPlantId: string | null = null): Outcome | null {

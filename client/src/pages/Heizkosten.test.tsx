@@ -32,5 +32,8 @@ test('Punkt 8: Heizposition unangetastet, Gutschrift „CO₂-Anteil Vermieter�
   expect(await screen.findByText(/Lassen Sie die\s+Heizposition, wie sie ist/, undefined, { timeout: 5000 })).toBeTruthy()
   expect(screen.getByText(/Gutschrift „CO₂-Anteil Vermieter“ in der Kostenart „Heizung und Warmwasser“/)).toBeTruthy()
   expect(screen.getByText(/mit Einzelbeträgen je Mieter,\s+geht eine Gutschrift nicht/)).toBeTruthy()
+  // Review Runde 3 (M1): bei Einzelbeträgen der Abzug je Mieter, ohne Position „Nicht umlagefähig“.
+  expect(screen.getByText(/den auf ihn entfallenden CO₂-Anteil des Vermieters vom Einzelbetrag ab/)).toBeTruthy()
+  expect(screen.getByText(/eine Position „Nicht umlagefähig“ entfällt dann/)).toBeTruthy()
   expect(screen.queryByText(/mindern Sie die Heizposition/)).toBeNull()
 })
