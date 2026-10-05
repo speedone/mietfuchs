@@ -956,12 +956,28 @@ als vermutlich gewollt oder eine Rechtsregel ist verletzt, `hint`, prüfen ohne 
 eingefrorene Abrechnungen lesen sie, und eine vor #112 abgeschlossene Abrechnung kennt nur sie
 (die Oberfläche zeigt sie dann als Warnungen ohne Titel, `noticesOf` in
 [client/src/notices.ts](client/src/notices.ts)).
-Rechtsregeln mit Gültigkeit stehen in [server/src/rules.ts](server/src/rules.ts), und zwar nur
-solche, die die Berechnung wirklich anwendet. calc.ts fragt `ruleCoverage` statt ein Jahr fest
-hinzuschreiben (die Kabel-Regel: `partial` ist das Übergangsjahr 2024, `none` die Zeit danach).
-Jede Abrechnung trägt ihren **Rechtsstand** (`legalBasis`: `RULES_AS_OF` und die Regeln des
-Jahres); weil die abgeschlossene Abrechnung wortgleich eingefroren wird, friert er mit ein. Wer
-eine Regel ändert, setzt `RULES_AS_OF` auf den Tag der Durchsicht (#110).
+
+**Rechtsregister** (Heizung PR 1, Entwurf `2026-10-05-heizung-gesamt-design.md` Abschnitt 4):
+Jede Rechtszahl steht nur in [shared/law/](shared/law/), mit Gültigkeit, Fundstelle, Prüfstand und
+**genau einer Zeitregel** (`periodStart`, `overlap`, `eventDate`; braucht ein Fall zwei, sind es
+zwei Parameter). Abgefragt wird mit `law(param, ctx, log)` aus
+[shared/law/register.ts](shared/law/register.ts); die Berechnung legt je Abrechnung ein Protokoll
+an (`createLawLog`, kein globaler Zustand), fragt erst dort, wo ein Wert gebraucht wird, und legt
+die benutzten Werte in `legalBasis.values`. Sie frieren mit dem Abschluss ein, `deviation` meldet
+einen später geänderten Wert in `valueChanges`. Texte außerhalb einer Abrechnung (Lexikon,
+Anleitungen, Cockpit) lesen `valueAt(param, LAW_AS_OF)`. Das Regelverzeichnis liegt in
+[shared/law/rules.ts](shared/law/rules.ts) und nimmt seine Daten und Zahlen aus den Parametern.
+**Eine Fassung wird nie geändert, nur eine neue angelegt**; `law-history.test.ts` hält jede
+ausgelieferte Fassung als Zahl fest. `law-literals.test.ts` verbietet Prozentangaben einer
+Rechtsfolge außerhalb des Registers und Datumsliterale in den Dateien der Berechnung; erlaubte
+Stellen stehen dort mit Grund. Beim Tag bricht release.yml ab, solange ein Wert
+`checked: 'unchecked'` hat (`law-release.test.ts`). Wer eine Regel oder einen Wert prüft, setzt
+`retrieved` und `LAW_AS_OF` (bei Regeln `RULES_AS_OF`) auf den Tag der Durchsicht (#110);
+`LAW_AS_OF` ist das jüngste `retrieved` und steht als Rechtsstand in jeder Abrechnung. Die
+jährliche Durchsicht (Entwurf 4.8) geht jeden Parameter an seiner Fundstelle durch, legt bei
+einer Änderung eine neue Fassung an statt die alte zu ändern, trägt veröffentlichte Werte ein,
+sieht Bundesgesetzblatt (HeizkostenV, CO2KostAufG, GModG, BetrKV, MessEV) und neue Urteile des
+VIII. Senats zu Heiz- und Betriebskosten durch und setzt zuletzt `LAW_AS_OF`.
 
 **Begriffslexikon** (#113): [shared/glossary.ts](shared/glossary.ts) hält jeden Fachbegriff mit
 Erklärung, Beispiel mit Zahlen, Rechtsgrundlage und „Brauche ich das?“. Es war der **erste
@@ -977,7 +993,8 @@ Verbrauchsanteil dasteht. Das Cockpit wendet die Regel nicht selbst an, sondern 
 [Term.tsx](client/src/components/Term.tsx) die Erklärung zum Aufklappen, und zwar als `span`
 mit `role="button"`: In einem `<label>` wäre ein `<button>` das erste bedienbare Element und
 nähme dem Eingabefeld die Beschriftung. Die Seite „Hilfe & Begriffe“ listet alle. Rechtsaussagen
-nur, wo sie im Gesetz stehen; Beispiele werden nachgerechnet.
+nur, wo sie im Gesetz stehen; Beispiele werden nachgerechnet. Lexikon und Anleitungen nehmen ihre
+Rechtszahlen aus dem Rechtsregister.
 
 **Anleitungen je Vermietungsart** (#164): [shared/guides.ts](shared/guides.ts) hält acht
 Anleitungen (Einliegerwohnung, Mehrfamilienhaus, Eigentumswohnung, mehrere Objekte, Garage,
