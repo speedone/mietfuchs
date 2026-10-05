@@ -5,7 +5,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement } from '../src/calc.ts'
-import { RULES } from '../src/rules.ts'
+import { RULES } from '../../shared/law/rules.ts'
 import { snapshotOf, type SnapshotSource } from '../src/snapshot.ts'
 import { GLOSSARY } from '../../shared/glossary.ts'
 
