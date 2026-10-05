@@ -475,6 +475,13 @@ async function requireServiceAndTax(db: Executor, before: CostItem | null, after
   // Einen Zeitraum, den es nicht gibt, hat `requirePeriods` schon abgelehnt.
   if (period === null) return
   requireTaxYear(period, after, what)
+  // Ein Teil einer aufgeteilten Rechnung wird nur berichtigt (Durchsicht von #226, C1): Mit einem
+  // anderen Leistungszeitraum oder Zeitraum stimmte sein Anteil nicht mehr zum Schnitt nach Tagen,
+  // und die Geschwisterteile blieben stehen. Den Wechsel des Rhythmus (`splitPart`) betrifft das nicht.
+  if (before !== null && !options.splitPart && isSplitPart(rules, before) &&
+    (before.serviceFrom !== from || before.serviceTo !== to || before.period !== after.period)) {
+    throw new PeriodError(splitPartMessage(before))
+  }
   if (from === undefined || to === undefined || after.category === HEATING_CATEGORY || options.splitPart) return
   const unchanged = before !== null && before.serviceFrom === from && before.serviceTo === to && before.period === after.period
   if (unchanged) return
@@ -486,6 +493,20 @@ async function requireServiceAndTax(db: Executor, before: CostItem | null, after
     )
   }
 }
+
+// Ein Teil einer aufgeteilten Rechnung (#208): eine kalte Position, deren Leistungszeitraum mehr
+// als einen Zeitraum des Objekts berührt. Anders entsteht so eine Position nicht, denn das
+// gewöhnliche Speichern lehnt sie ab (oben); sie kommt aus `saveCostItemSplit` oder dem Wechsel des
+// Rhythmus, und jeder Teil trägt den ganzen Leistungszeitraum der Rechnung.
+export function isSplitPart(rules: PeriodRules, c: Pick<CostItem, 'category' | 'serviceFrom' | 'serviceTo'>): boolean {
+  if (c.category === HEATING_CATEGORY || c.serviceFrom === undefined || c.serviceTo === undefined || c.serviceFrom > c.serviceTo) return false
+  return periodsBetween(rules, c.serviceFrom, c.serviceTo).length > 1
+}
+
+const splitPartMessage = (c: CostItem): string =>
+  `„${c.description}“ ist ein Teil einer aufgeteilten Rechnung (Leistungszeitraum ${formatDayRange(c.serviceFrom ?? '', c.serviceTo ?? '')}). ` +
+  'Leistungszeitraum und Abrechnungszeitraum ändern Sie nicht an einem einzelnen Teil, sonst passten die Anteile nicht mehr zusammen. ' +
+  'Betrag, Rechnungssteller und Beleg lassen sich berichtigen; für einen anderen Leistungszeitraum löschen Sie alle Teile und erfassen die Rechnung neu mit „Aufteilen und speichern“.'
 
 // Das Jahr der Zahlung (Entwurf 3.10): Liegt der Zeitraum in einem Kalenderjahr, ist es dieses und
 // darf nur leer oder genau dieses sein. Reicht er über zwei, ist es Pflicht und liegt zwischen dem
@@ -1117,6 +1138,9 @@ export async function writeCostItemParts(tx: Executor, base: CostItem, parts: re
 async function splitBase(db: Database, propertyId: string | null, body: unknown, currentId: string | null): Promise<{ base: CostItem; from: string; to: string }> {
   const current = currentId === null ? undefined : (await readCostItems(db)).find((c) => c.id === currentId)
   if (currentId !== null && !current) throw new PeriodError('Diese Kostenposition gibt es nicht (mehr). Bitte laden Sie die Seite neu.')
+  // Ein schon aufgeteilter Teil ist nicht die ganze Rechnung (Durchsicht von #226, C1): Ihn noch
+  // einmal aufzuteilen, verteilte seinen Anteil ein zweites Mal über beide Zeiträume.
+  if (current && isSplitPart(await rulesForProperty(db, current.propertyId), current)) throw new PeriodError(splitPartMessage(current))
   const base = mergeCostItem(current ?? emptyCostItem(currentId ?? 'vorschau'), current ? body : { ...Object(body), propertyId })
   if (base.category === HEATING_CATEGORY) {
     throw new PeriodError('Heizkosten teilt Mietfuchs nicht nach Tagen auf: Sie müssen den Verbrauch im Abrechnungszeitraum abbilden (BGH VIII ZR 156/11).')

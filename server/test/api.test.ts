@@ -5598,3 +5598,36 @@ test('Wechsel des Zeitraums (#208): Vorschau und Speichern über HTTP, 409 ohne 
     s.stop()
   }
 })
+
+// Durchsicht von #226 (C1): Ein schon aufgeteilter Teil trägt den ganzen Leistungszeitraum der
+// Rechnung, sein Betrag ist aber nur der Anteil seines Zeitraums. Wurde er erneut aufgeteilt, als
+// wäre er die ganze Rechnung, wanderten 106,22 € zu den Mietern des anderen Zeitraums.
+test('Aufteilen (#208): Ein Teil einer aufgeteilten Rechnung wird nur berichtigt, nie noch einmal aufgeteilt', async () => {
+  const s = await startServer()
+  try {
+    await inDatabase(s, async (db) => { await db.update(propertiesTable).set({ periodStartMonth: 5 }).where(eq(propertiesTable.id, 'objekt-1')) })
+    const rumpf = { category: 'Grundsteuer', description: 'Grundsteuer 2025', amountCents: 48000, key: 'area', serviceFrom: '2025-01-01', serviceTo: '2025-12-31', taxYear: 2025 }
+    await s.api<CostItem[]>('/api/costItems/split', { method: 'POST', body: JSON.stringify(rumpf) })
+    const teile = async () => (await s.api<CostItem[]>('/api/costItems')).map((c) => [c.period, c.amountCents]).sort()
+    assert.deepEqual(await teile(), [['2024-05', 15781], ['2025-05', 32219]])
+    const zweiter = (await s.api<CostItem[]>('/api/costItems')).find((c) => c.period === '2025-05') ?? assert.fail('kein Teil 2025-05')
+    const json = { 'content-type': 'application/json' }
+    // Den Leistungszeitraum eines Teils ändern: weder über das Aufteilen noch über die gewöhnliche Route.
+    const geteilt = await fetch(`${s.base}/api/costItems/${zweiter.id}/split`, { method: 'PUT', headers: json, body: JSON.stringify({ serviceTo: '2025-12-30' }) })
+    assert.equal(geteilt.status, 400)
+    assert.match(await errorFrom(geteilt), /ist ein Teil einer aufgeteilten Rechnung/)
+    const vorschau = await fetch(`${s.base}/api/costItems/${zweiter.id}/split/preview`, { method: 'POST', headers: json, body: JSON.stringify({ serviceTo: '2025-12-30' }) })
+    assert.equal(vorschau.status, 400)
+    const direkt = await fetch(`${s.base}/api/costItems/${zweiter.id}`, { method: 'PUT', headers: json, body: JSON.stringify({ serviceTo: '2025-12-30' }) })
+    assert.equal(direkt.status, 400)
+    assert.match(await errorFrom(direkt), /ist ein Teil einer aufgeteilten Rechnung/)
+    const umziehen = await fetch(`${s.base}/api/costItems/${zweiter.id}`, { method: 'PUT', headers: json, body: JSON.stringify({ period: '2024-05' }) })
+    assert.equal(umziehen.status, 400)
+    assert.deepEqual(await teile(), [['2024-05', 15781], ['2025-05', 32219]], 'nichts gewandert')
+    // Berichtigen geht: Rechnungssteller und Beleg ändern, Leistungszeitraum und Zeitraum bleiben.
+    await s.api(`/api/costItems/${zweiter.id}`, { method: 'PUT', body: JSON.stringify({ vendor: 'Stadtkasse' }) })
+    assert.deepEqual(await teile(), [['2024-05', 15781], ['2025-05', 32219]])
+  } finally {
+    s.stop()
+  }
+})
