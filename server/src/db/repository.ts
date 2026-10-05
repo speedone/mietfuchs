@@ -883,6 +883,7 @@ async function guardTenancy(db: Executor, before: Tenancy | null, after: Tenancy
 // Objekts, bleiben seine Einzelbeträge (#94) beim alten zurück; dann lieber ablehnen.
 async function guardTenancyMove(db: Executor, before: Tenancy | null, after: Tenancy): Promise<void> {
   if (!before || before.unitId === after.unitId) return
+  await guardHeatingMove(db, before, after)
   const objektVon = async (unitId: string) =>
     (await db.select({ propertyId: units.propertyId }).from(units).where(eq(units.id, unitId)))[0]?.propertyId
   if ((await objektVon(before.unitId)) === (await objektVon(after.unitId))) return
@@ -929,6 +930,35 @@ async function guardHeatingOverrides(db: Executor, after: Tenancy): Promise<void
     if (o.fromMonth === null || o.toMonth === null || !months.includes(o.fromMonth) || !months.includes(o.toMonth) || o.toMonth < o.fromMonth) {
       throw new PeriodError(`Die vorläufige Korrektur der Heizvorauszahlung von „${after.tenantName}“ nennt Monate außerhalb der Heizperiode ${periodLabel(h)}.`)
     }
+  }
+}
+
+// Versorgt eine Anlage die Wohnung? Ohne Liste jede ohne „kein Anschluss: Wärme“, mit Liste genau
+// die genannten (`servesUnit`, hier aus den Tabellen gelesen).
+async function plantServes(db: Executor, plantId: string, unitsLimited: boolean, unitId: string): Promise<boolean> {
+  if (unitsLimited) {
+    return (await db.select({ unitId: heatingPlantUnits.unitId }).from(heatingPlantUnits)
+      .where(and(eq(heatingPlantUnits.plantId, plantId), eq(heatingPlantUnits.unitId, unitId)))).length > 0
+  }
+  return (await db.select({ unitId: unitNoConnection.unitId }).from(unitNoConnection)
+    .where(and(eq(unitNoConnection.unitId, unitId), eq(unitNoConnection.meterType, 'waerme')))).length === 0
+}
+
+// Ein Mietverhältnis mit Heizvorauszahlung wechselt in eine Wohnung, die eine Anlage mit Spannen nach
+// Weg d anders versorgt als die bisherige (Durchsicht von #231, Minor 5): wie `guardServedChange`,
+// denn auch dann stünde eine angerechnete Heizvorauszahlung danach in einer anderen Abrechnung.
+async function guardHeatingMove(db: Executor, before: Tenancy, after: Tenancy): Promise<void> {
+  if (!(after.heatingPrepayments ?? before.heatingPrepayments ?? []).some((e) => e.monthlyCents > 0)) return
+  const propertyIds = (await db.select({ propertyId: units.propertyId }).from(units).where(inArray(units.id, [before.unitId, after.unitId]))).map((u) => u.propertyId)
+  if (propertyIds.length === 0) return
+  const plants = await db.select({ id: heatingPlants.id, unitsLimited: heatingPlants.unitsLimited }).from(heatingPlants).where(inArray(heatingPlants.propertyId, propertyIds))
+  for (const plant of plants) {
+    const spans = await db.select({ from: heatingSeparateSpans.from }).from(heatingSeparateSpans).where(eq(heatingSeparateSpans.plantId, plant.id))
+    if (spans.length === 0) continue
+    if ((await plantServes(db, plant.id, plant.unitsLimited, before.unitId)) === (await plantServes(db, plant.id, plant.unitsLimited, after.unitId))) continue
+    throw new HeatingError(409,
+      `Für „${after.tenantName}“ ist eine Heizvorauszahlung erfasst, und die Heizkosten werden getrennt abgerechnet. Die neue Wohnung versorgt die Heizanlage anders als die bisherige; ` +
+        'die Heizvorauszahlung stünde danach in einer anderen Abrechnung als bisher, auch in einer schon abgeschlossenen. Legen Sie für die neue Wohnung ein neues Mietverhältnis an (Mieterwechsel). Gespeichert wurde nichts.')
   }
 }
 

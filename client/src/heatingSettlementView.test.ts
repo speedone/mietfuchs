@@ -85,6 +85,8 @@ describe('Kostenformular und Mietverhältnis', () => {
   test('Staffel aus dem Formular', () => {
     expect(scheduleOf([{ from: '2025-05', amount: '123,00' }, { from: '', amount: '' }])).toEqual([{ from: '2025-05', monthlyCents: 12300 }])
     expect(scheduleOf([{ from: '2025-05', amount: 'viel' }])).toEqual({ error: 'Bitte die Staffel der Heizvorauszahlung prüfen (Monat und Betrag).' })
+    // Ein leerer Monat ist der Einzugsmonat, wie bei den übrigen Staffeln (Durchsicht von #231, Minor 3).
+    expect(scheduleOf([{ from: '', amount: '123,00' }], '2025-08')).toEqual([{ from: '2025-08', monthlyCents: 12300 }])
   })
 })
 

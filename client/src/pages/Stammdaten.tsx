@@ -236,7 +236,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
       }
     }
     // Heizung PR 5: die Heizstaffel neben der übrigen Vorauszahlung (nach dem Aufteilen, Entwurf 3.1).
-    const heating = scheduleOf(tenForm.heatingPrepayments)
+    const heating = scheduleOf(tenForm.heatingPrepayments, tenForm.start.slice(0, 7))
     if ('error' in heating) {
       setError(heating.error)
       return

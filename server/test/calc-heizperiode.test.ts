@@ -202,3 +202,17 @@ test('Hinweise einer Heizperiode im Rumpf nennen die Heizperiode, nicht P (Durch
   assert.doesNotMatch(vorschlag.text, /Rumpfzeitraum 2025/)
   assert.match(vorschlag.text, /^Für die Abrechnung 2025 schlägt Mietfuchs keine neue Vorauszahlung vor: Die Heizperiode 01\.05\.–31\.12\.2025 ist ein Rumpf, und keine Position der Heizkosten ist als Brennstoff gekennzeichnet\./)
 })
+
+test('Weg d ohne Heizstaffel: Einzug mitten im Monat zählt den Monat mit, eine Heizkorrektur genügt (Durchsicht von #231, Minor 2)', () => {
+  const src = (over: Record<string, unknown>) => haus({
+    heatingPlants: [anlage({ separateSettlement: true, separateSpans: [{ from: '2025-05', until: null }] })],
+    tenancies: [{ ...mieter('N', '2026-03-15', null, [{ from: '2026-03', monthlyCents: 30000 }]), ...over }],
+  })
+  const hints = (s: ReturnType<typeof settle>) => (s.notices ?? []).filter((n) => n.code === 'prepayment.heating-share-missing')
+  assert.match(hints(settle(src({}), '2026-01'))[0]?.text ?? '', /Die Heizkosten März bis Dezember 2026 werden getrennt abgerechnet/)
+  const korrigiert = src({ heatingPrepaymentOverrides: [
+    { plantId: 'hp1', period: periodKey('2025-05'), cents: 20000, provisional: false, fromMonth: null, toMonth: null },
+    { plantId: 'hp1', period: periodKey('2026-05'), cents: 80000, provisional: false, fromMonth: null, toMonth: null },
+  ] })
+  assert.deepEqual(hints(settle(korrigiert, '2026-01')), [], 'Die Heizkorrekturen nennen, was gezahlt wurde')
+})

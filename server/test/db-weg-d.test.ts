@@ -271,3 +271,17 @@ test('Weg d mit Heizstaffel: Die Liste der versorgten Wohnungen ändert sich nic
     await opened.write((db) => updateEntity(db, 'units', 'u3', { noConnection: ['waerme'] }))
   })
 })
+
+test('Weg d mit Heizstaffel: ein Mietverhältnis wechselt nicht still zwischen versorgter und unversorgter Wohnung (Durchsicht von #231, Minor 5)', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write(async (db) => {
+      await haus(db, {})
+      await createEntity(db, 'units', 'u2', { propertyId: 'objekt-1', name: 'Garage', areaM2: 0, participates: true, noConnection: ['waerme'] })
+    })
+    const v = await preview(opened, { separate: true, month: '2026-01' })
+    const steps = Object.fromEntries(v.steps.map((s) => [s.tenancyId, Object.fromEntries(s.rows.map((r) => [r.from, 10000]))]))
+    assert.ok(await apply(opened, { separate: true, month: '2026-01', answers: { steps } }))
+    await assert.rejects(opened.write((db) => updateEntity(db, 'tenancies', 't1', { unitId: 'u2' })),
+      (e: unknown) => e instanceof HeatingError && e.status === 409 && /Müller/.test(e.message))
+  })
+})

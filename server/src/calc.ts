@@ -3027,8 +3027,15 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       // in P; typisch für ein neues Mietverhältnis, bei dem die Heizstaffel fehlt.
       const way = wayOf(plant)
       const heizRate: MonthlySchedule[] = Array.isArray(t.heatingPrepayments) ? t.heatingPrepayments : []
-      const ohne = periodMonths(period).filter((m) => t.start <= `${m}-01` && !(t.end && t.end < `${m}-01`) &&
-        separateOwner(way, objectRules, m) !== null && rateAtMonth(heizRate, m) === 0 && rateAtMonth(t.prepayments, m) > 0)
+      // Ein Einzug mitten im Monat zählt den Monat mit, und eine Heizkorrektur der Heizperiode (endgültig,
+      // oder vorläufig für diesen Monat) nennt schon, was gezahlt wurde (Durchsicht von #231, Minor 2).
+      const korrigiert = (m: string, key: PeriodKey): boolean => (t.heatingPrepaymentOverrides ?? []).some((o) => o.plantId === plant.id && o.period === key &&
+        (!o.provisional || (o.fromMonth !== null && o.toMonth !== null && o.fromMonth <= m && m <= o.toMonth)))
+      const ohne = periodMonths(period).filter((m) => {
+        if (t.start > `${m}-31` || (t.end && t.end < `${m}-01`)) return false
+        const owner = separateOwner(way, objectRules, m)
+        return owner !== null && !korrigiert(m, owner.key) && rateAtMonth(heizRate, m) === 0 && rateAtMonth(t.prepayments, m) > 0
+      })
       if (ohne.length > 0) {
         warn('prepayment.heating-share-missing',
           `${t.tenantName} (${t.unit.name}): Die Heizkosten ${monthSpanText(ohne)} werden getrennt abgerechnet, für diese Monate ist aber keine Heizvorauszahlung erfasst; ` +

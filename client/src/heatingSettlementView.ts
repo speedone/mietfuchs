@@ -100,13 +100,15 @@ export function itemsOfPeriod<T extends { period: string; heatingPlantId?: strin
 }
 
 // Die Heizstaffel aus den Zeilen des Formulars; leere Zeilen fallen weg.
-export function scheduleOf(rows: readonly { from: string; amount: string }[]): { from: string; monthlyCents: number }[] | { error: string } {
+// Ein leerer Monat ist `defaultFrom`, der Einzugsmonat, wie bei Vorauszahlung und Pauschale.
+export function scheduleOf(rows: readonly { from: string; amount: string }[], defaultFrom = ''): { from: string; monthlyCents: number }[] | { error: string } {
   const result: { from: string; monthlyCents: number }[] = []
   for (const row of rows) {
     if (row.from === '' && row.amount.trim() === '') continue
     const cents = parseEuro(row.amount)
-    if (!/^\d{4}-\d{2}$/.test(row.from) || cents === null || cents < 0) return { error: 'Bitte die Staffel der Heizvorauszahlung prüfen (Monat und Betrag).' }
-    result.push({ from: row.from, monthlyCents: cents })
+    const from = row.from || defaultFrom
+    if (!/^\d{4}-\d{2}$/.test(from) || cents === null || cents < 0) return { error: 'Bitte die Staffel der Heizvorauszahlung prüfen (Monat und Betrag).' }
+    result.push({ from, monthlyCents: cents })
   }
   return result
 }
