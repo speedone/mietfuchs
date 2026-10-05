@@ -16,7 +16,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { AiSettings, AiSlot, Co2Statement, Co2TenantRelief, CostItem, HeatingPeriodData, HeatingPlant, HeatingPlantUnit, HeatingPrepaymentOverride, SeparateSpan, PeriodKey, PeriodRules, Meter, Payment, PersonEntry, PrepaymentEntry, Reading, RentEntry, Settings, Tenancy, Unit, ExternalBasis, UploadInfo, StoredAssessment, StoredAssessmentLine } from '../../shared/types.ts'
+import type { AiSettings, AiSlot, Co2Statement, DegreeDayValue, FrozenFuelCarry, FuelDelivery, FuelDeliveryPart, Co2TenantRelief, CostItem, HeatingPeriodData, HeatingPlant, HeatingPlantUnit, HeatingPrepaymentOverride, SeparateSpan, PeriodKey, PeriodRules, Meter, Payment, PersonEntry, PrepaymentEntry, Reading, RentEntry, Settings, Tenancy, Unit, ExternalBasis, UploadInfo, StoredAssessment, StoredAssessmentLine } from '../../shared/types.ts'
 import type { ClosedSettlement } from '../src/store.ts'
 import { applyMigrations, connect, loadMigrations } from '../src/db/client.ts'
 import * as schema from '../src/db/schema.ts'
@@ -145,6 +145,12 @@ type _HeatingSeparateSpans = Assert<Matches<Omit<typeof schema.heatingSeparateSp
 type Co2StatementColumns = Omit<Co2Statement, 'plantId' | 'period' | 'reliefs'>
 type _Co2Statements = Assert<Matches<typeof schema.co2Statements.$inferSelect, Co2StatementColumns>>
 type _Co2Reliefs = Assert<Matches<Omit<typeof schema.co2TenantReliefs.$inferSelect, 'statementId'>, Co2TenantRelief>>
+// --- Lieferungen (Heizung PR 7) ---
+// Die Teilmengen stehen in einer eigenen Tabelle; eingefroren wird je Zeile in `heating_periods`.
+type _FuelDeliveries = Assert<Matches<typeof schema.fuelDeliveries.$inferSelect, Omit<FuelDelivery, 'parts'>>>
+type _FuelParts = Assert<Matches<Omit<typeof schema.fuelDeliveryParts.$inferSelect, 'deliveryId'>, FuelDeliveryPart>>
+type _FuelFrozen = Assert<Matches<typeof schema.fuelCarryFrozen.$inferSelect, Omit<FrozenFuelCarry, 'plantId' | 'period'> & { heatingPeriodId: string }>>
+type _DegreeDays = Assert<Matches<Omit<typeof schema.degreeDayValues.$inferSelect, 'propertyId'>, DegreeDayValue>>
 
 // --- Abgeschlossene Abrechnungen ---
 // `ClosedSettlement` steht in store.ts und nicht in shared/types.ts, weil nur der Server sie
@@ -260,7 +266,11 @@ test('Migration lässt sich anwenden und legt alle Tabellen an', async () => {
       'cost_item_self_amounts',
       'cost_item_shares',
       'cost_items',
+      'degree_day_values',
       'flat_rates',
+      'fuel_carry_frozen',
+      'fuel_deliveries',
+      'fuel_delivery_parts',
       'heating_period_changes',
       'heating_periods',
       'heating_plant_units',
@@ -852,6 +862,73 @@ test('CO₂: Beträge je Mietverhältnis fallen mit Mietverhältnis und Datensat
     assert.equal(zahl('co2_tenant_reliefs'), 0, 'der Betrag fällt mit dem Mietverhältnis')
     connection.exec("DELETE FROM heating_periods WHERE id = 'h1'")
     assert.equal(zahl('co2_statements'), 0, 'der Datensatz fällt mit der Heizperiode')
+  } finally {
+    cleanup()
+  }
+})
+
+// ---------- Lieferungen (Heizung PR 7) ----------
+
+const eineGasanlage = [
+  "INSERT INTO heating_plants (id, property_id, energy, method) VALUES ('hp1', 'objekt-1', 'gas', 'manual')",
+  "INSERT INTO heating_periods (id, plant_id, period) VALUES ('h1', 'hp1', '2025-01')",
+]
+
+test('Lieferungen: Rechnungszeitraum paarweise und geordnet, Anteil bis 1000 ‰, Zahlen nicht negativ', async () => {
+  const { connection, cleanup } = await freshDb()
+  try {
+    for (const sql of eineGasanlage) connection.exec(sql)
+    assert.equal(rejects(connection, "INSERT INTO fuel_deliveries (id, plant_id, invoice_from, invoice_to) VALUES ('d1', 'hp1', '2025-03-15', '2026-03-14')"), null)
+    assert.deepEqual(connection.rows("SELECT label, estimated, used_by_service FROM fuel_deliveries")[0], ['', 0, 1])
+    assert.ok(rejects(connection, "INSERT INTO fuel_deliveries (id, plant_id, invoice_from) VALUES ('d2', 'hp1', '2025-03-15')"), 'Beginn ohne Ende')
+    assert.ok(rejects(connection, "INSERT INTO fuel_deliveries (id, plant_id, invoice_from, invoice_to) VALUES ('d3', 'hp1', '2026-03-14', '2025-03-15')"), 'Ende vor Beginn')
+    assert.ok(rejects(connection, "INSERT INTO fuel_deliveries (id, plant_id, invoice_from, invoice_to) VALUES ('d4', 'hp1', '15.03.2025', '14.03.2026')"), 'kein ISO-Datum')
+    assert.ok(rejects(connection, "UPDATE fuel_deliveries SET share_permille = 1001"), 'über 1000 ‰')
+    assert.ok(rejects(connection, "UPDATE fuel_deliveries SET fixed_cents = -1"), 'negativer fester Teil')
+    assert.ok(rejects(connection, "UPDATE fuel_deliveries SET emissions_kg = -1"), 'negativer Ausstoß')
+    assert.ok(rejects(connection, "UPDATE fuel_deliveries SET quantity_unit = 'fass'"), 'unbekannte Einheit')
+    assert.ok(rejects(connection, "UPDATE fuel_deliveries SET heating_value = 0"), 'Heizwert 0')
+    assert.equal(rejects(connection, "INSERT INTO fuel_delivery_parts (delivery_id, \"from\", \"to\", amount_cents) VALUES ('d1', '2025-03-15', '2025-12-31', 500000)"), null)
+    assert.ok(rejects(connection, "INSERT INTO fuel_delivery_parts (delivery_id, \"from\", \"to\", amount_cents) VALUES ('d1', '2025-03-15', '2025-12-31', 1)"), 'dieselbe Teilmenge zweimal')
+    assert.ok(rejects(connection, "INSERT INTO fuel_delivery_parts (delivery_id, \"from\", \"to\", amount_cents) VALUES ('d1', '2026-01-02', '2026-01-01', 1)"), 'Teilmenge endet vor Beginn')
+  } finally {
+    cleanup()
+  }
+})
+
+test('Lieferungen: die Anlage bleibt stehen, Teilmengen fallen mit, Positionen und Eingefrorenes halten die Lieferung', async () => {
+  const { connection, cleanup } = await freshDb()
+  try {
+    for (const sql of eineGasanlage) connection.exec(sql)
+    connection.exec("INSERT INTO fuel_deliveries (id, plant_id, invoice_from, invoice_to) VALUES ('d1', 'hp1', '2025-01-01', '2025-12-31')")
+    connection.exec("INSERT INTO fuel_delivery_parts (delivery_id, \"from\", \"to\", amount_cents) VALUES ('d1', '2025-01-01', '2025-06-30', 100)")
+    connection.exec("INSERT INTO cost_items (id, property_id, period, category, description, amount_cents, key, heating_plant_id, fuel_delivery_id) VALUES ('c1', 'objekt-1', '2025-01', 'Heizung und Warmwasser', 'Gas', 100000, 'area', 'hp1', 'd1')")
+    assert.ok(rejects(connection, "INSERT INTO cost_items (id, property_id, period, category, description, amount_cents, key, fuel_delivery_id) VALUES ('c2', 'objekt-1', '2025-01', 'Grundsteuer', 'G', 1, 'area', 'd1')"), 'Lieferung an einer kalten Position')
+    assert.ok(rejects(connection, "DELETE FROM heating_plants WHERE id = 'hp1'"), 'die Lieferung hält die Anlage')
+    assert.ok(rejects(connection, "DELETE FROM fuel_deliveries WHERE id = 'd1'"), 'die Position hält die Lieferung')
+    connection.exec("DELETE FROM cost_items WHERE id = 'c1'")
+    connection.exec("INSERT INTO fuel_carry_frozen (delivery_id, heating_period_id, cents) VALUES ('d1', 'h1', -98339)")
+    assert.deepEqual(connection.rows('SELECT emissions_kg, co2_cents FROM fuel_carry_frozen')[0], [0, 0])
+    assert.ok(rejects(connection, "DELETE FROM fuel_deliveries WHERE id = 'd1'"), 'das Eingefrorene hält die Lieferung')
+    connection.exec('DELETE FROM fuel_carry_frozen')
+    connection.exec("DELETE FROM fuel_deliveries WHERE id = 'd1'")
+    assert.equal(Number(connection.rows('SELECT count(*) FROM fuel_delivery_parts')[0]?.[0]), 0, 'die Teilmengen fallen mit')
+  } finally {
+    cleanup()
+  }
+})
+
+test('CO₂-Merkmale der Anlage und Ortswerte der Gradtage', async () => {
+  const { connection, cleanup } = await freshDb()
+  try {
+    for (const sql of eineGasanlage) connection.exec(sql)
+    assert.deepEqual(connection.rows('SELECT non_residential, restriction, district_ets_new FROM heating_plants')[0], [0, 'none', 0])
+    assert.ok(rejects(connection, "UPDATE heating_plants SET restriction = 'denkmal'"), 'unbekannte Beschränkung')
+    assert.ok(rejects(connection, 'UPDATE heating_plants SET district_ets_new = 1'), 'Emissionshandel nur bei Fernwärme')
+    assert.equal(rejects(connection, "UPDATE heating_plants SET energy = 'districtHeating', district_ets_new = 1"), null)
+    assert.equal(rejects(connection, "INSERT INTO degree_day_values (property_id, month, value) VALUES ('objekt-1', '2025-01', 412.5)"), null)
+    assert.ok(rejects(connection, "INSERT INTO degree_day_values (property_id, month, value) VALUES ('objekt-1', '2025-13', 1)"), 'Monat 13')
+    assert.ok(rejects(connection, "INSERT INTO degree_day_values (property_id, month, value) VALUES ('objekt-1', '2025-02', 0)"), 'Wert 0')
   } finally {
     cleanup()
   }

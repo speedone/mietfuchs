@@ -290,7 +290,7 @@ test('co2.missing: Gasheizung ohne CO₂-Angaben, 3 % je Mieter auf seine Heizze
   assert.ok(!codes(settle({ ...zwei, costItems: [gas()] }, [], [plant({ energy: 'heatPump' })])).some((c) => c.startsWith('co2.')))
   assert.equal(settle({ ...zwei, costItems: [gas()] }, [], [plant({ energy: 'other' })]).notices.find((x) => x.code === 'co2.fuel-unknown')?.subject?.id, 'hp')
   assert.match(textOf(settle({ ...zwei, costItems: [gas()] }, [], [plant({ source: 'homeowners' })]), 'co2.missing'), /aus der Abrechnung der Gemeinschaft ein\./)
-  assert.match(textOf(settle({ ...zwei, costItems: [gas()] }, [], [plant({ method: 'manual' })]), 'co2.missing'), /mit einer späteren Version/)
+  assert.match(textOf(settle({ ...zwei, costItems: [gas()] }, [], [plant({ method: 'manual' })]), 'co2.missing'), /als Lieferungen ein; dann teilt Mietfuchs die CO₂-Kosten selbst auf/)
 })
 
 test('Ohne Heizanlage: co2.fuel-unknown, im ersten Jahr co2.missing-first-year, nichts vor 2023 und nichts bei Warmmiete', () => {

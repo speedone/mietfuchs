@@ -16,7 +16,7 @@ import { compareWithFrozen } from './settlementDiff.ts'
 import { computeSettlement, consumptionOverview, rentLedger, taxPartsFor, taxReportFor, type ComputedSettlement } from './calc.ts'
 import { heatingSnapshotFor, narrowToProperty, snapshotFor } from './snapshot.ts'
 import { calendarPeriod, calendarYearPeriod, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodOfKey, resolvePeriodParam, rulesOf, settlementDeadline, settlementPeriod, startYearOf } from '../../shared/period.ts'
-import type { BillingPeriod, HeatingPlant } from '../../shared/types.ts'
+import type { BillingPeriod, FuelGapQuestion, HeatingPlant } from '../../shared/types.ts'
 import { plantRules, settledSeparately } from '../../shared/heatingPeriod.ts'
 import { extractFromFile, classifyDocType, extractMeterReading, type AskProgressEvent, type AskStats } from './extract.ts'
 import { listOllamaModels, findOllama, defaultCandidates, pullOllamaModel } from './ai/ollama.ts'
@@ -34,7 +34,7 @@ import { databaseUnavailable, healthReport, NO_DATABASE, type DatabaseState } fr
 import { databaseFile, openDatabase, type OpenedDatabase } from './db/open.ts'
 import { changeoverWithoutDatabase, replaceFile, runChangeover, type ChangeoverResult } from './db/changeover.ts'
 import { acknowledgeNotice, clearNotice, NOTICE_NAME, noticeKey, readNotice, recordNotice, type MigrationNotice } from './db/migrationNotice.ts'
-import type { Database } from './db/client.ts'
+import type { Database, Executor } from './db/client.ts'
 import { databaseProblem } from './db/errors.ts'
 import { readHeatingPlants, readProperties, readSettings, readStock, type Stock } from './db/read.ts'
 import {
@@ -46,6 +46,7 @@ import {
   TenantChangeError, unitDependents, writeSettings, type CollectionName,
 } from './db/repository.ts'
 import { heatingPeriodViews, removeCo2Statement, saveCo2Statement, saveHotWater } from './db/co2.ts'
+import { createDelivery, createEstimates, freezeFuelCarries, fuelGapQuestions, listDegreeDays, listDeliveries, removeDelivery, saveDegreeDays, unfreezeFuelCarries, updateDelivery } from './db/fuel.ts'
 import { assignableHeatingItems, createHeatingPlant, listHeatingPlants, removeHeatingPlant, updateHeatingPlant } from './db/heating.ts'
 import { applyHeatingPeriodChange, previewHeatingPeriodChange } from './db/heatingPeriodChange.ts'
 import { testTodayOf } from './testToday.ts'
@@ -531,6 +532,11 @@ app.delete('/api/heating-plants/:id', async (req, res) => {
         'wenn die Anlage wirklich entfallen soll; sonst gingen sie mit ihr verloren.',
     })
   }
+  if (result.reason === 'deliveries') {
+    return res.status(409).json({
+      error: `An dieser Heizanlage stehen ${result.count === 1 ? 'eine Lieferung' : `${result.count} Lieferungen`}. Entfernen Sie sie auf der Seite Heizkosten, wenn die Anlage wirklich entfallen soll.`,
+    })
+  }
   if (result.reason === 'separate') {
     return res.status(409).json({
       error: 'Die Heizkosten dieser Anlage werden getrennt abgerechnet, oder es gibt abgeschlossene Heizkostenabrechnungen oder Korrekturen der ' +
@@ -568,6 +574,42 @@ app.put('/api/heating-plants/:id/periods/:period/hot-water', async (req, res) =>
   const saved = await writeData((db) => saveHotWater(db, req.params.id, req.params.period, bodyObject(req)))
   if (!saved) return res.status(404).json({ error: NO_PLANT })
   res.json(saved)
+})
+
+// ---------- Brennstofflieferungen (Heizung PR 7) ----------
+// Was gespeichert wird und was nicht, steht in db/fuel.ts; gerechnet wird in fuel.ts und calc.ts.
+const NO_DELIVERY = 'Diese Lieferung gibt es nicht (mehr). Bitte laden Sie die Seite neu.'
+app.get('/api/heating-plants/:id/deliveries', async (req, res) => {
+  const list = await readData((db) => listDeliveries(db, req.params.id))
+  if (!list) return res.status(404).json({ error: NO_PLANT })
+  res.json(list)
+})
+app.post('/api/heating-plants/:id/deliveries', async (req, res) => {
+  const created = await writeData((db) => createDelivery(db, newId(), req.params.id, bodyObject(req)))
+  if (!created) return res.status(404).json({ error: NO_PLANT })
+  res.status(201).json(created)
+})
+app.put('/api/fuel-deliveries/:id', async (req, res) => {
+  const saved = await writeData((db) => updateDelivery(db, req.params.id, bodyObject(req)))
+  if (!saved) return res.status(404).json({ error: NO_DELIVERY })
+  res.json(saved)
+})
+app.delete('/api/fuel-deliveries/:id', async (req, res) => {
+  const removed = await writeData((db) => removeDelivery(db, req.params.id))
+  if (!removed) return res.status(404).json({ error: NO_DELIVERY })
+  res.json({ ok: true })
+})
+// Die Gradtagzahlen des Orts (Stufe 4 in 3.2), je Objekt.
+const NO_PROPERTY = 'Dieses Objekt gibt es nicht (mehr). Bitte laden Sie die Seite neu.'
+app.get('/api/properties/:id/degree-days', async (req, res) => {
+  const values = await readData((db) => listDegreeDays(db, req.params.id))
+  if (!values) return res.status(404).json({ error: NO_PROPERTY })
+  res.json(values)
+})
+app.put('/api/properties/:id/degree-days', async (req, res) => {
+  const values = await writeData((db) => saveDegreeDays(db, req.params.id, bodyObject(req)))
+  if (!values) return res.status(404).json({ error: NO_PROPERTY })
+  res.json(values)
 })
 
 // Zeitraum der Heizung (Heizung PR 5, Entwurf 3.0, 3.6): erst die Vorschau, dann der Wechsel mit den
@@ -649,18 +691,25 @@ app.get('/api/heating-settlement/:plant/:period', async (req, res) => {
 app.post('/api/heating-settlement/:plant/:period/close', async (req, res) => {
   const sentAt = sentAtOf(req)
   if (sentAt === false) return res.status(400).json({ error: SENT_AT_INVALID })
+  const answer = fuelAnswerOf(req)
+  if (answer === false) return res.status(400).json({ error: FUEL_ANSWER_INVALID })
   // Rechnen und Einfrieren im selben Vorgang, wie bei der Abrechnung des Objekts.
   const ergebnis = await writeData(async (db) => {
     const target = await heatingTargetOf(db, req)
     const label = periodLabel(target.period)
-    if (await findClosedHeatingSettlement(db, target.plant.id, target.period.key)) return { schonDa: true, label }
-    await closeHeatingSettlement(db, {
-      id: newId(), plantId: target.plant.id, period: target.period.key, closedAt: new Date().toISOString(), sentAt,
-      settlement: computeHeating(await readStock(db), target.plant, target.period),
-    })
-    return { schonDa: false, label }
+    if (await findClosedHeatingSettlement(db, target.plant.id, target.period.key)) return { schonDa: true, label, gaps: null }
+    const gaps = await closeWithFuel(
+      db,
+      answer,
+      async (tx) => computeHeating(await readStock(tx), target.plant, target.period),
+      (tx, settlement) => closeHeatingSettlement(tx, {
+        id: newId(), plantId: target.plant.id, period: target.period.key, closedAt: new Date().toISOString(), sentAt, settlement,
+      }),
+    )
+    return { schonDa: false, label, gaps }
   })
   if (ergebnis.schonDa) return res.status(409).json({ error: `Die Heizkostenabrechnung ${ergebnis.label} ist bereits abgeschlossen.` })
+  if (ergebnis.gaps) return res.status(409).json({ error: FUEL_GAPS_TEXT, fuelGaps: ergebnis.gaps })
   res.status(201).json({ ok: true })
 })
 
@@ -685,7 +734,7 @@ app.get('/api/heating-settlement/:plant/:period/history', async (req, res) => {
 app.delete('/api/heating-settlement/:plant/:period/close', async (req, res) => {
   const gefunden = await writeData(async (db) => {
     const target = await heatingTargetOf(db, req)
-    return reopenHeatingSettlement(db, target.plant.id, target.period.key, newId())
+    return reopenHeatingSettlement(db, target.plant.id, target.period.key, newId(), unfreezeFuelCarries)
   })
   if (!gefunden) return res.status(404).json({ error: 'Die Heizkostenabrechnung ist nicht abgeschlossen.' })
   res.json({ ok: true })
@@ -759,29 +808,70 @@ const sentAtOf = (req: Request): string | null | false => {
   return isDateOnly(value) ? value : false
 }
 
+// Die Antwort auf die Rückfrage zur Schätzung (Heizung PR 7, Entwurf 8.2, N1, A5): `estimate` legt je
+// Lücke eine geschätzte Lieferung mit Vorbehalt an, `none` schließt ohne ab. `null`: keine Antwort,
+// `false`: ein anderer Wert (400).
+type FuelAnswer = 'estimate' | 'none'
+const FUEL_ANSWER_INVALID = 'Die Antwort auf die Rückfrage zur Schätzung ist „estimate“ oder „none“.'
+const FUEL_GAPS_TEXT =
+  'Für einen Teil der Heizperiode fehlt eine Rechnung. Mietfuchs kann die Kosten bis dahin mit Vorbehalt schätzen; ohne Schätzung tragen Sie diesen Teil selbst, auch wenn die Rechnung später kommt.'
+const fuelAnswerOf = (req: Request): FuelAnswer | null | false => {
+  const value: unknown = bodyObject(req).fuelEstimates
+  if (value === undefined || value === null) return null
+  return value === 'estimate' || value === 'none' ? value : false
+}
+
+// Abschließen samt Lieferungen (Heizung PR 7): rechnen, bei Lücken ohne Antwort nachfragen, auf Wunsch
+// Schätzungen anlegen und neu rechnen, dann abschließen und einfrieren, alles in **einer**
+// Transaktion (Entwurf 8.2, N1): Die Berechnung liest den Bestand auf der Transaktion (`readStock`
+// nimmt ein `Executor`), die neu angelegten Schätzungen sind darin also schon sichtbar; scheitert ein
+// Schritt, fällt alles zurück, und keine Schätzung bleibt ohne Abschluss stehen. Ohne Antwort und mit
+// Lücken wird nichts geschrieben.
+async function closeWithFuel(
+  db: Database,
+  answer: FuelAnswer | null,
+  compute: (tx: Executor) => Promise<ComputedSettlement>,
+  close: (tx: Executor, settlement: ComputedSettlement) => Promise<void>,
+): Promise<FuelGapQuestion[] | null> {
+  return db.transaction(async (tx) => {
+    let settlement = await compute(tx)
+    const gaps = fuelGapQuestions(settlement)
+    if (gaps.length > 0 && answer === null) return gaps
+    if (gaps.length > 0 && answer === 'estimate') {
+      await createEstimates(tx, settlement, newId)
+      settlement = await compute(tx)
+    }
+    await close(tx, settlement)
+    await freezeFuelCarries(tx, settlement)
+    return null
+  })
+}
+
 // Abrechnung abschließen: aktuellen Berechnungsstand einfrieren. Spätere Änderungen an
 // Kosten/Stammdaten verändern eine bereits verschickte Abrechnung dann nicht mehr still.
+// Mit Lieferungen fragt Mietfuchs bei einer Lücke nach (Heizung PR 7) und friert die Überträge mit ein.
 app.post('/api/settlement/:period/close', async (req, res) => {
   const sentAt = sentAtOf(req)
   if (sentAt === false) return res.status(400).json({ error: SENT_AT_INVALID })
+  const answer = fuelAnswerOf(req)
+  if (answer === false) return res.status(400).json({ error: FUEL_ANSWER_INVALID })
   // Rechnen und Einfrieren im selben Vorgang: Käme dazwischen eine Änderung an einer
   // Kostenposition durch, fröre Mietfuchs einen Stand ein, den es so nie gegeben hat.
   const ergebnis = await writeData(async (db) => {
     const property = await propertyOf(db, req)
     const period = await periodOf(db, req, property)
     const label = periodLabel(period)
-    if (await findClosedSettlement(db, property, period.key)) return { schonDa: true, label }
-    await closeSettlement(db, {
-      id: newId(),
-      propertyId: property,
-      period: period.key,
-      closedAt: new Date().toISOString(),
-      sentAt,
-      settlement: computeSettlement(snapshotFor(await readStock(db), property, period), { asOf: today() }),
-    })
-    return { schonDa: false, label }
+    if (await findClosedSettlement(db, property, period.key)) return { schonDa: true, label, gaps: null }
+    const gaps = await closeWithFuel(
+      db,
+      answer,
+      async (tx) => computeSettlement(snapshotFor(await readStock(tx), property, period), { asOf: today() }),
+      (tx, settlement) => closeSettlement(tx, { id: newId(), propertyId: property, period: period.key, closedAt: new Date().toISOString(), sentAt, settlement }),
+    )
+    return { schonDa: false, label, gaps }
   })
   if (ergebnis.schonDa) return res.status(409).json({ error: `Abrechnung ${ergebnis.label} ist bereits abgeschlossen.` })
+  if (ergebnis.gaps) return res.status(409).json({ error: FUEL_GAPS_TEXT, fuelGaps: ergebnis.gaps })
   res.status(201).json({ ok: true })
 })
 
@@ -811,7 +901,7 @@ app.get('/api/settlement/:period/history', async (req, res) => {
 app.delete('/api/settlement/:period/close', async (req, res) => {
   const gefunden = await writeData(async (db) => {
     const property = await propertyOf(db, req)
-    return reopenSettlement(db, property, (await periodOf(db, req, property)).key, newId())
+    return reopenSettlement(db, property, (await periodOf(db, req, property)).key, newId(), unfreezeFuelCarries)
   })
   if (!gefunden) return res.status(404).json({ error: 'Abrechnung ist nicht abgeschlossen.' })
   res.json({ ok: true })

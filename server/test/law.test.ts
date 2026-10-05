@@ -13,7 +13,7 @@ import { betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths } from '../../sha
 import { hkvConsumptionShare, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit } from '../../shared/law/heizkostenv.ts'
 import { practiceVacancyPersons } from '../../shared/law/practice.ts'
 import { ustgStandardRate } from '../../shared/law/ustg.ts'
-import { co2ApplicableFrom, co2CutMissing, co2FirstPeriodStart, co2RoundingDecimals, co2StageTable } from '../../shared/law/co2kostaufg.ts'
+import { co2ApplicableFrom, co2CutMissing, co2DistrictEtsNew, co2FirstPeriodStart, co2NonResidential, co2Restriction, co2RoundingDecimals, co2StageTable } from '../../shared/law/co2kostaufg.ts'
 import { RULES } from '../../shared/law/rules.ts'
 
 const year = (y: number) => ({ period: { from: `${y}-01-01`, to: `${y}-12-31` } })
@@ -176,7 +176,7 @@ test('Register: jede Konstante vom Typ LawParam in shared/law/ steht in LAW_PARA
     .flatMap((f) => [...fs.readFileSync(path.join(dir, f), 'utf8').matchAll(/^export const (\w+): LawParam</gm)].map((m) => m[1]))
   assert.ok(declared.length >= 7, `nur ${declared.length} Parameter gefunden`)
   const listed = new Set<unknown>(LAW_PARAMS)
-  const modules = { betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths, co2ApplicableFrom, co2CutMissing, co2RoundingDecimals, co2StageTable, hkvConsumptionShare, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, practiceVacancyPersons, ustgStandardRate }
+  const modules = { betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths, co2ApplicableFrom, co2CutMissing, co2DistrictEtsNew, co2NonResidential, co2Restriction, co2RoundingDecimals, co2StageTable, hkvConsumptionShare, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, practiceVacancyPersons, ustgStandardRate }
   for (const name of declared) {
     assert.ok(name && Object.hasOwn(modules, name), `${name} fehlt in diesem Test`)
     assert.ok(listed.has(Reflect.get(modules, name)), `${name} fehlt in LAW_PARAMS`)
@@ -282,4 +282,32 @@ test('Regeln: CO₂-Aufteilung ab dem Beginn der Anwendbarkeit, Warmwasser mit W
   assert.match(dhw.summary, /weder die Wärmemenge noch das Volumen des verbrauchten Warmwassers gemessen werden kann/)
   assert.match(dhw.summary, /um 15 % kürzen/)
   assert.equal(dhw.validFrom, undefined)
+})
+
+// ---------- CO2KostAufG § 2 Abs. 4, § 8, § 9 (Heizung PR 7) ----------
+
+test('co2.non-residential, co2.restriction, co2.district-ets-new: Werte und Texte (§ 8 Abs. 1, § 9, § 2 Abs. 4 Satz 2)', () => {
+  const log = createLawLog()
+  const p = { period: { from: '2025-01-01', to: '2025-12-31' } }
+  assert.equal(law(co2NonResidential, p, log), 500)
+  assert.deepEqual(law(co2Restriction, p, log), { factor: 0.5, bothSplit: false })
+  assert.deepEqual(law(co2DistrictEtsNew, p, log), { connectedAfter: '2023-01-01' })
+  assert.equal(co2NonResidential.describe(500), 'Vermieter mindestens 500 ‰ (Mieter höchstens die Hälfte)')
+  assert.equal(co2Restriction.describe({ factor: 0.5, bothSplit: false }), 'Anteil des Vermieters × 0,5; bei beiden Vorgaben keine Aufteilung')
+  assert.equal(co2DistrictEtsNew.describe({ connectedAfter: '2023-01-01' }), 'nicht anzuwenden bei erstem Wärmeanschluss nach dem 01.01.2023')
+  assert.deepEqual(log.values.map((v) => v.id), ['co2.non-residential', 'co2.restriction', 'co2.district-ets-new'])
+})
+
+test('Regeln: Nichtwohngebäude, Beschränkungen und verbrauchter Brennstoff', () => {
+  const nonRes = RULES.find((r) => r.code === 'co2-non-residential') ?? assert.fail('Regel co2-non-residential fehlt')
+  assert.equal(nonRes.norm, '§ 8 CO2KostAufG')
+  assert.match(nonRes.summary, /nicht überwiegend dem Wohnen/)
+  const restr = RULES.find((r) => r.code === 'co2-restriction') ?? assert.fail('Regel co2-restriction fehlt')
+  assert.equal(restr.norm, '§ 9 CO2KostAufG')
+  assert.match(restr.summary, /um die Hälfte/)
+  assert.match(restr.summary, /nachweist/)
+  const fuel = RULES.find((r) => r.code === 'heating-consumed-fuel') ?? assert.fail('Regel heating-consumed-fuel fehlt')
+  assert.equal(fuel.norm, '§ 7 Abs. 2 HeizkostenV; BGH, Urteil vom 01.02.2012, VIII ZR 156/11')
+  assert.match(fuel.summary, /verbrauchten Brennstoffe/)
+  assert.equal(fuel.validFrom, undefined)
 })

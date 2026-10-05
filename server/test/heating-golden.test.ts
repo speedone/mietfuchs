@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url'
 import { eq } from 'drizzle-orm'
 import { computeSettlement, taxReport } from '../src/calc.ts'
 import { saveCo2Statement } from '../src/db/co2.ts'
+import { createDelivery } from '../src/db/fuel.ts'
 import { createHeatingPlant } from '../src/db/heating.ts'
 import { openDatabase } from '../src/db/open.ts'
 import { readStock } from '../src/db/read.ts'
@@ -107,4 +108,61 @@ test('F12 Mai–April, Messdienst ohne CO₂-Aufteilung: Frist 30.04.2027, co2.s
     kuerzung.forEach((c, i) => assert.ok(text.includes(`Mieter ${i + 1} (W${i + 1}) ${euro(c)}`), `Kürzung Mieter ${i + 1}: ${text}`))
     assert.ok(!s.notices.some((n) => n.code === 'heating.dhw-not-metered' || n.code === 'heating.not-by-consumption'), 'keine 15 %')
   })
+})
+
+// Die vier Einzelbeträge von F12 (aus dem Beleg); F13 baut darauf auf.
+function einzelbetraegeF12(): number[] {
+  const datei = path.join(FIXTURES, 'F12-messdienst-mai-april', 'betraege.json')
+  if (!fs.existsSync(datei)) return assert.fail(`${datei} fehlt: die vier Einzelbeträge aus dem Beleg (Entwurf 12.1) sind noch nicht eingetragen`)
+  const daten: unknown = JSON.parse(fs.readFileSync(datei, 'utf8'))
+  const v = typeof daten === 'object' && daten !== null ? Reflect.get(daten, 'einzelbetraege') : undefined
+  if (!Array.isArray(v) || v.length !== 4 || !v.every((x) => Number.isInteger(x) && x > 0)) return assert.fail('einzelbetraege in betraege.json: vier ganze Cent-Beträge erwartet')
+  return v
+}
+
+test('F13 Mai–April mit eigener Aufteilung: E umgerechnet, C ganz (G-A3), 26,94 → 30 % gegen 26,95 → 40 %', async () => {
+  const einzel = einzelbetraegeF12()
+  const S = einzel.reduce((a, c) => a + c, 0)
+  const betragVon: Record<string, number | undefined> = { ta: einzel[0], tb: einzel[1], tc: einzel[2], td: einzel[3] }
+  const varianten = [
+    { kg: 5404.16, wert: 26.9, permille: 300, L: 18000 },
+    { kg: 5406.17, wert: 27, permille: 400, L: 24000 },
+  ]
+  for (const v of varianten) {
+    await withDatabase(async (opened) => {
+      await opened.write(async (db) => { await db.update(properties).set({ periodStartMonth: 5 }).where(eq(properties.id, 'objekt-1')) })
+      await vierWohnungen(opened)
+      await opened.write(async (db) => {
+        await createEntity(db, 'costItems', 'hz', {
+          propertyId: 'objekt-1', period: '2025-05', category: HEATING_CATEGORY, description: 'Heizung und Warmwasser laut Messdienst', amountCents: S, key: 'amounts', taxYear: 2026,
+          tenancyAmounts: betragVon,
+        })
+        await saveCo2Statement(db, 'hp', '2025-05', { method: 'selfAfterService', areaM2: 200.6 })
+        await createDelivery(db, 'gas', 'hp', {
+          label: 'Gas 2025/2026', invoiceFrom: '2025-03-15', invoiceTo: '2026-03-14', amountCents: 311747, energyKwh: 29886, emissionsKg: v.kg, co2CostCents: 60000,
+        })
+      })
+      const p = periodOfKey({ startMonth: 5, changes: [] }, periodKey('2025-05')) ?? assert.fail('kein Zeitraum 2025/2026')
+      const s = computeSettlement(snapshotFor(await opened.read(readStock), 'objekt-1', p))
+      const fall = `${v.kg} kg`
+      const h = s.heating?.[0] ?? assert.fail(`${fall}: keine Bewertung`)
+      const co2 = h.co2 ?? assert.fail(`${fall}: keine CO₂-Bewertung`)
+      assert.deepEqual([co2.method, co2.totalCents, co2.kgPerM2, co2.landlordPermille, co2.landlordCents, co2.areaM2, co2.areaSource], ['selfAfterService', 60000, v.wert, v.permille, v.L, 200.6, 'entered'], fall)
+      assert.ok(Math.abs((co2.emissionsKg ?? 0) - v.kg) < 1e-6, `${fall}: E umgerechnet = E der Rechnung`)
+      assert.equal(h.fuel?.coveragePermille.toFixed(2), '848.71', fall)
+      // Abzug je Mieter: weniger als ein Cent neben L · Einzelbetrag / S, zusammen genau L.
+      const abzuege = s.statements.map((st) => st.rows.filter((r) => r.kind === 'co2Relief').reduce((a, r) => a + r.shareCents, 0))
+      assert.equal(abzuege.reduce((a, c) => a + c, 0), -v.L, fall)
+      s.statements.forEach((st, i) => {
+        const e = betragVon[st.tenancyId] ?? assert.fail(`unbekanntes Mietverhältnis ${st.tenancyId}`)
+        assert.ok(Math.abs(-(abzuege[i] ?? 0) - (v.L * e) / S) < 1, `${fall}, ${st.tenancyId}: ${abzuege[i]}`)
+      })
+      assert.deepEqual(s.landlord.rows.find((r) => r.costItemId === 'co2:hp:2025-05')?.landlordParts, [{ reason: 'co2Share', cents: v.L }], fall)
+      const codes = s.notices.map((n) => n.code)
+      assert.ok(!codes.includes('co2.service-unsplit'), fall)
+      assert.ok(codes.includes('co2.service-unsplit-healed') && codes.includes('co2.share-approximated'), fall)
+      assert.match(s.notices.find((n) => n.code === 'fuel.uncovered')?.text ?? '', /15\.03\.–30\.04\.2026 \(47 Tage, 151,3 ‰ der Gradtage\)/, fall)
+      assert.ok(s.legalBasis.values?.some((x) => x.id === 'hkv.degree-days'), `${fall}: Gradtagstabelle im Rechtsstand`)
+    })
+  }
 })

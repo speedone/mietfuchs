@@ -8,6 +8,7 @@
 //   2. **Nichts bleibt halb.** Ein Vorgang über mehrere Tabellen läuft in einer Transaktion.
 //   3. **Für ein unbekanntes Feld gibt es keinen Ort mehr** (#60).
 
+import { createDelivery } from '../src/db/fuel.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
@@ -405,7 +406,7 @@ test('Die Verschmelzung erreicht jede Spalte des Schemas', async () => {
         key: 'direct', directUnitId: 'u1', meterType: 'kaltwasser', labor35aCents: 400, invoiceFile: 'b.pdf',
         // #208: Leistungszeitraum im Jahr der Position, das Jahr der Zahlung ist dann dieses.
         serviceFrom: '2024-01-01', serviceTo: '2024-12-31', taxYear: 2024, heatingPart: 'fuel',
-        heatingPlantId: 'hp1',
+        heatingPlantId: 'hp1', fuelDeliveryId: 'd1',
       },
     },
     {
@@ -432,6 +433,7 @@ test('Die Verschmelzung erreicht jede Spalte des Schemas', async () => {
       await createEntity(db, 'tenancies', 't1', { unitId: 'u1', tenantName: 'A', persons: 1, start: '2024-01-01' })
       await createEntity(db, 'meters', 'm1', { propertyId: 'objekt-1', name: 'K', unitId: 'u1', type: 'kaltwasser', unit: 'm³' })
       await createHeatingPlant(db, 'hp1', 'objekt-1', { energy: 'gas' })
+      await createDelivery(db, 'd1', 'hp1', { invoiceFrom: '2024-01-01', invoiceTo: '2024-12-31' })
     })
 
     for (const { coll, table, body } of proben) {

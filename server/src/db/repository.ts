@@ -51,7 +51,7 @@ import {
   aiSlots, assessmentLines, assessments, baseRents, co2Statements, co2TenantReliefs, heatingPeriods, closedHeatingSettlementHistory, closedHeatingSettlements, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, DEPOSIT_STATUS, EXTERNAL_MEASURES,
   HEATING_PARTS, HEATING_ROLES, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingPrepaymentOverrides, heatingPrepayments, heatingSeparateSpans,
   flatRates, METER_TYPES, meters, payments, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, PROPERTY_KINDS,
-  readings, settings, tenancies, unitNoConnection, units,
+  readings, settings, tenancies, unitNoConnection, units, fuelDeliveries,
 } from './schema.ts'
 import { aiSlotRows, settingsRow } from './write.ts'
 
@@ -375,6 +375,8 @@ function mergeCostItem(current: CostItem, body: unknown): CostItem {
       : has(body, 'heatingPlantId')
         ? asNullableFilled(raw(body, 'heatingPlantId'))
         : current.category === HEATING_CATEGORY ? (current.heatingPlantId ?? null) : undefined,
+    // Die Lieferung (Heizung PR 7); `null` löst die Verknüpfung.
+    fuelDeliveryId: merged(body, 'fuelDeliveryId', current.fuelDeliveryId, asNullableFilled),
   }
 }
 
@@ -501,6 +503,77 @@ export async function itemPeriodClosed(db: Executor, c: CostItem): Promise<boole
     .where(and(eq(closedHeatingSettlements.plantId, c.heatingPlantId), eq(closedHeatingSettlements.period, c.period)))
   if (zu.length > 0) return true
   return isPeriodClosed(db, c.propertyId, periodContaining(await rulesForProperty(db, c.propertyId), h.to).key)
+}
+
+// Die Heizperiode einer Anlage an einem Tag und ob sie abgeschlossen ist (Heizung PR 7): mit ihrer
+// Heizkostenabrechnung nach Weg d oder mit der Abrechnung des Objektzeitraums, in dem sie endet (W1,
+// B3), dieselbe Regel wie `itemPeriodClosed`. Gefragt wird in der laufenden Transaktion, deshalb
+// unmittelbar an den Tabellen.
+export async function heatingPeriodAt(db: Executor, plantId: string, date: string): Promise<{ period: BillingPeriod; closed: boolean } | null> {
+  const heating = await heatingRulesOf(db, plantId)
+  if (!heating) return null
+  const h = periodContaining(heating.rules, date)
+  if (!heating.own) return { period: h, closed: await isPeriodClosed(db, heating.propertyId, h.key) }
+  const zu = await db.select({ id: closedHeatingSettlements.id }).from(closedHeatingSettlements)
+    .where(and(eq(closedHeatingSettlements.plantId, plantId), eq(closedHeatingSettlements.period, h.key)))
+  if (zu.length > 0) return { period: h, closed: true }
+  return { period: h, closed: await isPeriodClosed(db, heating.propertyId, periodContaining(await rulesForProperty(db, heating.propertyId), h.to).key) }
+}
+
+// Ablesungen des Versorgungszählers einer Heizanlage mit Datum in einer abgeschlossenen Heizperiode
+// sind gesperrt (Heizung PR 7, A10): Die Abgrenzung der Lieferungen dieser Heizperiode ist
+// eingefroren, und ein später erfasster Stand änderte nur noch die Rechnung danach (8.2 Fall d).
+async function guardSupplyReading(db: Executor, reading: Pick<Reading, 'meterId' | 'date'>): Promise<void> {
+  const [m] = await db.select({ plantId: meters.heatingPlantId, role: meters.heatingRole }).from(meters).where(eq(meters.id, reading.meterId))
+  if (!m || m.plantId === null || m.role !== 'supply') return
+  const at = await heatingPeriodAt(db, m.plantId, reading.date)
+  if (at?.closed) {
+    throw new HeatingError(409,
+      `Die Heizperiode ${periodLabel(at.period)} ist abgeschlossen; Ablesungen des Versorgungszählers mit einem Datum darin lassen sich nicht mehr ändern, denn die Aufteilung der Rechnungen ist eingefroren. Öffnen Sie die Abrechnung wieder, um etwas zu ändern.`)
+  }
+}
+
+async function guardReading(db: Executor, before: Reading | null, after: Reading): Promise<void> {
+  if (before) await guardSupplyReading(db, before)
+  await guardSupplyReading(db, after)
+}
+
+// Die Lieferung einer Position (Heizung PR 7, Entwurf 5.4): nur bei der Kostenart Heizung, nur eine
+// echte Lieferung der eigenen Anlage mit freien Schlüsseln, und die Position steht in der
+// Heizperiode, die das Ende der Rechnung enthält. Sonst stünde die Rechnung in einer Heizperiode, in
+// die sie nicht gehört, und ihr Teil liefe in die falsche Richtung (N1).
+async function guardFuelLink(db: Executor, after: CostItem): Promise<void> {
+  if (!after.fuelDeliveryId) return
+  if (after.category !== HEATING_CATEGORY) {
+    throw new HeatingError(400, `Eine Lieferung gehört nur zu einer Position der Kostenart „${HEATING_CATEGORY}“.`)
+  }
+  // Der Teil einer anderen Heizperiode folgt dem Schlüssel der Position; Einzelbeträge gelten für die
+  // ganze Position und kommen vom Messdienst, nicht aus der Rechnung des Versorgers.
+  if (after.key === 'amounts') {
+    throw new HeatingError(400, 'Eine Rechnung des Versorgers verteilen Sie nach einem Schlüssel, nicht als Einzelbeträge; Einzelbeträge kommen vom Messdienst.')
+  }
+  const [d] = await db
+    .select({ plantId: fuelDeliveries.plantId, from: fuelDeliveries.invoiceFrom, to: fuelDeliveries.invoiceTo, deliveredAt: fuelDeliveries.deliveredAt, estimated: fuelDeliveries.estimated, label: fuelDeliveries.label })
+    .from(fuelDeliveries).where(eq(fuelDeliveries.id, after.fuelDeliveryId))
+  if (!d) throw new HeatingError(400, 'Die gewählte Lieferung gibt es nicht (mehr). Bitte laden Sie die Seite neu.')
+  if (d.estimated) throw new HeatingError(400, 'Eine geschätzte Lieferung hat keine Kostenposition. Verknüpfen Sie die echte Rechnung, wenn sie da ist.')
+  if (after.heatingPlantId != null && after.heatingPlantId !== d.plantId) {
+    throw new HeatingError(400, 'Die Lieferung gehört zu einer anderen Heizanlage als die Position.')
+  }
+  const [plant] = await db.select({ method: heatingPlants.method }).from(heatingPlants).where(eq(heatingPlants.id, d.plantId))
+  if (plant?.method !== 'manual') {
+    throw new HeatingError(400,
+      'Rechnet ein Messdienst oder die Gemeinschaft ab, steckt der Brennstoff in deren Einzelbeträgen; eine Lieferung wird dort mit keiner Position verknüpft. Tragen Sie die Rechnung nur als Lieferung ein.')
+  }
+  const end = d.to ?? d.deliveredAt
+  const heating = await heatingRulesOf(db, d.plantId)
+  if (end === null || heating === null) return
+  const h = periodContaining(heating.rules, end)
+  if (after.period !== h.key) {
+    throw new HeatingError(400,
+      `Die Rechnung „${d.label || formatDayRange(d.from ?? end, end)}“ endet am ${formatDayRange(end, end)} und gehört deshalb in die Heizperiode ${periodLabel(h)}. ` +
+        'Bitte wählen Sie für die Position diesen Zeitraum; den Teil der Heizperiode davor bucht Mietfuchs selbst hinüber.')
+  }
 }
 
 // Die Anlage, die eine neue Heizposition ohne Angabe bekommt: die einzige ihres Objekts, außer ihr
@@ -795,6 +868,7 @@ async function guardCostItem(db: Executor, before: CostItem | null, after: CostI
   ]
   await sameProperty(db, after.propertyId, ziele, 'Die Kostenposition')
   await guardCostItemHeating(db, before, after)
+  await guardFuelLink(db, after)
 }
 
 // Eine Wohnung darf das Objekt wechseln, solange nichts Objektgebundenes an ihr hängt. Ihr
@@ -1059,6 +1133,14 @@ export async function crossPropertyViolations(db: Database): Promise<string[]> {
     .innerJoin(costItems, eq(co2Statements.serviceCostItemId, costItems.id))
     .where(ne(costItems.propertyId, heatingPlants.propertyId))
   for (const c of co2Position) befunde.push(`Die CO₂-Angaben einer Heizanlage verweisen auf die Kostenposition „${c.description}“ eines anderen Objekts.`)
+  // Lieferungen (Heizung PR 7): Eine Position zeigt nur auf eine Lieferung einer Anlage ihres Objekts.
+  const lieferungen = await db
+    .select({ description: costItems.description })
+    .from(costItems)
+    .innerJoin(fuelDeliveries, eq(costItems.fuelDeliveryId, fuelDeliveries.id))
+    .innerJoin(heatingPlants, eq(fuelDeliveries.plantId, heatingPlants.id))
+    .where(ne(heatingPlants.propertyId, costItems.propertyId))
+  for (const c of lieferungen) befunde.push(`Die Kostenposition „${c.description}“ zeigt auf eine Lieferung einer Heizanlage eines anderen Objekts.`)
   return befunde
 }
 
@@ -1241,6 +1323,7 @@ const costItemRow = (c: CostItem) => ({
   participantsLimited: Array.isArray(c.participantUnitIds),
   serviceFrom: orNull(c.serviceFrom), serviceTo: orNull(c.serviceTo), taxYear: orNull(c.taxYear), heatingPart: orNull(c.heatingPart),
   heatingPlantId: c.heatingPlantId ?? null,
+  fuelDeliveryId: c.fuelDeliveryId ?? null,
 })
 const meterRow = (m: Meter) => ({
   id: m.id, propertyId: m.propertyId, name: m.name, unitId: m.unitId, type: m.type, meterNumber: orNull(m.meterNumber), unit: m.unit,
@@ -1407,13 +1490,18 @@ const meterCollection: Collection<Meter> = {
 }
 
 const readingCollection: Collection<Reading> = {
-  guard: noGuard,
+  guard: guardReading,
   read: readReadings,
   empty: emptyReading,
   merge: mergeReading,
   insert: async (db, r) => { await db.insert(readings).values(readingRow(r)) },
   replace: async (db, r) => { await db.update(readings).set(readingRow(r)).where(eq(readings.id, r.id)) },
-  remove: async (db, id) => { await db.delete(readings).where(eq(readings.id, id)) },
+  // Eine Ablesung des Versorgungszählers in einer abgeschlossenen Heizperiode bleibt (Heizung PR 7).
+  remove: async (db, id) => {
+    const [r] = await db.select({ meterId: readings.meterId, date: readings.date }).from(readings).where(eq(readings.id, id))
+    if (r) await guardSupplyReading(db, r)
+    await db.delete(readings).where(eq(readings.id, id))
+  },
 }
 
 const paymentCollection: Collection<Payment> = {
@@ -1815,7 +1903,7 @@ const closedOf = (propertyId: string, period: PeriodKey) =>
   and(eq(closedSettlements.propertyId, propertyId), eq(closedSettlements.period, period))
 
 export async function closeSettlement(
-  db: Database,
+  db: Executor,
   entry: { id: string, propertyId: string, period: PeriodKey, closedAt: string, sentAt: string | null, settlement: unknown },
 ): Promise<void> {
   await db.insert(closedSettlements).values(entry)
@@ -1831,8 +1919,16 @@ export async function setSentAt(db: Database, propertyId: string, period: Period
 
 // Wiederöffnen verschiebt den Stand in den Verlauf (#56, Teil 2), statt ihn zu löschen, und zwar
 // in einer Transaktion: Scheiterte das Löschen nach dem Einfügen, stünde der Zeitraum sonst zugleich
-// als abgeschlossen und im Verlauf da (Befund der Durchsicht).
-export async function reopenSettlement(db: Database, propertyId: string, period: PeriodKey, historyId: string): Promise<boolean> {
+// als abgeschlossen und im Verlauf da (Befund der Durchsicht). `alsoInTransaction` läuft im selben
+// Vorgang mit dem eingefrorenen Stand (Heizung PR 7: die eingefrorenen Lieferungsteile freigeben);
+// repository.ts kennt db/fuel.ts nicht, deshalb reicht die Route es herein.
+export async function reopenSettlement(
+  db: Database,
+  propertyId: string,
+  period: PeriodKey,
+  historyId: string,
+  alsoInTransaction: (tx: Executor, settlement: unknown) => Promise<void> = async () => {},
+): Promise<boolean> {
   const eintrag = await findClosedSettlement(db, propertyId, period)
   if (!eintrag) return false
   await db.transaction(async (tx) => {
@@ -1841,6 +1937,7 @@ export async function reopenSettlement(db: Database, propertyId: string, period:
       reopenedAt: new Date().toISOString(), settlement: eintrag.settlement,
     })
     await tx.delete(closedSettlements).where(closedOf(propertyId, period))
+    await alsoInTransaction(tx, eintrag.settlement)
   })
   return true
 }
