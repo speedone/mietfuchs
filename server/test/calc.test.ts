@@ -30,6 +30,7 @@ import type { CostKey, CostModel, MeterType, Payment, Reading, Settings, TaxExpe
 import type { LegacyCostItem as CostItem, LegacyCostKey, LegacyMeter as Meter, LegacyUnit as Unit } from '../src/store.ts'
 import { assertLandlordParts } from '../testing/landlordParts.ts'
 import { compareWithFrozen } from '../src/settlementDiff.ts'
+import { calendarPeriod } from '../../shared/period.ts'
 
 // ---------- Bausteine für die Testdaten ----------
 //
@@ -2257,7 +2258,7 @@ function scopedSource(db: Db, propertyId: string): PropertyScopedSource {
   return {
     units: db.units.map((u) => ({ ...u, propertyId })),
     tenancies: db.tenancies,
-    costItems: db.costItems.map((c) => ({ ...c, propertyId })),
+    costItems: db.costItems.map((c) => ({ ...c, period: calendarPeriod(c.year), propertyId })),
     meters: db.meters.map((m) => ({ ...m, propertyId })),
     readings: db.readings,
     payments: db.payments,

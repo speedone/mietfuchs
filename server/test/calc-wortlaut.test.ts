@@ -3,6 +3,7 @@
 // Anführungszeichen auf beiden Seiten. Neue Abrechnungen sprechen so; eine abgeschlossene behält
 // den Wortlaut, mit dem sie eingefroren wurde, denn sie liefert ihre gespeicherten Texte.
 
+import { calendarPeriod } from '../../shared/period.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement, type ComputedSettlement } from '../src/calc.ts'
@@ -15,7 +16,7 @@ const tenancy = (id: string, unitId: string, persons = 1): SnapshotTenancy => ({
   prepayments: [], prepaymentOverrides: {}, baseRents: [],
 })
 const item = (id: string, key: SnapshotCostItem['key'], over: Partial<SnapshotCostItem> = {}): SnapshotCostItem =>
-  ({ id, year: 2025, category: 'Grundsteuer', description: id, amountCents: 100000, key, ...over })
+  ({ id, period: calendarPeriod(2025), category: 'Grundsteuer', description: id, amountCents: 100000, key, ...over })
 const settle = (s: Partial<SnapshotSource>): ComputedSettlement => computeSettlement(snapshotOf({
   units: [], tenancies: [], costItems: [], meters: [], readings: [], payments: [], closedSettlements: [], ...s,
 }, 2025))

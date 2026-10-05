@@ -73,7 +73,7 @@ export type StoredClosedSettlement = {
 export type Stock = SnapshotSource & {
   units: Unit[]
   tenancies: Tenancy[]
-  costItems: CostItem[]
+  costItems: (CostItem & { period: PeriodKey })[]
   meters: Meter[]
   readings: Reading[]
   payments: Payment[]
@@ -166,7 +166,7 @@ export async function readTenancies(db: Database): Promise<Tenancy[]> {
   }))
 }
 
-export async function readCostItems(db: Database): Promise<CostItem[]> {
+export async function readCostItems(db: Database): Promise<(CostItem & { period: PeriodKey })[]> {
   const rows = await db.select().from(costItems).orderBy(INSERTION_ORDER)
   const shareRows = await db.select().from(costItemShares).orderBy(INSERTION_ORDER)
   const shares = groupBy(shareRows, (r) => r.costItemId, (r): [string, number] => [r.unitId, r.percent])
@@ -175,6 +175,7 @@ export async function readCostItems(db: Database): Promise<CostItem[]> {
     return {
       id: c.id,
       year: c.year,
+      period: calendarPeriod(c.year),
       category: c.category,
       description: c.description,
       vendor: orUndefined(c.vendor),

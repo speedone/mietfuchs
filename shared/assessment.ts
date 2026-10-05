@@ -2,7 +2,8 @@
 // geht (Belegbuchung, #170). Bis hierher stand beides im Browser (client/src/triage.ts und
 // client/src/costForm.ts); seit der Server die Auswertung speichert und ihre Vorschläge
 // mitliefert, braucht er dieselbe Antwort. Reine Logik ohne Netz und DOM.
-import type { CostItem, ExternalMeasure, Meter, PropertyKind, TrafficLight, Unit } from './types.ts'
+import type { CostItem, ExternalMeasure, Meter, PeriodKey, PropertyKind, TrafficLight, Unit } from './types.ts'
+import { calendarContext, calendarPeriod, type PeriodContext } from './period.ts'
 import { allocationOf, previousAllocation, type Allocation } from './allocation.ts'
 import { defaultKeyFor, isNotAllocable } from './categories.ts'
 import { sameCostCandidates } from './duplicates.ts'
@@ -53,16 +54,18 @@ export function scorePosition(ctx: PositionCtx): { level: TrafficLight; reasons:
 
   const vendor = ctx.vendor.trim().toLowerCase()
   const year = ctx.detectedYear ?? ctx.targetYear
+  // Brücke Kalenderjahr (#208): bis PR 3. Die Belegbuchung bucht in den Kalenderzeitraum des Jahres.
+  const period = calendarPeriod(year)
   if (vendor && ctx.amountCents !== 0) {
     const dupe = ctx.existingItems.some(
-      (it) => it.year === year && it.amountCents === ctx.amountCents && (it.vendor ?? '').trim().toLowerCase() === vendor,
+      (it) => it.period === period && it.amountCents === ctx.amountCents && (it.vendor ?? '').trim().toLowerCase() === vendor,
     )
     if (dupe) s.bump('rot', 'mögliche Dublette — gleicher Betrag, Steller und Jahr existiert bereits')
   }
 
   // Schon eine Position, die dieselbe Rechnung sein könnte, etwa aus dem Vorjahr übernommen
   // (shared/duplicates.ts)? Nie grün: verknüpfen oder bewusst als neue Position anlegen.
-  const candidates = sameCostCandidates(ctx.existingItems, { category: ctx.category, description: ctx.description ?? '', vendor: ctx.vendor, year, amountCents: ctx.amountCents })
+  const candidates = sameCostCandidates(ctx.existingItems, { category: ctx.category, description: ctx.description ?? '', vendor: ctx.vendor, period, amountCents: ctx.amountCents })
   // Eine Gutschrift wird nie verknüpft (Belegbuchung, #170), der Rat lautet für sie anders. Gefragt
   // wird mit dem Betrag: Eine Gutschrift ist nie dieselbe wie eine Rechnung (rc.1).
   if (candidates.length > 0) {
@@ -91,15 +94,15 @@ export function aiRowPreselected(r: { category: string; preselect: boolean; prob
   return !isNotAllocable(r.category) && r.preselect && r.problem === null && r.level !== 'rot' && r.candidates.length === 0
 }
 
-// Weicht die Summe der Kostenart im Jahr des Belegs, mit diesem Betrag, um wie viel Prozent vom
-// Jahr davor ab? `null` ohne Vorjahr. `replacedCents` ist der Betrag, den die Zeile beim Verknüpfen
+// Weicht die Summe der Kostenart im Zeitraum, mit diesem Betrag, um wie viel Prozent vom Vorzeitraum
+// ab? `null` ohne Vorzeitraum. `replacedCents` ist der Betrag, den die Zeile beim Verknüpfen
 // ersetzt (eine übernommene Schätzung, server/src/assessment.ts `replacedByLinking`): Er fällt aus
 // der Summe, sonst stünde die Rechnung neben der Schätzung, die sie ablöst, und der Vergleich
 // meldete rund das Doppelte des Vorjahres.
-export function categoryDeviationPct(items: readonly CostItem[], category: string, year: number, amountCents: number, replacedCents = 0): number | null {
-  const sum = (y: number) => items.filter((i) => i.year === y && i.category === category).reduce((a, i) => a + i.amountCents, 0)
-  const prior = sum(year - 1)
-  return prior > 0 ? ((sum(year) - replacedCents + amountCents - prior) / prior) * 100 : null
+export function categoryDeviationPct(items: readonly CostItem[], category: string, at: PeriodContext, amountCents: number, replacedCents = 0): number | null {
+  const sum = (key: PeriodKey) => items.filter((i) => i.period === key && i.category === category).reduce((a, i) => a + i.amountCents, 0)
+  const prior = sum(at.previous)
+  return prior > 0 ? ((sum(at.key) - replacedCents + amountCents - prior) / prior) * 100 : null
 }
 
 // Weicht die Summe der erkannten Positionen von der Rechnungs-Gesamtsumme ab, ist meist eine
@@ -124,7 +127,8 @@ export type KeyContext = { items: readonly CostItem[]; year: number; propertyKin
 // Objekt, jüngstes Jahr zuerst, sonst die zuletzt angelegte.
 export function lastExternalBasis(items: readonly CostItem[]): { measure: ExternalMeasure, total: number } | null {
   let found: CostItem | null = null
-  for (const i of items) if (i.key === 'external' && i.externalBasis && (!found || i.year >= found.year)) found = i
+  // Zeitraumschlüssel 'JJJJ-MM' ordnen sich als Text wie die Zeit (#208).
+  for (const i of items) if (i.key === 'external' && i.externalBasis && (!found || i.period >= found.period)) found = i
   return found?.externalBasis ? { measure: found.externalBasis.measure, total: found.externalBasis.total } : null
 }
 
@@ -149,12 +153,13 @@ function stillComplete(a: Allocation, units: readonly Unit[]): boolean {
 // `meters` bleibt in der Unterschrift, damit die Aufrufer unverändert bleiben.
 export function aiPositionDefaults(category: string, units: readonly Unit[], meters: readonly Meter[], ctx?: KeyContext, description?: string): AiPositionKey {
   void meters
-  const remembered = ctx && !isNotAllocable(category) ? previousAllocation(ctx.items, category, ctx.year, description) : null
+  // Brücke Kalenderjahr (#208): bis PR 3. KeyContext trägt das Jahr der Oberfläche.
+  const remembered = ctx && !isNotAllocable(category) ? previousAllocation(ctx.items, category, calendarContext(ctx.year), description) : null
   if (remembered && remembered.key !== 'amounts' && stillComplete(remembered, units)) return { key: remembered.key, allocation: remembered }
   // Bei einer Eigentumswohnung nur, wenn die Summe der Anteile schon einmal erfasst ist: Ein Feld
   // dafür hat die Zeile nicht, sie bliebe sonst unübernehmbar.
   const last = ctx && etwByStatement(category, ctx) ? lastExternalBasis(ctx.items) : null
-  if (last) return { key: 'external', allocation: allocationOf({ year: 0, category, description: '', key: 'external', externalBasis: { ...last, totalCents: 0 } }) }
+  if (last) return { key: 'external', allocation: allocationOf({ category, description: '', key: 'external', externalBasis: { ...last, totalCents: 0 } }) }
   return { key: defaultKeyFor(category), allocation: null }
 }
 

@@ -30,7 +30,7 @@ let hold: Promise<void> | null
 let openViews: AssessmentView[] | null
 
 const estimate = (id: string, category: string, amountCents: number, extra: Partial<CostItem> = {}): CostItem =>
-  ({ id, propertyId: 'objekt-1', year: YEAR, category, description: `${category} ${YEAR}`, amountCents, key: 'area', ...extra })
+  ({ id, propertyId: 'objekt-1', period: calendarPeriod(YEAR), category, description: `${category} ${YEAR}`, amountCents, key: 'area', ...extra })
 const invoice = (positions: Extraction['positions'], vendor = 'Stadtwerke'): Extraction => ({ vendor, invoiceDate: `${YEAR}-12-31`, positions })
 
 beforeEach(() => {
@@ -396,7 +396,7 @@ test('I1: die Kostenseite nennt das Jahr des Belegs, und die Vorschau das Jahr d
   const { shown } = await previewAndBook()
   expect(shown[0]).toMatch(new RegExp(`^Neu für ${YEAR + 1}: „Hausmeister“`))
   await screen.findByLabelText('Gebucht', {}, SLOW)
-  expect(fake.items.map((i) => i.year)).toEqual([YEAR + 1])
+  expect(fake.items.map((i) => i.period)).toEqual([calendarPeriod(YEAR + 1)])
 })
 
 test('I2: nur Verwerfen zeigt in Vorschau und Erfolgsmeldung, was geschieht', async () => {

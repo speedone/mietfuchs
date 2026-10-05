@@ -34,7 +34,7 @@
 
 import { and, count, desc, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm'
 import type { CostItem, ExternalBasis, Meter, MeterType, Payment, PeriodKey, PeriodRules, PersonEntry, PrepaymentEntry, Property, Reading, RentEntry, Tenancy, Unit, UnitDependents } from '../../../shared/types.ts'
-import { calendarPeriod, isCalendarRules, parsePeriodKey, periodOfKey, rulesOf, startYearOf } from '../../../shared/period.ts'
+import { calendarPeriod, isCalendarRules, parsePeriodKey, periodOfKey, rulesOf } from '../../../shared/period.ts'
 import type { MigratedSettings } from '../ai/settings.ts'
 import { lastPerFrom, straightenPersonHistory } from '../schedule.ts'
 import type { Database, Executor } from './client.ts'
@@ -279,7 +279,7 @@ function mergedPeriod(body: unknown, current: PeriodKey): PeriodKey {
 }
 
 function mergeCostItem(current: CostItem, body: unknown): CostItem {
-  const period = mergedPeriod(body, current.period ?? calendarPeriod(current.year))
+  const period = mergedPeriod(body, current.period)
   const shares = merged(body, 'customShares', current.customShares, (v) => (v === null ? null : readShares(v)))
   const participants = merged(body, 'participantUnitIds', current.participantUnitIds, (v) => (v === null ? null : readParticipants(v)))
   const external = merged(body, 'externalBasis', current.externalBasis, readExternalBasis)
@@ -289,7 +289,6 @@ function mergeCostItem(current: CostItem, body: unknown): CostItem {
     id: current.id,
     propertyId: mergedProperty(body, current.propertyId),
     period,
-    year: startYearOf(period),
     category: merged(body, 'category', current.category, (v) => asText(v, '')),
     description: merged(body, 'description', current.description, (v) => asText(v, '')),
     vendor: merged(body, 'vendor', current.vendor, asOptionalText),
@@ -358,7 +357,7 @@ const emptyTenancy = (id: string): Tenancy => ({
   prepayments: [], prepaymentOverrides: {}, baseRents: [],
 })
 const emptyCostItem = (id: string): CostItem => ({
-  id, propertyId: '', period: calendarPeriod(new Date().getUTCFullYear()), year: new Date().getUTCFullYear(), category: '', description: '', amountCents: 0, key: 'area',
+  id, propertyId: '', period: calendarPeriod(new Date().getUTCFullYear()), category: '', description: '', amountCents: 0, key: 'area',
   directUnitId: null, meterType: null,
 })
 const emptyMeter = (id: string): Meter => ({ id, propertyId: '', name: '', unitId: null, type: 'sonstig', unit: '' })
@@ -449,7 +448,7 @@ async function guardMeter(db: Executor, _before: Meter | null, after: Meter): Pr
 
 async function guardCostItem(db: Executor, _before: CostItem | null, after: CostItem, body: unknown): Promise<void> {
   // Der Zeitraum (#208) muss zum Objekt gehören. `year` ohne `period` schickt nur ein alter Tab.
-  await requirePeriods(db, after.propertyId, [after.period ?? calendarPeriod(after.year)], has(body, 'year') && !has(body, 'period'), 'Die Kostenposition')
+  await requirePeriods(db, after.propertyId, [after.period], has(body, 'year') && !has(body, 'period'), 'Die Kostenposition')
   // Die Wohnungen der Einzelbeträge über ihr Mietverhältnis (#94).
   const mietverhaeltnisse = Object.keys(after.tenancyAmounts ?? {})
   const ihreWohnungen = mietverhaeltnisse.length === 0
@@ -715,7 +714,7 @@ const tenancyRow = (t: Tenancy) => ({
   costModel: orNull(t.costModel), heatingModel: orNull(t.heatingModel),
 })
 const costItemRow = (c: CostItem) => ({
-  id: c.id, propertyId: c.propertyId, period: c.period ?? calendarPeriod(c.year), category: c.category, description: c.description, vendor: orNull(c.vendor),
+  id: c.id, propertyId: c.propertyId, period: c.period, category: c.category, description: c.description, vendor: orNull(c.vendor),
   amountCents: c.amountCents, key: c.key, directUnitId: c.directUnitId ?? null,
   meterType: c.meterType ?? null, labor35aCents: orNull(c.labor35aCents), invoiceFile: orNull(c.invoiceFile),
   externalMeasure: c.externalBasis?.measure ?? null, externalTotal: c.externalBasis?.total ?? null,

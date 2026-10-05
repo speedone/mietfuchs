@@ -4,6 +4,7 @@
 // Satz des Servers bisher nur in der Konsole: Der Dialog blieb offen, und nichts geschah.
 // Jeder Test hier lässt den Server ablehnen und verlangt, dass seine Meldung zu sehen ist und
 // der Dialog offen bleibt, damit die Eingaben nicht verloren sind.
+import { calendarPeriod } from '../../../shared/period.ts'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { ReactNode } from 'react'
@@ -148,7 +149,7 @@ test('Stammdaten: überschneidet sich das neue Mietverhältnis, fragt die Seite 
 })
 
 test('Kosten: die Ablehnung beim Löschen ist zu sehen', async () => {
-  const item = { id: 'c1', propertyId: 'objekt-1', year: new Date().getFullYear() - 1, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 10000, key: 'units' }
+  const item = { id: 'c1', propertyId: 'objekt-1', period: calendarPeriod(new Date().getFullYear() - 1), category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 10000, key: 'units' }
   const base = globalThis.fetch
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) =>
     (init?.method ?? 'GET') === 'GET' && url.startsWith('/api/costItems')

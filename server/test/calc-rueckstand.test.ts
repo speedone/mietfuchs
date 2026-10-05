@@ -3,6 +3,7 @@
 // im selben Jahr einen Rückstand, muss die Abrechnung darauf hinweisen; umgerechnet wird nicht,
 // denn welcher Teil einer Zahlung die Vorauszahlung betraf, weiß nur der Vermieter.
 
+import { calendarPeriod } from '../../shared/period.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement, type ComputedSettlement } from '../src/calc.ts'
@@ -21,7 +22,7 @@ const paidMarchToNovember = (tenancyId = 't'): SnapshotPayment[] =>
 const settle = (s: Partial<SnapshotSource>, asOf?: string): ComputedSettlement => computeSettlement(snapshotOf({
   units: [{ id: 'a', name: 'EG', areaM2: 50, participates: true }],
   tenancies: [tenancy()],
-  costItems: [{ id: 'g', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 73056, key: 'area' }],
+  costItems: [{ id: 'g', period: calendarPeriod(2025), category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 73056, key: 'area' }],
   meters: [], readings: [], payments: [], closedSettlements: [], ...s,
 }, 2025), asOf ? { asOf } : {})
 
@@ -83,7 +84,7 @@ test('Gemischtes Modell (kalt pauschal, Heizung abgerechnet): der Text behauptet
       costModel: 'flatRate', flatRates: [{ from: '2025-03', monthlyCents: 5000 }],
       baseRents: [{ from: '2025-03', monthlyCents: 40000 }],
     })],
-    costItems: [{ id: 'h', year: 2025, category: 'Heizung und Warmwasser', description: 'Heizung', amountCents: 73056, key: 'area' }],
+    costItems: [{ id: 'h', period: calendarPeriod(2025), category: 'Heizung und Warmwasser', description: 'Heizung', amountCents: 73056, key: 'area' }],
     // Soll 400 + 80 + 50 = 530 € je Monat von März bis Dezember; gezahlt neun Mal 530 €.
     payments: paidMarchToNovember(),
   })

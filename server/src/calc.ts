@@ -43,7 +43,7 @@ import type { TermId } from '../../shared/glossary.ts'
 import { allocationOf, comparablePrevious, sameAllocation, sameUnits } from '../../shared/allocation.ts'
 import { possibleDuplicates } from '../../shared/duplicates.ts'
 import { commonPeriod, tenancyOverlaps } from '../../shared/tenancyOverlap.ts'
-import { calendarPeriod } from '../../shared/period.ts'
+import { calendarContext, calendarPeriod, type PeriodContext } from '../../shared/period.ts'
 import type { FrozenItemSelfUse, Snapshot, SnapshotCostItem, SnapshotMeter, SnapshotReading, SnapshotTenancy, SnapshotUnit } from './snapshot.ts'
 
 export const KEY_LABELS: Record<CostKey, string> = {
@@ -725,7 +725,7 @@ export function taxReport(snapshot: Snapshot): TaxReport {
   // Steht im Jahr keine Heizposition, rechnen die Mieter die Heizung selbst mit dem Versorger ab,
   // und das Heizmodell sagt nichts über die Nebenkosten des Vermieters (dritte Durchsicht).
   const tenancyById = new Map(snapshot.tenancies.map((t) => [t.id, t]))
-  const heatingBilled = snapshot.costItems.some((c) => c.year === year && c.category === HEATING_CATEGORY)
+  const heatingBilled = snapshot.costItems.some((c) => c.period === calendarPeriod(year) && c.category === HEATING_CATEGORY)
   const models = ledger.rows.map((r) => {
     const t = tenancyById.get(r.tenancyId)
     const cold = t?.costModel ?? 'settlement'
@@ -778,7 +778,7 @@ export function taxReport(snapshot: Snapshot): TaxReport {
   // bewusst doppelt: `snapshotFromDb` grenzt bereits ein. Er bleibt, weil er das Einzige ist,
   // was eine falsch eingegrenzte Ablage noch auffängt, und der Schaden wäre eine Steuerübersicht
   // mit den Werbungskosten mehrerer Jahre. Nicht als toten Code entfernen.
-  const items = snapshot.costItems.filter((c) => c.year === year)
+  const items = snapshot.costItems.filter((c) => c.period === calendarPeriod(year))
   // Die Aufteilung bei teilweiser Eigennutzung (#163), je Position. Die Rücklage fehlt darin.
   const split = splitForTax(snapshot, items.filter((c) => groupOf(c.category) !== null), settlement)
   const byGroup = new Map<string, Map<string, TaxExpenseCategory>>()
@@ -1460,24 +1460,23 @@ const KEY_PHRASES: Record<CostKey, string> = {
 // Text des Hinweises, sonst `null`. „Derselbe Schlüssel“ heißt dasselbe wie für den Vorschlag der
 // Oberfläche (shared/allocation.ts); entspricht die Position einer der Vorjahrespositionen, ist sie
 // keine Änderung. Wortlaut des § 556a BGB nachgelesen auf gesetze-im-internet.de.
-function keyChangeText(item: SnapshotCostItem, previous: readonly SnapshotCostItem[], year: number, basisUnitIds: readonly string[]): string | null {
+function keyChangeText(item: SnapshotCostItem, previous: readonly SnapshotCostItem[], at: PeriodContext, basisUnitIds: readonly string[]): string | null {
   if (isNotAllocable(item.category)) return null
   // Bei einer breiten Kostenart nur die Position mit derselben Beschreibung (Befund der Durchsicht).
-  const before = comparablePrevious(previous, item.category, year, item.description).map((i) => allocationOf(i, basisUnitIds))
+  const before = comparablePrevious(previous, item.category, at, item.description).map((i) => allocationOf(i, basisUnitIds))
   const now = allocationOf(item, basisUnitIds)
   const first = before[0]
   if (!first || before.some((a) => sameAllocation(a, now))) return null
-  const prevYear = year - 1
   const sameKey = before.find((a) => a.key === now.key)
   const what = !sameKey
-    ? `„${item.description}“ wird ${year} ${KEY_PHRASES[now.key]} verteilt, die Kostenart „${item.category}“ ${prevYear} ${KEY_PHRASES[first.key]}.`
-    : `„${item.description}“ wird ${year} wieder ${KEY_PHRASES[now.key]} verteilt, aber mit ${
+    ? `„${item.description}“ wird ${at.label} ${KEY_PHRASES[now.key]} verteilt, die Kostenart „${item.category}“ ${at.previousLabel} ${KEY_PHRASES[first.key]}.`
+    : `„${item.description}“ wird ${at.label} wieder ${KEY_PHRASES[now.key]} verteilt, aber mit ${
       !sameUnits(sameKey.participantUnitIds, now.participantUnitIds) ? 'anderen beteiligten Wohnungen'
         : sameKey.meterType !== now.meterType ? 'einem anderen Zählertyp'
           : sameKey.directUnitId !== now.directUnitId ? 'einer anderen Wohnung'
             : now.key === 'custom' ? 'anderen vereinbarten Anteilen'
               : 'einem anderen Maßstab der Gemeinschaft'
-    } als ${prevYear}.`
+    } als ${at.previousLabel}.`
   // Wortlaut nachgelesen auf gesetze-im-internet.de: § 556a BGB und § 6 Abs. 4 HeizkostenV. Für
   // Heizung und Warmwasser geht die Verordnung vor und erlaubt die Änderung in weiteren Fällen.
   if (item.category === HEATING_CATEGORY) {
@@ -1498,6 +1497,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // erst dort, wo ein Wert wirklich gebraucht wird, damit nur Benutztes einfriert.
   const lawLog = createLawLog()
   const lawPeriod: Period = { from: yFrom, to: yTo }
+  // Zeitraum und Vorzeitraum für Vergleich und Doppelungen (#208); Task 5 nimmt sie aus dem Schnappschuss.
+  const at = calendarContext(year)
   const unitById = new Map(snapshot.units.map((u) => [u.id, u]))
   // Selbstgenutzte Wohnungen (`selfUsed`) haben kein Mietverhältnis, bilden aber die
   // Verteilbasis mit: Kosten einer Rechnung über das ganze Haus dürfen nur anteilig auf die
@@ -1782,7 +1783,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // weil er das Einzige ist, was eine falsch eingegrenzte Ablage noch auffängt. Ohne ihn
   // rechnete ein Repository, das zu viel liefert, die Kosten mehrerer Jahre in eine Abrechnung,
   // und das fiele niemandem auf, weil jede Zeile für sich stimmig aussieht. Nicht entfernen.
-  const items = snapshot.costItems.filter((c) => c.year === year)
+  const items = snapshot.costItems.filter((c) => c.period === at.key)
   let totalCostsCents = 0
   let selfUsedShareCents = 0
 
@@ -2003,13 +2004,13 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // dieselbe Rechnung noch einmal aus dem Beleg. Nur ein Hinweis, verteilt wird wie erfasst. Der Rat
   // lautet „löschen“ und nicht „Beleg zuordnen“: Zugeordnet verstummt der Hinweis (er verlangt eine
   // Position ohne Beleg), die Summe bliebe aber doppelt (Integrationsdurchsicht M1).
-  for (const group of possibleDuplicates(items, year, snapshot.previousCostItems ?? [])) {
+  for (const group of possibleDuplicates(items, at, snapshot.previousCostItems ?? [])) {
     const first = group.find((i) => !i.invoiceFile) ?? group[0]
     if (!first) continue
     const list = group.map((i) => `„${i.description}“ (${fmtCents(i.amountCents)}${i.invoiceFile ? '' : ', ohne Beleg'})`)
     const named = andList(list)
     warn('cost.possible-duplicate',
-      `${named} stehen ${list.length === 2 ? `beide ${year}` : `${year} alle`} unter „${first.category}“. ${list.length === 2 ? 'Ist das dieselbe Rechnung' : 'Ist darunter dieselbe Rechnung zweimal'}, etwa einmal aus dem Vorjahr übernommen und einmal aus dem Beleg erfasst, wird sie zweimal verteilt. ` +
+      `${named} stehen ${list.length === 2 ? `beide ${at.label}` : `${at.label} alle`} unter „${first.category}“. ${list.length === 2 ? 'Ist das dieselbe Rechnung' : 'Ist darunter dieselbe Rechnung zweimal'}, etwa einmal aus dem Vorjahr übernommen und einmal aus dem Beleg erfasst, wird sie zweimal verteilt. ` +
       (list.length === 2
         ? 'Dann bitte eine der beiden Positionen löschen, in der Regel die ohne Beleg. Soll die ohne Beleg bleiben, setzen Sie ihren Betrag auf den der Rechnung und löschen die andere. '
         : 'Dann bitte die doppelt erfasste Position löschen, in der Regel die ohne Beleg. ') +
@@ -2022,7 +2023,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const bookable = (t: SnapshotTenancy) => statements.has(t.id) && modelFor(t, item) === 'settlement'
     totalCostsCents += item.amountCents
     // Anders als im Vorjahr (#141)? Nur ein Hinweis, verteilt wird wie erfasst.
-    const keyChange = keyChangeText(item, snapshot.previousCostItems ?? [], year, basisUnitIds)
+    const keyChange = keyChangeText(item, snapshot.previousCostItems ?? [], at, basisUnitIds)
     if (keyChange) warn('key.changed-from-previous-year', keyChange, itemSubject(item))
     // Rohanteile (float, in Cent) pro Mietverhältnis bestimmen.
     // Nicht umlagefähige Kosten gehen immer vollständig an den Vermieter.

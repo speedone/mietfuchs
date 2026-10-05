@@ -19,7 +19,6 @@
 
 import { sql } from 'drizzle-orm'
 import type { AiConsent, AiSettings, AiSlot, CostItem, Meter, Payment, PeriodKey, Property, Reading, Settings, Tenancy, Unit } from '../../../shared/types.ts'
-import { startYearOf } from '../../../shared/period.ts'
 import { migrateAi, type MigratedSettings } from '../ai/settings.ts'
 import { DEFAULT_SETTINGS } from '../defaults.ts'
 import { frozenSettlementOf, type FrozenItemSelfUse, type SnapshotSource } from '../snapshot.ts'
@@ -50,16 +49,13 @@ export type StoredClosedSettlement = {
   settlement: unknown
 }
 
-// Eine Kostenposition, wie sie aus der Datenbank kommt: mit Zeitraum (#208).
-export type StoredCostItem = CostItem & { period: PeriodKey }
-
 // Der Bestand, wie er in der Datenbank liegt. Er erfüllt `SnapshotSource` (snapshot.ts), lässt
 // sich also unmittelbar zu einem Schnappschuss eines Jahres machen.
 export type Stock = SnapshotSource & {
   properties: Property[]
   units: Unit[]
   tenancies: Tenancy[]
-  costItems: StoredCostItem[]
+  costItems: CostItem[]
   meters: Meter[]
   readings: Reading[]
   payments: Payment[]
@@ -189,7 +185,7 @@ export async function readTenancies(db: Database): Promise<Tenancy[]> {
   }))
 }
 
-export async function readCostItems(db: Database): Promise<StoredCostItem[]> {
+export async function readCostItems(db: Database): Promise<CostItem[]> {
   const rows = await db.select().from(costItems).orderBy(INSERTION_ORDER)
   const shareRows = await db.select().from(costItemShares).orderBy(INSERTION_ORDER)
   const shares = groupBy(shareRows, (r) => r.costItemId, (r): [string, number] => [r.unitId, r.percent])
@@ -208,8 +204,6 @@ export async function readCostItems(db: Database): Promise<StoredCostItem[]> {
       id: c.id,
       propertyId: c.propertyId,
       period: c.period,
-      // abgeleitet, siehe CostItem in shared/types.ts
-      year: startYearOf(c.period),
       category: c.category,
       description: c.description,
       vendor: orUndefined(c.vendor),

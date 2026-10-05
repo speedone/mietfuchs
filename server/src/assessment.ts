@@ -7,7 +7,7 @@ import type {
   StoredAssessment, StoredAssessmentLine, Unit,
 } from '../../shared/types.ts'
 import { isNotAllocable, matchCategory } from '../../shared/categories.ts'
-import { startYearOf } from '../../shared/period.ts'
+import { calendarContext, calendarPeriod, startYearOf } from '../../shared/period.ts'
 import { normalizedText, sameCostCandidates } from '../../shared/duplicates.ts'
 import { costItemBody, type CostItemDraft } from '../../shared/costItem.ts'
 import { aiPositionDefaults, aiPositionPreselect, aiRowPreselected, categoryDeviationPct, invoiceSumCheck, scorePosition } from '../../shared/assessment.ts'
@@ -81,9 +81,10 @@ export function lineCandidates<T extends CostItem>(
   const own = [...receipt.own]
   const pool = candidatePool(others, line.amountCents, booked)
   const ownPool = candidatePool(own, line.amountCents, booked)
-  const same = sameCostCandidates(pool, { propertyId: a.propertyId, year: a.year, category: line.category, description: line.description, vendor: a.vendor ?? '' })
+  // Brücke Kalenderjahr (#208): bis PR 3
+  const same = sameCostCandidates(pool, { propertyId: a.propertyId, period: calendarPeriod(a.year), category: line.category, description: line.description, vendor: a.vendor ?? '' })
   const extra = [...own.filter((i) => ownPool.includes(i)), ...[...attached, ...twin].filter((i) => pool.includes(i))]
-    .filter((i) => i.year === a.year && !same.includes(i))
+    .filter((i) => i.period === calendarPeriod(a.year) && !same.includes(i))
   return { candidates: [...extra, ...same], attached, twin, own }
 }
 
@@ -207,7 +208,7 @@ export function replacedByLinking<T extends CostItem>(
 ): T | null {
   if (line.amountCents === null || line.amountCents <= 0) return null
   const fits = candidates.filter((c) =>
-    c.year === year && c.category === line.category && !c.invoiceFile && c.key !== 'amounts' && c.key !== 'external' &&
+    c.period === calendarPeriod(year) && c.category === line.category && !c.invoiceFile && c.key !== 'amounts' && c.key !== 'external' &&
     !booked.some((l) => l.costItemId === c.id))
   return fits.length === 1 ? fits[0] ?? null : null
 }
@@ -277,7 +278,8 @@ function suggestLine(line: StoredAssessmentLine, a: StoredAssessment, others: re
   const score = scorePosition({
     category: line.category, description: line.description, amountCents: amount, labor35aCents: line.labor35aCents ?? 0,
     matchedByDesc: line.categoryGuessed, vendor, detectedYear: a.detectedYear, targetYear: a.year, existingItems: pool,
-    priorYearDeviationPct: categoryDeviationPct(ctx.items, line.category, a.year, deviation.amountCents, deviation.replacedCents),
+    // Brücke Kalenderjahr (#208): bis PR 3
+    priorYearDeviationPct: categoryDeviationPct(ctx.items, line.category, calendarContext(a.year), deviation.amountCents, deviation.replacedCents),
   })
   // Das Jahr aus dem Beleg weicht vom gewählten ab (Schlussdurchsicht, I1): Gebucht wird im Jahr
   // des Belegs, aber nie ungesehen. Eine Jahresrechnung vom Februar, deren Leistungszeitraum die KI
@@ -285,7 +287,8 @@ function suggestLine(line: StoredAssessmentLine, a: StoredAssessment, others: re
   // Brücke Kalenderjahr (#208): bis PR 3. Gewählt ist ein Kalenderzeitraum; verglichen wird sein Jahr.
   const requestedYear = a.requestedPeriod === null ? null : startYearOf(a.requestedPeriod)
   const otherYear = requestedYear !== null && requestedYear !== a.year
-  const built = costItemBody(lineDraft(fields, { vendor, invoiceFile: a.file }, ctx.units), ctx.units, a.year)
+  // Brücke Kalenderjahr (#208): bis PR 3
+  const built = costItemBody(lineDraft(fields, { vendor, invoiceFile: a.file }, ctx.units), ctx.units, calendarPeriod(a.year))
   const problem = 'error' in built ? built.error : null
   let level = score.level
   const reasons = [...score.reasons]

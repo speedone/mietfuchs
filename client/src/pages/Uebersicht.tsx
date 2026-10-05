@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { CostItem, Settlement } from '../types'
+import { startYearOf } from '../../../shared/period.ts'
 import { api, fmtEuro } from '../api'
 import { useYear } from '../year'
 import { useProperty, withProperty, useSwitchYear } from '../property'
@@ -36,7 +37,8 @@ export default function Uebersicht({ onNavigate }: Props) {
   // Summe je Kostenart für ein Jahr
   const byCategory = useCallback((y: number) => {
     const map = new Map<string, number>()
-    for (const c of costItems.filter((c) => c.year === y)) {
+    // Brücke Kalenderjahr (#208): bis PR 3. Die Seite vergleicht Kalenderjahre.
+    for (const c of costItems.filter((c) => startYearOf(c.period) === y)) {
       map.set(c.category, (map.get(c.category) ?? 0) + c.amountCents)
     }
     return map
@@ -65,7 +67,8 @@ export default function Uebersicht({ onNavigate }: Props) {
   // Jahresüberblick über alle erfassten Jahre
   const years = useMemo(() => {
     const map = new Map<number, number>()
-    for (const c of costItems) map.set(c.year, (map.get(c.year) ?? 0) + c.amountCents)
+    // Brücke Kalenderjahr (#208): bis PR 3
+    for (const c of costItems) map.set(startYearOf(c.period), (map.get(startYearOf(c.period)) ?? 0) + c.amountCents)
     return [...map.entries()].sort((a, b) => a[0] - b[0])
   }, [costItems])
   const maxYearCents = Math.max(1, ...years.map(([, v]) => v))

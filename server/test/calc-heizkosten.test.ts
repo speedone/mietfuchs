@@ -3,6 +3,7 @@
 // verbrauchsabhängig abgerechnet, darf der Mieter seinen Anteil um 15 Prozent kürzen (§ 12 Abs. 1).
 // Mietfuchs rechnet weiter wie erfasst und beziffert die Kürzung je Mieter.
 
+import { calendarPeriod } from '../../shared/period.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement, type ComputedSettlement } from '../src/calc.ts'
@@ -14,7 +15,7 @@ const tenancy = (id: string, unitId: string, over: Partial<SnapshotTenancy> = {}
 })
 const unit = (id: string, areaM2: number, over: Partial<SnapshotUnit> = {}): SnapshotUnit => ({ id, name: id, areaM2, participates: true, ...over })
 const heizung = (over: Partial<SnapshotCostItem> = {}): SnapshotCostItem => ({
-  id: 'h', year: 2025, category: 'Heizung und Warmwasser', description: 'Heizöl', amountCents: 540000, key: 'area', ...over,
+  id: 'h', period: calendarPeriod(2025), category: 'Heizung und Warmwasser', description: 'Heizöl', amountCents: 540000, key: 'area', ...over,
 })
 const settle = (s: Partial<SnapshotSource>): ComputedSettlement => computeSettlement(snapshotOf({
   units: [], tenancies: [], costItems: [], meters: [], readings: [], payments: [], closedSettlements: [], ...s,

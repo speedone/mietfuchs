@@ -123,8 +123,11 @@ export type ClosedSettlement = {
 export type LegacyCostKey = Exclude<CostKey, 'external' | 'amounts'>
 export type LegacyUnit = Omit<Unit, 'propertyId' | 'mea'>
 export type LegacyMeter = Omit<Meter, 'propertyId'>
-export type LegacyCostItem = Omit<CostItem, 'propertyId' | 'key' | 'participantUnitIds' | 'externalBasis' | 'tenancyAmounts' | 'selfAmounts'> & {
+// Die db.json kennt Jahre, keine Zeiträume (#208): Ihre Kostenpositionen tragen `year`, und erst der
+// Eingang macht daraus den Kalenderzeitraum.
+export type LegacyCostItem = Omit<CostItem, 'period' | 'propertyId' | 'key' | 'participantUnitIds' | 'externalBasis' | 'tenancyAmounts' | 'selfAmounts'> & {
   key: LegacyCostKey
+  year: number
 }
 
 export type Db = {

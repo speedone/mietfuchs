@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { CostItem, Meter, Settings, Settlement, Tenancy, Unit, UploadEntry } from '../types'
+import type { CostItem, Meter, PeriodKey, Settings, Settlement, Tenancy, Unit, UploadEntry } from '../types'
 import { isNotAllocable, usageOf } from '../types'
 import { cockpitSubtitle, itemsDetail, meterTypesInUse, tenanciesDetail, usesUnitBasis } from '../cockpitChecks'
 import { coverageCheck, filesByItem } from '../receipts'
@@ -7,6 +7,7 @@ import { api, fmtEuro, fmtDate } from '../api'
 import { andList } from '../../../shared/wording.ts'
 import { hkvCutNotByConsumption } from '../../../shared/law/heizkostenv.ts'
 import { LAW_AS_OF, valueAt } from '../../../shared/law/register.ts'
+import { calendarPeriod } from '../../../shared/period.ts'
 import { useYear } from '../year'
 import { useProperty, withProperty } from '../property'
 import { consentPending } from '../update'
@@ -43,7 +44,7 @@ type Check = {
 const NOTABLE_CHANGE_PCT = 25
 
 export default function Cockpit({ units, tenancies, settings, reload, onNavigate }: Props) {
-  const { year } = useYear()
+  const { year, period } = useYear()
   const { property } = useProperty()
   const propertyId = property?.id
   const [settlement, setSettlement] = useState<Settlement | null>(null)
@@ -73,20 +74,21 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
   }, [year, propertyId])
 
   // ---------- Kennzahlen des Jahres ----------
-  const yearItems = useMemo(() => costItems.filter((c) => c.year === year), [costItems, year])
+  const yearItems = useMemo(() => costItems.filter((c) => c.period === period), [costItems, period])
   const itemsSum = useMemo(() => yearItems.reduce((a, c) => a + c.amountCents, 0), [yearItems])
   const invoiceFileCount = useMemo(() => new Set(yearItems.filter((c) => c.invoiceFile).map((c) => c.invoiceFile)).size, [yearItems])
   const participating = useMemo(() => units.filter((u) => u.participates), [units])
 
   // Vorjahresvergleich je Kostenart (wie in der Übersicht)
   const notable = useMemo(() => {
-    const sumByCat = (y: number) => {
+    const sumByCat = (key: PeriodKey) => {
       const m = new Map<string, number>()
-      for (const c of costItems) if (c.year === y) m.set(c.category, (m.get(c.category) ?? 0) + c.amountCents)
+      for (const c of costItems) if (c.period === key) m.set(c.category, (m.get(c.category) ?? 0) + c.amountCents)
       return m
     }
-    const cur = sumByCat(year)
-    const prev = sumByCat(year - 1)
+    const cur = sumByCat(period)
+    // Brücke Kalenderjahr (#208): bis PR 3
+    const prev = sumByCat(calendarPeriod(year - 1))
     if (prev.size === 0) return { hasPrev: false, list: [] as { cat: string; pct: number }[] }
     const list: { cat: string; pct: number }[] = []
     for (const [cat, k] of cur) {
@@ -96,7 +98,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
       if (Math.abs(pct) >= NOTABLE_CHANGE_PCT) list.push({ cat, pct })
     }
     return { hasPrev: true, list }
-  }, [costItems, year])
+  }, [costItems, year, period])
 
   // §556 Abs. 3 BGB: Zugang beim Mieter binnen 12 Monaten nach Ende des Abrechnungszeitraums.
   const deadline = useMemo(() => new Date(Date.UTC(year + 1, 11, 31)), [year])

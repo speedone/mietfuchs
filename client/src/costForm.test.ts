@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest'
+import { calendarPeriod } from '../../shared/period.ts'
 import type { CostKey, Meter, MeterType, Unit } from './types'
 import { KEY_LABELS, matchCategory } from './types'
 import {
@@ -211,7 +212,7 @@ describe('Felder eines nicht gewählten Schlüssels werden zurückgesetzt', () =
 describe('Bearbeiten einer gespeicherten Position', () => {
   test('Zählertyp und Anteile werden ins Formular übernommen', () => {
     const f = itemToForm({
-      id: 'c1', propertyId: 'objekt-1', year: 2025, category: 'Wasser/Abwasser', description: 'Wasser',
+      id: 'c1', propertyId: 'objekt-1', period: calendarPeriod(2025), category: 'Wasser/Abwasser', description: 'Wasser',
       amountCents: 123456, key: 'meter', meterType: 'sonstig', labor35aCents: 1000,
       customShares: { u1: 33.33 },
     })
@@ -222,14 +223,14 @@ describe('Bearbeiten einer gespeicherten Position', () => {
   })
 
   test('eine Position ohne Zählertyp füllt das Feld nicht mit einem geratenen Wert', () => {
-    const f = itemToForm({ id: 'c1', propertyId: 'objekt-1', year: 2025, category: 'Grundsteuer', description: 'G', amountCents: 100, key: 'area' })
+    const f = itemToForm({ id: 'c1', propertyId: 'objekt-1', period: calendarPeriod(2025), category: 'Grundsteuer', description: 'G', amountCents: 100, key: 'area' })
     expect(f.meterType).toBe('')
   })
 
   test('der Rundlauf Formular → Rumpf verändert die Anteile nicht', () => {
     const original = { u1: 12.5, u2: 87.5 }
     const f = itemToForm({
-      id: 'c1', propertyId: 'objekt-1', year: 2025, category: 'Sonstige Betriebskosten', description: 'X',
+      id: 'c1', propertyId: 'objekt-1', period: calendarPeriod(2025), category: 'Sonstige Betriebskosten', description: 'X',
       amountCents: 50000, key: 'custom', customShares: original,
     })
     const r = buildCostItemBody(f, UNITS, 2025)
@@ -295,14 +296,14 @@ describe('Teilnehmer, Gemeinschaftsabrechnung und Einzelbeträge (#94)', () => {
 
   test('eine gespeicherte Position füllt die neuen Felder', () => {
     const f = itemToForm({
-      id: 'c', propertyId: 'objekt-1', year: 2025, category: 'Heizung', description: 'H', amountCents: 80000, key: 'amounts',
+      id: 'c', propertyId: 'objekt-1', period: calendarPeriod(2025), category: 'Heizung', description: 'H', amountCents: 80000, key: 'amounts',
       participantUnitIds: ['u1'], tenancyAmounts: { t1: 30000 },
       externalBasis: { measure: 'area', total: 1240, totalCents: 100000 },
     })
     expect(f.participants).toEqual(['u1'])
     expect(f.tenancyAmounts).toEqual({ t1: '300,00' })
     expect([f.externalMeasure, f.externalTotal, f.externalTotalAmount]).toEqual(['area', '1.240', '1.000,00'])
-    expect(itemToForm({ id: 'c', propertyId: 'objekt-1', year: 2025, category: 'X', description: 'X', amountCents: 1, key: 'area' }).participants).toBeNull()
+    expect(itemToForm({ id: 'c', propertyId: 'objekt-1', period: calendarPeriod(2025), category: 'X', description: 'X', amountCents: 1, key: 'area' }).participants).toBeNull()
   })
 })
 
@@ -344,7 +345,7 @@ describe('Eigenbeträge (#104)', () => {
     expect(buildCostItemBody(f, EIGEN, 2025)).toMatchObject({ body: { tenancyAmounts: { t1: 124000 }, selfAmounts: { u1: 160000 } } })
     expect(amountsSumText(f, EIGEN)).toMatch(/2\.840,00.*160,00/)
     expect(buildCostItemBody(form({ key: 'amounts', amount: '1.000,00', tenancyAmounts: { t1: '600,00' }, selfAmounts: { u1: '500,00' } }), EIGEN, 2025)).toHaveProperty('error')
-    expect(itemToForm({ id: 'c', propertyId: 'objekt-1', year: 2025, category: 'X', description: 'X', amountCents: 1, key: 'amounts', selfAmounts: { u1: 160000 } }).selfAmounts).toEqual({ u1: '1.600,00' })
+    expect(itemToForm({ id: 'c', propertyId: 'objekt-1', period: calendarPeriod(2025), category: 'X', description: 'X', amountCents: 1, key: 'amounts', selfAmounts: { u1: 160000 } }).selfAmounts).toEqual({ u1: '1.600,00' })
     expect(buildCostItemBody(form({ key: 'area', amount: '100,00', selfAmounts: { u1: '1,00' } }), EIGEN, 2025)).toMatchObject({ body: { selfAmounts: null } })
   })
 
@@ -381,7 +382,7 @@ describe('Kleinigkeiten (#105)', () => {
   })
 
   test('die Summe der Anlage behält beim erneuten Speichern ihre Nachkommastellen', () => {
-    const f = itemToForm({ id: 'c', propertyId: 'objekt-1', year: 2025, category: 'X', description: 'X', amountCents: 1, key: 'external', externalBasis: { measure: 'mea', total: 1000.125, totalCents: 1 } })
+    const f = itemToForm({ id: 'c', propertyId: 'objekt-1', period: calendarPeriod(2025), category: 'X', description: 'X', amountCents: 1, key: 'external', externalBasis: { measure: 'mea', total: 1000.125, totalCents: 1 } })
     expect(f.externalTotal).toBe('1.000,125')
   })
 })
@@ -518,7 +519,7 @@ describe('Kleinigkeiten aus der Browser-Abnahme (#142)', () => {
     expect(withTaxUnit(hinterhaus, '')).toMatchObject({ key: 'area', participants: null })
     expect(withTaxUnit(hinterhaus, 'u1')).toMatchObject({ key: 'direct', directUnitId: 'u1', participants: null })
     // Gespeicherte Teilnehmer kommen als „bestimmte Einheiten“ zurück, und die Liste nennt sie.
-    const stored = { id: 'c', propertyId: 'p', year: 2025, description: 'Dach', amountCents: 300000, category: 'Nicht umlagefähig', key: 'area', participantUnitIds: ['u2'] } as const
+    const stored = { id: 'c', propertyId: 'p', period: calendarPeriod(2025), description: 'Dach', amountCents: 300000, category: 'Nicht umlagefähig', key: 'area', participantUnitIds: ['u2'] } as const
     expect(taxScopeOf(itemToForm({ ...stored, participantUnitIds: ['u2'] }))).toBe(TAX_SCOPE_SOME)
     expect(keyListText({ ...stored, participantUnitIds: ['u2'] }, UNITS)).toBe('— trägt der Vermieter · betrifft U2')
     // Wer von einer umlagefähigen Kostenart wechselt, nimmt keine alten Teilnehmer mit.
@@ -560,8 +561,8 @@ describe('Kostenart wechseln (Durchsicht zu #142)', () => {
 // dieselbe Rechnung wie eine Rechnung derselben Kostenart. Die Rückfrage riet sonst, statt der
 // Gutschrift die vorhandene Rechnung zu bearbeiten.
 describe('Rückfrage nach derselben Rechnung', () => {
-  const rechnung = { id: 'r', propertyId: 'p', year: 2026, category: 'Wasser', description: 'Wasser 2026', amountCents: 84000 }
-  const gutschrift = { id: 'g', propertyId: 'p', year: 2026, category: 'Wasser', description: 'Gutschrift Wasser', amountCents: -5745 }
+  const rechnung = { id: 'r', propertyId: 'p', period: calendarPeriod(2026), category: 'Wasser', description: 'Wasser 2026', amountCents: 84000 }
+  const gutschrift = { id: 'g', propertyId: 'p', period: calendarPeriod(2026), category: 'Wasser', description: 'Gutschrift Wasser', amountCents: -5745 }
   const body = (amountCents: number | null) => ({ category: 'Wasser', description: 'Wasser', vendor: '', amountCents })
   test('eine Gutschrift fragt nur nach Gutschriften, eine Rechnung nur nach Rechnungen (rc.1)', () => {
     expect(sameCostOf([rechnung, gutschrift], body(-5745), 'p', 2026).map((i) => i.id)).toEqual(['g'])

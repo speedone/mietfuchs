@@ -15,7 +15,7 @@ import { DEFAULT_SETTINGS } from './defaults.ts'
 import { compareWithFrozen } from './settlementDiff.ts'
 import { computeSettlement, consumptionOverview, rentLedger, taxReport } from './calc.ts'
 import { narrowToProperty, snapshotFor } from './snapshot.ts'
-import { calendarPeriod, startYearOf } from '../../shared/period.ts'
+import { calendarPeriod, isCalendarRules, rulesOf, startYearOf } from '../../shared/period.ts'
 import { extractFromFile, classifyDocType, extractMeterReading, type AskProgressEvent, type AskStats } from './extract.ts'
 import { listOllamaModels, findOllama, defaultCandidates, pullOllamaModel } from './ai/ollama.ts'
 import { createRecommendations } from './ai/recommendations.ts'
@@ -377,7 +377,17 @@ for (const coll of COLLECTIONS) {
   // Aufgelistet wird über `narrowToProperty`, dieselbe Regel wie beim Rechnen; eine zweite
   // Fassung für die Listen liefe irgendwann anders als die der Abrechnung.
   app.get(`/api/${coll}`, async (req, res) => {
-    res.json(await readData(async (db) => narrowToProperty(await readStock(db), await propertyOf(db, req))[coll]))
+    res.json(await readData(async (db) => {
+      const propertyId = await propertyOf(db, req)
+      const stock = await readStock(db)
+      const scoped = narrowToProperty(stock, propertyId)
+      if (coll !== 'costItems') return scoped[coll]
+      // Ein Tab von vor dem Update filtert die Kostenpositionen nach `year` (#208). Bei einem reinen
+      // Kalenderobjekt bekommt er es weiter; sonst sähe er eine leere Liste und erfasste alles noch
+      // einmal. Bei einem anderen Rhythmus gibt es kein Jahr, das stimmte; dort lehnt das Schreiben ab.
+      const calendar = isCalendarRules(rulesOf(stock.properties.find((p) => p.id === propertyId)))
+      return calendar ? scoped.costItems.map((c) => ({ ...c, year: startYearOf(c.period) })) : scoped.costItems
+    }))
   })
   app.post(`/api/${coll}`, async (req, res) => {
     const body = bodyObject(req)
@@ -1137,7 +1147,8 @@ app.get('/api/receipts/tax/:year', async (req, res) => {
     const property = (await listProperties(db)).find((p) => p.id === propertyId)
     // Privat und abziehbar je Position aus derselben Rechnung wie die Steuerübersicht (#163)
     const split = new Map(taxReport(snapshotFor(whole, propertyId, year)).expenses.items.map((i) => [i.costItemId, i]))
-    return { items: stock.costItems.filter((c) => c.year === year), property, rows: await uploadRows(db), links: await uploadLinks(db), split }
+    // Die Steuer rechnet im Kalenderjahr (#208).
+    return { items: stock.costItems.filter((c) => c.period === calendarPeriod(year)), property, rows: await uploadRows(db), links: await uploadLinks(db), split }
   })
   const booked = new Map<string, string[]>()
   for (const [file, l] of links) for (const id of l.bookedItemIds) booked.set(id, [...(booked.get(id) ?? []), file])

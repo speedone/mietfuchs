@@ -31,7 +31,7 @@ type Props = {
 }
 
 export default function Abrechnung({ settings, tenancies, reload, onNavigate }: Props) {
-  const { year } = useYear()
+  const { year, period } = useYear()
   // Fragt bei offenem Formular nach, wie der Objektwechsel (Durchsicht zu #141).
   const switchYear = useSwitchYear()
   const { properties, property } = useProperty()
@@ -92,14 +92,14 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
 
   // Beleg-Dateien des Jahres (in Erfassungsreihenfolge, ohne Duplikate)
   const invoiceFiles = useMemo(
-    () => [...new Set(costItems.filter((c) => c.year === year && c.invoiceFile).map((c) => c.invoiceFile!))],
-    [costItems, year],
+    () => [...new Set(costItems.filter((c) => c.period === period && c.invoiceFile).map((c) => c.invoiceFile!))],
+    [costItems, period],
   )
 
   // Sprechende Anlagen-Beschriftung aus den verknüpften Kostenpositionen
   // (Rechnungssteller + Kostenarten) statt des technischen Dateinamens.
   function fileLabel(f: string): string {
-    const linked = costItems.filter((c) => c.year === year && c.invoiceFile === f)
+    const linked = costItems.filter((c) => c.period === period && c.invoiceFile === f)
     const vendor = linked.find((c) => c.vendor)?.vendor
     const cats = [...new Set(linked.map((c) => c.category))].join(', ')
     if (vendor && cats) return `${vendor} — ${cats}`

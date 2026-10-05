@@ -96,10 +96,7 @@ type _OverrideAmount = Assert<Equals<OverrideRow['amountCents'], Tenancy['prepay
 // die Angaben der Gemeinschaft als drei Spalten statt eines Objekts. An ihrer Stelle stehen
 // deshalb die drei Spalten im Vergleich. Die Eigenbeträge (#104) stehen ebenfalls in einer
 // eigenen Tabelle.
-// `year` ist abgeleitet und keine Spalte; `period` ist im Modell noch optional, in der Tabelle
-// Pflicht (#208).
-type CostItemColumns = Omit<CostItem, 'year' | 'period' | 'customShares' | 'participantUnitIds' | 'tenancyAmounts' | 'selfAmounts' | 'externalBasis'> & {
-  period: PeriodKey
+type CostItemColumns = Omit<CostItem, 'customShares' | 'participantUnitIds' | 'tenancyAmounts' | 'selfAmounts' | 'externalBasis'> & {
   externalMeasure?: ExternalBasis['measure']
   externalTotal?: ExternalBasis['total']
   externalTotalCents?: ExternalBasis['totalCents']

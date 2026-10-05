@@ -19,7 +19,7 @@ const tenancy = (id: string, unitId: string, start = '2020-01-01', end: string |
 const rented = (id: string, areaM2: number): SnapshotUnit => ({ id, name: id, areaM2, participates: true })
 const own = (id: string, areaM2: number, selfPersons = 2): SnapshotUnit => ({ id, name: id, areaM2, participates: false, selfUsed: true, selfPersons })
 const item = (id: string, over: Partial<SnapshotCostItem>): SnapshotCostItem => ({
-  id, year: 2025, category: 'Grundsteuer', description: id, amountCents: 100000, key: 'area', ...over,
+  id, period: calendarPeriod(2025), category: 'Grundsteuer', description: id, amountCents: 100000, key: 'area', ...over,
 })
 const source = (over: Partial<SnapshotSource>): SnapshotSource => ({
   units: [], tenancies: [], costItems: [], meters: [], readings: [], payments: [], closedSettlements: [], ...over,

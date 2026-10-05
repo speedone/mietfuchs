@@ -48,7 +48,7 @@ async function receipt(w: World, file: string, lines: NewLine[], extra: Partial<
   }, { id: `a-${file}`, now: new Date(Date.UTC(2026, 9, 2, 0, 0, ++seq)).toISOString() }))
 }
 const estimate = (w: World, id: string, patch: Record<string, unknown> = {}) => w.opened.write((db) => createEntity(db, 'costItems', id, {
-  propertyId: 'objekt-1', year: 2025, category: 'Wasser/Abwasser', description: 'Wasser/Abwasser 2025', amountCents: 150000, key: 'area', ...patch,
+  propertyId: 'objekt-1', period: calendarPeriod(2025), category: 'Wasser/Abwasser', description: 'Wasser/Abwasser 2025', amountCents: 150000, key: 'area', ...patch,
 }))
 const plan = (w: World, r: AssessmentRecord, decisions: LineDecision[]) =>
   w.opened.read((db) => previewBooking(db, r.assessment.id, decisions, w.uploadDir))
@@ -210,7 +210,7 @@ test('Ziel aus anderem Objekt oder Jahr ergibt einen Fehler, kein stilles Umbieg
   await withWorld(async (w) => {
     await w.opened.write((db) => createProperty(db, 'objekt-2', { name: 'Zweites Haus' }))
     await estimate(w, 'fremd', { propertyId: 'objekt-2' })
-    await estimate(w, 'alt', { year: 2024 })
+    await estimate(w, 'alt', { period: calendarPeriod(2024) })
     const r = await receipt(w, 'w.pdf', [line('Frischwasser', 'Wasser/Abwasser', 70000)])
     assert.match((await plan(w, r, [link(0, 'fremd')])).errors[0]?.message ?? '', /anderen Objekt/)
     assert.match((await plan(w, r, [link(0, 'alt')])).errors[0]?.message ?? '', /gehört zu 2024, der Beleg zu 2025/)
@@ -714,7 +714,7 @@ test('Ampel über zwei Belege (#170): die Ansicht rechnet offene Zeilen beider A
   await withWorld(async (w) => {
     // Vorjahr 1.000 €, Schätzung 1.500 €, die Rechnung kommt in zwei Belegen à 700 € und 800 €:
     // zusammen 1.500 € gegen 1.000 €, +50 % bei beiden. Jeder für sich ergäbe −30 % und −20 %.
-    await estimate(w, 'vj', { year: 2024, amountCents: 100000, invoiceFile: 'w-2024.pdf' })
+    await estimate(w, 'vj', { period: calendarPeriod(2024), amountCents: 100000, invoiceFile: 'w-2024.pdf' })
     await estimate(w, 'wa')
     const erster = await receipt(w, 'wasser-1.pdf', [line('Frischwasser', 'Wasser/Abwasser', 70000)])
     const zweiter = await receipt(w, 'wasser-2.pdf', [line('Abwasser', 'Wasser/Abwasser', 80000)])
@@ -736,7 +736,7 @@ test('Ampel über zwei Belege (Durchsicht): derselbe Beleg zweimal hochgeladen r
     const row = (file: string) => ({ file, originalName: file, mimeType: 'application/pdf', size: 10, sha256: 'gleich', uploadedAt: '2026-10-02T00:00:00.000Z', propertyId: null, year: null, invoiceDate: null, kind: 'receipt' as const })
     await w.opened.write((db) => recordUpload(db, row('a.pdf')))
     await w.opened.write((db) => recordUpload(db, row('b.pdf')))
-    await estimate(w, 'vj', { year: 2024, amountCents: 150000, invoiceFile: 'w-2024.pdf' })
+    await estimate(w, 'vj', { period: calendarPeriod(2024), amountCents: 150000, invoiceFile: 'w-2024.pdf' })
     await estimate(w, 'wa')
     const a = await receipt(w, 'a.pdf', [line('Wasser', 'Wasser/Abwasser', 155000)])
     await receipt(w, 'b.pdf', [line('Wasser', 'Wasser/Abwasser', 155000)])
@@ -757,7 +757,7 @@ test('Ampel über zwei Belege (Integrationsdurchsicht): Zwillinge unter den ande
     await w.opened.write((db) => recordUpload(db, row('a.pdf', 'gleich')))
     await w.opened.write((db) => recordUpload(db, row('b.pdf', 'gleich')))
     await w.opened.write((db) => recordUpload(db, row('c.pdf', 'anders')))
-    await estimate(w, 'vj', { year: 2024, amountCents: 100000, invoiceFile: 'w-2024.pdf' })
+    await estimate(w, 'vj', { period: calendarPeriod(2024), amountCents: 100000, invoiceFile: 'w-2024.pdf' })
     await estimate(w, 'wa')
     await receipt(w, 'a.pdf', [line('Frischwasser', 'Wasser/Abwasser', 70000)])
     await receipt(w, 'b.pdf', [line('Frischwasser', 'Wasser/Abwasser', 70000)])

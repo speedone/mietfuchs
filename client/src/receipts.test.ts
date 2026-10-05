@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { calendarPeriod } from '../../shared/period.ts'
 import type { CostItem, UploadInfo } from './types'
 import { amountCheckBody, amountCheckMode, attachChoices, buildFolder, coverage, coverageCheck, duplicateHints, filesByItem, inboxFor, inboxOf, matchesQuery, receiptCards } from './receipts'
 
@@ -9,7 +10,7 @@ const upload = (file: string, extra: Partial<UploadInfo> = {}): UploadInfo => ({
 })
 
 const item = (id: string, extra: Partial<CostItem> = {}): CostItem => ({
-  id, propertyId: 'p1', year: 2025, category: 'Grundsteuer', description: `Position ${id}`, amountCents: 10000, key: 'area', ...extra,
+  id, propertyId: 'p1', period: calendarPeriod(2025), category: 'Grundsteuer', description: `Position ${id}`, amountCents: 10000, key: 'area', ...extra,
 })
 
 describe('Belegordner: Karten', () => {
@@ -38,7 +39,7 @@ describe('Belegordner: Register nach Kostenart', () => {
     item('gs', { invoiceFile: '1_gs.pdf', amountCents: 60000 }),
     item('w1', { invoiceFile: '2_wasser.pdf', category: 'Wasser/Abwasser', amountCents: 98000 }),
     item('w2', { category: 'Wasser/Abwasser', amountCents: 26000 }),
-    item('alt', { invoiceFile: '3_alt.pdf', year: 2024 }),
+    item('alt', { invoiceFile: '3_alt.pdf', period: calendarPeriod(2024) }),
     item('fremd', { invoiceFile: '4_fremd.pdf', propertyId: 'p2' }),
   ]
 
@@ -145,7 +146,7 @@ describe('Belegabdeckung', () => {
     item('b', { amountCents: 30000 }),
     item('c', { amountCents: 10000, invoiceFile: '9_weg.pdf' }),
     item('null', { amountCents: 0 }),
-    item('alt', { year: 2024, amountCents: 5000 }),
+    item('alt', { period: calendarPeriod(2024), amountCents: 5000 }),
     item('fremd', { propertyId: 'p2', amountCents: 5000 }),
   ]
 
@@ -205,7 +206,7 @@ describe('Posteingang', () => {
   })
 
   it('für eine Position kommen nur Belege ihres Objekts und Jahres oder ohne Zuordnung in Frage', () => {
-    expect(inboxFor(cards, item('x', { propertyId: 'p1', year: 2024 })).map((c) => c.upload.file)).toEqual(['1_ohne.pdf', '3_anderes-jahr.pdf'])
+    expect(inboxFor(cards, item('x', { propertyId: 'p1', period: calendarPeriod(2024) })).map((c) => c.upload.file)).toEqual(['1_ohne.pdf', '3_anderes-jahr.pdf'])
   })
 })
 

@@ -7,7 +7,7 @@ import { categoryDeviationPct } from '../../shared/assessment.ts'
 import type { CostItem, StoredAssessment, StoredAssessmentLine, Unit } from '../../shared/types.ts'
 import type { Allocation } from '../../shared/allocation.ts'
 import { costItemBody } from '../../shared/costItem.ts'
-import { calendarPeriod } from '../../shared/period.ts'
+import { calendarContext, calendarPeriod } from '../../shared/period.ts'
 
 test('Zeilen aus der KI: Kostenart zugeordnet, Cent, nicht gelesener Lohnanteil bleibt null, 0 bleibt 0', () => {
   const lines = linesFromExtraction({
@@ -64,28 +64,28 @@ const ALLOC = (patch: Partial<Allocation>): Allocation => ({ key: 'area', meterT
 
 test('Entwurf einer KI-Zeile: Teilnehmer, Beleg und Rechnungssteller wie bisher bei der KI-Übernahme', () => {
   const draft = lineDraft(fieldsOf('Aufzugswartung', 'Aufzug', 48000, 'area', ALLOC({ participantUnitIds: ['u1', 'u2'] })), { vendor: 'Lift GmbH', invoiceFile: 'b.pdf' }, UNITS3)
-  const built = costItemBody(draft, UNITS3, 2026)
+  const built = costItemBody(draft, UNITS3, calendarPeriod(2026))
   if (!('body' in built)) return assert.fail(built.error)
-  assert.deepEqual([built.body.key, built.body.participantUnitIds, built.body.amountCents, built.body.vendor, built.body.invoiceFile, built.body.year], ['area', ['u1', 'u2'], 48000, 'Lift GmbH', 'b.pdf', 2026])
+  assert.deepEqual([built.body.key, built.body.participantUnitIds, built.body.amountCents, built.body.vendor, built.body.invoiceFile, built.body.period], ['area', ['u1', 'u2'], 48000, 'Lift GmbH', 'b.pdf', calendarPeriod(2026)])
 })
 
 test('Entwurf einer KI-Zeile: die Gemeinschaftsabrechnung verlangt die Kosten der Gemeinschaft', () => {
   const alloc = ALLOC({ key: 'external', externalBasis: { measure: 'mea', total: 1000 } })
-  const ohne = costItemBody(lineDraft(fieldsOf('Hauswart', 'Hauswart', 12000, 'external', alloc), { vendor: 'WEG', invoiceFile: 'h.pdf' }, UNITS3), UNITS3, 2026)
+  const ohne = costItemBody(lineDraft(fieldsOf('Hauswart', 'Hauswart', 12000, 'external', alloc), { vendor: 'WEG', invoiceFile: 'h.pdf' }, UNITS3), UNITS3, calendarPeriod(2026))
   assert.match('error' in ohne ? ohne.error : '', /Gemeinschaft/)
-  const mit = costItemBody(lineDraft(fieldsOf('Hauswart', 'Hauswart', 12000, 'external', alloc, 12000000), { vendor: 'WEG', invoiceFile: 'h.pdf' }, UNITS3), UNITS3, 2026)
+  const mit = costItemBody(lineDraft(fieldsOf('Hauswart', 'Hauswart', 12000, 'external', alloc, 12000000), { vendor: 'WEG', invoiceFile: 'h.pdf' }, UNITS3), UNITS3, calendarPeriod(2026))
   assert.ok('body' in mit && JSON.stringify(mit.body.externalBasis) === JSON.stringify({ measure: 'mea', total: 1000, totalCents: 12000000 }))
 })
 
 test('Entwurf einer KI-Zeile ohne Gedächtnis: nur der Schlüssel, Nebenfelder leer; 0 € ist keine Position', () => {
-  const built = costItemBody(lineDraft(fieldsOf('Müll', 'Müllabfuhr', 6000, 'persons', null), { vendor: 'Stadt', invoiceFile: 'm.pdf' }, UNITS3), UNITS3, 2026)
+  const built = costItemBody(lineDraft(fieldsOf('Müll', 'Müllabfuhr', 6000, 'persons', null), { vendor: 'Stadt', invoiceFile: 'm.pdf' }, UNITS3), UNITS3, calendarPeriod(2026))
   if (!('body' in built)) return assert.fail(built.error)
   assert.deepEqual(built.body, {
-    year: 2026, category: 'Müllabfuhr', description: 'Müll', vendor: 'Stadt', amountCents: 6000, labor35aCents: undefined, key: 'persons',
+    period: calendarPeriod(2026), category: 'Müllabfuhr', description: 'Müll', vendor: 'Stadt', amountCents: 6000, labor35aCents: undefined, key: 'persons',
     directUnitId: null, meterType: null, customShares: null, participantUnitIds: null, externalBasis: null, tenancyAmounts: null,
     selfAmounts: null, invoiceFile: 'm.pdf',
   })
-  const null0 = costItemBody(lineDraft(fieldsOf('Müll', 'Müllabfuhr', 0, 'persons', null), { vendor: 'Stadt', invoiceFile: 'm.pdf' }, UNITS3), UNITS3, 2026)
+  const null0 = costItemBody(lineDraft(fieldsOf('Müll', 'Müllabfuhr', 0, 'persons', null), { vendor: 'Stadt', invoiceFile: 'm.pdf' }, UNITS3), UNITS3, calendarPeriod(2026))
   assert.match('error' in null0 ? null0.error : '', /0 €/)
 })
 
@@ -95,7 +95,7 @@ test('Entwurf einer KI-Zeile „Nicht umlagefähig“: ein gemerkter Schlüssel 
   // werden muss dann auch keine: Sonst wäre die Position für die Steuer still nur diesen Einheiten
   // zugeordnet, und ihr privater Teil verschöbe sich, ohne dass jemand es gewählt hätte.
   for (const alloc of [ALLOC({ participantUnitIds: ['u1', 'u2'] }), ALLOC({ key: 'direct', directUnitId: 'u3' })]) {
-    const built = costItemBody(lineDraft(fieldsOf('Dachrinne', 'Nicht umlagefähig', 30000, alloc.key, alloc), { vendor: 'Dachdecker', invoiceFile: 'd.pdf' }, UNITS3), UNITS3, 2026)
+    const built = costItemBody(lineDraft(fieldsOf('Dachrinne', 'Nicht umlagefähig', 30000, alloc.key, alloc), { vendor: 'Dachdecker', invoiceFile: 'd.pdf' }, UNITS3), UNITS3, calendarPeriod(2026))
     if (!('body' in built)) return assert.fail(built.error)
     assert.deepEqual([built.body.key, built.body.directUnitId, built.body.participantUnitIds], ['area', null, null])
   }
@@ -108,7 +108,7 @@ const assessmentOf = (patch: Partial<StoredAssessment> = {}): StoredAssessment =
   invoiceDate: '2026-02-15', totalGrossCents: 51240, amountsAdjusted: null, laborFromTotal: false, nextIdx: 1, createdAt: '2026-02-20T10:00:00Z', ...patch,
 })
 const grundsteuer = (patch: Partial<CostItem>): CostItem => ({
-  id: 'x', propertyId: 'objekt-1', year: 2026, category: 'Grundsteuer', description: 'Grundsteuer', vendor: 'Stadt Musterstadt', amountCents: 49800, key: 'area', ...patch,
+  id: 'x', propertyId: 'objekt-1', period: calendarPeriod(2026), category: 'Grundsteuer', description: 'Grundsteuer', vendor: 'Stadt Musterstadt', amountCents: 49800, key: 'area', ...patch,
 })
 const describeWith = (items: CostItem[], booked: DescribeContext['booked'] = []) => {
   const line = stored({ description: 'Grundsteuer 2026', category: 'Grundsteuer', amountCents: 51240 })
@@ -124,7 +124,7 @@ test('Ampel: Rechnung zu einer übernommenen Schätzung vergleicht den Stand nac
   // Vorjahr 498 €, dieses Jahr aus dem Vorjahr übernommen 498 € ohne Beleg, Rechnung 512,40 €.
   // Verknüpft ersetzt die Rechnung die Schätzung (Summenregel): 512,40 € gegen 498 €, rund +3 %.
   const s = describeWith([
-    grundsteuer({ id: 'v', year: 2025, invoiceFile: 'gs-2025.pdf' }),
+    grundsteuer({ id: 'v', period: calendarPeriod(2025), invoiceFile: 'gs-2025.pdf' }),
     grundsteuer({ id: 'u' }),
   ])
   assert.deepEqual(s.candidates.map((c) => c.id), ['u'])
@@ -135,7 +135,7 @@ test('Ampel: Ersetzt die Rechnung die Schätzung und weicht stark vom Vorjahr ab
   // Schätzung 498 €, Rechnung 800 €: nach dem Verknüpfen 800 € gegen 498 €, +61 %, nicht +161 %.
   const line = stored({ description: 'Grundsteuer 2026', category: 'Grundsteuer', amountCents: 80000 })
   const view = describeAssessment({ assessment: assessmentOf(), lines: [line] }, {
-    items: [grundsteuer({ id: 'v', year: 2025, invoiceFile: 'gs-2025.pdf' }), grundsteuer({ id: 'u' })],
+    items: [grundsteuer({ id: 'v', period: calendarPeriod(2025), invoiceFile: 'gs-2025.pdf' }), grundsteuer({ id: 'u' })],
     units: UNITS3, meters: [], propertyKind: null, originalName: 'grundsteuer.pdf', twinOf: null, twinNames: new Map(), booked: [],
   })
   assert.ok(view.lines[0]?.suggestion?.reasons.includes('+61 % gegenüber Vorjahr'), view.lines[0]?.suggestion?.reasons.join(' | '))
@@ -144,7 +144,7 @@ test('Ampel: Ersetzt die Rechnung die Schätzung und weicht stark vom Vorjahr ab
 test('Ampel: Trägt die Position des Jahres einen Beleg, zählt die Rechnung hinzu (zweite Rechnung)', () => {
   // Beleg von Hand angehängt, keine gebuchte Zeile: Die Zeile ist eher eine zweite Rechnung.
   const s = describeWith([
-    grundsteuer({ id: 'v', year: 2025, invoiceFile: 'gs-2025.pdf' }),
+    grundsteuer({ id: 'v', period: calendarPeriod(2025), invoiceFile: 'gs-2025.pdf' }),
     grundsteuer({ id: 'u', invoiceFile: 'gs-2026-a.pdf' }),
   ])
   assert.ok(s.reasons.includes('+103 % gegenüber Vorjahr'), s.reasons.join(' | '))
@@ -153,7 +153,7 @@ test('Ampel: Trägt die Position des Jahres einen Beleg, zählt die Rechnung hin
 test('Ampel: Hängt an der Position des Jahres schon eine gebuchte Zeile, zählt die Rechnung hinzu, auch ohne Beleg', () => {
   // Verknüpfen addiert dann zur Summe der Zeilen (Summenregel), es ersetzt keine Schätzung.
   const s = describeWith([
-    grundsteuer({ id: 'v', year: 2025, invoiceFile: 'gs-2025.pdf' }),
+    grundsteuer({ id: 'v', period: calendarPeriod(2025), invoiceFile: 'gs-2025.pdf' }),
     grundsteuer({ id: 'u' }),
   ], [{ costItemId: 'u', amountCents: 49800 }])
   assert.ok(s.reasons.includes('+103 % gegenüber Vorjahr'), s.reasons.join(' | '))
@@ -163,7 +163,7 @@ test('Ampel: Eine Position mit Einzelbeträgen oder laut Gemeinschaftsabrechnung
   // Solche Positionen werden nur im Formular verknüpft (formOnly), die Zeile ersetzt sie nicht.
   for (const key of ['amounts', 'external'] as const) {
     const s = describeWith([
-      grundsteuer({ id: 'v', year: 2025, invoiceFile: 'gs-2025.pdf' }),
+      grundsteuer({ id: 'v', period: calendarPeriod(2025), invoiceFile: 'gs-2025.pdf' }),
       grundsteuer({ id: 'u', key }),
     ])
     assert.ok(s.reasons.includes('+103 % gegenüber Vorjahr'), `${key}: ${s.reasons.join(' | ')}`)
@@ -177,8 +177,8 @@ test('Ampel: Passen zwei Schätzungen derselben Kostenart, wird keine abgezogen'
   const line = stored({ description: 'Abfallgebühren 2026', category: 'Müllabfuhr', amountCents: 31000 })
   const view = describeAssessment({ assessment: assessmentOf({ totalGrossCents: 31000 }), lines: [line] }, {
     items: [
-      muell({ id: 'r25', year: 2025, description: 'Restmüll', amountCents: 30000, invoiceFile: 'm-2025.pdf' }),
-      muell({ id: 'b25', year: 2025, description: 'Biomüll', amountCents: 10000, invoiceFile: 'm-2025.pdf' }),
+      muell({ id: 'r25', period: calendarPeriod(2025), description: 'Restmüll', amountCents: 30000, invoiceFile: 'm-2025.pdf' }),
+      muell({ id: 'b25', period: calendarPeriod(2025), description: 'Biomüll', amountCents: 10000, invoiceFile: 'm-2025.pdf' }),
       muell({ id: 'r', description: 'Restmüll', amountCents: 30000 }),
       muell({ id: 'b', description: 'Biomüll', amountCents: 10000 }),
     ],
@@ -199,7 +199,7 @@ test('Ampel (Abnahme B2): Zeilen, die dieselbe Schätzung ersetzen, rechnen geme
     stored({ idx: 1, description: 'Abwasser', category: 'Wasser/Abwasser', amountCents: 80000 }),
   ]
   const view = describeAssessment({ assessment: assessmentOf({ nextIdx: 2, totalGrossCents: 150000 }), lines }, {
-    items: [wasser({ id: 'v', year: 2025, amountCents: 140000, invoiceFile: 'w-2025.pdf' }), wasser({ id: 'u', amountCents: 150000 })],
+    items: [wasser({ id: 'v', period: calendarPeriod(2025), amountCents: 140000, invoiceFile: 'w-2025.pdf' }), wasser({ id: 'u', amountCents: 150000 })],
     units: UNITS3, meters: [], propertyKind: null, originalName: 'wasser.pdf', twinOf: null, twinNames: new Map(), booked: [],
   })
   // +7 % liegt unter der Schwelle von 25 %, ein Hinweis entfällt also.
@@ -207,7 +207,7 @@ test('Ampel (Abnahme B2): Zeilen, die dieselbe Schätzung ersetzen, rechnen geme
   // Mit einem Vorjahr von 1.000 € sichtbar: 1.500 € gegen 1.000 €, +50 % bei beiden Zeilen (vorher
   // +120 % und +130 %).
   const high = describeAssessment({ assessment: assessmentOf({ nextIdx: 2, totalGrossCents: 150000 }), lines }, {
-    items: [wasser({ id: 'v', year: 2025, amountCents: 100000, invoiceFile: 'w-2025.pdf' }), wasser({ id: 'u', amountCents: 150000 })],
+    items: [wasser({ id: 'v', period: calendarPeriod(2025), amountCents: 100000, invoiceFile: 'w-2025.pdf' }), wasser({ id: 'u', amountCents: 150000 })],
     units: UNITS3, meters: [], propertyKind: null, originalName: 'wasser.pdf', twinOf: null, twinNames: new Map(), booked: [],
   })
   for (const l of high.lines) assert.ok(l.suggestion?.reasons.includes('+50 % gegenüber Vorjahr'), `Zeile ${l.idx}: ${l.suggestion?.reasons.join(' | ')}`)
@@ -221,7 +221,7 @@ test('Ampel (#170): offene Zeilen zweier Belege, die dieselbe Schätzung ersetze
   const erster = { assessment: assessmentOf({ id: 'a1', file: 'wasser-1.pdf', vendor: 'Stadtwerke', totalGrossCents: 70000 }), lines: [stored({ assessmentId: 'a1', amountCents: 70000 })] }
   const zweiter = { assessment: assessmentOf({ id: 'a2', file: 'wasser-2.pdf', vendor: 'Stadtwerke', totalGrossCents: 80000 }), lines: [stored({ assessmentId: 'a2', description: 'Abwasser', amountCents: 80000 })] }
   const sieh = (vorjahr: number) => {
-    const items = [wasser({ id: 'v', year: 2025, amountCents: vorjahr, invoiceFile: 'w-2025.pdf' }), wasser({ id: 'u', amountCents: 150000 })]
+    const items = [wasser({ id: 'v', period: calendarPeriod(2025), amountCents: vorjahr, invoiceFile: 'w-2025.pdf' }), wasser({ id: 'u', amountCents: 150000 })]
     const base = { items, units: UNITS3, meters: [], propertyKind: null, twinOf: null, twinNames: new Map<string, string>(), booked: [] }
     const peerTargets = [erster, zweiter].flatMap((r) => openTargets(r, base))
     assert.deepEqual(peerTargets.map((t) => [t.assessmentId, t.costItemId, t.amountCents]), [['a1', 'u', 70000], ['a2', 'u', 80000]])
@@ -237,7 +237,7 @@ test('Ampel (#170): offene Zeilen zweier Belege, die dieselbe Schätzung ersetze
   }
   // Ist der zweite Beleg verworfen, ersetzt der erste die Schätzung allein: 700 € gegen 1.400 €.
   const base = {
-    items: [wasser({ id: 'v', year: 2025, amountCents: 140000, invoiceFile: 'w-2025.pdf' }), wasser({ id: 'u', amountCents: 150000 })],
+    items: [wasser({ id: 'v', period: calendarPeriod(2025), amountCents: 140000, invoiceFile: 'w-2025.pdf' }), wasser({ id: 'u', amountCents: 150000 })],
     units: UNITS3, meters: [], propertyKind: null, twinOf: null, twinNames: new Map<string, string>(), booked: [],
   }
   const verworfen = { ...zweiter, lines: [{ ...zweiter.lines[0]!, dismissed: true }] }
@@ -254,20 +254,20 @@ test('Ampel: Zielen zwei offene Zeilen auf dieselbe Schätzung, verschweigt kein
     stored({ idx: 1, description: 'Grundsteuer B', category: 'Grundsteuer', amountCents: 70000 }),
   ]
   const view = describeAssessment({ assessment: assessmentOf({ nextIdx: 2, totalGrossCents: 140000 }), lines }, {
-    items: [grundsteuer({ id: 'v', year: 2025, amountCents: 70000, invoiceFile: 'gs-2025.pdf' }), grundsteuer({ id: 'u', amountCents: 70000 })],
+    items: [grundsteuer({ id: 'v', period: calendarPeriod(2025), amountCents: 70000, invoiceFile: 'gs-2025.pdf' }), grundsteuer({ id: 'u', amountCents: 70000 })],
     units: UNITS3, meters: [], propertyKind: null, originalName: 'grundsteuer.pdf', twinOf: null, twinNames: new Map(), booked: [],
   })
   for (const l of view.lines) assert.ok(l.suggestion?.reasons.includes('+100 % gegenüber Vorjahr'), `Zeile ${l.idx}: ${l.suggestion?.reasons.join(' | ')}`)
   // Ist die zweite verworfen, ersetzt die erste die Schätzung allein: 700 € gegen 700 €.
   const one = describeAssessment({ assessment: assessmentOf({ nextIdx: 2, totalGrossCents: 140000 }), lines: [lines[0]!, { ...lines[1]!, dismissed: true }] }, {
-    items: [grundsteuer({ id: 'v', year: 2025, amountCents: 70000, invoiceFile: 'gs-2025.pdf' }), grundsteuer({ id: 'u', amountCents: 70000 })],
+    items: [grundsteuer({ id: 'v', period: calendarPeriod(2025), amountCents: 70000, invoiceFile: 'gs-2025.pdf' }), grundsteuer({ id: 'u', amountCents: 70000 })],
     units: UNITS3, meters: [], propertyKind: null, originalName: 'grundsteuer.pdf', twinOf: null, twinNames: new Map(), booked: [],
   })
   assert.ok(!one.lines[0]?.suggestion?.reasons.some((r) => /gegenüber Vorjahr/.test(r)), one.lines[0]?.suggestion?.reasons.join(' | '))
 })
 
 test('Abweichung zum Vorjahr: ein ersetzter Betrag fällt aus der Summe des Jahres', () => {
-  const items = [grundsteuer({ id: 'v', year: 2025 }), grundsteuer({ id: 'u' })]
-  assert.ok(Math.abs((categoryDeviationPct(items, 'Grundsteuer', 2026, 51240) ?? 0) - 102.89) < 0.01)
-  assert.ok(Math.abs((categoryDeviationPct(items, 'Grundsteuer', 2026, 51240, 49800) ?? 0) - 2.89) < 0.01)
+  const items = [grundsteuer({ id: 'v', period: calendarPeriod(2025) }), grundsteuer({ id: 'u' })]
+  assert.ok(Math.abs((categoryDeviationPct(items, 'Grundsteuer', calendarContext(2026), 51240) ?? 0) - 102.89) < 0.01)
+  assert.ok(Math.abs((categoryDeviationPct(items, 'Grundsteuer', calendarContext(2026), 51240, 49800) ?? 0) - 2.89) < 0.01)
 })

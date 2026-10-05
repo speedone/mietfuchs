@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { calendarPeriod } from '../../shared/period.ts'
 import { PDFDocument } from 'pdf-lib'
 import type { CostItem, Settlement, SettlementRow, UploadInfo } from './types'
 import type { ReceiptUpload } from './receipts'
@@ -9,7 +10,7 @@ const upload = (file: string, mimeType = 'application/pdf'): UploadInfo => ({
   uploadedAt: '2026-01-01T00:00:00.000Z', sha256: file, propertyId: null, year: null, invoiceDate: null, kind: 'receipt',
 })
 const item = (id: string, extra: Partial<CostItem> = {}): CostItem => ({
-  id, propertyId: 'p1', year: 2025, category: 'Grundsteuer', description: `Position ${id}`, amountCents: 10000, key: 'area', ...extra,
+  id, propertyId: 'p1', period: calendarPeriod(2025), category: 'Grundsteuer', description: `Position ${id}`, amountCents: 10000, key: 'area', ...extra,
 })
 const row = (costItemId: string, category = 'Grundsteuer'): SettlementRow => ({
   costItemId, category, description: costItemId, totalCents: 10000, keyLabel: '', shareCents: 5000,

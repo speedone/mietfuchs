@@ -3,6 +3,7 @@
 // Vorauszahlung. Cockpit und Kostenvergleich kündigten das als „voraussichtliches Guthaben“ an,
 // und der Vergleich zeigte bei jeder Kostenart „−100 %“. Beides ist keine Auskunft, sondern die
 // Folge davon, dass noch nichts erfasst ist.
+import { calendarPeriod } from '../../../shared/period.ts'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/react'
 import type { ReactNode } from 'react'
@@ -19,8 +20,8 @@ const SLOW = { timeout: 5000 }
 const YEAR = new Date().getFullYear() - 1
 const UNITS: Unit[] = [{ id: 'u1', propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true }]
 const VORJAHR: CostItem[] = [
-  { id: 'k1', propertyId: 'objekt-1', year: YEAR - 1, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 50000, key: 'area' },
-  { id: 'k2', propertyId: 'objekt-1', year: YEAR - 1, category: 'Müllabfuhr', description: 'Müll', amountCents: 30000, key: 'units' },
+  { id: 'k1', propertyId: 'objekt-1', period: calendarPeriod(YEAR - 1), category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 50000, key: 'area' },
+  { id: 'k2', propertyId: 'objekt-1', period: calendarPeriod(YEAR - 1), category: 'Müllabfuhr', description: 'Müll', amountCents: 30000, key: 'units' },
 ]
 const settlementOhneKosten: Settlement = {
   year: YEAR, daysInYear: 365, landlord: { rows: [], totalCents: 0 }, selfUsedShareCents: 0, totalCostsCents: 0, warnings: [], notices: [], closed: null,
@@ -79,7 +80,7 @@ test('Kostenvergleich: ohne Kosten im Jahr keine −100-%-Abweichungen und kein 
 })
 
 test('Kostenvergleich mit Kosten im Jahr: der Vergleich steht wie bisher', async () => {
-  costItems = [...VORJAHR, { id: 'k3', propertyId: 'objekt-1', year: YEAR, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 100000, key: 'area' }]
+  costItems = [...VORJAHR, { id: 'k3', propertyId: 'objekt-1', period: calendarPeriod(YEAR), category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 100000, key: 'area' }]
   wrap(<Uebersicht onNavigate={() => {}} />)
   await screen.findByText(/Auffällige Abweichung/, {}, SLOW)
   expect(screen.getAllByText(/\+100\s*%/).length).toBeGreaterThan(0)
@@ -87,8 +88,8 @@ test('Kostenvergleich mit Kosten im Jahr: der Vergleich steht wie bisher', async
 
 test('Cockpit: fehlende Belege ergeben „Belege vollständig“ in Gelb, nie in Rot (#170)', async () => {
   costItems = [
-    { id: 'k3', propertyId: 'objekt-1', year: YEAR, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 100000, key: 'area', invoiceFile: '1_gs.pdf' },
-    { id: 'k4', propertyId: 'objekt-1', year: YEAR, category: 'Müllabfuhr', description: 'Müll', amountCents: 30000, key: 'units' },
+    { id: 'k3', propertyId: 'objekt-1', period: calendarPeriod(YEAR), category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 100000, key: 'area', invoiceFile: '1_gs.pdf' },
+    { id: 'k4', propertyId: 'objekt-1', period: calendarPeriod(YEAR), category: 'Müllabfuhr', description: 'Müll', amountCents: 30000, key: 'units' },
   ]
   wrap(<Cockpit units={UNITS} tenancies={[]} settings={null} reload={async () => {}} onNavigate={() => {}} />)
   const titel = await screen.findByText('Belege vollständig', {}, SLOW)

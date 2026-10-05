@@ -5,6 +5,7 @@
 // Mietfuchs kann das eine vom anderen nicht unterscheiden und kürzt deshalb nicht selbst; es
 // warnt, und zwar abhängig vom Abrechnungsjahr.
 
+import { calendarPeriod } from '../../shared/period.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement } from '../src/calc.ts'
@@ -16,7 +17,7 @@ const bestand = (year: number, category = 'Kabel/Antenne'): SnapshotSource => ({
     id: 't', unitId: 'u', tenantName: 'Meier', persons: 1, personHistory: [], start: '2020-01-01', end: null,
     prepayments: [], prepaymentOverrides: {}, baseRents: [],
   }],
-  costItems: [{ id: 'k', year, category, description: 'Kabelanschluss', amountCents: 12000, key: 'units' }],
+  costItems: [{ id: 'k', period: calendarPeriod(year), category, description: 'Kabelanschluss', amountCents: 12000, key: 'units' }],
   meters: [], readings: [], payments: [], closedSettlements: [],
 })
 const warningsFor = (year: number, category?: string) => computeSettlement(snapshotOf(bestand(year, category), year)).warnings
@@ -90,7 +91,7 @@ test('Kabel nach 2024: ohne umgelegten Betrag kein Satz über einen Betrag, und 
   const src = bestand(2025)
   src.tenancies = src.tenancies.map((t) => ({ ...t, costModel: 'flatRate' }))
   // Eine Wasserposition ohne Ablesungen ergibt einen Hinweis aus der Verteilung.
-  src.costItems.push({ id: 'z', year: 2025, category: 'Wasser/Abwasser', description: 'Wasser', amountCents: 1000, key: 'meter', meterType: 'kaltwasser' })
+  src.costItems.push({ id: 'z', period: calendarPeriod(2025), category: 'Wasser/Abwasser', description: 'Wasser', amountCents: 1000, key: 'meter', meterType: 'kaltwasser' })
   const n = computeSettlement(snapshotOf(src, 2025)).notices
   assert.deepEqual(n.map((x) => x.code), ['tv-signal.ended', 'meter.no-consumption'])
   const kabel = n.find((x) => x.code === 'tv-signal.ended')
@@ -99,7 +100,7 @@ test('Kabel nach 2024: ohne umgelegten Betrag kein Satz über einen Betrag, und 
 
 test('Kabel nach 2024: eine Gutschrift bekommt keinen Satz über einen umgelegten Betrag', () => {
   const src = bestand(2025)
-  src.costItems = [{ id: 'k', year: 2025, category: 'Kabel/Antenne', description: 'Kabel Gutschrift', amountCents: -3000, key: 'units' }]
+  src.costItems = [{ id: 'k', period: calendarPeriod(2025), category: 'Kabel/Antenne', description: 'Kabel Gutschrift', amountCents: -3000, key: 'units' }]
   const n = computeSettlement(snapshotOf(src, 2025)).notices
   assert.deepEqual(n.map((x) => x.code), ['tv-signal.ended'])
   assert.doesNotMatch(n[0]?.text ?? '', /umgelegt sind in dieser Abrechnung/)

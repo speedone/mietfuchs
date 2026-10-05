@@ -205,12 +205,8 @@ export type ExternalBasis = {
 export type CostItem = {
   id: string
   propertyId: string
-  // Das Kalenderjahr, in dem `period` beginnt. Gespeichert wird es nicht mehr, sondern aus `period`
-  // abgeleitet (#208), für Leser, die noch nicht auf `period` umgestellt sind.
-  year: number
-  // Der Abrechnungszeitraum (#208), dem die Position ganz gehört. Aus der Datenbank kommt er immer
-  // (`StoredCostItem` in server/src/db/read.ts); optional nur, solange `year` daneben steht.
-  period?: PeriodKey
+  // Der Abrechnungszeitraum (#208), dem die Position ganz gehört.
+  period: PeriodKey
   category: string
   description: string
   vendor?: string

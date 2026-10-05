@@ -5410,3 +5410,16 @@ test('H1: eine erneut ausgewertete Zeile mit einer schon aus diesem Beleg gebuch
     assert.equal(await totalOf(s), 225000)
   }, { invoices: NOCHMAL })
 })
+
+test('Alter Tab: Die Kostenliste eines Kalenderobjekts nennt weiter das Jahr (#208)', async () => {
+  // Ein Tab von vor dem Update filtert nach `item.year`. Ohne das Feld sähe der Vermieter eine leere
+  // Liste und erfasste alles noch einmal.
+  const s = await startServer()
+  try {
+    await s.api('/api/costItems', { method: 'POST', body: JSON.stringify({ period: '2025-01', category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 50000, key: 'area' }) })
+    const [item] = await s.api<(CostItem & { year?: number })[]>('/api/costItems')
+    assert.deepEqual([item?.period, item?.year], ['2025-01', 2025])
+  } finally {
+    s.stop()
+  }
+})

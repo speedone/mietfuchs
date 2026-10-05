@@ -55,13 +55,13 @@ export type SnapshotTenancy = Pick<
   prepaymentMonthlyCents?: number
 }
 
-// Gelesen werden Kennung, Jahr, Kostenart, Beschreibung, Betrag, Schlüssel samt seiner Angaben
+// Gelesen werden Kennung, Zeitraum, Kostenart, Beschreibung, Betrag, Schlüssel samt seiner Angaben
 // und der Lohnanteil nach §35a. Der Rechnungssteller und die Belegdatei fehlen: Sie stehen auf
 // der Abrechnung nicht und verteilen nichts.
 export type SnapshotCostItem = Pick<
   CostItem,
   | 'id'
-  | 'year'
+  | 'period'
   | 'category'
   | 'description'
   | 'amountCents'
@@ -326,7 +326,7 @@ export function snapshotFor(source: PropertyScopedSource & { properties?: (Snaps
 
 // Baut den Schnappschuss eines Abrechnungsjahres aus dem Datenbestand.
 //
-// Eingegrenzt wird nach Jahr nur, was sein Jahr als Feld dabei hat: die Kostenpositionen und
+// Nach Zeitraum eingegrenzt wird nur, was seinen Zeitraum als Feld trägt: die Kostenpositionen und
 // die abgeschlossenen Abrechnungen. Dort heißt Eingrenzen, zu lesen, was dasteht. Bei allen
 // anderen Sammlungen müsste die Zugehörigkeit hergeleitet werden, und eine Herleitung an
 // dieser Grenze schneidet im Zweifel etwas weg, das die Abrechnung braucht:
@@ -354,16 +354,20 @@ export function snapshotOf(source: SnapshotSource, year: number): Snapshot {
   // Warnung, in der jeder Mieter seine Vorauszahlung voll erstattet bekommt. Sie sähe stimmig
   // aus und wäre falsch, und das ist der schlimmere der beiden Ausgänge. Ein Test in
   // calc.test.ts hält das fest.
-  const closed = source.closedSettlements.find((c) => c.period === calendarPeriod(year))
+  // `snapshotOf` ist der Eingang im Kalenderjahr: db.json, Umstieg, Regression und Tests. Hier ist
+  // der Vorzeitraum wirklich das Vorjahr.
+  const key = calendarPeriod(year)
+  const previous = calendarPeriod(year - 1)
+  const closed = source.closedSettlements.find((c) => c.period === key)
   return {
     year,
     propertyId: null,
     units: source.units,
     tenancies: source.tenancies,
-    costItems: source.costItems.filter((c) => c.year === year),
-    // Das Vorjahr nur für den Vergleich der Schlüssel (#141); dieselbe Eingrenzung nach dem Feld
-    // `year`, deshalb hier und nicht in `snapshotFor`.
-    previousCostItems: source.costItems.filter((c) => c.year === year - 1),
+    costItems: source.costItems.filter((c) => c.period === key),
+    // Der Vorzeitraum nur für den Vergleich der Schlüssel (#141) und der Doppelungen; dieselbe
+    // Eingrenzung nach dem Feld `period`, deshalb hier und nicht in `snapshotFor`.
+    previousCostItems: source.costItems.filter((c) => c.period === previous),
     meters: source.meters,
     readings: source.readings,
     payments: source.payments,
@@ -399,7 +403,7 @@ export function snapshotFromDb(db: Db, year: number): Snapshot {
     {
       units: db.units,
       tenancies: db.tenancies.map((t) => ({ ...t, prepaymentOverrides: overridesByPeriod(t.prepaymentOverrides ?? {}) })),
-      costItems: db.costItems,
+      costItems: db.costItems.map((c) => ({ ...c, period: calendarPeriod(c.year) })),
       meters: db.meters,
       readings: db.readings,
       payments: db.payments,

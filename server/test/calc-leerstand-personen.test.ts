@@ -7,6 +7,7 @@
 // belegte Regel; die Rechnungen unten nehmen deshalb den Wert aus dem Register und nicht seine
 // heutige Zahl, und genau ein Test hält die Zahl fest.
 
+import { calendarPeriod } from '../../shared/period.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement, occupiedDays, type ComputedSettlement } from '../src/calc.ts'
@@ -23,7 +24,7 @@ const tenancy = (id: string, unitId: string, persons: number, start = '2020-01-0
   prepayments: [], prepaymentOverrides: {}, baseRents: [],
 })
 const muell = (over: Partial<SnapshotCostItem> = {}): SnapshotCostItem => ({
-  id: 'muell', year: 2025, category: 'Müllabfuhr', description: 'Müll', amountCents: 60000, key: 'persons', ...over,
+  id: 'muell', period: calendarPeriod(2025), category: 'Müllabfuhr', description: 'Müll', amountCents: 60000, key: 'persons', ...over,
 })
 const settle = (s: Partial<SnapshotSource>): ComputedSettlement => computeSettlement(snapshotOf({
   units: [], tenancies: [], costItems: [], meters: [], readings: [], payments: [], closedSettlements: [], ...s,

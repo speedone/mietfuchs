@@ -2,12 +2,13 @@
 // Teil, der auf die selbstgenutzte Wohnung entfällt, muss mitsinken, sonst weist die
 // Steuerübersicht einen zu hohen privaten Anteil aus.
 
+import { calendarPeriod } from '../../shared/period.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement } from '../src/calc.ts'
 import { snapshotOf, type SnapshotCostItem } from '../src/snapshot.ts'
 
-const item = (id: string, amountCents: number): SnapshotCostItem => ({ id, year: 2025, category: 'Grundsteuer', description: id, amountCents, key: 'area' })
+const item = (id: string, amountCents: number): SnapshotCostItem => ({ id, period: calendarPeriod(2025), category: 'Grundsteuer', description: id, amountCents, key: 'area' })
 
 test('Rechnung 1.000 € und Gutschrift −200 €, eigene Wohnung 50 % der Fläche: Eigenanteil 400 €', () => {
   const s = computeSettlement(snapshotOf({

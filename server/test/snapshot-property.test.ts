@@ -21,8 +21,8 @@ const source: PropertyScopedSource = {
   ],
   tenancies: [tenancy('a-t', 'a-w'), tenancy('b-t', 'b-w')],
   costItems: [
-    { id: 'a-k', propertyId: 'A', year: 2025, category: 'Grundsteuer', description: 'A', amountCents: 100, key: 'area' },
-    { id: 'b-k', propertyId: 'B', year: 2025, category: 'Grundsteuer', description: 'B', amountCents: 200, key: 'area' },
+    { id: 'a-k', propertyId: 'A', period: calendarPeriod(2025), category: 'Grundsteuer', description: 'A', amountCents: 100, key: 'area' },
+    { id: 'b-k', propertyId: 'B', period: calendarPeriod(2025), category: 'Grundsteuer', description: 'B', amountCents: 200, key: 'area' },
   ],
   meters: [
     { id: 'a-m', propertyId: 'A', unitId: 'a-w', type: 'kaltwasser' },

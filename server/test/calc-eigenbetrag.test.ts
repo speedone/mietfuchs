@@ -2,6 +2,7 @@
 // des Vermieters ab; ihr Betrag ist sein Eigenanteil und in der Steuer privat. Vorher ließ er
 // sich nicht eintragen, steckte im Rest beim Vermieter und fehlte im Eigenanteil.
 
+import { calendarPeriod } from '../../shared/period.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement, taxReport, type ComputedSettlement } from '../src/calc.ts'
@@ -14,7 +15,7 @@ const tenancy = (id: string, unitId: string): SnapshotTenancy => ({
 const haupt: SnapshotUnit = { id: 'haupt', name: 'Hauptwohnung', areaM2: 100, participates: false, selfUsed: true, selfPersons: 2 }
 const el: SnapshotUnit = { id: 'el', name: 'Einlieger', areaM2: 50, participates: true }
 const heizung = (over: Partial<SnapshotCostItem>): SnapshotCostItem => ({
-  id: 'h', year: 2025, category: 'Heizung und Warmwasser', description: 'Heizung laut Messdienst', amountCents: 300000, key: 'amounts', ...over,
+  id: 'h', period: calendarPeriod(2025), category: 'Heizung und Warmwasser', description: 'Heizung laut Messdienst', amountCents: 300000, key: 'amounts', ...over,
 })
 const source = (item: SnapshotCostItem): SnapshotSource => ({
   units: [haupt, el], tenancies: [tenancy('t', 'el')], costItems: [item], meters: [], readings: [], payments: [], closedSettlements: [],

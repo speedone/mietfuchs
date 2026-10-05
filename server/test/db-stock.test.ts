@@ -374,7 +374,7 @@ test('Rundreise: jedes Feld des Datenmodells kommt zurück', async () => {
     const inObjekt1 = <T>(rows: T[]) => rows.map((row) => ({ ...row, propertyId: 'objekt-1' }))
     assert.deepStrictEqual(stock.units, inObjekt1(gerade.units), 'Wohnungen')
     assert.deepStrictEqual(stock.tenancies, gerade.tenancies.map((t) => ({ ...t, prepaymentOverrides: overridesByPeriod(t.prepaymentOverrides) })), 'Mietverhältnisse')
-    assert.deepStrictEqual(stock.costItems, inObjekt1(gerade.costItems).map((c) => ({ ...c, period: calendarPeriod(c.year) })), 'Kostenpositionen')
+    assert.deepStrictEqual(stock.costItems, inObjekt1(gerade.costItems).map(({ year, ...c }) => ({ ...c, period: calendarPeriod(year) })), 'Kostenpositionen')
     assert.deepStrictEqual(stock.meters, inObjekt1(gerade.meters), 'Zähler')
     assert.deepStrictEqual(stock.readings, gerade.readings, 'Ablesungen')
     assert.deepStrictEqual(stock.payments, gerade.payments, 'Zahlungen')
