@@ -1586,7 +1586,10 @@ export type HeatingPeriodView = {
   to: string
   short: boolean
   closed: boolean
-  hotWater: Pick<HeatingPeriodData, 'dhwMethod' | 'dhwUnmeasurable'>
+  hotWater: Pick<HeatingPeriodData, 'dhwMethod' | 'dhwUnmeasurable' | 'dhwHeatKwh' | 'totalHeatKwh' | 'dhwVolumeM3' | 'dhwTempC'>
+  // Für die Formeln (Heizung PR 11): Σ der Warmwasserzähler der angeschlossenen Wohnungen in der
+  // Heizperiode als Vorschlag für V (null ohne solche Zähler) und die mit Warmwasser versorgte Fläche.
+  hotWaterBasis: { volumeFromMetersM3: number | null; suppliedAreaM2: number }
   co2: Co2Statement | null
   items: Pick<CostItem, 'id' | 'description' | 'amountCents' | 'key' | 'tenancyAmounts' | 'selfAmounts' | 'fuelDeliveryId'>[]
   // Der Vorrat dieser Heizperiode (Heizung PR 8); `null` bei einer Anlage ohne Vorratsenergie.

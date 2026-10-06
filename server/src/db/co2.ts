@@ -9,12 +9,16 @@
 // Abrechnung des Objektzeitraums, der ihr Ende enthält (Entwurf 3.0, W1).
 //
 // Gespeichert wird nur, was diese Version rechnet: Angaben eines Messdienstes oder der Gemeinschaft
-// (Methode der Anlage `service`). Die eigene Aufteilung (`self`, freie Schlüssel) kommt mit PR 7.
+// (Methode der Anlage `service`) und seit Heizung PR 11 die Angaben zum Warmwasser bei eigener
+// Heizkostenabrechnung (`self`).
 //
 // Diese Datei importiert aus repository.ts und read.ts, nie umgekehrt.
 import { lineRowsOf } from './selfLine.ts'
 import { selfFromOf } from '../heating.ts'
-import { eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
+import { consumptionInPeriod } from '../calc.ts'
+import { suppliedAreaOf } from '../dhw.ts'
+import { servesUnit } from '../../../shared/heatingPeriod.ts'
 import type { BillingPeriod, Co2Statement, Co2TenantRelief, HeatingPeriodView, PeriodKey } from '../../../shared/types.ts'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 import { co2ApplicableFrom, co2FirstPeriodStart } from '../../../shared/law/co2kostaufg.ts'
@@ -22,7 +26,7 @@ import { germanDate, valueAt } from '../../../shared/law/register.ts'
 import { heatingPeriodsEndingIn } from '../../../shared/heatingPeriod.ts'
 import { periodLabel, periodOfKey, resolvePeriodParam } from '../../../shared/period.ts'
 import type { Database, Executor } from './client.ts'
-import { readCo2Statements, readCostItems, readStock } from './read.ts'
+import { readCo2Statements, readCostItems, readMeters, readReadings, readStock, readUnits } from './read.ts'
 import { stockViewFor } from './fuelStock.ts'
 import { isStockEnergy } from '../../../shared/fuelStock.ts'
 import { asNullableFilled, CrossPropertyError, has, HeatingError, merged, oneOfOrUndefined, raw } from './repository.ts'
@@ -69,6 +73,11 @@ export async function heatingPeriodViews(db: Database, plantId: string, periodPa
   const stockData = isStockEnergy(ctx.plant.energy) ? await readStock(db) : null
   const lineRows = ctx.plant.method === 'self' ? (await lineRowsOf(db, plantId)).merged : []
   const selfBegin = selfFromOf(ctx.plant)
+  // Für die Formeln (Heizung PR 11): angeschlossene Wohnungen, ihre Warmwasserzähler und Ablesungen.
+  const served = (await readUnits(db)).filter((u) => u.propertyId === ctx.plant.propertyId && servesUnit(ctx.plant, u))
+  const servedIds = new Set(served.map((u) => u.id))
+  const waterMeters = (await readMeters(db)).filter((m) => m.type === 'warmwasser' && m.unitId !== null && servedIds.has(m.unitId))
+  const readings = waterMeters.length > 0 ? await readReadings(db) : []
   const views: HeatingPeriodView[] = []
   for (const h of hs) {
     const row = rows.find((r) => r.period === h.key)
@@ -81,7 +90,18 @@ export async function heatingPeriodViews(db: Database, plantId: string, periodPa
       to: h.to,
       short: h.short,
       closed,
-      hotWater: { dhwMethod: row?.dhwMethod ?? null, dhwUnmeasurable: row?.dhwUnmeasurable ?? null },
+      hotWater: {
+        dhwMethod: row?.dhwMethod ?? null, dhwUnmeasurable: row?.dhwUnmeasurable ?? null,
+        dhwHeatKwh: row?.dhwHeatKwh ?? null, totalHeatKwh: row?.totalHeatKwh ?? null,
+        dhwVolumeM3: row?.dhwVolumeM3 ?? null, dhwTempC: row?.dhwTempC ?? null,
+      },
+      // Vorschlag für V aus den Warmwasserzählern der angeschlossenen Wohnungen, auf Liter gerundet, und
+      // die mit Warmwasser versorgte Fläche (§ 9 Abs. 2 Satz 5 Nr. 2 HeizkostenV).
+      hotWaterBasis: {
+        volumeFromMetersM3: waterMeters.length === 0 ? null
+          : Math.round(waterMeters.reduce((a, m) => a + consumptionInPeriod(readings.filter((r) => r.meterId === m.id), h.from, h.to), 0) * 1000) / 1000,
+        suppliedAreaM2: suppliedAreaOf(served),
+      },
       co2: statements.find((s) => s.period === h.key) ?? null,
       items: items
         .filter((c) => c.period === h.key)
@@ -242,14 +262,39 @@ export async function removeCo2Statement(db: Database, plantId: string, period: 
 
 // ---------- Warmwasser laut Messdienst (#211, Entwurf 7.7) ----------
 
-// Wie der Messdienst die Wärme für das Warmwasser ermittelt hat, und bei einer Formel, ob das Messen
-// nur mit unzumutbar hohem Aufwand möglich wäre (§ 9 Abs. 2 Satz 2 HeizkostenV). Die Bestätigung
-// gibt es nur zu einer Formel.
+// Eingaben der Volumenformel (Heizung PR 11, § 9 Abs. 2 Satz 2 HeizkostenV): das gemessene Volumen und
+// die gemessene oder geschätzte mittlere Temperatur. Ergänzend wie die Sammlungen in repository.ts: Was
+// im Rumpf steht, ersetzt; was fehlt, bleibt.
+function readFormulaInputs(body: unknown): { dhwVolumeM3?: number | null; dhwTempC?: number | null } {
+  const out: { dhwVolumeM3?: number | null; dhwTempC?: number | null } = {}
+  const numberOf = (key: string): number | null => {
+    const v = raw(body, key)
+    if (v === null || v === undefined || v === '') return null
+    if (typeof v !== 'number' || !Number.isFinite(v)) throw new HeatingError(400, key === 'dhwVolumeM3' ? 'Das Volumen des Warmwassers ist keine Zahl.' : 'Die Temperatur des Warmwassers ist keine Zahl.')
+    return v
+  }
+  if (has(body, 'dhwVolumeM3')) {
+    const v = numberOf('dhwVolumeM3')
+    if (v !== null && !(v >= 0)) throw new HeatingError(400, 'Das Volumen des Warmwassers ist eine Zahl ab 0 m³.')
+    out.dhwVolumeM3 = v
+  }
+  if (has(body, 'dhwTempC')) {
+    const t = numberOf('dhwTempC')
+    if (t !== null && !(t > 0 && t < 100)) throw new HeatingError(400, 'Die mittlere Temperatur des Warmwassers liegt zwischen 0 und 100 °C.')
+    out.dhwTempC = t
+  }
+  return out
+}
+
+// Wie die Wärme für das Warmwasser ermittelt wurde, und bei einer Formel, ob das Messen nur mit
+// unzumutbar hohem Aufwand möglich wäre (§ 9 Abs. 2 Satz 2 HeizkostenV). Die Bestätigung gibt es nur zu
+// einer Formel. Beim Messdienst steht das Ergebnis in seiner Abrechnung; bei eigener Abrechnung (Heizung
+// PR 11) rechnet Mietfuchs selbst und nimmt dazu Volumen und Temperatur.
 export async function saveHotWater(db: Database, plantId: string, period: string, body: unknown): Promise<HeatingPeriodView['hotWater'] | null> {
   const ctx = await plantContext(db, plantId)
   if (!ctx) return null
-  if (ctx.plant.method !== 'service') {
-    throw new HeatingError(400, 'Die Angabe, wie die Wärme für das Warmwasser ermittelt wurde, gibt es hier nur bei einer Heizanlage, die ein Messdienst oder die Gemeinschaft abrechnet. Bei eigener Abrechnung rechnet Mietfuchs den Warmwasseranteil mit einer späteren Version selbst.')
+  if (ctx.plant.method === 'manual') {
+    throw new HeatingError(400, 'Die Angaben zum Warmwasser gibt es nur bei einer Heizanlage, die ein Messdienst oder die Gemeinschaft abrechnet, oder bei eigener Heizkostenabrechnung. Bei freien Schlüsseln verteilen die Positionen selbst.')
   }
   const h = heatingPeriodOf(ctx, period)
   const text = raw(body, 'dhwMethod')
@@ -258,11 +303,16 @@ export async function saveHotWater(db: Database, plantId: string, period: string
   const formula = dhwMethod === 'volumeFormula' || dhwMethod === 'areaFormula'
   const answer = raw(body, 'dhwUnmeasurable')
   const dhwUnmeasurable = formula && has(body, 'dhwUnmeasurable') && typeof answer === 'boolean' ? answer : null
+  const formulaInputs = ctx.plant.method === 'self' ? readFormulaInputs(body) : {}
   await db.transaction(async (tx) => {
     if (await heatingPeriodClosed(tx, ctx, h)) throw new HeatingError(409, closedText(h))
     const heatingPeriodId = await ensureHeatingPeriod(tx, plantId, h.key)
-    await tx.update(heatingPeriods).set({ dhwMethod, dhwUnmeasurable }).where(eq(heatingPeriods.id, heatingPeriodId))
+    await tx.update(heatingPeriods).set({ dhwMethod, dhwUnmeasurable, ...formulaInputs }).where(eq(heatingPeriods.id, heatingPeriodId))
     await dropIfEmpty(tx, heatingPeriodId)
   })
-  return { dhwMethod, dhwUnmeasurable }
+  const [row] = await db.select().from(heatingPeriods).where(and(eq(heatingPeriods.plantId, plantId), eq(heatingPeriods.period, h.key)))
+  return {
+    dhwMethod: row?.dhwMethod ?? null, dhwUnmeasurable: row?.dhwUnmeasurable ?? null, dhwHeatKwh: row?.dhwHeatKwh ?? null, totalHeatKwh: row?.totalHeatKwh ?? null,
+    dhwVolumeM3: row?.dhwVolumeM3 ?? null, dhwTempC: row?.dhwTempC ?? null,
+  }
 }

@@ -10,7 +10,7 @@ import type { FuelDelivery, HeatingPeriodView } from '../types'
 
 const view: HeatingPeriodView = {
   plantId: 'hp', period: periodKey('2025-05'), label: '2025/2026', from: '2025-05-01', to: '2026-04-30', short: false, closed: false,
-  hotWater: { dhwMethod: null, dhwUnmeasurable: null }, co2: null, stock: null,
+  hotWater: { dhwMethod: null, dhwUnmeasurable: null, dhwHeatKwh: null, totalHeatKwh: null, dhwVolumeM3: null, dhwTempC: null }, hotWaterBasis: { volumeFromMetersM3: null, suppliedAreaM2: 0 }, co2: null, stock: null,
   items: [
     { id: 'gas', description: 'Gas Abschlussrechnung', amountCents: 650000, key: 'area', fuelDeliveryId: 'd' },
     { id: 'wart', description: 'Wartung', amountCents: 20000, key: 'area', fuelDeliveryId: null },

@@ -5967,13 +5967,41 @@ test('CO₂-Angaben über die Routen: speichern, lesen, entfernen, Sperren und 4
     assert.equal(selbst.status, 400)
     assert.match(await errorFrom(selbst), /Frage nach der Abzugszeile/)
     const wasser = await send(`${base}/2025-01/hot-water`, { method: 'PUT', body: JSON.stringify({ dhwMethod: 'areaFormula' }) })
-    assert.deepEqual(await jsonOf<unknown>(wasser), { dhwMethod: 'areaFormula', dhwUnmeasurable: null })
+    assert.deepEqual(await jsonOf<unknown>(wasser), { dhwMethod: 'areaFormula', dhwUnmeasurable: null, dhwHeatKwh: null, totalHeatKwh: null, dhwVolumeM3: null, dhwTempC: null })
     const blockiert = await send(`/api/heating-plants/${plant.id}`, { method: 'DELETE' })
     assert.equal(blockiert.status, 409)
     assert.match(await errorFrom(blockiert), /CO₂-Angaben erfasst/)
     assert.deepEqual(await jsonOf<unknown>(await send(`${base}/2025-01/co2`, { method: 'DELETE' })), { ok: true, removed: true })
     assert.equal((await send('/api/heating-plants/gibt-es-nicht/periods?period=2025', { method: 'GET' })).status, 404)
     assert.equal((await send('/api/heating-plants/gibt-es-nicht/periods/2025-01/co2', { method: 'PUT', body: '{}' })).status, 404)
+  } finally {
+    s.stop()
+  }
+})
+
+test('Warmwasser (Heizung PR 11): PUT nimmt bei eigener Abrechnung Volumen und Temperatur, GET der Heizperioden zeigt sie', async () => {
+  const s = await startServer()
+  try {
+    const send = (url: string, init: RequestInit) => fetch(`${s.base}${url}`, { ...init, headers: { 'content-type': 'application/json' } })
+    await s.api<Unit>('/api/units', jsonPost({ name: 'EG', areaM2: 80, participates: true }))
+    const { plant } = await jsonOf<{ plant: HeatingPlant }>(await send('/api/heating-plants', jsonPost({ energy: 'gas', method: 'manual' })))
+    const setup = await send(`/api/heating-plants/${plant.id}/self`, { method: 'PUT', body: JSON.stringify({
+      period: '2025-01', heatConsumptionPct: 70, waterConsumptionPct: 70, insulationRule: 'notApplies', hotWater: 'combined', capture: 'heatMeter', dhwHeatMeter: false, totalHeatMeter: false,
+    }) })
+    assert.equal(setup.status, 200, await setup.clone().text())
+    const base = `/api/heating-plants/${plant.id}/periods`
+    const put = await send(`${base}/2025-01/hot-water`, { method: 'PUT', body: JSON.stringify({ dhwMethod: 'volumeFormula', dhwVolumeM3: 120, dhwTempC: 60 }) })
+    assert.equal(put.status, 200)
+    const saved = await jsonOf<HeatingPeriodView['hotWater']>(put)
+    assert.deepEqual([saved.dhwMethod, saved.dhwVolumeM3, saved.dhwTempC], ['volumeFormula', 120, 60])
+    const [view] = await s.api<HeatingPeriodView[]>(`${base}?period=2025`)
+    assert.deepEqual([view?.hotWater.dhwTempC, view?.hotWaterBasis.suppliedAreaM2], [60, 80])
+    const falsch = await send(`${base}/2025-01/hot-water`, { method: 'PUT', body: JSON.stringify({ dhwMethod: 'volumeFormula', dhwTempC: 150 }) })
+    assert.equal(falsch.status, 400)
+    // Die Antwort zum Erzeuger gehört zur Anlage.
+    const erzeuger = await send(`/api/heating-plants/${plant.id}`, { method: 'PUT', body: JSON.stringify({ heatGeneration: 'single' }) })
+    assert.equal(erzeuger.status, 200)
+    assert.equal((await jsonOf<HeatingPlant>(erzeuger)).heatGeneration, 'single')
   } finally {
     s.stop()
   }
