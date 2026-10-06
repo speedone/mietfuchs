@@ -15,7 +15,7 @@ const UNITS: Unit[] = [
 const PLANT: HeatingPlant = {
   id: 'hp1', propertyId: 'objekt-1', name: '', energy: 'districtHeating', supply: 'central', method: 'manual', separateSettlement: null,
   devicesRemote: 'partial', devicesInstalledAfter2021: 'some', source: 'building', captureInstalledOn: null, capturedOnOct2024: null,
-  warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null, periodChanges: [], separateSpans: [], units: null, newDevicesInstall: 'single', nonResidential: false, restriction: 'none', districtEtsNew: false,
+  warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null, periodChanges: [], separateSpans: [], units: null, newDevicesInstall: 'single', nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null,
 }
 const ITEM: AssignableHeatingItem = { id: 'c1', period: periodKey('2025-01'), description: 'Fernwärme 2025', amountCents: 240000 }
 
@@ -97,4 +97,56 @@ test('Laienprobe B8, B9: „Niemand“ fragt nicht nach Fernablesung; Hilfesätz
   expect(screen.getByText(/Angeschlossen ist jede Wohnung, die von dieser Heizung warm wird/)).toBeTruthy()
   fireEvent.change(screen.getByLabelText(/Wer erstellt Ihre Heizkostenabrechnung/), { target: { value: 'service' } })
   expect(screen.getByLabelText(/aus der Ferne ablesbar/)).toBeTruthy()
+})
+
+test('„+ weitere Heizanlage“ legt die zweite an und benennt die erste im selben Schritt (Heizung PR 9, Review Focus 1)', async () => {
+  plants = [PLANT]
+  renderCard()
+  await waitFor(() => expect(screen.getByRole('button', { name: '+ weitere Heizanlage' })).toBeTruthy())
+  fireEvent.click(screen.getByRole('button', { name: '+ weitere Heizanlage' }))
+  // Keine Vorschau der Zuordnung bei der zweiten Anlage.
+  await waitFor(() => expect(screen.getByLabelText('Name der neuen Heizanlage')).toBeTruthy())
+  expect(screen.queryByText(/kommt zur Anlage/)).toBeNull()
+  fireEvent.change(screen.getByLabelText(/Womit wird geheizt/), { target: { value: 'gas' } })
+  fireEvent.change(screen.getByLabelText(/Wer erstellt Ihre Heizkostenabrechnung/), { target: { value: 'manual' } })
+  fireEvent.change(screen.getByLabelText('Name der neuen Heizanlage'), { target: { value: 'Haus B' } })
+  fireEvent.change(screen.getByLabelText('Name der bisherigen Heizanlage'), { target: { value: 'Zentralheizung' } })
+  fireEvent.click(screen.getByRole('checkbox', { name: 'OG' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0]?.body).toMatchObject({
+    name: 'Haus B', units: [{ unitId: 'og', heatedAreaM2: null }], assignItemIds: [],
+    adjust: [{ id: 'hp1', name: 'Zentralheizung', units: [{ unitId: 'eg', heatedAreaM2: null }] }],
+  })
+})
+
+test('Etagenheizung: „Ich habe den Vertrag“ fragt nach der Energie und legt eine Anlage je Wohnung an (Heizung PR 9)', async () => {
+  renderCard()
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Heizung einrichten' })).toBeTruthy())
+  fireEvent.click(screen.getByRole('button', { name: 'Heizung einrichten' }))
+  await waitFor(() => expect(screen.getByLabelText(/Womit wird geheizt/)).toBeTruthy())
+  fireEvent.change(screen.getByLabelText(/Womit wird geheizt/), { target: { value: 'perUnit' } })
+  fireEvent.change(screen.getByLabelText(/Wer hat den Vertrag/), { target: { value: 'landlord' } })
+  fireEvent.change(screen.getByLabelText(/Womit heizen die Etagenheizungen/), { target: { value: 'gas' } })
+  expect(screen.getByText(/§ 5 Abs\. 1 Satz 2 CO2KostAufG/)).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0]?.body).toMatchObject({ energy: 'gas', supply: 'perUnit', method: 'manual', units: null })
+})
+
+test('Kessel getauscht: Tag, Energie und Namen gehen an die Route des Tauschs (Heizung PR 9)', async () => {
+  plants = [{ ...PLANT, energy: 'oil' }]
+  renderCard()
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Kessel getauscht' })).toBeTruthy())
+  fireEvent.click(screen.getByRole('button', { name: 'Kessel getauscht' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Tausch speichern' }))
+  await waitFor(() => expect(screen.getByText('Bitte wählen Sie den Tag, an dem die neue Heizung in Betrieb ging.')).toBeTruthy())
+  fireEvent.change(screen.getByLabelText('Seit wann heizt die neue Heizung?'), { target: { value: '2025-07-01' } })
+  fireEvent.change(screen.getByLabelText('Womit heizt die neue Heizung?'), { target: { value: 'gas' } })
+  fireEvent.change(screen.getByLabelText('Name der neuen Heizanlage'), { target: { value: 'Gastherme' } })
+  fireEvent.change(screen.getByLabelText('Name der bisherigen Heizanlage'), { target: { value: 'Ölkessel' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Tausch speichern' }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0]?.url).toBe('/api/heating-plants/hp1/replace')
+  expect(sent[0]?.body).toMatchObject({ date: '2025-07-01', energy: 'gas', name: 'Gastherme', previousName: 'Ölkessel' })
 })

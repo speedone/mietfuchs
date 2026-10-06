@@ -94,6 +94,8 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // Marken hier ersetzt.
   '0024_vorrat': '790d0a3771f7504c2cda7fae1497a5251ca343b67f2f62b333aacdc0e164ade8',
   '0025_vorrat_bedingungen': '3545f80a98da04aff0f80639e9890888c1f9ac3cfab9a4fdf8c28297213e072b',
+  // Heizung PR 9 (Kesseltausch). Wird der Schritt vor dem Push neu erzeugt, hier die neue Marke eintragen.
+  '0026_kesseltausch': '72d4481216f94bd17c7acf2b41fe0d40ca99e4e52f9047cf7e765af6716bb36a',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

@@ -5,16 +5,18 @@ import { useState } from 'react'
 import { api, errorText, fmtEuro } from '../api'
 import { useConfirm, useToast } from './feedback'
 import Term from './Term'
-import { CO2_ENERGIES, deliveryLine, deliveryOptions, emptyFuelForm, fuelBody, fuelToForm, STOCK_QUANTITY_OPTIONS, stockFuelBody, type FuelForm } from '../fuelForm'
+import { CO2_ENERGIES, deliveryLine, deliveryOptions, deliveryUnitId, emptyFuelForm, fuelBody, fuelToForm, STOCK_QUANTITY_OPTIONS, stockFuelBody, type FuelForm } from '../fuelForm'
 import { isStockEnergy } from '../../../shared/fuelStock.ts'
-import type { FuelDelivery, HeatingEnergy, HeatingMethod, HeatingPeriodView } from '../types'
+import type { FuelDelivery, HeatingEnergy, HeatingMethod, HeatingPeriodView, HeatingPlant, Unit } from '../types'
 
-type TextKey = Exclude<keyof FuelForm, 'usedByService' | 'quantityUnit'>
+type TextKey = Exclude<keyof FuelForm, 'usedByService' | 'quantityUnit' | 'unitId'>
 
-export default function FuelCard({ plant, view, deliveries, onSaved }: {
-  plant: { id: string; method: HeatingMethod; energy?: HeatingEnergy }
+export default function FuelCard({ plant, view, deliveries, units = [], onSaved }: {
+  plant: { id: string; method: HeatingMethod; energy?: HeatingEnergy } & Partial<Pick<HeatingPlant, 'supply' | 'units'>>
   view: HeatingPeriodView
   deliveries: FuelDelivery[]
+  // Die Wohnungen des Objekts, für die Rechnung einer Etagenheizung (Heizung PR 9).
+  units?: readonly Pick<Unit, 'id' | 'name'>[]
   onSaved: () => void
 }) {
   const [editing, setEditing] = useState<string | null>(null)
@@ -40,14 +42,21 @@ export default function FuelCard({ plant, view, deliveries, onSaved }: {
   }
 
   async function save() {
+    const unit = deliveryUnitId(form, { supply: plant.supply ?? 'central' })
+    if ('error' in unit) {
+      setError(unit.error)
+      return
+    }
     const r = stock ? stockFuelBody(form, plant.method) : fuelBody(form, plant.method)
     if ('error' in r) {
       setError(r.error)
       return
     }
+    // Die Wohnung nur bei einer Etagenheizung; sonst bleibt der Rumpf, wie er war.
+    const body = plant.supply === 'perUnit' ? { ...r.body, unitId: unit.unitId } : r.body
     try {
-      if (editing === 'neu') await api(`/api/heating-plants/${plant.id}/deliveries`, { method: 'POST', body: JSON.stringify(r.body) })
-      else await api(`/api/fuel-deliveries/${editing}`, { method: 'PUT', body: JSON.stringify(r.body) })
+      if (editing === 'neu') await api(`/api/heating-plants/${plant.id}/deliveries`, { method: 'POST', body: JSON.stringify(body) })
+      else await api(`/api/fuel-deliveries/${editing}`, { method: 'PUT', body: JSON.stringify(body) })
       setEditing(null)
       setError('')
       toast('Lieferung gespeichert.')
@@ -136,6 +145,15 @@ export default function FuelCard({ plant, view, deliveries, onSaved }: {
       )}
       {editing !== null && (
         <div className="field-group">
+          {plant.supply === 'perUnit' && (
+            <label className="field grow">
+              Wohnung
+              <select value={form.unitId} onChange={(e) => set('unitId', e.target.value)}>
+                <option value="">— bitte wählen —</option>
+                {units.filter((u) => !plant.units || plant.units.some((x) => x.unitId === u.id)).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+            </label>
+          )}
           {text('label', 'Bezeichnung', 'text')}
           {stock ? (<>
             <div className="row">

@@ -93,6 +93,19 @@ export function servesUnit(plant: { units: readonly { unitId: string }[] | null 
   return plant.units.some((u) => u.unitId === unit.id)
 }
 
+// Kesseltausch (Heizung PR 9): Zwei Anlagen hängen zusammen, wenn die eine die andere ersetzt. Sie
+// dürfen dieselben Wohnungen versorgen, denn sie heizen nacheinander.
+type Succession = { id: string; replacesPlantId?: string | null }
+export const replaces = (a: Succession, b: Succession): boolean => a.replacesPlantId === b.id || b.replacesPlantId === a.id
+
+// Die Tage, an denen eine Anlage heizt (Heizung PR 9): ab dem Tag nach dem letzten Betriebstag der
+// Anlage, die sie ersetzt, bis zu ihrem eigenen letzten Betriebstag. `null` heißt offen.
+export function plantSpan(plant: Succession & { endsOn?: string | null }, plants: readonly (Succession & { endsOn?: string | null })[]): { from: string | null; to: string | null } {
+  const before = plant.replacesPlantId ? plants.find((p) => p.id === plant.replacesPlantId) : undefined
+  const from = before?.endsOn ? new Date(Date.parse(`${before.endsOn}T00:00:00Z`) + 86400000).toISOString().slice(0, 10) : null
+  return { from, to: plant.endsOn ?? null }
+}
+
 // Eine Abrechnung nur mit Heizkosten für einen Zeitraum, in dem der Mieter nicht mehr gewohnt hat,
 // ist nicht entschieden (15.1 Nr. 2). Empfohlen wird die Frist des Zeitraums, in dem das
 // Mietverhältnis endete; die zwölf Monate kommen aus dem Rechtsregister (`settlementDeadline`).

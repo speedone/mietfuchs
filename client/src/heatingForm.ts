@@ -4,10 +4,11 @@
 // ob die Geräte aus der Ferne ablesbar sind (5) und bei einer Wärmepumpe, seit wann ihr Verbrauch
 // erfasst wird (6). Schritt 3 (eigener Zeitraum) kommt mit Heizung PR 5, Schritt 7 (eigene
 // Abrechnung) mit PR 10. Nichts davon ändert eine Zahl der Abrechnung.
-import type { DevicesInstalledAfter, DevicesRemote, DhwMethod, HeatingEnergy, HeatingPlant, NewDevicesInstall, PropertyKind, Unit } from './types'
+import type { DevicesInstalledAfter, DevicesRemote, DhwMethod, HeatingEnergy, HeatingPlant, HeatingPlantUnit, NewDevicesInstall, PropertyKind, Unit } from './types'
+import { isStockEnergy } from '../../shared/fuelStock.ts'
 import { parseEuro } from './api'
 import { hkvConsumptionShare, hkvCutNotByConsumption, hkvRemoteReadingNewDevices } from '../../shared/law/heizkostenv.ts'
-import { germanDate, LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
+import { dayAfter, germanDate, LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
 
 // Rechtszahlen aus dem Register, in der Fassung von heute (wie Lexikon und Anleitungen).
 const SHARE = valueAt(hkvConsumptionShare, LAW_AS_OF)
@@ -30,15 +31,22 @@ export type HeatingForm = {
   captured: CaptureAnswer
   captureInstalledOn: string
   warmRentAverage: string
+  // Heizung PR 9: Name der Anlage (Pflicht ab der zweiten), Energie der Etagenheizungen und die Namen
+  // der bisherigen Anlagen, die beim Anlegen der zweiten noch keinen Namen oder keine Liste haben.
+  name: string
+  perUnitEnergy: HeatingEnergy | ''
+  otherNames: Record<string, string>
 }
 
 // Was die Einrichtung schickt. Die übrigen Felder der Anlage behalten ihre Vorgabe.
 export type HeatingPlantBody = Pick<
   HeatingPlant,
-  'energy' | 'supply' | 'method' | 'source' | 'devicesRemote' | 'devicesInstalledAfter2021' | 'capturedOnOct2024' | 'captureInstalledOn' | 'warmRentAverageCents' | 'units' | 'newDevicesInstall'
+  'energy' | 'supply' | 'method' | 'source' | 'devicesRemote' | 'devicesInstalledAfter2021' | 'capturedOnOct2024' | 'captureInstalledOn' | 'warmRentAverageCents' | 'units' | 'newDevicesInstall' | 'name'
 >
+// Name und Wohnungen einer bisherigen Anlage, die mit dem Anlegen geändert werden (Heizung PR 9).
+export type AdjustRow = { id: string; name: string; units: HeatingPlantUnit[] }
 // `none`: Es entsteht bewusst keine Anlage, und der Satz sagt warum.
-export type HeatingResult = { body: HeatingPlantBody } | { error: string } | { none: string }
+export type HeatingResult = { body: HeatingPlantBody; adjust: AdjustRow[] } | { error: string } | { none: string }
 
 type UnitInfo = Pick<Unit, 'id' | 'noConnection'>
 
@@ -60,6 +68,17 @@ export const CONTRACT_OPTIONS: { value: Exclude<PerUnitContract, ''>; label: str
   { value: 'tenant', label: 'Der Mieter hat den Vertrag, etwa für die Gastherme' },
   { value: 'landlord', label: 'Ich habe den Vertrag und lege die Kosten um' },
 ]
+
+// Womit Etagenheizungen auf Vertrag des Vermieters heizen können (Heizung PR 9). Ohne Vorratsenergien:
+// Der Vorrat wird je Heizanlage geführt, nicht je Wohnung.
+export const PER_UNIT_ENERGY_OPTIONS: { value: HeatingEnergy; label: string }[] = ENERGY_OPTIONS.flatMap((o) =>
+  o.value !== 'perUnit' && !isStockEnergy(o.value) ? [{ value: o.value, label: o.label }] : [],
+)
+
+// Die Auswahl der Anlage an Kosten, Zählern und Lieferungen: erst ab zwei Anlagen. Eine stillgelegte
+// Anlage (Kesseltausch) nennt ihren letzten Betriebstag.
+export const plantOptions = (plants: readonly Pick<HeatingPlant, 'id' | 'name' | 'endsOn'>[]): { value: string; label: string }[] =>
+  plants.length < 2 ? [] : plants.map((p) => ({ value: p.id, label: p.endsOn ? `${p.name} (bis ${germanDate(p.endsOn)})` : p.name }))
 
 export function whoOptions(kind: PropertyKind): { value: Exclude<WhoSettles, ''>; label: string }[] {
   const options: { value: Exclude<WhoSettles, ''>; label: string }[] = [
@@ -105,7 +124,6 @@ export const CAPTURE_OPTIONS: { value: CaptureAnswer; label: string }[] = [
 ]
 
 const LATER_SELF = 'Die eigene Heizkostenabrechnung kommt mit einer späteren Version. Wählen Sie bis dahin „Ein Messdienst oder die Hausverwaltung“ oder „Niemand“; an Ihren Beträgen ändert sich dadurch nichts.'
-const LATER_PER_UNIT = 'Etagenheizungen mit Vertrag auf den Vermieter kommen mit einer späteren Version. Bis dahin erfassen Sie ihre Kosten wie bisher, etwa direkt bei der Wohnung.'
 const SELF_SUPPLY = 'Hat jeder Mieter einen eigenen Vertrag für seine Heizung, gibt es keine Heizkostenabrechnung des Hauses, und Mietfuchs legt keine Heizanlage an. Was Mieter für CO₂-Kosten vom Vermieter verlangen können, erklärt Mietfuchs mit einer späteren Version.'
 
 // Der Satz unter der zweiten Frage.
@@ -138,35 +156,78 @@ export function whoHint(who: WhoSettles, kind: PropertyKind): string {
 export const defaultUnitIds = (units: readonly UnitInfo[]): string[] =>
   units.filter((u) => !(u.noConnection ?? []).includes('waerme')).map((u) => u.id)
 
-export function emptyHeatingForm(units: readonly UnitInfo[]): HeatingForm {
+// Die Wohnungen, an denen eine Anlage hängt; ohne Liste alle mit Anschluss an die Wärme.
+const servedIds = (plant: Pick<HeatingPlant, 'units'>, units: readonly UnitInfo[]): string[] =>
+  plant.units === null ? defaultUnitIds(units) : plant.units.map((u) => u.unitId)
+
+export function emptyHeatingForm(units: readonly UnitInfo[], others: readonly HeatingPlant[] = []): HeatingForm {
+  // Ab der zweiten Anlage beginnt die Liste mit den Wohnungen, die an keiner hängen (Heizung PR 9).
+  const taken = new Set(others.flatMap((p) => servedIds(p, units)))
   return {
-    energy: '', contract: '', who: '', unitIds: defaultUnitIds(units), remote: 'unknown', installedAfter: 'unknown',
+    energy: '', contract: '', who: '', unitIds: defaultUnitIds(units).filter((id) => !taken.has(id)), remote: 'unknown', installedAfter: 'unknown',
     captured: 'unknown', captureInstalledOn: '', warmRentAverage: '', newInstall: '',
+    name: '', perUnitEnergy: '', otherNames: Object.fromEntries(others.filter((p) => p.name.trim() === '' || p.units === null).map((p) => [p.id, p.name])),
   }
 }
 
 const centsText = (cents: number): string => (cents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 export function heatingToForm(plant: HeatingPlant, units: readonly UnitInfo[]): HeatingForm {
+  const perUnit = plant.supply === 'perUnit'
   return {
-    energy: plant.energy,
-    contract: '',
+    energy: perUnit ? 'perUnit' : plant.energy,
+    contract: perUnit ? 'landlord' : '',
     who: plant.source === 'homeowners' ? 'homeowners' : plant.method,
-    unitIds: plant.units === null ? defaultUnitIds(units) : plant.units.map((u) => u.unitId),
+    unitIds: servedIds(plant, units),
     remote: plant.devicesRemote,
     installedAfter: plant.devicesInstalledAfter2021,
     captured: plant.capturedOnOct2024 === null ? 'unknown' : plant.capturedOnOct2024 ? 'yes' : 'no',
     captureInstalledOn: plant.captureInstalledOn ?? '',
     warmRentAverage: plant.warmRentAverageCents === null ? '' : centsText(plant.warmRentAverageCents),
     newInstall: plant.newDevicesInstall ?? '',
+    name: plant.name,
+    perUnitEnergy: perUnit ? plant.energy : '',
+    otherNames: {},
   }
 }
 
-export function heatingPlantBody(form: HeatingForm, units: readonly UnitInfo[]): HeatingResult {
+// `others`: die übrigen Anlagen des Objekts; `editingId`: die Anlage, die geändert wird (dann gibt es
+// keine Anpassung anderer Anlagen, Heizung PR 9).
+export function heatingPlantBody(form: HeatingForm, units: readonly UnitInfo[], others: readonly HeatingPlant[] = [], editingId: string | null = null): HeatingResult {
   if (form.energy === '') return { error: 'Bitte wählen Sie, womit geheizt wird.' }
+  const several = others.length > 0
+  const name = form.name.trim()
+  if (several && name === '') {
+    return { error: editingId ? 'Bitte geben Sie der Heizanlage einen Namen.' : 'Bitte geben Sie der neuen Heizanlage einen Namen, etwa „Haus B“ oder „Gastherme DG“.' }
+  }
+  // Die bisherigen Anlagen ohne Namen oder ohne Liste bekommen beides mit dem Anlegen (Review Focus 1).
+  const adjust: AdjustRow[] = []
+  if (!editingId) {
+    for (const p of others.filter((x) => x.name.trim() === '' || x.units === null)) {
+      const otherName = (form.otherNames[p.id] ?? p.name).trim()
+      if (otherName === '') return { error: 'Bitte geben Sie auch der bisherigen Heizanlage einen Namen, etwa „Zentralheizung“.' }
+      const rest = servedIds(p, units).filter((id) => !form.unitIds.includes(id))
+      if (rest.length === 0) return { error: `An „${otherName}“ hinge dann keine Wohnung mehr. Ändern Sie stattdessen die bisherige Heizanlage.` }
+      adjust.push({ id: p.id, name: otherName, units: rest.map((unitId) => ({ unitId, heatedAreaM2: null })) })
+    }
+  }
+  const all = defaultUnitIds(units)
+  const allServed = !several && form.unitIds.length === all.length && all.every((id) => form.unitIds.includes(id))
+  const unitList = allServed ? null : form.unitIds.map((unitId) => ({ unitId, heatedAreaM2: null }))
   if (form.energy === 'perUnit') {
     if (form.contract === '') return { error: 'Wer hat den Vertrag für die Heizung in der Wohnung?' }
-    return form.contract === 'tenant' ? { none: SELF_SUPPLY } : { error: LATER_PER_UNIT }
+    if (form.contract === 'tenant') return { none: SELF_SUPPLY }
+    // Etagenheizung auf Vertrag des Vermieters (Heizung PR 9, § 5 Abs. 1 Satz 2 CO2KostAufG): Die
+    // Rechnung jeder Wohnung wird ihr direkt zugeordnet.
+    if (form.perUnitEnergy === '') return { error: 'Womit heizen die Etagenheizungen?' }
+    if (form.unitIds.length === 0) return { error: 'Bitte haken Sie mindestens eine Wohnung an, die eine solche Heizung hat.' }
+    return {
+      body: {
+        name, energy: form.perUnitEnergy, supply: 'perUnit', method: 'manual', source: 'building', devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown',
+        capturedOnOct2024: null, captureInstalledOn: null, warmRentAverageCents: null, units: unitList, newDevicesInstall: null,
+      },
+      adjust,
+    }
   }
   const energy: HeatingEnergy = form.energy
   const who = form.who
@@ -179,8 +240,6 @@ export function heatingPlantBody(form: HeatingForm, units: readonly UnitInfo[]):
   if (averageText !== '' && (average === null || average < 0)) {
     return { error: 'Bitte geben Sie die durchschnittlichen Heizkosten als Betrag ein, etwa 1.234,56.' }
   }
-  const all = defaultUnitIds(units)
-  const allServed = form.unitIds.length === all.length && all.every((id) => form.unitIds.includes(id))
   return {
     body: {
       energy,
@@ -192,10 +251,29 @@ export function heatingPlantBody(form: HeatingForm, units: readonly UnitInfo[]):
       capturedOnOct2024: heatPump && form.captured !== 'unknown' ? form.captured === 'yes' : null,
       captureInstalledOn: heatPump && form.captured === 'no' && form.captureInstalledOn !== '' ? form.captureInstalledOn : null,
       warmRentAverageCents: average,
-      units: allServed ? null : form.unitIds.map((unitId) => ({ unitId, heatedAreaM2: null })),
+      units: unitList,
       newDevicesInstall: asksNewInstall(form) && form.newInstall !== '' ? form.newInstall : null,
+      name,
     },
+    adjust,
   }
+}
+
+// ---------- Kessel getauscht (Heizung PR 9) ----------
+
+export type SwapForm = { date: string; energy: HeatingEnergy | ''; name: string; previousName: string }
+export type SwapBody = { date: string; energy: HeatingEnergy; name: string; previousName: string }
+
+// Getauscht wird eine laufende zentrale Anlage; bei getrennter Heizkostenabrechnung kommt das später.
+export const canSwap = (p: Pick<HeatingPlant, 'endsOn' | 'supply' | 'separateSpans'>): boolean =>
+  p.endsOn === null && p.supply === 'central' && p.separateSpans.length === 0
+
+export const emptySwapForm = (p: Pick<HeatingPlant, 'name'>): SwapForm => ({ date: '', energy: '', name: '', previousName: p.name })
+
+export function swapBody(form: SwapForm): { body: SwapBody } | { error: string } {
+  if (form.date === '') return { error: 'Bitte wählen Sie den Tag, an dem die neue Heizung in Betrieb ging.' }
+  if (form.energy === '') return { error: 'Womit heizt die neue Heizung?' }
+  return { body: { date: form.date, energy: form.energy, name: form.name.trim(), previousName: form.previousName.trim() } }
 }
 
 // Sichtprüfung E9: Warum eine Einheit beim Einrichten nicht angehakt ist.
@@ -204,11 +282,15 @@ export const connectionNote = (u: Pick<Unit, 'noConnection'>): string | null =>
 
 // Die Zeilen der Karte, wenn eine Anlage eingerichtet ist. Ohne Liste versorgt die Anlage jede
 // Einheit mit Wärmeanschluss (`servesUnit`); die übrigen nennt die Zeile, sonst hieße es „alle“.
-export function heatingSummary(plant: HeatingPlant, units: readonly Pick<Unit, 'id' | 'name' | 'noConnection'>[]): string[] {
-  const energy = ENERGY_OPTIONS.find((o) => o.value === plant.energy)?.label ?? plant.energy
-  const who = plant.source === 'homeowners'
-    ? 'Die Gemeinschaft (Hausverwaltung) rechnet ab'
-    : (whoOptions('mfh').find((o) => o.value === plant.method)?.label ?? plant.method)
+export function heatingSummary(plant: HeatingPlant, units: readonly Pick<Unit, 'id' | 'name' | 'noConnection'>[], plants: readonly HeatingPlant[] = []): string[] {
+  const energyLabel = ENERGY_OPTIONS.find((o) => o.value === plant.energy)?.label ?? plant.energy
+  const perUnit = plant.supply === 'perUnit'
+  const energy = perUnit ? `${energyLabel}, Etagenheizung je Wohnung (Vertrag bei Ihnen)` : energyLabel
+  const who = perUnit
+    ? 'Direktzuordnung der Rechnung jeder Wohnung'
+    : plant.source === 'homeowners'
+      ? 'Die Gemeinschaft (Hausverwaltung) rechnet ab'
+      : (whoOptions('mfh').find((o) => o.value === plant.method)?.label ?? plant.method)
   const without = units.filter((u) => connectionNote(u) !== null).map((u) => u.name)
   const served = plant.units === null
     ? `alle Wohnungen${without.length > 0 ? ` außer ${without.join(', ')} (ohne Wärmeanschluss)` : ''}`
@@ -217,7 +299,19 @@ export function heatingSummary(plant: HeatingPlant, units: readonly Pick<Unit, '
       : plant.units.map((u) => units.find((x) => x.id === u.unitId)?.name ?? u.unitId).join(', ')
   const remote = REMOTE_OPTIONS.find((o) => o.value === plant.devicesRemote)?.label ?? plant.devicesRemote
   const lines = [`Energie: ${energy}`, `Abrechnung: ${who}`, `Angeschlossen: ${served}`]
-  return asksRemote(plant.method) ? [...lines, `Aus der Ferne ablesbar: ${remote}`] : lines
+  // Kesseltausch (Heizung PR 9): Stilllegung und Nachfolge.
+  const successor = plants.find((p) => p.replacesPlantId === plant.id)
+  const predecessor = plants.find((p) => p.id === plant.replacesPlantId)
+  const swap = [
+    ...(plant.endsOn ? [`Außer Betrieb seit ${germanDate(dayAfter(plant.endsOn))}${successor ? `, ersetzt durch „${successor.name}“` : ''}`] : []),
+    ...(predecessor?.endsOn ? [`In Betrieb seit ${germanDate(dayAfter(predecessor.endsOn))}, ersetzt „${predecessor.name}“`] : []),
+  ]
+  return [
+    ...(plant.name.trim() ? [`Name: ${plant.name.trim()}`] : []),
+    ...lines,
+    ...(asksRemote(plant.method) && !perUnit ? [`Aus der Ferne ablesbar: ${remote}`] : []),
+    ...swap,
+  ]
 }
 
 // ---------- Warmwasser laut Messdienst (Heizung PR 6, #211, Entwurf 7.7) ----------

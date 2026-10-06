@@ -5,7 +5,7 @@ import { parseDecimal } from './co2Form'
 import { formatDayRange } from '../../shared/period.ts'
 import { germanDate } from '../../shared/law/register.ts'
 import { STOCK_UNIT_LABELS, STOCK_UNIT_TEXT } from '../../shared/fuelStock.ts'
-import type { Co2Restriction, DegreeDayValue, FuelDelivery, HeatingEnergy, HeatingMethod, StockUnit } from './types'
+import type { Co2Restriction, DegreeDayValue, FuelDelivery, HeatingEnergy, HeatingMethod, HeatingPlant, StockUnit } from './types'
 
 // Energieträger, bei denen CO₂-Kosten aufzuteilen sind: Brennstoffe mit Standardwerten nach § 7 Abs. 4
 // BEHG (§ 2 Abs. 1 CO2KostAufG) und Fernwärme, wenn der Lieferant CO₂-Kosten ausweist. Dieselbe Liste
@@ -29,11 +29,13 @@ export type FuelForm = {
   invoiceDate: string
   quantity: string
   quantityUnit: StockUnit | ''
+  // Etagenheizung (Heizung PR 9): die Wohnung, deren Heizung die Rechnung betrifft.
+  unitId: string
 }
 
 export const emptyFuelForm = (): FuelForm => ({
   label: '', invoiceFrom: '', invoiceTo: '', amount: '', fixed: '', sharePercent: '', emissionsKg: '', co2Cost: '', energyKwh: '', usedByService: true,
-  deliveredAt: '', invoiceDate: '', quantity: '', quantityUnit: '',
+  deliveredAt: '', invoiceDate: '', quantity: '', quantityUnit: '', unitId: '',
 })
 
 const centsText = (cents: number | null): string =>
@@ -57,6 +59,7 @@ export function fuelToForm(d: FuelDelivery): FuelForm {
     invoiceDate: d.invoiceDate ?? '',
     quantity: numberText(d.quantity),
     quantityUnit: d.quantityUnit === 'l' || d.quantityUnit === 'kg' || d.quantityUnit === 'srm' ? d.quantityUnit : '',
+    unitId: d.unitId ?? '',
   }
 }
 
@@ -137,6 +140,14 @@ export function fuelBody(form: FuelForm, method: HeatingMethod): { body: Record<
 }
 
 // Eine Zeile der Liste: Zeitraum, Betrag, Ausstoß und CO₂-Kosten, bei einer Schätzung der Vorbehalt.
+// Die Wohnung einer Rechnung (Heizung PR 9, Entwurf 5.4 F8): bei einer Etagenheizung Pflicht, sonst nie.
+// Getrennt von fuelBody, damit dessen Gestalt (form, method) für die späteren PRs bleibt; die Karte
+// setzt das Ergebnis in den Rumpf.
+export function deliveryUnitId(form: Pick<FuelForm, 'unitId'>, plant: Pick<HeatingPlant, 'supply'>): { unitId: string | null } | { error: string } {
+  if (plant.supply !== 'perUnit') return { unitId: null }
+  return form.unitId ? { unitId: form.unitId } : { error: 'Bitte wählen Sie die Wohnung, deren Heizung die Rechnung betrifft.' }
+}
+
 export function deliveryLine(d: FuelDelivery): string {
   const parts: string[] = []
   if (d.invoiceFrom && d.invoiceTo) parts.push(formatDayRange(d.invoiceFrom, d.invoiceTo))

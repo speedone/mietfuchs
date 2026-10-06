@@ -666,11 +666,13 @@ export type SettlementRow = {
 //                      eine andere Heizperiode gehört; über die Zeiträume hinweg null
 //   `fuelClosedPeriod` der Teil für eine abgeschlossene Heizperiode, die ohne Schätzung abgeschlossen wurde
 //   `fuelEstimateDiff` tatsächlicher Teil minus Schätzung einer abgeschlossenen Heizperiode, mit Vorzeichen
+//   `stockRemaining`   Restbestand im Vorrat einer stillgelegten Heizanlage (Kesseltausch, Heizung PR 9): Er
+//                      gehört dem Vermieter, die Mieter tragen nur den verbrauchten Brennstoff
 //   `rounding`      Rundungsrest (nur in Abrechnungen, die vor #202 abgeschlossen wurden)
 export type LandlordReason =
   | 'notAllocable' | 'noBasis' | 'selfUse' | 'vacancy' | 'flatRate' | 'inclusive'
   | 'outsideUnit' | 'amountsRest' | 'customRest' | 'mainMeterRest' | 'co2Share'
-  | 'fuelCarry' | 'fuelClosedPeriod' | 'fuelEstimateDiff' | 'rounding'
+  | 'fuelCarry' | 'fuelClosedPeriod' | 'fuelEstimateDiff' | 'stockRemaining' | 'rounding'
 export type LandlordPart = { reason: LandlordReason; cents: number }
 
 // Ein Schritt des Rechenwegs: Beschriftung, Wert als fertiger Text, auf Wunsch mit dem Begriff
@@ -1300,6 +1302,10 @@ export type HeatingPlant = {
   // `null`: alle Wohnungen des Objekts ohne „kein Anschluss: Wärme“ (#117). Eine Liste, auch eine
   // leere, nennt die angeschlossenen.
   units: HeatingPlantUnit[] | null
+  // Kesseltausch (Heizung PR 9): der letzte Betriebstag einer stillgelegten Anlage und an der neuen die
+  // Anlage, die sie ersetzt. Gesetzt nur über den Kesseltausch; sonst `null`.
+  endsOn: string | null
+  replacesPlantId: string | null
 }
 
 // Die Angaben einer Heizperiode (Entwurf 5.3; den Vorrat seit Heizung PR 8). Geschrieben werden sie ab PR 6 (Warmwasser

@@ -4,8 +4,8 @@
 // **Was eine Lieferung in dieser Version sein kann:** eine Rechnung über Gas, Fernwärme oder Strom
 // einer Wärmepumpe mit Rechnungszeitraum, und seit Heizung PR 8 eine Lieferung von Heizöl, Flüssiggas,
 // Pellets, Holz oder Kohle mit Lieferdatum und Menge für die Bestandsrechnung (db/fuelStock.ts).
-// Lieferungen je Wohnung brauchen die Etagenheizung (PR 9), Netzentgelte und Biobrennstoff § 5a (PR 18); der
-// Server lehnt sie bis dahin mit einem Satz ab.
+// Lieferungen je Wohnung gibt es nur bei der Etagenheizung (Heizung PR 9). Netzentgelte und Biobrennstoff
+// § 5a (PR 18) lehnt der Server bis dahin mit einem Satz ab.
 //
 // **Gesperrt** ist eine Lieferung, von der eine abgeschlossene Heizperiode einen Teil eingefroren hat
 // (8.2, G-A4): Mengen, Zeiträume und Beträge, nicht die Bezeichnung.
@@ -13,17 +13,17 @@
 // Diese Datei importiert aus repository.ts und read.ts, nie umgekehrt.
 import { and, count, eq, inArray } from 'drizzle-orm'
 import { formatDayRange, parsePeriodKey, periodContaining, periodLabel, periodsBetween } from '../../../shared/period.ts'
-import type { BillingPeriod, DegreeDayValue, FuelDelivery, FuelDeliveryPart, FuelGapQuestion, HeatingEnergy, HeatingMethod, HeatingStatement, PeriodKey } from '../../../shared/types.ts'
+import type { BillingPeriod, DegreeDayValue, FuelDelivery, FuelDeliveryPart, FuelGapQuestion, HeatingEnergy, HeatingMethod, HeatingStatement, HeatingSupply, PeriodKey } from '../../../shared/types.ts'
 import { STOCK_ENERGIES } from '../fuel.ts'
+import { dayAfter, germanDate } from '../../../shared/law/register.ts'
 import type { Database, Executor } from './client.ts'
 import { dropIfEmpty, ensureHeatingPeriod } from './heatingPeriodContext.ts'
 import { readDegreeDayValues, readFuelDeliveries } from './read.ts'
-import { asNullableFilled, asText, frozenDeliveryText, HeatingError, heatingPeriodAt, stockTakenOverBy, stockTakenOverText, heatingRulesOf, ISO_DATE, merged, oneOfOrUndefined, raw } from './repository.ts'
+import { asNullableFilled, asText, frozenDeliveryText, HeatingError, heatingPeriodAt, plantServesUnit, stockTakenOverBy, stockTakenOverText, heatingRulesOf, ISO_DATE, merged, oneOfOrUndefined, plantSpanOf, raw } from './repository.ts'
 import { costItems, degreeDayValues, FUEL_QUANTITY_UNITS, fuelCarryFrozen, fuelDeliveries, fuelDeliveryParts, GAS_BASES, heatingPeriods, heatingPlants, properties } from './schema.ts'
 
 const LATER = {
   other: 'Tragen Sie zuerst bei der Heizanlage den Energieträger ein; Lieferungen gibt es für Gas, Fernwärme und Strom einer Wärmepumpe.',
-  perUnit: 'Lieferungen je Wohnung (Etagenheizungen mit Vertrag auf den Vermieter) kommen mit einer späteren Version.',
   halfSplit: 'Netzentgelte und Biobrennstoff nach § 5a CO2KostAufG kommen mit einer späteren Version.',
   self: 'Die eigene Heizkostenabrechnung kommt mit einer späteren Version.',
 }
@@ -91,10 +91,10 @@ const emptyDelivery = (id: string, plantId: string): FuelDelivery => ({
   emissionFactor: null, gridFeeCents: null, bioCostCents: null, sharePermille: null, fixedCents: null, estimated: false, usedByService: true, parts: [],
 })
 
-type PlantFacts = { id: string; energy: HeatingEnergy; method: HeatingMethod }
+type PlantFacts = { id: string; energy: HeatingEnergy; method: HeatingMethod; supply: HeatingSupply; name: string }
 
 async function plantOf(db: Executor, plantId: string): Promise<PlantFacts | null> {
-  const [p] = await db.select({ id: heatingPlants.id, energy: heatingPlants.energy, method: heatingPlants.method }).from(heatingPlants).where(eq(heatingPlants.id, plantId))
+  const [p] = await db.select({ id: heatingPlants.id, energy: heatingPlants.energy, method: heatingPlants.method, supply: heatingPlants.supply, name: heatingPlants.name }).from(heatingPlants).where(eq(heatingPlants.id, plantId))
   return p ?? null
 }
 
@@ -107,8 +107,30 @@ async function guardDelivery(db: Executor, plant: PlantFacts, before: FuelDelive
   if (plant.method === 'self') throw new HeatingError(400, LATER.self)
   const stock = STOCK_ENERGIES.includes(plant.energy)
   if (plant.energy === 'other') throw new HeatingError(400, LATER.other)
-  if (after.unitId !== null) throw new HeatingError(400, LATER.perUnit)
+  // Lieferungen mit Wohnung (Heizung PR 9, Entwurf 5.4 F8): bei einer Etagenheizung immer, sonst nie.
+  // Eine Rechnung, deren Positionen einer Wohnung zugeordnet sind, gehört zu dieser.
+  if (plant.supply === 'perUnit') {
+    if (!after.unitId) throw new HeatingError(400, 'Bei einer Etagenheizung gehört jede Rechnung zu einer Wohnung. Bitte wählen Sie die Wohnung, deren Heizung sie betrifft.')
+    if (!(await plantServesUnit(db, plant.id, after.unitId))) throw new HeatingError(400, `Die gewählte Wohnung hängt nicht an der Etagenheizung „${plant.name}“.`)
+    const verknuepft = await db.select({ unitId: costItems.directUnitId }).from(costItems).where(eq(costItems.fuelDeliveryId, after.id))
+    if (verknuepft.some((c) => c.unitId !== after.unitId)) {
+      throw new HeatingError(400, 'An dieser Rechnung hängen Positionen einer anderen Wohnung. Lösen Sie die Verknüpfung dort, bevor Sie die Wohnung der Rechnung ändern.')
+    }
+  } else if (after.unitId) {
+    throw new HeatingError(400, 'Eine Rechnung einer zentralen Heizanlage gehört zu keiner einzelnen Wohnung. Lassen Sie die Wohnung leer.')
+  }
   if (after.gridFeeCents !== null || after.bioCostCents !== null) throw new HeatingError(400, LATER.halfSplit)
+  // Kesseltausch (Heizung PR 9): Eine Lieferung gehört in die Zeit, in der die Anlage heizt.
+  const span = await plantSpanOf(db, plant.id)
+  const firstDay = after.deliveredAt ?? after.invoiceFrom
+  const lastDay = after.deliveredAt ?? after.invoiceTo
+  const label = `„${after.label || 'Lieferung'}“`
+  if (span.to !== null && lastDay !== null && lastDay > span.to) {
+    throw new HeatingError(400, `Die Heizanlage „${span.name}“ ist seit dem ${germanDate(dayAfter(span.to))} außer Betrieb; ${label} reicht über diesen Tag hinaus. Erfassen Sie Brennstoff für die Zeit danach bei der neuen Anlage.`)
+  }
+  if (span.from !== null && firstDay !== null && firstDay < span.from) {
+    throw new HeatingError(400, `Die Heizanlage „${span.name}“ heizt erst seit dem ${germanDate(span.from)}; ${label} beginnt davor. Erfassen Sie Brennstoff für die Zeit davor bei der Anlage, die sie ersetzt hat.`)
+  }
   const what = `„${after.label || 'Lieferung'}“`
   const dates: [string | null, string][] = [
     [after.invoiceDate, 'Rechnungsdatum'], [after.invoiceFrom, 'Beginn des Rechnungszeitraums'], [after.invoiceTo, 'Ende des Rechnungszeitraums'], [after.deliveredAt, 'Lieferdatum'],

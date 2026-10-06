@@ -292,3 +292,22 @@ test('Laienprobe B19: Heizung mit Einzelbeträgen bei Messdienst-Anlage nennt de
   fireEvent.change(select(/Umlageschlüssel/i), { target: { value: 'amounts' } })
   expect(await screen.findByText(/Tragen Sie die Kosten vor „Abzüglich CO₂-Kosten Vermieter“ ein/)).toBeTruthy()
 })
+
+test('Zwei Heizanlagen (Heizung PR 9): die Heizposition wählt ihre Anlage; ohne Wahl ordnet der Server nach den Wohnungen', async () => {
+  const anlage = (id: string, name: string, endsOn: string | null) => ({
+    id, propertyId: 'objekt-1', name, energy: 'gas', supply: 'central', method: 'manual', separateSettlement: null,
+    devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null, capturedOnOct2024: null,
+    warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null, periodChanges: [], separateSpans: [], units: [], newDevicesInstall: null,
+    nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn, replacesPlantId: null,
+  })
+  plants = [anlage('hp1', 'Ölkessel', '2025-06-30'), anlage('hp2', 'Gastherme', null)]
+  await openForm()
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Heizung und Warmwasser' } })
+  const wahl = await waitFor(() => select(/^Heizanlage$/))
+  expect([...wahl.options].map((o) => o.textContent)).toEqual(['— nach den Wohnungen der Position —', 'Ölkessel (bis 30.06.2025)', 'Gastherme'])
+  fireEvent.change(wahl, { target: { value: 'hp2' } })
+  expect(select(/^Heizanlage$/).value).toBe('hp2')
+  fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/i }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0].body).toMatchObject({ category: 'Heizung und Warmwasser', heatingPlantId: 'hp2' })
+})

@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import type { AssessmentView, CostItem, CostKey, ExternalMeasure, ExtractResult, HeatingPlant, Meter, MeterType, Settlement, Settings, SplitPreviewPart, Tenancy, Unit, UploadEntry } from '../types'
 import HeatingPeriodSelect from '../components/HeatingPeriodSelect'
 import { heatingItemPeriods, heatingTaxYear, itemsOfPeriod } from '../heatingSettlementView'
+import { plantOptions } from '../heatingForm'
 import { filedUnderSettlement } from '../costPeriods'
 import { calendarPeriod, periodContext, periodOfKey, spansTwoYears } from '../../../shared/period.ts'
 import { CATEGORIES, KEY_LABELS, METER_TYPE_LABELS, isNotAllocable, usageOf } from '../types'
@@ -104,10 +105,18 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   // Die Positionen mit dem Zeitraum ihrer Abrechnung, für Vorjahr und „schon erfasst“ (costPeriods.ts).
   const filedItems = useMemo(() => filedUnderSettlement(items, () => view.rules, () => plants), [items, view.rules, plants])
   const heatingKeys = heatingOptions.flatMap((h) => h.options.map((o) => ({ plantId: h.plantId, key: o.value })))
-  const ownPlant = heatingOptions[0]
-  // Beim Öffnen einer bestehenden Position ihre Heizperiode, sonst die Vorgabe der Auswahl.
+  // Heizung PR 9: Ab zwei Anlagen wählt der Vermieter die Anlage einer Heizposition. Leer heißt: Der
+  // Server ordnet nach den Wohnungen der Position zu (`plantForNewItem`).
+  const [heatingPlantId, setHeatingPlantId] = useState('')
+  const plantChoices = plantOptions(plants)
+  const ownPlant = plantChoices.length > 0 ? heatingOptions.find((h) => h.plantId === heatingPlantId) : heatingOptions[0]
+  // Beim Öffnen einer bestehenden Position ihre Heizperiode und Anlage, sonst die Vorgabe der Auswahl.
   const formId = form?.id
-  useEffect(() => { setHeatingPeriod(formId ? items.find((i) => i.id === formId)?.period ?? '' : '') }, [formId, items])
+  useEffect(() => {
+    const item = formId ? items.find((i) => i.id === formId) : undefined
+    setHeatingPeriod(item?.period ?? '')
+    setHeatingPlantId(item?.heatingPlantId ?? '')
+  }, [formId, items])
   // Das Jahr der Zahlung einer Heizposition richtet sich nach ihrer Heizperiode (Durchsicht von #231):
   // Pflicht und vorbelegt, wenn sie über zwei Jahre reicht, sonst kein Feld. Vorbelegt mit dem Jahr
   // des Rechnungsdatums des angehängten Belegs, wenn der Belegordner eines kennt, sonst mit dem Jahr
@@ -316,7 +325,9 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     }
     const heating = heatingOption && ownPlant
       ? { period: heatingOption.value, heatingPlantId: ownPlant.plantId, taxYear: heatTax?.show ? Number(form.taxYear) : null }
-      : {}
+      : form.category === HEATING_CATEGORY && plantChoices.length > 0 && heatingPlantId !== ''
+        ? { heatingPlantId }
+        : {}
     const body = JSON.stringify({ ...built.body, ...heating })
     const editing = !!form.id
     // Eine kalte Rechnung über zwei Abrechnungszeiträume (#208, Entwurf 3.4): erst die Vorschau,
@@ -742,6 +753,15 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                 {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
               </select>
             </label>
+            {form.category === HEATING_CATEGORY && plantChoices.length > 0 && (
+              <label className="field grow">
+                Heizanlage
+                <select value={heatingPlantId} onChange={(e) => { setHeatingPlantId(e.target.value); setHeatingPeriod('') }}>
+                  <option value="">— nach den Wohnungen der Position —</option>
+                  {plantChoices.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </label>
+            )}
             {form.category === HEATING_CATEGORY && ownPlant && ownPlant.options.length > 0 && (
               <HeatingPeriodSelect options={ownPlant.options} value={heatingPeriod || (ownPlant.options[0]?.value ?? '')} onChange={setHeatingPeriod} />
             )}

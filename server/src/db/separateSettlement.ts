@@ -143,6 +143,11 @@ const outOverrides = (list: readonly OverrideEntry[]): SeparatePreview['override
 // Einschalten ab X.
 function planOn(c: Ctx, rawMonth: unknown): Plan {
   if (c.plant.separateSpans.some((s) => s.until === null)) throw new PeriodError('Die getrennte Heizkostenabrechnung ist schon eingeschaltet.')
+  // Kesseltausch (Heizung PR 9): Alte und neue Anlage versorgen dieselben Wohnungen nacheinander; welche
+  // Abrechnung eine Heizvorauszahlung anrechnet, hinge dann am Tag. Das rechnet Mietfuchs noch nicht.
+  if (c.plant.endsOn !== null || c.plant.replacesPlantId !== null) {
+    throw new PeriodError('Nach einem Kesseltausch rechnet Mietfuchs die Heizkosten noch nicht getrennt ab; das kommt mit einer späteren Version. Die Heizkosten stehen weiter in der Abrechnung des Objekts.')
+  }
   const earliest = earliestMonth(c)
   const current = monthOf(periodContaining(c.rules, c.today).from)
   const x = readMonth(rawMonth, 'Beginn') ?? (earliest !== null && earliest > current ? earliest : current)

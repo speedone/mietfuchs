@@ -1,7 +1,7 @@
 // Die Einheit eines Zählers folgt seiner Sparte (#142): Ein Wärmezähler, bei dem niemand die
 // Einheit geändert hat, zeigte „m³“.
-import { expect, test } from 'vitest'
-import { asksRemote, defaultMeterUnit, emptyMeterForm, heatingRoleLabel, heatingRoleOptions, meterBody, meterToForm, oldEndText, withMeterType } from './meterForm'
+import { describe, expect, test } from 'vitest'
+import { asksRemote, defaultMeterUnit, emptyMeterForm, heatingRoleLabel, heatingRoleOptions, meterBody, meterPlantId, meterToForm, oldEndText, withMeterType } from './meterForm'
 
 test('Vorgabe der Einheit je Sparte: Wasser m³, Wärme und Strom kWh, Sonstiges leer', () => {
   expect(defaultMeterUnit('kaltwasser')).toBe('m³')
@@ -65,7 +65,7 @@ test('Bearbeiten: was gespeichert ist, steht wieder im Formular', () => {
   expect(meterToForm({
     id: 'm1', propertyId: 'objekt-1', name: 'Speicher', unitId: null, type: 'waerme', unit: 'kWh',
     heatingPlantId: 'hp1', heatingRole: 'dhwHeat', remoteReadable: false, installedOn: '2022-03-01',
-  })).toEqual({ id: 'm1', name: 'Speicher', unitId: '', type: 'waerme', meterNumber: '', unit: 'kWh', heatingRole: 'dhwHeat', keptRole: 'dhwHeat', remote: 'no', installedOn: '2022-03-01' })
+  })).toEqual({ id: 'm1', name: 'Speicher', unitId: '', type: 'waerme', meterNumber: '', unit: 'kWh', heatingRole: 'dhwHeat', keptRole: 'dhwHeat', remote: 'no', installedOn: '2022-03-01', heatingPlantId: 'hp1' })
 })
 
 // Sichtprüfung E19: „Gehört zur Heizanlage?“ stand auch bei Kaltwasser. Ein Wasserzähler ist weder
@@ -101,4 +101,19 @@ test('eine gespeicherte Rolle bleibt beim Speichern, bis die Sparte wechselt ode
   // Eine Rolle, die die Sparte ohnehin anbietet, heißt ohne „bisher“.
   const gas = meterToForm({ id: 'g', propertyId: 'objekt-1', name: 'Gas', unitId: null, type: 'sonstig', unit: 'm³', heatingPlantId: 'p1', heatingRole: 'supply' })
   expect(heatingRoleLabel(gas, 'supply')).toBe('Versorgungszähler der Heizanlage (etwa der Gaszähler)')
+})
+
+describe('Zähler an einer von mehreren Heizanlagen (Heizung PR 9)', () => {
+  const A = { id: 'hp1' }
+  const B = { id: 'hp2' }
+  const form = { ...emptyMeterForm(), name: 'Gaszähler', type: 'sonstig' as const, heatingRole: 'supply' as const }
+  test('eine Anlage: diese', () => expect(meterPlantId(form, [A])).toEqual({ plantId: 'hp1' }))
+  test('zwei Anlagen: die gewählte, ohne Wahl ein Satz', () => {
+    expect(meterPlantId({ ...form, heatingPlantId: 'hp2' }, [A, B])).toEqual({ plantId: 'hp2' })
+    expect(meterPlantId(form, [A, B])).toEqual({ error: 'Bitte wählen Sie die Heizanlage, zu der der Zähler gehört.' })
+    expect(meterPlantId({ ...form, heatingRole: '' }, [A, B])).toEqual({ plantId: null })
+  })
+  test('ein gespeicherter Zähler bringt seine Anlage mit', () => {
+    expect(meterToForm({ id: 'm', propertyId: 'objekt-1', name: 'Gas', unitId: null, type: 'sonstig', unit: 'm³', heatingPlantId: 'hp2', heatingRole: 'supply' }).heatingPlantId).toBe('hp2')
+  })
 })
