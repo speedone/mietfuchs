@@ -1381,6 +1381,57 @@ export type HeatingPeriodData = {
   closingMeasuredOn: string | null
 }
 
+// ---------- Warmwasser ohne Wärmezähler (Heizung PR 11, Entwurf 8.3, #211) ----------
+
+// Die Zeile der Heizwerttabelle des § 9 Abs. 3 HeizkostenV, nach der ein Brennstoff ohne Heizwert auf
+// der Rechnung hilfsweise bewertet wird. Die Tabelle unterscheidet feiner als der Energieträger der
+// Anlage (Erdgas H oder L, leichtes oder schweres Heizöl, drei Kohlen, Brennholz oder Hackschnitzel);
+// deshalb wählt der Vermieter die Zeile an der Lieferung.
+export type FuelGrade =
+  | 'heatingOilEL' | 'heavyFuelOil' | 'naturalGasH' | 'naturalGasL' | 'lpg' | 'coke' | 'lignite' | 'hardCoal'
+  | 'firewood' | 'woodPellets' | 'woodChips'
+// Erzeugt die Anlage die Wärme allein (ein Kessel, eine Wärmepumpe, Fernwärme) oder zusammen mit einem
+// zweiten Erzeuger (Solaranlage, Heizstab, zweiter Kessel)? § 9 Abs. 1 Satz 5 und Abs. 2 Satz 6 Nr. 3
+// HeizkostenV („monovalente Wärmepumpe“). `null` heißt: nicht beantwortet.
+export type HeatGeneration = 'single' | 'mixed'
+// Die Einheit eines Heizwerts und einer Brennstoffmenge im Sinne des § 9 Abs. 3.
+export type HeatingValueUnit = 'l' | 'm3' | 'kg' | 'srm'
+export type HeatingValueRow = { readonly kwh: number; readonly per: HeatingValueUnit }
+// Die Heizwerttabelle einer Fassung: die Einheiten, in denen § 9 Abs. 3 Satz 1 den
+// Brennstoffverbrauch bestimmt, und je Zeile Heizwert und Einheit. Schlüssel sind `FuelGrade`.
+export type HeatingValueTable = {
+  readonly units: readonly HeatingValueUnit[]
+  readonly values: { readonly [grade: string]: HeatingValueRow }
+}
+// Ein Heizwert, mit dem der Warmwasseranteil gerechnet wurde: laut Rechnung oder hilfsweise aus der
+// Tabelle des § 9 Abs. 3 HeizkostenV.
+export type DhwHeatingValue = { label: string; kwh: number; per: HeatingValueUnit; source: 'invoice' | 'table'; grade: FuelGrade | null }
+// Womit ein Formelwert umgerechnet wurde (§ 9 Abs. 2 Satz 6 Nr. 1 bis 3).
+export type DhwFactorKind = 'gasCalorific' | 'heatSupply' | 'heatPump'
+// Wogegen die Wärme für das Warmwasser gestellt wurde: Brennstoff in kWh laut Rechnung, Brennstoff als
+// Menge (B = Q / Hᵢ), gelieferte Wärme (Fernwärme), Strom (Wärmepumpe mit Formel, Stromheizung
+// gemessen), gemessene Gesamtwärme.
+export type DhwDenominator = 'fuelKwh' | 'fuelQuantity' | 'deliveredHeat' | 'electricity' | 'measuredTotalHeat'
+// Der Warmwasseranteil α einer Anlage in einer Heizperiode samt Rechenweg (Entwurf 8.3, 8.8 „α mit
+// Methode“). `heatKwh` ist Q, wie es in den Bruch eingeht (bei einer Formel nach dem Faktor),
+// `formulaKwh` das Ergebnis der Zahlenwertgleichung davor.
+export type DhwStatement = {
+  method: DhwMethod
+  alpha: number
+  heatKwh: number
+  formulaKwh: number | null
+  factor: { kind: DhwFactorKind; value: number } | null
+  denominator: { kind: DhwDenominator; value: number; unit: 'kWh' | HeatingValueUnit }
+  // Die Energie des Nenners in kWh, auch bei Brennstoff als Menge (Menge · Heizwert); für `self.alpha`
+  // (PR 10: `referenceKwh`).
+  energyKwh: number
+  fuelForDhw: { quantity: number; unit: HeatingValueUnit; heatingValue: number } | null
+  heatingValues: DhwHeatingValue[]
+  // α beruht auf der Schätzung beim Abschluss (PR 7, PR 10 Abweichung 11).
+  estimated: boolean
+  steps: string[]
+}
+
 // Eine Heizposition, die beim Anlegen der Anlage zugeordnet werden kann (Vorschau, 11.2).
 export type AssignableHeatingItem = Pick<CostItem, 'id' | 'period' | 'description' | 'amountCents'>
 

@@ -13,12 +13,22 @@
 // Rechtszahlen kommen aus dem Rechtsregister (shared/law/, Heizung PR 1), und zwar in der Fassung
 // von `LAW_AS_OF`: Das Lexikon erklärt das geltende Recht. Die Zahlen einer Beispielrechnung („70 %
 // nach Verbrauch“) sind gewählt und bleiben stehen.
-import { hkvConsumptionShare, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit } from './law/heizkostenv.ts'
+import { hkvConsumptionShare, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit } from './law/heizkostenv.ts'
 import { germanDate, LAW_AS_OF, onlyVersion, valueAt } from './law/register.ts'
 import { co2CutMissing, co2DistrictEtsNew, co2FirstPeriodStart, co2NonResidential, co2Restriction, co2RoundingDecimals, co2StageTable } from './law/co2kostaufg.ts'
 
 const SHARE = valueAt(hkvConsumptionShare, LAW_AS_OF)
 const CUT = valueAt(hkvCutNotByConsumption, LAW_AS_OF)
+// Warmwasseranteil (Heizung PR 11): das Beispiel aus dem Entwurf 8.3, gerechnet mit den Werten des
+// Registers. Die Mengen des Hauses sind Beispielzahlen und keine Rechtswerte.
+const DHW_VOLUME = valueAt(hkvDhwVolumeFormula, LAW_AS_OF)
+const DHW_AREA = valueAt(hkvDhwAreaFormula, LAW_AS_OF)
+const DHW_FACTORS = valueAt(hkvDhwFactors, LAW_AS_OF)
+const dhwDe = (n: number, digits = 0) => n.toLocaleString('de-DE', { minimumFractionDigits: digits, maximumFractionDigits: digits })
+const dhwPct = (part: number, whole: number) => `${dhwDe((part / whole) * 100, 2)} %`
+const DHW_EXAMPLE = { areaM2: 200, volumeM3: 120, tempC: 60, gasKwh: 60000, measuredKwh: 9000, shareEuro: 1000 }
+const DHW_Q_VOLUME = DHW_VOLUME.effort * DHW_EXAMPLE.volumeM3 * (DHW_EXAMPLE.tempC - DHW_VOLUME.coldWaterC)
+const DHW_Q_AREA = DHW_AREA.kwhPerM2 * DHW_EXAMPLE.areaM2
 const REMOTE_CUT = valueAt(hkvCutRemoteReading, LAW_AS_OF)
 const NEW_DEVICES_AFTER = germanDate(valueAt(hkvRemoteReadingNewDevices, LAW_AS_OF).installedAfter)
 const RETROFIT_FROM = germanDate(onlyVersion(hkvRemoteReadingRetrofit).validFrom ?? '')
@@ -233,13 +243,24 @@ export const GLOSSARY = {
   },
   hotWaterShare: {
     title: 'Warmwasseranteil',
-    short: 'Bereitet die Heizung auch das Warmwasser, wird ein Teil ihrer Kosten dem Warmwasser zugerechnet. Die Wärme dafür ist mit einem Wärmezähler zu messen. Die Formel nach dem Warmwasserverbrauch ist nur erlaubt, wenn das Messen nur mit unzumutbar hohem Aufwand möglich wäre; die Formel nach der Wohnfläche nur, wenn weder die Wärmemenge noch das Volumen des verbrauchten Warmwassers gemessen werden kann.',
+    short:
+      'Bereitet die Heizung auch das Warmwasser, wird ein Teil ihrer Kosten dem Warmwasser zugerechnet. Die Wärme dafür ist mit einem Wärmezähler zu messen. ' +
+      'Die Formel nach dem Warmwasserverbrauch ist nur erlaubt, wenn das Messen nur mit unzumutbar hohem Aufwand möglich wäre; die Formel nach der Wohnfläche nur, wenn weder die Wärmemenge noch das Volumen des verbrauchten Warmwassers gemessen werden kann. ' +
+      'Wird Brennstoff in Litern, Kilogramm oder Kubikmetern abgerechnet, gilt der Heizwert laut Rechnung; die Werte der Heizkostenverordnung nur, wenn die Rechnung keinen nennt, und nur bei Heizkesseln.',
     example:
-      'Gasrechnung 60.000 kWh nach Brennwert, der Wärmezähler am Warmwasserspeicher zeigt 9.000 kWh: Mietfuchs rechnet nach dem Wortlaut der Verordnung 9.000 ÷ 60.000 = 15,0 %. ' +
-      'Wer die gemessene Wärme wie einen Formelwert auf den Brennwert umrechnet, käme auf 16,65 %; welche Lesart die technische Regel meint, ist nicht geklärt (⟨Norm offen: VDI 2077⟩). ' +
-      `Hat der Messdienst die Wärme mit einer Formel bestimmt, obwohl sie sich ohne unzumutbaren Aufwand messen ließ, darf ein Mieter mit 1.000 € Heiz- und Warmwasserkosten seinen Anteil um ${CUT} % kürzen, also um ${(1000 * CUT) / 100} €.`,
-    norm: '§ 9 Abs. 2 Satz 1, § 12 Abs. 1 Satz 1 HeizkostenV; BGH, Urteil vom 12.01.2022, VIII ZR 151/20',
-    needed: 'Beim Messdienst, wenn seine Abrechnung sagt, dass die Wärme für das Warmwasser nach einer Formel bestimmt wurde. Dann tragen Sie das auf der Seite Heizkosten ein. Rechnen Sie die Heizkosten selbst ab, misst ein Wärmezähler am Warmwasserspeicher die Wärme; Mietfuchs teilt damit die gemeinsamen Kosten.',
+      `Ein Haus mit ${dhwDe(DHW_EXAMPLE.areaM2)} m² heizt mit Erdgas, abgerechnet nach Brennwert: ${dhwDe(DHW_EXAMPLE.gasKwh)} kWh. Verbraucht wurden ${dhwDe(DHW_EXAMPLE.volumeM3)} m³ Warmwasser zu ${dhwDe(DHW_EXAMPLE.tempC)} °C. ` +
+      `Aus dem Volumen: Q = ${dhwDe(DHW_VOLUME.effort, 1)} · ${dhwDe(DHW_EXAMPLE.volumeM3)} · (${dhwDe(DHW_EXAMPLE.tempC)} − ${dhwDe(DHW_VOLUME.coldWaterC)}) = ${dhwDe(DHW_Q_VOLUME)} kWh, ` +
+      `wegen der Abrechnung nach Brennwert mal ${dhwDe(DHW_FACTORS.gasCalorific, 2)} = ${dhwDe(DHW_Q_VOLUME * DHW_FACTORS.gasCalorific)} kWh, Anteil ${dhwPct(DHW_Q_VOLUME * DHW_FACTORS.gasCalorific, DHW_EXAMPLE.gasKwh)}. ` +
+      `Aus der Fläche: ${dhwDe(DHW_AREA.kwhPerM2)} · ${dhwDe(DHW_EXAMPLE.areaM2)} = ${dhwDe(DHW_Q_AREA)} kWh, mal ${dhwDe(DHW_FACTORS.gasCalorific, 2)} = ${dhwDe(DHW_Q_AREA * DHW_FACTORS.gasCalorific)} kWh, Anteil ${dhwPct(DHW_Q_AREA * DHW_FACTORS.gasCalorific, DHW_EXAMPLE.gasKwh)}. ` +
+      `Zeigt der Wärmezähler am Warmwasserspeicher ${dhwDe(DHW_EXAMPLE.measuredKwh)} kWh, gilt der Faktor nach dem Wortlaut nur für die Formeln: ${dhwDe(DHW_EXAMPLE.measuredKwh)} / ${dhwDe(DHW_EXAMPLE.gasKwh)} = ${dhwPct(DHW_EXAMPLE.measuredKwh, DHW_EXAMPLE.gasKwh)}. ` +
+      `Wer die gemessene Wärme wie einen Formelwert auf den Brennwert umrechnet, käme auf ${dhwDe(DHW_EXAMPLE.measuredKwh)} · ${dhwDe(DHW_FACTORS.gasCalorific, 2)} / ${dhwDe(DHW_EXAMPLE.gasKwh)} = ${dhwPct(DHW_EXAMPLE.measuredKwh * DHW_FACTORS.gasCalorific, DHW_EXAMPLE.gasKwh)}; ` +
+      'welche Lesart die technische Regel meint, ist nicht geklärt (⟨Norm offen: VDI 2077⟩), Mietfuchs rechnet nach dem Wortlaut. ' +
+      `Wird ohne zulässigen Grund nach einer Formel abgerechnet, obwohl sich die Wärme ohne unzumutbaren Aufwand messen ließ, darf ein Mieter mit ${dhwDe(DHW_EXAMPLE.shareEuro)} € Heiz- und Warmwasserkosten seinen Anteil um ${CUT} % kürzen, also um ${dhwDe((DHW_EXAMPLE.shareEuro * CUT) / 100)} €.`,
+    norm: '§ 9 Abs. 2 und 3, § 9b Abs. 2, § 12 Abs. 1 Satz 1 HeizkostenV; BGH, Urteil vom 12.01.2022, VIII ZR 151/20',
+    needed:
+      'Wenn Ihre Heizung auch das Warmwasser bereitet. Rechnet ein Messdienst ab und sagt seine Abrechnung, dass die Wärme für das Warmwasser nach einer Formel bestimmt wurde, tragen Sie das auf der Seite Heizkosten ein. ' +
+      'Rechnen Sie selbst ab, misst ein Wärmezähler am Warmwasserspeicher die Wärme; ist keiner da, tragen Sie dort das Warmwasser in m³ und seine Temperatur ein, und nur wenn auch das nicht gemessen wird, rechnet Mietfuchs mit der Wohnfläche. ' +
+      'Ist die Heizperiode kürzer als ein Jahr, kürzt Mietfuchs den Jahreswert der Flächenformel nach Tagen, so wie die Verordnung Warmwasserkosten beim Nutzerwechsel zeitanteilig teilt (§ 9b Abs. 2 HeizkostenV); eine ausdrückliche Regel dafür gibt es nicht.',
   },
   // Heizung PR 10 (#99, Entwurf 10.3): die eigene Heizkostenabrechnung. Zahlen aus Beispiel A (8.6).
   baseCosts: {

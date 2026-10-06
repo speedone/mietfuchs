@@ -137,7 +137,7 @@ test('CO₂ und Warmwasser (Heizung PR 6): Beispiele nachgerechnet, Rechtszahlen
   assert.match(GLOSSARY.co2Deducted.example, /3\.540,00 €.*87,50 €.*3\.452,50 €.*3\.845,51 €.*3\.933,01 €/s)
   // 15 % von 1.000 € (BGH VIII ZR 151/20, Entwurf R-A6).
   assert.match(GLOSSARY.hotWaterShare.example, /1\.000 €.*um 15 % kürzen, also um 150 €/s)
-  assert.equal(GLOSSARY.hotWaterShare.norm, '§ 9 Abs. 2 Satz 1, § 12 Abs. 1 Satz 1 HeizkostenV; BGH, Urteil vom 12.01.2022, VIII ZR 151/20')
+  assert.equal(GLOSSARY.hotWaterShare.norm, '§ 9 Abs. 2 und 3, § 9b Abs. 2, § 12 Abs. 1 Satz 1 HeizkostenV; BGH, Urteil vom 12.01.2022, VIII ZR 151/20')
 })
 
 test('Nutzeinheit (Heizung PR 6, Durchsicht M3): Beispiel mit dem Spielraum der Probe', () => {
@@ -194,6 +194,18 @@ test('Eigene Heizkostenabrechnung: vier Begriffe mit nachgerechneten Beispielen 
   assert.match(GLOSSARY.interimReading.needed, /VIII ZR 19\/07/)
   assert.match(GLOSSARY.heatMeter.example, /13\.000 kWh.*12\.000 kWh/s)
   // Beide Lesarten beim gemessenen Warmwasseranteil (15.1 Nr. 9), mit beiden Werten.
-  assert.match(GLOSSARY.hotWaterShare.example, /15,0 %.*16,65 %/s)
+  assert.match(GLOSSARY.hotWaterShare.example, /15,00 %.*16,65 %/s)
   assert.match(GLOSSARY.hotWaterShare.example, /Norm offen: VDI 2077/)
+})
+
+test('Warmwasseranteil (Heizung PR 11): Beispiel aus dem Entwurf 8.3 nachgerechnet, beide Lesarten zu Q gleichwertig', () => {
+  const e = GLOSSARY.hotWaterShare.example
+  assert.match(e, /Q = 2,5 · 120 · \(60 − 10\) = 15\.000 kWh/)
+  assert.match(e, /mal 1,11 = 16\.650 kWh, Anteil 27,75 %/)
+  assert.match(e, /32 · 200 = 6\.400 kWh, mal 1,11 = 7\.104 kWh, Anteil 11,84 %/)
+  assert.match(e, /9\.000 \/ 60\.000 = 15,00 %/)
+  assert.match(e, /9\.000 · 1,11 \/ 60\.000 = 16,65 %/)
+  assert.match(e, /um 15 % kürzen, also um 150 €/)
+  assert.match(GLOSSARY.hotWaterShare.short, /Heizwert laut Rechnung/)
+  assert.match(GLOSSARY.hotWaterShare.needed, /§ 9b Abs\. 2 HeizkostenV/)
 })

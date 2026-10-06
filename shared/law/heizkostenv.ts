@@ -3,6 +3,7 @@
 // 23.07.2026 ändert die Verordnung nicht (Entwurf Abschnitt 2).
 import type { LawParam, Source } from './register.ts'
 import { germanDate } from './register.ts'
+import type { HeatingValueTable } from '../types.ts'
 
 const ENACTED = 'HeizkostenV, Fassung Art. 3 G v. 16.10.2023 (BGBl. I Nr. 280)'
 const checked = (cite: string, url: string): Source => ({ rank: 'law', cite, url, retrieved: '2026-10-05', checked: 'checked' })
@@ -201,4 +202,150 @@ export const hkvHeatPumpCapture: LawParam<HeatPumpCapture, 'eventDate'> = {
     enacted: ENACTED,
   }],
   describe: (v) => `Verbrauch am ${germanDate(v.capturedBy)} erfasst, sonst Erfassung bis ${germanDate(v.installBy)}; die Verordnung gilt ab dem Zeitraum nach dem Einbau`,
+}
+
+// ---------- Warmwasser ohne Wärmezähler (Heizung PR 11, Entwurf 4.3, 8.3) ----------
+
+const URL_9 = 'https://www.gesetze-im-internet.de/heizkostenv/__9.html'
+const URL_11 = 'https://www.gesetze-im-internet.de/heizkostenv/__11.html'
+// Die amtlichen Fassungen im Bundesgesetzblatt. Der Wortlaut der früheren Fassungen wurde am 05.10.2026
+// über buzer.de gelesen und am 06.10.2026 an den amtlichen PDF bestätigt (BGBl. 2009 I S. 3253 f., 2021 I
+// S. 4966, 2023 I Nr. 280 S. 24 und 26); `retrieved` nennt den ersten Abruf, denn `LAW_AS_OF` ist der
+// Rechtsstand jeder Abrechnung und ändert sich mit keiner Bestätigung.
+const BGBL_2009 = 'https://www.bgbl.de/xaver/bgbl/start.xav?startbk=Bundesanzeiger_BGBl&jumpTo=bgbl109s3250.pdf'
+const BGBL_2021 = 'https://www.bgbl.de/xaver/bgbl/start.xav?startbk=Bundesanzeiger_BGBl&jumpTo=bgbl121s4964.pdf'
+const BGBL_2023 = 'https://www.recht.bund.de/bgbl/1/2023/280/VO.html'
+const official = (cite: string, url: string): Source => ({ rank: 'law', cite, url, retrieved: '2026-10-05', checked: 'checked' })
+const ENACTED_2021 = 'HeizkostenV i. d. F. der Bekanntmachung vom 05.10.2009 (BGBl. I S. 3250), geändert durch VO v. 24.11.2021 (BGBl. I S. 4964)'
+// Zahlen deutsch geschrieben, mit so vielen Nachkommastellen, wie das Gesetz sie nennt.
+const de = (n: number, digits = 0) => n.toLocaleString('de-DE', { minimumFractionDigits: digits, maximumFractionDigits: Math.max(digits, 1) })
+
+// § 9 Abs. 2 Satz 2 und 3: Kann die Wärme für das Warmwasser nur mit unzumutbar hohem Aufwand gemessen
+// werden, Q = 2,5 · V · (t_w − 10) in kWh je Jahr, V gemessen in m³, t_w gemessen oder geschätzt in °C.
+// Seit der Bekanntmachung vom 05.10.2009 in der Sache unverändert (2021 neu gefasst, BGBl. I S. 4965).
+export const hkvDhwVolumeFormula: LawParam<{ readonly effort: number; readonly coldWaterC: number }, 'periodStart'> = {
+  id: 'hkv.dhw.volume-formula',
+  title: 'Wärme für Warmwasser aus dem gemessenen Volumen',
+  norm: '§ 9 Abs. 2 Satz 2 und 3 HeizkostenV',
+  timing: 'periodStart',
+  versions: [{ value: { effort: 2.5, coldWaterC: 10 }, source: checked('§ 9 Abs. 2 Satz 2 und 3 HeizkostenV', URL_9), enacted: ENACTED }],
+  describe: (v) => `Q = ${de(v.effort)} · V · (t_w − ${de(v.coldWaterC)})`,
+}
+
+// § 9 Abs. 2 Satz 4 und 5: Können weder die Wärme noch das Volumen gemessen werden, Q = 32 · A in kWh je
+// Jahr, A die mit Warmwasser versorgte Wohn- oder Nutzfläche in m².
+export const hkvDhwAreaFormula: LawParam<{ readonly kwhPerM2: number }, 'periodStart'> = {
+  id: 'hkv.dhw.area-formula',
+  title: 'Wärme für Warmwasser aus der Wohnfläche',
+  norm: '§ 9 Abs. 2 Satz 4 und 5 HeizkostenV',
+  timing: 'periodStart',
+  versions: [{ value: { kwhPerM2: 32 }, source: checked('§ 9 Abs. 2 Satz 4 und 5 HeizkostenV', URL_9), enacted: ENACTED }],
+  describe: (v) => `Q = ${de(v.kwhPerM2)} · A`,
+}
+
+// § 9 Abs. 2 Satz 6: nur für die nach den Zahlenwertgleichungen bestimmte Wärme, nie für gemessene
+// (Entwurf 8.3, G-B1). Nr. 3 (monovalente Wärmepumpe, 0,30) kam mit Art. 3 Nr. 2 Buchst. b Doppelbuchst. cc
+// G v. 16.10.2023 und gilt seit 01.10.2024 (Art. 6 Abs. 2, BGBl. 2023 I Nr. 280); davor `null`
+// (Abweichung 1 des Plans PR 11). Die Zahl 0,30 rechnet auf den Strom um (Entwurf 8.3, F1).
+export const hkvDhwFactors: LawParam<{ readonly gasCalorific: number; readonly heatSupplyDivisor: number; readonly heatPump: number | null }, 'periodStart'> = {
+  id: 'hkv.dhw.factors',
+  title: 'Umrechnung der Formelwerte für Warmwasser',
+  norm: '§ 9 Abs. 2 Satz 6 HeizkostenV',
+  timing: 'periodStart',
+  versions: [
+    {
+      validTo: '2024-09-30',
+      value: { gasCalorific: 1.11, heatSupplyDivisor: 1.15, heatPump: null },
+      source: official('§ 9 Abs. 2 Satz 6 HeizkostenV in der Fassung bis 30.09.2024 (BGBl. 2009 I S. 3253; Nr. 3 angefügt durch Art. 3 G v. 16.10.2023, BGBl. 2023 I Nr. 280)', BGBL_2023),
+      enacted: ENACTED_2021,
+    },
+    {
+      validFrom: '2024-10-01',
+      value: { gasCalorific: 1.11, heatSupplyDivisor: 1.15, heatPump: 0.3 },
+      source: checked('§ 9 Abs. 2 Satz 6 Nr. 1 bis 3 HeizkostenV', URL_9),
+      enacted: ENACTED,
+    },
+  ],
+  describe: (v) =>
+    `Erdgas nach Brennwert · ${de(v.gasCalorific, 2)}; Wärmelieferung ÷ ${de(v.heatSupplyDivisor, 2)}` +
+    (v.heatPump !== null ? `; monovalente Wärmepumpe · ${de(v.heatPump, 2)}` : ''),
+}
+
+// § 9 Abs. 3: Heizwerte, „hilfsweise“, wenn die Rechnung keinen nennt, und nur „bei Anlagen mit
+// Heizkesseln“ (Entwurf R-A13). Die Fassung ab 01.12.2021 (VO v. 24.11.2021, Art. 1 Nr. 5 Buchst. c,
+// BGBl. 2021 I S. 4966, ausgegeben am 30.11.2021, in Kraft am Tag danach) hat Satz 1 und Satz 2 Nr. 2
+// neu gefasst: B in Litern, Kubikmetern oder Kilogramm, Hackschnitzel 4 kWh/kg. Die alte Tabelle
+// (650 kWh/SRm, BGBl. 2009 I S. 3253 f.) stand in der alten Nummer 2 und ist mit ihr entfallen, auch wenn
+// gesetze-im-internet.de sie weiter abdruckt (Abweichung 2 des Plans PR 11).
+const OLD_TABLE: HeatingValueTable = {
+  units: ['l', 'm3', 'kg', 'srm'],
+  values: {
+    heatingOilEL: { kwh: 10, per: 'l' },
+    heavyFuelOil: { kwh: 10.9, per: 'l' },
+    naturalGasH: { kwh: 10, per: 'm3' },
+    naturalGasL: { kwh: 9, per: 'm3' },
+    lpg: { kwh: 13, per: 'kg' },
+    coke: { kwh: 8, per: 'kg' },
+    lignite: { kwh: 5.5, per: 'kg' },
+    hardCoal: { kwh: 8, per: 'kg' },
+    firewood: { kwh: 4.1, per: 'kg' },
+    woodPellets: { kwh: 5, per: 'kg' },
+    woodChips: { kwh: 650, per: 'srm' },
+  },
+}
+const TABLE_2021: HeatingValueTable = {
+  units: ['l', 'm3', 'kg'],
+  values: { ...OLD_TABLE.values, woodChips: { kwh: 4, per: 'kg' } },
+}
+const UNIT_PLURAL: Record<string, string> = { l: 'Litern', m3: 'Kubikmetern', kg: 'Kilogramm', srm: 'Schüttraummetern' }
+export const hkvHeatingValues: LawParam<HeatingValueTable, 'periodStart'> = {
+  id: 'hkv.heating-values',
+  title: 'Heizwerte, wenn die Rechnung keinen nennt',
+  norm: '§ 9 Abs. 3 HeizkostenV',
+  timing: 'periodStart',
+  versions: [
+    {
+      validTo: '2021-11-30',
+      value: OLD_TABLE,
+      source: official('§ 9 Abs. 3 Satz 1 und 2 HeizkostenV in der Fassung bis 30.11.2021 (BGBl. 2009 I S. 3253 f.)', BGBL_2009),
+      enacted: 'HeizkostenV i. d. F. der Bekanntmachung vom 05.10.2009 (BGBl. I S. 3250)',
+    },
+    {
+      validFrom: '2021-12-01',
+      value: TABLE_2021,
+      source: official('§ 9 Abs. 3 Satz 1 bis 5 HeizkostenV; Änderungsbefehl Art. 1 Nr. 5 Buchst. c VO v. 24.11.2021 (BGBl. 2021 I S. 4966)', BGBL_2021),
+      enacted: ENACTED,
+    },
+  ],
+  describe: (v) => `Heizwerte für ${Object.keys(v.values).length} Brennstoffe; Brennstoffverbrauch in ${v.units.map((u) => UNIT_PLURAL[u] ?? u).join(', ')}`,
+}
+
+// § 11 Abs. 1 Nr. 3 Buchst. a HeizkostenV (Heizung PR 11, Abweichung 9; Prüfbericht vom 05.10.2026, A3):
+// Ausgenommen sind Räume in Gebäuden, die überwiegend mit Wärme aus Anlagen zur Rückgewinnung von Wärme
+// oder aus Solaranlagen versorgt werden. Bis 30.09.2024 stand dort „aus Wärmepumpen- oder Solaranlagen“
+// (BGBl. 2009 I S. 3254); Art. 3 Nr. 3 G v. 16.10.2023 hat „Wärmepumpen- oder“ gestrichen und § 12 Abs. 3
+// angefügt (BGBl. 2023 I Nr. 280, in Kraft am 01.10.2024). PR 11 fragt den Parameter bei Wärmepumpen,
+// PR 14 für die Ausnahme `renewable`.
+export const hkvRenewableExemption: LawParam<{ readonly heatPump: boolean }, 'periodStart'> = {
+  id: 'hkv.exemption.renewable',
+  title: 'Ausnahme für Gebäude mit Wärme aus Rückgewinnung, Solaranlagen oder Wärmepumpen',
+  norm: '§ 11 Abs. 1 Nr. 3 Buchst. a HeizkostenV',
+  timing: 'periodStart',
+  versions: [
+    {
+      validTo: '2024-09-30',
+      value: { heatPump: true },
+      source: official('§ 11 Abs. 1 Nr. 3 Buchst. a HeizkostenV in der Fassung bis 30.09.2024 (BGBl. 2009 I S. 3254)', BGBL_2009),
+      enacted: ENACTED_2021,
+    },
+    {
+      validFrom: '2024-10-01',
+      value: { heatPump: false },
+      source: checked('§ 11 Abs. 1 Nr. 3 Buchst. a HeizkostenV', URL_11),
+      enacted: ENACTED,
+    },
+  ],
+  describe: (v) => (v.heatPump
+    ? `Wärmerückgewinnung, Wärmepumpen oder Solaranlagen (§ 11 Abs. 1 Nr. 3 Buchst. a HeizkostenV in der Fassung bis ${germanDate('2024-09-30')})`
+    : 'Wärmerückgewinnung oder Solaranlagen (§ 11 Abs. 1 Nr. 3 Buchst. a HeizkostenV)'),
 }
