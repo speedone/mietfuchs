@@ -18,7 +18,7 @@
 // die Abfrage bedient, kann es anders kommen.
 
 import { eq, sql } from 'drizzle-orm'
-import type { AiConsent, AiSettings, AiSlot, Co2Statement, CostItem, DegreeDayValue, FrozenFuelCarry, FuelDelivery, HeatingPeriodData, HeatingPlant, Meter, Payment, PeriodKey, Property, Reading, Settings, Tenancy, Unit } from '../../../shared/types.ts'
+import type { AiConsent, AiSettings, AiSlot, Co2Statement, CostItem, DegreeDayValue, FrozenFuelCarry, FuelDelivery, HeatingPeriodData, HeatingPlant, InterimGap, Meter, Payment, PeriodKey, Property, Reading, Settings, Tenancy, Unit } from '../../../shared/types.ts'
 import { periodKey } from '../../../shared/period.ts'
 import { migrateAi, type MigratedSettings } from '../ai/settings.ts'
 import { DEFAULT_SETTINGS } from '../defaults.ts'
@@ -27,6 +27,7 @@ import type { Executor } from './client.ts'
 import {
   aiSlots, baseRents, closedHeatingSettlements, co2Statements, co2TenantReliefs, degreeDayValues, fuelCarryFrozen, fuelDeliveries, fuelDeliveryParts, heatingPeriods, closedSettlements, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, unitNoConnection, meters, payments,
   flatRates, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingPrepaymentOverrides, heatingPrepayments, heatingSeparateSpans, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, readings, settings, tenancies, units,
+  interimReadingGaps,
 } from './schema.ts'
 
 // Eine abgeschlossene Abrechnung, wie sie in der Datenbank steht. `settlement` bleibt
@@ -62,6 +63,8 @@ export type Stock = SnapshotSource & {
   // CO₂-Angaben und Zeilen der Heizperioden (Heizung PR 6)
   co2Statements: Co2Statement[]
   heatingPeriodRows: HeatingPeriodData[]
+  // Antworten zu fehlenden Zwischenablesungen (Heizung PR 10)
+  interimGaps: InterimGap[]
   // Lieferungen, eingefrorene Überträge, Ortswerte (Heizung PR 7)
   fuelDeliveries: FuelDelivery[]
   fuelCarryFrozen: FrozenFuelCarry[]
@@ -346,6 +349,12 @@ export async function readHeatingPeriodRows(db: Executor): Promise<HeatingPeriod
   return await db.select().from(heatingPeriods).orderBy(INSERTION_ORDER)
 }
 
+// Die Antworten zu fehlenden Zwischenablesungen (Heizung PR 10, Abweichung 8), nach Wohnung und Datum.
+export async function readInterimGaps(db: Executor): Promise<InterimGap[]> {
+  const rows = await db.select().from(interimReadingGaps).orderBy(interimReadingGaps.unitId, interimReadingGaps.date)
+  return rows.map((r) => ({ unitId: r.unitId, date: r.date, status: r.status, reason: r.reason }))
+}
+
 // Die Brennstofflieferungen samt Teilmengen (Heizung PR 7), die Teilmengen nach Beginn.
 export async function readFuelDeliveries(db: Executor): Promise<FuelDelivery[]> {
   const rows = await db.select().from(fuelDeliveries).orderBy(INSERTION_ORDER)
@@ -445,6 +454,7 @@ export async function readStock(db: Executor): Promise<Stock> {
     heatingPlants: await readHeatingPlants(db),
     co2Statements: await readCo2Statements(db),
     heatingPeriodRows: await readHeatingPeriodRows(db),
+    interimGaps: await readInterimGaps(db),
     fuelDeliveries: await readFuelDeliveries(db),
     fuelCarryFrozen: await readFuelCarryFrozen(db),
     degreeDayValues: await readDegreeDayValues(db),

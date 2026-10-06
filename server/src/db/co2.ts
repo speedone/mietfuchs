@@ -27,6 +27,7 @@ import { asNullableFilled, CrossPropertyError, has, HeatingError, merged, oneOfO
 import { closedText, dropIfEmpty, ensureHeatingPeriod, heatingPeriodClosed, heatingPeriodOf, plantContext, type PlantContext } from './heatingPeriodContext.ts'
 // Für ältere Importe (Tests): Die Helfer der Heizperioden stehen seit Heizung PR 8 in heatingPeriodContext.ts.
 export { dropIfEmpty, ensureHeatingPeriod } from './heatingPeriodContext.ts'
+import { distributionOf } from './heatingSelf.ts'
 import { CO2_METHODS, co2Statements, co2TenantReliefs, costItems, DHW_METHODS, heatingPeriods, tenancies, units } from './schema.ts'
 
 const ASK_METHOD = 'Bitte beantworten Sie zuerst die Frage, ob die Kostenaufstellung eine Zeile wie „Abzüglich CO₂-Kosten Vermieter“ enthält.'
@@ -51,7 +52,7 @@ export async function openCo2Periods(db: Database, plantId: string): Promise<str
 // Die Heizperioden der Anlage, die im Abrechnungszeitraum P enden, mit ihren Angaben und den
 // Positionen der Anlage in dieser Heizperiode (für die Probe der Oberfläche). Ohne eigenen Rhythmus
 // genau P.
-export async function heatingPeriodViews(db: Database, plantId: string, periodParam: string): Promise<HeatingPeriodView[] | null> {
+export async function heatingPeriodViews(db: Database, plantId: string, periodParam: string, today = ''): Promise<HeatingPeriodView[] | null> {
   const ctx = await plantContext(db, plantId)
   if (!ctx) return null
   const resolved = resolvePeriodParam(ctx.objectRules, periodParam)
@@ -61,9 +62,9 @@ export async function heatingPeriodViews(db: Database, plantId: string, periodPa
   const statements = (await readCo2Statements(db)).filter((s) => s.plantId === plantId)
   const rows = await db.select().from(heatingPeriods).where(eq(heatingPeriods.plantId, plantId))
   const items = (await readCostItems(db)).filter((c) => c.heatingPlantId === plantId && c.category === HEATING_CATEGORY)
-  // Der Vorrat (Heizung PR 8) nur bei Heizöl, Flüssiggas, Pellets, Holz und Kohle, und nicht bei der
-  // eigenen Heizkostenabrechnung, die ihn erst mit einer späteren Version rechnet.
-  const stockData = isStockEnergy(ctx.plant.energy) && ctx.plant.method !== 'self' ? await readStock(db) : null
+  // Der Vorrat (Heizung PR 8) nur bei Heizöl, Flüssiggas, Pellets, Holz und Kohle; seit Heizung PR 10
+  // auch bei der eigenen Heizkostenabrechnung (Entwurf 8.2).
+  const stockData = isStockEnergy(ctx.plant.energy) ? await readStock(db) : null
   const views: HeatingPeriodView[] = []
   for (const h of hs) {
     const row = rows.find((r) => r.period === h.key)
@@ -82,6 +83,10 @@ export async function heatingPeriodViews(db: Database, plantId: string, periodPa
         .filter((c) => c.period === h.key)
         .map((c) => ({ id: c.id, description: c.description, amountCents: c.amountCents, key: c.key, tenancyAmounts: c.tenancyAmounts, selfAmounts: c.selfAmounts, fuelDeliveryId: c.fuelDeliveryId })),
       stock: stockData ? stockViewFor(stockData, ctx, h, closed) : null,
+      // Anteil nach Verbrauch (Heizung PR 10), nur bei eigener Abrechnung.
+      distribution: ctx.plant.method === 'self'
+        ? distributionOf(rows.map((r) => ({ period: String(r.period), heatConsumptionPct: r.heatConsumptionPct, waterConsumptionPct: r.waterConsumptionPct, insulationRule: r.insulationRule })), ctx.plant.energy, h, today)
+        : null,
     })
   }
   return views

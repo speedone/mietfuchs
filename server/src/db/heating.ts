@@ -29,6 +29,10 @@ import { openCo2Periods } from './co2.ts'
 import { parsePeriodKey, periodKey, periodLabel, periodOfKey, rulesOf } from '../../../shared/period.ts'
 import type { Database, Executor } from './client.ts'
 import { readHeatingPlants, readProperties, readUnits } from './read.ts'
+import { KWH_ENERGIES } from '../heating.ts'
+import { SELF_VIA_SETUP, SelfItemsError, selfItemsOf } from './heatingSelf.ts'
+import { hkvCutNotByConsumption } from '../../../shared/law/heizkostenv.ts'
+import { LAW_AS_OF, valueAt } from '../../../shared/law/register.ts'
 import { asNullableFilled, asNullableText, asText, guardServedChange, has, heatingPeriodAt, heatingRulesOf, HeatingError, ISO_DATE, merged, oneOfOrUndefined, raw, sameProperty } from './repository.ts'
 import { buildingCycle, sameLine, servesUnit } from '../../../shared/heatingPeriod.ts'
 import {
@@ -38,10 +42,10 @@ import {
 
 // Die Sätze der Sperren. Jeder sagt, was bis dahin geht.
 const LATER = {
-  self: 'Die eigene Heizkostenabrechnung nach der Heizkostenverordnung kommt mit einer späteren Version. Wählen Sie bis dahin „Ein Messdienst oder die Hausverwaltung“ oder „Niemand“; an Ihren Beträgen ändert sich dadurch nichts.',
   rhythm: 'Den Zeitraum der Heizung stellen Sie nach dem Anlegen unter „Zeitraum der Heizung“ ein; eine Vorschau zeigt, was mit Ihren Heizpositionen geschieht.',
   separateVia: 'Ob die Heizkosten getrennt abgerechnet werden, stellen Sie bei einer eigenen Heizperiode unter „Getrennte Heizkostenabrechnung“ ein; eine Vorschau zeigt, wie die Vorauszahlung aufgeteilt wird.',
-  heatedArea: 'Die beheizte Fläche je Wohnung braucht erst die eigene Heizkostenabrechnung; sie kommt mit einer späteren Version.',
+  capture: 'Heizkostenverteiler und die Werte eines Ablesedienstes wertet Mietfuchs mit einer späteren Version aus. Bis dahin rechnen Sie mit Wärmezählern ab oder übernehmen die Abrechnung des Messdienstes als Einzelbeträge.',
+  dhwHeatingValue: 'Den Warmwasseranteil bei Heizöl, Flüssiggas, Pellets, Holz und Kohle rechnet Mietfuchs mit einer späteren Version; dafür braucht es den Heizwert laut Rechnung (§ 9 Abs. 3 HeizkostenV). Bis dahin geht die eigene Abrechnung, wenn das Warmwasser getrennt oder gar nicht bereitet wird.',
 }
 
 // Der Verweis auf den Kesseltausch (Heizung PR 9) in den Sätzen, die einen Wechsel des Energieträgers sperren.
@@ -122,8 +126,7 @@ const emptyHeatingPlant = (id: string, propertyId: string): HeatingPlant => ({
   hotWater: 'combined', capture: null, areaBasisHeat: 'area', heatPumpInstalledOn: null,
 })
 
-async function guardHeatingPlant(db: Executor, before: HeatingPlant | null, after: HeatingPlant): Promise<void> {
-  if (after.method === 'self') throw new HeatingError(400, LATER.self)
+export async function guardHeatingPlant(db: Executor, before: HeatingPlant | null, after: HeatingPlant): Promise<void> {
   // Etagenheizung auf Vertrag des Vermieters (Heizung PR 9, Entwurf 9.3, 11.2): Die Rechnung jeder
   // Wohnung gehört direkt zu ihr, also freie Schlüssel mit Direktzuordnung. Vorratsenergien rechnet
   // Mietfuchs dafür nicht, denn der Vorrat hängt an der Anlage, nicht an der Wohnung (Festlegung 3).
@@ -148,7 +151,18 @@ async function guardHeatingPlant(db: Executor, before: HeatingPlant | null, afte
   if (before !== null && after.periodStartMonth !== null && before.separateSettlement !== after.separateSettlement) {
     throw new HeatingError(400, LATER.separateVia)
   }
-  if ((after.units ?? []).some((u) => u.heatedAreaM2 !== null)) throw new HeatingError(400, LATER.heatedArea)
+  // Eigene Heizkostenabrechnung (Heizung PR 10, Entwurf 5.3, 8.1, 8.3, Abweichungen 10 und 17).
+  if (after.method === 'self') {
+    if (after.capture === null) throw new HeatingError(400, 'Bitte wählen Sie, womit der Verbrauch erfasst wird.')
+    if (after.capture !== 'heatMeter') throw new HeatingError(400, LATER.capture)
+    if (after.hotWater === 'combined' && !KWH_ENERGIES.includes(after.energy)) throw new HeatingError(400, LATER.dhwHeatingValue)
+    if (after.areaBasisHeat === 'heatedArea' && (after.units === null || after.units.some((u) => u.heatedAreaM2 === null))) {
+      throw new HeatingError(400, 'Für Grundkosten nach der beheizten Fläche nennen Sie die angeschlossenen Wohnungen und tragen bei jeder die beheizte Fläche ein.')
+    }
+  }
+  if (after.heatPumpInstalledOn !== null && !ISO_DATE.test(after.heatPumpInstalledOn)) {
+    throw new HeatingError(400, 'Das Einbaudatum der Wärmepumpe ist kein Datum. Bitte wählen Sie es im Kalender.')
+  }
   if (after.source === 'homeowners' && after.method !== 'service') {
     throw new HeatingError(400, 'Rechnet die Gemeinschaft der Eigentümer ab, übernehmen Sie ihre Abrechnung wie die eines Messdienstes, als Einzelbeträge. Wählen Sie dafür „Die Gemeinschaft (Hausverwaltung) rechnet ab“.')
   }
@@ -175,7 +189,9 @@ async function guardHeatingPlant(db: Executor, before: HeatingPlant | null, afte
     // Verknüpfte Positionen gibt es nur bei freien Schlüsseln (Heizung PR 7); ein Wechsel ließe sie
     // sonst still anders rechnen.
     const [verknuepft] = await db.select({ n: count() }).from(costItems).innerJoin(fuelDeliveries, eq(costItems.fuelDeliveryId, fuelDeliveries.id)).where(eq(fuelDeliveries.plantId, after.id))
-    if (before.method === 'manual' && after.method !== 'manual' && (verknuepft?.n ?? 0) > 0) {
+    // Heizung PR 10 (N6): Verknüpfte Positionen gibt es bei freien Schlüsseln und bei der eigenen
+    // Heizkostenabrechnung; gesperrt ist nur der Wechsel zum Messdienst.
+    if (before.method !== 'service' && after.method === 'service' && (verknuepft?.n ?? 0) > 0) {
       const n = verknuepft?.n ?? 0
       throw new HeatingError(400, `An dieser Anlage ${n === 1 ? 'ist eine Kostenposition' : `sind ${n} Kostenpositionen`} mit Lieferungen verknüpft. Lösen Sie die Verknüpfungen zuerst; ein Messdienst rechnet den Brennstoff in seinen eigenen Beträgen ab.`)
     }
@@ -284,7 +300,7 @@ function readAdjust(value: unknown): { id: string; body: Record<string, unknown>
   })
 }
 
-const plantRow = (p: HeatingPlant) => ({
+export const plantRow = (p: HeatingPlant) => ({
   id: p.id, propertyId: p.propertyId, name: p.name, energy: p.energy, supply: p.supply, method: p.method,
   separateSettlement: p.separateSettlement, devicesRemote: p.devicesRemote, devicesInstalledAfter2021: p.devicesInstalledAfter2021,
   newDevicesInstall: p.newDevicesInstall,
@@ -335,6 +351,9 @@ export async function createHeatingPlant(db: Database, id: string, propertyId: s
     throw new HeatingError(400, 'Womit wird geheizt? Bitte wählen Sie den Energieträger der Anlage.')
   }
   const plant = mergeHeatingPlant(emptyHeatingPlant(id, propertyId), body)
+  // Zur eigenen Heizkostenabrechnung nur über die Einrichtung (Heizung PR 10, Abweichung 17): Anteil,
+  // Zähler und Umstellung der Positionen entstehen dort in einer Transaktion.
+  if (plant.method === 'self') throw new HeatingError(400, SELF_VIA_SETUP)
   const wanted = readIds(raw(body, 'assignItemIds'))
   const adjust = readAdjust(raw(body, 'adjust'))
   const others = (await readHeatingPlants(db)).filter((p) => p.propertyId === propertyId)
@@ -381,6 +400,21 @@ export async function updateHeatingPlant(db: Database, id: string, body: unknown
   if (!current) return null
   const all = (await readHeatingPlants(db)).filter((p) => p.propertyId === current.propertyId)
   const next = { ...mergeHeatingPlant(current, body), takesOverStock: await takesOverStockOf(db, current, all, body) }
+  // Zur eigenen Heizkostenabrechnung nur über die Einrichtung (Heizung PR 10, Abweichung 17).
+  if (next.method === 'self' && current.method !== 'self') throw new HeatingError(400, SELF_VIA_SETUP)
+  // Zurück von der eigenen Abrechnung: Die Positionen offener Zeiträume brauchen einen anderen
+  // Schlüssel. Ohne Bestätigung 409 mit der Liste und den Folgen (§ 12 Abs. 1, § 6 Abs. 4); mit
+  // `convertItems: 'area'` werden sie in derselben Transaktion nach Wohnfläche verteilt (Abweichung 17).
+  const zurueck = current.method === 'self' && next.method !== 'self'
+  const offen = zurueck ? await selfItemsOf(db, id, null, 'heatingSystem') : []
+  if (offen.length > 0 && raw(body, 'convertItems') !== 'area') {
+    throw new SelfItemsError(
+      `Diese Heizanlage hat ${offen.length === 1 ? 'eine Position' : `${offen.length} Positionen`} in offenen Zeiträumen, die nach der Heizkostenverordnung verteilt ${offen.length === 1 ? 'wird' : 'werden'}. Bestätigen Sie, dass sie künftig nach Wohnfläche verteilt ${offen.length === 1 ? 'wird' : 'werden'}; prüfen Sie danach die Schlüssel. ` +
+        `Fällt die Anlage unter die Heizkostenverordnung, verteilen Sie damit nicht nach Verbrauch, und jeder Mieter darf seinen Anteil um ${valueAt(hkvCutNotByConsumption, LAW_AS_OF)} % kürzen (§ 12 Abs. 1 Satz 1 HeizkostenV). ` +
+        'Einen anderen Abrechnungsmaßstab dürfen Sie nur für künftige Abrechnungszeiträume und zu ihrem Beginn wählen, durch Erklärung gegenüber den Mietern (§ 6 Abs. 4 HeizkostenV).',
+      offen,
+    )
+  }
   // Gebäude (Nachprüfung von #238): Neben einer laufenden Anlage gibt es „nicht gefragt“ nicht mehr, wenn die
   // Frage einmal beantwortet war.
   const running = all.filter((p) => p.id !== id && p.endsOn === null && !sameLine(p, current, all))
@@ -403,6 +437,9 @@ export async function updateHeatingPlant(db: Database, id: string, body: unknown
     guardCo2Plant(current, next, openCo2)
     const { id: _id, ...rest } = plantRow(next)
     await tx.update(heatingPlants).set(rest).where(eq(heatingPlants.id, id))
+    for (const c of offen) {
+      await tx.update(costItems).set({ key: 'area', heatingTarget: null }).where(eq(costItems.id, c.id))
+    }
     await writePlantUnits(tx, next)
     await guardPlantsOfProperty(tx, current.propertyId)
   })
@@ -535,6 +572,9 @@ export async function replaceHeatingPlant(db: Database, oldId: string, newId: st
   for (const k of SWAP_FIELDS) if (has(body, k)) picked[k] = raw(body, k)
   const base: HeatingPlant = { ...old, id: newId, name: '', separateSpans: [], units: served, endsOn: null, replacesPlantId: oldId, takesOverStock: null }
   const merged = mergeHeatingPlant(base, picked)
+  // Zur eigenen Heizkostenabrechnung nur über die Einrichtung (Heizung PR 10); eine Anlage, die schon
+  // selbst abrechnet, gibt die Art an die neue weiter.
+  if (merged.method === 'self' && old.method !== 'self') throw new HeatingError(400, SELF_VIA_SETUP)
   // Die Angabe zum Emissionshandel gilt nur für eine Wärmelieferung. Bei demselben Vorratsbrennstoff die
   // Frage, ob die neue Anlage ihn weiter verheizt (Nachprüfung von #238); ohne Antwort ja.
   const answer = raw(body, 'takesOverStock')
@@ -677,6 +717,14 @@ export async function heatingPlantViolations(db: Database): Promise<string[]> {
     .innerJoin(heatingPlants, eq(meters.heatingPlantId, heatingPlants.id))
     .where(ne(meters.propertyId, heatingPlants.propertyId))
   for (const z of zaehler) befunde.push(`Der Zähler „${z.name}“ gehört zur Heizanlage eines anderen Objekts.`)
+
+  // Heizung PR 10: Positionen nach Heizkostenverordnung gehören zu einer Anlage mit eigener Abrechnung.
+  const eigene = new Set((await db.select({ id: heatingPlants.id }).from(heatingPlants).where(eq(heatingPlants.method, 'self'))).map((p) => p.id))
+  for (const c of await db.select({ id: costItems.id, description: costItems.description, plantId: costItems.heatingPlantId }).from(costItems).where(eq(costItems.key, 'heatingSystem'))) {
+    if (c.plantId === null || !eigene.has(c.plantId)) {
+      befunde.push(`Die Position „${c.description}“ wird nach der Heizkostenverordnung verteilt, ihre Heizanlage rechnet aber nicht selbst ab.`)
+    }
+  }
 
   // Überlappende Anlagen: Ab zwei Anlagen in einem Objekt braucht jede ihre Liste, und keine Wohnung
   // hängt an zweien. Sonst verteilten zwei Anlagen dieselben Kosten auf dieselben Mieter.

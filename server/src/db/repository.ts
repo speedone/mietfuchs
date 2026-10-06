@@ -33,10 +33,11 @@
 // nächste, der eine Spalte hinzufügt.
 
 import { and, count, desc, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm'
-import type { BillingPeriod, CostItem, ExternalBasis, HeatingPlant, HeatingPrepaymentOverride, Meter, MeterType, Payment, PeriodKey, PeriodRules, PersonEntry, PrepaymentEntry, Property, Reading, RentEntry, SplitPreviewPart, Tenancy, Unit, UnitDependents } from '../../../shared/types.ts'
+import type { BillingPeriod, CostItem, ExternalBasis, HeatingPlant, HeatingPrepaymentOverride, InterimGapStatus, Meter, MeterType, Payment, PeriodKey, PeriodRules, PersonEntry, PrepaymentEntry, Property, Reading, RentEntry, SplitPreviewPart, Tenancy, Unit, UnitDependents } from '../../../shared/types.ts'
 import { CALENDAR_RULES, calendarPeriod, paymentYear, formatDayRange, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, spansTwoYears, startYearOf } from '../../../shared/period.ts'
 import { heatingPeriodsEndingIn, isObjectPeriod, plantRules, plantSpan, servesUnit, spanOf } from '../../../shared/heatingPeriod.ts'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
+import { targetProblem } from '../heating.ts'
 import { andList } from '../../../shared/wording.ts'
 import type { MigratedSettings } from '../ai/settings.ts'
 import { lastPerFrom, straightenPersonHistory } from '../schedule.ts'
@@ -49,7 +50,7 @@ import {
 } from './read.ts'
 import {
   aiSlots, assessmentLines, assessments, baseRents, co2Statements, co2TenantReliefs, heatingPeriods, closedHeatingSettlementHistory, closedHeatingSettlements, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, DEPOSIT_STATUS, EXTERNAL_MEASURES,
-  HEATING_PARTS, HEATING_ROLES, HEATING_TARGETS, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingPrepaymentOverrides, heatingPrepayments, heatingSeparateSpans,
+  HEATING_PARTS, HEATING_ROLES, HEATING_TARGETS, INTERIM_GAP_STATUS, interimReadingGaps, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingPrepaymentOverrides, heatingPrepayments, heatingSeparateSpans,
   flatRates, METER_TYPES, meters, payments, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, PROPERTY_KINDS,
   readings, settings, tenancies, unitNoConnection, units, fuelCarryFrozen, fuelDeliveries,
 } from './schema.ts'
@@ -762,6 +763,7 @@ async function defaultHeatingPlant(db: Executor, c: CostItem, invoiceDate?: stri
 // einem abgeschlossenen Zeitraum keine neue Zuordnung.
 async function guardCostItemHeating(db: Executor, before: CostItem | null, after: CostItem): Promise<void> {
   if (after.key === 'meter' && after.meterType === 'hkv') throw new HeatingError(400, HKV_KEY)
+  await guardHeatingSystem(db, after)
   const plantId = after.heatingPlantId
   if (!plantId) return
   const plant = await plantOf(db, plantId)
@@ -791,6 +793,45 @@ async function guardCostItemHeating(db: Executor, before: CostItem | null, after
       'Die Abrechnung dieses Zeitraums ist abgeschlossen; ihre Positionen bekommen keine Heizanlage mehr, denn der eingefrorene Stand bleibt maßgeblich. ' +
         'Öffnen Sie die Abrechnung wieder, wenn Sie die Position zuordnen wollen.')
   }
+}
+
+// Eigene Heizkostenabrechnung (Heizung PR 10, Entwurf 5.3, Abweichung 18): Nach Heizkostenverordnung
+// verteilt nur eine Position einer Anlage mit `method = 'self'`, mit Teil und Ziel, und deren
+// Positionen verteilen nur so. Das Ziel passt zur Warmwasserbereitung (heating.ts, `targetProblem`).
+// „Nur Heizung“ bei freien Schlüsseln bleibt erlaubt (A2, B7).
+export async function guardHeatingSystem(db: Executor, after: CostItem): Promise<void> {
+  const target = after.heatingTarget ?? null
+  if (target !== null && after.category !== HEATING_CATEGORY) {
+    throw new HeatingError(400, 'Ein Ziel (Heizung, Warmwasser) gibt es nur bei der Kostenart „Heizung und Warmwasser“.')
+  }
+  // Ohne Angabe bekommt eine neue Heizposition die Anlage erst beim Schreiben (`defaultHeatingPlant`);
+  // geprüft wird gegen dieselbe, die sie dann bekommt.
+  const plantId = after.heatingPlantId === undefined && after.category === HEATING_CATEGORY ? await plantForNewItem(db, after) : (after.heatingPlantId ?? null)
+  const [plant] = plantId === null ? [] : await db.select({ method: heatingPlants.method, hotWater: heatingPlants.hotWater }).from(heatingPlants).where(eq(heatingPlants.id, plantId))
+  if (after.key === 'heatingSystem') {
+    if (after.category !== HEATING_CATEGORY || !plant || plant.method !== 'self') {
+      throw new HeatingError(400,
+        'Nach der Heizkostenverordnung verteilt Mietfuchs nur Positionen einer Heizanlage mit eigener Heizkostenabrechnung. Richten Sie sie in den Stammdaten unter „Heizung“ ein oder wählen Sie einen anderen Schlüssel.')
+    }
+    const problem = targetProblem(plant.hotWater, after.heatingPart ?? null, target)
+    if (problem !== null) throw new HeatingError(400, `${problem}.`)
+    return
+  }
+  if (plant?.method === 'self' && after.category === HEATING_CATEGORY) {
+    throw new HeatingError(400,
+      'Diese Heizanlage rechnet die Heizkosten selbst nach der Heizkostenverordnung ab. Wählen Sie den Schlüssel „nach Heizkostenverordnung“ mit Teil und Ziel.')
+  }
+}
+
+// Für die Einrichtung der eigenen Heizkostenabrechnung (Heizung PR 10): innerhalb einer fremden
+// Transaktion anlegen, durch dieselbe Verschmelzung und denselben Wächter wie die Routen (wie
+// `insertCostItemIn` für die Belegbuchung).
+export async function insertEntityIn(tx: Executor, coll: CollectionName, id: string, body: unknown): Promise<void> {
+  await withCollection<Promise<void>>(coll, async (c) => {
+    const entity = c.merge(c.empty(id), body)
+    await c.guard(tx, null, entity, body)
+    await c.insert(tx, entity)
+  })
 }
 
 // Das Formular eines Mietverhältnisses kennt einen älteren Stand als den gespeicherten
@@ -1957,6 +1998,10 @@ const isIsoDate = (value: unknown): value is string =>
   typeof value === 'string' && ISO_DATE.test(value) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value
 
 // `null`, wenn es das Mietverhältnis nicht gibt; die Route macht daraus ihre 404.
+// **Heizung PR 10 (Entwurf 3.5, 11.4):** Eine Ablesung darf ein eigenes Datum tragen, wenn sie neben
+// dem Auszug liegt (Brunata erfasst Wechsel- und Ablesedatum getrennt); gerechnet wird mit dem Wert,
+// wie er ist. Gibt es keine Zwischenablesung, sagt `interimGap`, ob sie nicht möglich war oder nicht
+// durchgeführt wurde (§ 9b Abs. 3); gespeichert für die Grenze am Auszugstag.
 export async function changeTenant(
   db: Database, propertyId: string, tenancyId: string, body: unknown, nextId: () => string,
 ): Promise<TenantChange | null> {
@@ -1997,9 +2042,22 @@ export async function changeTenant(
     if (value === undefined) throw new TenantChangeError(400, `Der Zählerstand für „${meter.name}“ ist keine gültige Zahl.`)
     if (gesehen.has(meter.id)) throw new TenantChangeError(400, `Für den Zähler „${meter.name}“ stehen zwei Stände da.`)
     gesehen.add(meter.id)
+    const datum = raw(angabe, 'date')
+    if (datum !== undefined && datum !== null && !isIsoDate(datum)) {
+      throw new TenantChangeError(400, `Das Ablesedatum für „${meter.name}“ ist kein Datum. Bitte wählen Sie es im Kalender.`)
+    }
     ablesungen.push(mergeReading(emptyReading(nextId()), {
-      meterId: meter.id, date: end, value, note: `Zwischenablesung Mieterwechsel ${current.tenantName}`,
+      meterId: meter.id, date: typeof datum === 'string' ? datum : end, value, note: `Zwischenablesung Mieterwechsel ${current.tenantName}`, interimFor: end,
     }))
+  }
+  // Keine Zwischenablesung: nicht möglich oder nicht durchgeführt (Heizung PR 10, Abweichung 8).
+  const lueckeRumpf = raw(body, 'interimGap')
+  let luecke: { status: InterimGapStatus; reason: string } | null = null
+  if (lueckeRumpf !== null && lueckeRumpf !== undefined) {
+    const s = oneOfOrUndefined(INTERIM_GAP_STATUS, raw(lueckeRumpf, 'status'))
+    if (s === undefined) throw new TenantChangeError(400, 'Bitte wählen Sie, ob die Zwischenablesung nicht möglich war oder nicht durchgeführt wurde.')
+    const grund = raw(lueckeRumpf, 'reason')
+    luecke = { status: s, reason: typeof grund === 'string' ? grund.trim() : '' }
   }
 
   // Der Nachmieter, oder Leerstand.
@@ -2021,6 +2079,10 @@ export async function changeTenant(
     await guardTenancy(tx, current, beendet, { end })
     await tenancyCollection.replace(tx, beendet)
     for (const ablesung of ablesungen) await readingCollection.insert(tx, ablesung)
+    if (luecke) {
+      await tx.delete(interimReadingGaps).where(and(eq(interimReadingGaps.unitId, current.unitId), eq(interimReadingGaps.date, end)))
+      await tx.insert(interimReadingGaps).values({ unitId: current.unitId, date: end, status: luecke.status, reason: luecke.reason })
+    }
     if (nachmieter) {
       await guardTenancy(tx, null, nachmieter, nachmieterRumpf)
       await tenancyCollection.insert(tx, nachmieter)

@@ -45,6 +45,7 @@ import {
   listProperties, removeEntity, removeProperty, reopenSettlement, setSentAt, settlementHistory, updateEntity, updateProperty,
   TenantChangeError, unitDependents, writeSettings, type CollectionName,
 } from './db/repository.ts'
+import { removeInterimGap, saveDistribution, saveInterimGap, SelfItemsError, setUpSelf } from './db/heatingSelf.ts'
 import { heatingPeriodViews, removeCo2Statement, saveCo2Statement, saveHotWater } from './db/co2.ts'
 import { removeStock, saveStock } from './db/fuelStock.ts'
 import { createDelivery, createEstimates, freezeFuelCarries, fuelGapQuestions, listDegreeDays, listDeliveries, removeDelivery, saveDegreeDays, unfreezeFuelCarries, updateDelivery } from './db/fuel.ts'
@@ -564,7 +565,7 @@ app.delete('/api/heating-plants/:id', async (req, res) => {
 const NO_PLANT = 'Diese Heizanlage gibt es nicht (mehr). Bitte laden Sie die Seite neu.'
 app.get('/api/heating-plants/:id/periods', async (req, res) => {
   const period = typeof req.query.period === 'string' ? req.query.period : ''
-  const views = await readData((db) => heatingPeriodViews(db, req.params.id, period))
+  const views = await readData((db) => heatingPeriodViews(db, req.params.id, period, today()))
   if (!views) return res.status(404).json({ error: NO_PLANT })
   res.json(views)
 })
@@ -594,6 +595,34 @@ app.delete('/api/heating-plants/:id/periods/:period/stock', async (req, res) => 
   const removed = await writeData((db) => removeStock(db, req.params.id, req.params.period))
   if (removed === null) return res.status(404).json({ error: NO_PLANT })
   res.json({ ok: true, removed })
+})
+
+// ---------- Eigene Heizkostenabrechnung (Heizung PR 10) ----------
+
+// Einrichtung Schritt 7 (Entwurf 11.2): Umstellung auf die eigene Abrechnung in einer Transaktion,
+// samt Anteil, Zählern und Positionen (db/heatingSelf.ts). 409 mit der Liste offener Positionen, die
+// Teil und Ziel brauchen.
+app.put('/api/heating-plants/:id/self', async (req, res) => {
+  const result = await writeData((db) => setUpSelf(db, req.params.id, bodyObject(req), today(), newId))
+  if (!result) return res.status(404).json({ error: NO_PLANT })
+  res.json(result)
+})
+
+// Anteil nach Verbrauch einer Heizperiode (§ 6 Abs. 4, § 7 Abs. 1 Satz 2).
+app.put('/api/heating-plants/:id/periods/:period/distribution', async (req, res) => {
+  const result = await writeData((db) => saveDistribution(db, req.params.id, req.params.period, bodyObject(req), today()))
+  if (!result) return res.status(404).json({ error: NO_PLANT })
+  res.json(result)
+})
+
+// Keine Zwischenablesung an einer Grenze: nicht möglich oder nicht durchgeführt (Entwurf 3.5).
+app.put('/api/units/:id/interim-gaps/:date', async (req, res) => {
+  const result = await writeData((db) => saveInterimGap(db, req.params.id, req.params.date, bodyObject(req)))
+  if (!result) return res.status(404).json({ error: 'Diese Wohnung gibt es nicht (mehr). Bitte laden Sie die Seite neu.' })
+  res.json(result)
+})
+app.delete('/api/units/:id/interim-gaps/:date', async (req, res) => {
+  res.json({ ok: true, removed: await writeData((db) => removeInterimGap(db, req.params.id, req.params.date)) })
 })
 
 // ---------- Brennstofflieferungen (Heizung PR 7) ----------
@@ -2162,6 +2191,8 @@ app.use('/api', (err: unknown, req: Request, res: Response, next: NextFunction) 
             : `Hochladen fehlgeschlagen: ${err.message}`
     return res.status(400).json({ error: message })
   }
+  // Eigene Heizkostenabrechnung (Heizung PR 10): die Liste der Positionen, die umzustellen sind.
+  if (err instanceof SelfItemsError) return res.status(409).json({ error: err.message, items: err.items })
   // Ablehnungen, deren Meldung schon für den Nutzer geschrieben ist (#92).
   if (err instanceof RouteProblem || err instanceof CrossPropertyError || err instanceof PeriodError || err instanceof PeriodConflict || err instanceof TenantChangeError || err instanceof BookingRefusal || err instanceof HeatingError || err instanceof StaleTenancyError) {
     return res.status(err.status).json({ error: err.message })
