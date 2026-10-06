@@ -58,7 +58,7 @@ import { CALENDAR_RULES, calendarYearPeriod, contextOf, formatDayRange, isCalend
 import { monthSpanText, plantRules, recommendedDeadline, requestMonth, sameSpan, separateOwner, servesUnit, settledSeparately } from '../../shared/heatingPeriod.ts'
 import { heatingSnapshotFor, snapshotFor, wayOf } from './snapshot.ts'
 import { plantFuel, rangeOf, type FuelCarry, type FuelResult } from './fuel.ts'
-import { fuelFromDeliveries, fuelFromStock, measuredOffset, problemText, stockOf, stockTemplateOf, stockTouched, valueOf as stockValueOf, type FuelFigures, type StockPeriodInput, type StockResult } from './fuelStock.ts'
+import { fuelFromDeliveries, fuelFromStock, looseCentsOf, measuredOffset, problemText, settledByDefault, stockOf, stockTemplateOf, stockTouched, valueOf as stockValueOf, type FuelFigures, type StockPeriodInput, type StockResult } from './fuelStock.ts'
 import { isStockEnergy, STOCK_FUEL_NAMES, STOCK_UNIT_TEXT } from '../../shared/fuelStock.ts'
 import { degreeDayPermille } from '../../shared/degreeDays.ts'
 import { annualFactors, type AnnualBasis } from './prepaymentSuggestion.ts'
@@ -304,6 +304,8 @@ const noticeKinds = {
   // Nachprüfung von #237 (N2): „nicht umgelegt“, obwohl die Vorperiode Heizkosten nach Lieferung verteilt hat.
   // Nachprüfung von 7ce5958, Befund 1: Vorbelegung nur nach Heizpositionen ohne Kennzeichen „Brennstoff“.
   'fuel.opening-settled-assumed': { level: 'warning', title: 'Anfangsbestand als umgelegt angenommen', rule: 'heating-consumed-fuel', terms: ['fuelStock'] },
+  // Nachprüfung von 819398e: Heizkosten ohne Kennzeichen unter dem Wert des Anfangsbestands, ohne Antwort.
+  'fuel.opening-check-loose': { level: 'hint', title: 'Heizkosten ohne Kennzeichen im Vorjahr', rule: 'heating-consumed-fuel', terms: ['fuelStock'] },
   'fuel.opening-not-settled': { level: 'warning', title: 'Anfangsbestand womöglich doppelt', rule: 'heating-consumed-fuel', terms: ['fuelStock'] },
   'fuel.stock-unlinked': { level: 'warning', title: 'Brennstoffposition ohne Lieferung', rule: 'heating-consumed-fuel', terms: ['fuelStock', 'fuelDelivery'] },
   'heating.dhw-not-metered': { level: 'warning', title: 'Warmwasser ohne Wärmezähler abgerechnet', rule: 'heating-dhw-split', terms: ['hotWaterShare', 'heatingCostOrdinance'] },
@@ -2297,7 +2299,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   const stockManualNotes: { plant: SnapshotHeatingPlant; text: string; invalid: boolean }[] = []
   // Weitere Hinweise zum Vorrat je Anlage (Durchsicht von #237): Verlust beim Vermieter (`lost`), ein
   // schon umgelegter Anfangsbestand (`settled`), Brennstoffpositionen ohne Lieferung (`unlinked`).
-  const stockNotes: { plant: SnapshotHeatingPlant; code: 'fuel.stock-not-taken-over' | 'fuel.opening-settled' | 'fuel.opening-settled-assumed' | 'fuel.opening-not-settled' | 'fuel.stock-unlinked'; text: string }[] = []
+  const stockNotes: { plant: SnapshotHeatingPlant; code: 'fuel.stock-not-taken-over' | 'fuel.opening-settled' | 'fuel.opening-settled-assumed' | 'fuel.opening-check-loose' | 'fuel.opening-not-settled' | 'fuel.stock-unlinked'; text: string }[] = []
   const stockUnlinked = new Map<string, SnapshotCostItem[]>()
   const stockOpts = (plant: SnapshotHeatingPlant) => ({
     needCost: plant.method === 'manual', needCo2: CO2_FUELS.includes(plant.energy), countedAt: stockCountedAt,
@@ -2364,8 +2366,13 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         ? `wurde nach der Vorbelegung schon mit einer früheren Abrechnung umgelegt, denn in der Heizperiode ${prevFuel.label} sind Heizkosten von ${fmtCents(prevFuel.cents)} nach Lieferung verteilt. Trifft das nicht zu, antworten Sie in der Karte „Vorrat“ mit „Nein“.`
         : 'ist nach Ihrer Angabe schon mit einer früheren Abrechnung umgelegt worden.'
       if (stmt.openingSettledSource !== 'defaultLoose') stockNotes.push({ plant: entry.plant, code: 'fuel.opening-settled', text: `Der Anfangsbestand von ${qty}${worth} ${why} Er zählt hier deshalb mit 0 € und ohne CO₂-Kosten; seine kg zählen für die Einstufung des Gebäudes.` })
-    } else if (stmt.openingSource === 'own' && prevFuel && (stmt.opening.costCents ?? 0) > 0 &&
-      (prevFuel.explicitCents > 0 || prevFuel.loose.reduce((a, l) => a + l.cents, 0) >= (stmt.opening.costCents ?? 0))) {
+    } else if (stmt.openingSource === 'own' && prevFuel && (stmt.opening.costCents ?? 0) > 0 && entry.last.ownOpening?.settledSource !== 'entered' &&
+      settledByDefault(prevFuel, stmt.opening.costCents) === null && looseCentsOf(prevFuel) > 0) {
+      // Nachprüfung von 819398e: Ohne Antwort und unter der Schwelle zählt der Anfangsbestand mit seinem
+      // Wert; ob in den Positionen ohne Kennzeichen doch Brennstoff steckt, weiß nur der Vermieter.
+      const named = andList(prevFuel.loose.map((l) => `„${l.description}“ (${fmtCents(l.cents)})`))
+      stockNotes.push({ plant: entry.plant, code: 'fuel.opening-check-loose', text: `Der Anfangsbestand von ${qty} zählt mit ${fmtCents(stmt.opening.costCents ?? 0)}. In der Heizperiode ${prevFuel.label} stehen Heizkosten ohne Kennzeichnung über ${fmtCents(looseCentsOf(prevFuel))} (${named}). Prüfen Sie, ob Brennstoff darin war; dann wählen Sie in der Karte „Vorrat“ „Ja“.` })
+    } else if (stmt.openingSource === 'own' && prevFuel && (stmt.opening.costCents ?? 0) > 0 && settledByDefault(prevFuel, stmt.opening.costCents) !== null) {
       // Dieselbe Schwelle wie die Vorbelegung: Eine Wartung erklärt keinen Anfangsbestand (W1n).
       stockNotes.push({ plant: entry.plant, code: 'fuel.opening-not-settled', text: `Nach Ihrer Angabe ist der Anfangsbestand von ${qty} noch nicht umgelegt; er zählt mit ${fmtCents(stmt.opening.costCents ?? 0)}. In der Heizperiode ${prevFuel.label} sind aber Heizkosten von ${fmtCents(prevFuel.cents)} nach Lieferung verteilt. Steckt der Brennstoff des Anfangsbestands darin, tragen die Mieter ${fmtCents(stmt.opening.costCents ?? 0)} zweimal; antworten Sie dann in der Karte „Vorrat“ mit „Ja“.` })
     }

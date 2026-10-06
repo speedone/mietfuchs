@@ -17,7 +17,7 @@ import { dayAfter, valueAt } from '../../../shared/law/register.ts'
 import { periodContaining, periodLabel } from '../../../shared/period.ts'
 import type { BillingPeriod, HeatingPlant, HeatingStockStatement, StockRow, StockView } from '../../../shared/types.ts'
 import { CO2_FUELS } from '../co2.ts'
-import { problemText, readFrozenStock, stockOf, type StockOptions, type StockPeriodInput } from '../fuelStock.ts'
+import { problemText, readFrozenStock, settledByDefault, stockOf, type StockOptions, type StockPeriodInput } from '../fuelStock.ts'
 import { stockChainsOf } from '../snapshot.ts'
 import type { Database } from './client.ts'
 import { closedText, dropIfEmpty, ensureHeatingPeriod, heatingPeriodClosed, heatingPeriodOf, plantContext, type PlantContext } from './heatingPeriodContext.ts'
@@ -113,11 +113,13 @@ export function stockViewFor(stock: Stock, ctx: PlantContext, h: BillingPeriod, 
     if (before.ok) derived = { value: before.statement.closing, period: prev.key, label: prev.label, frozen: false }
   }
   const result = stockOf(chain, opts)
+  const row = rowOf(stock.heatingPeriodRows.find((r) => r.plantId === ctx.plant.id && r.period === h.key))
   return {
-    row: rowOf(stock.heatingPeriodRows.find((r) => r.plantId === ctx.plant.id && r.period === h.key)),
+    row,
     derived,
     closingLockedBy: lockedBy(chain, ctx, h),
     askAlreadySettled: derived === null && (chain.at(-1)?.previousFuel ?? null) !== null,
+    defaultAlreadySettled: derived === null ? settledByDefault(chain.at(-1)?.previousFuel, row.openingCostCents) : null,
     statement: result.ok ? result.statement : null,
     frozen: closed ? frozenStatementOf(stock, ctx, h) : null,
     problem: result.ok ? null : problemText(result.problem),

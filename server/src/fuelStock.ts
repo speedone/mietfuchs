@@ -55,6 +55,20 @@ export type StockDeliveryInput = {
 export type StockOpeningInput = { quantity: number; costCents: number | null; emissionsKg: number | null; co2Cents: number | null; invoicedBefore2023: boolean | null; alreadySettled?: boolean; settledSource?: 'entered' | 'default' | 'defaultLoose' }
 
 // Eine Heizperiode der Kette; snapshot.ts baut sie (`stockChainsOf`).
+export type PreviousFuel = { label: string; cents: number; explicitCents: number; loose: { description: string; cents: number }[] }
+
+// Gilt ohne Antwort „schon umgelegt“ (Nachprüfung von 7ce5958 und 819398e)? Bei ausdrücklichem Brennstoff
+// ja; bei Heizpositionen ohne Kennzeichen nur, wenn ihre positiven Beträge zusammen den Wert des
+// Anfangsbestands erreichen. Eine Wartung von 250 € erklärt keinen Anfangsbestand von 2.000 €, und eine
+// Gutschrift macht aus einer Ölrechnung keine Wartung. Schnappschuss, Abrechnung und Karte fragen hier.
+export const looseCentsOf = (prev: PreviousFuel): number => prev.loose.reduce((a, l) => a + Math.max(0, l.cents), 0)
+export function settledByDefault(prev: PreviousFuel | null | undefined, openingCents: number | null): 'default' | 'defaultLoose' | null {
+  if (!prev) return null
+  if (prev.explicitCents > 0) return 'default'
+  const loose = looseCentsOf(prev)
+  return loose > 0 && loose >= (openingCents ?? 0) ? 'defaultLoose' : null
+}
+
 export type StockPeriodInput = {
   key: PeriodKey
   label: string
@@ -83,7 +97,7 @@ export type StockPeriodInput = {
   // Positionen. Die Karte fragt dann, ob der Anfangsbestand schon umgelegt wurde.
   // `explicitCents`: ausdrücklich Brennstoff (gekennzeichnet oder mit Lieferung verknüpft); `loose`: Heizpositionen
   // ohne Kennzeichen (Nachprüfung von 7ce5958, Befund 1).
-  previousFuel?: { label: string; cents: number; explicitCents: number; loose: { description: string; cents: number }[] } | null
+  previousFuel?: PreviousFuel | null
   // Abgeschlossen, ohne dass der Stand einen Vorrat eingefroren hat (Nachprüfung N1): Die Mieter haben
   // den Brennstoff mit den Rechnungen bezahlt; der Endbestand geht mit 0 € weiter.
   closedWithoutStock?: boolean

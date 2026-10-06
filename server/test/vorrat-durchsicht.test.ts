@@ -78,6 +78,7 @@ test('C1 (T1): Erster Vorrat nach einer Abrechnung nach Lieferung: Der Anfangsbe
     await h.close(2024)
     const view = await h.stock('2025-01', { stockUnit: 'l', openingQuantity: 2000, openingCostCents: 200000, openingEmissionsKg: 5352.6, openingCo2Cents: 35033, openingInvoicedBefore2023: false, closingQuantity: 1000 }) ?? assert.fail('keine Anlage')
     assert.equal(view.askAlreadySettled, true, 'die Karte fragt, ob der Anfangsbestand schon umgelegt wurde')
+    assert.equal(view.defaultAlreadySettled, 'default', 'ausdrücklich Brennstoff: die Karte belegt „Ja“ vor')
     await h.deliver('Heizöl 10/2025', '2025-10-01', 1000, 100000, 2676.3, 17516)
     const s25 = await h.settle(2025)
     // Gekauft 4.000 l für 4.000 €, im Tank 1.000 l für 1.000 €: verbraucht 3.000 €, nicht 5.000 €.
@@ -220,6 +221,7 @@ test('N2 (T1u): Heizposition der Vorperiode ohne Kennzeichen „Brennstoff“ is
     await h.opened.write((db) => createEntity(db, 'costItems', 'alt', { propertyId: 'objekt-1', period: '2024-01', category: HEATING_CATEGORY, description: 'Heizöl 2024', amountCents: 300000, key: 'area', heatingPlantId: 'hp' }))
     const view = await h.stock('2025-01', { stockUnit: 'l', openingQuantity: 2000, openingCostCents: 200000, openingEmissionsKg: 5352.6, openingCo2Cents: 35033, openingInvoicedBefore2023: false, closingQuantity: 1000 }) ?? assert.fail('keine Anlage')
     assert.equal(view.askAlreadySettled, true)
+    assert.equal(view.defaultAlreadySettled, 'defaultLoose', 'nur ohne Kennzeichen: die Karte belegt nichts vor')
     await h.deliver('Heizöl 10/2025', '2025-10-01', 1000, 100000, 2676.3, 17516)
     const s25 = await h.settle(2025)
     assert.equal(heat(await h.settle(2024)) + heat(s25), 300000)
@@ -297,12 +299,18 @@ for (const [name, description, withPlant] of [['W1', 'Wartung Brenner 2024', tru
   test(`Befund 1 (${name}): ${description}${withPlant ? '' : ' ohne Heizanlage'} ohne Kennzeichen: Der Anfangsbestand zählt mit 2.000 €`, async () => {
     await withHouse(async (h) => {
       await h.opened.write((db) => createEntity(db, 'costItems', 'w', { propertyId: 'objekt-1', period: '2024-01', category: HEATING_CATEGORY, description, amountCents: 25000, key: 'area', ...(withPlant ? { heatingPlantId: 'hp' } : {}) }))
-      await h.stock('2025-01', { stockUnit: 'l', openingQuantity: 2000, openingCostCents: 200000, openingEmissionsKg: 5352.6, openingCo2Cents: 35033, openingInvoicedBefore2023: false, closingQuantity: 1000 })
+      const view = await h.stock('2025-01', { stockUnit: 'l', openingQuantity: 2000, openingCostCents: 200000, openingEmissionsKg: 5352.6, openingCo2Cents: 35033, openingInvoicedBefore2023: false, closingQuantity: 1000 }) ?? assert.fail('keine Anlage')
+      // Nachprüfung von 819398e: Die Karte belegt nichts vor (sonst würde das erste Speichern „Ja“ zur Angabe).
+      assert.equal(view.defaultAlreadySettled, null)
       await h.deliver('Heizöl 10/2025', '2025-10-01', 1000, 100000, 2676.3, 17516)
       const s25 = await h.settle(2025)
       assert.equal(s25.heating?.[0]?.stock?.opening.costCents, 200000)
       assert.equal(heat(s25), 200000)
-      assert.ok(!codes(s25).some((c) => c.startsWith('fuel.opening-')), codes(s25).join(', '))
+      assert.ok(!codes(s25).some((c) => c.startsWith('fuel.opening-') && c !== 'fuel.opening-check-loose'), codes(s25).join(', '))
+      // Nachprüfung von 819398e: ein Hinweis, der die Position nennt.
+      const n = s25.notices.find((x) => x.code === 'fuel.opening-check-loose') ?? assert.fail(codes(s25).join(', '))
+      assert.equal(n.level, 'hint')
+      assert.match(n.text, new RegExp(`zählt mit 2\\.000,00 €.*Heizkosten ohne Kennzeichnung über 250,00 € \\(„${description}“ \\(250,00 €\\)\\).*„Ja“`))
     })
   })
 }
@@ -314,6 +322,7 @@ test('Befund 1 (W1n): „Nein“ neben einer Wartung ohne Kennzeichen ist kein W
     await h.deliver('Heizöl 10/2025', '2025-10-01', 1000, 100000, 2676.3, 17516)
     const s25 = await h.settle(2025)
     assert.ok(!codes(s25).includes('fuel.opening-not-settled'), codes(s25).join(', '))
+    assert.ok(!codes(s25).includes('fuel.opening-check-loose'), 'beantwortet: kein Hinweis')
     assert.equal(heat(s25), 200000)
   })
 })
@@ -361,5 +370,23 @@ test('Befund 2: Entfernen des Vorrats setzt die Antwort „schon umgelegt?“ de
     assert.equal(await h.opened.write((db) => removeStock(db, 'hp', '2024-01')), true)
     const row = (await h.opened.read(readStock)).heatingPeriodRows.find((r) => r.period === '2025-01') ?? assert.fail('keine Zeile 2025')
     assert.equal(row.openingAlreadySettled ?? null, null)
+  })
+})
+
+// Nachprüfung von 819398e (Probe W6): Eine Gutschrift ohne Kennzeichen zieht nicht von der Schwelle ab.
+// Heizöl 2.500 € und Wartung 250 € ohne Kennzeichen, Gutschrift 800 €: Die positiven Beträge (2.750 €)
+// erreichen den Anfangsbestand von 2.000 €; vorher zählte er mit 2.000 € und ohne jede Meldung.
+test('W6: Gutschrift ohne Kennzeichen zählt nicht gegen die Schwelle: Vorbelegung mit Warnung, Anfangsbestand 0 €', async () => {
+  await withHouse(async (h) => {
+    await h.opened.write((db) => createEntity(db, 'costItems', 'w', { propertyId: 'objekt-1', period: '2024-01', category: HEATING_CATEGORY, description: 'Wartung Brenner 2024', amountCents: 25000, key: 'area', heatingPlantId: 'hp' }))
+    await h.opened.write((db) => createEntity(db, 'costItems', 'o', { propertyId: 'objekt-1', period: '2024-01', category: HEATING_CATEGORY, description: 'Heizöl 2024', amountCents: 250000, key: 'area', heatingPlantId: 'hp' }))
+    await h.opened.write((db) => createEntity(db, 'costItems', 'g', { propertyId: 'objekt-1', period: '2024-01', category: HEATING_CATEGORY, description: 'Gutschrift Heizöl', amountCents: -80000, key: 'area', heatingPlantId: 'hp' }))
+    const view = await h.stock('2025-01', { stockUnit: 'l', openingQuantity: 2000, openingCostCents: 200000, openingEmissionsKg: 5352.6, openingCo2Cents: 35033, openingInvoicedBefore2023: false, closingQuantity: 1000 }) ?? assert.fail('keine Anlage')
+    assert.equal(view.defaultAlreadySettled, 'defaultLoose')
+    await h.deliver('Heizöl 10/2025', '2025-10-01', 1000, 100000, 2676.3, 17516)
+    const s25 = await h.settle(2025)
+    assert.equal(s25.heating?.[0]?.stock?.opening.costCents, 0)
+    const n = s25.notices.find((x) => x.code === 'fuel.opening-settled-assumed') ?? assert.fail(codes(s25).join(', '))
+    assert.match(n.text, /„Wartung Brenner 2024“ \(250,00 €\) und „Heizöl 2024“ \(2\.500,00 €\)\./)
   })
 })

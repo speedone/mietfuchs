@@ -1689,6 +1689,10 @@ export type StockView = {
   // Die Vorperiode hat Brennstoff dieser Anlage nach Lieferung abgerechnet (oder ist ohne Vorrat
   // abgeschlossen): Dann fragt die Karte, ob der Anfangsbestand schon umgelegt wurde (C1).
   askAlreadySettled: boolean
+  // Die Vorbelegung des Servers ohne Antwort (Nachprüfung von 819398e): Nur bei `default` (ausdrücklich
+  // Brennstoff in der Vorperiode) belegt die Karte „Ja“ vor; sonst bleibt die Auswahl leer und der Server
+  // entscheidet nach der Schwelle.
+  defaultAlreadySettled: 'default' | 'defaultLoose' | null
   statement: HeatingStockStatement | null
   // Bei einer abgeschlossenen Heizperiode die eingefrorene Bestandsrechnung, wie sie abgerechnet ist.
   frozen: HeatingStockStatement | null

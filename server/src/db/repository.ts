@@ -812,7 +812,7 @@ async function requireServiceAndTax(db: Executor, before: CostItem | null, after
     if (from > to) throw new PeriodError(`Der Leistungszeitraum von ${what} endet vor seinem Beginn.`)
   }
   if (after.heatingPart !== undefined && after.category !== HEATING_CATEGORY) {
-    throw new PeriodError(`„Brennstoff/Energie“ gibt es nur bei der Kostenart „${HEATING_CATEGORY}“.`)
+    throw new PeriodError(`„Teil der Heizkosten“ gibt es nur bei der Kostenart „${HEATING_CATEGORY}“.`)
   }
   // Heizung PR 5: das Jahr der Zahlung einer Heizposition richtet sich nach ihrer Heizperiode.
   const rules = await itemRules(db, after)

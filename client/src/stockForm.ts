@@ -22,10 +22,13 @@ export const BEFORE_2023_OPTIONS: readonly { value: Before2023; label: string }[
   { value: 'no', label: `Nein, ab dem ${FROM} in Rechnung gestellt` },
 ]
 
-// Schon mit einer früheren Abrechnung umgelegt (Durchsicht von #237, C1)? Vorbelegt mit „ja“, wenn
-// die Vorperiode Brennstoff dieser Anlage nach Lieferung abgerechnet hat.
+// Schon mit einer früheren Abrechnung umgelegt (Durchsicht von #237, C1)? Vorbelegt mit „ja“ nur, wenn
+// die Vorperiode ausdrücklich Brennstoff dieser Anlage abgerechnet hat (`defaultAlreadySettled` des
+// Servers). Sonst bleibt die Auswahl leer, wird nicht gesendet, und der Server entscheidet nach der
+// Schwelle (Nachprüfung von 819398e): Ein „Ja“ ohne Grund würde beim ersten Speichern zur Angabe.
 export type AlreadySettled = '' | 'yes' | 'no'
 export const ALREADY_SETTLED_OPTIONS: readonly { value: AlreadySettled; label: string }[] = [
+  { value: '', label: 'Bitte wählen …' },
   { value: 'yes', label: 'Ja, die Mieter haben ihn mit den Rechnungen schon bezahlt (er zählt mit 0 €)' },
   { value: 'no', label: 'Nein, er ist noch nicht umgelegt (er zählt mit seinem Wert)' },
 ]
@@ -58,7 +61,7 @@ export function stockToForm(view: StockView): StockForm {
     before2023: r.openingInvoicedBefore2023 === null ? '' : r.openingInvoicedBefore2023 ? 'yes' : 'no',
     closingQuantity: numberText(r.closingQuantity),
     measuredOn: r.closingMeasuredOn ?? '',
-    alreadySettled: r.openingAlreadySettled === null ? (view.askAlreadySettled ? 'yes' : '') : r.openingAlreadySettled ? 'yes' : 'no',
+    alreadySettled: r.openingAlreadySettled === null ? (view.askAlreadySettled && view.defaultAlreadySettled === 'default' ? 'yes' : '') : r.openingAlreadySettled ? 'yes' : 'no',
   }
 }
 

@@ -1120,9 +1120,14 @@ Lieferdatum und Menge statt Rechnungszeitraum und laufen nicht durch die Abgrenz
   Anfangsbestand der ersten Heizperiode mit Vorrat mit 0 €, wenn er schon umgelegt wurde
   (`heating_periods.opening_already_settled`; ohne Antwort „ja“, wenn die Vorperiode an dieser Anlage
   oder ohne Anlage eine Heizposition **ausdrücklich als Brennstoff** hat (`heatingPart: 'fuel'` oder mit
-  Lieferung verknüpft), oder wenn ihre Heizpositionen **ohne Kennzeichen** zusammen mindestens den Wert
-  des Anfangsbestands erreichen: Eine Wartung von 250 € erklärt keinen Bestand von 2.000 €, und vorher
-  trug der Vermieter ihn dann still. „Betrieb“ und „Ablesung“ zählen nie; „abgeschlossen ohne Vorrat“
+  Lieferung verknüpft), oder wenn die **positiven** Beträge ihrer Heizpositionen **ohne Kennzeichen**
+  zusammen mindestens den Wert des Anfangsbestands erreichen (eine Gutschrift zieht nicht ab): Eine
+  Wartung von 250 € erklärt keinen Bestand von 2.000 €, und vorher trug der Vermieter ihn dann still.
+  Die Regel steht einmal als `settledByDefault` in fuelStock.ts; Schnappschuss, Abrechnung und Karte
+  fragen dort. Die Karte „Vorrat“ belegt „Ja“ nur bei `defaultAlreadySettled: 'default'` vor, sonst
+  steht „Bitte wählen …“ und es wird nichts gesendet: Eine Vorbelegung ohne Grund würde beim ersten
+  Speichern zur Angabe. Unter der Schwelle und ohne Antwort nennt der Hinweis
+  `fuel.opening-check-loose` (Stufe `hint`) die Positionen. „Betrieb“ und „Ablesung“ zählen nie; „abgeschlossen ohne Vorrat“
   allein reicht nicht), Hinweis `fuel.opening-settled` mit „nach Ihrer Angabe“ oder „nach der
   Vorbelegung“. Beruht die Vorbelegung nur auf Positionen ohne Kennzeichen (`defaultLoose`), steht
   statt des Hinweises die Warnung `fuel.opening-settled-assumed`, die die Positionen mit Betrag nennt.

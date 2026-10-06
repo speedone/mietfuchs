@@ -224,7 +224,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   tragen. Ohne Antwort nimmt Mietfuchs das an, wenn im Vorjahr Brennstoff abgerechnet ist; stehen dort
   nur Heizkosten ohne Angabe, warnt die Abrechnung und nennt sie. Verteilt eine Heizperiode ohne
   Übertrag, geht ihr Endbestand mit 0 € weiter. Bleibt ein Bestand bei Ihnen hängen, nennt die
-  Abrechnung den Betrag.
+  Abrechnung den Betrag. Stehen im Vorjahr nur kleinere Heizkosten ohne Angabe, zählt der
+  Anfangsbestand mit seinem Wert, und ein Hinweis bittet Sie, das zu prüfen.
 - Im Kostenformular wählen Sie bei Heizkosten „Teil der Heizkosten“: Brennstoff/Energie, Betrieb,
   Ablesung oder ohne Angabe.
 

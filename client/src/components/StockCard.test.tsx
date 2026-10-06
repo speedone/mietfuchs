@@ -9,7 +9,7 @@ import type { HeatingPeriodView, StockView } from '../types'
 
 const STOCK: StockView = {
   row: { stockUnit: 'kg', openingQuantity: 1000, openingCostCents: 30000, openingEmissionsKg: null, openingCo2Cents: null, openingInvoicedBefore2023: null, openingAlreadySettled: null, closingQuantity: 400, closingMeasuredOn: null },
-  derived: null, closingLockedBy: null, askAlreadySettled: false, statement: null, frozen: null, problem: null,
+  derived: null, closingLockedBy: null, askAlreadySettled: false, defaultAlreadySettled: null, statement: null, frozen: null, problem: null,
 }
 const view = (stock: StockView): HeatingPeriodView => ({
   plantId: 'hp', period: periodKey('2025-01'), label: '2025', from: '2025-01-01', to: '2025-12-31', short: false, closed: false,
@@ -52,7 +52,7 @@ test('Folgeperiode: Anfangsbestand aus der Vorperiode, keine Eingabefelder dafü
 
 test('Durchsicht von #237, C1: Nach einer Abrechnung nach Lieferung fragt die Karte, vorbelegt mit „ja“, und schickt die Antwort', async () => {
   const saved = vi.fn()
-  render(<StockCard view={view({ ...STOCK, askAlreadySettled: true })} onSaved={saved} energy="oil" />)
+  render(<StockCard view={view({ ...STOCK, askAlreadySettled: true, defaultAlreadySettled: 'default' })} onSaved={saved} energy="oil" />)
   const frage = screen.getByLabelText('Anfangsbestand schon umgelegt')
   if (!(frage instanceof HTMLSelectElement)) throw new Error('keine Auswahl')
   expect(frage.value).toBe('yes')
@@ -61,6 +61,23 @@ test('Durchsicht von #237, C1: Nach einer Abrechnung nach Lieferung fragt die Ka
   await waitFor(() => expect(saved).toHaveBeenCalled())
   expect(sent[0]?.body).toMatchObject({ openingAlreadySettled: true })
 })
+
+// Nachprüfung von 819398e (W1y): Steht im Vorjahr nur eine Wartung ohne Kennzeichen, belegt die Karte
+// nichts vor und schickt nichts; vorher machte das erste Speichern aus der Vorbelegung „Ja“ eine Angabe,
+// und der Vermieter trug 2.000 € mit bloßem Hinweis.
+for (const def of ['defaultLoose', null] as const) {
+  test(`Nachprüfung von 819398e: Vorbelegung ${def ?? 'keine'}: „Bitte wählen …“, und Speichern schickt keine Antwort`, async () => {
+    const saved = vi.fn()
+    render(<StockCard view={view({ ...STOCK, askAlreadySettled: true, defaultAlreadySettled: def })} onSaved={saved} energy="oil" />)
+    const frage = screen.getByLabelText('Anfangsbestand schon umgelegt')
+    if (!(frage instanceof HTMLSelectElement)) throw new Error('keine Auswahl')
+    expect(frage.value).toBe('')
+    expect(frage.selectedOptions[0]?.textContent).toBe('Bitte wählen …')
+    fireEvent.click(screen.getByText('Vorrat speichern'))
+    await waitFor(() => expect(saved).toHaveBeenCalled())
+    expect(sent[0]?.body && 'openingAlreadySettled' in sent[0].body).toBe(false)
+  })
+}
 
 test('Durchsicht von #237, M1: Eine abgeschlossene Heizperiode zeigt die eingefrorene Bestandsrechnung', () => {
   const frozen = {

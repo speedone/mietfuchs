@@ -108,7 +108,7 @@ export default function StockCard({ view, onSaved, co2Fields = true, energy }: {
         {stock.askAlreadySettled && (
           <label className="field">
             Wurde dieser Brennstoff schon mit einer früheren Abrechnung umgelegt?
-            <select aria-label="Anfangsbestand schon umgelegt" value={form.alreadySettled} disabled={view.closed} onChange={(e) => set('alreadySettled', ALREADY_SETTLED_OPTIONS.find((o) => o.value === e.target.value)?.value ?? 'yes')}>
+            <select aria-label="Anfangsbestand schon umgelegt" value={form.alreadySettled} disabled={view.closed} onChange={(e) => set('alreadySettled', ALREADY_SETTLED_OPTIONS.find((o) => o.value === e.target.value)?.value ?? '')}>
               {ALREADY_SETTLED_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </label>

@@ -6,7 +6,7 @@ import type { HeatingStockStatement, StockView } from './types'
 
 const leer: StockView = {
   row: { stockUnit: null, openingQuantity: null, openingCostCents: null, openingEmissionsKg: null, openingCo2Cents: null, openingInvoicedBefore2023: null, openingAlreadySettled: null, closingQuantity: null, closingMeasuredOn: null },
-  derived: null, closingLockedBy: null, askAlreadySettled: false, statement: null, frozen: null, problem: 'Für die Bestandsrechnung (Heizperiode 2025) fehlt: die Einheit des Vorrats, der Anfangsbestand und der Endbestand.',
+  derived: null, closingLockedBy: null, askAlreadySettled: false, defaultAlreadySettled: null, statement: null, frozen: null, problem: 'Für die Bestandsrechnung (Heizperiode 2025) fehlt: die Einheit des Vorrats, der Anfangsbestand und der Endbestand.',
 }
 const BESTAND: HeatingStockStatement = {
   unit: 'l', openingSource: 'own', closingMeasuredOn: '2025-12-31', paidCents: 565000, oldStockKg: 5352.6,
@@ -58,10 +58,17 @@ test('Zusammenfassung und wann die Karte erscheint', () => {
 })
 
 test('Durchsicht von #237, C1: Nach einer Abrechnung nach Lieferung fragt die Karte, ob der Anfangsbestand schon umgelegt wurde, vorbelegt mit „ja“', () => {
-  const frage: StockView = { ...leer, askAlreadySettled: true }
+  const frage: StockView = { ...leer, askAlreadySettled: true, defaultAlreadySettled: 'default' }
   expect(stockToForm(frage).alreadySettled).toBe('yes')
   expect(stockToForm(leer).alreadySettled).toBe('')
-  expect(ALREADY_SETTLED_OPTIONS.map((o) => o.value)).toEqual(['yes', 'no'])
+  expect(ALREADY_SETTLED_OPTIONS.map((o) => o.value)).toEqual(['', 'yes', 'no'])
+  // Nachprüfung von 819398e: Ohne ausdrücklichen Brennstoff im Vorjahr nichts vorbelegt und nichts gesendet.
+  for (const def of ['defaultLoose', null] as const) {
+    const lose: StockView = { ...leer, askAlreadySettled: true, defaultAlreadySettled: def }
+    const g = { ...stockToForm(lose), unit: 'l' as const, openingQuantity: '2000', closingQuantity: '1000' }
+    expect(g.alreadySettled).toBe('')
+    expect('openingAlreadySettled' in ((stockBody(g, lose) as { body: object }).body)).toBe(false)
+  }
   const f = { ...stockToForm(frage), unit: 'l' as const, openingQuantity: '2000', closingQuantity: '1000' }
   expect(stockBody(f, frage)).toMatchObject({ body: { openingAlreadySettled: true } })
   expect(stockBody({ ...f, alreadySettled: 'no' }, frage)).toMatchObject({ body: { openingAlreadySettled: false } })
