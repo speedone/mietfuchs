@@ -1333,6 +1333,9 @@ export type HeatingPlant = {
   capture: CaptureMethod | null
   areaBasisHeat: AreaBasisHeat
   heatPumpInstalledOn: string | null
+  // Erzeugt die Anlage die Wärme allein oder mit einem weiteren Erzeuger? (Heizung PR 11, § 9 Abs. 1
+  // Satz 5 und Abs. 2 Satz 6 Nr. 3 HeizkostenV). Nur für den Warmwasseranteil nach einer Formel gefragt.
+  heatGeneration: HeatGeneration | null
   // Die Zeiträume der eigenen Heizkostenabrechnung (Durchsicht von #239), aufsteigend; `until` NULL beim
   // laufenden.
   selfSpans?: SelfSpanRange[]
@@ -1633,6 +1636,9 @@ export type FuelDelivery = {
   energyKwh: number | null
   gasBasis: GasBasis | null
   heatingValue: number | null
+  // Die Zeile der Heizwerttabelle (§ 9 Abs. 3 HeizkostenV), falls die Rechnung keinen Heizwert nennt
+  // (Heizung PR 11). Der Heizwert laut Rechnung geht vor.
+  fuelGrade: FuelGrade | null
   emissionsKg: number | null
   co2CostCents: number | null
   emissionFactor: number | null

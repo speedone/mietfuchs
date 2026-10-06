@@ -7,7 +7,7 @@ import type { FuelDelivery } from './types'
 
 const gas: FuelDelivery = {
   id: 'd', plantId: 'hp', label: 'Gas 2025/2026', invoiceDate: null, deliveredAt: null, invoiceFrom: '2025-03-15', invoiceTo: '2026-03-14', unitId: null,
-  amountCents: 311747, quantity: null, quantityUnit: null, energyKwh: 29886, gasBasis: null, heatingValue: null, emissionsKg: 5406.17, co2CostCents: 60000,
+  amountCents: 311747, quantity: null, quantityUnit: null, energyKwh: 29886, gasBasis: null, heatingValue: null, fuelGrade: null, emissionsKg: 5406.17, co2CostCents: 60000,
   emissionFactor: null, gridFeeCents: null, bioCostCents: null, sharePermille: 900, fixedCents: 12000, estimated: false, usedByService: true, parts: [],
 }
 

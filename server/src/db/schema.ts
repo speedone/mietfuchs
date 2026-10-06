@@ -28,8 +28,10 @@ import type {
   DevicesRemote,
   DhwMethod,
   ExternalMeasure,
+  FuelGrade,
   FuelQuantityUnit,
   GasBasis,
+  HeatGeneration,
   HeatingEnergy,
   HeatingMethod,
   HeatingPart,
@@ -350,6 +352,9 @@ export const CHANGE_SPLITS = exactly<ChangeSplit>()(['degreeDays', 'time'] as co
 export const HEATING_ROLES = exactly<HeatingRole>()(['supply', 'dhwHeat', 'totalHeat'] as const)
 export const INSULATION_RULES = exactly<InsulationRule>()(['applies', 'notApplies', 'unknown'] as const)
 export const DHW_METHODS = exactly<DhwMethod>()(['heatMeter', 'volumeFormula', 'areaFormula'] as const)
+// Warmwasser ohne Wärmezähler (Heizung PR 11): Zeile der Heizwerttabelle und Erzeuger der Anlage.
+export const FUEL_GRADE_VALUES = exactly<FuelGrade>()(['heatingOilEL', 'heavyFuelOil', 'naturalGasH', 'naturalGasL', 'lpg', 'coke', 'lignite', 'hardCoal', 'firewood', 'woodPellets', 'woodChips'] as const)
+export const HEAT_GENERATIONS = exactly<HeatGeneration>()(['single', 'mixed'] as const)
 // CO₂-Merkmale der Anlage und Mengen einer Lieferung (Heizung PR 7).
 export const CO2_RESTRICTIONS = exactly<Co2Restriction>()(['none', 'building', 'supply', 'both'] as const)
 export const FUEL_QUANTITY_UNITS = exactly<FuelQuantityUnit>()(['l', 'kg', 'm3', 'kWh', 'srm'] as const)
@@ -409,6 +414,8 @@ export const heatingPlants = sqliteTable(
     capture: text('capture', { enum: CAPTURE_METHODS }),
     areaBasisHeat: text('area_basis_heat', { enum: AREA_BASES_HEAT }).notNull().default('area'),
     heatPumpInstalledOn: text('heat_pump_installed_on'),
+    // Ein Erzeuger oder mehrere (Heizung PR 11); NULL heißt: nicht beantwortet.
+    heatGeneration: text('heat_generation', { enum: HEAT_GENERATIONS }),
   },
   () => [
     oneOf('heating_plants_energy_known', 'energy', HEATING_ENERGIES),
@@ -433,6 +440,8 @@ export const heatingPlants = sqliteTable(
     oneOf('heating_plants_area_basis_heat_known', 'area_basis_heat', AREA_BASES_HEAT),
     // Die eigene Heizkostenabrechnung braucht die Art der Erfassung (Entwurf 5.3).
     check('heating_plants_self_capture_complete', sql.raw(`"method" <> 'self' OR "capture" IS NOT NULL`)),
+    // Warmwasser ohne Wärmezähler (Heizung PR 11).
+    oneOf('heating_plants_heat_generation_known', 'heat_generation', HEAT_GENERATIONS),
   ],
 )
 
@@ -725,6 +734,8 @@ export const fuelDeliveries = sqliteTable(
     energyKwh: real('energy_kwh'),
     gasBasis: text('gas_basis', { enum: GAS_BASES }),
     heatingValue: real('heating_value'),
+    // Zeile der Heizwerttabelle, falls die Rechnung keinen Heizwert nennt (Heizung PR 11).
+    fuelGrade: text('fuel_grade', { enum: FUEL_GRADE_VALUES }),
     emissionsKg: real('emissions_kg'),
     co2CostCents: integer('co2_cost_cents'),
     emissionFactor: real('emission_factor'),
@@ -738,6 +749,8 @@ export const fuelDeliveries = sqliteTable(
   () => [
     oneOf('fuel_deliveries_quantity_unit_known', 'quantity_unit', FUEL_QUANTITY_UNITS),
     oneOf('fuel_deliveries_gas_basis_known', 'gas_basis', GAS_BASES),
+    // Heizung PR 11.
+    oneOf('fuel_deliveries_fuel_grade_known', 'fuel_grade', FUEL_GRADE_VALUES),
     check('fuel_deliveries_invoice_complete', sql.raw('("invoice_from" IS NULL) = ("invoice_to" IS NULL)')),
     isoDate('fuel_deliveries_invoice_from_valid', 'invoice_from'),
     isoDate('fuel_deliveries_invoice_to_valid', 'invoice_to'),

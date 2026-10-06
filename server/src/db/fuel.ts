@@ -20,7 +20,8 @@ import type { Database, Executor } from './client.ts'
 import { dropIfEmpty, ensureHeatingPeriod } from './heatingPeriodContext.ts'
 import { readDegreeDayValues, readFuelDeliveries } from './read.ts'
 import { asNullableFilled, asText, frozenDeliveryText, HeatingError, heatingPeriodAt, plantServesUnit, stockTakenOverBy, stockTakenOverText, heatingRulesOf, ISO_DATE, merged, oneOfOrUndefined, plantSpanOf, raw } from './repository.ts'
-import { costItems, degreeDayValues, FUEL_QUANTITY_UNITS, fuelCarryFrozen, fuelDeliveries, fuelDeliveryParts, GAS_BASES, heatingPeriods, heatingPlants, properties } from './schema.ts'
+import { FUEL_GRADE_LABELS, GRADES_BY_ENERGY, isBoiler } from '../../../shared/fuelGrades.ts'
+import { costItems, degreeDayValues, FUEL_GRADE_VALUES, FUEL_QUANTITY_UNITS, fuelCarryFrozen, fuelDeliveries, fuelDeliveryParts, GAS_BASES, heatingPeriods, heatingPlants, properties } from './schema.ts'
 
 const LATER = {
   other: 'Tragen Sie zuerst bei der Heizanlage den Energieträger ein; Lieferungen gibt es für Gas, Fernwärme und Strom einer Wärmepumpe.',
@@ -72,6 +73,8 @@ function mergeDelivery(current: FuelDelivery, body: unknown): FuelDelivery {
     energyKwh: merged(body, 'energyKwh', current.energyKwh, nullableNumber),
     gasBasis: merged(body, 'gasBasis', current.gasBasis, (v) => oneOfOrUndefined(GAS_BASES, v) ?? null),
     heatingValue: merged(body, 'heatingValue', current.heatingValue, nullableNumber),
+    // Zeile der Heizwerttabelle (Heizung PR 11); leer oder unbekannt heißt keine.
+    fuelGrade: merged(body, 'fuelGrade', current.fuelGrade, (v) => oneOfOrUndefined(FUEL_GRADE_VALUES, v) ?? null),
     emissionsKg: merged(body, 'emissionsKg', current.emissionsKg, nullableNumber),
     co2CostCents: merged(body, 'co2CostCents', current.co2CostCents, nullableInt),
     emissionFactor: merged(body, 'emissionFactor', current.emissionFactor, nullableNumber),
@@ -86,7 +89,7 @@ function mergeDelivery(current: FuelDelivery, body: unknown): FuelDelivery {
 
 const emptyDelivery = (id: string, plantId: string): FuelDelivery => ({
   id, plantId, label: '', invoiceDate: null, deliveredAt: null, invoiceFrom: null, invoiceTo: null, unitId: null, amountCents: null,
-  quantity: null, quantityUnit: null, energyKwh: null, gasBasis: null, heatingValue: null, emissionsKg: null, co2CostCents: null,
+  quantity: null, quantityUnit: null, energyKwh: null, gasBasis: null, heatingValue: null, fuelGrade: null, emissionsKg: null, co2CostCents: null,
   emissionFactor: null, gridFeeCents: null, bioCostCents: null, sharePermille: null, fixedCents: null, estimated: false, usedByService: true, parts: [],
 })
 
@@ -100,6 +103,12 @@ async function plantOf(db: Executor, plantId: string): Promise<PlantFacts | null
 async function frozenCount(db: Executor, id: string): Promise<number> {
   const [n] = await db.select({ n: count() }).from(fuelCarryFrozen).where(eq(fuelCarryFrozen.deliveryId, id))
   return n?.n ?? 0
+}
+
+// Der Energieträger im Satz („einer Heizung mit Heizöl“, Heizung PR 11).
+const ENERGY_WORDS: Record<HeatingEnergy, string> = {
+  gas: 'Gas', oil: 'Heizöl', lpg: 'Flüssiggas', pellets: 'Pellets', wood: 'Holz', coal: 'Kohle',
+  districtHeating: 'Fernwärme', heatPump: 'Wärmepumpe', electric: 'Strom', other: 'unbekanntem Energieträger',
 }
 
 async function guardDelivery(db: Executor, plant: PlantFacts, before: FuelDelivery | null, after: FuelDelivery): Promise<void> {
@@ -210,6 +219,18 @@ async function guardDelivery(db: Executor, plant: PlantFacts, before: FuelDelive
           `Mit diesem Rechnungsende gehört ${what} in die Heizperiode ${periodLabel(h)}; die verknüpfte Position „${fremd.description}“ steht aber in einem anderen Zeitraum. ` +
             'Lösen Sie zuerst die Verknüpfung oder ändern Sie den Zeitraum der Position.')
       }
+    }
+  }
+  // Die Zeile der Heizwerttabelle (Heizung PR 11): nur bei Heizkesseln (§ 9 Abs. 3 HeizkostenV) und nur
+  // eine, die zum Energieträger der Anlage passt.
+  if (after.fuelGrade !== null) {
+    if (!isBoiler(plant.energy)) {
+      throw new HeatingError(400, `Die Tabelle der Heizwerte gilt nur bei Heizkesseln (§ 9 Abs. 3 HeizkostenV). Bei dieser Heizung zählen die Kilowattstunden laut Rechnung; lassen Sie die Tabellenzeile bei ${label} leer.`)
+    }
+    const fitting = GRADES_BY_ENERGY[plant.energy]
+    if (!fitting.includes(after.fuelGrade)) {
+      throw new HeatingError(400,
+        `Die Tabellenzeile „${FUEL_GRADE_LABELS[after.fuelGrade]}“ passt nicht zu einer Heizung mit ${ENERGY_WORDS[plant.energy]}. Passend ${fitting.length === 1 ? 'ist' : 'sind'} ${fitting.map((g) => FUEL_GRADE_LABELS[g]).join(' oder ')}.`)
     }
   }
   if (before !== null && (await frozenCount(db, before.id)) > 0) {

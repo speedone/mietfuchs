@@ -103,6 +103,10 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // heating_self_spans, W1/W2 und Runde 3; 0028 ist wieder der Stand von Runde 1); main hat er nie erreicht.
   '0027_heizkostenabrechnung': 'd86baa5699643afc2e0ac837a95a21630f589ad329407a1dc534e65ae0d4709a',
   '0028_heizkostenabrechnung_bedingungen': '3898a4defcee79eacb162e80d1c2b74910ff98211ce51289e529337588dfe54e',
+  // Heizung PR 11 (Warmwasser). Wird ein Schritt davor vor dem Push neu erzeugt, werden diese beiden
+  // Schritte neu erzeugt und die Marken hier ersetzt.
+  '0029_warmwasser': '978a75b72e95aba3b7753c84fb39957607dc4581df4ce124c7d4fb8a10253d44',
+  '0030_warmwasser_bedingungen': 'ae96f77285f6019b63a6ee728f51bdbfd672bd03b74e9f055317f7ff08a0c8e5',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {
