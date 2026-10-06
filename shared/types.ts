@@ -204,9 +204,12 @@ export type Reading = {
   replacement?: boolean // Zählerwechsel: value = Startstand des neuen Geräts
   oldEndValue?: number // Endstand des alten Geräts
   note?: string
+  // Bei einer Ablesung aus dem Mieterwechsel (#150) die Grenze, zu der sie gehört: der letzte Tag des
+  // bisherigen Nutzers (Heizung PR 10). Fehlt bei allen übrigen Ablesungen.
+  interimFor?: string
 }
 
-export type CostKey = 'area' | 'persons' | 'units' | 'direct' | 'meter' | 'custom' | 'external' | 'amounts'
+export type CostKey = 'area' | 'persons' | 'units' | 'direct' | 'meter' | 'custom' | 'external' | 'amounts' | 'heatingSystem'
 
 // Der Maßstab einer Gemeinschaft (#94): Miteigentumsanteile, Fläche oder Einheiten.
 export type ExternalMeasure = 'mea' | 'area' | 'units'
@@ -242,6 +245,12 @@ export type CostItem = {
   taxYear?: number
   // Nur bei der Kostenart „Heizung und Warmwasser“ (#208, A1).
   heatingPart?: HeatingPart
+  // Wohin die Position bei der eigenen Heizkostenabrechnung gehört (Heizung PR 10, Entwurf 5.3):
+  // Heizung und Warmwasser zusammen, nur Heizung oder nur Warmwasser. Pflicht beim Schlüssel
+  // `heatingSystem`; bei freien Schlüsseln heißt „nur Heizung“, dass beim Mieterwechsel die Gradtage
+  // gelten (§ 9b Abs. 2, A2, B7). Nur bei der Kostenart „Heizung und Warmwasser“. Wie `heatingPart`
+  // (PR 3): fehlt, wenn nicht gesetzt.
+  heatingTarget?: HeatingTarget
   category: string
   description: string
   vendor?: string
@@ -1314,7 +1323,22 @@ export type HeatingPlant = {
   // Anlage den Brennstoff im Tank weiter? Dann ist der Restbestand der alten ihr Anfangsbestand; sonst
   // bleibt er beim Vermieter. `null`: nicht gefragt, weil die Anlage keine mit demselben Brennstoff ersetzt.
   takesOverStock: boolean | null
+  // Eigene Heizkostenabrechnung (Heizung PR 10, Entwurf 5.3). Wird das Warmwasser mit derselben
+  // Anlage bereitet (`combined`, dann wird nach § 9 aufgeteilt), getrennt (`separate`) oder gar nicht
+  // (`none`)? Womit wird erfasst (bei `self` Pflicht; Heizkostenverteiler und Werte eines
+  // Ablesedienstes kommen mit PR 12)? Grundkosten Heizung nach Wohnfläche oder beheizter Fläche
+  // (§ 7 Abs. 1 Satz 5; Warmwasser immer nach Wohnfläche, § 8 Abs. 1). Und bei einer Wärmepumpe, wann
+  // sie eingebaut wurde (§ 12 Abs. 3, Abweichung 1 des Plans).
+  hotWater: HotWater
+  capture: CaptureMethod | null
+  areaBasisHeat: AreaBasisHeat
+  heatPumpInstalledOn: string | null
+  // Die Zeiträume der eigenen Heizkostenabrechnung (Durchsicht von #239), aufsteigend; `until` NULL beim
+  // laufenden.
+  selfSpans?: SelfSpanRange[]
 }
+// Ein Zeitraum der eigenen Heizkostenabrechnung, Schlüssel von Heizperioden; `until` ist die erste ohne.
+export type SelfSpanRange = { from: string; until: string | null }
 
 // Die Angaben einer Heizperiode (Entwurf 5.3; den Vorrat seit Heizung PR 8). Geschrieben werden sie ab PR 6 (Warmwasser
 // laut Messdienst), PR 10 (Verteilung) und PR 14 (§ 6a); PR 4 legt nur die Tabelle an.
@@ -1494,6 +1518,8 @@ export type HeatingStatement = {
   // Folgeperiode liest daraus ihren Anfangsbestand, die Vorperiode ihren Endbestand (G-A4). Fehlt
   // sie, gibt es keinen Vorrat oder er ließ sich nicht rechnen.
   stock?: HeatingStockStatement | null
+  // Die eigene Heizkostenabrechnung dieser Heizperiode (Heizung PR 10), nur bei `method = 'self'`.
+  self?: SelfHeatingStatement
 }
 
 // Was die Seite Heizkosten zu einer Heizperiode lädt (Heizung PR 6): die Angabe zum Warmwasser, die
@@ -1511,6 +1537,8 @@ export type HeatingPeriodView = {
   items: Pick<CostItem, 'id' | 'description' | 'amountCents' | 'key' | 'tenancyAmounts' | 'selfAmounts' | 'fuelDeliveryId'>[]
   // Der Vorrat dieser Heizperiode (Heizung PR 8); `null` bei einer Anlage ohne Vorratsenergie.
   stock: StockView | null
+  // Anteil nach Verbrauch dieser Heizperiode (Heizung PR 10), nur bei `method = 'self'`.
+  distribution?: HeatingDistribution | null
 }
 
 // ---------- Brennstofflieferungen (Heizung PR 7, Entwurf 5.4, 8.2) ----------
@@ -1592,6 +1620,8 @@ export type FuelDeliveryLine = {
   inPeriodCents: number | null
   emissionsKg: number | null
   co2Cents: number | null
+  // Energie in der Heizperiode in kWh, wie abgerechnet (Heizung PR 10); `null` ohne Angabe.
+  energyKwh: number | null
 }
 
 // Ein Übertrag der Mieterseite dieser Heizperiode aus oder in die Heizperiode `period`.
@@ -1606,6 +1636,8 @@ export type FuelEstimateProposal = {
   amountCents: number
   emissionsKg: number | null
   co2CostCents: number | null
+  // kWh im selben Verhältnis (Heizung PR 10, Abweichung 11); `null`, wenn die Vorlage keine nennt.
+  energyKwh: number | null
   basedOn: string
   byMeter: boolean
   // Der Anteil der Rechnung `basedOn`, der für die Lücke angesetzt ist, in Promille (Durchsicht von #233,
@@ -1712,4 +1744,104 @@ export type StockView = {
   frozen: HeatingStockStatement | null
   // Was fehlt oder nicht passt, als Satz für die Karte.
   problem: string | null
+}
+
+// ---------- Eigene Heizkostenabrechnung (Heizung PR 10, Entwurf 5.3, 8) ----------
+
+export type HeatingTarget = 'both' | 'heating' | 'water'
+export type HotWater = 'combined' | 'separate' | 'none'
+export type CaptureMethod = 'heatMeter' | 'hca' | 'serviceValues'
+export type AreaBasisHeat = 'area' | 'heatedArea'
+
+// Antwort des Vermieters zur Zwischenablesung an einer Grenze (Entwurf 3.5): keine, weil „nicht
+// möglich“ (§ 9b Abs. 3 Alt. 1) oder „nicht durchgeführt“; oder eine Ablesung ab der Warngrenze, die
+// er nach § 9b Abs. 3 Alt. 2 als ungenau behandelt (`imprecise`) oder bewusst verwendet
+// (`useReading`). `date` ist der letzte Tag des bisherigen Nutzers (Abweichungen 8 und 22 des Plans).
+export type InterimGapStatus = 'impossible' | 'missed' | 'imprecise' | 'useReading'
+export type InterimGap = { unitId: string; date: string; status: InterimGapStatus; reason: string }
+
+// Der Anteil nach Verbrauch einer Heizperiode, wie ihn die Seite Heizkosten zeigt (§ 6 Abs. 4, § 7
+// Abs. 1 Satz 2). `own`: eigene Zeile dieser Heizperiode; `effective`: was gilt, eigen oder aus der
+// Vorperiode; `begun`: die Heizperiode hat begonnen, ein anderer Anteil ist gesperrt; `first`: es
+// gibt noch keinen Anteil.
+export type HeatingDistribution = {
+  own: { heating: number | null; water: number | null; insulationRule: InsulationRule | null }
+  // `water` ist null, wenn es kein zentrales Warmwasser gibt oder der Wert fehlt (§ 8 Abs. 1 verlangt
+  // eine eigene Wahl, Abweichung 14).
+  effective: { heating: number; water: number | null; insulationRule: InsulationRule | null } | null
+  inherited: boolean
+  begun: boolean
+  first: boolean
+  forcedPercent: number | null
+}
+
+export type SelfPot = 'heating' | 'water'
+export type SelfRole = 'tenancy' | 'vacancy' | 'self' | 'outside'
+// Ein Topf im Ausweis (Entwurf 8.8): Kosten, Anteil nach Verbrauch, Gesamteinheiten, Preis je
+// Einheit. `byAreaOnly`: kein Verbrauch erfasst, nur nach Fläche verteilt.
+export type SelfPotView = {
+  pot: SelfPot
+  costCents: number
+  consumptionPct: number
+  byAreaOnly: boolean
+  areaM2: number
+  consumption: number
+  consumptionUnit: 'kWh' | 'm³'
+  baseCentsPerM2: number
+  consumptionCentsPerUnit: number | null
+}
+// Eine Ablesung an einer Grenze: `date` null heißt, es gibt keine.
+export type SelfReadingView = { meterId: string; meterName: string; pot: SelfPot; boundary: string; date: string | null; value: number | null }
+// Eine Grenze einer Wohnung für die Ampel der Seite Heizkosten.
+export type SelfBoundaryView = {
+  date: string
+  kind: 'start' | 'end' | 'change'
+  status: 'read' | 'off' | 'missing'
+  offDays: number
+  // ab der Warngrenze neben dem Wechsel (`practice.reading-off-warning`); dann wählt der Vermieter
+  far: boolean
+  gap: InterimGapStatus | null
+  // Der Grund, wenn die Zwischenablesung nicht möglich war (Durchsicht von #239, I3).
+  gapReason?: string
+}
+// Ein Nutzer einer Wohnung (Mieter, Leerstand, Eigennutzung, außerhalb) mit seinen Werten.
+export type SelfUserView = {
+  key: string
+  role: SelfRole
+  tenancyId: string | null
+  label: string
+  from: string
+  to: string
+  days: number
+  degreeDayPermille: number
+  heatingConsumption: number | null
+  waterConsumption: number | null
+  heatingGroup: boolean
+  waterGroup: boolean
+  heatingCents: number
+  waterCents: number
+  // Der Teil seines CO₂-Abzugs, der auf den Topf entfällt (Abweichung 15): Topfbetrag nach Abzug =
+  // heatingCents − heatingCo2Cents. 0 ohne Abzug.
+  heatingCo2Cents: number
+  waterCo2Cents: number
+}
+export type SelfUnitView = {
+  unitId: string
+  unitName: string
+  areaM2: number
+  heatAreaM2: number
+  readings: SelfReadingView[]
+  boundaries: SelfBoundaryView[]
+  users: SelfUserView[]
+}
+export type SelfHeatingStatement = {
+  ok: boolean
+  heatPump: 'applies' | 'notYet' | 'missing' | null
+  changeSplit: ChangeSplit
+  areaBasisHeat: AreaBasisHeat
+  hotWater: HotWater
+  alpha: { percent: number; dhwHeatKwh: number; referenceKwh: number; reference: 'fuel' | 'totalHeat'; estimated: boolean } | null
+  shares: { heating: number; water: number | null; forced: boolean; previous: { heating: number; water: number | null } | null } | null
+  pots: SelfPotView[]
+  units: SelfUnitView[]
 }

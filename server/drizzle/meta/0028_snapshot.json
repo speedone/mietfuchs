@@ -1,0 +1,4571 @@
+{
+  "version": "6",
+  "dialect": "sqlite",
+  "id": "471f8f2b-d314-451d-9d2b-bb4129e19dfe",
+  "prevId": "9fec117b-06a7-40ca-85be-fede89afda7a",
+  "tables": {
+    "ai_slots": {
+      "name": "ai_slots",
+      "columns": {
+        "slot": {
+          "name": "slot",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "provider": {
+          "name": "provider",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "preset": {
+          "name": "preset",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "url": {
+          "name": "url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "model": {
+          "name": "model",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "vision": {
+          "name": "vision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "consent_url": {
+          "name": "consent_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "consent_model": {
+          "name": "consent_model",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "consent_date": {
+          "name": "consent_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "ai_slots_slot_known": {
+          "name": "ai_slots_slot_known",
+          "value": "\"slot\" IN ('text', 'images')"
+        },
+        "ai_slots_provider_known": {
+          "name": "ai_slots_provider_known",
+          "value": "\"provider\" IN ('ollama', 'openai')"
+        }
+      }
+    },
+    "assessment_lines": {
+      "name": "assessment_lines",
+      "columns": {
+        "assessment_id": {
+          "name": "assessment_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "idx": {
+          "name": "idx",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "category": {
+          "name": "category",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "category_guessed": {
+          "name": "category_guessed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "amount_cents": {
+          "name": "amount_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "labor_35a_cents": {
+          "name": "labor_35a_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "booking": {
+          "name": "booking",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "cost_item_id": {
+          "name": "cost_item_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "dismissed": {
+          "name": "dismissed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "reassessed": {
+          "name": "reassessed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        }
+      },
+      "indexes": {
+        "assessment_lines_cost_item_idx": {
+          "name": "assessment_lines_cost_item_idx",
+          "columns": [
+            "cost_item_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "assessment_lines_assessment_id_assessments_id_fk": {
+          "name": "assessment_lines_assessment_id_assessments_id_fk",
+          "tableFrom": "assessment_lines",
+          "tableTo": "assessments",
+          "columnsFrom": [
+            "assessment_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "assessment_lines_cost_item_id_cost_items_id_fk": {
+          "name": "assessment_lines_cost_item_id_cost_items_id_fk",
+          "tableFrom": "assessment_lines",
+          "tableTo": "cost_items",
+          "columnsFrom": [
+            "cost_item_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "assessment_lines_assessment_id_idx_pk": {
+          "columns": [
+            "assessment_id",
+            "idx"
+          ],
+          "name": "assessment_lines_assessment_id_idx_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "assessment_lines_idx_not_negative": {
+          "name": "assessment_lines_idx_not_negative",
+          "value": "\"idx\" >= 0"
+        },
+        "assessment_lines_booking_known": {
+          "name": "assessment_lines_booking_known",
+          "value": "\"booking\" IN ('created', 'linked')"
+        },
+        "assessment_lines_booking_complete": {
+          "name": "assessment_lines_booking_complete",
+          "value": "\"cost_item_id\" IS NULL OR \"booking\" IS NOT NULL"
+        }
+      }
+    },
+    "assessments": {
+      "name": "assessments",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "file": {
+          "name": "file",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "property_id": {
+          "name": "property_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "year": {
+          "name": "year",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "detected_year": {
+          "name": "detected_year",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "requested_year": {
+          "name": "requested_year",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "requested_period": {
+          "name": "requested_period",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "vendor": {
+          "name": "vendor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "invoice_date": {
+          "name": "invoice_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "total_gross_cents": {
+          "name": "total_gross_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "amounts_adjusted": {
+          "name": "amounts_adjusted",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "labor_from_total": {
+          "name": "labor_from_total",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "next_idx": {
+          "name": "next_idx",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "assessments_file_unique": {
+          "name": "assessments_file_unique",
+          "columns": [
+            "file"
+          ],
+          "isUnique": true
+        },
+        "assessments_property_idx": {
+          "name": "assessments_property_idx",
+          "columns": [
+            "property_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "assessments_property_id_properties_id_fk": {
+          "name": "assessments_property_id_properties_id_fk",
+          "tableFrom": "assessments",
+          "tableTo": "properties",
+          "columnsFrom": [
+            "property_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "assessments_year_positive": {
+          "name": "assessments_year_positive",
+          "value": "\"year\" > 0"
+        },
+        "assessments_requested_year_positive": {
+          "name": "assessments_requested_year_positive",
+          "value": "\"requested_year\" IS NULL OR \"requested_year\" > 0"
+        },
+        "assessments_requested_period_with_property": {
+          "name": "assessments_requested_period_with_property",
+          "value": "\"requested_period\" IS NULL OR \"property_id\" IS NOT NULL"
+        },
+        "assessments_requested_period_valid": {
+          "name": "assessments_requested_period_valid",
+          "value": "\"requested_period\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]' AND CAST(substr(\"requested_period\", 6, 2) AS INTEGER) BETWEEN 1 AND 12"
+        },
+        "assessments_next_idx_not_negative": {
+          "name": "assessments_next_idx_not_negative",
+          "value": "\"next_idx\" >= 0"
+        },
+        "assessments_amounts_adjusted_known": {
+          "name": "assessments_amounts_adjusted_known",
+          "value": "\"amounts_adjusted\" IN ('netto')"
+        }
+      }
+    },
+    "base_rents": {
+      "name": "base_rents",
+      "columns": {
+        "tenancy_id": {
+          "name": "tenancy_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "from": {
+          "name": "from",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "monthly_cents": {
+          "name": "monthly_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "base_rents_tenancy_id_tenancies_id_fk": {
+          "name": "base_rents_tenancy_id_tenancies_id_fk",
+          "tableFrom": "base_rents",
+          "tableTo": "tenancies",
+          "columnsFrom": [
+            "tenancy_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "base_rents_tenancy_id_from_pk": {
+          "columns": [
+            "tenancy_id",
+            "from"
+          ],
+          "name": "base_rents_tenancy_id_from_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "base_rents_monthly_not_negative": {
+          "name": "base_rents_monthly_not_negative",
+          "value": "\"monthly_cents\" >= 0"
+        }
+      }
+    },
+    "closed_heating_settlement_history": {
+      "name": "closed_heating_settlement_history",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "plant_id": {
+          "name": "plant_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "period": {
+          "name": "period",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "closed_at": {
+          "name": "closed_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sent_at": {
+          "name": "sent_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "reopened_at": {
+          "name": "reopened_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "settlement": {
+          "name": "settlement",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "closed_heating_settlement_history_plant_period_idx": {
+          "name": "closed_heating_settlement_history_plant_period_idx",
+          "columns": [
+            "plant_id",
+            "period"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "closed_heating_settlement_history_plant_id_heating_plants_id_fk": {
+          "name": "closed_heating_settlement_history_plant_id_heating_plants_id_fk",
+          "tableFrom": "closed_heating_settlement_history",
+          "tableTo": "heating_plants",
+          "columnsFrom": [
+            "plant_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "closed_heating_settlement_history_period_valid": {
+          "name": "closed_heating_settlement_history_period_valid",
+          "value": "\"period\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]' AND CAST(substr(\"period\", 6, 2) AS INTEGER) BETWEEN 1 AND 12"
+        },
+        "closed_heating_settlement_history_settlement_is_json": {
+          "name": "closed_heating_settlement_history_settlement_is_json",
+          "value": "json_valid(\"settlement\")"
+        }
+      }
+    },
+    "closed_heating_settlements": {
+      "name": "closed_heating_settlements",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "plant_id": {
+          "name": "plant_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "period": {
+          "name": "period",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "closed_at": {
+          "name": "closed_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sent_at": {
+          "name": "sent_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "settlement": {
+          "name": "settlement",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "closed_heating_settlements_plant_period_idx": {
+          "name": "closed_heating_settlements_plant_period_idx",
+          "columns": [
+            "plant_id",
+            "period"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "closed_heating_settlements_plant_id_heating_plants_id_fk": {
+          "name": "closed_heating_settlements_plant_id_heating_plants_id_fk",
+          "tableFrom": "closed_heating_settlements",
+          "tableTo": "heating_plants",
+          "columnsFrom": [
+            "plant_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "closed_heating_settlements_period_valid": {
+          "name": "closed_heating_settlements_period_valid",
+          "value": "\"period\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]' AND CAST(substr(\"period\", 6, 2) AS INTEGER) BETWEEN 1 AND 12"
+        },
+        "closed_heating_settlements_settlement_is_json": {
+          "name": "closed_heating_settlements_settlement_is_json",
+          "value": "json_valid(\"settlement\")"
+        }
+      }
+    },
+    "closed_settlement_history": {
+      "name": "closed_settlement_history",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "property_id": {
+          "name": "property_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "period": {
+          "name": "period",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "closed_at": {
+          "name": "closed_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sent_at": {
+          "name": "sent_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "reopened_at": {
+          "name": "reopened_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "settlement": {
+          "name": "settlement",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "closed_settlement_history_property_period_idx": {
+          "name": "closed_settlement_history_property_period_idx",
+          "columns": [
+            "property_id",
+            "period"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "closed_settlement_history_property_id_properties_id_fk": {
+          "name": "closed_settlement_history_property_id_properties_id_fk",
+          "tableFrom": "closed_settlement_history",
+          "tableTo": "properties",
+          "columnsFrom": [
+            "property_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "closed_settlement_history_period_valid": {
+          "name": "closed_settlement_history_period_valid",
+          "value": "\"period\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]' AND CAST(substr(\"period\", 6, 2) AS INTEGER) BETWEEN 1 AND 12"
+        },
+        "closed_settlement_history_settlement_is_json": {
+          "name": "closed_settlement_history_settlement_is_json",
+          "value": "json_valid(\"settlement\")"
+        }
+      }
+    },
+    "closed_settlements": {
+      "name": "closed_settlements",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "property_id": {
+          "name": "property_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "period": {
+          "name": "period",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "closed_at": {
+          "name": "closed_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sent_at": {
+          "name": "sent_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "settlement": {
+          "name": "settlement",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "closed_settlements_property_period_idx": {
+          "name": "closed_settlements_property_period_idx",
+          "columns": [
+            "property_id",
+            "period"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "closed_settlements_property_id_properties_id_fk": {
+          "name": "closed_settlements_property_id_properties_id_fk",
+          "tableFrom": "closed_settlements",
+          "tableTo": "properties",
+          "columnsFrom": [
+            "property_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "closed_settlements_period_valid": {
+          "name": "closed_settlements_period_valid",
+          "value": "\"period\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]' AND CAST(substr(\"period\", 6, 2) AS INTEGER) BETWEEN 1 AND 12"
+        },
+        "closed_settlements_settlement_is_json": {
+          "name": "closed_settlements_settlement_is_json",
+          "value": "json_valid(\"settlement\")"
+        }
+      }
+    },
+    "co2_statements": {
+      "name": "co2_statements",
+      "columns": {
+        "heating_period_id": {
+          "name": "heating_period_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "method": {
+          "name": "method",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "area_m2": {
+          "name": "area_m2",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "service_emissions_kg": {
+          "name": "service_emissions_kg",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "service_area_m2": {
+          "name": "service_area_m2",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "service_kg_per_m2": {
+          "name": "service_kg_per_m2",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "service_landlord_permille": {
+          "name": "service_landlord_permille",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "service_total_cents": {
+          "name": "service_total_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "service_landlord_cents": {
+          "name": "service_landlord_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "service_users_total_cents": {
+          "name": "service_users_total_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "service_users_total_approx": {
+          "name": "service_users_total_approx",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "service_units_count": {
+          "name": "service_units_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "service_cost_item_id": {
+          "name": "service_cost_item_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "service_self_landlord_cents": {
+          "name": "service_self_landlord_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "service_fuel_gross_cents": {
+          "name": "service_fuel_gross_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "service_fuel_net_cents": {
+          "name": "service_fuel_net_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "co2_statements_heating_period_id_heating_periods_id_fk": {
+          "name": "co2_statements_heating_period_id_heating_periods_id_fk",
+          "tableFrom": "co2_statements",
+          "tableTo": "heating_periods",
+          "columnsFrom": [
+            "heating_period_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "co2_statements_service_cost_item_id_cost_items_id_fk": {
+          "name": "co2_statements_service_cost_item_id_cost_items_id_fk",
+          "tableFrom": "co2_statements",
+          "tableTo": "cost_items",
+          "columnsFrom": [
+            "service_cost_item_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "co2_statements_method_known": {
+          "name": "co2_statements_method_known",
+          "value": "\"method\" IN ('serviceDeducted', 'serviceShown', 'selfAfterService', 'self')"
+        },
+        "co2_statements_service_complete": {
+          "name": "co2_statements_service_complete",
+          "value": "\"method\" NOT IN ('serviceDeducted', 'serviceShown') OR (\"service_users_total_cents\" IS NOT NULL AND \"service_landlord_cents\" IS NOT NULL AND \"service_units_count\" IS NOT NULL)"
+        },
+        "co2_statements_users_total_not_negative": {
+          "name": "co2_statements_users_total_not_negative",
+          "value": "\"service_users_total_cents\" >= 0"
+        },
+        "co2_statements_landlord_not_negative": {
+          "name": "co2_statements_landlord_not_negative",
+          "value": "\"service_landlord_cents\" >= 0"
+        },
+        "co2_statements_total_not_negative": {
+          "name": "co2_statements_total_not_negative",
+          "value": "\"service_total_cents\" >= 0"
+        },
+        "co2_statements_self_landlord_not_negative": {
+          "name": "co2_statements_self_landlord_not_negative",
+          "value": "\"service_self_landlord_cents\" >= 0"
+        },
+        "co2_statements_fuel_gross_not_negative": {
+          "name": "co2_statements_fuel_gross_not_negative",
+          "value": "\"service_fuel_gross_cents\" >= 0"
+        },
+        "co2_statements_fuel_net_not_negative": {
+          "name": "co2_statements_fuel_net_not_negative",
+          "value": "\"service_fuel_net_cents\" >= 0"
+        },
+        "co2_statements_emissions_not_negative": {
+          "name": "co2_statements_emissions_not_negative",
+          "value": "\"service_emissions_kg\" >= 0"
+        },
+        "co2_statements_kg_per_m2_not_negative": {
+          "name": "co2_statements_kg_per_m2_not_negative",
+          "value": "\"service_kg_per_m2\" >= 0"
+        },
+        "co2_statements_permille_valid": {
+          "name": "co2_statements_permille_valid",
+          "value": "\"service_landlord_permille\" BETWEEN 0 AND 1000"
+        },
+        "co2_statements_units_positive": {
+          "name": "co2_statements_units_positive",
+          "value": "\"service_units_count\" > 0"
+        },
+        "co2_statements_area_positive": {
+          "name": "co2_statements_area_positive",
+          "value": "\"area_m2\" > 0"
+        },
+        "co2_statements_service_area_positive": {
+          "name": "co2_statements_service_area_positive",
+          "value": "\"service_area_m2\" > 0"
+        }
+      }
+    },
+    "co2_tenant_reliefs": {
+      "name": "co2_tenant_reliefs",
+      "columns": {
+        "statement_id": {
+          "name": "statement_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "tenancy_id": {
+          "name": "tenancy_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "cents": {
+          "name": "cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "co2_tenant_reliefs_statement_id_co2_statements_heating_period_id_fk": {
+          "name": "co2_tenant_reliefs_statement_id_co2_statements_heating_period_id_fk",
+          "tableFrom": "co2_tenant_reliefs",
+          "tableTo": "co2_statements",
+          "columnsFrom": [
+            "statement_id"
+          ],
+          "columnsTo": [
+            "heating_period_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "co2_tenant_reliefs_tenancy_id_tenancies_id_fk": {
+          "name": "co2_tenant_reliefs_tenancy_id_tenancies_id_fk",
+          "tableFrom": "co2_tenant_reliefs",
+          "tableTo": "tenancies",
+          "columnsFrom": [
+            "tenancy_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "co2_tenant_reliefs_statement_id_tenancy_id_pk": {
+          "columns": [
+            "statement_id",
+            "tenancy_id"
+          ],
+          "name": "co2_tenant_reliefs_statement_id_tenancy_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "co2_tenant_reliefs_cents_not_negative": {
+          "name": "co2_tenant_reliefs_cents_not_negative",
+          "value": "\"cents\" >= 0"
+        }
+      }
+    },
+    "cost_item_amounts": {
+      "name": "cost_item_amounts",
+      "columns": {
+        "cost_item_id": {
+          "name": "cost_item_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "tenancy_id": {
+          "name": "tenancy_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "amount_cents": {
+          "name": "amount_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "cost_item_amounts_cost_item_id_cost_items_id_fk": {
+          "name": "cost_item_amounts_cost_item_id_cost_items_id_fk",
+          "tableFrom": "cost_item_amounts",
+          "tableTo": "cost_items",
+          "columnsFrom": [
+            "cost_item_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "cost_item_amounts_tenancy_id_tenancies_id_fk": {
+          "name": "cost_item_amounts_tenancy_id_tenancies_id_fk",
+          "tableFrom": "cost_item_amounts",
+          "tableTo": "tenancies",
+          "columnsFrom": [
+            "tenancy_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "cost_item_amounts_cost_item_id_tenancy_id_pk": {
+          "columns": [
+            "cost_item_id",
+            "tenancy_id"
+          ],
+          "name": "cost_item_amounts_cost_item_id_tenancy_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "cost_item_amounts_not_negative": {
+          "name": "cost_item_amounts_not_negative",
+          "value": "\"amount_cents\" >= 0"
+        }
+      }
+    },
+    "cost_item_participants": {
+      "name": "cost_item_participants",
+      "columns": {
+        "cost_item_id": {
+          "name": "cost_item_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "unit_id": {
+          "name": "unit_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "cost_item_participants_cost_item_id_cost_items_id_fk": {
+          "name": "cost_item_participants_cost_item_id_cost_items_id_fk",
+          "tableFrom": "cost_item_participants",
+          "tableTo": "cost_items",
+          "columnsFrom": [
+            "cost_item_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "cost_item_participants_unit_id_units_id_fk": {
+          "name": "cost_item_participants_unit_id_units_id_fk",
+          "tableFrom": "cost_item_participants",
+          "tableTo": "units",
+          "columnsFrom": [
+            "unit_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "cost_item_participants_cost_item_id_unit_id_pk": {
+          "columns": [
+            "cost_item_id",
+            "unit_id"
+          ],
+          "name": "cost_item_participants_cost_item_id_unit_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "cost_item_self_amounts": {
+      "name": "cost_item_self_amounts",
+      "columns": {
+        "cost_item_id": {
+          "name": "cost_item_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "unit_id": {
+          "name": "unit_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "amount_cents": {
+          "name": "amount_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "cost_item_self_amounts_cost_item_id_cost_items_id_fk": {
+          "name": "cost_item_self_amounts_cost_item_id_cost_items_id_fk",
+          "tableFrom": "cost_item_self_amounts",
+          "tableTo": "cost_items",
+          "columnsFrom": [
+            "cost_item_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "cost_item_self_amounts_unit_id_units_id_fk": {
+          "name": "cost_item_self_amounts_unit_id_units_id_fk",
+          "tableFrom": "cost_item_self_amounts",
+          "tableTo": "units",
+          "columnsFrom": [
+            "unit_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "cost_item_self_amounts_cost_item_id_unit_id_pk": {
+          "columns": [
+            "cost_item_id",
+            "unit_id"
+          ],
+          "name": "cost_item_self_amounts_cost_item_id_unit_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "cost_item_self_amounts_not_negative": {
+          "name": "cost_item_self_amounts_not_negative",
+          "value": "\"amount_cents\" >= 0"
+        }
+      }
+    },
+    "cost_item_shares": {
+      "name": "cost_item_shares",
+      "columns": {
+        "cost_item_id": {
+          "name": "cost_item_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "unit_id": {
+          "name": "unit_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "percent": {
+          "name": "percent",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "cost_item_shares_cost_item_id_cost_items_id_fk": {
+          "name": "cost_item_shares_cost_item_id_cost_items_id_fk",
+          "tableFrom": "cost_item_shares",
+          "tableTo": "cost_items",
+          "columnsFrom": [
+            "cost_item_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "cost_item_shares_unit_id_units_id_fk": {
+          "name": "cost_item_shares_unit_id_units_id_fk",
+          "tableFrom": "cost_item_shares",
+          "tableTo": "units",
+          "columnsFrom": [
+            "unit_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "cost_item_shares_cost_item_id_unit_id_pk": {
+          "columns": [
+            "cost_item_id",
+            "unit_id"
+          ],
+          "name": "cost_item_shares_cost_item_id_unit_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "cost_item_shares_percent_not_negative": {
+          "name": "cost_item_shares_percent_not_negative",
+          "value": "\"percent\" >= 0"
+        }
+      }
+    },
+    "cost_items": {
+      "name": "cost_items",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "property_id": {
+          "name": "property_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "period": {
+          "name": "period",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "category": {
+          "name": "category",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "vendor": {
+          "name": "vendor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "amount_cents": {
+          "name": "amount_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "key": {
+          "name": "key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "direct_unit_id": {
+          "name": "direct_unit_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "meter_type": {
+          "name": "meter_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "labor_35a_cents": {
+          "name": "labor_35a_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "invoice_file": {
+          "name": "invoice_file",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "external_measure": {
+          "name": "external_measure",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "external_total": {
+          "name": "external_total",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "external_total_cents": {
+          "name": "external_total_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "participants_limited": {
+          "name": "participants_limited",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "service_from": {
+          "name": "service_from",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "service_to": {
+          "name": "service_to",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "tax_year": {
+          "name": "tax_year",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "heating_part": {
+          "name": "heating_part",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "heating_plant_id": {
+          "name": "heating_plant_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "fuel_delivery_id": {
+          "name": "fuel_delivery_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "heating_target": {
+          "name": "heating_target",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "cost_items_property_period_idx": {
+          "name": "cost_items_property_period_idx",
+          "columns": [
+            "property_id",
+            "period"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "cost_items_property_id_properties_id_fk": {
+          "name": "cost_items_property_id_properties_id_fk",
+          "tableFrom": "cost_items",
+          "tableTo": "properties",
+          "columnsFrom": [
+            "property_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "cost_items_direct_unit_id_units_id_fk": {
+          "name": "cost_items_direct_unit_id_units_id_fk",
+          "tableFrom": "cost_items",
+          "tableTo": "units",
+          "columnsFrom": [
+            "direct_unit_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "cost_items_heating_plant_id_heating_plants_id_fk": {
+          "name": "cost_items_heating_plant_id_heating_plants_id_fk",
+          "tableFrom": "cost_items",
+          "tableTo": "heating_plants",
+          "columnsFrom": [
+            "heating_plant_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "cost_items_fuel_delivery_id_fuel_deliveries_id_fk": {
+          "name": "cost_items_fuel_delivery_id_fuel_deliveries_id_fk",
+          "tableFrom": "cost_items",
+          "tableTo": "fuel_deliveries",
+          "columnsFrom": [
+            "fuel_delivery_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "cost_items_period_valid": {
+          "name": "cost_items_period_valid",
+          "value": "\"period\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]' AND CAST(substr(\"period\", 6, 2) AS INTEGER) BETWEEN 1 AND 12"
+        },
+        "cost_items_key_known": {
+          "name": "cost_items_key_known",
+          "value": "\"key\" IN ('area', 'persons', 'units', 'direct', 'meter', 'custom', 'external', 'amounts', 'heatingSystem')"
+        },
+        "cost_items_meter_type_known": {
+          "name": "cost_items_meter_type_known",
+          "value": "\"meter_type\" IN ('kaltwasser', 'warmwasser', 'strom', 'waerme', 'hkv', 'sonstig')"
+        },
+        "cost_items_external_measure_known": {
+          "name": "cost_items_external_measure_known",
+          "value": "\"external_measure\" IN ('mea', 'area', 'units')"
+        },
+        "cost_items_service_complete": {
+          "name": "cost_items_service_complete",
+          "value": "(\"service_from\" IS NULL) = (\"service_to\" IS NULL)"
+        },
+        "cost_items_service_from_valid": {
+          "name": "cost_items_service_from_valid",
+          "value": "\"service_from\" IS NULL OR \"service_from\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'"
+        },
+        "cost_items_service_to_valid": {
+          "name": "cost_items_service_to_valid",
+          "value": "\"service_to\" IS NULL OR \"service_to\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'"
+        },
+        "cost_items_service_order_valid": {
+          "name": "cost_items_service_order_valid",
+          "value": "\"service_from\" IS NULL OR \"service_from\" <= \"service_to\""
+        },
+        "cost_items_tax_year_valid": {
+          "name": "cost_items_tax_year_valid",
+          "value": "\"tax_year\" IS NULL OR \"tax_year\" BETWEEN 1900 AND 2200"
+        },
+        "cost_items_heating_part_known": {
+          "name": "cost_items_heating_part_known",
+          "value": "\"heating_part\" IN ('fuel', 'operating', 'metering')"
+        },
+        "cost_items_heating_part_category_valid": {
+          "name": "cost_items_heating_part_category_valid",
+          "value": "\"heating_part\" IS NULL OR \"category\" = 'Heizung und Warmwasser'"
+        },
+        "cost_items_heating_target_known": {
+          "name": "cost_items_heating_target_known",
+          "value": "\"heating_target\" IN ('both', 'heating', 'water')"
+        },
+        "cost_items_heating_target_category_valid": {
+          "name": "cost_items_heating_target_category_valid",
+          "value": "\"heating_target\" IS NULL OR \"category\" = 'Heizung und Warmwasser'"
+        },
+        "cost_items_heating_system_complete": {
+          "name": "cost_items_heating_system_complete",
+          "value": "\"key\" <> 'heatingSystem' OR (\"heating_target\" IS NOT NULL AND \"heating_part\" IS NOT NULL AND \"heating_plant_id\" IS NOT NULL)"
+        },
+        "cost_items_fuel_delivery_category_valid": {
+          "name": "cost_items_fuel_delivery_category_valid",
+          "value": "\"fuel_delivery_id\" IS NULL OR \"category\" = 'Heizung und Warmwasser'"
+        },
+        "cost_items_external_total_positive": {
+          "name": "cost_items_external_total_positive",
+          "value": "\"external_total\" > 0"
+        },
+        "cost_items_external_complete": {
+          "name": "cost_items_external_complete",
+          "value": "(\"external_measure\" IS NULL) = (\"external_total\" IS NULL) AND (\"external_measure\" IS NULL) = (\"external_total_cents\" IS NULL)"
+        }
+      }
+    },
+    "degree_day_values": {
+      "name": "degree_day_values",
+      "columns": {
+        "property_id": {
+          "name": "property_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "month": {
+          "name": "month",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "value": {
+          "name": "value",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "degree_day_values_property_id_properties_id_fk": {
+          "name": "degree_day_values_property_id_properties_id_fk",
+          "tableFrom": "degree_day_values",
+          "tableTo": "properties",
+          "columnsFrom": [
+            "property_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "degree_day_values_property_id_month_pk": {
+          "columns": [
+            "property_id",
+            "month"
+          ],
+          "name": "degree_day_values_property_id_month_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "degree_day_values_month_valid": {
+          "name": "degree_day_values_month_valid",
+          "value": "\"month\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]' AND CAST(substr(\"month\", 6, 2) AS INTEGER) BETWEEN 1 AND 12"
+        },
+        "degree_day_values_value_positive": {
+          "name": "degree_day_values_value_positive",
+          "value": "\"value\" > 0"
+        }
+      }
+    },
+    "flat_rates": {
+      "name": "flat_rates",
+      "columns": {
+        "tenancy_id": {
+          "name": "tenancy_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "from": {
+          "name": "from",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "monthly_cents": {
+          "name": "monthly_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "flat_rates_tenancy_id_tenancies_id_fk": {
+          "name": "flat_rates_tenancy_id_tenancies_id_fk",
+          "tableFrom": "flat_rates",
+          "tableTo": "tenancies",
+          "columnsFrom": [
+            "tenancy_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "flat_rates_tenancy_id_from_pk": {
+          "columns": [
+            "tenancy_id",
+            "from"
+          ],
+          "name": "flat_rates_tenancy_id_from_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "flat_rates_monthly_not_negative": {
+          "name": "flat_rates_monthly_not_negative",
+          "value": "\"monthly_cents\" >= 0"
+        }
+      }
+    },
+    "fuel_carry_frozen": {
+      "name": "fuel_carry_frozen",
+      "columns": {
+        "delivery_id": {
+          "name": "delivery_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "heating_period_id": {
+          "name": "heating_period_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "cents": {
+          "name": "cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "emissions_kg": {
+          "name": "emissions_kg",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "co2_cents": {
+          "name": "co2_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "fuel_carry_frozen_delivery_id_fuel_deliveries_id_fk": {
+          "name": "fuel_carry_frozen_delivery_id_fuel_deliveries_id_fk",
+          "tableFrom": "fuel_carry_frozen",
+          "tableTo": "fuel_deliveries",
+          "columnsFrom": [
+            "delivery_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "fuel_carry_frozen_heating_period_id_heating_periods_id_fk": {
+          "name": "fuel_carry_frozen_heating_period_id_heating_periods_id_fk",
+          "tableFrom": "fuel_carry_frozen",
+          "tableTo": "heating_periods",
+          "columnsFrom": [
+            "heating_period_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "fuel_carry_frozen_delivery_id_heating_period_id_pk": {
+          "columns": [
+            "delivery_id",
+            "heating_period_id"
+          ],
+          "name": "fuel_carry_frozen_delivery_id_heating_period_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "fuel_deliveries": {
+      "name": "fuel_deliveries",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "plant_id": {
+          "name": "plant_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "label": {
+          "name": "label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "''"
+        },
+        "invoice_date": {
+          "name": "invoice_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "delivered_at": {
+          "name": "delivered_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "invoice_from": {
+          "name": "invoice_from",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "invoice_to": {
+          "name": "invoice_to",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "unit_id": {
+          "name": "unit_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "amount_cents": {
+          "name": "amount_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "quantity": {
+          "name": "quantity",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "quantity_unit": {
+          "name": "quantity_unit",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "energy_kwh": {
+          "name": "energy_kwh",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "gas_basis": {
+          "name": "gas_basis",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "heating_value": {
+          "name": "heating_value",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "emissions_kg": {
+          "name": "emissions_kg",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "co2_cost_cents": {
+          "name": "co2_cost_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "emission_factor": {
+          "name": "emission_factor",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "grid_fee_cents": {
+          "name": "grid_fee_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "bio_cost_cents": {
+          "name": "bio_cost_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "share_permille": {
+          "name": "share_permille",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "fixed_cents": {
+          "name": "fixed_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "estimated": {
+          "name": "estimated",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "used_by_service": {
+          "name": "used_by_service",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "fuel_deliveries_plant_id_heating_plants_id_fk": {
+          "name": "fuel_deliveries_plant_id_heating_plants_id_fk",
+          "tableFrom": "fuel_deliveries",
+          "tableTo": "heating_plants",
+          "columnsFrom": [
+            "plant_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "fuel_deliveries_unit_id_units_id_fk": {
+          "name": "fuel_deliveries_unit_id_units_id_fk",
+          "tableFrom": "fuel_deliveries",
+          "tableTo": "units",
+          "columnsFrom": [
+            "unit_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "fuel_deliveries_quantity_unit_known": {
+          "name": "fuel_deliveries_quantity_unit_known",
+          "value": "\"quantity_unit\" IN ('l', 'kg', 'm3', 'kWh', 'srm')"
+        },
+        "fuel_deliveries_gas_basis_known": {
+          "name": "fuel_deliveries_gas_basis_known",
+          "value": "\"gas_basis\" IN ('hs', 'hi')"
+        },
+        "fuel_deliveries_invoice_complete": {
+          "name": "fuel_deliveries_invoice_complete",
+          "value": "(\"invoice_from\" IS NULL) = (\"invoice_to\" IS NULL)"
+        },
+        "fuel_deliveries_invoice_from_valid": {
+          "name": "fuel_deliveries_invoice_from_valid",
+          "value": "\"invoice_from\" IS NULL OR \"invoice_from\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'"
+        },
+        "fuel_deliveries_invoice_to_valid": {
+          "name": "fuel_deliveries_invoice_to_valid",
+          "value": "\"invoice_to\" IS NULL OR \"invoice_to\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'"
+        },
+        "fuel_deliveries_invoice_date_valid": {
+          "name": "fuel_deliveries_invoice_date_valid",
+          "value": "\"invoice_date\" IS NULL OR \"invoice_date\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'"
+        },
+        "fuel_deliveries_delivered_at_valid": {
+          "name": "fuel_deliveries_delivered_at_valid",
+          "value": "\"delivered_at\" IS NULL OR \"delivered_at\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'"
+        },
+        "fuel_deliveries_invoice_order_valid": {
+          "name": "fuel_deliveries_invoice_order_valid",
+          "value": "\"invoice_from\" IS NULL OR \"invoice_from\" <= \"invoice_to\""
+        },
+        "fuel_deliveries_share_valid": {
+          "name": "fuel_deliveries_share_valid",
+          "value": "\"share_permille\" BETWEEN 0 AND 1000"
+        },
+        "fuel_deliveries_heating_value_positive": {
+          "name": "fuel_deliveries_heating_value_positive",
+          "value": "\"heating_value\" > 0"
+        },
+        "fuel_deliveries_quantity_not_negative": {
+          "name": "fuel_deliveries_quantity_not_negative",
+          "value": "\"quantity\" >= 0"
+        },
+        "fuel_deliveries_energy_not_negative": {
+          "name": "fuel_deliveries_energy_not_negative",
+          "value": "\"energy_kwh\" >= 0"
+        },
+        "fuel_deliveries_emissions_not_negative": {
+          "name": "fuel_deliveries_emissions_not_negative",
+          "value": "\"emissions_kg\" >= 0"
+        },
+        "fuel_deliveries_co2_not_negative": {
+          "name": "fuel_deliveries_co2_not_negative",
+          "value": "\"co2_cost_cents\" >= 0"
+        },
+        "fuel_deliveries_factor_not_negative": {
+          "name": "fuel_deliveries_factor_not_negative",
+          "value": "\"emission_factor\" >= 0"
+        },
+        "fuel_deliveries_fixed_not_negative": {
+          "name": "fuel_deliveries_fixed_not_negative",
+          "value": "\"fixed_cents\" >= 0"
+        },
+        "fuel_deliveries_grid_fee_not_negative": {
+          "name": "fuel_deliveries_grid_fee_not_negative",
+          "value": "\"grid_fee_cents\" >= 0"
+        },
+        "fuel_deliveries_bio_not_negative": {
+          "name": "fuel_deliveries_bio_not_negative",
+          "value": "\"bio_cost_cents\" >= 0"
+        }
+      }
+    },
+    "fuel_delivery_parts": {
+      "name": "fuel_delivery_parts",
+      "columns": {
+        "delivery_id": {
+          "name": "delivery_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "from": {
+          "name": "from",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "to": {
+          "name": "to",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "energy_kwh": {
+          "name": "energy_kwh",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "amount_cents": {
+          "name": "amount_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "fixed_cents": {
+          "name": "fixed_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "emissions_kg": {
+          "name": "emissions_kg",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "co2_cost_cents": {
+          "name": "co2_cost_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "fuel_delivery_parts_delivery_id_fuel_deliveries_id_fk": {
+          "name": "fuel_delivery_parts_delivery_id_fuel_deliveries_id_fk",
+          "tableFrom": "fuel_delivery_parts",
+          "tableTo": "fuel_deliveries",
+          "columnsFrom": [
+            "delivery_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "fuel_delivery_parts_delivery_id_from_pk": {
+          "columns": [
+            "delivery_id",
+            "from"
+          ],
+          "name": "fuel_delivery_parts_delivery_id_from_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "fuel_delivery_parts_from_valid": {
+          "name": "fuel_delivery_parts_from_valid",
+          "value": "\"from\" IS NULL OR \"from\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'"
+        },
+        "fuel_delivery_parts_to_valid": {
+          "name": "fuel_delivery_parts_to_valid",
+          "value": "\"to\" IS NULL OR \"to\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'"
+        },
+        "fuel_delivery_parts_order_valid": {
+          "name": "fuel_delivery_parts_order_valid",
+          "value": "\"from\" <= \"to\""
+        },
+        "fuel_delivery_parts_energy_not_negative": {
+          "name": "fuel_delivery_parts_energy_not_negative",
+          "value": "\"energy_kwh\" >= 0"
+        },
+        "fuel_delivery_parts_fixed_not_negative": {
+          "name": "fuel_delivery_parts_fixed_not_negative",
+          "value": "\"fixed_cents\" >= 0"
+        },
+        "fuel_delivery_parts_emissions_not_negative": {
+          "name": "fuel_delivery_parts_emissions_not_negative",
+          "value": "\"emissions_kg\" >= 0"
+        },
+        "fuel_delivery_parts_co2_not_negative": {
+          "name": "fuel_delivery_parts_co2_not_negative",
+          "value": "\"co2_cost_cents\" >= 0"
+        }
+      }
+    },
+    "heating_period_changes": {
+      "name": "heating_period_changes",
+      "columns": {
+        "plant_id": {
+          "name": "plant_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "from_month": {
+          "name": "from_month",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "heating_period_changes_plant_id_heating_plants_id_fk": {
+          "name": "heating_period_changes_plant_id_heating_plants_id_fk",
+          "tableFrom": "heating_period_changes",
+          "tableTo": "heating_plants",
+          "columnsFrom": [
+            "plant_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "heating_period_changes_plant_id_from_month_pk": {
+          "columns": [
+            "plant_id",
+            "from_month"
+          ],
+          "name": "heating_period_changes_plant_id_from_month_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "heating_period_changes_from_month_valid": {
+          "name": "heating_period_changes_from_month_valid",
+          "value": "\"from_month\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]' AND CAST(substr(\"from_month\", 6, 2) AS INTEGER) BETWEEN 1 AND 12"
+        }
+      }
+    },
+    "heating_periods": {
+      "name": "heating_periods",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "plant_id": {
+          "name": "plant_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "period": {
+          "name": "period",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "heat_consumption_pct": {
+          "name": "heat_consumption_pct",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "water_consumption_pct": {
+          "name": "water_consumption_pct",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "above_70_agreed": {
+          "name": "above_70_agreed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "insulation_rule": {
+          "name": "insulation_rule",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "dhw_method": {
+          "name": "dhw_method",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "dhw_heat_kwh": {
+          "name": "dhw_heat_kwh",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "total_heat_kwh": {
+          "name": "total_heat_kwh",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "dhw_volume_m3": {
+          "name": "dhw_volume_m3",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "dhw_temp_c": {
+          "name": "dhw_temp_c",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "dhw_unmeasurable": {
+          "name": "dhw_unmeasurable",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "info_taxes_text": {
+          "name": "info_taxes_text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "info_district_ghg": {
+          "name": "info_district_ghg",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "info_district_pef": {
+          "name": "info_district_pef",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "climate_factor": {
+          "name": "climate_factor",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "climate_factor_prev": {
+          "name": "climate_factor_prev",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "consumer_contract": {
+          "name": "consumer_contract",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "info_contacts_confirmed": {
+          "name": "info_contacts_confirmed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "stock_unit": {
+          "name": "stock_unit",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "opening_quantity": {
+          "name": "opening_quantity",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "opening_cost_cents": {
+          "name": "opening_cost_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "opening_emissions_kg": {
+          "name": "opening_emissions_kg",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "opening_co2_cents": {
+          "name": "opening_co2_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "opening_invoiced_before_2023": {
+          "name": "opening_invoiced_before_2023",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "opening_already_settled": {
+          "name": "opening_already_settled",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "closing_quantity": {
+          "name": "closing_quantity",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "closing_measured_on": {
+          "name": "closing_measured_on",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "heating_periods_plant_period_idx": {
+          "name": "heating_periods_plant_period_idx",
+          "columns": [
+            "plant_id",
+            "period"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "heating_periods_plant_id_heating_plants_id_fk": {
+          "name": "heating_periods_plant_id_heating_plants_id_fk",
+          "tableFrom": "heating_periods",
+          "tableTo": "heating_plants",
+          "columnsFrom": [
+            "plant_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "heating_periods_period_valid": {
+          "name": "heating_periods_period_valid",
+          "value": "\"period\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]' AND CAST(substr(\"period\", 6, 2) AS INTEGER) BETWEEN 1 AND 12"
+        },
+        "heating_periods_heat_pct_valid": {
+          "name": "heating_periods_heat_pct_valid",
+          "value": "\"heat_consumption_pct\" BETWEEN 0 AND 100"
+        },
+        "heating_periods_water_pct_valid": {
+          "name": "heating_periods_water_pct_valid",
+          "value": "\"water_consumption_pct\" BETWEEN 0 AND 100"
+        },
+        "heating_periods_insulation_rule_known": {
+          "name": "heating_periods_insulation_rule_known",
+          "value": "\"insulation_rule\" IN ('applies', 'notApplies', 'unknown')"
+        },
+        "heating_periods_dhw_method_known": {
+          "name": "heating_periods_dhw_method_known",
+          "value": "\"dhw_method\" IN ('heatMeter', 'volumeFormula', 'areaFormula')"
+        },
+        "heating_periods_dhw_heat_not_negative": {
+          "name": "heating_periods_dhw_heat_not_negative",
+          "value": "\"dhw_heat_kwh\" >= 0"
+        },
+        "heating_periods_total_heat_not_negative": {
+          "name": "heating_periods_total_heat_not_negative",
+          "value": "\"total_heat_kwh\" >= 0"
+        },
+        "heating_periods_dhw_volume_not_negative": {
+          "name": "heating_periods_dhw_volume_not_negative",
+          "value": "\"dhw_volume_m3\" >= 0"
+        },
+        "heating_periods_stock_unit_known": {
+          "name": "heating_periods_stock_unit_known",
+          "value": "\"stock_unit\" IN ('l', 'kg', 'srm')"
+        },
+        "heating_periods_opening_quantity_not_negative": {
+          "name": "heating_periods_opening_quantity_not_negative",
+          "value": "\"opening_quantity\" >= 0"
+        },
+        "heating_periods_opening_cost_not_negative": {
+          "name": "heating_periods_opening_cost_not_negative",
+          "value": "\"opening_cost_cents\" >= 0"
+        },
+        "heating_periods_opening_emissions_not_negative": {
+          "name": "heating_periods_opening_emissions_not_negative",
+          "value": "\"opening_emissions_kg\" >= 0"
+        },
+        "heating_periods_opening_co2_not_negative": {
+          "name": "heating_periods_opening_co2_not_negative",
+          "value": "\"opening_co2_cents\" >= 0"
+        },
+        "heating_periods_closing_quantity_not_negative": {
+          "name": "heating_periods_closing_quantity_not_negative",
+          "value": "\"closing_quantity\" >= 0"
+        },
+        "heating_periods_closing_measured_on_valid": {
+          "name": "heating_periods_closing_measured_on_valid",
+          "value": "\"closing_measured_on\" IS NULL OR \"closing_measured_on\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'"
+        }
+      }
+    },
+    "heating_plant_units": {
+      "name": "heating_plant_units",
+      "columns": {
+        "plant_id": {
+          "name": "plant_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "unit_id": {
+          "name": "unit_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "heated_area_m2": {
+          "name": "heated_area_m2",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "heating_plant_units_plant_id_heating_plants_id_fk": {
+          "name": "heating_plant_units_plant_id_heating_plants_id_fk",
+          "tableFrom": "heating_plant_units",
+          "tableTo": "heating_plants",
+          "columnsFrom": [
+            "plant_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "heating_plant_units_unit_id_units_id_fk": {
+          "name": "heating_plant_units_unit_id_units_id_fk",
+          "tableFrom": "heating_plant_units",
+          "tableTo": "units",
+          "columnsFrom": [
+            "unit_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "heating_plant_units_plant_id_unit_id_pk": {
+          "columns": [
+            "plant_id",
+            "unit_id"
+          ],
+          "name": "heating_plant_units_plant_id_unit_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "heating_plant_units_heated_area_positive": {
+          "name": "heating_plant_units_heated_area_positive",
+          "value": "\"heated_area_m2\" > 0"
+        }
+      }
+    },
+    "heating_plants": {
+      "name": "heating_plants",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "property_id": {
+          "name": "property_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "''"
+        },
+        "energy": {
+          "name": "energy",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "supply": {
+          "name": "supply",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'central'"
+        },
+        "method": {
+          "name": "method",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'manual'"
+        },
+        "separate_settlement": {
+          "name": "separate_settlement",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "devices_remote": {
+          "name": "devices_remote",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'unknown'"
+        },
+        "devices_installed_after_2021_12": {
+          "name": "devices_installed_after_2021_12",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'unknown'"
+        },
+        "new_devices_install": {
+          "name": "new_devices_install",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'building'"
+        },
+        "capture_installed_on": {
+          "name": "capture_installed_on",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "captured_on_2024_10_01": {
+          "name": "captured_on_2024_10_01",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "warm_rent_average_2022_2024": {
+          "name": "warm_rent_average_2022_2024",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "change_split": {
+          "name": "change_split",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'degreeDays'"
+        },
+        "period_start_month": {
+          "name": "period_start_month",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "units_limited": {
+          "name": "units_limited",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "non_residential": {
+          "name": "non_residential",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "restriction": {
+          "name": "restriction",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'none'"
+        },
+        "district_ets_new": {
+          "name": "district_ets_new",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "ends_on": {
+          "name": "ends_on",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "replaces_plant_id": {
+          "name": "replaces_plant_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "building_with": {
+          "name": "building_with",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "takes_over_stock": {
+          "name": "takes_over_stock",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "hot_water": {
+          "name": "hot_water",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'combined'"
+        },
+        "capture": {
+          "name": "capture",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "area_basis_heat": {
+          "name": "area_basis_heat",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'area'"
+        },
+        "heat_pump_installed_on": {
+          "name": "heat_pump_installed_on",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "heating_plants_property_id_properties_id_fk": {
+          "name": "heating_plants_property_id_properties_id_fk",
+          "tableFrom": "heating_plants",
+          "tableTo": "properties",
+          "columnsFrom": [
+            "property_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "heating_plants_energy_known": {
+          "name": "heating_plants_energy_known",
+          "value": "\"energy\" IN ('gas', 'oil', 'lpg', 'pellets', 'wood', 'districtHeating', 'heatPump', 'electric', 'coal', 'other')"
+        },
+        "heating_plants_supply_known": {
+          "name": "heating_plants_supply_known",
+          "value": "\"supply\" IN ('central', 'perUnit')"
+        },
+        "heating_plants_method_known": {
+          "name": "heating_plants_method_known",
+          "value": "\"method\" IN ('service', 'self', 'manual')"
+        },
+        "heating_plants_devices_remote_known": {
+          "name": "heating_plants_devices_remote_known",
+          "value": "\"devices_remote\" IN ('all', 'none', 'partial', 'unknown')"
+        },
+        "heating_plants_devices_installed_known": {
+          "name": "heating_plants_devices_installed_known",
+          "value": "\"devices_installed_after_2021_12\" IN ('all', 'some', 'none', 'unknown')"
+        },
+        "heating_plants_new_devices_install_known": {
+          "name": "heating_plants_new_devices_install_known",
+          "value": "\"new_devices_install\" IN ('single', 'whole')"
+        },
+        "heating_plants_source_known": {
+          "name": "heating_plants_source_known",
+          "value": "\"source\" IN ('building', 'homeowners')"
+        },
+        "heating_plants_change_split_known": {
+          "name": "heating_plants_change_split_known",
+          "value": "\"change_split\" IN ('degreeDays', 'time')"
+        },
+        "heating_plants_period_start_month_valid": {
+          "name": "heating_plants_period_start_month_valid",
+          "value": "\"period_start_month\" BETWEEN 1 AND 12"
+        },
+        "heating_plants_source_method_valid": {
+          "name": "heating_plants_source_method_valid",
+          "value": "\"source\" <> 'homeowners' OR \"method\" = 'service'"
+        },
+        "heating_plants_warm_rent_not_negative": {
+          "name": "heating_plants_warm_rent_not_negative",
+          "value": "\"warm_rent_average_2022_2024\" >= 0"
+        },
+        "heating_plants_restriction_known": {
+          "name": "heating_plants_restriction_known",
+          "value": "\"restriction\" IN ('none', 'building', 'supply', 'both')"
+        },
+        "heating_plants_ets_district_valid": {
+          "name": "heating_plants_ets_district_valid",
+          "value": "\"district_ets_new\" = 0 OR \"energy\" = 'districtHeating'"
+        },
+        "heating_plants_hot_water_known": {
+          "name": "heating_plants_hot_water_known",
+          "value": "\"hot_water\" IN ('combined', 'separate', 'none')"
+        },
+        "heating_plants_capture_known": {
+          "name": "heating_plants_capture_known",
+          "value": "\"capture\" IN ('heatMeter', 'hca', 'serviceValues')"
+        },
+        "heating_plants_area_basis_heat_known": {
+          "name": "heating_plants_area_basis_heat_known",
+          "value": "\"area_basis_heat\" IN ('area', 'heatedArea')"
+        },
+        "heating_plants_self_capture_complete": {
+          "name": "heating_plants_self_capture_complete",
+          "value": "\"method\" <> 'self' OR \"capture\" IS NOT NULL"
+        }
+      }
+    },
+    "heating_prepayment_overrides": {
+      "name": "heating_prepayment_overrides",
+      "columns": {
+        "tenancy_id": {
+          "name": "tenancy_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "plant_id": {
+          "name": "plant_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "period": {
+          "name": "period",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "amount_cents": {
+          "name": "amount_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "provisional": {
+          "name": "provisional",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "from_month": {
+          "name": "from_month",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "to_month": {
+          "name": "to_month",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "heating_prepayment_overrides_tenancy_id_tenancies_id_fk": {
+          "name": "heating_prepayment_overrides_tenancy_id_tenancies_id_fk",
+          "tableFrom": "heating_prepayment_overrides",
+          "tableTo": "tenancies",
+          "columnsFrom": [
+            "tenancy_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "heating_prepayment_overrides_plant_id_heating_plants_id_fk": {
+          "name": "heating_prepayment_overrides_plant_id_heating_plants_id_fk",
+          "tableFrom": "heating_prepayment_overrides",
+          "tableTo": "heating_plants",
+          "columnsFrom": [
+            "plant_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "heating_prepayment_overrides_tenancy_id_plant_id_period_pk": {
+          "columns": [
+            "tenancy_id",
+            "plant_id",
+            "period"
+          ],
+          "name": "heating_prepayment_overrides_tenancy_id_plant_id_period_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "heating_prepayment_overrides_period_valid": {
+          "name": "heating_prepayment_overrides_period_valid",
+          "value": "\"period\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]' AND CAST(substr(\"period\", 6, 2) AS INTEGER) BETWEEN 1 AND 12"
+        },
+        "heating_prepayment_overrides_from_valid": {
+          "name": "heating_prepayment_overrides_from_valid",
+          "value": "\"from_month\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]' AND CAST(substr(\"from_month\", 6, 2) AS INTEGER) BETWEEN 1 AND 12"
+        },
+        "heating_prepayment_overrides_to_valid": {
+          "name": "heating_prepayment_overrides_to_valid",
+          "value": "\"to_month\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]' AND CAST(substr(\"to_month\", 6, 2) AS INTEGER) BETWEEN 1 AND 12"
+        },
+        "heating_prepayment_overrides_amount_not_negative": {
+          "name": "heating_prepayment_overrides_amount_not_negative",
+          "value": "\"amount_cents\" >= 0"
+        },
+        "heating_prepayment_overrides_provisional_complete": {
+          "name": "heating_prepayment_overrides_provisional_complete",
+          "value": "(\"provisional\" = 1) = (\"from_month\" IS NOT NULL) AND (\"from_month\" IS NULL) = (\"to_month\" IS NULL)"
+        },
+        "heating_prepayment_overrides_months_order_valid": {
+          "name": "heating_prepayment_overrides_months_order_valid",
+          "value": "\"to_month\" IS NULL OR \"to_month\" >= \"from_month\""
+        }
+      }
+    },
+    "heating_prepayments": {
+      "name": "heating_prepayments",
+      "columns": {
+        "tenancy_id": {
+          "name": "tenancy_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "from": {
+          "name": "from",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "monthly_cents": {
+          "name": "monthly_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "heating_prepayments_tenancy_id_tenancies_id_fk": {
+          "name": "heating_prepayments_tenancy_id_tenancies_id_fk",
+          "tableFrom": "heating_prepayments",
+          "tableTo": "tenancies",
+          "columnsFrom": [
+            "tenancy_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "heating_prepayments_tenancy_id_from_pk": {
+          "columns": [
+            "tenancy_id",
+            "from"
+          ],
+          "name": "heating_prepayments_tenancy_id_from_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "heating_prepayments_monthly_not_negative": {
+          "name": "heating_prepayments_monthly_not_negative",
+          "value": "\"monthly_cents\" >= 0"
+        },
+        "heating_prepayments_from_valid": {
+          "name": "heating_prepayments_from_valid",
+          "value": "\"from\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]' AND CAST(substr(\"from\", 6, 2) AS INTEGER) BETWEEN 1 AND 12"
+        }
+      }
+    },
+    "heating_self_spans": {
+      "name": "heating_self_spans",
+      "columns": {
+        "plant_id": {
+          "name": "plant_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "from_period": {
+          "name": "from_period",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "until_period": {
+          "name": "until_period",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "heating_self_spans_plant_id_heating_plants_id_fk": {
+          "name": "heating_self_spans_plant_id_heating_plants_id_fk",
+          "tableFrom": "heating_self_spans",
+          "tableTo": "heating_plants",
+          "columnsFrom": [
+            "plant_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "heating_self_spans_plant_id_from_period_pk": {
+          "columns": [
+            "plant_id",
+            "from_period"
+          ],
+          "name": "heating_self_spans_plant_id_from_period_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "heating_self_spans_from_valid": {
+          "name": "heating_self_spans_from_valid",
+          "value": "\"from_period\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]' AND CAST(substr(\"from_period\", 6, 2) AS INTEGER) BETWEEN 1 AND 12"
+        },
+        "heating_self_spans_until_valid": {
+          "name": "heating_self_spans_until_valid",
+          "value": "\"until_period\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]' AND CAST(substr(\"until_period\", 6, 2) AS INTEGER) BETWEEN 1 AND 12"
+        },
+        "heating_self_spans_order_valid": {
+          "name": "heating_self_spans_order_valid",
+          "value": "\"until_period\" IS NULL OR \"until_period\" > \"from_period\""
+        }
+      }
+    },
+    "heating_separate_spans": {
+      "name": "heating_separate_spans",
+      "columns": {
+        "plant_id": {
+          "name": "plant_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "from_month": {
+          "name": "from_month",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "until_period": {
+          "name": "until_period",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "heating_separate_spans_plant_id_heating_plants_id_fk": {
+          "name": "heating_separate_spans_plant_id_heating_plants_id_fk",
+          "tableFrom": "heating_separate_spans",
+          "tableTo": "heating_plants",
+          "columnsFrom": [
+            "plant_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "heating_separate_spans_plant_id_from_month_pk": {
+          "columns": [
+            "plant_id",
+            "from_month"
+          ],
+          "name": "heating_separate_spans_plant_id_from_month_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "heating_separate_spans_from_valid": {
+          "name": "heating_separate_spans_from_valid",
+          "value": "\"from_month\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]' AND CAST(substr(\"from_month\", 6, 2) AS INTEGER) BETWEEN 1 AND 12"
+        },
+        "heating_separate_spans_until_valid": {
+          "name": "heating_separate_spans_until_valid",
+          "value": "\"until_period\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]' AND CAST(substr(\"until_period\", 6, 2) AS INTEGER) BETWEEN 1 AND 12"
+        },
+        "heating_separate_spans_order_valid": {
+          "name": "heating_separate_spans_order_valid",
+          "value": "\"until_period\" IS NULL OR \"until_period\" > \"from_month\""
+        }
+      }
+    },
+    "interim_reading_gaps": {
+      "name": "interim_reading_gaps",
+      "columns": {
+        "unit_id": {
+          "name": "unit_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "date": {
+          "name": "date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "''"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "interim_reading_gaps_unit_id_units_id_fk": {
+          "name": "interim_reading_gaps_unit_id_units_id_fk",
+          "tableFrom": "interim_reading_gaps",
+          "tableTo": "units",
+          "columnsFrom": [
+            "unit_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "interim_reading_gaps_unit_id_date_pk": {
+          "columns": [
+            "unit_id",
+            "date"
+          ],
+          "name": "interim_reading_gaps_unit_id_date_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "interim_reading_gaps_status_known": {
+          "name": "interim_reading_gaps_status_known",
+          "value": "\"status\" IN ('impossible', 'missed', 'imprecise', 'useReading')"
+        },
+        "interim_reading_gaps_date_valid": {
+          "name": "interim_reading_gaps_date_valid",
+          "value": "\"date\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'"
+        }
+      }
+    },
+    "meters": {
+      "name": "meters",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "property_id": {
+          "name": "property_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "unit_id": {
+          "name": "unit_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "type": {
+          "name": "type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "meter_number": {
+          "name": "meter_number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "unit": {
+          "name": "unit",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "heating_plant_id": {
+          "name": "heating_plant_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "heating_role": {
+          "name": "heating_role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "remote_readable": {
+          "name": "remote_readable",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "installed_on": {
+          "name": "installed_on",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "meters_property_id_properties_id_fk": {
+          "name": "meters_property_id_properties_id_fk",
+          "tableFrom": "meters",
+          "tableTo": "properties",
+          "columnsFrom": [
+            "property_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "meters_unit_id_units_id_fk": {
+          "name": "meters_unit_id_units_id_fk",
+          "tableFrom": "meters",
+          "tableTo": "units",
+          "columnsFrom": [
+            "unit_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "meters_heating_plant_id_heating_plants_id_fk": {
+          "name": "meters_heating_plant_id_heating_plants_id_fk",
+          "tableFrom": "meters",
+          "tableTo": "heating_plants",
+          "columnsFrom": [
+            "heating_plant_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "meters_type_known": {
+          "name": "meters_type_known",
+          "value": "\"type\" IN ('kaltwasser', 'warmwasser', 'strom', 'waerme', 'hkv', 'sonstig')"
+        },
+        "meters_heating_role_known": {
+          "name": "meters_heating_role_known",
+          "value": "\"heating_role\" IN ('supply', 'dhwHeat', 'totalHeat')"
+        },
+        "meters_heating_role_plant_valid": {
+          "name": "meters_heating_role_plant_valid",
+          "value": "(\"heating_plant_id\" IS NULL) = (\"heating_role\" IS NULL)"
+        },
+        "meters_heating_plant_unit_valid": {
+          "name": "meters_heating_plant_unit_valid",
+          "value": "\"heating_plant_id\" IS NULL OR \"unit_id\" IS NULL"
+        }
+      }
+    },
+    "payments": {
+      "name": "payments",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "tenancy_id": {
+          "name": "tenancy_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "date": {
+          "name": "date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "amount_cents": {
+          "name": "amount_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "payments_tenancy_id_tenancies_id_fk": {
+          "name": "payments_tenancy_id_tenancies_id_fk",
+          "tableFrom": "payments",
+          "tableTo": "tenancies",
+          "columnsFrom": [
+            "tenancy_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "period_changes": {
+      "name": "period_changes",
+      "columns": {
+        "property_id": {
+          "name": "property_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "from_month": {
+          "name": "from_month",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "period_changes_property_id_properties_id_fk": {
+          "name": "period_changes_property_id_properties_id_fk",
+          "tableFrom": "period_changes",
+          "tableTo": "properties",
+          "columnsFrom": [
+            "property_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "period_changes_property_id_from_month_pk": {
+          "columns": [
+            "property_id",
+            "from_month"
+          ],
+          "name": "period_changes_property_id_from_month_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "period_changes_from_month_valid": {
+          "name": "period_changes_from_month_valid",
+          "value": "\"from_month\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]' AND CAST(substr(\"from_month\", 6, 2) AS INTEGER) BETWEEN 1 AND 12"
+        }
+      }
+    },
+    "person_history": {
+      "name": "person_history",
+      "columns": {
+        "tenancy_id": {
+          "name": "tenancy_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "from": {
+          "name": "from",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "persons": {
+          "name": "persons",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "person_history_tenancy_id_tenancies_id_fk": {
+          "name": "person_history_tenancy_id_tenancies_id_fk",
+          "tableFrom": "person_history",
+          "tableTo": "tenancies",
+          "columnsFrom": [
+            "tenancy_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "person_history_tenancy_id_from_pk": {
+          "columns": [
+            "tenancy_id",
+            "from"
+          ],
+          "name": "person_history_tenancy_id_from_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "person_history_persons_not_negative": {
+          "name": "person_history_persons_not_negative",
+          "value": "\"persons\" >= 0"
+        }
+      }
+    },
+    "prepayment_overrides": {
+      "name": "prepayment_overrides",
+      "columns": {
+        "tenancy_id": {
+          "name": "tenancy_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "period": {
+          "name": "period",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "amount_cents": {
+          "name": "amount_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "prepayment_overrides_tenancy_id_tenancies_id_fk": {
+          "name": "prepayment_overrides_tenancy_id_tenancies_id_fk",
+          "tableFrom": "prepayment_overrides",
+          "tableTo": "tenancies",
+          "columnsFrom": [
+            "tenancy_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "prepayment_overrides_tenancy_id_period_pk": {
+          "columns": [
+            "tenancy_id",
+            "period"
+          ],
+          "name": "prepayment_overrides_tenancy_id_period_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "prepayment_overrides_period_valid": {
+          "name": "prepayment_overrides_period_valid",
+          "value": "\"period\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]' AND CAST(substr(\"period\", 6, 2) AS INTEGER) BETWEEN 1 AND 12"
+        },
+        "prepayment_overrides_amount_not_negative": {
+          "name": "prepayment_overrides_amount_not_negative",
+          "value": "\"amount_cents\" >= 0"
+        }
+      }
+    },
+    "prepayments": {
+      "name": "prepayments",
+      "columns": {
+        "tenancy_id": {
+          "name": "tenancy_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "from": {
+          "name": "from",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "monthly_cents": {
+          "name": "monthly_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "prepayments_tenancy_id_tenancies_id_fk": {
+          "name": "prepayments_tenancy_id_tenancies_id_fk",
+          "tableFrom": "prepayments",
+          "tableTo": "tenancies",
+          "columnsFrom": [
+            "tenancy_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "prepayments_tenancy_id_from_pk": {
+          "columns": [
+            "tenancy_id",
+            "from"
+          ],
+          "name": "prepayments_tenancy_id_from_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "prepayments_monthly_not_negative": {
+          "name": "prepayments_monthly_not_negative",
+          "value": "\"monthly_cents\" >= 0"
+        }
+      }
+    },
+    "properties": {
+      "name": "properties",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "address": {
+          "name": "address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "landlord_name": {
+          "name": "landlord_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "iban": {
+          "name": "iban",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "payment_deadline_days": {
+          "name": "payment_deadline_days",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "cable_built_before_dec_2021": {
+          "name": "cable_built_before_dec_2021",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "period_start_month": {
+          "name": "period_start_month",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "properties_kind_known": {
+          "name": "properties_kind_known",
+          "value": "\"kind\" IN ('mfh', 'etw', 'efh', 'zfh', 'sonstiges')"
+        },
+        "properties_deadline_not_negative": {
+          "name": "properties_deadline_not_negative",
+          "value": "\"payment_deadline_days\" >= 0"
+        },
+        "properties_period_start_month_valid": {
+          "name": "properties_period_start_month_valid",
+          "value": "\"period_start_month\" BETWEEN 1 AND 12"
+        }
+      }
+    },
+    "readings": {
+      "name": "readings",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "meter_id": {
+          "name": "meter_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "date": {
+          "name": "date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "value": {
+          "name": "value",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "replacement": {
+          "name": "replacement",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "old_end_value": {
+          "name": "old_end_value",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "interim_for": {
+          "name": "interim_for",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "readings_meter_id_meters_id_fk": {
+          "name": "readings_meter_id_meters_id_fk",
+          "tableFrom": "readings",
+          "tableTo": "meters",
+          "columnsFrom": [
+            "meter_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "readings_value_not_negative": {
+          "name": "readings_value_not_negative",
+          "value": "\"value\" >= 0"
+        },
+        "readings_old_end_value_not_negative": {
+          "name": "readings_old_end_value_not_negative",
+          "value": "\"old_end_value\" >= 0"
+        }
+      }
+    },
+    "settings": {
+      "name": "settings",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "house_name": {
+          "name": "house_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "address": {
+          "name": "address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "landlord_name": {
+          "name": "landlord_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "iban": {
+          "name": "iban",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "payment_deadline_days": {
+          "name": "payment_deadline_days",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "ollama_url": {
+          "name": "ollama_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "ollama_model": {
+          "name": "ollama_model",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "print_adjust_suggestion": {
+          "name": "print_adjust_suggestion",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "print_attachments": {
+          "name": "print_attachments",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "update_check": {
+          "name": "update_check",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "update_dismissed": {
+          "name": "update_dismissed",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "ai_timeout_seconds": {
+          "name": "ai_timeout_seconds",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "ai_num_ctx": {
+          "name": "ai_num_ctx",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "ai_max_output_tokens": {
+          "name": "ai_max_output_tokens",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "ai_page_image_edge": {
+          "name": "ai_page_image_edge",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "ai_json_mode": {
+          "name": "ai_json_mode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "ai_reasoning_effort": {
+          "name": "ai_reasoning_effort",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "ai_extra_instructions": {
+          "name": "ai_extra_instructions",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "settings_single_row": {
+          "name": "settings_single_row",
+          "value": "\"settings\".\"id\" = 1"
+        },
+        "settings_deadline_not_negative": {
+          "name": "settings_deadline_not_negative",
+          "value": "\"payment_deadline_days\" >= 0"
+        },
+        "settings_update_check_known": {
+          "name": "settings_update_check_known",
+          "value": "\"update_check\" IN ('on', 'off')"
+        },
+        "settings_ai_json_mode_known": {
+          "name": "settings_ai_json_mode_known",
+          "value": "\"ai_json_mode\" IN ('auto', 'schema', 'object', 'prompt')"
+        }
+      }
+    },
+    "tenancies": {
+      "name": "tenancies",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "unit_id": {
+          "name": "unit_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "tenant_name": {
+          "name": "tenant_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "persons": {
+          "name": "persons",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "start": {
+          "name": "start",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "end": {
+          "name": "end",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "phone": {
+          "name": "phone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "correspondence_address": {
+          "name": "correspondence_address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "iban": {
+          "name": "iban",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "contract_date": {
+          "name": "contract_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "deposit_cents": {
+          "name": "deposit_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "deposit_status": {
+          "name": "deposit_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "cost_model": {
+          "name": "cost_model",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "heating_model": {
+          "name": "heating_model",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "tenancies_unit_id_units_id_fk": {
+          "name": "tenancies_unit_id_units_id_fk",
+          "tableFrom": "tenancies",
+          "tableTo": "units",
+          "columnsFrom": [
+            "unit_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "tenancies_persons_not_negative": {
+          "name": "tenancies_persons_not_negative",
+          "value": "\"persons\" >= 0"
+        },
+        "tenancies_deposit_not_negative": {
+          "name": "tenancies_deposit_not_negative",
+          "value": "\"deposit_cents\" >= 0"
+        },
+        "tenancies_deposit_status_known": {
+          "name": "tenancies_deposit_status_known",
+          "value": "\"deposit_status\" IN ('offen', 'erhalten', 'teilweise', 'zurückgezahlt')"
+        },
+        "tenancies_cost_model_known": {
+          "name": "tenancies_cost_model_known",
+          "value": "\"cost_model\" IN ('settlement', 'flatRate', 'inclusive')"
+        },
+        "tenancies_heating_model_known": {
+          "name": "tenancies_heating_model_known",
+          "value": "\"heating_model\" IN ('settlement', 'flatRate', 'inclusive')"
+        }
+      }
+    },
+    "unit_no_connection": {
+      "name": "unit_no_connection",
+      "columns": {
+        "unit_id": {
+          "name": "unit_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "meter_type": {
+          "name": "meter_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "unit_no_connection_unit_id_units_id_fk": {
+          "name": "unit_no_connection_unit_id_units_id_fk",
+          "tableFrom": "unit_no_connection",
+          "tableTo": "units",
+          "columnsFrom": [
+            "unit_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "unit_no_connection_unit_id_meter_type_pk": {
+          "columns": [
+            "unit_id",
+            "meter_type"
+          ],
+          "name": "unit_no_connection_unit_id_meter_type_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "unit_no_connection_meter_type_known": {
+          "name": "unit_no_connection_meter_type_known",
+          "value": "\"meter_type\" IN ('kaltwasser', 'warmwasser', 'strom', 'waerme', 'hkv', 'sonstig')"
+        }
+      }
+    },
+    "units": {
+      "name": "units",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "property_id": {
+          "name": "property_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "area_m2": {
+          "name": "area_m2",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "participates": {
+          "name": "participates",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "self_used": {
+          "name": "self_used",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "self_persons": {
+          "name": "self_persons",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "mea": {
+          "name": "mea",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "rooms": {
+          "name": "rooms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "floor": {
+          "name": "floor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "units_property_id_properties_id_fk": {
+          "name": "units_property_id_properties_id_fk",
+          "tableFrom": "units",
+          "tableTo": "properties",
+          "columnsFrom": [
+            "property_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "units_area_not_negative": {
+          "name": "units_area_not_negative",
+          "value": "\"area_m2\" >= 0"
+        },
+        "units_self_persons_not_negative": {
+          "name": "units_self_persons_not_negative",
+          "value": "\"self_persons\" >= 0"
+        },
+        "units_rooms_not_negative": {
+          "name": "units_rooms_not_negative",
+          "value": "\"rooms\" >= 0"
+        },
+        "units_mea_not_negative": {
+          "name": "units_mea_not_negative",
+          "value": "\"mea\" >= 0"
+        }
+      }
+    },
+    "uploads": {
+      "name": "uploads",
+      "columns": {
+        "file": {
+          "name": "file",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "original_name": {
+          "name": "original_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "mime_type": {
+          "name": "mime_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "size_bytes": {
+          "name": "size_bytes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sha256": {
+          "name": "sha256",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "uploaded_at": {
+          "name": "uploaded_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "property_id": {
+          "name": "property_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "year": {
+          "name": "year",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "invoice_date": {
+          "name": "invoice_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'receipt'"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "uploads_property_id_properties_id_fk": {
+          "name": "uploads_property_id_properties_id_fk",
+          "tableFrom": "uploads",
+          "tableTo": "properties",
+          "columnsFrom": [
+            "property_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "uploads_size_not_negative": {
+          "name": "uploads_size_not_negative",
+          "value": "\"size_bytes\" >= 0"
+        },
+        "uploads_kind_known": {
+          "name": "uploads_kind_known",
+          "value": "\"kind\" IN ('receipt', 'meterPhoto')"
+        },
+        "uploads_year_positive": {
+          "name": "uploads_year_positive",
+          "value": "\"year\" > 0"
+        }
+      }
+    }
+  },
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "indexes": {}
+  }
+}

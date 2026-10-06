@@ -27,7 +27,7 @@ import { tenancyStamp } from '../../shared/tenancyStamp.ts'
 import { calendarPeriod } from '../../shared/period.ts'
 import type { JsonSchema } from '../src/ai/ollama.ts'
 import type {
-  AiKeyInfo, AiPreset, AiRecommendations, AiSettings, AiSlot, AiSlotName, AiStatus, AssessmentLine, AssignableHeatingItem, Co2Statement, DegreeDayValue, FuelDelivery, FuelGapQuestion, Notice, HeatingPeriodView, HeatingPlant, AssessmentView, BookingPreview, CostItem, Extraction, LineDecision, LineFields,
+  AiKeyInfo, AiPreset, AiRecommendations, AiSettings, AiSlot, AiSlotName, AiStatus, AssessmentLine, AssignableHeatingItem, Co2Statement, DegreeDayValue, FuelDelivery, FuelGapQuestion, Notice, HeatingDistribution, HeatingPeriodView, HeatingPlant, InterimGap, AssessmentView, BookingPreview, CostItem, Extraction, LineDecision, LineFields,
   Meter, MeterReadingExtraction, OllamaStatus, Payment, Property, Reading, Settings, Settlement, StockView, TaxReport, Tenancy, Unit, UnitDependents,
   UpdateStatus, UploadEntry, UploadInfo,
 } from '../../shared/types.ts'
@@ -6246,6 +6246,52 @@ test('Kesseltausch über die Route: Öl endet, Gas beginnt; der Restbestand steh
     const rest = abrechnung.landlord.rows.find((r) => r.costItemId.endsWith(':remaining')) ?? assert.fail('kein Restbestand beim Vermieter')
     assert.deepEqual(rest.landlordParts, [{ reason: 'stockRemaining', cents: 105000 }])
     assert.ok(abrechnung.notices?.some((n) => n.code === 'fuel.stock-remaining'))
+  } finally {
+    s.stop()
+  }
+})
+
+test('Eigene Heizkostenabrechnung über die Routen: Einrichtung mit Liste, Anteil, Zwischenablesung (Heizung PR 10)', async () => {
+  const s = await startServer()
+  const send = (method: string, url: string, body?: unknown) =>
+    fetch(`${s.base}${url}`, { method, headers: { 'content-type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) })
+  try {
+    const unit = await s.api<{ id: string }>('/api/units', { method: 'POST', body: JSON.stringify({ name: 'EG', areaM2: 60, participates: true }) })
+    const { plant } = await jsonOf<{ plant: HeatingPlant }>(await send('POST', '/api/heating-plants', { energy: 'gas', method: 'manual' }))
+    const item = await s.api<{ id: string }>('/api/costItems', { method: 'POST', body: JSON.stringify({ period: '2025-01', category: 'Heizung und Warmwasser', description: 'Gas', amountCents: 600000, key: 'area' }) })
+    // Über die allgemeine Route geht es nicht.
+    const allgemein = await send('PUT', `/api/heating-plants/${plant.id}`, { method: 'self', capture: 'heatMeter' })
+    assert.equal(allgemein.status, 400)
+    assert.match(await errorFrom(allgemein), /Einrichtung/)
+    const setup = { period: '2025-01', heatConsumptionPct: 70, waterConsumptionPct: 70, insulationRule: 'notApplies', hotWater: 'combined', capture: 'heatMeter', dhwHeatMeter: true, totalHeatMeter: false }
+    const liste = await send('PUT', `/api/heating-plants/${plant.id}/self`, setup)
+    assert.equal(liste.status, 409)
+    const body409 = await jsonOf<{ error: string; items: { id: string }[] }>(liste)
+    assert.deepEqual(body409.items.map((i) => i.id), [item.id])
+    const ok = await send('PUT', `/api/heating-plants/${plant.id}/self`, { ...setup, items: [{ id: item.id, heatingPart: 'fuel', heatingTarget: 'both' }] })
+    assert.equal(ok.status, 200)
+    const result = await jsonOf<{ plant: HeatingPlant; created: Meter[]; converted: number }>(ok)
+    assert.deepEqual([result.plant.method, result.converted, result.created.length], ['self', 1, 3])
+    // Der Anteil: 2025 hat begonnen, ein anderer Wert ist gesperrt; derselbe geht.
+    const anders = await send('PUT', `/api/heating-plants/${plant.id}/periods/2025-01/distribution`, { heatConsumptionPct: 60, waterConsumptionPct: 60, insulationRule: 'notApplies' })
+    assert.equal(anders.status, 400)
+    assert.match(await errorFrom(anders), /§ 6 Abs\. 4/)
+    const gleich = await jsonOf<HeatingDistribution>(await send('PUT', `/api/heating-plants/${plant.id}/periods/2025-01/distribution`, { heatConsumptionPct: 70, waterConsumptionPct: 70, insulationRule: 'notApplies' }))
+    assert.equal(gleich.effective?.heating, 70)
+    const [view] = await s.api<HeatingPeriodView[]>(`/api/heating-plants/${plant.id}/periods?period=2025`)
+    assert.deepEqual([view?.distribution?.effective?.heating, view?.distribution?.begun], [70, true])
+    // Zwischenablesung
+    const gap = await jsonOf<InterimGap>(await send('PUT', `/api/units/${unit.id}/interim-gaps/2025-09-30`, { status: 'missed', reason: '' }))
+    assert.equal(gap.status, 'missed')
+    assert.equal((await send('PUT', `/api/units/${unit.id}/interim-gaps/2025-09-30`, { status: 'egal' })).status, 400)
+    assert.equal((await send('PUT', '/api/units/gibt-es-nicht/interim-gaps/2025-09-30', { status: 'missed' })).status, 404)
+    assert.deepEqual(await jsonOf<{ ok: boolean; removed: boolean }>(await send('DELETE', `/api/units/${unit.id}/interim-gaps/2025-09-30`)), { ok: true, removed: true })
+    // Zurück auf freie Schlüssel: erst die Liste, dann mit Bestätigung.
+    const zurueck = await send('PUT', `/api/heating-plants/${plant.id}`, { method: 'manual' })
+    assert.equal(zurueck.status, 409)
+    assert.equal((await jsonOf<{ items: unknown[] }>(zurueck)).items.length, 1)
+    assert.equal((await send('PUT', `/api/heating-plants/${plant.id}`, { method: 'manual', convertItems: 'area' })).status, 200)
+    assert.equal((await send('PUT', '/api/heating-plants/gibt-es-nicht/self', setup)).status, 404)
   } finally {
     s.stop()
   }

@@ -18,7 +18,7 @@
 // die Abfrage bedient, kann es anders kommen.
 
 import { eq, sql } from 'drizzle-orm'
-import type { AiConsent, AiSettings, AiSlot, Co2Statement, CostItem, DegreeDayValue, FrozenFuelCarry, FuelDelivery, HeatingPeriodData, HeatingPlant, Meter, Payment, PeriodKey, Property, Reading, Settings, Tenancy, Unit } from '../../../shared/types.ts'
+import type { AiConsent, AiSettings, AiSlot, Co2Statement, CostItem, DegreeDayValue, FrozenFuelCarry, FuelDelivery, HeatingPeriodData, HeatingPlant, InterimGap, Meter, Payment, PeriodKey, Property, Reading, Settings, Tenancy, Unit } from '../../../shared/types.ts'
 import { periodKey } from '../../../shared/period.ts'
 import { migrateAi, type MigratedSettings } from '../ai/settings.ts'
 import { DEFAULT_SETTINGS } from '../defaults.ts'
@@ -26,7 +26,8 @@ import { frozenSettlementOf, type FrozenItemSelfUse, type SnapshotSource } from 
 import type { Executor } from './client.ts'
 import {
   aiSlots, baseRents, closedHeatingSettlements, co2Statements, co2TenantReliefs, degreeDayValues, fuelCarryFrozen, fuelDeliveries, fuelDeliveryParts, heatingPeriods, closedSettlements, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, unitNoConnection, meters, payments,
-  flatRates, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingPrepaymentOverrides, heatingPrepayments, heatingSeparateSpans, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, readings, settings, tenancies, units,
+  flatRates, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingPrepaymentOverrides, heatingPrepayments, heatingSelfSpans, heatingSeparateSpans, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, readings, settings, tenancies, units,
+  interimReadingGaps,
 } from './schema.ts'
 
 // Eine abgeschlossene Abrechnung, wie sie in der Datenbank steht. `settlement` bleibt
@@ -62,6 +63,8 @@ export type Stock = SnapshotSource & {
   // CO₂-Angaben und Zeilen der Heizperioden (Heizung PR 6)
   co2Statements: Co2Statement[]
   heatingPeriodRows: HeatingPeriodData[]
+  // Antworten zu fehlenden Zwischenablesungen (Heizung PR 10)
+  interimGaps: InterimGap[]
   // Lieferungen, eingefrorene Überträge, Ortswerte (Heizung PR 7)
   fuelDeliveries: FuelDelivery[]
   fuelCarryFrozen: FrozenFuelCarry[]
@@ -250,6 +253,8 @@ export async function readCostItems(db: Executor): Promise<CostItem[]> {
       ...(c.serviceTo !== null ? { serviceTo: c.serviceTo } : {}),
       ...(c.taxYear !== null ? { taxYear: c.taxYear } : {}),
       ...(c.heatingPart !== null ? { heatingPart: c.heatingPart } : {}),
+      // Das Ziel bei Heizkosten (Heizung PR 10), ebenso nur, wenn es gesetzt ist.
+      ...(c.heatingTarget !== null ? { heatingTarget: c.heatingTarget } : {}),
       // Die Heizanlage (Heizung PR 4), ebenso nur, wenn es sie gibt.
       ...(c.heatingPlantId !== null ? { heatingPlantId: c.heatingPlantId } : {}),
       // Die Lieferung (Heizung PR 7), ebenso nur, wenn es sie gibt.
@@ -286,6 +291,8 @@ export async function readHeatingPlants(db: Executor): Promise<HeatingPlant[]> {
   // Wechsel und Spannen nach Weg d (Heizung PR 5), aufsteigend.
   const wechsel = groupBy(await db.select().from(heatingPeriodChanges).orderBy(heatingPeriodChanges.fromMonth), (w) => w.plantId, (w) => w.fromMonth)
   const spannen = groupBy(await db.select().from(heatingSeparateSpans).orderBy(heatingSeparateSpans.from), (s) => s.plantId, (s) => ({ from: s.from, until: s.until }))
+  // Zeiträume der eigenen Heizkostenabrechnung (Durchsicht von #239), aufsteigend.
+  const eigene = groupBy(await db.select().from(heatingSelfSpans).orderBy(heatingSelfSpans.from), (s) => s.plantId, (s) => ({ from: s.from, until: s.until }))
   return rows.map((p) => ({
     id: p.id,
     propertyId: p.propertyId,
@@ -313,6 +320,12 @@ export async function readHeatingPlants(db: Executor): Promise<HeatingPlant[]> {
     replacesPlantId: p.replacesPlantId,
     buildingWith: p.buildingWith,
     takesOverStock: p.takesOverStock,
+    // Eigene Heizkostenabrechnung (Heizung PR 10).
+    hotWater: p.hotWater,
+    capture: p.capture,
+    areaBasisHeat: p.areaBasisHeat,
+    heatPumpInstalledOn: p.heatPumpInstalledOn,
+    selfSpans: eigene.get(p.id) ?? [],
   }))
 }
 
@@ -337,6 +350,12 @@ export async function readCo2Statements(db: Executor): Promise<Co2Statement[]> {
 // Die Zeilen der Heizperioden (PR 4), für die Angaben zum Warmwasser im Schnappschuss.
 export async function readHeatingPeriodRows(db: Executor): Promise<HeatingPeriodData[]> {
   return await db.select().from(heatingPeriods).orderBy(INSERTION_ORDER)
+}
+
+// Die Antworten zu fehlenden Zwischenablesungen (Heizung PR 10, Abweichung 8), nach Wohnung und Datum.
+export async function readInterimGaps(db: Executor): Promise<InterimGap[]> {
+  const rows = await db.select().from(interimReadingGaps).orderBy(interimReadingGaps.unitId, interimReadingGaps.date)
+  return rows.map((r) => ({ unitId: r.unitId, date: r.date, status: r.status, reason: r.reason }))
 }
 
 // Die Brennstofflieferungen samt Teilmengen (Heizung PR 7), die Teilmengen nach Beginn.
@@ -377,6 +396,8 @@ export async function readReadings(db: Executor): Promise<Reading[]> {
     replacement: orUndefined(r.replacement),
     oldEndValue: orUndefined(r.oldEndValue),
     note: orUndefined(r.note),
+    // Grenze einer Ablesung aus dem Mieterwechsel (Heizung PR 10), nur wenn gesetzt.
+    ...(r.interimFor !== null ? { interimFor: r.interimFor } : {}),
   }))
 }
 
@@ -436,6 +457,7 @@ export async function readStock(db: Executor): Promise<Stock> {
     heatingPlants: await readHeatingPlants(db),
     co2Statements: await readCo2Statements(db),
     heatingPeriodRows: await readHeatingPeriodRows(db),
+    interimGaps: await readInterimGaps(db),
     fuelDeliveries: await readFuelDeliveries(db),
     fuelCarryFrozen: await readFuelCarryFrozen(db),
     degreeDayValues: await readDegreeDayValues(db),

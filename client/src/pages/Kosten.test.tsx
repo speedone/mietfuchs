@@ -312,3 +312,46 @@ test('Zwei Heizanlagen (Heizung PR 9): die Heizposition wählt ihre Anlage; ohne
   // Recht I2 der Durchsicht von #238: Die Wahl der Anlage beteiligt deren Wohnungen.
   expect(sent[0].body).toMatchObject({ category: 'Heizung und Warmwasser', heatingPlantId: 'hp2', participantUnitIds: ['u2', 'u3'] })
 })
+
+test('Heizung PR 10: bei eigener Heizkostenabrechnung nur der Schlüssel nach Heizkostenverordnung; Teil und Ziel angezeigt wie gespeichert', async () => {
+  plants = [{
+    id: 'hp1', propertyId: 'objekt-1', name: '', energy: 'gas', supply: 'central', method: 'self', separateSettlement: null,
+    devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null, capturedOnOct2024: null,
+    warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null, periodChanges: [], separateSpans: [], units: null, newDevicesInstall: null,
+    nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null,
+    hotWater: 'combined', capture: 'heatMeter', areaBasisHeat: 'area', heatPumpInstalledOn: null,
+  }]
+  await openForm()
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Heizung und Warmwasser' } })
+  await waitFor(() => expect(select(/Umlageschlüssel/i).value).toBe('heatingSystem'))
+  expect([...select(/Umlageschlüssel/i).options].map((o) => o.value)).toEqual(['heatingSystem'])
+  // Ohne Teil: Ziel wählbar, nichts vorbelegt.
+  expect(select(/^Ziel$/).value).toBe('')
+  fireEvent.change(select(/^Teil der Heizkosten$/), { target: { value: 'fuel' } })
+  // Brennstoff bei verbundener Bereitung: nur „Heizung und Warmwasser“, und genau das steht im Zustand.
+  await waitFor(() => expect(select(/^Ziel$/).value).toBe('both'))
+  expect([...select(/^Ziel$/).options].map((o) => o.value)).toEqual(['both'])
+  fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/i }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0].body).toMatchObject({ key: 'heatingSystem', heatingPart: 'fuel', heatingTarget: 'both' })
+})
+
+test('Heizung PR 10: bei freien Schlüsseln „nur Heizung“ wählbar, ohne Wahl „Heizung und Warmwasser“', async () => {
+  plants = [{
+    id: 'hp1', propertyId: 'objekt-1', name: '', energy: 'gas', supply: 'central', method: 'manual', separateSettlement: null,
+    devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null, capturedOnOct2024: null,
+    warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null, periodChanges: [], separateSpans: [], units: null, newDevicesInstall: null,
+    nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null,
+    hotWater: 'combined', capture: null, areaBasisHeat: 'area', heatPumpInstalledOn: null,
+  }]
+  await openForm()
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Heizung und Warmwasser' } })
+  await waitFor(() => expect([...select(/^Ziel$/).options].map((o) => o.value)).toEqual(['', 'heating']))
+  expect(select(/^Ziel$/).value).toBe('')
+  expect([...select(/Umlageschlüssel/i).options].map((o) => o.value)).not.toContain('heatingSystem')
+  fireEvent.change(select(/^Ziel$/), { target: { value: 'heating' } })
+  expect(select(/^Ziel$/).value).toBe('heating')
+  fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/i }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0].body).toMatchObject({ key: 'area', heatingTarget: 'heating' })
+})

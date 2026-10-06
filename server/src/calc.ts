@@ -34,6 +34,13 @@ import type {
   TaxExpenseItem,
   TaxReport,
   FuelDeliveryLine,
+  HeatingTarget,
+  HotWater,
+  SelfHeatingStatement,
+  SelfPot,
+  SelfPotView,
+  SelfUnitView,
+  SelfUserView,
 } from '../../shared/types.ts'
 // Die Berechnung kennt den Speicher nicht mehr, sondern nur noch den Schnappschuss eines
 // Abrechnungsjahres (siehe snapshot.ts). Welche Sammlung darin nach Jahr eingegrenzt sein darf,
@@ -46,23 +53,27 @@ import { ausweisGaps, CO2_FUELS, co2Assessment, co2DeductionsOf, FORMULA_METHODS
 // nicht als Literal; server/test/law-literals.test.ts wacht darüber.
 import { createLawLog, dayAfter, dayBefore, law, LAW_AS_OF, onlyVersion, recordVersionAt, valueAt, type Period } from '../../shared/law/register.ts'
 import { betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths } from '../../shared/law/bgb-betrkv.ts'
-import { hkvConsumptionShare, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit } from '../../shared/law/heizkostenv.ts'
+import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvHeatPumpCapture, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvSettlementInfo, type DegreeDayTable } from '../../shared/law/heizkostenv.ts'
 import { remoteReadingVerdict, servedUnitIds } from './remoteReading.ts'
-import { practiceVacancyPersons } from '../../shared/law/practice.ts'
+import { practiceReadingOffWarning, practiceVacancyPersons } from '../../shared/law/practice.ts'
 import { HEATING_CATEGORY, heatingByConsumption, heatingFindings, mayAgreeOtherwise } from '../../shared/heating.ts'
 import { andList, meterTypeLabel, plural } from '../../shared/wording.ts'
 import type { TermId } from '../../shared/glossary.ts'
 import { allocationOf, comparablePrevious, sameAllocation, sameUnits } from '../../shared/allocation.ts'
 import { possibleDuplicates } from '../../shared/duplicates.ts'
 import { commonPeriod, tenancyOverlaps } from '../../shared/tenancyOverlap.ts'
-import { CALENDAR_RULES, calendarYearPeriod, contextOf, formatDayRange, isCalendarRules, periodContaining, periodDays, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, settlementDeadline, settlementPeriod, type PeriodContext } from '../../shared/period.ts'
+import { CALENDAR_RULES, calendarYearPeriod, contextOf, formatDayRange, isCalendarRules, periodContaining, periodDays, periodLabel, periodMonths, periodOfKey, periodsBetween, previousPeriod, rulesOf, settlementDeadline, settlementPeriod, type PeriodContext } from '../../shared/period.ts'
 import { lineRoot, monthSpanText, plantRules, plantSpan, recommendedDeadline, requestMonth, sameBuilding, sameFuelLine, sameLine, sameSpan, separateOwner, servesUnit, settledSeparately } from '../../shared/heatingPeriod.ts'
-import { heatingSnapshotFor, snapshotFor, wayOf } from './snapshot.ts'
+import { heatingSnapshotFor, selfAt, snapshotFor, wayOf } from './snapshot.ts'
 import { plantFuel, rangeOf, type FuelCarry, type FuelResult } from './fuel.ts'
-import { fuelFromDeliveries, fuelFromStock, looseCentsOf, measuredOffset, problemText, settledByDefault, stockOf, stockTemplateOfLine, stockTouched, valueOf as stockValueOf, type FuelFigures, type StockPeriodInput, type StockResult } from './fuelStock.ts'
+import { fuelFromDeliveries, fuelFromStock, looseCentsOf, measuredOffset, problemText, settledByDefault, stockKeysOf, stockOf, stockTemplateOfLine, stockTouched, valueOf as stockValueOf, type FuelFigures, type StockPeriodInput, type StockResult } from './fuelStock.ts'
 import { isStockEnergy, STOCK_FUEL_NAMES, STOCK_UNIT_TEXT } from '../../shared/fuelStock.ts'
 import { degreeDayPermille } from '../../shared/degreeDays.ts'
 import { annualFactors, type AnnualBasis } from './prepaymentSuggestion.ts'
+import {
+  boundaryReadingsOf, consumptionSharesOf, heatPumpVerdict, lineShareRows, OIL_OR_GAS, hotWaterShareOf, measuredBetween, planSelf, sortReadings, targetProblem, usersOf, weightsOf,
+  type Alpha, type AlphaProblem, type ConsumptionShares, type HeatPumpVerdict, type SelfInput, type SelfPlan, type SelfProblem, type SelfReading, type SelfTenancy, type SelfUnit, type SelfUserPlan, type SelfWeights,
+} from './heating.ts'
 import type { FrozenItemSelfUse, Snapshot, SnapshotCostItem, SnapshotHeatingPart, SnapshotHeatingPlant, SnapshotMeter, SnapshotReading, SnapshotTenancy, SnapshotUnit } from './snapshot.ts'
 
 export const KEY_LABELS: Record<CostKey, string> = {
@@ -74,6 +85,7 @@ export const KEY_LABELS: Record<CostKey, string> = {
   custom: 'Vereinbarte Anteile',
   external: 'Laut Gemeinschaftsabrechnung',
   amounts: 'Einzelbetrag',
+  heatingSystem: 'Nach Heizkostenverordnung',
 }
 
 const MS_DAY = 86400000
@@ -323,6 +335,31 @@ const noticeKinds = {
   'fuel.opening-check-loose': { level: 'hint', title: 'Heizkosten ohne Kennzeichen im Vorjahr', rule: 'heating-consumed-fuel', terms: ['fuelStock'] },
   'fuel.opening-not-settled': { level: 'warning', title: 'Anfangsbestand womöglich doppelt', rule: 'heating-consumed-fuel', terms: ['fuelStock'] },
   'fuel.stock-unlinked': { level: 'warning', title: 'Brennstoffposition ohne Lieferung', rule: 'heating-consumed-fuel', terms: ['fuelStock', 'fuelDelivery'] },
+  // Heizung PR 10 (#99): eigene Heizkostenabrechnung (Entwurf 8, 10.1; Abweichungen 4 bis 6). Ein
+  // Fehler heißt hier: Die Anlage wird nicht verteilt, ihre Positionen stehen beim Vermieter.
+  'heating.self-incomplete': { level: 'error', title: 'Heizkostenabrechnung unvollständig', rule: 'heating-own-settlement', terms: ['heatingSystem', 'heatMeter'] },
+  'heating.dhw-share-invalid': { level: 'error', title: 'Warmwasseranteil nicht bestimmbar', rule: 'heating-dhw-split', terms: ['hotWaterShare'] },
+  'heating.heat-pump-dhw-basis': { level: 'error', title: 'Wärmepumpe ohne Gesamtwärmezähler', rule: 'heating-dhw-split', terms: ['hotWaterShare', 'heatMeter'] },
+  'heating.target-invalid': { level: 'error', title: 'Ziel der Heizposition passt nicht', rule: 'heating-own-settlement', terms: ['heatingSystem', 'hotWaterShare'] },
+  'fuel.stock-missing-self': { level: 'error', title: 'Vorrat fehlt bei der eigenen Heizkostenabrechnung', rule: 'heating-consumed-fuel', terms: ['fuelStock', 'heatingSystem'] },
+  // Ablesungen und Nutzerwechsel (Entwurf 3.5, 15.2 F2, F3); eine Stufe je Code (Abweichungen 2, 3).
+  'heating.interim-reading-off': { level: 'hint', title: 'Zwischenablesung neben dem Wechsel', rule: 'heating-tenant-change', terms: ['interimReading', 'degreeDays'] },
+  'heating.interim-reading-far': { level: 'warning', title: 'Zwischenablesung weit neben dem Wechsel', rule: 'heating-tenant-change', terms: ['interimReading', 'degreeDays'] },
+  'heating.no-interim-reading': { level: 'hint', title: 'Zwischenablesung nicht möglich', rule: 'heating-tenant-change', terms: ['interimReading', 'degreeDays'] },
+  'heating.no-interim-reading-missed': { level: 'warning', title: 'Zwischenablesung nicht durchgeführt', rule: 'heating-tenant-change', terms: ['interimReading'] },
+  'heating.reading-dates-differ': { level: 'hint', title: 'Ablesung neben dem Stichtag', rule: 'heating-reading-date', terms: ['heatMeter', 'degreeDays'] },
+  'heating.reading-dates-far': { level: 'warning', title: 'Ablesung weit neben dem Stichtag', rule: 'heating-reading-date', terms: ['heatMeter', 'degreeDays'] },
+  'heating.no-consumption': { level: 'warning', title: 'Kein Verbrauch erfasst', rule: 'heating-consumption', terms: ['consumptionCosts', 'heatMeter'] },
+  // Durchsicht von #239: „Weiß ich nicht“ beim Wärmeschutz und weniger als der Pflichtanteil (C1), die
+  // Angaben nach § 6a Abs. 3 bis PR 14 (I1).
+  'heating.share-forced-unsure': { level: 'warning', title: 'Pflichtanteil nach Verbrauch ungeklärt', rule: 'heating-own-settlement', terms: ['forcedConsumptionShare', 'consumptionCosts'] },
+  'heating.self-6a-missing': { level: 'warning', title: 'Angaben nach § 6a HeizkostenV fehlen', rule: 'heating-own-settlement', terms: ['heatingCostOrdinance', 'consumptionCosts'] },
+  'heating.key-change': { level: 'hint', title: 'Anteil nach Verbrauch geändert', rule: 'heating-key-change', terms: ['consumptionCosts', 'keyChange'] },
+  'heating.change-split-time': { level: 'hint', title: 'Mieterwechsel zeitanteilig statt nach Gradtagen', rule: 'heating-tenant-change', terms: ['interimReading', 'degreeDays'] },
+  'heating.change-fee': { level: 'hint', title: 'Kosten der Zwischenablesung', rule: 'heating-tenant-change', terms: ['interimReading'] },
+  'heating.heat-pump-capture': { level: 'hint', title: 'Wärmepumpe: Heizkostenverordnung gilt noch nicht', rule: 'heating-own-settlement', terms: ['heatingSystem', 'heatMeter'] },
+  // Warmwasseranteil auf der Schätzung beim Abschluss (Abweichung 11).
+  'heating.dhw-share-estimated': { level: 'hint', title: 'Warmwasseranteil aus geschätzter Energie', rule: 'heating-own-settlement', terms: ['hotWaterShare'] },
   'heating.dhw-not-metered': { level: 'warning', title: 'Warmwasser ohne Wärmezähler abgerechnet', rule: 'heating-dhw-split', terms: ['hotWaterShare', 'heatingCostOrdinance'] },
   'model.prepayment-unsettled': { level: 'warning', title: 'Vorauszahlung ohne Abrechnung', terms: ['prepayment', 'flatRate'] },
   'prepayment.arrears': { level: 'warning', title: 'Rückstand im Mietkonto', terms: ['prepayment'] },
@@ -1588,7 +1625,9 @@ type TenancyWithUnit = SnapshotTenancy & { days: number, unit: SnapshotUnit }
 // der Anteil der Wohnung innerhalb der Wohnungen des Vermieters, nach dem wirklich verteilt wird;
 // `ownShare` fehlt, wenn er nur eine hat.
 type CommunitySteps = { costsCents: number, share: string, term: TermId, appliedCents: number | null, ownShare: string | null }
-type Target = { t: TenancyWithUnit, raw: number, basisText: string, community?: CommunitySteps }
+// `heating`: bei der eigenen Heizkostenabrechnung (Heizung PR 10) die Schritte über Grund- und
+// Verbrauchskosten, Warmwasseranteil und Anteil, statt der Verteilbasis.
+type Target = { t: TenancyWithUnit, raw: number, basisText: string, community?: CommunitySteps, heating?: CalcStep[] }
 
 // Verbrauch und Zähler eines Zählertyps, aufbereitet für die Verteilung. Der Wert ist bewusst
 // optional (nicht `Record<string, ConsumptionByTypeEntry>`): zu einer Kostenposition mit einem
@@ -1736,6 +1775,7 @@ const KEY_PHRASES: Record<CostKey, string> = {
   custom: 'nach vereinbarten Anteilen',
   external: 'laut Gemeinschaftsabrechnung',
   amounts: 'als Einzelbeträge',
+  heatingSystem: 'nach der Heizkostenverordnung',
 }
 
 // Hat eine Position einen anderen Schlüssel als dieselbe Kostenart im Vorjahr (#141)? Dann der
@@ -2209,7 +2249,6 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   const fuel = snapshot.fuel
   if (fuel) {
     for (const plant of fuelPlants) {
-      if (plant.method === 'self') continue
       // Heizöl, Flüssiggas, Pellets, Holz und Kohle rechnen über den Vorrat (Heizung PR 8, unten).
       if (isStockEnergy(plant.energy)) continue
       const deliveries = fuel.deliveries.filter((d) => d.plantId === plant.id)
@@ -2307,14 +2346,15 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   for (const plant of fuelPlants) {
     if (!isStockEnergy(plant.energy)) continue
     const statement = (snapshot.co2Statements ?? []).find((x) => x.plantId === plant.id && x.period === period.key)
-    if (plant.method !== 'manual' && !(plant.method === 'service' && statement?.method === 'selfAfterService')) continue
+    // Heizung PR 10: auch bei der eigenen Heizkostenabrechnung (Entwurf 8.2).
+    if (plant.method === 'service' && statement?.method !== 'selfAfterService') continue
     const chain = (snapshot.stockChains ?? []).find((c) => c.plantId === plant.id && c.period === period.key)?.chain ?? []
     const last = chain.at(-1)
     if (!last) continue
     // Ohne Angaben zum Vorrat keine Abfrage des Registers (Entwurf 1.2 Nr. 1).
     const touched = stockTouched(chain)
     const result = stockOf(chain, {
-      needCost: plant.method === 'manual',
+      needCost: plant.method !== 'service',
       needCo2: CO2_FUELS.includes(plant.energy),
       countedAt: touched ? stockCountedAt : () => true,
       excludedUntil: co2CostsExcludedUntil(),
@@ -2338,13 +2378,18 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   const stockNotes: { plant: SnapshotHeatingPlant; code: 'fuel.stock-remaining' | 'fuel.stock-not-taken-over' | 'fuel.opening-settled' | 'fuel.opening-settled-assumed' | 'fuel.opening-check-loose' | 'fuel.opening-not-settled' | 'fuel.stock-unlinked'; text: string }[] = []
   const stockUnlinked = new Map<string, SnapshotCostItem[]>()
   const stockOpts = (plant: SnapshotHeatingPlant) => ({
-    needCost: plant.method === 'manual', needCo2: CO2_FUELS.includes(plant.energy), countedAt: stockCountedAt,
+    needCost: plant.method !== 'service', needCo2: CO2_FUELS.includes(plant.energy), countedAt: stockCountedAt,
     excludedUntil: co2CostsExcludedUntil(), countedFrom: co2CostsCountedFrom(),
   })
+  // Heizung PR 10 (N14): Bei der eigenen Heizkostenabrechnung ist die Vorlage eine Brennstoffposition nach
+  // Heizkostenverordnung; die Übertragsposten gehen mit den Gewichten ihres Ziels durch die Verordnung
+  // (Entwurf 8.2). Den fehlenden Bestand meldet dort der Plan der Anlage (`fuel.stock-missing-self`).
+  const stockWithoutTemplate = new Set<string>()
   for (const [plantId, entry] of stockOfPlant) {
-    if (entry.plant.method !== 'manual') continue
+    if (entry.plant.method === 'service') continue
+    const ownSettlement = entry.plant.method === 'self'
     const mine = items.filter((c) => c.category === HEATING_CATEGORY && c.heatingPlantId === plantId)
-    const template = stockTemplateOfLine(items, snapshot.previousCostItems ?? [], sameFuelLine(entry.plant, plants), HEATING_CATEGORY)
+    const template = stockTemplateOfLine(items, snapshot.previousCostItems ?? [], sameFuelLine(entry.plant, plants), HEATING_CATEGORY, stockKeysOf(entry.plant.method))
     const name = STOCK_FUEL_NAMES[entry.plant.energy] ?? 'Brennstoff'
     // Was die Vorperiode an diese weitergibt (eingefroren oder lebend), für den Hinweis auf einen
     // Bestand, den diese Heizperiode nicht übernimmt (I2).
@@ -2368,7 +2413,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       stockNotes.push({ plant: entry.plant, code: 'fuel.stock-unlinked', text: `${andList(unlinked.map((c) => `„${c.description}“`))} ${unlinked.length === 1 ? 'ist' : 'sind'} als Brennstoff gekennzeichnet, aber mit keiner Lieferung verknüpft. Die Bestandsrechnung kennt ${unlinked.length === 1 ? 'diese Rechnung' : 'diese Rechnungen'} nicht: Weder ${unlinked.length === 1 ? 'ihre Menge' : 'ihre Mengen'} noch ihr CO₂-Ausstoß zählen, und der Endbestand ist ohne sie bewertet. Verknüpfen Sie ${unlinked.length === 1 ? 'sie' : 'jede'} auf der Seite Heizkosten als Lieferung mit Lieferdatum und Menge.` })
     }
     if (!entry.result.ok) {
-      if (stockTouched(entry.chain) || mine.length > 0) {
+      if (!ownSettlement && (stockTouched(entry.chain) || mine.length > 0)) {
         stockManualNotes.push({ plant: entry.plant, text: problemText(entry.result.problem), invalid: entry.result.problem.kind === 'invalid' })
       }
       notTaken('die Bestandsrechnung hier fehlt oder nicht aufgeht')
@@ -2420,6 +2465,11 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const prevChain = entry.chain.length > 1 ? entry.chain[entry.chain.length - 2] : undefined
     if (prevChain?.closedWithoutStock && !prevChain.frozenClosing && stmt.opening.quantity > 0) {
       stockNotes.push({ plant: entry.plant, code: 'fuel.opening-settled', text: `Der Anfangsbestand von ${qty} zählt mit 0 € und ohne CO₂-Kosten: Die Heizperiode ${prevChain.label} ist ohne Vorrat abgeschlossen, ihre Mieter haben den Brennstoff mit den Rechnungen bezahlt. Seine kg zählen für die Einstufung des Gebäudes.` })
+    }
+    if (!template && ownSettlement) {
+      stockWithoutTemplate.add(plantId)
+      notTaken('es hier keine Brennstoffposition nach Heizkostenverordnung gibt')
+      continue
     }
     if (!template) {
       stockManualNotes.push({ plant: entry.plant, text: 'Für den Verbrauch aus dem Vorrat gibt es keinen Schlüssel: In dieser Heizperiode und der vorigen steht keine Brennstoffposition dieser Heizanlage, die nach einem Umlageschlüssel verteilt wird. Der Endbestand geht deshalb mit 0 € in die nächste Heizperiode, denn die Mieter haben ihn mit den Rechnungen schon bezahlt.', invalid: false })
@@ -2522,6 +2572,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     }))
     for (const c of items) {
       if (c.category !== HEATING_CATEGORY || !c.heatingPlantId) continue
+      // Nach Heizkostenverordnung verteilt eine Position nur über die Wohnungen ihrer Anlage (Heizung PR 10).
+      if (c.key === 'heatingSystem') continue
       // Nach einem Kesseltausch versorgen alte und neue Anlage dieselben Wohnungen nacheinander, auch über
       // mehrere Täusche (Durchsicht von #238, C1); das ist keine zweite Anlage im Sinne von F9. Eine Anlage,
       // die in diesem Zeitraum nicht heizt, zählt ebenso wenig.
@@ -2531,6 +2583,317 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         return !!other && activeIn(other) && (!ownPlant || !sameLine(ownPlant, other, plants))
       }))
       if (others.length > 0) spanning.set(c.id, others)
+    }
+  }
+  // ---------- Eigene Heizkostenabrechnung (Heizung PR 10, Entwurf 6.1 Nr. 4.3, 8) ----------
+  // Je Anlage mit `method = 'self'`, deren Heizperiode der Zeitraum dieser Berechnung ist (dieselben
+  // Anlagen wie bei den Lieferungen, `fuelPlants`), der Plan: Nutzer, Ablesungen, Gruppen und Bruchteile
+  // (heating.ts), Anteil nach Verbrauch, Warmwasseranteil und das Urteil zur Wärmepumpe. Daraus die
+  // Gewichte, mit denen jede Position mit `heatingSystem` und jeder Übertrag der Anlage verteilt wird.
+  // Was die Anlage nicht verteilbar macht, steht in `blocked`; dann gehen ihre Positionen an den
+  // Vermieter (`noBasis`), und je Grund nennt ein Fehler, was zu tun ist (Abweichung 5).
+  type SelfBlock = { code: 'heating.self-incomplete' | 'heating.dhw-share-invalid' | 'heating.heat-pump-dhw-basis' | 'fuel.stock-missing-self' | 'fuel.stock-invalid'; text: string }
+  type SelfPlantPlan = {
+    plant: SnapshotHeatingPlant
+    plan: SelfPlan
+    shares: ConsumptionShares | null
+    alpha: Alpha | null
+    weights: Map<string, SelfWeights> | null
+    blocked: SelfBlock[]
+    verdict: HeatPumpVerdict | null
+    hotWater: HotWater
+    changeSplit: 'degreeDays' | 'time'
+    hDays: number
+    hDegree: number
+    userByKey: Map<string, SelfUserPlan>
+    input: SelfInput
+  }
+  const POT_NAME: Record<SelfPot, string> = { heating: 'Heizung', water: 'Warmwasser' }
+  const POT_UNIT: Record<SelfPot, string> = { heating: 'kWh', water: 'm³' }
+  const selfProblemText = (p: SelfProblem, areaBasisHeat: string): string => {
+    if (p.kind === 'farInterim') {
+      return `Beim Wechsel in ${p.unitName} zum ${fmtDay(p.boundary)} wurde erst am ${fmtDay(p.readingDate)} abgelesen, ${p.days} Tage daneben und über einen Wintermonat. Lässt die Ablesung wegen des Zeitpunkts keine hinreichend genaue Ermittlung zu, wird nach Gradtagen bzw. Tagen geteilt (§ 9b Abs. 3 HeizkostenV). Ob das so ist, entscheiden Sie: Wählen Sie auf der Seite Heizkosten „Ablesung verwenden“ oder „Nach § 9b Abs. 3“.`
+    }
+    if (p.kind === 'noArea') {
+      return `Für den Topf ${POT_NAME[p.pot]} ist keine Fläche hinterlegt, und die Grundkosten lassen sich nicht verteilen. Tragen Sie die Wohnfläche${p.pot === 'heating' && areaBasisHeat === 'heatedArea' ? ' bzw. die beheizte Fläche' : ''} der Wohnungen ein.`
+    }
+    const meter = p.meterName ? `„${p.meterName}“ (${p.unitName})` : p.unitName
+    if (p.reason === 'noMeter') return `${p.unitName} hat keinen ${p.pot === 'heating' ? 'Wärmezähler' : 'Warmwasserzähler'}, die übrigen Wohnungen schon. Legen Sie den Zähler an und tragen Sie die Stände ein.`
+    if (p.reason === 'noReading') return `Für ${meter} fehlt ein Stand zum ${fmtDay(p.boundary ?? yTo)}. Tragen Sie die Ablesung ein; liegt sie einige Tage daneben, gilt sie, wie sie ist.`
+    if (p.reason === 'replacement') return `Beim Zähler ${meter} fehlt zu einem Zählerwechsel der Endstand des alten Geräts. Tragen Sie ihn nach.`
+    if (p.reason === 'sameDay') return `Für ${meter} stehen am ${fmtDay(p.boundary ?? yTo)} zwei verschiedene Stände. Welcher stimmt, wissen nur Sie; löschen oder berichtigen Sie den falschen auf der Seite Zähler.`
+    return `Der Zähler ${meter} zeigt bis zum ${fmtDay(p.boundary ?? yTo)} weniger als vorher. Prüfen Sie die Stände oder markieren Sie einen Zählerwechsel.`
+  }
+  const ALPHA_TEXT: Record<AlphaProblem, string> = {
+    formulaLater: 'Den Warmwasseranteil nach einer Formel rechnet Mietfuchs mit einer späteren Version; die Verordnung verlangt ohnehin einen Wärmezähler (§ 9 Abs. 2 HeizkostenV). Tragen Sie die Stände des Wärmezählers am Warmwasserspeicher ein.',
+    noDhwHeat: 'Für den Warmwasseranteil fehlt die gemessene Wärme des Warmwassers. Tragen Sie die Stände des Wärmezählers am Warmwasserspeicher zu Beginn und Ende der Heizperiode ein.',
+    noFuelEnergy: 'Für den Warmwasseranteil fehlt die Energie des Brennstoffs in kWh. Tragen Sie die Rechnungen Ihres Versorgers als Lieferungen mit den kWh laut Rechnung ein.',
+    fuelGap: 'Die Rechnungen des Versorgers decken die Heizperiode nicht ganz ab, und der Warmwasseranteil braucht den Verbrauch der ganzen Heizperiode. Tragen Sie die Folgerechnung ein oder schließen Sie die Abrechnung mit einer Schätzung der fehlenden Rechnung ab.',
+    heatingValueLater: 'Den Warmwasseranteil bei Heizöl, Flüssiggas, Pellets, Holz und Kohle rechnet Mietfuchs mit einer späteren Version; dafür braucht es den Heizwert laut Rechnung (§ 9 Abs. 3 HeizkostenV).',
+    outOfRange: 'Die gemessene Wärme des Warmwassers ist null oder nicht kleiner als die Energie des Brennstoffs; das passt nicht zusammen. Prüfen Sie die Stände des Wärmezählers am Speicher und die kWh der Rechnungen.',
+    heatPumpBasis: 'Bei einer Wärmepumpe wird der Warmwasseranteil gegen die gemessene Gesamtwärme gerechnet; gegen den Strom ergäbe sich etwa das Dreifache (§ 9 Abs. 1 Satz 2 HeizkostenV: nach dem Anteil am Wärmeverbrauch). Legen Sie einen Gesamtwärmezähler an (Rolle „Gesamtwärme“) oder tragen Sie die Gesamtwärme der Heizperiode auf der Seite Heizkosten ein.',
+  }
+  const selfPlans = new Map<string, SelfPlantPlan>()
+  for (const plant of fuelPlants.filter((p) => p.method === 'self')) {
+    const rules = plantRules(wayOf(plant), objectRules)
+    const prev = previousPeriod(rules, period)
+    const next = periodContaining(rules, dayAfter(period.to))
+    const hotWater: HotWater = plant.hotWater ?? 'combined'
+    const potTypes: MeterType[] = hotWater === 'none' ? ['waerme'] : ['waerme', 'warmwasser']
+    const unitMeters = snapshot.meters.flatMap((m) => (m.unitId !== null && (m.heatingPlantId ?? null) === null && potTypes.includes(m.type) ? [{ ...m, unitId: m.unitId }] : []))
+    const served = snapshot.units.filter((u) => servesUnit(plant, u) && ((u.areaM2 || 0) > 0 || unitMeters.some((m) => m.unitId === u.id)))
+    const servedIds = new Set(served.map((u) => u.id))
+    const table = law(hkvDegreeDays, { period: lawPeriod }, lawLog)
+    const neighbors = { before: dayBefore(prev.from), after: next.to }
+    // Abweichung 9: die Wechselgrenzen der Nachbarperioden und der eingefrorene Endstand der vorigen.
+    const selfUnits: SelfUnit[] = served.map((u) => ({
+      id: u.id, name: u.name, areaM2: u.areaM2 || 0,
+      heatedAreaM2: plant.units?.find((x) => x.unitId === u.id)?.heatedAreaM2 ?? null,
+      role: u.participates ? 'rented' : u.selfUsed ? 'self' : 'outside',
+    }))
+    const selfTenancies: SelfTenancy[] = snapshot.tenancies.filter((t) => servedIds.has(t.unitId)).map((t) => ({ id: t.id, unitId: t.unitId, tenantName: t.tenantName, start: t.start, end: t.end }))
+    const changesIn = (unit: SelfUnit, hh: { from: string; to: string }): string[] => usersOf(unit, selfTenancies, hh).slice(0, -1).map((u) => u.to)
+    const outerChanges = new Map(selfUnits.map((u) => [u.id, [...changesIn(u, prev), ...changesIn(u, next)]]))
+    const opening = new Map((snapshot.selfClosedEnds ?? [])
+      .filter((e) => e.plantId === plant.id && e.boundary === dayBefore(period.from))
+      .map((e): [string, SelfReading] => [e.meterId, { meterId: e.meterId, date: e.date, value: e.value }]))
+    const input: SelfInput = {
+      h: { from: period.from, to: period.to },
+      neighbors,
+      outerChanges,
+      opening,
+      changeSplit: plant.changeSplit ?? 'degreeDays',
+      hotWater,
+      areaBasisHeat: plant.areaBasisHeat ?? 'area',
+      units: selfUnits,
+      tenancies: selfTenancies,
+      meters: unitMeters.filter((m) => servedIds.has(m.unitId)).map((m) => ({ id: m.id, name: m.name ?? m.id, unitId: m.unitId, type: m.type })),
+      readings: snapshot.readings.map((r) => ({ ...r, boundFor: r.interimFor ?? null })),
+      gaps: snapshot.interimGaps ?? [],
+      table,
+      offRule: () => law(practiceReadingOffWarning, { period: lawPeriod }, lawLog),
+    }
+    const plan = planSelf(input)
+    const rows = (snapshot.heatingPeriodRows ?? []).filter((r) => r.plantId === plant.id)
+    // Der Anteil gehört zur Linie (Durchsicht von #239, I3): Nach einem Kesseltausch gilt der der alten
+    // Anlage weiter, ebenso ihr Verfahren für den Warmwasseranteil.
+    const allPlants = snapshot.heatingPlants ?? []
+    const lineIds = new Set([plant.id, ...allPlants.filter((p) => lineRoot(p, allPlants) === lineRoot(plant, allPlants)).map((p) => p.id)])
+    const shares = consumptionSharesOf(
+      lineShareRows((snapshot.heatingPeriodRows ?? []).map((r) => ({ plantId: r.plantId, period: String(r.period), heatConsumptionPct: r.heatConsumptionPct ?? null, waterConsumptionPct: r.waterConsumptionPct ?? null, insulationRule: r.insulationRule ?? null })), allPlants, plant.id),
+      period.key, plant.energy, () => law(hkvConsumptionShareForced, { period: lawPeriod }, lawLog),
+    )
+    const own = rows.find((r) => r.period === period.key)
+    const lineOwn = (snapshot.heatingPeriodRows ?? []).find((r) => r.plantId !== plant.id && lineIds.has(r.plantId) && r.period === period.key && r.dhwMethod !== null)
+    // Läuft die Anlage nur einen Teil der Heizperiode (Kesseltausch), gilt die Wärme am Speicher nur
+    // für ihre Laufzeit (I3); dafür braucht es den Stand am Tag des Tauschs. Die Zähler der Anlage
+    // gehören zur Linie, denn der Speicher bleibt, wenn der Kessel getauscht wird.
+    const predecessor = plant.replacesPlantId ? allPlants.find((p) => p.id === plant.replacesPlantId) : undefined
+    const startsOn = predecessor?.endsOn ? dayAfter(predecessor.endsOn) : null
+    const swapStart = startsOn !== null && startsOn > period.from && startsOn <= period.to ? dayBefore(startsOn) : null
+    const swapEnd = plant.endsOn && plant.endsOn >= period.from && plant.endsOn < period.to ? plant.endsOn : null
+    let swapMissing: string | null = null
+    // Gemessene Wärme am Zähler der Anlage mit dieser Rolle über die Heizperiode (Abweichung 12).
+    const plantMeterKwh = (role: 'dhwHeat' | 'totalHeat'): number | null => {
+      const ms = snapshot.meters.filter((m) => m.heatingPlantId !== null && m.heatingPlantId !== undefined && lineIds.has(m.heatingPlantId) && m.heatingRole === role)
+      if (ms.length === 0) return null
+      let sum = 0
+      for (const m of ms) {
+        const sorted = sortReadings(snapshot.readings.filter((r) => r.meterId === m.id))
+        const at = boundaryReadingsOf(sorted, [dayBefore(period.from), period.to], [neighbors.before, dayBefore(period.from), period.to, neighbors.after])
+        const exact = (day: string) => sorted.find((r) => r.date === day) ?? null
+        const a = swapStart !== null ? exact(swapStart) : (at.get(dayBefore(period.from)) ?? null)
+        const b = swapEnd !== null ? exact(swapEnd) : (at.get(period.to) ?? null)
+        if (swapStart !== null && a === null) swapMissing = swapStart
+        if (swapEnd !== null && b === null) swapMissing = swapEnd
+        if (a === null || b === null) return null
+        const v = measuredBetween(sorted, a, b)
+        if ('problem' in v) return null
+        sum += v.value
+      }
+      return sum
+    }
+    const fuelOfPlant = fuelResults.get(plant.id)?.result
+    const fuelKwh = fuelOfPlant && fuelOfPlant.lines.length > 0 && fuelOfPlant.lines.every((l) => l.energyKwh !== null)
+      ? fuelOfPlant.lines.reduce((a, l) => a + (l.energyKwh ?? 0), 0)
+      : null
+    const alphaResult = hotWaterShareOf({
+      hotWater, dhwMethod: own?.dhwMethod ?? lineOwn?.dhwMethod ?? null, energy: plant.energy,
+      dhwHeatKwh: own?.dhwHeatKwh ?? plantMeterKwh('dhwHeat'),
+      totalHeatKwh: own?.totalHeatKwh ?? plantMeterKwh('totalHeat'),
+      fuelKwh, fuelCoveragePermille: fuelOfPlant?.coveragePermille ?? null,
+      // Die Schätzung beim Abschluss (PR 7) trägt bei der Lieferung `estimated` (Abweichung 11).
+      fuelEstimated: fuelOfPlant?.lines.some((l) => l.estimated) ?? false,
+    })
+    const verdict = plant.energy === 'heatPump'
+      ? heatPumpVerdict(
+        { energy: plant.energy, capturedOnOct2024: plant.capturedOnOct2024 ?? null, captureInstalledOn: plant.captureInstalledOn ?? null, heatPumpInstalledOn: plant.heatPumpInstalledOn ?? null },
+        period.from, law(hkvHeatPumpCapture, { date: period.from }, lawLog),
+      )
+      : null
+    const blocked: SelfBlock[] = []
+    for (const p of plan.problems) blocked.push({ code: 'heating.self-incomplete', text: `${selfProblemText(p, plant.areaBasisHeat ?? 'area')}${p.kind === 'missing' && p.reason !== 'sameDay' ? ' Lässt sich ein Wert nicht mehr ablesen, ist er zu schätzen (§ 9a HeizkostenV); das rechnet Mietfuchs mit einer späteren Version.' : ''}` })
+    if (shares === null) {
+      blocked.push({ code: 'heating.self-incomplete', text: 'Für diese Heizperiode ist kein Anteil nach Verbrauch festgelegt. Tragen Sie auf der Seite Heizkosten ein, mit welchem Anteil Sie bisher abgerechnet haben.' })
+    } else {
+      const { min, max } = law(hkvConsumptionShare, { period: lawPeriod }, lawLog)
+      // § 8 Abs. 1: beim Warmwasser eine eigene Wahl, nie still die der Heizung (Abweichung 14).
+      if (hotWater !== 'none' && shares.water === null) {
+        blocked.push({ code: 'heating.self-incomplete', text: 'Für das Warmwasser ist kein Anteil nach Verbrauch festgelegt (§ 8 Abs. 1 HeizkostenV); er darf von dem der Heizung abweichen. Tragen Sie ihn auf der Seite Heizkosten ein.' })
+      }
+      if ([shares.heating, ...(hotWater !== 'none' && shares.water !== null ? [shares.water] : [])].some((v) => v < min || v > max)) {
+        blocked.push({ code: 'heating.self-incomplete', text: `Der Anteil nach Verbrauch liegt außerhalb von ${hkvConsumptionShare.describe({ min, max })}. Korrigieren Sie ihn auf der Seite Heizkosten.` })
+      }
+    }
+    if (!alphaResult.ok && swapMissing !== null && (alphaResult.problem === 'noDhwHeat' || alphaResult.problem === 'heatPumpBasis')) {
+      blocked.push({
+        code: 'heating.self-incomplete',
+        text: `Die Anlage lief in dieser Heizperiode nur ${swapEnd !== null ? `bis zum ${fmtDay(swapEnd)}` : `ab dem ${fmtDay(startsOn ?? period.from)}`} (Kesseltausch). Für den Warmwasseranteil braucht es die Wärme am Warmwasserspeicher in dieser Zeit, also den Stand des Wärmezählers am Speicher am ${fmtDay(swapMissing)}. Tragen Sie ihn auf der Seite Zähler ein.`,
+      })
+    } else if (!alphaResult.ok) blocked.push({ code: alphaResult.problem === 'heatPumpBasis' ? 'heating.heat-pump-dhw-basis' : 'heating.dhw-share-invalid', text: ALPHA_TEXT[alphaResult.problem] })
+    const stocked = stockOfPlant.get(plant.id)
+    if (stocked && !stocked.result.ok) {
+      const kind = stocked.result.problem.kind
+      blocked.push({
+        code: kind === 'missing' ? 'fuel.stock-missing-self' : 'fuel.stock-invalid',
+        text: `${problemText(stocked.result.problem)} Umzulegen sind die Kosten des verbrauchten Brennstoffs (§ 7 Abs. 2 HeizkostenV, BGH VIII ZR 156/11); ohne Bestandsrechnung verteilt Mietfuchs die Anlage nicht. Tragen Sie Anfangs- und Endbestand auf der Seite Heizkosten in der Karte „Vorrat“ ein.`,
+      })
+    }
+    if (stockWithoutTemplate.has(plant.id)) {
+      blocked.push({ code: 'heating.self-incomplete', text: 'Für den Verbrauch aus dem Vorrat fehlt eine Brennstoffposition dieser Heizanlage, in dieser Heizperiode und in der vorigen. Erfassen Sie die Brennstoffrechnung als Position nach Heizkostenverordnung.' })
+    }
+    const where = `${plant.name ? `Heizanlage „${plant.name}“` : 'Heizanlage'}, Heizperiode ${label}`
+    if (shares !== null && shares.insulation !== 'applies' && shares.insulation !== 'notApplies' && OIL_OR_GAS.includes(plant.energy)) {
+      const forced = law(hkvConsumptionShareForced, { period: lawPeriod }, lawLog)
+      if (shares.heating < forced) {
+        warn('heating.share-forced-unsure',
+          `${where}: Ob Ihr Haus den Wärmeschutz nach dem Stand von 1994 nicht erfüllt und die Leitungen überwiegend gedämmt sind, haben Sie mit „Weiß ich nicht“ beantwortet, und von den Heizkosten gehen ${fmtNum(shares.heating)} % nach Verbrauch. Mit ${forced} % liegen Sie in jedem Fall richtig; trifft § 7 Abs. 1 Satz 2 HeizkostenV zu, sind weniger nicht zulässig. Beantworten Sie die Frage auf der Seite Heizkosten; den Pflichtwert können Sie auch in einer begonnenen Heizperiode eintragen.`,
+          { kind: 'heatingCosts', id: plant.id })
+      }
+    }
+    for (const b of blocked) warn(b.code, `${where}: ${b.text} Bis dahin verteilt Mietfuchs die Heizkosten dieser Anlage nicht; sie stehen beim Vermieter.`, { kind: 'heatingCosts', id: plant.id })
+    const weights = blocked.length === 0 && shares !== null && alphaResult.ok
+      ? weightsOf(plan, { heating: shares.heating, water: shares.water ?? 0 }, alphaResult.alpha?.value ?? null)
+      : null
+    selfPlans.set(plant.id, {
+      plant, plan, shares, alpha: alphaResult.ok ? alphaResult.alpha : null, weights, blocked, verdict, hotWater, input,
+      changeSplit: plant.changeSplit ?? 'degreeDays',
+      hDays: periodDays(period),
+      hDegree: degreeDayPermille([{ from: period.from, to: period.to }], table),
+      userByKey: new Map(plan.units.flatMap((u) => u.users.map((x): [string, SelfUserPlan] => [x.key, x]))),
+    })
+  }
+  // Der Rechenweg einer Zeile nach Heizkostenverordnung (#114): Grund- und Verbrauchskosten je Topf,
+  // Anteil nach Verbrauch, Warmwasseranteil und der Anteil des Nutzers, aus denselben Zahlen.
+  const selfSteps = (sp: SelfPlantPlan, key: string, target: HeatingTarget): CalcStep[] => {
+    const u = sp.userByKey.get(key)
+    const unit = u ? sp.plan.units.find((x) => x.unit.id === u.unitId) : undefined
+    if (!u || !unit || !sp.shares || !sp.weights) return []
+    const pots: SelfPot[] = target === 'both' ? ['heating', 'water'] : [target]
+    const steps: CalcStep[] = []
+    for (const p of pots) {
+      const total = sp.plan.totals[p]
+      const area = p === 'heating' ? unit.heatArea : unit.unit.areaM2
+      const byDegree = p === 'heating' && sp.changeSplit === 'degreeDays'
+      const part = u.days < sp.hDays
+        ? byDegree ? ` · ${fmtNum(Math.round(u.degreeDayPermille * 10) / 10)} von ${fmtNum(Math.round(sp.hDegree * 10) / 10)} ‰ Gradtage` : ` · ${u.days}/${sp.hDays} Tage`
+        : ''
+      steps.push({ label: `Grundkosten ${POT_NAME[p]}`, value: `${fmtNum(area)} von ${fmtNum(total.area)} m²${part}`, term: 'baseCosts' })
+      const v = u.pots[p].value
+      steps.push(total.measured && v !== null
+        ? {
+          label: `Verbrauchskosten ${POT_NAME[p]}`,
+          value: `${fmtNum(Math.round(v * 1000) / 1000)} von ${fmtNum(Math.round(total.consumption * 1000) / 1000)} ${POT_UNIT[p]}${u.pots[p].group ? ' (ohne Zwischenablesung nach § 9b Abs. 3 HeizkostenV geteilt)' : ''}`,
+          term: 'consumptionCosts',
+        }
+        : { label: `Verbrauchskosten ${POT_NAME[p]}`, value: 'kein Verbrauch erfasst, nur nach Fläche verteilt', term: 'consumptionCosts' })
+      steps.push({ label: `Anteil nach Verbrauch ${POT_NAME[p]}`, value: `${fmtNum(total.measured ? (sp.shares[p] ?? 0) : 0)} %`, term: 'consumptionCosts' })
+    }
+    if (target === 'both' && sp.alpha) steps.push({ label: 'Warmwasseranteil', value: `${fmtPercent(sp.alpha.value * 100)} % (gemessen)`, term: 'hotWaterShare' })
+    steps.push({ label: 'Ihr Anteil nach Heizkostenverordnung', value: `${fmtPercent((sp.weights.get(key)?.[target] ?? 0) * 100)} %`, term: 'heatingSystem' })
+    return steps
+  }
+  const TARGET_TEXT: Record<HeatingTarget, string> = { both: 'Heizung und Warmwasser', heating: 'Heizung', water: 'Warmwasser' }
+  const selfBasisText = (sp: SelfPlantPlan, key: string, target: HeatingTarget): string =>
+    `nach Heizkostenverordnung, ${TARGET_TEXT[target]} ${fmtPercent((sp.weights?.get(key)?.[target] ?? 0) * 100)} %`
+  // Die Kosten eines Topfs: jede Position der Anlage nach ihrem Ziel, „Heizung und Warmwasser“ nach dem
+  // Warmwasseranteil geteilt (Entwurf 8.3, 8.5). Ohne α (kein verbundenes Warmwasser) gibt es kein
+  // Ziel „beides“.
+  const partOf = (sp: SelfPlantPlan, c: SnapshotCostItem, p: SelfPot): number => {
+    const a = sp.alpha?.value ?? null
+    const tg = c.heatingTarget ?? null
+    return tg === p ? 1 : tg === 'both' ? (a === null ? (p === 'heating' ? 1 : 0) : p === 'heating' ? 1 - a : a) : 0
+  }
+  const potCostOf = (sp: SelfPlantPlan, potItems: readonly SnapshotCostItem[], p: SelfPot): number =>
+    potItems.filter((c) => c.key === 'heatingSystem').reduce((sum, c) => sum + c.amountCents * partOf(sp, c, p), 0)
+  // Der Teil des CO₂-Abzugs eines Mieters, der auf jeden Topf entfällt (Abweichung 15, Entwurf 6.5): sein
+  // gedruckter Abzug (positiv) im Verhältnis seines Brennstoffs in diesem Topf zu seinem Brennstoff
+  // insgesamt. Beim Ziel „beides“ teilt α.
+  const potCo2Of = (sp: SelfPlantPlan, potItems: readonly SnapshotCostItem[], reliefKey: string | null, tenancyId: string | null, w: SelfWeights | undefined): Record<SelfPot, number> => {
+    const st = tenancyId ? statements.get(tenancyId) : undefined
+    const relief = st && reliefKey ? -st.rows.filter((r) => r.costItemId === reliefKey).reduce((a, r) => a + r.shareCents, 0) : 0
+    if (!w || relief === 0) return { heating: 0, water: 0 }
+    const fuel = potItems.filter((c) => c.key === 'heatingSystem' && c.heatingPart === 'fuel')
+    const inPot = (p: SelfPot) => fuel.reduce((a, c) => a + c.amountCents * partOf(sp, c, p) * w[p], 0)
+    const h = inPot('heating')
+    const wa = inPot('water')
+    return h + wa > 0 ? { heating: (relief * h) / (h + wa), water: (relief * wa) / (h + wa) } : { heating: 0, water: 0 }
+  }
+  // Der Ausweis je Anlage und Heizperiode (Entwurf 8.8 ohne § 6a, der mit PR 14 kommt).
+  const selfStatementOf = (sp: SelfPlantPlan, potItems: readonly SnapshotCostItem[], reliefKey: string | null): SelfHeatingStatement => {
+    const cost = { heating: potCostOf(sp, potItems, 'heating'), water: potCostOf(sp, potItems, 'water') }
+    const offDays = (d: string, b: string): number => Math.abs(Math.round((toUTC(d) - toUTC(b)) / MS_DAY))
+    return {
+      ok: sp.weights !== null,
+      heatPump: sp.verdict?.kind ?? null,
+      changeSplit: sp.changeSplit,
+      areaBasisHeat: sp.plant.areaBasisHeat ?? 'area',
+      hotWater: sp.hotWater,
+      alpha: sp.alpha ? { percent: sp.alpha.value * 100, dhwHeatKwh: sp.alpha.dhwHeatKwh, referenceKwh: sp.alpha.referenceKwh, reference: sp.alpha.reference, estimated: sp.alpha.estimated } : null,
+      shares: sp.shares ? { heating: sp.shares.heating, water: sp.shares.water, forced: sp.shares.forced, previous: sp.shares.previous } : null,
+      pots: sp.plan.pots.map((p): SelfPotView => {
+        const t = sp.plan.totals[p]
+        const pct = t.measured && sp.shares ? (sp.shares[p] ?? 0) : 0
+        return {
+          pot: p, costCents: Math.round(cost[p]), consumptionPct: pct, byAreaOnly: !t.measured, areaM2: t.area, consumption: t.consumption,
+          consumptionUnit: p === 'heating' ? 'kWh' : 'm³',
+          baseCentsPerM2: t.area > 0 ? (cost[p] * (1 - pct / 100)) / t.area : 0,
+          consumptionCentsPerUnit: t.measured && t.consumption > 0 ? (cost[p] * pct / 100) / t.consumption : null,
+        }
+      }),
+      units: sp.plan.units.map((u): SelfUnitView => ({
+        unitId: u.unit.id,
+        unitName: u.unit.name,
+        areaM2: u.unit.areaM2,
+        heatAreaM2: u.heatArea,
+        readings: u.readings,
+        boundaries: u.boundaries.map((b) => {
+          const dated = b.readingDates.filter((d): d is string => d !== null)
+          // Der Grund einer nicht möglichen Zwischenablesung (Durchsicht von #239, I3), nur wenn es ihn gibt.
+          const reason = b.gap === 'impossible' ? ((snapshot.interimGaps ?? []).find((g) => g.unitId === u.unit.id && g.date === b.date)?.reason ?? '') : ''
+          return {
+            ...(reason !== '' ? { gapReason: reason } : {}),
+            date: b.date, kind: b.kind, gap: b.gap, far: b.far,
+            status: dated.length < b.readingDates.length ? 'missing' : dated.some((d) => d !== b.date) ? 'off' : 'read',
+            offDays: dated.reduce((m, d) => Math.max(m, offDays(d, b.date)), 0),
+          }
+        }),
+        users: u.users.map((x): SelfUserView => {
+          const w = sp.weights?.get(x.key)
+          const co2 = potCo2Of(sp, potItems, reliefKey, x.tenancyId, w)
+          return {
+            key: x.key, role: x.role, tenancyId: x.tenancyId, label: x.label, from: x.from, to: x.to, days: x.days, degreeDayPermille: x.degreeDayPermille,
+            heatingConsumption: x.pots.heating.value,
+            waterConsumption: sp.plan.pots.includes('water') ? x.pots.water.value : null,
+            heatingGroup: x.pots.heating.group,
+            waterGroup: x.pots.water.group,
+            heatingCents: w ? Math.round(cost.heating * w.heating) : 0,
+            waterCents: w ? Math.round(cost.water * w.water) : 0,
+            heatingCo2Cents: Math.round(co2.heating),
+            waterCo2Cents: Math.round(co2.water),
+          }
+        }),
+      })),
     }
   }
   const co2Pots = co2PotsOf(snapshot, [...items, ...fuelSynthetic].filter((c) => !spanning.has(c.id)))
@@ -2777,6 +3140,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       itemSubject(first))
   }
 
+  // „Nur Heizung“ zeitanteilig (Heizung PR 10) und der Betrag nach der Verordnung bei Pauschale (Entwurf 6.3).
+  const manualSplitTime = new Map<string, Map<string, { now: number, alt: number }>>()
+  const selfFlat = new Map<string, number>()
   for (const item of [...items, ...fuelSynthetic]) {
     const b = basisOf(item)
     // Eine Übertragszeile (Heizung PR 7) ist keine Position: Sie zählt nicht zu den Kosten des
@@ -2788,6 +3154,15 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Anders als im Vorjahr (#141)? Nur ein Hinweis, verteilt wird wie erfasst.
     const keyChange = carry ? null : keyChangeText(item, snapshot.comparableCostItems ?? snapshot.previousCostItems ?? [], at, basisUnitIds)
     if (keyChange) warn('key.changed-from-previous-year', keyChange, itemSubject(item))
+    // Kosten der Zwischenablesung (BGH VIII ZR 19/07, Entwurf 10.1, Abweichung 19). Nicht an den
+    // Übertragszeilen der Lieferungen und des Vorrats.
+    if (item.category === HEATING_CATEGORY && !item.id.startsWith('fuel:') && !item.id.startsWith('stock:') && /zwischenablesung|nutzerwechsel/i.test(item.description)) {
+      warn('heating.change-fee',
+        `„${item.description}“: Kosten der Verbrauchserfassung, die wegen des Auszugs eines Mieters vor Ablauf des Abrechnungszeitraums entstehen, sind keine umlagefähigen Betriebskosten; sie trägt der Vermieter, soweit im Mietvertrag nichts anderes vereinbart ist (BGH VIII ZR 19/07). ` +
+          'Ob eine Klausel im Formularmietvertrag genügt, hat der BGH nicht entschieden; ein Amtsgericht hält sie für unwirksam (AG Berlin-Hohenschönhausen; das Aktenzeichen steht im Lexikon unter „Zwischenablesung“). Eine wirksame Vereinbarung gibt einen Anspruch gegen den ausziehenden Mieter, keine Position für alle. ' +
+          'Gehört die Position dazu, erfassen Sie sie unter „Nicht umlagefähig“.',
+        itemSubject(item))
+    }
     // Rohanteile (float, in Cent) pro Mietverhältnis bestimmen.
     // Nicht umlagefähige Kosten gehen immer vollständig an den Vermieter.
     const targets: Target[] = []
@@ -2810,7 +3185,25 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       warn('item.no-basis', `„${item.description}“: ${reason} — Betrag geht an den Vermieter.`, itemSubject(item))
     }
     // Tage im Rechenweg, nur bei einem Teiljahr.
-    const partOfYear = (t: TenancyWithUnit) => (t.days < diy ? ` · ${t.days}/${diy} Tage` : '')
+    // „Nur Heizung“ bei freien Schlüsseln (Heizung PR 10, Entwurf 5.3 `change_split`, A2, B7): Beim
+    // Mieterwechsel teilen die übrigen Wärmekosten nach Gradtagszahlen (§ 9b Abs. 2), wenn die Anlage
+    // es so eingestellt hat (Vorgabe). Eine kombinierte Position „Heizung und Warmwasser“ geht nach
+    // Tagen wie bisher; ohne Ziel ändert sich keine Zahl. § 9b Abs. 2 lässt Gradtage oder Zeitanteil zu:
+    // Bei Fläche, Einheiten, vereinbarten Anteilen und Direktzuordnung ist der Tagesanteil genau der
+    // zeitanteilige Faktor, und an seine Stelle tritt der Gradtagsanteil. Personentage bleiben; sie sind
+    // ebenso zeitanteilig, und die Verordnung kennt für Heizkosten keinen Personenschlüssel
+    // (§ 7 Abs. 1 Satz 5; Abweichung 16).
+    const manualPlant = item.category === HEATING_CATEGORY && item.heatingTarget === 'heating'
+      ? plants.find((p) => p.id === item.heatingPlantId && p.method === 'manual')
+      : undefined
+    const degreeTable = manualPlant && (manualPlant.changeSplit ?? 'degreeDays') === 'degreeDays' ? law(hkvDegreeDays, { period: lawPeriod }, lawLog) : null
+    const fullDegree = degreeTable ? degreeDayPermille([{ from: yFrom, to: yTo }], degreeTable) : 0
+    const degreeOf = (t: TenancyWithUnit, table: DegreeDayTable): number =>
+      degreeDayPermille([{ from: t.start > yFrom ? t.start : yFrom, to: t.end !== null && t.end < yTo ? t.end : yTo }], table)
+    const dayShare = (t: TenancyWithUnit): number => (degreeTable && fullDegree > 0 ? degreeOf(t, degreeTable) / fullDegree : t.days / diy)
+    const partOfYear = (t: TenancyWithUnit) => (t.days >= diy ? ''
+      : degreeTable ? ` · ${fmtNum(Math.round(degreeOf(t, degreeTable) * 10) / 10)} von ${fmtNum(Math.round(fullDegree * 10) / 10)} ‰ Gradtage`
+        : ` · ${t.days}/${diy} Tage`)
     // Teilnehmer wirken bei den Schlüsseln, deren Basis aus Wohnungen entsteht (#94).
     const withParticipants = ['area', 'units', 'persons', 'meter', 'external', 'amounts'].includes(item.key)
     if (isNotAllocable(item.category)) {
@@ -2825,13 +3218,13 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       noBasis('für die vermieteten Wohnungen sind keine Personen hinterlegt')
     } else if (item.key === 'area' && b.basisArea > 0) {
       for (const t of b.partTenancies) {
-        const raw = item.amountCents * ((t.unit.areaM2 || 0) / b.basisArea) * (t.days / diy)
+        const raw = item.amountCents * ((t.unit.areaM2 || 0) / b.basisArea) * dayShare(t)
         targets.push({ t, raw, basisText: `${fmtNum(t.unit.areaM2 || 0)} von ${fmtNum(b.basisArea)} m²${partOfYear(t)}` })
       }
       selfRaw = item.amountCents * (b.selfArea / b.basisArea)
     } else if (item.key === 'units' && b.basisUnits.length > 0) {
       for (const t of b.partTenancies) {
-        const raw = (item.amountCents / b.basisUnits.length) * (t.days / diy)
+        const raw = (item.amountCents / b.basisUnits.length) * dayShare(t)
         targets.push({ t, raw, basisText: `1 von ${b.basisUnits.length} Einheiten${partOfYear(t)}` })
       }
       selfRaw = (item.amountCents / b.basisUnits.length) * b.selfUnits.length
@@ -2982,8 +3375,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         for (const t of partTenancies) {
           const pct = pctOf(t.unitId)
           if (pct <= 0) continue
-          const raw = item.amountCents * (pct / 100) * (t.days / diy)
-          targets.push({ t, raw, basisText: `${fmtNum(pct)} % vereinbart${t.days < diy ? ` · ${t.days}/${diy} Tage` : ''}` })
+          const raw = item.amountCents * (pct / 100) * dayShare(t)
+          targets.push({ t, raw, basisText: `${fmtNum(pct)} % vereinbart${partOfYear(t)}` })
         }
         selfRaw = selfUnits.reduce((a, u) => a + item.amountCents * (pctOf(u.id) / 100), 0)
         // Ein Anteil für eine Wohnung, die es gibt, die aber außerhalb liegt, ist dort vereinbart
@@ -3062,6 +3455,39 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           targets.push({ t, raw, basisText: `${fmtNum(Math.round(c * 100) / 100)} von ${fmtNum(Math.round(data.basis * 100) / 100)} (${data.main !== null ? 'Hauptzähler' : 'gemessen'})` })
         }
       }
+    } else if (item.key === 'heatingSystem') {
+      // Eigene Heizkostenabrechnung (Heizung PR 10, Entwurf 6.2, 8.6): je Nutzer der Rohwert Betrag ×
+      // Gewicht des Ziels. Mieter sind Ziele (bei Pauschale oder Inklusivmiete nicht zugebucht, wie
+      // überall), die Eigennutzung ist der Eigenanteil (exakt, nie über `take()`), eine Wohnung
+      // außerhalb ein eigener Grund; der Leerstand bleibt als Rest (`vacancy`).
+      const sp = item.heatingPlantId ? selfPlans.get(item.heatingPlantId) : undefined
+      const target = item.heatingTarget ?? null
+      const problem = sp ? targetProblem(sp.hotWater, item.heatingPart ?? null, target) : null
+      if (!sp) {
+        forced = 'noBasis'
+        warn('heating.target-invalid',
+          `„${item.description}“: Die Position wird nach der Heizkostenverordnung verteilt, gehört aber in ${label} zu keiner Heizanlage mit eigener Heizkostenabrechnung — Betrag geht an den Vermieter. Wählen Sie im Kostenformular die Heizanlage oder einen anderen Schlüssel.`,
+          itemSubject(item))
+      } else if (problem !== null || target === null) {
+        forced = 'noBasis'
+        warn('heating.target-invalid', `„${item.description}“: ${problem ?? 'Das Ziel fehlt'} — Betrag geht an den Vermieter.`, itemSubject(item))
+      } else if (sp.weights === null) {
+        // Die Anlage ist nicht verteilbar; der Fehler steht einmal je Anlage (Plan oben).
+        forced = 'noBasis'
+      } else {
+        for (const u of sp.plan.units.flatMap((x) => x.users)) {
+          const raw = item.amountCents * (sp.weights.get(u.key)?.[target] ?? 0)
+          if (u.role === 'tenancy') {
+            const t = tenancies.find((x) => x.id === u.tenancyId)
+            if (t) targets.push({ t, raw, basisText: selfBasisText(sp, u.key, target), heating: selfSteps(sp, u.key, target) })
+            else outsideRaw += raw
+          } else if (u.role === 'self') {
+            selfRaw += raw
+          } else if (u.role === 'outside') {
+            outsideRaw += raw
+          }
+        }
+      }
     } else if (item.key === 'direct') {
       // `item.directUnitId` ist optional (string | null | undefined); Map.get() verhält sich
       // für null/undefined wie für eine unbekannte ID (kein Treffer), deshalb hier nur eine
@@ -3081,8 +3507,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         // Ein Mietverhältnis ohne Abrechnung in der selbstgenutzten Wohnung zählt zur Eigennutzung,
         // wie vor #202, als der ganze Vermieteranteil dort als Eigenanteil stand.
         if (toSelf && !statements.has(t.id)) continue
-        const raw = item.amountCents * (t.days / diy)
-        targets.push({ t, raw, basisText: `Direktzuordnung ${t.unit.name}${t.days < diy ? ` · ${t.days}/${diy} Tage` : ''}` })
+        const raw = item.amountCents * dayShare(t)
+        targets.push({ t, raw, basisText: `Direktzuordnung ${t.unit.name}${partOfYear(t)}` })
       }
       // Eigenanteil nur, soweit die Kosten nicht doch einem Mieter dieser Wohnung zufallen
       // (z. B. Mietverhältnis bis März, Eigennutzung ab April).
@@ -3100,7 +3526,24 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // zugebucht: Er fällt dem Vermieter zu, als abziehbare Kosten und nicht als Eigenanteil. Ebenso
     // ein Mietverhältnis in einer nicht beteiligten Wohnung (nur bei Direktzuordnung möglich), das
     // keine Abrechnung hat. Solche Anteile werden je Grund zu einer Zeile des Vermieters.
+    // „Nur Heizung“ zeitanteilig (Heizung PR 10, `heating.change-split-time`): was die Gradtage ergäben.
+    if (manualPlant && degreeTable === null && ['area', 'units', 'custom', 'direct'].includes(item.key)) {
+      const table = law(hkvDegreeDays, { period: lawPeriod }, lawLog)
+      const full = degreeDayPermille([{ from: yFrom, to: yTo }], table)
+      for (const x of targets) {
+        if (x.t.days >= diy || full <= 0) continue
+        const byPlant = manualSplitTime.get(manualPlant.id) ?? new Map<string, { now: number, alt: number }>()
+        const e = byPlant.get(x.t.id) ?? { now: 0, alt: 0 }
+        e.now += x.raw
+        e.alt += (x.raw * (degreeOf(x.t, table) / full)) / (x.t.days / diy)
+        byPlant.set(x.t.id, e)
+        manualSplitTime.set(manualPlant.id, byPlant)
+      }
+    }
     const booked = targets.map((x) => bookable(x.t))
+    // Pauschale und Inklusivmiete bei der eigenen Heizkostenabrechnung (Entwurf 6.3): Den Betrag nach der
+    // Verordnung nennt `heating.flat-rate`.
+    if (item.key === 'heatingSystem') targets.forEach((x, i) => { if (!booked[i] && statements.has(x.t.id)) selfFlat.set(x.t.id, (selfFlat.get(x.t.id) ?? 0) + x.raw) })
     const tenantLines: Recipient[] = targets.flatMap((x, i) => (booked[i] ? [{ key: String(x.t.id), landlord: false, raw: x.raw }] : []))
     const recipients: Recipient[] = [
       ...tenantLines,
@@ -3182,6 +3625,12 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         }
       } else if (item.key === 'amounts') {
         steps.push({ label: 'Einzelbetrag', value: `${fmtCents(Math.round(x.raw))} laut Einzelabrechnung`, term: 'individualAmounts' })
+      } else if (x.heating) {
+        // Eigene Heizkostenabrechnung (Heizung PR 10): der Weg über Grund- und Verbrauchskosten.
+        steps.push(...x.heating)
+        if (item.amountCents !== 0) {
+          steps.push({ label: 'Rechnung', value: `${fmtCents(item.amountCents)} × ${fmtPercent((x.raw / item.amountCents) * 100)} % = ${fmtExactEuro(x.raw)}` })
+        }
       } else {
         steps.push({ label: 'Anteil an der Verteilbasis', value: x.basisText, term: 'distributionBasis' })
         // Der Leerstand steckt in der Verteilbasis (#177); ohne diesen Schritt sähe der Mieter eine
@@ -3620,7 +4069,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     new Map(snapshot.units.filter((u) => plant !== undefined && servesUnit(plant, u) && isDwelling(u)).map((u) => [u.id, u.areaM2]))
   const contributionOf = (q: Co2Pot): { kg: number | null; units: Map<string, number> } => {
     const plant = plants.find((p) => p.id === q.plantId)
-    if (q.method !== 'manual' && q.statement?.method !== 'selfAfterService') return { kg: q.statement?.serviceEmissionsKg ?? null, units: servedUnitsOf(plant) }
+    // Heizung PR 10: die eigene Heizkostenabrechnung wie freie Schlüssel.
+    if (q.method === 'service' && q.statement?.method !== 'selfAfterService') return { kg: q.statement?.serviceEmissionsKg ?? null, units: servedUnitsOf(plant) }
     if (plant?.supply === 'perUnit') {
       const counted = perUnitFuelOf(q, fuelResults.get(q.plantId)?.result.lines ?? []).filter((u) => u.rented && u.delivered)
       return { kg: counted.length > 0 ? counted.reduce((a, u) => a + u.emissionsKg, 0) : null, units: new Map(counted.map((u) => [u.unitId, u.areaM2])) }
@@ -3636,7 +4086,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // „selbst nach Messdienst“ in dessen Angaben. `null`: keine eingetragen.
   const enteredAreaOf = (q: Co2Pot): number | null => {
     if (q.statement?.method === 'selfAfterService') return q.statement.areaM2 ?? null
-    if (q.method !== 'manual') return null
+    if (q.method === 'service') return null
     return (snapshot.co2Statements ?? []).find((x) => x.plantId === q.plantId && x.period === q.period.key && x.method === 'self')?.areaM2 ?? null
   }
   // Die Fläche mehrerer Anlagen eines Gebäudes (Nachprüfung von #238, I-A): je Linie von Täuschen die
@@ -3752,8 +4202,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Was die eigene Aufteilung liest, aus den Lieferungen (PR 7) oder aus dem Vorrat (PR 8).
     const own = ownOf(pot)
     const ownSplit = applicable && co2Relevant && own !== null && pot.items.length > 0 && (isStockEnergy(pot.energy)
-      ? pot.method === 'manual' || st?.method === 'selfAfterService'
-      : (pot.method === 'manual' && (fuelOf?.lines.length ?? 0) > 0) || (st?.method === 'selfAfterService' && own.serviceCo2Cents !== null))
+      // Heizung PR 10 (N13): bei freien Schlüsseln und bei der eigenen Heizkostenabrechnung teilt Mietfuchs selbst auf.
+      ? pot.method !== 'service' || st?.method === 'selfAfterService'
+      : (pot.method !== 'service' && (fuelOf?.lines.length ?? 0) > 0) || (st?.method === 'selfAfterService' && own.serviceCo2Cents !== null))
     // Messdienst ohne Aufteilung mit erfasstem Vorrat, der fehlt oder nicht aufgeht: Die Kürzung meldet
     // `fuel.stock-missing` bzw. `fuel.stock-invalid` statt `co2.service-unsplit`, nie beide.
     const stockHandled = stockEntry !== undefined && stockTouched(stockEntry.chain)
@@ -4189,6 +4640,179 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         plantSubject)
     }
   }
+  // Der Ausweis je Anlage und Heizperiode (Heizung PR 10), nach dem CO₂-Block, denn er nennt den
+  // gedruckten Abzug je Mieter (Abweichung 15).
+  for (const report of heatingStatements) {
+    const sp = selfPlans.get(report.plantId)
+    const pot = co2Pots.find((x) => x.plantId === report.plantId)
+    if (sp && pot) report.self = selfStatementOf(sp, pot.items, pot.reliefKey)
+  }
+  // ---------- Hinweise der eigenen Heizkostenabrechnung (Heizung PR 10, Entwurf 3.5, 8.5, 10.1) ----------
+  // Nach dem CO₂-Block, denn die Kürzungsbeträge rechnen auf den gedruckten Zeilen nach der
+  // Abzugszeile (Entwurf 6.5). Ist eine Anlage nicht verteilbar, steht dort schon ein Fehler, und ein
+  // Hinweis auf leere Zeilen sagte nichts.
+  const cutOf = (tenancyId: string, ids: ReadonlySet<string>, pct: number): number | null => {
+    const st = statements.get(tenancyId)
+    if (!st) return null
+    const sum = st.rows.filter((r) => ids.has(r.costItemId)).reduce((a, r) => a + r.shareCents, 0)
+    return sum > 0 ? Math.round((sum * pct) / 100) : null
+  }
+  const nameOf = (tenancyId: string): string => {
+    const st = statements.get(tenancyId)
+    return st ? `${st.tenantName} (${st.unitName})` : tenancyId
+  }
+  const permilleText = (p: number): string => `${fmtNum(Math.round(p * 10) / 10)} ‰`
+  const lines6a = new Set<string>()
+  for (const sp of selfPlans.values()) {
+    if (sp.weights === null || !sp.shares) continue
+    const plant = sp.plant
+    const where = `${plant.name ? `Heizanlage „${plant.name}“` : 'Heizanlage'}, Heizperiode ${label}`
+    const subject: NoticeSubject = { kind: 'heatingCosts', id: plant.id }
+    const pot = co2Pots.find((x) => x.plantId === plant.id)
+    const ids = new Set<string>([...(pot?.items ?? []).map((c) => c.id), ...(pot ? [pot.reliefKey] : [])])
+    const notYet = sp.verdict?.kind === 'notYet'
+    // § 6a Abs. 3 HeizkostenV (Durchsicht von #239, I1 und N2): Die Informationen zur Abrechnung erstellt
+    // Mietfuchs mit PR 14; bis dahin eine Warnung mit der Kürzung je Mieter (§ 12 Abs. 1 Satz 3). Nur für
+    // Abrechnungszeiträume ab dem 01.12.2021 (`hkv.settlement-info`), einmal je Linie (nach einem Tausch
+    // geht eine Abrechnung an die Mieter), und beruht die Abrechnung nicht auf erfasstem Verbrauch, nur die
+    // Angaben nach Abs. 3 Satz 1 Nr. 2 und 3 (Abs. 5).
+    const root6a = lineRoot(plant, snapshot.heatingPlants ?? [])
+    if (!notYet && law(hkvSettlementInfo, { period: lawPeriod }, lawLog) && !lines6a.has(root6a)) {
+      lines6a.add(root6a)
+      const cut6a = law(hkvCutRemoteReading, { period: lawPeriod }, lawLog)
+      const inLine = [...selfPlans.values()].filter((x) => lineRoot(x.plant, snapshot.heatingPlants ?? []) === root6a)
+      const lineIds = new Set<string>(inLine.flatMap((x) => {
+        const p = co2Pots.find((y) => y.plantId === x.plant.id)
+        return [...(p?.items ?? []).map((c) => c.id), ...(p ? [p.reliefKey] : [])]
+      }))
+      const cuts6a = [...statements.keys()].flatMap((tenancyId) => {
+        const v = cutOf(tenancyId, lineIds, cut6a)
+        return v === null ? [] : [`${nameOf(tenancyId)} ${fmtCents(v)}`]
+      })
+      const measured = inLine.some((x) => Object.values(x.plan.totals).some((tot) => tot?.measured === true))
+      const what = measured
+        ? 'die Informationen nach § 6a Abs. 3 HeizkostenV zugänglich zu machen, unter anderem der Anteil der Energieträger, die Steuern und Abgaben, die Entgelte für Zähler, Ablesung und Abrechnung, Kontaktstellen zur Energieberatung, ein Vergleich mit einem Durchschnittsnutzer und der witterungsbereinigte Vergleich mit dem vorhergehenden Abrechnungszeitraum in grafischer Form'
+        : 'nach § 6a Abs. 5 HeizkostenV mindestens die Kontaktstellen zur Energieberatung und der Hinweis auf die Streitbeilegung zu nennen (Abs. 3 Satz 1 Nr. 2 und 3), denn die Abrechnung beruht nicht auf erfasstem Verbrauch'
+      warn('heating.self-6a-missing',
+        `${where}: Zusammen mit der Abrechnung sind den Mietern ${what}. ` +
+          `Diese Angaben erstellt Mietfuchs mit einer späteren Version; legen Sie sie bis dahin selbst bei. Fehlen sie oder sind sie unvollständig, darf jeder Mieter seinen Anteil an den Heizkosten um ${cut6a} % kürzen (§ 12 Abs. 1 Satz 3 HeizkostenV)` +
+          `${cuts6a.length > 0 ? `, hier: ${andList(cuts6a)}` : ''}. Mietfuchs zieht nichts ab; die Kürzung muss der Mieter erklären.`,
+        subject)
+    }
+    const farText = ' Liegt im Winter ein Monat oder mehr dazwischen, gilt eine solche Abweichung nach der Kommentarliteratur grundsätzlich als nicht zulässig; lesen Sie künftig zum Stichtag ab oder nutzen Sie den Stichtagswert des Geräts (⟨Norm offen: VDI 2077⟩).'
+    for (const f of sp.plan.findings) {
+      if (f.kind === 'datesDiffer') {
+        warn(f.far ? 'heating.reading-dates-far' : 'heating.reading-dates-differ',
+          `${where}: Die Zähler wurden nicht genau zum ${fmtDay(f.boundary)} abgelesen; die größte Abweichung hat ${f.unitName} mit ${f.days} ${f.days === 1 ? 'Tag' : 'Tagen'} (Ablesung am ${fmtDay(f.readingDate)}, ${permilleText(f.permille)} der Gradtage dazwischen). ` +
+            'Mietfuchs rechnet mit den Werten, wie sie abgelesen sind, ohne Rückrechnung; das ist unschädlich, wenn in der Zwischenzeit wenig verbraucht wird.' + (f.far ? farText : ''),
+          subject)
+      } else if (f.kind === 'interimOff') {
+        warn(f.far ? 'heating.interim-reading-far' : 'heating.interim-reading-off',
+          `${where}: Beim Wechsel in ${f.unitName} zum ${fmtDay(f.boundary)} wurde am ${fmtDay(f.readingDate)} abgelesen (${f.days} ${f.days === 1 ? 'Tag' : 'Tage'} daneben, ${permilleText(f.permille)} der Gradtage). ` +
+            `Der Verbrauch dazwischen zählt zum ${f.readingDate > f.boundary ? 'Vormieter' : 'Nachmieter'}; zurückgerechnet wird nicht.` +
+            (f.far ? ' Sie haben gewählt, diese Ablesung zu verwenden, statt nach § 9b Abs. 3 HeizkostenV zu teilen.' + farText : ''),
+          subject)
+      } else if (f.status === 'impossible' || f.status === 'imprecise') {
+        warn('heating.no-interim-reading',
+          f.status === 'impossible'
+            ? `${where}: Für den Wechsel in ${f.unitName} zum ${fmtDay(f.boundary)} gibt es keine Zwischenablesung (nicht möglich${f.reason ? `: ${f.reason}` : ''}). ` +
+              'Die gesamten Kosten der Wohnung werden deshalb aufgeteilt, die Heizkosten nach Gradtagen bzw. Tagen, die Warmwasserkosten nach Tagen (§ 9b Abs. 3 HeizkostenV).'
+            : `${where}: Die Zwischenablesung zum Wechsel in ${f.unitName} zum ${fmtDay(f.boundary)} lässt nach Ihrer Angabe wegen ihres Zeitpunkts keine hinreichend genaue Ermittlung zu. ` +
+              'Die gesamten Kosten der Wohnung werden deshalb aufgeteilt, die Heizkosten nach Gradtagen bzw. Tagen, die Warmwasserkosten nach Tagen (§ 9b Abs. 3 HeizkostenV).',
+          subject)
+      } else {
+        const cut = law(hkvCutNotByConsumption, { period: lawPeriod }, lawLog)
+        const list = notYet ? [] : f.tenancyIds.flatMap((id) => {
+          const c = cutOf(id, ids, cut)
+          return c === null ? [] : [`${nameOf(id)} ${fmtCents(c)}`]
+        })
+        warn('heating.no-interim-reading-missed',
+          `${where}: Für den Wechsel in ${f.unitName} zum ${fmtDay(f.boundary)} gibt es keine Zwischenablesung` +
+            `${f.status === null ? '; bitte geben Sie auf der Seite Heizkosten an, ob sie nicht möglich war oder nicht durchgeführt wurde' : ''}. ` +
+            'Gerechnet wird nach § 9b Abs. 3 HeizkostenV, denn eine andere Rechnung gibt es nicht. Die Zwischenablesung war Pflicht (§ 9b Abs. 1). ' +
+            (list.length > 0 ? `Bis zu ${cut} % der Heizkosten von ${andList(list)} können gekürzt werden (LG Hamburg, 11 S 202/87); ` : `Bis zu ${cut} % können gekürzt werden (LG Hamburg, 11 S 202/87); `) +
+            'nach AG Schöneberg, 104a C 226/05, ist die Umlage des Verbrauchsanteils angreifbar. Mietfuchs zieht nichts ab; die Kürzung muss der Mieter erklären.',
+          subject)
+      }
+    }
+    // Kein Verbrauch erfasst (Entwurf 8.5): nur nach Fläche, 15 % (Abweichung 15 zur Grundlage).
+    const unmeasured = sp.plan.pots.filter((p) => !sp.plan.totals[p].measured)
+    if (unmeasured.length > 0 && !notYet) {
+      const cut = law(hkvCutNotByConsumption, { period: lawPeriod }, lawLog)
+      const share = law(hkvConsumptionShare, { period: lawPeriod }, lawLog)
+      let amounts = ''
+      if (unmeasured.length === sp.plan.pots.length) {
+        amounts = cutsOn(ids, cut)
+      } else {
+        // „Soweit“ (§ 12 Abs. 1 Satz 1): nur der unerfasste Topf, sein Anteil nach CO₂-Abzug (6.5); der
+        // Ausweis druckt beide Beträge je Mieter (Abweichung 15).
+        const p = unmeasured[0] ?? 'heating'
+        const K = potCostOf(sp, pot?.items ?? [], p)
+        const list = sp.plan.units.flatMap((u) => u.users).flatMap((u) => {
+          const w = sp.weights?.get(u.key)
+          if (u.role !== 'tenancy' || !u.tenancyId || !statements.has(u.tenancyId) || !w) return []
+          const net = K * w[p] - potCo2Of(sp, pot?.items ?? [], pot?.reliefKey ?? null, u.tenancyId, w)[p]
+          const c = Math.round((net * cut) / 100)
+          return c > 0 ? [`${nameOf(u.tenancyId)} ${fmtCents(c)}`] : []
+        })
+        amounts = list.length > 0 ? `, hier vom Topf ${POT_NAME[p]} nach CO₂-Abzug laut Ausweis: ${andList(list)}` : ''
+      }
+      const missingCapture = sp.verdict?.kind === 'missing'
+        ? ` Die Wärmepumpe hat keine Verbrauchserfassung, obwohl sie bis zum ${fmtDay(law(hkvHeatPumpCapture, { date: period.from }, lawLog).installBy)} einzubauen war (§ 12 Abs. 3 HeizkostenV). Dass die Mieter dann nach § 12 Abs. 1 Satz 1 kürzen dürfen, ist eine Auslegung; entschieden ist es nicht.`
+        : ''
+      warn('heating.no-consumption',
+        `${where}: Für ${unmeasured.map((p) => POT_NAME[p]).join(' und ')} ist kein Verbrauch erfasst; Mietfuchs verteilt ${unmeasured.length === 1 ? 'diesen Teil' : 'die Kosten'} nur nach Fläche. ` +
+          `Die Heizkostenverordnung verlangt, ${hkvConsumptionShare.describe(share)} nach dem erfassten Verbrauch zu verteilen; sonst darf jeder Mieter seinen Anteil um ${cut} % kürzen (§ 12 Abs. 1 Satz 1 HeizkostenV)${amounts}.${missingCapture}`,
+        subject)
+    }
+    // Anteil anders als in der Vorperiode (§ 6 Abs. 4, R-A7).
+    const prev = sp.shares.previous
+    if (sp.shares.changed && prev) {
+      warn('heating.key-change',
+        `${where}: Der Anteil nach Verbrauch war in der vorigen Heizperiode ${fmtNum(prev.heating)} % bei der Heizung${prev.water !== null ? ` und ${fmtNum(prev.water)} % beim Warmwasser` : ''}, jetzt ${fmtNum(sp.shares.heating)} %${sp.shares.water !== null ? ` und ${fmtNum(sp.shares.water)} %` : ''}. ` +
+          'Den Abrechnungsmaßstab ändern Sie nach der ersten Festlegung nur bei Einführung einer Vorerfassung nach Nutzergruppen, nach baulichen Maßnahmen, die nachhaltig Heizenergie einsparen, oder aus anderen sachgerechten Gründen, durch Erklärung gegenüber den Mietern und nur mit Wirkung zum Beginn eines Abrechnungszeitraums (§ 6 Abs. 4 HeizkostenV). Ist das so geschehen, ist nichts zu tun.',
+        subject)
+    }
+    // Warmwasseranteil auf der Schätzung beim Abschluss (Abweichung 11).
+    if (sp.alpha?.estimated) {
+      warn('heating.dhw-share-estimated',
+        `${where}: Der Warmwasseranteil von ${fmtNum(Math.round(sp.alpha.value * 1000) / 10)} % beruht auf der geschätzten Energie der fehlenden Rechnung, die Sie beim Abschluss eingetragen haben. Mit der Folgerechnung kann er sich ändern; die abgeschlossene Abrechnung bleibt, wie sie ist.`,
+        subject)
+    }
+    // Wärmepumpe, für die die Verordnung noch nicht gilt (§ 12 Abs. 3 Satz 2, Abweichung 7).
+    if (sp.verdict?.kind === 'notYet') {
+      const rule = law(hkvHeatPumpCapture, { date: period.from }, lawLog)
+      const on = sp.verdict.captureInstalledOn
+      warn('heating.heat-pump-capture',
+        `${where}: Bei dieser Wärmepumpe wurde der Verbrauch am ${fmtDay(rule.capturedBy)} noch nicht erfasst. Die Heizkostenverordnung gilt für sie erst ab dem Abrechnungszeitraum, der nach dem Einbau der Erfassung beginnt (§ 12 Abs. 3 HeizkostenV)` +
+          `${on ? `, also ab dem Abrechnungszeitraum, der nach dem ${fmtDay(on)} beginnt` : `; einzubauen ist sie bis zum ${fmtDay(rule.installBy)}`}. ` +
+          'Bis dahin gilt die Verteilung laut Mietvertrag, und Kürzungen nach § 12 Abs. 1 HeizkostenV entfallen. Mietfuchs verteilt nach den erfassten Werten, wie Sie es eingerichtet haben; prüfen Sie, ob der Mietvertrag das deckt.',
+        subject)
+    }
+    // Zeitanteilig statt nach Gradtagen (§ 9b Abs. 2): beide Beträge.
+    if (sp.changeSplit === 'time' && sp.plan.units.some((u) => u.users.length > 1)) {
+      const alt = weightsOf(planSelf({ ...sp.input, changeSplit: 'degreeDays' }), { heating: sp.shares.heating, water: sp.shares.water ?? 0 }, sp.alpha?.value ?? null)
+      const own = (pot?.items ?? []).filter((c) => c.key === 'heatingSystem')
+      const sumFor = (w: Map<string, SelfWeights>, key: string): number => own.reduce((a, c) => a + c.amountCents * (w.get(key)?.[c.heatingTarget ?? 'both'] ?? 0), 0)
+      const list = sp.plan.units.filter((u) => u.users.length > 1).flatMap((u) => u.users).flatMap((u) => (u.role === 'tenancy' && u.tenancyId && sp.weights
+        ? [`${nameOf(u.tenancyId)}: zeitanteilig ${fmtCents(Math.round(sumFor(sp.weights, u.key)))}, nach Gradtagen ${fmtCents(Math.round(sumFor(alt, u.key)))}`]
+        : []))
+      if (list.length > 0) {
+        warn('heating.change-split-time',
+          `${where}: Beim Mieterwechsel teilen Sie die übrigen Heizkosten zeitanteilig. Die Heizkostenverordnung lässt auch die Gradtagszahlen zu, nach denen ein Wintermonat mehr wiegt als ein Sommermonat (§ 9b Abs. 2 HeizkostenV); beides ist zulässig. ${andList(list)}.`,
+          subject)
+      }
+    }
+  }
+  // Dasselbe bei freien Schlüsseln mit Positionen „nur Heizung“ (Heizung PR 10, A2).
+  for (const [plantId, byTenancy] of manualSplitTime) {
+    const plant = plants.find((p) => p.id === plantId)
+    const list = [...byTenancy].map(([id, e]) => `${nameOf(id)}: zeitanteilig ${fmtCents(Math.round(e.now))}, nach Gradtagen ${fmtCents(Math.round(e.alt))}`)
+    if (!plant || list.length === 0) continue
+    warn('heating.change-split-time',
+      `${plant.name ? `Heizanlage „${plant.name}“` : 'Heizanlage'}: Beim Mieterwechsel teilen Sie die Positionen „nur Heizung“ zeitanteilig. Die Heizkostenverordnung lässt auch die Gradtagszahlen zu, nach denen ein Wintermonat mehr wiegt als ein Sommermonat (§ 9b Abs. 2 HeizkostenV); beides ist zulässig. ${andList(list)}.`,
+      { kind: 'heatingCosts', id: plantId })
+  }
   // Freie Schlüssel ohne Bestand oder ohne Schlüssel (Entwurf 8.2 „Ohne Bestand“, N9): verteilt wird nach
   // Lieferung wie bisher; der Text nennt beide Folgen (Heizung PR 8).
   for (const n of stockNotes) {
@@ -4458,7 +5082,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       // dazu gibt es nichts zu sagen. Bei einer Anlage mit freien Schlüsseln ohne Verknüpfung der
       // Rat, die Rechnung als Lieferung einzutragen; ohne Anlage wie bisher.
       if (item.fuelDeliveryId) continue
-      if (plants.find((p) => p.id === item.heatingPlantId)?.method === 'manual') {
+      if ((plants.find((p) => p.id === item.heatingPlantId)?.method ?? 'service') !== 'service') {
         warn('fuel.manual-beyond-period',
           `„${item.description}“: Die Rechnung reicht über die Heizperiode ${label} hinaus (Leistungszeitraum ${range}) und wird ganz verteilt. Heizkosten gehören in die Heizperiode, in der sie verbraucht wurden (BGH VIII ZR 156/11). ` +
             'Tragen Sie die Rechnung auf der Seite Heizkosten als Lieferung ein und verknüpfen Sie die Position mit ihr; dann grenzt Mietfuchs sie ab.',
@@ -4553,8 +5177,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           previousCostItems: part.previousItems,
           comparableCostItems: part.comparableItems,
           heatingParts: [],
+          // Je Heizperiode entschieden, ob die eigene Abrechnung schon gilt (Durchsicht von #239, N3).
+          heatingPlants: (snapshot.heatingPlants ?? []).map((p) => selfAt(p, String(part.period.key))),
           closedSettlement: null,
-          scope: { kind: 'heatingPart', plant },
+          scope: { kind: 'heatingPart', plant: selfAt(plant, String(part.period.key)) },
         }, options)
         mergeHeatingPart(sub, part)
         mergedParts.push(part)
@@ -4698,11 +5324,17 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // Die Ausnahme steht in shared/heating.ts, für diese Warnung wie für die Verteilung (#140).
   if (heatingFlat.length > 0 && !heatingAgreeable && items.some((c) => c.category === HEATING_CATEGORY)) {
     const cut = law(hkvCutNotByConsumption, { period: lawPeriod }, lawLog)
+    // Bei der eigenen Heizkostenabrechnung kennt Mietfuchs den Betrag nach der Verordnung (Entwurf 6.3).
+    const selfFlatList = heatingFlat.flatMap((t) => {
+      const raw = selfFlat.get(t.id)
+      return raw === undefined ? [] : [`${t.tenantName} (${t.unit.name}) ${fmtCents(Math.round(raw))}`]
+    })
+    const selfFlatText = selfFlatList.length > 0 ? ` Nach der Heizkostenverordnung entfielen auf ${andList(selfFlatList)}.` : ''
     warn('heating.flat-rate',
       `Für ${andList(heatingFlat.map((t) => `${t.tenantName} (${t.unit.name})`))} ist für Heizung und Warmwasser eine Pauschale oder Warmmiete vereinbart. ` +
         'Die Heizkostenverordnung geht der Vereinbarung vor (§ 2 HeizkostenV); zulässig ist das nur im Gebäude mit höchstens zwei Wohnungen, von denen Sie eine selbst bewohnen. ' +
         'Sonst wird der Heizanteil als Vorauszahlung behandelt, über die Sie nach Verbrauch abrechnen müssen (BGH VIII ZR 212/05). ' +
-        `Rechnen Sie trotzdem nicht nach Verbrauch ab, darf der Mieter seinen Anteil um ${cut} % kürzen (§ 12 Abs. 1 HeizkostenV).` +
+        `Rechnen Sie trotzdem nicht nach Verbrauch ab, darf der Mieter seinen Anteil um ${cut} % kürzen (§ 12 Abs. 1 HeizkostenV).` + selfFlatText +
         // Die Einliegerwohnung (#116): Wer nur die vermietete Wohnung anlegt, hat womöglich
         // genau das Zweifamilienhaus der Ausnahme. Mietfuchs erkennt es an der eigenen Wohnung,
         // und die fehlt dann. Bei zwei oder mehr angelegten Wohnungen hülfe sie nicht mehr.

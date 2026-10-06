@@ -401,6 +401,10 @@ export function stockTouched(chain: readonly StockPeriodInput[]): boolean {
 // und „laut Gemeinschaftsabrechnung“ nennen feste Beträge und taugen nicht.
 export type StockKeyItem = { category: string; heatingPlantId?: string | null; heatingPart?: string | null; fuelDeliveryId?: string | null; key: string; amountCents: number; period: string }
 const KEYED: readonly string[] = ['area', 'persons', 'units', 'meter', 'direct', 'custom']
+// Bei der eigenen Heizkostenabrechnung (Heizung PR 10, Entwurf 8.2) taugt nur eine Position nach
+// Heizkostenverordnung: Die Überträge gehen mit den Gewichten ihres Ziels durch die Verordnung.
+export const SELF_KEYED: readonly string[] = ['heatingSystem']
+export const stockKeysOf = (method: string): readonly string[] => (method === 'self' ? SELF_KEYED : KEYED)
 export const isStockFuelItem = (c: StockKeyItem, plantId: string, heatingCategory: string): boolean =>
   c.category === heatingCategory && c.heatingPlantId === plantId && (c.heatingPart === 'fuel' || (c.fuelDeliveryId ?? null) !== null)
 
@@ -409,16 +413,16 @@ export const isStockFuelItem = (c: StockKeyItem, plantId: string, heatingCategor
 // Kesseltausch mit demselben Brennstoff (Nachprüfung von #238, K1): Hat die neue Anlage noch keine eigene
 // Brennstoffposition, folgt der Übertrag dem Schlüssel der Vorgängerin. `plantIds`: die Anlage und ihre
 // Vorgängerinnen mit demselben Brennstoff, die nächste zuerst.
-export function stockTemplateOfLine<T extends StockKeyItem>(current: readonly T[], previous: readonly T[], plantIds: readonly string[], heatingCategory: string): T | null {
+export function stockTemplateOfLine<T extends StockKeyItem>(current: readonly T[], previous: readonly T[], plantIds: readonly string[], heatingCategory: string, keys: readonly string[] = KEYED): T | null {
   for (const id of plantIds) {
-    const t = stockTemplateOf(current, previous, id, heatingCategory)
+    const t = stockTemplateOf(current, previous, id, heatingCategory, keys)
     if (t) return t
   }
   return null
 }
 
-export function stockTemplateOf<T extends StockKeyItem>(current: readonly T[], previous: readonly T[], plantId: string, heatingCategory: string): T | null {
-  const ok = (c: T) => isStockFuelItem(c, plantId, heatingCategory) && KEYED.includes(c.key)
+export function stockTemplateOf<T extends StockKeyItem>(current: readonly T[], previous: readonly T[], plantId: string, heatingCategory: string, keys: readonly string[] = KEYED): T | null {
+  const ok = (c: T) => isStockFuelItem(c, plantId, heatingCategory) && keys.includes(c.key)
   const largest = current.filter(ok).reduce<T | null>((a, c) => (a === null || c.amountCents > a.amountCents ? c : a), null)
   return largest ?? previous.filter(ok).at(-1) ?? null
 }

@@ -1177,6 +1177,65 @@ im Rumpf `adjust` mit, damit nie ein halber Stand entsteht.
   sagen „nicht geklärt“ und verweisen auf § 556 Abs. 1 Satz 1 BGB. Fernwärme ist keine Etagenheizung. `fuel-invariant.test.ts` und `fuel-stock-invariant.test.ts`
   rechnen je eine Variante mit zwei Anlagen und prüfen, dass jede Lieferung nur bei ihrer Anlage steht.
 
+**Eigene Heizkostenabrechnung** (Heizung PR 10, #99): Bei `method = 'self'` verteilt Mietfuchs nach
+der Heizkostenverordnung. Die reine Rechnung steht in [server/src/heating.ts](server/src/heating.ts):
+Nutzer je Wohnung (Mietverhältnisse, Leerstand, Eigennutzung, außerhalb), die Ablesung je Grenze (die
+beim Mieterwechsel erfasste fest, `readings.interim_for`; sonst die nächste in der Zelle über H−1, H und
+H+1; zwei Werte am selben Tag sind ein Befund; der eingefrorene Endstand der Vorperiode ist der
+Anfangsstand; ohne Rückrechnung, Entwurf 3.5),
+§ 9b Abs. 3 als Gruppe über die Grenzen ohne Ablesung, Bruchteile je Topf und daraus **ein Gewicht je
+Nutzer und Ziel** (`weightsOf`). calc.ts verteilt jede Position mit `key = 'heatingSystem'` mit diesen
+Gewichten durch `distributeCents` (#202), wie jede andere Position; Leerstand und Eigennutzung gehen
+über `landlordRecipients`.
+
+- **Teil und Ziel** stehen an der Position (`heatingPart`, `heatingTarget`); bei verbundener
+  Warmwasserbereitung teilt der gemessene Warmwasseranteil α (`hotWaterShareOf`, nur bei Abrechnung in
+  kWh) die Ziele „beides“. Der Anteil nach Verbrauch gilt aus der Heizperiode oder der vorigen
+  (`consumptionSharesOf`, § 6 Abs. 4); § 7 Abs. 1 Satz 2 ist `hkv.consumption-share-forced`.
+- **Umgestellt wird nur über die Einrichtung** (`PUT /api/heating-plants/:id/self`,
+  [server/src/db/heatingSelf.ts](server/src/db/heatingSelf.ts)): Anlage, Anteil, Zähler und die
+  Positionen offener Zeiträume in einer Transaktion; fehlen Teil und Ziel, antwortet sie 409 mit der
+  Liste. Zurück auf „Niemand“ verlangt `convertItems: 'area'`.
+- **Nicht verteilbar** (fehlender Stand, fehlender Zähler, kein Anteil, α unbestimmbar) heißt Fehler an
+  der Anlage und alle Positionen beim Vermieter; geraten wird nie. Die Hinweise zu Ablesung und
+  Zwischenablesung rechnen nach dem CO₂-Block, weil ihre Kürzungsbeträge auf den gedruckten Zeilen
+  stehen; fehlende Zwischenablesungen beantwortet der Vermieter in `interim_reading_gaps`.
+- **Wärmepumpe**: Ob die Verordnung gilt, entscheidet `heatPumpVerdict` aus dem Datum der Erfassung
+  oder des Einbaus (§ 12 Abs. 3, `hkv.heat-pump.capture`).
+- **„Nur Heizung“ bei freien Schlüsseln** nimmt beim Mieterwechsel die Gradtage statt der Tage
+  (Fläche, Einheiten, vereinbarte Anteile, Direktzuordnung); eine kombinierte Position bleibt nach
+  Tagen, deshalb ändert sich für Bestandsnutzer keine Zahl.
+- **Golden F16, F17** in `server/test/fixtures/heating/` rechnen Beispiel A und das Heizöl mit Vorrat von
+  Hand nach; Heizkostenverteiler, Werte eines Ablesedienstes und § 6a kommen mit PR 12 und PR 14.
+- **Invarianten**: fuel-invariant.test.ts und fuel-stock-invariant.test.ts haben Läufe mit eigener
+  Abrechnung, fuel-invariant auch mit verbundenem und getrenntem Warmwasser; dazu prüfen sie, dass die
+  Gewichte jeden Topf ganz verteilen, jede Lieferung über alle Heizperioden genau einmal in den Zeilen
+  steht und der Topf Warmwasser den Warmwasseranteil α trägt (s3). Der Vorratsübertrag nimmt bei `self` nur eine
+  Brennstoffposition nach Heizkostenverordnung als Vorlage (`stockKeysOf` in fuelStock.ts).
+- **Zeiträume und Linie** (Durchsicht von #239 und ihre Nachprüfung): Wann die eigene Abrechnung gilt,
+  steht in der Tabelle `heating_self_spans` (von, bis ausschließlich; `until` NULL beim laufenden), wie die
+  Spannen nach Weg d. Die Einrichtung öffnet einen Zeitraum (nie vor einem laufenden und nie vor oder in einer
+  abgeschlossenen Heizperiode; unmittelbar am Ende eines früheren geht dieser weiter). Das Zurückschalten
+  schließt ihn mit der ersten offenen Heizperiode, wenn abgeschlossene nach ihm gerechnet wurden, sonst
+  entfällt er, und es leert die Anteile offener Heizperioden; abgeschlossene rechnen weiter nach der
+  Verordnung, wie sie zugestellt wurden. Liegt eine abgeschlossene Heizperiode hinter einer offenen, lehnt
+  es mit 409 ab. Der Kesseltausch erbt den laufenden Zeitraum. Abgeleitet aus den Anteilszeilen wird nichts.
+  Gerechnet wird je Heizperiode (`selfActive` in heating.ts, `selfAt` und `withSelfBegin` in snapshot.ts,
+  auch in der Teilabrechnung von calc.ts, der Wächter in repository.ts, `selfItemsOf` mit `from`), denn § 6 Abs. 4
+lässt die Wahl nur für künftige Zeiträume zu. Der Anteil gehört zur **Linie** der Anlage
+  (`lineShareRows`, [server/src/db/selfLine.ts](server/src/db/selfLine.ts)): Nach einem Kesseltausch gilt er
+  weiter, und in derselben Heizperiode lehnt `saveDistribution` einen anderen ab. Den Pflichtanteil nach
+  § 7 Abs. 1 Satz 2 nachzutragen ist keine Wahl und geht auch in einer begonnenen Heizperiode. Läuft eine
+  Anlage nur einen Teil der Heizperiode, wird die Wärme am Speicher an ihrer Laufzeit abgegrenzt; dafür
+  braucht es den Stand am Tauschtag (der Tausch nimmt `meterReadings` an), sonst `heating.self-incomplete`.
+  Der eingefrorene Endstand kommt auch aus der Heizkostenabrechnung nach Weg d. Bis PR 14 warnt
+  `heating.self-6a-missing` mit der Kürzung je Mieter (§ 12 Abs. 1 Satz 3), einmal je Linie, nur für
+  Abrechnungszeiträume ab dem 01.12.2021 (`hkv.settlement-info`) und ohne erfassten Verbrauch mit den
+  Angaben nach § 6a Abs. 5.
+- **Migrationen 0027/0028**: Spalten an `heating_plants` (`hot_water`, `capture`, `area_basis_heat`,
+  `heat_pump_installed_on`), `cost_items.heating_target`, `readings.interim_for` und die Tabellen
+  `interim_reading_gaps` und `heating_self_spans`; die Bedingungen im zweiten Schritt.
+
 **Brennstoffvorrat** (Heizung PR 8, #97, #99): Bei Heizöl, Flüssiggas, Pellets, Holz und Kohle
 (`STOCK_ENERGIES` in [shared/fuelStock.ts](shared/fuelStock.ts)) rechnet
 [server/src/fuelStock.ts](server/src/fuelStock.ts) den verbrauchten Brennstoff: Anfangsbestand +
@@ -1356,7 +1415,7 @@ Löschen erledigen die Fremdschlüssel und nicht mehr index.ts. Alle Datenrouten
 `?property=` auf ein Objekt ein (siehe Objekte). `POST /api/tenancies/:id/change` führt den
 Mieterwechsel (Ende, Zwischenablesungen, Nachmieter) in einer Transaktion aus, ganz oder gar
 nicht (#150, `changeTenant` in repository.ts). Daneben Spezialrouten: `/api/properties`
-(Objekte anlegen, ändern, nur leere löschen), `/api/heating-plants` (Heizanlage, siehe dort; der Rumpf beim Anlegen nimmt `adjust` für Name und Wohnungen bisheriger Anlagen, `/:id/replace` ist der Kesseltausch), `/api/heating-plants/:id/periods` (Heizperioden einer Anlage mit CO₂-Angaben und Warmwasser, siehe CO₂ beim Messdienst), `…/periods/:period/stock` (PUT/DELETE, Vorrat, siehe Brennstoffvorrat), `/api/heating-plants/:id/period` und `/separate` (je mit `/preview`), `/api/heating-settlement/:plant/:period` (samt `/close` und `/history`) und `/api/heating-settlements` (eigene Heizperiode, siehe dort), `/api/heating-plants/:id/deliveries`, `/api/fuel-deliveries/:id` und `/api/properties/:id/degree-days` (siehe Lieferungen), `/api/settings`, `/api/settlement/:year`, `/api/consumption/:year`, `/api/rentledger/:year`
+(Objekte anlegen, ändern, nur leere löschen), `/api/heating-plants` (Heizanlage, siehe dort; der Rumpf beim Anlegen nimmt `adjust` für Name und Wohnungen bisheriger Anlagen, `/:id/replace` ist der Kesseltausch; `PUT /:id/self` richtet die eigene Heizkostenabrechnung ein, 409 mit Positionen; `PUT …/periods/:period/distribution` setzt den Anteil nach Verbrauch; `PUT`/`DELETE /api/units/:id/interim-gaps/:date` die Antwort zu einer fehlenden Zwischenablesung, siehe Eigene Heizkostenabrechnung), `/api/heating-plants/:id/periods` (Heizperioden einer Anlage mit CO₂-Angaben und Warmwasser, siehe CO₂ beim Messdienst), `…/periods/:period/stock` (PUT/DELETE, Vorrat, siehe Brennstoffvorrat), `/api/heating-plants/:id/period` und `/separate` (je mit `/preview`), `/api/heating-settlement/:plant/:period` (samt `/close` und `/history`) und `/api/heating-settlements` (eigene Heizperiode, siehe dort), `/api/heating-plants/:id/deliveries`, `/api/fuel-deliveries/:id` und `/api/properties/:id/degree-days` (siehe Lieferungen), `/api/settings`, `/api/settlement/:year`, `/api/consumption/:year`, `/api/rentledger/:year`
 (Mietkonto: Soll/Ist je Monat), `/api/taxreport/:year` (Steuer-Übersicht Anlage V),
 `/api/upload`, `/api/extract` und `/api/intake` (KI-Auswertung, auf Wunsch als Strom, siehe
 unten), die KI-Einstellungen `/api/ai/presets`, `/api/ai/status`, `/api/ai/key` und

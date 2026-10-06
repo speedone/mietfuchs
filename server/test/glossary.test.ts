@@ -174,3 +174,26 @@ test('Brennstoffvorrat (Heizung PR 8): Beispiel nachgerechnet', () => {
 test('Fläche der CO₂-Einstufung bei Etagenheizungen (Heizung PR 9, § 5 Abs. 1 Satz 2 CO2KostAufG)', () => {
   assert.match(GLOSSARY.co2Area.short, /Etagenheizung.*Gesamtwohnfläche der vermieteten Wohnungen mit eigener Heizung \(§ 5 Abs\. 1 Satz 2 CO2KostAufG\)/s)
 })
+
+test('Eigene Heizkostenabrechnung: vier Begriffe mit nachgerechneten Beispielen (Heizung PR 10, Entwurf 10.3)', () => {
+  // Beispiel A aus 8.6: Topf Heizung 5.628 €, davon 30 % Grundkosten, Wohnung mit 60 von 200 m².
+  assert.match(GLOSSARY.baseCosts.example, /5\.628,00 €.*1\.688,40 €.*506,52 €/s)
+  assert.equal(Math.round(562800 * 0.3), 168840)
+  assert.equal(Math.round((168840 * 60) / 200), 50652)
+  // 70 % = 3.939,60 €, davon 12.000 von 40.000 kWh = 1.181,88 €.
+  assert.match(GLOSSARY.consumptionCosts.example, /3\.939,60 €.*12\.000 von 40\.000 kWh.*1\.181,88 €/s)
+  assert.equal(Math.round(562800 * 0.7), 393960)
+  assert.equal(Math.round((393960 * 12000) / 40000), 118188)
+  // Wechsel zum 30.09.: 640 ‰ und 360 ‰ Gradtage, zeitanteilig 273 und 92 Tage.
+  assert.match(GLOSSARY.interimReading.example, /324,17 €.*182,35 €.*378,85 €.*127,67 €/s)
+  assert.equal(Math.round(50652 * 0.64), 32417)
+  assert.equal(Math.round(50652 * 0.36), 18235)
+  assert.equal(Math.round((50652 * 273) / 365), 37885)
+  assert.equal(Math.round((50652 * 92) / 365), 12767)
+  assert.match(GLOSSARY.interimReading.norm, /§ 9b HeizkostenV/)
+  assert.match(GLOSSARY.interimReading.needed, /VIII ZR 19\/07/)
+  assert.match(GLOSSARY.heatMeter.example, /13\.000 kWh.*12\.000 kWh/s)
+  // Beide Lesarten beim gemessenen Warmwasseranteil (15.1 Nr. 9), mit beiden Werten.
+  assert.match(GLOSSARY.hotWaterShare.example, /15,0 %.*16,65 %/s)
+  assert.match(GLOSSARY.hotWaterShare.example, /Norm offen: VDI 2077/)
+})

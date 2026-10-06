@@ -1,12 +1,13 @@
 // Entscheidungslogik des Kostenposition-Formulars, bewusst getrennt von der Darstellung:
 // Auswahllisten, Validierung und der Rumpf, der an die API geht. Diese Stelle bestimmt, was
 // tatsächlich gespeichert wird — sie ist in client/src/costForm.test.ts geprüft.
-import type { BillingPeriod, CostItem, CostKey, ExternalMeasure, HeatingPart, Meter, MeterType, PeriodKey, SplitPreviewPart, Tenancy, Unit } from './types'
+import type { BillingPeriod, CostItem, CostKey, ExternalMeasure, HeatingPart, HeatingTarget, HotWater, Meter, MeterType, PeriodKey, SplitPreviewPart, Tenancy, Unit } from './types'
 import { CATEGORIES, KEY_LABELS, defaultKeyFor, isNotAllocable } from './types'
 import { PARTICIPANT_KEYS as SHARED_PARTICIPANT_KEYS, allocationOf, comparablePrevious, previousAllocation, sameAllocation, type Allocation } from '../../shared/allocation.ts'
 import { parseEuro } from './api'
 import { sameCostCandidates, type DuplicateItem } from '../../shared/duplicates.ts'
 import { parseNumberDe } from './numbers'
+import { targetOptions } from './heatingSelfForm'
 import { usageOf } from './types'
 import { CREDIT_WITH_AMOUNTS, costItemBody, euro, type CostItemBody, inBasis, pct, showsTaxUnitField, taxUnitOf, type BuildResult, type CostItemDraft } from '../../shared/costItem.ts'
 import { etwByStatement, lastExternalBasis, type KeyContext } from '../../shared/assessment.ts'
@@ -47,6 +48,9 @@ export type ItemForm = {
   // Teil der Heizkosten, nur bei Heizkosten (#208, A1; Nachprüfung von #237: alle Werte des Modells),
   // leer heißt keine Angabe
   heatingPart: HeatingPart | ''
+  // Ziel bei Heizkosten (Heizung PR 10): leer heißt „Heizung und Warmwasser“ bei freien Schlüsseln bzw.
+  // noch nicht gewählt bei der eigenen Heizkostenabrechnung.
+  heatingTarget: HeatingTarget | ''
   invoiceFile?: string
 }
 
@@ -70,6 +74,7 @@ export const EMPTY_ITEM_FORM: ItemForm = {
   serviceTo: '',
   taxYear: '',
   heatingPart: '',
+  heatingTarget: '',
 }
 
 // Formular aus einer gespeicherten Position füllen
@@ -97,6 +102,7 @@ export function itemToForm(i: CostItem): ItemForm {
     serviceTo: i.serviceTo ?? '',
     taxYear: i.taxYear !== undefined ? String(i.taxYear) : '',
     heatingPart: i.heatingPart ?? '',
+    heatingTarget: i.heatingTarget ?? '',
     invoiceFile: i.invoiceFile ?? undefined,
   }
 }
@@ -381,11 +387,25 @@ export function toggleTaxUnit(form: ItemForm, unitId: string, checked: boolean):
   return { ...form, key: 'area', directUnitId: '', participants: next }
 }
 
-export function costKeyOptions(unitMeterTypes: MeterType[], stored: CostKey): CostKey[] {
+// `selfPlant` (Heizung PR 10): eine Heizposition einer Anlage mit eigener Heizkostenabrechnung; dort gibt es nur
+// den Schlüssel nach Heizkostenverordnung (Abweichung 18).
+export function costKeyOptions(unitMeterTypes: MeterType[], stored: CostKey, selfPlant = false): CostKey[] {
+  if (selfPlant) return ['heatingSystem']
   return (Object.keys(KEY_LABELS) as CostKey[]).filter(
     (k) => (k !== 'meter' || unitMeterTypes.length > 0 || stored === 'meter') &&
-      true,
+      // Nach Heizkostenverordnung verteilt nur eine Anlage mit eigener Abrechnung; angeboten wird der
+      // Schlüssel dort. Sonst nur bei einer Position, die ihn schon hat.
+      (k !== 'heatingSystem' || stored === 'heatingSystem'),
   )
+}
+
+// Ziel einer Heizposition (Heizung PR 10). Bei eigener Abrechnung nach der Warmwasserbereitung
+// (`targetOptions`, dieselbe Regel wie `targetProblem` im Server); bei freien Schlüsseln „Heizung und
+// Warmwasser“ (leer, wie bisher) oder „nur Heizung“, dann gelten beim Mieterwechsel die Gradtage
+// (Abweichung 16).
+export function heatingTargetOptions(selfPlant: boolean, hotWater: HotWater, part: HeatingPart | ''): { value: HeatingTarget | ''; label: string }[] {
+  if (selfPlant) return targetOptions(hotWater, part)
+  return [{ value: '', label: 'Heizung und Warmwasser' }, { value: 'heating', label: 'nur Heizung' }]
 }
 
 // Der Schlüssel, den das Formular einer Kostenposition für eine Kostenart vorschlägt (#142).
@@ -472,6 +492,7 @@ function draftOf(form: ItemForm, units: Unit[], tenancies: Tenancy[] | undefined
     serviceTo: form.serviceTo || null,
     taxYear: form.taxYear === '' ? null : Number(form.taxYear),
     heatingPart: form.heatingPart === '' ? null : form.heatingPart,
+    heatingTarget: form.heatingTarget === '' ? null : form.heatingTarget,
   }
 }
 

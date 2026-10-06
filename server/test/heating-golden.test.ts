@@ -8,17 +8,19 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { eq } from 'drizzle-orm'
-import { computeSettlement, taxReport } from '../src/calc.ts'
+import { computeSettlement, stockCarrySelfCents, taxReport } from '../src/calc.ts'
 import { saveCo2Statement } from '../src/db/co2.ts'
 import { createDelivery } from '../src/db/fuel.ts'
 import { createHeatingPlant } from '../src/db/heating.ts'
+import { setUpSelf } from '../src/db/heatingSelf.ts'
+import { saveStock } from '../src/db/fuelStock.ts'
 import { openDatabase } from '../src/db/open.ts'
 import { readStock } from '../src/db/read.ts'
 import { createEntity } from '../src/db/repository.ts'
 import { properties } from '../src/db/schema.ts'
 import { snapshotFor } from '../src/snapshot.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
-import { periodKey, periodOfKey } from '../../shared/period.ts'
+import { CALENDAR_RULES, periodKey, periodOfKey } from '../../shared/period.ts'
 import type { PeriodRules } from '../../shared/types.ts'
 
 const FIXTURES = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'heating')
@@ -165,4 +167,120 @@ test('F13 Mai–April mit eigener Aufteilung: E umgerechnet, C ganz (G-A3), 26,9
       assert.ok(s.legalBasis.values?.some((x) => x.id === 'hkv.degree-days'), `${fall}: Gradtagstabelle im Rechtsstand`)
     })
   }
+})
+
+// ---------- F16, F17: eigene Heizkostenabrechnung (Heizung PR 10) ----------
+
+let meterIds = 0
+const meterId = () => `gm-${++meterIds}`
+const P2025 = () => periodOfKey(CALENDAR_RULES, periodKey('2025-01')) ?? assert.fail('kein Zeitraum 2025')
+const zeile = (s: ReturnType<typeof computeSettlement>, t: string, id: string): number =>
+  s.statements.find((st) => st.tenancyId === t)?.rows.find((r) => r.costItemId === id)?.shareCents ?? assert.fail(`keine Zeile ${id} bei ${t}`)
+const summe = (s: ReturnType<typeof computeSettlement>, t: string): number =>
+  (s.statements.find((st) => st.tenancyId === t) ?? assert.fail(`keine Abrechnung ${t}`)).rows.filter((r) => r.kind !== 'co2Relief').reduce((a, r) => a + r.shareCents, 0)
+const entlastung = (s: ReturnType<typeof computeSettlement>, t: string): number =>
+  s.statements.find((st) => st.tenancyId === t)?.rows.filter((r) => r.kind === 'co2Relief').reduce((a, r) => a + r.shareCents, 0) ?? 0
+async function ablesen(opened: Opened, rows: [string | null, string, string | null, string, number][]): Promise<void> {
+  const meters = (await opened.read(readStock)).meters
+  await opened.write(async (db) => {
+    for (const [unitId, type, role, date, value] of rows) {
+      const m = meters.find((x) => x.unitId === unitId && x.type === type && (x.heatingRole ?? null) === role) ?? assert.fail(`kein Zähler ${unitId} ${type}`)
+      await createEntity(db, 'readings', `${m.id}@${date}`, { meterId: m.id, date, value })
+    }
+  })
+}
+
+test('F16 Eigene Heizkostenabrechnung: 1.961,89 / 2.615,84 / 1.331,52 / 750,75 €, R = 568,66 €', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write(async (db) => {
+      for (const [u, area] of [['a', 60], ['b', 80], ['c', 60]] as const) await createEntity(db, 'units', u, { propertyId: 'objekt-1', name: u.toUpperCase(), areaM2: area, participates: true })
+      await createEntity(db, 'tenancies', 'A', { unitId: 'a', tenantName: 'Mieter A', persons: 1, start: '2020-01-01' })
+      await createEntity(db, 'tenancies', 'B', { unitId: 'b', tenantName: 'Mieter B', persons: 1, start: '2020-01-01' })
+      await createEntity(db, 'tenancies', 'C1', { unitId: 'c', tenantName: 'Mieter C1', persons: 1, start: '2020-01-01', end: '2025-09-30' })
+      await createEntity(db, 'tenancies', 'C2', { unitId: 'c', tenantName: 'Mieter C2', persons: 1, start: '2025-10-01' })
+      await createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'gas', method: 'manual' })
+      await setUpSelf(db, 'hp', { period: '2025-01', heatConsumptionPct: 70, waterConsumptionPct: 70, insulationRule: 'notApplies', hotWater: 'combined', capture: 'heatMeter', dhwHeatMeter: true, totalHeatMeter: false }, '2026-02-01', meterId)
+    })
+    await ablesen(opened, [
+      ['a', 'waerme', null, '2024-12-31', 1000], ['a', 'waerme', null, '2025-12-31', 13000],
+      ['b', 'waerme', null, '2024-12-31', 0], ['b', 'waerme', null, '2025-12-31', 16000],
+      ['c', 'waerme', null, '2024-12-31', 500], ['c', 'waerme', null, '2025-09-30', 7700], ['c', 'waerme', null, '2025-12-31', 12500],
+      ['a', 'warmwasser', null, '2024-12-31', 10], ['a', 'warmwasser', null, '2025-12-31', 40],
+      ['b', 'warmwasser', null, '2024-12-31', 0], ['b', 'warmwasser', null, '2025-12-31', 40],
+      ['c', 'warmwasser', null, '2024-12-31', 5], ['c', 'warmwasser', null, '2025-09-30', 43], ['c', 'warmwasser', null, '2025-12-31', 55],
+      [null, 'waerme', 'dhwHeat', '2024-12-31', 0], [null, 'waerme', 'dhwHeat', '2025-12-31', 9000],
+    ])
+    await opened.write(async (db) => {
+      await createDelivery(db, 'd1', 'hp', { label: 'Erdgas', invoiceDate: '2026-01-15', invoiceFrom: '2025-01-01', invoiceTo: '2025-12-31', energyKwh: 60000, fixedCents: 0, emissionsKg: 10883.4, co2CostCents: 59859 })
+      const item = (id: string, description: string, amountCents: number, heatingPart: string, heatingTarget: string, extra: Record<string, unknown> = {}) =>
+        createEntity(db, 'costItems', id, { propertyId: 'objekt-1', period: '2025-01', category: HEATING_CATEGORY, description, amountCents, key: 'heatingSystem', heatingPlantId: 'hp', heatingPart, heatingTarget, ...extra })
+      await item('gas', 'Erdgas', 600000, 'fuel', 'both', { fuelDeliveryId: 'd1' })
+      await item('strom', 'Betriebsstrom', 18000, 'operating', 'both')
+      await item('wartung', 'Wartung', 24000, 'operating', 'both')
+      await item('imm', 'Immissionsmessung', 6000, 'operating', 'both')
+      await item('wz', 'Miete Wärmezähler', 12000, 'metering', 'heating')
+      await item('wwz', 'Miete Warmwasserzähler', 6000, 'metering', 'water')
+    })
+    const s = computeSettlement(snapshotFor(await opened.read(readStock), 'objekt-1', P2025()))
+    assert.deepEqual(s.notices.filter((n) => n.level === 'error').map((n) => n.code), [])
+    // Keiner der Hinweise der eigenen Abrechnung: alle Grenzen abgelesen, Anteil wie im ersten Jahr.
+    const PR10 = ['heating.interim-reading-off', 'heating.interim-reading-far', 'heating.no-interim-reading', 'heating.no-interim-reading-missed', 'heating.reading-dates-differ', 'heating.reading-dates-far', 'heating.no-consumption', 'heating.key-change', 'heating.change-split-time', 'heating.change-fee', 'heating.heat-pump-capture']
+    assert.deepEqual(s.notices.filter((n) => PR10.includes(n.code)).map((n) => n.code), [])
+    assert.deepEqual(['A', 'B', 'C1', 'C2'].map((t) => euro(summe(s, t))), ['1.961,89 €', '2.615,84 €', '1.331,52 €', '750,75 €'])
+    assert.equal(['A', 'B', 'C1', 'C2'].reduce((a, t) => a + summe(s, t), 0), 666000)
+    assert.deepEqual(['A', 'B', 'C1', 'C2'].map((t) => zeile(s, t, 'gas')), [176850, 235800, 119644, 67706])
+    assert.deepEqual(['A', 'B', 'C1', 'C2'].map((t) => entlastung(s, t)), [-16761, -22348, -11340, -6417])
+    const self = s.heating?.[0]?.self ?? assert.fail('kein Ausweis')
+    assert.equal(Math.round((self.alpha?.percent ?? 0) * 10) / 10, 15)
+    assert.deepEqual(self.pots.map((p) => [p.pot, p.costCents]), [['heating', 562800], ['water', 103200]])
+  })
+})
+
+// F17: drei Wohnungen à 100 m², Öl mit Vorrat, kein Warmwasser. `heat` sind die kWh der Wärmezähler.
+async function f17(opened: Opened, selfC: boolean, heat: [number, number, number]): Promise<ReturnType<typeof snapshotFor>> {
+  await opened.write(async (db) => {
+    for (const u of ['a', 'b', 'c']) {
+      const self = selfC && u === 'c'
+      await createEntity(db, 'units', u, { propertyId: 'objekt-1', name: u.toUpperCase(), areaM2: 100, participates: !self, selfUsed: self, ...(self ? { selfPersons: 1 } : {}) })
+      if (!self) await createEntity(db, 'tenancies', `t${u}`, { unitId: u, tenantName: `Mieter ${u.toUpperCase()}`, persons: 1, start: '2020-01-01' })
+    }
+    await createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'oil', method: 'manual' })
+    await setUpSelf(db, 'hp', { period: '2025-01', heatConsumptionPct: 70, insulationRule: 'notApplies', hotWater: 'none', capture: 'heatMeter' }, '2026-02-01', meterId)
+    await saveStock(db, 'hp', '2025-01', { stockUnit: 'l', openingQuantity: 2000, openingCostCents: 190000, openingEmissionsKg: 5352.6, openingCo2Cents: 0, openingInvoicedBefore2023: true, closingQuantity: 1800, closingMeasuredOn: '2025-12-31' })
+    // Lieferungen von Vorratsenergien mit Lieferdatum und Menge (PR 8).
+    await createDelivery(db, 'd1', 'hp', { label: 'Heizöl März', invoiceDate: '2025-03-15', deliveredAt: '2025-03-15', quantity: 3000, quantityUnit: 'l', emissionsKg: 8028.9, co2CostCents: 52549 })
+    await createDelivery(db, 'd2', 'hp', { label: 'Heizöl Oktober', invoiceDate: '2025-10-10', deliveredAt: '2025-10-10', quantity: 2500, quantityUnit: 'l', emissionsKg: 6690.75, co2CostCents: 43791 })
+    for (const [id, amountCents, d] of [['l1', 315000, 'd1'], ['l2', 250000, 'd2']] as const) {
+      await createEntity(db, 'costItems', id, { propertyId: 'objekt-1', period: '2025-01', category: HEATING_CATEGORY, description: `Heizöl ${id}`, amountCents, key: 'heatingSystem', heatingPlantId: 'hp', heatingPart: 'fuel', heatingTarget: 'heating', fuelDeliveryId: d })
+    }
+  })
+  await ablesen(opened, (['a', 'b', 'c'] as const).flatMap((u, i): [string, string, null, string, number][] => [[u, 'waerme', null, '2024-12-31', 0], [u, 'waerme', null, '2025-12-31', heat[i] ?? 0]]))
+  return snapshotFor(await opened.read(readStock), 'objekt-1', P2025())
+}
+
+test('F17 Heizöl mit Vorrat: 5.750,00 € nach Verbrauch, Überträge durch die Verordnung, L = 518,48 €', async () => {
+  await withDatabase(async (opened) => {
+    const s = computeSettlement(await f17(opened, false, [10000, 12000, 8000]))
+    assert.ok(!s.notices.some((n) => n.level === 'error'), s.notices.map((n) => n.code).join(', '))
+    assert.deepEqual(['ta', 'tb', 'tc'].map((t) => summe(s, t)), [191666, 218500, 164834])
+    const key = `stock:hp:${periodKey('2025-01')}`
+    assert.deepEqual(s.landlord.rows.find((r) => r.costItemId === key)?.landlordParts, [{ reason: 'fuelCarry', cents: -10000 }])
+    assert.deepEqual(['ta', 'tb', 'tc'].map((t) => entlastung(s, t)), [-17283, -19702, -14863])
+    assert.equal(s.totalCostsCents, 565000)
+  })
+})
+
+test('F17 mit ⅓ Eigennutzung (N8): Abrechnung 1.916,68 € (exakt 1.916,67 €), Steuer 1.883,34 €, Abstand = Eigenanteil an den Überträgen', async () => {
+  await withDatabase(async (opened) => {
+    const snap = await f17(opened, true, [10000, 10000, 10000])
+    const s = computeSettlement(snap)
+    // Je Zeile nach #202 gerundet, Restcent bei Gleichstand an den Vermieter (README, Abweichung 20).
+    assert.equal(s.selfUsedShareCents, 191668)
+    const tax = taxReport(snap)
+    const privat = tax.expenses.items.filter((x) => x.costItemId === 'l1' || x.costItemId === 'l2').reduce((a, x) => a + x.privateCents, 0)
+    // Je Position der gedruckte Eigenanteil der Abrechnung (#163): 1.050,00 € + 833,34 € (Restcent wie dort).
+  assert.equal(privat, 188334)
+    assert.equal(stockCarrySelfCents(s), 3334)
+    assert.equal(tax.expenses.stockCarrySelfCents, 3334)
+  })
 })
