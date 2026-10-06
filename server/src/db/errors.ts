@@ -149,6 +149,8 @@ const OWN_CHECK_MESSAGES: Readonly<Record<string, string>> = {
   cost_items_fuel_delivery_category_valid: 'Eine Lieferung gehört nur zu einer Position der Kostenart „Heizung und Warmwasser“.',
   // Eigene Heizkostenabrechnung (Heizung PR 10)
   heating_plants_self_capture_complete: 'Für die eigene Heizkostenabrechnung braucht die Heizanlage die Angabe, womit der Verbrauch erfasst wird.',
+  heating_plants_self_from_valid: 'Der Beginn der eigenen Heizkostenabrechnung ist keine Heizperiode.',
+  heating_plants_self_from_complete: 'Die eigene Heizkostenabrechnung braucht die Heizperiode, mit der sie beginnt; richten Sie sie in den Stammdaten unter „Heizung“ ein.',
   cost_items_heating_target_category_valid: 'Ein Ziel (Heizung, Warmwasser) gibt es nur bei der Kostenart „Heizung und Warmwasser“.',
   cost_items_heating_system_complete: 'Nach der Heizkostenverordnung verteilt nur eine Position mit Heizanlage, Teil und Ziel. Bitte wählen Sie alle drei.',
   interim_reading_gaps_date_valid: 'Das Datum der Grenze ist kein Datum in der Form JJJJ-MM-TT. Bitte laden Sie die Seite neu.',

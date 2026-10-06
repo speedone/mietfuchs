@@ -972,7 +972,11 @@ test('Heizkostenabrechnung: Vorgaben an der Anlage, Erfassung Pflicht bei eigene
     connection.exec("INSERT INTO heating_plants (id, property_id, energy) VALUES ('hp1', 'objekt-1', 'gas')")
     assert.deepEqual(connection.rows('SELECT hot_water, capture, area_basis_heat, heat_pump_installed_on FROM heating_plants')[0], ['combined', null, 'area', null])
     assert.ok(rejects(connection, "INSERT INTO heating_plants (id, property_id, energy, method) VALUES ('hp2', 'objekt-1', 'gas', 'self')"), 'eigene Abrechnung ohne Erfassung')
-    assert.equal(rejects(connection, "INSERT INTO heating_plants (id, property_id, energy, method, capture) VALUES ('hp3', 'objekt-1', 'gas', 'self', 'heatMeter')"), null)
+    assert.equal(rejects(connection, "INSERT INTO heating_plants (id, property_id, energy, method, capture, self_from) VALUES ('hp3', 'objekt-1', 'gas', 'self', 'heatMeter', '2025-01')"), null)
+    // Durchsicht von #239, W1/W2: der Beginn steht genau bei der eigenen Abrechnung und ist ein Schlüssel.
+    assert.ok(rejects(connection, "INSERT INTO heating_plants (id, property_id, energy, method, capture) VALUES ('hp4', 'objekt-1', 'gas', 'self', 'heatMeter')"), 'eigene Abrechnung ohne Beginn')
+    assert.ok(rejects(connection, "UPDATE heating_plants SET self_from = '2025-01' WHERE id = 'hp1'"), 'Beginn ohne eigene Abrechnung')
+    assert.ok(rejects(connection, "UPDATE heating_plants SET self_from = '2025-13' WHERE id = 'hp3'"), 'Beginn kein Schlüssel')
     assert.ok(rejects(connection, "UPDATE heating_plants SET hot_water = 'zentral' WHERE id = 'hp1'"), 'unbekannte Warmwasserbereitung')
     assert.ok(rejects(connection, "UPDATE heating_plants SET capture = 'verdunster' WHERE id = 'hp1'"), 'unbekannte Erfassung')
     assert.ok(rejects(connection, "UPDATE heating_plants SET area_basis_heat = 'raum' WHERE id = 'hp1'"), 'unbekannte Flächenbasis')
@@ -984,7 +988,7 @@ test('Heizkostenabrechnung: Vorgaben an der Anlage, Erfassung Pflicht bei eigene
 test('Heizkostenabrechnung: Schlüssel heatingSystem nur mit Ziel, Teil und Anlage; Ziel nur bei Heizkosten', async () => {
   const { connection, cleanup } = await freshDb()
   try {
-    connection.exec("INSERT INTO heating_plants (id, property_id, energy, method, capture) VALUES ('hp1', 'objekt-1', 'gas', 'self', 'heatMeter')")
+    connection.exec("INSERT INTO heating_plants (id, property_id, energy, method, capture, self_from) VALUES ('hp1', 'objekt-1', 'gas', 'self', 'heatMeter', '2025-01')")
     const insert = (id: string, cols: string, vals: string) =>
       rejects(connection, `INSERT INTO cost_items (id, property_id, period, category, description, amount_cents, key${cols}) VALUES ('${id}', 'objekt-1', '2025-01', 'Heizung und Warmwasser', 'Gas', 600000, ${vals})`)
     assert.equal(insert('c1', ', heating_plant_id, heating_part, heating_target', "'heatingSystem', 'hp1', 'fuel', 'both'"), null)

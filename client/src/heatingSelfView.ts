@@ -33,7 +33,7 @@ export function unsureShareHint(energy: HeatingEnergy, insulation: InsulationRul
 export function gapConsequence(status: 'impossible' | 'missed'): string {
   return status === 'impossible'
     ? 'Nicht möglich: Die Kosten der Wohnung werden nach Gradtagen und Tagen auf die Mieter geteilt (§ 9b Abs. 3 HeizkostenV). Nennen Sie den Grund; er steht in der Abrechnung.'
-    : `Nicht durchgeführt: Mietfuchs teilt die Kosten der Wohnung ebenso, aber nicht nach dem Verbrauch; die Mieter dürfen ihren Anteil daran um ${valueAt(hkvCutNotByConsumption, LAW_AS_OF)} % kürzen (§ 12 Abs. 1 Satz 1 HeizkostenV). Die Abrechnung nennt die Beträge.`
+    : `Nicht durchgeführt: Mietfuchs teilt die Kosten der Wohnung ebenso nach § 9b Abs. 3 HeizkostenV, denn eine andere Rechnung gibt es nicht; die Zwischenablesung war Pflicht (§ 9b Abs. 1). Nach einer Auslegung (LG Hamburg, 11 S 202/87) dürfen die Mieter ihren Anteil an diesen Kosten um bis zu ${valueAt(hkvCutNotByConsumption, LAW_AS_OF)} % kürzen. Die Abrechnung nennt die Beträge.`
 }
 
 // Prozent mit höchstens zwei Nachkommastellen (M9); sonst null.

@@ -5,7 +5,7 @@ import type { LawParam, Timing } from './register.ts'
 import type { LawValue } from '../types.ts'
 import { betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths } from './bgb-betrkv.ts'
 import { co2ApplicableFrom, co2CostsBefore, co2CutMissing, co2DistrictEtsNew, co2NonResidential, co2Restriction, co2RoundingDecimals, co2StageTable } from './co2kostaufg.ts'
-import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvHeatPumpCapture, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit } from './heizkostenv.ts'
+import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvHeatPumpCapture, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvSettlementInfo } from './heizkostenv.ts'
 import { practiceReadingOffWarning, practiceVacancyPersons } from './practice.ts'
 import { ustgStandardRate } from './ustg.ts'
 
@@ -23,6 +23,7 @@ export const LAW_PARAMS: readonly LawParam<LawValue, Timing>[] = [
   co2StageTable,
   hkvConsumptionShare,
   hkvConsumptionShareForced,
+  hkvSettlementInfo,
   hkvCutNotByConsumption,
   hkvCutRemoteReading,
   hkvDegreeDays,

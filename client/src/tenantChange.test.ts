@@ -106,7 +106,7 @@ describe('Mieterwechsel bei eigener Heizkostenabrechnung (Heizung PR 10)', () =>
 
 describe('Durchsicht von #239, I3', () => {
   test('„nicht möglich“ nur mit Grund, geprüft vor „Weiter“', () => {
-    expect(gapProblem(['w'], {}, { status: 'impossible', reason: ' ' })).toBe('Bitte nennen Sie den Grund, warum die Zwischenablesung nicht möglich war; er steht in der Abrechnung.')
+    expect(gapProblem(['w'], {}, { status: 'impossible', reason: ' ' })).toBe('Bitte nennen Sie den Grund für die Teilung nach § 9b Abs. 3 HeizkostenV, also warum die Zwischenablesung nicht möglich war; er steht in der Abrechnung.')
     expect(gapProblem(['w'], {}, { status: 'impossible', reason: 'nicht zugänglich' })).toBeNull()
     expect(gapProblem(['w'], { w: '12' }, null)).toBeNull()
     expect(gapProblem(['w'], {}, { status: '', reason: '' })).toMatch(/fehlt ein Zählerstand/)

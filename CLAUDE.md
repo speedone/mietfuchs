@@ -1212,19 +1212,25 @@ Gewichten durch `distributeCents` (#202), wie jede andere Position; Leerstand un
   Gewichte jeden Topf ganz verteilen, jede Lieferung über alle Heizperioden genau einmal in den Zeilen
   steht und der Topf Warmwasser den Warmwasseranteil α trägt (s3). Der Vorratsübertrag nimmt bei `self` nur eine
   Brennstoffposition nach Heizkostenverordnung als Vorlage (`stockKeysOf` in fuelStock.ts).
-- **Beginn und Linie** (Durchsicht von #239): Die eigene Abrechnung beginnt mit der ersten Heizperiode
-  mit Anteil nach Verbrauch (`selfBeginOf`); davor rechnet die Anlage wie mit freien Schlüsseln
-  (`withSelfBegin` in snapshot.ts, der Wächter in repository.ts, `selfItemsOf` mit `from`), denn § 6 Abs. 4
-  lässt die Wahl nur für künftige Zeiträume zu. Der Anteil gehört zur **Linie** der Anlage
+- **Beginn und Linie** (Durchsicht von #239 und ihre Nachprüfung): Die eigene Abrechnung beginnt mit der
+  Heizperiode in `heating_plants.self_from`. Die Einrichtung setzt sie (nie vor einem bestehenden Beginn und
+  nie vor oder in einer abgeschlossenen Heizperiode), das Zurückschalten löscht sie und leert die Anteile
+  offener Heizperioden ab ihr, und der Kesseltausch erbt sie. Abgeleitet aus den Anteilszeilen wird der
+  Beginn nicht: Nach einem Zurück und erneuten Einrichten stünde sonst ein Zeitraum dazwischen als eigene
+  Abrechnung da. Davor rechnet die Anlage wie mit freien Schlüsseln (`selfAt` und `withSelfBegin` in
+  snapshot.ts, je Heizperiode auch in der Teilabrechnung von calc.ts, der Wächter in repository.ts,
+  `selfItemsOf` mit `from`), denn § 6 Abs. 4 lässt die Wahl nur für künftige Zeiträume zu. Der Anteil gehört zur **Linie** der Anlage
   (`lineShareRows`, [server/src/db/selfLine.ts](server/src/db/selfLine.ts)): Nach einem Kesseltausch gilt er
   weiter, und in derselben Heizperiode lehnt `saveDistribution` einen anderen ab. Den Pflichtanteil nach
   § 7 Abs. 1 Satz 2 nachzutragen ist keine Wahl und geht auch in einer begonnenen Heizperiode. Läuft eine
   Anlage nur einen Teil der Heizperiode, wird die Wärme am Speicher an ihrer Laufzeit abgegrenzt; dafür
   braucht es den Stand am Tauschtag (der Tausch nimmt `meterReadings` an), sonst `heating.self-incomplete`.
   Der eingefrorene Endstand kommt auch aus der Heizkostenabrechnung nach Weg d. Bis PR 14 warnt
-  `heating.self-6a-missing` mit der Kürzung je Mieter (§ 12 Abs. 1 Satz 3).
+  `heating.self-6a-missing` mit der Kürzung je Mieter (§ 12 Abs. 1 Satz 3), einmal je Linie, nur für
+  Abrechnungszeiträume ab dem 01.12.2021 (`hkv.settlement-info`) und ohne erfassten Verbrauch mit den
+  Angaben nach § 6a Abs. 5.
 - **Migrationen 0027/0028**: Spalten an `heating_plants` (`hot_water`, `capture`, `area_basis_heat`,
-  `heat_pump_installed_on`), `cost_items.heating_target`, `readings.interim_for` und die Tabelle
+  `heat_pump_installed_on`, `self_from`), `cost_items.heating_target`, `readings.interim_for` und die Tabelle
   `interim_reading_gaps`; die Bedingungen im zweiten Schritt.
 
 **Brennstoffvorrat** (Heizung PR 8, #97, #99): Bei Heizöl, Flüssiggas, Pellets, Holz und Kohle

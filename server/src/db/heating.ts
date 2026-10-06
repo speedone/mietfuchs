@@ -27,6 +27,7 @@ import { CO2_FUELS } from '../co2.ts'
 import { STOCK_ENERGIES } from '../fuel.ts'
 import { openCo2Periods } from './co2.ts'
 import { parsePeriodKey, periodKey, periodLabel, periodOfKey, rulesOf } from '../../../shared/period.ts'
+import { heatingPeriodClosed, plantContext } from './heatingPeriodContext.ts'
 import type { Database, Executor } from './client.ts'
 import { readHeatingPlants, readMeters, readProperties, readUnits } from './read.ts'
 import { KWH_ENERGIES } from '../heating.ts'
@@ -113,6 +114,8 @@ function mergeHeatingPlant(current: HeatingPlant, body: unknown): HeatingPlant {
     capture: merged(body, 'capture', current.capture, (v) => (v === null ? null : oneOfOrUndefined(CAPTURE_METHODS, v) ?? current.capture)),
     areaBasisHeat: merged(body, 'areaBasisHeat', current.areaBasisHeat, (v) => oneOfOrUndefined(AREA_BASES_HEAT, v) ?? current.areaBasisHeat),
     heatPumpInstalledOn: merged(body, 'heatPumpInstalledOn', current.heatPumpInstalledOn, asNullableFilled),
+    // Setzt nur die Einrichtung der eigenen Abrechnung; das Zurückschalten löscht ihn (updateHeatingPlant).
+    selfFrom: current.selfFrom ?? null,
   }
 }
 
@@ -123,7 +126,7 @@ const emptyHeatingPlant = (id: string, propertyId: string): HeatingPlant => ({
   capturedOnOct2024: null, warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null,
   periodChanges: [], separateSpans: [], units: null, newDevicesInstall: null,
   nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null,
-  hotWater: 'combined', capture: null, areaBasisHeat: 'area', heatPumpInstalledOn: null,
+  hotWater: 'combined', capture: null, areaBasisHeat: 'area', heatPumpInstalledOn: null, selfFrom: null,
 })
 
 export async function guardHeatingPlant(db: Executor, before: HeatingPlant | null, after: HeatingPlant): Promise<void> {
@@ -310,6 +313,7 @@ export const plantRow = (p: HeatingPlant) => ({
   nonResidential: p.nonResidential, restriction: p.restriction, districtEtsNew: p.districtEtsNew,
   endsOn: p.endsOn, replacesPlantId: p.replacesPlantId, buildingWith: p.buildingWith, takesOverStock: p.takesOverStock,
   hotWater: p.hotWater, capture: p.capture, areaBasisHeat: p.areaBasisHeat, heatPumpInstalledOn: p.heatPumpInstalledOn,
+  selfFrom: p.method === 'self' ? (p.selfFrom ?? null) : null,
 })
 
 // Die Liste der Wohnungen, ganz ersetzt wie die Untertabellen in repository.ts.
@@ -406,6 +410,9 @@ export async function updateHeatingPlant(db: Database, id: string, body: unknown
   // Schlüssel. Ohne Bestätigung 409 mit der Liste und den Folgen (§ 12 Abs. 1, § 6 Abs. 4); mit
   // `convertItems: 'area'` werden sie in derselben Transaktion nach Wohnfläche verteilt (Abweichung 17).
   const zurueck = current.method === 'self' && next.method !== 'self'
+  // Durchsicht von #239, W1: Zurück heißt, der Beginn entfällt, und die Anteile offener Heizperioden ab ihm
+  // werden geleert; die abgeschlossener bleiben, denn sie stehen in zugestellten Abrechnungen.
+  const clearShares = zurueck ? await openShareRowsFrom(db, id, current.selfFrom ?? null) : []
   const offen = zurueck ? await selfItemsOf(db, id, null, 'heatingSystem') : []
   if (offen.length > 0 && raw(body, 'convertItems') !== 'area') {
     throw new SelfItemsError(
@@ -440,10 +447,29 @@ export async function updateHeatingPlant(db: Database, id: string, body: unknown
     for (const c of offen) {
       await tx.update(costItems).set({ key: 'area', heatingTarget: null }).where(eq(costItems.id, c.id))
     }
+    for (const rowId of clearShares) {
+      await tx.update(heatingPeriods).set({ heatConsumptionPct: null, waterConsumptionPct: null, insulationRule: null }).where(eq(heatingPeriods.id, rowId))
+    }
     await writePlantUnits(tx, next)
     await guardPlantsOfProperty(tx, current.propertyId)
   })
   return (await readHeatingPlants(db)).find((p) => p.id === id) ?? null
+}
+
+// Die Zeilen offener Heizperioden ab `from` mit einem Anteil (Durchsicht von #239, W1).
+async function openShareRowsFrom(db: Database, plantId: string, from: string | null): Promise<string[]> {
+  const ctx = await plantContext(db, plantId)
+  if (!ctx) return []
+  const rows = await db.select({ id: heatingPeriods.id, period: heatingPeriods.period, pct: heatingPeriods.heatConsumptionPct }).from(heatingPeriods).where(eq(heatingPeriods.plantId, plantId))
+  const out: string[] = []
+  for (const r of rows) {
+    if (r.pct === null || (from !== null && String(r.period) < from)) continue
+    const key = parsePeriodKey(String(r.period))
+    const h = key === null ? null : periodOfKey(ctx.plantRules, key)
+    if (h && (await heatingPeriodClosed(db, ctx, h))) continue
+    out.push(r.id)
+  }
+  return out
 }
 
 // Die erste Heizperiode einer Nachfolgerin und die letzte ihrer Vorgängerin (Kesseltausch).

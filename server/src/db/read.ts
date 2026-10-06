@@ -323,6 +323,7 @@ export async function readHeatingPlants(db: Executor): Promise<HeatingPlant[]> {
     capture: p.capture,
     areaBasisHeat: p.areaBasisHeat,
     heatPumpInstalledOn: p.heatPumpInstalledOn,
+    selfFrom: p.selfFrom,
   }))
 }
 

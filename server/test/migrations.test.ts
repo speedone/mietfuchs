@@ -99,9 +99,10 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // (Spalte takes_over_stock); main hat er nie erreicht.
   '0026_kesseltausch': '50b85a7bcbe2d3e8dd367a83895e076909aa7050bfa0bd38d27d5f5bcbab5337',
   // Heizung PR 10. Wird ein Schritt von PR 9 vor dem Push neu erzeugt, werden diese beiden Schritte
-  // neu erzeugt und die Marken hier ersetzt.
-  '0027_heizkostenabrechnung': '94a4113e774ca26aff9f96d41d19e19529feb38d86d6d8002e19a04640b43fda',
-  '0028_heizkostenabrechnung_bedingungen': '3898a4defcee79eacb162e80d1c2b74910ff98211ce51289e529337588dfe54e',
+  // neu erzeugt und die Marken hier ersetzt. Neu erzeugt in der Nachprüfung von #239 (Spalte self_from,
+  // W1/W2); main hat er nie erreicht.
+  '0027_heizkostenabrechnung': 'e23752155ee53e932f08804f56e429c9bc6187b2e4b67b402f9590a76cb1c08f',
+  '0028_heizkostenabrechnung_bedingungen': '6a8aa49cbeec4842c294d5186d337794171c815110ea4729eced34fc94d4791e',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

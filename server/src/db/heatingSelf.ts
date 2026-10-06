@@ -17,17 +17,18 @@ import { and, eq, ne } from 'drizzle-orm'
 import { hkvConsumptionShare, hkvConsumptionShareForced } from '../../../shared/law/heizkostenv.ts'
 import { germanDate, valueAt } from '../../../shared/law/register.ts'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
-import { lineRoot, servesUnit } from '../../../shared/heatingPeriod.ts'
+import { heatingPeriodsEndingIn, lineRoot, servesUnit, settledSeparately } from '../../../shared/heatingPeriod.ts'
 import type {
   BillingPeriod, CostItem, CostKey, HeatingDistribution, HeatingEnergy, HeatingPart, HeatingPlant, InterimGap, InsulationRule, Meter,
 } from '../../../shared/types.ts'
 import { consumptionSharesOf, OIL_OR_GAS, POT_METER, targetProblem, type ShareRow } from '../heating.ts'
 import type { Database, Executor } from './client.ts'
-import { closedText, ensureHeatingPeriod, heatingPeriodClosed, heatingPeriodOf, plantContext } from './heatingPeriodContext.ts'
+import { closedText, ensureHeatingPeriod, heatingPeriodClosed, heatingPeriodOf, plantContext, type PlantContext } from './heatingPeriodContext.ts'
+import { parsePeriodKey, periodOfKey } from '../../../shared/period.ts'
 import { readCostItems, readHeatingPlants, readMeters, readUnits } from './read.ts'
 import { guardHeatingPlant, plantRow } from './heating.ts'
 import { HeatingError, insertEntityIn, ISO_DATE, oneOfOrUndefined, patchCostItemIn, raw } from './repository.ts'
-import { costItems, heatingPeriods, heatingPlants, INSULATION_RULES, INTERIM_GAP_STATUS, interimReadingGaps, units } from './schema.ts'
+import { closedHeatingSettlements, closedSettlements, costItems, heatingPeriods, heatingPlants, INSULATION_RULES, INTERIM_GAP_STATUS, interimReadingGaps, units } from './schema.ts'
 import { beforeBeginText, lineRowsOf } from './selfLine.ts'
 
 export const SELF_VIA_SETUP =
@@ -88,6 +89,23 @@ function lineIdsOf(plants: readonly { id: string; replacesPlantId: string | null
   return new Set([plantId, ...plants.filter((p) => lineRoot(p, plants) === root).map((p) => p.id)])
 }
 
+// Die späteste abgeschlossene Heizperiode der Anlage (ihr Schlüssel), oder null (Durchsicht von #239, W2):
+// nach Weg d die eigenen Heizkostenabrechnungen, sonst die Abrechnungen des Objekts, deren Zeitraum das Ende
+// einer Heizperiode enthält.
+async function lastClosedHeatingPeriod(db: Database, ctx: PlantContext): Promise<string | null> {
+  const keys: string[] = []
+  const heating = await db.select({ period: closedHeatingSettlements.period }).from(closedHeatingSettlements).where(eq(closedHeatingSettlements.plantId, ctx.plant.id))
+  for (const c of heating) keys.push(String(c.period))
+  const object = await db.select({ period: closedSettlements.period }).from(closedSettlements).where(eq(closedSettlements.propertyId, ctx.plant.propertyId))
+  for (const c of object) {
+    const key = parsePeriodKey(String(c.period))
+    const p = key === null ? null : periodOfKey(ctx.objectRules, key)
+    if (!p) continue
+    for (const h of heatingPeriodsEndingIn(ctx.plantRules, p)) if (!settledSeparately(ctx.plant, ctx.objectRules, h)) keys.push(String(h.key))
+  }
+  return keys.sort().at(-1) ?? null
+}
+
 const pctOf = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
 
 // Prüft einen neuen Anteil (Prozent) und gibt Heizung und Warmwasser zurück.
@@ -142,7 +160,8 @@ export async function saveDistribution(db: Database, plantId: string, period: st
   if (await heatingPeriodClosed(db, ctx, h)) throw new HeatingError(409, closedText(h))
   const line = await lineRowsOf(db, plantId)
   const rows = line.merged
-  const begin = rows.filter((r) => r.heatConsumptionPct !== null).map((r) => r.period).sort()[0] ?? null
+  // Der Beginn steht an der Anlage (Durchsicht von #239, W1/W2).
+  const begin = ctx.plant.selfFrom ?? null
   if (begin !== null && h.key < begin) throw new HeatingError(400, beforeBeginText(begin))
   const next = checkShares(body, ctx.plant, h, rows, today)
   // In derselben Heizperiode gilt in der Linie ein Anteil (§ 6 Abs. 4; Durchsicht von #239, I3).
@@ -183,6 +202,7 @@ export async function setUpSelf(db: Database, plantId: string, body: unknown, to
   const after: HeatingPlant = {
     ...current,
     method: 'self',
+    selfFrom: current.method === 'self' && current.selfFrom ? current.selfFrom : h.key,
     hotWater: raw(body, 'hotWater') === 'separate' ? 'separate' : raw(body, 'hotWater') === 'none' ? 'none' : 'combined',
     capture: capture === 'heatMeter' || capture === 'hca' || capture === 'serviceValues' ? capture : null,
     areaBasisHeat: raw(body, 'areaBasisHeat') === 'heatedArea' ? 'heatedArea' : 'area',
@@ -192,9 +212,16 @@ export async function setUpSelf(db: Database, plantId: string, body: unknown, to
   const shares = checkShares(body, after, h, rows, today)
 
   // Positionen offener Zeiträume mit anderem Schlüssel: jede braucht Teil und Ziel (Review Focus 3).
-  // Nur ab der Heizperiode der Einrichtung (I1) und nur Positionen dieser Anlage (M1).
-  const existingBegin = rows.filter((r) => r.heatConsumptionPct !== null).map((r) => r.period).sort()[0] ?? null
-  const from = existingBegin !== null && existingBegin < h.key ? existingBegin : h.key
+  // Nur ab der Heizperiode der Einrichtung (I1) und nur Positionen dieser Anlage (M1). Ein bestehender
+  // Beginn bleibt (erneute Einrichtung); davor und vor oder auf einer abgeschlossenen Heizperiode beginnt
+  // die eigene Abrechnung nicht (Durchsicht von #239, W2).
+  const existingBegin = current.method === 'self' ? (current.selfFrom ?? null) : null
+  if (existingBegin !== null && h.key < existingBegin) throw new HeatingError(400, beforeBeginText(existingBegin))
+  const lastClosed = await lastClosedHeatingPeriod(db, ctx)
+  if (lastClosed !== null && h.key <= lastClosed) {
+    throw new HeatingError(400, `Die Heizperiode ${lastClosed.slice(0, 4)} dieser Anlage ist abgeschlossen. Die eigene Heizkostenabrechnung kann erst mit einer späteren Heizperiode beginnen; abgeschlossene Abrechnungen bleiben, wie sie zugestellt wurden. Öffnen Sie die Abrechnung wieder, wenn sie schon früher beginnen soll.`)
+  }
+  const from = existingBegin ?? h.key
   const offen = await selfItemsOf(db, plantId, 'heatingSystem', null, from)
   const answers = readItemAnswers(raw(body, 'items')).filter((a) => offen.some((c) => c.id === a.id))
   const missing = offen.filter((c) => !answers.some((a) => a.id === c.id))
@@ -269,7 +296,7 @@ export async function saveInterimGap(db: Database, unitId: string, date: string,
   const reasonRaw = raw(body, 'reason')
   const reason = typeof reasonRaw === 'string' ? reasonRaw.trim() : ''
   // Durchsicht von #239, I3: „nicht möglich“ nur mit Grund; er steht in der Abrechnung.
-  if (status === 'impossible' && reason === '') throw new HeatingError(400, 'Bitte nennen Sie den Grund, warum die Zwischenablesung nicht möglich war; er steht in der Abrechnung (§ 9b Abs. 3 HeizkostenV).')
+  if (status === 'impossible' && reason === '') throw new HeatingError(400, 'Bitte nennen Sie den Grund für die Teilung nach § 9b Abs. 3 HeizkostenV, also warum die Zwischenablesung nicht möglich war; er steht in der Abrechnung.')
   await db.transaction(async (tx) => {
     await tx.delete(interimReadingGaps).where(and(eq(interimReadingGaps.unitId, unitId), eq(interimReadingGaps.date, date)))
     await tx.insert(interimReadingGaps).values({ unitId, date, status, reason })

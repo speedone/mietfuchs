@@ -89,7 +89,8 @@ describe('Durchsicht von #239', () => {
     expect([insulationAsked('lpg'), insulationAsked('heatPump')]).toEqual([true, false])
   })
   it('I3: die Folge jeder Antwort und der Grund im Text', () => {
-    expect(gapConsequence('missed')).toMatch(/um 15 % kürzen \(§ 12 Abs\. 1 Satz 1 HeizkostenV\)/)
+    // Nachprüfung, N1: wie der Server, „bis zu“ und als Auslegung mit Fundstelle.
+    expect(gapConsequence('missed')).toMatch(/Nach einer Auslegung \(LG Hamburg, 11 S 202\/87\) dürfen die Mieter ihren Anteil an diesen Kosten um bis zu 15 % kürzen\./)
     expect(gapConsequence('impossible')).toMatch(/§ 9b Abs\. 3 HeizkostenV\)\. Nennen Sie den Grund/)
     expect(boundaryText({ date: '2025-09-30', kind: 'change', status: 'missing', offDays: 0, far: false, gap: 'impossible', gapReason: 'Wohnung nicht zugänglich' }, 'C'))
       .toBe('C, Mieterwechsel zum 30.09.2025: keine Ablesung (nicht möglich: Wohnung nicht zugänglich)')

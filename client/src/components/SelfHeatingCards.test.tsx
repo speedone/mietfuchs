@@ -25,7 +25,7 @@ test('fehlende Zwischenablesung: „nicht möglich“ erst mit Grund; beide Folg
   const onChanged = vi.fn()
   render(<SelfHeatingCards plant={{ id: 'hp', method: 'self', energy: 'districtHeating', hotWater: 'none' } as HeatingPlant} view={{ period: '2025-01', label: '2025', distribution: null } as HeatingPeriodView} self={statement([c])} onChanged={onChanged} />)
   expect(screen.getByText(/C, Mieterwechsel zum 30\.09\.2025: keine Ablesung/)).toBeTruthy()
-  expect(screen.getByText(/Nicht durchgeführt: .* um 15 % kürzen/)).toBeTruthy()
+  expect(screen.getByText(/Nicht durchgeführt: .* um bis zu 15 % kürzen/)).toBeTruthy()
   expect(screen.getByText(/Nicht möglich: .* Nennen Sie den Grund/)).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'Nicht möglich' }))
   expect(sent).toEqual([])

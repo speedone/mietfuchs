@@ -10,8 +10,8 @@ import { eq } from 'drizzle-orm'
 import { openDatabase } from '../src/db/open.ts'
 import { readStock } from '../src/db/read.ts'
 import { changeTenant, closeSettlement, createEntity, createProperty, updateEntity } from '../src/db/repository.ts'
-import { createHeatingPlant, replaceHeatingPlant } from '../src/db/heating.ts'
-import { saveDistribution, setUpSelf } from '../src/db/heatingSelf.ts'
+import { createHeatingPlant, replaceHeatingPlant, updateHeatingPlant } from '../src/db/heating.ts'
+import { saveDistribution, saveInterimGap, setUpSelf } from '../src/db/heatingSelf.ts'
 import { closeHeatingSettlement } from '../src/db/heatingSettlements.ts'
 import { createDelivery } from '../src/db/fuel.ts'
 import { heatingPeriodViews } from '../src/db/co2.ts'
@@ -191,7 +191,10 @@ test('Durchsicht #239 I3a: der Anteil gehört zur Linie; die neue Anlage überni
     assert.equal(tenantsOf(s, 'gas1'), 300000)
     // Recht I1: bis PR 14 die Warnung zu § 6a Abs. 3 mit der Kürzung je Mieter (§ 12 Abs. 1 Satz 3).
     const n6a = s.notices.filter((n) => n.code === 'heating.self-6a-missing')
-    assert.equal(n6a.length, 2, 'je Anlage eine')
+    assert.equal(n6a.length, 1, 'eine je Linie (Nachprüfung, N2)')
+    assert.match(n6a[0]?.text ?? '', /vorhergehenden Abrechnungszeitraum/)
+    // Der Kesseltausch erbt den Beginn (Nachprüfung, W1/W2).
+    assert.equal((await opened.read(readStock)).heatingPlants.find((p) => p.id === 'hp2')?.selfFrom, '2025-01')
     assert.ok(n6a.every((n) => n.level === 'warning' && /um 3 % kürzen \(§ 12 Abs\. 1 Satz 3 HeizkostenV\), hier: Mieter A \(A\) [0-9.,]+ €/.test(n.text)), n6a.map((n) => n.text).join('\n'))
     await assert.rejects(opened.write((db) => saveDistribution(db, 'hp2', '2025-01', { heatConsumptionPct: 60, insulationRule: 'notApplies' }, '2024-12-01')), status(400, /derselben Heizperiode/))
     const d = await opened.write((db) => saveDistribution(db, 'hp2', '2025-01', { heatConsumptionPct: 70, insulationRule: 'notApplies' }, '2024-12-01'))
@@ -228,6 +231,88 @@ test('Durchsicht #239 I3 (Recht): beim Mieterwechsel „nicht möglich“ nur mi
       await createEntity(db, 'units', 'a', { propertyId: 'objekt-1', name: 'A', areaM2: 50, participates: true })
       await createEntity(db, 'tenancies', 'ta', { unitId: 'a', tenantName: 'Mieter A', persons: 1, start: '2020-01-01' })
     })
-    await assert.rejects(opened.write((db) => changeTenant(db, 'objekt-1', 'ta', { end: '2025-06-30', readings: [], interimGap: { status: 'impossible', reason: '' }, newTenancy: null }, newId)), status(400, /Grund/))
+    await assert.rejects(opened.write((db) => changeTenant(db, 'objekt-1', 'ta', { end: '2025-06-30', readings: [], interimGap: { status: 'impossible', reason: '' }, newTenancy: null }, newId)), status(400, /Grund für die Teilung nach § 9b Abs\. 3/))
+  })
+})
+
+// Nachprüfung von #239 (W1, W2): Der Beginn steht an der Anlage (`self_from`) und wird nicht aus den
+// Anteilszeilen abgeleitet.
+async function zweiMieter(opened: Opened): Promise<void> {
+  await opened.write(async (db) => {
+    for (const [u, a] of [['a', 50], ['b', 150]] as const) await createEntity(db, 'units', u, { propertyId: 'objekt-1', name: u.toUpperCase(), areaM2: a, participates: true })
+    for (const u of ['a', 'b']) await createEntity(db, 'tenancies', `t${u}`, { unitId: u, tenantName: `Mieter ${u}`, persons: 1, start: '2020-01-01' })
+    await createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'gas', method: 'manual' })
+  })
+}
+
+test('Nachprüfung #239 W1: zurück auf freie Schlüssel und erneut ab 2026; 2025 bleibt bei Fläche, auch wenn 2024 abgeschlossen mit Anteil dasteht', async () => {
+  await withDatabase(async (opened) => {
+    await zweiMieter(opened)
+    await opened.write((db) => setUpSelf(db, 'hp', { ...NONE, period: '2024-01' }, '2023-12-01', newId))
+    const s24 = await settle(opened, '2024-06-01')
+    await opened.write((db) => closeSettlement(db, { id: 'c24', propertyId: 'objekt-1', period: periodKey('2024-01'), closedAt: '2025-03-01', sentAt: null, settlement: s24 }))
+    await opened.write((db) => saveDistribution(db, 'hp', '2025-01', { heatConsumptionPct: 60, insulationRule: 'notApplies' }, '2024-12-01'))
+    await opened.write((db) => updateHeatingPlant(db, 'hp', { method: 'manual', convertItems: 'area' }))
+    let stock = await opened.read(readStock)
+    assert.equal(stock.heatingPlants.find((p) => p.id === 'hp')?.selfFrom, null)
+    const rows = stock.heatingPeriodRows.filter((r) => r.plantId === 'hp')
+    assert.deepEqual(rows.map((r) => [String(r.period), r.heatConsumptionPct]).sort(), [['2024-01', 70], ['2025-01', null]], 'abgeschlossene bleiben, offene werden geleert')
+    await opened.write((db) => createEntity(db, 'costItems', 'g25', { propertyId: 'objekt-1', period: '2025-01', category: HEATING_CATEGORY, description: 'Gas 2025', amountCents: 400000, key: 'area', heatingPlantId: 'hp', heatingPart: 'fuel' }))
+    await opened.write((db) => setUpSelf(db, 'hp', { ...NONE, period: '2026-01' }, '2025-12-01', newId))
+    stock = await opened.read(readStock)
+    assert.equal(stock.heatingPlants.find((p) => p.id === 'hp')?.selfFrom, '2026-01')
+    const s = await settle(opened, '2025-06-01')
+    const share = (id: string) => s.statements.find((st) => st.tenancyId === id)?.rows.find((r) => r.costItemId === 'g25')?.shareCents
+    assert.deepEqual([share('ta'), share('tb')], [100000, 300000])
+    assert.deepEqual(s.notices.filter((n) => n.level === 'error').map((n) => n.code), [])
+  })
+})
+
+test('Nachprüfung #239 W2: die eigene Abrechnung beginnt nicht vor oder in einer abgeschlossenen Heizperiode und nie vor ihrem Beginn', async () => {
+  await withDatabase(async (opened) => {
+    await zweiMieter(opened)
+    await opened.write(async (db) => {
+      for (const y of [2023, 2024]) await createEntity(db, 'costItems', `g${y}`, { propertyId: 'objekt-1', period: `${y}-01`, category: HEATING_CATEGORY, description: `Gas ${y}`, amountCents: 400000, key: 'area', heatingPlantId: 'hp', heatingPart: 'fuel' })
+    })
+    const s24 = await settle(opened, '2024-06-01')
+    await opened.write((db) => closeSettlement(db, { id: 'c24', propertyId: 'objekt-1', period: periodKey('2024-01'), closedAt: '2025-03-01', sentAt: null, settlement: s24 }))
+    await assert.rejects(opened.write((db) => setUpSelf(db, 'hp', { ...NONE, period: '2023-01', items: [{ id: 'g2023', heatingPart: 'fuel', heatingTarget: 'heating' }] }, '2025-06-01', newId)), status(400, /Heizperiode 2024 dieser Anlage ist abgeschlossen/))
+    await opened.write((db) => setUpSelf(db, 'hp', { ...NONE, period: '2025-01' }, '2024-12-01', newId))
+    await assert.rejects(opened.write((db) => setUpSelf(db, 'hp', { ...NONE, period: '2023-01', items: [{ id: 'g2023', heatingPart: 'fuel', heatingTarget: 'heating' }] }, '2025-06-01', newId)), status(400, /beginnt mit der Heizperiode 2025/))
+    // Erneut ab einer späteren Heizperiode eingerichtet: Der Beginn bleibt.
+    await opened.write((db) => setUpSelf(db, 'hp', { ...NONE, period: '2026-01' }, '2025-06-01', newId))
+    assert.equal((await opened.read(readStock)).heatingPlants.find((p) => p.id === 'hp')?.selfFrom, '2025-01')
+    const live = await settle(opened, '2024-06-01')
+    const share = (s: typeof live, id: string) => s.statements.find((st) => st.tenancyId === id)?.rows.find((r) => r.costItemId === 'g2024')?.shareCents
+    assert.deepEqual([share(live, 'ta'), share(live, 'tb')], [share(s24, 'ta'), share(s24, 'tb')])
+  })
+})
+
+// Nachprüfung von #239, N2: § 6a gilt für Abrechnungszeiträume ab dem 01.12.2021; ohne erfassten Verbrauch
+// nur die Angaben nach Abs. 3 Satz 1 Nr. 2 und 3 (Abs. 5).
+test('Nachprüfung #239 N2: Warnung zu § 6a erst ab Zeiträumen, die am 01.12.2021 oder später beginnen; ohne Verbrauch nach Abs. 5', async () => {
+  await withDatabase(async (opened) => {
+    await zweiMieter(opened)
+    await opened.write((db) => setUpSelf(db, 'hp', { ...NONE, period: '2021-01' }, '2020-12-01', newId))
+    const meters = (await opened.read(readStock)).meters
+    const m = (u: string) => meters.find((x) => x.unitId === u && x.type === 'waerme')?.id ?? assert.fail('Wärmezähler')
+    await opened.write(async (db) => {
+      for (const u of ['a', 'b']) {
+        await createEntity(db, 'readings', `${u}0`, { meterId: m(u), date: '2020-12-31', value: 0 })
+        await createEntity(db, 'readings', `${u}1`, { meterId: m(u), date: '2021-12-31', value: 1000 })
+        await createEntity(db, 'readings', `${u}2`, { meterId: m(u), date: '2022-12-31', value: 2000 })
+        await createEntity(db, 'readings', `${u}3`, { meterId: m(u), date: '2023-12-31', value: 2000 })
+      }
+      for (const y of [2021, 2022, 2023]) await createEntity(db, 'costItems', `w${y}`, { propertyId: 'objekt-1', period: `${y}-01`, category: HEATING_CATEGORY, description: `Wartung ${y}`, amountCents: 100000, key: 'heatingSystem', heatingPlantId: 'hp', heatingPart: 'operating', heatingTarget: 'heating' })
+    })
+    const codes6a = async (day: string) => (await settle(opened, day)).notices.filter((n) => n.code === 'heating.self-6a-missing').map((n) => n.text)
+    assert.deepEqual(await codes6a('2021-06-01'), [])
+    const n22 = await codes6a('2022-06-01')
+    assert.equal(n22.length, 1)
+    assert.match(n22[0] ?? '', /§ 6a Abs\. 3 HeizkostenV/)
+    const n23 = await codes6a('2023-06-01')
+    assert.match(n23[0] ?? '', /§ 6a Abs\. 5 HeizkostenV/)
+    // Und der Satz zum Grund (N3).
+    await assert.rejects(opened.write((db) => saveInterimGap(db, 'a', '2022-06-30', { status: 'impossible', reason: '' })), status(400, /Grund für die Teilung nach § 9b Abs\. 3/))
   })
 })

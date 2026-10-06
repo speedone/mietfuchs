@@ -409,6 +409,9 @@ export const heatingPlants = sqliteTable(
     capture: text('capture', { enum: CAPTURE_METHODS }),
     areaBasisHeat: text('area_basis_heat', { enum: AREA_BASES_HEAT }).notNull().default('area'),
     heatPumpInstalledOn: text('heat_pump_installed_on'),
+    // Die erste Heizperiode der eigenen Heizkostenabrechnung (Durchsicht von #239, W1/W2): gesetzt von der
+    // Einrichtung, gelöscht beim Zurückschalten; NULL bei jeder anderen Art.
+    selfFrom: text('self_from'),
   },
   () => [
     oneOf('heating_plants_energy_known', 'energy', HEATING_ENERGIES),
@@ -433,6 +436,9 @@ export const heatingPlants = sqliteTable(
     oneOf('heating_plants_area_basis_heat_known', 'area_basis_heat', AREA_BASES_HEAT),
     // Die eigene Heizkostenabrechnung braucht die Art der Erfassung (Entwurf 5.3).
     check('heating_plants_self_capture_complete', sql.raw(`"method" <> 'self' OR "capture" IS NOT NULL`)),
+    // Der Beginn ist ein Schlüssel einer Heizperiode und steht genau bei der eigenen Abrechnung.
+    check('heating_plants_self_from_valid', sql.raw(`"self_from" IS NULL OR ("self_from" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]' AND CAST(substr("self_from", 6, 2) AS INTEGER) BETWEEN 1 AND 12)`)),
+    check('heating_plants_self_from_complete', sql.raw(`("method" = 'self') = ("self_from" IS NOT NULL)`)),
   ],
 )
 

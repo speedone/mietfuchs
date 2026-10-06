@@ -84,7 +84,7 @@ export function gapProblem(heatIds: readonly string[], meterValues: Record<strin
   if (!gap || gap.status === '') {
     return 'Für die Heizkostenabrechnung fehlt ein Zählerstand. Bitte tragen Sie ihn ein oder geben Sie an, ob die Zwischenablesung nicht möglich war oder nicht durchgeführt wurde.'
   }
-  if (gap.status === 'impossible' && gap.reason.trim() === '') return 'Bitte nennen Sie den Grund, warum die Zwischenablesung nicht möglich war; er steht in der Abrechnung.'
+  if (gap.status === 'impossible' && gap.reason.trim() === '') return 'Bitte nennen Sie den Grund für die Teilung nach § 9b Abs. 3 HeizkostenV, also warum die Zwischenablesung nicht möglich war; er steht in der Abrechnung.'
   return null
 }
 

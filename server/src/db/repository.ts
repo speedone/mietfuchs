@@ -32,7 +32,7 @@
 // der seine Erwartung aus den Spalten des Schemas ableitet: Eine Liste von Hand vergisst der
 // nächste, der eine Spalte hinzufügt.
 
-import { beforeBeginText, selfBeginFor } from './selfLine.ts'
+import { beforeBeginText } from './selfLine.ts'
 import { and, count, desc, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm'
 import type { BillingPeriod, CostItem, ExternalBasis, HeatingPlant, HeatingPrepaymentOverride, InterimGapStatus, Meter, MeterType, Payment, PeriodKey, PeriodRules, PersonEntry, PrepaymentEntry, Property, Reading, RentEntry, SplitPreviewPart, Tenancy, Unit, UnitDependents } from '../../../shared/types.ts'
 import { CALENDAR_RULES, calendarPeriod, paymentYear, formatDayRange, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, spansTwoYears, startYearOf } from '../../../shared/period.ts'
@@ -809,14 +809,14 @@ export async function guardHeatingSystem(db: Executor, after: CostItem): Promise
   // Ohne Angabe bekommt eine neue Heizposition die Anlage erst beim Schreiben (`defaultHeatingPlant`);
   // geprüft wird gegen dieselbe, die sie dann bekommt.
   const plantId = after.heatingPlantId === undefined && after.category === HEATING_CATEGORY ? await plantForNewItem(db, after) : (after.heatingPlantId ?? null)
-  const [plant] = plantId === null ? [] : await db.select({ method: heatingPlants.method, hotWater: heatingPlants.hotWater }).from(heatingPlants).where(eq(heatingPlants.id, plantId))
+  const [plant] = plantId === null ? [] : await db.select({ method: heatingPlants.method, hotWater: heatingPlants.hotWater, selfFrom: heatingPlants.selfFrom }).from(heatingPlants).where(eq(heatingPlants.id, plantId))
   if (after.key === 'heatingSystem') {
     if (after.category !== HEATING_CATEGORY || !plant || plant.method !== 'self') {
       throw new HeatingError(400,
         'Nach der Heizkostenverordnung verteilt Mietfuchs nur Positionen einer Heizanlage mit eigener Heizkostenabrechnung. Richten Sie sie in den Stammdaten unter „Heizung“ ein oder wählen Sie einen anderen Schlüssel.')
     }
     // Durchsicht von #239, I1: erst ab der ersten Heizperiode mit Anteil nach Verbrauch.
-    const begin = plantId === null ? null : await selfBeginFor(db, plantId)
+    const begin = plant.selfFrom ?? null
     if (begin !== null && String(after.period) < begin) throw new HeatingError(400, beforeBeginText(begin))
     const problem = targetProblem(plant.hotWater, after.heatingPart ?? null, target)
     if (problem !== null) throw new HeatingError(400, `${problem}.`)
@@ -824,7 +824,7 @@ export async function guardHeatingSystem(db: Executor, after: CostItem): Promise
   }
   if (plant?.method === 'self' && after.category === HEATING_CATEGORY) {
     // Vor dem Beginn der eigenen Abrechnung gelten die bisherigen Schlüssel (I1).
-    const begin = plantId === null ? null : await selfBeginFor(db, plantId)
+    const begin = plant.selfFrom ?? null
     if (begin !== null && String(after.period) < begin) return
     throw new HeatingError(400,
       'Diese Heizanlage rechnet die Heizkosten selbst nach der Heizkostenverordnung ab. Wählen Sie den Schlüssel „nach Heizkostenverordnung“ mit Teil und Ziel.')
@@ -2067,7 +2067,7 @@ export async function changeTenant(
     const grund = raw(lueckeRumpf, 'reason')
     luecke = { status: s, reason: typeof grund === 'string' ? grund.trim() : '' }
     // Durchsicht von #239, I3: „nicht möglich“ nur mit Grund.
-    if (s === 'impossible' && luecke.reason === '') throw new TenantChangeError(400, 'Bitte nennen Sie den Grund, warum die Zwischenablesung nicht möglich war; er steht in der Abrechnung (§ 9b Abs. 3 HeizkostenV).')
+    if (s === 'impossible' && luecke.reason === '') throw new TenantChangeError(400, 'Bitte nennen Sie den Grund für die Teilung nach § 9b Abs. 3 HeizkostenV, also warum die Zwischenablesung nicht möglich war; er steht in der Abrechnung.')
   }
 
   // Der Nachmieter, oder Leerstand.

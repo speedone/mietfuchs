@@ -158,6 +158,31 @@ export const hkvConsumptionShareForced: LawParam<number, 'periodStart'> = {
   describe: (v) => `${v} %`,
 }
 
+// § 6a Abs. 3 HeizkostenV (Durchsicht von #239, N2): Die Informationen zur Abrechnung schuldet der
+// Gebäudeeigentümer „für Abrechnungszeiträume, die ab dem 1. Dezember 2021 beginnen“. Zeitregel nach dem
+// Beginn des Abrechnungszeitraums.
+export const hkvSettlementInfo: LawParam<boolean, 'periodStart'> = {
+  id: 'hkv.settlement-info',
+  title: 'Abrechnungsinformationen nach § 6a Abs. 3',
+  norm: '§ 6a Abs. 3 HeizkostenV',
+  timing: 'periodStart',
+  versions: [
+    {
+      validTo: '2021-11-30',
+      value: false,
+      source: checked('§ 6a Abs. 3 HeizkostenV', 'https://www.gesetze-im-internet.de/heizkostenv/__6a.html'),
+      enacted: ENACTED,
+    },
+    {
+      validFrom: '2021-12-01',
+      value: true,
+      source: checked('§ 6a Abs. 3 HeizkostenV', 'https://www.gesetze-im-internet.de/heizkostenv/__6a.html'),
+      enacted: ENACTED,
+    },
+  ],
+  describe: (v) => (v ? 'mit der Abrechnung mitzuteilen' : 'noch nicht vorgeschrieben'),
+}
+
 // § 12 Abs. 3 HeizkostenV (Heizung PR 10): Wird der Verbrauch der von Wärmepumpen versorgten Nutzer am
 // 01.10.2024 noch nicht erfasst, ist bis zum Ablauf des 30.09.2025 eine Ausstattung zur
 // Verbrauchserfassung zu installieren; die Verordnung gilt dann ab dem Abrechnungszeitraum, der nach

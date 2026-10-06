@@ -1333,6 +1333,8 @@ export type HeatingPlant = {
   capture: CaptureMethod | null
   areaBasisHeat: AreaBasisHeat
   heatPumpInstalledOn: string | null
+  // Die erste Heizperiode der eigenen Heizkostenabrechnung (Durchsicht von #239, W1/W2); nur bei `self`.
+  selfFrom?: string | null
 }
 
 // Die Angaben einer Heizperiode (Entwurf 5.3; den Vorrat seit Heizung PR 8). Geschrieben werden sie ab PR 6 (Warmwasser

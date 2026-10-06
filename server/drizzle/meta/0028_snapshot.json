@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "aa2d633f-c8c3-4e59-acca-e73d2a283281",
-  "prevId": "7bf9cd5f-06d5-4d0b-8392-aeb86d7567c9",
+  "id": "6a36cca7-abe1-4894-869c-30427ed284eb",
+  "prevId": "5f9bb14d-8552-449f-8ec3-561fb3edf35f",
   "tables": {
     "ai_slots": {
       "name": "ai_slots",
@@ -2879,6 +2879,13 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
+        },
+        "self_from": {
+          "name": "self_from",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         }
       },
       "indexes": {},
@@ -2967,6 +2974,14 @@
         "heating_plants_self_capture_complete": {
           "name": "heating_plants_self_capture_complete",
           "value": "\"method\" <> 'self' OR \"capture\" IS NOT NULL"
+        },
+        "heating_plants_self_from_valid": {
+          "name": "heating_plants_self_from_valid",
+          "value": "\"self_from\" IS NULL OR (\"self_from\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]' AND CAST(substr(\"self_from\", 6, 2) AS INTEGER) BETWEEN 1 AND 12)"
+        },
+        "heating_plants_self_from_complete": {
+          "name": "heating_plants_self_from_complete",
+          "value": "(\"method\" = 'self') = (\"self_from\" IS NOT NULL)"
         }
       }
     },

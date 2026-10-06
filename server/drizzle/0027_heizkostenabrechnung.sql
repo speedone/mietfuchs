@@ -14,4 +14,5 @@ ALTER TABLE `heating_plants` ADD `hot_water` text DEFAULT 'combined' NOT NULL;--
 ALTER TABLE `heating_plants` ADD `capture` text;--> statement-breakpoint
 ALTER TABLE `heating_plants` ADD `area_basis_heat` text DEFAULT 'area' NOT NULL;--> statement-breakpoint
 ALTER TABLE `heating_plants` ADD `heat_pump_installed_on` text;--> statement-breakpoint
+ALTER TABLE `heating_plants` ADD `self_from` text;--> statement-breakpoint
 ALTER TABLE `readings` ADD `interim_for` text;

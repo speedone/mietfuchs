@@ -609,11 +609,6 @@ export function lineShareRows(rows: readonly PlantShareRow[], plants: readonly L
   return [...byPeriod.values()]
 }
 
-// Die erste Heizperiode der eigenen Abrechnung (Durchsicht von #239, I1): die erste mit einem Anteil
-// nach Verbrauch, denn die Einrichtung setzt ihn. Davor rechnet die Anlage wie mit freien Schlüsseln;
-// § 6 Abs. 4 HeizkostenV lässt die Wahl nur für künftige Abrechnungszeiträume zu.
-export const selfBeginOf = (rows: readonly ShareRow[]): string | null =>
-  rows.filter((r) => r.heatConsumptionPct !== null).map((r) => r.period).sort()[0] ?? null
 
 // Der Anteil nach Verbrauch einer Heizperiode, in Prozent. **Vorgabe ist der Anteil der vorigen
 // Heizperiode** (§ 6 Abs. 4: der Gebäudeeigentümer wählt, ändern nur für künftige Zeiträume durch

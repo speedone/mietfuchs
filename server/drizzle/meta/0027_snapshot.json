@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "7bf9cd5f-06d5-4d0b-8392-aeb86d7567c9",
+  "id": "5f9bb14d-8552-449f-8ec3-561fb3edf35f",
   "prevId": "637cb511-d364-4482-a85d-73d09f07a00c",
   "tables": {
     "ai_slots": {
@@ -2863,6 +2863,13 @@
         },
         "heat_pump_installed_on": {
           "name": "heat_pump_installed_on",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "self_from": {
+          "name": "self_from",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

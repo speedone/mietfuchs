@@ -53,7 +53,7 @@ import { ausweisGaps, CO2_FUELS, co2Assessment, co2DeductionsOf, FORMULA_METHODS
 // nicht als Literal; server/test/law-literals.test.ts wacht darüber.
 import { createLawLog, dayAfter, dayBefore, law, LAW_AS_OF, onlyVersion, recordVersionAt, valueAt, type Period } from '../../shared/law/register.ts'
 import { betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths } from '../../shared/law/bgb-betrkv.ts'
-import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvHeatPumpCapture, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, type DegreeDayTable } from '../../shared/law/heizkostenv.ts'
+import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvHeatPumpCapture, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvSettlementInfo, type DegreeDayTable } from '../../shared/law/heizkostenv.ts'
 import { remoteReadingVerdict, servedUnitIds } from './remoteReading.ts'
 import { practiceReadingOffWarning, practiceVacancyPersons } from '../../shared/law/practice.ts'
 import { HEATING_CATEGORY, heatingByConsumption, heatingFindings, mayAgreeOtherwise } from '../../shared/heating.ts'
@@ -64,7 +64,7 @@ import { possibleDuplicates } from '../../shared/duplicates.ts'
 import { commonPeriod, tenancyOverlaps } from '../../shared/tenancyOverlap.ts'
 import { CALENDAR_RULES, calendarYearPeriod, contextOf, formatDayRange, isCalendarRules, periodContaining, periodDays, periodLabel, periodMonths, periodOfKey, periodsBetween, previousPeriod, rulesOf, settlementDeadline, settlementPeriod, type PeriodContext } from '../../shared/period.ts'
 import { lineRoot, monthSpanText, plantRules, plantSpan, recommendedDeadline, requestMonth, sameBuilding, sameFuelLine, sameLine, sameSpan, separateOwner, servesUnit, settledSeparately } from '../../shared/heatingPeriod.ts'
-import { heatingSnapshotFor, snapshotFor, wayOf } from './snapshot.ts'
+import { heatingSnapshotFor, selfAt, snapshotFor, wayOf } from './snapshot.ts'
 import { plantFuel, rangeOf, type FuelCarry, type FuelResult } from './fuel.ts'
 import { fuelFromDeliveries, fuelFromStock, looseCentsOf, measuredOffset, problemText, settledByDefault, stockKeysOf, stockOf, stockTemplateOfLine, stockTouched, valueOf as stockValueOf, type FuelFigures, type StockPeriodInput, type StockResult } from './fuelStock.ts'
 import { isStockEnergy, STOCK_FUEL_NAMES, STOCK_UNIT_TEXT } from '../../shared/fuelStock.ts'
@@ -4662,6 +4662,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     return st ? `${st.tenantName} (${st.unitName})` : tenancyId
   }
   const permilleText = (p: number): string => `${fmtNum(Math.round(p * 10) / 10)} ‰`
+  const lines6a = new Set<string>()
   for (const sp of selfPlans.values()) {
     if (sp.weights === null || !sp.shares) continue
     const plant = sp.plant
@@ -4670,16 +4671,30 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const pot = co2Pots.find((x) => x.plantId === plant.id)
     const ids = new Set<string>([...(pot?.items ?? []).map((c) => c.id), ...(pot ? [pot.reliefKey] : [])])
     const notYet = sp.verdict?.kind === 'notYet'
-    // § 6a Abs. 3 HeizkostenV (Durchsicht von #239, I1): Die Informationen zur Abrechnung erstellt
-    // Mietfuchs mit PR 14; bis dahin eine Warnung mit der Kürzung je Mieter (§ 12 Abs. 1 Satz 3).
-    if (!notYet) {
+    // § 6a Abs. 3 HeizkostenV (Durchsicht von #239, I1 und N2): Die Informationen zur Abrechnung erstellt
+    // Mietfuchs mit PR 14; bis dahin eine Warnung mit der Kürzung je Mieter (§ 12 Abs. 1 Satz 3). Nur für
+    // Abrechnungszeiträume ab dem 01.12.2021 (`hkv.settlement-info`), einmal je Linie (nach einem Tausch
+    // geht eine Abrechnung an die Mieter), und beruht die Abrechnung nicht auf erfasstem Verbrauch, nur die
+    // Angaben nach Abs. 3 Satz 1 Nr. 2 und 3 (Abs. 5).
+    const root6a = lineRoot(plant, snapshot.heatingPlants ?? [])
+    if (!notYet && law(hkvSettlementInfo, { period: lawPeriod }, lawLog) && !lines6a.has(root6a)) {
+      lines6a.add(root6a)
       const cut6a = law(hkvCutRemoteReading, { period: lawPeriod }, lawLog)
+      const inLine = [...selfPlans.values()].filter((x) => lineRoot(x.plant, snapshot.heatingPlants ?? []) === root6a)
+      const lineIds = new Set<string>(inLine.flatMap((x) => {
+        const p = co2Pots.find((y) => y.plantId === x.plant.id)
+        return [...(p?.items ?? []).map((c) => c.id), ...(p ? [p.reliefKey] : [])]
+      }))
       const cuts6a = [...statements.keys()].flatMap((tenancyId) => {
-        const v = cutOf(tenancyId, ids, cut6a)
+        const v = cutOf(tenancyId, lineIds, cut6a)
         return v === null ? [] : [`${nameOf(tenancyId)} ${fmtCents(v)}`]
       })
+      const measured = inLine.some((x) => Object.values(x.plan.totals).some((tot) => tot?.measured === true))
+      const what = measured
+        ? 'die Informationen nach § 6a Abs. 3 HeizkostenV zugänglich zu machen, unter anderem der Anteil der Energieträger, die Steuern und Abgaben, die Entgelte für Zähler, Ablesung und Abrechnung, Kontaktstellen zur Energieberatung, ein Vergleich mit einem Durchschnittsnutzer und der witterungsbereinigte Vergleich mit dem vorhergehenden Abrechnungszeitraum in grafischer Form'
+        : 'nach § 6a Abs. 5 HeizkostenV mindestens die Kontaktstellen zur Energieberatung und der Hinweis auf die Streitbeilegung zu nennen (Abs. 3 Satz 1 Nr. 2 und 3), denn die Abrechnung beruht nicht auf erfasstem Verbrauch'
       warn('heating.self-6a-missing',
-        `${where}: Zusammen mit der Abrechnung sind den Mietern die Informationen nach § 6a Abs. 3 HeizkostenV zugänglich zu machen, unter anderem der Anteil der Energieträger, die Steuern und Abgaben, die Entgelte für Zähler, Ablesung und Abrechnung, Kontaktstellen zur Energieberatung, ein Vergleich mit einem Durchschnittsnutzer und der witterungsbereinigte Vergleich mit dem Vorjahr in grafischer Form. ` +
+        `${where}: Zusammen mit der Abrechnung sind den Mietern ${what}. ` +
           `Diese Angaben erstellt Mietfuchs mit einer späteren Version; legen Sie sie bis dahin selbst bei. Fehlen sie oder sind sie unvollständig, darf jeder Mieter seinen Anteil an den Heizkosten um ${cut6a} % kürzen (§ 12 Abs. 1 Satz 3 HeizkostenV)` +
           `${cuts6a.length > 0 ? `, hier: ${andList(cuts6a)}` : ''}. Mietfuchs zieht nichts ab; die Kürzung muss der Mieter erklären.`,
         subject)
@@ -5162,8 +5177,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           previousCostItems: part.previousItems,
           comparableCostItems: part.comparableItems,
           heatingParts: [],
+          // Je Heizperiode entschieden, ob die eigene Abrechnung schon gilt (Durchsicht von #239, N3).
+          heatingPlants: (snapshot.heatingPlants ?? []).map((p) => selfAt(p, String(part.period.key))),
           closedSettlement: null,
-          scope: { kind: 'heatingPart', plant },
+          scope: { kind: 'heatingPart', plant: selfAt(plant, String(part.period.key)) },
         }, options)
         mergeHeatingPart(sub, part)
         mergedParts.push(part)

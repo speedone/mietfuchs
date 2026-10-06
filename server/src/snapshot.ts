@@ -24,7 +24,6 @@ import { isStockEnergy } from '../../shared/fuelStock.ts'
 import { dayAfter, germanDate } from '../../shared/law/register.ts'
 import { isStockFuelItem, readFrozenStock, settledByDefault, stockKeysOf, stockTemplateOfLine, type PreviousFuel, type StockPeriodInput } from './fuelStock.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
-import { lineShareRows, selfBeginOf } from './heating.ts'
 import type { Db } from './store.ts'
 
 // Gelesen werden Kennung, Name (für Abrechnung und Warnungen), Wohnfläche und die beiden
@@ -117,7 +116,7 @@ export type SnapshotHeatingPlant = Pick<HeatingPlant, 'id' | 'energy' | 'method'
   & Partial<Pick<HeatingPlant, 'name' | 'periodStartMonth' | 'periodChanges' | 'separateSpans' | 'separateSettlement' | 'nonResidential' | 'restriction' | 'districtEtsNew' | 'supply' | 'endsOn' | 'replacesPlantId' | 'buildingWith' | 'takesOverStock'>>
   // Eigene Heizkostenabrechnung (Heizung PR 10). Fehlt ein Feld, gilt die Vorgabe der Spalte
   // (`combined`, `area`, `degreeDays`); `capture` und die Angaben zur Wärmepumpe fehlen dann.
-  & Partial<Pick<HeatingPlant, 'changeSplit' | 'hotWater' | 'capture' | 'areaBasisHeat' | 'capturedOnOct2024' | 'captureInstalledOn' | 'heatPumpInstalledOn'>>
+  & Partial<Pick<HeatingPlant, 'changeSplit' | 'hotWater' | 'capture' | 'areaBasisHeat' | 'capturedOnOct2024' | 'captureInstalledOn' | 'heatPumpInstalledOn' | 'selfFrom'>>
 // Seit Heizung PR 9 die Versorgung (`supply`); fehlt sie, ist die Anlage zentral.
 // Die Angaben je Heizperiode, die die Berechnung liest: Warmwasser laut Messdienst (Heizung PR 6, #211)
 // und der Vorrat (Heizung PR 8). Die Felder des Vorrats sind optional, damit ein von Hand gebauter
@@ -763,17 +762,17 @@ export function selfClosedEndsOf(settlement: unknown): SelfClosedEnd[] {
   })
 }
 
-// Vor ihrer ersten Heizperiode mit Anteil nach Verbrauch rechnet eine Anlage mit eigener
-// Heizkostenabrechnung wie mit freien Schlüsseln (Durchsicht von #239, I1): § 6 Abs. 4 HeizkostenV
-// lässt die Wahl nur für künftige Abrechnungszeiträume zu, und die Einrichtung stellt nichts davor um.
-// Der Anteil gehört zur Linie (I3); `keysOf` nennt die Heizperioden des Schnappschusses je Anlage.
-function withSelfBegin<P extends SnapshotHeatingPlant>(plants: readonly P[], rows: readonly SnapshotHeatingPeriodRow[], keysOf: (p: P) => string[]): P[] {
-  const shareRows = rows.map((r) => ({ plantId: r.plantId, period: String(r.period), heatConsumptionPct: r.heatConsumptionPct ?? null, waterConsumptionPct: r.waterConsumptionPct ?? null, insulationRule: r.insulationRule ?? null }))
+// Vor ihrer ersten Heizperiode der eigenen Abrechnung (`selfFrom`, gesetzt von der Einrichtung, beim
+// Kesseltausch geerbt) rechnet eine Anlage mit eigener Heizkostenabrechnung wie mit freien Schlüsseln
+// (Durchsicht von #239, I1, W1, W2): § 6 Abs. 4 HeizkostenV lässt die Wahl nur für künftige
+// Abrechnungszeiträume zu. `keysOf` nennt die Heizperioden des Schnappschusses je Anlage; die Abrechnung
+// entscheidet je Heizperiode noch einmal (`selfAt` in calc.ts, N3).
+export const selfAt = <P extends SnapshotHeatingPlant>(p: P, key: string): P =>
+  p.method === 'self' && (p.selfFrom ?? null) !== null && key < (p.selfFrom ?? '') ? { ...p, method: 'manual' } : p
+function withSelfBegin<P extends SnapshotHeatingPlant>(plants: readonly P[], keysOf: (p: P) => string[]): P[] {
   return plants.map((p) => {
-    if (p.method !== 'self') return p
-    const begin = selfBeginOf(lineShareRows(shareRows, plants, p.id))
     const keys = keysOf(p)
-    return begin !== null && keys.length > 0 && keys.every((k) => k < begin) ? { ...p, method: 'manual' } : p
+    return keys.length > 0 && keys.every((k) => selfAt(p, k).method !== 'self') ? selfAt(p, keys[0] ?? '') : p
   })
 }
 
@@ -818,7 +817,7 @@ export function snapshotFor(
   const found = source.properties?.find((p) => p.id === propertyId)
   const objectRules = rulesOf(found)
   const narrowed = narrowToProperty(source, propertyId)
-  const plants = withSelfBegin((source.heatingPlants ?? []).filter((p) => p.propertyId === propertyId), source.heatingPeriodRows ?? [],
+  const plants = withSelfBegin((source.heatingPlants ?? []).filter((p) => p.propertyId === propertyId),
     (p) => (hasOwnRhythm(wayOf(p)) ? heatingPeriodsEndingIn(plantRules(wayOf(p), objectRules), period).map((h) => String(h.key)) : [String(period.key)]))
   const own = plants.filter((p) => (p.periodStartMonth ?? null) !== null)
   const ownIds = new Set(own.map((p) => p.id))
@@ -878,7 +877,7 @@ export function snapshotFor(
 export function heatingSnapshotFor(source: Parameters<typeof snapshotFor>[0], propertyId: string, plantId: string, h: BillingPeriod): Snapshot | null {
   const found = source.properties?.find((p) => p.id === propertyId)
   const objectRules = rulesOf(found)
-  const plants = withSelfBegin((source.heatingPlants ?? []).filter((p) => p.propertyId === propertyId), source.heatingPeriodRows ?? [], () => [String(h.key)])
+  const plants = withSelfBegin((source.heatingPlants ?? []).filter((p) => p.propertyId === propertyId), () => [String(h.key)])
   const plant = plants.find((p) => p.id === plantId)
   if (!plant) return null
   // Die Zeilen der Linie (Durchsicht von #239, I3): Der Anteil nach Verbrauch gilt über den Tausch.

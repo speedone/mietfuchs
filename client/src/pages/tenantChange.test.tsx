@@ -166,7 +166,7 @@ test('Heizung PR 10: bei eigener Heizkostenabrechnung Ablesedatum je Wärmezähl
   // Durchsicht von #239, I3: die Folge der Wahl steht da, und ohne Grund geht es nicht weiter.
   expect(screen.getByText(/Nicht möglich: Die Kosten der Wohnung werden nach Gradtagen und Tagen/)).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: /^Weiter$/i }))
-  expect(screen.getByText(/Bitte nennen Sie den Grund/)).toBeTruthy()
+  expect(screen.getByText(/Bitte nennen Sie den Grund für die Teilung nach § 9b Abs\. 3/)).toBeTruthy()
   expect(screen.queryByLabelText(/Leerstand/i)).toBeNull()
   fireEvent.change(screen.getByLabelText(/Grund \(steht in der Abrechnung\)/i), { target: { value: 'nicht zugänglich' } })
   fireEvent.click(screen.getByRole('button', { name: /^Weiter$/i }))
