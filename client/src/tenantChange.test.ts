@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { buildTenantChange, defaultStart, EMPTY_NEW_TENANT, endProblem, meterProblem, parseMeterValue, type NewTenantForm } from './tenantChange'
+import { buildTenantChange, defaultStart, EMPTY_NEW_TENANT, endProblem, INTERIM_FEE_HINT, meterProblem, parseMeterValue, type NewTenantForm } from './tenantChange'
 
 const meters = [{ id: 'm1', name: 'KW EG' }, { id: 'm2', name: 'Haupt' }]
 const input = (patch: Partial<Parameters<typeof buildTenantChange>[0]> = {}, tenant: Partial<NewTenantForm> = {}) => ({
@@ -80,5 +80,26 @@ describe('Nachmieter unter getrennter Heizkostenabrechnung (Durchsicht von #231,
     const r = buildTenantChange(input({}, { prepayment: '300,00' }))
     if ('error' in r) throw new Error(r.error)
     expect(Object.hasOwn(r.body.newTenancy ?? {}, 'heatingPrepayments')).toBe(false)
+  })
+})
+
+describe('Mieterwechsel bei eigener Heizkostenabrechnung (Heizung PR 10)', () => {
+  const heat = { heatMeterIds: ['m1'], meterDates: {}, interimGap: null }
+  test('Ablesedatum je Zähler geht mit, leer heißt Auszugstag', () => {
+    const r = buildTenantChange({ ...input(), ...heat, meterDates: { m1: '2025-07-03' } })
+    expect('body' in r && r.body.readings).toEqual([{ meterId: 'm1', value: 123.5, date: '2025-07-03' }])
+  })
+  test('fehlt ein Stand eines Wärme- oder Warmwasserzählers, braucht es den Grund', () => {
+    const ohne = { ...input({ meterValues: { m1: '', m2: '' } }), ...heat }
+    expect(buildTenantChange(ohne)).toEqual({ error: expect.stringMatching(/nicht möglich.*nicht durchgeführt/) })
+    const mit = buildTenantChange({ ...ohne, interimGap: { status: 'impossible', reason: 'Mieter nicht erreichbar' } })
+    expect('body' in mit && mit.body.interimGap).toEqual({ status: 'impossible', reason: 'Mieter nicht erreichbar' })
+  })
+  test('ohne eigene Heizkostenabrechnung bleibt alles wie bisher', () => {
+    const r = buildTenantChange(input({ meterValues: { m1: '', m2: '' } }))
+    expect('body' in r && r.body).not.toHaveProperty('interimGap')
+  })
+  test('der Hinweis zu den Kosten der Zwischenablesung nennt das Urteil', () => {
+    expect(INTERIM_FEE_HINT).toMatch(/VIII ZR 19\/07/)
   })
 })

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import type { CostModel, DepositStatus, HeatingPlant, Meter, MeterType, Settings, Tenancy, Unit, UnitDependents, UnitUsage } from '../types'
+import type { CostModel, DepositStatus, HeatingPlant, InterimGapStatus, Meter, MeterType, Settings, Tenancy, Unit, UnitDependents, UnitUsage } from '../types'
+import { servesUnit } from '../../../shared/heatingPeriod.ts'
 import { DEPOSIT_STATUS_LABELS, METER_TYPE_LABELS, UNIT_USAGE_LABELS, usageOf } from '../types'
 import { EMPTY_UNIT_FORM, buildUnitBody, connectionSummary, connectionTypes, setConnected, unitDeleteMessage, unitToForm, type UnitForm } from '../unitForm'
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
@@ -8,7 +9,7 @@ import Drawer from '../components/Drawer'
 import PropertyCard from '../components/PropertyCard'
 import { COST_MODEL_LABELS, buildPersonHistory, costModelBadge, costModelBody, defaultTenancyUnitId, overlapQuestion, prepaymentColumn, showsFlatRates } from '../tenancyModel'
 import { useOpenForm, useProperty, withProperty } from '../property'
-import { buildTenantChange, defaultStart, EMPTY_NEW_TENANT, endProblem, meterProblem, parseMeterValue, type NewTenantForm } from '../tenantChange'
+import { buildTenantChange, defaultStart, EMPTY_NEW_TENANT, endProblem, INTERIM_FEE_HINT, INTERIM_GAP_OPTIONS, meterProblem, parseMeterValue, type NewTenantForm } from '../tenantChange'
 import PeriodCard from '../components/PeriodCard'
 import PageHeader from '../components/PageHeader'
 import { emptyUnitsText } from '../propertyView'
@@ -874,6 +875,11 @@ function TenantChangeWizard({ tenancy, unit, plants, onClose, onDone }: {
   const [newTenant, setNewTenant] = useState<NewTenantForm>(EMPTY_NEW_TENANT)
   // Getrennte Heizkostenabrechnung an der Wohnung (Durchsicht von #231): der Nachmieter bekommt seine Heizvorauszahlung.
   const askHeating = unit ? separateHeatingFor(unit, plants) : false
+  // Eigene Heizkostenabrechnung an der Wohnung (Heizung PR 10, Entwurf 3.5): Ablesedatum je Zähler und, wenn
+  // ein Stand eines Wärme- oder Warmwasserzählers fehlt, die Antwort warum.
+  const selfHeating = unit ? plants.some((p) => p.method === 'self' && p.endsOn === null && servesUnit(p, unit)) : false
+  const [meterDates, setMeterDates] = useState<Record<string, string>>({})
+  const [gap, setGap] = useState<{ status: InterimGapStatus | ''; reason: string }>({ status: '', reason: '' })
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -919,7 +925,8 @@ function TenantChangeWizard({ tenancy, unit, plants, onClose, onDone }: {
   }
 
   async function commit() {
-    const change = buildTenantChange({ tenancy, endDate, meters, meterValues, vacancy, newTenant, askHeating })
+    const heatMeterIds = selfHeating ? meters.filter((m) => m.unitId === tenancy.unitId && (m.type === 'waerme' || m.type === 'warmwasser')).map((m) => m.id) : []
+    const change = buildTenantChange({ tenancy, endDate, meters, meterValues, vacancy, newTenant, askHeating, meterDates, heatMeterIds, interimGap: gap })
     if ('error' in change) {
       setError(change.error)
       return
@@ -945,6 +952,8 @@ function TenantChangeWizard({ tenancy, unit, plants, onClose, onDone }: {
   }
 
   const unitMeters = meters.filter((m) => m.unitId !== null)
+  const heatMeters = selfHeating ? unitMeters.filter((m) => m.type === 'waerme' || m.type === 'warmwasser') : []
+  const heatMissing = heatMeters.some((m) => parseMeterValue(meterValues[m.id] ?? '') === null)
   const readCount = meters.filter((m) => parseMeterValue(meterValues[m.id] ?? '') !== null).length
 
   return (
@@ -995,10 +1004,43 @@ function TenantChangeWizard({ tenancy, unit, plants, onClose, onDone }: {
                       className="input-s"
                       onChange={(e) => setMeterValues({ ...meterValues, [m.id]: e.target.value })}
                     />
+                    {heatMeters.includes(m) && (
+                      <input
+                        type="date"
+                        aria-label={`Ablesedatum ${m.name}`}
+                        title="Abgelesen an einem anderen Tag als dem Auszug? Leer heißt am Auszugstag."
+                        value={meterDates[m.id] ?? ''}
+                        disabled={step > 2}
+                        onChange={(e) => setMeterDates({ ...meterDates, [m.id]: e.target.value })}
+                      />
+                    )}
                   </label>
                 ))}
                 {step === 2 && <button className="btn" onClick={goToStep3}>Weiter</button>}
               </div>
+              {heatMeters.length > 0 && (
+                <>
+                  <p className="muted">Bei den Wärme- und Warmwasserzählern tragen Sie das Ablesedatum ein, wenn nicht am Auszugstag abgelesen wurde; gerechnet wird mit dem Stand, wie er abgelesen ist. {INTERIM_FEE_HINT}</p>
+                  {heatMissing && (
+                    <div className="row">
+                      <label className="field grow">
+                        Warum gibt es keine Zwischenablesung?
+                        <select value={gap.status} disabled={step > 2} onChange={(e) => setGap({ ...gap, status: INTERIM_GAP_OPTIONS.find((o) => o.value === e.target.value)?.value ?? '' })}>
+                          <option value="">— bitte wählen —</option>
+                          {INTERIM_GAP_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                        </select>
+                      </label>
+                      {gap.status === 'impossible' && (
+                        <label className="field grow">
+                          Grund (steht in der Abrechnung)
+                          <input value={gap.reason} disabled={step > 2} onChange={(e) => setGap({ ...gap, reason: e.target.value })} />
+                        </label>
+                      )}
+                    </div>
+                  )}
+                  {heatMissing && gap.status === 'missed' && <p className="muted">Dann rechnet Mietfuchs nach § 9b Abs. 3 HeizkostenV, und die Mieter können ihren Anteil kürzen; die Abrechnung nennt die Beträge.</p>}
+                </>
+              )}
             </>
           )}
           {step === 2 && meters.length === 0 && <button className="btn" onClick={goToStep3}>Weiter</button>}

@@ -25,11 +25,13 @@ const SLOW = { timeout: 5000 }
 let sent: { url: string; method: string; body: unknown }[]
 let changeStatus: number
 let plants: unknown[] = []
+let meters: Meter[] = METERS
 
 beforeEach(() => {
   sent = []
   changeStatus = 400
   plants = []
+  meters = METERS
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
     const method = init?.method ?? 'GET'
     const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
@@ -40,7 +42,7 @@ beforeEach(() => {
     const path = url.split('?')[0] ?? url
     const responses: Record<string, unknown> = {
       '/api/properties': [{ id: 'objekt-1', name: 'A', kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null }],
-      '/api/meters': METERS,
+      '/api/meters': meters,
       '/api/heating-plants': plants,
     }
     return json(responses[path] ?? [])
@@ -133,4 +135,38 @@ test('E18: der Assistent holt sich ins Bild', async () => {
   await waitFor(() => expect(scroll).toHaveBeenCalled())
   expect(document.activeElement).toBe(screen.getByLabelText(/Auszugsdatum/i))
   Reflect.deleteProperty(Element.prototype, 'scrollIntoView')
+})
+
+test('Heizung PR 10: bei eigener Heizkostenabrechnung Ablesedatum je Wärmezähler und, ohne Stand, der Grund; angezeigt wie gespeichert', async () => {
+  plants = [{
+    id: 'hp1', propertyId: 'objekt-1', name: '', energy: 'gas', supply: 'central', method: 'self', separateSettlement: null,
+    devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null, capturedOnOct2024: null,
+    warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null, periodChanges: [], separateSpans: [], units: null, newDevicesInstall: null,
+    nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null,
+    hotWater: 'combined', capture: 'heatMeter', areaBasisHeat: 'area', heatPumpInstalledOn: null,
+  }]
+  meters = [...METERS, { id: 'w1', propertyId: 'objekt-1', name: 'Wärme EG', unitId: 'u1', type: 'waerme', unit: 'kWh' }]
+  changeStatus = 200
+  render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <UIProvider><Stammdaten units={UNITS} tenancies={TENANCIES} settings={null} reload={async () => {}} /></UIProvider>
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  fireEvent.click(await screen.findByRole('button', { name: /^Mieterwechsel$/i }, SLOW))
+  fireEvent.change(screen.getByLabelText(/Auszugsdatum/i), { target: { value: '2025-06-30' } })
+  fireEvent.click(screen.getByRole('button', { name: /^Weiter$/i }))
+  await screen.findByLabelText(/Ablesedatum Wärme EG/i, {}, SLOW)
+  expect(screen.getByText(/VIII ZR 19\/07/)).toBeTruthy()
+  const grund = screen.getByLabelText(/Warum gibt es keine Zwischenablesung/i) as HTMLSelectElement
+  expect(grund.value).toBe('')
+  fireEvent.change(grund, { target: { value: 'impossible' } })
+  expect((screen.getByLabelText(/Warum gibt es keine Zwischenablesung/i) as HTMLSelectElement).value).toBe('impossible')
+  fireEvent.change(screen.getByLabelText(/Grund \(steht in der Abrechnung\)/i), { target: { value: 'nicht zugänglich' } })
+  fireEvent.click(screen.getByRole('button', { name: /^Weiter$/i }))
+  fireEvent.click(await screen.findByLabelText(/Leerstand/i, {}, SLOW))
+  fireEvent.click(screen.getByRole('button', { name: /Mieterwechsel durchführen/i }))
+  await waitFor(() => expect(sent).toHaveLength(1), SLOW)
+  expect(sent[0]?.body).toMatchObject({ end: '2025-06-30', interimGap: { status: 'impossible', reason: 'nicht zugänglich' }, newTenancy: null })
 })
