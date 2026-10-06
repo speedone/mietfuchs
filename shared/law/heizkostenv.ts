@@ -139,3 +139,41 @@ export const hkvRemoteReadingNewDevices: LawParam<{ readonly required: boolean; 
       ? `Einbau nach dem ${germanDate(v.installedAfter)}: fernablesbar ab Einbau`
       : `Einbau bis ${germanDate(v.installedAfter)}: keine Pflicht ab Einbau`,
 }
+// § 7 Abs. 1 Satz 2 HeizkostenV (Heizung PR 10): In Gebäuden, die das Anforderungsniveau der
+// Wärmeschutzverordnung vom 16.08.1994 nicht erfüllen, die mit einer Öl- oder Gasheizung versorgt
+// werden und deren freiliegende Leitungen der Wärmeverteilung überwiegend gedämmt sind, sind 70 % der
+// Kosten des Betriebs der zentralen Heizungsanlage nach Verbrauch zu verteilen. Bei Wärmelieferung
+// nicht: § 7 Abs. 3 verweist nur auf Abs. 1 Satz 1 und 3 bis 5 (R-A2). Welche Energieträger eine
+// Öl- oder Gasheizung sind, entscheidet server/src/heating.ts (`OIL_OR_GAS`).
+export const hkvConsumptionShareForced: LawParam<number, 'periodStart'> = {
+  id: 'hkv.consumption-share-forced',
+  title: 'Pflichtanteil nach Verbrauch bei gedämmten Leitungen',
+  norm: '§ 7 Abs. 1 Satz 2 HeizkostenV',
+  timing: 'periodStart',
+  versions: [{
+    value: 70,
+    source: checked('§ 7 Abs. 1 Satz 2 HeizkostenV', 'https://www.gesetze-im-internet.de/heizkostenv/__7.html'),
+    enacted: ENACTED,
+  }],
+  describe: (v) => `${v} %`,
+}
+
+// § 12 Abs. 3 HeizkostenV (Heizung PR 10): Wird der Verbrauch der von Wärmepumpen versorgten Nutzer am
+// 01.10.2024 noch nicht erfasst, ist bis zum Ablauf des 30.09.2025 eine Ausstattung zur
+// Verbrauchserfassung zu installieren; die Verordnung gilt dann ab dem Abrechnungszeitraum, der nach
+// der Installation beginnt (Satz 2; BT-Drs. 20/7619: Installation der Ausstattung). Zeitregel nach
+// dem Ereignis (Entwurf 3.13). Ohne Erfassung nach dem 30.09.2025 rechnet Mietfuchs mit 15 % nach
+// § 12 Abs. 1 Satz 1, als Auslegung (Entwurf 15.1 Nr. 22, `heatPumpVerdict` in heating.ts).
+export type HeatPumpCapture = { readonly capturedBy: string; readonly installBy: string }
+export const hkvHeatPumpCapture: LawParam<HeatPumpCapture, 'eventDate'> = {
+  id: 'hkv.heat-pump.capture',
+  title: 'Verbrauchserfassung bei Wärmepumpen',
+  norm: '§ 12 Abs. 3 HeizkostenV',
+  timing: 'eventDate',
+  versions: [{
+    value: { capturedBy: '2024-10-01', installBy: '2025-09-30' },
+    source: checked('§ 12 Abs. 3 HeizkostenV; BT-Drs. 20/7619', 'https://www.gesetze-im-internet.de/heizkostenv/__12.html'),
+    enacted: ENACTED,
+  }],
+  describe: (v) => `Verbrauch am ${germanDate(v.capturedBy)} erfasst, sonst Erfassung bis ${germanDate(v.installBy)}; die Verordnung gilt ab dem Zeitraum nach dem Einbau`,
+}

@@ -234,9 +234,41 @@ export const GLOSSARY = {
   hotWaterShare: {
     title: 'Warmwasseranteil',
     short: 'Bereitet die Heizung auch das Warmwasser, wird ein Teil ihrer Kosten dem Warmwasser zugerechnet. Die Wärme dafür ist mit einem Wärmezähler zu messen. Die Formel nach dem Warmwasserverbrauch ist nur erlaubt, wenn das Messen nur mit unzumutbar hohem Aufwand möglich wäre; die Formel nach der Wohnfläche nur, wenn weder die Wärmemenge noch das Volumen des verbrauchten Warmwassers gemessen werden kann.',
-    example: `Ein Mieter trägt 1.000 € Heiz- und Warmwasserkosten. Hat der Messdienst die Wärme für das Warmwasser ohne diesen Grund mit einer Formel bestimmt, darf der Mieter seinen Anteil um ${CUT} % kürzen, also um ${(1000 * CUT) / 100} €.`,
+    example:
+      'Gasrechnung 60.000 kWh nach Brennwert, der Wärmezähler am Warmwasserspeicher zeigt 9.000 kWh: Mietfuchs rechnet nach dem Wortlaut der Verordnung 9.000 ÷ 60.000 = 15,0 %. ' +
+      'Wer die gemessene Wärme wie einen Formelwert auf den Brennwert umrechnet, käme auf 16,65 %; welche Lesart die technische Regel meint, ist nicht geklärt (⟨Norm offen: VDI 2077⟩). ' +
+      `Hat der Messdienst die Wärme mit einer Formel bestimmt, obwohl sie sich ohne unzumutbaren Aufwand messen ließ, darf ein Mieter mit 1.000 € Heiz- und Warmwasserkosten seinen Anteil um ${CUT} % kürzen, also um ${(1000 * CUT) / 100} €.`,
     norm: '§ 9 Abs. 2 Satz 1, § 12 Abs. 1 Satz 1 HeizkostenV; BGH, Urteil vom 12.01.2022, VIII ZR 151/20',
-    needed: 'Nur, wenn die Abrechnung des Messdienstes sagt, dass die Wärme für das Warmwasser nach einer Formel bestimmt wurde. Dann tragen Sie das auf der Seite Heizkosten ein.',
+    needed: 'Beim Messdienst, wenn seine Abrechnung sagt, dass die Wärme für das Warmwasser nach einer Formel bestimmt wurde. Dann tragen Sie das auf der Seite Heizkosten ein. Rechnen Sie die Heizkosten selbst ab, misst ein Wärmezähler am Warmwasserspeicher die Wärme; Mietfuchs teilt damit die gemeinsamen Kosten.',
+  },
+  // Heizung PR 10 (#99, Entwurf 10.3): die eigene Heizkostenabrechnung. Zahlen aus Beispiel A (8.6).
+  baseCosts: {
+    title: 'Grundkosten',
+    short: 'Der Teil der Heiz- oder Warmwasserkosten, der nicht nach Verbrauch, sondern nach der Fläche verteilt wird; bei der Heizung auch nach der beheizten Fläche.',
+    example: 'Topf Heizung 5.628,00 €, davon 30 % Grundkosten = 1.688,40 €. Eine Wohnung mit 60 von 200 m² trägt davon 506,52 €.',
+    norm: '§ 7 Abs. 1 Satz 5, § 8 Abs. 1 HeizkostenV',
+    needed: 'Ja, wenn Sie die Heizkosten selbst abrechnen. Mietfuchs rechnet sie aus dem Anteil, den Sie nach Verbrauch verteilen.',
+  },
+  consumptionCosts: {
+    title: 'Verbrauchskosten',
+    short: 'Der Teil der Heiz- oder Warmwasserkosten, der nach dem gemessenen Verbrauch verteilt wird, bei der Heizung nach Kilowattstunden, beim Warmwasser nach Kubikmetern.',
+    example: 'Topf Heizung 5.628,00 €, davon 70 % nach Verbrauch = 3.939,60 €. Eine Wohnung mit 12.000 von 40.000 kWh trägt davon 1.181,88 €.',
+    norm: '§ 7 Abs. 1 Satz 1, § 8 Abs. 1 HeizkostenV',
+    needed: 'Ja, wenn Sie die Heizkosten selbst abrechnen. Ohne Zähler darf jeder Mieter seinen Anteil kürzen. Bei einer Öl- oder Gasheizung in einem Haus mit Wärmeschutz unter dem Niveau von 1994 und überwiegend gedämmten Leitungen ist der Anteil vorgeschrieben (§ 7 Abs. 1 Satz 2 HeizkostenV). Dass eine Flüssiggasheizung dazu zählt, ist eine Auslegung von Mietfuchs: Der Wortlaut sagt „Gasheizung“ ohne Einschränkung, wo die Verordnung Erdgas meint, sagt sie es (§ 9 Abs. 2 Satz 6 und die Tabelle in § 9 Abs. 3), und die Begründung (BR-Drs. 570/08) nennt Öl- und Gasheizungen und grenzt nur gegen Fernwärme ab. Der vorgeschriebene Anteil ist unter beiden Lesarten zulässig.',
+  },
+  interimReading: {
+    title: 'Zwischenablesung',
+    short: 'Die Ablesung der Wärme- und Warmwasserzähler, wenn ein Mieter mitten im Abrechnungszeitraum aus- oder einzieht. Nach ihr werden die Verbrauchskosten aufgeteilt; die übrigen Heizkosten nach Gradtagszahlen oder zeitanteilig, die übrigen Warmwasserkosten zeitanteilig.',
+    example: 'Wechsel zum 30.09.: Grundkosten Heizung der Wohnung 506,52 €. Nach Gradtagen (Januar bis September 640 Promille) trägt der Vormieter 324,17 € und der Nachmieter 182,35 €; zeitanteilig wären es 378,85 € und 127,67 €.',
+    norm: '§ 9b HeizkostenV',
+    needed: 'Ja, bei jedem Mieterwechsel. Ist sie nicht möglich, werden die gesamten Kosten der Wohnung nach Gradtagen bzw. Tagen geteilt. Die Kosten der Zwischenablesung trägt der Vermieter, soweit nichts anderes vereinbart ist (BGH, Urteil vom 14.11.2007, VIII ZR 19/07); ob eine Klausel im Formularmietvertrag genügt, hat der BGH nicht entschieden. Das AG Berlin-Hohenschönhausen (16 C 205/07) hält sie für unwirksam; das ist die Entscheidung eines Amtsgerichts.',
+  },
+  heatMeter: {
+    title: 'Wärmezähler',
+    short: 'Ein geeichtes Messgerät, das die Wärme in Kilowattstunden misst, etwa an der Leitung einer Wohnung oder am Warmwasserspeicher.',
+    example: 'Der Wärmezähler der Wohnung zeigt am 31.12.2024 1.000 kWh und am 31.12.2025 13.000 kWh: verbraucht sind 12.000 kWh.',
+    norm: '§ 5 Abs. 1 HeizkostenV',
+    needed: 'Wenn Sie die Heizkosten selbst abrechnen. Ein Wärmezähler am Warmwasserspeicher misst den Anteil des Warmwassers; ohne ihn ist eine Formel nur bei unzumutbar hohem Aufwand erlaubt.',
   },
   cableTv: {
     title: 'Kabelfernsehen',
