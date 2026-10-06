@@ -135,16 +135,22 @@ async function guardHeatingPlant(db: Executor, before: HeatingPlant | null, afte
     throw new HeatingError(400, 'Die Angabe zur Wärme aus dem Emissionshandel gibt es nur bei Fernwärme.')
   }
   if (before !== null) {
-    // Verknüpfte Positionen gibt es nur bei freien Schlüsseln, Lieferungen mit Vorrat erst mit der
-    // Bestandsrechnung (Heizung PR 7); ein Wechsel ließe sie sonst still anders rechnen.
+    // Verknüpfte Positionen gibt es nur bei freien Schlüsseln (Heizung PR 7); ein Wechsel ließe sie
+    // sonst still anders rechnen.
     const [verknuepft] = await db.select({ n: count() }).from(costItems).innerJoin(fuelDeliveries, eq(costItems.fuelDeliveryId, fuelDeliveries.id)).where(eq(fuelDeliveries.plantId, after.id))
     if (before.method === 'manual' && after.method !== 'manual' && (verknuepft?.n ?? 0) > 0) {
       const n = verknuepft?.n ?? 0
       throw new HeatingError(400, `An dieser Anlage ${n === 1 ? 'ist eine Kostenposition' : `sind ${n} Kostenpositionen`} mit Lieferungen verknüpft. Lösen Sie die Verknüpfungen zuerst; ein Messdienst rechnet den Brennstoff in seinen eigenen Beträgen ab.`)
     }
     const [lieferungen] = await db.select({ n: count() }).from(fuelDeliveries).where(eq(fuelDeliveries.plantId, after.id))
-    if (before.energy !== after.energy && (STOCK_ENERGIES.includes(after.energy) || after.energy === 'other') && (lieferungen?.n ?? 0) > 0) {
-      throw new HeatingError(400, 'An dieser Anlage stehen Lieferungen mit Rechnungszeitraum; Heizöl, Flüssiggas, Pellets, Holz und Kohle brauchen die Bestandsrechnung, die mit einer späteren Version kommt.')
+    // Lieferungen mit Rechnungszeitraum (Gas, Fernwärme, Strom) und mit Lieferdatum für den Vorrat
+    // (Heizung PR 8) sind verschieden gebaut; ein Wechsel dazwischen ließe sie still anders rechnen.
+    const stockBefore = STOCK_ENERGIES.includes(before.energy)
+    const stockAfter = STOCK_ENERGIES.includes(after.energy)
+    if (before.energy !== after.energy && (stockBefore !== stockAfter || after.energy === 'other') && (lieferungen?.n ?? 0) > 0) {
+      throw new HeatingError(400, stockBefore
+        ? 'An dieser Anlage stehen Lieferungen für den Vorrat (Lieferdatum und Menge); Gas, Fernwärme und Strom werden nach dem Rechnungszeitraum abgegrenzt. Entfernen Sie die Lieferungen zuerst.'
+        : 'An dieser Anlage stehen Lieferungen mit Rechnungszeitraum; Heizöl, Flüssiggas, Pellets, Holz und Kohle rechnet Mietfuchs über den Vorrat mit Lieferdatum und Menge. Entfernen Sie die Lieferungen zuerst.')
     }
   }
   await sameProperty(db, after.propertyId, (after.units ?? []).map((u) => u.unitId), 'Die Heizanlage')
