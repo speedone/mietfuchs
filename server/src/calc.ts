@@ -3451,7 +3451,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       const tail = ` Ohne Aufteilung darf jeder Mieter seinen Anteil an den Heizkosten um ${cut} % kürzen (§ 7 Abs. 4 CO2KostAufG)${cutsOn(ids, cut)}.`
       if (problem.kind === 'missing') {
         warn('fuel.stock-missing',
-          `${where}: ${problemText(problem)} Ohne Bestandsrechnung teilt Mietfuchs die CO₂-Kosten nicht selbst auf, denn aufzuteilen sind die Kosten des im Abrechnungszeitraum verursachten Ausstoßes, also des verbrauchten und nicht des gelieferten Brennstoffs (§ 5 Abs. 1 CO2KostAufG).${tail} ` +
+          `${where}: ${problemText(problem)} Ohne Bestandsrechnung teilt Mietfuchs die CO₂-Kosten nicht selbst auf, denn aufzuteilen sind die Kosten des im Abrechnungszeitraum verursachten Ausstoßes (§ 7 Abs. 1 CO2KostAufG), also des verbrauchten und nicht des gelieferten Brennstoffs.${tail} ` +
             'Tragen Sie Anfangs- und Endbestand auf der Seite Heizkosten in der Karte „Vorrat“ ein; die Abrechnung des Messdienstes nennt beide.',
           plantSubject)
       } else {
