@@ -9,7 +9,7 @@ import Term from './Term'
 import HeatingPeriodSection from './HeatingPeriodSection'
 import { useFocusTarget, type FocusProps } from '../focus'
 import {
-  CAPTURE_OPTIONS, CONTRACT_OPTIONS, ENERGY_OPTIONS, HOW_TO_TELL, asksRemote, INSTALLED_OPTIONS, NEW_DEVICES_AFTER, NEW_INSTALL_OPTIONS, NEW_INSTALL_QUESTION, PER_UNIT_ENERGY_OPTIONS, REMOTE_OPTIONS, TAKES_OVER_HINT, TAKES_OVER_OPTIONS, TAKES_OVER_QUESTION, asksNewInstall, asksTakeOver, buildingOptions, canSwap, emptyHeatingForm, emptySwapForm, heatingPlantBody,
+  CAPTURE_OPTIONS, CONTRACT_OPTIONS, ENERGY_OPTIONS, HOW_TO_TELL, asksRemote, INSTALLED_OPTIONS, NEW_DEVICES_AFTER, NEW_INSTALL_OPTIONS, NEW_INSTALL_QUESTION, PER_UNIT_ENERGY_OPTIONS, REMOTE_OPTIONS, TAKES_OVER_BACK, TAKES_OVER_HINT, takesOverBack, TAKES_OVER_OPTIONS, TAKES_OVER_QUESTION, asksNewInstall, asksTakeOver, buildingOptions, canSwap, emptyHeatingForm, emptySwapForm, heatingPlantBody,
   connectionNote, heatingSummary, heatingToForm, swapBody, whoHint, whoOptions, type CaptureAnswer, type EnergyAnswer, type HeatingForm, type PerUnitContract, type SwapForm, type WhoSettles,
 } from '../heatingForm'
 
@@ -90,6 +90,11 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
       toast(result.none)
       return
     }
+    const back = editingId !== null && takesOverBack(plants.find((p) => p.id === editingId), form)
+    if (back) {
+      const ok = await confirm({ title: 'Brennstoff doch weiter verheizen?', message: TAKES_OVER_BACK, confirmLabel: 'Umstellen' })
+      if (!ok) return
+    }
     try {
       if (editingId) {
         await api(`/api/heating-plants/${editingId}`, { method: 'PUT', body: JSON.stringify(result.body) })
@@ -107,7 +112,9 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
     const first = plants.length === 0
     close()
     await loadAll()
-    toast(created ? (first ? 'Heizung eingerichtet. An Ihren Beträgen ändert sich nichts.' : 'Weitere Heizanlage angelegt. Ordnen Sie ihre Heizpositionen auf der Seite Kosten zu.') : 'Heizung gespeichert.')
+    toast(created
+      ? (first ? 'Heizung eingerichtet. An Ihren Beträgen ändert sich nichts.' : 'Weitere Heizanlage angelegt. Ordnen Sie ihre Heizpositionen auf der Seite Kosten zu.')
+      : back ? 'Heizung gespeichert. Der eigene Anfangsbestand ist entfernt; der Restbestand der bisherigen Heizanlage ist jetzt ihr Anfangsbestand.' : 'Heizung gespeichert.')
   }
 
   function openSwap(p: HeatingPlant) {

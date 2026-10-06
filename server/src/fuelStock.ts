@@ -72,6 +72,9 @@ export function settledByDefault(prev: PreviousFuel | null | undefined, openingC
 export type StockPeriodInput = {
   key: PeriodKey
   label: string
+  // Kesseltausch mit demselben Brennstoff (Heizung PR 9): Die Heizperiode gehört der Anlage davor, deren
+  // Restbestand die Kette übernimmt; ihr Name für die Hinweise. Fehlt bei der eigenen Anlage.
+  plantName?: string
   from: string
   to: string
   unit: StockUnit | null

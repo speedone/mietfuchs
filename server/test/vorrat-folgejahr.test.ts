@@ -1,7 +1,7 @@
 // Vorrat: eine Lieferung, deren Rechnung erst im Folgejahr gebucht werden soll (Nachprüfung von #238). Die
-// Lieferung gehört zur Heizperiode ihres Lieferdatums (Entwurf 5.4), und ihre Position muss dort stehen
-// (`guardFuelLink` in repository.ts, Lieferdatum in db/fuel.ts); nur so verteilt die Bestandskette ihren
-// Betrag im Jahr des Verbrauchs. Die Invariante (fuel-stock-invariant.test.ts) versucht dasselbe zufällig.
+// Position einer Lieferung steht in der Heizperiode des Rechnungsendes, beim Vorrat in der des
+// Lieferdatums (Entwurf 5.4; `guardFuelLink` in repository.ts, ein geändertes Rechnungsende oder
+// Lieferdatum prüft db/fuel.ts); nur so verteilt die Bestandskette ihren Betrag im Jahr des Verbrauchs. Die Invariante (fuel-stock-invariant.test.ts) versucht dasselbe zufällig.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'

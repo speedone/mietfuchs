@@ -2,11 +2,12 @@
 // Die Karte „Heizung“ (Heizung PR 4). Geprüft wird, was reine Logik nicht sieht: Der angezeigte Wert
 // jedes Auswahlfelds ist der gespeicherte, und das Anlegen schickt die Positionen der Vorschau mit.
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { AssignableHeatingItem, HeatingPlant, Unit } from '../types'
 import { PropertyProvider } from '../property'
 import { periodKey } from '../../../shared/period.ts'
 import HeatingCard from './HeatingCard'
+import { UIProvider } from './feedback'
 
 const UNITS: Unit[] = [
   { id: 'eg', propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true },
@@ -195,4 +196,26 @@ test('Gebäude: Zeigt die gespeicherte Angabe auf eine stillgelegte Anlage, zeig
   await waitFor(() => expect(screen.getAllByRole('button', { name: 'Ändern' })).toHaveLength(3))
   fireEvent.click(screen.getAllByRole('button', { name: 'Ändern' })[1] as HTMLElement)
   expect(screen.queryByLabelText(/im selben Gebäude/)).toBeNull()
+})
+
+test('Zurück von „Nein“ auf „Ja“: erst eine Rückfrage, dass der eigene Anfangsbestand entfällt (Nachprüfung von #238, M2)', async () => {
+  plants = [
+    { ...PLANT, id: 'alt', name: 'Alter Kessel', energy: 'oil', endsOn: '2025-06-30' },
+    { ...PLANT, id: 'neu', name: 'Neuer Kessel', energy: 'oil', method: 'manual', replacesPlantId: 'alt', takesOverStock: false },
+  ]
+  render(<UIProvider><PropertyProvider><HeatingCard units={UNITS} /></PropertyProvider></UIProvider>)
+  await waitFor(() => expect(screen.getAllByRole('button', { name: 'Ändern' })).toHaveLength(2))
+  fireEvent.click(screen.getAllByRole('button', { name: 'Ändern' })[1] as HTMLElement)
+  expect(valueOf(/Verheizt der neue Kessel/)).toBe('no')
+  fireEvent.change(screen.getByLabelText(/Verheizt der neue Kessel/), { target: { value: 'yes' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Übernehmen' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Brennstoff doch weiter verheizen?' })
+  expect(dialog.textContent).toMatch(/eigene Anfangsbestand der neuen Heizanlage in ihrer ersten Heizperiode wird dabei entfernt/)
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Abbrechen' }))
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Brennstoff doch weiter verheizen?' })).toBeNull())
+  expect(sent).toHaveLength(0)
+  fireEvent.click(screen.getByRole('button', { name: 'Übernehmen' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Umstellen' }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0]?.body).toMatchObject({ takesOverStock: true })
 })

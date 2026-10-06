@@ -711,7 +711,7 @@ export function stockChainsOf(source: StockChainSource, plant: SnapshotHeatingPl
           // Die letzte Heizperiode der alten Anlage: dieselbe oder, bei einem Tausch zum Ersten, die davor.
           const last = periodContaining(plantRules(wayOf(predecessor), objectRules), predecessor.endsOn)
           const before = stockChainsOf(source, predecessor, objectRules, [last], plants)[0]?.chain ?? []
-          chain.unshift(...before)
+          chain.unshift(...before.map((x) => ({ ...x, plantName: predecessor.name ?? '' })))
         }
         break
       }

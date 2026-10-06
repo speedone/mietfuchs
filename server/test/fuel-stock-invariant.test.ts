@@ -71,6 +71,7 @@ const g = (o: unknown, k: string): unknown => (o !== null && typeof o === 'objec
 const list = (o: unknown, k: string): unknown[] => { const v = g(o, k); return Array.isArray(v) ? v : [] }
 const num = (o: unknown, k: string): number => { const v = g(o, k); return typeof v === 'number' ? v : 0 }
 const str = (o: unknown, k: string): string => { const v = g(o, k); return typeof v === 'string' ? v : '' }
+const germanDay = (iso: string) => `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}`
 const euro = (c: number) => `${(c / 100).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`
 
 // Die Zeilen einer Anlage (Heizung PR 9): Überträge und CO₂-Zeilen tragen ihre Kennung, die übrigen gehören
@@ -393,7 +394,8 @@ for (const { seed, two, tausch } of RUNS) {
             const diff = -oa.carryOut - nb.carryIn
             const label = periodLabel(span(oa.key))
             if (nb.key !== oa.key) stats.boundary++
-            const flagged = nb.notices.some((x) => x.code === 'fuel.stock-not-taken-over' && x.text.includes(`Heizperiode ${label} im Wert von ${euro(diff)}`)) ||
+            // Im selben Zeitraum nennt der Hinweis den Restbestand der alten Anlage (Nachprüfung von #238).
+            const flagged = nb.notices.some((x) => x.code === 'fuel.stock-not-taken-over' && (x.text.includes(`Heizperiode ${label} im Wert von ${euro(diff)}`) || x.text.includes(`Restbestand von „Alt“ zum ${germanDay(alt.endsOn ?? '')} im Wert von ${euro(diff)}`))) ||
               oa.notices.some((x) => x.code === 'fuel.stock-not-taken-over' && x.text.includes('Folgeperiode ist ohne Vorrat') && x.text.includes(euro(diff)))
             assert.ok(diff === 0 || (diff > 0 && flagged), `${fall}; Tausch: die alte Anlage gibt ${-oa.carryOut} weiter, die neue übernimmt ${nb.carryIn}`)
             assert.equal(oa.remaining, 0, `${fall}; Tausch mit demselben Brennstoff: kein Restbestand beim Vermieter`)

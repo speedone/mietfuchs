@@ -2354,7 +2354,11 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const prevValue = prevHandover?.costCents ?? 0
     const notTaken = (why: string) => {
       if (prev && prevValue > 0) {
-        stockNotes.push({ plant: entry.plant, code: 'fuel.stock-not-taken-over', text: `Den Endbestand der Heizperiode ${prev.label} im Wert von ${fmtCents(prevValue)} übernimmt diese Heizperiode nicht, weil ${why}. Die Mieter der Heizperiode ${prev.label} haben ihn gutgeschrieben bekommen; bis er hier übernommen wird, tragen Sie ihn selbst.` })
+        // Nach einem Kesseltausch im selben Zeitraum ist es der Restbestand der alten Anlage (Nachprüfung von #238).
+        const text = prev.plantName !== undefined
+          ? `Den Restbestand von „${prev.plantName}“ zum ${fmtDay(prev.to)} im Wert von ${fmtCents(prevValue)} übernimmt die neue Heizanlage nicht, weil ${why}. Die Mieter haben ihn bei „${prev.plantName}“ gutgeschrieben bekommen; bis er hier übernommen wird, tragen Sie ihn selbst.`
+          : `Den Endbestand der Heizperiode ${prev.label} im Wert von ${fmtCents(prevValue)} übernimmt diese Heizperiode nicht, weil ${why}. Die Mieter der Heizperiode ${prev.label} haben ihn gutgeschrieben bekommen; bis er hier übernommen wird, tragen Sie ihn selbst.`
+        stockNotes.push({ plant: entry.plant, code: 'fuel.stock-not-taken-over', text })
       }
     }
     // Brennstoffpositionen ohne Lieferung neben dem Vorrat (I2a): Die Bestandsrechnung kennt sie nicht.
@@ -3918,7 +3922,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Ohne Angaben (Entwurf 9.1): Gas, Öl, Flüssiggas und Kohle sind erfasst, Fernwärme nur, wenn der
     // Lieferant CO₂ ausweist (R-A28), Wärmepumpe, Strom, Holz und Pellets nicht (W8); unbekannt ist
     // „Sonstiges“.
-    if (!st && applicable && settledHere && !ownSplit) {
+    // Eine Anlage, die in diesem Zeitraum nicht heizt (Kesseltausch), steht hier nur mit der Rechnung, die in
+    // einen anderen Zeitraum abgegrenzt wird; dort gilt der Hinweis, nicht hier (Nachprüfung von #238).
+    if (!st && applicable && settledHere && !ownSplit && (!potPlant || activeIn(potPlant))) {
       if (CO2_FUELS.includes(pot.energy) || pot.energy === 'districtHeating') {
         const cut = law(co2CutMissing, { period: hPeriod }, lawLog)
         warn('co2.missing',

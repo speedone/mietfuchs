@@ -330,3 +330,77 @@ test('Gasrechnung bis zum Tausch, erst im Folgejahr gebucht: die Mieter tragen s
   // 2025: 1.000 € aus der Rechnung des Folgejahres; 2026 nur die Fernwärme.
   assert.deepEqual([tenants(2025), tenants(2026)], [100000, 240000])
 })
+
+test('W1 (Probe B3): Tausch A → A2 im Jahr und B im selben Gebäude wie A: eine Wohnung der Linie zählt einmal, 15.000 kg auf 300 m²', () => {
+  const ab = [{ unitId: 'a', heatedAreaM2: null }, { unitId: 'b', heatedAreaM2: null }]
+  const r = computeSettlement(snap({
+    heatingPlants: [
+      anlage({ id: 'A', name: 'Gas alt', units: ab, endsOn: '2025-06-30' }),
+      anlage({ id: 'A2', name: 'Gas', units: ab, replacesPlantId: 'A' }),
+      anlage({ id: 'B', name: 'Haus C', units: [{ unitId: 'c', heatedAreaM2: null }], buildingWith: 'A' }),
+    ],
+    heatingPeriodRows: [],
+    costItems: [
+      position({ id: 'alt', amountCents: 150000, heatingPlantId: 'A', fuelDeliveryId: 'dA', participantUnitIds: ['a', 'b'] }),
+      position({ id: 'neu', amountCents: 100000, heatingPlantId: 'A2', fuelDeliveryId: 'dA2', participantUnitIds: ['a', 'b'] }),
+      position({ id: 'gc', amountCents: 100000, key: 'direct', directUnitId: 'c', heatingPlantId: 'B', fuelDeliveryId: 'dB' }),
+    ],
+    fuelDeliveries: [
+      lieferung({ id: 'dA', plantId: 'A', invoiceFrom: '2025-01-01', invoiceTo: '2025-06-30', emissionsKg: 6000, co2CostCents: 33000 }),
+      lieferung({ id: 'dA2', plantId: 'A2', invoiceFrom: '2025-07-01', invoiceTo: '2025-12-31', emissionsKg: 3000, co2CostCents: 16500 }),
+      lieferung({ id: 'dB', plantId: 'B', invoiceFrom: '2025-01-01', invoiceTo: '2025-12-31', emissionsKg: 6000, co2CostCents: 33000 }),
+    ],
+  }))
+  assert.deepEqual(r.heating?.map((h) => [h.plantId, h.co2?.kgPerM2, h.co2?.areaM2, h.co2?.landlordCents]), [['A', 50, 300, 26400], ['A2', 50, 300, 13200], ['B', 50, 300, 26400]])
+})
+
+test('K1b: Öl → Gas → Öl: die zweite Ölanlage nimmt keinen Schlüssel von der Gasanlage dazwischen', () => {
+  const P26 = jahr(2026)
+  const r = computeSettlement(snapshotFor(QUELLE({
+    heatingPlants: [
+      anlage({ id: 'o1', name: 'Öl alt', energy: 'oil', endsOn: '2025-12-31' }),
+      anlage({ id: 'g', name: 'Gas', replacesPlantId: 'o1', endsOn: '2026-06-30' }),
+      anlage({ id: 'o2', name: 'Öl neu', energy: 'oil', replacesPlantId: 'g' }),
+    ],
+    heatingPeriodRows: [{
+      plantId: 'o2', period: P26.key, dhwMethod: null, dhwUnmeasurable: null, stockUnit: 'l', openingQuantity: 1000, openingCostCents: 100000,
+      openingEmissionsKg: 2676, openingCo2Cents: 15000, openingInvoicedBefore2023: false, openingAlreadySettled: false, closingQuantity: 400, closingMeasuredOn: '2026-12-31',
+    }],
+    // Die Gasrechnung trägt nur Wohnung A (Direktzuordnung): ein anderer Schlüssel als der des Öls.
+    costItems: [position({ id: 'gas', period: P26.key, amountCents: 90000, key: 'direct', directUnitId: 'a', heatingPlantId: 'g', fuelDeliveryId: 'dg' })],
+    fuelDeliveries: [lieferung({ id: 'dg', plantId: 'g', invoiceFrom: '2026-01-01', invoiceTo: '2026-06-30', emissionsKg: 2000, co2CostCents: 11000 })],
+  }), 'objekt-1', P26))
+  const rows = r.statements.flatMap((st) => st.rows.map((row) => row.costItemId))
+  assert.ok(!rows.some((id) => id.startsWith('stock:o2:')), rows.join(', '))
+  assert.match(r.notices.map((n) => n.text).join(' | '), /Für den Verbrauch aus dem Vorrat gibt es keinen Schlüssel/)
+})
+
+test('Eine stillgelegte Anlage, die im Zeitraum nicht heizt, bekommt keinen Hinweis auf fehlende CO₂-Angaben', () => {
+  const P26 = jahr(2026)
+  const r = computeSettlement(snapshotFor(QUELLE({
+    heatingPlants: [anlage({ id: 'gasalt', name: 'Gas alt', endsOn: '2025-06-30' }), anlage({ id: 'fern', name: 'Fernwärme', energy: 'districtHeating', replacesPlantId: 'gasalt' })],
+    heatingPeriodRows: [],
+    costItems: [
+      position({ id: 'alt', period: P26.key, amountCents: 100000, heatingPlantId: 'gasalt', fuelDeliveryId: 'dalt' }),
+      position({ id: 'fw', period: P26.key, amountCents: 240000, heatingPlantId: 'fern', fuelDeliveryId: 'dfw' }),
+    ],
+    fuelDeliveries: [
+      lieferung({ id: 'dalt', plantId: 'gasalt', invoiceFrom: '2025-01-01', invoiceTo: '2025-06-30', emissionsKg: 900, co2CostCents: 5000 }),
+      lieferung({ id: 'dfw', plantId: 'fern', invoiceFrom: '2026-01-01', invoiceTo: '2026-12-31', emissionsKg: 3000, co2CostCents: 16500 }),
+    ],
+  }), 'objekt-1', P26))
+  const gasalt = r.notices.filter((n) => n.subject?.kind === 'heatingCosts' && n.subject.id === 'gasalt').map((n) => n.code)
+  assert.ok(!gasalt.includes('co2.missing'), gasalt.join(', '))
+})
+
+test('M1: Übernimmt die neue Ölanlage im selben Jahr den Restbestand nicht, nennt der Hinweis den Restbestand der alten Anlage zum Tag des Tauschs', () => {
+  const r = computeSettlement(snap({
+    heatingPlants: [OEL, anlage({ id: 'oel2', name: 'Neuer Kessel', energy: 'oil', replacesPlantId: 'oel' })],
+    // Ohne Endbestand der neuen Anlage geht ihre Bestandsrechnung nicht auf.
+    costItems: [position({ id: 'oelrechnung', description: 'Heizöl 15.03.2025', amountCents: 315000, heatingPlantId: 'oel', fuelDeliveryId: 'd-oel' })],
+    fuelDeliveries: [lieferung({ id: 'd-oel', plantId: 'oel', label: 'Heizöl 15.03.2025', deliveredAt: '2025-03-15', invoiceDate: '2025-03-15', quantity: 3000, quantityUnit: 'l', emissionsKg: 8028.9, co2CostCents: 52549 })],
+  }))
+  const t = textOf(r, 'fuel.stock-not-taken-over')
+  assert.match(t, /: Den Restbestand von „Ölkessel“ zum 30\.06\.2025 im Wert von 525,00 € übernimmt die neue Heizanlage nicht/)
+  assert.doesNotMatch(t, /Heizperiode 2025 im Wert/)
+})

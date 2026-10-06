@@ -1159,7 +1159,7 @@ im Rumpf `adjust` mit, damit nie ein halber Stand entsteht.
   erste der neuen abgeschlossen ist). Mit Ja beginnt die Kette der neuen Anlage mit der der alten
   (`stockChainsOf` mit `plants`), der Restbestand ist ihr Anfangsbestand, ein eigener wird mit einem Satz
   über die alte Anlage abgelehnt. Mit Nein bleibt der Restbestand wie bei anderem Brennstoff beim
-  Vermieter. In beiden Fällen kommt der Schlüssel der Überträge auch von den Positionen der Vorgängerin
+  Vermieter. Zurück von Nein auf Ja fragt die Oberfläche vorher, denn der eigene Anfangsbestand der neuen Anlage entfällt dann. Übernimmt sie den Restbestand im selben Zeitraum nicht, nennt `fuel.stock-not-taken-over` den Restbestand der alten Anlage zum letzten Betriebstag. In beiden Fällen kommt der Schlüssel der Überträge auch von den Positionen der Vorgängerin
   (`sameFuelLine`, `stockTemplateOfLine`; sonst ging der Anfangsbestand ohne eigene Position der neuen
   Anlage im Tauschjahr mit 0 € weiter, Nachprüfung K1). Eine stillgelegte Anlage rechnet in einem späteren Zeitraum mit, wenn
   eine Position dort mit ihrer Lieferung verknüpft ist (die Gasrechnung bis zum Tausch, im Folgejahr

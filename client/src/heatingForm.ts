@@ -104,7 +104,12 @@ export const TAKES_OVER_OPTIONS: { value: 'yes' | 'no'; label: string }[] = [
   { value: 'yes', label: 'Ja, der Restbestand ist der Anfangsbestand der neuen Heizanlage' },
   { value: 'no', label: 'Nein, der Restbestand bleibt bei Ihnen (etwa verkauft oder abgepumpt)' },
 ]
-export const TAKES_OVER_HINT = 'Mit „Nein“ tragen die Mieter den Restbestand nicht; er steht mit seinem Wert bei Ihrem Anteil, und Sie tragen bei der neuen Heizanlage einen eigenen Anfangsbestand ein, wenn sie mit neuem Brennstoff beginnt.'
+export const TAKES_OVER_HINT = 'Mit „Nein“ tragen die Mieter den Restbestand nicht; er steht mit seinem Wert bei Ihrem Anteil, und Sie tragen bei der neuen Heizanlage einen eigenen Anfangsbestand ein, wenn sie mit neuem Brennstoff beginnt. Stellen Sie später auf „Ja“ zurück, entfällt dieser eigene Anfangsbestand.'
+// Zurück von „Nein“ auf „Ja“ leert der Server den eigenen Anfangsbestand der neuen Anlage in ihrer ersten
+// Heizperiode (Nachprüfung von #238); die Oberfläche fragt vorher. `null`: keine Rückfrage nötig.
+export const TAKES_OVER_BACK = 'Der eigene Anfangsbestand der neuen Heizanlage in ihrer ersten Heizperiode wird dabei entfernt; ihr Anfangsbestand ist dann der Restbestand der bisherigen Heizanlage. Erfasste Lieferungen bleiben.'
+export const takesOverBack = (plant: Pick<HeatingPlant, 'takesOverStock'> | undefined, form: Pick<HeatingForm, 'takesOverStock'>): boolean =>
+  plant?.takesOverStock === false && form.takesOverStock === 'yes'
 
 // Die Auswahl der Anlage an Kosten, Zählern und Lieferungen: erst ab zwei Anlagen. Eine stillgelegte
 // Anlage (Kesseltausch) nennt ihren letzten Betriebstag.
