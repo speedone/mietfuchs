@@ -12,12 +12,14 @@
 
 import type { TermId } from './glossary.ts'
 // Rechtszahlen aus dem Rechtsregister (Heizung PR 1), in der Fassung von `LAW_AS_OF` wie im Lexikon.
-import { hkvConsumptionShare, hkvCutNotByConsumption } from './law/heizkostenv.ts'
+import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutNotByConsumption } from './law/heizkostenv.ts'
 import { germanDate, LAW_AS_OF, valueAt } from './law/register.ts'
 import { co2CutMissing, co2FirstPeriodStart } from './law/co2kostaufg.ts'
 
 const SHARE = valueAt(hkvConsumptionShare, LAW_AS_OF)
 const CUT = valueAt(hkvCutNotByConsumption, LAW_AS_OF)
+// Heizung PR 10: der Pflichtanteil nach § 7 Abs. 1 Satz 2 HeizkostenV, aus dem Register.
+const FORCED = valueAt(hkvConsumptionShareForced, LAW_AS_OF)
 // Heizung PR 6: die Kürzung bei fehlender CO₂-Aufteilung (§ 7 Abs. 4 CO2KostAufG) und der Beginn der
 // Aufteilung (§ 11 Abs. 2 Satz 1) aus dem Register.
 const CO2_CUT = valueAt(co2CutMissing, LAW_AS_OF)
@@ -90,7 +92,7 @@ const GUIDE_DATA = {
       { text: 'Lesen Sie Haupt- und Zwischenzähler am selben Tag ab, am besten zum 31.12. Deckt der Hauptzähler nicht das ganze Jahr ab, nimmt Mietfuchs ihn nicht als Grundlage und warnt.' },
     ],
     gaps: [
-      { text: 'Eine eigene Heizkostenabrechnung nach Grund- und Verbrauchskosten rechnet Mietfuchs noch nicht. Liegt eine Abrechnung eines Messdienstes vor, übernehmen Sie sie als Einzelbeträge (siehe die Anleitung zum Messdienst).', issue: 99 },
+      { text: 'Eine eigene Heizkostenabrechnung mit Heizkostenverteilern an den Heizkörpern rechnet Mietfuchs noch nicht; mit Wärme- und Warmwasserzählern siehe die Anleitung „Heizkosten selbst abrechnen“. Liegt eine Abrechnung eines Messdienstes vor, übernehmen Sie sie als Einzelbeträge (siehe die Anleitung zum Messdienst).', issue: 99 },
       { text: 'Abschreibung (AfA) und Schuldzinsen gehören nicht zu den Kostenpositionen; die Steuerübersicht rechnet und teilt sie nicht.' },
     ],
     terms: ['granny', 'ownShare', 'mixedUse', 'mainMeter', 'heatingCostOrdinance'],
@@ -125,7 +127,7 @@ const GUIDE_DATA = {
       { text: `Fallen für die Heizung CO₂-Kosten an, sind sie zwischen Ihnen und dem Mieter nach dem CO₂-Ausstoß des Gebäudes aufzuteilen. Die Heizkostenabrechnung muss den Anteil des Mieters, die Einstufung des Gebäudes und die Berechnungsgrundlagen ausweisen; fehlt das, darf der Mieter seinen Anteil an den Heizkosten um ${CO2_CUT} Prozent kürzen. Verteilen Sie die Heizkosten selbst nach einem Schlüssel, teilt Mietfuchs die CO₂-Kosten auf, wenn Sie die Rechnungen Ihres Versorgers auf der Seite Heizkosten als Lieferungen eintragen, bei Heizöl, Flüssiggas und Kohle dazu Anfangs- und Endbestand des Vorrats; rechnet ein Messdienst ab, übernehmen Sie seine Angaben dort.`, norm: '§ 5 Abs. 2, § 7 Abs. 3 und 4 CO2KostAufG' },
     ],
     gaps: [
-      { text: 'Eine eigene Heizkostenabrechnung mit Wärmemengenzählern nach Grund- und Verbrauchskosten.', issue: 99 },
+      { text: 'Eine eigene Heizkostenabrechnung mit Heizkostenverteilern; mit Wärme- und Warmwasserzählern siehe „Heizkosten selbst abrechnen“.', issue: 99 },
       { text: 'Die Differenz zwischen Hauptzähler und Wohnungszählern als eigener Posten, Eichfristen und geschätzte Ablesungen.', issue: 98 },
     ],
     terms: ['allocationKey', 'distributionBasis', 'billingUnit', 'participants', 'ownShare', 'heatingCostOrdinance'],
@@ -276,7 +278,7 @@ const GUIDE_DATA = {
     ],
     gaps: [
       { text: 'Die Abrechnung des Messdienstes per KI auslesen und den Mietverhältnissen zuordnen; heute tragen Sie die Beträge von Hand ein.', issue: 103 },
-      { text: 'Die Heizkosten ohne Messdienst selbst nach der Heizkostenverordnung abrechnen.', issue: 99 },
+      { text: 'Die Heizkosten ohne Messdienst mit Heizkostenverteilern selbst abrechnen; mit Wärme- und Warmwasserzählern siehe „Heizkosten selbst abrechnen“.', issue: 99 },
     ],
     terms: ['individualAmounts', 'heatingCostOrdinance', 'ownShare', 'labor35a', 'co2Deducted'],
   },
@@ -310,6 +312,37 @@ const GUIDE_DATA = {
       { text: 'Die Abrechnung des Messdienstes per KI auslesen.', issue: 103 },
     ],
     terms: ['co2Split', 'co2Stage', 'co2Deducted', 'co2Area'],
+  },
+  // Heizung PR 10 (#99, Entwurf 11.4): die eigene Heizkostenabrechnung. Beispiel nachgerechnet in guides.test.ts.
+  heatingSelf: {
+    title: 'Heizkosten selbst abrechnen',
+    applies: 'Ihr Haus hat eine Zentralheizung, und Sie lesen die Wärmezähler (und, wenn die Heizung auch das Warmwasser bereitet, die Warmwasserzähler) jeder Wohnung selbst ab, ohne Messdienst. Mietfuchs verteilt dann nach der Heizkostenverordnung in Grund- und Verbrauchskosten.',
+    steps: [
+      { page: 'stammdaten', text: 'Klicken Sie in der Karte „Heizung“ auf „Heizung einrichten“, wählen Sie die Energie und bei der Frage, wer abrechnet, „Ich selbst, mit Zählern oder Heizkostenverteilern“.' },
+      { page: 'stammdaten', text: 'Beantworten Sie danach die Fragen zu Warmwasser, Erfassung, Wärmeschutz und dem Anteil nach Verbrauch und klicken Sie auf „Umstellen“. Nennt Mietfuchs Heizpositionen, wählen Sie für jede Teil und Ziel. Später erreichen Sie die Fragen über „Selbst abrechnen“.' },
+      { page: 'zaehler', text: 'Tragen Sie die Stände der angelegten Zähler zu Beginn und Ende der Heizperiode ein, beim Mieterwechsel zum Auszugstag.' },
+      { page: 'kosten', text: 'Erfassen Sie Brennstoff, Betriebsstrom, Wartung und Zählermiete als Position „Heizung und Warmwasser“; der Schlüssel ist „nach Heizkostenverordnung“, dazu der Teil der Heizkosten unter „Weitere Angaben“ und das Ziel.' },
+      { page: 'heizkosten', text: 'Prüfen Sie auf der Seite Heizkosten die Ablesungen. Fehlt beim Mieterwechsel eine Zwischenablesung, antworten Sie mit „Nicht möglich“ oder „Nicht durchgeführt“. Das „Ableseergebnis“ drucken Sie für jede Wohnung aus.' },
+    ],
+    result: [
+      'Die Kosten jedes Topfs (Heizung, Warmwasser) gehen zum gewählten Anteil nach Verbrauch, der Rest nach Wohnfläche; bei verbundener Warmwasserbereitung teilt Mietfuchs die gemeinsamen Kosten nach der gemessenen Wärme am Warmwasserspeicher.',
+      'Beim Mieterwechsel trägt jeder seinen abgelesenen Verbrauch; die Grundkosten der Heizung teilen sich nach Gradtagen, die des Warmwassers nach Tagen.',
+      'Leerstand und Eigennutzung sind Nutzer wie Mieter; ihren Anteil tragen Sie. Die Abrechnung druckt den Block „Heizkostenabrechnung“ mit den Preisen je m², kWh und m³.',
+    ],
+    example: 'Zwei Wohnungen à 50 m², Fernwärme 3.000 €, kein zentrales Warmwasser, 70 % nach Verbrauch. Grundkosten 30 %: 900 €, je Wohnung 450 €. Verbrauchskosten 70 %: 2.100 € für 10.000 kWh. Wohnung A: 4.000 kWh, 840 €, zusammen 1.290 €. Wohnung B: 6.000 kWh, zusammen 1.710 €.',
+    caveats: [
+      { text: `Zwischen ${SHARE.min} und ${SHARE.max} Prozent der Kosten sind nach Verbrauch zu verteilen; bei Öl- oder Gasheizung in einem Haus mit Wärmeschutz unter dem Niveau von 1994 und überwiegend gedämmten Leitungen genau ${FORCED} Prozent der Heizkosten.`, norm: '§ 7 Abs. 1, § 8 Abs. 1 HeizkostenV' },
+      { text: 'Den Anteil ändern Sie nach der ersten Festlegung nur aus den dort genannten Gründen, durch Erklärung gegenüber den Mietern und nur für künftige Abrechnungszeiträume.', norm: '§ 6 Abs. 4 HeizkostenV' },
+      { text: 'Beim Mieterwechsel ist eine Zwischenablesung Pflicht. Wird sie nicht durchgeführt, rechnet Mietfuchs ersatzweise nach Gradtagen und Tagen, und der Mieter kann seinen Anteil kürzen; die Abrechnung nennt die Beträge.', norm: '§ 9b HeizkostenV' },
+      { text: 'Die Kosten der Zwischenablesung sind keine Betriebskosten; sie trägt der Vermieter, soweit im Mietvertrag nichts anderes vereinbart ist.', norm: 'BGH VIII ZR 19/07' },
+      { text: `Wird nicht nach Verbrauch verteilt, etwa weil Zählerstände fehlen, darf jeder Mieter seinen Anteil um ${CUT} Prozent kürzen.`, norm: '§ 12 Abs. 1 HeizkostenV' },
+      { text: 'Bei Zählern, die nicht aus der Ferne ablesbar sind, teilen Sie jedem Mieter das Ergebnis der Ablesung in der Regel innerhalb eines Monats mit.', norm: '§ 6 Abs. 1 HeizkostenV' },
+    ],
+    gaps: [
+      { text: 'Heizkostenverteiler an den Heizkörpern und die Werte eines Ablesedienstes, der Warmwasseranteil bei Heizöl, Flüssiggas, Pellets und Holz und die Angaben nach § 6a HeizkostenV kommen mit späteren Versionen.', issue: 99 },
+      { text: 'Fehlt ein Zählerstand zu Beginn oder Ende der Heizperiode, schätzt Mietfuchs ihn noch nicht (§ 9a HeizkostenV); bis dahin verteilt es die Anlage nicht.', issue: 99 },
+    ],
+    terms: ['heatingCostOrdinance', 'baseCosts', 'consumptionCosts', 'interimReading', 'heatMeter', 'hotWaterShare', 'degreeDays'],
   },
   tenantChange: {
     title: 'Mieterwechsel und Leerstand im Jahr',
@@ -414,7 +447,7 @@ const GUIDE_DATA = {
       { text: 'Brennstoff, der vor dem 01.01.2023 in Rechnung gestellt wurde, trägt keine CO₂-Kosten; seine kg zählen aber für die Einstufung. Holz und Pellets sind keine Brennstoffe im Sinne des Brennstoffemissionshandels; für sie gibt es keine CO₂-Kosten aufzuteilen.', norm: '§ 11 Abs. 2 Satz 2, § 2 Abs. 1 CO2KostAufG; Anlage 1 BEHG' },
     ],
     gaps: [
-      { text: 'Eine eigene Heizkostenabrechnung nach Grund- und Verbrauchskosten rechnet Mietfuchs noch nicht; auch der Vorrat dort kommt mit ihr.', issue: 99 },
+      { text: 'Den Warmwasseranteil bei Heizöl, Flüssiggas, Pellets und Holz rechnet Mietfuchs bei der eigenen Heizkostenabrechnung noch nicht; ohne zentrales Warmwasser rechnet sie auch den Vorrat, siehe „Heizkosten selbst abrechnen“.', issue: 99 },
     ],
     terms: ['fuelStock', 'fuelDelivery', 'co2Split'],
   },
