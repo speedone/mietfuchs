@@ -1,24 +1,25 @@
 // Jede Lieferung genau einmal verbraucht, auch mit Vorrat (Heizung PR 8, Entwurf 8.2, 12.3 Nr. 1 und 5;
-// Erweiterung der Invariante aus fuel-invariant.test.ts um Anfangs- und Endbestand).
+// Erweiterung der Invariante aus fuel-invariant.test.ts um Anfangs- und Endbestand, mit der Erweiterung
+// aus der Durchsicht von #237).
 //
 // Der Generator geht über die **echten Schreibwege** (db/fuel.ts, db/fuelStock.ts, repository.ts,
 // Abschluss wie in index.ts) und bildet keine Sperre nach: Was die Anwendung mit 400 oder 409 ablehnt,
-// wird übersprungen. Vorgänge: Lieferung samt Rechnung, Betrag einer Rechnung ändern (auch nach dem
-// Abschluss der Folgeperiode), Endbestand eintragen oder ändern, Peildatum ändern, abschließen, wieder
-// öffnen, in wechselnder Reihenfolge, auch die Folgeperiode vor ihrer Vorperiode.
+// wird übersprungen. Vorgänge: Lieferung samt Rechnung, Betrag einer Rechnung ändern, Verknüpfung
+// lösen, Menge einer Lieferung ändern, Endbestand eintragen oder ändern,
+// Peildatum ändern, abschließen, wieder öffnen, in wechselnder Reihenfolge, auch die Folgeperiode vor
+// ihrer Vorperiode und eine Folgeperiode ohne Vorrat.
 //
 // Geprüft wird über alle Heizperioden, abgeschlossene mit ihrem eingefrorenen Stand:
 //   (i)   je Abrechnung Σ Mieterzeilen + Σ Vermieterzeilen = Σ Positionen (durch den Aufbau);
 //   (ii)  je Abrechnung mit Bestandsrechnung und Übertrag: die Heizkosten aller Zeilen ohne die
 //         Gegenzeile sind Positionen + Anfangsbestand − Endbestand, also der Verbrauch;
-//   (iii) je Paar aufeinanderfolgender Heizperioden mit Bestandsrechnung, deren zweite den Anfangsbestand
-//         übernommen hat: Ihr Anfangsbestand ist der Endbestand der ersten, in Menge, Betrag, kg und
-//         CO₂-Kosten. Nur dann ist über die Heizperioden jede Lieferung genau einmal verbraucht:
-//         Σ Verbrauch = erster Anfangsbestand + Σ Lieferungen − letzter Endbestand.
-// Die Mutationsprobe (06.10.2026): Ohne die Regel, dass der übernommene Anfangsbestand einer
-// abgeschlossenen Folgeperiode der Endbestand ist (`nextFrozenOpening` in fuelStock.ts), wird (iii) rot,
-// unter den Startwerten 1 bis 40 bei 6, 14 und 30 (Betrag einer Rechnung geändert, nachdem die
-// Folgeperiode den Endbestand übernommen hatte). Mit INV_FROM/INV_TO ein Bereich, z. B. INV_TO=60.
+//   (iii) je Paar aufeinanderfolgender Heizperioden, deren zweite den Anfangsbestand übernommen hat:
+//         Ihr Anfangsbestand ist, was die erste weitergibt (`handover`), in Menge, Betrag, kg und
+//         CO₂-Kosten;
+//   (iv)  was eine Heizperiode „im Vorrat“ gutschreibt, bucht die nächste „aus dem Vorrat“ herein, außer
+//         der Verlust des Vermieters ist ausgewiesen (`fuel.stock-not-taken-over`).
+// Mutationsproben stehen im PR #237. Auf dem Stand vor der Durchsicht war diese Invariante bei den
+// Startwerten 1, 15, 19, 21, 28, 30, 31 und 33 rot. Mit INV_FROM/INV_TO ein Bereich, z. B. INV_TO=60.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
@@ -26,7 +27,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { computeSettlement } from '../src/calc.ts'
 import { heatingPeriodViews } from '../src/db/co2.ts'
-import { createDelivery, unfreezeFuelCarries } from '../src/db/fuel.ts'
+import { createDelivery, unfreezeFuelCarries, updateDelivery } from '../src/db/fuel.ts'
 import { saveStock } from '../src/db/fuelStock.ts'
 import { createHeatingPlant } from '../src/db/heating.ts'
 import { openDatabase } from '../src/db/open.ts'
@@ -52,7 +53,7 @@ const rejected = (err: unknown): boolean => {
 
 // Die Heizkosten aller Zeilen einer Abrechnung, auch einer eingefrorenen (JSON), ohne die Gegenzeile
 // des Vorrats; dazu die Summe aller Zeilen und die Bestandsrechnung der Anlage.
-function readSettlement(s: unknown): { all: number; heating: number; stock: HeatingStockStatement | null; codes: string[] } {
+function readSettlement(s: unknown): { all: number; heating: number; carryIn: number; carryOut: number; stock: HeatingStockStatement | null; codes: string[] } {
   const list = (o: unknown, key: string): unknown[] => {
     const v: unknown = o !== null && typeof o === 'object' ? Reflect.get(o, key) : undefined
     return Array.isArray(v) ? v : []
@@ -73,12 +74,13 @@ function readSettlement(s: unknown): { all: number; heating: number; stock: Heat
   const heatingList = list(s, 'heating')
   const stock: unknown = heatingList.length > 0 ? Reflect.get(Object(heatingList[0]), 'stock') : null
   const codes = list(s, 'notices').map((x) => str(x, 'code'))
-  return { all, heating, stock: stock !== null && typeof stock === 'object' ? (stock as HeatingStockStatement) : null, codes }
+  const carry = (suffix: string) => [...tenantRows, ...landlordRows].filter((r) => new RegExp(`^stock:[^:]+:[^:]+:${suffix}$`).test(str(r, 'costItemId'))).reduce<number>((a, r) => a + num(r, 'shareCents'), 0)
+  return { all, heating, carryIn: carry('in'), carryOut: carry('out'), stock: stock !== null && typeof stock === 'object' ? (stock as HeatingStockStatement) : null, codes }
 }
 
 const SEEDS: number[] = process.env.INV_FROM !== undefined || process.env.INV_TO !== undefined
   ? Array.from({ length: Math.max(0, Number(process.env.INV_TO ?? 12) - Number(process.env.INV_FROM ?? 1) + 1) }, (_, k) => Number(process.env.INV_FROM ?? 1) + k)
-  : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 30]
+  : Array.from({ length: 40 }, (_, k) => k + 1)
 const STEPS = Number(process.env.INV_STEPS ?? 40)
 const YEARS = [2023, 2024, 2025, 2026]
 
@@ -115,7 +117,7 @@ for (const seed of SEEDS) {
       const periodOf = (key: string) => periodOfKey(CALENDAR_RULES, periodKey(key)) ?? assert.fail(`kein Zeitraum ${key}`)
       let n = 0
       for (let step = 0; step < STEPS; step++) {
-        const op = pick(['deliver', 'deliver', 'amount', 'amount', 'closing', 'closing', 'measured', 'close', 'close', 'reopen'] as const)
+        const op = pick(['deliver', 'deliver', 'amount', 'amount', 'closing', 'closing', 'measured', 'close', 'close', 'reopen', 'unlink', 'quantity'] as const)
         const year = pick(YEARS) ?? 2023
         const key = `${year}-01`
         if (op === 'deliver') {
@@ -134,6 +136,15 @@ for (const seed of SEEDS) {
           if (!c) continue
           const amountCents = int(50000, 400000)
           await attempt(`amount ${c.id}=${amountCents}`, () => opened.write((db) => updateEntity(db, 'costItems', c.id, { amountCents })))
+        } else if (op === 'unlink') {
+          const c = pick((await opened.read((db) => readCostItems(db))).filter((x) => x.fuelDeliveryId))
+          if (!c) continue
+          await attempt(`unlink ${c.id}`, () => opened.write((db) => updateEntity(db, 'costItems', c.id, { fuelDeliveryId: null })))
+        } else if (op === 'quantity') {
+          const d = pick(await opened.read((db) => readFuelDeliveries(db)))
+          if (!d) continue
+          const quantity = int(100, 3000)
+          await attempt(`quantity ${d.id}=${quantity}`, () => opened.write((db) => updateDelivery(db, d.id, { quantity })))
         } else if (op === 'closing' || op === 'measured') {
           const [view] = await opened.read((db) => heatingPeriodViews(db, 'hp', String(year))) ?? []
           const before = view?.stock?.derived?.value.quantity ?? view?.stock?.row.openingQuantity ?? 0
@@ -176,6 +187,15 @@ for (const seed of SEEDS) {
         // die Abrechnung, dass sie nach Lieferung verteilt (`fuel.manual-by-delivery`).
         if (r.stock && !r.codes.includes('fuel.manual-by-delivery')) assert.equal(r.heating, r.positions + (r.stock.opening.costCents ?? 0) - (r.stock.closing.costCents ?? 0), `${fall}; (ii) ${r.key}`)
       }
+      // (iv) Was eine Heizperiode „im Vorrat“ gutschreibt, bucht die nächste „aus dem Vorrat“ herein, und umgekehrt.
+      for (let i = 1; i < read.length; i++) {
+        const a = read[i - 1]
+        const b = read[i]
+        if (!a || !b) continue
+        // Ausnahme: Der Verlust des Vermieters ist ausgewiesen (`fuel.stock-not-taken-over`).
+        if (a.codes.includes('fuel.stock-not-taken-over') || b.codes.includes('fuel.stock-not-taken-over')) continue
+        assert.equal(-a.carryOut + 0, b.carryIn + 0, `${fall}; (iv) ${a.key} gibt ${-a.carryOut} weiter, ${b.key} übernimmt ${b.carryIn}`)
+      }
       // (iii) Übergabe zwischen aufeinanderfolgenden Heizperioden
       for (let i = 1; i < read.length; i++) {
         const a = read[i - 1]
@@ -183,7 +203,7 @@ for (const seed of SEEDS) {
         if (!a?.stock || !b?.stock || b.stock.openingSource === 'own') continue
         assert.deepEqual(
           [b.stock.opening.quantity, b.stock.opening.costCents, b.stock.opening.emissionsKg, b.stock.opening.co2Cents],
-          [a.stock.closing.quantity, a.stock.closing.costCents, a.stock.closing.emissionsKg, a.stock.closing.co2Cents],
+          [(a.stock.handover ?? a.stock.closing).quantity, (a.stock.handover ?? a.stock.closing).costCents, (a.stock.handover ?? a.stock.closing).emissionsKg, (a.stock.handover ?? a.stock.closing).co2Cents],
           `${fall}; (iii) ${a.key} → ${b.key}`,
         )
       }

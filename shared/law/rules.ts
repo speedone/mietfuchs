@@ -155,8 +155,9 @@ export const RULES: readonly Rule[] = [
       'Umgelegt werden die Kosten der im Abrechnungszeitraum verbrauchten Brennstoffe, nicht der bezahlten Rechnungen. ' +
       'Reicht eine Rechnung des Versorgers über das Ende des Zeitraums hinaus, ist sie abzugrenzen; eine sachgerechte Schätzung ist dabei zulässig. ' +
       // Heizung PR 8 (#97, #99): Vorrat. Die Bewertung des Endbestands ist Praxis der Messdienste ([M] Minol).
-      'Bei Heizöl, Flüssiggas, Pellets, Holz und Kohle ergibt sich der Verbrauch aus Anfangsbestand + Lieferungen − Endbestand; ' +
-      'den Endbestand bewertet Mietfuchs wie die Messdienste zu den Preisen der jüngsten Lieferungen.',
+      'Bei Heizöl, Flüssiggas, Pellets, Holz und Kohle ergibt sich der Verbrauch aus Anfangsbestand + Lieferungen − Endbestand. ' +
+      'Die Bewertung des Endbestands regelt die HeizkostenV nicht; Mietfuchs rechnet, dass das Älteste zuerst verbraucht wird (Kinne/Schach/Bieber-Kinne, BGB § 556 Rn. 121), ' +
+      'und bewertet den Endbestand zu den Preisen der jüngsten Lieferungen. Eine Abrechnung nach Lieferungen ist nicht zulässig und lässt sich nicht durch die Kürzung nach § 12 Abs. 1 HeizkostenV ausgleichen.',
   },
 ]
 

@@ -22,7 +22,7 @@ import { calendarPeriod, calendarYearPeriod, parsePeriodKey, periodContaining, p
 import { hasOwnRhythm, heatingPeriodsEndingIn, plantRules, settledSeparately, settlementKeyOf, type PlantWay } from '../../shared/heatingPeriod.ts'
 import { isStockEnergy } from '../../shared/fuelStock.ts'
 import { dayAfter, germanDate } from '../../shared/law/register.ts'
-import { readFrozenStock, type StockPeriodInput } from './fuelStock.ts'
+import { isStockFuelItem, readFrozenStock, stockTemplateOf, type StockPeriodInput } from './fuelStock.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import type { Db } from './store.ts'
 
@@ -116,7 +116,7 @@ export type SnapshotHeatingPlant = Pick<HeatingPlant, 'id' | 'energy' | 'method'
 // und der Vorrat (Heizung PR 8). Die Felder des Vorrats sind optional, damit ein von Hand gebauter
 // Schnappschuss ohne Vorrat sie nicht nennen muss; fehlen sie, gibt es keinen.
 export type SnapshotHeatingPeriodRow = Pick<HeatingPeriodData, 'plantId' | 'period' | 'dhwMethod' | 'dhwUnmeasurable'>
-  & Partial<Pick<HeatingPeriodData, 'stockUnit' | 'openingQuantity' | 'openingCostCents' | 'openingEmissionsKg' | 'openingCo2Cents' | 'openingInvoicedBefore2023' | 'closingQuantity' | 'closingMeasuredOn'>>
+  & Partial<Pick<HeatingPeriodData, 'stockUnit' | 'openingQuantity' | 'openingCostCents' | 'openingEmissionsKg' | 'openingCo2Cents' | 'openingInvoicedBefore2023' | 'openingAlreadySettled' | 'closingQuantity' | 'closingMeasuredOn'>>
 
 export const wayOf = (p: SnapshotHeatingPlant): PlantWay => ({
   periodStartMonth: p.periodStartMonth ?? null, periodChanges: p.periodChanges ?? [], separateSpans: p.separateSpans ?? [],
@@ -327,7 +327,9 @@ function stockOf(heating: unknown, which: 'closing' | 'opening'): Record<string,
     const stock: unknown = Reflect.get(h, 'stock')
     if (typeof plantId !== 'string' || typeof period !== 'string' || stock === null || typeof stock !== 'object') continue
     if (which === 'opening' && Reflect.get(stock, 'openingSource') === 'own') continue
-    const value = readFrozenStock(Reflect.get(stock, which))
+    // Weitergegeben wird, was die Heizperiode weitergibt (`handover`, #237 C1/I1); ältere Stände kennen nur den Endbestand.
+    const handover: unknown = which === 'closing' ? Reflect.get(stock, 'handover') : undefined
+    const value = readFrozenStock(handover ?? Reflect.get(stock, which))
     if (value) out[`${plantId}:${period}`] = value
   }
   return Object.keys(out).length > 0 ? out : null
@@ -578,7 +580,7 @@ export function narrowToProperty<
 export type SnapshotStockChain = { plantId: string; period: PeriodKey; chain: StockPeriodInput[] }
 
 export type StockChainSource = {
-  costItems: readonly Pick<SnapshotCostItem, 'amountCents' | 'fuelDeliveryId'>[]
+  costItems: readonly Pick<SnapshotCostItem, 'amountCents' | 'fuelDeliveryId' | 'category' | 'heatingPlantId' | 'heatingPart' | 'key' | 'period'>[]
   closedSettlements: readonly (SnapshotClosedSettlement & { period: PeriodKey })[]
   closedHeatingSettlements?: readonly (SnapshotClosedSettlement & { plantId: string; period: PeriodKey })[]
   heatingPeriodRows?: readonly SnapshotHeatingPeriodRow[]
@@ -608,10 +610,16 @@ export function stockChainsOf(source: StockChainSource, plant: SnapshotHeatingPl
       ? source.closedHeatingSettlements?.find((c) => c.plantId === plant.id && c.period === p.key)
       : source.closedSettlements.find((c) => c.period === periodContaining(objectRules, p.to).key)
   const frozenOf = (p: BillingPeriod): StockValue | null => closedOf(p)?.stockClosings?.[`${plant.id}:${p.key}`] ?? null
+  const nextOf = (p: BillingPeriod): BillingPeriod => periodContaining(rules, dayAfter(p.to))
   const nextFrozenOf = (p: BillingPeriod): StockValue | null => {
-    const next = periodContaining(rules, dayAfter(p.to))
+    const next = nextOf(p)
     return closedOf(next)?.stockOpenings?.[`${plant.id}:${next.key}`] ?? null
   }
+  const itemsIn = (key: string) => source.costItems.filter((c) => c.period === key)
+  // Hat diese Heizperiode Brennstoff der Anlage abgerechnet, ohne Vorrat (C1)? Oder ist sie ohne Vorrat
+  // abgeschlossen? Dann ist der Anfangsbestand der Folgeperiode vermutlich schon umgelegt.
+  const settledWithoutStock = (p: BillingPeriod): boolean =>
+    itemsIn(p.key).some((c) => c.amountCents !== 0 && isStockFuelItem(c, plant.id, HEATING_CATEGORY)) || (closedOf(p) !== undefined && frozenOf(p) === null)
   const inputOf = (p: BillingPeriod): StockPeriodInput => {
     const row = rows.get(p.key)
     const measured = row?.closingMeasuredOn ?? null
@@ -623,8 +631,14 @@ export function stockChainsOf(source: StockChainSource, plant: SnapshotHeatingPl
       to: p.to,
       unit: row?.stockUnit ?? null,
       ownOpening: row && opening !== null
-        ? { quantity: opening, costCents: row.openingCostCents ?? null, emissionsKg: row.openingEmissionsKg ?? null, co2Cents: row.openingCo2Cents ?? null, invoicedBefore2023: row.openingInvoicedBefore2023 ?? null }
+        ? {
+          quantity: opening, costCents: row.openingCostCents ?? null, emissionsKg: row.openingEmissionsKg ?? null, co2Cents: row.openingCo2Cents ?? null,
+          invoicedBefore2023: row.openingInvoicedBefore2023 ?? null,
+          // Ohne Antwort gilt „schon umgelegt“, wenn die Vorperiode Brennstoff ohne Vorrat abgerechnet hat (C1).
+          alreadySettled: row.openingAlreadySettled ?? settledWithoutStock(previousPeriod(rules, p)),
+        }
         : null,
+      previousSettledFuel: settledWithoutStock(previousPeriod(rules, p)),
       closingQuantity: row?.closingQuantity ?? null,
       closingMeasuredOn: measured,
       deliveries: deliveries.flatMap((d) => {
@@ -643,6 +657,8 @@ export function stockChainsOf(source: StockChainSource, plant: SnapshotHeatingPl
         : [],
       frozenClosing: frozenOf(p),
       nextFrozenOpening: nextFrozenOf(p),
+      hasKey: stockTemplateOf(itemsIn(p.key), itemsIn(previousPeriod(rules, p).key), plant.id, HEATING_CATEGORY) !== null,
+      nextClosedWithoutStock: closedOf(nextOf(p)) !== undefined && nextFrozenOf(p) === null,
     }
   }
   return hs.map((h) => {

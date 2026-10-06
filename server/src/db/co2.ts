@@ -67,6 +67,7 @@ export async function heatingPeriodViews(db: Database, plantId: string, periodPa
   const views: HeatingPeriodView[] = []
   for (const h of hs) {
     const row = rows.find((r) => r.period === h.key)
+    const closed = await heatingPeriodClosed(db, ctx, h)
     views.push({
       plantId,
       period: h.key,
@@ -74,13 +75,13 @@ export async function heatingPeriodViews(db: Database, plantId: string, periodPa
       from: h.from,
       to: h.to,
       short: h.short,
-      closed: await heatingPeriodClosed(db, ctx, h),
+      closed,
       hotWater: { dhwMethod: row?.dhwMethod ?? null, dhwUnmeasurable: row?.dhwUnmeasurable ?? null },
       co2: statements.find((s) => s.period === h.key) ?? null,
       items: items
         .filter((c) => c.period === h.key)
         .map((c) => ({ id: c.id, description: c.description, amountCents: c.amountCents, key: c.key, tenancyAmounts: c.tenancyAmounts, selfAmounts: c.selfAmounts, fuelDeliveryId: c.fuelDeliveryId })),
-      stock: stockData ? stockViewFor(stockData, ctx, h) : null,
+      stock: stockData ? stockViewFor(stockData, ctx, h, closed) : null,
     })
   }
   return views

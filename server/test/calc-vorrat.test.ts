@@ -72,6 +72,8 @@ test('Messdienst ohne Aufteilung, Heizöl mit Vorrat (Entwurf 8.2, 7.6): E 15.25
   assert.ok(r.legalBasis.values?.some((v) => v.id === 'co2.costs-before'), 'der Stichtag des § 11 Abs. 2 Satz 2 friert mit ein')
   // Altbestand mit Rechnung 2022 hebt die Stufe ohne CO₂-Kosten (D-H6).
   assert.match(textOf(r, 'fuel.before-2023'), /5\.352,6 kg CO₂ des verbrauchten Brennstoffs stammen aus Brennstoff, der vor dem 01\.01\.2023 in Rechnung gestellt wurde/)
+  // Durchsicht von #237, Recht M2: Die kg zählen nach § 7 Abs. 1 Satz 1, § 5 Abs. 1; § 11 Abs. 2 Satz 2 nimmt nur die Kosten aus.
+  assert.match(textOf(r, 'fuel.before-2023'), /Diese kg zählen für die Einstufung des Gebäudes, denn sie sind im Abrechnungszeitraum ausgestoßen \(§ 7 Abs\. 1 Satz 1, § 5 Abs\. 1 CO2KostAufG\); CO₂-Kosten trägt dieser Brennstoff nicht \(§ 11 Abs\. 2 Satz 2 CO2KostAufG\)/)
 })
 
 test('Messdienst ohne Aufteilung: Vorrat fehlt → fuel.stock-missing mit 3 % je Mieter statt co2.service-unsplit; geht nicht auf → fuel.stock-invalid', () => {
@@ -156,7 +158,14 @@ test('Ohne Bestand: nach Lieferung wie bisher, fuel.manual-by-delivery nennt bei
   const n = ohne.notices.find((x) => x.code === 'fuel.manual-by-delivery') ?? assert.fail(codes(ohne).join(', '))
   assert.equal(n.level, 'warning')
   assert.match(n.text, /fehlt: der Endbestand\. Mietfuchs verteilt die Brennstoffrechnungen deshalb, wie sie sind, nach ihrem Schlüssel\./)
-  assert.match(n.text, /eine Abrechnung nach Lieferungen ist angreifbar \(BGH VIII ZR 156\/11\)/)
+  // Durchsicht von #237, Recht I1: nicht „angreifbar“, sondern unzulässig, und durch die Kürzung nicht zu heilen.
+  assert.match(n.text, /Kosten der verbrauchten Brennstoffe und ihrer Lieferung \(§ 7 Abs\. 2 HeizkostenV\)/)
+  assert.match(n.text, /nach BGH VIII ZR 156\/11 nicht zulässig; die Abrechnung ist insoweit falsch, und das lässt sich nicht durch eine Kürzung um 15 % ausgleichen/)
+  assert.doesNotMatch(n.text, /angreifbar/)
+  // Im selbstbewohnten Zweifamilienhaus gilt die HeizkostenV nicht (§ 2); dort § 2 Nr. 4a BetrKV, ohne Kürzung.
+  const zfh = textOf(computeSettlement(snap({ units: [unit('a'), unit('c', { participates: false, selfUsed: true, selfPersons: 1 })], tenancies: [tenancy('ta', 'a')], costItems: RECHNUNGEN }, oel, [VORRAT({ closingQuantity: null })])), 'fuel.manual-by-delivery')
+  assert.match(zfh, /\(§ 2 Nr\. 4a BetrKV\)/)
+  assert.doesNotMatch(zfh, /Kürzung/)
   assert.match(n.text, /Auch die CO₂-Einstufung beruht dann auf den gelieferten statt den verbrauchten kg \(§ 5 Abs\. 1 CO2KostAufG\)/)
   assert.equal(heatingCostsOf(ohne), 565000)
   assert.ok(!ohne.statements.some((st) => st.rows.some((row) => row.kind === 'fuelCarry')))
@@ -223,4 +232,15 @@ test('Invarianten (Entwurf 12.3 Nr. 1, 2, 10): Summe über die Gegenzeile, je Ze
     assert.ok(!tax.expenses.items.some((x) => x.costItemId.startsWith('stock:')), fall)
     assert.deepEqual(tax.expenses.items.map((x) => x.costItemId).filter((id) => id.startsWith('r-')).sort(), items.map((c) => c.id).sort(), fall)
   }
+})
+
+test('Durchsicht von #237, M3: Die Kürzung nach § 12 Abs. 1 HeizkostenV rechnet auf den Heizkostenanteil samt Übertrag aus dem Vorrat', () => {
+  const r = computeSettlement(snap({ ...drei, costItems: RECHNUNGEN }, oel, [VORRAT()]))
+  // Die Überträge folgen dem Schlüssel von r1 (größte Brennstoffposition) und stehen bei deren Hinweis:
+  // ta trägt aus r1 1.050,00 € und aus dem Übertrag 633,34 € − 600,00 €, zusammen 1.083,34 €; 15 % davon
+  // sind 162,50 € (ohne Übertrag 157,50 €).
+  const r1 = r.notices.find((n) => n.code === 'heating.not-by-consumption' && n.text.startsWith('„r1“'))?.text ?? assert.fail(codes(r).join(', '))
+  assert.match(r1, /ta \(a\) 162,50 €/)
+  const summe = ['ta', 'tb', 'tc'].map((t) => r.statements.find((st) => st.tenancyId === t)?.rows.filter((x) => x.category === HEATING_CATEGORY && x.kind !== 'co2Relief').reduce((a, x) => a + x.shareCents, 0) ?? 0)
+  assert.equal(summe.reduce((a, c) => a + c, 0), 575000)
 })

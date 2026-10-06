@@ -6,13 +6,17 @@
 // verbrauchten Brennstoffs. Beides ergibt die Bestandsrechnung: Anfangsbestand + Lieferungen −
 // Endbestand. Die Kosten einer Lieferung sind ihr ganzer Rechnungsbetrag samt Lieferkosten.
 //
-// **Bewertung** ([M] Minol, Restbewertung): „Der zuerst gelieferte Brennstoff wird als erstes
-// verbraucht“. Der Endbestand besteht also aus den jüngsten Teilen und wird zu deren Preisen, kg und
+// **Bewertung** — eine Bewertungsregel, denn die HeizkostenV regelt die Bewertung des Restbestands
+// nicht: „Bei einem Brennstoffrest am Ende der Abrechnungsperiode ist, wenn im Öltank mehrere
+// Liefermengen miteinander vermischt sind, rechnerisch davon auszugehen, dass als erste Menge das älteste
+// Öl verbraucht wurde“ (Kinne/Schach/Bieber-Kinne, BGB § 556 Rn. 121, zitiert nach Haufe, FAQ
+// Heizölverbuchung, gelesen am 06.10.2026); ebenso [M] Minol, Restbewertung: „Der zuerst gelieferte
+// Brennstoff wird als erstes verbraucht“. Der Endbestand besteht also aus den jüngsten Teilen und wird zu deren Preisen, kg und
 // CO₂-Kosten bewertet. Jeder Teil wird für sich gerundet, Beträge auf den Cent, kg auf das Hundertstel
 // (Abweichung 1 des Plans: Die Zahlen des Entwurfs haben zwei Nachkommastellen). Minol beruft sich auf
 // BGH, 23.11.1981, VIII ZR 298/80 (NJW 1982, 573); gelesen am 06.10.2026: Die Entscheidung betrifft die
 // Mindestangaben einer Betriebskostenabrechnung und sagt zur Bewertung eines Vorrats nichts. Die Regel
-// stützt sich deshalb allein auf die Praxis der Messdienste.
+// stützt sich deshalb auf die Kommentarliteratur und die Praxis der Messdienste.
 //
 // **Die Kette** (Entwurf 8.2 „Der Anfangsbestand ist vorbelegt aus dem bewerteten Endbestand von
 // H−1. Ist H−1 abgeschlossen, gilt der eingefrorene Wert.“): Eingetragen wird ein Anfangsbestand nur
@@ -46,8 +50,9 @@ export type StockDeliveryInput = {
   co2Cents: number | null
 }
 
-// Der eingetragene Anfangsbestand (Spalten `opening_*`).
-export type StockOpeningInput = { quantity: number; costCents: number | null; emissionsKg: number | null; co2Cents: number | null; invoicedBefore2023: boolean | null }
+// Der eingetragene Anfangsbestand (Spalten `opening_*`). `alreadySettled`: schon mit einer früheren
+// Abrechnung umgelegt (nach Lieferung); dann zählt er mit 0 € und ohne CO₂-Kosten, die kg zählen.
+export type StockOpeningInput = { quantity: number; costCents: number | null; emissionsKg: number | null; co2Cents: number | null; invoicedBefore2023: boolean | null; alreadySettled?: boolean }
 
 // Eine Heizperiode der Kette; snapshot.ts baut sie (`stockChainsOf`).
 export type StockPeriodInput = {
@@ -68,6 +73,15 @@ export type StockPeriodInput = {
   // Der eingefrorene Anfangsbestand der abgeschlossenen Folgeperiode, wenn sie ihn von hier übernommen
   // hat. Dann ist er der Endbestand dieser Heizperiode (G-A4). Fehlt das Feld, gibt es keinen.
   nextFrozenOpening?: StockValue | null
+  // Gibt es bei freien Schlüsseln eine Position, mit deren Schlüssel die Überträge verteilt werden
+  // (`stockTemplateOf`)? Ohne sie bucht die Heizperiode keinen Übertrag, und ihr Endbestand geht mit
+  // 0 € weiter (Befund I1). Fehlt das Feld, gibt es eine.
+  hasKey?: boolean
+  // Die Folgeperiode ist abgeschlossen, ohne einen Anfangsbestand von hier übernommen zu haben (I2).
+  nextClosedWithoutStock?: boolean
+  // Die Vorperiode hat Brennstoff der Anlage ohne Vorrat abgerechnet oder ist ohne Vorrat abgeschlossen
+  // (C1): Die Karte fragt dann, ob der Anfangsbestand schon umgelegt wurde.
+  previousSettledFuel?: boolean
 }
 
 export type StockProblem =
@@ -90,6 +104,11 @@ export type StockOptions = {
 const EPS = 1e-9
 const KG_PER_STEP = 100
 const DAY_MS = 86400000
+
+// Derselbe Bestand mit 0 € und ohne CO₂-Kosten: Er ist schon bezahlt, seine kg zählen weiter.
+export function zeroValued(v: StockValue): StockValue {
+  return valueOf(v.layers.map((l) => ({ ...l, costCents: 0, co2Cents: 0 })))
+}
 
 export const roundKg = (kg: number): number => Math.round(kg * KG_PER_STEP + EPS) / KG_PER_STEP
 const roundCents = (cents: number): number => Math.round(cents + EPS)
@@ -138,6 +157,11 @@ export function closingOf(layers: readonly StockLayer[], quantity: number): Stoc
 
 // Der eingetragene Anfangsbestand als bewerteter Bestand, oder was dafür fehlt.
 function openingValue(o: StockOpeningInput, opts: StockOptions): StockValue | string[] {
+  // Schon umgelegt (C1): Wert und CO₂-Kosten sind bezahlt, gefragt wird nur nach den kg.
+  if (o.alreadySettled) {
+    if (opts.needCo2 && o.emissionsKg === null) return ['der CO₂-Ausstoß des Anfangsbestands in kg']
+    return valueOf([{ label: 'Anfangsbestand (schon umgelegt)', date: null, quantity: o.quantity, costCents: 0, emissionsKg: o.emissionsKg ?? 0, co2Cents: 0, co2Counted: false }])
+  }
   const missing: string[] = []
   if (opts.needCost && o.costCents === null) missing.push('der Wert des Anfangsbestands')
   if (opts.needCo2 && o.emissionsKg === null) missing.push('der CO₂-Ausstoß des Anfangsbestands in kg')
@@ -181,8 +205,15 @@ function balance(p: StockPeriodInput, unit: StockUnit, closingQuantity: number, 
   // Hat die abgeschlossene Folgeperiode diesen Endbestand übernommen, gilt er, wie sie ihn eingefroren hat.
   const closing = frozenNext ?? valueOf(closingOf(all, closingQuantity))
   const inCost = sumCost(all)
-  const oldIn = sumKg(all.filter((l) => !l.co2Counted))
-  const oldOut = sumKg(closing.layers.filter((l) => !l.co2Counted))
+  // Was als Altbestand ohne CO₂-Kosten zählt: Brennstoff mit Rechnung vor 2023 (§ 11 Abs. 2 Satz 2).
+  // Ein schon umgelegter Anfangsbestand trägt ebenfalls keine CO₂-Kosten, ist aber kein Altbestand.
+  const old = (l: StockLayer) => !l.co2Counted && l.label !== 'Anfangsbestand (schon umgelegt)'
+  const oldIn = sumKg(all.filter(old))
+  const oldOut = sumKg(closing.layers.filter(old))
+  // Bucht diese Heizperiode keinen Übertrag (freie Schlüssel ohne Schlüssel), haben ihre Mieter den
+  // Endbestand schon bezahlt; er geht mit 0 € und ohne CO₂-Kosten weiter (I1). Hat die abgeschlossene
+  // Folgeperiode ihn übernommen, gilt dagegen, was sie eingefroren hat.
+  const handover = !frozenNext && opts.needCost && p.hasKey === false ? zeroValued(closing) : closing
   return {
     ok: true,
     balance: {
@@ -191,6 +222,7 @@ function balance(p: StockPeriodInput, unit: StockUnit, closingQuantity: number, 
       deliveries,
       closing,
       ...(frozenNext ? { closingFrozen: true } : {}),
+      handover,
       closingMeasuredOn: p.closingMeasuredOn,
       consumed: {
         quantity: total - closing.quantity,
@@ -240,8 +272,9 @@ export function stockOf(chain: readonly StockPeriodInput[], opts: StockOptions):
     }
     const r = balance(p, p.unit, p.closingQuantity ?? 0, open, opts)
     if (!r.ok) return { ok: false, problem: { kind: 'invalid', period: p.label, reasons: r.reasons } }
-    if (i === last) return { ok: true, statement: { ...r.balance, openingSource: i === 0 ? 'own' : source } }
-    opening = r.balance.closing
+    const settled = p.ownOpening?.alreadySettled && opening === null ? { openingSettledCents: p.ownOpening.costCents } : {}
+    if (i === last) return { ok: true, statement: { ...r.balance, ...settled, openingSource: i === 0 || source === 'own' ? 'own' : source } }
+    opening = r.balance.handover ?? r.balance.closing
     source = 'previous'
     previousUnit = p.unit
   }
@@ -337,4 +370,22 @@ export function stockTouched(chain: readonly StockPeriodInput[]): boolean {
   const last = chain.at(-1)
   if (!last) return false
   return chain.length > 1 || last.unit !== null || last.ownOpening !== null || last.closingQuantity !== null || last.deliveries.length > 0
+}
+
+// ---------- Der Schlüssel der Überträge (Festlegung 5 des Plans) ----------
+
+// Was als Brennstoffposition einer Anlage zählt: Kostenart Heizung, an der Anlage, als Brennstoff
+// gekennzeichnet oder mit einer Lieferung verknüpft, und verteilt nach einem Schlüssel; Einzelbeträge
+// und „laut Gemeinschaftsabrechnung“ nennen feste Beträge und taugen nicht.
+export type StockKeyItem = { category: string; heatingPlantId?: string | null; heatingPart?: string | null; fuelDeliveryId?: string | null; key: string; amountCents: number; period: string }
+const KEYED: readonly string[] = ['area', 'persons', 'units', 'meter', 'direct', 'custom']
+export const isStockFuelItem = (c: StockKeyItem, plantId: string, heatingCategory: string): boolean =>
+  c.category === heatingCategory && c.heatingPlantId === plantId && (c.heatingPart === 'fuel' || (c.fuelDeliveryId ?? null) !== null)
+
+// Die Position, deren Schlüssel die Überträge folgen: die Brennstoffposition dieser Heizperiode mit dem
+// größten Betrag, sonst die jüngste der Vorperiode. Schnappschuss und Abrechnung fragen dieselbe Regel.
+export function stockTemplateOf<T extends StockKeyItem>(current: readonly T[], previous: readonly T[], plantId: string, heatingCategory: string): T | null {
+  const ok = (c: T) => isStockFuelItem(c, plantId, heatingCategory) && KEYED.includes(c.key)
+  const largest = current.filter(ok).reduce<T | null>((a, c) => (a === null || c.amountCents > a.amountCents ? c : a), null)
+  return largest ?? previous.filter(ok).at(-1) ?? null
 }

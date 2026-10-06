@@ -462,6 +462,9 @@ export const heatingPeriods = sqliteTable(
     openingEmissionsKg: real('opening_emissions_kg'),
     openingCo2Cents: integer('opening_co2_cents'),
     openingInvoicedBefore2023: integer('opening_invoiced_before_2023', { mode: 'boolean' }),
+    // Wurde der Anfangsbestand schon mit einer früheren Abrechnung umgelegt (nach Lieferung, vor dem
+    // ersten Vorrat)? Dann zählt er mit 0 € (Befund C1 der Durchsicht von #237).
+    openingAlreadySettled: integer('opening_already_settled', { mode: 'boolean' }),
     closingQuantity: real('closing_quantity'),
     closingMeasuredOn: text('closing_measured_on'),
   },

@@ -15,13 +15,13 @@ import { isStockEnergy } from '../../../shared/fuelStock.ts'
 import { co2CostsBefore, co2CostsCountedFrom, co2CostsExcludedUntil } from '../../../shared/law/co2kostaufg.ts'
 import { dayAfter, valueAt } from '../../../shared/law/register.ts'
 import { periodContaining, periodLabel } from '../../../shared/period.ts'
-import type { BillingPeriod, HeatingPlant, StockRow, StockView } from '../../../shared/types.ts'
+import type { BillingPeriod, HeatingPlant, HeatingStockStatement, StockRow, StockView } from '../../../shared/types.ts'
 import { CO2_FUELS } from '../co2.ts'
-import { problemText, stockOf, type StockOptions, type StockPeriodInput } from '../fuelStock.ts'
+import { problemText, readFrozenStock, stockOf, type StockOptions, type StockPeriodInput } from '../fuelStock.ts'
 import { stockChainsOf } from '../snapshot.ts'
 import type { Database } from './client.ts'
 import { closedText, dropIfEmpty, ensureHeatingPeriod, heatingPeriodClosed, heatingPeriodOf, plantContext, type PlantContext } from './heatingPeriodContext.ts'
-import { readStock, type Stock, type StoredClosedSettlement } from './read.ts'
+import { readStock, type Stock, type StoredClosedHeatingSettlement, type StoredClosedSettlement } from './read.ts'
 import { has, HeatingError, ISO_DATE, raw } from './repository.ts'
 import { heatingPeriods, STOCK_UNITS } from './schema.ts'
 
@@ -33,13 +33,13 @@ const UNIT = 'Bitte wählen Sie die Einheit des Vorrats: Liter, Kilogramm oder S
 const DATE = 'Der Tag der Peilung ist kein Datum. Bitte wählen Sie ihn im Kalender oder lassen Sie das Feld leer.'
 const derivedText = (label: string) => `Der Anfangsbestand ergibt sich aus dem Endbestand der Heizperiode ${label}. Ändern Sie ihn dort; hier ist er nicht einzutragen.`
 const lockedText = (label: string) =>
-  `Die Heizperiode ${label} ist abgeschlossen und hat diesen Endbestand als Anfangsbestand übernommen; Einheit und Endbestand bleiben deshalb, wie sie sind. Öffnen Sie die Abrechnung ${label} wieder, um sie zu ändern.`
+  `Die Heizperiode ${label} ist abgeschlossen; sie rechnet mit diesem Endbestand. Einheit und Endbestand bleiben deshalb, wie sie sind. Öffnen Sie die Abrechnung ${label} wieder, um sie zu ändern.`
 
 const EMPTY: StockRow = {
   stockUnit: null, openingQuantity: null, openingCostCents: null, openingEmissionsKg: null, openingCo2Cents: null,
-  openingInvoicedBefore2023: null, closingQuantity: null, closingMeasuredOn: null,
+  openingInvoicedBefore2023: null, openingAlreadySettled: null, closingQuantity: null, closingMeasuredOn: null,
 }
-const OPENING_KEYS = ['openingQuantity', 'openingCostCents', 'openingEmissionsKg', 'openingCo2Cents', 'openingInvoicedBefore2023'] as const
+const OPENING_KEYS = ['openingQuantity', 'openingCostCents', 'openingEmissionsKg', 'openingCo2Cents', 'openingInvoicedBefore2023', 'openingAlreadySettled'] as const
 
 // Was die Bestandsrechnung einer Anlage verlangt (fuelStock.ts): Beträge, wenn nach Verbrauch verteilt
 // wird (freie Schlüssel), kg und CO₂-Kosten bei Heizöl, Flüssiggas und Kohle. Das Register beantwortet
@@ -56,7 +56,8 @@ export function stockOptionsFor(plant: Pick<HeatingPlant, 'energy' | 'method'>):
 
 const rowOf = (r: StockRow | undefined): StockRow => (r ? {
   stockUnit: r.stockUnit, openingQuantity: r.openingQuantity, openingCostCents: r.openingCostCents, openingEmissionsKg: r.openingEmissionsKg,
-  openingCo2Cents: r.openingCo2Cents, openingInvoicedBefore2023: r.openingInvoicedBefore2023, closingQuantity: r.closingQuantity, closingMeasuredOn: r.closingMeasuredOn,
+  openingCo2Cents: r.openingCo2Cents, openingInvoicedBefore2023: r.openingInvoicedBefore2023, openingAlreadySettled: r.openingAlreadySettled,
+  closingQuantity: r.closingQuantity, closingMeasuredOn: r.closingMeasuredOn,
 } : { ...EMPTY })
 
 // Die Kette dieser Heizperiode, wie die Abrechnung sie bekommt (snapshot.ts). Abgeschlossene
@@ -73,16 +74,35 @@ function chainOf(stock: Stock, ctx: PlantContext, h: BillingPeriod): StockPeriod
   return entry?.chain ?? []
 }
 
-// Die Folgeperiode, wenn sie abgeschlossen ist und den Endbestand dieser Heizperiode übernommen hat.
+// Die Folgeperiode, wenn sie abgeschlossen ist, mit oder ohne Vorrat (Befunde C2, I2 der Durchsicht von
+// #237): Dann bleiben Einheit und Endbestand, wie sie sind.
 function lockedBy(chain: readonly StockPeriodInput[], ctx: PlantContext, h: BillingPeriod): StockView['closingLockedBy'] {
-  if (!chain.at(-1)?.nextFrozenOpening) return null
+  const last = chain.at(-1)
+  if (!last?.nextFrozenOpening && !last?.nextClosedWithoutStock) return null
   const next = periodContaining(ctx.plantRules, dayAfter(h.to))
   return { period: next.key, label: periodLabel(next) }
 }
 
 // Die Ansicht einer Heizperiode: eingetragen, Anfangsbestand aus der Vorperiode, Bestandsrechnung, was
 // fehlt.
-export function stockViewFor(stock: Stock, ctx: PlantContext, h: BillingPeriod): StockView {
+// Die eingefrorene Bestandsrechnung einer abgeschlossenen Heizperiode aus ihrem Stand (M1).
+function frozenStatementOf(stock: Stock, ctx: PlantContext, h: BillingPeriod): HeatingStockStatement | null {
+  const closed: StoredClosedSettlement[] = stock.closedSettlements
+  const heatingClosed: StoredClosedHeatingSettlement[] = stock.closedHeatingSettlements
+  const stands = [...closed.filter((c) => c.propertyId === ctx.plant.propertyId).map((c) => c.settlement), ...heatingClosed.filter((c) => c.plantId === ctx.plant.id).map((c) => c.settlement)]
+  for (const st of stands) {
+    const heating: unknown = st !== null && typeof st === 'object' ? Reflect.get(st, 'heating') : undefined
+    if (!Array.isArray(heating)) continue
+    for (const x of heating) {
+      if (x === null || typeof x !== 'object' || Reflect.get(x, 'plantId') !== ctx.plant.id || Reflect.get(x, 'period') !== h.key) continue
+      const s: unknown = Reflect.get(x, 'stock')
+      if (s !== null && typeof s === 'object' && readFrozenStock(Reflect.get(s, 'closing'))) return s as HeatingStockStatement
+    }
+  }
+  return null
+}
+
+export function stockViewFor(stock: Stock, ctx: PlantContext, h: BillingPeriod, closed = false): StockView {
   const opts = stockOptionsFor(ctx.plant)
   const chain = chainOf(stock, ctx, h)
   const prev = chain.length > 1 ? chain[chain.length - 2] : undefined
@@ -97,7 +117,9 @@ export function stockViewFor(stock: Stock, ctx: PlantContext, h: BillingPeriod):
     row: rowOf(stock.heatingPeriodRows.find((r) => r.plantId === ctx.plant.id && r.period === h.key)),
     derived,
     closingLockedBy: lockedBy(chain, ctx, h),
+    askAlreadySettled: derived === null && (chain.at(-1)?.previousSettledFuel ?? false),
     statement: result.ok ? result.statement : null,
+    frozen: closed ? frozenStatementOf(stock, ctx, h) : null,
     problem: result.ok ? null : problemText(result.problem),
   }
 }
@@ -112,6 +134,12 @@ function numberField(body: unknown, key: keyof StockRow, current: number | null,
   if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) throw new HeatingError(400, cents ? CENTS : NUMBER)
   if (cents && !Number.isInteger(v)) throw new HeatingError(400, CENTS)
   return v
+}
+
+function booleanField(body: unknown, key: keyof StockRow, current: boolean | null): boolean | null {
+  if (!has(body, key)) return current
+  const v = raw(body, key)
+  return typeof v === 'boolean' ? v : null
 }
 
 function mergeStock(current: StockRow, body: unknown): StockRow {
@@ -129,6 +157,7 @@ function mergeStock(current: StockRow, body: unknown): StockRow {
     openingEmissionsKg: numberField(body, 'openingEmissionsKg', current.openingEmissionsKg, false),
     openingCo2Cents: numberField(body, 'openingCo2Cents', current.openingCo2Cents, true),
     openingInvoicedBefore2023: typeof before === 'boolean' ? before : null,
+    openingAlreadySettled: booleanField(body, 'openingAlreadySettled', current.openingAlreadySettled),
     closingQuantity: numberField(body, 'closingQuantity', current.closingQuantity, false),
     closingMeasuredOn,
   }

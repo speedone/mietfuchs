@@ -289,8 +289,9 @@ describe('Vorrat (Heizung PR 8, N8)', () => {
   it('erklärt den Abstand beim Eigenanteil in beide Richtungen', () => {
     const mit = (cents: number) => report({}, { expenses: { ...report({}).expenses, stockCarrySelfCents: cents } })
     const tail = 'Die Abrechnung rechnet nach Verbrauch, die Steuerübersicht nach Bezahltem.'
-    expect(stockCarryNote(mit(3333))).toBe(`${fmtEuro(3333)} Unterschied zum Eigenanteil der Abrechnung: Brennstoff aus dem Vorrat, steuerlich bereits 2024 oder früher abgeflossen. ${tail}`)
-    expect(stockCarryNote(mit(-500))).toBe(`${fmtEuro(500)} Unterschied zum Eigenanteil der Abrechnung: Brennstoff, der im Vorrat bleibt, steuerlich 2025 abgeflossen und erst später verbraucht. ${tail}`)
+    // Durchsicht von #237, M7: mit Richtung.
+    expect(stockCarryNote(mit(3333))).toBe(`Der Eigenanteil der Abrechnung ist um ${fmtEuro(3333)} höher als der private Teil hier: Brennstoff aus dem Vorrat, steuerlich bereits 2024 oder früher abgeflossen. ${tail}`)
+    expect(stockCarryNote(mit(-500))).toBe(`Der Eigenanteil der Abrechnung ist um ${fmtEuro(500)} niedriger als der private Teil hier: Brennstoff, der im Vorrat bleibt, steuerlich 2025 abgeflossen und erst später verbraucht. ${tail}`)
     expect(stockCarryNote(report({}))).toBeNull()
   })
 })

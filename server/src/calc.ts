@@ -58,7 +58,7 @@ import { CALENDAR_RULES, calendarYearPeriod, contextOf, formatDayRange, isCalend
 import { monthSpanText, plantRules, recommendedDeadline, requestMonth, sameSpan, separateOwner, servesUnit, settledSeparately } from '../../shared/heatingPeriod.ts'
 import { heatingSnapshotFor, snapshotFor, wayOf } from './snapshot.ts'
 import { plantFuel, rangeOf, type FuelCarry, type FuelResult } from './fuel.ts'
-import { fuelFromDeliveries, fuelFromStock, measuredOffset, problemText, stockOf, stockTouched, type FuelFigures, type StockPeriodInput, type StockResult } from './fuelStock.ts'
+import { fuelFromDeliveries, fuelFromStock, measuredOffset, problemText, stockOf, stockTemplateOf, stockTouched, valueOf as stockValueOf, type FuelFigures, type StockPeriodInput, type StockResult } from './fuelStock.ts'
 import { isStockEnergy, STOCK_FUEL_NAMES, STOCK_UNIT_TEXT } from '../../shared/fuelStock.ts'
 import { degreeDayPermille } from '../../shared/degreeDays.ts'
 import { annualFactors, type AnnualBasis } from './prepaymentSuggestion.ts'
@@ -297,6 +297,11 @@ const noticeKinds = {
   'fuel.before-2023': { level: 'hint', title: 'Altbestand mit Rechnung vor 2023', rule: 'co2-split', terms: ['fuelStock', 'co2Split'] },
   'fuel.stock-date-differs': { level: 'hint', title: 'Tank nicht am Ende der Heizperiode gepeilt', rule: 'heating-consumed-fuel', terms: ['fuelStock'] },
   'fuel.manual-by-delivery': { level: 'warning', title: 'Heizkosten nach Lieferung statt nach Verbrauch', rule: 'heating-consumed-fuel', terms: ['fuelStock', 'co2Stage'] },
+  // Durchsicht von #237: Bestand, den keine Abrechnung übernimmt (I2), schon umgelegter Anfangsbestand
+  // (C1), Brennstoffposition ohne Lieferung neben dem Vorrat (I2a).
+  'fuel.stock-not-taken-over': { level: 'warning', title: 'Endbestand wird nicht übernommen', rule: 'heating-consumed-fuel', terms: ['fuelStock'] },
+  'fuel.opening-settled': { level: 'hint', title: 'Anfangsbestand schon umgelegt', rule: 'heating-consumed-fuel', terms: ['fuelStock'] },
+  'fuel.stock-unlinked': { level: 'warning', title: 'Brennstoffposition ohne Lieferung', rule: 'heating-consumed-fuel', terms: ['fuelStock', 'fuelDelivery'] },
   'heating.dhw-not-metered': { level: 'warning', title: 'Warmwasser ohne Wärmezähler abgerechnet', rule: 'heating-dhw-split', terms: ['hotWaterShare', 'heatingCostOrdinance'] },
   'model.prepayment-unsettled': { level: 'warning', title: 'Vorauszahlung ohne Abrechnung', terms: ['prepayment', 'flatRate'] },
   'prepayment.arrears': { level: 'warning', title: 'Rückstand im Mietkonto', terms: ['prepayment'] },
@@ -2285,29 +2290,71 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // Der Schlüssel (Festlegung 5 des Plans): die Brennstoffposition dieser Heizperiode mit dem größten
   // Betrag, sonst die jüngste der Vorperiode; Einzelbeträge und „laut Gemeinschaftsabrechnung“ taugen
   // nicht, denn sie nennen feste Beträge. Ohne Schlüssel gilt „ohne Bestand“.
-  const FUEL_KEYS: readonly CostKey[] = ['area', 'persons', 'units', 'meter', 'direct', 'custom']
   const stockManualNotes: { plant: SnapshotHeatingPlant; text: string; invalid: boolean }[] = []
+  // Weitere Hinweise zum Vorrat je Anlage (Durchsicht von #237): Verlust beim Vermieter (`lost`), ein
+  // schon umgelegter Anfangsbestand (`settled`), Brennstoffpositionen ohne Lieferung (`unlinked`).
+  const stockNotes: { plant: SnapshotHeatingPlant; code: 'fuel.stock-not-taken-over' | 'fuel.opening-settled' | 'fuel.stock-unlinked'; text: string }[] = []
+  const stockUnlinked = new Map<string, SnapshotCostItem[]>()
+  const stockOpts = (plant: SnapshotHeatingPlant) => ({
+    needCost: plant.method === 'manual', needCo2: CO2_FUELS.includes(plant.energy), countedAt: stockCountedAt,
+    excludedUntil: co2CostsExcludedUntil(), countedFrom: co2CostsCountedFrom(),
+  })
   for (const [plantId, entry] of stockOfPlant) {
     if (entry.plant.method !== 'manual') continue
-    const isFuel = (c: SnapshotCostItem): boolean =>
-      c.category === HEATING_CATEGORY && c.heatingPlantId === plantId && (c.heatingPart === 'fuel' || (c.fuelDeliveryId ?? null) !== null) && FUEL_KEYS.includes(c.key)
     const mine = items.filter((c) => c.category === HEATING_CATEGORY && c.heatingPlantId === plantId)
+    const template = stockTemplateOf(items, snapshot.previousCostItems ?? [], plantId, HEATING_CATEGORY)
+    const name = STOCK_FUEL_NAMES[entry.plant.energy] ?? 'Brennstoff'
+    // Was die Vorperiode an diese weitergibt (eingefroren oder lebend), für den Hinweis auf einen
+    // Bestand, den diese Heizperiode nicht übernimmt (I2).
+    const prev = entry.chain.length > 1 ? entry.chain[entry.chain.length - 2] : undefined
+    const prevResult = prev && !prev.frozenClosing ? stockOf(entry.chain.slice(0, -1), stockOpts(entry.plant)) : null
+    const prevHandover = prev?.frozenClosing ?? (prevResult?.ok ? (prevResult.statement.handover ?? prevResult.statement.closing) : null)
+    const prevValue = prevHandover?.costCents ?? 0
+    const notTaken = (why: string) => {
+      if (prev && prevValue > 0) {
+        stockNotes.push({ plant: entry.plant, code: 'fuel.stock-not-taken-over', text: `Den Endbestand der Heizperiode ${prev.label} im Wert von ${fmtCents(prevValue)} übernimmt diese Heizperiode nicht, weil ${why}. Die Mieter der Heizperiode ${prev.label} haben ihn gutgeschrieben bekommen; bis er hier übernommen wird, tragen Sie ihn selbst.` })
+      }
+    }
+    // Brennstoffpositionen ohne Lieferung neben dem Vorrat (I2a): Die Bestandsrechnung kennt sie nicht.
+    const unlinked = mine.filter((c) => c.heatingPart === 'fuel' && !c.fuelDeliveryId && c.amountCents !== 0)
+    if (unlinked.length > 0 && stockTouched(entry.chain)) {
+      stockUnlinked.set(plantId, unlinked)
+      stockNotes.push({ plant: entry.plant, code: 'fuel.stock-unlinked', text: `${andList(unlinked.map((c) => `„${c.description}“`))} ${unlinked.length === 1 ? 'ist' : 'sind'} als Brennstoff gekennzeichnet, aber mit keiner Lieferung verknüpft. Die Bestandsrechnung kennt ${unlinked.length === 1 ? 'diese Rechnung' : 'diese Rechnungen'} nicht: Weder ${unlinked.length === 1 ? 'ihre Menge' : 'ihre Mengen'} noch ihr CO₂-Ausstoß zählen, und der Endbestand ist ohne sie bewertet. Verknüpfen Sie ${unlinked.length === 1 ? 'sie' : 'jede'} auf der Seite Heizkosten als Lieferung mit Lieferdatum und Menge.` })
+    }
     if (!entry.result.ok) {
       if (stockTouched(entry.chain) || mine.length > 0) {
         stockManualNotes.push({ plant: entry.plant, text: problemText(entry.result.problem), invalid: entry.result.problem.kind === 'invalid' })
       }
+      notTaken('die Bestandsrechnung hier fehlt oder nicht aufgeht')
+      // Hat die abgeschlossene Folgeperiode den Endbestand übernommen, wird er hier immer als „im
+      // Vorrat“ gutgeschrieben, auch wenn die Bestandsrechnung nicht aufgeht (C2): Sonst trügen ihn die
+      // Mieter zweimal, hier in den Rechnungen und dort als „aus dem Vorrat“.
+      const frozenNext = entry.last.nextFrozenOpening
+      const cents = frozenNext ? (stockValueOf(frozenNext.layers).costCents ?? 0) : 0
+      if (template && cents !== 0) {
+        const { labor35aCents: _labor, serviceFrom: _from, serviceTo: _to, ...rest } = template
+        const id = `stock:${plantId}:${period.key}:out`
+        fuelSynthetic.push({ ...rest, id, period: period.key, description: `${name} im Vorrat`, amountCents: -cents, heatingPlantId: plantId, heatingPart: 'fuel', fuelDeliveryId: null })
+        fuelCarryOf.set(id, { carry: null, step: { label: 'Im Vorrat', value: `Endbestand ${fmtCents(cents)}, wie ihn die abgeschlossene Folgeperiode übernommen hat`, term: 'fuelStock' }, itemId: template.id })
+        fuelCounterRows.push({
+          costItemId: `stock:${plantId}:${period.key}`, category: HEATING_CATEGORY, description: 'Gegenbuchung: Übertrag aus dem Brennstoffvorrat',
+          totalCents: cents, keyLabel: 'Bestandsrechnung', shareCents: cents, landlordParts: [{ reason: 'fuelCarry', cents }],
+        })
+      }
       continue
     }
-    const largest = items.filter(isFuel).reduce<SnapshotCostItem | null>((a, c) => (a === null || c.amountCents > a.amountCents ? c : a), null)
-    const template = largest ?? (snapshot.previousCostItems ?? []).filter(isFuel).at(-1) ?? null
+    if (entry.result.statement.openingSettledCents !== undefined) {
+      const v = entry.result.statement.openingSettledCents
+      stockNotes.push({ plant: entry.plant, code: 'fuel.opening-settled', text: `Der Anfangsbestand von ${fmtNum(entry.result.statement.opening.quantity)} ${STOCK_UNIT_TEXT[entry.result.statement.unit]}${v !== null && v > 0 ? ` (Wert laut Eintrag ${fmtCents(v)})` : ''} ist nach Ihrer Angabe schon mit einer früheren Abrechnung umgelegt worden. Er zählt hier deshalb mit 0 € und ohne CO₂-Kosten; seine kg zählen für die Einstufung des Gebäudes.` })
+    }
     if (!template) {
-      stockManualNotes.push({ plant: entry.plant, text: 'Für den Verbrauch aus dem Vorrat gibt es keinen Schlüssel: In dieser Heizperiode und der vorigen steht keine Brennstoffposition dieser Heizanlage.', invalid: false })
+      stockManualNotes.push({ plant: entry.plant, text: 'Für den Verbrauch aus dem Vorrat gibt es keinen Schlüssel: In dieser Heizperiode und der vorigen steht keine Brennstoffposition dieser Heizanlage, die nach einem Umlageschlüssel verteilt wird. Der Endbestand geht deshalb mit 0 € in die nächste Heizperiode, denn die Mieter haben ihn mit den Rechnungen schon bezahlt.', invalid: false })
+      notTaken('es hier keinen Schlüssel für den Übertrag gibt')
       continue
     }
     const st = entry.result.statement
     const opening = st.opening.costCents ?? 0
     const closing = st.closing.costCents ?? 0
-    const name = STOCK_FUEL_NAMES[entry.plant.energy] ?? 'Brennstoff'
     const q = (n: number): string => `${n.toLocaleString('de-DE', { maximumFractionDigits: 2 })} ${STOCK_UNIT_TEXT[st.unit]}`
     const { labor35aCents: _labor, serviceFrom: _from, serviceTo: _to, ...rest } = template
     const make = (suffix: 'in' | 'out', description: string, cents: number, step: CalcStep): void => {
@@ -2328,6 +2375,11 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         value: `Endbestand ${q(st.closing.quantity)}, ${fmtCents(closing)}, zu den Preisen der jüngsten Lieferungen bewertet${st.closingFrozen ? ', wie ihn die abgeschlossene Folgeperiode übernommen hat' : ''}`,
         term: 'fuelStock',
       })
+    }
+    // Die Folgeperiode ist ohne Vorrat abgeschlossen (I2): Den Endbestand, den diese Heizperiode
+    // gutschreibt, übernimmt keine Abrechnung.
+    if (entry.last.nextClosedWithoutStock && closing > 0) {
+      stockNotes.push({ plant: entry.plant, code: 'fuel.stock-not-taken-over', text: `Der Endbestand im Wert von ${fmtCents(closing)} wird von keiner Abrechnung übernommen: Die Folgeperiode ist ohne Vorrat abgeschlossen. Bis Sie ihn dort nachtragen, tragen Sie ihn selbst; öffnen Sie dafür die Abrechnung der Folgeperiode wieder und tragen Sie den Vorrat ein.` })
     }
     const net = opening - closing
     if (net !== 0) {
@@ -3072,6 +3124,20 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         })
       }
     }
+    // Die Überträge aus dem Vorrat (Heizung PR 8) gehören zu den Heizkosten, die der Mieter trägt: Die
+    // Kürzung nach § 12 Abs. 1 HeizkostenV wird auf seinen Anteil samt Übertrag gerechnet (Durchsicht von
+    // #237, M3); sie stehen bei der Position, deren Schlüssel sie folgen.
+    if (carry && item.id.startsWith('stock:') && item.category === HEATING_CATEGORY) {
+      const cutOf = heatingCuts.find((c) => c.item.id === carry.itemId)
+      if (cutOf) {
+        targets.forEach((x, i) => {
+          if (!booked[i] || !statements.has(x.t.id) || outsideHeating(x.t.unit) || shareOf(i) === 0) return
+          const row = cutOf.rows.find((r) => r.label === `${x.t.tenantName} (${x.t.unit.name})` && r.unitId === x.t.unitId)
+          if (row) row.share += shareOf(i)
+          else cutOf.rows.push({ unitId: x.t.unitId, label: `${x.t.tenantName} (${x.t.unit.name})`, share: shareOf(i) })
+        })
+      }
+    }
     tenantCentsOf.set(item.id, distributed)
     const landlordCents = item.amountCents - distributed
     // Die Zeilen des Vermieters aus derselben Verteilung; zusammen ergeben sie genau den
@@ -3379,7 +3445,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       if (CO2_FUELS.includes(pot.energy) && sr.oldStockKg > 0 && law(co2ApplicableFrom, { period: hPeriod }, lawLog)) {
         warn('fuel.before-2023',
           `${where}: ${fmtKg(sr.oldStockKg)} kg CO₂ des verbrauchten Brennstoffs stammen aus Brennstoff, der vor dem ${fmtDay(co2CostsCountedFrom())} in Rechnung gestellt wurde. ` +
-            'Sie zählen für die Einstufung des Gebäudes, CO₂-Kosten tragen sie nicht (§ 11 Abs. 2 Satz 2 CO2KostAufG); die Stufe kann deshalb höher liegen, als die CO₂-Kosten allein vermuten lassen.',
+            'Diese kg zählen für die Einstufung des Gebäudes, denn sie sind im Abrechnungszeitraum ausgestoßen (§ 7 Abs. 1 Satz 1, § 5 Abs. 1 CO2KostAufG); CO₂-Kosten trägt dieser Brennstoff nicht (§ 11 Abs. 2 Satz 2 CO2KostAufG). Die Stufe kann deshalb höher liegen, als die CO₂-Kosten allein vermuten lassen.',
           plantSubject)
       }
       const off = measuredOffset(stocked.last)
@@ -3662,6 +3728,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         return cents > 0 ? [{ tenancyId: s.tenancyId, cents }] : []
       })
       const gaps: string[] = []
+      // Brennstoff ohne Lieferung neben dem Vorrat (I2a): Seine kg und CO₂-Kosten fehlen der Rechnung.
+      const unlinkedHere = stockUnlinked.get(pot.plantId) ?? []
+      if (unlinkedHere.length > 0) gaps.push(`die Lieferung zu ${andList(unlinkedHere.map((c) => `„${c.description}“`))} (Menge, Ausstoß in kg und CO₂-Kosten)`)
       if (!afterService && own.missingCo2.length > 0) gaps.push(`die CO₂-Angaben der Rechnung ${andList(own.missingCo2.map((l) => `„${l}“`))} (Ausstoß in kg und CO₂-Kosten)`)
       if (split.permille === null) {
         if (area === null) gaps.push('die Fläche der versorgten Wohnungen')
@@ -3794,6 +3863,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   }
   // Freie Schlüssel ohne Bestand oder ohne Schlüssel (Entwurf 8.2 „Ohne Bestand“, N9): verteilt wird nach
   // Lieferung wie bisher; der Text nennt beide Folgen (Heizung PR 8).
+  for (const n of stockNotes) {
+    const where = `${n.plant.name ? `Heizanlage „${n.plant.name}“` : 'Heizanlage'}, Heizperiode ${label}`
+    warn(n.code, `${where}: ${n.text}`, { kind: 'heatingCosts', id: n.plant.id })
+  }
   for (const n of stockManualNotes) {
     const where = `${n.plant.name ? `Heizanlage „${n.plant.name}“` : 'Heizanlage'}, Heizperiode ${label}`
     const subject: NoticeSubject = { kind: 'heatingCosts', id: n.plant.id }
@@ -3803,8 +3876,15 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         `${where}: ${n.text} Bis das geklärt ist, verteilt Mietfuchs die Brennstoffrechnungen, wie sie sind, nach ihrem Schlüssel; umzulegen sind aber die Kosten des verbrauchten Brennstoffs (§ 7 Abs. 2 HeizkostenV).${co2} Bitte prüfen Sie den Vorrat und die Lieferungen auf der Seite Heizkosten.`,
         subject)
     } else {
+      // Durchsicht von #237, Recht I1: BGH VIII ZR 156/11, Leitsätze 1 und 2 (gelesen am 06.10.2026):
+      // nur nach dem verbrauchten Brennstoff; der Fehler ist nicht durch die Kürzung nach § 12 Abs. 1
+      // HeizkostenV auszugleichen. Im selbstbewohnten Zweifamilienhaus gilt die HeizkostenV nicht (§ 2),
+      // die Kosten „der verbrauchten Brennstoffe und ihrer Lieferung“ nennt dann § 2 Nr. 4a BetrKV.
+      const norm = heatingAgreeable ? '§ 2 Nr. 4a BetrKV' : '§ 7 Abs. 2 HeizkostenV'
+      const cut = heatingAgreeable ? '' : `, und das lässt sich nicht durch eine Kürzung um ${law(hkvCutNotByConsumption, { period: lawPeriod }, lawLog)} % ausgleichen`
       warn('fuel.manual-by-delivery',
-        `${where}: ${n.text} Mietfuchs verteilt die Brennstoffrechnungen deshalb, wie sie sind, nach ihrem Schlüssel. Umzulegen sind aber die Kosten des verbrauchten Brennstoffs (§ 7 Abs. 2 HeizkostenV); eine Abrechnung nach Lieferungen ist angreifbar (BGH VIII ZR 156/11).${co2} ` +
+        `${where}: ${n.text} Mietfuchs verteilt die Brennstoffrechnungen deshalb, wie sie sind, nach ihrem Schlüssel. Umzulegen sind aber die Kosten der verbrauchten Brennstoffe und ihrer Lieferung (${norm}). ` +
+          `Eine Abrechnung nach Lieferungen statt nach dem verbrauchten Brennstoff ist nach BGH VIII ZR 156/11 nicht zulässig; die Abrechnung ist insoweit falsch${cut}.${co2} ` +
           'Tragen Sie Anfangs- und Endbestand auf der Seite Heizkosten in der Karte „Vorrat“ ein.',
         subject)
     }

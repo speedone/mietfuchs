@@ -173,14 +173,14 @@
     {
       "idx": 24,
       "version": "6",
-      "when": 1791243399535,
+      "when": 1791248438463,
       "tag": "0024_vorrat",
       "breakpoints": true
     },
     {
       "idx": 25,
       "version": "6",
-      "when": 1791243407168,
+      "when": 1791248444405,
       "tag": "0025_vorrat_bedingungen",
       "breakpoints": true
     }

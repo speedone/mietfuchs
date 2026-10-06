@@ -18,7 +18,7 @@ import { STOCK_ENERGIES } from '../fuel.ts'
 import type { Database, Executor } from './client.ts'
 import { dropIfEmpty, ensureHeatingPeriod } from './heatingPeriodContext.ts'
 import { readDegreeDayValues, readFuelDeliveries } from './read.ts'
-import { asNullableFilled, asText, frozenDeliveryText, HeatingError, heatingPeriodAt, heatingRulesOf, ISO_DATE, merged, oneOfOrUndefined, raw } from './repository.ts'
+import { asNullableFilled, asText, frozenDeliveryText, HeatingError, heatingPeriodAt, stockTakenOverBy, stockTakenOverText, heatingRulesOf, ISO_DATE, merged, oneOfOrUndefined, raw } from './repository.ts'
 import { costItems, degreeDayValues, FUEL_QUANTITY_UNITS, fuelCarryFrozen, fuelDeliveries, fuelDeliveryParts, GAS_BASES, heatingPeriods, heatingPlants, properties } from './schema.ts'
 
 const LATER = {
@@ -138,6 +138,13 @@ async function guardDelivery(db: Executor, plant: PlantFacts, before: FuelDelive
         if (at?.closed) throw new HeatingError(409, stockClosedText(at.period))
       }
     }
+    // Hat die abgeschlossene Folgeperiode den Endbestand übernommen (C2), bleiben Menge, Einheit und
+    // Lieferdatum; Beträge, kg und CO₂-Kosten dürfen sich ändern.
+    const moved = before !== null && (before.quantity !== after.quantity || before.quantityUnit !== after.quantityUnit || before.deliveredAt !== after.deliveredAt)
+    for (const date of moved ? [before?.deliveredAt ?? null, after.deliveredAt] : []) {
+      const took = date === null ? null : await stockTakenOverBy(db, plant.id, date)
+      if (took) throw new HeatingError(409, stockTakenOverText(took.label, 'Menge, Einheit und Lieferdatum ihrer Lieferungen'))
+    }
   } else {
     if (after.invoiceFrom === null || after.invoiceTo === null) {
       throw new HeatingError(400, `Bei Gas, Fernwärme und Strom braucht ${what} den Rechnungszeitraum (Beginn und Ende laut Rechnung); nach ihm teilt Mietfuchs die Rechnung auf die Heizperioden auf.`)
@@ -242,6 +249,8 @@ export async function removeDelivery(db: Database, id: string): Promise<boolean>
   if (plant && STOCK_ENERGIES.includes(plant.energy) && current.deliveredAt !== null) {
     const at = await heatingPeriodAt(db, plant.id, current.deliveredAt)
     if (at?.closed) throw new HeatingError(409, stockClosedText(at.period))
+    const took = await stockTakenOverBy(db, plant.id, current.deliveredAt)
+    if (took) throw new HeatingError(409, stockTakenOverText(took.label, 'ihre Lieferungen'))
   }
   const [linked] = await db.select({ n: count() }).from(costItems).where(eq(costItems.fuelDeliveryId, id))
   const n = linked?.n ?? 0

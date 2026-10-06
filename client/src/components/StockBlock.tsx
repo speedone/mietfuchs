@@ -10,7 +10,7 @@ export default function StockBlock({ view }: { view: StockBlockView | null }) {
       <h3>{view.title}</h3>
       <Table>
         <tbody>
-          {view.lines.map((l) => <tr key={l.label}><td>{l.label}</td><td className="num">{l.value}</td></tr>)}
+          {view.lines.map((l, i) => <tr key={`${i}:${l.label}`}><td>{l.label}</td><td className="num">{l.value}</td></tr>)}
         </tbody>
       </Table>
       {view.notes.map((n) => <p key={n} className="muted">{n}</p>)}

@@ -26,6 +26,7 @@ CREATE TABLE `__new_heating_periods` (
 	`opening_emissions_kg` real,
 	`opening_co2_cents` integer,
 	`opening_invoiced_before_2023` integer,
+	`opening_already_settled` integer,
 	`closing_quantity` real,
 	`closing_measured_on` text,
 	FOREIGN KEY (`plant_id`) REFERENCES `heating_plants`(`id`) ON UPDATE no action ON DELETE cascade,
@@ -46,7 +47,7 @@ CREATE TABLE `__new_heating_periods` (
 	CONSTRAINT "heating_periods_closing_measured_on_valid" CHECK("closing_measured_on" IS NULL OR "closing_measured_on" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]')
 );
 --> statement-breakpoint
-INSERT INTO `__new_heating_periods`("id", "plant_id", "period", "heat_consumption_pct", "water_consumption_pct", "above_70_agreed", "insulation_rule", "dhw_method", "dhw_heat_kwh", "total_heat_kwh", "dhw_volume_m3", "dhw_temp_c", "dhw_unmeasurable", "info_taxes_text", "info_district_ghg", "info_district_pef", "climate_factor", "climate_factor_prev", "consumer_contract", "info_contacts_confirmed", "stock_unit", "opening_quantity", "opening_cost_cents", "opening_emissions_kg", "opening_co2_cents", "opening_invoiced_before_2023", "closing_quantity", "closing_measured_on") SELECT "id", "plant_id", "period", "heat_consumption_pct", "water_consumption_pct", "above_70_agreed", "insulation_rule", "dhw_method", "dhw_heat_kwh", "total_heat_kwh", "dhw_volume_m3", "dhw_temp_c", "dhw_unmeasurable", "info_taxes_text", "info_district_ghg", "info_district_pef", "climate_factor", "climate_factor_prev", "consumer_contract", "info_contacts_confirmed", "stock_unit", "opening_quantity", "opening_cost_cents", "opening_emissions_kg", "opening_co2_cents", "opening_invoiced_before_2023", "closing_quantity", "closing_measured_on" FROM `heating_periods`;--> statement-breakpoint
+INSERT INTO `__new_heating_periods`("id", "plant_id", "period", "heat_consumption_pct", "water_consumption_pct", "above_70_agreed", "insulation_rule", "dhw_method", "dhw_heat_kwh", "total_heat_kwh", "dhw_volume_m3", "dhw_temp_c", "dhw_unmeasurable", "info_taxes_text", "info_district_ghg", "info_district_pef", "climate_factor", "climate_factor_prev", "consumer_contract", "info_contacts_confirmed", "stock_unit", "opening_quantity", "opening_cost_cents", "opening_emissions_kg", "opening_co2_cents", "opening_invoiced_before_2023", "opening_already_settled", "closing_quantity", "closing_measured_on") SELECT "id", "plant_id", "period", "heat_consumption_pct", "water_consumption_pct", "above_70_agreed", "insulation_rule", "dhw_method", "dhw_heat_kwh", "total_heat_kwh", "dhw_volume_m3", "dhw_temp_c", "dhw_unmeasurable", "info_taxes_text", "info_district_ghg", "info_district_pef", "climate_factor", "climate_factor_prev", "consumer_contract", "info_contacts_confirmed", "stock_unit", "opening_quantity", "opening_cost_cents", "opening_emissions_kg", "opening_co2_cents", "opening_invoiced_before_2023", "opening_already_settled", "closing_quantity", "closing_measured_on" FROM `heating_periods`;--> statement-breakpoint
 DROP TABLE `heating_periods`;--> statement-breakpoint
 ALTER TABLE `__new_heating_periods` RENAME TO `heating_periods`;--> statement-breakpoint
 PRAGMA foreign_keys=ON;--> statement-breakpoint

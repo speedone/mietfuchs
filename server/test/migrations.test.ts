@@ -92,8 +92,8 @@ const VEROEFFENTLICHT: Record<string, string> = {
   '0023_lieferungen_bedingungen': '0e73c25626805e01fb878d234ab71f42736917ce967196bc96aa713117daad6a',
   // Heizung PR 8. Wird PR 8 vor dem Push neu erzeugt, werden diese beiden Schritte neu erzeugt und die
   // Marken hier ersetzt.
-  '0024_vorrat': '29716bd83ab7f1cb4f37d176d2b59de24e69a91dc2bd787b8c7abbbfd7d0ae8f',
-  '0025_vorrat_bedingungen': '434083a865e1be97a00485cc7713793739006b772fb0b9300d71aa3bdd2ccfc8',
+  '0024_vorrat': '790d0a3771f7504c2cda7fae1497a5251ca343b67f2f62b333aacdc0e164ade8',
+  '0025_vorrat_bedingungen': '3545f80a98da04aff0f80639e9890888c1f9ac3cfab9a4fdf8c28297213e072b',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

@@ -1,12 +1,12 @@
 import { expect, test } from 'vitest'
 import { fmtEuro } from './api'
-import { BEFORE_2023_OPTIONS, STOCK_UNIT_OPTIONS, showsStockCard, stockBody, stockSummary, stockToForm } from './stockForm'
+import { ALREADY_SETTLED_OPTIONS, BEFORE_2023_OPTIONS, STOCK_UNIT_OPTIONS, showsStockCard, stockBody, stockSummary, stockToForm } from './stockForm'
 import { periodKey } from '../../shared/period.ts'
 import type { HeatingStockStatement, StockView } from './types'
 
 const leer: StockView = {
-  row: { stockUnit: null, openingQuantity: null, openingCostCents: null, openingEmissionsKg: null, openingCo2Cents: null, openingInvoicedBefore2023: null, closingQuantity: null, closingMeasuredOn: null },
-  derived: null, closingLockedBy: null, statement: null, problem: 'Für die Bestandsrechnung (Heizperiode 2025) fehlt: die Einheit des Vorrats, der Anfangsbestand und der Endbestand.',
+  row: { stockUnit: null, openingQuantity: null, openingCostCents: null, openingEmissionsKg: null, openingCo2Cents: null, openingInvoicedBefore2023: null, openingAlreadySettled: null, closingQuantity: null, closingMeasuredOn: null },
+  derived: null, closingLockedBy: null, askAlreadySettled: false, statement: null, frozen: null, problem: 'Für die Bestandsrechnung (Heizperiode 2025) fehlt: die Einheit des Vorrats, der Anfangsbestand und der Endbestand.',
 }
 const BESTAND: HeatingStockStatement = {
   unit: 'l', openingSource: 'own', closingMeasuredOn: '2025-12-31', paidCents: 565000, oldStockKg: 5352.6,
@@ -55,4 +55,20 @@ test('Zusammenfassung und wann die Karte erscheint', () => {
   expect(showsStockCard({ method: 'service' }, v('selfAfterService'))).toBe(true)
   expect(showsStockCard({ method: 'service' }, v('serviceDeducted'))).toBe(false)
   expect(showsStockCard({ method: 'manual' }, { stock: null, co2: null })).toBe(false)
+})
+
+test('Durchsicht von #237, C1: Nach einer Abrechnung nach Lieferung fragt die Karte, ob der Anfangsbestand schon umgelegt wurde, vorbelegt mit „ja“', () => {
+  const frage: StockView = { ...leer, askAlreadySettled: true }
+  expect(stockToForm(frage).alreadySettled).toBe('yes')
+  expect(stockToForm(leer).alreadySettled).toBe('')
+  expect(ALREADY_SETTLED_OPTIONS.map((o) => o.value)).toEqual(['yes', 'no'])
+  const f = { ...stockToForm(frage), unit: 'l' as const, openingQuantity: '2000', closingQuantity: '1000' }
+  expect(stockBody(f, frage)).toMatchObject({ body: { openingAlreadySettled: true } })
+  expect(stockBody({ ...f, alreadySettled: 'no' }, frage)).toMatchObject({ body: { openingAlreadySettled: false } })
+  // Ohne Frage wird nichts geschickt; der Server entscheidet dann nach der Vorperiode.
+  expect('openingAlreadySettled' in ((stockBody({ ...stockToForm(leer), unit: 'l', closingQuantity: '1' }, leer) as { body: object }).body)).toBe(false)
+})
+
+test('Durchsicht von #237, I4: Bei Pellets und Holz nennt die Zusammenfassung keine CO₂-Angaben', () => {
+  expect(stockSummary({ ...leer, statement: BESTAND }, false).at(-1)).toBe(`Verbraucht 5.700 l · ${fmtEuro(575000)}`)
 })

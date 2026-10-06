@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "0b8ee83e-43b6-4198-a359-98c157607f4e",
-  "prevId": "19eb6cb9-72ea-4e87-843a-b4541bc90415",
+  "id": "ba78f622-7f79-4c79-85a1-af3c36afbf92",
+  "prevId": "bb2440cf-f6a7-4578-9801-a8d46e142063",
   "tables": {
     "ai_slots": {
       "name": "ai_slots",
@@ -2461,6 +2461,13 @@
         },
         "opening_invoiced_before_2023": {
           "name": "opening_invoiced_before_2023",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "opening_already_settled": {
+          "name": "opening_already_settled",
           "type": "integer",
           "primaryKey": false,
           "notNull": false,

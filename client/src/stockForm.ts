@@ -22,6 +22,14 @@ export const BEFORE_2023_OPTIONS: readonly { value: Before2023; label: string }[
   { value: 'no', label: `Nein, ab dem ${FROM} in Rechnung gestellt` },
 ]
 
+// Schon mit einer früheren Abrechnung umgelegt (Durchsicht von #237, C1)? Vorbelegt mit „ja“, wenn
+// die Vorperiode Brennstoff dieser Anlage nach Lieferung abgerechnet hat.
+export type AlreadySettled = '' | 'yes' | 'no'
+export const ALREADY_SETTLED_OPTIONS: readonly { value: AlreadySettled; label: string }[] = [
+  { value: 'yes', label: 'Ja, die Mieter haben ihn mit den Rechnungen schon bezahlt (er zählt mit 0 €)' },
+  { value: 'no', label: 'Nein, er ist noch nicht umgelegt (er zählt mit seinem Wert)' },
+]
+
 export type StockForm = {
   unit: StockUnit | ''
   openingQuantity: string
@@ -31,6 +39,7 @@ export type StockForm = {
   before2023: Before2023
   closingQuantity: string
   measuredOn: string
+  alreadySettled: AlreadySettled
 }
 
 // Ohne Tausenderpunkt: `parseDecimal` liest „1.000“ als technische Schreibweise (1), und eine
@@ -49,6 +58,7 @@ export function stockToForm(view: StockView): StockForm {
     before2023: r.openingInvoicedBefore2023 === null ? '' : r.openingInvoicedBefore2023 ? 'yes' : 'no',
     closingQuantity: numberText(r.closingQuantity),
     measuredOn: r.closingMeasuredOn ?? '',
+    alreadySettled: r.openingAlreadySettled === null ? (view.askAlreadySettled ? 'yes' : '') : r.openingAlreadySettled ? 'yes' : 'no',
   }
 }
 
@@ -83,6 +93,7 @@ export function stockBody(form: StockForm, view: StockView): { body: Record<stri
     body.openingEmissionsKg = quantity(form.openingKg, 'CO₂ des Anfangsbestands (kg)')
     body.openingCo2Cents = money(form.openingCo2, 'CO₂-Kosten des Anfangsbestands')
     body.openingInvoicedBefore2023 = form.before2023 === '' ? null : form.before2023 === 'yes'
+    if (view.askAlreadySettled && form.alreadySettled !== '') body.openingAlreadySettled = form.alreadySettled === 'yes'
   }
   const first = errors[0]
   if (first) return { error: first }
@@ -91,7 +102,8 @@ export function stockBody(form: StockForm, view: StockView): { body: Record<stri
 }
 
 // Die Zeilen unter der Karte: was da war, was kam, was übrig ist und was verbraucht wurde.
-export function stockSummary(view: StockView): string[] {
+// `co2`: CO₂-Angaben nur bei Brennstoffen, deren CO₂-Kosten aufzuteilen sind (Durchsicht von #237, I4).
+export function stockSummary(view: StockView, co2 = true): string[] {
   const s = view.statement
   if (!s) return []
   const q = (n: number): string => `${n.toLocaleString('de-DE', { maximumFractionDigits: 2 })} ${STOCK_UNIT_TEXT[s.unit]}`
@@ -101,7 +113,7 @@ export function stockSummary(view: StockView): string[] {
     `Anfangsbestand ${q(s.opening.quantity)} · ${euro(s.opening.costCents)}`,
     ...s.deliveries.map((d) => `${d.label}: ${q(d.quantity)} · ${euro(d.costCents)}`),
     `Endbestand ${q(s.closing.quantity)} · ${euro(s.closing.costCents)} (zu den jüngsten Lieferungen bewertet)`,
-    `Verbraucht ${q(s.consumed.quantity)} · ${euro(s.consumed.costCents)} · ${kg(s.consumed.emissionsKg)} kg CO₂ · CO₂-Kosten ${fmtEuro(s.consumed.co2Cents)}`,
+    `Verbraucht ${q(s.consumed.quantity)} · ${euro(s.consumed.costCents)}${co2 ? ` · ${kg(s.consumed.emissionsKg)} kg CO₂ · CO₂-Kosten ${fmtEuro(s.consumed.co2Cents)}` : ''}`,
   ]
 }
 

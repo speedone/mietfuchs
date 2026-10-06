@@ -15,15 +15,33 @@ const BESTAND: NonNullable<HeatingStatement['stock']> = {
   consumed: { quantity: 5700, costCents: 575000, emissionsKg: 15254.91, co2Cents: 64810 },
 }
 
-test('Druckblock Bestandsrechnung (Entwurf 9.5, 8.2): Anfang, Lieferungen, Ende, Verbrauch, Bewertung und Altbestand', () => {
-  const v = stockBlock(anlage(BESTAND)) ?? (() => { throw new Error('kein Block') })()
+test('Druckblock Bestandsrechnung (Entwurf 9.5, 8.2; Durchsicht von #237, I3): je Zeile Menge, Wert, kg und CO₂-Kosten, Endbestand nach Herkunft', () => {
+  const v = stockBlock(anlage({
+    ...BESTAND,
+    closing: { ...BESTAND.closing, layers: [{ label: 'Heizöl Oktober', date: '2025-10-10', quantity: 1800, costCents: 180000, emissionsKg: 4817.34, co2Cents: 31530, co2Counted: true }] },
+  })) ?? (() => { throw new Error('kein Block') })()
   expect(v.title).toBe('Bestandsrechnung Brennstoff')
-  expect(v.lines.map((l) => l.label)).toEqual(['Anfangsbestand', 'Lieferung vom 15.03.2025', 'Endbestand (gepeilt am 05.01.2026)', 'Verbraucht'])
-  expect(v.lines[3]?.value).toBe(`5.700 l · ${fmtEuro(575000)} · 15.254,91 kg CO₂ · CO₂-Kosten ${fmtEuro(64810)}`)
-  expect(v.notes).toContain('Verbraucht wird das Älteste zuerst; den Endbestand bewertet Mietfuchs wie die Messdienste zu den Preisen der jüngsten Lieferungen.')
-  expect(v.notes).toContain('Davon 5.352,6 kg CO₂ aus Brennstoff mit Rechnung vor dem 01.01.2023: Sie zählen für die Einstufung, CO₂-Kosten trägt er nicht (§ 11 Abs. 2 Satz 2 CO2KostAufG).')
+  expect(v.lines.map((l) => l.label)).toEqual(['Anfangsbestand', 'Lieferung vom 15.03.2025', 'Endbestand (abgelesen am 05.01.2026)', 'davon aus „Heizöl Oktober“ vom 10.10.2025', 'Verbraucht'])
+  expect(v.lines[0]?.value).toBe(`2.000 l · ${fmtEuro(190000)} · 5.352,6 kg CO₂ · CO₂-Kosten ${fmtEuro(0)}`)
+  expect(v.lines[1]?.value).toBe(`3.000 l · ${fmtEuro(315000)} · 8.028,9 kg CO₂ · CO₂-Kosten ${fmtEuro(52549)}`)
+  expect(v.lines[3]?.value).toBe('1.800 l zu 1,00 €/l')
+  expect(v.lines[4]?.value).toBe(`5.700 l · ${fmtEuro(575000)} · 15.254,91 kg CO₂ · CO₂-Kosten ${fmtEuro(64810)}`)
+  expect(v.notes[0]).toBe('Verbraucht wird rechnerisch das Älteste zuerst (Kinne/Schach/Bieber-Kinne, BGB § 556 Rn. 121); der Endbestand hat deshalb die Preise der jüngsten Lieferungen.')
+  expect(v.notes).toContain('Davon 5.352,6 kg CO₂ aus Brennstoff mit Rechnung vor dem 01.01.2023: Diese kg zählen für die Einstufung, CO₂-Kosten trägt dieser Brennstoff nicht (§ 11 Abs. 2 Satz 2 CO2KostAufG).')
   expect(v.notes).toContain('Der Anfangsbestand ist der eingefrorene Endbestand der abgeschlossenen Vorperiode.')
   expect(stockBlock(anlage(null))).toBeNull()
+})
+
+test('Pellets und Holz (Durchsicht von #237, I4): ohne CO₂-Angaben, denn das CO2KostAufG gilt nicht', () => {
+  const v = stockBlock({ ...anlage({ ...BESTAND, unit: 'kg', oldStockKg: 0 }), energy: 'pellets' }) ?? (() => { throw new Error('kein Block') })()
+  expect(v.lines.at(-1)?.value).toBe(`5.700 kg · ${fmtEuro(575000)}`)
+  expect(v.lines.some((l) => /CO₂/.test(l.value))).toBe(false)
+})
+
+test('Schon umgelegter Anfangsbestand und Weitergabe mit 0 € stehen als Erklärung da (C1, I1)', () => {
+  const v = stockBlock(anlage({ ...BESTAND, openingSource: 'own', openingSettledCents: 200000, handover: { ...BESTAND.closing, costCents: 0, co2Cents: 0 } })) ?? (() => { throw new Error('kein Block') })()
+  expect(v.notes).toContain(`Der Anfangsbestand ist schon mit einer früheren Abrechnung umgelegt worden (Wert laut Eintrag ${fmtEuro(200000)}); er zählt hier mit 0 € und ohne CO₂-Kosten.`)
+  expect(v.notes).toContain('Der Endbestand geht mit 0 € in die nächste Heizperiode, denn diese Abrechnung verteilt die Rechnungen ohne Übertrag.')
 })
 
 test('Der Block steht beim Mieter, der einen Übertrag oder einen CO₂-Abzug dieser Anlage hat', () => {

@@ -103,13 +103,14 @@ test('Folgeperiode abgeschlossen (G-A4): Einheit und Endbestand der Vorperiode g
       id: 's2', propertyId: 'objekt-1', period: periodKey('2026-01'), closedAt: '2027-02-01', sentAt: null,
       settlement: { heating: [{ plantId: 'hp', period: '2026-01', energy: 'oil', stock: zweite.statement }] },
     }))
-    await assert.rejects(opened.write((db) => saveStock(db, 'hp', '2025-01', { closingQuantity: 1700 })), heatingError(409, /Heizperiode 2026 ist abgeschlossen und hat diesen Endbestand/))
-    await assert.rejects(opened.write((db) => saveStock(db, 'hp', '2025-01', { stockUnit: 'kg' })), heatingError(409, /übernommen/))
-    await assert.rejects(opened.write((db) => removeStock(db, 'hp', '2025-01')), heatingError(409, /übernommen/))
+    await assert.rejects(opened.write((db) => saveStock(db, 'hp', '2025-01', { closingQuantity: 1700 })), heatingError(409, /Heizperiode 2026 ist abgeschlossen; sie rechnet mit diesem Endbestand/))
+    await assert.rejects(opened.write((db) => saveStock(db, 'hp', '2025-01', { stockUnit: 'kg' })), heatingError(409, /rechnet mit diesem Endbestand/))
+    await assert.rejects(opened.write((db) => removeStock(db, 'hp', '2025-01')), heatingError(409, /rechnet mit diesem Endbestand/))
     const peilung = await opened.write((db) => saveStock(db, 'hp', '2025-01', { closingMeasuredOn: '2025-12-30' })) ?? assert.fail('keine Anlage')
     assert.deepEqual(peilung.closingLockedBy, { period: '2026-01', label: '2026' })
     assert.equal(peilung.statement?.closingFrozen, true)
-    assert.deepEqual(peilung.statement?.closing, erste.statement?.closing)
+    // Ohne Brennstoffposition bucht 2025 keinen Übertrag; weitergegeben ist der Bestand mit 0 € (I1 der Durchsicht von #237).
+    assert.deepEqual(peilung.statement?.closing, erste.statement?.handover)
   })
 })
 
@@ -142,7 +143,7 @@ test('Lieferungen von Heizöl: Lieferdatum und Menge Pflicht, kein Rechnungszeit
   })
 })
 
-test('Vorrat entfernen: die acht Felder werden leer', async () => {
+test('Vorrat entfernen: die Felder des Vorrats werden leer', async () => {
   await withDatabase(async (opened) => {
     await oelhaus(opened)
     await opened.write((db) => saveStock(db, 'hp', '2025-01', anfang))
@@ -150,7 +151,7 @@ test('Vorrat entfernen: die acht Felder werden leer', async () => {
     const [ansicht] = await opened.read((db) => heatingPeriodViews(db, 'hp', '2025')) ?? assert.fail('keine Anlage')
     assert.deepEqual(ansicht?.stock?.row, {
       stockUnit: null, openingQuantity: null, openingCostCents: null, openingEmissionsKg: null, openingCo2Cents: null,
-      openingInvoicedBefore2023: null, closingQuantity: null, closingMeasuredOn: null,
+      openingInvoicedBefore2023: null, openingAlreadySettled: null, closingQuantity: null, closingMeasuredOn: null,
     })
     assert.equal(await opened.write((db) => removeStock(db, 'hp', '2025-01')), false)
     assert.equal(await opened.write((db) => removeStock(db, 'gibt-es-nicht', '2025-01')), null)

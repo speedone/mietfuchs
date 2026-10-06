@@ -2,7 +2,7 @@
 // Versorgers, die in dieser Heizperiode enden, und bei freien Schlüsseln die Verknüpfung der Positionen.
 // Mietfuchs teilt jede Rechnung auf die Heizperioden auf; die Abrechnung zeigt, wie.
 import { useState } from 'react'
-import { api, errorText } from '../api'
+import { api, errorText, fmtEuro } from '../api'
 import { useConfirm, useToast } from './feedback'
 import Term from './Term'
 import { CO2_ENERGIES, deliveryLine, deliveryOptions, emptyFuelForm, fuelBody, fuelToForm, STOCK_QUANTITY_OPTIONS, stockFuelBody, type FuelForm } from '../fuelForm'
@@ -27,6 +27,11 @@ export default function FuelCard({ plant, view, deliveries, onSaved }: {
   const stock = plant.energy !== undefined && isStockEnergy(plant.energy)
   const set = <K extends keyof FuelForm>(key: K, value: FuelForm[K]) => setForm((f) => ({ ...f, [key]: value }))
   const options = deliveryOptions(deliveries)
+  // Beim Vorrat (Durchsicht von #237, M5): der Betrag aus den verknüpften Positionen dieser Heizperiode.
+  const linkedText = (id: string): string => {
+    const linked = view.items.filter((i) => i.fuelDeliveryId === id)
+    return linked.length === 0 ? 'noch keine Position verknüpft' : `Betrag laut Position ${fmtEuro(linked.reduce((a, i) => a + i.amountCents, 0))}`
+  }
 
   function open(d: FuelDelivery | null) {
     setForm(d ? fuelToForm(d) : emptyFuelForm())
@@ -93,6 +98,7 @@ export default function FuelCard({ plant, view, deliveries, onSaved }: {
         <p className="muted">
           Tragen Sie jede Lieferung mit Lieferdatum und Menge ein, wie auf der Rechnung. Was davon in dieser Heizperiode verbraucht wurde,
           ergibt die Karte „Vorrat“ aus Anfangs- und Endbestand (<Term id="fuelStock">Bestandsrechnung</Term>).
+          {!service && ' Den Betrag nimmt Mietfuchs aus der verknüpften Kostenposition; ohne Verknüpfung geht die Bestandsrechnung nicht auf.'}
         </p>
       ) : (
         <p className="muted">
@@ -105,6 +111,7 @@ export default function FuelCard({ plant, view, deliveries, onSaved }: {
         {deliveries.map((d) => (
           <li key={d.id}>
             <strong>{d.label || 'Lieferung'}</strong> {deliveryLine(d)}
+            {stock && !service && <span className="muted"> · {linkedText(d.id)}</span>}
             {!view.closed && (
               <span className="row">
                 <button className="btn secondary" onClick={() => open(d)}>Ändern</button>
@@ -133,7 +140,7 @@ export default function FuelCard({ plant, view, deliveries, onSaved }: {
           {stock ? (<>
             <div className="row">
               {text('deliveredAt', 'Lieferdatum')}
-              {text('invoiceDate', 'Rechnungsdatum')}
+              {text('invoiceDate', 'Rechnungsdatum (leer: Lieferdatum)')}
             </div>
             <div className="row">
               {text('quantity', 'Menge')}

@@ -294,6 +294,6 @@ export function stockCarryNote(report: TaxReport): string | null {
   if (c === 0) return null
   const tail = 'Die Abrechnung rechnet nach Verbrauch, die Steuerübersicht nach Bezahltem.'
   return c > 0
-    ? `${fmtEuro(c)} Unterschied zum Eigenanteil der Abrechnung: Brennstoff aus dem Vorrat, steuerlich bereits ${report.year - 1} oder früher abgeflossen. ${tail}`
-    : `${fmtEuro(-c)} Unterschied zum Eigenanteil der Abrechnung: Brennstoff, der im Vorrat bleibt, steuerlich ${report.year} abgeflossen und erst später verbraucht. ${tail}`
+    ? `Der Eigenanteil der Abrechnung ist um ${fmtEuro(c)} höher als der private Teil hier: Brennstoff aus dem Vorrat, steuerlich bereits ${report.year - 1} oder früher abgeflossen. ${tail}`
+    : `Der Eigenanteil der Abrechnung ist um ${fmtEuro(-c)} niedriger als der private Teil hier: Brennstoff, der im Vorrat bleibt, steuerlich ${report.year} abgeflossen und erst später verbraucht. ${tail}`
 }

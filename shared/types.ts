@@ -1335,6 +1335,10 @@ export type HeatingPeriodData = {
   openingEmissionsKg: number | null
   openingCo2Cents: number | null
   openingInvoicedBefore2023: boolean | null
+  // Schon mit einer früheren Abrechnung umgelegt (nach Lieferung, vor dem ersten Vorrat): Dann zählt
+  // der Anfangsbestand mit 0 € und ohne CO₂-Kosten, seine kg zählen für die Einstufung. `null`: keine
+  // Antwort; dann gilt „ja“, wenn die Vorperiode Brennstoff dieser Anlage abgerechnet hat.
+  openingAlreadySettled: boolean | null
   closingQuantity: number | null
   closingMeasuredOn: string | null
 }
@@ -1651,6 +1655,13 @@ export type HeatingStockStatement = {
   closing: StockValue
   // Der Endbestand ist der eingefrorene Anfangsbestand der abgeschlossenen Folgeperiode (G-A4).
   closingFrozen?: boolean
+  // Was diese Heizperiode an die nächste weitergibt: der Endbestand, wenn sie ihn als „im Vorrat“
+  // gutschreibt; sonst (Verteilung nach Lieferung, ohne Schlüssel) derselbe Bestand mit 0 € und ohne
+  // CO₂-Kosten, denn die Mieter haben ihn dann schon bezahlt (Befunde C1, I1 der Durchsicht von #237).
+  // Fehlt das Feld (ältere Stände), ist es der Endbestand.
+  handover?: StockValue
+  // Der eingetragene Anfangsbestand war schon umgelegt und zählt mit 0 €; hier sein Wert laut Eintrag.
+  openingSettledCents?: number | null
   closingMeasuredOn: string | null
   consumed: { quantity: number; costCents: number | null; emissionsKg: number; co2Cents: number }
   // Σ der Lieferungen dieser Heizperiode; null, wenn eine keinen Betrag hat.
@@ -1662,7 +1673,7 @@ export type HeatingStockStatement = {
 // Was die Karte „Vorrat“ zu einer Heizperiode lädt.
 export type StockRow = Pick<
   HeatingPeriodData,
-  'stockUnit' | 'openingQuantity' | 'openingCostCents' | 'openingEmissionsKg' | 'openingCo2Cents' | 'openingInvoicedBefore2023' | 'closingQuantity' | 'closingMeasuredOn'
+  'stockUnit' | 'openingQuantity' | 'openingCostCents' | 'openingEmissionsKg' | 'openingCo2Cents' | 'openingInvoicedBefore2023' | 'openingAlreadySettled' | 'closingQuantity' | 'closingMeasuredOn'
 >
 export type StockView = {
   row: StockRow
@@ -1672,7 +1683,12 @@ export type StockView = {
   // Die Folgeperiode ist abgeschlossen und hat diesen Endbestand als Anfangsbestand übernommen;
   // dann ist der Endbestand gesperrt (G-A4).
   closingLockedBy: { period: PeriodKey; label: string } | null
+  // Die Vorperiode hat Brennstoff dieser Anlage nach Lieferung abgerechnet (oder ist ohne Vorrat
+  // abgeschlossen): Dann fragt die Karte, ob der Anfangsbestand schon umgelegt wurde (C1).
+  askAlreadySettled: boolean
   statement: HeatingStockStatement | null
+  // Bei einer abgeschlossenen Heizperiode die eingefrorene Bestandsrechnung, wie sie abgerechnet ist.
+  frozen: HeatingStockStatement | null
   // Was fehlt oder nicht passt, als Satz für die Karte.
   problem: string | null
 }

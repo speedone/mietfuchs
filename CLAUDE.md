@@ -1107,11 +1107,22 @@ Lieferungen − Endbestand, für Menge, Betrag, kg und CO₂-Kosten. Die acht Sp
 Lieferdatum und Menge statt Rechnungszeitraum und laufen nicht durch die Abgrenzung von PR 7
 (`plantFuel` überspringt sie); ihr Betrag ist Σ der verknüpften Positionen, sonst der an der Lieferung.
 
-- **Bewertung nach Minol:** Verbraucht wird das Älteste zuerst; der Endbestand besteht aus den
-  jüngsten Teilen und wird zu deren Preisen, kg und CO₂-Kosten bewertet, je Teil gerundet (Cent,
-  kg auf das Hundertstel, nicht 0,1 kg wie im Entwurf, weil dessen Zahlen zwei Stellen haben).
-  BGH VIII ZR 298/80, auf das Minol sich beruft, betrifft die Mindestangaben einer Abrechnung und sagt
-  zur Bewertung nichts; die Regel stützt sich allein auf die Praxis der Messdienste.
+- **Bewertung, eine Bewertungsregel:** Die HeizkostenV regelt die Bewertung des Restbestands nicht.
+  Verbraucht wird rechnerisch das Älteste zuerst (Kinne/Schach/Bieber-Kinne, BGB § 556 Rn. 121; ebenso
+  Minol); der Endbestand besteht aus den jüngsten Teilen und wird zu deren Preisen, kg und CO₂-Kosten
+  bewertet, je Teil gerundet (Cent, kg auf das Hundertstel, nicht 0,1 kg wie im Entwurf, weil dessen
+  Zahlen zwei Stellen haben). BGH VIII ZR 298/80, auf das Minol sich beruft, betrifft die
+  Mindestangaben einer Abrechnung und sagt zur Bewertung nichts.
+- **Was weitergegeben wird** (`handover`, Durchsicht von #237): Bucht eine Heizperiode keinen
+  Übertrag (freie Schlüssel ohne Brennstoffposition mit Umlageschlüssel, `stockTemplateOf` in
+  fuelStock.ts, dieselbe Regel in Schnappschuss und Abrechnung), haben ihre Mieter den Endbestand mit
+  den Rechnungen bezahlt; er geht mit 0 € und ohne CO₂-Kosten weiter, die kg bleiben. Ebenso zählt der
+  Anfangsbestand der ersten Heizperiode mit Vorrat mit 0 €, wenn er schon umgelegt wurde
+  (`heating_periods.opening_already_settled`; ohne Antwort „ja“, wenn die Vorperiode Brennstoff der
+  Anlage ohne Vorrat abgerechnet hat oder ohne Vorrat abgeschlossen ist), Hinweis `fuel.opening-settled`.
+  Übernimmt eine Heizperiode einen Bestand mit Wert nicht (Bestandsrechnung fehlt, geht nicht auf oder
+  kein Schlüssel), oder ist die Folgeperiode ohne Vorrat abgeschlossen, nennt `fuel.stock-not-taken-over`
+  den Betrag, den der Vermieter trägt.
 - **Die Kette:** Den Anfangsbestand trägt der Vermieter nur in der ersten Heizperiode mit Vorrat ein;
   jede weitere übernimmt den Endbestand der Vorperiode mit seinen Teilen (der Server lehnt einen
   eigenen ab). `stockChainsOf` in snapshot.ts baut die Kette bis zur ersten abgeschlossenen
@@ -1120,10 +1131,14 @@ Lieferdatum und Menge statt Rechnungszeitraum und laufen nicht durch die Abgrenz
   hebt ihn auf.
 - **Und rückwärts:** Ist die Folgeperiode abgeschlossen und hat sie den Endbestand übernommen
   (`stockOpenings`), ist ihr eingefrorener Anfangsbestand der Endbestand der Vorperiode
-  (`nextFrozenOpening`); Einheit und Endbestand sind dann gesperrt. Ohne diese Regel änderte eine
-  berichtigte Rechnung der wieder geöffneten Vorperiode, was sie weitergibt, und der Unterschied wäre
-  zweimal oder gar nicht verteilt; die Invariante
-  [fuel-stock-invariant.test.ts](server/test/fuel-stock-invariant.test.ts) wird ohne sie rot.
+  (`nextFrozenOpening`), und er wird dort als „im Vorrat“ gutgeschrieben, auch wenn die
+  Bestandsrechnung nicht mehr aufgeht. Einheit und Endbestand sind gesperrt, sobald die Folgeperiode
+  abgeschlossen ist, mit oder ohne Vorrat; hat sie den Bestand übernommen, auch Menge, Einheit und
+  Lieferdatum der Lieferungen, ihr Entfernen und das Lösen ihrer Positionen (`stockTakenOverBy` in
+  repository.ts); Beträge bleiben änderbar. Ohne diese Regeln änderte die wieder geöffnete Vorperiode,
+  was sie weitergibt; die Invariante
+  [fuel-stock-invariant.test.ts](server/test/fuel-stock-invariant.test.ts) prüft die Übergabe je Paar
+  von Heizperioden, die Befunde der Durchsicht hält [vorrat-durchsicht.test.ts](server/test/vorrat-durchsicht.test.ts).
 - **Gesperrt** sind Vorrat und Lieferungen einer abgeschlossenen Heizperiode (Lieferdatum dort, auch
   beim Verschieben hinein oder hinaus; die Bezeichnung bleibt änderbar).
 - **§ 11 Abs. 2 Satz 2 CO2KostAufG** (`co2.costs-before`, Rechnungsdatum): Brennstoff mit Rechnung vor
@@ -1141,7 +1156,12 @@ Lieferdatum und Menge statt Rechnungszeitraum und laufen nicht durch die Abgrenz
   `kind: 'fuelCarry'` über denselben Weg wie die Überträge von PR 7 (`fuelSynthetic`), Gegenzeile beim
   Vermieter `fuelCarry` unter `stock:<Anlage>:<Heizperiode>`. Sie zählen nicht in die Gesamtkosten und
   nicht in die Steuer. Ohne Bestand oder ohne Schlüssel `fuel.manual-by-delivery` und Verteilung nach
-  Lieferung wie bisher, die CO₂-Einstufung dann nach den gelieferten kg.
+  Lieferung wie bisher, die CO₂-Einstufung dann nach den gelieferten kg. Der Hinweis sagt, dass eine
+  Abrechnung nach Lieferungen nicht zulässig ist und sich nicht durch die Kürzung ausgleichen lässt (BGH
+  VIII ZR 156/11, Leitsätze 1 und 2); im selbstbewohnten Zweifamilienhaus nennt er § 2 Nr. 4a BetrKV.
+  Eine Brennstoffposition ohne Lieferung neben dem Vorrat meldet `fuel.stock-unlinked`, und die
+  CO₂-Aufteilung gilt dann als unvollständig. Die Kürzung nach § 12 Abs. 1 HeizkostenV rechnet auf den
+  Anteil samt Übertrag.
 - **Steuer nach Bezahltem:** Der Eigenanteil der Abrechnung enthält den Anteil am Übertrag, die
   Steuerübersicht nicht; `TaxReport.expenses.stockCarrySelfCents` nennt den Abstand, die Steuerseite
   erklärt ihn (N8).

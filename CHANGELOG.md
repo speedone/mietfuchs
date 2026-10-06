@@ -216,8 +216,13 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - Die Steuerübersicht nennt den Unterschied zum Eigenanteil der Abrechnung, der aus dem Vorrat kommt:
   Die Abrechnung rechnet nach Verbrauch, die Steuerübersicht nach Bezahltem.
 - Der Vorrat und die Lieferungen einer abgeschlossenen Heizperiode lassen sich erst nach dem
-  Wiederöffnen ändern; ebenso Einheit und Endbestand einer Heizperiode, deren abgeschlossene
-  Folgeperiode diesen Endbestand übernommen hat.
+  Wiederöffnen ändern; ebenso Einheit und Endbestand einer Heizperiode, deren Folgeperiode
+  abgeschlossen ist, und, wenn diese den Endbestand übernommen hat, Menge, Lieferdatum und Verknüpfung
+  der Lieferungen. Beträge bleiben änderbar.
+- Beim ersten Vorrat nach einer Abrechnung nach Lieferungen fragt die Karte „Vorrat“, ob der
+  Anfangsbestand schon umgelegt wurde; dann zählt er mit 0 €, damit die Mieter ihn nicht zweimal
+  tragen. Verteilt eine Heizperiode ohne Übertrag, geht ihr Endbestand mit 0 € weiter. Bleibt ein
+  Bestand bei Ihnen hängen, nennt die Abrechnung den Betrag.
 
 ### Behoben
 
