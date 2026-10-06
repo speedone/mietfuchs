@@ -190,6 +190,8 @@ export function UpdateSettings({ settings, update, reload }: SettingsProps) {
         <button className="btn secondary" disabled={!enabled || checking || saving} onClick={() => void check()}>
           {checking && <span className="spinner" />}Jetzt prüfen
         </button>
+        {/* Sichtprüfung E53: sagen, warum der Knopf gesperrt ist */}
+        {!enabled && !saving && <span className="muted">Erst das Häkchen oben setzen.</span>}
       </div>
 
       {guide && status && (

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { attentionDetail, attentionLevel, legalBasisLines, noticeClass, noticesNeedAttention, noticesOf, noticeTarget, NOTICE_LEVEL_LABELS } from './notices'
+import { attentionDetail, attentionLevel, attentionLines, legalBasisLines, noticeClass, noticesNeedAttention, noticesOf, noticeTarget, NOTICE_LEVEL_LABELS } from './notices'
 import type { Notice, NoticeSubject } from './types'
 
 const n = (over: Partial<Notice>): Notice => ({ code: 'x', level: 'warning', title: 'Titel', text: 'Text', ...over })
@@ -168,4 +168,19 @@ test('Heizanlage als Ziel: ohne Anlage zur Einrichtung, CO₂-Angaben auf der Se
   // Mit Anlage bleibt das Ziel aus PR 5 (Zeitraum der Heizung in den Stammdaten).
   expect(noticeTarget({ kind: 'heatingPlant', id: 'hp1' })?.tab).toBe('stammdaten')
   expect(noticeTarget({ kind: 'heatingCosts', id: 'hp1' })).toEqual({ tab: 'heizkosten', label: 'Hier beheben → Heizkosten', focus: { kind: 'heatingCosts', id: 'hp1' } })
+})
+
+// Sichtprüfung S12/E54: Das Cockpit verkettete alle Hinweise zu einem Absatz von rund 25 Zeilen.
+describe('Cockpit: eine Zeile je Hinweis', () => {
+  test('Titel statt Text, gleiche Titel zusammengefasst, reine Auskünfte nicht', () => {
+    expect(attentionLines({ warnings: ['a', 'b', 'c', 'd'], notices: [
+      n({ code: 'meter.main-gap', title: 'Hauptzähler mit Lücke', text: 'langer Text a' }),
+      n({ code: 'meter.main-gap', title: 'Hauptzähler mit Lücke', text: 'langer Text b' }),
+      n({ code: 'tenancy.overlap', level: 'error', title: 'Mietverhältnisse überschneiden sich', text: 'c' }),
+      n({ code: 'heating.remote-reading', level: 'hint', title: 'Fernablesung', text: 'd' }),
+    ] })).toEqual(['Mietverhältnisse überschneiden sich', 'Hauptzähler mit Lücke (2×)'])
+  })
+  test('vor #112 abgeschlossen: der Text, eine Zeile je Hinweis', () => {
+    expect(attentionLines({ warnings: ['a', 'b'] })).toEqual(['a', 'b'])
+  })
 })

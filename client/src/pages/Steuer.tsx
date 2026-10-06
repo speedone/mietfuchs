@@ -62,7 +62,7 @@ export default function Steuer({ settings }: Props) {
   return (
     <>
       <div className="no-print">
-        <PageHeader title="Steuer · Anlage V" subtitle={'Jahresübersicht für die Einkünfte aus Vermietung — Einnahmen, Werbungskosten und Überschuss. Als PDF speichern über „Drucken“.'} />
+        <PageHeader title="Steuer (Anlage V)" subtitle={'Jahresübersicht für die Einkünfte aus Vermietung — Einnahmen, Werbungskosten und Überschuss. Als PDF speichern über „Drucken“.'} />
       </div>
       {error && <div className="error">{error}</div>}
 
@@ -108,11 +108,11 @@ export default function Steuer({ settings }: Props) {
           </div>
 
           <div className="card">
-            <div className="muted" style={{ marginBottom: 8 }}>
+            <div className="muted">
               {letterhead(landlord?.landlordName, property)}
             </div>
-            <h2 style={{ marginBottom: 2 }}>Steuerübersicht {year} — Einkünfte aus Vermietung und Verpachtung</h2>
-            <div className="muted" style={{ marginBottom: 14 }}>
+            <h2>Steuerübersicht {year} — Einkünfte aus Vermietung und Verpachtung</h2>
+            <div className="muted">
               Einnahmen angesetzt als {basis === 'soll' ? 'vereinbartes Soll' : 'tatsächlich gezahlt (Zuflussprinzip)'}.
               Werbungskosten mit dem Jahr, unter dem die Kostenposition erfasst ist — für die Anlage V
               zählt dort das Jahr der Zahlung (§ 11 Abs. 2 EStG).
@@ -121,7 +121,7 @@ export default function Steuer({ settings }: Props) {
             {/* Auch im Druck sichtbar: Ein ausgedrucktes Blatt auf Soll-Basis ginge sonst ohne
                 jeden Vorbehalt zum Steuerberater oder ins Formular. */}
             {hints.includes('sollIsNotTaxBasis') && (
-              <div className="notice" style={{ marginBottom: 14 }}>
+              <div className="notice">
                 <strong>Diese Ansicht rechnet mit dem vereinbarten Soll.</strong> Für die Anlage V
                 zählt, was tatsächlich zugeflossen ist (§ 11 Abs. 1 Satz 1 EStG) — eine vereinbarte,
                 aber nicht gezahlte Miete ist keine Einnahme. Das Soll ist zum Abgleich gedacht, etwa
@@ -179,7 +179,7 @@ export default function Steuer({ settings }: Props) {
             </Table>
 
             {hints.includes('paymentsMissing') && (
-              <div className="notice" style={{ marginTop: 10 }}>
+              <div className="notice">
                 <strong>
                   {data.income.tenanciesWithoutPayment === data.income.tenanciesWithSoll
                     ? `Für ${year} ist keine einzige Zahlung erfasst.`
@@ -199,7 +199,7 @@ export default function Steuer({ settings }: Props) {
                 der Korrektur zu; gemessen kamen von 1.500 € Abstand nur 600 € von dort. */}
             {sources && <p className="muted">{sources}</p>}
             {note && (
-              <p className="muted" style={{ marginTop: 10, fontSize: 12 }}>
+              <p className="muted fine">
                 Die Abrechnung {year} setzt bei den Vorauszahlungen{' '}
                 <strong>{fmtEuro(note.settlementCents)}</strong> an, hier steht das vereinbarte Soll
                 von {fmtEuro(note.sollCents)}. Beide Zahlen sind richtig und beantworten verschiedene
@@ -210,7 +210,7 @@ export default function Steuer({ settings }: Props) {
               </p>
             )}
 
-            <h3 style={{ marginTop: 18 }}>Werbungskosten</h3>
+            <h3>Werbungskosten</h3>
             {data.expenses.groups.length === 0 ? (
               <div className="empty">Keine Kostenpositionen für {year} erfasst.</div>
             ) : split ? (
@@ -255,7 +255,7 @@ export default function Steuer({ settings }: Props) {
             {/* #143: Die Zuführung zur Erhaltungsrücklage steht neben den Werbungskosten. Auch im
                 Druck, damit der Betrag beim Steuerberater nicht als vergessen gilt. */}
             {hints.includes('reserveContribution') && (
-              <div className="notice" style={{ marginTop: 10 }}>
+              <div className="notice">
                 <strong>{data.reserveContributionCents < 0
                   // Saldiert negativ, etwa durch eine Rückzahlung oder Korrektur: dann ist es keine Zuführung.
                   ? 'Erhaltungsrücklage, saldiert (Rückzahlung oder Korrektur)'
@@ -267,7 +267,7 @@ export default function Steuer({ settings }: Props) {
               </div>
             )}
             {hints.includes('reserveSuspected') && (
-              <div className="notice" style={{ marginTop: 10 }}>
+              <div className="notice">
                 {data.reserveSuspects.map((r) => `„${r.description}“ (${fmtEuro(r.amountCents)})`).join(', ')}{' '}
                 {data.reserveSuspects.length === 1 ? 'sieht' : 'sehen'} nach einer Zuführung zur Erhaltungsrücklage aus und
                 {data.reserveSuspects.length === 1 ? ' steht' : ' stehen'} oben in den Werbungskosten. Ist es die Zuführung,
@@ -276,7 +276,7 @@ export default function Steuer({ settings }: Props) {
               </div>
             )}
 
-            <h3 style={{ marginTop: 18 }}>Ergebnis</h3>
+            <h3>Ergebnis</h3>
             <Table>
               <tbody>
                 <tr>
@@ -297,7 +297,7 @@ export default function Steuer({ settings }: Props) {
             </Table>
 
             {data.expenses.labor35aCents > 0 && (
-              <p className="muted" style={{ marginTop: 14 }}>
+              <p className="muted">
                 In den Werbungskosten enthaltene Arbeitskosten (§35a EStG, haushaltsnahe
                 Dienstleistungen/Handwerker): <strong>{fmtEuro(data.expenses.labor35aCents)}</strong>.
                 Diese werden den Mietern in der Nebenkostenabrechnung bescheinigt.
@@ -321,22 +321,22 @@ export default function Steuer({ settings }: Props) {
             {/* #96: Kopfzeilen der Anlage V, die am Mietmodell hängen. Belegt am Vordruck 2025 und der
                 Anleitung 2024; die Pauschale nennt die Anleitung nicht ausdrücklich. */}
             {hints.includes('inclusiveLine24') && (
-              <p className="muted" style={{ marginTop: 14, fontSize: 12 }}>
+              <p className="muted fine">
                 <strong>Zeile 24 der Anlage V.</strong> Bei einer Inklusivmiete sind die Nebenkosten nicht gesondert vereinbart. Tragen Sie dort eine 1 ein; die ganze Miete gehört dann zu den Mieteinnahmen, und für diese Mietverhältnisse sind keine Umlagen in den Zeilen 20 und 21 einzutragen.
               </p>
             )}
             {hints.includes('inclusiveLine24Mixed') && (
-              <p className="muted" style={{ marginTop: 14, fontSize: 12 }}>
+              <p className="muted fine">
                 <strong>Zeile 24 der Anlage V.</strong> Eine Inklusivmiete gilt hier nur für einen Teil der Mietverhältnisse oder nur für einen Teil der Nebenkosten (nur kalt oder nur die Heizung). Die Zeile fragt für das ganze Objekt, ob Nebenkosten gesondert vereinbart sind; bei gemischten Verträgen klären Sie den Eintrag am besten mit Ihrem Steuerberater.
               </p>
             )}
             {hints.includes('flatRateLine20') && (
-              <p className="muted" style={{ marginTop: 14, fontSize: 12 }}>
+              <p className="muted fine">
                 <strong>Zeile 20 der Anlage V.</strong> Eine Betriebskostenpauschale ist eine Einnahme wie die Miete. Nach dem Wortlaut gehört sie zu den laufend vereinnahmten Umlagen in Zeile 20; ausdrücklich nennt die Anleitung die Pauschale nicht.
               </p>
             )}
             {hints.includes('etwHousingMoney') && (
-              <p className="muted" style={{ marginTop: 14, fontSize: 12 }}>
+              <p className="muted fine">
                 <strong>Eigentumswohnung: abgeflossen ist das gezahlte Hausgeld.</strong> Werbungskosten sind im Jahr
                 der Zahlung anzusetzen (§ 11 Abs. 2 EStG). Das sind die Hausgeld-Vorschüsse dieses Jahres und eine
                 Nachzahlung aus der Abrechnung des Vorjahres, nicht die Beträge der Hausgeldabrechnung dieses Jahres.
@@ -345,7 +345,7 @@ export default function Steuer({ settings }: Props) {
               </p>
             )}
             {hints.includes('turnOfYear') && (
-              <p className="muted" style={{ marginTop: 14, fontSize: 12 }}>
+              <p className="muted fine">
                 <strong>Am Jahreswechsel bitte prüfen.</strong> Mietfuchs ordnet jede Zahlung dem Jahr
                 ihres Eingangs zu. Für regelmäßig wiederkehrende Einnahmen wie die Miete gibt es davon
                 eine Ausnahme: Fließen sie kurze Zeit — nach der Rechtsprechung bis zu zehn Tage — vor
@@ -366,7 +366,7 @@ export default function Steuer({ settings }: Props) {
                 Wohnungen außerhalb der Abrechnungseinheit gibt; deshalb steht der Vorbehalt
                 daneben, sobald es sie gibt. */}
             {data.selfOccupiedExists && (
-              <div className="notice" style={{ marginTop: 14 }}>
+              <div className="notice">
                 <strong>Gemischt genutztes Gebäude.</strong> Von {fmtArea(data.totalAreaM2)} Gesamtfläche
                 sind <strong>{fmtArea(data.selfUsedAreaM2)}</strong> selbstgenutzt und damit privat
                 {sharePct !== null && <> ({sharePct.toLocaleString('de-DE')} %)</>}.
@@ -381,7 +381,7 @@ export default function Steuer({ settings }: Props) {
               </div>
             )}
             {hints.includes('mixedUseSplit') && (
-              <p className="muted" style={{ marginTop: 10, fontSize: 12 }}>
+              <p className="muted fine">
                 <strong>In der Anlage V.</strong> Zeile 11 fragt die Gesamtwohnfläche, Zeile 12 den
                 eigengenutzten oder unentgeltlich überlassenen Wohnraum darin. Dorthin gehört nur Wohnfläche:
                 Garagen, Keller und andere Zubehörräume zählen nicht mit; für die Aufteilung der Gebäudekosten zählt
@@ -394,7 +394,7 @@ export default function Steuer({ settings }: Props) {
               </p>
             )}
             {hints.includes('mixedUseKeyNotArea') && keyDiff && (
-              <div className="notice" style={{ marginTop: 10 }}>
+              <div className="notice">
                 Bei {keyDiff.count === 1 ? 'einer Position' : `${keyDiff.count} Positionen`} verteilt die
                 Nebenkostenabrechnung nach Personen, Wohneinheiten oder vereinbarten Anteilen, und der private Teil
                 folgt diesem Schlüssel. Nach Fläche wären es zusammen <strong>{fmtEuro(keyDiff.differenceCents)}</strong> anders.
@@ -409,7 +409,7 @@ export default function Steuer({ settings }: Props) {
               </div>
             )}
             {hints.includes('mixedUseExcludedArea') && excludedDiff && (
-              <div className="notice" style={{ marginTop: 10 }}>
+              <div className="notice">
                 Zum Gebäude gehören Einheiten außerhalb der Abrechnungseinheit. Die Nebenkostenabrechnung verteilt
                 nur über die Abrechnungseinheit; ihr Eigenanteil lässt diese Einheiten außen vor und ist deshalb kein
                 Anteil am ganzen Gebäude. Für die Steuer teilt diese Übersicht {excludedDiff.count === 1 ? 'eine Position' : `${excludedDiff.count} Positionen`} nach
@@ -421,28 +421,28 @@ export default function Steuer({ settings }: Props) {
               </div>
             )}
             {hints.includes('mixedUseClosedItemsChanged') && (
-              <p className="muted" style={{ marginTop: 10, fontSize: 12 }}>
+              <p className="muted fine">
                 {data.closedItemsChanged === 1 ? 'Eine Position wurde' : `${data.closedItemsChanged} Positionen wurden`} nach dem Abschluss der Abrechnung {year} erfasst
                 oder geändert. Sie {data.closedItemsChanged === 1 ? 'steht' : 'stehen'} nicht so auf dem Papier beim Mieter; ihren privaten Teil rechnet die
                 Übersicht deshalb mit den heutigen Daten.
               </p>
             )}
             {hints.includes('mixedUseAreaMissing') && (
-              <div className="notice" style={{ marginTop: 10 }}>
+              <div className="notice">
                 Mindestens eine Position ließ sich nicht aufteilen, weil für eine betroffene Einheit keine Fläche
                 hinterlegt ist. Sie steht ungekürzt bei den abziehbaren Werbungskosten. Bitte tragen Sie die Fläche
                 in den Stammdaten ein.
               </div>
             )}
             {hints.includes('mixedUseDirectOutside') && (
-              <div className="notice" style={{ marginTop: 10 }}>
+              <div className="notice">
                 Mindestens eine Position ist einer Einheit außerhalb der Abrechnungseinheit zugeordnet. Mietfuchs
                 zählt sie als abziehbar. Nutzen Sie diese Einheit selbst, stellen Sie sie in den Stammdaten auf
                 Eigennutzung; sonst sind die abziehbaren Werbungskosten zu hoch.
               </div>
             )}
             {hints.includes('mixedUseAssignedUnits') && (
-              <div className="notice" style={{ marginTop: 10 }}>
+              <div className="notice">
                 {assigned.length === 1 ? 'Eine Position' : `${assigned.length} Positionen`} „Nicht umlagefähig“{' '}
                 {assigned.length === 1 ? 'ist' : 'sind'} für die Steuer bestimmten Einheiten zugeordnet:{' '}
                 {assigned.map((x, k) => (
@@ -462,7 +462,7 @@ export default function Steuer({ settings }: Props) {
               </div>
             )}
             {hints.includes('mixedUseChangedInYear') && (
-              <div className="notice" style={{ marginTop: 10 }}>
+              <div className="notice">
                 Eine selbstgenutzte Einheit war in diesem Jahr auch vermietet. Die Nutzung einer Einheit hat in
                 Mietfuchs keinen Stichtag; die Aufteilung nach Fläche ist deshalb nicht nach Tagen gerechnet und zählt
                 die Einheit das ganze Jahr als privat. Für die Zeit der Vermietung sind ihre Kosten abziehbar; bitte
@@ -470,21 +470,21 @@ export default function Steuer({ settings }: Props) {
               </div>
             )}
             {hints.includes('mixedUseClosedChanged') && (
-              <p className="muted" style={{ marginTop: 10, fontSize: 12 }}>
+              <p className="muted fine">
                 Die Abrechnung {year} ist abgeschlossen. Für den privaten Teil der umlagefähigen Kosten gilt der eingefrorene Stand,
                 auch wenn die heutige Rechnung etwas anderes ergäbe oder die Abrechnung den Eigenanteil je Position
                 noch nicht festhielt; so nennt die Übersicht dieselbe Zahl wie das Papier beim Mieter.
               </p>
             )}
             {hints.includes('mixedUseLabor35a') && (
-              <p className="muted" style={{ marginTop: 10, fontSize: 12 }}>
+              <p className="muted fine">
                 Bei Positionen mit Lohnanteil (§ 35a EStG) gehört der private Teil nicht zu den Werbungskosten. Ob
                 Sie für den Lohnanteil, der auf Ihre eigene Wohnung entfällt, die Steuerermäßigung in Ihrer eigenen Steuererklärung
                 nutzen können, klären Sie bitte mit Ihrem Steuerberater; Mietfuchs rechnet sie nicht aus.
               </p>
             )}
             {hints.includes('mixedUseNotCalculated') && (
-              <p className="muted" style={{ marginTop: 10, fontSize: 12 }}>
+              <p className="muted fine">
                 Nicht gerechnet werden: die Abschreibung (AfA) des Gebäudes, die ebenfalls nur anteilig abziehbar
                 ist (Zeilen 33 und 34); Schuldzinsen, die der Zuordnung des Darlehens folgen und nicht der Fläche; die
                 Verteilung größeren Erhaltungsaufwands auf mehrere Jahre nach § 82b EStDV; und die Kürzung bei
@@ -498,7 +498,7 @@ export default function Steuer({ settings }: Props) {
                 calc.ts): die getrennt abgerechnete Gewerbeeinheit und die eigene Wohnung aus einem
                 alten Bestand. Der Satz fragt deshalb, statt zu behaupten. */}
             {data.excludedExists && (
-              <div className="notice" style={{ marginTop: 14 }}>
+              <div className="notice">
                 <strong>Wohnungen außerhalb der Abrechnungseinheit.</strong> Diese Wohnungen sind weder
                 als vermietet noch als selbstgenutzt gekennzeichnet, und deshalb weiß Mietfuchs nicht, wie
                 sie steuerlich zu behandeln sind. Nutzen Sie eine davon selbst, stellen Sie sie in den <em>Stammdaten</em> auf
@@ -530,7 +530,7 @@ export default function Steuer({ settings }: Props) {
                 schützen soll. „Können“ statt „gehen“, weil eine ausgenommene Wohnung ohne
                 erfasste Fläche beide Grundmengen gleich lässt. */}
             {data.selfOccupiedExists && data.excludedExists && (
-              <p className="muted" style={{ marginTop: 10, fontSize: 12 }}>
+              <p className="muted fine">
                 Der Flächenanteil hier rechnet über das <strong>ganze Gebäude</strong>. Die Abrechnung
                 desselben Jahres verteilt dagegen nur über die Wohnungen, die zur Abrechnungseinheit
                 gehören. Die beiden Anteile können deshalb auseinandergehen, und beide sind richtig: Die
@@ -539,7 +539,7 @@ export default function Steuer({ settings }: Props) {
               </p>
             )}
 
-            <p className="muted" style={{ marginTop: 14, fontSize: 12 }}>
+            <p className="muted fine">
               Diese Übersicht ist eine Aufbereitung der erfassten Daten und <strong>keine Steuerberatung</strong>.
               Maßgeblich sind die amtlichen Formulare und Hinweise der Anlage V des jeweiligen Jahres.
             </p>

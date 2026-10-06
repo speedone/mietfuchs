@@ -60,6 +60,19 @@ export function attentionDetail(settlement: Pick<Settlement, 'notices' | 'warnin
   return texts.length > 0 ? texts.join(' · ') : 'Nur Auskünfte, nichts zu beheben. Sie stehen auf der Seite Abrechnung.'
 }
 
+// Sichtprüfung S12/E54: Im Cockpit eine Zeile je Hinweis, der etwas verlangt, statt aller Texte
+// in einem Absatz. Steht ein Titel da, genügt er (der Text steht auf der Seite Abrechnung);
+// gleiche Titel werden zusammengefasst. Ohne Titel (abgeschlossen vor #112) der Text wie bisher.
+export function attentionLines(settlement: Pick<Settlement, 'notices' | 'warnings'>): string[] {
+  const open = noticesOf(settlement).filter((n) => !INFORMATIONAL.has(n.code))
+  const counts = new Map<string, number>()
+  for (const n of open) {
+    const line = n.title || n.text
+    counts.set(line, (counts.get(line) ?? 0) + 1)
+  }
+  return [...counts].map(([line, k]) => (k > 1 ? `${line} (${k}×)` : line))
+}
+
 // Die CSS-Klasse je Stufe. Hinweis und Info teilen sich eine ruhige Farbe: Beides verlangt
 // nichts, und eine eigene Farbe für „reine Auskunft“ wäre eine mehr, die man lernen muss.
 export function noticeClass(level: NoticeLevel): 'error' | 'notice' | 'hint' {

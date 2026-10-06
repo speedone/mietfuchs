@@ -13,6 +13,14 @@ import { PeriodSelect } from '../components/PeriodSelect'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import { AiProgressBadge } from '../components/AiProgress'
 import { plural } from '../../../shared/wording.ts'
+import PageHeader from '../components/PageHeader'
+
+// Sichtprüfung E30: Die Kennzeichnung offener Zeilen trägt die Farbe der schlechtesten Ampel,
+// nicht Grün für „bitte prüfen“.
+function openBadgeClass(v: AssessmentView): string {
+  const levels = v.lines.filter((l) => l.state === 'open').map((l) => l.suggestion?.level)
+  return levels.includes('rot') ? 'badge red' : levels.includes('gelb') ? 'badge amber' : 'badge green'
+}
 
 type Props = {
   units: Unit[]
@@ -299,21 +307,23 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
 
   return (
     <>
-      <h1>📥 Schnellerfassung</h1>
-      <p className="sub">
-        Werfen Sie alles rein — Rechnungen <em>und</em> Zählerfotos. Das Tool erkennt automatisch, was es ist,
-        prüft es und sortiert nach Ampel. Grün übernehmen Sie mit einem Klick.{' '}
-        {ai.notice ?? `Alles bleibt lokal (${ai.model}).`}
-      </p>
+      <PageHeader
+        title="Schnellerfassung"
+        subtitle={<>
+          Werfen Sie alles rein — Rechnungen <em>und</em> Zählerfotos. Das Tool erkennt automatisch, was es ist,
+          prüft es und sortiert nach Ampel. Grün übernehmen Sie mit einem Klick.{' '}
+          {ai.notice ?? `Alles bleibt lokal (${ai.model}).`}
+        </>}
+      />
       {error && <div className="error">{error}</div>}
       {pending && <div className="warn">{pending}</div>}
 
       <div className="card no-print">
-        <div className="row" style={{ alignItems: 'center' }}>
+        <div className="row center">
           <PeriodSelect />
           <div className="grow" />
           {totalRecognized > 0 && (
-            <div className="muted" style={{ textAlign: 'right' }}>
+            <div className="muted align-right">
               {totalRecognized} erkannt — <span className="ampel gruen" /> {tally.gruen} · <span className="ampel gelb" /> {tally.gelb} · <span className="ampel rot" /> {tally.rot}
             </div>
           )}
@@ -321,7 +331,6 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
 
         <div
           className={`dropzone ${dragOver ? 'over' : ''}`}
-          style={{ marginTop: 12 }}
           onClick={() => fileInputRef.current?.click()}
           onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
           onDragLeave={() => setDragOver(false)}
@@ -334,7 +343,7 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
             type="file"
             accept="application/pdf,image/*"
             multiple
-            style={{ display: 'none' }}
+            className="sr-only"
             onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = '' }}
           />
         </div>
@@ -354,7 +363,7 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
         const rs = readingScores.get(entry.id)
         return (
           <div className="card no-print" key={entry.id}>
-            <div className="row" style={{ alignItems: 'center' }}>
+            <div className="row center">
               <strong>{entry.data.kind === 'zaehler' ? '🔢 ' : '🧾 '}{entry.fileName}</strong>
               {entry.status === 'wartend' && <span className="badge gray">wartet …</span>}
               {entry.status === 'läuft' && (
@@ -374,18 +383,18 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
               )}
             </div>
 
-            {entry.status === 'fehler' && <div className="error" style={{ marginTop: 8 }}>{entry.error}</div>}
+            {entry.status === 'fehler' && <div className="error">{entry.error}</div>}
 
             {/* ---------- Zählerstand ---------- */}
             {entry.status === 'fertig' && entry.data.kind === 'zaehler' && entry.data.reading && (
-              <div className="row" style={{ marginTop: 10, alignItems: 'flex-start' }}>
+              <div className="row start">
                 {entry.data.serverFile && (
                   <a href={`/uploads/${entry.data.serverFile}`} target="_blank" rel="noreferrer">
-                    <img src={`/uploads/${entry.data.serverFile}`} alt="Zählerfoto" style={{ width: 140, height: 140, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--line)' }} />
+                    <img src={`/uploads/${entry.data.serverFile}`} alt="Zählerfoto" className="meter-photo" />
                   </a>
                 )}
-                <div className="grow">
-                  <div className="row" style={{ alignItems: 'center' }}>
+                <div className="grow stack">
+                  <div className="row center">
                     <span className={`ampel ${rs?.level ?? 'gruen'}`} />
                     <label className="field">
                       Zähler
@@ -398,30 +407,32 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
                     </label>
                     <label className="field">
                       Stand
-                      <input value={entry.data.reading.value} onChange={(e) => updateReading(entry.id, { value: e.target.value })} style={{ width: 110 }} />
+                      <input value={entry.data.reading.value} onChange={(e) => updateReading(entry.id, { value: e.target.value })} className="input-num" />
                     </label>
                     <label className="field">
                       Datum
                       <input type="date" value={entry.data.reading.date} onChange={(e) => updateReading(entry.id, { date: e.target.value, hasDate: true })} />
                     </label>
-                    <label className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingBottom: 9 }}>
-                      <input type="checkbox" checked={entry.data.reading.replacement} onChange={(e) => updateReading(entry.id, { replacement: e.target.checked })} />
-                      Zählerwechsel
+                    <label className="field checkline">
+                      <span>
+                        <input type="checkbox" checked={entry.data.reading.replacement} onChange={(e) => updateReading(entry.id, { replacement: e.target.checked })} />
+                        Zählerwechsel
+                      </span>
                     </label>
                     {entry.data.reading.replacement && (
                       <label className="field">
                         Endstand alt
-                        <input value={entry.data.reading.oldEndValue} onChange={(e) => updateReading(entry.id, { oldEndValue: e.target.value })} style={{ width: 110 }} />
+                        <input value={entry.data.reading.oldEndValue} onChange={(e) => updateReading(entry.id, { oldEndValue: e.target.value })} className="input-num" />
                       </label>
                     )}
                   </div>
                   {entry.data.reading.meterNumber && <div className="muted">Gelesene Zählernummer: {entry.data.reading.meterNumber}</div>}
                   {rs && rs.level !== 'gruen' && (
-                    <div style={{ marginTop: 6 }}>
+                    <div>
                       {rs.reasons.map((r, j) => <span key={j} className={`chip ${rs.level}`}>{r}</span>)}
                     </div>
                   )}
-                  <div className="row" style={{ marginTop: 10 }}>
+                  <div className="row">
                     <div className="grow" />
                     <button className="btn" onClick={() => void adoptReading(entry)} disabled={adopting || !entry.data.reading.matchedMeterId || parseNum(entry.data.reading.value) === null}>
                       Ablesung übernehmen
@@ -436,10 +447,10 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
 
       {assessments.map((v) => (
         <div className="card no-print" key={v.id}>
-          <div className="row" style={{ alignItems: 'center' }}>
+          <div className="row center">
             <strong>🧾 {v.vendor || v.originalName}</strong>
             {v.open
-              ? <span className="badge green">{v.lines.filter((l) => l.state === 'open').length} offen — bitte prüfen</span>
+              ? <span className={openBadgeClass(v)}>{v.lines.filter((l) => l.state === 'open').length} offen — bitte prüfen</span>
               : <span className="badge green">✓ übernommen</span>}
             {/* Das Jahr, in das gebucht wird (nach einer Änderung von Hand nicht mehr das des Belegs) */}
             {(v.targetPeriod ?? calendarPeriod(v.year)) !== key && <span className="badge gray">{calendar ? `Jahr ${v.year}` : v.targetLabel ?? `Jahr ${v.year}`}</span>}
@@ -452,7 +463,7 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
 
       {hasAdopted && (
         <div className="card no-print">
-          <div className="row" style={{ alignItems: 'center' }}>
+          <div className="row center">
             <span>✓ Übernommen. Weiter geht's auf der Abrechnung oder bei den Kosten.</span>
             <div className="grow" />
             <button className="btn secondary" onClick={() => onNavigate('kosten')}>→ Kosten ansehen</button>

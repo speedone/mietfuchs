@@ -85,10 +85,10 @@ export default function FuelCard({ plant, view, deliveries, onSaved }: {
 
   return (
     <div className="card">
-      <h2>Lieferungen <Term id="accrualPrinciple" /></h2>
+      <h2><Term id="accrualPrinciple">Lieferungen</Term></h2>
       <p className="muted">
         Tragen Sie jede Rechnung Ihres Versorgers mit ihrem Rechnungszeitraum ein. Reicht sie über die Heizperiode hinaus, teilt Mietfuchs sie
-        auf: nach einem Zählerstand zum Stichtag, nach Teilmengen der Rechnung oder nach Gradtagen <Term id="degreeDays" />.
+        auf: nach einem Zählerstand zum Stichtag, nach Teilmengen der Rechnung oder nach <Term id="degreeDays">Gradtagen</Term>.
       </p>
       {deliveries.length === 0 && <p className="muted">Noch keine Lieferung, die in dieser Heizperiode endet.</p>}
       <ul className="plain">
@@ -98,7 +98,7 @@ export default function FuelCard({ plant, view, deliveries, onSaved }: {
             {!view.closed && (
               <span className="row">
                 <button className="btn secondary" onClick={() => open(d)}>Ändern</button>
-                <button className="btn secondary" onClick={() => void remove(d)}>Entfernen</button>
+                <button className="btn ghost danger-ghost" onClick={() => void remove(d)}>Entfernen</button>
               </span>
             )}
           </li>
@@ -136,12 +136,12 @@ export default function FuelCard({ plant, view, deliveries, onSaved }: {
               {text('co2Cost', 'CO₂-Kosten laut Rechnung')}
             </div>
           )}
-          <details>
+          <details className="extra-details">
             <summary>Weitere Angaben</summary>
             {text('sharePercent', 'Anteil dieser Heizperiode am Verbrauch (%), wenn bekannt')}
           </details>
           {service && (
-            <label className="field">
+            <label className="checkline">
               <input type="checkbox" checked={form.usedByService} onChange={(e) => set('usedByService', e.target.checked)} />
               vom Messdienst angesetzt
             </label>
@@ -153,7 +153,7 @@ export default function FuelCard({ plant, view, deliveries, onSaved }: {
         </div>
       )}
       {error && <div className="error">{error}</div>}
-      {!view.closed && editing === null && <button className="btn" onClick={() => open(null)}>Lieferung eintragen</button>}
+      {!view.closed && editing === null && <div className="row"><button className="btn" onClick={() => open(null)}>Lieferung eintragen</button></div>}
     </div>
   )
 }

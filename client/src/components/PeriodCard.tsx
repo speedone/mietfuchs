@@ -59,7 +59,7 @@ const balance = (cents: number): string => (cents >= 0 ? `Guthaben ${fmtEuro(cen
 export function EffectsList({ effects, earliest }: { effects: PeriodEffect[]; earliest?: string }) {
   if (effects.length === 0) return null
   return (
-    <div>
+    <div className="stack">
       <h4>Was sich an schon begonnenen Abrechnungen ändert</h4>
       <p className="muted">Gerechnet mit den Vorschlägen dieser Vorschau; wo keiner steht, mit dem Aufteilen nach Tagen. Wählen Sie anders, ändern sich die Beträge.</p>
       {effects.map((e) => (
@@ -174,7 +174,7 @@ export function PreviewAnswers({ preview, answers, onChange }: { preview: Period
                   tatsächlich gezahlt {a.months} ({a.label}) €
                   <input value={entry.amount} disabled={entry.none} inputMode="decimal" onChange={(e) => set({ ...entry, amount: e.target.value })} />
                 </label>
-                <label className="field checkline">
+                <label className="checkline">
                   <input type="checkbox" checked={entry.none} onChange={(e) => set({ ...entry, none: e.target.checked })} />
                   <span>keine Korrektur (die Staffel gilt)</span>
                 </label>
@@ -253,18 +253,19 @@ export default function PeriodCard({ onChanged }: { onChanged?: () => Promise<vo
   return (
     <div className="card">
       <h2><Term id="billingPeriod">Abrechnungszeitraum</Term></h2>
-      <p>
-        {rhythmText(rules)}.{' '}
-        <span className="muted">
-          Wählen Sie einen anderen Beginn nur, wenn Ihr Mietvertrag oder Ihr Messdienst ihn vorgibt. Weicht nur die Heizung ab,
-          stellen Sie das in der Karte „Heizung“ ein; der Zeitraum der übrigen Kosten bleibt dann, wie er ist.
-        </span>
-      </p>
+      {/* Sichtprüfung E4: der Stand als Satz, die Erklärung darunter statt in derselben Zeile */}
+      <p>{rhythmText(rules)}.</p>
+      <small className="muted">
+        Wählen Sie einen anderen Beginn nur, wenn Ihr Mietvertrag oder Ihr Messdienst ihn vorgibt. Weicht nur die Heizung ab,
+        stellen Sie das in der Karte „Heizung“ ein; der Zeitraum der übrigen Kosten bleibt dann, wie er ist.
+      </small>
       {rules.changes.map((c) => (
         <button key={c} className="btn secondary" disabled={busy} onClick={() => void ask(withoutChange(rules, c))}>Wechsel ab {changeLabel(c)} entfernen …</button>
       ))}
       <RhythmFields form={form} onChange={setForm} />
-      <button className="btn secondary" disabled={busy} onClick={() => void ask(nextRules(rules, form))}>Vorschau</button>
+      <div className="row">
+        <button className="btn secondary" disabled={busy} onClick={() => void ask(nextRules(rules, form))}>Vorschau</button>
+      </div>
       {error && <div className="error">{error}</div>}
       {preview && answers && (
         <div className="card inset">
@@ -284,7 +285,7 @@ export default function PeriodCard({ onChanged }: { onChanged?: () => Promise<vo
           <PreviewAnswers preview={preview} answers={answers} onChange={setAnswers} />
           <EffectsList effects={preview.effects} earliest={earliestOpenChange(localToday())} />
           {preview.effects.some((e) => e.passed) && (
-            <label className="field checkline">
+            <label className="checkline">
               <input type="checkbox" checked={understood} onChange={(e) => setUnderstood(e.target.checked)} />
               <span>Ich habe verstanden, dass ich aus einem Zeitraum mit abgelaufener Frist keine Nachzahlung mehr verlangen kann.</span>
             </label>

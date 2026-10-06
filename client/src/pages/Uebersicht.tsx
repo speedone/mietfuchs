@@ -80,7 +80,7 @@ export default function Uebersicht({ onNavigate }: Props) {
 
   return (
     <>
-      <PageHeader title="Übersicht" subtitle="Kosten im Blick: Jahresvergleich, Auffälligkeiten und der Stand der Abrechnung." />
+      <PageHeader title="Kostenvergleich" subtitle="Kosten im Blick: Jahresvergleich, Auffälligkeiten und der Stand der Abrechnung." />
       {error && <div className="error">{error}</div>}
 
       <div className="card">
@@ -140,6 +140,12 @@ export default function Uebersicht({ onNavigate }: Props) {
 
       <div className="card">
         <h2>Kostenarten {label}{hasCosts && hasPrev ? ` im Vergleich zu ${at.previousLabel}` : ''}</h2>
+        {/* Sichtprüfung E49: was grau und was farbig ist */}
+        {hasCosts && hasPrev && (
+          <p className="muted chart-legend" aria-hidden="true">
+            <span className="bar-key prev" /> {at.previousLabel} <span className="bar-key" /> {label}
+          </p>
+        )}
         {categories.length === 0 ? (
           <div className="empty">
             Für {label} sind noch keine Kosten erfasst —{' '}

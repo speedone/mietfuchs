@@ -428,7 +428,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   return (
     <>
       <PageHeader
-        title="Kosten & Belege"
+        title="Kosten"
         subtitle="Alle Rechnungen des Abrechnungsjahres erfassen — manuell oder per KI-Belegauswertung."
         actions={<button className="btn" onClick={() => { setError(''); setForm(newItemForm(units, meters, keyCtx)) }}>+ Kostenposition</button>}
       />
@@ -452,7 +452,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
           <div className="grow" />
           <div>
             <div className="muted">Erfasste Kosten {label}</div>
-            <div style={{ fontSize: 22, fontWeight: 700 }}>{fmtEuro(totalCents)}</div>
+            <div className="big-number">{fmtEuro(totalCents)}</div>
           </div>
         </div>
       </div>
@@ -495,13 +495,13 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                   <td className="num">
                     {r.inline && (
                       <input aria-label={`Betrag ${label} für ${r.description}`} value={r.amount} onChange={(e) => updateCarry(i, withCarryAmount(r, e.target.value, alreadyCarried(filedItems, r, at)))}
-                        placeholder="—" inputMode="decimal" style={{ width: 100, textAlign: 'right' }} />
+                        placeholder="—" inputMode="decimal" className="input-num" />
                     )}
                     {r.checked && !r.amount.trim() && <div><span className="badge red">Betrag fehlt</span></div>}
                     <div className="muted">{at.previousLabel}: {fmtEuro(r.source.amountCents)}</div>
                   </td>
                   <td className="num">
-                    {r.inline && <input aria-label={`§35a-Lohn ${label} für ${r.description}`} value={r.labor35a} onChange={(e) => updateCarry(i, { labor35a: e.target.value })} placeholder="—" inputMode="decimal" style={{ width: 90, textAlign: 'right' }} />}
+                    {r.inline && <input aria-label={`§35a-Lohn ${label} für ${r.description}`} value={r.labor35a} onChange={(e) => updateCarry(i, { labor35a: e.target.value })} placeholder="—" inputMode="decimal" className="input-num" />}
                   </td>
                   {/* Reicht der Zeitraum über zwei Kalenderjahre, ist das Jahr der Zahlung Pflicht (#208, Durchsicht von #226, I2). */}
                   {spansTwoYears(period) && (
@@ -510,7 +510,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                       {r.inline && !r.heating && <TaxYearSelect label={`Jahr der Zahlung für ${r.description}`} value={r.taxYear ?? ''} years={taxYearOptions(year)} onChange={(v) => updateCarry(i, { taxYear: v })} />}
                     </td>
                   )}
-                  <td><input aria-label="Beschreibung" value={r.description} onChange={(e) => updateCarry(i, { description: e.target.value })} style={{ width: '100%', minWidth: 200 }} /></td>
+                  <td><input aria-label="Beschreibung" value={r.description} onChange={(e) => updateCarry(i, { description: e.target.value })} className="input-wide" /></td>
                   <td>
                     {keyListText(r.source, units)}
                     {showsKeyFields(r.source.category) && r.source.participantUnitIds && (
@@ -534,7 +534,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                         onChange={(e) => updateCarry(i, { externalTotalAmount: e.target.value })}
                         placeholder="Kosten der Gemeinschaft €"
                         inputMode="decimal"
-                        style={{ width: 170, marginTop: 4 }}
+                        className="input-cell"
                       />
                     )}
                     {!r.inline && <div className="muted">{r.formReason ?? 'Einzelbeträge je Mieter bitte im Formular eintragen.'}</div>}
@@ -547,7 +547,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
               ))}
             </tbody>
           </Table>
-          <div className="row" style={{ marginTop: 10 }}>
+          <div className="row">
             <button className="btn" onClick={() => void adoptCarry()} disabled={carrySaving || carry.every((r) => !r.checked)}>
               {carry.filter((r) => r.checked).length} {carry.filter((r) => r.checked).length === 1 ? 'Position' : 'Positionen'} für {label} anlegen
             </button>
@@ -576,14 +576,14 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             type="file"
             accept="application/pdf,image/*"
             multiple
-            style={{ display: 'none' }}
+            className="sr-only"
             onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = '' }}
           />
         </div>
 
         {queue.map((entry) => (
-          <div key={entry.id} style={{ marginTop: 14 }}>
-            <div className="row" style={{ alignItems: 'center' }}>
+          <div key={entry.id} className="stack">
+            <div className="row center">
               <strong>{entry.fileName}</strong>
               {entry.status === 'wartend' && <span className="badge gray">wartet …</span>}
               {entry.status === 'läuft' && (
@@ -593,7 +593,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                   onCancel={() => cancel(entry.id)}
                 />
               )}
-              {entry.status === 'fertig' && <span className="badge green">{countOf(entry.data.assessment?.lines.length ?? 0, 'Position', 'Positionen')} erkannt — bitte prüfen</span>}
+              {entry.status === 'fertig' && <span className="badge amber">{countOf(entry.data.assessment?.lines.length ?? 0, 'Position', 'Positionen')} erkannt — bitte prüfen</span>}
               {entry.status === 'übernommen' && <span className="badge green">✓ übernommen</span>}
               {entry.status === 'fehler' && <span className="badge red">Fehler</span>}
               {entry.status === 'abgebrochen' && <span className="badge gray">abgebrochen</span>}
@@ -645,7 +645,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                 <tr key={i.id}>
                   <td>
                     {i.category}
-                    {isNotAllocable(i.category) && <span className="badge gray" style={{ marginLeft: 6 }}>Vermieter</span>}
+                    {isNotAllocable(i.category) && <span className="badge gray badge-next">Vermieter</span>}
                   </td>
                   <td>
                     {i.description}
@@ -710,9 +710,11 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
           </Table>
         )}
 
-        <button className="btn secondary no-print" style={{ marginTop: 14 }} onClick={() => { setError(''); setForm(newItemForm(units, meters, keyCtx)) }}>
-          + Kostenposition manuell erfassen
-        </button>
+        <div className="row no-print">
+          <button className="btn secondary" onClick={() => { setError(''); setForm(newItemForm(units, meters, keyCtx)) }}>
+            + Kostenposition manuell erfassen
+          </button>
+        </div>
       </div>
 
       {form && (
@@ -769,7 +771,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
               <span>davon <Term id="labor35a">§35a-Lohn</Term> €</span>
               <input value={form.labor35a} onChange={(e) => setForm({ ...form, labor35a: e.target.value })} placeholder="optional" />
             </label>
-            <details className="field grow" style={{ flexBasis: '100%' }} open={!!(form.serviceFrom || form.serviceTo || form.taxYear || form.heatingFuel || (heatTax ? heatTax.show : showsTaxYear(period, needsTaxYear)))}>
+            <details className="extra-details" open={!!(form.serviceFrom || form.serviceTo || form.taxYear || form.heatingFuel || (heatTax ? heatTax.show : showsTaxYear(period, needsTaxYear)))}>
               <summary>Weitere Angaben — Leistungszeitraum{(heatTax ? heatTax.show : showsTaxYear(period, needsTaxYear)) ? ', Jahr der Zahlung' : ''}{form.category === HEATING_CATEGORY ? ', Brennstoff/Energie' : ''} (optional)</summary>
               <CostPeriodFields form={form} onChange={setForm} showTaxYear={heatTax ? heatTax.show : showsTaxYear(period, needsTaxYear)} years={heatTax?.show ? heatTax.years : taxYearOptions(year)} />
             </details>
@@ -795,7 +797,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             {showsTaxUnitField(form.category) && taxScopeOf(form) === TAX_SCOPE_SOME && (
               <div className="field-group">
                 <div className="field-group-label">Betroffene Einheiten (für die Steuer)</div>
-                <div className="row">
+                <div className="checks">
                   {units.map((u) => (
                     <label key={u.id} className="field checkline">
                       <span>
@@ -841,7 +843,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             {form.key === 'custom' && (
               <div className="field-group">
                 <div className="field-group-label"><Term id="agreedShares">Vereinbarte Anteile</Term></div>
-                <div className="muted" style={{ marginBottom: 8 }}>
+                <div className="muted">
                   Anteil je Wohnung in Prozent, wie im Mietvertrag vereinbart (§556a Abs. 1 BGB).
                   Was unter 100 % fehlt, trägt der Vermieter.
                 </div>
@@ -850,7 +852,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                     <label key={u.id} className="field grow">
                       {/* Name und Kennzeichen in einer Zeile — .field ist eine Flex-Spalte,
                           ein direktes Kind würde sich sonst über die ganze Breite ziehen. */}
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span className="label-line">
                         {u.name}
                         {usageOf(u) === 'eigen' && <span className="badge gray">Eigennutzung</span>}
                       </span>
@@ -863,13 +865,13 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                     </label>
                   ))}
                 </div>
-                <div className="muted" style={{ marginTop: 6 }}>Summe: {sumText}</div>
+                <div className="muted">Summe: {sumText}</div>
               </div>
             )}
             {form.key === 'external' && (
               <div className="field-group">
                 <div className="field-group-label">Laut Gemeinschaftsabrechnung</div>
-                <div className="muted" style={{ marginBottom: 8 }}>
+                <div className="muted">
                   Betrag oben ist Ihr Anteil laut <Term id="homeownersStatement">Hausgeldabrechnung</Term>. Hier die Angaben der Gemeinschaft
                   zu dieser Kostenart, meist nach <Term id="mea">Miteigentumsanteilen</Term>; sie erscheinen im Rechenweg der Abrechnung (§556a Abs. 3 BGB).
                 </div>
@@ -892,15 +894,15 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                 {/* #144: weicht der rechnerische Anteil vom Betrag ab, steht er markiert da */}
                 {externalHint(form, units) && (
                   externalMismatch(form, units)
-                    ? <div className="notice" style={{ marginTop: 6 }}><strong>{externalHint(form, units)}</strong></div>
-                    : <div className="muted" style={{ marginTop: 6 }}>{externalHint(form, units)}</div>
+                    ? <div className="notice"><strong>{externalHint(form, units)}</strong></div>
+                    : <div className="muted">{externalHint(form, units)}</div>
                 )}
               </div>
             )}
             {form.key === 'amounts' && (
               <div className="field-group">
                 <div className="field-group-label"><Term id="individualAmounts">Einzelbeträge</Term> je Mieter</div>
-                <div className="muted" style={{ marginBottom: 8 }}>
+                <div className="muted">
                   Die Beträge aus der Einzelabrechnung, etwa vom Messdienst. Bei einem Mieterwechsel teilt
                   der Messdienst selbst auf; den Rest trägt der Vermieter.
                 </div>
@@ -922,7 +924,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                   </div>
                 )}
                 {selfAmountUnits(units, form.participants).length > 0 && (
-                  <div className="row" style={{ marginTop: 8 }}>
+                  <div className="row">
                     {selfAmountUnits(units, form.participants).map((u) => (
                       <label key={u.id} className="field grow">
                         <span>{u.name} (selbstgenutzt, Ihr <Term id="ownShare">Eigenanteil</Term>)</span>
@@ -936,17 +938,17 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                     ))}
                   </div>
                 )}
-                <div className="muted" style={{ marginTop: 6 }}>{amountsSumText(form, units, tenancies, period)}</div>
+                <div className="muted">{amountsSumText(form, units, tenancies, period)}</div>
               </div>
             )}
             {PARTICIPANT_KEYS.includes(form.key) && basisUnits.length > 1 && (
-              <details open={form.participants !== null}>
+              <details className="extra-details" open={form.participants !== null}>
                 <summary>Weitere Optionen: nur bestimmte Wohnungen beteiligen</summary>
-                <div className="muted" style={{ marginBottom: 8 }}>
+                <div className="muted">
                   Etwa der Aufzug nur für ein Haus oder die Waschküche nur für ihre Nutzer. Nur die
                   angehakten Wohnungen bilden die <Term id="distributionBasis">Verteilbasis</Term>.
                 </div>
-                <div className="row">
+                <div className="checks">
                   {basisUnits.map((u) => {
                     const checked = form.participants === null || form.participants.includes(u.id)
                     return (
@@ -982,7 +984,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             <div className="field-group">
               <div className="field-group-label">Beleg (Rechnungskopie)</div>
               {form.invoiceFile ? (
-                <div className="row" style={{ alignItems: 'center' }}>
+                <div className="row center">
                   <a href={`/uploads/${form.invoiceFile}`} target="_blank" rel="noreferrer">
                     📎 {form.invoiceFile.replace(/^\d+_/, '')}
                   </a>
@@ -992,12 +994,16 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                 </div>
               ) : (
                 <>
-                  <label className="field grow">
-                    neu hochladen
-                    <input type="file" accept="application/pdf,image/*" onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadInvoice(f) }} />
-                  </label>
+                  {/* Sichtprüfung E26: ein eigener Knopf statt des Dateifelds des Browsers („Choose File“) */}
+                  <div className="row center">
+                    <label className="btn secondary small">
+                      Beleg hochladen …
+                      <input type="file" className="sr-only" accept="application/pdf,image/*" onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadInvoice(f) }} />
+                    </label>
+                    <span className="muted">PDF oder Foto</span>
+                  </div>
                   {knownFiles.length > 0 && (
-                    <label className="field grow" style={{ marginTop: 8 }}>
+                    <label className="field grow">
                       oder vorhandenen Beleg zuordnen
                       <select value="" onChange={(e) => { if (e.target.value) setForm({ ...form, invoiceFile: e.target.value }) }}>
                         <option value="">— wählen —</option>

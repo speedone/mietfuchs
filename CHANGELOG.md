@@ -126,6 +126,14 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Geändert
 
+- **Oberfläche aufgeräumt.** Felder, Hilfetexte und Knöpfe stehen in Karten, Seitenfenstern und
+  aufklappbaren Bereichen mit einheitlichem Abstand, statt aneinanderzukleben; eingegebene Werte,
+  Platzhalter und Hilfetexte sind nicht mehr fett, Kontrollkästchen stehen überall links neben
+  ihrem Text. Aufklappbare Bereiche und Links sehen überall gleich aus, Schrift in Akzentfarbe ist
+  im dunklen Design gut lesbar, und „Abbrechen“ wird beim Überfahren nicht mehr rot. Die Hinweise
+  der Abrechnung stehen als Liste mit Titel und aufklappbarem Text, das Cockpit nennt sie Zeile für
+  Zeile. Breite Tabellen zeigen auf dem Handy, dass sich seitlich scrollen lässt, und die
+  Seitentitel heißen wie in der Navigation.
 - **Jahr der Zahlung bei der Belegbuchung.** Reicht der Abrechnungszeitraum über zwei
   Kalenderjahre, liegt das Jahr der Zahlung immer zwischen dem ersten Jahr und dem Jahr nach dem
   Ende des Zeitraums: Ein Rechnungsdatum außerhalb wird auf die nächste Grenze gesetzt, auch bei

@@ -2,9 +2,12 @@
   --bg: #f4f5f7;
   --card: #ffffff;
   --text: #1a2233;
-  --muted: #68718a;
+  --muted: #5f6780;
   --line: #e4e7ee;
+  /* --accent für Flächen, Rahmen und Fokus; --accent-text für Schrift in Akzentfarbe (S6). Beide
+     müssen auf --card und --accent-soft mindestens 4,5:1 erreichen (uiRules.test.ts rechnet nach). */
   --accent: #4f46e5;
+  --accent-text: #4f46e5;
   --accent-soft: #eef0ff;
   --green: #15803d;
   --green-soft: #ecfdf3;
@@ -32,9 +35,10 @@
   --bg: #11141d;
   --card: #1a1f2e;
   --text: #e3e7f2;
-  --muted: #8b93ab;
+  --muted: #9098b0;
   --line: #2a3044;
-  --accent: #6366f1;
+  --accent: #5558e3;
+  --accent-text: #a5b4fc;
   --accent-soft: #262b4a;
   --green: #4ade80;
   --green-soft: #11271b;
@@ -123,7 +127,7 @@ body {
   margin: auto -14px -24px;
   padding: 12px 26px 16px;
   font-size: 12px;
-  color: #5d6580;
+  color: #8b93ab;
   position: sticky;
   bottom: -24px;
   background: var(--sidebar);
@@ -149,10 +153,18 @@ h1 { font-size: 24px; margin: 0 0 4px; }
 h2 { font-size: 17px; margin: 0 0 12px; }
 h3 { font-size: 14px; margin: 0 0 8px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
 
-/* Aufklappbarer Abschnitt (z. B. „Weitere Angaben" im Mieter-Formular) */
-.extra-details { border-top: 1px dashed var(--line); padding-top: 10px; margin-top: 4px; }
-.extra-details > summary { cursor: pointer; color: var(--accent); font-size: 14px; user-select: none; }
-.extra-details > summary:hover { text-decoration: underline; }
+/* Aufklappbare Bereiche (S8): eine Gestaltung für jede Zusammenfassung. Eigene Gestaltungen haben
+   nur die Register des Belegordners und die Anleitungen der Hilfe; sie stehen weiter unten. */
+details > summary { cursor: pointer; color: var(--accent-text); font-size: 14px; font-weight: 600; user-select: none; width: fit-content; max-width: 100%; }
+details > summary:hover { text-decoration: underline; }
+details > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+/* „Weitere Angaben“ in einem Formular: dazu eine gestrichelte Linie darüber */
+.extra-details { border-top: 1px dashed var(--line); padding-top: 10px; }
+
+/* Links (S9): Akzentschrift statt Browserblau, im Dunkelmodus lesbar */
+a { color: var(--accent-text); text-decoration: none; }
+a:hover { text-decoration: underline; }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
 
 .card {
   background: var(--card);
@@ -173,6 +185,7 @@ tr.focus-target > td { background: var(--accent-soft); }
 
 .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
 .grow { flex: 1; }
+.grow-2 { flex: 2; }
 
 /* ---------- Formulare ---------- */
 label.field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); font-weight: 600; }
@@ -209,9 +222,11 @@ input[type='checkbox'] { width: 17px; height: 17px; accent-color: var(--accent);
 :is(a, label).btn { display: inline-block; text-decoration: none; }
 :is(button, a, label).btn:hover { filter: brightness(1.1); }
 button.btn:disabled { opacity: 0.5; cursor: default; }
-:is(button, a, label).btn.secondary { background: var(--accent-soft); color: var(--accent); }
+:is(button, a, label).btn.secondary { background: var(--accent-soft); color: var(--accent-text); }
 button.btn.ghost { background: transparent; color: var(--muted); padding: 9px 10px; }
-button.btn.ghost:hover { color: var(--red); }
+/* S7: Ein Geisterknopf wird beim Überfahren nicht rot; rot ist nur, was löscht (.danger-ghost). */
+button.btn.ghost:hover { color: var(--text); background: var(--chip); filter: none; }
+button.btn.ghost.danger-ghost:hover { color: var(--red); background: var(--red-soft); }
 :is(button, a, label).btn.small { padding: 5px 10px; font-size: 13px; }
 button.btn.danger { background: var(--red); color: #fff; }
 button.btn.danger:hover { filter: brightness(1.08); }
@@ -229,7 +244,7 @@ tr:last-child td { border-bottom: none; }
 td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 tfoot td { font-weight: 700; border-top: 2px solid var(--line); }
 tr.subtotal td { font-weight: 600; background: var(--bg); border-bottom: 1px solid var(--input-border); }
-tr.group-head td { font-weight: 600; background: var(--accent-soft); color: var(--accent); border-bottom: 1px solid var(--input-border); padding-top: 11px; padding-bottom: 11px; }
+tr.group-head td { font-weight: 600; background: var(--accent-soft); color: var(--accent-text); border-bottom: 1px solid var(--input-border); padding-top: 11px; padding-bottom: 11px; }
 tr.group-head td a { color: inherit; font-weight: 400; margin-left: 8px; }
 .muted { color: var(--muted); font-size: 13px; }
 
@@ -245,11 +260,14 @@ label.field.checkline span { display: flex; align-items: center; gap: 6px; font-
 .notice { background: var(--amber-soft); color: var(--amber); border: 1px solid var(--notice-border); border-radius: 8px; padding: 10px 14px; font-size: 13.5px; margin-bottom: 16px; }
 .error { background: var(--red-soft); color: var(--red); border: 1px solid var(--error-border); border-radius: 8px; padding: 10px 14px; font-size: 13.5px; margin: 10px 0; }
 .ok { background: var(--green-soft); color: var(--green); border: 1px solid var(--ok-border); border-radius: 8px; padding: 10px 14px; font-size: 13.5px; margin: 10px 0; }
-.hint { background: var(--accent-soft); color: var(--accent); border: 1px solid var(--accent); border-radius: 8px; padding: 10px 14px; font-size: 13.5px; margin: 10px 0; }
+/* Fließtext in normaler Schrift (S6): Indigo auf Indigo las sich im Dunkelmodus mit 3:1. Der Akzent
+   bleibt Rahmen und Titel. */
+.hint, .info { background: var(--accent-soft); color: var(--text); border: 1px solid var(--accent); border-left-width: 4px; border-radius: 8px; padding: 10px 14px; font-size: 13.5px; margin: 10px 0; }
+.hint :is(strong, .notice-title), .info strong { color: var(--accent-text); }
 /* Hinweise der Abrechnung (#112): Stufe und Titel über dem Text, der Knopf darunter */
 .notice-item .notice-head { margin-bottom: 4px; }
 .notice-item .notice-level { text-transform: uppercase; font-size: 11px; letter-spacing: 0.04em; opacity: 0.85; }
-.notice-item .notice-action { margin-top: 8px; padding: 4px 10px; font-size: 12.5px; }
+.notice-item .notice-action { padding: 4px 10px; font-size: 12.5px; background: var(--card); border: 1px solid currentColor; }
 .legal-basis { font-size: 12.5px; color: var(--muted); margin: 4px 0 16px; }
 .legal-basis summary { cursor: pointer; }
 .legal-basis ul { margin: 6px 0 0 18px; padding: 0; }
@@ -311,6 +329,14 @@ label.field.checkline span { display: flex; align-items: center; gap: 6px; font-
   margin: 2px 0;
 }
 .chart-table .bar.prev { background: var(--line); }
+/* Legende der Balken (E49) */
+.chart-legend { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.bar-key { display: inline-block; width: 18px; height: 10px; border-radius: 3px; background: var(--accent); margin-left: 6px; }
+.bar-key:first-child { margin-left: 0; }
+.bar-key.prev { background: var(--line); }
+/* Rechenweg (E43): ein kleiner Textverweis statt eines Knopfes, der jede Zeile höher macht */
+button.btn.calc-toggle { background: none; color: var(--accent-text); padding: 2px 0; font-size: 12px; }
+button.btn.calc-toggle:hover { text-decoration: underline; filter: none; }
 
 /* ---------- Mieterwechsel-Assistent ---------- */
 .wizard-step {
@@ -368,7 +394,7 @@ label.field.checkline span { display: flex; align-items: center; gap: 6px; font-
 }
 .sidebar .property-switcher .property-select:focus-within .property-current { outline: 2px solid #ef6f2e; outline-offset: 2px; }
 .sidebar .nav-group { display: flex; flex-direction: column; gap: 2px; }
-.sidebar .nav-section { font-size: 10.5px; letter-spacing: 0.6px; text-transform: uppercase; color: #5d6580; padding: 14px 12px 5px; }
+.sidebar .nav-section { font-size: 10.5px; letter-spacing: 0.6px; text-transform: uppercase; color: #8b93ab; padding: 14px 12px 5px; }
 
 /* ---------- Mobil (Handy: Zählerstand erfassen, Beleg fotografieren) ---------- */
 @media (max-width: 760px) {
@@ -424,7 +450,7 @@ label.field.checkline span { display: flex; align-items: center; gap: 6px; font-
 .check-row.clickable { cursor: pointer; }
 .check-row.clickable:hover { background: var(--accent-soft); }
 .check-title { font-weight: 600; }
-.check-cta { color: var(--accent); font-size: 13px; font-weight: 600; white-space: nowrap; align-self: center; }
+.check-cta { color: var(--accent-text); font-size: 13px; font-weight: 600; white-space: nowrap; align-self: center; }
 
 .tenant-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
 .tenant-card {
@@ -452,13 +478,10 @@ label.field.checkline span { display: flex; align-items: center; gap: 6px; font-
 .page-property {
   display: inline-flex; align-items: baseline; gap: 6px; max-width: 100%;
   margin-bottom: 6px; padding: 2px 10px; border-radius: 99px;
-  background: var(--accent-soft); color: var(--accent); font-size: 13px; font-weight: 600;
+  background: var(--accent-soft); color: var(--accent-text); font-size: 13px; font-weight: 600;
   overflow-wrap: anywhere;
 }
 .page-property-label { font-size: 10.5px; letter-spacing: 0.5px; text-transform: uppercase; font-weight: 500; }
-/* Im Dunkelmodus liegt --accent auf --accent-soft unter 3:1; #a5b4fc kommt auf rund 7:1. */
-:root[data-theme='dark'] .page-property,
-:root[data-theme='dark'] .property-notice { color: #a5b4fc; }
 /* Hinweis nach dem Wechsel in ein leeres Objekt (#157) */
 .property-notice { display: flex; flex-direction: column; gap: 10px; margin: 0 0 18px; font-size: 14px; }
 .property-notice-title { font-size: 15px; margin: 0 0 4px; color: inherit; }
@@ -539,7 +562,7 @@ label.field.checkline span { display: flex; align-items: center; gap: 6px; font-
 .staffel-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; align-items: end; margin-bottom: 8px; }
 .staffel-row > label.field { flex: none; }
 .staffel-row > .icon-btn { margin-bottom: 4px; }
-.field-group .field-add { margin-top: 2px; }
+.field-group .field-add { margin-top: 10px; }
 
 /* ---------- Toasts ---------- */
 .toast-wrap {
@@ -571,7 +594,7 @@ label.field.checkline span { display: flex; align-items: center; gap: 6px; font-
 .toast.error { border-left-color: var(--red); }
 .toast.error .toast-ic { color: var(--red); }
 .toast.info { border-left-color: var(--accent); }
-.toast.info .toast-ic { color: var(--accent); }
+.toast.info .toast-ic { color: var(--accent-text); }
 
 /* ---------- Bestätigungsdialog ---------- */
 .dialog-backdrop {
@@ -620,7 +643,7 @@ td.actions { white-space: nowrap; text-align: right; }
   color: var(--muted);
   font-size: 15px;
 }
-.icon-btn:hover { background: var(--accent-soft); color: var(--accent); }
+.icon-btn:hover { background: var(--accent-soft); color: var(--accent-text); }
 .icon-btn.danger:hover { background: var(--red-soft); color: var(--red); }
 
 /* ---------- Update-Hinweis (Seitenleiste, Cockpit, Einstellungen) ---------- */
@@ -691,7 +714,6 @@ td.actions { white-space: nowrap; text-align: right; }
 .update-guide { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
 .update-guide p { margin: 0 0 10px; }
 .update-guide p.muted { margin: 10px 0 0; }
-.update-guide a:not(.btn) { color: var(--accent); }
 .update-download { margin-bottom: 12px; }
 .update-steps { margin: 0 0 10px; padding-left: 22px; }
 .update-steps li { margin-bottom: 6px; padding-left: 2px; }
@@ -721,6 +743,165 @@ td.actions { white-space: nowrap; text-align: right; }
   .drawer, .drawer-backdrop, .toast, .dialog, .dialog-backdrop, .sidebar .update-hint { animation: none; }
 }
 
+/* ========== Gestaltungsregeln aus der Sichtprüfung (S1–S12) ==========
+   Sie stehen gesammelt hier, nach den Regeln der Bausteine und vor dem Druck, damit sie bei gleicher
+   Spezifität gelten. Wächter dazu in uiRules.test.ts. */
+
+/* S1 – Senkrechter Rhythmus. Jedes Element im Fluss einer Karte, eines Drawers, eines
+   aufklappbaren Bereichs, eines Panels oder einer Feldgruppe steht 12 px unter seinem Vorgänger.
+   Vorher entstand Abstand nur zufällig über `.row { gap }` oder den Standardrand von <p>, und
+   alles andere klebte Kante an Kante. Abstände gehören hierher, nicht als style={{ marginTop }}
+   in die Seiten. */
+:is(.card, .drawer-body, .panel, .preview, .field-group, .stack, details, fieldset, .wizard-step, .co2-block, .notice-item, .notice, .error, .warn, .hint, .info, .ok) > * { margin-block: 0; }
+:is(.card, .drawer-body, .panel, .preview, .field-group, .stack, details, fieldset, .wizard-step, .co2-block, .notice-item, .notice, .error, .warn, .hint, .info, .ok) > * + * { margin-top: 12px; }
+/* Ein Hilfetext gehört zum Feld darüber und rückt an es heran */
+:is(.card, .drawer-body, .panel, .preview, .field-group, .stack, details, fieldset) > :is(label.field, fieldset, .row, .checks) + small.muted { margin-top: 4px; }
+:is(.card, .drawer-body, .panel, .preview, .field-group, .stack, details, fieldset, label.field) > small.muted { display: block; font-size: 12.5px; line-height: 1.45; }
+/* Staffelzeilen innerhalb einer Feldgruppe stehen enger */
+.field-group > .staffel-row + .staffel-row { margin-top: 8px; }
+.field-group > .field-group-label + * { margin-top: 10px; }
+/* Eine Zwischenüberschrift beginnt einen neuen Abschnitt und bekommt mehr Luft */
+:is(.card, .drawer-body, .panel, .preview, .stack, details) > * + :is(h3, h4) { margin-top: 22px; }
+/* Kleingedrucktes (Hinweise unter Ergebnissen) */
+.fine { font-size: 12px; }
+/* Karten mit Symbol links und Text rechts stehen nebeneinander, nicht im Fluss */
+:is(.db-notice, .update-consent, .toast) > * + * { margin-top: 0; }
+fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+legend { padding: 0; }
+/* Eine Legende sitzt sonst auf der Oberkante des fieldset und rückt an den Vorgänger heran */
+fieldset > legend { float: left; width: 100%; }
+fieldset > legend + * { clear: both; }
+
+/* S2 – Fett ist nur die Beschriftung. `label.field` vererbte sein Gewicht an Eingaben, Platzhalter
+   und Hilfetexte; Platzhalter sahen dadurch aus wie Werte und Hilfetexte wie die nächste Frage. */
+label.field :is(input, select, textarea) { font-weight: 400; }
+label.field :is(small, .muted, p, ul, ol) { font-weight: 400; }
+::placeholder { color: var(--muted); opacity: 0.8; font-weight: 400; }
+.field-label { font-weight: 600; }
+/* Eingabe- und Auswahlfelder gleich hoch, damit Beschriftungen in einer Zeile auf einer Linie stehen (E3) */
+:is(input:not([type='checkbox'], [type='radio'], [type='file'], [type='range']), select) { height: 38px; }
+td :is(input, select) { height: auto; }
+/* In Karten und Panels werden Felder nicht so breit wie die ganze Karte (E6, E39) */
+:is(.card, .panel, .preview, details) > label.field { max-width: 640px; }
+.preview label.field input[inputmode='decimal'] { max-width: 180px; }
+
+/* S3 – Eine Schreibweise für Kontrollkästchen und Optionsfelder: das Feld links, der Text daneben,
+   normal gesetzt. `label.field` mit einem Kästchen als erstem Kind ist verboten (uiRules.test.ts):
+   Dort stand das Kästchen über seiner Beschriftung. */
+label.checkline { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 400; color: var(--text); cursor: pointer; }
+label.checkline > input { flex-shrink: 0; margin: 0; }
+label.field.checkline { display: flex; }
+input[type='radio'] { width: 16px; height: 16px; accent-color: var(--accent); }
+/* Mehrere Kästchen nebeneinander (Wohnungen, Teilnehmer, Optionen) */
+.checks { display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center; }
+.checks > label.field.checkline { padding-bottom: 0; }
+.drawer-body .checks > label.field { flex: 0 0 auto; }
+
+/* S4 – Klassen, die die Bausteine verwenden, haben hier ihre Regel */
+.panel { border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; background: var(--bg); }
+.preview { border-top: 1px dashed var(--input-border); padding-top: 14px; }
+.card.inset { box-shadow: none; background: var(--bg); padding: 14px 16px; margin-bottom: 0; }
+.heating-plant ul.facts { margin: 0; padding-left: 20px; }
+.heating-ways ol { margin: 0; padding-left: 0; list-style: none; display: grid; gap: 8px; }
+.heating-ways li { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; background: var(--card); }
+.heating-ways ol { counter-reset: way; }
+.heating-ways li { counter-increment: way; }
+.heating-ways .way-title::before { content: counter(way) '. '; font-weight: 600; }
+.heating-plant > ul.facts + .heating-period { margin-top: 2px; }
+.heating-ways li > details > summary { font-size: 13px; }
+.co2-block { margin-top: 16px; }
+.notice-terms { font-size: 12.5px; }
+.guide-steps { margin: 0; }
+.guide-norm { white-space: nowrap; }
+.ai-elapsed { color: var(--muted); font-variant-numeric: tabular-nums; }
+.update-consent-body { flex: 1; min-width: 0; }
+.property-notice-text { min-width: 0; }
+ul.plain { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.badge { background: var(--chip); color: var(--muted); }
+.badge.accent { background: var(--accent-soft); color: var(--accent-text); }
+.icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* Feste Breiten kurzer Eingaben statt style={{ width }} */
+input.input-xs { width: 80px; }
+input.input-s { width: 140px; }
+input.input-m { width: 120px; }
+input.input-num { width: 100px; text-align: right; }
+input.input-wide { width: 100%; min-width: 200px; }
+input.input-cell { display: block; width: 170px; margin-top: 4px; }
+/* Ein Auswahlfeld ist so breit wie seine längste Option und schob auf dem Handy die Seite breiter
+   als den Bildschirm (Abrechnungszeitraum, 390 px). In einer Zeile darf es schmaler werden. */
+.row > label.field { min-width: min(100%, 160px); max-width: 100%; }
+label.field > select { max-width: 100%; }
+.row.center { align-items: center; }
+.row.start { align-items: flex-start; }
+.row.baseline { align-items: baseline; }
+.row.centered { justify-content: center; }
+.row > :is(h2, h3) { margin: 0; }
+.normal { font-weight: 400; }
+.align-right { text-align: right; }
+.meter-photo { width: 140px; height: 140px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); }
+td.reading-panel { background: var(--bg); }
+/* Überschrift eines Abschnitts aus mehreren Karten (Heizkosten je Heizperiode) */
+.section-title { font-size: 18px; margin: 28px 0 12px; }
+/* Die Auswertung einer Rechnung passt in ihre Karte (E29) */
+.assessment-table select { max-width: 220px; }
+.assessment-table input.input-wide { min-width: 140px; }
+.big-number { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+/* Beschriftung mit Kennzeichen in einer Zeile (label.field ist eine Spalte) */
+.label-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+/* In einer Zeile mit Feldern nimmt ein aufklappbarer Bereich die ganze Breite */
+.row > details, .row > .field-group { flex: 1 1 100%; width: 100%; }
+/* Zweite Zeile in einer Tabellenzelle: klein, mit etwas Luft */
+.cell-sub { font-size: 12px; margin-top: 2px; }
+/* Kontakt in der Tabelle: eine Zeile, zu Langes mit „…“ (E13), vollständig im Tooltip */
+.cell-contact { max-width: 26ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cell-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.badge-next { margin-left: 6px; }
+/* Der Mieterwechsel ist ein laufender Vorgang: Akzentrahmen */
+.card.wizard { border-color: var(--accent); }
+
+/* Dateiauswahl: Das Feld ist nur visuell versteckt (sr-only), damit es per Tab erreichbar bleibt;
+   der Fokus zeigt sich am sichtbaren Knopf bzw. an der Ablagefläche. */
+:is(label.btn, .dropzone):focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* S7 – Umschalter wie „Betriebskosten / Heizkosten“: ein Segment statt loser Knöpfe */
+.segmented { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 3px; border-radius: 10px; background: var(--chip); width: fit-content; max-width: 100%; }
+.segmented > button { all: unset; cursor: pointer; padding: 6px 14px; border-radius: 8px; font-size: 14px; font-weight: 600; color: var(--muted); }
+.segmented > button:hover { color: var(--text); }
+.segmented > button[aria-pressed='true'] { background: var(--card); color: var(--accent-text); box-shadow: var(--shadow-1); }
+.segmented > button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* S12 – Hinweise: Stufe und Titel als Zeile, der Text zum Aufklappen, der Knopf darunter sichtbar */
+.notice-item > details > summary { color: inherit; font-weight: 400; font-size: 13.5px; width: auto; }
+.notice-item > details > summary strong { font-weight: 600; }
+.notice-item > details > * + * { margin-top: 6px; }
+.notice-item > * + * { margin-top: 8px; }
+.stack.tight > * + * { margin-top: 4px; }
+.notice-list { display: grid; gap: 8px; margin: 0 0 16px; }
+.notice-list > :is(.notice, .error, .hint) { margin: 0; }
+.check-lines { margin: 2px 0 0; padding-left: 18px; }
+.check-lines li { margin: 1px 0; }
+
+/* S10 – Tabellen, die breiter sind als ihre Karte: ein Schatten am Rand und ein Satz darüber
+   zeigen, dass sich seitlich wischen lässt (Table.tsx setzt den Satz). */
+.table-scroll {
+  background:
+    linear-gradient(to right, var(--card) 30%, transparent) left center / 24px 100% no-repeat local,
+    linear-gradient(to left, var(--card) 30%, transparent) right center / 24px 100% no-repeat local,
+    radial-gradient(farthest-side at 0 50%, rgba(16, 24, 40, 0.18), transparent) left center / 12px 100% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%, rgba(16, 24, 40, 0.18), transparent) right center / 12px 100% no-repeat scroll;
+}
+.table-scroll-hint { font-size: 12px; color: var(--muted); }
+:is(.card, .drawer-body, .panel, .preview, .stack, details) > .table-scroll-hint + .table-scroll { margin-top: 4px; }
+@media (max-width: 640px) {
+  /* Cockpit: Der Verweis steht unter dem Text, statt ihn in eine schmale Spalte zu drücken (E55) */
+  .check-row { flex-wrap: wrap; }
+  .check-row > .grow { flex: 1 1 calc(100% - 30px); min-width: 0; }
+  .check-cta { flex-basis: 100%; padding-left: 23px; white-space: normal; }
+  /* Geisterknöpfe stehen bündig unter dem Hauptknopf (E1) */
+  .row > button.btn.ghost { padding-left: 4px; padding-right: 4px; }
+}
+
 /* ---------- Druck ---------- */
 .print-only { display: none; }
 
@@ -731,9 +912,10 @@ td.actions { white-space: nowrap; text-align: right; }
     --bg: #fff;
     --card: #fff;
     --text: #1a2233;
-    --muted: #68718a;
+    --muted: #5f6780;
     --line: #e4e7ee;
     --accent: #4f46e5;
+    --accent-text: #4f46e5;
     --accent-soft: #eef0ff;
     --green: #15803d;
     --green-soft: #ecfdf3;
@@ -742,12 +924,18 @@ td.actions { white-space: nowrap; text-align: right; }
     --input-bg: #fff;
     --input-border: #cdd3e0;
     --chip: #eef0f4;
+    --amber-soft: #fffbeb;
+    --amber: #92400e;
+    --notice-border: #fde68a;
+    --error-border: #fecaca;
+    --ok-border: #bbf7d0;
   }
   body { background: #fff; font-size: 13px; }
   .sidebar, .no-print { display: none !important; }
   /* Im Druck kein Scrollbereich: Er schnitte ab, was nicht auf die Seite passt, und Chromium
      bricht einen solchen Bereich nicht sauber über Seitengrenzen um. */
-  .table-scroll { overflow: visible; }
+  .table-scroll { overflow: visible; background: none; }
+  .table-scroll-hint { display: none; }
   main { padding: 0; max-width: none; }
   .card { border: none; padding: 0; margin: 0; box-shadow: none; }
   /* Sichtprüfung E46: Beim Druck aller Abrechnungen beginnt jede weitere auf einer neuen Seite. */
@@ -821,7 +1009,7 @@ tr.calc-steps td { background: var(--bg); }
 .settlement-history-entry ul { margin: 4px 0 0 18px; padding: 0; }
 
 /* Kein Anschluss für (#117): wie ein Feld beschriftet, als Gruppe für Screenreader */
-fieldset.no-connection { border: 0; padding: 0; margin: 0; min-width: 0; }
+fieldset.no-connection { border: 0; padding: 0; margin-inline: 0; min-width: 0; }
 .field-legend { font-size: 13px; font-weight: 600; color: var(--muted); padding: 0; margin-bottom: 6px; }
 
 /* ---------- Belegordner (#170) ---------- */
