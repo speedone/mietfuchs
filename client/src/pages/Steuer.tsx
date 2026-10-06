@@ -7,7 +7,7 @@ import { useProperty, withProperty } from '../property'
 import { effectiveLandlord, letterhead } from '../landlord'
 import PageHeader from '../components/PageHeader'
 import Table from '../components/Table'
-import { allocationLabel, assignedUnitItems, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, prepaymentNote, settlementSourcesText, showsSplit, surplusCentsFor, taxHints, type Basis } from '../taxView'
+import { allocationLabel, assignedUnitItems, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, prepaymentNote, settlementSourcesText, showsSplit, stockCarryNote, surplusCentsFor, taxHints, type Basis } from '../taxView'
 import { StepList } from '../components/CalcSteps'
 import Term from '../components/Term'
 import { andList } from '../../../shared/wording.ts'
@@ -303,6 +303,8 @@ export default function Steuer({ settings }: Props) {
                 Diese werden den Mietern in der Nebenkostenabrechnung bescheinigt.
               </p>
             )}
+            {/* Heizung PR 8 (N8): Brennstoff aus dem Vorrat; Abrechnung nach Verbrauch, Steuer nach Bezahltem. */}
+            {stockCarryNote(data) && <p className="muted">{stockCarryNote(data)}</p>}
 
             {/* **Hinweis statt Automatik**, und zwar bewusst. Die Zuordnung hängt an der
                 vertraglichen Fälligkeit des einzelnen Mietverhältnisses, und der BFH verlangt,

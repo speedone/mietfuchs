@@ -71,3 +71,16 @@ test('Durchsicht: Die Karte sagt, dass ohne Verknüpfung nichts abgegrenzt wird;
   expect(screen.queryByLabelText('CO₂-Ausstoß laut Rechnung (kg)')).toBeNull()
   expect(screen.queryByLabelText('CO₂-Kosten laut Rechnung')).toBeNull()
 })
+
+test('Heizöl (Heizung PR 8): Lieferdatum, Menge und Einheit statt Rechnungszeitraum; die Auswahl zeigt die gespeicherte Einheit', async () => {
+  const oel: FuelDelivery = { ...gas, label: '', invoiceFrom: null, invoiceTo: null, deliveredAt: '2025-10-10', invoiceDate: '2025-10-12', quantity: 2500, quantityUnit: 'l' }
+  render(<FuelCard plant={{ id: 'hp', method: 'manual', energy: 'oil' }} view={view} deliveries={[oel]} onSaved={() => {}} />)
+  expect(screen.getByText(/geliefert am 10\.10\.2025 · 2\.500 l/)).toBeTruthy()
+  expect(screen.getByText(/mit Lieferdatum und Menge/)).toBeTruthy()
+  fireEvent.click(screen.getByText('Ändern'))
+  expect(screen.queryByLabelText('Rechnungszeitraum von')).toBeNull()
+  expect(auswahl('Einheit der Menge').value).toBe('l')
+  fireEvent.change(screen.getByLabelText('Menge'), { target: { value: '2600' } })
+  fireEvent.click(screen.getByText('Lieferung speichern'))
+  await waitFor(() => expect(sent.at(-1)?.body).toMatchObject({ deliveredAt: '2025-10-10', quantity: 2600, quantityUnit: 'l' }))
+})

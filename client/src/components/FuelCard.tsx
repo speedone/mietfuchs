@@ -5,10 +5,11 @@ import { useState } from 'react'
 import { api, errorText } from '../api'
 import { useConfirm, useToast } from './feedback'
 import Term from './Term'
-import { CO2_ENERGIES, deliveryLine, deliveryOptions, emptyFuelForm, fuelBody, fuelToForm, type FuelForm } from '../fuelForm'
+import { CO2_ENERGIES, deliveryLine, deliveryOptions, emptyFuelForm, fuelBody, fuelToForm, STOCK_QUANTITY_OPTIONS, stockFuelBody, type FuelForm } from '../fuelForm'
+import { isStockEnergy } from '../../../shared/fuelStock.ts'
 import type { FuelDelivery, HeatingEnergy, HeatingMethod, HeatingPeriodView } from '../types'
 
-type TextKey = Exclude<keyof FuelForm, 'usedByService'>
+type TextKey = Exclude<keyof FuelForm, 'usedByService' | 'quantityUnit'>
 
 export default function FuelCard({ plant, view, deliveries, onSaved }: {
   plant: { id: string; method: HeatingMethod; energy?: HeatingEnergy }
@@ -22,6 +23,8 @@ export default function FuelCard({ plant, view, deliveries, onSaved }: {
   const toast = useToast()
   const confirm = useConfirm()
   const service = plant.method === 'service'
+  // Heizöl, Flüssiggas, Pellets, Holz und Kohle (Heizung PR 8): Lieferdatum und Menge für den Vorrat.
+  const stock = plant.energy !== undefined && isStockEnergy(plant.energy)
   const set = <K extends keyof FuelForm>(key: K, value: FuelForm[K]) => setForm((f) => ({ ...f, [key]: value }))
   const options = deliveryOptions(deliveries)
 
@@ -32,7 +35,7 @@ export default function FuelCard({ plant, view, deliveries, onSaved }: {
   }
 
   async function save() {
-    const r = fuelBody(form, plant.method)
+    const r = stock ? stockFuelBody(form, plant.method) : fuelBody(form, plant.method)
     if ('error' in r) {
       setError(r.error)
       return
@@ -79,18 +82,25 @@ export default function FuelCard({ plant, view, deliveries, onSaved }: {
   const text = (key: TextKey, label: string, mode: 'decimal' | 'text' = 'decimal') => (
     <label className="field">
       {label}
-      <input value={form[key]} inputMode={mode === 'decimal' ? 'decimal' : undefined} type={key === 'invoiceFrom' || key === 'invoiceTo' ? 'date' : 'text'} onChange={(e) => set(key, e.target.value)} />
+      <input aria-label={label} value={form[key]} inputMode={mode === 'decimal' ? 'decimal' : undefined} type={key === 'invoiceFrom' || key === 'invoiceTo' || key === 'deliveredAt' || key === 'invoiceDate' ? 'date' : 'text'} onChange={(e) => set(key, e.target.value)} />
     </label>
   )
 
   return (
     <div className="card">
       <h2><Term id="accrualPrinciple">Lieferungen</Term></h2>
-      <p className="muted">
-        Tragen Sie jede Rechnung Ihres Versorgers mit ihrem Rechnungszeitraum ein. Reicht sie über die Heizperiode hinaus, teilt Mietfuchs sie
-        auf: nach einem Zählerstand zum Stichtag, nach Teilmengen der Rechnung oder nach <Term id="degreeDays">Gradtagen</Term>.
-      </p>
-      {deliveries.length === 0 && <p className="muted">Noch keine Lieferung, die in dieser Heizperiode endet.</p>}
+      {stock ? (
+        <p className="muted">
+          Tragen Sie jede Lieferung mit Lieferdatum und Menge ein, wie auf der Rechnung. Was davon in dieser Heizperiode verbraucht wurde,
+          ergibt die Karte „Vorrat“ aus Anfangs- und Endbestand (<Term id="fuelStock">Bestandsrechnung</Term>).
+        </p>
+      ) : (
+        <p className="muted">
+          Tragen Sie jede Rechnung Ihres Versorgers mit ihrem Rechnungszeitraum ein. Reicht sie über die Heizperiode hinaus, teilt Mietfuchs sie
+          auf: nach einem Zählerstand zum Stichtag, nach Teilmengen der Rechnung oder nach <Term id="degreeDays">Gradtagen</Term>.
+        </p>
+      )}
+      {deliveries.length === 0 && <p className="muted">{stock ? 'Noch keine Lieferung in dieser Heizperiode.' : 'Noch keine Lieferung, die in dieser Heizperiode endet.'}</p>}
       <ul className="plain">
         {deliveries.map((d) => (
           <li key={d.id}>
@@ -120,15 +130,32 @@ export default function FuelCard({ plant, view, deliveries, onSaved }: {
       {editing !== null && (
         <div className="field-group">
           {text('label', 'Bezeichnung', 'text')}
-          <div className="row">
-            {text('invoiceFrom', 'Rechnungszeitraum von')}
-            {text('invoiceTo', 'bis')}
-          </div>
-          <div className="row">
-            {service && text('amount', 'Rechnungsbetrag')}
-            {text('fixed', 'davon fester Preisbestandteil (Grund-, Mess-, Verrechnungspreis)')}
-            {text('energyKwh', 'Energie (kWh)')}
-          </div>
+          {stock ? (<>
+            <div className="row">
+              {text('deliveredAt', 'Lieferdatum')}
+              {text('invoiceDate', 'Rechnungsdatum')}
+            </div>
+            <div className="row">
+              {text('quantity', 'Menge')}
+              <label className="field">
+                Einheit
+                <select aria-label="Einheit der Menge" value={form.quantityUnit} onChange={(e) => set('quantityUnit', STOCK_QUANTITY_OPTIONS.find((o) => o.value === e.target.value)?.value ?? '')}>
+                  {STOCK_QUANTITY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </label>
+              {service && text('amount', 'Rechnungsbetrag')}
+            </div>
+          </>) : (<>
+            <div className="row">
+              {text('invoiceFrom', 'Rechnungszeitraum von')}
+              {text('invoiceTo', 'bis')}
+            </div>
+            <div className="row">
+              {service && text('amount', 'Rechnungsbetrag')}
+              {text('fixed', 'davon fester Preisbestandteil (Grund-, Mess-, Verrechnungspreis)')}
+              {text('energyKwh', 'Energie (kWh)')}
+            </div>
+          </>)}
           {/* Bei Strom einer Wärmepumpe gibt es keine CO₂-Kosten aufzuteilen (§ 2 Abs. 1 CO2KostAufG). */}
           {(plant.energy === undefined || CO2_ENERGIES.includes(plant.energy)) && (
             <div className="row">
@@ -136,10 +163,12 @@ export default function FuelCard({ plant, view, deliveries, onSaved }: {
               {text('co2Cost', 'CO₂-Kosten laut Rechnung')}
             </div>
           )}
-          <details className="extra-details">
-            <summary>Weitere Angaben</summary>
-            {text('sharePercent', 'Anteil dieser Heizperiode am Verbrauch (%), wenn bekannt')}
-          </details>
+          {!stock && (
+            <details className="extra-details">
+              <summary>Weitere Angaben</summary>
+              {text('sharePercent', 'Anteil dieser Heizperiode am Verbrauch (%), wenn bekannt')}
+            </details>
+          )}
           {service && (
             <label className="checkline">
               <input type="checkbox" checked={form.usedByService} onChange={(e) => set('usedByService', e.target.checked)} />

@@ -62,3 +62,14 @@ test('Eigene Aufteilung: berechnet aus den Rechnungen, Ausstoß umgerechnet, Fl�
     'Der Anteil des Vermieters ist wegen öffentlich-rechtlicher Vorgaben um die Hälfte gekürzt (§ 9 Abs. 1 CO2KostAufG).',
   ])
 })
+
+test('Eigene Aufteilung aus dem Vorrat (Heizung PR 8): Ausstoß des verbrauchten Brennstoffs, ohne Gradtage', () => {
+  const vorrat = bewertung({
+    method: 'self', deducted: false, basis: 'stock', coveragePermille: 1000, emissionsKg: 15254.91, areaM2: 300, areaSource: 'served',
+    kgPerM2: 50.8, landlordPermille: 800, totalCents: 64810, landlordCents: 51848, stage: { from: 47, to: 52, landlordPercent: 80 },
+    tenants: [{ tenancyId: 'ta', landlordCents: 17283, tenantCents: 4321, approximated: false }],
+  })
+  const v = co2Block(anlage(vorrat), 'ta') ?? assert.fail('kein Block')
+  expect(v.lines.find((l) => l.label === 'CO₂-Ausstoß des verbrauchten Brennstoffs')?.value).toBe('15.254,9 kg (Anfangsbestand + Lieferungen − Endbestand)')
+  expect(v.notes[0]).toMatch(/aus den Lieferungen und dem Vorrat/)
+})

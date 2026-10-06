@@ -1,6 +1,7 @@
 // Die Seite „Heizkosten“ (Heizung PR 6 und 7, Entwurf 11.4): je Heizanlage und Heizperiode des gewählten
 // Zeitraums die Karten „CO₂-Kosten“ und „Warmwasser“ (beim Messdienst), „Lieferungen“ und „CO₂: Angaben
-// zum Gebäude“, dazu einmal „Gradtagzahlen Ihres Orts“. Sie steht erst ab einer Heizanlage in der
+// zum Gebäude“, seit Heizung PR 8 „Vorrat“ bei Heizöl, Flüssiggas, Pellets, Holz und Kohle, dazu einmal
+// „Gradtagzahlen Ihres Orts“. Sie steht erst ab einer Heizanlage in der
 // Navigation (`navFor`).
 import { useCallback, useEffect, useState } from 'react'
 import type { DegreeDayValue, FuelDelivery, HeatingPeriodView, HeatingPlant, Tenancy, Unit } from '../types'
@@ -13,6 +14,8 @@ import Co2FactsCard from '../components/Co2FactsCard'
 import DegreeDaysCard from '../components/DegreeDaysCard'
 import FuelCard from '../components/FuelCard'
 import HotWaterCard from '../components/HotWaterCard'
+import StockCard from '../components/StockCard'
+import { showsStockCard } from '../stockForm'
 import Term from '../components/Term'
 import { CO2_ENERGIES, monthsOf, ownedBy } from '../fuelForm'
 import { co2FirstPeriodStart } from '../../../shared/law/co2kostaufg.ts'
@@ -87,6 +90,7 @@ export default function Heizkosten({ units, tenancies }: { units: Unit[]; tenanc
                 ))}
                 {plant.method === 'service' && <HotWaterCard view={v} onSaved={() => void load()} />}
                 <FuelCard plant={plant} view={v} deliveries={ownedBy(data?.deliveries[plant.id] ?? [], v)} onSaved={() => void load()} />
+                {showsStockCard(plant, v) && <StockCard key={`stock:${v.period}:${JSON.stringify(v.stock?.row ?? null)}`} view={v} co2Fields={CO2_ENERGIES.includes(plant.energy)} onSaved={() => void load()} />}
                 {v.from >= first && CO2_ENERGIES.includes(plant.energy) && <Co2FactsCard plant={plant} view={v} servedAreaM2={servedArea(plant)} onSaved={() => void load()} />}
               </div>
             ))}
