@@ -180,7 +180,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Gradtagen; Leerstand, Eigennutzung und Pauschale als eigene Nutzer. Die Abrechnung druckt die Preise je
   m², kWh und m³. Fehlt eine Zwischenablesung, sagt die Abrechnung, um wie viel die Mieter kürzen dürfen.
   Die Seite Heizkosten zeigt die Ablesungen als Ampel und druckt das Ableseergebnis je Wohnung
-  ([#99](https://github.com/speedone/mietfuchs/issues/99)).
+  ([#99](https://github.com/speedone/mietfuchs/issues/99)). Die eigene Abrechnung gilt ab der Heizperiode,
+  für die Sie sie einrichten; frühere bleiben bei ihrem Schlüssel. Nach einem Kesseltausch gilt der Anteil
+  nach Verbrauch weiter, und der Tausch fragt den Stand des Wärmezählers am Warmwasserspeicher ab. Den
+  vorgeschriebenen Anteil bei Öl- und Gasheizung können Sie auch in einer begonnenen Heizperiode
+  nachtragen. Bis Mietfuchs die Angaben nach § 6a HeizkostenV erstellt, warnt die Abrechnung und nennt die
+  Kürzung je Mieter.
 - Bei einer Wärmepumpe fragt die Einrichtung auch, ob sie erst nach dem Stichtag der Verordnung
   eingebaut wurde.
 
