@@ -39,10 +39,22 @@ test('S3: kein Kontrollkästchen als erstes Kind von label.field', () => {
   expect(offenders(/<label className="field"[^>]*style=\{\{[^}]*flexDirection: 'row'/g)).toEqual([])
 })
 
+// Durchsicht von #236: Ein Dateifeld mit `hidden` oder display: none ist per Tab nicht erreichbar.
+// Es wird nur visuell versteckt (sr-only), der sichtbare Knopf zeigt den Fokus.
+test('Dateifelder bleiben per Tastatur erreichbar', () => {
+  expect(offenders(/<input(?=[^>]*type="file")[^>]*(?:\shidden[\s/>]|display: 'none')[^>]*>/g)).toEqual([])
+})
+
 // S4: Jede Klasse, die eine Seite oder ein Baustein setzt, hat eine Regel im Stylesheet. Vorher
 // setzten neue Bausteine 15 Klassen ohne Regel, und ihre Bereiche standen ungestaltet da.
+// Klassen, die nur als Haken für Tests oder Skripte dienen und bewusst keine Gestaltung haben.
+const HOOK_CLASSES = new Set(['assessment-review'])
+
 test('S4: jede verwendete Klasse hat eine Regel in index.css', () => {
-  const defined = new Set([...css.matchAll(/\.(-?[_a-zA-Z][\w-]*)/g)].map((m) => m[1]))
+  // Nur Selektoren zählen: ohne Kommentare und ohne den Inhalt der Regeln (Werte wie url(x.png)).
+  const selectors = [...css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{/g)].map((m) => m[1] ?? '').join(' ')
+  const defined = new Set([...selectors.matchAll(/\.(-?[_a-zA-Z][\w-]*)/g)].map((m) => m[1]))
+  for (const hook of HOOK_CLASSES) expect(defined.has(hook), `${hook} hat eine Regel; dann gehört es nicht in die Ausnahmeliste`).toBe(false)
   const used = new Map<string, string>()
   const add = (text: string, file: string) => {
     for (const word of text.split(/\s+/)) if (/^[a-z][\w-]*$/.test(word) && !used.has(word)) used.set(word, file)
@@ -62,7 +74,7 @@ test('S4: jede verwendete Klasse hat eine Regel in index.css', () => {
     }
   }
   expect(used.size).toBeGreaterThan(100)
-  const missing = [...used].filter(([c]) => !defined.has(c)).map(([c, file]) => `${c} (${file})`)
+  const missing = [...used].filter(([c]) => !defined.has(c) && !HOOK_CLASSES.has(c)).map(([c, file]) => `${c} (${file})`)
   expect(missing).toEqual([])
 })
 
@@ -107,6 +119,8 @@ describe('S6: Kontrast der Farbtöne', () => {
       expect(ratio('#ffffff', token(body, 'accent'))).toBeGreaterThanOrEqual(4.5)
       expect(ratio(token(body, 'muted'), token(body, 'card'))).toBeGreaterThanOrEqual(4.5)
       expect(ratio(token(body, 'muted'), token(body, 'bg'))).toBeGreaterThanOrEqual(4.5)
+      expect(ratio(token(body, 'muted'), token(body, 'chip'))).toBeGreaterThanOrEqual(4.5)
+      expect(ratio(token(body, 'muted'), token(body, 'accent-soft'))).toBeGreaterThanOrEqual(4.5)
       expect(ratio(token(body, 'text'), token(body, 'accent-soft'))).toBeGreaterThanOrEqual(4.5)
     })
   }

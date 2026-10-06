@@ -127,7 +127,7 @@ export default function Einstellungen({ settings, reload, update }: Props) {
             <input
               type="file"
               accept=".zip,application/zip"
-              hidden
+              className="sr-only"
               onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void restore(f) }}
             />
           </label>

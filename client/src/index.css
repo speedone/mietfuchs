@@ -35,7 +35,7 @@
   --bg: #11141d;
   --card: #1a1f2e;
   --text: #e3e7f2;
-  --muted: #8b93ab;
+  --muted: #9098b0;
   --line: #2a3044;
   --accent: #5558e3;
   --accent-text: #a5b4fc;
@@ -814,7 +814,6 @@ input[type='radio'] { width: 16px; height: 16px; accent-color: var(--accent); }
 .guide-steps { margin: 0; }
 .guide-norm { white-space: nowrap; }
 .ai-elapsed { color: var(--muted); font-variant-numeric: tabular-nums; }
-.assessment-review { min-width: 0; }
 .update-consent-body { flex: 1; min-width: 0; }
 .property-notice-text { min-width: 0; }
 ul.plain { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
@@ -860,6 +859,10 @@ td.reading-panel { background: var(--bg); }
 .badge-next { margin-left: 6px; }
 /* Der Mieterwechsel ist ein laufender Vorgang: Akzentrahmen */
 .card.wizard { border-color: var(--accent); }
+
+/* Dateiauswahl: Das Feld ist nur visuell versteckt (sr-only), damit es per Tab erreichbar bleibt;
+   der Fokus zeigt sich am sichtbaren Knopf bzw. an der Ablagefläche. */
+:is(label.btn, .dropzone):focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* S7 – Umschalter wie „Betriebskosten / Heizkosten“: ein Segment statt loser Knöpfe */
 .segmented { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 3px; border-radius: 10px; background: var(--chip); width: fit-content; max-width: 100%; }
@@ -1006,7 +1009,7 @@ tr.calc-steps td { background: var(--bg); }
 .settlement-history-entry ul { margin: 4px 0 0 18px; padding: 0; }
 
 /* Kein Anschluss für (#117): wie ein Feld beschriftet, als Gruppe für Screenreader */
-fieldset.no-connection { border: 0; padding: 0; margin: 0; min-width: 0; }
+fieldset.no-connection { border: 0; padding: 0; margin-inline: 0; min-width: 0; }
 .field-legend { font-size: 13px; font-weight: 600; color: var(--muted); padding: 0; margin-bottom: 6px; }
 
 /* ---------- Belegordner (#170) ---------- */

@@ -343,7 +343,7 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
             type="file"
             accept="application/pdf,image/*"
             multiple
-            hidden
+            className="sr-only"
             onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = '' }}
           />
         </div>

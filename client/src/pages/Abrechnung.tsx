@@ -381,7 +381,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
             return (
               <div key={i} className={`${noticeClass(n.level)} notice-item`}>
                 {n.title ? (
-                  <details open={n.level === 'error'}>
+                  <details open={n.level !== 'hint'}>
                     <summary><span className="notice-level">{NOTICE_LEVEL_LABELS[n.level]}</span> <strong>{n.title}</strong></summary>
                     {body}
                   </details>

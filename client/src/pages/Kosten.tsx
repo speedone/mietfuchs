@@ -576,7 +576,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             type="file"
             accept="application/pdf,image/*"
             multiple
-            hidden
+            className="sr-only"
             onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = '' }}
           />
         </div>
@@ -998,7 +998,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                   <div className="row center">
                     <label className="btn secondary small">
                       Beleg hochladen …
-                      <input type="file" hidden accept="application/pdf,image/*" onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadInvoice(f) }} />
+                      <input type="file" className="sr-only" accept="application/pdf,image/*" onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadInvoice(f) }} />
                     </label>
                     <span className="muted">PDF oder Foto</span>
                   </div>
