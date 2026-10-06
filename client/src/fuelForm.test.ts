@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import { fmtEuro } from './api'
 import {
-  degreeDaysBody, degreeDaysToForm, deliveryLine, deliveryOptions, deliveryUnitId, emptyFuelForm, fuelBody, fuelToForm, monthsOf, ownedBy, RESTRICTION_OPTIONS, stockFuelBody,
+  defaultGrade, degreeDaysBody, degreeDaysToForm, deliveryLine, deliveryOptions, deliveryUnitId, emptyFuelForm, fuelBody, fuelToForm, gradeOptions, monthsOf, ownedBy, RESTRICTION_OPTIONS, stockFuelBody, unitWordFor,
 } from './fuelForm'
 import type { FuelDelivery } from './types'
 
@@ -18,7 +18,7 @@ test('Lieferung ins Formular und zurück: Beträge, Zahlen, Anteil in Prozent', 
   if ('error' in r) throw new Error(r.error)
   expect(r.body).toEqual({
     label: 'Gas 2025/2026', invoiceFrom: '2025-03-15', invoiceTo: '2026-03-14', amountCents: 311747, fixedCents: 12000, sharePermille: 900,
-    emissionsKg: 5406.17, co2CostCents: 60000, energyKwh: 29886, usedByService: true,
+    emissionsKg: 5406.17, co2CostCents: 60000, energyKwh: 29886, gasBasis: null, usedByService: true,
   })
 })
 
@@ -73,7 +73,7 @@ test('Lieferung für den Vorrat: Lieferdatum und Menge statt Rechnungszeitraum; 
   const form = fuelToForm(oel)
   expect([form.deliveredAt, form.invoiceDate, form.quantity, form.quantityUnit]).toEqual(['2025-10-10', '2025-10-12', '2500', 'l'])
   expect(stockFuelBody(form, 'manual')).toEqual({
-    body: { label: '', deliveredAt: '2025-10-10', invoiceDate: '2025-10-12', quantity: 2500, quantityUnit: 'l', emissionsKg: 6690.75, co2CostCents: 43791 },
+    body: { label: '', deliveredAt: '2025-10-10', invoiceDate: '2025-10-12', heatingValue: null, fuelGrade: null, quantity: 2500, quantityUnit: 'l', emissionsKg: 6690.75, co2CostCents: 43791 },
   })
   expect(stockFuelBody({ ...form, amount: '2.500,00' }, 'service')).toMatchObject({ body: { amountCents: 250000, usedByService: true } })
   expect(stockFuelBody({ ...form, deliveredAt: '' }, 'manual')).toEqual({ error: 'Bitte geben Sie das Lieferdatum an. Beim Vorrat zählt eine Lieferung zur Heizperiode, in der sie geliefert wurde.' })
@@ -100,4 +100,25 @@ describe('Rechnung einer Etagenheizung (Heizung PR 9)', () => {
     if ('error' in r) throw new Error(r.error)
     expect('unitId' in r.body).toBe(false)
   })
+})
+
+test('Heizwert und Zeile der Tabelle (Heizung PR 11): nur bei Heizkesseln, vorbelegt nur bei genau einer Zeile', () => {
+  expect(gradeOptions('oil').map((o) => o.value)).toEqual(['', 'heatingOilEL', 'heavyFuelOil'])
+  expect(gradeOptions('oil')[0]?.label).toBe('keine (Heizwert laut Rechnung)')
+  expect(gradeOptions('districtHeating')).toEqual([])
+  expect(defaultGrade('pellets')).toBe('woodPellets')
+  expect(defaultGrade('oil')).toBe('')
+  expect([unitWordFor('l'), unitWordFor('')]).toEqual(['Liter', 'Einheit'])
+  const oel: FuelDelivery = { ...gas, label: 'Öl', invoiceFrom: null, invoiceTo: null, deliveredAt: '2025-10-12', energyKwh: null, quantity: 3000, quantityUnit: 'l', heatingValue: 9.8, fuelGrade: 'heatingOilEL' }
+  const form = fuelToForm(oel)
+  expect([form.heatingValue, form.grade]).toEqual(['9,8', 'heatingOilEL'])
+  // Ein Heizwert laut Rechnung geht vor; die Zeile der Tabelle wird dann nicht geschickt.
+  const mit = stockFuelBody({ ...form, heatingValue: '10,2' }, 'self')
+  expect('body' in mit && [mit.body.heatingValue, mit.body.fuelGrade]).toEqual([10.2, null])
+  const ohne = stockFuelBody({ ...form, heatingValue: '' }, 'self')
+  expect('body' in ohne && [ohne.body.heatingValue, ohne.body.fuelGrade]).toEqual([null, 'heatingOilEL'])
+  expect(stockFuelBody({ ...form, heatingValue: 'zehn' }, 'self')).toEqual({ error: 'Der Heizwert laut Rechnung ist eine Zahl über 0.' })
+  // Gas: nach Brennwert oder Heizwert, davon hängt der Faktor der Formeln ab.
+  const g = fuelBody({ ...fuelToForm(gas), gasBasis: 'hs' }, 'self')
+  expect('body' in g && g.body.gasBasis).toBe('hs')
 })

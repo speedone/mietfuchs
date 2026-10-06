@@ -33,9 +33,9 @@ describe('Einrichtung Schritt 7 (Heizung PR 10)', () => {
     const ohne = selfSetupBody(filled({ hotWater: 'none', waterShare: '' }), 'gas')
     expect('body' in ohne && ohne.body.waterConsumptionPct).toBeNull()
   })
-  it('Warmwasser über die Anlage nur bei Abrechnung in kWh (Abweichung 10)', () => {
-    expect(selfSetupBody(filled(), 'oil')).toEqual({ error: expect.stringMatching(/Heizwert.*späteren Version/) })
-    expect(emptySelfSetup({ ...plant, energy: 'oil' }, '2025-01').hotWater).toBe('')
+  it('Warmwasser über die Anlage auch bei Heizöl (Heizung PR 11: Heizwert laut Rechnung, § 9 Abs. 3 HeizkostenV)', () => {
+    expect('body' in selfSetupBody(filled(), 'oil')).toBe(true)
+    expect(emptySelfSetup({ ...plant, energy: 'oil', hotWater: 'combined' }, '2025-01').hotWater).toBe('combined')
     expect('body' in selfSetupBody(filled({ hotWater: 'none' }), 'oil')).toBe(true)
   })
   it('Erfassung mit Heizkostenverteilern oder Werten eines Ablesedienstes: noch gesperrt', () => {

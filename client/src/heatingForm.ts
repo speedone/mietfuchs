@@ -6,7 +6,7 @@
 // Abrechnung, Heizung PR 10) steht in heatingSelfForm.ts: Wer „Ich selbst“ wählt, legt die Anlage hier
 // zunächst bei „Niemand“ an, und Schritt 7 stellt sie in einer Transaktion um (Abweichung 21 des Plans).
 // Nichts davon ändert eine Zahl der Abrechnung.
-import type { DevicesInstalledAfter, DevicesRemote, DhwMethod, HeatingEnergy, HeatingPlant, HeatingPlantUnit, Meter, NewDevicesInstall, PropertyKind, Unit } from './types'
+import type { DevicesInstalledAfter, DevicesRemote, DhwMethod, HeatGeneration, HeatingEnergy, HeatingPeriodView, HeatingPlant, HeatingPlantUnit, Meter, NewDevicesInstall, PropertyKind, Unit } from './types'
 import { isStockEnergy } from '../../shared/fuelStock.ts'
 import { parseEuro } from './api'
 import { hkvConsumptionShare, hkvCutNotByConsumption, hkvHeatPumpCapture, hkvRemoteReadingNewDevices } from '../../shared/law/heizkostenv.ts'
@@ -433,4 +433,40 @@ export function unmeasurableLabel(choice: HotWaterChoice): string {
   return choice === 'areaFormula'
     ? 'Weder die Wärmemenge noch das Volumen des verbrauchten Warmwassers lässt sich messen (Nachweis aufbewahren)'
     : 'Die Wärmemenge ließe sich nur mit unzumutbar hohem Aufwand messen (Nachweis aufbewahren)'
+}
+
+// ---------- Warmwasser bei eigener Abrechnung (Heizung PR 11, Entwurf 8.3) ----------
+
+// Bei eigener Abrechnung rechnet Mietfuchs selbst; „keine Angabe“ gibt es dort nicht, die Vorgabe ist
+// der Wärmezähler (§ 9 Abs. 2 Satz 1 HeizkostenV).
+export const SELF_HOT_WATER_OPTIONS: readonly { value: HotWaterChoice; label: string }[] = HOT_WATER_OPTIONS.filter((o) => o.value !== '')
+
+// Ob die Anlage die Wärme allein erzeugt (§ 9 Abs. 1 Satz 5, Abs. 2 Satz 6 Nr. 3 HeizkostenV). Ohne
+// Vorgabe: Eine falsche Vorgabe ergäbe still einen falschen Anteil (Abweichung 5 des Plans PR 11).
+export const HEAT_GENERATION_OPTIONS: readonly { value: HeatGeneration | ''; label: string }[] = [
+  { value: '', label: 'bitte wählen' },
+  { value: 'single', label: 'allein (ein Kessel, eine Wärmepumpe oder Fernwärme)' },
+  { value: 'mixed', label: 'mit einem weiteren Erzeuger (Solaranlage, Heizstab, zweiter Kessel)' },
+]
+
+// Eine Zahl deutsch oder technisch geschrieben; leer heißt keine Angabe, `undefined` keine Zahl.
+export function parseDecimal(text: string): number | null | undefined {
+  const t = text.trim()
+  if (t === '') return null
+  const n = Number(t.includes(',') ? t.replace(/\./g, '').replace(',', '.') : t)
+  return Number.isFinite(n) ? n : undefined
+}
+export const numberText = (n: number | null): string => (n === null ? '' : n.toLocaleString('de-DE', { maximumFractionDigits: 3, useGrouping: false }))
+
+export type FormulaForm = { volume: string; temp: string }
+export const formulaFormOf = (hw: HeatingPeriodView['hotWater']): FormulaForm => ({ volume: numberText(hw.dhwVolumeM3), temp: numberText(hw.dhwTempC) })
+
+// Der Teil des Rumpfs, den nur die Volumenformel braucht.
+export function selfFormulaBody(choice: HotWaterChoice, form: FormulaForm): { body: { dhwVolumeM3?: number | null; dhwTempC?: number | null } } | { error: string } {
+  if (choice !== 'volumeFormula') return { body: {} }
+  const volume = parseDecimal(form.volume)
+  if (volume === undefined) return { error: 'Das Volumen des Warmwassers ist keine Zahl.' }
+  const temp = parseDecimal(form.temp)
+  if (temp === undefined) return { error: 'Die Temperatur des Warmwassers ist keine Zahl.' }
+  return { body: { dhwVolumeM3: volume, dhwTempC: temp } }
 }

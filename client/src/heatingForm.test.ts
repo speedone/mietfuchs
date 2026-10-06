@@ -1,6 +1,6 @@
 // Die Einrichtung „Heizung“ (Heizung PR 4, Entwurf 11.2), ohne DOM.
 import { describe, expect, test } from 'vitest'
-import { asksNewInstall, asksTakeOver, buildingOptions, canSwap, connectionNote, emptyHeatingForm, emptySwapForm, HOT_WATER_OPTIONS, hotWaterBody, isFormula, PER_UNIT_ENERGY_OPTIONS, plantOptions, swapBody, swapMetersOf, unmeasurableLabel, heatingPlantBody, heatingSummary, heatingToForm, whoHint, whoOptions, type HeatingForm } from './heatingForm'
+import { asksNewInstall, asksTakeOver, buildingOptions, canSwap, connectionNote, emptyHeatingForm, emptySwapForm, formulaFormOf, HEAT_GENERATION_OPTIONS, HOT_WATER_OPTIONS, hotWaterBody, isFormula, parseDecimal, SELF_HOT_WATER_OPTIONS, selfFormulaBody, PER_UNIT_ENERGY_OPTIONS, plantOptions, swapBody, swapMetersOf, unmeasurableLabel, heatingPlantBody, heatingSummary, heatingToForm, whoHint, whoOptions, type HeatingForm } from './heatingForm'
 import type { HeatingPlant, Unit } from './types'
 
 const UNITS: Pick<Unit, 'id' | 'name' | 'noConnection'>[] = [{ id: 'eg', name: 'EG' }, { id: 'og', name: 'OG' }, { id: 'garage', name: 'Garage', noConnection: ['waerme'] }]
@@ -266,4 +266,19 @@ describe('Durchsicht von #239, I3: Kesseltausch bei eigener Heizkostenabrechnung
     expect(swapBody({ ...f, meterValues: { dh: 'viel' } }, { energy: 'gas' }, [{ id: 'dh', name: 'Speicher' }])).toEqual({ error: 'Der Stand für „Speicher“ ist keine Zahl.' })
     expect(swapBody(f, { energy: 'gas' }, [{ id: 'dh', name: 'Speicher' }])).toEqual({ body: { date: '2025-07-01', energy: 'districtHeating', name: '', previousName: 'Gas' } })
   })
+})
+
+test('Warmwasser nach Formel (Heizung PR 11): Volumen und Temperatur deutsch und technisch, leer heißt keine Angabe', () => {
+  expect(parseDecimal('32,5')).toBe(32.5)
+  expect(parseDecimal('32.5')).toBe(32.5)
+  expect(parseDecimal('1.234,5')).toBe(1234.5)
+  expect(parseDecimal('')).toBe(null)
+  expect(parseDecimal('viel')).toBe(undefined)
+  expect(selfFormulaBody('volumeFormula', { volume: '120', temp: '60' })).toEqual({ body: { dhwVolumeM3: 120, dhwTempC: 60 } })
+  expect(selfFormulaBody('volumeFormula', { volume: 'x', temp: '60' })).toEqual({ error: 'Das Volumen des Warmwassers ist keine Zahl.' })
+  expect(selfFormulaBody('areaFormula', { volume: '120', temp: '60' })).toEqual({ body: {} })
+  expect(formulaFormOf({ dhwMethod: 'volumeFormula', dhwUnmeasurable: null, dhwHeatKwh: null, totalHeatKwh: null, dhwVolumeM3: 32.5, dhwTempC: null })).toEqual({ volume: '32,5', temp: '' })
+  expect(HEAT_GENERATION_OPTIONS.map((o) => o.value)).toEqual(['', 'single', 'mixed'])
+  // Bei eigener Abrechnung gibt es „keine Angabe“ nicht; die Vorgabe ist der Wärmezähler.
+  expect(SELF_HOT_WATER_OPTIONS.map((o) => o.value)).toEqual(['heatMeter', 'volumeFormula', 'areaFormula'])
 })

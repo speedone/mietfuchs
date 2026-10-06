@@ -95,3 +95,22 @@ test('Heizöl (Durchsicht von #237, M5): Die Zeile nennt den Betrag aus der verk
   // Die Position „Gas Abschlussrechnung“ der Ansicht zeigt auf „d“ und hat 6.500,00 €.
   expect(screen.getByText(/Betrag laut Position 6\.500,00 €/)).toBeTruthy()
 })
+
+test('Heizung PR 11: beim Vorrat Heizwert laut Rechnung, ohne ihn die Zeile der Tabelle; bei Gas Brennwert oder Heizwert', async () => {
+  render(<FuelCard plant={{ id: 'hp', method: 'self', energy: 'pellets' }} view={view} deliveries={[]} onSaved={() => {}} />)
+  fireEvent.click(screen.getByText('Lieferung eintragen'))
+  // Pellets haben genau eine Zeile; sie ist vorbelegt.
+  expect(auswahl('Steht kein Heizwert auf der Rechnung: Brennstoff laut Heizkostenverordnung').value).toBe('woodPellets')
+  fireEvent.change(screen.getByLabelText('Lieferdatum'), { target: { value: '2025-10-12' } })
+  fireEvent.change(screen.getByLabelText('Menge'), { target: { value: '3000' } })
+  fireEvent.change(auswahl('Einheit der Menge'), { target: { value: 'kg' } })
+  fireEvent.change(screen.getByLabelText('Heizwert laut Rechnung (kWh je Kilogramm)'), { target: { value: '4,9' } })
+  expect(screen.queryByLabelText('Steht kein Heizwert auf der Rechnung: Brennstoff laut Heizkostenverordnung')).toBeNull()
+  fireEvent.click(screen.getByText('Lieferung speichern'))
+  await waitFor(() => expect(sent.at(-1)).toMatchObject({ url: '/api/heating-plants/hp/deliveries', method: 'POST', body: { heatingValue: 4.9, fuelGrade: null, quantityUnit: 'kg' } }))
+  cleanup()
+  render(<FuelCard plant={{ id: 'hp', method: 'self', energy: 'gas' }} view={view} deliveries={[gas]} onSaved={() => {}} />)
+  fireEvent.click(screen.getByText('Lieferung eintragen'))
+  expect(screen.queryByLabelText(/Heizwert laut Rechnung/)).toBeNull()
+  expect(auswahl('Abgerechnet (laut Rechnung)').value).toBe('')
+})
