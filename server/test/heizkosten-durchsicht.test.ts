@@ -9,7 +9,7 @@ import path from 'node:path'
 import { eq } from 'drizzle-orm'
 import { openDatabase } from '../src/db/open.ts'
 import { readStock } from '../src/db/read.ts'
-import { closeSettlement, createEntity, createProperty, updateEntity } from '../src/db/repository.ts'
+import { changeTenant, closeSettlement, createEntity, createProperty, updateEntity } from '../src/db/repository.ts'
 import { createHeatingPlant, replaceHeatingPlant } from '../src/db/heating.ts'
 import { saveDistribution, setUpSelf } from '../src/db/heatingSelf.ts'
 import { closeHeatingSettlement } from '../src/db/heatingSettlements.ts'
@@ -99,6 +99,8 @@ test('Durchsicht #239 C1: der Pflichtanteil von 70 % lässt sich auch in einer b
     assert.deepEqual([d?.effective?.heating, d?.forcedPercent], [70, 70])
     s = await settle(opened, '2025-06-01')
     assert.ok(!s.notices.some((n) => n.code === 'heating.share-forced-unsure'))
+    // M9: höchstens zwei Nachkommastellen.
+    await assert.rejects(opened.write((db) => saveDistribution(db, 'hp', '2026-01', { heatConsumptionPct: 65.125, insulationRule: 'notApplies' }, '2025-06-01')), status(400, /zwei Nachkommastellen/))
   })
 })
 
@@ -217,5 +219,15 @@ test('Durchsicht #239 I3c: fehlt der Stand des Speicherzählers zum Tausch, vert
     const texts = s.notices.filter((n) => n.code === 'heating.self-incomplete').map((n) => n.text)
     assert.ok(texts.some((t) => /Kesseltausch/.test(t) && /30\.06\.2025/.test(t)), texts.join('\n'))
     assert.equal(tenantsOf(s, 'gas1'), 0)
+  })
+})
+
+test('Durchsicht #239 I3 (Recht): beim Mieterwechsel „nicht möglich“ nur mit Grund', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write(async (db) => {
+      await createEntity(db, 'units', 'a', { propertyId: 'objekt-1', name: 'A', areaM2: 50, participates: true })
+      await createEntity(db, 'tenancies', 'ta', { unitId: 'a', tenantName: 'Mieter A', persons: 1, start: '2020-01-01' })
+    })
+    await assert.rejects(opened.write((db) => changeTenant(db, 'objekt-1', 'ta', { end: '2025-06-30', readings: [], interimGap: { status: 'impossible', reason: '' }, newTenancy: null }, newId)), status(400, /Grund/))
   })
 })

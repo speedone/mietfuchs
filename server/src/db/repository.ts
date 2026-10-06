@@ -2066,6 +2066,8 @@ export async function changeTenant(
     if (s === undefined) throw new TenantChangeError(400, 'Bitte wählen Sie, ob die Zwischenablesung nicht möglich war oder nicht durchgeführt wurde.')
     const grund = raw(lueckeRumpf, 'reason')
     luecke = { status: s, reason: typeof grund === 'string' ? grund.trim() : '' }
+    // Durchsicht von #239, I3: „nicht möglich“ nur mit Grund.
+    if (s === 'impossible' && luecke.reason === '') throw new TenantChangeError(400, 'Bitte nennen Sie den Grund, warum die Zwischenablesung nicht möglich war; er steht in der Abrechnung (§ 9b Abs. 3 HeizkostenV).')
   }
 
   // Der Nachmieter, oder Leerstand.

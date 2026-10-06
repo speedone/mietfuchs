@@ -34,4 +34,16 @@ describe('HeatingSelfSetup', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(bodies[1]).toMatchObject({ items: [{ id: 'c1', heatingPart: 'fuel', heatingTarget: 'both' }] })
   })
+
+  it('Durchsicht von #239: nennt die Heizperiode, rät bei „Weiß ich nicht“ zum Pflichtanteil und fragt bei Fernwärme nicht nach dem Wärmeschutz', () => {
+    render(<HeatingSelfSetup plant={plant} period="2025-01" periodLabel="2025" onDone={() => {}} onCancel={() => {}} />)
+    expect(screen.getByText(/er gilt ab der Heizperiode 2025/)).toBeTruthy()
+    expect(screen.getByText(/Steht im Mietvertrag ein Anteil, gilt er/)).toBeTruthy()
+    fireEvent.change(screen.getByLabelText(/Wärmeschutz/), { target: { value: 'unknown' } })
+    fireEvent.change(screen.getByLabelText(/Heizung in %/), { target: { value: '50' } })
+    expect(screen.getByText(/Mit 70 % liegen Sie in jedem Fall richtig/)).toBeTruthy()
+    cleanup()
+    render(<HeatingSelfSetup plant={{ ...plant, energy: 'districtHeating' }} period="2025-01" onDone={() => {}} onCancel={() => {}} />)
+    expect(screen.queryByLabelText(/Wärmeschutz/)).toBeNull()
+  })
 })

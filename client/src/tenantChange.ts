@@ -41,7 +41,7 @@ export const INTERIM_FEE_HINT = 'Die Kosten einer Zwischenablesung beim Mieterwe
 
 // Die Antworten, wenn bei eigener Heizkostenabrechnung ein Stand fehlt (Heizung PR 10, Entwurf 3.5).
 export const INTERIM_GAP_OPTIONS: { value: Extract<InterimGapStatus, 'impossible' | 'missed'>; label: string }[] = [
-  { value: 'impossible', label: 'Sie war nicht möglich (etwa: Wohnung nicht zugänglich)' },
+  { value: 'impossible', label: 'Sie war nicht möglich' },
   { value: 'missed', label: 'Sie wurde nicht durchgeführt' },
 ]
 
@@ -72,6 +72,19 @@ export function meterProblem(meters: Pick<Meter, 'id' | 'name'>[], values: Recor
     const v = values[m.id]
     if (v?.trim() && parseMeterValue(v) === null) return `Zählerstand für „${m.name}“ ist keine gültige Zahl.`
   }
+  return null
+}
+
+// Eigene Heizkostenabrechnung (Heizung PR 10, Entwurf 3.5): Fehlt ein Stand eines Wärme- oder
+// Warmwasserzählers, sagt der Vermieter warum, und zwar vor „Weiter“; „nicht möglich“ nur mit Grund
+// (Durchsicht von #239, I3).
+export function gapProblem(heatIds: readonly string[], meterValues: Record<string, string>, gap: { status: InterimGapStatus | ''; reason: string } | null | undefined): string | null {
+  const missingHeat = heatIds.some((id) => parseMeterValue(meterValues[id] ?? '') === null)
+  if (heatIds.length === 0 || !missingHeat) return null
+  if (!gap || gap.status === '') {
+    return 'Für die Heizkostenabrechnung fehlt ein Zählerstand. Bitte tragen Sie ihn ein oder geben Sie an, ob die Zwischenablesung nicht möglich war oder nicht durchgeführt wurde.'
+  }
+  if (gap.status === 'impossible' && gap.reason.trim() === '') return 'Bitte nennen Sie den Grund, warum die Zwischenablesung nicht möglich war; er steht in der Abrechnung.'
   return null
 }
 
@@ -109,13 +122,10 @@ export function buildTenantChange(input: {
   const heatIds = input.heatMeterIds ?? []
   const missingHeat = heatIds.some((id) => parseMeterValue(meterValues[id] ?? '') === null)
   let interimGap: TenantChangeBody['interimGap']
-  if (heatIds.length > 0 && missingHeat) {
-    const g = input.interimGap
-    if (!g || g.status === '') {
-      return { error: 'Für die Heizkostenabrechnung fehlt ein Zählerstand. Bitte tragen Sie ihn ein oder geben Sie an, ob die Zwischenablesung nicht möglich war oder nicht durchgeführt wurde.' }
-    }
-    interimGap = { status: g.status, reason: g.reason.trim() }
-  }
+  const gapError = gapProblem(heatIds, meterValues, input.interimGap)
+  if (gapError) return { error: gapError }
+  const g = input.interimGap
+  if (heatIds.length > 0 && missingHeat && g && g.status !== '') interimGap = { status: g.status, reason: g.reason.trim() }
   const gap = interimGap ? { interimGap } : {}
   if (vacancy) return { body: { end: endDate, readings, ...gap, newTenancy: null } }
 

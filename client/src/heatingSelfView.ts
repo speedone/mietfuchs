@@ -1,8 +1,47 @@
 // Die eigene Heizkostenabrechnung auf der Seite Heizkosten und im Druck (Heizung PR 10, Entwurf 3.5,
 // 8.8), ohne DOM prüfbar (heatingSelfView.test.ts). Die Zahlen rechnet der Server; hier stehen nur
 // Sätze und die Ampel.
-import type { HeatingDistribution, SelfBoundaryView, SelfHeatingStatement, SelfPotView, SelfUnitView, SelfUserView } from './types'
+import type { HeatingDistribution, HeatingEnergy, InsulationRule, SelfBoundaryView, SelfHeatingStatement, SelfPotView, SelfUnitView, SelfUserView } from './types'
 import { fmtDate, fmtEuro } from './api'
+import { hkvConsumptionShareForced, hkvCutNotByConsumption } from '../../shared/law/heizkostenv.ts'
+import { LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
+
+// ---------- Wärmeschutz und Pflichtanteil (Durchsicht von #239, C1 und M1) ----------
+
+// § 7 Abs. 1 Satz 2 HeizkostenV gilt nur bei Öl- oder Gasheizung (Flüssiggas zählt als Gas); sonst
+// fragt Mietfuchs nicht.
+export const insulationAsked = (energy: HeatingEnergy): boolean => ['oil', 'gas', 'lpg'].includes(energy)
+export const INSULATION_QUESTION = 'Liegt der Wärmeschutz Ihres Hauses unter dem Anforderungsniveau der Wärmeschutzverordnung vom 16. August 1994, und sind die freiliegenden Leitungen der Wärmeverteilung überwiegend gedämmt?'
+export const INSULATION_OPTIONS: { value: InsulationRule; label: string }[] = [
+  { value: 'applies', label: 'Ja, beides' },
+  { value: 'notApplies', label: 'Nein' },
+  { value: 'unknown', label: 'Weiß ich nicht' },
+]
+const forcedValue = (): number => valueAt(hkvConsumptionShareForced, LAW_AS_OF)
+export const insulationExplained = (): string =>
+  `Trifft beides zu, sind von den Heizkosten ${forcedValue()} % nach Verbrauch zu verteilen (§ 7 Abs. 1 Satz 2 HeizkostenV); mehr nur mit einer Vereinbarung (§ 10 HeizkostenV).`
+// „Weiß ich nicht“ und weniger als der Pflichtanteil: der Rat aus der Durchsicht.
+export function unsureShareHint(energy: HeatingEnergy, insulation: InsulationRule | '' | null, share: number | null): string | null {
+  const forced = forcedValue()
+  if (!insulationAsked(energy) || insulation !== 'unknown' || share === null || share >= forced) return null
+  return `Mit ${forced} % liegen Sie in jedem Fall richtig; trifft § 7 Abs. 1 Satz 2 HeizkostenV zu, sind weniger nicht zulässig.`
+}
+
+// ---------- Fehlende Zwischenablesung (Durchsicht von #239, I3) ----------
+
+// Was jede Antwort bewirkt, bevor der Vermieter sie gibt.
+export function gapConsequence(status: 'impossible' | 'missed'): string {
+  return status === 'impossible'
+    ? 'Nicht möglich: Die Kosten der Wohnung werden nach Gradtagen und Tagen auf die Mieter geteilt (§ 9b Abs. 3 HeizkostenV). Nennen Sie den Grund; er steht in der Abrechnung.'
+    : `Nicht durchgeführt: Mietfuchs teilt die Kosten der Wohnung ebenso, aber nicht nach dem Verbrauch; die Mieter dürfen ihren Anteil daran um ${valueAt(hkvCutNotByConsumption, LAW_AS_OF)} % kürzen (§ 12 Abs. 1 Satz 1 HeizkostenV). Die Abrechnung nennt die Beträge.`
+}
+
+// Prozent mit höchstens zwei Nachkommastellen (M9); sonst null.
+export function percentOf(text: string): number | null {
+  const t = text.trim().replace(',', '.')
+  if (!/^\d+(\.\d{1,2})?$/.test(t)) return null
+  return Number(t)
+}
 
 export type Light = 'green' | 'yellow' | 'red'
 
@@ -25,7 +64,7 @@ export function boundaryText(b: SelfBoundaryView, unitName: string): string {
       : ''
     return `${head}: abgelesen ${b.offDays} ${b.offDays === 1 ? 'Tag' : 'Tage'} daneben${b.far ? ', über einen Wintermonat' : ''}${choice}`
   }
-  const answer = b.gap === 'impossible' ? ' (nicht möglich)' : b.gap === 'missed' ? ' (nicht durchgeführt)' : ''
+  const answer = b.gap === 'impossible' ? ` (nicht möglich${b.gapReason ? `: ${b.gapReason}` : ''})` : b.gap === 'missed' ? ' (nicht durchgeführt)' : ''
   return `${head}: keine Ablesung${answer}`
 }
 
@@ -66,6 +105,11 @@ export function userLine(u: SelfUserView, self: Pick<SelfHeatingStatement, 'pots
   }
   return `${u.label}, ${time}: ${parts.join('; ')}`
 }
+
+// Das Ableseergebnis geht an jeden Mieter für seine Wohnung (Durchsicht von #239, I2); gedruckt wird eine
+// Wohnung. Einer gesonderten Mitteilung des Warmwasserverbrauchs bedarf es nicht, wenn in der Wohnung ein
+// Warmwasserzähler eingebaut ist (§ 6 Abs. 1 Satz 4 HeizkostenV).
+export const READING_RESULT_HINT = 'Bei Zählern, die nicht aus der Ferne ablesbar sind, teilen Sie jedem Mieter das Ergebnis der Ablesung seiner Wohnung in der Regel innerhalb eines Monats mit (§ 6 Abs. 1 Satz 2 HeizkostenV). Wählen Sie die Wohnung und drucken Sie ihr Ergebnis. Den Warmwasserverbrauch müssen Sie nicht gesondert mitteilen, wenn in der Wohnung ein Warmwasserzähler eingebaut ist (§ 6 Abs. 1 Satz 4).'
 
 // Das Ableseergebnis einer Wohnung zu einer Grenze (§ 6 Abs. 1 Satz 2 HeizkostenV).
 export function readingResult(unit: SelfUnitView, boundary: string): string[] {

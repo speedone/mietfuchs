@@ -66,3 +66,17 @@ describe('Einrichtung Schritt 7 (Heizung PR 10)', () => {
     } })
   })
 })
+
+describe('Durchsicht von #239', () => {
+  it('M1: bei Fernwärme keine Frage zum Wärmeschutz; gesendet wird „trifft nicht zu“', () => {
+    const fern = { ...plant, energy: 'districtHeating' } as typeof plant
+    const r = selfSetupBody({ ...emptySelfSetup(fern, '2025-01'), share: '70', waterShare: '70', insulation: '' }, 'districtHeating')
+    expect('body' in r && r.body.insulationRule).toBe('notApplies')
+    expect(selfSetupBody(filled({ insulation: '' }), 'gas')).toEqual({ error: 'Bitte beantworten Sie die Frage zum Wärmeschutz; „Weiß ich nicht“ ist eine Antwort.' })
+  })
+  it('M9: Anteil mit höchstens zwei Nachkommastellen', () => {
+    expect('error' in selfSetupBody(filled({ share: '65,125' }), 'gas')).toBe(true)
+    const r = selfSetupBody(filled({ share: '65,25', waterShare: '60' }), 'gas')
+    expect('body' in r && r.body.heatConsumptionPct).toBe(65.25)
+  })
+})

@@ -319,10 +319,10 @@ const GUIDE_DATA = {
     applies: 'Ihr Haus hat eine Zentralheizung, und Sie lesen die Wärmezähler (und, wenn die Heizung auch das Warmwasser bereitet, die Warmwasserzähler) jeder Wohnung selbst ab, ohne Messdienst. Mietfuchs verteilt dann nach der Heizkostenverordnung in Grund- und Verbrauchskosten.',
     steps: [
       { page: 'stammdaten', text: 'Klicken Sie in der Karte „Heizung“ auf „Heizung einrichten“, wählen Sie die Energie und bei der Frage, wer abrechnet, „Ich selbst, mit Zählern oder Heizkostenverteilern“.' },
-      { page: 'stammdaten', text: 'Beantworten Sie danach die Fragen zu Warmwasser, Erfassung, Wärmeschutz und dem Anteil nach Verbrauch und klicken Sie auf „Umstellen“. Nennt Mietfuchs Heizpositionen, wählen Sie für jede Teil und Ziel. Später erreichen Sie die Fragen über „Selbst abrechnen“.' },
+      { page: 'stammdaten', text: 'Beantworten Sie danach die Fragen zu Warmwasser, Erfassung, Wärmeschutz und dem Anteil nach Verbrauch und klicken Sie auf „Umstellen“. Nennt Mietfuchs Heizpositionen, wählen Sie für jede Teil und Ziel. Den Anteil und die Antwort zum Wärmeschutz ändern Sie später auf der Seite Heizkosten.' },
       { page: 'zaehler', text: 'Tragen Sie die Stände der angelegten Zähler zu Beginn und Ende der Heizperiode ein, beim Mieterwechsel zum Auszugstag.' },
       { page: 'kosten', text: 'Erfassen Sie Brennstoff, Betriebsstrom, Wartung und Zählermiete als Position „Heizung und Warmwasser“; der Schlüssel ist „nach Heizkostenverordnung“, dazu der Teil der Heizkosten unter „Weitere Angaben“ und das Ziel.' },
-      { page: 'heizkosten', text: 'Prüfen Sie auf der Seite Heizkosten die Ablesungen. Fehlt beim Mieterwechsel eine Zwischenablesung, antworten Sie mit „Nicht möglich“ oder „Nicht durchgeführt“. Das „Ableseergebnis“ drucken Sie für jede Wohnung aus.' },
+      { page: 'heizkosten', text: 'Prüfen Sie auf der Seite Heizkosten die Ablesungen. Fehlt beim Mieterwechsel eine Zwischenablesung, antworten Sie mit „Nicht möglich“ (mit Grund) oder „Nicht durchgeführt“. Wählen Sie in der Karte Ableseergebnis jede Wohnung und klicken Sie auf „Ableseergebnis drucken“; das Blatt geht an den Mieter dieser Wohnung.' },
     ],
     result: [
       'Die Kosten jedes Topfs (Heizung, Warmwasser) gehen zum gewählten Anteil nach Verbrauch, der Rest nach Wohnfläche; bei verbundener Warmwasserbereitung teilt Mietfuchs die gemeinsamen Kosten nach der gemessenen Wärme am Warmwasserspeicher.',
@@ -331,11 +331,11 @@ const GUIDE_DATA = {
     ],
     example: 'Zwei Wohnungen à 50 m², Fernwärme 3.000 €, kein zentrales Warmwasser, 70 % nach Verbrauch. Grundkosten 30 %: 900 €, je Wohnung 450 €. Verbrauchskosten 70 %: 2.100 € für 10.000 kWh. Wohnung A: 4.000 kWh, 840 €, zusammen 1.290 €. Wohnung B: 6.000 kWh, zusammen 1.710 €.',
     caveats: [
-      { text: `Zwischen ${SHARE.min} und ${SHARE.max} Prozent der Kosten sind nach Verbrauch zu verteilen; bei Öl- oder Gasheizung in einem Haus mit Wärmeschutz unter dem Niveau von 1994 und überwiegend gedämmten Leitungen genau ${FORCED} Prozent der Heizkosten.`, norm: '§ 7 Abs. 1, § 8 Abs. 1 HeizkostenV' },
+      { text: `Zwischen ${SHARE.min} und ${SHARE.max} Prozent der Kosten sind nach Verbrauch zu verteilen; bei Öl- oder Gasheizung in einem Haus mit Wärmeschutz unter dem Niveau von 1994 und überwiegend gedämmten Leitungen ${FORCED} Prozent der Heizkosten. Mehr geht nur mit einer Vereinbarung. Wissen Sie es nicht, liegen Sie mit ${FORCED} Prozent in jedem Fall richtig.`, norm: '§ 7 Abs. 1, § 8 Abs. 1, § 10 HeizkostenV' },
       { text: 'Den Anteil ändern Sie nach der ersten Festlegung nur aus den dort genannten Gründen, durch Erklärung gegenüber den Mietern und nur für künftige Abrechnungszeiträume.', norm: '§ 6 Abs. 4 HeizkostenV' },
       { text: 'Beim Mieterwechsel ist eine Zwischenablesung Pflicht. Wird sie nicht durchgeführt, rechnet Mietfuchs ersatzweise nach Gradtagen und Tagen, und der Mieter kann seinen Anteil kürzen; die Abrechnung nennt die Beträge.', norm: '§ 9b HeizkostenV' },
       { text: 'Die Kosten der Zwischenablesung sind keine Betriebskosten; sie trägt der Vermieter, soweit im Mietvertrag nichts anderes vereinbart ist.', norm: 'BGH VIII ZR 19/07' },
-      { text: `Wird nicht nach Verbrauch verteilt, etwa weil Zählerstände fehlen, darf jeder Mieter seinen Anteil um ${CUT} Prozent kürzen.`, norm: '§ 12 Abs. 1 HeizkostenV' },
+      { text: `Wird entgegen der Verordnung nicht nach Verbrauch verteilt, etwa weil keine Zähler eingebaut sind, darf jeder Mieter seinen Anteil um ${CUT} Prozent kürzen.`, norm: '§ 12 Abs. 1 Satz 1 HeizkostenV' },
       { text: 'Bei Zählern, die nicht aus der Ferne ablesbar sind, teilen Sie jedem Mieter das Ergebnis der Ablesung in der Regel innerhalb eines Monats mit.', norm: '§ 6 Abs. 1 HeizkostenV' },
     ],
     gaps: [

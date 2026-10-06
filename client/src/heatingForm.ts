@@ -6,12 +6,13 @@
 // Abrechnung, Heizung PR 10) steht in heatingSelfForm.ts: Wer „Ich selbst“ wählt, legt die Anlage hier
 // zunächst bei „Niemand“ an, und Schritt 7 stellt sie in einer Transaktion um (Abweichung 21 des Plans).
 // Nichts davon ändert eine Zahl der Abrechnung.
-import type { DevicesInstalledAfter, DevicesRemote, DhwMethod, HeatingEnergy, HeatingPlant, HeatingPlantUnit, NewDevicesInstall, PropertyKind, Unit } from './types'
+import type { DevicesInstalledAfter, DevicesRemote, DhwMethod, HeatingEnergy, HeatingPlant, HeatingPlantUnit, Meter, NewDevicesInstall, PropertyKind, Unit } from './types'
 import { isStockEnergy } from '../../shared/fuelStock.ts'
 import { parseEuro } from './api'
 import { hkvConsumptionShare, hkvCutNotByConsumption, hkvHeatPumpCapture, hkvRemoteReadingNewDevices } from '../../shared/law/heizkostenv.ts'
 import { dayAfter, germanDate, LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
-import { sameLine } from '../../shared/heatingPeriod.ts'
+import { lineRoot, sameLine } from '../../shared/heatingPeriod.ts'
+import { parseMeterValue } from './tenantChange'
 
 // Rechtszahlen aus dem Register, in der Fassung von heute (wie Lexikon und Anleitungen).
 const SHARE = valueAt(hkvConsumptionShare, LAW_AS_OF)
@@ -333,8 +334,18 @@ export function heatingPlantBody(form: HeatingForm, units: readonly UnitInfo[], 
 
 // ---------- Kessel getauscht (Heizung PR 9) ----------
 
-export type SwapForm = { date: string; energy: HeatingEnergy | ''; name: string; previousName: string; takesOverStock: 'yes' | 'no' }
-export type SwapBody = { date: string; energy: HeatingEnergy; name: string; previousName: string; takesOverStock?: boolean }
+export type SwapForm = { date: string; energy: HeatingEnergy | ''; name: string; previousName: string; takesOverStock: 'yes' | 'no'; meterValues?: Record<string, string> }
+export type SwapBody = { date: string; energy: HeatingEnergy; name: string; previousName: string; takesOverStock?: boolean; meterReadings?: { meterId: string; value: number }[] }
+
+// Bei der eigenen Heizkostenabrechnung fragt der Tausch die Stände der Zähler der Anlage (Wärme am
+// Warmwasserspeicher, Gesamtwärme) am letzten Tag der bisherigen ab (Durchsicht von #239, I3): Mit ihnen
+// grenzt Mietfuchs die Wärme beider Anlagen ab. Die Zähler bleiben, wo sie sind.
+export const swapMetersOf = (plant: Pick<HeatingPlant, 'id' | 'method' | 'replacesPlantId'>, plants: readonly Pick<HeatingPlant, 'id' | 'replacesPlantId'>[], meters: readonly Meter[]): Meter[] => {
+  if (plant.method !== 'self') return []
+  const root = lineRoot(plant, plants)
+  const line = new Set([plant.id, ...plants.filter((p) => lineRoot(p, plants) === root).map((p) => p.id)])
+  return meters.filter((m) => m.heatingPlantId !== null && m.heatingPlantId !== undefined && line.has(m.heatingPlantId) && !!m.heatingRole)
+}
 
 // Bei demselben Vorratsbrennstoff fragt der Tausch, ob die neue Anlage den Brennstoff weiter verheizt.
 export const asksTakeOver = (form: Pick<SwapForm, 'energy'>, previous: Pick<HeatingPlant, 'energy'>): boolean =>
@@ -347,10 +358,18 @@ export const canSwap = (p: Pick<HeatingPlant, 'endsOn' | 'supply' | 'separateSpa
 // Vorbelegung „Ja“: Wer den Kessel tauscht, verheizt den Brennstoff im Tank meist weiter.
 export const emptySwapForm = (p: Pick<HeatingPlant, 'name'>): SwapForm => ({ date: '', energy: '', name: '', previousName: p.name, takesOverStock: 'yes' })
 
-export function swapBody(form: SwapForm, previous: Pick<HeatingPlant, 'energy'>): { body: SwapBody } | { error: string } {
+export function swapBody(form: SwapForm, previous: Pick<HeatingPlant, 'energy'>, plantMeters: readonly Pick<Meter, 'id' | 'name'>[] = []): { body: SwapBody } | { error: string } {
   if (form.date === '') return { error: 'Bitte wählen Sie den Tag, an dem die neue Heizung in Betrieb ging.' }
   if (form.energy === '') return { error: 'Womit heizt die neue Heizung?' }
-  const body: SwapBody = { date: form.date, energy: form.energy, name: form.name.trim(), previousName: form.previousName.trim() }
+  const meterReadings: { meterId: string; value: number }[] = []
+  for (const m of plantMeters) {
+    const text = (form.meterValues?.[m.id] ?? '').trim()
+    if (text === '') continue
+    const value = parseMeterValue(text)
+    if (value === null) return { error: `Der Stand für „${m.name}“ ist keine Zahl.` }
+    meterReadings.push({ meterId: m.id, value })
+  }
+  const body: SwapBody = { date: form.date, energy: form.energy, name: form.name.trim(), previousName: form.previousName.trim(), ...(meterReadings.length > 0 ? { meterReadings } : {}) }
   return { body: asksTakeOver(form, previous) ? { ...body, takesOverStock: form.takesOverStock === 'yes' } : body }
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { buildTenantChange, defaultStart, EMPTY_NEW_TENANT, endProblem, INTERIM_FEE_HINT, meterProblem, parseMeterValue, type NewTenantForm } from './tenantChange'
+import { buildTenantChange, defaultStart, EMPTY_NEW_TENANT, endProblem, gapProblem, INTERIM_FEE_HINT, meterProblem, parseMeterValue, type NewTenantForm } from './tenantChange'
 
 const meters = [{ id: 'm1', name: 'KW EG' }, { id: 'm2', name: 'Haupt' }]
 const input = (patch: Partial<Parameters<typeof buildTenantChange>[0]> = {}, tenant: Partial<NewTenantForm> = {}) => ({
@@ -101,5 +101,14 @@ describe('Mieterwechsel bei eigener Heizkostenabrechnung (Heizung PR 10)', () =>
   })
   test('der Hinweis zu den Kosten der Zwischenablesung nennt das Urteil', () => {
     expect(INTERIM_FEE_HINT).toMatch(/VIII ZR 19\/07/)
+  })
+})
+
+describe('Durchsicht von #239, I3', () => {
+  test('„nicht möglich“ nur mit Grund, geprüft vor „Weiter“', () => {
+    expect(gapProblem(['w'], {}, { status: 'impossible', reason: ' ' })).toBe('Bitte nennen Sie den Grund, warum die Zwischenablesung nicht möglich war; er steht in der Abrechnung.')
+    expect(gapProblem(['w'], {}, { status: 'impossible', reason: 'nicht zugänglich' })).toBeNull()
+    expect(gapProblem(['w'], { w: '12' }, null)).toBeNull()
+    expect(gapProblem(['w'], {}, { status: '', reason: '' })).toMatch(/fehlt ein Zählerstand/)
   })
 })

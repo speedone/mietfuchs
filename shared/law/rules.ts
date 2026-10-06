@@ -168,9 +168,9 @@ export const RULES: readonly Rule[] = [
     title: 'Eigene Heizkostenabrechnung nach der Heizkostenverordnung',
     norm: '§§ 6 bis 9 HeizkostenV',
     summary:
-      `Von den Kosten der Heizung und des Warmwassers sind mindestens ${share.min} und höchstens ${share.max} % nach dem erfassten Verbrauch zu verteilen, der Rest bei der Heizung nach Wohn- oder Nutzfläche oder der beheizten Fläche, beim Warmwasser nach Wohn- oder Nutzfläche. ` +
+      `Von den Kosten der Heizung und des Warmwassers sind mindestens ${share.min} und höchstens ${share.max} % nach dem erfassten Verbrauch zu verteilen; höhere Sätze gehen nur mit einer Vereinbarung (§ 10). Der Rest geht bei der Heizung nach Wohn- oder Nutzfläche oder der beheizten Fläche, beim Warmwasser nach Wohn- oder Nutzfläche. Die Verordnung lässt auch den umbauten Raum zu (§ 7 Abs. 1 Satz 5, § 8 Abs. 1); Mietfuchs rechnet mit der Fläche. ` +
       'Bereitet die Heizung auch das Warmwasser, wird der Anteil des Warmwassers mit einem Wärmezähler gemessen. ' +
-      `In Gebäuden mit Öl- oder Gasheizung, die das Niveau der Wärmeschutzverordnung von 1994 nicht erreichen und deren freiliegende Leitungen überwiegend gedämmt sind, sind es bei der Heizung ${forcedShare} %. ` +
+      `In Gebäuden mit Öl- oder Gasheizung, die das Anforderungsniveau der Wärmeschutzverordnung vom 16. August 1994 nicht erfüllen und deren freiliegende Leitungen überwiegend gedämmt sind, sind es bei der Heizung ${forcedShare} % (§ 7 Abs. 1 Satz 2); mehr nur mit einer Vereinbarung (§ 10). ` +
       'Umgelegt werden die Kosten des verbrauchten Brennstoffs, nicht der gelieferte.',
   },
   {
@@ -195,8 +195,8 @@ export const RULES: readonly Rule[] = [
     title: 'Wechsel des Anteils nach Verbrauch',
     norm: '§ 6 Abs. 4 HeizkostenV',
     summary:
-      'Den Anteil nach Verbrauch und die übrigen Maßstäbe wählt der Gebäudeeigentümer. Ändern darf er sie nach der ersten Festlegung nur bei Einführung einer Vorerfassung nach Nutzergruppen, nach baulichen Maßnahmen, die nachhaltig Heizenergie einsparen, oder aus anderen sachgerechten Gründen, ' +
-      'durch Erklärung gegenüber den Nutzern und nur mit Wirkung zum Beginn eines Abrechnungszeitraums.',
+      'Den Anteil nach Verbrauch und die übrigen Maßstäbe wählt der Gebäudeeigentümer. Für künftige Abrechnungszeiträume ändern darf er sie durch Erklärung gegenüber den Nutzern bei Einführung einer Vorerfassung nach Nutzergruppen, nach baulichen Maßnahmen, die nachhaltig Heizenergie einsparen, oder aus anderen sachgerechten Gründen nach ihrer erstmaligen Bestimmung. ' +
+      'Festlegung und Änderung sind nur mit Wirkung zum Beginn eines Abrechnungszeitraums zulässig. Den vorgeschriebenen Anteil nach § 7 Abs. 1 Satz 2 wählt er nicht, er gilt.',
   },
 ]
 

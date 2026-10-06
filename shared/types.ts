@@ -1796,6 +1796,8 @@ export type SelfBoundaryView = {
   // ab der Warngrenze neben dem Wechsel (`practice.reading-off-warning`); dann wählt der Vermieter
   far: boolean
   gap: InterimGapStatus | null
+  // Der Grund, wenn die Zwischenablesung nicht möglich war (Durchsicht von #239, I3).
+  gapReason?: string
 }
 // Ein Nutzer einer Wohnung (Mieter, Leerstand, Eigennutzung, außerhalb) mit seinen Werten.
 export type SelfUserView = {

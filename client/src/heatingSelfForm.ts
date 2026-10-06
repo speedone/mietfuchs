@@ -104,13 +104,20 @@ export function selfSetupBody(form: SelfSetupForm, energy: HeatingEnergy): { bod
   if (form.hotWater === 'combined' && !kwhEnergy(energy)) {
     return { error: 'Bereitet die Heizung auch das Warmwasser, braucht die Aufteilung den Heizwert des Brennstoffs laut Rechnung (§ 9 Abs. 3 HeizkostenV); das kommt mit einer späteren Version. Bis dahin geht es mit getrennter Warmwasserbereitung oder ohne zentrales Warmwasser.' }
   }
-  if (form.insulation === '') return { error: 'Bitte beantworten Sie die Frage zum Wärmeschutz; „Weiß ich nicht“ ist eine Antwort.' }
+  // Die Frage zum Wärmeschutz nur bei Öl- oder Gasheizung (Durchsicht von #239, M1); sonst gilt § 7 Abs. 1 Satz 2 nicht.
+  const asked = ['oil', 'gas', 'lpg'].includes(energy)
+  if (asked && form.insulation === '') return { error: 'Bitte beantworten Sie die Frage zum Wärmeschutz; „Weiß ich nicht“ ist eine Antwort.' }
+  const insulationRule: InsulationRule = asked && form.insulation !== '' ? form.insulation : 'notApplies'
   // Vorgeschrieben (§ 7 Abs. 1 Satz 2): das Feld zeigt den Pflichtanteil und ist gesperrt; gesendet
   // wird, was angezeigt ist.
   const forced = forcedShare(energy, form.insulation)
-  const percent = (text: string): number | null => (text.trim() === '' ? null : Number(text.replace(',', '.')))
+  // Höchstens zwei Nachkommastellen (Durchsicht von #239, M9); anderes gilt als nicht angegeben.
+  const percent = (text: string): number | null => {
+    const t = text.trim().replace(',', '.')
+    return /^\d+(\.\d{1,2})?$/.test(t) ? Number(t) : null
+  }
   const share = forced ?? percent(form.share)
-  if (share === null || !Number.isFinite(share)) return { error: `Bitte geben Sie den Anteil nach Verbrauch an, zwischen ${min} und ${max} %.` }
+  if (share === null || !Number.isFinite(share)) return { error: `Bitte geben Sie den Anteil nach Verbrauch an, zwischen ${min} und ${max} %, mit höchstens zwei Nachkommastellen.` }
   // § 8 Abs. 1: beim Warmwasser eine eigene Wahl; ohne zentrales Warmwasser keine (Abweichung 14).
   const water = form.hotWater === 'none' ? null : percent(form.waterShare)
   if (form.hotWater !== 'none' && (water === null || !Number.isFinite(water))) {
@@ -130,7 +137,7 @@ export function selfSetupBody(form: SelfSetupForm, energy: HeatingEnergy): { bod
   }
   return {
     body: {
-      period: form.period, heatConsumptionPct: share, waterConsumptionPct: water, insulationRule: form.insulation, hotWater: form.hotWater, capture: form.capture,
+      period: form.period, heatConsumptionPct: share, waterConsumptionPct: water, insulationRule, hotWater: form.hotWater, capture: form.capture,
       areaBasisHeat: form.areaBasisHeat, dhwHeatMeter: form.hotWater === 'combined' && form.dhwHeatMeter, totalHeatMeter: form.totalHeatMeter, items,
     },
   }

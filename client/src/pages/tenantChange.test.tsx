@@ -163,6 +163,11 @@ test('Heizung PR 10: bei eigener Heizkostenabrechnung Ablesedatum je Wärmezähl
   expect(grund.value).toBe('')
   fireEvent.change(grund, { target: { value: 'impossible' } })
   expect((screen.getByLabelText(/Warum gibt es keine Zwischenablesung/i) as HTMLSelectElement).value).toBe('impossible')
+  // Durchsicht von #239, I3: die Folge der Wahl steht da, und ohne Grund geht es nicht weiter.
+  expect(screen.getByText(/Nicht möglich: Die Kosten der Wohnung werden nach Gradtagen und Tagen/)).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: /^Weiter$/i }))
+  expect(screen.getByText(/Bitte nennen Sie den Grund/)).toBeTruthy()
+  expect(screen.queryByLabelText(/Leerstand/i)).toBeNull()
   fireEvent.change(screen.getByLabelText(/Grund \(steht in der Abrechnung\)/i), { target: { value: 'nicht zugänglich' } })
   fireEvent.click(screen.getByRole('button', { name: /^Weiter$/i }))
   fireEvent.click(await screen.findByLabelText(/Leerstand/i, {}, SLOW))

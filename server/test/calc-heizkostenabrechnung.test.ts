@@ -241,6 +241,11 @@ test('Zwischenablesung nicht möglich: ein Hinweis ohne Betrag; ohne Antwort die
     const mit = computeSettlement(snapshotFor(await opened.read(readStock), 'objekt-1', p))
     assert.match(textOf(mit, 'heating.no-interim-reading'), /nicht möglich: Wohnung nicht zugänglich.*§ 9b Abs\. 3/s)
     assert.ok(!codes(mit).includes('heating.no-interim-reading-missed'))
+    // Durchsicht von #239, I3: Der Grund steht im Ausweis an der Grenze.
+    const c = mit.heating?.[0]?.self?.units.find((u) => u.unitId === 'c')?.boundaries.find((b) => b.date === '2025-09-30')
+    assert.deepEqual([c?.gap, c?.gapReason], ['impossible', 'Wohnung nicht zugänglich'])
+    // Ohne Grund nimmt der Server „nicht möglich“ nicht an.
+    await assert.rejects(opened.write((db) => saveInterimGap(db, 'c', '2025-09-30', { status: 'impossible', reason: ' ' })), (e: unknown) => e instanceof Error && /Grund/.test(e.message))
   })
 })
 

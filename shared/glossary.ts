@@ -256,6 +256,13 @@ export const GLOSSARY = {
     norm: '§ 7 Abs. 1 Satz 1, § 8 Abs. 1 HeizkostenV',
     needed: 'Ja, wenn Sie die Heizkosten selbst abrechnen. Ohne Zähler darf jeder Mieter seinen Anteil kürzen. Bei einer Öl- oder Gasheizung in einem Haus mit Wärmeschutz unter dem Niveau von 1994 und überwiegend gedämmten Leitungen ist der Anteil vorgeschrieben (§ 7 Abs. 1 Satz 2 HeizkostenV). Dass eine Flüssiggasheizung dazu zählt, ist eine Auslegung von Mietfuchs: Der Wortlaut sagt „Gasheizung“ ohne Einschränkung, wo die Verordnung Erdgas meint, sagt sie es (§ 9 Abs. 2 Satz 6 und die Tabelle in § 9 Abs. 3), und die Begründung (BR-Drs. 570/08) nennt Öl- und Gasheizungen und grenzt nur gegen Fernwärme ab. Der vorgeschriebene Anteil ist unter beiden Lesarten zulässig.',
   },
+  forcedConsumptionShare: {
+    title: 'Pflichtanteil nach Verbrauch',
+    short: 'In Gebäuden, die das Anforderungsniveau der Wärmeschutzverordnung vom 16. August 1994 nicht erfüllen, die mit einer Öl- oder Gasheizung versorgt werden und in denen die freiliegenden Leitungen der Wärmeverteilung überwiegend gedämmt sind, ist der Anteil der Heizkosten nach Verbrauch vorgeschrieben; eine Wahl zwischen den Grenzen gibt es dann nicht.',
+    example: 'Topf Heizung 5.000,00 €. Gilt der Pflichtanteil, gehen 3.500,00 € nach Verbrauch und 1.500,00 € nach Fläche; mit 50 % wären es je 2.500,00 €.',
+    norm: '§ 7 Abs. 1 Satz 2, § 10 HeizkostenV',
+    needed: 'Nur bei einer Öl- oder Gasheizung (Flüssiggas zählt nach Auslegung von Mietfuchs dazu, siehe Verbrauchskosten). Wissen Sie nicht, ob die Voraussetzungen vorliegen, liegen Sie mit dem Pflichtanteil in jedem Fall richtig, denn er liegt auch innerhalb der freien Wahl. Mehr geht nur mit einer Vereinbarung (§ 10 HeizkostenV). Den Pflichtanteil nachzutragen ist keine Änderung nach § 6 Abs. 4 und geht auch in einer begonnenen Heizperiode.',
+  },
   interimReading: {
     title: 'Zwischenablesung',
     short: 'Die Ablesung der Wärme- und Warmwasserzähler, wenn ein Mieter mitten im Abrechnungszeitraum aus- oder einzieht. Nach ihr werden die Verbrauchskosten aufgeteilt; die übrigen Heizkosten nach Gradtagszahlen oder zeitanteilig, die übrigen Warmwasserkosten zeitanteilig.',

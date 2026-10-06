@@ -1,6 +1,6 @@
 // Die Einrichtung „Heizung“ (Heizung PR 4, Entwurf 11.2), ohne DOM.
 import { describe, expect, test } from 'vitest'
-import { asksNewInstall, asksTakeOver, buildingOptions, canSwap, connectionNote, emptyHeatingForm, emptySwapForm, HOT_WATER_OPTIONS, hotWaterBody, isFormula, PER_UNIT_ENERGY_OPTIONS, plantOptions, swapBody, unmeasurableLabel, heatingPlantBody, heatingSummary, heatingToForm, whoHint, whoOptions, type HeatingForm } from './heatingForm'
+import { asksNewInstall, asksTakeOver, buildingOptions, canSwap, connectionNote, emptyHeatingForm, emptySwapForm, HOT_WATER_OPTIONS, hotWaterBody, isFormula, PER_UNIT_ENERGY_OPTIONS, plantOptions, swapBody, swapMetersOf, unmeasurableLabel, heatingPlantBody, heatingSummary, heatingToForm, whoHint, whoOptions, type HeatingForm } from './heatingForm'
 import type { HeatingPlant, Unit } from './types'
 
 const UNITS: Pick<Unit, 'id' | 'name' | 'noConnection'>[] = [{ id: 'eg', name: 'EG' }, { id: 'og', name: 'OG' }, { id: 'garage', name: 'Garage', noConnection: ['waerme'] }]
@@ -248,5 +248,22 @@ describe('Kessel getauscht (Heizung PR 9)', () => {
     const neu: HeatingPlant = { ...OEL, id: 'hp2', energy: 'gas', name: 'Gastherme', replacesPlantId: 'hp1' }
     expect(heatingSummary(alt, UNITS, [alt, neu])).toContain('Außer Betrieb seit 01.07.2025, ersetzt durch „Gastherme“')
     expect(heatingSummary(neu, UNITS, [alt, neu])).toContain('In Betrieb seit 01.07.2025, ersetzt „Ölkessel“')
+  })
+})
+
+describe('Durchsicht von #239, I3: Kesseltausch bei eigener Heizkostenabrechnung', () => {
+  test('fragt die Zähler der Linie ab und schickt die eingetragenen Stände', () => {
+    const plants = [{ id: 'alt', replacesPlantId: null }, { id: 'hp', replacesPlantId: 'alt' }, { id: 'fremd', replacesPlantId: null }]
+    const meters = [
+      { id: 'dh', name: 'Speicher', heatingPlantId: 'alt', heatingRole: 'dhwHeat' },
+      { id: 'x', name: 'Fremd', heatingPlantId: 'fremd', heatingRole: 'dhwHeat' },
+      { id: 'w', name: 'Wärme A', heatingPlantId: null, heatingRole: null, unitId: 'a' },
+    ] as unknown as Parameters<typeof swapMetersOf>[2]
+    expect(swapMetersOf({ id: 'hp', method: 'self', replacesPlantId: 'alt' }, plants, meters).map((m) => m.id)).toEqual(['dh'])
+    expect(swapMetersOf({ id: 'hp', method: 'manual', replacesPlantId: 'alt' }, plants, meters)).toEqual([])
+    const f = { ...emptySwapForm({ name: 'Gas' }), date: '2025-07-01', energy: 'districtHeating' as const }
+    expect(swapBody({ ...f, meterValues: { dh: '4.500' } }, { energy: 'gas' }, [{ id: 'dh', name: 'Speicher' }])).toEqual({ body: { date: '2025-07-01', energy: 'districtHeating', name: '', previousName: 'Gas', meterReadings: [{ meterId: 'dh', value: 4500 }] } })
+    expect(swapBody({ ...f, meterValues: { dh: 'viel' } }, { energy: 'gas' }, [{ id: 'dh', name: 'Speicher' }])).toEqual({ error: 'Der Stand für „Speicher“ ist keine Zahl.' })
+    expect(swapBody(f, { energy: 'gas' }, [{ id: 'dh', name: 'Speicher' }])).toEqual({ body: { date: '2025-07-01', energy: 'districtHeating', name: '', previousName: 'Gas' } })
   })
 })

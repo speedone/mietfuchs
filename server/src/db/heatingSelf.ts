@@ -103,6 +103,8 @@ function checkShares(body: unknown, plant: HeatingPlant, h: BillingPeriod, rows:
   const { min, max } = valueAt(hkvConsumptionShare, h.from)
   for (const v of withWater ? [heating, water] : [heating]) {
     if (v === null) throw new HeatingError(400, 'Bitte geben Sie an, welcher Anteil der Kosten nach Verbrauch verteilt wird.')
+    // Durchsicht von #239, M9: höchstens zwei Nachkommastellen.
+    if (Math.abs(Math.round(v * 100) - v * 100) > 1e-9) throw new HeatingError(400, 'Bitte geben Sie den Anteil mit höchstens zwei Nachkommastellen an.')
     if (v > max) throw new HeatingError(400, `Mehr als ${max} % nach Verbrauch gehen nur mit einer Vereinbarung (§ 10 HeizkostenV); das kommt mit einer späteren Version.`)
     if (v < min) throw new HeatingError(400, `Die Heizkostenverordnung verlangt mindestens ${min} % nach Verbrauch (§ 7 Abs. 1, § 8 Abs. 1).`)
   }
@@ -266,6 +268,8 @@ export async function saveInterimGap(db: Database, unitId: string, date: string,
   if (!unit) return null
   const reasonRaw = raw(body, 'reason')
   const reason = typeof reasonRaw === 'string' ? reasonRaw.trim() : ''
+  // Durchsicht von #239, I3: „nicht möglich“ nur mit Grund; er steht in der Abrechnung.
+  if (status === 'impossible' && reason === '') throw new HeatingError(400, 'Bitte nennen Sie den Grund, warum die Zwischenablesung nicht möglich war; er steht in der Abrechnung (§ 9b Abs. 3 HeizkostenV).')
   await db.transaction(async (tx) => {
     await tx.delete(interimReadingGaps).where(and(eq(interimReadingGaps.unitId, unitId), eq(interimReadingGaps.date, date)))
     await tx.insert(interimReadingGaps).values({ unitId, date, status, reason })

@@ -9,7 +9,8 @@ import Drawer from '../components/Drawer'
 import PropertyCard from '../components/PropertyCard'
 import { COST_MODEL_LABELS, buildPersonHistory, costModelBadge, costModelBody, defaultTenancyUnitId, overlapQuestion, prepaymentColumn, showsFlatRates } from '../tenancyModel'
 import { useOpenForm, useProperty, withProperty } from '../property'
-import { buildTenantChange, defaultStart, EMPTY_NEW_TENANT, endProblem, INTERIM_FEE_HINT, INTERIM_GAP_OPTIONS, meterProblem, parseMeterValue, type NewTenantForm } from '../tenantChange'
+import { buildTenantChange, defaultStart, EMPTY_NEW_TENANT, endProblem, gapProblem, INTERIM_FEE_HINT, INTERIM_GAP_OPTIONS, meterProblem, parseMeterValue, type NewTenantForm } from '../tenantChange'
+import { gapConsequence } from '../heatingSelfView'
 import PeriodCard from '../components/PeriodCard'
 import PageHeader from '../components/PageHeader'
 import { emptyUnitsText } from '../propertyView'
@@ -899,7 +900,8 @@ function TenantChangeWizard({ tenancy, unit, plants, onClose, onDone }: {
   const propertyId = property?.id
   useEffect(() => {
     void api<Meter[]>(withProperty('/api/meters', propertyId))
-      .then((all) => setMeters(all.filter((m) => m.unitId === tenancy.unitId || m.unitId === null)))
+      // Die Zähler einer Heizanlage (Speicher, Gesamtwärme) gehören nicht zur Zwischenablesung (Durchsicht von #239, M8).
+      .then((all) => setMeters(all.filter((m) => (m.unitId === tenancy.unitId || m.unitId === null) && !m.heatingPlantId)))
       .catch(() => setMeters([]))
   }, [tenancy.unitId, propertyId])
 
@@ -915,7 +917,7 @@ function TenantChangeWizard({ tenancy, unit, plants, onClose, onDone }: {
   }
 
   function goToStep3() {
-    const problem = meterProblem(meters, meterValues)
+    const problem = meterProblem(meters, meterValues) ?? gapProblem(heatMeters.map((m) => m.id), meterValues, gap)
     if (problem) {
       setError(problem)
       return
@@ -989,8 +991,9 @@ function TenantChangeWizard({ tenancy, unit, plants, onClose, onDone }: {
           ) : (
             <>
               <p className="muted">
-                Stände zum {fmtDate(endDate)} erfassen — dann wird der Verbrauch exakt statt
-                tagesanteilig aufgeteilt. {unitMeters.length === 0 && 'Der Hauptzähler dient nur der Dokumentation.'}
+                Stände zum {fmtDate(endDate)} erfassen — dann wird der Verbrauch nach den Ständen statt
+                tagesanteilig aufgeteilt.{heatMeters.length > 0 && ' Bei der Heizkostenabrechnung trägt jeder Mieter seinen abgelesenen Verbrauch; die Grundkosten der Heizung teilen sich nach Gradtagen, die des Warmwassers nach Tagen.'}
+                {' '}{unitMeters.length === 0 && 'Der Hauptzähler dient nur der Dokumentation.'}
                 {' '}Leere Felder werden übersprungen.
               </p>
               <div className="row">
@@ -1016,7 +1019,6 @@ function TenantChangeWizard({ tenancy, unit, plants, onClose, onDone }: {
                     )}
                   </label>
                 ))}
-                {step === 2 && <button className="btn" onClick={goToStep3}>Weiter</button>}
               </div>
               {heatMeters.length > 0 && (
                 <>
@@ -1038,9 +1040,10 @@ function TenantChangeWizard({ tenancy, unit, plants, onClose, onDone }: {
                       )}
                     </div>
                   )}
-                  {heatMissing && gap.status === 'missed' && <p className="muted">Dann rechnet Mietfuchs nach § 9b Abs. 3 HeizkostenV, und die Mieter können ihren Anteil kürzen; die Abrechnung nennt die Beträge.</p>}
+                  {heatMissing && gap.status !== '' && <p className="muted">{gapConsequence(gap.status === 'impossible' ? 'impossible' : 'missed')}</p>}
                 </>
               )}
+              {step === 2 && <div className="row"><button className="btn" onClick={goToStep3}>Weiter</button></div>}
             </>
           )}
           {step === 2 && meters.length === 0 && <button className="btn" onClick={goToStep3}>Weiter</button>}

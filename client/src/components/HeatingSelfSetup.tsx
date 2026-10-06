@@ -6,19 +6,21 @@ import Term from './Term'
 import {
   CAPTURE_SELF_OPTIONS, HOT_WATER_OPTIONS, PART_OPTIONS, emptySelfSetup, forcedShare, itemsFromConflict, kwhEnergy, selfSetupBody, shareBounds, targetOptions,
 } from '../heatingSelfForm'
+import { INSULATION_OPTIONS, INSULATION_QUESTION, insulationAsked, insulationExplained, percentOf, unsureShareHint } from '../heatingSelfView'
 
 // Einrichtung Schritt 7 (Heizung PR 10, Entwurf 11.2): Heizkosten selbst abrechnen. Antwortet der
 // Server mit 409, nennt er die Heizpositionen offener Zeiträume, die Teil und Ziel brauchen; sie
 // erscheinen unter den Fragen, und der zweite Versuch schickt sie mit. Bricht der Vermieter ab, bleibt
 // die Anlage bei „Niemand“.
-export default function HeatingSelfSetup({ plant, period, onDone, onCancel }: {
-  plant: HeatingPlant; period: string; onDone: (p: HeatingPlant) => void; onCancel: () => void
+export default function HeatingSelfSetup({ plant, period, periodLabel, onDone, onCancel }: {
+  plant: HeatingPlant; period: string; periodLabel?: string; onDone: (p: HeatingPlant) => void; onCancel: () => void
 }) {
   const [form, setForm] = useState(() => emptySelfSetup(plant, period))
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const { min, max } = shareBounds()
   const forced = forcedShare(plant.energy, form.insulation)
+  const hint = unsureShareHint(plant.energy, form.insulation, percentOf(form.share))
 
   async function submit() {
     const result = selfSetupBody(form, plant.energy)
@@ -73,18 +75,23 @@ export default function HeatingSelfSetup({ plant, period, onDone, onCancel }: {
           {CAPTURE_SELF_OPTIONS.map((o) => <option key={o.value} value={o.value} disabled={o.later}>{o.label}</option>)}
         </select>
       </label>
-      <label className="field grow">
-        Wärmeschutz: Erreicht das Haus nicht das Niveau von 1994, und sind die freiliegenden Leitungen überwiegend gedämmt?
-        <select value={form.insulation} onChange={(e) => setForm({ ...form, insulation: e.target.value as InsulationRule | '' })}>
-          <option value="">— bitte wählen —</option>
-          <option value="applies">Ja, beides</option>
-          <option value="notApplies">Nein</option>
-          <option value="unknown">Weiß ich nicht</option>
-        </select>
-      </label>
+      {insulationAsked(plant.energy) && (
+        <>
+          <label className="field grow">
+            <span>{INSULATION_QUESTION} (<Term id="forcedConsumptionShare">Pflichtanteil</Term>)</span>
+            <select value={form.insulation} onChange={(e) => setForm({ ...form, insulation: e.target.value as InsulationRule | '' })}>
+              <option value="">— bitte wählen —</option>
+              {INSULATION_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </label>
+          <p className="muted">{insulationExplained()}</p>
+        </>
+      )}
       <p className="muted">
-        <Term id="consumptionCosts">Anteil nach Verbrauch</Term> ({min} bis {max} %), für Heizung und Warmwasser je eine Wahl. Rechnen Sie schon
-        so ab, tragen Sie den bisherigen Anteil ein; ändern dürfen Sie ihn nur für künftige Abrechnungszeiträume (§ 6 Abs. 4 HeizkostenV).
+        <Term id="consumptionCosts">Anteil nach Verbrauch</Term> ({min} bis {max} %), für Heizung und Warmwasser je eine Wahl
+        {periodLabel ? `; er gilt ab der Heizperiode ${periodLabel}` : ''}. Rechnen Sie schon so ab, tragen Sie den bisherigen Anteil ein. Steht im
+        Mietvertrag ein Anteil, gilt er. Festlegen und ändern dürfen Sie ihn nur mit Wirkung zum Beginn eines Abrechnungszeitraums, ändern nur für
+        künftige und durch Erklärung gegenüber den Mietern (§ 6 Abs. 4 HeizkostenV).
       </p>
       <div className="row">
         <label className="field">
@@ -99,7 +106,8 @@ export default function HeatingSelfSetup({ plant, period, onDone, onCancel }: {
           </label>
         )}
       </div>
-      {forced !== null && <p className="muted">Bei einer Öl- oder Gasheizung in diesem Fall sind es bei der Heizung {forced} % (§ 7 Abs. 1 Satz 2 HeizkostenV).</p>}
+      {forced !== null && <p className="muted">Bei einer Öl- oder Gasheizung in diesem Fall sind es bei der Heizung {forced} % (§ 7 Abs. 1 Satz 2 HeizkostenV); mehr nur mit einer Vereinbarung (§ 10 HeizkostenV).</p>}
+      {hint && <div className="notice">{hint}</div>}
       <label className="field grow">
         <span><Term id="baseCosts">Grundkosten</Term> der Heizung verteilen nach</span>
         <select value={form.areaBasisHeat} onChange={(e) => setForm({ ...form, areaBasisHeat: e.target.value as AreaBasisHeat })}>

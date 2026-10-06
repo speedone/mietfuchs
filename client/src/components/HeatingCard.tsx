@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { AssignableHeatingItem, DevicesInstalledAfter, DevicesRemote, HeatingEnergy, HeatingPlant, NewDevicesInstall, Unit } from '../types'
+import type { AssignableHeatingItem, DevicesInstalledAfter, DevicesRemote, HeatingEnergy, HeatingPlant, Meter, NewDevicesInstall, Unit } from '../types'
 import { api, errorText, fmtEuro } from '../api'
 import { useProperty, withProperty } from '../property'
 import { periodContaining, periodLabel, periodOfKey, rulesOf } from '../../../shared/period.ts'
@@ -15,7 +15,7 @@ import { ApiError } from '../api'
 import { useFocusTarget, type FocusProps } from '../focus'
 import {
   CAPTURE_OPTIONS, CONTRACT_OPTIONS, ENERGY_OPTIONS, HOW_TO_TELL, asksRemote, INSTALLED_OPTIONS, NEW_DEVICES_AFTER, NEW_INSTALL_OPTIONS, NEW_INSTALL_QUESTION, PER_UNIT_ENERGY_OPTIONS, REMOTE_OPTIONS, TAKES_OVER_BACK, TAKES_OVER_HINT, takesOverBack, TAKES_OVER_OPTIONS, TAKES_OVER_QUESTION, asksNewInstall, asksTakeOver, buildingOptions, canSwap, emptyHeatingForm, emptySwapForm, heatingPlantBody,
-  connectionNote, heatingSummary, heatingToForm, NEWER_THAN, swapBody, whoHint, whoOptions, type CaptureAnswer, type EnergyAnswer, type HeatingForm, type PerUnitContract, type SwapForm, type WhoSettles,
+  connectionNote, heatingSummary, heatingToForm, NEWER_THAN, swapBody, swapMetersOf, whoHint, whoOptions, type CaptureAnswer, type EnergyAnswer, type HeatingForm, type PerUnitContract, type SwapForm, type WhoSettles,
 } from '../heatingForm'
 
 // Die Karte „Heizung“ in den Stammdaten (Heizung PR 4, Entwurf 11.2). Ohne Anlage ein Satz und der
@@ -35,7 +35,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
   const [assignable, setAssignable] = useState<AssignableHeatingItem[]>([])
   const [error, setError] = useState('')
   // Kessel getauscht (Heizung PR 9): die Anlage, die endet, und die Angaben zur neuen.
-  const [swap, setSwap] = useState<{ plant: HeatingPlant; form: SwapForm } | null>(null)
+  const [swap, setSwap] = useState<{ plant: HeatingPlant; form: SwapForm; meters: Meter[] } | null>(null)
   // Einrichtung Schritt 7 (Heizung PR 10): die Anlage, die selbst abrechnen soll.
   const [selfFor, setSelfFor] = useState<HeatingPlant | null>(null)
   // Schritt 7 legt den Anteil der Heizperiode fest, an der der Vermieter arbeitet: die, in der der gewählte
@@ -152,12 +152,15 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
 
   function openSwap(p: HeatingPlant) {
     setError('')
-    setSwap({ plant: p, form: emptySwapForm(p) })
+    setSwap({ plant: p, form: emptySwapForm(p), meters: [] })
+    if (p.method === 'self') {
+      void api<Meter[]>(withProperty('/api/meters', propertyId)).then((all) => setSwap((s) => (s && s.plant.id === p.id ? { ...s, meters: swapMetersOf(p, plants, all) } : s))).catch(() => undefined)
+    }
   }
 
   async function saveSwap() {
     if (!swap) return
-    const result = swapBody(swap.form, swap.plant)
+    const result = swapBody(swap.form, swap.plant, swap.meters)
     if ('error' in result) {
       setError(result.error)
       return
@@ -438,6 +441,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
         <HeatingSelfSetup
           plant={selfFor}
           period={heatingKeyOf(selfFor)}
+          periodLabel={periodLabel(periodContaining(plantRules(selfFor, rulesOf(property)), period?.period.to ?? localToday()))}
           onCancel={() => setSelfFor(null)}
           onDone={async () => {
             setSelfFor(null)
@@ -497,6 +501,20 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
             Name der bisherigen Heizanlage
             <input value={swap.form.previousName} onChange={(e) => setSwap({ ...swap, form: { ...swap.form, previousName: e.target.value } })} placeholder="etwa „Ölkessel“" />
           </label>
+          {swap.meters.length > 0 && (
+            <>
+              <p className="muted">
+                Mit diesen Ständen am letzten Tag der bisherigen Heizung grenzt Mietfuchs die Wärme beider Anlagen ab; ohne sie verteilt es die
+                Heizkosten der Heizperiode nicht. Sie können sie auch später auf der Seite Zähler eintragen.
+              </p>
+              {swap.meters.map((m) => (
+                <label className="field grow" key={m.id}>
+                  Stand „{m.name}“ am letzten Tag der bisherigen Heizung{m.unit ? ` (${m.unit})` : ''}
+                  <input inputMode="decimal" value={swap.form.meterValues?.[m.id] ?? ''} onChange={(e) => setSwap({ ...swap, form: { ...swap.form, meterValues: { ...swap.form.meterValues, [m.id]: e.target.value } } })} />
+                </label>
+              ))}
+            </>
+          )}
         </Drawer>
       )}
     </div>

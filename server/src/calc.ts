@@ -352,7 +352,7 @@ const noticeKinds = {
   'heating.no-consumption': { level: 'warning', title: 'Kein Verbrauch erfasst', rule: 'heating-consumption', terms: ['consumptionCosts', 'heatMeter'] },
   // Durchsicht von #239: „Weiß ich nicht“ beim Wärmeschutz und weniger als der Pflichtanteil (C1), die
   // Angaben nach § 6a Abs. 3 bis PR 14 (I1).
-  'heating.share-forced-unsure': { level: 'warning', title: 'Pflichtanteil nach Verbrauch ungeklärt', rule: 'heating-own-settlement', terms: ['consumptionCosts', 'heatingCostOrdinance'] },
+  'heating.share-forced-unsure': { level: 'warning', title: 'Pflichtanteil nach Verbrauch ungeklärt', rule: 'heating-own-settlement', terms: ['forcedConsumptionShare', 'consumptionCosts'] },
   'heating.self-6a-missing': { level: 'warning', title: 'Angaben nach § 6a HeizkostenV fehlen', rule: 'heating-own-settlement', terms: ['heatingCostOrdinance', 'consumptionCosts'] },
   'heating.key-change': { level: 'hint', title: 'Anteil nach Verbrauch geändert', rule: 'heating-key-change', terms: ['consumptionCosts', 'keyChange'] },
   'heating.change-split-time': { level: 'hint', title: 'Mieterwechsel zeitanteilig statt nach Gradtagen', rule: 'heating-tenant-change', terms: ['interimReading', 'degreeDays'] },
@@ -2869,7 +2869,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         readings: u.readings,
         boundaries: u.boundaries.map((b) => {
           const dated = b.readingDates.filter((d): d is string => d !== null)
+          // Der Grund einer nicht möglichen Zwischenablesung (Durchsicht von #239, I3), nur wenn es ihn gibt.
+          const reason = b.gap === 'impossible' ? ((snapshot.interimGaps ?? []).find((g) => g.unitId === u.unit.id && g.date === b.date)?.reason ?? '') : ''
           return {
+            ...(reason !== '' ? { gapReason: reason } : {}),
             date: b.date, kind: b.kind, gap: b.gap, far: b.far,
             status: dated.length < b.readingDates.length ? 'missing' : dated.some((d) => d !== b.date) ? 'off' : 'read',
             offDays: dated.reduce((m, d) => Math.max(m, offDays(d, b.date)), 0),

@@ -662,7 +662,7 @@ test('Heizkosten selbst abrechnen (Heizung PR 10): Pflichten mit Norm, Lücken m
   const hinweise = g.caveats.map((c) => `${c.text} ${c.norm ?? ''}`).join(' ')
   for (const norm of [/§ 6 Abs\. 4/, /§ 7 Abs\. 1/, /§ 9b/, /§ 12 Abs\. 1/, /§ 6 Abs\. 1/]) assert.match(hinweise, norm)
   assert.match(hinweise, /VIII ZR 19\/07/)
-  assert.ok(g.steps.some((s) => s.page === 'heizkosten' && s.text.includes('„Ableseergebnis“')))
+  assert.ok(g.steps.some((s) => s.page === 'heizkosten' && s.text.includes('„Ableseergebnis drucken“') && /jede Wohnung/.test(s.text)))
   assert.ok(g.gaps.some((x) => x.issue === 99 && /Heizkostenverteiler/.test(x.text)))
   for (const id of ids.filter((x) => x !== 'heatingSelf')) {
     assert.doesNotMatch(JSON.stringify(GUIDES[id].gaps), /eigene Heizkostenabrechnung (nach Grund- und Verbrauchskosten rechnet Mietfuchs noch nicht|mit Wärmemengenzählern)/, id)

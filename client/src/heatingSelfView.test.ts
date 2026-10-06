@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { boundaryLight, boundaryText, distributionLines, potLines, readingResult, shareEditable, userLine } from './heatingSelfView'
+import { boundaryLight, boundaryText, distributionLines, gapConsequence, insulationAsked, percentOf, potLines, readingResult, shareEditable, unsureShareHint, userLine } from './heatingSelfView'
 import { fmtEuro } from './api'
 import type { HeatingDistribution, SelfBoundaryView, SelfHeatingStatement, SelfUnitView } from './types'
 
@@ -77,5 +77,24 @@ describe('Ausweis und Ableseergebnis (Entwurf 8.8, § 6 Abs. 1 Satz 2)', () => {
   })
   it('Ableseergebnis je Wohnung: Zähler, Datum, Stand; fehlend als solcher benannt', () => {
     expect(readingResult(unitC, '2025-09-30')).toEqual(['Wärme C: 7.700 kWh am 30.09.2025', 'Warmwasser C: nicht abgelesen'])
+  })
+})
+
+describe('Durchsicht von #239', () => {
+  it('C1: Rat bei „Weiß ich nicht“ unter dem Pflichtanteil, nur bei Öl und Gas', () => {
+    expect(unsureShareHint('gas', 'unknown', 50)).toMatch(/Mit 70 % liegen Sie in jedem Fall richtig; trifft § 7 Abs\. 1 Satz 2 HeizkostenV zu, sind weniger nicht zulässig\./)
+    expect(unsureShareHint('gas', 'unknown', 70)).toBeNull()
+    expect(unsureShareHint('gas', 'notApplies', 50)).toBeNull()
+    expect(unsureShareHint('districtHeating', 'unknown', 50)).toBeNull()
+    expect([insulationAsked('lpg'), insulationAsked('heatPump')]).toEqual([true, false])
+  })
+  it('I3: die Folge jeder Antwort und der Grund im Text', () => {
+    expect(gapConsequence('missed')).toMatch(/um 15 % kürzen \(§ 12 Abs\. 1 Satz 1 HeizkostenV\)/)
+    expect(gapConsequence('impossible')).toMatch(/§ 9b Abs\. 3 HeizkostenV\)\. Nennen Sie den Grund/)
+    expect(boundaryText({ date: '2025-09-30', kind: 'change', status: 'missing', offDays: 0, far: false, gap: 'impossible', gapReason: 'Wohnung nicht zugänglich' }, 'C'))
+      .toBe('C, Mieterwechsel zum 30.09.2025: keine Ablesung (nicht möglich: Wohnung nicht zugänglich)')
+  })
+  it('M9: Prozent mit höchstens zwei Nachkommastellen', () => {
+    expect([percentOf('65,25'), percentOf('65.125'), percentOf('70'), percentOf('')]).toEqual([65.25, null, 70, null])
   })
 })
