@@ -2608,7 +2608,7 @@ Für jede Festlegung stehen hier der Rechercheweg, die konservativste oder verbr
   - Die Formel liefert „Kilowattstunden pro Jahr“ ([G] § 9 Abs. 2 Satz 4 HeizkostenV); für einen kürzeren Zeitraum stimmt das Verhältnis zur Energie des Zeitraums nur nach einer Umrechnung.
   - Beim Nutzerwechsel sind die Kosten des Warmwasserverbrauchs „zeitanteilig“ aufzuteilen ([G] § 9b Abs. 2 HeizkostenV); Warmwasser hängt nicht an der Witterung.
 - *Nicht belegt:* eine Regel eines Messdienstes oder der VDI 2077 für den Rumpf (Suche ohne Treffer, VDI 2077 Bl. 3.1 nicht eingesehen).
-- *Lösung:* 32 · A · Tage der Heizperiode / Tage des Jahres ab ihrem Beginn, nach Tagen und nicht nach Gradtagen, mit der Begründung aus § 9b Abs. 2. Die Volumenformel braucht das nicht, denn V ist das gemessene Volumen des Zeitraums. ⟨Norm offen: VDI 2077⟩
+- *Lösung:* 32 · A · Tage der Heizperiode / Tage des Jahres ab ihrem Beginn, nach Tagen und nicht nach Gradtagen, mit der Begründung aus § 9b Abs. 2. Dasselbe bei einem Kesseltausch mitten in der Heizperiode mit den Tagen der Laufzeit der Anlage (Umsetzung PR 11). Die Volumenformel braucht das nicht, denn V ist das gemessene Volumen des Zeitraums (beim Kesseltausch das der Laufzeit, an der Anlage eingetragen). ⟨Norm offen: VDI 2077⟩
 - *Hinweis:* kein eigener Code; der Rechenweg im Ausweis nennt Tage und § 9b Abs. 2.
 
 **Gegenüber der ersten Fassung belegt und gestrichen:**

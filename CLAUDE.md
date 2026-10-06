@@ -1189,8 +1189,8 @@ Gewichten durch `distributeCents` (#202), wie jede andere Position; Leerstand un
 über `landlordRecipients`.
 
 - **Teil und Ziel** stehen an der Position (`heatingPart`, `heatingTarget`); bei verbundener
-  Warmwasserbereitung teilt der gemessene Warmwasseranteil α (`hotWaterShareOf`, nur bei Abrechnung in
-  kWh) die Ziele „beides“. Der Anteil nach Verbrauch gilt aus der Heizperiode oder der vorigen
+  Warmwasserbereitung teilt der Warmwasseranteil α (`hotWaterShareOf`, seit PR 11 über dhw.ts, siehe
+  unten) die Ziele „beides“. Der Anteil nach Verbrauch gilt aus der Heizperiode oder der vorigen
   (`consumptionSharesOf`, § 6 Abs. 4); § 7 Abs. 1 Satz 2 ist `hkv.consumption-share-forced`.
 - **Umgestellt wird nur über die Einrichtung** (`PUT /api/heating-plants/:id/self`,
   [server/src/db/heatingSelf.ts](server/src/db/heatingSelf.ts)): Anlage, Anteil, Zähler und die
@@ -1235,6 +1235,37 @@ lässt die Wahl nur für künftige Zeiträume zu. Der Anteil gehört zur **Linie
 - **Migrationen 0027/0028**: Spalten an `heating_plants` (`hot_water`, `capture`, `area_basis_heat`,
   `heat_pump_installed_on`), `cost_items.heating_target`, `readings.interim_for` und die Tabellen
   `interim_reading_gaps` und `heating_self_spans`; die Bedingungen im zweiten Schritt.
+- **Warmwasseranteil α** (Heizung PR 11, #211, [server/src/dhw.ts](server/src/dhw.ts)): eine Stelle
+  für alle drei Verfahren des § 9 Abs. 2 HeizkostenV, als reine Funktionen; `hotWaterShareOf` bleibt der
+  eine Aufruf in calc.ts. Die Faktoren 1,11, 1,15 und 0,30 gelten **nur für Formelwerte**, nie für
+  gemessene Wärme (Entwurf G-B1 abgelehnt, 15.1 Nr. 9; das Lexikon nennt beide Lesarten, ⟨Norm offen:
+  VDI 2077⟩). Wogegen Q gestellt wird, hängt am Erzeuger: Brennstoff in kWh laut Rechnung (die kWh der
+  Heizperiode aus der Bewertung der Lieferungen, wie in PR 10), sonst als Menge mit B = Q / Hᵢ (§ 9
+  Abs. 3), Fernwärme die gelieferte Wärme, die Wärmepumpe mit Formel den Strom, gemessen bei Wärmepumpe
+  und Mischanlage die gemessene Gesamtwärme. Der **Heizwert laut Rechnung** geht vor; die Tabelle nur
+  hilfsweise, nur bei Heizkesseln und nur mit der Zeile, die der Vermieter an der Lieferung wählt
+  (`fuel_grade`, Zeilen in [shared/fuelGrades.ts](shared/fuelGrades.ts)); mehrere Heizwerte
+  mengengewichtet, beim Vorrat ohne Lieferung in der Heizperiode der der jüngsten früheren.
+  **Holzhackschnitzel**: Die Verordnung vom 24.11.2021 hat § 9 Abs. 3 Satz 1 und Satz 2 Nr. 2 neu
+  gefasst (BGBl. 2021 I S. 4966), und mit der alten Nummer ist die Angabe 650 kWh/SRm entfallen; seit
+  01.12.2021 gelten 4 kWh/kg und B nur in Litern, Kubikmetern oder Kilogramm. gesetze-im-internet.de
+  druckt die alte Tabelle hinter Satz 5 noch ab; das ist ein Versehen der Konsolidierung. Eine Formel
+  verlangt die Antwort, ob die Anlage die Wärme **allein** erzeugt (`heat_generation`); ohne sie und bei
+  mehreren Erzeugern rechnet sie nicht (Satz 6 Nr. 3 „monovalent“, Satz 5). Die Flächenformel liefert kWh
+  „pro Jahr“ und wird im Rumpf und bei einem Kesseltausch nach Tagen gekürzt (Festlegung F7, § 9b
+  Abs. 2); das Volumen nimmt Mietfuchs beim Tausch nur aus der Zeile der Anlage selbst. Was fehlt, ergibt
+  `heating.dhw-share-invalid` mit dem Satz, was fehlt. Der Ausweis führt α als `self.alpha`, den
+  Rechenweg als `self.dhw`. Die **Stromheizung** rechnet gemessen gegen den Strom laut Rechnung wie in
+  PR 10, nur die Formeln sind dort gesperrt: Eine Anlage, die vorher abrechenbar war, sperrt eine spätere
+  PR nicht. Die **Wärmepumpe vor dem 01.10.2024** fiel nach § 11 Abs. 1 Nr. 3 Buchst. a a. F. nicht unter
+  die Verordnung (`hkv.exemption.renewable`, zwei Fassungen): Hinweis statt Fehler, keine
+  Kürzungsbeträge, ohne α gehen Heizung und Warmwasser gemeinsam in den Topf Heizung. Die Kürzung um
+  15 % bei einer Formel ohne bestätigten Aufwand (`heating.dhw-not-metered`) gilt auch bei `self`. Tests
+  der eigenen Abrechnung bauen Beispiel A mit `selfSnapshot()`
+  ([server/testing/selfHeating.ts](server/testing/selfHeating.ts)); ein Test hält den Helfer gleich mit
+  dem Weg über die Datenbank. Die Invarianten prüfen Q, Faktor und α gegen die Eingaben (fuel-invariant
+  (s4), fuel-stock-invariant (w) mit Heizöl und Heizwert). Migrationen 0029/0030 (`fuel_grade`,
+  `heat_generation`).
 
 **Brennstoffvorrat** (Heizung PR 8, #97, #99): Bei Heizöl, Flüssiggas, Pellets, Holz und Kohle
 (`STOCK_ENERGIES` in [shared/fuelStock.ts](shared/fuelStock.ts)) rechnet
