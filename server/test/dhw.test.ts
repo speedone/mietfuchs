@@ -3,7 +3,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createLawLog } from '../../shared/law/register.ts'
-import { dhwShareOf, suppliedAreaOf, yearShare, type DhwInput, type DhwOutcome, type EnergyDelivery } from '../src/dhw.ts'
+import { dhwInputOf, dhwProblemText, dhwShareOf, suppliedAreaOf, yearShare, type DhwInput, type DhwOutcome, type EnergyDelivery } from '../src/dhw.ts'
 
 const H2025 = { from: '2025-01-01', to: '2025-12-31' }
 const delivery = (over: Partial<EnergyDelivery>): EnergyDelivery => ({
@@ -235,4 +235,35 @@ test('Kesseltausch (PR 9): Flächenformel nach den Tagen der Laufzeit, Volumen n
   assert.equal(share({ generator: teil }).alpha, 0.15)
   const nurTeile = { deliveries: [delivery({ label: 'Gas mit Teilmengen', energyKwh: null, parts: [{ energyKwh: 20000 }, { energyKwh: 40000 }] })], stock: null, earlier: null }
   assert.equal(share({ generator: nurTeile }).alpha, 0.15)
+})
+
+test('Naht zu PR 10: Anteile der Rechnungen aus der Bewertung, beim Vorrat die Lieferungen der Heizperiode oder die jüngste frühere', () => {
+  const lieferung = { id: 'g', label: 'Gas', invoiceTo: '2025-12-31', deliveredAt: null, invoiceDate: null, energyKwh: 60000, quantity: null, quantityUnit: null, gasBasis: 'hs' as const, heatingValue: null, fuelGrade: null }
+  const ctx = {
+    plant: { energy: 'gas' as const }, row: null, h: H2025, fuelLines: [{ deliveryId: 'g', sharePermille: 500 }], stock: null,
+    deliveries: [lieferung], units: [{ areaM2: 80 }, { areaM2: 70 }], measured: { dhwKwh: 9000, totalKwh: null },
+    fuelCoveragePermille: 1000, fuelEstimated: false,
+  }
+  const i = dhwInputOf(ctx)
+  assert.equal(i.method, 'heatMeter')
+  assert.equal(i.heatGeneration, null)
+  assert.equal(i.suppliedAreaM2, 150)
+  assert.deepEqual([i.fuelCoveragePermille, i.fuelEstimated], [1000, false])
+  assert.deepEqual(i.generator.deliveries.map((d) => [d.id, d.share]), [['g', 0.5]])
+  const oel = (id: string, date: string) => ({ ...lieferung, id, label: id, invoiceTo: null, deliveredAt: date, energyKwh: null, gasBasis: null, quantity: 1000, quantityUnit: 'l' as const, heatingValue: 10 })
+  const vorrat = { ...ctx, plant: { energy: 'oil' as const }, fuelLines: [], stock: { unit: 'l' as const, consumedQuantity: 6000 } }
+  const mit = dhwInputOf({ ...vorrat, deliveries: [oel('alt', '2024-10-01'), oel('neu', '2025-10-01')] })
+  assert.deepEqual([mit.generator.deliveries.map((d) => d.id), mit.generator.earlier], [['neu'], null])
+  const ohne = dhwInputOf({ ...vorrat, deliveries: [oel('alt', '2024-10-01'), oel('aelter', '2023-10-01'), oel('spaeter', '2026-02-01')] })
+  assert.deepEqual([ohne.generator.deliveries, ohne.generator.earlier?.id], [[], 'alt'])
+  assert.deepEqual(ohne.generator.stock, { unit: 'l', consumed: 6000 })
+})
+
+test('Satz ohne Anteil: nennt, was fehlt; die Wärmepumpe ohne Gesamtwärme mit eigenem Satz', () => {
+  assert.equal(
+    dhwProblemText({ problem: 'formulaInput', reasons: ['a fehlt', 'b fehlt'] }),
+    'Mietfuchs kann den Warmwasseranteil nicht bestimmen, denn a fehlt und b fehlt (§ 9 HeizkostenV).',
+  )
+  assert.match(dhwProblemText({ problem: 'heatPumpBasis', reasons: [] }), /§ 9 Abs\. 1 Satz 2.*Gesamtwärmezähler/s)
+  assert.match(dhwProblemText(failure({ fuelCoveragePermille: 848.71 })), /Folgerechnung.*Schätzung/s)
 })

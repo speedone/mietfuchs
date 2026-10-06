@@ -439,3 +439,71 @@ function formulaShare(i: DhwInput, method: 'volumeFormula' | 'areaFormula', log:
 export function dhwShareOf(i: DhwInput, log: LawLog): DhwOutcome {
   return i.method === 'heatMeter' ? measuredShare(i, log) : formulaShare(i, i.method, log)
 }
+
+// ---------- Naht zur eigenen Heizkostenabrechnung (PR 10) ----------
+
+// Was die eigene Heizkostenabrechnung an der Stelle hat, an der sie α bestimmt (`hotWaterShareOf` in
+// heating.ts, aufgerufen im Block der eigenen Abrechnung von `computeSettlement`). Ohne Vorrat kommen die
+// Anteile und kWh der Rechnungen aus der Bewertung von PR 7 (`FuelDeliveryLine`); mit Vorrat zählt die
+// verbrauchte Menge (PR 8), und der Heizwert kommt von den Lieferungen der Heizperiode oder, ohne sie,
+// von der jüngsten früheren (Abweichung 6).
+export type DhwContext = {
+  plant: { energy: HeatingEnergy; heatGeneration?: HeatGeneration | null }
+  row: { dhwMethod: DhwMethod | null; dhwVolumeM3?: number | null; dhwTempC?: number | null } | null
+  h: Period
+  // Kesseltausch (PR 9): die Laufzeit der Anlage in der Heizperiode, wenn sie kürzer ist.
+  running?: Period | null
+  fuelLines: readonly { deliveryId: string; sharePermille: number; energyKwh?: number | null }[]
+  stock: { unit: HeatingValueUnit; consumedQuantity: number } | null
+  deliveries: readonly Omit<EnergyDelivery, 'share' | 'kwhInPeriod'>[]
+  units: readonly Pick<SnapshotUnit, 'areaM2' | 'noConnection'>[]
+  measured: { dhwKwh: number | null; totalKwh: number | null }
+  fuelCoveragePermille: number | null
+  fuelEstimated: boolean
+}
+
+export function dhwInputOf(c: DhwContext): DhwInput {
+  let generator: GeneratorInput
+  if (c.stock !== null) {
+    const own = deliveriesInPeriod(c.deliveries, c.h).map((d) => ({ ...d, share: 1 }))
+    const earlier = own.length > 0 ? null : latestBefore(c.deliveries, c.h, c.stock.unit)
+    generator = { deliveries: own, stock: { unit: c.stock.unit, consumed: c.stock.consumedQuantity }, earlier: earlier ? { ...earlier, share: 1 } : null }
+  } else {
+    const byId = new Map(c.deliveries.map((d) => [d.id, d]))
+    generator = {
+      deliveries: c.fuelLines.flatMap((l) => {
+        const d = byId.get(l.deliveryId)
+        return d ? [{ ...d, share: l.sharePermille / 1000, ...(l.energyKwh !== undefined ? { kwhInPeriod: l.energyKwh } : {}) }] : []
+      }),
+      stock: null,
+      earlier: null,
+    }
+  }
+  return {
+    energy: c.plant.energy,
+    heatGeneration: c.plant.heatGeneration ?? null,
+    h: c.h,
+    running: c.running ?? null,
+    // Ohne Angabe gilt die Regel des § 9 Abs. 2 Satz 1: gemessen (wie PR 10).
+    method: c.row?.dhwMethod ?? 'heatMeter',
+    measured: c.measured,
+    volumeM3: c.row?.dhwVolumeM3 ?? null,
+    tempC: c.row?.dhwTempC ?? null,
+    suppliedAreaM2: suppliedAreaOf(c.units),
+    generator,
+    fuelCoveragePermille: c.fuelCoveragePermille,
+    fuelEstimated: c.fuelEstimated,
+  }
+}
+
+// Der Satz zu einem Anteil, den Mietfuchs nicht bestimmen kann. Ohne Ort und ohne Folge: Beides setzt
+// `computeSettlement` davor bzw. dahinter („Bis dahin verteilt Mietfuchs …“, PR 10).
+export function dhwProblemText(o: { problem: DhwProblem; reasons: readonly string[] }): string {
+  if (o.problem === 'heatPumpBasis') {
+    return 'Der Wärmezähler misst die Wärme für das Warmwasser, aber die gesamte Wärme der Wärmepumpe kennt Mietfuchs nicht. ' +
+      'Geteilt durch den Strom ergäbe das einen etwa dreimal zu großen Warmwasseranteil, denn die Wärmepumpe macht aus einer Kilowattstunde Strom mehrere Kilowattstunden Wärme; ' +
+      'bei Wärmepumpen richtet sich die Aufteilung nach dem Wärmeverbrauch (§ 9 Abs. 1 Satz 2 HeizkostenV). ' +
+      'Legen Sie einen Gesamtwärmezähler an (Rolle „Gesamtwärme“) oder tragen Sie die gemessene Gesamtwärme der Heizperiode auf der Seite Heizkosten ein, oder wählen Sie eine Formel nach § 9 Abs. 2 HeizkostenV.'
+  }
+  return `Mietfuchs kann den Warmwasseranteil nicht bestimmen, denn ${andList(o.reasons)} (§ 9 HeizkostenV).`
+}

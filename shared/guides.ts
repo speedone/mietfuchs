@@ -325,7 +325,7 @@ const GUIDE_DATA = {
       { page: 'heizkosten', text: 'Prüfen Sie auf der Seite Heizkosten die Ablesungen. Fehlt beim Mieterwechsel eine Zwischenablesung, antworten Sie mit „Nicht möglich“ (mit Grund) oder „Nicht durchgeführt“. Wählen Sie in der Karte Ableseergebnis jede Wohnung und klicken Sie auf „Ableseergebnis drucken“; das Blatt geht an den Mieter dieser Wohnung.' },
     ],
     result: [
-      'Die Kosten jedes Topfs (Heizung, Warmwasser) gehen zum gewählten Anteil nach Verbrauch, der Rest nach Wohnfläche; bei verbundener Warmwasserbereitung teilt Mietfuchs die gemeinsamen Kosten nach der gemessenen Wärme am Warmwasserspeicher.',
+      'Die Kosten jedes Topfs (Heizung, Warmwasser) gehen zum gewählten Anteil nach Verbrauch, der Rest nach Wohnfläche; bei verbundener Warmwasserbereitung teilt Mietfuchs die gemeinsamen Kosten nach der Wärme für das Warmwasser: gemessen am Warmwasserspeicher oder, wo das Messen unzumutbar wäre, nach den Formeln der Heizkostenverordnung; Brennstoff in Litern, Kilogramm oder Kubikmetern mit dem Heizwert laut Rechnung.',
       'Beim Mieterwechsel trägt jeder seinen abgelesenen Verbrauch; die Grundkosten der Heizung teilen sich nach Gradtagen, die des Warmwassers nach Tagen.',
       'Leerstand und Eigennutzung sind Nutzer wie Mieter; ihren Anteil tragen Sie. Die Abrechnung druckt den Block „Heizkostenabrechnung“ mit den Preisen je m², kWh und m³.',
     ],
@@ -339,7 +339,7 @@ const GUIDE_DATA = {
       { text: 'Bei Zählern, die nicht aus der Ferne ablesbar sind, teilen Sie jedem Mieter das Ergebnis der Ablesung in der Regel innerhalb eines Monats mit.', norm: '§ 6 Abs. 1 HeizkostenV' },
     ],
     gaps: [
-      { text: 'Heizkostenverteiler an den Heizkörpern und die Werte eines Ablesedienstes, der Warmwasseranteil bei Heizöl, Flüssiggas, Pellets und Holz und die Angaben nach § 6a HeizkostenV kommen mit späteren Versionen.', issue: 99 },
+      { text: 'Heizkostenverteiler an den Heizkörpern und die Werte eines Ablesedienstes und die Angaben nach § 6a HeizkostenV kommen mit späteren Versionen.', issue: 99 },
       { text: 'Fehlt ein Zählerstand zu Beginn oder Ende der Heizperiode, schätzt Mietfuchs ihn noch nicht (§ 9a HeizkostenV); bis dahin verteilt es die Anlage nicht.', issue: 99 },
     ],
     terms: ['heatingCostOrdinance', 'baseCosts', 'consumptionCosts', 'interimReading', 'heatMeter', 'hotWaterShare', 'degreeDays'],
@@ -447,7 +447,7 @@ const GUIDE_DATA = {
       { text: 'Brennstoff, der vor dem 01.01.2023 in Rechnung gestellt wurde, trägt keine CO₂-Kosten; seine kg zählen aber für die Einstufung. Holz und Pellets sind keine Brennstoffe im Sinne des Brennstoffemissionshandels; für sie gibt es keine CO₂-Kosten aufzuteilen.', norm: '§ 11 Abs. 2 Satz 2, § 2 Abs. 1 CO2KostAufG; Anlage 1 BEHG' },
     ],
     gaps: [
-      { text: 'Den Warmwasseranteil bei Heizöl, Flüssiggas, Pellets und Holz rechnet Mietfuchs bei der eigenen Heizkostenabrechnung noch nicht; ohne zentrales Warmwasser rechnet sie auch den Vorrat, siehe „Heizkosten selbst abrechnen“.', issue: 99 },
+      { text: 'Den Heizwert laut Rechnung liest die Belegauswertung nicht aus; für den Warmwasseranteil der eigenen Heizkostenabrechnung tragen Sie ihn an der Lieferung ein, sonst gilt hilfsweise der Wert der Heizkostenverordnung.' },
     ],
     terms: ['fuelStock', 'fuelDelivery', 'co2Split'],
   },

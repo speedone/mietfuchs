@@ -28,11 +28,12 @@
 import { degreeDayPermille } from '../../shared/degreeDays.ts'
 import type { DegreeDayTable, HeatPumpCapture } from '../../shared/law/heizkostenv.ts'
 import type { ReadingOffWarning } from '../../shared/law/practice.ts'
-import { dayAfter, dayBefore } from '../../shared/law/register.ts'
+import { dayAfter, dayBefore, type LawLog } from '../../shared/law/register.ts'
+import { dhwInputOf, dhwShareOf, type DhwContext, type DhwProblem } from './dhw.ts'
 import { lineRoot } from '../../shared/heatingPeriod.ts'
 import type {
   SelfSpanRange,
-  AreaBasisHeat, ChangeSplit, DhwMethod, HeatingEnergy, HeatingPart, HeatingTarget, HotWater, InsulationRule, InterimGap, InterimGapStatus, MeterType, SelfPot, SelfReadingView, SelfRole,
+  AreaBasisHeat, ChangeSplit, DhwMethod, DhwStatement, HeatingEnergy, HeatingPart, HeatingTarget, HotWater, InsulationRule, InterimGap, InterimGapStatus, MeterType, SelfPot, SelfReadingView, SelfRole,
 } from '../../shared/types.ts'
 
 export type SelfUnit = { id: string; name: string; areaM2: number; heatedAreaM2: number | null; role: 'rented' | 'self' | 'outside' }
@@ -508,65 +509,32 @@ export function targetProblem(hotWater: HotWater, part: HeatingPart | null, targ
   return null
 }
 
-// ---------- Warmwasseranteil (Entwurf 8.3) ----------
+// ---------- Warmwasseranteil (Entwurf 8.3; ab Heizung PR 11 aus dhw.ts) ----------
 
-// Energien, die in Kilowattstunden abgerechnet werden. Nur bei ihnen ist α = Q / E ohne Heizwert zu
-// rechnen (§ 9 Abs. 3 letzter Satz: „Soweit die Abrechnung über Kilowattstunden-Werte erfolgt, ist
-// eine Umrechnung in Brennstoffverbrauch nicht erforderlich“). Heizöl, Flüssiggas, Pellets, Holz und
-// Kohle brauchen den Heizwert laut Rechnung, hilfsweise die Tabelle; das kommt mit PR 11
-// (Abweichung 10 des Plans).
-export const KWH_ENERGIES: readonly HeatingEnergy[] = ['gas', 'districtHeating', 'heatPump', 'electric']
+// Was die eigene Heizkostenabrechnung zum Warmwasseranteil hineinreicht (dhw.ts `DhwContext`), dazu die
+// Warmwasserbereitung der Anlage und das Protokoll der Rechtswerte, denn die Formeln fragen das Register.
+// Die Sperren `formulaLater` und `heatingValueLater` aus PR 10 (Abweichung 10 dort) fallen: dhw.ts rechnet
+// alle drei Verfahren des § 9 Abs. 2 und Brennstoff als Menge mit dem Heizwert (Abs. 3).
+export type AlphaInput = DhwContext & { hotWater: HotWater; log: LawLog }
+export type AlphaProblem = DhwProblem
+// α mit dem Rechenweg aus dhw.ts. `referenceKwh` ist die Energie des Nenners in kWh, auch bei Brennstoff
+// als Menge: B / Menge = Q / (Menge · Hᵢ).
+export type Alpha = { value: number; dhwHeatKwh: number; referenceKwh: number; reference: 'fuel' | 'totalHeat'; estimated: boolean; statement: DhwStatement }
 
-export type AlphaInput = {
-  hotWater: HotWater
-  dhwMethod: DhwMethod | null
-  energy: HeatingEnergy
-  // gemessene Wärme des Warmwassers und Gesamtwärme in kWh (eingetragen oder vom Zähler, Abweichung 12)
-  dhwHeatKwh: number | null
-  totalHeatKwh: number | null
-  // Energie der in der Heizperiode verbrauchten Lieferungen in kWh, wie abgerechnet, und ihre Abdeckung
-  fuelKwh: number | null
-  fuelCoveragePermille: number | null
-  // Eine der verbrauchten Lieferungen ist die Schätzung beim Abschluss (PR 7, Abweichung 11).
-  fuelEstimated?: boolean
-}
-export type AlphaProblem = 'formulaLater' | 'noDhwHeat' | 'heatPumpBasis' | 'noFuelEnergy' | 'fuelGap' | 'heatingValueLater' | 'outOfRange'
-export type Alpha = { value: number; dhwHeatKwh: number; referenceKwh: number; reference: 'fuel' | 'totalHeat'; estimated: boolean }
-
-const COVERAGE_FULL = 1000
-
-// α nach § 9 Abs. 1 Satz 2 und Abs. 2 HeizkostenV. Bei Heizkesseln nach dem Anteil am Energieverbrauch:
-// gemessene Wärme Q durch die Energie des verbrauchten Brennstoffs, wie abgerechnet. Mietfuchs rechnet
-// nach dem Wortlaut: Der Faktor für Erdgas nach Brennwert gilt nur für Formelwerte (Abs. 2 Satz 6), und
-// bei kWh ist keine Umrechnung nötig (Abs. 3); die Gegenlesung steht im Lexikon (15.1 Nr. 9,
-// ⟨Norm offen: VDI 2077⟩). Bei Wärmepumpen und Wärmelieferung nach dem Anteil am Wärmeverbrauch:
-// Q durch die gemessene Gesamtwärme; bei Fernwärme ohne Gesamtwärmezähler durch die gelieferten kWh
-// laut Rechnung, die Wärme sind. Eine Wärmepumpe ohne Gesamtwärme ergäbe Wärme durch Strom, rund das
-// Dreifache; dann ein Fehler (A8). Ohne verbundene Warmwasserbereitung gibt es kein α.
-export function hotWaterShareOf(i: AlphaInput): { ok: true; alpha: Alpha | null } | { ok: false; problem: AlphaProblem } {
+// α nach § 9 Abs. 1 Satz 2, Abs. 2 und 3 HeizkostenV. Ohne verbundene Warmwasserbereitung gibt es kein α.
+export function hotWaterShareOf(i: AlphaInput): { ok: true; alpha: Alpha | null } | { ok: false; problem: AlphaProblem; reasons: string[] } {
   if (i.hotWater !== 'combined') return { ok: true, alpha: null }
-  if (i.dhwMethod === 'volumeFormula' || i.dhwMethod === 'areaFormula') return { ok: false, problem: 'formulaLater' }
-  if (!KWH_ENERGIES.includes(i.energy)) return { ok: false, problem: 'heatingValueLater' }
-  if (i.dhwHeatKwh === null) return { ok: false, problem: 'noDhwHeat' }
-  let referenceKwh: number
-  let reference: Alpha['reference']
-  if (i.energy === 'heatPump') {
-    if (i.totalHeatKwh === null) return { ok: false, problem: 'heatPumpBasis' }
-    referenceKwh = i.totalHeatKwh
-    reference = 'totalHeat'
-  } else if (i.energy === 'districtHeating' && i.totalHeatKwh !== null) {
-    referenceKwh = i.totalHeatKwh
-    reference = 'totalHeat'
-  } else {
-    if (i.fuelKwh === null) return { ok: false, problem: 'noFuelEnergy' }
-    // Eine Lücke hochzurechnen wäre eine Schätzung (W4); α braucht die ganze Heizperiode (Abweichung 11).
-    if (i.fuelCoveragePermille === null || i.fuelCoveragePermille < COVERAGE_FULL - 1e-6) return { ok: false, problem: 'fuelGap' }
-    referenceKwh = i.fuelKwh
-    reference = 'fuel'
+  const o = dhwShareOf(dhwInputOf(i), i.log)
+  if (!o.ok) return { ok: false, problem: o.problem, reasons: o.reasons }
+  const st = o.statement
+  return {
+    ok: true,
+    alpha: {
+      value: st.alpha, dhwHeatKwh: st.heatKwh, referenceKwh: st.energyKwh,
+      reference: st.denominator.kind === 'measuredTotalHeat' ? 'totalHeat' : 'fuel',
+      estimated: st.estimated, statement: st,
+    },
   }
-  const value = referenceKwh > 0 ? i.dhwHeatKwh / referenceKwh : Number.NaN
-  if (!(value > 0 && value < 1)) return { ok: false, problem: 'outOfRange' }
-  return { ok: true, alpha: { value, dhwHeatKwh: i.dhwHeatKwh, referenceKwh, reference, estimated: reference === 'fuel' && i.fuelEstimated === true } }
 }
 
 // ---------- Zeitraum der eigenen Abrechnung (Durchsicht von #239, Runde 3) ----------

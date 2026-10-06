@@ -1898,6 +1898,8 @@ export type SelfHeatingStatement = {
   areaBasisHeat: AreaBasisHeat
   hotWater: HotWater
   alpha: { percent: number; dhwHeatKwh: number; referenceKwh: number; reference: 'fuel' | 'totalHeat'; estimated: boolean } | null
+  // Der Rechenweg zum Warmwasseranteil (Heizung PR 11, Entwurf 8.8 „α mit Methode“); fehlt ohne α.
+  dhw?: DhwStatement
   shares: { heating: number; water: number | null; forced: boolean; previous: { heating: number; water: number | null } | null } | null
   pots: SelfPotView[]
   units: SelfUnitView[]
