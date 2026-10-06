@@ -42,6 +42,7 @@ import type {
   Settings,
   StoredAssessment,
   UploadKind,
+  StockUnit,
 } from '../../../shared/types.ts'
 
 // Die Werte der Aufzählungstypen stehen hier noch einmal, weil `shared/types.ts` bewusst keinen
@@ -422,6 +423,9 @@ export const heatingPlantUnits = sqliteTable(
 
 // Eine Zeile je Anlage und Heizperiode (Entwurf 5.3), ohne die Spalten des Vorrats (PR 7, 8). In
 // PR 4 ist die Heizperiode der Abrechnungszeitraum des Objekts; eine eigene kommt mit PR 5.
+// Einheiten eines Vorrats (Heizung PR 8, Entwurf 5.3).
+export const STOCK_UNITS = exactly<StockUnit>()(['l', 'kg', 'srm'] as const)
+
 export const heatingPeriods = sqliteTable(
   'heating_periods',
   {
@@ -450,6 +454,19 @@ export const heatingPeriods = sqliteTable(
     climateFactorPrev: real('climate_factor_prev'),
     consumerContract: text('consumer_contract'),
     infoContactsConfirmed: integer('info_contacts_confirmed', { mode: 'boolean' }),
+    // Vorrat (Heizung PR 8, Entwurf 5.3, 8.2). Eingetragen wird der Anfangsbestand nur in der ersten
+    // Heizperiode mit Vorrat; danach ist er der Endbestand der Vorperiode (db/fuelStock.ts).
+    stockUnit: text('stock_unit', { enum: STOCK_UNITS }),
+    openingQuantity: real('opening_quantity'),
+    openingCostCents: integer('opening_cost_cents'),
+    openingEmissionsKg: real('opening_emissions_kg'),
+    openingCo2Cents: integer('opening_co2_cents'),
+    openingInvoicedBefore2023: integer('opening_invoiced_before_2023', { mode: 'boolean' }),
+    // Wurde der Anfangsbestand schon mit einer früheren Abrechnung umgelegt (nach Lieferung, vor dem
+    // ersten Vorrat)? Dann zählt er mit 0 € (Befund C1 der Durchsicht von #237).
+    openingAlreadySettled: integer('opening_already_settled', { mode: 'boolean' }),
+    closingQuantity: real('closing_quantity'),
+    closingMeasuredOn: text('closing_measured_on'),
   },
   (t) => [
     uniqueIndex('heating_periods_plant_period_idx').on(t.plantId, t.period),
@@ -462,6 +479,14 @@ export const heatingPeriods = sqliteTable(
     notNegative('heating_periods_dhw_heat_not_negative', 'dhw_heat_kwh'),
     notNegative('heating_periods_total_heat_not_negative', 'total_heat_kwh'),
     notNegative('heating_periods_dhw_volume_not_negative', 'dhw_volume_m3'),
+    // Vorrat (Heizung PR 8)
+    oneOf('heating_periods_stock_unit_known', 'stock_unit', STOCK_UNITS),
+    notNegative('heating_periods_opening_quantity_not_negative', 'opening_quantity'),
+    notNegative('heating_periods_opening_cost_not_negative', 'opening_cost_cents'),
+    notNegative('heating_periods_opening_emissions_not_negative', 'opening_emissions_kg'),
+    notNegative('heating_periods_opening_co2_not_negative', 'opening_co2_cents'),
+    notNegative('heating_periods_closing_quantity_not_negative', 'closing_quantity'),
+    check('heating_periods_closing_measured_on_valid', sql.raw(`"closing_measured_on" IS NULL OR "closing_measured_on" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`)),
   ],
 )
 

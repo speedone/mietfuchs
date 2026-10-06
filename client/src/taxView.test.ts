@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { TaxExpenseItem, TaxReport } from './types'
-import { allocationLabel, assignedUnitItems, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, prepaymentNote, settlementSourcesText, showsSplit, surplusCentsFor, taxHints } from './taxView'
+import { allocationLabel, assignedUnitItems, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, prepaymentNote, settlementSourcesText, showsSplit, stockCarryNote, surplusCentsFor, taxHints } from './taxView'
+import { fmtEuro } from './api'
 import { periodKey } from '../../shared/period.ts'
 
 // Ein Bericht, in dem nur das steht, was die Hinweise lesen. Die übrigen Felder füllt der Typ
@@ -281,5 +282,16 @@ describe('Steuer über mehrere Abrechnungen (#208)', () => {
   })
   it('Kalenderjahr: kein Satz', () => {
     expect(settlementSourcesText({ ...report({}), settlementPeriods: [{ key: periodKey('2025-01'), label: '2025' }] })).toBeNull()
+  })
+})
+
+describe('Vorrat (Heizung PR 8, N8)', () => {
+  it('erklärt den Abstand beim Eigenanteil in beide Richtungen', () => {
+    const mit = (cents: number) => report({}, { expenses: { ...report({}).expenses, stockCarrySelfCents: cents } })
+    const tail = 'Die Abrechnung rechnet nach Verbrauch, die Steuerübersicht nach Bezahltem.'
+    // Durchsicht von #237, M7: mit Richtung.
+    expect(stockCarryNote(mit(3333))).toBe(`Der Eigenanteil der Abrechnung ist um ${fmtEuro(3333)} höher als der private Teil hier: Brennstoff aus dem Vorrat, steuerlich bereits 2024 oder früher abgeflossen. ${tail}`)
+    expect(stockCarryNote(mit(-500))).toBe(`Der Eigenanteil der Abrechnung ist um ${fmtEuro(500)} niedriger als der private Teil hier: Brennstoff, der im Vorrat bleibt, steuerlich 2025 abgeflossen und erst später verbraucht. ${tail}`)
+    expect(stockCarryNote(report({}))).toBeNull()
   })
 })

@@ -13,7 +13,7 @@ import { betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths } from '../../sha
 import { hkvConsumptionShare, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit } from '../../shared/law/heizkostenv.ts'
 import { practiceVacancyPersons } from '../../shared/law/practice.ts'
 import { ustgStandardRate } from '../../shared/law/ustg.ts'
-import { co2ApplicableFrom, co2CutMissing, co2DistrictEtsNew, co2FirstPeriodStart, co2NonResidential, co2Restriction, co2RoundingDecimals, co2StageTable } from '../../shared/law/co2kostaufg.ts'
+import { co2ApplicableFrom, co2CostsBefore, co2CostsCountedFrom, co2CostsExcludedUntil, co2CutMissing, co2DistrictEtsNew, co2FirstPeriodStart, co2NonResidential, co2Restriction, co2RoundingDecimals, co2StageTable } from '../../shared/law/co2kostaufg.ts'
 import { RULES } from '../../shared/law/rules.ts'
 
 const year = (y: number) => ({ period: { from: `${y}-01-01`, to: `${y}-12-31` } })
@@ -176,7 +176,7 @@ test('Register: jede Konstante vom Typ LawParam in shared/law/ steht in LAW_PARA
     .flatMap((f) => [...fs.readFileSync(path.join(dir, f), 'utf8').matchAll(/^export const (\w+): LawParam</gm)].map((m) => m[1]))
   assert.ok(declared.length >= 7, `nur ${declared.length} Parameter gefunden`)
   const listed = new Set<unknown>(LAW_PARAMS)
-  const modules = { betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths, co2ApplicableFrom, co2CutMissing, co2DistrictEtsNew, co2NonResidential, co2Restriction, co2RoundingDecimals, co2StageTable, hkvConsumptionShare, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, practiceVacancyPersons, ustgStandardRate }
+  const modules = { betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths, co2ApplicableFrom, co2CostsBefore, co2CutMissing, co2DistrictEtsNew, co2NonResidential, co2Restriction, co2RoundingDecimals, co2StageTable, hkvConsumptionShare, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, practiceVacancyPersons, ustgStandardRate }
   for (const name of declared) {
     assert.ok(name && Object.hasOwn(modules, name), `${name} fehlt in diesem Test`)
     assert.ok(listed.has(Reflect.get(modules, name)), `${name} fehlt in LAW_PARAMS`)
@@ -310,4 +310,24 @@ test('Regeln: Nichtwohngebäude, Beschränkungen und verbrauchter Brennstoff', (
   assert.equal(fuel.norm, '§ 7 Abs. 2 HeizkostenV; BGH, Urteil vom 01.02.2012, VIII ZR 156/11')
   assert.match(fuel.summary, /verbrauchten Brennstoffe/)
   assert.equal(fuel.validFrom, undefined)
+})
+
+// ---------- Brennstoff vor 2023 (Heizung PR 8) ----------
+
+test('co2.costs-before: Rechnung bis 31.12.2022 unberücksichtigt, ab 01.01.2023 berücksichtigt (§ 11 Abs. 2 Satz 2, Entwurf 4.3)', () => {
+  const log = createLawLog()
+  assert.equal(law(co2CostsBefore, { date: '2022-12-31' }, log), true)
+  assert.equal(law(co2CostsBefore, { date: '2023-01-01' }, log), false)
+  assert.equal(co2CostsExcludedUntil(), '2022-12-31')
+  assert.equal(co2CostsCountedFrom(), '2023-01-01')
+  assert.equal(co2CostsBefore.timing, 'eventDate')
+  assert.equal(co2CostsBefore.norm, '§ 11 Abs. 2 Satz 2 CO2KostAufG')
+  assert.deepEqual(log.values.map((v) => [v.id, v.value]), [['co2.costs-before', true], ['co2.costs-before', false]])
+})
+
+test('Regel heating-consumed-fuel: verbrauchte statt gelieferte Brennstoffe, auch beim Vorrat (§ 7 Abs. 2 HeizkostenV, BGH VIII ZR 156/11)', () => {
+  const r = RULES.find((x) => x.code === 'heating-consumed-fuel') ?? assert.fail('Regel heating-consumed-fuel fehlt')
+  assert.equal(r.norm, '§ 7 Abs. 2 HeizkostenV; BGH, Urteil vom 01.02.2012, VIII ZR 156/11')
+  assert.match(r.summary, /verbrauchten Brennstoffe/)
+  assert.match(r.summary, /Anfangsbestand \+ Lieferungen − Endbestand/)
 })

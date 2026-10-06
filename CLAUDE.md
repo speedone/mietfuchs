@@ -1098,6 +1098,98 @@ mehrere je Lieferung (Abschlag, Schlussrechnung, Gutschrift). Abgegrenzt wird in
   nur die Gesamtwerte und der eine Nutzer des Belegs echt; die übrigen drei Nutzer sind synthetisch und
   die kg CO₂ geschätzt, beides steht so in README und `betraege.json`.
 
+**Brennstoffvorrat** (Heizung PR 8, #97, #99): Bei Heizöl, Flüssiggas, Pellets, Holz und Kohle
+(`STOCK_ENERGIES` in [shared/fuelStock.ts](shared/fuelStock.ts)) rechnet
+[server/src/fuelStock.ts](server/src/fuelStock.ts) den verbrauchten Brennstoff: Anfangsbestand +
+Lieferungen − Endbestand, für Menge, Betrag, kg und CO₂-Kosten. Die acht Spalten des Vorrats stehen an
+`heating_periods` (Migrationen 0024, 0025); gelesen und geschrieben in
+[server/src/db/fuelStock.ts](server/src/db/fuelStock.ts). Lieferungen dieser Brennstoffe haben
+Lieferdatum und Menge statt Rechnungszeitraum und laufen nicht durch die Abgrenzung von PR 7
+(`plantFuel` überspringt sie); ihr Betrag ist Σ der verknüpften Positionen, sonst der an der Lieferung.
+
+- **Bewertung, eine Bewertungsregel:** Die HeizkostenV regelt die Bewertung des Restbestands nicht.
+  Verbraucht wird rechnerisch das Älteste zuerst (Kinne/Schach/Bieber-Kinne, BGB § 556 Rn. 121; ebenso
+  Minol); der Endbestand besteht aus den jüngsten Teilen und wird zu deren Preisen, kg und CO₂-Kosten
+  bewertet, je Teil gerundet (Cent, kg auf das Hundertstel, nicht 0,1 kg wie im Entwurf, weil dessen
+  Zahlen zwei Stellen haben). BGH VIII ZR 298/80, auf das Minol sich beruft, betrifft die
+  Mindestangaben einer Abrechnung und sagt zur Bewertung nichts.
+- **Was weitergegeben wird** (`handover`, Durchsicht von #237): Bucht eine Heizperiode keinen
+  Übertrag (freie Schlüssel ohne Brennstoffposition mit Umlageschlüssel, `stockTemplateOf` in
+  fuelStock.ts, dieselbe Regel in Schnappschuss und Abrechnung), haben ihre Mieter den Endbestand mit
+  den Rechnungen bezahlt; er geht mit 0 € und ohne CO₂-Kosten weiter, die kg bleiben. Ebenso zählt der
+  Anfangsbestand der ersten Heizperiode mit Vorrat mit 0 €, wenn er schon umgelegt wurde
+  (`heating_periods.opening_already_settled`; ohne Antwort „ja“, wenn die Vorperiode an dieser Anlage
+  oder ohne Anlage eine Heizposition **ausdrücklich als Brennstoff** hat (`heatingPart: 'fuel'` oder mit
+  Lieferung verknüpft), oder wenn die **positiven** Beträge ihrer Heizpositionen **ohne Kennzeichen**
+  zusammen mindestens den Wert des Anfangsbestands erreichen (eine Gutschrift zieht nicht ab): Eine
+  Wartung von 250 € erklärt keinen Bestand von 2.000 €, und vorher trug der Vermieter ihn dann still.
+  Die Regel steht einmal als `settledByDefault` in fuelStock.ts; Schnappschuss, Abrechnung und Karte
+  fragen dort. Die Karte „Vorrat“ belegt „Ja“ nur bei `defaultAlreadySettled: 'default'` vor, sonst
+  steht „Bitte wählen …“ und es wird nichts gesendet: Eine Vorbelegung ohne Grund würde beim ersten
+  Speichern zur Angabe. Unter der Schwelle und ohne Antwort nennt der Hinweis
+  `fuel.opening-check-loose` (Stufe `hint`) die Positionen. „Betrieb“ und „Ablesung“ zählen nie; „abgeschlossen ohne Vorrat“
+  allein reicht nicht), Hinweis `fuel.opening-settled` mit „nach Ihrer Angabe“ oder „nach der
+  Vorbelegung“. Beruht die Vorbelegung nur auf Positionen ohne Kennzeichen (`defaultLoose`), steht
+  statt des Hinweises die Warnung `fuel.opening-settled-assumed`, die die Positionen mit Betrag nennt.
+  Ein ausdrückliches „nein“ trotz Brennstoff in der Vorperiode (dieselbe Schwelle) ergibt
+  `fuel.opening-not-settled` mit Betrag. Die Auswahl „Teil der Heizkosten“ im Kostenformular führt
+  alle Werte des Modells und „ohne Angabe“ (`HEATING_PART_OPTIONS` in costForm.ts). Trägt der
+  Vermieter in der Vorperiode einen Endbestand ein, leert das in derselben Transaktion den eigenen
+  Anfangsbestand der offenen Folgeperiode, und das Entfernen des Vorrats setzt deren Antwort auf
+  „schon umgelegt?“ zurück; sonst lebte ein veralteter Anfangsbestand wieder auf (`saveStock`,
+  `removeStock` in db/fuelStock.ts). Eine abgeschlossene Heizperiode, deren Stand
+  keinen Vorrat eingefroren hat, gibt ihren Endbestand ebenfalls mit 0 € weiter (`closedWithoutStock`).
+  Übernimmt eine Heizperiode einen Bestand mit Wert nicht (Bestandsrechnung fehlt, geht nicht auf oder
+  kein Schlüssel), oder ist die Folgeperiode ohne Vorrat abgeschlossen, nennt `fuel.stock-not-taken-over`
+  den Betrag, den der Vermieter trägt.
+- **Die Kette:** Den Anfangsbestand trägt der Vermieter nur in der ersten Heizperiode mit Vorrat ein;
+  jede weitere übernimmt den Endbestand der Vorperiode mit seinen Teilen (der Server lehnt einen
+  eigenen ab). `stockChainsOf` in snapshot.ts baut die Kette bis zur ersten abgeschlossenen
+  Vorperiode; deren Endbestand ist eingefroren und steht im abgeschlossenen Stand unter
+  `heating[].stock.closing`, gelesen über `frozenSettlementOf` (`stockClosings`). Ein Wiederöffnen
+  hebt ihn auf.
+- **Und rückwärts:** Ist die Folgeperiode abgeschlossen und hat sie den Endbestand übernommen
+  (`stockOpenings`), ist ihr eingefrorener Anfangsbestand der Endbestand der Vorperiode
+  (`nextFrozenOpening`), und er wird dort als „im Vorrat“ gutgeschrieben, auch wenn die
+  Bestandsrechnung nicht mehr aufgeht. Einheit und Endbestand sind gesperrt, sobald die Folgeperiode
+  abgeschlossen ist, mit oder ohne Vorrat; hat sie den Bestand übernommen, auch Menge, Einheit und
+  Lieferdatum der Lieferungen, ihr Entfernen und das Lösen ihrer Positionen (`stockTakenOverBy` in
+  repository.ts); Beträge bleiben änderbar. Ohne diese Regeln änderte die wieder geöffnete Vorperiode,
+  was sie weitergibt; die Invariante
+  [fuel-stock-invariant.test.ts](server/test/fuel-stock-invariant.test.ts) prüft die Übergabe je Paar
+  von Heizperioden, die Befunde der Durchsicht hält [vorrat-durchsicht.test.ts](server/test/vorrat-durchsicht.test.ts).
+- **Gesperrt** sind Vorrat und Lieferungen einer abgeschlossenen Heizperiode (Lieferdatum dort, auch
+  beim Verschieben hinein oder hinaus; die Bezeichnung bleibt änderbar), und der Wechsel des
+  Energieträgers, sobald irgendwo ein Vorrat eingetragen ist (409).
+- **§ 11 Abs. 2 Satz 2 CO2KostAufG** (`co2.costs-before`, Rechnungsdatum): Brennstoff mit Rechnung vor
+  dem 01.01.2023 zählt mit seinen kg, nicht mit seinen CO₂-Kosten; `fuel.before-2023` sagt, dass er die
+  Stufe hebt. CO₂-Kosten gibt es nur bei Heizöl, Flüssiggas und Kohle (`CO2_FUELS`): Holz und Pellets
+  stehen nicht in Anlage 1 BEHG, für sie gibt es keine Standardwerte nach § 7 Abs. 4 BEHG, und das
+  CO2KostAufG gilt nach § 2 Abs. 1 nicht.
+- **Messdienst ohne Aufteilung** (`selfAfterService`): E und C aus dem Bestand (Naht N1 zur eigenen
+  Aufteilung von PR 7, `OwnFuel` in calc.ts); ohne Bestand keine Aufteilung und `fuel.stock-missing`
+  mit 3 % je Mieter statt `co2.service-unsplit`. Wer zum Vorrat nichts erfasst hat, sieht den Hinweis
+  von PR 6.
+- **Freie Schlüssel** (`manual`): Die Rechnungen bleiben Positionen; zwei Übertragsposten
+  `stock:<Anlage>:<Heizperiode>:in|out` („aus dem Vorrat“, „im Vorrat“) laufen mit dem Schlüssel der
+  größten Brennstoffposition (sonst der jüngsten der Vorperiode) durch die Verteilung, als Zeilen
+  `kind: 'fuelCarry'` über denselben Weg wie die Überträge von PR 7 (`fuelSynthetic`), Gegenzeile beim
+  Vermieter `fuelCarry` unter `stock:<Anlage>:<Heizperiode>`. Sie zählen nicht in die Gesamtkosten und
+  nicht in die Steuer. Ohne Bestand oder ohne Schlüssel `fuel.manual-by-delivery` und Verteilung nach
+  Lieferung wie bisher, die CO₂-Einstufung dann nach den gelieferten kg. Der Hinweis sagt, dass eine
+  Abrechnung nach Lieferungen nicht zulässig ist und sich nicht durch die Kürzung ausgleichen lässt (BGH
+  VIII ZR 156/11, Leitsätze 1 und 2); im selbstbewohnten Zweifamilienhaus nennt er § 2 Nr. 4a BetrKV.
+  Eine Brennstoffposition ohne Lieferung neben dem Vorrat meldet `fuel.stock-unlinked`, und die
+  CO₂-Aufteilung gilt dann als unvollständig. Die Kürzung nach § 12 Abs. 1 HeizkostenV rechnet auf den
+  Anteil samt Übertrag.
+- **Steuer nach Bezahltem:** Der Eigenanteil der Abrechnung enthält den Anteil am Übertrag, die
+  Steuerübersicht nicht; `TaxReport.expenses.stockCarrySelfCents` nennt den Abstand, die Steuerseite
+  erklärt ihn (N8).
+- **Peildatum:** gerechnet wird mit dem Wert wie gepeilt; `fuel.stock-date-differs` nennt Tage,
+  Gradtagsanteil und Lieferungen dazwischen.
+- `fuel.stock-missing` ist eine Warnung; den Fehler bei der eigenen Heizkostenabrechnung bringt PR 10
+  mit eigenem Code, denn eine Stufe hängt am Code.
+
 **Der Umstieg** ([server/src/db/changeover.ts](server/src/db/changeover.ts)): Beim ersten Start
 der neuen Version wandern die Daten der `db.json` in die Datenbank, ohne dass jemand einen Befehl
 eingibt. Die Reihenfolge steht dort ausführlich; kurz: erkennen, prüfen (mit dem Validator,
@@ -1185,7 +1277,7 @@ Löschen erledigen die Fremdschlüssel und nicht mehr index.ts. Alle Datenrouten
 `?property=` auf ein Objekt ein (siehe Objekte). `POST /api/tenancies/:id/change` führt den
 Mieterwechsel (Ende, Zwischenablesungen, Nachmieter) in einer Transaktion aus, ganz oder gar
 nicht (#150, `changeTenant` in repository.ts). Daneben Spezialrouten: `/api/properties`
-(Objekte anlegen, ändern, nur leere löschen), `/api/heating-plants` (Heizanlage, siehe dort), `/api/heating-plants/:id/periods` (Heizperioden einer Anlage mit CO₂-Angaben und Warmwasser, siehe CO₂ beim Messdienst), `/api/heating-plants/:id/period` und `/separate` (je mit `/preview`), `/api/heating-settlement/:plant/:period` (samt `/close` und `/history`) und `/api/heating-settlements` (eigene Heizperiode, siehe dort), `/api/heating-plants/:id/deliveries`, `/api/fuel-deliveries/:id` und `/api/properties/:id/degree-days` (siehe Lieferungen), `/api/settings`, `/api/settlement/:year`, `/api/consumption/:year`, `/api/rentledger/:year`
+(Objekte anlegen, ändern, nur leere löschen), `/api/heating-plants` (Heizanlage, siehe dort), `/api/heating-plants/:id/periods` (Heizperioden einer Anlage mit CO₂-Angaben und Warmwasser, siehe CO₂ beim Messdienst), `…/periods/:period/stock` (PUT/DELETE, Vorrat, siehe Brennstoffvorrat), `/api/heating-plants/:id/period` und `/separate` (je mit `/preview`), `/api/heating-settlement/:plant/:period` (samt `/close` und `/history`) und `/api/heating-settlements` (eigene Heizperiode, siehe dort), `/api/heating-plants/:id/deliveries`, `/api/fuel-deliveries/:id` und `/api/properties/:id/degree-days` (siehe Lieferungen), `/api/settings`, `/api/settlement/:year`, `/api/consumption/:year`, `/api/rentledger/:year`
 (Mietkonto: Soll/Ist je Monat), `/api/taxreport/:year` (Steuer-Übersicht Anlage V),
 `/api/upload`, `/api/extract` und `/api/intake` (KI-Auswertung, auf Wunsch als Strom, siehe
 unten), die KI-Einstellungen `/api/ai/presets`, `/api/ai/status`, `/api/ai/key` und

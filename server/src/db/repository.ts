@@ -520,6 +520,37 @@ export async function heatingPeriodAt(db: Executor, plantId: string, date: strin
   return { period: h, closed: await isPeriodClosed(db, heating.propertyId, periodContaining(await rulesForProperty(db, heating.propertyId), h.to).key) }
 }
 
+// Hat die Heizperiode nach der, in die `date` fällt, beim Abschluss ihren Anfangsbestand aus dieser
+// übernommen (Heizung PR 8, Durchsicht von #237, C2)? Dann gibt diese Heizperiode genau den
+// eingefrorenen Bestand weiter, und Menge, Einheit, Lieferdatum und Verknüpfungen ihrer Lieferungen
+// bleiben; Beträge dürfen sich ändern. Gibt die Bezeichnung der Folgeperiode zurück, sonst `null`.
+export async function stockTakenOverBy(db: Executor, plantId: string, date: string): Promise<{ label: string } | null> {
+  const heating = await heatingRulesOf(db, plantId)
+  if (!heating) return null
+  const h = periodContaining(heating.rules, date)
+  const next = periodContaining(heating.rules, dayAfterIso(h.to))
+  const [zu] = await db.select({ settlement: closedHeatingSettlements.settlement }).from(closedHeatingSettlements)
+    .where(and(eq(closedHeatingSettlements.plantId, plantId), eq(closedHeatingSettlements.period, next.key)))
+  let settlement: unknown = zu?.settlement
+  if (settlement === undefined) {
+    const p = periodContaining(await rulesForProperty(db, heating.propertyId), next.to)
+    const [gesamt] = await db.select({ settlement: closedSettlements.settlement }).from(closedSettlements)
+      .where(and(eq(closedSettlements.propertyId, heating.propertyId), eq(closedSettlements.period, p.key)))
+    settlement = gesamt?.settlement
+  }
+  const list: unknown = settlement !== null && typeof settlement === 'object' ? Reflect.get(settlement, 'heating') : undefined
+  if (!Array.isArray(list)) return null
+  const took = list.some((x: unknown) => {
+    if (x === null || typeof x !== 'object' || Reflect.get(x, 'plantId') !== plantId || Reflect.get(x, 'period') !== next.key) return false
+    const stock: unknown = Reflect.get(x, 'stock')
+    return stock !== null && typeof stock === 'object' && Reflect.get(stock, 'openingSource') !== 'own'
+  })
+  return took ? { label: periodLabel(next) } : null
+}
+const dayAfterIso = (iso: string): string => new Date(Date.parse(`${iso}T00:00:00Z`) + 86400000).toISOString().slice(0, 10)
+export const stockTakenOverText = (label: string, what: string): string =>
+  `Die abgeschlossene Heizperiode ${label} hat den Endbestand dieser Heizperiode als Anfangsbestand übernommen; ${what} lassen sich deshalb nicht mehr ändern, Beträge schon. Öffnen Sie die Abrechnung ${label} wieder, um etwas zu ändern.`
+
 // Ablesungen des Versorgungszählers einer Heizanlage mit Datum in einer abgeschlossenen Heizperiode
 // sind gesperrt (Heizung PR 7, A10): Die Abgrenzung der Lieferungen dieser Heizperiode ist
 // eingefroren, und ein später erfasster Stand änderte nur noch die Rechnung danach (8.2 Fall d).
@@ -580,6 +611,16 @@ async function guardFrozenLink(db: Executor, before: Pick<CostItem, 'id' | 'fuel
 
 async function guardFuelLink(db: Executor, before: CostItem | null, after: CostItem): Promise<void> {
   await guardFrozenLink(db, before, after)
+  // Vorrat (C2): Lösen oder Umhängen einer Position, deren Lieferung die abgeschlossene Folgeperiode
+  // übernommen hat, änderte den weitergegebenen Bestand.
+  // Eine neue Position an der Lieferung ändert nur den Betrag und bleibt erlaubt.
+  for (const id of [before?.fuelDeliveryId ?? null]) {
+    if (!id || id === (after.fuelDeliveryId ?? null)) continue
+    const [d] = await db.select({ plantId: fuelDeliveries.plantId, deliveredAt: fuelDeliveries.deliveredAt, invoiceTo: fuelDeliveries.invoiceTo }).from(fuelDeliveries).where(eq(fuelDeliveries.id, id))
+    if (!d || d.invoiceTo !== null || d.deliveredAt === null) continue
+    const took = await stockTakenOverBy(db, d.plantId, d.deliveredAt)
+    if (took) throw new HeatingError(409, stockTakenOverText(took.label, 'die Verknüpfungen ihrer Lieferungen'))
+  }
   if (!after.fuelDeliveryId) return
   if (after.category !== HEATING_CATEGORY) {
     throw new HeatingError(400, `Eine Lieferung gehört nur zu einer Position der Kostenart „${HEATING_CATEGORY}“.`)
@@ -771,7 +812,7 @@ async function requireServiceAndTax(db: Executor, before: CostItem | null, after
     if (from > to) throw new PeriodError(`Der Leistungszeitraum von ${what} endet vor seinem Beginn.`)
   }
   if (after.heatingPart !== undefined && after.category !== HEATING_CATEGORY) {
-    throw new PeriodError(`„Brennstoff/Energie“ gibt es nur bei der Kostenart „${HEATING_CATEGORY}“.`)
+    throw new PeriodError(`„Teil der Heizkosten“ gibt es nur bei der Kostenart „${HEATING_CATEGORY}“.`)
   }
   // Heizung PR 5: das Jahr der Zahlung einer Heizposition richtet sich nach ihrer Heizperiode.
   const rules = await itemRules(db, after)

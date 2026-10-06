@@ -18,13 +18,17 @@ export function co2Block(h: HeatingStatement, tenancyId: string): Co2BlockView |
   if (!c || !c.booked) return null
   const tenant = c.tenants.find((t) => t.tenancyId === tenancyId)
   if (!tenant) return null
-  const own = c.basis === 'deliveries'
+  // Eigene Aufteilung aus den Lieferungen (Heizung PR 7) oder aus dem Vorrat (Heizung PR 8).
+  const own = c.basis === 'deliveries' || c.basis === 'stock'
+  const fromStock = c.basis === 'stock'
   const lines: { label: string; value: string }[] = [
     { label: 'Energieträger', value: ENERGY_OPTIONS.find((o) => o.value === h.energy)?.label ?? h.energy },
     { label: 'Heizperiode', value: `${fmtDate(h.from)} – ${fmtDate(h.to)}` },
   ]
   if (c.emissionsKg !== null) {
-    lines.push(own
+    lines.push(fromStock
+      ? { label: 'CO₂-Ausstoß des verbrauchten Brennstoffs', value: `${num(c.emissionsKg)} kg (Anfangsbestand + Lieferungen − Endbestand)` }
+      : own
       ? { label: 'CO₂-Ausstoß, umgerechnet auf die Heizperiode', value: `${num(c.emissionsKg)} kg${c.coveragePermille != null && c.coveragePermille < 1000 ? ` (die Rechnungen decken ${num(c.coveragePermille)} ‰ der Gradtage ab)` : ''}` }
       : { label: 'CO₂-Ausstoß', value: `${num(c.emissionsKg)} kg` })
   }
@@ -61,7 +65,9 @@ export function co2Block(h: HeatingStatement, tenancyId: string): Co2BlockView |
     percent: `${s.landlordPercent} %`,
     marked: c.stage !== null && s.from === c.stage.from,
   }))
-  const notes = [own
+  const notes = [fromStock
+    ? 'Berechnet von Mietfuchs aus den Lieferungen und dem Vorrat (§ 7 Abs. 3 CO2KostAufG): Aufgeteilt werden Ausstoß und CO₂-Kosten des im Abrechnungszeitraum verbrauchten Brennstoffs.'
+    : own
     ? 'Berechnet von Mietfuchs aus den Rechnungen des Versorgers (§ 7 Abs. 3 CO2KostAufG); der Ausstoß ist auf die Heizperiode umgerechnet (§ 5 Abs. 1 Satz 5 CO2KostAufG).'
     : 'Angaben laut Abrechnung des Messdienstes oder der Gemeinschaft (§ 7 Abs. 3 CO2KostAufG).']
   // Durchsicht I2: Die markierte Stufe ist die nach dem Wert; weicht der Anteil laut Abrechnung davon

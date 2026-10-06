@@ -2,8 +2,9 @@
 // entfernen; die Ortswerte der Gradtagzahlen; die Schätzung beim Abschluss und das Einfrieren.
 //
 // **Was eine Lieferung in dieser Version sein kann:** eine Rechnung über Gas, Fernwärme oder Strom
-// einer Wärmepumpe mit Rechnungszeitraum. Lieferungen mit Vorrat brauchen die Bestandsrechnung (PR 8),
-// Lieferungen je Wohnung die Etagenheizung (PR 9), Netzentgelte und Biobrennstoff § 5a (PR 18); der
+// einer Wärmepumpe mit Rechnungszeitraum, und seit Heizung PR 8 eine Lieferung von Heizöl, Flüssiggas,
+// Pellets, Holz oder Kohle mit Lieferdatum und Menge für die Bestandsrechnung (db/fuelStock.ts).
+// Lieferungen je Wohnung brauchen die Etagenheizung (PR 9), Netzentgelte und Biobrennstoff § 5a (PR 18); der
 // Server lehnt sie bis dahin mit einem Satz ab.
 //
 // **Gesperrt** ist eine Lieferung, von der eine abgeschlossene Heizperiode einen Teil eingefroren hat
@@ -12,22 +13,23 @@
 // Diese Datei importiert aus repository.ts und read.ts, nie umgekehrt.
 import { and, count, eq, inArray } from 'drizzle-orm'
 import { formatDayRange, parsePeriodKey, periodContaining, periodLabel, periodsBetween } from '../../../shared/period.ts'
-import type { DegreeDayValue, FuelDelivery, FuelDeliveryPart, FuelGapQuestion, HeatingEnergy, HeatingMethod, HeatingStatement, PeriodKey } from '../../../shared/types.ts'
+import type { BillingPeriod, DegreeDayValue, FuelDelivery, FuelDeliveryPart, FuelGapQuestion, HeatingEnergy, HeatingMethod, HeatingStatement, PeriodKey } from '../../../shared/types.ts'
 import { STOCK_ENERGIES } from '../fuel.ts'
 import type { Database, Executor } from './client.ts'
-import { dropIfEmpty, ensureHeatingPeriod } from './co2.ts'
+import { dropIfEmpty, ensureHeatingPeriod } from './heatingPeriodContext.ts'
 import { readDegreeDayValues, readFuelDeliveries } from './read.ts'
-import { asNullableFilled, asText, frozenDeliveryText, HeatingError, heatingPeriodAt, heatingRulesOf, ISO_DATE, merged, oneOfOrUndefined, raw } from './repository.ts'
+import { asNullableFilled, asText, frozenDeliveryText, HeatingError, heatingPeriodAt, stockTakenOverBy, stockTakenOverText, heatingRulesOf, ISO_DATE, merged, oneOfOrUndefined, raw } from './repository.ts'
 import { costItems, degreeDayValues, FUEL_QUANTITY_UNITS, fuelCarryFrozen, fuelDeliveries, fuelDeliveryParts, GAS_BASES, heatingPeriods, heatingPlants, properties } from './schema.ts'
 
 const LATER = {
-  stock: 'Lieferungen von Heizöl, Flüssiggas, Pellets, Holz und Kohle brauchen die Bestandsrechnung mit Anfangs- und Endbestand; sie kommt mit einer späteren Version. Bis dahin verteilen Sie diese Rechnungen wie bisher als Kostenpositionen.',
   other: 'Tragen Sie zuerst bei der Heizanlage den Energieträger ein; Lieferungen gibt es für Gas, Fernwärme und Strom einer Wärmepumpe.',
   perUnit: 'Lieferungen je Wohnung (Etagenheizungen mit Vertrag auf den Vermieter) kommen mit einer späteren Version.',
   halfSplit: 'Netzentgelte und Biobrennstoff nach § 5a CO2KostAufG kommen mit einer späteren Version.',
   self: 'Die eigene Heizkostenabrechnung kommt mit einer späteren Version.',
 }
 const frozenText = frozenDeliveryText
+const stockClosedText = (h: BillingPeriod) =>
+  `Die Lieferung gehört zur abgeschlossenen Heizperiode ${periodLabel(h)}; ihr Vorrat ist eingefroren. Lieferdatum, Menge und Beträge lassen sich deshalb nicht mehr ändern. Öffnen Sie die Abrechnung wieder, um etwas zu ändern.`
 
 const nullableNumber = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
 const nullableInt = (v: unknown): number | null => (typeof v === 'number' && Number.isInteger(v) ? v : null)
@@ -103,7 +105,7 @@ async function frozenCount(db: Executor, id: string): Promise<number> {
 
 async function guardDelivery(db: Executor, plant: PlantFacts, before: FuelDelivery | null, after: FuelDelivery): Promise<void> {
   if (plant.method === 'self') throw new HeatingError(400, LATER.self)
-  if (STOCK_ENERGIES.includes(plant.energy)) throw new HeatingError(400, LATER.stock)
+  const stock = STOCK_ENERGIES.includes(plant.energy)
   if (plant.energy === 'other') throw new HeatingError(400, LATER.other)
   if (after.unitId !== null) throw new HeatingError(400, LATER.perUnit)
   if (after.gridFeeCents !== null || after.bioCostCents !== null) throw new HeatingError(400, LATER.halfSplit)
@@ -114,10 +116,41 @@ async function guardDelivery(db: Executor, plant: PlantFacts, before: FuelDelive
   for (const [v, name] of dates) {
     if (v !== null && !ISO_DATE.test(v)) throw new HeatingError(400, `${name} von ${what} ist kein Datum. Bitte wählen Sie es im Kalender.`)
   }
-  if (after.invoiceFrom === null || after.invoiceTo === null) {
-    throw new HeatingError(400, `Bei Gas, Fernwärme und Strom braucht ${what} den Rechnungszeitraum (Beginn und Ende laut Rechnung); nach ihm teilt Mietfuchs die Rechnung auf die Heizperioden auf.`)
+  if (stock) {
+    // Vorratsenergien (Heizung PR 8, Entwurf 5.4, 8.2): Die Lieferung gehört zur Heizperiode ihres
+    // Lieferdatums; ihre Menge braucht die Einheit des Vorrats. Einen Rechnungszeitraum gibt es nicht,
+    // abgegrenzt wird über Anfangs- und Endbestand.
+    if (after.deliveredAt === null) {
+      throw new HeatingError(400, `Bitte tragen Sie das Lieferdatum von ${what} ein. Beim Vorrat zählt eine Lieferung zur Heizperiode, in der sie geliefert wurde.`)
+    }
+    if (after.invoiceFrom !== null || after.invoiceTo !== null || after.parts.length > 0 || after.sharePermille !== null) {
+      throw new HeatingError(400, `Bei Heizöl, Flüssiggas, Pellets, Holz und Kohle hat ${what} keinen Rechnungszeitraum; den Verbrauch ergibt die Bestandsrechnung aus Anfangs- und Endbestand. Bitte tragen Sie nur das Lieferdatum ein.`)
+    }
+    if (after.quantity === null || !(after.quantity > 0) || (after.quantityUnit !== 'l' && after.quantityUnit !== 'kg' && after.quantityUnit !== 'srm')) {
+      throw new HeatingError(400, `Bitte tragen Sie die gelieferte Menge von ${what} in Litern, Kilogramm oder Schüttraummetern ein, wie auf der Rechnung.`)
+    }
+    // Eine Lieferung in einer abgeschlossenen Heizperiode ist gesperrt (G-A4), auch beim Verschieben
+    // hinein oder hinaus; die Bezeichnung bleibt änderbar.
+    const same = (d: FuelDelivery) => JSON.stringify({ ...d, label: '', usedByService: true })
+    if (before === null || same(before) !== same(after)) {
+      for (const date of [before?.deliveredAt ?? null, after.deliveredAt]) {
+        const at = date === null ? null : await heatingPeriodAt(db, plant.id, date)
+        if (at?.closed) throw new HeatingError(409, stockClosedText(at.period))
+      }
+    }
+    // Hat die abgeschlossene Folgeperiode den Endbestand übernommen (C2), bleiben Menge, Einheit und
+    // Lieferdatum; Beträge, kg und CO₂-Kosten dürfen sich ändern.
+    const moved = before !== null && (before.quantity !== after.quantity || before.quantityUnit !== after.quantityUnit || before.deliveredAt !== after.deliveredAt)
+    for (const date of moved ? [before?.deliveredAt ?? null, after.deliveredAt] : []) {
+      const took = date === null ? null : await stockTakenOverBy(db, plant.id, date)
+      if (took) throw new HeatingError(409, stockTakenOverText(took.label, 'Menge, Einheit und Lieferdatum ihrer Lieferungen'))
+    }
+  } else {
+    if (after.invoiceFrom === null || after.invoiceTo === null) {
+      throw new HeatingError(400, `Bei Gas, Fernwärme und Strom braucht ${what} den Rechnungszeitraum (Beginn und Ende laut Rechnung); nach ihm teilt Mietfuchs die Rechnung auf die Heizperioden auf.`)
+    }
+    if (after.invoiceFrom > after.invoiceTo) throw new HeatingError(400, `Der Rechnungszeitraum von ${what} endet vor seinem Beginn.`)
   }
-  if (after.invoiceFrom > after.invoiceTo) throw new HeatingError(400, `Der Rechnungszeitraum von ${what} endet vor seinem Beginn.`)
   if (plant.method === 'manual' && after.amountCents !== null && !after.estimated) {
     throw new HeatingError(400, `Bei freien Schlüsseln steht der Betrag in der Kostenposition: Verknüpfen Sie die Position mit ${what}, statt hier einen Betrag einzutragen.`)
   }
@@ -127,7 +160,7 @@ async function guardDelivery(db: Executor, plant: PlantFacts, before: FuelDelive
   ]
   for (const [v, name] of notNegative) if (v !== null && v < 0) throw new HeatingError(400, `${name} von ${what} ist eine Zahl ab 0.`)
   if (after.heatingValue !== null && !(after.heatingValue > 0)) throw new HeatingError(400, `Der Heizwert von ${what} ist eine Zahl über 0.`)
-  if (after.sharePermille !== null) {
+  if (after.sharePermille !== null && after.invoiceFrom !== null && after.invoiceTo !== null) {
     if (after.sharePermille < 0 || after.sharePermille > 1000) throw new HeatingError(400, 'Ein eingetragener Anteil liegt zwischen 0 und 1000 ‰.')
     const heating = await heatingRulesOf(db, plant.id)
     if (heating && periodsBetween(heating.rules, after.invoiceFrom, after.invoiceTo).length > 2) {
@@ -137,7 +170,7 @@ async function guardDelivery(db: Executor, plant: PlantFacts, before: FuelDelive
   let last: string | null = null
   for (const p of after.parts) {
     if (!ISO_DATE.test(p.from) || !ISO_DATE.test(p.to) || p.from > p.to) throw new HeatingError(400, 'Eine Teilmenge braucht Beginn und Ende als Datum; das Ende liegt nicht vor dem Beginn.')
-    if (p.from < after.invoiceFrom || p.to > after.invoiceTo) throw new HeatingError(400, 'Eine Teilmenge liegt außerhalb des Rechnungszeitraums.')
+    if (after.invoiceFrom === null || after.invoiceTo === null || p.from < after.invoiceFrom || p.to > after.invoiceTo) throw new HeatingError(400, 'Eine Teilmenge liegt außerhalb des Rechnungszeitraums.')
     if (last !== null && p.from <= last) throw new HeatingError(400, 'Teilmengen dürfen sich nicht überschneiden.')
     if ((p.fixedCents ?? 0) < 0 || (p.emissionsKg ?? 0) < 0 || (p.co2CostCents ?? 0) < 0 || (p.energyKwh ?? 0) < 0) throw new HeatingError(400, 'Die Zahlen einer Teilmenge sind Zahlen ab 0, nur der Betrag darf negativ sein.')
     last = p.to
@@ -211,6 +244,14 @@ export async function removeDelivery(db: Database, id: string): Promise<boolean>
   const current = (await readFuelDeliveries(db)).find((x) => x.id === id)
   if (!current) return false
   if ((await frozenCount(db, id)) > 0) throw new HeatingError(409, frozenText(current.label || 'Lieferung'))
+  // Vorrat (Heizung PR 8): eine Lieferung in einer abgeschlossenen Heizperiode bleibt.
+  const plant = await plantOf(db, current.plantId)
+  if (plant && STOCK_ENERGIES.includes(plant.energy) && current.deliveredAt !== null) {
+    const at = await heatingPeriodAt(db, plant.id, current.deliveredAt)
+    if (at?.closed) throw new HeatingError(409, stockClosedText(at.period))
+    const took = await stockTakenOverBy(db, plant.id, current.deliveredAt)
+    if (took) throw new HeatingError(409, stockTakenOverText(took.label, 'ihre Lieferungen'))
+  }
   const [linked] = await db.select({ n: count() }).from(costItems).where(eq(costItems.fuelDeliveryId, id))
   const n = linked?.n ?? 0
   if (n > 0) {

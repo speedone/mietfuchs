@@ -122,11 +122,10 @@ const GUIDE_DATA = {
       { text: 'Die Abrechnung muss dem Mieter spätestens bis zum Ablauf des zwölften Monats nach Ende des Abrechnungszeitraums zugehen; danach können Sie eine Nachzahlung in der Regel nicht mehr verlangen.', norm: '§ 556 Abs. 3 Satz 2 und 3 BGB' },
       { text: `Bei einer Zentralheizung sind mindestens ${SHARE.min} und höchstens ${SHARE.max} Prozent der Heiz- und Warmwasserkosten nach Verbrauch zu verteilen. Wird nicht nach Verbrauch abgerechnet, darf der Mieter seinen Anteil um ${CUT} Prozent kürzen.`, norm: '§ 7 Abs. 1, § 8 Abs. 1, § 12 Abs. 1 HeizkostenV' },
       { text: 'Verwaltungskosten sowie Instandhaltung und Instandsetzung sind keine Betriebskosten; erfassen Sie sie als „Nicht umlagefähig“.', norm: '§ 1 Abs. 2 BetrKV' },
-      { text: `Fallen für die Heizung CO₂-Kosten an, sind sie zwischen Ihnen und dem Mieter nach dem CO₂-Ausstoß des Gebäudes aufzuteilen. Die Heizkostenabrechnung muss den Anteil des Mieters, die Einstufung des Gebäudes und die Berechnungsgrundlagen ausweisen; fehlt das, darf der Mieter seinen Anteil an den Heizkosten um ${CO2_CUT} Prozent kürzen. Verteilen Sie die Heizkosten selbst nach einem Schlüssel, teilt Mietfuchs die CO₂-Kosten auf, wenn Sie die Rechnungen Ihres Versorgers auf der Seite Heizkosten als Lieferungen eintragen; rechnet ein Messdienst ab, übernehmen Sie seine Angaben dort.`, norm: '§ 5 Abs. 2, § 7 Abs. 3 und 4 CO2KostAufG' },
+      { text: `Fallen für die Heizung CO₂-Kosten an, sind sie zwischen Ihnen und dem Mieter nach dem CO₂-Ausstoß des Gebäudes aufzuteilen. Die Heizkostenabrechnung muss den Anteil des Mieters, die Einstufung des Gebäudes und die Berechnungsgrundlagen ausweisen; fehlt das, darf der Mieter seinen Anteil an den Heizkosten um ${CO2_CUT} Prozent kürzen. Verteilen Sie die Heizkosten selbst nach einem Schlüssel, teilt Mietfuchs die CO₂-Kosten auf, wenn Sie die Rechnungen Ihres Versorgers auf der Seite Heizkosten als Lieferungen eintragen, bei Heizöl, Flüssiggas und Kohle dazu Anfangs- und Endbestand des Vorrats; rechnet ein Messdienst ab, übernehmen Sie seine Angaben dort.`, norm: '§ 5 Abs. 2, § 7 Abs. 3 und 4 CO2KostAufG' },
     ],
     gaps: [
       { text: 'Eine eigene Heizkostenabrechnung mit Wärmemengenzählern nach Grund- und Verbrauchskosten.', issue: 99 },
-      { text: 'Die CO₂-Kosten bei Heizöl, Flüssiggas und Pellets, die eine Bestandsrechnung brauchen.', issue: 97 },
       { text: 'Die Differenz zwischen Hauptzähler und Wohnungszählern als eigener Posten, Eichfristen und geschätzte Ablesungen.', issue: 98 },
     ],
     terms: ['allocationKey', 'distributionBasis', 'billingUnit', 'participants', 'ownShare', 'heatingCostOrdinance'],
@@ -307,7 +306,6 @@ const GUIDE_DATA = {
       { text: 'Ist ein Abrechnungszeitraum von unter einem Jahr vereinbart, werden die Grenzen der Stufentabelle anteilig gekürzt.', norm: '§ 5 Abs. 1 Satz 4 CO2KostAufG' },
     ],
     gaps: [
-      { text: 'Die CO₂-Kosten bei Heizöl, Flüssiggas und Pellets aus der Bestandsrechnung.', issue: 97 },
       { text: 'Die CO₂-Angaben für den Messdienst ausdrucken.', issue: 210 },
       { text: 'Die Abrechnung des Messdienstes per KI auslesen.', issue: 103 },
     ],
@@ -389,10 +387,36 @@ const GUIDE_DATA = {
       { text: 'Die Abrechnung muss dem Mieter bis zum Ablauf des zwölften Monats nach Ende des Abrechnungszeitraums zugehen; eine Nachforderung danach gibt es nur, wenn Sie die Verspätung nicht zu vertreten haben. Kommt die Rechnung des Versorgers spät, warten Sie mit dem Abschluss, solange die Frist läuft.', norm: '§ 556 Abs. 3 Satz 2 und 3 BGB' },
     ],
     gaps: [
-      { text: 'Lieferungen mit Vorrat (Heizöl, Flüssiggas, Pellets) mit Bestandsrechnung.', issue: 97 },
       { text: 'Lieferungen je Wohnung bei Etagenheizungen auf Vertrag des Vermieters.' },
     ],
     terms: ['fuelDelivery', 'degreeDays', 'fixedPriceComponent', 'fuelEstimate'],
+  },
+  // Heizung PR 8 (#97, #99, Durchsicht von #237): Brennstoff mit Vorrat.
+  stockFuel: {
+    title: 'Heizöl, Flüssiggas, Pellets oder Holz mit Tank oder Lager',
+    applies: 'Sie heizen mit Heizöl, Flüssiggas, Pellets, Holz oder Kohle, kaufen den Brennstoff in Lieferungen und verteilen die Heizkosten selbst nach einem Schlüssel. Nicht jede Lieferung wird im selben Jahr verbraucht.',
+    steps: [
+      { page: 'stammdaten', text: 'Richten Sie in der Karte „Heizung“ die Heizanlage mit ihrem Brennstoff ein; bei der Frage, wer abrechnet, wählen Sie „Niemand“.' },
+      { page: 'kosten', text: 'Erfassen Sie jede Rechnung über eine Lieferung mit „+ Kostenposition manuell erfassen“ und der Kostenart „Heizung und Warmwasser“, im Zeitraum, in dem geliefert wurde.' },
+      { page: 'heizkosten', text: 'Klicken Sie auf der Seite Heizkosten in der Karte „Lieferungen“ auf „Lieferung eintragen“, tragen Sie Lieferdatum, Menge und Einheit ein und, bei Heizöl, Flüssiggas und Kohle, die CO₂-Angaben laut Rechnung, dann „Lieferung speichern“.' },
+      { page: 'heizkosten', text: 'Wählen Sie darunter bei „Welche Position gehört zu welcher Rechnung?“ an der Position die Lieferung. Aus der verknüpften Position nimmt Mietfuchs den Betrag der Lieferung.' },
+      { page: 'heizkosten', text: 'Tragen Sie in der Karte „Vorrat“ den Endbestand ein, wie Sie ihn am Ende der Heizperiode abgelesen haben, und nur in der ersten Heizperiode auch den Anfangsbestand mit seinem Wert; danach übernimmt Mietfuchs den Endbestand der Vorperiode. Speichern Sie mit „Vorrat speichern“.' },
+    ],
+    result: [
+      'Die Rechnungen bleiben Positionen in voller Höhe. Den Unterschied zwischen Bezahltem und Verbrauchtem tragen zwei Zeilen „aus dem Vorrat“ und „im Vorrat“ mit dem Schlüssel der Brennstoffposition; über die Jahre ist jede Lieferung genau einmal verteilt.',
+      'Die Abrechnung druckt die „Bestandsrechnung Brennstoff“ mit Anfangsbestand, Lieferungen, Endbestand und Verbrauch.',
+      'Bei Heizöl, Flüssiggas und Kohle teilt Mietfuchs die CO₂-Kosten nach dem verbrauchten Brennstoff auf.',
+    ],
+    example: 'Anfangsbestand 2.000 l für 1.900 €, Lieferungen 3.000 l für 3.150 € und 2.500 l für 2.500 €, Endbestand 1.800 l. Er stammt aus der jüngsten Lieferung und ist 1.800 € wert. Verbraucht wurden 5.750 €, bezahlt 5.650 €. Bei zwei Wohnungen mit 60 und 40 m² nach Wohnfläche tragen die Mieter 3.450 € und 2.300 € an Heizkosten.',
+    caveats: [
+      { text: `Umgelegt werden die Kosten der verbrauchten Brennstoffe und ihrer Lieferung, nicht der bezahlten Rechnungen. Eine Abrechnung nach Lieferungen ist nicht zulässig, und der Fehler lässt sich nicht durch die Kürzung um ${CUT} Prozent ausgleichen.`, norm: '§ 7 Abs. 2 HeizkostenV; BGH, Urteil vom 01.02.2012, VIII ZR 156/11' },
+      { text: 'Wie der Endbestand zu bewerten ist, regelt die Heizkostenverordnung nicht. Mietfuchs rechnet, als sei das älteste Öl zuerst verbraucht worden, wie es die Kommentarliteratur und die Messdienste tun; der Endbestand hat dann die Preise der jüngsten Lieferungen.', norm: 'Kinne/Schach/Bieber-Kinne, BGB § 556 Rn. 121' },
+      { text: 'Brennstoff, der vor dem 01.01.2023 in Rechnung gestellt wurde, trägt keine CO₂-Kosten; seine kg zählen aber für die Einstufung. Holz und Pellets sind keine Brennstoffe im Sinne des Brennstoffemissionshandels; für sie gibt es keine CO₂-Kosten aufzuteilen.', norm: '§ 11 Abs. 2 Satz 2, § 2 Abs. 1 CO2KostAufG; Anlage 1 BEHG' },
+    ],
+    gaps: [
+      { text: 'Eine eigene Heizkostenabrechnung nach Grund- und Verbrauchskosten rechnet Mietfuchs noch nicht; auch der Vorrat dort kommt mit ihr.', issue: 99 },
+    ],
+    terms: ['fuelStock', 'fuelDelivery', 'co2Split'],
   },
 } satisfies Record<string, Guide>
 

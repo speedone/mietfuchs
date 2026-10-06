@@ -433,6 +433,14 @@ async function co2Statement() {
   await request(`/api/costItems/${posten.body.id}`, { method: 'DELETE' })
 }
 
+// Vorrat (Heizung PR 8): Die Route gibt es, und bei einer Gasheizung lehnt sie mit einem Satz ab.
+// Rechnen prüfen calc-vorrat.test.ts und api.test.ts; die Anlage der Prüfung heizt mit Gas.
+async function stockRoute() {
+  const [anlage] = (await request('/api/heating-plants')).body
+  const antwort = await request(`/api/heating-plants/${anlage.id}/periods/2025-01/stock`, json('PUT', { stockUnit: 'l', closingQuantity: 100 }))
+  assert(antwort.status === 400 && /Heizöl, Flüssiggas, Pellets, Holz und Kohle/.test(antwort.body?.error ?? ''), 'Vorrat nur bei Vorratsenergien', antwort.body)
+}
+
 // Lieferungen (Heizung PR 7): Die Gasrechnung des Jahres als Lieferung an der Heizanlage des
 // Messdienstes; die Abrechnung bewertet sie (Abdeckung der Heizperiode). Das Objekt der Prüfung
 // rechnet im Kalenderjahr.
@@ -552,6 +560,7 @@ async function main() {
   const unit = await uploadsAndSettlement()
   await heatingPlant()
   await co2Statement()
+  await stockRoute()
   await fuelDelivery()
   await heatingPeriod()
   await co2ForBackup()

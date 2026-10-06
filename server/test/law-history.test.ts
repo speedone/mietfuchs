@@ -41,6 +41,9 @@ const SHIPPED: readonly string[] = [
   'co2.district-ets-new|||{"connectedAfter":"2023-01-01"}',
   'co2.non-residential|||500',
   'co2.restriction|||{"factor":0.5,"bothSplit":false}',
+  // 0.11.0 (Heizung PR 8)
+  'co2.costs-before||2022-12-31|true',
+  'co2.costs-before|2023-01-01||false',
 ]
 
 const current = (): string[] =>

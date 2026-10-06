@@ -12,90 +12,26 @@
 // (Methode der Anlage `service`). Die eigene Aufteilung (`self`, freie Schlüssel) kommt mit PR 7.
 //
 // Diese Datei importiert aus repository.ts und read.ts, nie umgekehrt.
-import { and, count, eq, inArray } from 'drizzle-orm'
-import type { BillingPeriod, Co2Statement, Co2TenantRelief, HeatingPeriodView, HeatingPlant, PeriodKey, PeriodRules } from '../../../shared/types.ts'
+import { eq, inArray } from 'drizzle-orm'
+import type { BillingPeriod, Co2Statement, Co2TenantRelief, HeatingPeriodView, PeriodKey } from '../../../shared/types.ts'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 import { co2ApplicableFrom, co2FirstPeriodStart } from '../../../shared/law/co2kostaufg.ts'
 import { germanDate, valueAt } from '../../../shared/law/register.ts'
-import { heatingPeriodsEndingIn, plantRules, settledSeparately } from '../../../shared/heatingPeriod.ts'
-import { parsePeriodKey, periodContaining, periodLabel, periodOfKey, resolvePeriodParam, rulesOf } from '../../../shared/period.ts'
-import { newId } from '../store.ts'
+import { heatingPeriodsEndingIn } from '../../../shared/heatingPeriod.ts'
+import { periodLabel, periodOfKey, resolvePeriodParam } from '../../../shared/period.ts'
 import type { Database, Executor } from './client.ts'
-import { readCo2Statements, readCostItems, readHeatingPlants, readProperties } from './read.ts'
+import { readCo2Statements, readCostItems, readStock } from './read.ts'
+import { stockViewFor } from './fuelStock.ts'
+import { isStockEnergy } from '../../../shared/fuelStock.ts'
 import { asNullableFilled, CrossPropertyError, has, HeatingError, merged, oneOfOrUndefined, raw } from './repository.ts'
-import {
-  closedHeatingSettlements, closedSettlements, CO2_METHODS, co2Statements, co2TenantReliefs, costItems, DHW_METHODS, heatingPeriods, tenancies,
-  fuelCarryFrozen, units,
-} from './schema.ts'
+import { closedText, dropIfEmpty, ensureHeatingPeriod, heatingPeriodClosed, heatingPeriodOf, plantContext, type PlantContext } from './heatingPeriodContext.ts'
+// Für ältere Importe (Tests): Die Helfer der Heizperioden stehen seit Heizung PR 8 in heatingPeriodContext.ts.
+export { dropIfEmpty, ensureHeatingPeriod } from './heatingPeriodContext.ts'
+import { CO2_METHODS, co2Statements, co2TenantReliefs, costItems, DHW_METHODS, heatingPeriods, tenancies, units } from './schema.ts'
 
 const ASK_METHOD = 'Bitte beantworten Sie zuerst die Frage, ob die Kostenaufstellung eine Zeile wie „Abzüglich CO₂-Kosten Vermieter“ enthält.'
 const SERVICE_NOT_SELF = 'Rechnet ein Messdienst oder die Gemeinschaft ab, beantworten Sie die Frage nach der Abzugszeile. Hat der Messdienst die CO₂-Kosten nicht aufgeteilt, wählen Sie „gar nicht aufgeteilt“; mit der Brennstoffrechnung als Lieferung teilt Mietfuchs dann selbst auf.'
 const MANUAL_SELF = 'Bei freien Schlüsseln teilt Mietfuchs die CO₂-Kosten selbst auf, aus den Lieferungen des Versorgers. Angeben lässt sich hier nur die Fläche der Einstufung, wenn sie von der Wohnfläche der versorgten Wohnungen abweicht.'
-const closedText = (h: BillingPeriod) =>
-  `Die Heizperiode ${periodLabel(h)} ist abgeschlossen; ihre Angaben bleiben, wie sie beim Abschluss waren. Öffnen Sie die Abrechnung wieder, um etwas zu ändern.`
-
-type PlantContext = { plant: HeatingPlant; objectRules: PeriodRules; plantRules: PeriodRules }
-
-// Die Anlage mit dem Rhythmus ihres Objekts und ihrem eigenen. Ohne eigenen Beginnmonat folgt die
-// Heizperiode dem Objekt samt seinen Wechseln (Entwurf 3.0); mit eigenem gelten Beginnmonat und
-// Wechsel der Anlage (`plantRules`, PR 5; `periodChanges` füllt `readHeatingPlants`).
-async function plantContext(db: Database, plantId: string): Promise<PlantContext | null> {
-  const plant = (await readHeatingPlants(db)).find((p) => p.id === plantId)
-  if (!plant) return null
-  const objectRules = rulesOf((await readProperties(db)).find((p) => p.id === plant.propertyId))
-  return { plant, objectRules, plantRules: plantRules(plant, objectRules) }
-}
-
-function heatingPeriodOf(ctx: PlantContext, text: string): BillingPeriod {
-  const key = parsePeriodKey(text)
-  const h = key === null ? null : periodOfKey(ctx.plantRules, key)
-  if (!h) throw new HeatingError(400, `Eine Heizperiode „${text}“ gibt es für diese Heizanlage nicht. Bitte laden Sie die Seite neu.`)
-  return h
-}
-
-// Abgeschlossen ist eine Heizperiode nach Weg d mit ihrer eigenen Heizkostenabrechnung
-// (`closed_heating_settlements`, PR 5); der Abschluss von P friert sie nicht ein (B3). Jede andere mit
-// der Abrechnung des Objektzeitraums, der ihr Ende enthält (W1).
-async function heatingPeriodClosed(db: Executor, ctx: PlantContext, h: BillingPeriod): Promise<boolean> {
-  if (settledSeparately(ctx.plant, ctx.objectRules, h)) {
-    const [heizung] = await db
-      .select({ n: count() })
-      .from(closedHeatingSettlements)
-      .where(and(eq(closedHeatingSettlements.plantId, ctx.plant.id), eq(closedHeatingSettlements.period, h.key)))
-    return (heizung?.n ?? 0) > 0
-  }
-  const p = periodContaining(ctx.objectRules, h.to)
-  const [gesamt] = await db
-    .select({ n: count() })
-    .from(closedSettlements)
-    .where(and(eq(closedSettlements.propertyId, ctx.plant.propertyId), eq(closedSettlements.period, p.key)))
-  return (gesamt?.n ?? 0) > 0
-}
-
-export async function ensureHeatingPeriod(db: Executor, plantId: string, key: PeriodKey): Promise<string> {
-  const [row] = await db.select({ id: heatingPeriods.id }).from(heatingPeriods).where(and(eq(heatingPeriods.plantId, plantId), eq(heatingPeriods.period, key)))
-  if (row) return row.id
-  const id = newId()
-  await db.insert(heatingPeriods).values({ id, plantId, period: key })
-  return id
-}
-
-// Eine Zeile in `heating_periods` ohne jede Angabe wird wieder entfernt. Sie entstand nur, damit
-// etwas an ihr hängen konnte; bliebe sie leer stehen, sperrte sie den Wechsel des Zeitraums der
-// Heizung (PR 5, heatingPeriodChange.ts: jede Zeile gilt dort als erfasste Angabe).
-export async function dropIfEmpty(db: Executor, heatingPeriodId: string): Promise<void> {
-  const [row] = await db.select().from(heatingPeriods).where(eq(heatingPeriods.id, heatingPeriodId))
-  if (!row) return
-  const { id: _id, plantId: _plant, period: _period, ...data } = row
-  if (Object.values(data).some((v) => v !== null)) return
-  const [co2] = await db.select({ n: count() }).from(co2Statements).where(eq(co2Statements.heatingPeriodId, heatingPeriodId))
-  if ((co2?.n ?? 0) > 0) return
-  // Eingefrorene Teile von Lieferungen (Heizung PR 7) hängen an der Zeile; mit ihr fielen sie.
-  const [frozen] = await db.select({ n: count() }).from(fuelCarryFrozen).where(eq(fuelCarryFrozen.heatingPeriodId, heatingPeriodId))
-  if ((frozen?.n ?? 0) > 0) return
-  await db.delete(heatingPeriods).where(eq(heatingPeriods.id, heatingPeriodId))
-}
-
 // Die Heizperioden einer Anlage mit CO₂-Angaben, die noch nicht abgeschlossen sind. Abgeschlossene
 // sind eingefroren und lassen sich nicht mehr entfernen; sie dürfen einen Wechsel der Anlage
 // (Kesseltausch, andere Abrechnung) deshalb nicht sperren (Nachprüfung von PR 6).
@@ -125,9 +61,13 @@ export async function heatingPeriodViews(db: Database, plantId: string, periodPa
   const statements = (await readCo2Statements(db)).filter((s) => s.plantId === plantId)
   const rows = await db.select().from(heatingPeriods).where(eq(heatingPeriods.plantId, plantId))
   const items = (await readCostItems(db)).filter((c) => c.heatingPlantId === plantId && c.category === HEATING_CATEGORY)
+  // Der Vorrat (Heizung PR 8) nur bei Heizöl, Flüssiggas, Pellets, Holz und Kohle, und nicht bei der
+  // eigenen Heizkostenabrechnung, die ihn erst mit einer späteren Version rechnet.
+  const stockData = isStockEnergy(ctx.plant.energy) && ctx.plant.method !== 'self' ? await readStock(db) : null
   const views: HeatingPeriodView[] = []
   for (const h of hs) {
     const row = rows.find((r) => r.period === h.key)
+    const closed = await heatingPeriodClosed(db, ctx, h)
     views.push({
       plantId,
       period: h.key,
@@ -135,12 +75,13 @@ export async function heatingPeriodViews(db: Database, plantId: string, periodPa
       from: h.from,
       to: h.to,
       short: h.short,
-      closed: await heatingPeriodClosed(db, ctx, h),
+      closed,
       hotWater: { dhwMethod: row?.dhwMethod ?? null, dhwUnmeasurable: row?.dhwUnmeasurable ?? null },
       co2: statements.find((s) => s.period === h.key) ?? null,
       items: items
         .filter((c) => c.period === h.key)
         .map((c) => ({ id: c.id, description: c.description, amountCents: c.amountCents, key: c.key, tenancyAmounts: c.tenancyAmounts, selfAmounts: c.selfAmounts, fuelDeliveryId: c.fuelDeliveryId })),
+      stock: stockData ? stockViewFor(stockData, ctx, h, closed) : null,
     })
   }
   return views

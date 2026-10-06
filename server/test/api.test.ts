@@ -28,7 +28,7 @@ import { calendarPeriod } from '../../shared/period.ts'
 import type { JsonSchema } from '../src/ai/ollama.ts'
 import type {
   AiKeyInfo, AiPreset, AiRecommendations, AiSettings, AiSlot, AiSlotName, AiStatus, AssessmentLine, AssignableHeatingItem, Co2Statement, DegreeDayValue, FuelDelivery, FuelGapQuestion, Notice, HeatingPeriodView, HeatingPlant, AssessmentView, BookingPreview, CostItem, Extraction, LineDecision, LineFields,
-  Meter, MeterReadingExtraction, OllamaStatus, Payment, Property, Reading, Settings, Settlement, TaxReport, Tenancy, Unit, UnitDependents,
+  Meter, MeterReadingExtraction, OllamaStatus, Payment, Property, Reading, Settings, Settlement, StockView, TaxReport, Tenancy, Unit, UnitDependents,
   UpdateStatus, UploadEntry, UploadInfo,
 } from '../../shared/types.ts'
 import type { Db } from '../src/store.ts'
@@ -6138,6 +6138,32 @@ test('Abschluss mit Lücke: Rückfrage (409), Schätzung, Sperre der eingefroren
     assert.equal((await send(`/api/fuel-deliveries/${d.id}`, { method: 'PUT', body: JSON.stringify({ fixedCents: 100 }) })).status, 200)
     // Erneut abschließen fragt nicht mehr: Die Schätzung deckt die Lücke.
     assert.equal((await send('/api/settlement/2025/close', jsonPost({}))).status, 201)
+  } finally {
+    s.stop()
+  }
+})
+
+// ---------- Vorrat (Heizung PR 8) ----------
+
+test('Vorrat über die Routen: speichern, entfernen, 404 ohne Anlage; Öllieferung mit Lieferdatum und Menge', async () => {
+  const s = await startServer()
+  try {
+    const send = (url: string, init: RequestInit) => fetch(`${s.base}${url}`, { ...init, headers: { 'content-type': 'application/json' } })
+    await s.api<Unit>('/api/units', jsonPost({ name: 'EG', areaM2: 80, participates: true }))
+    const { plant } = await jsonOf<{ plant: HeatingPlant }>(await send('/api/heating-plants', jsonPost({ energy: 'oil', method: 'manual' })))
+    const base = `/api/heating-plants/${plant.id}/periods/2025-01/stock`
+    const gespeichert = await send(base, { method: 'PUT', body: JSON.stringify({ stockUnit: 'l', openingQuantity: 1000, openingCostCents: 95000, openingEmissionsKg: 2676.3, openingCo2Cents: 0, openingInvoicedBefore2023: true, closingQuantity: 400 }) })
+    assert.equal(gespeichert.status, 200)
+    assert.equal((await jsonOf<StockView>(gespeichert)).statement?.consumed.costCents, 57000)
+    const [ansicht] = await s.api<HeatingPeriodView[]>(`/api/heating-plants/${plant.id}/periods?period=2025`)
+    assert.equal(ansicht?.stock?.statement?.consumed.quantity, 600)
+    assert.deepEqual(await jsonOf<unknown>(await send(base, { method: 'DELETE' })), { ok: true, removed: true })
+    assert.equal((await send('/api/heating-plants/gibt-es-nicht/periods/2025-01/stock', { method: 'PUT', body: '{}' })).status, 404)
+    const ohneDatum = await send(`/api/heating-plants/${plant.id}/deliveries`, jsonPost({ quantity: 1000, quantityUnit: 'l', emissionsKg: 2676.3, co2CostCents: 17500 }))
+    assert.equal(ohneDatum.status, 400)
+    assert.match(await errorFrom(ohneDatum), /Lieferdatum/)
+    const mitDatum = await send(`/api/heating-plants/${plant.id}/deliveries`, jsonPost({ deliveredAt: '2025-03-15', quantity: 1000, quantityUnit: 'l', emissionsKg: 2676.3, co2CostCents: 17500 }))
+    assert.equal(mitDatum.status, 201)
   } finally {
     s.stop()
   }

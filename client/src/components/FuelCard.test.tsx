@@ -10,7 +10,7 @@ import type { FuelDelivery, HeatingPeriodView } from '../types'
 
 const view: HeatingPeriodView = {
   plantId: 'hp', period: periodKey('2025-05'), label: '2025/2026', from: '2025-05-01', to: '2026-04-30', short: false, closed: false,
-  hotWater: { dhwMethod: null, dhwUnmeasurable: null }, co2: null,
+  hotWater: { dhwMethod: null, dhwUnmeasurable: null }, co2: null, stock: null,
   items: [
     { id: 'gas', description: 'Gas Abschlussrechnung', amountCents: 650000, key: 'area', fuelDeliveryId: 'd' },
     { id: 'wart', description: 'Wartung', amountCents: 20000, key: 'area', fuelDeliveryId: null },
@@ -70,4 +70,28 @@ test('Durchsicht: Die Karte sagt, dass ohne Verknüpfung nichts abgegrenzt wird;
   fireEvent.click(screen.getByText('Lieferung eintragen'))
   expect(screen.queryByLabelText('CO₂-Ausstoß laut Rechnung (kg)')).toBeNull()
   expect(screen.queryByLabelText('CO₂-Kosten laut Rechnung')).toBeNull()
+})
+
+test('Heizöl (Heizung PR 8): Lieferdatum, Menge und Einheit statt Rechnungszeitraum; die Auswahl zeigt die gespeicherte Einheit', async () => {
+  const oel: FuelDelivery = { ...gas, label: '', invoiceFrom: null, invoiceTo: null, deliveredAt: '2025-10-10', invoiceDate: '2025-10-12', quantity: 2500, quantityUnit: 'l' }
+  render(<FuelCard plant={{ id: 'hp', method: 'manual', energy: 'oil' }} view={view} deliveries={[oel]} onSaved={() => {}} />)
+  expect(screen.getByText(/geliefert am 10\.10\.2025 · 2\.500 l/)).toBeTruthy()
+  expect(screen.getByText(/mit Lieferdatum und Menge/)).toBeTruthy()
+  // Durchsicht von #237, M5: Der Betrag kommt aus der verknüpften Position, und die Karte sagt es.
+  expect(screen.getByText(/Den Betrag nimmt Mietfuchs aus der verknüpften Kostenposition; ohne Verknüpfung geht die Bestandsrechnung nicht auf\./)).toBeTruthy()
+  fireEvent.click(screen.getByText('Ändern'))
+  expect(screen.queryByLabelText('Rechnungszeitraum von')).toBeNull()
+  // M4: Ein leeres Rechnungsdatum ist das Lieferdatum, und das Feld sagt es.
+  expect(screen.getByLabelText('Rechnungsdatum (leer: Lieferdatum)')).toBeTruthy()
+  expect(auswahl('Einheit der Menge').value).toBe('l')
+  fireEvent.change(screen.getByLabelText('Menge'), { target: { value: '2600' } })
+  fireEvent.click(screen.getByText('Lieferung speichern'))
+  await waitFor(() => expect(sent.at(-1)?.body).toMatchObject({ deliveredAt: '2025-10-10', quantity: 2600, quantityUnit: 'l' }))
+})
+
+test('Heizöl (Durchsicht von #237, M5): Die Zeile nennt den Betrag aus der verknüpften Position', () => {
+  const oel: FuelDelivery = { ...gas, id: 'd', label: '', invoiceFrom: null, invoiceTo: null, deliveredAt: '2025-10-10', invoiceDate: '2025-10-12', quantity: 2500, quantityUnit: 'l' }
+  render(<FuelCard plant={{ id: 'hp', method: 'manual', energy: 'oil' }} view={view} deliveries={[oel]} onSaved={() => {}} />)
+  // Die Position „Gas Abschlussrechnung“ der Ansicht zeigt auf „d“ und hat 6.500,00 €.
+  expect(screen.getByText(/Betrag laut Position 6\.500,00 €/)).toBeTruthy()
 })

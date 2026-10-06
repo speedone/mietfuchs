@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest'
 import { fmtEuro } from './api'
 import {
-  degreeDaysBody, degreeDaysToForm, deliveryLine, deliveryOptions, emptyFuelForm, fuelBody, fuelToForm, monthsOf, ownedBy, RESTRICTION_OPTIONS,
+  degreeDaysBody, degreeDaysToForm, deliveryLine, deliveryOptions, emptyFuelForm, fuelBody, fuelToForm, monthsOf, ownedBy, RESTRICTION_OPTIONS, stockFuelBody,
 } from './fuelForm'
 import type { FuelDelivery } from './types'
 
@@ -60,4 +60,27 @@ test('Gradtagzahlen: Monate des Zeitraums, Formular und Rumpf', () => {
 
 test('Beschränkungen nach § 9: vier Antworten, „keine“ zuerst', () => {
   expect(RESTRICTION_OPTIONS.map((o) => o.value)).toEqual(['none', 'building', 'supply', 'both'])
+})
+
+// ---------- Lieferungen von Heizöl, Flüssiggas, Pellets, Holz und Kohle (Heizung PR 8) ----------
+
+const oel: FuelDelivery = {
+  ...gas, id: 'o', label: '', invoiceFrom: null, invoiceTo: null, deliveredAt: '2025-10-10', invoiceDate: '2025-10-12', amountCents: null,
+  quantity: 2500, quantityUnit: 'l', energyKwh: null, sharePermille: null, fixedCents: null, emissionsKg: 6690.75, co2CostCents: 43791,
+}
+
+test('Lieferung für den Vorrat: Lieferdatum und Menge statt Rechnungszeitraum; Zeile und Zuordnung nach dem Lieferdatum', () => {
+  const form = fuelToForm(oel)
+  expect([form.deliveredAt, form.invoiceDate, form.quantity, form.quantityUnit]).toEqual(['2025-10-10', '2025-10-12', '2500', 'l'])
+  expect(stockFuelBody(form, 'manual')).toEqual({
+    body: { label: '', deliveredAt: '2025-10-10', invoiceDate: '2025-10-12', quantity: 2500, quantityUnit: 'l', emissionsKg: 6690.75, co2CostCents: 43791 },
+  })
+  expect(stockFuelBody({ ...form, amount: '2.500,00' }, 'service')).toMatchObject({ body: { amountCents: 250000, usedByService: true } })
+  expect(stockFuelBody({ ...form, deliveredAt: '' }, 'manual')).toEqual({ error: 'Bitte geben Sie das Lieferdatum an. Beim Vorrat zählt eine Lieferung zur Heizperiode, in der sie geliefert wurde.' })
+  expect(stockFuelBody({ ...form, quantity: '' }, 'manual')).toEqual({ error: 'Bitte geben Sie die gelieferte Menge an, wie auf der Rechnung.' })
+  expect(stockFuelBody({ ...form, quantityUnit: '' }, 'manual')).toEqual({ error: 'Bitte wählen Sie die Einheit der Menge.' })
+  expect(deliveryLine(oel)).toBe('geliefert am 10.10.2025 · 2.500 l · 6.690,75 kg CO₂ · CO₂-Kosten ' + fmtEuro(43791))
+  expect(deliveryOptions([oel])[1]?.label).toBe('Lieferung vom 10.10.2025')
+  expect(ownedBy([oel], { from: '2025-01-01', to: '2025-12-31' }).map((d) => d.id)).toEqual(['o'])
+  expect(ownedBy([oel], { from: '2026-01-01', to: '2026-12-31' })).toEqual([])
 })
