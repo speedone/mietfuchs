@@ -186,11 +186,19 @@ export async function saveStock(db: Database, plantId: string, period: string, b
   if (prev) for (const k of OPENING_KEYS) next[k] = null
   const locked = lockedBy(chain, ctx, h)
   if (locked && (next.stockUnit !== current.stockUnit || next.closingQuantity !== current.closingQuantity)) throw new HeatingError(409, lockedText(locked.label))
+  const following = periodContaining(ctx.plantRules, dayAfter(h.to))
   await db.transaction(async (tx) => {
     if (await heatingPeriodClosed(tx, ctx, h)) throw new HeatingError(409, closedText(h))
     const id = await ensureHeatingPeriod(tx, plantId, h.key)
     await tx.update(heatingPeriods).set(next).where(eq(heatingPeriods.id, id))
     await dropIfEmpty(tx, id)
+    // Mit einem Endbestand hier übernimmt die Folgeperiode ihn als Anfangsbestand; ein dort früher
+    // eingetragener eigener Anfangsbestand gälte sonst wieder, sobald dieser Vorrat entfernt wird
+    // (Nachprüfung von 7ce5958, Befund 2). Eine abgeschlossene Folgeperiode bleibt, wie sie ist.
+    if (next.closingQuantity !== null && !(await heatingPeriodClosed(tx, ctx, following))) {
+      await tx.update(heatingPeriods).set({ openingQuantity: null, openingCostCents: null, openingEmissionsKg: null, openingCo2Cents: null, openingInvoicedBefore2023: null, openingAlreadySettled: null })
+        .where(and(eq(heatingPeriods.plantId, plantId), eq(heatingPeriods.period, following.key)))
+    }
   })
   return stockViewFor(await readStock(db), ctx, h)
 }
@@ -209,6 +217,12 @@ export async function removeStock(db: Database, plantId: string, period: string)
     if (locked && (own.stockUnit !== null || own.closingQuantity !== null)) throw new HeatingError(409, lockedText(locked.label))
     await tx.update(heatingPeriods).set({ ...EMPTY }).where(eq(heatingPeriods.id, own.id))
     await dropIfEmpty(tx, own.id)
+    // Die Folgeperiode beginnt jetzt selbst; eine früher gegebene Antwort auf „schon umgelegt?“ galt einer
+    // anderen Lage und wird zurückgesetzt (Nachprüfung von 7ce5958, Befund 2).
+    const following = periodContaining(ctx.plantRules, dayAfter(h.to))
+    if (!(await heatingPeriodClosed(tx, ctx, following))) {
+      await tx.update(heatingPeriods).set({ openingAlreadySettled: null }).where(and(eq(heatingPeriods.plantId, plantId), eq(heatingPeriods.period, following.key)))
+    }
   })
   return true
 }

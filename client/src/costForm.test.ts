@@ -605,12 +605,21 @@ describe('Leistungszeitraum, Jahr der Zahlung, Brennstoff (#208)', () => {
   })
 
   test('Brennstoff/Energie nur bei Heizkosten; bei anderer Kostenart fällt es weg', () => {
-    const heiz = buildCostItemBody(form({ category: 'Heizung und Warmwasser', description: 'Gas', key: 'area', heatingFuel: true }), units, 2025)
+    const heiz = buildCostItemBody(form({ category: 'Heizung und Warmwasser', description: 'Gas', key: 'area', heatingPart: 'fuel' }), units, 2025)
     if ('error' in heiz) return expect.unreachable(heiz.error)
     expect(heiz.body.heatingPart).toBe('fuel')
-    const kalt = buildCostItemBody(form({ heatingFuel: true }), units, 2025)
+    const kalt = buildCostItemBody(form({ heatingPart: 'fuel' }), units, 2025)
     if ('error' in kalt) return expect.unreachable(kalt.error)
     expect(kalt.body.heatingPart).toBeNull()
+    // Nachprüfung von #237: Betrieb und Messdienst lassen sich ausdrücklich angeben, ohne Angabe bleibt null.
+    for (const part of ['operating', 'metering'] as const) {
+      const b = buildCostItemBody(form({ category: 'Heizung und Warmwasser', description: 'Wartung', key: 'area', heatingPart: part }), units, 2025)
+      if ('error' in b) return expect.unreachable(b.error)
+      expect(b.body.heatingPart).toBe(part)
+    }
+    const ohne = buildCostItemBody(form({ category: 'Heizung und Warmwasser', description: 'Wartung', key: 'area', heatingPart: '' }), units, 2025)
+    if ('error' in ohne) return expect.unreachable(ohne.error)
+    expect(ohne.body.heatingPart).toBeNull()
   })
 
   test('Aufteilen nur bei kalten Kosten mit Leistungszeitraum', () => {

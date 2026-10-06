@@ -8,12 +8,13 @@ import os from 'node:os'
 import path from 'node:path'
 import { computeSettlement, type ComputedSettlement } from '../src/calc.ts'
 import { createDelivery, removeDelivery, unfreezeFuelCarries, updateDelivery } from '../src/db/fuel.ts'
-import { saveStock } from '../src/db/fuelStock.ts'
+import { removeStock, saveStock } from '../src/db/fuelStock.ts'
 import { createHeatingPlant, updateHeatingPlant } from '../src/db/heating.ts'
 import { openDatabase } from '../src/db/open.ts'
 import { readClosedSettlements, readStock } from '../src/db/read.ts'
 import { closeSettlement, createEntity, HeatingError, reopenSettlement, updateEntity } from '../src/db/repository.ts'
 import { snapshotFor } from '../src/snapshot.ts'
+import { sql } from 'drizzle-orm'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import { calendarYearPeriod, periodKey } from '../../shared/period.ts'
 
@@ -222,7 +223,12 @@ test('N2 (T1u): Heizposition der Vorperiode ohne Kennzeichen „Brennstoff“ is
     await h.deliver('Heizöl 10/2025', '2025-10-01', 1000, 100000, 2676.3, 17516)
     const s25 = await h.settle(2025)
     assert.equal(heat(await h.settle(2024)) + heat(s25), 300000)
-    assert.match(textOf(s25, 'fuel.opening-settled'), /nach der Vorbelegung schon mit einer früheren Abrechnung umgelegt, denn in der Heizperiode 2024 sind Heizkosten von 3\.000,00 € nach Lieferung verteilt/)
+    // Nachprüfung von 7ce5958, Befund 1: Die Vorbelegung beruht nur auf einer Position ohne Kennzeichen,
+    // deshalb eine Warnung mit Betrag, die die Position nennt, statt des Hinweises.
+    const n = s25.notices.find((x) => x.code === 'fuel.opening-settled-assumed') ?? assert.fail(codes(s25).join(', '))
+    assert.equal(n.level, 'warning')
+    assert.match(n.text, /Anfangsbestand von 2\.000 l \(Wert laut Eintrag 2\.000,00 €\).*Heizperiode 2024.*„Heizöl 2024“ \(3\.000,00 €\).*tragen Sie 2\.000,00 € selbst/)
+    assert.ok(!codes(s25).includes('fuel.opening-settled'), 'kein zweiter Hinweis daneben')
   })
 })
 
@@ -282,5 +288,78 @@ test('MB (Mutationsprobe der Nachprüfung): Kein Verlust-Hinweis, solange die Fo
     const s24 = await h.settle(2024)
     assert.ok(!codes(s24).includes('fuel.stock-not-taken-over'), 'Folgeperiode hat übernommen')
     assert.equal(heat(s24) + heat((await h.opened.read(readClosedSettlements)).find((c) => c.period === '2025-01')?.settlement), 300000 + 120000 - 60000)
+  })
+})
+
+// Nachprüfung von 7ce5958, Befund 1 (Proben W1–W3): Eine Wartung ohne Kennzeichen von 250 € erklärt keinen
+// Anfangsbestand von 2.000 €. Vorher zählte er mit 0 €, und der Vermieter trug 2.000 € still.
+for (const [name, description, withPlant] of [['W1', 'Wartung Brenner 2024', true], ['W2', 'Wartung Brenner 2024', false], ['W3', 'Messdienst Ablesung 2024', true]] as const) {
+  test(`Befund 1 (${name}): ${description}${withPlant ? '' : ' ohne Heizanlage'} ohne Kennzeichen: Der Anfangsbestand zählt mit 2.000 €`, async () => {
+    await withHouse(async (h) => {
+      await h.opened.write((db) => createEntity(db, 'costItems', 'w', { propertyId: 'objekt-1', period: '2024-01', category: HEATING_CATEGORY, description, amountCents: 25000, key: 'area', ...(withPlant ? { heatingPlantId: 'hp' } : {}) }))
+      await h.stock('2025-01', { stockUnit: 'l', openingQuantity: 2000, openingCostCents: 200000, openingEmissionsKg: 5352.6, openingCo2Cents: 35033, openingInvoicedBefore2023: false, closingQuantity: 1000 })
+      await h.deliver('Heizöl 10/2025', '2025-10-01', 1000, 100000, 2676.3, 17516)
+      const s25 = await h.settle(2025)
+      assert.equal(s25.heating?.[0]?.stock?.opening.costCents, 200000)
+      assert.equal(heat(s25), 200000)
+      assert.ok(!codes(s25).some((c) => c.startsWith('fuel.opening-')), codes(s25).join(', '))
+    })
+  })
+}
+
+test('Befund 1 (W1n): „Nein“ neben einer Wartung ohne Kennzeichen ist kein Widerspruch: keine Warnung', async () => {
+  await withHouse(async (h) => {
+    await h.opened.write((db) => createEntity(db, 'costItems', 'w', { propertyId: 'objekt-1', period: '2024-01', category: HEATING_CATEGORY, description: 'Wartung Brenner 2024', amountCents: 25000, key: 'area', heatingPlantId: 'hp' }))
+    await h.stock('2025-01', { stockUnit: 'l', openingQuantity: 2000, openingCostCents: 200000, openingEmissionsKg: 5352.6, openingCo2Cents: 35033, openingInvoicedBefore2023: false, openingAlreadySettled: false, closingQuantity: 1000 })
+    await h.deliver('Heizöl 10/2025', '2025-10-01', 1000, 100000, 2676.3, 17516)
+    const s25 = await h.settle(2025)
+    assert.ok(!codes(s25).includes('fuel.opening-not-settled'), codes(s25).join(', '))
+    assert.equal(heat(s25), 200000)
+  })
+})
+
+test('Befund 1 (W4): Ausdrücklich „Betrieb“ zählt nie als Brennstoff, auch über dem Wert des Anfangsbestands', async () => {
+  await withHouse(async (h) => {
+    await h.opened.write((db) => createEntity(db, 'costItems', 'w', { propertyId: 'objekt-1', period: '2024-01', category: HEATING_CATEGORY, description: 'Wartung und Reparatur', amountCents: 300000, key: 'area', heatingPlantId: 'hp', heatingPart: 'operating' }))
+    await h.stock('2025-01', { stockUnit: 'l', openingQuantity: 2000, openingCostCents: 200000, openingEmissionsKg: 5352.6, openingCo2Cents: 35033, openingInvoicedBefore2023: false, closingQuantity: 1000 })
+    await h.deliver('Heizöl 10/2025', '2025-10-01', 1000, 100000, 2676.3, 17516)
+    const s25 = await h.settle(2025)
+    assert.equal(s25.heating?.[0]?.stock?.opening.costCents, 200000)
+    assert.ok(!codes(s25).some((c) => c.startsWith('fuel.opening-')), codes(s25).join(', '))
+  })
+})
+
+// Nachprüfung von 7ce5958, Befund 2 (Probe D1): Ein früher eingetragener eigener Anfangsbestand der
+// Folgeperiode lebte wieder auf, sobald der Vorrat der Vorperiode entfernt wurde: 5.000 € statt 3.000 €.
+test('Befund 2 (D1): Endbestand der Vorperiode leert den eigenen Anfangsbestand der Folgeperiode; Entfernen setzt die Antwort zurück', async () => {
+  await withHouse(async (h) => {
+    await h.stock('2025-01', { stockUnit: 'l', openingQuantity: 2000, openingCostCents: 200000, openingEmissionsKg: 5352.6, openingCo2Cents: 35033, openingInvoicedBefore2023: false, openingAlreadySettled: false, closingQuantity: 1000 })
+    await h.deliver('Heizöl 10/2025', '2025-10-01', 1000, 100000, 2676.3, 17516)
+    await h.stock('2024-01', { stockUnit: 'l', openingQuantity: 0, openingCostCents: 0, openingEmissionsKg: 0, openingCo2Cents: 0, openingInvoicedBefore2023: false, closingQuantity: 2000 })
+    await h.deliver('Heizöl 03/2024', '2024-03-01', 3000, 300000, 8028.9, 52549)
+    assert.equal(heat(await h.settle(2024)) + heat(await h.settle(2025)), 300000)
+    const row = (await h.opened.read(readStock)).heatingPeriodRows.find((r) => r.period === '2025-01') ?? assert.fail('keine Zeile 2025')
+    assert.equal(row.openingQuantity ?? null, null, 'der eigene Anfangsbestand 2025 ist geleert')
+    assert.equal(row.openingAlreadySettled ?? null, null)
+    await h.close(2024)
+    await h.reopen(2024)
+    assert.equal(await h.opened.write((db) => removeStock(db, 'hp', '2024-01')), true)
+    // Ohne Vorrat 2024 und ohne eigenen Anfangsbestand 2025 rechnen beide nach Lieferung: Jeder gekaufte Liter
+    // zählt genau einmal (4.000 €). Vorher lebte der alte Anfangsbestand von 2.000 € wieder auf: 5.000 €.
+    const t24 = await h.settle(2024), t25 = await h.settle(2025)
+    assert.equal(heat(t24) + heat(t25), 400000)
+    assert.equal(t25.heating?.[0]?.stock, undefined, '2025 hat keinen Anfangsbestand mehr')
+  })
+})
+
+test('Befund 2: Entfernen des Vorrats setzt die Antwort „schon umgelegt?“ der Folgeperiode zurück', async () => {
+  await withHouse(async (h) => {
+    await h.stock('2024-01', { stockUnit: 'l', openingQuantity: 0, openingCostCents: 0, openingEmissionsKg: 0, openingCo2Cents: 0, openingInvoicedBefore2023: false, closingQuantity: 2000 })
+    await h.stock('2025-01', { stockUnit: 'l', closingQuantity: 1000 })
+    // Eine Antwort, die in der Folgeperiode stehen geblieben ist, gilt nach dem Entfernen nicht mehr.
+    await h.opened.write(async (db) => { await db.run(sql`UPDATE heating_periods SET opening_already_settled = 0 WHERE period = '2025-01'`) })
+    assert.equal(await h.opened.write((db) => removeStock(db, 'hp', '2024-01')), true)
+    const row = (await h.opened.read(readStock)).heatingPeriodRows.find((r) => r.period === '2025-01') ?? assert.fail('keine Zeile 2025')
+    assert.equal(row.openingAlreadySettled ?? null, null)
   })
 })

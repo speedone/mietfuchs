@@ -221,8 +221,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   der Lieferungen. Beträge bleiben änderbar.
 - Beim ersten Vorrat nach einer Abrechnung nach Lieferungen fragt die Karte „Vorrat“, ob der
   Anfangsbestand schon umgelegt wurde; dann zählt er mit 0 €, damit die Mieter ihn nicht zweimal
-  tragen. Verteilt eine Heizperiode ohne Übertrag, geht ihr Endbestand mit 0 € weiter. Bleibt ein
-  Bestand bei Ihnen hängen, nennt die Abrechnung den Betrag.
+  tragen. Ohne Antwort nimmt Mietfuchs das an, wenn im Vorjahr Brennstoff abgerechnet ist; stehen dort
+  nur Heizkosten ohne Angabe, warnt die Abrechnung und nennt sie. Verteilt eine Heizperiode ohne
+  Übertrag, geht ihr Endbestand mit 0 € weiter. Bleibt ein Bestand bei Ihnen hängen, nennt die
+  Abrechnung den Betrag.
+- Im Kostenformular wählen Sie bei Heizkosten „Teil der Heizkosten“: Brennstoff/Energie, Betrieb,
+  Ablesung oder ohne Angabe.
 
 ### Behoben
 

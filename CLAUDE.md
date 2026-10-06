@@ -1118,11 +1118,21 @@ Lieferdatum und Menge statt Rechnungszeitraum und laufen nicht durch die Abgrenz
   fuelStock.ts, dieselbe Regel in Schnappschuss und Abrechnung), haben ihre Mieter den Endbestand mit
   den Rechnungen bezahlt; er geht mit 0 € und ohne CO₂-Kosten weiter, die kg bleiben. Ebenso zählt der
   Anfangsbestand der ersten Heizperiode mit Vorrat mit 0 €, wenn er schon umgelegt wurde
-  (`heating_periods.opening_already_settled`; ohne Antwort „ja“, wenn die Vorperiode eine Position der
-  Kostenart Heizung mit Betrag an dieser Anlage oder ohne Anlage hat, außer ausdrücklich nicht
-  Brennstoff; „abgeschlossen ohne Vorrat“ allein reicht nicht), Hinweis `fuel.opening-settled` mit
-  „nach Ihrer Angabe“ oder „nach der Vorbelegung“; ein ausdrückliches „nein“ trotz Heizkosten in der
-  Vorperiode ergibt `fuel.opening-not-settled` mit Betrag. Eine abgeschlossene Heizperiode, deren Stand
+  (`heating_periods.opening_already_settled`; ohne Antwort „ja“, wenn die Vorperiode an dieser Anlage
+  oder ohne Anlage eine Heizposition **ausdrücklich als Brennstoff** hat (`heatingPart: 'fuel'` oder mit
+  Lieferung verknüpft), oder wenn ihre Heizpositionen **ohne Kennzeichen** zusammen mindestens den Wert
+  des Anfangsbestands erreichen: Eine Wartung von 250 € erklärt keinen Bestand von 2.000 €, und vorher
+  trug der Vermieter ihn dann still. „Betrieb“ und „Ablesung“ zählen nie; „abgeschlossen ohne Vorrat“
+  allein reicht nicht), Hinweis `fuel.opening-settled` mit „nach Ihrer Angabe“ oder „nach der
+  Vorbelegung“. Beruht die Vorbelegung nur auf Positionen ohne Kennzeichen (`defaultLoose`), steht
+  statt des Hinweises die Warnung `fuel.opening-settled-assumed`, die die Positionen mit Betrag nennt.
+  Ein ausdrückliches „nein“ trotz Brennstoff in der Vorperiode (dieselbe Schwelle) ergibt
+  `fuel.opening-not-settled` mit Betrag. Die Auswahl „Teil der Heizkosten“ im Kostenformular führt
+  alle Werte des Modells und „ohne Angabe“ (`HEATING_PART_OPTIONS` in costForm.ts). Trägt der
+  Vermieter in der Vorperiode einen Endbestand ein, leert das in derselben Transaktion den eigenen
+  Anfangsbestand der offenen Folgeperiode, und das Entfernen des Vorrats setzt deren Antwort auf
+  „schon umgelegt?“ zurück; sonst lebte ein veralteter Anfangsbestand wieder auf (`saveStock`,
+  `removeStock` in db/fuelStock.ts). Eine abgeschlossene Heizperiode, deren Stand
   keinen Vorrat eingefroren hat, gibt ihren Endbestand ebenfalls mit 0 € weiter (`closedWithoutStock`).
   Übernimmt eine Heizperiode einen Bestand mit Wert nicht (Bestandsrechnung fehlt, geht nicht auf oder
   kein Schlüssel), oder ist die Folgeperiode ohne Vorrat abgeschlossen, nennt `fuel.stock-not-taken-over`

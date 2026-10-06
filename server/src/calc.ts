@@ -302,6 +302,8 @@ const noticeKinds = {
   'fuel.stock-not-taken-over': { level: 'warning', title: 'Endbestand wird nicht übernommen', rule: 'heating-consumed-fuel', terms: ['fuelStock'] },
   'fuel.opening-settled': { level: 'hint', title: 'Anfangsbestand schon umgelegt', rule: 'heating-consumed-fuel', terms: ['fuelStock'] },
   // Nachprüfung von #237 (N2): „nicht umgelegt“, obwohl die Vorperiode Heizkosten nach Lieferung verteilt hat.
+  // Nachprüfung von 7ce5958, Befund 1: Vorbelegung nur nach Heizpositionen ohne Kennzeichen „Brennstoff“.
+  'fuel.opening-settled-assumed': { level: 'warning', title: 'Anfangsbestand als umgelegt angenommen', rule: 'heating-consumed-fuel', terms: ['fuelStock'] },
   'fuel.opening-not-settled': { level: 'warning', title: 'Anfangsbestand womöglich doppelt', rule: 'heating-consumed-fuel', terms: ['fuelStock'] },
   'fuel.stock-unlinked': { level: 'warning', title: 'Brennstoffposition ohne Lieferung', rule: 'heating-consumed-fuel', terms: ['fuelStock', 'fuelDelivery'] },
   'heating.dhw-not-metered': { level: 'warning', title: 'Warmwasser ohne Wärmezähler abgerechnet', rule: 'heating-dhw-split', terms: ['hotWaterShare', 'heatingCostOrdinance'] },
@@ -2295,7 +2297,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   const stockManualNotes: { plant: SnapshotHeatingPlant; text: string; invalid: boolean }[] = []
   // Weitere Hinweise zum Vorrat je Anlage (Durchsicht von #237): Verlust beim Vermieter (`lost`), ein
   // schon umgelegter Anfangsbestand (`settled`), Brennstoffpositionen ohne Lieferung (`unlinked`).
-  const stockNotes: { plant: SnapshotHeatingPlant; code: 'fuel.stock-not-taken-over' | 'fuel.opening-settled' | 'fuel.opening-not-settled' | 'fuel.stock-unlinked'; text: string }[] = []
+  const stockNotes: { plant: SnapshotHeatingPlant; code: 'fuel.stock-not-taken-over' | 'fuel.opening-settled' | 'fuel.opening-settled-assumed' | 'fuel.opening-not-settled' | 'fuel.stock-unlinked'; text: string }[] = []
   const stockUnlinked = new Map<string, SnapshotCostItem[]>()
   const stockOpts = (plant: SnapshotHeatingPlant) => ({
     needCost: plant.method === 'manual', needCo2: CO2_FUELS.includes(plant.energy), countedAt: stockCountedAt,
@@ -2351,12 +2353,20 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     if (stmt.openingSettledCents !== undefined) {
       const v = stmt.openingSettledCents
       const worth = v !== null && v > 0 ? ` (Wert laut Eintrag ${fmtCents(v)})` : ''
+      if (stmt.openingSettledSource === 'defaultLoose' && prevFuel) {
+        // Nachprüfung von 7ce5958, Befund 1: Nur Positionen ohne Kennzeichen sprechen dafür; das kann
+        // ebenso Wartung sein. Dann trüge der Vermieter den Wert still.
+        const named = andList(prevFuel.loose.map((l) => `„${l.description}“ (${fmtCents(l.cents)})`))
+        stockNotes.push({ plant: entry.plant, code: 'fuel.opening-settled-assumed', text: `Mietfuchs nimmt an, dass der Anfangsbestand von ${qty}${worth} schon mit der Abrechnung der Heizperiode ${prevFuel.label} umgelegt wurde, denn dort stehen Heizpositionen ohne Kennzeichen „Brennstoff“: ${named}. Er zählt hier deshalb mit 0 €. War darin kein Brennstoff, tragen Sie ${v !== null && v > 0 ? fmtCents(v) : 'seinen Wert'} selbst; antworten Sie dann in der Karte „Vorrat“ mit „Nein“, oder kennzeichnen Sie die Positionen bei den Kosten unter „Teil der Heizkosten“.` })
+      }
       // Nachprüfung N2: Angabe des Vermieters oder Vorbelegung, und dann mit Grund.
       const why = stmt.openingSettledSource === 'default' && prevFuel
         ? `wurde nach der Vorbelegung schon mit einer früheren Abrechnung umgelegt, denn in der Heizperiode ${prevFuel.label} sind Heizkosten von ${fmtCents(prevFuel.cents)} nach Lieferung verteilt. Trifft das nicht zu, antworten Sie in der Karte „Vorrat“ mit „Nein“.`
         : 'ist nach Ihrer Angabe schon mit einer früheren Abrechnung umgelegt worden.'
-      stockNotes.push({ plant: entry.plant, code: 'fuel.opening-settled', text: `Der Anfangsbestand von ${qty}${worth} ${why} Er zählt hier deshalb mit 0 € und ohne CO₂-Kosten; seine kg zählen für die Einstufung des Gebäudes.` })
-    } else if (stmt.openingSource === 'own' && prevFuel && (stmt.opening.costCents ?? 0) > 0) {
+      if (stmt.openingSettledSource !== 'defaultLoose') stockNotes.push({ plant: entry.plant, code: 'fuel.opening-settled', text: `Der Anfangsbestand von ${qty}${worth} ${why} Er zählt hier deshalb mit 0 € und ohne CO₂-Kosten; seine kg zählen für die Einstufung des Gebäudes.` })
+    } else if (stmt.openingSource === 'own' && prevFuel && (stmt.opening.costCents ?? 0) > 0 &&
+      (prevFuel.explicitCents > 0 || prevFuel.loose.reduce((a, l) => a + l.cents, 0) >= (stmt.opening.costCents ?? 0))) {
+      // Dieselbe Schwelle wie die Vorbelegung: Eine Wartung erklärt keinen Anfangsbestand (W1n).
       stockNotes.push({ plant: entry.plant, code: 'fuel.opening-not-settled', text: `Nach Ihrer Angabe ist der Anfangsbestand von ${qty} noch nicht umgelegt; er zählt mit ${fmtCents(stmt.opening.costCents ?? 0)}. In der Heizperiode ${prevFuel.label} sind aber Heizkosten von ${fmtCents(prevFuel.cents)} nach Lieferung verteilt. Steckt der Brennstoff des Anfangsbestands darin, tragen die Mieter ${fmtCents(stmt.opening.costCents ?? 0)} zweimal; antworten Sie dann in der Karte „Vorrat“ mit „Ja“.` })
     }
     // Nachprüfung N1: Die Vorperiode ist ohne Vorrat abgeschlossen; ihr Endbestand zählt hier mit 0 €.

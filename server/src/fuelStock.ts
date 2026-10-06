@@ -52,7 +52,7 @@ export type StockDeliveryInput = {
 
 // Der eingetragene Anfangsbestand (Spalten `opening_*`). `alreadySettled`: schon mit einer früheren
 // Abrechnung umgelegt (nach Lieferung); dann zählt er mit 0 € und ohne CO₂-Kosten, die kg zählen.
-export type StockOpeningInput = { quantity: number; costCents: number | null; emissionsKg: number | null; co2Cents: number | null; invoicedBefore2023: boolean | null; alreadySettled?: boolean; settledSource?: 'entered' | 'default' }
+export type StockOpeningInput = { quantity: number; costCents: number | null; emissionsKg: number | null; co2Cents: number | null; invoicedBefore2023: boolean | null; alreadySettled?: boolean; settledSource?: 'entered' | 'default' | 'defaultLoose' }
 
 // Eine Heizperiode der Kette; snapshot.ts baut sie (`stockChainsOf`).
 export type StockPeriodInput = {
@@ -81,7 +81,9 @@ export type StockPeriodInput = {
   nextClosedWithoutStock?: boolean
   // Die Vorperiode hat Heizkosten der Anlage abgerechnet (C1, Nachprüfung N2): Bezeichnung und Summe der
   // Positionen. Die Karte fragt dann, ob der Anfangsbestand schon umgelegt wurde.
-  previousFuel?: { label: string; cents: number } | null
+  // `explicitCents`: ausdrücklich Brennstoff (gekennzeichnet oder mit Lieferung verknüpft); `loose`: Heizpositionen
+  // ohne Kennzeichen (Nachprüfung von 7ce5958, Befund 1).
+  previousFuel?: { label: string; cents: number; explicitCents: number; loose: { description: string; cents: number }[] } | null
   // Abgeschlossen, ohne dass der Stand einen Vorrat eingefroren hat (Nachprüfung N1): Die Mieter haben
   // den Brennstoff mit den Rechnungen bezahlt; der Endbestand geht mit 0 € weiter.
   closedWithoutStock?: boolean

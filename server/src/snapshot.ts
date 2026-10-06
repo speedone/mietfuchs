@@ -580,7 +580,7 @@ export function narrowToProperty<
 export type SnapshotStockChain = { plantId: string; period: PeriodKey; chain: StockPeriodInput[] }
 
 export type StockChainSource = {
-  costItems: readonly Pick<SnapshotCostItem, 'amountCents' | 'fuelDeliveryId' | 'category' | 'heatingPlantId' | 'heatingPart' | 'key' | 'period'>[]
+  costItems: readonly Pick<SnapshotCostItem, 'amountCents' | 'fuelDeliveryId' | 'category' | 'heatingPlantId' | 'heatingPart' | 'key' | 'period' | 'description'>[]
   closedSettlements: readonly (SnapshotClosedSettlement & { period: PeriodKey })[]
   closedHeatingSettlements?: readonly (SnapshotClosedSettlement & { plantId: string; period: PeriodKey })[]
   heatingPeriodRows?: readonly SnapshotHeatingPeriodRow[]
@@ -620,9 +620,24 @@ export function stockChainsOf(source: StockChainSource, plant: SnapshotHeatingPl
   // der Kostenart Heizung mit Betrag an dieser Anlage oder ohne Anlage, außer sie ist ausdrücklich kein
   // Brennstoff (Betrieb, Messdienst). Dann ist der Anfangsbestand der Folgeperiode vermutlich schon
   // umgelegt. „Abgeschlossen ohne Vorrat“ allein ist kein Indiz.
-  const previousFuelOf = (p: BillingPeriod): { label: string; cents: number } | null => {
+  const previousFuelOf = (p: BillingPeriod): { label: string; cents: number; explicitCents: number; loose: { description: string; cents: number }[] } | null => {
     const fuel = itemsIn(p.key).filter((c) => c.category === HEATING_CATEGORY && c.amountCents !== 0 && (c.heatingPlantId === plant.id || !c.heatingPlantId) && (c.heatingPart ?? 'fuel') === 'fuel')
-    return fuel.length > 0 ? { label: periodLabel(p), cents: fuel.reduce((a, c) => a + c.amountCents, 0) } : null
+    if (fuel.length === 0) return null
+    const explicit = fuel.filter((c) => c.heatingPart === 'fuel' || (c.fuelDeliveryId ?? null) !== null)
+    const loose = fuel.filter((c) => !explicit.includes(c))
+    return {
+      label: periodLabel(p), cents: fuel.reduce((a, c) => a + c.amountCents, 0), explicitCents: explicit.reduce((a, c) => a + c.amountCents, 0),
+      loose: loose.map((c) => ({ description: c.description, cents: c.amountCents })),
+    }
+  }
+  // Gilt ohne Antwort „schon umgelegt“ (Nachprüfung von 7ce5958, Befund 1)? Bei ausdrücklichem Brennstoff
+  // ja; bei Heizpositionen ohne Kennzeichen nur, wenn sie zusammen den Wert des Anfangsbestands erreichen.
+  // Eine Wartung von 250 € erklärt keinen Anfangsbestand von 2.000 €.
+  const settledByDefault = (prev: ReturnType<typeof previousFuelOf>, openingCents: number | null): 'default' | 'defaultLoose' | null => {
+    if (!prev) return null
+    if (prev.explicitCents > 0) return 'default'
+    const looseCents = prev.loose.reduce((a, l) => a + l.cents, 0)
+    return looseCents > 0 && looseCents >= (openingCents ?? 0) ? 'defaultLoose' : null
   }
   const inputOf = (p: BillingPeriod): StockPeriodInput => {
     const row = rows.get(p.key)
@@ -639,8 +654,10 @@ export function stockChainsOf(source: StockChainSource, plant: SnapshotHeatingPl
           quantity: opening, costCents: row.openingCostCents ?? null, emissionsKg: row.openingEmissionsKg ?? null, co2Cents: row.openingCo2Cents ?? null,
           invoicedBefore2023: row.openingInvoicedBefore2023 ?? null,
           // Ohne Antwort gilt „schon umgelegt“, wenn die Vorperiode Heizkosten der Anlage abgerechnet hat (C1, N2).
-          alreadySettled: row.openingAlreadySettled ?? previousFuelOf(previousPeriod(rules, p)) !== null,
-          settledSource: row.openingAlreadySettled === null || row.openingAlreadySettled === undefined ? 'default' as const : 'entered' as const,
+          alreadySettled: row.openingAlreadySettled ?? settledByDefault(previousFuelOf(previousPeriod(rules, p)), row.openingCostCents ?? null) !== null,
+          settledSource: row.openingAlreadySettled === null || row.openingAlreadySettled === undefined
+            ? (settledByDefault(previousFuelOf(previousPeriod(rules, p)), row.openingCostCents ?? null) ?? 'default')
+            : 'entered' as const,
         }
         : null,
       previousFuel: previousFuelOf(previousPeriod(rules, p)),

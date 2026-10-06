@@ -1663,7 +1663,8 @@ export type HeatingStockStatement = {
   // Der eingetragene Anfangsbestand war schon umgelegt und zählt mit 0 €; hier sein Wert laut Eintrag,
   // und ob der Vermieter es angegeben hat oder Mietfuchs es nach der Vorperiode annimmt.
   openingSettledCents?: number | null
-  openingSettledSource?: 'entered' | 'default'
+  // `defaultLoose`: vorbelegt nur nach Heizpositionen ohne Kennzeichen „Brennstoff“ (Nachprüfung von 7ce5958).
+  openingSettledSource?: 'entered' | 'default' | 'defaultLoose'
   closingMeasuredOn: string | null
   consumed: { quantity: number; costCents: number | null; emissionsKg: number; co2Cents: number }
   // Σ der Lieferungen dieser Heizperiode; null, wenn eine keinen Betrag hat.
