@@ -33,9 +33,9 @@
 // nächste, der eine Spalte hinzufügt.
 
 import { and, count, desc, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm'
-import type { BillingPeriod, CostItem, ExternalBasis, HeatingPrepaymentOverride, Meter, MeterType, Payment, PeriodKey, PeriodRules, PersonEntry, PrepaymentEntry, Property, Reading, RentEntry, SplitPreviewPart, Tenancy, Unit, UnitDependents } from '../../../shared/types.ts'
+import type { BillingPeriod, CostItem, ExternalBasis, HeatingPlant, HeatingPrepaymentOverride, Meter, MeterType, Payment, PeriodKey, PeriodRules, PersonEntry, PrepaymentEntry, Property, Reading, RentEntry, SplitPreviewPart, Tenancy, Unit, UnitDependents } from '../../../shared/types.ts'
 import { CALENDAR_RULES, calendarPeriod, paymentYear, formatDayRange, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, spansTwoYears, startYearOf } from '../../../shared/period.ts'
-import { heatingPeriodsEndingIn, isObjectPeriod, plantRules, servesUnit, spanOf } from '../../../shared/heatingPeriod.ts'
+import { heatingPeriodsEndingIn, isObjectPeriod, plantRules, plantSpan, servesUnit, spanOf } from '../../../shared/heatingPeriod.ts'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 import { andList } from '../../../shared/wording.ts'
 import type { MigratedSettings } from '../ai/settings.ts'
@@ -482,9 +482,31 @@ const HKV_KEY =
   'Nach Heizkostenverteilern verteilt Mietfuchs noch nicht selbst; dafür braucht es die Bewertungsfaktoren der Geräte, und die kommen mit einer späteren Version. ' +
   'Übernehmen Sie bis dahin die Abrechnung des Messdienstes als Einzelbeträge (Schlüssel „Einzelbeträge“).'
 
-async function plantOf(db: Executor, plantId: string): Promise<{ propertyId: string } | undefined> {
-  return (await db.select({ propertyId: heatingPlants.propertyId }).from(heatingPlants).where(eq(heatingPlants.id, plantId)))[0]
+async function plantOf(db: Executor, plantId: string): Promise<{ propertyId: string; supply: HeatingPlant['supply']; name: string } | undefined> {
+  return (await db.select({ propertyId: heatingPlants.propertyId, supply: heatingPlants.supply, name: heatingPlants.name }).from(heatingPlants).where(eq(heatingPlants.id, plantId)))[0]
 }
+
+// Hängt die Wohnung an der Anlage (Heizung PR 9)? Mit Liste, wenn sie darin steht; ohne Liste jede
+// Wohnung des Objekts ohne „kein Anschluss: Wärme“ (#117), wie `servesUnit` in shared/heatingPeriod.ts.
+export async function plantServesUnit(db: Executor, plantId: string, unitId: string): Promise<boolean> {
+  const [p] = await db.select({ propertyId: heatingPlants.propertyId, limited: heatingPlants.unitsLimited }).from(heatingPlants).where(eq(heatingPlants.id, plantId))
+  if (!p) return false
+  const [u] = await db.select({ propertyId: units.propertyId }).from(units).where(eq(units.id, unitId))
+  if (!u || u.propertyId !== p.propertyId) return false
+  return plantServes(db, plantId, p.limited, unitId)
+}
+
+// Die Tage, an denen eine Anlage heizt, aus den Tabellen (für die Prüfung der Lieferungen, db/fuel.ts).
+export async function plantSpanOf(db: Executor, plantId: string): Promise<{ from: string | null; to: string | null; name: string }> {
+  const [p] = await db.select({ id: heatingPlants.id, name: heatingPlants.name, endsOn: heatingPlants.endsOn, replacesPlantId: heatingPlants.replacesPlantId }).from(heatingPlants).where(eq(heatingPlants.id, plantId))
+  if (!p) return { from: null, to: null, name: '' }
+  const before = p.replacesPlantId === null
+    ? []
+    : await db.select({ id: heatingPlants.id, endsOn: heatingPlants.endsOn, replacesPlantId: heatingPlants.replacesPlantId }).from(heatingPlants).where(eq(heatingPlants.id, p.replacesPlantId))
+  return { ...plantSpan(p, before), name: p.name }
+}
+
+const PER_UNIT_DIRECT = 'Die Kosten einer Etagenheizung gehören zu genau einer Wohnung. Bitte wählen Sie den Schlüssel „Direktzuordnung“ und die Wohnung, deren Heizung die Rechnung betrifft.'
 
 async function isPeriodClosed(db: Executor, propertyId: string, period: CostItem['period']): Promise<boolean> {
   const rows = await db.select({ id: closedSettlements.id }).from(closedSettlements)
@@ -660,23 +682,66 @@ async function guardFuelLink(db: Executor, before: CostItem | null, after: CostI
   }
 }
 
-// Die Anlage, die eine neue Heizposition ohne Angabe bekommt: die einzige ihres Objekts, außer ihr
-// Zeitraum ist abgeschlossen (Entwurf 3.0). Rechnet die Anlage in eigenen Heizperioden ab (Heizung
-// PR 5), kommt die Position in die Heizperiode, die in ihrem Objektzeitraum endet, mit dem Jahr der
-// Zahlung des Objektzeitraums, wenn die Heizperiode über zwei Kalenderjahre reicht; so legt ein Tab
-// von vor dem Update oder die Belegbuchung keine Position unter einem Schlüssel an, den es für die
-// Anlage nicht gibt. Endet dort keine oder mehr als eine Heizperiode, bleibt sie ohne Anlage, und
-// der Vermieter ordnet sie zu.
+// Die Wohnungen, die eine Position selbst nennt (Heizung PR 9): bei Direktzuordnung ihre Wohnung, mit
+// Teilnehmern diese, bei Einzelbeträgen die Wohnungen der Mietverhältnisse und die eigenen Wohnungen
+// mit Betrag. Ohne solche Angabe verteilt die Position über das ganze Haus und nennt keine.
+async function namedUnitsOf(db: Executor, c: CostItem): Promise<string[]> {
+  if (c.key === 'direct') return c.directUnitId ? [c.directUnitId] : []
+  if (c.participantUnitIds) return [...new Set(c.participantUnitIds)]
+  if (c.key === 'amounts') {
+    const ids = Object.keys(c.tenancyAmounts ?? {})
+    const rows = ids.length > 0 ? await db.select({ unitId: tenancies.unitId }).from(tenancies).where(inArray(tenancies.id, ids)) : []
+    return [...new Set([...rows.map((r) => r.unitId), ...Object.keys(c.selfAmounts ?? {})])]
+  }
+  return []
+}
+
+// Die Anlage einer neuen Heizposition ohne Angabe (Heizung PR 9, Festlegung 4): die einzige des
+// Objekts; bei mehreren die, an der alle von der Position genannten Wohnungen hängen. Nennt sie keine
+// oder liegen sie an verschiedenen Anlagen, keine, und der Vermieter ordnet zu. Ab zwei Anlagen hat
+// jede ihre Liste (heating.ts, `guardPlantsOfProperty`).
+export async function plantForNewItem(db: Executor, c: CostItem): Promise<string | null> {
+  // Mit verknüpfter Lieferung deren Anlage (Recht I7 der Durchsicht von #238); eine abweichende Angabe
+  // lehnt `guardFuelLink` ab.
+  if (c.fuelDeliveryId) {
+    const [d] = await db.select({ plantId: fuelDeliveries.plantId }).from(fuelDeliveries).where(eq(fuelDeliveries.id, c.fuelDeliveryId))
+    if (d) return d.plantId
+  }
+  const plants = await db.select({ id: heatingPlants.id, endsOn: heatingPlants.endsOn, replacesPlantId: heatingPlants.replacesPlantId }).from(heatingPlants).where(eq(heatingPlants.propertyId, c.propertyId))
+  if (plants.length === 0) return null
+  const named = await namedUnitsOf(db, c)
+  const rows = await db.select({ plantId: heatingPlantUnits.plantId, unitId: heatingPlantUnits.unitId }).from(heatingPlantUnits)
+    .where(inArray(heatingPlantUnits.plantId, plants.map((p) => p.id)))
+  const fits = named.length === 0 || plants.length === 1 ? plants : plants.filter((p) => named.every((u) => rows.some((r) => r.plantId === p.id && r.unitId === u)))
+  // Kesseltausch: nur die Anlage, die zu Beginn des Leistungszeitraums heizt (ohne Leistungszeitraum zu
+  // Beginn des Zeitraums der Position). Eine stillgelegte Anlage bekommt nie eine Position für die Zeit
+  // danach (Durchsicht von #238, I1).
+  const day = c.serviceFrom ?? periodOfKey(await rulesForProperty(db, c.propertyId), c.period)?.from
+  if (day === undefined) return null
+  const active = fits.filter((p) => {
+    const span = plantSpan(p, plants)
+    return (span.from === null || span.from <= day) && (span.to === null || span.to >= day)
+  })
+  return active.length === 1 && active[0] ? active[0].id : null
+}
+
+// Die Anlage, die eine neue Heizposition ohne Angabe bekommt (Heizung PR 4, PR 5, PR 9): die aus
+// `plantForNewItem`, außer ihr Zeitraum ist abgeschlossen (Entwurf 3.0). Rechnet die Anlage in eigenen
+// Heizperioden ab (PR 5), kommt die Position in die Heizperiode, die in ihrem Objektzeitraum endet,
+// mit dem Jahr der Zahlung des Objektzeitraums, wenn die Heizperiode über zwei Kalenderjahre reicht; so
+// legt ein Tab von vor dem Update oder die Belegbuchung keine Position unter einem Schlüssel an, den es
+// für die Anlage nicht gibt. Endet dort keine oder mehr als eine Heizperiode, bleibt sie ohne Anlage,
+// und der Vermieter ordnet sie zu.
 // `invoiceDate` (Belegbuchung): Das Jahr der Zahlung einer Heizperiode über zwei Kalenderjahre ist das
 // Jahr des Rechnungsdatums, geklemmt in ihre Spanne (Entwurf 3.10, `paymentYear`).
 async function defaultHeatingPlant(db: Executor, c: CostItem, invoiceDate?: string | null): Promise<Pick<CostItem, 'heatingPlantId' | 'period' | 'taxYear'>> {
   const none = { heatingPlantId: null, period: c.period, taxYear: c.taxYear }
   if (c.category !== HEATING_CATEGORY) return none
-  const [einzige, ...weitere] = await db.select({ id: heatingPlants.id }).from(heatingPlants).where(eq(heatingPlants.propertyId, c.propertyId))
-  if (!einzige || weitere.length > 0) return none
+  const plantId = await plantForNewItem(db, c)
+  if (plantId === null) return none
   if (await isPeriodClosed(db, c.propertyId, c.period)) return none
-  const heating = await heatingRulesOf(db, einzige.id)
-  if (!heating?.own) return { ...none, heatingPlantId: einzige.id }
+  const heating = await heatingRulesOf(db, plantId)
+  if (!heating?.own) return { ...none, heatingPlantId: plantId }
   const p = periodOfKey(await rulesForProperty(db, c.propertyId), c.period)
   const enden = p === null ? [] : heatingPeriodsEndingIn(heating.rules, p)
   const h = enden.length === 1 ? enden[0] : undefined
@@ -685,7 +750,7 @@ async function defaultHeatingPlant(db: Executor, c: CostItem, invoiceDate?: stri
   // (mit `invoiceDate`) das Rechnungsdatum, geklemmt in die Heizperiode; sonst ein angegebenes Jahr,
   // ohne Angabe das Jahr des Endes der Heizperiode.
   const year = invoiceDate !== undefined ? paymentYear(h, invoiceDate, c.taxYear).year : c.taxYear ?? paymentYear(h, null).year
-  const neu = { heatingPlantId: einzige.id, period: h.key, taxYear: spansTwoYears(h) ? year : undefined }
+  const neu = { heatingPlantId: plantId, period: h.key, taxYear: spansTwoYears(h) ? year : undefined }
   return (await itemPeriodClosed(db, { ...c, ...neu })) ? none : neu
 }
 
@@ -702,6 +767,20 @@ async function guardCostItemHeating(db: Executor, before: CostItem | null, after
       `Die Kostenposition gehört zu Objekt ${await propertyName(db, after.propertyId)}, die Heizanlage aber zu ` +
         `${await propertyName(db, plant.propertyId)}. Eine Heizposition gehört zur Heizanlage ihres eigenen Objekts.`,
     )
+  }
+  // Etagenheizung (Heizung PR 9, Entwurf 11.2): jede Heizposition direkt bei einer Wohnung der Anlage;
+  // eine verknüpfte Rechnung gehört zu derselben Wohnung, sonst stammten C_u und A_u aus zwei Wohnungen.
+  if (plant.supply === 'perUnit') {
+    if (after.key !== 'direct' || !after.directUnitId) throw new HeatingError(400, PER_UNIT_DIRECT)
+    if (!(await plantServesUnit(db, plantId, after.directUnitId))) {
+      throw new HeatingError(400, `Die Wohnung dieser Position hängt nicht an der Etagenheizung „${plant.name}“. Bitte wählen Sie eine Wohnung der Anlage oder ordnen Sie die Position einer anderen Heizanlage zu.`)
+    }
+    if (after.fuelDeliveryId) {
+      const [d] = await db.select({ unitId: fuelDeliveries.unitId }).from(fuelDeliveries).where(eq(fuelDeliveries.id, after.fuelDeliveryId))
+      if (d && d.unitId !== after.directUnitId) {
+        throw new HeatingError(400, 'Die verknüpfte Rechnung gehört zu einer anderen Wohnung als die Position. Bitte verknüpfen Sie die Rechnung der Wohnung, der die Position zugeordnet ist.')
+      }
+    }
   }
   if ((before?.heatingPlantId ?? null) !== plantId && (await itemPeriodClosed(db, after))) {
     throw new HeatingError(409,

@@ -27,6 +27,11 @@
 // eingefroren, bucht die Heizperiode ihrer Positionen deren Teil trotzdem hinaus. Mit Schätzungen
 // gelten (ii) und (vii) nur, wenn am Ende jede Schätzung von echten verknüpften Rechnungen abgedeckt ist.
 //
+// Heizung PR 9: Die Variante „Zwei Anlagen“ rechnet dasselbe mit zwei Anlagen in einem Objekt (Haus A mit den
+// Wohnungen A und B, Haus B mit C), je mit eigenen Rechnungen. Dazu wird geprüft, dass jede Lieferung nur im
+// Ausweis ihrer eigenen Anlage steht und jede Gegenbuchung je Abrechnung genau einmal vorkommt (je Anlage und
+// Lieferung genau einmal verteilt), und dass je Anlage die Zeilen ihre Positionen ergeben.
+//
 // Feste Startwerte, im Lauf der Tests wenige; mehr mit INV_FROM/INV_TO (siehe SEEDS).
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -35,7 +40,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { eq } from 'drizzle-orm'
 import { computeSettlement } from '../src/calc.ts'
-import { createHeatingPlant } from '../src/db/heating.ts'
+import { createHeatingPlant, replaceHeatingPlant } from '../src/db/heating.ts'
 import { createDelivery, createEstimates, freezeFuelCarries, fuelGapQuestions, unfreezeFuelCarries } from '../src/db/fuel.ts'
 import { openDatabase } from '../src/db/open.ts'
 import { readClosedSettlements, readCostItems, readFuelCarryFrozen, readFuelDeliveries, readStock } from '../src/db/read.ts'
@@ -121,12 +126,43 @@ const SEEDS: number[] = process.env.INV_FROM !== undefined || process.env.INV_TO
   : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 16, 81]
 const STEPS = Number(process.env.INV_STEPS ?? 30)
 
-type Variant = { name: string; lazy: boolean; estimate: boolean }
+type Variant = { name: string; lazy: boolean; estimate: boolean; two?: boolean; swap?: boolean }
 const VARIANTS: Variant[] = [
   { name: 'Grundform', lazy: false, estimate: false },
   { name: 'Rechnung kommt später', lazy: true, estimate: false },
   { name: 'Abschluss mit Schätzung', lazy: true, estimate: true },
+  { name: 'Zwei Anlagen', lazy: false, estimate: false, two: true },
+  // Durchsicht von #238, I3: Gas wird an einem Tag durch Fernwärme ersetzt; die Rechnungen danach kommen
+  // erst nach dem Tausch und gehören der neuen Anlage.
+  { name: 'Kesseltausch', lazy: true, estimate: false, swap: true },
 ]
+
+// Heizung PR 9: Wem gehört eine Zeile? Übertrag und Gegenbuchung der Lieferung, CO₂-Zeilen dem Topf, sonst der
+// Position.
+const plantOfRow = (id: string, itemPlant: ReadonlyMap<string, string>, deliveryPlant: ReadonlyMap<string, string>): string | undefined => {
+  const [kind, ref] = id.split(':')
+  if (kind === 'fuel') return deliveryPlant.get(ref ?? '')
+  if (kind === 'co2' || kind === 'stock') return ref
+  return itemPlant.get(id)
+}
+
+// Je Abrechnung (auch eingefroren): Jede Lieferung steht nur im Ausweis ihrer Anlage, und keine Gegenbuchung
+// kommt zweimal vor.
+function onceEach(s: unknown, deliveryPlant: ReadonlyMap<string, string>, where: string): void {
+  const g = (o: unknown, k: string): unknown => (o !== null && typeof o === 'object' ? Reflect.get(o, k) : undefined)
+  const arr = (o: unknown, k: string): unknown[] => { const v = g(o, k); return Array.isArray(v) ? v : [] }
+  for (const h of arr(s, 'heating')) {
+    for (const line of arr(g(h, 'fuel'), 'deliveries')) {
+      const owner = deliveryPlant.get(String(g(line, 'deliveryId')))
+      assert.equal(owner, g(h, 'plantId'), `${where}: Lieferung ${String(g(line, 'deliveryId'))} im Ausweis von ${String(g(h, 'plantId'))}`)
+    }
+  }
+  const ids = arr(g(s, 'landlord'), 'rows').map((r) => String(g(r, 'costItemId'))).filter((id) => id.startsWith('fuel:'))
+  assert.equal(new Set(ids).size, ids.length, `${where}: Gegenbuchung doppelt: ${ids.join(', ')}`)
+}
+
+// Wie oft der Tausch in der Variante „Kesseltausch“ gelang (Abdeckung, letzter Test).
+const SWAPS = { runs: 0, done: 0 }
 
 for (const variant of VARIANTS) {
   for (const seed of SEEDS) {
@@ -137,32 +173,48 @@ for (const variant of VARIANTS) {
       const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-fuel-inv-'))
       const opened = await openDatabase({ dataDir })
       try {
-        const deliveries: { id: string; from: string; to: string }[] = []
-        const all: { id: string; from: string; to: string }[] = []
-        const pending: { id: string; body: Record<string, unknown> }[] = []
+        const deliveries: { id: string; from: string; to: string; plantId: string }[] = []
+        const all: { id: string; from: string; to: string; plantId: string }[] = []
+        const pending: { id: string; plantId: string; body: Record<string, unknown> }[] = []
         await opened.write(async (db) => {
           await db.update(properties).set({ periodStartMonth: 5 }).where(eq(properties.id, 'objekt-1'))
           await createEntity(db, 'units', 'a', { propertyId: 'objekt-1', name: 'A', areaM2: 60, participates: true })
           await createEntity(db, 'units', 'b', { propertyId: 'objekt-1', name: 'B', areaM2: 40, participates: true })
           await createEntity(db, 'tenancies', 'ta', { unitId: 'a', tenantName: 'Mieter A', persons: 1, start: '2020-01-01' })
           await createEntity(db, 'tenancies', 'tb', { unitId: 'b', tenantName: 'Mieter B', persons: 1, start: '2020-01-01' })
-          await createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'gas', method: 'manual' })
-          let start = variant.estimate ? '2024-05-01' : isoOf(Date.UTC(2024, 1, 1) + int(0, 120) * DAY)
-          for (let k = 0; k < 3; k++) {
-            const to = isoOf(Date.parse(`${start}T00:00:00Z`) + (int(300, 800) - 1) * DAY)
-            const body = { label: `Rechnung ${k}`, invoiceFrom: start, invoiceTo: to, fixedCents: rnd() < 0.5 ? int(0, 20000) : null }
-            all.push({ id: `d${k}`, from: start, to })
-            if (!variant.lazy || k === 0) {
-              await createDelivery(db, `d${k}`, 'hp', body)
-              deliveries.push({ id: `d${k}`, from: start, to })
-            } else {
-              pending.push({ id: `d${k}`, body })
+          if (variant.two) {
+            await createEntity(db, 'units', 'c', { propertyId: 'objekt-1', name: 'C', areaM2: 50, participates: true })
+            await createEntity(db, 'tenancies', 'tc', { unitId: 'c', tenantName: 'Mieter C', persons: 1, start: '2020-01-01' })
+            await createHeatingPlant(db, 'hp', 'objekt-1', { name: 'Haus A', energy: 'gas', method: 'manual', units: [{ unitId: 'a', heatedAreaM2: null }, { unitId: 'b', heatedAreaM2: null }] })
+            await createHeatingPlant(db, 'hp2', 'objekt-1', { buildingWith: 'own', name: 'Haus B', energy: 'gas', method: 'manual', units: [{ unitId: 'c', heatedAreaM2: null }] })
+          } else {
+            await createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'gas', method: 'manual' })
+          }
+          for (const plantId of variant.two ? ['hp', 'hp2'] : ['hp']) {
+            let start = variant.estimate ? '2024-05-01' : isoOf(Date.UTC(2024, 1, 1) + int(0, 120) * DAY)
+            const prefix = plantId === 'hp' ? 'd' : 'e'
+            for (let k = 0; k < 3; k++) {
+              const to = isoOf(Date.parse(`${start}T00:00:00Z`) + (int(300, 800) - 1) * DAY)
+              const body = { label: `Rechnung ${prefix}${k}`, invoiceFrom: start, invoiceTo: to, fixedCents: rnd() < 0.5 ? int(0, 20000) : null }
+              // Kesseltausch: Die Rechnungen ab der zweiten gehören der neuen Anlage.
+              const owner = variant.swap && k > 0 ? 'hp2' : plantId
+              all.push({ id: `${prefix}${k}`, from: start, to, plantId: owner })
+              if (!variant.lazy || k === 0) {
+                await createDelivery(db, `${prefix}${k}`, plantId, body)
+                deliveries.push({ id: `${prefix}${k}`, from: start, to, plantId })
+              } else {
+                pending.push({ id: `${prefix}${k}`, plantId: owner, body })
+              }
+              start = isoOf(Date.parse(`${to}T00:00:00Z`) + DAY)
             }
-            start = isoOf(Date.parse(`${to}T00:00:00Z`) + DAY)
           }
         })
+        const deliveryPlant = new Map(all.map((d) => [d.id, d.plantId]))
+        const itemPlant = new Map<string, string>()
         const keys: string[] = []
-        for (let p = periodContaining(MAI, all[0]?.from ?? ''); p.from <= (all[2]?.to ?? ''); p = periodContaining(MAI, isoOf(Date.parse(`${p.to}T00:00:00Z`) + DAY))) keys.push(p.key)
+        const firstFrom = all.reduce((a, d) => (d.from < a ? d.from : a), all[0]?.from ?? '')
+        const lastTo = all.reduce((a, d) => (d.to > a ? d.to : a), '')
+        for (let p = periodContaining(MAI, firstFrom); p.from <= lastTo; p = periodContaining(MAI, isoOf(Date.parse(`${p.to}T00:00:00Z`) + DAY))) keys.push(p.key)
         const periodOf = (key: string) => periodOfKey(MAI, periodKey(key)) ?? assert.fail(`kein Zeitraum ${key}`)
         const log: string[] = []
         const attempt = async (what: string, run: () => Promise<unknown>) => {
@@ -178,15 +230,38 @@ for (const variant of VARIANTS) {
         const atClose = new Map<string, number>()
         const unlinkedFrom = new Map<string, string>()
         const positionsIn = async (key: string) => (await opened.read((db) => readCostItems(db))).filter((c) => c.category === HEATING_CATEGORY && c.period === key).reduce((a, c) => a + c.amountCents, 0)
-        const link = (id: string, d: { id: string; to: string }, amountCents: number, key: 'area' | 'units') => {
+        const link = async (id: string, d: { id: string; to: string; plantId: string }, amountCents: number, key: 'area' | 'units') => {
           const owner = periodContaining(MAI, d.to)
-          return opened.write((db) => createEntity(db, 'costItems', id, {
+          // Mit zwei Anlagen verteilt jede Position nur über die Wohnungen ihrer Anlage.
+          const participants = variant.two ? { participantUnitIds: d.plantId === 'hp' ? ['a', 'b'] : ['c'] } : {}
+          const made = await opened.write((db) => createEntity(db, 'costItems', id, {
             propertyId: 'objekt-1', period: owner.key, category: HEATING_CATEGORY, description: id, amountCents, key,
-            heatingPlantId: 'hp', fuelDeliveryId: d.id, taxYear: Number(owner.to.slice(0, 4)),
+            heatingPlantId: d.plantId, fuelDeliveryId: d.id, taxYear: Number(owner.to.slice(0, 4)), ...participants,
           }))
+          itemPlant.set(id, d.plantId)
+          return made
         }
-        const arrive = async (next: { id: string; body: Record<string, unknown> }, mark: string) => {
-          await opened.write((db) => createDelivery(db, next.id, 'hp', next.body))
+        // Der Tausch am ersten Tag der zweiten Rechnung; er kann abgelehnt werden (abgeschlossene Heizperiode).
+        let swapped = false
+        if (variant.swap) SWAPS.runs++
+        const swapDate = all[1]?.from ?? ''
+        const replace = async (mark: string) => {
+          if (!variant.swap || swapped) return
+          try {
+            await opened.write((db) => replaceHeatingPlant(db, 'hp', 'hp2', { date: swapDate, energy: 'districtHeating', name: 'Fernwärme', previousName: 'Gas' }))
+            swapped = true
+            SWAPS.done++
+            log.push(`${mark} ${swapDate}`)
+          } catch (err) {
+            if (!rejected(err)) throw err
+          }
+        }
+        const arrive = async (next: { id: string; plantId: string; body: Record<string, unknown> }, mark: string) => {
+          if (next.plantId === 'hp2' && variant.swap) {
+            await replace('replace')
+            if (!swapped) return
+          }
+          await opened.write((db) => createDelivery(db, next.id, next.plantId, next.body))
           const a = all.find((x) => x.id === next.id)
           if (a) deliveries.push(a)
           log.push(`${mark} ${next.id}`)
@@ -197,8 +272,9 @@ for (const variant of VARIANTS) {
           if (!d) continue
           const items = (await opened.read((db) => readCostItems(db))).filter((c) => c.fuelDeliveryId === d.id)
           if (op === 'arrive') {
-            const next = pending.shift()
+            const next = pending[0]
             if (next) await arrive(next, 'arrive')
+            if (next && deliveries.some((x) => x.id === next.id)) pending.shift()
           } else if (op === 'amount') {
             const c = pick(items)
             if (!c) continue
@@ -257,6 +333,10 @@ for (const variant of VARIANTS) {
             })
           }
         }
+        if (variant.swap) for (const next of [...pending]) {
+          await arrive(next, 'arrive*')
+          if (deliveries.some((x) => x.id === next.id)) pending.splice(pending.indexOf(next), 1)
+        }
         if (variant.estimate) {
           // Am Ende kommen alle Rechnungen und werden verknüpft, wo es geht; dann ist jede Schätzung durch
           // eine echte Rechnung ersetzt oder ihr Teil als Abweichung ausgewiesen.
@@ -284,6 +364,28 @@ for (const variant of VARIANTS) {
           const r = stored ? null : computeSettlement(snapshotFor(stock, 'objekt-1', periodOf(key)), {})
           if (r) live.set(key, r)
           const t = totals(stored ? stored.settlement : r)
+          if (variant.two || (variant.swap && swapped)) {
+            onceEach(stored ? stored.settlement : r, deliveryPlant, `${fall}; ${key}`)
+            // Kesseltausch: Die neue Anlage zeigt keine Lücke vor dem Tausch, und keine Anlage steht in einem
+            // Zeitraum, in dem sie nicht heizt.
+            if (r && variant.swap) {
+              const gaps = r.heating?.find((h) => h.plantId === 'hp2')?.fuel?.gaps ?? []
+              assert.ok(gaps.every((g) => g.from >= swapDate), `${fall}; Lücke der neuen Anlage vor dem Tausch in ${key}: ${JSON.stringify(gaps)}`)
+              for (const h of r.heating ?? []) {
+                const p = periodOf(key)
+                const alive = h.plantId === 'hp' ? p.from < swapDate : p.to >= swapDate
+                assert.ok(alive || !h.fuel, `${fall}; ${h.plantId} rechnet Lieferungen in ${key}, obwohl sie dort nicht heizt`)
+              }
+            }
+            if (r) {
+              // Je Anlage ergeben ihre Zeilen ihre Positionen.
+              for (const plantId of ['hp', 'hp2']) {
+                const rows: { costItemId: string; shareCents: number }[] = [...r.statements.flatMap((st) => st.rows), ...r.landlord.rows].filter((row) => plantOfRow(row.costItemId, itemPlant, deliveryPlant) === plantId)
+                const mine = items.filter((c) => c.period === key && c.heatingPlantId === plantId).reduce((a, c) => a + c.amountCents, 0)
+                assert.equal(rows.reduce((a, row) => a + row.shareCents, 0), mine, `${fall}; Zeilen von ${plantId} in ${key}`)
+              }
+            }
+          }
           const here = stored ? (atClose.get(key) ?? assert.fail(`${fall}; ${key} ohne Stand beim Abschluss`)) : items.filter((c) => c.period === key).reduce((a, c) => a + c.amountCents, 0)
           assert.equal(t.tenants + t.landlord, here, `${fall}; Σ Zeilen in ${key}`)
           positions += here
@@ -330,7 +432,7 @@ for (const variant of VARIANTS) {
           const r = live.get(owner)
           if (!r || T === 0) continue
           for (const f of frozen.filter((x) => x.deliveryId === d.id && x.cents === 0 && x.period !== owner && closed.some((c) => c.period === x.period))) {
-            const carry = r.heating?.[0]?.fuel?.carries.find((c) => c.deliveryId === d.id && c.period === f.period)
+            const carry = r.heating?.find((h) => h.plantId === d.plantId)?.fuel?.carries.find((c) => c.deliveryId === d.id && c.period === f.period)
             assert.ok(carry && carry.cents !== 0, `${fall}; ${d.id} bucht den Teil für ${f.period} nicht hinaus`)
           }
         }
@@ -341,3 +443,8 @@ for (const variant of VARIANTS) {
     })
   }
 }
+
+test('Invariante, Kesseltausch: Abdeckung', () => {
+  if (SWAPS.runs < 10) return
+  assert.ok(SWAPS.done * 3 >= SWAPS.runs * 2, `nur ${SWAPS.done} von ${SWAPS.runs} Läufen getauscht`)
+})

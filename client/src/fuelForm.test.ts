@@ -1,7 +1,7 @@
-import { expect, test } from 'vitest'
+import { describe, expect, test } from 'vitest'
 import { fmtEuro } from './api'
 import {
-  degreeDaysBody, degreeDaysToForm, deliveryLine, deliveryOptions, emptyFuelForm, fuelBody, fuelToForm, monthsOf, ownedBy, RESTRICTION_OPTIONS, stockFuelBody,
+  degreeDaysBody, degreeDaysToForm, deliveryLine, deliveryOptions, deliveryUnitId, emptyFuelForm, fuelBody, fuelToForm, monthsOf, ownedBy, RESTRICTION_OPTIONS, stockFuelBody,
 } from './fuelForm'
 import type { FuelDelivery } from './types'
 
@@ -83,4 +83,21 @@ test('Lieferung für den Vorrat: Lieferdatum und Menge statt Rechnungszeitraum; 
   expect(deliveryOptions([oel])[1]?.label).toBe('Lieferung vom 10.10.2025')
   expect(ownedBy([oel], { from: '2025-01-01', to: '2025-12-31' }).map((d) => d.id)).toEqual(['o'])
   expect(ownedBy([oel], { from: '2026-01-01', to: '2026-12-31' })).toEqual([])
+})
+
+describe('Rechnung einer Etagenheizung (Heizung PR 9)', () => {
+  test('das Formular führt die Wohnung', () => {
+    expect(emptyFuelForm().unitId).toBe('')
+    expect(fuelToForm({ ...gas, unitId: 'og' }).unitId).toBe('og')
+  })
+  test('bei perUnit Pflicht, bei zentraler Anlage leer', () => {
+    expect(deliveryUnitId({ unitId: '' }, { supply: 'perUnit' })).toEqual({ error: 'Bitte wählen Sie die Wohnung, deren Heizung die Rechnung betrifft.' })
+    expect(deliveryUnitId({ unitId: 'og' }, { supply: 'perUnit' })).toEqual({ unitId: 'og' })
+    expect(deliveryUnitId({ unitId: 'og' }, { supply: 'central' })).toEqual({ unitId: null })
+  })
+  test('fuelBody schickt keine Wohnung; die setzt die Karte', () => {
+    const r = fuelBody({ ...emptyFuelForm(), invoiceFrom: '2025-01-01', invoiceTo: '2025-12-31', unitId: 'og' }, 'manual')
+    if ('error' in r) throw new Error(r.error)
+    expect('unitId' in r.body).toBe(false)
+  })
 })

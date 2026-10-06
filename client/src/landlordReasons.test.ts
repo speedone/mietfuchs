@@ -20,7 +20,7 @@ test('mehrere Gründe: jeder mit seinem Betrag', () => {
 })
 
 test('jeder Grund hat eine Beschriftung', () => {
-  const reasons = ['notAllocable', 'noBasis', 'selfUse', 'vacancy', 'flatRate', 'inclusive', 'outsideUnit', 'amountsRest', 'customRest', 'mainMeterRest', 'co2Share', 'fuelCarry', 'fuelClosedPeriod', 'fuelEstimateDiff', 'rounding'] as const
+  const reasons = ['notAllocable', 'noBasis', 'selfUse', 'vacancy', 'flatRate', 'inclusive', 'outsideUnit', 'amountsRest', 'customRest', 'mainMeterRest', 'co2Share', 'fuelCarry', 'fuelClosedPeriod', 'fuelEstimateDiff', 'stockRemaining', 'rounding'] as const
   for (const reason of reasons) {
     const text = landlordReasonText(row({ landlordParts: [{ reason, cents: 50000 }] }))
     expect(text).not.toBe('')

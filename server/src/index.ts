@@ -48,7 +48,7 @@ import {
 import { heatingPeriodViews, removeCo2Statement, saveCo2Statement, saveHotWater } from './db/co2.ts'
 import { removeStock, saveStock } from './db/fuelStock.ts'
 import { createDelivery, createEstimates, freezeFuelCarries, fuelGapQuestions, listDegreeDays, listDeliveries, removeDelivery, saveDegreeDays, unfreezeFuelCarries, updateDelivery } from './db/fuel.ts'
-import { assignableHeatingItems, createHeatingPlant, listHeatingPlants, removeHeatingPlant, updateHeatingPlant } from './db/heating.ts'
+import { assignableHeatingItems, createHeatingPlant, listHeatingPlants, removeHeatingPlant, replaceHeatingPlant, updateHeatingPlant } from './db/heating.ts'
 import { applyHeatingPeriodChange, previewHeatingPeriodChange } from './db/heatingPeriodChange.ts'
 import { testTodayOf } from './testToday.ts'
 import { applySeparate, previewSeparate } from './db/separateSettlement.ts'
@@ -518,6 +518,13 @@ app.get('/api/heating-plants/assignable', async (req, res) => {
 app.post('/api/heating-plants', async (req, res) => {
   res.status(201).json(await writeData(async (db) => createHeatingPlant(db, newId(), await propertyOf(db, req, true), bodyObject(req))))
 })
+// Kesseltausch (Heizung PR 9): Die Anlage endet am Tag vor `date`, eine neue beginnt mit denselben
+// Wohnungen (db/heating.ts, `replaceHeatingPlant`).
+app.post('/api/heating-plants/:id/replace', async (req, res) => {
+  const result = await writeData((db) => replaceHeatingPlant(db, req.params.id, newId(), bodyObject(req)))
+  if (!result) return res.status(404).json({ error: 'Diese Heizanlage gibt es nicht (mehr). Bitte laden Sie die Seite neu.' })
+  res.status(201).json(result)
+})
 app.put('/api/heating-plants/:id', async (req, res) => {
   const plant = await writeData((db) => updateHeatingPlant(db, req.params.id, bodyObject(req)))
   if (!plant) return res.status(404).json({ error: 'Diese Heizanlage gibt es nicht (mehr). Bitte laden Sie die Seite neu.' })
@@ -525,7 +532,7 @@ app.put('/api/heating-plants/:id', async (req, res) => {
 })
 app.delete('/api/heating-plants/:id', async (req, res) => {
   const result = await writeData((db) => removeHeatingPlant(db, req.params.id))
-  if (result.removed) return res.json({ ok: true, released: result.released })
+  if (result.removed) return res.json({ ok: true, released: result.released, notice: result.notice })
   if (result.reason === 'missing') return res.status(404).json({ error: 'Diese Heizanlage gibt es nicht (mehr). Bitte laden Sie die Seite neu.' })
   if (result.reason === 'co2') {
     return res.status(409).json({

@@ -22,7 +22,7 @@ import { sql } from 'drizzle-orm'
 import { APP_VERSION } from '../version.ts'
 import { applyMigrations, connect, loadMigrations } from './client.ts'
 import { crossPropertyViolations, orphanPeriodKeys } from './repository.ts'
-import { heatingPlantViolations } from './heating.ts'
+import { heatingPlantViolations, straightenHeatingPlants } from './heating.ts'
 import { germanDate, integrityProblem, messageOf, unknownSteps, type OpenedDatabase } from './open.ts'
 
 // Die Namen im Archiv. Die Datenbank heißt darin wie im Datenordner, damit jemand, der das ZIP
@@ -147,6 +147,12 @@ export async function archiveDatabaseProblem(file: string): Promise<string | nul
     }
     // Die Heizanlagen (Heizung PR 4): Verweise über Objektgrenzen, überlappende Anlagen und
     // Heizperioden ohne Zeitraum. Dieselbe Haltung wie bei den Verweisen darüber.
+    // Ein Verweis auf eine ersetzte Anlage, die es nicht mehr gibt, wird geradegerückt (Durchsicht von
+    // #238, C2); die Nachfolgerin gilt dann als Anlage ohne Vorgängerin.
+    const geradegerueckt = await straightenHeatingPlants(connection.db)
+    if (geradegerueckt.length > 0) {
+      console.warn(`Wiederherstellen: ${geradegerueckt.map((n) => `„${n}“`).join(', ')} verwies auf eine Heizanlage, die es im Archiv nicht mehr gibt (Vorgängerin oder Gebäude); der Verweis wurde entfernt.`)
+    }
     const heizung = await heatingPlantViolations(connection.db)
     if (heizung.length > 0) {
       return (

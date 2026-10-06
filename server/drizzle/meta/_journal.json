@@ -183,6 +183,13 @@
       "when": 1791248444405,
       "tag": "0025_vorrat_bedingungen",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "6",
+      "when": 1791288318828,
+      "tag": "0026_kesseltausch",
+      "breakpoints": true
     }
   ]
 }

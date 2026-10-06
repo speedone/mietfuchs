@@ -72,6 +72,9 @@ export function settledByDefault(prev: PreviousFuel | null | undefined, openingC
 export type StockPeriodInput = {
   key: PeriodKey
   label: string
+  // Kesseltausch mit demselben Brennstoff (Heizung PR 9): Die Heizperiode gehört der Anlage davor, deren
+  // Restbestand die Kette übernimmt; ihr Name für die Hinweise. Fehlt bei der eigenen Anlage.
+  plantName?: string
   from: string
   to: string
   unit: StockUnit | null
@@ -403,6 +406,17 @@ export const isStockFuelItem = (c: StockKeyItem, plantId: string, heatingCategor
 
 // Die Position, deren Schlüssel die Überträge folgen: die Brennstoffposition dieser Heizperiode mit dem
 // größten Betrag, sonst die jüngste der Vorperiode. Schnappschuss und Abrechnung fragen dieselbe Regel.
+// Kesseltausch mit demselben Brennstoff (Nachprüfung von #238, K1): Hat die neue Anlage noch keine eigene
+// Brennstoffposition, folgt der Übertrag dem Schlüssel der Vorgängerin. `plantIds`: die Anlage und ihre
+// Vorgängerinnen mit demselben Brennstoff, die nächste zuerst.
+export function stockTemplateOfLine<T extends StockKeyItem>(current: readonly T[], previous: readonly T[], plantIds: readonly string[], heatingCategory: string): T | null {
+  for (const id of plantIds) {
+    const t = stockTemplateOf(current, previous, id, heatingCategory)
+    if (t) return t
+  }
+  return null
+}
+
 export function stockTemplateOf<T extends StockKeyItem>(current: readonly T[], previous: readonly T[], plantId: string, heatingCategory: string): T | null {
   const ok = (c: T) => isStockFuelItem(c, plantId, heatingCategory) && KEYED.includes(c.key)
   const largest = current.filter(ok).reduce<T | null>((a, c) => (a === null || c.amountCents > a.amountCents ? c : a), null)

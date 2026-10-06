@@ -20,6 +20,7 @@ const LABELS: Record<LandlordReason, string> = {
   fuelCarry: 'Brennstoff einer anderen Heizperiode (Abgrenzung)',
   fuelClosedPeriod: 'Brennstoff einer abgeschlossenen Heizperiode',
   fuelEstimateDiff: 'Abweichung von der Schätzung',
+  stockRemaining: 'Restbestand im Vorrat nach einem Kesseltausch (gehört Ihnen)',
   rounding: 'Rundungsrest',
 }
 
