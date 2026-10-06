@@ -1452,7 +1452,8 @@ export type Co2Assessment = {
   // Woher die Angaben stammen (Heizung PR 7): laut Messdienst oder von Mietfuchs aus den Lieferungen,
   // dann mit der Abdeckung der Heizperiode durch die Rechnungen in Promille der Gradtage. Fehlt das
   // Feld (vor PR 7 abgeschlossen), sind es Angaben laut Messdienst.
-  basis?: 'service' | 'deliveries'
+  // `stock`: aus der Bestandsrechnung des Vorrats (Heizung PR 8).
+  basis?: 'service' | 'deliveries' | 'stock'
   coveragePermille?: number | null
   // Bei der eigenen Aufteilung: § 8 und § 9, und woher die Fläche der Einstufung stammt (eingetragen
   // oder die Wohnfläche der versorgten Wohnungen, Entwurf 9.2, 9.5).
