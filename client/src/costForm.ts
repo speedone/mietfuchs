@@ -1,7 +1,7 @@
 // Entscheidungslogik des Kostenposition-Formulars, bewusst getrennt von der Darstellung:
 // Auswahllisten, Validierung und der Rumpf, der an die API geht. Diese Stelle bestimmt, was
 // tatsächlich gespeichert wird — sie ist in client/src/costForm.test.ts geprüft.
-import type { BillingPeriod, CostItem, CostKey, ExternalMeasure, Meter, MeterType, PeriodKey, SplitPreviewPart, Tenancy, Unit } from './types'
+import type { BillingPeriod, CostItem, CostKey, ExternalMeasure, HeatingPart, Meter, MeterType, PeriodKey, SplitPreviewPart, Tenancy, Unit } from './types'
 import { CATEGORIES, KEY_LABELS, defaultKeyFor, isNotAllocable } from './types'
 import { PARTICIPANT_KEYS as SHARED_PARTICIPANT_KEYS, allocationOf, comparablePrevious, previousAllocation, sameAllocation, type Allocation } from '../../shared/allocation.ts'
 import { parseEuro } from './api'
@@ -44,8 +44,9 @@ export type ItemForm = {
   serviceTo: string
   // Jahr der Zahlung als Text der Auswahl, leer heißt keine Angabe (#208)
   taxYear: string
-  // „Brennstoff/Energie“, nur bei Heizkosten (#208, A1)
-  heatingFuel: boolean
+  // Teil der Heizkosten, nur bei Heizkosten (#208, A1; Nachprüfung von #237: alle Werte des Modells),
+  // leer heißt keine Angabe
+  heatingPart: HeatingPart | ''
   invoiceFile?: string
 }
 
@@ -68,7 +69,7 @@ export const EMPTY_ITEM_FORM: ItemForm = {
   serviceFrom: '',
   serviceTo: '',
   taxYear: '',
-  heatingFuel: false,
+  heatingPart: '',
 }
 
 // Formular aus einer gespeicherten Position füllen
@@ -95,7 +96,7 @@ export function itemToForm(i: CostItem): ItemForm {
     serviceFrom: i.serviceFrom ?? '',
     serviceTo: i.serviceTo ?? '',
     taxYear: i.taxYear !== undefined ? String(i.taxYear) : '',
-    heatingFuel: i.heatingPart === 'fuel',
+    heatingPart: i.heatingPart ?? '',
     invoiceFile: i.invoiceFile ?? undefined,
   }
 }
@@ -224,6 +225,16 @@ export const basisUnitsOf = (units: Unit[]) => units.filter(inBasis)
 // Auswahllisten. Beide halten dieselbe Regel ein: der gespeicherte Wert steht immer in der
 // Liste. Fehlt er, zeigt ein Select im Browser den ersten Eintrag an, während der State
 // unverändert bleibt — gespeichert würde dann etwas anderes als das, was zu sehen ist.
+// Die Auswahl „Teil der Heizkosten“ (Nachprüfung von #237): alle Werte des Modells und „ohne Angabe“.
+// Wie bei den übrigen Auswahlfeldern steht der gespeicherte Wert immer in der Liste, damit der Browser
+// zeigt, was gespeichert ist.
+export const HEATING_PART_OPTIONS: readonly { value: HeatingPart | ''; label: string }[] = [
+  { value: '', label: 'ohne Angabe' },
+  { value: 'fuel', label: 'Brennstoff/Energie (Gas, Öl, Fernwärme, Strom der Wärmepumpe)' },
+  { value: 'operating', label: 'Betrieb, Wartung, Strom der Heizung' },
+  { value: 'metering', label: 'Messdienst, Ablesung, Geräte' },
+]
+
 export function meterTypeOptions(unitMeterTypes: MeterType[], stored: MeterType | ''): MeterType[] {
   return [...new Set([...unitMeterTypes, ...(stored ? [stored] : [])])]
 }
@@ -460,7 +471,7 @@ function draftOf(form: ItemForm, units: Unit[], tenancies: Tenancy[] | undefined
     serviceFrom: form.serviceFrom || null,
     serviceTo: form.serviceTo || null,
     taxYear: form.taxYear === '' ? null : Number(form.taxYear),
-    heatingPart: form.heatingFuel ? 'fuel' : null,
+    heatingPart: form.heatingPart === '' ? null : form.heatingPart,
   }
 }
 

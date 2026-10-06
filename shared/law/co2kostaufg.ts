@@ -124,3 +124,33 @@ export const co2DistrictEtsNew: LawParam<{ readonly connectedAfter: string }, 'p
   versions: [{ value: { connectedAfter: '2023-01-01' }, source: checked('§ 2 Abs. 4 Satz 2 CO2KostAufG', '__2.html'), enacted: ENACTED }],
   describe: (v) => `nicht anzuwenden bei erstem Wärmeanschluss nach dem ${germanDate(v.connectedAfter)}`,
 }
+
+// CO₂-Kosten aus Brennstoff, der vor dem 01.01.2023 in Rechnung gestellt wurde, bleiben
+// unberücksichtigt (§ 11 Abs. 2 Satz 2: „Kohlendioxidkosten, die aufgrund des Verbrauchs von
+// Brennstoffmengen anfallen, die vor dem 1. Januar 2023 in Rechnung gestellt worden sind, bleiben
+// unberücksichtigt.“). Seine kg zählen für die Einstufung (Entwurf 3.9). Zeitregel `eventDate`: Es
+// zählt das Datum der Rechnung. `true` heißt „unberücksichtigt“. Heizung PR 8, für den Vorrat.
+export const co2CostsBefore: LawParam<boolean, 'eventDate'> = {
+  id: 'co2.costs-before',
+  title: 'CO₂-Kosten aus Rechnungen vor 2023',
+  norm: '§ 11 Abs. 2 Satz 2 CO2KostAufG',
+  timing: 'eventDate',
+  versions: [
+    { validTo: '2022-12-31', value: true, source: checked('§ 11 Abs. 2 Satz 2 CO2KostAufG', '__11.html'), enacted: ENACTED },
+    { validFrom: '2023-01-01', value: false, source: checked('§ 11 Abs. 2 Satz 2 CO2KostAufG', '__11.html'), enacted: ENACTED },
+  ],
+  describe: (v) => (v ? 'unberücksichtigt (in Rechnung gestellt vor dem 01.01.2023)' : 'berücksichtigt'),
+}
+
+// Die beiden Grenztage aus den Fassungen, für einen Altbestand, dessen Rechnung Mietfuchs nur als
+// „vor dem 01.01.2023“ kennt, und für Texte. Gerechnet wird mit `law(co2CostsBefore, …)`.
+export function co2CostsExcludedUntil(): string {
+  const last = co2CostsBefore.versions.find((v) => v.value)?.validTo
+  if (!last) throw new Error('Rechtsregister: Ende des § 11 Abs. 2 Satz 2 fehlt')
+  return last
+}
+export function co2CostsCountedFrom(): string {
+  const first = co2CostsBefore.versions.find((v) => !v.value)?.validFrom
+  if (!first) throw new Error('Rechtsregister: Beginn der berücksichtigten CO₂-Kosten fehlt')
+  return first
+}

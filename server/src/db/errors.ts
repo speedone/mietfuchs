@@ -138,6 +138,7 @@ const OWN_CHECK_MESSAGES: Readonly<Record<string, string>> = {
   heating_prepayment_overrides_months_order_valid:
     'Die Monate der Korrektur der Heizvorauszahlung enden vor ihrem Beginn. Bitte laden Sie die Seite neu; gespeichert wurde nichts.',
   heating_periods_heat_pct_valid: 'Der Verbrauchsanteil der Heizkosten ist ein Anteil am Ganzen, also nicht negativ und nicht größer als das Ganze.',
+  heating_periods_closing_measured_on_valid: 'Der Tag der Peilung ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie ihn im Kalender.',
   heating_periods_water_pct_valid: 'Der Verbrauchsanteil der Warmwasserkosten ist ein Anteil am Ganzen, also nicht negativ und nicht größer als das Ganze.',
   // CO₂ beim Messdienst (Heizung PR 6)
   co2_statements_service_complete:

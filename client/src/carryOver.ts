@@ -200,7 +200,7 @@ export function carryOverForm(row: CarryRow): ItemForm {
     // Ein Leistungszeitraum oder ein Jahr der Zahlung des Vorzeitraums gilt nicht für den neuen (#208).
     // Das Jahr der Zahlung kommt verschoben aus der Zeile (carryOverRows).
     serviceFrom: '', serviceTo: '', taxYear: row.taxYear ?? '',
-    heatingFuel: row.source.heatingPart === 'fuel',
+    heatingPart: row.source.heatingPart ?? '',
     invoiceFile: undefined,
   }
 }

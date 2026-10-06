@@ -25,6 +25,8 @@ import { suggestionBasis, totalColumnLabel, totalNote } from '../calcSteps'
 import { useToast, useConfirm } from '../components/feedback'
 import Table from '../components/Table'
 import Co2Block from '../components/Co2Block'
+import StockBlock from '../components/StockBlock'
+import { showsStock, stockBlock } from '../stockView'
 import FuelBlock from '../components/FuelBlock'
 import { fuelBlock } from '../fuelView'
 import { closeWithFuelQuestion } from '../fuelClose'
@@ -609,6 +611,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
               )}
               {/* Der Ausweis nach § 7 Abs. 3 CO2KostAufG (Heizung PR 6) wird mitgedruckt. */}
               {(data?.heating ?? []).map((h) => <Co2Block key={`${h.plantId}:${h.period}`} view={co2Block(h, st.tenancyId)} />)}
+              {(data?.heating ?? []).filter((h) => showsStock(h, st)).map((h) => <StockBlock key={`stock:${h.plantId}:${h.period}`} view={stockBlock(h)} />)}
               {(data?.heating ?? []).map((h) => <FuelBlock key={`fuel:${h.plantId}:${h.period}`} view={fuelBlock(h)} />)}
               {st.rows.length > 0 && (
                 <>

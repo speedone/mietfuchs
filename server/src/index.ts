@@ -46,6 +46,7 @@ import {
   TenantChangeError, unitDependents, writeSettings, type CollectionName,
 } from './db/repository.ts'
 import { heatingPeriodViews, removeCo2Statement, saveCo2Statement, saveHotWater } from './db/co2.ts'
+import { removeStock, saveStock } from './db/fuelStock.ts'
 import { createDelivery, createEstimates, freezeFuelCarries, fuelGapQuestions, listDegreeDays, listDeliveries, removeDelivery, saveDegreeDays, unfreezeFuelCarries, updateDelivery } from './db/fuel.ts'
 import { assignableHeatingItems, createHeatingPlant, listHeatingPlants, removeHeatingPlant, updateHeatingPlant } from './db/heating.ts'
 import { applyHeatingPeriodChange, previewHeatingPeriodChange } from './db/heatingPeriodChange.ts'
@@ -574,6 +575,18 @@ app.put('/api/heating-plants/:id/periods/:period/hot-water', async (req, res) =>
   const saved = await writeData((db) => saveHotWater(db, req.params.id, req.params.period, bodyObject(req)))
   if (!saved) return res.status(404).json({ error: NO_PLANT })
   res.json(saved)
+})
+
+// Vorrat je Heizperiode (Heizung PR 8): Was gespeichert wird, steht in db/fuelStock.ts.
+app.put('/api/heating-plants/:id/periods/:period/stock', async (req, res) => {
+  const saved = await writeData((db) => saveStock(db, req.params.id, req.params.period, bodyObject(req)))
+  if (!saved) return res.status(404).json({ error: NO_PLANT })
+  res.json(saved)
+})
+app.delete('/api/heating-plants/:id/periods/:period/stock', async (req, res) => {
+  const removed = await writeData((db) => removeStock(db, req.params.id, req.params.period))
+  if (removed === null) return res.status(404).json({ error: NO_PLANT })
+  res.json({ ok: true, removed })
 })
 
 // ---------- Brennstofflieferungen (Heizung PR 7) ----------

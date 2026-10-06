@@ -64,7 +64,9 @@ test('Lieferung: anlegen mit Teilmengen, ändern, lesen; „geschätzt“ setzt 
 test('Lieferung: Sperren dieser Version und Pflichtangaben, jede mit einem Satz', async () => {
   await withDatabase(async (opened) => {
     await bestand(opened, 'oil')
-    await assert.rejects(opened.write((db) => createDelivery(db, 'x', 'hp', gas)), heatingError(400, /Bestandsrechnung/))
+    // Seit Heizung PR 8: Bei Heizöl braucht eine Lieferung Lieferdatum und Menge statt eines Rechnungszeitraums.
+    await assert.rejects(opened.write((db) => createDelivery(db, 'x', 'hp', gas)), heatingError(400, /Lieferdatum/))
+    await assert.rejects(opened.write((db) => createDelivery(db, 'x', 'hp', { ...gas, deliveredAt: '2025-03-15', quantity: 1000, quantityUnit: 'l' })), heatingError(400, /Bestandsrechnung/))
   })
   await withDatabase(async (opened) => {
     await bestand(opened)

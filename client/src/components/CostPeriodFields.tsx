@@ -1,4 +1,4 @@
-import type { ItemForm } from '../costForm'
+import { HEATING_PART_OPTIONS, type ItemForm } from '../costForm'
 import Term from './Term'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 
@@ -28,9 +28,16 @@ export default function CostPeriodFields({ form, onChange, showTaxYear, years }:
         Abrechnungszeiträume teilt Mietfuchs beim Speichern nach Tagen auf; Heizkosten nicht.
       </p>
       {form.category === HEATING_CATEGORY && (
-        <label className="field checkline">
-          <input type="checkbox" checked={form.heatingFuel} onChange={(e) => onChange({ ...form, heatingFuel: e.target.checked })} />
-          <span>Brennstoff/Energie (Gas, Öl, Fernwärme, Strom der Wärmepumpe)</span>
+        <label className="field">
+          <span>Teil der Heizkosten (<Term id="fuelStock">Brennstoff</Term> oder anderes)</span>
+          <select aria-label="Teil der Heizkosten" value={form.heatingPart} onChange={(e) => onChange({ ...form, heatingPart: HEATING_PART_OPTIONS.find((o) => o.value === e.target.value)?.value ?? '' })}>
+            {HEATING_PART_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+          <small className="muted">
+            Brennstoff/Energie ist die Rechnung über Gas, Öl, Pellets, Fernwärme oder den Strom der Wärmepumpe. Wartung, Schornsteinfeger und
+            Betriebsstrom sind Betrieb, die Kosten des Messdienstes Ablesung. Mietfuchs braucht die Angabe für den Vorschlag der Vorauszahlung
+            und beim Vorrat, um zu erkennen, ob im Vorjahr schon Brennstoff abgerechnet wurde.
+          </small>
         </label>
       )}
       {showTaxYear && (

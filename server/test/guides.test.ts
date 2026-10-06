@@ -36,7 +36,7 @@ const ids = Object.keys(GUIDES) as GuideId[]
 // ---------- Aufbau ----------
 
 test('Anleitungen: die Vermietungsarten aus #164 und der Abrechnungszeitraum (#208), jede mit allen fünf Abschnitten', () => {
-  assert.deepEqual(ids, ['granny', 'multiFamily', 'condo', 'properties', 'garage', 'flatRate', 'meteringService', 'co2Costs', 'tenantChange', 'periodMayApril', 'supplierInvoice'])
+  assert.deepEqual(ids, ['granny', 'multiFamily', 'condo', 'properties', 'garage', 'flatRate', 'meteringService', 'co2Costs', 'tenantChange', 'periodMayApril', 'supplierInvoice', 'stockFuel'])
   const titles = ids.map((id) => GUIDES[id].title)
   assert.equal(new Set(titles).size, titles.length, 'doppelter Titel')
   for (const id of ids) {
@@ -382,6 +382,37 @@ const checks: Record<GuideId, () => void> = {
       eur(mieter(h1, 'ta') + mieter(h1, 'tb')), eur(mieter(h1, 'ta')), eur(mieter(h1, 'tb')),
     ], 'supplierInvoice')
   },
+  // Heizung PR 8 (Durchsicht von #237, I2): Heizöl mit Vorrat, zwei Lieferungen, nach Wohnfläche.
+  stockFuel: () => {
+    const lieferung = (id: string, deliveredAt: string, quantity: number, emissionsKg: number, co2CostCents: number) => ({
+      id, plantId: 'hp', label: '', invoiceDate: deliveredAt, deliveredAt, invoiceFrom: null, invoiceTo: null, unitId: null, amountCents: null,
+      quantity, quantityUnit: 'l' as const, energyKwh: null, gasBasis: null, heatingValue: null, emissionsKg, co2CostCents, emissionFactor: null,
+      gridFeeCents: null, bioCostCents: null, sharePermille: null, fixedCents: null, estimated: false, usedByService: true, parts: [],
+    })
+    const quelle = {
+      properties: [{ id: 'o', kind: 'mfh' as const, cableBuiltBeforeDec2021: null }],
+      units: [{ ...rented('a', 60), propertyId: 'o' }, { ...rented('b', 40), propertyId: 'o' }],
+      tenancies: [tenancy('ta', 'a'), tenancy('tb', 'b')],
+      costItems: [
+        { ...item('r1', { category: HEATING_CATEGORY, amountCents: 315000, heatingPlantId: 'hp', heatingPart: 'fuel', fuelDeliveryId: 'd1' }), propertyId: 'o' },
+        { ...item('r2', { category: HEATING_CATEGORY, amountCents: 250000, heatingPlantId: 'hp', heatingPart: 'fuel', fuelDeliveryId: 'd2' }), propertyId: 'o' },
+      ],
+      meters: [], readings: [], payments: [], closedSettlements: [],
+      heatingPlants: [{ ...HP, energy: 'oil' as const, method: 'manual' as const, propertyId: 'o' }],
+      heatingPeriodRows: [{
+        plantId: 'hp', period: calendarPeriod(2025), dhwMethod: null, dhwUnmeasurable: null, stockUnit: 'l' as const, openingQuantity: 2000, openingCostCents: 190000,
+        openingEmissionsKg: 5352.6, openingCo2Cents: 0, openingInvoicedBefore2023: true, openingAlreadySettled: false, closingQuantity: 1800, closingMeasuredOn: '2025-12-31',
+      }],
+      fuelDeliveries: [lieferung('d1', '2025-03-15', 3000, 8028.9, 52549), lieferung('d2', '2025-10-10', 2500, 6690.75, 43791)],
+    }
+    const r = computeSettlement(snapshotFor(quelle, 'o', periodOfKey({ startMonth: 1, changes: [] }, calendarPeriod(2025)) ?? assert.fail('kein Zeitraum')))
+    const s = r.heating?.[0]?.stock ?? assert.fail('keine Bestandsrechnung')
+    const heat = (id: string) => r.statements.find((st) => st.tenancyId === id)?.rows.filter((x) => x.category === HEATING_CATEGORY && x.kind !== 'co2Relief').reduce((a, x) => a + x.shareCents, 0) ?? -1
+    inOrder(GUIDES.stockFuel.example, [
+      '2.000 l', eur(s.opening.costCents ?? -1), '3.000 l', eur(315000), '2.500 l', eur(250000), '1.800 l', eur(s.closing.costCents ?? -1),
+      eur(s.consumed.costCents ?? -1), eur(s.paidCents ?? -1), '60', '40 m²', eur(heat('ta')), eur(heat('tb')),
+    ], 'stockFuel')
+  },
   // #208: die Aufteilung der Grundsteuer nach Tagen, mit derselben Funktion wie beim Speichern.
   periodMayApril: () => {
     const parts = splitByService({ startMonth: 1, changes: ['2025-05'] }, { id: 'g', description: 'Grundsteuer 2025', amountCents: 48000, serviceFrom: '2025-01-01', serviceTo: '2025-12-31' })
@@ -442,7 +473,8 @@ test('Durchsicht: CO₂-Kosten mit belegter Norm beim Mehrfamilienhaus und beim 
   // Lücke bleibt nur die Bestandsrechnung für Vorräte.
   assert.match(GUIDES.multiFamily.caveats.find((x) => /CO₂/.test(x.text))?.text ?? '', /als Lieferungen ein/)
   for (const id of ids) assert.doesNotMatch(JSON.stringify(GUIDES[id]), /rechnet Mietfuchs die Aufteilung noch nicht|selbst aus der Brennstoffrechnung aufteilen/, id)
-  assert.ok(GUIDES.co2Costs.gaps.some((g) => g.issue === 97 && /Bestandsrechnung/.test(g.text)), 'die Bestandsrechnung bleibt eine Lücke')
+  // Seit Heizung PR 8 (Durchsicht von #237, I2) ist die Bestandsrechnung keine Lücke mehr.
+  assert.ok(!ids.some((id) => GUIDES[id].gaps.some((g) => /Bestandsrechnung|mit Vorrat \(|bei Heizöl, Flüssiggas und Pellets/.test(g.text))), 'veraltete Lücke zum Vorrat')
 })
 
 test('Messdienst mit Vorwegabzug (#209): Der Betrag ist, was bezahlt wurde, der CO₂-Anteil des Vermieters wird dazugerechnet', () => {
@@ -542,5 +574,5 @@ test('CO₂-Kosten aufteilen (Heizung PR 6): Ort von S je Messdienst, Muster nur
   assert.ok(g.steps.some((s) => s.page === 'heizkosten' && s.text.includes('„Ich finde diese Zeile nicht“')))
   assert.ok(g.caveats.some((c) => /3 Prozent/.test(c.text) && c.norm === '§ 7 Abs. 3 und 4 CO2KostAufG'))
   assert.match(g.applies, /01\.01\.2023/)
-  for (const n of [97, 210, 103]) assert.ok(g.gaps.some((x) => x.issue === n), `#${n} fehlt`)
+  for (const n of [210, 103]) assert.ok(g.gaps.some((x) => x.issue === n), `#${n} fehlt`)
 })

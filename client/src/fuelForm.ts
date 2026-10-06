@@ -3,7 +3,9 @@
 import { fmtEuro, parseEuro } from './api'
 import { parseDecimal } from './co2Form'
 import { formatDayRange } from '../../shared/period.ts'
-import type { Co2Restriction, DegreeDayValue, FuelDelivery, HeatingEnergy, HeatingMethod } from './types'
+import { germanDate } from '../../shared/law/register.ts'
+import { STOCK_UNIT_LABELS, STOCK_UNIT_TEXT } from '../../shared/fuelStock.ts'
+import type { Co2Restriction, DegreeDayValue, FuelDelivery, HeatingEnergy, HeatingMethod, StockUnit } from './types'
 
 // Energieträger, bei denen CO₂-Kosten aufzuteilen sind: Brennstoffe mit Standardwerten nach § 7 Abs. 4
 // BEHG (§ 2 Abs. 1 CO2KostAufG) und Fernwärme, wenn der Lieferant CO₂-Kosten ausweist. Dieselbe Liste
@@ -22,10 +24,16 @@ export type FuelForm = {
   co2Cost: string
   energyKwh: string
   usedByService: boolean
+  // Vorrat (Heizung PR 8): Lieferdatum, Rechnungsdatum und Menge.
+  deliveredAt: string
+  invoiceDate: string
+  quantity: string
+  quantityUnit: StockUnit | ''
 }
 
 export const emptyFuelForm = (): FuelForm => ({
   label: '', invoiceFrom: '', invoiceTo: '', amount: '', fixed: '', sharePercent: '', emissionsKg: '', co2Cost: '', energyKwh: '', usedByService: true,
+  deliveredAt: '', invoiceDate: '', quantity: '', quantityUnit: '',
 })
 
 const centsText = (cents: number | null): string =>
@@ -45,6 +53,46 @@ export function fuelToForm(d: FuelDelivery): FuelForm {
     co2Cost: centsText(d.co2CostCents),
     energyKwh: numberText(d.energyKwh),
     usedByService: d.usedByService,
+    deliveredAt: d.deliveredAt ?? '',
+    invoiceDate: d.invoiceDate ?? '',
+    quantity: numberText(d.quantity),
+    quantityUnit: d.quantityUnit === 'l' || d.quantityUnit === 'kg' || d.quantityUnit === 'srm' ? d.quantityUnit : '',
+  }
+}
+
+// Die Einheiten einer Lieferung für den Vorrat, mit leerer Vorauswahl.
+export const STOCK_QUANTITY_OPTIONS: readonly { value: StockUnit | ''; label: string }[] = [
+  { value: '', label: 'Bitte wählen …' },
+  { value: 'l', label: STOCK_UNIT_LABELS.l },
+  { value: 'kg', label: STOCK_UNIT_LABELS.kg },
+  { value: 'srm', label: STOCK_UNIT_LABELS.srm },
+]
+
+// Der Rumpf einer Lieferung von Heizöl, Flüssiggas, Pellets, Holz oder Kohle (Heizung PR 8): Lieferdatum
+// und Menge statt Rechnungszeitraum; abgegrenzt wird über Anfangs- und Endbestand. Den Betrag gibt es
+// nur beim Messdienst (bei freien Schlüsseln steht er in den verknüpften Positionen).
+export function stockFuelBody(form: FuelForm, method: HeatingMethod): { body: Record<string, unknown> } | { error: string } {
+  if (form.deliveredAt === '') return { error: 'Bitte geben Sie das Lieferdatum an. Beim Vorrat zählt eine Lieferung zur Heizperiode, in der sie geliefert wurde.' }
+  const quantity = form.quantity.trim() === '' ? null : parseDecimal(form.quantity)
+  if (quantity === null || !(quantity > 0)) return { error: 'Bitte geben Sie die gelieferte Menge an, wie auf der Rechnung.' }
+  if (form.quantityUnit === '') return { error: 'Bitte wählen Sie die Einheit der Menge.' }
+  const amount = method === 'service' && form.amount.trim() !== '' ? parseEuro(form.amount) : null
+  if (method === 'service' && form.amount.trim() !== '' && amount === null) return { error: 'Der Rechnungsbetrag ist kein Betrag.' }
+  const kg = form.emissionsKg.trim() === '' ? null : parseDecimal(form.emissionsKg)
+  if (form.emissionsKg.trim() !== '' && (kg === null || kg < 0)) return { error: 'Der CO₂-Ausstoß ist eine Zahl ab 0.' }
+  const co2 = form.co2Cost.trim() === '' ? null : parseEuro(form.co2Cost)
+  if (form.co2Cost.trim() !== '' && co2 === null) return { error: 'Die CO₂-Kosten sind kein Betrag.' }
+  return {
+    body: {
+      label: form.label.trim(),
+      deliveredAt: form.deliveredAt,
+      invoiceDate: form.invoiceDate === '' ? form.deliveredAt : form.invoiceDate,
+      quantity,
+      quantityUnit: form.quantityUnit,
+      ...(method === 'service' ? { amountCents: amount, usedByService: form.usedByService } : {}),
+      emissionsKg: kg,
+      co2CostCents: co2,
+    },
   }
 }
 
@@ -92,6 +140,8 @@ export function fuelBody(form: FuelForm, method: HeatingMethod): { body: Record<
 export function deliveryLine(d: FuelDelivery): string {
   const parts: string[] = []
   if (d.invoiceFrom && d.invoiceTo) parts.push(formatDayRange(d.invoiceFrom, d.invoiceTo))
+  else if (d.deliveredAt) parts.push(`geliefert am ${germanDate(d.deliveredAt)}`)
+  if (d.quantity !== null && (d.quantityUnit === 'l' || d.quantityUnit === 'kg' || d.quantityUnit === 'srm')) parts.push(`${d.quantity.toLocaleString('de-DE', { maximumFractionDigits: 2 })} ${STOCK_UNIT_TEXT[d.quantityUnit]}`)
   if (d.amountCents !== null) parts.push(fmtEuro(d.amountCents))
   if (d.emissionsKg !== null) parts.push(`${d.emissionsKg.toLocaleString('de-DE', { maximumFractionDigits: 2 })} kg CO₂`)
   if (d.co2CostCents !== null) parts.push(`CO₂-Kosten ${fmtEuro(d.co2CostCents)}`)
@@ -103,13 +153,20 @@ export function deliveryLine(d: FuelDelivery): string {
 export function deliveryOptions(deliveries: readonly FuelDelivery[]): { value: string; label: string }[] {
   return [
     { value: '', label: 'keine Lieferung' },
-    ...deliveries.filter((d) => !d.estimated).map((d) => ({ value: d.id, label: d.label || (d.invoiceFrom && d.invoiceTo ? formatDayRange(d.invoiceFrom, d.invoiceTo) : 'Lieferung') })),
+    ...deliveries.filter((d) => !d.estimated).map((d) => ({
+      value: d.id,
+      label: d.label || (d.invoiceFrom && d.invoiceTo ? formatDayRange(d.invoiceFrom, d.invoiceTo) : d.deliveredAt ? `Lieferung vom ${germanDate(d.deliveredAt)}` : 'Lieferung'),
+    })),
   ]
 }
 
-// Die Lieferungen, die in einer Heizperiode enden: Ihre Positionen stehen dort (Entwurf 5.4).
+// Die Lieferungen, die in einer Heizperiode enden, beim Vorrat die, die in ihr geliefert wurden: Ihre
+// Positionen stehen dort (Entwurf 5.4).
 export function ownedBy(deliveries: readonly FuelDelivery[], view: { from: string; to: string }): FuelDelivery[] {
-  return deliveries.filter((d) => d.invoiceTo !== null && d.invoiceTo >= view.from && d.invoiceTo <= view.to)
+  return deliveries.filter((d) => {
+    const end = d.invoiceTo ?? d.deliveredAt
+    return end !== null && end >= view.from && end <= view.to
+  })
 }
 
 // ---------- Gradtagzahlen des Orts (Stufe 4 in 3.2) ----------
