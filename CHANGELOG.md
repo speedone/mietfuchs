@@ -123,6 +123,19 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   bei einem ersten Anschluss nach dem 01.01.2023 ohne Aufteilung (§ 2 Abs. 4 Satz 2 CO2KostAufG). Die
   Abrechnung druckt die Grundlagen und den Block „Brennstoff“ mit
   ([#97](https://github.com/speedone/mietfuchs/issues/97)).
+- **Brennstoffvorrat bei Heizöl, Flüssiggas, Pellets, Holz und Kohle.** Auf der Seite „Heizkosten“
+  tragen Sie Lieferungen mit Lieferdatum und Menge ein und je Heizperiode in der Karte „Vorrat“ den
+  Endbestand, den Anfangsbestand nur in der ersten Heizperiode; danach ist er der Endbestand der
+  Vorperiode. Mietfuchs rechnet daraus den verbrauchten Brennstoff (Anfangsbestand + Lieferungen −
+  Endbestand) und bewertet den Endbestand wie die Messdienste zu den Preisen der jüngsten Lieferungen.
+  Verteilen Sie die Heizkosten selbst nach Schlüsseln, tragen die Mieter den Verbrauch, mit den Zeilen
+  „aus dem Vorrat“ und „im Vorrat“ (§ 7 Abs. 2 HeizkostenV, BGH VIII ZR 156/11); hat der Messdienst die
+  CO₂-Kosten nicht aufgeteilt, teilt Mietfuchs sie nach dem verbrauchten Brennstoff auf. Brennstoff
+  mit Rechnung vor dem 01.01.2023 zählt für die Einstufung, trägt aber keine CO₂-Kosten (§ 11 Abs. 2
+  Satz 2 CO2KostAufG). Die Abrechnung druckt die Bestandsrechnung mit
+  ([#97](https://github.com/speedone/mietfuchs/issues/97),
+  [#99](https://github.com/speedone/mietfuchs/issues/99)).
+- Lexikon-Eintrag „Brennstoffvorrat“.
 
 ### Geändert
 
@@ -196,6 +209,15 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   die Rechnung und rät, eine echte Rechnung über 0 € nicht zu schätzen.
   Wurde die Position einer Rechnung erst nach dem Abschluss ihrer Heizperiode mit der Lieferung
   verknüpft, sagt es ein Hinweis in der anderen Heizperiode.
+- **Angekündigt: Hinweis bei Heizöl, Flüssiggas, Pellets, Holz und Kohle mit freien Schlüsseln.** Ohne
+  Anfangs- und Endbestand sagt die Abrechnung, dass die Heizkosten nach Lieferung statt nach Verbrauch
+  verteilt sind und das angreifbar ist; an den Zahlen ändert sich nichts, bis Sie den Vorrat eintragen
+  ([#99](https://github.com/speedone/mietfuchs/issues/99)).
+- Die Steuerübersicht nennt den Unterschied zum Eigenanteil der Abrechnung, der aus dem Vorrat kommt:
+  Die Abrechnung rechnet nach Verbrauch, die Steuerübersicht nach Bezahltem.
+- Der Vorrat und die Lieferungen einer abgeschlossenen Heizperiode lassen sich erst nach dem
+  Wiederöffnen ändern; ebenso Einheit und Endbestand einer Heizperiode, deren abgeschlossene
+  Folgeperiode diesen Endbestand übernommen hat.
 
 ### Behoben
 
