@@ -1098,6 +1098,49 @@ mehrere je Lieferung (Abschlag, Schlussrechnung, Gutschrift). Abgegrenzt wird in
   nur die Gesamtwerte und der eine Nutzer des Belegs echt; die übrigen drei Nutzer sind synthetisch und
   die kg CO₂ geschätzt, beides steht so in README und `betraege.json`.
 
+**Mehrere Heizanlagen, Etagenheizung und Kesseltausch** (Heizung PR 9, #97): Ein Objekt kann mehrere
+Anlagen haben. Ab zwei braucht jede einen Namen (im Objekt verschieden) und ihre Liste der Wohnungen,
+und keine Wohnung hängt an zweien, außer die eine Anlage ersetzt die andere; geprüft wird das nach jedem
+Schreiben über alle Anlagen des Objekts (`guardPlantsOfProperty` in
+[server/src/db/heating.ts](server/src/db/heating.ts)), in derselben Transaktion, und beim
+Wiederherstellen mit `heatingPlantViolations`. Das Anlegen nimmt Namen und Wohnungen bisheriger Anlagen
+im Rumpf `adjust` mit, damit nie ein halber Stand entsteht.
+
+- **Eine neue Heizposition ohne Anlage** bekommt bei mehreren Anlagen die, an der alle von ihr
+  genannten Wohnungen hängen (Direktzuordnung, Teilnehmer, Einzelbeträge; `plantForNewItem` in
+  repository.ts), bei einem Kesseltausch die, die am Ende ihres Zeitraums heizt, sonst keine. Gehört
+  eine Heizposition zu keiner Anlage, obwohl das Objekt welche hat, sagt `co2.fuel-unknown` das an der
+  Position statt „Richten Sie die Heizung ein“.
+- **Position über zwei Anlagen** (`co2.item-spans-plants`, error): Reicht die Verteilbasis einer
+  Heizposition (`itemBasisUnits` in [server/src/co2.ts](server/src/co2.ts)) in eine zweite Anlage,
+  gehört sie zu keinem Topf und mindert keinen Abzug; verteilt wird sie weiter nach ihrem Schlüssel.
+  Alte und neue Anlage eines Kesseltauschs zählen dafür nicht als zwei.
+- **Etagenheizung auf Vertrag des Vermieters** (`supply = 'perUnit'`, § 5 Abs. 1 Satz 2
+  CO2KostAufG): nur mit freien Schlüsseln und ohne Vorratsenergie; jede Heizposition direkt bei einer
+  Wohnung der Anlage, jede Rechnung (`fuel_deliveries.unit_id`) mit dieser Wohnung, eine verknüpfte
+  Rechnung mit derselben. Eine zentrale Anlage nimmt keine Rechnung mit Wohnung, und ob zentral oder
+  je Wohnung, lässt sich nicht mehr umstellen, sobald Positionen oder Rechnungen daran hängen.
+  Eingestuft wird über Σ kg / Σ Fläche der vermieteten Wohnungen mit Rechnung in der Heizperiode (eine
+  eingetragene Fläche geht vor). Der Abzug ist je Mietverhältnis r = ‰ · C_u · x_t / A_u, **ohne**
+  Normierung auf die Mieter der Wohnung: Was in A_u auf Leerstand, Eigennutzung oder Pauschale fällt,
+  bleibt beim Vermieter. C_u über A_u → `co2.exceeds-heating` für diese Wohnung, sie bekommt keinen
+  Abzug, die übrigen schon. Die Rechnung steht in `perUnitClassification`, `perUnitReliefs`,
+  `perUnitExceeding`; calc.ts setzt sie über `perUnitFuelOf` aus den Zeilen der Abgrenzung (PR 7) ein.
+- **Kesseltausch** (`POST /api/heating-plants/:id/replace`, `replaceHeatingPlant`, Migration 0026):
+  Die alte Anlage bekommt `ends_on` (letzter Betriebstag), die neue `replaces_plant_id`, Namen und
+  dieselben Wohnungen; Rhythmus und Gebäudemerkmale übernimmt sie. Ohne Fremdschlüssel, weil drizzle-kit
+  beim Hinzufügen einer Spalte kein `ON DELETE` schreibt. Lieferungen müssen in die Betriebszeit ihrer
+  Anlage fallen (`plantSpanOf`, db/fuel.ts); die Abgrenzung (PR 7) rechnet eine Anlage nur über ihre
+  Betriebstage, die Bestandsrechnung (PR 8) endet am letzten Betriebstag, und der Endbestand dort ist
+  der **Restbestand**: den Mietern gutgeschrieben, beim Vermieter als eigene Zeile `stockRemaining`,
+  Hinweis `fuel.stock-remaining` mit § 7 Abs. 2 HeizkostenV (im selbstbewohnten Zweifamilienhaus § 2
+  Nr. 4a BetrKV). Die Steuerübersicht ändert sich nicht, die Rechnungen bleiben voll. Teilen alte und
+  neue Anlage eine Heizperiode, wird das Gebäude über den Ausstoß beider eingestuft (§ 5 Abs. 1 Satz 1
+  CO2KostAufG: „des Gebäudes … und Jahr“, `successionOf` in calc.ts, Hinweis `co2.plant-replaced`).
+  Gesperrt bleiben der Tausch einer Etagenheizung, bei getrennter Heizkostenabrechnung (Weg d) und in
+  einer abgeschlossenen Heizperiode. `fuel-invariant.test.ts` und `fuel-stock-invariant.test.ts`
+  rechnen je eine Variante mit zwei Anlagen und prüfen, dass jede Lieferung nur bei ihrer Anlage steht.
+
 **Brennstoffvorrat** (Heizung PR 8, #97, #99): Bei Heizöl, Flüssiggas, Pellets, Holz und Kohle
 (`STOCK_ENERGIES` in [shared/fuelStock.ts](shared/fuelStock.ts)) rechnet
 [server/src/fuelStock.ts](server/src/fuelStock.ts) den verbrauchten Brennstoff: Anfangsbestand +
@@ -1277,7 +1320,7 @@ Löschen erledigen die Fremdschlüssel und nicht mehr index.ts. Alle Datenrouten
 `?property=` auf ein Objekt ein (siehe Objekte). `POST /api/tenancies/:id/change` führt den
 Mieterwechsel (Ende, Zwischenablesungen, Nachmieter) in einer Transaktion aus, ganz oder gar
 nicht (#150, `changeTenant` in repository.ts). Daneben Spezialrouten: `/api/properties`
-(Objekte anlegen, ändern, nur leere löschen), `/api/heating-plants` (Heizanlage, siehe dort), `/api/heating-plants/:id/periods` (Heizperioden einer Anlage mit CO₂-Angaben und Warmwasser, siehe CO₂ beim Messdienst), `…/periods/:period/stock` (PUT/DELETE, Vorrat, siehe Brennstoffvorrat), `/api/heating-plants/:id/period` und `/separate` (je mit `/preview`), `/api/heating-settlement/:plant/:period` (samt `/close` und `/history`) und `/api/heating-settlements` (eigene Heizperiode, siehe dort), `/api/heating-plants/:id/deliveries`, `/api/fuel-deliveries/:id` und `/api/properties/:id/degree-days` (siehe Lieferungen), `/api/settings`, `/api/settlement/:year`, `/api/consumption/:year`, `/api/rentledger/:year`
+(Objekte anlegen, ändern, nur leere löschen), `/api/heating-plants` (Heizanlage, siehe dort; der Rumpf beim Anlegen nimmt `adjust` für Name und Wohnungen bisheriger Anlagen, `/:id/replace` ist der Kesseltausch), `/api/heating-plants/:id/periods` (Heizperioden einer Anlage mit CO₂-Angaben und Warmwasser, siehe CO₂ beim Messdienst), `…/periods/:period/stock` (PUT/DELETE, Vorrat, siehe Brennstoffvorrat), `/api/heating-plants/:id/period` und `/separate` (je mit `/preview`), `/api/heating-settlement/:plant/:period` (samt `/close` und `/history`) und `/api/heating-settlements` (eigene Heizperiode, siehe dort), `/api/heating-plants/:id/deliveries`, `/api/fuel-deliveries/:id` und `/api/properties/:id/degree-days` (siehe Lieferungen), `/api/settings`, `/api/settlement/:year`, `/api/consumption/:year`, `/api/rentledger/:year`
 (Mietkonto: Soll/Ist je Monat), `/api/taxreport/:year` (Steuer-Übersicht Anlage V),
 `/api/upload`, `/api/extract` und `/api/intake` (KI-Auswertung, auf Wunsch als Strom, siehe
 unten), die KI-Einstellungen `/api/ai/presets`, `/api/ai/status`, `/api/ai/key` und

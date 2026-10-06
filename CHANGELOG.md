@@ -136,6 +136,27 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   ([#97](https://github.com/speedone/mietfuchs/issues/97),
   [#99](https://github.com/speedone/mietfuchs/issues/99)).
 - Lexikon-Eintrag „Brennstoffvorrat“.
+- **Mehrere Heizanlagen in einem Objekt.** In den Stammdaten legen Sie mit „+ weitere Heizanlage“ eine
+  zweite Anlage an, etwa für ein zweites Haus, das mit dem ersten abrechnet. Jede Anlage hat einen Namen
+  und ihre Wohnungen; die bisherige bekommt beides im selben Schritt. Jede Anlage wird für die
+  CO₂-Aufteilung für sich eingestuft. Verteilt eine Heizposition über Wohnungen beider Anlagen, sagt die
+  Abrechnung das als Fehler an der Position; verteilt wird sie weiter wie bisher. Auf den Seiten Kosten
+  und Zähler wählen Sie ab zwei Heizanlagen die Anlage
+  ([#97](https://github.com/speedone/mietfuchs/issues/97)).
+- **Etagenheizungen, deren Vertrag Sie haben.** Unter „Jede Wohnung hat eine eigene Heizung“ mit „Ich
+  habe den Vertrag“ legt Mietfuchs eine Etagenheizung an. Die Rechnung jeder Wohnung ordnen Sie dieser
+  Wohnung direkt zu und tragen sie auf der Seite Heizkosten mit ihrer Wohnung ein. Die CO₂-Einstufung
+  rechnet über die vermieteten Wohnungen mit eigener Heizung und deren Gesamtwohnfläche (§ 5 Abs. 1
+  Satz 2 CO2KostAufG); jeder Mieter bekommt den Anteil des Vermieters an den CO₂-Kosten seiner Wohnung
+  nach seinem Anteil an deren Heizkosten, ein Leerstand bleibt beim Vermieter
+  ([#97](https://github.com/speedone/mietfuchs/issues/97)).
+- **Kessel getauscht.** Wird die Heizung erneuert, etwa Öl gegen Gas, wählen Sie bei der Heizanlage
+  „Kessel getauscht“: Die bisherige Anlage endet am Tag vor dem Tausch, eine neue beginnt mit denselben
+  Wohnungen. Ein Restbestand im Tank wird den Mietern gutgeschrieben, denn sie tragen nur den
+  verbrauchten Brennstoff; er gehört Ihnen und steht mit seinem Wert bei Ihrem Anteil. Eingestuft wird
+  das Gebäude im Jahr des Tauschs über den Ausstoß beider Anlagen (§ 5 Abs. 1 Satz 1 CO2KostAufG). Die
+  Steuerübersicht nimmt die Rechnungen wie bisher voll
+  ([#97](https://github.com/speedone/mietfuchs/issues/97)).
 
 ### Geändert
 

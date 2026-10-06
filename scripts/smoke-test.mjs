@@ -523,6 +523,43 @@ async function backupAndRestore(unit) {
   assert(health?.database?.open === true, 'Die Datenbank ist nach dem Wiederherstellen wieder offen', health?.database)
 }
 
+// Mehrere Heizanlagen, Etagenheizung und Kesseltausch (Heizung PR 9). In einem eigenen Objekt und nach
+// dem Wiederherstellen, denn `backupAndRestore` zählt die Wohnungen und fragt ohne Objekt; mit einem
+// zweiten Objekt antworteten die Routen ohne `?property=` mit 400.
+async function plantsOfProperty() {
+  const objekt = (await request('/api/properties', json('POST', { name: 'Prüfhaus Etagenheizung', kind: 'mfh', address: '' }))).body
+  const q = `?property=${encodeURIComponent(objekt.id)}`
+  const eg = (await request(`/api/units${q}`, json('POST', { name: 'EG', areaM2: 60, participates: true }))).body
+  const og = (await request(`/api/units${q}`, json('POST', { name: 'OG', areaM2: 40, participates: true }))).body
+  for (const u of [eg, og]) {
+    await request(`/api/tenancies${q}`, json('POST', {
+      unitId: u.id, tenantName: `Mieter ${u.name}`, personHistory: [{ from: '2025-01-01', persons: 1 }],
+      start: '2025-01-01', end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [],
+    }))
+  }
+  const erste = (await request(`/api/heating-plants${q}`, json('POST', { energy: 'gas', method: 'manual', assignItemIds: [] }))).body.plant
+  const zweite = await request(`/api/heating-plants${q}`, json('POST', {
+    name: 'Gastherme OG', energy: 'gas', supply: 'perUnit', method: 'manual', units: [{ unitId: og.id, heatedAreaM2: null }], assignItemIds: [],
+    adjust: [{ id: erste.id, name: 'Zentralheizung', units: [{ unitId: eg.id, heatedAreaM2: null }] }],
+  }))
+  assert(zweite.status === 201, 'zweite Heizanlage anlegen, die erste im selben Schritt benennen', zweite.body)
+  const namen = (await request(`/api/heating-plants${q}`)).body.map((p) => p.name).sort()
+  assert(JSON.stringify(namen) === JSON.stringify(['Gastherme OG', 'Zentralheizung']), 'beide Anlagen mit Namen', namen)
+  const gas = (await request(`/api/costItems${q}`, json('POST', {
+    period: '2025-01', category: 'Heizung und Warmwasser', description: 'Gas OG', amountCents: 100000, key: 'direct', directUnitId: og.id,
+  }))).body
+  assert(gas.heatingPlantId === zweite.body.plant.id, 'die Gasrechnung der Wohnung kommt zur Etagenheizung', gas)
+  const ueber = await request(`/api/costItems${q}`, json('POST', {
+    period: '2025-01', category: 'Heizung und Warmwasser', description: 'Wartung', amountCents: 20000, key: 'area',
+    participantUnitIds: [eg.id, og.id], heatingPlantId: erste.id,
+  }))
+  assert(ueber.status === 201 || ueber.status === 200, 'eine Position über beide Anlagen lässt sich speichern', ueber.body)
+  const abrechnung = (await request(`/api/settlement/2025${q}`)).body
+  assert(abrechnung.notices?.some((n) => n.code === 'co2.item-spans-plants'), 'die Abrechnung meldet die Position über zwei Anlagen', abrechnung.notices?.map((n) => n.code))
+  const tausch = await request(`/api/heating-plants/${erste.id}/replace`, json('POST', { date: '2026-01-01', energy: 'heatPump', name: 'Wärmepumpe' }))
+  assert(tausch.status === 201 && tausch.body.previous?.endsOn === '2025-12-31' && tausch.body.plant?.replacesPlantId === erste.id, 'Kessel getauscht: die alte Anlage endet, die neue beginnt', tausch.body)
+}
+
 async function main() {
   console.log(`Mietfuchs prüfen: ${BASE} (erwartet: Version ${VERSION}, Betriebsart ${MODE})`)
   await waitForStart()
@@ -565,6 +602,7 @@ async function main() {
   await heatingPeriod()
   await co2ForBackup()
   await backupAndRestore(unit)
+  await plantsOfProperty()
   console.log(`\nAlle ${passed} Prüfungen bestanden.`)
 }
 
