@@ -30,6 +30,9 @@
 // Restbestand geht über) oder Flüssiggas (er bleibt beim Vermieter); Lieferungen danach gehen an die neue.
 // Geprüft wird je Anlage nur in ihrer Betriebszeit und am Tausch: Was die alte als Restbestand hinausbucht,
 // bucht die neue herein, steht als Restbestand beim Vermieter oder ist als nicht übernommen gemeldet.
+// Nachprüfung von #238: Mit eigener Zufallsfolge versucht der Generator, die Rechnung einer Lieferung erst im
+// Folgejahr zu buchen; (v) verlangt, dass jede Position einer Lieferung in der Heizperiode ihres Lieferdatums
+// steht, denn nur dort verteilt die Bestandskette den Betrag im Jahr des Verbrauchs.
 // Ein letzter Test sichert die Abdeckung: gültige Heizperioden und geprüfte Paare nicht unter einer
 // Untergrenze. Auf dem Stand vor der Durchsicht war die Invariante bei 1, 15, 19, 21, 28, 30, 31, 33
 // rot; die Mutationsproben stehen im PR #237. Bereich mit INV_FROM/INV_TO.
@@ -100,7 +103,7 @@ const WAY = process.env.INV_WAY ?? 'a'
 const YEARS = [2023, 2024, 2025, 2026]
 // Zwei Anlagen (Heizung PR 9): mit INV_PLANTS=2 alle Startwerte, sonst die ersten acht zusätzlich.
 const TWO_SEEDS = process.env.INV_PLANTS === '2' ? SEEDS : SEEDS.filter((s) => s <= 8)
-const STATS = { periods: 0, validStock: 0, iiChecked: 0, iiDerivedValue: 0, iiiChecked: 0, mbd: 0, pairs: 0, nonzero: 0, flagged: 0, settledOpenings: 0, reown: 0, external: 0, swaps: 0, carried: 0, remaining: 0, boundary: 0 }
+const STATS = { late: 0, periods: 0, validStock: 0, iiChecked: 0, iiDerivedValue: 0, iiiChecked: 0, mbd: 0, pairs: 0, nonzero: 0, flagged: 0, settledOpenings: 0, reown: 0, external: 0, swaps: 0, carried: 0, remaining: 0, boundary: 0 }
 
 const TWO_STATS = { ...STATS }
 const TAUSCH_STATS = { ...STATS }
@@ -120,6 +123,9 @@ for (const { seed, two, tausch } of RUNS) {
     // Die Läufe mit zwei Anlagen zählen getrennt, damit die Grenzen der Abdeckung bleiben.
     const stats = tausch ? TAUSCH_STATS : two ? TWO_STATS : STATS
     const rnd = zufall(seed * 31 + 5 + (tausch ? 1000 : 0))
+    // „Rechnung erst im Folgejahr buchen“ (Nachprüfung von #238) mit eigener Zufallsfolge, damit die übrigen
+    // Vorgänge jedes Startwerts dieselben bleiben.
+    const lateRnd = zufall(seed * 97 + 11 + (tausch ? 1000 : 0))
     const int = (lo: number, hi: number) => lo + Math.floor(rnd() * (hi - lo + 1))
     const pick = <T,>(xs: readonly T[]): T | undefined => xs[Math.floor(rnd() * xs.length)]
     const hkeyOf = (y: number) => (WAY === 'b' ? `${y}-05` : `${y}-01`)
@@ -222,12 +228,25 @@ for (const { seed, two, tausch } of RUNS) {
           const ok = await attempt(`${op} ${plant} ${id} ${date} ${q}`, async () => {
             await opened.write((db) => createDelivery(db, id, plant, { label: id, deliveredAt: date, invoiceDate: date, quantity: q, quantityUnit: 'l', emissionsKg: Math.round(q * 267.6) / 100, co2CostCents: int(1000, 60000) }))
             deliveryPlant.set(id, plant)
-            await opened.write((db) => createEntity(db, 'costItems', `c${id}`, {
-              propertyId: 'objekt-1', period: hkey, category: HEATING_CATEGORY, description: id, amountCents,
+            const fields = {
+              category: HEATING_CATEGORY, description: id, amountCents,
               ...(op === 'external' ? { key: 'external', externalBasis: { measure: 'area', total: 100, totalCents: amountCents } } : { key: rnd() < 0.5 ? 'area' : 'units' }),
               heatingPlantId: plant, heatingPart: 'fuel', fuelDeliveryId: id, taxYear: year,
               ...(two ? { participantUnitIds: plant === 'hp' ? ['a', 'b'] : ['c'] } : {}),
-            }))
+            }
+            // Die Rechnung erst im Folgejahr buchen: Die Lieferung gehört in die Heizperiode ihres Lieferdatums,
+            // nur dort verteilt die Bestandskette sie genau einmal; der Schreibweg lehnt das ab.
+            if (YEARS.includes(year + 1) && lateRnd() < 0.3) {
+              try {
+                await opened.write((db) => createEntity(db, 'costItems', `c${id}`, { propertyId: 'objekt-1', period: hkeyOf(year + 1), ...fields, taxYear: year + 1 }))
+                itemPlant.set(`c${id}`, plant)
+                return
+              } catch (err) {
+                if (!rejected(err)) throw err
+                stats.late++
+              }
+            }
+            await opened.write((db) => createEntity(db, 'costItems', `c${id}`, { propertyId: 'objekt-1', period: hkey, ...fields }))
             itemPlant.set(`c${id}`, plant)
           })
           if (ok && op === 'external') stats.external++
@@ -295,6 +314,13 @@ for (const { seed, two, tausch } of RUNS) {
       const closed = await opened.read((db) => readClosedSettlements(db))
       const items = (await opened.read((db) => readCostItems(db))).filter((c) => c.category === HEATING_CATEGORY)
       const span = (key: string) => periodOfKey(rulesOfWay, periodKey(key)) ?? assert.fail(`kein Zeitraum ${key}`)
+      // (v) Jede Position einer Lieferung steht in der Heizperiode des Lieferdatums (Nachprüfung von #238);
+      // sonst trügen die Mieter einer Heizperiode den Brennstoff, den die einer anderen verbraucht haben.
+      const deliveredOn = new Map((await opened.read((db) => readFuelDeliveries(db))).map((d) => [d.id, d.deliveredAt]))
+      for (const c of items.filter((x) => x.fuelDeliveryId)) {
+        const date = deliveredOn.get(c.fuelDeliveryId ?? '') ?? null
+        if (date !== null) assert.equal(c.period, hkeyOf(periodOfDate(date)), `${fall}; (v) Position ${c.id} der Lieferung vom ${date} steht in ${c.period}`)
+      }
       const reads = new Map<string, ReturnType<typeof readSettlement> extends infer R ? (R & { key: string; positions: number })[] : never>()
       for (const plant of PLANTS) {
       const read = YEARS.map((y) => {
@@ -405,5 +431,5 @@ test('Invariante Vorrat: Abdeckung', () => {
   assert.ok(STATS.iiChecked * 10 >= STATS.periods * 3, `(ii) nur ${STATS.iiChecked}-mal geprüft`)
   assert.ok(STATS.iiiChecked * 5 >= STATS.periods, `(iii) nur ${STATS.iiiChecked}-mal geprüft`)
   assert.ok((STATS.pairs - STATS.nonzero) * 5 >= STATS.pairs * 4, `(iv′) nur ${STATS.pairs - STATS.nonzero} Paare ohne Abweichung`)
-  assert.ok(STATS.reown > 0 && STATS.external > 0 && STATS.settledOpenings > 0, 'ein Vorgang des Generators kommt nicht vor')
+  assert.ok(STATS.reown > 0 && STATS.external > 0 && STATS.settledOpenings > 0 && STATS.late > 0, 'ein Vorgang des Generators kommt nicht vor')
 })
