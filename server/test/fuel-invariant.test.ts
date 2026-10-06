@@ -32,6 +32,14 @@
 // Ausweis ihrer eigenen Anlage steht und jede Gegenbuchung je Abrechnung genau einmal vorkommt (je Anlage und
 // Lieferung genau einmal verteilt), und dass je Anlage die Zeilen ihre Positionen ergeben.
 //
+// Heizung PR 10: Die Varianten „Eigene Heizkostenabrechnung“ rechnen dasselbe mit einer Anlage, die selbst nach
+// der Heizkostenverordnung abrechnet (Wärmezähler je Wohnung, Ablesungen an jeder Grenze, Positionen nach
+// Heizkostenverordnung). Dazu je Abrechnung über die Kernrechnung: (s1) die Gewichte der Nutzer verteilen
+// jeden Topf ganz (Σ der Topfbeträge im Ausweis = Kosten des Topfs, je Nutzer höchstens 1 ct Rundung), keine
+// Position steht wegen der Anlage beim Vermieter, und der Leerstand wird nie negativ; (s2) je Lieferung über
+// alle Heizperioden: Σ der Zeilen ihrer Positionen und Überträge (ohne Gegenbuchungen) = Σ ihrer Positionen,
+// jede Lieferung also genau einmal verbraucht. Die Mutationsproben stehen im PR.
+//
 // Feste Startwerte, im Lauf der Tests wenige; mehr mit INV_FROM/INV_TO (siehe SEEDS).
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -41,6 +49,7 @@ import path from 'node:path'
 import { eq } from 'drizzle-orm'
 import { computeSettlement } from '../src/calc.ts'
 import { createHeatingPlant, replaceHeatingPlant } from '../src/db/heating.ts'
+import { setUpSelf } from '../src/db/heatingSelf.ts'
 import { createDelivery, createEstimates, freezeFuelCarries, fuelGapQuestions, unfreezeFuelCarries } from '../src/db/fuel.ts'
 import { openDatabase } from '../src/db/open.ts'
 import { readClosedSettlements, readCostItems, readFuelCarryFrozen, readFuelDeliveries, readStock } from '../src/db/read.ts'
@@ -126,7 +135,7 @@ const SEEDS: number[] = process.env.INV_FROM !== undefined || process.env.INV_TO
   : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 16, 81]
 const STEPS = Number(process.env.INV_STEPS ?? 30)
 
-type Variant = { name: string; lazy: boolean; estimate: boolean; two?: boolean; swap?: boolean }
+type Variant = { name: string; lazy: boolean; estimate: boolean; two?: boolean; swap?: boolean; self?: boolean }
 const VARIANTS: Variant[] = [
   { name: 'Grundform', lazy: false, estimate: false },
   { name: 'Rechnung kommt später', lazy: true, estimate: false },
@@ -135,7 +144,13 @@ const VARIANTS: Variant[] = [
   // Durchsicht von #238, I3: Gas wird an einem Tag durch Fernwärme ersetzt; die Rechnungen danach kommen
   // erst nach dem Tausch und gehören der neuen Anlage.
   { name: 'Kesseltausch', lazy: true, estimate: false, swap: true },
+  // Heizung PR 10: eigene Heizkostenabrechnung, mit und ohne Schätzung beim Abschluss.
+  { name: 'Eigene Heizkostenabrechnung', lazy: false, estimate: false, self: true },
+  { name: 'Eigene Heizkostenabrechnung mit Schätzung', lazy: true, estimate: true, self: true },
 ]
+
+// Wie oft die eigene Heizkostenabrechnung wirklich verteilt hat (Abdeckung, letzter Test).
+const SELF = { periods: 0, distributed: 0 }
 
 // Heizung PR 9: Wem gehört eine Zeile? Übertrag und Gegenbuchung der Lieferung, CO₂-Zeilen dem Topf, sonst der
 // Position.
@@ -159,6 +174,56 @@ function onceEach(s: unknown, deliveryPlant: ReadonlyMap<string, string>, where:
   }
   const ids = arr(g(s, 'landlord'), 'rows').map((r) => String(g(r, 'costItemId'))).filter((id) => id.startsWith('fuel:'))
   assert.equal(new Set(ids).size, ids.length, `${where}: Gegenbuchung doppelt: ${ids.join(', ')}`)
+}
+
+// Heizung PR 10, (s1): Die Kernrechnung verteilt jeden Topf ganz. Der Ausweis nennt je Nutzer den Topfbetrag
+// (Kosten des Topfs × Gewicht, auf den Cent gerundet); zusammen sind sie die Kosten des Topfs, je Nutzer
+// höchstens ein halber Cent daneben. Keine Position der Anlage geht ohne Grund an den Vermieter, und der Rest
+// beim Vermieter (Leerstand) wird nie negativ.
+function selfChecks(r: ReturnType<typeof computeSettlement>, items: readonly { id: string; key: string; amountCents: number }[], where: string): void {
+  const self = r.heating?.find((h) => h.plantId === 'hp')?.self
+  const mine = items.filter((c) => c.key === 'heatingSystem')
+  if (!self || mine.length === 0) return
+  SELF.periods++
+  if (!self.ok) return
+  SELF.distributed++
+  for (const pot of self.pots) {
+    const users = self.units.flatMap((u) => u.users)
+    const sum = users.reduce((a, u) => a + (pot.pot === 'heating' ? u.heatingCents : u.waterCents), 0)
+    assert.ok(Math.abs(sum - pot.costCents) <= users.length, `${where}: (s1) Topf ${pot.pot}: Σ Nutzer ${sum}, Kosten ${pot.costCents}`)
+  }
+  for (const row of r.landlord.rows.filter((x) => mine.some((c) => c.id === x.costItemId))) {
+    for (const p of row.landlordParts ?? []) {
+      assert.ok(p.reason !== 'noBasis', `${where}: (s1) ${row.costItemId} ohne Verteilung beim Vermieter`)
+      assert.ok(p.reason !== 'vacancy' || p.cents * Math.sign(row.totalCents || 1) >= -1, `${where}: (s1) negativer Leerstand ${p.cents} bei ${row.costItemId}`)
+    }
+  }
+}
+
+// Heizung PR 10, (s2): Zeilen einer Lieferung in einer Abrechnung (auch eingefroren): Mieter- und Vermieterzeilen
+// ihrer Positionen und ihrer Übertragszeilen (`fuel:<Lieferung>:…:<Position>`), ohne die Gegenbuchungen.
+function rowsOfDelivery(s: unknown, deliveryId: string, own: ReadonlySet<string>): number {
+  const g = (o: unknown, k: string): unknown => (o !== null && typeof o === 'object' ? Reflect.get(o, k) : undefined)
+  const arr = (o: unknown, k: string): unknown[] => { const v = g(o, k); return Array.isArray(v) ? v : [] }
+  const n = (v: unknown): number => (typeof v === 'number' ? v : 0)
+  const belongs = (id: string): boolean => own.has(id) || (id.startsWith(`fuel:${deliveryId}:`) && id.split(':').length > 4)
+  const tenants = arr(s, 'statements').flatMap((st) => arr(st, 'rows')).filter((r) => belongs(String(g(r, 'costItemId')))).reduce<number>((a, r) => a + n(g(r, 'shareCents')), 0)
+  const landlord = arr(g(s, 'landlord'), 'rows').filter((r) => belongs(String(g(r, 'costItemId')))).reduce<number>((a, r) => a + n(g(r, 'shareCents')), 0)
+  return tenants + landlord
+}
+
+// Die Beträge der Positionen einer Lieferung, wie die Abrechnung sie verteilt hat (eine eingefrorene mit dem
+// Betrag beim Abschluss): je Position einmal ihr `totalCents`.
+function totalsOfDelivery(s: unknown, own: ReadonlySet<string>): number {
+  const g = (o: unknown, k: string): unknown => (o !== null && typeof o === 'object' ? Reflect.get(o, k) : undefined)
+  const arr = (o: unknown, k: string): unknown[] => { const v = g(o, k); return Array.isArray(v) ? v : [] }
+  const seen = new Map<string, number>()
+  for (const r of [...arr(s, 'statements').flatMap((st) => arr(st, 'rows')), ...arr(g(s, 'landlord'), 'rows')]) {
+    const id = String(g(r, 'costItemId'))
+    const total = g(r, 'totalCents')
+    if (own.has(id) && typeof total === 'number') seen.set(id, total)
+  }
+  return [...seen.values()].reduce((a, v) => a + v, 0)
 }
 
 // Wie oft der Tausch in der Variante „Kesseltausch“ gelang (Abdeckung, letzter Test).
@@ -190,6 +255,11 @@ for (const variant of VARIANTS) {
           } else {
             await createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'gas', method: 'manual' })
           }
+          // Heizung PR 10: Die Anlage rechnet selbst ab; Wärmezähler je Wohnung, kein zentrales Warmwasser.
+          if (variant.self) {
+            let m = 0
+            await setUpSelf(db, 'hp', { period: '2023-05', heatConsumptionPct: int(50, 70), insulationRule: 'notApplies', hotWater: 'none', capture: 'heatMeter' }, '2023-01-01', () => `wz${m++}`)
+          }
           for (const plantId of variant.two ? ['hp', 'hp2'] : ['hp']) {
             let start = variant.estimate ? '2024-05-01' : isoOf(Date.UTC(2024, 1, 1) + int(0, 120) * DAY)
             const prefix = plantId === 'hp' ? 'd' : 'e'
@@ -216,6 +286,21 @@ for (const variant of VARIANTS) {
         const lastTo = all.reduce((a, d) => (d.to > a ? d.to : a), '')
         for (let p = periodContaining(MAI, firstFrom); p.from <= lastTo; p = periodContaining(MAI, isoOf(Date.parse(`${p.to}T00:00:00Z`) + DAY))) keys.push(p.key)
         const periodOf = (key: string) => periodOfKey(MAI, periodKey(key)) ?? assert.fail(`kein Zeitraum ${key}`)
+        // Heizung PR 10: Ablesungen an jeder Grenze, je Wohnung ein steigender Stand.
+        if (variant.self) {
+          const meters = (await opened.read((db) => readStock(db))).meters.filter((x) => x.type === 'waerme' && x.unitId !== null)
+          await opened.write(async (db) => {
+            for (const meter of meters) {
+              let value = 0
+              const first = periodOf(keys[0] ?? '')
+              await createEntity(db, 'readings', `${meter.id}@0`, { meterId: meter.id, date: isoOf(Date.parse(`${first.from}T00:00:00Z`) - DAY), value })
+              for (const key of keys) {
+                value += int(1000, 9000)
+                await createEntity(db, 'readings', `${meter.id}@${key}`, { meterId: meter.id, date: periodOf(key).to, value })
+              }
+            }
+          })
+        }
         const log: string[] = []
         const attempt = async (what: string, run: () => Promise<unknown>) => {
           try {
@@ -234,9 +319,10 @@ for (const variant of VARIANTS) {
           const owner = periodContaining(MAI, d.to)
           // Mit zwei Anlagen verteilt jede Position nur über die Wohnungen ihrer Anlage.
           const participants = variant.two ? { participantUnitIds: d.plantId === 'hp' ? ['a', 'b'] : ['c'] } : {}
+          const selfKey = variant.self ? { key: 'heatingSystem', heatingPart: 'fuel', heatingTarget: 'heating' } : { key }
           const made = await opened.write((db) => createEntity(db, 'costItems', id, {
-            propertyId: 'objekt-1', period: owner.key, category: HEATING_CATEGORY, description: id, amountCents, key,
-            heatingPlantId: d.plantId, fuelDeliveryId: d.id, taxYear: Number(owner.to.slice(0, 4)), ...participants,
+            propertyId: 'objekt-1', period: owner.key, category: HEATING_CATEGORY, description: id, amountCents,
+            heatingPlantId: d.plantId, fuelDeliveryId: d.id, taxYear: Number(owner.to.slice(0, 4)), ...participants, ...selfKey,
           }))
           itemPlant.set(id, d.plantId)
           return made
@@ -386,6 +472,7 @@ for (const variant of VARIANTS) {
               }
             }
           }
+          if (r && variant.self) selfChecks(r, items.filter((c) => c.period === key), `${fall}; ${key}`)
           const here = stored ? (atClose.get(key) ?? assert.fail(`${fall}; ${key} ohne Stand beim Abschluss`)) : items.filter((c) => c.period === key).reduce((a, c) => a + c.amountCents, 0)
           assert.equal(t.tenants + t.landlord, here, `${fall}; Σ Zeilen in ${key}`)
           positions += here
@@ -403,6 +490,25 @@ for (const variant of VARIANTS) {
         }
         // (i) durch den Aufbau
         assert.equal(tenants + landlord, positions, `${fall}; (i)`)
+        // (s2) Heizung PR 10: jede Lieferung genau einmal, über alle Heizperioden (ohne Schätzungen und
+        // ohne ausgewiesene Teile, wie (iii); abgeschlossene mit ihrem eingefrorenen Stand).
+        if (variant.self) {
+          const flaggedAny = [...pairs.values()].some((v) => v.flagged !== 0 || v.estimate)
+          const estimatesNow = (await opened.read((db) => readFuelDeliveries(db))).filter((x) => x.estimated)
+          if (!flaggedAny && estimatesNow.length === 0) {
+            for (const d of deliveries) {
+              const own = new Set(items.filter((c) => c.fuelDeliveryId === d.id).map((c) => c.id))
+              let rows = 0
+              let T = 0
+              for (const key of keys) {
+                const s = closed.find((c) => c.period === key)?.settlement ?? live.get(key)
+                rows += rowsOfDelivery(s, d.id, own)
+                T += totalsOfDelivery(s, own)
+              }
+              assert.equal(rows, T, `${fall}; (s2) Lieferung ${d.id}: Zeilen ${rows}, Positionen ${T}`)
+            }
+          }
+        }
         const deliveriesNow = await opened.read((db) => readFuelDeliveries(db))
         const estimates = deliveriesNow.filter((x) => x.estimated)
         // Eine stornierte Rechnung (Positionen ergeben 0 oder weniger) ersetzt keine Schätzung (Nachprüfung, M2).
@@ -443,6 +549,11 @@ for (const variant of VARIANTS) {
     })
   }
 }
+
+test('Invariante, eigene Heizkostenabrechnung: Abdeckung', () => {
+  if (SELF.periods < 10) return
+  assert.ok(SELF.distributed * 2 >= SELF.periods, `nur ${SELF.distributed} von ${SELF.periods} Heizperioden nach der Verordnung verteilt`)
+})
 
 test('Invariante, Kesseltausch: Abdeckung', () => {
   if (SWAPS.runs < 10) return
