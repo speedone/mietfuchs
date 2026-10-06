@@ -26,7 +26,7 @@ import { frozenSettlementOf, type FrozenItemSelfUse, type SnapshotSource } from 
 import type { Executor } from './client.ts'
 import {
   aiSlots, baseRents, closedHeatingSettlements, co2Statements, co2TenantReliefs, degreeDayValues, fuelCarryFrozen, fuelDeliveries, fuelDeliveryParts, heatingPeriods, closedSettlements, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, unitNoConnection, meters, payments,
-  flatRates, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingPrepaymentOverrides, heatingPrepayments, heatingSeparateSpans, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, readings, settings, tenancies, units,
+  flatRates, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingPrepaymentOverrides, heatingPrepayments, heatingSelfSpans, heatingSeparateSpans, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, readings, settings, tenancies, units,
   interimReadingGaps,
 } from './schema.ts'
 
@@ -291,6 +291,8 @@ export async function readHeatingPlants(db: Executor): Promise<HeatingPlant[]> {
   // Wechsel und Spannen nach Weg d (Heizung PR 5), aufsteigend.
   const wechsel = groupBy(await db.select().from(heatingPeriodChanges).orderBy(heatingPeriodChanges.fromMonth), (w) => w.plantId, (w) => w.fromMonth)
   const spannen = groupBy(await db.select().from(heatingSeparateSpans).orderBy(heatingSeparateSpans.from), (s) => s.plantId, (s) => ({ from: s.from, until: s.until }))
+  // Zeiträume der eigenen Heizkostenabrechnung (Durchsicht von #239), aufsteigend.
+  const eigene = groupBy(await db.select().from(heatingSelfSpans).orderBy(heatingSelfSpans.from), (s) => s.plantId, (s) => ({ from: s.from, until: s.until }))
   return rows.map((p) => ({
     id: p.id,
     propertyId: p.propertyId,
@@ -323,7 +325,7 @@ export async function readHeatingPlants(db: Executor): Promise<HeatingPlant[]> {
     capture: p.capture,
     areaBasisHeat: p.areaBasisHeat,
     heatPumpInstalledOn: p.heatPumpInstalledOn,
-    selfFrom: p.selfFrom,
+    selfSpans: eigene.get(p.id) ?? [],
   }))
 }
 

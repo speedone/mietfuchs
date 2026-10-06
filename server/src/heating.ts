@@ -31,6 +31,7 @@ import type { ReadingOffWarning } from '../../shared/law/practice.ts'
 import { dayAfter, dayBefore } from '../../shared/law/register.ts'
 import { lineRoot } from '../../shared/heatingPeriod.ts'
 import type {
+  SelfSpanRange,
   AreaBasisHeat, ChangeSplit, DhwMethod, HeatingEnergy, HeatingPart, HeatingTarget, HotWater, InsulationRule, InterimGap, InterimGapStatus, MeterType, SelfPot, SelfReadingView, SelfRole,
 } from '../../shared/types.ts'
 
@@ -567,6 +568,20 @@ export function hotWaterShareOf(i: AlphaInput): { ok: true; alpha: Alpha | null 
   if (!(value > 0 && value < 1)) return { ok: false, problem: 'outOfRange' }
   return { ok: true, alpha: { value, dhwHeatKwh: i.dhwHeatKwh, referenceKwh, reference, estimated: reference === 'fuel' && i.fuelEstimated === true } }
 }
+
+// ---------- Zeitraum der eigenen Abrechnung (Durchsicht von #239, Runde 3) ----------
+
+// Gilt die eigene Heizkostenabrechnung in der Heizperiode `key`? In jedem ihrer Zeiträume, der laufende nur,
+// solange die Anlage selbst abrechnet; ohne Zeiträume gilt die Art der Anlage.
+export type SelfSpanned = { method: string; selfSpans?: readonly SelfSpanRange[] }
+export function selfActive(p: SelfSpanned, key: string): boolean {
+  const spans = p.selfSpans ?? []
+  if (spans.length === 0) return p.method === 'self'
+  return spans.some((s) => key >= s.from && (s.until === null ? p.method === 'self' : key < s.until))
+}
+// Der laufende Zeitraum und sein Beginn.
+export const openSelfSpan = (p: SelfSpanned): SelfSpanRange | null => (p.method === 'self' ? (p.selfSpans ?? []).find((s) => s.until === null) ?? null : null)
+export const selfFromOf = (p: SelfSpanned): string | null => openSelfSpan(p)?.from ?? null
 
 // ---------- Anteil nach Verbrauch (Entwurf 8.5, R-A7) ----------
 

@@ -24,6 +24,7 @@ import { isStockEnergy } from '../../shared/fuelStock.ts'
 import { dayAfter, germanDate } from '../../shared/law/register.ts'
 import { isStockFuelItem, readFrozenStock, settledByDefault, stockKeysOf, stockTemplateOfLine, type PreviousFuel, type StockPeriodInput } from './fuelStock.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
+import { selfActive } from './heating.ts'
 import type { Db } from './store.ts'
 
 // Gelesen werden Kennung, Name (für Abrechnung und Warnungen), Wohnfläche und die beiden
@@ -116,7 +117,7 @@ export type SnapshotHeatingPlant = Pick<HeatingPlant, 'id' | 'energy' | 'method'
   & Partial<Pick<HeatingPlant, 'name' | 'periodStartMonth' | 'periodChanges' | 'separateSpans' | 'separateSettlement' | 'nonResidential' | 'restriction' | 'districtEtsNew' | 'supply' | 'endsOn' | 'replacesPlantId' | 'buildingWith' | 'takesOverStock'>>
   // Eigene Heizkostenabrechnung (Heizung PR 10). Fehlt ein Feld, gilt die Vorgabe der Spalte
   // (`combined`, `area`, `degreeDays`); `capture` und die Angaben zur Wärmepumpe fehlen dann.
-  & Partial<Pick<HeatingPlant, 'changeSplit' | 'hotWater' | 'capture' | 'areaBasisHeat' | 'capturedOnOct2024' | 'captureInstalledOn' | 'heatPumpInstalledOn' | 'selfFrom'>>
+  & Partial<Pick<HeatingPlant, 'changeSplit' | 'hotWater' | 'capture' | 'areaBasisHeat' | 'capturedOnOct2024' | 'captureInstalledOn' | 'heatPumpInstalledOn' | 'selfSpans'>>
 // Seit Heizung PR 9 die Versorgung (`supply`); fehlt sie, ist die Anlage zentral.
 // Die Angaben je Heizperiode, die die Berechnung liest: Warmwasser laut Messdienst (Heizung PR 6, #211)
 // und der Vorrat (Heizung PR 8). Die Felder des Vorrats sind optional, damit ein von Hand gebauter
@@ -762,17 +763,24 @@ export function selfClosedEndsOf(settlement: unknown): SelfClosedEnd[] {
   })
 }
 
-// Vor ihrer ersten Heizperiode der eigenen Abrechnung (`selfFrom`, gesetzt von der Einrichtung, beim
+// Außerhalb der Zeiträume der eigenen Abrechnung (`selfSpans`, von der Einrichtung geöffnet, beim
 // Kesseltausch geerbt) rechnet eine Anlage mit eigener Heizkostenabrechnung wie mit freien Schlüsseln
 // (Durchsicht von #239, I1, W1, W2): § 6 Abs. 4 HeizkostenV lässt die Wahl nur für künftige
 // Abrechnungszeiträume zu. `keysOf` nennt die Heizperioden des Schnappschusses je Anlage; die Abrechnung
 // entscheidet je Heizperiode noch einmal (`selfAt` in calc.ts, N3).
-export const selfAt = <P extends SnapshotHeatingPlant>(p: P, key: string): P =>
-  p.method === 'self' && (p.selfFrom ?? null) !== null && key < (p.selfFrom ?? '') ? { ...p, method: 'manual' } : p
+// Nach dem Zurückschalten (geschlossener Zeitraum) rechnen die abgeschlossenen Heizperioden der eigenen Abrechnung
+// weiter nach ihr, sonst wiche die heutige Rechnung von der zugestellten ab (Runde 3).
+export const selfAt = <P extends SnapshotHeatingPlant>(p: P, key: string): P => {
+  const active = selfActive(p, key)
+  if (active && p.method !== 'self') return { ...p, method: 'self' }
+  if (!active && p.method === 'self') return { ...p, method: 'manual' }
+  return p
+}
 function withSelfBegin<P extends SnapshotHeatingPlant>(plants: readonly P[], keysOf: (p: P) => string[]): P[] {
   return plants.map((p) => {
     const keys = keysOf(p)
-    return keys.length > 0 && keys.every((k) => selfAt(p, k).method !== 'self') ? selfAt(p, keys[0] ?? '') : p
+    if (keys.length === 0) return p
+    return selfAt(p, keys.find((k) => selfActive(p, k)) ?? keys[0] ?? '')
   })
 }
 

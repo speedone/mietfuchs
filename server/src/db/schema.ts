@@ -409,9 +409,6 @@ export const heatingPlants = sqliteTable(
     capture: text('capture', { enum: CAPTURE_METHODS }),
     areaBasisHeat: text('area_basis_heat', { enum: AREA_BASES_HEAT }).notNull().default('area'),
     heatPumpInstalledOn: text('heat_pump_installed_on'),
-    // Die erste Heizperiode der eigenen Heizkostenabrechnung (Durchsicht von #239, W1/W2): gesetzt von der
-    // Einrichtung, gelöscht beim Zurückschalten; NULL bei jeder anderen Art.
-    selfFrom: text('self_from'),
   },
   () => [
     oneOf('heating_plants_energy_known', 'energy', HEATING_ENERGIES),
@@ -436,9 +433,6 @@ export const heatingPlants = sqliteTable(
     oneOf('heating_plants_area_basis_heat_known', 'area_basis_heat', AREA_BASES_HEAT),
     // Die eigene Heizkostenabrechnung braucht die Art der Erfassung (Entwurf 5.3).
     check('heating_plants_self_capture_complete', sql.raw(`"method" <> 'self' OR "capture" IS NOT NULL`)),
-    // Der Beginn ist ein Schlüssel einer Heizperiode und steht genau bei der eigenen Abrechnung.
-    check('heating_plants_self_from_valid', sql.raw(`"self_from" IS NULL OR ("self_from" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]' AND CAST(substr("self_from", 6, 2) AS INTEGER) BETWEEN 1 AND 12)`)),
-    check('heating_plants_self_from_complete', sql.raw(`("method" = 'self') = ("self_from" IS NOT NULL)`)),
   ],
 )
 
@@ -584,6 +578,27 @@ export const heatingSeparateSpans = sqliteTable(
     periodKeyCheck('heating_separate_spans_from_valid', 'from_month'),
     periodKeyCheck('heating_separate_spans_until_valid', 'until_period'),
     check('heating_separate_spans_order_valid', sql.raw('"until_period" IS NULL OR "until_period" > "from_month"')),
+  ],
+)
+
+// Die Zeiträume der eigenen Heizkostenabrechnung (Durchsicht von #239, W1/W2 und Runde 3), wie die
+// Spannen nach Weg d: Die Einrichtung öffnet einen ab ihrer Heizperiode (`until` NULL), das Zurückschalten
+// schließt ihn mit der ersten offenen Heizperiode, wenn abgeschlossene Heizperioden nach ihr gerechnet
+// wurden, sonst entfällt er. Abgeleitet aus den Anteilszeilen wird nichts.
+export const heatingSelfSpans = sqliteTable(
+  'heating_self_spans',
+  {
+    plantId: text('plant_id')
+      .notNull()
+      .references(() => heatingPlants.id, { onDelete: 'cascade' }),
+    from: text('from_period').notNull(),
+    until: text('until_period'),
+  },
+  (t) => [
+    primaryKey({ columns: [t.plantId, t.from] }),
+    periodKeyCheck('heating_self_spans_from_valid', 'from_period'),
+    periodKeyCheck('heating_self_spans_until_valid', 'until_period'),
+    check('heating_self_spans_order_valid', sql.raw('"until_period" IS NULL OR "until_period" > "from_period"')),
   ],
 )
 

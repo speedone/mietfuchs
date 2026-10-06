@@ -33,6 +33,7 @@
 // nächste, der eine Spalte hinzufügt.
 
 import { beforeBeginText } from './selfLine.ts'
+import { selfActive, selfFromOf } from '../heating.ts'
 import { and, count, desc, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm'
 import type { BillingPeriod, CostItem, ExternalBasis, HeatingPlant, HeatingPrepaymentOverride, InterimGapStatus, Meter, MeterType, Payment, PeriodKey, PeriodRules, PersonEntry, PrepaymentEntry, Property, Reading, RentEntry, SplitPreviewPart, Tenancy, Unit, UnitDependents } from '../../../shared/types.ts'
 import { CALENDAR_RULES, calendarPeriod, paymentYear, formatDayRange, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, spansTwoYears, startYearOf } from '../../../shared/period.ts'
@@ -51,7 +52,7 @@ import {
 } from './read.ts'
 import {
   aiSlots, assessmentLines, assessments, baseRents, co2Statements, co2TenantReliefs, heatingPeriods, closedHeatingSettlementHistory, closedHeatingSettlements, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, DEPOSIT_STATUS, EXTERNAL_MEASURES,
-  HEATING_PARTS, HEATING_ROLES, HEATING_TARGETS, INTERIM_GAP_STATUS, interimReadingGaps, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingPrepaymentOverrides, heatingPrepayments, heatingSeparateSpans,
+  HEATING_PARTS, HEATING_ROLES, HEATING_TARGETS, INTERIM_GAP_STATUS, interimReadingGaps, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingSelfSpans, heatingPrepaymentOverrides, heatingPrepayments, heatingSeparateSpans,
   flatRates, METER_TYPES, meters, payments, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, PROPERTY_KINDS,
   readings, settings, tenancies, unitNoConnection, units, fuelCarryFrozen, fuelDeliveries,
 } from './schema.ts'
@@ -809,23 +810,26 @@ export async function guardHeatingSystem(db: Executor, after: CostItem): Promise
   // Ohne Angabe bekommt eine neue Heizposition die Anlage erst beim Schreiben (`defaultHeatingPlant`);
   // geprüft wird gegen dieselbe, die sie dann bekommt.
   const plantId = after.heatingPlantId === undefined && after.category === HEATING_CATEGORY ? await plantForNewItem(db, after) : (after.heatingPlantId ?? null)
-  const [plant] = plantId === null ? [] : await db.select({ method: heatingPlants.method, hotWater: heatingPlants.hotWater, selfFrom: heatingPlants.selfFrom }).from(heatingPlants).where(eq(heatingPlants.id, plantId))
+  const [row] = plantId === null ? [] : await db.select({ method: heatingPlants.method, hotWater: heatingPlants.hotWater }).from(heatingPlants).where(eq(heatingPlants.id, plantId))
+  const plant = row && plantId !== null
+    ? { ...row, selfSpans: await db.select({ from: heatingSelfSpans.from, until: heatingSelfSpans.until }).from(heatingSelfSpans).where(eq(heatingSelfSpans.plantId, plantId)) }
+    : undefined
   if (after.key === 'heatingSystem') {
-    if (after.category !== HEATING_CATEGORY || !plant || plant.method !== 'self') {
+    // Durchsicht von #239: nur in Heizperioden der eigenen Abrechnung (`selfActive`), also ab ihrem Beginn
+    // und, nach dem Zurückschalten, bis vor ihr Ende.
+    const begin = plant ? selfFromOf(plant) : null
+    if (begin !== null && String(after.period) < begin && !selfActive(plant ?? { method: 'manual' }, String(after.period))) {
+      throw new HeatingError(400, beforeBeginText(begin))
+    }
+    if (after.category !== HEATING_CATEGORY || !plant || !selfActive(plant, String(after.period))) {
       throw new HeatingError(400,
         'Nach der Heizkostenverordnung verteilt Mietfuchs nur Positionen einer Heizanlage mit eigener Heizkostenabrechnung. Richten Sie sie in den Stammdaten unter „Heizung“ ein oder wählen Sie einen anderen Schlüssel.')
     }
-    // Durchsicht von #239, I1: erst ab der ersten Heizperiode mit Anteil nach Verbrauch.
-    const begin = plant.selfFrom ?? null
-    if (begin !== null && String(after.period) < begin) throw new HeatingError(400, beforeBeginText(begin))
     const problem = targetProblem(plant.hotWater, after.heatingPart ?? null, target)
     if (problem !== null) throw new HeatingError(400, `${problem}.`)
     return
   }
-  if (plant?.method === 'self' && after.category === HEATING_CATEGORY) {
-    // Vor dem Beginn der eigenen Abrechnung gelten die bisherigen Schlüssel (I1).
-    const begin = plant.selfFrom ?? null
-    if (begin !== null && String(after.period) < begin) return
+  if (plant && selfActive(plant, String(after.period)) && after.category === HEATING_CATEGORY) {
     throw new HeatingError(400,
       'Diese Heizanlage rechnet die Heizkosten selbst nach der Heizkostenverordnung ab. Wählen Sie den Schlüssel „nach Heizkostenverordnung“ mit Teil und Ziel.')
   }

@@ -17,18 +17,17 @@ import { and, eq, ne } from 'drizzle-orm'
 import { hkvConsumptionShare, hkvConsumptionShareForced } from '../../../shared/law/heizkostenv.ts'
 import { germanDate, valueAt } from '../../../shared/law/register.ts'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
-import { heatingPeriodsEndingIn, lineRoot, servesUnit, settledSeparately } from '../../../shared/heatingPeriod.ts'
+import { lineRoot, servesUnit } from '../../../shared/heatingPeriod.ts'
 import type {
-  BillingPeriod, CostItem, CostKey, HeatingDistribution, HeatingEnergy, HeatingPart, HeatingPlant, InterimGap, InsulationRule, Meter,
+  BillingPeriod, CostItem, CostKey, SelfSpanRange, HeatingDistribution, HeatingEnergy, HeatingPart, HeatingPlant, InterimGap, InsulationRule, Meter,
 } from '../../../shared/types.ts'
-import { consumptionSharesOf, OIL_OR_GAS, POT_METER, targetProblem, type ShareRow } from '../heating.ts'
+import { consumptionSharesOf, OIL_OR_GAS, POT_METER, selfFromOf, targetProblem, type ShareRow } from '../heating.ts'
 import type { Database, Executor } from './client.ts'
-import { closedText, ensureHeatingPeriod, heatingPeriodClosed, heatingPeriodOf, plantContext, type PlantContext } from './heatingPeriodContext.ts'
-import { parsePeriodKey, periodOfKey } from '../../../shared/period.ts'
+import { closedHeatingKeys, closedText, ensureHeatingPeriod, heatingPeriodClosed, heatingPeriodOf, plantContext, type PlantContext } from './heatingPeriodContext.ts'
 import { readCostItems, readHeatingPlants, readMeters, readUnits } from './read.ts'
-import { guardHeatingPlant, plantRow } from './heating.ts'
+import { guardHeatingPlant, plantRow, writeSelfSpans } from './heating.ts'
 import { HeatingError, insertEntityIn, ISO_DATE, oneOfOrUndefined, patchCostItemIn, raw } from './repository.ts'
-import { closedHeatingSettlements, closedSettlements, costItems, heatingPeriods, heatingPlants, INSULATION_RULES, INTERIM_GAP_STATUS, interimReadingGaps, units } from './schema.ts'
+import { costItems, heatingPeriods, heatingPlants, INSULATION_RULES, INTERIM_GAP_STATUS, interimReadingGaps, units } from './schema.ts'
 import { beforeBeginText, lineRowsOf } from './selfLine.ts'
 
 export const SELF_VIA_SETUP =
@@ -89,21 +88,9 @@ function lineIdsOf(plants: readonly { id: string; replacesPlantId: string | null
   return new Set([plantId, ...plants.filter((p) => lineRoot(p, plants) === root).map((p) => p.id)])
 }
 
-// Die späteste abgeschlossene Heizperiode der Anlage (ihr Schlüssel), oder null (Durchsicht von #239, W2):
-// nach Weg d die eigenen Heizkostenabrechnungen, sonst die Abrechnungen des Objekts, deren Zeitraum das Ende
-// einer Heizperiode enthält.
+// Die späteste abgeschlossene Heizperiode der Anlage (ihr Schlüssel), oder null (Durchsicht von #239, W2).
 async function lastClosedHeatingPeriod(db: Database, ctx: PlantContext): Promise<string | null> {
-  const keys: string[] = []
-  const heating = await db.select({ period: closedHeatingSettlements.period }).from(closedHeatingSettlements).where(eq(closedHeatingSettlements.plantId, ctx.plant.id))
-  for (const c of heating) keys.push(String(c.period))
-  const object = await db.select({ period: closedSettlements.period }).from(closedSettlements).where(eq(closedSettlements.propertyId, ctx.plant.propertyId))
-  for (const c of object) {
-    const key = parsePeriodKey(String(c.period))
-    const p = key === null ? null : periodOfKey(ctx.objectRules, key)
-    if (!p) continue
-    for (const h of heatingPeriodsEndingIn(ctx.plantRules, p)) if (!settledSeparately(ctx.plant, ctx.objectRules, h)) keys.push(String(h.key))
-  }
-  return keys.sort().at(-1) ?? null
+  return (await closedHeatingKeys(db, ctx)).sort().at(-1) ?? null
 }
 
 const pctOf = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
@@ -161,7 +148,7 @@ export async function saveDistribution(db: Database, plantId: string, period: st
   const line = await lineRowsOf(db, plantId)
   const rows = line.merged
   // Der Beginn steht an der Anlage (Durchsicht von #239, W1/W2).
-  const begin = ctx.plant.selfFrom ?? null
+  const begin = selfFromOf(ctx.plant)
   if (begin !== null && h.key < begin) throw new HeatingError(400, beforeBeginText(begin))
   const next = checkShares(body, ctx.plant, h, rows, today)
   // In derselben Heizperiode gilt in der Linie ein Anteil (§ 6 Abs. 4; Durchsicht von #239, I3).
@@ -202,7 +189,6 @@ export async function setUpSelf(db: Database, plantId: string, body: unknown, to
   const after: HeatingPlant = {
     ...current,
     method: 'self',
-    selfFrom: current.method === 'self' && current.selfFrom ? current.selfFrom : h.key,
     hotWater: raw(body, 'hotWater') === 'separate' ? 'separate' : raw(body, 'hotWater') === 'none' ? 'none' : 'combined',
     capture: capture === 'heatMeter' || capture === 'hca' || capture === 'serviceValues' ? capture : null,
     areaBasisHeat: raw(body, 'areaBasisHeat') === 'heatedArea' ? 'heatedArea' : 'area',
@@ -215,13 +201,22 @@ export async function setUpSelf(db: Database, plantId: string, body: unknown, to
   // Nur ab der Heizperiode der Einrichtung (I1) und nur Positionen dieser Anlage (M1). Ein bestehender
   // Beginn bleibt (erneute Einrichtung); davor und vor oder auf einer abgeschlossenen Heizperiode beginnt
   // die eigene Abrechnung nicht (Durchsicht von #239, W2).
-  const existingBegin = current.method === 'self' ? (current.selfFrom ?? null) : null
+  const existingBegin = selfFromOf(current)
   if (existingBegin !== null && h.key < existingBegin) throw new HeatingError(400, beforeBeginText(existingBegin))
   const lastClosed = await lastClosedHeatingPeriod(db, ctx)
   if (lastClosed !== null && h.key <= lastClosed) {
     throw new HeatingError(400, `Die Heizperiode ${lastClosed.slice(0, 4)} dieser Anlage ist abgeschlossen. Die eigene Heizkostenabrechnung kann erst mit einer späteren Heizperiode beginnen; abgeschlossene Abrechnungen bleiben, wie sie zugestellt wurden. Öffnen Sie die Abrechnung wieder, wenn sie schon früher beginnen soll.`)
   }
   const from = existingBegin ?? h.key
+  // Runde 3: Ein neuer Zeitraum schließt an einen früheren unmittelbar an (dann geht dieser weiter) oder
+  // beginnt danach; die abgeschlossenen Heizperioden früherer Zeiträume rechnen weiter nach der Verordnung.
+  const past = (current.selfSpans ?? []).filter((s) => s.until !== null)
+  const spans: SelfSpanRange[] = existingBegin !== null
+    ? (current.selfSpans ?? [])
+    : past.some((s) => s.until === h.key)
+      ? past.map((s) => (s.until === h.key ? { from: s.from, until: null } : s))
+      : [...past, { from: h.key, until: null }]
+  after.selfSpans = spans
   const offen = await selfItemsOf(db, plantId, 'heatingSystem', null, from)
   const answers = readItemAnswers(raw(body, 'items')).filter((a) => offen.some((c) => c.id === a.id))
   const missing = offen.filter((c) => !answers.some((a) => a.id === c.id))
@@ -261,6 +256,7 @@ export async function setUpSelf(db: Database, plantId: string, body: unknown, to
   const createdIds: string[] = []
   await db.transaction(async (tx) => {
     await tx.update(heatingPlants).set(plantRow(after)).where(eq(heatingPlants.id, plantId))
+    await writeSelfSpans(tx, plantId, spans)
     for (const a of answers) {
       const item = currentItems.find((c) => c.id === a.id)
       if (!item) continue

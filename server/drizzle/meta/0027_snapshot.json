@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "5f9bb14d-8552-449f-8ec3-561fb3edf35f",
+  "id": "9fec117b-06a7-40ca-85be-fede89afda7a",
   "prevId": "637cb511-d364-4482-a85d-73d09f07a00c",
   "tables": {
     "ai_slots": {
@@ -2867,13 +2867,6 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
-        },
-        "self_from": {
-          "name": "self_from",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
         }
       },
       "indexes": {},
@@ -3129,6 +3122,72 @@
         "heating_prepayments_from_valid": {
           "name": "heating_prepayments_from_valid",
           "value": "\"from\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]' AND CAST(substr(\"from\", 6, 2) AS INTEGER) BETWEEN 1 AND 12"
+        }
+      }
+    },
+    "heating_self_spans": {
+      "name": "heating_self_spans",
+      "columns": {
+        "plant_id": {
+          "name": "plant_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "from_period": {
+          "name": "from_period",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "until_period": {
+          "name": "until_period",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "heating_self_spans_plant_id_heating_plants_id_fk": {
+          "name": "heating_self_spans_plant_id_heating_plants_id_fk",
+          "tableFrom": "heating_self_spans",
+          "tableTo": "heating_plants",
+          "columnsFrom": [
+            "plant_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "heating_self_spans_plant_id_from_period_pk": {
+          "columns": [
+            "plant_id",
+            "from_period"
+          ],
+          "name": "heating_self_spans_plant_id_from_period_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "heating_self_spans_from_valid": {
+          "name": "heating_self_spans_from_valid",
+          "value": "\"from_period\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]' AND CAST(substr(\"from_period\", 6, 2) AS INTEGER) BETWEEN 1 AND 12"
+        },
+        "heating_self_spans_until_valid": {
+          "name": "heating_self_spans_until_valid",
+          "value": "\"until_period\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]' AND CAST(substr(\"until_period\", 6, 2) AS INTEGER) BETWEEN 1 AND 12"
+        },
+        "heating_self_spans_order_valid": {
+          "name": "heating_self_spans_order_valid",
+          "value": "\"until_period\" IS NULL OR \"until_period\" > \"from_period\""
         }
       }
     },

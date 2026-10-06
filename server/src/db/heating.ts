@@ -20,25 +20,25 @@
 // Diese Datei importiert aus repository.ts, nie umgekehrt; die Prüfungen an Kostenpositionen und
 // Zählern stehen dort, weil sie zum Verschmelzen dieser Sammlungen gehören.
 import { and, count, eq, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm'
-import type { AssignableHeatingItem, HeatingPlant, HeatingPlantUnit, PeriodKey } from '../../../shared/types.ts'
+import type { AssignableHeatingItem, HeatingPlant, HeatingPlantUnit, PeriodKey, SelfSpanRange } from '../../../shared/types.ts'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 import { plantRules } from '../../../shared/heatingPeriod.ts'
 import { CO2_FUELS } from '../co2.ts'
 import { STOCK_ENERGIES } from '../fuel.ts'
 import { openCo2Periods } from './co2.ts'
-import { parsePeriodKey, periodKey, periodLabel, periodOfKey, rulesOf } from '../../../shared/period.ts'
-import { heatingPeriodClosed, plantContext } from './heatingPeriodContext.ts'
+import { parsePeriodKey, periodContaining, periodKey, periodLabel, periodOfKey, rulesOf } from '../../../shared/period.ts'
+import { closedHeatingKeys, heatingPeriodClosed, plantContext } from './heatingPeriodContext.ts'
 import type { Database, Executor } from './client.ts'
 import { readHeatingPlants, readMeters, readProperties, readUnits } from './read.ts'
-import { KWH_ENERGIES } from '../heating.ts'
+import { KWH_ENERGIES, openSelfSpan } from '../heating.ts'
 import { SELF_VIA_SETUP, SelfItemsError, selfItemsOf } from './heatingSelf.ts'
 import { hkvCutNotByConsumption } from '../../../shared/law/heizkostenv.ts'
-import { LAW_AS_OF, valueAt } from '../../../shared/law/register.ts'
+import { dayAfter, LAW_AS_OF, valueAt } from '../../../shared/law/register.ts'
 import { asNullableFilled, asNullableText, asText, guardServedChange, has, heatingPeriodAt, heatingRulesOf, HeatingError, insertEntityIn, ISO_DATE, merged, oneOfOrUndefined, raw, sameProperty } from './repository.ts'
 import { buildingCycle, lineRoot, sameLine, servesUnit } from '../../../shared/heatingPeriod.ts'
 import {
   AREA_BASES_HEAT, CAPTURE_METHODS, CHANGE_SPLITS, CO2_RESTRICTIONS, HOT_WATER, fuelDeliveries, closedHeatingSettlementHistory, co2Statements, closedHeatingSettlements, closedSettlements, costItems, DEVICES_INSTALLED_AFTER, DEVICES_REMOTE, HEATING_ENERGIES, HEATING_METHODS,
-  HEATING_SOURCES, HEATING_SUPPLIES, NEW_DEVICES_INSTALLS, heatingPeriodChanges, heatingPeriods, heatingPlants, heatingPlantUnits, heatingPrepaymentOverrides, heatingSeparateSpans, meters, units,
+  HEATING_SOURCES, HEATING_SUPPLIES, NEW_DEVICES_INSTALLS, heatingPeriodChanges, heatingPeriods, heatingPlants, heatingPlantUnits, heatingPrepaymentOverrides, heatingSelfSpans, heatingSeparateSpans, meters, units,
 } from './schema.ts'
 
 // Die Sätze der Sperren. Jeder sagt, was bis dahin geht.
@@ -115,7 +115,7 @@ function mergeHeatingPlant(current: HeatingPlant, body: unknown): HeatingPlant {
     areaBasisHeat: merged(body, 'areaBasisHeat', current.areaBasisHeat, (v) => oneOfOrUndefined(AREA_BASES_HEAT, v) ?? current.areaBasisHeat),
     heatPumpInstalledOn: merged(body, 'heatPumpInstalledOn', current.heatPumpInstalledOn, asNullableFilled),
     // Setzt nur die Einrichtung der eigenen Abrechnung; das Zurückschalten löscht ihn (updateHeatingPlant).
-    selfFrom: current.selfFrom ?? null,
+    selfSpans: current.selfSpans ?? [],
   }
 }
 
@@ -126,7 +126,7 @@ const emptyHeatingPlant = (id: string, propertyId: string): HeatingPlant => ({
   capturedOnOct2024: null, warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null,
   periodChanges: [], separateSpans: [], units: null, newDevicesInstall: null,
   nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null,
-  hotWater: 'combined', capture: null, areaBasisHeat: 'area', heatPumpInstalledOn: null, selfFrom: null,
+  hotWater: 'combined', capture: null, areaBasisHeat: 'area', heatPumpInstalledOn: null, selfSpans: [],
 })
 
 export async function guardHeatingPlant(db: Executor, before: HeatingPlant | null, after: HeatingPlant): Promise<void> {
@@ -313,8 +313,13 @@ export const plantRow = (p: HeatingPlant) => ({
   nonResidential: p.nonResidential, restriction: p.restriction, districtEtsNew: p.districtEtsNew,
   endsOn: p.endsOn, replacesPlantId: p.replacesPlantId, buildingWith: p.buildingWith, takesOverStock: p.takesOverStock,
   hotWater: p.hotWater, capture: p.capture, areaBasisHeat: p.areaBasisHeat, heatPumpInstalledOn: p.heatPumpInstalledOn,
-  selfFrom: p.method === 'self' ? (p.selfFrom ?? null) : null,
 })
+
+// Die Zeiträume der eigenen Heizkostenabrechnung, ganz ersetzt wie die Liste der Wohnungen (Durchsicht von #239).
+export async function writeSelfSpans(tx: Executor, plantId: string, spans: readonly SelfSpanRange[]): Promise<void> {
+  await tx.delete(heatingSelfSpans).where(eq(heatingSelfSpans.plantId, plantId))
+  if (spans.length > 0) await tx.insert(heatingSelfSpans).values(spans.map((s) => ({ plantId, from: s.from, until: s.until })))
+}
 
 // Die Liste der Wohnungen, ganz ersetzt wie die Untertabellen in repository.ts.
 async function writePlantUnits(db: Executor, p: HeatingPlant): Promise<void> {
@@ -412,13 +417,26 @@ export async function updateHeatingPlant(db: Database, id: string, body: unknown
   const zurueck = current.method === 'self' && next.method !== 'self'
   // Durchsicht von #239, W1: Zurück heißt, der Beginn entfällt, und die Anteile offener Heizperioden ab ihm
   // werden geleert; die abgeschlossener bleiben, denn sie stehen in zugestellten Abrechnungen.
-  const clearShares = zurueck ? await openShareRowsFrom(db, id, current.selfFrom ?? null) : []
+  // Runde 3: Bleiben abgeschlossene Heizperioden der eigenen Abrechnung, endet sie mit der ersten offenen
+  // (`selfTo`), statt zu verschwinden; sonst rechnete die heutige Abrechnung sie anders als zugestellt.
+  // Eine abgeschlossene nach einer offenen ließe sich so nicht beschreiben; dann zuerst abschließen.
+  const open = zurueck ? openSelfSpan(current) : null
+  const span = open ? await selfSpanEnd(db, id, open.from) : null
+  if (span && span.closedAfter !== null) {
+    throw new HeatingError(409, `Die Heizperiode ${span.closedAfter.slice(0, 4)} ist abgeschlossen, die Heizperiode ${(span.to ?? '').slice(0, 4)} davor nicht. Schließen Sie diese zuerst ab oder öffnen Sie die spätere wieder, bevor Sie die eigene Heizkostenabrechnung beenden.`)
+  }
+  if (zurueck) {
+    const rest = (current.selfSpans ?? []).filter((s) => s.until !== null)
+    next.selfSpans = open && span?.to && span.to !== open.from ? [...rest, { from: open.from, until: span.to }] : rest
+  }
+  const clearShares = zurueck ? await openShareRowsFrom(db, id, open?.from ?? null) : []
   const offen = zurueck ? await selfItemsOf(db, id, null, 'heatingSystem') : []
   if (offen.length > 0 && raw(body, 'convertItems') !== 'area') {
     throw new SelfItemsError(
       `Diese Heizanlage hat ${offen.length === 1 ? 'eine Position' : `${offen.length} Positionen`} in offenen Zeiträumen, die nach der Heizkostenverordnung verteilt ${offen.length === 1 ? 'wird' : 'werden'}. Bestätigen Sie, dass sie künftig nach Wohnfläche verteilt ${offen.length === 1 ? 'wird' : 'werden'}; prüfen Sie danach die Schlüssel. ` +
         `Fällt die Anlage unter die Heizkostenverordnung, verteilen Sie damit nicht nach Verbrauch, und jeder Mieter darf seinen Anteil um ${valueAt(hkvCutNotByConsumption, LAW_AS_OF)} % kürzen (§ 12 Abs. 1 Satz 1 HeizkostenV). ` +
-        'Einen anderen Abrechnungsmaßstab dürfen Sie nur für künftige Abrechnungszeiträume und zu ihrem Beginn wählen, durch Erklärung gegenüber den Mietern (§ 6 Abs. 4 HeizkostenV).',
+        'Einen anderen Abrechnungsmaßstab dürfen Sie nur für künftige Abrechnungszeiträume und zu ihrem Beginn wählen, durch Erklärung gegenüber den Mietern (§ 6 Abs. 4 HeizkostenV). ' +
+        'Die Anteile nach Verbrauch der offenen Heizperioden werden dabei verworfen; abgeschlossene Heizperioden rechnen weiter nach der Heizkostenverordnung, wie sie zugestellt wurden.',
       offen,
     )
   }
@@ -451,9 +469,24 @@ export async function updateHeatingPlant(db: Database, id: string, body: unknown
       await tx.update(heatingPeriods).set({ heatConsumptionPct: null, waterConsumptionPct: null, insulationRule: null }).where(eq(heatingPeriods.id, rowId))
     }
     await writePlantUnits(tx, next)
+    if (zurueck) await writeSelfSpans(tx, id, next.selfSpans ?? [])
     await guardPlantsOfProperty(tx, current.propertyId)
   })
   return (await readHeatingPlants(db)).find((p) => p.id === id) ?? null
+}
+
+// Die erste offene Heizperiode ab `from` und, falls danach noch eine abgeschlossene kommt, deren Schlüssel
+// (Runde 3).
+async function selfSpanEnd(db: Database, plantId: string, from: string | null): Promise<{ to: string | null; closedAfter: string | null } | null> {
+  const ctx = await plantContext(db, plantId)
+  if (!ctx || from === null) return null
+  const closed = new Set(await closedHeatingKeys(db, ctx))
+  const key = parsePeriodKey(from)
+  let h = key === null ? null : periodOfKey(ctx.plantRules, key)
+  while (h && closed.has(String(h.key))) h = periodContaining(ctx.plantRules, dayAfter(h.to))
+  const to = h ? String(h.key) : null
+  const closedAfter = to === null ? null : ([...closed].filter((k) => k > to).sort()[0] ?? null)
+  return { to, closedAfter }
 }
 
 // Die Zeilen offener Heizperioden ab `from` mit einem Anteil (Durchsicht von #239, W1).
@@ -596,7 +629,9 @@ export async function replaceHeatingPlant(db: Database, oldId: string, newId: st
   const served = (await readUnits(db)).filter((u) => u.propertyId === old.propertyId && servesUnit(old, u)).map((u) => ({ unitId: u.id, heatedAreaM2: null }))
   const picked: Record<string, unknown> = {}
   for (const k of SWAP_FIELDS) if (has(body, k)) picked[k] = raw(body, k)
-  const base: HeatingPlant = { ...old, id: newId, name: '', separateSpans: [], units: served, endsOn: null, replacesPlantId: oldId, takesOverStock: null }
+  const base: HeatingPlant = { ...old, id: newId, name: '', separateSpans: [], units: served, endsOn: null, replacesPlantId: oldId, takesOverStock: null,
+    // Der Beginn der eigenen Abrechnung geht nur mit, wenn die alte Anlage selbst abrechnet (Runde 3).
+    selfSpans: openSelfSpan(old) ? [{ from: openSelfSpan(old)?.from ?? '', until: null }] : [] }
   const merged = mergeHeatingPlant(base, picked)
   // Zur eigenen Heizkostenabrechnung nur über die Einrichtung (Heizung PR 10); eine Anlage, die schon
   // selbst abrechnet, gibt die Art an die neue weiter.
@@ -632,6 +667,7 @@ export async function replaceHeatingPlant(db: Database, oldId: string, newId: st
     await writePlantUnits(tx, previous)
     await tx.insert(heatingPlants).values(plantRow(plant))
     await writePlantUnits(tx, plant)
+    await writeSelfSpans(tx, newId, plant.selfSpans ?? [])
     if (plant.periodChanges.length > 0) await tx.insert(heatingPeriodChanges).values(plant.periodChanges.map((fromMonth) => ({ plantId: newId, fromMonth })))
     await guardPlantsOfProperty(tx, old.propertyId)
   })

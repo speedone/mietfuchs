@@ -160,7 +160,7 @@ test('Zwei Heizperioden in einer Abrechnung nach einem Wechsel der Anlage: beide
 
 test('Durchsicht von #239, N3: zwei Heizperioden in einer Abrechnung, die eigene Abrechnung beginnt mit der zweiten; die erste rechnet wie bisher', () => {
   const src = haus({
-    heatingPlants: [{ ...anlage({ periodChanges: ['2026-01'] }), method: 'self', capture: 'heatMeter', hotWater: 'none', selfFrom: '2025-05' }],
+    heatingPlants: [{ ...anlage({ periodChanges: ['2026-01'] }), method: 'self', capture: 'heatMeter', hotWater: 'none', selfSpans: [{ from: '2025-05', until: null }] }],
     tenancies: [mieter('A', '2024-01-01', null, [{ from: '2024-01', monthlyCents: 30000 }])],
     costItems: [heizung('h2024', '2024-05', 120000, { taxYear: 2025 }), heizung('rumpf', '2025-05', 80000, { key: 'heatingSystem', heatingPart: 'fuel', heatingTarget: 'heating' })],
   })

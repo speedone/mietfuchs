@@ -16,7 +16,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { AiSettings, AiSlot, Co2Statement, DegreeDayValue, FrozenFuelCarry, FuelDelivery, FuelDeliveryPart, Co2TenantRelief, CostItem, HeatingPeriodData, HeatingPlant, HeatingPlantUnit, HeatingPrepaymentOverride, InterimGap, SeparateSpan, PeriodKey, PeriodRules, Meter, Payment, PersonEntry, PrepaymentEntry, Reading, RentEntry, Settings, Tenancy, Unit, ExternalBasis, UploadInfo, StoredAssessment, StoredAssessmentLine } from '../../shared/types.ts'
+import type { AiSettings, AiSlot, Co2Statement, DegreeDayValue, FrozenFuelCarry, FuelDelivery, FuelDeliveryPart, Co2TenantRelief, CostItem, HeatingPeriodData, HeatingPlant, HeatingPlantUnit, HeatingPrepaymentOverride, InterimGap, SelfSpanRange, SeparateSpan, PeriodKey, PeriodRules, Meter, Payment, PersonEntry, PrepaymentEntry, Reading, RentEntry, Settings, Tenancy, Unit, ExternalBasis, UploadInfo, StoredAssessment, StoredAssessmentLine } from '../../shared/types.ts'
 import type { ClosedSettlement } from '../src/store.ts'
 import { applyMigrations, connect, loadMigrations } from '../src/db/client.ts'
 import * as schema from '../src/db/schema.ts'
@@ -129,7 +129,7 @@ type _Payments = Assert<Matches<typeof schema.payments.$inferSelect, Payment>>
 // sähe eine Anlage, deren letzte Wohnung gelöscht wurde, aus wie eine ohne Liste.
 // Die Wechsel der eigenen Heizperiode und die Spannen nach Weg d stehen in eigenen Tabellen
 // (Heizung PR 5), wie die Wohnungen in heating_plant_units.
-type HeatingPlantColumns = Omit<HeatingPlant, 'units' | 'periodChanges' | 'separateSpans'> & { unitsLimited: boolean }
+type HeatingPlantColumns = Omit<HeatingPlant, 'units' | 'periodChanges' | 'separateSpans' | 'selfSpans'> & { unitsLimited: boolean }
 type _HeatingPlants = Assert<Matches<typeof schema.heatingPlants.$inferSelect, HeatingPlantColumns>>
 type _HeatingPlantUnits = Assert<Matches<Omit<typeof schema.heatingPlantUnits.$inferSelect, 'plantId'>, HeatingPlantUnit>>
 type _HeatingPeriods = Assert<Matches<typeof schema.heatingPeriods.$inferSelect, HeatingPeriodData>>
@@ -138,6 +138,8 @@ type _HeatingPeriods = Assert<Matches<typeof schema.heatingPeriods.$inferSelect,
 type _HeatingPrepayments = Assert<Matches<Omit<typeof schema.heatingPrepayments.$inferSelect, 'tenancyId'>, PrepaymentEntry>>
 type _HeatingPrepaymentOverrides = Assert<Matches<Omit<typeof schema.heatingPrepaymentOverrides.$inferSelect, 'tenancyId'>, HeatingPrepaymentOverride>>
 type _HeatingSeparateSpans = Assert<Matches<Omit<typeof schema.heatingSeparateSpans.$inferSelect, 'plantId'>, SeparateSpan>>
+// Die Zeiträume der eigenen Heizkostenabrechnung (Durchsicht von #239).
+type _HeatingSelfSpans = Assert<Matches<Omit<typeof schema.heatingSelfSpans.$inferSelect, 'plantId'>, SelfSpanRange>>
 // --- Eigene Heizkostenabrechnung (Heizung PR 10) ---
 type _InterimGaps = Assert<Matches<typeof schema.interimReadingGaps.$inferSelect, InterimGap>>
 
@@ -279,6 +281,7 @@ test('Migration lässt sich anwenden und legt alle Tabellen an', async () => {
       'heating_plants',
       'heating_prepayment_overrides',
       'heating_prepayments',
+      'heating_self_spans',
       'heating_separate_spans',
       'interim_reading_gaps',
       'meters',
@@ -972,11 +975,11 @@ test('Heizkostenabrechnung: Vorgaben an der Anlage, Erfassung Pflicht bei eigene
     connection.exec("INSERT INTO heating_plants (id, property_id, energy) VALUES ('hp1', 'objekt-1', 'gas')")
     assert.deepEqual(connection.rows('SELECT hot_water, capture, area_basis_heat, heat_pump_installed_on FROM heating_plants')[0], ['combined', null, 'area', null])
     assert.ok(rejects(connection, "INSERT INTO heating_plants (id, property_id, energy, method) VALUES ('hp2', 'objekt-1', 'gas', 'self')"), 'eigene Abrechnung ohne Erfassung')
-    assert.equal(rejects(connection, "INSERT INTO heating_plants (id, property_id, energy, method, capture, self_from) VALUES ('hp3', 'objekt-1', 'gas', 'self', 'heatMeter', '2025-01')"), null)
-    // Durchsicht von #239, W1/W2: der Beginn steht genau bei der eigenen Abrechnung und ist ein Schlüssel.
-    assert.ok(rejects(connection, "INSERT INTO heating_plants (id, property_id, energy, method, capture) VALUES ('hp4', 'objekt-1', 'gas', 'self', 'heatMeter')"), 'eigene Abrechnung ohne Beginn')
-    assert.ok(rejects(connection, "UPDATE heating_plants SET self_from = '2025-01' WHERE id = 'hp1'"), 'Beginn ohne eigene Abrechnung')
-    assert.ok(rejects(connection, "UPDATE heating_plants SET self_from = '2025-13' WHERE id = 'hp3'"), 'Beginn kein Schlüssel')
+    assert.equal(rejects(connection, "INSERT INTO heating_plants (id, property_id, energy, method, capture) VALUES ('hp3', 'objekt-1', 'gas', 'self', 'heatMeter')"), null)
+    // Durchsicht von #239: Zeiträume der eigenen Abrechnung sind Schlüssel von Heizperioden, das Ende nach dem Beginn.
+    assert.equal(rejects(connection, "INSERT INTO heating_self_spans (plant_id, from_period, until_period) VALUES ('hp3', '2025-01', '2026-01')"), null)
+    assert.ok(rejects(connection, "INSERT INTO heating_self_spans (plant_id, from_period, until_period) VALUES ('hp3', '2027-13', NULL)"), 'Beginn kein Schlüssel')
+    assert.ok(rejects(connection, "INSERT INTO heating_self_spans (plant_id, from_period, until_period) VALUES ('hp3', '2028-01', '2027-01')"), 'Ende vor dem Beginn')
     assert.ok(rejects(connection, "UPDATE heating_plants SET hot_water = 'zentral' WHERE id = 'hp1'"), 'unbekannte Warmwasserbereitung')
     assert.ok(rejects(connection, "UPDATE heating_plants SET capture = 'verdunster' WHERE id = 'hp1'"), 'unbekannte Erfassung')
     assert.ok(rejects(connection, "UPDATE heating_plants SET area_basis_heat = 'raum' WHERE id = 'hp1'"), 'unbekannte Flächenbasis')
@@ -988,7 +991,7 @@ test('Heizkostenabrechnung: Vorgaben an der Anlage, Erfassung Pflicht bei eigene
 test('Heizkostenabrechnung: Schlüssel heatingSystem nur mit Ziel, Teil und Anlage; Ziel nur bei Heizkosten', async () => {
   const { connection, cleanup } = await freshDb()
   try {
-    connection.exec("INSERT INTO heating_plants (id, property_id, energy, method, capture, self_from) VALUES ('hp1', 'objekt-1', 'gas', 'self', 'heatMeter', '2025-01')")
+    connection.exec("INSERT INTO heating_plants (id, property_id, energy, method, capture) VALUES ('hp1', 'objekt-1', 'gas', 'self', 'heatMeter')")
     const insert = (id: string, cols: string, vals: string) =>
       rejects(connection, `INSERT INTO cost_items (id, property_id, period, category, description, amount_cents, key${cols}) VALUES ('${id}', 'objekt-1', '2025-01', 'Heizung und Warmwasser', 'Gas', 600000, ${vals})`)
     assert.equal(insert('c1', ', heating_plant_id, heating_part, heating_target', "'heatingSystem', 'hp1', 'fuel', 'both'"), null)

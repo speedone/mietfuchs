@@ -13,6 +13,7 @@
 //
 // Diese Datei importiert aus repository.ts und read.ts, nie umgekehrt.
 import { lineRowsOf } from './selfLine.ts'
+import { selfFromOf } from '../heating.ts'
 import { eq, inArray } from 'drizzle-orm'
 import type { BillingPeriod, Co2Statement, Co2TenantRelief, HeatingPeriodView, PeriodKey } from '../../../shared/types.ts'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
@@ -67,7 +68,7 @@ export async function heatingPeriodViews(db: Database, plantId: string, periodPa
   // auch bei der eigenen Heizkostenabrechnung (Entwurf 8.2).
   const stockData = isStockEnergy(ctx.plant.energy) ? await readStock(db) : null
   const lineRows = ctx.plant.method === 'self' ? (await lineRowsOf(db, plantId)).merged : []
-  const selfBegin = ctx.plant.selfFrom ?? null
+  const selfBegin = selfFromOf(ctx.plant)
   const views: HeatingPeriodView[] = []
   for (const h of hs) {
     const row = rows.find((r) => r.period === h.key)
