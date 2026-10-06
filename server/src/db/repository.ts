@@ -672,7 +672,8 @@ async function guardFuelLink(db: Executor, before: CostItem | null, after: CostI
       `Die Kostenposition gehört zu Objekt ${await propertyName(db, after.propertyId)}, die Lieferung aber zur Heizanlage von Objekt ${await propertyName(db, plant.propertyId)}. ` +
         'Eine Position zeigt nur auf eine Lieferung einer Heizanlage desselben Objekts.')
   }
-  if (plant?.method !== 'manual') {
+  // Heizung PR 10 (N2): verknüpft wird bei freien Schlüsseln und bei der eigenen Heizkostenabrechnung.
+  if (plant?.method === 'service') {
     throw new HeatingError(400,
       'Rechnet ein Messdienst oder die Gemeinschaft ab, steckt der Brennstoff in deren Einzelbeträgen; eine Lieferung wird dort mit keiner Position verknüpft. Tragen Sie die Rechnung nur als Lieferung ein.')
   }

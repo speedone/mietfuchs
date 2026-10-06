@@ -29,7 +29,9 @@ export function mayAgreeOtherwise<U extends HeatingUnit>(units: readonly U[], is
 // der fertigen Abrechnung eines Messdienstes (`amounts`) oder laut Gemeinschaftsabrechnung
 // (`external`), die bei einer Eigentumswohnung die Heizkostenabrechnung der Gemeinschaft enthält.
 export function heatingByConsumption(key: CostKey): boolean {
-  return key === 'meter' || key === 'amounts' || key === 'external'
+  // Heizung PR 10: auch nach der eigenen Heizkostenabrechnung (`heatingSystem`), deren Grund- und
+  // Verbrauchsanteil die Verordnung selbst festlegt.
+  return key === 'meter' || key === 'amounts' || key === 'external' || key === 'heatingSystem'
 }
 
 // Die Befunde eines Jahres. Eine Direktzuordnung (`direct`, etwa die Wartung der Gastherme einer
@@ -75,7 +77,7 @@ export function heatingFindings(
     const own = heating.filter((c) => takesPart(c, u.id))
     const metered = own.filter((c) => c.key === 'meter')
     const other = own.filter((c) => !heatingByConsumption(c.key))
-    if (metered.length === 0 || other.length === 0 || own.some((c) => c.key === 'amounts' || c.key === 'external')) continue
+    if (metered.length === 0 || other.length === 0 || own.some((c) => c.key === 'amounts' || c.key === 'external' || c.key === 'heatingSystem')) continue
     const key = own.map((c) => c.id).join('\u0000')
     const g = groups.get(key) ?? {
       unitIds: [],

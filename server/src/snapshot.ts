@@ -22,7 +22,7 @@ import { calendarPeriod, calendarYearPeriod, parsePeriodKey, periodContaining, p
 import { hasOwnRhythm, heatingPeriodsEndingIn, plantRules, sameFuelLine, settledSeparately, settlementKeyOf, type PlantWay } from '../../shared/heatingPeriod.ts'
 import { isStockEnergy } from '../../shared/fuelStock.ts'
 import { dayAfter, germanDate } from '../../shared/law/register.ts'
-import { isStockFuelItem, readFrozenStock, settledByDefault, stockTemplateOfLine, type PreviousFuel, type StockPeriodInput } from './fuelStock.ts'
+import { isStockFuelItem, readFrozenStock, settledByDefault, stockKeysOf, stockTemplateOfLine, type PreviousFuel, type StockPeriodInput } from './fuelStock.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import type { Db } from './store.ts'
 
@@ -706,7 +706,7 @@ export function stockChainsOf(source: StockChainSource, plant: SnapshotHeatingPl
         : [],
       frozenClosing: frozenOf(p),
       nextFrozenOpening: nextFrozenOf(p),
-      hasKey: stockTemplateOfLine(itemsIn(p.key), itemsIn(previousPeriod(rules, p).key), sameFuelLine(plant, plants), HEATING_CATEGORY) !== null,
+      hasKey: stockTemplateOfLine(itemsIn(p.key), itemsIn(previousPeriod(rules, p).key), sameFuelLine(plant, plants), HEATING_CATEGORY, stockKeysOf(plant.method)) !== null,
       // Nach dem letzten Betriebstag gibt es keine Folgeperiode, die den Endbestand übernähme.
       nextClosedWithoutStock: nextClosedOf(p) && nextFrozenOf(p) === null,
     }

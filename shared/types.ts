@@ -1615,6 +1615,8 @@ export type FuelDeliveryLine = {
   inPeriodCents: number | null
   emissionsKg: number | null
   co2Cents: number | null
+  // Energie in der Heizperiode in kWh, wie abgerechnet (Heizung PR 10); `null` ohne Angabe.
+  energyKwh: number | null
 }
 
 // Ein Übertrag der Mieterseite dieser Heizperiode aus oder in die Heizperiode `period`.
@@ -1629,6 +1631,8 @@ export type FuelEstimateProposal = {
   amountCents: number
   emissionsKg: number | null
   co2CostCents: number | null
+  // kWh im selben Verhältnis (Heizung PR 10, Abweichung 11); `null`, wenn die Vorlage keine nennt.
+  energyKwh: number | null
   basedOn: string
   byMeter: boolean
   // Der Anteil der Rechnung `basedOn`, der für die Lücke angesetzt ist, in Promille (Durchsicht von #233,

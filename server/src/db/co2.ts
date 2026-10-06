@@ -32,7 +32,7 @@ import { CO2_METHODS, co2Statements, co2TenantReliefs, costItems, DHW_METHODS, h
 
 const ASK_METHOD = 'Bitte beantworten Sie zuerst die Frage, ob die Kostenaufstellung eine Zeile wie „Abzüglich CO₂-Kosten Vermieter“ enthält.'
 const SERVICE_NOT_SELF = 'Rechnet ein Messdienst oder die Gemeinschaft ab, beantworten Sie die Frage nach der Abzugszeile. Hat der Messdienst die CO₂-Kosten nicht aufgeteilt, wählen Sie „gar nicht aufgeteilt“; mit der Brennstoffrechnung als Lieferung teilt Mietfuchs dann selbst auf.'
-const MANUAL_SELF = 'Bei freien Schlüsseln teilt Mietfuchs die CO₂-Kosten selbst auf, aus den Lieferungen des Versorgers. Angeben lässt sich hier nur die Fläche der Einstufung, wenn sie von der Wohnfläche der versorgten Wohnungen abweicht.'
+const MANUAL_SELF = 'Bei freien Schlüsseln teilt Mietfuchs die CO₂-Kosten selbst auf, ebenso bei der eigenen Heizkostenabrechnung, aus den Lieferungen des Versorgers. Angeben lässt sich hier nur die Fläche der Einstufung, wenn sie von der Wohnfläche der versorgten Wohnungen abweicht.'
 // Die Heizperioden einer Anlage mit CO₂-Angaben, die noch nicht abgeschlossen sind. Abgeschlossene
 // sind eingefroren und lassen sich nicht mehr entfernen; sie dürfen einen Wechsel der Anlage
 // (Kesseltausch, andere Abrechnung) deshalb nicht sperren (Nachprüfung von PR 6).
@@ -154,8 +154,9 @@ function mergeCo2(current: Co2Statement, body: unknown): Co2Statement {
 
 async function guardCo2(db: Executor, ctx: PlantContext, h: BillingPeriod, st: Co2Statement): Promise<void> {
   // Heizung PR 7: bei freien Schlüsseln nur `self` (die Fläche der Einstufung), beim Messdienst nie.
-  if (ctx.plant.method === 'manual' && st.method !== 'self') throw new HeatingError(400, MANUAL_SELF)
-  if (ctx.plant.method !== 'manual' && st.method === 'self') throw new HeatingError(400, SERVICE_NOT_SELF)
+  // Heizung PR 10 (N7): bei der eigenen Heizkostenabrechnung wie bei freien Schlüsseln.
+  if (ctx.plant.method !== 'service' && st.method !== 'self') throw new HeatingError(400, MANUAL_SELF)
+  if (ctx.plant.method === 'service' && st.method === 'self') throw new HeatingError(400, SERVICE_NOT_SELF)
   if (!valueAt(co2ApplicableFrom, h.from)) {
     throw new HeatingError(400, `Die CO₂-Kosten sind erst für Abrechnungszeiträume aufzuteilen, die am oder nach dem ${germanDate(co2FirstPeriodStart())} beginnen (§ 11 Abs. 2 Satz 1 CO2KostAufG); diese Heizperiode beginnt früher.`)
   }
