@@ -387,7 +387,7 @@ const GUIDE_DATA = {
       { text: 'Die Abrechnung muss dem Mieter bis zum Ablauf des zwölften Monats nach Ende des Abrechnungszeitraums zugehen; eine Nachforderung danach gibt es nur, wenn Sie die Verspätung nicht zu vertreten haben. Kommt die Rechnung des Versorgers spät, warten Sie mit dem Abschluss, solange die Frist läuft.', norm: '§ 556 Abs. 3 Satz 2 und 3 BGB' },
     ],
     gaps: [
-      { text: 'Lieferungen je Wohnung bei Etagenheizungen auf Vertrag des Vermieters.' },
+      { text: 'Bei Etagenheizungen auf Ihren Vertrag ein gemeinsamer Gaszähler für mehrere Wohnungen; Mietfuchs braucht je Wohnung eine eigene Rechnung.', issue: 97 },
     ],
     terms: ['fuelDelivery', 'degreeDays', 'fixedPriceComponent', 'fuelEstimate'],
   },
@@ -417,6 +417,34 @@ const GUIDE_DATA = {
       { text: 'Eine eigene Heizkostenabrechnung nach Grund- und Verbrauchskosten rechnet Mietfuchs noch nicht; auch der Vorrat dort kommt mit ihr.', issue: 99 },
     ],
     terms: ['fuelStock', 'fuelDelivery', 'co2Split'],
+  },
+  // Heizung PR 9 (Durchsicht von #238, Recht I6): zweite Heizanlage, Etagenheizung, Heizung erneuert.
+  heatingRenewed: {
+    title: 'Heizung erneuert, zweite Heizanlage oder Etagenheizung',
+    applies: 'Die Heizung wurde im Lauf eines Abrechnungszeitraums erneuert, etwa Öl gegen Gas; oder im Objekt heizen zwei Anlagen, etwa die Zentralheizung und eine Gastherme im Dachgeschoss; oder Thermen in den Wohnungen laufen über Ihren Gasvertrag.',
+    steps: [
+      { page: 'stammdaten', text: 'Wurde die Heizung erneuert, klicken Sie in der Karte „Heizung“ bei der bisherigen Anlage auf „Heizung erneuert (Kessel getauscht)“, wählen den Tag, an dem die neue in Betrieb ging, und ihren Brennstoff, dann „Tausch speichern“.' },
+      { page: 'heizkosten', text: 'Ist noch Heizöl, Flüssiggas oder Pellets im Tank, tragen Sie bei der bisherigen Anlage in der Karte „Vorrat“ den Endbestand zum letzten Betriebstag ein und speichern mit „Vorrat speichern“.' },
+      { page: 'stammdaten', text: 'Heizt eine zweite Anlage gleichzeitig, legen Sie sie mit „+ weitere Heizanlage“ an, geben beiden Anlagen einen Namen und ihre Wohnungen und sagen, ob sie im selben Gebäude steht.' },
+      { page: 'kosten', text: 'Wählen Sie an jeder Heizposition unter „Heizanlage“ die Anlage, zu der die Rechnung gehört; Rechnungen einer Etagenheizung ordnen Sie mit dem Schlüssel „Direktzuordnung“ der Wohnung zu.' },
+    ],
+    result: [
+      'Nach einem Tausch rechnet jede Anlage nur über ihre Betriebstage. Einen Restbestand übernimmt die neue Anlage, wenn sie mit demselben Brennstoff weiterheizt und Sie beim Tausch „Verheizt der neue Kessel den Brennstoff im Tank weiter?“ mit Ja beantworten; sonst tragen ihn die Mieter nicht, und er steht mit seinem Wert bei Ihnen.',
+      'Eingestuft wird das Gebäude über den Ausstoß aller Anlagen, die im Jahr darin geheizt haben.',
+      'Eine Heizposition, die über Wohnungen zweier Anlagen verteilt wird, meldet die Abrechnung als Fehler.',
+    ],
+    example: 'Ölheizung bis 30.06.2025, ab 01.07.2025 Gas, drei Wohnungen mit je 100 m² nach Wohnfläche. Anfangsbestand 2.000 l für 1.900 €, Lieferung 3.000 l für 3.150 €, Restbestand 500 l im Wert von 525 €. Die Mieter tragen 4.525 € Öl und die Gasrechnung über 1.500 €. Öl und Gas zusammen stießen 15.043,35 kg CO₂ aus, 50,1 kg je m²; Sie tragen 80 % der CO₂-Kosten.',
+    caveats: [
+      { text: 'Umgelegt werden die Kosten der verbrauchten Brennstoffe, nicht der Restbestand im Tank.', norm: '§ 7 Abs. 2 HeizkostenV' },
+      { text: 'Eingestuft wird nach dem Ausstoß des Gebäudes pro Quadratmeter Wohnfläche und Jahr; mehrere Wohnungen mit gesonderter oder zentraler Versorgung in einem Gebäude zählen mit ihrer Gesamtwohnfläche. Wie mehrere Anlagen in einem Gebäude einzustufen sind, ist höchstrichterlich nicht geklärt; Mietfuchs stuft sie gemeinsam ein.', norm: '§ 5 Abs. 1 Satz 1 und 2 CO2KostAufG' },
+      { text: 'Für Etagenheizungen gilt die Heizkostenverordnung nicht, und die Betriebskostenverordnung nennt bei ihnen nur Reinigung und Wartung. Ob Sie die Gaskosten umlegen dürfen, wenn der Gasvertrag auf Sie läuft, ist nicht geklärt; umgelegt werden dürfen Betriebskosten nur mit Vereinbarung im Mietvertrag.', norm: '§ 1 Abs. 1 HeizkostenV; § 2 Nr. 4 Buchstabe d BetrKV; § 556 Abs. 1 Satz 1 BGB' },
+    ],
+    gaps: [
+      { text: 'Getrennte Heizkostenabrechnung (eigene Heizperiode mit eigener Vorauszahlung) zusammen mit einem Kesseltausch.', issue: 97 },
+      { text: 'Lücken in den Gasrechnungen einer Etagenheizung je Wohnung erkennen und schätzen; heute zählt jede Rechnung der Anlage.', issue: 97 },
+      { text: 'Ein gemeinsamer Gaszähler für mehrere Wohnungen mit Etagenheizung.', issue: 97 },
+    ],
+    terms: ['boilerSwap', 'perUnitHeating', 'heatingSystem', 'co2Stage'],
   },
 } satisfies Record<string, Guide>
 

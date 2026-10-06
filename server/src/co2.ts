@@ -361,3 +361,96 @@ export function selfSplit(i: SelfSplitInput): SelfSplit {
   }
   return { value, stage, permille, landlordRaw: permille === null ? null : (i.co2Cents * permille) / 1000, adjustments }
 }
+
+// ---------- Mehrere Anlagen und Etagenheizung (Heizung PR 9, Entwurf 9.2, 9.3) ----------
+
+// Was `itemBasisUnits` über den Bestand wissen muss: die Wohnungen der Abrechnungseinheit samt
+// selbstgenutzten, die Wohnung jedes Mietverhältnisses und die Wohnungen mit Zählern eines Typs.
+export type BasisContext = {
+  basisUnitIds: readonly string[]
+  unitOfTenancy: ReadonlyMap<string, string>
+  meterUnitIds: (type: string) => readonly string[]
+}
+
+// Die Wohnungen, auf die eine Position verteilt wird (F9): bei Direktzuordnung ihre Wohnung, bei
+// vereinbarten Anteilen die mit Anteil, bei Einzelbeträgen die Wohnungen der Mietverhältnisse und die
+// eigenen mit Betrag, sonst die Teilnehmer (#94), und ohne Teilnehmer die Basis des Schlüssels: beim
+// Verbrauch die Wohnungen mit Zählern des Typs (alle Wohnungszähler bilden die Basis), sonst die
+// Wohnungen der Abrechnungseinheit samt selbstgenutzten.
+export function itemBasisUnits(
+  item: Pick<SnapshotCostItem, 'key' | 'participantUnitIds' | 'directUnitId' | 'customShares' | 'tenancyAmounts' | 'selfAmounts' | 'meterType'>,
+  ctx: BasisContext,
+): string[] {
+  const unique = (ids: readonly string[]): string[] => [...new Set(ids)]
+  if (item.key === 'direct') return item.directUnitId ? [item.directUnitId] : []
+  if (item.key === 'custom') return unique(Object.entries(item.customShares ?? {}).filter(([, v]) => Number(v) > 0).map(([id]) => id))
+  if (item.key === 'amounts') {
+    const fromTenancies = Object.keys(item.tenancyAmounts ?? {}).flatMap((t) => {
+      const u = ctx.unitOfTenancy.get(t)
+      return u ? [u] : []
+    })
+    return unique([...fromTenancies, ...Object.keys(item.selfAmounts ?? {})])
+  }
+  if (item.participantUnitIds) return unique(item.participantUnitIds)
+  if (item.key === 'meter') return unique(ctx.meterUnitIds(item.meterType ?? ''))
+  return unique(ctx.basisUnitIds)
+}
+
+// Eine Anlage mit der Frage, ob eine Wohnung an ihr hängt (`servesUnit`, shared/heatingPeriod.ts).
+export type PlantServing = { id: string; name: string; serves: (unitId: string) => boolean }
+
+// Die übrigen Anlagen, an denen Wohnungen der Basis hängen, je mit diesen Wohnungen. Leer heißt: Die
+// Position bleibt in ihrer Anlage.
+export function spanningPlants(unitIds: readonly string[], ownPlantId: string, plants: readonly PlantServing[]): { plantId: string; name: string; unitIds: string[] }[] {
+  return plants
+    .filter((p) => p.id !== ownPlantId)
+    .flatMap((p) => {
+      const hit = unitIds.filter((u) => p.serves(u))
+      return hit.length > 0 ? [{ plantId: p.id, name: p.name, unitIds: hit }] : []
+    })
+}
+
+// Eine Wohnung einer Etagenheizung auf Vertrag des Vermieters (§ 5 Abs. 1 Satz 2 CO2KostAufG) in einer
+// Heizperiode: Ausstoß und CO₂-Kosten aus ihren Rechnungen (auf die Heizperiode umgerechnet wie bei
+// jeder Lieferung, PR 7), A_u (`fuelCents`) die Beträge ihrer Heizpositionen, je Mietverhältnis mit
+// Abrechnung x_t sein exakter Anteil daran. `rented`: vermietet (`participates`); `delivered`: eine
+// Rechnung berührt die Heizperiode.
+export type PerUnitFuel = {
+  unitId: string
+  rented: boolean
+  delivered: boolean
+  areaM2: number
+  emissionsKg: number
+  co2Cents: number
+  fuelCents: number
+  shares: { tenancyId: string; exact: number }[]
+}
+
+// Die Einstufung (Entwurf 9.2 Nr. 1): „vermietet er in einem Gebäude mehrere Wohnungen mit gesonderter
+// … Versorgung …, ist deren Gesamtwohnfläche maßgeblich“. Gezählt werden die vermieteten Wohnungen mit
+// Lieferung, mit ihrem Ausstoß, ihrer Fläche und ihren CO₂-Kosten.
+export function perUnitClassification(list: readonly PerUnitFuel[]): { emissionsKg: number; areaM2: number; co2Cents: number } {
+  const counted = list.filter((u) => u.rented && u.delivered)
+  return {
+    emissionsKg: counted.reduce((a, u) => a + u.emissionsKg, 0),
+    areaM2: counted.reduce((a, u) => a + u.areaM2, 0),
+    co2Cents: counted.reduce((a, u) => a + u.co2Cents, 0),
+  }
+}
+
+// Wohnungen, deren CO₂-Kosten nicht in ihren Heizkosten aufgehen: C_u über A_u, oder CO₂-Kosten ohne
+// Heizposition. Sie bekommen keinen Abzug; der Aufrufer meldet `co2.exceeds-heating`.
+export function perUnitExceeding(list: readonly PerUnitFuel[]): string[] {
+  return list.filter((u) => u.co2Cents > 0 && (u.fuelCents <= 0 || u.co2Cents > u.fuelCents)).map((u) => u.unitId)
+}
+
+// Der Abzug je Mietverhältnis (Entwurf 9.3): r_t = ‰/1000 · C_u · x_t / A_u, **ohne** Normierung auf
+// die Mietverhältnisse der Wohnung. Was in A_u auf Leerstand, Eigennutzung oder Pauschale fällt, hat
+// kein x_t und bleibt ohne Abzug beim Vermieter, wie bei der zentralen Anlage. Gerundet wird beim
+// Aufrufer als eine Verteilung von R = round(Σ r) mit `distributeCents`.
+export function perUnitReliefs(permille: number, list: readonly PerUnitFuel[]): { tenancyId: string; unitId: string; raw: number }[] {
+  const exceeding = new Set(perUnitExceeding(list))
+  return list
+    .filter((u) => u.rented && u.fuelCents > 0 && !exceeding.has(u.unitId))
+    .flatMap((u) => u.shares.map((s) => ({ tenancyId: s.tenancyId, unitId: u.unitId, raw: ((permille / 1000) * u.co2Cents * s.exact) / u.fuelCents })))
+}

@@ -275,7 +275,7 @@ test('M2 (T6b): Wechsel des Energieträgers auch bei Vorrat nur in einer abgesch
   await withHouse(async (h) => {
     await h.stock('2024-01', { stockUnit: 'l', openingQuantity: 1000, openingCostCents: 100000, openingEmissionsKg: 2676.3, openingCo2Cents: 17516, openingInvoicedBefore2023: false, closingQuantity: 400 })
     await h.close(2024)
-    await assert.rejects(h.opened.write((db) => updateHeatingPlant(db, 'hp', { energy: 'gas' })), heatingError(409, /Für einen neuen Kessel legen Sie eine neue Heizanlage an/))
+    await assert.rejects(h.opened.write((db) => updateHeatingPlant(db, 'hp', { energy: 'gas' })), heatingError(409, /wählen Sie bei der Heizanlage „Heizung erneuert \(Kessel getauscht\)“/))
   })
 })
 

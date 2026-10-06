@@ -36,7 +36,7 @@ const ids = Object.keys(GUIDES) as GuideId[]
 // ---------- Aufbau ----------
 
 test('Anleitungen: die Vermietungsarten aus #164 und der Abrechnungszeitraum (#208), jede mit allen fünf Abschnitten', () => {
-  assert.deepEqual(ids, ['granny', 'multiFamily', 'condo', 'properties', 'garage', 'flatRate', 'meteringService', 'co2Costs', 'tenantChange', 'periodMayApril', 'supplierInvoice', 'stockFuel'])
+  assert.deepEqual(ids, ['granny', 'multiFamily', 'condo', 'properties', 'garage', 'flatRate', 'meteringService', 'co2Costs', 'tenantChange', 'periodMayApril', 'supplierInvoice', 'stockFuel', 'heatingRenewed'])
   const titles = ids.map((id) => GUIDES[id].title)
   assert.equal(new Set(titles).size, titles.length, 'doppelter Titel')
   for (const id of ids) {
@@ -412,6 +412,43 @@ const checks: Record<GuideId, () => void> = {
       '2.000 l', eur(s.opening.costCents ?? -1), '3.000 l', eur(315000), '2.500 l', eur(250000), '1.800 l', eur(s.closing.costCents ?? -1),
       eur(s.consumed.costCents ?? -1), eur(s.paidCents ?? -1), '60', '40 m²', eur(heat('ta')), eur(heat('tb')),
     ], 'stockFuel')
+  },
+  // Heizung PR 9 (Durchsicht von #238, Recht I6): Öl → Gas mit Restöl, dieselben Zahlen wie calc-kesseltausch.test.ts.
+  heatingRenewed: () => {
+    const units = ['a', 'b', 'c']
+    const anlage = (over: Record<string, unknown>) => ({ ...HP, method: 'manual' as const, units: units.map((unitId) => ({ unitId, heatedAreaM2: null })), propertyId: 'o', ...over })
+    const lieferung = (over: Record<string, unknown> & { id: string; plantId: string }) => ({
+      label: '', invoiceDate: null, deliveredAt: null, invoiceFrom: null, invoiceTo: null, unitId: null, amountCents: null, quantity: null, quantityUnit: null,
+      energyKwh: null, gasBasis: null, heatingValue: null, emissionsKg: null, co2CostCents: null, emissionFactor: null, gridFeeCents: null, bioCostCents: null,
+      sharePermille: null, fixedCents: null, estimated: false, usedByService: true, parts: [], ...over,
+    })
+    const quelle = {
+      properties: [{ id: 'o', kind: 'mfh' as const, cableBuiltBeforeDec2021: null }],
+      units: units.map((u) => ({ ...rented(u, 100), propertyId: 'o' })),
+      tenancies: units.map((u) => tenancy(`t${u}`, u)),
+      costItems: [
+        { ...item('oel', { category: HEATING_CATEGORY, amountCents: 315000, heatingPlantId: 'alt', heatingPart: 'fuel', fuelDeliveryId: 'd1' }), propertyId: 'o' },
+        { ...item('gas', { category: HEATING_CATEGORY, amountCents: 150000, heatingPlantId: 'neu', heatingPart: 'fuel', fuelDeliveryId: 'd2' }), propertyId: 'o' },
+      ],
+      meters: [], readings: [], payments: [], closedSettlements: [],
+      heatingPlants: [anlage({ id: 'alt', energy: 'oil', endsOn: '2025-06-30' }), anlage({ id: 'neu', energy: 'gas', replacesPlantId: 'alt' })],
+      heatingPeriodRows: [{
+        plantId: 'alt', period: calendarPeriod(2025), dhwMethod: null, dhwUnmeasurable: null, stockUnit: 'l' as const, openingQuantity: 2000, openingCostCents: 190000,
+        openingEmissionsKg: 5352.6, openingCo2Cents: 0, openingInvoicedBefore2023: true, openingAlreadySettled: false, closingQuantity: 500, closingMeasuredOn: '2025-06-30',
+      }],
+      fuelDeliveries: [
+        lieferung({ id: 'd1', plantId: 'alt', deliveredAt: '2025-03-15', invoiceDate: '2025-03-15', quantity: 3000, quantityUnit: 'l', emissionsKg: 8028.9, co2CostCents: 52549 }),
+        lieferung({ id: 'd2', plantId: 'neu', invoiceFrom: '2025-07-01', invoiceTo: '2025-12-31', emissionsKg: 3000, co2CostCents: 16500 }),
+      ],
+    }
+    const r = computeSettlement(snapshotFor(quelle, 'o', periodOfKey({ startMonth: 1, changes: [] }, calendarPeriod(2025)) ?? assert.fail('kein Zeitraum')))
+    const alt = r.heating?.find((h) => h.plantId === 'alt') ?? assert.fail('keine alte Anlage')
+    const oel = r.statements.reduce((a, st) => a + st.rows.filter((x) => x.costItemId === 'oel' || x.costItemId.startsWith('stock:alt')).reduce((b, x) => b + x.shareCents, 0), 0)
+    const kg = (alt.co2?.emissionsKg ?? -1).toLocaleString('de-DE', { maximumFractionDigits: 2 })
+    inOrder(GUIDES.heatingRenewed.example, [
+      '30.06.2025', '01.07.2025', '100 m²', '2.000 l', eur(alt.stock?.opening.costCents ?? -1), '3.000 l', eur(315000), '500 l', eur(alt.stock?.closing.costCents ?? -1),
+      eur(oel), eur(150000), `${kg} kg`, `${(alt.co2?.kgPerM2 ?? -1).toLocaleString('de-DE')} kg je m²`, `${alt.co2?.stage?.landlordPercent ?? -1} %`,
+    ], 'heatingRenewed')
   },
   // #208: die Aufteilung der Grundsteuer nach Tagen, mit derselben Funktion wie beim Speichern.
   periodMayApril: () => {

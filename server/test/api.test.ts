@@ -5803,9 +5803,13 @@ test('Heizanlage: Sperren, Objektgrenze, Ändern und Entfernen über die Routen'
     const angelegt = await send('/api/heating-plants', jsonPost({ energy: 'districtHeating', method: 'manual' }))
     assert.equal(angelegt.status, 201)
     const { plant } = await jsonOf<{ plant: HeatingPlant }>(angelegt)
+    // Heizung PR 9: Eine zweite Anlage fragt nach dem Gebäude und braucht Namen und Wohnungen, die erste ebenso.
     const zweite = await send('/api/heating-plants', jsonPost({ energy: 'gas' }))
     assert.equal(zweite.status, 400)
-    assert.match(await errorFrom(zweite), /zweite Heizanlage/)
+    assert.match(await errorFrom(zweite), /im selben Gebäude/)
+    const ohneNamen = await send('/api/heating-plants', jsonPost({ energy: 'gas', buildingWith: 'own' }))
+    assert.equal(ohneNamen.status, 400)
+    assert.match(await errorFrom(ohneNamen), /braucht jede einen Namen/)
 
     const objekt2 = await s.api<Property>('/api/properties', jsonPost({ name: 'Zweites Haus', kind: 'mfh', address: '' }))
     const fremd = await send(`/api/meters?property=${objekt2.id}`, jsonPost({ name: 'Gas', unitId: null, type: 'sonstig', unit: 'm³', heatingPlantId: plant.id, heatingRole: 'supply' }))
@@ -5825,7 +5829,7 @@ test('Heizanlage: Sperren, Objektgrenze, Ändern und Entfernen über die Routen'
     await send(`/api/meters/${(await jsonOf<Meter>(zaehler)).id}`, { method: 'DELETE' })
     const weg = await send(`/api/heating-plants/${plant.id}`, { method: 'DELETE' })
     assert.equal(weg.status, 200)
-    assert.deepEqual(await jsonOf<{ ok: boolean; released: number }>(weg), { ok: true, released: 0 })
+    assert.deepEqual(await jsonOf<{ ok: boolean; released: number; notice: string | null }>(weg), { ok: true, released: 0, notice: null })
     assert.equal((await send(`/api/heating-plants/${plant.id}`, { method: 'DELETE' })).status, 404)
   } finally {
     s.stop()
@@ -6065,7 +6069,8 @@ test('Lieferungen über die Routen: anlegen, lesen, ändern, Sperre, entfernen; 
     assert.equal((await jsonOf<FuelDelivery>(geaendert)).fixedCents, 12000)
     const etage = await send(`/api/heating-plants/${plant.id}/deliveries`, jsonPost({ label: 'x', unitId: 'egal', invoiceFrom: '2025-01-01', invoiceTo: '2025-12-31' }))
     assert.equal(etage.status, 400)
-    assert.match(await errorFrom(etage), /späteren Version/)
+    // Heizung PR 9: Eine zentrale Anlage nimmt keine Rechnung mit Wohnung.
+    assert.match(await errorFrom(etage), /zentralen Heizanlage gehört zu keiner einzelnen Wohnung/)
     assert.equal((await send('/api/heating-plants/gibt-es-nicht/deliveries', { method: 'GET' })).status, 404)
     assert.equal((await send('/api/fuel-deliveries/gibt-es-nicht', { method: 'PUT', body: '{}' })).status, 404)
     const blockiert = await send(`/api/heating-plants/${plant.id}`, { method: 'DELETE' })
@@ -6164,6 +6169,83 @@ test('Vorrat über die Routen: speichern, entfernen, 404 ohne Anlage; Öllieferu
     assert.match(await errorFrom(ohneDatum), /Lieferdatum/)
     const mitDatum = await send(`/api/heating-plants/${plant.id}/deliveries`, jsonPost({ deliveredAt: '2025-03-15', quantity: 1000, quantityUnit: 'l', emissionsKg: 2676.3, co2CostCents: 17500 }))
     assert.equal(mitDatum.status, 201)
+  } finally {
+    s.stop()
+  }
+})
+
+// ---------- Etagenheizung (Heizung PR 9) ----------
+
+test('Etagenheizung über die Routen: Lieferung nur mit Wohnung der Anlage, zentrale nur ohne; Position und Rechnung derselben Wohnung (Review Focus 5)', async () => {
+  const s = await startServer()
+  try {
+    const send = (url: string, init: RequestInit) => fetch(`${s.base}${url}`, { ...init, headers: { 'content-type': 'application/json' } })
+    const eg = await s.api<Unit>('/api/units', jsonPost({ name: 'EG', areaM2: 60, participates: true }))
+    const og = await s.api<Unit>('/api/units', jsonPost({ name: 'OG', areaM2: 40, participates: true }))
+    const { plant } = await jsonOf<{ plant: HeatingPlant }>(await send('/api/heating-plants', jsonPost({ name: 'Gasthermen', energy: 'gas', supply: 'perUnit', method: 'manual' })))
+    const lieferung = (body: Record<string, unknown>) => send(`/api/heating-plants/${plant.id}/deliveries`, jsonPost({
+      label: 'Gas', invoiceFrom: '2025-01-01', invoiceTo: '2025-12-31', invoiceDate: '2026-01-15', energyKwh: 15000, emissionsKg: 3013, co2CostCents: 16500, ...body,
+    }))
+    const ohne = await lieferung({})
+    assert.equal(ohne.status, 400)
+    assert.match(await errorFrom(ohne), /gehört jede Rechnung zu einer Wohnung/)
+    const mitEg = await lieferung({ unitId: eg.id })
+    assert.equal(mitEg.status, 201)
+    const rechnung = await jsonOf<{ id: string }>(mitEg)
+    // Die Position der Wohnung OG mit der Rechnung der Wohnung EG: abgelehnt.
+    const falsch = await send('/api/costItems', jsonPost({ period: '2025-01', category: 'Heizung und Warmwasser', description: 'Gas OG', amountCents: 150000, key: 'direct', directUnitId: og.id, heatingPlantId: plant.id, fuelDeliveryId: rechnung.id }))
+    assert.equal(falsch.status, 400)
+    assert.match(await errorFrom(falsch), /gehört zu einer anderen Wohnung/)
+    // Nicht direkt einer Wohnung zugeordnet: abgelehnt.
+    const flaeche = await send('/api/costItems', jsonPost({ period: '2025-01', category: 'Heizung und Warmwasser', description: 'Gas', amountCents: 150000, key: 'area', heatingPlantId: plant.id }))
+    assert.equal(flaeche.status, 400)
+    assert.match(await errorFrom(flaeche), /genau einer Wohnung/)
+    const richtig = await send('/api/costItems', jsonPost({ period: '2025-01', category: 'Heizung und Warmwasser', description: 'Gas EG', amountCents: 150000, key: 'direct', directUnitId: eg.id, heatingPlantId: plant.id, fuelDeliveryId: rechnung.id }))
+    assert.equal(richtig.status, 201)
+    // Die Wohnung der Rechnung wechselt nicht, solange eine Position der anderen Wohnung an ihr hängt.
+    const umhaengen = await send(`/api/fuel-deliveries/${rechnung.id}`, { method: 'PUT', body: JSON.stringify({ unitId: og.id }) })
+    assert.equal(umhaengen.status, 400)
+    assert.match(await errorFrom(umhaengen), /Positionen einer anderen Wohnung/)
+    // Eine zentrale Anlage im zweiten Objekt nimmt keine Lieferung mit Wohnung.
+    const objekt2 = await s.api<Property>('/api/properties', jsonPost({ name: 'Zweites Haus', kind: 'mfh', address: '' }))
+    const fremdeWohnung = await s.api<Unit>(`/api/units?property=${objekt2.id}`, jsonPost({ name: 'X', areaM2: 50, participates: true }))
+    const zentral = await jsonOf<{ plant: HeatingPlant }>(await send(`/api/heating-plants?property=${objekt2.id}`, jsonPost({ energy: 'gas', method: 'manual' })))
+    const mitWohnung = await send(`/api/heating-plants/${zentral.plant.id}/deliveries`, jsonPost({ invoiceFrom: '2025-01-01', invoiceTo: '2025-12-31', emissionsKg: 1, co2CostCents: 1, unitId: fremdeWohnung.id }))
+    assert.equal(mitWohnung.status, 400)
+    assert.match(await errorFrom(mitWohnung), /zentralen Heizanlage gehört zu keiner einzelnen Wohnung/)
+  } finally {
+    s.stop()
+  }
+})
+
+// ---------- Kesseltausch (Heizung PR 9) ----------
+
+test('Kesseltausch über die Route: Öl endet, Gas beginnt; der Restbestand steht in der Abrechnung beim Vermieter', async () => {
+  const s = await startServer()
+  try {
+    const send = (url: string, init: RequestInit) => fetch(`${s.base}${url}`, { ...init, headers: { 'content-type': 'application/json' } })
+    const eg = await s.api<Unit>('/api/units', jsonPost({ name: 'EG', areaM2: 80, participates: true }))
+    await s.api('/api/tenancies', jsonPost({
+      unitId: eg.id, tenantName: 'Mieter', personHistory: [{ from: '2020-01-01', persons: 1 }], start: '2020-01-01', end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [],
+    }))
+    const { plant: oel } = await jsonOf<{ plant: HeatingPlant }>(await send('/api/heating-plants', jsonPost({ energy: 'oil', method: 'manual' })))
+    const lieferung = await jsonOf<{ id: string }>(await send(`/api/heating-plants/${oel.id}/deliveries`, jsonPost({ label: 'Heizöl', deliveredAt: '2025-03-15', quantity: 3000, quantityUnit: 'l', emissionsKg: 8028.9, co2CostCents: 52549 })))
+    await s.api('/api/costItems', jsonPost({ period: '2025-01', category: 'Heizung und Warmwasser', description: 'Heizöl', amountCents: 315000, key: 'area', heatingPlantId: oel.id, heatingPart: 'fuel', fuelDeliveryId: lieferung.id }))
+    const vorrat = await send(`/api/heating-plants/${oel.id}/periods/2025-01/stock`, { method: 'PUT', body: JSON.stringify({ stockUnit: 'l', openingQuantity: 0, openingCostCents: 0, openingEmissionsKg: 0, openingCo2Cents: 0, openingInvoicedBefore2023: false, closingQuantity: 1000, closingMeasuredOn: '2025-06-30' }) })
+    assert.equal(vorrat.status, 200, await vorrat.clone().text())
+    // Der Energieträger lässt sich nicht umstellen; der Satz führt zum Kesseltausch.
+    const umstellen = await send(`/api/heating-plants/${oel.id}`, { method: 'PUT', body: JSON.stringify({ energy: 'gas' }) })
+    assert.equal(umstellen.status, 409)
+    assert.match(await errorFrom(umstellen), /„Heizung erneuert \(Kessel getauscht\)“/)
+    const tausch = await send(`/api/heating-plants/${oel.id}/replace`, jsonPost({ date: '2025-07-01', energy: 'gas', method: 'manual', name: 'Gastherme', previousName: 'Ölkessel' }))
+    assert.equal(tausch.status, 201)
+    const { plant, previous } = await jsonOf<{ plant: HeatingPlant; previous: HeatingPlant }>(tausch)
+    assert.deepEqual([previous.endsOn, plant.replacesPlantId, plant.units?.map((u) => u.unitId)], ['2025-06-30', oel.id, [eg.id]])
+    assert.equal((await send('/api/heating-plants/gibt-es-nicht/replace', jsonPost({ date: '2025-07-01', energy: 'gas' }))).status, 404)
+    const abrechnung = await s.api<Settlement>('/api/settlement/2025-01')
+    const rest = abrechnung.landlord.rows.find((r) => r.costItemId.endsWith(':remaining')) ?? assert.fail('kein Restbestand beim Vermieter')
+    assert.deepEqual(rest.landlordParts, [{ reason: 'stockRemaining', cents: 105000 }])
+    assert.ok(abrechnung.notices?.some((n) => n.code === 'fuel.stock-remaining'))
   } finally {
     s.stop()
   }

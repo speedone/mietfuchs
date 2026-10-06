@@ -20,6 +20,8 @@ export type MeterForm = {
   keptRole: HeatingRole | ''
   remote: RemoteAnswer
   installedOn: string
+  // Heizung PR 9: die gewählte Heizanlage, wenn das Objekt mehrere hat.
+  heatingPlantId: string
 }
 
 // Die Einheit, die ein Zähler seiner Sparte nach meist zeigt (#142). Vorher stand für jede Sparte
@@ -44,7 +46,7 @@ export function withMeterType(form: MeterForm, type: MeterType): MeterForm {
 }
 
 export const emptyMeterForm = (): MeterForm => ({
-  name: '', unitId: '', type: 'kaltwasser', meterNumber: '', unit: defaultMeterUnit('kaltwasser'), heatingRole: '', keptRole: '', remote: '', installedOn: '',
+  name: '', unitId: '', type: 'kaltwasser', meterNumber: '', unit: defaultMeterUnit('kaltwasser'), heatingRole: '', keptRole: '', remote: '', installedOn: '', heatingPlantId: '',
 })
 
 export const meterToForm = (m: Meter): MeterForm => ({
@@ -58,6 +60,7 @@ export const meterToForm = (m: Meter): MeterForm => ({
   keptRole: m.unitId === null && m.heatingRole ? m.heatingRole : '',
   remote: m.remoteReadable === true ? 'yes' : m.remoteReadable === false ? 'no' : '',
   installedOn: m.installedOn ?? '',
+  heatingPlantId: m.heatingPlantId ?? '',
 })
 
 export const HEATING_ROLE_LABELS: Record<HeatingRole, string> = {
@@ -119,6 +122,15 @@ export const REMOTE_RULE_TEXT =
 
 // Der Rumpf zum Speichern. `plantId`: die Heizanlage des Objekts, `null` ohne. Eine Zählernummer
 // fehlt im Rumpf, wenn das Feld leer ist, wie bisher.
+// Die Anlage eines Zählers mit Rolle an der Heizanlage (Heizung PR 9): bei einer Anlage diese, ab zwei
+// die gewählte. Ohne Rolle gehört der Zähler zu keiner.
+export function meterPlantId(form: Pick<MeterForm, 'unitId' | 'heatingRole' | 'heatingPlantId'>, plants: readonly { id: string }[]): { plantId: string | null } | { error: string } {
+  if (form.unitId || form.heatingRole === '') return { plantId: null }
+  if (plants.length === 1) return { plantId: plants[0]?.id ?? null }
+  if (plants.some((p) => p.id === form.heatingPlantId)) return { plantId: form.heatingPlantId }
+  return plants.length === 0 ? { plantId: null } : { error: 'Bitte wählen Sie die Heizanlage, zu der der Zähler gehört.' }
+}
+
 export function meterBody(form: MeterForm, plantId: string | null): { body: MeterBody } | { error: string } {
   if (!form.name.trim()) return { error: 'Bitte einen Namen für den Zähler angeben.' }
   if (form.type === 'hkv' && !form.unitId) {

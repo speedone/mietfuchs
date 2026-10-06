@@ -309,6 +309,10 @@ export async function readHeatingPlants(db: Executor): Promise<HeatingPlant[]> {
     periodChanges: wechsel.get(p.id) ?? [],
     separateSpans: spannen.get(p.id) ?? [],
     units: p.unitsLimited ? (byPlant.get(p.id) ?? []) : null,
+    endsOn: p.endsOn,
+    replacesPlantId: p.replacesPlantId,
+    buildingWith: p.buildingWith,
+    takesOverStock: p.takesOverStock,
   }))
 }
 

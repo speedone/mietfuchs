@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import type { HeatingPlant, HeatingRole, Meter, MeterType, Reading, Unit } from '../types'
 import { METER_TYPE_LABELS } from '../types'
 import { buildReadingBody, EMPTY_READING, type ReadingForm } from '../readingForm'
-import { asksRemote, emptyMeterForm, HEATING_ROLE_HELP, heatingRoleLabel, heatingRoleOptions, meterBody, meterToForm, oldEndText, REMOTE_RULE_TEXT, withMeterType, type MeterForm, type RemoteAnswer } from '../meterForm'
+import { asksRemote, emptyMeterForm, HEATING_ROLE_HELP, heatingRoleLabel, heatingRoleOptions, meterBody, meterPlantId, meterToForm, oldEndText, REMOTE_RULE_TEXT, withMeterType, type MeterForm, type RemoteAnswer } from '../meterForm'
+import { plantOptions } from '../heatingForm'
 import { api, errorText, fmtDate } from '../api'
 import { usePeriod } from '../period'
 import { PeriodSelect } from '../components/PeriodSelect'
@@ -59,8 +60,13 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
 
   async function saveMeter() {
     if (!meterForm) return
-    // Die Heizanlage des Objekts; in dieser Version gibt es höchstens eine (Heizung PR 4).
-    const result = meterBody(meterForm, plants[0]?.id ?? null)
+    // Die Heizanlage des Zählers (Heizung PR 9): bei einer die des Objekts, ab zwei die gewählte.
+    const plant = meterPlantId(meterForm, plants)
+    if ('error' in plant) {
+      setError(plant.error)
+      return
+    }
+    const result = meterBody(meterForm, plant.plantId)
     if ('error' in result) {
       setError(result.error)
       return
@@ -260,6 +266,15 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
                   {heatingRoleOptions(meterForm, true).map((r) => <option key={r} value={r}>{heatingRoleLabel(meterForm, r)}</option>)}
                 </select>
                 <small className="muted">{HEATING_ROLE_HELP}</small>
+              </label>
+            )}
+            {!meterForm.unitId && meterForm.heatingRole !== '' && plantOptions(plants).length > 0 && (
+              <label className="field grow">
+                Heizanlage
+                <select value={meterForm.heatingPlantId} onChange={(e) => setMeterForm({ ...meterForm, heatingPlantId: e.target.value })}>
+                  <option value="">— bitte wählen —</option>
+                  {plantOptions(plants).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
               </label>
             )}
             {asksRemote(meterForm, plants.length > 0) && (

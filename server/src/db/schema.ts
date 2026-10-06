@@ -381,6 +381,18 @@ export const heatingPlants = sqliteTable(
     nonResidential: integer('non_residential', { mode: 'boolean' }).notNull().default(false),
     restriction: text('restriction', { enum: CO2_RESTRICTIONS }).notNull().default('none'),
     districtEtsNew: integer('district_ets_new', { mode: 'boolean' }).notNull().default(false),
+    // Kesseltausch (Heizung PR 9): letzter Betriebstag der alten Anlage und an der neuen die Anlage,
+    // die sie ersetzt. Ohne Bedingung im SQL (README der Migrationen: neue Spalten und Bedingungen nie
+    // in einem Schritt); das Datum prüft heating.ts.
+    endsOn: text('ends_on'),
+    // Ohne Fremdschlüssel: drizzle-kit schreibt beim Hinzufügen einer Spalte kein ON DELETE, und eine
+    // ersetzte Anlage wird ohnehin nicht entfernt (sie hält ihre Lieferungen). heating.ts prüft den Verweis.
+    replacesPlantId: text('replaces_plant_id'),
+    // Im selben Gebäude wie eine andere Anlage (deren Kennung) oder `'own'`; NULL nicht gefragt.
+    buildingWith: text('building_with'),
+    // Kesseltausch mit demselben Vorratsbrennstoff (Nachprüfung von #238): Verheizt die neue Anlage den
+    // Brennstoff im Tank weiter? NULL nicht gefragt (kein solcher Tausch), sonst die Antwort.
+    takesOverStock: integer('takes_over_stock', { mode: 'boolean' }),
   },
   () => [
     oneOf('heating_plants_energy_known', 'energy', HEATING_ENERGIES),

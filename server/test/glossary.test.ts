@@ -170,3 +170,7 @@ test('Brennstoffvorrat (Heizung PR 8): Beispiel nachgerechnet', () => {
   assert.match(t.short, /jüngsten Lieferungen/)
   assert.match(t.needed, /Heizöl, Flüssiggas, Pellets, Holz oder Kohle/)
 })
+
+test('Fläche der CO₂-Einstufung bei Etagenheizungen (Heizung PR 9, § 5 Abs. 1 Satz 2 CO2KostAufG)', () => {
+  assert.match(GLOSSARY.co2Area.short, /Etagenheizung.*Gesamtwohnfläche der vermieteten Wohnungen mit eigener Heizung \(§ 5 Abs\. 1 Satz 2 CO2KostAufG\)/s)
+})

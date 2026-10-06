@@ -71,7 +71,7 @@ test('Lieferung: Sperren dieser Version und Pflichtangaben, jede mit einem Satz'
   await withDatabase(async (opened) => {
     await bestand(opened)
     const anlegen = (body: Record<string, unknown>) => opened.write((db) => createDelivery(db, 'x', 'hp', body))
-    await assert.rejects(anlegen({ ...gas, unitId: 'u1' }), heatingError(400, /späteren Version/))
+    await assert.rejects(anlegen({ ...gas, unitId: 'u1' }), heatingError(400, /zentralen Heizanlage gehört zu keiner einzelnen Wohnung/))
     await assert.rejects(anlegen({ ...gas, gridFeeCents: 100 }), heatingError(400, /späteren Version/))
     await assert.rejects(anlegen({ label: 'ohne Zeitraum' }), heatingError(400, /Rechnungszeitraum/))
     await assert.rejects(anlegen({ ...gas, invoiceTo: '2025-03-01' }), heatingError(400, /endet vor seinem Beginn/))
