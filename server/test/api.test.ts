@@ -5829,7 +5829,7 @@ test('Heizanlage: Sperren, Objektgrenze, Ändern und Entfernen über die Routen'
     await send(`/api/meters/${(await jsonOf<Meter>(zaehler)).id}`, { method: 'DELETE' })
     const weg = await send(`/api/heating-plants/${plant.id}`, { method: 'DELETE' })
     assert.equal(weg.status, 200)
-    assert.deepEqual(await jsonOf<{ ok: boolean; released: number }>(weg), { ok: true, released: 0 })
+    assert.deepEqual(await jsonOf<{ ok: boolean; released: number; notice: string | null }>(weg), { ok: true, released: 0, notice: null })
     assert.equal((await send(`/api/heating-plants/${plant.id}`, { method: 'DELETE' })).status, 404)
   } finally {
     s.stop()

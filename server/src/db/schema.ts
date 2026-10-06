@@ -390,6 +390,9 @@ export const heatingPlants = sqliteTable(
     replacesPlantId: text('replaces_plant_id'),
     // Im selben Gebäude wie eine andere Anlage (deren Kennung) oder `'own'`; NULL nicht gefragt.
     buildingWith: text('building_with'),
+    // Kesseltausch mit demselben Vorratsbrennstoff (Nachprüfung von #238): Verheizt die neue Anlage den
+    // Brennstoff im Tank weiter? NULL nicht gefragt (kein solcher Tausch), sonst die Antwort.
+    takesOverStock: integer('takes_over_stock', { mode: 'boolean' }),
   },
   () => [
     oneOf('heating_plants_energy_known', 'energy', HEATING_ENERGIES),

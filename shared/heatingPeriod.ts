@@ -99,6 +99,22 @@ export function servesUnit(plant: { units: readonly { unitId: string }[] | null 
 type Succession = { id: string; replacesPlantId?: string | null }
 export const replaces = (a: Succession, b: Succession): boolean => a.replacesPlantId === b.id || b.replacesPlantId === a.id
 
+// Die Anlage und ihre Vorgängerinnen mit demselben Brennstoff, die nächste zuerst (Kesseltausch Öl → Öl,
+// Nachprüfung von #238, K1): Hat die neue Anlage im Jahr des Tauschs noch keine eigene Brennstoffposition,
+// folgen die Überträge dem Schlüssel der Vorgängerin. Das gilt auch, wenn sie den Restbestand nicht
+// übernimmt: Ihr eigener Anfangsbestand wird ebenso verbraucht und braucht denselben Schlüssel.
+export function sameFuelLine<P extends Succession & { energy: string }>(plant: P, plants: readonly P[]): string[] {
+  const ids = [plant.id]
+  let cur = plant
+  while (cur.replacesPlantId) {
+    const prev = plants.find((p) => p.id === cur.replacesPlantId)
+    if (!prev || prev.energy !== plant.energy || ids.includes(prev.id)) break
+    ids.push(prev.id)
+    cur = prev
+  }
+  return ids
+}
+
 // Die erste Anlage einer Linie von Täuschen; ein Verweis ins Leere oder ein Kreis endet dort.
 export function lineRoot(plant: Succession, plants: readonly Succession[]): string {
   let cur = plant
@@ -116,17 +132,37 @@ export const sameLine = (a: Succession, b: Succession, plants: readonly Successi
 // Das Gebäude einer Anlage (Heizung PR 9, § 5 Abs. 1 CO2KostAufG): die erste Anlage ihrer Linie und,
 // steht diese im selben Gebäude wie eine andere, deren Gebäude. Ohne Angabe ein eigenes.
 type Housed = Succession & { buildingWith?: string | null }
-export function buildingRoot(plant: Housed, plants: readonly Housed[]): string {
+// Der Weg über die Angaben zum Gebäude: die Linienanfänge nacheinander und, verweisen sie im Kreis, ab
+// welchem Eintrag der Kreis beginnt.
+function buildingWalk(plant: Housed, plants: readonly Housed[]): { roots: string[]; cycleFrom: number | null } {
+  const roots: string[] = []
   let root = lineRoot(plant, plants)
-  const seen = new Set<string>()
   for (;;) {
-    if (seen.has(root)) return root
-    seen.add(root)
+    const at = roots.indexOf(root)
+    if (at >= 0) return { roots, cycleFrom: at }
+    roots.push(root)
     const head = plants.find((p) => p.id === root)
     const other = head?.buildingWith && head.buildingWith !== 'own' ? plants.find((p) => p.id === head.buildingWith) : undefined
-    if (!other) return root
+    if (!other) return { roots, cycleFrom: null }
     root = lineRoot(other, plants)
   }
+}
+// Ein Kreis kommt über die Routen nicht zustande (heating.ts lehnt ihn ab); in einem Archiv kann er
+// stehen. Dann ist die Wurzel die kleinste Kennung im Kreis, von jeder Anlage aus dieselbe (Nachprüfung von
+// #238, I-C).
+export function buildingRoot(plant: Housed, plants: readonly Housed[]): string {
+  const { roots, cycleFrom } = buildingWalk(plant, plants)
+  if (cycleFrom === null) return roots[roots.length - 1] ?? plant.id
+  return roots.slice(cycleFrom).reduce((a, b) => (b < a ? b : a))
+}
+// Die Linienanfänge eines Kreises aus mindestens zwei Gebäudeangaben, sonst `null`. Verweist eine Anlage
+// auf eine ihrer eigenen Linie, ist das kein Kreis zwischen Gebäuden.
+export function buildingCycle(plants: readonly Housed[]): string[] | null {
+  for (const p of plants) {
+    const { roots, cycleFrom } = buildingWalk(p, plants)
+    if (cycleFrom !== null && roots.length - cycleFrom >= 2) return roots.slice(cycleFrom)
+  }
+  return null
 }
 export const sameBuilding = (a: Housed, b: Housed, plants: readonly Housed[]): boolean => a.id !== b.id && buildingRoot(a, plants) === buildingRoot(b, plants)
 

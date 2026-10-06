@@ -312,6 +312,7 @@ export async function readHeatingPlants(db: Executor): Promise<HeatingPlant[]> {
     endsOn: p.endsOn,
     replacesPlantId: p.replacesPlantId,
     buildingWith: p.buildingWith,
+    takesOverStock: p.takesOverStock,
   }))
 }
 

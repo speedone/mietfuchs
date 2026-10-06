@@ -252,3 +252,81 @@ test('Nach dem Ende: keine Kette für die stillgelegte Anlage im Schnappschuss, 
   }), 'objekt-1', P26))
   assert.ok(!r.heating?.some((h) => h.plantId === 'gasalt' && h.fuel), JSON.stringify(r.heating?.map((h) => h.plantId)))
 })
+
+// ---------- Nachprüfung von #238 ----------
+
+const ZWEI_HAEUSER = (over: Partial<Quelle> = {}): Partial<Quelle> => ({
+  heatingPlants: [
+    anlage({ id: 'H1', name: 'Zentral AB', units: [{ unitId: 'a', heatedAreaM2: null }, { unitId: 'b', heatedAreaM2: null }] }),
+    anlage({ id: 'H2', name: 'Zentral C', units: [{ unitId: 'c', heatedAreaM2: null }], buildingWith: 'H1' }),
+  ],
+  heatingPeriodRows: [],
+  costItems: [
+    position({ id: 'g1', amountCents: 200000, heatingPlantId: 'H1', fuelDeliveryId: 'd1', participantUnitIds: ['a', 'b'] }),
+    position({ id: 'g2', amountCents: 100000, key: 'direct', directUnitId: 'c', heatingPlantId: 'H2', fuelDeliveryId: 'd2' }),
+  ],
+  fuelDeliveries: [
+    lieferung({ id: 'd1', plantId: 'H1', invoiceFrom: '2025-01-01', invoiceTo: '2025-12-31', emissionsKg: 12000, co2CostCents: 66000 }),
+    lieferung({ id: 'd2', plantId: 'H2', invoiceFrom: '2025-01-01', invoiceTo: '2025-12-31', emissionsKg: 3000, co2CostCents: 16500 }),
+  ],
+  ...over,
+})
+const selfArea = (plantId: string, areaM2: number): Co2Statement => ({
+  heatingPeriodId: `h-${plantId}`, plantId, period: P.key, method: 'self', areaM2, serviceEmissionsKg: null, serviceAreaM2: null,
+  serviceKgPerM2: null, serviceLandlordPermille: null, serviceTotalCents: null, serviceLandlordCents: null, serviceUsersTotalCents: null,
+  serviceUsersTotalApprox: false, serviceUnitsCount: null, serviceCostItemId: null, serviceSelfLandlordCents: null, serviceFuelGrossCents: null,
+  serviceFuelNetCents: null, reliefs: [],
+})
+
+test('I-A: eine eingetragene Fläche einer Anlage im selben Gebäude zählt mit der Fläche der anderen, nicht statt ihrer', () => {
+  // 15.000 kg auf 300 m²: eingetragen 180 m² an „Zentral AB“, dazu 100 m² der Wohnung C = 280 m², 53,6 kg/m².
+  const r = computeSettlement(snap(ZWEI_HAEUSER({ co2Statements: [selfArea('H1', 180)] })))
+  assert.deepEqual(r.heating?.map((h) => [h.plantId, h.co2?.kgPerM2, h.co2?.areaM2]), [['H1', 53.6, 280], ['H2', 53.6, 280]])
+  assert.match(textOf(r, 'co2.building-joint'), /15\.000 kg CO₂ auf 280 m²; je Anlage zählt die eingetragene Fläche, sonst die ihrer Wohnungen, jede Wohnung einmal/)
+  // Probe B2: 200 m² eingetragen ergibt dieselbe Stufe wie ohne Eintrag (50 kg/m²).
+  const b2 = computeSettlement(snap(ZWEI_HAEUSER({ co2Statements: [selfArea('H1', 200)] })))
+  const ohne = computeSettlement(snap(ZWEI_HAEUSER()))
+  assert.deepEqual(b2.heating?.map((h) => h.co2?.kgPerM2), [50, 50])
+  assert.equal(b2.landlord.totalCents, ohne.landlord.totalCents)
+})
+
+test('I-C (Probe B4): Verweisen zwei Anlagen im Kreis aufeinander (Archiv), stehen sie im selben Gebäude', () => {
+  const kreis = ZWEI_HAEUSER()
+  const [h1, h2] = kreis.heatingPlants ?? []
+  if (!h1 || !h2) assert.fail('zwei Anlagen erwartet')
+  const r = computeSettlement(snap({ ...kreis, heatingPlants: [{ ...h1, buildingWith: 'H2' }, h2] }))
+  assert.deepEqual(r.heating?.map((h) => h.co2?.kgPerM2), [50, 50])
+})
+
+test('N1: Eine Anlage, die im Zeitraum nicht heizt, macht eine Position nicht zur Position über zwei Anlagen', () => {
+  const r = computeSettlement(snap({
+    heatingPlants: [
+      anlage({ id: 'H1', name: 'Zentral', units: [{ unitId: 'a', heatedAreaM2: null }, { unitId: 'b', heatedAreaM2: null }] }),
+      // Die Therme der Wohnung C ist 2024 stillgelegt worden.
+      anlage({ id: 'H2', name: 'Therme C', units: [{ unitId: 'c', heatedAreaM2: null }], buildingWith: 'own', endsOn: '2024-12-31' }),
+    ],
+    heatingPeriodRows: [],
+    costItems: [position({ id: 'g1', amountCents: 300000, heatingPlantId: 'H1', fuelDeliveryId: 'd1' })],
+    fuelDeliveries: [lieferung({ id: 'd1', plantId: 'H1', invoiceFrom: '2025-01-01', invoiceTo: '2025-12-31', emissionsKg: 6000, co2CostCents: 33000 })],
+  }))
+  assert.ok(!codes(r).includes('co2.item-spans-plants'), codes(r).join(', '))
+})
+
+test('Gasrechnung bis zum Tausch, erst im Folgejahr gebucht: die Mieter tragen sie einmal, im Jahr der Lieferung', () => {
+  const P26 = jahr(2026)
+  const quelle = QUELLE({
+    heatingPlants: [anlage({ id: 'gasalt', name: 'Gas alt', endsOn: '2025-06-30' }), anlage({ id: 'fern', name: 'Fernwärme', energy: 'districtHeating', replacesPlantId: 'gasalt' })],
+    heatingPeriodRows: [],
+    costItems: [
+      position({ id: 'alt', period: P26.key, amountCents: 100000, heatingPlantId: 'gasalt', fuelDeliveryId: 'dalt' }),
+      position({ id: 'fw', period: P26.key, amountCents: 240000, heatingPlantId: 'fern', fuelDeliveryId: 'dfw' }),
+    ],
+    fuelDeliveries: [
+      lieferung({ id: 'dalt', plantId: 'gasalt', invoiceFrom: '2025-01-01', invoiceTo: '2025-06-30', emissionsKg: 900, co2CostCents: 5000 }),
+      lieferung({ id: 'dfw', plantId: 'fern', invoiceFrom: '2026-01-01', invoiceTo: '2026-12-31', emissionsKg: 3000, co2CostCents: 16500 }),
+    ],
+  })
+  const tenants = (y: number) => computeSettlement(snapshotFor(quelle, 'objekt-1', jahr(y))).statements.reduce((a, st) => a + st.totalShareCents, 0)
+  // 2025: 1.000 € aus der Rechnung des Folgejahres; 2026 nur die Fernwärme.
+  assert.deepEqual([tenants(2025), tenants(2026)], [100000, 240000])
+})

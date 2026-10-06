@@ -9,7 +9,7 @@ import Term from './Term'
 import HeatingPeriodSection from './HeatingPeriodSection'
 import { useFocusTarget, type FocusProps } from '../focus'
 import {
-  CAPTURE_OPTIONS, CONTRACT_OPTIONS, ENERGY_OPTIONS, HOW_TO_TELL, asksRemote, INSTALLED_OPTIONS, NEW_DEVICES_AFTER, NEW_INSTALL_OPTIONS, NEW_INSTALL_QUESTION, PER_UNIT_ENERGY_OPTIONS, REMOTE_OPTIONS, asksNewInstall, buildingOptions, canSwap, emptyHeatingForm, emptySwapForm, heatingPlantBody,
+  CAPTURE_OPTIONS, CONTRACT_OPTIONS, ENERGY_OPTIONS, HOW_TO_TELL, asksRemote, INSTALLED_OPTIONS, NEW_DEVICES_AFTER, NEW_INSTALL_OPTIONS, NEW_INSTALL_QUESTION, PER_UNIT_ENERGY_OPTIONS, REMOTE_OPTIONS, TAKES_OVER_HINT, TAKES_OVER_OPTIONS, TAKES_OVER_QUESTION, asksNewInstall, asksTakeOver, buildingOptions, canSwap, emptyHeatingForm, emptySwapForm, heatingPlantBody,
   connectionNote, heatingSummary, heatingToForm, swapBody, whoHint, whoOptions, type CaptureAnswer, type EnergyAnswer, type HeatingForm, type PerUnitContract, type SwapForm, type WhoSettles,
 } from '../heatingForm'
 
@@ -117,7 +117,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
 
   async function saveSwap() {
     if (!swap) return
-    const result = swapBody(swap.form)
+    const result = swapBody(swap.form, swap.plant)
     if ('error' in result) {
       setError(result.error)
       return
@@ -129,28 +129,37 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
       return
     }
     setError('')
+    const carried = asksTakeOver(swap.form, swap.plant) && swap.form.takesOverStock === 'yes'
     setSwap(null)
     await loadAll()
-    toast('Heizung erneuert. Tragen Sie bei der bisherigen Heizung den Endbestand zum letzten Betriebstag ein, wenn noch Brennstoff im Tank ist.')
+    toast(carried
+      ? 'Heizung erneuert. Tragen Sie bei der bisherigen Heizung den Endbestand zum letzten Betriebstag ein; er ist der Anfangsbestand der neuen.'
+      : 'Heizung erneuert. Tragen Sie bei der bisherigen Heizung den Endbestand zum letzten Betriebstag ein, wenn noch Brennstoff im Tank ist.')
   }
 
   async function remove(p: HeatingPlant) {
+    // Mitten aus einer Linie von Täuschen (Nachprüfung von #238): Die nächste Anlage übernimmt den Zeitraum.
+    const next = plants.find((x) => x.replacesPlantId === p.id)
+    const before = plants.find((x) => x.id === p.replacesPlantId)
+    const line = next && before ? ` „${next.name}“ übernimmt danach den Zeitraum dieser Anlage und heizt im Anschluss an „${before.name}“.` : ''
     const ok = await confirm({
       title: 'Heizanlage entfernen?',
-      message: 'Die Heizpositionen bleiben, wie sie sind, nur ohne Heizanlage. Zähler der Anlage lösen Sie vorher auf der Seite Zähler.',
+      message: `Die Heizpositionen bleiben, wie sie sind, nur ohne Heizanlage. Zähler der Anlage lösen Sie vorher auf der Seite Zähler.${line}`,
       confirmLabel: 'Entfernen',
       danger: true,
     })
     if (!ok) return
+    let notice: string | null = null
     try {
-      await api(`/api/heating-plants/${p.id}`, { method: 'DELETE' })
+      const result = await api<{ notice?: string | null }>(`/api/heating-plants/${p.id}`, { method: 'DELETE' })
+      notice = result?.notice ?? null
     } catch (e) {
       setError(errorText(e))
       return
     }
     setError('')
     await loadAll()
-    toast('Heizanlage entfernt.')
+    toast(notice ? `Heizanlage entfernt. ${notice}` : 'Heizanlage entfernt.')
   }
 
   const kind = property?.kind ?? 'mfh'
@@ -249,14 +258,23 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
               ))}
             </>
           )}
-          {(editingId ? plants.length > 1 : plants.some((p) => p.endsOn === null)) && (
+          {(editingId ? plants.find((p) => p.id === editingId)?.buildingWith != null : plants.some((p) => p.endsOn === null)) && (
             <label className="field grow">
               {editingId ? 'Steht diese Heizanlage im selben Gebäude wie eine andere?' : 'Steht die neue Heizanlage im selben Gebäude wie eine bisherige?'}
               <select value={form.building} onChange={(e) => setForm({ ...form, building: e.target.value })}>
-                <option value="">— bitte wählen —</option>
-                {buildingOptions(plants.filter((p) => p.id !== editingId), form.otherNames).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                {!editingId && <option value="">— bitte wählen —</option>}
+                {buildingOptions(plants.filter((p) => p.id !== editingId), form.otherNames, form.building).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
               <small className="muted">Im selben Gebäude stuft Mietfuchs die Anlagen für die CO₂-Aufteilung gemeinsam ein, über den Ausstoß aller Anlagen und die Wohnfläche aller versorgten Wohnungen (§ 5 Abs. 1 CO2KostAufG); das ist eine Auslegung.</small>
+            </label>
+          )}
+          {editingId && form.takesOverStock !== '' && (
+            <label className="field grow">
+              {TAKES_OVER_QUESTION}
+              <select value={form.takesOverStock} onChange={(e) => setForm({ ...form, takesOverStock: e.target.value === 'no' ? 'no' : 'yes' })}>
+                {TAKES_OVER_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+              <small className="muted">{TAKES_OVER_HINT}</small>
             </label>
           )}
           <label className="field grow">
@@ -403,6 +421,15 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
               {ENERGY_OPTIONS.flatMap((o) => (o.value === 'perUnit' ? [] : [<option key={o.value} value={o.value}>{o.label}</option>]))}
             </select>
           </label>
+          {asksTakeOver(swap.form, swap.plant) && (
+            <label className="field grow">
+              {TAKES_OVER_QUESTION}
+              <select value={swap.form.takesOverStock} onChange={(e) => setSwap({ ...swap, form: { ...swap.form, takesOverStock: e.target.value === 'no' ? 'no' : 'yes' } })}>
+                {TAKES_OVER_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+              <small className="muted">{TAKES_OVER_HINT}</small>
+            </label>
+          )}
           <label className="field grow">
             Name der neuen Heizanlage
             <input value={swap.form.name} onChange={(e) => setSwap({ ...swap, form: { ...swap.form, name: e.target.value } })} placeholder="etwa „Gastherme“" />

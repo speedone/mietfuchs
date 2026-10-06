@@ -1310,6 +1310,10 @@ export type HeatingPlant = {
   // ob sie im selben Gebäude steht wie eine andere (deren Kennung) oder in einem eigenen (`'own'`).
   // `null`: nicht gefragt (die erste Anlage, oder sie ersetzt eine andere und übernimmt deren Angabe).
   buildingWith: string | null
+  // Kesseltausch mit demselben Vorratsbrennstoff (Öl → Öl, Nachprüfung von #238): Verheizt die neue
+  // Anlage den Brennstoff im Tank weiter? Dann ist der Restbestand der alten ihr Anfangsbestand; sonst
+  // bleibt er beim Vermieter. `null`: nicht gefragt, weil die Anlage keine mit demselben Brennstoff ersetzt.
+  takesOverStock: boolean | null
 }
 
 // Die Angaben einer Heizperiode (Entwurf 5.3; den Vorrat seit Heizung PR 8). Geschrieben werden sie ab PR 6 (Warmwasser

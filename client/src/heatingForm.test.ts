@@ -1,6 +1,6 @@
 // Die Einrichtung „Heizung“ (Heizung PR 4, Entwurf 11.2), ohne DOM.
 import { describe, expect, test } from 'vitest'
-import { asksNewInstall, buildingOptions, canSwap, connectionNote, emptyHeatingForm, emptySwapForm, HOT_WATER_OPTIONS, hotWaterBody, isFormula, PER_UNIT_ENERGY_OPTIONS, plantOptions, swapBody, unmeasurableLabel, heatingPlantBody, heatingSummary, heatingToForm, whoHint, whoOptions, type HeatingForm } from './heatingForm'
+import { asksNewInstall, asksTakeOver, buildingOptions, canSwap, connectionNote, emptyHeatingForm, emptySwapForm, HOT_WATER_OPTIONS, hotWaterBody, isFormula, PER_UNIT_ENERGY_OPTIONS, plantOptions, swapBody, unmeasurableLabel, heatingPlantBody, heatingSummary, heatingToForm, whoHint, whoOptions, type HeatingForm } from './heatingForm'
 import type { HeatingPlant, Unit } from './types'
 
 const UNITS: Pick<Unit, 'id' | 'name' | 'noConnection'>[] = [{ id: 'eg', name: 'EG' }, { id: 'og', name: 'OG' }, { id: 'garage', name: 'Garage', noConnection: ['waerme'] }]
@@ -9,7 +9,7 @@ const PLANT: HeatingPlant = {
   id: 'hp1', propertyId: 'objekt-1', name: '', energy: 'heatPump', supply: 'central', method: 'service', separateSettlement: null,
   devicesRemote: 'partial', devicesInstalledAfter2021: 'some', source: 'building', captureInstalledOn: '2025-06-01', capturedOnOct2024: false,
   warmRentAverageCents: 123456, changeSplit: 'degreeDays', periodStartMonth: null, periodChanges: [], separateSpans: [], units: [{ unitId: 'og', heatedAreaM2: null }],
-  newDevicesInstall: 'single', nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null,
+  newDevicesInstall: 'single', nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null,
 }
 
 describe('Einrichtung Heizung', () => {
@@ -178,6 +178,26 @@ describe('Mehrere Heizanlagen und Etagenheizung (Heizung PR 9)', () => {
     ])
   })
 
+  test('Gebäude: Zeigt die gespeicherte Antwort auf eine stillgelegte Anlage, steht dort die laufende ihrer Linie mit dem gespeicherten Wert', () => {
+    const alt: HeatingPlant = { ...PLANT, id: 'A', name: 'Öl', endsOn: '2025-06-30' }
+    const neu: HeatingPlant = { ...PLANT, id: 'A2', name: 'Fernwärme', replacesPlantId: 'A' }
+    expect(buildingOptions([alt, neu], {}, 'A')).toEqual([
+      { value: 'A', label: 'Ja, im selben Gebäude wie „Fernwärme“' },
+      { value: 'own', label: 'Nein, in einem anderen Gebäude' },
+    ])
+    expect(buildingOptions([alt, neu], {}, 'own')[0]).toEqual({ value: 'A2', label: 'Ja, im selben Gebäude wie „Fernwärme“' })
+  })
+
+  test('Öl → Öl: Die Antwort auf „Verheizt der neue Kessel …?“ geht mit, wenn die Anlage sie hat', () => {
+    const neu: HeatingPlant = { ...PLANT, id: 'hp2', energy: 'oil', method: 'manual', name: 'Neu', replacesPlantId: 'hp1', takesOverStock: false }
+    const form = heatingToForm(neu, UNITS3)
+    expect(form.takesOverStock).toBe('no')
+    const result = heatingPlantBody({ ...form, takesOverStock: 'yes' }, UNITS3, [{ ...PLANT, energy: 'oil', endsOn: '2025-06-30' }], 'hp2')
+    if (!('body' in result)) throw new Error(JSON.stringify(result))
+    expect(result.body.takesOverStock).toBe(true)
+    expect('takesOverStock' in (heatingPlantBody(heatingToForm(PLANT, UNITS3), UNITS3) as { body: object }).body).toBe(false)
+  })
+
   test('Auswahl der Anlage erst ab zwei; eine stillgelegte Anlage nur, wenn sie gerade gewählt ist', () => {
     expect(plantOptions([{ ...PLANT, id: 'hp1', name: 'A' }])).toEqual([])
     expect(plantOptions([{ ...PLANT, id: 'hp1', name: 'A' }, { ...PLANT, id: 'hp2', name: 'B' }])).toEqual([{ value: 'hp1', label: 'A' }, { value: 'hp2', label: 'B' }])
@@ -192,11 +212,19 @@ describe('Kessel getauscht (Heizung PR 9)', () => {
 
   test('Tag und neuer Energieträger sind Pflicht; die Namen sind vorbelegt', () => {
     const f = emptySwapForm(OEL)
-    expect(f).toEqual({ date: '', energy: '', name: '', previousName: '' })
-    expect(swapBody(f)).toEqual({ error: 'Bitte wählen Sie den Tag, an dem die neue Heizung in Betrieb ging.' })
-    expect(swapBody({ ...f, date: '2025-07-01' })).toEqual({ error: 'Womit heizt die neue Heizung?' })
-    expect(swapBody({ ...f, date: '2025-07-01', energy: 'gas', name: ' Gastherme ', previousName: 'Ölkessel' }))
+    expect(f).toEqual({ date: '', energy: '', name: '', previousName: '', takesOverStock: 'yes' })
+    expect(swapBody(f, OEL)).toEqual({ error: 'Bitte wählen Sie den Tag, an dem die neue Heizung in Betrieb ging.' })
+    expect(swapBody({ ...f, date: '2025-07-01' }, OEL)).toEqual({ error: 'Womit heizt die neue Heizung?' })
+    expect(swapBody({ ...f, date: '2025-07-01', energy: 'gas', name: ' Gastherme ', previousName: 'Ölkessel' }, OEL))
       .toEqual({ body: { date: '2025-07-01', energy: 'gas', name: 'Gastherme', previousName: 'Ölkessel' } })
+  })
+
+  test('Öl → Öl fragt, ob der neue Kessel den Brennstoff im Tank weiter verheizt; vorbelegt ist ja (Nachprüfung von #238)', () => {
+    const f = { ...emptySwapForm(OEL), date: '2025-07-01', energy: 'oil' as const }
+    expect(asksTakeOver(f, OEL)).toBe(true)
+    expect(asksTakeOver({ energy: 'gas' }, OEL)).toBe(false)
+    expect(swapBody(f, OEL)).toEqual({ body: { date: '2025-07-01', energy: 'oil', name: '', previousName: '', takesOverStock: true } })
+    expect(swapBody({ ...f, takesOverStock: 'no' }, OEL)).toMatchObject({ body: { takesOverStock: false } })
   })
 
   test('Tauschen lässt sich nur eine laufende zentrale Anlage ohne getrennte Heizkostenabrechnung', () => {

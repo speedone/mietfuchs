@@ -151,7 +151,7 @@ export async function archiveDatabaseProblem(file: string): Promise<string | nul
     // #238, C2); die Nachfolgerin gilt dann als Anlage ohne Vorgängerin.
     const geradegerueckt = await straightenHeatingPlants(connection.db)
     if (geradegerueckt.length > 0) {
-      console.warn(`Wiederherstellen: ${geradegerueckt.map((n) => `„${n}“`).join(', ')} ersetzte eine Heizanlage, die es im Archiv nicht mehr gibt; der Verweis wurde entfernt.`)
+      console.warn(`Wiederherstellen: ${geradegerueckt.map((n) => `„${n}“`).join(', ')} verwies auf eine Heizanlage, die es im Archiv nicht mehr gibt (Vorgängerin oder Gebäude); der Verweis wurde entfernt.`)
     }
     const heizung = await heatingPlantViolations(connection.db)
     if (heizung.length > 0) {

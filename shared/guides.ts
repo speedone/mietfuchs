@@ -429,7 +429,7 @@ const GUIDE_DATA = {
       { page: 'kosten', text: 'Wählen Sie an jeder Heizposition unter „Heizanlage“ die Anlage, zu der die Rechnung gehört; Rechnungen einer Etagenheizung ordnen Sie mit dem Schlüssel „Direktzuordnung“ der Wohnung zu.' },
     ],
     result: [
-      'Nach einem Tausch rechnet jede Anlage nur über ihre Betriebstage. Einen Restbestand übernimmt die neue Anlage, wenn sie mit demselben Brennstoff weiterheizt; sonst tragen ihn die Mieter nicht, und er steht mit seinem Wert bei Ihnen.',
+      'Nach einem Tausch rechnet jede Anlage nur über ihre Betriebstage. Einen Restbestand übernimmt die neue Anlage, wenn sie mit demselben Brennstoff weiterheizt und Sie beim Tausch „Verheizt der neue Kessel den Brennstoff im Tank weiter?“ mit Ja beantworten; sonst tragen ihn die Mieter nicht, und er steht mit seinem Wert bei Ihnen.',
       'Eingestuft wird das Gebäude über den Ausstoß aller Anlagen, die im Jahr darin geheizt haben.',
       'Eine Heizposition, die über Wohnungen zweier Anlagen verteilt wird, meldet die Abrechnung als Fehler.',
     ],
@@ -437,7 +437,7 @@ const GUIDE_DATA = {
     caveats: [
       { text: 'Umgelegt werden die Kosten der verbrauchten Brennstoffe, nicht der Restbestand im Tank.', norm: '§ 7 Abs. 2 HeizkostenV' },
       { text: 'Eingestuft wird nach dem Ausstoß des Gebäudes pro Quadratmeter Wohnfläche und Jahr; mehrere Wohnungen mit gesonderter oder zentraler Versorgung in einem Gebäude zählen mit ihrer Gesamtwohnfläche. Wie mehrere Anlagen in einem Gebäude einzustufen sind, ist höchstrichterlich nicht geklärt; Mietfuchs stuft sie gemeinsam ein.', norm: '§ 5 Abs. 1 Satz 1 und 2 CO2KostAufG' },
-      { text: 'Für Etagenheizungen gilt die Heizkostenverordnung nicht, und die Betriebskostenverordnung nennt bei ihnen nur Reinigung und Wartung. Ob Sie die Gaskosten umlegen dürfen, wenn der Gasvertrag auf Sie läuft, ist nicht geklärt; umgelegt werden dürfen Betriebskosten nur mit Vereinbarung im Mietvertrag.', norm: '§ 1 Abs. 1 HeizkostenV; § 2 Nr. 4 Buchstabe d BetrKV; § 556 Abs. 1 BGB' },
+      { text: 'Für Etagenheizungen gilt die Heizkostenverordnung nicht, und die Betriebskostenverordnung nennt bei ihnen nur Reinigung und Wartung. Ob Sie die Gaskosten umlegen dürfen, wenn der Gasvertrag auf Sie läuft, ist nicht geklärt; umgelegt werden dürfen Betriebskosten nur mit Vereinbarung im Mietvertrag.', norm: '§ 1 Abs. 1 HeizkostenV; § 2 Nr. 4 Buchstabe d BetrKV; § 556 Abs. 1 Satz 1 BGB' },
     ],
     gaps: [
       { text: 'Getrennte Heizkostenabrechnung (eigene Heizperiode mit eigener Vorauszahlung) zusammen mit einem Kesseltausch.', issue: 97 },

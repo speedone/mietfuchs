@@ -19,8 +19,8 @@
 //
 // Diese Datei importiert aus repository.ts, nie umgekehrt; die Prüfungen an Kostenpositionen und
 // Zählern stehen dort, weil sie zum Verschmelzen dieser Sammlungen gehören.
-import { and, count, eq, inArray, isNotNull, isNull, ne, or } from 'drizzle-orm'
-import type { AssignableHeatingItem, HeatingPlant, HeatingPlantUnit } from '../../../shared/types.ts'
+import { and, count, eq, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm'
+import type { AssignableHeatingItem, HeatingPlant, HeatingPlantUnit, PeriodKey } from '../../../shared/types.ts'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 import { plantRules } from '../../../shared/heatingPeriod.ts'
 import { CO2_FUELS } from '../co2.ts'
@@ -30,7 +30,7 @@ import { parsePeriodKey, periodKey, periodLabel, periodOfKey, rulesOf } from '..
 import type { Database, Executor } from './client.ts'
 import { readHeatingPlants, readProperties, readUnits } from './read.ts'
 import { asNullableFilled, asNullableText, asText, guardServedChange, has, heatingPeriodAt, heatingRulesOf, HeatingError, ISO_DATE, merged, oneOfOrUndefined, raw, sameProperty } from './repository.ts'
-import { sameLine, servesUnit } from '../../../shared/heatingPeriod.ts'
+import { buildingCycle, sameLine, servesUnit } from '../../../shared/heatingPeriod.ts'
 import {
   CHANGE_SPLITS, CO2_RESTRICTIONS, fuelDeliveries, closedHeatingSettlementHistory, co2Statements, closedHeatingSettlements, closedSettlements, costItems, DEVICES_INSTALLED_AFTER, DEVICES_REMOTE, HEATING_ENERGIES, HEATING_METHODS,
   HEATING_SOURCES, HEATING_SUPPLIES, NEW_DEVICES_INSTALLS, heatingPeriodChanges, heatingPeriods, heatingPlants, heatingPlantUnits, heatingPrepaymentOverrides, heatingSeparateSpans, meters, units,
@@ -102,6 +102,8 @@ function mergeHeatingPlant(current: HeatingPlant, body: unknown): HeatingPlant {
     endsOn: current.endsOn,
     replacesPlantId: current.replacesPlantId,
     buildingWith: merged(body, 'buildingWith', current.buildingWith, asNullableFilled),
+    // Setzen nur der Kesseltausch und das Ändern einer Nachfolgerin (`takesOverStockOf`).
+    takesOverStock: current.takesOverStock,
   }
 }
 
@@ -111,7 +113,7 @@ const emptyHeatingPlant = (id: string, propertyId: string): HeatingPlant => ({
   devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null,
   capturedOnOct2024: null, warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null,
   periodChanges: [], separateSpans: [], units: null, newDevicesInstall: null,
-  nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null,
+  nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null,
 })
 
 async function guardHeatingPlant(db: Executor, before: HeatingPlant | null, after: HeatingPlant): Promise<void> {
@@ -218,11 +220,18 @@ const NAME_REQUIRED = 'Bei mehreren Heizanlagen braucht jede einen Namen, etwa �
 // die Prüfung, wird nichts gespeichert. Mit einer Anlage gilt nichts davon.
 export async function guardPlantsOfProperty(db: Executor, propertyId: string): Promise<void> {
   const plants = await db
-    .select({ id: heatingPlants.id, name: heatingPlants.name, unitsLimited: heatingPlants.unitsLimited, replacesPlantId: heatingPlants.replacesPlantId })
+    .select({ id: heatingPlants.id, name: heatingPlants.name, unitsLimited: heatingPlants.unitsLimited, replacesPlantId: heatingPlants.replacesPlantId, buildingWith: heatingPlants.buildingWith })
     .from(heatingPlants)
     .where(eq(heatingPlants.propertyId, propertyId))
     .orderBy(heatingPlants.id)
   if (plants.length < 2) return
+  // Gebäude (Nachprüfung von #238, I-C): Verweisen die Angaben im Kreis aufeinander, gäbe es keine Anlage,
+  // von der das Gebäude ausgeht. Die Anlagen stehen dann ohnehin im selben Gebäude.
+  const cycle = buildingCycle(plants)
+  if (cycle !== null) {
+    const names = cycle.map((id) => `„${plants.find((p) => p.id === id)?.name.trim() || 'ohne Namen'}“`)
+    throw new HeatingError(400, `Die Angaben zum Gebäude verweisen im Kreis aufeinander (${names.join(' → ')} → ${names[0] ?? ''}). Diese Heizanlagen stehen damit schon im selben Gebäude; die Angabe hier ist nicht nötig. Gespeichert wurde nichts.`)
+  }
   const seen = new Set<string>()
   for (const p of plants) {
     const name = p.name.trim()
@@ -277,7 +286,7 @@ const plantRow = (p: HeatingPlant) => ({
   warmRentAverageCents: p.warmRentAverageCents, changeSplit: p.changeSplit, periodStartMonth: p.periodStartMonth,
   unitsLimited: p.units !== null,
   nonResidential: p.nonResidential, restriction: p.restriction, districtEtsNew: p.districtEtsNew,
-  endsOn: p.endsOn, replacesPlantId: p.replacesPlantId, buildingWith: p.buildingWith,
+  endsOn: p.endsOn, replacesPlantId: p.replacesPlantId, buildingWith: p.buildingWith, takesOverStock: p.takesOverStock,
 })
 
 // Die Liste der Wohnungen, ganz ersetzt wie die Untertabellen in repository.ts.
@@ -363,12 +372,26 @@ export async function createHeatingPlant(db: Database, id: string, propertyId: s
 export async function updateHeatingPlant(db: Database, id: string, body: unknown): Promise<HeatingPlant | null> {
   const current = (await readHeatingPlants(db)).find((p) => p.id === id)
   if (!current) return null
-  const next = mergeHeatingPlant(current, body)
+  const all = (await readHeatingPlants(db)).filter((p) => p.propertyId === current.propertyId)
+  const next = { ...mergeHeatingPlant(current, body), takesOverStock: await takesOverStockOf(db, current, all, body) }
+  // Gebäude (Nachprüfung von #238): Neben einer laufenden Anlage gibt es „nicht gefragt“ nicht mehr, wenn die
+  // Frage einmal beantwortet war.
+  const running = all.filter((p) => p.id !== id && p.endsOn === null && !sameLine(p, current, all))
+  if (current.buildingWith !== null && next.buildingWith === null && running.length > 0) {
+    throw new HeatingError(400, `Steht diese Heizanlage im selben Gebäude wie ${running.map((p) => `„${p.name.trim() || 'die andere Heizanlage'}“`).join(' oder ')}? Bitte wählen Sie eine Antwort; neben einer laufenden Heizanlage braucht Mietfuchs sie für die CO₂-Aufteilung.`)
+  }
   // Welche Wohnungen die Anlage danach anders versorgt (Durchsicht von #231, Critical 1).
   const changed = (await readUnits(db)).filter((u) => u.propertyId === current.propertyId && servesUnit(current, u) !== servesUnit(next, u)).map((u) => u.id)
   const openCo2 = await openCo2Periods(db, id)
   await db.transaction(async (tx) => {
     await guardHeatingPlant(tx, current, next)
+    // Verheizt die neue Anlage den Brennstoff doch weiter, gilt kein eigener Anfangsbestand mehr in ihrer
+    // ersten Heizperiode; er stammt dann aus dem Restbestand der alten.
+    const first = next.takesOverStock === true && current.takesOverStock === false ? await firstPeriodOf(tx, all, current) : null
+    if (first) {
+      await tx.update(heatingPeriods).set({ openingQuantity: null, openingCostCents: null, openingEmissionsKg: null, openingCo2Cents: null, openingInvoicedBefore2023: null, openingAlreadySettled: null })
+        .where(and(eq(heatingPeriods.plantId, id), eq(heatingPeriods.period, first.key)))
+    }
     await guardServedChange(tx, id, changed)
     guardCo2Plant(current, next, openCo2)
     const { id: _id, ...rest } = plantRow(next)
@@ -377,6 +400,34 @@ export async function updateHeatingPlant(db: Database, id: string, body: unknown
     await guardPlantsOfProperty(tx, current.propertyId)
   })
   return (await readHeatingPlants(db)).find((p) => p.id === id) ?? null
+}
+
+// Die erste Heizperiode einer Nachfolgerin und die letzte ihrer Vorgängerin (Kesseltausch).
+async function firstPeriodOf(db: Executor, plants: readonly HeatingPlant[], plant: HeatingPlant): Promise<{ key: PeriodKey; closed: boolean; lastClosed: boolean } | null> {
+  const before = plants.find((p) => p.id === plant.replacesPlantId)
+  if (!before?.endsOn) return null
+  const first = await heatingPeriodAt(db, plant.id, isoDayAfter(before.endsOn))
+  const last = await heatingPeriodAt(db, before.id, before.endsOn)
+  return first ? { key: first.period.key, closed: first.closed, lastClosed: last?.closed ?? false } : null
+}
+
+// Die Antwort auf „Verheizt der neue Kessel den Brennstoff im Tank weiter?“ (Nachprüfung von #238). Es gibt
+// sie nur an einer Nachfolgerin mit demselben Vorratsbrennstoff; ändern lässt sie sich, solange weder die
+// letzte Heizperiode der alten noch die erste der neuen abgeschlossen ist, denn beide rechnen damit.
+async function takesOverStockOf(db: Executor, current: HeatingPlant, plants: readonly HeatingPlant[], body: unknown): Promise<boolean | null> {
+  if (!has(body, 'takesOverStock')) return current.takesOverStock
+  const v = raw(body, 'takesOverStock')
+  // Ohne Antwort gilt ja; dieselbe Antwort ändert nichts.
+  if (typeof v !== 'boolean' || v === (current.takesOverStock ?? true)) return current.takesOverStock
+  const before = plants.find((p) => p.id === current.replacesPlantId)
+  if (!before || before.energy !== current.energy || !STOCK_ENERGIES.includes(current.energy)) {
+    throw new HeatingError(400, 'Ob die neue Heizanlage den Brennstoff im Tank weiter verheizt, fragt Mietfuchs nur nach einem Kesseltausch mit demselben Brennstoff.')
+  }
+  const first = await firstPeriodOf(db, plants, current)
+  if (first?.closed || first?.lastClosed) {
+    throw new HeatingError(409, 'Die Heizperiode des Tauschs ist abgeschlossen; sie rechnet mit der bisherigen Antwort, ob die neue Heizanlage den Brennstoff im Tank weiter verheizt. Öffnen Sie die Abrechnung wieder, um sie zu ändern.')
+  }
+  return v
 }
 
 // Mit CO₂-Angaben (Heizung PR 6, Durchsicht M-3) gelten sie nur für eine Anlage beim Messdienst mit
@@ -399,6 +450,7 @@ const ENERGY_NAMES: Record<HeatingPlant['energy'], string> = {
   gas: 'Gas', oil: 'Heizöl', lpg: 'Flüssiggas', pellets: 'Pellets', wood: 'Holz', districtHeating: 'Fernwärme', heatPump: 'Wärmepumpe', electric: 'Strom', coal: 'Kohle', other: 'Heizung',
 }
 const isoDayBefore = (iso: string): string => new Date(Date.parse(`${iso}T00:00:00Z`) - 86400000).toISOString().slice(0, 10)
+const isoDayAfter = (iso: string): string => new Date(Date.parse(`${iso}T00:00:00Z`) + 86400000).toISOString().slice(0, 10)
 const germanDay = (iso: string): string => `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}`
 
 // Was der Rumpf des Kesseltauschs an der neuen Anlage setzen darf; alles andere übernimmt sie von der
@@ -474,13 +526,16 @@ export async function replaceHeatingPlant(db: Database, oldId: string, newId: st
   const served = (await readUnits(db)).filter((u) => u.propertyId === old.propertyId && servesUnit(old, u)).map((u) => ({ unitId: u.id, heatedAreaM2: null }))
   const picked: Record<string, unknown> = {}
   for (const k of SWAP_FIELDS) if (has(body, k)) picked[k] = raw(body, k)
-  const base: HeatingPlant = { ...old, id: newId, name: '', separateSpans: [], units: served, endsOn: null, replacesPlantId: oldId }
+  const base: HeatingPlant = { ...old, id: newId, name: '', separateSpans: [], units: served, endsOn: null, replacesPlantId: oldId, takesOverStock: null }
   const merged = mergeHeatingPlant(base, picked)
-  // Die Angabe zum Emissionshandel gilt nur für eine Wärmelieferung.
+  // Die Angabe zum Emissionshandel gilt nur für eine Wärmelieferung. Bei demselben Vorratsbrennstoff die
+  // Frage, ob die neue Anlage ihn weiter verheizt (Nachprüfung von #238); ohne Antwort ja.
+  const answer = raw(body, 'takesOverStock')
   const plant: HeatingPlant = {
     ...merged,
     name: merged.name.trim() || `${ENERGY_NAMES[merged.energy]} ab ${germanDay(date)}`,
     districtEtsNew: merged.energy === 'districtHeating' && merged.districtEtsNew,
+    takesOverStock: merged.energy === old.energy && STOCK_ENERGIES.includes(old.energy) ? answer !== false : null,
   }
   const previousName = asText(raw(body, 'previousName'), '').trim() || old.name.trim() || `${ENERGY_NAMES[old.energy]} bis ${germanDay(endsOn)}`
   const previous: HeatingPlant = { ...old, name: previousName, units: served, endsOn }
@@ -503,7 +558,8 @@ export async function replaceHeatingPlant(db: Database, oldId: string, newId: st
 }
 
 export type PlantRemoval =
-  | { removed: true; released: number }
+  // `notice`: was mit der Linie geschieht, wenn die Anlage mitten aus ihr entfernt wird.
+  | { removed: true; released: number; notice: string | null }
   | { removed: false; reason: 'missing' }
   | { removed: false; reason: 'meters'; meters: string[] }
   | { removed: false; reason: 'separate' }
@@ -545,14 +601,30 @@ export async function removeHeatingPlant(db: Database, id: string): Promise<Plan
     // Kesseltausch (Durchsicht von #238): Wird die neue Anlage entfernt, ist der Tausch rückgängig, und
     // die ersetzte heizt wieder (I1). Wird die ersetzte entfernt, verliert die Nachfolgerin den Verweis
     // (C2); sonst lehnte das Wiederherstellen des eigenen Backups ihn ab.
-    const [self] = await tx.select({ replacesPlantId: heatingPlants.replacesPlantId, buildingWith: heatingPlants.buildingWith }).from(heatingPlants).where(eq(heatingPlants.id, id))
-    // Mitten aus einer Linie entfernt (A → A2 → A3 ohne A2), ersetzt A3 die Anlage A.
-    const [successor] = await tx.select({ id: heatingPlants.id }).from(heatingPlants).where(eq(heatingPlants.replacesPlantId, id))
+    const [self] = await tx.select({ replacesPlantId: heatingPlants.replacesPlantId, buildingWith: heatingPlants.buildingWith, endsOn: heatingPlants.endsOn }).from(heatingPlants).where(eq(heatingPlants.id, id))
+    // Mitten aus einer Linie entfernt (A → A2 → A3 ohne A2), ersetzt A3 die Anlage A und heizt ab dem Tag
+    // nach dem letzten Betriebstag von A, also auch in der Zeit von A2.
+    const [successor] = await tx.select({ id: heatingPlants.id, name: heatingPlants.name }).from(heatingPlants).where(eq(heatingPlants.replacesPlantId, id))
+    const [before] = self?.replacesPlantId ? await tx.select({ name: heatingPlants.name, endsOn: heatingPlants.endsOn }).from(heatingPlants).where(eq(heatingPlants.id, self.replacesPlantId)) : []
     if (self?.replacesPlantId && !successor) await tx.update(heatingPlants).set({ endsOn: null }).where(eq(heatingPlants.id, self.replacesPlantId))
     await tx.update(heatingPlants).set({ replacesPlantId: self?.replacesPlantId ?? null }).where(eq(heatingPlants.replacesPlantId, id))
-    await tx.update(heatingPlants).set({ buildingWith: self?.buildingWith && self.buildingWith !== id ? self.buildingWith : 'own' }).where(eq(heatingPlants.buildingWith, id))
+    // Gebäude (Nachprüfung von #238, I-B): Verweise auf die entfernte Anlage gehen an ihre Nachfolgerin, die
+    // dasselbe Gebäude heizt; sonst an das Gebäude, in dem sie stand. Stand sie in keinem anderen, wird die
+    // erste verweisende Anlage der Bezugspunkt, und die übrigen verweisen auf sie.
+    const pointing = await tx.select({ id: heatingPlants.id }).from(heatingPlants).where(and(eq(heatingPlants.buildingWith, id), ne(heatingPlants.id, id))).orderBy(sql`rowid`)
+    const target = successor?.id ?? (self?.buildingWith && self.buildingWith !== 'own' && self.buildingWith !== id ? self.buildingWith : null)
+    if (target !== null) {
+      await tx.update(heatingPlants).set({ buildingWith: target }).where(and(eq(heatingPlants.buildingWith, id), ne(heatingPlants.id, target)))
+    } else if (pointing[0]) {
+      const head = pointing[0].id
+      await tx.update(heatingPlants).set({ buildingWith: self?.buildingWith === id ? null : (self?.buildingWith ?? null) }).where(eq(heatingPlants.id, head))
+      await tx.update(heatingPlants).set({ buildingWith: head }).where(eq(heatingPlants.buildingWith, id))
+    }
     await tx.delete(heatingPlants).where(eq(heatingPlants.id, id))
-    return { removed: true, released: n?.n ?? 0 }
+    const notice = successor && before?.endsOn
+      ? `„${successor.name.trim() || 'Die nächste Heizanlage'}“ übernimmt den Zeitraum der entfernten Anlage und heizt jetzt ab dem ${germanDay(isoDayAfter(before.endsOn))}, im Anschluss an „${before.name.trim() || 'die vorige Heizanlage'}“.`
+      : null
+    return { removed: true, released: n?.n ?? 0, notice }
   })
 }
 
@@ -566,11 +638,15 @@ const plantName = (name: string): string => (name ? `„${name}“` : 'ohne Name
 // ihn tragen. Beim Wiederherstellen wird er geradegerückt statt abgelehnt; die Nachfolgerin gilt dann
 // als Anlage ohne Vorgängerin. Gibt die Namen der betroffenen Anlagen zurück.
 export async function straightenHeatingPlants(db: Database): Promise<string[]> {
-  const plants = await db.select({ id: heatingPlants.id, name: heatingPlants.name, replacesPlantId: heatingPlants.replacesPlantId }).from(heatingPlants)
+  const plants = await db.select({ id: heatingPlants.id, name: heatingPlants.name, replacesPlantId: heatingPlants.replacesPlantId, buildingWith: heatingPlants.buildingWith }).from(heatingPlants)
   const ids = new Set(plants.map((p) => p.id))
   const waisen = plants.filter((p) => p.replacesPlantId !== null && !ids.has(p.replacesPlantId))
   for (const p of waisen) await db.update(heatingPlants).set({ replacesPlantId: null }).where(eq(heatingPlants.id, p.id))
-  return waisen.map((p) => p.name)
+  // Ebenso „im selben Gebäude wie …“ auf eine Anlage, die es nicht mehr gibt (Nachprüfung von #238): Die
+  // Angabe gilt dann als nicht gefragt.
+  const ohneGebaeude = plants.filter((p) => p.buildingWith !== null && p.buildingWith !== 'own' && !ids.has(p.buildingWith))
+  for (const p of ohneGebaeude) await db.update(heatingPlants).set({ buildingWith: null }).where(eq(heatingPlants.id, p.id))
+  return [...new Set([...waisen, ...ohneGebaeude].map((p) => p.name))]
 }
 
 export async function heatingPlantViolations(db: Database): Promise<string[]> {

@@ -191,7 +191,14 @@ export async function saveStock(db: Database, plantId: string, period: string, b
   const current = rowOf(stock.heatingPeriodRows.find((r) => r.plantId === plantId && r.period === h.key))
   const chain = chainOf(stock, ctx, h)
   const prev = chain.length > 1 ? chain[chain.length - 2] : undefined
-  if (prev && OPENING_KEYS.some((k) => has(body, k) && raw(body, k) !== null && raw(body, k) !== '')) throw new HeatingError(400, derivedText(prev.label))
+  if (prev && OPENING_KEYS.some((k) => has(body, k) && raw(body, k) !== null && raw(body, k) !== '')) {
+    // Nach einem Kesseltausch mit demselben Brennstoff ist es der Restbestand der alten Anlage (Nachprüfung von #238).
+    const before = ctx.plant.replacesPlantId && ctx.plant.takesOverStock !== false ? stock.heatingPlants.find((p) => p.id === ctx.plant.replacesPlantId && p.energy === ctx.plant.energy) : undefined
+    if (before?.endsOn && h.from <= dayAfter(before.endsOn) && dayAfter(before.endsOn) <= h.to) {
+      throw new HeatingError(400, `Der Anfangsbestand ist der Restbestand der Heizanlage „${before.name.trim() || 'vor dem Tausch'}“ zum ${germanDate(before.endsOn)}; ändern Sie ihn dort als Endbestand. Verheizt die neue Heizanlage den Brennstoff im Tank nicht weiter, wählen Sie bei ihr unter „Verheizt der neue Kessel den Brennstoff im Tank weiter?“ „Nein“; dann tragen Sie hier einen eigenen Anfangsbestand ein.`)
+    }
+    throw new HeatingError(400, derivedText(prev.label))
+  }
   const next = mergeStock(current, body)
   if (prev) for (const k of OPENING_KEYS) next[k] = null
   const locked = lockedBy(chain, ctx, h)

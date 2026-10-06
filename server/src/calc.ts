@@ -56,10 +56,10 @@ import { allocationOf, comparablePrevious, sameAllocation, sameUnits } from '../
 import { possibleDuplicates } from '../../shared/duplicates.ts'
 import { commonPeriod, tenancyOverlaps } from '../../shared/tenancyOverlap.ts'
 import { CALENDAR_RULES, calendarYearPeriod, contextOf, formatDayRange, isCalendarRules, periodContaining, periodDays, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, settlementDeadline, settlementPeriod, type PeriodContext } from '../../shared/period.ts'
-import { monthSpanText, plantRules, plantSpan, recommendedDeadline, requestMonth, sameBuilding, sameLine, sameSpan, separateOwner, servesUnit, settledSeparately } from '../../shared/heatingPeriod.ts'
+import { lineRoot, monthSpanText, plantRules, plantSpan, recommendedDeadline, requestMonth, sameBuilding, sameFuelLine, sameLine, sameSpan, separateOwner, servesUnit, settledSeparately } from '../../shared/heatingPeriod.ts'
 import { heatingSnapshotFor, snapshotFor, wayOf } from './snapshot.ts'
 import { plantFuel, rangeOf, type FuelCarry, type FuelResult } from './fuel.ts'
-import { fuelFromDeliveries, fuelFromStock, looseCentsOf, measuredOffset, problemText, settledByDefault, stockOf, stockTemplateOf, stockTouched, valueOf as stockValueOf, type FuelFigures, type StockPeriodInput, type StockResult } from './fuelStock.ts'
+import { fuelFromDeliveries, fuelFromStock, looseCentsOf, measuredOffset, problemText, settledByDefault, stockOf, stockTemplateOfLine, stockTouched, valueOf as stockValueOf, type FuelFigures, type StockPeriodInput, type StockResult } from './fuelStock.ts'
 import { isStockEnergy, STOCK_FUEL_NAMES, STOCK_UNIT_TEXT } from '../../shared/fuelStock.ts'
 import { degreeDayPermille } from '../../shared/degreeDays.ts'
 import { annualFactors, type AnnualBasis } from './prepaymentSuggestion.ts'
@@ -2187,9 +2187,17 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const span = spanOfPlant(p)
     return (span.to === null || span.to >= period.from) && (span.from === null || span.from <= period.to)
   }
+  // Eine Anlage, die in diesem Zeitraum nicht mehr heizt, zählt trotzdem, wenn eine Position dieses Zeitraums
+  // mit einer ihrer Lieferungen verknüpft ist (Nachprüfung von #238): die Gasrechnung bis zum Tausch, die erst
+  // im Folgejahr gebucht wird. Ihr Betrag gehört in den Zeitraum der Lieferung; ohne Abgrenzung trügen die
+  // Mieter ihn zweimal, dort als Anteil aus der Rechnung und hier in voller Höhe.
+  const linkedHere = (p: SnapshotHeatingPlant): boolean => {
+    const ids = new Set((snapshot.fuel?.deliveries ?? []).filter((d) => d.plantId === p.id).map((d) => d.id))
+    return items.some((c) => c.fuelDeliveryId != null && ids.has(c.fuelDeliveryId))
+  }
   const fuelPlants: SnapshotHeatingPlant[] = (scope === 'all'
     ? plants.filter((p) => (p.periodStartMonth ?? null) === null)
-    : snapshot.scope ? [snapshot.scope.plant] : []).filter(activeIn)
+    : snapshot.scope ? [snapshot.scope.plant] : []).filter((p) => activeIn(p) || linkedHere(p))
   const fuelResults = new Map<string, { plant: SnapshotHeatingPlant; result: FuelResult }>()
   const fuelSynthetic: SnapshotCostItem[] = []
   const fuelCarryOf = new Map<string, { carry: FuelCarry | null; step: CalcStep; itemId: string }>()
@@ -2336,7 +2344,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   for (const [plantId, entry] of stockOfPlant) {
     if (entry.plant.method !== 'manual') continue
     const mine = items.filter((c) => c.category === HEATING_CATEGORY && c.heatingPlantId === plantId)
-    const template = stockTemplateOf(items, snapshot.previousCostItems ?? [], plantId, HEATING_CATEGORY)
+    const template = stockTemplateOfLine(items, snapshot.previousCostItems ?? [], sameFuelLine(entry.plant, plants), HEATING_CATEGORY)
     const name = STOCK_FUEL_NAMES[entry.plant.energy] ?? 'Brennstoff'
     // Was die Vorperiode an diese weitergibt (eingefroren oder lebend), für den Hinweis auf einen
     // Bestand, den diese Heizperiode nicht übernimmt (I2).
@@ -2454,7 +2462,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Ein eigener Anfangsbestand der Nachfolgerin in dieser Heizperiode beginnt ihre Kette neu; dann bleibt
     // der Restbestand wie bei einem anderen Brennstoff beim Vermieter.
     const carriedOn = plants.some((p) => {
-      if (p.replacesPlantId !== plantId || p.energy !== entry.plant.energy || retiredOn === null) return false
+      if (p.replacesPlantId !== plantId || p.energy !== entry.plant.energy || p.takesOverStock === false || retiredOn === null) return false
       // Die erste Heizperiode der neuen Anlage: dieselbe oder, bei einem Tausch zum Ersten, die folgende.
       const first = periodContaining(plantRules(wayOf(p), objectRules), dayAfter(retiredOn)).key
       return ((snapshot.heatingPeriodRows ?? []).find((r) => r.plantId === p.id && r.period === first)?.openingQuantity ?? null) === null
@@ -2473,8 +2481,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       })
       const norm = mayAgreeOtherwise(snapshot.units, isDwelling) ? '§ 2 Nr. 4a BetrKV' : '§ 7 Abs. 2 HeizkostenV'
       const plantName = entry.plant.name ? `„${entry.plant.name}“` : 'ohne Namen'
+      // Ein Tausch mit demselben Brennstoff, dessen neue Anlage ihn nach Angabe des Vermieters nicht weiter verheizt.
+      const refused = plants.find((p) => p.replacesPlantId === plantId && p.energy === entry.plant.energy && p.takesOverStock === false)
       stockNotes.push({ plant: entry.plant, code: 'fuel.stock-remaining', text:
-        `Die Heizanlage ${plantName} ist seit dem ${fmtDay(dayAfter(retiredOn))} außer Betrieb. Ihren Restbestand von ${q(st.closing.quantity)} im Wert von ${fmtCents(closing)} tragen die Mieter nicht, ` +
+        `Die Heizanlage ${plantName} ist seit dem ${fmtDay(dayAfter(retiredOn))} außer Betrieb.${refused ? ` Nach Ihrer Angabe verheizt „${refused.name ?? ''}“ den Brennstoff im Tank nicht weiter.` : ''} Ihren Restbestand von ${q(st.closing.quantity)} im Wert von ${fmtCents(closing)} tragen die Mieter nicht, ` +
         `denn umzulegen sind nur die Kosten der verbrauchten Brennstoffe (${norm}). Der Restbestand gehört Ihnen und steht mit seinem Wert bei Ihrem Anteil. ` +
         'Verkaufen Sie ihn oder lassen Sie ihn abholen, betrifft das die Abrechnung der Mieter nicht.' })
     } else if (net !== 0) {
@@ -3617,6 +3627,32 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // Täuschen (§ 5 Abs. 1 Satz 1 CO2KostAufG: der Ausstoß „des Gebäudes … pro Quadratmeter Wohnfläche und
   // Jahr“) und die, die nach Angabe des Vermieters im selben Gebäude stehen (Satz 2 Halbsatz 2: „deren
   // Gesamtwohnfläche“), soweit sie in dieser Heizperiode heizen.
+  // Die eingetragene Fläche der Einstufung einer Anlage (9.2): bei freien Schlüsseln im Datensatz `self`
+  // (Heizung PR 7; der Topf führt ihn nicht, denn er kennt nur Angaben laut Messdienst), nach Weg
+  // „selbst nach Messdienst“ in dessen Angaben. `null`: keine eingetragen.
+  const enteredAreaOf = (q: Co2Pot): number | null => {
+    if (q.statement?.method === 'selfAfterService') return q.statement.areaM2 ?? null
+    if (q.method !== 'manual') return null
+    return (snapshot.co2Statements ?? []).find((x) => x.plantId === q.plantId && x.period === q.period.key && x.method === 'self')?.areaM2 ?? null
+  }
+  // Die Fläche mehrerer Anlagen eines Gebäudes (Nachprüfung von #238, I-A): je Linie von Täuschen die
+  // eingetragene Fläche einer ihrer Anlagen, sonst die Wohnfläche ihrer Wohnungen; jede Wohnung zählt einmal.
+  const jointAreaOf = (members: readonly { pot: Co2Pot; units: ReadonlyMap<string, number> }[]): number => {
+    const lines = new Map<string, { entered: number | null; units: Map<string, number> }>()
+    for (const m of members) {
+      const plant = plants.find((p) => p.id === m.pot.plantId)
+      const root = plant ? lineRoot(plant, plants) : m.pot.plantId
+      const line = lines.get(root) ?? { entered: null, units: new Map<string, number>() }
+      line.entered ??= enteredAreaOf(m.pot)
+      for (const [u, a] of m.units) line.units.set(u, a)
+      lines.set(root, line)
+    }
+    // Die Wohnungen verschiedener Linien sind verschieden (guardPlantsOfProperty); innerhalb einer Linie
+    // zählt jede einmal (Map).
+    let total = 0
+    for (const line of lines.values()) total += line.entered ?? [...line.units.values()].reduce((a, v) => a + v, 0)
+    return total
+  }
   const partnersOf = (pot: Co2Pot): { pot: Co2Pot; line: boolean }[] => {
     const mine = plants.find((p) => p.id === pot.plantId)
     if (!mine) return []
@@ -3628,7 +3664,6 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     })
   }
   for (const pot of co2Pots) {
-    // Ohne Positionen kein Topf  for (const pot of co2Pots) {
     // Ohne Positionen kein Topf, außer die Anlage hat Lieferungen (Heizung PR 7): Dann gehört ihre
     // Bewertung samt Lücken in die Abrechnung.
     if (pot.items.length === 0 && !fuelResults.has(pot.plantId) && !(stockOfPlant.get(pot.plantId)?.result.ok ?? false)) continue
@@ -3685,7 +3720,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       warn('heating.per-unit-basis',
         `${where}: Für Etagenheizungen gilt die Heizkostenverordnung nicht; sie regelt nur zentrale Anlagen und die Wärmelieferung (§ 1 Abs. 1 HeizkostenV). ` +
           'Die Betriebskostenverordnung nennt bei Etagenheizungen nur die Kosten der Reinigung und Wartung (§ 2 Nr. 4 Buchstabe d BetrKV). Ob Sie die Gaskosten selbst umlegen dürfen, wenn der Gasvertrag auf Sie läuft, ist nicht geklärt; ' +
-          'umgelegt werden dürfen Betriebskosten nur, wenn der Mietvertrag es vereinbart (§ 556 Abs. 1 BGB). Prüfen Sie Ihren Mietvertrag, im Zweifel mit Ihrem Haus- und Grundbesitzerverein.',
+          'umgelegt werden dürfen Betriebskosten nur, wenn der Mietvertrag es vereinbart (§ 556 Abs. 1 Satz 1 BGB). Prüfen Sie Ihren Mietvertrag, im Zweifel mit Ihrem Haus- und Grundbesitzerverein.',
         plantSubject)
     }
     let etsExempt = false
@@ -3926,10 +3961,14 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           plantSubject)
       }
       const building = known.filter((x) => !x.line)
+      // Im selben Gebäude (Nachprüfung von #238, I-A): die Fläche aller Anlagen des Gebäudes, je Linie die
+      // eingetragene oder die der versorgten Wohnungen, jede Wohnung einmal. Eine eingetragene Fläche einer
+      // Anlage allein teilte den Ausstoß des ganzen Gebäudes durch einen Teil seiner Fläche.
+      const buildingArea = building.length > 0 ? jointAreaOf([{ pot, units: selfUnits }, ...known]) : 0
       if (building.length > 0 && selfKg !== null) {
         warn('co2.building-joint',
           `${where}: Nach Ihrer Angabe steht die Anlage im selben Gebäude wie ${andList(building.map((x) => `„${x.pot.plantName}“`))}. Mietfuchs stuft das Gebäude deshalb über den Ausstoß aller seiner Anlagen und die Wohnfläche aller versorgten Wohnungen ein ` +
-            `(${fmtKg(emissionsKg ?? 0)} kg CO₂ auf ${fmtNum(jointArea)} m²), denn maßgeblich sind der Ausstoß des Gebäudes und die Gesamtwohnfläche seiner Wohnungen mit gesonderter oder zentraler Versorgung (§ 5 Abs. 1 Satz 1 und 2 CO2KostAufG). ` +
+            `(${fmtKg(emissionsKg ?? 0)} kg CO₂ auf ${fmtNum(buildingArea)} m²; je Anlage zählt die eingetragene Fläche, sonst die ihrer Wohnungen, jede Wohnung einmal), denn maßgeblich sind der Ausstoß des Gebäudes und die Gesamtwohnfläche seiner Wohnungen mit gesonderter oder zentraler Versorgung (§ 5 Abs. 1 Satz 1 und 2 CO2KostAufG). ` +
             'Das ist eine Auslegung: Wie mehrere Heizanlagen in einem Gebäude einzustufen sind, ist höchstrichterlich nicht geklärt.',
           plantSubject)
       }
@@ -3945,11 +3984,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       // Fläche der Einstufung (9.2): eingetragen, sonst die Wohnfläche der versorgten Wohnungen (`jointArea`).
       // Bei freien Schlüsseln hält ein Datensatz `self` nur die Fläche (Heizung PR 7); der Topf führt
       // ihn nicht, denn er kennt nur Angaben laut Messdienst.
-      const selfStatement = pot.method === 'manual'
-        ? (snapshot.co2Statements ?? []).find((x) => x.plantId === pot.plantId && x.period === pot.period.key && x.method === 'self') ?? null
-        : null
-      const entered = (afterService ? st?.areaM2 : selfStatement?.areaM2) ?? null
-      const area = entered ?? (jointArea > 0 ? jointArea : null)
+      const entered = enteredAreaOf(pot)
+      const area = building.length > 0 ? (buildingArea > 0 ? buildingArea : null) : entered ?? (jointArea > 0 ? jointArea : null)
       const restriction = potPlant?.restriction ?? 'none'
       const split = selfSplit({
         emissionsKg,

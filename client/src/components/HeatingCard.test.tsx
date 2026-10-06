@@ -15,7 +15,7 @@ const UNITS: Unit[] = [
 const PLANT: HeatingPlant = {
   id: 'hp1', propertyId: 'objekt-1', name: '', energy: 'districtHeating', supply: 'central', method: 'manual', separateSettlement: null,
   devicesRemote: 'partial', devicesInstalledAfter2021: 'some', source: 'building', captureInstalledOn: null, capturedOnOct2024: null,
-  warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null, periodChanges: [], separateSpans: [], units: null, newDevicesInstall: 'single', nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null,
+  warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null, periodChanges: [], separateSpans: [], units: null, newDevicesInstall: 'single', nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null,
 }
 const ITEM: AssignableHeatingItem = { id: 'c1', period: periodKey('2025-01'), description: 'Fernwärme 2025', amountCents: 240000 }
 
@@ -158,4 +158,41 @@ test('Heizung erneuert (Kessel getauscht): Tag, Energie und Namen gehen an die R
   await waitFor(() => expect(sent).toHaveLength(1))
   expect(sent[0]?.url).toBe('/api/heating-plants/hp1/replace')
   expect(sent[0]?.body).toMatchObject({ date: '2025-07-01', energy: 'gas', name: 'Gastherme', previousName: 'Ölkessel' })
+})
+
+test('Öl → Öl: „Verheizt der neue Kessel den Brennstoff im Tank weiter?“ ist mit Ja vorbelegt und geht mit (Nachprüfung von #238)', async () => {
+  plants = [{ ...PLANT, energy: 'oil' }]
+  renderCard()
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Heizung erneuert (Kessel getauscht)' })).toBeTruthy())
+  fireEvent.click(screen.getByRole('button', { name: 'Heizung erneuert (Kessel getauscht)' }))
+  expect(screen.queryByLabelText(/Verheizt der neue Kessel/)).toBeNull()
+  fireEvent.change(screen.getByLabelText('Seit wann heizt die neue Heizung?'), { target: { value: '2025-07-01' } })
+  fireEvent.change(screen.getByLabelText('Womit heizt die neue Heizung?'), { target: { value: 'oil' } })
+  expect(valueOf(/Verheizt der neue Kessel den Brennstoff im Tank weiter/)).toBe('yes')
+  fireEvent.change(screen.getByLabelText(/Verheizt der neue Kessel/), { target: { value: 'no' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Tausch speichern' }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0]?.body).toMatchObject({ date: '2025-07-01', energy: 'oil', takesOverStock: false })
+})
+
+test('Gebäude: Zeigt die gespeicherte Angabe auf eine stillgelegte Anlage, zeigt die Auswahl deren laufende Nachfolgerin, und gespeichert bleibt der Wert (Nachprüfung von #238)', async () => {
+  const unitsOf = (...ids: string[]) => ids.map((unitId) => ({ unitId, heatedAreaM2: null }))
+  plants = [
+    { ...PLANT, id: 'A', name: 'Öl', energy: 'oil', units: unitsOf('eg'), endsOn: '2025-06-30' },
+    { ...PLANT, id: 'A2', name: 'Fernwärme', units: unitsOf('eg'), replacesPlantId: 'A' },
+    { ...PLANT, id: 'B', name: 'Haus OG', energy: 'gas', units: unitsOf('og'), buildingWith: 'A' },
+  ]
+  renderCard()
+  await waitFor(() => expect(screen.getAllByRole('button', { name: 'Ändern' })).toHaveLength(3))
+  fireEvent.click(screen.getAllByRole('button', { name: 'Ändern' })[2] as HTMLElement)
+  const select = screen.getByLabelText(/Steht diese Heizanlage im selben Gebäude/)
+  if (!(select instanceof HTMLSelectElement)) throw new Error('kein Auswahlfeld')
+  expect(select.value).toBe('A')
+  expect(select.selectedOptions[0]?.textContent).toBe('Ja, im selben Gebäude wie „Fernwärme“')
+  // Die erste Anlage wird nicht nach dem Gebäude gefragt (I-C).
+  cleanup()
+  renderCard()
+  await waitFor(() => expect(screen.getAllByRole('button', { name: 'Ändern' })).toHaveLength(3))
+  fireEvent.click(screen.getAllByRole('button', { name: 'Ändern' })[1] as HTMLElement)
+  expect(screen.queryByLabelText(/im selben Gebäude/)).toBeNull()
 })

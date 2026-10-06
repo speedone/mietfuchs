@@ -9,6 +9,7 @@ import { isStockEnergy } from '../../shared/fuelStock.ts'
 import { parseEuro } from './api'
 import { hkvConsumptionShare, hkvCutNotByConsumption, hkvRemoteReadingNewDevices } from '../../shared/law/heizkostenv.ts'
 import { dayAfter, germanDate, LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
+import { sameLine } from '../../shared/heatingPeriod.ts'
 
 // Rechtszahlen aus dem Register, in der Fassung von heute (wie Lexikon und Anleitungen).
 const SHARE = valueAt(hkvConsumptionShare, LAW_AS_OF)
@@ -41,13 +42,16 @@ export type HeatingForm = {
   building: string
   // Etagenheizung: Hat jede Wohnung einen eigenen Gaszähler? Ohne ihn gibt es keine Rechnung je Wohnung.
   ownMeters: boolean
+  // Nach einem Kesseltausch mit demselben Vorratsbrennstoff (Nachprüfung von #238): Verheizt die neue Anlage
+  // den Brennstoff im Tank weiter? `''`: nicht gefragt.
+  takesOverStock: '' | 'yes' | 'no'
 }
 
 // Was die Einrichtung schickt. Die übrigen Felder der Anlage behalten ihre Vorgabe.
 export type HeatingPlantBody = Pick<
   HeatingPlant,
   'energy' | 'supply' | 'method' | 'source' | 'devicesRemote' | 'devicesInstalledAfter2021' | 'capturedOnOct2024' | 'captureInstalledOn' | 'warmRentAverageCents' | 'units' | 'newDevicesInstall' | 'name' | 'buildingWith'
->
+> & { takesOverStock?: boolean }
 // Name und Wohnungen einer bisherigen Anlage, die mit dem Anlegen geändert werden (Heizung PR 9).
 export type AdjustRow = { id: string; name: string; units: HeatingPlantUnit[] }
 // `none`: Es entsteht bewusst keine Anlage, und der Satz sagt warum.
@@ -82,10 +86,25 @@ export const PER_UNIT_ENERGY_OPTIONS: { value: HeatingEnergy; label: string }[] 
 )
 
 // Die Antworten auf die Frage nach dem Gebäude: jede andere laufende Anlage oder ein eigenes Gebäude.
-export const buildingOptions = (others: readonly Pick<HeatingPlant, 'id' | 'name' | 'endsOn'>[], names: Record<string, string> = {}): { value: string; label: string }[] => [
-  ...others.filter((p) => p.endsOn === null).map((p) => ({ value: p.id, label: `Ja, im selben Gebäude wie „${(names[p.id] ?? p.name).trim() || 'die bisherige Heizanlage'}“` })),
-  { value: 'own', label: 'Nein, in einem anderen Gebäude' },
+// `current`: die gespeicherte Antwort. Zeigt sie auf eine stillgelegte Anlage (Kesseltausch), steht dort die
+// laufende Anlage ihrer Linie, mit der gespeicherten Kennung als Wert; so ist das Angezeigte das Gespeicherte
+// (Nachprüfung von #238).
+export const buildingOptions = (others: readonly Pick<HeatingPlant, 'id' | 'name' | 'endsOn' | 'replacesPlantId'>[], names: Record<string, string> = {}, current = ''): { value: string; label: string }[] => {
+  const stored = others.find((p) => p.id === current && p.endsOn !== null)
+  const heir = stored ? others.find((p) => p.endsOn === null && sameLine(p, stored, others)) : undefined
+  return [
+    ...others.filter((p) => p.endsOn === null).map((p) => ({ value: p.id === heir?.id ? current : p.id, label: `Ja, im selben Gebäude wie „${(names[p.id] ?? p.name).trim() || 'die bisherige Heizanlage'}“` })),
+    { value: 'own', label: 'Nein, in einem anderen Gebäude' },
+  ]
+}
+
+// Kesseltausch mit demselben Vorratsbrennstoff (Nachprüfung von #238): die Frage und ihre Antworten.
+export const TAKES_OVER_QUESTION = 'Verheizt der neue Kessel den Brennstoff im Tank weiter?'
+export const TAKES_OVER_OPTIONS: { value: 'yes' | 'no'; label: string }[] = [
+  { value: 'yes', label: 'Ja, der Restbestand ist der Anfangsbestand der neuen Heizanlage' },
+  { value: 'no', label: 'Nein, der Restbestand bleibt bei Ihnen (etwa verkauft oder abgepumpt)' },
 ]
+export const TAKES_OVER_HINT = 'Mit „Nein“ tragen die Mieter den Restbestand nicht; er steht mit seinem Wert bei Ihrem Anteil, und Sie tragen bei der neuen Heizanlage einen eigenen Anfangsbestand ein, wenn sie mit neuem Brennstoff beginnt.'
 
 // Die Auswahl der Anlage an Kosten, Zählern und Lieferungen: erst ab zwei Anlagen. Eine stillgelegte
 // Anlage (Kesseltausch) nennt ihren letzten Betriebstag.
@@ -180,7 +199,7 @@ export function emptyHeatingForm(units: readonly UnitInfo[], others: readonly He
   return {
     energy: '', contract: '', who: '', unitIds: defaultUnitIds(units).filter((id) => !taken.has(id)), remote: 'unknown', installedAfter: 'unknown',
     captured: 'unknown', captureInstalledOn: '', warmRentAverage: '', newInstall: '',
-    name: '', perUnitEnergy: '', building: '', ownMeters: false, otherNames: Object.fromEntries(others.filter((p) => p.name.trim() === '' || p.units === null).map((p) => [p.id, p.name])),
+    name: '', perUnitEnergy: '', building: '', ownMeters: false, takesOverStock: '', otherNames: Object.fromEntries(others.filter((p) => p.name.trim() === '' || p.units === null).map((p) => [p.id, p.name])),
   }
 }
 
@@ -204,6 +223,7 @@ export function heatingToForm(plant: HeatingPlant, units: readonly UnitInfo[]): 
     otherNames: {},
     building: plant.buildingWith ?? '',
     ownMeters: perUnit,
+    takesOverStock: plant.takesOverStock === null ? '' : plant.takesOverStock ? 'yes' : 'no',
   }
 }
 
@@ -279,6 +299,7 @@ export function heatingPlantBody(form: HeatingForm, units: readonly UnitInfo[], 
       newDevicesInstall: asksNewInstall(form) && form.newInstall !== '' ? form.newInstall : null,
       name,
       buildingWith,
+      ...(form.takesOverStock === '' ? {} : { takesOverStock: form.takesOverStock === 'yes' }),
     },
     adjust,
   }
@@ -286,19 +307,25 @@ export function heatingPlantBody(form: HeatingForm, units: readonly UnitInfo[], 
 
 // ---------- Kessel getauscht (Heizung PR 9) ----------
 
-export type SwapForm = { date: string; energy: HeatingEnergy | ''; name: string; previousName: string }
-export type SwapBody = { date: string; energy: HeatingEnergy; name: string; previousName: string }
+export type SwapForm = { date: string; energy: HeatingEnergy | ''; name: string; previousName: string; takesOverStock: 'yes' | 'no' }
+export type SwapBody = { date: string; energy: HeatingEnergy; name: string; previousName: string; takesOverStock?: boolean }
+
+// Bei demselben Vorratsbrennstoff fragt der Tausch, ob die neue Anlage den Brennstoff weiter verheizt.
+export const asksTakeOver = (form: Pick<SwapForm, 'energy'>, previous: Pick<HeatingPlant, 'energy'>): boolean =>
+  form.energy === previous.energy && isStockEnergy(previous.energy)
 
 // Getauscht wird eine laufende zentrale Anlage; bei getrennter Heizkostenabrechnung kommt das später.
 export const canSwap = (p: Pick<HeatingPlant, 'endsOn' | 'supply' | 'separateSpans'>): boolean =>
   p.endsOn === null && p.supply === 'central' && p.separateSpans.length === 0
 
-export const emptySwapForm = (p: Pick<HeatingPlant, 'name'>): SwapForm => ({ date: '', energy: '', name: '', previousName: p.name })
+// Vorbelegung „Ja“: Wer den Kessel tauscht, verheizt den Brennstoff im Tank meist weiter.
+export const emptySwapForm = (p: Pick<HeatingPlant, 'name'>): SwapForm => ({ date: '', energy: '', name: '', previousName: p.name, takesOverStock: 'yes' })
 
-export function swapBody(form: SwapForm): { body: SwapBody } | { error: string } {
+export function swapBody(form: SwapForm, previous: Pick<HeatingPlant, 'energy'>): { body: SwapBody } | { error: string } {
   if (form.date === '') return { error: 'Bitte wählen Sie den Tag, an dem die neue Heizung in Betrieb ging.' }
   if (form.energy === '') return { error: 'Womit heizt die neue Heizung?' }
-  return { body: { date: form.date, energy: form.energy, name: form.name.trim(), previousName: form.previousName.trim() } }
+  const body: SwapBody = { date: form.date, energy: form.energy, name: form.name.trim(), previousName: form.previousName.trim() }
+  return { body: asksTakeOver(form, previous) ? { ...body, takesOverStock: form.takesOverStock === 'yes' } : body }
 }
 
 // Sichtprüfung E9: Warum eine Einheit beim Einrichten nicht angehakt ist.

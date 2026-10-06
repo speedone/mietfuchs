@@ -532,7 +532,7 @@ app.put('/api/heating-plants/:id', async (req, res) => {
 })
 app.delete('/api/heating-plants/:id', async (req, res) => {
   const result = await writeData((db) => removeHeatingPlant(db, req.params.id))
-  if (result.removed) return res.json({ ok: true, released: result.released })
+  if (result.removed) return res.json({ ok: true, released: result.released, notice: result.notice })
   if (result.reason === 'missing') return res.status(404).json({ error: 'Diese Heizanlage gibt es nicht (mehr). Bitte laden Sie die Seite neu.' })
   if (result.reason === 'co2') {
     return res.status(409).json({

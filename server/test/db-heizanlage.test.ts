@@ -51,7 +51,7 @@ test('Anlegen: Vorgaben, und so steht sie in der Liste', async () => {
       devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null,
       capturedOnOct2024: null, warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null, units: null,
       newDevicesInstall: null,
-      nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null,
+      nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null,
       periodChanges: [], separateSpans: [],
     })
     assert.deepEqual(await opened.read((db) => listHeatingPlants(db, 'objekt-1')), [plant])
@@ -215,7 +215,7 @@ test('Entfernen: gibt die Positionen frei; mit Zählern erst, wenn sie gelöst s
     })
     assert.deepEqual(await opened.write((db) => removeHeatingPlant(db, 'hp1')), { removed: false, reason: 'meters', meters: ['Gaszähler'] })
     await opened.write((db) => removeEntity(db, 'meters', 'gas'))
-    assert.deepEqual(await opened.write((db) => removeHeatingPlant(db, 'hp1')), { removed: true, released: 1 })
+    assert.deepEqual(await opened.write((db) => removeHeatingPlant(db, 'hp1')), { removed: true, released: 1, notice: null })
     assert.equal(fieldOf(await opened.read((db) => findEntity(db, 'costItems', 'c1')), 'heatingPlantId'), undefined)
     assert.deepEqual(await opened.write((db) => removeHeatingPlant(db, 'hp1')), { removed: false, reason: 'missing' })
   })

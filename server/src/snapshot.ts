@@ -19,10 +19,10 @@
 
 import type { BillingPeriod, Co2Statement, CostItem, DegreeDayValue, FrozenFuelCarry, FuelDelivery, HeatingPeriodData, HeatingPlant, Meter, Payment, PeriodKey, PeriodRules, Property, Reading, StockValue, Tenancy, Unit } from '../../shared/types.ts'
 import { calendarPeriod, calendarYearPeriod, parsePeriodKey, periodContaining, periodLabel, periodOfKey, previousPeriod, rulesOf, settlementDeadline } from '../../shared/period.ts'
-import { hasOwnRhythm, heatingPeriodsEndingIn, plantRules, settledSeparately, settlementKeyOf, type PlantWay } from '../../shared/heatingPeriod.ts'
+import { hasOwnRhythm, heatingPeriodsEndingIn, plantRules, sameFuelLine, settledSeparately, settlementKeyOf, type PlantWay } from '../../shared/heatingPeriod.ts'
 import { isStockEnergy } from '../../shared/fuelStock.ts'
 import { dayAfter, germanDate } from '../../shared/law/register.ts'
-import { isStockFuelItem, readFrozenStock, settledByDefault, stockTemplateOf, type PreviousFuel, type StockPeriodInput } from './fuelStock.ts'
+import { isStockFuelItem, readFrozenStock, settledByDefault, stockTemplateOfLine, type PreviousFuel, type StockPeriodInput } from './fuelStock.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import type { Db } from './store.ts'
 
@@ -111,7 +111,7 @@ export type SnapshotMeter = Pick<Meter, 'id' | 'unitId' | 'type' | 'heatingPlant
 // Energieträger, Pflicht: Von ihm hängt ab, ob CO₂-Kosten aufzuteilen sind. Seit PR 7 die
 // CO₂-Merkmale (§ 8, § 9, § 2 Abs. 4 Satz 2 CO2KostAufG); fehlen sie, hat die Anlage keine.
 export type SnapshotHeatingPlant = Pick<HeatingPlant, 'id' | 'energy' | 'method' | 'source' | 'devicesRemote' | 'devicesInstalledAfter2021' | 'newDevicesInstall' | 'units'>
-  & Partial<Pick<HeatingPlant, 'name' | 'periodStartMonth' | 'periodChanges' | 'separateSpans' | 'separateSettlement' | 'nonResidential' | 'restriction' | 'districtEtsNew' | 'supply' | 'endsOn' | 'replacesPlantId' | 'buildingWith'>>
+  & Partial<Pick<HeatingPlant, 'name' | 'periodStartMonth' | 'periodChanges' | 'separateSpans' | 'separateSettlement' | 'nonResidential' | 'restriction' | 'districtEtsNew' | 'supply' | 'endsOn' | 'replacesPlantId' | 'buildingWith' | 'takesOverStock'>>
 // Seit Heizung PR 9 die Versorgung (`supply`); fehlt sie, ist die Anlage zentral.
 // Die Angaben je Heizperiode, die die Berechnung liest: Warmwasser laut Messdienst (Heizung PR 6, #211)
 // und der Vorrat (Heizung PR 8). Die Felder des Vorrats sind optional, damit ein von Hand gebauter
@@ -617,7 +617,8 @@ export function stockChainsOf(source: StockChainSource, plant: SnapshotHeatingPl
   const nextOf = (p: BillingPeriod): BillingPeriod => periodContaining(rules, dayAfter(p.to))
   // Kesseltausch mit demselben Brennstoff (Durchsicht von #238): Die Folgeperiode der letzten Heizperiode
   // ist die erste der neuen Anlage; ob sie den Restbestand übernommen hat, steht unter deren Kennung.
-  const successor = plants.find((p) => p.replacesPlantId === plant.id && p.energy === plant.energy)
+  // Mit „nein“ auf die Frage, ob die neue Anlage den Brennstoff weiter verheizt, übernimmt sie nichts.
+  const successor = plants.find((p) => p.replacesPlantId === plant.id && p.energy === plant.energy && p.takesOverStock !== false)
   const endsIn = (p: BillingPeriod): boolean => endsOn !== null && endsOn >= p.from && endsOn <= p.to
   const handoverTo = (): { id: string; period: BillingPeriod } | null =>
     successor && endsOn !== null ? { id: successor.id, period: periodContaining(plantRules(wayOf(successor), objectRules), dayAfter(endsOn)) } : null
@@ -693,12 +694,12 @@ export function stockChainsOf(source: StockChainSource, plant: SnapshotHeatingPl
         : [],
       frozenClosing: frozenOf(p),
       nextFrozenOpening: nextFrozenOf(p),
-      hasKey: stockTemplateOf(itemsIn(p.key), itemsIn(previousPeriod(rules, p).key), plant.id, HEATING_CATEGORY) !== null,
+      hasKey: stockTemplateOfLine(itemsIn(p.key), itemsIn(previousPeriod(rules, p).key), sameFuelLine(plant, plants), HEATING_CATEGORY) !== null,
       // Nach dem letzten Betriebstag gibt es keine Folgeperiode, die den Endbestand übernähme.
       nextClosedWithoutStock: nextClosedOf(p) && nextFrozenOf(p) === null,
     }
   }
-  const predecessor = plant.replacesPlantId ? plants.find((p) => p.id === plant.replacesPlantId && p.energy === plant.energy) : undefined
+  const predecessor = plant.replacesPlantId && plant.takesOverStock !== false ? plants.find((p) => p.id === plant.replacesPlantId && p.energy === plant.energy) : undefined
   const startsOn = predecessor?.endsOn ? dayAfter(predecessor.endsOn) : null
   return hs.filter((h) => (endsOn === null || endsOn >= h.from) && (startsOn === null || startsOn <= h.to)).map((h) => {
     const chain = [inputOf(h)]

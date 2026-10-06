@@ -119,6 +119,8 @@ test('Etagenheizung (F8, Review Focus 3): 30,0 kg/m² → 40 %, Abzug je Wohnung
   const basis = r.notices.find((n) => n.code === 'heating.per-unit-basis') ?? assert.fail(codes(r).join(', '))
   assert.match(basis.text, /§ 1 Abs\. 1 HeizkostenV/)
   assert.match(basis.text, /§ 2 Nr\. 4 Buchstabe d BetrKV\)\. Ob Sie die Gaskosten selbst umlegen dürfen, wenn der Gasvertrag auf Sie läuft, ist nicht geklärt/)
+  // Nachprüfung von #238: Die Vereinbarung steht in § 556 Abs. 1 Satz 1 BGB.
+  assert.match(basis.text, /nur, wenn der Mietvertrag es vereinbart \(§ 556 Abs\. 1 Satz 1 BGB\)/)
   // Die eingetragene Fläche der Einstufung geht vor (9.2 Nr. 1): 3.000 kg / 120 m² = 25,0 → 30 %.
   const flaeche = settle(F8({ co2Statements: [co2('hp', { method: 'self', areaM2: 120 })] }))
   assert.equal(flaeche.heating?.[0]?.co2?.stage?.landlordPercent, 30)

@@ -1113,6 +1113,16 @@ im Rumpf `adjust` mit, damit nie ein halber Stand entsteht.
   und die Wohnfläche aller versorgten Wohnungen ein (`partnersOf`/`contributionOf` in calc.ts, § 5 Abs. 1
   Satz 1 und 2 CO2KostAufG, Hinweis `co2.building-joint` als Auslegung); dieselbe Mechanik gilt für die Linie
   eines Kesseltauschs. Fehlt der Ausstoß einer mitheizenden Anlage, `co2.classification-incomplete`.
+  **Die Fläche** ist bei Anlagen im selben Gebäude die aller Anlagen des Gebäudes: je Linie die eingetragene
+  (9.2) oder die der versorgten Wohnungen, jede Wohnung einmal (`jointAreaOf`); eine eingetragene Fläche einer
+  Anlage allein teilte den Ausstoß des ganzen Gebäudes durch einen Teil seiner Fläche (Nachprüfung, I-A).
+  **Die erste Anlage wird nicht gefragt** (`building_with` NULL), auch nicht beim Ändern; eine beantwortete
+  Frage lässt sich neben einer laufenden Anlage nicht wieder leeren. Ein Kreis der Angaben (`buildingCycle`)
+  wird mit 400 abgelehnt; steht er in einem Archiv, ist die Wurzel die kleinste Kennung im Kreis
+  (`buildingRoot`). Wird die Anlage entfernt, auf die andere zeigen, gehen die Verweise an ihre
+  Nachfolgerin, sonst an das Gebäude, in dem sie stand, sonst wird die erste verweisende der Bezugspunkt;
+  ein Verweis ins Leere im Archiv wird beim Wiederherstellen NULL. Die Auswahl in der Oberfläche zeigt bei
+  einem Verweis auf eine stillgelegte Anlage die laufende ihrer Linie, mit dem gespeicherten Wert.
 - **Eine neue Heizposition ohne Anlage** bekommt mit verknüpfter Lieferung deren Anlage, sonst bei mehreren
   Anlagen die, an der alle von ihr genannten Wohnungen hängen (Direktzuordnung, Teilnehmer, Einzelbeträge;
   `plantForNewItem` in repository.ts) und die zu Beginn ihres Leistungszeitraums heizt, sonst keine. Gehört
@@ -1144,10 +1154,19 @@ im Rumpf `adjust` mit, damit nie ein halber Stand entsteht.
   Nr. 4a BetrKV). Die Steuerübersicht ändert sich nicht, die Rechnungen bleiben voll. Teilen alte und
   neue Anlage eine Heizperiode, wird das Gebäude über den Ausstoß beider eingestuft (§ 5 Abs. 1 Satz 1
   CO2KostAufG: „des Gebäudes … und Jahr“, `successionOf` in calc.ts, Hinweis `co2.plant-replaced`).
-  Gleicher Vorratsbrennstoff: Die Kette der neuen Anlage beginnt mit der der alten (`stockChainsOf` mit
-  `plants`), der Restbestand ist ihr Anfangsbestand. Gleicher Brennstoff über einen Zähler (Gas, Fernwärme,
+  Gleicher Vorratsbrennstoff: Der Tausch fragt „Verheizt der neue Kessel den Brennstoff im Tank weiter?“
+  (`takes_over_stock`, Vorbelegung ja, änderbar, solange weder die letzte Heizperiode der alten noch die
+  erste der neuen abgeschlossen ist). Mit Ja beginnt die Kette der neuen Anlage mit der der alten
+  (`stockChainsOf` mit `plants`), der Restbestand ist ihr Anfangsbestand, ein eigener wird mit einem Satz
+  über die alte Anlage abgelehnt. Mit Nein bleibt der Restbestand wie bei anderem Brennstoff beim
+  Vermieter. In beiden Fällen kommt der Schlüssel der Überträge auch von den Positionen der Vorgängerin
+  (`sameFuelLine`, `stockTemplateOfLine`; sonst ging der Anfangsbestand ohne eigene Position der neuen
+  Anlage im Tauschjahr mit 0 € weiter, Nachprüfung K1). Eine stillgelegte Anlage rechnet in einem späteren Zeitraum mit, wenn
+  eine Position dort mit ihrer Lieferung verknüpft ist (die Gasrechnung bis zum Tausch, im Folgejahr
+  gebucht): Sie wird in den Zeitraum der Lieferung abgegrenzt, sonst trügen die Mieter sie zweimal. Gleicher Brennstoff über einen Zähler (Gas, Fernwärme,
   Strom): 409, kein Tausch nötig. Das Entfernen der neuen Anlage macht den Tausch rückgängig, das der alten
-  nimmt der Nachfolgerin den Verweis; ein verwaister Verweis im Archiv wird beim Wiederherstellen
+  nimmt der Nachfolgerin den Verweis, das aus der Mitte einer Linie lässt die nächste den Zeitraum
+  übernehmen (Hinweis in Rückfrage und Antwort, `notice`); ein verwaister Verweis im Archiv wird beim Wiederherstellen
   geradegerückt (`straightenHeatingPlants`). Vorrat und Lieferungen nur in der Betriebszeit. Gesperrt
   bleiben der Tausch einer Etagenheizung, bei getrennter Heizkostenabrechnung (Weg d), mitten in einer
   abgeschlossenen Heizperiode (zum Ersten nach dem Abschluss geht er), vor einer abgeschlossenen späteren
@@ -1155,7 +1174,7 @@ im Rumpf `adjust` mit, damit nie ein halber Stand entsteht.
 - **Etagenheizung, Grundlage der Umlage:** Die HeizkostenV gilt nicht (§ 1 Abs. 1), § 2 Nr. 4 Buchstabe d
   BetrKV nennt nur Reinigung und Wartung. Eine belegte Grundlage für die Umlage der Gaskosten bei Vertrag des
   Vermieters hat die Durchsicht nicht gefunden; Hinweis `heating.per-unit-basis` und Lexikon „Etagenheizung“
-  sagen „nicht geklärt“ und verweisen auf § 556 Abs. 1 BGB. Fernwärme ist keine Etagenheizung. `fuel-invariant.test.ts` und `fuel-stock-invariant.test.ts`
+  sagen „nicht geklärt“ und verweisen auf § 556 Abs. 1 Satz 1 BGB. Fernwärme ist keine Etagenheizung. `fuel-invariant.test.ts` und `fuel-stock-invariant.test.ts`
   rechnen je eine Variante mit zwei Anlagen und prüfen, dass jede Lieferung nur bei ihrer Anlage steht.
 
 **Brennstoffvorrat** (Heizung PR 8, #97, #99): Bei Heizöl, Flüssiggas, Pellets, Holz und Kohle
