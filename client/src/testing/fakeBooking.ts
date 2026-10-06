@@ -32,11 +32,11 @@ export function fakeBooking(start: { items: CostItem[]; units: Unit[]; meters?: 
     for (const w of writes) {
       if (w.kind === 'createItem') {
         // Die Felder aus #208 stehen im Rumpf als `null`, an der Position fehlen sie dann.
-        const { invoiceFile, serviceFrom, serviceTo, taxYear, heatingPart, ...rest } = w.body
+        const { invoiceFile, serviceFrom, serviceTo, taxYear, heatingPart, heatingTarget, ...rest } = w.body
         items = [...items, {
           ...rest, id: w.id, ...(invoiceFile ? { invoiceFile } : {}),
           ...(serviceFrom !== null && serviceTo !== null ? { serviceFrom, serviceTo } : {}),
-          ...(taxYear !== null ? { taxYear } : {}), ...(heatingPart !== null ? { heatingPart } : {}),
+          ...(taxYear !== null ? { taxYear } : {}), ...(heatingPart !== null ? { heatingPart } : {}), ...(heatingTarget !== null ? { heatingTarget } : {}),
         }]
       } else if (w.kind === 'updateItem') {
         items = items.map((i) => (i.id === w.id

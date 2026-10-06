@@ -32,11 +32,14 @@
 // der seine Erwartung aus den Spalten des Schemas ableitet: Eine Liste von Hand vergisst der
 // nächste, der eine Spalte hinzufügt.
 
+import { beforeBeginText } from './selfLine.ts'
+import { selfActive, selfFromOf } from '../heating.ts'
 import { and, count, desc, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm'
-import type { BillingPeriod, CostItem, ExternalBasis, HeatingPlant, HeatingPrepaymentOverride, Meter, MeterType, Payment, PeriodKey, PeriodRules, PersonEntry, PrepaymentEntry, Property, Reading, RentEntry, SplitPreviewPart, Tenancy, Unit, UnitDependents } from '../../../shared/types.ts'
+import type { BillingPeriod, CostItem, ExternalBasis, HeatingPlant, HeatingPrepaymentOverride, InterimGapStatus, Meter, MeterType, Payment, PeriodKey, PeriodRules, PersonEntry, PrepaymentEntry, Property, Reading, RentEntry, SplitPreviewPart, Tenancy, Unit, UnitDependents } from '../../../shared/types.ts'
 import { CALENDAR_RULES, calendarPeriod, paymentYear, formatDayRange, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, spansTwoYears, startYearOf } from '../../../shared/period.ts'
 import { heatingPeriodsEndingIn, isObjectPeriod, plantRules, plantSpan, servesUnit, spanOf } from '../../../shared/heatingPeriod.ts'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
+import { targetProblem } from '../heating.ts'
 import { andList } from '../../../shared/wording.ts'
 import type { MigratedSettings } from '../ai/settings.ts'
 import { lastPerFrom, straightenPersonHistory } from '../schedule.ts'
@@ -49,7 +52,7 @@ import {
 } from './read.ts'
 import {
   aiSlots, assessmentLines, assessments, baseRents, co2Statements, co2TenantReliefs, heatingPeriods, closedHeatingSettlementHistory, closedHeatingSettlements, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, DEPOSIT_STATUS, EXTERNAL_MEASURES,
-  HEATING_PARTS, HEATING_ROLES, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingPrepaymentOverrides, heatingPrepayments, heatingSeparateSpans,
+  HEATING_PARTS, HEATING_ROLES, HEATING_TARGETS, INTERIM_GAP_STATUS, interimReadingGaps, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingSelfSpans, heatingPrepaymentOverrides, heatingPrepayments, heatingSeparateSpans,
   flatRates, METER_TYPES, meters, payments, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, PROPERTY_KINDS,
   readings, settings, tenancies, unitNoConnection, units, fuelCarryFrozen, fuelDeliveries,
 } from './schema.ts'
@@ -365,6 +368,8 @@ function mergeCostItem(current: CostItem, body: unknown): CostItem {
     serviceTo: merged(body, 'serviceTo', current.serviceTo, asOptionalText),
     taxYear: merged(body, 'taxYear', current.taxYear, asOptionalNumber),
     heatingPart: merged(body, 'heatingPart', current.heatingPart, (v) => oneOfOrUndefined(HEATING_PARTS, v)),
+    // Ziel bei Heizkosten (Heizung PR 10).
+    heatingTarget: merged(body, 'heatingTarget', current.heatingTarget, (v) => oneOfOrUndefined(HEATING_TARGETS, v)),
     // Die Heizanlage der Position (Heizung PR 4). Nur die Kostenart Heizung und Warmwasser gehört zu
     // einer Anlage; wechselt die Kostenart, fällt die Anlage weg. `undefined` heißt „nicht
     // angegeben“: bei einer neuen Position und bei einer, die gerade zur Heizposition wird
@@ -410,6 +415,8 @@ function mergeReading(current: Reading, body: unknown): Reading {
     replacement: merged(body, 'replacement', current.replacement, asOptionalBoolean),
     oldEndValue: merged(body, 'oldEndValue', current.oldEndValue, asOptionalNumber),
     note: merged(body, 'note', current.note, asOptionalText),
+    // Grenze einer Ablesung aus dem Mieterwechsel (Heizung PR 10): der letzte Tag des bisherigen Nutzers.
+    interimFor: merged(body, 'interimFor', current.interimFor, (v) => (typeof v === 'string' && ISO_DATE.test(v) ? v : undefined)),
   }
 }
 
@@ -667,7 +674,8 @@ async function guardFuelLink(db: Executor, before: CostItem | null, after: CostI
       `Die Kostenposition gehört zu Objekt ${await propertyName(db, after.propertyId)}, die Lieferung aber zur Heizanlage von Objekt ${await propertyName(db, plant.propertyId)}. ` +
         'Eine Position zeigt nur auf eine Lieferung einer Heizanlage desselben Objekts.')
   }
-  if (plant?.method !== 'manual') {
+  // Heizung PR 10 (N2): verknüpft wird bei freien Schlüsseln und bei der eigenen Heizkostenabrechnung.
+  if (plant?.method === 'service') {
     throw new HeatingError(400,
       'Rechnet ein Messdienst oder die Gemeinschaft ab, steckt der Brennstoff in deren Einzelbeträgen; eine Lieferung wird dort mit keiner Position verknüpft. Tragen Sie die Rechnung nur als Lieferung ein.')
   }
@@ -758,6 +766,7 @@ async function defaultHeatingPlant(db: Executor, c: CostItem, invoiceDate?: stri
 // einem abgeschlossenen Zeitraum keine neue Zuordnung.
 async function guardCostItemHeating(db: Executor, before: CostItem | null, after: CostItem): Promise<void> {
   if (after.key === 'meter' && after.meterType === 'hkv') throw new HeatingError(400, HKV_KEY)
+  await guardHeatingSystem(db, after)
   const plantId = after.heatingPlantId
   if (!plantId) return
   const plant = await plantOf(db, plantId)
@@ -787,6 +796,54 @@ async function guardCostItemHeating(db: Executor, before: CostItem | null, after
       'Die Abrechnung dieses Zeitraums ist abgeschlossen; ihre Positionen bekommen keine Heizanlage mehr, denn der eingefrorene Stand bleibt maßgeblich. ' +
         'Öffnen Sie die Abrechnung wieder, wenn Sie die Position zuordnen wollen.')
   }
+}
+
+// Eigene Heizkostenabrechnung (Heizung PR 10, Entwurf 5.3, Abweichung 18): Nach Heizkostenverordnung
+// verteilt nur eine Position einer Anlage mit `method = 'self'`, mit Teil und Ziel, und deren
+// Positionen verteilen nur so. Das Ziel passt zur Warmwasserbereitung (heating.ts, `targetProblem`).
+// „Nur Heizung“ bei freien Schlüsseln bleibt erlaubt (A2, B7).
+export async function guardHeatingSystem(db: Executor, after: CostItem): Promise<void> {
+  const target = after.heatingTarget ?? null
+  if (target !== null && after.category !== HEATING_CATEGORY) {
+    throw new HeatingError(400, 'Ein Ziel (Heizung, Warmwasser) gibt es nur bei der Kostenart „Heizung und Warmwasser“.')
+  }
+  // Ohne Angabe bekommt eine neue Heizposition die Anlage erst beim Schreiben (`defaultHeatingPlant`);
+  // geprüft wird gegen dieselbe, die sie dann bekommt.
+  const plantId = after.heatingPlantId === undefined && after.category === HEATING_CATEGORY ? await plantForNewItem(db, after) : (after.heatingPlantId ?? null)
+  const [row] = plantId === null ? [] : await db.select({ method: heatingPlants.method, hotWater: heatingPlants.hotWater }).from(heatingPlants).where(eq(heatingPlants.id, plantId))
+  const plant = row && plantId !== null
+    ? { ...row, selfSpans: await db.select({ from: heatingSelfSpans.from, until: heatingSelfSpans.until }).from(heatingSelfSpans).where(eq(heatingSelfSpans.plantId, plantId)) }
+    : undefined
+  if (after.key === 'heatingSystem') {
+    // Durchsicht von #239: nur in Heizperioden der eigenen Abrechnung (`selfActive`), also ab ihrem Beginn
+    // und, nach dem Zurückschalten, bis vor ihr Ende.
+    const begin = plant ? selfFromOf(plant) : null
+    if (begin !== null && String(after.period) < begin && !selfActive(plant ?? { method: 'manual' }, String(after.period))) {
+      throw new HeatingError(400, beforeBeginText(begin))
+    }
+    if (after.category !== HEATING_CATEGORY || !plant || !selfActive(plant, String(after.period))) {
+      throw new HeatingError(400,
+        'Nach der Heizkostenverordnung verteilt Mietfuchs nur Positionen einer Heizanlage mit eigener Heizkostenabrechnung. Richten Sie sie in den Stammdaten unter „Heizung“ ein oder wählen Sie einen anderen Schlüssel.')
+    }
+    const problem = targetProblem(plant.hotWater, after.heatingPart ?? null, target)
+    if (problem !== null) throw new HeatingError(400, `${problem}.`)
+    return
+  }
+  if (plant && selfActive(plant, String(after.period)) && after.category === HEATING_CATEGORY) {
+    throw new HeatingError(400,
+      'Diese Heizanlage rechnet die Heizkosten selbst nach der Heizkostenverordnung ab. Wählen Sie den Schlüssel „nach Heizkostenverordnung“ mit Teil und Ziel.')
+  }
+}
+
+// Für die Einrichtung der eigenen Heizkostenabrechnung (Heizung PR 10): innerhalb einer fremden
+// Transaktion anlegen, durch dieselbe Verschmelzung und denselben Wächter wie die Routen (wie
+// `insertCostItemIn` für die Belegbuchung).
+export async function insertEntityIn(tx: Executor, coll: CollectionName, id: string, body: unknown): Promise<void> {
+  await withCollection<Promise<void>>(coll, async (c) => {
+    const entity = c.merge(c.empty(id), body)
+    await c.guard(tx, null, entity, body)
+    await c.insert(tx, entity)
+  })
 }
 
 // Das Formular eines Mietverhältnisses kennt einen älteren Stand als den gespeicherten
@@ -1485,6 +1542,7 @@ const costItemRow = (c: CostItem) => ({
   externalTotalCents: c.externalBasis?.totalCents ?? null,
   participantsLimited: Array.isArray(c.participantUnitIds),
   serviceFrom: orNull(c.serviceFrom), serviceTo: orNull(c.serviceTo), taxYear: orNull(c.taxYear), heatingPart: orNull(c.heatingPart),
+  heatingTarget: orNull(c.heatingTarget),
   heatingPlantId: c.heatingPlantId ?? null,
   fuelDeliveryId: c.fuelDeliveryId ?? null,
 })
@@ -1495,6 +1553,7 @@ const meterRow = (m: Meter) => ({
 const readingRow = (r: Reading) => ({
   id: r.id, meterId: r.meterId, date: r.date, value: r.value,
   replacement: orNull(r.replacement), oldEndValue: orNull(r.oldEndValue), note: orNull(r.note),
+  interimFor: orNull(r.interimFor),
 })
 const paymentRow = (p: Payment) => ({
   id: p.id, tenancyId: p.tenancyId, date: p.date, amountCents: p.amountCents, note: orNull(p.note),
@@ -1951,6 +2010,10 @@ const isIsoDate = (value: unknown): value is string =>
   typeof value === 'string' && ISO_DATE.test(value) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value
 
 // `null`, wenn es das Mietverhältnis nicht gibt; die Route macht daraus ihre 404.
+// **Heizung PR 10 (Entwurf 3.5, 11.4):** Eine Ablesung darf ein eigenes Datum tragen, wenn sie neben
+// dem Auszug liegt (Brunata erfasst Wechsel- und Ablesedatum getrennt); gerechnet wird mit dem Wert,
+// wie er ist. Gibt es keine Zwischenablesung, sagt `interimGap`, ob sie nicht möglich war oder nicht
+// durchgeführt wurde (§ 9b Abs. 3); gespeichert für die Grenze am Auszugstag.
 export async function changeTenant(
   db: Database, propertyId: string, tenancyId: string, body: unknown, nextId: () => string,
 ): Promise<TenantChange | null> {
@@ -1991,9 +2054,24 @@ export async function changeTenant(
     if (value === undefined) throw new TenantChangeError(400, `Der Zählerstand für „${meter.name}“ ist keine gültige Zahl.`)
     if (gesehen.has(meter.id)) throw new TenantChangeError(400, `Für den Zähler „${meter.name}“ stehen zwei Stände da.`)
     gesehen.add(meter.id)
+    const datum = raw(angabe, 'date')
+    if (datum !== undefined && datum !== null && !isIsoDate(datum)) {
+      throw new TenantChangeError(400, `Das Ablesedatum für „${meter.name}“ ist kein Datum. Bitte wählen Sie es im Kalender.`)
+    }
     ablesungen.push(mergeReading(emptyReading(nextId()), {
-      meterId: meter.id, date: end, value, note: `Zwischenablesung Mieterwechsel ${current.tenantName}`,
+      meterId: meter.id, date: typeof datum === 'string' ? datum : end, value, note: `Zwischenablesung Mieterwechsel ${current.tenantName}`, interimFor: end,
     }))
+  }
+  // Keine Zwischenablesung: nicht möglich oder nicht durchgeführt (Heizung PR 10, Abweichung 8).
+  const lueckeRumpf = raw(body, 'interimGap')
+  let luecke: { status: InterimGapStatus; reason: string } | null = null
+  if (lueckeRumpf !== null && lueckeRumpf !== undefined) {
+    const s = oneOfOrUndefined(INTERIM_GAP_STATUS, raw(lueckeRumpf, 'status'))
+    if (s === undefined) throw new TenantChangeError(400, 'Bitte wählen Sie, ob die Zwischenablesung nicht möglich war oder nicht durchgeführt wurde.')
+    const grund = raw(lueckeRumpf, 'reason')
+    luecke = { status: s, reason: typeof grund === 'string' ? grund.trim() : '' }
+    // Durchsicht von #239, I3: „nicht möglich“ nur mit Grund.
+    if (s === 'impossible' && luecke.reason === '') throw new TenantChangeError(400, 'Bitte nennen Sie den Grund für die Teilung nach § 9b Abs. 3 HeizkostenV, also warum die Zwischenablesung nicht möglich war; er steht in der Abrechnung.')
   }
 
   // Der Nachmieter, oder Leerstand.
@@ -2015,6 +2093,10 @@ export async function changeTenant(
     await guardTenancy(tx, current, beendet, { end })
     await tenancyCollection.replace(tx, beendet)
     for (const ablesung of ablesungen) await readingCollection.insert(tx, ablesung)
+    if (luecke) {
+      await tx.delete(interimReadingGaps).where(and(eq(interimReadingGaps.unitId, current.unitId), eq(interimReadingGaps.date, end)))
+      await tx.insert(interimReadingGaps).values({ unitId: current.unitId, date: end, status: luecke.status, reason: luecke.reason })
+    }
     if (nachmieter) {
       await guardTenancy(tx, null, nachmieter, nachmieterRumpf)
       await tenancyCollection.insert(tx, nachmieter)

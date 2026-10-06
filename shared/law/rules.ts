@@ -18,7 +18,7 @@
 // liest, setzt deren `retrieved` und `LAW_AS_OF` auf den Tag der Durchsicht (#110).
 import { betrkvTvSignal } from './bgb-betrkv.ts'
 import { co2CutMissing, co2FirstPeriodStart } from './co2kostaufg.ts'
-import { hkvConsumptionShare, hkvCutNotByConsumption, hkvCutRemoteReading, hkvRemoteReadingRetrofit } from './heizkostenv.ts'
+import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutNotByConsumption, hkvCutRemoteReading, hkvRemoteReadingRetrofit } from './heizkostenv.ts'
 import { dayBefore, germanDate, LAW_AS_OF, onlyVersion, valueAt } from './register.ts'
 
 // Die Fassungen, aus denen die Regeln ihre Grenzen nehmen. Bekommt einer der beiden Parameter eine
@@ -33,6 +33,7 @@ const RETROFIT_FROM = retrofit.validFrom
 const share = valueAt(hkvConsumptionShare, LAW_AS_OF)
 const cut = valueAt(hkvCutNotByConsumption, LAW_AS_OF)
 const remoteCut = valueAt(hkvCutRemoteReading, LAW_AS_OF)
+const forcedShare = valueAt(hkvConsumptionShareForced, LAW_AS_OF)
 const CO2_FROM = co2FirstPeriodStart()
 const co2Cut = valueAt(co2CutMissing, LAW_AS_OF)
 
@@ -158,6 +159,44 @@ export const RULES: readonly Rule[] = [
       'Bei Heizöl, Flüssiggas, Pellets, Holz und Kohle ergibt sich der Verbrauch aus Anfangsbestand + Lieferungen − Endbestand. ' +
       'Die Bewertung des Endbestands regelt die HeizkostenV nicht; Mietfuchs rechnet, dass das Älteste zuerst verbraucht wird (Kinne/Schach/Bieber-Kinne, BGB § 556 Rn. 121), ' +
       'und bewertet den Endbestand zu den Preisen der jüngsten Lieferungen. Eine Abrechnung nach Lieferungen ist nicht zulässig und lässt sich nicht durch die Kürzung nach § 12 Abs. 1 HeizkostenV ausgleichen.',
+  },
+  // Heizung PR 10 (#99, Entwurf 10.2): die eigene Heizkostenabrechnung. Wortlaut gelesen am
+  // 05.10.2026 auf gesetze-im-internet.de (HeizkostenV §§ 6 bis 9b in der Fassung Art. 3 G v.
+  // 16.10.2023).
+  {
+    code: 'heating-own-settlement',
+    title: 'Eigene Heizkostenabrechnung nach der Heizkostenverordnung',
+    norm: '§§ 6 bis 9 HeizkostenV',
+    summary:
+      `Von den Kosten der Heizung und des Warmwassers sind mindestens ${share.min} und höchstens ${share.max} % nach dem erfassten Verbrauch zu verteilen; höhere Sätze gehen nur mit einer Vereinbarung (§ 10). Der Rest geht bei der Heizung nach Wohn- oder Nutzfläche oder der beheizten Fläche, beim Warmwasser nach Wohn- oder Nutzfläche. Die Verordnung lässt auch den umbauten Raum zu (§ 7 Abs. 1 Satz 5, § 8 Abs. 1); Mietfuchs rechnet mit der Fläche. ` +
+      'Bereitet die Heizung auch das Warmwasser, wird der Anteil des Warmwassers mit einem Wärmezähler gemessen. ' +
+      `In Gebäuden mit Öl- oder Gasheizung, die das Anforderungsniveau der Wärmeschutzverordnung vom 16. August 1994 nicht erfüllen und deren freiliegende Leitungen überwiegend gedämmt sind, sind es bei der Heizung ${forcedShare} % (§ 7 Abs. 1 Satz 2); mehr nur mit einer Vereinbarung (§ 10). ` +
+      'Umgelegt werden die Kosten des verbrauchten Brennstoffs, nicht der gelieferte.',
+  },
+  {
+    code: 'heating-tenant-change',
+    title: 'Mieterwechsel bei Heizung und Warmwasser',
+    norm: '§ 9b HeizkostenV; BGH, Urteil vom 14.11.2007, VIII ZR 19/07',
+    summary:
+      'Zieht ein Mieter während des Abrechnungszeitraums aus, ist eine Zwischenablesung vorzunehmen. Die Verbrauchskosten werden nach ihr aufgeteilt, die übrigen Heizkosten nach Gradtagszahlen oder zeitanteilig, die übrigen Warmwasserkosten zeitanteilig. ' +
+      'Ist die Zwischenablesung nicht möglich, werden die gesamten Kosten so aufgeteilt. Abweichende Vereinbarungen bleiben unberührt. ' +
+      'Die Kosten der Zwischenablesung trägt der Vermieter, soweit nichts anderes vereinbart ist.',
+  },
+  {
+    code: 'heating-reading-date',
+    title: 'Ablesung neben dem Stichtag',
+    norm: 'OLG Schleswig, Rechtsentscheid vom 04.10.1990, 4 RE-Miet 1/88; § 9a HeizkostenV; BGH, Urteil vom 16.11.2005, VIII ZR 373/04',
+    summary:
+      'Abgelesen wird zum Ende des Abrechnungszeitraums oder zum Wechsel. Eine Ablesung einige Tage daneben ist unschädlich, wenn in der Zwischenzeit wenig verbraucht wird; zurückgerechnet wird nicht. ' +
+      'Geschätzt werden darf nur, wenn ein Gerät ausfällt oder ein anderer zwingender Grund vorliegt, und zwingend ist ein Grund erst, wenn sich der Fehler nicht mehr beheben lässt.',
+  },
+  {
+    code: 'heating-key-change',
+    title: 'Wechsel des Anteils nach Verbrauch',
+    norm: '§ 6 Abs. 4 HeizkostenV',
+    summary:
+      'Den Anteil nach Verbrauch und die übrigen Maßstäbe wählt der Gebäudeeigentümer. Für künftige Abrechnungszeiträume ändern darf er sie durch Erklärung gegenüber den Nutzern bei Einführung einer Vorerfassung nach Nutzergruppen, nach baulichen Maßnahmen, die nachhaltig Heizenergie einsparen, oder aus anderen sachgerechten Gründen nach ihrer erstmaligen Bestimmung. ' +
+      'Festlegung und Änderung sind nur mit Wirkung zum Beginn eines Abrechnungszeitraums zulässig. Den vorgeschriebenen Anteil nach § 7 Abs. 1 Satz 2 wählt er nicht, er gilt.',
   },
 ]
 

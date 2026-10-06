@@ -33,6 +33,11 @@
 // Nachprüfung von #238: Mit eigener Zufallsfolge versucht der Generator, die Rechnung einer Lieferung erst im
 // Folgejahr zu buchen; (v) verlangt, dass jede Position einer Lieferung in der Heizperiode ihres Lieferdatums
 // steht, denn nur dort verteilt die Bestandskette den Betrag im Jahr des Verbrauchs.
+// Heizung PR 10: In den Startwerten 1–8 (mit INV_SELF=alle in allen) rechnet die Anlage selbst nach der
+// Heizkostenverordnung ab (Wärmezähler je Wohnung, an jeder Grenze abgelesen, Positionen nach
+// Heizkostenverordnung); die Überträge des Vorrats gehen dann mit den Gewichten durch die Verordnung. Es
+// gelten dieselben Prüfungen; die Abdeckung verlangt dort zusätzlich Heizperioden, die nach der Verordnung
+// verteilt sind.
 // Ein letzter Test sichert die Abdeckung: gültige Heizperioden und geprüfte Paare nicht unter einer
 // Untergrenze. Auf dem Stand vor der Durchsicht war die Invariante bei 1, 15, 19, 21, 28, 30, 31, 33
 // rot; die Mutationsproben stehen im PR #237. Bereich mit INV_FROM/INV_TO.
@@ -47,6 +52,7 @@ import { heatingPeriodViews } from '../src/db/co2.ts'
 import { createDelivery, unfreezeFuelCarries, updateDelivery } from '../src/db/fuel.ts'
 import { saveStock } from '../src/db/fuelStock.ts'
 import { createHeatingPlant, replaceHeatingPlant } from '../src/db/heating.ts'
+import { setUpSelf } from '../src/db/heatingSelf.ts'
 import { openDatabase } from '../src/db/open.ts'
 import { readClosedSettlements, readCostItems, readFuelDeliveries, readHeatingPlants, readStock } from '../src/db/read.ts'
 import { closeSettlement, createEntity, findClosedSettlement, reopenSettlement, updateEntity } from '../src/db/repository.ts'
@@ -109,20 +115,24 @@ const STATS = { late: 0, periods: 0, validStock: 0, iiChecked: 0, iiDerivedValue
 const TWO_STATS = { ...STATS }
 const TAUSCH_STATS = { ...STATS }
 const TAUSCH_SEEDS = process.env.INV_TAUSCH === 'alle' ? SEEDS : SEEDS.filter((s) => s <= 8)
+// Heizung PR 10: eigene Heizkostenabrechnung.
+const SELF_SEEDS = process.env.INV_SELF === 'alle' ? SEEDS : SEEDS.filter((s) => s <= 8)
+const SELF_STATS = { ...STATS, distributed: 0 }
 const RUNS = [
-  ...(process.env.INV_PLANTS === '2' ? [] : SEEDS.map((seed) => ({ seed, two: false, tausch: false }))),
-  ...TWO_SEEDS.map((seed) => ({ seed, two: true, tausch: false })),
-  ...TAUSCH_SEEDS.map((seed) => ({ seed, two: false, tausch: true })),
+  ...(process.env.INV_PLANTS === '2' ? [] : SEEDS.map((seed) => ({ seed, two: false, tausch: false, self: false }))),
+  ...TWO_SEEDS.map((seed) => ({ seed, two: true, tausch: false, self: false })),
+  ...TAUSCH_SEEDS.map((seed) => ({ seed, two: false, tausch: true, self: false })),
+  ...SELF_SEEDS.map((seed) => ({ seed, two: false, tausch: false, self: true })),
 ]
-for (const { seed, two, tausch } of RUNS) {
-  test(`Invariante Vorrat (Weg ${WAY}, Startwert ${seed}${two ? ', zwei Anlagen' : ''}${tausch ? ', Kesseltausch' : ''}): jede Lieferung über alle Heizperioden genau einmal verbraucht`, async () => {
+for (const { seed, two, tausch, self } of RUNS) {
+  test(`Invariante Vorrat (Weg ${WAY}, Startwert ${seed}${two ? ', zwei Anlagen' : ''}${tausch ? ', Kesseltausch' : ''}${self ? ', eigene Heizkostenabrechnung' : ''}): jede Lieferung über alle Heizperioden genau einmal verbraucht`, async () => {
     const PLANTS = two || tausch ? ['hp', 'hp2'] : ['hp']
     // Kesseltausch: Tag und Brennstoff der neuen Anlage, sobald getauscht ist.
     let swap = null as { date: string; energy: 'oil' | 'lpg' } | null
     const itemPlant = new Map<string, string>()
     const deliveryPlant = new Map<string, string>()
     // Die Läufe mit zwei Anlagen zählen getrennt, damit die Grenzen der Abdeckung bleiben.
-    const stats = tausch ? TAUSCH_STATS : two ? TWO_STATS : STATS
+    const stats = self ? SELF_STATS : tausch ? TAUSCH_STATS : two ? TWO_STATS : STATS
     const rnd = zufall(seed * 31 + 5 + (tausch ? 1000 : 0))
     // „Rechnung erst im Folgejahr buchen“ (Nachprüfung von #238) mit eigener Zufallsfolge, damit die übrigen
     // Vorgänge jedes Startwerts dieselben bleiben.
@@ -154,6 +164,20 @@ for (const { seed, two, tausch } of RUNS) {
           await createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'oil', method: 'manual' })
         }
         for (const p of PLANTS) if (WAY === 'b') await db.update(heatingPlants).set({ periodStartMonth: 5 }).where(eq(heatingPlants.id, p))
+        // Heizung PR 10: Die Anlage rechnet selbst ab, Wärmezähler je Wohnung, an jeder Grenze abgelesen.
+        if (self) {
+          let m = 0
+          await setUpSelf(db, 'hp', { period: hkeyOf(2023), heatConsumptionPct: 70, insulationRule: 'notApplies', hotWater: 'none', capture: 'heatMeter' }, '2022-01-01', () => `wz${m++}`)
+          const meters = (await readStock(db)).meters.filter((x) => x.type === 'waerme' && x.unitId !== null)
+          const ends = [WAY === 'b' ? '2023-04-30' : '2022-12-31', ...YEARS.map((y) => (WAY === 'b' ? `${y + 1}-04-30` : `${y}-12-31`))]
+          for (const meter of meters) {
+            let value = 0
+            for (const date of ends) {
+              await createEntity(db, 'readings', `${meter.id}@${date}`, { meterId: meter.id, date, value })
+              value += int(1000, 9000)
+            }
+          }
+        }
       })
       const openingBody = () => {
         const q = int(0, 3000)
@@ -232,6 +256,8 @@ for (const { seed, two, tausch } of RUNS) {
             const fields = {
               category: HEATING_CATEGORY, description: id, amountCents,
               ...(op === 'external' ? { key: 'external', externalBasis: { measure: 'area', total: 100, totalCents: amountCents } } : { key: rnd() < 0.5 ? 'area' : 'units' }),
+              // Heizung PR 10: nach Heizkostenverordnung; „laut Gemeinschaftsabrechnung“ lehnt der Schreibweg dort ab.
+              ...(self && op !== 'external' ? { key: 'heatingSystem', heatingTarget: 'heating' } : {}),
               heatingPlantId: plant, heatingPart: 'fuel', fuelDeliveryId: id, taxYear: year,
               ...(two ? { participantUnitIds: plant === 'hp' ? ['a', 'b'] : ['c'] } : {}),
             }
@@ -339,14 +365,19 @@ for (const { seed, two, tausch } of RUNS) {
             }
           }
         }
+        // Heizung PR 10: nach der Verordnung verteilt (Abdeckung).
+        if (self && list(s, 'heating').some((x) => str(x, 'plantId') === plant && str(x, 'period') === hkey && g(g(x, 'self'), 'ok') === true)) SELF_STATS.distributed++
         return { key: hkey, positions, ...readSettlement(s, hkey, plant, itemPlant) }
       })
       for (const r of read) {
         if (process.env.INV_DEBUG) console.log('DBG', seed, r.key, JSON.stringify(r.stock && [r.stock.openingSource, r.stock.opening.quantity, r.stock.opening.costCents, r.stock.closing.costCents, r.stock.handover?.costCents, r.stock.openingSettledCents]), r.carryIn, r.carryOut, JSON.stringify(r.notices.filter((x) => x.code.startsWith('fuel')).map((x) => x.code)))
         stats.periods++; if (r.stock) stats.validStock++; if (r.codes.includes('fuel.manual-by-delivery')) stats.mbd++
-        if (r.stock && !r.codes.includes('fuel.manual-by-delivery')) { stats.iiChecked++; if (r.stock.openingSource !== 'own' && (r.stock.opening.costCents ?? 0) > 0) stats.iiDerivedValue++ }
+        // Heizung PR 10: Ist die eigene Heizkostenabrechnung nicht verteilbar (etwa ohne Brennstoffposition), stehen
+        // die Positionen beim Vermieter und es gibt keinen Übertrag; das sagt `heating.self-incomplete`.
+        const unsplit = r.codes.includes('fuel.manual-by-delivery') || r.codes.includes('heating.self-incomplete')
+        if (r.stock && !unsplit) { stats.iiChecked++; if (r.stock.openingSource !== 'own' && (r.stock.opening.costCents ?? 0) > 0) stats.iiDerivedValue++ }
         assert.equal(r.all, r.positions, `${fall}; (i) ${plant} ${r.key}`)
-        if (r.stock && !r.codes.includes('fuel.manual-by-delivery')) assert.equal(r.heating, r.positions + (r.stock.opening.costCents ?? 0) - (r.stock.closing.costCents ?? 0), `${fall}; (ii) ${plant} ${r.key}`)
+        if (r.stock && !unsplit) assert.equal(r.heating, r.positions + (r.stock.opening.costCents ?? 0) - (r.stock.closing.costCents ?? 0), `${fall}; (ii) ${plant} ${r.key}`)
       }
       const plantRow = (await opened.read((db) => readHeatingPlants(db))).find((p) => p.id === plant)
       const ends = plantRow?.endsOn ?? null
@@ -422,6 +453,15 @@ test('Invariante Vorrat: Abdeckung', () => {
   if (TAUSCH_SEEDS.length >= 8) {
     if (process.env.INV_LOG) console.log('Tausch', JSON.stringify(TAUSCH_STATS))
     assert.ok(TAUSCH_STATS.swaps >= 6 && TAUSCH_STATS.carried > 0 && TAUSCH_STATS.remaining > 0, `Kesseltausch: ${JSON.stringify(TAUSCH_STATS)}`)
+  }
+  // Heizung PR 10: auch mit eigener Heizkostenabrechnung gültige Bestandsrechnungen, geprüfte Übernahmen und
+  // Heizperioden, die nach der Verordnung verteilt sind.
+  if (SELF_SEEDS.length >= 8) {
+    if (process.env.INV_LOG) console.log('Eigene Abrechnung', JSON.stringify(SELF_STATS))
+    assert.ok(SELF_STATS.validStock * 3 > SELF_STATS.periods, `eigene Abrechnung: nur ${SELF_STATS.validStock} von ${SELF_STATS.periods} Heizperioden mit gültiger Bestandsrechnung`)
+    assert.ok(SELF_STATS.iiChecked > 0 && SELF_STATS.iiiChecked > 0, `eigene Abrechnung: (ii) ${SELF_STATS.iiChecked}-mal, (iii) ${SELF_STATS.iiiChecked}-mal geprüft`)
+    // Heute 7 von 32 (Startwerte 1–8): Ohne Brennstoffposition oder ohne gültigen Bestand verteilt die Anlage nicht.
+    assert.ok(SELF_STATS.distributed * 5 > SELF_STATS.periods, `eigene Abrechnung: nur ${SELF_STATS.distributed} von ${SELF_STATS.periods} Heizperioden nach der Verordnung verteilt`)
   }
   if (TWO_SEEDS.length >= 8) {
     assert.ok(TWO_STATS.validStock * 3 > TWO_STATS.periods, `zwei Anlagen: nur ${TWO_STATS.validStock} von ${TWO_STATS.periods} Heizperioden mit gültiger Bestandsrechnung`)

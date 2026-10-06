@@ -8,7 +8,7 @@
 import { parseQuantity } from './costForm'
 import { parseEuro } from './api'
 import { PERSONS_HINT, parsePersons } from './tenancyModel'
-import type { Meter, Tenancy } from './types'
+import type { InterimGapStatus, Meter, Tenancy } from './types'
 
 // `heatingPrepayment` nur bei getrennter Heizkostenabrechnung (Heizung PR 5): dann ist `prepayment`
 // die übrige Vorauszahlung.
@@ -18,7 +18,10 @@ export const EMPTY_NEW_TENANT: NewTenantForm = { name: '', start: '', persons: '
 
 export type TenantChangeBody = {
   end: string
-  readings: { meterId: string; value: number }[]
+  // `date`: eigenes Ablesedatum neben dem Auszug (Heizung PR 10); fehlt es, gilt der Auszugstag.
+  readings: { meterId: string; value: number; date?: string }[]
+  // Keine Zwischenablesung bei eigener Heizkostenabrechnung: nicht möglich oder nicht durchgeführt (Heizung PR 10).
+  interimGap?: { status: InterimGapStatus; reason: string }
   newTenancy: {
     tenantName: string
     persons: number
@@ -32,6 +35,15 @@ export type TenantChangeBody = {
 }
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
+
+// Kosten der Zwischenablesung (BGH VIII ZR 19/07), als Satz unter den Zählerständen (Heizung PR 10).
+export const INTERIM_FEE_HINT = 'Die Kosten einer Zwischenablesung beim Mieterwechsel sind keine Betriebskosten; sie trägt der Vermieter, soweit im Mietvertrag nichts anderes vereinbart ist (BGH VIII ZR 19/07).'
+
+// Die Antworten, wenn bei eigener Heizkostenabrechnung ein Stand fehlt (Heizung PR 10, Entwurf 3.5).
+export const INTERIM_GAP_OPTIONS: { value: Extract<InterimGapStatus, 'impossible' | 'missed'>; label: string }[] = [
+  { value: 'impossible', label: 'Sie war nicht möglich' },
+  { value: 'missed', label: 'Sie wurde nicht durchgeführt' },
+]
 
 // Ein Zählerstand im Assistenten, gelesen wie auf der Zähler-Seite (#149, #105): „1.234“ ist
 // 1234. Leer heißt „nicht abgelesen“ und wird übersprungen.
@@ -63,6 +75,19 @@ export function meterProblem(meters: Pick<Meter, 'id' | 'name'>[], values: Recor
   return null
 }
 
+// Eigene Heizkostenabrechnung (Heizung PR 10, Entwurf 3.5): Fehlt ein Stand eines Wärme- oder
+// Warmwasserzählers, sagt der Vermieter warum, und zwar vor „Weiter“; „nicht möglich“ nur mit Grund
+// (Durchsicht von #239, I3).
+export function gapProblem(heatIds: readonly string[], meterValues: Record<string, string>, gap: { status: InterimGapStatus | ''; reason: string } | null | undefined): string | null {
+  const missingHeat = heatIds.some((id) => parseMeterValue(meterValues[id] ?? '') === null)
+  if (heatIds.length === 0 || !missingHeat) return null
+  if (!gap || gap.status === '') {
+    return 'Für die Heizkostenabrechnung fehlt ein Zählerstand. Bitte tragen Sie ihn ein oder geben Sie an, ob die Zwischenablesung nicht möglich war oder nicht durchgeführt wurde.'
+  }
+  if (gap.status === 'impossible' && gap.reason.trim() === '') return 'Bitte nennen Sie den Grund für die Teilung nach § 9b Abs. 3 HeizkostenV, also warum die Zwischenablesung nicht möglich war; er steht in der Abrechnung.'
+  return null
+}
+
 // Schritt 3: der ganze Wechsel als ein Rumpf, oder die Meldung, warum nicht.
 export function buildTenantChange(input: {
   tenancy: Pick<Tenancy, 'start'>
@@ -74,6 +99,12 @@ export function buildTenantChange(input: {
   // Die Anlage der Wohnung rechnet die Heizkosten getrennt ab (Durchsicht von #231): Dann gehört zum
   // Nachmieter auch seine Heizvorauszahlung, sonst wiese die Heizkostenabrechnung 0 € aus.
   askHeating?: boolean
+  // Heizung PR 10: eigenes Ablesedatum je Zähler (leer heißt Auszugstag), die Wärme- und Warmwasserzähler
+  // der Wohnung, wenn eine Anlage mit eigener Heizkostenabrechnung sie versorgt, und die Antwort, wenn
+  // dort ein Stand fehlt.
+  meterDates?: Record<string, string>
+  heatMeterIds?: string[]
+  interimGap?: { status: InterimGapStatus | ''; reason: string } | null
 }): { error: string } | { body: TenantChangeBody } {
   const { tenancy, endDate, meters, meterValues, vacancy, newTenant } = input
   const ende = endProblem(endDate, tenancy)
@@ -83,9 +114,20 @@ export function buildTenantChange(input: {
   const readings: TenantChangeBody['readings'] = []
   for (const m of meters) {
     const value = parseMeterValue(meterValues[m.id] ?? '')
-    if (value !== null) readings.push({ meterId: m.id, value })
+    const date = input.meterDates?.[m.id] ?? ''
+    if (date !== '' && !ISO_DATE.test(date)) return { error: `Das Ablesedatum für „${m.name}“ ist kein Datum.` }
+    if (value !== null) readings.push({ meterId: m.id, value, ...(date !== '' ? { date } : {}) })
   }
-  if (vacancy) return { body: { end: endDate, readings, newTenancy: null } }
+  // Eigene Heizkostenabrechnung (Heizung PR 10, Entwurf 3.5): fehlt ein Stand, sagt der Vermieter warum.
+  const heatIds = input.heatMeterIds ?? []
+  const missingHeat = heatIds.some((id) => parseMeterValue(meterValues[id] ?? '') === null)
+  let interimGap: TenantChangeBody['interimGap']
+  const gapError = gapProblem(heatIds, meterValues, input.interimGap)
+  if (gapError) return { error: gapError }
+  const g = input.interimGap
+  if (heatIds.length > 0 && missingHeat && g && g.status !== '') interimGap = { status: g.status, reason: g.reason.trim() }
+  const gap = interimGap ? { interimGap } : {}
+  if (vacancy) return { body: { end: endDate, readings, ...gap, newTenancy: null } }
 
   const persons = parsePersons(newTenant.persons)
   if (!newTenant.name.trim() || !ISO_DATE.test(newTenant.start) || persons === null) {
@@ -105,6 +147,7 @@ export function buildTenantChange(input: {
     body: {
       end: endDate,
       readings,
+      ...gap,
       newTenancy: {
         tenantName: newTenant.name.trim(),
         persons,

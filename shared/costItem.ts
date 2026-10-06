@@ -6,7 +6,7 @@
 // Die Funktionen nehmen **Cent und Codes** und keine Eingabetexte: Was „54,00“ heißt, liest die
 // Oberfläche (parseEuro), und was sie nicht lesen konnte, kommt als `null` herein. Die Meldungen
 // sind dieselben Sätze wie bisher im Formular; client/src/costForm.test.ts hält sie fest.
-import type { CostKey, ExternalBasis, ExternalMeasure, HeatingPart, MeterType, PeriodKey, Unit } from './types.ts'
+import type { CostKey, ExternalBasis, ExternalMeasure, HeatingPart, HeatingTarget, MeterType, PeriodKey, Unit } from './types.ts'
 import { HEATING_CATEGORY } from './heating.ts'
 import { PARTICIPANT_KEYS } from './allocation.ts'
 import { isNotAllocable } from './categories.ts'
@@ -75,6 +75,8 @@ export type CostItemDraft = {
   serviceTo: string | null
   taxYear: number | null
   heatingPart: HeatingPart | null
+  // Ziel bei Heizkosten (Heizung PR 10): Heizung und Warmwasser, nur Heizung oder nur Warmwasser.
+  heatingTarget: HeatingTarget | null
 }
 
 // Der Rumpf, der an die Datenbank geht. Felder, die zum Schlüssel nicht gehören, stehen
@@ -101,6 +103,7 @@ export type CostItemBody = {
   serviceTo: string | null
   taxYear: number | null
   heatingPart: HeatingPart | null
+  heatingTarget: HeatingTarget | null
 }
 
 // **Nicht umlagefähig, aber einer Einheit zuzuordnen** (#163): Für die Abrechnung bleibt es dabei,
@@ -145,6 +148,10 @@ export function costItemBody(d: CostItemDraft, units: readonly Unit[], period: P
   if (d.serviceFrom !== null && d.serviceTo !== null && d.serviceFrom > d.serviceTo) {
     return { error: `Der Leistungszeitraum von „${d.description.trim()}“ endet vor seinem Beginn.` }
   }
+  // Nach Heizkostenverordnung (Heizung PR 10): Teil und Ziel sind Pflicht (dieselbe Regel wie `targetProblem` im Server).
+  if (d.key === 'heatingSystem' && d.category === HEATING_CATEGORY && (d.heatingPart === null || d.heatingTarget === null)) {
+    return { error: `Für „${d.description.trim()}“ fehlt ${d.heatingPart === null ? 'der Teil der Heizkosten (Brennstoff/Energie, Betrieb oder Messdienst)' : 'das Ziel (Heizung und Warmwasser, nur Heizung oder nur Warmwasser)'}.` }
+  }
   const common = {
     period,
     category: d.category,
@@ -159,6 +166,7 @@ export function costItemBody(d: CostItemDraft, units: readonly Unit[], period: P
     // Das Merkmal gibt es nur bei Heizkosten (A1); bei anderer Kostenart fällt es weg, wie eine
     // Zuordnung, die zum Schlüssel nicht gehört.
     heatingPart: d.category === HEATING_CATEGORY ? d.heatingPart : null,
+    heatingTarget: d.category === HEATING_CATEGORY ? d.heatingTarget : null,
   }
   // Nicht umlagefähig (#142): Gespeichert wird die neutrale Vorgabe ohne jede Zuordnung. Die
   // Spalte verlangt einen Schlüssel, die Berechnung liest ihn hier aber nicht. Eine Zuordnung, die

@@ -38,7 +38,9 @@ export function noticesOf(settlement: Pick<Settlement, 'notices' | 'warnings'>):
 // Mietfuchs nicht, im Programm lässt sich also nichts beheben; sonst stünde die Ampel in jedem Haus
 // mit Heizabrechnung dauerhaft auf Gelb.
 // Ebenso die eigene Heizperiode (Heizung PR 5): zulässig und nur eine Auskunft.
-const INFORMATIONAL = new Set(['basis.unit-zero', 'basis.tenancy-zero', 'basis.vacancy-persons', 'basis.vacancy-no-area', 'heating.remote-reading', 'period.short', 'period.heating-differs'])
+const INFORMATIONAL = new Set(['basis.unit-zero', 'basis.tenancy-zero', 'basis.vacancy-persons', 'basis.vacancy-no-area', 'heating.remote-reading', 'period.short', 'period.heating-differs',
+  // Heizung PR 10: Hinweise der eigenen Heizkostenabrechnung ohne Handlungsbedarf.
+  'heating.interim-reading-off', 'heating.reading-dates-differ', 'heating.change-split-time', 'heating.heat-pump-capture'])
 export function noticesNeedAttention(settlement: Pick<Settlement, 'notices' | 'warnings'>): boolean {
   return noticesOf(settlement).some((n) => !INFORMATIONAL.has(n.code))
 }

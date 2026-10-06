@@ -83,7 +83,7 @@ test('Entwurf einer KI-Zeile ohne Gedächtnis: nur der Schlüssel, Nebenfelder l
   assert.deepEqual(built.body, {
     period: calendarPeriod(2026), category: 'Müllabfuhr', description: 'Müll', vendor: 'Stadt', amountCents: 6000, labor35aCents: undefined, key: 'persons',
     directUnitId: null, meterType: null, customShares: null, participantUnitIds: null, externalBasis: null, tenancyAmounts: null,
-    selfAmounts: null, invoiceFile: 'm.pdf', serviceFrom: null, serviceTo: null, taxYear: null, heatingPart: null,
+    selfAmounts: null, invoiceFile: 'm.pdf', serviceFrom: null, serviceTo: null, taxYear: null, heatingPart: null, heatingTarget: null,
   })
   const null0 = costItemBody(lineDraft(fieldsOf('Müll', 'Müllabfuhr', 0, 'persons', null), { vendor: 'Stadt', invoiceFile: 'm.pdf' }, UNITS3), UNITS3, calendarPeriod(2026))
   assert.match('error' in null0 ? null0.error : '', /0 €/)

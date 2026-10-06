@@ -201,12 +201,12 @@ const bewertung = (over: Partial<NonNullable<HeatingStatement['fuel']>> = {}): {
       coveragePermille: 848.71, emissionsKg: 4588.3, co2Cents: 50923,
       deliveries: [{
         deliveryId: 'd1', label: 'Gas 2025/2026', from: '2025-03-15', to: '2026-03-14', estimated: false, method: 'degreeDays', sharePermille: 848.71,
-        fixedKnown: false, split: true, amountCents: 650000, inPeriodCents: 551661, emissionsKg: 4588.3, co2Cents: 50923,
+        fixedKnown: false, split: true, amountCents: 650000, inPeriodCents: 551661, emissionsKg: 4588.3, co2Cents: 50923, energyKwh: null,
       }],
       carries: [{ deliveryId: 'd1', period: periodKey('2024-01'), cents: -98339 }],
       gaps: [{
         from: '2026-03-15', to: '2026-04-30', days: 47, permille: 151.29,
-        estimate: { from: '2026-03-15', to: '2026-04-30', amountCents: 90774, emissionsKg: 1815.5, co2CostCents: 9077, basedOn: 'Gas 2025/2026', byMeter: false, factorPermille: 151.29 },
+        estimate: { from: '2026-03-15', to: '2026-04-30', amountCents: 90774, emissionsKg: 1815.5, co2CostCents: 9077, energyKwh: null, basedOn: 'Gas 2025/2026', byMeter: false, factorPermille: 151.29 },
       }],
       ...over,
     },

@@ -26,7 +26,6 @@ import { has, HeatingError, ISO_DATE, plantSpanOf, raw } from './repository.ts'
 import { heatingPeriods, STOCK_UNITS } from './schema.ts'
 
 const NOT_STOCK = 'Einen Vorrat gibt es nur bei Heizöl, Flüssiggas, Pellets, Holz und Kohle.'
-const LATER_SELF = 'Den Vorrat bei der eigenen Heizkostenabrechnung rechnet Mietfuchs mit einer späteren Version.'
 const NUMBER = 'Mengen und kg sind je eine Zahl ab 0, zum Beispiel 1800 oder 5352,6.'
 const CENTS = 'Beträge sind ganze Cent ab 0.'
 const UNIT = 'Bitte wählen Sie die Einheit des Vorrats: Liter, Kilogramm oder Schüttraummeter.'
@@ -46,7 +45,8 @@ const OPENING_KEYS = ['openingQuantity', 'openingCostCents', 'openingEmissionsKg
 // § 11 Abs. 2 Satz 2 hier ohne Protokoll; in der Abrechnung protokolliert `law()`.
 export function stockOptionsFor(plant: Pick<HeatingPlant, 'energy' | 'method'>): StockOptions {
   return {
-    needCost: plant.method === 'manual',
+    // Heizung PR 10 (N9): auch bei der eigenen Heizkostenabrechnung.
+    needCost: plant.method !== 'service',
     needCo2: CO2_FUELS.includes(plant.energy),
     countedAt: (date) => !valueAt(co2CostsBefore, date),
     excludedUntil: co2CostsExcludedUntil(),
@@ -170,7 +170,6 @@ function mergeStock(current: StockRow, body: unknown): StockRow {
 // Gilt für eine Anlage überhaupt ein Vorrat, den Mietfuchs rechnet?
 function guardPlant(ctx: PlantContext): void {
   if (!isStockEnergy(ctx.plant.energy)) throw new HeatingError(400, NOT_STOCK)
-  if (ctx.plant.method === 'self') throw new HeatingError(400, LATER_SELF)
 }
 
 // `null`, wenn es die Anlage nicht gibt; die Route macht daraus ihre 404.

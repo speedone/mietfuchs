@@ -11,6 +11,7 @@ import {
   basisUnitsOf,
   buildCostItemBody,
   costKeyOptions,
+  heatingTargetOptions,
   customSharesSumText,
   itemToForm,
   meterTypeOptions,
@@ -110,6 +111,23 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   const [heatingPlantId, setHeatingPlantId] = useState('')
   const plantChoices = plantOptions(plants)
   const ownPlant = plantChoices.length > 0 ? heatingOptions.find((h) => h.plantId === heatingPlantId) : heatingOptions[0]
+  // Heizung PR 10: die Anlage der Heizposition (gewählt, mit eigener Heizperiode, oder die einzige). Rechnet
+  // sie selbst nach der Heizkostenverordnung ab, gibt es nur diesen Schlüssel, und Teil und Ziel sind Pflicht.
+  const plantOfForm = form?.category === HEATING_CATEGORY
+    ? (plants.find((p) => p.id === (heatingPlantId || ownPlant?.plantId)) ?? (plants.length === 1 ? plants[0] : undefined))
+    : undefined
+  const selfPlant = plantOfForm?.method === 'self'
+  const targetChoices = plantOfForm ? heatingTargetOptions(selfPlant, plantOfForm.hotWater ?? 'combined', form?.heatingPart ?? '') : []
+  useEffect(() => {
+    if (!form) return
+    // Gespeichert wird, was zu sehen ist: Bei eigener Abrechnung steht der Schlüssel fest, und eine einzige
+    // passende Wahl des Ziels ist zugleich die gespeicherte.
+    const only = selfPlant && targetChoices.length === 1 ? (targetChoices[0]?.value ?? '') : null
+    const target = selfPlant && !targetChoices.some((o) => o.value === form.heatingTarget) ? (only ?? '') : form.heatingTarget
+    if ((selfPlant && form.key !== 'heatingSystem') || target !== form.heatingTarget) {
+      setForm({ ...form, ...(selfPlant ? { key: 'heatingSystem' as const, participants: null } : {}), heatingTarget: target })
+    }
+  }, [form, selfPlant, targetChoices])
   // Beim Öffnen einer bestehenden Position ihre Heizperiode und Anlage, sonst die Vorgabe der Auswahl.
   const formId = form?.id
   useEffect(() => {
@@ -801,7 +819,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
               <span>davon <Term id="labor35a">§35a-Lohn</Term> €</span>
               <input value={form.labor35a} onChange={(e) => setForm({ ...form, labor35a: e.target.value })} placeholder="optional" />
             </label>
-            <details className="extra-details" open={!!(form.serviceFrom || form.serviceTo || form.taxYear || form.heatingPart !== '' || (heatTax ? heatTax.show : showsTaxYear(period, needsTaxYear)))}>
+            <details className="extra-details" open={!!(selfPlant || form.serviceFrom || form.serviceTo || form.taxYear || form.heatingPart !== '' || (heatTax ? heatTax.show : showsTaxYear(period, needsTaxYear)))}>
               <summary>Weitere Angaben — Leistungszeitraum{(heatTax ? heatTax.show : showsTaxYear(period, needsTaxYear)) ? ', Jahr der Zahlung' : ''}{form.category === HEATING_CATEGORY ? ', Brennstoff/Energie' : ''} (optional)</summary>
               <CostPeriodFields form={form} onChange={setForm} showTaxYear={heatTax ? heatTax.show : showsTaxYear(period, needsTaxYear)} years={heatTax?.show ? heatTax.years : taxYearOptions(year)} />
             </details>
@@ -848,11 +866,25 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             <label className="field grow">
               <Term id="allocationKey">Umlageschlüssel</Term>
               <select value={form.key} onChange={(e) => setForm(withKey(form, e.target.value as CostKey, unitMeterTypes, keyCtx))}>
-                {costKeyOptions(unitMeterTypes, form.key).map((k) => (
+                {costKeyOptions(unitMeterTypes, form.key, selfPlant).map((k) => (
                   <option key={k} value={k}>{KEY_LABELS[k]}</option>
                 ))}
               </select>
             </label>
+            {/* Heizung PR 10: Ziel der Heizposition. Bei eigener Abrechnung Pflicht (Teil steht unter „Weitere
+                Angaben“); bei freien Schlüsseln teilt „nur Heizung“ beim Mieterwechsel nach Gradtagen. */}
+            {form.category === HEATING_CATEGORY && plantOfForm && (
+              <label className="field grow">
+                <span>Ziel{selfPlant ? '' : ' (beim Mieterwechsel)'}</span>
+                <select aria-label="Ziel" value={targetChoices.some((o) => o.value === form.heatingTarget) ? form.heatingTarget : ''} onChange={(e) => setForm({ ...form, heatingTarget: targetChoices.find((o) => o.value === e.target.value)?.value ?? '' })}>
+                  {selfPlant && targetChoices.length !== 1 && <option value="">— bitte wählen —</option>}
+                  {targetChoices.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+                <small className="muted">{selfPlant
+                  ? 'Bereitet die Anlage auch das Warmwasser, gehört der Brennstoff zu Heizung und Warmwasser; Mietfuchs teilt ihn nach dem gemessenen Warmwasseranteil. Den Teil der Heizkosten wählen Sie unter „Weitere Angaben“.'
+                  : '„nur Heizung“: Beim Mieterwechsel teilen sich diese Kosten nach Gradtagen statt nach Tagen (§ 9b Abs. 2 HeizkostenV), wenn die Heizanlage so eingestellt ist.'}</small>
+              </label>
+            )}
             {/* #141: anders als dieselbe Kostenart im Vorjahr? Dasselbe sagt die Abrechnung. */}
             {keyChangeNotice(form, units, keyCtx) && (
               <div className="notice">

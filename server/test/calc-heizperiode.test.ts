@@ -158,6 +158,20 @@ test('Zwei Heizperioden in einer Abrechnung nach einem Wechsel der Anlage: beide
   assert.deepEqual(st(s, 'A').rows.map((r) => [r.costItemId, r.shareCents]), [['h2024', 120000], ['rumpf', 80000]])
 })
 
+test('Durchsicht von #239, N3: zwei Heizperioden in einer Abrechnung, die eigene Abrechnung beginnt mit der zweiten; die erste rechnet wie bisher', () => {
+  const src = haus({
+    heatingPlants: [{ ...anlage({ periodChanges: ['2026-01'] }), method: 'self', capture: 'heatMeter', hotWater: 'none', selfSpans: [{ from: '2025-05', until: null }] }],
+    tenancies: [mieter('A', '2024-01-01', null, [{ from: '2024-01', monthlyCents: 30000 }])],
+    costItems: [heizung('h2024', '2024-05', 120000, { taxYear: 2025 }), heizung('rumpf', '2025-05', 80000, { key: 'heatingSystem', heatingPart: 'fuel', heatingTarget: 'heating' })],
+  })
+  const s = settle(src, '2025-01')
+  assert.deepEqual(s.heatingPeriods?.map((h) => h.period.label), ['2024/2025', '01.05.–31.12.2025'])
+  assert.equal(st(s, 'A').rows.find((r) => r.costItemId === 'h2024')?.shareCents, 120000)
+  // Nur die zweite Heizperiode rechnet nach der Verordnung; für die erste gibt es keinen Befund der eigenen Abrechnung.
+  assert.ok(!s.notices.some((n) => n.code === 'heating.self-incomplete' && /2024\/2025/.test(n.text)), s.notices.map((n) => n.text).join('\n'))
+  assert.ok(s.notices.some((n) => n.code === 'heating.self-incomplete' && /01\.05\.–31\.12\.2025/.test(n.text)))
+})
+
 test('Ein Rumpf der Heizperiode in P: ohne Brennstoffkennzeichen kein Vorschlag (R11)', () => {
   const s = settle(haus({
     heatingPlants: [anlage({ periodChanges: ['2026-01'] })],

@@ -173,8 +173,28 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Heizanlage oder Etagenheizung“ und Lexikon-Einträge „Etagenheizung“ und „Heizung erneuert
   (Kesseltausch) und Restbestand“ ([#97](https://github.com/speedone/mietfuchs/issues/97)).
 
+- **Heizkosten selbst abrechnen.** Wer Wärme- und Warmwasserzähler jeder Wohnung selbst abliest, wählt in
+  den Stammdaten bei der Heizung „Ich selbst, mit Zählern oder Heizkostenverteilern“. Mietfuchs verteilt
+  dann nach der Heizkostenverordnung: Grund- und Verbrauchskosten je Topf, den Warmwasseranteil aus der
+  gemessenen Wärme am Speicher, beim Mieterwechsel den abgelesenen Verbrauch und die Grundkosten nach
+  Gradtagen; Leerstand, Eigennutzung und Pauschale als eigene Nutzer. Die Abrechnung druckt die Preise je
+  m², kWh und m³. Fehlt eine Zwischenablesung, sagt die Abrechnung, um wie viel die Mieter kürzen dürfen.
+  Die Seite Heizkosten zeigt die Ablesungen als Ampel und druckt das Ableseergebnis je Wohnung
+  ([#99](https://github.com/speedone/mietfuchs/issues/99)). Die eigene Abrechnung gilt ab der Heizperiode,
+  für die Sie sie einrichten; frühere bleiben bei ihrem Schlüssel. Nach einem Kesseltausch gilt der Anteil
+  nach Verbrauch weiter, und der Tausch fragt den Stand des Wärmezählers am Warmwasserspeicher ab. Den
+  vorgeschriebenen Anteil bei Öl- und Gasheizung können Sie auch in einer begonnenen Heizperiode
+  nachtragen. Bis Mietfuchs die Angaben nach § 6a HeizkostenV erstellt, warnt die Abrechnung und nennt die
+  Kürzung je Mieter.
+- Bei einer Wärmepumpe fragt die Einrichtung auch, ob sie erst nach dem Stichtag der Verordnung
+  eingebaut wurde.
+
 ### Geändert
 
+- Bei freien Schlüsseln kann eine Heizposition „nur Heizung“ sein; beim Mieterwechsel teilt sie sich
+  dann nach Gradtagen statt nach Tagen. Positionen „Heizung und Warmwasser“ bleiben, wie sie sind.
+- Eine Heizposition, deren Beschreibung „Zwischenablesung“ oder „Nutzerwechsel“ enthält, bekommt einen
+  Hinweis: Diese Kosten trägt der Vermieter, soweit im Mietvertrag nichts anderes vereinbart ist.
 - **Oberfläche aufgeräumt.** Felder, Hilfetexte und Knöpfe stehen in Karten, Seitenfenstern und
   aufklappbaren Bereichen mit einheitlichem Abstand, statt aneinanderzukleben; eingegebene Werte,
   Platzhalter und Hilfetexte sind nicht mehr fett, Kontrollkästchen stehen überall links neben

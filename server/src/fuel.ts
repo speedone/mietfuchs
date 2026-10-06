@@ -33,7 +33,14 @@ export type ShareContext = { table: DegreeDayTable; local: ReadonlyMap<string, n
 export type FuelDeliveryInput = Pick<
   FuelDelivery,
   'id' | 'label' | 'invoiceFrom' | 'invoiceTo' | 'deliveredAt' | 'amountCents' | 'fixedCents' | 'sharePermille' | 'emissionsKg' | 'co2CostCents' | 'estimated' | 'usedByService' | 'parts'
->
+> & Partial<Pick<FuelDelivery, 'energyKwh'>>
+// `energyKwh` seit Heizung PR 10 (Warmwasseranteil der eigenen Heizkostenabrechnung); optional, damit ein
+// von Hand gebauter Schnappschuss sie nicht nennen muss.
+
+// Die Energie einer Lieferung in kWh, wie abgerechnet: an der Lieferung, sonst die Summe der Teilmengen,
+// wenn jede eine nennt (Heizung PR 10).
+export const energyKwhOf = (d: Pick<FuelDeliveryInput, 'energyKwh' | 'parts'>): number | null =>
+  d.energyKwh ?? (d.parts.length > 0 && d.parts.every((p) => p.energyKwh !== null) ? d.parts.reduce((a, p) => a + (p.energyKwh ?? 0), 0) : null)
 
 const MS_DAY = 86400000
 const toUTC = (iso: string): number => Date.parse(`${iso}T00:00:00Z`)
@@ -253,7 +260,9 @@ export type FuelResult = {
 // nichts übertragen wird: Dann gibt es nichts zu bewerten und keine Lücke zu melden.
 export function plantFuel(input: FuelPlantInput): FuelResult | null {
   const { h, rules, ctx } = input
-  const withItems = input.method === 'manual'
+  // Überträge und Schätzvorschläge gibt es, wo die Rechnungen Positionen sind: bei freien Schlüsseln
+  // und bei der eigenen Heizkostenabrechnung (Heizung PR 10, Entwurf 8.2, Naht N1).
+  const withItems = input.method === 'manual' || input.method === 'self'
   const ranged = input.deliveries.filter((d) => rangeOf(d) !== null)
   const itemsOf = (id: string): FuelItem[] => input.items.filter((c) => c.fuelDeliveryId === id)
   // Storniert (Nachprüfung von 47f2373, M2/G1): Bei freien Schlüsseln ergeben die Positionen einer
@@ -323,6 +332,9 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
       deliveryId: d.id, label: d.label, from: r.from, to: r.to, estimated: d.estimated, method: s.method, sharePermille: s.kgShare * 1000,
       fixedKnown: s.fixedKnown, split: s.split, amountCents: total, inPeriodCents: withItems || d.estimated ? roundHalf(total * s.ratio) : null,
       emissionsKg: e, co2Cents: c === null ? null : roundHalf(c),
+      // Energie dieser Lieferung in der Heizperiode, wie abgerechnet (Heizung PR 10, Warmwasseranteil);
+      // bei einer eingefrorenen Heizperiode ebenso aus dem Anteil, denn eingefroren sind nur Geld und CO₂.
+      energyKwh: energyKwhOf(d) === null ? null : (energyKwhOf(d) ?? 0) * s.kgShare * part,
     })
   }
   const coverage = coverageOf(h, counted.map(rangeOf).filter(isRange), ctx.table)
@@ -528,6 +540,8 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
         amountCents: roundHalf((T - fixed) * factor + (fixed * daysOf(g)) / daysOf(tr)),
         emissionsKg: t.emissionsKg === null ? null : Math.round(t.emissionsKg * factor * 10) / 10,
         co2CostCents: t.co2CostCents === null ? null : roundHalf(t.co2CostCents * factor),
+        // Die kWh im selben Verhältnis wie kg und CO₂-Kosten (Heizung PR 10, Abweichung 11, Festlegung ohne Quelle).
+        energyKwh: energyKwhOf(t) === null ? null : Math.round((energyKwhOf(t) ?? 0) * factor),
         basedOn: labelOf(t), byMeter, factorPermille: Math.round(factor * 100000) / 100,
       }
     }

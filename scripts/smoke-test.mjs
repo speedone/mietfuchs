@@ -560,6 +560,37 @@ async function plantsOfProperty() {
   assert(tausch.status === 201 && tausch.body.previous?.endsOn === '2025-12-31' && tausch.body.plant?.replacesPlantId === erste.id, 'Kessel getauscht: die alte Anlage endet, die neue beginnt', tausch.body)
 }
 
+// Eigene Heizkostenabrechnung (Heizung PR 10), in einem eigenen Objekt wie die Prüfung aus PR 9.
+async function selfHeating() {
+  const objekt = (await request('/api/properties', json('POST', { name: 'Prüfhaus Heizkosten', kind: 'mfh', address: '' }))).body
+  const q = `?property=${encodeURIComponent(objekt.id)}`
+  const ids = []
+  for (const name of ['A', 'B']) {
+    const u = (await request(`/api/units${q}`, json('POST', { name, areaM2: 50, participates: true }))).body
+    ids.push(u.id)
+    await request(`/api/tenancies${q}`, json('POST', {
+      unitId: u.id, tenantName: `Mieter ${name}`, personHistory: [{ from: '2020-01-01', persons: 1 }],
+      start: '2020-01-01', end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [],
+    }))
+  }
+  const plant = (await request(`/api/heating-plants${q}`, json('POST', { energy: 'districtHeating', method: 'manual', assignItemIds: [] }))).body.plant
+  const setup = await request(`/api/heating-plants/${plant.id}/self`, json('PUT', { period: '2025-01', heatConsumptionPct: 70, insulationRule: 'unknown', hotWater: 'none', capture: 'heatMeter' }))
+  assert(setup.status === 200 && setup.body.plant.method === 'self', 'eigene Heizkostenabrechnung einrichten', setup.body)
+  for (const [i, m] of setup.body.created.entries()) {
+    await request(`/api/readings${q}`, json('POST', { meterId: m.id, date: '2024-12-31', value: 0 }))
+    await request(`/api/readings${q}`, json('POST', { meterId: m.id, date: '2025-12-31', value: m.unitId === ids[0] ? 4000 : 6000 }))
+    assert(m.type === 'waerme', `Zähler ${i + 1} ist ein Wärmezähler`, m)
+  }
+  await request(`/api/costItems${q}`, json('POST', {
+    period: '2025-01', category: 'Heizung und Warmwasser', description: 'Fernwärme', amountCents: 300000,
+    key: 'heatingSystem', heatingPlantId: plant.id, heatingPart: 'fuel', heatingTarget: 'heating',
+  }))
+  const abrechnung = (await request(`/api/settlement/2025${q}`)).body
+  const summen = abrechnung.statements.map((s) => s.totalShareCents).sort((a, b) => a - b)
+  assert(JSON.stringify(summen) === JSON.stringify([129000, 171000]), 'nach Heizkostenverordnung verteilt: 1.290,00 € und 1.710,00 €', summen)
+  assert(abrechnung.heating?.some((h) => h.self?.ok), 'die Abrechnung trägt den Ausweis der Heizkostenabrechnung', abrechnung.heating)
+}
+
 async function main() {
   console.log(`Mietfuchs prüfen: ${BASE} (erwartet: Version ${VERSION}, Betriebsart ${MODE})`)
   await waitForStart()
@@ -603,6 +634,7 @@ async function main() {
   await co2ForBackup()
   await backupAndRestore(unit)
   await plantsOfProperty()
+  await selfHeating()
   console.log(`\nAlle ${passed} Prüfungen bestanden.`)
 }
 

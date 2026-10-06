@@ -30,7 +30,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 
 const PERCENT_PATTERNS = [/um \d+ ?%/g, /\d+ ?% kürzen/g, /\d+ bis \d+ ?%/g, /\d+ und höchstens \d+ ?%/g, /\d+ Prozent/g, /\d+ vom Hundert/g, /\d+–\d+ ?%/g]
 const DATE_PATTERNS = [/\d{4}-\d{2}-\d{2}/g, /\d{2}\.\d{2}\.\d{4}/g]
-const ENGINE_FILES = ['server/src/calc.ts', 'server/src/snapshot.ts', 'shared/heating.ts', 'shared/period.ts', 'shared/heatingPeriod.ts', 'shared/degreeDays.ts', 'server/src/remoteReading.ts', 'server/src/co2.ts', 'server/src/fuel.ts', 'server/src/fuelStock.ts', 'shared/fuelStock.ts']
+const ENGINE_FILES = ['server/src/calc.ts', 'server/src/snapshot.ts', 'shared/heating.ts', 'shared/period.ts', 'shared/heatingPeriod.ts', 'shared/degreeDays.ts', 'server/src/remoteReading.ts', 'server/src/co2.ts', 'server/src/fuel.ts', 'server/src/fuelStock.ts', 'shared/fuelStock.ts', 'server/src/heating.ts']
 // Rechtszahlen als Zahl im Code (Durchsicht von #221, I2): Die Muster oben sehen nur Texte, eine
 // Zeile wie `Math.round((share * 15) / 100)` oder `year >= 2021` fiele durch. Geprüft wird der Code
 // ohne Zeichenketten und Kommentare, in den Dateien der Berechnung und in invoiceAmounts.ts, auf die
@@ -45,9 +45,8 @@ const CODE_PATTERN = /(?<![\w.])(15|50|70|19|16|2021|2024|2027)(?![\w.])/g
 
 type Allowed = { file: string; match: string; reason: string }
 const ALLOWED: readonly Allowed[] = [
-  { file: 'client/src/components/HeatingCard.tsx', match: '01.10.2024', reason: 'Frage nach der Wärmepumpe (§ 12 Abs. 3 HeizkostenV); `hkv.heat-pump.capture` kommt mit PR 10, PR 4 speichert nur die Antwort' },
-  { file: 'client/src/components/HeatingCard.tsx', match: '2022', reason: 'Durchschnittskosten 2022 bis 2024 (§ 12 Abs. 3 Satz 3 HeizkostenV); `hkv.heat-pump.capture` kommt mit PR 10' },
-  { file: 'client/src/components/HeatingCard.tsx', match: '2024', reason: 'Durchschnittskosten 2022 bis 2024 (§ 12 Abs. 3 Satz 3 HeizkostenV); `hkv.heat-pump.capture` kommt mit PR 10' },
+  { file: 'client/src/components/HeatingCard.tsx', match: '2022', reason: 'Durchschnittskosten 2022 bis 2024 (§ 12 Abs. 3 Satz 3 HeizkostenV); `hkv.heat-pump.capture` (PR 10) nennt nur die Stichtage der Erfassung, Satz 3 rechnet Mietfuchs noch nicht' },
+  { file: 'client/src/components/HeatingCard.tsx', match: '2024', reason: 'Durchschnittskosten 2022 bis 2024 (§ 12 Abs. 3 Satz 3 HeizkostenV); `hkv.heat-pump.capture` (PR 10) nennt nur die Stichtage der Erfassung, Satz 3 rechnet Mietfuchs noch nicht' },
   { file: 'shared/glossary.ts', match: '100 Prozent', reason: 'Summe vereinbarter Quoten, keine Rechtsfolge' },
   { file: 'shared/glossary.ts', match: '20 Prozent', reason: '§ 35a Abs. 2 EStG, Steuer des Mieters; kein Parameter des Entwurfs (4.3)' },
   { file: 'server/src/calc.ts', match: '31.05.2006', reason: 'Datum einer Entscheidung im Zitat (BGH VIII ZR 159/05), kein Rechtswert' },

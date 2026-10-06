@@ -38,6 +38,19 @@ export function usePeriod(): PeriodView {
   return useMemo(() => periodView(rules, { anchor, calendarYear }, today), [rules, anchor, calendarYear, today])
 }
 
+// Wie `usePeriod`, außerhalb des PeriodProvider aber `null` (Karten, die auch einzeln getestet werden;
+// Heizung PR 10).
+export function useOptionalPeriod(): PeriodView | null {
+  const c = useContext(Ctx)
+  const property = useOptionalProperty()?.property ?? null
+  const rules = rulesOf(property)
+  const today = localToday()
+  const anchor = c?.anchor ?? null
+  const calendarYear = c?.calendarYear ?? null
+  const present = c !== null
+  return useMemo(() => (present ? periodView(rules, { anchor, calendarYear }, today) : null), [present, rules, anchor, calendarYear, today])
+}
+
 // Der eine Weg, den Zeitraum zu wechseln (Durchsicht zu #141), mit derselben Rückfrage wie beim
 // Objekt: Ein offenes Formular legt im gewählten Zeitraum an. Nach dem Wechsel stellt App.tsx die
 // Seiten neu auf. `value` ist ein Wert der Auswahl (Jahreszahl oder Schlüssel).

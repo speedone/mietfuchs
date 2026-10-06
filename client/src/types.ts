@@ -47,4 +47,5 @@ export const KEY_LABELS: Record<CostKey, string> = {
   custom: 'nach vereinbarten Anteilen (%)',
   external: 'laut Gemeinschaftsabrechnung (Eigentumswohnung)',
   amounts: 'Einzelbeträge je Mieter (z. B. Messdienst)',
+  heatingSystem: 'nach Heizkostenverordnung (eigene Heizkostenabrechnung)',
 }

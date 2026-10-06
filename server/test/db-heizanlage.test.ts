@@ -51,7 +51,7 @@ test('Anlegen: Vorgaben, und so steht sie in der Liste', async () => {
       devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null,
       capturedOnOct2024: null, warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null, units: null,
       newDevicesInstall: null,
-      nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null,
+      nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null, hotWater: 'combined', capture: null, areaBasisHeat: 'area', heatPumpInstalledOn: null, selfSpans: [],
       periodChanges: [], separateSpans: [],
     })
     assert.deepEqual(await opened.read((db) => listHeatingPlants(db, 'objekt-1')), [plant])
@@ -69,10 +69,10 @@ test('Sperren: was spätere Versionen rechnen, lehnt der Server mit einem Satz a
   await withDatabase(async (opened) => {
     await opened.write((db) => wohnung(db, 'u1'))
     const faelle: [Record<string, unknown>, RegExp][] = [
-      [{ method: 'self' }, /eigene Heizkostenabrechnung .* kommt mit einer späteren Version/],
+      // Heizung PR 10: zur eigenen Heizkostenabrechnung nur über die Einrichtung (Abweichung 17).
+      [{ method: 'self' }, /Einrichtung/],
       // Heizung PR 5: den Rhythmus setzt nur der Wechsel mit Vorschau.
       [{ periodStartMonth: 5 }, /Zeitraum der Heizung/],
-      [{ units: [{ unitId: 'u1', heatedAreaM2: 60 }] }, /beheizte Fläche .* kommt mit einer späteren Version/],
       [{ source: 'homeowners', method: 'manual' }, /Gemeinschaft/],
       [{ captureInstalledOn: '01.06.2025' }, /kein Datum/],
     ]
@@ -200,7 +200,7 @@ test('Ändern: verschmilzt, und die Sperren gelten auch hier', async () => {
     assert.equal(geaendert?.devicesRemote, 'partial')
     assert.equal(geaendert?.devicesInstalledAfter2021, 'some')
     assert.equal(geaendert?.method, 'service', 'was nicht im Rumpf steht, bleibt')
-    await assert.rejects(() => opened.write((db) => updateHeatingPlant(db, 'hp1', { method: 'self' })), refused(400, /späteren Version/))
+    await assert.rejects(() => opened.write((db) => updateHeatingPlant(db, 'hp1', { method: 'self' })), refused(400, /Einrichtung/))
     assert.equal(await opened.write((db) => updateHeatingPlant(db, 'gibt-es-nicht', { name: 'X' })), null)
   })
 })

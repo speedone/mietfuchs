@@ -29,6 +29,13 @@ import { snapshotFor, snapshotOf, type SnapshotCostItem, type SnapshotHeatingPla
 import type { ComputedSettlement } from '../src/calc.ts'
 import type { Co2Statement } from '../../shared/types.ts'
 import { splitByService } from '../src/serviceSplit.ts'
+import os from 'node:os'
+import { openDatabase } from '../src/db/open.ts'
+import { readStock } from '../src/db/read.ts'
+import { createEntity } from '../src/db/repository.ts'
+import { createHeatingPlant } from '../src/db/heating.ts'
+import { setUpSelf } from '../src/db/heatingSelf.ts'
+import { CALENDAR_RULES } from '../../shared/period.ts'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const ids = Object.keys(GUIDES) as GuideId[]
@@ -36,7 +43,7 @@ const ids = Object.keys(GUIDES) as GuideId[]
 // ---------- Aufbau ----------
 
 test('Anleitungen: die Vermietungsarten aus #164 und der Abrechnungszeitraum (#208), jede mit allen fünf Abschnitten', () => {
-  assert.deepEqual(ids, ['granny', 'multiFamily', 'condo', 'properties', 'garage', 'flatRate', 'meteringService', 'co2Costs', 'tenantChange', 'periodMayApril', 'supplierInvoice', 'stockFuel', 'heatingRenewed'])
+  assert.deepEqual(ids, ['granny', 'multiFamily', 'condo', 'properties', 'garage', 'flatRate', 'meteringService', 'co2Costs', 'heatingSelf', 'tenantChange', 'periodMayApril', 'supplierInvoice', 'stockFuel', 'heatingRenewed'])
   const titles = ids.map((id) => GUIDES[id].title)
   assert.equal(new Set(titles).size, titles.length, 'doppelter Titel')
   for (const id of ids) {
@@ -175,7 +182,7 @@ const co2Statement = (over: Partial<Co2Statement>): Co2Statement => ({
   serviceFuelNetCents: null, reliefs: [], ...over,
 })
 
-const checks: Record<GuideId, () => void> = {
+const checks: Record<GuideId, () => void | Promise<void>> = {
   granny: () => {
     const src = source({
       units: [own('eigen', 120), rented('elw', 60)],
@@ -306,6 +313,42 @@ const checks: Record<GuideId, () => void> = {
       eur(share(r, 'ta', 'heiz')), eur(share(r, 'tb', 'heiz')), eur(net.c), eur(sumNet), eur(co2), eur(gross),
       eur(ownCo2), eur(r.selfUsedShareCents), eur(co2Share),
     ], 'meteringService')
+  },
+  heatingSelf: async () => {
+    // Zwei Wohnungen à 50 m², Fernwärme ohne zentrales Warmwasser, 70 % nach Verbrauch (Heizung PR 10).
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-guide-heating-'))
+    const opened = await openDatabase({ dataDir })
+    try {
+      let n = 0
+      await opened.write(async (db) => {
+        for (const u of ['a', 'b']) {
+          await createEntity(db, 'units', u, { propertyId: 'objekt-1', name: u.toUpperCase(), areaM2: 50, participates: true })
+          await createEntity(db, 'tenancies', `t${u}`, { unitId: u, tenantName: `Mieter ${u.toUpperCase()}`, persons: 1, start: '2020-01-01' })
+        }
+        await createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'districtHeating', method: 'manual' })
+        await setUpSelf(db, 'hp', { period: '2025-01', heatConsumptionPct: 70, insulationRule: 'unknown', hotWater: 'none', capture: 'heatMeter' }, '2026-02-01', () => `gm-${++n}`)
+      })
+      const meters = (await opened.read(readStock)).meters
+      await opened.write(async (db) => {
+        for (const [u, kwh] of [['a', 4000], ['b', 6000]] as const) {
+          const m = meters.find((x) => x.unitId === u && x.type === 'waerme') ?? assert.fail(`kein Wärmezähler ${u}`)
+          await createEntity(db, 'readings', `${u}0`, { meterId: m.id, date: '2024-12-31', value: 0 })
+          await createEntity(db, 'readings', `${u}1`, { meterId: m.id, date: '2025-12-31', value: kwh })
+        }
+        await createEntity(db, 'costItems', 'fw', {
+          propertyId: 'objekt-1', period: '2025-01', category: 'Heizung und Warmwasser', description: 'Fernwärme', amountCents: 300000,
+          key: 'heatingSystem', heatingPlantId: 'hp', heatingPart: 'fuel', heatingTarget: 'heating',
+        })
+      })
+      const p = periodOfKey(CALENDAR_RULES, periodKey('2025-01')) ?? assert.fail('kein Zeitraum')
+      const r = computeSettlement(snapshotFor(await opened.read(readStock), 'objekt-1', p))
+      assert.ok(!r.notices.some((x) => x.level === 'error'), r.notices.map((x) => x.code).join(', '))
+      assert.deepEqual([share(r, 'ta', 'fw'), share(r, 'tb', 'fw')], [129000, 171000])
+      inOrder(GUIDES.heatingSelf.example, [eur(300000), eur(90000), eur(45000), eur(210000), '4.000 kWh', eur(84000), eur(129000), '6.000 kWh', eur(171000)], 'heatingSelf')
+    } finally {
+      opened.close()
+      fs.rmSync(dataDir, { recursive: true, force: true })
+    }
   },
   co2Costs: () => {
     // Beispiel A (Techem-Muster, Entwurf 7.4).
@@ -459,7 +502,7 @@ const checks: Record<GuideId, () => void> = {
 }
 
 for (const id of ids) {
-  test(`Anleitung „${GUIDES[id].title}“: das Zahlenbeispiel ist mit der Berechnung nachgerechnet`, () => checks[id]())
+  test(`Anleitung „${GUIDES[id].title}“: das Zahlenbeispiel ist mit der Berechnung nachgerechnet`, async () => checks[id]())
 }
 
 test('Leerstand beim Personenschlüssel: Die leere Wohnung zählt je Leerstandstag mit einer Person, den Anteil trägt der Vermieter (so steht es in der Anleitung, seit #177)', () => {
@@ -612,4 +655,16 @@ test('CO₂-Kosten aufteilen (Heizung PR 6): Ort von S je Messdienst, Muster nur
   assert.ok(g.caveats.some((c) => /3 Prozent/.test(c.text) && c.norm === '§ 7 Abs. 3 und 4 CO2KostAufG'))
   assert.match(g.applies, /01\.01\.2023/)
   for (const n of [210, 103]) assert.ok(g.gaps.some((x) => x.issue === n), `#${n} fehlt`)
+})
+
+test('Heizkosten selbst abrechnen (Heizung PR 10): Pflichten mit Norm, Lücken mit Issue, und die übrigen Anleitungen sagen nicht mehr „noch nicht“', () => {
+  const g = GUIDES.heatingSelf
+  const hinweise = g.caveats.map((c) => `${c.text} ${c.norm ?? ''}`).join(' ')
+  for (const norm of [/§ 6 Abs\. 4/, /§ 7 Abs\. 1/, /§ 9b/, /§ 12 Abs\. 1/, /§ 6 Abs\. 1/]) assert.match(hinweise, norm)
+  assert.match(hinweise, /VIII ZR 19\/07/)
+  assert.ok(g.steps.some((s) => s.page === 'heizkosten' && s.text.includes('„Ableseergebnis drucken“') && /jede Wohnung/.test(s.text)))
+  assert.ok(g.gaps.some((x) => x.issue === 99 && /Heizkostenverteiler/.test(x.text)))
+  for (const id of ids.filter((x) => x !== 'heatingSelf')) {
+    assert.doesNotMatch(JSON.stringify(GUIDES[id].gaps), /eigene Heizkostenabrechnung (nach Grund- und Verbrauchskosten rechnet Mietfuchs noch nicht|mit Wärmemengenzählern)/, id)
+  }
 })

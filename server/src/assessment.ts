@@ -187,7 +187,7 @@ export function lineDraft(fields: LineFields, extra: { vendor: string; invoiceFi
     selfAmounts: {},
     // Die Belegbuchung kennt keinen Leistungszeitraum je Zeile (#208); das Jahr der Zahlung kommt
     // aus `bookingTaxYear` (Rechnungsdatum), nur bei einem Zeitraum über zwei Kalenderjahre.
-    serviceFrom: null, serviceTo: null, taxYear: extra.taxYear ?? null, heatingPart: null,
+    serviceFrom: null, serviceTo: null, taxYear: extra.taxYear ?? null, heatingPart: null, heatingTarget: null,
   }
 }
 

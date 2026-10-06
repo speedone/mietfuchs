@@ -124,5 +124,6 @@ export function stockSummary(view: StockView, co2 = true): string[] {
 // Ausweis führt der Messdienst den Bestand selbst (Entwurf 8.2).
 export function showsStockCard(plant: { method: HeatingMethod }, view: { stock: StockView | null; co2: { method: Co2Method } | null }): boolean {
   if (view.stock === null) return false
-  return plant.method === 'manual' || (plant.method === 'service' && view.co2?.method === 'selfAfterService')
+  // Heizung PR 10: auch bei der eigenen Heizkostenabrechnung.
+  return plant.method !== 'service' || view.co2?.method === 'selfAfterService'
 }

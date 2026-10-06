@@ -986,6 +986,10 @@ td.reading-panel { background: var(--bg); }
 .guide .guide-jump { margin-top: 2px; white-space: nowrap; }
 .guide .guide-terms { margin-top: 12px; }
 @media print { .term { text-decoration: none; } .term-pop { display: none; } }
+/* Ableseergebnis je Wohnung (Durchsicht von #239, I2): gedruckt wird nur diese Karte. */
+@media print {
+  body.print-reading main .card:not(.reading-result), body.print-reading main h2, body.print-reading .page-head, body.print-reading .error, body.print-reading .notice { display: none !important; }
+}
 /* Ein Auswahlfeld ist so breit wie seine längste Option. „laut Gemeinschaftsabrechnung
    (Eigentumswohnung)“ (#94) zog den Umlageschlüssel im Seitenfenster über den Rand, samt
    waagerechtem Scrollbalken. Im Formular darf es schmaler werden als sein Inhalt. */

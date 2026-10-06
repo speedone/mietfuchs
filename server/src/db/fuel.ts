@@ -25,7 +25,6 @@ import { costItems, degreeDayValues, FUEL_QUANTITY_UNITS, fuelCarryFrozen, fuelD
 const LATER = {
   other: 'Tragen Sie zuerst bei der Heizanlage den Energieträger ein; Lieferungen gibt es für Gas, Fernwärme und Strom einer Wärmepumpe.',
   halfSplit: 'Netzentgelte und Biobrennstoff nach § 5a CO2KostAufG kommen mit einer späteren Version.',
-  self: 'Die eigene Heizkostenabrechnung kommt mit einer späteren Version.',
 }
 const frozenText = frozenDeliveryText
 const stockClosedText = (h: BillingPeriod) =>
@@ -104,7 +103,6 @@ async function frozenCount(db: Executor, id: string): Promise<number> {
 }
 
 async function guardDelivery(db: Executor, plant: PlantFacts, before: FuelDelivery | null, after: FuelDelivery): Promise<void> {
-  if (plant.method === 'self') throw new HeatingError(400, LATER.self)
   const stock = STOCK_ENERGIES.includes(plant.energy)
   if (plant.energy === 'other') throw new HeatingError(400, LATER.other)
   // Lieferungen mit Wohnung (Heizung PR 9, Entwurf 5.4 F8): bei einer Etagenheizung immer, sonst nie.
@@ -173,8 +171,9 @@ async function guardDelivery(db: Executor, plant: PlantFacts, before: FuelDelive
     }
     if (after.invoiceFrom > after.invoiceTo) throw new HeatingError(400, `Der Rechnungszeitraum von ${what} endet vor seinem Beginn.`)
   }
-  if (plant.method === 'manual' && after.amountCents !== null && !after.estimated) {
-    throw new HeatingError(400, `Bei freien Schlüsseln steht der Betrag in der Kostenposition: Verknüpfen Sie die Position mit ${what}, statt hier einen Betrag einzutragen.`)
+  // Heizung PR 10 (N4): ebenso bei der eigenen Heizkostenabrechnung.
+  if (plant.method !== 'service' && after.amountCents !== null && !after.estimated) {
+    throw new HeatingError(400, `Bei freien Schlüsseln und bei der eigenen Heizkostenabrechnung steht der Betrag in der Kostenposition: Verknüpfen Sie die Position mit ${what}, statt hier einen Betrag einzutragen.`)
   }
   const notNegative: [number | null, string][] = [
     [after.fixedCents, 'Der feste Preisbestandteil'], [after.emissionsKg, 'Der CO₂-Ausstoß'], [after.co2CostCents, 'Die CO₂-Kosten'],
@@ -365,6 +364,8 @@ export async function createEstimates(db: Executor, s: WithHeating, newId: () =>
         amountCents: e.amountCents,
         emissionsKg: e.emissionsKg,
         co2CostCents: e.co2CostCents,
+        // Heizung PR 10 (Abweichung 11): die kWh im selben Verhältnis; ältere Vorschläge kennen sie nicht.
+        energyKwh: e.energyKwh ?? null,
         estimated: true,
       }))
       ids.push(id)

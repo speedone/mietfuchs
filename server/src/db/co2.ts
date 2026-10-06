@@ -12,6 +12,8 @@
 // (Methode der Anlage `service`). Die eigene Aufteilung (`self`, freie Schlüssel) kommt mit PR 7.
 //
 // Diese Datei importiert aus repository.ts und read.ts, nie umgekehrt.
+import { lineRowsOf } from './selfLine.ts'
+import { selfFromOf } from '../heating.ts'
 import { eq, inArray } from 'drizzle-orm'
 import type { BillingPeriod, Co2Statement, Co2TenantRelief, HeatingPeriodView, PeriodKey } from '../../../shared/types.ts'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
@@ -27,11 +29,12 @@ import { asNullableFilled, CrossPropertyError, has, HeatingError, merged, oneOfO
 import { closedText, dropIfEmpty, ensureHeatingPeriod, heatingPeriodClosed, heatingPeriodOf, plantContext, type PlantContext } from './heatingPeriodContext.ts'
 // Für ältere Importe (Tests): Die Helfer der Heizperioden stehen seit Heizung PR 8 in heatingPeriodContext.ts.
 export { dropIfEmpty, ensureHeatingPeriod } from './heatingPeriodContext.ts'
+import { distributionOf } from './heatingSelf.ts'
 import { CO2_METHODS, co2Statements, co2TenantReliefs, costItems, DHW_METHODS, heatingPeriods, tenancies, units } from './schema.ts'
 
 const ASK_METHOD = 'Bitte beantworten Sie zuerst die Frage, ob die Kostenaufstellung eine Zeile wie „Abzüglich CO₂-Kosten Vermieter“ enthält.'
 const SERVICE_NOT_SELF = 'Rechnet ein Messdienst oder die Gemeinschaft ab, beantworten Sie die Frage nach der Abzugszeile. Hat der Messdienst die CO₂-Kosten nicht aufgeteilt, wählen Sie „gar nicht aufgeteilt“; mit der Brennstoffrechnung als Lieferung teilt Mietfuchs dann selbst auf.'
-const MANUAL_SELF = 'Bei freien Schlüsseln teilt Mietfuchs die CO₂-Kosten selbst auf, aus den Lieferungen des Versorgers. Angeben lässt sich hier nur die Fläche der Einstufung, wenn sie von der Wohnfläche der versorgten Wohnungen abweicht.'
+const MANUAL_SELF = 'Bei freien Schlüsseln teilt Mietfuchs die CO₂-Kosten selbst auf, ebenso bei der eigenen Heizkostenabrechnung, aus den Lieferungen des Versorgers. Angeben lässt sich hier nur die Fläche der Einstufung, wenn sie von der Wohnfläche der versorgten Wohnungen abweicht.'
 // Die Heizperioden einer Anlage mit CO₂-Angaben, die noch nicht abgeschlossen sind. Abgeschlossene
 // sind eingefroren und lassen sich nicht mehr entfernen; sie dürfen einen Wechsel der Anlage
 // (Kesseltausch, andere Abrechnung) deshalb nicht sperren (Nachprüfung von PR 6).
@@ -51,7 +54,7 @@ export async function openCo2Periods(db: Database, plantId: string): Promise<str
 // Die Heizperioden der Anlage, die im Abrechnungszeitraum P enden, mit ihren Angaben und den
 // Positionen der Anlage in dieser Heizperiode (für die Probe der Oberfläche). Ohne eigenen Rhythmus
 // genau P.
-export async function heatingPeriodViews(db: Database, plantId: string, periodParam: string): Promise<HeatingPeriodView[] | null> {
+export async function heatingPeriodViews(db: Database, plantId: string, periodParam: string, today = ''): Promise<HeatingPeriodView[] | null> {
   const ctx = await plantContext(db, plantId)
   if (!ctx) return null
   const resolved = resolvePeriodParam(ctx.objectRules, periodParam)
@@ -61,9 +64,11 @@ export async function heatingPeriodViews(db: Database, plantId: string, periodPa
   const statements = (await readCo2Statements(db)).filter((s) => s.plantId === plantId)
   const rows = await db.select().from(heatingPeriods).where(eq(heatingPeriods.plantId, plantId))
   const items = (await readCostItems(db)).filter((c) => c.heatingPlantId === plantId && c.category === HEATING_CATEGORY)
-  // Der Vorrat (Heizung PR 8) nur bei Heizöl, Flüssiggas, Pellets, Holz und Kohle, und nicht bei der
-  // eigenen Heizkostenabrechnung, die ihn erst mit einer späteren Version rechnet.
-  const stockData = isStockEnergy(ctx.plant.energy) && ctx.plant.method !== 'self' ? await readStock(db) : null
+  // Der Vorrat (Heizung PR 8) nur bei Heizöl, Flüssiggas, Pellets, Holz und Kohle; seit Heizung PR 10
+  // auch bei der eigenen Heizkostenabrechnung (Entwurf 8.2).
+  const stockData = isStockEnergy(ctx.plant.energy) ? await readStock(db) : null
+  const lineRows = ctx.plant.method === 'self' ? (await lineRowsOf(db, plantId)).merged : []
+  const selfBegin = selfFromOf(ctx.plant)
   const views: HeatingPeriodView[] = []
   for (const h of hs) {
     const row = rows.find((r) => r.period === h.key)
@@ -82,6 +87,11 @@ export async function heatingPeriodViews(db: Database, plantId: string, periodPa
         .filter((c) => c.period === h.key)
         .map((c) => ({ id: c.id, description: c.description, amountCents: c.amountCents, key: c.key, tenancyAmounts: c.tenancyAmounts, selfAmounts: c.selfAmounts, fuelDeliveryId: c.fuelDeliveryId })),
       stock: stockData ? stockViewFor(stockData, ctx, h, closed) : null,
+      // Anteil nach Verbrauch (Heizung PR 10), nur bei eigener Abrechnung.
+      // Über die Linie (Durchsicht von #239, I3), und erst ab dem Beginn der eigenen Abrechnung (I1).
+      distribution: ctx.plant.method === 'self' && (selfBegin === null || h.key >= selfBegin)
+        ? distributionOf(lineRows, ctx.plant.energy, h, today)
+        : null,
     })
   }
   return views
@@ -149,8 +159,9 @@ function mergeCo2(current: Co2Statement, body: unknown): Co2Statement {
 
 async function guardCo2(db: Executor, ctx: PlantContext, h: BillingPeriod, st: Co2Statement): Promise<void> {
   // Heizung PR 7: bei freien Schlüsseln nur `self` (die Fläche der Einstufung), beim Messdienst nie.
-  if (ctx.plant.method === 'manual' && st.method !== 'self') throw new HeatingError(400, MANUAL_SELF)
-  if (ctx.plant.method !== 'manual' && st.method === 'self') throw new HeatingError(400, SERVICE_NOT_SELF)
+  // Heizung PR 10 (N7): bei der eigenen Heizkostenabrechnung wie bei freien Schlüsseln.
+  if (ctx.plant.method !== 'service' && st.method !== 'self') throw new HeatingError(400, MANUAL_SELF)
+  if (ctx.plant.method === 'service' && st.method === 'self') throw new HeatingError(400, SERVICE_NOT_SELF)
   if (!valueAt(co2ApplicableFrom, h.from)) {
     throw new HeatingError(400, `Die CO₂-Kosten sind erst für Abrechnungszeiträume aufzuteilen, die am oder nach dem ${germanDate(co2FirstPeriodStart())} beginnen (§ 11 Abs. 2 Satz 1 CO2KostAufG); diese Heizperiode beginnt früher.`)
   }

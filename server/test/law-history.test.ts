@@ -44,6 +44,13 @@ const SHIPPED: readonly string[] = [
   // 0.11.0 (Heizung PR 8)
   'co2.costs-before||2022-12-31|true',
   'co2.costs-before|2023-01-01||false',
+  // 0.11.0 (Heizung PR 10, #99)
+  'hkv.consumption-share-forced|||70',
+  // Nachprüfung von #239, N2.
+  'hkv.settlement-info||2021-11-30|false',
+  'hkv.settlement-info|2021-12-01||true',
+  'hkv.heat-pump.capture|||{"capturedBy":"2024-10-01","installBy":"2025-09-30"}',
+  'practice.reading-off-warning|||{"months":1,"winterMonths":["10","11","12","01","02","03","04"]}',
 ]
 
 const current = (): string[] =>

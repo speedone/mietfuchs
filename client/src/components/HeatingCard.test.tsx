@@ -16,7 +16,7 @@ const UNITS: Unit[] = [
 const PLANT: HeatingPlant = {
   id: 'hp1', propertyId: 'objekt-1', name: '', energy: 'districtHeating', supply: 'central', method: 'manual', separateSettlement: null,
   devicesRemote: 'partial', devicesInstalledAfter2021: 'some', source: 'building', captureInstalledOn: null, capturedOnOct2024: null,
-  warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null, periodChanges: [], separateSpans: [], units: null, newDevicesInstall: 'single', nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null,
+  warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null, periodChanges: [], separateSpans: [], units: null, newDevicesInstall: 'single', nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null, hotWater: 'combined', capture: null, areaBasisHeat: 'area', heatPumpInstalledOn: null,
 }
 const ITEM: AssignableHeatingItem = { id: 'c1', period: periodKey('2025-01'), description: 'Fernwärme 2025', amountCents: 240000 }
 
@@ -218,4 +218,26 @@ test('Zurück von „Nein“ auf „Ja“: erst eine Rückfrage, dass der eigene
   fireEvent.click(await screen.findByRole('button', { name: 'Umstellen' }))
   await waitFor(() => expect(sent).toHaveLength(1))
   expect(sent[0]?.body).toMatchObject({ takesOverStock: true })
+})
+
+test('Wärmepumpe erst nach dem Stichtag eingebaut: Auswahl und Einbaudatum zeigen den gespeicherten Wert (Heizung PR 10)', async () => {
+  plants = [{ ...PLANT, energy: 'heatPump', method: 'service', heatPumpInstalledOn: '2025-03-01' }]
+  renderCard()
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Ändern' })).toBeTruthy())
+  fireEvent.click(screen.getByRole('button', { name: 'Ändern' }))
+  expect(valueOf(/Wurde der Verbrauch der Wärmepumpe am 01\.10\.2024 schon erfasst/)).toBe('newer')
+  expect((screen.getByLabelText(/Einbaudatum der Wärmepumpe/) as HTMLInputElement).value).toBe('2025-03-01')
+})
+
+test('„Ich selbst“: die Anlage entsteht bei „Niemand“, danach öffnet Schritt 7 (Heizung PR 10, Abweichung 21)', async () => {
+  renderCard()
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Heizung einrichten' })).toBeTruthy())
+  fireEvent.click(screen.getByRole('button', { name: 'Heizung einrichten' }))
+  await waitFor(() => expect(screen.getByText(/Diese Heizposition kommt zur Anlage/)).toBeTruthy())
+  fireEvent.change(screen.getByLabelText(/Womit wird geheizt/), { target: { value: 'gas' } })
+  fireEvent.change(screen.getByLabelText(/Wer erstellt Ihre Heizkostenabrechnung/), { target: { value: 'self' } })
+  expect(valueOf(/Wer erstellt Ihre Heizkostenabrechnung/)).toBe('self')
+  fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }))
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Umstellen' })).toBeTruthy())
+  expect(sent[0]?.body).toMatchObject({ method: 'manual' })
 })

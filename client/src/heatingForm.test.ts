@@ -1,6 +1,6 @@
 // Die Einrichtung „Heizung“ (Heizung PR 4, Entwurf 11.2), ohne DOM.
 import { describe, expect, test } from 'vitest'
-import { asksNewInstall, asksTakeOver, buildingOptions, canSwap, connectionNote, emptyHeatingForm, emptySwapForm, HOT_WATER_OPTIONS, hotWaterBody, isFormula, PER_UNIT_ENERGY_OPTIONS, plantOptions, swapBody, unmeasurableLabel, heatingPlantBody, heatingSummary, heatingToForm, whoHint, whoOptions, type HeatingForm } from './heatingForm'
+import { asksNewInstall, asksTakeOver, buildingOptions, canSwap, connectionNote, emptyHeatingForm, emptySwapForm, HOT_WATER_OPTIONS, hotWaterBody, isFormula, PER_UNIT_ENERGY_OPTIONS, plantOptions, swapBody, swapMetersOf, unmeasurableLabel, heatingPlantBody, heatingSummary, heatingToForm, whoHint, whoOptions, type HeatingForm } from './heatingForm'
 import type { HeatingPlant, Unit } from './types'
 
 const UNITS: Pick<Unit, 'id' | 'name' | 'noConnection'>[] = [{ id: 'eg', name: 'EG' }, { id: 'og', name: 'OG' }, { id: 'garage', name: 'Garage', noConnection: ['waerme'] }]
@@ -9,7 +9,7 @@ const PLANT: HeatingPlant = {
   id: 'hp1', propertyId: 'objekt-1', name: '', energy: 'heatPump', supply: 'central', method: 'service', separateSettlement: null,
   devicesRemote: 'partial', devicesInstalledAfter2021: 'some', source: 'building', captureInstalledOn: '2025-06-01', capturedOnOct2024: false,
   warmRentAverageCents: 123456, changeSplit: 'degreeDays', periodStartMonth: null, periodChanges: [], separateSpans: [], units: [{ unitId: 'og', heatedAreaM2: null }],
-  newDevicesInstall: 'single', nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null,
+  newDevicesInstall: 'single', nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null, hotWater: 'combined', capture: null, areaBasisHeat: 'area', heatPumpInstalledOn: null,
 }
 
 describe('Einrichtung Heizung', () => {
@@ -18,9 +18,10 @@ describe('Einrichtung Heizung', () => {
     expect(heatingPlantBody(ausgefuellt(), UNITS)).toEqual({
       body: {
         energy: 'gas', supply: 'central', method: 'service', source: 'building', devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown',
-        capturedOnOct2024: null, captureInstalledOn: null, warmRentAverageCents: null, units: null, newDevicesInstall: null, name: '', buildingWith: null,
+        capturedOnOct2024: null, captureInstalledOn: null, warmRentAverageCents: null, heatPumpInstalledOn: null, units: null, newDevicesInstall: null, name: '', buildingWith: null,
       },
       adjust: [],
+      setUpSelf: false,
     })
     expect(heatingPlantBody(ausgefuellt({ unitIds: ['og'] }), UNITS)).toMatchObject({ body: { units: [{ unitId: 'og', heatedAreaM2: null }] } })
   })
@@ -37,9 +38,17 @@ describe('Einrichtung Heizung', () => {
     expect(heatingPlantBody(ausgefuellt({ energy: 'perUnit', contract: 'landlord' }), UNITS)).toEqual({ error: 'Womit heizen die Etagenheizungen?' })
   })
 
-  test('Eigene Abrechnung kommt später', () => {
-    expect(heatingPlantBody(ausgefuellt({ who: 'self' }), UNITS)).toEqual({ error: expect.stringMatching(/eigene Heizkostenabrechnung kommt mit einer späteren Version/) })
-    expect(whoHint('self', 'mfh')).toMatch(/späteren Version/)
+  test('„Ich selbst“: die Anlage entsteht zunächst bei „Niemand“, Schritt 7 stellt sie um (Heizung PR 10, Abweichung 21)', () => {
+    expect(whoHint('self', 'mfh')).toMatch(/Wärmezähler und Warmwasserzähler/)
+    expect(whoHint('self', 'mfh')).not.toMatch(/späteren Version/)
+    expect(heatingPlantBody(ausgefuellt({ who: 'self' }), UNITS)).toMatchObject({ body: { method: 'manual' }, setUpSelf: true })
+  })
+
+  test('Wärmepumpe erst nach dem Stichtag eingebaut: Einbaudatum statt Erfassung (§ 12 Abs. 3, Heizung PR 10)', () => {
+    const base = ausgefuellt({ energy: 'heatPump', who: 'manual', captured: 'newer' })
+    expect(heatingPlantBody(base, UNITS)).toEqual({ error: expect.stringMatching(/Einbaudatum/) })
+    expect(heatingPlantBody({ ...base, heatPumpInstalledOn: '2024-09-01' }, UNITS)).toEqual({ error: expect.stringMatching(/bis zum 01\.10\.2024/) })
+    expect(heatingPlantBody({ ...base, heatPumpInstalledOn: '2025-03-01' }, UNITS)).toMatchObject({ body: { capturedOnOct2024: null, captureInstalledOn: null, heatPumpInstalledOn: '2025-03-01' }, setUpSelf: false })
   })
 
   test('Eigentumswohnung: die Gemeinschaft rechnet ab, übernommen wie vom Messdienst', () => {
@@ -239,5 +248,22 @@ describe('Kessel getauscht (Heizung PR 9)', () => {
     const neu: HeatingPlant = { ...OEL, id: 'hp2', energy: 'gas', name: 'Gastherme', replacesPlantId: 'hp1' }
     expect(heatingSummary(alt, UNITS, [alt, neu])).toContain('Außer Betrieb seit 01.07.2025, ersetzt durch „Gastherme“')
     expect(heatingSummary(neu, UNITS, [alt, neu])).toContain('In Betrieb seit 01.07.2025, ersetzt „Ölkessel“')
+  })
+})
+
+describe('Durchsicht von #239, I3: Kesseltausch bei eigener Heizkostenabrechnung', () => {
+  test('fragt die Zähler der Linie ab und schickt die eingetragenen Stände', () => {
+    const plants = [{ id: 'alt', replacesPlantId: null }, { id: 'hp', replacesPlantId: 'alt' }, { id: 'fremd', replacesPlantId: null }]
+    const meters = [
+      { id: 'dh', name: 'Speicher', heatingPlantId: 'alt', heatingRole: 'dhwHeat' },
+      { id: 'x', name: 'Fremd', heatingPlantId: 'fremd', heatingRole: 'dhwHeat' },
+      { id: 'w', name: 'Wärme A', heatingPlantId: null, heatingRole: null, unitId: 'a' },
+    ] as unknown as Parameters<typeof swapMetersOf>[2]
+    expect(swapMetersOf({ id: 'hp', method: 'self', replacesPlantId: 'alt' }, plants, meters).map((m) => m.id)).toEqual(['dh'])
+    expect(swapMetersOf({ id: 'hp', method: 'manual', replacesPlantId: 'alt' }, plants, meters)).toEqual([])
+    const f = { ...emptySwapForm({ name: 'Gas' }), date: '2025-07-01', energy: 'districtHeating' as const }
+    expect(swapBody({ ...f, meterValues: { dh: '4.500' } }, { energy: 'gas' }, [{ id: 'dh', name: 'Speicher' }])).toEqual({ body: { date: '2025-07-01', energy: 'districtHeating', name: '', previousName: 'Gas', meterReadings: [{ meterId: 'dh', value: 4500 }] } })
+    expect(swapBody({ ...f, meterValues: { dh: 'viel' } }, { energy: 'gas' }, [{ id: 'dh', name: 'Speicher' }])).toEqual({ error: 'Der Stand für „Speicher“ ist keine Zahl.' })
+    expect(swapBody(f, { energy: 'gas' }, [{ id: 'dh', name: 'Speicher' }])).toEqual({ body: { date: '2025-07-01', energy: 'districtHeating', name: '', previousName: 'Gas' } })
   })
 })

@@ -2,24 +2,30 @@
 // (heatingForm.test.ts). Gefragt wird in der Reihenfolge des Entwurfs: womit geheizt wird
 // (Schritt 1), wer die Heizkostenabrechnung erstellt (2), welche Wohnungen angeschlossen sind (4),
 // ob die Geräte aus der Ferne ablesbar sind (5) und bei einer Wärmepumpe, seit wann ihr Verbrauch
-// erfasst wird (6). Schritt 3 (eigener Zeitraum) kommt mit Heizung PR 5, Schritt 7 (eigene
-// Abrechnung) mit PR 10. Nichts davon ändert eine Zahl der Abrechnung.
-import type { DevicesInstalledAfter, DevicesRemote, DhwMethod, HeatingEnergy, HeatingPlant, HeatingPlantUnit, NewDevicesInstall, PropertyKind, Unit } from './types'
+// erfasst wird (6). Schritt 3 (eigener Zeitraum) kommt mit Heizung PR 5. Schritt 7 (eigene
+// Abrechnung, Heizung PR 10) steht in heatingSelfForm.ts: Wer „Ich selbst“ wählt, legt die Anlage hier
+// zunächst bei „Niemand“ an, und Schritt 7 stellt sie in einer Transaktion um (Abweichung 21 des Plans).
+// Nichts davon ändert eine Zahl der Abrechnung.
+import type { DevicesInstalledAfter, DevicesRemote, DhwMethod, HeatingEnergy, HeatingPlant, HeatingPlantUnit, Meter, NewDevicesInstall, PropertyKind, Unit } from './types'
 import { isStockEnergy } from '../../shared/fuelStock.ts'
 import { parseEuro } from './api'
-import { hkvConsumptionShare, hkvCutNotByConsumption, hkvRemoteReadingNewDevices } from '../../shared/law/heizkostenv.ts'
+import { hkvConsumptionShare, hkvCutNotByConsumption, hkvHeatPumpCapture, hkvRemoteReadingNewDevices } from '../../shared/law/heizkostenv.ts'
 import { dayAfter, germanDate, LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
-import { sameLine } from '../../shared/heatingPeriod.ts'
+import { lineRoot, sameLine } from '../../shared/heatingPeriod.ts'
+import { parseMeterValue } from './tenantChange'
 
 // Rechtszahlen aus dem Register, in der Fassung von heute (wie Lexikon und Anleitungen).
 const SHARE = valueAt(hkvConsumptionShare, LAW_AS_OF)
 const CUT = valueAt(hkvCutNotByConsumption, LAW_AS_OF)
 export const NEW_DEVICES_AFTER = germanDate(valueAt(hkvRemoteReadingNewDevices, LAW_AS_OF).installedAfter)
+// § 12 Abs. 3 Satz 1 HeizkostenV: der Stichtag der Wärmepumpen aus dem Register (Heizung PR 10, Abweichung 1).
+const HEAT_PUMP_CAPTURED_BY = valueAt(hkvHeatPumpCapture, LAW_AS_OF).capturedBy
+export const NEWER_THAN = germanDate(HEAT_PUMP_CAPTURED_BY)
 
 export type EnergyAnswer = HeatingEnergy | 'perUnit'
 export type PerUnitContract = '' | 'tenant' | 'landlord'
 export type WhoSettles = '' | 'service' | 'homeowners' | 'self' | 'manual'
-export type CaptureAnswer = 'unknown' | 'yes' | 'no'
+export type CaptureAnswer = 'unknown' | 'yes' | 'no' | 'newer'
 
 export type HeatingForm = {
   energy: EnergyAnswer | ''
@@ -31,6 +37,8 @@ export type HeatingForm = {
   newInstall: NewDevicesInstall | ''
   captured: CaptureAnswer
   captureInstalledOn: string
+  // Wärmepumpe erst nach dem Stichtag eingebaut (Heizung PR 10): ihr Einbaudatum.
+  heatPumpInstalledOn: string
   warmRentAverage: string
   // Heizung PR 9: Name der Anlage (Pflicht ab der zweiten), Energie der Etagenheizungen und die Namen
   // der bisherigen Anlagen, die beim Anlegen der zweiten noch keinen Namen oder keine Liste haben.
@@ -51,11 +59,12 @@ export type HeatingForm = {
 export type HeatingPlantBody = Pick<
   HeatingPlant,
   'energy' | 'supply' | 'method' | 'source' | 'devicesRemote' | 'devicesInstalledAfter2021' | 'capturedOnOct2024' | 'captureInstalledOn' | 'warmRentAverageCents' | 'units' | 'newDevicesInstall' | 'name' | 'buildingWith'
-> & { takesOverStock?: boolean }
+> & Partial<Pick<HeatingPlant, 'heatPumpInstalledOn'>> & { takesOverStock?: boolean }
 // Name und Wohnungen einer bisherigen Anlage, die mit dem Anlegen geändert werden (Heizung PR 9).
 export type AdjustRow = { id: string; name: string; units: HeatingPlantUnit[] }
 // `none`: Es entsteht bewusst keine Anlage, und der Satz sagt warum.
-export type HeatingResult = { body: HeatingPlantBody; adjust: AdjustRow[] } | { error: string } | { none: string }
+// `setUpSelf`: „Ich selbst“ gewählt; nach dem Speichern folgt Schritt 7 (Heizung PR 10).
+export type HeatingResult = { body: HeatingPlantBody; adjust: AdjustRow[]; setUpSelf?: boolean } | { error: string } | { none: string }
 
 type UnitInfo = Pick<Unit, 'id' | 'noConnection'>
 
@@ -157,9 +166,11 @@ export const CAPTURE_OPTIONS: { value: CaptureAnswer; label: string }[] = [
   { value: 'unknown', label: 'Weiß ich nicht' },
   { value: 'yes', label: 'Ja' },
   { value: 'no', label: 'Nein' },
+  // Heizung PR 10 (Abweichung 1): eine Wärmepumpe, die erst danach eingebaut wurde, fällt nicht unter § 12 Abs. 3.
+  { value: 'newer', label: `Die Wärmepumpe ist erst nach dem ${NEWER_THAN} eingebaut worden` },
 ]
 
-const LATER_SELF = 'Die eigene Heizkostenabrechnung kommt mit einer späteren Version. Wählen Sie bis dahin „Ein Messdienst oder die Hausverwaltung“ oder „Niemand“; an Ihren Beträgen ändert sich dadurch nichts.'
+const SELF_HINT = 'Sie lesen Wärmezähler und Warmwasserzähler jeder Wohnung ab, und Mietfuchs verteilt nach der Heizkostenverordnung. Nach dem Anlegen fragt Mietfuchs nach Warmwasser, Erfassung und dem Anteil nach Verbrauch; bis dahin ändert sich an keiner Zahl etwas.'
 const SELF_SUPPLY = 'Hat jeder Mieter einen eigenen Vertrag für seine Heizung, gibt es keine Heizkostenabrechnung des Hauses, und Mietfuchs legt keine Heizanlage an. Was Mieter für CO₂-Kosten vom Vermieter verlangen können, erklärt Mietfuchs mit einer späteren Version.'
 
 // Der Satz unter der zweiten Frage.
@@ -178,7 +189,7 @@ export const HOW_TO_TELL = {
 export const asksRemote = (who: WhoSettles | HeatingPlant['method']): boolean => who !== 'manual'
 
 export function whoHint(who: WhoSettles, kind: PropertyKind): string {
-  if (who === 'self') return LATER_SELF
+  if (who === 'self') return SELF_HINT
   if (who === 'service') return 'Die Abrechnung des Messdienstes übernehmen Sie wie bisher als Position „Heizung und Warmwasser“ mit dem Schlüssel „Einzelbeträge“.'
   if (who === 'homeowners') return 'Die Abrechnung der Gemeinschaft übernehmen Sie wie die eines Messdienstes: als Position „Heizung und Warmwasser“ mit dem Schlüssel „Einzelbeträge“, mit den Beträgen der Hausgeldabrechnung.'
   if (who === 'manual') {
@@ -203,7 +214,7 @@ export function emptyHeatingForm(units: readonly UnitInfo[], others: readonly He
   const taken = new Set(others.flatMap((p) => servedIds(p, units)))
   return {
     energy: '', contract: '', who: '', unitIds: defaultUnitIds(units).filter((id) => !taken.has(id)), remote: 'unknown', installedAfter: 'unknown',
-    captured: 'unknown', captureInstalledOn: '', warmRentAverage: '', newInstall: '',
+    captured: 'unknown', captureInstalledOn: '', heatPumpInstalledOn: '', warmRentAverage: '', newInstall: '',
     name: '', perUnitEnergy: '', building: '', ownMeters: false, takesOverStock: '', otherNames: Object.fromEntries(others.filter((p) => p.name.trim() === '' || p.units === null).map((p) => [p.id, p.name])),
   }
 }
@@ -219,8 +230,9 @@ export function heatingToForm(plant: HeatingPlant, units: readonly UnitInfo[]): 
     unitIds: servedIds(plant, units),
     remote: plant.devicesRemote,
     installedAfter: plant.devicesInstalledAfter2021,
-    captured: plant.capturedOnOct2024 === null ? 'unknown' : plant.capturedOnOct2024 ? 'yes' : 'no',
+    captured: plant.heatPumpInstalledOn !== null ? 'newer' : plant.capturedOnOct2024 === null ? 'unknown' : plant.capturedOnOct2024 ? 'yes' : 'no',
     captureInstalledOn: plant.captureInstalledOn ?? '',
+    heatPumpInstalledOn: plant.heatPumpInstalledOn ?? '',
     warmRentAverage: plant.warmRentAverageCents === null ? '' : centsText(plant.warmRentAverageCents),
     newInstall: plant.newDevicesInstall ?? '',
     name: plant.name,
@@ -281,7 +293,6 @@ export function heatingPlantBody(form: HeatingForm, units: readonly UnitInfo[], 
   const energy: HeatingEnergy = form.energy
   const who = form.who
   if (who === '') return { error: 'Bitte wählen Sie, wer die Heizkostenabrechnung erstellt.' }
-  if (who === 'self') return { error: LATER_SELF }
   if (form.unitIds.length === 0) return { error: 'Bitte haken Sie mindestens eine Wohnung an, die an dieser Heizung hängt.' }
   const heatPump = energy === 'heatPump'
   const averageText = heatPump ? form.warmRentAverage.trim() : ''
@@ -289,17 +300,28 @@ export function heatingPlantBody(form: HeatingForm, units: readonly UnitInfo[], 
   if (averageText !== '' && (average === null || average < 0)) {
     return { error: 'Bitte geben Sie die durchschnittlichen Heizkosten als Betrag ein, etwa 1.234,56.' }
   }
+  // Abweichung 1 des Plans (Heizung PR 10): erst nach dem Stichtag eingebaut, dann das Einbaudatum statt der Erfassung.
+  const installedText = heatPump && form.captured === 'newer' ? form.heatPumpInstalledOn : ''
+  if (heatPump && form.captured === 'newer') {
+    if (installedText === '') return { error: 'Bitte geben Sie das Einbaudatum der Wärmepumpe an.' }
+    if (installedText <= HEAT_PUMP_CAPTURED_BY) {
+      return { error: `Eine Wärmepumpe, die bis zum ${NEWER_THAN} eingebaut wurde, beantworten Sie mit „Ja“ oder „Nein“.` }
+    }
+  }
   return {
+    setUpSelf: who === 'self',
     body: {
       energy,
       supply: 'central',
-      method: who === 'homeowners' ? 'service' : who,
+      // „Ich selbst“: zunächst „Niemand“; Schritt 7 stellt um (Abweichung 21).
+      method: who === 'homeowners' ? 'service' : who === 'self' ? 'manual' : who,
       source: who === 'homeowners' ? 'homeowners' : 'building',
       devicesRemote: form.remote,
       devicesInstalledAfter2021: form.installedAfter,
-      capturedOnOct2024: heatPump && form.captured !== 'unknown' ? form.captured === 'yes' : null,
+      capturedOnOct2024: heatPump && (form.captured === 'yes' || form.captured === 'no') ? form.captured === 'yes' : null,
       captureInstalledOn: heatPump && form.captured === 'no' && form.captureInstalledOn !== '' ? form.captureInstalledOn : null,
       warmRentAverageCents: average,
+      heatPumpInstalledOn: installedText === '' ? null : installedText,
       units: unitList,
       newDevicesInstall: asksNewInstall(form) && form.newInstall !== '' ? form.newInstall : null,
       name,
@@ -312,8 +334,18 @@ export function heatingPlantBody(form: HeatingForm, units: readonly UnitInfo[], 
 
 // ---------- Kessel getauscht (Heizung PR 9) ----------
 
-export type SwapForm = { date: string; energy: HeatingEnergy | ''; name: string; previousName: string; takesOverStock: 'yes' | 'no' }
-export type SwapBody = { date: string; energy: HeatingEnergy; name: string; previousName: string; takesOverStock?: boolean }
+export type SwapForm = { date: string; energy: HeatingEnergy | ''; name: string; previousName: string; takesOverStock: 'yes' | 'no'; meterValues?: Record<string, string> }
+export type SwapBody = { date: string; energy: HeatingEnergy; name: string; previousName: string; takesOverStock?: boolean; meterReadings?: { meterId: string; value: number }[] }
+
+// Bei der eigenen Heizkostenabrechnung fragt der Tausch die Stände der Zähler der Anlage (Wärme am
+// Warmwasserspeicher, Gesamtwärme) am letzten Tag der bisherigen ab (Durchsicht von #239, I3): Mit ihnen
+// grenzt Mietfuchs die Wärme beider Anlagen ab. Die Zähler bleiben, wo sie sind.
+export const swapMetersOf = (plant: Pick<HeatingPlant, 'id' | 'method' | 'replacesPlantId'>, plants: readonly Pick<HeatingPlant, 'id' | 'replacesPlantId'>[], meters: readonly Meter[]): Meter[] => {
+  if (plant.method !== 'self') return []
+  const root = lineRoot(plant, plants)
+  const line = new Set([plant.id, ...plants.filter((p) => lineRoot(p, plants) === root).map((p) => p.id)])
+  return meters.filter((m) => m.heatingPlantId !== null && m.heatingPlantId !== undefined && line.has(m.heatingPlantId) && !!m.heatingRole)
+}
 
 // Bei demselben Vorratsbrennstoff fragt der Tausch, ob die neue Anlage den Brennstoff weiter verheizt.
 export const asksTakeOver = (form: Pick<SwapForm, 'energy'>, previous: Pick<HeatingPlant, 'energy'>): boolean =>
@@ -326,10 +358,18 @@ export const canSwap = (p: Pick<HeatingPlant, 'endsOn' | 'supply' | 'separateSpa
 // Vorbelegung „Ja“: Wer den Kessel tauscht, verheizt den Brennstoff im Tank meist weiter.
 export const emptySwapForm = (p: Pick<HeatingPlant, 'name'>): SwapForm => ({ date: '', energy: '', name: '', previousName: p.name, takesOverStock: 'yes' })
 
-export function swapBody(form: SwapForm, previous: Pick<HeatingPlant, 'energy'>): { body: SwapBody } | { error: string } {
+export function swapBody(form: SwapForm, previous: Pick<HeatingPlant, 'energy'>, plantMeters: readonly Pick<Meter, 'id' | 'name'>[] = []): { body: SwapBody } | { error: string } {
   if (form.date === '') return { error: 'Bitte wählen Sie den Tag, an dem die neue Heizung in Betrieb ging.' }
   if (form.energy === '') return { error: 'Womit heizt die neue Heizung?' }
-  const body: SwapBody = { date: form.date, energy: form.energy, name: form.name.trim(), previousName: form.previousName.trim() }
+  const meterReadings: { meterId: string; value: number }[] = []
+  for (const m of plantMeters) {
+    const text = (form.meterValues?.[m.id] ?? '').trim()
+    if (text === '') continue
+    const value = parseMeterValue(text)
+    if (value === null) return { error: `Der Stand für „${m.name}“ ist keine Zahl.` }
+    meterReadings.push({ meterId: m.id, value })
+  }
+  const body: SwapBody = { date: form.date, energy: form.energy, name: form.name.trim(), previousName: form.previousName.trim(), ...(meterReadings.length > 0 ? { meterReadings } : {}) }
   return { body: asksTakeOver(form, previous) ? { ...body, takesOverStock: form.takesOverStock === 'yes' } : body }
 }
 

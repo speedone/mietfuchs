@@ -5,7 +5,7 @@
 // db/fuelStock.ts (Vorrat) importieren von hier, nie umgekehrt.
 import { and, count, eq } from 'drizzle-orm'
 import type { BillingPeriod, HeatingPlant, PeriodKey, PeriodRules } from '../../../shared/types.ts'
-import { plantRules, settledSeparately } from '../../../shared/heatingPeriod.ts'
+import { heatingPeriodsEndingIn, plantRules, settledSeparately } from '../../../shared/heatingPeriod.ts'
 import { parsePeriodKey, periodContaining, periodLabel, periodOfKey, rulesOf } from '../../../shared/period.ts'
 import { newId } from '../store.ts'
 import type { Database, Executor } from './client.ts'
@@ -52,6 +52,23 @@ export async function heatingPeriodClosed(db: Executor, ctx: PlantContext, h: Bi
     .from(closedSettlements)
     .where(and(eq(closedSettlements.propertyId, ctx.plant.propertyId), eq(closedSettlements.period, p.key)))
   return (gesamt?.n ?? 0) > 0
+}
+
+// Die Schlüssel der abgeschlossenen Heizperioden einer Anlage (Durchsicht von #239, W2 und Runde 3): nach
+// Weg d die eigenen Heizkostenabrechnungen, sonst die Abrechnungen des Objekts, deren Zeitraum das Ende
+// einer Heizperiode enthält.
+export async function closedHeatingKeys(db: Executor, ctx: PlantContext): Promise<string[]> {
+  const keys: string[] = []
+  const heating = await db.select({ period: closedHeatingSettlements.period }).from(closedHeatingSettlements).where(eq(closedHeatingSettlements.plantId, ctx.plant.id))
+  for (const c of heating) keys.push(String(c.period))
+  const object = await db.select({ period: closedSettlements.period }).from(closedSettlements).where(eq(closedSettlements.propertyId, ctx.plant.propertyId))
+  for (const c of object) {
+    const key = parsePeriodKey(String(c.period))
+    const p = key === null ? null : periodOfKey(ctx.objectRules, key)
+    if (!p) continue
+    for (const h of heatingPeriodsEndingIn(ctx.plantRules, p)) if (!settledSeparately(ctx.plant, ctx.objectRules, h)) keys.push(String(h.key))
+  }
+  return [...new Set(keys)]
 }
 
 export async function ensureHeatingPeriod(db: Executor, plantId: string, key: PeriodKey): Promise<string> {

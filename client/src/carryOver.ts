@@ -201,6 +201,7 @@ export function carryOverForm(row: CarryRow): ItemForm {
     // Das Jahr der Zahlung kommt verschoben aus der Zeile (carryOverRows).
     serviceFrom: '', serviceTo: '', taxYear: row.taxYear ?? '',
     heatingPart: row.source.heatingPart ?? '',
+    heatingTarget: row.source.heatingTarget ?? '',
     invoiceFile: undefined,
   }
 }

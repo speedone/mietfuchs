@@ -13,6 +13,7 @@ import {
   amountProblem,
   buildCostItemBody,
   costKeyOptions,
+  heatingTargetOptions,
   customSharesSumText,
   itemToForm,
   meterTypeOptions,
@@ -671,4 +672,35 @@ test('Eine Heizposition, die zur kalten wird, geht durch die Rückfrage zum Auft
   const before = { serviceFrom: '2025-01-01', serviceTo: '2025-12-31', period: calendarPeriod(2025), category: 'Heizung und Warmwasser' }
   expect(needsSplitCheck(built.body, before)).toBe(true)
   expect(needsSplitCheck(built.body, { ...before, category: 'Grundsteuer' })).toBe(false)
+})
+
+test('Der Schlüssel „nach Heizkostenverordnung“ steht nur bei einer Position, die ihn schon hat (Heizung PR 10, bis Task 12)', () => {
+  expect(costKeyOptions([], 'area')).not.toContain('heatingSystem')
+  expect(costKeyOptions([], 'heatingSystem')).toContain('heatingSystem')
+})
+
+describe('Eigene Heizkostenabrechnung im Kostenformular (Heizung PR 10)', () => {
+  test('bei einer Anlage mit eigener Abrechnung gibt es nur den Schlüssel nach Heizkostenverordnung', () => {
+    expect(costKeyOptions([], 'area', true)).toEqual(['heatingSystem'])
+    expect(costKeyOptions([], 'area', false)).not.toContain('heatingSystem')
+    expect(costKeyOptions(['waerme'], 'heatingSystem', false)).toContain('heatingSystem')
+  })
+  test('Ziel: bei eigener Abrechnung nach der Warmwasserbereitung, bei freien Schlüsseln „beides“ oder „nur Heizung“', () => {
+    expect(heatingTargetOptions(true, 'combined', 'fuel').map((o) => o.value)).toEqual(['both'])
+    expect(heatingTargetOptions(true, 'separate', 'metering').map((o) => o.value)).toEqual(['heating', 'water'])
+    expect(heatingTargetOptions(false, 'combined', '').map((o) => o.value)).toEqual(['', 'heating'])
+  })
+  test('Teil und Ziel gehen in den Rumpf, nur bei Heizkosten; nach Heizkostenverordnung sind beide Pflicht', () => {
+    const heiz = { ...EMPTY_ITEM_FORM, category: 'Heizung und Warmwasser', description: 'Wartung', amount: '240,00', key: 'heatingSystem' as const, heatingPart: 'operating' as const, heatingTarget: 'both' as const }
+    const r = buildCostItemBody(heiz, [], 2025)
+    expect('body' in r && [r.body.key, r.body.heatingPart, r.body.heatingTarget]).toEqual(['heatingSystem', 'operating', 'both'])
+    const kalt = buildCostItemBody({ ...heiz, category: 'Müllabfuhr', key: 'area' }, [], 2025)
+    expect('body' in kalt && [kalt.body.heatingPart, kalt.body.heatingTarget]).toEqual([null, null])
+    expect(buildCostItemBody({ ...heiz, heatingTarget: '' }, [], 2025)).toEqual({ error: expect.stringMatching(/Ziel/) })
+    expect(buildCostItemBody({ ...heiz, heatingPart: '' }, [], 2025)).toEqual({ error: expect.stringMatching(/Teil der Heizkosten/) })
+  })
+  test('itemToForm liest das Ziel zurück', () => {
+    const f = itemToForm({ id: 'c', propertyId: 'p', period: periodKey('2025-01'), category: 'Heizung und Warmwasser', description: 'Gas', amountCents: 1, key: 'heatingSystem', heatingPart: 'fuel', heatingTarget: 'both' })
+    expect([f.heatingPart, f.heatingTarget]).toEqual(['fuel', 'both'])
+  })
 })
