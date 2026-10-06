@@ -36,12 +36,17 @@ export type HeatingForm = {
   name: string
   perUnitEnergy: HeatingEnergy | ''
   otherNames: Record<string, string>
+  // Recht I3 der Durchsicht von #238: im selben Gebäude wie eine andere Anlage (deren Kennung), in einem
+  // eigenen (`'own'`) oder noch nicht beantwortet (`''`). Keine Vorbelegung.
+  building: string
+  // Etagenheizung: Hat jede Wohnung einen eigenen Gaszähler? Ohne ihn gibt es keine Rechnung je Wohnung.
+  ownMeters: boolean
 }
 
 // Was die Einrichtung schickt. Die übrigen Felder der Anlage behalten ihre Vorgabe.
 export type HeatingPlantBody = Pick<
   HeatingPlant,
-  'energy' | 'supply' | 'method' | 'source' | 'devicesRemote' | 'devicesInstalledAfter2021' | 'capturedOnOct2024' | 'captureInstalledOn' | 'warmRentAverageCents' | 'units' | 'newDevicesInstall' | 'name'
+  'energy' | 'supply' | 'method' | 'source' | 'devicesRemote' | 'devicesInstalledAfter2021' | 'capturedOnOct2024' | 'captureInstalledOn' | 'warmRentAverageCents' | 'units' | 'newDevicesInstall' | 'name' | 'buildingWith'
 >
 // Name und Wohnungen einer bisherigen Anlage, die mit dem Anlegen geändert werden (Heizung PR 9).
 export type AdjustRow = { id: string; name: string; units: HeatingPlantUnit[] }
@@ -71,9 +76,16 @@ export const CONTRACT_OPTIONS: { value: Exclude<PerUnitContract, ''>; label: str
 
 // Womit Etagenheizungen auf Vertrag des Vermieters heizen können (Heizung PR 9). Ohne Vorratsenergien:
 // Der Vorrat wird je Heizanlage geführt, nicht je Wohnung.
+// Fernwärme bis in die Wohnung ist eine Wärmelieferung, keine Etagenheizung (§ 1 Abs. 1 Nr. 2 HeizkostenV).
 export const PER_UNIT_ENERGY_OPTIONS: { value: HeatingEnergy; label: string }[] = ENERGY_OPTIONS.flatMap((o) =>
-  o.value !== 'perUnit' && !isStockEnergy(o.value) ? [{ value: o.value, label: o.label }] : [],
+  o.value !== 'perUnit' && o.value !== 'districtHeating' && !isStockEnergy(o.value) ? [{ value: o.value, label: o.label }] : [],
 )
+
+// Die Antworten auf die Frage nach dem Gebäude: jede andere laufende Anlage oder ein eigenes Gebäude.
+export const buildingOptions = (others: readonly Pick<HeatingPlant, 'id' | 'name' | 'endsOn'>[], names: Record<string, string> = {}): { value: string; label: string }[] => [
+  ...others.filter((p) => p.endsOn === null).map((p) => ({ value: p.id, label: `Ja, im selben Gebäude wie „${(names[p.id] ?? p.name).trim() || 'die bisherige Heizanlage'}“` })),
+  { value: 'own', label: 'Nein, in einem anderen Gebäude' },
+]
 
 // Die Auswahl der Anlage an Kosten, Zählern und Lieferungen: erst ab zwei Anlagen. Eine stillgelegte
 // Anlage (Kesseltausch) nennt ihren letzten Betriebstag.
@@ -132,6 +144,8 @@ export const HOW_TO_TELL = {
   energy: 'Woran erkenne ich das? Am Brennstoff auf Ihrer Rechnung. Steht dort „Wärmelieferung“ oder „Fernwärme“, wählen Sie Fernwärme, auch wenn im Keller ein Kessel steht. Eine Wärmepumpe ist „Wärmepumpe“, nicht „Strom“; „Strom“ heißt Nachtspeicher- oder Elektroheizung.',
   who: 'Woran erkenne ich das? Bekommen Sie jedes Jahr eine Heizkostenabrechnung mit Beträgen je Wohnung, etwa von ista, Techem, Brunata, Minol oder KALO, wählen Sie „Ein Messdienst oder die Hausverwaltung“; das gilt auch für die Abrechnung einer Hausverwaltung. Gibt es keine Zähler oder Heizkostenverteiler in den Wohnungen, wählen Sie „Niemand“.',
   units: 'Woran erkenne ich das? Angeschlossen ist jede Wohnung, die von dieser Heizung warm wird. Eine Garage oder eine Wohnung mit eigener Gastherme gehört nicht dazu.',
+  // Recht I5 der Durchsicht von #238: bei der Etagenheizung ein eigener Satz.
+  unitsPerUnit: 'Haken Sie jede Wohnung an, deren Therme über Ihren Gasvertrag läuft. Wohnungen, deren Mieter einen eigenen Vertrag haben, gehören nicht dazu.',
   after: 'Den Zeitraum der Heizung stellen Sie nach dem Anlegen in dieser Karte mit „Zeitraum der Heizung ändern“ ein, wenn Ihr Messdienst nicht im Abrechnungszeitraum des Objekts abrechnet. Haupt- und Wärmezähler ordnen Sie auf der Seite Zähler der Heizung zu.',
 } as const
 
@@ -166,7 +180,7 @@ export function emptyHeatingForm(units: readonly UnitInfo[], others: readonly He
   return {
     energy: '', contract: '', who: '', unitIds: defaultUnitIds(units).filter((id) => !taken.has(id)), remote: 'unknown', installedAfter: 'unknown',
     captured: 'unknown', captureInstalledOn: '', warmRentAverage: '', newInstall: '',
-    name: '', perUnitEnergy: '', otherNames: Object.fromEntries(others.filter((p) => p.name.trim() === '' || p.units === null).map((p) => [p.id, p.name])),
+    name: '', perUnitEnergy: '', building: '', ownMeters: false, otherNames: Object.fromEntries(others.filter((p) => p.name.trim() === '' || p.units === null).map((p) => [p.id, p.name])),
   }
 }
 
@@ -188,6 +202,8 @@ export function heatingToForm(plant: HeatingPlant, units: readonly UnitInfo[]): 
     name: plant.name,
     perUnitEnergy: perUnit ? plant.energy : '',
     otherNames: {},
+    building: plant.buildingWith ?? '',
+    ownMeters: perUnit,
   }
 }
 
@@ -195,11 +211,16 @@ export function heatingToForm(plant: HeatingPlant, units: readonly UnitInfo[]): 
 // keine Anpassung anderer Anlagen, Heizung PR 9).
 export function heatingPlantBody(form: HeatingForm, units: readonly UnitInfo[], others: readonly HeatingPlant[] = [], editingId: string | null = null): HeatingResult {
   if (form.energy === '') return { error: 'Bitte wählen Sie, womit geheizt wird.' }
+  // Die Frage nach dem Gebäude (Recht I3 der Durchsicht von #238): beim Anlegen neben einer laufenden Anlage Pflicht.
+  if (!editingId && others.some((p) => p.endsOn === null) && form.building === '') {
+    return { error: 'Steht die neue Heizanlage im selben Gebäude wie eine bisherige? Bitte wählen Sie; im selben Gebäude stuft Mietfuchs die Anlagen für die CO₂-Aufteilung gemeinsam ein.' }
+  }
   const several = others.length > 0
   const name = form.name.trim()
   if (several && name === '') {
     return { error: editingId ? 'Bitte geben Sie der Heizanlage einen Namen.' : 'Bitte geben Sie der neuen Heizanlage einen Namen, etwa „Haus B“ oder „Gastherme DG“.' }
   }
+  const buildingWith = form.building === '' ? null : form.building
   // Die bisherigen Anlagen ohne Namen oder ohne Liste bekommen beides mit dem Anlegen (Review Focus 1).
   const adjust: AdjustRow[] = []
   if (!editingId) {
@@ -220,10 +241,13 @@ export function heatingPlantBody(form: HeatingForm, units: readonly UnitInfo[], 
     // Etagenheizung auf Vertrag des Vermieters (Heizung PR 9, § 5 Abs. 1 Satz 2 CO2KostAufG): Die
     // Rechnung jeder Wohnung wird ihr direkt zugeordnet.
     if (form.perUnitEnergy === '') return { error: 'Womit heizen die Etagenheizungen?' }
+    if (!form.ownMeters) {
+      return { error: 'Mietfuchs ordnet die Rechnung jeder Wohnung dieser Wohnung zu; dafür braucht jede einen eigenen Gaszähler mit eigener Rechnung. Teilen sich Wohnungen einen Zähler, erfasst Mietfuchs das noch nicht.' }
+    }
     if (form.unitIds.length === 0) return { error: 'Bitte haken Sie mindestens eine Wohnung an, die eine solche Heizung hat.' }
     return {
       body: {
-        name, energy: form.perUnitEnergy, supply: 'perUnit', method: 'manual', source: 'building', devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown',
+        name, buildingWith, energy: form.perUnitEnergy, supply: 'perUnit', method: 'manual', source: 'building', devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown',
         capturedOnOct2024: null, captureInstalledOn: null, warmRentAverageCents: null, units: unitList, newDevicesInstall: null,
       },
       adjust,
@@ -254,6 +278,7 @@ export function heatingPlantBody(form: HeatingForm, units: readonly UnitInfo[], 
       units: unitList,
       newDevicesInstall: asksNewInstall(form) && form.newInstall !== '' ? form.newInstall : null,
       name,
+      buildingWith,
     },
     adjust,
   }

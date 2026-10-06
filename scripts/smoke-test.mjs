@@ -539,7 +539,7 @@ async function plantsOfProperty() {
   }
   const erste = (await request(`/api/heating-plants${q}`, json('POST', { energy: 'gas', method: 'manual', assignItemIds: [] }))).body.plant
   const zweite = await request(`/api/heating-plants${q}`, json('POST', {
-    name: 'Gastherme OG', energy: 'gas', supply: 'perUnit', method: 'manual', units: [{ unitId: og.id, heatedAreaM2: null }], assignItemIds: [],
+    name: 'Gastherme OG', buildingWith: 'own', energy: 'gas', supply: 'perUnit', method: 'manual', units: [{ unitId: og.id, heatedAreaM2: null }], assignItemIds: [],
     adjust: [{ id: erste.id, name: 'Zentralheizung', units: [{ unitId: eg.id, heatedAreaM2: null }] }],
   }))
   assert(zweite.status === 201, 'zweite Heizanlage anlegen, die erste im selben Schritt benennen', zweite.body)

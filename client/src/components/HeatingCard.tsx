@@ -9,7 +9,7 @@ import Term from './Term'
 import HeatingPeriodSection from './HeatingPeriodSection'
 import { useFocusTarget, type FocusProps } from '../focus'
 import {
-  CAPTURE_OPTIONS, CONTRACT_OPTIONS, ENERGY_OPTIONS, HOW_TO_TELL, asksRemote, INSTALLED_OPTIONS, NEW_DEVICES_AFTER, NEW_INSTALL_OPTIONS, NEW_INSTALL_QUESTION, PER_UNIT_ENERGY_OPTIONS, REMOTE_OPTIONS, asksNewInstall, canSwap, emptyHeatingForm, emptySwapForm, heatingPlantBody,
+  CAPTURE_OPTIONS, CONTRACT_OPTIONS, ENERGY_OPTIONS, HOW_TO_TELL, asksRemote, INSTALLED_OPTIONS, NEW_DEVICES_AFTER, NEW_INSTALL_OPTIONS, NEW_INSTALL_QUESTION, PER_UNIT_ENERGY_OPTIONS, REMOTE_OPTIONS, asksNewInstall, buildingOptions, canSwap, emptyHeatingForm, emptySwapForm, heatingPlantBody,
   connectionNote, heatingSummary, heatingToForm, swapBody, whoHint, whoOptions, type CaptureAnswer, type EnergyAnswer, type HeatingForm, type PerUnitContract, type SwapForm, type WhoSettles,
 } from '../heatingForm'
 
@@ -131,7 +131,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
     setError('')
     setSwap(null)
     await loadAll()
-    toast('Kesseltausch gespeichert. Tragen Sie bei der bisherigen Heizung den Restbestand zum letzten Betriebstag ein, wenn noch Brennstoff im Tank ist.')
+    toast('Heizung erneuert. Tragen Sie bei der bisherigen Heizung den Endbestand zum letzten Betriebstag ein, wenn noch Brennstoff im Tank ist.')
   }
 
   async function remove(p: HeatingPlant) {
@@ -171,7 +171,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
           </label>
         ))}
       </div>
-      <small className="muted">{HOW_TO_TELL.units}</small>
+      <small className="muted">{form.energy === 'perUnit' ? HOW_TO_TELL.unitsPerUnit : HOW_TO_TELL.units}</small>
     </fieldset>
   )
   const periodText = (key: AssignableHeatingItem['period']): string => {
@@ -204,7 +204,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
             notify={toast}
             actions={<>
               <button className="btn secondary" onClick={() => openEdit(p)}>Ändern</button>
-              {canSwap(p) && <button className="btn secondary" onClick={() => openSwap(p)}>Kessel getauscht</button>}
+              {canSwap(p) && <button className="btn secondary" onClick={() => openSwap(p)}>Heizung erneuert (Kessel getauscht)</button>}
             </>}
             dangerAction={<button className="btn ghost danger-ghost" onClick={() => remove(p)}>Entfernen</button>}
           />
@@ -249,6 +249,16 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
               ))}
             </>
           )}
+          {(editingId ? plants.length > 1 : plants.some((p) => p.endsOn === null)) && (
+            <label className="field grow">
+              {editingId ? 'Steht diese Heizanlage im selben Gebäude wie eine andere?' : 'Steht die neue Heizanlage im selben Gebäude wie eine bisherige?'}
+              <select value={form.building} onChange={(e) => setForm({ ...form, building: e.target.value })}>
+                <option value="">— bitte wählen —</option>
+                {buildingOptions(plants.filter((p) => p.id !== editingId), form.otherNames).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+              <small className="muted">Im selben Gebäude stuft Mietfuchs die Anlagen für die CO₂-Aufteilung gemeinsam ein, über den Ausstoß aller Anlagen und die Wohnfläche aller versorgten Wohnungen (§ 5 Abs. 1 CO2KostAufG); das ist eine Auslegung.</small>
+            </label>
+          )}
           <label className="field grow">
             Womit wird geheizt?
             <select value={form.energy} onChange={(e) => setForm({ ...form, energy: e.target.value as EnergyAnswer | '' })}>
@@ -275,10 +285,15 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
                       {PER_UNIT_ENERGY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
                   </label>
+                  <label className="checkline">
+                    <input type="checkbox" checked={form.ownMeters} onChange={(e) => setForm({ ...form, ownMeters: e.target.checked })} />
+                    Jede dieser Wohnungen hat einen eigenen Gaszähler mit eigener Rechnung
+                  </label>
                   <p className="muted">
                     Ordnen Sie die Rechnung jeder Wohnung auf der Seite Kosten direkt dieser Wohnung zu, mit der Kostenart „Heizung und
                     Warmwasser“, und tragen Sie die Rechnung auf der Seite Heizkosten mit ihrer Wohnung ein. Für die CO₂-Aufteilung zählt die
-                    Wohnfläche der vermieteten Wohnungen mit eigener Heizung (§ 5 Abs. 1 Satz 2 CO2KostAufG).
+                    Wohnfläche der vermieteten Wohnungen mit eigener Heizung (§ 5 Abs. 1 Satz 2 CO2KostAufG). Für eine{' '}
+                    <Term id="perUnitHeating">Etagenheizung</Term> gilt die Heizkostenverordnung nicht; ob Sie die Gaskosten umlegen dürfen, hängt an Ihrem Mietvertrag.
                   </p>
                   {unitChoice}
                 </>
@@ -357,7 +372,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
       {swap && (
         <Drawer
           open
-          title="Kessel getauscht"
+          title="Heizung erneuert (Kessel getauscht)"
           onClose={() => { setError(''); setSwap(null) }}
           onSubmit={saveSwap}
           footer={
@@ -372,8 +387,10 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
           {error && <div className="error">{error}</div>}
           <p className="muted">
             Die bisherige Heizung endet am Tag vor dem Tausch; eine neue Heizanlage beginnt mit denselben Wohnungen. Lieferungen, Positionen und
-            Vorrat bleiben bei der bisherigen. Ist noch Brennstoff im Tank, tragen Sie ihn als Endbestand zum letzten Betriebstag ein: Die Mieter
-            tragen nur den verbrauchten Brennstoff, der Restbestand gehört Ihnen und steht mit seinem Wert bei Ihrem Anteil.
+            Vorrat bleiben bei der bisherigen. Ist noch Brennstoff im Tank, tragen Sie ihn als Endbestand zum letzten Betriebstag ein. Heizt die
+            neue Anlage mit demselben Brennstoff aus demselben Tank, wird er ihr Anfangsbestand; sonst tragen die Mieter den{' '}
+            <Term id="boilerSwap">Restbestand</Term> nicht, und er steht mit seinem Wert bei Ihnen. Bleibt der Energieträger gleich und läuft
+            er über denselben Zähler, etwa Gas, brauchen Sie keinen Tausch.
           </p>
           <label className="field grow">
             Seit wann heizt die neue Heizung?

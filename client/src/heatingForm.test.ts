@@ -1,6 +1,6 @@
 // Die Einrichtung „Heizung“ (Heizung PR 4, Entwurf 11.2), ohne DOM.
 import { describe, expect, test } from 'vitest'
-import { asksNewInstall, canSwap, connectionNote, emptyHeatingForm, emptySwapForm, HOT_WATER_OPTIONS, hotWaterBody, isFormula, PER_UNIT_ENERGY_OPTIONS, plantOptions, swapBody, unmeasurableLabel, heatingPlantBody, heatingSummary, heatingToForm, whoHint, whoOptions, type HeatingForm } from './heatingForm'
+import { asksNewInstall, buildingOptions, canSwap, connectionNote, emptyHeatingForm, emptySwapForm, HOT_WATER_OPTIONS, hotWaterBody, isFormula, PER_UNIT_ENERGY_OPTIONS, plantOptions, swapBody, unmeasurableLabel, heatingPlantBody, heatingSummary, heatingToForm, whoHint, whoOptions, type HeatingForm } from './heatingForm'
 import type { HeatingPlant, Unit } from './types'
 
 const UNITS: Pick<Unit, 'id' | 'name' | 'noConnection'>[] = [{ id: 'eg', name: 'EG' }, { id: 'og', name: 'OG' }, { id: 'garage', name: 'Garage', noConnection: ['waerme'] }]
@@ -9,7 +9,7 @@ const PLANT: HeatingPlant = {
   id: 'hp1', propertyId: 'objekt-1', name: '', energy: 'heatPump', supply: 'central', method: 'service', separateSettlement: null,
   devicesRemote: 'partial', devicesInstalledAfter2021: 'some', source: 'building', captureInstalledOn: '2025-06-01', capturedOnOct2024: false,
   warmRentAverageCents: 123456, changeSplit: 'degreeDays', periodStartMonth: null, periodChanges: [], separateSpans: [], units: [{ unitId: 'og', heatedAreaM2: null }],
-  newDevicesInstall: 'single', nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null,
+  newDevicesInstall: 'single', nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null,
 }
 
 describe('Einrichtung Heizung', () => {
@@ -18,7 +18,7 @@ describe('Einrichtung Heizung', () => {
     expect(heatingPlantBody(ausgefuellt(), UNITS)).toEqual({
       body: {
         energy: 'gas', supply: 'central', method: 'service', source: 'building', devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown',
-        capturedOnOct2024: null, captureInstalledOn: null, warmRentAverageCents: null, units: null, newDevicesInstall: null, name: '',
+        capturedOnOct2024: null, captureInstalledOn: null, warmRentAverageCents: null, units: null, newDevicesInstall: null, name: '', buildingWith: null,
       },
       adjust: [],
     })
@@ -117,13 +117,17 @@ describe('Mehrere Heizanlagen und Etagenheizung (Heizung PR 9)', () => {
   const ERSTE: HeatingPlant = { ...PLANT, id: 'hp1', name: '', units: null }
 
   test('Die zweite Anlage braucht einen Namen, und die erste bekommt Namen und die übrigen Wohnungen im selben Schritt', () => {
-    const form = { ...emptyHeatingForm(UNITS3, [ERSTE]), energy: 'gas' as const, who: 'manual' as const, unitIds: ['dg'] }
-    expect(form.otherNames).toEqual({ hp1: '' })
+    const ohneGebaeude = { ...emptyHeatingForm(UNITS3, [ERSTE]), energy: 'gas' as const, who: 'manual' as const, unitIds: ['dg'] }
+    expect(ohneGebaeude.otherNames).toEqual({ hp1: '' })
+    // Recht I3 der Durchsicht von #238: die Frage nach dem Gebäude, ohne Vorbelegung.
+    expect(ohneGebaeude.building).toBe('')
+    expect(heatingPlantBody(ohneGebaeude, UNITS3, [ERSTE])).toEqual({ error: expect.stringMatching(/im selben Gebäude wie eine bisherige/) })
+    const form = { ...ohneGebaeude, building: 'hp1' }
     expect(heatingPlantBody(form, UNITS3, [ERSTE])).toEqual({ error: 'Bitte geben Sie der neuen Heizanlage einen Namen, etwa „Haus B“ oder „Gastherme DG“.' })
     expect(heatingPlantBody({ ...form, name: 'Haus B' }, UNITS3, [ERSTE])).toEqual({ error: 'Bitte geben Sie auch der bisherigen Heizanlage einen Namen, etwa „Zentralheizung“.' })
     const result = heatingPlantBody({ ...form, name: 'Haus B', otherNames: { hp1: 'Zentralheizung' } }, UNITS3, [ERSTE])
     if (!('body' in result)) throw new Error(JSON.stringify(result))
-    expect(result.body).toMatchObject({ name: 'Haus B', supply: 'central', units: [{ unitId: 'dg', heatedAreaM2: null }] })
+    expect(result.body).toMatchObject({ name: 'Haus B', supply: 'central', buildingWith: 'hp1', units: [{ unitId: 'dg', heatedAreaM2: null }] })
     expect(result.adjust).toEqual([{ id: 'hp1', name: 'Zentralheizung', units: [{ unitId: 'eg', heatedAreaM2: null }, { unitId: 'og', heatedAreaM2: null }] }])
   })
 
@@ -131,20 +135,23 @@ describe('Mehrere Heizanlagen und Etagenheizung (Heizung PR 9)', () => {
     const begrenzt: HeatingPlant = { ...ERSTE, name: 'Zentralheizung', units: [{ unitId: 'eg', heatedAreaM2: null }, { unitId: 'og', heatedAreaM2: null }] }
     expect(emptyHeatingForm(UNITS3, [begrenzt]).unitIds).toEqual(['dg'])
     expect(emptyHeatingForm(UNITS3, [ERSTE]).unitIds).toEqual([])
-    const alle = { ...emptyHeatingForm(UNITS3, [ERSTE]), energy: 'gas' as const, who: 'manual' as const, name: 'Neu', otherNames: { hp1: 'Alt' }, unitIds: ['eg', 'og', 'dg'] }
+    const alle = { ...emptyHeatingForm(UNITS3, [ERSTE]), energy: 'gas' as const, who: 'manual' as const, name: 'Neu', otherNames: { hp1: 'Alt' }, unitIds: ['eg', 'og', 'dg'], building: 'own' }
     expect(heatingPlantBody(alle, UNITS3, [ERSTE])).toEqual({ error: 'An „Alt“ hinge dann keine Wohnung mehr. Ändern Sie stattdessen die bisherige Heizanlage.' })
   })
 
   test('Etagenheizung mit Vertrag beim Vermieter: Anlage perUnit mit freien Schlüsseln, ohne Vorratsenergien', () => {
-    expect(PER_UNIT_ENERGY_OPTIONS.map((o) => o.value)).toEqual(['gas', 'districtHeating', 'heatPump', 'electric', 'other'])
+    // Recht M5 der Durchsicht von #238: Fernwärme ist eine Wärmelieferung, keine Etagenheizung.
+    expect(PER_UNIT_ENERGY_OPTIONS.map((o) => o.value)).toEqual(['gas', 'heatPump', 'electric', 'other'])
     const form = { ...emptyHeatingForm(UNITS3), energy: 'perUnit' as const, contract: 'landlord' as const }
     expect(heatingPlantBody(form, UNITS3)).toEqual({ error: 'Womit heizen die Etagenheizungen?' })
-    const result = heatingPlantBody({ ...form, perUnitEnergy: 'gas' }, UNITS3)
+    // Recht I4: Direktzuordnung je Wohnung setzt einen eigenen Gaszähler voraus.
+    expect(heatingPlantBody({ ...form, perUnitEnergy: 'gas' }, UNITS3)).toEqual({ error: expect.stringMatching(/eigenen Gaszähler/) })
+    const result = heatingPlantBody({ ...form, perUnitEnergy: 'gas', ownMeters: true }, UNITS3)
     if (!('body' in result)) throw new Error(JSON.stringify(result))
     expect(result.body).toMatchObject({ energy: 'gas', supply: 'perUnit', method: 'manual', source: 'building', units: null })
     expect(heatingPlantBody({ ...form, contract: 'tenant' }, UNITS3)).toHaveProperty('none')
     const zurueck = heatingToForm({ ...PLANT, supply: 'perUnit', method: 'manual', energy: 'gas' }, UNITS3)
-    expect([zurueck.energy, zurueck.contract, zurueck.perUnitEnergy]).toEqual(['perUnit', 'landlord', 'gas'])
+    expect([zurueck.energy, zurueck.contract, zurueck.perUnitEnergy, zurueck.ownMeters]).toEqual(['perUnit', 'landlord', 'gas', true])
     expect(heatingSummary({ ...PLANT, name: 'Gasthermen', supply: 'perUnit', method: 'manual', energy: 'gas' }, UNITS3).slice(0, 3)).toEqual([
       'Name: Gasthermen', 'Energie: Gas, Etagenheizung je Wohnung (Vertrag bei Ihnen)', 'Abrechnung: Direktzuordnung der Rechnung jeder Wohnung',
     ])
@@ -160,6 +167,15 @@ describe('Mehrere Heizanlagen und Etagenheizung (Heizung PR 9)', () => {
     if (!('body' in result)) throw new Error(JSON.stringify(result))
     expect(result.adjust).toEqual([])
     expect(result.body.units).toEqual([{ unitId: 'eg', heatedAreaM2: null }, { unitId: 'og', heatedAreaM2: null }])
+  })
+
+  test('Gebäude: jede laufende andere Anlage oder ein eigenes Gebäude (Recht I3 der Durchsicht von #238)', () => {
+    const alt: HeatingPlant = { ...PLANT, id: 'alt', name: 'Öl', endsOn: '2024-12-31' }
+    const zentral: HeatingPlant = { ...PLANT, id: 'hp1', name: '' }
+    expect(buildingOptions([alt, zentral], { hp1: 'Zentralheizung' })).toEqual([
+      { value: 'hp1', label: 'Ja, im selben Gebäude wie „Zentralheizung“' },
+      { value: 'own', label: 'Nein, in einem anderen Gebäude' },
+    ])
   })
 
   test('Auswahl der Anlage erst ab zwei; eine stillgelegte Anlage nur, wenn sie gerade gewählt ist', () => {

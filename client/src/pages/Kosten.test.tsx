@@ -294,20 +294,21 @@ test('Laienprobe B19: Heizung mit Einzelbeträgen bei Messdienst-Anlage nennt de
 })
 
 test('Zwei Heizanlagen (Heizung PR 9): die Heizposition wählt ihre Anlage; ohne Wahl ordnet der Server nach den Wohnungen', async () => {
-  const anlage = (id: string, name: string, endsOn: string | null) => ({
+  const anlage = (id: string, name: string, endsOn: string | null, unitIds: string[] = []) => ({
     id, propertyId: 'objekt-1', name, energy: 'gas', supply: 'central', method: 'manual', separateSettlement: null,
     devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null, capturedOnOct2024: null,
-    warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null, periodChanges: [], separateSpans: [], units: [], newDevicesInstall: null,
+    warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null, periodChanges: [], separateSpans: [], units: unitIds.map((unitId) => ({ unitId, heatedAreaM2: null })), newDevicesInstall: null,
     nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn, replacesPlantId: null,
   })
-  plants = [anlage('hp1', 'Ölkessel', '2025-06-30'), anlage('hp2', 'Gastherme', null)]
+  plants = [anlage('hp1', 'Ölkessel', '2025-06-30', ['u2', 'u3']), anlage('hp2', 'Gastherme', null, ['u2', 'u3'])]
   await openForm()
   fireEvent.change(select(/Kostenart/i), { target: { value: 'Heizung und Warmwasser' } })
-  const wahl = await waitFor(() => select(/^Heizanlage$/))
-  expect([...wahl.options].map((o) => o.textContent)).toEqual(['— nach den Wohnungen der Position —', 'Ölkessel (bis 30.06.2025)', 'Gastherme'])
+  const wahl = await waitFor(() => select(/^Heizanlage(?!n)/))
+  expect([...wahl.options].map((o) => o.textContent)).toEqual(['automatisch (nach den beteiligten Wohnungen)', 'Ölkessel (bis 30.06.2025)', 'Gastherme'])
   fireEvent.change(wahl, { target: { value: 'hp2' } })
-  expect(select(/^Heizanlage$/).value).toBe('hp2')
+  expect(select(/^Heizanlage(?!n)/).value).toBe('hp2')
   fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/i }))
   await waitFor(() => expect(sent).toHaveLength(1))
-  expect(sent[0].body).toMatchObject({ category: 'Heizung und Warmwasser', heatingPlantId: 'hp2' })
+  // Recht I2 der Durchsicht von #238: Die Wahl der Anlage beteiligt deren Wohnungen.
+  expect(sent[0].body).toMatchObject({ category: 'Heizung und Warmwasser', heatingPlantId: 'hp2', participantUnitIds: ['u2', 'u3'] })
 })

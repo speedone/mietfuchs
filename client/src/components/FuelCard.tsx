@@ -115,6 +115,13 @@ export default function FuelCard({ plant, view, deliveries, units = [], onSaved 
           auf: nach einem Zählerstand zum Stichtag, nach Teilmengen der Rechnung oder nach <Term id="degreeDays">Gradtagen</Term>.
         </p>
       )}
+      {plant.supply === 'perUnit' && (
+        <p className="muted">
+          Etagenheizung: Tragen Sie die Rechnung jeder Wohnung mit ihrer Wohnung ein. Nennt eine Sammelrechnung mehrere Zählpunkte, tragen
+          Sie für jede Wohnung eine eigene Lieferung mit ihrem Teil ein. Beim Mieterwechsel teilt Mietfuchs die Rechnung der Wohnung nach
+          Tagen auf die Mieter auf, nicht nach einem Zwischenstand des Gaszählers.
+        </p>
+      )}
       {deliveries.length === 0 && <p className="muted">{stock ? 'Noch keine Lieferung in dieser Heizperiode.' : 'Noch keine Lieferung, die in dieser Heizperiode endet.'}</p>}
       <ul className="plain">
         {deliveries.map((d) => (

@@ -139,24 +139,33 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - **Mehrere Heizanlagen in einem Objekt.** In den Stammdaten legen Sie mit „+ weitere Heizanlage“ eine
   zweite Anlage an, etwa für ein zweites Haus, das mit dem ersten abrechnet. Jede Anlage hat einen Namen
   und ihre Wohnungen; die bisherige bekommt beides im selben Schritt. Jede Anlage wird für die
-  CO₂-Aufteilung für sich eingestuft. Verteilt eine Heizposition über Wohnungen beider Anlagen, sagt die
-  Abrechnung das als Fehler an der Position; verteilt wird sie weiter wie bisher. Auf den Seiten Kosten
-  und Zähler wählen Sie ab zwei Heizanlagen die Anlage
+  CO₂-Aufteilung für sich eingestuft, außer sie steht nach Ihrer Angabe im selben Gebäude wie eine
+  andere: Dann werden beide gemeinsam eingestuft (§ 5 Abs. 1 Satz 1 und 2 CO2KostAufG; eine Auslegung,
+  höchstrichterlich nicht geklärt). Verteilt eine Heizposition über Wohnungen beider Anlagen, sagt die
+  Abrechnung das als Fehler an der Position, mit der Kürzung um 3 % und dem Handgriff; verteilt wird sie
+  weiter wie bisher. Auf den Seiten Kosten und Zähler wählen Sie ab zwei Heizanlagen die Anlage; die Wahl
+  beteiligt an der Position die Wohnungen der Anlage
   ([#97](https://github.com/speedone/mietfuchs/issues/97)).
 - **Etagenheizungen, deren Vertrag Sie haben.** Unter „Jede Wohnung hat eine eigene Heizung“ mit „Ich
   habe den Vertrag“ legt Mietfuchs eine Etagenheizung an. Die Rechnung jeder Wohnung ordnen Sie dieser
   Wohnung direkt zu und tragen sie auf der Seite Heizkosten mit ihrer Wohnung ein. Die CO₂-Einstufung
   rechnet über die vermieteten Wohnungen mit eigener Heizung und deren Gesamtwohnfläche (§ 5 Abs. 1
   Satz 2 CO2KostAufG); jeder Mieter bekommt den Anteil des Vermieters an den CO₂-Kosten seiner Wohnung
-  nach seinem Anteil an deren Heizkosten, ein Leerstand bleibt beim Vermieter
+  nach seinem Anteil an deren Heizkosten, ein Leerstand bleibt beim Vermieter. Jede Wohnung braucht
+  dafür einen eigenen Gaszähler. Für Etagenheizungen gilt die Heizkostenverordnung nicht, und ob Sie die
+  Gaskosten umlegen dürfen, ist nicht geklärt; die Abrechnung sagt das
   ([#97](https://github.com/speedone/mietfuchs/issues/97)).
-- **Kessel getauscht.** Wird die Heizung erneuert, etwa Öl gegen Gas, wählen Sie bei der Heizanlage
-  „Kessel getauscht“: Die bisherige Anlage endet am Tag vor dem Tausch, eine neue beginnt mit denselben
-  Wohnungen. Ein Restbestand im Tank wird den Mietern gutgeschrieben, denn sie tragen nur den
-  verbrauchten Brennstoff; er gehört Ihnen und steht mit seinem Wert bei Ihrem Anteil. Eingestuft wird
+- **Heizung erneuert (Kessel getauscht).** Wird die Heizung erneuert, etwa Öl gegen Gas, wählen Sie bei der
+  Heizanlage „Heizung erneuert (Kessel getauscht)“: Die bisherige Anlage endet am Tag vor dem Tausch, eine
+  neue beginnt mit denselben Wohnungen; auch ein zweiter Tausch geht, und das Entfernen der neuen Anlage
+  macht den Tausch rückgängig. Heizt die neue Anlage mit demselben Brennstoff aus demselben Tank, wird der
+  Restbestand ihr Anfangsbestand; sonst tragen ihn die Mieter nicht, denn sie tragen nur den verbrauchten
+  Brennstoff, und er steht mit seinem Wert bei Ihrem Anteil. Bleibt Gas über denselben Zähler, braucht es
+  keinen Tausch. Eingestuft wird
   das Gebäude im Jahr des Tauschs über den Ausstoß beider Anlagen (§ 5 Abs. 1 Satz 1 CO2KostAufG). Die
-  Steuerübersicht nimmt die Rechnungen wie bisher voll
-  ([#97](https://github.com/speedone/mietfuchs/issues/97)).
+  Steuerübersicht nimmt die Rechnungen wie bisher voll. Neue Anleitung „Heizung erneuert, zweite
+  Heizanlage oder Etagenheizung“ und Lexikon-Einträge „Etagenheizung“ und „Heizung erneuert
+  (Kesseltausch) und Restbestand“ ([#97](https://github.com/speedone/mietfuchs/issues/97)).
 
 ### Geändert
 

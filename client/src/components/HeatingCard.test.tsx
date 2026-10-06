@@ -15,7 +15,7 @@ const UNITS: Unit[] = [
 const PLANT: HeatingPlant = {
   id: 'hp1', propertyId: 'objekt-1', name: '', energy: 'districtHeating', supply: 'central', method: 'manual', separateSettlement: null,
   devicesRemote: 'partial', devicesInstalledAfter2021: 'some', source: 'building', captureInstalledOn: null, capturedOnOct2024: null,
-  warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null, periodChanges: [], separateSpans: [], units: null, newDevicesInstall: 'single', nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null,
+  warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null, periodChanges: [], separateSpans: [], units: null, newDevicesInstall: 'single', nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null,
 }
 const ITEM: AssignableHeatingItem = { id: 'c1', period: periodKey('2025-01'), description: 'Fernwärme 2025', amountCents: 240000 }
 
@@ -112,10 +112,16 @@ test('„+ weitere Heizanlage“ legt die zweite an und benennt die erste im sel
   fireEvent.change(screen.getByLabelText('Name der neuen Heizanlage'), { target: { value: 'Haus B' } })
   fireEvent.change(screen.getByLabelText('Name der bisherigen Heizanlage'), { target: { value: 'Zentralheizung' } })
   fireEvent.click(screen.getByRole('checkbox', { name: 'OG' }))
+  // Recht I3 der Durchsicht von #238: ohne Antwort auf die Frage nach dem Gebäude nichts gesendet.
+  fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }))
+  await waitFor(() => expect(screen.getByText(/im selben Gebäude wie eine bisherige\? Bitte wählen Sie/)).toBeTruthy())
+  expect(sent).toHaveLength(0)
+  expect(valueOf(/Steht die neue Heizanlage im selben Gebäude/)).toBe('')
+  fireEvent.change(screen.getByLabelText(/Steht die neue Heizanlage im selben Gebäude/), { target: { value: 'hp1' } })
   fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }))
   await waitFor(() => expect(sent).toHaveLength(1))
   expect(sent[0]?.body).toMatchObject({
-    name: 'Haus B', units: [{ unitId: 'og', heatedAreaM2: null }], assignItemIds: [],
+    name: 'Haus B', buildingWith: 'hp1', units: [{ unitId: 'og', heatedAreaM2: null }], assignItemIds: [],
     adjust: [{ id: 'hp1', name: 'Zentralheizung', units: [{ unitId: 'eg', heatedAreaM2: null }] }],
   })
 })
@@ -129,16 +135,19 @@ test('Etagenheizung: „Ich habe den Vertrag“ fragt nach der Energie und legt 
   fireEvent.change(screen.getByLabelText(/Wer hat den Vertrag/), { target: { value: 'landlord' } })
   fireEvent.change(screen.getByLabelText(/Womit heizen die Etagenheizungen/), { target: { value: 'gas' } })
   expect(screen.getByText(/§ 5 Abs\. 1 Satz 2 CO2KostAufG/)).toBeTruthy()
+  // Recht I5 der Durchsicht von #238: ein eigener Satz zur Auswahl der Wohnungen.
+  expect(screen.getByText(/deren Therme über Ihren Gasvertrag läuft/)).toBeTruthy()
+  fireEvent.click(screen.getByRole('checkbox', { name: /eigenen Gaszähler/ }))
   fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }))
   await waitFor(() => expect(sent).toHaveLength(1))
   expect(sent[0]?.body).toMatchObject({ energy: 'gas', supply: 'perUnit', method: 'manual', units: null })
 })
 
-test('Kessel getauscht: Tag, Energie und Namen gehen an die Route des Tauschs (Heizung PR 9)', async () => {
+test('Heizung erneuert (Kessel getauscht): Tag, Energie und Namen gehen an die Route des Tauschs (Heizung PR 9)', async () => {
   plants = [{ ...PLANT, energy: 'oil' }]
   renderCard()
-  await waitFor(() => expect(screen.getByRole('button', { name: 'Kessel getauscht' })).toBeTruthy())
-  fireEvent.click(screen.getByRole('button', { name: 'Kessel getauscht' }))
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Heizung erneuert (Kessel getauscht)' })).toBeTruthy())
+  fireEvent.click(screen.getByRole('button', { name: 'Heizung erneuert (Kessel getauscht)' }))
   fireEvent.click(screen.getByRole('button', { name: 'Tausch speichern' }))
   await waitFor(() => expect(screen.getByText('Bitte wählen Sie den Tag, an dem die neue Heizung in Betrieb ging.')).toBeTruthy())
   fireEvent.change(screen.getByLabelText('Seit wann heizt die neue Heizung?'), { target: { value: '2025-07-01' } })

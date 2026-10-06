@@ -756,10 +756,20 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             {form.category === HEATING_CATEGORY && plantChoices.length > 0 && (
               <label className="field grow">
                 Heizanlage
-                <select value={heatingPlantId} onChange={(e) => { setHeatingPlantId(e.target.value); setHeatingPeriod('') }}>
-                  <option value="">— nach den Wohnungen der Position —</option>
+                <select value={heatingPlantId} onChange={(e) => {
+                  setHeatingPlantId(e.target.value)
+                  setHeatingPeriod('')
+                  // Recht I2 der Durchsicht von #238: Die Wahl der Anlage beteiligt deren Wohnungen, damit die
+                  // Position nicht über zwei Anlagen verteilt wird.
+                  const chosen = plants.find((p) => p.id === e.target.value)
+                  if (chosen?.units && PARTICIPANT_KEYS.includes(form.key) && basisUnits.length > 1) {
+                    setForm({ ...form, participants: chosen.units.map((u) => u.unitId).filter((id) => basisUnits.some((b) => b.id === id)) })
+                  }
+                }}>
+                  <option value="">automatisch (nach den beteiligten Wohnungen)</option>
                   {plantChoices.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
+                <small className="muted">Automatisch: Mietfuchs nimmt die Anlage, an der alle beteiligten Wohnungen hängen und die zu Beginn des Leistungszeitraums heizt; passt keine eindeutig, bleibt die Position ohne Anlage, und die Abrechnung sagt es.</small>
               </label>
             )}
             {form.category === HEATING_CATEGORY && ownPlant && ownPlant.options.length > 0 && (
