@@ -390,3 +390,13 @@ test('W6: Gutschrift ohne Kennzeichen zählt nicht gegen die Schwelle: Vorbelegu
     assert.match(n.text, /„Wartung Brenner 2024“ \(250,00 €\) und „Heizöl 2024“ \(2\.500,00 €\)\./)
   })
 })
+
+// Nachprüfung von 819398e: Die Meldung nennt das Feld so, wie es im Formular heißt.
+test('Teil der Heizkosten nur bei Heizkosten: Die Meldung nennt „Teil der Heizkosten“', async () => {
+  await withHouse(async (h) => {
+    await assert.rejects(
+      h.opened.write((db) => createEntity(db, 'costItems', 'x', { propertyId: 'objekt-1', period: '2024-01', category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 50000, key: 'area', heatingPart: 'operating' })),
+      (err: unknown) => err instanceof Error && /„Teil der Heizkosten“ gibt es nur bei der Kostenart „Heizung und Warmwasser“/.test(err.message),
+    )
+  })
+})
