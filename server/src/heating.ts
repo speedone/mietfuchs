@@ -29,6 +29,7 @@ import { degreeDayPermille } from '../../shared/degreeDays.ts'
 import type { DegreeDayTable, HeatPumpCapture } from '../../shared/law/heizkostenv.ts'
 import type { ReadingOffWarning } from '../../shared/law/practice.ts'
 import { dayAfter, dayBefore } from '../../shared/law/register.ts'
+import { lineRoot } from '../../shared/heatingPeriod.ts'
 import type {
   AreaBasisHeat, ChangeSplit, DhwMethod, HeatingEnergy, HeatingPart, HeatingTarget, HotWater, InsulationRule, InterimGap, InterimGapStatus, MeterType, SelfPot, SelfReadingView, SelfRole,
 } from '../../shared/types.ts'
@@ -583,7 +584,36 @@ export type ConsumptionShares = {
   previous: { heating: number; water: number | null } | null
   own: boolean
   changed: boolean
+  // Die Antwort zum Wärmeschutz (§ 7 Abs. 1 Satz 2), aus der eigenen Zeile oder der letzten davor.
+  insulation: InsulationRule | null
 }
+
+// Der Anteil nach Verbrauch gehört zur **Linie** einer Anlage (Durchsicht von #239, I3): Beim
+// Kesseltausch übernimmt die neue Anlage den Anteil der alten, denn § 6 Abs. 4 HeizkostenV lässt ihn
+// nur für künftige Abrechnungszeiträume ändern, und ein Tausch ist kein neuer Zeitraum. Die Zeilen der
+// Linie werden je Heizperiode zusammengelegt; die eigene Zeile geht vor, eine ohne Anteil tritt hinter
+// eine mit Anteil zurück.
+type LinePlant = { id: string; replacesPlantId?: string | null }
+export type PlantShareRow = ShareRow & { plantId: string }
+export function lineShareRows(rows: readonly PlantShareRow[], plants: readonly LinePlant[], plantId: string): ShareRow[] {
+  const plant = plants.find((p) => p.id === plantId)
+  const root = plant ? lineRoot(plant, plants) : plantId
+  const inLine = new Set(plants.filter((p) => lineRoot(p, plants) === root).map((p) => p.id))
+  const ordered = [...rows.filter((r) => r.plantId === plantId), ...rows.filter((r) => r.plantId !== plantId && inLine.has(r.plantId))]
+  const byPeriod = new Map<string, ShareRow>()
+  for (const r of ordered) {
+    const cur = byPeriod.get(r.period)
+    const row: ShareRow = { period: r.period, heatConsumptionPct: r.heatConsumptionPct, waterConsumptionPct: r.waterConsumptionPct, insulationRule: r.insulationRule }
+    if (!cur || (cur.heatConsumptionPct === null && r.heatConsumptionPct !== null)) byPeriod.set(r.period, row)
+  }
+  return [...byPeriod.values()]
+}
+
+// Die erste Heizperiode der eigenen Abrechnung (Durchsicht von #239, I1): die erste mit einem Anteil
+// nach Verbrauch, denn die Einrichtung setzt ihn. Davor rechnet die Anlage wie mit freien Schlüsseln;
+// § 6 Abs. 4 HeizkostenV lässt die Wahl nur für künftige Abrechnungszeiträume zu.
+export const selfBeginOf = (rows: readonly ShareRow[]): string | null =>
+  rows.filter((r) => r.heatConsumptionPct !== null).map((r) => r.period).sort()[0] ?? null
 
 // Der Anteil nach Verbrauch einer Heizperiode, in Prozent. **Vorgabe ist der Anteil der vorigen
 // Heizperiode** (§ 6 Abs. 4: der Gebäudeeigentümer wählt, ändern nur für künftige Zeiträume durch
@@ -612,6 +642,7 @@ export function consumptionSharesOf(rows: readonly ShareRow[], key: string, ener
     previous,
     own: ownHeat !== null,
     changed: ownHeat !== null && previous !== null && (ownHeat !== previous.heating || water !== previous.water),
+    insulation,
   }
 }
 

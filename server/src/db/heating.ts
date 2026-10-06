@@ -28,13 +28,13 @@ import { STOCK_ENERGIES } from '../fuel.ts'
 import { openCo2Periods } from './co2.ts'
 import { parsePeriodKey, periodKey, periodLabel, periodOfKey, rulesOf } from '../../../shared/period.ts'
 import type { Database, Executor } from './client.ts'
-import { readHeatingPlants, readProperties, readUnits } from './read.ts'
+import { readHeatingPlants, readMeters, readProperties, readUnits } from './read.ts'
 import { KWH_ENERGIES } from '../heating.ts'
 import { SELF_VIA_SETUP, SelfItemsError, selfItemsOf } from './heatingSelf.ts'
 import { hkvCutNotByConsumption } from '../../../shared/law/heizkostenv.ts'
 import { LAW_AS_OF, valueAt } from '../../../shared/law/register.ts'
-import { asNullableFilled, asNullableText, asText, guardServedChange, has, heatingPeriodAt, heatingRulesOf, HeatingError, ISO_DATE, merged, oneOfOrUndefined, raw, sameProperty } from './repository.ts'
-import { buildingCycle, sameLine, servesUnit } from '../../../shared/heatingPeriod.ts'
+import { asNullableFilled, asNullableText, asText, guardServedChange, has, heatingPeriodAt, heatingRulesOf, HeatingError, insertEntityIn, ISO_DATE, merged, oneOfOrUndefined, raw, sameProperty } from './repository.ts'
+import { buildingCycle, lineRoot, sameLine, servesUnit } from '../../../shared/heatingPeriod.ts'
 import {
   AREA_BASES_HEAT, CAPTURE_METHODS, CHANGE_SPLITS, CO2_RESTRICTIONS, HOT_WATER, fuelDeliveries, closedHeatingSettlementHistory, co2Statements, closedHeatingSettlements, closedSettlements, costItems, DEVICES_INSTALLED_AFTER, DEVICES_REMOTE, HEATING_ENERGIES, HEATING_METHODS,
   HEATING_SOURCES, HEATING_SUPPLIES, NEW_DEVICES_INSTALLS, heatingPeriodChanges, heatingPeriods, heatingPlants, heatingPlantUnits, heatingPrepaymentOverrides, heatingSeparateSpans, meters, units,
@@ -586,7 +586,19 @@ export async function replaceHeatingPlant(db: Database, oldId: string, newId: st
   }
   const previousName = asText(raw(body, 'previousName'), '').trim() || old.name.trim() || `${ENERGY_NAMES[old.energy]} bis ${germanDay(endsOn)}`
   const previous: HeatingPlant = { ...old, name: previousName, units: served, endsOn }
+  // Stände der Zähler der Anlage am letzten Tag der alten (Durchsicht von #239, I3): Bei der eigenen
+  // Heizkostenabrechnung grenzt der Stand am Warmwasserspeicher die Wärme beider Anlagen ab. Die Zähler
+  // bleiben, wo sie sind; die neue Anlage liest sie über die Linie.
+  const lineIds = new Set(plants.filter((p) => lineRoot(p, plants) === lineRoot(old, plants)).map((p) => p.id))
+  const plantMeters = (await readMeters(db)).filter((m) => m.heatingPlantId !== null && m.heatingPlantId !== undefined && lineIds.has(m.heatingPlantId) && m.heatingRole)
+  const standRaw = raw(body, 'meterReadings')
+  const stands = (Array.isArray(standRaw) ? standRaw : []).flatMap((x): { meterId: string; value: number }[] => {
+    const meterId = raw(x, 'meterId')
+    const value = raw(x, 'value')
+    return typeof meterId === 'string' && typeof value === 'number' && Number.isFinite(value) && plantMeters.some((m) => m.id === meterId) ? [{ meterId, value }] : []
+  })
   await db.transaction(async (tx) => {
+    for (const [i, s] of stands.entries()) await insertEntityIn(tx, 'readings', `${newId}-stand-${i + 1}`, { meterId: s.meterId, date: endsOn, value: s.value })
     // Geprüft wird die neue Anlage wie beim Ändern (`before` = sie selbst): Ihr Rhythmus kommt von der
     // alten und wird nicht neu gesetzt.
     await guardHeatingPlant(tx, plant, plant)

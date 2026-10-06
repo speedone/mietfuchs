@@ -17,7 +17,7 @@ import { and, eq, ne } from 'drizzle-orm'
 import { hkvConsumptionShare, hkvConsumptionShareForced } from '../../../shared/law/heizkostenv.ts'
 import { germanDate, valueAt } from '../../../shared/law/register.ts'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
-import { servesUnit } from '../../../shared/heatingPeriod.ts'
+import { lineRoot, servesUnit } from '../../../shared/heatingPeriod.ts'
 import type {
   BillingPeriod, CostItem, CostKey, HeatingDistribution, HeatingEnergy, HeatingPart, HeatingPlant, InterimGap, InsulationRule, Meter,
 } from '../../../shared/types.ts'
@@ -28,6 +28,7 @@ import { readCostItems, readHeatingPlants, readMeters, readUnits } from './read.
 import { guardHeatingPlant, plantRow } from './heating.ts'
 import { HeatingError, insertEntityIn, ISO_DATE, oneOfOrUndefined, patchCostItemIn, raw } from './repository.ts'
 import { costItems, heatingPeriods, heatingPlants, INSULATION_RULES, INTERIM_GAP_STATUS, interimReadingGaps, units } from './schema.ts'
+import { beforeBeginText, lineRowsOf } from './selfLine.ts'
 
 export const SELF_VIA_SETUP =
   'Die eigene Heizkostenabrechnung richten Sie in den Stammdaten unter „Heizung“ mit den Fragen der Einrichtung ein; dort entstehen Anteil, Zähler und die Umstellung der Positionen gemeinsam.'
@@ -46,8 +47,9 @@ export class SelfItemsError extends Error {
 
 // Heizpositionen der Anlage in offenen Zeiträumen, mit einem anderen Schlüssel als `keyNot` bzw. genau
 // dem Schlüssel `keyIs`. Offen heißt: weder der Zeitraum des Objekts noch die Heizperiode ist
-// abgeschlossen; abgeschlossene bleiben, wie sie sind.
-export async function selfItemsOf(db: Database, plantId: string, keyNot: CostKey | null, keyIs: CostKey | null): Promise<SelfConvertItem[]> {
+// abgeschlossen; abgeschlossene bleiben, wie sie sind. Mit `from` nur Heizperioden ab dieser
+// (Durchsicht von #239, I1: die Einrichtung stellt nichts vor ihrem Beginn um).
+export async function selfItemsOf(db: Database, plantId: string, keyNot: CostKey | null, keyIs: CostKey | null, from: string | null = null): Promise<SelfConvertItem[]> {
   const conds = [eq(costItems.heatingPlantId, plantId), eq(costItems.category, HEATING_CATEGORY)]
   if (keyNot !== null) conds.push(ne(costItems.key, keyNot))
   if (keyIs !== null) conds.push(eq(costItems.key, keyIs))
@@ -57,6 +59,7 @@ export async function selfItemsOf(db: Database, plantId: string, keyNot: CostKey
   const out: SelfConvertItem[] = []
   for (const r of rows) {
     const h = ctx ? heatingPeriodOf(ctx, String(r.period)) : null
+    if (from !== null && h && h.key < from) continue
     if (ctx && h && (await heatingPeriodClosed(db, ctx, h))) continue
     out.push({ id: r.id, period: r.period, description: r.description, amountCents: r.amountCents, key: r.key, heatingPart: r.heatingPart ?? null })
   }
@@ -78,10 +81,17 @@ export function distributionOf(rows: readonly ShareRow[], energy: HeatingEnergy,
   }
 }
 
+// Die Kennungen der Linie einer Anlage (sie selbst eingeschlossen).
+function lineIdsOf(plants: readonly { id: string; replacesPlantId: string | null }[], plantId: string): Set<string> {
+  const plant = plants.find((p) => p.id === plantId)
+  const root = plant ? lineRoot(plant, plants) : plantId
+  return new Set([plantId, ...plants.filter((p) => lineRoot(p, plants) === root).map((p) => p.id)])
+}
+
 const pctOf = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
 
 // Prüft einen neuen Anteil (Prozent) und gibt Heizung und Warmwasser zurück.
-function checkShares(body: unknown, plant: HeatingPlant, h: BillingPeriod, rows: readonly ShareRow[], today: string): { heating: number; water: number | null; insulationRule: InsulationRule } {
+function checkShares(body: unknown, plant: HeatingPlant, h: BillingPeriod, rows: readonly ShareRow[], today: string): { heating: number; water: number | null; insulationRule: InsulationRule; toForced: boolean } {
   const heating = pctOf(raw(body, 'heatConsumptionPct'))
   // § 8 Abs. 1: eigene Wahl beim Warmwasser (Abweichung 14); ohne zentrales Warmwasser gibt es keinen.
   const withWater = plant.hotWater !== 'none'
@@ -105,16 +115,20 @@ function checkShares(body: unknown, plant: HeatingPlant, h: BillingPeriod, rows:
   }
   // § 6 Abs. 4: nur für künftige Zeiträume; der erste Anteil darf jederzeit gesetzt werden.
   const before = consumptionSharesOf(rows, h.key, plant.energy, () => valueAt(hkvConsumptionShareForced, h.from))
-  if (before !== null && today >= h.from && (before.heating !== heating || before.water !== water) && !(insulationRule === 'applies' && before.forced)) {
+  // Durchsicht von #239, C1: Den Pflichtwert nach § 7 Abs. 1 Satz 2 nachzutragen ist keine Wahl nach
+  // § 6 Abs. 4 (der verweist nur auf § 7 Abs. 1 Satz 1) und geht deshalb auch in einer begonnenen
+  // Heizperiode; das Warmwasser bleibt dabei, wie es ist.
+  const toForced = insulationRule === 'applies' && OIL_OR_GAS.includes(plant.energy) && (before === null || before.water === water)
+  if (before !== null && today >= h.from && (before.heating !== heating || before.water !== water) && !toForced) {
     throw new HeatingError(400,
       `Die Heizperiode hat am ${germanDate(h.from)} begonnen. Den Anteil nach Verbrauch ändern Sie nur für künftige Abrechnungszeiträume, durch Erklärung gegenüber den Mietern und mit Wirkung zum Beginn eines Zeitraums (§ 6 Abs. 4 HeizkostenV). Tragen Sie ihn bei der nächsten Heizperiode ein.`)
   }
-  return { heating, water, insulationRule }
+  return { heating, water, insulationRule, toForced }
 }
 
+// Die Zeilen über die Linie der Anlage (Durchsicht von #239, I3).
 async function shareRows(db: Executor, plantId: string): Promise<ShareRow[]> {
-  return (await db.select({ period: heatingPeriods.period, heatConsumptionPct: heatingPeriods.heatConsumptionPct, waterConsumptionPct: heatingPeriods.waterConsumptionPct, insulationRule: heatingPeriods.insulationRule })
-    .from(heatingPeriods).where(eq(heatingPeriods.plantId, plantId))).map((r) => ({ ...r, period: String(r.period) }))
+  return (await lineRowsOf(db, plantId)).merged
 }
 
 // `null`, wenn es die Anlage nicht gibt; die Route macht daraus ihre 404.
@@ -124,8 +138,17 @@ export async function saveDistribution(db: Database, plantId: string, period: st
   if (ctx.plant.method !== 'self') throw new HeatingError(400, 'Den Anteil nach Verbrauch legen Sie nur bei einer eigenen Heizkostenabrechnung fest.')
   const h = heatingPeriodOf(ctx, period)
   if (await heatingPeriodClosed(db, ctx, h)) throw new HeatingError(409, closedText(h))
-  const rows = await shareRows(db, plantId)
+  const line = await lineRowsOf(db, plantId)
+  const rows = line.merged
+  const begin = rows.filter((r) => r.heatConsumptionPct !== null).map((r) => r.period).sort()[0] ?? null
+  if (begin !== null && h.key < begin) throw new HeatingError(400, beforeBeginText(begin))
   const next = checkShares(body, ctx.plant, h, rows, today)
+  // In derselben Heizperiode gilt in der Linie ein Anteil (§ 6 Abs. 4; Durchsicht von #239, I3).
+  const ids = lineIdsOf(line.plants, plantId)
+  const other = line.all.find((r) => r.plantId !== plantId && ids.has(r.plantId) && r.period === h.key && r.heatConsumptionPct !== null)
+  if (other && !next.toForced && (other.heatConsumptionPct !== next.heating || other.waterConsumptionPct !== next.water)) {
+    throw new HeatingError(400, `In derselben Heizperiode gilt der Anteil der Anlage vor dem Kesseltausch (${other.heatConsumptionPct} %${other.waterConsumptionPct !== null ? `, Warmwasser ${other.waterConsumptionPct} %` : ''}); ändern lässt er sich nur für künftige Abrechnungszeiträume (§ 6 Abs. 4 HeizkostenV).`)
+  }
   await db.transaction(async (tx) => {
     const id = await ensureHeatingPeriod(tx, plantId, h.key)
     await tx.update(heatingPeriods).set({ heatConsumptionPct: next.heating, waterConsumptionPct: next.water, insulationRule: next.insulationRule }).where(eq(heatingPeriods.id, id))
@@ -167,8 +190,11 @@ export async function setUpSelf(db: Database, plantId: string, body: unknown, to
   const shares = checkShares(body, after, h, rows, today)
 
   // Positionen offener Zeiträume mit anderem Schlüssel: jede braucht Teil und Ziel (Review Focus 3).
-  const offen = await selfItemsOf(db, plantId, 'heatingSystem', null)
-  const answers = readItemAnswers(raw(body, 'items'))
+  // Nur ab der Heizperiode der Einrichtung (I1) und nur Positionen dieser Anlage (M1).
+  const existingBegin = rows.filter((r) => r.heatConsumptionPct !== null).map((r) => r.period).sort()[0] ?? null
+  const from = existingBegin !== null && existingBegin < h.key ? existingBegin : h.key
+  const offen = await selfItemsOf(db, plantId, 'heatingSystem', null, from)
+  const answers = readItemAnswers(raw(body, 'items')).filter((a) => offen.some((c) => c.id === a.id))
   const missing = offen.filter((c) => !answers.some((a) => a.id === c.id))
   if (missing.length > 0) {
     throw new SelfItemsError(
@@ -186,6 +212,7 @@ export async function setUpSelf(db: Database, plantId: string, body: unknown, to
   // der Wärmezähler am Speicher und der Gesamtwärmezähler, wenn gewünscht.
   const allUnits = (await readUnits(db)).filter((u) => u.propertyId === current.propertyId && servesUnit(after, u))
   const allMeters = await readMeters(db)
+  const lineIds = lineIdsOf((await lineRowsOf(db, plantId)).plants, plantId)
   const pots = after.hotWater === 'none' ? (['heating'] as const) : (['heating', 'water'] as const)
   const plans: Record<string, unknown>[] = []
   for (const u of allUnits) {
@@ -196,7 +223,7 @@ export async function setUpSelf(db: Database, plantId: string, body: unknown, to
     }
   }
   const plantMeter = (role: 'dhwHeat' | 'totalHeat', name: string) => {
-    if (allMeters.some((m) => m.heatingPlantId === plantId && m.heatingRole === role)) return
+    if (allMeters.some((m) => m.heatingPlantId !== null && m.heatingPlantId !== undefined && lineIds.has(m.heatingPlantId) && m.heatingRole === role)) return
     plans.push({ propertyId: current.propertyId, name, unitId: null, type: 'waerme', unit: 'kWh', heatingPlantId: plantId, heatingRole: role })
   }
   if (raw(body, 'dhwHeatMeter') === true && after.hotWater === 'combined') plantMeter('dhwHeat', 'Wärmezähler Warmwasserspeicher')

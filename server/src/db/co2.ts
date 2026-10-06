@@ -12,6 +12,8 @@
 // (Methode der Anlage `service`). Die eigene Aufteilung (`self`, freie Schlüssel) kommt mit PR 7.
 //
 // Diese Datei importiert aus repository.ts und read.ts, nie umgekehrt.
+import { lineRowsOf } from './selfLine.ts'
+import { selfBeginOf } from '../heating.ts'
 import { eq, inArray } from 'drizzle-orm'
 import type { BillingPeriod, Co2Statement, Co2TenantRelief, HeatingPeriodView, PeriodKey } from '../../../shared/types.ts'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
@@ -65,6 +67,8 @@ export async function heatingPeriodViews(db: Database, plantId: string, periodPa
   // Der Vorrat (Heizung PR 8) nur bei Heizöl, Flüssiggas, Pellets, Holz und Kohle; seit Heizung PR 10
   // auch bei der eigenen Heizkostenabrechnung (Entwurf 8.2).
   const stockData = isStockEnergy(ctx.plant.energy) ? await readStock(db) : null
+  const lineRows = ctx.plant.method === 'self' ? (await lineRowsOf(db, plantId)).merged : []
+  const selfBegin = selfBeginOf(lineRows)
   const views: HeatingPeriodView[] = []
   for (const h of hs) {
     const row = rows.find((r) => r.period === h.key)
@@ -84,8 +88,9 @@ export async function heatingPeriodViews(db: Database, plantId: string, periodPa
         .map((c) => ({ id: c.id, description: c.description, amountCents: c.amountCents, key: c.key, tenancyAmounts: c.tenancyAmounts, selfAmounts: c.selfAmounts, fuelDeliveryId: c.fuelDeliveryId })),
       stock: stockData ? stockViewFor(stockData, ctx, h, closed) : null,
       // Anteil nach Verbrauch (Heizung PR 10), nur bei eigener Abrechnung.
-      distribution: ctx.plant.method === 'self'
-        ? distributionOf(rows.map((r) => ({ period: String(r.period), heatConsumptionPct: r.heatConsumptionPct, waterConsumptionPct: r.waterConsumptionPct, insulationRule: r.insulationRule })), ctx.plant.energy, h, today)
+      // Über die Linie (Durchsicht von #239, I3), und erst ab dem Beginn der eigenen Abrechnung (I1).
+      distribution: ctx.plant.method === 'self' && (selfBegin === null || h.key >= selfBegin)
+        ? distributionOf(lineRows, ctx.plant.energy, h, today)
         : null,
     })
   }

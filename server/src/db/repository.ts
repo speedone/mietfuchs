@@ -32,6 +32,7 @@
 // der seine Erwartung aus den Spalten des Schemas ableitet: Eine Liste von Hand vergisst der
 // nächste, der eine Spalte hinzufügt.
 
+import { beforeBeginText, selfBeginFor } from './selfLine.ts'
 import { and, count, desc, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm'
 import type { BillingPeriod, CostItem, ExternalBasis, HeatingPlant, HeatingPrepaymentOverride, InterimGapStatus, Meter, MeterType, Payment, PeriodKey, PeriodRules, PersonEntry, PrepaymentEntry, Property, Reading, RentEntry, SplitPreviewPart, Tenancy, Unit, UnitDependents } from '../../../shared/types.ts'
 import { CALENDAR_RULES, calendarPeriod, paymentYear, formatDayRange, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, spansTwoYears, startYearOf } from '../../../shared/period.ts'
@@ -814,11 +815,17 @@ export async function guardHeatingSystem(db: Executor, after: CostItem): Promise
       throw new HeatingError(400,
         'Nach der Heizkostenverordnung verteilt Mietfuchs nur Positionen einer Heizanlage mit eigener Heizkostenabrechnung. Richten Sie sie in den Stammdaten unter „Heizung“ ein oder wählen Sie einen anderen Schlüssel.')
     }
+    // Durchsicht von #239, I1: erst ab der ersten Heizperiode mit Anteil nach Verbrauch.
+    const begin = plantId === null ? null : await selfBeginFor(db, plantId)
+    if (begin !== null && String(after.period) < begin) throw new HeatingError(400, beforeBeginText(begin))
     const problem = targetProblem(plant.hotWater, after.heatingPart ?? null, target)
     if (problem !== null) throw new HeatingError(400, `${problem}.`)
     return
   }
   if (plant?.method === 'self' && after.category === HEATING_CATEGORY) {
+    // Vor dem Beginn der eigenen Abrechnung gelten die bisherigen Schlüssel (I1).
+    const begin = plantId === null ? null : await selfBeginFor(db, plantId)
+    if (begin !== null && String(after.period) < begin) return
     throw new HeatingError(400,
       'Diese Heizanlage rechnet die Heizkosten selbst nach der Heizkostenverordnung ab. Wählen Sie den Schlüssel „nach Heizkostenverordnung“ mit Teil und Ziel.')
   }
