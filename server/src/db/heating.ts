@@ -32,7 +32,7 @@ import { readHeatingPlants, readProperties, readUnits } from './read.ts'
 import { asNullableFilled, asNullableText, asText, guardServedChange, has, heatingPeriodAt, heatingRulesOf, HeatingError, ISO_DATE, merged, oneOfOrUndefined, raw, sameProperty } from './repository.ts'
 import { buildingCycle, sameLine, servesUnit } from '../../../shared/heatingPeriod.ts'
 import {
-  CHANGE_SPLITS, CO2_RESTRICTIONS, fuelDeliveries, closedHeatingSettlementHistory, co2Statements, closedHeatingSettlements, closedSettlements, costItems, DEVICES_INSTALLED_AFTER, DEVICES_REMOTE, HEATING_ENERGIES, HEATING_METHODS,
+  AREA_BASES_HEAT, CAPTURE_METHODS, CHANGE_SPLITS, CO2_RESTRICTIONS, HOT_WATER, fuelDeliveries, closedHeatingSettlementHistory, co2Statements, closedHeatingSettlements, closedSettlements, costItems, DEVICES_INSTALLED_AFTER, DEVICES_REMOTE, HEATING_ENERGIES, HEATING_METHODS,
   HEATING_SOURCES, HEATING_SUPPLIES, NEW_DEVICES_INSTALLS, heatingPeriodChanges, heatingPeriods, heatingPlants, heatingPlantUnits, heatingPrepaymentOverrides, heatingSeparateSpans, meters, units,
 } from './schema.ts'
 
@@ -104,6 +104,11 @@ function mergeHeatingPlant(current: HeatingPlant, body: unknown): HeatingPlant {
     buildingWith: merged(body, 'buildingWith', current.buildingWith, asNullableFilled),
     // Setzen nur der Kesseltausch und das Ändern einer Nachfolgerin (`takesOverStockOf`).
     takesOverStock: current.takesOverStock,
+    // Eigene Heizkostenabrechnung (Heizung PR 10).
+    hotWater: merged(body, 'hotWater', current.hotWater, (v) => oneOfOrUndefined(HOT_WATER, v) ?? current.hotWater),
+    capture: merged(body, 'capture', current.capture, (v) => (v === null ? null : oneOfOrUndefined(CAPTURE_METHODS, v) ?? current.capture)),
+    areaBasisHeat: merged(body, 'areaBasisHeat', current.areaBasisHeat, (v) => oneOfOrUndefined(AREA_BASES_HEAT, v) ?? current.areaBasisHeat),
+    heatPumpInstalledOn: merged(body, 'heatPumpInstalledOn', current.heatPumpInstalledOn, asNullableFilled),
   }
 }
 
@@ -114,6 +119,7 @@ const emptyHeatingPlant = (id: string, propertyId: string): HeatingPlant => ({
   capturedOnOct2024: null, warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null,
   periodChanges: [], separateSpans: [], units: null, newDevicesInstall: null,
   nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null,
+  hotWater: 'combined', capture: null, areaBasisHeat: 'area', heatPumpInstalledOn: null,
 })
 
 async function guardHeatingPlant(db: Executor, before: HeatingPlant | null, after: HeatingPlant): Promise<void> {
@@ -287,6 +293,7 @@ const plantRow = (p: HeatingPlant) => ({
   unitsLimited: p.units !== null,
   nonResidential: p.nonResidential, restriction: p.restriction, districtEtsNew: p.districtEtsNew,
   endsOn: p.endsOn, replacesPlantId: p.replacesPlantId, buildingWith: p.buildingWith, takesOverStock: p.takesOverStock,
+  hotWater: p.hotWater, capture: p.capture, areaBasisHeat: p.areaBasisHeat, heatPumpInstalledOn: p.heatPumpInstalledOn,
 })
 
 // Die Liste der Wohnungen, ganz ersetzt wie die Untertabellen in repository.ts.

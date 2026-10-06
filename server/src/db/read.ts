@@ -250,6 +250,8 @@ export async function readCostItems(db: Executor): Promise<CostItem[]> {
       ...(c.serviceTo !== null ? { serviceTo: c.serviceTo } : {}),
       ...(c.taxYear !== null ? { taxYear: c.taxYear } : {}),
       ...(c.heatingPart !== null ? { heatingPart: c.heatingPart } : {}),
+      // Das Ziel bei Heizkosten (Heizung PR 10), ebenso nur, wenn es gesetzt ist.
+      ...(c.heatingTarget !== null ? { heatingTarget: c.heatingTarget } : {}),
       // Die Heizanlage (Heizung PR 4), ebenso nur, wenn es sie gibt.
       ...(c.heatingPlantId !== null ? { heatingPlantId: c.heatingPlantId } : {}),
       // Die Lieferung (Heizung PR 7), ebenso nur, wenn es sie gibt.
@@ -313,6 +315,11 @@ export async function readHeatingPlants(db: Executor): Promise<HeatingPlant[]> {
     replacesPlantId: p.replacesPlantId,
     buildingWith: p.buildingWith,
     takesOverStock: p.takesOverStock,
+    // Eigene Heizkostenabrechnung (Heizung PR 10).
+    hotWater: p.hotWater,
+    capture: p.capture,
+    areaBasisHeat: p.areaBasisHeat,
+    heatPumpInstalledOn: p.heatPumpInstalledOn,
   }))
 }
 
@@ -377,6 +384,8 @@ export async function readReadings(db: Executor): Promise<Reading[]> {
     replacement: orUndefined(r.replacement),
     oldEndValue: orUndefined(r.oldEndValue),
     note: orUndefined(r.note),
+    // Grenze einer Ablesung aus dem Mieterwechsel (Heizung PR 10), nur wenn gesetzt.
+    ...(r.interimFor !== null ? { interimFor: r.interimFor } : {}),
   }))
 }
 

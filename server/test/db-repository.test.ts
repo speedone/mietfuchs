@@ -405,7 +405,7 @@ test('Die Verschmelzung erreicht jede Spalte des Schemas', async () => {
         externalBasis: { measure: 'mea', total: 10000, totalCents: 1000000 },
         key: 'direct', directUnitId: 'u1', meterType: 'kaltwasser', labor35aCents: 400, invoiceFile: 'b.pdf',
         // #208: Leistungszeitraum im Jahr der Position, das Jahr der Zahlung ist dann dieses.
-        serviceFrom: '2024-01-01', serviceTo: '2024-12-31', taxYear: 2024, heatingPart: 'fuel',
+        serviceFrom: '2024-01-01', serviceTo: '2024-12-31', taxYear: 2024, heatingPart: 'fuel', heatingTarget: 'heating',
         heatingPlantId: 'hp1', fuelDeliveryId: 'd1',
       },
     },
@@ -418,7 +418,7 @@ test('Die Verschmelzung erreicht jede Spalte des Schemas', async () => {
     },
     {
       coll: 'readings', table: readings,
-      body: { meterId: 'm1', date: '2024-12-31', value: 160, replacement: true, oldEndValue: 155, note: 'Wechsel' },
+      body: { meterId: 'm1', date: '2024-12-31', value: 160, replacement: true, oldEndValue: 155, note: 'Wechsel', interimFor: '2024-12-30' },
     },
     {
       coll: 'payments', table: payments,

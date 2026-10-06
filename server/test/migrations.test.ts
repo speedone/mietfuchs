@@ -98,6 +98,10 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // Neu erzeugt in der Durchsicht von #238 (Spalte building_with, Recht I3) und in ihrer Nachprüfung
   // (Spalte takes_over_stock); main hat er nie erreicht.
   '0026_kesseltausch': '50b85a7bcbe2d3e8dd367a83895e076909aa7050bfa0bd38d27d5f5bcbab5337',
+  // Heizung PR 10. Wird ein Schritt von PR 9 vor dem Push neu erzeugt, werden diese beiden Schritte
+  // neu erzeugt und die Marken hier ersetzt.
+  '0027_heizkostenabrechnung': '94a4113e774ca26aff9f96d41d19e19529feb38d86d6d8002e19a04640b43fda',
+  '0028_heizkostenabrechnung_bedingungen': '3898a4defcee79eacb162e80d1c2b74910ff98211ce51289e529337588dfe54e',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

@@ -190,6 +190,20 @@
       "when": 1791288318828,
       "tag": "0026_kesseltausch",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "6",
+      "when": 1791301518639,
+      "tag": "0027_heizkostenabrechnung",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "6",
+      "when": 1791301529577,
+      "tag": "0028_heizkostenabrechnung_bedingungen",
+      "breakpoints": true
     }
   ]
 }

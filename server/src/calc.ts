@@ -74,6 +74,7 @@ export const KEY_LABELS: Record<CostKey, string> = {
   custom: 'Vereinbarte Anteile',
   external: 'Laut Gemeinschaftsabrechnung',
   amounts: 'Einzelbetrag',
+  heatingSystem: 'Nach Heizkostenverordnung',
 }
 
 const MS_DAY = 86400000
@@ -1736,6 +1737,7 @@ const KEY_PHRASES: Record<CostKey, string> = {
   custom: 'nach vereinbarten Anteilen',
   external: 'laut Gemeinschaftsabrechnung',
   amounts: 'als Einzelbeträge',
+  heatingSystem: 'nach der Heizkostenverordnung',
 }
 
 // Hat eine Position einen anderen Schlüssel als dieselbe Kostenart im Vorjahr (#141)? Dann der

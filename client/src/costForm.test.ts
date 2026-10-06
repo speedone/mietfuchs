@@ -672,3 +672,8 @@ test('Eine Heizposition, die zur kalten wird, geht durch die Rückfrage zum Auft
   expect(needsSplitCheck(built.body, before)).toBe(true)
   expect(needsSplitCheck(built.body, { ...before, category: 'Grundsteuer' })).toBe(false)
 })
+
+test('Der Schlüssel „nach Heizkostenverordnung“ steht nur bei einer Position, die ihn schon hat (Heizung PR 10, bis Task 12)', () => {
+  expect(costKeyOptions([], 'area')).not.toContain('heatingSystem')
+  expect(costKeyOptions([], 'heatingSystem')).toContain('heatingSystem')
+})

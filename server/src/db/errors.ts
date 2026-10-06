@@ -147,6 +147,11 @@ const OWN_CHECK_MESSAGES: Readonly<Record<string, string>> = {
   // Lieferungen (Heizung PR 7)
   heating_plants_ets_district_valid: 'Die Angabe zur Wärme aus dem Emissionshandel gibt es nur bei Fernwärme.',
   cost_items_fuel_delivery_category_valid: 'Eine Lieferung gehört nur zu einer Position der Kostenart „Heizung und Warmwasser“.',
+  // Eigene Heizkostenabrechnung (Heizung PR 10)
+  heating_plants_self_capture_complete: 'Für die eigene Heizkostenabrechnung braucht die Heizanlage die Angabe, womit der Verbrauch erfasst wird.',
+  cost_items_heating_target_category_valid: 'Ein Ziel (Heizung, Warmwasser) gibt es nur bei der Kostenart „Heizung und Warmwasser“.',
+  cost_items_heating_system_complete: 'Nach der Heizkostenverordnung verteilt nur eine Position mit Heizanlage, Teil und Ziel. Bitte wählen Sie alle drei.',
+  interim_reading_gaps_date_valid: 'Das Datum der Grenze ist kein Datum in der Form JJJJ-MM-TT. Bitte laden Sie die Seite neu.',
   fuel_deliveries_invoice_complete: 'Zum Rechnungszeitraum einer Lieferung gehören Beginn und Ende. Bitte tragen Sie beide ein.',
   fuel_deliveries_invoice_from_valid: 'Der Beginn des Rechnungszeitraums ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie es im Kalender.',
   fuel_deliveries_invoice_to_valid: 'Das Ende des Rechnungszeitraums ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie es im Kalender.',

@@ -49,7 +49,7 @@ import {
 } from './read.ts'
 import {
   aiSlots, assessmentLines, assessments, baseRents, co2Statements, co2TenantReliefs, heatingPeriods, closedHeatingSettlementHistory, closedHeatingSettlements, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, DEPOSIT_STATUS, EXTERNAL_MEASURES,
-  HEATING_PARTS, HEATING_ROLES, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingPrepaymentOverrides, heatingPrepayments, heatingSeparateSpans,
+  HEATING_PARTS, HEATING_ROLES, HEATING_TARGETS, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingPrepaymentOverrides, heatingPrepayments, heatingSeparateSpans,
   flatRates, METER_TYPES, meters, payments, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, PROPERTY_KINDS,
   readings, settings, tenancies, unitNoConnection, units, fuelCarryFrozen, fuelDeliveries,
 } from './schema.ts'
@@ -365,6 +365,8 @@ function mergeCostItem(current: CostItem, body: unknown): CostItem {
     serviceTo: merged(body, 'serviceTo', current.serviceTo, asOptionalText),
     taxYear: merged(body, 'taxYear', current.taxYear, asOptionalNumber),
     heatingPart: merged(body, 'heatingPart', current.heatingPart, (v) => oneOfOrUndefined(HEATING_PARTS, v)),
+    // Ziel bei Heizkosten (Heizung PR 10).
+    heatingTarget: merged(body, 'heatingTarget', current.heatingTarget, (v) => oneOfOrUndefined(HEATING_TARGETS, v)),
     // Die Heizanlage der Position (Heizung PR 4). Nur die Kostenart Heizung und Warmwasser gehört zu
     // einer Anlage; wechselt die Kostenart, fällt die Anlage weg. `undefined` heißt „nicht
     // angegeben“: bei einer neuen Position und bei einer, die gerade zur Heizposition wird
@@ -410,6 +412,8 @@ function mergeReading(current: Reading, body: unknown): Reading {
     replacement: merged(body, 'replacement', current.replacement, asOptionalBoolean),
     oldEndValue: merged(body, 'oldEndValue', current.oldEndValue, asOptionalNumber),
     note: merged(body, 'note', current.note, asOptionalText),
+    // Grenze einer Ablesung aus dem Mieterwechsel (Heizung PR 10): der letzte Tag des bisherigen Nutzers.
+    interimFor: merged(body, 'interimFor', current.interimFor, (v) => (typeof v === 'string' && ISO_DATE.test(v) ? v : undefined)),
   }
 }
 
@@ -1485,6 +1489,7 @@ const costItemRow = (c: CostItem) => ({
   externalTotalCents: c.externalBasis?.totalCents ?? null,
   participantsLimited: Array.isArray(c.participantUnitIds),
   serviceFrom: orNull(c.serviceFrom), serviceTo: orNull(c.serviceTo), taxYear: orNull(c.taxYear), heatingPart: orNull(c.heatingPart),
+  heatingTarget: orNull(c.heatingTarget),
   heatingPlantId: c.heatingPlantId ?? null,
   fuelDeliveryId: c.fuelDeliveryId ?? null,
 })
@@ -1495,6 +1500,7 @@ const meterRow = (m: Meter) => ({
 const readingRow = (r: Reading) => ({
   id: r.id, meterId: r.meterId, date: r.date, value: r.value,
   replacement: orNull(r.replacement), oldEndValue: orNull(r.oldEndValue), note: orNull(r.note),
+  interimFor: orNull(r.interimFor),
 })
 const paymentRow = (p: Payment) => ({
   id: p.id, tenancyId: p.tenancyId, date: p.date, amountCents: p.amountCents, note: orNull(p.note),

@@ -15,10 +15,12 @@ import type {
   AiJsonMode,
   AiProviderKind,
   AiSlotName,
+  AreaBasisHeat,
   AssessmentBooking,
   ChangeSplit,
   Co2Method,
   Co2Restriction,
+  CaptureMethod,
   CostKey,
   CostModel,
   DepositStatus,
@@ -34,7 +36,10 @@ import type {
   HeatingRole,
   HeatingSource,
   HeatingSupply,
+  HeatingTarget,
+  HotWater,
   InsulationRule,
+  InterimGapStatus,
   NewDevicesInstall,
   MeterType,
   PeriodKey,
@@ -62,7 +67,7 @@ const exactly =
   <L extends readonly T[]>(values: L & ([T] extends [L[number]] ? unknown : never)): L =>
     values
 
-export const COST_KEYS = exactly<CostKey>()(['area', 'persons', 'units', 'direct', 'meter', 'custom', 'external', 'amounts'] as const)
+export const COST_KEYS = exactly<CostKey>()(['area', 'persons', 'units', 'direct', 'meter', 'custom', 'external', 'amounts', 'heatingSystem'] as const)
 export const EXTERNAL_MEASURES = exactly<ExternalMeasure>()(['mea', 'area', 'units'] as const)
 export const COST_MODELS = exactly<CostModel>()(['settlement', 'flatRate', 'inclusive'] as const)
 export const METER_TYPES = exactly<MeterType>()(['kaltwasser', 'warmwasser', 'strom', 'waerme', 'hkv', 'sonstig'] as const)
@@ -349,6 +354,12 @@ export const DHW_METHODS = exactly<DhwMethod>()(['heatMeter', 'volumeFormula', '
 export const CO2_RESTRICTIONS = exactly<Co2Restriction>()(['none', 'building', 'supply', 'both'] as const)
 export const FUEL_QUANTITY_UNITS = exactly<FuelQuantityUnit>()(['l', 'kg', 'm3', 'kWh', 'srm'] as const)
 export const GAS_BASES = exactly<GasBasis>()(['hs', 'hi'] as const)
+// Eigene Heizkostenabrechnung (Heizung PR 10).
+export const HEATING_TARGETS = exactly<HeatingTarget>()(['both', 'heating', 'water'] as const)
+export const HOT_WATER = exactly<HotWater>()(['combined', 'separate', 'none'] as const)
+export const CAPTURE_METHODS = exactly<CaptureMethod>()(['heatMeter', 'hca', 'serviceValues'] as const)
+export const AREA_BASES_HEAT = exactly<AreaBasisHeat>()(['area', 'heatedArea'] as const)
+export const INTERIM_GAP_STATUS = exactly<InterimGapStatus>()(['impossible', 'missed', 'imprecise', 'useReading'] as const)
 
 // Die Heizanlage eines Objekts. Spalten späterer PRs kommen mit ihnen (CO₂-Merkmale mit PR 7, §§ 5a
 // bis 5d mit PR 18, Erfassung und Ausnahmen mit PR 10 und 14); was PR 4 schon anlegt, aber erst
@@ -393,6 +404,11 @@ export const heatingPlants = sqliteTable(
     // Kesseltausch mit demselben Vorratsbrennstoff (Nachprüfung von #238): Verheizt die neue Anlage den
     // Brennstoff im Tank weiter? NULL nicht gefragt (kein solcher Tausch), sonst die Antwort.
     takesOverStock: integer('takes_over_stock', { mode: 'boolean' }),
+    // Eigene Heizkostenabrechnung (Heizung PR 10, Entwurf 5.3). Bedingungen im zweiten Schritt.
+    hotWater: text('hot_water', { enum: HOT_WATER }).notNull().default('combined'),
+    capture: text('capture', { enum: CAPTURE_METHODS }),
+    areaBasisHeat: text('area_basis_heat', { enum: AREA_BASES_HEAT }).notNull().default('area'),
+    heatPumpInstalledOn: text('heat_pump_installed_on'),
   },
   () => [
     oneOf('heating_plants_energy_known', 'energy', HEATING_ENERGIES),
@@ -411,6 +427,12 @@ export const heatingPlants = sqliteTable(
     oneOf('heating_plants_restriction_known', 'restriction', CO2_RESTRICTIONS),
     // § 2 Abs. 4 Satz 2 CO2KostAufG betrifft nur Wärmelieferungen (Heizung PR 7).
     check('heating_plants_ets_district_valid', sql.raw(`"district_ets_new" = 0 OR "energy" = 'districtHeating'`)),
+    // Eigene Heizkostenabrechnung (Heizung PR 10).
+    oneOf('heating_plants_hot_water_known', 'hot_water', HOT_WATER),
+    oneOf('heating_plants_capture_known', 'capture', CAPTURE_METHODS),
+    oneOf('heating_plants_area_basis_heat_known', 'area_basis_heat', AREA_BASES_HEAT),
+    // Die eigene Heizkostenabrechnung braucht die Art der Erfassung (Entwurf 5.3).
+    check('heating_plants_self_capture_complete', sql.raw(`"method" <> 'self' OR "capture" IS NOT NULL`)),
   ],
 )
 
@@ -499,6 +521,26 @@ export const heatingPeriods = sqliteTable(
     notNegative('heating_periods_opening_co2_not_negative', 'opening_co2_cents'),
     notNegative('heating_periods_closing_quantity_not_negative', 'closing_quantity'),
     check('heating_periods_closing_measured_on_valid', sql.raw(`"closing_measured_on" IS NULL OR "closing_measured_on" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`)),
+  ],
+)
+
+// Keine Zwischenablesung an einer Grenze einer Wohnung (Heizung PR 10, Entwurf 3.5, Abweichung 8):
+// „nicht möglich“ oder „nicht durchgeführt“, mit Grund. Die Grenze ist der letzte Tag des
+// bisherigen Nutzers. Fällt mit der Wohnung.
+export const interimReadingGaps = sqliteTable(
+  'interim_reading_gaps',
+  {
+    unitId: text('unit_id')
+      .notNull()
+      .references(() => units.id, { onDelete: 'cascade' }),
+    date: text('date').notNull(),
+    status: text('status', { enum: INTERIM_GAP_STATUS }).notNull(),
+    reason: text('reason').notNull().default(''),
+  },
+  (t) => [
+    primaryKey({ columns: [t.unitId, t.date] }),
+    oneOf('interim_reading_gaps_status_known', 'status', INTERIM_GAP_STATUS),
+    check('interim_reading_gaps_date_valid', sql.raw(`"date" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`)),
   ],
 )
 
@@ -812,6 +854,8 @@ export const costItems = sqliteTable(
     // Die Lieferung der Position (Heizung PR 7). `RESTRICT`: Eine Lieferung mit Positionen wird nicht
     // still gelöscht; removeDelivery verlangt vorher, die Verknüpfung zu lösen.
     fuelDeliveryId: text('fuel_delivery_id').references(() => fuelDeliveries.id, { onDelete: 'restrict' }),
+    // Ziel bei Heizung und Warmwasser (Heizung PR 10): beides, nur Heizung, nur Warmwasser.
+    heatingTarget: text('heating_target', { enum: HEATING_TARGETS }),
   },
   (t) => [
     // Der einzige Filter, den der Schnappschuss wirklich setzt: die Kostenpositionen eines
@@ -835,6 +879,14 @@ export const costItems = sqliteTable(
     oneOf('cost_items_heating_part_known', 'heating_part', HEATING_PARTS),
     // Ein Brennstoffmerkmal an Müllabfuhr hätte keine Bedeutung und verwirrte den Vorschlag nach § 560.
     check('cost_items_heating_part_category_valid', sql.raw(`"heating_part" IS NULL OR "category" = 'Heizung und Warmwasser'`)),
+    oneOf('cost_items_heating_target_known', 'heating_target', HEATING_TARGETS),
+    // Ein Ziel gibt es nur bei Heizung und Warmwasser, wie den Teil (PR 3).
+    check('cost_items_heating_target_category_valid', sql.raw(`"heating_target" IS NULL OR "category" = 'Heizung und Warmwasser'`)),
+    // Nach Heizkostenverordnung verteilt nur eine Position mit Anlage, Teil und Ziel (Entwurf 5.3).
+    check(
+      'cost_items_heating_system_complete',
+      sql.raw(`"key" <> 'heatingSystem' OR ("heating_target" IS NOT NULL AND "heating_part" IS NOT NULL AND "heating_plant_id" IS NOT NULL)`),
+    ),
     // Eine Lieferung gehört nur zu einer Heizposition (Heizung PR 7).
     check('cost_items_fuel_delivery_category_valid', sql.raw(`"fuel_delivery_id" IS NULL OR "category" = 'Heizung und Warmwasser'`)),
     // Eine Summe der Anlage von null ergäbe eine Division durch null im Rechenweg.
@@ -1007,6 +1059,8 @@ export const readings = sqliteTable(
     replacement: integer('replacement', { mode: 'boolean' }),
     oldEndValue: real('old_end_value'),
     note: text('note'),
+    // Grenze einer Ablesung aus dem Mieterwechsel (Heizung PR 10): letzter Tag des bisherigen Nutzers.
+    interimFor: text('interim_for'),
   },
   (t) => [
     // Ein Zählerstand ist eine ablesbare Menge und läuft nicht unter null. Der negative

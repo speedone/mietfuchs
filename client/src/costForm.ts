@@ -384,7 +384,9 @@ export function toggleTaxUnit(form: ItemForm, unitId: string, checked: boolean):
 export function costKeyOptions(unitMeterTypes: MeterType[], stored: CostKey): CostKey[] {
   return (Object.keys(KEY_LABELS) as CostKey[]).filter(
     (k) => (k !== 'meter' || unitMeterTypes.length > 0 || stored === 'meter') &&
-      true,
+      // Nach Heizkostenverordnung verteilt nur eine Anlage mit eigener Abrechnung; angeboten wird der
+      // Schlüssel dort. Sonst nur bei einer Position, die ihn schon hat.
+      (k !== 'heatingSystem' || stored === 'heatingSystem'),
   )
 }
 

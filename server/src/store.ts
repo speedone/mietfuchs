@@ -123,7 +123,7 @@ export type ClosedSettlement = {
 // Ebenso kennt sie nichts aus #94: keine Miteigentumsanteile, keine Teilnehmer, keine Angaben
 // einer Gemeinschaft, keine Einzelbeträge und die beiden neuen Umlageschlüssel nicht. Der
 // Validator weist sie mit der eingefrorenen Liste aus legacy/schema.ts ab.
-export type LegacyCostKey = Exclude<CostKey, 'external' | 'amounts'>
+export type LegacyCostKey = Exclude<CostKey, 'external' | 'amounts' | 'heatingSystem'>
 export type LegacyUnit = Omit<Unit, 'propertyId' | 'mea'>
 // Ebenso kennt sie keine Heizanlage (Heizung PR 4): keine Zähler für Warmwasser und
 // Heizkostenverteiler, keine Anlagenzähler, keine Angaben zu Einbau und Fernablesbarkeit. Der
