@@ -1118,8 +1118,12 @@ Lieferdatum und Menge statt Rechnungszeitraum und laufen nicht durch die Abgrenz
   fuelStock.ts, dieselbe Regel in Schnappschuss und Abrechnung), haben ihre Mieter den Endbestand mit
   den Rechnungen bezahlt; er geht mit 0 € und ohne CO₂-Kosten weiter, die kg bleiben. Ebenso zählt der
   Anfangsbestand der ersten Heizperiode mit Vorrat mit 0 €, wenn er schon umgelegt wurde
-  (`heating_periods.opening_already_settled`; ohne Antwort „ja“, wenn die Vorperiode Brennstoff der
-  Anlage ohne Vorrat abgerechnet hat oder ohne Vorrat abgeschlossen ist), Hinweis `fuel.opening-settled`.
+  (`heating_periods.opening_already_settled`; ohne Antwort „ja“, wenn die Vorperiode eine Position der
+  Kostenart Heizung mit Betrag an dieser Anlage oder ohne Anlage hat, außer ausdrücklich nicht
+  Brennstoff; „abgeschlossen ohne Vorrat“ allein reicht nicht), Hinweis `fuel.opening-settled` mit
+  „nach Ihrer Angabe“ oder „nach der Vorbelegung“; ein ausdrückliches „nein“ trotz Heizkosten in der
+  Vorperiode ergibt `fuel.opening-not-settled` mit Betrag. Eine abgeschlossene Heizperiode, deren Stand
+  keinen Vorrat eingefroren hat, gibt ihren Endbestand ebenfalls mit 0 € weiter (`closedWithoutStock`).
   Übernimmt eine Heizperiode einen Bestand mit Wert nicht (Bestandsrechnung fehlt, geht nicht auf oder
   kein Schlüssel), oder ist die Folgeperiode ohne Vorrat abgeschlossen, nennt `fuel.stock-not-taken-over`
   den Betrag, den der Vermieter trägt.
@@ -1140,7 +1144,8 @@ Lieferdatum und Menge statt Rechnungszeitraum und laufen nicht durch die Abgrenz
   [fuel-stock-invariant.test.ts](server/test/fuel-stock-invariant.test.ts) prüft die Übergabe je Paar
   von Heizperioden, die Befunde der Durchsicht hält [vorrat-durchsicht.test.ts](server/test/vorrat-durchsicht.test.ts).
 - **Gesperrt** sind Vorrat und Lieferungen einer abgeschlossenen Heizperiode (Lieferdatum dort, auch
-  beim Verschieben hinein oder hinaus; die Bezeichnung bleibt änderbar).
+  beim Verschieben hinein oder hinaus; die Bezeichnung bleibt änderbar), und der Wechsel des
+  Energieträgers, sobald irgendwo ein Vorrat eingetragen ist (409).
 - **§ 11 Abs. 2 Satz 2 CO2KostAufG** (`co2.costs-before`, Rechnungsdatum): Brennstoff mit Rechnung vor
   dem 01.01.2023 zählt mit seinen kg, nicht mit seinen CO₂-Kosten; `fuel.before-2023` sagt, dass er die
   Stufe hebt. CO₂-Kosten gibt es nur bei Heizöl, Flüssiggas und Kohle (`CO2_FUELS`): Holz und Pellets

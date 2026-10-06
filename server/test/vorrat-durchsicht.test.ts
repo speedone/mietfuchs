@@ -188,3 +188,99 @@ test('M2 (T6): Wechsel von Öl auf Gas mit Vorrat in einer offenen Heizperiode: 
     await assert.rejects(h.opened.write((db) => updateHeatingPlant(db, 'hp', { energy: 'gas' })), heatingError(409, /Vorrat eingetragen/))
   })
 })
+
+// ---------- Nachprüfung von 6ef8f10 (Korrekturrunde 2) ----------
+
+test('N1 (T8): Eine ohne Vorrat abgeschlossene Heizperiode gibt ihren Endbestand mit 0 € weiter; 2026 trägt 0 € statt 600 € doppelt', async () => {
+  await withHouse(async (h) => {
+    await h.stock('2024-01', { stockUnit: 'l', openingQuantity: 0, openingCostCents: 0, openingEmissionsKg: 0, openingCo2Cents: 0, openingInvoicedBefore2023: false, closingQuantity: 1000 })
+    const x = await h.deliver('Heizöl 03/2024', '2024-03-01', 3000, 300000, 8028.9, 52549)
+    await h.stock('2025-01', { stockUnit: 'l', closingQuantity: 500 })
+    await h.deliver('Heizöl 03/2025', '2025-03-01', 1000, 120000, 2676.3, 17516)
+    await h.opened.write((db) => updateEntity(db, 'costItems', x.item, { fuelDeliveryId: null }))
+    await h.close(2025)
+    await h.opened.write((db) => updateEntity(db, 'costItems', x.item, { fuelDeliveryId: x.delivery }))
+    await h.stock('2026-01', { stockUnit: 'l', closingQuantity: 0 })
+    const s24 = await h.settle(2024)
+    const stand25 = (await h.opened.read(readClosedSettlements)).find((c) => c.period === '2025-01')?.settlement
+    const s26 = await h.settle(2026)
+    // 2026 übernimmt aus 2025 nichts mehr: vorher trugen die Mieter dort 600 € zum zweiten Mal.
+    assert.equal(heat(s26), 0)
+    // 2024 schreibt 1.000 € gut, die keine Abrechnung übernimmt; das steht mit Betrag da (I2), und
+    // zusammen mit diesem Verlust des Vermieters ist der Brennstoff genau einmal verteilt (4.200 €).
+    assert.match(textOf(s24, 'fuel.stock-not-taken-over'), /Endbestand im Wert von 1\.000,00 €/)
+    assert.equal(heat(s24) + heat(stand25) + heat(s26) + 100000, 420000)
+    assert.match(textOf(s26, 'fuel.opening-settled'), /Heizperiode 2025 ist ohne Vorrat abgeschlossen/)
+  })
+})
+
+test('N2 (T1u): Heizposition der Vorperiode ohne Kennzeichen „Brennstoff“ ist ein Indiz, auch bei offener Vorperiode: 3.000 € statt 5.000 €', async () => {
+  await withHouse(async (h) => {
+    await h.opened.write((db) => createEntity(db, 'costItems', 'alt', { propertyId: 'objekt-1', period: '2024-01', category: HEATING_CATEGORY, description: 'Heizöl 2024', amountCents: 300000, key: 'area', heatingPlantId: 'hp' }))
+    const view = await h.stock('2025-01', { stockUnit: 'l', openingQuantity: 2000, openingCostCents: 200000, openingEmissionsKg: 5352.6, openingCo2Cents: 35033, openingInvoicedBefore2023: false, closingQuantity: 1000 }) ?? assert.fail('keine Anlage')
+    assert.equal(view.askAlreadySettled, true)
+    await h.deliver('Heizöl 10/2025', '2025-10-01', 1000, 100000, 2676.3, 17516)
+    const s25 = await h.settle(2025)
+    assert.equal(heat(await h.settle(2024)) + heat(s25), 300000)
+    assert.match(textOf(s25, 'fuel.opening-settled'), /nach der Vorbelegung schon mit einer früheren Abrechnung umgelegt, denn in der Heizperiode 2024 sind Heizkosten von 3\.000,00 € nach Lieferung verteilt/)
+  })
+})
+
+test('N2 (T1v): Abgeschlossen ohne jede Heizposition ist kein Indiz: keine Frage, der Anfangsbestand zählt mit seinem Wert', async () => {
+  await withHouse(async (h) => {
+    await h.opened.write((db) => createEntity(db, 'costItems', 'gs', { propertyId: 'objekt-1', period: '2024-01', category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 50000, key: 'area' }))
+    await h.close(2024)
+    const view = await h.stock('2025-01', { stockUnit: 'l', openingQuantity: 2000, openingCostCents: 200000, openingEmissionsKg: 5352.6, openingCo2Cents: 35033, openingInvoicedBefore2023: false, closingQuantity: 1000 }) ?? assert.fail('keine Anlage')
+    assert.equal(view.askAlreadySettled, false)
+    await h.deliver('Heizöl 10/2025', '2025-10-01', 1000, 100000, 2676.3, 17516)
+    const s25 = await h.settle(2025)
+    assert.equal(s25.heating?.[0]?.stock?.opening.costCents, 200000)
+    assert.ok(!codes(s25).includes('fuel.opening-settled'))
+  })
+})
+
+test('N2 (T1x): „Nein“, obwohl die Vorperiode nach Lieferung verteilt hat: Warnung mit Betrag', async () => {
+  await withHouse(async (h) => {
+    await h.deliver('Heizöl 03/2024', '2024-03-01', 3000, 300000, 8028.9, 52549)
+    await h.close(2024)
+    await h.stock('2025-01', { stockUnit: 'l', openingQuantity: 2000, openingCostCents: 200000, openingEmissionsKg: 5352.6, openingCo2Cents: 35033, openingInvoicedBefore2023: false, openingAlreadySettled: false, closingQuantity: 1000 })
+    await h.deliver('Heizöl 10/2025', '2025-10-01', 1000, 100000, 2676.3, 17516)
+    const s25 = await h.settle(2025)
+    const n = s25.notices.find((x) => x.code === 'fuel.opening-not-settled') ?? assert.fail(codes(s25).join(', '))
+    assert.equal(n.level, 'warning')
+    assert.match(n.text, /zählt mit 2\.000,00 €.*Heizkosten von 3\.000,00 €.*tragen die Mieter 2\.000,00 € zweimal/)
+  })
+})
+
+test('N3 (T1): Ohne CO₂-Kosten im Verbrauch keine Meldung, die CO₂-Kosten lägen über den Brennstoffkosten', async () => {
+  await withHouse(async (h) => {
+    await h.deliver('Heizöl 03/2024', '2024-03-01', 3000, 300000, 8028.9, 52549)
+    await h.close(2024)
+    await h.stock('2025-01', { stockUnit: 'l', openingQuantity: 2000, openingCostCents: 200000, openingEmissionsKg: 5352.6, openingCo2Cents: 35033, openingInvoicedBefore2023: false, closingQuantity: 1000 })
+    await h.deliver('Heizöl 10/2025', '2025-10-01', 1000, 100000, 2676.3, 17516)
+    const s25 = await h.settle(2025)
+    assert.ok(!codes(s25).includes('co2.exceeds-heating'), codes(s25).join(', '))
+  })
+})
+
+test('M2 (T6b): Wechsel des Energieträgers auch bei Vorrat nur in einer abgeschlossenen Heizperiode: 409', async () => {
+  await withHouse(async (h) => {
+    await h.stock('2024-01', { stockUnit: 'l', openingQuantity: 1000, openingCostCents: 100000, openingEmissionsKg: 2676.3, openingCo2Cents: 17516, openingInvoicedBefore2023: false, closingQuantity: 400 })
+    await h.close(2024)
+    await assert.rejects(h.opened.write((db) => updateHeatingPlant(db, 'hp', { energy: 'gas' })), heatingError(409, /Für einen neuen Kessel legen Sie eine neue Heizanlage an/))
+  })
+})
+
+test('MB (Mutationsprobe der Nachprüfung): Kein Verlust-Hinweis, solange die Folgeperiode offen ist oder den Bestand übernimmt', async () => {
+  await withHouse(async (h) => {
+    await h.stock('2024-01', { stockUnit: 'l', openingQuantity: 0, openingCostCents: 0, openingEmissionsKg: 0, openingCo2Cents: 0, openingInvoicedBefore2023: false, closingQuantity: 1000 })
+    await h.deliver('Heizöl 03/2024', '2024-03-01', 3000, 300000, 8028.9, 52549)
+    assert.ok(!codes(await h.settle(2024)).includes('fuel.stock-not-taken-over'), 'Folgeperiode offen')
+    await h.stock('2025-01', { stockUnit: 'l', closingQuantity: 500 })
+    await h.deliver('Heizöl 03/2025', '2025-03-01', 1000, 120000, 2676.3, 17516)
+    await h.close(2025)
+    const s24 = await h.settle(2024)
+    assert.ok(!codes(s24).includes('fuel.stock-not-taken-over'), 'Folgeperiode hat übernommen')
+    assert.equal(heat(s24) + heat((await h.opened.read(readClosedSettlements)).find((c) => c.period === '2025-01')?.settlement), 300000 + 120000 - 60000)
+  })
+})

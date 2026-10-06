@@ -52,7 +52,7 @@ export type StockDeliveryInput = {
 
 // Der eingetragene Anfangsbestand (Spalten `opening_*`). `alreadySettled`: schon mit einer früheren
 // Abrechnung umgelegt (nach Lieferung); dann zählt er mit 0 € und ohne CO₂-Kosten, die kg zählen.
-export type StockOpeningInput = { quantity: number; costCents: number | null; emissionsKg: number | null; co2Cents: number | null; invoicedBefore2023: boolean | null; alreadySettled?: boolean }
+export type StockOpeningInput = { quantity: number; costCents: number | null; emissionsKg: number | null; co2Cents: number | null; invoicedBefore2023: boolean | null; alreadySettled?: boolean; settledSource?: 'entered' | 'default' }
 
 // Eine Heizperiode der Kette; snapshot.ts baut sie (`stockChainsOf`).
 export type StockPeriodInput = {
@@ -79,9 +79,12 @@ export type StockPeriodInput = {
   hasKey?: boolean
   // Die Folgeperiode ist abgeschlossen, ohne einen Anfangsbestand von hier übernommen zu haben (I2).
   nextClosedWithoutStock?: boolean
-  // Die Vorperiode hat Brennstoff der Anlage ohne Vorrat abgerechnet oder ist ohne Vorrat abgeschlossen
-  // (C1): Die Karte fragt dann, ob der Anfangsbestand schon umgelegt wurde.
-  previousSettledFuel?: boolean
+  // Die Vorperiode hat Heizkosten der Anlage abgerechnet (C1, Nachprüfung N2): Bezeichnung und Summe der
+  // Positionen. Die Karte fragt dann, ob der Anfangsbestand schon umgelegt wurde.
+  previousFuel?: { label: string; cents: number } | null
+  // Abgeschlossen, ohne dass der Stand einen Vorrat eingefroren hat (Nachprüfung N1): Die Mieter haben
+  // den Brennstoff mit den Rechnungen bezahlt; der Endbestand geht mit 0 € weiter.
+  closedWithoutStock?: boolean
 }
 
 export type StockProblem =
@@ -213,7 +216,7 @@ function balance(p: StockPeriodInput, unit: StockUnit, closingQuantity: number, 
   // Bucht diese Heizperiode keinen Übertrag (freie Schlüssel ohne Schlüssel), haben ihre Mieter den
   // Endbestand schon bezahlt; er geht mit 0 € und ohne CO₂-Kosten weiter (I1). Hat die abgeschlossene
   // Folgeperiode ihn übernommen, gilt dagegen, was sie eingefroren hat.
-  const handover = !frozenNext && opts.needCost && p.hasKey === false ? zeroValued(closing) : closing
+  const handover = !frozenNext && opts.needCost && (p.hasKey === false || p.closedWithoutStock === true) ? zeroValued(closing) : closing
   return {
     ok: true,
     balance: {
@@ -272,7 +275,7 @@ export function stockOf(chain: readonly StockPeriodInput[], opts: StockOptions):
     }
     const r = balance(p, p.unit, p.closingQuantity ?? 0, open, opts)
     if (!r.ok) return { ok: false, problem: { kind: 'invalid', period: p.label, reasons: r.reasons } }
-    const settled = p.ownOpening?.alreadySettled && opening === null ? { openingSettledCents: p.ownOpening.costCents } : {}
+    const settled = p.ownOpening?.alreadySettled && opening === null ? { openingSettledCents: p.ownOpening.costCents, openingSettledSource: p.ownOpening.settledSource ?? 'entered' } : {}
     if (i === last) return { ok: true, statement: { ...r.balance, ...settled, openingSource: i === 0 || source === 'own' ? 'own' : source } }
     opening = r.balance.handover ?? r.balance.closing
     source = 'previous'

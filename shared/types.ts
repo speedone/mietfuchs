@@ -1660,8 +1660,10 @@ export type HeatingStockStatement = {
   // CO₂-Kosten, denn die Mieter haben ihn dann schon bezahlt (Befunde C1, I1 der Durchsicht von #237).
   // Fehlt das Feld (ältere Stände), ist es der Endbestand.
   handover?: StockValue
-  // Der eingetragene Anfangsbestand war schon umgelegt und zählt mit 0 €; hier sein Wert laut Eintrag.
+  // Der eingetragene Anfangsbestand war schon umgelegt und zählt mit 0 €; hier sein Wert laut Eintrag,
+  // und ob der Vermieter es angegeben hat oder Mietfuchs es nach der Vorperiode annimmt.
   openingSettledCents?: number | null
+  openingSettledSource?: 'entered' | 'default'
   closingMeasuredOn: string | null
   consumed: { quantity: number; costCents: number | null; emissionsKg: number; co2Cents: number }
   // Σ der Lieferungen dieser Heizperiode; null, wenn eine keinen Betrag hat.

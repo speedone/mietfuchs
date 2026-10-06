@@ -138,8 +138,8 @@ test('Lieferungen von Heizöl: Lieferdatum und Menge Pflicht, kein Rechnungszeit
     // Die Bezeichnung bleibt änderbar; eine Lieferung in der offenen Folgeperiode geht.
     await opened.write((db) => updateDelivery(db, 'd1', { label: 'Heizöl März' }))
     await opened.write((db) => createDelivery(db, 'd3', 'hp', { ...oel, deliveredAt: '2026-02-01' }))
-    // Ein Wechsel auf Gas mit Lieferungen für den Vorrat wird abgelehnt.
-    await assert.rejects(opened.write((db) => updateHeatingPlant(db, 'hp', { energy: 'gas' })), heatingError(400, /Lieferungen für den Vorrat/))
+    // Ein Wechsel auf Gas mit Vorrat und Lieferungen wird abgelehnt (der Vorrat sperrt zuerst, Nachprüfung von #237, M2).
+    await assert.rejects(opened.write((db) => updateHeatingPlant(db, 'hp', { energy: 'gas' })), heatingError(409, /Vorrat eingetragen/))
   })
 })
 

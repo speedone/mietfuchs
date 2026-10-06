@@ -616,10 +616,14 @@ export function stockChainsOf(source: StockChainSource, plant: SnapshotHeatingPl
     return closedOf(next)?.stockOpenings?.[`${plant.id}:${next.key}`] ?? null
   }
   const itemsIn = (key: string) => source.costItems.filter((c) => c.period === key)
-  // Hat diese Heizperiode Brennstoff der Anlage abgerechnet, ohne Vorrat (C1)? Oder ist sie ohne Vorrat
-  // abgeschlossen? Dann ist der Anfangsbestand der Folgeperiode vermutlich schon umgelegt.
-  const settledWithoutStock = (p: BillingPeriod): boolean =>
-    itemsIn(p.key).some((c) => c.amountCents !== 0 && isStockFuelItem(c, plant.id, HEATING_CATEGORY)) || (closedOf(p) !== undefined && frozenOf(p) === null)
+  // Hat diese Heizperiode Heizkosten der Anlage abgerechnet (C1, Nachprüfung N2)? Indiz ist jede Position
+  // der Kostenart Heizung mit Betrag an dieser Anlage oder ohne Anlage, außer sie ist ausdrücklich kein
+  // Brennstoff (Betrieb, Messdienst). Dann ist der Anfangsbestand der Folgeperiode vermutlich schon
+  // umgelegt. „Abgeschlossen ohne Vorrat“ allein ist kein Indiz.
+  const previousFuelOf = (p: BillingPeriod): { label: string; cents: number } | null => {
+    const fuel = itemsIn(p.key).filter((c) => c.category === HEATING_CATEGORY && c.amountCents !== 0 && (c.heatingPlantId === plant.id || !c.heatingPlantId) && (c.heatingPart ?? 'fuel') === 'fuel')
+    return fuel.length > 0 ? { label: periodLabel(p), cents: fuel.reduce((a, c) => a + c.amountCents, 0) } : null
+  }
   const inputOf = (p: BillingPeriod): StockPeriodInput => {
     const row = rows.get(p.key)
     const measured = row?.closingMeasuredOn ?? null
@@ -634,11 +638,13 @@ export function stockChainsOf(source: StockChainSource, plant: SnapshotHeatingPl
         ? {
           quantity: opening, costCents: row.openingCostCents ?? null, emissionsKg: row.openingEmissionsKg ?? null, co2Cents: row.openingCo2Cents ?? null,
           invoicedBefore2023: row.openingInvoicedBefore2023 ?? null,
-          // Ohne Antwort gilt „schon umgelegt“, wenn die Vorperiode Brennstoff ohne Vorrat abgerechnet hat (C1).
-          alreadySettled: row.openingAlreadySettled ?? settledWithoutStock(previousPeriod(rules, p)),
+          // Ohne Antwort gilt „schon umgelegt“, wenn die Vorperiode Heizkosten der Anlage abgerechnet hat (C1, N2).
+          alreadySettled: row.openingAlreadySettled ?? previousFuelOf(previousPeriod(rules, p)) !== null,
+          settledSource: row.openingAlreadySettled === null || row.openingAlreadySettled === undefined ? 'default' as const : 'entered' as const,
         }
         : null,
-      previousSettledFuel: settledWithoutStock(previousPeriod(rules, p)),
+      previousFuel: previousFuelOf(previousPeriod(rules, p)),
+      closedWithoutStock: closedOf(p) !== undefined && frozenOf(p) === null,
       closingQuantity: row?.closingQuantity ?? null,
       closingMeasuredOn: measured,
       deliveries: deliveries.flatMap((d) => {

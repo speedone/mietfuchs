@@ -301,6 +301,8 @@ const noticeKinds = {
   // (C1), Brennstoffposition ohne Lieferung neben dem Vorrat (I2a).
   'fuel.stock-not-taken-over': { level: 'warning', title: 'Endbestand wird nicht übernommen', rule: 'heating-consumed-fuel', terms: ['fuelStock'] },
   'fuel.opening-settled': { level: 'hint', title: 'Anfangsbestand schon umgelegt', rule: 'heating-consumed-fuel', terms: ['fuelStock'] },
+  // Nachprüfung von #237 (N2): „nicht umgelegt“, obwohl die Vorperiode Heizkosten nach Lieferung verteilt hat.
+  'fuel.opening-not-settled': { level: 'warning', title: 'Anfangsbestand womöglich doppelt', rule: 'heating-consumed-fuel', terms: ['fuelStock'] },
   'fuel.stock-unlinked': { level: 'warning', title: 'Brennstoffposition ohne Lieferung', rule: 'heating-consumed-fuel', terms: ['fuelStock', 'fuelDelivery'] },
   'heating.dhw-not-metered': { level: 'warning', title: 'Warmwasser ohne Wärmezähler abgerechnet', rule: 'heating-dhw-split', terms: ['hotWaterShare', 'heatingCostOrdinance'] },
   'model.prepayment-unsettled': { level: 'warning', title: 'Vorauszahlung ohne Abrechnung', terms: ['prepayment', 'flatRate'] },
@@ -2293,7 +2295,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   const stockManualNotes: { plant: SnapshotHeatingPlant; text: string; invalid: boolean }[] = []
   // Weitere Hinweise zum Vorrat je Anlage (Durchsicht von #237): Verlust beim Vermieter (`lost`), ein
   // schon umgelegter Anfangsbestand (`settled`), Brennstoffpositionen ohne Lieferung (`unlinked`).
-  const stockNotes: { plant: SnapshotHeatingPlant; code: 'fuel.stock-not-taken-over' | 'fuel.opening-settled' | 'fuel.stock-unlinked'; text: string }[] = []
+  const stockNotes: { plant: SnapshotHeatingPlant; code: 'fuel.stock-not-taken-over' | 'fuel.opening-settled' | 'fuel.opening-not-settled' | 'fuel.stock-unlinked'; text: string }[] = []
   const stockUnlinked = new Map<string, SnapshotCostItem[]>()
   const stockOpts = (plant: SnapshotHeatingPlant) => ({
     needCost: plant.method === 'manual', needCo2: CO2_FUELS.includes(plant.energy), countedAt: stockCountedAt,
@@ -2343,9 +2345,24 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       }
       continue
     }
-    if (entry.result.statement.openingSettledCents !== undefined) {
-      const v = entry.result.statement.openingSettledCents
-      stockNotes.push({ plant: entry.plant, code: 'fuel.opening-settled', text: `Der Anfangsbestand von ${fmtNum(entry.result.statement.opening.quantity)} ${STOCK_UNIT_TEXT[entry.result.statement.unit]}${v !== null && v > 0 ? ` (Wert laut Eintrag ${fmtCents(v)})` : ''} ist nach Ihrer Angabe schon mit einer früheren Abrechnung umgelegt worden. Er zählt hier deshalb mit 0 € und ohne CO₂-Kosten; seine kg zählen für die Einstufung des Gebäudes.` })
+    const stmt = entry.result.statement
+    const qty = `${fmtNum(stmt.opening.quantity)} ${STOCK_UNIT_TEXT[stmt.unit]}`
+    const prevFuel = entry.last.previousFuel ?? null
+    if (stmt.openingSettledCents !== undefined) {
+      const v = stmt.openingSettledCents
+      const worth = v !== null && v > 0 ? ` (Wert laut Eintrag ${fmtCents(v)})` : ''
+      // Nachprüfung N2: Angabe des Vermieters oder Vorbelegung, und dann mit Grund.
+      const why = stmt.openingSettledSource === 'default' && prevFuel
+        ? `wurde nach der Vorbelegung schon mit einer früheren Abrechnung umgelegt, denn in der Heizperiode ${prevFuel.label} sind Heizkosten von ${fmtCents(prevFuel.cents)} nach Lieferung verteilt. Trifft das nicht zu, antworten Sie in der Karte „Vorrat“ mit „Nein“.`
+        : 'ist nach Ihrer Angabe schon mit einer früheren Abrechnung umgelegt worden.'
+      stockNotes.push({ plant: entry.plant, code: 'fuel.opening-settled', text: `Der Anfangsbestand von ${qty}${worth} ${why} Er zählt hier deshalb mit 0 € und ohne CO₂-Kosten; seine kg zählen für die Einstufung des Gebäudes.` })
+    } else if (stmt.openingSource === 'own' && prevFuel && (stmt.opening.costCents ?? 0) > 0) {
+      stockNotes.push({ plant: entry.plant, code: 'fuel.opening-not-settled', text: `Nach Ihrer Angabe ist der Anfangsbestand von ${qty} noch nicht umgelegt; er zählt mit ${fmtCents(stmt.opening.costCents ?? 0)}. In der Heizperiode ${prevFuel.label} sind aber Heizkosten von ${fmtCents(prevFuel.cents)} nach Lieferung verteilt. Steckt der Brennstoff des Anfangsbestands darin, tragen die Mieter ${fmtCents(stmt.opening.costCents ?? 0)} zweimal; antworten Sie dann in der Karte „Vorrat“ mit „Ja“.` })
+    }
+    // Nachprüfung N1: Die Vorperiode ist ohne Vorrat abgeschlossen; ihr Endbestand zählt hier mit 0 €.
+    const prevChain = entry.chain.length > 1 ? entry.chain[entry.chain.length - 2] : undefined
+    if (prevChain?.closedWithoutStock && !prevChain.frozenClosing && stmt.opening.quantity > 0) {
+      stockNotes.push({ plant: entry.plant, code: 'fuel.opening-settled', text: `Der Anfangsbestand von ${qty} zählt mit 0 € und ohne CO₂-Kosten: Die Heizperiode ${prevChain.label} ist ohne Vorrat abgeschlossen, ihre Mieter haben den Brennstoff mit den Rechnungen bezahlt. Seine kg zählen für die Einstufung des Gebäudes.` })
     }
     if (!template) {
       stockManualNotes.push({ plant: entry.plant, text: 'Für den Verbrauch aus dem Vorrat gibt es keinen Schlüssel: In dieser Heizperiode und der vorigen steht keine Brennstoffposition dieser Heizanlage, die nach einem Umlageschlüssel verteilt wird. Der Endbestand geht deshalb mit 0 € in die nächste Heizperiode, denn die Mieter haben ihn mit den Rechnungen schon bezahlt.', invalid: false })
@@ -3743,7 +3760,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           `${where}: Für die Aufteilung der CO₂-Kosten fehlen ${andList(gaps)}. Die Heizkostenabrechnung muss den Anteil der Mieter, die Einstufung des Gebäudes und die Berechnungsgrundlagen ausweisen (§ 7 Abs. 3 CO2KostAufG); ` +
             `fehlt das, darf jeder Mieter seinen Anteil an den Heizkosten um ${cut} % kürzen (§ 7 Abs. 4 CO2KostAufG)${cutsOn(ids, cut)}. Tragen Sie die Angaben bei der Lieferung auf der Seite Heizkosten nach.`,
           plantSubject)
-      } else if (F <= 0 || C > F) {
+      } else if (C > 0 && (F <= 0 || C > F)) {
         warn('co2.exceeds-heating',
           `${where}: Die CO₂-Kosten der Lieferungen (${fmtCents(C)}) sind höher als die Brennstoffkosten, die verteilt werden (${fmtCents(F)}). Das passt nicht zusammen; Mietfuchs bucht keine CO₂-Aufteilung. ` +
             `Ohne Aufteilung darf jeder Mieter seinen Anteil an den Heizkosten um ${cut} % kürzen (§ 7 Abs. 4 CO2KostAufG)${cutsOn(ids, cut)}. Prüfen Sie die CO₂-Kosten und die Beträge der Lieferungen und Positionen.`,

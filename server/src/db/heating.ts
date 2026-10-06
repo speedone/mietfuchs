@@ -29,7 +29,7 @@ import { openCo2Periods } from './co2.ts'
 import { parsePeriodKey, periodKey, periodOfKey, rulesOf } from '../../../shared/period.ts'
 import type { Database, Executor } from './client.ts'
 import { readHeatingPlants, readProperties, readUnits } from './read.ts'
-import { asNullableFilled, asNullableText, asText, guardServedChange, HeatingError, heatingPeriodAt, ISO_DATE, merged, oneOfOrUndefined, raw, sameProperty } from './repository.ts'
+import { asNullableFilled, asNullableText, asText, guardServedChange, HeatingError, ISO_DATE, merged, oneOfOrUndefined, raw, sameProperty } from './repository.ts'
 import { servesUnit } from '../../../shared/heatingPeriod.ts'
 import {
   CHANGE_SPLITS, CO2_RESTRICTIONS, fuelDeliveries, closedHeatingSettlementHistory, co2Statements, closedHeatingSettlements, closedSettlements, costItems, DEVICES_INSTALLED_AFTER, DEVICES_REMOTE, HEATING_ENERGIES, HEATING_METHODS,
@@ -147,17 +147,14 @@ async function guardHeatingPlant(db: Executor, before: HeatingPlant | null, afte
     // (Heizung PR 8) sind verschieden gebaut; ein Wechsel dazwischen ließe sie still anders rechnen.
     const stockBefore = STOCK_ENERGIES.includes(before.energy)
     const stockAfter = STOCK_ENERGIES.includes(after.energy)
-    // Auch ein eingetragener Vorrat zählt (Durchsicht von #237, M2): Ohne Vorratsenergie fiele er still
-    // weg. Gezählt wird der Vorrat offener Heizperioden; abgeschlossene sind eingefroren und sperren einen
-    // Wechsel der Anlage nicht (wie die CO₂-Angaben, PR 6), sonst ginge ein Kesseltausch nie.
+    // Auch ein eingetragener Vorrat zählt (Durchsicht von #237, M2; Nachprüfung: jeder, auch in einer
+    // abgeschlossenen Heizperiode): Mit einem anderen Energieträger stimmte die Bestandsrechnung nicht mehr,
+    // und eine wieder geöffnete Heizperiode rechnete ohne ihren Vorrat.
     if (before.energy !== after.energy && stockBefore && !stockAfter) {
-      const rows = await db.select({ period: heatingPeriods.period }).from(heatingPeriods)
+      const [vorrat] = await db.select({ n: count() }).from(heatingPeriods)
         .where(and(eq(heatingPeriods.plantId, after.id), or(isNotNull(heatingPeriods.stockUnit), isNotNull(heatingPeriods.openingQuantity), isNotNull(heatingPeriods.closingQuantity))))
-      for (const r of rows) {
-        const at = await heatingPeriodAt(db, after.id, `${r.period}-01`)
-        if (at && !at.closed) {
-          throw new HeatingError(409, 'An dieser Anlage ist für eine offene Heizperiode ein Vorrat eingetragen (Anfangs- oder Endbestand). Gas, Fernwärme und Strom haben keinen Vorrat; entfernen Sie ihn zuerst auf der Seite Heizkosten.')
-        }
+      if ((vorrat?.n ?? 0) > 0) {
+        throw new HeatingError(409, 'An dieser Anlage ist ein Vorrat eingetragen (Anfangs- oder Endbestand); mit einem anderen Energieträger stimmte die Bestandsrechnung nicht mehr. Für einen neuen Kessel legen Sie eine neue Heizanlage an.')
       }
     }
     if (before.energy !== after.energy && (stockBefore !== stockAfter || after.energy === 'other') && (lieferungen?.n ?? 0) > 0) {
