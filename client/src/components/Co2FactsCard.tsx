@@ -54,7 +54,7 @@ export default function Co2FactsCard({ plant, view, servedAreaM2, onSaved }: { p
 
   return (
     <div className="card">
-      <h2>CO₂: Angaben zum Gebäude <Term id="co2Stage" /></h2>
+      <h2>CO₂: Angaben zum Gebäude für die <Term id="co2Stage">Einstufung</Term></h2>
       <p className="muted">Gilt für alle Heizperioden dieser Anlage. Die Angaben wirken auf Heizperioden, die noch nicht abgeschlossen sind; eine abgeschlossene Abrechnung bleibt, wie sie ist.</p>
       <label className="checkline">
         <input type="checkbox" checked={nonResidential} onChange={(e) => setNonResidential(e.target.checked)} />
@@ -73,7 +73,7 @@ export default function Co2FactsCard({ plant, view, servedAreaM2, onSaved }: { p
           {`Das Gebäude wurde erstmals nach dem ${stichtag} an ein Wärmenetz angeschlossen, dessen Wärme aus dem Emissionshandel stammt (§ 2 Abs. 4 Satz 2 CO2KostAufG)`}
         </label>
       )}
-      <button className="btn" onClick={() => void saveFacts()}>Angaben speichern</button>
+      <div className="row"><button className="btn" onClick={() => void saveFacts()}>Angaben speichern</button></div>
       {plant.method === 'manual' && (
         <div className="field-group">
           <label className="field">

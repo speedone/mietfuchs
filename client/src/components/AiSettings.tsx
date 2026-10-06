@@ -235,7 +235,7 @@ export function AiSettings({ settings, reload }: Props) {
         />
       ))}
 
-      <details className="extra-details" style={{ marginTop: 12 }}>
+      <details className="extra-details">
         <summary>Erweitert</summary>
         <label className="ai-toggle">
           <input
@@ -330,7 +330,7 @@ export function AiSettings({ settings, reload }: Props) {
         </label>
       </details>
 
-      <div className="row" style={{ marginTop: 14 }}>
+      <div className="row">
         <button className="btn" onClick={() => void save()} disabled={saving}>
           {saving && <span className="spinner" />}Speichern
         </button>
@@ -504,7 +504,7 @@ function SlotEditor(props: SlotProps) {
         <div className="notice">
           {status.error}
           {status.found && (
-            <div className="row" style={{ marginTop: 8, alignItems: 'center' }}>
+            <div className="row center">
               <span>Unter {status.found} antwortet Ollama.</span>
               <button className="btn secondary small" onClick={() => onAdopt(status.found!)}>Diese Adresse verwenden</button>
             </div>
@@ -544,7 +544,7 @@ function SlotEditor(props: SlotProps) {
 
       {pull && (
         <div className="ok">
-          <div className="row" style={{ alignItems: 'center' }}>
+          <div className="row center">
             <span className="spinner" />
             <span>„{pull.model}“: {pullText(pull.progress)}</span>
             <button className="btn secondary small" onClick={onCancelPull}>Abbrechen</button>
@@ -577,7 +577,7 @@ function SlotEditor(props: SlotProps) {
           Dienst gibt, braucht dafür in der Regel einen Vertrag zur Auftragsverarbeitung mit dem
           Anbieter. Ohne Bestätigung schickt Mietfuchs nichts dorthin.
           {preset?.notice && <> {preset.notice}</>}
-          <div className="row" style={{ marginTop: 8, alignItems: 'center' }}>
+          <div className="row center">
             <button className="btn secondary small" onClick={props.onConsent}>Übermittlung bestätigen</button>
             {preset?.privacyUrl && (
               <a href={preset.privacyUrl} target="_blank" rel="noreferrer">Bedingungen des Anbieters</a>
@@ -586,7 +586,7 @@ function SlotEditor(props: SlotProps) {
         </div>
       )}
       {consent?.given && (
-        <div className="row" style={{ alignItems: 'center' }}>
+        <div className="row center">
           <p className="muted">Übermittlung an {consent.target} bestätigt am {fmtDate(consent.given.date)}.</p>
           <button className="btn secondary small" onClick={props.onRevoke}>Widerrufen</button>
         </div>

@@ -139,19 +139,18 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
         </>
       )}
       {plants.map((p) => (
-        <div key={p.id}>
-          <ul>{heatingSummary(p, units).map((line) => <li key={line}>{line}</li>)}</ul>
+        // Sichtprüfung E5: eine Liste mit allen Angaben der Anlage, darunter eine Zeile mit allen Aktionen
+        <div key={p.id} className="stack heating-plant">
+          <ul className="facts">{heatingSummary(p, units).map((line) => <li key={line}>{line}</li>)}</ul>
           <HeatingPeriodSection
             plant={p}
             objectRules={rulesOf(property)}
             hasCalendarData={assignable.length > 0 || units.length > 0}
             onChanged={loadAll}
             notify={toast}
+            actions={<button className="btn secondary" onClick={() => openEdit(p)}>Ändern</button>}
+            dangerAction={<button className="btn ghost danger-ghost" onClick={() => remove(p)}>Entfernen</button>}
           />
-          <div className="row">
-            <button className="btn ghost" onClick={() => openEdit(p)}>Ändern</button>
-            <button className="btn ghost" onClick={() => remove(p)}>Entfernen</button>
-          </div>
         </div>
       ))}
       {form && (
@@ -199,7 +198,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
               {whoHint(form.who, kind) && <p className="muted">{whoHint(form.who, kind)}</p>}
               <fieldset className="field grow no-connection">
                 <legend className="field-legend">Welche Wohnungen hängen an dieser Heizung?</legend>
-                <div className="row" style={{ gap: 10 }}>
+                <div className="checks">
                   {units.map((u) => (
                     <label key={u.id} className="checkline">
                       <input
@@ -220,8 +219,8 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
                 <select value={form.remote} onChange={(e) => setForm({ ...form, remote: e.target.value as DevicesRemote })}>
                   {REMOTE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
-                <small className="muted">Woran erkenne ich das? Fernablesbare Geräte liest der Messdienst per Funk ab, ohne die Wohnungen zu betreten. Im Zweifel fragen Sie Ihren Messdienst.</small>
               </label>
+              <small className="muted">Woran erkenne ich das? Fernablesbare Geräte liest der Messdienst per Funk ab, ohne die Wohnungen zu betreten. Im Zweifel fragen Sie Ihren Messdienst.</small>
               <label className="field grow">
                 {`Wurden sie nach dem ${NEW_DEVICES_AFTER} eingebaut?`}
                 <select value={form.installedAfter} onChange={(e) => setForm({ ...form, installedAfter: e.target.value as DevicesInstalledAfter })}>
@@ -234,8 +233,10 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
                   <select value={form.newInstall} onChange={(e) => setForm({ ...form, newInstall: e.target.value as NewDevicesInstall | '' })}>
                     {NEW_INSTALL_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
-                  <small className="muted">Einzeln ersetzt: Die Pflicht zur Fernablesbarkeit gilt dann erst mit der Frist für ältere Geräte. Als Ganzes neu: schon ab dem Einbau. Im Zweifel fragen Sie Ihren Messdienst.</small>
                 </label>
+              )}
+              {asksNewInstall(form) && (
+                <small className="muted">{`Nach dem ${NEW_DEVICES_AFTER} einzeln als Ersatz oder Ergänzung in ein bestehendes System eingebaut: Die Pflicht zur Fernablesbarkeit gilt dann erst mit der Frist für ältere Geräte. Als Ganzes neu installiert: schon ab dem Einbau. Im Zweifel fragen Sie Ihren Messdienst.`}</small>
               )}
               </>)}
               {form.energy === 'heatPump' && (

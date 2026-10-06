@@ -143,14 +143,14 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
   return (
     <>
       <PageHeader
-        title="Zähler"
+        title="Zähler & Stände"
         subtitle={'Zählerstände dokumentieren — Jahresablesung, Zwischenablesung beim Mieterwechsel, Zählerwechsel. Wohnungszähler ermöglichen den Umlageschlüssel „nach Verbrauch“.'}
       />
       {error && !meterForm && <div className="error">{error}</div>}
 
       <div className="card">
-        <div className="row" style={{ marginBottom: 14 }}>
-          <h2 style={{ margin: 0 }} className="grow">Zähler</h2>
+        <div className="row">
+          <h2 className="grow">Zähler</h2>
           <PeriodSelect label={calendar ? 'Verbrauchsjahr' : undefined} />
         </div>
         {meters.length === 0 && (
@@ -199,9 +199,11 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
           </Table>
         )}
 
-        <button className="btn secondary" style={{ marginTop: 14 }} onClick={() => { setError(''); setMeterForm(emptyMeterForm()) }}>
-          + Zähler hinzufügen
-        </button>
+        <div className="row">
+          <button className="btn secondary" onClick={() => { setError(''); setMeterForm(emptyMeterForm()) }}>
+            + Zähler hinzufügen
+          </button>
+        </div>
       </div>
 
       {meterForm && (
@@ -306,7 +308,7 @@ function FragmentRow(props: {
         <td>
           {m.name}
           {m.meterNumber && <div className="muted">Nr. {m.meterNumber}</div>}
-          {cons?.warnings.map((w, i) => <div key={i} className="error" style={{ marginTop: 6 }}>{w}</div>)}
+          {cons?.warnings.map((w, i) => <div key={i} className="error">{w}</div>)}
         </td>
         <td>{unitName}</td>
         <td>{METER_TYPE_LABELS[m.type] ?? m.type}</td>
@@ -315,7 +317,7 @@ function FragmentRow(props: {
             ? `${cons.consumption.toLocaleString('de-DE')}${m.unit ? ` ${m.unit}` : ''}`
             : <span className="muted">zu wenig Ablesungen</span>}
         </td>
-        <td className="actions no-print" style={{ whiteSpace: 'nowrap' }}>
+        <td className="actions no-print">
           <button className="btn small secondary" onClick={onToggle}>{open ? 'Schließen' : `Ablesungen (${readings.length})`}</button>
           {' '}
           <button className="icon-btn" title="Bearbeiten" aria-label="Zähler bearbeiten" onClick={onEdit}>✎</button>
@@ -324,9 +326,9 @@ function FragmentRow(props: {
       </tr>
       {open && (
         <tr>
-          <td colSpan={5} style={{ background: 'var(--bg)', borderRadius: 8 }}>
+          <td colSpan={5} className="stack reading-panel">
             {readings.length > 0 && (
-              <Table style={{ marginBottom: 10 }}>
+              <Table>
                 <thead>
                   <tr>
                     <th>Datum</th>
@@ -359,16 +361,18 @@ function FragmentRow(props: {
               </label>
               <label className="field">
                 {readingForm.replacement ? 'Startstand neuer Zähler' : 'Zählerstand'}
-                <input value={readingForm.value} onChange={(e) => setReadingForm({ ...readingForm, value: e.target.value })} style={{ width: 110 }} />
+                <input value={readingForm.value} onChange={(e) => setReadingForm({ ...readingForm, value: e.target.value })} className="input-num" />
               </label>
-              <label className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingBottom: 9 }}>
-                <input type="checkbox" checked={readingForm.replacement} onChange={(e) => setReadingForm({ ...readingForm, replacement: e.target.checked })} />
-                Zählerwechsel
+              <label className="field checkline">
+                <span>
+                  <input type="checkbox" checked={readingForm.replacement} onChange={(e) => setReadingForm({ ...readingForm, replacement: e.target.checked })} />
+                  Zählerwechsel
+                </span>
               </label>
               {readingForm.replacement && (
                 <label className="field">
                   Endstand alter Zähler
-                  <input value={readingForm.oldEndValue} onChange={(e) => setReadingForm({ ...readingForm, oldEndValue: e.target.value })} style={{ width: 110 }} />
+                  <input value={readingForm.oldEndValue} onChange={(e) => setReadingForm({ ...readingForm, oldEndValue: e.target.value })} className="input-num" />
                 </label>
               )}
               <label className="field grow">
@@ -377,7 +381,7 @@ function FragmentRow(props: {
               </label>
               <button className="btn" onClick={onSaveReading}>Ablesung speichern</button>
             </div>
-            <p className="muted" style={{ marginTop: 8 }}>
+            <p className="muted">
               Tipp: Beim Mieterwechsel am Auszugstag eine Zwischenablesung erfassen — dann wird der
               Verbrauch exakt statt tagesanteilig geschätzt aufgeteilt.
             </p>

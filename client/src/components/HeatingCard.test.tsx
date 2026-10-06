@@ -62,7 +62,7 @@ test('Bearbeiten: jedes Auswahlfeld zeigt den gespeicherten Wert', async () => {
   expect(valueOf(/Wer erstellt Ihre Heizkostenabrechnung/)).toBe('service')
   expect(valueOf(/aus der Ferne ablesbar/)).toBe('partial')
   expect(valueOf(/nach dem 01\.12\.2021 eingebaut/)).toBe('some')
-  expect(valueOf(/einzeln als Ersatz oder Ergänzung/)).toBe('single')
+  expect(valueOf(/Wie wurden die nicht fernablesbaren Geräte eingebaut/)).toBe('single')
 })
 
 test('Einrichten: Fragen ohne Vorauswahl, und das Anlegen nimmt die Positionen der Vorschau mit', async () => {
@@ -73,7 +73,7 @@ test('Einrichten: Fragen ohne Vorauswahl, und das Anlegen nimmt die Positionen d
   expect(valueOf(/Womit wird geheizt/)).toBe('')
   expect(valueOf(/Wer erstellt Ihre Heizkostenabrechnung/)).toBe('')
   // Die Frage nach dem Einbau erscheint erst, wenn sie zählt (Nachprüfung von #230).
-  expect(screen.queryByLabelText(/einzeln als Ersatz oder Ergänzung/)).toBeNull()
+  expect(screen.queryByLabelText(/Wie wurden die nicht fernablesbaren Geräte eingebaut/)).toBeNull()
   fireEvent.change(screen.getByLabelText(/Womit wird geheizt/), { target: { value: 'gas' } })
   fireEvent.change(screen.getByLabelText(/Wer erstellt Ihre Heizkostenabrechnung/), { target: { value: 'service' } })
   fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }))

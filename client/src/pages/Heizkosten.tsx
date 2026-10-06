@@ -55,7 +55,10 @@ export default function Heizkosten({ units, tenancies }: { units: Unit[]; tenanc
 
   return (
     <div>
-      <PageHeader title={`Heizkosten ${period.label}`} />
+      <PageHeader
+        title={`Heizkosten ${period.label}`}
+        subtitle="Je Heizperiode die Angaben aus der Heizkostenabrechnung: CO₂-Kosten, Warmwasser und Lieferungen."
+      />
       {error && <div className="error">{error}</div>}
       {data !== null && data.plants.length === 0 && (
         <div className="card"><p>Legen Sie zuerst in den Stammdaten unter „Heizung“ eine Heizanlage an.</p></div>
@@ -76,7 +79,7 @@ export default function Heizkosten({ units, tenancies }: { units: Unit[]; tenanc
             )}
             {(data?.views[plant.id] ?? []).map((v) => (
               <div key={v.period}>
-                <h2>{plant.name || 'Heizanlage'}, Heizperiode {v.label}</h2>
+                <h2 className="section-title">{plant.name || 'Heizanlage'}, Heizperiode {v.label}</h2>
                 {plant.method === 'service' && (v.from >= first ? (
                   <Co2Card key={`${v.period}:${v.co2?.method ?? ''}`} view={v} tenancies={tenancies} unitsCount={plant.units?.length ?? units.length} hasSelfUsed={units.some((u) => u.selfUsed === true)} onSaved={() => void load()} />
                 ) : (
