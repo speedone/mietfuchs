@@ -4,7 +4,7 @@
 // „Gradtagzahlen Ihres Orts“. Sie steht erst ab einer Heizanlage in der
 // Navigation (`navFor`).
 import { useCallback, useEffect, useState } from 'react'
-import type { DegreeDayValue, FuelDelivery, HeatingPeriodView, HeatingPlant, Tenancy, Unit } from '../types'
+import type { DegreeDayValue, FuelDelivery, HeatingPeriodView, HeatingPlant, HeatingStatement, Tenancy, Unit } from '../types'
 import { api, errorText } from '../api'
 import { usePeriod } from '../period'
 import { useProperty, withProperty } from '../property'
@@ -15,6 +15,7 @@ import DegreeDaysCard from '../components/DegreeDaysCard'
 import FuelCard from '../components/FuelCard'
 import HotWaterCard from '../components/HotWaterCard'
 import StockCard from '../components/StockCard'
+import SelfHeatingCards from '../components/SelfHeatingCards'
 import { showsStockCard } from '../stockForm'
 import Term from '../components/Term'
 import { CO2_ENERGIES, monthsOf, ownedBy } from '../fuelForm'
@@ -22,7 +23,8 @@ import { co2FirstPeriodStart } from '../../../shared/law/co2kostaufg.ts'
 import { servesUnit } from '../../../shared/heatingPeriod.ts'
 import { germanDate } from '../../../shared/law/register.ts'
 
-type Loaded = { plants: HeatingPlant[]; views: Record<string, HeatingPeriodView[]>; deliveries: Record<string, FuelDelivery[]>; degreeDays: DegreeDayValue[] }
+// `heating`: der Ausweis der Abrechnung des Zeitraums (Heizung PR 10), für die eigene Heizkostenabrechnung.
+type Loaded = { plants: HeatingPlant[]; views: Record<string, HeatingPeriodView[]>; deliveries: Record<string, FuelDelivery[]>; degreeDays: DegreeDayValue[]; heating: HeatingStatement[] }
 
 export default function Heizkosten({ units, tenancies }: { units: Unit[]; tenancies: Tenancy[] }) {
   const { property } = useProperty()
@@ -35,7 +37,12 @@ export default function Heizkosten({ units, tenancies }: { units: Unit[]; tenanc
       const views = await Promise.all(plants.map((p) => api<HeatingPeriodView[]>(`/api/heating-plants/${p.id}/periods?period=${encodeURIComponent(period.param)}`)))
       const deliveries = await Promise.all(plants.map((p) => api<FuelDelivery[]>(`/api/heating-plants/${p.id}/deliveries`)))
       const degreeDays = property ? await api<DegreeDayValue[]>(`/api/properties/${property.id}/degree-days`) : []
+      // Heizung PR 10: Ausweis, Ablesungen und Verteilung der eigenen Heizkostenabrechnung stehen in der Abrechnung.
+      const heating = plants.some((p) => p.method === 'self')
+        ? ((await api<{ heating?: HeatingStatement[] }>(withProperty(`/api/settlement/${encodeURIComponent(period.param)}`, property?.id))).heating ?? [])
+        : []
       setData({
+        heating,
         plants,
         views: Object.fromEntries(plants.map((p, i) => [p.id, views[i] ?? []])),
         deliveries: Object.fromEntries(plants.map((p, i) => [p.id, deliveries[i] ?? []])),
@@ -68,13 +75,8 @@ export default function Heizkosten({ units, tenancies }: { units: Unit[]; tenanc
       )}
       {(data?.plants ?? []).map((plant) => (
         <div key={plant.id}>
-          {plant.method === 'self' ? (
-            <div className="card">
-              <p>Die eigene Heizkostenabrechnung kommt mit einer späteren Version.</p>
-              {CO2_ENERGIES.includes(plant.energy) && <ManualCo2Advice energy={plant.energy} />}
-            </div>
-          ) : (<>
-            {plant.method === 'manual' && CO2_ENERGIES.includes(plant.energy) && (data?.deliveries[plant.id] ?? []).length === 0 && (
+          <>
+            {plant.method !== 'service' && CO2_ENERGIES.includes(plant.energy) && (data?.deliveries[plant.id] ?? []).length === 0 && (
               <div className="card">
                 <p>Verteilen Sie die Heizkosten selbst nach einem <Term id="allocationKey">Umlageschlüssel</Term> (bei der Frage, wer abrechnet: „Niemand“), teilt Mietfuchs die CO₂-Kosten selbst auf, sobald Sie die {invoiceName(plant.energy)} unten als Lieferung eintragen; Gutschrift und Position „Nicht umlagefähig“ entfallen dann.</p>
                 <ManualCo2Advice energy={plant.energy} />
@@ -92,9 +94,12 @@ export default function Heizkosten({ units, tenancies }: { units: Unit[]; tenanc
                 <FuelCard plant={plant} view={v} deliveries={ownedBy(data?.deliveries[plant.id] ?? [], v)} units={units} onSaved={() => void load()} />
                 {showsStockCard(plant, v) && <StockCard key={`stock:${v.period}:${JSON.stringify(v.stock?.row ?? null)}`} view={v} co2Fields={CO2_ENERGIES.includes(plant.energy)} energy={plant.energy} onSaved={() => void load()} />}
                 {v.from >= first && CO2_ENERGIES.includes(plant.energy) && <Co2FactsCard plant={plant} view={v} servedAreaM2={servedArea(plant)} onSaved={() => void load()} />}
+                {plant.method === 'self' && (
+                  <SelfHeatingCards plant={plant} view={v} self={data?.heating.find((h) => h.plantId === plant.id && h.period === v.period)?.self ?? null} onChanged={() => void load()} />
+                )}
               </div>
             ))}
-          </>)}
+          </>
         </div>
       ))}
       {property && from !== null && to !== null && data !== null && (

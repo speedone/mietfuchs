@@ -1,0 +1,75 @@
+// Die eigene Heizkostenabrechnung auf der Seite Heizkosten und im Druck (Heizung PR 10, Entwurf 3.5,
+// 8.8), ohne DOM prüfbar (heatingSelfView.test.ts). Die Zahlen rechnet der Server; hier stehen nur
+// Sätze und die Ampel.
+import type { HeatingDistribution, SelfBoundaryView, SelfHeatingStatement, SelfPotView, SelfUnitView, SelfUserView } from './types'
+import { fmtDate, fmtEuro } from './api'
+
+export type Light = 'green' | 'yellow' | 'red'
+
+// Rot ist, was die Abrechnung nach § 9b Abs. 3 rechnen lässt und eine Kürzung erlaubt; gelb, was
+// zulässig ist, aber hingesehen werden sollte (daneben abgelesen, Zwischenablesung nicht möglich).
+export function boundaryLight(b: SelfBoundaryView): Light {
+  if (b.status === 'read') return 'green'
+  // Ab der Warngrenze neben dem Wechsel wählt der Vermieter; bis dahin wird nicht verteilt (Abweichung 22).
+  if (b.status === 'off') return b.far && b.kind === 'change' && b.gap !== 'useReading' && b.gap !== 'imprecise' ? 'red' : 'yellow'
+  return b.gap === 'impossible' ? 'yellow' : 'red'
+}
+
+const KIND_TEXT: Record<SelfBoundaryView['kind'], string> = { start: 'Beginn der Heizperiode am', end: 'Ende der Heizperiode am', change: 'Mieterwechsel zum' }
+export function boundaryText(b: SelfBoundaryView, unitName: string): string {
+  const head = `${unitName}, ${KIND_TEXT[b.kind]} ${fmtDate(b.date)}`
+  if (b.status === 'read') return `${head}: abgelesen`
+  if (b.status === 'off') {
+    const choice = b.far && b.kind === 'change'
+      ? (b.gap === 'imprecise' ? ' (geteilt nach § 9b Abs. 3)' : b.gap === 'useReading' ? ' (Ablesung verwendet)' : '; bitte wählen')
+      : ''
+    return `${head}: abgelesen ${b.offDays} ${b.offDays === 1 ? 'Tag' : 'Tage'} daneben${b.far ? ', über einen Wintermonat' : ''}${choice}`
+  }
+  const answer = b.gap === 'impossible' ? ' (nicht möglich)' : b.gap === 'missed' ? ' (nicht durchgeführt)' : ''
+  return `${head}: keine Ablesung${answer}`
+}
+
+// § 6 Abs. 4: nach Beginn der Heizperiode gilt der Anteil; vorher und beim ersten Mal ist er frei.
+export const shareEditable = (d: HeatingDistribution): boolean => d.first || !d.begun
+
+export function distributionLines(d: HeatingDistribution): string[] {
+  if (!d.effective) return ['Noch kein Anteil nach Verbrauch festgelegt.']
+  const water = d.effective.water === null ? '' : `, Warmwasser ${d.effective.water} %`
+  const lines = [`Heizung ${d.effective.heating} %${water} nach Verbrauch${d.inherited ? ', übernommen aus der vorigen Heizperiode' : ''}`]
+  if (d.forcedPercent !== null) lines.push(`Vorgeschrieben: ${d.forcedPercent} % bei den Heizkosten (§ 7 Abs. 1 Satz 2 HeizkostenV).`)
+  if (!shareEditable(d)) lines.push('Die Heizperiode hat begonnen; einen anderen Anteil tragen Sie für die nächste ein (§ 6 Abs. 4 HeizkostenV).')
+  return lines
+}
+
+const POT_LABEL = { heating: 'Heizung', water: 'Warmwasser' } as const
+const num = (n: number, digits = 0) => n.toLocaleString('de-DE', { minimumFractionDigits: digits, maximumFractionDigits: digits })
+const perUnit = (cents: number, digits: number) => `${num(cents / 100, digits)}\u00a0€`
+
+export function potLines(p: SelfPotView): string[] {
+  const base = p.costCents * (1 - p.consumptionPct / 100)
+  const lines = [`${POT_LABEL[p.pot]}: ${fmtEuro(p.costCents)}`]
+  lines.push(`Grundkosten ${num(100 - p.consumptionPct)} %: ${fmtEuro(Math.round(base))} für ${num(p.areaM2)} m², ${perUnit(p.baseCentsPerM2, 4)} je m²`)
+  if (p.byAreaOnly) lines.push('Kein Verbrauch erfasst: nur nach Fläche verteilt.')
+  else if (p.consumptionCentsPerUnit !== null) {
+    lines.push(`Verbrauchskosten ${num(p.consumptionPct)} %: ${fmtEuro(Math.round(p.costCents - base))} für ${num(p.consumption)} ${p.consumptionUnit}, ${perUnit(p.consumptionCentsPerUnit, 6)} je ${p.consumptionUnit}`)
+  }
+  return lines
+}
+
+export function userLine(u: SelfUserView, self: Pick<SelfHeatingStatement, 'pots'>): string {
+  const time = `${fmtDate(u.from)} bis ${fmtDate(u.to)} (${u.days} Tage, ${num(u.degreeDayPermille)} ‰ der Gradtage)`
+  // Der Topfbetrag je Mieter, mit Abzug auch nach CO₂-Abzug: die Grundlage einer Kürzung (Abweichung 15).
+  const net = (cents: number, co2: number) => `${fmtEuro(cents)}${co2 > 0 ? `, nach CO₂-Abzug ${fmtEuro(cents - co2)}` : ''}`
+  const parts = [`Heizung ${u.heatingConsumption === null ? 'nicht erfasst' : `${num(u.heatingConsumption)} kWh${u.heatingGroup ? ' (gemeinsam nach § 9b Abs. 3)' : ''}`}, ${net(u.heatingCents, u.heatingCo2Cents)}`]
+  if (self.pots.some((p) => p.pot === 'water')) {
+    parts.push(`Warmwasser ${u.waterConsumption === null ? 'nicht erfasst' : `${num(u.waterConsumption)} m³${u.waterGroup ? ' (gemeinsam nach § 9b Abs. 3)' : ''}`}, ${net(u.waterCents, u.waterCo2Cents)}`)
+  }
+  return `${u.label}, ${time}: ${parts.join('; ')}`
+}
+
+// Das Ableseergebnis einer Wohnung zu einer Grenze (§ 6 Abs. 1 Satz 2 HeizkostenV).
+export function readingResult(unit: SelfUnitView, boundary: string): string[] {
+  return unit.readings.filter((r) => r.boundary === boundary).map((r) => (r.date === null || r.value === null
+    ? `${r.meterName}: nicht abgelesen`
+    : `${r.meterName}: ${num(r.value)} ${r.pot === 'heating' ? 'kWh' : 'm³'} am ${fmtDate(r.date)}`))
+}

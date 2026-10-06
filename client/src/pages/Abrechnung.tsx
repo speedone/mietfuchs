@@ -25,6 +25,7 @@ import { suggestionBasis, totalColumnLabel, totalNote } from '../calcSteps'
 import { useToast, useConfirm } from '../components/feedback'
 import Table from '../components/Table'
 import Co2Block from '../components/Co2Block'
+import SelfHeatingBlock from '../components/SelfHeatingBlock'
 import StockBlock from '../components/StockBlock'
 import { showsStock, stockBlock } from '../stockView'
 import FuelBlock from '../components/FuelBlock'
@@ -610,6 +611,8 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
                 </Table>
               )}
               {/* Der Ausweis nach § 7 Abs. 3 CO2KostAufG (Heizung PR 6) wird mitgedruckt. */}
+              {/* Heizung PR 10: der Ausweis der eigenen Heizkostenabrechnung, vor dem CO₂-Block. */}
+              {(data?.heating ?? []).map((h) => (h.self ? <SelfHeatingBlock key={`self:${h.plantId}:${h.period}`} self={h.self} tenancyId={st.tenancyId} plantName={h.plantName} /> : null))}
               {(data?.heating ?? []).map((h) => <Co2Block key={`${h.plantId}:${h.period}`} view={co2Block(h, st.tenancyId)} />)}
               {(data?.heating ?? []).filter((h) => showsStock(h, st)).map((h) => <StockBlock key={`stock:${h.plantId}:${h.period}`} view={stockBlock(h)} />)}
               {(data?.heating ?? []).map((h) => <FuelBlock key={`fuel:${h.plantId}:${h.period}`} view={fuelBlock(h)} />)}
