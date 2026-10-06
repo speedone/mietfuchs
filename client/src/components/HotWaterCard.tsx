@@ -27,7 +27,7 @@ export default function HotWaterCard({ view, onSaved }: { view: HeatingPeriodVie
 
   return (
     <div className="card">
-      <h2>Warmwasser <Term id="hotWaterShare" /></h2>
+      <h2><Term id="hotWaterShare">Warmwasser</Term></h2>
       <label className="field">
         Wie hat der Messdienst die Wärme für das Warmwasser ermittelt?
         <select value={choice} disabled={view.closed} onChange={(e) => setChoice(HOT_WATER_OPTIONS.find((o) => o.value === e.target.value)?.value ?? '')}>
@@ -35,13 +35,13 @@ export default function HotWaterCard({ view, onSaved }: { view: HeatingPeriodVie
         </select>
       </label>
       {isFormula(choice) && (
-        <label className="field">
+        <label className="checkline">
           <input type="checkbox" checked={unmeasurable} disabled={view.closed} onChange={(e) => setUnmeasurable(e.target.checked)} />
           {unmeasurableLabel(choice)}
         </label>
       )}
       {error && <div className="error">{error}</div>}
-      {!view.closed && <button className="btn" onClick={() => void save()}>Angabe speichern</button>}
+      {!view.closed && <div className="row"><button className="btn" onClick={() => void save()}>Angabe speichern</button></div>}
     </div>
   )
 }

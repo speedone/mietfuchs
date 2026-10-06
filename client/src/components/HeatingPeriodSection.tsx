@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import type { HeatingPeriodChangePreview, HeatingPlant, PeriodRules, SeparatePreview } from '../types'
 import { ApiError, api, errorText, fmtDate, fmtEuro } from '../api'
 import { earliestOpenChange, localToday, MONTH_OPTIONS } from '../periodForm'
@@ -21,6 +21,9 @@ type Props = {
   hasCalendarData: boolean
   onChanged: () => Promise<void>
   notify: (text: string) => void
+  // Sichtprüfung E5: Die Aktionen der Anlage stehen in derselben Zeile wie die des Zeitraums.
+  actions?: ReactNode
+  dangerAction?: ReactNode
 }
 
 // Bei 409 bringt der Server die neue Vorschau mit (veraltete Marke oder fehlende Angaben, wie beim
@@ -31,7 +34,7 @@ function freshPreview<T>(e: unknown): T | null {
   return p !== null && typeof p === 'object' ? p as T : null
 }
 
-export default function HeatingPeriodSection({ plant, objectRules, hasCalendarData, onChanged, notify }: Props) {
+export default function HeatingPeriodSection({ plant, objectRules, hasCalendarData, onChanged, notify, actions, dangerAction }: Props) {
   const [open, setOpen] = useState<'none' | 'period' | 'separate'>('none')
   const [form, setForm] = useState<HeatingPeriodForm>(heatingPeriodForm(plant))
   const [periodPreview, setPeriodPreview] = useState<HeatingPeriodChangePreview | null>(null)
@@ -149,15 +152,17 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
   const amount = (key: string) => separateAnswers?.amounts[key] ?? ''
 
   return (
-    <div className="heating-period">
-      <ul>{heatingPeriodSummary(plant, objectRules).map((line) => <li key={line}>{line}</li>)}</ul>
+    <div className="stack heating-period">
+      <ul className="facts">{heatingPeriodSummary(plant, objectRules).map((line) => <li key={line}>{line}</li>)}</ul>
       <div className="row">
-        <button className="btn ghost" onClick={() => { setForm(heatingPeriodForm(plant)); setOpen('period') }}>Zeitraum der Heizung ändern</button>
+        {actions}
+        <button className="btn secondary" aria-expanded={open === 'period'} onClick={() => { setForm(heatingPeriodForm(plant)); setOpen('period') }}>Zeitraum der Heizung ändern</button>
         {(own || plant.separateSettlement === true) && (
-          <button className="btn ghost" onClick={() => { setMonth(''); setOpen('separate') }}>
+          <button className="btn secondary" aria-expanded={open === 'separate'} onClick={() => { setMonth(''); setOpen('separate') }}>
             {separateOn ? 'Getrennte Heizkostenabrechnung ausschalten' : own ? 'Getrennte Heizkostenabrechnung einschalten' : 'Vorauszahlung aufteilen'}
           </button>
         )}
+        {dangerAction}
       </div>
       {error && <div className="error">{error}</div>}
 
@@ -174,25 +179,31 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
           {form.choice === 'own' && (
             <>
               {/* Die drei Wege (Nutzerwunsch zu Schritt 3): jeder mit Vor- und Nachteilen, Weg 1 als Vorgabe. */}
-              <div className="heating-ways">
+              {/* Sichtprüfung S12/E6: je Weg der Titel und wie es geht; Vor- und Nachteile zum Aufklappen */}
+              <div className="stack heating-ways">
                 <p>Rechnet Ihr Messdienst in einem anderen Zeitraum ab als Ihre Betriebskosten, gibt es drei Wege:</p>
                 <ol>
                   {ways.map((w) => (
-                    <li key={w.id}>
-                      <strong>{w.title}</strong>{w.recommended && <> <span className="badge">Vorgabe</span></>}
-                      <div className="muted">{w.how}</div>
-                      <div>Vorteile: {w.pros.join(' ')}</div>
-                      <div>Nachteile: {w.cons.join(' ')}</div>
-                      {w.example && <div className="muted">{w.example}</div>}
-                      {w.recommended && w.why && <div className="muted">{w.why}</div>}
+                    <li key={w.id} className="stack">
+                      <div className="way-title"><strong>{w.title}</strong>{w.recommended && <> <span className="badge accent">Vorgabe</span></>}</div>
+                      <small className="muted">{w.how}</small>
+                      <details>
+                        <summary>Vor- und Nachteile</summary>
+                        <div>Vorteile: {w.pros.join(' ')}</div>
+                        <div>Nachteile: {w.cons.join(' ')}</div>
+                        {w.example && <small className="muted">{w.example}</small>}
+                      </details>
+                      {w.recommended && w.why && <small className="muted">{w.why}</small>}
                     </li>
                   ))}
                 </ol>
               </div>
-              <fieldset className="field grow">
+              <fieldset>
                 <legend className="field-legend">Gilt dieser Zeitraum schon immer oder erst ab einem Monat?</legend>
-                <label className="checkline"><input type="radio" checked={form.mode === 'start'} onChange={() => setForm({ ...form, mode: 'start' })} /> Schon immer</label>
-                <label className="checkline"><input type="radio" checked={form.mode === 'change'} onChange={() => setForm({ ...form, mode: 'change' })} /> Ab einem Monat</label>
+                <div className="checks">
+                  <label className="checkline"><input type="radio" checked={form.mode === 'start'} onChange={() => setForm({ ...form, mode: 'start' })} /> Schon immer</label>
+                  <label className="checkline"><input type="radio" checked={form.mode === 'change'} onChange={() => setForm({ ...form, mode: 'change' })} /> Ab einem Monat</label>
+                </div>
               </fieldset>
               {/* Laienprobe B14: „Ab Monat“ wurde als „seit wann“ gelesen; gemeint ist der Beginn jeder Heizperiode. */}
               {form.mode === 'start' ? (

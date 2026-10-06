@@ -39,7 +39,7 @@ export default function AiKeyCell({ position: p, units, onChange }: Props) {
           onChange={(e) => onChange({ externalTotalAmount: e.target.value })}
           placeholder="Kosten der Gemeinschaft €"
           inputMode="decimal"
-          style={{ width: 170, marginTop: 4 }}
+          className="input-cell"
         />
       )}
     </>

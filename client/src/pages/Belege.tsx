@@ -515,29 +515,29 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
       />
       {error && <div className="error">{error}</div>}
       {amountCheck && (
-        <div className="notice no-print" role="status" aria-label="Betrag prüfen">
+        <div className="notice stack no-print" role="status" aria-label="Betrag prüfen">
           Beleg an „{amountCheck.item.description}“ angehängt. Betrag der Position: <strong>{fmtEuro(amountCheck.item.amountCents)}</strong>.
           {amountCheck.closed && <div>{closedPeriodNotice(labelOfKey(rulesOf(properties.find((p) => p.id === amountCheck.item.propertyId)), amountCheck.item.period))}</div>}
           {' '}Stimmt er mit dem Beleg überein? Eine aus dem Vorjahr übernommene Position trägt oft noch einen geschätzten Betrag.{' '}
           <a href={`/uploads/${encodeURIComponent(amountCheck.file)}`} target="_blank" rel="noreferrer">Beleg ansehen</a>
           {/* Ein geschätzter Lohnanteil gelangte sonst still in die Anlage V (dritte Durchsicht). */}
           {(amountCheck.item.labor35aCents ?? 0) > 0 && (
-            <div style={{ marginTop: 6 }}>
+            <div>
               Lohnanteil der Position: <strong>{fmtEuro(amountCheck.item.labor35aCents ?? 0)}</strong> – stimmt er mit dem Beleg?{' '}
               {onOpenItem && <button className="btn small ghost" onClick={() => { const it = amountCheck.item; setAmountCheck(null); onOpenItem(it) }}>Lohnanteil im Formular prüfen</button>}
             </div>
           )}
           {amountCheckMode(amountCheck.item) === 'form' ? (
-            <div className="row" style={{ marginTop: 8, alignItems: 'center', gap: 8 }}>
+            <div className="row center">
               <span>Bei dieser Position prüfen Sie den Betrag im Formular: Er hängt an weiteren Angaben (Einzelbeträge oder Kosten der Gemeinschaft).</span>
               {onOpenItem && <button className="btn small" onClick={() => { const it = amountCheck.item; setAmountCheck(null); onOpenItem(it) }}>Position öffnen</button>}
               <button className="btn small ghost" onClick={() => setAmountCheck(null)}>Schließen</button>
             </div>
           ) : (
-          <div className="row" style={{ marginTop: 8, alignItems: 'flex-end', gap: 8 }}>
+          <div className="row">
             <label className="field">
               Betrag laut Beleg
-              <input value={amountCheck.amount} placeholder={fmtEuro(amountCheck.item.amountCents)} style={{ width: 120, textAlign: 'right' }}
+              <input value={amountCheck.amount} placeholder={fmtEuro(amountCheck.item.amountCents)} className="input-num"
                 onChange={(e) => setAmountCheck({ ...amountCheck, amount: e.target.value, problem: '' })} />
             </label>
             <button className="btn small" onClick={() => void saveCheckedAmount()} disabled={!amountCheck.amount.trim()}>Betrag speichern</button>
@@ -545,7 +545,7 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
           </div>
           )}
           {amountCheck.problem && (
-            <div className="error" style={{ marginTop: 6 }}>
+            <div className="error">
               {amountCheck.problem}
               {amountCheck.form && onOpenItem && <> <button className="btn small" onClick={() => { const it = amountCheck.item; setAmountCheck(null); onOpenItem(it) }}>Position öffnen</button></>}
             </div>

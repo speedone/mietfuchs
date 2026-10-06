@@ -14,9 +14,10 @@ import { usePeriod, useSwitchPeriod } from '../period'
 import { useProperty, withProperty } from '../property'
 import { consentPending } from '../update'
 import { heatingWithoutConsumption, meterReadiness } from '../meterCheck'
-import { attentionDetail, attentionLevel } from '../notices'
+import { attentionDetail, attentionLevel, attentionLines } from '../notices'
 import { missingAreaCheck, zeroAreaUnits } from '../unitForm'
 import { UpdateConsent } from '../components/Update'
+import PageHeader from '../components/PageHeader'
 
 type Props = {
   units: Unit[]
@@ -37,6 +38,8 @@ type Level = 'gruen' | 'gelb' | 'rot' | 'leer'
 type Check = {
   title: string
   detail: string
+  // Sichtprüfung S12/E54: mehrere Einträge als Liste statt als ein Absatz
+  lines?: string[]
   level: Level
   tab?: string
   cta?: string
@@ -228,8 +231,9 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
 
     // 6. Hinweise der Berechnung (z. B. negativer Verbrauch)
     if (settlement.warnings.length > 0) {
+      const lines = attentionLines(settlement)
       list.push({ title: 'Hinweise der Berechnung', level: attentionLevel(settlement), tab: 'abrechnung', cta: 'Abrechnung ansehen',
-        detail: attentionDetail(settlement) })
+        detail: lines.length > 0 ? '' : attentionDetail(settlement), lines })
     }
 
     // 7. Abschluss & Versand
@@ -285,22 +289,21 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
 
   return (
     <>
-      <div className="statement-head">
-        <div>
-          <h1 style={{ marginBottom: 2 }}>Abrechnung {label}</h1>
-          <p className="sub" style={{ margin: 0 }}>
-            {cockpitSubtitle({ loaded: !!settlement, fresh: !!fresh, openCount })}
-          </p>
-        </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          {statusBadge}
-          {settlement && !settlement.closed && (
-            <span className={`badge ${daysLeft < 0 ? 'red' : daysLeft < 90 ? 'gray' : 'gray'}`}>
-              {daysLeft >= 0 ? `Frist in ${daysLeft} Tagen` : 'Frist abgelaufen'}
-            </span>
-          )}
-        </div>
-      </div>
+      {/* Sichtprüfung S11/E56: Titel wie in der Navigation, mit dem Objekt darüber wie auf jeder Seite */}
+      <PageHeader
+        title={`Cockpit · Abrechnung ${label}`}
+        subtitle={cockpitSubtitle({ loaded: !!settlement, fresh: !!fresh, openCount })}
+        actions={
+          <>
+            {statusBadge}
+            {settlement && !settlement.closed && (
+              <span className={`badge ${daysLeft < 0 ? 'red' : 'gray'}`}>
+                {daysLeft >= 0 ? `Frist in ${daysLeft} Tagen` : 'Frist abgelaufen'}
+              </span>
+            )}
+          </>
+        }
+      />
 
       {error && <div className="error">{error}</div>}
 
@@ -310,7 +313,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
         <div className="card">
           <div className="empty">
             <p>Noch nichts für {label} erfasst. So fangen Sie an:</p>
-            <div className="row" style={{ justifyContent: 'center', marginTop: 12 }}>
+            <div className="row centered">
               <button className="btn secondary" onClick={() => onNavigate('stammdaten')}>🏠 Stammdaten anlegen</button>
               <button className="btn" onClick={() => onNavigate('schnellerfassung')}>📥 Belege zur Schnellerfassung</button>
             </div>
@@ -320,8 +323,8 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
         <>
           {/* Fortschritt */}
           <div className="card">
-            <div className="row" style={{ alignItems: 'center', marginBottom: 6 }}>
-              <strong style={{ flex: 1 }}>Fertigstellung</strong>
+            <div className="row center">
+              <strong className="grow">Fertigstellung</strong>
               <span className="muted">{greenCount} von {relevant.length} erledigt</span>
             </div>
             <div className="progress"><div className="progress-fill" style={{ width: `${pct}%` }} /></div>
@@ -341,7 +344,8 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
                     <span className={`ampel ${c.level === 'leer' ? '' : c.level}`} style={c.level === 'leer' ? { background: 'var(--line)' } : undefined} />
                     <div className="grow">
                       <div className="check-title">{c.title}</div>
-                      <div className="muted">{c.detail}</div>
+                      {c.detail && <div className="muted">{c.detail}</div>}
+                      {c.lines && c.lines.length > 0 && <ul className="muted check-lines">{c.lines.map((l) => <li key={l}>{l}</li>)}</ul>}
                     </div>
                     {clickable && <span className="check-cta">{c.cta} →</span>}
                   </div>
@@ -349,7 +353,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
               })}
             </div>
 
-            <div className="row" style={{ marginTop: 16 }}>
+            <div className="row">
               {next ? (
                 <button className="btn" onClick={() => (next.go ? next.go() : onNavigate(next.tab!))}>→ Nächster Schritt: {next.cta}</button>
               ) : (

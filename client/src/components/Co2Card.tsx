@@ -70,16 +70,17 @@ export default function Co2Card({ view, tenancies, unitsCount, hasSelfUsed = fal
     }
   }
 
-  const text = (key: TextKey, label: string, term?: ReactNode) => (
+  // Sichtprüfung S5/E38: Ein Fachbegriff steht als Wort in der Beschriftung, nicht als zweite Zeile dahinter.
+  const text = (key: TextKey, label: ReactNode) => (
     <label className="field">
-      {label}{term}
+      <span>{label}</span>
       <input value={form[key]} inputMode="decimal" disabled={view.closed} onChange={(e) => set(key, e.target.value)} />
     </label>
   )
 
   return (
     <div className="card">
-      <h2>CO₂-Kosten <Term id="co2Split" /></h2>
+      <h2><Term id="co2Split">CO₂-Kosten</Term></h2>
       {view.closed && <p className="muted">Diese Heizperiode ist abgeschlossen; die Angaben lassen sich nicht mehr ändern.</p>}
       <label className="field">
         {CO2_QUESTION}
@@ -92,34 +93,43 @@ export default function Co2Card({ view, tenancies, unitsCount, hasSelfUsed = fal
           {CO2_ANSWER_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
       </label>
-      <p className="muted">{CO2_EXAMPLE} <Term id="co2Deducted" /></p>
+      <p className="muted">{CO2_EXAMPLE} · <Term id="co2Deducted">Was ist die Abzugszeile?</Term></p>
       <p className="muted">{CO2_NOT_A_SIGN}</p>
       {form.answer === 'unsplit' && (
         <p className="notice">Ohne Aufteilung darf jeder Mieter seinen Anteil an den Heizkosten kürzen; die Abrechnung nennt die Beträge. Bitten Sie den Messdienst um eine Abrechnung mit CO₂-Aufteilung.</p>
       )}
       {service && (
         <>
+          {/* Sichtprüfung E38: der Hilfetext unmittelbar unter seinem Feld, das Kästchen neben seiner Beschriftung */}
           <div className="row">
-            {form.usersTotalApprox ? text('vacancyTotal', 'Beträge leerer oder nicht eingetragener Einheiten') : text('usersTotal', 'Summe der Kosten aller Nutzer')}
-            <label className="field">
-              <input type="checkbox" checked={form.usersTotalApprox} disabled={view.closed} onChange={(e) => set('usersTotalApprox', e.target.checked)} />
-              Ich finde diese Zeile nicht
+            {form.usersTotalApprox ? text('vacancyTotal', 'Beträge leerer oder nicht eingetragener Einheiten (€)') : text('usersTotal', 'Summe der Kosten aller Nutzer (€)')}
+            <label className="field checkline">
+              <span>
+                <input type="checkbox" checked={form.usersTotalApprox} disabled={view.closed} onChange={(e) => set('usersTotalApprox', e.target.checked)} />
+                Ich finde diese Zeile nicht
+              </span>
             </label>
-            {text('unitsCount', 'Nutzeinheiten laut Abrechnung', <> <Term id="serviceUnits" /></>)}
           </div>
           {!form.usersTotalApprox && (
-            <p className="muted">
+            <small className="muted">
               Die gedruckte Summe für Heizung und Warmwasser aller Nutzer, bei einer Abzugszeile nach dem Abzug. Bei Techem heißt die Zeile
               „Summe der Nutzerkosten Heizungsanlage“; bei anderen Messdiensten steht sie in der Kostenaufstellung unter der Verteilung.
-            </p>
+            </small>
           )}
           <div className="row">
-            {text('kgPerM2', 'CO₂-Ausstoß je m² und Jahr (kg)', <> <Term id="co2Stage" /></>)}
+            {text('unitsCount', 'Nutzeinheiten laut Abrechnung')}
+          </div>
+          <small className="muted">
+            {!view.co2 && 'Vorbelegt mit der Zahl der Wohnungen an dieser Heizung; maßgeblich ist die Zahl auf der Abrechnung des Messdienstes. '}
+            <Term id="serviceUnits">Was ist eine Nutzeinheit?</Term>
+          </small>
+          <div className="row">
+            {text('kgPerM2', <>CO₂-Ausstoß je m² und Jahr (kg) für die <Term id="co2Stage">Einstufung</Term></>)}
             {text('emissionsKg', 'CO₂-Ausstoß insgesamt laut Abrechnung (kg)')}
-            {text('serviceArea', 'Wohnfläche laut Abrechnung (m²)', <> <Term id="co2Area" /></>)}
+            {text('serviceArea', <><Term id="co2Area">Wohnfläche</Term> laut Abrechnung (m²)</>)}
             {text('landlordPercent', 'Anteil des Vermieters (%)')}
-            {text('totalCo2', 'CO₂-Kosten insgesamt')}
-            {text('landlordCo2', 'davon Vermieter')}
+            {text('totalCo2', 'CO₂-Kosten insgesamt (€)')}
+            {text('landlordCo2', 'davon Vermieter (€)')}
             {form.answer === 'deducted' && (hasSelfUsed || form.selfLandlord.trim() !== '') && text('selfLandlord', 'davon für Ihre selbst bewohnte Wohnung')}
           </div>
           {/* Laienprobe B21: die Berechnungsgrundlagen der Einstufung (§ 7 Abs. 3 CO2KostAufG). */}
@@ -157,7 +167,7 @@ export default function Co2Card({ view, tenancies, unitsCount, hasSelfUsed = fal
               ))}
             </div>
           )}
-          <details>
+          <details className="extra-details">
             <summary>Weitere Angaben</summary>
             <div className="row">
               {text('fuelGross', 'Brennstoffkosten laut Abrechnung (vor Abzug)')}

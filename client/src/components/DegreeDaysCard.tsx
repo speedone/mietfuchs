@@ -31,12 +31,12 @@ export default function DegreeDaysCard({ propertyId, months, values, onSaved }: 
 
   return (
     <div className="card">
-      <h2>Gradtagzahlen Ihres Orts <Term id="degreeDays" /></h2>
+      <h2><Term id="degreeDays">Gradtagzahlen</Term> Ihres Orts</h2>
       <p className="muted">
         Freiwillig. Mit den Monatswerten des Deutschen Wetterdienstes für Ihren Ort teilt Mietfuchs eine Rechnung genauer auf als mit der
         Gradtagszahlentabelle. Ein Zählerstand zum Stichtag ist noch genauer. Gemeint ist die Gradtagzahl G20/15 (Raumtemperatur 20 °C, Heizgrenze 15 °C, VDI 3807), die Monatssumme Ihrer nächsten Wetterstation; der Deutsche Wetterdienst veröffentlicht sie in seinem Open-Data-Angebot (Climate Data Center), viele Versorger nennen sie auch.
       </p>
-      <div className="row wrap">
+      <div className="row">
         {months.map((m) => (
           <label className="field" key={m}>
             {`${m.slice(5, 7)}/${m.slice(0, 4)}`}
@@ -45,7 +45,7 @@ export default function DegreeDaysCard({ propertyId, months, values, onSaved }: 
         ))}
       </div>
       {error && <div className="error">{error}</div>}
-      <button className="btn" onClick={() => void save()}>Gradtagzahlen speichern</button>
+      <div className="row"><button className="btn" onClick={() => void save()}>Gradtagzahlen speichern</button></div>
     </div>
   )
 }

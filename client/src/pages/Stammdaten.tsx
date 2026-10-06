@@ -361,7 +361,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                   <td>
                     {u.name}
                     {(u.rooms != null || u.floor || u.notes) && (
-                      <div className="muted" style={{ fontSize: 12 }}>
+                      <div className="muted cell-sub">
                         {[u.floor, u.rooms != null ? `${u.rooms.toLocaleString('de-DE')} Zi.` : null, u.notes].filter(Boolean).join(' · ')}
                       </div>
                     )}
@@ -369,7 +369,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                   <td className="num">{u.areaM2.toLocaleString('de-DE')} m²</td>
                   {showsMea && <td className="num">{u.mea != null ? u.mea.toLocaleString('de-DE') : '—'}</td>}
                   <td>
-                    {usageOf(u) === 'vermietet' && <span className="badge green">beteiligt</span>}
+                    {usageOf(u) === 'vermietet' && <span className="badge accent">beteiligt</span>}
                     {usageOf(u) === 'eigen' && (
                       <span className="badge gray" title="In der Verteilbasis, Anteil trägt der Vermieter">
                         Eigennutzung — Eigenanteil
@@ -380,7 +380,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                     )}
                     {/* Eine Einheit ohne Anschluss (#117, #142) soll man in der Liste sehen. */}
                     {connectionSummary(u.noConnection ?? []) && (
-                      <span className="badge gray" style={{ marginLeft: 6 }}>{connectionSummary(u.noConnection ?? [])}</span>
+                      <span className="badge gray badge-next">{connectionSummary(u.noConnection ?? [])}</span>
                     )}
                   </td>
                   <td className="actions no-print">
@@ -392,9 +392,11 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
             </tbody>
           </Table>
         )}
-        <button className="btn secondary" style={{ marginTop: 14 }} onClick={() => { setError(''); setUnitForm({ ...EMPTY_UNIT }) }}>+ Wohnung hinzufügen</button>
+        <div className="row">
+          <button className="btn secondary" onClick={() => { setError(''); setUnitForm({ ...EMPTY_UNIT }) }}>+ Wohnung hinzufügen</button>
+        </div>
         {units.length > 0 && participating.length === 0 && (
-          <div className="notice" style={{ marginTop: 14 }}>Keine Wohnung ist an der Kostenverteilung beteiligt — die Abrechnung wäre leer.</div>
+          <div className="notice">Keine Wohnung ist an der Kostenverteilung beteiligt — die Abrechnung wäre leer.</div>
         )}
       </div>
 
@@ -434,19 +436,19 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                     {t.tenantName}
                     {/* Pauschale oder Inklusivmiete auf einen Blick (#142); die Abrechnung ist der Normalfall. */}
                     {costModelBadge(t.costModel, t.heatingModel) && (
-                      <div style={{ marginTop: 2 }}>
+                      <div className="cell-sub">
                         <span className="badge gray" title="Nebenkostenmodell; ändern unter „Weitere Angaben“">
                           {costModelBadge(t.costModel, t.heatingModel)}
                         </span>
                       </div>
                     )}
                     {(t.email || t.phone) && (
-                      <div className="muted" style={{ fontSize: 12, overflowWrap: 'anywhere' }}>
+                      <div className="muted cell-sub cell-contact" title={[t.email, t.phone].filter(Boolean).join(' · ')}>
                         {t.email}{t.email && t.phone && ' · '}{t.phone && <span className="nowrap">{t.phone}</span>}
                       </div>
                     )}
                     {t.depositCents != null && (
-                      <div style={{ fontSize: 12, marginTop: 2 }}>
+                      <div className="cell-sub">
                         <span className="muted">Kaution {fmtEuro(t.depositCents)}</span>{' '}
                         <span className={`badge ${t.depositStatus === 'erhalten' ? 'green' : t.depositStatus === 'offen' ? 'gray' : 'gray'}`}>
                           {DEPOSIT_STATUS_LABELS[t.depositStatus ?? 'offen']}
@@ -485,12 +487,8 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                     ))}
                   </td>
                   <td className="actions no-print">
-                    {!t.end && (
-                      <button className="btn small secondary" title="Geführter Ablauf: Auszug, Zwischenablesung, neuer Mieter" onClick={() => setWizardFor(t)}>
-                        Mieterwechsel
-                      </button>
-                    )}
-                    {' '}
+                    {/* Sichtprüfung E13: Bearbeiten und Löschen stehen in jeder Zeile oben, der Mieterwechsel darunter */}
+                    <div className="cell-actions">
                     <span className="nowrap">
                     <button
                       className="icon-btn"
@@ -505,20 +503,27 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                     </button>
                     <button className="icon-btn danger" title="Löschen" aria-label="Mietverhältnis löschen" onClick={() => deleteTenancy(t)}>🗑</button>
                     </span>
+                    {!t.end && (
+                      <button className="btn small secondary" title="Geführter Ablauf: Auszug, Zwischenablesung, neuer Mieter" onClick={() => setWizardFor(t)}>
+                        Mieterwechsel
+                      </button>
+                    )}
+                    </div>
                   </td>
                 </tr>
               ))}
             </tbody>
           </Table>
         )}
+        <div className="row">
         <button
           className="btn secondary"
-          style={{ marginTop: 14 }}
           onClick={() => { setError(''); setTenForm({ unitId: defaultTenancyUnitId(units, tenancies, localToday()), tenantName: '', personHistory: [{ from: '', persons: '2' }], start: '', end: '', baseRents: [{ from: '', amount: '' }], prepayments: [{ from: '', amount: '' }], ...EMPTY_TENANCY_EXTRA }) }}
           disabled={units.length === 0}
         >
           + Mietverhältnis hinzufügen
         </button>
+        </div>
       </div>
 
       {tenForm && (
@@ -648,7 +653,9 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                       <label className="field">Betrag €/Monat
                         <input value={p.amount} placeholder="z. B. 120,00" onChange={(e) => setTenForm({ ...tenForm, heatingPrepayments: rows.map((x, k) => (k === i ? { ...x, amount: e.target.value } : x)) })} />
                       </label>
-                      <span />
+                      {rows.length > 1
+                        ? <button className="icon-btn danger" title="Zeile entfernen" aria-label="Zeile entfernen" onClick={() => setTenForm({ ...tenForm, heatingPrepayments: rows.filter((_, k) => k !== i) })}>🗑</button>
+                        : <span />}
                     </div>
                   ))}
                   <button className="btn small secondary field-add" onClick={() => setTenForm({ ...tenForm, heatingPrepayments: [...rows, { from: '', amount: '' }] })}>+ Änderung ab Monat …</button>
@@ -656,9 +663,9 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
               )
             })()}
 
-            <details className="extra-details" style={{ width: '100%' }}>
+            <details className="extra-details">
               <summary>Weitere Angaben — Nebenkosten-Modell, Kontakt, Kaution, Vertrag (optional)</summary>
-              <div className="row" style={{ marginTop: 10 }}>
+              <div className="row">
                 <label className="field grow" title="Pauschale nach § 556 Abs. 2 BGB oder Inklusivmiete: dann gibt es keine Nebenkostenabrechnung">
                   <span>Nebenkosten (<Term id="flatRate">Pauschale</Term>, <Term id="inclusiveRent">Inklusivmiete</Term>)</span>
                   <select value={tenForm.costModel} onChange={(e) => setTenForm({ ...tenForm, costModel: e.target.value as CostModel })}>
@@ -673,9 +680,9 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                 </label>
               </div>
               {showsFlatRates(tenForm.costModel, tenForm.heatingModel) && (
-                <div className="field-group" style={{ marginTop: 10 }}>
+                <div className="field-group">
                   <div className="field-group-label">Pauschale je Monat — Staffel</div>
-                  <div className="muted" style={{ marginBottom: 6 }}>
+                  <div className="muted">
                     Die Pauschale steht im Mietkonto, wird aber nie abgerechnet. Eine Vorauszahlung für die
                     abgerechnete Art gehört in die Staffel „NK-Vorauszahlung“ oben.
                   </div>
@@ -697,7 +704,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                   <button className="btn small secondary field-add" onClick={() => setTenForm({ ...tenForm, flatRates: [...(tenForm.flatRates.length > 0 ? tenForm.flatRates : [{ from: '', amount: '' }]), { from: '', amount: '' }] })}>+ Änderung ab Monat …</button>
                 </div>
               )}
-              <div className="row" style={{ marginTop: 10 }}>
+              <div className="row">
                 <label className="field grow">
                   E-Mail
                   <input type="email" value={tenForm.email} onChange={(e) => setTenForm({ ...tenForm, email: e.target.value })} placeholder="mieter@example.de" />
@@ -807,13 +814,13 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
             {/* Anschlüsse (#117, #142): positiv gefragt, gespeichert wird nur die Ausnahme. Nur
                 Zählerarten des Objekts und schon gesetzte Ausnahmen; sonst gibt es nichts zu fragen. */}
             {connectionTypes(objectMeters, unitForm.noConnection).length > 0 && (
-              <details className="extra-details" style={{ width: '100%' }}>
+              <details className="extra-details">
                 <summary>
                   Weitere Angaben — Anschlüsse{connectionSummary(unitForm.noConnection) ? `: ${connectionSummary(unitForm.noConnection)}` : ''}
                 </summary>
-                <fieldset className="field grow no-connection" style={{ marginTop: 10 }}>
+                <fieldset className="field grow no-connection">
                   <legend className="field-legend"><Term id="noConnection">Anschlüsse</Term> dieser Einheit:</legend>
-                  <div className="row" style={{ gap: 10 }}>
+                  <div className="checks">
                     {connectionTypes(objectMeters, unitForm.noConnection).map((t) => (
                       <label key={t} className="checkline">
                         <input
@@ -941,7 +948,7 @@ function TenantChangeWizard({ tenancy, unit, plants, onClose, onDone }: {
   const readCount = meters.filter((m) => parseMeterValue(meterValues[m.id] ?? '') !== null).length
 
   return (
-    <div ref={rootRef} className="card" style={{ borderColor: 'var(--accent)' }}>
+    <div ref={rootRef} className="card wizard">
       <h2>Mieterwechsel: {tenancy.tenantName} ({unit?.name ?? '—'})</h2>
       {error && <div className="error">{error}</div>}
       {saved && (
@@ -954,7 +961,7 @@ function TenantChangeWizard({ tenancy, unit, plants, onClose, onDone }: {
       {!saved && <>
       <div className="wizard-step">
         <strong>1. Auszug</strong>
-        <div className="row" style={{ marginTop: 8 }}>
+        <div className="row">
           <label className="field">
             Auszugsdatum (letzter Miettag)
             <input ref={endRef} type="date" value={endDate} disabled={step > 1} onChange={(e) => setEndDate(e.target.value)} />
@@ -972,7 +979,7 @@ function TenantChangeWizard({ tenancy, unit, plants, onClose, onDone }: {
             </p>
           ) : (
             <>
-              <p className="muted" style={{ margin: '4px 0 8px' }}>
+              <p className="muted">
                 Stände zum {fmtDate(endDate)} erfassen — dann wird der Verbrauch exakt statt
                 tagesanteilig aufgeteilt. {unitMeters.length === 0 && 'Der Hauptzähler dient nur der Dokumentation.'}
                 {' '}Leere Felder werden übersprungen.
@@ -985,7 +992,7 @@ function TenantChangeWizard({ tenancy, unit, plants, onClose, onDone }: {
                       value={meterValues[m.id] ?? ''}
                       disabled={step > 2}
                       placeholder="Stand"
-                      style={{ width: 140 }}
+                      className="input-s"
                       onChange={(e) => setMeterValues({ ...meterValues, [m.id]: e.target.value })}
                     />
                   </label>
@@ -1001,12 +1008,10 @@ function TenantChangeWizard({ tenancy, unit, plants, onClose, onDone }: {
       {step >= 3 && (
         <div className="wizard-step">
           <strong>3. Neuer Mieter</strong>
-          <div className="row" style={{ marginTop: 8 }}>
-            <label className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingBottom: 9 }}>
-              <input type="checkbox" checked={vacancy} onChange={(e) => setVacancy(e.target.checked)} />
-              Wohnung bleibt vorerst leer (Leerstand)
-            </label>
-          </div>
+          <label className="checkline">
+            <input type="checkbox" checked={vacancy} onChange={(e) => setVacancy(e.target.checked)} />
+            Wohnung bleibt vorerst leer (Leerstand)
+          </label>
           {!vacancy && (
             <div className="row">
               <label className="field grow">
@@ -1019,39 +1024,43 @@ function TenantChangeWizard({ tenancy, unit, plants, onClose, onDone }: {
               </label>
               <label className="field">
                 Personen
-                <input value={newTenant.persons} style={{ width: 80 }} onChange={(e) => setNewTenant({ ...newTenant, persons: e.target.value })} />
+                <input value={newTenant.persons} className="input-xs" onChange={(e) => setNewTenant({ ...newTenant, persons: e.target.value })} />
               </label>
               <label className="field">
                 Kaltmiete €/Monat
-                <input value={newTenant.baseRent} style={{ width: 120 }} placeholder="z. B. 800,00" onChange={(e) => setNewTenant({ ...newTenant, baseRent: e.target.value })} />
+                <input value={newTenant.baseRent} className="input-m" placeholder="z. B. 800,00" onChange={(e) => setNewTenant({ ...newTenant, baseRent: e.target.value })} />
               </label>
               <label className="field">
                 {askHeating ? 'Übrige Vorauszahlung €/Monat' : 'Vorauszahlung €/Monat'}
-                <input value={newTenant.prepayment} style={{ width: 120 }} placeholder="z. B. 150,00" onChange={(e) => setNewTenant({ ...newTenant, prepayment: e.target.value })} />
+                <input value={newTenant.prepayment} className="input-m" placeholder="z. B. 150,00" onChange={(e) => setNewTenant({ ...newTenant, prepayment: e.target.value })} />
               </label>
               {askHeating && (
                 <label className="field">
                   Heizvorauszahlung €/Monat
-                  <input value={newTenant.heatingPrepayment ?? ''} style={{ width: 120 }} placeholder="z. B. 120,00" onChange={(e) => setNewTenant({ ...newTenant, heatingPrepayment: e.target.value })} />
+                  <input value={newTenant.heatingPrepayment ?? ''} className="input-m" placeholder="z. B. 120,00" onChange={(e) => setNewTenant({ ...newTenant, heatingPrepayment: e.target.value })} />
                 </label>
               )}
             </div>
           )}
-          <div className="notice" style={{ marginTop: 10 }}>
+          <div className="notice">
             Beim Abschluss passiert: Mietverhältnis „{tenancy.tenantName}“ endet am {fmtDate(endDate)}
             {readCount > 0 && <> · {readCount} Zwischenablesung{readCount > 1 ? 'en werden' : ' wird'} gespeichert</>}
             {vacancy
               ? ' · die Wohnung bleibt ohne Mieter (Leerstandskosten trägt der Vermieter).'
               : newTenant.name.trim() ? <> · neues Mietverhältnis „{newTenant.name}“ ab {newTenant.start ? fmtDate(newTenant.start) : '—'}.</> : ' · neues Mietverhältnis wird angelegt.'}
           </div>
-          <button className="btn" disabled={busy} onClick={() => void commit()}>
-            {busy && <span className="spinner" />}Mieterwechsel durchführen
-          </button>{' '}
-          <button className="btn ghost" disabled={busy} onClick={onClose}>Abbrechen</button>
+          <div className="row">
+            <button className="btn" disabled={busy} onClick={() => void commit()}>
+              {busy && <span className="spinner" />}Mieterwechsel durchführen
+            </button>
+            <button className="btn ghost" disabled={busy} onClick={onClose}>Abbrechen</button>
+          </div>
         </div>
       )}
       {step < 3 && (
-        <button className="btn ghost" onClick={onClose}>Abbrechen</button>
+        <div className="row">
+          <button className="btn ghost" onClick={onClose}>Abbrechen</button>
+        </div>
       )}
       </>}
     </div>

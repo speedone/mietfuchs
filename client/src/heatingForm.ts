@@ -87,9 +87,9 @@ export const INSTALLED_OPTIONS: { value: DevicesInstalledAfter; label: string }[
 
 // Die Frage nach dem Einbau (§ 5 Abs. 2 Satz 1 und 4 HeizkostenV, Nachprüfung von #230). Sie zählt nur,
 // wenn Geräte nach dem Stichtag eingebaut wurden und nicht alle fernablesbar sind.
-export const NEW_INSTALL_QUESTION =
-  `Wurden die nicht fernablesbaren Geräte nach dem ${NEW_DEVICES_AFTER} einzeln als Ersatz oder Ergänzung in ein bestehendes, ` +
-  'nicht fernablesbares System eingebaut, oder wurde das System als Ganzes neu installiert?'
+// Sichtprüfung E10: kurz gefragt; was „einzeln“ und „als Ganzes“ bedeuten, sagen die Optionen und
+// der Hilfetext darunter.
+export const NEW_INSTALL_QUESTION = 'Wie wurden die nicht fernablesbaren Geräte eingebaut?'
 export const NEW_INSTALL_OPTIONS: { value: NewDevicesInstall | ''; label: string }[] = [
   { value: '', label: 'Weiß ich nicht' },
   { value: 'single', label: 'Einzeln als Ersatz oder Ergänzung' },

@@ -268,7 +268,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
                 checked={printAdjust}
                 onChange={(e) => void saveSetting({ printAdjustSuggestion: e.target.checked })}
               />{' '}
-              Neue Vorauszahlung vorschlagen (§560 BGB)
+              Neue <Term id="prepayment">Vorauszahlung</Term> vorschlagen (§ 560 BGB)
             </span>
           </label>
           <label className="field checkline" title="Kopien der hochgeladenen Beleg-PDFs als Anlage hinter jeder Abrechnung mit ausdrucken">
@@ -278,16 +278,17 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
                 checked={printAttachments}
                 onChange={(e) => void saveSetting({ printAttachments: e.target.checked })}
               />{' '}
-              Belegkopien als Anlage andrucken
+              Belegkopien als Anlage mitdrucken
               {printAttachments && attachmentsLoading && <span className="muted"> (werden vorbereitet …)</span>}
             </span>
           </label>
         </div>
         {choices.length > 0 && (
-          <div className="row no-print">
-            <button className={target === null ? 'btn' : 'btn ghost'} onClick={() => setTarget(null)}>{`Betriebskosten ${label}`}</button>
+          // Sichtprüfung S7/E44: ein Umschalter, dessen gewählter Teil hervorgehoben ist
+          <div className="segmented no-print" role="group" aria-label="Welche Abrechnung?">
+            <button type="button" aria-pressed={target === null} onClick={() => setTarget(null)}>{`Betriebskosten ${label}`}</button>
             {choices.map((h) => (
-              <button key={`${h.plantId}|${h.period.key}`} className={target?.period === h.period.key ? 'btn' : 'btn ghost'} onClick={() => setTarget({ plantId: h.plantId, period: h.period.key })}>
+              <button type="button" key={`${h.plantId}|${h.period.key}`} aria-pressed={target?.period === h.period.key} onClick={() => setTarget({ plantId: h.plantId, period: h.period.key })}>
                 {`Heizkosten ${h.period.label} (eigene Abrechnung, Frist ${fmtDate(h.deadline)})`}
               </button>
             ))}
@@ -300,7 +301,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
 
       {data && (
         <div className="card no-print">
-          <div className="row" style={{ alignItems: 'center' }}>
+          <div className="row center">
             {isClosed ? (
               <>
                 <div className="grow">
@@ -328,6 +329,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
                 <button className="btn" disabled={!data || data.totalCostsCents === 0} onClick={() => void closeSettlement()}>
                   🔒 {docLabel} abschließen
                 </button>
+                {data.totalCostsCents === 0 && <span className="muted">Noch keine Kosten erfasst, nichts abzuschließen.</span>}
               </>
             )}
           </div>
@@ -361,25 +363,37 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
           </div>
         )
       })()}
-      {data && noticesOf(data).map((n, i) => {
-        const target = noticeTarget(n.subject)
-        return (
-          <div key={i} className={`${noticeClass(n.level)} no-print notice-item`}>
-            {n.title && (
-              <div className="notice-head">
-                <span className="notice-level">{NOTICE_LEVEL_LABELS[n.level]}</span> <strong>{n.title}</strong>
+      {/* Sichtprüfung S12/E40: Stufe und Titel je Hinweis als eine Zeile, der Text zum Aufklappen und
+          „Hier beheben →“ immer sichtbar. Ein Widerspruch (Stufe Fehler) steht offen da. Der Wortlaut
+          bleibt unverändert; ein Hinweis ohne Titel (abgeschlossen vor #112) steht wie bisher als Text. */}
+      {data && noticesOf(data).length > 0 && (
+        <div className="notice-list no-print">
+          {noticesOf(data).map((n, i) => {
+            const target = noticeTarget(n.subject)
+            const body = (
+              <>
+                <div>{n.text}</div>
+                {n.terms && n.terms.length > 0 && (
+                  <div className="notice-terms">Begriffe: {n.terms.map((t, k) => <Fragment key={t}>{k > 0 && ', '}<Term id={t} /></Fragment>)}</div>
+                )}
+              </>
+            )
+            return (
+              <div key={i} className={`${noticeClass(n.level)} notice-item`}>
+                {n.title ? (
+                  <details open={n.level !== 'hint'}>
+                    <summary><span className="notice-level">{NOTICE_LEVEL_LABELS[n.level]}</span> <strong>{n.title}</strong></summary>
+                    {body}
+                  </details>
+                ) : body}
+                {target && onNavigate && (
+                  <div><button type="button" className="btn secondary notice-action" onClick={() => onNavigate(target.tab, target.focus)}>{target.label}</button></div>
+                )}
               </div>
-            )}
-            <div>{n.text}</div>
-            {n.terms && n.terms.length > 0 && (
-              <div className="notice-terms">Begriffe: {n.terms.map((t, k) => <Fragment key={t}>{k > 0 && ', '}<Term id={t} /></Fragment>)}</div>
-            )}
-            {target && onNavigate && (
-              <button type="button" className="btn secondary notice-action" onClick={() => onNavigate(target.tab, target.focus)}>{target.label}</button>
-            )}
-          </div>
-        )
-      })}
+            )
+          })}
+        </div>
+      )}
       {data && (() => {
         const basis = legalBasisLines(data.legalBasis)
         return (
@@ -455,12 +469,12 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
             }
             return (
             <div key={st.tenancyId} className={`card statement ${printId === st.tenancyId ? 'print-target' : ''}`}>
-              <div className="muted" style={{ marginBottom: 8 }}>
+              <div className="muted">
                 {letterhead(landlord?.landlordName, property)}
               </div>
               <div className="statement-head">
-                <div>
-                  <h2 style={{ marginBottom: 2 }}>{data ? settlementTitle(data) : `Nebenkostenabrechnung ${label}`}</h2>
+                <div className="stack tight">
+                  <h2>{data ? settlementTitle(data) : `Nebenkostenabrechnung ${label}`}</h2>
                   <div className="muted">
                     {st.tenantName} · {st.unitName} · {personsText(st, tenancies.find((t) => t.id === st.tenancyId))} ·
                     Zeitraum {fmtDate(st.periodStart)} – {fmtDate(st.periodEnd)} ({countOf(st.days, 'Tag', 'Tage')})
@@ -482,7 +496,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
               {st.rows.length === 0 ? (
                 <div className="empty">Keine Kostenpositionen für {label} erfasst.</div>
               ) : (
-                <Table style={{ marginTop: 14 }}>
+                <Table>
                   <thead>
                     <tr>
                       <th>Kostenart</th>
@@ -598,7 +612,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
               {(data?.heating ?? []).map((h) => <FuelBlock key={`fuel:${h.plantId}:${h.period}`} view={fuelBlock(h)} />)}
               {st.rows.length > 0 && (
                 <>
-                  <p style={{ marginTop: 16 }}>
+                  <p>
                     {st.balanceCents < 0 ? (
                       <>
                         Es ergibt sich eine <strong>Nachzahlung von {fmtEuro(-st.balanceCents)}</strong>.
@@ -621,9 +635,9 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
                     </p>
                   )}
                   {st.total35aCents > 0 && (
-                    <div style={{ marginTop: 14 }}>
+                    <div className="stack tight">
                       <strong>Bescheinigung nach §35a EStG</strong>
-                      <p className="muted" style={{ margin: '4px 0 8px' }}>
+                      <p className="muted">
                         In Ihrem Kostenanteil sind folgende Arbeitskosten für haushaltsnahe
                         Dienstleistungen/Handwerkerleistungen enthalten, die Sie ggf. steuerlich
                         geltend machen können:
@@ -646,7 +660,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
                   )}
                 </>
               )}
-              <p className="muted" style={{ marginTop: 14 }}>
+              <p className="muted">
                 {costBasisText(label, calendar)}
                 {printAttachments && stFiles.length > 0
                   ? ` Kopien der zugrunde liegenden Belege sind als Anlage beigefügt (${stFiles.length} Beleg${stFiles.length > 1 ? 'e' : ''}).`
