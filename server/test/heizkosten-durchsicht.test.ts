@@ -187,6 +187,10 @@ test('Durchsicht #239 I3a: der Anteil gehört zur Linie; die neue Anlage überni
     assert.deepEqual(s.notices.filter((n) => n.level === 'error').map((n) => n.code), [])
     assert.equal(tenantsOf(s, 'gas2'), 100000, 'die Kosten der neuen Anlage tragen die Mieter')
     assert.equal(tenantsOf(s, 'gas1'), 300000)
+    // Recht I1: bis PR 14 die Warnung zu § 6a Abs. 3 mit der Kürzung je Mieter (§ 12 Abs. 1 Satz 3).
+    const n6a = s.notices.filter((n) => n.code === 'heating.self-6a-missing')
+    assert.equal(n6a.length, 2, 'je Anlage eine')
+    assert.ok(n6a.every((n) => n.level === 'warning' && /um 3 % kürzen \(§ 12 Abs\. 1 Satz 3 HeizkostenV\), hier: Mieter A \(A\) [0-9.,]+ €/.test(n.text)), n6a.map((n) => n.text).join('\n'))
     await assert.rejects(opened.write((db) => saveDistribution(db, 'hp2', '2025-01', { heatConsumptionPct: 60, insulationRule: 'notApplies' }, '2024-12-01')), status(400, /derselben Heizperiode/))
     const d = await opened.write((db) => saveDistribution(db, 'hp2', '2025-01', { heatConsumptionPct: 70, insulationRule: 'notApplies' }, '2024-12-01'))
     assert.equal(d?.effective?.heating, 70)
