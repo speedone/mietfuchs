@@ -388,6 +388,8 @@ export const heatingPlants = sqliteTable(
     // Ohne Fremdschlüssel: drizzle-kit schreibt beim Hinzufügen einer Spalte kein ON DELETE, und eine
     // ersetzte Anlage wird ohnehin nicht entfernt (sie hält ihre Lieferungen). heating.ts prüft den Verweis.
     replacesPlantId: text('replaces_plant_id'),
+    // Im selben Gebäude wie eine andere Anlage (deren Kennung) oder `'own'`; NULL nicht gefragt.
+    buildingWith: text('building_with'),
   },
   () => [
     oneOf('heating_plants_energy_known', 'energy', HEATING_ENERGIES),

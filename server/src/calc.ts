@@ -56,7 +56,7 @@ import { allocationOf, comparablePrevious, sameAllocation, sameUnits } from '../
 import { possibleDuplicates } from '../../shared/duplicates.ts'
 import { commonPeriod, tenancyOverlaps } from '../../shared/tenancyOverlap.ts'
 import { CALENDAR_RULES, calendarYearPeriod, contextOf, formatDayRange, isCalendarRules, periodContaining, periodDays, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, settlementDeadline, settlementPeriod, type PeriodContext } from '../../shared/period.ts'
-import { monthSpanText, plantRules, plantSpan, recommendedDeadline, replaces, requestMonth, sameSpan, separateOwner, servesUnit, settledSeparately } from '../../shared/heatingPeriod.ts'
+import { monthSpanText, plantRules, plantSpan, recommendedDeadline, requestMonth, sameBuilding, sameLine, sameSpan, separateOwner, servesUnit, settledSeparately } from '../../shared/heatingPeriod.ts'
 import { heatingSnapshotFor, snapshotFor, wayOf } from './snapshot.ts'
 import { plantFuel, rangeOf, type FuelCarry, type FuelResult } from './fuel.ts'
 import { fuelFromDeliveries, fuelFromStock, looseCentsOf, measuredOffset, problemText, settledByDefault, stockOf, stockTemplateOf, stockTouched, valueOf as stockValueOf, type FuelFigures, type StockPeriodInput, type StockResult } from './fuelStock.ts'
@@ -293,7 +293,13 @@ const noticeKinds = {
   // gehört zu keinem Topf. Verteilt wird sie weiter; ein Fehler, weil ihre CO₂-Kosten sich keiner
   // Einstufung zuordnen lassen.
   // Heizung PR 9: Kesseltausch in der Heizperiode; eingestuft wird über beide Anlagen.
-  'co2.plant-replaced': { level: 'hint', title: 'Heizanlage im Zeitraum getauscht', rule: 'co2-split', terms: ['co2Stage', 'heatingSystem'] },
+  'co2.plant-replaced': { level: 'hint', title: 'Heizanlage im Zeitraum getauscht', rule: 'co2-split', terms: ['boilerSwap', 'co2Stage'] },
+  // Heizung PR 9 (Recht I3 der Durchsicht von #238): mehrere Anlagen im selben Gebäude, gemeinsam eingestuft.
+  // Heizung PR 9 (Recht I4 der Durchsicht von #238): Grundlage der Umlage bei einer Etagenheizung ungeklärt.
+  'heating.per-unit-basis': { level: 'hint', title: 'Etagenheizung: Grundlage der Umlage prüfen', terms: ['perUnitHeating'] },
+  'co2.building-joint': { level: 'hint', title: 'Anlagen im selben Gebäude gemeinsam eingestuft', rule: 'co2-split', terms: ['co2Stage', 'co2Area'] },
+  // Heizung PR 9 (Durchsicht von #238, I2): Eine Anlage desselben Gebäudes heizt mit, ihr Ausstoß fehlt.
+  'co2.classification-incomplete': { level: 'warning', title: 'Einstufung ohne eine Anlage des Gebäudes', rule: 'co2-split', terms: ['co2Stage', 'heatingSystem'] },
   'co2.item-spans-plants': { level: 'error', title: 'Heizposition über mehrere Heizanlagen', rule: 'co2-split', terms: ['co2Split', 'heatingSystem'] },
   // #211, Entwurf 7.7: Warmwasser nach einer Formel ohne bestätigten unzumutbaren Aufwand.
   // Heizung PR 8 (#97, #99): Brennstoffvorrat (Entwurf 8.2, 10.1). `fuel.stock-missing` ist hier eine
@@ -307,7 +313,7 @@ const noticeKinds = {
   // Durchsicht von #237: Bestand, den keine Abrechnung übernimmt (I2), schon umgelegter Anfangsbestand
   // (C1), Brennstoffposition ohne Lieferung neben dem Vorrat (I2a).
   // Kesseltausch (Heizung PR 9): Der Restbestand einer stillgelegten Anlage bleibt beim Vermieter.
-  'fuel.stock-remaining': { level: 'hint', title: 'Restbestand nach Stilllegung der Heizanlage', rule: 'heating-consumed-fuel', terms: ['fuelStock'] },
+  'fuel.stock-remaining': { level: 'hint', title: 'Restbestand nach Stilllegung der Heizanlage', rule: 'heating-consumed-fuel', terms: ['boilerSwap', 'fuelStock'] },
   'fuel.stock-not-taken-over': { level: 'warning', title: 'Endbestand wird nicht übernommen', rule: 'heating-consumed-fuel', terms: ['fuelStock'] },
   'fuel.opening-settled': { level: 'hint', title: 'Anfangsbestand schon umgelegt', rule: 'heating-consumed-fuel', terms: ['fuelStock'] },
   // Nachprüfung von #237 (N2): „nicht umgelegt“, obwohl die Vorperiode Heizkosten nach Lieferung verteilt hat.
@@ -2442,8 +2448,18 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // den Endbestand. Er gehört dem Vermieter; die Mieter tragen nur den verbrauchten Brennstoff. Die
     // Gegenbuchung wird deshalb geteilt: der Anfangsbestand wie bisher, der Restbestand mit seinem Wert
     // als eigene Zeile beim Vermieter.
+    // Heizt die Nachfolgerin mit demselben Brennstoff weiter, ist der Restbestand ihr Anfangsbestand
+    // (snapshot.ts, `stockChainsOf`); dann gilt die gewöhnliche Gegenbuchung (Recht I1 der Durchsicht von #238).
     const retiredOn = entry.plant.endsOn ?? null
-    if (retiredOn !== null && retiredOn >= period.from && retiredOn <= period.to && closing !== 0) {
+    // Ein eigener Anfangsbestand der Nachfolgerin in dieser Heizperiode beginnt ihre Kette neu; dann bleibt
+    // der Restbestand wie bei einem anderen Brennstoff beim Vermieter.
+    const carriedOn = plants.some((p) => {
+      if (p.replacesPlantId !== plantId || p.energy !== entry.plant.energy || retiredOn === null) return false
+      // Die erste Heizperiode der neuen Anlage: dieselbe oder, bei einem Tausch zum Ersten, die folgende.
+      const first = periodContaining(plantRules(wayOf(p), objectRules), dayAfter(retiredOn)).key
+      return ((snapshot.heatingPeriodRows ?? []).find((r) => r.plantId === p.id && r.period === first)?.openingQuantity ?? null) === null
+    })
+    if (retiredOn !== null && retiredOn >= period.from && retiredOn <= period.to && closing !== 0 && !carriedOn) {
       if (opening !== 0) {
         fuelCounterRows.push({
           costItemId: `stock:${plantId}:${period.key}`, category: HEATING_CATEGORY, description: 'Gegenbuchung: Übertrag aus dem Brennstoffvorrat',
@@ -2458,7 +2474,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       const norm = mayAgreeOtherwise(snapshot.units, isDwelling) ? '§ 2 Nr. 4a BetrKV' : '§ 7 Abs. 2 HeizkostenV'
       const plantName = entry.plant.name ? `„${entry.plant.name}“` : 'ohne Namen'
       stockNotes.push({ plant: entry.plant, code: 'fuel.stock-remaining', text:
-        `Die Heizanlage ${plantName} ist seit dem ${fmtDay(dayAfter(retiredOn))} außer Betrieb. Ihr Restbestand von ${q(st.closing.quantity)} im Wert von ${fmtCents(closing)} wird den Mietern gutgeschrieben, ` +
+        `Die Heizanlage ${plantName} ist seit dem ${fmtDay(dayAfter(retiredOn))} außer Betrieb. Ihren Restbestand von ${q(st.closing.quantity)} im Wert von ${fmtCents(closing)} tragen die Mieter nicht, ` +
         `denn umzulegen sind nur die Kosten der verbrauchten Brennstoffe (${norm}). Der Restbestand gehört Ihnen und steht mit seinem Wert bei Ihrem Anteil. ` +
         'Verkaufen Sie ihn oder lassen Sie ihn abholen, betrifft das die Abrechnung der Mieter nicht.' })
     } else if (net !== 0) {
@@ -2492,10 +2508,14 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     }))
     for (const c of items) {
       if (c.category !== HEATING_CATEGORY || !c.heatingPlantId) continue
-      // Nach einem Kesseltausch versorgen alte und neue Anlage dieselben Wohnungen nacheinander; das ist
-      // keine zweite Anlage im Sinne von F9.
+      // Nach einem Kesseltausch versorgen alte und neue Anlage dieselben Wohnungen nacheinander, auch über
+      // mehrere Täusche (Durchsicht von #238, C1); das ist keine zweite Anlage im Sinne von F9. Eine Anlage,
+      // die in diesem Zeitraum nicht heizt, zählt ebenso wenig.
       const ownPlant = plants.find((p) => p.id === c.heatingPlantId)
-      const others = spanningPlants(itemBasisUnits(c, ctx), c.heatingPlantId, serving.filter((p) => !ownPlant || !replaces(ownPlant, plants.find((x) => x.id === p.id) ?? { id: p.id })))
+      const others = spanningPlants(itemBasisUnits(c, ctx), c.heatingPlantId, serving.filter((p) => {
+        const other = plants.find((x) => x.id === p.id)
+        return !!other && activeIn(other) && (!ownPlant || !sameLine(ownPlant, other, plants))
+      }))
       if (others.length > 0) spanning.set(c.id, others)
     }
   }
@@ -3578,20 +3598,37 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         serviceGrossCents: fuelOf.serviceGrossCents, missingCo2: fuelOf.missingCo2, coveragePermille: fuelOf.coveragePermille, stock: false,
       }
   }
-  // Kesseltausch (Heizung PR 9): Die Anlage, die in derselben Heizperiode die eigene ersetzt oder von ihr
-  // ersetzt wird, mit ihren Zahlen, wenn Mietfuchs für beide selbst aufteilt.
-  const successionOf = (pot: Co2Pot): { pot: Co2Pot; own: OwnFuel } | null => {
-    const mine = plants.find((p) => p.id === pot.plantId)
-    if (!mine || pot.method !== 'manual') return null
-    for (const other of co2Pots) {
-      const plant = plants.find((p) => p.id === other.plantId)
-      if (!plant || other === pot || other.method !== 'manual' || !replaces(mine, plant) || other.items.length === 0) continue
-      const own = ownOf(other)
-      if (own !== null && own.emissionsKg !== null) return { pot: other, own }
+  // Was eine Anlage zur Einstufung des Gebäudes beiträgt (Heizung PR 9): ihr Ausstoß in der Heizperiode und
+  // die Wohnungen, deren Fläche zählt. Bei freien Schlüsseln aus Lieferungen oder Vorrat, bei einer
+  // Etagenheizung nur die vermieteten Wohnungen mit Rechnung (§ 5 Abs. 1 Satz 2), beim Messdienst aus
+  // seinen CO₂-Angaben. `null`: Mietfuchs kennt den Ausstoß nicht.
+  const servedUnitsOf = (plant: SnapshotHeatingPlant | undefined): Map<string, number> =>
+    new Map(snapshot.units.filter((u) => plant !== undefined && servesUnit(plant, u) && isDwelling(u)).map((u) => [u.id, u.areaM2]))
+  const contributionOf = (q: Co2Pot): { kg: number | null; units: Map<string, number> } => {
+    const plant = plants.find((p) => p.id === q.plantId)
+    if (q.method !== 'manual' && q.statement?.method !== 'selfAfterService') return { kg: q.statement?.serviceEmissionsKg ?? null, units: servedUnitsOf(plant) }
+    if (plant?.supply === 'perUnit') {
+      const counted = perUnitFuelOf(q, fuelResults.get(q.plantId)?.result.lines ?? []).filter((u) => u.rented && u.delivered)
+      return { kg: counted.length > 0 ? counted.reduce((a, u) => a + u.emissionsKg, 0) : null, units: new Map(counted.map((u) => [u.unitId, u.areaM2])) }
     }
-    return null
+    return { kg: ownOf(q)?.emissionsKg ?? null, units: servedUnitsOf(plant) }
+  }
+  // Die Anlagen, mit denen eine Anlage gemeinsam eingestuft wird (Heizung PR 9): die ihrer Linie von
+  // Täuschen (§ 5 Abs. 1 Satz 1 CO2KostAufG: der Ausstoß „des Gebäudes … pro Quadratmeter Wohnfläche und
+  // Jahr“) und die, die nach Angabe des Vermieters im selben Gebäude stehen (Satz 2 Halbsatz 2: „deren
+  // Gesamtwohnfläche“), soweit sie in dieser Heizperiode heizen.
+  const partnersOf = (pot: Co2Pot): { pot: Co2Pot; line: boolean }[] => {
+    const mine = plants.find((p) => p.id === pot.plantId)
+    if (!mine) return []
+    return co2Pots.flatMap((other) => {
+      const plant = plants.find((p) => p.id === other.plantId)
+      if (!plant || other === pot || !activeIn(plant)) return []
+      const line = sameLine(mine, plant, plants)
+      return line || sameBuilding(mine, plant, plants) ? [{ pot: other, line }] : []
+    })
   }
   for (const pot of co2Pots) {
+    // Ohne Positionen kein Topf  for (const pot of co2Pots) {
     // Ohne Positionen kein Topf, außer die Anlage hat Lieferungen (Heizung PR 7): Dann gehört ihre
     // Bewertung samt Lücken in die Abrechnung.
     if (pot.items.length === 0 && !fuelResults.has(pot.plantId) && !(stockOfPlant.get(pot.plantId)?.result.ok ?? false)) continue
@@ -3641,6 +3678,16 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Wärme aus dem Emissionshandel bei einem Anschluss nach dem Stichtag (§ 2 Abs. 4 Satz 2
     // CO2KostAufG, Heizung PR 7): Das Gesetz gilt nicht; der Stichtag steht im Rechtsstand.
     const potPlant = plants.find((x) => x.id === pot.plantId)
+    // Etagenheizung auf Vertrag des Vermieters (Recht I4 der Durchsicht von #238): Die Heizkostenverordnung
+    // gilt nicht, und für die Umlage der Gaskosten nennt die Betriebskostenverordnung keine Nummer; das sagt
+    // die Abrechnung, statt eine Grundlage zu behaupten.
+    if (potPlant?.supply === 'perUnit' && settledHere) {
+      warn('heating.per-unit-basis',
+        `${where}: Für Etagenheizungen gilt die Heizkostenverordnung nicht; sie regelt nur zentrale Anlagen und die Wärmelieferung (§ 1 Abs. 1 HeizkostenV). ` +
+          'Die Betriebskostenverordnung nennt bei Etagenheizungen nur die Kosten der Reinigung und Wartung (§ 2 Nr. 4 Buchstabe d BetrKV). Ob Sie die Gaskosten selbst umlegen dürfen, wenn der Gasvertrag auf Sie läuft, ist nicht geklärt; ' +
+          'umgelegt werden dürfen Betriebskosten nur, wenn der Mietvertrag es vereinbart (§ 556 Abs. 1 BGB). Prüfen Sie Ihren Mietvertrag, im Zweifel mit Ihrem Haus- und Grundbesitzerverein.',
+        plantSubject)
+    }
     let etsExempt = false
     if (pot.energy === 'districtHeating' && potPlant?.districtEtsNew === true) {
       const ets = law(co2DistrictEtsNew, { period: hPeriod }, lawLog)
@@ -3858,30 +3905,51 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       const perUnit = potPlant?.supply === 'perUnit' && !afterService ? perUnitFuelOf(pot, fuelOf?.lines ?? []) : null
       const classified = perUnit ? perUnitClassification(perUnit) : null
       const C = classified ? classified.co2Cents : (afterService ? own.serviceCo2Cents : own.co2Cents) ?? 0
-      // Kesseltausch (Heizung PR 9): Maßgeblich ist der Ausstoß des Gebäudes pro Quadratmeter und Jahr (§ 5
-      // Abs. 1 Satz 1 CO2KostAufG), also beider Anlagen zusammen; jede teilt ihre CO₂-Kosten mit diesem Anteil.
-      const partner = classified ? null : successionOf(pot)
-      const emissionsKg = classified
-        ? classified.emissionsKg
-        : partner && own.emissionsKg !== null ? own.emissionsKg + (partner.own.emissionsKg ?? 0) : own.emissionsKg
-      if (partner && own.emissionsKg !== null && potPlant?.replacesPlantId === partner.pot.plantId && emissionsKg !== null) {
+      // Gemeinsame Einstufung (Heizung PR 9): nach einem Kesseltausch über die Anlagen der Linie, im selben
+      // Gebäude über alle seine Anlagen. Jede teilt ihre CO₂-Kosten mit dem gemeinsamen Anteil. Fehlt der
+      // Ausstoß einer, stuft Mietfuchs ohne sie ein und sagt es (Durchsicht von #238, I2).
+      const selfKg = classified ? classified.emissionsKg : own.emissionsKg
+      const selfUnits = classified && perUnit ? new Map(perUnit.filter((u) => u.rented && u.delivered).map((u) => [u.unitId, u.areaM2])) : servedUnitsOf(potPlant)
+      const partners = partnersOf(pot).map((x) => ({ ...x, ...contributionOf(x.pot) }))
+      const known = partners.filter((x) => x.kg !== null)
+      const unknown = partners.filter((x) => x.kg === null)
+      const emissionsKg = selfKg === null ? null : selfKg + known.reduce((a, x) => a + (x.kg ?? 0), 0)
+      const jointUnits = new Map(selfUnits)
+      for (const x of known) for (const [u, a] of x.units) jointUnits.set(u, a)
+      const jointArea = [...jointUnits.values()].reduce((a, v) => a + v, 0)
+      const replaced = known.find((x) => x.line && potPlant?.replacesPlantId === x.pot.plantId)
+      if (replaced && selfKg !== null && emissionsKg !== null) {
         warn('co2.plant-replaced',
-          `${where}: In dieser Heizperiode hat „${pot.plantName}“ die Heizanlage „${partner.pot.plantName}“ ersetzt. Eingestuft wird das Gebäude über den Ausstoß beider Heizanlagen ` +
-            `(${fmtKg(own.emissionsKg)} kg und ${fmtKg(partner.own.emissionsKg ?? 0)} kg, zusammen ${fmtKg(emissionsKg)} kg CO₂), denn maßgeblich ist der Kohlendioxidausstoß des Gebäudes pro Quadratmeter Wohnfläche und Jahr (§ 5 Abs. 1 Satz 1 CO2KostAufG). ` +
+          `${where}: In dieser Heizperiode hat „${pot.plantName}“ die Heizanlage „${replaced.pot.plantName}“ ersetzt. Eingestuft wird das Gebäude über den Ausstoß beider Heizanlagen ` +
+            `(${fmtKg(selfKg)} kg und ${fmtKg(replaced.kg ?? 0)} kg, zusammen ${fmtKg(emissionsKg)} kg CO₂), denn maßgeblich ist der Kohlendioxidausstoß des Gebäudes pro Quadratmeter Wohnfläche und Jahr (§ 5 Abs. 1 Satz 1 CO2KostAufG). ` +
             'Die CO₂-Kosten jeder Anlage werden mit dem Anteil dieser Stufe aufgeteilt.',
+          plantSubject)
+      }
+      const building = known.filter((x) => !x.line)
+      if (building.length > 0 && selfKg !== null) {
+        warn('co2.building-joint',
+          `${where}: Nach Ihrer Angabe steht die Anlage im selben Gebäude wie ${andList(building.map((x) => `„${x.pot.plantName}“`))}. Mietfuchs stuft das Gebäude deshalb über den Ausstoß aller seiner Anlagen und die Wohnfläche aller versorgten Wohnungen ein ` +
+            `(${fmtKg(emissionsKg ?? 0)} kg CO₂ auf ${fmtNum(jointArea)} m²), denn maßgeblich sind der Ausstoß des Gebäudes und die Gesamtwohnfläche seiner Wohnungen mit gesonderter oder zentraler Versorgung (§ 5 Abs. 1 Satz 1 und 2 CO2KostAufG). ` +
+            'Das ist eine Auslegung: Wie mehrere Heizanlagen in einem Gebäude einzustufen sind, ist höchstrichterlich nicht geklärt.',
+          plantSubject)
+      }
+      if (unknown.length > 0) {
+        warn('co2.classification-incomplete',
+          `${where}: In dieser Heizperiode heizt auch ${andList(unknown.map((x) => `„${x.pot.plantName}“`))} ${unknown.some((x) => x.line) ? 'als Vorgängerin oder Nachfolgerin dieser Anlage' : 'im selben Gebäude'}, aber deren CO₂-Ausstoß kennt Mietfuchs nicht. ` +
+            'Eingestuft wird deshalb ohne sie; die Stufe kann zu niedrig liegen, und dann tragen die Mieter einen zu großen Teil der CO₂-Kosten (§ 5 Abs. 1 CO2KostAufG). ' +
+            'Tragen Sie dort die Rechnungen mit CO₂-Angaben oder die CO₂-Angaben des Messdienstes ein.',
           plantSubject)
       }
       const cut = law(co2CutMissing, { period: hPeriod }, lawLog)
       const ranges = stageRanges(law(co2StageTable, { period: hPeriod }, lawLog), tableFactor(pot.period))
-      // Fläche der Einstufung (9.2): eingetragen, sonst die Wohnfläche der versorgten Wohnungen.
-      const served = snapshot.units.filter((u) => potPlant !== undefined && servesUnit(potPlant, u) && isDwelling(u)).reduce((a, u) => a + u.areaM2, 0)
+      // Fläche der Einstufung (9.2): eingetragen, sonst die Wohnfläche der versorgten Wohnungen (`jointArea`).
       // Bei freien Schlüsseln hält ein Datensatz `self` nur die Fläche (Heizung PR 7); der Topf führt
       // ihn nicht, denn er kennt nur Angaben laut Messdienst.
       const selfStatement = pot.method === 'manual'
         ? (snapshot.co2Statements ?? []).find((x) => x.plantId === pot.plantId && x.period === pot.period.key && x.method === 'self') ?? null
         : null
       const entered = (afterService ? st?.areaM2 : selfStatement?.areaM2) ?? null
-      const area = entered ?? (classified ? (classified.areaM2 > 0 ? classified.areaM2 : null) : served > 0 ? served : null)
+      const area = entered ?? (jointArea > 0 ? jointArea : null)
       const restriction = potPlant?.restriction ?? 'none'
       const split = selfSplit({
         emissionsKg,
@@ -3915,6 +3983,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       }
       const printed = new Map<string, { cents: number; approximated: boolean }>()
       let booked = false
+      // Etagenheizung (Geld M4 der Durchsicht von #238): Der Ausweis nennt, was wirklich abgezogen ist.
+      let perUnitBooked: number | null = null
       if (gaps.length > 0) {
         warn('co2.incomplete',
           `${where}: Für die Aufteilung der CO₂-Kosten fehlen ${andList(gaps)}. Die Heizkostenabrechnung muss den Anteil der Mieter, die Einstufung des Gebäudes und die Berechnungsgrundlagen ausweisen (§ 7 Abs. 3 CO2KostAufG); ` +
@@ -3935,8 +4005,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         const raws = perUnitReliefs(permille, perUnit)
         const unitOf = new Map(raws.map((r) => [r.tenancyId, perUnit.find((x) => x.unitId === r.unitId)]))
         const perUnitShares: ReliefShare[] = raws.map((r) => ({ tenancyId: r.tenancyId, cents: Math.round(unitOf.get(r.tenancyId)?.shares.find((x) => x.tenancyId === r.tenancyId)?.exact ?? 0) }))
+        perUnitBooked = 0
         if (raws.some((r) => r.raw > 0)) {
-          bookReliefs(pot, raws.map((r) => ({ tenancyId: r.tenancyId, raw: r.raw, approximated: false })), perUnitShares, printed, {
+          perUnitBooked = bookReliefs(pot, raws.map((r) => ({ tenancyId: r.tenancyId, raw: r.raw, approximated: false })), perUnitShares, printed, {
             basis: () => 'nach Ihrem Anteil an den Heizkosten Ihrer Wohnung',
             steps: (x, c) => {
               const u = unitOf.get(x.tenancyId)
@@ -4030,7 +4101,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         booked,
         deducted: false,
         totalCents: C,
-        landlordCents: L === null ? null : Math.round(L),
+        landlordCents: perUnitBooked ?? (L === null ? null : Math.round(L)),
         landlordPermille: split.permille,
         kgPerM2: split.value,
         emissionsKg,
@@ -4106,15 +4177,24 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   }
   // Positionen über zwei Anlagen (Heizung PR 9): ein Fehler an der Position, mit den Wohnungen der
   // anderen Anlage.
+  const plantsHere = (plantId: string | null | undefined): string => {
+    const plant = plants.find((p) => p.id === plantId)
+    return plant ? snapshot.units.filter((u) => servesUnit(plant, u)).map((u) => u.name).join(', ') : ''
+  }
   for (const [itemId, others] of spanning) {
     const item = items.find((c) => c.id === itemId)
     if (!item) continue
     const own = plants.find((p) => p.id === item.heatingPlantId)?.name ?? ''
     const named = (unitIds: string[]) => unitIds.map((id) => unitById.get(id)?.name ?? id).join(', ')
+    // Recht I2 und Geld M5 der Durchsicht von #238: keine Norm für „je Anlage“, die Folge in Euro und der
+    // Handgriff im Formular.
+    const cut = law(co2CutMissing, { period: lawPeriod }, lawLog)
+    const ownUnits = plantsHere(item.heatingPlantId)
     warn('co2.item-spans-plants',
       `„${item.description}“ gehört zur Heizanlage „${own}“, wird aber auch auf Wohnungen verteilt, die an ${andList(others.map((o) => `„${o.name}“`))} hängen (${others.map((o) => named(o.unitIds)).join('; ')}). ` +
-        'Mietfuchs stuft jede Heizanlage für sich ein (§ 5 Abs. 1 CO2KostAufG); eine Position über zwei Anlagen gehört zu keiner, deshalb zählt sie bei der CO₂-Aufteilung nicht mit. ' +
-        'Verteilt wird sie weiter nach ihrem Schlüssel. Teilen Sie die Position je Heizanlage auf, über die beteiligten Wohnungen, oder ordnen Sie sie der richtigen Anlage zu.',
+        'Mietfuchs teilt die CO₂-Kosten je Heizanlage auf; eine Position über zwei Anlagen gehört zu keiner, deshalb mindert sie keinen CO₂-Abzug, und die Mieter tragen den CO₂-Anteil darin mit. ' +
+        `${CO2_NOT_ON_TENANTS} Fehlt die Aufteilung, darf jeder Mieter seinen Anteil an den Heizkosten um ${cut} % kürzen (§ 7 Abs. 4 CO2KostAufG)${cutsOn(new Set([item.id]), cut)}. ` +
+        `Wählen Sie an der Position unter „Weitere Optionen: nur bestimmte Wohnungen beteiligen“ die Wohnungen von „${own}“${ownUnits ? ` (${ownUnits})` : ''}, und erfassen Sie den Teil der übrigen Wohnungen als eigene Position ihrer Anlage.`,
       itemSubject(item))
   }
   // Heizpositionen ohne Heizanlage (Entwurf 9.1, 11.1): Mietfuchs kennt den Energieträger nicht und

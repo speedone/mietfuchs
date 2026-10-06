@@ -115,6 +115,10 @@ test('Etagenheizung (F8, Review Focus 3): 30,0 kg/m² → 40 %, Abzug je Wohnung
   const h = r.heating?.[0] ?? assert.fail('keine Anlage in der Abrechnung')
   assert.deepEqual([h.co2?.kgPerM2, h.co2?.stage?.landlordPercent, h.co2?.areaM2, h.co2?.totalCents], [30, 40, 100, 32000])
   assert.ok(!codes(r).includes('co2.exceeds-heating'), codes(r).join(', '))
+  // Recht I4 der Durchsicht von #238: Die Grundlage der Umlage ist ungeklärt; die Abrechnung sagt das.
+  const basis = r.notices.find((n) => n.code === 'heating.per-unit-basis') ?? assert.fail(codes(r).join(', '))
+  assert.match(basis.text, /§ 1 Abs\. 1 HeizkostenV/)
+  assert.match(basis.text, /§ 2 Nr\. 4 Buchstabe d BetrKV\)\. Ob Sie die Gaskosten selbst umlegen dürfen, wenn der Gasvertrag auf Sie läuft, ist nicht geklärt/)
   // Die eingetragene Fläche der Einstufung geht vor (9.2 Nr. 1): 3.000 kg / 120 m² = 25,0 → 30 %.
   const flaeche = settle(F8({ co2Statements: [co2('hp', { method: 'self', areaM2: 120 })] }))
   assert.equal(flaeche.heating?.[0]?.co2?.stage?.landlordPercent, 30)
@@ -126,6 +130,8 @@ test('Etagenheizung: CO₂-Kosten über der Gasrechnung einer Wohnung → co2.ex
   assert.match(n.text, /Wohnung OG/)
   const tenanten = r.statements.flatMap((st) => st.rows.filter((row) => row.kind === 'co2Relief').map(() => st.tenancyId))
   assert.deepEqual(tenanten, ['t1'])
+  // Geld M4 der Durchsicht von #238: Der Ausweis nennt, was wirklich abgezogen ist (nur EG, 80,00 €).
+  assert.equal(r.heating?.[0]?.co2?.landlordCents, 8000)
 })
 
 test('Etagenheizung: eine Wohnung ohne Rechnung zählt nicht zur Fläche der Einstufung (§ 5 Abs. 1 Satz 2)', () => {

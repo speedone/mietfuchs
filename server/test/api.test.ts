@@ -5803,10 +5803,13 @@ test('Heizanlage: Sperren, Objektgrenze, Ändern und Entfernen über die Routen'
     const angelegt = await send('/api/heating-plants', jsonPost({ energy: 'districtHeating', method: 'manual' }))
     assert.equal(angelegt.status, 201)
     const { plant } = await jsonOf<{ plant: HeatingPlant }>(angelegt)
-    // Heizung PR 9: Eine zweite Anlage braucht Namen und Wohnungen, die erste ebenso.
+    // Heizung PR 9: Eine zweite Anlage fragt nach dem Gebäude und braucht Namen und Wohnungen, die erste ebenso.
     const zweite = await send('/api/heating-plants', jsonPost({ energy: 'gas' }))
     assert.equal(zweite.status, 400)
-    assert.match(await errorFrom(zweite), /braucht jede einen Namen/)
+    assert.match(await errorFrom(zweite), /im selben Gebäude/)
+    const ohneNamen = await send('/api/heating-plants', jsonPost({ energy: 'gas', buildingWith: 'own' }))
+    assert.equal(ohneNamen.status, 400)
+    assert.match(await errorFrom(ohneNamen), /braucht jede einen Namen/)
 
     const objekt2 = await s.api<Property>('/api/properties', jsonPost({ name: 'Zweites Haus', kind: 'mfh', address: '' }))
     const fremd = await send(`/api/meters?property=${objekt2.id}`, jsonPost({ name: 'Gas', unitId: null, type: 'sonstig', unit: 'm³', heatingPlantId: plant.id, heatingRole: 'supply' }))
@@ -6233,7 +6236,7 @@ test('Kesseltausch über die Route: Öl endet, Gas beginnt; der Restbestand steh
     // Der Energieträger lässt sich nicht umstellen; der Satz führt zum Kesseltausch.
     const umstellen = await send(`/api/heating-plants/${oel.id}`, { method: 'PUT', body: JSON.stringify({ energy: 'gas' }) })
     assert.equal(umstellen.status, 409)
-    assert.match(await errorFrom(umstellen), /„Kessel getauscht“/)
+    assert.match(await errorFrom(umstellen), /„Heizung erneuert \(Kessel getauscht\)“/)
     const tausch = await send(`/api/heating-plants/${oel.id}/replace`, jsonPost({ date: '2025-07-01', energy: 'gas', method: 'manual', name: 'Gastherme', previousName: 'Ölkessel' }))
     assert.equal(tausch.status, 201)
     const { plant, previous } = await jsonOf<{ plant: HeatingPlant; previous: HeatingPlant }>(tausch)

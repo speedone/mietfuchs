@@ -1306,6 +1306,10 @@ export type HeatingPlant = {
   // Anlage, die sie ersetzt. Gesetzt nur über den Kesseltausch; sonst `null`.
   endsOn: string | null
   replacesPlantId: string | null
+  // Gebäude (Heizung PR 9, § 5 Abs. 1 CO2KostAufG): Heizen zwei Anlagen gleichzeitig, sagt die zweite,
+  // ob sie im selben Gebäude steht wie eine andere (deren Kennung) oder in einem eigenen (`'own'`).
+  // `null`: nicht gefragt (die erste Anlage, oder sie ersetzt eine andere und übernimmt deren Angabe).
+  buildingWith: string | null
 }
 
 // Die Angaben einer Heizperiode (Entwurf 5.3; den Vorrat seit Heizung PR 8). Geschrieben werden sie ab PR 6 (Warmwasser

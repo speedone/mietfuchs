@@ -93,10 +93,42 @@ export function servesUnit(plant: { units: readonly { unitId: string }[] | null 
   return plant.units.some((u) => u.unitId === unit.id)
 }
 
-// Kesseltausch (Heizung PR 9): Zwei Anlagen hängen zusammen, wenn die eine die andere ersetzt. Sie
-// dürfen dieselben Wohnungen versorgen, denn sie heizen nacheinander.
+// Kesseltausch (Heizung PR 9): Zwei Anlagen hängen zusammen, wenn die eine die andere ersetzt, auch über
+// mehrere Täusche hinweg (A → A2 → A3, Durchsicht von #238, C1). Sie dürfen dieselben Wohnungen versorgen,
+// denn sie heizen nacheinander.
 type Succession = { id: string; replacesPlantId?: string | null }
 export const replaces = (a: Succession, b: Succession): boolean => a.replacesPlantId === b.id || b.replacesPlantId === a.id
+
+// Die erste Anlage einer Linie von Täuschen; ein Verweis ins Leere oder ein Kreis endet dort.
+export function lineRoot(plant: Succession, plants: readonly Succession[]): string {
+  let cur = plant
+  const seen = new Set<string>([cur.id])
+  while (cur.replacesPlantId) {
+    const prev = plants.find((p) => p.id === cur.replacesPlantId)
+    if (!prev || seen.has(prev.id)) break
+    seen.add(prev.id)
+    cur = prev
+  }
+  return cur.id
+}
+export const sameLine = (a: Succession, b: Succession, plants: readonly Succession[]): boolean => a.id !== b.id && lineRoot(a, plants) === lineRoot(b, plants)
+
+// Das Gebäude einer Anlage (Heizung PR 9, § 5 Abs. 1 CO2KostAufG): die erste Anlage ihrer Linie und,
+// steht diese im selben Gebäude wie eine andere, deren Gebäude. Ohne Angabe ein eigenes.
+type Housed = Succession & { buildingWith?: string | null }
+export function buildingRoot(plant: Housed, plants: readonly Housed[]): string {
+  let root = lineRoot(plant, plants)
+  const seen = new Set<string>()
+  for (;;) {
+    if (seen.has(root)) return root
+    seen.add(root)
+    const head = plants.find((p) => p.id === root)
+    const other = head?.buildingWith && head.buildingWith !== 'own' ? plants.find((p) => p.id === head.buildingWith) : undefined
+    if (!other) return root
+    root = lineRoot(other, plants)
+  }
+}
+export const sameBuilding = (a: Housed, b: Housed, plants: readonly Housed[]): boolean => a.id !== b.id && buildingRoot(a, plants) === buildingRoot(b, plants)
 
 // Die Tage, an denen eine Anlage heizt (Heizung PR 9): ab dem Tag nach dem letzten Betriebstag der
 // Anlage, die sie ersetzt, bis zu ihrem eigenen letzten Betriebstag. `null` heißt offen.

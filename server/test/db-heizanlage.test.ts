@@ -51,7 +51,7 @@ test('Anlegen: Vorgaben, und so steht sie in der Liste', async () => {
       devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null,
       capturedOnOct2024: null, warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null, units: null,
       newDevicesInstall: null,
-      nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null,
+      nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null,
       periodChanges: [], separateSpans: [],
     })
     assert.deepEqual(await opened.read((db) => listHeatingPlants(db, 'objekt-1')), [plant])
@@ -91,12 +91,12 @@ test('Zweite Anlage (Heizung PR 9): mit Namen und Wohnungen; die erste bekommt b
     })
     // Die erste hat weder Namen noch Liste: ohne Anpassung entsteht nichts, und die erste bleibt, wie sie war.
     await assert.rejects(
-      () => opened.write((db) => createHeatingPlant(db, 'hp2', 'objekt-1', { name: 'Gastherme DG', energy: 'gas', units: [{ unitId: 'dg', heatedAreaM2: null }] })),
+      () => opened.write((db) => createHeatingPlant(db, 'hp2', 'objekt-1', { buildingWith: 'own', name: 'Gastherme DG', energy: 'gas', units: [{ unitId: 'dg', heatedAreaM2: null }] })),
       refused(400, /braucht jede einen Namen/),
     )
     assert.deepEqual((await opened.read((db) => listHeatingPlants(db, 'objekt-1'))).map((p) => [p.id, p.name, p.units]), [['hp1', '', null]])
     const { plant } = await opened.write((db) => createHeatingPlant(db, 'hp2', 'objekt-1', {
-      name: 'Gastherme DG', energy: 'gas', units: [{ unitId: 'dg', heatedAreaM2: null }],
+      buildingWith: 'own', name: 'Gastherme DG', energy: 'gas', units: [{ unitId: 'dg', heatedAreaM2: null }],
       adjust: [{ id: 'hp1', name: 'Zentralheizung', units: [{ unitId: 'eg', heatedAreaM2: null }, { unitId: 'og', heatedAreaM2: null }] }],
     }))
     assert.equal(plant.name, 'Gastherme DG')
@@ -106,7 +106,7 @@ test('Zweite Anlage (Heizung PR 9): mit Namen und Wohnungen; die erste bekommt b
     await opened.write((db) => createProperty(db, 'objekt-2', { name: 'Zweites Haus', kind: 'mfh', address: '' }))
     await opened.write((db) => createHeatingPlant(db, 'hpx', 'objekt-2', { energy: 'oil' }))
     await assert.rejects(
-      () => opened.write((db) => createHeatingPlant(db, 'hp3', 'objekt-1', { name: 'Keller', energy: 'gas', units: [], adjust: [{ id: 'hpx', name: 'Fremd' }] })),
+      () => opened.write((db) => createHeatingPlant(db, 'hp3', 'objekt-1', { buildingWith: 'own', name: 'Keller', energy: 'gas', units: [], adjust: [{ id: 'hpx', name: 'Fremd' }] })),
       refused(409, /gibt es nicht mehr/),
     )
   })
@@ -117,7 +117,7 @@ test('Zwei Anlagen: Wohnungen schließen sich aus, Namen verschieden, keine ohne
     await opened.write(async (db) => {
       for (const u of ['eg', 'og', 'dg']) await wohnung(db, u)
       await createHeatingPlant(db, 'hp1', 'objekt-1', { name: 'Zentralheizung', energy: 'gas', units: [{ unitId: 'eg', heatedAreaM2: null }, { unitId: 'og', heatedAreaM2: null }] })
-      await createHeatingPlant(db, 'hp2', 'objekt-1', { name: 'Gastherme DG', energy: 'gas', units: [{ unitId: 'dg', heatedAreaM2: null }] })
+      await createHeatingPlant(db, 'hp2', 'objekt-1', { buildingWith: 'own', name: 'Gastherme DG', energy: 'gas', units: [{ unitId: 'dg', heatedAreaM2: null }] })
     })
     const aendern = (id: string, body: unknown) => opened.write((db) => updateHeatingPlant(db, id, body))
     await assert.rejects(() => aendern('hp2', { units: [{ unitId: 'dg', heatedAreaM2: null }, { unitId: 'og', heatedAreaM2: null }] }), refused(400, /Die Wohnung „og“ hängt an „(Zentralheizung|Gastherme DG)“ und an „(Zentralheizung|Gastherme DG)“/))
@@ -138,7 +138,7 @@ test('Neue Heizposition ohne Anlage bei zwei Anlagen: die Anlage ihrer Wohnungen
       for (const u of ['eg', 'og', 'dg']) await wohnung(db, u)
       await createEntity(db, 'tenancies', 't-dg', { unitId: 'dg', tenantName: 'Mieter DG', persons: 1, start: '2020-01-01' })
       await createHeatingPlant(db, 'hp1', 'objekt-1', { name: 'Zentralheizung', energy: 'gas', units: [{ unitId: 'eg', heatedAreaM2: null }, { unitId: 'og', heatedAreaM2: null }] })
-      await createHeatingPlant(db, 'hp2', 'objekt-1', { name: 'Haus B', energy: 'gas', units: [{ unitId: 'dg', heatedAreaM2: null }] })
+      await createHeatingPlant(db, 'hp2', 'objekt-1', { buildingWith: 'own', name: 'Haus B', energy: 'gas', units: [{ unitId: 'dg', heatedAreaM2: null }] })
     })
     const anlage = async (id: string, extra: Record<string, unknown>) => fieldOf(await opened.write((db) => heizposition(db, id, '2025-01', extra)), 'heatingPlantId')
     assert.equal(await anlage('direkt', { key: 'direct', directUnitId: 'dg' }), 'hp2')
@@ -387,7 +387,7 @@ test('Kesseltausch: die alte Anlage endet am Vortag, die neue beginnt mit densel
       await createDelivery(db, 'd1', 'hp1', { label: 'Heizöl', deliveredAt: '2025-03-15', quantity: 3000, quantityUnit: 'l' })
     })
     // Den Energieträger umstellen geht nicht; der Satz verweist auf den Kesseltausch.
-    await assert.rejects(() => opened.write((db) => updateHeatingPlant(db, 'hp1', { energy: 'gas' })), refused(400, /„Kessel getauscht“/))
+    await assert.rejects(() => opened.write((db) => updateHeatingPlant(db, 'hp1', { energy: 'gas' })), refused(400, /„Heizung erneuert \(Kessel getauscht\)“/))
     await assert.rejects(() => opened.write((db) => replaceHeatingPlant(db, 'hp1', 'hp2', { date: '01.07.2025', energy: 'gas' })), refused(400, /kein Datum/))
     await assert.rejects(() => opened.write((db) => replaceHeatingPlant(db, 'hp1', 'hp2', { date: '2025-03-01', energy: 'gas' })), refused(400, /Lieferung .* nach dem Tausch/))
     const { plant } = (await opened.write((db) => replaceHeatingPlant(db, 'hp1', 'hp2', { date: '2025-07-01', energy: 'gas', name: 'Gastherme', previousName: 'Ölkessel' }))) ?? assert.fail('keine Anlage')
@@ -403,10 +403,14 @@ test('Kesseltausch: die alte Anlage endet am Vortag, die neue beginnt mit densel
     await opened.write((db) => createDelivery(db, 'g2', 'hp2', { label: 'Gas', invoiceFrom: '2025-07-01', invoiceTo: '2025-12-31' }))
     // Getrennte Heizkostenabrechnung nach dem Tausch: noch nicht (Weg d hängt an der Zuordnung der Wohnungen).
     await assert.rejects(() => opened.read((db) => previewSeparate(db, 'hp2', { separate: true, month: '2026-01' }, '2026-02-01')), (err: unknown) => err instanceof PeriodError && /Kesseltausch/.test(err.message))
-    // Eine neue Heizposition ohne Anlage: die, die am Ende ihres Zeitraums heizt.
-    assert.equal(fieldOf(await opened.write((db) => heizposition(db, 'c25', '2025-01')), 'heatingPlantId'), 'hp2')
+    // Eine neue Heizposition ohne Anlage: die, die zu Beginn ihres Leistungszeitraums heizt (Recht I7 der
+    // Durchsicht von #238), ohne Leistungszeitraum zu Beginn ihres Zeitraums.
+    assert.equal(fieldOf(await opened.write((db) => heizposition(db, 'c25', '2025-01')), 'heatingPlantId'), 'hp1')
+    assert.equal(fieldOf(await opened.write((db) => heizposition(db, 'c25b', '2025-01', { serviceFrom: '2025-08-01', serviceTo: '2025-08-31' })), 'heatingPlantId'), 'hp2')
+    // Mit verknüpfter Lieferung deren Anlage.
+    assert.equal(fieldOf(await opened.write((db) => heizposition(db, 'c25g', '2025-01', { serviceFrom: '2025-01-01', serviceTo: '2025-01-31', fuelDeliveryId: 'g2', heatingPart: 'fuel' })), 'heatingPlantId'), 'hp2')
     // Die Wohnungen beider Anlagen ändern sich nur gemeinsam; eine dritte Anlage darf sie nicht haben.
-    await assert.rejects(() => opened.write((db) => createHeatingPlant(db, 'hp9', 'objekt-1', { name: 'Kamin', energy: 'other', units: [{ unitId: 'eg', heatedAreaM2: null }] })), refused(400, /Die Wohnung „eg“ hängt an/))
+    await assert.rejects(() => opened.write((db) => createHeatingPlant(db, 'hp9', 'objekt-1', { buildingWith: 'own', name: 'Kamin', energy: 'other', units: [{ unitId: 'eg', heatedAreaM2: null }] })), refused(400, /Die Wohnung „eg“ hängt an/))
   })
 })
 
@@ -418,7 +422,7 @@ test('Kesseltausch: nicht in einer abgeschlossenen Heizperiode, nicht bei einer 
       await closeSettlement(db, { id: 's25', propertyId: 'objekt-1', period: periodKey('2025-01'), closedAt: '2026-03-01', sentAt: null, settlement: {} })
     })
     await assert.rejects(() => opened.write((db) => replaceHeatingPlant(db, 'hp1', 'hp2', { date: '2025-07-01', energy: 'districtHeating' })), refused(409, /abgeschlossen/))
-    await opened.write((db) => createHeatingPlant(db, 'etage', 'objekt-1', { name: 'Thermen', energy: 'gas', supply: 'perUnit', method: 'manual', units: [], adjust: [{ id: 'hp1', name: 'Zentral', units: [{ unitId: 'eg', heatedAreaM2: null }] }] }))
+    await opened.write((db) => createHeatingPlant(db, 'etage', 'objekt-1', { buildingWith: 'own', name: 'Thermen', energy: 'gas', supply: 'perUnit', method: 'manual', units: [], adjust: [{ id: 'hp1', name: 'Zentral', units: [{ unitId: 'eg', heatedAreaM2: null }] }] }))
     await assert.rejects(() => opened.write((db) => replaceHeatingPlant(db, 'etage', 'hp3', { date: '2026-03-01', energy: 'gas' })), refused(400, /Etagenheizung/))
   })
 })

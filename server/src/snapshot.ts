@@ -111,7 +111,7 @@ export type SnapshotMeter = Pick<Meter, 'id' | 'unitId' | 'type' | 'heatingPlant
 // Energieträger, Pflicht: Von ihm hängt ab, ob CO₂-Kosten aufzuteilen sind. Seit PR 7 die
 // CO₂-Merkmale (§ 8, § 9, § 2 Abs. 4 Satz 2 CO2KostAufG); fehlen sie, hat die Anlage keine.
 export type SnapshotHeatingPlant = Pick<HeatingPlant, 'id' | 'energy' | 'method' | 'source' | 'devicesRemote' | 'devicesInstalledAfter2021' | 'newDevicesInstall' | 'units'>
-  & Partial<Pick<HeatingPlant, 'name' | 'periodStartMonth' | 'periodChanges' | 'separateSpans' | 'separateSettlement' | 'nonResidential' | 'restriction' | 'districtEtsNew' | 'supply' | 'endsOn' | 'replacesPlantId'>>
+  & Partial<Pick<HeatingPlant, 'name' | 'periodStartMonth' | 'periodChanges' | 'separateSpans' | 'separateSettlement' | 'nonResidential' | 'restriction' | 'districtEtsNew' | 'supply' | 'endsOn' | 'replacesPlantId' | 'buildingWith'>>
 // Seit Heizung PR 9 die Versorgung (`supply`); fehlt sie, ist die Anlage zentral.
 // Die Angaben je Heizperiode, die die Berechnung liest: Warmwasser laut Messdienst (Heizung PR 6, #211)
 // und der Vorrat (Heizung PR 8). Die Felder des Vorrats sind optional, damit ein von Hand gebauter
@@ -592,7 +592,10 @@ export type StockChainSource = {
 // einem Bestand, der hundert Heizperioden nie abgeschlossen hat.
 const STOCK_CHAIN_LIMIT = 100
 
-export function stockChainsOf(source: StockChainSource, plant: SnapshotHeatingPlant, objectRules: PeriodRules, hs: readonly BillingPeriod[]): SnapshotStockChain[] {
+// `plants`: die Anlagen des Objekts. Ersetzt die Anlage eine mit demselben Vorratsbrennstoff (Kesseltausch
+// Öl → Öl, Recht I1 der Durchsicht von #238), beginnt ihre Kette mit der Kette der alten: Deren Restbestand
+// ist ihr Anfangsbestand, außer der Vermieter hat einen eigenen eingetragen.
+export function stockChainsOf(source: StockChainSource, plant: SnapshotHeatingPlant, objectRules: PeriodRules, hs: readonly BillingPeriod[], plants: readonly SnapshotHeatingPlant[] = []): SnapshotStockChain[] {
   if (!isStockEnergy(plant.energy)) return []
   const way = wayOf(plant)
   const rules = plantRules(way, objectRules)
@@ -612,9 +615,22 @@ export function stockChainsOf(source: StockChainSource, plant: SnapshotHeatingPl
       : source.closedSettlements.find((c) => c.period === periodContaining(objectRules, p.to).key)
   const frozenOf = (p: BillingPeriod): StockValue | null => closedOf(p)?.stockClosings?.[`${plant.id}:${p.key}`] ?? null
   const nextOf = (p: BillingPeriod): BillingPeriod => periodContaining(rules, dayAfter(p.to))
+  // Kesseltausch mit demselben Brennstoff (Durchsicht von #238): Die Folgeperiode der letzten Heizperiode
+  // ist die erste der neuen Anlage; ob sie den Restbestand übernommen hat, steht unter deren Kennung.
+  const successor = plants.find((p) => p.replacesPlantId === plant.id && p.energy === plant.energy)
+  const endsIn = (p: BillingPeriod): boolean => endsOn !== null && endsOn >= p.from && endsOn <= p.to
+  const handoverTo = (): { id: string; period: BillingPeriod } | null =>
+    successor && endsOn !== null ? { id: successor.id, period: periodContaining(plantRules(wayOf(successor), objectRules), dayAfter(endsOn)) } : null
   const nextFrozenOf = (p: BillingPeriod): StockValue | null => {
+    const to = endsIn(p) ? handoverTo() : null
+    if (endsIn(p)) return to ? closedOf(to.period)?.stockOpenings?.[`${to.id}:${to.period.key}`] ?? null : null
     const next = nextOf(p)
     return closedOf(next)?.stockOpenings?.[`${plant.id}:${next.key}`] ?? null
+  }
+  const nextClosedOf = (p: BillingPeriod): boolean => {
+    if (!endsIn(p)) return closedOf(nextOf(p)) !== undefined
+    const to = handoverTo()
+    return to !== null && closedOf(to.period) !== undefined
   }
   const itemsIn = (key: string) => source.costItems.filter((c) => c.period === key)
   // Hat diese Heizperiode Heizkosten der Anlage abgerechnet (C1, Nachprüfung N2)? Indiz ist jede Position
@@ -679,13 +695,25 @@ export function stockChainsOf(source: StockChainSource, plant: SnapshotHeatingPl
       nextFrozenOpening: nextFrozenOf(p),
       hasKey: stockTemplateOf(itemsIn(p.key), itemsIn(previousPeriod(rules, p).key), plant.id, HEATING_CATEGORY) !== null,
       // Nach dem letzten Betriebstag gibt es keine Folgeperiode, die den Endbestand übernähme.
-      nextClosedWithoutStock: endsOn !== null && endsOn <= p.to ? false : closedOf(nextOf(p)) !== undefined && nextFrozenOf(p) === null,
+      nextClosedWithoutStock: nextClosedOf(p) && nextFrozenOf(p) === null,
     }
   }
-  return hs.filter((h) => endsOn === null || endsOn >= h.from).map((h) => {
+  const predecessor = plant.replacesPlantId ? plants.find((p) => p.id === plant.replacesPlantId && p.energy === plant.energy) : undefined
+  const startsOn = predecessor?.endsOn ? dayAfter(predecessor.endsOn) : null
+  return hs.filter((h) => (endsOn === null || endsOn >= h.from) && (startsOn === null || startsOn <= h.to)).map((h) => {
     const chain = [inputOf(h)]
     let cur = h
     for (let i = 0; i < STOCK_CHAIN_LIMIT; i++) {
+      // Die erste Heizperiode nach einem Tausch mit demselben Brennstoff: weiter in der Kette der alten.
+      if (predecessor && startsOn !== null && cur.from <= startsOn && startsOn <= cur.to) {
+        if (!chain[0]?.ownOpening && predecessor.endsOn) {
+          // Die letzte Heizperiode der alten Anlage: dieselbe oder, bei einem Tausch zum Ersten, die davor.
+          const last = periodContaining(plantRules(wayOf(predecessor), objectRules), predecessor.endsOn)
+          const before = stockChainsOf(source, predecessor, objectRules, [last], plants)[0]?.chain ?? []
+          chain.unshift(...before)
+        }
+        break
+      }
       const prev = previousPeriod(rules, cur)
       const input = inputOf(prev)
       if (!input.frozenClosing && input.closingQuantity === null && !input.nextFrozenOpening) break
@@ -754,7 +782,7 @@ export function snapshotFor(
     fuelDeliveries: source.fuelDeliveries,
   }
   const stockChains = plants.flatMap((p) =>
-    stockChainsOf(stockSource, p, objectRules, hasOwnRhythm(wayOf(p)) ? heatingPeriodsEndingIn(plantRules(wayOf(p), objectRules), period) : [period]))
+    stockChainsOf(stockSource, p, objectRules, hasOwnRhythm(wayOf(p)) ? heatingPeriodsEndingIn(plantRules(wayOf(p), objectRules), period) : [period], plants))
   return {
     ...snapshotOfPeriod(general, period, previousPeriod(objectRules, period)),
     propertyId,

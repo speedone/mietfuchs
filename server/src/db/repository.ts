@@ -35,7 +35,7 @@
 import { and, count, desc, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm'
 import type { BillingPeriod, CostItem, ExternalBasis, HeatingPlant, HeatingPrepaymentOverride, Meter, MeterType, Payment, PeriodKey, PeriodRules, PersonEntry, PrepaymentEntry, Property, Reading, RentEntry, SplitPreviewPart, Tenancy, Unit, UnitDependents } from '../../../shared/types.ts'
 import { CALENDAR_RULES, calendarPeriod, paymentYear, formatDayRange, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, spansTwoYears, startYearOf } from '../../../shared/period.ts'
-import { heatingPeriodsEndingIn, isObjectPeriod, plantRules, plantSpan, replaces, servesUnit, spanOf } from '../../../shared/heatingPeriod.ts'
+import { heatingPeriodsEndingIn, isObjectPeriod, plantRules, plantSpan, servesUnit, spanOf } from '../../../shared/heatingPeriod.ts'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 import { andList } from '../../../shared/wording.ts'
 import type { MigratedSettings } from '../ai/settings.ts'
@@ -701,23 +701,26 @@ async function namedUnitsOf(db: Executor, c: CostItem): Promise<string[]> {
 // oder liegen sie an verschiedenen Anlagen, keine, und der Vermieter ordnet zu. Ab zwei Anlagen hat
 // jede ihre Liste (heating.ts, `guardPlantsOfProperty`).
 export async function plantForNewItem(db: Executor, c: CostItem): Promise<string | null> {
+  // Mit verknüpfter Lieferung deren Anlage (Recht I7 der Durchsicht von #238); eine abweichende Angabe
+  // lehnt `guardFuelLink` ab.
+  if (c.fuelDeliveryId) {
+    const [d] = await db.select({ plantId: fuelDeliveries.plantId }).from(fuelDeliveries).where(eq(fuelDeliveries.id, c.fuelDeliveryId))
+    if (d) return d.plantId
+  }
   const plants = await db.select({ id: heatingPlants.id, endsOn: heatingPlants.endsOn, replacesPlantId: heatingPlants.replacesPlantId }).from(heatingPlants).where(eq(heatingPlants.propertyId, c.propertyId))
-  const [first] = plants
-  if (!first) return null
-  if (plants.length === 1) return first.id
+  if (plants.length === 0) return null
   const named = await namedUnitsOf(db, c)
   const rows = await db.select({ plantId: heatingPlantUnits.plantId, unitId: heatingPlantUnits.unitId }).from(heatingPlantUnits)
     .where(inArray(heatingPlantUnits.plantId, plants.map((p) => p.id)))
-  const fits = named.length === 0 ? plants : plants.filter((p) => named.every((u) => rows.some((r) => r.plantId === p.id && r.unitId === u)))
-  if (fits.length === 1 && fits[0]) return fits[0].id
-  // Kesseltausch: Passen nur Anlagen, die einander ersetzen, gilt die, die am Ende des Zeitraums der
-  // Position heizt. Ohne genannte Wohnungen nur, wenn alle Anlagen des Objekts so zusammenhängen.
-  if (fits.length < 2 || !fits.every((p) => fits.some((q) => q !== p && replaces(p, q)))) return null
-  const end = periodOfKey(await rulesForProperty(db, c.propertyId), c.period)?.to
-  if (end === undefined) return null
+  const fits = named.length === 0 || plants.length === 1 ? plants : plants.filter((p) => named.every((u) => rows.some((r) => r.plantId === p.id && r.unitId === u)))
+  // Kesseltausch: nur die Anlage, die zu Beginn des Leistungszeitraums heizt (ohne Leistungszeitraum zu
+  // Beginn des Zeitraums der Position). Eine stillgelegte Anlage bekommt nie eine Position für die Zeit
+  // danach (Durchsicht von #238, I1).
+  const day = c.serviceFrom ?? periodOfKey(await rulesForProperty(db, c.propertyId), c.period)?.from
+  if (day === undefined) return null
   const active = fits.filter((p) => {
     const span = plantSpan(p, plants)
-    return (span.from === null || span.from <= end) && (span.to === null || span.to >= end)
+    return (span.from === null || span.from <= day) && (span.to === null || span.to >= day)
   })
   return active.length === 1 && active[0] ? active[0].id : null
 }

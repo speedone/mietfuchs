@@ -13,7 +13,7 @@
 import { and, eq } from 'drizzle-orm'
 import { isStockEnergy } from '../../../shared/fuelStock.ts'
 import { co2CostsBefore, co2CostsCountedFrom, co2CostsExcludedUntil } from '../../../shared/law/co2kostaufg.ts'
-import { dayAfter, valueAt } from '../../../shared/law/register.ts'
+import { dayAfter, germanDate, valueAt } from '../../../shared/law/register.ts'
 import { periodContaining, periodLabel } from '../../../shared/period.ts'
 import type { BillingPeriod, HeatingPlant, HeatingStockStatement, StockRow, StockView } from '../../../shared/types.ts'
 import { CO2_FUELS } from '../co2.ts'
@@ -22,7 +22,7 @@ import { stockChainsOf } from '../snapshot.ts'
 import type { Database } from './client.ts'
 import { closedText, dropIfEmpty, ensureHeatingPeriod, heatingPeriodClosed, heatingPeriodOf, plantContext, type PlantContext } from './heatingPeriodContext.ts'
 import { readStock, type Stock, type StoredClosedHeatingSettlement, type StoredClosedSettlement } from './read.ts'
-import { has, HeatingError, ISO_DATE, raw } from './repository.ts'
+import { has, HeatingError, ISO_DATE, plantSpanOf, raw } from './repository.ts'
 import { heatingPeriods, STOCK_UNITS } from './schema.ts'
 
 const NOT_STOCK = 'Einen Vorrat gibt es nur bei Heizöl, Flüssiggas, Pellets, Holz und Kohle.'
@@ -70,7 +70,7 @@ function chainOf(stock: Stock, ctx: PlantContext, h: BillingPeriod): StockPeriod
     closedHeatingSettlements: stock.closedHeatingSettlements,
     heatingPeriodRows: stock.heatingPeriodRows,
     fuelDeliveries: stock.fuelDeliveries,
-  }, ctx.plant, ctx.objectRules, [h])
+  }, ctx.plant, ctx.objectRules, [h], stock.heatingPlants.filter((p) => p.propertyId === ctx.plant.propertyId))
   return entry?.chain ?? []
 }
 
@@ -179,6 +179,14 @@ export async function saveStock(db: Database, plantId: string, period: string, b
   if (!ctx) return null
   guardPlant(ctx)
   const h = heatingPeriodOf(ctx, period)
+  // Kesseltausch (Durchsicht von #238, I3): Vorrat nur in Heizperioden, in denen die Anlage heizt.
+  const span = await plantSpanOf(db, plantId)
+  if (span.to !== null && h.from > span.to) {
+    throw new HeatingError(400, `Die Heizanlage „${span.name}“ ist seit dem ${germanDate(dayAfter(span.to))} außer Betrieb; in der Heizperiode ${periodLabel(h)} hat sie keinen Vorrat. Tragen Sie ihn bei der neuen Anlage ein.`)
+  }
+  if (span.from !== null && h.to < span.from) {
+    throw new HeatingError(400, `Die Heizanlage „${span.name}“ heizt erst seit dem ${germanDate(span.from)}; in der Heizperiode ${periodLabel(h)} hat sie keinen Vorrat.`)
+  }
   const stock = await readStock(db)
   const current = rowOf(stock.heatingPeriodRows.find((r) => r.plantId === plantId && r.period === h.key))
   const chain = chainOf(stock, ctx, h)

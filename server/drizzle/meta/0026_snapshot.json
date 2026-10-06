@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "139f35c2-141c-418a-8717-7fdcceb4c7c8",
+  "id": "b94aaddb-8c9a-40fa-8742-400631bf4e6e",
   "prevId": "ba78f622-7f79-4c79-85a1-af3c36afbf92",
   "tables": {
     "ai_slots": {
@@ -2812,6 +2812,13 @@
         },
         "replaces_plant_id": {
           "name": "replaces_plant_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "building_with": {
+          "name": "building_with",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

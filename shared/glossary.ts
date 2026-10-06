@@ -44,6 +44,11 @@ function stageText(value: number): { range: string; percent: number } {
   return { range: next ? `${stage.from} bis unter ${next.from} kg` : `ab ${stage.from} kg`, percent: stage.landlordPercent }
 }
 const B1 = stageText(40.2)
+// Etagenheizung (Heizung PR 9): 3.000 kg auf 100 m² = 30,0 kg je m².
+const E1 = stageText(30)
+// Kesseltausch: 15.043,35 kg auf 300 m² = 50,1 kg je m², Öl allein 12.043,35 kg = 40,1 kg je m².
+const K1 = stageText(50.1)
+const K0 = stageText(40.1)
 const FIRST = STAGES[0]
 const SECOND = STAGES[1]
 const LAST = STAGES[STAGES.length - 1]
@@ -176,7 +181,7 @@ export const GLOSSARY = {
     short: `Heizkosten müssen zu ${SHARE.min} bis ${SHARE.max} Prozent nach Verbrauch verteilt werden, der Rest nach Fläche oder umbautem Raum; beim Warmwasser der Rest nur nach Fläche. Die Verordnung geht einer anderen Vereinbarung im Mietvertrag vor.`,
     example: `3.000 € Heizkosten, 70 % nach Verbrauch: 2.100 € nach den Messwerten, 900 € nach Wohnfläche. Wird nicht nach Verbrauch abgerechnet, etwa nur nach Fläche, darf der Mieter seinen Anteil um ${CUT} % kürzen. Unabhängig davon darf er um ${REMOTE_CUT} % kürzen, wenn Zähler nicht fernablesbar sind, obwohl sie es sein müssten (neue Geräte seit Dezember 2021, alle übrigen ab 2027), oder wenn die vorgeschriebenen Verbrauchsinformationen fehlen.`,
     norm: '§§ 1, 2, 5, 6a, 7, 8, 11, 12 HeizkostenV',
-    needed: 'Bei einer Zentralheizung, bei Fernwärme und bei zentraler Warmwasserbereitung, nicht bei einer Gastherme in der Wohnung mit eigenem Vertrag des Mieters. Im Haus mit höchstens zwei Wohnungen, von denen Sie eine selbst bewohnen, dürfen Sie mit dem Mieter etwas anderes vereinbaren, etwa eine Warmmiete; ohne solche Vereinbarung gilt die Verordnung auch dort. Wenige weitere Ausnahmen nennt § 11, etwa wenn die Messung unverhältnismäßig teuer wäre. Wärmepumpen sind seit Oktober 2024 nicht mehr ausgenommen. Nicht fernablesbare Zähler und Heizkostenverteiler müssen bis zum 31.12.2026 nachgerüstet oder getauscht sein; klären Sie das bitte mit Ihrem Messdienst. Ab dem Abrechnungsjahr 2027 erinnert Mietfuchs in der Abrechnung daran.',
+    needed: 'Bei einer Zentralheizung, bei Fernwärme und bei zentraler Warmwasserbereitung, nicht bei Etagenheizungen oder Gasthermen in der Wohnung (§ 1 Abs. 1 HeizkostenV), gleich wer den Gasvertrag hat. Im Haus mit höchstens zwei Wohnungen, von denen Sie eine selbst bewohnen, dürfen Sie mit dem Mieter etwas anderes vereinbaren, etwa eine Warmmiete; ohne solche Vereinbarung gilt die Verordnung auch dort. Wenige weitere Ausnahmen nennt § 11, etwa wenn die Messung unverhältnismäßig teuer wäre. Wärmepumpen sind seit Oktober 2024 nicht mehr ausgenommen. Nicht fernablesbare Zähler und Heizkostenverteiler müssen bis zum 31.12.2026 nachgerüstet oder getauscht sein; klären Sie das bitte mit Ihrem Messdienst. Ab dem Abrechnungsjahr 2027 erinnert Mietfuchs in der Abrechnung daran.',
   },
   heatingSystem: {
     title: 'Heizanlage',
@@ -395,6 +400,20 @@ export const GLOSSARY = {
     example: 'Anfangsbestand 2.000 l für 1.900 €, Lieferungen 3.000 l für 3.150 € und 2.500 l für 2.500 €, Endbestand 1.800 l. Der Endbestand stammt aus der jüngsten Lieferung und ist 1.800 € wert. Verbraucht wurden 5.700 l für 1.900 € + 3.150 € + 2.500 € − 1.800 € = 5.750 €; bezahlt haben Sie in diesem Zeitraum 5.650 €. Die 100 € Unterschied stehen in der Abrechnung als „aus dem Vorrat“ und „im Vorrat“.',
     norm: '§ 7 Abs. 2 HeizkostenV; BGH VIII ZR 156/11',
     needed: 'Ja, wenn Sie mit Heizöl, Flüssiggas, Pellets, Holz oder Kohle heizen und die Heizkosten selbst nach Schlüsseln verteilen, oder wenn der Messdienst die CO₂-Kosten nicht aufgeteilt hat. Dann tragen Sie auf der Seite Heizkosten in der Karte „Vorrat“ je Heizperiode den Endbestand ein und nur in der ersten auch den Anfangsbestand; danach übernimmt Mietfuchs den Endbestand der Vorperiode.',
+  },
+  perUnitHeating: {
+    title: 'Etagenheizung',
+    short: 'Eine Heizung in der Wohnung, meist eine Gastherme, die nur diese Wohnung versorgt. Die Heizkostenverordnung gilt dafür nicht, denn sie regelt nur zentrale Anlagen und die Wärmelieferung (§ 1 Abs. 1 HeizkostenV). Hat der Vermieter den Gasvertrag, sind die CO₂-Kosten aufzuteilen; eingestuft wird über die Gesamtwohnfläche der vermieteten Wohnungen mit eigener Heizung (§ 5 Abs. 1 Satz 2 CO2KostAufG). Ob der Vermieter die Gaskosten selbst als Betriebskosten umlegen darf, ist nicht geklärt: Die Betriebskostenverordnung nennt bei Etagenheizungen nur Reinigung und Wartung (§ 2 Nr. 4 Buchstabe d BetrKV), Buchstabe a bis c gelten für zentrale Anlagen und die Wärmelieferung.',
+    example: `EG mit 60 m² und OG mit 40 m², je mit eigener Gastherme auf Ihren Vertrag; die Rechnungen nennen 1.800 kg und 1.200 kg CO₂ und CO₂-Kosten von 200 € und 120 €. 3.000 kg auf 100 m² ergeben 30,0 kg je m², Stufe ${E1.range}; Sie tragen ${E1.percent} %, beim EG ${(200 * E1.percent) / 100} €, beim OG ${(120 * E1.percent) / 100} €.`,
+    norm: '§ 1 Abs. 1 HeizkostenV; § 2 Nr. 4 BetrKV; § 5 Abs. 1 Satz 2 CO2KostAufG',
+    needed: 'Wenn in Wohnungen Thermen über Ihren Gasvertrag laufen. Jede Wohnung braucht dafür einen eigenen Gaszähler, denn die Rechnung gehört zu ihr. Umgelegt werden dürfen Betriebskosten nur, wenn der Mietvertrag es vereinbart (§ 556 Abs. 1 BGB); für die Gaskosten einer Etagenheizung prüfen Sie das bitte mit Ihrem Mietvertrag, im Zweifel mit Ihrem Haus- und Grundbesitzerverein. Hat der Mieter den Vertrag, gibt es keine Heizanlage des Hauses.',
+  },
+  boilerSwap: {
+    title: 'Heizung erneuert (Kesseltausch) und Restbestand',
+    short: 'Wird die Heizung erneuert, endet die bisherige Heizanlage am Tag vor dem Tausch, und eine neue beginnt mit denselben Wohnungen. Bleibt Heizöl, Flüssiggas oder Pellets im Tank, ist das der Restbestand. Heizt die neue Anlage mit demselben Brennstoff aus demselben Tank weiter, wird er ihr Anfangsbestand; sonst tragen ihn die Mieter nicht, denn umgelegt werden nur die Kosten der verbrauchten Brennstoffe (§ 7 Abs. 2 HeizkostenV). Er bleibt dann mit seinem Wert bei Ihnen.',
+    example: `Ölheizung bis 30.06., danach Gas. 500 l Restöl zu 1,05 € tragen die Mieter nicht, 525 € bleiben bei Ihnen. Eingestuft wird das Gebäude über das ganze Jahr: 12.043,35 kg aus dem Öl und 3.000 kg aus dem Gas auf 300 m² ergeben 50,1 kg je m² und ${K1.percent} %; das Öl allein ergäbe 40,1 kg je m² und ${K0.percent} %.`,
+    norm: '§ 7 Abs. 2 HeizkostenV; § 5 Abs. 1 Satz 1 CO2KostAufG',
+    needed: 'Wenn die Heizung im Lauf eines Abrechnungszeitraums ersetzt wird. Bleibt der Energieträger gleich und läuft er über denselben Zähler, etwa Gas über denselben Gaszähler, brauchen Sie keinen Tausch.',
   },
   fixedPriceComponent: {
     title: 'Fester Preisbestandteil',

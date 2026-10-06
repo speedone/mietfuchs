@@ -311,6 +311,7 @@ export async function readHeatingPlants(db: Executor): Promise<HeatingPlant[]> {
     units: p.unitsLimited ? (byPlant.get(p.id) ?? []) : null,
     endsOn: p.endsOn,
     replacesPlantId: p.replacesPlantId,
+    buildingWith: p.buildingWith,
   }))
 }
 

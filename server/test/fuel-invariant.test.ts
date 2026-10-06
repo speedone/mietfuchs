@@ -40,7 +40,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { eq } from 'drizzle-orm'
 import { computeSettlement } from '../src/calc.ts'
-import { createHeatingPlant } from '../src/db/heating.ts'
+import { createHeatingPlant, replaceHeatingPlant } from '../src/db/heating.ts'
 import { createDelivery, createEstimates, freezeFuelCarries, fuelGapQuestions, unfreezeFuelCarries } from '../src/db/fuel.ts'
 import { openDatabase } from '../src/db/open.ts'
 import { readClosedSettlements, readCostItems, readFuelCarryFrozen, readFuelDeliveries, readStock } from '../src/db/read.ts'
@@ -126,12 +126,15 @@ const SEEDS: number[] = process.env.INV_FROM !== undefined || process.env.INV_TO
   : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 16, 81]
 const STEPS = Number(process.env.INV_STEPS ?? 30)
 
-type Variant = { name: string; lazy: boolean; estimate: boolean; two?: boolean }
+type Variant = { name: string; lazy: boolean; estimate: boolean; two?: boolean; swap?: boolean }
 const VARIANTS: Variant[] = [
   { name: 'Grundform', lazy: false, estimate: false },
   { name: 'Rechnung kommt später', lazy: true, estimate: false },
   { name: 'Abschluss mit Schätzung', lazy: true, estimate: true },
   { name: 'Zwei Anlagen', lazy: false, estimate: false, two: true },
+  // Durchsicht von #238, I3: Gas wird an einem Tag durch Fernwärme ersetzt; die Rechnungen danach kommen
+  // erst nach dem Tausch und gehören der neuen Anlage.
+  { name: 'Kesseltausch', lazy: true, estimate: false, swap: true },
 ]
 
 // Heizung PR 9: Wem gehört eine Zeile? Übertrag und Gegenbuchung der Lieferung, CO₂-Zeilen dem Topf, sonst der
@@ -158,6 +161,9 @@ function onceEach(s: unknown, deliveryPlant: ReadonlyMap<string, string>, where:
   assert.equal(new Set(ids).size, ids.length, `${where}: Gegenbuchung doppelt: ${ids.join(', ')}`)
 }
 
+// Wie oft der Tausch in der Variante „Kesseltausch“ gelang (Abdeckung, letzter Test).
+const SWAPS = { runs: 0, done: 0 }
+
 for (const variant of VARIANTS) {
   for (const seed of SEEDS) {
     test(`Invariante, ${variant.name} (Startwert ${seed}): jede Rechnung genau einmal verteilt`, async () => {
@@ -180,7 +186,7 @@ for (const variant of VARIANTS) {
             await createEntity(db, 'units', 'c', { propertyId: 'objekt-1', name: 'C', areaM2: 50, participates: true })
             await createEntity(db, 'tenancies', 'tc', { unitId: 'c', tenantName: 'Mieter C', persons: 1, start: '2020-01-01' })
             await createHeatingPlant(db, 'hp', 'objekt-1', { name: 'Haus A', energy: 'gas', method: 'manual', units: [{ unitId: 'a', heatedAreaM2: null }, { unitId: 'b', heatedAreaM2: null }] })
-            await createHeatingPlant(db, 'hp2', 'objekt-1', { name: 'Haus B', energy: 'gas', method: 'manual', units: [{ unitId: 'c', heatedAreaM2: null }] })
+            await createHeatingPlant(db, 'hp2', 'objekt-1', { buildingWith: 'own', name: 'Haus B', energy: 'gas', method: 'manual', units: [{ unitId: 'c', heatedAreaM2: null }] })
           } else {
             await createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'gas', method: 'manual' })
           }
@@ -190,12 +196,14 @@ for (const variant of VARIANTS) {
             for (let k = 0; k < 3; k++) {
               const to = isoOf(Date.parse(`${start}T00:00:00Z`) + (int(300, 800) - 1) * DAY)
               const body = { label: `Rechnung ${prefix}${k}`, invoiceFrom: start, invoiceTo: to, fixedCents: rnd() < 0.5 ? int(0, 20000) : null }
-              all.push({ id: `${prefix}${k}`, from: start, to, plantId })
+              // Kesseltausch: Die Rechnungen ab der zweiten gehören der neuen Anlage.
+              const owner = variant.swap && k > 0 ? 'hp2' : plantId
+              all.push({ id: `${prefix}${k}`, from: start, to, plantId: owner })
               if (!variant.lazy || k === 0) {
                 await createDelivery(db, `${prefix}${k}`, plantId, body)
                 deliveries.push({ id: `${prefix}${k}`, from: start, to, plantId })
               } else {
-                pending.push({ id: `${prefix}${k}`, plantId, body })
+                pending.push({ id: `${prefix}${k}`, plantId: owner, body })
               }
               start = isoOf(Date.parse(`${to}T00:00:00Z`) + DAY)
             }
@@ -233,7 +241,26 @@ for (const variant of VARIANTS) {
           itemPlant.set(id, d.plantId)
           return made
         }
+        // Der Tausch am ersten Tag der zweiten Rechnung; er kann abgelehnt werden (abgeschlossene Heizperiode).
+        let swapped = false
+        if (variant.swap) SWAPS.runs++
+        const swapDate = all[1]?.from ?? ''
+        const replace = async (mark: string) => {
+          if (!variant.swap || swapped) return
+          try {
+            await opened.write((db) => replaceHeatingPlant(db, 'hp', 'hp2', { date: swapDate, energy: 'districtHeating', name: 'Fernwärme', previousName: 'Gas' }))
+            swapped = true
+            SWAPS.done++
+            log.push(`${mark} ${swapDate}`)
+          } catch (err) {
+            if (!rejected(err)) throw err
+          }
+        }
         const arrive = async (next: { id: string; plantId: string; body: Record<string, unknown> }, mark: string) => {
+          if (next.plantId === 'hp2' && variant.swap) {
+            await replace('replace')
+            if (!swapped) return
+          }
           await opened.write((db) => createDelivery(db, next.id, next.plantId, next.body))
           const a = all.find((x) => x.id === next.id)
           if (a) deliveries.push(a)
@@ -245,8 +272,9 @@ for (const variant of VARIANTS) {
           if (!d) continue
           const items = (await opened.read((db) => readCostItems(db))).filter((c) => c.fuelDeliveryId === d.id)
           if (op === 'arrive') {
-            const next = pending.shift()
+            const next = pending[0]
             if (next) await arrive(next, 'arrive')
+            if (next && deliveries.some((x) => x.id === next.id)) pending.shift()
           } else if (op === 'amount') {
             const c = pick(items)
             if (!c) continue
@@ -305,6 +333,10 @@ for (const variant of VARIANTS) {
             })
           }
         }
+        if (variant.swap) for (const next of [...pending]) {
+          await arrive(next, 'arrive*')
+          if (deliveries.some((x) => x.id === next.id)) pending.splice(pending.indexOf(next), 1)
+        }
         if (variant.estimate) {
           // Am Ende kommen alle Rechnungen und werden verknüpft, wo es geht; dann ist jede Schätzung durch
           // eine echte Rechnung ersetzt oder ihr Teil als Abweichung ausgewiesen.
@@ -332,8 +364,19 @@ for (const variant of VARIANTS) {
           const r = stored ? null : computeSettlement(snapshotFor(stock, 'objekt-1', periodOf(key)), {})
           if (r) live.set(key, r)
           const t = totals(stored ? stored.settlement : r)
-          if (variant.two) {
+          if (variant.two || (variant.swap && swapped)) {
             onceEach(stored ? stored.settlement : r, deliveryPlant, `${fall}; ${key}`)
+            // Kesseltausch: Die neue Anlage zeigt keine Lücke vor dem Tausch, und keine Anlage steht in einem
+            // Zeitraum, in dem sie nicht heizt.
+            if (r && variant.swap) {
+              const gaps = r.heating?.find((h) => h.plantId === 'hp2')?.fuel?.gaps ?? []
+              assert.ok(gaps.every((g) => g.from >= swapDate), `${fall}; Lücke der neuen Anlage vor dem Tausch in ${key}: ${JSON.stringify(gaps)}`)
+              for (const h of r.heating ?? []) {
+                const p = periodOf(key)
+                const alive = h.plantId === 'hp' ? p.from < swapDate : p.to >= swapDate
+                assert.ok(alive || !h.fuel, `${fall}; ${h.plantId} rechnet Lieferungen in ${key}, obwohl sie dort nicht heizt`)
+              }
+            }
             if (r) {
               // Je Anlage ergeben ihre Zeilen ihre Positionen.
               for (const plantId of ['hp', 'hp2']) {
@@ -400,3 +443,8 @@ for (const variant of VARIANTS) {
     })
   }
 }
+
+test('Invariante, Kesseltausch: Abdeckung', () => {
+  if (SWAPS.runs < 10) return
+  assert.ok(SWAPS.done * 3 >= SWAPS.runs * 2, `nur ${SWAPS.done} von ${SWAPS.runs} Läufen getauscht`)
+})
