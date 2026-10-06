@@ -2,15 +2,20 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AssignableHeatingItem, DevicesInstalledAfter, DevicesRemote, HeatingEnergy, HeatingPlant, NewDevicesInstall, Unit } from '../types'
 import { api, errorText, fmtEuro } from '../api'
 import { useProperty, withProperty } from '../property'
-import { periodLabel, periodOfKey, rulesOf } from '../../../shared/period.ts'
+import { periodContaining, periodLabel, periodOfKey, rulesOf } from '../../../shared/period.ts'
 import { useConfirm, useToast } from './feedback'
 import Drawer from './Drawer'
 import Term from './Term'
 import HeatingPeriodSection from './HeatingPeriodSection'
+import HeatingSelfSetup from './HeatingSelfSetup'
+import { useOptionalPeriod } from '../period'
+import { localToday } from '../periodForm'
+import { plantRules } from '../../../shared/heatingPeriod.ts'
+import { ApiError } from '../api'
 import { useFocusTarget, type FocusProps } from '../focus'
 import {
   CAPTURE_OPTIONS, CONTRACT_OPTIONS, ENERGY_OPTIONS, HOW_TO_TELL, asksRemote, INSTALLED_OPTIONS, NEW_DEVICES_AFTER, NEW_INSTALL_OPTIONS, NEW_INSTALL_QUESTION, PER_UNIT_ENERGY_OPTIONS, REMOTE_OPTIONS, TAKES_OVER_BACK, TAKES_OVER_HINT, takesOverBack, TAKES_OVER_OPTIONS, TAKES_OVER_QUESTION, asksNewInstall, asksTakeOver, buildingOptions, canSwap, emptyHeatingForm, emptySwapForm, heatingPlantBody,
-  connectionNote, heatingSummary, heatingToForm, swapBody, whoHint, whoOptions, type CaptureAnswer, type EnergyAnswer, type HeatingForm, type PerUnitContract, type SwapForm, type WhoSettles,
+  connectionNote, heatingSummary, heatingToForm, NEWER_THAN, swapBody, whoHint, whoOptions, type CaptureAnswer, type EnergyAnswer, type HeatingForm, type PerUnitContract, type SwapForm, type WhoSettles,
 } from '../heatingForm'
 
 // Die Karte „Heizung“ in den Stammdaten (Heizung PR 4, Entwurf 11.2). Ohne Anlage ein Satz und der
@@ -31,6 +36,12 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
   const [error, setError] = useState('')
   // Kessel getauscht (Heizung PR 9): die Anlage, die endet, und die Angaben zur neuen.
   const [swap, setSwap] = useState<{ plant: HeatingPlant; form: SwapForm } | null>(null)
+  // Einrichtung Schritt 7 (Heizung PR 10): die Anlage, die selbst abrechnen soll.
+  const [selfFor, setSelfFor] = useState<HeatingPlant | null>(null)
+  // Schritt 7 legt den Anteil der Heizperiode fest, an der der Vermieter arbeitet: die, in der der gewählte
+  // Zeitraum endet (ohne Zeitraum der Tag heute), nach dem Rhythmus der Anlage.
+  const period = useOptionalPeriod()
+  const heatingKeyOf = (p: HeatingPlant): string => periodContaining(plantRules(p, rulesOf(property)), period?.period.to ?? localToday()).key
   // „Hier beheben →“ an einem Hinweis zur Heizanlage (Heizung PR 5): die Karte ins Bild holen.
   const cardRef = useRef<HTMLDivElement>(null)
   useFocusTarget(focus, 'heatingPlant', plants, (p) => p.id, () => cardRef.current?.scrollIntoView?.({ block: 'start' }), onFocusDone)
@@ -95,14 +106,31 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
       const ok = await confirm({ title: 'Brennstoff doch weiter verheizen?', message: TAKES_OVER_BACK, confirmLabel: 'Umstellen' })
       if (!ok) return
     }
+    // „Ich selbst“ (Heizung PR 10): Die Art stellt nur Schritt 7 um; beim Ändern schickt die Karte sie nicht
+    // mit, sonst stellte sie eine Anlage mit eigener Abrechnung auf „Niemand“ zurück (Abweichung 17).
+    const { method: _method, ...withoutMethod } = result.body
+    const body = editingId && result.setUpSelf ? withoutMethod : result.body
+    let saved: HeatingPlant | null = null
     try {
       if (editingId) {
-        await api(`/api/heating-plants/${editingId}`, { method: 'PUT', body: JSON.stringify(result.body) })
+        try {
+          saved = await api<HeatingPlant>(`/api/heating-plants/${editingId}`, { method: 'PUT', body: JSON.stringify(body) })
+        } catch (e) {
+          // Zurück von der eigenen Abrechnung: Die offenen Positionen gehen nach Wohnfläche, nach Rückfrage.
+          if (!(e instanceof ApiError && e.status === 409 && Array.isArray(e.data.items))) throw e
+          const ok = await confirm({
+            title: 'Positionen nach Wohnfläche verteilen?',
+            message: `${errorText(e)} Ohne eigene Heizkostenabrechnung verteilt Mietfuchs diese Positionen nach Wohnfläche; den Schlüssel ändern Sie danach auf der Seite Kosten.`,
+            confirmLabel: 'Umstellen',
+          })
+          if (!ok) return
+          saved = await api<HeatingPlant>(`/api/heating-plants/${editingId}`, { method: 'PUT', body: JSON.stringify({ ...body, convertItems: 'area' }) })
+        }
       } else {
-        await api(withProperty('/api/heating-plants', propertyId), {
+        saved = (await api<{ plant: HeatingPlant }>(withProperty('/api/heating-plants', propertyId), {
           method: 'POST',
           body: JSON.stringify({ ...result.body, adjust: result.adjust, assignItemIds: assignable.map((i) => i.id) }),
-        })
+        })).plant
       }
     } catch (e) {
       setError(errorText(e))
@@ -112,6 +140,11 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
     const first = plants.length === 0
     close()
     await loadAll()
+    // Schritt 7: Die Anlage steht bei „Niemand“, bis die Fragen zur eigenen Abrechnung beantwortet sind.
+    if (result.setUpSelf && saved && saved.method !== 'self') {
+      setSelfFor(saved)
+      return
+    }
     toast(created
       ? (first ? 'Heizung eingerichtet. An Ihren Beträgen ändert sich nichts.' : 'Weitere Heizanlage angelegt. Ordnen Sie ihre Heizpositionen auf der Seite Kosten zu.')
       : back ? 'Heizung gespeichert. Der eigene Anfangsbestand ist entfernt; der Restbestand der bisherigen Heizanlage ist jetzt ihr Anfangsbestand.' : 'Heizung gespeichert.')
@@ -221,6 +254,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
             actions={<>
               <button className="btn secondary" onClick={() => openEdit(p)}>Ändern</button>
               {canSwap(p) && <button className="btn secondary" onClick={() => openSwap(p)}>Heizung erneuert (Kessel getauscht)</button>}
+              {p.method === 'manual' && p.supply === 'central' && p.endsOn === null && <button className="btn secondary" onClick={() => { setError(''); setSelfFor(p) }}>Selbst abrechnen</button>}
             </>}
             dangerAction={<button className="btn ghost danger-ghost" onClick={() => remove(p)}>Entfernen</button>}
           />
@@ -365,7 +399,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
               {form.energy === 'heatPump' && (
                 <>
                   <label className="field grow">
-                    Wurde der Verbrauch der Wärmepumpe am 01.10.2024 schon erfasst?
+                    {`Wurde der Verbrauch der Wärmepumpe am ${NEWER_THAN} schon erfasst?`}
                     <select value={form.captured} onChange={(e) => setForm({ ...form, captured: e.target.value as CaptureAnswer })}>
                       {CAPTURE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
@@ -374,6 +408,12 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
                     <label className="field grow">
                       Seit wann wird er erfasst?
                       <input type="date" value={form.captureInstalledOn} onChange={(e) => setForm({ ...form, captureInstalledOn: e.target.value })} />
+                    </label>
+                  )}
+                  {form.captured === 'newer' && (
+                    <label className="field grow">
+                      Einbaudatum der Wärmepumpe
+                      <input type="date" value={form.heatPumpInstalledOn} onChange={(e) => setForm({ ...form, heatPumpInstalledOn: e.target.value })} />
                     </label>
                   )}
                   <label className="field grow">
@@ -393,6 +433,18 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
             </>
           )}
         </Drawer>
+      )}
+      {selfFor && (
+        <HeatingSelfSetup
+          plant={selfFor}
+          period={heatingKeyOf(selfFor)}
+          onCancel={() => setSelfFor(null)}
+          onDone={async () => {
+            setSelfFor(null)
+            await loadAll()
+            toast('Eigene Heizkostenabrechnung eingerichtet. Tragen Sie die Zählerstände auf der Seite Zähler ein.')
+          }}
+        />
       )}
       {swap && (
         <Drawer

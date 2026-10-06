@@ -18,9 +18,10 @@ describe('Einrichtung Heizung', () => {
     expect(heatingPlantBody(ausgefuellt(), UNITS)).toEqual({
       body: {
         energy: 'gas', supply: 'central', method: 'service', source: 'building', devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown',
-        capturedOnOct2024: null, captureInstalledOn: null, warmRentAverageCents: null, units: null, newDevicesInstall: null, name: '', buildingWith: null,
+        capturedOnOct2024: null, captureInstalledOn: null, warmRentAverageCents: null, heatPumpInstalledOn: null, units: null, newDevicesInstall: null, name: '', buildingWith: null,
       },
       adjust: [],
+      setUpSelf: false,
     })
     expect(heatingPlantBody(ausgefuellt({ unitIds: ['og'] }), UNITS)).toMatchObject({ body: { units: [{ unitId: 'og', heatedAreaM2: null }] } })
   })
@@ -37,9 +38,17 @@ describe('Einrichtung Heizung', () => {
     expect(heatingPlantBody(ausgefuellt({ energy: 'perUnit', contract: 'landlord' }), UNITS)).toEqual({ error: 'Womit heizen die Etagenheizungen?' })
   })
 
-  test('Eigene Abrechnung kommt später', () => {
-    expect(heatingPlantBody(ausgefuellt({ who: 'self' }), UNITS)).toEqual({ error: expect.stringMatching(/eigene Heizkostenabrechnung kommt mit einer späteren Version/) })
-    expect(whoHint('self', 'mfh')).toMatch(/späteren Version/)
+  test('„Ich selbst“: die Anlage entsteht zunächst bei „Niemand“, Schritt 7 stellt sie um (Heizung PR 10, Abweichung 21)', () => {
+    expect(whoHint('self', 'mfh')).toMatch(/Wärmezähler und Warmwasserzähler/)
+    expect(whoHint('self', 'mfh')).not.toMatch(/späteren Version/)
+    expect(heatingPlantBody(ausgefuellt({ who: 'self' }), UNITS)).toMatchObject({ body: { method: 'manual' }, setUpSelf: true })
+  })
+
+  test('Wärmepumpe erst nach dem Stichtag eingebaut: Einbaudatum statt Erfassung (§ 12 Abs. 3, Heizung PR 10)', () => {
+    const base = ausgefuellt({ energy: 'heatPump', who: 'manual', captured: 'newer' })
+    expect(heatingPlantBody(base, UNITS)).toEqual({ error: expect.stringMatching(/Einbaudatum/) })
+    expect(heatingPlantBody({ ...base, heatPumpInstalledOn: '2024-09-01' }, UNITS)).toEqual({ error: expect.stringMatching(/bis zum 01\.10\.2024/) })
+    expect(heatingPlantBody({ ...base, heatPumpInstalledOn: '2025-03-01' }, UNITS)).toMatchObject({ body: { capturedOnOct2024: null, captureInstalledOn: null, heatPumpInstalledOn: '2025-03-01' }, setUpSelf: false })
   })
 
   test('Eigentumswohnung: die Gemeinschaft rechnet ab, übernommen wie vom Messdienst', () => {

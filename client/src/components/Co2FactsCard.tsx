@@ -74,7 +74,7 @@ export default function Co2FactsCard({ plant, view, servedAreaM2, onSaved }: { p
         </label>
       )}
       <div className="row"><button className="btn" onClick={() => void saveFacts()}>Angaben speichern</button></div>
-      {plant.method === 'manual' && (
+      {plant.method !== 'service' && (
         <div className="field-group">
           <label className="field">
             Fläche der Einstufung (m²)
