@@ -49,7 +49,9 @@ describe('§ 11 und § 2 (Entwurf 8.9)', () => {
     expect(text('renewable')).not.toMatch(/sofern|nicht erfasst/)
     expect(text('chp')).toMatch(/Kraft-Wärme-Kopplung.*sofern der Wärmeverbrauch des Gebäudes nicht erfasst wird \(§ 11 Abs\. 1 Nr\. 3 Buchst\. b/)
     // R-K6: kurze Beschriftungen, damit das Auswahlfeld nichts abschneidet.
-    expect(Math.max(...EXEMPTION_OPTIONS.map((o) => o.label.length))).toBeLessThanOrEqual(95)
+    expect(Math.max(...EXEMPTION_OPTIONS.map((o) => o.label.length))).toBeLessThanOrEqual(45)
+    // Runde 2, R2-N-K6: Nr. 5 mit ihrem Zweck.
+    expect(text('authority')).toMatch(/um einen unangemessenen Aufwand oder sonstige unbillige Härten zu vermeiden/)
     // R-K2: was nicht zur Wahl steht.
     expect(EXEMPTION_NOT_OFFERED).toMatch(/Pflegeheime.*Nr\. 2.*Hausanlagen.*Nr\. 4/s)
     expect(EXEMPTION_SCOPE_OPTIONS.map((o) => o.value)).toEqual(['heat', 'both'])
@@ -65,6 +67,10 @@ describe('§ 11 und § 2 (Entwurf 8.9)', () => {
     expect(laterClosedText(['2025-01', '2026-01'])).toMatch(/Die Heizperioden 2025 und 2026 sind abgeschlossen/)
     expect(CONTRACT_HELP).toMatch(/Unternehmer \(§ 14 BGB\).*Verbraucher ist \(§ 13 BGB\).*Liste der Verbraucherschlichtungsstellen.*Bundesamt für Justiz/s)
     expect(CONTRACT_HELP).not.toMatch(/welche Stelle zuständig ist und ob Sie teilnehmen, entscheiden Sie/)
+    // Runde 2, R2-N-K2 und R2-N-K3.
+    expect(CONTRACT_HELP).toMatch(/§§ 36, 37 VSBG bleiben davon unberührt, soweit sie Sie treffen/)
+    expect(CONTRACT_HELP).not.toMatch(/gelten daneben/)
+    expect(CONTRACT_HELP).toMatch(/vgl\. BGH, Urteil vom 23\.10\.2001, XI ZR 63\/01/)
     expect(CONTRACT_OPTIONS.map((o) => o.value)).toEqual(['', 'none', 'yes'])
   })
   it('„Mitteilen“: ein Portal nur mit einer Nachricht jeden Monat', () => {

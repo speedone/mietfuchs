@@ -2,10 +2,11 @@
 // server/testing/selfHeating.ts, ergänzt um Stände am 31.12.2023, damit es eine Vorperiode gibt.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { computeSettlement, type ComputedSettlement } from '../src/calc.ts'
+import { computeSettlement, meterSegments, type ComputedSettlement } from '../src/calc.ts'
 import type { Snapshot } from '../src/snapshot.ts'
-import { selfReading, selfRow, selfSnapshot, selfTenancy, selfUnit, type SelfSnapshotOptions } from '../testing/selfHeating.ts'
-import type { HeatingEstimate, HeatingPeriodData } from '../../shared/types.ts'
+import { selfDelivery, selfMeter, selfReading, selfRow, selfSnapshot, selfTenancy, selfUnit, type SelfSnapshotOptions } from '../testing/selfHeating.ts'
+import type { HeatingEstimate, HeatingPeriodData, HeatingServiceValue } from '../../shared/types.ts'
+import { dayAfter } from '../../shared/law/register.ts'
 import { periodKey } from '../../shared/period.ts'
 
 const codes = (s: ComputedSettlement) => s.notices.map((n) => n.code)
@@ -379,6 +380,127 @@ test('Durchsicht R-W7, R-K1, R-W8: Wortlaut des § 11 und die CO₂-Sätze je Um
   assert.match(text({ exemption: 'chp', exemptionScope: 'both' }), /Kraft-Wärme-Kopplung oder aus Anlagen zur Verwertung von Abwärme versorgt wird, sofern der Wärmeverbrauch des Gebäudes nicht erfasst wird \(§ 11 Abs\. 1 Nr\. 3 Buchst\. b HeizkostenV\)/)
   assert.match(text({ exemption: 'disproportionate', exemptionScope: 'both' }), /das Anbringen der Ausstattung zur Verbrauchserfassung, die Erfassung des Wärmeverbrauchs oder die Verteilung der Kosten des Wärmeverbrauchs nicht oder nur mit unverhältnismäßig hohen Kosten möglich ist/)
   const heat = text({ exemption: 'lowDemand', exemptionScope: 'heat' })
-  assert.match(heat, /teilt Mietfuchs weiter auf: .*„in denen keine Heizkostenabrechnung durchgeführt wird“ \(BT-Drs\. 20\/3172, S\. 28, zu § 2 Abs\. 7 CO2KostAufG\).*Auslegung von Mietfuchs/s)
+  assert.match(heat, /teilt Mietfuchs weiter auf: .*„in denen keine Heizkostenabrechnung durchgeführt wird“ \(BT-Drs\. 20\/3172, S\. 28, zu § 2 Abs\. 6 des Entwurfs, heute § 2 Abs\. 7 CO2KostAufG\).*Auslegung von Mietfuchs/s)
   assert.doesNotMatch(heat, /sagt das Gesetz nicht ausdrücklich/)
+})
+
+// ---------- Durchsicht von #243, Runde 2 ----------
+
+const tenantCut = (text: string, who: string): string => new RegExp(`${who} \\(\\w+\\) ([0-9.,]+ €)`).exec(text)?.[1] ?? assert.fail(`kein Betrag für ${who}: ${text}`)
+
+test('Durchsicht Runde 2, G2-N-W1: Warmwasser ohne Wärmezähler unter Ausnahme nur der Wärme – 15 % nur auf den Anteil Warmwasser', () => {
+  const formel = { dhwMethod: 'volumeFormula' as const, dhwVolumeM3: 120, dhwTempC: 60, dhwUnmeasurable: null }
+  const deliveries = [selfDelivery({ gasBasis: 'hs' })]
+  const run = (row: Partial<HeatingPeriodData>) => computeSettlement(beispiel({ plant: { heatGeneration: 'single' }, row: { ...formel, ...row }, deliveries }))
+  const ohne = notice(run({}), 'heating.dhw-not-metered').text
+  assert.equal(tenantCut(ohne, 'Mieter A'), '265,19 €')
+  const heat = notice(run({ exemption: 'lowDemand', exemptionScope: 'heat' }), 'heating.dhw-not-metered').text
+  assert.match(heat, /nur den Anteil am Warmwasser, hier: Mieter A \(A\) /)
+  const a = Number(tenantCut(heat, 'Mieter A').replace(/[^0-9,]/g, '').replace(',', '.'))
+  assert.ok(a > 60 && a < 75, `A ${a} €, erwartet rund 67,60 €`)
+  assert.ok(!codes(run({ exemption: 'lowDemand', exemptionScope: 'both' })).includes('heating.dhw-not-metered'))
+})
+
+// Werte des Ablesedienstes in beiden Heizperioden (aus den Ständen der Wärmezähler gebildet).
+function mitWertenDesAblesedienstes(row: Partial<HeatingPeriodData>): Snapshot {
+  const HEAT = ['wz-a', 'wz-b', 'wz-c']
+  const base = beispiel({ row: { ...ANGABEN, ...row } })
+  const rowsOf = (key: string, lo: string, hi: string): HeatingServiceValue[] => base.meters.filter((m) => HEAT.includes(m.id)).flatMap((m) =>
+    meterSegments(base.readings.filter((r) => r.meterId === m.id)).segments.filter((s) => s.from >= lo && s.to <= hi)
+      .map((s) => ({ plantId: 'hp', period: periodKey(key), unitId: m.unitId ?? '', from: dayAfter(s.from), to: s.to, heatValue: s.delta, waterValue: null, heatUnit: 'units' as const })))
+  const meters = [
+    selfMeter('xw-a', 'a', 'Warmwasser A', 'warmwasser'), selfMeter('xw-b', 'b', 'Warmwasser B', 'warmwasser'), selfMeter('xw-c', 'c', 'Warmwasser C', 'warmwasser'),
+    selfMeter('ww', null, 'Wärmezähler Warmwasserspeicher', 'waerme', { heatingPlantId: 'hp', heatingRole: 'dhwHeat' }),
+  ]
+  const s = beispiel({ row: { ...ANGABEN, ...row }, serviceValues: [...rowsOf('2025-01', '2024-12-31', '2025-12-31'), ...rowsOf('2024-01', '2023-12-31', '2024-12-31')], meters })
+  return { ...s, heatingPlants: (s.heatingPlants ?? []).map((p) => ({ ...p, capture: 'serviceValues' as const, selfSpans: (p.selfSpans ?? []).map((x) => ({ ...x, capture: 'serviceValues' as const })) })) }
+}
+
+test('Durchsicht Runde 2, R2-N-W1: Werte des Ablesedienstes – die Bestätigung des beigelegten Vergleichs deckt Nr. 4 und Nr. 5', () => {
+  const ohne = computeSettlement(mitWertenDesAblesedienstes({}))
+  assert.match(notice(ohne, 'heating.info-incomplete').text, /\(Nr\. 5\).*bestätigen Sie das mit seiner Quelle/s)
+  const mit = computeSettlement(mitWertenDesAblesedienstes({ infoComparisonSource: 'Vergleich des Ablesedienstes, Anlage' }))
+  assert.ok(!codes(mit).includes('heating.info-incomplete'), codes(mit).join(', '))
+  assert.doesNotMatch(mit.notices.map((n) => n.text).join(' '), /53,83 €|71,77 €|36,54 €/)
+  const info = infoOf(mit)
+  assert.equal(info.comparisonCoversPrev, true)
+  assert.deepEqual(info.users.filter((u) => !u.firstPeriod).map((u) => u.missing), [[], [], []])
+})
+
+test('Durchsicht Runde 2, R2-N-W2: Für den nach § 9a geschätzten Mieter gelten nur die Mindestangaben – kein Betrag wegen Nr. 1 b', () => {
+  const readings = beispiel().readings.filter((r) => !(r.meterId === 'wz-a' && r.date === '2025-12-31'))
+  const estimate: HeatingEstimate = { plantId: 'hp', period: periodKey('2025-01'), unitId: 'a', part: 'heat', value: 12000, method: 'buildingAverage', reason: 'Wärmezähler defekt', confirmed: true, cause: 'deviceFailure', capture: 'heatMeter', valueUnit: 'kWh' }
+  const s = computeSettlement({ ...beispiel({ estimates: [estimate], row: { ...ANGABEN, infoTaxesText: null } }), readings })
+  const n = notice(s, 'heating.info-incomplete')
+  const list = n.text.split('Satz 3 HeizkostenV), hier:')[1]?.split('. ')[0] ?? assert.fail(n.text)
+  assert.doesNotMatch(list, /Mieter A/)
+  assert.match(list, /Mieter B \(B\)/)
+  assert.match(n.text, /mindestens die Angaben nach Abs\. 5, also Nr\. 2 und 3.*keine Kürzung wegen der Nr\. 1, 4 und 5.*Auslegung von Mietfuchs/s)
+  assert.deepEqual(infoOf(s).users.find((u) => u.tenancyId === 'A')?.missing, [])
+})
+
+test('Durchsicht Runde 2, R2-N-K4 und R2-N-K7: der Betrag des ersten Jahres steht einmal; „jeder übrige Mieter“ neben einem geschätzten', () => {
+  const fern: Snapshot = (() => { const s = beispiel({ row: { ...ANGABEN, infoTaxesText: null } }); return { ...s, meters: s.meters.map((m) => (m.id === 'wz-a' ? { ...m, remoteReadable: true } : m)) } })()
+  const s = computeSettlement(fern)
+  const all = s.notices.map((n) => n.text).join('\n')
+  // C2 hat seinen Betrag beim Hinweis zu den Angaben (Nr. 1 b fehlt ihm auch), nicht ein zweites Mal im ersten Jahr und nicht bei der monatlichen Information.
+  assert.equal((all.match(/Mieter C2 \(C\) [0-9.,]+ €/g) ?? []).length, 1, all)
+  assert.match(notice(s, 'heating.info-incomplete').text, /dasselbe Kürzungsrecht wie bei den übrigen Angaben und der monatlichen Verbrauchsinformation/)
+  // Erstes Jahr ohne andere Lücke: Betrag beim Hinweis zu den Angaben, die monatliche Information verweist dorthin.
+  const voll = computeSettlement((() => { const x = mitAngaben(); return { ...x, meters: x.meters.map((m) => (m.id === 'wz-a' ? { ...m, remoteReadable: true } : m)) } })())
+  const text = voll.notices.map((n) => n.text).join('\n')
+  assert.equal((text.match(/Mieter C2 \(C\) [0-9.,]+ €/g) ?? []).length, 1, text)
+  // R2-N-K7
+  // Nur die Wärme ausgenommen: Nr. 4 rechnet Mietfuchs für das Warmwasser nicht; A hat einen geschätzten Warmwasserverbrauch.
+  const readings = beispiel().readings.filter((r) => !(r.meterId === 'xw-a' && r.date === '2025-12-31'))
+  const estimate: HeatingEstimate = { plantId: 'hp', period: periodKey('2025-01'), unitId: 'a', part: 'water', value: 30, method: 'buildingAverage', reason: 'Zähler defekt', confirmed: true, cause: 'deviceFailure', capture: 'heatMeter', valueUnit: 'm³' }
+  // A mit 40 m²: die Schätzung bleibt unter 25 % der Fläche (§ 9a Abs. 2).
+  const heat = computeSettlement({ ...beispiel({ units: [selfUnit('a', 40), selfUnit('b', 80), selfUnit('c', 60)], estimates: [estimate], row: { ...ANGABEN, exemption: 'lowDemand', exemptionScope: 'heat' } }), readings })
+  assert.equal(infoOf(heat).users.find((u) => u.tenancyId === 'A')?.estimated, true, JSON.stringify([heat.notices.map((x) => x.code), infoOf(heat).users.map((u) => u.tenancyId)]))
+  const open = heat.notices.find((x) => /Legt Ihr Ablesedienst/.test(x.text)) ?? assert.fail(heat.notices.map((x) => x.code).join(', '))
+  assert.match(open.text, /sonst darf jeder übrige Mieter um bis zu 3 % kürzen/)
+})
+
+test('Durchsicht Runde 2, G2-N-K1: Unter „nach Wohnfläche“ sperrt eine fehlende Ablesung die eigene Abrechnung nicht', () => {
+  const zfh = (row: Partial<HeatingPeriodData>, drop: (r: { meterId: string; date: string }) => boolean): Snapshot => {
+    const s = beispiel({ units: [selfUnit('a', 60, { participates: false, selfUsed: true, selfPersons: 1 }), selfUnit('b', 80)], tenancies: [selfTenancy('B', 'b', '2020-01-01', null)], row: { ...ANGABEN, ...row } })
+    return { ...s, readings: s.readings.filter((r) => !drop(r)) }
+  }
+  const ohneB = (r: { meterId: string; date: string }) => r.meterId === 'wz-b' && r.date === '2025-12-31'
+  const ohneSpeicher = (r: { meterId: string }) => r.meterId === 'ww'
+  for (const drop of [ohneB, ohneSpeicher]) {
+    const s = computeSettlement(zfh({ agreedOtherwise: 'area' }, drop))
+    assert.ok(!s.notices.some((n) => n.level === 'error' && n.code.startsWith('heating.')), s.notices.filter((n) => n.level === 'error').map((n) => n.code).join(', '))
+    assert.equal(ohneAbzug(s, 'B'), 380572)
+    // Ohne Vereinbarung bleibt es eine Sperre.
+    assert.ok(computeSettlement(zfh({}, drop)).notices.some((n) => n.level === 'error' && n.code.startsWith('heating.')))
+  }
+})
+
+test('Durchsicht Runde 2, G2-N-K2: nur Wärme – Fernablesbarkeit und versäumte Zwischenablesung auf den Anteil Warmwasser; freie Schlüssel in der Grundlage', () => {
+  // Fernablesbarkeit: Wärmezähler nicht fernablesbar ist ohne Belang, ein Warmwasserzähler nicht fernablesbar zählt.
+  const geraete = (row: Partial<HeatingPeriodData>) => {
+    const s = beispiel({ row })
+    return computeSettlement({ ...s, meters: s.meters.map((m) => (m.id === 'xw-a' ? { ...m, remoteReadable: false, installedOn: '2023-01-01' } : m.unitId ? { ...m, remoteReadable: true } : m)) })
+  }
+  const r = (s: ComputedSettlement) => s.notices.find((n) => n.code.startsWith('heating.remote-reading')) ?? assert.fail(s.notices.map((n) => n.code).join(', '))
+  assert.equal(tenantCut(r(geraete({})).text, 'Mieter A'), '53,83 €')
+  assert.equal(tenantCut(r(geraete({ exemption: 'lowDemand', exemptionScope: 'heat' })).text, 'Mieter A'), '7,53 €')
+  // Versäumte Zwischenablesung bei C (C1 → C2): ohne Ausnahme 188,70 €, nur Wärme 40,54 €.
+  const lueck = (row: Partial<HeatingPeriodData>) => computeSettlement({ ...beispiel({ row }), readings: beispiel().readings.filter((x) => !(x.date === '2025-09-30')), interimGaps: [{ unitId: 'c', date: '2025-09-30', status: 'missed', reason: '' }] })
+  const missed = (s: ComputedSettlement) => notice(s, 'heating.no-interim-reading-missed').text
+  assert.equal(tenantCut(missed(lueck({})), 'Mieter C1'), '188,70 €')
+  assert.equal(tenantCut(missed(lueck({ exemption: 'lowDemand', exemptionScope: 'heat' })), 'Mieter C1'), '40,54 €')
+  // Freie Schlüssel nach Zählern, nur Wärme: die Position nur für Warmwasser zählt, „beides“ ist unbekannt.
+  const frei = (() => { const s = beispiel({ plant: { method: 'manual' }, row: { exemption: 'lowDemand', exemptionScope: 'heat' } }); return { ...s, costItems: s.costItems.map((c) => (c.heatingPlantId ? { ...c, key: 'meter' as const, meterType: 'waerme' as const } : c)) } })()
+  const t = notice(computeSettlement(frei), 'heating.info-incomplete').text
+  assert.match(t, /hier: Mieter A \(A\) 0,54 €/)
+  assert.match(t, /Bei Mieter A \(A\).* kommt der Anteil Warmwasser an den Positionen für Heizung und Warmwasser hinzu; den kennt Mietfuchs bei diesen Schlüsseln nicht/s)
+  assert.doesNotMatch(t, /0,45 € und auf den Anteil/)
+})
+
+test('Durchsicht Runde 2, G2-N-K2: co2.exempt-deducted nur, wenn der Messdienst abgezogen hat – nicht bei eigener Abrechnung unter voller Ausnahme', () => {
+  const s = computeSettlement(beispiel({ row: { exemption: 'lowDemand', exemptionScope: 'both' } }))
+  assert.ok(codes(s).includes('heating.exemption'))
+  assert.ok(!codes(s).includes('co2.exempt-deducted' as never), codes(s).join(', '))
 })

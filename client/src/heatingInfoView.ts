@@ -26,7 +26,7 @@ export function infoLines(info: HeatingInfoStatement): string[] {
     // Durchsicht von #243, R-W6: ohne Position mit dem Teil Erfassung keine Zahl; mit, für das ganze Gebäude.
     if (info.meteringCents !== null) lines.push(`Entgelte für Erfassungsgeräte, Eichung, Ablesung und Abrechnung, insgesamt für das Gebäude: ${fmtEuro(info.meteringCents)}`)
     // R-W1: der beigelegte Vergleich des Ablesedienstes.
-    if (info.comparisonSource) lines.push(`Vergleich mit einem Durchschnittsnutzer${info.comparisons ? '' : ' und mit dem vorhergehenden Abrechnungszeitraum'}: liegt der Abrechnung bei (${info.comparisonSource})`)
+    if (info.comparisonSource) lines.push(`Vergleich mit einem Durchschnittsnutzer${info.comparisons && !info.comparisonCoversPrev ? '' : ' und mit dem vorhergehenden Abrechnungszeitraum'}: liegt der Abrechnung bei (${info.comparisonSource})`)
   }
   lines.push(`Informationen zum Energiesparen, zu Vergleichsprofilen und zu energiebetriebenen Geräten (Stand ${germanDate(info.contactsChecked)}):`)
   for (const c of info.contacts) lines.push(`${c.name}, ${c.url} – ${c.what}`)

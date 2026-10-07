@@ -371,7 +371,7 @@ export const GLOSSARY = {
     needed:
       'Ja, wenn Sie die Heizkosten nach Verbrauch abrechnen. Mietfuchs rechnet die meisten Angaben aus Ihren Daten. Steuern und Abgaben, bei Fernwärme die Werte des Netzes, den Vergleichswert eines Durchschnittsnutzers mit seiner Quelle und die Klimafaktoren tragen Sie auf der Seite Heizkosten ein. ' +
       'Ein Durchschnitt Ihres eigenen Hauses ist kein solcher Vergleich: Gemeint sind nach der Begründung der Verordnung anonymisierte Verbraucher aus den Beständen der Ablesedienste. ' +
-      'Rechnen Sie mit Heizkostenverteilern oder freien Schlüsseln ab, legt meist der Ablesedienst den Vergleich bei; das bestätigen Sie mit seiner Quelle. Ist der Verbrauch eines Mieters geschätzt (§ 9a), gehören die Vergleiche nach der Begründung nicht dazu.',
+      'Rechnen Sie mit Heizkostenverteilern oder freien Schlüsseln ab, legt meist der Ablesedienst den Vergleich bei; das bestätigen Sie mit seiner Quelle. Ist der Verbrauch eines Mieters geschätzt (§ 9a), gelten nach der Begründung der Verordnung nur die Mindestangaben, also die Kontaktinformationen und beim Verbrauchervertrag die Streitbeilegung; dass Mietfuchs das je Mieter anwendet, ist eine Auslegung.',
   },
   climateFactor: {
     title: 'Klimafaktor',

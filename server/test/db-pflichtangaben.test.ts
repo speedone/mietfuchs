@@ -11,6 +11,7 @@ import { closeSettlement, createEntity, updateProperty } from '../src/db/reposit
 import { createHeatingPlant, replaceHeatingPlant, updateHeatingPlant } from '../src/db/heating.ts'
 import { saveDistribution, setUpSelf } from '../src/db/heatingSelf.ts'
 import { saveHeatingInfo, saveHeatingRules } from '../src/db/heatingInfo.ts'
+import { closeHeatingSettlement } from '../src/db/heatingSettlements.ts'
 import { heatingPeriodViews } from '../src/db/co2.ts'
 import { periodKey } from '../../shared/period.ts'
 import { postalCodeOf } from '../../shared/heatingInfo.ts'
@@ -237,5 +238,16 @@ test('Durchsicht G-W3: Feste Anteile nach § 2 bei eigener Heizkostenabrechnung:
     await opened.write((db) => setUpSelf(db, 'hp', SETUP, '2025-12-01', newId))
     await assert.rejects(opened.write((db) => saveHeatingRules(db, 'hp', '2026-01', { agreedOtherwise: 'fixedPercent' })), status(400, /feste Anteile.*freien Schlüsseln/s))
     assert.equal((await opened.write((db) => saveHeatingRules(db, 'hp', '2026-01', { agreedOtherwise: 'area' })))?.agreedOtherwise, 'area')
+  })
+})
+
+test('Durchsicht Runde 2, G2-N-H1: Die Rückfrage kennt auch die getrennt abgeschlossene Heizkostenabrechnung der Nachfolgeanlage', async () => {
+  await withDatabase(async (opened) => {
+    await haus(opened)
+    const neu = await opened.write((db) => replaceHeatingPlant(db, 'hp', 'hp2', { date: '2025-01-01', energy: 'oil' }))
+    const id = neu?.plant.id ?? assert.fail('keine neue Anlage')
+    await opened.write((db) => closeHeatingSettlement(db, { id: 'h26', plantId: id, period: periodKey('2026-01'), closedAt: '2027-03-01T10:00:00.000Z', sentAt: null, settlement: {} }))
+    const probe = await opened.write((db) => saveHeatingRules(db, 'hp', '2024-01', { exemption: 'pre1981', exemptionScope: 'both', dryRun: true }))
+    assert.deepEqual(probe?.later.closed, ['2026-01'])
   })
 })

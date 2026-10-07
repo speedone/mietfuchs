@@ -1414,7 +1414,8 @@ lässt die Wahl nur für künftige Zeiträume zu. Der Anteil gehört zur **Linie
   der eigenen Wohnung ist privat) und `co2.exempt-deducted` sagt es. Eine Vereinbarung nach
   § 2 (`agreedFor`) wirkt nur, solange das Haus im Zeitraum die Voraussetzung erfüllt (`heatingAgreeable`), und
   hebt nur die Kürzung nach § 12 Abs. 1 Satz 1 auf. „Nach Wohnfläche“ verteilt die eigene Abrechnung ganz nach
-  der Fläche (`agreedArea`, Anteil 0, ohne die Grenzen der §§ 7, 8, 10); „feste Anteile“ kann sie nicht (400 beim
+  der Fläche (`agreedArea`, Anteil 0, ohne die Grenzen der §§ 7, 8, 10; fehlende Ablesungen und Warmwasseranteil
+  sperren dann nicht); „feste Anteile“ kann sie nicht (400 beim
   Speichern, sonst `heating.self-incomplete`). Der Umfang der Angaben folgt dem, was Mietfuchs tatsächlich
   rechnet, nicht der Vereinbarung. Eine Änderung von Umfang oder vereinbarter Abrechnung unter geerbter Ausnahme
   schreibt die Ausnahme in die eigene Zeile; ohne geltende Ausnahme 400. `dryRun` beim Speichern nennt die
@@ -1435,8 +1436,9 @@ lässt die Wahl nur für künftige Zeiträume zu. Der Anteil gehört zur **Linie
   Information fehlt. Wo Mietfuchs Nr. 4 nicht rechnen kann (Heizkostenverteiler, Werte des Ablesedienstes,
   Warmwasser allein) oder bei freien Schlüsseln Nr. 4 und 5, bestätigt der Vermieter den beigelegten Vergleich
   des Ablesedienstes mit Quelle (`info_comparison_source`); ohne Bestätigung ist es offen, nicht fehlend. Ist
-  der Verbrauch eines Mieters nach § 9a geschätzt, fallen für ihn die Vergleiche weg (BR-Drs. 643/21, S. 19 und
-  22; je Mieter ist Auslegung). Ohne Position mit dem Teil Erfassung druckt Nr. 1 c keine Zahl (`meteringCents`
+  der Verbrauch eines Mieters nach § 9a geschätzt, gelten für ihn nur die Mindestangaben nach Abs. 5 (Nr. 2 und 3;
+  BR-Drs. 643/21, S. 19 und 22; je Mieter ist Auslegung). Bei Werten des Ablesedienstes deckt die Bestätigung
+  auch Nr. 5 (`attachedCoversPrev`). Ohne Position mit dem Teil Erfassung druckt Nr. 1 c keine Zahl (`meteringCents`
   `null`, offen). Jede sicher fehlende Angabe ergibt `heating.info-incomplete` mit 3 % für die betroffenen Mieter
   (ein Kürzungsrecht nach Satz 3, auch mit der monatlichen Information: deren Hinweis nennt die Beträge nicht
   ein zweites Mal; BR-Drs. 643/21, S. 23 f.), nur für Zeiträume ab dem 01.12.2021 (`hkv.settlement-info`). `heating.monthly-info` nur, wenn ein Gerät, das in der

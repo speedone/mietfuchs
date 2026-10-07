@@ -88,3 +88,13 @@ test('Durchsicht von #243: Regeln und Lexikon zu Ablesung, Kürzungsrecht, CO₂
   assert.doesNotMatch(`${GLOSSARY.billingInfo.short} ${GLOSSARY.climateFactor.needed}`, /Vorjahr/)
   assert.match(GLOSSARY.billingInfo.example, /BR-Drs\. 643\/21, S\. 23 f\./)
 })
+
+test('Durchsicht Runde 2: Lexikon und Anleitung zu § 9a (R2-N-W2) und zum Verbrauchervertrag (R2-N-K3)', async () => {
+  const { GLOSSARY } = await import('../../shared/glossary.ts')
+  assert.match(GLOSSARY.billingInfo.needed, /geschätzt \(§ 9a\), gelten nach der Begründung der Verordnung nur die Mindestangaben.*Auslegung/s)
+  assert.doesNotMatch(GLOSSARY.billingInfo.needed, /gehören die Vergleiche nach der Begründung nicht dazu/)
+  const { GUIDES } = await import('../../shared/guides.ts')
+  const text = JSON.stringify(GUIDES)
+  assert.doesNotMatch(text, /und ob Sie als Unternehmer vermieten/)
+  assert.match(text, /ob Ihr Mietvertrag ein Verbrauchervertrag ist/)
+})

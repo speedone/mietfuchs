@@ -2147,6 +2147,8 @@ export type HeatingInfoStatement = {
   meteringCents: number | null
   // Der beigelegte Vergleich des Ablesedienstes mit Quelle (R-W1); `null`: nicht bestätigt.
   comparisonSource: string | null
+  // Er deckt auch Nr. 5 (Werte des Ablesedienstes, Runde 2).
+  comparisonCoversPrev?: true
   // Nr. 4: der eingetragene Vergleichswert mit Quelle (`null`: fehlt) und ob Mietfuchs ihn mit dem Verbrauch
   // vergleichen kann (Wärme in kWh; nicht bei Heizkostenverteilern oder ausgenommener Wärme).
   reference: { kwhPerM2: number; source: string } | null

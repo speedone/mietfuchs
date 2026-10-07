@@ -17,6 +17,7 @@ import { readProperties, readTenancies, readUnits } from './read.ts'
 import { has, HeatingError, oneOfOrUndefined, raw } from './repository.ts'
 import { AGREED_OTHERWISE, EXEMPTION_SCOPES, HEATING_EXEMPTIONS, heatingPeriods, heatingPlants } from './schema.ts'
 import { heatingRulesOf, type RuleRow } from '../heatingInfo.ts'
+import { lineRoot } from '../../../shared/heatingPeriod.ts'
 
 type Inputs = Omit<HeatingInfoInputs, 'postalCode'>
 export type OwnRules = Pick<HeatingPeriodData, 'exemption' | 'exemptionScope' | 'exemptionBillingAgreed' | 'agreedOtherwise' | 'monthlyInfoElsewhere' | 'consumerContract'>
@@ -136,6 +137,13 @@ export async function saveHeatingRules(db: Database, plantId: string, period: st
   // Mit `dryRun` wird nur gerechnet, nichts geschrieben: Die Oberfläche fragt nach, bevor eine Angabe an
   // abgeschlossenen Heizperioden vorbei auf eine offene wirkt (Durchsicht von #243, G-K1).
   const dryRun = raw(body, 'dryRun') === true
+  const allPlants = await db.select({ id: heatingPlants.id, replacesPlantId: heatingPlants.replacesPlantId }).from(heatingPlants)
+  const root = lineRoot({ id: plantId, replacesPlantId: allPlants.find((x) => x.id === plantId)?.replacesPlantId ?? null }, allPlants)
+  const lineContexts = [ctx]
+  for (const x of allPlants.filter((y) => y.id !== plantId && lineRoot(y, allPlants) === root)) {
+    const xc = await plantContext(db, x.id)
+    if (xc) lineContexts.push(xc)
+  }
   let saved: SavedRules | null = null
   await db.transaction(async (tx) => {
     if (await heatingPeriodClosed(tx, ctx, h)) throw new HeatingError(409, closedText(h))
@@ -176,7 +184,11 @@ export async function saveHeatingRules(db: Database, plantId: string, period: st
     }
     const withBefore: RuleRow[] = before ? [...rows, { ...self, ...ownOf(before) }] : rows
     const withAfter: RuleRow[] = [...rows, { ...self, ...merged }]
-    const closed = (await closedHeatingKeys(tx, ctx)).filter((k) => k > String(h.key) && rulesAt(withBefore, k) !== rulesAt(withAfter, k)).sort()
+    // Über die Linie (Runde 2, G2-N-H1): Nach einem Kesseltausch kann die neue Anlage eine eigene, getrennt
+    // abgeschlossene Heizkostenabrechnung haben.
+    const keys = new Set<string>()
+    for (const xc of lineContexts) for (const k of await closedHeatingKeys(tx, xc)) keys.add(k)
+    const closed = [...keys].filter((k) => k > String(h.key) && rulesAt(withBefore, k) !== rulesAt(withAfter, k)).sort()
     if (dryRun) {
       saved = { ...merged, later: { closed } }
       return

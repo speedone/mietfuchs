@@ -63,3 +63,9 @@ describe('Durchsicht von #243 (Druck)', () => {
     expect(infoLines({ ...info, comparisons: false, comparisonSource: 'Ablesedienst, Anlage 2' })).toContain('Vergleich mit einem Durchschnittsnutzer und mit dem vorhergehenden Abrechnungszeitraum: liegt der Abrechnung bei (Ablesedienst, Anlage 2)')
   })
 })
+
+describe('Durchsicht von #243, Runde 2 (Druck)', () => {
+  it('R2-N-W1: bei Werten des Ablesedienstes nennt der Druck den beigelegten Vergleich für Nr. 4 und 5', () => {
+    expect(infoLines({ ...info, comparisonSource: 'Ablesedienst, Anlage 2', comparisonCoversPrev: true })).toContain('Vergleich mit einem Durchschnittsnutzer und mit dem vorhergehenden Abrechnungszeitraum: liegt der Abrechnung bei (Ablesedienst, Anlage 2)')
+  })
+})

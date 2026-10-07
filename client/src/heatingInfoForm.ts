@@ -18,9 +18,9 @@ export const CONTRACT_OPTIONS: { value: ContractForm['contract']; label: string 
   { value: 'none', label: 'Nein: kein Verbrauchervertrag' },
   { value: 'yes', label: 'Ja: Verbrauchervertrag (§ 310 Abs. 3 BGB)' },
 ]
-export const CONTRACT_HELP = 'Ein Verbrauchervertrag liegt vor, wenn Sie als Unternehmer (§ 14 BGB) an einen Mieter vermieten, der Verbraucher ist (§ 13 BGB). Wer als Privatperson eigenes Vermögen vermietet, ist in der Regel kein Unternehmer; das kann sich mit Umfang und Organisation der Vermietung ändern. ' +
+export const CONTRACT_HELP = 'Ein Verbrauchervertrag liegt vor, wenn Sie als Unternehmer (§ 14 BGB) an einen Mieter vermieten, der Verbraucher ist (§ 13 BGB). Wer als Privatperson eigenes Vermögen vermietet, ist in der Regel kein Unternehmer; das kann sich mit Umfang und Organisation der Vermietung ändern (vgl. BGH, Urteil vom 23.10.2001, XI ZR 63/01). ' +
   'Beim Verbrauchervertrag gehört die Information über die Möglichkeit eines Streitbeilegungsverfahrens nach dem Verbraucherstreitbeilegungsgesetz zur Abrechnung (§ 6a Abs. 3 Satz 1 Nr. 3 HeizkostenV); dafür können Sie etwa auf die Liste der Verbraucherschlichtungsstellen verweisen, die das Bundesamt für Justiz veröffentlicht (BR-Drs. 643/21, S. 21). ' +
-  'Die Informationspflichten nach §§ 36, 37 VSBG gelten daneben unverändert.'
+  'Eigene Informationspflichten nach §§ 36, 37 VSBG bleiben davon unberührt, soweit sie Sie treffen.'
 const text = (n: number | null): string => (n === null ? '' : n.toLocaleString('de-DE', { maximumFractionDigits: 6, useGrouping: false }))
 const num = (t: string): number | null | 'bad' => {
   if (t.trim() === '') return null
