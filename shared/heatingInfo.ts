@@ -7,12 +7,18 @@
 import type { InfoContact } from './types.ts'
 
 export const INFO_CONTACTS_CHECKED = '2026-10-07'
+// Die Verbraucherzentralen nennt die Begründung für alle drei Angaben der Nr. 2: „Diese Informationen erhält man über
+// die Energieberatung der Verbraucherzentralen“ (BR-Drs. 643/21, S. 20; Durchsicht von #243, R-K4).
 export const INFO_CONTACTS: readonly InfoContact[] = [
-  { name: 'Verbraucherzentrale, Energieberatung', url: 'https://verbraucherzentrale-energieberatung.de', what: 'Verbraucherorganisation: Beratung zu Maßnahmen, die Energie sparen' },
+  { name: 'Verbraucherzentrale, Energieberatung', url: 'https://verbraucherzentrale-energieberatung.de', what: 'Verbraucherorganisation: Informationen über Maßnahmen zur Energieeffizienzverbesserung, Endnutzer-Vergleichsprofile und energiebetriebene Geräte' },
   { name: 'Deutsche Energie-Agentur (dena)', url: 'https://www.dena.de', what: 'Energieagentur: Informationen zur Energieeffizienz von Gebäuden' },
   { name: 'Bundesstelle für Energieeffizienz beim BAFA', url: 'https://www.bfee-online.de', what: 'Informationen über angebotene Maßnahmen zur Energieeffizienzverbesserung und ihre Anbieter' },
   { name: 'Europäische Produktdatenbank für die Energieverbrauchskennzeichnung (EPREL)', url: 'https://eprel.ec.europa.eu', what: 'Technische Angaben und Energielabel energiebetriebener Geräte' },
 ]
+
+// Durchsicht von #243, G-W3: Feste Anteile nach § 2 kann die eigene Heizkostenabrechnung nicht abbilden; sie verteilt
+// nach der Verordnung oder, vereinbart, nach der Wohnfläche.
+export const AGREED_FIXED_SELF_TEXT = 'Vereinbart sind feste Anteile (§ 2 HeizkostenV). Die eigene Heizkostenabrechnung verteilt nach der Heizkostenverordnung oder, wenn das vereinbart ist, nach der Wohnfläche; feste Anteile kann sie nicht abbilden. Erfassen Sie die Heizkosten dann mit freien Schlüsseln als Position mit vereinbarten Anteilen, oder ändern Sie die Angabe in der Karte „Ausnahmen und Vereinbarungen“.'
 
 // Kein Verbrauchervertrag (§ 310 Abs. 3 BGB) in `heating_periods.consumer_contract`.
 export const CONSUMER_CONTRACT_NONE = 'none'

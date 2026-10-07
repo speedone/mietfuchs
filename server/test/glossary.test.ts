@@ -260,6 +260,8 @@ test('Angaben zur Abrechnung und Klimafaktor (Heizung PR 14): Beispiele nachgere
   assert.equal(Math.round(12000 * 1.08), 12960)
   assert.equal(Math.round(11500 * 1.15), 13225)
   assert.match(GLOSSARY.climateFactor.example, /12\.000 kWh.*1,08.*12\.960 kWh.*11\.500 kWh.*1,15.*13\.225 kWh/s)
-  assert.match(GLOSSARY.climateFactor.needed, /Norm offen: DIN 94680/)
+  // Durchsicht von #243, R-K3: VDI 3807 wie in der Begründung, keine offene Norm mehr.
+  assert.match(GLOSSARY.climateFactor.needed, /„insbesondere die technische Regel VDI 3807“.*BR-Drs\. 643\/21, S\. 21/s)
+  assert.doesNotMatch(GLOSSARY.climateFactor.needed, /DIN 94680/)
   assert.match(GLOSSARY.climateFactor.needed, /mit ihrer Quelle/)
 })

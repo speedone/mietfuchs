@@ -39,6 +39,7 @@ export { dropIfEmpty, ensureHeatingPeriod } from './heatingPeriodContext.ts'
 import { distributionOf } from './heatingSelf.ts'
 import { effectiveRules, heatingRulesOf } from '../heatingInfo.ts'
 import { postalCodeOf } from '../../../shared/heatingInfo.ts'
+import { agreeableFor } from './heatingInfo.ts'
 import { CO2_METHODS, co2Statements, co2TenantReliefs, costItems, DHW_METHODS, heatingPeriods, tenancies, units } from './schema.ts'
 
 const ASK_METHOD = 'Bitte beantworten Sie zuerst die Frage, ob die Kostenaufstellung eine Zeile wie „Abzüglich CO₂-Kosten Vermieter“ enthält.'
@@ -93,6 +94,7 @@ export async function heatingPeriodViews(db: Database, plantId: string, periodPa
   const lineRowsAll = lineIds.size > 1 ? await db.select().from(heatingPeriods).where(inArray(heatingPeriods.plantId, [...lineIds])) : rows
   const serviceValues = await readHeatingServiceValues(db)
   const postalCode = postalCodeOf((await readProperties(db)).find((x) => x.id === ctx.plant.propertyId)?.address ?? null)
+  const agreeable = await agreeableFor(db, ctx.plant.propertyId)
   const views: HeatingPeriodView[] = []
   for (const h of hs) {
     const self = selfActive(ctx.plant, String(h.key))
@@ -155,9 +157,14 @@ export async function heatingPeriodViews(db: Database, plantId: string, periodPa
         infoTaxesText: row?.infoTaxesText ?? null, infoDistrictGhg: row?.infoDistrictGhg ?? null, infoDistrictPef: row?.infoDistrictPef ?? null,
         climateFactor: row?.climateFactor ?? null, climateFactorPrev: row?.climateFactorPrev ?? null, climateFactorSource: row?.climateFactorSource ?? null,
         infoReferenceKwhPerM2: row?.infoReferenceKwhPerM2 ?? null, infoReferenceSource: row?.infoReferenceSource ?? null,
+        infoComparisonSource: row?.infoComparisonSource ?? null,
         postalCode,
       },
       rules: effectiveRules(heatingRulesOf(lineRowsAll.map((r) => ({ ...r, period: String(r.period) })), allPlants, plantId, String(h.key)), hotWaterOf(ctx.plant, String(h.key))),
+      // Durchsicht von #243, R-K6 und R-K7: ob die Anlage in dieser Heizperiode Warmwasser bereitet (sonst fragt die
+      // Karte nicht nach dem Umfang) und ob das Haus eine Vereinbarung nach § 2 zulässt.
+      centralHotWater: hotWaterOf(ctx.plant, String(h.key)) !== 'none',
+      agreeable,
       ownRules: {
         exemption: row?.exemption ?? null, exemptionScope: row?.exemptionScope ?? null, exemptionBillingAgreed: row?.exemptionBillingAgreed ?? null,
         agreedOtherwise: row?.agreedOtherwise ?? null, monthlyInfoElsewhere: row?.monthlyInfoElsewhere ?? null, consumerContract: row?.consumerContract ?? null,

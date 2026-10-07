@@ -500,14 +500,27 @@ test('Durchsicht Recht I4: Die Nachstufung beim Messdienst berücksichtigt § 8 
   assert.match(textOf(nichtWohnen, 'co2.stage-mismatch'), /Nach Ihren Angaben zum Gebäude \(§ 8 CO2KostAufG\) gehören dazu 50 %/)
 })
 
-test('Heizung PR 14: unter einer Ausnahme nach § 11 für Wärme und Warmwasser bucht der Vorwegabzug keinen CO₂-Anteil (§ 2 Abs. 7 CO2KostAufG); mit vereinbarter Abrechnung schon', () => {
+test('Heizung PR 14: unter einer Ausnahme nach § 11 für Wärme und Warmwasser keine CO₂-Aufteilung (§ 2 Abs. 7 CO2KostAufG); hat der Messdienst trotzdem abgezogen, sagt es ein Hinweis, und der Abzug bleibt zerlegt (Durchsicht G-K3)', () => {
   const s = { ...vier, costItems: [messdienst(393301, TECHEM)] }
   const mit = (row: Record<string, unknown>) => computeSettlement({ ...snap(s, [techem()]), heatingPeriodRows: [{ plantId: 'hp', period: P, dhwMethod: null, dhwUnmeasurable: null, ...row }] })
   const aus = mit({ exemption: 'authority', exemptionScope: 'both' })
-  assert.ok(!partsOf(aus).some((x) => x.reason === 'co2Share'), JSON.stringify(partsOf(aus)))
+  assert.deepEqual(partsOf(aus), [{ reason: 'co2Share', cents: 8750 }])
   assert.equal(aus.heating?.[0]?.co2, null)
-  // Die Mieter tragen ihre Beträge wie eingetragen; was übrig bleibt, trägt der Vermieter.
+  assert.match(textOf(aus, 'co2.exempt-deducted'), /§ 2 Abs\. 7 CO2KostAufG.*trotzdem CO₂-Kosten des Vermieters von 87,50 € abgezogen.*Eigenanteil/s)
+  assert.equal(aus.notices.find((n) => n.code === 'co2.exempt-deducted')?.level, 'warning')
+  // Die Mieter tragen ihre Beträge wie eingetragen.
   for (const [t, c] of Object.entries(TECHEM)) assert.equal(shareOf(aus, t, 'hz'), c)
   const vereinbart = mit({ exemption: 'authority', exemptionScope: 'both', exemptionBillingAgreed: true })
   assert.deepEqual(partsOf(vereinbart), [{ reason: 'co2Share', cents: 8750 }])
+  assert.ok(!codes(vereinbart).includes('co2.exempt-deducted'))
+})
+
+test('Durchsicht G-K3: Vorwegabzug unter voller Ausnahme ohne vereinbarte Abrechnung – der CO₂-Anteil der eigenen Wohnung ist privat (wie Beispiel B)', () => {
+  const s = { units: [unit('a'), unit('b'), own('c')], tenancies: [tenancy('ta', 'a'), tenancy('tb', 'b')], costItems: [messdienst(300000, { ta: 120000, tb: 110000 }, { selfAmounts: { c: 60000 } })] }
+  const st = co2({ serviceUsersTotalCents: 290000, serviceLandlordCents: 10000, serviceUnitsCount: 3 })
+  const ex = (x: Snapshot): Snapshot => ({ ...x, heatingPeriodRows: [{ plantId: 'hp', period: P, dhwMethod: null, dhwUnmeasurable: null, exemption: 'authority', exemptionScope: 'both' }] })
+  const r = computeSettlement(ex(snap(s, [st])))
+  assert.deepEqual(partsOf(r), [{ reason: 'selfUse', cents: 62069 }, { reason: 'co2Share', cents: 7931 }])
+  assert.equal(taxOf(ex(snap(s, [st]))).privateCents, 62069)
+  assert.ok(codes(r).includes('co2.exempt-deducted'))
 })

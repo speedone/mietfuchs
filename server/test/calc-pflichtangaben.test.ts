@@ -87,7 +87,7 @@ test('Review Focus 4: Ausnahme nach § 11 für Wärme und Warmwasser – keine �
   const ohne = computeSettlement(beispiel())
   assert.ok(relief(ohne) > 0, 'Beispiel A hat CO₂-Abzüge')
   const ex = computeSettlement(beispiel({ row: { exemption: 'lowDemand', exemptionScope: 'both' } }))
-  assert.match(notice(ex, 'heating.exemption').text, /§ 11.*Heizwärmebedarf von weniger als 15 kWh.*§ 556a Abs\. 1 BGB.*nicht nach dem CO2KostAufG aufgeteilt \(§ 2 Abs\. 7 CO2KostAufG\)/s)
+  assert.match(notice(ex, 'heating.exemption').text, /§ 11.*Heizwärmebedarf von weniger als 15 kWh.*§ 556a Abs\. 1 BGB.*nicht nach dem CO2KostAufG aufgeteilt \(§ 2 Abs\. 7 CO2KostAufG; nach der Begründung, soweit „keine Heizkostenabrechnung durchgeführt wird“, BT-Drs\. 20\/3172, S\. 28\)/s)
   for (const c of ['heating.info-incomplete', 'heating.info-open', 'heating.monthly-info', 'heating.no-consumption', 'co2.missing']) assert.ok(!codes(ex).includes(c as never), c)
   assert.equal(relief(ex), 0)
   assert.equal(ex.heating?.find((h) => h.info), undefined)
@@ -123,13 +123,18 @@ test('Prüfbericht A3: „Wärmerückgewinnung, Solar“ nennt die Wärmepumpen 
   assert.doesNotMatch(mit(2025), /Wärmepumpen/)
 })
 
-test('Freie Schlüssel nach Zählern: volle Pflicht, Nr. 4 und 5 fehlen mit Satz; nach Fläche Abs. 5 (nur Verbrauchervertrag offen)', () => {
+test('Freie Schlüssel nach Zählern: volle Pflicht, Nr. 4 und 5 offen bis zur Bestätigung des beigelegten Vergleichs (Durchsicht R-W1); nach Fläche Abs. 5 (nur Verbrauchervertrag offen)', () => {
   const base = mitAngaben({}, { plant: { method: 'manual' } })
   const frei: Snapshot = { ...base, costItems: base.costItems.map((c) => (c.heatingPlantId ? { ...c, key: 'meter', meterType: 'waerme' } : c)) }
   const s = computeSettlement(frei)
   const info = infoOf(s)
-  assert.deepEqual([info.scope, info.comparisons, info.missing], ['full', false, ['4', '5']])
-  assert.match(notice(s, 'heating.info-incomplete').text, /Nr\. 4 und 5 erstellt Mietfuchs nur bei eigener Heizkostenabrechnung/)
+  assert.deepEqual([info.scope, info.comparisons, info.missing, info.uncertain], ['full', false, [], ['4', '5']])
+  assert.ok(!codes(s).includes('heating.info-incomplete'))
+  assert.match(notice(s, 'heating.info-open').text, /Nr\. 4 und 5 erstellt Mietfuchs nur bei eigener Heizkostenabrechnung\. Legt Ihr Ablesedienst einen solchen Vergleich bei, bestätigen Sie das mit seiner Quelle/)
+  const beigelegt = mitAngaben({ infoComparisonSource: 'Vergleich des Ablesedienstes, Anlage 2' }, { plant: { method: 'manual' } })
+  const mitVergleich = computeSettlement({ ...beigelegt, costItems: beigelegt.costItems.map((c) => (c.heatingPlantId ? { ...c, key: 'meter', meterType: 'waerme' } : c)) })
+  assert.deepEqual([infoOf(mitVergleich).uncertain, infoOf(mitVergleich).comparisonSource], [[], 'Vergleich des Ablesedienstes, Anlage 2'])
+  assert.ok(!codes(mitVergleich).some((c) => c.startsWith('heating.info')), codes(mitVergleich).join(', '))
   const flaeche = computeSettlement({ ...frei, costItems: base.costItems.map((c) => (c.heatingPlantId ? { ...c, key: 'area' } : c)) })
   assert.equal(infoOf(flaeche).scope, 'minimal')
   assert.ok(!codes(flaeche).includes('heating.info-incomplete'))
@@ -247,4 +252,133 @@ test('Ausnahme nur für die Wärme, aber ohne zentrales Warmwasser: die ganze An
   assert.equal(s.heating?.find((h) => h.info), undefined)
   assert.doesNotMatch(notice(s, 'heating.exemption').text, /nur die Wärme/)
   assert.ok(!codes(s).includes('heating.info-incomplete'))
+})
+
+// ---------- Durchsicht von #243, Runde 1 ----------
+
+const fernAlle = (s: Snapshot, ids: readonly string[]): Snapshot => ({ ...s, meters: s.meters.map((m) => (ids.includes(m.id) ? { ...m, remoteReadable: true } : m)) })
+const ohneAbzug = (s: ComputedSettlement, id: string) => s.statements.find((st) => st.tenancyId === id)?.rows.filter((r) => r.kind !== 'co2Relief').reduce((a, r) => a + r.shareCents, 0) ?? assert.fail(`kein ${id}`)
+
+test('Durchsicht G-W2: Ausnahme nur der Wärme – Kürzung nach Satz 3 nur auf den Anteil Warmwasser (A 7,53 € statt 53,83 €)', () => {
+  const s = computeSettlement(beispiel({ row: { exemption: 'lowDemand', exemptionScope: 'heat' } }))
+  const n = notice(s, 'heating.info-incomplete')
+  assert.match(n.text, /seinen Anteil am Warmwasser um 3 % kürzen \(§ 12 Abs\. 1 Satz 3 HeizkostenV\), hier: Mieter A \(A\) 7,53 €, Mieter B \(B\) 10,04 €/)
+  assert.doesNotMatch(n.text, /53,83 €/)
+  // Ohne Ausnahme bleibt es bei 3 % der ganzen Heizkosten nach dem CO₂-Abzug.
+  assert.match(notice(computeSettlement(beispiel()), 'heating.info-incomplete').text, /hier: Mieter A \(A\) 53,83 €/)
+})
+
+test('Durchsicht G-W2: Ausnahme nur der Wärme – Satz 1 bei freien Schlüsseln nur auf den Anteil Warmwasser, ohne Betrag; Fernablesbarkeit nur der Warmwasserzähler', () => {
+  const flaeche = (row: Partial<HeatingPeriodData>): Snapshot => {
+    const s = beispiel({ plant: { method: 'manual' }, row })
+    return { ...s, costItems: s.costItems.map((c) => (c.heatingPlantId ? { ...c, key: 'area' } : c)) }
+  }
+  const ohne = notice(computeSettlement(flaeche({})), 'heating.not-by-consumption').text
+  assert.match(ohne, /um 15 % kürzen \(§ 12 Abs\. 1 HeizkostenV\), hier:/)
+  const heat = computeSettlement(flaeche({ exemption: 'lowDemand', exemptionScope: 'heat' }))
+  const texts = heat.notices.filter((x) => x.code === 'heating.not-by-consumption').map((x) => x.text)
+  // „Erdgas“ (beides) nennt keinen Betrag, „Miete Warmwasserzähler“ (nur Warmwasser) behält ihn, „Miete Wärmezähler“ (nur Heizung) fehlt.
+  const of = (d: string) => texts.find((t) => t.startsWith(`„${d}“`))
+  assert.match(of('Erdgas') ?? assert.fail(texts.join('\n')), /nur den Anteil Warmwasser an seinem Anteil um 15 % kürzen.*keinen Betrag/s)
+  assert.doesNotMatch(of('Erdgas') ?? '', /hier:/)
+  assert.match(of('Miete Warmwasserzähler') ?? assert.fail('wwz'), /hier:/)
+  assert.equal(of('Miete Wärmezähler'), undefined)
+  // Fernablesbarkeit: Wärmezähler nicht fernablesbar, Warmwasserzähler schon. Ist nur die Wärme ausgenommen, zählt nur das
+  // Warmwasser, und es gibt keinen Hinweis.
+  const geraete = (row: Partial<HeatingPeriodData>) => {
+    const s = fernAlle(beispiel({ row }), ['xw-a', 'xw-b', 'xw-c'])
+    return computeSettlement({ ...s, meters: s.meters.map((m) => (m.type === 'waerme' && m.unitId ? { ...m, remoteReadable: false } : m)) })
+  }
+  assert.ok(codes(geraete({})).some((c) => c.startsWith('heating.remote-reading')), codes(geraete({})).join(', '))
+  assert.ok(!codes(geraete({ exemption: 'lowDemand', exemptionScope: 'heat' })).some((c) => c.startsWith('heating.remote-reading')))
+})
+
+test('Durchsicht G-W3: Vereinbarung nach § 2 „nach Wohnfläche“ verteilt die eigene Abrechnung nach Fläche; dann Abs. 5; „feste Anteile“ geht nicht', () => {
+  // Einliegerhaus: a (60 m²) selbst genutzt, b (80 m²) Mieter B; B verbraucht nur halb so viel wie nach der Fläche.
+  const zfh = (row: Partial<HeatingPeriodData>): Snapshot => {
+    const s = beispiel({ units: [selfUnit('a', 60, { participates: false, selfUsed: true, selfPersons: 1 }), selfUnit('b', 80)], tenancies: [selfTenancy('B', 'b', '2020-01-01', null)], row: { ...ANGABEN, ...row } })
+    return { ...s, readings: s.readings.map((r) => (r.meterId === 'wz-b' && r.date === '2025-12-31' ? { ...r, value: 8000 } : r)) }
+  }
+  const verbrauch = computeSettlement(zfh({}))
+  const flaeche = computeSettlement(zfh({ agreedOtherwise: 'area' }))
+  // 80/140 × 6.660,00 € = 3.805,71 € vor dem CO₂-Abzug (je Position gerundet 3.805,72 €).
+  assert.equal(ohneAbzug(flaeche, 'B'), 380572)
+  assert.ok(ohneAbzug(verbrauch, 'B') < 380572 - 10000, `${ohneAbzug(verbrauch, 'B')}`)
+  const self = flaeche.heating?.find((h) => h.self)?.self ?? assert.fail('kein Ausweis')
+  assert.equal(self.agreedArea, true)
+  assert.equal(infoOf(flaeche).scope, 'minimal')
+  assert.equal(infoOf(verbrauch).scope, 'full')
+  assert.equal(sumRows(flaeche), sumRows(verbrauch))
+  // „nach Verbrauch“ rechnet wie eingerichtet, mit vollem § 6a.
+  const vereinbartVerbrauch = computeSettlement(zfh({ agreedOtherwise: 'consumption' }))
+  assert.deepEqual([ohneAbzug(vereinbartVerbrauch, 'B'), infoOf(vereinbartVerbrauch).scope], [ohneAbzug(verbrauch, 'B'), 'full'])
+  // Feste Anteile kann die eigene Abrechnung nicht abbilden.
+  assert.match(notice(computeSettlement(zfh({ agreedOtherwise: 'fixedPercent' })), 'heating.self-incomplete').text, /feste Anteile.*freien Schlüsseln/s)
+  // Golden: im Haus mit drei Wohnungen ändert die Angabe nichts.
+  assert.equal(ohneAbzug(computeSettlement(beispiel({ row: { agreedOtherwise: 'area' } })), 'B'), ohneAbzug(computeSettlement(beispiel()), 'B'))
+})
+
+test('Durchsicht R-W2: Fehlt Nr. 5 nur für B, nennt der Hinweis die Kürzung nur für B', () => {
+  const base = mitAngaben()
+  const s = computeSettlement({ ...base, readings: base.readings.filter((r) => !(r.meterId === 'wz-b' && r.date === '2023-12-31')) })
+  const n = notice(s, 'heating.info-incomplete')
+  assert.match(n.text, /Es fehlen: der witterungsbereinigte Vergleich .*\(Nr\. 5\), und zwar für Mieter B \(B\)\. Fehlt eine dieser Angaben, darf der Mieter, dem sie fehlt, seinen Anteil an den Heizkosten um 3 % kürzen \(§ 12 Abs\. 1 Satz 3 HeizkostenV\), hier: Mieter B \(B\) [0-9.,]+ €\./s)
+  assert.doesNotMatch(n.text.split('Satz 3 HeizkostenV), hier:')[1]?.split('.')[0] ?? '', /Mieter A/)
+  assert.deepEqual(infoOf(s).users.map((u) => [u.tenancyId, u.missing]), [['A', []], ['B', ['5']], ['C1', []], ['C2', []]])
+})
+
+test('Durchsicht R-W4: monatliche Information und Angaben zur Abrechnung sind ein Kürzungsrecht; die Beträge stehen einmal', () => {
+  const s = computeSettlement(fernAlle(beispiel(), ['wz-a']))
+  const monthly = notice(s, 'heating.monthly-info')
+  const info = notice(s, 'heating.info-incomplete')
+  assert.match(monthly.text, /dasselbe Kürzungsrecht wie bei fehlenden Angaben zur Heizkostenabrechnung und kommt nicht hinzu.*verschiedenen Sätzen des § 12 Abs\. 1 \(BR-Drs\. 643\/21, S\. 23 f\.\)/s)
+  assert.match(monthly.text, /Die Beträge je Mieter stehen beim Hinweis zu den Angaben zur Heizkostenabrechnung\./)
+  assert.doesNotMatch(monthly.text, /[0-9],[0-9]{2} €/)
+  assert.match(info.text, /hier: Mieter A \(A\) 53,83 €/)
+  assert.match(info.text, /auch wenn die monatliche Verbrauchsinformation fehlt/)
+  // Fehlt zur Abrechnung nichts (nur das erste Jahr von C2 offen), nennt die monatliche Information ihre Beträge selbst.
+  const voll = notice(computeSettlement(fernAlle(mitAngaben(), ['wz-a'])), 'heating.monthly-info')
+  assert.match(voll.text, /hier bis zu: Mieter A \(A\) 53,83 €/)
+  // „soweit diese Daten erhoben worden sind“ (§ 6a Abs. 2 Nr. 2, R-K10).
+  assert.match(voll.text, /Vormonat und dem entsprechenden Monat des Vorjahres, soweit diese Daten erhoben worden sind/)
+})
+
+test('Durchsicht R-W5: geschätzter Verbrauch (§ 9a) – für den Mieter keine Kürzung wegen der Vergleiche, als Auslegung gekennzeichnet', () => {
+  const readings = beispiel().readings.filter((r) => !(r.meterId === 'wz-a' && r.date === '2025-12-31'))
+  const estimate: HeatingEstimate = { plantId: 'hp', period: periodKey('2025-01'), unitId: 'a', part: 'heat', value: 12000, method: 'buildingAverage', reason: 'Wärmezähler defekt', confirmed: true, cause: 'deviceFailure', capture: 'heatMeter', valueUnit: 'kWh' }
+  const s = computeSettlement({ ...beispiel({ estimates: [estimate], row: { ...ANGABEN, infoReferenceKwhPerM2: null, infoReferenceSource: null } }), readings })
+  const n = notice(s, 'heating.info-incomplete')
+  assert.match(n.text, /Der Verbrauch von Mieter A \(A\) ist nach § 9a HeizkostenV geschätzt.*„Nicht darunter fallen also die Fälle des § 9a und Fälle, in denen eine Ausnahme gemäß § 11 greift“.*BR-Drs\. 643\/21, S\. 19 und 22.*Auslegung von Mietfuchs/s)
+  const cutList = n.text.split('Satz 3 HeizkostenV), hier:')[1]?.split('. ')[0] ?? assert.fail(n.text)
+  assert.doesNotMatch(cutList, /Mieter A/)
+  assert.match(cutList, /Mieter B \(B\)/)
+  assert.deepEqual(infoOf(s).users.find((u) => u.tenancyId === 'A')?.missing, [])
+})
+
+test('Durchsicht R-W6: Ohne Position mit dem Teil Erfassung kein „0,00 €“, sondern ein offener Hinweis', () => {
+  const base = mitAngaben()
+  const s = computeSettlement({ ...base, costItems: base.costItems.map((c) => (c.heatingPart === 'metering' ? { ...c, heatingPart: 'operating' as const } : c)) })
+  const info = infoOf(s)
+  assert.deepEqual([info.meteringCents, info.uncertain.includes('1c')], [null, true])
+  assert.match(notice(s, 'heating.info-open').text, /Keine Position dieser Heizanlage trägt den Teil „Messdienst, Ablesung, Geräte“.*\(Nr\. 1 c\)/s)
+  assert.equal(infoOf(computeSettlement(base)).meteringCents, 18000)
+})
+
+test('Durchsicht R-K12: Ausnahme nur der Wärme – für die monatliche Information zählen nur Warmwassergeräte', () => {
+  const heat = { exemption: 'lowDemand' as const, exemptionScope: 'heat' as const }
+  assert.ok(!codes(computeSettlement(fernAlle(mitAngaben(heat), ['wz-a', 'wz-b']))).includes('heating.monthly-info'))
+  const n = notice(computeSettlement(fernAlle(mitAngaben(heat), ['xw-a'])), 'heating.monthly-info')
+  assert.match(n.text, /seinen Anteil am Warmwasser um bis zu 3 %/)
+})
+
+test('Durchsicht R-W7, R-K1, R-W8: Wortlaut des § 11 und die CO₂-Sätze je Umfang', () => {
+  const text = (row: Partial<HeatingPeriodData>) => notice(computeSettlement(beispiel({ row })), 'heating.exemption').text
+  const a = text({ exemption: 'renewable', exemptionScope: 'both' })
+  assert.match(a, /Wärme aus Wärmerückgewinnung oder Solaranlagen \(§ 11 Abs\. 1 Nr\. 3 Buchst\. a HeizkostenV\) versorgt wird\./)
+  assert.doesNotMatch(a, /sofern/)
+  assert.match(text({ exemption: 'chp', exemptionScope: 'both' }), /Kraft-Wärme-Kopplung oder aus Anlagen zur Verwertung von Abwärme versorgt wird, sofern der Wärmeverbrauch des Gebäudes nicht erfasst wird \(§ 11 Abs\. 1 Nr\. 3 Buchst\. b HeizkostenV\)/)
+  assert.match(text({ exemption: 'disproportionate', exemptionScope: 'both' }), /das Anbringen der Ausstattung zur Verbrauchserfassung, die Erfassung des Wärmeverbrauchs oder die Verteilung der Kosten des Wärmeverbrauchs nicht oder nur mit unverhältnismäßig hohen Kosten möglich ist/)
+  const heat = text({ exemption: 'lowDemand', exemptionScope: 'heat' })
+  assert.match(heat, /teilt Mietfuchs weiter auf: .*„in denen keine Heizkostenabrechnung durchgeführt wird“ \(BT-Drs\. 20\/3172, S\. 28, zu § 2 Abs\. 7 CO2KostAufG\).*Auslegung von Mietfuchs/s)
+  assert.doesNotMatch(heat, /sagt das Gesetz nicht ausdrücklich/)
 })

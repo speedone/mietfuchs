@@ -188,10 +188,11 @@ export const RULES: readonly Rule[] = [
   {
     code: 'heating-reading-date',
     title: 'Ablesung neben dem Stichtag',
-    norm: 'OLG Schleswig, Rechtsentscheid vom 04.10.1990, 4 RE-Miet 1/88; § 9a HeizkostenV; BGH, Urteil vom 16.11.2005, VIII ZR 373/04',
+    norm: 'OLG Schleswig, Rechtsentscheid vom 04.10.1990, 4 RE-Miet 1/88; § 9a Abs. 1 HeizkostenV; BGH, Urteil vom 16.11.2005, VIII ZR 373/04',
     summary:
       'Abgelesen wird zum Ende des Abrechnungszeitraums oder zum Wechsel. Eine Ablesung einige Tage daneben ist unschädlich, wenn in der Zwischenzeit wenig verbraucht wird; zurückgerechnet wird nicht. ' +
-      'Geschätzt werden darf nur, wenn ein Gerät ausfällt oder ein anderer zwingender Grund vorliegt, und zwingend ist ein Grund erst, wenn sich der Fehler nicht mehr beheben lässt.',
+      // Durchsicht von #243, R-K8 (wie R-I6 aus #242): was der BGH entschieden hat, nicht als allgemeiner Leitsatz.
+      'Geschätzt werden darf nur, wenn der Verbrauch wegen Geräteausfalls oder aus einem anderen zwingenden Grund nicht ordnungsgemäß erfasst werden kann. Auch ein Ablesefehler ist ein solcher Grund, wenn sich der Wert nicht mehr ermitteln lässt; im vom BGH entschiedenen Fall war die Ablesung nicht nachholbar.',
   },
   {
     code: 'heating-key-change',
@@ -223,16 +224,19 @@ export const RULES: readonly Rule[] = [
     summary:
       'Beruht die Abrechnung auf dem erfassten Verbrauch, macht der Vermieter mit ihr Angaben über den Anteil der eingesetzten Energieträger (bei Fernwärme auch die jährlichen Treibhausgasemissionen und den Primärenergiefaktor des Netzes), die erhobenen Steuern, Abgaben und Zölle, die Entgelte für Erfassung, Ablesung und Abrechnung, Kontaktinformationen, beim Verbrauchervertrag die Information zur Streitbeilegung, einen Vergleich mit einem normierten oder durch Vergleichstests ermittelten Durchschnittsnutzer und einen grafischen Vergleich des witterungsbereinigten Verbrauchs mit dem vorhergehenden Zeitraum zugänglich. ' +
       'Beruht sie nicht auf dem Verbrauch, enthält sie mindestens die Kontaktinformationen und die Information zur Streitbeilegung. Sind fernablesbare Geräte eingebaut, stehen den Mietern außerdem monatliche Verbrauchsinformationen zu. ' +
-      `Teilt der Vermieter diese Informationen nicht oder nicht vollständig mit, darf der Mieter seinen Anteil um ${infoCut} % kürzen.`,
+      `Teilt der Vermieter diese Informationen nicht oder nicht vollständig mit, darf der Mieter, dem sie fehlen, seinen Anteil um ${infoCut} % kürzen. Das ist ein Kürzungsrecht, auch wenn mehrere Informationen fehlen; es summieren sich nur Kürzungsrechte aus verschiedenen Sätzen des § 12 Abs. 1, etwa dieses und das wegen nicht fernablesbarer Geräte (BR-Drs. 643/21, S. 23 f.). ` +
+      'Für Abrechnungen mit geschätztem Verbrauch (§ 9a) und in den Fällen des § 11 nennt die Begründung nur die Mindestangaben (BR-Drs. 643/21, S. 19 und 22).',
   },
   {
     code: 'heating-exemption',
     title: 'Ausnahmen von der Heizkostenverordnung',
-    norm: '§ 11 HeizkostenV; § 2 Abs. 7 CO2KostAufG; § 556a Abs. 1 BGB',
+    norm: '§ 11 HeizkostenV; § 2 Abs. 7 CO2KostAufG; BT-Drs. 20/3172, S. 28; § 556a Abs. 1 BGB',
     summary:
-      `Die Vorschriften zur Verbrauchserfassung und Kostenverteilung gelten unter anderem nicht für Räume in Gebäuden mit einem Heizwärmebedarf von weniger als ${exemptions.lowDemandKwhPerM2Year} kWh je m² und Jahr, für Räume, bei denen Erfassung oder Verteilung nur mit Kosten möglich ist, die sich nicht in der Regel innerhalb von ${exemptions.paybackYears} Jahren durch Einsparungen erwirtschaften lassen, ` +
-      `für Räume, die vor dem ${germanDate(exemptions.readyBefore)} bezugsfertig wurden und in denen der Nutzer den Verbrauch nicht beeinflussen kann, für Räume in Gebäuden, die überwiegend mit Wärme aus Wärmerückgewinnung oder Solaranlagen versorgt werden, oder aus Kraft-Wärme-Kopplung oder Abwärme, sofern der Wärmeverbrauch des Gebäudes nicht erfasst wird, und bei einer Befreiung durch die zuständige Stelle. Für das Warmwasser gilt das entsprechend. ` +
-      'Dann gilt der Mietvertrag; ist nichts anderes vereinbart, wird nach der Wohnfläche umgelegt, und Kosten, die von einem erfassten Verbrauch abhängen, nach einem Maßstab, der dem Verbrauch Rechnung trägt. Die CO₂-Kosten werden dann nicht nach dem CO2KostAufG aufgeteilt, außer die Vertragsparteien haben eine Abrechnung der Heiz- und Warmwasserkosten vereinbart.',
+      `Die Vorschriften zur Verbrauchserfassung und Kostenverteilung gelten, soweit sie die Wärme betreffen, unter anderem nicht für Räume in Gebäuden mit einem Heizwärmebedarf von weniger als ${exemptions.lowDemandKwhPerM2Year} kWh je m² und Jahr; für Räume, bei denen das Anbringen der Ausstattung zur Verbrauchserfassung, die Erfassung des Wärmeverbrauchs oder die Verteilung der Kosten des Wärmeverbrauchs nicht oder nur mit unverhältnismäßig hohen Kosten möglich ist, also mit Kosten, die sich nicht durch die Einsparungen erwirtschaften lassen, die in der Regel innerhalb von ${exemptions.paybackYears} Jahren erzielt werden können; ` +
+      `für Räume, die vor dem ${germanDate(exemptions.readyBefore)} bezugsfertig wurden und in denen der Nutzer den Verbrauch nicht beeinflussen kann; für Räume in Gebäuden, die überwiegend mit Wärme aus Wärmerückgewinnung oder Solaranlagen versorgt werden; für Räume in Gebäuden, die überwiegend mit Wärme aus Kraft-Wärme-Kopplung oder Abwärme versorgt werden, sofern der Wärmeverbrauch des Gebäudes nicht erfasst wird; und bei einer Befreiung durch die zuständige Stelle. Für das Warmwasser gilt das entsprechend. ` +
+      'Dann gilt der Mietvertrag; ist nichts anderes vereinbart, wird nach der Wohnfläche umgelegt, und Kosten, die von einem erfassten Verbrauch abhängen, nach einem Maßstab, der dem Verbrauch Rechnung trägt. ' +
+      'In den Fällen des § 11 ist das CO2KostAufG nicht anzuwenden, außer die Vertragsparteien haben eine Abrechnung der Heiz- und Warmwasserkosten vereinbart; nach der Begründung betrifft das Mietverhältnisse oder Räume, „in denen keine Heizkostenabrechnung durchgeführt wird“. ' +
+      'Ist nur die Wärme ausgenommen und wird das Warmwasser weiter nach der Verordnung abgerechnet, teilt Mietfuchs die CO₂-Kosten deshalb weiter auf (Auslegung von Mietfuchs).',
   },
 ]
 

@@ -258,7 +258,7 @@ for (const { seed, two, tausch, self, dhw, ...rest } of RUNS) {
         const op = pick(['deliver', 'deliver', 'amount', 'amount', 'closing', 'closing', 'measured', 'close', 'close', 'reopen', 'unlink', 'quantity', 'reown', 'external', ...(tausch ? ['replace' as const] : []), ...(rules ? ['rules' as const, 'rules' as const] : [])] as const)
         const year = pick(YEARS) ?? 2023
         if (op === 'rules') {
-          const body = { exemption: pick(['none', 'lowDemand', 'authority', null] as const) ?? null, exemptionScope: pick(['heat', 'both', null] as const) ?? null, exemptionBillingAgreed: rnd() < 0.3 ? true : null, monthlyInfoElsewhere: rnd() < 0.5 }
+          const body = { exemption: pick(['none', 'lowDemand', 'chp', 'authority', null] as const) ?? null, exemptionScope: pick(['heat', 'both', null] as const) ?? null, exemptionBillingAgreed: rnd() < 0.3 ? true : null, monthlyInfoElsewhere: rnd() < 0.5 }
           if (await attempt(`regeln ${hkeyOf(year)} ${JSON.stringify(body)}`, () => opened.write((db) => saveHeatingRules(db, 'hp', hkeyOf(year), body)))) RULE_STATS.rules++
           continue
         }

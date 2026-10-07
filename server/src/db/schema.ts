@@ -367,7 +367,7 @@ export const SERVICE_HEAT_UNITS = exactly<ServiceHeatUnit>()(['units', 'kWh'] as
 export const INSULATION_RULES = exactly<InsulationRule>()(['applies', 'notApplies', 'unknown'] as const)
 export const DHW_METHODS = exactly<DhwMethod>()(['heatMeter', 'volumeFormula', 'areaFormula'] as const)
 // Heizung PR 14: Ausnahme nach § 11 und Vereinbarung nach § 2 HeizkostenV je Heizperiode.
-export const HEATING_EXEMPTIONS = exactly<HeatingExemption>()(['none', 'lowDemand', 'disproportionate', 'pre1981', 'renewable', 'authority'] as const)
+export const HEATING_EXEMPTIONS = exactly<HeatingExemption>()(['none', 'lowDemand', 'disproportionate', 'pre1981', 'renewable', 'chp', 'authority'] as const)
 export const EXEMPTION_SCOPES = exactly<ExemptionScope>()(['heat', 'both'] as const)
 export const AGREED_OTHERWISE = exactly<AgreedOtherwise>()(['none', 'area', 'fixedPercent', 'consumption'] as const)
 // Warmwasser ohne Wärmezähler (Heizung PR 11): Zeile der Heizwerttabelle und Erzeuger der Anlage.
@@ -546,6 +546,9 @@ export const heatingPeriods = sqliteTable(
     exemptionBillingAgreed: integer('exemption_billing_agreed', { mode: 'boolean' }),
     agreedOtherwise: text('agreed_otherwise', { enum: AGREED_OTHERWISE }),
     monthlyInfoElsewhere: integer('monthly_info_elsewhere', { mode: 'boolean' }),
+    // Durchsicht von #243, R-W1: Der Vergleich des Ablesedienstes (Nr. 4, bei freien Schlüsseln Nr. 4 und 5) liegt
+    // der Abrechnung bei, mit seiner Quelle; je Heizperiode wie die übrigen Angaben nach § 6a.
+    infoComparisonSource: text('info_comparison_source'),
   },
   (t) => [
     uniqueIndex('heating_periods_plant_period_idx').on(t.plantId, t.period),

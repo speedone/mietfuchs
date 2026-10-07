@@ -14,7 +14,9 @@
 // (BR-Drs. 643/21, S. 19 zu Abs. 2 Nr. 3, S. 21 zu Abs. 3 Nr. 4). Mietfuchs hat keine Vergleichsdaten: Der
 // Vermieter trägt einen Wert in kWh je m² Wohnfläche mit Quelle ein, umgerechnet wird er auf Wohnfläche und
 // Tage des Mieters (Festlegung). Nr. 5: Wärmeverbrauch mal Klimafaktor, das Warmwasser unbereinigt daneben
-// (Satz 2, 3); die Faktoren trägt der Vermieter mit Quelle ein. ⟨Norm offen: DIN 94680⟩.
+// (Satz 2, 3); die Faktoren trägt der Vermieter mit Quelle ein. Als Verfahren nach anerkannten Regeln der Technik nennt
+// die Begründung „insbesondere die technische Regel VDI 3807“, die Klimafaktoren des Deutschen Wetterdienstes sind
+// „auf diese Vereinfachungen zugeschnitten“ (BR-Drs. 643/21, S. 21).
 import type {
   AgreedOtherwise, ExemptionScope, HeatingEnergy, HeatingExemption, HeatingInfoStatement, HeatingRules, HotWater, InfoComparison, InfoContact, InfoItem, SelfPot,
 } from '../../shared/types.ts'
@@ -81,6 +83,8 @@ export type InfoRow = {
   climateFactorSource: string | null
   infoReferenceKwhPerM2: number | null
   infoReferenceSource: string | null
+  // Der Vergleich des Ablesedienstes liegt bei (Durchsicht von #243, R-W1); fehlt in älteren Aufrufen.
+  infoComparisonSource?: string | null
 }
 // Ein Mietverhältnis mit seinen Tagen; für die Frage, ob es im vorhergehenden Zeitraum schon bestand.
 export type InfoTenancy = { id: string; start: string; end: string | null }
@@ -99,7 +103,8 @@ export type InfoInput = {
   // Der Klimafaktor aus der Zeile der vorigen Heizperiode, falls in dieser kein Vorjahresfaktor steht.
   prevClimateFactor: { factor: number; source: string | null } | null
   consumerContract: string | null
-  meteringCents: number
+  // Nr. 1 c für das ganze Gebäude; `null`, wenn keine Position den Teil „Erfassung“ trägt (R-W6).
+  meteringCents: number | null
   contacts: readonly InfoContact[]
   contactsChecked: string
   // Der Plan der eigenen Abrechnung und der der Vorperiode (null, wenn sie anders erfasst ist); ohne eigene
@@ -155,6 +160,7 @@ export function heatingInfoOf(i: InfoInput): HeatingInfoStatement {
     ? { kind: 'unknown' }
     : contract === CONSUMER_CONTRACT_NONE ? { kind: 'none' } : { kind: 'text', text: contract.trim() }
   if (dispute.kind === 'unknown') uncertain.push('3')
+  const comparisonSource = row && filled(row.infoComparisonSource) ? row.infoComparisonSource.trim() : null
   const heatExempt = !i.pots.includes('heating')
   const base = {
     contacts: [...i.contacts],
@@ -165,8 +171,8 @@ export function heatingInfoOf(i: InfoInput): HeatingInfoStatement {
   }
   if (!i.byConsumption) {
     return {
-      ...base, scope: 'minimal', carriers: [], district: null, taxesText: null, meteringCents: 0, reference: null, referenceComparable: false,
-      climate: { factor: null, factorPrev: null, source: null }, users: [], missing, uncertain, comparisons: false, mixedGeneration: false,
+      ...base, scope: 'minimal', carriers: [], district: null, taxesText: null, meteringCents: null, comparisonSource: null, reference: null, referenceComparable: false,
+      climate: { factor: null, factorPrev: null, source: null }, users: [], missing, missingCommon: [], uncertain, comparisons: false, mixedGeneration: false,
     }
   }
   // Nr. 1 a: der Anteil der eingesetzten Energieträger. Ein Energieträger: 100 %. Mehrere (Kesseltausch): nach
@@ -193,6 +199,9 @@ export function heatingInfoOf(i: InfoInput): HeatingInfoStatement {
   // Nr. 1 b: Steuern, Abgaben und Zölle laut Rechnung.
   const taxesText = row && filled(row.infoTaxesText) ? row.infoTaxesText.trim() : null
   if (taxesText === null) missing.push('1b')
+  // Nr. 1 c: Trägt keine Position den Teil „Erfassung“, kennt Mietfuchs die Entgelte nicht; ob welche anfielen,
+  // weiß nur der Vermieter (Durchsicht von #243, R-W6). Gedruckt wird dann keine Zahl.
+  if (i.meteringCents === null) uncertain.push('1c')
   // Nr. 4: nur mit Quelle ist ein Wert ein Vergleichswert.
   const refValue = row?.infoReferenceKwhPerM2 ?? null
   const reference = refValue !== null && refValue > 0 && row && filled(row.infoReferenceSource) ? { kwhPerM2: refValue, source: row.infoReferenceSource.trim() } : null
@@ -201,16 +210,27 @@ export function heatingInfoOf(i: InfoInput): HeatingInfoStatement {
   const factorPrev = ownPrev ?? i.prevClimateFactor?.factor ?? null
   const source = filled(row?.climateFactorSource) ? (row?.climateFactorSource ?? '').trim() : (ownPrev === null ? i.prevClimateFactor?.source ?? null : null)
   const climate = { factor, factorPrev, source }
-  // Nr. 4 und 5 rechnet Mietfuchs nur aus dem Plan der eigenen Abrechnung; ohne ihn fehlen sie.
+  // Nr. 4 und 5 rechnet Mietfuchs nur aus dem Plan der eigenen Abrechnung. Ohne ihn (freie Schlüssel) kann es nicht
+  // wissen, ob der Vergleich des Ablesedienstes beiliegt: Mit Bestätigung samt Quelle gilt er als zugänglich
+  // gemacht, ohne ist er offen (Durchsicht von #243, R-W1; § 6a Abs. 3 verlangt nur, die Informationen mit der
+  // Abrechnung zugänglich zu machen).
   const plan = i.plan
+  const common = [...missing]
+  const out = { ...base, scope: 'full' as const, carriers, district, taxesText, meteringCents: i.meteringCents, comparisonSource, reference, climate, mixedGeneration: i.mixedGeneration }
   if (!plan) {
-    missing.push('4', '5')
-    return { ...base, scope: 'full', carriers, district, taxesText, meteringCents: i.meteringCents, reference, referenceComparable: false, climate, users: [], missing, uncertain, comparisons: false, mixedGeneration: i.mixedGeneration }
+    if (comparisonSource === null) uncertain.push('4', '5')
+    return { ...out, referenceComparable: false, users: [], missing, missingCommon: common, uncertain, comparisons: false }
   }
   const inPots = (p: SelfPot): boolean => i.pots.includes(p) && plan.pots.includes(p)
   // Verglichen wird der Wärmeverbrauch in kWh (Festlegung). Misst der Topf in Einheiten (Heizkostenverteiler)
   // oder ist die Wärme nach § 11 ausgenommen, kann Mietfuchs nicht vergleichen.
   const referenceComparable = inPots('heating') && i.units.heating === 'kWh'
+  // Nr. 4 für alle: ohne Vergleichswert mit Quelle, und wo Mietfuchs nicht vergleichen kann, ohne beigelegten
+  // Vergleich (dann offen, R-W1). Ein selbst errechneter Hausdurchschnitt ersetzt ihn nicht.
+  const ref4: 'ok' | 'missing' | 'open' = comparisonSource !== null ? 'ok' : !referenceComparable ? 'open' : reference === null ? 'missing' : 'ok'
+  // Nr. 5 für alle mit Vorjahr: ohne Klimafaktoren (bereinigt wird nur die Wärme, Satz 3). Den rechnet Mietfuchs
+  // aus dem Plan; die Bestätigung des beigelegten Vergleichs gilt hier nur für Nr. 4.
+  const noFactors = inPots('heating') && (factor === null || factorPrev === null)
   const tenancyIds = [...new Set(plan.units.flatMap((u) => u.users.flatMap((x) => (x.role === 'tenancy' && x.tenancyId ? [x.tenancyId] : []))))]
   const users: InfoComparison[] = tenancyIds.map((id) => {
     const unit = unitOf(plan, id)
@@ -231,6 +251,14 @@ export function heatingInfoOf(i: InfoInput): HeatingInfoStatement {
       : null
     const share = i.costShares?.get(id)
     const prevDays = firstPeriod || prevUnknown ? null : before[lead].days
+    // § 9a: Ist sein Verbrauch in einem Topf unter der Verordnung geschätzt, gehören die Vergleiche nach Abs. 3
+    // nicht dazu (BR-Drs. 643/21, S. 19 und 22; je Mieter ist Auslegung von Mietfuchs).
+    const estimated = (['heating', 'water'] as const).some((p) => inPots(p) && now[p].estimated)
+    const own: InfoItem[] = [...common]
+    if (!estimated) {
+      if (ref4 === 'missing' || (ref4 === 'ok' && comparisonSource === null && referenceKwh === null)) own.push('4')
+      if (!firstPeriod && (prevUnknown || noFactors)) own.push('5')
+    }
     return {
       tenancyId: id,
       label,
@@ -247,18 +275,15 @@ export function heatingInfoOf(i: InfoInput): HeatingInfoStatement {
       water: !inPots('water') ? null : { now: now.water.value, prev: firstPeriod || prevUnknown ? null : before.water.value },
       firstPeriod,
       prevUnknown,
+      estimated,
+      missing: own,
       ghgKg: annualKg !== null && share !== undefined ? annualKg * share : null,
     }
   })
-  // Nr. 4 fehlt ohne Vergleichswert mit Quelle, ohne vergleichbaren Wärmeverbrauch in kWh und für jeden Mieter,
-  // für den sich der Wert nicht umrechnen lässt (Wohnfläche 0). Ein selbst errechneter Hausdurchschnitt ersetzt
-  // ihn nicht.
-  if (users.length > 0 && (!referenceComparable || reference === null || users.some((u) => u.heating?.referenceKwh === null || u.heating?.referenceKwh === undefined))) missing.push('4')
-  // Nr. 5 fehlt sicher, wenn ein Mieter mit Vorjahr keinen Vergleich bekommt: Mietfuchs kennt seinen
-  // Vorjahresverbrauch nicht, oder ein Klimafaktor fehlt (bereinigt wird nur die Wärme, Satz 3). Für einen Mieter
-  // im ersten Jahr nennt der Hinweis „bis zu“ (Auslegung, Entwurf 15.1 Nr. 14).
-  const withPrev = users.filter((u) => !u.firstPeriod)
-  if (withPrev.some((u) => u.prevUnknown) || (inPots('heating') && withPrev.length > 0 && (factor === null || factorPrev === null))) missing.push('5')
-  if (users.some((u) => u.firstPeriod) && !missing.includes('5')) uncertain.push('5')
-  return { ...base, scope: 'full', carriers, district, taxesText, meteringCents: i.meteringCents, reference, referenceComparable, climate, users, missing, uncertain, comparisons: true, mixedGeneration: i.mixedGeneration }
+  for (const u of users) for (const x of u.missing) if (!missing.includes(x)) missing.push(x)
+  const asked = users.filter((u) => !u.estimated)
+  if (ref4 === 'open' && asked.length > 0) uncertain.push('4')
+  // Für einen Mieter im ersten Jahr nennt der Hinweis „bis zu“ (Auslegung, Entwurf 15.1 Nr. 14).
+  if (asked.some((u) => u.firstPeriod)) uncertain.push('5')
+  return { ...out, referenceComparable, users, missing, missingCommon: common, uncertain, comparisons: true }
 }

@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "969bcab8-039f-4052-b3c0-d61b5248f431",
+  "id": "e427b641-1dde-492a-a1ad-f2c73cb19b72",
   "prevId": "943dbfeb-fb48-4017-a728-a55180a31007",
   "tables": {
     "ai_slots": {
@@ -2715,6 +2715,13 @@
         "monthly_info_elsewhere": {
           "name": "monthly_info_elsewhere",
           "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "info_comparison_source": {
+          "name": "info_comparison_source",
+          "type": "text",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
