@@ -6,13 +6,14 @@
 // Abrechnung, Heizung PR 10) steht in heatingSelfForm.ts: Wer „Ich selbst“ wählt, legt die Anlage hier
 // zunächst bei „Niemand“ an, und Schritt 7 stellt sie in einer Transaktion um (Abweichung 21 des Plans).
 // Nichts davon ändert eine Zahl der Abrechnung.
-import type { DevicesInstalledAfter, DevicesRemote, DhwMethod, HeatingEnergy, HeatingPlant, HeatingPlantUnit, Meter, NewDevicesInstall, PropertyKind, Unit } from './types'
+import type { DevicesInstalledAfter, DevicesRemote, DhwMethod, HeatGeneration, HeatPumpMajority, HeatingEnergy, HeatingPeriodView, HeatingPlant, HeatingPlantUnit, Meter, NewDevicesInstall, PropertyKind, Unit } from './types'
 import { isStockEnergy } from '../../shared/fuelStock.ts'
 import { parseEuro } from './api'
-import { hkvConsumptionShare, hkvCutNotByConsumption, hkvHeatPumpCapture, hkvRemoteReadingNewDevices } from '../../shared/law/heizkostenv.ts'
+import { hkvConsumptionShare, hkvCutNotByConsumption, hkvHeatPumpCapture, hkvRemoteReadingNewDevices, hkvRenewableExemption } from '../../shared/law/heizkostenv.ts'
 import { dayAfter, germanDate, LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
 import { lineRoot, sameLine } from '../../shared/heatingPeriod.ts'
 import { parseMeterValue } from './tenantChange'
+import { ambiguousText, ambiguousThousands, parseNumberDe } from './numbers'
 
 // Rechtszahlen aus dem Register, in der Fassung von heute (wie Lexikon und Anleitungen).
 const SHARE = valueAt(hkvConsumptionShare, LAW_AS_OF)
@@ -53,13 +54,17 @@ export type HeatingForm = {
   // Nach einem Kesseltausch mit demselben Vorratsbrennstoff (Nachprüfung von #238): Verheizt die neue Anlage
   // den Brennstoff im Tank weiter? `''`: nicht gefragt.
   takesOverStock: '' | 'yes' | 'no'
+  // Heizung PR 11 (Durchsicht von #240, Recht-I1/I2): ob die Anlage die Wärme allein erzeugt, und bei einer
+  // Wärmepumpe, ob sie mehr als die Hälfte der Wärme des Gebäudes liefert. Keine Vorbelegung.
+  generation: HeatGeneration | ''
+  majority: HeatPumpMajority | ''
 }
 
 // Was die Einrichtung schickt. Die übrigen Felder der Anlage behalten ihre Vorgabe.
 export type HeatingPlantBody = Pick<
   HeatingPlant,
   'energy' | 'supply' | 'method' | 'source' | 'devicesRemote' | 'devicesInstalledAfter2021' | 'capturedOnOct2024' | 'captureInstalledOn' | 'warmRentAverageCents' | 'units' | 'newDevicesInstall' | 'name' | 'buildingWith'
-> & Partial<Pick<HeatingPlant, 'heatPumpInstalledOn'>> & { takesOverStock?: boolean }
+> & Partial<Pick<HeatingPlant, 'heatPumpInstalledOn' | 'heatGeneration' | 'heatPumpMajority'>> & { takesOverStock?: boolean }
 // Name und Wohnungen einer bisherigen Anlage, die mit dem Anlegen geändert werden (Heizung PR 9).
 export type AdjustRow = { id: string; name: string; units: HeatingPlantUnit[] }
 // `none`: Es entsteht bewusst keine Anlage, und der Satz sagt warum.
@@ -215,7 +220,7 @@ export function emptyHeatingForm(units: readonly UnitInfo[], others: readonly He
   return {
     energy: '', contract: '', who: '', unitIds: defaultUnitIds(units).filter((id) => !taken.has(id)), remote: 'unknown', installedAfter: 'unknown',
     captured: 'unknown', captureInstalledOn: '', heatPumpInstalledOn: '', warmRentAverage: '', newInstall: '',
-    name: '', perUnitEnergy: '', building: '', ownMeters: false, takesOverStock: '', otherNames: Object.fromEntries(others.filter((p) => p.name.trim() === '' || p.units === null).map((p) => [p.id, p.name])),
+    name: '', perUnitEnergy: '', building: '', ownMeters: false, takesOverStock: '', generation: '', majority: '', otherNames: Object.fromEntries(others.filter((p) => p.name.trim() === '' || p.units === null).map((p) => [p.id, p.name])),
   }
 }
 
@@ -241,6 +246,8 @@ export function heatingToForm(plant: HeatingPlant, units: readonly UnitInfo[]): 
     building: plant.buildingWith ?? '',
     ownMeters: perUnit,
     takesOverStock: plant.takesOverStock === null ? '' : plant.takesOverStock ? 'yes' : 'no',
+    generation: plant.heatGeneration ?? '',
+    majority: plant.heatPumpMajority ?? '',
   }
 }
 
@@ -327,6 +334,8 @@ export function heatingPlantBody(form: HeatingForm, units: readonly UnitInfo[], 
       name,
       buildingWith,
       ...(form.takesOverStock === '' ? {} : { takesOverStock: form.takesOverStock === 'yes' }),
+      ...(asksGeneration(form) ? { heatGeneration: form.generation === '' ? null : form.generation } : {}),
+      ...(heatPump ? { heatPumpMajority: form.majority === '' ? null : form.majority } : {}),
     },
     adjust,
   }
@@ -434,3 +443,62 @@ export function unmeasurableLabel(choice: HotWaterChoice): string {
     ? 'Weder die Wärmemenge noch das Volumen des verbrauchten Warmwassers lässt sich messen (Nachweis aufbewahren)'
     : 'Die Wärmemenge ließe sich nur mit unzumutbar hohem Aufwand messen (Nachweis aufbewahren)'
 }
+
+// ---------- Warmwasser bei eigener Abrechnung (Heizung PR 11, Entwurf 8.3) ----------
+
+// An der Anlage gefragt (Durchsicht von #240, Recht-I2): bei einer Wärmepumpe immer, sonst bei eigener
+// Abrechnung, denn die Antwort entscheidet über Formel und Gesamtwärme beim Warmwasseranteil.
+export const asksGeneration = (form: Pick<HeatingForm, 'energy' | 'who'>): boolean =>
+  form.energy !== '' && form.energy !== 'perUnit' && (form.energy === 'heatPump' || form.who === 'self')
+export const GENERATION_QUESTION = 'Erzeugt diese Heizung die Wärme allein?'
+// § 11 Abs. 1 Nr. 3 Buchst. a HeizkostenV in der Fassung bis zum Tag vor diesem: Wärmepumpen waren ausgenommen.
+const EXEMPTION_ENDS = hkvRenewableExemption.versions.find((v) => v.validFrom !== undefined)?.validFrom ?? ''
+export const MAJORITY_QUESTION = `Liefert die Wärmepumpe mehr als die Hälfte der Wärme des Gebäudes? (Wichtig für Abrechnungszeiträume, die vor dem ${germanDate(EXEMPTION_ENDS)} beginnen.)`
+export const MAJORITY_EXPLAINED = 'Bis dahin galten die Vorschriften der Heizkostenverordnung zur Verteilung nicht für Gebäude, die überwiegend mit Wärme aus Wärmepumpen versorgt werden (§ 11 Abs. 1 Nr. 3 Buchst. a HeizkostenV in der alten Fassung). Ohne Antwort rechnet Mietfuchs für diese Zeiträume ohne Kürzungsbeträge und nennt beide Folgen.'
+export const MAJORITY_OPTIONS: readonly { value: HeatPumpMajority | ''; label: string }[] = [
+  { value: '', label: 'bitte wählen' },
+  { value: 'yes', label: 'Ja, mehr als die Hälfte' },
+  { value: 'no', label: 'Nein' },
+  { value: 'unknown', label: 'Weiß ich nicht' },
+]
+
+// Bei eigener Abrechnung rechnet Mietfuchs selbst; „keine Angabe“ gibt es dort nicht, die Vorgabe ist
+// der Wärmezähler (§ 9 Abs. 2 Satz 1 HeizkostenV).
+export const SELF_HOT_WATER_OPTIONS: readonly { value: HotWaterChoice; label: string }[] = HOT_WATER_OPTIONS.filter((o) => o.value !== '')
+
+// Ob die Anlage die Wärme allein erzeugt (§ 9 Abs. 1 Satz 5, Abs. 2 Satz 6 Nr. 3 HeizkostenV). Ohne
+// Vorgabe: Eine falsche Vorgabe ergäbe still einen falschen Anteil (Abweichung 5 des Plans PR 11).
+export const HEAT_GENERATION_OPTIONS: readonly { value: HeatGeneration | ''; label: string }[] = [
+  { value: '', label: 'bitte wählen' },
+  { value: 'single', label: 'allein (ein Kessel, eine Wärmepumpe oder Fernwärme)' },
+  { value: 'mixed', label: 'mit einem weiteren Erzeuger (Solaranlage, Heizstab, zweiter Kessel)' },
+]
+
+// Eine Zahl deutsch oder technisch geschrieben; leer heißt keine Angabe, `undefined` keine Zahl.
+// Deutsche Tausenderpunkte wie bei Beträgen (`parseNumberDe`, Durchsicht von #240, M3).
+export function parseDecimal(text: string): number | null | undefined {
+  if (text.trim() === '') return null
+  return parseNumberDe(text) ?? undefined
+}
+export const numberText = (n: number | null): string => (n === null ? '' : n.toLocaleString('de-DE', { maximumFractionDigits: 3, useGrouping: false }))
+
+export type FormulaForm = { volume: string; temp: string }
+export const formulaFormOf = (hw: HeatingPeriodView['hotWater']): FormulaForm => ({ volume: numberText(hw.dhwVolumeM3), temp: numberText(hw.dhwTempC) })
+
+// Der Teil des Rumpfs, den nur die Volumenformel braucht.
+export function selfFormulaBody(choice: HotWaterChoice, form: FormulaForm): { body: { dhwVolumeM3?: number | null; dhwTempC?: number | null } } | { error: string } {
+  if (choice !== 'volumeFormula') return { body: {} }
+  if (ambiguousThousands(form.volume)) return { error: `Volumen des Warmwassers: ${ambiguousText(form.volume)}` }
+  const volume = parseDecimal(form.volume)
+  if (volume === undefined) return { error: 'Das Volumen des Warmwassers ist keine Zahl.' }
+  const temp = parseDecimal(form.temp)
+  if (temp === undefined) return { error: 'Die Temperatur des Warmwassers ist keine Zahl.' }
+  return { body: { dhwVolumeM3: volume, dhwTempC: temp } }
+}
+
+// Die Folge einer fehlenden Bestätigung (Durchsicht von #240, M6), mit der Kürzung aus dem Register.
+export const unconfirmedConsequence = (): string =>
+  `Ohne diese Bestätigung nennt die Abrechnung, dass jeder Mieter seinen Anteil an den Heiz- und Warmwasserkosten um ${CUT} % kürzen darf (§ 12 Abs. 1 Satz 1 HeizkostenV).`
+// Die Beschriftung des Volumens: bei einem Kesseltausch das der Laufzeit der Anlage (Durchsicht von #240, Geld-I1).
+export const volumeLabel = (running: { from: string; to: string } | null, fmt: (iso: string) => string): string =>
+  running ? `Warmwasser in der Laufzeit dieser Anlage (${fmt(running.from)}–${fmt(running.to)}, m³, gemessen)` : 'Warmwasser in der Heizperiode (m³, gemessen)'

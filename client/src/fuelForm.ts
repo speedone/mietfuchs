@@ -2,10 +2,12 @@
 // zum Gebäude (Heizung PR 7), ohne DOM prüfbar. Die Seite rendert nur.
 import { fmtEuro, parseEuro } from './api'
 import { parseDecimal } from './co2Form'
+import { ambiguousText, ambiguousThousands } from './numbers'
 import { formatDayRange } from '../../shared/period.ts'
 import { germanDate } from '../../shared/law/register.ts'
 import { STOCK_UNIT_LABELS, STOCK_UNIT_TEXT } from '../../shared/fuelStock.ts'
-import type { Co2Restriction, DegreeDayValue, FuelDelivery, HeatingEnergy, HeatingMethod, HeatingPlant, StockUnit } from './types'
+import type { Co2Restriction, DegreeDayValue, FuelDelivery, FuelGrade, GasBasis, HeatingEnergy, HeatingMethod, HeatingPlant, StockUnit } from './types'
+import { FUEL_GRADE_LABELS, GRADES_BY_ENERGY, HEATING_VALUE_UNIT_TEXT } from '../../shared/fuelGrades.ts'
 
 // Energieträger, bei denen CO₂-Kosten aufzuteilen sind: Brennstoffe mit Standardwerten nach § 7 Abs. 4
 // BEHG (§ 2 Abs. 1 CO2KostAufG) und Fernwärme, wenn der Lieferant CO₂-Kosten ausweist. Dieselbe Liste
@@ -31,11 +33,17 @@ export type FuelForm = {
   quantityUnit: StockUnit | ''
   // Etagenheizung (Heizung PR 9): die Wohnung, deren Heizung die Rechnung betrifft.
   unitId: string
+  // Heizung PR 11 (Warmwasseranteil der eigenen Abrechnung): bei Gas, ob nach Brennwert oder Heizwert
+  // abgerechnet; beim Vorrat der Heizwert laut Rechnung (kWh je Einheit der Menge) und, falls keiner darauf
+  // steht, die Zeile der Tabelle des § 9 Abs. 3 HeizkostenV.
+  gasBasis: GasBasis | ''
+  heatingValue: string
+  grade: FuelGrade | ''
 }
 
 export const emptyFuelForm = (): FuelForm => ({
   label: '', invoiceFrom: '', invoiceTo: '', amount: '', fixed: '', sharePercent: '', emissionsKg: '', co2Cost: '', energyKwh: '', usedByService: true,
-  deliveredAt: '', invoiceDate: '', quantity: '', quantityUnit: '', unitId: '',
+  deliveredAt: '', invoiceDate: '', quantity: '', quantityUnit: '', unitId: '', gasBasis: '', heatingValue: '', grade: '',
 })
 
 const centsText = (cents: number | null): string =>
@@ -60,6 +68,9 @@ export function fuelToForm(d: FuelDelivery): FuelForm {
     quantity: numberText(d.quantity),
     quantityUnit: d.quantityUnit === 'l' || d.quantityUnit === 'kg' || d.quantityUnit === 'srm' ? d.quantityUnit : '',
     unitId: d.unitId ?? '',
+    gasBasis: d.gasBasis ?? '',
+    heatingValue: numberText(d.heatingValue),
+    grade: d.fuelGrade ?? '',
   }
 }
 
@@ -85,10 +96,15 @@ export function stockFuelBody(form: FuelForm, method: HeatingMethod): { body: Re
   if (form.emissionsKg.trim() !== '' && (kg === null || kg < 0)) return { error: 'Der CO₂-Ausstoß ist eine Zahl ab 0.' }
   const co2 = form.co2Cost.trim() === '' ? null : parseEuro(form.co2Cost)
   if (form.co2Cost.trim() !== '' && co2 === null) return { error: 'Die CO₂-Kosten sind kein Betrag.' }
+  if (ambiguousThousands(form.heatingValue)) return { error: `Heizwert laut Rechnung: ${ambiguousText(form.heatingValue)}` }
+  const heatingValue = form.heatingValue.trim() === '' ? null : parseDecimal(form.heatingValue)
+  if (form.heatingValue.trim() !== '' && (heatingValue === null || !(heatingValue > 0))) return { error: 'Der Heizwert laut Rechnung ist eine Zahl über 0.' }
   return {
     body: {
       label: form.label.trim(),
       deliveredAt: form.deliveredAt,
+      heatingValue,
+      fuelGrade: heatingValue === null && form.grade !== '' ? form.grade : null,
       invoiceDate: form.invoiceDate === '' ? form.deliveredAt : form.invoiceDate,
       quantity,
       quantityUnit: form.quantityUnit,
@@ -134,6 +150,7 @@ export function fuelBody(form: FuelForm, method: HeatingMethod): { body: Record<
     emissionsKg: num(kg),
     co2CostCents: num(co2),
     energyKwh: num(kwh),
+    gasBasis: form.gasBasis === '' ? null : form.gasBasis,
     ...(method === 'service' ? { usedByService: form.usedByService } : {}),
   }
   return { body }
@@ -226,3 +243,35 @@ export const RESTRICTION_OPTIONS: readonly { value: Co2Restriction; label: strin
   { value: 'supply', label: 'Vorgaben stehen einer wesentlichen Verbesserung der Wärme- und Warmwasserversorgung entgegen' },
   { value: 'both', label: 'Vorgaben stehen beidem entgegen' },
 ]
+
+// ---------- Heizwert und Abrechnungsgrundlage (Heizung PR 11, § 9 Abs. 2 Satz 6 Nr. 1 und Abs. 3 HeizkostenV) ----------
+
+// Gas nach Brennwert oder Heizwert: Davon hängt der Faktor 1,11 der Formeln für das Warmwasser ab.
+export const GAS_BASIS_LABEL = 'Kilowattstunden der Rechnung berechnet nach'
+export const GAS_BASIS_MISSING = 'Für den Warmwasseranteil nach einer Formel braucht Mietfuchs diese Angabe (§ 9 Abs. 2 Satz 6 Nr. 1 HeizkostenV); ohne sie rechnet die Formel nicht.'
+// Ohne Angabe und mit einer Formel für das Warmwasser in dieser Heizperiode: schon an der Lieferung sagen,
+// dass sie fehlt (Durchsicht von #240, Recht-I3). Vorbelegt wird nicht.
+export const gasBasisMissing = (form: Pick<FuelForm, 'gasBasis'>, view: { hotWater: { dhwMethod: string | null } }): boolean =>
+  form.gasBasis === '' && (view.hotWater.dhwMethod === 'volumeFormula' || view.hotWater.dhwMethod === 'areaFormula')
+export const GAS_BASIS_OPTIONS: readonly { value: GasBasis | ''; label: string }[] = [
+  { value: '', label: 'keine Angabe' },
+  { value: 'hs', label: 'nach Brennwert (Hs)' },
+  { value: 'hi', label: 'nach Heizwert (Hi)' },
+]
+
+// Die Zeilen der Tabelle zum Energieträger der Anlage; leer bei Fernwärme, Wärmepumpe und Strom, denn
+// die Tabelle gilt nur bei Heizkesseln (Entwurf R-A13).
+export function gradeOptions(energy: HeatingEnergy): { value: FuelGrade | ''; label: string }[] {
+  const grades = GRADES_BY_ENERGY[energy]
+  return grades.length === 0 ? [] : [{ value: '', label: 'keine (Heizwert laut Rechnung)' }, ...grades.map((g) => ({ value: g, label: FUEL_GRADE_LABELS[g] }))]
+}
+// Die Einheit der Menge im Satz „kWh je …“; ohne bekannte Einheit „Einheit“.
+export const unitWordFor = (unit: string): string =>
+  unit === 'l' || unit === 'm3' || unit === 'kg' || unit === 'srm' ? HEATING_VALUE_UNIT_TEXT[unit] : 'Einheit'
+
+// Vorbelegt wird nur, wo es genau eine Zeile gibt (Flüssiggas, Pellets); sonst wird nicht geraten
+// (Abweichung 4 des Plans PR 11).
+export function defaultGrade(energy: HeatingEnergy): FuelGrade | '' {
+  const grades = GRADES_BY_ENERGY[energy]
+  return grades.length === 1 ? (grades[0] ?? '') : ''
+}

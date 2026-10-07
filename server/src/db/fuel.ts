@@ -20,7 +20,8 @@ import type { Database, Executor } from './client.ts'
 import { dropIfEmpty, ensureHeatingPeriod } from './heatingPeriodContext.ts'
 import { readDegreeDayValues, readFuelDeliveries } from './read.ts'
 import { asNullableFilled, asText, frozenDeliveryText, HeatingError, heatingPeriodAt, plantServesUnit, stockTakenOverBy, stockTakenOverText, heatingRulesOf, ISO_DATE, merged, oneOfOrUndefined, plantSpanOf, raw } from './repository.ts'
-import { costItems, degreeDayValues, FUEL_QUANTITY_UNITS, fuelCarryFrozen, fuelDeliveries, fuelDeliveryParts, GAS_BASES, heatingPeriods, heatingPlants, properties } from './schema.ts'
+import { FUEL_GRADE_LABELS, GRADES_BY_ENERGY, HEATING_VALUE_UNIT_TEXT, isBoiler } from '../../../shared/fuelGrades.ts'
+import { costItems, degreeDayValues, FUEL_GRADE_VALUES, FUEL_QUANTITY_UNITS, fuelCarryFrozen, fuelDeliveries, fuelDeliveryParts, GAS_BASES, heatingPeriods, heatingPlants, properties } from './schema.ts'
 
 const LATER = {
   other: 'Tragen Sie zuerst bei der Heizanlage den Energieträger ein; Lieferungen gibt es für Gas, Fernwärme und Strom einer Wärmepumpe.',
@@ -72,6 +73,8 @@ function mergeDelivery(current: FuelDelivery, body: unknown): FuelDelivery {
     energyKwh: merged(body, 'energyKwh', current.energyKwh, nullableNumber),
     gasBasis: merged(body, 'gasBasis', current.gasBasis, (v) => oneOfOrUndefined(GAS_BASES, v) ?? null),
     heatingValue: merged(body, 'heatingValue', current.heatingValue, nullableNumber),
+    // Zeile der Heizwerttabelle (Heizung PR 11); leer oder unbekannt heißt keine.
+    fuelGrade: merged(body, 'fuelGrade', current.fuelGrade, (v) => oneOfOrUndefined(FUEL_GRADE_VALUES, v) ?? null),
     emissionsKg: merged(body, 'emissionsKg', current.emissionsKg, nullableNumber),
     co2CostCents: merged(body, 'co2CostCents', current.co2CostCents, nullableInt),
     emissionFactor: merged(body, 'emissionFactor', current.emissionFactor, nullableNumber),
@@ -86,7 +89,7 @@ function mergeDelivery(current: FuelDelivery, body: unknown): FuelDelivery {
 
 const emptyDelivery = (id: string, plantId: string): FuelDelivery => ({
   id, plantId, label: '', invoiceDate: null, deliveredAt: null, invoiceFrom: null, invoiceTo: null, unitId: null, amountCents: null,
-  quantity: null, quantityUnit: null, energyKwh: null, gasBasis: null, heatingValue: null, emissionsKg: null, co2CostCents: null,
+  quantity: null, quantityUnit: null, energyKwh: null, gasBasis: null, heatingValue: null, fuelGrade: null, emissionsKg: null, co2CostCents: null,
   emissionFactor: null, gridFeeCents: null, bioCostCents: null, sharePermille: null, fixedCents: null, estimated: false, usedByService: true, parts: [],
 })
 
@@ -101,6 +104,24 @@ async function frozenCount(db: Executor, id: string): Promise<number> {
   const [n] = await db.select({ n: count() }).from(fuelCarryFrozen).where(eq(fuelCarryFrozen.deliveryId, id))
   return n?.n ?? 0
 }
+
+// Plausibles Band des Heizwerts laut Rechnung je Einheit der Menge (Nachprüfung von #240, W1); kein Rechtswert.
+const HEATING_VALUE_BAND: Record<'l' | 'm3' | 'kg' | 'srm', { min: number; max: number }> = {
+  l: { min: 5, max: 15 }, m3: { min: 5, max: 15 }, kg: { min: 2, max: 15 }, srm: { min: 400, max: 1200 },
+}
+
+// Der Energieträger im Satz („einer Heizung mit Heizöl“, Heizung PR 11).
+const ENERGY_WORDS: Record<HeatingEnergy, string> = {
+  gas: 'Gas', oil: 'Heizöl', lpg: 'Flüssiggas', pellets: 'Pellets', wood: 'Holz', coal: 'Kohle',
+  districtHeating: 'Fernwärme', heatPump: 'Wärmepumpe', electric: 'Strom', other: 'unbekanntem Energieträger',
+}
+
+// Was an einer Lieferung änderbar bleibt, wenn eine abgeschlossene Heizperiode sie eingefroren hat: die
+// Bezeichnung und seit Heizung PR 11 (Durchsicht von #240, Geld-I2) die Angaben, nach denen der
+// Warmwasseranteil rechnet (Brennwert/Heizwert, Heizwert laut Rechnung, Zeile der Tabelle). Der Anteil einer
+// abgeschlossenen Abrechnung ist mit ihr eingefroren; die Angaben wirken nur auf offene Heizperioden, in der
+// abgeschlossenen erscheinen sie nur als Abweichung der heutigen Rechnung (`deviation`, settlementDiff.ts).
+const unfrozenAside = (d: FuelDelivery) => ({ ...d, label: '', usedByService: true, gasBasis: null, heatingValue: null, fuelGrade: null })
 
 async function guardDelivery(db: Executor, plant: PlantFacts, before: FuelDelivery | null, after: FuelDelivery): Promise<void> {
   const stock = STOCK_ENERGIES.includes(plant.energy)
@@ -150,8 +171,8 @@ async function guardDelivery(db: Executor, plant: PlantFacts, before: FuelDelive
       throw new HeatingError(400, `Bitte tragen Sie die gelieferte Menge von ${what} in Litern, Kilogramm oder Schüttraummetern ein, wie auf der Rechnung.`)
     }
     // Eine Lieferung in einer abgeschlossenen Heizperiode ist gesperrt (G-A4), auch beim Verschieben
-    // hinein oder hinaus; die Bezeichnung bleibt änderbar.
-    const same = (d: FuelDelivery) => JSON.stringify({ ...d, label: '', usedByService: true })
+    // hinein oder hinaus; die Bezeichnung bleibt änderbar, ebenso die Angaben zum Warmwasseranteil.
+    const same = (d: FuelDelivery) => JSON.stringify(unfrozenAside(d))
     if (before === null || same(before) !== same(after)) {
       for (const date of [before?.deliveredAt ?? null, after.deliveredAt]) {
         const at = date === null ? null : await heatingPeriodAt(db, plant.id, date)
@@ -212,8 +233,29 @@ async function guardDelivery(db: Executor, plant: PlantFacts, before: FuelDelive
       }
     }
   }
+  // Heizwert laut Rechnung (Nachprüfung von #240, W1): ein Band je Einheit, das jede Angabe einer Rechnung
+  // einschließt (Tabelle des § 9 Abs. 3: 4 bis 13 kWh/kg bzw. je l und m³ 9 bis 10,9; Hackschnitzel a. F.
+  // 650 kWh/SRm). Außerhalb ist es fast immer ein Tausenderpunkt oder die falsche Einheit.
+  if (after.heatingValue !== null && after.quantityUnit !== null && after.quantityUnit !== 'kWh') {
+    const band = HEATING_VALUE_BAND[after.quantityUnit]
+    if (!(after.heatingValue >= band.min && after.heatingValue <= band.max)) {
+      throw new HeatingError(400, `Ein Heizwert von ${after.heatingValue.toLocaleString('de-DE')} kWh je ${HEATING_VALUE_UNIT_TEXT[after.quantityUnit]} ist kaum möglich; üblich sind ${band.min.toLocaleString('de-DE')} bis ${band.max.toLocaleString('de-DE')} kWh. Bitte prüfen Sie ${label}: Nachkommastellen mit Komma, die Einheit wie auf der Rechnung.`)
+    }
+  }
+  // Die Zeile der Heizwerttabelle (Heizung PR 11): nur bei Heizkesseln (§ 9 Abs. 3 HeizkostenV) und nur
+  // eine, die zum Energieträger der Anlage passt.
+  if (after.fuelGrade !== null) {
+    if (!isBoiler(plant.energy)) {
+      throw new HeatingError(400, `Die Tabelle der Heizwerte gilt nur bei Heizkesseln (§ 9 Abs. 3 HeizkostenV). Bei dieser Heizung zählen die Kilowattstunden laut Rechnung; lassen Sie die Tabellenzeile bei ${label} leer.`)
+    }
+    const fitting = GRADES_BY_ENERGY[plant.energy]
+    if (!fitting.includes(after.fuelGrade)) {
+      throw new HeatingError(400,
+        `Die Tabellenzeile „${FUEL_GRADE_LABELS[after.fuelGrade]}“ passt nicht zu einer Heizung mit ${ENERGY_WORDS[plant.energy]}. Passend ${fitting.length === 1 ? 'ist' : 'sind'} ${fitting.map((g) => FUEL_GRADE_LABELS[g]).join(' oder ')}.`)
+    }
+  }
   if (before !== null && (await frozenCount(db, before.id)) > 0) {
-    const same = (d: FuelDelivery) => JSON.stringify({ ...d, label: '', usedByService: true })
+    const same = (d: FuelDelivery) => JSON.stringify(unfrozenAside(d))
     if (same(before) !== same(after)) throw new HeatingError(409, frozenText(before.label || 'Lieferung'))
   }
 }

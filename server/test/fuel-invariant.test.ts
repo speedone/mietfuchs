@@ -40,6 +40,12 @@
 // alle Heizperioden: Σ der Zeilen ihrer Positionen und Überträge (ohne Gegenbuchungen) = Σ ihrer Positionen,
 // jede Lieferung also genau einmal verbraucht. Die Mutationsproben stehen im PR.
 //
+// Heizung PR 11: Zwei Varianten rechnen den Warmwasseranteil nach der Volumen- und nach der Flächenformel
+// (§ 9 Abs. 2 Satz 2 und 4 HeizkostenV), mit Gas nach Brennwert (Faktor 1,11) oder nach Heizwert. Dazu (s4):
+// Die Wärme für das Warmwasser im Ausweis ist die der Formel, mit Faktor nur bei Brennwert, und α mal der
+// Energie der Rechnungen in der Heizperiode ergibt genau sie; (s3) prüft daneben, dass der Topf Warmwasser
+// α der Kosten trägt, und (i) und (s2), dass trotzdem jede Rechnung genau einmal verteilt ist.
+//
 // Feste Startwerte, im Lauf der Tests wenige; mehr mit INV_FROM/INV_TO (siehe SEEDS).
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -48,8 +54,9 @@ import os from 'node:os'
 import path from 'node:path'
 import { eq } from 'drizzle-orm'
 import { computeSettlement } from '../src/calc.ts'
-import { createHeatingPlant, replaceHeatingPlant } from '../src/db/heating.ts'
+import { createHeatingPlant, replaceHeatingPlant, updateHeatingPlant } from '../src/db/heating.ts'
 import { setUpSelf } from '../src/db/heatingSelf.ts'
+import { saveHotWater } from '../src/db/co2.ts'
 import { createDelivery, createEstimates, freezeFuelCarries, fuelGapQuestions, unfreezeFuelCarries } from '../src/db/fuel.ts'
 import { openDatabase } from '../src/db/open.ts'
 import { readClosedSettlements, readCostItems, readFuelCarryFrozen, readFuelDeliveries, readStock } from '../src/db/read.ts'
@@ -135,7 +142,7 @@ const SEEDS: number[] = process.env.INV_FROM !== undefined || process.env.INV_TO
   : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 16, 81]
 const STEPS = Number(process.env.INV_STEPS ?? 30)
 
-type Variant = { name: string; lazy: boolean; estimate: boolean; two?: boolean; swap?: boolean; self?: boolean; hw?: 'combined' | 'separate' }
+type Variant = { name: string; lazy: boolean; estimate: boolean; two?: boolean; swap?: boolean; self?: boolean; hw?: 'combined' | 'separate'; dhw?: 'volumeFormula' | 'areaFormula' }
 const VARIANTS: Variant[] = [
   { name: 'Grundform', lazy: false, estimate: false },
   { name: 'Rechnung kommt später', lazy: true, estimate: false },
@@ -151,10 +158,33 @@ const VARIANTS: Variant[] = [
   // (Positionen nur für Heizung oder nur für Warmwasser).
   { name: 'Eigene Heizkostenabrechnung, verbundenes Warmwasser', lazy: false, estimate: false, self: true, hw: 'combined' },
   { name: 'Eigene Heizkostenabrechnung, getrenntes Warmwasser', lazy: false, estimate: false, self: true, hw: 'separate' },
+  // Heizung PR 11: Warmwasseranteil nach einer Formel (§ 9 Abs. 2 HeizkostenV).
+  { name: 'Eigene Heizkostenabrechnung, Warmwasser nach Volumenformel', lazy: false, estimate: false, self: true, hw: 'combined', dhw: 'volumeFormula' },
+  { name: 'Eigene Heizkostenabrechnung, Warmwasser nach Flächenformel', lazy: true, estimate: false, self: true, hw: 'combined', dhw: 'areaFormula' },
 ]
 
 // Wie oft die eigene Heizkostenabrechnung wirklich verteilt hat (Abdeckung, letzter Test).
-const SELF = { periods: 0, distributed: 0, alpha: 0 }
+const SELF = { periods: 0, distributed: 0, alpha: 0, formula: 0 }
+
+// Heizung PR 11, (s4): Bei einer Formel ist die Wärme für das Warmwasser im Ausweis Q = 2,5 · V · (t − 10)
+// bzw. 32 · A (die beiden Wohnungen haben zusammen 100 m², jede Heizperiode hat zwölf Monate), bei Gas nach
+// Brennwert mal 1,11, nach Heizwert ohne Faktor (§ 9 Abs. 2 Satz 6 Nr. 1), und α mal der Energie der Rechnungen
+// in der Heizperiode (Bewertung der Lieferungen) ergibt genau dieses Q.
+function dhwChecks(r: ReturnType<typeof computeSettlement>, input: { method: 'volumeFormula' | 'areaFormula'; volumeM3: number; tempC: number; basis: 'hs' | 'hi' }, where: string): void {
+  const h = r.heating?.find((x) => x.plantId === 'hp')
+  const self = h?.self
+  if (!self?.ok || !self.alpha || !self.dhw) return
+  SELF.formula++
+  const near = (a: number, b: number, what: string) => assert.ok(Math.abs(a - b) <= 1e-9 * Math.max(1, Math.abs(b)), `${where}: (s4) ${what}: ${a} statt ${b}`)
+  const q0 = input.method === 'volumeFormula' ? 2.5 * input.volumeM3 * (input.tempC - 10) : 32 * 100
+  const q = input.basis === 'hs' ? q0 * 1.11 : q0
+  assert.equal(self.dhw.method, input.method, `${where}: (s4) Verfahren`)
+  near(self.dhw.formulaKwh ?? Number.NaN, q0, 'Formelwert')
+  near(self.dhw.heatKwh, q, 'Wärme nach dem Faktor')
+  assert.equal(self.dhw.factor?.kind ?? null, input.basis === 'hs' ? 'gasCalorific' : null, `${where}: (s4) Faktor`)
+  const energy = (h?.fuel?.deliveries ?? []).reduce((a, l) => a + (l.energyKwh ?? 0), 0)
+  near((self.alpha.percent / 100) * energy, q, 'α · Energie der Rechnungen')
+}
 
 // Heizung PR 9: Wem gehört eine Zeile? Übertrag und Gegenbuchung der Lieferung, CO₂-Zeilen dem Topf, sonst der
 // Position.
@@ -249,6 +279,10 @@ for (const variant of VARIANTS) {
     test(`Invariante, ${variant.name} (Startwert ${seed}): jede Rechnung genau einmal verteilt`, async () => {
       const rnd = zufall(seed * 7 + (variant.lazy ? 1 : 0) + (variant.estimate ? 2 : 0))
       const int = (lo: number, hi: number) => lo + Math.floor(rnd() * (hi - lo + 1))
+      // Heizung PR 11: Gas nach Brennwert oder nach Heizwert, für alle Rechnungen eines Laufs gleich, je nach
+      // Startwert abwechselnd (der erste Wert der Zufallsfolge liegt bei kleinen Startwerten immer unter 0,5).
+      const dhwBasis: 'hs' | 'hi' = seed % 2 === 0 ? 'hs' : 'hi'
+      const dhwInputs = new Map<string, { volumeM3: number; tempC: number }>()
       const pick = <T,>(xs: readonly T[]): T | undefined => xs[Math.floor(rnd() * xs.length)]
       const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-fuel-inv-'))
       const opened = await openDatabase({ dataDir })
@@ -281,7 +315,7 @@ for (const variant of VARIANTS) {
             const prefix = plantId === 'hp' ? 'd' : 'e'
             for (let k = 0; k < 3; k++) {
               const to = isoOf(Date.parse(`${start}T00:00:00Z`) + (int(300, 800) - 1) * DAY)
-              const body = { label: `Rechnung ${prefix}${k}`, invoiceFrom: start, invoiceTo: to, fixedCents: rnd() < 0.5 ? int(0, 20000) : null, ...(variant.hw === 'combined' ? { energyKwh: int(20000, 60000) } : {}) }
+              const body = { label: `Rechnung ${prefix}${k}`, invoiceFrom: start, invoiceTo: to, fixedCents: rnd() < 0.5 ? int(0, 20000) : null, ...(variant.hw === 'combined' ? { energyKwh: int(20000, 60000) } : {}), ...(variant.dhw ? { gasBasis: dhwBasis } : {}) }
               // Kesseltausch: Die Rechnungen ab der zweiten gehören der neuen Anlage.
               const owner = variant.swap && k > 0 ? 'hp2' : plantId
               all.push({ id: `${prefix}${k}`, from: start, to, plantId: owner })
@@ -317,6 +351,17 @@ for (const variant of VARIANTS) {
               }
             }
           })
+        }
+        // Heizung PR 11: Warmwasser nach einer Formel, je Heizperiode Volumen und Temperatur; die Anlage erzeugt
+        // die Wärme allein.
+        if (variant.dhw) {
+          const method = variant.dhw
+          await opened.write((db) => updateHeatingPlant(db, 'hp', { heatGeneration: 'single' }))
+          for (const key of keys) {
+            const input = { volumeM3: int(10, 60), tempC: int(45, 60) }
+            dhwInputs.set(key, input)
+            await opened.write((db) => saveHotWater(db, 'hp', key, { dhwMethod: method, dhwUnmeasurable: true, ...(method === 'volumeFormula' ? { dhwVolumeM3: input.volumeM3, dhwTempC: input.tempC } : {}) }))
+          }
         }
         const log: string[] = []
         const attempt = async (what: string, run: () => Promise<unknown>) => {
@@ -494,7 +539,15 @@ for (const variant of VARIANTS) {
             }
           }
           if (r && variant.self) selfChecks(r, items.filter((c) => c.period === key), `${fall}; ${key}`)
+          const dhwInput = dhwInputs.get(key)
+          if (r && variant.dhw && dhwInput) dhwChecks(r, { method: variant.dhw, ...dhwInput, basis: dhwBasis }, `${fall}; ${key}`)
           if (r && variant.self && r.heating?.find((h) => h.plantId === 'hp')?.self?.ok === false) selfBlocked = true
+          // Heizung PR 11: auch eine abgeschlossene Heizperiode, in der die Anlage nicht verteilt war (etwa eine
+          // Lücke in den Rechnungen, die der Warmwasseranteil nach einer Formel nicht überbrückt).
+          if (stored && variant.self) {
+            const heating: unknown = Reflect.get(Object(stored.settlement), 'heating')
+            if (Array.isArray(heating) && heating.some((x: unknown) => Reflect.get(Object(x), 'plantId') === 'hp' && Reflect.get(Object(Reflect.get(Object(x), 'self')), 'ok') === false)) selfBlocked = true
+          }
           const here = stored ? (atClose.get(key) ?? assert.fail(`${fall}; ${key} ohne Stand beim Abschluss`)) : items.filter((c) => c.period === key).reduce((a, c) => a + c.amountCents, 0)
           assert.equal(t.tenants + t.landlord, here, `${fall}; Σ Zeilen in ${key}`)
           positions += here
@@ -573,8 +626,10 @@ for (const variant of VARIANTS) {
 }
 
 test('Invariante, eigene Heizkostenabrechnung: Abdeckung', () => {
+  if (process.env.INV_LOG) console.log('Eigene Abrechnung', JSON.stringify(SELF))
   if (SELF.periods < 10) return
   assert.ok(SELF.alpha > 0, 'kein Lauf mit Warmwasseranteil geprüft (s3)')
+  assert.ok(SELF.formula > 0, 'kein Lauf mit Warmwasseranteil nach einer Formel geprüft (s4)')
   assert.ok(SELF.distributed * 2 >= SELF.periods, `nur ${SELF.distributed} von ${SELF.periods} Heizperioden nach der Verordnung verteilt`)
 })
 

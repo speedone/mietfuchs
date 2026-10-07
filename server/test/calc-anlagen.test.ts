@@ -89,7 +89,7 @@ test('Position ohne Anlage, wenn das Objekt Anlagen hat (Festlegung 5): Hinweis 
 
 const gasrechnung = (id: string, unitId: string, emissionsKg: number, co2CostCents: number): FuelDelivery => ({
   id, plantId: 'hp', label: `Gas ${unitId}`, invoiceDate: '2026-01-15', deliveredAt: null, invoiceFrom: P.from, invoiceTo: P.to, unitId,
-  amountCents: null, quantity: null, quantityUnit: 'kWh', energyKwh: Math.round(emissionsKg / 0.2), gasBasis: null, heatingValue: null, emissionsKg, co2CostCents,
+  amountCents: null, quantity: null, quantityUnit: 'kWh', energyKwh: Math.round(emissionsKg / 0.2), gasBasis: null, heatingValue: null, fuelGrade: null, emissionsKg, co2CostCents,
   emissionFactor: null, gridFeeCents: null, bioCostCents: null, sharePermille: null, fixedCents: null, estimated: false, usedByService: true, parts: [],
 })
 const direkt = (id: string, unitId: string, amountCents: number, fuelDeliveryId: string) =>

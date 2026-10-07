@@ -4,7 +4,7 @@ import { api, ApiError, errorText, fmtEuro } from '../api'
 import Drawer from './Drawer'
 import Term from './Term'
 import {
-  CAPTURE_SELF_OPTIONS, HOT_WATER_OPTIONS, PART_OPTIONS, emptySelfSetup, forcedShare, itemsFromConflict, kwhEnergy, selfSetupBody, shareBounds, targetOptions,
+  CAPTURE_SELF_OPTIONS, HOT_WATER_OPTIONS, PART_OPTIONS, emptySelfSetup, forcedShare, itemsFromConflict, selfSetupBody, shareBounds, targetOptions,
 } from '../heatingSelfForm'
 import { INSULATION_OPTIONS, INSULATION_QUESTION, insulationAsked, insulationExplained, percentOf, unsureShareHint } from '../heatingSelfView'
 
@@ -66,7 +66,7 @@ export default function HeatingSelfSetup({ plant, period, periodLabel, onDone, o
         Bereitet diese Heizung auch das Warmwasser?
         <select value={form.hotWater} onChange={(e) => setForm({ ...form, hotWater: e.target.value as HotWater | '', items: form.items.map((x) => ({ ...x, heatingTarget: '' })) })}>
           {form.hotWater === '' && <option value="">— bitte wählen —</option>}
-          {HOT_WATER_OPTIONS.map((o) => <option key={o.value} value={o.value} disabled={o.value === 'combined' && !kwhEnergy(plant.energy)}>{o.label}</option>)}
+          {HOT_WATER_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
       </label>
       <label className="field grow">

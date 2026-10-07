@@ -30,14 +30,14 @@ import { parsePeriodKey, periodContaining, periodKey, periodLabel, periodOfKey, 
 import { closedHeatingKeys, heatingPeriodClosed, plantContext } from './heatingPeriodContext.ts'
 import type { Database, Executor } from './client.ts'
 import { readHeatingPlants, readMeters, readProperties, readUnits } from './read.ts'
-import { KWH_ENERGIES, openSelfSpan } from '../heating.ts'
+import { openSelfSpan } from '../heating.ts'
 import { SELF_VIA_SETUP, SelfItemsError, selfItemsOf } from './heatingSelf.ts'
 import { hkvCutNotByConsumption } from '../../../shared/law/heizkostenv.ts'
 import { dayAfter, LAW_AS_OF, valueAt } from '../../../shared/law/register.ts'
 import { asNullableFilled, asNullableText, asText, guardServedChange, has, heatingPeriodAt, heatingRulesOf, HeatingError, insertEntityIn, ISO_DATE, merged, oneOfOrUndefined, raw, sameProperty } from './repository.ts'
 import { buildingCycle, lineRoot, sameLine, servesUnit } from '../../../shared/heatingPeriod.ts'
 import {
-  AREA_BASES_HEAT, CAPTURE_METHODS, CHANGE_SPLITS, CO2_RESTRICTIONS, HOT_WATER, fuelDeliveries, closedHeatingSettlementHistory, co2Statements, closedHeatingSettlements, closedSettlements, costItems, DEVICES_INSTALLED_AFTER, DEVICES_REMOTE, HEATING_ENERGIES, HEATING_METHODS,
+  AREA_BASES_HEAT, CAPTURE_METHODS, CHANGE_SPLITS, CO2_RESTRICTIONS, HEAT_GENERATIONS, HEAT_PUMP_MAJORITIES, HOT_WATER, fuelDeliveries, closedHeatingSettlementHistory, co2Statements, closedHeatingSettlements, closedSettlements, costItems, DEVICES_INSTALLED_AFTER, DEVICES_REMOTE, HEATING_ENERGIES, HEATING_METHODS,
   HEATING_SOURCES, HEATING_SUPPLIES, NEW_DEVICES_INSTALLS, heatingPeriodChanges, heatingPeriods, heatingPlants, heatingPlantUnits, heatingPrepaymentOverrides, heatingSelfSpans, heatingSeparateSpans, meters, units,
 } from './schema.ts'
 
@@ -46,7 +46,6 @@ const LATER = {
   rhythm: 'Den Zeitraum der Heizung stellen Sie nach dem Anlegen unter „Zeitraum der Heizung“ ein; eine Vorschau zeigt, was mit Ihren Heizpositionen geschieht.',
   separateVia: 'Ob die Heizkosten getrennt abgerechnet werden, stellen Sie bei einer eigenen Heizperiode unter „Getrennte Heizkostenabrechnung“ ein; eine Vorschau zeigt, wie die Vorauszahlung aufgeteilt wird.',
   capture: 'Heizkostenverteiler und die Werte eines Ablesedienstes wertet Mietfuchs mit einer späteren Version aus. Bis dahin rechnen Sie mit Wärmezählern ab oder übernehmen die Abrechnung des Messdienstes als Einzelbeträge.',
-  dhwHeatingValue: 'Den Warmwasseranteil bei Heizöl, Flüssiggas, Pellets, Holz und Kohle rechnet Mietfuchs mit einer späteren Version; dafür braucht es den Heizwert laut Rechnung (§ 9 Abs. 3 HeizkostenV). Bis dahin geht die eigene Abrechnung, wenn das Warmwasser getrennt oder gar nicht bereitet wird.',
 }
 
 // Der Verweis auf den Kesseltausch (Heizung PR 9) in den Sätzen, die einen Wechsel des Energieträgers sperren.
@@ -74,6 +73,14 @@ function readPlantUnits(value: unknown): HeatingPlantUnit[] {
 function readIds(value: unknown): string[] {
   if (!Array.isArray(value)) return []
   return [...new Set(value.map((v) => asNullableText(v)).filter((v): v is string => v !== null && v !== ''))]
+}
+
+// Eine Antwort aus einer Liste (Heizung PR 11): leer ist keine, ein unbekannter Wert ein Fehler.
+function answerOf<T extends string>(values: readonly T[], v: unknown, what: string): T | null {
+  if (v === null || v === undefined || v === '') return null
+  const known = oneOfOrUndefined(values, v)
+  if (known === undefined) throw new HeatingError(400, `${what}, kennt Mietfuchs so nicht. Bitte wählen Sie aus der Liste.`)
+  return known
 }
 
 function mergeHeatingPlant(current: HeatingPlant, body: unknown): HeatingPlant {
@@ -114,6 +121,10 @@ function mergeHeatingPlant(current: HeatingPlant, body: unknown): HeatingPlant {
     capture: merged(body, 'capture', current.capture, (v) => (v === null ? null : oneOfOrUndefined(CAPTURE_METHODS, v) ?? current.capture)),
     areaBasisHeat: merged(body, 'areaBasisHeat', current.areaBasisHeat, (v) => oneOfOrUndefined(AREA_BASES_HEAT, v) ?? current.areaBasisHeat),
     heatPumpInstalledOn: merged(body, 'heatPumpInstalledOn', current.heatPumpInstalledOn, asNullableFilled),
+    // Heizung PR 11: ein Erzeuger oder mehrere, und bei einer Wärmepumpe, ob sie mehr als die Hälfte der
+    // Wärme liefert. Leer heißt keine Antwort; ein unbekannter Wert ist ein Fehler mit Satz, kein stilles Löschen.
+    heatGeneration: merged(body, 'heatGeneration', current.heatGeneration, (v) => answerOf(HEAT_GENERATIONS, v, 'Ob die Heizung die Wärme allein erzeugt')),
+    heatPumpMajority: merged(body, 'heatPumpMajority', current.heatPumpMajority, (v) => answerOf(HEAT_PUMP_MAJORITIES, v, 'Ob die Wärmepumpe mehr als die Hälfte der Wärme liefert')),
     // Setzt nur die Einrichtung der eigenen Abrechnung; das Zurückschalten löscht ihn (updateHeatingPlant).
     selfSpans: current.selfSpans ?? [],
   }
@@ -126,7 +137,7 @@ const emptyHeatingPlant = (id: string, propertyId: string): HeatingPlant => ({
   capturedOnOct2024: null, warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null,
   periodChanges: [], separateSpans: [], units: null, newDevicesInstall: null,
   nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null,
-  hotWater: 'combined', capture: null, areaBasisHeat: 'area', heatPumpInstalledOn: null, selfSpans: [],
+  hotWater: 'combined', capture: null, areaBasisHeat: 'area', heatPumpInstalledOn: null, heatGeneration: null, heatPumpMajority: null, selfSpans: [],
 })
 
 export async function guardHeatingPlant(db: Executor, before: HeatingPlant | null, after: HeatingPlant): Promise<void> {
@@ -158,7 +169,6 @@ export async function guardHeatingPlant(db: Executor, before: HeatingPlant | nul
   if (after.method === 'self') {
     if (after.capture === null) throw new HeatingError(400, 'Bitte wählen Sie, womit der Verbrauch erfasst wird.')
     if (after.capture !== 'heatMeter') throw new HeatingError(400, LATER.capture)
-    if (after.hotWater === 'combined' && !KWH_ENERGIES.includes(after.energy)) throw new HeatingError(400, LATER.dhwHeatingValue)
     if (after.areaBasisHeat === 'heatedArea' && (after.units === null || after.units.some((u) => u.heatedAreaM2 === null))) {
       throw new HeatingError(400, 'Für Grundkosten nach der beheizten Fläche nennen Sie die angeschlossenen Wohnungen und tragen bei jeder die beheizte Fläche ein.')
     }
@@ -313,6 +323,7 @@ export const plantRow = (p: HeatingPlant) => ({
   nonResidential: p.nonResidential, restriction: p.restriction, districtEtsNew: p.districtEtsNew,
   endsOn: p.endsOn, replacesPlantId: p.replacesPlantId, buildingWith: p.buildingWith, takesOverStock: p.takesOverStock,
   hotWater: p.hotWater, capture: p.capture, areaBasisHeat: p.areaBasisHeat, heatPumpInstalledOn: p.heatPumpInstalledOn,
+  heatGeneration: p.heatGeneration, heatPumpMajority: p.heatPumpMajority,
 })
 
 // Die Zeiträume der eigenen Heizkostenabrechnung, ganz ersetzt wie die Liste der Wohnungen (Durchsicht von #239).

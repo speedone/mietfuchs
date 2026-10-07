@@ -188,8 +188,38 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Kürzung je Mieter.
 - Bei einer Wärmepumpe fragt die Einrichtung auch, ob sie erst nach dem Stichtag der Verordnung
   eingebaut wurde.
+- **Warmwasser ohne Wärmezähler.** Bei der eigenen Heizkostenabrechnung bestimmt Mietfuchs den
+  Warmwasseranteil auch nach den beiden Formeln des § 9 Abs. 2 HeizkostenV, aus dem gemessenen
+  Warmwasser (mit Vorschlag aus den Warmwasserzählern) oder aus der Wohnfläche. Die Faktoren 1,11
+  (Erdgas nach Brennwert), 1,15 (Wärmelieferung) und 0,30 (monovalente Wärmepumpe, für Zeiträume ab
+  01.10.2024) gelten nur für diese Formelwerte. Brennstoff in Litern, Kubikmetern oder Kilogramm wird
+  mit dem Heizwert laut Rechnung umgerechnet, hilfsweise und nur bei Heizkesseln mit der Tabelle der
+  Verordnung. Wird ohne zulässigen Grund nach einer Formel abgerechnet, nennt die Abrechnung die
+  Kürzung um 15 % je Mieter. Der Ausdruck nennt Anteil, Verfahren, Rechenweg und die Herkunft jedes
+  Heizwerts ([#211](https://github.com/speedone/mietfuchs/issues/211),
+  [#99](https://github.com/speedone/mietfuchs/issues/99)).
+- Hinweise, wenn der Heizwert aus der Tabelle stammt und wenn der Warmwasseranteil ungewöhnlich ist
+  (unter 5 oder über 50 %, nur zur Prüfung).
+- Wärmepumpe in Abrechnungszeiträumen, die vor dem 01.10.2024 beginnen: Die Heizanlage fragt, ob die
+  Wärmepumpe mehr als die Hälfte der Wärme des Gebäudes liefert. Dann galt die Heizkostenverordnung damals
+  nicht (§ 11 Abs. 1 Nr. 3 Buchst. a in der alten Fassung): ein Hinweis, keine Kürzungsbeträge, und Heizung
+  und Warmwasser werden gemeinsam nach dem Heizschlüssel verteilt, ohne Warmwasseranteil. Ohne Antwort
+  rechnet Mietfuchs ebenso, warnt aber und beziffert je Mieter die mögliche Kürzung um 15 %.
+- Die Heizanlage fragt bei einer Wärmepumpe und bei eigener Abrechnung, ob sie die Wärme allein erzeugt.
+- An einer Gasrechnung lässt sich angeben, ob die Kilowattstunden nach Brennwert oder nach Heizwert
+  berechnet sind, an einer Lieferung mit Menge der Heizwert laut Rechnung oder die Zeile der Tabelle.
+  Beide lassen sich auch nach dem Abschluss einer Heizperiode nachtragen.
+- Mengen mit Tausenderpunkt („3.000“) liest die Seite Heizkosten jetzt wie Beträge als dreitausend. Beim
+  Heizwert und beim Volumen des Warmwassers fragt sie bei „11.325“ nach, ob 11,325 oder 11325 gemeint ist;
+  einen Heizwert außerhalb des üblichen Bands der Einheit lehnt Mietfuchs mit einem Satz ab.
 
 ### Geändert
+
+- Eigene Heizkostenabrechnung: Die Heizung darf jetzt auch bei Heizöl, Flüssiggas, Pellets, Holz und
+  Kohle das Warmwasser bereiten; die Einrichtung sperrt das nicht mehr.
+- Holzhackschnitzel: Seit 01.12.2021 nennt die Heizkostenverordnung 4 kWh je Kilogramm; die frühere
+  Angabe 650 kWh je Schüttraummeter gilt nur für Zeiträume davor, und den Brennstoffverbrauch bestimmt
+  die Verordnung seither in Litern, Kubikmetern oder Kilogramm.
 
 - Bei freien Schlüsseln kann eine Heizposition „nur Heizung“ sein; beim Mieterwechsel teilt sie sich
   dann nach Gradtagen statt nach Tagen. Positionen „Heizung und Warmwasser“ bleiben, wie sie sind.

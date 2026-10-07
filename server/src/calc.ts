@@ -53,7 +53,7 @@ import { ausweisGaps, CO2_FUELS, co2Assessment, co2DeductionsOf, FORMULA_METHODS
 // nicht als Literal; server/test/law-literals.test.ts wacht darüber.
 import { createLawLog, dayAfter, dayBefore, law, LAW_AS_OF, onlyVersion, recordVersionAt, valueAt, type Period } from '../../shared/law/register.ts'
 import { betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths } from '../../shared/law/bgb-betrkv.ts'
-import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvHeatPumpCapture, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvSettlementInfo, type DegreeDayTable } from '../../shared/law/heizkostenv.ts'
+import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvHeatPumpCapture, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvRenewableExemption, hkvSettlementInfo, type DegreeDayTable } from '../../shared/law/heizkostenv.ts'
 import { remoteReadingVerdict, servedUnitIds } from './remoteReading.ts'
 import { practiceReadingOffWarning, practiceVacancyPersons } from '../../shared/law/practice.ts'
 import { HEATING_CATEGORY, heatingByConsumption, heatingFindings, mayAgreeOtherwise } from '../../shared/heating.ts'
@@ -72,8 +72,10 @@ import { degreeDayPermille } from '../../shared/degreeDays.ts'
 import { annualFactors, type AnnualBasis } from './prepaymentSuggestion.ts'
 import {
   boundaryReadingsOf, consumptionSharesOf, heatPumpVerdict, lineShareRows, OIL_OR_GAS, hotWaterShareOf, measuredBetween, planSelf, sortReadings, targetProblem, usersOf, weightsOf,
-  type Alpha, type AlphaProblem, type ConsumptionShares, type HeatPumpVerdict, type SelfInput, type SelfPlan, type SelfProblem, type SelfReading, type SelfTenancy, type SelfUnit, type SelfUserPlan, type SelfWeights,
+  type Alpha, type ConsumptionShares, type HeatPumpVerdict, type SelfInput, type SelfPlan, type SelfProblem, type SelfReading, type SelfTenancy, type SelfUnit, type SelfUserPlan, type SelfWeights,
 } from './heating.ts'
+import { DHW_PLAUSIBLE, dhwProblemText, fmtShare } from './dhw.ts'
+import { FUEL_GRADE_LABELS, HEATING_VALUE_UNIT_TEXT } from '../../shared/fuelGrades.ts'
 import type { FrozenItemSelfUse, Snapshot, SnapshotCostItem, SnapshotHeatingPart, SnapshotHeatingPlant, SnapshotMeter, SnapshotReading, SnapshotTenancy, SnapshotUnit } from './snapshot.ts'
 
 export const KEY_LABELS: Record<CostKey, string> = {
@@ -361,6 +363,12 @@ const noticeKinds = {
   // Warmwasseranteil auf der Schätzung beim Abschluss (Abweichung 11).
   'heating.dhw-share-estimated': { level: 'hint', title: 'Warmwasseranteil aus geschätzter Energie', rule: 'heating-own-settlement', terms: ['hotWaterShare'] },
   'heating.dhw-not-metered': { level: 'warning', title: 'Warmwasser ohne Wärmezähler abgerechnet', rule: 'heating-dhw-split', terms: ['hotWaterShare', 'heatingCostOrdinance'] },
+  // Heizung PR 11 (Entwurf 8.3, 10.1; Abweichung 9 des Plans).
+  'heating.heating-value-from-table': { level: 'hint', title: 'Heizwert aus der Tabelle der Heizkostenverordnung', rule: 'heating-dhw-split', terms: ['hotWaterShare'] },
+  // Plausibilität ohne Rechtsfolge (Entwurf 15.2 F6), deshalb ohne Regel.
+  'heating.dhw-share-implausible': { level: 'hint', title: 'Warmwasseranteil ungewöhnlich', terms: ['hotWaterShare'] },
+  'heating.heat-pump-majority-open': { level: 'warning', title: 'Wärmepumpe: Ausnahme der Heizkostenverordnung ungeklärt', rule: 'heating-own-settlement', terms: ['heatingSystem', 'heatingCostOrdinance'] },
+  'heating.heat-pump-old-exemption': { level: 'hint', title: 'Wärmepumpe: Heizkostenverordnung galt in diesem Zeitraum nicht', rule: 'heating-own-settlement', terms: ['heatingSystem', 'heatingCostOrdinance'] },
   'model.prepayment-unsettled': { level: 'warning', title: 'Vorauszahlung ohne Abrechnung', terms: ['prepayment', 'flatRate'] },
   'prepayment.arrears': { level: 'warning', title: 'Rückstand im Mietkonto', terms: ['prepayment'] },
   // #141: ein Hinweis und kein Fehler, denn eine vereinbarte Änderung ist zulässig.
@@ -2607,6 +2615,13 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     hDegree: number
     userByKey: Map<string, SelfUserPlan>
     input: SelfInput
+    // § 11 Abs. 1 Nr. 3 Buchst. a a. F. (Heizung PR 11, Abweichung 9): Wärmepumpe ohne weiteren Erzeuger in
+    // einem Zeitraum, der vor dem 01.10.2024 beginnt. Dann keine Kürzungsbeträge und kein Fehler zu α.
+    oldHeatPumpExemption: boolean
+    // Ohne Antwort zur Überwiegend-Frage gerechnet wie „ja“ (Festlegung; Nachprüfung von #240, W2).
+    majorityOpen: boolean
+    // Ist der unzumutbare Aufwand für den Wärmezähler bestätigt (§ 9 Abs. 2 Satz 2, Heizung PR 11)?
+    dhwUnmeasurable: boolean | null
   }
   const POT_NAME: Record<SelfPot, string> = { heating: 'Heizung', water: 'Warmwasser' }
   const POT_UNIT: Record<SelfPot, string> = { heating: 'kWh', water: 'm³' }
@@ -2623,15 +2638,6 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     if (p.reason === 'replacement') return `Beim Zähler ${meter} fehlt zu einem Zählerwechsel der Endstand des alten Geräts. Tragen Sie ihn nach.`
     if (p.reason === 'sameDay') return `Für ${meter} stehen am ${fmtDay(p.boundary ?? yTo)} zwei verschiedene Stände. Welcher stimmt, wissen nur Sie; löschen oder berichtigen Sie den falschen auf der Seite Zähler.`
     return `Der Zähler ${meter} zeigt bis zum ${fmtDay(p.boundary ?? yTo)} weniger als vorher. Prüfen Sie die Stände oder markieren Sie einen Zählerwechsel.`
-  }
-  const ALPHA_TEXT: Record<AlphaProblem, string> = {
-    formulaLater: 'Den Warmwasseranteil nach einer Formel rechnet Mietfuchs mit einer späteren Version; die Verordnung verlangt ohnehin einen Wärmezähler (§ 9 Abs. 2 HeizkostenV). Tragen Sie die Stände des Wärmezählers am Warmwasserspeicher ein.',
-    noDhwHeat: 'Für den Warmwasseranteil fehlt die gemessene Wärme des Warmwassers. Tragen Sie die Stände des Wärmezählers am Warmwasserspeicher zu Beginn und Ende der Heizperiode ein.',
-    noFuelEnergy: 'Für den Warmwasseranteil fehlt die Energie des Brennstoffs in kWh. Tragen Sie die Rechnungen Ihres Versorgers als Lieferungen mit den kWh laut Rechnung ein.',
-    fuelGap: 'Die Rechnungen des Versorgers decken die Heizperiode nicht ganz ab, und der Warmwasseranteil braucht den Verbrauch der ganzen Heizperiode. Tragen Sie die Folgerechnung ein oder schließen Sie die Abrechnung mit einer Schätzung der fehlenden Rechnung ab.',
-    heatingValueLater: 'Den Warmwasseranteil bei Heizöl, Flüssiggas, Pellets, Holz und Kohle rechnet Mietfuchs mit einer späteren Version; dafür braucht es den Heizwert laut Rechnung (§ 9 Abs. 3 HeizkostenV).',
-    outOfRange: 'Die gemessene Wärme des Warmwassers ist null oder nicht kleiner als die Energie des Brennstoffs; das passt nicht zusammen. Prüfen Sie die Stände des Wärmezählers am Speicher und die kWh der Rechnungen.',
-    heatPumpBasis: 'Bei einer Wärmepumpe wird der Warmwasseranteil gegen die gemessene Gesamtwärme gerechnet; gegen den Strom ergäbe sich etwa das Dreifache (§ 9 Abs. 1 Satz 2 HeizkostenV: nach dem Anteil am Wärmeverbrauch). Legen Sie einen Gesamtwärmezähler an (Rolle „Gesamtwärme“) oder tragen Sie die Gesamtwärme der Heizperiode auf der Seite Heizkosten ein.',
   }
   const selfPlans = new Map<string, SelfPlantPlan>()
   for (const plant of fuelPlants.filter((p) => p.method === 'self')) {
@@ -2714,17 +2720,56 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       return sum
     }
     const fuelOfPlant = fuelResults.get(plant.id)?.result
-    const fuelKwh = fuelOfPlant && fuelOfPlant.lines.length > 0 && fuelOfPlant.lines.every((l) => l.energyKwh !== null)
-      ? fuelOfPlant.lines.reduce((a, l) => a + (l.energyKwh ?? 0), 0)
+    // Heizung PR 11: der Warmwasseranteil nach allen drei Verfahren des § 9 Abs. 2 (dhw.ts). Beim Vorrat
+    // (PR 8) zählt die verbrauchte Menge, sonst die Bewertung der Rechnungen (PR 7) mit ihren kWh in der
+    // Heizperiode. Das Volumen gehört zur Anlage selbst, denn bei einem Kesseltausch zählt nur das ihrer
+    // Laufzeit; Verfahren und Temperatur gelten wie in PR 10 für die Linie, der Speicher bleibt.
+    const stockOfThis = stockOfPlant.get(plant.id)?.result
+    // Kesseltausch mit übernommenem Vorrat (Durchsicht von #240, Geld-I3): Der Brennstoff im Tank stammt aus
+    // Lieferungen der Vorgängerin(nen) gleicher Energie; ihr Heizwert gilt für ihn mit.
+    const stockLine = new Set<string>([plant.id])
+    for (let cur: SnapshotHeatingPlant | undefined = plant; cur?.takesOverStock === true && cur.replacesPlantId;) {
+      const prev: SnapshotHeatingPlant | undefined = allPlants.find((x) => x.id === cur?.replacesPlantId)
+      if (!prev || prev.energy !== plant.energy || stockLine.has(prev.id)) break
+      stockLine.add(prev.id)
+      cur = prev
+    }
+    const running = swapStart !== null || swapEnd !== null
+      ? { from: swapStart !== null ? dayAfter(swapStart) : period.from, to: swapEnd ?? period.to }
       : null
     const alphaResult = hotWaterShareOf({
-      hotWater, dhwMethod: own?.dhwMethod ?? lineOwn?.dhwMethod ?? null, energy: plant.energy,
-      dhwHeatKwh: own?.dhwHeatKwh ?? plantMeterKwh('dhwHeat'),
-      totalHeatKwh: own?.totalHeatKwh ?? plantMeterKwh('totalHeat'),
-      fuelKwh, fuelCoveragePermille: fuelOfPlant?.coveragePermille ?? null,
-      // Die Schätzung beim Abschluss (PR 7) trägt bei der Lieferung `estimated` (Abweichung 11).
+      hotWater,
+      log: lawLog,
+      plant: { energy: plant.energy, heatGeneration: plant.heatGeneration ?? null },
+      row: own || lineOwn
+        ? { dhwMethod: own?.dhwMethod ?? lineOwn?.dhwMethod ?? null, dhwVolumeM3: own?.dhwVolumeM3 ?? null, dhwTempC: own?.dhwTempC ?? lineOwn?.dhwTempC ?? null }
+        : null,
+      h: { from: period.from, to: period.to },
+      running,
+      fuelLines: (fuelOfPlant?.lines ?? []).map((l) => ({ deliveryId: l.deliveryId, sharePermille: l.sharePermille, energyKwh: l.energyKwh })),
+      stock: stockOfThis?.ok ? { unit: stockOfThis.statement.unit, consumedQuantity: stockOfThis.statement.consumed.quantity } : null,
+      deliveries: (snapshot.fuel?.deliveries ?? []).filter((d) => stockLine.has(d.plantId)).map((d) => ({
+        id: d.id, label: d.label, invoiceTo: d.invoiceTo, deliveredAt: d.deliveredAt, invoiceDate: d.invoiceDate ?? null, energyKwh: d.energyKwh ?? null,
+        quantity: d.quantity ?? null, quantityUnit: d.quantityUnit ?? null, gasBasis: d.gasBasis ?? null, heatingValue: d.heatingValue ?? null, fuelGrade: d.fuelGrade ?? null, parts: d.parts,
+      })),
+      units: served,
+      measured: { dhwKwh: own?.dhwHeatKwh ?? plantMeterKwh('dhwHeat'), totalKwh: own?.totalHeatKwh ?? plantMeterKwh('totalHeat') },
+      fuelCoveragePermille: fuelOfPlant?.coveragePermille ?? null,
+      // Die Schätzung beim Abschluss (PR 7) trägt bei der Lieferung `estimated` (PR 10 Abweichung 11).
       fuelEstimated: fuelOfPlant?.lines.some((l) => l.estimated) ?? false,
     })
+    // § 11 Abs. 1 Nr. 3 Buchst. a a. F. (Abweichung 9; Durchsicht von #240, Recht-I1): ausgenommen waren
+    // Gebäude, die überwiegend mit Wärme aus Wärmepumpen versorgt werden. Das fragt die Anlage
+    // (`heatPumpMajority`, mehr als die Hälfte der Wärme), unabhängig vom Erzeuger nach § 9. „Nein“ heißt: Die
+    // Verordnung galt. Ohne Antwort oder mit „weiß nicht“ rechnet Mietfuchs ohne Kürzung und ohne Sperre und
+    // nennt beide Folgen.
+    const renewable = plant.energy === 'heatPump' ? law(hkvRenewableExemption, { period: lawPeriod }, lawLog) : null
+    const majority = plant.heatPumpMajority ?? null
+    const oldHeatPumpExemption = renewable?.heatPump === true && majority !== 'no'
+    const majorityOpen = oldHeatPumpExemption && majority !== 'yes'
+    // Unter dieser Ausnahme bindet § 9 nicht: Ohne bestimmbares α gehen „Heizung und Warmwasser“ ganz in
+    // den Topf Heizung (Festlegung, Abweichung 9), und es gibt keinen Fehler.
+    const alpha = alphaResult.ok ? alphaResult.alpha : null
     const verdict = plant.energy === 'heatPump'
       ? heatPumpVerdict(
         { energy: plant.energy, capturedOnOct2024: plant.capturedOnOct2024 ?? null, captureInstalledOn: plant.captureInstalledOn ?? null, heatPumpInstalledOn: plant.heatPumpInstalledOn ?? null },
@@ -2750,7 +2795,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         code: 'heating.self-incomplete',
         text: `Die Anlage lief in dieser Heizperiode nur ${swapEnd !== null ? `bis zum ${fmtDay(swapEnd)}` : `ab dem ${fmtDay(startsOn ?? period.from)}`} (Kesseltausch). Für den Warmwasseranteil braucht es die Wärme am Warmwasserspeicher in dieser Zeit, also den Stand des Wärmezählers am Speicher am ${fmtDay(swapMissing)}. Tragen Sie ihn auf der Seite Zähler ein.`,
       })
-    } else if (!alphaResult.ok) blocked.push({ code: alphaResult.problem === 'heatPumpBasis' ? 'heating.heat-pump-dhw-basis' : 'heating.dhw-share-invalid', text: ALPHA_TEXT[alphaResult.problem] })
+    } else if (!alphaResult.ok && !oldHeatPumpExemption) {
+      blocked.push({ code: alphaResult.problem === 'heatPumpBasis' ? 'heating.heat-pump-dhw-basis' : 'heating.dhw-share-invalid', text: dhwProblemText(alphaResult) })
+    }
     const stocked = stockOfPlant.get(plant.id)
     if (stocked && !stocked.result.ok) {
       const kind = stocked.result.problem.kind
@@ -2772,11 +2819,45 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       }
     }
     for (const b of blocked) warn(b.code, `${where}: ${b.text} Bis dahin verteilt Mietfuchs die Heizkosten dieser Anlage nicht; sie stehen beim Vermieter.`, { kind: 'heatingCosts', id: plant.id })
-    const weights = blocked.length === 0 && shares !== null && alphaResult.ok
-      ? weightsOf(plan, { heating: shares.heating, water: shares.water ?? 0 }, alphaResult.alpha?.value ?? null)
+    const plantSubjectSelf: NoticeSubject = { kind: 'heatingCosts', id: plant.id }
+    if (renewable && oldHeatPumpExemption) {
+      const together = alpha === null && hotWater === 'combined'
+        ? '; einen Warmwasseranteil nach § 9 HeizkostenV verlangt die Verordnung dann nicht, und die Kosten von Heizung und Warmwasser verteilt Mietfuchs gemeinsam wie die Heizkosten (Festlegung von Mietfuchs)'
+        : ''
+      // Ohne Antwort steht der Hinweis mit den Kürzungsbeträgen nach dem CO₂-Block
+      // (`heating.heat-pump-majority-open`, Nachprüfung von #240, W2).
+      if (!majorityOpen) {
+        warn('heating.heat-pump-old-exemption',
+          `${where}: Für diesen Abrechnungszeitraum galten die Vorschriften der Heizkostenverordnung zur Erfassung und Verteilung nicht für Räume in Gebäuden, die überwiegend mit Wärme aus ${hkvRenewableExemption.describe(renewable)} versorgt werden. ` +
+            'Mietfuchs wendet die Fassung an, die zu Beginn des Abrechnungszeitraums galt (Festlegung von Mietfuchs). ' +
+            'Sie haben angegeben, dass die Wärmepumpe mehr als die Hälfte der Wärme liefert. Dann gilt die Verteilung laut Mietvertrag, und Kürzungen nach § 12 HeizkostenV entfallen. ' +
+            `Mietfuchs verteilt nach den erfassten Werten, wie Sie es eingerichtet haben${together}.`,
+          plantSubjectSelf)
+      }
+    }
+    if (alpha && blocked.length === 0) {
+      // Heizwert hilfsweise aus der Tabelle (§ 9 Abs. 3 HeizkostenV, Entwurf R-A13).
+      for (const v of alpha.statement.heatingValues.filter((x) => x.source === 'table')) {
+        warn('heating.heating-value-from-table',
+          `${where}: Die Rechnung „${v.label}“ nennt keinen Heizwert. Mietfuchs rechnet deshalb mit dem Wert der Heizkostenverordnung für ` +
+            `${v.grade ? FUEL_GRADE_LABELS[v.grade] : 'diesen Brennstoff'}: ${v.kwh.toLocaleString('de-DE')} kWh je ${HEATING_VALUE_UNIT_TEXT[v.per]} (§ 9 Abs. 3 HeizkostenV, hilfsweise). ` +
+            'Steht ein Heizwert auf der Rechnung, tragen Sie ihn an der Lieferung ein; er geht vor.',
+          plantSubjectSelf)
+      }
+      // Plausibilität (Entwurf 15.2 F6): kein Recht, nur ein Anlass zu prüfen.
+      if (alpha.value < DHW_PLAUSIBLE.min || alpha.value > DHW_PLAUSIBLE.max) {
+        warn('heating.dhw-share-implausible',
+          `${where}: Der Warmwasseranteil liegt bei ${fmtShare(alpha.value)}. Üblich sind Werte zwischen ${fmtShare(DHW_PLAUSIBLE.min)} und ${fmtShare(DHW_PLAUSIBLE.max)}; das ist keine Grenze des Gesetzes, ` +
+            'sondern nur ein Anlass, die Angaben zu prüfen: die Wärme oder das Warmwasser und seine Temperatur, die Wohnflächen und die Energie der Rechnungen.',
+          plantSubjectSelf)
+      }
+    }
+    const weights = blocked.length === 0 && shares !== null && (alphaResult.ok || oldHeatPumpExemption)
+      ? weightsOf(plan, { heating: shares.heating, water: shares.water ?? 0 }, alpha?.value ?? null)
       : null
     selfPlans.set(plant.id, {
-      plant, plan, shares, alpha: alphaResult.ok ? alphaResult.alpha : null, weights, blocked, verdict, hotWater, input,
+      plant, plan, shares, alpha, weights, blocked, verdict, hotWater, input, oldHeatPumpExemption, majorityOpen,
+      dhwUnmeasurable: own?.dhwUnmeasurable ?? lineOwn?.dhwUnmeasurable ?? null,
       changeSplit: plant.changeSplit ?? 'degreeDays',
       hDays: periodDays(period),
       hDegree: degreeDayPermille([{ from: period.from, to: period.to }], table),
@@ -2809,7 +2890,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         : { label: `Verbrauchskosten ${POT_NAME[p]}`, value: 'kein Verbrauch erfasst, nur nach Fläche verteilt', term: 'consumptionCosts' })
       steps.push({ label: `Anteil nach Verbrauch ${POT_NAME[p]}`, value: `${fmtNum(total.measured ? (sp.shares[p] ?? 0) : 0)} %`, term: 'consumptionCosts' })
     }
-    if (target === 'both' && sp.alpha) steps.push({ label: 'Warmwasseranteil', value: `${fmtPercent(sp.alpha.value * 100)} % (gemessen)`, term: 'hotWaterShare' })
+    if (target === 'both' && sp.alpha) {
+      const how = sp.alpha.statement.method === 'volumeFormula' ? 'aus dem gemessenen Warmwasser berechnet' : sp.alpha.statement.method === 'areaFormula' ? 'aus der Wohnfläche berechnet' : 'gemessen'
+      steps.push({ label: 'Warmwasseranteil', value: `${fmtPercent(sp.alpha.value * 100)} % (${how})`, term: 'hotWaterShare' })
+    }
     steps.push({ label: 'Ihr Anteil nach Heizkostenverordnung', value: `${fmtPercent((sp.weights.get(key)?.[target] ?? 0) * 100)} %`, term: 'heatingSystem' })
     return steps
   }
@@ -2850,6 +2934,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       areaBasisHeat: sp.plant.areaBasisHeat ?? 'area',
       hotWater: sp.hotWater,
       alpha: sp.alpha ? { percent: sp.alpha.value * 100, dhwHeatKwh: sp.alpha.dhwHeatKwh, referenceKwh: sp.alpha.referenceKwh, reference: sp.alpha.reference, estimated: sp.alpha.estimated } : null,
+      // Der Rechenweg zum Warmwasseranteil (Heizung PR 11, Entwurf 8.8 „α mit Methode“).
+      ...(sp.alpha ? { dhw: sp.alpha.statement } : {}),
       shares: sp.shares ? { heating: sp.shares.heating, water: sp.shares.water, forced: sp.shares.forced, previous: sp.shares.previous } : null,
       pots: sp.plan.pots.map((p): SelfPotView => {
         const t = sp.plan.totals[p]
@@ -4627,12 +4713,20 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // bestätigten unzumutbaren Aufwand. 15 % auf den ganzen Anteil an Heiz- und Warmwasserkosten im
     // Topf (§ 9 Abs. 2 Satz 1, § 12 Abs. 1 Satz 1 HeizkostenV; BGH VIII ZR 151/20; R-A6, G-B9). Die
     // Flächenformel hat die engere Voraussetzung des Satzes 4 (Durchsicht M1). Ohne Angabe kein Hinweis.
+    // Bei eigener Abrechnung (Heizung PR 11, Entwurf 6.5, 8.3) nur, wenn Mietfuchs den Anteil nach einer
+    // Formel gerechnet hat, und nicht unter der Ausnahme des § 11 Abs. 1 Nr. 3 Buchst. a a. F. (Abweichung 9).
     const hw = pot.hotWater
-    if (settledHere && pot.method === 'service' && hw && hw.dhwMethod !== null && FORMULA_METHODS.includes(hw.dhwMethod) && hw.dhwUnmeasurable !== true) {
+    const selfOfPot = pot.method === 'self' ? selfPlans.get(pot.plantId) : undefined
+    const selfFormula = selfOfPot && !selfOfPot.oldHeatPumpExemption && selfOfPot.dhwUnmeasurable !== true && selfOfPot.alpha && selfOfPot.alpha.statement.method !== 'heatMeter'
+      ? selfOfPot.alpha.statement.method
+      : null
+    const serviceFormula = pot.method === 'service' && hw && hw.dhwMethod !== null && FORMULA_METHODS.includes(hw.dhwMethod) && hw.dhwUnmeasurable !== true ? hw.dhwMethod : null
+    const formulaMethod = selfFormula ?? serviceFormula
+    if (settledHere && formulaMethod !== null) {
       const cut = law(hkvCutNotByConsumption, { period: hPeriod }, lawLog)
       warn('heating.dhw-not-metered',
-        `${where}: Laut Abrechnung wurde die Wärme für das Warmwasser mit einer Formel bestimmt und nicht mit einem Wärmezähler gemessen. ` +
-          (hw.dhwMethod === 'areaFormula'
+        `${where}: ${selfFormula ? 'Die Wärme für das Warmwasser ist' : 'Laut Abrechnung wurde die Wärme für das Warmwasser'} mit einer Formel bestimmt und nicht mit einem Wärmezähler gemessen. ` +
+          (formulaMethod === 'areaFormula'
             ? 'Die Heizkostenverordnung verlangt den Wärmezähler (§ 9 Abs. 2 Satz 1 HeizkostenV); die Formel nach der Wohnfläche ist nur erlaubt, wenn weder die Wärmemenge noch das Volumen des verbrauchten Warmwassers gemessen werden kann (§ 9 Abs. 2 Satz 4 HeizkostenV). '
             : 'Die Heizkostenverordnung verlangt den Wärmezähler (§ 9 Abs. 2 Satz 1 HeizkostenV); die Formel nach dem Warmwasserverbrauch ist nur erlaubt, wenn die Wärmemenge nur mit unzumutbar hohem Aufwand gemessen werden könnte (§ 9 Abs. 2 Satz 2 HeizkostenV). ') +
           `Sonst darf jeder Mieter seinen gesamten Anteil an den Heiz- und Warmwasserkosten um ${cut} % kürzen (§ 9 Abs. 2 Satz 1, § 12 Abs. 1 Satz 1 HeizkostenV; BGH, Urteil vom 12.01.2022, VIII ZR 151/20)${cutsOn(ids, cut)}. ` +
@@ -4670,7 +4764,25 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const subject: NoticeSubject = { kind: 'heatingCosts', id: plant.id }
     const pot = co2Pots.find((x) => x.plantId === plant.id)
     const ids = new Set<string>([...(pot?.items ?? []).map((c) => c.id), ...(pot ? [pot.reliefKey] : [])])
-    const notYet = sp.verdict?.kind === 'notYet'
+    // § 12 Abs. 3 (PR 10) oder § 11 Abs. 1 Nr. 3 Buchst. a a. F. (Heizung PR 11): keine Kürzungsbeträge.
+    const notYet = sp.verdict?.kind === 'notYet' || sp.oldHeatPumpExemption
+    // Wärmepumpe vor dem Stichtag ohne Antwort zur Überwiegend-Frage (Nachprüfung von #240, W2): Galt die
+    // Verordnung doch, dürfen die Mieter kürzen, soweit nicht nach Verbrauch verteilt ist (§ 12 Abs. 1
+    // Satz 1). Nicht nach Verbrauch verteilt sind hier Heizung und Warmwasser ohne Warmwasseranteil und jeder
+    // Topf ohne erfassten Verbrauch.
+    if (sp.majorityOpen) {
+      const cut = law(hkvCutNotByConsumption, { period: lawPeriod }, lawLog)
+      const notByConsumption = (sp.alpha === null && sp.hotWater === 'combined') || sp.plan.pots.some((p) => !sp.plan.totals[p].measured)
+      const renewableText = hkvRenewableExemption.describe(law(hkvRenewableExemption, { period: lawPeriod }, lawLog))
+      warn('heating.heat-pump-majority-open',
+        `${where}: Für diesen Abrechnungszeitraum galten die Vorschriften der Heizkostenverordnung zur Verteilung nicht für Gebäude, die überwiegend mit Wärme aus ${renewableText} versorgt werden. ` +
+          'Ob Ihr Gebäude dazu gehört, hängt davon ab, ob die Wärmepumpe mehr als die Hälfte der Wärme liefert; beantworten Sie die Frage bei der Heizanlage. ' +
+          'Bis dahin rechnet Mietfuchs, als liefere sie mehr als die Hälfte (Festlegung von Mietfuchs); die Ausnahme muss im Streit der Vermieter belegen. ' +
+          (notByConsumption
+            ? `Galt die Verordnung doch, darf jeder Mieter seinen Anteil um ${cut} % kürzen, soweit nicht nach Verbrauch verteilt ist (§ 12 Abs. 1 Satz 1 HeizkostenV)${cutsOn(ids, cut)}. Mietfuchs zieht nichts ab.`
+            : `Mietfuchs hat nach dem erfassten Verbrauch verteilt; eine Kürzung um ${cut} % nach § 12 Abs. 1 Satz 1 HeizkostenV käme nur in Betracht, soweit nicht nach Verbrauch verteilt ist.`),
+        subject)
+    }
     // § 6a Abs. 3 HeizkostenV (Durchsicht von #239, I1 und N2): Die Informationen zur Abrechnung erstellt
     // Mietfuchs mit PR 14; bis dahin eine Warnung mit der Kürzung je Mieter (§ 12 Abs. 1 Satz 3). Nur für
     // Abrechnungszeiträume ab dem 01.12.2021 (`hkv.settlement-info`), einmal je Linie (nach einem Tausch

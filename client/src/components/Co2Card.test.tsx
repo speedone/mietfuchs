@@ -12,7 +12,7 @@ import type { Co2Statement, HeatingPeriodView, Tenancy } from '../types'
 
 const view = (co2: Co2Statement | null): HeatingPeriodView => ({
   plantId: 'hp', period: periodKey('2025-01'), label: '2025', from: '2025-01-01', to: '2025-12-31', short: false, closed: false,
-  hotWater: { dhwMethod: null, dhwUnmeasurable: null }, co2, stock: null,
+  hotWater: { dhwMethod: null, dhwUnmeasurable: null, dhwHeatKwh: null, totalHeatKwh: null, dhwVolumeM3: null, dhwTempC: null }, hotWaterBasis: { volumeFromMetersM3: null, volumeMissing: null, running: null, suppliedAreaM2: 0 }, co2, stock: null,
   items: [{ id: 'hz', description: 'Messdienst', amountCents: 100500, key: 'amounts', tenancyAmounts: { t1: 100000 } }],
 })
 const shown: Co2Statement = {

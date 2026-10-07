@@ -1731,7 +1731,7 @@ Mietfuchs rechnet nach dem Wortlaut (15,0 %). Ob die technische Regel die gemess
 
 **Beispiel Wärmepumpe (F1, Testfall):** 120 m³, t_w = 60 °C → Q = 15.000 kWh · 0,30 = 4.500 kWh; Strom 12.000 kWh, Wärme 36.000 kWh. α = 4.500 / 12.000 = **37,5 %**; die zweite Fassung hätte 4.500 / 36.000 = 12,5 % gerechnet.
 
-**Beleg zu F1 und eine Spannung** (A8): Der Wortlaut von § 9 Abs. 2 S. 6 Nr. 3 sagt nur „mit 0,30 zu multiplizieren“; § 9 Abs. 1 S. 2 verlangt bei Wärmepumpen die Aufteilung nach Anteilen am **Wärme**verbrauch. Entscheidend ist die Begründung, BT-Drs. 20/7619: Der Faktor gilt „für die Abrechnung von Strom für Wärmepumpen“ und ergibt sich aus einer Jahresarbeitszahl von 2,7 und dem Nutzungsgrad 0,8 in der Zahl 2,5 (0,8 / 2,7 ≈ 0,30). Das Formelergebnis ist also Strom, und α = Q · 0,30 / Strom.
+**Beleg zu F1 und eine Spannung** (A8): Der Wortlaut von § 9 Abs. 2 S. 6 Nr. 3 sagt nur „mit 0,30 zu multiplizieren“; § 9 Abs. 1 S. 2 verlangt bei Wärmepumpen die Aufteilung nach Anteilen am **Wärme**verbrauch. Entscheidend ist die Begründung, BT-Drs. 20/7619 S. 99 (gelesen in der Durchsicht von PR #240): Der Faktor gilt „für die Abrechnung von Strom für Wärmepumpen“ und ergibt sich aus einer Jahresarbeitszahl von 2,7 und dem Nutzungsgrad 0,8 in der Zahl 2,5 (0,8 / 2,7 ≈ 0,30). Das Formelergebnis ist also Strom, und α = Q · 0,30 / Strom.
 
 **Wärmepumpe mit Wärmezähler am Warmwasser, aber ohne Gesamtwärmezähler:** Gemessene Wärme geteilt durch Strom ergäbe etwa das Dreifache. Mietfuchs rechnet dann nicht, sondern meldet `heating.heat-pump-dhw-basis` (error) mit der Bitte, einen Gesamtwärmezähler anzugeben oder die Formel zu wählen. Testfall in 12.2.
 
@@ -2608,7 +2608,7 @@ Für jede Festlegung stehen hier der Rechercheweg, die konservativste oder verbr
   - Die Formel liefert „Kilowattstunden pro Jahr“ ([G] § 9 Abs. 2 Satz 4 HeizkostenV); für einen kürzeren Zeitraum stimmt das Verhältnis zur Energie des Zeitraums nur nach einer Umrechnung.
   - Beim Nutzerwechsel sind die Kosten des Warmwasserverbrauchs „zeitanteilig“ aufzuteilen ([G] § 9b Abs. 2 HeizkostenV); Warmwasser hängt nicht an der Witterung.
 - *Nicht belegt:* eine Regel eines Messdienstes oder der VDI 2077 für den Rumpf (Suche ohne Treffer, VDI 2077 Bl. 3.1 nicht eingesehen).
-- *Lösung:* 32 · A · Tage der Heizperiode / Tage des Jahres ab ihrem Beginn, nach Tagen und nicht nach Gradtagen, mit der Begründung aus § 9b Abs. 2. Die Volumenformel braucht das nicht, denn V ist das gemessene Volumen des Zeitraums. ⟨Norm offen: VDI 2077⟩
+- *Lösung:* 32 · A · Tage der Heizperiode / Tage des Jahres ab ihrem Beginn, nach Tagen und nicht nach Gradtagen, mit der Begründung aus § 9b Abs. 2. Dasselbe bei einem Kesseltausch mitten in der Heizperiode mit den Tagen der Laufzeit der Anlage (Umsetzung PR 11). Die Volumenformel braucht das nicht, denn V ist das gemessene Volumen des Zeitraums (beim Kesseltausch das der Laufzeit, an der Anlage eingetragen). ⟨Norm offen: VDI 2077⟩
 - *Hinweis:* kein eigener Code; der Rechenweg im Ausweis nennt Tage und § 9b Abs. 2.
 
 **Gegenüber der ersten Fassung belegt und gestrichen:**

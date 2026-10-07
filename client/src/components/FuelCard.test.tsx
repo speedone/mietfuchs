@@ -10,7 +10,7 @@ import type { FuelDelivery, HeatingPeriodView } from '../types'
 
 const view: HeatingPeriodView = {
   plantId: 'hp', period: periodKey('2025-05'), label: '2025/2026', from: '2025-05-01', to: '2026-04-30', short: false, closed: false,
-  hotWater: { dhwMethod: null, dhwUnmeasurable: null }, co2: null, stock: null,
+  hotWater: { dhwMethod: null, dhwUnmeasurable: null, dhwHeatKwh: null, totalHeatKwh: null, dhwVolumeM3: null, dhwTempC: null }, hotWaterBasis: { volumeFromMetersM3: null, volumeMissing: null, running: null, suppliedAreaM2: 0 }, co2: null, stock: null,
   items: [
     { id: 'gas', description: 'Gas Abschlussrechnung', amountCents: 650000, key: 'area', fuelDeliveryId: 'd' },
     { id: 'wart', description: 'Wartung', amountCents: 20000, key: 'area', fuelDeliveryId: null },
@@ -18,7 +18,7 @@ const view: HeatingPeriodView = {
 }
 const gas: FuelDelivery = {
   id: 'd', plantId: 'hp', label: 'Gas 2025/2026', invoiceDate: null, deliveredAt: null, invoiceFrom: '2025-03-15', invoiceTo: '2026-03-14', unitId: null,
-  amountCents: null, quantity: null, quantityUnit: null, energyKwh: null, gasBasis: null, heatingValue: null, emissionsKg: null, co2CostCents: null,
+  amountCents: null, quantity: null, quantityUnit: null, energyKwh: null, gasBasis: null, heatingValue: null, fuelGrade: null, emissionsKg: null, co2CostCents: null,
   emissionFactor: null, gridFeeCents: null, bioCostCents: null, sharePermille: null, fixedCents: null, estimated: false, usedByService: true, parts: [],
 }
 
@@ -94,4 +94,34 @@ test('Heizöl (Durchsicht von #237, M5): Die Zeile nennt den Betrag aus der verk
   render(<FuelCard plant={{ id: 'hp', method: 'manual', energy: 'oil' }} view={view} deliveries={[oel]} onSaved={() => {}} />)
   // Die Position „Gas Abschlussrechnung“ der Ansicht zeigt auf „d“ und hat 6.500,00 €.
   expect(screen.getByText(/Betrag laut Position 6\.500,00 €/)).toBeTruthy()
+})
+
+test('Heizung PR 11: beim Vorrat Heizwert laut Rechnung, ohne ihn die Zeile der Tabelle; bei Gas Brennwert oder Heizwert', async () => {
+  render(<FuelCard plant={{ id: 'hp', method: 'self', energy: 'pellets' }} view={view} deliveries={[]} onSaved={() => {}} />)
+  fireEvent.click(screen.getByText('Lieferung eintragen'))
+  // Pellets haben genau eine Zeile; sie ist vorbelegt.
+  expect(auswahl('Steht kein Heizwert auf der Rechnung: Brennstoff laut Heizkostenverordnung').value).toBe('woodPellets')
+  fireEvent.change(screen.getByLabelText('Lieferdatum'), { target: { value: '2025-10-12' } })
+  fireEvent.change(screen.getByLabelText('Menge'), { target: { value: '3000' } })
+  fireEvent.change(auswahl('Einheit der Menge'), { target: { value: 'kg' } })
+  fireEvent.change(screen.getByLabelText('Heizwert laut Rechnung (kWh je Kilogramm)'), { target: { value: '4,9' } })
+  expect(screen.queryByLabelText('Steht kein Heizwert auf der Rechnung: Brennstoff laut Heizkostenverordnung')).toBeNull()
+  fireEvent.click(screen.getByText('Lieferung speichern'))
+  await waitFor(() => expect(sent.at(-1)).toMatchObject({ url: '/api/heating-plants/hp/deliveries', method: 'POST', body: { heatingValue: 4.9, fuelGrade: null, quantityUnit: 'kg' } }))
+  cleanup()
+  render(<FuelCard plant={{ id: 'hp', method: 'self', energy: 'gas' }} view={view} deliveries={[gas]} onSaved={() => {}} />)
+  fireEvent.click(screen.getByText('Lieferung eintragen'))
+  expect(screen.queryByLabelText(/Heizwert laut Rechnung/)).toBeNull()
+  expect(auswahl('Kilowattstunden der Rechnung berechnet nach').value).toBe('')
+  // Ohne Formel für das Warmwasser kein Hinweis; die Angabe ist nicht vorbelegt.
+  expect(screen.queryByText(/ohne sie rechnet die Formel nicht/)).toBeNull()
+})
+
+test('Durchsicht #240, Recht-I3: bei Formel für das Warmwasser sagt die Gasrechnung schon an der Lieferung, dass Brennwert/Heizwert fehlt', () => {
+  const formel = { ...view, hotWater: { ...view.hotWater, dhwMethod: 'volumeFormula' as const } }
+  render(<FuelCard plant={{ id: 'hp', method: 'self', energy: 'gas' }} view={formel} deliveries={[gas]} onSaved={() => {}} />)
+  fireEvent.click(screen.getByText('Lieferung eintragen'))
+  expect(screen.getByText(/ohne sie rechnet die Formel nicht/)).toBeTruthy()
+  fireEvent.change(auswahl('Kilowattstunden der Rechnung berechnet nach'), { target: { value: 'hs' } })
+  expect(screen.queryByText(/ohne sie rechnet die Formel nicht/)).toBeNull()
 })

@@ -13,7 +13,7 @@ const STOCK: StockView = {
 }
 const view = (stock: StockView): HeatingPeriodView => ({
   plantId: 'hp', period: periodKey('2025-01'), label: '2025', from: '2025-01-01', to: '2025-12-31', short: false, closed: false,
-  hotWater: { dhwMethod: null, dhwUnmeasurable: null }, co2: null, items: [], stock,
+  hotWater: { dhwMethod: null, dhwUnmeasurable: null, dhwHeatKwh: null, totalHeatKwh: null, dhwVolumeM3: null, dhwTempC: null }, hotWaterBasis: { volumeFromMetersM3: null, volumeMissing: null, running: null, suppliedAreaM2: 0 }, co2: null, items: [], stock,
 })
 let sent: { url: string; method: string; body: Record<string, unknown> }[]
 beforeEach(() => {

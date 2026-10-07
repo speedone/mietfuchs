@@ -1,6 +1,6 @@
 // Die Einrichtung „Heizung“ (Heizung PR 4, Entwurf 11.2), ohne DOM.
 import { describe, expect, test } from 'vitest'
-import { asksNewInstall, asksTakeOver, buildingOptions, canSwap, connectionNote, emptyHeatingForm, emptySwapForm, HOT_WATER_OPTIONS, hotWaterBody, isFormula, PER_UNIT_ENERGY_OPTIONS, plantOptions, swapBody, swapMetersOf, unmeasurableLabel, heatingPlantBody, heatingSummary, heatingToForm, whoHint, whoOptions, type HeatingForm } from './heatingForm'
+import { asksGeneration, asksNewInstall, asksTakeOver, buildingOptions, canSwap, connectionNote, emptyHeatingForm, emptySwapForm, formulaFormOf, HEAT_GENERATION_OPTIONS, HOT_WATER_OPTIONS, hotWaterBody, isFormula, parseDecimal, SELF_HOT_WATER_OPTIONS, selfFormulaBody, PER_UNIT_ENERGY_OPTIONS, plantOptions, swapBody, swapMetersOf, unmeasurableLabel, heatingPlantBody, heatingSummary, heatingToForm, whoHint, whoOptions, type HeatingForm } from './heatingForm'
 import type { HeatingPlant, Unit } from './types'
 
 const UNITS: Pick<Unit, 'id' | 'name' | 'noConnection'>[] = [{ id: 'eg', name: 'EG' }, { id: 'og', name: 'OG' }, { id: 'garage', name: 'Garage', noConnection: ['waerme'] }]
@@ -9,7 +9,7 @@ const PLANT: HeatingPlant = {
   id: 'hp1', propertyId: 'objekt-1', name: '', energy: 'heatPump', supply: 'central', method: 'service', separateSettlement: null,
   devicesRemote: 'partial', devicesInstalledAfter2021: 'some', source: 'building', captureInstalledOn: '2025-06-01', capturedOnOct2024: false,
   warmRentAverageCents: 123456, changeSplit: 'degreeDays', periodStartMonth: null, periodChanges: [], separateSpans: [], units: [{ unitId: 'og', heatedAreaM2: null }],
-  newDevicesInstall: 'single', nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null, hotWater: 'combined', capture: null, areaBasisHeat: 'area', heatPumpInstalledOn: null,
+  newDevicesInstall: 'single', nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null, hotWater: 'combined', capture: null, areaBasisHeat: 'area', heatPumpInstalledOn: null, heatGeneration: null, heatPumpMajority: null,
 }
 
 describe('Einrichtung Heizung', () => {
@@ -266,4 +266,37 @@ describe('Durchsicht von #239, I3: Kesseltausch bei eigener Heizkostenabrechnung
     expect(swapBody({ ...f, meterValues: { dh: 'viel' } }, { energy: 'gas' }, [{ id: 'dh', name: 'Speicher' }])).toEqual({ error: 'Der Stand für „Speicher“ ist keine Zahl.' })
     expect(swapBody(f, { energy: 'gas' }, [{ id: 'dh', name: 'Speicher' }])).toEqual({ body: { date: '2025-07-01', energy: 'districtHeating', name: '', previousName: 'Gas' } })
   })
+})
+
+test('Warmwasser nach Formel (Heizung PR 11): Volumen und Temperatur deutsch und technisch, leer heißt keine Angabe', () => {
+  expect(parseDecimal('32,5')).toBe(32.5)
+  expect(parseDecimal('32.5')).toBe(32.5)
+  expect(parseDecimal('1.234,5')).toBe(1234.5)
+  expect(parseDecimal('')).toBe(null)
+  expect(parseDecimal('viel')).toBe(undefined)
+  expect(selfFormulaBody('volumeFormula', { volume: '120', temp: '60' })).toEqual({ body: { dhwVolumeM3: 120, dhwTempC: 60 } })
+  expect(selfFormulaBody('volumeFormula', { volume: 'x', temp: '60' })).toEqual({ error: 'Das Volumen des Warmwassers ist keine Zahl.' })
+  expect(selfFormulaBody('areaFormula', { volume: '120', temp: '60' })).toEqual({ body: {} })
+  expect(formulaFormOf({ dhwMethod: 'volumeFormula', dhwUnmeasurable: null, dhwHeatKwh: null, totalHeatKwh: null, dhwVolumeM3: 32.5, dhwTempC: null })).toEqual({ volume: '32,5', temp: '' })
+  expect(HEAT_GENERATION_OPTIONS.map((o) => o.value)).toEqual(['', 'single', 'mixed'])
+  // Bei eigener Abrechnung gibt es „keine Angabe“ nicht; die Vorgabe ist der Wärmezähler.
+  expect(SELF_HOT_WATER_OPTIONS.map((o) => o.value)).toEqual(['heatMeter', 'volumeFormula', 'areaFormula'])
+})
+
+test('Durchsicht #240: Zahlen mit Tausenderpunkt (M3) und die Fragen an der Anlage (Recht-I1/I2)', () => {
+  expect(parseDecimal('1.200')).toBe(1200)
+  expect(parseDecimal('1.200,5')).toBe(1200.5)
+  expect(parseDecimal('12.5')).toBe(12.5)
+  expect([asksGeneration({ energy: 'heatPump', who: 'service' }), asksGeneration({ energy: 'gas', who: 'self' }), asksGeneration({ energy: 'gas', who: 'service' })]).toEqual([true, true, false])
+  const wp = heatingPlantBody({ ...ausgefuellt({ energy: 'heatPump', who: 'manual' }), generation: 'mixed', majority: 'yes' }, UNITS)
+  expect('body' in wp && [wp.body.heatGeneration, wp.body.heatPumpMajority]).toEqual(['mixed', 'yes'])
+  const gas = heatingPlantBody({ ...ausgefuellt(), generation: 'single', majority: 'yes' }, UNITS)
+  expect('body' in gas && ['heatGeneration' in gas.body, 'heatPumpMajority' in gas.body]).toEqual([false, false])
+  expect(heatingToForm({ ...PLANT, heatGeneration: 'single', heatPumpMajority: 'unknown' }, UNITS)).toMatchObject({ generation: 'single', majority: 'unknown' })
+})
+
+test('Nachprüfung #240, W1: Volumen „60.125“ ist mehrdeutig und wird nachgefragt; „1.200,5“ und „1.234.567“ sind eindeutig', () => {
+  expect(selfFormulaBody('volumeFormula', { volume: '60.125', temp: '60' })).toEqual({ error: 'Volumen des Warmwassers: Meinen Sie 60,125 oder 60125? Bitte schreiben Sie Nachkommastellen mit Komma (60,125) und Tausender ohne Punkt (60125).' })
+  expect(selfFormulaBody('volumeFormula', { volume: '1.200,5', temp: '60' })).toEqual({ body: { dhwVolumeM3: 1200.5, dhwTempC: 60 } })
+  expect(selfFormulaBody('volumeFormula', { volume: '1.234.567', temp: '60' })).toEqual({ body: { dhwVolumeM3: 1234567, dhwTempC: 60 } })
 })

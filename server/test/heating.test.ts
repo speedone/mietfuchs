@@ -10,7 +10,7 @@ import {
 import { distributeCents } from '../src/calc.ts'
 import { hkvDegreeDays, hkvHeatPumpCapture } from '../../shared/law/heizkostenv.ts'
 import { practiceReadingOffWarning } from '../../shared/law/practice.ts'
-import { onlyVersion } from '../../shared/law/register.ts'
+import { createLawLog, onlyVersion } from '../../shared/law/register.ts'
 
 const table = onlyVersion(hkvDegreeDays).value
 const offRule = onlyVersion(practiceReadingOffWarning).value
@@ -301,50 +301,64 @@ test('Ziel einer Position: passt zur Warmwasserbereitung, Brennstoff bei verbund
   assert.match(targetProblem('combined', 'fuel', null) ?? '', /Ziel/)
 })
 
-// ---------- Warmwasseranteil (Entwurf 8.3) ----------
+// ---------- Warmwasseranteil (Entwurf 8.3; ab Heizung PR 11 über dhw.ts) ----------
 
+const gasRechnung = {
+  id: 'g', label: 'Gas 2025', invoiceTo: '2025-12-31', deliveredAt: null, invoiceDate: '2026-01-15', energyKwh: 60000,
+  quantity: null, quantityUnit: null, gasBasis: 'hs' as const, heatingValue: null, fuelGrade: null,
+}
 const gas = (over: Partial<AlphaInput> = {}): AlphaInput => ({
-  hotWater: 'combined', dhwMethod: 'heatMeter', energy: 'gas', dhwHeatKwh: 9000, totalHeatKwh: null, fuelKwh: 60000, fuelCoveragePermille: 1000, ...over,
+  hotWater: 'combined', log: createLawLog(), plant: { energy: 'gas', heatGeneration: null }, row: { dhwMethod: 'heatMeter' },
+  h: { from: '2025-01-01', to: '2025-12-31' }, fuelLines: [{ deliveryId: 'g', sharePermille: 1000 }], stock: null, deliveries: [gasRechnung],
+  units: [{ areaM2: 200 }], measured: { dhwKwh: 9000, totalKwh: null }, fuelCoveragePermille: 1000, fuelEstimated: false, ...over,
 })
+const problemOf = (r: ReturnType<typeof hotWaterShareOf>): string => (r.ok ? 'ok' : r.problem)
 
-test('α gemessen: 9.000 von 60.000 kWh nach Brennwert = 15,0 % (Wortlaut, G-B1 abgelehnt)', () => {
+test('α gemessen (PR 10, ab PR 11 über dhw.ts): 9.000 von 60.000 kWh = 15,0 %, ohne Faktor (Wortlaut, G-B1 abgelehnt)', () => {
   const r = hotWaterShareOf(gas())
   assert.ok(r.ok && r.alpha)
   near(r.alpha.value, 0.15, 'α')
   assert.deepEqual([r.alpha.reference, r.alpha.referenceKwh, r.alpha.dhwHeatKwh, r.alpha.estimated], ['fuel', 60000, 9000, false])
-  // Mit der Schätzung beim Abschluss beruht α auf geschätzter Energie (Abweichung 11).
+  assert.deepEqual([r.alpha.statement.method, r.alpha.statement.factor], ['heatMeter', null])
+  // Mit der Schätzung beim Abschluss beruht α auf geschätzter Energie (PR 10 Abweichung 11).
   const geschaetzt = hotWaterShareOf(gas({ fuelEstimated: true }))
   assert.ok(geschaetzt.ok && geschaetzt.alpha?.estimated === true)
 })
 
-test('α bei Fernwärme: Gesamtwärme, wenn gemessen, sonst die gelieferten kWh laut Rechnung', () => {
-  const mitZaehler = hotWaterShareOf(gas({ energy: 'districtHeating', totalHeatKwh: 45000 }))
+test('α bei Fernwärme und Wärmepumpe wie in PR 10: Gesamtwärme, wenn gemessen; Wärmepumpe nur gegen sie (A8)', () => {
+  const mitZaehler = hotWaterShareOf(gas({ plant: { energy: 'districtHeating' }, measured: { dhwKwh: 9000, totalKwh: 45000 } }))
   assert.ok(mitZaehler.ok && mitZaehler.alpha)
   near(mitZaehler.alpha.value, 0.2, 'Q / Gesamtwärme')
   assert.equal(mitZaehler.alpha.reference, 'totalHeat')
-  const ohne = hotWaterShareOf(gas({ energy: 'districtHeating' }))
+  const ohne = hotWaterShareOf(gas({ plant: { energy: 'districtHeating' } }))
   assert.ok(ohne.ok && ohne.alpha)
   near(ohne.alpha.value, 0.15, 'Q / Lieferung')
+  const strom = [{ ...gasRechnung, label: 'Strom 2025', energyKwh: 12000, gasBasis: null }]
+  const wp = hotWaterShareOf(gas({ plant: { energy: 'heatPump' }, deliveries: strom, measured: { dhwKwh: 4500, totalKwh: 36000 } }))
+  assert.ok(wp.ok && wp.alpha)
+  near(wp.alpha.value, 0.125, 'Q / Wärme, nicht Q / Strom')
+  assert.equal(problemOf(hotWaterShareOf(gas({ plant: { energy: 'heatPump' }, deliveries: strom, measured: { dhwKwh: 4500, totalKwh: null } }))), 'heatPumpBasis')
 })
 
-test('α bei Wärmepumpe: nur gegen die gemessene Gesamtwärme; ohne Gesamtwärmezähler ein Fehler (A8)', () => {
-  const r = hotWaterShareOf(gas({ energy: 'heatPump', dhwHeatKwh: 4500, totalHeatKwh: 36000, fuelKwh: 12000 }))
-  assert.ok(r.ok && r.alpha)
-  near(r.alpha.value, 0.125, 'Q / Wärme, nicht Q / Strom')
-  // Gemessene Wärme geteilt durch Strom ergäbe etwa das Dreifache (37,5 %); das rechnet Mietfuchs nicht.
-  assert.deepEqual(hotWaterShareOf(gas({ energy: 'heatPump', dhwHeatKwh: 4500, fuelKwh: 12000 })), { ok: false, problem: 'heatPumpBasis' })
-})
-
-test('α: Formeln, Heizöl und Lücken sind gesperrt oder Fehler, ohne Warmwasser gibt es kein α', () => {
-  assert.deepEqual(hotWaterShareOf(gas({ dhwMethod: 'volumeFormula' })), { ok: false, problem: 'formulaLater' })
-  assert.deepEqual(hotWaterShareOf(gas({ energy: 'oil' })), { ok: false, problem: 'heatingValueLater' })
-  assert.deepEqual(hotWaterShareOf(gas({ fuelCoveragePermille: 848.71 })), { ok: false, problem: 'fuelGap' })
-  assert.deepEqual(hotWaterShareOf(gas({ fuelKwh: null })), { ok: false, problem: 'noFuelEnergy' })
-  assert.deepEqual(hotWaterShareOf(gas({ dhwHeatKwh: null })), { ok: false, problem: 'noDhwHeat' })
-  assert.deepEqual(hotWaterShareOf(gas({ dhwHeatKwh: 60000 })), { ok: false, problem: 'outOfRange' })
-  assert.deepEqual(hotWaterShareOf(gas({ dhwHeatKwh: 0 })), { ok: false, problem: 'outOfRange' })
+test('α: Lücke, fehlende Werte und Werte außerhalb sind Fehler wie in PR 10; Formel und Heizöl rechnen ab PR 11; ohne verbundenes Warmwasser kein α', () => {
+  assert.equal(problemOf(hotWaterShareOf(gas({ fuelCoveragePermille: 848.71 }))), 'fuelGap')
+  assert.equal(problemOf(hotWaterShareOf(gas({ deliveries: [{ ...gasRechnung, energyKwh: null }] }))), 'noFuelEnergy')
+  assert.equal(problemOf(hotWaterShareOf(gas({ measured: { dhwKwh: null, totalKwh: null } }))), 'noDhwHeat')
+  assert.equal(problemOf(hotWaterShareOf(gas({ measured: { dhwKwh: 60000, totalKwh: null } }))), 'outOfRange')
+  assert.equal(problemOf(hotWaterShareOf(gas({ measured: { dhwKwh: 0, totalKwh: null } }))), 'outOfRange')
   assert.deepEqual(hotWaterShareOf(gas({ hotWater: 'none' })), { ok: true, alpha: null })
-  assert.deepEqual(hotWaterShareOf(gas({ hotWater: 'separate', energy: 'oil' })), { ok: true, alpha: null })
+  assert.deepEqual(hotWaterShareOf(gas({ hotWater: 'separate', plant: { energy: 'oil' } })), { ok: true, alpha: null })
+  // Die Sperren `formulaLater` und `heatingValueLater` aus PR 10 fallen: 15.000 · 1,11 / 60.000 = 27,75 %.
+  const formel = hotWaterShareOf(gas({ plant: { energy: 'gas', heatGeneration: 'single' }, row: { dhwMethod: 'volumeFormula', dhwVolumeM3: 120, dhwTempC: 60 } }))
+  assert.ok(formel.ok && formel.alpha)
+  near(formel.alpha.value, 0.2775, 'Volumenformel')
+  assert.deepEqual(formel.alpha.statement.factor, { kind: 'gasCalorific', value: 1.11 })
+  // Heizöl aus dem Vorrat: 9.000 kWh / 9,8 kWh/l = 918,37 l von 6.000 l = 15,31 %; Energie 58.800 kWh.
+  const oel = { ...gasRechnung, id: 'o1', label: 'Öl Oktober', invoiceTo: null, deliveredAt: '2025-10-12', invoiceDate: null, energyKwh: null, gasBasis: null, quantity: 3000, quantityUnit: 'l' as const, heatingValue: 9.8 }
+  const heizoel = hotWaterShareOf(gas({ plant: { energy: 'oil' }, fuelLines: [], stock: { unit: 'l', consumedQuantity: 6000 }, deliveries: [oel] }))
+  assert.ok(heizoel.ok && heizoel.alpha)
+  near(heizoel.alpha.value, 9000 / 58800, 'B / verbrauchte Menge')
+  assert.equal(Math.round(heizoel.alpha.referenceKwh), 58800)
 })
 
 // ---------- Anteil nach Verbrauch (Entwurf 8.5, R-A7) ----------

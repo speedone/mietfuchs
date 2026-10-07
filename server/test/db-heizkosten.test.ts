@@ -69,7 +69,7 @@ test('Review Focus 3: Umstellen auf die eigene Abrechnung nennt erst die offenen
   })
 })
 
-test('Einrichtung: Anteil 50 bis 70 %, Pflichtanteil bei gedämmten Leitungen, Warmwasseranteil bei Heizöl erst später', async () => {
+test('Einrichtung: Anteil 50 bis 70 %, Pflichtanteil bei gedämmten Leitungen, Warmwasseranteil bei Heizöl mit dem Heizwert (Heizung PR 11)', async () => {
   await withDatabase(async (opened) => {
     await haus(opened)
     const items = [{ id: 'gas', heatingPart: 'fuel', heatingTarget: 'both' }]
@@ -83,12 +83,10 @@ test('Einrichtung: Anteil 50 bis 70 %, Pflichtanteil bei gedämmten Leitungen, W
   })
   await withDatabase(async (opened) => {
     await haus(opened, 'oil')
-    await assert.rejects(
-      opened.write((db) => setUpSelf(db, 'hp', { ...SETUP, items: [{ id: 'gas', heatingPart: 'fuel', heatingTarget: 'both' }] }, '2026-02-01', newId)),
-      status(400, /späteren Version.*Heizwert/),
-    )
-    const ohneWarmwasser = await opened.write((db) => setUpSelf(db, 'hp', { ...SETUP, hotWater: 'none', dhwHeatMeter: false, items: [{ id: 'gas', heatingPart: 'fuel', heatingTarget: 'heating' }] }, '2026-02-01', newId))
-    assert.equal(ohneWarmwasser?.plant.hotWater, 'none')
+    // Heizung PR 11: Warmwasseranteil mit dem Heizwert laut Rechnung (§ 9 Abs. 3 HeizkostenV); die Sperre
+    // aus PR 10 (Abweichung 10) fällt.
+    const verbunden = await opened.write((db) => setUpSelf(db, 'hp', { ...SETUP, items: [{ id: 'gas', heatingPart: 'fuel', heatingTarget: 'both' }] }, '2026-02-01', newId))
+    assert.deepEqual([verbunden?.plant.method, verbunden?.plant.hotWater], ['self', 'combined'])
   })
 })
 

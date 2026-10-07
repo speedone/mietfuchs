@@ -5,11 +5,11 @@ import { useState } from 'react'
 import { api, errorText, fmtEuro } from '../api'
 import { useConfirm, useToast } from './feedback'
 import Term from './Term'
-import { CO2_ENERGIES, deliveryLine, deliveryOptions, deliveryUnitId, emptyFuelForm, fuelBody, fuelToForm, STOCK_QUANTITY_OPTIONS, stockFuelBody, type FuelForm } from '../fuelForm'
+import { CO2_ENERGIES, GAS_BASIS_LABEL, GAS_BASIS_MISSING, gasBasisMissing, defaultGrade, deliveryLine, deliveryOptions, deliveryUnitId, emptyFuelForm, fuelBody, fuelToForm, GAS_BASIS_OPTIONS, gradeOptions, STOCK_QUANTITY_OPTIONS, stockFuelBody, unitWordFor, type FuelForm } from '../fuelForm'
 import { isStockEnergy } from '../../../shared/fuelStock.ts'
 import type { FuelDelivery, HeatingEnergy, HeatingMethod, HeatingPeriodView, HeatingPlant, Unit } from '../types'
 
-type TextKey = Exclude<keyof FuelForm, 'usedByService' | 'quantityUnit' | 'unitId'>
+type TextKey = Exclude<keyof FuelForm, 'usedByService' | 'quantityUnit' | 'unitId' | 'gasBasis' | 'grade'>
 
 export default function FuelCard({ plant, view, deliveries, units = [], onSaved }: {
   plant: { id: string; method: HeatingMethod; energy?: HeatingEnergy } & Partial<Pick<HeatingPlant, 'supply' | 'units'>>
@@ -36,7 +36,8 @@ export default function FuelCard({ plant, view, deliveries, units = [], onSaved 
   }
 
   function open(d: FuelDelivery | null) {
-    setForm(d ? fuelToForm(d) : emptyFuelForm())
+    // Heizung PR 11: Die Zeile der Heizwerttabelle ist nur vorbelegt, wo es genau eine gibt.
+    setForm(d ? fuelToForm(d) : { ...emptyFuelForm(), grade: plant.energy ? defaultGrade(plant.energy) : '' })
     setEditing(d ? d.id : 'neu')
     setError('')
   }
@@ -177,6 +178,18 @@ export default function FuelCard({ plant, view, deliveries, units = [], onSaved 
               </label>
               {service && text('amount', 'Rechnungsbetrag')}
             </div>
+            {/* Heizung PR 11: für den Warmwasseranteil der Heizwert laut Rechnung, sonst die Zeile der Tabelle (§ 9 Abs. 3 HeizkostenV). */}
+            <div className="row">
+              {text('heatingValue', `Heizwert laut Rechnung (kWh je ${unitWordFor(form.quantityUnit)})`)}
+              {form.heatingValue.trim() === '' && plant.energy !== undefined && gradeOptions(plant.energy).length > 0 && (
+                <label className="field">
+                  Steht kein Heizwert auf der Rechnung: Brennstoff laut Heizkostenverordnung
+                  <select value={form.grade} onChange={(e) => set('grade', gradeOptions(plant.energy ?? 'other').find((o) => o.value === e.target.value)?.value ?? '')}>
+                    {(plant.energy ? gradeOptions(plant.energy) : []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </label>
+              )}
+            </div>
           </>) : (<>
             <div className="row">
               {text('invoiceFrom', 'Rechnungszeitraum von')}
@@ -187,6 +200,16 @@ export default function FuelCard({ plant, view, deliveries, units = [], onSaved 
               {text('fixed', 'davon fester Preisbestandteil (Grund-, Mess-, Verrechnungspreis)')}
               {text('energyKwh', 'Energie (kWh)')}
             </div>
+            {plant.energy === 'gas' && (<>
+              <label className="field">
+                {GAS_BASIS_LABEL}
+                <select value={form.gasBasis} onChange={(e) => set('gasBasis', GAS_BASIS_OPTIONS.find((o) => o.value === e.target.value)?.value ?? '')}>
+                  {GAS_BASIS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </label>
+              <small className="muted">Steht bei der Umrechnung von m³ in kWh „Brennwert“ auf der Rechnung, wählen Sie „nach Brennwert“. Für den <Term id="gasCalorificBasis">Warmwasseranteil nach einer Formel</Term> hängt der Faktor davon ab.</small>
+              {gasBasisMissing(form, view) && <div className="notice">{GAS_BASIS_MISSING}</div>}
+            </>)}
           </>)}
           {/* Bei Strom einer Wärmepumpe gibt es keine CO₂-Kosten aufzuteilen (§ 2 Abs. 1 CO2KostAufG). */}
           {(plant.energy === undefined || CO2_ENERGIES.includes(plant.energy)) && (
