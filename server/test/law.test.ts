@@ -398,7 +398,7 @@ const preis: LawParam<number | null, 'deliveryYear'> = {
     { validFrom: '2026-01-01', value: null, source, enacted: 'b' },
   ],
   describe: (v) => (v === null ? 'noch nicht veröffentlicht' : `${v} €/t`),
-  overridable: { reason: 'wird später veröffentlicht', max: 1000 },
+  overridable: { reason: 'wird später veröffentlicht', max: 1000, unit: '€/t' },
 }
 const fest: LawParam<number, 'deliveryYear'> = {
   id: 'test.fest', title: 'Fest', norm: '§ 5', timing: 'deliveryYear',
@@ -439,7 +439,7 @@ test('Register: veröffentlicht gilt; null ohne Eintrag wird nicht protokolliert
 
 test('Register: eventDate mit Eintrag nach dem Jahr des Datums', () => {
   const ets: LawParam<number | null, 'eventDate'> = {
-    id: 'test.ets', title: 'ETS', norm: '§ 3', timing: 'eventDate', overridable: { reason: 'r', max: 1000 },
+    id: 'test.ets', title: 'ETS', norm: '§ 3', timing: 'eventDate', overridable: { reason: 'r', max: 1000, unit: '€/t' },
     versions: [{ validFrom: '2026-01-01', validTo: '2026-12-31', value: 73.86, source, enacted: 'a' }, { validFrom: '2027-01-01', value: null, source, enacted: 'b' }],
     describe: (v) => String(v),
   }

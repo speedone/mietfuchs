@@ -186,9 +186,8 @@ test('R-W1: die Ausnahme des § 2 Abs. 4 Satz 2 an einer Stelle', () => {
   assert.equal(etsExempt({ energy: 'gas', districtEtsNew: true }), false)
 })
 
-test('R-K8: der Hinweis nennt die Verordnung kurz, damit er auf dem Handy nicht über den Rand läuft', () => {
+test('N2 (Runde 2, ersetzt R-K8): der Hinweis schreibt die Verordnung aus und nennt die Abkürzung', () => {
   const [f] = co2Plausibility({ ...base, invoiceFrom: '2025-01-01', invoiceTo: '2025-12-31', energyKwh: 100000, gasBasis: 'hs', emissionsKg: 20088 }, 'gas', createLawLog())
   if (!f) return assert.fail('kein Hinweis')
-  assert.match(plausibilityText(f, euro), /Standardwerten der EBeV 2030 wären es/)
-  assert.doesNotMatch(plausibilityText(f, euro), /Emissionsberichterstattungsverordnung/)
+  assert.match(plausibilityText(f, euro), /Standardwerten der Emissionsberichterstattungsverordnung 2030 \(EBeV 2030\) wären es/)
 })

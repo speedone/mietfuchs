@@ -24,7 +24,7 @@ test('Kopf, Zeilen und Angaben zur Einstufung', () => {
   expect(sheetFacts(sheet)).toEqual([
     'Fläche für die Einstufung: 300 m² (Summe der Wohnflächen der versorgten Wohnungen laut Vermieter)',
     'Kein Nichtwohngebäude (§ 8 CO2KostAufG); keine Beschränkung nach § 9 CO2KostAufG',
-    'Angaben je Rechnung nach § 3 Abs. 1 Nr. 1 bis 4 CO2KostAufG, wie sie der Lieferant ausweist; nicht auf die Heizperiode abgegrenzt. Die Summe enthält nur, was nach dem CO2KostAufG zählt (siehe Vermerke).',
+    'Angaben je Rechnung nach § 3 Abs. 1 Nr. 1 bis 4 CO2KostAufG, wie sie der Lieferant ausweist; nicht auf die Heizperiode abgegrenzt. Die Summe enthält nur, was nach dem CO2KostAufG zählt.',
   ])
 })
 
@@ -42,7 +42,7 @@ test('G-W1, G-W2: Vermerke an den Zeilen, Anfangsbestand mit CO₂-Kosten, Summe
   const s: Co2Sheet = {
     ...sheet,
     stock: { stockUnit: 'l', openingQuantity: 1000, openingEmissionsKg: 2676.3, openingCo2Cents: 17517, openingInvoicedBefore2023: false, openingAlreadySettled: null, closingQuantity: 500, closingMeasuredOn: '2025-12-31' },
-    opening: { emissionsKg: 2676.3, co2CostCents: 17517, co2Counted: true, note: null },
+    opening: { emissionsKg: 2676.3, co2CostCents: 17517, kgCounted: true, co2Counted: true, note: null },
     deliveries: [heizoel, { ...heizoel, id: 'x', label: 'Heizöl alt', counted: 'none', note: 'Storniert: Die Kostenpositionen dieser Rechnung ergeben 0 €; sie zählt nicht.' }],
     totals: { emissionsKg: 10705.2, co2CostCents: 70066 },
   }
@@ -51,8 +51,13 @@ test('G-W1, G-W2: Vermerke an den Zeilen, Anfangsbestand mit CO₂-Kosten, Summe
   expect(rows[2]?.note).toMatch(/Storniert/)
   expect(rows[2]?.label).toBe('Heizöl alt (zählt nicht)')
   expect(rows[3]).toEqual({ kind: 'sum', label: 'Summe', note: null, cells: ['', '', '', '', '', '10.705,2 kg', fmtEuro(70066), ''] })
-  const ohne = sheetRows({ ...s, opening: { emissionsKg: 2676.3, co2CostCents: 0, co2Counted: false, note: 'Vor dem 01.01.2023 in Rechnung gestellt …' } })
+  const ohne = sheetRows({ ...s, opening: { emissionsKg: 2676.3, co2CostCents: 0, kgCounted: true, co2Counted: false, note: 'Vor dem 01.01.2023 in Rechnung gestellt …' } })
   expect(ohne[0]?.label).toBe('Anfangsbestand (Vorrat, nur die kg zählen)')
+  // N3 (Runde 2): Mit Vermerken verweist der Fußsatz darauf.
+  expect(sheetFacts(s).at(-1)).toMatch(/zählt \(siehe Vermerke\)\.$/)
+  // O2b (Runde 2): ohne kg bleibt die Zeile sichtbar und zählt nicht.
+  const ohneKg = sheetRows({ ...s, opening: { emissionsKg: null, co2CostCents: 17517, kgCounted: false, co2Counted: false, note: 'Der CO₂-Ausstoß in kg fehlt …' } })
+  expect(ohneKg[0]).toEqual({ kind: 'opening', label: 'Anfangsbestand (Vorrat, zählt nicht)', note: 'Der CO₂-Ausstoß in kg fehlt …', cells: ['', '', '1.000 l', '–', '–', '–', fmtEuro(17517), ''] })
 })
 
 test('Gas über einen Zeitraum, geschätzte Rechnung, Vorrat, Emissionshandel und Beschränkung', () => {
@@ -79,4 +84,12 @@ test('Ein Blatt gibt es, sobald eine Rechnung die Heizperiode berührt', () => {
   expect(hasSheet([{ invoiceFrom: '2026-03-01', invoiceTo: '2027-02-28', deliveredAt: null }], h)).toBe(true)
   expect(hasSheet([{ invoiceFrom: null, invoiceTo: null, deliveredAt: '2026-04-30' }], h)).toBe(true)
   expect(hasSheet([{ invoiceFrom: null, invoiceTo: null, deliveredAt: null }], h)).toBe(false)
+})
+
+test('N3, O3 (Runde 2): Emissionshandel mit Anschluss nach dem Stichtag: keine Summe nach CO2KostAufG, eigener Fußsatz', () => {
+  const ets: Co2Sheet = { ...sheet, energy: 'districtHeating', districtEtsNew: true, checked: false }
+  expect(sheetRows(ets).some((r) => r.kind === 'sum')).toBe(false)
+  const last = sheetFacts(ets).at(-1) ?? ''
+  expect(last).toBe('Angaben je Rechnung, wie sie der Lieferant ausweist. Nach § 2 Abs. 4 Satz 2 CO2KostAufG werden die CO₂-Kosten dieser Wärme nicht aufgeteilt; eine Summe entfällt deshalb.')
+  expect(last).not.toMatch(/Vermerke|zählt/)
 })

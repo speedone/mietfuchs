@@ -57,12 +57,14 @@ export function sheetRows(s: Co2Sheet): SheetRow[] {
   const opening: SheetRow[] = o
     ? [{
         kind: 'opening',
-        label: o.co2Counted ? 'Anfangsbestand (Vorrat)' : 'Anfangsbestand (Vorrat, nur die kg zählen)',
+        label: o.co2Counted ? 'Anfangsbestand (Vorrat)' : o.kgCounted ? 'Anfangsbestand (Vorrat, nur die kg zählen)' : 'Anfangsbestand (Vorrat, zählt nicht)',
         note: o.note,
         cells: ['', '', stock?.openingQuantity != null && stock.stockUnit ? `${num(stock.openingQuantity, 2)} ${STOCK_UNIT_TEXT[stock.stockUnit]}` : '–', '–', '–',
-          `${num(o.emissionsKg, 2)} kg`, o.co2CostCents !== null ? fmtEuro(o.co2CostCents) : '–', ''],
+          o.emissionsKg !== null ? `${num(o.emissionsKg, 2)} kg` : '–', o.co2CostCents !== null ? fmtEuro(o.co2CostCents) : '–', ''],
       }]
     : []
+  // Gilt das Gesetz nicht (§ 2 Abs. 4 Satz 2), gibt es keine Summe nach dem CO2KostAufG (Runde 2, O3).
+  if (!s.checked) return [...opening, ...rows]
   return [...opening, ...rows, { kind: 'sum', label: 'Summe', note: null, cells: ['', '', '', '', '', `${num(s.totals.emissionsKg, 2)} kg`, fmtEuro(s.totals.co2CostCents), ''] }]
 }
 
@@ -87,7 +89,11 @@ export function sheetFacts(s: Co2Sheet): string[] {
     const closing = s.stock.closingQuantity !== null ? `Endbestand ${num(s.stock.closingQuantity, 2)}${unit}${s.stock.closingMeasuredOn ? ` am ${fmtDate(s.stock.closingMeasuredOn)}` : ''}` : 'Endbestand nicht angegeben'
     facts.push(`Vorrat: ${opening}; ${closing}`)
   }
-  facts.push('Angaben je Rechnung nach § 3 Abs. 1 Nr. 1 bis 4 CO2KostAufG, wie sie der Lieferant ausweist; nicht auf die Heizperiode abgegrenzt. Die Summe enthält nur, was nach dem CO2KostAufG zählt (siehe Vermerke).')
+  // Der Fußsatz verweist nur auf Vermerke, die es gibt, und nennt keine Summe, wo das Gesetz nicht gilt (Runde 2, N3, O3).
+  const notes = s.deliveries.some((d) => d.note !== null) || (s.opening?.note ?? null) !== null
+  facts.push(s.checked
+    ? `Angaben je Rechnung nach § 3 Abs. 1 Nr. 1 bis 4 CO2KostAufG, wie sie der Lieferant ausweist; nicht auf die Heizperiode abgegrenzt. Die Summe enthält nur, was nach dem CO2KostAufG zählt${notes ? ' (siehe Vermerke)' : ''}.`
+    : 'Angaben je Rechnung, wie sie der Lieferant ausweist. Nach § 2 Abs. 4 Satz 2 CO2KostAufG werden die CO₂-Kosten dieser Wärme nicht aufgeteilt; eine Summe entfällt deshalb.')
   return facts
 }
 

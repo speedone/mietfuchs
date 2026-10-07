@@ -103,7 +103,7 @@ test('G-K4: Jahr nur bis ins Folgejahr, Wert höchstens 1.000 €/t; die Zeile n
   await withDatabase(async (opened) => {
     await assert.rejects(opened.write((db) => saveLawOverride(db, 'co2.price', 2207, { value: 64, source: 'x' }, '2026-12-20')), refused(/bis 2027/))
     await assert.rejects(opened.write((db) => saveLawOverride(db, 'co2.price', 2028, { value: 64, source: 'x' }, '2026-12-20')), refused(/bis 2027/))
-    await assert.rejects(opened.write((db) => saveLawOverride(db, 'co2.price', 2027, { value: 1001, source: 'x' }, '2026-12-20')), refused(/höchstens 1\.000/))
+    await assert.rejects(opened.write((db) => saveLawOverride(db, 'co2.price', 2027, { value: 1001, source: 'x' }, '2026-12-20')), refused(/höchstens 1\.000 €\/t;/))
     await assert.rejects(opened.write((db) => saveLawOverride(db, 'co2.price', 2027, { value: 1e308, source: 'x' }, '2026-12-20')), refused(/höchstens 1\.000/))
     const ok = await opened.write((db) => saveLawOverride(db, 'co2.price', 2028, { value: 70, source: 'x' }, '2027-06-01'))
     assert.equal(ok.status, 'entered')

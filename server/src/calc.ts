@@ -63,7 +63,7 @@ import { CO2_RELIEF_LABEL } from '../../shared/co2Probe.ts'
 import { ausweisGaps, CO2_FUELS, co2Assessment, co2DeductionsOf, FORMULA_METHODS, co2PotsOf, itemBasisUnits, L_TOLERANCE_CENTS, perUnitClassification, perUnitExceeding, perUnitReliefs, reliefsByShare, spanningPlants, type PerUnitFuel, restage, selfSplit, SERVICE_FUEL_TOLERANCE_CENTS, shownReliefs, stageRanges, tableFactor, tenantLines as co2TenantLines, type Co2Pot, type ReliefShare } from './co2.ts'
 // Zahlen und Daten der Rechtsregeln kommen aus dem Rechtsregister (Heizung PR 1) und stehen hier
 // nicht als Literal; server/test/law-literals.test.ts wacht darüber.
-import { createLawLog, dayAfter, dayBefore, law, LAW_AS_OF, onlyVersion, recordVersionAt, valueAt, type Period } from '../../shared/law/register.ts'
+import { createLawLog, dayAfter, dayBefore, law, LAW_AS_OF, onlyVersion, recordVersionAt, VALUE_CHANGE_LABEL, valueAt, type Period } from '../../shared/law/register.ts'
 import { betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths } from '../../shared/law/bgb-betrkv.ts'
 import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvEstimateThreshold, hkvExemptions, hkvInfoDistrict, hkvMonthlyInfo, hkvHeatPumpCapture, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvRenewableExemption, hkvSettlementInfo, type DegreeDayTable } from '../../shared/law/heizkostenv.ts'
 import { plantDevices, remoteReadingVerdict, servedUnitIds } from './remoteReading.ts'
@@ -296,7 +296,7 @@ const noticeKinds = {
   // Heizung PR 14, Durchsicht von #243, G-K3.
   'co2.exempt-deducted': { level: 'warning', title: 'CO₂-Abzug trotz Ausnahme nach § 11', rule: 'heating-exemption', terms: ['co2Deducted', 'heatingCostOrdinance'] },
   // Heizung PR 17 (#97, Entwurf 15.2 F6): kg oder CO₂-Kosten einer Rechnung passen nicht zum Gesetz.
-  'co2.cost-implausible': { level: 'hint', title: 'CO₂-Angaben der Rechnung prüfen', terms: ['co2Split'] },
+  'co2.cost-implausible': { level: 'hint', title: 'CO₂-Angaben der Rechnung prüfen', terms: ['co2Split', 'ebev'] },
   'co2.service-unsplit': { level: 'warning', title: 'Messdienst hat die CO₂-Kosten nicht aufgeteilt', rule: 'co2-split', terms: ['co2Split'] },
   'co2.incomplete': { level: 'warning', title: 'Angaben für den CO₂-Ausweis fehlen', rule: 'co2-split', terms: ['co2Split', 'co2Stage'] },
   'co2.stage-mismatch': { level: 'hint', title: 'Einstufung laut Abrechnung weicht ab', rule: 'co2-split', terms: ['co2Stage', 'co2Area'] },
@@ -6362,9 +6362,11 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   for (const v of lawLog.values) {
     if (!v.overridden) continue
     const year = Number(v.validFrom?.slice(0, 4))
-    const label = LAW_PARAMS.find((p) => p.id === v.id)?.overridable?.yearLabel?.(year) ?? String(year)
+    const param = LAW_PARAMS.find((p) => p.id === v.id)
+    const label = param?.overridable?.yearLabel?.(year) ?? String(year)
+    const change = param?.checkOnly ? VALUE_CHANGE_LABEL.check : VALUE_CHANGE_LABEL.law
     const text = `${v.title} ${label}: ${v.text}, von Ihnen eingetragen (Quelle: ${v.overridden.source}), weil der amtliche Wert noch nicht im Programm steht. ` +
-      'Bringt ein Update den amtlichen Wert, gilt dieser; bei einer abgeschlossenen Abrechnung nennt die Seite Abrechnung die Änderung dann als „Rechtswert geändert“.'
+      `Bringt ein Update den amtlichen Wert, gilt dieser; bei einer abgeschlossenen Abrechnung nennt die Seite Abrechnung die Änderung dann als „${change}“.`
     if (!notices.some((n) => n.code === 'law.value-overridden' && n.text === text)) warn('law.value-overridden', text)
   }
 
