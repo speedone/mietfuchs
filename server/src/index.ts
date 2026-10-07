@@ -51,7 +51,7 @@ import { saveHeatingInfo, saveHeatingRules } from './db/heatingInfo.ts'
 import { heatingPeriodViews, removeCo2Statement, saveCo2Statement, saveHotWater } from './db/co2.ts'
 import { saveServiceValues } from './db/serviceValues.ts'
 import { removeEstimate, saveEstimate } from './db/heatingEstimates.ts'
-import { co2SheetOf } from './co2Sheet.ts'
+import { co2SheetFor } from './co2Sheet.ts'
 import { heatingPeriodOf, plantContext } from './db/heatingPeriodContext.ts'
 import { LawOverrideError, lawOverrideSlots, readLawOverrides, removeLawOverride, saveLawOverride } from './db/lawOverrides.ts'
 import { removeStock, saveStock } from './db/fuelStock.ts'
@@ -687,24 +687,10 @@ app.get('/api/heating-plants/:id/periods/:period/co2-sheet', async (req, res) =>
     if (!ctx) return null
     const h = heatingPeriodOf(ctx, req.params.period)
     const stock = await readStock(db)
-    const plant = ctx.plant
-    const property = stock.properties.find((p) => p.id === plant.propertyId)
-    const statement = stock.co2Statements.find((x) => x.plantId === plant.id && x.period === h.key && (x.method === 'self' || x.method === 'selfAfterService'))
-    const row = stock.heatingPeriodRows.find((r) => r.plantId === plant.id && r.period === h.key)
-    const units: Unit[] = stock.units
-    return co2SheetOf({
-      propertyName: property?.name ?? '', address: property?.address ?? '',
-      landlordName: property?.landlordName ?? stock.settings.landlordName,
-      plant, h: { key: String(h.key), from: h.from, to: h.to },
-      units: units.filter((u) => u.propertyId === plant.propertyId),
-      enteredAreaM2: statement?.areaM2 ?? null,
-      stock: row && row.stockUnit !== null ? {
-        stockUnit: row.stockUnit, openingQuantity: row.openingQuantity, openingEmissionsKg: row.openingEmissionsKg, openingCo2Cents: row.openingCo2Cents,
-        openingInvoicedBefore2023: row.openingInvoicedBefore2023, openingAlreadySettled: row.openingAlreadySettled, closingQuantity: row.closingQuantity, closingMeasuredOn: row.closingMeasuredOn,
-      } : null,
-      deliveries: stock.fuelDeliveries, overrides: stock.lawOverrides,
-      items: stock.costItems.filter((c) => c.fuelDeliveryId).map((c) => ({ id: c.id, period: String(c.period), amountCents: c.amountCents, fuelDeliveryId: c.fuelDeliveryId })),
-      today: today(),
+    const property = stock.properties.find((p) => p.id === ctx.plant.propertyId)
+    // Dieselben Daten und dieselbe Bestandsrechnung wie die Abrechnung (Nachprüfung von #246, O2a/O2b).
+    return co2SheetFor(stock, ctx.plant.propertyId, ctx.plant.id, h, today(), {
+      propertyName: property?.name ?? '', address: property?.address ?? '', landlordName: property?.landlordName ?? stock.settings.landlordName,
     })
   })
   if (!sheet) return res.status(404).json({ error: NO_PLANT })

@@ -59,7 +59,7 @@ export function sheetRows(s: Co2Sheet): SheetRow[] {
         kind: 'opening',
         label: o.co2Counted ? 'Anfangsbestand (Vorrat)' : o.kgCounted ? 'Anfangsbestand (Vorrat, nur die kg zählen)' : 'Anfangsbestand (Vorrat, zählt nicht)',
         note: o.note,
-        cells: ['', '', stock?.openingQuantity != null && stock.stockUnit ? `${num(stock.openingQuantity, 2)} ${STOCK_UNIT_TEXT[stock.stockUnit]}` : '–', '–', '–',
+        cells: ['', '', o.quantity !== null && stock?.stockUnit ? `${num(o.quantity, 2)} ${STOCK_UNIT_TEXT[stock.stockUnit]}` : '–', '–', '–',
           o.emissionsKg !== null ? `${num(o.emissionsKg, 2)} kg` : '–', o.co2CostCents !== null ? fmtEuro(o.co2CostCents) : '–', ''],
       }]
     : []

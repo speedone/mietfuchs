@@ -15,7 +15,10 @@ import { servesUnit } from '../../shared/heatingPeriod.ts'
 import { co2CostsBefore, co2CostsCountedFrom } from '../../shared/law/co2kostaufg.ts'
 import { hkvDegreeDays } from '../../shared/law/heizkostenv.ts'
 import { createLawLog, germanDate, valueAt } from '../../shared/law/register.ts'
-import type { Co2Sheet, Co2SheetDelivery, Co2SheetStock, FuelDelivery, HeatingPlant, LawOverride, Unit } from '../../shared/types.ts'
+import type { BillingPeriod, Co2Sheet, Co2SheetDelivery, Co2SheetOpening, Co2SheetStock, FuelDelivery, HeatingPlant, LawOverride, Unit } from '../../shared/types.ts'
+import { plantStockOf } from './calc.ts'
+import type { StockResult } from './fuelStock.ts'
+import { heatingSnapshotFor } from './snapshot.ts'
 import { co2Plausibility, etsExempt, plausibilityText } from './co2Plausibility.ts'
 import { cancelledDeliveries, estimateFactors, rangeOf, type FuelItem } from './fuel.ts'
 
@@ -28,6 +31,8 @@ export type Co2SheetInput = {
   units: readonly Pick<Unit, 'id' | 'areaM2' | 'noConnection'>[]
   enteredAreaM2: number | null
   stock: Co2SheetStock | null
+  // Die Bestandsrechnung der Abrechnung für diese Heizperiode (`plantStockOf`); `null` ohne Vorrat.
+  stockResult?: StockResult | null
   deliveries: readonly FuelDelivery[]
   // Die Kostenpositionen, die auf eine Lieferung zeigen: ihre Summe ist der Betrag einer Rechnung ohne
   // eingetragenen Betrag, und ergibt sie 0, ist die Rechnung storniert.
@@ -84,38 +89,37 @@ export function co2SheetOf(i: Co2SheetInput): Co2Sheet {
   })
   // Der Anfangsbestand (Vorrat, Heizung PR 8): seine kg zählen immer, seine CO₂-Kosten nicht, wenn er vor
   // 2023 in Rechnung gestellt oder schon mit einer früheren Abrechnung umgelegt wurde (wie die Bestandsrechnung).
-  // Fehlt eine Angabe, rechnet auch die Abrechnung den Vorrat nicht (fuelStock.ts, `openingValue`): Die Zeile
-  // bleibt sichtbar, zählt aber nicht (Durchsicht von #246, Runde 2, O2b). Offen ist nur, ob vor 2023 in
-  // Rechnung gestellt: dann zählen die kg wie bei einer Rechnung ohne Datum (O2a).
-  const s = i.stock
-  const opening = s && (s.openingEmissionsKg !== null || s.openingQuantity !== null)
-    ? (() => {
-        const kg = s.openingEmissionsKg
-        const settled = s.openingAlreadySettled === true
-        const base = { emissionsKg: kg, co2CostCents: s.openingCo2Cents }
-        if (kg === null) {
-          return { ...base, kgCounted: false, co2Counted: false, note: 'Der CO₂-Ausstoß in kg fehlt: Ohne ihn rechnet auch die Abrechnung den Vorrat nicht; diese Zeile zählt deshalb nicht.' }
-        }
-        if (settled) {
-          return { ...base, kgCounted: true, co2Counted: false, note: 'Schon mit einer früheren Abrechnung umgelegt: Die CO₂-Kosten zählen hier nicht mehr, die kg für die Einstufung.' }
-        }
-        if (s.openingInvoicedBefore2023 === true) {
-          return { ...base, kgCounted: true, co2Counted: false, note: `Vor dem ${from} in Rechnung gestellt: Die CO₂-Kosten bleiben unberücksichtigt (§ 11 Abs. 2 Satz 2 CO2KostAufG).` }
-        }
-        if (s.openingInvoicedBefore2023 === null) {
-          return { ...base, kgCounted: true, co2Counted: false, note: `Nicht angegeben, ob der Anfangsbestand vor dem ${from} in Rechnung gestellt wurde: Ob seine CO₂-Kosten zählen, ist offen (§ 11 Abs. 2 Satz 2 CO2KostAufG); gezählt sind nur die kg.` }
-        }
-        if (s.openingCo2Cents === null) {
-          return { ...base, kgCounted: false, co2Counted: false, note: 'Die CO₂-Kosten fehlen: Ohne sie rechnet auch die Abrechnung den Vorrat nicht; diese Zeile zählt deshalb nicht.' }
-        }
-        return { ...base, kgCounted: true, co2Counted: true, note: null }
-      })()
-    : null
+  // Der Anfangsbestand eines Vorrats (G-W2): Das Blatt hat dafür keine eigene Regel, sondern liest die
+  // Bestandsrechnung der Abrechnung (`plantStockOf` in calc.ts, Nachprüfung von #246, O2a/O2b). Rechnet sie
+  // den Vorrat, zählt das Blatt genau ihren Anfangsbestand (kg, und die CO₂-Kosten, soweit sie berücksichtigt
+  // sind). Rechnet sie ihn nicht, weil eine Angabe fehlt, bleibt die Zeile sichtbar und zählt nicht.
+  const r = i.stockResult ?? null
+  const row = i.stock
+  const opening: Co2SheetOpening | null = r === null
+    ? null
+    : r.ok
+      ? (() => {
+          const v = r.statement.opening
+          if (v.layers.length === 0) return null
+          const settled = r.statement.openingSettledSource !== undefined
+          const counted = v.layers.some((l) => l.co2Counted)
+          const note = settled ? 'Schon mit einer früheren Abrechnung umgelegt: Die CO₂-Kosten zählen hier nicht mehr, die kg für die Einstufung.'
+            : !counted && v.layers.length > 0 ? `Vor dem ${from} in Rechnung gestellt: Die CO₂-Kosten bleiben unberücksichtigt (§ 11 Abs. 2 Satz 2 CO2KostAufG).` : null
+          return { quantity: v.quantity, emissionsKg: v.emissionsKg, co2CostCents: v.co2Cents, kgCounted: true, co2Counted: counted, note }
+        })()
+      : row && (row.openingQuantity !== null || row.openingEmissionsKg !== null)
+        ? {
+            quantity: row.openingQuantity, emissionsKg: row.openingEmissionsKg, co2CostCents: row.openingCo2Cents, kgCounted: false, co2Counted: false,
+            note: r.problem.kind === 'missing'
+              ? `Nicht berücksichtigt, weil eine Angabe fehlt: ${r.problem.what.join('; ')}. Ohne sie rechnet auch die Abrechnung den Vorrat nicht.`
+              : `Nicht berücksichtigt, weil die Bestandsrechnung nicht aufgeht: ${r.problem.reasons.join('; ')}.`,
+          }
+        : null
   // Fläche der Einstufung (Entwurf 9.2): eingetragen, sonst die Wohnfläche der versorgten Wohnungen.
   const served = i.units.filter((u) => servesUnit(i.plant, u)).reduce((a, u) => a + (u.areaM2 > 0 ? u.areaM2 : 0), 0)
   const area = i.enteredAreaM2 ?? (served > 0 ? served : null)
   const kg = deliveries.reduce((a, d) => a + (d.counted === 'none' ? 0 : (d.emissionsKg ?? 0) * d.factor), opening?.kgCounted ? (opening.emissionsKg ?? 0) : 0)
-  const co2 = deliveries.reduce((a, d) => a + (d.counted === 'full' || d.counted === 'partial' ? (d.co2CostCents ?? 0) * d.factor : 0), opening?.co2Counted ? (opening.co2CostCents ?? 0) : 0)
+  const co2 = deliveries.reduce((a, d) => a + (d.counted === 'full' || d.counted === 'partial' ? (d.co2CostCents ?? 0) * d.factor : 0), opening?.kgCounted ? (opening.co2CostCents ?? 0) : 0)
   return {
     propertyName: i.propertyName, address: i.address, landlordName: i.landlordName,
     plantName: i.plant.name, energy: i.plant.energy, createdOn: i.today, checked,
@@ -125,4 +129,43 @@ export function co2SheetOf(i: Co2SheetInput): Co2Sheet {
     stock: i.stock, opening, deliveries,
     totals: { emissionsKg: Math.round(kg * 100) / 100, co2CostCents: Math.round(co2) },
   }
+}
+
+// Das Blatt aus dem Bestand, wie die Route es baut: dieselben Daten und dieselbe Bestandsrechnung wie die
+// Abrechnung der Heizperiode. `null` ohne Anlage.
+export function co2SheetFor(
+  source: Parameters<typeof heatingSnapshotFor>[0] & {
+    heatingPlants?: (Pick<HeatingPlant, 'id' | 'energy' | 'method' | 'units' | 'propertyId'> & Partial<Pick<HeatingPlant, 'name' | 'nonResidential' | 'restriction' | 'districtEtsNew'>>)[]
+    fuelDeliveries?: FuelDelivery[]
+    lawOverrides?: LawOverride[]
+  },
+  propertyId: string,
+  plantId: string,
+  h: BillingPeriod,
+  today: string,
+  meta: { propertyName: string; address: string; landlordName: string } = { propertyName: '', address: '', landlordName: '' },
+): Co2Sheet | null {
+  const plant = (source.heatingPlants ?? []).find((p) => p.id === plantId && p.propertyId === propertyId)
+  const snap = plant ? heatingSnapshotFor(source, propertyId, plantId, h) : null
+  if (!plant || !snap) return null
+  const key = String(h.key)
+  const statement = (source.co2Statements ?? []).find((x) => x.plantId === plantId && x.period === h.key && (x.method === 'self' || x.method === 'selfAfterService'))
+  const row = (source.heatingPeriodRows ?? []).find((x) => x.plantId === plantId && x.period === h.key)
+  const found = plantStockOf(snap, plant, key, (date) => !valueAt(co2CostsBefore, date))
+  return co2SheetOf({
+    ...meta,
+    plant: { ...plant, name: plant.name ?? '', nonResidential: plant.nonResidential ?? false, restriction: plant.restriction ?? 'none', districtEtsNew: plant.districtEtsNew ?? false },
+    h: { key, from: h.from, to: h.to },
+    units: source.units.filter((u) => u.propertyId === propertyId),
+    enteredAreaM2: statement?.areaM2 ?? null,
+    stock: row && row.stockUnit != null ? {
+      stockUnit: row.stockUnit, openingQuantity: row.openingQuantity ?? null, openingEmissionsKg: row.openingEmissionsKg ?? null, openingCo2Cents: row.openingCo2Cents ?? null,
+      openingInvoicedBefore2023: row.openingInvoicedBefore2023 ?? null, openingAlreadySettled: row.openingAlreadySettled ?? null, closingQuantity: row.closingQuantity ?? null, closingMeasuredOn: row.closingMeasuredOn ?? null,
+    } : null,
+    stockResult: found?.result ?? null,
+    deliveries: source.fuelDeliveries ?? [],
+    items: source.costItems.flatMap((c) => (c.fuelDeliveryId ? [{ id: c.id, period: String(c.period), amountCents: c.amountCents, fuelDeliveryId: c.fuelDeliveryId }] : [])),
+    overrides: source.lawOverrides ?? [],
+    today,
+  })
 }

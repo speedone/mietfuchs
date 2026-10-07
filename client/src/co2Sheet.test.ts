@@ -42,7 +42,7 @@ test('G-W1, G-W2: Vermerke an den Zeilen, Anfangsbestand mit CO₂-Kosten, Summe
   const s: Co2Sheet = {
     ...sheet,
     stock: { stockUnit: 'l', openingQuantity: 1000, openingEmissionsKg: 2676.3, openingCo2Cents: 17517, openingInvoicedBefore2023: false, openingAlreadySettled: null, closingQuantity: 500, closingMeasuredOn: '2025-12-31' },
-    opening: { emissionsKg: 2676.3, co2CostCents: 17517, kgCounted: true, co2Counted: true, note: null },
+    opening: { quantity: 1000, emissionsKg: 2676.3, co2CostCents: 17517, kgCounted: true, co2Counted: true, note: null },
     deliveries: [heizoel, { ...heizoel, id: 'x', label: 'Heizöl alt', counted: 'none', note: 'Storniert: Die Kostenpositionen dieser Rechnung ergeben 0 €; sie zählt nicht.' }],
     totals: { emissionsKg: 10705.2, co2CostCents: 70066 },
   }
@@ -51,12 +51,12 @@ test('G-W1, G-W2: Vermerke an den Zeilen, Anfangsbestand mit CO₂-Kosten, Summe
   expect(rows[2]?.note).toMatch(/Storniert/)
   expect(rows[2]?.label).toBe('Heizöl alt (zählt nicht)')
   expect(rows[3]).toEqual({ kind: 'sum', label: 'Summe', note: null, cells: ['', '', '', '', '', '10.705,2 kg', fmtEuro(70066), ''] })
-  const ohne = sheetRows({ ...s, opening: { emissionsKg: 2676.3, co2CostCents: 0, kgCounted: true, co2Counted: false, note: 'Vor dem 01.01.2023 in Rechnung gestellt …' } })
+  const ohne = sheetRows({ ...s, opening: { quantity: 1000, emissionsKg: 2676.3, co2CostCents: 0, kgCounted: true, co2Counted: false, note: 'Vor dem 01.01.2023 in Rechnung gestellt …' } })
   expect(ohne[0]?.label).toBe('Anfangsbestand (Vorrat, nur die kg zählen)')
   // N3 (Runde 2): Mit Vermerken verweist der Fußsatz darauf.
   expect(sheetFacts(s).at(-1)).toMatch(/zählt \(siehe Vermerke\)\.$/)
   // O2b (Runde 2): ohne kg bleibt die Zeile sichtbar und zählt nicht.
-  const ohneKg = sheetRows({ ...s, opening: { emissionsKg: null, co2CostCents: 17517, kgCounted: false, co2Counted: false, note: 'Der CO₂-Ausstoß in kg fehlt …' } })
+  const ohneKg = sheetRows({ ...s, opening: { quantity: 1000, emissionsKg: null, co2CostCents: 17517, kgCounted: false, co2Counted: false, note: 'Der CO₂-Ausstoß in kg fehlt …' } })
   expect(ohneKg[0]).toEqual({ kind: 'opening', label: 'Anfangsbestand (Vorrat, zählt nicht)', note: 'Der CO₂-Ausstoß in kg fehlt …', cells: ['', '', '1.000 l', '–', '–', '–', fmtEuro(17517), ''] })
 })
 

@@ -9,7 +9,7 @@ import type { FuelDelivery, LawOverride } from '../../shared/types.ts'
 
 type Source = Parameters<typeof snapshotFor>[0]
 
-export function co2Source(year: number, delivery: Partial<FuelDelivery>, overrides: LawOverride[] = [], plant: Partial<SnapshotHeatingPlant> = {}): Source {
+export function co2Source(year: number, delivery: Partial<FuelDelivery>, overrides: LawOverride[] = [], plant: Partial<SnapshotHeatingPlant> = {}): Source & { fuelDeliveries: FuelDelivery[] } {
   const d: FuelDelivery = {
     id: 'd', plantId: 'hp', label: 'Gasrechnung', invoiceDate: `${year + 1}-01-20`, deliveredAt: null, invoiceFrom: `${year}-01-01`, invoiceTo: `${year}-12-31`,
     unitId: null, amountCents: null, quantity: null, quantityUnit: null, energyKwh: null, gasBasis: null, heatingValue: null, fuelGrade: null,
