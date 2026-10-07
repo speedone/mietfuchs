@@ -499,3 +499,15 @@ test('Durchsicht Recht I4: Die Nachstufung beim Messdienst berücksichtigt § 8 
   const nichtWohnen = settle({ ...vier, costItems: [messdienst(393301, TECHEM)] }, [techem()], [plant({ nonResidential: true })])
   assert.match(textOf(nichtWohnen, 'co2.stage-mismatch'), /Nach Ihren Angaben zum Gebäude \(§ 8 CO2KostAufG\) gehören dazu 50 %/)
 })
+
+test('Heizung PR 14: unter einer Ausnahme nach § 11 für Wärme und Warmwasser bucht der Vorwegabzug keinen CO₂-Anteil (§ 2 Abs. 7 CO2KostAufG); mit vereinbarter Abrechnung schon', () => {
+  const s = { ...vier, costItems: [messdienst(393301, TECHEM)] }
+  const mit = (row: Record<string, unknown>) => computeSettlement({ ...snap(s, [techem()]), heatingPeriodRows: [{ plantId: 'hp', period: P, dhwMethod: null, dhwUnmeasurable: null, ...row }] })
+  const aus = mit({ exemption: 'authority', exemptionScope: 'both' })
+  assert.ok(!partsOf(aus).some((x) => x.reason === 'co2Share'), JSON.stringify(partsOf(aus)))
+  assert.equal(aus.heating?.[0]?.co2, null)
+  // Die Mieter tragen ihre Beträge wie eingetragen; was übrig bleibt, trägt der Vermieter.
+  for (const [t, c] of Object.entries(TECHEM)) assert.equal(shareOf(aus, t, 'hz'), c)
+  const vereinbart = mit({ exemption: 'authority', exemptionScope: 'both', exemptionBillingAgreed: true })
+  assert.deepEqual(partsOf(vereinbart), [{ reason: 'co2Share', cents: 8750 }])
+})

@@ -7,7 +7,7 @@ import { heatingPeriods, heatingPlants } from './schema.ts'
 
 export async function lineRowsOf(db: Executor, plantId: string): Promise<{ merged: ShareRow[]; all: PlantShareRow[]; plants: { id: string; replacesPlantId: string | null }[] }> {
   const plants = await db.select({ id: heatingPlants.id, replacesPlantId: heatingPlants.replacesPlantId }).from(heatingPlants)
-  const all = (await db.select({ plantId: heatingPeriods.plantId, period: heatingPeriods.period, heatConsumptionPct: heatingPeriods.heatConsumptionPct, waterConsumptionPct: heatingPeriods.waterConsumptionPct, insulationRule: heatingPeriods.insulationRule })
+  const all = (await db.select({ plantId: heatingPeriods.plantId, period: heatingPeriods.period, heatConsumptionPct: heatingPeriods.heatConsumptionPct, waterConsumptionPct: heatingPeriods.waterConsumptionPct, insulationRule: heatingPeriods.insulationRule, above70Agreed: heatingPeriods.above70Agreed })
     .from(heatingPeriods)).map((r) => ({ ...r, period: String(r.period) }))
   return { merged: lineShareRows(all, plants, plantId), all, plants }
 }

@@ -132,6 +132,10 @@ export type SnapshotHeatingPeriodRow = Pick<HeatingPeriodData, 'plantId' | 'peri
   & Partial<Pick<HeatingPeriodData, 'heatConsumptionPct' | 'waterConsumptionPct' | 'insulationRule' | 'dhwHeatKwh' | 'totalHeatKwh'>>
   // Eingaben der Volumenformel (Heizung PR 11).
   & Partial<Pick<HeatingPeriodData, 'dhwVolumeM3' | 'dhwTempC'>>
+  // § 10, § 6a, § 11 und § 2 HeizkostenV je Heizperiode (Heizung PR 14). Fehlt ein Feld, gilt es als nicht
+  // beantwortet; dann gilt die vorige Heizperiode der Linie (server/src/heatingInfo.ts).
+  & Partial<Pick<HeatingPeriodData, 'above70Agreed' | 'infoTaxesText' | 'infoDistrictGhg' | 'infoDistrictPef' | 'climateFactor' | 'climateFactorPrev' | 'climateFactorSource' | 'consumerContract'
+    | 'infoReferenceKwhPerM2' | 'infoReferenceSource' | 'exemption' | 'exemptionScope' | 'exemptionBillingAgreed' | 'agreedOtherwise' | 'monthlyInfoElsewhere'>>
 
 export const wayOf = (p: SnapshotHeatingPlant): PlantWay => ({
   periodStartMonth: p.periodStartMonth ?? null, periodChanges: p.periodChanges ?? [], separateSpans: p.separateSpans ?? [],

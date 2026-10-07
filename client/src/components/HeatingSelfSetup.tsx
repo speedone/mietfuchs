@@ -101,7 +101,7 @@ export default function HeatingSelfSetup({ plant, period, periodLabel, onDone, o
       <div className="row">
         <label className="field">
           Heizung in %
-          <input inputMode="decimal" value={forced !== null ? String(forced) : form.share} disabled={forced !== null}
+          <input inputMode="decimal" value={forced !== null && !form.above70Agreed ? String(forced) : form.share} disabled={forced !== null && !form.above70Agreed}
             onChange={(e) => setForm({ ...form, share: e.target.value, waterShare: form.waterShare === '' || form.waterShare === form.share ? e.target.value : form.waterShare })} />
         </label>
         {form.hotWater !== 'none' && (
@@ -111,6 +111,12 @@ export default function HeatingSelfSetup({ plant, period, periodLabel, onDone, o
           </label>
         )}
       </div>
+      {/* § 10 HeizkostenV (Heizung PR 14): Höhere Sätze als 70 % aus einer Vereinbarung bleiben unberührt. */}
+      <label className="checkline">
+        <input type="checkbox" checked={form.above70Agreed} onChange={(e) => setForm({ ...form, above70Agreed: e.target.checked })} />
+        Mehr als {max} % nach Verbrauch sind mit den Mietern vereinbart (§ 10 HeizkostenV)
+      </label>
+      <p className="muted">Nur ankreuzen, wenn es im Mietvertrag oder einer Vereinbarung mit den Mietern steht; mehr als 100 % gibt es nicht.</p>
       {forced !== null && <p className="muted">Bei einer Öl- oder Gasheizung in diesem Fall sind es bei der Heizung {forced} % (§ 7 Abs. 1 Satz 2 HeizkostenV); mehr nur mit einer Vereinbarung (§ 10 HeizkostenV).</p>}
       {hint && <div className="notice">{hint}</div>}
       <label className="field grow">

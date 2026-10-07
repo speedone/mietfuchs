@@ -114,6 +114,10 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // Heizung PR 13 (Schätzung nach § 9a), neu erzeugt mit der Durchsicht von #242 (Grund, Erfassung, Einheit). Wird ein Schritt von PR 12 vor dem Push neu erzeugt, wird dieser
   // Schritt neu erzeugt und die Marke hier ersetzt.
   '0033_schaetzung': 'ec08c84ef61a91c67f770f34aaaa321093981bf4f92bdefc120bb980db72e325',
+  // Heizung PR 14 (Pflichtangaben nach § 6a, § 11, § 2): erst die Spalten, dann die Bedingungen. Wird ein Schritt
+  // davor neu erzeugt, werden diese beiden neu erzeugt.
+  '0034_pflichtangaben': 'af57baecdf684255f7860887b196bcef4a7ad7f953ac01a43c84464a989324e6',
+  '0035_pflichtangaben_bedingungen': 'df83f2e426ef7f7abb0eed65f3d7ebcf33ff5e4fc6c19afece7deab65fab69af',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

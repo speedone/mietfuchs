@@ -1050,3 +1050,11 @@ fieldset.no-connection { border: 0; padding: 0; margin-inline: 0; min-width: 0; 
 .receipt-inbox-controls select { flex: 1 1 10rem; min-width: 0; max-width: 100%; }
 .receipt-packs details { margin-top: 12px; }
 .receipt-packs summary { cursor: pointer; font-weight: 600; }
+
+/* Informationen nach § 6a HeizkostenV (Heizung PR 14): der witterungsbereinigte Vergleich als Balken. Die Balken
+   werden mitgedruckt (print-color-adjust), sonst ließe der Browser die Farbe beim Drucken weg. */
+.heating-info-block .info-bars { display: grid; gap: 4px; }
+.info-bar-row { display: grid; grid-template-columns: minmax(16rem, 24rem) 1fr; align-items: center; gap: 8px; }
+.info-bar-track { height: 12px; border: 1px solid var(--line); border-radius: 3px; }
+.info-bar { height: 100%; background: var(--accent); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.info-bar.prev { background: var(--muted); }

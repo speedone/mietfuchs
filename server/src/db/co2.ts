@@ -29,7 +29,7 @@ import { germanDate, valueAt } from '../../../shared/law/register.ts'
 import { heatingPeriodsEndingIn } from '../../../shared/heatingPeriod.ts'
 import { periodLabel, periodOfKey, resolvePeriodParam } from '../../../shared/period.ts'
 import type { Database, Executor } from './client.ts'
-import { readCo2Statements, readCostItems, readHeatingServiceValues, readMeters, readReadings, readStock, readUnits } from './read.ts'
+import { readCo2Statements, readCostItems, readProperties, readHeatingServiceValues, readMeters, readReadings, readStock, readUnits } from './read.ts'
 import { stockViewFor } from './fuelStock.ts'
 import { isStockEnergy } from '../../../shared/fuelStock.ts'
 import { asNullableFilled, CrossPropertyError, has, HeatingError, merged, oneOfOrUndefined, plantSpanOf, raw } from './repository.ts'
@@ -37,6 +37,8 @@ import { closedText, dropIfEmpty, ensureHeatingPeriod, heatingPeriodClosed, heat
 // Für ältere Importe (Tests): Die Helfer der Heizperioden stehen seit Heizung PR 8 in heatingPeriodContext.ts.
 export { dropIfEmpty, ensureHeatingPeriod } from './heatingPeriodContext.ts'
 import { distributionOf } from './heatingSelf.ts'
+import { heatingRulesOf } from '../heatingInfo.ts'
+import { postalCodeOf } from '../../../shared/heatingInfo.ts'
 import { CO2_METHODS, co2Statements, co2TenantReliefs, costItems, DHW_METHODS, heatingPeriods, tenancies, units } from './schema.ts'
 
 const ASK_METHOD = 'Bitte beantworten Sie zuerst die Frage, ob die Kostenaufstellung eine Zeile wie „Abzüglich CO₂-Kosten Vermieter“ enthält.'
@@ -90,6 +92,7 @@ export async function heatingPeriodViews(db: Database, plantId: string, periodPa
   const lineIds = new Set(allPlants.filter((x) => lineRoot(x, allPlants) === lineRoot({ id: plantId, replacesPlantId: allPlants.find((y) => y.id === plantId)?.replacesPlantId ?? null }, allPlants)).map((x) => x.id))
   const lineRowsAll = lineIds.size > 1 ? await db.select().from(heatingPeriods).where(inArray(heatingPeriods.plantId, [...lineIds])) : rows
   const serviceValues = await readHeatingServiceValues(db)
+  const postalCode = postalCodeOf((await readProperties(db)).find((x) => x.id === ctx.plant.propertyId)?.address ?? null)
   const views: HeatingPeriodView[] = []
   for (const h of hs) {
     const self = selfActive(ctx.plant, String(h.key))
@@ -146,6 +149,19 @@ export async function heatingPeriodViews(db: Database, plantId: string, periodPa
       selfHotWater: self ? hotWaterOf(ctx.plant, String(h.key)) : null,
       // Über die Linie (Durchsicht von #241, I1): nach einem Kesseltausch dieselben Werte bei beiden Anlagen.
       serviceValues: lineServiceRows(serviceValues, allPlants, plantId, String(h.key)),
+      // Heizung PR 14: Eingaben zu § 6a (eigene Zeile) und die Angaben zu § 11, § 2, monatlicher Information und
+      // Verbrauchervertrag, wie sie gelten (geerbt über die Linie) und wie die eigene Zeile sie sagt.
+      info: {
+        infoTaxesText: row?.infoTaxesText ?? null, infoDistrictGhg: row?.infoDistrictGhg ?? null, infoDistrictPef: row?.infoDistrictPef ?? null,
+        climateFactor: row?.climateFactor ?? null, climateFactorPrev: row?.climateFactorPrev ?? null, climateFactorSource: row?.climateFactorSource ?? null,
+        infoReferenceKwhPerM2: row?.infoReferenceKwhPerM2 ?? null, infoReferenceSource: row?.infoReferenceSource ?? null,
+        postalCode,
+      },
+      rules: heatingRulesOf(lineRowsAll.map((r) => ({ ...r, period: String(r.period) })), allPlants, plantId, String(h.key)),
+      ownRules: {
+        exemption: row?.exemption ?? null, exemptionScope: row?.exemptionScope ?? null, exemptionBillingAgreed: row?.exemptionBillingAgreed ?? null,
+        agreedOtherwise: row?.agreedOtherwise ?? null, monthlyInfoElsewhere: row?.monthlyInfoElsewhere ?? null, consumerContract: row?.consumerContract ?? null,
+      },
     })
   }
   return views

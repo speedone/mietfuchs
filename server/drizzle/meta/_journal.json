@@ -239,6 +239,20 @@
       "when": 1791362347960,
       "tag": "0033_schaetzung",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "6",
+      "when": 1791369125210,
+      "tag": "0034_pflichtangaben",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "6",
+      "when": 1791371057295,
+      "tag": "0035_pflichtangaben_bedingungen",
+      "breakpoints": true
     }
   ]
 }
