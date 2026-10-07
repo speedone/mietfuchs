@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
+import HcaBlock from './HcaBlock'
 import type { HeatingPeriodView, HeatingPlant, InsulationRule, InterimGapStatus, SelfHeatingStatement } from '../types'
 import { api, errorText, fmtDate } from '../api'
 import { useToast } from './feedback'
 import Term from './Term'
 import {
   boundaryLight, boundaryText, distributionLines, gapConsequence, INSULATION_OPTIONS, INSULATION_QUESTION, insulationAsked, insulationExplained,
-  percentOf, potLines, READING_RESULT_HINT, readingResult, shareEditable, unsureShareHint, userLine, type Light,
+  heatUnitOf, percentOf, potLines, READING_RESULT_HINT, readingResult, shareEditable, unsureShareHint, userLine, type Light,
 } from '../heatingSelfView'
 import { forcedShare, shareBounds } from '../heatingSelfForm'
 
@@ -193,6 +194,7 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
           <h3>Verteilung</h3>
           {self.pots.flatMap(potLines).map((l) => <p key={l}>{l}</p>)}
           {self.units.flatMap((u) => u.users).map((u) => <p key={u.key}>{userLine(u, self)}</p>)}
+          <HcaBlock self={self} unitName={(id) => self.units.find((u) => u.unitId === id)?.unitName ?? id} />
         </div>
       )}
       {self && (
@@ -214,7 +216,7 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
               {[...new Set(u.readings.map((r) => r.boundary))].map((date) => (
                 <div key={date}>
                   <span className="muted">{fmtDate(date)}</span>
-                  {readingResult(u, date).map((l) => <div key={l}>{l}</div>)}
+                  {readingResult(u, date, heatUnitOf(self)).map((l) => <div key={l}>{l}</div>)}
                 </div>
               ))}
             </div>

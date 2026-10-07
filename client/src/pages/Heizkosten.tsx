@@ -16,6 +16,7 @@ import FuelCard from '../components/FuelCard'
 import HotWaterCard from '../components/HotWaterCard'
 import StockCard from '../components/StockCard'
 import SelfHeatingCards from '../components/SelfHeatingCards'
+import ServiceValuesCard from '../components/ServiceValuesCard'
 import { showsStockCard } from '../stockForm'
 import Term from '../components/Term'
 import { CO2_ENERGIES, monthsOf, ownedBy } from '../fuelForm'
@@ -97,6 +98,15 @@ export default function Heizkosten({ units, tenancies }: { units: Unit[]; tenanc
                 <FuelCard plant={plant} view={v} deliveries={ownedBy(data?.deliveries[plant.id] ?? [], v)} units={units} onSaved={() => void load()} />
                 {showsStockCard(plant, v) && <StockCard key={`stock:${v.period}:${JSON.stringify(v.stock?.row ?? null)}`} view={v} co2Fields={CO2_ENERGIES.includes(plant.energy)} energy={plant.energy} onSaved={() => void load()} />}
                 {v.from >= first && CO2_ENERGIES.includes(plant.energy) && <Co2FactsCard plant={plant} view={v} servedAreaM2={servedArea(plant)} onSaved={() => void load()} />}
+                {/* Heizung PR 12: die Werte des Ablesedienstes, wenn diese Heizperiode so erfasst wird. */}
+                {v.capture === 'serviceValues' && (
+                  <ServiceValuesCard
+                    key={`svc:${v.period}:${JSON.stringify(v.serviceValues ?? [])}`}
+                    plantId={plant.id} period={v.period} from={v.from} to={v.to} closed={v.closed}
+                    units={units.filter((u) => servesUnit(plant, u)).map((u) => ({ id: u.id, name: u.name }))}
+                    values={v.serviceValues ?? []} onSaved={() => void load()}
+                  />
+                )}
                 {plant.method === 'self' && (
                   <SelfHeatingCards plant={plant} view={v} self={data?.heating.find((h) => h.plantId === plant.id && h.period === v.period)?.self ?? null} onChanged={() => void load()} />
                 )}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { boundaryLight, boundaryText, distributionLines, gapConsequence, insulationAsked, percentOf, potLines, readingResult, shareEditable, unsureShareHint, userLine } from './heatingSelfView'
+import { boundaryLight, boundaryText, distributionLines, gapConsequence, heatUnitOf, insulationAsked, percentOf, potLines, readingResult, shareEditable, unsureShareHint, userLine } from './heatingSelfView'
 import { fmtEuro } from './api'
 import type { HeatingDistribution, SelfBoundaryView, SelfHeatingStatement, SelfUnitView } from './types'
 
@@ -97,5 +97,24 @@ describe('Durchsicht von #239', () => {
   })
   it('M9: Prozent mit höchstens zwei Nachkommastellen', () => {
     expect([percentOf('65,25'), percentOf('65.125'), percentOf('70'), percentOf('')]).toEqual([65.25, null, 70, null])
+  })
+})
+
+describe('Heizung PR 12: bei Heizkostenverteilern und Ablesedienst Einheiten statt kWh', () => {
+  it('Nutzerzeile und Ableseergebnis', () => {
+    const u = {
+      key: 'A', role: 'tenancy' as const, tenancyId: 'A', label: 'Mieter A', from: '2025-01-01', to: '2025-12-31', days: 365, degreeDayPermille: 1000,
+      heatingConsumption: 785, waterConsumption: null, heatingGroup: false, waterGroup: false, heatingCents: 0, waterCents: 0, heatingCo2Cents: 0, waterCo2Cents: 0,
+    }
+    const pot = { pot: 'heating' as const, costCents: 0, consumptionPct: 70, byAreaOnly: false, areaM2: 200, consumption: 7850, consumptionUnit: 'Einheiten' as const, baseCentsPerM2: 0, consumptionCentsPerUnit: null }
+    expect(userLine(u, { pots: [pot] })).toContain('Heizung 785 Einheiten')
+    expect(userLine(u, { pots: [{ ...pot, consumptionUnit: 'kWh' }] })).toContain('Heizung 785 kWh')
+    expect(heatUnitOf({ pots: [pot] })).toBe('Einheiten')
+    const unit: SelfUnitView = {
+      unitId: 'a', unitName: 'A', areaM2: 60, heatAreaM2: 60, boundaries: [], users: [],
+      readings: [{ meterId: 'a1', meterName: 'Wohnzimmer', pot: 'heating', boundary: '2025-12-31', date: '2025-12-31', value: 500 }],
+    }
+    expect(readingResult(unit, '2025-12-31', 'Einheiten')).toEqual(['Wohnzimmer: 500 Einheiten am 31.12.2025'])
+    expect(readingResult(unit, '2025-12-31')).toEqual(['Wohnzimmer: 500 kWh am 31.12.2025'])
   })
 })

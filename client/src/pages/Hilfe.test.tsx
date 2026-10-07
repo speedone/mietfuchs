@@ -21,7 +21,8 @@ test('Anleitungen stehen über den Begriffen, jede aufklappbar mit den fünf Abs
   expect(screen.getByRole('heading', { name: 'Begriffe', level: 2 })).toBeTruthy()
   expect(screen.getByRole('heading', { name: 'Einliegerwohnung', level: 3 })).toBeTruthy()
   expect(within(guide).getByText('§ 2 HeizkostenV')).toBeTruthy()
-  expect(within(guide).getByRole('link', { name: '#99' }).getAttribute('href')).toBe('https://github.com/speedone/mietfuchs/issues/99')
+  // Heizung PR 12: Die offene Lücke dort ist die Vorerfassung bei gemischten Geräten (#218).
+  expect(within(guide).getByRole('link', { name: '#218' }).getAttribute('href')).toBe('https://github.com/speedone/mietfuchs/issues/218')
   // Begriffe zum Aufklappen
   fireEvent.click(within(guide).getByRole('button', { name: 'Einliegerwohnung' }))
   expect(within(guide).getByText(/Ihre Wohnung hat 120 m², die Einliegerwohnung 45 m²/)).toBeTruthy()

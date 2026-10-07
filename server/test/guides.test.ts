@@ -663,7 +663,8 @@ test('Heizkosten selbst abrechnen (Heizung PR 10): Pflichten mit Norm, Lücken m
   for (const norm of [/§ 6 Abs\. 4/, /§ 7 Abs\. 1/, /§ 9b/, /§ 12 Abs\. 1/, /§ 6 Abs\. 1/]) assert.match(hinweise, norm)
   assert.match(hinweise, /VIII ZR 19\/07/)
   assert.ok(g.steps.some((s) => s.page === 'heizkosten' && s.text.includes('„Ableseergebnis drucken“') && /jede Wohnung/.test(s.text)))
-  assert.ok(g.gaps.some((x) => x.issue === 99 && /Heizkostenverteiler/.test(x.text)))
+  // Heizung PR 12: Heizkostenverteiler rechnet Mietfuchs; offen ist die Vorerfassung bei gemischten Geräten (#218).
+  assert.ok(g.gaps.some((x) => x.issue === 218 && /Heizkostenverteiler/.test(x.text)))
   for (const id of ids.filter((x) => x !== 'heatingSelf')) {
     assert.doesNotMatch(JSON.stringify(GUIDES[id].gaps), /eigene Heizkostenabrechnung (nach Grund- und Verbrauchskosten rechnet Mietfuchs noch nicht|mit Wärmemengenzählern)/, id)
   }
@@ -675,4 +676,12 @@ test('Durchsicht #240, M7: „Heizkosten selbst abrechnen“ nennt die Karte War
   assert.ok(g.caveats.some((c) => /unzumutbar aufwendig/.test(c.text) && c.norm === '§ 9 Abs. 2, § 12 Abs. 1 Satz 1 HeizkostenV; BGH, Urteil vom 12.01.2022, VIII ZR 151/20'))
   assert.ok(g.caveats.some((c) => /vor dem 01\.10\.2024 beginnen.*mehr als die Hälfte/.test(c.text)))
   assert.ok(GUIDES.stockFuel.gaps.every((x) => x.issue !== undefined))
+})
+
+test('Heizung PR 12: „Heizkosten selbst abrechnen“ nennt Heizkostenverteiler mit Skala und Faktor, den Stichtagswert und die Werte des Ablesedienstes; keine Anleitung sagt mehr, Heizkostenverteiler rechne Mietfuchs nicht', () => {
+  const g = GUIDES.heatingSelf
+  assert.ok(g.steps.some((s) => s.page === 'zaehler' && /„Heizkostenverteiler“.*Skala.*Bewertungsfaktor.*„Stichtagswert speichern“/s.test(s.text)))
+  assert.ok(g.steps.some((s) => s.page === 'heizkosten' && /„Werte des Ablesedienstes“.*„Werte speichern“/.test(s.text)))
+  assert.ok(g.gaps.every((x) => !/Heizkostenverteiler an den Heizkörpern und die Werte eines Ablesedienstes/.test(x.text)))
+  for (const id of ids) assert.doesNotMatch(JSON.stringify(GUIDES[id].gaps), /mit Heizkostenverteilern (an den Heizkörpern rechnet Mietfuchs noch nicht|selbst abrechnen)|Eine eigene Heizkostenabrechnung mit Heizkostenverteilern;/, id)
 })

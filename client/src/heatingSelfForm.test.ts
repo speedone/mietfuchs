@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { emptySelfSetup, forcedShare, itemsFromConflict, selfSetupBody, shareBounds, targetOptions, type SelfSetupForm } from './heatingSelfForm'
+import { CAPTURE_SELF_OPTIONS, captureHint, emptySelfSetup, forcedShare, itemsFromConflict, selfSetupBody, shareBounds, targetOptions, type SelfSetupForm } from './heatingSelfForm'
 import type { HeatingPlant } from './types'
 
 const plant = { id: 'hp', energy: 'gas', hotWater: 'combined', capture: null, areaBasisHeat: 'area' } as Pick<HeatingPlant, 'id' | 'energy' | 'hotWater' | 'capture' | 'areaBasisHeat'>
@@ -38,8 +38,12 @@ describe('Einrichtung Schritt 7 (Heizung PR 10)', () => {
     expect(emptySelfSetup({ ...plant, energy: 'oil', hotWater: 'combined' }, '2025-01').hotWater).toBe('combined')
     expect('body' in selfSetupBody(filled({ hotWater: 'none' }), 'oil')).toBe(true)
   })
-  it('Erfassung mit Heizkostenverteilern oder Werten eines Ablesedienstes: noch gesperrt', () => {
-    expect(selfSetupBody(filled({ capture: 'hca' }), 'gas')).toEqual({ error: expect.stringMatching(/späteren Version/) })
+  it('Erfassung mit Heizkostenverteilern oder Werten eines Ablesedienstes (Heizung PR 12): wählbar, ohne Zusatz', () => {
+    expect('body' in selfSetupBody(filled({ capture: 'hca' }), 'gas')).toBe(true)
+    expect('body' in selfSetupBody(filled({ capture: 'serviceValues' }), 'gas')).toBe(true)
+    expect(CAPTURE_SELF_OPTIONS.every((o) => !o.later && !/späteren Version/.test(o.label))).toBe(true)
+    expect(captureHint('hca')).toMatch(/Seite Zähler.*Skala und Bewertungsfaktor.*§ 5 Abs\. 7/)
+    expect(captureHint('serviceValues')).toMatch(/Seite Heizkosten/)
   })
   it('Ziel passt zur Warmwasserbereitung; Brennstoff bei verbundener Bereitung nur „beides“', () => {
     expect(targetOptions('combined', 'fuel').map((o) => o.value)).toEqual(['both'])

@@ -2,6 +2,7 @@ import type { SelfHeatingStatement } from '../types'
 import { potLines, userLine } from '../heatingSelfView'
 import { showsDhwBlock } from '../dhwView'
 import DhwBlock from './DhwBlock'
+import HcaBlock from './HcaBlock'
 
 // Druckblock „Heizkostenabrechnung“ je Anlage und Heizperiode (Heizung PR 10, Entwurf 8.8 ohne § 6a, der
 // mit PR 14 kommt): Töpfe mit Preisen je Einheit, der Warmwasseranteil mit Methode und die Zeilen des
@@ -22,6 +23,10 @@ export default function SelfHeatingBlock({ self, tenancyId, plantName }: { self:
       )}
       {self.pots.flatMap(potLines).map((l) => <p key={l}>{l}</p>)}
       {mine.map((u) => <p key={u.key}><strong>{userLine(u, self)}</strong></p>)}
+      {/* Heizung PR 12: die Geräte bzw. Werte des Ablesedienstes der eigenen Wohnung, mit Skala und Faktor. */}
+      {[...new Set(mine.map((u) => self.units.find((x) => x.users.includes(u))?.unitId ?? ''))].map((unitId) => (
+        <HcaBlock key={`hca:${unitId}`} self={self} unitId={unitId} unitName={(id) => self.units.find((x) => x.unitId === id)?.unitName ?? id} />
+      ))}
     </div>
   )
 }

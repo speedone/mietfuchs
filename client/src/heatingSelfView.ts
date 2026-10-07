@@ -95,11 +95,16 @@ export function potLines(p: SelfPotView): string[] {
   return lines
 }
 
+// Heizkostenverteiler und Ablesedienst zählen Einheiten, keine Kilowattstunden (Heizung PR 12, Abweichung 9).
+export const heatUnitOf = (self: Pick<SelfHeatingStatement, 'pots'>): 'kWh' | 'Einheiten' =>
+  self.pots.find((p) => p.pot === 'heating')?.consumptionUnit === 'Einheiten' ? 'Einheiten' : 'kWh'
+
 export function userLine(u: SelfUserView, self: Pick<SelfHeatingStatement, 'pots'>): string {
+  const heatUnit = heatUnitOf(self)
   const time = `${fmtDate(u.from)} bis ${fmtDate(u.to)} (${u.days} Tage, ${num(u.degreeDayPermille)} ‰ der Gradtage)`
   // Der Topfbetrag je Mieter, mit Abzug auch nach CO₂-Abzug: die Grundlage einer Kürzung (Abweichung 15).
   const net = (cents: number, co2: number) => `${fmtEuro(cents)}${co2 > 0 ? `, nach CO₂-Abzug ${fmtEuro(cents - co2)}` : ''}`
-  const parts = [`Heizung ${u.heatingConsumption === null ? 'nicht erfasst' : `${num(u.heatingConsumption)} kWh${u.heatingGroup ? ' (gemeinsam nach § 9b Abs. 3)' : ''}`}, ${net(u.heatingCents, u.heatingCo2Cents)}`]
+  const parts = [`Heizung ${u.heatingConsumption === null ? 'nicht erfasst' : `${num(u.heatingConsumption)} ${heatUnit}${u.heatingGroup ? ' (gemeinsam nach § 9b Abs. 3)' : ''}`}, ${net(u.heatingCents, u.heatingCo2Cents)}`]
   if (self.pots.some((p) => p.pot === 'water')) {
     parts.push(`Warmwasser ${u.waterConsumption === null ? 'nicht erfasst' : `${num(u.waterConsumption)} m³${u.waterGroup ? ' (gemeinsam nach § 9b Abs. 3)' : ''}`}, ${net(u.waterCents, u.waterCo2Cents)}`)
   }
@@ -112,8 +117,8 @@ export function userLine(u: SelfUserView, self: Pick<SelfHeatingStatement, 'pots
 export const READING_RESULT_HINT = 'Bei Zählern, die nicht aus der Ferne ablesbar sind, teilen Sie jedem Mieter das Ergebnis der Ablesung seiner Wohnung in der Regel innerhalb eines Monats mit (§ 6 Abs. 1 Satz 2 HeizkostenV). Wählen Sie die Wohnung und drucken Sie ihr Ergebnis. Den Warmwasserverbrauch müssen Sie nicht gesondert mitteilen, wenn in der Wohnung ein Warmwasserzähler eingebaut ist (§ 6 Abs. 1 Satz 4).'
 
 // Das Ableseergebnis einer Wohnung zu einer Grenze (§ 6 Abs. 1 Satz 2 HeizkostenV).
-export function readingResult(unit: SelfUnitView, boundary: string): string[] {
+export function readingResult(unit: SelfUnitView, boundary: string, heatUnit: 'kWh' | 'Einheiten' = 'kWh'): string[] {
   return unit.readings.filter((r) => r.boundary === boundary).map((r) => (r.date === null || r.value === null
     ? `${r.meterName}: nicht abgelesen`
-    : `${r.meterName}: ${num(r.value)} ${r.pot === 'heating' ? 'kWh' : 'm³'} am ${fmtDate(r.date)}`))
+    : `${r.meterName}: ${num(r.value)} ${r.pot === 'heating' ? heatUnit : 'm³'} am ${fmtDate(r.date)}`))
 }
