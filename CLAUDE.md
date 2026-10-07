@@ -95,7 +95,13 @@ einem Absturz liegen bliebe. Bis Datenbank und Umstieg fertig sind, warten alle 
 zweiter Start Mietfuchs auch während eines langen Umstiegs erkennt. Wer auf den Start wartet,
 fragt deshalb nach 200 oder nach einem anderen `status` als `starting` (smoke-test.mjs,
 umstieg-praxislauf.mjs). `NKA_TEST_START_DELAY_MS` hält den Start nach dem Binden fest, nur für
-den Test dieses Rennens. Und scheitert der Start aus einem
+den Test dieses Rennens. Bleibt die Antwort auf `/healthz` aus (der erste Start blockiert gerade
+seine Ereignisschleife), fragt der zweite bis zu 30 Sekunden lang erneut, bevor er „anderes
+Programm“ meldet; eine Antwort, die nicht Mietfuchs ist, entscheidet sofort. Ob Bun den Port auf
+jedem System exklusiv bindet, prüft [scripts/second-start.mjs](scripts/second-start.mjs) in
+release.yml auf allen sechs Programmdateien und in jedem Prüfumfang: zweiter Start auf dem Port
+der laufenden Instanz, mit einer `db.json`, die umsteigen will, erwartet Exit 0 und einen
+byteweise unveränderten Datenordner. Und scheitert der Start aus einem
 anderen Grund, geht unter Linux zusätzlich eine Meldung über `notify-send` hinaus. Für Tests
 gibt `NKA_RUNTIME=binary` die Programmdatei vor, ohne eine zu sein; die Auslieferung des
 Frontends hängt weiterhin an `globalThis.Bun`. Den Klick im Menü selbst prüft kein Test, das

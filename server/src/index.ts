@@ -1954,13 +1954,27 @@ const server = http.createServer((req, res) => {
 // Antwortet auf dem Port bereits Mietfuchs? /healthz nennt sich mit Namen (health.ts), auch
 // während des Startens (oben). Dann ist ein zweiter Start kein Fehler, sondern ein zweiter Klick
 // im Startmenü (#45).
+//
+// **Schweigt der Port, wird nachgefragt** (Durchsicht zu #244). Rechnet der erste Start gerade
+// einen Abschnitt, der die Ereignisschleife blockiert (die Regression des Umstiegs über viele
+// Jahre, ein großer Migrationsschritt), antwortet auch sein /healthz erst danach. Nach dem ersten
+// Zeitlimit „anderes Programm“ zu melden wäre dann falsch. Nur eine **ausbleibende** Antwort führt
+// zur nächsten Frage; eine Antwort, die nicht Mietfuchs ist, entscheidet sofort.
+const PROBE_ATTEMPT_MS = 2000
+const PROBE_TOTAL_MS = 30000
+
 async function mietfuchsAlreadyOn(url: string): Promise<boolean> {
-  try {
-    const res = await fetch(`${url}/healthz`, { signal: AbortSignal.timeout(2000) })
-    const report: unknown = await res.json()
-    return isObject(report) && report.app === 'mietfuchs'
-  } catch {
-    return false
+  const deadline = Date.now() + PROBE_TOTAL_MS
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const res = await fetch(`${url}/healthz`, { signal: AbortSignal.timeout(PROBE_ATTEMPT_MS) })
+      const report: unknown = await res.json()
+      return isObject(report) && report.app === 'mietfuchs'
+    } catch (err) {
+      const silent = err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')
+      if (!silent || Date.now() + PROBE_ATTEMPT_MS > deadline) return false
+      if (attempt === 1) console.log(`Auf ${url} antwortet noch nichts. Mietfuchs fragt bis zu ${PROBE_TOTAL_MS / 1000} Sekunden lang erneut nach.`)
+    }
   }
 }
 
