@@ -380,6 +380,17 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   wenn Sie selbst im Haus wohnen, den Betrag Ihrer Wohnung um deren Teil davon; die Beträge der
   Mieter bleiben
   ([#209](https://github.com/speedone/mietfuchs/issues/209)).
+- **Ein zweiter Start fasst die Daten nicht mehr an, solange Mietfuchs schon läuft.** Startete
+  man Mietfuchs ein zweites Mal, etwa über das Startmenü, während es unsichtbar im Hintergrund
+  lief, öffnete der zweite Start erst die Datenbank und bemerkte den belegten Port danach. Nach
+  einem Update migrierte die neue Version so die Datei unter der noch laufenden alten und legte
+  eine „Sicherung vor dem Update“ an, hinter der die alte Version weiterschrieb. Jetzt belegt
+  Mietfuchs zuerst den Port und öffnet die Datenbank erst danach; läuft dort schon Mietfuchs,
+  holt der zweite Start nur die Oberfläche nach vorn und lässt Datenbank, Sicherungen und eine
+  vorhandene `db.json` unberührt. Das gilt auch für zwei gleichzeitige Starts. Solange Mietfuchs
+  beim Start noch die Datenbank vorbereitet, antwortet `/healthz` mit 503 und
+  `"status": "starting"`; alle anderen Anfragen warten, bis der Start fertig ist
+  ([#244](https://github.com/speedone/mietfuchs/issues/244)).
 
 ## [0.10.1] – 2026-10-04
 

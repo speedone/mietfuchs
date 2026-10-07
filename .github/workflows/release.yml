@@ -382,6 +382,10 @@ jobs:
           pid=$!
           trap 'kill $pid 2>/dev/null; echo "--- Ausgabe der Programmdatei"; cat server.log' EXIT
           node scripts/smoke-test.mjs --url "http://127.0.0.1:$NKA_PORT" --mode binary ${{ env.SLOW_AI }}
+          # Ein zweiter Start derselben Programmdatei auf demselben Port, mit Daten, die umsteigen
+          # wollen (#244): Er muss mit Code 0 enden, ohne seinen Datenordner anzufassen. Ob Bun den
+          # Port auf jedem System exklusiv bindet, zeigt nur dieser Lauf, in jedem Prüfumfang.
+          node scripts/second-start.mjs --url "http://127.0.0.1:$NKA_PORT" --program "./bin/${{ matrix.programm }}"
 
       - name: Starten und prüfen (Windows)
         if: runner.os == 'Windows'
@@ -392,6 +396,9 @@ jobs:
           try {
             node scripts/smoke-test.mjs --url "http://127.0.0.1:$env:NKA_PORT" --mode binary ${{ env.SLOW_AI }}
             if ($LASTEXITCODE -ne 0) { throw "Prüfung auf ${{ matrix.name }} fehlgeschlagen" }
+            # Zweiter Start auf demselben Port (#244), siehe den Schritt für Linux und macOS
+            node scripts/second-start.mjs --url "http://127.0.0.1:$env:NKA_PORT" --program "bin\${{ matrix.programm }}"
+            if ($LASTEXITCODE -ne 0) { throw "Zweiter Start auf ${{ matrix.name }} fehlgeschlagen" }
           } finally {
             Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
             Write-Host '--- Ausgabe der Programmdatei'
