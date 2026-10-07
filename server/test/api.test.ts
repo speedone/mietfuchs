@@ -566,6 +566,134 @@ test('Belegter Port: sitzt dort etwas anderes, bleibt es bei der Fehlermeldung',
   }
 })
 
+// ---------- Zweiter Start auf belegtem Port fasst die Daten nicht an (#244) ----------
+
+// Jede Datei im Datenordner mit ihrer Prüfsumme, Unterordner eingeschlossen. Daran sieht der
+// Test jede Veränderung: eine migrierte Datenbank, eine Sicherung `vor-*`, die Merkdatei
+// `sicherung-vor-update.json`, eine abgelöste db.json oder ein Protokoll des Umstiegs.
+function folderFingerprint(dir: string): Record<string, string> {
+  const result: Record<string, string> = {}
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true, recursive: true })) {
+    if (!entry.isFile()) continue
+    const file = path.join(entry.parentPath, entry.name)
+    result[path.relative(dir, file)] = createHash('sha256').update(fs.readFileSync(file)).digest('hex')
+  }
+  return result
+}
+
+// Ein Datenordner, in dem der nächste Start etwas zu tun hätte: eine Datenbank, der Schritte
+// fehlen (wie nach einem Update), oder eine db.json, die umsteigen will.
+async function dataDirWithPendingWork(kind: 'migration' | 'changeover'): Promise<string> {
+  if (kind === 'migration') {
+    const dataDir = await dataDirAtBaseline()
+    fs.mkdirSync(path.join(dataDir, 'uploads'), { recursive: true })
+    return dataDir
+  }
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-'))
+  fs.mkdirSync(path.join(dataDir, 'uploads'), { recursive: true })
+  fs.writeFileSync(path.join(dataDir, 'db.json'), JSON.stringify({
+    settings: { houseName: 'Haus am Weg', address: 'Weg 1', landlordName: 'V', iban: '', paymentDeadlineDays: 30 },
+    units: [{ id: 'u1', name: 'EG', areaM2: 80, participates: true }],
+    tenancies: [], costItems: [], meters: [], readings: [], payments: [], closedSettlements: [],
+  }))
+  return dataDir
+}
+
+// Ein freier Port: vom System vergeben, dann wieder freigegeben.
+async function freePort(): Promise<number> {
+  const probe = http.createServer()
+  await listening(probe)
+  const port = portOf(probe)
+  await new Promise((resolve) => probe.close(resolve))
+  return port
+}
+
+for (const kind of ['migration', 'changeover'] as const) {
+  test(`Belegter Port (#244): läuft dort schon Mietfuchs, rührt der zweite Start die Daten nicht an (${kind === 'migration' ? 'ausstehende Migration' : 'ausstehender Umstieg'})`, async () => {
+    // Das Update, während die alte Version noch läuft: Die neue Version darf die Datei nicht
+    // unter der laufenden migrieren und keine Sicherung anlegen, hinter der die alte
+    // weiterschreibt. Sie sieht nur, dass dort Mietfuchs läuft, und endet.
+    const port = new URL(srv.base).port
+    const dataDir = await dataDirWithPendingWork(kind)
+    const vorher = folderFingerprint(dataDir)
+    const zweiter = startServerRaw(dataDir, { NKA_PORT: port, NKA_RUNTIME: 'binary' })
+    try {
+      assert.equal(await waitForExit(zweiter.child), 0, zweiter.out())
+      assert.match(zweiter.out(), /läuft bereits/)
+      assert.deepEqual(folderFingerprint(dataDir), vorher, zweiter.out())
+    } finally {
+      zweiter.child.kill()
+      removeDataDir(dataDir)
+    }
+  })
+}
+
+test('Belegter Port (#244): sitzt dort etwas anderes, wird vor der Fehlermeldung nichts migriert', async () => {
+  const fremder = http.createServer((req, res) => res.end('nicht Mietfuchs'))
+  await listening(fremder)
+  const port = String(portOf(fremder))
+  const dataDir = await dataDirWithPendingWork('migration')
+  const vorher = folderFingerprint(dataDir)
+  // Im npm-Betrieb endet der Start sofort mit Fehler; das ist der kürzere Weg zum Ende.
+  const start = startServerRaw(dataDir, { NKA_PORT: port, NKA_RUNTIME: '' })
+  try {
+    assert.equal(await waitForExit(start.child), 1, start.out())
+    assert.match(start.out(), /bereits belegt/)
+    assert.deepEqual(folderFingerprint(dataDir), vorher, start.out())
+  } finally {
+    start.child.kill()
+    fremder.close()
+    removeDataDir(dataDir)
+  }
+})
+
+test('Belegter Port (#244): ein zweiter Start, während der erste noch die Datenbank öffnet, erkennt Mietfuchs', async () => {
+  // Das Rennen zweier gleichzeitiger Starts: Der erste bindet den Port, bevor er die Datenbank
+  // anfasst. Solange er noch öffnet, antwortet /healthz mit „startet“ und nennt sich beim Namen.
+  // Der Testgriff hält den ersten Start in diesem Fenster fest.
+  const port = String(await freePort())
+  const ersterOrdner = await dataDirWithPendingWork('migration')
+  const erster = startServerRaw(ersterOrdner, { NKA_PORT: port, NKA_RUNTIME: 'binary', NKA_TEST_START_DELAY_MS: '3000' })
+  const dataDir = await dataDirWithPendingWork('migration')
+  try {
+    const deadline = Date.now() + 15000
+    let report: { app?: string, status?: string } = {}
+    let status = 0
+    while (Date.now() < deadline) {
+      try {
+        const res = await fetch(`http://127.0.0.1:${port}/healthz`)
+        status = res.status
+        report = await jsonOf<typeof report>(res)
+        break
+      } catch {
+        await new Promise((r) => setTimeout(r, 50))
+      }
+    }
+    assert.equal(status, 503, erster.out())
+    assert.deepEqual([report.app, report.status], ['mietfuchs', 'starting'])
+    // Der erste hat in diesem Augenblick noch nichts angefasst.
+    assert.equal(fs.readdirSync(ersterOrdner).some((name) => name.includes('.vor-')), false)
+    const vorher = folderFingerprint(dataDir)
+    const zweiter = startServerRaw(dataDir, { NKA_PORT: port, NKA_RUNTIME: 'binary' })
+    try {
+      assert.equal(await waitForExit(zweiter.child), 0, zweiter.out())
+      assert.deepEqual(folderFingerprint(dataDir), vorher, zweiter.out())
+    } finally {
+      zweiter.child.kill()
+    }
+    // Eine Anfrage, die während des Startens kommt, wartet und wird danach beantwortet.
+    const units = await fetch(`http://127.0.0.1:${port}/api/units`)
+    assert.equal(units.status, 200)
+    assert.match(erster.out(), /Mietfuchs-Server läuft auf/)
+    assert.ok(fs.readdirSync(ersterOrdner).some((name) => name.includes('.vor-')), 'der erste Start hat danach migriert')
+  } finally {
+    erster.child.kill()
+    await waitForExit(erster.child).catch(() => null)
+    removeDataDir(ersterOrdner)
+    removeDataDir(dataDir)
+  }
+})
+
 // Dieselbe Falle wie bei PUT /api/settings, hier in den generischen CRUD-Routen: express.json()
 // lässt auch eine Liste als Rumpf durch. Deren Indizes landeten als Schlüssel „0“, „1“ … im
 // Datensatz und blieben in der db.json stehen. Geprüft an /api/units, die Routen entstehen für
