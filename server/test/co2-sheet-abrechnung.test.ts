@@ -31,7 +31,7 @@ test('O2a: fehlt die Angabe „vor 2023 in Rechnung gestellt“, rechnet die Abr
   const { sheet, stock } = both({ ...vorrat, openingInvoicedBefore2023: null })
   assert.equal(stock, null, 'die Abrechnung rechnet den Vorrat nicht')
   assert.deepEqual([sheet.opening?.kgCounted, sheet.opening?.co2Counted], [false, false])
-  assert.match(sheet.opening?.note ?? '', /Nicht berücksichtigt, weil eine Angabe fehlt: ob der Anfangsbestand vor dem 01\.01\.2023 in Rechnung gestellt wurde/)
+  assert.match(sheet.opening?.note ?? '', /Nicht berücksichtigt: Für die Bestandsrechnung des Vorrats \(Heizperiode 2025\) fehlt eine Angabe \(ob der Anfangsbestand vor dem 01\.01\.2023 in Rechnung gestellt wurde\)/)
   assert.deepEqual(sheet.totals, { emissionsKg: 8028.9, co2CostCents: 52549 })
 })
 
@@ -46,7 +46,7 @@ test('O2b: ohne kg des Anfangsbestands ebenso; die Zeile bleibt sichtbar', () =>
 test('Vollständige Angaben: das Blatt zählt den Anfangsbestand genau so wie die Abrechnung', () => {
   const { sheet, stock } = both(vorrat)
   const o = stock?.opening ?? assert.fail('keine Bestandsrechnung')
-  assert.deepEqual([sheet.opening?.emissionsKg, sheet.opening?.co2CostCents, sheet.opening?.co2Counted], [o.emissionsKg, o.co2Cents, true])
+  assert.deepEqual([sheet.opening?.emissionsKg, sheet.opening?.countedCents, sheet.opening?.co2Counted], [o.emissionsKg, o.co2Cents, true])
   assert.deepEqual(sheet.totals, { emissionsKg: Math.round((8028.9 + o.emissionsKg) * 100) / 100, co2CostCents: 52549 + o.co2Cents })
 })
 
@@ -77,7 +77,7 @@ test('Invariante: Anfangsbestand des Blatts = Anfangsbestand der Abrechnung, üb
     }
     const { sheet, stock } = both(row)
     const kg = sheet.opening?.kgCounted ? (sheet.opening.emissionsKg ?? 0) : 0
-    const co2 = sheet.opening?.co2Counted ? (sheet.opening.co2CostCents ?? 0) : 0
+    const co2 = sheet.opening?.countedCents ?? 0
     const fall = JSON.stringify(row)
     assert.deepEqual([kg, co2], stock ? [stock.opening.emissionsKg, stock.opening.co2Cents] : [0, 0], fall)
     assert.deepEqual(sheet.totals, { emissionsKg: Math.round((8028.9 + kg) * 100) / 100, co2CostCents: 52549 + co2 }, fall)

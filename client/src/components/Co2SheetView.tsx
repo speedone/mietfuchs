@@ -39,16 +39,28 @@ export default function Co2SheetView({ plantId, period, onClose }: { plantId: st
           <Table>
             <thead><tr><th>Rechnung</th>{SHEET_COLUMNS.map((c, j) => <th key={c} className={j >= 5 ? 'num' : undefined}>{c}</th>)}</tr></thead>
             <tbody>
-              {sheetRows(sheet).map((r, i) => (
-                <tr key={`${r.label}:${i}`} className={r.kind === 'sum' ? 'subtotal' : undefined}>
-                  <td>{r.label}{r.note && <div className="muted">{r.note}</div>}</td>
+              {sheetRows(sheet).flatMap((r, i) => [
+                <tr key={`${r.label}:${i}`} className={r.kind === 'sum' || r.kind === 'billing' ? 'subtotal' : undefined}>
+                  <td>{r.label}</td>
                   {r.cells.map((c, j) => <td key={j} className={j >= 5 ? 'num' : undefined}>{c}</td>)}
-                </tr>
-              ))}
+                </tr>,
+                // Vermerk und Teil in der Heizperiode über die volle Breite (Runde 3, klein): In der schmalen
+                // ersten Spalte brach der Text auf dem Handy über viele Zeilen um.
+                ...[r.sub, r.note].filter((t): t is string => t !== null).map((t) => (
+                  <tr key={`${r.label}:${i}:${t}`}><td colSpan={SHEET_COLUMNS.length + 1} className="muted">{t}</td></tr>
+                )),
+              ])}
             </tbody>
           </Table>
         )}
       <ul>{sheetFacts(sheet).map((f) => <li key={f}>{f}</li>)}</ul>
+      {sheet.opening?.adminNote && (
+        // Die genauen Gründe einer unvollständigen Bestandsrechnung sind für den Vermieter (W-N4).
+        <div className="hint no-print">
+          <strong>Vorrat</strong>
+          <p>{sheet.opening.adminNote}</p>
+        </div>
+      )}
       {findings.length > 0 && (
         // Für den Vermieter, nicht für den Empfänger des Blatts (Durchsicht von #246, R-W2).
         <div className="hint no-print">

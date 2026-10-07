@@ -1750,7 +1750,11 @@ Stornos), eine Rechnung vor 2023 nur mit kg, der Anfangsbestand mit seinen CO₂
 Bestandsrechnung; jede nicht zählende Zeile trägt einen Vermerk. Bei Wärme aus dem Emissionshandel mit
 Anschluss nach dem Stichtag prüfen Abrechnung und Blatt nicht (`etsExempt` in co2Plausibility.ts, eine
 Stelle). Das Blatt spricht in der dritten Person, der Kasten „Bitte prüfen“ ist `no-print`; dieselben
-Befunde stehen an der Lieferung auf der Seite Heizkosten. Werte, die nur geprüft werden, tragen
+Befunde stehen an der Lieferung auf der Seite Heizkosten. **Das Blatt rechnet nichts, was die Abrechnung
+entscheidet** (Runde 3 von #246): Endbestand, Verbrauch, der Teil je Rechnung in der Heizperiode sowie kg/m²
+und Stufe kommen aus dem Ergebnis der Abrechnung (`heating[].stock`, `fuel`, `co2`, als `billing`);
+`co2SheetFor` rechnet dafür die Abrechnung, in der die Heizperiode steht. Eine Zufallsprüfung in
+co2-sheet-runde3.test.ts hält die abgegrenzte Zeile gleich der CO₂-Grundlage der Abrechnung. Werte, die nur geprüft werden, tragen
 `checkOnly` (shared/law); die Abweichung einer abgeschlossenen Abrechnung sagt dann „Prüfwert geändert“.
 
 **Begriffslexikon** (#113): [shared/glossary.ts](shared/glossary.ts) hält jeden Fachbegriff mit

@@ -293,7 +293,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Emissionsfaktor, Energiegehalt, Menge, Betrag), den Anfangsbestand eines Vorrats, die Fläche und die
   Angaben zu §§ 8, 9 CO2KostAufG zum Drucken und Weitergeben zusammen. Die Summe enthält nur, was auch die
   Abrechnung zählt; stornierte Rechnungen, abgedeckte Schätzungen und Rechnungen vor 2023 stehen mit
-  einem Vermerk darin. Hinweise der Prüfung stehen auch an der Lieferung.
+  einem Vermerk darin. Hinweise der Prüfung stehen auch an der Lieferung. Unter der Summe der Rechnungen
+  (nicht abgegrenzt) steht, was die Abrechnung daraus macht: beim Vorrat Endbestand und Verbrauch in der
+  Heizperiode, sonst der Teil der Rechnungen in der Heizperiode, dazu die Einstufung laut Abrechnung.
 
 ### Geändert
 

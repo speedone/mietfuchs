@@ -8,10 +8,13 @@ import { STOCK_UNIT_TEXT } from '../../shared/fuelStock.ts'
 import { co2DistrictEtsNew } from '../../shared/law/co2kostaufg.ts'
 import { germanDate, onlyVersion } from '../../shared/law/register.ts'
 import type { Co2Sheet, Co2SheetDelivery, FuelDelivery, FuelQuantityUnit } from './types'
+import { FUEL_METHOD_LABELS } from './fuelView'
 
 // `kind`: der Anfangsbestand, eine Rechnung oder die Summe; `note` der Vermerk, warum eine Zeile nicht oder
 // nur zum Teil zählt.
-export type SheetRow = { kind: 'opening' | 'delivery' | 'sum'; label: string; note: string | null; cells: string[] }
+// `billing`: was die Abrechnung daraus macht (Endbestand, Verbrauch, abgegrenzte Rechnungen; Runde 3, S-W1).
+// `sub`: je Rechnung der Teil in der Heizperiode, wie die Abrechnung ihn ansetzt.
+export type SheetRow = { kind: 'opening' | 'delivery' | 'sum' | 'billing'; label: string; note: string | null; sub: string | null; cells: string[] }
 export const SHEET_COLUMNS = ['Rechnung vom', 'Zeitraum', 'Menge', 'Energiegehalt', 'Emissionsfaktor', 'CO₂', 'CO₂-Kosten', 'Betrag']
 
 const num = (n: number, digits: number): string => n.toLocaleString('de-DE', { maximumFractionDigits: digits })
@@ -40,6 +43,9 @@ export function sheetRows(s: Co2Sheet): SheetRow[] {
     kind: 'delivery',
     label: `${d.label}${d.counted === 'full' && d.estimated ? ' (geschätzt)' : COUNTED_LABEL[d.counted]}`,
     note: d.note,
+    sub: d.inPeriod && d.inPeriod.emissionsKg !== null
+      ? `davon in der Heizperiode: ${num(d.inPeriod.emissionsKg, 2)} kg, ${d.inPeriod.co2Cents !== null ? fmtEuro(d.inPeriod.co2Cents) : '–'} (${num(d.inPeriod.sharePermille, 1)} ‰, ${FUEL_METHOD_LABELS[d.inPeriod.method]})`
+      : null,
     cells: [
       d.invoiceDate ? fmtDate(d.invoiceDate) : '–',
       d.from && d.to ? `${fmtDate(d.from)} bis ${fmtDate(d.to)}` : d.deliveredAt ? `geliefert ${fmtDate(d.deliveredAt)}` : '–',
@@ -59,13 +65,35 @@ export function sheetRows(s: Co2Sheet): SheetRow[] {
         kind: 'opening',
         label: o.co2Counted ? 'Anfangsbestand (Vorrat)' : o.kgCounted ? 'Anfangsbestand (Vorrat, nur die kg zählen)' : 'Anfangsbestand (Vorrat, zählt nicht)',
         note: o.note,
+        sub: null,
         cells: ['', '', o.quantity !== null && stock?.stockUnit ? `${num(o.quantity, 2)} ${STOCK_UNIT_TEXT[stock.stockUnit]}` : '–', '–', '–',
           o.emissionsKg !== null ? `${num(o.emissionsKg, 2)} kg` : '–', o.co2CostCents !== null ? fmtEuro(o.co2CostCents) : '–', ''],
       }]
     : []
   // Gilt das Gesetz nicht (§ 2 Abs. 4 Satz 2), gibt es keine Summe nach dem CO2KostAufG (Runde 2, O3).
   if (!s.checked) return [...opening, ...rows]
-  return [...opening, ...rows, { kind: 'sum', label: 'Summe', note: null, cells: ['', '', '', '', '', `${num(s.totals.emissionsKg, 2)} kg`, fmtEuro(s.totals.co2CostCents), ''] }]
+  const line = (label: string, kg: number | null, cents: number | null): SheetRow =>
+    ({ kind: 'billing', label, note: null, sub: null, cells: ['', '', '', '', '', kg === null ? '–' : `${num(kg, 2)} kg`, cents === null ? '–' : fmtEuro(cents), ''] })
+  const minus = (t: string): string => (t === '–' ? t : `−${t}`)
+  // Die Summe der Rechnungen ist nicht abgegrenzt (Runde 3, S-W1). Was die Abrechnung daraus macht, steht
+  // darunter, gelesen aus ihrem Ergebnis: beim Vorrat Endbestand und Verbrauch, bei Rechnungen über einen
+  // Zeitraum ihr Teil in der Heizperiode, und die Grundlage der Aufteilung, wo sie hochgerechnet ist.
+  const b = s.billing
+  const billing: SheetRow[] = []
+  if (b.closing && b.consumed) {
+    const unit = s.stock?.stockUnit ? ` ${STOCK_UNIT_TEXT[s.stock.stockUnit]}` : ''
+    const closing = line(`abzüglich Endbestand${b.closing.measuredOn ? ` am ${fmtDate(b.closing.measuredOn)}` : ''} (${num(b.closing.quantity, 2)}${unit})`, b.closing.emissionsKg, b.closing.co2Cents)
+    billing.push({ ...closing, cells: closing.cells.map((c, i) => (i === 5 || i === 6 ? minus(c) : c)) })
+    billing.push(line('Verbrauch in der Heizperiode (wie in der Abrechnung)', b.consumed.emissionsKg, b.consumed.co2Cents))
+  } else if (b.inPeriod) {
+    const cover = b.inPeriod.coveragePermille < 1000 ? `; die Rechnungen decken ${num(b.inPeriod.coveragePermille, 1)} ‰ der Gradtage ab` : ''
+    billing.push(line(`davon in der Heizperiode (Abgrenzung wie in der Abrechnung${cover})`, b.inPeriod.emissionsKg, b.inPeriod.co2Cents))
+  }
+  if (b.basis && (billing.length === 0 || (b.inPeriod !== null && b.inPeriod.coveragePermille < 1000 && !b.closing))) {
+    const scaled = b.inPeriod !== null && b.inPeriod.coveragePermille < 1000
+    billing.push(line(`Grundlage der CO₂-Aufteilung in der Abrechnung${scaled ? ' (kg hochgerechnet auf die ganze Heizperiode)' : ''}`, b.basis.emissionsKg, b.basis.co2Cents))
+  }
+  return [...opening, ...rows, { kind: 'sum', label: 'Summe der Rechnungen (nicht abgegrenzt)', note: null, sub: null, cells: ['', '', '', '', '', `${num(s.totals.emissionsKg, 2)} kg`, fmtEuro(s.totals.co2CostCents), ''] }, ...billing]
 }
 
 export function sheetFacts(s: Co2Sheet): string[] {
@@ -75,7 +103,15 @@ export function sheetFacts(s: Co2Sheet): string[] {
   const restriction = s.restriction === 'none' ? 'keine Beschränkung nach § 9 CO2KostAufG'
     : s.restriction === 'both' ? 'Beschränkung nach § 9 Abs. 2 CO2KostAufG (Gebäude und Wärmeversorgung)'
       : `Beschränkung nach § 9 Abs. 1 CO2KostAufG (${s.restriction === 'building' ? 'Gebäude' : 'Wärmeversorgung'})`
-  const facts = [area, `${s.nonResidential ? 'Nichtwohngebäude (§ 8 CO2KostAufG)' : 'Kein Nichtwohngebäude (§ 8 CO2KostAufG)'}; ${restriction}`]
+  // Gilt das Gesetz nicht (§ 2 Abs. 4 Satz 2), wird nicht eingestuft: keine Fläche und keine §§ 8, 9 (Runde 3, klein).
+  const facts = s.checked ? [area, `${s.nonResidential ? 'Nichtwohngebäude (§ 8 CO2KostAufG)' : 'Kein Nichtwohngebäude (§ 8 CO2KostAufG)'}; ${restriction}`] : []
+  // Die Einstufung, wie die Abrechnung sie vornimmt (S-W1, Punkt 4): nie aus der Summe der Rechnungen.
+  const basis = s.checked ? s.billing.basis : null
+  if (basis && basis.kgPerM2 !== null) {
+    const stage = basis.stage ? `, Stufe ${basis.stage.to === null ? `ab ${num(basis.stage.from, 1)} kg` : `${num(basis.stage.from, 1)} bis unter ${num(basis.stage.to, 1)} kg`}` : ''
+    const share = basis.landlordPermille !== null ? `, Vermieter ${num(basis.landlordPermille / 10, 1)} % der CO₂-Kosten` : ''
+    facts.push(`Einstufung laut Abrechnung: ${num(basis.kgPerM2, 1)} kg CO₂ je m² Wohnfläche${basis.areaM2 !== null ? ` (${num(basis.areaM2, 2)} m²)` : ''}${stage}${share}`)
+  }
   // Der Stichtag kommt aus dem Register (`co2.district-ets-new`), nicht als Text. Für diese Wärme gilt das
   // Gesetz nicht; geprüft wird nichts (R-W1).
   if (s.districtEtsNew) {
@@ -92,7 +128,9 @@ export function sheetFacts(s: Co2Sheet): string[] {
   // Der Fußsatz verweist nur auf Vermerke, die es gibt, und nennt keine Summe, wo das Gesetz nicht gilt (Runde 2, N3, O3).
   const notes = s.deliveries.some((d) => d.note !== null) || (s.opening?.note ?? null) !== null
   facts.push(s.checked
-    ? `Angaben je Rechnung nach § 3 Abs. 1 Nr. 1 bis 4 CO2KostAufG, wie sie der Lieferant ausweist; nicht auf die Heizperiode abgegrenzt. Die Summe enthält nur, was nach dem CO2KostAufG zählt${notes ? ' (siehe Vermerke)' : ''}.`
+    ? 'Angaben je Rechnung nach § 3 Abs. 1 Nr. 1 bis 4 CO2KostAufG, wie sie der Lieferant ausweist. Die Summe der Rechnungen ist nicht der CO₂-Ausstoß des Abrechnungszeitraums: ' +
+      'Auf ihn umgerechnet (§ 5 Abs. 1 Satz 5 CO2KostAufG) und ohne den Endbestand eines Vorrats (§ 7 Abs. 1 CO2KostAufG: im Abrechnungszeitraum verursacht) sind erst die Zeilen darunter, wie die Abrechnung sie ansetzt. ' +
+      `Nicht gezählt sind Angaben, die nach dem CO2KostAufG unberücksichtigt bleiben${notes ? ' (siehe Vermerke)' : ''}.`
     : 'Angaben je Rechnung, wie sie der Lieferant ausweist. Nach § 2 Abs. 4 Satz 2 CO2KostAufG werden die CO₂-Kosten dieser Wärme nicht aufgeteilt; eine Summe entfällt deshalb.')
   return facts
 }

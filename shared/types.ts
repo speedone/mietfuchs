@@ -1776,6 +1776,9 @@ export type Co2SheetDelivery = {
   counted: 'full' | 'partial' | 'kgOnly' | 'none'
   factor: number
   note: string | null
+  // Der Teil dieser Rechnung, den die Abrechnung der Heizperiode zuordnet (`fuel.deliveries`), mit Anteil in
+  // Promille und Verfahren; `null` ohne Abgrenzung (Vorrat, Messdienst ohne Lieferzeilen).
+  inPeriod: { emissionsKg: number | null; co2Cents: number | null; sharePermille: number; method: FuelMethod } | null
   findings: string[]
 }
 export type Co2SheetStock = Pick<HeatingPeriodData, 'stockUnit' | 'openingQuantity' | 'openingEmissionsKg' | 'openingCo2Cents' | 'openingInvoicedBefore2023' | 'openingAlreadySettled' | 'closingQuantity' | 'closingMeasuredOn'>
@@ -1783,7 +1786,38 @@ export type Co2SheetStock = Pick<HeatingPeriodData, 'stockUnit' | 'openingQuanti
 // nicht vor 2023 in Rechnung gestellt und nicht schon umgelegt wurde.
 // Seit der Nachprüfung von #246 (O2a/O2b) die Entscheidung der Bestandsrechnung der Abrechnung: `co2CostCents`
 // sind die dort berücksichtigten CO₂-Kosten; rechnet die Abrechnung den Vorrat nicht, die eingetragenen.
-export type Co2SheetOpening = { quantity: number | null; emissionsKg: number | null; co2CostCents: number | null; kgCounted: boolean; co2Counted: boolean; note: string | null }
+// `co2CostCents` ist der Betrag laut Rechnung bzw. Eintrag (wie bei den Rechnungen), `countedCents` der davon
+// berücksichtigte Teil (Durchsicht von #246, Runde 3, S-K1). `adminNote`: die genauen Gründe einer
+// unvollständigen Bestandsrechnung für den Vermieter, nicht gedruckt (W-N4).
+export type Co2SheetOpening = {
+  quantity: number | null
+  emissionsKg: number | null
+  co2CostCents: number | null
+  countedCents: number
+  kgCounted: boolean
+  co2Counted: boolean
+  note: string | null
+  adminNote: string | null
+}
+// Was die Abrechnung der Heizperiode daraus macht (Durchsicht von #246, Runde 3, S-W1): gelesen aus ihrem
+// Ergebnis (`heating[]`), nicht vom Blatt gerechnet. `closing`/`consumed` aus der Bestandsrechnung des
+// Vorrats, `inPeriod` die Summe der auf die Heizperiode abgegrenzten Rechnungen (`fuel.deliveries`) samt
+// Abdeckung, `basis` die Grundlage der CO₂-Aufteilung mit kg/m² und Stufe (`co2`). Jede Angabe fehlt, wo
+// die Abrechnung sie nicht hat.
+export type Co2SheetBilling = {
+  closing: { quantity: number; emissionsKg: number; co2Cents: number; measuredOn: string | null } | null
+  consumed: { quantity: number; emissionsKg: number; co2Cents: number } | null
+  inPeriod: { emissionsKg: number; co2Cents: number; coveragePermille: number } | null
+  basis: {
+    source: 'stock' | 'deliveries'
+    emissionsKg: number | null
+    co2Cents: number | null
+    kgPerM2: number | null
+    areaM2: number | null
+    landlordPermille: number | null
+    stage: Co2StageRange | null
+  } | null
+}
 // `areaM2`: die Fläche der Einstufung, eingetragen (`entered`) oder die Wohnfläche der Wohnungen, die die
 // Anlage versorgt (`served`); `null`, wenn keine bekannt ist.
 export type Co2Sheet = {
@@ -1800,6 +1834,7 @@ export type Co2Sheet = {
   districtEtsNew: boolean
   stock: Co2SheetStock | null
   opening: Co2SheetOpening | null
+  billing: Co2SheetBilling
   deliveries: Co2SheetDelivery[]
   totals: { emissionsKg: number; co2CostCents: number }
   // Der Tag, an dem das Blatt erstellt wurde (R-K6), und ob geprüft wurde: nicht bei Wärme aus dem
