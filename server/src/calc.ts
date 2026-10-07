@@ -1864,6 +1864,32 @@ function keyChangeText(item: SnapshotCostItem, previous: readonly SnapshotCostIt
     'Bei einer vermieteten Eigentumswohnung gilt, soweit nichts anderes vereinbart ist, der jeweils geltende Maßstab der Gemeinschaft; widerspricht er billigem Ermessen, wird nach Absatz 1 umgelegt, also in der Regel nach Wohnfläche (§ 556a Abs. 3 BGB). Ist die Änderung so vereinbart, ist nichts zu tun.'
 }
 
+// Die Bestandsrechnung einer Anlage mit Vorratsenergie für eine Heizperiode, wie die Abrechnung sie rechnet.
+// Eigene Funktion seit Heizung PR 17 (Nachprüfung von #246, O2a/O2b): Das Blatt „CO₂-Angaben für den
+// Messdienst“ liest dieselbe Entscheidung, statt eine eigene Regel für den Anfangsbestand zu haben.
+// `countedAt` sagt, ob die CO₂-Kosten einer Rechnung dieses Tages zählen (§ 11 Abs. 2 Satz 2); ohne Angaben
+// zum Vorrat wird es nicht gefragt (Entwurf 1.2 Nr. 1).
+export function plantStockOf(
+  snapshot: Pick<Snapshot, 'stockChains'>,
+  plant: Pick<SnapshotHeatingPlant, 'id' | 'energy' | 'method'>,
+  periodKey: string,
+  countedAt: (date: string) => boolean,
+): { result: StockResult; chain: StockPeriodInput[]; last: StockPeriodInput } | null {
+  if (!isStockEnergy(plant.energy)) return null
+  const chain = (snapshot.stockChains ?? []).find((c) => c.plantId === plant.id && c.period === periodKey)?.chain ?? []
+  const last = chain.at(-1)
+  if (!last) return null
+  const touched = stockTouched(chain)
+  const result = stockOf(chain, {
+    needCost: plant.method !== 'service',
+    needCo2: CO2_FUELS.includes(plant.energy),
+    countedAt: touched ? countedAt : () => true,
+    excludedUntil: co2CostsExcludedUntil(),
+    countedFrom: co2CostsCountedFrom(),
+  })
+  return { result, chain, last }
+}
+
 export function computeSettlement(snapshot: Snapshot, options: SettlementOptions = {}): ComputedSettlement {
   // Der Abrechnungszeitraum (#208). Grenzen, Tage und Monate kommen von hier; `year` ist das
   // Kalenderjahr des Beginns und steht nur noch im Ergebnis und an den Kabelzeilen (siehe dort).
@@ -2405,19 +2431,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const statement = (snapshot.co2Statements ?? []).find((x) => x.plantId === plant.id && x.period === period.key)
     // Heizung PR 10: auch bei der eigenen Heizkostenabrechnung (Entwurf 8.2).
     if (plant.method === 'service' && statement?.method !== 'selfAfterService') continue
-    const chain = (snapshot.stockChains ?? []).find((c) => c.plantId === plant.id && c.period === period.key)?.chain ?? []
-    const last = chain.at(-1)
-    if (!last) continue
-    // Ohne Angaben zum Vorrat keine Abfrage des Registers (Entwurf 1.2 Nr. 1).
-    const touched = stockTouched(chain)
-    const result = stockOf(chain, {
-      needCost: plant.method !== 'service',
-      needCo2: CO2_FUELS.includes(plant.energy),
-      countedAt: touched ? stockCountedAt : () => true,
-      excludedUntil: co2CostsExcludedUntil(),
-      countedFrom: co2CostsCountedFrom(),
-    })
-    stockOfPlant.set(plant.id, { plant, result, chain, last })
+    const found = plantStockOf(snapshot, plant, String(period.key), stockCountedAt)
+    if (!found) continue
+    stockOfPlant.set(plant.id, { plant, ...found })
   }
   // Übertragsposten bei freien Schlüsseln (Entwurf 8.2 „Wie das in die Abrechnung kommt“). Die
   // Rechnungen bleiben Positionen in voller Höhe, Steuer und Belegarchiv stimmen damit. Den Unterschied

@@ -99,19 +99,6 @@ test('G-W1: stornierte Rechnung und abgedeckte Schätzung zählen nicht; Summe 6
   assert.deepEqual(s.deliveries.map((d) => d.amountCents), [0, 300000, 300000])
 })
 
-test('G-W2: Anfangsbestand mit CO₂-Kosten in der Summe, außer vor 2023 in Rechnung gestellt oder schon umgelegt', () => {
-  const stock = { stockUnit: 'l' as const, openingQuantity: 1000, openingEmissionsKg: 2676.3, openingCo2Cents: 17517, openingInvoicedBefore2023: false, openingAlreadySettled: null, closingQuantity: 500, closingMeasuredOn: '2025-12-31' }
-  const s = co2SheetOf(input({ stock, deliveries: [lieferung({})] }))
-  assert.deepEqual(s.opening, { emissionsKg: 2676.3, co2CostCents: 17517, kgCounted: true, co2Counted: true, note: null })
-  assert.deepEqual(s.totals, { emissionsKg: 10705.2, co2CostCents: 70066 })
-  const alt = co2SheetOf(input({ stock: { ...stock, openingInvoicedBefore2023: true }, deliveries: [lieferung({})] }))
-  assert.deepEqual([alt.opening?.co2Counted, alt.totals.co2CostCents, alt.totals.emissionsKg], [false, 52549, 10705.2])
-  assert.match(alt.opening?.note ?? '', /§ 11 Abs\. 2 Satz 2/)
-  const umgelegt = co2SheetOf(input({ stock: { ...stock, openingAlreadySettled: true }, deliveries: [lieferung({})] }))
-  assert.deepEqual([umgelegt.opening?.co2Counted, umgelegt.totals.co2CostCents], [false, 52549])
-  assert.match(umgelegt.opening?.note ?? '', /früheren Abrechnung/)
-})
-
 test('R-W1: Fernwärme aus dem Emissionshandel mit Anschluss nach dem Stichtag: nicht geprüft, mit Grund', () => {
   const fw: Co2SheetInput['plant'] = { ...plant, energy: 'districtHeating', districtEtsNew: true }
   const d = lieferung({ deliveredAt: null, invoiceDate: '2026-01-20', invoiceFrom: '2025-01-01', invoiceTo: '2025-12-31', quantity: null, quantityUnit: null, emissionsKg: 9000, co2CostCents: 1000 })
@@ -126,6 +113,7 @@ test('R-K6: das Blatt trägt den Tag, an dem es erstellt wurde', () => {
 })
 
 // ---------- Durchsicht Runde 2 (#246) ----------
+// Den Anfangsbestand (G-W2, O2a, O2b) prüft co2-sheet-abrechnung.test.ts über die Bestandsrechnung der Abrechnung.
 
 test('O1: eine teilweise abgedeckte Schätzung zählt mit ihrem Faktor, bei kg und CO₂-Kosten', () => {
   const gas: Co2SheetInput['plant'] = { ...plant, energy: 'gas', method: 'manual' }
@@ -150,22 +138,3 @@ test('O1: ohne Rechnungsdatum und Liefertag mit Zeitraumende vor 2023 ist offen,
   assert.deepEqual([neu.deliveries[0]?.counted, neu.totals.co2CostCents], ['full', 35700])
 })
 
-test('O2a: Anfangsbestand ohne Angabe, ob vor 2023 in Rechnung gestellt: offen, nur die kg zählen', () => {
-  const stock = { stockUnit: 'l' as const, openingQuantity: 1000, openingEmissionsKg: 2676.3, openingCo2Cents: 17517, openingInvoicedBefore2023: null, openingAlreadySettled: null, closingQuantity: 500, closingMeasuredOn: '2025-12-31' }
-  const s = co2SheetOf(input({ stock, deliveries: [lieferung({})] }))
-  assert.equal(s.opening?.co2Counted, false)
-  assert.match(s.opening?.note ?? '', /Nicht angegeben, ob .*vor dem 01\.01\.2023 in Rechnung gestellt/)
-  assert.deepEqual(s.totals, { emissionsKg: 10705.2, co2CostCents: 52549 })
-})
-
-test('O2b: Anfangsbestand ohne kg bleibt sichtbar; er zählt wie in der Abrechnung nicht', () => {
-  const stock = { stockUnit: 'l' as const, openingQuantity: 1000, openingEmissionsKg: null, openingCo2Cents: 17517, openingInvoicedBefore2023: false, openingAlreadySettled: null, closingQuantity: 500, closingMeasuredOn: '2025-12-31' }
-  const s = co2SheetOf(input({ stock, deliveries: [lieferung({})] }))
-  assert.deepEqual([s.opening?.emissionsKg, s.opening?.co2Counted, s.opening?.kgCounted], [null, false, false])
-  assert.match(s.opening?.note ?? '', /CO₂-Ausstoß in kg fehlt/)
-  assert.deepEqual(s.totals, { emissionsKg: 8028.9, co2CostCents: 52549 })
-  // CO₂-Kosten fehlen bei einem Bestand ab 2023: ebenso nicht gezählt, mit Vermerk.
-  const ohneKosten = co2SheetOf(input({ stock: { ...stock, openingEmissionsKg: 2676.3, openingCo2Cents: null }, deliveries: [lieferung({})] }))
-  assert.deepEqual([ohneKosten.opening?.co2Counted, ohneKosten.opening?.kgCounted], [false, false])
-  assert.match(ohneKosten.opening?.note ?? '', /CO₂-Kosten fehlen/)
-})
