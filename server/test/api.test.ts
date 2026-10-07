@@ -498,7 +498,8 @@ const waitForExit = (child: ChildProcess, timeoutMs = 15000): Promise<number | n
 function startServerRaw(dataDir: string, env: NodeJS.ProcessEnv = {}) {
   const child = spawn(process.execPath, ['src/index.ts'], {
     cwd: serverRoot,
-    env: { ...process.env, NKA_UPDATE_URL: 'http://127.0.0.1:9/kein-internet-im-test', NKA_DATA_DIR: dataDir, CI: 'true', ...env },
+    // CI hinter `...env`, wie in startServerIn: Kein Aufrufer kann es versehentlich abschalten.
+    env: { ...process.env, NKA_UPDATE_URL: 'http://127.0.0.1:9/kein-internet-im-test', NKA_DATA_DIR: dataDir, ...env, CI: 'true' },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   let output = ''
@@ -602,10 +603,29 @@ async function dataDirWithPendingWork(kind: 'migration' | 'changeover'): Promise
 // Ein freier Port: vom System vergeben, dann wieder freigegeben.
 async function freePort(): Promise<number> {
   const probe = http.createServer()
-  await listening(probe)
-  const port = portOf(probe)
+  const port = await listenInTestRange(probe)
   await new Promise((resolve) => probe.close(resolve))
   return port
+}
+
+// Lauschen auf einem freien Port zwischen 4200 und 4299, dem Bereich für Ports, die ein Test
+// selbst festlegt: 3001 ist auf Arbeitsrechnern oft belegt, und dort laufen parallel weitere
+// Prüfungen. Begonnen wird an einer zufälligen Stelle, damit zwei Läufe sich selten treffen.
+async function listenInTestRange(server: http.Server): Promise<number> {
+  const offset = Math.floor(Math.random() * 100)
+  for (let i = 0; i < 100; i++) {
+    const port = 4200 + ((offset + i) % 100)
+    const ok = await new Promise<boolean>((resolve) => {
+      const onError = () => resolve(false)
+      server.once('error', onError)
+      server.listen(port, () => {
+        server.off('error', onError)
+        resolve(true)
+      })
+    })
+    if (ok) return port
+  }
+  return assert.fail('zwischen 4200 und 4299 ist kein Port frei')
 }
 
 for (const kind of ['migration', 'changeover'] as const) {
@@ -673,6 +693,14 @@ test('Belegter Port (#244): ein zweiter Start, während der erste noch die Daten
     assert.deepEqual([report.app, report.status], ['mietfuchs', 'starting'])
     // Der erste hat in diesem Augenblick noch nichts angefasst.
     assert.equal(fs.readdirSync(ersterOrdner).some((name) => name.includes('.vor-')), false)
+    // Eine Datenroute, **jetzt** gefragt, also mitten im Starten: Sie wartet, bis der Start fertig
+    // ist, und bekommt dann eine gewöhnliche Antwort statt einer 503 (Durchsicht zu #244, K1).
+    // Ebenso ein Schreibvorgang mit Rumpf, der dabei nicht verloren gehen darf.
+    const gefragt = Date.now()
+    const waehrendLesen = fetch(`http://127.0.0.1:${port}/api/units`).then(async (res) => ({ status: res.status, nach: Date.now() - gefragt }))
+    const waehrendSchreiben = fetch(`http://127.0.0.1:${port}/api/units`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'mitten im Start', areaM2: 50, participates: true }),
+    }).then(async (res) => ({ status: res.status, body: await res.text() }))
     const vorher = folderFingerprint(dataDir)
     const zweiter = startServerRaw(dataDir, { NKA_PORT: port, NKA_RUNTIME: 'binary' })
     try {
@@ -681,15 +709,51 @@ test('Belegter Port (#244): ein zweiter Start, während der erste noch die Daten
     } finally {
       zweiter.child.kill()
     }
-    // Eine Anfrage, die während des Startens kommt, wartet und wird danach beantwortet.
-    const units = await fetch(`http://127.0.0.1:${port}/api/units`)
-    assert.equal(units.status, 200)
+    const lesen = await waehrendLesen
+    assert.equal(lesen.status, 200, `nach ${lesen.nach} ms: ${erster.out()}`)
+    const schreiben = await waehrendSchreiben
+    assert.equal(schreiben.status, 201, schreiben.body)
     assert.match(erster.out(), /Mietfuchs-Server läuft auf/)
+    const namen = (await jsonOf<Unit[]>(await fetch(`http://127.0.0.1:${port}/api/units`))).map((u) => u.name)
+    assert.deepEqual(namen, ['mitten im Start'])
     assert.ok(fs.readdirSync(ersterOrdner).some((name) => name.includes('.vor-')), 'der erste Start hat danach migriert')
   } finally {
     erster.child.kill()
     await waitForExit(erster.child).catch(() => null)
     removeDataDir(ersterOrdner)
+    removeDataDir(dataDir)
+  }
+})
+
+test('Belegter Port (#244): antwortet Mietfuchs dort erst nach Sekunden, wartet der zweite Start und erkennt es', async () => {
+  // Rechnet der erste Start gerade einen langen Abschnitt, der die Ereignisschleife blockiert
+  // (die Regression des Umstiegs über viele Jahre, ein großer Migrationsschritt), antwortet sein
+  // /healthz erst danach. Der zweite Start darf ihn deshalb nicht nach dem ersten Zeitlimit für ein
+  // fremdes Programm halten (Durchsicht zu #244, K2). Nachgestellt mit einem Dienst, der ab dem
+  // zweiten Start fünf Sekunden lang nichts beantwortet und danach jede Anfrage als Mietfuchs, so
+  // wie eine Ereignisschleife, die danach wieder frei ist. Das Zeitlimit einer einzelnen Frage
+  // (zwei Sekunden) liegt darunter.
+  let frei = Infinity
+  const langsam = http.createServer((req, res) => {
+    setTimeout(() => {
+      res.writeHead(503, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ app: 'mietfuchs', status: 'starting' }))
+    }, Math.max(0, frei - Date.now()))
+  })
+  const port = String(await listenInTestRange(langsam))
+  const dataDir = await dataDirWithPendingWork('migration')
+  const vorher = folderFingerprint(dataDir)
+  frei = Date.now() + 5000
+  const zweiter = startServerRaw(dataDir, { NKA_PORT: port, NKA_RUNTIME: 'binary' })
+  try {
+    assert.equal(await waitForExit(zweiter.child, 30000), 0, zweiter.out())
+    assert.match(zweiter.out(), /läuft bereits/)
+    assert.doesNotMatch(zweiter.out(), /anderes Programm/)
+    assert.deepEqual(folderFingerprint(dataDir), vorher, zweiter.out())
+  } finally {
+    zweiter.child.kill()
+    langsam.closeAllConnections()
+    langsam.close()
     removeDataDir(dataDir)
   }
 })
@@ -3898,7 +3962,11 @@ test('Jeder Serverstart einer Prüfung setzt CI', () => {
       else if (quelle[i] === '}' && --tiefe === 0) { envEnde = i; break }
     }
     if (envEnde === -1) return assert.fail(`env-Block bei Zeichen ${envStart} ist nicht geschlossen`)
-    if (!/\bCI:\s*['"]/.test(quelle.slice(envStart, envEnde))) {
+    // CI muss **hinter** dem `...env` des Aufrufers stehen, sonst könnte ein Aufrufer es
+    // versehentlich überschreiben (Durchsicht zu #244: `startServerRaw` hatte es davor).
+    const block = quelle.slice(envStart, envEnde)
+    const letztesCI = Math.max(-1, ...[...block.matchAll(/\bCI:\s*['"]/g)].map((m) => m.index))
+    if (letztesCI === -1 || letztesCI < block.lastIndexOf('...env')) {
       ohneCI.push(quelle.slice(0, von).split('\n').length)
     }
   }
