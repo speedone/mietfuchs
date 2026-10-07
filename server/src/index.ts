@@ -51,6 +51,7 @@ import { saveHeatingInfo, saveHeatingRules } from './db/heatingInfo.ts'
 import { heatingPeriodViews, removeCo2Statement, saveCo2Statement, saveHotWater } from './db/co2.ts'
 import { saveServiceValues } from './db/serviceValues.ts'
 import { removeEstimate, saveEstimate } from './db/heatingEstimates.ts'
+import { LawOverrideError, lawOverrideSlots, readLawOverrides, removeLawOverride, saveLawOverride } from './db/lawOverrides.ts'
 import { removeStock, saveStock } from './db/fuelStock.ts'
 import { createDelivery, createEstimates, freezeFuelCarries, fuelGapQuestions, listDegreeDays, listDeliveries, removeDelivery, saveDegreeDays, unfreezeFuelCarries, updateDelivery } from './db/fuel.ts'
 import { assignableHeatingItems, createHeatingPlant, listHeatingPlants, removeHeatingPlant, replaceHeatingPlant, updateHeatingPlant } from './db/heating.ts'
@@ -493,6 +494,19 @@ app.put('/api/properties/:id', async (req, res) => {
 // Testgriff `NKA_TEST_TODAY` (testToday.ts): ein fester Tag nur für Tests. Ohne ihn der wirkliche Tag.
 const TEST_TODAY = testTodayOf(process.env.NKA_TEST_TODAY)
 const today = (): string => TEST_TODAY.value ?? new Date().toISOString().slice(0, 10)
+
+// Rechtswerte, die eine Behörde später veröffentlicht (Heizung PR 17, Entwurf 4.5): je Parameter und
+// Jahr ein Eintrag des Vermieters mit Quelle. Installationsweit, deshalb ohne `?property=`.
+app.get('/api/law-overrides', async (_req, res) => {
+  res.json(lawOverrideSlots(await readData(readLawOverrides), today()))
+})
+app.put('/api/law-overrides/:paramId/:year', async (req, res) => {
+  res.json(await writeData((db) => saveLawOverride(db, req.params.paramId, Number(req.params.year), bodyObject(req), today())))
+})
+app.delete('/api/law-overrides/:paramId/:year', async (req, res) => {
+  const removed = await writeData((db) => removeLawOverride(db, req.params.paramId, Number(req.params.year)))
+  res.json({ ok: true, removed })
+})
 
 app.delete('/api/properties/:id', async (req, res) => {
   const result = await writeData((db) => removeProperty(db, req.params.id))
@@ -2229,7 +2243,7 @@ app.use('/api', (err: unknown, req: Request, res: Response, next: NextFunction) 
   // Eigene Heizkostenabrechnung (Heizung PR 10): die Liste der Positionen, die umzustellen sind.
   if (err instanceof SelfItemsError) return res.status(409).json({ error: err.message, items: err.items })
   // Ablehnungen, deren Meldung schon für den Nutzer geschrieben ist (#92).
-  if (err instanceof RouteProblem || err instanceof CrossPropertyError || err instanceof PeriodError || err instanceof PeriodConflict || err instanceof TenantChangeError || err instanceof BookingRefusal || err instanceof HeatingError || err instanceof StaleTenancyError) {
+  if (err instanceof RouteProblem || err instanceof CrossPropertyError || err instanceof PeriodError || err instanceof PeriodConflict || err instanceof TenantChangeError || err instanceof BookingRefusal || err instanceof HeatingError || err instanceof StaleTenancyError || err instanceof LawOverrideError) {
     return res.status(err.status).json({ error: err.message })
   }
   // **Fehler der Datenbank bekommen ihre eigene Meldung** (db/errors.ts). Ohne diese Zeile käme

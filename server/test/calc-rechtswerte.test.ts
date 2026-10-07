@@ -103,3 +103,5 @@ test('Rechtswerte: Frist und Höchstdauer des Zeitraums frieren in jeder Abrechn
   assert.deepEqual(bgb.sort(), [['bgb.deadline-months', 12], ['bgb.max-period-months', 12]])
   assert.equal(s.deadline, '2026-12-31')
 })
+
+test.todo('Eintrag des Vermieters: die Abrechnung nennt ihn als Hinweis und im Rechtsstand (Heizung PR 17)')
