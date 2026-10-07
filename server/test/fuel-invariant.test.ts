@@ -154,6 +154,23 @@ function totals(s: unknown): { tenants: number; landlord: number; carry: number;
   }
 }
 
+// Durchsicht von #243, Runde 4 (R3-K1): Teile beim Vermieter, die nur aus einem erlaubten Grund dort stehen dürfen, wo die
+// Schranken (ii) und (vii) über den Lauf entfallen: Gegenbuchung, ausgewiesene Teile, Leerstand, Eigenanteil, Restvorrat.
+const ALLOWED_LANDLORD = new Set(['fuelCarry', 'fuelClosedPeriod', 'fuelEstimateDiff', 'vacancy', 'selfUse', 'stockRemaining'])
+function strayParts(s: unknown): string[] {
+  const list = (o: unknown, key: string): unknown[] => {
+    const v: unknown = o !== null && typeof o === 'object' ? Reflect.get(o, key) : undefined
+    return Array.isArray(v) ? v : []
+  }
+  const landlordObj: unknown = s !== null && typeof s === 'object' ? Reflect.get(s, 'landlord') : undefined
+  return list(landlordObj, 'rows').flatMap((r) => list(r, 'landlordParts').flatMap((p) => {
+    const reason: unknown = p !== null && typeof p === 'object' ? Reflect.get(p, 'reason') : undefined
+    const cents: unknown = p !== null && typeof p === 'object' ? Reflect.get(p, 'cents') : undefined
+    const id: unknown = r !== null && typeof r === 'object' ? Reflect.get(r, 'costItemId') : undefined
+    return typeof reason === 'string' && !ALLOWED_LANDLORD.has(reason) && cents !== 0 ? [`${String(id)} ${reason} ${String(cents)}`] : []
+  }))
+}
+
 // Ohne Angabe die Startwerte 1 bis 10 und zwei festgehaltene, an denen die Mutationsprobe der
 // Nachprüfungen von #233 je eine Rücknahme findet, die die ersten zehn nicht finden (16: Storno nach
 // Abschluss der Heizperiode der Positionen; 81: Schätzfaktor). Ein Storno neben einer Schätzung (M2) und
@@ -944,6 +961,9 @@ for (const variant of VARIANTS) {
         let selfBlocked = false
         let bound = { tenants: 0, positions: 0, up: 0, down: 0 }
         let crossing = false
+        // Durchsicht von #243, Runde 4 (R3-K1): Vermieterteile einer nicht gesperrten Heizperiode außerhalb der erlaubten
+        // Gründe. Geprüft wird das, wo die Schranken (ii) und (vii) entfallen.
+        const stray: string[] = []
         let tenants = 0
         let landlord = 0
         const pairs = new Map<string, { carry: number; flagged: number; estimate: boolean; carries: number[]; neutral: number[] }>()
@@ -994,6 +1014,7 @@ for (const variant of VARIANTS) {
             if (Array.isArray(heating) && heating.some((x: unknown) => Reflect.get(Object(x), 'plantId') === 'hp' && Reflect.get(Object(Reflect.get(Object(x), 'self')), 'ok') === false)) blockedHere = true
           }
           if (blockedHere) selfBlocked = true
+          if (!blockedHere) stray.push(...strayParts(stored ? stored.settlement : r).map((x) => `${key}: ${x}`))
           // Zeilen aus Lieferungen oder dem Vorrat anderer Heizperioden: Dann trägt eine Heizperiode Kosten einer anderen, und
           // die Schranken lassen sich nicht je Heizperiode trennen.
           if (/"costItemId":"(fuel|stock):/.test(JSON.stringify(stored ? stored.settlement : r))) crossing = true
@@ -1068,6 +1089,9 @@ for (const variant of VARIANTS) {
         // die Prüfung über die übrigen nur, wenn es keine solchen Zeilen gibt, sonst wie bisher gar nicht. Der nicht
         // abgeglichene Teil einer eingefrorenen Schätzung (#247, G-K3) bleibt erlaubter Überschuss.
         const b = !selfBlocked ? { tenants, positions, up, down } : crossing ? null : bound
+        if ((estimates.length === 0 || estimatesCovered) && !b) {
+          assert.deepEqual(stray, [], `${fall}; (ii/vii je Heizperiode) Vermieterteil ohne erlaubten Grund`)
+        }
         if ((estimates.length === 0 || estimatesCovered) && b) {
           assert.ok(b.tenants >= b.positions - b.up, `${fall}; (vii) Mieter ${b.tenants} < Positionen ${b.positions} − ausgewiesen ${b.up}`)
           assert.ok(b.tenants <= b.positions - b.down + unreconciled + estimates.length, `${fall}; (ii) Mieter ${b.tenants} > Positionen ${b.positions} + ausgewiesen ${-b.down} + nicht abgeglichene Schätzung ${Math.round(unreconciled)}`)

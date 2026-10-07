@@ -102,4 +102,7 @@ test('Durchsicht Runde 2: Lexikon und Anleitung zu § 9a (R2-N-W2) und zum Verbr
 test('Durchsicht Runde 3, N2-H2: Lexikon erklärt die Gradtagzahlen beim Wechsel unter einer Vereinbarung nach § 2', async () => {
   const { GLOSSARY } = await import('../../shared/glossary.ts')
   assert.match(GLOSSARY.degreeDays.needed, /nach § 2 HeizkostenV eine Verteilung nach Wohnfläche vereinbart.*sinngemäß \(Festlegung von Mietfuchs\)/s)
+  // Runde 4 (N3-K1): § 6a und die Fernablesbarkeit gelten weiter; nur die Verteilungsregeln treten zurück.
+  assert.match(GLOSSARY.degreeDays.needed, /Die Verteilungsregeln treten dann hinter die Vereinbarung zurück \(§ 2 HeizkostenV\)/)
+  assert.doesNotMatch(GLOSSARY.degreeDays.needed, /Die Verordnung gilt dann nicht/)
 })
