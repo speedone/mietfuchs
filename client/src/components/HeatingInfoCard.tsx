@@ -3,7 +3,7 @@ import type { HeatingPeriodView, HeatingPlant } from '../types'
 import { api, errorText } from '../api'
 import { useToast } from './feedback'
 import Term from './Term'
-import { CONTRACT_OPTIONS, contractBody, contractToForm, dwdHint, infoBody, infoToForm, type ContractForm, type InfoForm } from '../heatingInfoForm'
+import { CONTRACT_HELP, CONTRACT_OPTIONS, contractBody, contractToForm, dwdHint, infoBody, infoToForm, type ContractForm, type InfoForm } from '../heatingInfoForm'
 import { inheritedText } from '../heatingRulesForm'
 
 // Karte „Angaben zur Abrechnung (§ 6a)“ (Heizung PR 14): was Mietfuchs für die Informationen nach § 6a Abs. 3
@@ -15,6 +15,9 @@ export default function HeatingInfoCard({ plant, view, onChanged }: { plant: Hea
   const [contract, setContract] = useState<ContractForm>(() => contractToForm(view.rules.consumerContract))
   const [error, setError] = useState('')
   const self = plant.method === 'self'
+  // Wo Mietfuchs den Vergleich nach Nr. 4 (bei freien Schlüsseln auch Nr. 5) nicht rechnet: Heizkostenverteiler,
+  // Werte des Ablesedienstes, freie Schlüssel oder ausgenommene Wärme (Durchsicht von #243, R-W1).
+  const attaches = !self || (view.capture ?? 'heatMeter') !== 'heatMeter' || view.rules.exemptionScope === 'heat'
   const set = (k: keyof InfoForm) => (e: { target: { value: string } }) => setForm({ ...form, [k]: e.target.value })
   async function save() {
     const r = infoBody(form)
@@ -40,8 +43,9 @@ export default function HeatingInfoCard({ plant, view, onChanged }: { plant: Hea
     <div className="card no-print">
       <h3><Term id="billingInfo">Angaben zur Abrechnung (§ 6a)</Term> · {view.label}</h3>
       <p className="muted">
-        Mietfuchs druckt die Informationen nach § 6a HeizkostenV mit der Abrechnung. Energieträger, Entgelte der Erfassung und die Kontaktadressen kennt es
-        selbst; was hier fehlt, nennt die Abrechnung mit der Kürzung, die die Mieter dann erklären dürfen.
+        Mietfuchs druckt die Informationen nach § 6a HeizkostenV mit der Abrechnung. Energieträger und Kontaktadressen kennt es selbst, die Entgelte der
+        Erfassung aus den Positionen mit dem Teil „Messdienst, Ablesung, Geräte“; was hier fehlt, nennt die Abrechnung mit der Kürzung, die die Mieter dann
+        erklären dürfen.
       </p>
       {error && <div className="error">{error}</div>}
       <label className="field grow">
@@ -71,7 +75,7 @@ export default function HeatingInfoCard({ plant, view, onChanged }: { plant: Hea
               <span>Vergleichswert eines Durchschnittsnutzers (kWh je m² Wohnfläche)</span>
               <input inputMode="decimal" value={form.reference} disabled={view.closed} onChange={set('reference')} />
             </label>
-            <label className="field grow">
+            <label className="field grow wide">
               <span>Quelle des Vergleichswerts</span>
               <input value={form.referenceSource} disabled={view.closed} onChange={set('referenceSource')} placeholder="z. B. Vergleichswerte Ihres Ablesedienstes" />
             </label>
@@ -89,16 +93,30 @@ export default function HeatingInfoCard({ plant, view, onChanged }: { plant: Hea
               <span>Klimafaktor der vorigen Heizperiode</span>
               <input inputMode="decimal" value={form.climateFactorPrev} disabled={view.closed} onChange={set('climateFactorPrev')} />
             </label>
-            <label className="field grow">
+            <label className="field grow wide">
               <span>Quelle der Klimafaktoren</span>
               <input value={form.climateSource} disabled={view.closed} onChange={set('climateSource')} placeholder="z. B. Deutscher Wetterdienst, Klimafaktoren" />
             </label>
           </div>
-          <p className="muted">{dwdHint(view.info.postalCode, view.from, view.to)} Ist der Faktor der vorigen Heizperiode dort schon eingetragen, lassen Sie das Feld leer.</p>
+          <p className="muted">{dwdHint(view.info.postalCode, view.from, view.to)} Ist der Faktor der vorigen Heizperiode schon in der Karte der vorigen Heizperiode eingetragen, lassen Sie das Feld leer.</p>
+        </>
+      )}
+      {attaches && (
+        <>
+          <label className="field grow wide">
+            <span>Der Vergleich des Ablesedienstes liegt der Abrechnung bei: Quelle</span>
+            <input value={form.comparisonSource} disabled={view.closed} onChange={set('comparisonSource')} placeholder="z. B. Verbrauchsvergleich des Ablesedienstes, Anlage zur Abrechnung" />
+          </label>
+          <p className="muted">
+            {self
+              ? 'Mit Heizkostenverteilern, mit Werten des Ablesedienstes oder für das Warmwasser allein rechnet Mietfuchs den Vergleich mit einem Durchschnittsnutzer (Nr. 4) nicht.'
+              : 'Bei freien Schlüsseln rechnet Mietfuchs die Vergleiche mit einem Durchschnittsnutzer (Nr. 4) und mit dem vorhergehenden Abrechnungszeitraum (Nr. 5) nicht.'}
+            {' '}Legt Ihr Ablesedienst einen solchen Vergleich bei, nennen Sie ihn hier; dann gilt die Angabe als zugänglich gemacht, und die Abrechnung nennt ihn mit dieser Quelle.
+          </p>
         </>
       )}
       <label className="field grow">
-        <span>Vermieten Sie als Unternehmer?</span>
+        <span>Ist Ihr Mietvertrag ein Verbrauchervertrag?</span>
         <select value={contract.contract} disabled={view.closed} onChange={(e) => setContract({ ...contract, contract: e.target.value as ContractForm['contract'] })}>
           {CONTRACT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
@@ -110,8 +128,7 @@ export default function HeatingInfoCard({ plant, view, onChanged }: { plant: Hea
         </label>
       )}
       <p className="muted">
-        Beim Verbrauchervertrag gehört die Information zur Streitbeilegung dazu (§ 6a Abs. 3 Satz 1 Nr. 3 HeizkostenV); welche Stelle zuständig ist und ob Sie
-        teilnehmen, entscheiden Sie (§§ 36, 37 VSBG).{fromContract ? ` ${fromContract}` : ''}
+        {CONTRACT_HELP}{fromContract ? ` ${fromContract}` : ''}
       </p>
       {!view.closed && (
         <div className="row">

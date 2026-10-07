@@ -68,7 +68,7 @@ import { betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths } from '../../sha
 import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvEstimateThreshold, hkvExemptions, hkvInfoDistrict, hkvMonthlyInfo, hkvHeatPumpCapture, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvRenewableExemption, hkvSettlementInfo, type DegreeDayTable } from '../../shared/law/heizkostenv.ts'
 import { plantDevices, remoteReadingVerdict, servedUnitIds } from './remoteReading.ts'
 import { heatingInfoOf, heatingRulesOf, planByConsumption, type RuleRow } from './heatingInfo.ts'
-import { INFO_CONTACTS, INFO_CONTACTS_CHECKED } from '../../shared/heatingInfo.ts'
+import { AGREED_FIXED_SELF_TEXT, INFO_CONTACTS, INFO_CONTACTS_CHECKED } from '../../shared/heatingInfo.ts'
 import { practiceReadingOffWarning, practiceVacancyPersons } from '../../shared/law/practice.ts'
 import { HEATING_CATEGORY, heatingByConsumption, heatingFindings, mayAgreeOtherwise, PART_OF_POT, POT_OF_PART } from '../../shared/heating.ts'
 import { andList, meterTypeLabel, plural } from '../../shared/wording.ts'
@@ -291,6 +291,8 @@ const noticeKinds = {
   'co2.missing': { level: 'warning', title: 'CO₂-Kosten nicht aufgeteilt', rule: 'co2-split', terms: ['co2Split', 'heatingSystem'] },
   'co2.missing-first-year': { level: 'hint', title: 'CO₂-Kosten im ersten Zeitraum der Aufteilung', rule: 'co2-split', terms: ['co2Split', 'heatingSystem'] },
   'co2.fuel-unknown': { level: 'hint', title: 'Energieträger der Heizung unbekannt', rule: 'co2-split', terms: ['co2Split', 'heatingSystem'] },
+  // Heizung PR 14, Durchsicht von #243, G-K3.
+  'co2.exempt-deducted': { level: 'warning', title: 'CO₂-Abzug trotz Ausnahme nach § 11', rule: 'heating-exemption', terms: ['co2Deducted', 'heatingCostOrdinance'] },
   'co2.service-unsplit': { level: 'warning', title: 'Messdienst hat die CO₂-Kosten nicht aufgeteilt', rule: 'co2-split', terms: ['co2Split'] },
   'co2.incomplete': { level: 'warning', title: 'Angaben für den CO₂-Ausweis fehlen', rule: 'co2-split', terms: ['co2Split', 'co2Stage'] },
   'co2.stage-mismatch': { level: 'hint', title: 'Einstufung laut Abrechnung weicht ab', rule: 'co2-split', terms: ['co2Stage', 'co2Area'] },
@@ -2720,6 +2722,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     hDays: number
     hDegree: number
     userByKey: Map<string, SelfUserPlan>
+    // Vereinbarung nach § 2 „nach Wohnfläche“: verteilt wird ganz nach den Grundkosten (Durchsicht von #243, G-W3).
+    agreedArea: boolean
     input: SelfInput
     // § 11 Abs. 1 Nr. 3 Buchst. a a. F. (Heizung PR 11, Abweichung 9): Wärmepumpe ohne weiteren Erzeuger in
     // einem Zeitraum, der vor dem 01.10.2024 beginnt. Dann keine Kürzungsbeträge und kein Fehler zu α.
@@ -2871,10 +2875,18 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Anlage weiter, ebenso ihr Verfahren für den Warmwasseranteil.
     const allPlants = snapshot.heatingPlants ?? []
     const lineIds = new Set([plant.id, ...allPlants.filter((p) => lineRoot(p, allPlants) === lineRoot(plant, allPlants)).map((p) => p.id)])
-    const shares = consumptionSharesOf(
+    const lineShares = consumptionSharesOf(
       lineShareRows((snapshot.heatingPeriodRows ?? []).map((r) => ({ plantId: r.plantId, period: String(r.period), heatConsumptionPct: r.heatConsumptionPct ?? null, waterConsumptionPct: r.waterConsumptionPct ?? null, insulationRule: r.insulationRule ?? null, above70Agreed: r.above70Agreed ?? null })), allPlants, plant.id),
       period.key, plant.energy, () => law(hkvConsumptionShareForced, { period: lawPeriod }, lawLog),
     )
+    // Vereinbarung nach § 2 (Durchsicht von #243, G-W3): „nach Wohnfläche“ verteilt die eigene Abrechnung ganz nach
+    // der Fläche, ohne Anteil nach Verbrauch und ohne die Grenzen der §§ 7, 8 und 10; „feste Anteile“ kann sie
+    // nicht abbilden (dafür freie Schlüssel); „nach Verbrauch“ rechnet wie eingerichtet.
+    const agreedHere = agreedFor(plant.id, String(period.key))
+    const agreedArea = agreedHere === 'area'
+    const shares: ConsumptionShares | null = agreedArea
+      ? { heating: 0, water: 0, forced: false, previous: null, own: true, changed: false, insulation: null, above70Agreed: false }
+      : lineShares
     const own = rows.find((r) => r.period === period.key)
     const lineOwn = (snapshot.heatingPeriodRows ?? []).find((r) => r.plantId !== plant.id && lineIds.has(r.plantId) && r.period === period.key && r.dhwMethod !== null)
     // Läuft die Anlage nur einen Teil der Heizperiode (Kesseltausch), gilt die Wärme am Speicher nur
@@ -2993,6 +3005,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           : ''}${switchedNote(p)}`,
       })
     }
+    if (agreedHere === 'fixedPercent') {
+      blocked.push({ code: 'heating.self-incomplete', text: AGREED_FIXED_SELF_TEXT })
+    }
     if (shares === null) {
       blocked.push({ code: 'heating.self-incomplete', text: 'Für diese Heizperiode ist kein Anteil nach Verbrauch festgelegt. Tragen Sie auf der Seite Heizkosten ein, mit welchem Anteil Sie bisher abgerechnet haben.' })
     } else {
@@ -3002,7 +3017,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         blocked.push({ code: 'heating.self-incomplete', text: 'Für das Warmwasser ist kein Anteil nach Verbrauch festgelegt (§ 8 Abs. 1 HeizkostenV); er darf von dem der Heizung abweichen. Tragen Sie ihn auf der Seite Heizkosten ein.' })
       }
       // § 10 (Heizung PR 14): über dem Höchstsatz nur mit Vereinbarung, nie über 100 %.
-      if ([shares.heating, ...(hotWater !== 'none' && shares.water !== null ? [shares.water] : [])].some((v) => v < min || v > 100 || (v > max && !shares.above70Agreed))) {
+      if (!agreedArea && [shares.heating, ...(hotWater !== 'none' && shares.water !== null ? [shares.water] : [])].some((v) => v < min || v > 100 || (v > max && !shares.above70Agreed))) {
         blocked.push({ code: 'heating.self-incomplete', text: `Der Anteil nach Verbrauch liegt außerhalb von ${hkvConsumptionShare.describe({ min, max })}. Mehr als ${max} % gehen nur mit einer Vereinbarung (§ 10 HeizkostenV). Korrigieren Sie ihn auf der Seite Heizkosten.` })
       }
     }
@@ -3081,7 +3096,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       ? weightsOf(plan, { heating: shares.heating, water: shares.water ?? 0 }, alpha?.value ?? null)
       : null
     selfPlans.set(plant.id, {
-      plant, plan, shares, alpha, weights, blocked, verdict, hotWater, input, oldHeatPumpExemption, majorityOpen,
+      plant, plan, shares, alpha, weights, blocked, verdict, hotWater, input, oldHeatPumpExemption, majorityOpen, agreedArea,
       dhwUnmeasurable: own?.dhwUnmeasurable ?? lineOwn?.dhwUnmeasurable ?? null,
       capture,
       devices: deviceLines(capture, plan, snapshot.meters),
@@ -3200,6 +3215,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       // Der Rechenweg zum Warmwasseranteil (Heizung PR 11, Entwurf 8.8 „α mit Methode“).
       ...(sp.alpha ? { dhw: sp.alpha.statement } : {}),
       shares: sp.shares ? { heating: sp.shares.heating, water: sp.shares.water, forced: sp.shares.forced, previous: sp.shares.previous, ...(sp.shares.above70Agreed ? { above70Agreed: true } : {}) } : null,
+      ...(sp.agreedArea ? { agreedArea: true as const } : {}),
       pots: sp.plan.pots.map((p): SelfPotView => {
         const t = sp.plan.totals[p]
         // § 9a Abs. 2 (Heizung PR 13): über der Grenze kein Anteil nach Verbrauch.
@@ -3274,7 +3290,11 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     }
   }
   const co2Pots = co2PotsOf(snapshot, [...items, ...fuelSynthetic].filter((c) => !spanning.has(c.id)))
-  const co2Deductions = co2DeductionsOf(co2Pots.filter((p) => !co2OffByExemption(p.plantId, String(p.period.key))), snapshot.units, (p) => law(co2ApplicableFrom, { period: { from: p.from, to: p.to } }, lawLog))
+  // Auch unter einer Ausnahme nach § 11 ohne vereinbarte Abrechnung (Durchsicht von #243, G-K3): Hat der Messdienst den
+  // CO₂-Anteil des Vermieters trotzdem abgezogen, steckt er im Rest der Position; zerlegt gehört der Teil der eigenen
+  // Wohnung zum Eigenanteil (privat), sonst zählte er in der Steuerübersicht als abziehbar. Den Mietern bucht das
+  // nichts zu; `co2.exempt-deducted` sagt es.
+  const co2Deductions = co2DeductionsOf(co2Pots, snapshot.units, (p) => law(co2ApplicableFrom, { period: { from: p.from, to: p.to } }, lawLog))
   let totalCostsCents = 0
   let selfUsedShareCents = 0
 
@@ -4606,6 +4626,13 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Heizung PR 14: unter einer Ausnahme nach § 11 für Wärme und Warmwasser nicht, außer eine Abrechnung ist
     // vereinbart (§ 2 Abs. 7 CO2KostAufG).
     const applicable = !etsExempt && !co2OffByExemption(pot.plantId, String(pot.period.key)) && (st !== null || settledHere) && law(co2ApplicableFrom, { period: hPeriod }, lawLog)
+    if (co2OffByExemption(pot.plantId, String(pot.period.key)) && co2Deductions.has(pot.carrierId ?? '') && settledHere) {
+      warn('co2.exempt-deducted',
+        `${where}: Sie haben eine Ausnahme nach § 11 HeizkostenV für Wärme und Warmwasser angegeben und keine Abrechnung der Heiz- und Warmwasserkosten mit den Mietern vereinbart; dann ist das CO2KostAufG nicht anzuwenden (§ 2 Abs. 7 CO2KostAufG). ` +
+          `Ihr Messdienst hat trotzdem CO₂-Kosten des Vermieters von ${fmtCents(st?.serviceLandlordCents ?? 0)} abgezogen. Mietfuchs übernimmt seine Beträge, wie sie dastehen; die Mieter tragen damit weniger, als ohne Aufteilung auf sie entfiele. ` +
+          'Den Teil, der auf Ihre selbstgenutzte Wohnung entfällt, rechnet Mietfuchs zum Eigenanteil; in der Steuerübersicht ist er privat. Klären Sie mit dem Messdienst, ob die Ausnahme gilt.',
+        plantSubject)
+    }
     // Eigene Aufteilung (Heizung PR 7, Entwurf 7.6, 9): bei freien Schlüsseln aus den Lieferungen dieser
     // Heizperiode, beim Messdienst ohne Aufteilung aus den Rechnungen, die er angesetzt hat.
     // Nur für Brennstoffe, für die es Standardwerte nach § 7 Abs. 4 BEHG gibt (§ 2 Abs. 1 CO2KostAufG):
@@ -5087,6 +5114,38 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const st = statements.get(tenancyId)
     return st ? `${st.tenantName} (${st.unitName})` : tenancyId
   }
+  // Die Grundlage einer Kürzung, wenn nach § 11 nur die Wärme ausgenommen ist (Durchsicht von #243, G-W2): je Mieter
+  // sein Anteil am Topf Warmwasser der Anlagen, nach dem CO₂-Abzug (Entwurf 6.5). Bei der eigenen Abrechnung aus dem
+  // Plan (Kosten des Topfs mal Gewicht, abzüglich seines CO₂-Abzugs im Topf); bei freien Schlüsseln die Positionen
+  // mit Ziel Warmwasser. Eine Position für Heizung und Warmwasser mit freiem Schlüssel hat einen Anteil Warmwasser,
+  // den Mietfuchs nicht kennt (`unknown`).
+  const waterBaseOf = (plantIds: readonly string[], tenancyId: string): { cents: number; unknown: boolean } => {
+    const st = statements.get(tenancyId)
+    if (!st) return { cents: 0, unknown: false }
+    let cents = 0
+    let unknown = false
+    for (const plantId of plantIds) {
+      const pot = co2Pots.find((x) => x.plantId === plantId)
+      if (!pot) continue
+      const sp = selfPlans.get(plantId)
+      const weights = sp?.weights ?? null
+      if (sp && weights) {
+        const w = sp.plan.units.flatMap((u) => u.users).filter((u) => u.tenancyId === tenancyId).reduce<SelfWeights>((a, u) => {
+          const x = weights.get(u.key)
+          return x ? { heating: a.heating + x.heating, water: a.water + x.water, both: a.both + x.both } : a
+        }, { heating: 0, water: 0, both: 0 })
+        cents += potCostOf(sp, pot.items, 'water') * w.water - potCo2Of(sp, pot.items, pot.reliefKey, tenancyId, w).water
+      }
+      for (const c of pot.items) {
+        if (weights && c.key === 'heatingSystem') continue
+        const sum = st.rows.filter((r) => r.costItemId === c.id).reduce((a, r) => a + r.shareCents, 0)
+        if (sum === 0) continue
+        if (c.heatingTarget === 'water') cents += sum
+        else if (c.heatingTarget !== 'heating') unknown = true
+      }
+    }
+    return { cents: Math.max(0, cents), unknown }
+  }
   const permilleText = (p: number): string => `${fmtNum(Math.round(p * 10) / 10)} ‰`
   // ---------- Schätzung nach § 9a (Heizung PR 13, Entwurf 8.7, 10.1) ----------
   // Vor den übrigen Hinweisen der eigenen Abrechnung und auch bei einer Anlage, die nicht verteilt wird: Die
@@ -5293,9 +5352,11 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       } else {
         const cut = law(hkvCutNotByConsumption, { period: lawPeriod }, lawLog)
         const noCut = noCutPots(f.pots)
+        // Ist nur die Wärme ausgenommen, nur der Anteil Warmwasser (Durchsicht von #243, G-W2).
+        const heatOnly = exemptionScopeOf(plant.id, key) === 'heat'
         const list = noCut ? [] : f.tenancyIds.flatMap((id) => {
-          const c = cutOf(id, ids, cut)
-          return c === null ? [] : [`${nameOf(id)} ${fmtCents(c)}`]
+          const c = heatOnly ? Math.round((waterBaseOf([plant.id], id).cents * cut) / 100) : cutOf(id, ids, cut)
+          return c === null || c <= 0 ? [] : [`${nameOf(id)} ${fmtCents(c)}`]
         })
         warn('heating.no-interim-reading-missed',
           `${where}: Für den Wechsel in ${f.unitName} zum ${fmtDay(f.boundary)} gibt es keine Zwischenablesung` +
@@ -5303,7 +5364,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
             'Gerechnet wird nach § 9b Abs. 3 HeizkostenV, denn eine andere Rechnung gibt es nicht. Die Zwischenablesung war Pflicht (§ 9b Abs. 1). ' +
             (noCut
               ? 'Eine Kürzung nach der Heizkostenverordnung nennt Mietfuchs hier nicht, weil die Verordnung insoweit nicht gilt oder die Verteilung vereinbart ist.'
-              : (list.length > 0 ? `Bis zu ${cut} % der Heizkosten von ${andList(list)} können gekürzt werden (LG Hamburg, 11 S 202/87); ` : `Bis zu ${cut} % können gekürzt werden (LG Hamburg, 11 S 202/87); `) +
+              : (list.length > 0 ? `Bis zu ${cut} % der ${heatOnly ? 'Warmwasserkosten' : 'Heizkosten'} von ${andList(list)} können gekürzt werden (LG Hamburg, 11 S 202/87); ` : `Bis zu ${cut} % können gekürzt werden (LG Hamburg, 11 S 202/87); `) +
                 'nach AG Schöneberg, 104a C 226/05, ist die Umlage des Verbrauchsanteils angreifbar. Mietfuchs zieht nichts ab; die Kürzung muss der Mieter erklären.'),
           subject)
       }
@@ -5396,10 +5457,13 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const v = law(hkvExemptions, { period: hPeriod }, lawLog)
     switch (e) {
       case 'lowDemand': return `Räume in einem Gebäude mit einem Heizwärmebedarf von weniger als ${v.lowDemandKwhPerM2Year} kWh je m² und Jahr (§ 11 Abs. 1 Nr. 1 Buchst. a HeizkostenV)`
-      case 'disproportionate': return `Räume, bei denen Erfassung oder Verteilung nur mit unverhältnismäßig hohen Kosten möglich ist, die sich nicht in der Regel innerhalb von ${v.paybackYears} Jahren durch Einsparungen erwirtschaften lassen (§ 11 Abs. 1 Nr. 1 Buchst. b HeizkostenV)`
+      // Durchsicht von #243, R-K1: der ganze Wortlaut des Buchst. b.
+      case 'disproportionate': return `Räume, bei denen das Anbringen der Ausstattung zur Verbrauchserfassung, die Erfassung des Wärmeverbrauchs oder die Verteilung der Kosten des Wärmeverbrauchs nicht oder nur mit unverhältnismäßig hohen Kosten möglich ist; unverhältnismäßig hoch sind Kosten, die nicht durch die Einsparungen erwirtschaftet werden können, die in der Regel innerhalb von ${v.paybackYears} Jahren erzielt werden können (§ 11 Abs. 1 Nr. 1 Buchst. b HeizkostenV)`
       case 'pre1981': return `Räume, die vor dem ${fmtDay(v.readyBefore)} bezugsfertig geworden sind und in denen der Nutzer den Wärmeverbrauch nicht beeinflussen kann (§ 11 Abs. 1 Nr. 1 Buchst. c HeizkostenV)`
-      // Zwei Fassungen der Nr. 3 a: für Zeiträume, die vor dem 01.10.2024 beginnen, mit Wärmepumpen.
-      case 'renewable': return `Räume in einem Gebäude, das überwiegend mit Wärme aus ${hkvRenewableExemption.describe(law(hkvRenewableExemption, { period: hPeriod }, lawLog)).replace(/ \(§ 11[^)]*\)$/, '')} oder aus Kraft-Wärme-Kopplung oder Abwärme versorgt wird, sofern der Wärmeverbrauch des Gebäudes nicht erfasst wird (§ 11 Abs. 1 Nr. 3 HeizkostenV)`
+      // Durchsicht von #243, R-W7: Die Bedingung „sofern der Wärmeverbrauch des Gebäudes nicht erfasst wird“ gehört
+      // nur zu Buchst. b. Zwei Fassungen des Buchst. a: für Zeiträume, die vor dem 01.10.2024 beginnen, mit Wärmepumpen.
+      case 'renewable': return `Räume in einem Gebäude, das überwiegend mit Wärme aus ${hkvRenewableExemption.describe(law(hkvRenewableExemption, { period: hPeriod }, lawLog))} versorgt wird`
+      case 'chp': return 'Räume in einem Gebäude, das überwiegend mit Wärme aus Anlagen der Kraft-Wärme-Kopplung oder aus Anlagen zur Verwertung von Abwärme versorgt wird, sofern der Wärmeverbrauch des Gebäudes nicht erfasst wird (§ 11 Abs. 1 Nr. 3 Buchst. b HeizkostenV)'
       case 'authority': return 'eine Befreiung durch die nach Landesrecht zuständige Stelle (§ 11 Abs. 1 Nr. 5 HeizkostenV)'
       case 'none': return ''
     }
@@ -5414,6 +5478,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const k = `${lineRoot(plant, plants)}|${report.period}`
     lineGroups.set(k, [...(lineGroups.get(k) ?? []), report])
   }
+  // Satz 3 ist ein Kürzungsrecht: Lücken innerhalb des Satzes summieren sich nicht, nur Kürzungsrechte aus
+  // verschiedenen Sätzen des § 12 Abs. 1 (BR-Drs. 643/21, S. 23 f., Durchsicht von #243, R-W4).
+  const ONE_RIGHT = 'Das ist ein Kürzungsrecht, auch wenn mehrere Angaben fehlen und auch wenn die monatliche Verbrauchsinformation fehlt: § 12 Abs. 1 Satz 3 HeizkostenV erfasst alle Informationen nach § 6a, und es summieren sich nur Kürzungsrechte aus verschiedenen Sätzen des § 12 Abs. 1 (BR-Drs. 643/21, S. 23 f.).'
   for (const group of lineGroups.values()) {
     const first = group[0]
     if (!first) continue
@@ -5436,18 +5503,19 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const scope = exemptionScopeOf(plant.id, key)
     const agreement = agreedFor(plant.id, key)
     const since = (from: string | null) => (from !== null && from !== key ? ` (angegeben ab der Heizperiode ${from.slice(0, 4)}${from.slice(5, 7) === '01' ? '' : `/${from.slice(5, 7)}`})` : '')
-    // § 11 (Entwurf 8.9): Hinweis mit § 556a BGB und § 2 Abs. 7 CO2KostAufG, je Topf.
+    // § 11 (Entwurf 8.9): Hinweis mit § 556a BGB und § 2 Abs. 7 CO2KostAufG, je Topf. Die CO₂-Sätze folgen dem, was
+    // Mietfuchs rechnet (`co2OffByExemption`, Durchsicht von #243, R-W8).
     if (scope !== null) {
       warn('heating.exemption',
         `${where}: Sie haben angegeben, dass die Heizkostenverordnung für diese Anlage nach § 11 HeizkostenV nicht gilt${since(rules.fromPeriod.exemption)}: ${exemptionText(rules.exemption, hPeriod)}. ` +
           'Soweit die Ausnahme reicht, gelten ihre Vorschriften zur Erfassung, zur Verteilung und zu den Informationen nach § 6a nicht, und Mietfuchs nennt dafür keine Kürzung nach § 12 HeizkostenV. ' +
           'Verteilt wird dann nach dem Mietvertrag; ist dort nichts anderes vereinbart, nach der Wohnfläche, und Kosten, die von einem erfassten Verbrauch abhängen, nach einem Maßstab, der dem Verbrauch Rechnung trägt (§ 556a Abs. 1 BGB). Mietfuchs verteilt, wie Sie die Positionen erfasst haben. Bewahren Sie den Nachweis für die Ausnahme auf. ' +
           (scope === 'heat'
-            ? 'Die Ausnahme betrifft nach Ihrer Angabe nur die Wärme. Für das Warmwasser gilt § 11 nur „entsprechend“ (Abs. 2), also mit eigener Prüfung; Mietfuchs rechnet das Warmwasser deshalb weiter nach der Verordnung ab, mit den Angaben nach § 6a und den Kürzungsrechten. ' +
-              'Die CO₂-Kosten teilt Mietfuchs weiter auf: Ob das CO2KostAufG auch dann nicht gilt, wenn nur die Wärme ausgenommen ist (§ 2 Abs. 7 CO2KostAufG), sagt das Gesetz nicht ausdrücklich, und ohne Aufteilung dürften die Mieter kürzen (Auslegung von Mietfuchs). Betrifft die Ausnahme auch das Warmwasser, geben Sie das auf der Seite Heizkosten an. '
+            ? 'Die Ausnahme betrifft nach Ihrer Angabe nur die Wärme. Für das Warmwasser gilt § 11 nur „entsprechend“ (Abs. 2), also mit eigener Prüfung; Mietfuchs rechnet das Warmwasser deshalb weiter nach der Verordnung ab, mit den Angaben nach § 6a und den Kürzungsrechten, und beziffert Kürzungen nur auf den Anteil Warmwasser. ' +
+              'Die CO₂-Kosten teilt Mietfuchs weiter auf: Das CO2KostAufG gilt nach der Begründung nicht für Räume im Sinne von § 11 HeizkostenV, „in denen keine Heizkostenabrechnung durchgeführt wird“ (BT-Drs. 20/3172, S. 28, zu § 2 Abs. 7 CO2KostAufG), und hier wird das Warmwasser nach der Verordnung abgerechnet. Dass das schon genügt, ist eine Auslegung von Mietfuchs. Betrifft die Ausnahme auch das Warmwasser, geben Sie das auf der Seite Heizkosten an. '
             : rules.exemptionBillingAgreed
               ? 'Weil Sie mit den Mietern eine Abrechnung der Heiz- und Warmwasserkosten vereinbart haben, teilt Mietfuchs die CO₂-Kosten nach dem CO2KostAufG auf (§ 2 Abs. 7 CO2KostAufG). '
-              : 'Die CO₂-Kosten werden in diesem Fall nicht nach dem CO2KostAufG aufgeteilt (§ 2 Abs. 7 CO2KostAufG), außer Sie haben mit den Mietern eine Abrechnung der Heiz- und Warmwasserkosten vereinbart; das geben Sie auf der Seite Heizkosten an. ') +
+              : 'Die CO₂-Kosten werden in diesem Fall nicht nach dem CO2KostAufG aufgeteilt (§ 2 Abs. 7 CO2KostAufG; nach der Begründung, soweit „keine Heizkostenabrechnung durchgeführt wird“, BT-Drs. 20/3172, S. 28), außer Sie haben mit den Mietern eine Abrechnung der Heiz- und Warmwasserkosten vereinbart; das geben Sie auf der Seite Heizkosten an. ') +
           'Die Verordnung stellt auf Räume ab; Mietfuchs wendet die Ausnahme auf die ganze Anlage an (Vereinfachung).',
         subject)
     }
@@ -5456,123 +5524,186 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // § 11 Abs. 1 Nr. 3 Buchst. a a. F. (Heizung PR 10, PR 11), gibt es auch keine Informationen nach § 6a.
     const hostSp = selfPlans.get(host.plantId)
     if (hostSp && (hostSp.verdict?.kind === 'notYet' || (hostSp.oldHeatPumpExemption && !hostSp.majorityOpen))) continue
-    // Monatliche Verbrauchsinformation (§ 6a Abs. 1, 2): Sind fernablesbare Geräte eingebaut, auch beim Messdienst
-    // und unter einer Vereinbarung nach § 2 (die regelt nur die Verteilung). Das Register wird erst gefragt, wenn
-    // ein Gerät in Frage kommt; so steht der Wert nur dann im Rechtsstand.
     const groupPlants = group.flatMap((r) => plants.filter((p) => p.id === r.plantId))
-    const devices = groupPlants.flatMap((p) => plantDevices(p, snapshot.meters, snapshot.units)).filter((m) => deviceInUse(m.id, hPeriod))
-    // Gemeldet wird nur, was Mietfuchs weiß: ein Gerät, das als fernablesbar eingetragen ist, oder die Angabe an der
-    // Anlage. Ohne Angabe schweigt der Hinweis, denn das Anlegen einer Anlage ändert keinen Hinweis (Entwurf 11.2);
-    // auf die monatliche Information weist dann der Hinweis zur Fernablesbarkeit hin (§ 5 Abs. 3).
-    const known = devices.some((m) => m.remoteReadable === true) || groupPlants.some((p) => p.devicesRemote === 'all' || p.devicesRemote === 'partial')
-    if (!rules.monthlyInfoElsewhere && known) {
-      const monthly = law(hkvMonthlyInfo, { period: hPeriod }, lawLog)
-      if (monthly.coverage !== 'none') {
-        const cut = law(hkvCutInformation, { period: hPeriod }, lawLog)
-        warn('heating.monthly-info',
-          `${where}: Nach Ihren Angaben sind Zähler oder Heizkostenverteiler fernablesbar. Dann stehen den Mietern seit dem ${fmtDay(monthly.validFrom ?? '')} monatliche Verbrauchsinformationen zu: der Verbrauch des letzten Monats in Kilowattstunden, der Vergleich mit dem Vormonat und dem Vorjahresmonat und mit einem Durchschnittsnutzer (§ 6a Abs. 1 und 2 HeizkostenV). ` +
-            `Fehlen sie, darf jeder Mieter seinen Anteil an den Heizkosten um bis zu ${cut} % kürzen (§ 12 Abs. 1 Satz 3 HeizkostenV)${cutsOn(ids, cut)}. ` +
-            'Mietfuchs erstellt diese Informationen nicht. Bekommen Ihre Mieter sie anders, etwa vom Messdienst als Brief oder E-Mail oder in einem Portal mit einer Nachricht jeden Monat, dass sie dort steht, bestätigen Sie das auf der Seite Heizkosten in der Karte „Ausnahmen und Vereinbarungen“. ' +
-            'Ein Portal ohne diese Nachricht genügt nach der Begründung der Verordnung nicht: Mitgeteilt ist die Information erst, wenn sie den Mieter erreicht (BR-Drs. 643/21, S. 18 f.).',
-          subject)
-      }
+    const groupIds = groupPlants.map((p) => p.id)
+    // Die Mieter, die über diese Anlage abgerechnet werden, und je Mieter die Grundlage einer Kürzung nach Satz 3:
+    // seine gedruckten Zeilen nach dem CO₂-Abzug; ist nur die Wärme ausgenommen, nur sein Anteil am Warmwasser
+    // (Durchsicht von #243, G-W2: für die Wärme gilt § 6a nach § 11 Abs. 1 nicht).
+    const billed = [...statements.values()].filter((st) => st.rows.some((r) => ids.has(r.costItemId))).map((st) => st.tenancyId)
+    const baseOf = (tenancyId: string): { cents: number; unknown: boolean } => {
+      if (scope === 'heat') return waterBaseOf(groupIds, tenancyId)
+      const st = statements.get(tenancyId)
+      return { cents: st ? st.rows.filter((r) => ids.has(r.costItemId)).reduce((a, r) => a + r.shareCents, 0) : 0, unknown: false }
     }
+    const amountsFor = (tenancyIds: readonly string[], pct: number): { list: string[]; unknown: string[] } => {
+      const list: string[] = []
+      const unknown: string[] = []
+      for (const id of tenancyIds) {
+        const b = baseOf(id)
+        const c = Math.round((b.cents * pct) / 100)
+        if (c > 0) list.push(`${nameOf(id)} ${fmtCents(c)}${b.unknown ? ' und auf den Anteil Warmwasser an den Positionen für Heizung und Warmwasser' : ''}`)
+        else if (b.unknown) unknown.push(nameOf(id))
+      }
+      return { list, unknown }
+    }
+    const waterWord = scope === 'heat' ? ' am Warmwasser' : ' an den Heizkosten'
+    const unknownText = (u: readonly string[]) => (u.length > 0
+      ? ` Für ${andList(u)} rechnet sich die Kürzung auf den Anteil Warmwasser an den Positionen für Heizung und Warmwasser; den kennt Mietfuchs bei diesen Schlüsseln nicht, deshalb steht dort kein Betrag.`
+      : '')
+    // Monatliche Verbrauchsinformation (§ 6a Abs. 1, 2): Sind fernablesbare Geräte eingebaut, auch beim Messdienst
+    // und unter einer Vereinbarung nach § 2 (die regelt nur die Verteilung). Ist nur die Wärme ausgenommen, zählen
+    // nur die Warmwassergeräte (Durchsicht von #243, R-K12). Gemeldet wird nur, was Mietfuchs weiß: ein Gerät, das
+    // als fernablesbar eingetragen ist, oder die Angabe an der Anlage. Ohne Angabe schweigt der Hinweis, denn das
+    // Anlegen einer Anlage ändert keinen Hinweis (Entwurf 11.2); auf die monatliche Information weist dann der Hinweis
+    // zur Fernablesbarkeit hin (§ 5 Abs. 3). Das Register wird erst gefragt, wenn ein Gerät in Frage kommt.
+    const devices = groupPlants.flatMap((p) => plantDevices(p, snapshot.meters, snapshot.units))
+      .filter((m) => deviceInUse(m.id, hPeriod) && (scope !== 'heat' || m.type === 'warmwasser'))
+    const known = devices.some((m) => m.remoteReadable === true) ||
+      groupPlants.some((p) => p.devicesRemote === 'all' || (scope !== 'heat' && p.devicesRemote === 'partial'))
+    const monthly = !rules.monthlyInfoElsewhere && known ? law(hkvMonthlyInfo, { period: hPeriod }, lawLog) : null
     // Informationen nach § 6a Abs. 3 und 5: nicht beim Messdienst (er liefert sie mit seiner Abrechnung), erst für
     // Zeiträume, die ab dem 01.12.2021 beginnen (`hkv.settlement-info`).
-    if (plant.method === 'service' || !law(hkvSettlementInfo, { period: hPeriod }, lawLog)) continue
-    const sp = group.map((r) => selfPlans.get(r.plantId)).find((x) => x !== undefined && x.plant.id === host.plantId) ?? group.map((r) => selfPlans.get(r.plantId)).find((x) => x !== undefined)
-    const potsUnder: SelfPot[] = scope === 'heat' ? ['water'] : ['heating', 'water']
-    // Beruht die Abrechnung auf dem Verbrauch? Das sagen die Schlüssel der Positionen, auch bei freien Schlüsseln;
-    // unter einer Vereinbarung nach § 2 der vereinbarte Maßstab.
-    const byKeys = potItems.some((c) => heatingByConsumption(c.key) && (c.key !== 'heatingSystem' || (sp !== undefined && planByConsumption(sp.plan, potsUnder))))
-    const full = agreement !== null ? agreement === 'consumption' : byKeys
-    const ownRow = (snapshot.heatingPeriodRows ?? []).find((r) => r.plantId === plant.id && String(r.period) === key)
-    const lineRow = (k: string) => (snapshot.heatingPeriodRows ?? []).filter((r) => String(r.period) === k && groupPlants.concat(plants.filter((p) => lineRoot(p, plants) === lineRoot(plant, plants))).some((p) => p.id === r.plantId))
-    const prevRows = sp?.prevPeriod ? lineRow(sp.prevPeriod.key) : []
-    const prevFactor = prevRows.find((r) => (r.climateFactor ?? null) !== null)
-    const kwhOfPlant = (id: string): number | null => {
-      const lines = fuelResults.get(id)?.result.lines ?? []
-      return lines.length > 0 && lines.every((l) => l.energyKwh !== null) ? lines.reduce((a, l) => a + (l.energyKwh ?? 0), 0) : null
+    const withInfo = plant.method !== 'service' && law(hkvSettlementInfo, { period: hPeriod }, lawLog)
+    let info: HeatingInfoStatement | null = null
+    if (withInfo) {
+      const sp = group.map((r) => selfPlans.get(r.plantId)).find((x) => x !== undefined && x.plant.id === host.plantId) ?? group.map((r) => selfPlans.get(r.plantId)).find((x) => x !== undefined)
+      const potsUnder: SelfPot[] = scope === 'heat' ? ['water'] : ['heating', 'water']
+      // Beruht die Abrechnung auf dem Verbrauch? Das sagt, was Mietfuchs rechnet: die Schlüssel der Positionen, bei
+      // der eigenen Abrechnung ihr Plan; verteilt sie nach einer Vereinbarung nach § 2 nach Fläche, nicht
+      // (Durchsicht von #243, G-W3).
+      const byKeys = potItems.some((c) => heatingByConsumption(c.key) && (c.key !== 'heatingSystem' || (sp !== undefined && !sp.agreedArea && planByConsumption(sp.plan, potsUnder))))
+      const ownRow = (snapshot.heatingPeriodRows ?? []).find((r) => r.plantId === plant.id && String(r.period) === key)
+      const lineRow = (k: string) => (snapshot.heatingPeriodRows ?? []).filter((r) => String(r.period) === k && groupPlants.concat(plants.filter((p) => lineRoot(p, plants) === lineRoot(plant, plants))).some((p) => p.id === r.plantId))
+      const prevRows = sp?.prevPeriod ? lineRow(sp.prevPeriod.key) : []
+      const prevFactor = prevRows.find((r) => (r.climateFactor ?? null) !== null)
+      const kwhOfPlant = (id: string): number | null => {
+        const lines = fuelResults.get(id)?.result.lines ?? []
+        return lines.length > 0 && lines.every((l) => l.energyKwh !== null) ? lines.reduce((a, l) => a + (l.energyKwh ?? 0), 0) : null
+      }
+      const district = groupPlants.find((p) => p.energy === 'districtHeating')
+      const districtSp = district ? selfPlans.get(district.id) : undefined
+      const costShares = districtSp?.weights
+        ? new Map(districtSp.plan.units.flatMap((u) => u.users.flatMap((x): [string, number][] => {
+          const w = districtSp.weights?.get(x.key)
+          return x.tenancyId && w ? [[x.tenancyId, w.both]] : []
+        })))
+        : undefined
+      const metering = potItems.filter((c) => c.heatingPart === 'metering')
+      info = heatingInfoOf({
+        byConsumption: byKeys,
+        carriers: groupPlants.map((p) => ({ energy: p.energy, kwh: kwhOfPlant(p.id) })),
+        mixedGeneration: groupPlants.some((p) => (p.heatGeneration ?? null) === 'mixed'),
+        district: district ? { required: law(hkvInfoDistrict, { period: hPeriod }, lawLog).scope === 'largeOnly' ? 'maybe' : 'yes', deliveredKwh: kwhOfPlant(district.id) } : null,
+        row: ownRow ? {
+          infoTaxesText: ownRow.infoTaxesText ?? null, infoDistrictGhg: ownRow.infoDistrictGhg ?? null, infoDistrictPef: ownRow.infoDistrictPef ?? null,
+          climateFactor: ownRow.climateFactor ?? null, climateFactorPrev: ownRow.climateFactorPrev ?? null, climateFactorSource: ownRow.climateFactorSource ?? null,
+          infoReferenceKwhPerM2: ownRow.infoReferenceKwhPerM2 ?? null, infoReferenceSource: ownRow.infoReferenceSource ?? null,
+          infoComparisonSource: ownRow.infoComparisonSource ?? null,
+        } : null,
+        prevClimateFactor: prevFactor && prevFactor.climateFactor !== null && prevFactor.climateFactor !== undefined ? { factor: prevFactor.climateFactor, source: prevFactor.climateFactorSource ?? null } : null,
+        consumerContract: rules.consumerContract,
+        meteringCents: metering.length > 0 ? metering.reduce((a, c) => a + c.amountCents, 0) : null,
+        contacts: INFO_CONTACTS,
+        contactsChecked: INFO_CONTACTS_CHECKED,
+        plan: byKeys && sp ? sp.plan : null,
+        prev: byKeys && sp ? sp.prev : null,
+        prevPeriod: sp?.prevPeriod ? { from: sp.prevPeriod.from, to: sp.prevPeriod.to } : null,
+        tenancies: snapshot.tenancies.map((t) => ({ id: t.id, start: t.start, end: t.end })),
+        units: { heating: sp ? potUnitOf(sp, 'heating') : 'kWh', water: sp ? potUnitOf(sp, 'water') : 'm³' },
+        periodDays: rangeOverlapDays(host.from, host.to, host.from, host.to),
+        pots: potsUnder,
+        ...(costShares ? { costShares } : {}),
+      })
+      host.info = { ...info, tenancyIds: billed }
     }
-    const district = groupPlants.find((p) => p.energy === 'districtHeating')
-    const districtSp = district ? selfPlans.get(district.id) : undefined
-    const costShares = districtSp?.weights
-      ? new Map(districtSp.plan.units.flatMap((u) => u.users.flatMap((x): [string, number][] => {
-        const w = districtSp.weights?.get(x.key)
-        return x.tenancyId && w ? [[x.tenancyId, w.both]] : []
-      })))
-      : undefined
-    const info = heatingInfoOf({
-      byConsumption: full,
-      carriers: groupPlants.map((p) => ({ energy: p.energy, kwh: kwhOfPlant(p.id) })),
-      mixedGeneration: groupPlants.some((p) => (p.heatGeneration ?? null) === 'mixed'),
-      district: district ? { required: law(hkvInfoDistrict, { period: hPeriod }, lawLog).scope === 'largeOnly' ? 'maybe' : 'yes', deliveredKwh: kwhOfPlant(district.id) } : null,
-      row: ownRow ? {
-        infoTaxesText: ownRow.infoTaxesText ?? null, infoDistrictGhg: ownRow.infoDistrictGhg ?? null, infoDistrictPef: ownRow.infoDistrictPef ?? null,
-        climateFactor: ownRow.climateFactor ?? null, climateFactorPrev: ownRow.climateFactorPrev ?? null, climateFactorSource: ownRow.climateFactorSource ?? null,
-        infoReferenceKwhPerM2: ownRow.infoReferenceKwhPerM2 ?? null, infoReferenceSource: ownRow.infoReferenceSource ?? null,
-      } : null,
-      prevClimateFactor: prevFactor && prevFactor.climateFactor !== null && prevFactor.climateFactor !== undefined ? { factor: prevFactor.climateFactor, source: prevFactor.climateFactorSource ?? null } : null,
-      consumerContract: rules.consumerContract,
-      meteringCents: potItems.filter((c) => c.heatingPart === 'metering').reduce((a, c) => a + c.amountCents, 0),
-      contacts: INFO_CONTACTS,
-      contactsChecked: INFO_CONTACTS_CHECKED,
-      plan: full && sp ? sp.plan : null,
-      prev: full && sp ? sp.prev : null,
-      prevPeriod: sp?.prevPeriod ? { from: sp.prevPeriod.from, to: sp.prevPeriod.to } : null,
-      tenancies: snapshot.tenancies.map((t) => ({ id: t.id, start: t.start, end: t.end })),
-      units: { heating: sp ? potUnitOf(sp, 'heating') : 'kWh', water: sp ? potUnitOf(sp, 'water') : 'm³' },
-      periodDays: rangeOverlapDays(host.from, host.to, host.from, host.to),
-      pots: potsUnder,
-      ...(costShares ? { costShares } : {}),
-    })
-    host.info = { ...info, tenancyIds: [...statements.values()].filter((st) => st.rows.some((r) => ids.has(r.costItemId))).map((st) => st.tenancyId) }
-    const cut = law(hkvCutInformation, { period: hPeriod }, lawLog)
+    // Je Mieter, was ihm fehlt (Durchsicht von #243, R-W2): die Angaben zur Anlage allen, Nr. 4 und 5 nur dem, den es
+    // betrifft. Kürzen darf „der Nutzer“, dem eine Information fehlt (§ 12 Abs. 1 Satz 3).
+    const missingFor = (tenancyId: string): InfoItem[] => {
+      if (!info) return []
+      const u = info.users.find((x) => x.tenancyId === tenancyId)
+      return u ? u.missing : (info.missingCommon ?? info.missing)
+    }
+    const infoCut = info ? billed.filter((id) => missingFor(id).length > 0) : []
+    // Das Register erst fragen, wenn ein Hinweis den Satz braucht; sonst stünde er im Rechtsstand jeder Abrechnung
+    // mit Heizanlage (Entwurf 1.2 Nr. 1).
+    const cutNow = () => law(hkvCutInformation, { period: hPeriod }, lawLog)
+    if (monthly && monthly.coverage !== 'none') {
+      const cut = cutNow()
+      // Dasselbe Kürzungsrecht wie bei den Angaben zur Abrechnung (R-W4): Die Beträge stehen einmal, beim Hinweis zu
+      // den Angaben, wenn er sie für den Mieter nennt.
+      const rest = billed.filter((id) => !infoCut.includes(id))
+      const a = amountsFor(rest, cut)
+      const amounts = rest.length === 0
+        ? ' Die Beträge je Mieter stehen beim Hinweis zu den Angaben zur Heizkostenabrechnung.'
+        : `${a.list.length > 0 ? `, hier bis zu: ${andList(a.list)}` : ''}.${infoCut.length > 0 ? ` Für ${andList(infoCut.map(nameOf))} stehen die Beträge beim Hinweis zu den Angaben zur Heizkostenabrechnung.` : ''}${unknownText(a.unknown)}`
+      warn('heating.monthly-info',
+        `${where}: Nach Ihren Angaben sind Zähler oder Heizkostenverteiler fernablesbar. Dann stehen den Mietern seit dem ${fmtDay(monthly.validFrom ?? '')} monatliche Verbrauchsinformationen zu: der Verbrauch des letzten Monats in Kilowattstunden, der Vergleich mit dem Vormonat und dem entsprechenden Monat des Vorjahres, soweit diese Daten erhoben worden sind, und der Vergleich mit einem Durchschnittsnutzer (§ 6a Abs. 1 und 2 HeizkostenV). ` +
+          `Fehlen sie, darf jeder Mieter seinen Anteil${waterWord} um bis zu ${cut} % kürzen (§ 12 Abs. 1 Satz 3 HeizkostenV)${rest.length === 0 ? '.' : ''}${amounts} ` +
+          'Das ist dasselbe Kürzungsrecht wie bei fehlenden Angaben zur Heizkostenabrechnung und kommt nicht hinzu: Satz 3 erfasst alle Informationen nach § 6a, und es summieren sich nur Kürzungsrechte aus verschiedenen Sätzen des § 12 Abs. 1 (BR-Drs. 643/21, S. 23 f.). ' +
+          'Mietfuchs erstellt diese Informationen nicht. Bekommen Ihre Mieter sie anders, etwa vom Messdienst als Brief oder E-Mail oder in einem Portal mit einer Nachricht jeden Monat, dass sie dort steht, bestätigen Sie das auf der Seite Heizkosten in der Karte „Ausnahmen und Vereinbarungen“. ' +
+          'Ein Portal ohne diese Nachricht genügt nach der Begründung der Verordnung nicht: Mitgeteilt ist die Information erst, wenn sie den Mieter erreicht (BR-Drs. 643/21, S. 18 f.).',
+        subject)
+    }
+    if (!info) continue
+    const cut = cutNow()
     const parts: string[] = []
     if (info.missing.length > 0) {
-      parts.push(`Es fehlen: ${andList(info.missing.map((x) => ITEM_TEXT[x]))}. Fehlt eine dieser Angaben, darf jeder Mieter seinen Anteil an den Heizkosten um ${cut} % kürzen (§ 12 Abs. 1 Satz 3 HeizkostenV)${cutsOn(ids, cut)}; das ist ein Kürzungsrecht, auch wenn mehrere Angaben fehlen.`)
+      const a = amountsFor(infoCut, cut)
+      const all = infoCut.length === billed.length
+      parts.push(`Es fehlen: ${andList(info.missing.map((x) => ITEM_TEXT[x]))}${!all ? `, und zwar für ${andList(infoCut.map(nameOf))}` : ''}. ` +
+        `Fehlt eine dieser Angaben, darf ${all ? 'jeder Mieter' : 'der Mieter, dem sie fehlt,'} seinen Anteil${waterWord} um ${cut} % kürzen (§ 12 Abs. 1 Satz 3 HeizkostenV)${a.list.length > 0 ? `, hier: ${andList(a.list)}` : ''}.${unknownText(a.unknown)} ${ONE_RIGHT}`)
     }
     if (info.missing.includes('1a')) {
       if (info.mixedGeneration) parts.push('Ihre Anlage erzeugt die Wärme mit einem weiteren Erzeuger; den Anteil der Energieträger (Nr. 1 a) kennt Mietfuchs dann nicht. Legen Sie ihn der Abrechnung bei.')
       else if (info.carriers.length > 1) parts.push('In dieser Heizperiode heizten nacheinander Anlagen mit verschiedenen Energieträgern; ihren Anteil rechnet Mietfuchs aus den Kilowattstunden der Rechnungen, und die fehlen. Tragen Sie die Kilowattstunden bei den Lieferungen ein oder legen Sie den Anteil der Abrechnung bei.')
       else if (info.district) parts.push('Bei Fernwärme tragen Sie den Faktor der Treibhausgasemissionen und den Primärenergiefaktor laut Versorger ein; die jährliche Menge rechnet Mietfuchs aus den Kilowattstunden der Lieferungen.')
     }
-    if (!info.comparisons && info.scope === 'full') {
-      parts.push('Die Vergleiche nach Nr. 4 und 5 erstellt Mietfuchs nur bei eigener Heizkostenabrechnung; legen Sie die Vergleiche Ihres Ablesedienstes der Abrechnung bei.')
+    if (info.uncertain.includes('1c')) {
+      parts.push('Keine Position dieser Heizanlage trägt den Teil „Messdienst, Ablesung, Geräte“; die Entgelte für Erfassung, Ablesung und Abrechnung (Nr. 1 c) druckt Mietfuchs deshalb nicht. Sind solche Kosten angefallen, etwa Gerätemiete, Eichung oder Ablesung, ordnen Sie die Position auf der Seite Kosten diesem Teil zu; sind keine angefallen, ist nichts zu tun.')
+    }
+    // Nr. 4 und 5, wo Mietfuchs sie nicht rechnet (Durchsicht von #243, R-W1): offen, bis der Vermieter bestätigt, dass
+    // der Vergleich des Ablesedienstes beiliegt.
+    const attach = 'Legt Ihr Ablesedienst einen solchen Vergleich bei, bestätigen Sie das mit seiner Quelle in der Karte „Angaben zur Abrechnung (§ 6a)“; sonst darf jeder Mieter um bis zu ' + `${cut} % kürzen.`
+    if (!info.comparisons && info.scope === 'full' && info.uncertain.includes('4')) {
+      parts.push(`Die Vergleiche nach Nr. 4 und 5 erstellt Mietfuchs nur bei eigener Heizkostenabrechnung. ${attach}`)
+    } else if (info.uncertain.includes('4')) {
+      parts.push(`${info.heatExempt
+        ? 'Den Vergleich mit einem Durchschnittsnutzer (Nr. 4) rechnet Mietfuchs mit dem Wärmeverbrauch in kWh; für das Warmwasser allein kann es ihn nicht erstellen.'
+        : 'Heizkostenverteiler zählen Einheiten, keine Kilowattstunden; den Vergleich mit einem Durchschnittsnutzer (Nr. 4) kann Mietfuchs deshalb nicht rechnen.'} ${attach}`)
     } else if (info.missing.includes('4')) {
-      parts.push(!info.referenceComparable
-        ? (info.heatExempt
-          ? 'Den Vergleich mit einem Durchschnittsnutzer (Nr. 4) rechnet Mietfuchs mit dem Wärmeverbrauch in kWh; für das Warmwasser allein kann es ihn nicht erstellen. Legen Sie den Vergleich Ihres Ablesedienstes bei.'
-          : 'Heizkostenverteiler zählen Einheiten, keine Kilowattstunden; den Vergleich mit einem Durchschnittsnutzer (Nr. 4) kann Mietfuchs deshalb nicht rechnen. Legen Sie den Vergleich Ihres Ablesedienstes bei.')
-        : info.reference === null
-          ? 'Für den Vergleich mit einem Durchschnittsnutzer (Nr. 4) tragen Sie einen Vergleichswert in kWh je m² Wohnfläche mit seiner Quelle ein, etwa aus den Vergleichsdaten Ihres Ablesedienstes. Ein Durchschnitt aus Ihrem eigenen Haus ist kein zulässiger Vergleich: Gemeint sind nach der Begründung der Verordnung anonymisierte Verbraucher aus den Beständen der Ablesedienste (BR-Drs. 643/21, S. 19 und 21).'
-          : 'Für eine Wohnung ohne Wohnfläche lässt sich der Vergleichswert (Nr. 4) nicht umrechnen; tragen Sie die Wohnfläche in den Stammdaten ein.')
+      parts.push(info.reference === null
+        ? 'Für den Vergleich mit einem Durchschnittsnutzer (Nr. 4) tragen Sie einen Vergleichswert in kWh je m² Wohnfläche mit seiner Quelle ein, etwa aus den Vergleichsdaten Ihres Ablesedienstes. Ein Durchschnitt aus Ihrem eigenen Haus ist kein zulässiger Vergleich: Gemeint sind nach der Begründung der Verordnung anonymisierte Verbraucher aus den Beständen der Ablesedienste (BR-Drs. 643/21, S. 19 und 21).'
+        : 'Für eine Wohnung ohne Wohnfläche lässt sich der Vergleichswert (Nr. 4) nicht umrechnen; tragen Sie die Wohnfläche in den Stammdaten ein.')
     }
     if (info.comparisons && info.missing.includes('5')) {
-      const unknownPrev = info.users.filter((u) => u.prevUnknown)
+      const unknownPrev = info.users.filter((u) => u.prevUnknown && u.missing.includes('5'))
       if (unknownPrev.length > 0) {
         parts.push(`Den Verbrauch von ${andList(unknownPrev.map((u) => nameOf(u.tenancyId)))} im vorhergehenden Abrechnungszeitraum kennt Mietfuchs nicht, weil er dort nicht vollständig oder anders erfasst ist. Legen Sie den Vergleich nach Nr. 5 der Abrechnung bei.`)
       }
-      if (info.users.some((u) => !u.firstPeriod && !u.prevUnknown) && (info.climate.factor === null || info.climate.factorPrev === null)) {
+      if (info.users.some((u) => !u.firstPeriod && !u.prevUnknown && u.missing.includes('5')) && (info.climate.factor === null || info.climate.factorPrev === null)) {
         parts.push('Für den witterungsbereinigten Vergleich (Nr. 5) tragen Sie die Klimafaktoren dieser und der vorigen Heizperiode mit ihrer Quelle ein, etwa die Klimafaktoren des Deutschen Wetterdienstes zu Ihrer Postleitzahl.')
       }
+    }
+    // § 9a (Durchsicht von #243, R-W5): Für einen Mieter mit geschätztem Verbrauch gehören die Vergleiche nicht dazu.
+    const estimated = info.users.filter((u) => u.estimated)
+    if (estimated.length > 0) {
+      parts.push(`Der Verbrauch von ${andList(estimated.map((u) => nameOf(u.tenancyId)))} ist nach § 9a HeizkostenV geschätzt. Die Vergleiche nach Nr. 4 und 5 gehören dann nach der Begründung der Verordnung nicht zu den Informationen nach § 6a Abs. 3: „Nicht darunter fallen also die Fälle des § 9a und Fälle, in denen eine Ausnahme gemäß § 11 greift“; es gelten mindestens die Angaben nach Abs. 5 (BR-Drs. 643/21, S. 19 und 22). ` +
+        `Mietfuchs nennt für ${estimated.length === 1 ? 'ihn' : 'sie'} deshalb keine Kürzung wegen dieser Vergleiche und druckt den Vergleich mit dem geschätzten Wert gekennzeichnet; dass das je Mieter gilt und nicht für die ganze Abrechnung, ist eine Auslegung von Mietfuchs.`)
     }
     if (agreement !== null) parts.push('Eine Vereinbarung über die Verteilung nach § 2 HeizkostenV ersetzt die Informationspflichten nicht.')
     if (info.uncertain.includes('1a')) parts.push(`Bei einem Fernwärmesystem ab ${law(hkvInfoDistrict, { period: hPeriod }, lawLog).thresholdMw} MW gehören Treibhausgasemissionen und Primärenergiefaktor schon in diese Abrechnung; dann bis zu ${cut} %.`)
     if (info.uncertain.includes('3')) {
+      // Durchsicht von #243, R-K5: beide Seiten des Verbrauchervertrags und die Liste beim Bundesamt für Justiz.
       parts.push(`${info.scope === 'minimal' ? 'Beruht die Abrechnung nicht auf dem Verbrauch, gehören zu ihr mindestens die Kontaktinformationen, die Mietfuchs druckt, und beim Verbrauchervertrag die Information zur Streitbeilegung (§ 6a Abs. 5 HeizkostenV). ' : ''}` +
-        `Ist Ihr Mietvertrag ein Verbrauchervertrag (§ 310 Abs. 3 BGB: Sie vermieten als Unternehmer), gehört die Information zur Streitbeilegung dazu; geben Sie an, ob das zutrifft. Fehlt sie, bis zu ${cut} %.`)
+        `Ist Ihr Mietvertrag ein Verbrauchervertrag (§ 310 Abs. 3 BGB: Sie vermieten als Unternehmer im Sinne des § 14 BGB, und der Mieter ist Verbraucher im Sinne des § 13 BGB), gehört die Information zur Streitbeilegung dazu; geben Sie an, ob das zutrifft. Fehlt sie, bis zu ${cut} %.`)
     }
-    const firsts = info.users.filter((u) => u.firstPeriod)
+    const firsts = info.users.filter((u) => u.firstPeriod && !u.estimated)
     if (info.uncertain.includes('5') && firsts.length > 0) {
-      const list = firsts.flatMap((u) => {
-        const c = cutOf(u.tenancyId, ids, cut)
-        return c === null ? [] : [`${nameOf(u.tenancyId)} ${fmtCents(c)}`]
-      })
-      parts.push(`${andList(firsts.map((u) => nameOf(u.tenancyId)))} ${firsts.length === 1 ? 'wohnte' : 'wohnten'} im vorhergehenden Abrechnungszeitraum noch nicht in der Wohnung; der Vergleich nach Nr. 5 ist für ${firsts.length === 1 ? 'ihn' : 'sie'} nicht möglich. Eine Ausnahme dafür nennt die Verordnung nicht; Mietfuchs nennt deshalb bis zu ${cut} % (Auslegung von Mietfuchs)${list.length > 0 ? `: ${andList(list)}` : ''}.`)
+      const a = amountsFor(firsts.map((u) => u.tenancyId), cut)
+      parts.push(`${andList(firsts.map((u) => nameOf(u.tenancyId)))} ${firsts.length === 1 ? 'wohnte' : 'wohnten'} im vorhergehenden Abrechnungszeitraum noch nicht in der Wohnung; der Vergleich nach Nr. 5 ist für ${firsts.length === 1 ? 'ihn' : 'sie'} nicht möglich. Eine Ausnahme dafür nennt die Verordnung nicht; Mietfuchs nennt deshalb bis zu ${cut} % (Auslegung von Mietfuchs)${a.list.length > 0 ? `: ${andList(a.list)}` : ''}.`)
     }
     if (parts.length > 0) {
-      warn(info.missing.length > 0 ? 'heating.info-incomplete' : 'heating.info-open',
+      warn(infoCut.length > 0 ? 'heating.info-incomplete' : 'heating.info-open',
         `${where}: Zur Heizkostenabrechnung gehören die Informationen nach § 6a ${info.scope === 'full' ? 'Abs. 3' : 'Abs. 5'} HeizkostenV. ${parts.join(' ')} Tragen Sie die Angaben auf der Seite Heizkosten in der Karte „Angaben zur Abrechnung (§ 6a)“ ein. Mietfuchs zieht nichts ab; die Kürzung muss der Mieter erklären.`,
         subject)
     }
@@ -5724,7 +5855,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // Pflicht unberührt.
   const remotePlants = (snapshot.heatingPlants ?? []).filter((p) => exemptionScopeOf(p.id, String(period.key)) !== 'both')
   const allExempt = (snapshot.heatingPlants ?? []).length > 0 && remotePlants.length === 0
-  const remote = heatingBilledItem && !allExempt ? remoteReadingVerdict(remotePlants, snapshot.meters, snapshot.units, lawPeriod, lawLog) : null
+  // Ist nach § 11 nur die Wärme ausgenommen, zählen nur die Warmwassergeräte, und gekürzt wird nur der Anteil
+  // Warmwasser (Durchsicht von #243, G-W2, R-K12).
+  const heatOnlyPlants = new Set(remotePlants.filter((p) => exemptionScopeOf(p.id, String(period.key)) === 'heat').map((p) => p.id))
+  const remote = heatingBilledItem && !allExempt ? remoteReadingVerdict(remotePlants, snapshot.meters, snapshot.units, lawPeriod, lawLog, heatOnlyPlants) : null
   const retrofit = heatingBilledItem && !allExempt && (remote === null || remote.level === 'unknown') ? law(hkvRemoteReadingRetrofit, { period: lawPeriod }, lawLog) : null
   if (retrofit && retrofit.coverage !== 'none') {
     const remoteCut = law(hkvCutRemoteReading, { period: lawPeriod }, lawLog)
@@ -5744,10 +5878,18 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Mietfuchs zieht nichts ab; erklären muss die Kürzung der Mieter.
     // Nur Mieter in Wohnungen an der Anlage (Durchsicht von #230).
     const served = servedUnitIds(snapshot.heatingPlants ?? [], snapshot.units)
+    const heatOnlyItems = new Set(co2Pots.filter((x) => heatOnlyPlants.has(x.plantId)).flatMap((x) => [...x.items.map((c) => c.id), x.reliefKey]))
+    let remoteUnknown = false
     const cuts = [...statements.values()].filter((st) => served.has(st.unitId)).flatMap((st) => {
-      const heat = st.rows.filter((r) => r.category === HEATING_CATEGORY).reduce((a, r) => a + r.shareCents, 0)
-      return heat > 0 ? [`${st.tenantName} (${st.unitName}) ${fmtCents(Math.round((heat * remoteCut) / 100))}`] : []
+      const heat = st.rows.filter((r) => r.category === HEATING_CATEGORY && !heatOnlyItems.has(r.costItemId)).reduce((a, r) => a + r.shareCents, 0)
+      const water = heatOnlyPlants.size > 0 ? waterBaseOf([...heatOnlyPlants], st.tenancyId) : { cents: 0, unknown: false }
+      if (water.unknown) remoteUnknown = true
+      const sum = heat + water.cents
+      return sum > 0 ? [`${st.tenantName} (${st.unitName}) ${fmtCents(Math.round((sum * remoteCut) / 100))}`] : []
     })
+    const remoteWaterNote = heatOnlyPlants.size > 0
+      ? ` Bei einer Anlage, deren Wärme nach § 11 HeizkostenV ausgenommen ist, zählt nur der Anteil Warmwasser${remoteUnknown ? '; bei Positionen für Heizung und Warmwasser mit freiem Schlüssel kennt Mietfuchs ihn nicht und rechnet ihn nicht mit' : ''}.`
+      : ''
     // Mit der Wohnung (Durchsicht von #241, Minor 7): Heizkostenverteiler heißen oft nur nach dem Raum.
     const names = remote.meterIds.map((id) => {
       const m = snapshot.meters.find((x) => x.id === id)
@@ -5762,13 +5904,13 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     if (remote.level === 'required') {
       warn('heating.remote-reading-missing',
         `${which} ${rule} In diesem Zeitraum gilt das für diese Geräte. Jeder Mieter darf seinen Anteil an den Heizkosten deshalb um ${remoteCut} % kürzen (§ 12 Abs. 1 Satz 2 HeizkostenV)` +
-          `${cuts.length > 0 ? `, hier: ${andList(cuts)}` : ''}. Mietfuchs zieht nichts ab; die Kürzung muss der Mieter erklären. ` +
+          `${cuts.length > 0 ? `, hier: ${andList(cuts)}` : ''}.${remoteWaterNote} Mietfuchs zieht nichts ab; die Kürzung muss der Mieter erklären. ` +
           'Ausgenommen sind ein einzelnes Gerät, das in einem nicht fernablesbaren System ersetzt oder ergänzt wurde (§ 5 Abs. 2 Satz 4), und Fälle, in denen die Nachrüstung technisch nicht möglich ist oder eine unbillige Härte wäre (§ 5 Abs. 3 Satz 2); bewahren Sie dafür einen Nachweis auf.',
         subject)
     } else {
       warn('heating.remote-reading',
         `${which} ${rule} Ob das in diesem Zeitraum schon für diese Geräte gilt, hängt an ihrem Einbaudatum und daran, ob ein einzelnes Gerät in einem System ersetzt oder ergänzt wurde, dessen übrige Geräte nicht fernablesbar sind; dann gilt die Frist für die übrigen (§ 5 Abs. 2 Satz 4). Wenn ja, darf jeder Mieter seinen Anteil an den Heizkosten um bis zu ${remoteCut} % kürzen (§ 12 Abs. 1 Satz 2 HeizkostenV)` +
-          `${cuts.length > 0 ? `, hier bis zu: ${andList(cuts)}` : ''}. ` +
+          `${cuts.length > 0 ? `, hier bis zu: ${andList(cuts)}` : ''}.${remoteWaterNote} ` +
           (remote.askInstall
             ? `Sagen Sie Mietfuchs an der Heizanlage, ob die nicht fernablesbaren Geräte, die nach dem ${fmtDay(newDevices.installedAfter)} eingebaut wurden, einzeln als Ersatz oder Ergänzung in ein bestehendes, nicht fernablesbares System kamen oder ob das System als Ganzes neu installiert wurde; dann rechnet Mietfuchs es genau.`
             : 'Tragen Sie das Einbaudatum am Zähler oder die Angabe an der Heizanlage ein; dann rechnet Mietfuchs es genau.'),
@@ -5802,11 +5944,16 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const share = consumptionShare()
     const cut = law(hkvCutNotByConsumption, { period: lawPeriod }, lawLog)
     if (!heatingAgreeable) {
-      // Auf den Cent gerundet, kaufmännisch wie überall bei einer Einzelzahl.
+      // Auf den Cent gerundet, kaufmännisch wie überall bei einer Einzelzahl. Ist nach § 11 nur die Wärme
+      // ausgenommen, darf nur der Anteil Warmwasser gekürzt werden; den kennt Mietfuchs bei einer Position für
+      // Heizung und Warmwasser mit freiem Schlüssel nicht (Durchsicht von #243, G-W2).
+      const waterPart = exemptionScopeOf(item.heatingPlantId, String(item.period)) === 'heat' && item.heatingTarget !== 'water'
       const cuts = hit.map((r) => `${r.label} ${fmtCents(Math.round((r.share * cut) / 100))}`)
       warn('heating.not-by-consumption',
         `„${item.description}“: Heizung und Warmwasser werden hier nicht nach Verbrauch verteilt. Die Heizkostenverordnung verlangt, mindestens ${share.min} und höchstens ${share.max} % nach dem erfassten Verbrauch zu verteilen, den Rest nach Fläche (§ 7 Abs. 1, § 8 Abs. 1 HeizkostenV). ` +
-          `Sonst darf jeder Mieter seinen Anteil um ${cut} % kürzen (§ 12 Abs. 1 HeizkostenV), hier: ${andList(cuts)}. ` +
+          (waterPart
+            ? `Die Ausnahme nach § 11 HeizkostenV betrifft nach Ihrer Angabe nur die Wärme. Sonst darf jeder Mieter deshalb nur den Anteil Warmwasser an seinem Anteil um ${cut} % kürzen (§ 12 Abs. 1 HeizkostenV); diesen Anteil kennt Mietfuchs bei diesem Schlüssel nicht und nennt keinen Betrag. `
+            : `Sonst darf jeder Mieter seinen Anteil um ${cut} % kürzen (§ 12 Abs. 1 HeizkostenV), hier: ${andList(cuts)}. `) +
           `Verteilen Sie ${hkvConsumptionShare.describe(share)} nach Verbrauch (eine Position nach Verbrauch mit Wärmezählern, den Rest als eigene Position nach Fläche) oder übernehmen Sie die Abrechnung des Messdienstes als Einzelbeträge.`,
         itemSubject(item))
     } else {

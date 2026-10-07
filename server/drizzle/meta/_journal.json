@@ -243,14 +243,14 @@
     {
       "idx": 34,
       "version": "6",
-      "when": 1791369125210,
+      "when": 1791376569948,
       "tag": "0034_pflichtangaben",
       "breakpoints": true
     },
     {
       "idx": 35,
       "version": "6",
-      "when": 1791371057295,
+      "when": 1791376570679,
       "tag": "0035_pflichtangaben_bedingungen",
       "breakpoints": true
     }

@@ -5,4 +5,5 @@ ALTER TABLE `heating_periods` ADD `exemption` text;--> statement-breakpoint
 ALTER TABLE `heating_periods` ADD `exemption_scope` text;--> statement-breakpoint
 ALTER TABLE `heating_periods` ADD `exemption_billing_agreed` integer;--> statement-breakpoint
 ALTER TABLE `heating_periods` ADD `agreed_otherwise` text;--> statement-breakpoint
-ALTER TABLE `heating_periods` ADD `monthly_info_elsewhere` integer;
+ALTER TABLE `heating_periods` ADD `monthly_info_elsewhere` integer;--> statement-breakpoint
+ALTER TABLE `heating_periods` ADD `info_comparison_source` text;

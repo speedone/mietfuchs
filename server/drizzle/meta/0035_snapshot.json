@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "e455da86-d573-4ea4-a76d-21474b802eab",
-  "prevId": "969bcab8-039f-4052-b3c0-d61b5248f431",
+  "id": "c6b74054-771c-4a68-b9f7-c68bf6b21c42",
+  "prevId": "e427b641-1dde-492a-a1ad-f2c73cb19b72",
   "tables": {
     "ai_slots": {
       "name": "ai_slots",
@@ -2718,6 +2718,13 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
+        },
+        "info_comparison_source": {
+          "name": "info_comparison_source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         }
       },
       "indexes": {
@@ -2834,7 +2841,7 @@
         },
         "heating_periods_exemption_known": {
           "name": "heating_periods_exemption_known",
-          "value": "\"exemption\" IN ('none', 'lowDemand', 'disproportionate', 'pre1981', 'renewable', 'authority')"
+          "value": "\"exemption\" IN ('none', 'lowDemand', 'disproportionate', 'pre1981', 'renewable', 'chp', 'authority')"
         },
         "heating_periods_exemption_scope_known": {
           "name": "heating_periods_exemption_scope_known",

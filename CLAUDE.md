@@ -1405,9 +1405,20 @@ lässt die Wahl nur für künftige Zeiträume zu. Der Anteil gehört zur **Linie
   Kürzung nach § 12 (`noCutFor`, an jeder Stelle mit § 12 Abs. 1 Satz 1, bei der Fernablesbarkeit zählen ganz
   ausgenommene Anlagen nicht mit); sind Wärme und Warmwasser ausgenommen, keine Angaben nach § 6a und keine
   CO₂-Aufteilung ohne vereinbarte Abrechnung (`co2OffByExemption`, § 2 Abs. 7 CO2KostAufG). Ist nur die Wärme
-  ausgenommen, teilt Mietfuchs die CO₂-Kosten weiter auf (Auslegung zur sicheren Seite). Eine Vereinbarung nach
+  ausgenommen, teilt Mietfuchs die CO₂-Kosten weiter auf (nach BT-Drs. 20/3172, S. 28 betrifft § 2 Abs. 7 Räume, „in
+  denen keine Heizkostenabrechnung durchgeführt wird“; das Warmwasser wird abgerechnet), und **jede Kürzung
+  beziffert es dann nur auf den Anteil Warmwasser** (`waterBaseOf`: Kosten des Topfs mal Gewicht, abzüglich des
+  CO₂-Abzugs im Topf; bei freien Schlüsseln die Positionen mit Ziel Warmwasser, eine Position für beides ohne
+  Betrag), ebenso bei der Fernablesbarkeit und der monatlichen Information nur die Warmwassergeräte (Durchsicht
+  von #243). Hat der Messdienst unter voller Ausnahme trotzdem CO₂ abgezogen, bleibt der Abzug zerlegt (der Teil
+  der eigenen Wohnung ist privat) und `co2.exempt-deducted` sagt es. Eine Vereinbarung nach
   § 2 (`agreedFor`) wirkt nur, solange das Haus im Zeitraum die Voraussetzung erfüllt (`heatingAgreeable`), und
-  hebt nur die Kürzung nach § 12 Abs. 1 Satz 1 auf; der Umfang der Angaben folgt dem vereinbarten Maßstab.
+  hebt nur die Kürzung nach § 12 Abs. 1 Satz 1 auf. „Nach Wohnfläche“ verteilt die eigene Abrechnung ganz nach
+  der Fläche (`agreedArea`, Anteil 0, ohne die Grenzen der §§ 7, 8, 10); „feste Anteile“ kann sie nicht (400 beim
+  Speichern, sonst `heating.self-incomplete`). Der Umfang der Angaben folgt dem, was Mietfuchs tatsächlich
+  rechnet, nicht der Vereinbarung. Eine Änderung von Umfang oder vereinbarter Abrechnung unter geerbter Ausnahme
+  schreibt die Ausnahme in die eigene Zeile; ohne geltende Ausnahme 400. `dryRun` beim Speichern nennt die
+  späteren abgeschlossenen Heizperioden, an denen eine Angabe vorbei auf eine offene wirkt; die Karte fragt nach.
   Etagenheizungen haben keine dieser Angaben (§ 1 Abs. 1). Mehr als 70 % nur mit `above_70_agreed` (§ 10), mit
   dem Anteil geerbt, auch über dem Pflichtanteil des § 7 Abs. 1 Satz 2 (Auslegung), nie über 100 %.
   **Die Angaben nach § 6a** rechnet `heatingInfoOf` je Linie und Heizperiode (`Settlement.heating[].info` an der
@@ -1419,15 +1430,22 @@ lässt die Wahl nur für künftige Zeiträume zu. Der Anteil gehört zur **Linie
   unbereinigt, der Vorjahreswert aus der neu gerechneten Vorperiode (`prev`); die Klimafaktoren trägt der
   Vermieter mit Quelle ein, denn die des DWD (je Postleitzahl, gleitende zwölf Monate, monatlich neu) bettet
   Mietfuchs nicht ein. Wohnte ein Mieter im Vorjahr noch nicht dort, „bis zu 3 %“ (Auslegung, `heating.info-open`);
-  wohnte er dort, aber Mietfuchs kennt seinen Vorjahresverbrauch nicht, fehlt Nr. 5 sicher. Jede sicher fehlende
-  Angabe ergibt `heating.info-incomplete` mit 3 % je Mieter (ein Kürzungsrecht, `hkv.cut.information`), nur für
-  Zeiträume ab dem 01.12.2021 (`hkv.settlement-info`). `heating.monthly-info` nur, wenn ein Gerät, das in der
+  wohnte er dort, aber Mietfuchs kennt seinen Vorjahresverbrauch nicht, fehlt Nr. 5 sicher. **Was fehlt, steht je
+  Mieter** (`users[].missing`, die Angaben zur Anlage in `missingCommon`): Kürzen darf der Nutzer, dem die
+  Information fehlt. Wo Mietfuchs Nr. 4 nicht rechnen kann (Heizkostenverteiler, Werte des Ablesedienstes,
+  Warmwasser allein) oder bei freien Schlüsseln Nr. 4 und 5, bestätigt der Vermieter den beigelegten Vergleich
+  des Ablesedienstes mit Quelle (`info_comparison_source`); ohne Bestätigung ist es offen, nicht fehlend. Ist
+  der Verbrauch eines Mieters nach § 9a geschätzt, fallen für ihn die Vergleiche weg (BR-Drs. 643/21, S. 19 und
+  22; je Mieter ist Auslegung). Ohne Position mit dem Teil Erfassung druckt Nr. 1 c keine Zahl (`meteringCents`
+  `null`, offen). Jede sicher fehlende Angabe ergibt `heating.info-incomplete` mit 3 % für die betroffenen Mieter
+  (ein Kürzungsrecht nach Satz 3, auch mit der monatlichen Information: deren Hinweis nennt die Beträge nicht
+  ein zweites Mal; BR-Drs. 643/21, S. 23 f.), nur für Zeiträume ab dem 01.12.2021 (`hkv.settlement-info`). `heating.monthly-info` nur, wenn ein Gerät, das in der
   Heizperiode in Betrieb ist (Ablesungen überdecken sie, `coversPeriod`, oder es hat noch keine), als fernablesbar eingetragen ist oder die Anlage es angibt; ohne Angabe schweigt
   es, denn das Anlegen einer Anlage ändert keinen Hinweis (Entwurf 11.2). Kontaktadressen in
   `shared/heatingInfo.ts`, jährlich prüfen. Seite Heizkosten: Karten „Ausnahmen und Vereinbarungen“
   ([HeatingRulesCard.tsx](client/src/components/HeatingRulesCard.tsx)) und „Angaben zur Abrechnung (§ 6a)“
   ([HeatingInfoCard.tsx](client/src/components/HeatingInfoCard.tsx)); Druckblock
-  [HeatingInfoBlock.tsx](client/src/components/HeatingInfoBlock.tsx) mit Balken. Migrationen 0034/0035; die
+  [HeatingInfoBlock.tsx](client/src/components/HeatingInfoBlock.tsx) mit Balken. Migrationen 0034/0035 (`exemption` mit `chp` für § 11 Abs. 1 Nr. 3 Buchst. b); die
   Invarianten haben je eine Variante „Ausnahme je Heizperiode“ ((x): keine Kürzung und keine Angaben im
   ausgenommenen Topf, keine Zeile außer den CO₂-Abzügen hängt an den Angaben).
 

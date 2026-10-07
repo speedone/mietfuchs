@@ -59,7 +59,7 @@ test('Regeln heating-info und heating-exemption, Zahlen aus dem Register', () =>
   // Ein Kürzungsrecht, nicht eines je fehlender Angabe (Wortlaut „nicht oder nicht vollständig“).
   assert.doesNotMatch(info.summary, /je fehlende/)
   const ex = RULES.find((r) => r.code === 'heating-exemption') ?? assert.fail('heating-exemption fehlt')
-  assert.match(ex.norm, /§ 11 HeizkostenV; § 2 Abs\. 7 CO2KostAufG; § 556a Abs\. 1 BGB/)
+  assert.match(ex.norm, /§ 11 HeizkostenV; § 2 Abs\. 7 CO2KostAufG; BT-Drs\. 20\/3172, S\. 28; § 556a Abs\. 1 BGB/)
   assert.match(ex.summary, /15 kWh je m² und Jahr.*10 Jahren.*01\.07\.1981/s)
   for (const code of ['heating-info', 'heating-exemption']) assert.equal(ruleCoverage(code, '2025-01-01', '2025-12-31'), 'full')
 })
@@ -70,4 +70,21 @@ test('Kontaktinformationen (§ 6a Abs. 3 Nr. 2): Verbraucherorganisation, Energi
   assert.ok(INFO_CONTACTS.some((c) => /Verbraucherzentrale/.test(c.name)))
   assert.ok(INFO_CONTACTS.some((c) => /Energie-Agentur/.test(c.name)))
   assert.equal(INFO_CONTACTS_CHECKED, '2026-10-07')
+})
+
+// Durchsicht von #243, Runde 1: R-K8 (Regel zur Ablesung neben dem Stichtag), R-W4 (ein Kürzungsrecht nach Satz 3),
+// R-W8 (CO₂ unter einer Ausnahme nur der Wärme), R-K10 (Wortlaut „vorhergehender Abrechnungszeitraum“).
+test('Durchsicht von #243: Regeln und Lexikon zu Ablesung, Kürzungsrecht, CO₂ unter § 11 und Wortlaut', async () => {
+  const reading = RULES.find((r) => r.code === 'heating-reading-date') ?? assert.fail('Regel fehlt')
+  assert.doesNotMatch(reading.summary, /zwingend ist ein Grund erst/i)
+  assert.match(reading.summary, /Auch ein Ablesefehler ist ein solcher Grund, wenn sich der Wert nicht mehr ermitteln lässt/)
+  const info = RULES.find((r) => r.code === 'heating-info') ?? assert.fail('Regel fehlt')
+  assert.match(info.summary, /ein Kürzungsrecht, auch wenn mehrere Informationen fehlen; es summieren sich nur Kürzungsrechte aus verschiedenen Sätzen.*BR-Drs\. 643\/21, S\. 23 f\./s)
+  const ex = RULES.find((r) => r.code === 'heating-exemption') ?? assert.fail('Regel fehlt')
+  assert.match(ex.summary, /„in denen keine Heizkostenabrechnung durchgeführt wird“.*nur die Wärme ausgenommen.*teilt Mietfuchs die CO₂-Kosten deshalb weiter auf \(Auslegung von Mietfuchs\)/s)
+  assert.match(ex.summary, /Solaranlagen versorgt werden; für Räume in Gebäuden, die überwiegend mit Wärme aus Kraft-Wärme-Kopplung oder Abwärme versorgt werden, sofern/)
+  assert.match(ex.summary, /das Anbringen der Ausstattung zur Verbrauchserfassung.*nicht oder nur mit unverhältnismäßig hohen Kosten/s)
+  const { GLOSSARY } = await import('../../shared/glossary.ts')
+  assert.doesNotMatch(`${GLOSSARY.billingInfo.short} ${GLOSSARY.climateFactor.needed}`, /Vorjahr/)
+  assert.match(GLOSSARY.billingInfo.example, /BR-Drs\. 643\/21, S\. 23 f\./)
 })

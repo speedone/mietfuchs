@@ -365,12 +365,13 @@ export const GLOSSARY = {
   // Heizung PR 14 (#99, Entwurf 10.3). Die Zahlen sind Beispielzahlen.
   billingInfo: {
     title: 'Angaben zur Heizkostenabrechnung',
-    short: 'Zur Heizkostenabrechnung nach Verbrauch gehören Angaben über die Energieträger, die Steuern und Abgaben, die Kosten der Zähler und der Ablesung, Kontaktadressen zum Energiesparen, beim Verbrauchervertrag die Streitbeilegung, ein Vergleich mit einem Durchschnittsnutzer aus Vergleichsdaten und ein grafischer Vergleich mit dem Vorjahr, bereinigt um die Witterung.',
-    example: `Fehlt eine dieser Angaben, darf der Mieter seinen Anteil an den Heizkosten um ${INFO_CUT} % kürzen: bei 1.200 € Heizkosten um ${(1200 * INFO_CUT) / 100} €. Das ist ein Kürzungsrecht, auch wenn mehrere Angaben fehlen.`,
+    short: 'Zur Heizkostenabrechnung nach Verbrauch gehören Angaben über die Energieträger, die Steuern und Abgaben, die Kosten der Zähler und der Ablesung, Kontaktadressen zum Energiesparen, beim Verbrauchervertrag die Streitbeilegung, ein Vergleich mit einem Durchschnittsnutzer aus Vergleichsdaten und ein grafischer Vergleich mit dem vorhergehenden Abrechnungszeitraum, bereinigt um die Witterung.',
+    example: `Fehlt eine dieser Angaben, darf der Mieter seinen Anteil an den Heizkosten um ${INFO_CUT} % kürzen: bei 1.200 € Heizkosten um ${(1200 * INFO_CUT) / 100} €. Das ist ein Kürzungsrecht, auch wenn mehrere Angaben fehlen und auch wenn die monatliche Verbrauchsinformation fehlt; es summieren sich nur Kürzungsrechte aus verschiedenen Sätzen des § 12 Abs. 1 HeizkostenV, etwa dieses und das wegen nicht fernablesbarer Geräte (BR-Drs. 643/21, S. 23 f.).`,
     norm: '§ 6a HeizkostenV; § 12 Abs. 1 Satz 3 HeizkostenV',
     needed:
       'Ja, wenn Sie die Heizkosten nach Verbrauch abrechnen. Mietfuchs rechnet die meisten Angaben aus Ihren Daten. Steuern und Abgaben, bei Fernwärme die Werte des Netzes, den Vergleichswert eines Durchschnittsnutzers mit seiner Quelle und die Klimafaktoren tragen Sie auf der Seite Heizkosten ein. ' +
-      'Ein Durchschnitt Ihres eigenen Hauses ist kein solcher Vergleich: Gemeint sind nach der Begründung der Verordnung anonymisierte Verbraucher aus den Beständen der Ablesedienste.',
+      'Ein Durchschnitt Ihres eigenen Hauses ist kein solcher Vergleich: Gemeint sind nach der Begründung der Verordnung anonymisierte Verbraucher aus den Beständen der Ablesedienste. ' +
+      'Rechnen Sie mit Heizkostenverteilern oder freien Schlüsseln ab, legt meist der Ablesedienst den Vergleich bei; das bestätigen Sie mit seiner Quelle. Ist der Verbrauch eines Mieters geschätzt (§ 9a), gehören die Vergleiche nach der Begründung nicht dazu.',
   },
   climateFactor: {
     title: 'Klimafaktor',
@@ -378,8 +379,8 @@ export const GLOSSARY = {
     example: 'Ein Mieter verbrauchte 12.000 kWh, der Klimafaktor für seinen Ort ist 1,08: witterungsbereinigt 12.960 kWh. Im Vorjahr waren es 11.500 kWh bei einem Faktor von 1,15, witterungsbereinigt 13.225 kWh. Bereinigt hat er also weniger geheizt.',
     norm: '§ 6a Abs. 3 Satz 1 Nr. 5, Satz 2 bis 4 HeizkostenV',
     needed:
-      'Ja, für den Vergleich mit dem Vorjahr. Die Faktoren sucht Mietfuchs nicht selbst heraus; Sie tragen sie mit ihrer Quelle ein, etwa die Klimafaktoren des Deutschen Wetterdienstes zu Ihrer Postleitzahl für die zwölf Monate der Heizperiode. ' +
-      'Ein Verfahren, für das die Verordnung die anerkannten Regeln der Technik vermutet, hat Mietfuchs im Bundesanzeiger nicht gefunden (⟨Norm offen: DIN 94680⟩). Bereinigt wird nur die Wärme, das Warmwasser nicht.',
+      'Ja, für den Vergleich mit dem vorhergehenden Abrechnungszeitraum. Die Faktoren sucht Mietfuchs nicht selbst heraus; Sie tragen sie mit ihrer Quelle ein, etwa die Klimafaktoren des Deutschen Wetterdienstes zu Ihrer Postleitzahl für die zwölf Monate der Heizperiode. ' +
+      'Als Verfahren nach anerkannten Regeln der Technik nennt die Begründung der Verordnung „insbesondere die technische Regel VDI 3807“; die Klimafaktoren des Deutschen Wetterdienstes sind auf die Vereinfachungen „zugeschnitten“, die die Ministerien dafür bekannt machen, und „kostenfrei im Internet“ (BR-Drs. 643/21, S. 21). Bereinigt wird nur die Wärme, das Warmwasser nicht.',
   },
   cableTv: {
     title: 'Kabelfernsehen',

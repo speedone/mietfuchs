@@ -23,7 +23,10 @@ export function infoLines(info: HeatingInfoStatement): string[] {
       lines.push(`Fernwärme laut Versorger: Treibhausgasemissionen ${ghg}; Primärenergiefaktor des Netzes ${info.district.pef === null ? 'nicht angegeben' : n(info.district.pef)}`)
     }
     lines.push(`Steuern, Abgaben und Zölle laut Rechnung: ${info.taxesText ?? 'nicht angegeben'}`)
-    lines.push(`Entgelte für Erfassungsgeräte, Eichung, Ablesung und Abrechnung: ${fmtEuro(info.meteringCents)}`)
+    // Durchsicht von #243, R-W6: ohne Position mit dem Teil Erfassung keine Zahl; mit, für das ganze Gebäude.
+    if (info.meteringCents !== null) lines.push(`Entgelte für Erfassungsgeräte, Eichung, Ablesung und Abrechnung, insgesamt für das Gebäude: ${fmtEuro(info.meteringCents)}`)
+    // R-W1: der beigelegte Vergleich des Ablesedienstes.
+    if (info.comparisonSource) lines.push(`Vergleich mit einem Durchschnittsnutzer${info.comparisons ? '' : ' und mit dem vorhergehenden Abrechnungszeitraum'}: liegt der Abrechnung bei (${info.comparisonSource})`)
   }
   lines.push(`Informationen zum Energiesparen, zu Vergleichsprofilen und zu energiebetriebenen Geräten (Stand ${germanDate(info.contactsChecked)}):`)
   for (const c of info.contacts) lines.push(`${c.name}, ${c.url} – ${c.what}`)
@@ -46,7 +49,8 @@ export function comparisonOf(info: HeatingInfoStatement, tenancyId: string): Com
   // Nr. 5: Wärme witterungsbereinigt, Warmwasser unbereinigt; mit den Tagen beider Zeiträume.
   const days = u.prevDays !== null && u.prevDays !== u.days ? ` (${u.days} Tage, vorhergehender Zeitraum ${u.prevDays} Tage)` : ''
   if (h && h.nowAdjusted !== null && h.prevAdjusted !== null) {
-    lines.push(`Heizung, witterungsbereinigt mit den Klimafaktoren ${n(info.climate.factor ?? 0)} und ${n(info.climate.factorPrev ?? 0)}${info.climate.source ? ` (${info.climate.source})` : ''}: dieser Zeitraum ${n(h.nowAdjusted, 0)} ${info.units.heating}, vorhergehender Zeitraum ${n(h.prevAdjusted, 0)} ${info.units.heating}${days}`)
+    // Durchsicht von #243, R-K9: jeder Klimafaktor bei seinem Zeitraum.
+    lines.push(`Heizung, witterungsbereinigt (Klimafaktor dieser Zeitraum ${n(info.climate.factor ?? 0)}, vorhergehender Zeitraum ${n(info.climate.factorPrev ?? 0)}${info.climate.source ? `; Quelle: ${info.climate.source}` : ''}): dieser Zeitraum ${n(h.nowAdjusted, 0)} ${info.units.heating}, vorhergehender Zeitraum ${n(h.prevAdjusted, 0)} ${info.units.heating}${days}`)
     bars.push({ label: 'Heizung, witterungsbereinigt', unit: info.units.heating, now: h.nowAdjusted, prev: h.prevAdjusted })
   }
   const w = u.water

@@ -5,13 +5,13 @@ import type { HeatingInfoStatement } from './types'
 
 const SOURCE = 'Vergleichswerte des Ablesedienstes Beispiel 2025'
 const info: HeatingInfoStatement = {
-  scope: 'full', carriers: [{ energy: 'gas', percent: 100 }], district: null, taxesText: 'Energiesteuer 312,00 €', meteringCents: 18000,
+  scope: 'full', carriers: [{ energy: 'gas', percent: 100 }], district: null, taxesText: 'Energiesteuer 312,00 €', meteringCents: 18000, comparisonSource: null,
   reference: { kwhPerM2: 150, source: SOURCE }, referenceComparable: true,
   contacts: [{ name: 'Deutsche Energie-Agentur (dena)', url: 'https://www.dena.de', what: 'Energieagentur' }], contactsChecked: '2026-10-07',
   dispute: { kind: 'none' }, climate: { factor: 1.08, factorPrev: 1.15, source: 'DWD 79100' }, units: { heating: 'kWh', water: 'm³' },
   users: [
-    { tenancyId: 'A', label: 'Mieter A', days: 365, prevDays: 366, heating: { now: 12000, estimated: false, referenceKwh: 9000, prev: 1000, nowAdjusted: 12960, prevAdjusted: 1150 }, water: { now: 30, prev: 25 }, firstPeriod: false, prevUnknown: false, ghgKg: null },
-    { tenancyId: 'C2', label: 'Mieter C2', days: 92, prevDays: null, heating: { now: 4800, estimated: false, referenceKwh: 2268.49, prev: null, nowAdjusted: null, prevAdjusted: null }, water: { now: 12, prev: null }, firstPeriod: true, prevUnknown: false, ghgKg: null },
+    { tenancyId: 'A', label: 'Mieter A', days: 365, prevDays: 366, heating: { now: 12000, estimated: false, referenceKwh: 9000, prev: 1000, nowAdjusted: 12960, prevAdjusted: 1150 }, water: { now: 30, prev: 25 }, firstPeriod: false, prevUnknown: false, estimated: false, missing: [], ghgKg: null },
+    { tenancyId: 'C2', label: 'Mieter C2', days: 92, prevDays: null, heating: { now: 4800, estimated: false, referenceKwh: 2268.49, prev: null, nowAdjusted: null, prevAdjusted: null }, water: { now: 12, prev: null }, firstPeriod: true, prevUnknown: false, estimated: false, missing: [], ghgKg: null },
   ],
   missing: [], uncertain: ['5'], comparisons: true, mixedGeneration: false, heatExempt: false,
 }
@@ -21,7 +21,7 @@ describe('Druckblock § 6a (Heizung PR 14)', () => {
     expect(infoLines(info)).toEqual([
       'Eingesetzte Energieträger: Erdgas 100 %',
       'Steuern, Abgaben und Zölle laut Rechnung: Energiesteuer 312,00 €',
-      `Entgelte für Erfassungsgeräte, Eichung, Ablesung und Abrechnung: ${fmtEuro(18000)}`,
+      `Entgelte für Erfassungsgeräte, Eichung, Ablesung und Abrechnung, insgesamt für das Gebäude: ${fmtEuro(18000)}`,
       'Informationen zum Energiesparen, zu Vergleichsprofilen und zu energiebetriebenen Geräten (Stand 07.10.2026):',
       'Deutsche Energie-Agentur (dena), https://www.dena.de – Energieagentur',
     ])
@@ -39,7 +39,7 @@ describe('Druckblock § 6a (Heizung PR 14)', () => {
     const c = comparisonOf(info, 'A') ?? expect.unreachable()
     expect(c.lines).toEqual([
       `Ihr Wärmeverbrauch: 12.000 kWh; Durchschnittsnutzer: 9.000 kWh (150 kWh je m² Wohnfläche, Quelle: ${SOURCE}; auf Ihre Wohnfläche und Ihre 365 Tage umgerechnet)`,
-      'Heizung, witterungsbereinigt mit den Klimafaktoren 1,08 und 1,15 (DWD 79100): dieser Zeitraum 12.960 kWh, vorhergehender Zeitraum 1.150 kWh (365 Tage, vorhergehender Zeitraum 366 Tage)',
+      'Heizung, witterungsbereinigt (Klimafaktor dieser Zeitraum 1,08, vorhergehender Zeitraum 1,15; Quelle: DWD 79100): dieser Zeitraum 12.960 kWh, vorhergehender Zeitraum 1.150 kWh (365 Tage, vorhergehender Zeitraum 366 Tage)',
       'Warmwasser (nicht witterungsbereinigt): dieser Zeitraum 30 m³, vorhergehender Zeitraum 25 m³',
     ])
     expect(c.bars.map((b) => b.label)).toEqual(['Heizung, witterungsbereinigt', 'Warmwasser'])
@@ -52,5 +52,14 @@ describe('Druckblock § 6a (Heizung PR 14)', () => {
     expect(c2.lines.join(' ')).not.toMatch(/12\.000|1\.150/)
     expect(c2.lines.at(-1)).toMatch(/noch nicht hier wohnten/)
     expect(comparisonOf(info, 'X')).toBeNull()
+  })
+})
+
+describe('Durchsicht von #243 (Druck)', () => {
+  it('R-W6: ohne Position mit dem Teil Erfassung keine Zahl; R-W1: der beigelegte Vergleich mit Quelle', () => {
+    expect(infoLines({ ...info, meteringCents: null }).some((l) => /Entgelte für Erfassungsgeräte/.test(l))).toBe(false)
+    expect(infoLines({ ...info, meteringCents: null }).join(' ')).not.toMatch(/0,00/)
+    expect(infoLines({ ...info, comparisonSource: 'Ablesedienst, Anlage 2' })).toContain('Vergleich mit einem Durchschnittsnutzer: liegt der Abrechnung bei (Ablesedienst, Anlage 2)')
+    expect(infoLines({ ...info, comparisons: false, comparisonSource: 'Ablesedienst, Anlage 2' })).toContain('Vergleich mit einem Durchschnittsnutzer und mit dem vorhergehenden Abrechnungszeitraum: liegt der Abrechnung bei (Ablesedienst, Anlage 2)')
   })
 })

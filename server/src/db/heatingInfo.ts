@@ -7,18 +7,22 @@
 // **Ausnahme, Vereinbarung, monatliche Information, Verbrauchervertrag** (`saveHeatingRules`): je Heizperiode;
 // sie gelten ab ihr für die folgenden der Linie (server/src/heatingInfo.ts, `heatingRulesOf`). Eine Antwort
 // ändert nie eine frühere Heizperiode. Eine abgeschlossene Heizperiode nimmt nichts mehr an (409).
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import type { HeatingInfoInputs, HeatingPeriodData } from '../../../shared/types.ts'
-import { CONSUMER_CONTRACT_NONE, postalCodeOf } from '../../../shared/heatingInfo.ts'
+import { AGREED_FIXED_SELF_TEXT, CONSUMER_CONTRACT_NONE, postalCodeOf } from '../../../shared/heatingInfo.ts'
 import { mayAgreeOtherwise } from '../../../shared/heating.ts'
 import type { Database } from './client.ts'
-import { closedText, dropIfEmpty, ensureHeatingPeriod, heatingPeriodClosed, heatingPeriodOf, plantContext } from './heatingPeriodContext.ts'
+import { closedHeatingKeys, closedText, dropIfEmpty, ensureHeatingPeriod, heatingPeriodClosed, heatingPeriodOf, plantContext } from './heatingPeriodContext.ts'
 import { readProperties, readTenancies, readUnits } from './read.ts'
 import { has, HeatingError, oneOfOrUndefined, raw } from './repository.ts'
-import { AGREED_OTHERWISE, EXEMPTION_SCOPES, HEATING_EXEMPTIONS, heatingPeriods } from './schema.ts'
+import { AGREED_OTHERWISE, EXEMPTION_SCOPES, HEATING_EXEMPTIONS, heatingPeriods, heatingPlants } from './schema.ts'
+import { heatingRulesOf, type RuleRow } from '../heatingInfo.ts'
 
 type Inputs = Omit<HeatingInfoInputs, 'postalCode'>
 export type OwnRules = Pick<HeatingPeriodData, 'exemption' | 'exemptionScope' | 'exemptionBillingAgreed' | 'agreedOtherwise' | 'monthlyInfoElsewhere' | 'consumerContract'>
+// Die Antwort auf das Speichern: die eigene Zeile und die späteren abgeschlossenen Heizperioden der Linie, für die
+// die Angabe gälte, die aber eingefroren bleiben (Durchsicht von #243, G-K1). Die nächste offene übernimmt sie.
+export type SavedRules = OwnRules & { later: { closed: string[] } }
 
 export const REFERENCE_SOURCE_TEXT = 'Bitte nennen Sie die Quelle des Vergleichswerts, etwa die Vergleichsdaten Ihres Ablesedienstes. Ein Durchschnitt aus Ihrem eigenen Haus ist kein zulässiger Vergleich.'
 export const CLIMATE_SOURCE_TEXT = 'Bitte nennen Sie die Quelle der Klimafaktoren, etwa „Deutscher Wetterdienst, Klimafaktoren“ mit Postleitzahl und Zeitraum.'
@@ -56,6 +60,7 @@ export async function saveHeatingInfo(db: Database, plantId: string, period: str
   if (has(body, 'climateFactorSource')) next.climateFactorSource = textOrNull(raw(body, 'climateFactorSource'))
   if (has(body, 'infoReferenceKwhPerM2')) next.infoReferenceKwhPerM2 = numberOrNull(raw(body, 'infoReferenceKwhPerM2'), 'Der Vergleichswert ist eine Zahl größer als 0 (kWh je m² Wohnfläche in der Heizperiode).', true)
   if (has(body, 'infoReferenceSource')) next.infoReferenceSource = textOrNull(raw(body, 'infoReferenceSource'))
+  if (has(body, 'infoComparisonSource')) next.infoComparisonSource = textOrNull(raw(body, 'infoComparisonSource'))
   let saved: Inputs | null = null
   await db.transaction(async (tx) => {
     if (await heatingPeriodClosed(tx, ctx, h)) throw new HeatingError(409, closedText(h))
@@ -72,6 +77,7 @@ export async function saveHeatingInfo(db: Database, plantId: string, period: str
       infoTaxesText: r?.infoTaxesText ?? null, infoDistrictGhg: r?.infoDistrictGhg ?? null, infoDistrictPef: r?.infoDistrictPef ?? null,
       climateFactor: r?.climateFactor ?? null, climateFactorPrev: r?.climateFactorPrev ?? null, climateFactorSource: r?.climateFactorSource ?? null,
       infoReferenceKwhPerM2: r?.infoReferenceKwhPerM2 ?? null, infoReferenceSource: r?.infoReferenceSource ?? null,
+      infoComparisonSource: r?.infoComparisonSource ?? null,
     }
   })
   if (!saved) throw new Error('Die Heizperiode ist nach dem Speichern nicht auffindbar.')
@@ -83,9 +89,17 @@ export async function saveHeatingInfo(db: Database, plantId: string, period: str
 // Vermieter eine selbst bewohnt. Wohnung ist hier, was Fläche hat, selbst genutzt wird oder ein
 // Mietverhältnis hat; die Berechnung prüft im Zeitraum erneut und wendet eine Vereinbarung nicht an, sobald
 // das Haus größer ist.
+export async function agreeableFor(db: Database, propertyId: string): Promise<boolean> {
+  const units = (await readUnits(db)).filter((u) => u.propertyId === propertyId)
+  const tenancies = await readTenancies(db)
+  const dwelling = (u: (typeof units)[number]) => (u.areaM2 || 0) > 0 || u.selfUsed === true || tenancies.some((t) => t.unitId === u.id)
+  return mayAgreeOtherwise(units, dwelling)
+}
 export const AGREEMENT_TEXT = 'Eine abweichende Vereinbarung nach § 2 HeizkostenV gibt es nur im Gebäude mit höchstens zwei Wohnungen, von denen Sie eine selbst bewohnen. Legen Sie Ihre eigene Wohnung in den Stammdaten als selbstgenutzt an, wenn das zutrifft.'
 
-export async function saveHeatingRules(db: Database, plantId: string, period: string, body: unknown): Promise<OwnRules | null> {
+export const EXEMPTION_FIRST_TEXT = 'Wählen Sie zuerst eine Ausnahme nach § 11 HeizkostenV; ohne Ausnahme gibt es weder den Umfang noch eine vereinbarte Abrechnung.'
+
+export async function saveHeatingRules(db: Database, plantId: string, period: string, body: unknown): Promise<SavedRules | null> {
   const found = await contextFor(db, plantId, period, 'rules')
   if (!found) return null
   const { ctx, h } = found
@@ -116,29 +130,62 @@ export async function saveHeatingRules(db: Database, plantId: string, period: st
     else throw new HeatingError(400, 'Bei einem Verbrauchervertrag tragen Sie die Information zur Streitbeilegung ein (§ 6a Abs. 3 Satz 1 Nr. 3 HeizkostenV); sonst wählen Sie „Nein“.')
   }
   if (next.agreedOtherwise !== undefined && next.agreedOtherwise !== null && next.agreedOtherwise !== 'none') {
-    const units = (await readUnits(db)).filter((u) => u.propertyId === ctx.plant.propertyId)
-    const tenancies = await readTenancies(db)
-    const dwelling = (u: (typeof units)[number]) => (u.areaM2 || 0) > 0 || u.selfUsed === true || tenancies.some((t) => t.unitId === u.id)
-    if (!mayAgreeOtherwise(units, dwelling)) throw new HeatingError(400, AGREEMENT_TEXT)
+    if (!(await agreeableFor(db, ctx.plant.propertyId))) throw new HeatingError(400, AGREEMENT_TEXT)
+    if (next.agreedOtherwise === 'fixedPercent' && ctx.plant.method === 'self') throw new HeatingError(400, AGREED_FIXED_SELF_TEXT)
   }
-  let saved: OwnRules | null = null
+  // Mit `dryRun` wird nur gerechnet, nichts geschrieben: Die Oberfläche fragt nach, bevor eine Angabe an
+  // abgeschlossenen Heizperioden vorbei auf eine offene wirkt (Durchsicht von #243, G-K1).
+  const dryRun = raw(body, 'dryRun') === true
+  let saved: SavedRules | null = null
   await db.transaction(async (tx) => {
     if (await heatingPeriodClosed(tx, ctx, h)) throw new HeatingError(409, closedText(h))
-    const id = await ensureHeatingPeriod(tx, plantId, h.key)
-    const [before] = await tx.select().from(heatingPeriods).where(eq(heatingPeriods.id, id))
-    const exemption = next.exemption !== undefined ? next.exemption : (before?.exemption ?? null)
-    // Ohne Ausnahme gibt es weder den Umfang noch die vereinbarte Abrechnung (§ 2 Abs. 7 CO2KostAufG).
-    if (exemption === null || exemption === 'none') {
+    const [before] = await tx.select().from(heatingPeriods).where(and(eq(heatingPeriods.plantId, plantId), eq(heatingPeriods.period, h.key)))
+    const own = next.exemption !== undefined ? next.exemption : (before?.exemption ?? null)
+    // Was ohne die eigene Zeile gälte (geerbt über die Linie, Durchsicht G-W1).
+    const plants = await tx.select({ id: heatingPlants.id, replacesPlantId: heatingPlants.replacesPlantId }).from(heatingPlants)
+    const rows = (await tx.select().from(heatingPeriods)).filter((r) => r.id !== before?.id).map((r) => ({ ...r, period: String(r.period) }))
+    const inherited = heatingRulesOf(rows, plants, plantId, String(h.key))
+    const scopeChanged = next.exemptionScope !== undefined && next.exemptionScope !== null && (own !== null || next.exemptionScope !== inherited.exemptionScope)
+    const billingChanged = next.exemptionBillingAgreed !== undefined && next.exemptionBillingAgreed !== null && (own !== null || next.exemptionBillingAgreed !== inherited.exemptionBillingAgreed)
+    if (own === null && (scopeChanged || billingChanged)) {
+      // Die Ausnahme gilt aus einer früheren Heizperiode: Die Änderung schreibt sie samt Umfang und vereinbarter
+      // Abrechnung in die eigene Zeile und gilt ab hier. Ohne geltende Ausnahme gibt es beides nicht.
+      if (inherited.exemption === 'none') throw new HeatingError(400, EXEMPTION_FIRST_TEXT)
+      next.exemption = inherited.exemption
+      if (!scopeChanged) next.exemptionScope = inherited.exemptionScope
+      if (!billingChanged) next.exemptionBillingAgreed = inherited.exemptionBillingAgreed
+    } else if (own === 'none' && (scopeChanged || billingChanged)) {
+      throw new HeatingError(400, EXEMPTION_FIRST_TEXT)
+    } else if (own === null || own === 'none') {
+      // Ohne eigene Ausnahme stehen Umfang und vereinbarte Abrechnung nicht in der Zeile (§ 2 Abs. 7 CO2KostAufG);
+      // ein Wert gleich dem geerbten ändert nichts.
       next.exemptionScope = null
       next.exemptionBillingAgreed = null
     }
+    const ownOf = (r: Partial<OwnRules> | undefined): OwnRules => ({
+      exemption: r?.exemption ?? null, exemptionScope: r?.exemptionScope ?? null, exemptionBillingAgreed: r?.exemptionBillingAgreed ?? null,
+      agreedOtherwise: r?.agreedOtherwise ?? null, monthlyInfoElsewhere: r?.monthlyInfoElsewhere ?? null, consumerContract: r?.consumerContract ?? null,
+    })
+    const merged = ownOf({ ...ownOf(before), ...next })
+    // Spätere abgeschlossene Heizperioden, für die die Angabe nun anders gälte: Sie bleiben eingefroren, die nächste
+    // offene übernimmt die Angabe an ihnen vorbei.
+    const self = { plantId, period: String(h.key) }
+    const rulesAt = (list: readonly RuleRow[], k: string) => {
+      const r = heatingRulesOf(list, plants, plantId, k)
+      return JSON.stringify([r.exemption, r.exemptionScope, r.exemptionBillingAgreed, r.agreedOtherwise, r.monthlyInfoElsewhere, r.consumerContract])
+    }
+    const withBefore: RuleRow[] = before ? [...rows, { ...self, ...ownOf(before) }] : rows
+    const withAfter: RuleRow[] = [...rows, { ...self, ...merged }]
+    const closed = (await closedHeatingKeys(tx, ctx)).filter((k) => k > String(h.key) && rulesAt(withBefore, k) !== rulesAt(withAfter, k)).sort()
+    if (dryRun) {
+      saved = { ...merged, later: { closed } }
+      return
+    }
+    const id = before?.id ?? (await ensureHeatingPeriod(tx, plantId, h.key))
     if (Object.keys(next).length > 0) await tx.update(heatingPeriods).set(next).where(eq(heatingPeriods.id, id))
     const [r] = await tx.select().from(heatingPeriods).where(eq(heatingPeriods.id, id))
     await dropIfEmpty(tx, id)
-    saved = {
-      exemption: r?.exemption ?? null, exemptionScope: r?.exemptionScope ?? null, exemptionBillingAgreed: r?.exemptionBillingAgreed ?? null,
-      agreedOtherwise: r?.agreedOtherwise ?? null, monthlyInfoElsewhere: r?.monthlyInfoElsewhere ?? null, consumerContract: r?.consumerContract ?? null,
-    }
+    saved = { ...ownOf(r ?? undefined), later: { closed } }
   })
   return saved
 }

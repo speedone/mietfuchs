@@ -832,6 +832,9 @@ input.input-cell { display: block; width: 170px; margin-top: 4px; }
    als den Bildschirm (Abrechnungszeitraum, 390 px). In einer Zeile darf es schmaler werden. */
 .row > label.field { min-width: min(100%, 160px); max-width: 100%; }
 label.field > select { max-width: 100%; }
+/* Quellen und Bestätigungen (Heizung PR 14, Durchsicht von #243, R-K11): breit genug für den Platzhalter. */
+.row > label.field.wide { flex: 2 1 18rem; min-width: min(100%, 18rem); }
+:is(.card, .panel, .preview, details) > label.field.wide { max-width: 100%; }
 .row.center { align-items: center; }
 .row.start { align-items: flex-start; }
 .row.baseline { align-items: baseline; }

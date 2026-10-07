@@ -6609,7 +6609,7 @@ test('Pflichtangaben nach § 6a und Ausnahmen über die Routen (Heizung PR 14): 
     assert.equal(falsch.status, 400)
     assert.match(await errorFrom(falsch), /Klimafaktor/)
     const rules = await send('PUT', `/api/heating-plants/${plant.id}/periods/2025-01/rules`, { exemption: 'lowDemand', consumerContract: 'none' })
-    assert.deepEqual(await jsonOf<Record<string, unknown>>(rules), { exemption: 'lowDemand', exemptionScope: null, exemptionBillingAgreed: null, agreedOtherwise: null, monthlyInfoElsewhere: null, consumerContract: 'none' })
+    assert.deepEqual(await jsonOf<Record<string, unknown>>(rules), { exemption: 'lowDemand', exemptionScope: null, exemptionBillingAgreed: null, agreedOtherwise: null, monthlyInfoElsewhere: null, consumerContract: 'none', later: { closed: [] } })
     assert.equal((await send('PUT', `/api/heating-plants/${plant.id}/periods/2025-01/rules`, { agreedOtherwise: 'area' })).status, 400)
     assert.equal((await send('PUT', '/api/heating-plants/gibt-es-nicht/periods/2025-01/info', {})).status, 404)
     assert.equal((await send('PUT', '/api/heating-plants/gibt-es-nicht/periods/2025-01/rules', {})).status, 404)

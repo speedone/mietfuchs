@@ -94,9 +94,11 @@ test('Rechtsbefund (BR-Drs. 643/21, S. 19, 21): ohne Vergleichswert mit Quelle f
   assert.deepEqual([ohneQuelle.missing, ohneQuelle.reference], [['4'], null])
 })
 
-test('Nr. 4 bei Heizkostenverteilern: Einheiten lassen sich nicht mit kWh vergleichen', () => {
+test('Nr. 4 bei Heizkostenverteilern: Einheiten lassen sich nicht mit kWh vergleichen; ohne beigelegten Vergleich offen (Durchsicht R-W1)', () => {
   const info = heatingInfoOf(input({ units: { heating: 'Einheiten', water: 'm³' } }))
-  assert.deepEqual([info.missing, info.referenceComparable], [['4'], false])
+  assert.deepEqual([info.missing, info.uncertain, info.referenceComparable], [[], ['4', '5'], false])
+  const beigelegt = heatingInfoOf(input({ units: { heating: 'Einheiten', water: 'm³' }, row: { ...row, infoComparisonSource: ' Vergleich des Ablesedienstes, Anlage 2 ' } }))
+  assert.deepEqual([beigelegt.missing, beigelegt.uncertain, beigelegt.comparisonSource], [[], ['5'], 'Vergleich des Ablesedienstes, Anlage 2'])
   assert.equal(user(info, 'A').heating?.referenceKwh, null)
   // Der witterungsbereinigte Vergleich geht in Einheiten (gleiche Erfassung in beiden Zeiträumen).
   near(user(info, 'A').heating?.nowAdjusted, 12960, 'A bereinigt in Einheiten')
@@ -147,9 +149,38 @@ test('Abs. 5: ohne Verteilung nach Verbrauch nur Nr. 2 und 3', () => {
   assert.equal(planByConsumption(plan), true)
 })
 
-test('Freie Schlüssel nach Zählern (ohne Plan der eigenen Abrechnung): volle Pflicht, Nr. 4 und 5 fehlen', () => {
+test('Freie Schlüssel nach Zählern (ohne Plan der eigenen Abrechnung): volle Pflicht, Nr. 4 und 5 offen, bis der Vergleich des Ablesedienstes bestätigt ist (Durchsicht R-W1)', () => {
   const info = heatingInfoOf(input({ plan: null, prev: null }))
-  assert.deepEqual([info.scope, info.missing, info.comparisons, info.users], ['full', ['4', '5'], false, []])
+  assert.deepEqual([info.scope, info.missing, info.uncertain, info.comparisons, info.users], ['full', [], ['4', '5'], false, []])
+  const beigelegt = heatingInfoOf(input({ plan: null, prev: null, row: { ...row, infoComparisonSource: 'Ablesedienst, Anlage' } }))
+  assert.deepEqual([beigelegt.missing, beigelegt.uncertain], [[], []])
+})
+
+test('Durchsicht R-W2: Was nur einem Mieter fehlt, steht bei ihm; die Angaben zur Anlage fehlen allen', () => {
+  // B ohne Stand am 31.12.2024: Mietfuchs kennt seinen Vorjahresverbrauch nicht (Nr. 5 nur für B).
+  const ohneB = planSelf(base({ from: '2024-01-01', to: '2024-12-31' }, READINGS.filter((r) => !(r.meterId === 'wb' && r.date < '2025-01-01'))))
+  const info = heatingInfoOf(input({ prev: ohneB }))
+  assert.deepEqual([info.missing, info.missingCommon, user(info, 'B').missing, user(info, 'A').missing, user(info, 'B').prevUnknown], [['5'], [], ['5'], [], true])
+  // Fehlen die Steuern, fehlen sie allen, B dazu Nr. 5.
+  const steuer = heatingInfoOf(input({ prev: ohneB, row: { ...row, infoTaxesText: null } }))
+  assert.deepEqual([steuer.missingCommon, user(steuer, 'A').missing, user(steuer, 'B').missing], [['1b'], ['1b'], ['1b', '5']])
+  // Wohnung ohne Fläche: der Vergleichswert lässt sich nur für sie nicht umrechnen.
+  const flach = planSelf({ ...base({ from: '2025-01-01', to: '2025-12-31' }, READINGS), units: base({ from: '2025-01-01', to: '2025-12-31' }, READINGS).units.map((u) => (u.id === 'b' ? { ...u, areaM2: 0 } : u)) })
+  const f = heatingInfoOf(input({ plan: flach }))
+  assert.deepEqual([user(f, 'B').missing, user(f, 'A').missing], [['4'], []])
+})
+
+test('Durchsicht R-W5: Geschätzter Verbrauch (§ 9a) – keine Vergleiche nach Abs. 3 für den Mieter, nichts fehlt für ihn', () => {
+  const geschaetzt: SelfPlan = structuredClone(plan)
+  for (const u of geschaetzt.units) for (const x of u.users) if (x.tenancyId === 'A') x.pots.heating = { ...x.pots.heating, estimated: true }
+  const info = heatingInfoOf(input({ plan: geschaetzt, row: { ...row, infoReferenceKwhPerM2: null, infoReferenceSource: null } }))
+  assert.deepEqual([user(info, 'A').estimated, user(info, 'A').missing, user(info, 'B').missing], [true, [], ['4']])
+})
+
+test('Durchsicht R-W6: Ohne Position mit dem Teil „Erfassung“ ist Nr. 1 c offen und ohne Betrag', () => {
+  const info = heatingInfoOf(input({ meteringCents: null }))
+  assert.deepEqual([info.meteringCents, info.uncertain.includes('1c'), info.missing.includes('1c')], [null, true, false])
+  assert.equal(heatingInfoOf(input()).meteringCents, 18000)
 })
 
 test('§ 11 nur für die Wärme: kein Vergleich der Heizung, kein Klimafaktor nötig; Nr. 4 fehlt (nur Wärme in kWh)', () => {

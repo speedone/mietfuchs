@@ -822,7 +822,7 @@ for (const variant of VARIANTS) {
             const key = pick(keys)
             const plantId = variant.swap && swapped && rnd() < 0.5 ? 'hp2' : 'hp'
             if (!key) continue
-            const exemption = pick(['none', 'lowDemand', 'pre1981', 'authority', null] as const) ?? null
+            const exemption = pick(['none', 'lowDemand', 'pre1981', 'chp', 'authority', null] as const) ?? null
             const body = {
               exemption,
               exemptionScope: pick(['heat', 'both', 'both', null] as const) ?? null,

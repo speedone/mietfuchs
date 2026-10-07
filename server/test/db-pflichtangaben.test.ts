@@ -14,6 +14,9 @@ import { saveHeatingInfo, saveHeatingRules } from '../src/db/heatingInfo.ts'
 import { heatingPeriodViews } from '../src/db/co2.ts'
 import { periodKey } from '../../shared/period.ts'
 import { postalCodeOf } from '../../shared/heatingInfo.ts'
+import { computeSettlement } from '../src/calc.ts'
+import { selfRow, selfSnapshot } from '../testing/selfHeating.ts'
+import type { HeatingPeriodData } from '../../shared/types.ts'
 
 type Opened = Awaited<ReturnType<typeof openDatabase>>
 async function withDatabase(run: (opened: Opened) => Promise<void>): Promise<void> {
@@ -50,7 +53,7 @@ test('Angaben nach § 6a speichern: Klimafaktoren und Vergleichswert über 0 und
     const saved = await save({ infoTaxesText: ' Energiesteuer 312,00 € ', climateFactor: 1.08, climateFactorPrev: 1.15, climateFactorSource: ' DWD, Klimafaktoren 79100 ' })
     assert.deepEqual(saved, {
       infoTaxesText: 'Energiesteuer 312,00 €', infoDistrictGhg: null, infoDistrictPef: null, climateFactor: 1.08, climateFactorPrev: 1.15,
-      climateFactorSource: 'DWD, Klimafaktoren 79100', infoReferenceKwhPerM2: null, infoReferenceSource: null, postalCode: null,
+      climateFactorSource: 'DWD, Klimafaktoren 79100', infoReferenceKwhPerM2: null, infoReferenceSource: null, infoComparisonSource: null, postalCode: null,
     })
     await assert.rejects(save({ climateFactor: 0 }), status(400, /Klimafaktor.*größer als 0/))
     await assert.rejects(save({ climateFactorSource: '' }), status(400, /Quelle der Klimafaktoren/))
@@ -133,9 +136,8 @@ test('Ausnahme nach § 11: Umfang und vereinbarte Abrechnung nur mit Ausnahme; g
     assert.deepEqual([mit?.exemption, mit?.exemptionScope, mit?.exemptionBillingAgreed], ['pre1981', 'both', true])
     const ohne = await rules('2026-01', { exemption: 'none' })
     assert.deepEqual([ohne?.exemption, ohne?.exemptionScope, ohne?.exemptionBillingAgreed], ['none', null, null])
-    // Ohne eigene Antwort zur Ausnahme gibt es auch keinen Umfang und keine vereinbarte Abrechnung in der Zeile.
-    const leer = await rules('2028-01', { exemptionScope: 'both', exemptionBillingAgreed: true })
-    assert.deepEqual([leer?.exemption, leer?.exemptionScope, leer?.exemptionBillingAgreed], [null, null, null])
+    // Ohne geltende Ausnahme gibt es weder Umfang noch vereinbarte Abrechnung (Durchsicht G-W1: 400 statt still leeren).
+    await assert.rejects(rules('2028-01', { exemptionScope: 'both', exemptionBillingAgreed: true }), status(400, /zuerst.*Ausnahme/))
     await rules('2026-01', { exemption: 'lowDemand' })
     const view = async (p: string) => ((await opened.read((db) => heatingPeriodViews(db, 'hp', p, '2025-12-01'))) ?? assert.fail('keine Anlage'))[0] ?? assert.fail('keine Heizperiode')
     // 2025 bleibt ohne Ausnahme; 2027 erbt sie aus 2026, nur die Wärme.
@@ -159,5 +161,81 @@ test('Kesseltausch: die neue Anlage erbt Ausnahme und Bestätigung der alten', a
     const id = neu?.plant.id ?? assert.fail('keine neue Anlage')
     const [v] = (await opened.read((db) => heatingPeriodViews(db, id, '2026', '2025-12-01'))) ?? assert.fail('keine Anlage')
     assert.deepEqual([v?.rules.exemption, v?.rules.exemptionScope, v?.rules.monthlyInfoElsewhere], ['authority', 'both', true])
+  })
+})
+
+// Durchsicht Runde 1, G-W1: Eine geerbte Ausnahme ließ sich in einer späteren Heizperiode nicht ändern; der Server
+// leerte Umfang und vereinbarte Abrechnung still und sagte 200.
+test('Durchsicht G-W1: Umfang oder vereinbarte Abrechnung unter geerbter Ausnahme schreibt die Ausnahme in die eigene Zeile; ohne Ausnahme 400', async () => {
+  await withDatabase(async (opened) => {
+    await haus(opened)
+    const rules = (period: string, body: Record<string, unknown>) => opened.write((db) => saveHeatingRules(db, 'hp', period, body))
+    const view = async (p: string) => ((await opened.read((db) => heatingPeriodViews(db, 'hp', p, '2024-12-01'))) ?? assert.fail('keine Anlage'))[0] ?? assert.fail('keine Heizperiode')
+    // Ohne jede Ausnahme gibt es weder Umfang noch vereinbarte Abrechnung: 400 statt still leeren.
+    await assert.rejects(rules('2024-01', { exemptionBillingAgreed: true }), status(400, /zuerst.*Ausnahme/))
+    await assert.rejects(rules('2024-01', { exemption: 'none', exemptionScope: 'both' }), status(400, /zuerst.*Ausnahme/))
+    const v2024 = await rules('2024-01', { exemption: 'pre1981', exemptionScope: 'both' })
+    assert.deepEqual([v2024?.exemption, v2024?.exemptionScope, v2024?.exemptionBillingAgreed], ['pre1981', 'both', null])
+    // 2025 erbt die Ausnahme; das Häkchen schreibt sie samt Umfang in die eigene Zeile.
+    const v2025 = await rules('2025-01', { exemptionBillingAgreed: true })
+    assert.deepEqual([v2025?.exemption, v2025?.exemptionScope, v2025?.exemptionBillingAgreed], ['pre1981', 'both', true])
+    const r2025 = (await view('2025')).rules
+    assert.deepEqual([r2025.exemption, r2025.exemptionScope, r2025.exemptionBillingAgreed, r2025.fromPeriod.exemption], ['pre1981', 'both', true, '2025-01'])
+    // 2024 bleibt, wie es war.
+    assert.equal((await view('2024')).rules.exemptionBillingAgreed, false)
+    // Geld: Beispiel A mit der Ausnahme aus 2024 und dem Häkchen 2025 bekommt die CO₂-Abzugszeilen wieder.
+    const sum = (row2025: Partial<HeatingPeriodData>) => computeSettlement(selfSnapshot({ row: row2025, rows: [selfRow({ exemption: 'pre1981', exemptionScope: 'both' }, 2024)] }))
+      .statements.find((st) => st.tenancyId === 'A')?.totalShareCents
+    assert.equal(sum({ exemption: v2025?.exemption, exemptionScope: v2025?.exemptionScope, exemptionBillingAgreed: v2025?.exemptionBillingAgreed }), 179428)
+    assert.equal(sum({}), 196189)
+    // Gegenrichtung: geerbt „nur die Wärme“, gewünscht „beides“; der Umfang wirkt ab 2026.
+    await rules('2025-01', { exemption: null })
+    await rules('2024-01', { exemptionScope: 'heat' })
+    const v2026 = await rules('2026-01', { exemptionScope: 'both' })
+    assert.deepEqual([v2026?.exemption, v2026?.exemptionScope, v2026?.exemptionBillingAgreed], ['pre1981', 'both', false])
+    assert.deepEqual([(await view('2026')).rules.exemptionScope, (await view('2025')).rules.exemptionScope], ['both', 'heat'])
+    // Derselbe Wert wie geerbt schreibt nichts in die eigene Zeile, die Vererbung bleibt.
+    const gleich = await rules('2027-01', { exemptionScope: 'both' })
+    assert.deepEqual([gleich?.exemption, gleich?.exemptionScope], [null, null])
+    assert.equal((await view('2027')).rules.fromPeriod.exemption, '2026-01')
+  })
+})
+
+test('Durchsicht G-K1: Eine Ausnahme in einer wiedergeöffneten Heizperiode nennt die späteren abgeschlossenen; dryRun schreibt nichts', async () => {
+  await withDatabase(async (opened) => {
+    await haus(opened)
+    const close = (id: string, p: string) => opened.write((db) => closeSettlement(db, { id, propertyId: 'objekt-1', period: periodKey(p), closedAt: '2027-03-01T10:00:00.000Z', sentAt: null, settlement: {} }))
+    await close('ab25', '2025-01')
+    const rules = (period: string, body: Record<string, unknown>) => opened.write((db) => saveHeatingRules(db, 'hp', period, body))
+    const probe = await rules('2024-01', { exemption: 'pre1981', exemptionScope: 'both', dryRun: true })
+    assert.deepEqual([probe?.exemption, probe?.later.closed], ['pre1981', ['2025-01']])
+    const view = async (p: string) => ((await opened.read((db) => heatingPeriodViews(db, 'hp', p, '2024-12-01'))) ?? assert.fail('keine Anlage'))[0] ?? assert.fail('keine Heizperiode')
+    assert.equal((await view('2026')).rules.exemption, 'none', 'dryRun schreibt nichts')
+    const saved = await rules('2024-01', { exemption: 'pre1981', exemptionScope: 'both' })
+    assert.deepEqual(saved?.later.closed, ['2025-01'])
+    assert.equal((await view('2026')).rules.exemption, 'pre1981')
+    // Ohne spätere abgeschlossene Heizperiode bleibt die Liste leer; eine gleiche Angabe nennt keine.
+    assert.deepEqual((await rules('2026-01', { monthlyInfoElsewhere: true }))?.later.closed, [])
+    assert.deepEqual((await rules('2024-01', { exemption: 'pre1981' }))?.later.closed, [])
+  })
+})
+
+test('Durchsicht R-W1: Vergleich des Ablesedienstes liegt bei, mit Quelle, je Heizperiode', async () => {
+  await withDatabase(async (opened) => {
+    await haus(opened)
+    const save = (body: Record<string, unknown>) => opened.write((db) => saveHeatingInfo(db, 'hp', '2026-01', body))
+    assert.equal((await save({ infoComparisonSource: ' Vergleich des Ablesedienstes, Anlage 2 ' }))?.infoComparisonSource, 'Vergleich des Ablesedienstes, Anlage 2')
+    const [v] = (await opened.read((db) => heatingPeriodViews(db, 'hp', '2026', '2025-12-01'))) ?? assert.fail('keine Anlage')
+    assert.equal(v?.info.infoComparisonSource, 'Vergleich des Ablesedienstes, Anlage 2')
+    assert.equal((await save({ infoComparisonSource: '' }))?.infoComparisonSource, null)
+  })
+})
+
+test('Durchsicht G-W3: Feste Anteile nach § 2 bei eigener Heizkostenabrechnung: 400 mit Weg', async () => {
+  await withDatabase(async (opened) => {
+    await haus(opened, [['a', 90, true], ['b', 70, false]])
+    await opened.write((db) => setUpSelf(db, 'hp', SETUP, '2025-12-01', newId))
+    await assert.rejects(opened.write((db) => saveHeatingRules(db, 'hp', '2026-01', { agreedOtherwise: 'fixedPercent' })), status(400, /feste Anteile.*freien Schlüsseln/s))
+    assert.equal((await opened.write((db) => saveHeatingRules(db, 'hp', '2026-01', { agreedOtherwise: 'area' })))?.agreedOtherwise, 'area')
   })
 })

@@ -7,13 +7,20 @@ import { parseNumberDe } from './numbers'
 
 export type InfoForm = {
   taxes: string; ghg: string; pef: string; climateFactor: string; climateFactorPrev: string; climateSource: string; reference: string; referenceSource: string
+  // Durchsicht von #243, R-W1: Quelle des beigelegten Vergleichs des Ablesedienstes.
+  comparisonSource: string
 }
 export type ContractForm = { contract: 'none' | 'yes' | ''; disputeText: string }
+// Durchsicht von #243, R-K5: Ein Verbrauchervertrag verlangt beide Seiten, den Vermieter als Unternehmer (§ 14 BGB)
+// und den Mieter als Verbraucher (§ 13 BGB) (BR-Drs. 643/21, S. 20 f.).
 export const CONTRACT_OPTIONS: { value: ContractForm['contract']; label: string }[] = [
   { value: '', label: 'Bitte wählen' },
-  { value: 'none', label: 'Nein, ich vermiete nicht als Unternehmer (kein Verbrauchervertrag)' },
-  { value: 'yes', label: 'Ja, ich vermiete als Unternehmer (Verbrauchervertrag nach § 310 Abs. 3 BGB)' },
+  { value: 'none', label: 'Nein: kein Verbrauchervertrag' },
+  { value: 'yes', label: 'Ja: Verbrauchervertrag (§ 310 Abs. 3 BGB)' },
 ]
+export const CONTRACT_HELP = 'Ein Verbrauchervertrag liegt vor, wenn Sie als Unternehmer (§ 14 BGB) an einen Mieter vermieten, der Verbraucher ist (§ 13 BGB). Wer als Privatperson eigenes Vermögen vermietet, ist in der Regel kein Unternehmer; das kann sich mit Umfang und Organisation der Vermietung ändern. ' +
+  'Beim Verbrauchervertrag gehört die Information über die Möglichkeit eines Streitbeilegungsverfahrens nach dem Verbraucherstreitbeilegungsgesetz zur Abrechnung (§ 6a Abs. 3 Satz 1 Nr. 3 HeizkostenV); dafür können Sie etwa auf die Liste der Verbraucherschlichtungsstellen verweisen, die das Bundesamt für Justiz veröffentlicht (BR-Drs. 643/21, S. 21). ' +
+  'Die Informationspflichten nach §§ 36, 37 VSBG gelten daneben unverändert.'
 const text = (n: number | null): string => (n === null ? '' : n.toLocaleString('de-DE', { maximumFractionDigits: 6, useGrouping: false }))
 const num = (t: string): number | null | 'bad' => {
   if (t.trim() === '') return null
@@ -28,7 +35,7 @@ export function infoToForm(i: HeatingInfoInputs): InfoForm {
   return {
     taxes: i.infoTaxesText ?? '', ghg: text(i.infoDistrictGhg), pef: text(i.infoDistrictPef),
     climateFactor: text(i.climateFactor), climateFactorPrev: text(i.climateFactorPrev), climateSource: i.climateFactorSource ?? '',
-    reference: text(i.infoReferenceKwhPerM2), referenceSource: i.infoReferenceSource ?? '',
+    reference: text(i.infoReferenceKwhPerM2), referenceSource: i.infoReferenceSource ?? '', comparisonSource: i.infoComparisonSource ?? '',
   }
 }
 
@@ -51,6 +58,7 @@ export function infoBody(f: InfoForm): { body: Omit<HeatingInfoInputs, 'postalCo
       infoTaxesText: f.taxes.trim() === '' ? null : f.taxes.trim(), infoDistrictGhg: ghg, infoDistrictPef: pef,
       climateFactor: factor, climateFactorPrev: prev, climateFactorSource: climateSource === '' ? null : climateSource,
       infoReferenceKwhPerM2: reference, infoReferenceSource: source === '' ? null : source,
+      infoComparisonSource: f.comparisonSource.trim() === '' ? null : f.comparisonSource.trim(),
     },
   }
 }

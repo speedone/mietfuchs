@@ -23,6 +23,8 @@ export default function SelfHeatingBlock({ self, tenancyId, plantName }: { self:
         </p>
       )}
       {self.pots.flatMap(potLines).map((l) => <p key={l}>{l}</p>)}
+      {/* Durchsicht von #243, G-W3: nach der Vereinbarung nach § 2 nach Fläche verteilt. */}
+      {self.agreedArea && <p>Verteilt nach der Wohnfläche, wie mit den Mietern vereinbart (§ 2 HeizkostenV); einen Anteil nach Verbrauch gibt es dann nicht.</p>}
       {self.shares?.above70Agreed && <p>Der Anteil nach Verbrauch liegt nach Vereinbarung mit den Mietern über {shareBounds().max} % (§ 10 HeizkostenV).</p>}
       {mine.map((u) => <p key={u.key}><strong>{userLine(u, self)}</strong></p>)}
       {/* Heizung PR 13: die Schätzung nach § 9a mit Weg und Begründung, nur für die Wohnung des Mieters. */}

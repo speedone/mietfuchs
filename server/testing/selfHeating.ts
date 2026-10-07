@@ -64,7 +64,7 @@ export function selfRow(over: Partial<HeatingPeriodData> = {}, year = 2025, plan
     stockUnit: null, openingQuantity: null, openingCostCents: null, openingEmissionsKg: null, openingCo2Cents: null, openingInvoicedBefore2023: null,
     openingAlreadySettled: null, closingQuantity: null, closingMeasuredOn: null,
     infoReferenceKwhPerM2: null, infoReferenceSource: null, climateFactorSource: null,
-    exemption: null, exemptionScope: null, exemptionBillingAgreed: null, agreedOtherwise: null, monthlyInfoElsewhere: null,
+    exemption: null, exemptionScope: null, exemptionBillingAgreed: null, agreedOtherwise: null, monthlyInfoElsewhere: null, infoComparisonSource: null,
     ...over,
   }
 }
