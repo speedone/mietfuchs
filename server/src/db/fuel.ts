@@ -20,7 +20,7 @@ import type { Database, Executor } from './client.ts'
 import { dropIfEmpty, ensureHeatingPeriod } from './heatingPeriodContext.ts'
 import { readDegreeDayValues, readFuelDeliveries } from './read.ts'
 import { asNullableFilled, asText, frozenDeliveryText, HeatingError, heatingPeriodAt, plantServesUnit, stockTakenOverBy, stockTakenOverText, heatingRulesOf, ISO_DATE, merged, oneOfOrUndefined, plantSpanOf, raw } from './repository.ts'
-import { FUEL_GRADE_LABELS, GRADES_BY_ENERGY, isBoiler } from '../../../shared/fuelGrades.ts'
+import { FUEL_GRADE_LABELS, GRADES_BY_ENERGY, HEATING_VALUE_UNIT_TEXT, isBoiler } from '../../../shared/fuelGrades.ts'
 import { costItems, degreeDayValues, FUEL_GRADE_VALUES, FUEL_QUANTITY_UNITS, fuelCarryFrozen, fuelDeliveries, fuelDeliveryParts, GAS_BASES, heatingPeriods, heatingPlants, properties } from './schema.ts'
 
 const LATER = {
@@ -105,6 +105,11 @@ async function frozenCount(db: Executor, id: string): Promise<number> {
   return n?.n ?? 0
 }
 
+// Plausibles Band des Heizwerts laut Rechnung je Einheit der Menge (Nachprüfung von #240, W1); kein Rechtswert.
+const HEATING_VALUE_BAND: Record<'l' | 'm3' | 'kg' | 'srm', { min: number; max: number }> = {
+  l: { min: 5, max: 15 }, m3: { min: 5, max: 15 }, kg: { min: 2, max: 15 }, srm: { min: 400, max: 1200 },
+}
+
 // Der Energieträger im Satz („einer Heizung mit Heizöl“, Heizung PR 11).
 const ENERGY_WORDS: Record<HeatingEnergy, string> = {
   gas: 'Gas', oil: 'Heizöl', lpg: 'Flüssiggas', pellets: 'Pellets', wood: 'Holz', coal: 'Kohle',
@@ -114,7 +119,8 @@ const ENERGY_WORDS: Record<HeatingEnergy, string> = {
 // Was an einer Lieferung änderbar bleibt, wenn eine abgeschlossene Heizperiode sie eingefroren hat: die
 // Bezeichnung und seit Heizung PR 11 (Durchsicht von #240, Geld-I2) die Angaben, nach denen der
 // Warmwasseranteil rechnet (Brennwert/Heizwert, Heizwert laut Rechnung, Zeile der Tabelle). Der Anteil einer
-// abgeschlossenen Abrechnung ist mit ihr eingefroren; die Angaben wirken nur auf offene Heizperioden.
+// abgeschlossenen Abrechnung ist mit ihr eingefroren; die Angaben wirken nur auf offene Heizperioden, in der
+// abgeschlossenen erscheinen sie nur als Abweichung der heutigen Rechnung (`deviation`, settlementDiff.ts).
 const unfrozenAside = (d: FuelDelivery) => ({ ...d, label: '', usedByService: true, gasBasis: null, heatingValue: null, fuelGrade: null })
 
 async function guardDelivery(db: Executor, plant: PlantFacts, before: FuelDelivery | null, after: FuelDelivery): Promise<void> {
@@ -225,6 +231,15 @@ async function guardDelivery(db: Executor, plant: PlantFacts, before: FuelDelive
           `Mit diesem Rechnungsende gehört ${what} in die Heizperiode ${periodLabel(h)}; die verknüpfte Position „${fremd.description}“ steht aber in einem anderen Zeitraum. ` +
             'Lösen Sie zuerst die Verknüpfung oder ändern Sie den Zeitraum der Position.')
       }
+    }
+  }
+  // Heizwert laut Rechnung (Nachprüfung von #240, W1): ein Band je Einheit, das jede Angabe einer Rechnung
+  // einschließt (Tabelle des § 9 Abs. 3: 4 bis 13 kWh/kg bzw. je l und m³ 9 bis 10,9; Hackschnitzel a. F.
+  // 650 kWh/SRm). Außerhalb ist es fast immer ein Tausenderpunkt oder die falsche Einheit.
+  if (after.heatingValue !== null && after.quantityUnit !== null && after.quantityUnit !== 'kWh') {
+    const band = HEATING_VALUE_BAND[after.quantityUnit]
+    if (!(after.heatingValue >= band.min && after.heatingValue <= band.max)) {
+      throw new HeatingError(400, `Ein Heizwert von ${after.heatingValue.toLocaleString('de-DE')} kWh je ${HEATING_VALUE_UNIT_TEXT[after.quantityUnit]} ist kaum möglich; üblich sind ${band.min.toLocaleString('de-DE')} bis ${band.max.toLocaleString('de-DE')} kWh. Bitte prüfen Sie ${label}: Nachkommastellen mit Komma, die Einheit wie auf der Rechnung.`)
     }
   }
   // Die Zeile der Heizwerttabelle (Heizung PR 11): nur bei Heizkesseln (§ 9 Abs. 3 HeizkostenV) und nur

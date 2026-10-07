@@ -204,12 +204,14 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Wärmepumpe mehr als die Hälfte der Wärme des Gebäudes liefert. Dann galt die Heizkostenverordnung damals
   nicht (§ 11 Abs. 1 Nr. 3 Buchst. a in der alten Fassung): ein Hinweis, keine Kürzungsbeträge, und Heizung
   und Warmwasser werden gemeinsam nach dem Heizschlüssel verteilt, ohne Warmwasseranteil. Ohne Antwort
-  nennt der Hinweis beide Folgen.
+  rechnet Mietfuchs ebenso, warnt aber und beziffert je Mieter die mögliche Kürzung um 15 %.
 - Die Heizanlage fragt bei einer Wärmepumpe und bei eigener Abrechnung, ob sie die Wärme allein erzeugt.
 - An einer Gasrechnung lässt sich angeben, ob die Kilowattstunden nach Brennwert oder nach Heizwert
   berechnet sind, an einer Lieferung mit Menge der Heizwert laut Rechnung oder die Zeile der Tabelle.
   Beide lassen sich auch nach dem Abschluss einer Heizperiode nachtragen.
-- Mengen mit Tausenderpunkt („3.000“) liest die Seite Heizkosten jetzt wie Beträge als dreitausend.
+- Mengen mit Tausenderpunkt („3.000“) liest die Seite Heizkosten jetzt wie Beträge als dreitausend. Beim
+  Heizwert und beim Volumen des Warmwassers fragt sie bei „11.325“ nach, ob 11,325 oder 11325 gemeint ist;
+  einen Heizwert außerhalb des üblichen Bands der Einheit lehnt Mietfuchs mit einem Satz ab.
 
 ### Geändert
 

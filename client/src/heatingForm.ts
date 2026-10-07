@@ -13,7 +13,7 @@ import { hkvConsumptionShare, hkvCutNotByConsumption, hkvHeatPumpCapture, hkvRem
 import { dayAfter, germanDate, LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
 import { lineRoot, sameLine } from '../../shared/heatingPeriod.ts'
 import { parseMeterValue } from './tenantChange'
-import { parseNumberDe } from './numbers'
+import { ambiguousText, ambiguousThousands, parseNumberDe } from './numbers'
 
 // Rechtszahlen aus dem Register, in der Fassung von heute (wie Lexikon und Anleitungen).
 const SHARE = valueAt(hkvConsumptionShare, LAW_AS_OF)
@@ -488,6 +488,7 @@ export const formulaFormOf = (hw: HeatingPeriodView['hotWater']): FormulaForm =>
 // Der Teil des Rumpfs, den nur die Volumenformel braucht.
 export function selfFormulaBody(choice: HotWaterChoice, form: FormulaForm): { body: { dhwVolumeM3?: number | null; dhwTempC?: number | null } } | { error: string } {
   if (choice !== 'volumeFormula') return { body: {} }
+  if (ambiguousThousands(form.volume)) return { error: `Volumen des Warmwassers: ${ambiguousText(form.volume)}` }
   const volume = parseDecimal(form.volume)
   if (volume === undefined) return { error: 'Das Volumen des Warmwassers ist keine Zahl.' }
   const temp = parseDecimal(form.temp)

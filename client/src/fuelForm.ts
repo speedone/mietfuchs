@@ -2,6 +2,7 @@
 // zum Gebäude (Heizung PR 7), ohne DOM prüfbar. Die Seite rendert nur.
 import { fmtEuro, parseEuro } from './api'
 import { parseDecimal } from './co2Form'
+import { ambiguousText, ambiguousThousands } from './numbers'
 import { formatDayRange } from '../../shared/period.ts'
 import { germanDate } from '../../shared/law/register.ts'
 import { STOCK_UNIT_LABELS, STOCK_UNIT_TEXT } from '../../shared/fuelStock.ts'
@@ -95,6 +96,7 @@ export function stockFuelBody(form: FuelForm, method: HeatingMethod): { body: Re
   if (form.emissionsKg.trim() !== '' && (kg === null || kg < 0)) return { error: 'Der CO₂-Ausstoß ist eine Zahl ab 0.' }
   const co2 = form.co2Cost.trim() === '' ? null : parseEuro(form.co2Cost)
   if (form.co2Cost.trim() !== '' && co2 === null) return { error: 'Die CO₂-Kosten sind kein Betrag.' }
+  if (ambiguousThousands(form.heatingValue)) return { error: `Heizwert laut Rechnung: ${ambiguousText(form.heatingValue)}` }
   const heatingValue = form.heatingValue.trim() === '' ? null : parseDecimal(form.heatingValue)
   if (form.heatingValue.trim() !== '' && (heatingValue === null || !(heatingValue > 0))) return { error: 'Der Heizwert laut Rechnung ist eine Zahl über 0.' }
   return {

@@ -122,3 +122,13 @@ test('Heizwert und Zeile der Tabelle (Heizung PR 11): nur bei Heizkesseln, vorbe
   const g = fuelBody({ ...fuelToForm(gas), gasBasis: 'hs' }, 'self')
   expect('body' in g && g.body.gasBasis).toBe('hs')
 })
+
+test('Nachprüfung #240, W1: „11.325“ als Heizwert ist mehrdeutig und wird nachgefragt; Mengen mit Tausenderpunkt bleiben tausend', () => {
+  const oel: FuelDelivery = { ...gas, label: 'Öl', invoiceFrom: null, invoiceTo: null, deliveredAt: '2025-10-12', energyKwh: null, quantity: 3000, quantityUnit: 'l', heatingValue: null, fuelGrade: null }
+  const form = fuelToForm(oel)
+  expect(stockFuelBody({ ...form, heatingValue: '11.325' }, 'self')).toEqual({ error: 'Heizwert laut Rechnung: Meinen Sie 11,325 oder 11325? Bitte schreiben Sie Nachkommastellen mit Komma (11,325) und Tausender ohne Punkt (11325).' })
+  const komma = stockFuelBody({ ...form, heatingValue: '11,325' }, 'self')
+  expect('body' in komma && komma.body.heatingValue).toBe(11.325)
+  const menge = stockFuelBody({ ...form, quantity: '1.200' }, 'self')
+  expect('body' in menge && menge.body.quantity).toBe(1200)
+})

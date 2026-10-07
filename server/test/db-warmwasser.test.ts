@@ -16,7 +16,7 @@ import { createDelivery, updateDelivery } from '../src/db/fuel.ts'
 import { heatingPeriodViews, saveHotWater } from '../src/db/co2.ts'
 import { setUpSelf } from '../src/db/heatingSelf.ts'
 import { openDatabase } from '../src/db/open.ts'
-import { readFuelDeliveries, readHeatingPlants, readStock } from '../src/db/read.ts'
+import { readClosedSettlements, readFuelDeliveries, readHeatingPlants, readStock } from '../src/db/read.ts'
 import { closeSettlement, createEntity, HeatingError, removeEntity } from '../src/db/repository.ts'
 
 type Opened = Awaited<ReturnType<typeof openDatabase>>
@@ -169,8 +169,11 @@ test('Durchsicht #240, Geld-I2: Brennwert/Heizwert, Heizwert und Tabellenzeile l
       const settlement = computeSettlement(snapshotFor(await readStock(db), 'objekt-1', p), {})
       await closeSettlement(db, { id: 's1', propertyId: 'objekt-1', period: periodKey('2025-01'), closedAt: '2026-03-01', sentAt: null, settlement })
     })
+    const frozen = JSON.stringify((await opened.read(readClosedSettlements)).map((c) => c.settlement))
     const o = await opened.write((db) => updateDelivery(db, 'o1', { heatingValue: 9.8, fuelGrade: 'heatingOilEL' })) ?? assert.fail('keine Lieferung')
     assert.deepEqual([o.heatingValue, o.fuelGrade], [9.8, 'heatingOilEL'])
+    // Nachprüfung von #240 (Minor): Die abgeschlossene Abrechnung bleibt, wie sie war.
+    assert.equal(JSON.stringify((await opened.read(readClosedSettlements)).map((c) => c.settlement)), frozen)
     await assert.rejects(opened.write((db) => updateDelivery(db, 'o1', { quantity: 2900 })), heatingError(409, /abgeschlossenen Heizperiode/))
   })
 })
@@ -197,5 +200,21 @@ test('Durchsicht #240, Geld-I1 und M5: beim Kesseltausch Vorschlag und Verfahren
     const [view] = await opened.read((db) => heatingPeriodViews(db, 'hp', '2025')) ?? assert.fail('keine Anlage')
     assert.equal(view?.hotWaterBasis.volumeFromMetersM3, null)
     assert.match(view?.hotWaterBasis.volumeMissing ?? '', /„WW A“.*31\.12\.2025/)
+  })
+})
+
+test('Nachprüfung #240, W1: ein Heizwert außerhalb des Bands der Einheit ist ein Fehler mit Satz (Tausenderpunkt, falsche Einheit)', async () => {
+  await withDatabase(async (opened) => {
+    await heizung(opened)
+    await opened.write((db) => createDelivery(db, 'o1', 'hp', { label: 'Öl', deliveredAt: '2025-10-12', invoiceDate: '2025-10-12', quantity: 3000, quantityUnit: 'l' }))
+    for (const heatingValue of [11325, 98, 1.2]) {
+      await assert.rejects(opened.write((db) => updateDelivery(db, 'o1', { heatingValue })), heatingError(400, /kaum möglich; üblich sind 5 bis 15 kWh/))
+    }
+    assert.equal((await opened.write((db) => updateDelivery(db, 'o1', { heatingValue: 11.325 })))?.heatingValue, 11.325)
+  })
+  await withDatabase(async (opened) => {
+    await heizung(opened, 'oil')
+    await opened.write((db) => createDelivery(db, 'h1', 'hp', { label: 'Hackschnitzel', deliveredAt: '2021-10-12', invoiceDate: '2021-10-12', quantity: 40, quantityUnit: 'srm', heatingValue: 650 }))
+    assert.equal((await opened.read(readFuelDeliveries)).find((d) => d.id === 'h1')?.heatingValue, 650)
   })
 })

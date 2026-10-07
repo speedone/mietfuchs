@@ -100,13 +100,22 @@ test('Review Focus 5 (Durchsicht #240, Recht-I1): Wärmepumpe 2024 (§ 11 Abs. 1
   const nein = mit({ heatPumpMajority: 'no' })
   assert.ok(codes(nein).includes('heating.dhw-share-invalid'))
   assert.ok(!codes(nein).includes('heating.heat-pump-old-exemption'))
-  // Ohne Antwort oder „weiß nicht“: Hinweis mit beiden Folgen, keine Kürzung, keine Sperre.
+  // Ohne Antwort oder „weiß nicht“ (Nachprüfung von #240, W2): gerechnet wie „ja“ (Festlegung), keine Sperre,
+  // aber eine Warnung mit dem möglichen Kürzungsbetrag je Mieter, denn ohne Warmwasseranteil ist Warmwasser
+  // nicht nach Verbrauch verteilt.
   for (const open of [null, 'unknown'] as const) {
     const s = mit({ heatPumpMajority: open })
     assert.deepEqual(s.notices.filter((x) => x.level === 'error').map((x) => x.code), [], String(open))
-    const h = s.notices.find((x) => x.code === 'heating.heat-pump-old-exemption') ?? assert.fail('kein Hinweis')
-    assert.match(h.text, /beantworten Sie die Frage bei der Heizanlage.*Liefert sie mehr als die Hälfte.*Liefert sie weniger, galt die Verordnung/s)
+    assert.ok(!codes(s).includes('heating.heat-pump-old-exemption'))
+    const h = s.notices.find((x) => x.code === 'heating.heat-pump-majority-open') ?? assert.fail('keine Warnung')
+    assert.equal(h.level, 'warning')
+    assert.match(h.text, /beantworten Sie die Frage bei der Heizanlage.*als liefere sie mehr als die Hälfte \(Festlegung von Mietfuchs\); die Ausnahme muss im Streit der Vermieter belegen/s)
+    assert.match(h.text, /um 15 % kürzen, soweit nicht nach Verbrauch verteilt ist \(§ 12 Abs\. 1 Satz 1 HeizkostenV\), hier: Mieter A \(A\) \d[\d.]*,\d\d €, Mieter B \(B\)/)
   }
+  // Mit Wärmezähler am Speicher und gemessener Gesamtwärme ist alles nach Verbrauch verteilt: kein Betrag.
+  const gemessen = computeSettlement(selfSnapshot({ year: 2024, plant: { ...wp, heatPumpMajority: null }, deliveries: [strom], row: { dhwHeatKwh: 4500, totalHeatKwh: 36000 } }))
+  const g = gemessen.notices.find((x) => x.code === 'heating.heat-pump-majority-open') ?? assert.fail('keine Warnung')
+  assert.doesNotMatch(g.text, /hier:/)
   // Ab dem 01.10.2024 gilt die Ausnahme nicht mehr: 2025 rechnet die Formel mit 0,30, gleich was geantwortet ist.
   const neu = computeSettlement(selfSnapshot({ plant: { ...wp, heatPumpMajority: 'yes' }, deliveries: [selfDelivery({ label: 'Strom 2025', energyKwh: 12000, emissionsKg: null, co2CostCents: null })], row: formel }))
   assert.ok(!codes(neu).includes('heating.heat-pump-old-exemption'))

@@ -367,6 +367,7 @@ const noticeKinds = {
   'heating.heating-value-from-table': { level: 'hint', title: 'Heizwert aus der Tabelle der Heizkostenverordnung', rule: 'heating-dhw-split', terms: ['hotWaterShare'] },
   // Plausibilität ohne Rechtsfolge (Entwurf 15.2 F6), deshalb ohne Regel.
   'heating.dhw-share-implausible': { level: 'hint', title: 'Warmwasseranteil ungewöhnlich', terms: ['hotWaterShare'] },
+  'heating.heat-pump-majority-open': { level: 'warning', title: 'Wärmepumpe: Ausnahme der Heizkostenverordnung ungeklärt', rule: 'heating-own-settlement', terms: ['heatingSystem', 'heatingCostOrdinance'] },
   'heating.heat-pump-old-exemption': { level: 'hint', title: 'Wärmepumpe: Heizkostenverordnung galt in diesem Zeitraum nicht', rule: 'heating-own-settlement', terms: ['heatingSystem', 'heatingCostOrdinance'] },
   'model.prepayment-unsettled': { level: 'warning', title: 'Vorauszahlung ohne Abrechnung', terms: ['prepayment', 'flatRate'] },
   'prepayment.arrears': { level: 'warning', title: 'Rückstand im Mietkonto', terms: ['prepayment'] },
@@ -2617,6 +2618,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // § 11 Abs. 1 Nr. 3 Buchst. a a. F. (Heizung PR 11, Abweichung 9): Wärmepumpe ohne weiteren Erzeuger in
     // einem Zeitraum, der vor dem 01.10.2024 beginnt. Dann keine Kürzungsbeträge und kein Fehler zu α.
     oldHeatPumpExemption: boolean
+    // Ohne Antwort zur Überwiegend-Frage gerechnet wie „ja“ (Festlegung; Nachprüfung von #240, W2).
+    majorityOpen: boolean
     // Ist der unzumutbare Aufwand für den Wärmezähler bestätigt (§ 9 Abs. 2 Satz 2, Heizung PR 11)?
     dhwUnmeasurable: boolean | null
   }
@@ -2821,16 +2824,16 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       const together = alpha === null && hotWater === 'combined'
         ? '; einen Warmwasseranteil nach § 9 HeizkostenV verlangt die Verordnung dann nicht, und die Kosten von Heizung und Warmwasser verteilt Mietfuchs gemeinsam wie die Heizkosten (Festlegung von Mietfuchs)'
         : ''
-      warn('heating.heat-pump-old-exemption',
-        `${where}: Für diesen Abrechnungszeitraum galten die Vorschriften der Heizkostenverordnung zur Erfassung und Verteilung nicht für Räume in Gebäuden, die überwiegend mit Wärme aus ${hkvRenewableExemption.describe(renewable)} versorgt werden. ` +
-          'Mietfuchs wendet die Fassung an, die zu Beginn des Abrechnungszeitraums galt (Festlegung von Mietfuchs). ' +
-          (majorityOpen
-            ? 'Ob das Ihr Gebäude betrifft, hängt davon ab, ob die Wärmepumpe mehr als die Hälfte der Wärme liefert; beantworten Sie die Frage bei der Heizanlage. ' +
-              'Liefert sie mehr als die Hälfte, gilt die Verteilung laut Mietvertrag, und Kürzungen nach § 12 HeizkostenV entfallen. Liefert sie weniger, galt die Verordnung, mit Warmwasseranteil nach § 9 und Kürzungsbeträgen nach § 12. ' +
-              `Bis zur Antwort rechnet Mietfuchs ohne Kürzungsbeträge und verteilt nach den erfassten Werten, wie Sie es eingerichtet haben${together}.`
-            : 'Sie haben angegeben, dass die Wärmepumpe mehr als die Hälfte der Wärme liefert. Dann gilt die Verteilung laut Mietvertrag, und Kürzungen nach § 12 HeizkostenV entfallen. ' +
-              `Mietfuchs verteilt nach den erfassten Werten, wie Sie es eingerichtet haben${together}.`),
-        plantSubjectSelf)
+      // Ohne Antwort steht der Hinweis mit den Kürzungsbeträgen nach dem CO₂-Block
+      // (`heating.heat-pump-majority-open`, Nachprüfung von #240, W2).
+      if (!majorityOpen) {
+        warn('heating.heat-pump-old-exemption',
+          `${where}: Für diesen Abrechnungszeitraum galten die Vorschriften der Heizkostenverordnung zur Erfassung und Verteilung nicht für Räume in Gebäuden, die überwiegend mit Wärme aus ${hkvRenewableExemption.describe(renewable)} versorgt werden. ` +
+            'Mietfuchs wendet die Fassung an, die zu Beginn des Abrechnungszeitraums galt (Festlegung von Mietfuchs). ' +
+            'Sie haben angegeben, dass die Wärmepumpe mehr als die Hälfte der Wärme liefert. Dann gilt die Verteilung laut Mietvertrag, und Kürzungen nach § 12 HeizkostenV entfallen. ' +
+            `Mietfuchs verteilt nach den erfassten Werten, wie Sie es eingerichtet haben${together}.`,
+          plantSubjectSelf)
+      }
     }
     if (alpha && blocked.length === 0) {
       // Heizwert hilfsweise aus der Tabelle (§ 9 Abs. 3 HeizkostenV, Entwurf R-A13).
@@ -2853,7 +2856,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       ? weightsOf(plan, { heating: shares.heating, water: shares.water ?? 0 }, alpha?.value ?? null)
       : null
     selfPlans.set(plant.id, {
-      plant, plan, shares, alpha, weights, blocked, verdict, hotWater, input, oldHeatPumpExemption,
+      plant, plan, shares, alpha, weights, blocked, verdict, hotWater, input, oldHeatPumpExemption, majorityOpen,
       dhwUnmeasurable: own?.dhwUnmeasurable ?? lineOwn?.dhwUnmeasurable ?? null,
       changeSplit: plant.changeSplit ?? 'degreeDays',
       hDays: periodDays(period),
@@ -4763,6 +4766,23 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const ids = new Set<string>([...(pot?.items ?? []).map((c) => c.id), ...(pot ? [pot.reliefKey] : [])])
     // § 12 Abs. 3 (PR 10) oder § 11 Abs. 1 Nr. 3 Buchst. a a. F. (Heizung PR 11): keine Kürzungsbeträge.
     const notYet = sp.verdict?.kind === 'notYet' || sp.oldHeatPumpExemption
+    // Wärmepumpe vor dem Stichtag ohne Antwort zur Überwiegend-Frage (Nachprüfung von #240, W2): Galt die
+    // Verordnung doch, dürfen die Mieter kürzen, soweit nicht nach Verbrauch verteilt ist (§ 12 Abs. 1
+    // Satz 1). Nicht nach Verbrauch verteilt sind hier Heizung und Warmwasser ohne Warmwasseranteil und jeder
+    // Topf ohne erfassten Verbrauch.
+    if (sp.majorityOpen) {
+      const cut = law(hkvCutNotByConsumption, { period: lawPeriod }, lawLog)
+      const notByConsumption = (sp.alpha === null && sp.hotWater === 'combined') || sp.plan.pots.some((p) => !sp.plan.totals[p].measured)
+      const renewableText = hkvRenewableExemption.describe(law(hkvRenewableExemption, { period: lawPeriod }, lawLog))
+      warn('heating.heat-pump-majority-open',
+        `${where}: Für diesen Abrechnungszeitraum galten die Vorschriften der Heizkostenverordnung zur Verteilung nicht für Gebäude, die überwiegend mit Wärme aus ${renewableText} versorgt werden. ` +
+          'Ob Ihr Gebäude dazu gehört, hängt davon ab, ob die Wärmepumpe mehr als die Hälfte der Wärme liefert; beantworten Sie die Frage bei der Heizanlage. ' +
+          'Bis dahin rechnet Mietfuchs, als liefere sie mehr als die Hälfte (Festlegung von Mietfuchs); die Ausnahme muss im Streit der Vermieter belegen. ' +
+          (notByConsumption
+            ? `Galt die Verordnung doch, darf jeder Mieter seinen Anteil um ${cut} % kürzen, soweit nicht nach Verbrauch verteilt ist (§ 12 Abs. 1 Satz 1 HeizkostenV)${cutsOn(ids, cut)}. Mietfuchs zieht nichts ab.`
+            : `Mietfuchs hat nach dem erfassten Verbrauch verteilt; eine Kürzung um ${cut} % nach § 12 Abs. 1 Satz 1 HeizkostenV käme nur in Betracht, soweit nicht nach Verbrauch verteilt ist.`),
+        subject)
+    }
     // § 6a Abs. 3 HeizkostenV (Durchsicht von #239, I1 und N2): Die Informationen zur Abrechnung erstellt
     // Mietfuchs mit PR 14; bis dahin eine Warnung mit der Kürzung je Mieter (§ 12 Abs. 1 Satz 3). Nur für
     // Abrechnungszeiträume ab dem 01.12.2021 (`hkv.settlement-info`), einmal je Linie (nach einem Tausch

@@ -294,3 +294,9 @@ test('Durchsicht #240: Zahlen mit Tausenderpunkt (M3) und die Fragen an der Anla
   expect('body' in gas && ['heatGeneration' in gas.body, 'heatPumpMajority' in gas.body]).toEqual([false, false])
   expect(heatingToForm({ ...PLANT, heatGeneration: 'single', heatPumpMajority: 'unknown' }, UNITS)).toMatchObject({ generation: 'single', majority: 'unknown' })
 })
+
+test('Nachprüfung #240, W1: Volumen „60.125“ ist mehrdeutig und wird nachgefragt; „1.200,5“ und „1.234.567“ sind eindeutig', () => {
+  expect(selfFormulaBody('volumeFormula', { volume: '60.125', temp: '60' })).toEqual({ error: 'Volumen des Warmwassers: Meinen Sie 60,125 oder 60125? Bitte schreiben Sie Nachkommastellen mit Komma (60,125) und Tausender ohne Punkt (60125).' })
+  expect(selfFormulaBody('volumeFormula', { volume: '1.200,5', temp: '60' })).toEqual({ body: { dhwVolumeM3: 1200.5, dhwTempC: 60 } })
+  expect(selfFormulaBody('volumeFormula', { volume: '1.234.567', temp: '60' })).toEqual({ body: { dhwVolumeM3: 1234567, dhwTempC: 60 } })
+})

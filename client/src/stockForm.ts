@@ -45,8 +45,8 @@ export type StockForm = {
   alreadySettled: AlreadySettled
 }
 
-// Ohne Tausenderpunkt: `parseDecimal` liest „1.000“ als technische Schreibweise (1), und eine
-// gespeicherte Menge muss unverändert zurückkommen.
+// Ohne Tausenderpunkt, damit eine gespeicherte Menge so zurückkommt, wie man sie tippt; `parseDecimal` liest
+// „1.000“ seit der Durchsicht von #240 (M3) wie Beträge als tausend.
 const numberText = (n: number | null): string => (n === null ? '' : n.toLocaleString('de-DE', { maximumFractionDigits: 2, useGrouping: false }))
 const centsText = (c: number | null): string => (c === null ? '' : (c / 100).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
 

@@ -20,3 +20,12 @@ export function parseNumberDe(raw: string): number | null {
   const n = Number(normalized)
   return Number.isFinite(n) ? n : null
 }
+
+// „11.325“ ohne Komma: Tausenderpunkt oder Nachkommastellen? Bei Mengen meint man fast immer Tausender, beim
+// Heizwert (kWh je Liter) und beim Volumen des Warmwassers kommen drei Nachkommastellen ebenso vor
+// (Nachprüfung von #240, W1). Dort fragt das Formular nach, statt zu raten.
+export const ambiguousThousands = (raw: string): boolean => /^-?\d{1,3}\.\d{3}$/.test(raw.trim())
+export const ambiguousText = (raw: string): string => {
+  const t = raw.trim()
+  return `Meinen Sie ${t.replace('.', ',')} oder ${t.replace('.', '')}? Bitte schreiben Sie Nachkommastellen mit Komma (${t.replace('.', ',')}) und Tausender ohne Punkt (${t.replace('.', '')}).`
+}
