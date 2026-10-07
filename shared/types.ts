@@ -1947,6 +1947,8 @@ export type SelfUnitView = {
 }
 export type SelfHeatingStatement = {
   ok: boolean
+  // Die Erfassung der Heizperiode (Durchsicht von #242 Runde 3, N2-M1); fehlt in älteren Abrechnungen.
+  capture?: CaptureMethod
   heatPump: 'applies' | 'notYet' | 'missing' | null
   changeSplit: ChangeSplit
   areaBasisHeat: AreaBasisHeat

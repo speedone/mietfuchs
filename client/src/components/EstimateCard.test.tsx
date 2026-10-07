@@ -171,9 +171,12 @@ test('N-I2: die Karte sagt nur bei einem ersetzten gemessenen Teilstück, dass a
   expect(container).toBeTruthy()
 })
 
-test('N-M3: beim Ablesedienst ohne Werte ist die Einheit eine Pflichtauswahl; mit Werten vorbelegt', async () => {
+// Runde 3, N2-M1: Die Lage baut der Ausweis so, wie die Berechnung ihn liefert: `capture` der Heizperiode, ohne
+// `serviceValues`, wenn der Ablesedienst keinen Wert hat; mit Werten fragt der Server die Einheit nicht und die Karte auch nicht.
+test('N-M3/N2-M1: beim Ablesedienst ohne Werte ist die Einheit eine Pflichtauswahl; mit Werten keine Auswahl, der Server nimmt ihre Einheit', async () => {
   const calls = mockFetch()
-  const dienst = { ...self, serviceValues: [], pots: [{ ...self.pots[0]!, consumptionUnit: 'Einheiten' as const }] }
+  const { serviceValues: _none, ...base } = { ...self, serviceValues: undefined }
+  const dienst = { ...base, capture: 'serviceValues' as const, pots: [{ ...self.pots[0]!, consumptionUnit: 'Einheiten' as const }] } as SelfHeatingStatement
   render(<EstimateCard plant={plant} view={view} self={dienst} onChanged={() => {}} />)
   fireEvent.click(screen.getByRole('button', { name: 'C schätzen' }))
   const einheit = screen.getByLabelText('Einheit der Schätzung') as HTMLSelectElement
@@ -187,8 +190,9 @@ test('N-M3: beim Ablesedienst ohne Werte ist die Einheit eine Pflichtauswahl; mi
   await waitFor(() => expect(calls.length).toBe(1))
   expect(JSON.parse(calls[0]?.[2] ?? '{}').valueUnit).toBe('kWh')
   cleanup()
-  const mitWerten = { ...dienst, serviceValues: [{ plantId: 'hp', period: '2025-01', unitId: 'a', from: '2025-01-01', to: '2025-12-31', heatValue: 12000, waterValue: null, heatUnit: 'kWh' as const }] } as unknown as SelfHeatingStatement
+  const mitWerten = { ...dienst, pots: [{ ...self.pots[0]!, consumptionUnit: 'kWh' as const }], serviceValues: [{ plantId: 'hp', period: '2025-01', unitId: 'a', from: '2025-01-01', to: '2025-12-31', heatValue: 12000, waterValue: null, heatUnit: 'kWh' as const }] } as unknown as SelfHeatingStatement
   render(<EstimateCard plant={plant} view={view} self={mitWerten} onChanged={() => {}} />)
   fireEvent.click(screen.getByRole('button', { name: 'C schätzen' }))
-  expect((screen.getByLabelText('Einheit der Schätzung') as HTMLSelectElement).value).toBe('kWh')
+  expect(screen.queryByLabelText('Einheit der Schätzung')).toBeNull()
+  expect(screen.getByLabelText(/Geschätzter Verbrauch in kWh, wie der Ablesedienst die Heizung nennt/)).toBeTruthy()
 })

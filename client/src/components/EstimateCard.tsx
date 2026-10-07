@@ -31,15 +31,16 @@ export default function EstimateCard({ plant, view, self, onChanged }: {
   const url = (o: Pick<SelfEstimateOption, 'unitId' | 'part'>) => `/api/heating-plants/${existingOf(o)?.plantId ?? plant.id}/periods/${view.period}/estimates/${o.unitId}/${o.part}`
   const potOf = (o: SelfEstimateOption) => self.pots.find((p) => p.pot === POT_OF[o.part])
 
-  const askUnit = (o: SelfEstimateOption) => self.serviceValues !== undefined && o.part === 'heat'
+  // Dieselbe Bedingung wie in saveEstimate: Ablesedienst und noch kein Wert (der Ausweis setzt `serviceValues` nur mit Werten).
+  const service = self.capture === 'serviceValues'
+  const askUnit = (o: SelfEstimateOption) => service && o.part === 'heat' && (self.serviceValues ?? []).length === 0
   function start(o: SelfEstimateOption) {
     setOpen(o)
-    // Durchsicht Runde 2, N-M3: beim Ablesedienst die Einheit aus seinen Werten, ohne Werte Pflichtauswahl.
-    const service = self.serviceValues
-    const known = service && service.length > 0 ? (service.every((r) => r.heatUnit === 'kWh') ? 'kWh' : 'Einheiten') : ''
+    // Durchsicht Runde 2/3, N-M3 und N2-M1: Ohne Werte des Ablesedienstes wählt der Vermieter die Einheit (Pflicht wie
+    // beim Server); eine gültige gespeicherte Schätzung bringt ihre mit.
     const existing = existingOf(o)
     const kept = existing && !existing.stale && (existing.valueUnit === 'kWh' || existing.valueUnit === 'Einheiten') ? existing.valueUnit : ''
-    setForm({ ...emptyEstimate(o, existing), ...(service && o.part === 'heat' ? { valueUnit: known || kept } : {}) })
+    setForm({ ...emptyEstimate(o, existing), ...(askUnit(o) ? { valueUnit: kept } : {}) })
     setError('')
   }
   async function save() {
@@ -79,6 +80,7 @@ export default function EstimateCard({ plant, view, self, onChanged }: {
     // Beim Ablesedienst die gewählte Einheit (Durchsicht Runde 2, N-M3).
     if (askUnit(o)) return form?.valueUnit ? `${form.valueUnit}, wie der Ablesedienst die Heizung nennt` : 'der gewählten Einheit des Ablesedienstes'
     const u = unitOf(o)
+    if (service && o.part === 'heat') return `${u}, wie der Ablesedienst die Heizung nennt`
     return u === 'Einheiten' ? 'bewerteten Einheiten (Ablesewert × Bewertungsfaktor)' : u
   }
   return (

@@ -497,6 +497,10 @@ test('N-M3: beim Ablesedienst ohne Werte ist die Einheit der Schätzung Pflicht;
     await opened.write((db) => saveServiceValues(db, 'hp', '2025-01', { values: [{ unitId: 'a', from: '2025-01-01', to: '2025-12-31', heatValue: 900, heatUnit: 'units' }] }))
     const b = await opened.write((db) => saveEstimate(db, 'hp', '2025-01', 'b', 'heat', { ...GUT, cause: 'otherReason' }))
     assert.equal(b?.valueUnit, 'Einheiten')
+    // Runde 3, N2-M3: Mit Werten des Ablesedienstes wird eine abweichende Einheit abgelehnt, nicht still umgedeutet.
+    const abweichend = (e: unknown) => e instanceof Error && Reflect.get(e, 'status') === 400 && /nennt die Heizung in dieser Heizperiode in Einheiten/.test(e.message)
+    await assert.rejects(opened.write((db) => saveEstimate(db, 'hp', '2025-01', 'b', 'heat', { ...GUT, cause: 'otherReason', valueUnit: 'kWh', value: 5 })), abweichend)
+    assert.equal((await opened.read(readStock)).heatingEstimates.find((x) => x.unitId === 'b')?.value, 12000)
     // Die Schätzung von C in kWh passt danach nicht mehr; ohne Werte für C ist das ein Fehler (N-I1).
     const stock = await opened.read(readStock)
     const p = (await import('../../shared/period.ts'))
@@ -505,5 +509,14 @@ test('N-M3: beim Ablesedienst ohne Werte ist die Einheit der Schätzung Pflicht;
     const s = computeSettlement(snapshotFor(stock, 'objekt-1', period))
     assert.match(noticeOf(s, 'heating.estimate-stale').text, /von C .*in kWh eingetragen.*in Einheiten erfasst/s)
   })
+})
+
+test('Runde 3, N2-M1: der Ausweis nennt die Erfassung, damit die Karte die Einheit unter derselben Bedingung fragt wie der Server', () => {
+  const capture: CaptureMethod = 'serviceValues'
+  const est = ['a', 'b', 'c'].map((u) => estimate({ unitId: u, value: 10000, capture, valueUnit: 'Einheiten' }))
+  const ohneWerte = selfOf(run({ plant: { capture, selfSpans: [{ from: periodKey('2025-01'), until: null, capture, hotWater: 'combined' }] }, estimates: est }))
+  assert.equal(ohneWerte.capture, 'serviceValues')
+  assert.equal(ohneWerte.serviceValues, undefined)
+  assert.equal(selfOf(run()).capture, 'heatMeter')
 })
 

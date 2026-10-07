@@ -3109,6 +3109,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const cost = { heating: potCostOf(sp, potItems, 'heating'), water: potCostOf(sp, potItems, 'water') }
     const offDays = (d: string, b: string): number => Math.abs(Math.round((toUTC(d) - toUTC(b)) / MS_DAY))
     return {
+      capture: sp.capture,
       ok: sp.weights !== null,
       heatPump: sp.verdict?.kind ?? null,
       changeSplit: sp.changeSplit,
