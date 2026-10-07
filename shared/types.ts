@@ -1352,9 +1352,10 @@ export type HeatingPlant = {
   selfSpans?: SelfSpanRange[]
 }
 // Ein Zeitraum der eigenen Heizkostenabrechnung, Schlüssel von Heizperioden; `until` ist die erste ohne.
-// `capture` (Heizung PR 12): womit der Verbrauch in diesem Zeitraum erfasst wird; ein Wechsel der Ausstattung
-// beginnt einen neuen Zeitraum. Fehlt die Angabe (Zeitraum von vor PR 12), gilt die Erfassung der Anlage.
-export type SelfSpanRange = { from: string; until: string | null; capture?: CaptureMethod | null }
+// `capture` und `hotWater` (Heizung PR 12, Durchsicht von #241, I2): womit der Verbrauch in diesem Zeitraum
+// erfasst wird und wie das Warmwasser bereitet wird; eine Änderung beginnt einen neuen Zeitraum. Fehlt die
+// Angabe (Zeitraum von vor PR 12), gilt die der Anlage.
+export type SelfSpanRange = { from: string; until: string | null; capture?: CaptureMethod | null; hotWater?: HotWater | null }
 
 // Die Angaben einer Heizperiode (Entwurf 5.3; den Vorrat seit Heizung PR 8). Geschrieben werden sie ab PR 6 (Warmwasser
 // laut Messdienst), PR 10 (Verteilung) und PR 14 (§ 6a); PR 4 legt nur die Tabelle an.
@@ -1399,12 +1400,16 @@ export type HeatingPeriodData = {
 
 // Ein Wert eines Ablesedienstes für eine Wohnung und einen Nutzungszeitraum (Heizung PR 12, Entwurf
 // 5.6). `heatValue` sind bewertete Einheiten für die Heizung, `waterValue` für das Warmwasser (optional:
-// ohne ihn zählen die Warmwasserzähler). Die Grenzen gelten einschließlich.
-export type HeatingServiceValue = { plantId: string; period: PeriodKey; unitId: string; from: string; to: string; heatValue: number; waterValue: number | null }
+// ohne ihn zählen die Warmwasserzähler). Die Grenzen gelten einschließlich. `heatUnit`: worin der Dienst
+// die Heizung nennt, bewertete Einheiten (Heizkostenverteiler) oder kWh (Wärmezähler); das Warmwasser in m³.
+export type ServiceHeatUnit = 'units' | 'kWh'
+export type HeatingServiceValue = { plantId: string; period: PeriodKey; unitId: string; from: string; to: string; heatValue: number; waterValue: number | null; heatUnit: ServiceHeatUnit }
 
 // Ein Heizkostenverteiler im Ausweis (Heizung PR 12, Entwurf 8.8): abgelesene Einheiten in der
 // Heizperiode, Skala, Faktor und die bewerteten Einheiten, mit denen verteilt wird.
-export type HcaDeviceLine = { unitId: string; meterId: string; name: string; scale: HcaScale; factor: number; raw: number; rated: number }
+// `userKeys`, `from`, `to` (Durchsicht von #241, Recht-I1): der Nutzer bzw. die Gruppe nach § 9b Abs. 3 und
+// ihr Zeitraum; jeder Mieter bekommt nur seine Zeilen.
+export type HcaDeviceLine = { unitId: string; meterId: string; name: string; scale: HcaScale; factor: number; raw: number; rated: number; userKeys: string[]; from: string; to: string }
 
 // ---------- Warmwasser ohne Wärmezähler (Heizung PR 11, Entwurf 8.3, #211) ----------
 
@@ -1627,6 +1632,8 @@ export type HeatingPeriodView = {
   // die Werte des Ablesedienstes dieser Heizperiode (leer bei anderer Erfassung).
   capture?: CaptureMethod | null
   serviceValues?: HeatingServiceValue[]
+  // Die Warmwasserbereitung dieser Heizperiode bei eigener Abrechnung (Durchsicht von #241, I2), sonst `null`.
+  selfHotWater?: HotWater | null
 }
 
 // ---------- Brennstofflieferungen (Heizung PR 7, Entwurf 5.4, 8.2) ----------
@@ -1883,7 +1890,9 @@ export type SelfPotView = {
   consumptionCentsPerUnit: number | null
 }
 // Eine Ablesung an einer Grenze: `date` null heißt, es gibt keine.
-export type SelfReadingView = { meterId: string; meterName: string; pot: SelfPot; boundary: string; date: string | null; value: number | null }
+// `oldEndValue` (Durchsicht von #241, Recht-I2): bei einem Wechsel oder Stichtag an der Grenze der Stand davor; beim
+// Heizkostenverteiler der Stichtagswert.
+export type SelfReadingView = { meterId: string; meterName: string; pot: SelfPot; boundary: string; date: string | null; value: number | null; oldEndValue?: number }
 // Eine Grenze einer Wohnung für die Ampel der Seite Heizkosten.
 export type SelfBoundaryView = {
   date: string

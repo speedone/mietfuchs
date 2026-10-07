@@ -25,7 +25,7 @@ export default function CutoffReadingForm({ meterId, onSaved }: { meterId: strin
   }
   return (
     <div className="stack">
-      <p className="muted">Elektronische Heizkostenverteiler setzen am Stichtag auf null und zeigen den Wert davor als Stichtagswert. Tragen Sie ihn hier ein; Mietfuchs erfasst das wie einen Zählerwechsel. Liegt der Stichtag des Geräts nicht am Beginn der Heizperiode, tragen Sie zu Beginn und Ende die Werte laut Gerätespeicher ein.</p>
+      <p className="muted">Elektronische Heizkostenverteiler setzen am Stichtag auf null und zeigen den Wert davor als Stichtagswert. Tragen Sie ihn hier ein; Mietfuchs erfasst das wie einen Zählerwechsel. Passend ist ein Stichtag am Tag vor dem Beginn der Heizperiode, bei einer Heizperiode im Kalenderjahr also der 31.12. Liegt er anders, tragen Sie zu Beginn und Ende die Werte laut Gerätespeicher ein.</p>
       <div className="row">
         <label className="field">
           Stichtag des Geräts

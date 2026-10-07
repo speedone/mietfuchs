@@ -805,12 +805,13 @@ function selfExtrasOf(
   source: { interimGaps?: InterimGap[]; closedHeatingSettlements?: readonly (object & { plantId: string })[]; heatingServiceValues?: HeatingServiceValue[] },
   narrowed: { units: readonly { id: string }[]; closedSettlements: readonly object[] },
   plantIds: readonly string[],
+  servicePlantIds: readonly string[] = plantIds,
 ): Pick<Snapshot, 'interimGaps' | 'selfClosedEnds' | 'heatingServiceValues'> {
   const gaps = (source.interimGaps ?? []).filter((g) => narrowed.units.some((u) => u.id === g.unitId))
   const heating = (source.closedHeatingSettlements ?? []).filter((c) => plantIds.includes(c.plantId))
   const selfClosedEnds = [...narrowed.closedSettlements, ...heating].flatMap((c) => selfClosedEndsOf(Reflect.get(c, 'settlement')))
   // Werte der Ablesedienste (Heizung PR 12): die der Anlagen des Objekts.
-  const service = (source.heatingServiceValues ?? []).filter((v) => plantIds.includes(v.plantId))
+  const service = (source.heatingServiceValues ?? []).filter((v) => servicePlantIds.includes(v.plantId))
   return {
     ...(gaps.length > 0 ? { interimGaps: gaps } : {}),
     ...(selfClosedEnds.length > 0 ? { selfClosedEnds } : {}),
@@ -943,7 +944,8 @@ export function heatingSnapshotFor(source: Parameters<typeof snapshotFor>[0], pr
     scope: { kind: 'heating', plant },
     ...(fuel ? { fuel } : {}),
     ...(stockChains.length > 0 ? { stockChains } : {}),
-    ...selfExtrasOf(source, narrowed, [plantId]),
+    // Die Werte eines Ablesedienstes über die Linie (Durchsicht von #241, I1).
+    ...selfExtrasOf(source, narrowed, [plantId], [...line]),
   }
 }
 

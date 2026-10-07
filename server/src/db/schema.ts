@@ -32,6 +32,7 @@ import type {
   FuelQuantityUnit,
   GasBasis,
   HcaScale,
+  ServiceHeatUnit,
   HeatGeneration,
   HeatPumpMajority,
   HeatingEnergy,
@@ -354,6 +355,8 @@ export const CHANGE_SPLITS = exactly<ChangeSplit>()(['degreeDays', 'time'] as co
 export const HEATING_ROLES = exactly<HeatingRole>()(['supply', 'dhwHeat', 'totalHeat'] as const)
 // Skala eines Heizkostenverteilers (Heizung PR 12).
 export const HCA_SCALES = exactly<HcaScale>()(['unit', 'product'] as const)
+// Worin ein Ablesedienst die Heizung nennt (Durchsicht von #241, Recht-I4).
+export const SERVICE_HEAT_UNITS = exactly<ServiceHeatUnit>()(['units', 'kWh'] as const)
 export const INSULATION_RULES = exactly<InsulationRule>()(['applies', 'notApplies', 'unknown'] as const)
 export const DHW_METHODS = exactly<DhwMethod>()(['heatMeter', 'volumeFormula', 'areaFormula'] as const)
 // Warmwasser ohne Wärmezähler (Heizung PR 11): Zeile der Heizwerttabelle und Erzeuger der Anlage.
@@ -617,6 +620,8 @@ export const heatingSelfSpans = sqliteTable(
     // beginnt einen neuen Zeitraum, damit frühere Heizperioden nicht rückwirkend anders rechnen. NULL:
     // Zeitraum von vor PR 12, damals gab es nur Wärmezähler, und es gilt die Erfassung der Anlage.
     capture: text('capture', { enum: CAPTURE_METHODS }),
+    // Die Warmwasserbereitung des Zeitraums (Durchsicht von #241, I2); NULL wie bei `capture`.
+    hotWater: text('hot_water', { enum: HOT_WATER }),
   },
   (t) => [
     primaryKey({ columns: [t.plantId, t.from] }),
@@ -624,6 +629,7 @@ export const heatingSelfSpans = sqliteTable(
     periodKeyCheck('heating_self_spans_until_valid', 'until_period'),
     check('heating_self_spans_order_valid', sql.raw('"until_period" IS NULL OR "until_period" > "from_period"')),
     oneOf('heating_self_spans_capture_known', 'capture', CAPTURE_METHODS),
+    oneOf('heating_self_spans_hot_water_known', 'hot_water', HOT_WATER),
   ],
 )
 
@@ -642,12 +648,15 @@ export const heatingServiceValues = sqliteTable(
     to: text('to').notNull(),
     heatValue: real('heat_value').notNull(),
     waterValue: real('water_value'),
+    // Worin der Dienst die Heizung nennt (Durchsicht von #241, Recht-I4): bewertete Einheiten oder kWh.
+    heatUnit: text('heat_unit', { enum: SERVICE_HEAT_UNITS }).notNull().default('units'),
   },
   (t) => [
     primaryKey({ columns: [t.heatingPeriodId, t.unitId, t.from] }),
     check('heating_service_values_dates_valid', sql.raw(`"from" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]' AND "to" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]' AND "from" <= "to"`)),
     notNegative('heating_service_values_heat_not_negative', 'heat_value'),
     notNegative('heating_service_values_water_not_negative', 'water_value'),
+    oneOf('heating_service_values_heat_unit_known', 'heat_unit', SERVICE_HEAT_UNITS),
   ],
 )
 

@@ -1288,24 +1288,38 @@ lässt die Wahl nur für künftige Zeiträume zu. Der Anteil gehört zur **Linie
   kein eigenes Feld, sondern eine Ablesung mit `replacement` und Wert 0; eine Rücksetzung mitten in der
   Heizperiode ergibt `heating.device-cutoff`. Ein Gerät mit anderem Faktor ist ein neuer Zähler; Skala und
   Faktor eines Geräts, dessen Ablesungen in einer abgeschlossenen Heizperiode mit Heizkostenverteilern
-  zählen, sind gesperrt (409). **Gemischte Geräte** (Wärmezähler neben Heizkostenverteilern an Wohnungen
-  einer Anlage) verlangen nach § 5 Abs. 7 eine Vorerfassung, die Mietfuchs nicht rechnet (#218):
-  `heating.mixed-capture`, keine Verteilung; Warmwasserzähler und Zähler der Anlage zählen nicht.
+  zählen, sind gesperrt (409), ebenso das Löschen; geprüft wird nach Überdeckung, nicht nach Ablesedatum.
+  **Gezählt wird ein Gerät nur in Heizperioden, die seine Ablesungen überdecken** (`coversPeriod`: erste vor
+  dem Ende, letzte nach dem Tag vor dem Beginn); ein ausgebautes Gerät mit letzter Ablesung am Stichtag
+  muss deshalb nicht gelöscht werden. **Gemischt** ist eine Wohnung, deren Raumwärme in der Heizperiode nur
+  ein Gerät der anderen Art erfasst; ein Heizkostenverteiler neben dem Wärmezähler derselben Wohnung ändert
+  nichts. Das verlangt nach § 5 Abs. 7 eine Vorerfassung, die Mietfuchs nicht rechnet (#218):
+  `heating.mixed-capture`, keine Verteilung; Warmwasserzähler und Zähler der Anlage zählen nicht. Beim
+  Ablesedienst nennt jede Zeile, ob die Heizung in Einheiten oder kWh steht (`heat_unit`); gemischt ist
+  dort, wo beides vorkommt.
   **Verdunster** wertet Mietfuchs nicht aus; ihre Werte kommen wie alle eines Ablesedienstes über
   `heating_service_values` (je Wohnung und Nutzungszeitraum, Warmwasser für alle Zeilen oder keine,
   Lücken bleiben Lücken, die Zeilen einer Heizperiode werden als Ganzes ersetzt; `dropIfEmpty` lässt eine
-  Heizperiode mit solchen Werten stehen). Skala und Faktor gibt es nur am Zähler vom Typ `hkv`
+  Heizperiode mit solchen Werten stehen). Gelesen werden sie **über die Linie** (`lineServiceRows`, eigene
+  Zeilen vor denen der Vorgängerin): Nach einem Kesseltausch liest die neue Anlage dieselben Werte, und eine
+  Heizperiode der alten Anlage, an der nur solche Werte hängen, sperrt den Tausch nicht. Skala und Faktor gibt es nur am Zähler vom Typ `hkv`
   (Prüfbedingung). Der Ausweis je Gerät (`self.devices`) entsteht aus den Differenzen des Plans
-  (`SelfUnitPlan.measured`), nicht aus einer zweiten Lesart der Ablesungen; gedruckt bekommt jeder Mieter
-  nur seine Geräte. **Die Erfassung gehört zum Zeitraum der eigenen Abrechnung** (`heating_self_spans.capture`,
-  `captureOf` in hca.ts): Eine andere Erfassung beginnt mit der Einrichtung ab einer Heizperiode einen neuen
+  (`SelfUnitPlan.measured`, je Nutzer bzw. Gruppe nach § 9b Abs. 3), nicht aus einer zweiten Lesart der
+  Ablesungen; gedruckt bekommt jeder Mieter nur seine Geräte in seinem Zeitraum und nur die Zeilen des
+  Ablesedienstes, die in seinen Zeitraum fallen. Das Ableseergebnis nennt am Stichtag den Stichtagswert
+  (`SelfReadingView.oldEndValue`), nicht die 0. Dass die Abrechnung den Faktor nennt, ist Praxis der
+  Messdienste (Berliner Mieterverein), keine Norm; so steht es in Lexikon und Sätzen. **Erfassung und Warmwasserbereitung gehören zum Zeitraum der eigenen Abrechnung**
+  (`heating_self_spans.capture`, `.hot_water`, `captureOf` und `hotWaterOf` in hca.ts; beide ändern sich
+  über `PUT` bei eigener Abrechnung nicht, sondern nur mit der Einrichtung ab einer Heizperiode): Eine andere Erfassung beginnt mit der Einrichtung ab einer Heizperiode einen neuen
   Zeitraum, frühere Heizperioden rechnen weiter nach ihren Geräten; ein Zeitraum von vor PR 12 bekommt beim
   nächsten Schreiben die bisherige Erfassung der Anlage (`pinSelfSpans`); über `PUT /api/heating-plants/:id`
   ändert sie sich bei eigener Abrechnung nicht. Die Einrichtung legt bei Heizkostenverteilern und
   Ablesedienst keine Wärmezähler an. Die Invariante fuel-invariant hat drei Varianten mit
   Heizkostenverteilern bzw. Ablesedienst samt Mieterwechsel und Leerstand ((s5): Verbrauch je Wohnung =
-  Σ Differenz × Faktor bzw. Σ der Werte). Migrationen 0031/0032 (`hca_scale`, `rating_factor`,
-  `hca_model`, `heating_self_spans.capture`, `heating_service_values`).
+  Σ Differenz × Faktor bzw. Σ der Werte). Weitere Varianten: Heizkostenverteiler und
+  Ablesedienst mit Kesseltausch, Heizkostenverteiler mit Ablesungen bis zehn Tage neben dem Stichtag; (s5) wird je
+  Variante gezählt. Migrationen 0031/0032 (`hca_scale`, `rating_factor`, `hca_model`, `heating_self_spans.capture`
+  und `.hot_water`, `heating_service_values` mit `heat_unit`).
 
 **Brennstoffvorrat** (Heizung PR 8, #97, #99): Bei Heizöl, Flüssiggas, Pellets, Holz und Kohle
 (`STOCK_ENERGIES` in [shared/fuelStock.ts](shared/fuelStock.ts)) rechnet

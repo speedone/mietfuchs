@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { cutoffReadingBody, exactText, hcaFieldsBody, hcaFieldsOf, hcaSummary, HCA_SCALE_OPTIONS, isCutoffReading, serviceRowsOf, serviceValuesBody, setupDoneText } from './hcaForm'
+import { cutoffReadingBody, ratedText, exactText, hcaFieldsBody, hcaFieldsOf, hcaSummary, HCA_SCALE_OPTIONS, isCutoffReading, serviceRowsOf, serviceValuesBody, setupDoneText } from './hcaForm'
 import { periodKey } from '../../shared/period.ts'
 
 test('Skala und Faktor: nur am Heizkostenverteiler, Faktor deutsch oder technisch, über 0', () => {
@@ -48,18 +48,18 @@ test('Stichtagswert: eine Ablesung mit Wechsel, Wert danach 0', () => {
 
 test('Ablesedienst: Zeilen ins Formular und zurück; leere Zeilen fallen weg; Warmwasser leer heißt keiner', () => {
   const p = periodKey('2025-01')
-  const rows = serviceRowsOf([{ plantId: 'hp', period: p, unitId: 'a', from: '2025-01-01', to: '2025-09-30', heatValue: 340.5, waterValue: null }])
-  expect(rows).toEqual([{ unitId: 'a', from: '2025-01-01', to: '2025-09-30', heat: '340,5', water: '' }])
-  expect(serviceValuesBody([...rows, { unitId: '', from: '', to: '', heat: '', water: '' }])).toEqual({
-    body: { values: [{ unitId: 'a', from: '2025-01-01', to: '2025-09-30', heatValue: 340.5, waterValue: null }] },
+  const rows = serviceRowsOf([{ plantId: 'hp', period: p, unitId: 'a', from: '2025-01-01', to: '2025-09-30', heatValue: 340.5, waterValue: null, heatUnit: 'units' }])
+  expect(rows).toEqual([{ unitId: 'a', from: '2025-01-01', to: '2025-09-30', heat: '340,5', water: '', heatUnit: 'units' }])
+  expect(serviceValuesBody([...rows, { unitId: '', from: '', to: '', heat: '', water: '', heatUnit: 'units' }])).toEqual({
+    body: { values: [{ unitId: 'a', from: '2025-01-01', to: '2025-09-30', heatValue: 340.5, waterValue: null, heatUnit: 'units' }] },
   })
-  expect(serviceValuesBody([{ unitId: 'a', from: '2025-01-01', to: '2025-12-31', heat: 'viel', water: '' }])).toEqual({ error: 'Heizung in Zeile 1 ist keine Zahl.' })
-  expect(serviceValuesBody([{ unitId: 'a', from: '2025-01-01', to: '2025-12-31', heat: '', water: '3' }])).toEqual({ error: 'Bitte tragen Sie in Zeile 1 den Wert für die Heizung ein.' })
-  expect(serviceValuesBody([{ unitId: '', from: '2025-01-01', to: '2025-12-31', heat: '3', water: '' }])).toEqual({ error: 'Bitte wählen Sie in Zeile 1 die Wohnung.' })
-  const zweifelhaft = serviceValuesBody([{ unitId: 'a', from: '2025-01-01', to: '2025-12-31', heat: '1.250', water: '' }])
+  expect(serviceValuesBody([{ unitId: 'a', from: '2025-01-01', to: '2025-12-31', heat: 'viel', water: '', heatUnit: 'units' }])).toEqual({ error: 'Heizung in Zeile 1 ist keine Zahl.' })
+  expect(serviceValuesBody([{ unitId: 'a', from: '2025-01-01', to: '2025-12-31', heat: '', water: '3', heatUnit: 'units' }])).toEqual({ error: 'Bitte tragen Sie in Zeile 1 den Wert für die Heizung ein.' })
+  expect(serviceValuesBody([{ unitId: '', from: '2025-01-01', to: '2025-12-31', heat: '3', water: '', heatUnit: 'units' }])).toEqual({ error: 'Bitte wählen Sie in Zeile 1 die Wohnung.' })
+  const zweifelhaft = serviceValuesBody([{ unitId: 'a', from: '2025-01-01', to: '2025-12-31', heat: '1.250', water: '', heatUnit: 'units' }])
   expect('error' in zweifelhaft && zweifelhaft.error).toMatch(/Meinen Sie 1,250 oder 1250\?/)
-  expect(serviceValuesBody([{ unitId: 'a', from: '2025-01-01', to: '2025-12-31', heat: '1.250,5', water: '12,25' }])).toEqual({
-    body: { values: [{ unitId: 'a', from: '2025-01-01', to: '2025-12-31', heatValue: 1250.5, waterValue: 12.25 }] },
+  expect(serviceValuesBody([{ unitId: 'a', from: '2025-01-01', to: '2025-12-31', heat: '1.250,5', water: '12,25', heatUnit: 'units' }])).toEqual({
+    body: { values: [{ unitId: 'a', from: '2025-01-01', to: '2025-12-31', heatValue: 1250.5, waterValue: 12.25, heatUnit: 'units' }] },
   })
 })
 
@@ -67,4 +67,13 @@ test('Nach der Einrichtung: was je Erfassung zu tun ist', () => {
   expect(setupDoneText('hca')).toMatch(/Heizkostenverteiler mit Skala und Bewertungsfaktor/)
   expect(setupDoneText('serviceValues')).toMatch(/Werte des Ablesedienstes auf der Seite Heizkosten/)
   expect(setupDoneText('heatMeter')).toBe('Eigene Heizkostenabrechnung eingerichtet. Tragen Sie die Zählerstände auf der Seite Zähler ein.')
+})
+
+test('Durchsicht #241 M3: ein Faktor über 10 braucht eine Bestätigung', () => {
+  const r = hcaFieldsBody('hkv', { scale: 'unit', factor: '1.250,5' })
+  expect('error' in r && r.error).toMatch(/ungewöhnlich hoch/)
+  expect(hcaFieldsBody('hkv', { scale: 'unit', factor: '1.250,5', confirmed: true })).toEqual({ body: { hcaScale: 'unit', ratingFactor: 1250.5 } })
+  expect(hcaFieldsOf({ hcaScale: 'unit', ratingFactor: 12 })).toEqual({ scale: 'unit', factor: '12', confirmed: true })
+  expect(ratedText({ type: 'hkv', hcaScale: 'unit', ratingFactor: 1.25 }, 500)).toBe('bewertet: 625 Einheiten')
+  expect(ratedText({ type: 'hkv', hcaScale: 'product', ratingFactor: null }, 500)).toBeNull()
 })

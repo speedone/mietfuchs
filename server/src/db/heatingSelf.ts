@@ -19,13 +19,14 @@ import { germanDate, valueAt } from '../../../shared/law/register.ts'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 import { lineRoot, servesUnit } from '../../../shared/heatingPeriod.ts'
 import type {
-  BillingPeriod, CostItem, CostKey, SelfSpanRange, HeatingDistribution, HeatingEnergy, HeatingPart, HeatingPlant, InterimGap, InsulationRule, Meter,
+  BillingPeriod, CostItem, CostKey, HotWater, SelfSpanRange, HeatingDistribution, HeatingEnergy, HeatingPart, HeatingPlant, InterimGap, InsulationRule, Meter,
 } from '../../../shared/types.ts'
 import { consumptionSharesOf, OIL_OR_GAS, POT_METER, selfFromOf, targetProblem, type ShareRow } from '../heating.ts'
 import type { Database, Executor } from './client.ts'
 import { closedHeatingKeys, closedText, ensureHeatingPeriod, heatingPeriodClosed, heatingPeriodOf, plantContext, type PlantContext } from './heatingPeriodContext.ts'
 import { readCostItems, readHeatingPlants, readMeters, readUnits } from './read.ts'
 import { guardHeatingPlant, pinSelfSpans, plantRow, writeSelfSpans } from './heating.ts'
+import { hotWaterOf } from '../hca.ts'
 import { HeatingError, insertEntityIn, ISO_DATE, oneOfOrUndefined, patchCostItemIn, raw } from './repository.ts'
 import { costItems, heatingPeriods, heatingPlants, INSULATION_RULES, INTERIM_GAP_STATUS, interimReadingGaps, units } from './schema.ts'
 import { beforeBeginText, lineRowsOf } from './selfLine.ts'
@@ -96,10 +97,10 @@ async function lastClosedHeatingPeriod(db: Database, ctx: PlantContext): Promise
 const pctOf = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
 
 // Prüft einen neuen Anteil (Prozent) und gibt Heizung und Warmwasser zurück.
-function checkShares(body: unknown, plant: HeatingPlant, h: BillingPeriod, rows: readonly ShareRow[], today: string): { heating: number; water: number | null; insulationRule: InsulationRule; toForced: boolean } {
+function checkShares(body: unknown, plant: HeatingPlant, hotWater: HotWater, h: BillingPeriod, rows: readonly ShareRow[], today: string): { heating: number; water: number | null; insulationRule: InsulationRule; toForced: boolean } {
   const heating = pctOf(raw(body, 'heatConsumptionPct'))
   // § 8 Abs. 1: eigene Wahl beim Warmwasser (Abweichung 14); ohne zentrales Warmwasser gibt es keinen.
-  const withWater = plant.hotWater !== 'none'
+  const withWater = hotWater !== 'none'
   const water = withWater ? pctOf(raw(body, 'waterConsumptionPct')) : null
   if (withWater && water === null) {
     throw new HeatingError(400, 'Bitte geben Sie auch den Anteil nach Verbrauch beim Warmwasser an (§ 8 Abs. 1 HeizkostenV); er darf von dem der Heizung abweichen.')
@@ -150,7 +151,7 @@ export async function saveDistribution(db: Database, plantId: string, period: st
   // Der Beginn steht an der Anlage (Durchsicht von #239, W1/W2).
   const begin = selfFromOf(ctx.plant)
   if (begin !== null && h.key < begin) throw new HeatingError(400, beforeBeginText(begin))
-  const next = checkShares(body, ctx.plant, h, rows, today)
+  const next = checkShares(body, ctx.plant, hotWaterOf(ctx.plant, String(h.key)), h, rows, today)
   // In derselben Heizperiode gilt in der Linie ein Anteil (§ 6 Abs. 4; Durchsicht von #239, I3).
   const ids = lineIdsOf(line.plants, plantId)
   const other = line.all.find((r) => r.plantId !== plantId && ids.has(r.plantId) && r.period === h.key && r.heatConsumptionPct !== null)
@@ -195,7 +196,7 @@ export async function setUpSelf(db: Database, plantId: string, body: unknown, to
   }
   await guardHeatingPlant(db, current, after)
   const rows = await shareRows(db, plantId)
-  const shares = checkShares(body, after, h, rows, today)
+  const shares = checkShares(body, after, after.hotWater, h, rows, today)
 
   // Positionen offener Zeiträume mit anderem Schlüssel: jede braucht Teil und Ziel (Review Focus 3).
   // Nur ab der Heizperiode der Einrichtung (I1) und nur Positionen dieser Anlage (M1). Ein bestehender
@@ -214,21 +215,24 @@ export async function setUpSelf(db: Database, plantId: string, body: unknown, to
   // Einrichtung einen neuen Zeitraum; Heizperioden davor rechnen weiter nach ihren Geräten, auch offene (der
   // Wechsel der Ausstattung zum Stichtag). Beginnt der laufende Zeitraum mit dieser Heizperiode, ist es eine
   // Berichtigung, und er bekommt die neue Erfassung.
+  // Dasselbe gilt für die Warmwasserbereitung (Durchsicht von #241, I2).
   const newCapture = after.capture ?? 'heatMeter'
+  const newHotWater = after.hotWater
+  const sameSetting = (s: SelfSpanRange) => s.capture === newCapture && s.hotWater === newHotWater
   const pinned = pinSelfSpans(current)
   const past = pinned.filter((s) => s.until !== null)
   const openSpan = pinned.find((s) => s.until === null)
   let spans: SelfSpanRange[]
   if (existingBegin !== null && openSpan) {
-    spans = openSpan.capture === newCapture
+    spans = sameSetting(openSpan)
       ? pinned
       : h.key === openSpan.from
-        ? [...past, { ...openSpan, capture: newCapture }]
-        : [...past, { ...openSpan, until: h.key }, { from: h.key, until: null, capture: newCapture }]
+        ? [...past, { ...openSpan, capture: newCapture, hotWater: newHotWater }]
+        : [...past, { ...openSpan, until: h.key }, { from: h.key, until: null, capture: newCapture, hotWater: newHotWater }]
   } else {
-    spans = past.some((s) => s.until === h.key && s.capture === newCapture)
+    spans = past.some((s) => s.until === h.key && sameSetting(s))
       ? past.map((s) => (s.until === h.key ? { ...s, until: null } : s))
-      : [...past, { from: h.key, until: null, capture: newCapture }]
+      : [...past, { from: h.key, until: null, capture: newCapture, hotWater: newHotWater }]
   }
   after.selfSpans = spans
   const offen = await selfItemsOf(db, plantId, 'heatingSystem', null, from)

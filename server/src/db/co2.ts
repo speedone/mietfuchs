@@ -15,7 +15,7 @@
 // Diese Datei importiert aus repository.ts und read.ts, nie umgekehrt.
 import { lineRowsOf } from './selfLine.ts'
 import { selfActive, selfFromOf } from '../heating.ts'
-import { captureOf } from '../hca.ts'
+import { captureOf, hotWaterOf, lineServiceRows } from '../hca.ts'
 import { and, eq, inArray } from 'drizzle-orm'
 import { consumptionInPeriod } from '../calc.ts'
 import { suppliedAreaOf } from '../dhw.ts'
@@ -89,7 +89,7 @@ export async function heatingPeriodViews(db: Database, plantId: string, periodPa
   const allPlants = (await lineRowsOf(db, plantId)).plants
   const lineIds = new Set(allPlants.filter((x) => lineRoot(x, allPlants) === lineRoot({ id: plantId, replacesPlantId: allPlants.find((y) => y.id === plantId)?.replacesPlantId ?? null }, allPlants)).map((x) => x.id))
   const lineRowsAll = lineIds.size > 1 ? await db.select().from(heatingPeriods).where(inArray(heatingPeriods.plantId, [...lineIds])) : rows
-  const serviceValues = (await readHeatingServiceValues(db)).filter((v) => v.plantId === plantId)
+  const serviceValues = await readHeatingServiceValues(db)
   const views: HeatingPeriodView[] = []
   for (const h of hs) {
     const self = selfActive(ctx.plant, String(h.key))
@@ -143,7 +143,9 @@ export async function heatingPeriodViews(db: Database, plantId: string, periodPa
         ? distributionOf(lineRows, ctx.plant.energy, h, today)
         : null,
       capture: self ? captureOf(ctx.plant, String(h.key)) : null,
-      serviceValues: serviceValues.filter((v) => v.period === h.key),
+      selfHotWater: self ? hotWaterOf(ctx.plant, String(h.key)) : null,
+      // Über die Linie (Durchsicht von #241, I1): nach einem Kesseltausch dieselben Werte bei beiden Anlagen.
+      serviceValues: lineServiceRows(serviceValues, allPlants, plantId, String(h.key)),
     })
   }
   return views

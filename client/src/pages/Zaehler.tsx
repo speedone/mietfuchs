@@ -15,7 +15,7 @@ import { useToast, useConfirm } from '../components/feedback'
 import Table from '../components/Table'
 import HcaFields from '../components/HcaFields'
 import CutoffReadingForm from '../components/CutoffReadingForm'
-import { hcaSummary, isCutoffReading } from '../hcaForm'
+import { hcaSummary, isCutoffReading, ratedText } from '../hcaForm'
 import { useFocusTarget, useScrollToFocus, type FocusProps } from '../focus'
 
 type Props = { units: Unit[] } & FocusProps
@@ -236,15 +236,16 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
           <div className="row">
             <label className="field grow">
               Name
-              <input value={meterForm.name} onChange={(e) => setMeterForm({ ...meterForm, name: e.target.value })} placeholder="z. B. Hauptwasserzähler" />
+              <input value={meterForm.name} onChange={(e) => setMeterForm({ ...meterForm, name: e.target.value })} placeholder={meterForm.type === 'hkv' ? 'z. B. Wohnzimmer' : 'z. B. Hauptwasserzähler'} />
             </label>
             <label className="field grow">
               <span>Zuordnung (<Term id="mainMeter">Haupt- oder Zwischenzähler</Term>)</span>
               <select value={meterForm.unitId} onChange={(e) => setMeterForm({ ...meterForm, unitId: e.target.value })}>
-                <option value="">Haus (Hauptzähler)</option>
+                {/* Ein Heizkostenverteiler sitzt an einem Heizkörper einer Wohnung (Durchsicht von #241, Minor 11). */}
+                <option value="">{meterForm.type === 'hkv' ? '— bitte Wohnung wählen —' : 'Haus (Hauptzähler)'}</option>
                 {units.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
               </select>
-              <small className="muted">Bei einer <Term id="granny">Einliegerwohnung</Term> mit eigenem Zwischenzähler: den Zähler des Hauses als Hauptzähler anlegen, den Zwischenzähler an der Wohnung.</small>
+              {meterForm.type !== 'hkv' && <small className="muted">Bei einer <Term id="granny">Einliegerwohnung</Term> mit eigenem Zwischenzähler: den Zähler des Hauses als Hauptzähler anlegen, den Zwischenzähler an der Wohnung.</small>}
             </label>
             <label className="field grow">
               Sparte
@@ -339,6 +340,7 @@ function FragmentRow(props: {
           {cons && cons.readingCount >= 2
             ? `${cons.consumption.toLocaleString('de-DE')}${m.unit ? ` ${m.unit}` : ''}`
             : <span className="muted">zu wenig Ablesungen</span>}
+          {cons && cons.readingCount >= 2 && ratedText(m, cons.consumption) && <div className="muted">{ratedText(m, cons.consumption)}</div>}
         </td>
         <td className="actions no-print">
           <button className="btn small secondary" onClick={onToggle}>{open ? 'Schließen' : `Ablesungen (${readings.length})`}</button>

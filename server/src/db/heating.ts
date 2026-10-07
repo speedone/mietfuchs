@@ -331,16 +331,19 @@ export const plantRow = (p: HeatingPlant) => ({
 
 // Heizung PR 12: Ein Zeitraum ohne eigene Erfassung (von vor PR 12) bekommt beim nächsten Schreiben die
 // bisherige der Anlage, damit ihn ein späterer Wechsel nicht rückwirkend umstellt.
-export const pinSelfSpans = (p: Pick<HeatingPlant, 'capture' | 'selfSpans'>): SelfSpanRange[] =>
-  (p.selfSpans ?? []).map((s) => ({ ...s, capture: s.capture ?? p.capture ?? 'heatMeter' }))
+export const pinSelfSpans = (p: Pick<HeatingPlant, 'capture' | 'hotWater' | 'selfSpans'>): SelfSpanRange[] =>
+  (p.selfSpans ?? []).map((s) => ({ ...s, capture: s.capture ?? p.capture ?? 'heatMeter', hotWater: s.hotWater ?? p.hotWater }))
 export const CAPTURE_VIA_SETUP =
   'Womit der Verbrauch erfasst wird, ändert sich nur zum Beginn einer Heizperiode, damit frühere Heizperioden nicht rückwirkend anders rechnen. ' +
   'Beenden Sie dafür unter „Ändern“ die eigene Heizkostenabrechnung und richten Sie sie mit „Selbst abrechnen“ ab der Heizperiode neu ein, in der die neuen Geräte zählen.'
+export const HOT_WATER_VIA_SETUP =
+  'Wie das Warmwasser bereitet wird, ändert sich bei der eigenen Heizkostenabrechnung nur zum Beginn einer Heizperiode, damit frühere Heizperioden nicht rückwirkend anders rechnen. ' +
+  'Beenden Sie dafür unter „Ändern“ die eigene Heizkostenabrechnung und richten Sie sie mit „Selbst abrechnen“ ab der Heizperiode neu ein, ab der die Änderung gilt.'
 
 // Die Zeiträume der eigenen Heizkostenabrechnung, ganz ersetzt wie die Liste der Wohnungen (Durchsicht von #239).
 export async function writeSelfSpans(tx: Executor, plantId: string, spans: readonly SelfSpanRange[]): Promise<void> {
   await tx.delete(heatingSelfSpans).where(eq(heatingSelfSpans.plantId, plantId))
-  if (spans.length > 0) await tx.insert(heatingSelfSpans).values(spans.map((s) => ({ plantId, from: s.from, until: s.until, capture: s.capture ?? null })))
+  if (spans.length > 0) await tx.insert(heatingSelfSpans).values(spans.map((s) => ({ plantId, from: s.from, until: s.until, capture: s.capture ?? null, hotWater: s.hotWater ?? null })))
 }
 
 // Die Liste der Wohnungen, ganz ersetzt wie die Untertabellen in repository.ts.
@@ -452,12 +455,13 @@ export async function updateHeatingPlant(db: Database, id: string, body: unknown
   if (current.method === 'self' && next.method === 'self' && (current.capture ?? null) !== (next.capture ?? null)) {
     throw new HeatingError(400, CAPTURE_VIA_SETUP)
   }
+  if (current.method === 'self' && next.method === 'self' && current.hotWater !== next.hotWater) throw new HeatingError(400, HOT_WATER_VIA_SETUP)
   if (zurueck) {
     // Die Zeiträume behalten ihre Erfassung; ein Zeitraum von vor PR 12 bekommt die bisherige der Anlage.
     const pinned = pinSelfSpans(current)
     const rest = pinned.filter((s) => s.until !== null)
     const openPinned = pinned.find((s) => s.until === null)
-    next.selfSpans = open && span?.to && span.to !== open.from ? [...rest, { from: open.from, until: span.to, capture: openPinned?.capture ?? current.capture ?? 'heatMeter' }] : rest
+    next.selfSpans = open && span?.to && span.to !== open.from ? [...rest, { from: open.from, until: span.to, capture: openPinned?.capture ?? current.capture ?? 'heatMeter', hotWater: openPinned?.hotWater ?? current.hotWater }] : rest
   }
   const clearShares = zurueck ? await openShareRowsFrom(db, id, open?.from ?? null) : []
   const offen = zurueck ? await selfItemsOf(db, id, null, 'heatingSystem') : []
@@ -649,8 +653,11 @@ export async function replaceHeatingPlant(db: Database, oldId: string, newId: st
     const after = (key: string): boolean => (periodOfKey(heating.rules, parsePeriodKey(key) ?? periodKey('1900-01'))?.from ?? '') > endsOn
     const posten = (await db.select({ period: costItems.period, description: costItems.description }).from(costItems).where(eq(costItems.heatingPlantId, oldId)))
       .filter((c) => after(String(c.period)))
-    const zeilen = (await db.select({ period: heatingPeriods.period }).from(heatingPeriods).where(eq(heatingPeriods.plantId, oldId)))
+    // Eine Zeile, an der nur Werte eines Ablesedienstes hängen, bleibt (Heizung PR 12, Durchsicht von #241, I1):
+    // Die neue Anlage liest sie über die Linie.
+    const zeilen = (await db.select().from(heatingPeriods).where(eq(heatingPeriods.plantId, oldId)))
       .filter((h) => after(String(h.period)))
+      .filter(({ id: _id, plantId: _plant, period: _period, ...data }) => Object.values(data).some((v) => v !== null))
     if (posten.length > 0 || zeilen.length > 0) {
       const was = posten.length > 0 ? `die Position ${posten.map((c) => `„${c.description}“`).join(', ')}` : `Angaben zur Heizperiode ${zeilen.map((h) => String(h.period)).join(', ')}`
       throw new HeatingError(409, `An der bisherigen Anlage stehen ${was} für die Zeit nach dem Tausch. Ordnen Sie sie zuerst richtig zu oder entfernen Sie sie; gespeichert wurde nichts.`)
@@ -661,7 +668,7 @@ export async function replaceHeatingPlant(db: Database, oldId: string, newId: st
   for (const k of SWAP_FIELDS) if (has(body, k)) picked[k] = raw(body, k)
   const base: HeatingPlant = { ...old, id: newId, name: '', separateSpans: [], units: served, endsOn: null, replacesPlantId: oldId, takesOverStock: null,
     // Der Beginn der eigenen Abrechnung geht nur mit, wenn die alte Anlage selbst abrechnet (Runde 3).
-    selfSpans: openSelfSpan(old) ? [{ from: openSelfSpan(old)?.from ?? '', until: null, capture: openSelfSpan(old)?.capture ?? old.capture ?? 'heatMeter' }] : [] }
+    selfSpans: openSelfSpan(old) ? [{ from: openSelfSpan(old)?.from ?? '', until: null, capture: openSelfSpan(old)?.capture ?? old.capture ?? 'heatMeter', hotWater: openSelfSpan(old)?.hotWater ?? old.hotWater }] : [] }
   const merged = mergeHeatingPlant(base, picked)
   // Zur eigenen Heizkostenabrechnung nur über die Einrichtung (Heizung PR 10); eine Anlage, die schon
   // selbst abrechnet, gibt die Art an die neue weiter.

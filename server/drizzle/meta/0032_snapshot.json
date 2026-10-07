@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "b69d02a6-1aa2-4fb8-b5e9-305fef56d277",
-  "prevId": "7bfd51fc-1583-41a6-a466-8e42da3015ca",
+  "id": "91c92ba0-00f6-4d3c-9413-dd8839a94d3c",
+  "prevId": "a94f7a00-ecc7-47e3-82d3-b2f694dcd9ad",
   "tables": {
     "ai_slots": {
       "name": "ai_slots",
@@ -3223,6 +3223,13 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
+        },
+        "hot_water": {
+          "name": "hot_water",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         }
       },
       "indexes": {},
@@ -3267,6 +3274,10 @@
         "heating_self_spans_capture_known": {
           "name": "heating_self_spans_capture_known",
           "value": "\"capture\" IN ('heatMeter', 'hca', 'serviceValues')"
+        },
+        "heating_self_spans_hot_water_known": {
+          "name": "heating_self_spans_hot_water_known",
+          "value": "\"hot_water\" IN ('combined', 'separate', 'none')"
         }
       }
     },
@@ -3380,6 +3391,14 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
+        },
+        "heat_unit": {
+          "name": "heat_unit",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'units'"
         }
       },
       "indexes": {},
@@ -3434,6 +3453,10 @@
         "heating_service_values_water_not_negative": {
           "name": "heating_service_values_water_not_negative",
           "value": "\"water_value\" >= 0"
+        },
+        "heating_service_values_heat_unit_known": {
+          "name": "heating_service_values_heat_unit_known",
+          "value": "\"heat_unit\" IN ('units', 'kWh')"
         }
       }
     },

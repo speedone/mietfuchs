@@ -153,7 +153,7 @@ const SEEDS: number[] = process.env.INV_FROM !== undefined || process.env.INV_TO
   : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 16, 81]
 const STEPS = Number(process.env.INV_STEPS ?? 30)
 
-type Variant = { name: string; lazy: boolean; estimate: boolean; two?: boolean; swap?: boolean; self?: boolean; hw?: 'combined' | 'separate'; dhw?: 'volumeFormula' | 'areaFormula'; capture?: 'hca' | 'serviceValues' }
+type Variant = { name: string; lazy: boolean; estimate: boolean; two?: boolean; swap?: boolean; self?: boolean; hw?: 'combined' | 'separate'; dhw?: 'volumeFormula' | 'areaFormula'; capture?: 'hca' | 'serviceValues'; offset?: boolean }
 const VARIANTS: Variant[] = [
   { name: 'Grundform', lazy: false, estimate: false },
   { name: 'Rechnung kommt später', lazy: true, estimate: false },
@@ -176,24 +176,37 @@ const VARIANTS: Variant[] = [
   { name: 'Eigene Heizkostenabrechnung mit Heizkostenverteilern', lazy: false, estimate: false, self: true, capture: 'hca' },
   { name: 'Eigene Heizkostenabrechnung mit Heizkostenverteilern, verbundenes Warmwasser', lazy: true, estimate: false, self: true, hw: 'combined', capture: 'hca' },
   { name: 'Eigene Heizkostenabrechnung mit Werten eines Ablesedienstes', lazy: false, estimate: false, self: true, hw: 'combined', capture: 'serviceValues' },
+  // Durchsicht von #241: Kesseltausch (die neue Anlage liest dieselben Geräte bzw. die Werte des Dienstes über
+  // die Linie) und Ablesungen einige Tage neben dem Stichtag (ohne Rücksetzung, wie abgelesen).
+  { name: 'Eigene Heizkostenabrechnung mit Heizkostenverteilern, Kesseltausch', lazy: true, estimate: false, self: true, swap: true, capture: 'hca' },
+  { name: 'Eigene Heizkostenabrechnung mit Werten eines Ablesedienstes, Kesseltausch', lazy: true, estimate: false, self: true, swap: true, capture: 'serviceValues' },
+  { name: 'Eigene Heizkostenabrechnung mit Heizkostenverteilern, Ablesung neben dem Stichtag', lazy: false, estimate: false, self: true, capture: 'hca', offset: true },
 ]
 
 // Wie oft die eigene Heizkostenabrechnung wirklich verteilt hat (Abdeckung, letzter Test).
 const SELF = { periods: 0, distributed: 0, alpha: 0, formula: 0, units: 0 }
+// Heizung PR 12, Durchsicht von #241: (s5) je Variante gezählt, damit keine still nichts prüft.
+const UNITS_BY_VARIANT = new Map<string, number>()
 
 // Heizung PR 12, (s5): Je Wohnung der Verbrauch der Heizung im Ausweis (Σ ihrer Nutzer) gleich dem erwarteten
 // (Σ Differenz × Faktor ihrer Heizkostenverteiler bzw. Σ der Werte des Ablesedienstes), in Einheiten.
-function unitChecks(r: ReturnType<typeof computeSettlement>, expected: ReadonlyMap<string, number> | undefined, water: ReadonlyMap<string, number> | undefined, where: string): void {
-  const self = r.heating?.find((h) => h.plantId === 'hp')?.self
-  if (!self?.ok || !expected) return
+function unitChecks(r: ReturnType<typeof computeSettlement>, expected: ReadonlyMap<string, number> | undefined, water: ReadonlyMap<string, number> | undefined, where: string, variant: string): void {
+  // Jede Anlage mit eigener Abrechnung, nach einem Kesseltausch also auch die neue (Durchsicht von #241, I1).
+  for (const h of r.heating ?? []) {
+    if (h.self) unitChecksOf(h.self, expected, water, `${where} (${h.plantId})`, variant)
+  }
+}
+function unitChecksOf(self: NonNullable<NonNullable<ReturnType<typeof computeSettlement>['heating']>[number]['self']>, expected: ReadonlyMap<string, number> | undefined, water: ReadonlyMap<string, number> | undefined, where: string, variant: string): void {
+  if (!self.ok || !expected) return
   SELF.units++
+  UNITS_BY_VARIANT.set(variant, (UNITS_BY_VARIANT.get(variant) ?? 0) + 1)
   assert.equal(self.pots.find((p) => p.pot === 'heating')?.consumptionUnit, 'Einheiten', `${where}: (s5) Einheit`)
   for (const u of self.units) {
     const got = u.users.reduce((a, x) => a + (x.heatingConsumption ?? 0), 0)
     const want = expected.get(u.unitId) ?? 0
     assert.ok(Math.abs(got - want) <= 1e-6 * Math.max(1, want), `${where}: (s5) ${u.unitName}: ${got} statt ${want}`)
     // Liefert der Ablesedienst das Warmwasser, zählen seine Werte und nicht die Warmwasserzähler.
-    if (water) {
+    if (water && self.pots.some((p) => p.pot === 'water')) {
       const gotW = u.users.reduce((a, x) => a + (x.waterConsumption ?? 0), 0)
       const wantW = water.get(u.unitId) ?? 0
       assert.ok(Math.abs(gotW - wantW) <= 1e-6 * Math.max(1, wantW), `${where}: (s5) Warmwasser ${u.unitName}: ${gotW} statt ${wantW}`)
@@ -411,7 +424,10 @@ for (const variant of VARIANTS) {
             for (const d of devices) {
               await createEntity(db, 'meters', d.id, { propertyId: 'objekt-1', unitId: d.unitId, name: d.id, type: 'hkv', unit: 'Einheiten', hcaScale: d.scale, ratingFactor: d.factor })
               const first = periodOf(keys[0] ?? '')
-              await createEntity(db, 'readings', `${d.id}@0`, { meterId: d.id, date: isoOf(Date.parse(`${first.from}T00:00:00Z`) - DAY), value: 0 })
+              // Neben dem Stichtag: bis zu zehn Tage vor oder nach der Grenze abgelesen, ohne Rücksetzung.
+              const shift = (iso: string) => (variant.offset ? isoOf(Date.parse(`${iso}T00:00:00Z`) + int(-10, 10) * DAY) : iso)
+              await createEntity(db, 'readings', `${d.id}@0`, { meterId: d.id, date: shift(isoOf(Date.parse(`${first.from}T00:00:00Z`) - DAY)), value: 0 })
+              let total = 0
               for (const key of keys) {
                 const p = periodOf(key)
                 let value = 0
@@ -423,8 +439,15 @@ for (const variant of VARIANTS) {
                   }
                 }
                 value += int(100, 4000)
-                // Stichtagswert laut Anzeige am Ende der Heizperiode: das Gerät setzt auf 0 zurück.
-                await createEntity(db, 'readings', `${d.id}@${key}`, { meterId: d.id, date: p.to, value: 0, replacement: true, oldEndValue: value })
+                if (variant.offset) {
+                  // Ohne Zwischenablesung in B (die Grenzen des Wechsels haben dann eigene Stände); gezählt wird
+                  // die Differenz der beiden Ablesungen neben den Grenzen.
+                  await createEntity(db, 'readings', `${d.id}@${key}`, { meterId: d.id, date: shift(p.to), value: total + value })
+                  total += value
+                } else {
+                  // Stichtagswert laut Anzeige am Ende der Heizperiode: das Gerät setzt auf 0 zurück.
+                  await createEntity(db, 'readings', `${d.id}@${key}`, { meterId: d.id, date: p.to, value: 0, replacement: true, oldEndValue: value })
+                }
                 addExpected(key, d.unitId, value * (d.factor ?? 1))
               }
             }
@@ -502,6 +525,7 @@ for (const variant of VARIANTS) {
             SWAPS.done++
             log.push(`${mark} ${swapDate}`)
           } catch (err) {
+            if (process.env.INV_DEBUG) console.log('Tausch abgelehnt', variant.name, String(err).slice(0, 200))
             if (!rejected(err)) throw err
           }
         }
@@ -515,6 +539,9 @@ for (const variant of VARIANTS) {
           if (a) deliveries.push(a)
           log.push(`${mark} ${next.id}`)
         }
+        // Durchsicht von #241: Mit eigener Abrechnung wird gleich zu Beginn getauscht, bevor ein Abschluss den
+        // Tausch sperrt; die Rechnungen der neuen Anlage kommen danach.
+        if (variant.self && variant.swap) await replace('replace')
         for (let step = 0; step < STEPS; step++) {
           const op = pick(['link', 'link', 'link', 'credit', 'unlink', 'delete', 'close', 'close', 'reopen', 'amount', 'arrive', 'relink', 'storno'] as const)
           const d = pick(deliveries)
@@ -639,7 +666,7 @@ for (const variant of VARIANTS) {
             }
           }
           if (r && variant.self) selfChecks(r, items.filter((c) => c.period === key), `${fall}; ${key}`)
-          if (r && variant.capture) unitChecks(r, expectedUnits.get(key), expectedWater.get(key), `${fall}; ${key}`)
+          if (r && variant.capture) unitChecks(r, expectedUnits.get(key), expectedWater.get(key), `${fall}; ${key}`, variant.name)
           const dhwInput = dhwInputs.get(key)
           if (r && variant.dhw && dhwInput) dhwChecks(r, { method: variant.dhw, ...dhwInput, basis: dhwBasis }, `${fall}; ${key}`)
           if (r && variant.self && r.heating?.find((h) => h.plantId === 'hp')?.self?.ok === false) selfBlocked = true
@@ -733,6 +760,8 @@ test('Invariante, eigene Heizkostenabrechnung: Abdeckung', () => {
   assert.ok(SELF.formula > 0, 'kein Lauf mit Warmwasseranteil nach einer Formel geprüft (s4)')
   assert.ok(SELF.distributed * 2 >= SELF.periods, `nur ${SELF.distributed} von ${SELF.periods} Heizperioden nach der Verordnung verteilt`)
   assert.ok(SELF.units > 0, 'kein Lauf mit Heizkostenverteilern oder Ablesedienst geprüft (s5)')
+  if (process.env.INV_LOG) console.log('(s5) je Variante', JSON.stringify([...UNITS_BY_VARIANT]))
+  for (const v of VARIANTS.filter((x) => x.capture)) assert.ok((UNITS_BY_VARIANT.get(v.name) ?? 0) > 0, `(s5) nie geprüft: ${v.name}`)
 })
 
 test('Invariante, Kesseltausch: Abdeckung', () => {

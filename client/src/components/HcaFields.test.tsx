@@ -22,7 +22,12 @@ test('Die Skala zeigt den gespeicherten Wert, der Faktor steht nur bei der Einhe
   expect(screen.queryByLabelText(/Bewertungsfaktor/)).toBeNull()
   fireEvent.change(scale, { target: { value: 'unit' } })
   fireEvent.change(screen.getByLabelText(/Bewertungsfaktor/), { target: { value: '1,25' } })
-  expect(screen.getByTestId('stand').textContent).toBe('{"scale":"unit","factor":"1,25"}')
+  expect(screen.getByTestId('stand').textContent).toBe('{"scale":"unit","factor":"1,25","confirmed":false}')
+  // Ein ungewöhnlich hoher Faktor (Durchsicht von #241, M3): das Formular fragt nach.
+  expect(screen.queryByLabelText(/Faktor ist so hoch richtig/)).toBeNull()
+  fireEvent.change(screen.getByLabelText(/Bewertungsfaktor/), { target: { value: '12,5' } })
+  fireEvent.click(screen.getByLabelText(/Faktor ist so hoch richtig/))
+  expect(screen.getByTestId('stand').textContent).toBe('{"scale":"unit","factor":"12,5","confirmed":true}')
 })
 
 test('Ohne Skala steht „bitte wählen“; ein gespeicherter Faktor steht mit allen Stellen da', () => {

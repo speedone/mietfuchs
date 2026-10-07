@@ -7,9 +7,10 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement, meterSegments, type ComputedSettlement } from '../src/calc.ts'
 import type { Snapshot, SnapshotReading } from '../src/snapshot.ts'
-import type { CaptureMethod, HeatingServiceValue } from '../../shared/types.ts'
+import type { CaptureMethod, CostItem, HeatingPlant, HeatingServiceValue } from '../../shared/types.ts'
+import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import { dayAfter } from '../../shared/law/register.ts'
-import { selfMeter, selfSnapshot } from '../testing/selfHeating.ts'
+import { selfDelivery, selfMeter, selfReading, selfRow, selfSnapshot } from '../testing/selfHeating.ts'
 import { periodKey } from '../../shared/period.ts'
 
 const codes = (s: ComputedSettlement) => s.notices.map((n) => n.code)
@@ -45,7 +46,7 @@ function serviceRowsOf(base: Snapshot): HeatingServiceValue[] {
   return base.meters.filter((m) => HEAT.includes(m.id)).flatMap((m) =>
     meterSegments(base.readings.filter((r) => r.meterId === m.id)).segments
       .filter((seg) => seg.from >= '2024-12-31' && seg.to <= '2025-12-31')
-      .map((seg) => ({ plantId: 'hp', period: periodKey('2025-01'), unitId: m.unitId ?? '', from: dayAfter(seg.from), to: seg.to, heatValue: seg.delta, waterValue: null })))
+      .map((seg) => ({ plantId: 'hp', period: periodKey('2025-01'), unitId: m.unitId ?? '', from: dayAfter(seg.from), to: seg.to, heatValue: seg.delta, waterValue: null, heatUnit: 'units' })))
 }
 function asService(): Snapshot {
   const base = selfSnapshot()
@@ -66,10 +67,14 @@ test('§ 5 Abs. 1 Satz 1: Heizkostenverteiler mit denselben bewerteten Einheiten
   assert.deepEqual(amounts(hca), amounts(computeSettlement(base)))
   assert.ok(!codes(hca).some((c) => c === 'heating.hca-factor-missing' || c === 'heating.mixed-capture'), codes(hca).join(', '))
   const lines = selfOf(hca).devices ?? assert.fail('kein Geräteausweis')
-  assert.deepEqual(lines.map((l) => l.meterId), HEAT)
+  // Je Nutzer eine Zeile (Durchsicht von #241, Recht-I1): C1 bis zum Wechsel, C2 danach.
+  assert.deepEqual(lines.map((l) => [l.meterId, l.userKeys, l.from, l.to]), [
+    ['wz-a', ['A'], '2025-01-01', '2025-12-31'], ['wz-b', ['B'], '2025-01-01', '2025-12-31'],
+    ['wz-c', ['C1'], '2025-01-01', '2025-09-30'], ['wz-c', ['C2'], '2025-10-01', '2025-12-31'],
+  ])
   assert.ok(lines.every((l) => l.scale === 'unit' && l.factor === 2 && l.rated === l.raw * 2))
   // 12.000 + 16.000 + 12.000 kWh = 40.000 bewertete Einheiten, je Gerät die Hälfte abgelesen.
-  assert.deepEqual(lines.map((l) => l.raw), [6000, 8000, 6000])
+  assert.deepEqual(lines.map((l) => l.raw), [6000, 8000, 3600, 2400])
   const pot = selfOf(hca).pots.find((p) => p.pot === 'heating')
   assert.equal(pot?.consumptionUnit, 'Einheiten')
   assert.equal(pot?.consumption, 40000)
@@ -124,10 +129,7 @@ test('Fehlender Faktor (hca-factor-missing) und gemischte Geräte (mixed-capture
   assert.equal(m.level, 'error')
   assert.match(m.text, /Wärmezähler bei A und Heizkostenverteiler bei B und C.*Vorerfassung/s)
   assert.equal(selfOf(s).ok, false)
-  // Bei Wärmezählern stört ein Heizkostenverteiler an einer Wohnung ebenso.
-  const base = selfSnapshot()
-  const mitHkv: Snapshot = { ...base, meters: [...base.meters, { id: 'h-a', unitId: 'a', type: 'hkv', name: 'Altgerät', hcaScale: null, ratingFactor: null }] }
-  assert.ok(codes(computeSettlement(mitHkv)).includes('heating.mixed-capture'))
+  // Ein Heizkostenverteiler neben dem Wärmezähler einer Wohnung stört nicht (Durchsicht von #241, C1, Test unten).
 })
 
 test('Gerätestichtag mitten in der Heizperiode: Hinweis am Gerät, gerechnet wird mit den Werten, wie sie sind', () => {
@@ -140,7 +142,7 @@ test('Gerätestichtag mitten in der Heizperiode: Hinweis am Gerät, gerechnet wi
   }
   const s = computeSettlement(mitReset)
   const n = s.notices.find((x) => x.code === 'heating.device-cutoff') ?? assert.fail('kein Hinweis')
-  assert.equal(n.level, 'warning')
+  assert.equal(n.level, 'hint')
   assert.deepEqual(n.subject, { kind: 'meter', id: 'wz-a' })
   assert.match(n.text, /hat am 30\.06\.2025 auf null zurückgesetzt/)
   // (3.000 − 500) + 3.500 = 6.000 Einheiten, wie ohne Rücksetzung: dieselben Beträge.
@@ -166,4 +168,94 @@ test('Ablesedienst nach einer abgeschlossenen Heizperiode: deren eingefrorener E
   const s = asService()
   const mitEnde: Snapshot = { ...s, selfClosedEnds: [{ plantId: 'hp', boundary: '2024-12-31', meterId: 'ablesedienst-heizung:a', date: '2024-12-31', value: 9000 }] }
   assert.deepEqual(amounts(computeSettlement(mitEnde)), amounts(computeSettlement(selfSnapshot())))
+})
+
+// ---------- Korrekturrunde 1 (Durchsicht von #241) ----------
+
+test('Durchsicht #241 C1: Wechsel Wärmezähler → Heizkostenverteiler zum 31.12.; keine der beiden Heizperioden ist gesperrt', () => {
+  const spans = { selfSpans: [{ from: periodKey('2025-01'), until: periodKey('2026-01'), capture: 'heatMeter' as const }, { from: periodKey('2026-01'), until: null, capture: 'hca' as const }] }
+  const base = selfSnapshot({ plant: spans })
+  const hkv = ['a', 'b', 'c'].map((u) => selfMeter(`hkv-${u}`, u, `HKV ${u}`, 'hkv', { hcaScale: 'unit', ratingFactor: 1.5 }))
+  const meters = [...METERS(), ...hkv]
+  // Die neuen Geräte haben am 31.12.2025 ihren ersten Stand; die Wärmezähler ihren letzten.
+  const readings2025 = [...selfSnapshot().readings.map((r) => selfReading(r.meterId, r.date, r.value)), ...['a', 'b', 'c'].map((u) => selfReading(`hkv-${u}`, '2025-12-31', 0))]
+  const s25 = computeSettlement(selfSnapshot({ plant: spans, meters, readings: readings2025 }))
+  assert.ok(!codes(s25).includes('heating.mixed-capture'), codes(s25).join(', '))
+  assert.deepEqual(amounts(s25), amounts(computeSettlement(base)))
+  const readings2026 = [...readings2025, ...['a', 'b', 'c'].map((u, i) => selfReading(`hkv-${u}`, '2026-12-31', 100 * (i + 1)))]
+  const s26 = computeSettlement(selfSnapshot({ year: 2026, plant: spans, meters, readings: readings2026 }))
+  assert.ok(!codes(s26).some((c) => c === 'heating.mixed-capture' || c === 'heating.hca-factor-missing'), codes(s26).join(', '))
+  // 2026 zählen die Heizkostenverteiler: 100, 200, 300 Einheiten mal Faktor 1,5.
+  assert.equal(selfOf(s26).pots.find((p) => p.pot === 'heating')?.consumption, 900)
+})
+
+test('Durchsicht #241 C1: Ein Heizkostenverteiler neben dem Wärmezähler derselben Wohnung macht nichts gemischt; gemischt ist eine Wohnung ohne Wärmezähler, aber mit Heizkostenverteiler', () => {
+  const base = selfSnapshot()
+  const hkv = ['a', 'b', 'c'].map((u) => selfMeter(`hkv-${u}`, u, `HKV ${u}`, 'hkv'))
+  const hkvReadings = ['a', 'b', 'c'].flatMap((u) => [selfReading(`hkv-${u}`, '2024-12-31', 0), selfReading(`hkv-${u}`, '2025-12-31', 400)])
+  const both = computeSettlement(selfSnapshot({ meters: [...METERS(), ...hkv], readings: [...base.readings.map((r) => selfReading(r.meterId, r.date, r.value)), ...hkvReadings] }))
+  assert.ok(!codes(both).includes('heating.mixed-capture'), codes(both).join(', '))
+  assert.deepEqual(amounts(both), amounts(computeSettlement(base)))
+  // A ohne Wärmezähler, aber mit Heizkostenverteiler: gemischt.
+  const ohneA = selfSnapshot({ meters: [...METERS().filter((m) => m.id !== 'wz-a'), ...hkv], readings: [...base.readings.filter((r) => r.meterId !== 'wz-a').map((r) => selfReading(r.meterId, r.date, r.value)), ...hkvReadings] })
+  const m = computeSettlement(ohneA).notices.find((n) => n.code === 'heating.mixed-capture') ?? assert.fail('nicht gemischt')
+  assert.match(m.text, /Heizkostenverteiler bei A/)
+  assert.doesNotMatch(m.text, /nehmen Sie es .*heraus/)
+  assert.match(m.text, /eigenen Wärmezähler/)
+})
+
+test('Durchsicht #241 I1: Kesseltausch mit Werten des Ablesedienstes; die neue Anlage liest die Werte über die Linie', () => {
+  const svc = { capture: 'serviceValues' as const, selfSpans: [{ from: periodKey('2025-01'), until: null, capture: 'serviceValues' as const }] }
+  const old = selfSnapshot({ plant: svc }).heatingPlants?.[0] ?? assert.fail('keine Anlage')
+  const hp2: HeatingPlant = { ...(old as HeatingPlant), id: 'hp2', name: 'neu', replacesPlantId: 'hp', heatGeneration: 'single', heatPumpMajority: null }
+  const item = (id: string, plant: string, amountCents: number, extra: Partial<CostItem> = {}): CostItem => ({ id, propertyId: 'objekt-1', period: periodKey('2025-01'), category: HEATING_CATEGORY, description: id, amountCents, key: 'heatingSystem', heatingPlantId: plant, heatingPart: 'fuel', heatingTarget: 'both', ...extra })
+  const rows = (plantId: string): HeatingServiceValue[] => [
+    { plantId, period: periodKey('2025-01'), unitId: 'a', from: '2025-01-01', to: '2025-12-31', heatValue: 1000, waterValue: null, heatUnit: 'units' },
+    { plantId, period: periodKey('2025-01'), unitId: 'b', from: '2025-01-01', to: '2025-12-31', heatValue: 3000, waterValue: null, heatUnit: 'units' },
+    { plantId, period: periodKey('2025-01'), unitId: 'c', from: '2025-01-01', to: '2025-09-30', heatValue: 500, waterValue: null, heatUnit: 'units' },
+    { plantId, period: periodKey('2025-01'), unitId: 'c', from: '2025-10-01', to: '2025-12-31', heatValue: 500, waterValue: null, heatUnit: 'units' },
+  ]
+  const run = (serviceValues: HeatingServiceValue[]) => computeSettlement(selfSnapshot({
+    plant: { ...svc, name: 'alt', endsOn: '2025-06-30', heatGeneration: 'single' }, plants: [hp2],
+    rows: [selfRow({}, 2025, 'hp2')],
+    deliveries: [
+      selfDelivery({ id: 'd1', invoiceFrom: '2025-01-01', invoiceTo: '2025-06-30', energyKwh: 30000 }),
+      selfDelivery({ id: 'd2', plantId: 'hp2', invoiceFrom: '2025-07-01', invoiceTo: '2025-12-31', energyKwh: 30000 }),
+    ],
+    costItems: [item('gas1', 'hp', 300000, { fuelDeliveryId: 'd1' }), item('gas2', 'hp2', 300000, { fuelDeliveryId: 'd2' })],
+    serviceValues,
+    readings: [...selfSnapshot().readings.map((r) => selfReading(r.meterId, r.date, r.value)), selfReading('ww', '2025-06-30', 4500)],
+  }))
+  const nurAlt = run(rows('hp'))
+  assert.deepEqual(amounts(nurAlt), amounts(run([...rows('hp'), ...rows('hp2')])))
+  assert.deepEqual(amounts(nurAlt), amounts(run(rows('hp2'))))
+  const neu = nurAlt.heating?.find((h) => h.plantId === 'hp2')?.self ?? assert.fail('kein Ausweis hp2')
+  assert.equal(neu.pots.find((p) => p.pot === 'heating')?.byAreaOnly, false)
+  assert.equal(neu.serviceValues?.length, 4)
+})
+
+test('Durchsicht #241 I2: die Warmwasserbereitung gehört zum Zeitraum; eine spätere Änderung an der Anlage stellt 2025 nicht um', () => {
+  const base = selfSnapshot()
+  const spaeter = selfSnapshot({ plant: { hotWater: 'none', selfSpans: [{ from: periodKey('2025-01'), until: periodKey('2026-01'), capture: 'heatMeter', hotWater: 'combined' }, { from: periodKey('2026-01'), until: null, capture: 'heatMeter', hotWater: 'none' }] } })
+  assert.deepEqual(amounts(computeSettlement(spaeter)), amounts(computeSettlement(base)))
+  assert.equal(selfOf(computeSettlement(spaeter)).hotWater, 'combined')
+})
+
+test('Durchsicht #241 Minor 7: der Hinweis zur Fernablesbarkeit nennt Gerät und Wohnung', () => {
+  const base = asHca(selfSnapshot())
+  const s = computeSettlement({ ...base, meters: base.meters.map((m) => (m.id === 'wz-a' ? { ...m, name: 'Wohnzimmer', remoteReadable: false, installedOn: '2023-03-01' } : m)) })
+  const n = s.notices.find((x) => x.code === 'heating.remote-reading-missing' || x.code === 'heating.remote-reading') ?? assert.fail(codes(s).join(', '))
+  assert.match(n.text, /„Wohnzimmer“ \(A\)/)
+})
+
+test('Durchsicht #241 Recht-I4: Ablesedienst mit Einheiten und kWh gemischt ist § 5 Abs. 7; nur kWh zählt in kWh', () => {
+  const base = selfSnapshot()
+  const rows = serviceRowsOf(base)
+  const gemischt = withCapture(selfSnapshot({ serviceValues: rows.map((r) => (r.unitId === 'a' ? { ...r, heatUnit: 'kWh' as const } : r)), meters: METERS().filter((m) => !HEAT.includes(m.id)) }), 'serviceValues')
+  const m = computeSettlement(gemischt).notices.find((n) => n.code === 'heating.mixed-capture') ?? assert.fail('nicht gemischt')
+  assert.equal(m.level, 'error')
+  assert.match(m.text, /bei A in kWh.*§ 5 Abs\. 7.*eigenen Wärmezähler/s)
+  const kwh = computeSettlement(withCapture(selfSnapshot({ serviceValues: rows.map((r) => ({ ...r, heatUnit: 'kWh' as const })), meters: METERS().filter((m2) => !HEAT.includes(m2.id)) }), 'serviceValues'))
+  assert.equal(selfOf(kwh).pots.find((p) => p.pot === 'heating')?.consumptionUnit, 'kWh')
+  assert.deepEqual(amounts(kwh), amounts(computeSettlement(base)))
 })

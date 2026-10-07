@@ -92,7 +92,7 @@ export default function Heizkosten({ units, tenancies }: { units: Unit[]; tenanc
                   <div className="card"><p className="muted">Für Heizperioden, die vor dem {germanDate(first)} beginnen, sind die CO₂-Kosten nicht aufzuteilen.</p></div>
                 ))}
                 {/* Heizung PR 11: auch bei eigener Abrechnung, wenn die Heizung das Warmwasser bereitet. */}
-                {(plant.method === 'service' || (plant.method === 'self' && plant.hotWater === 'combined')) && (
+                {(plant.method === 'service' || (plant.method === 'self' && (v.selfHotWater ?? plant.hotWater) === 'combined')) && (
                   <HotWaterCard key={`hw:${v.period}:${JSON.stringify(v.hotWater)}:${plant.heatGeneration ?? ''}`} view={v} plant={plant} onSaved={() => void load()} />
                 )}
                 <FuelCard plant={plant} view={v} deliveries={ownedBy(data?.deliveries[plant.id] ?? [], v)} units={units} onSaved={() => void load()} />
@@ -104,7 +104,7 @@ export default function Heizkosten({ units, tenancies }: { units: Unit[]; tenanc
                     key={`svc:${v.period}:${JSON.stringify(v.serviceValues ?? [])}`}
                     plantId={plant.id} period={v.period} from={v.from} to={v.to} closed={v.closed}
                     units={units.filter((u) => servesUnit(plant, u)).map((u) => ({ id: u.id, name: u.name }))}
-                    values={v.serviceValues ?? []} onSaved={() => void load()}
+                    values={v.serviceValues ?? []} remoteUnknown={plant.devicesRemote === 'unknown'} onSaved={() => void load()}
                   />
                 )}
                 {plant.method === 'self' && (

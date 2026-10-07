@@ -7,7 +7,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { openDatabase } from '../src/db/open.ts'
 import { readHeatingPlants, readMeters } from '../src/db/read.ts'
-import { closeSettlement, createEntity, createProperty, crossPropertyViolations, HeatingError, updateEntity } from '../src/db/repository.ts'
+import { closeSettlement, createEntity, createProperty, crossPropertyViolations, HeatingError, removeEntity, updateEntity } from '../src/db/repository.ts'
 import { createHeatingPlant, replaceHeatingPlant, updateHeatingPlant } from '../src/db/heating.ts'
 import { setUpSelf } from '../src/db/heatingSelf.ts'
 import { dropIfEmpty, heatingPeriodViews } from '../src/db/co2.ts'
@@ -96,7 +96,7 @@ test('Einrichtung mit Heizkostenverteilern oder Ablesedienst: keine Wärmezähle
       assert.equal(done.plant.capture, capture)
       assert.deepEqual(done.created.map((m) => m.type).sort(), ['warmwasser', 'warmwasser'])
       // Der Zeitraum der eigenen Abrechnung trägt die Erfassung.
-      assert.deepEqual(done.plant.selfSpans, [{ from: '2025-01', until: null, capture }])
+      assert.deepEqual(done.plant.selfSpans, [{ from: '2025-01', until: null, capture, hotWater: 'combined' }])
     })
   }
 })
@@ -106,12 +106,12 @@ test('Erfassung wechseln: nur mit einem neuen Zeitraum ab einer Heizperiode; fr�
     await haus(opened)
     await opened.write((db) => setUpSelf(db, 'hp', einrichtung('heatMeter'), '2026-02-01', newId))
     // Nebenbei über „Ändern“ geht es nicht.
-    await assert.rejects(opened.write((db) => updateHeatingPlant(db, 'hp', { capture: 'hca' })), heatingError(400, /nur zum Beginn einer Heizperiode/))
+    await assert.rejects(opened.write((db) => updateHeatingPlant(db, 'hp', { capture: 'hca', hotWater: 'combined' })), heatingError(400, /nur zum Beginn einer Heizperiode/))
     // Erneut eingerichtet ab 2026: 2025 bleibt bei Wärmezählern, auch offen.
     await opened.write((db) => setUpSelf(db, 'hp', einrichtung('hca', '2026-01'), '2026-02-01', newId))
     let plant = await plantOf(opened)
     assert.equal(plant.capture, 'hca')
-    assert.deepEqual(plant.selfSpans, [{ from: '2025-01', until: '2026-01', capture: 'heatMeter' }, { from: '2026-01', until: null, capture: 'hca' }])
+    assert.deepEqual(plant.selfSpans, [{ from: '2025-01', until: '2026-01', capture: 'heatMeter', hotWater: 'combined' }, { from: '2026-01', until: null, capture: 'hca', hotWater: 'combined' }])
     const [view2025] = await opened.read((db) => heatingPeriodViews(db, 'hp', '2025')) ?? assert.fail('keine Anlage')
     const [view2026] = await opened.read((db) => heatingPeriodViews(db, 'hp', '2026')) ?? assert.fail('keine Anlage')
     assert.deepEqual([view2025?.capture, view2026?.capture], ['heatMeter', 'hca'])
@@ -127,7 +127,7 @@ test('Erfassung berichtigen: beginnt der Zeitraum mit dieser Heizperiode, bekomm
     await haus(opened)
     await opened.write((db) => setUpSelf(db, 'hp', einrichtung('heatMeter'), '2026-02-01', newId))
     await opened.write((db) => setUpSelf(db, 'hp', einrichtung('hca'), '2026-02-01', newId))
-    assert.deepEqual((await plantOf(opened)).selfSpans, [{ from: '2025-01', until: null, capture: 'hca' }])
+    assert.deepEqual((await plantOf(opened)).selfSpans, [{ from: '2025-01', until: null, capture: 'hca', hotWater: 'combined' }])
   })
 })
 
@@ -137,7 +137,7 @@ test('Ablesedienst: speichern ersetzt alle Zeilen der Heizperiode; die Ansicht z
     const speichern = (values: unknown[]) => opened.write((db) => saveServiceValues(db, 'hp', '2025-01', { values }))
     const a = await speichern([zeile('a', '2025-01-01', '2025-09-30', 340), zeile('a', '2025-10-01', '2025-12-31', 210), zeile('b', '2025-01-01', '2025-12-31', 800)]) ?? assert.fail('keine Anlage')
     assert.equal(a.length, 3)
-    assert.deepEqual(a[0], { plantId: 'hp', period: periodKey('2025-01'), unitId: 'a', from: '2025-01-01', to: '2025-09-30', heatValue: 340, waterValue: null })
+    assert.deepEqual(a[0], { plantId: 'hp', period: periodKey('2025-01'), unitId: 'a', from: '2025-01-01', to: '2025-09-30', heatValue: 340, waterValue: null, heatUnit: 'units' })
     await speichern([zeile('b', '2025-01-01', '2025-12-31', 810.5)])
     const [view] = await opened.read((db) => heatingPeriodViews(db, 'hp', '2025')) ?? assert.fail('keine Anlage')
     assert.deepEqual(view?.serviceValues?.map((v) => [v.unitId, v.heatValue]), [['b', 810.5]])
@@ -223,10 +223,10 @@ test('Zeitraum von vor PR 12 (ohne Erfassung): beim Wechsel bekommt er die bishe
     await haus(opened)
     await opened.write((db) => setUpSelf(db, 'hp', einrichtung('heatMeter'), '2026-02-01', newId))
     // So steht ein Zeitraum in einer Datenbank von vor PR 12: ohne Erfassung.
-    await opened.write((db) => db.update(heatingSelfSpans).set({ capture: null }).where(eq(heatingSelfSpans.plantId, 'hp')))
+    await opened.write((db) => db.update(heatingSelfSpans).set({ capture: null, hotWater: null }).where(eq(heatingSelfSpans.plantId, 'hp')))
     assert.deepEqual((await plantOf(opened)).selfSpans, [{ from: '2025-01', until: null }])
     await opened.write((db) => setUpSelf(db, 'hp', einrichtung('hca', '2026-01'), '2026-02-01', newId))
-    assert.deepEqual((await plantOf(opened)).selfSpans, [{ from: '2025-01', until: '2026-01', capture: 'heatMeter' }, { from: '2026-01', until: null, capture: 'hca' }])
+    assert.deepEqual((await plantOf(opened)).selfSpans, [{ from: '2025-01', until: '2026-01', capture: 'heatMeter', hotWater: 'combined' }, { from: '2026-01', until: null, capture: 'hca', hotWater: 'combined' }])
   })
 })
 
@@ -248,6 +248,71 @@ test('Kesseltausch: die neue Anlage übernimmt die Erfassung mit Heizkostenverte
     await opened.write((db) => setUpSelf(db, 'hp', einrichtung('hca'), '2026-02-01', newId))
     await opened.write((db) => replaceHeatingPlant(db, 'hp', 'hp2', { date: '2025-07-01', energy: 'districtHeating', name: 'Fernwärme', previousName: 'Gas' }))
     const neu = (await opened.read(readHeatingPlants)).find((p) => p.id === 'hp2') ?? assert.fail('keine neue Anlage')
-    assert.deepEqual([neu.method, neu.capture, neu.selfSpans], ['self', 'hca', [{ from: '2025-01', until: null, capture: 'hca' }]])
+    assert.deepEqual([neu.method, neu.capture, neu.selfSpans], ['self', 'hca', [{ from: '2025-01', until: null, capture: 'hca', hotWater: 'combined' }]])
+  })
+})
+
+test('Durchsicht #241 M1: gesperrt nach Überdeckung, auch wenn kein Ablesedatum in der abgeschlossenen Heizperiode liegt; Löschen ebenso', async () => {
+  await withDatabase(async (opened) => {
+    await haus(opened)
+    await opened.write((db) => setUpSelf(db, 'hp', einrichtung('hca'), '2026-02-01', newId))
+    await opened.write(async (db) => {
+      await createEntity(db, 'meters', 'h1', { propertyId: 'objekt-1', unitId: 'a', name: 'Wohnzimmer', type: 'hkv', unit: 'Einheiten', hcaScale: 'unit', ratingFactor: 1.25 })
+      await createEntity(db, 'readings', 'r1', { meterId: 'h1', date: '2024-12-31', value: 0 })
+      await createEntity(db, 'readings', 'r2', { meterId: 'h1', date: '2026-01-04', value: 500 })
+      await createEntity(db, 'meters', 'h2', { propertyId: 'objekt-1', unitId: 'a', name: 'Bad', type: 'hkv', unit: 'Einheiten', hcaScale: 'product' })
+    })
+    await opened.write((db) => closeSettlement(db, { id: 'abschluss', propertyId: 'objekt-1', period: periodKey('2025-01'), closedAt: '2026-03-01T10:00:00.000Z', sentAt: null, settlement: {} }))
+    await assert.rejects(opened.write((db) => updateEntity(db, 'meters', 'h1', { ratingFactor: 0.8 })), heatingError(409, /abgeschlossenen Heizperiode 2025/))
+    await assert.rejects(opened.write((db) => removeEntity(db, 'meters', 'h1')), heatingError(409, /abgeschlossenen Heizperiode 2025.*lassen Sie stehen/s))
+    // Ein Gerät ohne Ablesungen lässt sich löschen.
+    assert.equal(await opened.write((db) => removeEntity(db, 'meters', 'h2')), true)
+  })
+})
+
+test('Durchsicht #241 I2: Warmwasserbereitung nur mit neuem Zeitraum; PUT bei eigener Abrechnung abgelehnt, 2025 behält ihren Wert', async () => {
+  await withDatabase(async (opened) => {
+    await haus(opened)
+    await opened.write((db) => setUpSelf(db, 'hp', einrichtung('heatMeter'), '2026-02-01', newId))
+    await assert.rejects(opened.write((db) => updateHeatingPlant(db, 'hp', { hotWater: 'none' })), heatingError(400, /Warmwasser.*nur zum Beginn einer Heizperiode/))
+    await opened.write((db) => setUpSelf(db, 'hp', { ...einrichtung('hca', '2026-01'), hotWater: 'none' }, '2025-11-01', newId))
+    const plant = await plantOf(opened)
+    assert.equal(plant.hotWater, 'none')
+    assert.deepEqual(plant.selfSpans, [
+      { from: '2025-01', until: '2026-01', capture: 'heatMeter', hotWater: 'combined' },
+      { from: '2026-01', until: null, capture: 'hca', hotWater: 'none' },
+    ])
+  })
+})
+
+test('Durchsicht #241 Recht-I4: der Ablesedienst nennt die Heizung in Einheiten oder kWh; Unbekanntes ist 400', async () => {
+  await withDatabase(async (opened) => {
+    await ablesedienst(opened)
+    const saved = await opened.write((db) => saveServiceValues(db, 'hp', '2025-01', { values: [{ ...zeile('a', '2025-01-01', '2025-12-31', 5), heatUnit: 'kWh' }, zeile('b', '2025-01-01', '2025-12-31', 6)] }))
+    assert.deepEqual(saved?.map((v) => v.heatUnit), ['kWh', 'units'])
+    await assert.rejects(opened.write((db) => saveServiceValues(db, 'hp', '2025-01', { values: [{ ...zeile('a', '2025-01-01', '2025-12-31', 5), heatUnit: 'MWh' }] })), heatingError(400, /weder „Einheiten“ noch „kWh“/))
+  })
+})
+
+test('Durchsicht #241 I1: Werte des Ablesedienstes späterer Heizperioden sperren den Kesseltausch nicht; die neue Anlage zeigt sie', async () => {
+  await withDatabase(async (opened) => {
+    await ablesedienst(opened)
+    await opened.write((db) => saveServiceValues(db, 'hp', '2026-01', { values: [zeile('a', '2026-01-01', '2026-12-31', 7)] }))
+    await opened.write((db) => replaceHeatingPlant(db, 'hp', 'hp2', { date: '2025-07-01', energy: 'districtHeating', name: 'Fernwärme', previousName: 'Gas' }))
+    const [view] = await opened.read((db) => heatingPeriodViews(db, 'hp2', '2026')) ?? assert.fail('keine Anlage')
+    assert.deepEqual(view?.serviceValues?.map((v) => [v.plantId, v.heatValue]), [['hp', 7]])
+    assert.equal(view?.capture, 'serviceValues')
+  })
+})
+
+test('Durchsicht #241 I2: nur die Warmwasserbereitung ändert sich ab 2026; auch das beginnt einen neuen Zeitraum', async () => {
+  await withDatabase(async (opened) => {
+    await haus(opened)
+    await opened.write((db) => setUpSelf(db, 'hp', einrichtung('heatMeter'), '2026-02-01', newId))
+    await opened.write((db) => setUpSelf(db, 'hp', { ...einrichtung('heatMeter', '2026-01'), hotWater: 'none' }, '2025-11-01', newId))
+    assert.deepEqual((await plantOf(opened)).selfSpans, [
+      { from: '2025-01', until: '2026-01', capture: 'heatMeter', hotWater: 'combined' },
+      { from: '2026-01', until: null, capture: 'heatMeter', hotWater: 'none' },
+    ])
   })
 })

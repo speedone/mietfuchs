@@ -74,7 +74,7 @@ export const practiceEvaporatorWindow: LawParam<{ readonly min: number; readonly
     value: { min: 400, max: 800 },
     source: {
       rank: 'practice',
-      cite: 'Berliner Mieterverein, Info 73 (Wiedergabe der Empfehlung der ARGE); ista, Fachwissen Zwischenablesung',
+      cite: 'Berliner Mieterverein, Info 73: Empfehlung der Arbeitsgemeinschaft Wärmemessdienste, eine Zwischenablesung bei Verdunstern sei sinnvoll zwischen 400 und 800 ‰ der Gradtagszahlen',
       url: 'https://www.berliner-mieterverein.de/recht/infoblaetter/info-73-heizkostenabrechnung-worauf-achten-beim-mieterwechsel-zwischenablesung-und-gradtagszahlentabelle.htm',
       retrieved: '2026-10-05',
       checked: 'checked',

@@ -4,7 +4,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  captureOf, deviceCutoffs, deviceCutoffText, deviceLines, meterFactor, missingRatings, missingRatingsText, mixedCapture, mixedCaptureText,
+  captureOf, coversPeriod, deviceCutoffs, deviceCutoffText, deviceLines, meterFactor, missingRatings, missingRatingsText, mixedCapture, mixedCaptureText,
   ratingOf, serviceMeters, type HcaMeter,
 } from '../src/hca.ts'
 import { planSelf, type SelfInput, type SelfReading, type SelfUnit } from '../src/heating.ts'
@@ -110,41 +110,56 @@ test('Stichtagswert (Entwurf 8.1): Rücksetzen wie ein Zählerwechsel; mitten in
   assert.equal(rated(deviceLines('hca', planOf(meters, amRand, ['c']), meters), 'c'), 650)
 })
 
-test('Gemischte Geräte (§ 5 Abs. 7, Review Focus 4): Wärmezähler neben Heizkostenverteilern; Warmwasserzähler und Zähler der Anlage zählen nicht', () => {
+// Ablesungen, die die Heizperiode 2025 überdecken (Durchsicht von #241, C1).
+const cover = (...ids: string[]) => ids.flatMap((id) => [read(id, '2024-12-31', 0), read(id, '2025-12-31', 100)])
+
+test('Gemischte Geräte (§ 5 Abs. 7, Review Focus 4): eine Wohnung nur mit Geräten der anderen Art; Warmwasserzähler und Zähler der Anlage zählen nicht', () => {
   const wz = (id: string, unitId: string): HcaMeter => ({ id, unitId, type: 'waerme', name: id, heatingPlantId: null })
   const ww: HcaMeter = { id: 'ww-a', unitId: 'a', type: 'warmwasser', name: 'ww-a', heatingPlantId: null }
   const anlage: HcaMeter = { id: 'speicher', unitId: null, type: 'waerme', name: 'Speicher', heatingPlantId: 'hp' }
-  assert.equal(mixedCapture('hca', ['a', 'b'], [hkv('a1', 'a'), hkv('b1', 'b'), ww, anlage]), null)
-  assert.equal(mixedCapture('heatMeter', ['a', 'b'], [wz('wa', 'a'), wz('wb', 'b'), ww, anlage]), null)
-  const m = mixedCapture('hca', ['a', 'b'], [wz('wa', 'a'), hkv('b1', 'b')])
+  const all = cover('a1', 'b1', 'wa', 'wb', 'ww-a', 'speicher')
+  assert.equal(mixedCapture('hca', ['a', 'b'], [hkv('a1', 'a'), hkv('b1', 'b'), ww, anlage], all, H), null)
+  assert.equal(mixedCapture('heatMeter', ['a', 'b'], [wz('wa', 'a'), wz('wb', 'b'), ww, anlage], all, H), null)
+  const m = mixedCapture('hca', ['a', 'b'], [wz('wa', 'a'), hkv('b1', 'b')], all, H)
   assert.deepEqual(m, { heatMeterUnits: ['a'], hcaUnits: ['b'] })
-  assert.deepEqual(mixedCapture('heatMeter', ['a', 'b'], [wz('wa', 'a'), hkv('b1', 'b')]), { heatMeterUnits: ['a'], hcaUnits: ['b'] })
+  assert.deepEqual(mixedCapture('heatMeter', ['a', 'b'], [wz('wa', 'a'), hkv('b1', 'b')], all, H), { heatMeterUnits: ['a'], hcaUnits: ['b'] })
+  // Beide Arten an derselben Wohnung: erfasst wird mit der eingestellten, nichts ist gemischt.
+  assert.equal(mixedCapture('heatMeter', ['a', 'b'], [wz('wa', 'a'), hkv('a1', 'a'), wz('wb', 'b')], all, H), null)
   // Ein Gerät an einer Wohnung, die nicht an der Anlage hängt, zählt nicht.
-  assert.equal(mixedCapture('hca', ['b'], [wz('wa', 'a'), hkv('b1', 'b')]), null)
-  assert.equal(mixedCapture('serviceValues', ['a', 'b'], [wz('wa', 'a'), hkv('b1', 'b')]), null)
+  assert.equal(mixedCapture('hca', ['b'], [wz('wa', 'a'), hkv('b1', 'b')], all, H), null)
+  assert.equal(mixedCapture('serviceValues', ['a', 'b'], [wz('wa', 'a'), hkv('b1', 'b')], all, H), null)
+  // Ein Gerät, dessen Ablesungen die Heizperiode nicht überdecken (ausgebaut am 31.12.2024 oder ab dem
+  // 31.12.2025 neu), zählt nicht.
+  const alt = [read('wa', '2023-12-31', 0), read('wa', '2024-12-31', 900), ...cover('b1')]
+  assert.equal(mixedCapture('hca', ['a', 'b'], [wz('wa', 'a'), hkv('a1', 'a'), hkv('b1', 'b')], [...alt, ...cover('a1')], H), null)
+  assert.equal(coversPeriod('wa', alt, H), false)
+  assert.equal(coversPeriod('n', [read('n', '2025-12-31', 0)], H), false)
+  assert.equal(coversPeriod('n', [read('n', '2025-12-30', 0), read('n', '2026-02-01', 5)], H), true)
   const t = mixedCaptureText('hca', m ?? assert.fail('nicht gemischt'), nameOf)
   assert.match(t, /^Eingestellt ist die Erfassung mit Heizkostenverteilern, an den Wohnungen hängen aber Wärmezähler bei Wohnung A und Heizkostenverteiler bei Wohnung B/)
-  assert.match(t, /§ 5 Abs\. 7 HeizkostenV.*Vorerfassung.*Messdienst/s)
+  assert.match(t, /§ 5 Abs\. 7 HeizkostenV.*Vorerfassung.*eigenen Wärmezähler.*Messdienst/s)
+  assert.match(t, /löschen Sie es nicht/)
   assert.doesNotMatch(t, /Bis dahin/)
 })
 
-test('Fehlende Skala oder fehlender Faktor (hca-factor-missing): je Gerät benannt, nur bei Erfassung mit Heizkostenverteilern', () => {
-  const meters = [hkv('a1', 'a', { name: 'Wohnzimmer', ratingFactor: null }), hkv('b1', 'b', { name: 'Bad', hcaScale: null }), hkv('b2', 'b', { ratingFactor: 0.9 })]
-  const list = missingRatings('hca', ['a', 'b'], meters)
+test('Fehlende Skala oder fehlender Faktor (hca-factor-missing): je Gerät benannt, nur bei Erfassung mit Heizkostenverteilern und nur für Geräte der Heizperiode', () => {
+  const meters = [hkv('a1', 'a', { name: 'Wohnzimmer', ratingFactor: null }), hkv('b1', 'b', { name: 'Bad', hcaScale: null }), hkv('b2', 'b', { ratingFactor: 0.9 }), hkv('b3', 'b', { name: 'alt', hcaScale: null })]
+  const readings = [...cover('a1', 'b1', 'b2'), read('b3', '2023-12-31', 0), read('b3', '2024-12-31', 10)]
+  const list = missingRatings('hca', ['a', 'b'], meters, readings, H)
   assert.deepEqual(list, [
     { meterId: 'a1', name: 'Wohnzimmer', unitId: 'a', missing: 'factor' },
     { meterId: 'b1', name: 'Bad', unitId: 'b', missing: 'scale' },
   ])
-  assert.deepEqual(missingRatings('heatMeter', ['a', 'b'], meters), [])
+  assert.deepEqual(missingRatings('heatMeter', ['a', 'b'], meters, readings, H), [])
   assert.match(missingRatingsText(list, nameOf), /^Bei diesen Heizkostenverteilern fehlt „Wohnzimmer“ \(Wohnung A\): der Bewertungsfaktor und „Bad“ \(Wohnung B\): die Skala.*als neuen Zähler an/s)
 })
 
 test('Werte des Ablesedienstes als gedachter Zähler je Wohnung: kumulierte Stände, Lücken bleiben Lücken (Review Focus 2)', () => {
   const p = periodKey('2025-01')
   const rows: HeatingServiceValue[] = [
-    { plantId: 'hp', period: p, unitId: 'a', from: '2025-10-15', to: '2025-12-31', heatValue: 100, waterValue: 3 },
-    { plantId: 'hp', period: p, unitId: 'a', from: '2025-01-01', to: '2025-09-30', heatValue: 340, waterValue: 12 },
-    { plantId: 'hp', period: p, unitId: 'b', from: '2025-01-01', to: '2025-12-31', heatValue: 800, waterValue: 20 },
+    { plantId: 'hp', period: p, unitId: 'a', from: '2025-10-15', to: '2025-12-31', heatValue: 100, waterValue: 3, heatUnit: 'units' },
+    { plantId: 'hp', period: p, unitId: 'a', from: '2025-01-01', to: '2025-09-30', heatValue: 340, waterValue: 12, heatUnit: 'units' },
+    { plantId: 'hp', period: p, unitId: 'b', from: '2025-01-01', to: '2025-12-31', heatValue: 800, waterValue: 20, heatUnit: 'units' },
   ]
   const units = [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }, { id: 'c', name: 'C' }]
   const heat = serviceMeters(rows, units, 'heat') ?? assert.fail('keine Werte')
@@ -158,5 +173,19 @@ test('Werte des Ablesedienstes als gedachter Zähler je Wohnung: kumulierte Stä
   ])
   const water = serviceMeters(rows, units, 'water') ?? assert.fail('kein Warmwasser')
   assert.deepEqual(water.readings.filter((r) => r.meterId === 'ablesedienst-warmwasser:b').map((r) => [r.date, r.value]), [['2024-12-31', 0], ['2025-12-31', 20]])
-  assert.equal(serviceMeters(rows.map((r) => ({ ...r, waterValue: null })), units, 'water'), null)
+  assert.equal(serviceMeters(rows.map((r) => ({ ...r, waterValue: null, heatUnit: 'units' })), units, 'water'), null)
+})
+
+test('Durchsicht #241 M2: eine Rücksetzung am ersten Tag der Heizperiode ist ein Stichtag daneben; am Tag davor nicht', () => {
+  const meters = [hkv('c1', 'c', { hcaScale: 'product', ratingFactor: null })]
+  const ersterTag = [read('c1', '2024-12-31', 0), read('c1', '2025-01-01', 0, { replacement: true, oldEndValue: 5 }), read('c1', '2025-12-31', 100)]
+  assert.deepEqual(deviceCutoffs('hca', meters, ersterTag, ['c'], H).map((c) => c.date), ['2025-01-01'])
+  assert.match(deviceCutoffText('Heizung', { meterId: 'c1', name: 'c1', unitId: 'c', date: '2025-01-01' }, H, nameOf), /am Tag vor dem Beginn der Heizperiode.*31\.12\./)
+})
+
+test('Durchsicht #241 Recht-I2: Die Ablesung am Stichtag trägt im Ausweis den Stichtagswert', () => {
+  const meters = [hkv('c1', 'c', { hcaScale: 'product', ratingFactor: null })]
+  const plan = planOf(meters, [read('c1', '2024-12-31', 0, { replacement: true, oldEndValue: 900 }), read('c1', '2025-12-31', 0, { replacement: true, oldEndValue: 650 })], ['c'])
+  const end = plan.units[0]?.readings.find((r) => r.boundary === '2025-12-31')
+  assert.deepEqual([end?.value, end?.oldEndValue], [0, 650])
 })

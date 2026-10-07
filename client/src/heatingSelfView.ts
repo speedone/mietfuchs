@@ -90,7 +90,8 @@ export function potLines(p: SelfPotView): string[] {
   lines.push(`Grundkosten ${num(100 - p.consumptionPct)} %: ${fmtEuro(Math.round(base))} für ${num(p.areaM2)} m², ${perUnit(p.baseCentsPerM2, 4)} je m²`)
   if (p.byAreaOnly) lines.push('Kein Verbrauch erfasst: nur nach Fläche verteilt.')
   else if (p.consumptionCentsPerUnit !== null) {
-    lines.push(`Verbrauchskosten ${num(p.consumptionPct)} %: ${fmtEuro(Math.round(p.costCents - base))} für ${num(p.consumption)} ${p.consumptionUnit}, ${perUnit(p.consumptionCentsPerUnit, 6)} je ${p.consumptionUnit}`)
+    // „je Einheit“, nicht „je Einheiten“ (Durchsicht von #241, Minor 2).
+    lines.push(`Verbrauchskosten ${num(p.consumptionPct)} %: ${fmtEuro(Math.round(p.costCents - base))} für ${num(p.consumption)} ${p.consumptionUnit}, ${perUnit(p.consumptionCentsPerUnit, 6)} je ${p.consumptionUnit === 'Einheiten' ? 'Einheit' : p.consumptionUnit}`)
   }
   return lines
 }
@@ -114,11 +115,16 @@ export function userLine(u: SelfUserView, self: Pick<SelfHeatingStatement, 'pots
 // Das Ableseergebnis geht an jeden Mieter für seine Wohnung (Durchsicht von #239, I2); gedruckt wird eine
 // Wohnung. Einer gesonderten Mitteilung des Warmwasserverbrauchs bedarf es nicht, wenn in der Wohnung ein
 // Warmwasserzähler eingebaut ist (§ 6 Abs. 1 Satz 4 HeizkostenV).
-export const READING_RESULT_HINT = 'Bei Zählern, die nicht aus der Ferne ablesbar sind, teilen Sie jedem Mieter das Ergebnis der Ablesung seiner Wohnung in der Regel innerhalb eines Monats mit (§ 6 Abs. 1 Satz 2 HeizkostenV). Wählen Sie die Wohnung und drucken Sie ihr Ergebnis. Den Warmwasserverbrauch müssen Sie nicht gesondert mitteilen, wenn in der Wohnung ein Warmwasserzähler eingebaut ist (§ 6 Abs. 1 Satz 4).'
+export const READING_RESULT_HINT = 'Bei Zählern, die nicht aus der Ferne ablesbar sind, teilen Sie jedem Mieter das Ergebnis der Ablesung seiner Wohnung in der Regel innerhalb eines Monats mit (§ 6 Abs. 1 Satz 2 HeizkostenV). Wählen Sie die Wohnung und drucken Sie ihr Ergebnis. Nicht nötig ist das, wenn das Ergebnis über einen längeren Zeitraum im Gerät in der Wohnung gespeichert ist und der Mieter es selbst abrufen kann, etwa am Stichtagsspeicher eines elektronischen Heizkostenverteilers (§ 6 Abs. 1 Satz 3). Den Warmwasserverbrauch müssen Sie nicht gesondert mitteilen, wenn in der Wohnung ein Warmwasserzähler eingebaut ist (§ 6 Abs. 1 Satz 4).'
 
 // Das Ableseergebnis einer Wohnung zu einer Grenze (§ 6 Abs. 1 Satz 2 HeizkostenV).
 export function readingResult(unit: SelfUnitView, boundary: string, heatUnit: 'kWh' | 'Einheiten' = 'kWh'): string[] {
   return unit.readings.filter((r) => r.boundary === boundary).map((r) => (r.date === null || r.value === null
     ? `${r.meterName}: nicht abgelesen`
-    : `${r.meterName}: ${num(r.value)} ${r.pot === 'heating' ? heatUnit : 'm³'} am ${fmtDate(r.date)}`))
+    : r.oldEndValue !== undefined
+      // Durchsicht von #241, Recht-I2: Am Stichtag zeigt das Gerät danach 0; mitgeteilt wird der Stichtagswert.
+      ? (r.pot === 'heating' && heatUnit === 'Einheiten' && r.value === 0
+        ? `${r.meterName}: Stichtagswert ${num(r.oldEndValue)} Einheiten am ${fmtDate(r.date)} (Gerät danach auf 0)`
+        : `${r.meterName}: ${num(r.oldEndValue)} ${r.pot === 'heating' ? heatUnit : 'm³'} am ${fmtDate(r.date)} (Endstand des alten Zählers; der neue beginnt mit ${num(r.value)})`)
+      : `${r.meterName}: ${num(r.value)} ${r.pot === 'heating' ? heatUnit : 'm³'} am ${fmtDate(r.date)}`))
 }

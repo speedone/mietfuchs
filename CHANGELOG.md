@@ -227,7 +227,16 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Geräte zum Beginn einer Heizperiode wechselt und die Einrichtung ab dieser Heizperiode neu durchläuft,
   rechnet frühere Heizperioden weiter mit den früheren Geräten. Skala und Faktor eines Geräts, dessen
   Ablesungen in einer abgeschlossenen Heizperiode zählen, sind gesperrt; ein Gerät mit anderem Faktor ist
-  ein neuer Zähler.
+  ein neuer Zähler. Ebenso gehört die Warmwasserbereitung zum Zeitraum; eine Änderung gilt ab der Heizperiode,
+  ab der Sie die Einrichtung neu durchlaufen.
+- Gezählt wird ein Gerät nur in den Heizperioden, die seine Ablesungen überdecken: Ein ausgebauter
+  Wärmezähler und ein neuer Heizkostenverteiler mit dem Wechsel am 31.12. sperren keine der beiden
+  Heizperioden, und ein Heizkostenverteiler neben dem Wärmezähler derselben Wohnung stört nicht.
+- Beim Mieterwechsel nennt die Abrechnung jedem Mieter nur seine Geräte und Werte in seinem Zeitraum; das
+  Ableseergebnis nennt am Stichtag den Stichtagswert. Der Ablesedienst kann die Heizung in Einheiten oder kWh
+  nennen, das Warmwasser in m³. Nach einem Kesseltausch rechnet die neue Anlage mit denselben Werten des
+  Ablesedienstes. Verdunster lassen sich nicht aus der Ferne ablesen; Lexikon und Karte nennen die Frist bis
+  zum 31.12.2026 (§ 5 Abs. 3 HeizkostenV) und die Kürzung um 3 % danach.
 
 ### Geändert
 

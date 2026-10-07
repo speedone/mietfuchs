@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "7bfd51fc-1583-41a6-a466-8e42da3015ca",
+  "id": "a94f7a00-ecc7-47e3-82d3-b2f694dcd9ad",
   "prevId": "eb1e2048-1c91-4fec-bbe3-411bb649d2a2",
   "tables": {
     "ai_slots": {
@@ -3223,6 +3223,13 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
+        },
+        "hot_water": {
+          "name": "hot_water",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         }
       },
       "indexes": {},
@@ -3376,6 +3383,14 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
+        },
+        "heat_unit": {
+          "name": "heat_unit",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'units'"
         }
       },
       "indexes": {},
@@ -3430,6 +3445,10 @@
         "heating_service_values_water_not_negative": {
           "name": "heating_service_values_water_not_negative",
           "value": "\"water_value\" >= 0"
+        },
+        "heating_service_values_heat_unit_known": {
+          "name": "heating_service_values_heat_unit_known",
+          "value": "\"heat_unit\" IN ('units', 'kWh')"
         }
       }
     },

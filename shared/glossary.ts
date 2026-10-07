@@ -14,7 +14,7 @@
 // von `LAW_AS_OF`: Das Lexikon erklärt das geltende Recht. Die Zahlen einer Beispielrechnung („70 %
 // nach Verbrauch“) sind gewählt und bleiben stehen.
 import { hkvConsumptionShare, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit } from './law/heizkostenv.ts'
-import { germanDate, LAW_AS_OF, onlyVersion, valueAt } from './law/register.ts'
+import { dayBefore as dayBeforeIso, germanDate, LAW_AS_OF, onlyVersion, valueAt } from './law/register.ts'
 import { practiceEvaporatorWindow } from './law/practice.ts'
 import { co2CutMissing, co2DistrictEtsNew, co2FirstPeriodStart, co2NonResidential, co2Restriction, co2RoundingDecimals, co2StageTable } from './law/co2kostaufg.ts'
 
@@ -213,7 +213,7 @@ export const GLOSSARY = {
     title: 'Heizkostenverteiler',
     short:
       'Ein kleines Gerät am Heizkörper, das anzeigt, wie viel dieser Heizkörper im Verhältnis zu den übrigen geheizt hat. Seine Werte sind keine Kilowattstunden, sondern Einheiten, die erst mit den Werten aller Geräte des Hauses etwas bedeuten. ' +
-      'Bei der Einheitsskala zählt der Ablesewert erst mal dem Bewertungsfaktor des Heizkörpers, und dieser Faktor muss in der Abrechnung stehen; bei der Produktskala ist er schon eingerechnet. ' +
+      'Bei der Einheitsskala wird der Ablesewert mit dem Bewertungsfaktor des Heizkörpers malgenommen; die Abrechnung nennt den Faktor, damit der Mieter sie nachprüfen kann, so machen es die Messdienste. Bei der Produktskala ist er schon eingerechnet. ' +
       'Elektronische Geräte setzen am Stichtag auf null und speichern den Wert des Stichtags. ' +
       `Geräte, die nach dem ${NEW_DEVICES_AFTER} eingebaut wurden, müssen aus der Ferne ablesbar sein, alle übrigen ab dem ${RETROFIT_FROM}.`,
     example:
@@ -224,10 +224,25 @@ export const GLOSSARY = {
     norm: '§§ 5, 12 HeizkostenV',
     needed:
       'Wenn Ihr Haus Heizkostenverteiler hat. Rechnet ein Messdienst ab, übernehmen Sie seine Beträge als Einzelbeträge. ' +
-      'Rechnen Sie selbst ab und lesen elektronische Geräte selbst ab, tragen Sie an jedem Gerät Skala und Bewertungsfaktor ein, und zum Stichtag den Stichtagswert laut Anzeige. Ein Gerät mit anderem Faktor ist ein neues Gerät. ' +
+      'Rechnen Sie selbst ab und lesen elektronische Geräte selbst ab, tragen Sie an jedem Gerät Skala und Bewertungsfaktor ein, und zum Stichtag den Stichtagswert laut Anzeige. Skala und Faktor finden Sie in der Geräteliste des Messdienstes oder in den Unterlagen des Herstellers. Ein Gerät mit anderem Faktor ist ein neues Gerät. ' +
+      'Verwenden dürfen Sie nur Geräte, deren Eignung eine sachverständige Stelle bestätigt hat (§ 5 Abs. 1 Satz 2 HeizkostenV); der Faktor hängt am Heizkörper und ist fachgerecht zu ermitteln, etwa vom Messdienst. ' +
       'Verdunster wertet Mietfuchs nicht selbst aus; übernehmen Sie dafür die Werte des Ablesedienstes je Wohnung und Nutzungszeitraum. ' +
-      `Eine Zwischenablesung bei Verdunstern empfiehlt die Arbeitsgemeinschaft Heiz- und Wasserkostenverteilung nur, wenn seit der Hauptablesung ${EVAPORATOR.min} bis ${EVAPORATOR.max} ‰ der Gradtagszahlen vergangen sind; das wendet der Ablesedienst an. ` +
+      `Eine Zwischenablesung bei Verdunstern empfiehlt die Arbeitsgemeinschaft Heiz- und Wasserkostenverteilung in der Regel nur, wenn seit der Hauptablesung ${EVAPORATOR.min} bis ${EVAPORATOR.max} ‰ der Gradtagszahlen vergangen sind. Verdunster lassen sich nicht aus der Ferne ablesen; nicht fernablesbare Geräte müssen bis zum ${germanDate(dayBeforeIso(onlyVersion(hkvRemoteReadingRetrofit).validFrom ?? ''))} ersetzt oder nachgerüstet sein. ` +
       'Tragen Sie am Zähler ein, ob das Gerät fernablesbar ist und wann es eingebaut wurde; dann sagt die Abrechnung, ob Mieter kürzen dürfen.',
+  },
+  serviceReading: {
+    title: 'Ablesedienst',
+    short: 'Ein Unternehmen, das die Geräte in den Wohnungen abliest und Ihnen die Werte je Wohnung und Nutzungszeitraum nennt, ohne selbst die Heizkosten abzurechnen. Bei Heizkostenverteilern nennt es bewertete Einheiten, also die Summe nach den Bewertungsfaktoren der Heizkörper.',
+    example: 'Der Dienst meldet für Wohnung A vom 01.01. bis 30.09. 340 Einheiten und für den Nachmieter vom 01.10. bis 31.12. 100 Einheiten. Sie tragen beide Zeilen ein; Mietfuchs verteilt die Kosten nach Verbrauch nach diesen Einheiten.',
+    norm: '§§ 5, 6 HeizkostenV',
+    needed: 'Wenn ein Dienst Ihre Geräte abliest, Sie die Heizkosten aber selbst abrechnen. Rechnet der Dienst auch ab, übernehmen Sie seine Beträge als Einzelbeträge.',
+  },
+  evaporator: {
+    title: 'Verdunster',
+    short: 'Ein älterer Heizkostenverteiler mit einer Flüssigkeit in einem Glasröhrchen, die je nach Wärme des Heizkörpers verdunstet. Der Ablesedienst tauscht das Röhrchen jährlich und wertet es aus; Mietfuchs übernimmt seine Werte. Verdunster lassen sich nicht aus der Ferne ablesen.',
+    example: `Ein Verdunster zeigt am Stichtag 12 Striche; der Ablesedienst rechnet sie mit dem Bewertungsfaktor des Heizkörpers in Einheiten um und nennt Ihnen die Summe je Wohnung. Ist er nicht bis zum ${germanDate(dayBeforeIso(onlyVersion(hkvRemoteReadingRetrofit).validFrom ?? ''))} durch ein fernablesbares Gerät ersetzt, darf der Mieter um ${REMOTE_CUT} % kürzen.`,
+    norm: '§ 5 Abs. 3, § 12 Abs. 1 Satz 2 HeizkostenV',
+    needed: `Wenn Ihr Haus noch Verdunster hat. Eine Zwischenablesung empfiehlt die Arbeitsgemeinschaft Heiz- und Wasserkostenverteilung in der Regel nur, wenn seit der Hauptablesung ${EVAPORATOR.min} bis ${EVAPORATOR.max} ‰ der Gradtagszahlen vergangen sind; sonst wird nach Gradtagen geteilt.`,
   },
   co2Split: {
     title: 'CO₂-Kostenaufteilung',

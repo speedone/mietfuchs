@@ -94,9 +94,10 @@ export type SelfUnitPlan = {
   boundaries: SelfBoundary[]
   readings: SelfReadingView[]
   consumption: Record<SelfPot, number>
-  // Je Zähler die abgelesene Menge vor dem Faktor (Heizung PR 12), aus denselben Differenzen, mit denen
-  // verteilt wird; für den Ausweis je Heizkostenverteiler.
-  measured: { meterId: string; pot: SelfPot; raw: number }[]
+  // Je Zähler und Nutzer (bei einer Gruppe nach § 9b Abs. 3 je Gruppe) die abgelesene Menge vor dem Faktor
+  // (Heizung PR 12, Durchsicht von #241, Recht-I1), aus denselben Differenzen, mit denen verteilt wird; für
+  // den Ausweis je Heizkostenverteiler und Nutzungszeitraum.
+  measured: { meterId: string; pot: SelfPot; raw: number; userKeys: string[]; from: string; to: string }[]
 }
 export type SelfProblem =
   | { kind: 'noArea'; pot: SelfPot }
@@ -335,7 +336,7 @@ export function planSelf(input: SelfInput): SelfPlan {
       }
     }
     const consumption: Record<SelfPot, number> = { heating: 0, water: 0 }
-    const measuredRaw = new Map<string, { pot: SelfPot; raw: number }>()
+    const measured: SelfUnitPlan['measured'] = []
     const answerAt = (b: string): InterimGapStatus | null => input.gaps.find((x) => x.unitId === unit.id && x.date === b)?.status ?? null
     const isChange = (b: string): boolean => users.some((u, i) => i < users.length - 1 && u.to === b && users[i + 1]?.from === dayAfter(b))
     // Wie weit die Ablesungen einer Grenze daneben liegen (die fernste über alle Zähler).
@@ -411,7 +412,7 @@ export function planSelf(input: SelfInput): SelfPlan {
           raws.push([m.id, result.value])
         }
         if (!ok) continue
-        for (const [id, raw] of raws) measuredRaw.set(id, { pot: p, raw: (measuredRaw.get(id)?.raw ?? 0) + raw })
+        for (const [id, raw] of raws) measured.push({ meterId: id, pot: p, raw, userKeys: g.map((u) => u.key), from: first.from, to: lastUser.to })
         consumption[p] += v
         const splitSum = g.reduce((a, u) => a + splitOf(p, u), 0)
         for (const u of g) {
@@ -453,9 +454,9 @@ export function planSelf(input: SelfInput): SelfPlan {
 
     const readings: SelfReadingView[] = pots.flatMap((p) => metersOf(unit.id, p).flatMap((m) => bounds.map((bd) => {
       const r = readingAt.get(m.id)?.get(bd.date) ?? null
-      return { meterId: m.id, meterName: m.name, pot: p, boundary: bd.date, date: r?.date ?? null, value: r?.value ?? null }
+      const oldEnd = r?.replacement && r.oldEndValue !== null && r.oldEndValue !== undefined ? { oldEndValue: r.oldEndValue } : {}
+      return { meterId: m.id, meterName: m.name, pot: p, boundary: bd.date, date: r?.date ?? null, value: r?.value ?? null, ...oldEnd }
     })))
-    const measured = [...measuredRaw].map(([meterId, x]) => ({ meterId, pot: x.pot, raw: x.raw }))
     return { unit, heatArea: heatAreaOf(unit), users, boundaries: bounds, readings, consumption, measured }
   })
 

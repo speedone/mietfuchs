@@ -219,14 +219,20 @@ test('Durchsicht #240, Recht-I3: Brennwert und Heizwert mit Faktor aus dem Regis
 
 test('Heizkostenverteiler (Heizung PR 12): Skalen, Faktoren 1,25 und 0,8 nachgerechnet, Stichtag, Verdunster', () => {
   const g = GLOSSARY.heatCostAllocator
-  assert.match(g.short, /Einheitsskala.*Bewertungsfaktor.*in der Abrechnung stehen/s)
+  // Dass die Abrechnung den Faktor nennt, ist Praxis der Messdienste, keine Norm (Durchsicht von #241, Recht-I3).
+  assert.match(g.short, /Einheitsskala.*mit dem Bewertungsfaktor des Heizkörpers malgenommen.*nennt den Faktor.*Messdienste/s)
+  assert.doesNotMatch(g.short, /muss in der Abrechnung stehen|erst mal/)
   assert.match(g.short, /Produktskala.*schon eingerechnet/s)
   assert.match(g.short, /Stichtag/)
   assert.match(g.example, /Einheitsskala 500, sein Bewertungsfaktor ist 1,25: das sind 625 Einheiten/)
   assert.match(g.example, /200 bei Faktor 0,8: 160 Einheiten/)
   assert.match(g.example, /785 von 7\.850 Einheiten/)
   assert.match(g.example, /ein Zehntel der Kosten nach Verbrauch, bei 2\.100 € also 210 €/)
-  assert.match(g.needed, /400 bis 800 ‰ der Gradtagszahlen/)
+  assert.match(g.needed, /in der Regel nur, wenn seit der Hauptablesung 400 bis 800 ‰ der Gradtagszahlen/)
+  assert.match(g.needed, /§ 5 Abs\. 1 Satz 2/)
+  assert.match(g.needed, /bis zum 31\.12\.2026/)
+  assert.match(GLOSSARY.evaporator.example, /bis zum 31\.12\.2026.*um 3 % kürzen/)
+  assert.match(GLOSSARY.serviceReading.short, /bewertete Einheiten/)
   assert.match(g.needed, /Skala und Bewertungsfaktor/)
   assert.doesNotMatch(g.needed, /noch nicht selbst aus/)
 })

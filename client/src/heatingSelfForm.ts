@@ -4,6 +4,7 @@
 import type { AreaBasisHeat, CaptureMethod, HeatingEnergy, HeatingPart, HeatingPlant, HeatingTarget, HotWater, InsulationRule } from './types'
 import { hkvConsumptionShare, hkvConsumptionShareForced } from '../../shared/law/heizkostenv.ts'
 import { LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
+import { EVAPORATOR_DEADLINE } from './hcaForm'
 
 export type SelfItemRow = { id: string; description: string; amountCents: number; heatingPart: HeatingPart | ''; heatingTarget: HeatingTarget | '' }
 export type SelfSetupForm = {
@@ -46,7 +47,7 @@ export const CAPTURE_SELF_OPTIONS: { value: CaptureMethod; label: string; later:
 // legt die Einrichtung keine Wärmezähler an.
 export function captureHint(capture: CaptureMethod): string {
   if (capture === 'hca') return 'Die Heizkostenverteiler legen Sie danach auf der Seite Zähler je Heizkörper an, mit Skala und Bewertungsfaktor. Einen Wärmezähler an einer Wohnung daneben darf es dann nicht geben (§ 5 Abs. 7 HeizkostenV).'
-  if (capture === 'serviceValues') return 'Die Werte je Wohnung und Nutzungszeitraum tragen Sie danach auf der Seite Heizkosten ein, so wie der Ablesedienst sie nennt; damit sind auch Verdunster abgedeckt.'
+  if (capture === 'serviceValues') return `Die bewerteten Werte je Wohnung und Nutzungszeitraum tragen Sie danach auf der Seite Heizkosten ein, so wie der Ablesedienst sie nennt; damit sind auch Verdunster abgedeckt. ${EVAPORATOR_DEADLINE}`
   return 'Je Wohnung ein Wärmezähler und, wenn die Heizung das Warmwasser bereitet, ein Warmwasserzähler.'
 }
 export const PART_OPTIONS: { value: HeatingPart; label: string }[] = [

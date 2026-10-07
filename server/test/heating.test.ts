@@ -437,7 +437,11 @@ test('HKV im Grenzmodell: Differenz mal Faktor des Geräts; Zwischenablesung je 
   near(userOf(plan, 'C2').pots.heating.value ?? -1, 400, 'C2')
   near(plan.totals.heating.consumption, 8850, 'Summe')
   // Der Ausweis bekommt die abgelesenen Mengen vor dem Faktor.
-  assert.deepEqual(plan.units.find((u) => u.unit.id === 'c')?.measured, [{ meterId: 'c1', pot: 'heating', raw: 500 }])
+  // Je Nutzer (Durchsicht von #241, Recht-I1): C1 300, C2 200.
+  assert.deepEqual(plan.units.find((u) => u.unit.id === 'c')?.measured, [
+    { meterId: 'c1', pot: 'heating', raw: 300, userKeys: ['C1'], from: '2025-01-01', to: '2025-09-30' },
+    { meterId: 'c1', pot: 'heating', raw: 200, userKeys: ['C2'], from: '2025-10-01', to: '2025-12-31' },
+  ])
   // Ohne Gerät des richtigen Typs fehlt der Wert.
   const ohne = planSelf(input({ hotWater: 'none', capture: 'hca', meters: HKV.filter((m) => m.unitId !== 'b'), readings: HKV_READINGS }))
   assert.deepEqual(ohne.problems.map((p) => (p.kind === 'missing' ? [p.unitId, p.reason] : p.kind)), [['b', 'noMeter']])

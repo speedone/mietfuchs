@@ -297,7 +297,7 @@ export async function readHeatingPlants(db: Executor): Promise<HeatingPlant[]> {
   const wechsel = groupBy(await db.select().from(heatingPeriodChanges).orderBy(heatingPeriodChanges.fromMonth), (w) => w.plantId, (w) => w.fromMonth)
   const spannen = groupBy(await db.select().from(heatingSeparateSpans).orderBy(heatingSeparateSpans.from), (s) => s.plantId, (s) => ({ from: s.from, until: s.until }))
   // Zeiträume der eigenen Heizkostenabrechnung (Durchsicht von #239), aufsteigend.
-  const eigene = groupBy(await db.select().from(heatingSelfSpans).orderBy(heatingSelfSpans.from), (s) => s.plantId, (s) => ({ from: s.from, until: s.until, ...(s.capture !== null ? { capture: s.capture } : {}) }))
+  const eigene = groupBy(await db.select().from(heatingSelfSpans).orderBy(heatingSelfSpans.from), (s) => s.plantId, (s) => ({ from: s.from, until: s.until, ...(s.capture !== null ? { capture: s.capture } : {}), ...(s.hotWater !== null ? { hotWater: s.hotWater } : {}) }))
   return rows.map((p) => ({
     id: p.id,
     propertyId: p.propertyId,
@@ -346,7 +346,7 @@ export async function readHeatingServiceValues(db: Executor): Promise<HeatingSer
     .innerJoin(heatingPeriods, eq(heatingServiceValues.heatingPeriodId, heatingPeriods.id))
     .orderBy(sql`"heating_service_values".rowid`)
   return rows.map(({ v, plantId, period }) => ({
-    plantId, period: periodKey(String(period)), unitId: v.unitId, from: v.from, to: v.to, heatValue: v.heatValue, waterValue: v.waterValue,
+    plantId, period: periodKey(String(period)), unitId: v.unitId, from: v.from, to: v.to, heatValue: v.heatValue, waterValue: v.waterValue, heatUnit: v.heatUnit,
   }))
 }
 

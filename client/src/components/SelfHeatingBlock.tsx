@@ -23,9 +23,10 @@ export default function SelfHeatingBlock({ self, tenancyId, plantName }: { self:
       )}
       {self.pots.flatMap(potLines).map((l) => <p key={l}>{l}</p>)}
       {mine.map((u) => <p key={u.key}><strong>{userLine(u, self)}</strong></p>)}
-      {/* Heizung PR 12: die Geräte bzw. Werte des Ablesedienstes der eigenen Wohnung, mit Skala und Faktor. */}
-      {[...new Set(mine.map((u) => self.units.find((x) => x.users.includes(u))?.unitId ?? ''))].map((unitId) => (
-        <HcaBlock key={`hca:${unitId}`} self={self} unitId={unitId} unitName={(id) => self.units.find((x) => x.unitId === id)?.unitName ?? id} />
+      {/* Heizung PR 12: die Geräte bzw. Werte des Ablesedienstes des Mieters in seinem Zeitraum, mit Skala und Faktor
+          (Durchsicht von #241, Recht-I1: ein Nachmieter sieht nicht den Verbrauch seines Vormieters). */}
+      {mine.map((u) => (
+        <HcaBlock key={`hca:${u.key}`} self={self} viewer={{ userKey: u.key, from: u.from, to: u.to }} unitId={self.units.find((x) => x.users.includes(u))?.unitId} unitName={(id) => self.units.find((x) => x.unitId === id)?.unitName ?? id} />
       ))}
     </div>
   )

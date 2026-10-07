@@ -78,7 +78,7 @@ import {
   type Alpha, type ConsumptionShares, type HeatPumpVerdict, type SelfInput, type SelfPlan, type SelfProblem, type SelfReading, type SelfTenancy, type SelfUnit, type SelfUserPlan, type SelfWeights,
 } from './heating.ts'
 import { DHW_PLAUSIBLE, dhwProblemText, fmtShare } from './dhw.ts'
-import { captureOf, deviceCutoffs, isServiceMeter, deviceCutoffText, deviceLines, meterFactor, missingRatings, missingRatingsText, mixedCapture, mixedCaptureText, serviceMeters } from './hca.ts'
+import { captureOf, hotWaterOf, lineServiceRows, serviceHeatUnit, serviceUnitsMixed, deviceCutoffs, isServiceMeter, deviceCutoffText, deviceLines, meterFactor, missingRatings, missingRatingsText, mixedCapture, mixedCaptureText, serviceMeters } from './hca.ts'
 import { FUEL_GRADE_LABELS, HEATING_VALUE_UNIT_TEXT } from '../../shared/fuelGrades.ts'
 import type { FrozenItemSelfUse, Snapshot, SnapshotCostItem, SnapshotHeatingPart, SnapshotHeatingPlant, SnapshotMeter, SnapshotReading, SnapshotTenancy, SnapshotUnit } from './snapshot.ts'
 
@@ -374,7 +374,9 @@ const noticeKinds = {
   'heating.heat-pump-majority-open': { level: 'warning', title: 'Wärmepumpe: Ausnahme der Heizkostenverordnung ungeklärt', rule: 'heating-own-settlement', terms: ['heatingSystem', 'heatingCostOrdinance'] },
   'heating.heat-pump-old-exemption': { level: 'hint', title: 'Wärmepumpe: Heizkostenverordnung galt in diesem Zeitraum nicht', rule: 'heating-own-settlement', terms: ['heatingSystem', 'heatingCostOrdinance'] },
   // Heizung PR 12 (Entwurf 8.1, 10.1)
-  'heating.device-cutoff': { level: 'warning', title: 'Stichtag eines Heizkostenverteilers mitten in der Heizperiode', rule: 'heating-own-settlement', terms: ['heatCostAllocator'] },
+  // Ein Hinweis (Durchsicht von #241, Minor 6): Gerechnet wird mit den Ständen an den Grenzen; fehlt einer,
+  // sperrt `heating.self-incomplete`.
+  'heating.device-cutoff': { level: 'hint', title: 'Stichtag eines Heizkostenverteilers mitten in der Heizperiode', rule: 'heating-own-settlement', terms: ['heatCostAllocator'] },
   'heating.mixed-capture': { level: 'error', title: 'Verschiedene Geräte in einer Heizanlage', rule: 'heating-own-settlement', terms: ['heatCostAllocator'] },
   'heating.hca-factor-missing': { level: 'error', title: 'Skala oder Bewertungsfaktor fehlt', rule: 'heating-own-settlement', terms: ['heatCostAllocator'] },
   'model.prepayment-unsettled': { level: 'warning', title: 'Vorauszahlung ohne Abrechnung', terms: ['prepayment', 'flatRate'] },
@@ -2643,8 +2645,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   const POT_NAME: Record<SelfPot, string> = { heating: 'Heizung', water: 'Warmwasser' }
   // Die Einheit des Verbrauchs eines Topfs (Heizung PR 12, Abweichung 9): Heizkostenverteiler und Ablesedienst
   // zählen Einheiten, keine Kilowattstunden.
-  const potUnitOf = (sp: Pick<SelfPlantPlan, 'capture'>, p: SelfPot): 'kWh' | 'm³' | 'Einheiten' =>
-    p === 'water' ? 'm³' : sp.capture === 'heatMeter' ? 'kWh' : 'Einheiten'
+  const potUnitOf = (sp: Pick<SelfPlantPlan, 'capture' | 'serviceValues'>, p: SelfPot): 'kWh' | 'm³' | 'Einheiten' =>
+    p === 'water' ? 'm³' : sp.capture === 'heatMeter' ? 'kWh' : sp.capture === 'serviceValues' ? serviceHeatUnit(sp.serviceValues) : 'Einheiten'
   const selfProblemText = (p: SelfProblem, areaBasisHeat: string, capture: CaptureMethod = 'heatMeter'): string => {
     if (p.kind === 'farInterim') {
       return `Beim Wechsel in ${p.unitName} zum ${fmtDay(p.boundary)} wurde erst am ${fmtDay(p.readingDate)} abgelesen, ${p.days} Tage daneben und über einen Wintermonat. Lässt die Ablesung wegen des Zeitpunkts keine hinreichend genaue Ermittlung zu, wird nach Gradtagen bzw. Tagen geteilt (§ 9b Abs. 3 HeizkostenV). Ob das so ist, entscheiden Sie: Wählen Sie auf der Seite Heizkosten „Ablesung verwenden“ oder „Nach § 9b Abs. 3“.`
@@ -2670,13 +2672,15 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const rules = plantRules(wayOf(plant), objectRules)
     const prev = previousPeriod(rules, period)
     const next = periodContaining(rules, dayAfter(period.to))
-    const hotWater: HotWater = plant.hotWater ?? 'combined'
+    // Die Warmwasserbereitung dieser Heizperiode (Durchsicht von #241, I2).
+    const hotWater: HotWater = hotWaterOf(plant, String(period.key))
     // Heizung PR 12: Die Heizung erfasst je nach Erfassung dieser Heizperiode der Typ `waerme` oder `hkv`; Werte
     // eines Ablesedienstes ersetzen die Zähler der Wohnungen (beim Warmwasser nur, wenn er es liefert).
     const capture: CaptureMethod = captureOf(plant, String(period.key))
     const potTypes: MeterType[] = [capture === 'hca' ? 'hkv' : 'waerme', ...(hotWater === 'none' ? [] : ['warmwasser' as const])]
     const unitMeters = snapshot.meters.flatMap((m) => (m.unitId !== null && (m.heatingPlantId ?? null) === null && potTypes.includes(m.type) ? [{ ...m, unitId: m.unitId }] : []))
-    const serviceRows = capture === 'serviceValues' ? (snapshot.heatingServiceValues ?? []).filter((v) => v.plantId === plant.id && v.period === period.key) : []
+    // `period.key` ist der Schlüssel der Heizperiode dieser Rechnung, derselbe wie `heating_periods.period` der Zeilen.
+    const serviceRows = capture === 'serviceValues' ? lineServiceRows(snapshot.heatingServiceValues ?? [], snapshot.heatingPlants ?? [], plant.id, String(period.key)) : []
     const served = snapshot.units.filter((u) => servesUnit(plant, u) && ((u.areaM2 || 0) > 0 || unitMeters.some((m) => m.unitId === u.id)))
     const servedIds = new Set(served.map((u) => u.id))
     const svcHeat = capture === 'serviceValues' ? serviceMeters(serviceRows, served, 'heat') : null
@@ -2857,9 +2861,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Heizkostenverteiler und Ablesedienst (Heizung PR 12, Entwurf 8.1): gemischte Geräte (§ 5 Abs. 7) und
     // fehlende Skala oder Faktor verhindern die Verteilung.
     const unitNameOf = (id: string) => snapshot.units.find((u) => u.id === id)?.name ?? id
-    const mixed = mixedCapture(capture, [...servedIds], snapshot.meters)
+    const hPeriod = { from: period.from, to: period.to }
+    const mixed = capture === 'serviceValues' ? serviceUnitsMixed(serviceRows) : mixedCapture(capture, [...servedIds], snapshot.meters, snapshot.readings, hPeriod)
     if (mixed) blocked.push({ code: 'heating.mixed-capture', text: mixedCaptureText(capture, mixed, unitNameOf) })
-    const unrated = missingRatings(capture, [...servedIds], snapshot.meters)
+    const unrated = missingRatings(capture, [...servedIds], snapshot.meters, snapshot.readings, hPeriod)
     if (unrated.length > 0) blocked.push({ code: 'heating.hca-factor-missing', text: missingRatingsText(unrated, unitNameOf) })
     const where = `${plant.name ? `Heizanlage „${plant.name}“` : 'Heizanlage'}, Heizperiode ${label}`
     if (shares !== null && shares.insulation !== 'applies' && shares.insulation !== 'notApplies' && OIL_OR_GAS.includes(plant.energy)) {
@@ -5144,7 +5149,12 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       const heat = st.rows.filter((r) => r.category === HEATING_CATEGORY).reduce((a, r) => a + r.shareCents, 0)
       return heat > 0 ? [`${st.tenantName} (${st.unitName}) ${fmtCents(Math.round((heat * remoteCut) / 100))}`] : []
     })
-    const names = remote.meterIds.map((id) => `„${snapshot.meters.find((m) => m.id === id)?.name ?? 'ohne Namen'}“`)
+    // Mit der Wohnung (Durchsicht von #241, Minor 7): Heizkostenverteiler heißen oft nur nach dem Raum.
+    const names = remote.meterIds.map((id) => {
+      const m = snapshot.meters.find((x) => x.id === id)
+      const unit = m?.unitId ? snapshot.units.find((u) => u.id === m.unitId)?.name : undefined
+      return `„${m?.name ?? 'ohne Namen'}“${unit ? ` (${unit})` : ''}`
+    })
     const which = names.length > 0
       ? `Nicht fernablesbar ${names.length === 1 ? 'ist' : 'sind'} ${andList(names)}.`
       : 'Laut Ihrer Angabe an der Heizanlage sind nicht alle Zähler und Heizkostenverteiler fernablesbar.'

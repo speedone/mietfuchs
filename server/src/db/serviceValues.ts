@@ -37,7 +37,11 @@ function readRow(item: unknown, h: Span, propertyUnits: readonly Unit[], plant: 
   if (heatValue === null || heatValue === undefined || !(heatValue >= 0)) throw new HeatingError(400, `Der Wert für die Heizung bei „${unit.name}“ ist eine Zahl ab 0. Gespeichert wurde nichts.`)
   const waterValue = numberOrNull(raw(item, 'waterValue'))
   if (waterValue === undefined || (waterValue !== null && !(waterValue >= 0))) throw new HeatingError(400, `Der Wert für das Warmwasser bei „${unit.name}“ ist eine Zahl ab 0 oder leer. Gespeichert wurde nichts.`)
-  return { unitId: unit.id, from, to, heatValue, waterValue }
+  // Worin der Dienst die Heizung nennt (Durchsicht von #241, Recht-I4); ohne Angabe bewertete Einheiten.
+  const unitRaw = raw(item, 'heatUnit')
+  const heatUnit = unitRaw === undefined || unitRaw === null ? 'units' : unitRaw === 'units' || unitRaw === 'kWh' ? unitRaw : null
+  if (heatUnit === null) throw new HeatingError(400, `Bei „${unit.name}“ ist die Einheit der Heizung weder „Einheiten“ noch „kWh“. Gespeichert wurde nichts.`)
+  return { unitId: unit.id, from, to, heatValue, waterValue, heatUnit }
 }
 
 // Warmwasser für alle Zeilen oder für keine (Abweichung 3, Review Focus 3); je Wohnung kein Tag doppelt.

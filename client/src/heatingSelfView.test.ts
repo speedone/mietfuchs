@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { boundaryLight, boundaryText, distributionLines, gapConsequence, heatUnitOf, insulationAsked, percentOf, potLines, readingResult, shareEditable, unsureShareHint, userLine } from './heatingSelfView'
+import { boundaryLight, boundaryText, distributionLines, gapConsequence, heatUnitOf, insulationAsked, percentOf, potLines, READING_RESULT_HINT, readingResult, shareEditable, unsureShareHint, userLine } from './heatingSelfView'
 import { fmtEuro } from './api'
 import type { HeatingDistribution, SelfBoundaryView, SelfHeatingStatement, SelfUnitView } from './types'
 
@@ -116,5 +116,22 @@ describe('Heizung PR 12: bei Heizkostenverteilern und Ablesedienst Einheiten sta
     }
     expect(readingResult(unit, '2025-12-31', 'Einheiten')).toEqual(['Wohnzimmer: 500 Einheiten am 31.12.2025'])
     expect(readingResult(unit, '2025-12-31')).toEqual(['Wohnzimmer: 500 kWh am 31.12.2025'])
+  })
+})
+
+describe('Durchsicht #241 Recht-I2: Ableseergebnis am Stichtag nennt den Stichtagswert, nicht die 0', () => {
+  it('Stichtag beim Heizkostenverteiler, Wechsel beim Wärmezähler', () => {
+    const unit: SelfUnitView = {
+      unitId: 'a', unitName: 'A', areaM2: 60, heatAreaM2: 60, boundaries: [], users: [],
+      readings: [
+        { meterId: 'a1', meterName: 'Wohnzimmer', pot: 'heating', boundary: '2025-12-31', date: '2025-12-31', value: 0, oldEndValue: 842 },
+        { meterId: 'xa', meterName: 'Warmwasser', pot: 'water', boundary: '2025-12-31', date: '2025-12-31', value: 3, oldEndValue: 40 },
+      ],
+    }
+    expect(readingResult(unit, '2025-12-31', 'Einheiten')).toEqual([
+      'Wohnzimmer: Stichtagswert 842 Einheiten am 31.12.2025 (Gerät danach auf 0)',
+      'Warmwasser: 40 m³ am 31.12.2025 (Endstand des alten Zählers; der neue beginnt mit 3)',
+    ])
+    expect(READING_RESULT_HINT).toMatch(/§ 6 Abs\. 1 Satz 3/)
   })
 })

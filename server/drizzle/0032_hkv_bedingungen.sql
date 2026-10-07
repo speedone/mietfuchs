@@ -4,15 +4,17 @@ CREATE TABLE `__new_heating_self_spans` (
 	`from_period` text NOT NULL,
 	`until_period` text,
 	`capture` text,
+	`hot_water` text,
 	PRIMARY KEY(`plant_id`, `from_period`),
 	FOREIGN KEY (`plant_id`) REFERENCES `heating_plants`(`id`) ON UPDATE no action ON DELETE cascade,
 	CONSTRAINT "heating_self_spans_from_valid" CHECK("from_period" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]' AND CAST(substr("from_period", 6, 2) AS INTEGER) BETWEEN 1 AND 12),
 	CONSTRAINT "heating_self_spans_until_valid" CHECK("until_period" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]' AND CAST(substr("until_period", 6, 2) AS INTEGER) BETWEEN 1 AND 12),
 	CONSTRAINT "heating_self_spans_order_valid" CHECK("until_period" IS NULL OR "until_period" > "from_period"),
-	CONSTRAINT "heating_self_spans_capture_known" CHECK("capture" IN ('heatMeter', 'hca', 'serviceValues'))
+	CONSTRAINT "heating_self_spans_capture_known" CHECK("capture" IN ('heatMeter', 'hca', 'serviceValues')),
+	CONSTRAINT "heating_self_spans_hot_water_known" CHECK("hot_water" IN ('combined', 'separate', 'none'))
 );
 --> statement-breakpoint
-INSERT INTO `__new_heating_self_spans`("plant_id", "from_period", "until_period", "capture") SELECT "plant_id", "from_period", "until_period", "capture" FROM `heating_self_spans`;--> statement-breakpoint
+INSERT INTO `__new_heating_self_spans`("plant_id", "from_period", "until_period", "capture", "hot_water") SELECT "plant_id", "from_period", "until_period", "capture", "hot_water" FROM `heating_self_spans`;--> statement-breakpoint
 DROP TABLE `heating_self_spans`;--> statement-breakpoint
 ALTER TABLE `__new_heating_self_spans` RENAME TO `heating_self_spans`;--> statement-breakpoint
 PRAGMA foreign_keys=ON;--> statement-breakpoint

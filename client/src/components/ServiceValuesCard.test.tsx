@@ -21,24 +21,26 @@ afterEach(() => {
 })
 
 const UNITS = [{ id: 'a', name: 'Wohnung A' }, { id: 'b', name: 'Wohnung B' }]
-const values: HeatingServiceValue[] = [{ plantId: 'hp', period: periodKey('2025-01'), unitId: 'b', from: '2025-01-01', to: '2025-12-31', heatValue: 800.25, waterValue: null }]
+const values: HeatingServiceValue[] = [{ plantId: 'hp', period: periodKey('2025-01'), unitId: 'b', from: '2025-01-01', to: '2025-12-31', heatValue: 800.25, waterValue: null, heatUnit: 'units' }]
 
 test('Die Wohnung einer Zeile zeigt den gespeicherten Wert, der Wert alle Stellen; Speichern schickt die ganze Liste', async () => {
   render(<ServiceValuesCard plantId="hp" period={periodKey('2025-01')} from="2025-01-01" to="2025-12-31" closed={false} units={UNITS} values={values} onSaved={() => {}} />)
-  const [unit] = screen.getAllByLabelText(/Wohnung/) as HTMLSelectElement[]
+  const [unit] = screen.getAllByLabelText(/^Wohnung/) as HTMLSelectElement[]
   expect(unit?.value).toBe('b')
-  expect((screen.getByLabelText(/Heizung \(Einheiten\)/) as HTMLInputElement).value).toBe('800,25')
+  expect((screen.getByLabelText(/Einheit der Heizung/) as HTMLSelectElement).value).toBe('units')
+  expect(screen.getByText(/bis zum 31\.12\.2026.*3 % kürzen/)).toBeTruthy()
+  expect((screen.getByLabelText(/Heizung \(bewertet\)/) as HTMLInputElement).value).toBe('800,25')
   fireEvent.click(screen.getByRole('button', { name: 'Werte speichern' }))
   await waitFor(() => expect(sent.length).toBe(1), { timeout: 5000 })
   expect(sent[0]).toEqual({
     url: '/api/heating-plants/hp/periods/2025-01/service-values', method: 'PUT',
-    body: { values: [{ unitId: 'b', from: '2025-01-01', to: '2025-12-31', heatValue: 800.25, waterValue: null }] },
+    body: { values: [{ unitId: 'b', from: '2025-01-01', to: '2025-12-31', heatValue: 800.25, waterValue: null, heatUnit: 'units' }] },
   })
 })
 
 test('Ohne Werte: je angeschlossene Wohnung eine Zeile über die Heizperiode; abgeschlossen nur lesbar', () => {
   render(<ServiceValuesCard plantId="hp" period={periodKey('2025-01')} from="2025-01-01" to="2025-12-31" closed={false} units={UNITS} values={[]} onSaved={() => {}} />)
-  expect((screen.getAllByLabelText(/Wohnung/) as HTMLSelectElement[]).map((s) => s.value)).toEqual(['a', 'b'])
+  expect((screen.getAllByLabelText(/^Wohnung/) as HTMLSelectElement[]).map((s) => s.value)).toEqual(['a', 'b'])
   cleanup()
   render(<ServiceValuesCard plantId="hp" period={periodKey('2025-01')} from="2025-01-01" to="2025-12-31" closed units={UNITS} values={values} onSaved={() => {}} />)
   expect(screen.queryByRole('button', { name: 'Werte speichern' })).toBeNull()
