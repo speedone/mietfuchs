@@ -45,6 +45,8 @@ test('Ein Blatt gibt es, sobald eine Rechnung die Heizperiode berührt', () => {
   expect(hasSheet([], h)).toBe(false)
   expect(hasSheet([{ invoiceFrom: '2025-03-15', invoiceTo: '2026-03-14', deliveredAt: null }], h)).toBe(true)
   expect(hasSheet([{ invoiceFrom: '2024-03-15', invoiceTo: '2025-04-30', deliveredAt: null }], h)).toBe(false)
+  // Beginnt in der Heizperiode und endet danach: steht auf dem Blatt, obwohl die Karte „Lieferungen“ sie erst später zeigt.
+  expect(hasSheet([{ invoiceFrom: '2026-03-01', invoiceTo: '2027-02-28', deliveredAt: null }], h)).toBe(true)
   expect(hasSheet([{ invoiceFrom: null, invoiceTo: null, deliveredAt: '2026-04-30' }], h)).toBe(true)
   expect(hasSheet([{ invoiceFrom: null, invoiceTo: null, deliveredAt: null }], h)).toBe(false)
 })
