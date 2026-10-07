@@ -1756,6 +1756,10 @@ export type FuelAssessment = {
   deliveries: FuelDeliveryLine[]
   carries: FuelCarryLine[]
   gaps: FuelGap[]
+  // Lieferungen, deren Positionen zusammen 0 € ergeben (als storniert behandelt) und die die Heizperiode
+  // berühren. Eingefroren sagt das einer anderen Heizperiode, dass die Rechnung beim Abschluss verknüpft, aber
+  // storniert war, und nicht unverknüpft (Runde 2 zu Startwert 515). Fehlt das Feld, gab es keine.
+  zeroInvoiceIds?: string[]
 }
 
 // Die Rückfrage beim Abschluss (8.2, Dialog „Trotzdem abschließen?“).

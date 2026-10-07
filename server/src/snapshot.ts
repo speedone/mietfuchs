@@ -198,6 +198,9 @@ export type SnapshotClosedSettlement = {
   fuelCarryRows?: FrozenFuelRow[]
   // Die Überträge des eingefrorenen Stands je Anlage, Heizperiode und Lieferung (Nachprüfung von #233).
   fuelCarries?: FrozenFuelCarryOut[]
+  // Die als storniert behandelten Lieferungen des eingefrorenen Stands je Anlage und Heizperiode (Runde 2 zu
+  // Startwert 515). Fehlt das Feld, gab es keine oder der Stand ist älter.
+  fuelCancelled?: FrozenFuelCancelled[]
   // Der Vorrat des eingefrorenen Stands (Heizung PR 8, G-A4), je `Anlage:Heizperiode`: der Endbestand,
   // aus dem die Folgeperiode ihren Anfangsbestand liest, und der Anfangsbestand, wenn er aus der
   // Vorperiode übernommen war; dann ist er deren Endbestand. Fehlt das Feld, kennt der Stand keinen.
@@ -332,6 +335,27 @@ export function frozenFuelCarriesOf(settlement: unknown): FrozenFuelCarryOut[] {
   return out
 }
 
+// Die Lieferungen, die ein eingefrorener Stand je Anlage und Heizperiode als storniert behandelt hat
+// (`heating[].fuel.zeroInvoiceIds`; Runde 2 zu Startwert 515).
+export type FrozenFuelCancelled = { plantId: string; period: string; deliveryId: string }
+
+export function frozenFuelCancelledOf(settlement: unknown): FrozenFuelCancelled[] {
+  if (settlement === null || typeof settlement !== 'object') return []
+  const heating: unknown = Reflect.get(settlement, 'heating')
+  if (!Array.isArray(heating)) return []
+  const out: FrozenFuelCancelled[] = []
+  for (const h of heating) {
+    if (h === null || typeof h !== 'object') continue
+    const plantId: unknown = Reflect.get(h, 'plantId')
+    const period: unknown = Reflect.get(h, 'period')
+    const fuel: unknown = Reflect.get(h, 'fuel')
+    const ids: unknown = fuel !== null && typeof fuel === 'object' ? Reflect.get(fuel, 'zeroInvoiceIds') : undefined
+    if (typeof plantId !== 'string' || typeof period !== 'string' || !Array.isArray(ids)) continue
+    for (const deliveryId of ids) if (typeof deliveryId === 'string') out.push({ plantId, period, deliveryId })
+  }
+  return out
+}
+
 // Der Vorrat aus `heating` eines Stands (Heizung PR 8): Endbestände und übernommene Anfangsbestände je
 // `Anlage:Heizperiode`. Ein Eintrag, der sich nicht lesen lässt, fehlt; dann gilt der eingetragene Wert.
 function stockOf(heating: unknown, which: 'closing' | 'opening'): Record<string, StockValue> | null {
@@ -352,8 +376,8 @@ function stockOf(heating: unknown, which: 'closing' | 'opening'): Record<string,
   return Object.keys(out).length > 0 ? out : null
 }
 
-export function frozenSettlementOf(settlement: unknown): SnapshotClosedSettlement & { selfUseByItem: Record<string, FrozenItemSelfUse> | null, itemTotals: Record<string, number> | null, fuelCarryRows: FrozenFuelRow[], fuelCarries: FrozenFuelCarryOut[], stockClosings: Record<string, StockValue> | null, stockOpenings: Record<string, StockValue> | null } {
-  const leer = { selfUsedShareCents: 0, prepaymentCents: 0, prepaymentOverridden: false, selfUseByItem: null, itemTotals: null, fuelCarryRows: [], fuelCarries: [], stockClosings: null, stockOpenings: null }
+export function frozenSettlementOf(settlement: unknown): SnapshotClosedSettlement & { selfUseByItem: Record<string, FrozenItemSelfUse> | null, itemTotals: Record<string, number> | null, fuelCarryRows: FrozenFuelRow[], fuelCarries: FrozenFuelCarryOut[], fuelCancelled: FrozenFuelCancelled[], stockClosings: Record<string, StockValue> | null, stockOpenings: Record<string, StockValue> | null } {
+  const leer = { selfUsedShareCents: 0, prepaymentCents: 0, prepaymentOverridden: false, selfUseByItem: null, itemTotals: null, fuelCarryRows: [], fuelCarries: [], fuelCancelled: [], stockClosings: null, stockOpenings: null }
   if (settlement === null || typeof settlement !== 'object') return leer
   const eigenanteil: unknown = Reflect.get(settlement, 'selfUsedShareCents')
   const statements: unknown = Reflect.get(settlement, 'statements')
@@ -364,6 +388,7 @@ export function frozenSettlementOf(settlement: unknown): SnapshotClosedSettlemen
     itemTotals: itemTotalsOf(settlement),
     fuelCarryRows: frozenFuelRowsOf(settlement),
     fuelCarries: frozenFuelCarriesOf(settlement),
+    fuelCancelled: frozenFuelCancelledOf(settlement),
     stockClosings: stockOf(Reflect.get(settlement, 'heating'), 'closing'),
     stockOpenings: stockOf(Reflect.get(settlement, 'heating'), 'opening'),
   }
@@ -461,7 +486,7 @@ export type SnapshotFuelDelivery = Pick<
 // Eine abgeschlossene Heizperiode einer Anlage, mit der Bezeichnung und der Frist der Abrechnung, die
 // sie abgeschlossen hat, und deren Übertragszeilen.
 // `carries`: was diese Heizperiode beim Abschluss je Lieferung in andere übertragen hat.
-export type SnapshotClosedHeating = { plantId: string; period: PeriodKey; label: string; deadline: string; fuelRows: FrozenFuelRow[]; carries?: { deliveryId: string; other: string; cents: number; totalCents?: number; landlordBorne?: true }[] }
+export type SnapshotClosedHeating = { plantId: string; period: PeriodKey; label: string; deadline: string; fuelRows: FrozenFuelRow[]; carries?: { deliveryId: string; other: string; cents: number; totalCents?: number; landlordBorne?: true }[]; cancelled?: string[] }
 export type SnapshotFuel = {
   deliveries: SnapshotFuelDelivery[]
   items: SnapshotCostItem[]
@@ -485,6 +510,11 @@ type FuelSource = {
 const carriesOf = (list: FrozenFuelCarryOut[] | undefined, plantId: string, period: string) =>
   (list ?? []).filter((x) => x.plantId === plantId && x.period === period).map(({ deliveryId, other, cents, totalCents, landlordBorne }) => ({ deliveryId, other, cents, ...(totalCents !== undefined ? { totalCents } : {}), ...(landlordBorne ? { landlordBorne } : {}) }))
 
+const cancelledOf = (list: FrozenFuelCancelled[] | undefined, plantId: string, period: string): { cancelled?: string[] } => {
+  const ids = (list ?? []).filter((x) => x.plantId === plantId && x.period === period).map((x) => x.deliveryId)
+  return ids.length > 0 ? { cancelled: ids } : {}
+}
+
 function fuelSnapshotOf(
   source: FuelSource,
   propertyId: string,
@@ -505,11 +535,11 @@ function fuelSnapshotOf(
       const p = periodOfKey(objectRules, c.period)
       if (!p) continue
       const hs = own ? heatingPeriodsEndingIn(rules, p).filter((h) => !settledSeparately(way, objectRules, h)) : [p]
-      for (const h of hs) closed.push({ plantId: plant.id, period: h.key, label: periodLabel(p), deadline: settlementDeadline(p), fuelRows: c.fuelCarryRows ?? [], carries: carriesOf(c.fuelCarries, plant.id, h.key) })
+      for (const h of hs) closed.push({ plantId: plant.id, period: h.key, label: periodLabel(p), deadline: settlementDeadline(p), fuelRows: c.fuelCarryRows ?? [], carries: carriesOf(c.fuelCarries, plant.id, h.key), ...cancelledOf(c.fuelCancelled, plant.id, h.key) })
     }
     for (const c of (source.closedHeatingSettlements ?? []).filter((x) => x.plantId === plant.id)) {
       const h = periodOfKey(rules, c.period)
-      if (h) closed.push({ plantId: plant.id, period: h.key, label: periodLabel(h), deadline: settlementDeadline(h), fuelRows: c.fuelCarryRows ?? [], carries: carriesOf(c.fuelCarries, plant.id, h.key) })
+      if (h) closed.push({ plantId: plant.id, period: h.key, label: periodLabel(h), deadline: settlementDeadline(h), fuelRows: c.fuelCarryRows ?? [], carries: carriesOf(c.fuelCarries, plant.id, h.key), ...cancelledOf(c.fuelCancelled, plant.id, h.key) })
     }
   }
   return {

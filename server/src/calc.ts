@@ -2305,6 +2305,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         frozen: fuel.frozen.filter((f) => f.plantId === plant.id),
         closed: new Set(fuel.closed.filter((c) => c.plantId === plant.id).map((c) => c.period)),
         closedCarries: fuel.closed.filter((c) => c.plantId === plant.id).flatMap((c) => (c.carries ?? []).map((x) => ({ period: c.period, ...x }))),
+        closedCancelled: fuel.closed.filter((c) => c.plantId === plant.id).flatMap((c) => (c.cancelled ?? []).map((deliveryId) => ({ period: c.period, deliveryId }))),
         ctx: {
           table: law(hkvDegreeDays, { period: lawPeriod }, lawLog),
           local: new Map(fuel.degreeDays.map((v) => [v.month, v.value])),
@@ -4149,7 +4150,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     for (const u of result.ownerClosedUnlinked) {
       const owner = closedOf(u.owner.key)
       warn('fuel.owner-closed-unlinked',
-        `${where}: Zur Rechnung „${nameOf(u.deliveryId)}“ gehörten heute ${fmtCents(u.cents)} in diese Heizperiode. Die Abrechnung ${owner?.label ?? periodLabel(u.owner)}, in der die Rechnung steht, ist abgeschlossen; ihre Position war beim Abschluss noch nicht mit der Lieferung verknüpft, deshalb ist die Rechnung dort ganz verteilt und hier kommt nichts dazu. ` +
+        `${where}: Zur Rechnung „${nameOf(u.deliveryId)}“ gehörten heute ${fmtCents(u.cents)} in diese Heizperiode. Die Abrechnung ${owner?.label ?? periodLabel(u.owner)}, in der die Rechnung steht, ist abgeschlossen; ` +
+          (u.cancelled
+            ? 'beim Abschluss ergaben ihre Positionen zusammen 0 € (storniert), deshalb ist dort nichts von ihr verteilt und hier kommt nichts dazu. Solange jene Abrechnung abgeschlossen bleibt, verteilt Mietfuchs die Rechnung nirgends. '
+            : 'ihre Position war beim Abschluss noch nicht mit der Lieferung verknüpft, deshalb ist die Rechnung dort ganz verteilt und hier kommt nichts dazu. ') +
           'Soll dieser Teil hierher, öffnen Sie jene Abrechnung wieder und schließen sie neu ab.',
         subject)
     }
@@ -4180,7 +4184,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       if (carry.landlord.some((p) => p.reason === 'fuelClosedPeriod')) {
         // Zwei Lagen (Nachprüfung, M-b): ohne Schätzung abgeschlossen, oder abgeschlossen, als die
         // Lieferung noch keine Position hatte (mit 0 eingefroren).
-        const lead = carry.zeroFrozen
+        const lead = carry.zeroFrozenCancelled
+          ? `Als die Abrechnung ${other.label} abgeschlossen wurde, ergaben die Positionen der Rechnung ${name} zusammen 0 € (storniert). Ihr Teil für ${periodLabel(carry.other)} (${fmtCents(X)}) ist dort deshalb nicht verteilt; bis Sie ihn nachfordern, steht er bei Ihnen. `
+          : carry.zeroFrozen
           ? `Als die Abrechnung ${other.label} abgeschlossen wurde, war die Rechnung ${name} noch mit keiner Position verknüpft. Ihr Teil für ${periodLabel(carry.other)} (${fmtCents(X)}) ist dort deshalb nicht verteilt; bis Sie ihn nachfordern, steht er bei Ihnen. `
           : `Der Teil der Rechnung ${name} für ${periodLabel(carry.other)} (${fmtCents(X)}) gehört in die Abrechnung ${other.label}, die ohne Schätzung abgeschlossen wurde; bis Sie ihn nachfordern, steht er bei Ihnen. `
         warn('fuel.closed-period-part',
@@ -4206,16 +4212,23 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       } else {
         // Zu hoch geschätzt (A4, B9): Ein Rückzahlungsanspruch folgt daraus nicht sicher (Einwendungsfrist,
         // § 556 Abs. 3 Satz 5 und 6 BGB); eine Gutschrift ist jederzeit zulässig. Je Mieter im Verhältnis
-        // seiner Übertragszeilen der Schätzung im eingefrorenen Stand.
+        // seiner Übertragszeilen der Schätzung im eingefrorenen Stand, und zwar nur des Teils, den die Rechnung
+        // abdeckt (`ratios`): E ist dieser Teil, nicht die ganze Schätzung. Mit allen Zeilen stand hier ein
+        // Vielfaches des zu viel getragenen Betrags (Invariante, Startwert 515: 11.675,31 € statt 2.158,05 €).
+        // Verteilt wird nach dem Restverfahren, damit die genannten Beträge zusammen nie mehr ergeben.
         const factor = E !== 0 ? -diff / E : 0
-        const byTenant = new Map<string, { name: string; cents: number }>()
+        const byTenant = new Map<string, { name: string; exact: number }>()
         for (const row of other.fuelRows) {
-          if (!carry.estimate.ids.some((id) => row.costItemId.startsWith(`fuel:${id}:`))) continue
-          const entry = byTenant.get(row.tenancyId) ?? { name: `${row.tenantName} (${row.unitName})`, cents: 0 }
-          entry.cents += row.shareCents
+          const k = carry.estimate.ids.findIndex((id) => row.costItemId.startsWith(`fuel:${id}:`))
+          if (k < 0) continue
+          const entry = byTenant.get(row.tenancyId) ?? { name: `${row.tenantName} (${row.unitName})`, exact: 0 }
+          entry.exact += row.shareCents * (carry.estimate.ratios[k] ?? 0) * factor
           byTenant.set(row.tenancyId, entry)
         }
-        const list = [...byTenant.values()].map((e) => `${e.name} ${fmtCents(Math.round(e.cents * factor))}`)
+        const entries = [...byTenant.entries()]
+        const credit = Math.min(-diff, Math.round(entries.reduce((a, [, e]) => a + e.exact, 0)))
+        const credits = distributeCents(credit, entries.map(([key, e]) => ({ key, landlord: false, raw: e.exact })))
+        const list = entries.map(([, e], k) => `${e.name} ${fmtCents(credits[k] ?? 0)}`)
         warn('fuel.estimate-overcharged',
           `${where}: Für ${periodLabel(carry.other)} war ${fmtCents(E)} geschätzt; tatsächlich entfallen nur ${fmtCents(X)}. Die Mieter dieser Heizperiode haben ${fmtCents(-diff)} zu viel getragen${list.length > 0 ? `, hier: ${andList(list)}` : ''}. ` +
             `Eine Gutschrift ist jederzeit zulässig und wird empfohlen. Öffnen Sie die Abrechnung ${other.label} wieder oder erfassen Sie die Gutschrift; bis dahin steht der Betrag bei Ihnen als Abweichung von der Schätzung.`,
@@ -4435,6 +4448,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           ...(c.kind === 'out' && c.cancelled === undefined ? { totalCents: c.totalCents } : {}),
           ...(c.kind === 'out' && c.cancelled === undefined && c.landlord.some((p) => p.reason === 'fuelClosedPeriod') ? { landlordBorne: true as const } : {}),
         })), gaps: fuelOf.gaps,
+        ...(fuelOf.zeroInvoices.length > 0 ? { zeroInvoiceIds: fuelOf.zeroInvoices.map((z) => z.deliveryId) } : {}),
       }
     }
     const settledHere = settledOn(ids)

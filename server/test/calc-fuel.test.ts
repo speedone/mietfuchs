@@ -5,7 +5,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement, type ComputedSettlement } from '../src/calc.ts'
 import { fuelGapQuestions } from '../src/db/fuel.ts'
-import { frozenFuelCarriesOf, frozenFuelRowsOf, snapshotFor, type SnapshotCostItem, type SnapshotHeatingPlant } from '../src/snapshot.ts'
+import { frozenFuelCancelledOf, frozenFuelCarriesOf, frozenFuelRowsOf, snapshotFor, type SnapshotCostItem, type SnapshotHeatingPlant } from '../src/snapshot.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import { CALENDAR_RULES, periodContaining, periodKey, periodOfKey } from '../../shared/period.ts'
 import type { BillingPeriod, Co2Statement, FrozenFuelCarry, FuelDelivery, LandlordPart, PeriodRules } from '../../shared/types.ts'
@@ -143,6 +143,26 @@ test('Fall e: Schätzung 1.050,00 € zu hoch; −66,61 € und die Gutschrift j
   assert.equal(n.level, 'warning')
   assert.match(n.text, /haben 66,61 € zu viel getragen, hier: Mieter A \(A\) 39,97 € und Mieter B \(B\) 26,64 €\. Eine Gutschrift ist jederzeit zulässig und wird empfohlen\./)
   assert.equal(summe(h), 650000)
+})
+
+test('Invariante (Abschluss mit Schätzung, Startwert 515): Die Rechnung deckt die Schätzung nur teilweise ab; die Gutschriften je Mieter ergeben zusammen den Betrag, den die Mieter zu viel getragen haben', () => {
+  // Geschätzt ist 01.01.–30.04.2025 (9.000,00 €), die Rechnung beginnt am 15.03.2025: Nur der Teil der Schätzung
+  // für 15.03.–30.04. ist mit der Rechnung zu vergleichen, und nur er geht in die Gutschrift je Mieter.
+  const e = lieferung({ id: 'e', label: 'Schätzung', invoiceFrom: '2025-01-01', invoiceTo: '2025-04-30', amountCents: 900000, estimated: true })
+  const h = settle('2025-05', {
+    fuelDeliveries: [lieferung(), e],
+    fuelCarryFrozen: [eingefroren('e', '2024-05', 900000)],
+    closedSettlements: [abgeschlossen('2024-05', { fuelCarryRows: zeilenDerSchaetzung(540000, 360000) })],
+  })
+  const n = h.notices.find((x) => x.code === 'fuel.estimate-overcharged') ?? assert.fail(codes(h).join(', '))
+  const cents = (s: string) => Math.round(Number(s.replace(/\./g, '').replace(',', '.')) * 100)
+  const total = cents(n.text.match(/haben ([\d.,]+) € zu viel getragen/)?.[1] ?? assert.fail(n.text))
+  const diff = teileVon(h, 'fuel:d:2025-05:2024-05').find((p) => p.reason === 'fuelEstimateDiff')?.cents ?? assert.fail('keine Abweichung')
+  assert.equal(total, -diff)
+  const each = [...n.text.matchAll(/Mieter [AB] \([AB]\) ([\d.,]+) €/g)].map((m) => cents(m[1] ?? ''))
+  assert.equal(each.length, 2)
+  // Vorher: der Faktor −diff/E auf alle Zeilen der Schätzung, also rund 9.000 € / E-fach zu viel.
+  assert.equal(each.reduce((a, c) => a + c, 0), total, n.text)
 })
 
 test('Fall f: H−1 wieder offen; die Schätzung zählt nicht mehr, H−1 bucht die echte Rechnung herein (Review Focus 3)', () => {
@@ -563,6 +583,28 @@ test('Nachprüfung (gering): Position erst nach dem Abschluss ihrer Heizperiode 
   const h1 = settle('2024-05', ueber)
   assert.equal(mieterSumme(h1), 0)
   assert.match(textOf(h1, 'fuel.owner-closed-unlinked'), /Abrechnung 2025\/2026, in der die Rechnung steht, ist abgeschlossen; ihre Position war beim Abschluss noch nicht mit der Lieferung verknüpft/)
+})
+
+test('Invariante (Startwert 515): Rechnung beim Abschluss ihrer Heizperiode verknüpft, aber storniert: der Hinweis sagt „storniert“, nicht „nicht verknüpft“', () => {
+  const storniert = settle('2025-05', { costItems: [position({ id: 'gas', amountCents: 0 })] })
+  const ueber = { closedSettlements: [abgeschlossen('2025-05', { fuelCarryRows: frozenFuelRowsOf(storniert), fuelCarries: frozenFuelCarriesOf(storniert), fuelCancelled: frozenFuelCancelledOf(storniert) })] }
+  const h1 = settle('2024-05', ueber)
+  assert.equal(mieterSumme(h1), 0)
+  const t = textOf(h1, 'fuel.owner-closed-unlinked')
+  assert.match(t, /Zur Rechnung „Gas 2025\/2026“ gehörten heute 983,39 € in diese Heizperiode\. Die Abrechnung 2025\/2026, in der die Rechnung steht, ist abgeschlossen; beim Abschluss ergaben ihre Positionen zusammen 0 € \(storniert\)/)
+  assert.doesNotMatch(t, /noch nicht mit der Lieferung verknüpft/)
+})
+
+test('Invariante (Startwerte 196, 397): mit 0 eingefroren, weil die Rechnung beim Abschluss storniert war: der Hinweis sagt „storniert“, nicht „nicht verknüpft“', () => {
+  const vorher = settle('2024-05', { costItems: [position({ id: 'gas', amountCents: 0 })] })
+  const h = settle('2025-05', {
+    fuelCarryFrozen: [eingefroren('d', '2024-05', 0)],
+    closedSettlements: [abgeschlossen('2024-05', { fuelCarryRows: frozenFuelRowsOf(vorher), fuelCancelled: [{ plantId: 'hp', period: '2024-05', deliveryId: 'd' }] })],
+  })
+  assert.deepEqual(teileVon(h, 'fuel:d:2025-05:2024-05'), [{ reason: 'fuelClosedPeriod', cents: 98339 }])
+  const t = textOf(h, 'fuel.closed-period-part')
+  assert.match(t, /Als die Abrechnung 2024\/2025 abgeschlossen wurde, ergaben die Positionen der Rechnung „Gas 2025\/2026“ zusammen 0 € \(storniert\)\. Ihr Teil für 2024\/2025 \(983,39 €\) ist dort deshalb nicht verteilt/)
+  assert.doesNotMatch(t, /noch mit keiner Position verknüpft/)
 })
 
 test('Nachprüfung W1, Gegenstück: Storno nach Abschluss der Heizperiode der Positionen: die offene davor verteilt nichts und weist die Gegenbuchung aus', () => {
