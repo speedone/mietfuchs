@@ -603,7 +603,7 @@ export const GLOSSARY = {
     title: 'Rechtsstand',
     short: 'Das Datum, auf dem die Regeln in Mietfuchs stehen, und die Regeln, die im Abrechnungsjahr gelten; beim Abschließen wird er mit der Abrechnung eingefroren.',
     example: 'Eine Abrechnung für 2023 mit Rechtsstand 30.09.2026 nennt die Regel zum Kabelfernsehen, denn 2023 war es bei Anlagen von vor dem 01.12.2021 noch umlagefähig; eine für 2025 nennt sie nicht mehr.',
-    needed: 'Sie müssen nichts tun. Er zeigt, nach welchen Regeln eine Abrechnung erstellt wurde.',
+    needed: 'Sie müssen nichts tun. Er zeigt, nach welchen Regeln eine Abrechnung erstellt wurde. Werte, die eine Behörde erst später veröffentlicht, etwa den CO₂-Preis des neuen Jahres, können Sie in den Einstellungen mit Quelle selbst eintragen; Mietfuchs braucht sie nur für die Prüfung Ihrer Rechnungen. Bringt ein Update den amtlichen Wert, gilt dieser.',
   },
 } satisfies Record<string, Term>
 

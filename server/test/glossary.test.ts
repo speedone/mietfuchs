@@ -265,3 +265,8 @@ test('Angaben zur Abrechnung und Klimafaktor (Heizung PR 14): Beispiele nachgere
   assert.doesNotMatch(GLOSSARY.climateFactor.needed, /DIN 94680/)
   assert.match(GLOSSARY.climateFactor.needed, /mit ihrer Quelle/)
 })
+
+test('Lexikon: Rechtsstand erklärt eingetragene Werte (Heizung PR 17)', () => {
+  assert.match(GLOSSARY.legalBasis.needed, /selbst eintragen/)
+  assert.match(GLOSSARY.legalBasis.needed, /amtlichen Wert/)
+})

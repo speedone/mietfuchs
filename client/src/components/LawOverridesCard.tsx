@@ -60,7 +60,7 @@ export default function LawOverridesCard() {
               <p>{statusText(s)}</p>
               {s.status !== 'superseded' && (
                 <>
-                  <p className="muted">{s.reason} Tragen Sie den Wert erst ein, wenn er veröffentlicht ist, und nennen Sie die Fundstelle.</p>
+                  <p className="muted">{`${s.reason} Tragen Sie den Wert erst ein, wenn er veröffentlicht ist, und nennen Sie die Fundstelle.`}</p>
                   <div className="row">
                     <label className="field">
                       {unit ? `Wert ${s.year} (${unit})` : `Wert ${s.year}`}
