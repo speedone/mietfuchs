@@ -6324,3 +6324,42 @@ test('Eigene Heizkostenabrechnung über die Routen: Einrichtung mit Liste, Antei
     s.stop()
   }
 })
+
+test('Ablesedienst (Heizung PR 12): PUT speichert die Werte, eine Überschneidung ergibt 400 mit Satz, die Abrechnung zählt Einheiten', async () => {
+  const s = await startServer()
+  try {
+    const send = (url: string, init: RequestInit) => fetch(`${s.base}${url}`, { ...init, headers: { 'content-type': 'application/json' } })
+    const unit = await s.api<Unit>('/api/units', jsonPost({ name: 'EG', areaM2: 80, participates: true }))
+    const zwei = await s.api<Unit>('/api/units', jsonPost({ name: 'OG', areaM2: 80, participates: true }))
+    for (const [u, n] of [[unit, 'A'], [zwei, 'B']] as const) await s.api('/api/tenancies', jsonPost({ unitId: u.id, tenantName: n, persons: 1, start: '2020-01-01' }))
+    const { plant } = await jsonOf<{ plant: HeatingPlant }>(await send('/api/heating-plants', jsonPost({ energy: 'gas', method: 'manual' })))
+    const setup = await send(`/api/heating-plants/${plant.id}/self`, { method: 'PUT', body: JSON.stringify({
+      period: '2025-01', heatConsumptionPct: 70, waterConsumptionPct: 70, insulationRule: 'notApplies', hotWater: 'none', capture: 'serviceValues', dhwHeatMeter: false, totalHeatMeter: false,
+    }) })
+    assert.equal(setup.status, 200, await setup.clone().text())
+    await s.api('/api/costItems', jsonPost({ period: '2025-01', category: 'Heizung und Warmwasser', description: 'Gas', amountCents: 100000, key: 'heatingSystem', heatingPlantId: plant.id, heatingPart: 'fuel', heatingTarget: 'heating' }))
+    const url = `/api/heating-plants/${plant.id}/periods/2025-01/service-values`
+    const ok = await send(url, { method: 'PUT', body: JSON.stringify({ values: [
+      { unitId: unit.id, from: '2025-01-01', to: '2025-12-31', heatValue: 300, waterValue: null },
+      { unitId: zwei.id, from: '2025-01-01', to: '2025-12-31', heatValue: 700, waterValue: null },
+    ] }) })
+    assert.equal(ok.status, 200, await ok.clone().text())
+    assert.equal((await jsonOf<unknown[]>(ok)).length, 2)
+    const doppelt = await send(url, { method: 'PUT', body: JSON.stringify({ values: [
+      { unitId: unit.id, from: '2025-01-01', to: '2025-06-30', heatValue: 1, waterValue: null },
+      { unitId: unit.id, from: '2025-06-01', to: '2025-12-31', heatValue: 1, waterValue: null },
+    ] }) })
+    assert.equal(doppelt.status, 400)
+    assert.match(await errorFrom(doppelt), /überschneiden sich/)
+    assert.equal((await send(`/api/heating-plants/gibt-es-nicht/periods/2025-01/service-values`, { method: 'PUT', body: '{"values":[]}' })).status, 404)
+    // 300 von 1.000 Einheiten: 70 % von 1.000 € nach Verbrauch, 30 % nach Fläche (gleich groß).
+    const abrechnung = await s.api<Settlement>('/api/settlement/2025')
+    const self = abrechnung.heating?.find((h) => h.plantId === plant.id)?.self
+    assert.equal(self?.pots.find((p) => p.pot === 'heating')?.consumptionUnit, 'Einheiten')
+    assert.equal(self?.serviceValues?.length, 2)
+    const a = abrechnung.statements.find((st) => st.tenantName === 'A')
+    assert.equal(a?.totalShareCents, 70000 * 0.3 + 15000)
+  } finally {
+    s.stop()
+  }
+})

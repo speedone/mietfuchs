@@ -33,12 +33,14 @@ import { dhwInputOf, dhwShareOf, type DhwContext, type DhwProblem } from './dhw.
 import { lineRoot } from '../../shared/heatingPeriod.ts'
 import type {
   SelfSpanRange,
-  AreaBasisHeat, ChangeSplit, DhwMethod, DhwStatement, HeatingEnergy, HeatingPart, HeatingTarget, HotWater, InsulationRule, InterimGap, InterimGapStatus, MeterType, SelfPot, SelfReadingView, SelfRole,
+  AreaBasisHeat, CaptureMethod, ChangeSplit, DhwMethod, DhwStatement, HeatingEnergy, HeatingPart, HeatingTarget, HotWater, InsulationRule, InterimGap, InterimGapStatus, MeterType, SelfPot, SelfReadingView, SelfRole,
 } from '../../shared/types.ts'
 
 export type SelfUnit = { id: string; name: string; areaM2: number; heatedAreaM2: number | null; role: 'rented' | 'self' | 'outside' }
 export type SelfTenancy = { id: string; unitId: string; tenantName: string; start: string; end: string | null }
-export type SelfMeter = { id: string; name: string; unitId: string; type: MeterType }
+// `factor` (Heizung PR 12): Die Differenz zweier Ablesungen zählt mal diesem Faktor; beim
+// Heizkostenverteiler mit Einheitsskala der Bewertungsfaktor, sonst 1 (hca.ts `meterFactor`). Fehlt: 1.
+export type SelfMeter = { id: string; name: string; unitId: string; type: MeterType; factor?: number }
 // `boundFor`: Grenze einer Ablesung aus dem Mieterwechsel (`readings.interim_for`, Abweichung 9, 23).
 export type SelfReading = { meterId: string; date: string; value: number; replacement?: boolean; oldEndValue?: number | null; boundFor?: string | null }
 export type SelfInput = {
@@ -62,6 +64,10 @@ export type SelfInput = {
   // Nur gefragt, wenn eine Ablesung neben ihrer Grenze liegt; so steht die Warngrenze nur dann im
   // Rechtsstand der Abrechnung.
   offRule: () => ReadingOffWarning
+  // Womit die Heizung erfasst wird (Heizung PR 12): bei `hca` die Zähler vom Typ `hkv`; Werte eines
+  // Ablesedienstes kommen als gedachte Zähler vom Typ `waerme`/`warmwasser` (hca.ts `serviceMeters`).
+  // Fehlt: Wärmezähler wie in PR 10.
+  capture?: CaptureMethod
 }
 
 export type SelfUser = {
@@ -88,6 +94,9 @@ export type SelfUnitPlan = {
   boundaries: SelfBoundary[]
   readings: SelfReadingView[]
   consumption: Record<SelfPot, number>
+  // Je Zähler die abgelesene Menge vor dem Faktor (Heizung PR 12), aus denselben Differenzen, mit denen
+  // verteilt wird; für den Ausweis je Heizkostenverteiler.
+  measured: { meterId: string; pot: SelfPot; raw: number }[]
 }
 export type SelfProblem =
   | { kind: 'noArea'; pot: SelfPot }
@@ -275,7 +284,9 @@ export function planSelf(input: SelfInput): SelfPlan {
   const splitTotal = (pot: SelfPot): number => (pot === 'heating' ? heatSplitTotal : hDays)
   const heatAreaOf = (u: SelfUnit): number => (input.areaBasisHeat === 'heatedArea' ? (u.heatedAreaM2 ?? u.areaM2) : u.areaM2) || 0
   const areaOf = (pot: SelfPot, u: SelfUnit): number => (pot === 'heating' ? heatAreaOf(u) : u.areaM2 || 0)
-  const metersOf = (unitId: string, pot: SelfPot) => input.meters.filter((m) => m.unitId === unitId && m.type === POT_METER[pot])
+  // Heizung PR 12: Der Gerätetyp der Heizung folgt der Erfassung.
+  const meterTypeOf = (pot: SelfPot): MeterType => (pot === 'heating' && input.capture === 'hca' ? 'hkv' : POT_METER[pot])
+  const metersOf = (unitId: string, pot: SelfPot) => input.meters.filter((m) => m.unitId === unitId && m.type === meterTypeOf(pot))
   const startBoundary = dayBefore(h.from)
   // Der eingefrorene Endstand der abgeschlossenen Vorperiode steht in der Liste, auch wenn die
   // Ablesung seither geändert wurde; er gilt (er steht in der zugestellten Abrechnung).
@@ -324,6 +335,7 @@ export function planSelf(input: SelfInput): SelfPlan {
       }
     }
     const consumption: Record<SelfPot, number> = { heating: 0, water: 0 }
+    const measuredRaw = new Map<string, { pot: SelfPot; raw: number }>()
     const answerAt = (b: string): InterimGapStatus | null => input.gaps.find((x) => x.unitId === unit.id && x.date === b)?.status ?? null
     const isChange = (b: string): boolean => users.some((u, i) => i < users.length - 1 && u.to === b && users[i + 1]?.from === dayAfter(b))
     // Wie weit die Ablesungen einer Grenze daneben liegen (die fernste über alle Zähler).
@@ -379,6 +391,7 @@ export function planSelf(input: SelfInput): SelfPlan {
         const to = lastUser.to
         let v = 0
         let ok = true
+        const raws: [string, number][] = []
         for (const m of meters) {
           const a = readingAt.get(m.id)?.get(from) ?? null
           const b = readingAt.get(m.id)?.get(to) ?? null
@@ -393,9 +406,12 @@ export function planSelf(input: SelfInput): SelfPlan {
             problems.push({ kind: 'missing', pot: p, unitId: unit.id, unitName: unit.name, boundary: to, reason: result.problem, meterName: m.name })
             continue
           }
-          v += result.value
+          // Heizung PR 12: jede Differenz mit dem Faktor ihres Geräts.
+          v += result.value * (m.factor ?? 1)
+          raws.push([m.id, result.value])
         }
         if (!ok) continue
+        for (const [id, raw] of raws) measuredRaw.set(id, { pot: p, raw: (measuredRaw.get(id)?.raw ?? 0) + raw })
         consumption[p] += v
         const splitSum = g.reduce((a, u) => a + splitOf(p, u), 0)
         for (const u of g) {
@@ -439,7 +455,8 @@ export function planSelf(input: SelfInput): SelfPlan {
       const r = readingAt.get(m.id)?.get(bd.date) ?? null
       return { meterId: m.id, meterName: m.name, pot: p, boundary: bd.date, date: r?.date ?? null, value: r?.value ?? null }
     })))
-    return { unit, heatArea: heatAreaOf(unit), users, boundaries: bounds, readings, consumption }
+    const measured = [...measuredRaw].map(([meterId, x]) => ({ meterId, pot: x.pot, raw: x.raw }))
+    return { unit, heatArea: heatAreaOf(unit), users, boundaries: bounds, readings, consumption, measured }
   })
 
   // Summe des Verbrauchs je Topf, dann die Bruchteile.

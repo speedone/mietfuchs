@@ -25,7 +25,7 @@ import { consumptionSharesOf, OIL_OR_GAS, POT_METER, selfFromOf, targetProblem, 
 import type { Database, Executor } from './client.ts'
 import { closedHeatingKeys, closedText, ensureHeatingPeriod, heatingPeriodClosed, heatingPeriodOf, plantContext, type PlantContext } from './heatingPeriodContext.ts'
 import { readCostItems, readHeatingPlants, readMeters, readUnits } from './read.ts'
-import { guardHeatingPlant, plantRow, writeSelfSpans } from './heating.ts'
+import { guardHeatingPlant, pinSelfSpans, plantRow, writeSelfSpans } from './heating.ts'
 import { HeatingError, insertEntityIn, ISO_DATE, oneOfOrUndefined, patchCostItemIn, raw } from './repository.ts'
 import { costItems, heatingPeriods, heatingPlants, INSULATION_RULES, INTERIM_GAP_STATUS, interimReadingGaps, units } from './schema.ts'
 import { beforeBeginText, lineRowsOf } from './selfLine.ts'
@@ -210,12 +210,26 @@ export async function setUpSelf(db: Database, plantId: string, body: unknown, to
   const from = existingBegin ?? h.key
   // Runde 3: Ein neuer Zeitraum schließt an einen früheren unmittelbar an (dann geht dieser weiter) oder
   // beginnt danach; die abgeschlossenen Heizperioden früherer Zeiträume rechnen weiter nach der Verordnung.
-  const past = (current.selfSpans ?? []).filter((s) => s.until !== null)
-  const spans: SelfSpanRange[] = existingBegin !== null
-    ? (current.selfSpans ?? [])
-    : past.some((s) => s.until === h.key)
-      ? past.map((s) => (s.until === h.key ? { from: s.from, until: null } : s))
-      : [...past, { from: h.key, until: null }]
+  // Heizung PR 12: Jeder Zeitraum trägt seine Erfassung. Eine andere Erfassung beginnt mit der Heizperiode der
+  // Einrichtung einen neuen Zeitraum; Heizperioden davor rechnen weiter nach ihren Geräten, auch offene (der
+  // Wechsel der Ausstattung zum Stichtag). Beginnt der laufende Zeitraum mit dieser Heizperiode, ist es eine
+  // Berichtigung, und er bekommt die neue Erfassung.
+  const newCapture = after.capture ?? 'heatMeter'
+  const pinned = pinSelfSpans(current)
+  const past = pinned.filter((s) => s.until !== null)
+  const openSpan = pinned.find((s) => s.until === null)
+  let spans: SelfSpanRange[]
+  if (existingBegin !== null && openSpan) {
+    spans = openSpan.capture === newCapture
+      ? pinned
+      : h.key === openSpan.from
+        ? [...past, { ...openSpan, capture: newCapture }]
+        : [...past, { ...openSpan, until: h.key }, { from: h.key, until: null, capture: newCapture }]
+  } else {
+    spans = past.some((s) => s.until === h.key && s.capture === newCapture)
+      ? past.map((s) => (s.until === h.key ? { ...s, until: null } : s))
+      : [...past, { from: h.key, until: null, capture: newCapture }]
+  }
   after.selfSpans = spans
   const offen = await selfItemsOf(db, plantId, 'heatingSystem', null, from)
   const answers = readItemAnswers(raw(body, 'items')).filter((a) => offen.some((c) => c.id === a.id))
@@ -241,6 +255,9 @@ export async function setUpSelf(db: Database, plantId: string, body: unknown, to
   const plans: Record<string, unknown>[] = []
   for (const u of allUnits) {
     for (const pot of pots) {
+      // Heizung PR 12 (Abweichung 8): Heizkostenverteiler legt der Vermieter je Heizkörper selbst an, beim
+      // Ablesedienst gibt es keine Geräte; ein Wärmezähler daneben wäre eine gemischte Ausstattung (§ 5 Abs. 7).
+      if (pot === 'heating' && newCapture !== 'heatMeter') continue
       const type = POT_METER[pot]
       if (allMeters.some((m) => m.unitId === u.id && m.type === type)) continue
       plans.push({ propertyId: current.propertyId, name: `${type === 'waerme' ? 'Wärme' : 'Warmwasser'} ${u.name}`, unitId: u.id, type, unit: type === 'waerme' ? 'kWh' : 'm³' })

@@ -31,6 +31,7 @@ import type {
   FuelGrade,
   FuelQuantityUnit,
   GasBasis,
+  HcaScale,
   HeatGeneration,
   HeatPumpMajority,
   HeatingEnergy,
@@ -351,6 +352,8 @@ export const NEW_DEVICES_INSTALLS = exactly<NewDevicesInstall>()(['single', 'who
 export const HEATING_SOURCES = exactly<HeatingSource>()(['building', 'homeowners'] as const)
 export const CHANGE_SPLITS = exactly<ChangeSplit>()(['degreeDays', 'time'] as const)
 export const HEATING_ROLES = exactly<HeatingRole>()(['supply', 'dhwHeat', 'totalHeat'] as const)
+// Skala eines Heizkostenverteilers (Heizung PR 12).
+export const HCA_SCALES = exactly<HcaScale>()(['unit', 'product'] as const)
 export const INSULATION_RULES = exactly<InsulationRule>()(['applies', 'notApplies', 'unknown'] as const)
 export const DHW_METHODS = exactly<DhwMethod>()(['heatMeter', 'volumeFormula', 'areaFormula'] as const)
 // Warmwasser ohne Wärmezähler (Heizung PR 11): Zeile der Heizwerttabelle und Erzeuger der Anlage.
@@ -421,6 +424,8 @@ export const heatingPlants = sqliteTable(
     // Wärmepumpe: Liefert sie mehr als die Hälfte der Wärme des Gebäudes? (§ 11 Abs. 1 Nr. 3 Buchst. a
     // HeizkostenV in der Fassung bis 30.09.2024, Heizung PR 11); NULL heißt: nicht beantwortet.
     heatPumpMajority: text('heat_pump_majority', { enum: HEAT_PUMP_MAJORITIES }),
+    // Bauart der Heizkostenverteiler (Heizung PR 12, Entwurf 5.3), nur zur Beschreibung im Ausweis.
+    hcaModel: text('hca_model'),
   },
   () => [
     oneOf('heating_plants_energy_known', 'energy', HEATING_ENERGIES),
@@ -608,12 +613,41 @@ export const heatingSelfSpans = sqliteTable(
       .references(() => heatingPlants.id, { onDelete: 'cascade' }),
     from: text('from_period').notNull(),
     until: text('until_period'),
+    // Womit der Verbrauch in diesem Zeitraum erfasst wird (Heizung PR 12). Ein Wechsel der Ausstattung
+    // beginnt einen neuen Zeitraum, damit frühere Heizperioden nicht rückwirkend anders rechnen. NULL:
+    // Zeitraum von vor PR 12, damals gab es nur Wärmezähler, und es gilt die Erfassung der Anlage.
+    capture: text('capture', { enum: CAPTURE_METHODS }),
   },
   (t) => [
     primaryKey({ columns: [t.plantId, t.from] }),
     periodKeyCheck('heating_self_spans_from_valid', 'from_period'),
     periodKeyCheck('heating_self_spans_until_valid', 'until_period'),
     check('heating_self_spans_order_valid', sql.raw('"until_period" IS NULL OR "until_period" > "from_period"')),
+    oneOf('heating_self_spans_capture_known', 'capture', CAPTURE_METHODS),
+  ],
+)
+
+// Die Werte eines Ablesedienstes je Wohnung und Nutzungszeitraum (Heizung PR 12, Entwurf 5.6). Eine
+// gelöschte Wohnung oder Heizperiode nimmt ihre Werte mit.
+export const heatingServiceValues = sqliteTable(
+  'heating_service_values',
+  {
+    heatingPeriodId: text('heating_period_id')
+      .notNull()
+      .references(() => heatingPeriods.id, { onDelete: 'cascade' }),
+    unitId: text('unit_id')
+      .notNull()
+      .references(() => units.id, { onDelete: 'cascade' }),
+    from: text('from').notNull(),
+    to: text('to').notNull(),
+    heatValue: real('heat_value').notNull(),
+    waterValue: real('water_value'),
+  },
+  (t) => [
+    primaryKey({ columns: [t.heatingPeriodId, t.unitId, t.from] }),
+    check('heating_service_values_dates_valid', sql.raw(`"from" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]' AND "to" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]' AND "from" <= "to"`)),
+    notNegative('heating_service_values_heat_not_negative', 'heat_value'),
+    notNegative('heating_service_values_water_not_negative', 'water_value'),
   ],
 )
 
@@ -1072,6 +1106,9 @@ export const meters = sqliteTable(
     // Fernablesbar und eingebaut am (§ 5 Abs. 2, 3 HeizkostenV); null heißt unbekannt.
     remoteReadable: integer('remote_readable', { mode: 'boolean' }),
     installedOn: text('installed_on'),
+    // Skala und Bewertungsfaktor eines Heizkostenverteilers (Heizung PR 12); nur bei `hkv`.
+    hcaScale: text('hca_scale', { enum: HCA_SCALES }),
+    ratingFactor: real('rating_factor'),
   },
   () => [
     // Der Zählertyp verbindet Zähler und Kostenposition (`cost_items.meter_type`). Ein
@@ -1083,6 +1120,10 @@ export const meters = sqliteTable(
     // Ein Zähler der Anlage hängt an keiner Wohnung; die Zähler der Wohnungen gehören zu ihr über
     // die angeschlossenen Wohnungen.
     check('meters_heating_plant_unit_valid', sql.raw('"heating_plant_id" IS NULL OR "unit_id" IS NULL')),
+    // Skala und Faktor gibt es nur am Heizkostenverteiler, der Faktor ist über 0 (Heizung PR 12).
+    oneOf('meters_hca_scale_known', 'hca_scale', HCA_SCALES),
+    check('meters_rating_factor_positive', sql.raw('"rating_factor" > 0')),
+    check('meters_hca_fields_valid', sql.raw(`"type" = 'hkv' OR ("rating_factor" IS NULL AND "hca_scale" IS NULL)`)),
   ],
 )
 

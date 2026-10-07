@@ -14,7 +14,8 @@
 //
 // Diese Datei importiert aus repository.ts und read.ts, nie umgekehrt.
 import { lineRowsOf } from './selfLine.ts'
-import { selfFromOf } from '../heating.ts'
+import { selfActive, selfFromOf } from '../heating.ts'
+import { captureOf } from '../hca.ts'
 import { and, eq, inArray } from 'drizzle-orm'
 import { consumptionInPeriod } from '../calc.ts'
 import { suppliedAreaOf } from '../dhw.ts'
@@ -28,7 +29,7 @@ import { germanDate, valueAt } from '../../../shared/law/register.ts'
 import { heatingPeriodsEndingIn } from '../../../shared/heatingPeriod.ts'
 import { periodLabel, periodOfKey, resolvePeriodParam } from '../../../shared/period.ts'
 import type { Database, Executor } from './client.ts'
-import { readCo2Statements, readCostItems, readMeters, readReadings, readStock, readUnits } from './read.ts'
+import { readCo2Statements, readCostItems, readHeatingServiceValues, readMeters, readReadings, readStock, readUnits } from './read.ts'
 import { stockViewFor } from './fuelStock.ts'
 import { isStockEnergy } from '../../../shared/fuelStock.ts'
 import { asNullableFilled, CrossPropertyError, has, HeatingError, merged, oneOfOrUndefined, plantSpanOf, raw } from './repository.ts'
@@ -88,8 +89,10 @@ export async function heatingPeriodViews(db: Database, plantId: string, periodPa
   const allPlants = (await lineRowsOf(db, plantId)).plants
   const lineIds = new Set(allPlants.filter((x) => lineRoot(x, allPlants) === lineRoot({ id: plantId, replacesPlantId: allPlants.find((y) => y.id === plantId)?.replacesPlantId ?? null }, allPlants)).map((x) => x.id))
   const lineRowsAll = lineIds.size > 1 ? await db.select().from(heatingPeriods).where(inArray(heatingPeriods.plantId, [...lineIds])) : rows
+  const serviceValues = (await readHeatingServiceValues(db)).filter((v) => v.plantId === plantId)
   const views: HeatingPeriodView[] = []
   for (const h of hs) {
+    const self = selfActive(ctx.plant, String(h.key))
     const row = rows.find((r) => r.period === h.key)
     const lineRow = lineRowsAll.find((r) => r.plantId !== plantId && r.period === h.key && r.dhwMethod !== null)
     const closed = await heatingPeriodClosed(db, ctx, h)
@@ -139,6 +142,8 @@ export async function heatingPeriodViews(db: Database, plantId: string, periodPa
       distribution: ctx.plant.method === 'self' && (selfBegin === null || h.key >= selfBegin)
         ? distributionOf(lineRows, ctx.plant.energy, h, today)
         : null,
+      capture: self ? captureOf(ctx.plant, String(h.key)) : null,
+      serviceValues: serviceValues.filter((v) => v.period === h.key),
     })
   }
   return views

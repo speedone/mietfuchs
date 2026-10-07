@@ -45,7 +45,6 @@ import {
 const LATER = {
   rhythm: 'Den Zeitraum der Heizung stellen Sie nach dem Anlegen unter „Zeitraum der Heizung“ ein; eine Vorschau zeigt, was mit Ihren Heizpositionen geschieht.',
   separateVia: 'Ob die Heizkosten getrennt abgerechnet werden, stellen Sie bei einer eigenen Heizperiode unter „Getrennte Heizkostenabrechnung“ ein; eine Vorschau zeigt, wie die Vorauszahlung aufgeteilt wird.',
-  capture: 'Heizkostenverteiler und die Werte eines Ablesedienstes wertet Mietfuchs mit einer späteren Version aus. Bis dahin rechnen Sie mit Wärmezählern ab oder übernehmen die Abrechnung des Messdienstes als Einzelbeträge.',
 }
 
 // Der Verweis auf den Kesseltausch (Heizung PR 9) in den Sätzen, die einen Wechsel des Energieträgers sperren.
@@ -125,6 +124,11 @@ function mergeHeatingPlant(current: HeatingPlant, body: unknown): HeatingPlant {
     // Wärme liefert. Leer heißt keine Antwort; ein unbekannter Wert ist ein Fehler mit Satz, kein stilles Löschen.
     heatGeneration: merged(body, 'heatGeneration', current.heatGeneration, (v) => answerOf(HEAT_GENERATIONS, v, 'Ob die Heizung die Wärme allein erzeugt')),
     heatPumpMajority: merged(body, 'heatPumpMajority', current.heatPumpMajority, (v) => answerOf(HEAT_PUMP_MAJORITIES, v, 'Ob die Wärmepumpe mehr als die Hälfte der Wärme liefert')),
+    // Bauart der Heizkostenverteiler (Heizung PR 12), nur zur Beschreibung; leer heißt keine Angabe.
+    hcaModel: merged(body, 'hcaModel', current.hcaModel ?? null, (v) => {
+      const text = asNullableFilled(v)
+      return text === null ? null : text.trim() === '' ? null : text.trim()
+    }),
     // Setzt nur die Einrichtung der eigenen Abrechnung; das Zurückschalten löscht ihn (updateHeatingPlant).
     selfSpans: current.selfSpans ?? [],
   }
@@ -137,7 +141,7 @@ const emptyHeatingPlant = (id: string, propertyId: string): HeatingPlant => ({
   capturedOnOct2024: null, warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null,
   periodChanges: [], separateSpans: [], units: null, newDevicesInstall: null,
   nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null,
-  hotWater: 'combined', capture: null, areaBasisHeat: 'area', heatPumpInstalledOn: null, heatGeneration: null, heatPumpMajority: null, selfSpans: [],
+  hotWater: 'combined', capture: null, areaBasisHeat: 'area', heatPumpInstalledOn: null, heatGeneration: null, heatPumpMajority: null, hcaModel: null, selfSpans: [],
 })
 
 export async function guardHeatingPlant(db: Executor, before: HeatingPlant | null, after: HeatingPlant): Promise<void> {
@@ -168,7 +172,6 @@ export async function guardHeatingPlant(db: Executor, before: HeatingPlant | nul
   // Eigene Heizkostenabrechnung (Heizung PR 10, Entwurf 5.3, 8.1, 8.3, Abweichungen 10 und 17).
   if (after.method === 'self') {
     if (after.capture === null) throw new HeatingError(400, 'Bitte wählen Sie, womit der Verbrauch erfasst wird.')
-    if (after.capture !== 'heatMeter') throw new HeatingError(400, LATER.capture)
     if (after.areaBasisHeat === 'heatedArea' && (after.units === null || after.units.some((u) => u.heatedAreaM2 === null))) {
       throw new HeatingError(400, 'Für Grundkosten nach der beheizten Fläche nennen Sie die angeschlossenen Wohnungen und tragen bei jeder die beheizte Fläche ein.')
     }
@@ -323,13 +326,21 @@ export const plantRow = (p: HeatingPlant) => ({
   nonResidential: p.nonResidential, restriction: p.restriction, districtEtsNew: p.districtEtsNew,
   endsOn: p.endsOn, replacesPlantId: p.replacesPlantId, buildingWith: p.buildingWith, takesOverStock: p.takesOverStock,
   hotWater: p.hotWater, capture: p.capture, areaBasisHeat: p.areaBasisHeat, heatPumpInstalledOn: p.heatPumpInstalledOn,
-  heatGeneration: p.heatGeneration, heatPumpMajority: p.heatPumpMajority,
+  heatGeneration: p.heatGeneration, heatPumpMajority: p.heatPumpMajority, hcaModel: p.hcaModel ?? null,
 })
+
+// Heizung PR 12: Ein Zeitraum ohne eigene Erfassung (von vor PR 12) bekommt beim nächsten Schreiben die
+// bisherige der Anlage, damit ihn ein späterer Wechsel nicht rückwirkend umstellt.
+export const pinSelfSpans = (p: Pick<HeatingPlant, 'capture' | 'selfSpans'>): SelfSpanRange[] =>
+  (p.selfSpans ?? []).map((s) => ({ ...s, capture: s.capture ?? p.capture ?? 'heatMeter' }))
+export const CAPTURE_VIA_SETUP =
+  'Womit der Verbrauch erfasst wird, ändert sich nur zum Beginn einer Heizperiode, damit frühere Heizperioden nicht rückwirkend anders rechnen. ' +
+  'Beenden Sie dafür unter „Ändern“ die eigene Heizkostenabrechnung und richten Sie sie mit „Selbst abrechnen“ ab der Heizperiode neu ein, in der die neuen Geräte zählen.'
 
 // Die Zeiträume der eigenen Heizkostenabrechnung, ganz ersetzt wie die Liste der Wohnungen (Durchsicht von #239).
 export async function writeSelfSpans(tx: Executor, plantId: string, spans: readonly SelfSpanRange[]): Promise<void> {
   await tx.delete(heatingSelfSpans).where(eq(heatingSelfSpans.plantId, plantId))
-  if (spans.length > 0) await tx.insert(heatingSelfSpans).values(spans.map((s) => ({ plantId, from: s.from, until: s.until })))
+  if (spans.length > 0) await tx.insert(heatingSelfSpans).values(spans.map((s) => ({ plantId, from: s.from, until: s.until, capture: s.capture ?? null })))
 }
 
 // Die Liste der Wohnungen, ganz ersetzt wie die Untertabellen in repository.ts.
@@ -436,9 +447,17 @@ export async function updateHeatingPlant(db: Database, id: string, body: unknown
   if (span && span.closedAfter !== null) {
     throw new HeatingError(409, `Die Heizperiode ${span.closedAfter.slice(0, 4)} ist abgeschlossen, die Heizperiode ${(span.to ?? '').slice(0, 4)} davor nicht. Schließen Sie diese zuerst ab oder öffnen Sie die spätere wieder, bevor Sie die eigene Heizkostenabrechnung beenden.`)
   }
+  // Heizung PR 12: Die Erfassung wechselt nur mit einem neuen Zeitraum der eigenen Abrechnung, damit frühere
+  // Heizperioden nicht rückwirkend nach anderen Geräten rechnen (die Einrichtung `setUpSelf` öffnet ihn).
+  if (current.method === 'self' && next.method === 'self' && (current.capture ?? null) !== (next.capture ?? null)) {
+    throw new HeatingError(400, CAPTURE_VIA_SETUP)
+  }
   if (zurueck) {
-    const rest = (current.selfSpans ?? []).filter((s) => s.until !== null)
-    next.selfSpans = open && span?.to && span.to !== open.from ? [...rest, { from: open.from, until: span.to }] : rest
+    // Die Zeiträume behalten ihre Erfassung; ein Zeitraum von vor PR 12 bekommt die bisherige der Anlage.
+    const pinned = pinSelfSpans(current)
+    const rest = pinned.filter((s) => s.until !== null)
+    const openPinned = pinned.find((s) => s.until === null)
+    next.selfSpans = open && span?.to && span.to !== open.from ? [...rest, { from: open.from, until: span.to, capture: openPinned?.capture ?? current.capture ?? 'heatMeter' }] : rest
   }
   const clearShares = zurueck ? await openShareRowsFrom(db, id, open?.from ?? null) : []
   const offen = zurueck ? await selfItemsOf(db, id, null, 'heatingSystem') : []
@@ -642,7 +661,7 @@ export async function replaceHeatingPlant(db: Database, oldId: string, newId: st
   for (const k of SWAP_FIELDS) if (has(body, k)) picked[k] = raw(body, k)
   const base: HeatingPlant = { ...old, id: newId, name: '', separateSpans: [], units: served, endsOn: null, replacesPlantId: oldId, takesOverStock: null,
     // Der Beginn der eigenen Abrechnung geht nur mit, wenn die alte Anlage selbst abrechnet (Runde 3).
-    selfSpans: openSelfSpan(old) ? [{ from: openSelfSpan(old)?.from ?? '', until: null }] : [] }
+    selfSpans: openSelfSpan(old) ? [{ from: openSelfSpan(old)?.from ?? '', until: null, capture: openSelfSpan(old)?.capture ?? old.capture ?? 'heatMeter' }] : [] }
   const merged = mergeHeatingPlant(base, picked)
   // Zur eigenen Heizkostenabrechnung nur über die Einrichtung (Heizung PR 10); eine Anlage, die schon
   // selbst abrechnet, gibt die Art an die neue weiter.
