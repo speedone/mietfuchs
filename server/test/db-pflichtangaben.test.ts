@@ -141,6 +141,9 @@ test('Ausnahme nach § 11: Umfang und vereinbarte Abrechnung nur mit Ausnahme; g
     // 2025 bleibt ohne Ausnahme; 2027 erbt sie aus 2026, nur die Wärme.
     assert.deepEqual([(await view('2025')).rules.exemption, (await view('2027')).rules.exemption, (await view('2027')).rules.exemptionScope, (await view('2027')).rules.fromPeriod.exemption], ['none', 'lowDemand', 'heat', '2026-01'])
     assert.equal((await view('2027')).ownRules.exemption, null)
+    // Ohne zentrales Warmwasser betrifft die Ausnahme der Wärme die ganze Anlage (wie die Berechnung).
+    await opened.write((db) => updateHeatingPlant(db, 'hp', { hotWater: 'none' }))
+    assert.equal((await view('2027')).rules.exemptionScope, 'both')
     await assert.rejects(rules('2026-01', { exemption: 'heim' }), status(400, /Ausnahme kennt Mietfuchs nicht/))
     await assert.rejects(rules('2026-01', { consumerContract: '  ' }), status(400, /Streitbeilegung/))
     await opened.write((db) => closeSettlement(db, { id: 'abschluss', propertyId: 'objekt-1', period: periodKey('2026-01'), closedAt: '2027-03-01T10:00:00.000Z', sentAt: null, settlement: {} }))

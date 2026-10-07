@@ -1401,7 +1401,7 @@ lässt die Wahl nur für künftige Zeiträume zu. Der Anteil gehört zur **Linie
   (`heatingRulesOf`; in derselben Heizperiode geht die eigene Anlage vor, `null` heißt geerbt). An der Anlage
   stünden sie zeitlos und wirkten rückwirkend auf offene und abgeschlossene Heizperioden; das war die
   Fehlerklasse der Durchsichten von #239, #241 und #242. In computeSettlement gilt eine Ausnahme je Topf
-  (`exemptionScopeOf`, `exemptPot`; ohne Antwort zum Umfang nur die Wärme): für den ausgenommenen Topf keine
+  (`exemptionScopeOf`, `exemptPot`; ohne Antwort zum Umfang nur die Wärme, ohne zentrales Warmwasser die ganze Anlage): für den ausgenommenen Topf keine
   Kürzung nach § 12 (`noCutFor`, an jeder Stelle mit § 12 Abs. 1 Satz 1, bei der Fernablesbarkeit zählen ganz
   ausgenommene Anlagen nicht mit); sind Wärme und Warmwasser ausgenommen, keine Angaben nach § 6a und keine
   CO₂-Aufteilung ohne vereinbarte Abrechnung (`co2OffByExemption`, § 2 Abs. 7 CO2KostAufG). Ist nur die Wärme

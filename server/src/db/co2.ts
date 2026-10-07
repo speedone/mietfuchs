@@ -37,7 +37,7 @@ import { closedText, dropIfEmpty, ensureHeatingPeriod, heatingPeriodClosed, heat
 // Für ältere Importe (Tests): Die Helfer der Heizperioden stehen seit Heizung PR 8 in heatingPeriodContext.ts.
 export { dropIfEmpty, ensureHeatingPeriod } from './heatingPeriodContext.ts'
 import { distributionOf } from './heatingSelf.ts'
-import { heatingRulesOf } from '../heatingInfo.ts'
+import { effectiveRules, heatingRulesOf } from '../heatingInfo.ts'
 import { postalCodeOf } from '../../../shared/heatingInfo.ts'
 import { CO2_METHODS, co2Statements, co2TenantReliefs, costItems, DHW_METHODS, heatingPeriods, tenancies, units } from './schema.ts'
 
@@ -157,7 +157,7 @@ export async function heatingPeriodViews(db: Database, plantId: string, periodPa
         infoReferenceKwhPerM2: row?.infoReferenceKwhPerM2 ?? null, infoReferenceSource: row?.infoReferenceSource ?? null,
         postalCode,
       },
-      rules: heatingRulesOf(lineRowsAll.map((r) => ({ ...r, period: String(r.period) })), allPlants, plantId, String(h.key)),
+      rules: effectiveRules(heatingRulesOf(lineRowsAll.map((r) => ({ ...r, period: String(r.period) })), allPlants, plantId, String(h.key)), hotWaterOf(ctx.plant, String(h.key))),
       ownRules: {
         exemption: row?.exemption ?? null, exemptionScope: row?.exemptionScope ?? null, exemptionBillingAgreed: row?.exemptionBillingAgreed ?? null,
         agreedOtherwise: row?.agreedOtherwise ?? null, monthlyInfoElsewhere: row?.monthlyInfoElsewhere ?? null, consumerContract: row?.consumerContract ?? null,

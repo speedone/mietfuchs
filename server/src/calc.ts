@@ -2663,8 +2663,13 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const p = plantId ? rulePlants.find((x) => x.id === plantId) : undefined
     return p && (p.supply ?? 'central') === 'central' ? p : undefined
   }
-  const exemptionScopeOf = (plantId: string | null | undefined, key: string): ExemptionScope | null =>
-    (centralPlant(plantId) && plantId ? periodRulesFor(plantId, key).exemptionScope : null)
+  // Bereitet die Anlage in der Heizperiode kein Warmwasser, betrifft eine Ausnahme der Wärme die ganze Anlage.
+  const exemptionScopeOf = (plantId: string | null | undefined, key: string): ExemptionScope | null => {
+    const p = centralPlant(plantId)
+    if (!p || !plantId) return null
+    const s = periodRulesFor(plantId, key).exemptionScope
+    return s === 'heat' && hotWaterOf(p, key) === 'none' ? 'both' : s
+  }
   const exemptPot = (plantId: string, pot: SelfPot, key: string): boolean => {
     const s = exemptionScopeOf(plantId, key)
     return s === 'both' || (s === 'heat' && pot === 'heating')
