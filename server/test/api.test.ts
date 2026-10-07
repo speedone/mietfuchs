@@ -502,7 +502,8 @@ const waitForExit = (child: ChildProcess, timeoutMs = 15000): Promise<number | n
 function startServerRaw(dataDir: string, env: NodeJS.ProcessEnv = {}) {
   const child = spawn(process.execPath, ['src/index.ts'], {
     cwd: serverRoot,
-    env: { ...process.env, NKA_UPDATE_URL: 'http://127.0.0.1:9/kein-internet-im-test', NKA_DATA_DIR: dataDir, CI: 'true', ...env },
+    // CI hinter `...env`, wie in startServerIn: Kein Aufrufer kann es versehentlich abschalten.
+    env: { ...process.env, NKA_UPDATE_URL: 'http://127.0.0.1:9/kein-internet-im-test', NKA_DATA_DIR: dataDir, ...env, CI: 'true' },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   let output = ''
@@ -566,6 +567,202 @@ test('Belegter Port: sitzt dort etwas anderes, bleibt es bei der Fehlermeldung',
   } finally {
     start.child.kill()
     fremder.close()
+    removeDataDir(dataDir)
+  }
+})
+
+// ---------- Zweiter Start auf belegtem Port fasst die Daten nicht an (#244) ----------
+
+// Jede Datei im Datenordner mit ihrer Prüfsumme, Unterordner eingeschlossen. Daran sieht der
+// Test jede Veränderung: eine migrierte Datenbank, eine Sicherung `vor-*`, die Merkdatei
+// `sicherung-vor-update.json`, eine abgelöste db.json oder ein Protokoll des Umstiegs.
+function folderFingerprint(dir: string): Record<string, string> {
+  const result: Record<string, string> = {}
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true, recursive: true })) {
+    if (!entry.isFile()) continue
+    const file = path.join(entry.parentPath, entry.name)
+    result[path.relative(dir, file)] = createHash('sha256').update(fs.readFileSync(file)).digest('hex')
+  }
+  return result
+}
+
+// Ein Datenordner, in dem der nächste Start etwas zu tun hätte: eine Datenbank, der Schritte
+// fehlen (wie nach einem Update), oder eine db.json, die umsteigen will.
+async function dataDirWithPendingWork(kind: 'migration' | 'changeover'): Promise<string> {
+  if (kind === 'migration') {
+    const dataDir = await dataDirAtBaseline()
+    fs.mkdirSync(path.join(dataDir, 'uploads'), { recursive: true })
+    return dataDir
+  }
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-'))
+  fs.mkdirSync(path.join(dataDir, 'uploads'), { recursive: true })
+  fs.writeFileSync(path.join(dataDir, 'db.json'), JSON.stringify({
+    settings: { houseName: 'Haus am Weg', address: 'Weg 1', landlordName: 'V', iban: '', paymentDeadlineDays: 30 },
+    units: [{ id: 'u1', name: 'EG', areaM2: 80, participates: true }],
+    tenancies: [], costItems: [], meters: [], readings: [], payments: [], closedSettlements: [],
+  }))
+  return dataDir
+}
+
+// Ein freier Port: vom System vergeben, dann wieder freigegeben.
+async function freePort(): Promise<number> {
+  const probe = http.createServer()
+  const port = await listenInTestRange(probe)
+  await new Promise((resolve) => probe.close(resolve))
+  return port
+}
+
+// Lauschen auf einem freien Port zwischen 4200 und 4299, dem Bereich für Ports, die ein Test
+// selbst festlegt: 3001 ist auf Arbeitsrechnern oft belegt, und dort laufen parallel weitere
+// Prüfungen. Begonnen wird an einer zufälligen Stelle, damit zwei Läufe sich selten treffen.
+async function listenInTestRange(server: http.Server): Promise<number> {
+  const offset = Math.floor(Math.random() * 100)
+  for (let i = 0; i < 100; i++) {
+    const port = 4200 + ((offset + i) % 100)
+    const ok = await new Promise<boolean>((resolve) => {
+      const onError = () => resolve(false)
+      server.once('error', onError)
+      server.listen(port, () => {
+        server.off('error', onError)
+        resolve(true)
+      })
+    })
+    if (ok) return port
+  }
+  return assert.fail('zwischen 4200 und 4299 ist kein Port frei')
+}
+
+for (const kind of ['migration', 'changeover'] as const) {
+  test(`Belegter Port (#244): läuft dort schon Mietfuchs, rührt der zweite Start die Daten nicht an (${kind === 'migration' ? 'ausstehende Migration' : 'ausstehender Umstieg'})`, async () => {
+    // Das Update, während die alte Version noch läuft: Die neue Version darf die Datei nicht
+    // unter der laufenden migrieren und keine Sicherung anlegen, hinter der die alte
+    // weiterschreibt. Sie sieht nur, dass dort Mietfuchs läuft, und endet.
+    const port = new URL(srv.base).port
+    const dataDir = await dataDirWithPendingWork(kind)
+    const vorher = folderFingerprint(dataDir)
+    const zweiter = startServerRaw(dataDir, { NKA_PORT: port, NKA_RUNTIME: 'binary' })
+    try {
+      assert.equal(await waitForExit(zweiter.child), 0, zweiter.out())
+      assert.match(zweiter.out(), /läuft bereits/)
+      assert.deepEqual(folderFingerprint(dataDir), vorher, zweiter.out())
+    } finally {
+      zweiter.child.kill()
+      removeDataDir(dataDir)
+    }
+  })
+}
+
+test('Belegter Port (#244): sitzt dort etwas anderes, wird vor der Fehlermeldung nichts migriert', async () => {
+  const fremder = http.createServer((req, res) => res.end('nicht Mietfuchs'))
+  await listening(fremder)
+  const port = String(portOf(fremder))
+  const dataDir = await dataDirWithPendingWork('migration')
+  const vorher = folderFingerprint(dataDir)
+  // Im npm-Betrieb endet der Start sofort mit Fehler; das ist der kürzere Weg zum Ende.
+  const start = startServerRaw(dataDir, { NKA_PORT: port, NKA_RUNTIME: '' })
+  try {
+    assert.equal(await waitForExit(start.child), 1, start.out())
+    assert.match(start.out(), /bereits belegt/)
+    assert.deepEqual(folderFingerprint(dataDir), vorher, start.out())
+  } finally {
+    start.child.kill()
+    fremder.close()
+    removeDataDir(dataDir)
+  }
+})
+
+test('Belegter Port (#244): ein zweiter Start, während der erste noch die Datenbank öffnet, erkennt Mietfuchs', async () => {
+  // Das Rennen zweier gleichzeitiger Starts: Der erste bindet den Port, bevor er die Datenbank
+  // anfasst. Solange er noch öffnet, antwortet /healthz mit „startet“ und nennt sich beim Namen.
+  // Der Testgriff hält den ersten Start in diesem Fenster fest.
+  const port = String(await freePort())
+  const ersterOrdner = await dataDirWithPendingWork('migration')
+  const erster = startServerRaw(ersterOrdner, { NKA_PORT: port, NKA_RUNTIME: 'binary', NKA_TEST_START_DELAY_MS: '3000' })
+  const dataDir = await dataDirWithPendingWork('migration')
+  try {
+    const deadline = Date.now() + 15000
+    let report: { app?: string, status?: string } = {}
+    let status = 0
+    while (Date.now() < deadline) {
+      try {
+        const res = await fetch(`http://127.0.0.1:${port}/healthz`)
+        status = res.status
+        report = await jsonOf<typeof report>(res)
+        break
+      } catch {
+        await new Promise((r) => setTimeout(r, 50))
+      }
+    }
+    assert.equal(status, 503, erster.out())
+    assert.deepEqual([report.app, report.status], ['mietfuchs', 'starting'])
+    // Der erste hat in diesem Augenblick noch nichts angefasst.
+    assert.equal(fs.readdirSync(ersterOrdner).some((name) => name.includes('.vor-')), false)
+    // Eine Datenroute, **jetzt** gefragt, also mitten im Starten: Sie wartet, bis der Start fertig
+    // ist, und bekommt dann eine gewöhnliche Antwort statt einer 503 (Durchsicht zu #244, K1).
+    // Ebenso ein Schreibvorgang mit Rumpf, der dabei nicht verloren gehen darf.
+    const gefragt = Date.now()
+    const waehrendLesen = fetch(`http://127.0.0.1:${port}/api/units`).then(async (res) => ({ status: res.status, nach: Date.now() - gefragt }))
+    const waehrendSchreiben = fetch(`http://127.0.0.1:${port}/api/units`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'mitten im Start', areaM2: 50, participates: true }),
+    }).then(async (res) => ({ status: res.status, body: await res.text() }))
+    const vorher = folderFingerprint(dataDir)
+    const zweiter = startServerRaw(dataDir, { NKA_PORT: port, NKA_RUNTIME: 'binary' })
+    try {
+      assert.equal(await waitForExit(zweiter.child), 0, zweiter.out())
+      assert.deepEqual(folderFingerprint(dataDir), vorher, zweiter.out())
+    } finally {
+      zweiter.child.kill()
+    }
+    const lesen = await waehrendLesen
+    assert.equal(lesen.status, 200, `nach ${lesen.nach} ms: ${erster.out()}`)
+    const schreiben = await waehrendSchreiben
+    assert.equal(schreiben.status, 201, schreiben.body)
+    assert.match(erster.out(), /Mietfuchs-Server läuft auf/)
+    const namen = (await jsonOf<Unit[]>(await fetch(`http://127.0.0.1:${port}/api/units`))).map((u) => u.name)
+    assert.deepEqual(namen, ['mitten im Start'])
+    assert.ok(fs.readdirSync(ersterOrdner).some((name) => name.includes('.vor-')), 'der erste Start hat danach migriert')
+  } finally {
+    erster.child.kill()
+    await waitForExit(erster.child).catch(() => null)
+    removeDataDir(ersterOrdner)
+    removeDataDir(dataDir)
+  }
+})
+
+test('Belegter Port (#244): antwortet Mietfuchs dort erst nach Sekunden, wartet der zweite Start und erkennt es', async () => {
+  // Rechnet der erste Start gerade einen langen Abschnitt, der die Ereignisschleife blockiert
+  // (die Regression des Umstiegs über viele Jahre, ein großer Migrationsschritt), antwortet sein
+  // /healthz erst danach. Der zweite Start darf ihn deshalb nicht nach dem ersten Zeitlimit für ein
+  // fremdes Programm halten (Durchsicht zu #244, K2). Nachgestellt mit einem Dienst, der ab der
+  // **ersten Anfrage** fünf Sekunden lang nichts beantwortet und danach jede Anfrage als
+  // Mietfuchs, so wie eine Ereignisschleife, die danach wieder frei ist. Das Zeitlimit einer
+  // einzelnen Frage (zwei Sekunden) liegt darunter; also kommt die Antwort nur bei einer zweiten
+  // oder späteren Frage an, und das zählt der Dienst mit (Durchsicht Runde 2, N1: ab dem Start
+  // gerechnet hing es an der Startzeit von Node, ob schon die erste Frage durchkam).
+  let frei = Infinity
+  let anfragen = 0
+  const langsam = http.createServer((req, res) => {
+    anfragen++
+    if (frei === Infinity) frei = Date.now() + 5000
+    setTimeout(() => {
+      res.writeHead(503, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ app: 'mietfuchs', status: 'starting' }))
+    }, Math.max(0, frei - Date.now()))
+  })
+  const port = String(await listenInTestRange(langsam))
+  const dataDir = await dataDirWithPendingWork('migration')
+  const vorher = folderFingerprint(dataDir)
+  const zweiter = startServerRaw(dataDir, { NKA_PORT: port, NKA_RUNTIME: 'binary' })
+  try {
+    assert.equal(await waitForExit(zweiter.child, 30000), 0, zweiter.out())
+    assert.match(zweiter.out(), /läuft bereits/)
+    assert.doesNotMatch(zweiter.out(), /anderes Programm/)
+    assert.ok(anfragen >= 2, `nur ${anfragen} Anfrage(n): Der zweite Start hat nicht nachgefragt`)
+    assert.deepEqual(folderFingerprint(dataDir), vorher, zweiter.out())
+  } finally {
+    zweiter.child.kill()
+    langsam.closeAllConnections()
+    langsam.close()
     removeDataDir(dataDir)
   }
 })
@@ -3798,7 +3995,11 @@ test('Jeder Serverstart einer Prüfung setzt CI', () => {
       else if (quelle[i] === '}' && --tiefe === 0) { envEnde = i; break }
     }
     if (envEnde === -1) return assert.fail(`env-Block bei Zeichen ${envStart} ist nicht geschlossen`)
-    if (!/\bCI:\s*['"]/.test(quelle.slice(envStart, envEnde))) {
+    // CI muss **hinter** dem `...env` des Aufrufers stehen, sonst könnte ein Aufrufer es
+    // versehentlich überschreiben (Durchsicht zu #244: `startServerRaw` hatte es davor).
+    const block = quelle.slice(envStart, envEnde)
+    const letztesCI = Math.max(-1, ...[...block.matchAll(/\bCI:\s*['"]/g)].map((m) => m.index))
+    if (letztesCI === -1 || letztesCI < block.lastIndexOf('...env')) {
       ohneCI.push(quelle.slice(0, von).split('\n').length)
     }
   }
