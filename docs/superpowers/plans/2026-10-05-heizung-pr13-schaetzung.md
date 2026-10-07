@@ -46,7 +46,9 @@ PR 12; der PR wird gestapelt auf PR 12 gestellt und nach dessen Merge auf `main`
 Der Prüfbericht vom 05.10.2026 hat an diesem Plan zwei Rechtsfolgen und eine Naht geändert:
 
 1. **Die Schätzung ersetzt nur den nicht erfassten Teil** (Prüfbericht A5, Abweichungen 2 und 3, Review
-   Focus 2). § 9a Abs. 1 Satz 2 setzt den ermittelten Verbrauch „anstelle des erfassten Verbrauchs“. Hat
+   Focus 2). [Berichtigt mit der Durchsicht von #242, R-I4: Die Folge stützt sich auf § 9a Abs. 1 Satz 1, der nur
+   den Verbrauch von Nutzern erfasst, der nicht ordnungsgemäß erfasst werden kann; Satz 2 sagt, der ermittelte
+   Verbrauch trete an die Stelle des (fehlerhaft) erfassten.] Hat
    ein Nutzer der Wohnung gültige Ablesungen (etwa der Vormieter bis zur Zwischenablesung), behält er
    seinen Messwert; die Nutzer ohne erfassten Verbrauch bekommen zusammen ihren Anteil an der Schätzung
    für die ganze Heizperiode nach Gradtagen bzw. Tagen. Sonst wanderte Geld zwischen Vor- und Nachmieter
@@ -217,7 +219,8 @@ entscheidet.
    Teil ihrer Heizperiode geschätzt ist: Die Verordnung fragt nach der „betroffenen Wohn- oder
    Nutzfläche“, nicht nach der Zeit (**Festlegung**, vorsichtig: im Zweifel nur nach Fläche).
 3. **Die Schätzung ersetzt nur, was nicht erfasst ist; bei vollständiger Ablesung ist sie die Markierung
-   „unbrauchbar“ und wird gewarnt** (nach der Prüfung vom 05.10.2026, A5 und A9). § 9a Abs. 1 Satz 2 setzt
+   „unbrauchbar“ und wird gewarnt** (nach der Prüfung vom 05.10.2026, A5 und A9; Rechtsgrund berichtigt mit der
+   Durchsicht von #242, R-I4: § 9a Abs. 1 Satz 1, nicht Satz 2). § 9a Abs. 1 Satz 2 setzt
    den ermittelten Verbrauch „anstelle des erfassten“, also nur, soweit nicht ordnungsgemäß erfasst wurde.
    Liegt für einen Nutzer der Wohnung eine gültige Anfangs- und Endablesung vor (etwa die
    Zwischenablesung des Vormieters, das Gerät fiel erst danach aus), bleibt sein Messwert; § 9b Abs. 3
@@ -2548,3 +2551,20 @@ gelesen; `SelfPotView.overThreshold`, `.estimatedAreaM2` in Task 2 und 5; `SelfU
 
 **Nicht in diesem Plan:** § 6a, § 11, § 2, § 10 und der Hinweis zu § 7 Abs. 1 Satz 2 (PR 14); die
 monatliche Verbrauchsinformation (PR 14, PR 22); Vorerfassung nach Nutzergruppen (§ 5 Abs. 7, #218).
+
+## Nach der Durchsicht von #242
+
+Die beiden Durchsichten (Geld/Daten und Recht/Texte) haben den Plan an diesen Stellen geändert; Tests in
+`server/test/schaetzung-durchsicht.test.ts` und den Client-Tests der Karte, des Dialogs und des Ausweises.
+
+- Die Schätzung trägt Grund (Auswahl), Erfassung und Einheit beim Speichern (Migration 0033 neu erzeugt).
+  Passen Erfassung oder Einheit nicht mehr, rechnet sie nicht (`heating.estimate-stale`, Fehler).
+- Die Frage zur fernen Zwischenablesung kommt auch mit Schätzung, wenn die Ablesung einen behaltenen Wert begrenzt.
+- Eine Wohnung mit Schätzung oder Werten eines Ablesedienstes wechselt nicht das Objekt.
+- Über der Grenze des § 9a Abs. 2 kein `heating.no-consumption`; Hinweise einmal je Linie.
+- `heating.estimate-complete` bestätigt ein Hinweis (färbt nicht), unbestätigt `heating.estimate-unconfirmed`.
+- Neue Hinweise: `heating.estimate-no-device`, `heating.estimate-below-measured`, `heating.estimate-same-day`.
+- Abweichung 2 (ganze Fläche) und die getrennte Prüfung je Topf bleiben Festlegung und heißen in Oberfläche,
+  Lexikon, Regel und Hinweis „Auslegung von Mietfuchs“ (offene Rechtsfrage).
+- BGH VIII ZR 373/04: Leitsatz a (Ablesefehler als zwingender Grund, Fall nicht nachholbar) und c (keine Kürzung)
+  statt einer allgemeinen Regel zur Behebbarkeit.

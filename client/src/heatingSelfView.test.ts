@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { boundaryLight, boundaryText, distributionLines, gapConsequence, heatUnitOf, insulationAsked, percentOf, potLines, READING_RESULT_HINT, readingResult, shareEditable, unsureShareHint, userLine } from './heatingSelfView'
+import { boundaryLight, boundaryText, distributionLines, estimateLines, gapConsequence, heatUnitOf, insulationAsked, percentOf, potLines, READING_RESULT_HINT, readingResult, shareEditable, unsureShareHint, userLine } from './heatingSelfView'
 import { fmtEuro } from './api'
 import type { HeatingDistribution, SelfBoundaryView, SelfHeatingStatement, SelfUnitView } from './types'
 
@@ -133,5 +133,73 @@ describe('Durchsicht #241 Recht-I2: Ableseergebnis am Stichtag nennt den Stichta
       'Warmwasser: 40 m³ am 31.12.2025 (Endstand des alten Zählers; der neue beginnt mit 3)',
     ])
     expect(READING_RESULT_HINT).toMatch(/§ 6 Abs\. 1 Satz 3/)
+  })
+})
+
+describe('Ausweis mit Schätzung (Heizung PR 13)', () => {
+  it('Topf über der Grenze: nur nach Fläche, mit Satz zu § 9a Abs. 2', () => {
+    const lines = potLines({ pot: 'heating', costCents: 562800, consumptionPct: 0, byAreaOnly: false, areaM2: 200, consumption: 40000, consumptionUnit: 'kWh', baseCentsPerM2: 2814, consumptionCentsPerUnit: null, overThreshold: true, estimatedAreaM2: 60 })
+    expect(lines).toContain('Geschätzt ist der Verbrauch für 60 von 200 m²; das überschreitet die Grenze des § 9a Abs. 2 HeizkostenV, deshalb nur nach Fläche verteilt.')
+  })
+  it('Nutzer mit geschätztem Verbrauch, auch gemeinsam nach § 9b Abs. 3', () => {
+    const u = { key: 'C1', role: 'tenancy' as const, tenancyId: 'C1', label: 'Mieter C1', from: '2025-01-01', to: '2025-09-30', days: 273, degreeDayPermille: 640, heatingConsumption: 7680, waterConsumption: null, heatingGroup: true, waterGroup: false, heatingCents: 0, waterCents: 0, heatingCo2Cents: 0, waterCo2Cents: 0, heatingEstimated: true }
+    expect(userLine(u, { pots: [] })).toContain('Heizung 7.680 kWh (geschätzt nach § 9a, gemeinsam nach § 9b Abs. 3)')
+    expect(userLine({ ...u, heatingGroup: false }, { pots: [] })).toContain('Heizung 7.680 kWh (geschätzt nach § 9a),')
+    expect(userLine({ ...u, heatingEstimated: false }, { pots: [] })).toContain('Heizung 7.680 kWh (gemeinsam nach § 9b Abs. 3),')
+  })
+  it('Druck: die Schätzung der eigenen Wohnung mit Weg und Begründung, nie die einer anderen', () => {
+    const self = {
+      pots: [],
+      estimates: [
+        { plantId: 'hp', unitId: 'c', unitName: 'C', part: 'heat' as const, value: 12000, method: 'buildingAverage' as const, reason: 'Wärmezähler defekt', confirmed: true, cause: 'deviceFailure' as const, capture: 'heatMeter' as const, valueUnit: 'kWh' as const, users: 1, kept: 1, complete: false },
+        { plantId: 'hp', unitId: 'a', unitName: 'A', part: 'heat' as const, value: 9000, method: 'previousPeriod' as const, reason: 'Zähler defekt', confirmed: true, cause: 'deviceFailure' as const, capture: 'heatMeter' as const, valueUnit: 'kWh' as const, users: 1, kept: 0, complete: false },
+      ],
+    }
+    expect(estimateLines(self, 'c', { heatingEstimated: true })).toEqual([
+      // Wortlaut seit der Durchsicht von #242 (R-I1, R-I2); ohne Verbrauch des Nutzers ohne den Satz zum Anteil.
+      'Heizung: Der Verbrauch Ihrer Wohnung konnte nicht ordnungsgemäß erfasst werden (Gerät ausgefallen; Begründung: „Wärmezähler defekt“) und ist nach § 9a HeizkostenV ermittelt, nach dem Durchschnitt des Gebäudes je m²: 12.000 kWh für die ganze Heizperiode der Wohnung. Für die Zeit vor Ihrem Einzug liegt eine gültige Ablesung vor; sie gilt dort weiter.',
+    ])
+    // Der Vormieter mit gültiger Ablesung bekommt keinen Satz zur Schätzung.
+    expect(estimateLines(self, 'c', { heatingEstimated: false })).toEqual([])
+    expect(estimateLines({ ...self, estimates: undefined }, 'c', { heatingEstimated: true })).toEqual([])
+  })
+})
+
+// Durchsicht von #242 (Recht): R-I1 Wortlaut, R-I2 nachrechenbarer Satz für den Nachmieter, R-M5 Klammern,
+// R-M8 über der Grenze, R-M9 geschätzter Teil im Topf, G-M6 ganze Heizperiode.
+describe('Durchsicht von #242: Ausweis mit Schätzung', () => {
+  const est = (over: Record<string, unknown> = {}) => ({
+    plantId: 'hp', unitId: 'c', unitName: 'C', part: 'heat' as const, value: 12000, method: 'buildingAverage' as const, reason: 'Wärmezähler defekt (Fachbetrieb)', confirmed: true,
+    cause: 'deviceFailure' as const, capture: 'heatMeter' as const, valueUnit: 'kWh' as const, users: 1, kept: 1, complete: false, ...over,
+  })
+  const heat = { pot: 'heating' as const, costCents: 0, consumptionPct: 70, byAreaOnly: false, areaM2: 200, consumption: 40000, consumptionUnit: 'kWh' as const, baseCentsPerM2: 0, consumptionCentsPerUnit: 1, overThreshold: false, estimatedAreaM2: 60 }
+  it('R-I1/R-I2/R-M5: „nicht ordnungsgemäß erfasst“, Grund aus der Auswahl, Begründung in Anführungszeichen, Anteil des Nachmieters nachrechenbar', () => {
+    const self = { pots: [heat], changeSplit: 'degreeDays' as const, estimates: [est()] }
+    expect(estimateLines(self, 'c', { heatingEstimated: true, heatingConsumption: 4320 })).toEqual([
+      'Heizung: Der Verbrauch Ihrer Wohnung konnte nicht ordnungsgemäß erfasst werden (Gerät ausgefallen; Begründung: „Wärmezähler defekt (Fachbetrieb)“) und ist nach § 9a HeizkostenV ermittelt, nach dem Durchschnitt des Gebäudes je m²: 12.000 kWh für die ganze Heizperiode der Wohnung. ' +
+        'Für die Zeit vor Ihrem Einzug liegt eine gültige Ablesung vor; sie gilt dort weiter. Auf Ihren Zeitraum entfallen 360 ‰ der Gradtage, also 360 ‰ von 12.000 kWh = 4.320 kWh.',
+    ])
+    // Teilung nach Tagen bzw. Warmwasser nach Tagen.
+    expect(estimateLines({ ...self, changeSplit: 'time' as const }, 'c', { heatingEstimated: true, heatingConsumption: 4320 })[0]).toMatch(/360 ‰ der Tage/)
+  })
+  // Durchsicht Runde 2, N-I2: nur bei einem ersetzten gemessenen Teilstück, nicht bei bloßem Anfangsstand oder Ablesedienst ohne Werte.
+  it('G-M6/N-I2: der Satz zu abgelesenen Zeiten nur, wenn ein gemessenes Teilstück ersetzt wird', () => {
+    const mit = { pots: [heat], changeSplit: 'degreeDays' as const, estimates: [est({ kept: 0, replacesMeasured: true })] }
+    expect(estimateLines(mit, 'c', { heatingEstimated: true, heatingConsumption: 12000 })[0]).toMatch(/ganze Heizperiode der Wohnung\. Sie gilt auch für Zeiten, für die Ablesungen vorliegen\.$/)
+    const ohne = { pots: [heat], changeSplit: 'degreeDays' as const, estimates: [est({ kept: 0, replacesMeasured: false })] }
+    expect(estimateLines(ohne, 'c', { heatingEstimated: true, heatingConsumption: 12000 })[0]).not.toMatch(/Ablesungen vorliegen/)
+    const dienst = { pots: [heat], changeSplit: 'degreeDays' as const, estimates: [est({ kept: 0, cause: 'otherReason', reason: 'Werte fehlen' })] }
+    expect(estimateLines(dienst, 'c', { heatingEstimated: true, heatingConsumption: 12000 })[0]).not.toMatch(/Ablesungen vorliegen/)
+  })
+  it('R-M8: über der Grenze ist der Verbrauch für die Verteilung nicht maßgeblich', () => {
+    const over = { ...heat, overThreshold: true, consumptionPct: 0 }
+    const self = { pots: [over], changeSplit: 'degreeDays' as const, estimates: [est()] }
+    expect(estimateLines(self, 'c', { heatingEstimated: true, heatingConsumption: 4320 })[0]).toMatch(/Für die Verteilung ist der Verbrauch nicht maßgeblich.*§ 9a Abs\. 2/)
+    const u = { key: 'A', role: 'tenancy' as const, tenancyId: 'A', label: 'Mieter A', from: '2025-01-01', to: '2025-12-31', days: 365, degreeDayPermille: 1000, heatingConsumption: 12000, waterConsumption: null, heatingGroup: false, waterGroup: false, heatingCents: 0, waterCents: 0, heatingCo2Cents: 0, waterCo2Cents: 0 }
+    expect(userLine(u, { pots: [over] })).toContain('Heizung 12.000 kWh (für die Verteilung nicht maßgeblich, § 9a Abs. 2)')
+  })
+  it('R-M9: der Topf nennt, wie viel darin geschätzt ist', () => {
+    expect(potLines({ ...heat, estimatedConsumption: 4320, costCents: 100000 }).join(' ')).toMatch(/davon geschätzt nach § 9a HeizkostenV: 4\.320 kWh/)
+    expect(potLines({ ...heat, estimatedConsumption: 0, costCents: 100000 }).join(' ')).not.toMatch(/geschätzt/)
   })
 })

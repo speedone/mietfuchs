@@ -27,7 +27,7 @@ import { tenancyStamp } from '../../shared/tenancyStamp.ts'
 import { calendarPeriod } from '../../shared/period.ts'
 import type { JsonSchema } from '../src/ai/ollama.ts'
 import type {
-  AiKeyInfo, AiPreset, AiRecommendations, AiSettings, AiSlot, AiSlotName, AiStatus, AssessmentLine, AssignableHeatingItem, Co2Statement, DegreeDayValue, FuelDelivery, FuelGapQuestion, Notice, HeatingDistribution, HeatingPeriodView, HeatingPlant, InterimGap, AssessmentView, BookingPreview, CostItem, Extraction, LineDecision, LineFields,
+  AiKeyInfo, AiPreset, AiRecommendations, AiSettings, AiSlot, AiSlotName, AiStatus, AssessmentLine, AssignableHeatingItem, Co2Statement, DegreeDayValue, FuelDelivery, FuelGapQuestion, Notice, HeatingDistribution, HeatingEstimate, HeatingPeriodView, HeatingPlant, InterimGap, AssessmentView, BookingPreview, CostItem, Extraction, LineDecision, LineFields,
   Meter, MeterReadingExtraction, OllamaStatus, Payment, Property, Reading, Settings, Settlement, StockView, TaxReport, Tenancy, Unit, UnitDependents,
   UpdateStatus, UploadEntry, UploadInfo,
 } from '../../shared/types.ts'
@@ -6320,6 +6320,36 @@ test('Eigene Heizkostenabrechnung über die Routen: Einrichtung mit Liste, Antei
     assert.equal((await jsonOf<{ items: unknown[] }>(zurueck)).items.length, 1)
     assert.equal((await send('PUT', `/api/heating-plants/${plant.id}`, { method: 'manual', convertItems: 'area' })).status, 200)
     assert.equal((await send('PUT', '/api/heating-plants/gibt-es-nicht/self', setup)).status, 404)
+  } finally {
+    s.stop()
+  }
+})
+
+test('Schätzung nach § 9a über die Routen (Heizung PR 13): speichern, in der Abrechnung, Satz bei Fehler, entfernen', async () => {
+  const s = await startServer()
+  const send = (method: string, url: string, body?: unknown) =>
+    fetch(`${s.base}${url}`, { method, headers: { 'content-type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) })
+  try {
+    const unit = await s.api<{ id: string }>('/api/units', { method: 'POST', body: JSON.stringify({ name: 'EG', areaM2: 60, participates: true }) })
+    const { plant } = await jsonOf<{ plant: HeatingPlant }>(await send('POST', '/api/heating-plants', { energy: 'gas', method: 'manual' }))
+    const setup = { period: '2025-01', heatConsumptionPct: 70, waterConsumptionPct: 70, insulationRule: 'notApplies', hotWater: 'combined', capture: 'heatMeter', dhwHeatMeter: true, totalHeatMeter: false }
+    assert.equal((await send('PUT', `/api/heating-plants/${plant.id}/self`, setup)).status, 200)
+    // Der Ausweis entsteht mit einer Position der Anlage.
+    await s.api('/api/costItems', { method: 'POST', body: JSON.stringify({ period: '2025-01', category: 'Heizung und Warmwasser', description: 'Wartung', amountCents: 30000, key: 'heatingSystem', heatingPlantId: plant.id, heatingPart: 'operating', heatingTarget: 'both' }) })
+    const url = `/api/heating-plants/${plant.id}/periods/2025-01/estimates/${unit.id}/heat`
+    const ok = await send('PUT', url, { value: 9000, method: 'buildingAverage', reason: 'Zähler defekt', confirmed: true, cause: 'deviceFailure' })
+    assert.equal(ok.status, 200)
+    assert.deepEqual(await jsonOf<HeatingEstimate>(ok), { plantId: plant.id, period: '2025-01', unitId: unit.id, part: 'heat', value: 9000, method: 'buildingAverage', reason: 'Zähler defekt', confirmed: true, cause: 'deviceFailure', capture: 'heatMeter', valueUnit: 'kWh' })
+    const abrechnung = await s.api<{ heating?: { plantId: string; self?: { estimates?: { unitId: string; value: number }[] } }[] }>('/api/settlement/2025')
+    assert.deepEqual(abrechnung.heating?.find((h) => h.plantId === plant.id)?.self?.estimates?.map((e) => [e.unitId, e.value]), [[unit.id, 9000]])
+    const leer = await send('PUT', url, { value: 9000, method: 'buildingAverage', reason: '', confirmed: true, cause: 'deviceFailure' })
+    assert.equal(leer.status, 400)
+    assert.match(await errorFrom(leer), /Begründung/)
+    assert.equal((await send('PUT', `/api/heating-plants/${plant.id}/periods/2025-01/estimates/${unit.id}/gas`, { value: 1, method: 'buildingAverage', reason: 'x', confirmed: true, cause: 'deviceFailure' })).status, 400)
+    assert.deepEqual(await jsonOf<{ ok: boolean; removed: boolean }>(await send('DELETE', url)), { ok: true, removed: true })
+    assert.deepEqual(await jsonOf<{ ok: boolean; removed: boolean }>(await send('DELETE', url)), { ok: true, removed: false })
+    assert.equal((await send('PUT', `/api/heating-plants/gibt-es-nicht/periods/2025-01/estimates/${unit.id}/heat`, { value: 1, method: 'buildingAverage', reason: 'x', confirmed: true, cause: 'deviceFailure' })).status, 404)
+    assert.equal((await send('DELETE', `/api/heating-plants/gibt-es-nicht/periods/2025-01/estimates/${unit.id}/heat`)).status, 404)
   } finally {
     s.stop()
   }

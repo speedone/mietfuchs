@@ -4,11 +4,11 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  boundaryReadingsOf, consumptionSharesOf, heatPumpVerdict, hotWaterShareOf, planSelf, readingOff, targetProblem, usersOf, weightsOf, type AlphaInput,
+  boundaryReadingsOf, consumptionSharesOf, estimateDeviceType, estimateKey, estimateProposals, heatPumpVerdict, hotWaterShareOf, planSelf, readingOff, targetProblem, usersOf, weightsOf, type AlphaInput,
   type SelfInput, type SelfMeter, type SelfPlan, type SelfReading, type SelfTenancy, type SelfUnit,
 } from '../src/heating.ts'
 import { distributeCents } from '../src/calc.ts'
-import { hkvDegreeDays, hkvHeatPumpCapture } from '../../shared/law/heizkostenv.ts'
+import { hkvDegreeDays, hkvEstimateThreshold, hkvHeatPumpCapture } from '../../shared/law/heizkostenv.ts'
 import { practiceReadingOffWarning } from '../../shared/law/practice.ts'
 import { createLawLog, onlyVersion } from '../../shared/law/register.ts'
 
@@ -257,7 +257,7 @@ test('Review Focus 4: eine Wohnung ohne Wärmezähler ist ein Fehler, nicht eine
   assert.deepEqual(plan.problems, [{ kind: 'missing', pot: 'heating', unitId: 'b', unitName: 'B', boundary: null, reason: 'noMeter', meterName: null }])
 })
 
-test('Fehlender Stand am Ende, Zählerwechsel ohne Endstand und negativer Verbrauch sind Fehler (§ 9a kommt mit PR 13)', () => {
+test('Fehlender Stand am Ende, Zählerwechsel ohne Endstand und negativer Verbrauch sind ohne Schätzung nach § 9a Fehler', () => {
   const ohneEnde = planSelf(input({ readings: READINGS.filter((x) => !(x.meterId === 'wa' && x.date === '2025-12-31')) }))
   assert.deepEqual(ohneEnde.problems, [{ kind: 'missing', pot: 'heating', unitId: 'a', unitName: 'A', boundary: '2025-12-31', reason: 'noReading', meterName: 'Wärme A' }])
   const wechsel = planSelf(input({ readings: [...READINGS, r('wa', '2025-06-30', 0, { replacement: true, oldEndValue: null })] }))
@@ -474,4 +474,231 @@ test('Ablesedienst als gedachter Zähler: Zeilen je Nutzungszeitraum ergeben die
   near(userOf(mitLuecke, 'C1').pots.heating.value ?? -1, 7000, 'C1 bis zur letzten Zeile')
   near(userOf(mitLuecke, 'C2').pots.heating.value ?? -1, 4800, 'C2')
   assert.ok(mitLuecke.findings.some((f) => f.kind === 'interimOff' && f.boundary === '2025-09-30' && f.readingDate === '2025-09-15'))
+})
+
+// ---------- Schätzung nach § 9a (Heizung PR 13, Entwurf 8.7, 12.2) ----------
+
+// Vier Wohnungen mit Wärmezählern, ohne Warmwasser. `end` je Wohnung der Stand am 31.12.2025; null heißt:
+// der Stand fehlt (Gerät ausgefallen).
+function vier(areas: readonly number[], end: readonly (number | null)[], over: Partial<SelfInput> = {}): SelfInput {
+  const ids = areas.map((_, i) => i)
+  return input({
+    hotWater: 'none',
+    units: ids.map((i) => ({ id: `d${i}`, name: `D${i}`, areaM2: areas[i] ?? 0, heatedAreaM2: null, role: 'rented' as const })),
+    tenancies: ids.map((i) => ({ id: `T${i}`, unitId: `d${i}`, tenantName: `Mieter ${i}`, start: '2020-01-01', end: null })),
+    meters: ids.map((i) => ({ id: `w${i}`, name: `Wärme D${i}`, unitId: `d${i}`, type: 'waerme' as const })),
+    readings: ids.flatMap((i) => {
+      const e = end[i]
+      return [r(`w${i}`, '2024-12-31', 0), ...(e === null || e === undefined ? [] : [r(`w${i}`, '2025-12-31', e)])]
+    }),
+    ...over,
+  })
+}
+const est = (entries: [string, number][]) => new Map(entries)
+const withLimit = (calls?: { n: number }) => () => {
+  if (calls) calls.n += 1
+  return onlyVersion(hkvEstimateThreshold).value
+}
+const unitPlanOf = (plan: SelfPlan, id: string) => plan.units.find((u) => u.unit.id === id) ?? assert.fail(`keine Wohnung ${id}`)
+
+test('§ 9a: ohne Schätzung ist ein fehlender Endstand ein Fehler, mit Schätzung tritt sie an die Stelle', () => {
+  const ohne = planSelf(vier([40, 40, 40, 80], [null, 5000, 7000, 14000]))
+  assert.deepEqual(ohne.problems.map((p) => (p.kind === 'missing' ? [p.unitId, p.reason] : p.kind)), [['d0', 'noReading']])
+  const mit = planSelf(vier([40, 40, 40, 80], [null, 5000, 7000, 14000], { estimates: est([[estimateKey('d0', 'heating'), 6500]]), estimateThreshold: withLimit() }))
+  assert.deepEqual(mit.problems, [])
+  assert.equal(userOf(mit, 'T0').pots.heating.value, 6500)
+  assert.equal(mit.totals.heating.consumption, 32500)
+  assert.deepEqual([mit.totals.heating.estimatedArea, mit.totals.heating.overThreshold], [40, false])
+  const unit = unitPlanOf(mit, 'd0')
+  assert.deepEqual([unit.estimated.heating, unit.captured.heating, unit.estimateComplete.heating], [true, false, false])
+  assert.equal(userOf(mit, 'T0').pots.heating.estimated, true)
+  assert.equal(userOf(mit, 'T1').pots.heating.estimated, undefined)
+  // Der Ausweis zeigt die Ablesungen, wie sie sind: Anfangsstand da, Endstand fehlt.
+  assert.deepEqual(unit.readings.map((x) => [x.boundary, x.value]), [['2024-12-31', 0], ['2025-12-31', null]])
+})
+
+test('12.2: Schätzung für 20 % der Fläche → nach Verbrauch; für 40 % → nur nach Fläche (§ 9a Abs. 2)', () => {
+  const klein = planSelf(vier([40, 40, 40, 80], [null, 5000, 7000, 14000], { estimates: est([[estimateKey('d0', 'heating'), 6500]]), estimateThreshold: withLimit() }))
+  near(weightsOf(klein, { heating: 70, water: 70 }, null).get('T0')?.heating ?? 0, 0.3 * (40 / 200) + 0.7 * (6500 / 32500), 'T0 nach Verbrauch')
+  const gross = planSelf(vier([40, 40, 40, 80], [6000, 5000, 7000, null], { estimates: est([[estimateKey('d3', 'heating'), 12000]]), estimateThreshold: withLimit() }))
+  assert.deepEqual([gross.totals.heating.estimatedArea, gross.totals.heating.overThreshold], [80, true])
+  const w = weightsOf(gross, { heating: 70, water: 70 }, null)
+  near(w.get('T3')?.heating ?? 0, 80 / 200, 'T3 nur nach Fläche')
+  near(w.get('T0')?.heating ?? 0, 40 / 200, 'T0 nur nach Fläche')
+  near([...w.values()].reduce((a, x) => a + x.heating, 0), 1, 'Σ heating')
+})
+
+test('R-A22: vier gleich große Wohnungen, eine geschätzt: genau 25 %, keine Überschreitung', () => {
+  const plan = planSelf(vier([50, 50, 50, 50], [null, 5000, 7000, 6000], { estimates: est([[estimateKey('d0', 'heating'), 6000]]), estimateThreshold: withLimit() }))
+  assert.deepEqual([plan.totals.heating.estimatedArea, plan.totals.heating.overThreshold], [50, false])
+  // Zwei geschätzte Wohnungen: 50 %, überschritten.
+  const zwei = planSelf(vier([50, 50, 50, 50], [null, null, 7000, 6000], { estimates: est([[estimateKey('d0', 'heating'), 6000], [estimateKey('d1', 'heating'), 6000]]), estimateThreshold: withLimit() }))
+  assert.equal(zwei.totals.heating.overThreshold, true)
+  // Eine Wohnung mit mehr als einem Viertel der Fläche überschreitet die Grenze allein.
+  const ungleich = planSelf(vier([51, 50, 50, 49], [null, 5000, 7000, 6000], { estimates: est([[estimateKey('d0', 'heating'), 6000]]), estimateThreshold: withLimit() }))
+  assert.equal(ungleich.totals.heating.overThreshold, true)
+})
+
+test('Die Grenze wird nur gefragt, wenn es eine Schätzung gibt (Rechtsstand)', () => {
+  const calls = { n: 0 }
+  planSelf(vier([50, 50, 50, 50], [6000, 5000, 7000, 6000], { estimateThreshold: withLimit(calls) }))
+  assert.equal(calls.n, 0)
+  planSelf(vier([50, 50, 50, 50], [null, 5000, 7000, 6000], { estimates: est([[estimateKey('d0', 'heating'), 6000]]), estimateThreshold: withLimit(calls) }))
+  assert.equal(calls.n, 1)
+})
+
+test('Review Focus 4: je Topf getrennt; beheizte Fläche zählt nur beim Topf Heizung (15.1 Nr. 6)', () => {
+  // C hat 60 m² Wohnfläche, aber nur 20 m² beheizte Fläche: Heizung 20 von 160 m² = 12,5 %; Warmwasser
+  // 60 von 200 m² = 30 %.
+  const units = UNITS.map((u) => (u.id === 'c' ? { ...u, heatedAreaM2: 20 } : u))
+  const plan = planSelf(input({
+    units, areaBasisHeat: 'heatedArea',
+    readings: READINGS.filter((x) => !(x.date === '2025-12-31' && (x.meterId === 'wc' || x.meterId === 'xc'))),
+    estimates: est([[estimateKey('c', 'heating'), 12000], [estimateKey('c', 'water'), 50]]),
+    estimateThreshold: withLimit(),
+  }))
+  assert.deepEqual(plan.problems, [])
+  assert.deepEqual([plan.totals.heating.estimatedArea, plan.totals.heating.area, plan.totals.heating.overThreshold], [20, 160, false])
+  assert.deepEqual([plan.totals.water.estimatedArea, plan.totals.water.area, plan.totals.water.overThreshold], [60, 200, true])
+  const w = weightsOf(plan, { heating: 70, water: 70 }, 0.15)
+  // Warmwasser nur nach Fläche, Heizung weiter nach Verbrauch.
+  near(w.get('A')?.water ?? 0, 60 / 200, 'A Warmwasser nur nach Fläche')
+  assert.ok(Math.abs((w.get('A')?.heating ?? 0) - 60 / 160) > 1e-3, 'A Heizung nach Verbrauch')
+})
+
+test('Review Focus 2 (Prüfbericht A5): Zwischenablesung vorhanden, Endstand fehlt: C1 behält 7.200 kWh gemessen, nur C2 wird geschätzt', () => {
+  const plan = planSelf(input({
+    readings: READINGS.filter((x) => !(x.meterId === 'wc' && x.date === '2025-12-31')),
+    estimates: est([[estimateKey('c', 'heating'), 12000]]),
+    estimateThreshold: withLimit(),
+  }))
+  assert.deepEqual(plan.problems, [])
+  // C1 bis 30.09. abgelesen: 7.700 − 500 = 7.200 kWh. C2 ohne Endstand: vom geschätzten Verbrauch der
+  // Wohnung für die Heizperiode (12.000 kWh) der Anteil nach Gradtagen Oktober bis Dezember, 360 ‰.
+  const c1 = userOf(plan, 'C1').pots.heating
+  const c2 = userOf(plan, 'C2').pots.heating
+  assert.deepEqual([c1.value, c1.estimated ?? false, c1.group], [7200, false, false])
+  near(c2.value ?? -1, 12000 * 0.36, 'C2')
+  assert.deepEqual([c2.estimated, c2.group], [true, false])
+  near(plan.totals.heating.consumption, 12000 + 16000 + 7200 + 4320, 'Summe')
+  const c = unitPlanOf(plan, 'c')
+  assert.deepEqual([c.estimated.heating, c.captured.heating, c.estimateComplete.heating], [true, false, false])
+  // Kein Geld wandert: Der Anteil von C1 am Verbrauch ist sein Messwert, nicht 12.000 · 640 ‰ = 7.680 kWh.
+  near(userOf(plan, 'C1').pots.heating.consumption, 7200 / 39520, 'Bruchteil C1')
+  // Warmwasser bleibt gemessen.
+  assert.deepEqual([userOf(plan, 'C1').pots.water.value, userOf(plan, 'C2').pots.water.value], [38, 12])
+  // 60 von 200 m² = 30 %: Topf Heizung nur nach Fläche.
+  assert.equal(plan.totals.heating.overThreshold, true)
+  // Der Ausweis je Gerät nennt nur, was abgelesen ist: die Differenz bis zur Zwischenablesung (C1).
+  assert.deepEqual(c.measured.filter((x) => x.pot === 'heating').map((x) => [x.raw, x.userKeys]), [[7200, ['C1']]])
+})
+
+test('Ohne verwertbare Zwischenablesung (Gerät fiel vor dem Wechsel aus) teilen Vormieter und Nachmieter den geschätzten Verbrauch wie nach § 9b Abs. 3', () => {
+  const plan = planSelf(input({
+    readings: READINGS.filter((x) => !(x.meterId === 'wc' && (x.date === '2025-12-31' || x.date === '2025-09-30'))),
+    gaps: [{ unitId: 'c', date: '2025-09-30', status: 'impossible', reason: 'Zähler defekt' }],
+    estimates: est([[estimateKey('c', 'heating'), 12000]]),
+    estimateThreshold: withLimit(),
+  }))
+  assert.deepEqual(plan.problems, [])
+  // Heizung nach Gradtagen: C1 640 ‰ (Januar bis September), C2 360 ‰.
+  near(userOf(plan, 'C1').pots.heating.value ?? -1, 12000 * 0.64, 'C1')
+  near(userOf(plan, 'C2').pots.heating.value ?? -1, 12000 * 0.36, 'C2')
+  assert.deepEqual([userOf(plan, 'C1').pots.heating.group, userOf(plan, 'C2').pots.heating.group], [true, true])
+  assert.deepEqual([userOf(plan, 'C1').pots.heating.estimated, userOf(plan, 'C2').pots.heating.estimated], [true, true])
+  // Ein ausgefallenes Gerät löst keinen Hinweis auf die fehlende Zwischenablesung aus; der Warmwasserzähler
+  // ist zum Wechsel abgelesen. Die Teilung steht im Hinweis zur Schätzung (calc.ts).
+  assert.equal(plan.findings.some((x) => x.kind === 'noInterim'), false)
+})
+
+test('Prüfbericht A9: Schätzung neben vollständigen Ablesungen ersetzt alles (Markierung „unbrauchbar“) und ist als vollständig erkannt', () => {
+  const plan = planSelf(input({ estimates: est([[estimateKey('c', 'heating'), 10000]]), estimateThreshold: withLimit() }))
+  const c = unitPlanOf(plan, 'c')
+  assert.equal(c.estimateComplete.heating, true)
+  near(userOf(plan, 'C1').pots.heating.value ?? -1, 6400, 'C1: 10.000 · 640 ‰')
+  near(userOf(plan, 'C2').pots.heating.value ?? -1, 3600, 'C2: 10.000 · 360 ‰')
+  near(plan.totals.heating.consumption, 12000 + 16000 + 10000, 'Summe ohne die abgelesenen 12.000 kWh von C')
+  // Die ersetzten Ablesungen stehen nicht mehr als Verbrauch des Geräts im Ausweis.
+  assert.deepEqual(c.measured.filter((x) => x.pot === 'heating'), [])
+})
+
+test('§ 9a bei Zählerwechsel ohne Endstand, negativem Verbrauch und zwei Ständen am selben Tag: die Schätzung deckt es', () => {
+  const wechsel = [...READINGS, r('wa', '2025-06-30', 0, { replacement: true, oldEndValue: null })]
+  const w = planSelf(input({ readings: wechsel, estimates: est([[estimateKey('a', 'heating'), 11000]]), estimateThreshold: withLimit() }))
+  assert.deepEqual(w.problems, [])
+  assert.equal(userOf(w, 'A').pots.heating.value, 11000)
+  assert.equal(unitPlanOf(w, 'a').estimateComplete.heating, false)
+  const rueck = READINGS.map((x) => (x.meterId === 'wa' && x.date === '2025-12-31' ? { ...x, value: 500 } : x))
+  const n = planSelf(input({ readings: rueck, estimates: est([[estimateKey('a', 'heating'), 11000]]), estimateThreshold: withLimit() }))
+  assert.deepEqual(n.problems, [])
+  assert.equal(userOf(n, 'A').pots.heating.value, 11000)
+  const doppelt = [...READINGS, r('wa', '2025-12-31', 13500)]
+  const d = planSelf(input({ readings: doppelt, estimates: est([[estimateKey('a', 'heating'), 11000]]), estimateThreshold: withLimit() }))
+  assert.deepEqual(d.problems, [])
+  assert.equal(userOf(d, 'A').pots.heating.value, 11000)
+})
+
+test('§ 9a mit Leerstand und Eigennutzung: der Anteil der Zeit ohne Mieter bleibt beim Vermieter', () => {
+  // C2 zieht nicht ein; ab 01.10. steht C leer. Endstand fehlt.
+  const plan = planSelf(input({
+    tenancies: TENANCIES.filter((t) => t.id !== 'C2'),
+    readings: READINGS.filter((x) => !(x.meterId === 'wc' && x.date === '2025-12-31')),
+    estimates: est([[estimateKey('c', 'heating'), 12000]]),
+    estimateThreshold: withLimit(),
+  }))
+  assert.deepEqual(plan.problems, [])
+  const leer = plan.units.flatMap((u) => u.users).find((u) => u.role === 'vacancy') ?? assert.fail('kein Leerstand')
+  near(leer.pots.heating.value ?? -1, 4320, 'Leerstand trägt den Anteil Oktober bis Dezember')
+  assert.equal(userOf(plan, 'C1').pots.heating.value, 7200)
+  const eigen = planSelf(input({
+    units: UNITS.map((u) => (u.id === 'b' ? { ...u, role: 'self' as const } : u)),
+    tenancies: TENANCIES.filter((t) => t.id !== 'B'),
+    readings: READINGS.filter((x) => !(x.meterId === 'wb' && x.date === '2025-12-31')),
+    estimates: est([[estimateKey('b', 'heating'), 15000]]),
+    estimateThreshold: withLimit(),
+  }))
+  assert.deepEqual(eigen.problems, [])
+  const self = eigen.units.flatMap((u) => u.users).find((u) => u.role === 'self') ?? assert.fail('keine Eigennutzung')
+  assert.deepEqual([self.pots.heating.value, self.pots.heating.estimated], [15000, true])
+})
+
+test('§ 9a mit Heizkostenverteilern: der geschätzte Verbrauch ist in bewerteten Einheiten, ohne Faktor', () => {
+  const hkv: SelfMeter[] = [
+    { id: 'ha', name: 'HKV A', unitId: 'a', type: 'hkv', factor: 2 }, { id: 'hb', name: 'HKV B', unitId: 'b', type: 'hkv', factor: 1 }, { id: 'hc', name: 'HKV C', unitId: 'c', type: 'hkv', factor: 1 },
+  ]
+  const readings = [r('ha', '2024-12-31', 0), r('ha', '2025-12-31', 300), r('hb', '2024-12-31', 0), r('hb', '2025-12-31', 800), r('hc', '2024-12-31', 0), r('hc', '2025-09-30', 400)]
+  const plan = planSelf(input({ hotWater: 'none', capture: 'hca', meters: hkv, readings, estimates: est([[estimateKey('c', 'heating'), 640]]), estimateThreshold: withLimit() }))
+  assert.deepEqual(plan.problems, [])
+  assert.equal(userOf(plan, 'A').pots.heating.value, 600)
+  assert.equal(userOf(plan, 'C1').pots.heating.value, 400)
+  near(userOf(plan, 'C2').pots.heating.value ?? -1, 640 * 0.36, 'C2 ohne Faktor')
+})
+
+test('Vorschläge: Durchschnitt des Gebäudes je m², vergleichbare Wohnungen je m², Vorperiode nur bei gleicher Länge', () => {
+  const ohneEnde = READINGS.filter((x) => !(x.meterId === 'wc' && x.date === '2025-12-31'))
+  const plan = planSelf(input({ readings: ohneEnde }))
+  const { proposals, comparable } = estimateProposals(plan, null, true, 'c', 'heating')
+  // A 12.000 kWh auf 60 m², B 16.000 auf 80 m²: 28.000 / 140 = 200 kWh je m²; C 60 m² → 12.000.
+  assert.deepEqual(proposals.find((p) => p.method === 'buildingAverage'), { method: 'buildingAverage', value: 12000, perM2: 200, why: 'ok' })
+  assert.deepEqual(proposals.find((p) => p.method === 'previousPeriod'), { method: 'previousPeriod', value: null, perM2: null, why: 'noPrevious' })
+  assert.deepEqual(comparable, [{ unitId: 'a', unitName: 'A', perM2: 200, value: 12000 }, { unitId: 'b', unitName: 'B', perM2: 200, value: 12000 }])
+  assert.deepEqual(proposals.find((p) => p.method === 'comparableUnit'), { method: 'comparableUnit', value: null, perM2: null, why: 'ok' })
+  // Vorperiode 2024 mit Ständen der Wohnung C am 31.12.2023 und 31.12.2024: 500 kWh.
+  const vorher = planSelf(input({ h: { from: '2024-01-01', to: '2024-12-31' }, neighbors: { before: '2022-12-31', after: '2025-12-31' }, readings: [...READINGS, r('wc', '2023-12-31', 0)] }))
+  assert.deepEqual(estimateProposals(plan, vorher, true, 'c', 'heating').proposals.find((p) => p.method === 'previousPeriod'), { method: 'previousPeriod', value: 500, perM2: null, why: 'ok' })
+  assert.deepEqual(estimateProposals(plan, vorher, false, 'c', 'heating').proposals.find((p) => p.method === 'previousPeriod'), { method: 'previousPeriod', value: null, perM2: null, why: 'lengthDiffers' })
+  // Eine Wohnung mit Fehler oder mit Schätzung zählt für den Durchschnitt nicht mit.
+  const zwei = planSelf(input({ readings: ohneEnde.filter((x) => !(x.meterId === 'wb' && x.date === '2025-12-31')), estimates: est([[estimateKey('b', 'heating'), 99999]]), estimateThreshold: withLimit() }))
+  assert.deepEqual(estimateProposals(zwei, null, true, 'c', 'heating').proposals.find((p) => p.method === 'buildingAverage'), { method: 'buildingAverage', value: 12000, perM2: 200, why: 'ok' })
+  const keiner = planSelf(input({ readings: READINGS.filter((x) => !(x.date === '2025-12-31' && ['wa', 'wb', 'wc'].includes(x.meterId))) }))
+  assert.deepEqual(estimateProposals(keiner, null, true, 'c', 'heating').proposals.find((p) => p.method === 'buildingAverage'), { method: 'buildingAverage', value: null, perM2: null, why: 'noMeasured' })
+})
+
+test('Gerät, das geschätzt werden kann: je Erfassung und Topf', () => {
+  assert.equal(estimateDeviceType('heatMeter', 'heat'), 'waerme')
+  assert.equal(estimateDeviceType(null, 'heat'), 'waerme')
+  assert.equal(estimateDeviceType('hca', 'heat'), 'hkv')
+  assert.equal(estimateDeviceType('serviceValues', 'heat'), null)
+  assert.equal(estimateDeviceType('heatMeter', 'water'), 'warmwasser')
+  assert.equal(estimateDeviceType('serviceValues', 'water'), null)
 })

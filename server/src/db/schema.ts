@@ -27,6 +27,10 @@ import type {
   DevicesInstalledAfter,
   DevicesRemote,
   DhwMethod,
+  EstimateCause,
+  EstimateMethod,
+  EstimatePart,
+  EstimateValueUnit,
   ExternalMeasure,
   FuelGrade,
   FuelQuantityUnit,
@@ -657,6 +661,47 @@ export const heatingServiceValues = sqliteTable(
     notNegative('heating_service_values_heat_not_negative', 'heat_value'),
     notNegative('heating_service_values_water_not_negative', 'water_value'),
     oneOf('heating_service_values_heat_unit_known', 'heat_unit', SERVICE_HEAT_UNITS),
+  ],
+)
+
+// ---------- Schätzung nach § 9a HeizkostenV (Heizung PR 13, Entwurf 5.6) ----------
+
+export const ESTIMATE_PARTS = exactly<EstimatePart>()(['heat', 'water'] as const)
+export const ESTIMATE_METHODS = exactly<EstimateMethod>()(['previousPeriod', 'comparableUnit', 'buildingAverage'] as const)
+export const ESTIMATE_CAUSES = exactly<EstimateCause>()(['deviceFailure', 'wrongReading', 'readingImpossible', 'otherReason'] as const)
+export const ESTIMATE_VALUE_UNITS = exactly<EstimateValueUnit>()(['kWh', 'm³', 'Einheiten'] as const)
+
+// Eine Zeile je Heizperiode, Wohnung und Topf: der geschätzte Verbrauch, der Weg des § 9a Abs. 1 und
+// die Begründung (Pflicht). Fällt mit der Heizperiode und mit der Wohnung.
+export const heatingEstimates = sqliteTable(
+  'heating_estimates',
+  {
+    heatingPeriodId: text('heating_period_id')
+      .notNull()
+      .references(() => heatingPeriods.id, { onDelete: 'cascade' }),
+    unitId: text('unit_id')
+      .notNull()
+      .references(() => units.id, { onDelete: 'cascade' }),
+    part: text('part', { enum: ESTIMATE_PARTS }).notNull(),
+    value: real('value').notNull(),
+    method: text('method', { enum: ESTIMATE_METHODS }).notNull(),
+    reason: text('reason').notNull(),
+    confirmed: integer('confirmed', { mode: 'boolean' }).notNull().default(false),
+    // Der Grund nach § 9a Abs. 1 Satz 1 und die Erfassung samt Einheit beim Speichern (Durchsicht von #242,
+    // R-I1, G-I1): Wechselt die Erfassung der Heizperiode danach, rechnet die Schätzung nicht mehr.
+    cause: text('cause', { enum: ESTIMATE_CAUSES }).notNull(),
+    capture: text('capture', { enum: CAPTURE_METHODS }).notNull(),
+    valueUnit: text('value_unit', { enum: ESTIMATE_VALUE_UNITS }).notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.heatingPeriodId, t.unitId, t.part] }),
+    oneOf('heating_estimates_cause_known', 'cause', ESTIMATE_CAUSES),
+    oneOf('heating_estimates_capture_known', 'capture', CAPTURE_METHODS),
+    oneOf('heating_estimates_value_unit_known', 'value_unit', ESTIMATE_VALUE_UNITS),
+    oneOf('heating_estimates_part_known', 'part', ESTIMATE_PARTS),
+    oneOf('heating_estimates_method_known', 'method', ESTIMATE_METHODS),
+    notNegative('heating_estimates_value_not_negative', 'value'),
+    check('heating_estimates_reason_complete', sql.raw(`length(trim("reason")) > 0`)),
   ],
 )
 

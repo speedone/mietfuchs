@@ -40,7 +40,10 @@ export function noticesOf(settlement: Pick<Settlement, 'notices' | 'warnings'>):
 // Ebenso die eigene Heizperiode (Heizung PR 5): zulässig und nur eine Auskunft.
 const INFORMATIONAL = new Set(['basis.unit-zero', 'basis.tenancy-zero', 'basis.vacancy-persons', 'basis.vacancy-no-area', 'heating.remote-reading', 'period.short', 'period.heating-differs',
   // Heizung PR 10: Hinweise der eigenen Heizkostenabrechnung ohne Handlungsbedarf.
-  'heating.interim-reading-off', 'heating.reading-dates-differ', 'heating.change-split-time', 'heating.heat-pump-capture'])
+  'heating.interim-reading-off', 'heating.reading-dates-differ', 'heating.change-split-time', 'heating.heat-pump-capture',
+  // Heizung PR 13 (Entwurf 10.1: „hint (färbt nicht)“): eine bestätigte Schätzung nach § 9a, auch neben
+  // vollständiger Ablesung, die der Vermieter damit als unbrauchbar markiert (Durchsicht von #242, R-I7).
+  'heating.estimated', 'heating.estimate-complete'])
 export function noticesNeedAttention(settlement: Pick<Settlement, 'notices' | 'warnings'>): boolean {
   return noticesOf(settlement).some((n) => !INFORMATIONAL.has(n.code))
 }

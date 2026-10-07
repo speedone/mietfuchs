@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { AreaBasisHeat, CaptureMethod, HeatingPart, HeatingPlant, HeatingTarget, HotWater, InsulationRule } from '../types'
 import { api, ApiError, errorText, fmtEuro } from '../api'
 import Drawer from './Drawer'
+import { useToast } from './feedback'
 import Term from './Term'
 import {
   CAPTURE_SELF_OPTIONS, captureHint, HOT_WATER_OPTIONS, PART_OPTIONS, emptySelfSetup, forcedShare, itemsFromConflict, selfSetupBody, shareBounds, targetOptions,
@@ -17,6 +18,7 @@ export default function HeatingSelfSetup({ plant, period, periodLabel, onDone, o
 }) {
   const [form, setForm] = useState(() => emptySelfSetup(plant, period))
   const [error, setError] = useState('')
+  const toast = useToast()
   const [busy, setBusy] = useState(false)
   const { min, max } = shareBounds()
   const forced = forcedShare(plant.energy, form.insulation)
@@ -30,8 +32,10 @@ export default function HeatingSelfSetup({ plant, period, periodLabel, onDone, o
     }
     setBusy(true)
     try {
-      const done = await api<{ plant: HeatingPlant; created: unknown[]; converted: number }>(`/api/heating-plants/${plant.id}/self`, { method: 'PUT', body: JSON.stringify(result.body) })
+      const done = await api<{ plant: HeatingPlant; created: unknown[]; converted: number; estimatesNotice?: string | null }>(`/api/heating-plants/${plant.id}/self`, { method: 'PUT', body: JSON.stringify(result.body) })
       setError('')
+      // Durchsicht von #242, G-I1: Schätzungen, die nach dem Wechsel der Erfassung nicht mehr rechnen.
+      if (done.estimatesNotice) toast(done.estimatesNotice, 'error')
       onDone(done.plant)
     } catch (e) {
       const items = e instanceof ApiError && e.status === 409 ? itemsFromConflict(e.data) : null

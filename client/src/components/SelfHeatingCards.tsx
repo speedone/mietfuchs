@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import EstimateCard from './EstimateCard'
 import HcaBlock from './HcaBlock'
 import type { HeatingPeriodView, HeatingPlant, InsulationRule, InterimGapStatus, SelfHeatingStatement } from '../types'
 import { api, errorText, fmtDate } from '../api'
@@ -191,6 +192,8 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
           </div>
         </div>
       )}
+      {/* Heizung PR 13: Schätzung nach § 9a, direkt hinter den Ablesungen. */}
+      {self && <EstimateCard plant={plant} view={view} self={self} onChanged={onChanged} />}
       {self && self.ok && (
         <div className="card">
           <h3>Verteilung</h3>

@@ -236,3 +236,16 @@ test('Heizkostenverteiler (Heizung PR 12): Skalen, Faktoren 1,25 und 0,8 nachger
   assert.match(g.needed, /Skala und Bewertungsfaktor/)
   assert.doesNotMatch(g.needed, /noch nicht selbst aus/)
 })
+
+test('Schätzung nach § 9a (Heizung PR 13): Beispiel mit Durchschnitt je m² und der Grenze, nachgerechnet', () => {
+  const g = GLOSSARY.heatingEstimate
+  // Übrige Wohnungen 28.000 kWh auf 140 m² = 200 kWh je m²; 60 m² × 200 = 12.000 kWh.
+  assert.equal(28000 / 140, 200)
+  assert.equal(60 * 200, 12000)
+  assert.match(g.example, /28\.000 kWh auf 140 m².*200 kWh je m².*12\.000 kWh/s)
+  // 60 von 200 m² = 30 %, mehr als die Grenze: nur nach Fläche.
+  assert.match(g.example, /60 von 200 m², also 30 %.*mehr als 25 %.*nur nach der Fläche/s)
+  assert.match(g.needed, /vier gleich großen Wohnungen.*genau 25 %.*keine Überschreitung/s)
+  assert.match(g.needed, /verschieden groß.*Fläche/s)
+  assert.match(g.norm, /§ 9a HeizkostenV/)
+})

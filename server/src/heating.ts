@@ -33,7 +33,7 @@ import { dhwInputOf, dhwShareOf, type DhwContext, type DhwProblem } from './dhw.
 import { lineRoot } from '../../shared/heatingPeriod.ts'
 import type {
   SelfSpanRange,
-  AreaBasisHeat, CaptureMethod, ChangeSplit, DhwMethod, DhwStatement, HeatingEnergy, HeatingPart, HeatingTarget, HotWater, InsulationRule, InterimGap, InterimGapStatus, MeterType, SelfPot, SelfReadingView, SelfRole,
+  AreaBasisHeat, CaptureMethod, ChangeSplit, ComparableUnit, EstimatePart, EstimateProposal, DhwMethod, DhwStatement, HeatingEnergy, HeatingPart, HeatingTarget, HotWater, InsulationRule, InterimGap, InterimGapStatus, MeterType, SelfPot, SelfReadingView, SelfRole,
 } from '../../shared/types.ts'
 
 export type SelfUnit = { id: string; name: string; areaM2: number; heatedAreaM2: number | null; role: 'rented' | 'self' | 'outside' }
@@ -68,6 +68,15 @@ export type SelfInput = {
   // Ablesedienstes kommen als gedachte Zähler vom Typ `waerme`/`warmwasser` (hca.ts `serviceMeters`).
   // Fehlt: Wärmezähler wie in PR 10.
   capture?: CaptureMethod
+  // Geschätzte Verbräuche nach § 9a (Heizung PR 13) je `estimateKey(unitId, pot)`: der Verbrauch der
+  // Wohnung in diesem Topf für die ganze Heizperiode, in der Einheit der Erfassung (beim Heizkostenverteiler
+  // bewertete Einheiten, ohne Faktor). Er tritt nur an die Stelle des nicht erfassten Verbrauchs (§ 9a Abs. 1
+  // Satz 1, Durchsicht von #242 R-I4): Nutzer mit gültigen Ablesungen behalten ihren Messwert, die übrigen bekommen zusammen ihren
+  // Anteil nach Gradtagen bzw. Tagen und teilen ihn unter sich wie nach § 9b Abs. 3.
+  estimates?: ReadonlyMap<string, number>
+  // Die Grenze des § 9a Abs. 2 in Prozent; nur gefragt, wenn es eine Schätzung gibt, damit sie nur dann
+  // im Rechtsstand der Abrechnung steht.
+  estimateThreshold?: () => number
 }
 
 export type SelfUser = {
@@ -83,8 +92,9 @@ export type SelfUser = {
 }
 // Je Topf: der Bruchteil an den Grundkosten und an den Verbrauchskosten des Topfs (ohne den Anteil
 // nach Verbrauch), der gemessene Verbrauch (bei einer Gruppe der rechnerische Teil) und ob der Nutzer
-// in einer Gruppe nach § 9b Abs. 3 steht.
-export type SelfUserPot = { base: number; consumption: number; value: number | null; group: boolean }
+// in einer Gruppe nach § 9b Abs. 3 steht. `estimated` (Heizung PR 13): Der Verbrauch dieses Nutzers in
+// diesem Topf kommt aus einer Schätzung nach § 9a; fehlt, wenn er abgelesen ist.
+export type SelfUserPot = { base: number; consumption: number; value: number | null; group: boolean; estimated?: boolean }
 export type SelfUserPlan = SelfUser & { pots: Record<SelfPot, SelfUserPot> }
 export type SelfBoundary = { date: string; kind: 'start' | 'end' | 'change'; readingDates: (string | null)[]; gap: InterimGapStatus | null; far: boolean }
 export type SelfUnitPlan = {
@@ -98,6 +108,16 @@ export type SelfUnitPlan = {
   // (Heizung PR 12, Durchsicht von #241, Recht-I1), aus denselben Differenzen, mit denen verteilt wird; für
   // den Ausweis je Heizkostenverteiler und Nutzungszeitraum.
   measured: { meterId: string; pot: SelfPot; raw: number; userKeys: string[]; from: string; to: string }[]
+  // Schätzung (Heizung PR 13): je Topf, ob geschätzt ist, ob der Verbrauch ohne Schätzung und ohne Fehler
+  // erfasst ist (für die Vorschläge der Schätzung anderer Wohnungen) und ob eine Schätzung neben
+  // vollständigen Ablesungen steht (`heating.estimate-complete`, Prüfbericht A9).
+  estimated: Record<SelfPot, boolean>
+  captured: Record<SelfPot, boolean>
+  estimateComplete: Record<SelfPot, boolean>
+  // Grenzen mit zwei verschiedenen Ständen am selben Tag, die eine Schätzung deckt (Durchsicht von #242, G-M7).
+  sameDayCovered: Record<SelfPot, string[]>
+  // Die Schätzung ersetzt ein gemessenes Teilstück eines Nutzers (Durchsicht von #242 Runde 2, N-I2).
+  replacesMeasured: Record<SelfPot, boolean>
 }
 export type SelfProblem =
   | { kind: 'noArea'; pot: SelfPot }
@@ -111,7 +131,9 @@ export type SelfFinding =
 export type SelfPlan = {
   pots: SelfPot[]
   units: SelfUnitPlan[]
-  totals: Record<SelfPot, { area: number; consumption: number; measured: boolean }>
+  // `estimatedArea`: Fläche des Topfs mit geschätztem Verbrauch; `overThreshold`: sie überschreitet die
+  // Grenze des § 9a Abs. 2, der Topf wird ausschließlich nach Fläche verteilt (Heizung PR 13).
+  totals: Record<SelfPot, { area: number; consumption: number; measured: boolean; estimatedArea: number; overThreshold: boolean }>
   problems: SelfProblem[]
   findings: SelfFinding[]
 }
@@ -272,6 +294,9 @@ export function readingOff(boundary: string, date: string, table: DegreeDayTable
 const POTS_OF: Record<HotWater, SelfPot[]> = { combined: ['heating', 'water'], separate: ['heating', 'water'], none: ['heating'] }
 const emptyPot = (): SelfUserPot => ({ base: 0, consumption: 0, value: null, group: false })
 
+// Schlüssel einer Schätzung in `SelfInput.estimates` (Heizung PR 13).
+export const estimateKey = (unitId: string, pot: SelfPot): string => `${unitId}:${pot}`
+
 export function planSelf(input: SelfInput): SelfPlan {
   const { h, table } = input
   const pots = POTS_OF[input.hotWater]
@@ -288,6 +313,13 @@ export function planSelf(input: SelfInput): SelfPlan {
   // Heizung PR 12: Der Gerätetyp der Heizung folgt der Erfassung.
   const meterTypeOf = (pot: SelfPot): MeterType => (pot === 'heating' && input.capture === 'hca' ? 'hkv' : POT_METER[pot])
   const metersOf = (unitId: string, pot: SelfPot) => input.meters.filter((m) => m.unitId === unitId && m.type === meterTypeOf(pot))
+  // Schätzung (Heizung PR 13): der geschätzte Verbrauch einer Wohnung in einem Topf für die ganze
+  // Heizperiode. Er tritt nur an die Stelle des nicht erfassten Verbrauchs (§ 9a Abs. 1 Satz 1); die
+  // Ablesungen der Wohnung bleiben deshalb in der Rechnung. Für Hinweise neben einem Wechsel und fehlende
+  // Zwischenablesungen zählen die Geräte einer geschätzten Wohnung nicht mit (`liveMetersOf`): Ein Hinweis
+  // auf eine Ablesung an einem ausgefallenen Gerät sagte nichts.
+  const estimateOf = (unitId: string, p: SelfPot): number | undefined => input.estimates?.get(estimateKey(unitId, p))
+  const liveMetersOf = (unitId: string, p: SelfPot) => (estimateOf(unitId, p) === undefined ? metersOf(unitId, p) : [])
   const startBoundary = dayBefore(h.from)
   // Der eingefrorene Endstand der abgeschlossenen Vorperiode steht in der Liste, auch wenn die
   // Ablesung seither geändert wurde; er gilt (er steht in der zugestellten Abrechnung).
@@ -299,7 +331,9 @@ export function planSelf(input: SelfInput): SelfPlan {
     return [m.id, sortReadings(o && !same ? [...own, { ...o, boundFor: null }] : own)]
   }))
 
-  const totals = Object.fromEntries(pots.map((p) => [p, { area: input.units.reduce((a, u) => a + areaOf(p, u), 0), consumption: 0, measured: false }])) as SelfPlan['totals']
+  const totals = Object.fromEntries(pots.map((p) => [p, {
+    area: input.units.reduce((a, u) => a + areaOf(p, u), 0), consumption: 0, measured: false, estimatedArea: 0, overThreshold: false,
+  }])) as SelfPlan['totals']
   // Ein Topf ohne einen einzigen Zähler ist nicht erfasst (nur nach Fläche, `heating.no-consumption`);
   // ein Topf mit Zählern verlangt einen an jeder Wohnung mit Fläche.
   const potHasMeters = Object.fromEntries(pots.map((p) => [p, input.units.some((u) => metersOf(u.id, p).length > 0)])) as Record<SelfPot, boolean>
@@ -319,6 +353,7 @@ export function planSelf(input: SelfInput): SelfPlan {
     const boundaries = [...boundarySet].sort()
     const cells = [...new Set([input.neighbors.before, ...(input.outerChanges?.get(unit.id) ?? []), ...boundaries, input.neighbors.after])].sort()
     const readingAt = new Map<string, Map<string, SelfReading | null>>()
+    const sameDayCovered: Record<SelfPot, string[]> = { heating: [], water: [] }
     for (const p of pots) {
       for (const m of metersOf(unit.id, p)) {
         const sorted = sortedOf.get(m.id) ?? []
@@ -330,7 +365,13 @@ export function planSelf(input: SelfInput): SelfPlan {
         for (const b of boundaries) {
           const chosen = at.get(b) ?? null
           if (chosen && !(o && b === startBoundary) && sameDayConflict(sorted, chosen)) {
-            problems.push({ kind: 'missing', pot: p, unitId: unit.id, unitName: unit.name, boundary: b, reason: 'sameDay', meterName: m.name })
+            // Bei einer geschätzten Wohnung ist diese Grenze dann nicht erfasst, und die Schätzung deckt sie
+            // (Heizung PR 13); sonst ein Befund (PR 10 Abweichung 9).
+            if (estimateOf(unit.id, p) !== undefined) {
+              at.set(b, null)
+              // Durchsicht von #242, G-M7: die Grenze merken; der Hinweis spricht dann nicht von widerspruchsfreien Ablesungen.
+              if (!sameDayCovered[p].includes(b)) sameDayCovered[p].push(b)
+            } else problems.push({ kind: 'missing', pot: p, unitId: unit.id, unitName: unit.name, boundary: b, reason: 'sameDay', meterName: m.name })
           }
         }
       }
@@ -341,8 +382,18 @@ export function planSelf(input: SelfInput): SelfPlan {
     const isChange = (b: string): boolean => users.some((u, i) => i < users.length - 1 && u.to === b && users[i + 1]?.from === dayAfter(b))
     // Wie weit die Ablesungen einer Grenze daneben liegen (die fernste über alle Zähler).
     const offAt = new Map<string, { date: string; days: number; permille: number; far: boolean }>()
+    // Durchsicht von #242, G-I2: Die Geräte einer geschätzten Wohnung zählen hier mit, wenn ihre Ablesung an der
+    // Grenze einen behaltenen Messwert begrenzt (Stand an der Grenze und an einer Nachbargrenze): Behält der Vormieter
+    // seinen Wert bis zu einer Ablesung Wochen nach dem Wechsel, entscheidet der Vermieter wie ohne Schätzung, ob sie
+    // gilt oder nach § 9b Abs. 3 geteilt wird. Ohne solchen Stand sagte ein Hinweis zum ausgefallenen Gerät nichts.
+    const allAt = (p: SelfPot, b: string | undefined): boolean => b !== undefined && metersOf(unit.id, p).every((m) => (readingAt.get(m.id)?.get(b) ?? null) !== null)
+    const usableAt = (p: SelfPot, b: string): boolean => {
+      if (estimateOf(unit.id, p) === undefined) return true
+      const i = boundaries.indexOf(b)
+      return metersOf(unit.id, p).length > 0 && allAt(p, b) && (allAt(p, boundaries[i - 1]) || allAt(p, boundaries[i + 1]))
+    }
     for (const b of boundaries) {
-      const dates = pots.flatMap((p) => metersOf(unit.id, p)).map((m) => readingAt.get(m.id)?.get(b)?.date ?? null)
+      const dates = pots.flatMap((p) => (usableAt(p, b) ? metersOf(unit.id, p) : [])).map((m) => readingAt.get(m.id)?.get(b)?.date ?? null)
       if (dates.length === 0 || dates.some((d) => d === null)) continue
       const farthest = (dates as string[]).filter((d) => d !== b).reduce<string | null>((a, d) => (a === null || Math.abs(dayNumber(d) - dayNumber(b)) > Math.abs(dayNumber(a) - dayNumber(b)) ? d : a), null)
       if (farthest !== null) offAt.set(b, { date: farthest, ...readingOff(b, farthest, table, input.offRule()) })
@@ -361,17 +412,23 @@ export function planSelf(input: SelfInput): SelfPlan {
       for (const u of users) u.pots[p].base = (totals[p].area > 0 ? areaOf(p, unit) / totals[p].area : 0) * (splitOf(p, u) / splitTotal(p))
     }
 
+    const estimateComplete: Record<SelfPot, boolean> = { heating: false, water: false }
+    const replacesMeasured: Record<SelfPot, boolean> = { heating: false, water: false }
     for (const p of pots) {
       const meters = metersOf(unit.id, p)
-      if (meters.length === 0) {
+      const estimated = estimateOf(unit.id, p)
+      if (meters.length === 0 && estimated === undefined) {
         if (potHasMeters[p] && areaOf(p, unit) > 0) problems.push({ kind: 'missing', pot: p, unitId: unit.id, unitName: unit.name, boundary: null, reason: 'noMeter', meterName: null })
         continue
       }
       // „Nach § 9b Abs. 3“ gewählt: die Ablesung gilt als nicht hinreichend genau (Abweichung 22).
       const has = (b: string): boolean => answerAt(b) !== 'imprecise' && meters.every((m) => (readingAt.get(m.id)?.get(b) ?? null) !== null)
-      for (const b of [startBoundary, h.to]) {
-        for (const m of meters) {
-          if ((readingAt.get(m.id)?.get(b) ?? null) === null) problems.push({ kind: 'missing', pot: p, unitId: unit.id, unitName: unit.name, boundary: b, reason: 'noReading', meterName: m.name })
+      // Ohne Schätzung fehlt ein Stand zu Beginn oder Ende (ein Fall des § 9a); mit Schätzung deckt sie ihn.
+      if (estimated === undefined) {
+        for (const b of [startBoundary, h.to]) {
+          for (const m of meters) {
+            if ((readingAt.get(m.id)?.get(b) ?? null) === null) problems.push({ kind: 'missing', pot: p, unitId: unit.id, unitName: unit.name, boundary: b, reason: 'noReading', meterName: m.name })
+          }
         }
       }
       // Gruppen: Nutzer, zwischen denen die Ablesung fehlt (§ 9b Abs. 3).
@@ -383,11 +440,12 @@ export function planSelf(input: SelfInput): SelfPlan {
         if (prev && clean && !has(prev.to) && last) last.push(u)
         else groups.push([u])
       })
-      // Verbrauch je Gruppe zwischen ihren äußeren Grenzen.
-      for (const g of groups) {
+      // Verbrauch einer Gruppe zwischen ihren äußeren Grenzen, mit den Differenzen je Gerät vor dem Faktor;
+      // `null`, wenn er nicht erfasst ist.
+      const measuredOf = (g: readonly SelfUserPlan[]): { v: number; raws: [string, number][] } | null => {
         const first = g[0]
         const lastUser = g[g.length - 1]
-        if (!first || !lastUser) continue
+        if (!first || !lastUser || meters.length === 0) return null
         const from = dayBefore(first.from)
         const to = lastUser.to
         let v = 0
@@ -398,35 +456,69 @@ export function planSelf(input: SelfInput): SelfPlan {
           const b = readingAt.get(m.id)?.get(to) ?? null
           if (a === null || b === null) {
             ok = false
-            if (from !== startBoundary && to !== h.to) problems.push({ kind: 'missing', pot: p, unitId: unit.id, unitName: unit.name, boundary: a === null ? from : to, reason: 'noReading', meterName: m.name })
+            if (estimated === undefined && from !== startBoundary && to !== h.to) problems.push({ kind: 'missing', pot: p, unitId: unit.id, unitName: unit.name, boundary: a === null ? from : to, reason: 'noReading', meterName: m.name })
             continue
           }
           const result = measuredBetween(sortedOf.get(m.id) ?? [], a, b)
           if ('problem' in result) {
             ok = false
-            problems.push({ kind: 'missing', pot: p, unitId: unit.id, unitName: unit.name, boundary: to, reason: result.problem, meterName: m.name })
+            if (estimated === undefined) problems.push({ kind: 'missing', pot: p, unitId: unit.id, unitName: unit.name, boundary: to, reason: result.problem, meterName: m.name })
             continue
           }
           // Heizung PR 12: jede Differenz mit dem Faktor ihres Geräts.
           v += result.value * (m.factor ?? 1)
           raws.push([m.id, result.value])
         }
-        if (!ok) continue
-        for (const [id, raw] of raws) measured.push({ meterId: id, pot: p, raw, userKeys: g.map((u) => u.key), from: first.from, to: lastUser.to })
-        consumption[p] += v
+        return ok ? { v, raws } : null
+      }
+      // Ein Verbrauch für eine Gruppe: allein ganz, sonst nach Gradtagen bzw. Tagen geteilt (§ 9b Abs. 3).
+      const assign = (g: readonly SelfUserPlan[], v: number, fromEstimate: boolean): void => {
         const splitSum = g.reduce((a, u) => a + splitOf(p, u), 0)
         for (const u of g) {
           u.pots[p].value = g.length === 1 ? v : splitSum > 0 ? (v * splitOf(p, u)) / splitSum : 0
           u.pots[p].group = g.length > 1
+          if (fromEstimate) u.pots[p].estimated = true
         }
       }
+      // Ein abgelesener Verbrauch: zugeteilt und je Gerät für den Ausweis festgehalten.
+      const keep = (g: readonly SelfUserPlan[], m: { v: number; raws: [string, number][] }): void => {
+        const first = g[0]
+        const lastUser = g[g.length - 1]
+        if (!first || !lastUser) return
+        for (const [id, raw] of m.raws) measured.push({ meterId: id, pot: p, raw, userKeys: g.map((u) => u.key), from: first.from, to: lastUser.to })
+        consumption[p] += m.v
+        assign(g, m.v, false)
+      }
+      const results = groups.map((g) => ({ g, m: measuredOf(g) }))
+      if (estimated === undefined) {
+        for (const { g, m } of results) if (m !== null) keep(g, m)
+        continue
+      }
+      // § 9a Abs. 1 Satz 1 (Heizung PR 13, Prüfbericht A5; Durchsicht von #242, R-I4): Der geschätzte Verbrauch tritt nur an die Stelle
+      // des nicht erfassten. Er gilt für die ganze Heizperiode der Wohnung; Nutzer ohne erfassten Verbrauch
+      // bekommen zusammen ihren Anteil daran nach Gradtagen bzw. Tagen (wie § 9b Abs. 3), Nutzer mit gültigen
+      // Ablesungen (etwa der Vormieter bis zur Zwischenablesung) behalten ihren Messwert, und kein Geld
+      // wandert zwischen ihnen. Ist alles vollständig abgelesen, ersetzt die Schätzung alles (sie ist dann die
+      // Markierung „unbrauchbar“, Abweichung 3 des Plans) und wird gemeldet (Prüfbericht A9).
+      const complete = results.length > 0 && results.every((x) => x.m !== null)
+      estimateComplete[p] = complete
+      if (!complete) for (const { g, m } of results) if (m !== null) keep(g, m)
+      const takers = complete ? users : results.filter((x) => x.m === null).flatMap((x) => x.g)
+      // Durchsicht von #242 Runde 2, N-I2: Ersetzt die Schätzung bei einem Nutzer ein gemessenes Teilstück (zwei Stände
+      // desselben Geräts mit Abstand in seinem Zeitraum)? Ein bloßer Anfangsstand ist kein abgelesener Zeitraum.
+      replacesMeasured[p] = !complete && takers.some((u) => meters.some((m) => new Set((sortedOf.get(m.id) ?? [])
+        .map((r) => r.date).filter((d) => d >= dayBefore(u.from) && d <= u.to)).size >= 2))
+      const splitAll = users.reduce((a, u) => a + splitOf(p, u), 0)
+      const part = splitAll > 0 ? (estimated * takers.reduce((a, u) => a + splitOf(p, u), 0)) / splitAll : 0
+      consumption[p] += part
+      assign(takers, part, true)
     }
 
     // Die Grenzen der Wohnung mit ihren Ablesungen (Ausweis, Ampel, Hinweise).
     const bounds: SelfBoundary[] = boundaries
       .filter((b) => b === startBoundary || b === h.to || isChange(b))
       .map((b) => {
-        const all = pots.flatMap((p) => metersOf(unit.id, p)).map((m) => readingAt.get(m.id)?.get(b)?.date ?? null)
+        const all = pots.flatMap((p) => liveMetersOf(unit.id, p)).map((m) => readingAt.get(m.id)?.get(b)?.date ?? null)
         const kind = b === startBoundary ? 'start' : b === h.to ? 'end' : 'change'
         const gap = kind === 'change' ? answerAt(b) : null
         return { date: b, kind, readingDates: all, gap, far: offAt.get(b)?.far ?? false }
@@ -436,8 +528,8 @@ export function planSelf(input: SelfInput): SelfPlan {
       const answer = input.gaps.find((x) => x.unitId === unit.id && x.date === bd.date)
       const imprecise = answer?.status === 'imprecise'
       const missingPots = imprecise
-        ? pots.filter((p) => metersOf(unit.id, p).length > 0)
-        : pots.filter((p) => metersOf(unit.id, p).length > 0 && metersOf(unit.id, p).some((m) => (readingAt.get(m.id)?.get(bd.date) ?? null) === null))
+        ? pots.filter((p) => liveMetersOf(unit.id, p).length > 0)
+        : pots.filter((p) => liveMetersOf(unit.id, p).length > 0 && liveMetersOf(unit.id, p).some((m) => (readingAt.get(m.id)?.get(bd.date) ?? null) === null))
       if (missingPots.length > 0) {
         const around = users.filter((u) => u.to === bd.date || u.from === dayAfter(bd.date))
         // „Ablesung verwenden“ passt nicht zu einer fehlenden Ablesung und zählt dann nicht als Antwort.
@@ -457,13 +549,27 @@ export function planSelf(input: SelfInput): SelfPlan {
       const oldEnd = r?.replacement && r.oldEndValue !== null && r.oldEndValue !== undefined ? { oldEndValue: r.oldEndValue } : {}
       return { meterId: m.id, meterName: m.name, pot: p, boundary: bd.date, date: r?.date ?? null, value: r?.value ?? null, ...oldEnd }
     })))
-    return { unit, heatArea: heatAreaOf(unit), users, boundaries: bounds, readings, consumption, measured }
+    const estimatedPots = { heating: estimateOf(unit.id, 'heating') !== undefined, water: estimateOf(unit.id, 'water') !== undefined }
+    const captured = Object.fromEntries((['heating', 'water'] as const).map((p) => [p,
+      pots.includes(p) && !estimatedPots[p] && metersOf(unit.id, p).length > 0 &&
+      !problems.some((x) => x.kind === 'missing' && x.unitId === unit.id && x.pot === p),
+    ])) as Record<SelfPot, boolean>
+    return { unit, heatArea: heatAreaOf(unit), users, boundaries: bounds, readings, consumption, measured, estimated: estimatedPots, captured, estimateComplete, sameDayCovered, replacesMeasured }
   })
 
   // Summe des Verbrauchs je Topf, dann die Bruchteile.
   for (const p of pots) {
     totals[p].consumption = units.reduce((a, u) => a + u.consumption[p], 0)
     totals[p].measured = potHasMeters[p] && totals[p].consumption > 0
+    // § 9a Abs. 2 (Heizung PR 13): Überschreitet die geschätzte Fläche die Grenze der für die Verteilung
+    // maßgeblichen Fläche dieses Topfs, wird er ausschließlich nach Fläche verteilt. „Überschreitet“:
+    // streng größer, verglichen über Produkte, nie über einen gerundeten Anteil. Betroffen ist die Fläche
+    // der Wohnung, auch wenn nur ein Teil der Heizperiode geschätzt ist (Festlegung, Abweichung 2 des Plans).
+    totals[p].estimatedArea = units.filter((u) => u.estimated[p]).reduce((a, u) => a + areaOf(p, u.unit), 0)
+    if (totals[p].estimatedArea > 0) {
+      const limit = input.estimateThreshold?.()
+      totals[p].overThreshold = limit !== undefined && totals[p].estimatedArea * 100 > totals[p].area * limit
+    }
     for (const u of units) {
       for (const user of u.users) {
         const v = user.pots[p].value
@@ -493,7 +599,8 @@ export function planSelf(input: SelfInput): SelfPlan {
 // ---------- Gewichte (Entwurf 8.5, 8.6) ----------
 
 // g_r(T) = (1 − p_T) · Grundanteil + p_T · Verbrauchsanteil; ohne erfassten Verbrauch nur der
-// Grundanteil (`heating.no-consumption`). g_r(both) = (1 − α) · g_r(heating) + α · g_r(water).
+// Grundanteil (`heating.no-consumption`); bei `overThreshold` ebenso nur der Grundanteil (§ 9a Abs. 2,
+// Heizung PR 13). g_r(both) = (1 − α) · g_r(heating) + α · g_r(water).
 // `shares` in Prozent, `alpha` als Bruchteil (`null`: keine verbundene Warmwasserbereitung).
 export function weightsOf(plan: SelfPlan, shares: { heating: number; water: number }, alpha: number | null): Map<string, SelfWeights> {
   const out = new Map<string, SelfWeights>()
@@ -501,7 +608,8 @@ export function weightsOf(plan: SelfPlan, shares: { heating: number; water: numb
     for (const user of u.users) {
       const g = (p: SelfPot): number => {
         if (!plan.pots.includes(p)) return 0
-        const share = plan.totals[p].measured ? shares[p] / 100 : 0
+        // Nicht erfasst oder nach § 9a Abs. 2 nur nach Fläche (Heizung PR 13): kein Anteil nach Verbrauch.
+        const share = plan.totals[p].measured && !plan.totals[p].overThreshold ? shares[p] / 100 : 0
         return (1 - share) * user.pots[p].base + share * user.pots[p].consumption
       }
       const heating = g('heating')
@@ -510,6 +618,52 @@ export function weightsOf(plan: SelfPlan, shares: { heating: number; water: numb
     }
   }
   return out
+}
+
+// ---------- Schätzung nach § 9a: Vorschläge (Heizung PR 13, Entwurf 8.7) ----------
+
+// Die Fläche einer Wohnung im Topf: beheizte Fläche nur beim Topf Heizung, wenn eingestellt (§ 7 Abs. 1
+// Satz 5), sonst Wohnfläche (§ 8 Abs. 1).
+const potAreaOf = (u: SelfUnitPlan, p: SelfPot): number => (p === 'heating' ? u.heatArea : u.unit.areaM2 || 0)
+
+// Die drei Wege des § 9a Abs. 1 als Vorschläge für eine Wohnung und einen Topf.
+// - Durchschnitt des Gebäudes (Vorgabe): Summe des erfassten Verbrauchs der übrigen Wohnungen ohne
+//   Schätzung und ohne Fehler durch ihre Fläche, mal der Fläche der Wohnung (Abweichung 7 des Plans).
+// - Vergleichbare andere Räume: dieselbe Rechnung für eine einzelne Wohnung; welche vergleichbar ist,
+//   wählt der Vermieter, deshalb ohne eigenen Wert und mit der Liste `comparable` (Abweichung 6).
+// - Vergleichbare Zeiträume: derselbe Topf derselben Wohnung in der vorigen Heizperiode, nur bei
+//   gleicher Länge (Abweichung 5).
+export function estimateProposals(plan: SelfPlan, prev: SelfPlan | null, sameLength: boolean, unitId: string, pot: SelfPot): { proposals: EstimateProposal[]; comparable: ComparableUnit[] } {
+  const target = plan.units.find((u) => u.unit.id === unitId)
+  const area = target ? potAreaOf(target, pot) : 0
+  const others = plan.units.filter((u) => u.unit.id !== unitId && u.captured[pot] && potAreaOf(u, pot) > 0)
+  const comparable: ComparableUnit[] = others.map((u) => {
+    const perM2 = u.consumption[pot] / potAreaOf(u, pot)
+    return { unitId: u.unit.id, unitName: u.unit.name, perM2, value: perM2 * area }
+  })
+  const sumArea = others.reduce((a, u) => a + potAreaOf(u, pot), 0)
+  const sumUse = others.reduce((a, u) => a + u.consumption[pot], 0)
+  const average: EstimateProposal = sumArea > 0
+    ? { method: 'buildingAverage', value: (sumUse / sumArea) * area, perM2: sumUse / sumArea, why: 'ok' }
+    : { method: 'buildingAverage', value: null, perM2: null, why: 'noMeasured' }
+  const before = prev?.units.find((u) => u.unit.id === unitId)
+  const previous: EstimateProposal = !before || !before.captured[pot]
+    ? { method: 'previousPeriod', value: null, perM2: null, why: 'noPrevious' }
+    : !sameLength
+      ? { method: 'previousPeriod', value: null, perM2: null, why: 'lengthDiffers' }
+      : { method: 'previousPeriod', value: before.consumption[pot], perM2: null, why: 'ok' }
+  const byUnit: EstimateProposal = { method: 'comparableUnit', value: null, perM2: null, why: comparable.length > 0 ? 'ok' : 'noMeasured' }
+  return { proposals: [average, previous, byUnit], comparable }
+}
+
+// Welches Gerät eine Wohnung für eine Schätzung haben muss (Abweichung 4 des Plans): § 9a setzt ein
+// Gerät voraus, das ausfällt. `null`: Mietfuchs kennt die Geräte nicht (Werte eines Ablesedienstes,
+// PR 12) und prüft nicht.
+export function estimateDeviceType(capture: CaptureMethod | null, part: EstimatePart): Extract<MeterType, 'waerme' | 'hkv' | 'warmwasser'> | null {
+  if (part === 'water') return capture === 'serviceValues' ? null : 'warmwasser'
+  if (capture === 'hca') return 'hkv'
+  if (capture === 'serviceValues') return null
+  return 'waerme'
 }
 
 // ---------- Ziel einer Position ----------

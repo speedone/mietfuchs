@@ -17,16 +17,17 @@ import { and, eq, ne } from 'drizzle-orm'
 import { hkvConsumptionShare, hkvConsumptionShareForced } from '../../../shared/law/heizkostenv.ts'
 import { germanDate, valueAt } from '../../../shared/law/register.ts'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
-import { lineRoot, servesUnit } from '../../../shared/heatingPeriod.ts'
+import { captureOf, lineRoot, servesUnit } from '../../../shared/heatingPeriod.ts'
 import type {
   BillingPeriod, CostItem, CostKey, HotWater, SelfSpanRange, HeatingDistribution, HeatingEnergy, HeatingPart, HeatingPlant, InterimGap, InsulationRule, Meter,
 } from '../../../shared/types.ts'
 import { consumptionSharesOf, OIL_OR_GAS, POT_METER, selfActive, selfFromOf, targetProblem, type ShareRow } from '../heating.ts'
 import type { Database, Executor } from './client.ts'
 import { closedHeatingKeys, closedText, ensureHeatingPeriod, heatingPeriodClosed, heatingPeriodOf, plantContext, type PlantContext } from './heatingPeriodContext.ts'
-import { readCostItems, readHeatingPlants, readMeters, readUnits } from './read.ts'
+import { readCostItems, readHeatingEstimates, readHeatingPlants, readHeatingServiceValues, readMeters, readUnits } from './read.ts'
 import { guardHeatingPlant, pinSelfSpans, plantRow, writeSelfSpans } from './heating.ts'
-import { hotWaterOf } from '../hca.ts'
+import { CAPTURE_TEXT, estimateFits, hotWaterOf, lineServiceRows } from '../hca.ts'
+import { andList } from '../../../shared/wording.ts'
 import { HeatingError, insertEntityIn, ISO_DATE, oneOfOrUndefined, patchCostItemIn, raw } from './repository.ts'
 import { costItems, heatingPeriods, heatingPlants, INSULATION_RULES, INTERIM_GAP_STATUS, interimReadingGaps, units } from './schema.ts'
 import { beforeBeginText, lineRowsOf } from './selfLine.ts'
@@ -185,7 +186,7 @@ function readItemAnswers(value: unknown): ItemAnswer[] {
 }
 
 // `null`, wenn es die Anlage nicht gibt.
-export async function setUpSelf(db: Database, plantId: string, body: unknown, today: string, newId: () => string): Promise<{ plant: HeatingPlant; created: Meter[]; converted: number } | null> {
+export async function setUpSelf(db: Database, plantId: string, body: unknown, today: string, newId: () => string): Promise<{ plant: HeatingPlant; created: Meter[]; converted: number; estimatesNotice: string | null } | null> {
   const ctx = await plantContext(db, plantId)
   if (!ctx) return null
   const current = ctx.plant
@@ -308,7 +309,27 @@ export async function setUpSelf(db: Database, plantId: string, body: unknown, to
   const plant = (await readHeatingPlants(db)).find((p) => p.id === plantId)
   if (!plant) throw new Error('Die Heizanlage ist nach der Einrichtung nicht auffindbar.')
   const created = (await readMeters(db)).filter((m) => createdIds.includes(m.id))
-  return { plant, created, converted: answers.length }
+  return { plant, created, converted: answers.length, estimatesNotice: await staleEstimatesNotice(db, plant, lineIds, String(h.key)) }
+}
+
+// Durchsicht von #242, G-I1: Schätzungen nach § 9a ab dieser Heizperiode, die nach der Einrichtung nicht mehr zur
+// Erfassung passen. Sie bleiben gespeichert, rechnen aber nicht (calc.ts, `heating.estimate-stale`); die Antwort
+// nennt sie, damit der Vermieter sie neu einträgt, bevor er die Abrechnung verschickt.
+async function staleEstimatesNotice(db: Executor, plant: HeatingPlant, lineIds: ReadonlySet<string>, fromKey: string): Promise<string | null> {
+  const all = (await readHeatingEstimates(db)).filter((e) => lineIds.has(e.plantId) && String(e.period) >= fromKey)
+  if (all.length === 0) return null
+  const service = await readHeatingServiceValues(db)
+  const plants = await readHeatingPlants(db)
+  const names = new Map((await readUnits(db)).map((u) => [u.id, u.name]))
+  const stale = all.filter((e) => {
+    const key = String(e.period)
+    const capture = captureOf(plant, key)
+    return !estimateFits(e, capture, capture === 'serviceValues' ? lineServiceRows(service, plants, plant.id, key) : [])
+  })
+  if (stale.length === 0) return null
+  const list = stale.map((e) => `„${names.get(e.unitId) ?? e.unitId}“ (${e.part === 'heat' ? 'Heizung' : 'Warmwasser'}, eingetragen ${CAPTURE_TEXT[e.capture]} in ${e.valueUnit})`)
+  return `${stale.length === 1 ? 'Eine Schätzung nach § 9a passt' : `${stale.length} Schätzungen nach § 9a passen`} nicht mehr zur Erfassung der Heizperiode: ${andList(list)}. ` +
+    'Mietfuchs rechnet sie nicht mehr, die Wohnung gilt als nicht erfasst. Tragen Sie die Schätzung auf der Seite Heizkosten unter „Schätzung (§ 9a)“ neu ein.'
 }
 
 // `null`, wenn es die Wohnung nicht gibt.

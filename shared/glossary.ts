@@ -13,7 +13,7 @@
 // Rechtszahlen kommen aus dem Rechtsregister (shared/law/, Heizung PR 1), und zwar in der Fassung
 // von `LAW_AS_OF`: Das Lexikon erklärt das geltende Recht. Die Zahlen einer Beispielrechnung („70 %
 // nach Verbrauch“) sind gewählt und bleiben stehen.
-import { hkvConsumptionShare, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit } from './law/heizkostenv.ts'
+import { hkvConsumptionShare, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvEstimateThreshold, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit } from './law/heizkostenv.ts'
 import { dayBefore as dayBeforeIso, germanDate, LAW_AS_OF, onlyVersion, valueAt } from './law/register.ts'
 import { practiceEvaporatorWindow } from './law/practice.ts'
 import { co2CutMissing, co2DistrictEtsNew, co2FirstPeriodStart, co2NonResidential, co2Restriction, co2RoundingDecimals, co2StageTable } from './law/co2kostaufg.ts'
@@ -31,6 +31,7 @@ const DHW_EXAMPLE = { areaM2: 200, volumeM3: 120, tempC: 60, gasKwh: 60000, meas
 const DHW_Q_VOLUME = DHW_VOLUME.effort * DHW_EXAMPLE.volumeM3 * (DHW_EXAMPLE.tempC - DHW_VOLUME.coldWaterC)
 const DHW_Q_AREA = DHW_AREA.kwhPerM2 * DHW_EXAMPLE.areaM2
 const REMOTE_CUT = valueAt(hkvCutRemoteReading, LAW_AS_OF)
+const ESTIMATE_THRESHOLD = valueAt(hkvEstimateThreshold, LAW_AS_OF)
 const NEW_DEVICES_AFTER = germanDate(valueAt(hkvRemoteReadingNewDevices, LAW_AS_OF).installedAfter)
 const RETROFIT_FROM = germanDate(onlyVersion(hkvRemoteReadingRetrofit).validFrom ?? '')
 // Heizkostenverteiler (Heizung PR 12): Beispiel mit zwei Bewertungsfaktoren. Die Zahlen des Hauses
@@ -345,6 +346,20 @@ export const GLOSSARY = {
     example: 'Der Wärmezähler der Wohnung zeigt am 31.12.2024 1.000 kWh und am 31.12.2025 13.000 kWh: verbraucht sind 12.000 kWh.',
     norm: '§ 5 Abs. 1 HeizkostenV',
     needed: 'Wenn Sie die Heizkosten selbst abrechnen. Ein Wärmezähler am Warmwasserspeicher misst den Anteil des Warmwassers; ohne ihn ist eine Formel nur bei unzumutbar hohem Aufwand erlaubt.',
+  },
+  // Heizung PR 13 (#99, Entwurf 10.3): Schätzung nach § 9a. Die Zahlen des Beispiels sind Beispielzahlen.
+  heatingEstimate: {
+    title: 'Schätzung bei Geräteausfall',
+    short: 'Fällt ein Zähler oder Heizkostenverteiler aus oder kann der Verbrauch aus einem anderen zwingenden Grund nicht ordnungsgemäß erfasst werden, wird der Verbrauch dieser Wohnung geschätzt: aus ihrem Verbrauch in einem vergleichbaren Zeitraum, aus dem Verbrauch einer vergleichbaren Wohnung oder aus dem Durchschnitt des Hauses. Der geschätzte Verbrauch tritt nur an die Stelle dessen, was nicht abgelesen werden konnte; hat ein Vormieter bis zur Zwischenablesung einen gültigen Wert, behält er ihn.',
+    example:
+      'Der Wärmezähler einer Wohnung mit 60 m² fällt aus. Die übrigen Wohnungen verbrauchen zusammen 28.000 kWh auf 140 m², das sind 200 kWh je m²: geschätzt werden 60 × 200 = 12.000 kWh. ' +
+      `Die Wohnung hat 60 von 200 m², also 30 % der Fläche. Das ist mehr als ${ESTIMATE_THRESHOLD} %, und die Heizkosten werden deshalb in diesem Jahr nur nach der Fläche verteilt.`,
+    norm: '§ 9a HeizkostenV',
+    needed:
+      'Nur, wenn der Verbrauch nicht ordnungsgemäß erfasst werden kann: Das Gerät ist ausgefallen, zeigt falsch an, oder ein anderer zwingender Grund verhindert die Ablesung. Dann muss der Verbrauch so ermittelt werden; ohne Schätzung verteilt Mietfuchs die Anlage nicht. ' +
+      'Ist ein Wert nur einige Tage neben dem Stichtag abgelesen, gilt er, wie er ist; das ist kein Grund zu schätzen. ' +
+      `Maßgeblich für die Grenze von ${ESTIMATE_THRESHOLD} % ist die Fläche der geschätzten Wohnungen, nicht ihre Zahl: Bei vier gleich großen Wohnungen hat jede genau ${ESTIMATE_THRESHOLD} %, das ist keine Überschreitung. ` +
+      `Sind die Wohnungen verschieden groß, zählt die Fläche: Eine Wohnung mit mehr als ${ESTIMATE_THRESHOLD} % der Fläche überschreitet die Grenze allein, und mehrere kleinere können es zusammen. Mietfuchs zählt die ganze Fläche der Wohnung, auch wenn nur ein Teil der Heizperiode geschätzt ist, und prüft Heizung und Warmwasser getrennt; die Verordnung sagt dazu nichts Ausdrückliches, das ist eine Auslegung von Mietfuchs.`,
   },
   cableTv: {
     title: 'Kabelfernsehen',

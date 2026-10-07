@@ -1888,6 +1888,13 @@ export type SelfPotView = {
   consumptionUnit: 'kWh' | 'm³' | 'Einheiten'
   baseCentsPerM2: number
   consumptionCentsPerUnit: number | null
+  // Schätzung (Heizung PR 13): geschätzte Fläche des Topfs und ob sie die Grenze des § 9a Abs. 2
+  // überschreitet; dann ist `consumptionPct` 0 und der Topf nur nach Fläche verteilt. Fehlen in einer
+  // Abrechnung, die vor Heizung PR 13 abgeschlossen wurde.
+  overThreshold?: boolean
+  estimatedAreaM2?: number
+  // Der Teil von `consumption`, der aus Schätzungen kommt (Durchsicht von #242, R-M9).
+  estimatedConsumption?: number
 }
 // Eine Ablesung an einer Grenze: `date` null heißt, es gibt keine.
 // `oldEndValue` (Durchsicht von #241, Recht-I2): bei einem Wechsel oder Stichtag an der Grenze der Stand davor; beim
@@ -1925,6 +1932,9 @@ export type SelfUserView = {
   // heatingCents − heatingCo2Cents. 0 ohne Abzug.
   heatingCo2Cents: number
   waterCo2Cents: number
+  // Der Verbrauch dieses Nutzers beruht auf einer Schätzung nach § 9a (Heizung PR 13).
+  heatingEstimated?: boolean
+  waterEstimated?: boolean
 }
 export type SelfUnitView = {
   unitId: string
@@ -1937,6 +1947,8 @@ export type SelfUnitView = {
 }
 export type SelfHeatingStatement = {
   ok: boolean
+  // Die Erfassung der Heizperiode (Durchsicht von #242 Runde 3, N2-M1); fehlt in älteren Abrechnungen.
+  capture?: CaptureMethod
   heatPump: 'applies' | 'notYet' | 'missing' | null
   changeSplit: ChangeSplit
   areaBasisHeat: AreaBasisHeat
@@ -1951,4 +1963,76 @@ export type SelfHeatingStatement = {
   // Ablesedienstes; nur bei dieser Erfassung.
   devices?: HcaDeviceLine[]
   serviceValues?: HeatingServiceValue[]
+  // Schätzungen nach § 9a (Heizung PR 13), die Wohnungen und Töpfe, für die der Dialog eine anbietet, und
+  // die Grenze des § 9a Abs. 2 (null, wenn nicht gefragt). Fehlen in einer Abrechnung, die vor Heizung PR 13
+  // abgeschlossen wurde.
+  estimates?: SelfEstimateView[]
+  estimateOptions?: SelfEstimateOption[]
+  threshold?: number | null
+}
+
+// ---------- Schätzung nach § 9a HeizkostenV (Heizung PR 13, Entwurf 5.6, 8.7) ----------
+
+// Topf der Schätzung in der Schreibweise der Tabelle (Entwurf 5.6); die Rechnung nennt die Töpfe
+// `heating` und `water` (shared/heating.ts ordnet zu).
+export type EstimatePart = 'heat' | 'water'
+// Die drei Wege des § 9a Abs. 1: Verbrauch der betroffenen Räume in vergleichbaren Zeiträumen,
+// vergleichbarer anderer Räume im selben Zeitraum, Durchschnittsverbrauch des Gebäudes.
+export type EstimateMethod = 'previousPeriod' | 'comparableUnit' | 'buildingAverage'
+// Der Grund nach § 9a Abs. 1 Satz 1 (Durchsicht von #242, R-I1): Geräteausfall oder ein anderer zwingender Grund,
+// aus dem der Verbrauch nicht ordnungsgemäß erfasst werden kann.
+export type EstimateCause = 'deviceFailure' | 'wrongReading' | 'readingImpossible' | 'otherReason'
+// Die Einheit des geschätzten Werts: die des Topfs bei der Erfassung, unter der geschätzt wurde.
+export type EstimateValueUnit = 'kWh' | 'm³' | 'Einheiten'
+// Eine Schätzung: der Verbrauch einer Wohnung in einem Topf für die ganze Heizperiode, in der Einheit
+// der Erfassung (kWh, m³ oder Einheiten). Begründung ist Pflicht; `confirmed` heißt, der Vermieter hat
+// bestätigt, dass der Verbrauch nicht ordnungsgemäß erfasst werden konnte. `capture` und `valueUnit`
+// (Durchsicht von #242, G-I1): die Erfassung und Einheit beim Speichern; passt eine von beiden nicht mehr zur
+// Heizperiode, rechnet Mietfuchs die Schätzung nicht (`heating.estimate-stale`).
+export type HeatingEstimate = {
+  plantId: string
+  period: PeriodKey
+  unitId: string
+  part: EstimatePart
+  value: number
+  method: EstimateMethod
+  reason: string
+  confirmed: boolean
+  cause: EstimateCause
+  capture: CaptureMethod
+  valueUnit: EstimateValueUnit
+}
+// Ein Vorschlag je Weg. `value` null mit Grund: keine Vorperiode, andere Länge, kein erfasster
+// Verbrauch der übrigen Wohnungen.
+export type EstimateProposal = { method: EstimateMethod; value: number | null; perM2: number | null; why: 'ok' | 'noPrevious' | 'lengthDiffers' | 'noMeasured' }
+export type ComparableUnit = { unitId: string; unitName: string; perM2: number; value: number }
+// Im Ausweis (Entwurf 8.8: „Schätzungen mit Methode“). `plantId`: die Anlage, an der die Schätzung steht (nach
+// einem Kesseltausch auch die Vorgängerin der Linie); `users`: Zahl der Nutzer der Wohnung, deren Verbrauch
+// aus der Schätzung kommt (mehr als einer heißt: wie nach § 9b Abs. 3 geteilt); `kept`: Zahl der Nutzer, die
+// ihren abgelesenen Verbrauch behalten; `complete`: Die Ablesungen waren vollständig, die Schätzung ersetzt
+// alle (`heating.estimate-complete`).
+// `stale` (Durchsicht von #242, G-I1): eingetragen unter einer anderen Erfassung oder Einheit, wird nicht gerechnet.
+export type SelfEstimateView = {
+  plantId: string; unitId: string; unitName: string; part: EstimatePart; value: number; method: EstimateMethod; reason: string; confirmed: boolean
+  cause: EstimateCause; capture: CaptureMethod; valueUnit: EstimateValueUnit
+  users: number; kept: number; complete: boolean; stale?: boolean
+  // Die Schätzung ersetzt bei einem Nutzer ein gemessenes Teilstück (Durchsicht von #242 Runde 2, N-I2); fehlt in älteren Abrechnungen.
+  replacesMeasured?: boolean
+}
+// Für den Dialog der Seite Heizkosten: je Wohnung und Topf mit Gerät, was fehlt (`why`, null heißt:
+// nichts, eine Schätzung wäre die Markierung „unbrauchbar“; `noValues`: der Ablesedienst hat für die Wohnung
+// keine Werte), die Fläche des Topfs und die Vorschläge.
+export type SelfEstimateOption = {
+  unitId: string
+  unitName: string
+  part: EstimatePart
+  areaM2: number
+  why: 'noReading' | 'replacement' | 'negative' | 'noValues' | null
+  boundary: string | null
+  estimated: boolean
+  // Ein Teil der Heizperiode der Wohnung ist gültig abgelesen (etwa beim Vormieter); gezählt wird für § 9a Abs. 2
+  // trotzdem die ganze Fläche (Durchsicht von #242, R-I5). Fehlt in älteren Antworten.
+  partlyMeasured?: boolean
+  proposals: EstimateProposal[]
+  comparable: ComparableUnit[]
 }

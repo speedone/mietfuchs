@@ -2,7 +2,7 @@
 // ihre Hinweise ab, und das Cockpit liest diese Hinweise (client/src/meterCheck.ts); so sagen
 // beide dasselbe, und das Cockpit kann nicht „Ablesungen nicht erforderlich“ melden, während die
 // Abrechnung einen Kürzungsbetrag nennt.
-import type { CostKey } from './types.ts'
+import type { CostKey, EstimatePart, SelfPot } from './types.ts'
 
 // Die Kostenart, an der Mietfuchs Heizung und Warmwasser erkennt. Dieselbe Zeichenkette steht in
 // CATEGORIES (client/src/types.ts) und im Kategorie-Schema der KI-Auswertung.
@@ -94,3 +94,8 @@ export function heatingFindings(
   const shareOutside = candidates.filter((g) => g.consumptionCents * 100 < g.totalCents * min || g.consumptionCents * 100 > g.totalCents * max)
   return { withoutConsumption, shareOutside }
 }
+
+// Die Töpfe der Schätzung (Heizung PR 13): `heat`/`water` in der Tabelle (Entwurf 5.6),
+// `heating`/`water` in der Rechnung (server/src/heating.ts).
+export const POT_OF_PART: Record<EstimatePart, SelfPot> = { heat: 'heating', water: 'water' }
+export const PART_OF_POT: Record<SelfPot, EstimatePart> = { heating: 'heat', water: 'water' }

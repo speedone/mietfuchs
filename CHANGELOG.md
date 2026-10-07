@@ -243,9 +243,22 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   nennen, das Warmwasser in m³. Nach einem Kesseltausch rechnet die neue Anlage mit denselben Werten des
   Ablesedienstes. Verdunster lassen sich nicht aus der Ferne ablesen; Lexikon und Karte nennen die Frist bis
   zum 31.12.2026 (§ 5 Abs. 3 HeizkostenV) und die Kürzung um 3 % danach.
+- Eigene Heizkostenabrechnung: Fällt ein Zähler oder Heizkostenverteiler aus oder kann der Verbrauch aus einem
+  anderen zwingenden Grund nicht ordnungsgemäß erfasst werden, schätzen Sie den Verbrauch der Wohnung auf der
+  Seite Heizkosten in der Karte „Schätzung (§ 9a)“ nach einem der drei Wege des § 9a HeizkostenV (vorbelegt:
+  Durchschnitt des Gebäudes je m²), mit Grund, Begründung (sie steht auf der Abrechnung des Mieters) und
+  Bestätigung. Wer bis zu einem Mieterwechsel gültig abgelesen ist, behält seinen Wert. Betrifft die Schätzung
+  mehr als 25 % der Fläche, verteilt Mietfuchs die Kosten dieses Topfs nur nach Fläche; der Dialog nennt den
+  Flächenanteil vorher, und dass Mietfuchs dabei die ganze Fläche einer Wohnung zählt, ist als Auslegung
+  benannt. Eine Schätzung neben vollständigen Ablesungen wird gemeldet. Wechselt danach die Erfassung der
+  Heizperiode, rechnet die Schätzung nicht mehr, bis Sie sie neu eintragen. Auch ein Gerätewechsel mitten in der Heizperiode lässt sich so
+  abrechnen. ([#99](https://github.com/speedone/mietfuchs/issues/99))
 
 ### Geändert
 
+- Der Fehler „Heizkostenabrechnung unvollständig“ bei einem fehlenden Stand, einem Zählerwechsel ohne
+  Endstand, negativem Verbrauch oder fehlenden Werten des Ablesedienstes verweist jetzt auf die Schätzung
+  statt auf eine spätere Version. ([#99](https://github.com/speedone/mietfuchs/issues/99))
 - Die Ablehnung einer Verteilung „nach Verbrauch“ mit Heizkostenverteilern bei freien Schlüsseln verweist
   jetzt auf die eigene Heizkostenabrechnung mit der Erfassung „Heizkostenverteiler“.
 

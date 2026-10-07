@@ -62,6 +62,8 @@ const SHIPPED: readonly string[] = [
   'hkv.exemption.renewable|2024-10-01||{"heatPump":false}',
   // 0.11.0 (Heizung PR 12, #99)
   'practice.evaporator-window|||{"min":400,"max":800}',
+  // 0.11.0 (Heizung PR 13, #99)
+  'hkv.estimate-threshold|||25',
 ]
 
 const current = (): string[] =>
