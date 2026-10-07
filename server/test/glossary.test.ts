@@ -270,3 +270,9 @@ test('Lexikon: Rechtsstand erklärt eingetragene Werte (Heizung PR 17)', () => {
   assert.match(GLOSSARY.legalBasis.needed, /selbst eintragen/)
   assert.match(GLOSSARY.legalBasis.needed, /amtlichen Wert/)
 })
+
+test('N2 (Runde 2): Lexikon „EBeV 2030“ mit den Werten aus dem Register; der Hinweis zur Prüfung verweist darauf', () => {
+  assert.match(GLOSSARY.ebev.title, /Emissionsberichterstattungsverordnung/)
+  assert.match(GLOSSARY.ebev.example, /0,0558/)
+  assert.ok(NOTICE_KINDS['co2.cost-implausible']?.terms.includes('ebev'))
+})

@@ -84,24 +84,37 @@ export function co2SheetOf(i: Co2SheetInput): Co2Sheet {
   })
   // Der Anfangsbestand (Vorrat, Heizung PR 8): seine kg zählen immer, seine CO₂-Kosten nicht, wenn er vor
   // 2023 in Rechnung gestellt oder schon mit einer früheren Abrechnung umgelegt wurde (wie die Bestandsrechnung).
+  // Fehlt eine Angabe, rechnet auch die Abrechnung den Vorrat nicht (fuelStock.ts, `openingValue`): Die Zeile
+  // bleibt sichtbar, zählt aber nicht (Durchsicht von #246, Runde 2, O2b). Offen ist nur, ob vor 2023 in
+  // Rechnung gestellt: dann zählen die kg wie bei einer Rechnung ohne Datum (O2a).
   const s = i.stock
-  const opening = s && s.openingEmissionsKg !== null
+  const opening = s && (s.openingEmissionsKg !== null || s.openingQuantity !== null)
     ? (() => {
-        const before = s.openingInvoicedBefore2023 === true
+        const kg = s.openingEmissionsKg
         const settled = s.openingAlreadySettled === true
-        return {
-          emissionsKg: s.openingEmissionsKg ?? 0,
-          co2CostCents: s.openingCo2Cents,
-          co2Counted: !before && !settled,
-          note: before ? `Vor dem ${from} in Rechnung gestellt: Die CO₂-Kosten bleiben unberücksichtigt (§ 11 Abs. 2 Satz 2 CO2KostAufG).`
-            : settled ? 'Schon mit einer früheren Abrechnung umgelegt: Die CO₂-Kosten zählen hier nicht mehr, die kg für die Einstufung.' : null,
+        const base = { emissionsKg: kg, co2CostCents: s.openingCo2Cents }
+        if (kg === null) {
+          return { ...base, kgCounted: false, co2Counted: false, note: 'Der CO₂-Ausstoß in kg fehlt: Ohne ihn rechnet auch die Abrechnung den Vorrat nicht; diese Zeile zählt deshalb nicht.' }
         }
+        if (settled) {
+          return { ...base, kgCounted: true, co2Counted: false, note: 'Schon mit einer früheren Abrechnung umgelegt: Die CO₂-Kosten zählen hier nicht mehr, die kg für die Einstufung.' }
+        }
+        if (s.openingInvoicedBefore2023 === true) {
+          return { ...base, kgCounted: true, co2Counted: false, note: `Vor dem ${from} in Rechnung gestellt: Die CO₂-Kosten bleiben unberücksichtigt (§ 11 Abs. 2 Satz 2 CO2KostAufG).` }
+        }
+        if (s.openingInvoicedBefore2023 === null) {
+          return { ...base, kgCounted: true, co2Counted: false, note: `Nicht angegeben, ob der Anfangsbestand vor dem ${from} in Rechnung gestellt wurde: Ob seine CO₂-Kosten zählen, ist offen (§ 11 Abs. 2 Satz 2 CO2KostAufG); gezählt sind nur die kg.` }
+        }
+        if (s.openingCo2Cents === null) {
+          return { ...base, kgCounted: false, co2Counted: false, note: 'Die CO₂-Kosten fehlen: Ohne sie rechnet auch die Abrechnung den Vorrat nicht; diese Zeile zählt deshalb nicht.' }
+        }
+        return { ...base, kgCounted: true, co2Counted: true, note: null }
       })()
     : null
   // Fläche der Einstufung (Entwurf 9.2): eingetragen, sonst die Wohnfläche der versorgten Wohnungen.
   const served = i.units.filter((u) => servesUnit(i.plant, u)).reduce((a, u) => a + (u.areaM2 > 0 ? u.areaM2 : 0), 0)
   const area = i.enteredAreaM2 ?? (served > 0 ? served : null)
-  const kg = deliveries.reduce((a, d) => a + (d.counted === 'none' ? 0 : (d.emissionsKg ?? 0) * d.factor), opening?.emissionsKg ?? 0)
+  const kg = deliveries.reduce((a, d) => a + (d.counted === 'none' ? 0 : (d.emissionsKg ?? 0) * d.factor), opening?.kgCounted ? (opening.emissionsKg ?? 0) : 0)
   const co2 = deliveries.reduce((a, d) => a + (d.counted === 'full' || d.counted === 'partial' ? (d.co2CostCents ?? 0) * d.factor : 0), opening?.co2Counted ? (opening.co2CostCents ?? 0) : 0)
   return {
     propertyName: i.propertyName, address: i.address, landlordName: i.landlordName,

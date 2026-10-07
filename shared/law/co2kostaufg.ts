@@ -192,7 +192,7 @@ export const co2Price: LawParam<number | null, 'deliveryYear'> = {
     { validFrom: '2027-01-01', value: null, source: checked('§ 4 Abs. 1 Nr. 3, Abs. 2 CO2KostAufG (Veröffentlichung des UBA steht aus)', '__4.html'), enacted: ENACTED },
   ],
   describe: (v) => (v === null ? 'noch nicht veröffentlicht' : `${euro2(v)} €/t`),
-  overridable: { reason: 'Das Umweltbundesamt veröffentlicht den Preis spätestens zehn Werktage vor Beginn des Jahres (§ 4 Abs. 2 CO2KostAufG).', max: 1000 },
+  overridable: { reason: 'Das Umweltbundesamt veröffentlicht den Preis spätestens zehn Werktage vor Beginn des Jahres (§ 4 Abs. 2 CO2KostAufG).', max: 1000, unit: '€/t' },
 }
 
 // Durchschnittspreis der Versteigerungen im EU-Emissionshandel für den Anteil einer Wärmelieferung aus
@@ -223,6 +223,7 @@ export const co2PriceEts: LawParam<number | null, 'eventDate'> = {
   overridable: {
     reason: 'Das Umweltbundesamt veröffentlicht den Durchschnittspreis eines Jahres spätestens bis zum 31. März des Folgejahres (§ 4 Abs. 3 CO2KostAufG); er gilt für Rechnungen aus dem Folgejahr.',
     max: 1000,
+    unit: '€/t',
     yearLabel: (year) => `für Rechnungen aus ${year} (Durchschnitt der Versteigerungen ${year - 1})`,
   },
 }

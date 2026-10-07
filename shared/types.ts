@@ -1781,7 +1781,7 @@ export type Co2SheetDelivery = {
 export type Co2SheetStock = Pick<HeatingPeriodData, 'stockUnit' | 'openingQuantity' | 'openingEmissionsKg' | 'openingCo2Cents' | 'openingInvoicedBefore2023' | 'openingAlreadySettled' | 'closingQuantity' | 'closingMeasuredOn'>
 // Der Anfangsbestand als Zeile des Blatts (G-W2): seine kg zählen immer, seine CO₂-Kosten nur, wenn er
 // nicht vor 2023 in Rechnung gestellt und nicht schon umgelegt wurde.
-export type Co2SheetOpening = { emissionsKg: number; co2CostCents: number | null; co2Counted: boolean; note: string | null }
+export type Co2SheetOpening = { emissionsKg: number | null; co2CostCents: number | null; kgCounted: boolean; co2Counted: boolean; note: string | null }
 // `areaM2`: die Fläche der Einstufung, eingetragen (`entered`) oder die Wohnfläche der Wohnungen, die die
 // Anlage versorgt (`served`); `null`, wenn keine bekannt ist.
 export type Co2Sheet = {

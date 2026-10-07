@@ -46,13 +46,18 @@ export type LawParam<T extends LawValue, M extends Timing = Timing> = {
   // lesen ist, wenn es nicht das Jahr des Werts selbst ist (der Durchschnittspreis des Emissionshandels gilt
   // für Rechnungen eines Jahres und stammt aus dem Vorjahr). `max`: Obergrenze eines Eintrags gegen
   // Tippfehler (Durchsicht von #246, G-K4, R-W4).
-  overridable?: { reason: string; max: number; yearLabel?: (year: number) => string }
+  overridable?: { reason: string; max: number; unit: string; yearLabel?: (year: number) => string }
   // Ein Wert, mit dem keine Zahl gerechnet, sondern nur geprüft wird (Plausibilität, Heizung PR 17). Die
   // Abweichung einer abgeschlossenen Abrechnung sagt dann „geprüft“ statt „gerechnet“ (#246, G-K6).
   checkOnly?: true
 }
 
 export type Period = { from: string; to: string }
+
+// Wie die Seite Abrechnung einen seit dem Abschluss geänderten Wert nennt (client/src/deviation.ts), und
+// wie der Hinweis `law.value-overridden` es ankündigt (calc.ts): eine Stelle für beide (Durchsicht von #246,
+// Runde 2, N1). `check` für Werte, mit denen nur geprüft wird (`checkOnly`).
+export const VALUE_CHANGE_LABEL = { check: 'Prüfwert geändert', law: 'Rechtswert geändert' } as const
 export type Coverage = 'full' | 'partial' | 'none'
 
 // Der Rechtsstand: das jüngste `retrieved` im Register (law.test.ts prüft das). Wer einen Wert

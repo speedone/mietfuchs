@@ -73,7 +73,8 @@ export async function saveLawOverride(db: Executor, paramId: string, year: numbe
   const sourceRaw: unknown = body !== null && typeof body === 'object' ? Reflect.get(body, 'source') : undefined
   if (typeof value !== 'number' || !Number.isFinite(value) || !(value > 0)) throw new LawOverrideError('Der Wert muss eine Zahl größer als 0 sein.')
   const max = p.overridable?.max ?? Infinity
-  if (value > max) throw new LawOverrideError(`Der Wert darf höchstens ${max.toLocaleString('de-DE')} betragen; bitte prüfen Sie die Eingabe.`)
+  const unit = p.overridable?.unit ? ` ${p.overridable.unit}` : ''
+  if (value > max) throw new LawOverrideError(`Der Wert ist zu groß, erlaubt sind höchstens ${max.toLocaleString('de-DE')}${unit}; bitte prüfen Sie die Eingabe.`)
   const source = typeof sourceRaw === 'string' ? sourceRaw.trim() : ''
   if (source === '') throw new LawOverrideError('Bitte nennen Sie die Quelle, etwa „UBA, Bekanntmachung vom …“.')
   await db.insert(lawOverrides).values({ paramId, validFrom, valueJson: JSON.stringify(value), source, enteredAt: today })

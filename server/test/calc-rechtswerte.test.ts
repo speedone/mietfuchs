@@ -8,7 +8,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement, type ComputedSettlement } from '../src/calc.ts'
 import { snapshotOf, type Snapshot, type SnapshotCostItem, type SnapshotSource, type SnapshotTenancy, type SnapshotUnit } from '../src/snapshot.ts'
-import { LAW_AS_OF } from '../../shared/law/register.ts'
+import { LAW_AS_OF, VALUE_CHANGE_LABEL } from '../../shared/law/register.ts'
 import { compareWithFrozen } from '../src/settlementDiff.ts'
 import { settleWithDelivery, settleWithDelivery2027 } from '../testing/co2Snapshot.ts'
 
@@ -138,4 +138,11 @@ test('R-W4: ein eingetragener Durchschnittspreis nennt das Jahr der Rechnungen u
   const texts = (s.notices ?? []).filter((n) => n.code === 'law.value-overridden').map((n) => n.text)
   assert.ok(texts.some((t) => /Durchschnittspreis des EU-Emissionshandels \(Plausibilität\) für Rechnungen aus 2027 \(Durchschnitt der Versteigerungen 2026\): 70,90 €\/t/.test(t)), texts.join(' | '))
   assert.ok(texts.some((t) => /CO₂-Preis je Tonne \(Plausibilität\) 2027: 64,20 €\/t/.test(t)), texts.join(' | '))
+})
+
+test('N1 (Runde 2): der Hinweis nennt die Beschriftung, die die Seite Abrechnung bei einem Prüfwert zeigt', () => {
+  const s = settleWithDelivery2027([{ paramId: 'co2.price', validFrom: '2027-01-01', value: 64.2, source: 'UBA', enteredAt: '2026-12-20' }])
+  const n = (s.notices ?? []).find((x) => x.code === 'law.value-overridden') ?? assert.fail('kein Hinweis')
+  assert.ok(n.text.includes(`„${VALUE_CHANGE_LABEL.check}“`), n.text)
+  assert.ok(!n.text.includes(VALUE_CHANGE_LABEL.law), n.text)
 })

@@ -152,7 +152,7 @@ export function plausibilityText(f: PlausibilityFinding, fmtCents: (c: number) =
     const bio = f.below
       ? 'Weniger kg können richtig sein, wenn der Lieferant für einen anerkannten Biomasseanteil (etwa Bio-Erdgas oder Bioheizöl) keine Emissionen ansetzt; dann sollte die Rechnung den Anteil nennen. '
       : ''
-    return `„${f.label}“: ${de(f.emissionsKg, 2)} kg CO₂ passen nicht zu ${f.basis}. Mit den Standardwerten der EBeV 2030 wären es ${de(f.expectedKg, 2)} kg. ${bio}` +
+    return `„${f.label}“: ${de(f.emissionsKg, 2)} kg CO₂ passen nicht zu ${f.basis}. Mit den Standardwerten der Emissionsberichterstattungsverordnung 2030 (EBeV 2030) wären es ${de(f.expectedKg, 2)} kg. ${bio}` +
       'Bitte prüfen Sie die Angaben der Rechnung, auch ob Brennwert oder Heizwert gemeint ist (§ 3 Abs. 1 und 2 CO2KostAufG). Mietfuchs rechnet mit den kg der Rechnung.'
   }
   const expected = f.lowCents === f.highCents ? `wären es ${fmtCents(f.lowCents)}` : `wären es zwischen ${fmtCents(f.lowCents)} und ${fmtCents(f.highCents)}`
