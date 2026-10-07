@@ -6,7 +6,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createLawLog, dayAfter, dayBefore, germanDate, law, LAW_AS_OF, onlyVersion, recordVersionAt, valueAt, versionAt, type LawParam } from '../../shared/law/register.ts'
+import { coversDate, createLawLog, dayAfter, dayBefore, germanDate, law, LAW_AS_OF, lawOverridable, onlyVersion, recordVersionAt, valueAt, versionAt, yearStart, type LawParam } from '../../shared/law/register.ts'
 import { LAW_PARAMS } from '../../shared/law/params.ts'
 import * as rulesModule from '../../shared/law/rules.ts'
 import { betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths } from '../../shared/law/bgb-betrkv.ts'
@@ -387,4 +387,69 @@ test('Stichtag practice.evaporator-window: 400 bis 800 ‰ seit der Hauptablesun
   const [v] = practiceEvaporatorWindow.versions
   assert.equal(v?.source.rank, 'practice')
   assert.match(practiceEvaporatorWindow.norm, /keine Rechtsnorm/)
+})
+
+// ---------- Werte, die später veröffentlicht werden (Heizung PR 17, Entwurf 4.5) ----------
+
+const preis: LawParam<number | null, 'deliveryYear'> = {
+  id: 'test.preis', title: 'Preis', norm: '§ 4', timing: 'deliveryYear',
+  versions: [
+    { validFrom: '2025-01-01', validTo: '2025-12-31', value: 55, source, enacted: 'a' },
+    { validFrom: '2026-01-01', value: null, source, enacted: 'b' },
+  ],
+  describe: (v) => (v === null ? 'noch nicht veröffentlicht' : `${v} €/t`),
+  overridable: { reason: 'wird später veröffentlicht' },
+}
+const fest: LawParam<number, 'deliveryYear'> = {
+  id: 'test.fest', title: 'Fest', norm: '§ 5', timing: 'deliveryYear',
+  versions: [{ validFrom: '2023-01-01', validTo: '2030-12-31', value: 3, source, enacted: 'a' }],
+  describe: (v) => String(v),
+}
+
+test('Register: deliveryYear fragt die Fassung am 1. Januar des Jahres', () => {
+  const log = createLawLog()
+  assert.equal(law(fest, { year: 2023 }, log), 3)
+  assert.equal(law(fest, { year: 2030 }, log), 3)
+  assert.throws(() => law(fest, { year: 2031 }, log), /Kein Rechtswert/)
+  assert.equal(yearStart(2027), '2027-01-01')
+})
+
+test('Register: ein überschreibbarer Wert geht nur über lawOverridable (Abweichung 1)', () => {
+  assert.throws(() => law(preis as unknown as LawParam<number, 'deliveryYear'>, { year: 2025 }, createLawLog()), /lawOverridable/)
+  assert.throws(() => lawOverridable(fest as unknown as LawParam<number | null, 'deliveryYear'>, { year: 2025 }, createLawLog()), /nicht überschreibbar/)
+})
+
+test('Register: veröffentlicht gilt; null ohne Eintrag wird nicht protokolliert; ein Eintrag gilt je Jahr und wird gekennzeichnet', () => {
+  const ohne = createLawLog()
+  assert.equal(lawOverridable(preis, { year: 2025 }, ohne), 55)
+  assert.equal(lawOverridable(preis, { year: 2027 }, ohne), null)
+  assert.deepEqual(ohne.values.map((v) => v.validFrom), ['2025-01-01'])
+  const eintrag = { paramId: 'test.preis', validFrom: '2027-01-01', value: 64.2, source: 'UBA, Bekanntmachung vom 15.12.2026', enteredAt: '2026-12-20' }
+  const mit = createLawLog([eintrag])
+  assert.equal(lawOverridable(preis, { year: 2027 }, mit), 64.2)
+  assert.equal(lawOverridable(preis, { year: 2027 }, mit), 64.2)
+  assert.equal(lawOverridable(preis, { year: 2028 }, mit), null, 'ein Eintrag gilt nur für sein Jahr')
+  assert.deepEqual(mit.values, [{
+    id: 'test.preis', title: 'Preis', norm: '§ 4', cite: 'UBA, Bekanntmachung vom 15.12.2026', value: 64.2, text: '64.2 €/t',
+    validFrom: '2027-01-01', validTo: '2027-12-31', overridden: { source: 'UBA, Bekanntmachung vom 15.12.2026', enteredAt: '2026-12-20' },
+  }])
+  // Ein Eintrag für ein Jahr mit veröffentlichtem Wert ist überholt und gilt nicht (4.5).
+  assert.equal(lawOverridable(preis, { year: 2025 }, createLawLog([{ ...eintrag, validFrom: '2025-01-01', value: 99 }])), 55)
+})
+
+test('Register: eventDate mit Eintrag nach dem Jahr des Datums', () => {
+  const ets: LawParam<number | null, 'eventDate'> = {
+    id: 'test.ets', title: 'ETS', norm: '§ 3', timing: 'eventDate', overridable: { reason: 'r' },
+    versions: [{ validFrom: '2026-01-01', validTo: '2026-12-31', value: 73.86, source, enacted: 'a' }, { validFrom: '2027-01-01', value: null, source, enacted: 'b' }],
+    describe: (v) => String(v),
+  }
+  const log = createLawLog([{ paramId: 'test.ets', validFrom: '2027-01-01', value: 70, source: 'UBA', enteredAt: '2027-04-01' }])
+  assert.equal(lawOverridable(ets, { date: '2026-02-10' }, log), 73.86)
+  assert.equal(lawOverridable(ets, { date: '2027-02-10' }, log), 70)
+})
+
+test('Register: coversDate sagt, ob es am Tag eine Fassung gibt', () => {
+  assert.equal(coversDate(fest, '2022-12-31'), false)
+  assert.equal(coversDate(fest, '2023-01-01'), true)
+  assert.equal(coversDate(preis, '2031-06-01'), true)
 })

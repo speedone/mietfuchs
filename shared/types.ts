@@ -777,6 +777,25 @@ export type AppliedValue = {
   text: string
   validFrom?: string
   validTo?: string
+  // Vom Vermieter eingetragen, weil der amtliche Wert noch nicht im Programm stand (Heizung PR 17,
+  // Entwurf 4.5); `source` ist seine Angabe, `enteredAt` der Tag des Eintrags.
+  overridden?: { source: string; enteredAt: string }
+}
+// Ein vom Vermieter eingetragener Rechtswert (Heizung PR 17, Entwurf 4.5, 5.9): nur für überschreibbare
+// Parameter und nur für ein Jahr, in dem das Register `null` hat. `validFrom` ist der 1. Januar.
+export type LawOverride = { paramId: string; validFrom: string; value: number; source: string; enteredAt: string }
+export type LawOverrideStatus = 'open' | 'entered' | 'superseded'
+// Eine Zeile der Einstellungen: ein überschreibbarer Wert eines Jahres, amtlich oder eingetragen.
+export type LawOverrideSlot = {
+  paramId: string
+  title: string
+  norm: string
+  reason: string
+  year: number
+  validFrom: string
+  official: number | null
+  override: LawOverride | null
+  status: LawOverrideStatus
 }
 // Datum des Rechtsregisters, die Regeln, die im Abrechnungsjahr gelten, und die Rechtswerte, mit
 // denen gerechnet wurde. Wird mit der Abrechnung eingefroren, damit eine spätere Rechtsänderung
