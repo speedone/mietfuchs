@@ -58,8 +58,6 @@ export function targetOptions(hotWater: HotWater | '', part: HeatingPart | ''): 
   return values.map((value) => ({ value, label: TARGET_LABELS[value] }))
 }
 
-// Abweichung 10: Warmwasser über die Anlage nur, wenn die Energie in kWh abgerechnet wird.
-export const kwhEnergy = (energy: HeatingEnergy): boolean => ['gas', 'districtHeating', 'heatPump', 'electric'].includes(energy)
 export const shareBounds = (): { min: number; max: number } => valueAt(hkvConsumptionShare, LAW_AS_OF)
 // § 7 Abs. 1 Satz 2 (Abweichung 13: Flüssiggas zählt als Gas).
 export function forcedShare(energy: HeatingEnergy, insulation: InsulationRule | ''): number | null {
@@ -69,9 +67,9 @@ export function forcedShare(energy: HeatingEnergy, insulation: InsulationRule | 
 export function emptySelfSetup(plant: Pick<HeatingPlant, 'energy' | 'hotWater' | 'capture' | 'areaBasisHeat'>, period: string): SelfSetupForm {
   return {
     period,
-    // Ohne Abrechnung in kWh ist „verbunden“ gesperrt (Abweichung 10); dann fragt die Einrichtung, statt
-    // still etwas anderes vorzubelegen.
-    hotWater: kwhEnergy(plant.energy) ? (plant.hotWater ?? 'combined') : plant.hotWater === 'combined' ? '' : plant.hotWater,
+    // Heizung PR 11: Verbundenes Warmwasser geht bei jeder Energie; bei Brennstoff in Litern, Kilogramm oder
+    // Kubikmetern rechnet Mietfuchs mit dem Heizwert laut Rechnung (§ 9 Abs. 3 HeizkostenV).
+    hotWater: plant.hotWater ?? 'combined',
     capture: plant.capture ?? 'heatMeter',
     share: '',
     waterShare: '',
@@ -101,9 +99,6 @@ export function selfSetupBody(form: SelfSetupForm, energy: HeatingEnergy): { bod
     return { error: 'Heizkostenverteiler und Werte eines Ablesedienstes kommen mit einer späteren Version. Bis dahin rechnet Mietfuchs mit Wärmezählern und Warmwasserzählern.' }
   }
   if (form.hotWater === '') return { error: 'Bitte beantworten Sie, ob die Heizung auch das Warmwasser bereitet.' }
-  if (form.hotWater === 'combined' && !kwhEnergy(energy)) {
-    return { error: 'Bereitet die Heizung auch das Warmwasser, braucht die Aufteilung den Heizwert des Brennstoffs laut Rechnung (§ 9 Abs. 3 HeizkostenV); das kommt mit einer späteren Version. Bis dahin geht es mit getrennter Warmwasserbereitung oder ohne zentrales Warmwasser.' }
-  }
   // Die Frage zum Wärmeschutz nur bei Öl- oder Gasheizung (Durchsicht von #239, M1); sonst gilt § 7 Abs. 1 Satz 2 nicht.
   const asked = ['oil', 'gas', 'lpg'].includes(energy)
   if (asked && form.insulation === '') return { error: 'Bitte beantworten Sie die Frage zum Wärmeschutz; „Weiß ich nicht“ ist eine Antwort.' }

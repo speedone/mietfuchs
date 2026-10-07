@@ -1,5 +1,7 @@
 import type { SelfHeatingStatement } from '../types'
 import { potLines, userLine } from '../heatingSelfView'
+import { showsDhwBlock } from '../dhwView'
+import DhwBlock from './DhwBlock'
 
 // Druckblock „Heizkostenabrechnung“ je Anlage und Heizperiode (Heizung PR 10, Entwurf 8.8 ohne § 6a, der
 // mit PR 14 kommt): Töpfe mit Preisen je Einheit, der Warmwasseranteil mit Methode und die Zeilen des
@@ -10,7 +12,8 @@ export default function SelfHeatingBlock({ self, tenancyId, plantName }: { self:
   return (
     <div className="co2-block">
       <h3>Heizkostenabrechnung{plantName ? ` · ${plantName}` : ''}</h3>
-      {self.alpha && (
+      {showsDhwBlock(self.dhw) && <DhwBlock dhw={self.dhw} />}
+      {self.alpha && !showsDhwBlock(self.dhw) && (
         <p>
           Warmwasseranteil {self.alpha.percent.toLocaleString('de-DE', { maximumFractionDigits: 2 })} %: gemessen {self.alpha.dhwHeatKwh.toLocaleString('de-DE')} kWh
           von {self.alpha.referenceKwh.toLocaleString('de-DE')} kWh{self.alpha.reference === 'fuel' ? ' laut Brennstoffrechnung' : ' laut Gesamtwärmezähler'} (§ 9 Abs. 2 HeizkostenV)

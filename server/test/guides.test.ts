@@ -668,3 +668,11 @@ test('Heizkosten selbst abrechnen (Heizung PR 10): Pflichten mit Norm, Lücken m
     assert.doesNotMatch(JSON.stringify(GUIDES[id].gaps), /eigene Heizkostenabrechnung (nach Grund- und Verbrauchskosten rechnet Mietfuchs noch nicht|mit Wärmemengenzählern)/, id)
   }
 })
+
+test('Durchsicht #240, M7: „Heizkosten selbst abrechnen“ nennt die Karte Warmwasser, Brennwert/Heizwert, die Formel nur bei unzumutbarem Aufwand und die Wärmepumpe vor dem Stichtag', () => {
+  const g = GUIDES.heatingSelf
+  assert.ok(g.steps.some((s) => /Karte „Warmwasser“.*„Kilowattstunden der Rechnung berechnet nach“/.test(s.text)))
+  assert.ok(g.caveats.some((c) => /unzumutbar aufwendig/.test(c.text) && c.norm === '§ 9 Abs. 2, § 12 Abs. 1 Satz 1 HeizkostenV; BGH, Urteil vom 12.01.2022, VIII ZR 151/20'))
+  assert.ok(g.caveats.some((c) => /vor dem 01\.10\.2024 beginnen.*mehr als die Hälfte/.test(c.text)))
+  assert.ok(GUIDES.stockFuel.gaps.every((x) => x.issue !== undefined))
+})

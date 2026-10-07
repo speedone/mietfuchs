@@ -20,6 +20,7 @@ import type { AiSettings, AiSlot, Co2Statement, DegreeDayValue, FrozenFuelCarry,
 import type { ClosedSettlement } from '../src/store.ts'
 import { applyMigrations, connect, loadMigrations } from '../src/db/client.ts'
 import * as schema from '../src/db/schema.ts'
+import type { SnapshotFuelDelivery, SnapshotHeatingPeriodRow, SnapshotHeatingPlant } from '../src/snapshot.ts'
 
 // ---------- Ebene 1: Schema und Datenmodell ----------
 
@@ -1023,4 +1024,30 @@ test('Heizkostenabrechnung: Antworten zu fehlenden Zwischenablesungen fallen mit
   } finally {
     cleanup()
   }
+})
+
+// ---------- Warmwasser ohne Wärmezähler (Heizung PR 11) ----------
+
+test('Heizung PR 11: Tabellenzeile an der Lieferung, Erzeuger an der Anlage, beide nur mit bekannten Werten', async () => {
+  const { connection, cleanup } = await freshDb()
+  try {
+    connection.exec("INSERT INTO heating_plants (id, property_id, energy) VALUES ('hp1', 'objekt-1', 'oil')")
+    assert.equal(rejects(connection, "UPDATE heating_plants SET heat_generation = 'single'"), null)
+    assert.equal(rejects(connection, 'UPDATE heating_plants SET heat_generation = NULL'), null)
+    assert.ok(rejects(connection, "UPDATE heating_plants SET heat_generation = 'bivalent'"), 'unbekannter Erzeuger')
+    connection.exec("INSERT INTO fuel_deliveries (id, plant_id, label) VALUES ('d1', 'hp1', 'Öl')")
+    assert.equal(rejects(connection, "UPDATE fuel_deliveries SET fuel_grade = 'heatingOilEL'"), null)
+    assert.ok(rejects(connection, "UPDATE fuel_deliveries SET fuel_grade = 'diesel'"), 'unbekannte Zeile')
+  } finally {
+    cleanup()
+  }
+})
+
+test('Heizung PR 11: Der Schnappschuss führt, was der Warmwasseranteil liest (Prüfbericht B.1, B6)', () => {
+  const lieferung = {
+    invoiceDate: null, energyKwh: null, quantity: 3000, quantityUnit: 'l', gasBasis: null, heatingValue: 9.8, fuelGrade: 'heatingOilEL',
+  } satisfies Pick<SnapshotFuelDelivery, 'invoiceDate' | 'energyKwh' | 'quantity' | 'quantityUnit' | 'gasBasis' | 'heatingValue' | 'fuelGrade'>
+  const zeile = { dhwMethod: 'volumeFormula', dhwVolumeM3: 120, dhwTempC: 60 } satisfies Pick<SnapshotHeatingPeriodRow, 'dhwMethod' | 'dhwVolumeM3' | 'dhwTempC'>
+  const anlage = { heatGeneration: 'single' } satisfies Pick<SnapshotHeatingPlant, 'heatGeneration'>
+  assert.deepEqual([lieferung.fuelGrade, zeile.dhwTempC, anlage.heatGeneration], ['heatingOilEL', 60, 'single'])
 })

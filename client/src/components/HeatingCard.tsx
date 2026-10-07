@@ -16,6 +16,7 @@ import { useFocusTarget, type FocusProps } from '../focus'
 import {
   CAPTURE_OPTIONS, CONTRACT_OPTIONS, ENERGY_OPTIONS, HOW_TO_TELL, asksRemote, INSTALLED_OPTIONS, NEW_DEVICES_AFTER, NEW_INSTALL_OPTIONS, NEW_INSTALL_QUESTION, PER_UNIT_ENERGY_OPTIONS, REMOTE_OPTIONS, TAKES_OVER_BACK, TAKES_OVER_HINT, takesOverBack, TAKES_OVER_OPTIONS, TAKES_OVER_QUESTION, asksNewInstall, asksTakeOver, buildingOptions, canSwap, emptyHeatingForm, emptySwapForm, heatingPlantBody,
   connectionNote, heatingSummary, heatingToForm, NEWER_THAN, swapBody, swapMetersOf, whoHint, whoOptions, type CaptureAnswer, type EnergyAnswer, type HeatingForm, type PerUnitContract, type SwapForm, type WhoSettles,
+  asksGeneration, GENERATION_QUESTION, HEAT_GENERATION_OPTIONS, MAJORITY_EXPLAINED, MAJORITY_OPTIONS, MAJORITY_QUESTION,
 } from '../heatingForm'
 
 // Die Karte „Heizung“ in den Stammdaten (Heizung PR 4, Entwurf 11.2). Ohne Anlage ein Satz und der
@@ -425,6 +426,25 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
                     <small className="muted">Bei einer Bruttowarmmiete bestimmt § 12 Abs. 3 HeizkostenV, wie diese Kosten zu ermitteln sind. Mietfuchs rechnet damit in einer späteren Version; tragen Sie den Betrag ein, sobald Sie ihn kennen.</small>
                   </label>
                 </>
+              )}
+              {/* Heizung PR 11 (Durchsicht von #240, Recht-I1/I2): Fragen an die Anlage, nicht an eine Heizperiode. */}
+              {asksGeneration(form) && (
+                <label className="field grow">
+                  {GENERATION_QUESTION}
+                  <select value={form.generation} onChange={(e) => setForm({ ...form, generation: HEAT_GENERATION_OPTIONS.find((o) => o.value === e.target.value)?.value ?? '' })}>
+                    {HEAT_GENERATION_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                  <small className="muted">Allein heißt: ein Kessel, eine Wärmepumpe ohne Heizstab oder Fernwärme. Mit einem weiteren Erzeuger lässt sich der Warmwasseranteil nur mit einem Gesamtwärmezähler bestimmen, nicht nach einer Formel.</small>
+                </label>
+              )}
+              {form.energy === 'heatPump' && (
+                <label className="field grow">
+                  {MAJORITY_QUESTION}
+                  <select value={form.majority} onChange={(e) => setForm({ ...form, majority: MAJORITY_OPTIONS.find((o) => o.value === e.target.value)?.value ?? '' })}>
+                    {MAJORITY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                  <small className="muted">{MAJORITY_EXPLAINED}</small>
+                </label>
               )}
               {!editingId && <p className="muted">{HOW_TO_TELL.after}</p>}
               {!editingId && assignable.length > 0 && (

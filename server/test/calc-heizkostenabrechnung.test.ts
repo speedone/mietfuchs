@@ -17,6 +17,7 @@ import { snapshotFor, type Snapshot } from '../src/snapshot.ts'
 import { computeSettlement, type ComputedSettlement } from '../src/calc.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import { CALENDAR_RULES, periodKey, periodOfKey } from '../../shared/period.ts'
+import { selfSnapshot } from '../testing/selfHeating.ts'
 
 type Opened = Awaited<ReturnType<typeof openDatabase>>
 async function withDatabase(run: (opened: Opened) => Promise<void>): Promise<void> {
@@ -353,5 +354,21 @@ test('R4/B5: freie Schlüssel, Position „nur Heizung“: Mieter April bis Okto
     const t = computeSettlement(snapshotFor(await opened.read(readStock), 'objekt-1', p))
     assert.equal(shareOf(t, 'T1', 'nur'), 29315)
     assert.match(textOf(t, 'heating.change-split-time'), /Sommer \(W1\): zeitanteilig 293,15 €, nach Gradtagen 135,00 €/)
+  })
+})
+
+test('Testhelfer selfSnapshot (server/testing/selfHeating.ts) rechnet wie Beispiel A über die Datenbank', async () => {
+  await withDatabase(async (opened) => {
+    const ueberDb = computeSettlement(await beispielA(opened))
+    const rein = computeSettlement(selfSnapshot())
+    for (const t of ['A', 'B', 'C1', 'C2']) {
+      for (const id of ITEMS) assert.equal(shareOf(rein, t, id), shareOf(ueberDb, t, id), `${t} ${id}`)
+    }
+    assert.deepEqual(['A', 'B', 'C1', 'C2'].map((t) => sumOf(rein, t)), [196189, 261584, 133152, 75075])
+    const relief = (s: ComputedSettlement, t: string) => s.statements.find((st) => st.tenancyId === t)?.rows.find((r) => r.kind === 'co2Relief')?.shareCents ?? 0
+    assert.deepEqual(['A', 'B', 'C1', 'C2'].map((t) => relief(rein, t)), [-16761, -22348, -11340, -6417])
+    assert.deepEqual(rein.heating?.[0]?.self?.alpha, ueberDb.heating?.[0]?.self?.alpha)
+    assert.deepEqual(rein.heating?.[0]?.self?.dhw, ueberDb.heating?.[0]?.self?.dhw)
+    assert.deepEqual(rein.notices.map((n) => n.code).sort(), ueberDb.notices.map((n) => n.code).sort())
   })
 })

@@ -1333,6 +1333,11 @@ export type HeatingPlant = {
   capture: CaptureMethod | null
   areaBasisHeat: AreaBasisHeat
   heatPumpInstalledOn: string | null
+  // Erzeugt die Anlage die Wärme allein oder mit einem weiteren Erzeuger? (Heizung PR 11, § 9 Abs. 1
+  // Satz 5 und Abs. 2 Satz 6 Nr. 3 HeizkostenV). Nur für den Warmwasseranteil nach einer Formel gefragt.
+  heatGeneration: HeatGeneration | null
+  // Wärmepumpe: mehr als die Hälfte der Wärme des Gebäudes (Heizung PR 11, § 11 Abs. 1 Nr. 3 Buchst. a a. F.).
+  heatPumpMajority: HeatPumpMajority | null
   // Die Zeiträume der eigenen Heizkostenabrechnung (Durchsicht von #239), aufsteigend; `until` NULL beim
   // laufenden.
   selfSpans?: SelfSpanRange[]
@@ -1379,6 +1384,60 @@ export type HeatingPeriodData = {
   openingAlreadySettled: boolean | null
   closingQuantity: number | null
   closingMeasuredOn: string | null
+}
+
+// ---------- Warmwasser ohne Wärmezähler (Heizung PR 11, Entwurf 8.3, #211) ----------
+
+// Die Zeile der Heizwerttabelle des § 9 Abs. 3 HeizkostenV, nach der ein Brennstoff ohne Heizwert auf
+// der Rechnung hilfsweise bewertet wird. Die Tabelle unterscheidet feiner als der Energieträger der
+// Anlage (Erdgas H oder L, leichtes oder schweres Heizöl, drei Kohlen, Brennholz oder Hackschnitzel);
+// deshalb wählt der Vermieter die Zeile an der Lieferung.
+export type FuelGrade =
+  | 'heatingOilEL' | 'heavyFuelOil' | 'naturalGasH' | 'naturalGasL' | 'lpg' | 'coke' | 'lignite' | 'hardCoal'
+  | 'firewood' | 'woodPellets' | 'woodChips'
+// Erzeugt die Anlage die Wärme allein (ein Kessel, eine Wärmepumpe, Fernwärme) oder zusammen mit einem
+// zweiten Erzeuger (Solaranlage, Heizstab, zweiter Kessel)? § 9 Abs. 1 Satz 5 und Abs. 2 Satz 6 Nr. 3
+// HeizkostenV („monovalente Wärmepumpe“). `null` heißt: nicht beantwortet.
+export type HeatGeneration = 'single' | 'mixed'
+// Liefert die Wärmepumpe mehr als die Hälfte der Wärme des Gebäudes? Nur für Abrechnungszeiträume, die vor
+// dem 01.10.2024 beginnen (§ 11 Abs. 1 Nr. 3 Buchst. a HeizkostenV a. F.). `null` heißt: nicht beantwortet.
+export type HeatPumpMajority = 'yes' | 'no' | 'unknown'
+// Die Einheit eines Heizwerts und einer Brennstoffmenge im Sinne des § 9 Abs. 3.
+export type HeatingValueUnit = 'l' | 'm3' | 'kg' | 'srm'
+export type HeatingValueRow = { readonly kwh: number; readonly per: HeatingValueUnit }
+// Die Heizwerttabelle einer Fassung: die Einheiten, in denen § 9 Abs. 3 Satz 1 den
+// Brennstoffverbrauch bestimmt, und je Zeile Heizwert und Einheit. Schlüssel sind `FuelGrade`.
+export type HeatingValueTable = {
+  readonly units: readonly HeatingValueUnit[]
+  readonly values: { readonly [grade: string]: HeatingValueRow }
+}
+// Ein Heizwert, mit dem der Warmwasseranteil gerechnet wurde: laut Rechnung oder hilfsweise aus der
+// Tabelle des § 9 Abs. 3 HeizkostenV.
+export type DhwHeatingValue = { label: string; kwh: number; per: HeatingValueUnit; source: 'invoice' | 'table'; grade: FuelGrade | null }
+// Womit ein Formelwert umgerechnet wurde (§ 9 Abs. 2 Satz 6 Nr. 1 bis 3).
+export type DhwFactorKind = 'gasCalorific' | 'heatSupply' | 'heatPump'
+// Wogegen die Wärme für das Warmwasser gestellt wurde: Brennstoff in kWh laut Rechnung, Brennstoff als
+// Menge (B = Q / Hᵢ), gelieferte Wärme (Fernwärme), Strom (Wärmepumpe mit Formel, Stromheizung
+// gemessen), gemessene Gesamtwärme.
+export type DhwDenominator = 'fuelKwh' | 'fuelQuantity' | 'deliveredHeat' | 'electricity' | 'measuredTotalHeat'
+// Der Warmwasseranteil α einer Anlage in einer Heizperiode samt Rechenweg (Entwurf 8.3, 8.8 „α mit
+// Methode“). `heatKwh` ist Q, wie es in den Bruch eingeht (bei einer Formel nach dem Faktor),
+// `formulaKwh` das Ergebnis der Zahlenwertgleichung davor.
+export type DhwStatement = {
+  method: DhwMethod
+  alpha: number
+  heatKwh: number
+  formulaKwh: number | null
+  factor: { kind: DhwFactorKind; value: number } | null
+  denominator: { kind: DhwDenominator; value: number; unit: 'kWh' | HeatingValueUnit }
+  // Die Energie des Nenners in kWh, auch bei Brennstoff als Menge (Menge · Heizwert); für `self.alpha`
+  // (PR 10: `referenceKwh`).
+  energyKwh: number
+  fuelForDhw: { quantity: number; unit: HeatingValueUnit; heatingValue: number } | null
+  heatingValues: DhwHeatingValue[]
+  // α beruht auf der Schätzung beim Abschluss (PR 7, PR 10 Abweichung 11).
+  estimated: boolean
+  steps: string[]
 }
 
 // Eine Heizposition, die beim Anlegen der Anlage zugeordnet werden kann (Vorschau, 11.2).
@@ -1532,7 +1591,12 @@ export type HeatingPeriodView = {
   to: string
   short: boolean
   closed: boolean
-  hotWater: Pick<HeatingPeriodData, 'dhwMethod' | 'dhwUnmeasurable'>
+  hotWater: Pick<HeatingPeriodData, 'dhwMethod' | 'dhwUnmeasurable' | 'dhwHeatKwh' | 'totalHeatKwh' | 'dhwVolumeM3' | 'dhwTempC'>
+  // Für die Formeln (Heizung PR 11): Σ der Warmwasserzähler der angeschlossenen Wohnungen in der
+  // Heizperiode als Vorschlag für V (null ohne solche Zähler) und die mit Warmwasser versorgte Fläche.
+  // Beim Kesseltausch (Durchsicht von #240) gelten Vorschlag und Beschriftung der Laufzeit der Anlage
+  // (`running`, sonst null); fehlt ein Stand, sagt `volumeMissing`, welcher.
+  hotWaterBasis: { volumeFromMetersM3: number | null; volumeMissing: string | null; running: { from: string; to: string } | null; suppliedAreaM2: number }
   co2: Co2Statement | null
   items: Pick<CostItem, 'id' | 'description' | 'amountCents' | 'key' | 'tenancyAmounts' | 'selfAmounts' | 'fuelDeliveryId'>[]
   // Der Vorrat dieser Heizperiode (Heizung PR 8); `null` bei einer Anlage ohne Vorratsenergie.
@@ -1582,6 +1646,9 @@ export type FuelDelivery = {
   energyKwh: number | null
   gasBasis: GasBasis | null
   heatingValue: number | null
+  // Die Zeile der Heizwerttabelle (§ 9 Abs. 3 HeizkostenV), falls die Rechnung keinen Heizwert nennt
+  // (Heizung PR 11). Der Heizwert laut Rechnung geht vor.
+  fuelGrade: FuelGrade | null
   emissionsKg: number | null
   co2CostCents: number | null
   emissionFactor: number | null
@@ -1841,6 +1908,8 @@ export type SelfHeatingStatement = {
   areaBasisHeat: AreaBasisHeat
   hotWater: HotWater
   alpha: { percent: number; dhwHeatKwh: number; referenceKwh: number; reference: 'fuel' | 'totalHeat'; estimated: boolean } | null
+  // Der Rechenweg zum Warmwasseranteil (Heizung PR 11, Entwurf 8.8 „α mit Methode“); fehlt ohne α.
+  dhw?: DhwStatement
   shares: { heating: number; water: number | null; forced: boolean; previous: { heating: number; water: number | null } | null } | null
   pots: SelfPotView[]
   units: SelfUnitView[]

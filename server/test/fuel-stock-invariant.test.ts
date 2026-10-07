@@ -38,6 +38,13 @@
 // Heizkostenverordnung); die Überträge des Vorrats gehen dann mit den Gewichten durch die Verordnung. Es
 // gelten dieselben Prüfungen; die Abdeckung verlangt dort zusätzlich Heizperioden, die nach der Verordnung
 // verteilt sind.
+// Heizung PR 11: In den Startwerten 1–8 (mit INV_SELF=alle in allen) rechnet ein weiterer Lauf die eigene
+// Abrechnung mit verbundenem Warmwasser: Wärmezähler am Speicher, Heizöl mit dem Heizwert laut Rechnung oder
+// (ohne ihn) der Zeile „Leichtes Heizöl extra leichtflüssig“ der Tabelle, Positionen „Heizung und
+// Warmwasser“. Dazu (w) je Heizperiode, die nach der Verordnung verteilt ist: Der Topf Warmwasser trägt α
+// der Kosten, und α mal verbrauchter Menge mal Heizwert ergibt die gemessene Wärme am Speicher (B = Q / Hᵢ,
+// § 9 Abs. 3 HeizkostenV); der Heizwert ist der mengengewichtete der Lieferungen der Heizperiode, ohne sie
+// der der jüngsten früheren. Das Vorratsgeld geht dabei durch dieselben Prüfungen (i) bis (v).
 // Ein letzter Test sichert die Abdeckung: gültige Heizperioden und geprüfte Paare nicht unter einer
 // Untergrenze. Auf dem Stand vor der Durchsicht war die Invariante bei 1, 15, 19, 21, 28, 30, 31, 33
 // rot; die Mutationsproben stehen im PR #237. Bereich mit INV_FROM/INV_TO.
@@ -118,21 +125,27 @@ const TAUSCH_SEEDS = process.env.INV_TAUSCH === 'alle' ? SEEDS : SEEDS.filter((s
 // Heizung PR 10: eigene Heizkostenabrechnung.
 const SELF_SEEDS = process.env.INV_SELF === 'alle' ? SEEDS : SEEDS.filter((s) => s <= 8)
 const SELF_STATS = { ...STATS, distributed: 0 }
+// Heizung PR 11: eigene Abrechnung mit verbundenem Warmwasser.
+const DHW_SEEDS = SELF_SEEDS
+const DHW_STATS = { ...STATS, distributed: 0, alpha: 0, table: 0 }
 const RUNS = [
-  ...(process.env.INV_PLANTS === '2' ? [] : SEEDS.map((seed) => ({ seed, two: false, tausch: false, self: false }))),
-  ...TWO_SEEDS.map((seed) => ({ seed, two: true, tausch: false, self: false })),
-  ...TAUSCH_SEEDS.map((seed) => ({ seed, two: false, tausch: true, self: false })),
-  ...SELF_SEEDS.map((seed) => ({ seed, two: false, tausch: false, self: true })),
+  ...(process.env.INV_PLANTS === '2' ? [] : SEEDS.map((seed) => ({ seed, two: false, tausch: false, self: false, dhw: false }))),
+  ...TWO_SEEDS.map((seed) => ({ seed, two: true, tausch: false, self: false, dhw: false })),
+  ...TAUSCH_SEEDS.map((seed) => ({ seed, two: false, tausch: true, self: false, dhw: false })),
+  ...SELF_SEEDS.map((seed) => ({ seed, two: false, tausch: false, self: true, dhw: false })),
+  ...DHW_SEEDS.map((seed) => ({ seed, two: false, tausch: false, self: true, dhw: true })),
 ]
-for (const { seed, two, tausch, self } of RUNS) {
-  test(`Invariante Vorrat (Weg ${WAY}, Startwert ${seed}${two ? ', zwei Anlagen' : ''}${tausch ? ', Kesseltausch' : ''}${self ? ', eigene Heizkostenabrechnung' : ''}): jede Lieferung über alle Heizperioden genau einmal verbraucht`, async () => {
+for (const { seed, two, tausch, self, dhw } of RUNS) {
+  test(`Invariante Vorrat (Weg ${WAY}, Startwert ${seed}${two ? ', zwei Anlagen' : ''}${tausch ? ', Kesseltausch' : ''}${self ? ', eigene Heizkostenabrechnung' : ''}${dhw ? ' mit Warmwasser' : ''}): jede Lieferung über alle Heizperioden genau einmal verbraucht`, async () => {
     const PLANTS = two || tausch ? ['hp', 'hp2'] : ['hp']
     // Kesseltausch: Tag und Brennstoff der neuen Anlage, sobald getauscht ist.
     let swap = null as { date: string; energy: 'oil' | 'lpg' } | null
     const itemPlant = new Map<string, string>()
     const deliveryPlant = new Map<string, string>()
     // Die Läufe mit zwei Anlagen zählen getrennt, damit die Grenzen der Abdeckung bleiben.
-    const stats = self ? SELF_STATS : tausch ? TAUSCH_STATS : two ? TWO_STATS : STATS
+    const stats = dhw ? DHW_STATS : self ? SELF_STATS : tausch ? TAUSCH_STATS : two ? TWO_STATS : STATS
+    // Heizung PR 11: die Stände des Wärmezählers am Speicher je Ende einer Heizperiode.
+    const dhwAt = new Map<string, number>()
     const rnd = zufall(seed * 31 + 5 + (tausch ? 1000 : 0))
     // „Rechnung erst im Folgejahr buchen“ (Nachprüfung von #238) mit eigener Zufallsfolge, damit die übrigen
     // Vorgänge jedes Startwerts dieselben bleiben.
@@ -167,14 +180,18 @@ for (const { seed, two, tausch, self } of RUNS) {
         // Heizung PR 10: Die Anlage rechnet selbst ab, Wärmezähler je Wohnung, an jeder Grenze abgelesen.
         if (self) {
           let m = 0
-          await setUpSelf(db, 'hp', { period: hkeyOf(2023), heatConsumptionPct: 70, insulationRule: 'notApplies', hotWater: 'none', capture: 'heatMeter' }, '2022-01-01', () => `wz${m++}`)
-          const meters = (await readStock(db)).meters.filter((x) => x.type === 'waerme' && x.unitId !== null)
+          await setUpSelf(db, 'hp', {
+            period: hkeyOf(2023), heatConsumptionPct: 70, insulationRule: 'notApplies', capture: 'heatMeter',
+            ...(dhw ? { hotWater: 'combined', waterConsumptionPct: 70, dhwHeatMeter: true } : { hotWater: 'none' }),
+          }, '2022-01-01', () => `wz${m++}`)
+          const meters = (await readStock(db)).meters.filter((x) => (x.type === 'waerme' && x.unitId !== null) || (dhw && (x.type === 'warmwasser' || x.heatingRole === 'dhwHeat')))
           const ends = [WAY === 'b' ? '2023-04-30' : '2022-12-31', ...YEARS.map((y) => (WAY === 'b' ? `${y + 1}-04-30` : `${y}-12-31`))]
           for (const meter of meters) {
             let value = 0
             for (const date of ends) {
               await createEntity(db, 'readings', `${meter.id}@${date}`, { meterId: meter.id, date, value })
-              value += int(1000, 9000)
+              if (meter.heatingRole === 'dhwHeat') dhwAt.set(date, value)
+              value += meter.type === 'warmwasser' ? int(5, 50) : meter.heatingRole === 'dhwHeat' ? int(500, 3000) : int(1000, 9000)
             }
           }
         }
@@ -251,13 +268,15 @@ for (const { seed, two, tausch, self } of RUNS) {
           const date = tausch ? swapDay : dateIn(year)
           const amountCents = q * int(80, 130)
           const ok = await attempt(`${op} ${plant} ${id} ${date} ${q}`, async () => {
-            await opened.write((db) => createDelivery(db, id, plant, { label: id, deliveredAt: date, invoiceDate: date, quantity: q, quantityUnit: 'l', emissionsKg: Math.round(q * 267.6) / 100, co2CostCents: int(1000, 60000) }))
+            // Heizung PR 11: Heizwert laut Rechnung oder, ohne ihn, die Zeile der Tabelle; mit eigener Zufallsfolge.
+            const hi = dhw ? (lateRnd() < 0.3 ? { heatingValue: null, fuelGrade: 'heatingOilEL' } : { heatingValue: 9.6 + Math.round(lateRnd() * 10) / 10 }) : {}
+            await opened.write((db) => createDelivery(db, id, plant, { label: id, deliveredAt: date, invoiceDate: date, quantity: q, quantityUnit: 'l', emissionsKg: Math.round(q * 267.6) / 100, co2CostCents: int(1000, 60000), ...hi }))
             deliveryPlant.set(id, plant)
             const fields = {
               category: HEATING_CATEGORY, description: id, amountCents,
               ...(op === 'external' ? { key: 'external', externalBasis: { measure: 'area', total: 100, totalCents: amountCents } } : { key: rnd() < 0.5 ? 'area' : 'units' }),
               // Heizung PR 10: nach Heizkostenverordnung; „laut Gemeinschaftsabrechnung“ lehnt der Schreibweg dort ab.
-              ...(self && op !== 'external' ? { key: 'heatingSystem', heatingTarget: 'heating' } : {}),
+              ...(self && op !== 'external' ? { key: 'heatingSystem', heatingTarget: dhw ? 'both' : 'heating' } : {}),
               heatingPlantId: plant, heatingPart: 'fuel', fuelDeliveryId: id, taxYear: year,
               ...(two ? { participantUnitIds: plant === 'hp' ? ['a', 'b'] : ['c'] } : {}),
             }
@@ -349,6 +368,40 @@ for (const { seed, two, tausch, self } of RUNS) {
         if (date !== null) assert.equal(c.period, hkeyOf(periodOfDate(date)), `${fall}; (v) Position ${c.id} der Lieferung vom ${date} steht in ${c.period}`)
       }
       const reads = new Map<string, ReturnType<typeof readSettlement> extends infer R ? (R & { key: string; positions: number })[] : never>()
+      // (w) Heizung PR 11: Warmwasseranteil mit Vorrat, nur an der lebenden Rechnung (eine abgeschlossene
+      // rechnete mit dem Stand beim Abschluss).
+      const allDeliveries = await opened.read((db) => readFuelDeliveries(db))
+      const dhwStockChecks = (s: unknown, hkey: string, y: number) => {
+        const h = list(s, 'heating').find((x) => str(x, 'plantId') === 'hp' && str(x, 'period') === hkey)
+        const selfSt = g(h, 'self')
+        const alpha = g(selfSt, 'alpha')
+        // Durchsicht von #240 (Geld-I3): „kein Heizwert bekannt“ ist nur richtig, wenn es bis zum Ende der
+        // Heizperiode wirklich keine Lieferung gibt; sonst wäre der Lauf still übersprungen.
+        const noValue = list(s, 'notices').some((x) => str(x, 'code') === 'heating.dhw-share-invalid' && str(x, 'text').includes('kein Heizwert bekannt'))
+        if (noValue) assert.ok(!allDeliveries.some((d) => d.plantId === 'hp' && d.deliveredAt !== null && periodOfDate(d.deliveredAt) <= y), `${WAY} Startwert ${seed}; (w) ${hkey}: kein Heizwert bekannt, obwohl es Lieferungen gibt`)
+        if (g(selfSt, 'ok') !== true || alpha === undefined || alpha === null) return
+        DHW_STATS.alpha++
+        const where = `${WAY} Startwert ${seed}; (w) ${hkey}`
+        // Topf Warmwasser = α der Kosten (alle Positionen „Heizung und Warmwasser“).
+        const pots = list(selfSt, 'pots')
+        const cost = (pot: string) => num(pots.find((x) => str(x, 'pot') === pot), 'costCents')
+        const a = num(alpha, 'percent') / 100
+        assert.ok(Math.abs(cost('water') - a * (cost('water') + cost('heating'))) <= 1, `${where}: Warmwasser ${cost('water')} statt α ${a} der Kosten`)
+        // α · Menge · Hᵢ = Q am Speicher.
+        const end = WAY === 'b' ? `${y + 1}-04-30` : `${y}-12-31`
+        const start = WAY === 'b' ? `${y}-04-30` : `${y - 1}-12-31`
+        const q = (dhwAt.get(end) ?? Number.NaN) - (dhwAt.get(start) ?? Number.NaN)
+        const consumed = num(g(g(h, 'stock'), 'consumed'), 'quantity')
+        const hiOf = (d: { heatingValue: number | null }) => d.heatingValue ?? 10
+        const own = allDeliveries.filter((d) => d.plantId === 'hp' && d.deliveredAt !== null && periodOfDate(d.deliveredAt) === y && (d.quantity ?? 0) > 0)
+        const earlier = allDeliveries.filter((d) => d.plantId === 'hp' && d.deliveredAt !== null && periodOfDate(d.deliveredAt) < y).sort((x, z) => ((x.deliveredAt ?? '') < (z.deliveredAt ?? '') ? -1 : (x.deliveredAt ?? '') > (z.deliveredAt ?? '') ? 1 : 0)).at(-1)
+        const hi = own.length > 0 ? own.reduce((acc, d) => acc + (d.quantity ?? 0) * hiOf(d), 0) / own.reduce((acc, d) => acc + (d.quantity ?? 0), 0) : earlier ? hiOf(earlier) : Number.NaN
+        assert.ok(Math.abs(a * consumed * hi - q) <= 1e-6 * Math.max(1, q), `${where}: α ${a} · ${consumed} l · ${hi} kWh/l ≠ Q ${q} kWh`)
+        const usedTable = (own.length > 0 ? own : earlier ? [earlier] : []).some((d) => d.heatingValue === null)
+        const codes = list(s, 'notices').map((x) => str(x, 'code'))
+        assert.equal(codes.includes('heating.heating-value-from-table'), usedTable, `${where}: Hinweis auf die Tabelle`)
+        if (usedTable) DHW_STATS.table++
+      }
       for (const plant of PLANTS) {
       const read = YEARS.map((y) => {
         const hkey = hkeyOf(y)
@@ -366,7 +419,8 @@ for (const { seed, two, tausch, self } of RUNS) {
           }
         }
         // Heizung PR 10: nach der Verordnung verteilt (Abdeckung).
-        if (self && list(s, 'heating').some((x) => str(x, 'plantId') === plant && str(x, 'period') === hkey && g(g(x, 'self'), 'ok') === true)) SELF_STATS.distributed++
+        if (self && list(s, 'heating').some((x) => str(x, 'plantId') === plant && str(x, 'period') === hkey && g(g(x, 'self'), 'ok') === true)) (dhw ? DHW_STATS : SELF_STATS).distributed++
+        if (dhw && !stored) dhwStockChecks(s, hkey, y)
         return { key: hkey, positions, ...readSettlement(s, hkey, plant, itemPlant) }
       })
       for (const r of read) {
@@ -462,6 +516,11 @@ test('Invariante Vorrat: Abdeckung', () => {
     assert.ok(SELF_STATS.iiChecked > 0 && SELF_STATS.iiiChecked > 0, `eigene Abrechnung: (ii) ${SELF_STATS.iiChecked}-mal, (iii) ${SELF_STATS.iiiChecked}-mal geprüft`)
     // Heute 7 von 32 (Startwerte 1–8): Ohne Brennstoffposition oder ohne gültigen Bestand verteilt die Anlage nicht.
     assert.ok(SELF_STATS.distributed * 5 > SELF_STATS.periods, `eigene Abrechnung: nur ${SELF_STATS.distributed} von ${SELF_STATS.periods} Heizperioden nach der Verordnung verteilt`)
+  }
+  // Heizung PR 11: mit verbundenem Warmwasser auch Heizperioden mit geprüftem Anteil, darunter mit der Tabelle.
+  if (DHW_SEEDS.length >= 8) {
+    if (process.env.INV_LOG) console.log('Warmwasser', JSON.stringify(DHW_STATS))
+    assert.ok(DHW_STATS.alpha > 0 && DHW_STATS.table > 0, `Warmwasser mit Vorrat: (w) ${DHW_STATS.alpha}-mal geprüft, ${DHW_STATS.table}-mal mit der Tabelle`)
   }
   if (TWO_SEEDS.length >= 8) {
     assert.ok(TWO_STATS.validStock * 3 > TWO_STATS.periods, `zwei Anlagen: nur ${TWO_STATS.validStock} von ${TWO_STATS.periods} Heizperioden mit gültiger Bestandsrechnung`)

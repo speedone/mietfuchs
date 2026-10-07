@@ -51,6 +51,15 @@ const SHIPPED: readonly string[] = [
   'hkv.settlement-info|2021-12-01||true',
   'hkv.heat-pump.capture|||{"capturedBy":"2024-10-01","installBy":"2025-09-30"}',
   'practice.reading-off-warning|||{"months":1,"winterMonths":["10","11","12","01","02","03","04"]}',
+  // 0.11.0 (Heizung PR 11, #211)
+  'hkv.dhw.volume-formula|||{"effort":2.5,"coldWaterC":10}',
+  'hkv.dhw.area-formula|||{"kwhPerM2":32}',
+  'hkv.dhw.factors||2024-09-30|{"gasCalorific":1.11,"heatSupplyDivisor":1.15,"heatPump":null}',
+  'hkv.dhw.factors|2024-10-01||{"gasCalorific":1.11,"heatSupplyDivisor":1.15,"heatPump":0.3}',
+  'hkv.heating-values||2021-11-30|{"units":["l","m3","kg","srm"],"values":{"heatingOilEL":{"kwh":10,"per":"l"},"heavyFuelOil":{"kwh":10.9,"per":"l"},"naturalGasH":{"kwh":10,"per":"m3"},"naturalGasL":{"kwh":9,"per":"m3"},"lpg":{"kwh":13,"per":"kg"},"coke":{"kwh":8,"per":"kg"},"lignite":{"kwh":5.5,"per":"kg"},"hardCoal":{"kwh":8,"per":"kg"},"firewood":{"kwh":4.1,"per":"kg"},"woodPellets":{"kwh":5,"per":"kg"},"woodChips":{"kwh":650,"per":"srm"}}}',
+  'hkv.heating-values|2021-12-01||{"units":["l","m3","kg"],"values":{"heatingOilEL":{"kwh":10,"per":"l"},"heavyFuelOil":{"kwh":10.9,"per":"l"},"naturalGasH":{"kwh":10,"per":"m3"},"naturalGasL":{"kwh":9,"per":"m3"},"lpg":{"kwh":13,"per":"kg"},"coke":{"kwh":8,"per":"kg"},"lignite":{"kwh":5.5,"per":"kg"},"hardCoal":{"kwh":8,"per":"kg"},"firewood":{"kwh":4.1,"per":"kg"},"woodPellets":{"kwh":5,"per":"kg"},"woodChips":{"kwh":4,"per":"kg"}}}',
+  'hkv.exemption.renewable||2024-09-30|{"heatPump":true}',
+  'hkv.exemption.renewable|2024-10-01||{"heatPump":false}',
 ]
 
 const current = (): string[] =>

@@ -105,12 +105,14 @@ test('CO₂-Angaben: nur bei einer Anlage mit Messdienst; abgeschlossene Heizper
 test('Warmwasser laut Messdienst: Formel mit oder ohne bestätigten Aufwand, Wärmezähler ohne Bestätigung', async () => {
   await withDatabase(async (opened) => {
     await bestand(opened)
-    assert.deepEqual(await opened.write((db) => saveHotWater(db, 'hp', '2025-01', { dhwMethod: 'volumeFormula', dhwUnmeasurable: true })), { dhwMethod: 'volumeFormula', dhwUnmeasurable: true })
-    assert.deepEqual(await opened.write((db) => saveHotWater(db, 'hp', '2025-01', { dhwMethod: 'heatMeter', dhwUnmeasurable: true })), { dhwMethod: 'heatMeter', dhwUnmeasurable: null })
-    assert.deepEqual(await opened.write((db) => saveHotWater(db, 'hp', '2025-01', { dhwMethod: null })), { dhwMethod: null, dhwUnmeasurable: null })
+    // Heizung PR 11: Die Antwort nennt auch Wärme, Volumen und Temperatur; beim Messdienst bleiben sie leer.
+    const leer = { dhwHeatKwh: null, totalHeatKwh: null, dhwVolumeM3: null, dhwTempC: null }
+    assert.deepEqual(await opened.write((db) => saveHotWater(db, 'hp', '2025-01', { dhwMethod: 'volumeFormula', dhwUnmeasurable: true })), { dhwMethod: 'volumeFormula', dhwUnmeasurable: true, ...leer })
+    assert.deepEqual(await opened.write((db) => saveHotWater(db, 'hp', '2025-01', { dhwMethod: 'heatMeter', dhwUnmeasurable: true })), { dhwMethod: 'heatMeter', dhwUnmeasurable: null, ...leer })
+    assert.deepEqual(await opened.write((db) => saveHotWater(db, 'hp', '2025-01', { dhwMethod: null })), { dhwMethod: null, dhwUnmeasurable: null, ...leer })
     await assert.rejects(opened.write((db) => saveHotWater(db, 'hp', '2025-01', { dhwMethod: 'schaetzung' })), heatingError(400, /Verfahren/))
     const [view] = await opened.read((db) => heatingPeriodViews(db, 'hp', '2025')) ?? assert.fail('keine Anlage')
-    assert.deepEqual(view?.hotWater, { dhwMethod: null, dhwUnmeasurable: null })
+    assert.deepEqual(view?.hotWater, { dhwMethod: null, dhwUnmeasurable: null, ...leer })
   })
 })
 

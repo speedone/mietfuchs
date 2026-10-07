@@ -10,7 +10,7 @@ import { createLawLog, dayAfter, dayBefore, germanDate, law, LAW_AS_OF, onlyVers
 import { LAW_PARAMS } from '../../shared/law/params.ts'
 import * as rulesModule from '../../shared/law/rules.ts'
 import { betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths } from '../../shared/law/bgb-betrkv.ts'
-import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvHeatPumpCapture, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvSettlementInfo } from '../../shared/law/heizkostenv.ts'
+import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvHeatingValues, hkvHeatPumpCapture, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvRenewableExemption, hkvSettlementInfo } from '../../shared/law/heizkostenv.ts'
 import { practiceReadingOffWarning, practiceVacancyPersons } from '../../shared/law/practice.ts'
 import { ustgStandardRate } from '../../shared/law/ustg.ts'
 import { co2ApplicableFrom, co2CostsBefore, co2CostsCountedFrom, co2CostsExcludedUntil, co2CutMissing, co2DistrictEtsNew, co2FirstPeriodStart, co2NonResidential, co2Restriction, co2RoundingDecimals, co2StageTable } from '../../shared/law/co2kostaufg.ts'
@@ -176,7 +176,7 @@ test('Register: jede Konstante vom Typ LawParam in shared/law/ steht in LAW_PARA
     .flatMap((f) => [...fs.readFileSync(path.join(dir, f), 'utf8').matchAll(/^export const (\w+): LawParam</gm)].map((m) => m[1]))
   assert.ok(declared.length >= 7, `nur ${declared.length} Parameter gefunden`)
   const listed = new Set<unknown>(LAW_PARAMS)
-  const modules = { betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths, co2ApplicableFrom, co2CostsBefore, co2CutMissing, co2DistrictEtsNew, co2NonResidential, co2Restriction, co2RoundingDecimals, co2StageTable, hkvConsumptionShare, hkvConsumptionShareForced, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvHeatPumpCapture, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvSettlementInfo, practiceReadingOffWarning, practiceVacancyPersons, ustgStandardRate }
+  const modules = { betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths, co2ApplicableFrom, co2CostsBefore, co2CutMissing, co2DistrictEtsNew, co2NonResidential, co2Restriction, co2RoundingDecimals, co2StageTable, hkvConsumptionShare, hkvConsumptionShareForced, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvHeatingValues, hkvHeatPumpCapture, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvRenewableExemption, hkvSettlementInfo, practiceReadingOffWarning, practiceVacancyPersons, ustgStandardRate }
   for (const name of declared) {
     assert.ok(name && Object.hasOwn(modules, name), `${name} fehlt in diesem Test`)
     assert.ok(listed.has(Reflect.get(modules, name)), `${name} fehlt in LAW_PARAMS`)
@@ -330,4 +330,54 @@ test('Regel heating-consumed-fuel: verbrauchte statt gelieferte Brennstoffe, auc
   assert.equal(r.norm, '§ 7 Abs. 2 HeizkostenV; BGH, Urteil vom 01.02.2012, VIII ZR 156/11')
   assert.match(r.summary, /verbrauchten Brennstoffe/)
   assert.match(r.summary, /Anfangsbestand \+ Lieferungen − Endbestand/)
+})
+
+// ---------- Warmwasser ohne Wärmezähler (Heizung PR 11, Entwurf 4.3, 8.3) ----------
+
+test('Stichtag: die Zahlenwertgleichungen des § 9 Abs. 2 gelten 2015 wie 2030', () => {
+  for (const y of [2015, 2021, 2025, 2030]) {
+    const log = createLawLog()
+    assert.deepEqual(law(hkvDhwVolumeFormula, year(y), log), { effort: 2.5, coldWaterC: 10 })
+    assert.deepEqual(law(hkvDhwAreaFormula, year(y), log), { kwhPerM2: 32 })
+  }
+})
+
+test('Stichtag hkv.dhw.factors: 0,30 für die monovalente Wärmepumpe erst für Zeiträume ab 01.10.2024 (BGBl. 2023 I Nr. 280, Art. 6 Abs. 2)', () => {
+  const log = createLawLog()
+  const vorher = { gasCalorific: 1.11, heatSupplyDivisor: 1.15, heatPump: null }
+  const nachher = { gasCalorific: 1.11, heatSupplyDivisor: 1.15, heatPump: 0.3 }
+  assert.deepEqual(law(hkvDhwFactors, year(2024), log), vorher)
+  assert.deepEqual(law(hkvDhwFactors, { period: { from: '2024-09-01', to: '2025-08-31' } }, log), vorher)
+  assert.deepEqual(law(hkvDhwFactors, { period: { from: '2024-10-01', to: '2025-09-30' } }, log), nachher)
+  assert.deepEqual(law(hkvDhwFactors, year(2025), log), nachher)
+  assert.deepEqual(log.values.map((v) => v.text), [
+    'Erdgas nach Brennwert · 1,11; Wärmelieferung ÷ 1,15',
+    'Erdgas nach Brennwert · 1,11; Wärmelieferung ÷ 1,15; monovalente Wärmepumpe · 0,30',
+  ])
+})
+
+test('Stichtag hkv.heating-values: Hackschnitzel bis 30.11.2021 650 kWh/SRm, ab 01.12.2021 4 kWh/kg, und B ohne Schüttraummeter', () => {
+  const alt = law(hkvHeatingValues, year(2021), createLawLog())
+  assert.deepEqual(alt.values.woodChips, { kwh: 650, per: 'srm' })
+  assert.deepEqual(alt.units, ['l', 'm3', 'kg', 'srm'])
+  const neu = law(hkvHeatingValues, { period: { from: '2021-12-01', to: '2022-11-30' } }, createLawLog())
+  assert.deepEqual(neu.values.woodChips, { kwh: 4, per: 'kg' })
+  assert.deepEqual(neu.units, ['l', 'm3', 'kg'])
+  // Die übrigen Zeilen sind in beiden Fassungen gleich.
+  const rest = (t: typeof alt) => ['heatingOilEL', 'heavyFuelOil', 'naturalGasH', 'naturalGasL', 'lpg', 'coke', 'lignite', 'hardCoal', 'firewood', 'woodPellets'].map((g) => t.values[g])
+  assert.deepEqual(rest(alt), rest(neu))
+  assert.deepEqual(rest(neu), [
+    { kwh: 10, per: 'l' }, { kwh: 10.9, per: 'l' }, { kwh: 10, per: 'm3' }, { kwh: 9, per: 'm3' }, { kwh: 13, per: 'kg' },
+    { kwh: 8, per: 'kg' }, { kwh: 5.5, per: 'kg' }, { kwh: 8, per: 'kg' }, { kwh: 4.1, per: 'kg' }, { kwh: 5, per: 'kg' },
+  ])
+})
+
+test('Stichtag hkv.exemption.renewable: Wärmepumpen bis 30.09.2024 in der Ausnahme des § 11 Abs. 1 Nr. 3 Buchst. a, danach nicht (Abweichung 9)', () => {
+  const log = createLawLog()
+  assert.deepEqual(law(hkvRenewableExemption, year(2024), log), { heatPump: true })
+  assert.deepEqual(law(hkvRenewableExemption, { period: { from: '2024-09-01', to: '2025-08-31' } }, log), { heatPump: true })
+  assert.deepEqual(law(hkvRenewableExemption, { period: { from: '2024-10-01', to: '2025-09-30' } }, log), { heatPump: false })
+  assert.deepEqual(law(hkvRenewableExemption, year(2025), log), { heatPump: false })
+  assert.match(hkvRenewableExemption.describe({ heatPump: true }), /Wärmepumpen.*in der Fassung bis 30\.09\.2024/)
+  assert.doesNotMatch(hkvRenewableExemption.describe({ heatPump: false }), /Wärmepumpe/)
 })

@@ -204,6 +204,20 @@
       "when": 1791320853714,
       "tag": "0028_heizkostenabrechnung_bedingungen",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "6",
+      "when": 1791332885568,
+      "tag": "0029_warmwasser",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "6",
+      "when": 1791332893331,
+      "tag": "0030_warmwasser_bedingungen",
+      "breakpoints": true
     }
   ]
 }
