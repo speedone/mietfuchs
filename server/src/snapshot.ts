@@ -17,7 +17,7 @@
 // geschnitten und nicht neu erfunden: Was dort dazukommt, kommt hier nur an, wenn es jemand
 // bewusst aufnimmt.
 
-import type { BillingPeriod, Co2Statement, CostItem, DegreeDayValue, FrozenFuelCarry, FuelDelivery, HeatingPeriodData, HeatingPlant, HeatingServiceValue, InterimGap, Meter, Payment, PeriodKey, PeriodRules, Property, Reading, StockValue, Tenancy, Unit } from '../../shared/types.ts'
+import type { BillingPeriod, Co2Statement, CostItem, DegreeDayValue, FrozenFuelCarry, FuelDelivery, HeatingEstimate, HeatingPeriodData, HeatingPlant, HeatingServiceValue, InterimGap, Meter, Payment, PeriodKey, PeriodRules, Property, Reading, StockValue, Tenancy, Unit } from '../../shared/types.ts'
 import { calendarPeriod, calendarYearPeriod, parsePeriodKey, periodContaining, periodLabel, periodOfKey, previousPeriod, rulesOf, settlementDeadline } from '../../shared/period.ts'
 import { hasOwnRhythm, heatingPeriodsEndingIn, lineRoot, plantRules, sameFuelLine, settledSeparately, settlementKeyOf, type PlantWay } from '../../shared/heatingPeriod.ts'
 import { isStockEnergy } from '../../shared/fuelStock.ts'
@@ -441,6 +441,9 @@ export type Snapshot = {
   // Werte der Ablesedienste der Anlagen des Objekts (Heizung PR 12, Entwurf 5.8). Fehlt die Angabe
   // (db.json, Regression), gibt es keine.
   heatingServiceValues?: HeatingServiceValue[]
+  // Schätzungen nach § 9a der Anlagen des Objekts (Heizung PR 13), Wohnungen des Objekts. Fehlt die Angabe,
+  // gibt es keine.
+  heatingEstimates?: HeatingEstimate[]
 }
 
 // Die Lieferungen im Schnappschuss (Heizung PR 7, Entwurf 5.8). Die Abgrenzung liest Zeitraum, Betrag,
@@ -802,20 +805,25 @@ function withSelfBegin<P extends SnapshotHeatingPlant>(plants: readonly P[], key
 // Der eingefrorene Endstand kommt aus der Abrechnung des Objekts und, bei einer Heizperiode nach Weg d,
 // aus der eigenen Heizkostenabrechnung der Anlage (Durchsicht von #239, I2).
 function selfExtrasOf(
-  source: { interimGaps?: InterimGap[]; closedHeatingSettlements?: readonly (object & { plantId: string })[]; heatingServiceValues?: HeatingServiceValue[] },
+  source: { interimGaps?: InterimGap[]; closedHeatingSettlements?: readonly (object & { plantId: string })[]; heatingServiceValues?: HeatingServiceValue[]; heatingEstimates?: HeatingEstimate[] },
   narrowed: { units: readonly { id: string }[]; closedSettlements: readonly object[] },
   plantIds: readonly string[],
   servicePlantIds: readonly string[] = plantIds,
-): Pick<Snapshot, 'interimGaps' | 'selfClosedEnds' | 'heatingServiceValues'> {
+): Pick<Snapshot, 'interimGaps' | 'selfClosedEnds' | 'heatingServiceValues' | 'heatingEstimates'> {
   const gaps = (source.interimGaps ?? []).filter((g) => narrowed.units.some((u) => u.id === g.unitId))
   const heating = (source.closedHeatingSettlements ?? []).filter((c) => plantIds.includes(c.plantId))
   const selfClosedEnds = [...narrowed.closedSettlements, ...heating].flatMap((c) => selfClosedEndsOf(Reflect.get(c, 'settlement')))
   // Werte der Ablesedienste (Heizung PR 12): die der Anlagen des Objekts.
   const service = (source.heatingServiceValues ?? []).filter((v) => servicePlantIds.includes(v.plantId))
+  // Schätzungen nach § 9a (Heizung PR 13): wie die Werte des Ablesedienstes über die Linie, an Wohnungen des
+  // Objekts.
+  const estimates = (source.heatingEstimates ?? []).filter((e) => servicePlantIds.includes(e.plantId) && narrowed.units.some((u) => u.id === e.unitId))
   return {
     ...(gaps.length > 0 ? { interimGaps: gaps } : {}),
     ...(selfClosedEnds.length > 0 ? { selfClosedEnds } : {}),
     ...(service.length > 0 ? { heatingServiceValues: service } : {}),
+    // Nur, wenn es Schätzungen gibt: Ein Schnappschuss ohne sie bleibt Feld für Feld, wie er war.
+    ...(estimates.length > 0 ? { heatingEstimates: estimates } : {}),
   }
 }
 
@@ -839,6 +847,8 @@ export function snapshotFor(
     interimGaps?: InterimGap[]
     // Werte der Ablesedienste (Heizung PR 12).
     heatingServiceValues?: HeatingServiceValue[]
+    // Schätzungen nach § 9a (Heizung PR 13).
+    heatingEstimates?: HeatingEstimate[]
   } & FuelSource,
   propertyId: string,
   period: BillingPeriod,

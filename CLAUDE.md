@@ -1295,7 +1295,7 @@ lässt die Wahl nur für künftige Zeiträume zu. Der Anteil gehört zur **Linie
   anderen Art zählt und kein Gerät der eingestellten Art sie **ganz** abdeckt (`spansPeriod`: erste Ablesung am
   Tag vor dem Beginn oder früher, letzte am Ende oder später); ein Heizkostenverteiler neben dem Wärmezähler
   derselben Wohnung ändert also nichts, ein Wechsel mitten in der Heizperiode dagegen schon (`switched`, der
-  Satz nennt Zwischenstand bzw. Schätzung nach § 9a, die mit PR 13 kommt, und die Meldung zum fehlenden Stand
+  Satz nennt Zwischenstand bzw. Schätzung nach § 9a, mit der die Wohnung seit PR 13 nicht mehr gemischt ist, und die Meldung zum fehlenden Stand
   nennt das andere Gerät). Sonst fiele der Verbrauch des alten Geräts still weg, nachgemessen 1.349,39 € statt
   1.794,28 €. Das verlangt nach § 5 Abs. 7 eine Vorerfassung, die Mietfuchs nicht rechnet (#218):
   `heating.mixed-capture`, keine Verteilung; Warmwasserzähler und Zähler der Anlage zählen nicht. Beim
@@ -1329,6 +1329,53 @@ lässt die Wahl nur für künftige Zeiträume zu. Der Anteil gehört zur **Linie
   Ablesedienst mit Kesseltausch, Heizkostenverteiler mit Ablesungen bis zehn Tage neben dem Stichtag; (s5) wird je
   Variante gezählt. Migrationen 0031/0032 (`hca_scale`, `rating_factor`, `hca_model`, `heating_self_spans.capture`
   und `.hot_water`, `heating_service_values` mit `heat_unit`).
+- **Schätzung nach § 9a** (Heizung PR 13, #99, [server/src/db/heatingEstimates.ts](server/src/db/heatingEstimates.ts)):
+  Tabelle `heating_estimates` (Heizperiode, Wohnung, Topf `heat`/`water`, Wert, Weg, Grund aus der Auswahl,
+  Begründung Pflicht, Bestätigung, **Erfassung und Einheit beim Speichern**; Migration 0033). Passen Erfassung
+  oder Einheit nicht mehr zur Heizperiode (`estimateFits` in hca.ts; beim Warmwasser zählt nur eigene Zähler oder
+  Ablesedienst), rechnet die Schätzung nicht: Ohne verwertbare Ablesung gilt die Wohnung als nicht erfasst
+  (`heating.estimate-stale`, Stufe `error`), neben vollständiger Ablesung gilt die Ablesung
+  (`heating.estimate-stale-unused`, Warnung, Runde 2 N-I1); die Karte zeigt eine veraltete Schätzung immer
+  sichtbar mit „Entfernen“ und „Schätzung neu eintragen“. `setUpSelf` nennt solche Schätzungen in
+  `estimatesNotice` (Durchsicht von #242, G-I1). Beim Ablesedienst ohne Werte wählt der Vermieter die Einheit
+  der Schätzung (Einheiten oder kWh), mit Werten gilt deren Einheit (N-M3). Eine Schätzung gilt für die ganze Heizperiode der Wohnung in der Einheit der
+  Erfassung (beim Heizkostenverteiler bewertete Einheiten, ohne Faktor) und tritt in `planSelf` **nur an die
+  Stelle des nicht erfassten Verbrauchs**: Ein Nutzer mit gültigen Ablesungen, etwa der
+  Vormieter bis zur Zwischenablesung, behält seinen Messwert, denn § 9a Abs. 1 Satz 1 erfasst nur den Verbrauch
+  von Nutzern, der nicht ordnungsgemäß erfasst werden kann (Durchsicht von #242, R-I4); die übrigen tragen
+  zusammen ihren Anteil nach Gradtagen bzw. Tagen und teilen ihn wie nach § 9b Abs. 3 (Festlegung). Ohne
+  behaltenen Wert ersetzt die Schätzung auch abgelesene Zeiten desselben Nutzers; Hinweis, Karte und Druck sagen
+  das nur, wenn wirklich ein gemessenes Teilstück ersetzt wird (zwei Stände desselben Geräts im Zeitraum des
+  Nutzers, `replacesMeasured`; G-M6, Runde 2 N-I2). Sind alle Ablesungen vollständig, ersetzt die Schätzung alles (Markierung „unbrauchbar“):
+  `heating.estimate-complete` ist dann ein Hinweis, der nicht färbt, unbestätigt eine Warnung
+  (`heating.estimate-unconfirmed`, R-I7); deckt die Schätzung zwei Stände am selben Tag, warnt
+  `heating.estimate-same-day` (G-M7). Weitere Hinweise: `heating.estimate-no-device` (Gerät danach gelöscht,
+  die Schätzung zählt weiter), `heating.estimate-below-measured` (Schätzung unter dem abgelesenen Teil des
+  Vormieters). Nach einem Kesseltausch steht jeder Hinweis einmal je Linie und Schätzung (zwei Schätzungen derselben
+  Wohnung an beiden Anlagen haben je ihre Hinweise, N-M2); abgeschlossen wird weiter je Anlage. Mit Schätzung sind ein fehlender Stand, ein Zählerwechsel ohne Endstand, negativer
+  Verbrauch und zwei Stände am selben Tag gedeckt; die Geräte einer geschätzten Wohnung lösen keine Hinweise zu
+  fehlenden Zwischenablesungen aus (`liveMetersOf`), stehen aber weiter im Ausweis. Begrenzt eine Ablesung ihres
+  Geräts einen behaltenen Messwert, fragt Mietfuchs bei einer fernen Zwischenablesung wie ohne Schätzung
+  („Ablesung verwenden“ / „Nach § 9b Abs. 3“, `usableAt` in heating.ts, G-I2). Überschreitet die geschätzte Fläche
+  eines Topfs die Grenze `hkv.estimate-threshold` (streng größer, über Produkte verglichen, je Topf, Heizung mit
+  der Fläche nach § 7 Abs. 1 Satz 5; die Fläche einer Wohnung zählt ganz, auch wenn nur ein Teil ihrer
+  Heizperiode geschätzt ist; beides ist eine **Auslegung von Mietfuchs** und steht so in Hinweis, Dialog, Lexikon
+  und Regel), geht der Topf nur nach Fläche, ohne Kürzungsbetrag und ohne `heating.no-consumption` (Auslegung,
+  Entwurf 15.1 Nr. 7; für eine Abrechnung nach § 9a Abs. 1 hat der BGH die Kürzung verneint, VIII ZR 373/04
+  Leitsatz c). Gelesen werden Schätzungen **über die Linie** wie die Werte eines Ablesedienstes (die eigene geht vor);
+  eine Wohnung mit Gerätewechsel mitten in der Heizperiode ist mit Schätzung nicht mehr gemischt
+  (`withoutEstimatedSwitches`). Eine Wohnung mit Schätzung oder Werten eines Ablesedienstes wechselt nicht das
+  Objekt (`guardUnit`, G-I3). Keine Schätzung für eine Wohnung ohne Gerät (Ausstattungspflicht, 400; beim
+  Ablesedienst prüft Mietfuchs keine Geräte) und nie wegen verschiedener Ablesetage; abgeschlossene
+  Heizperioden sind gesperrt (409), `dropIfEmpty` lässt eine Heizperiode mit Schätzung stehen. Die Vorschläge
+  (`estimateProposals`: Durchschnitt der übrigen erfassten Wohnungen je m², vergleichbare Wohnung je m²,
+  Vorperiode) rechnen die Vorperiode neu, nur bei gleich vielen Monaten und gleicher Erfassung, mit eigenem
+  Protokoll der Rechtswerte. Die Grenze steht nur mit einer Schätzung im Rechtsstand. Seite Heizkosten: Karte
+  „Schätzung (§ 9a)“ ([EstimateCard.tsx](client/src/components/EstimateCard.tsx), Logik in
+  [client/src/estimateForm.ts](client/src/estimateForm.ts)) mit dem tatsächlichen Flächenanteil vor dem
+  Speichern. Die Invariante fuel-invariant hat zwei Varianten „Gerät ausgefallen“ mit vier Wohnungen (30, 20, 25
+  und 25 % der Fläche) und Mieterwechsel ((s6): Grenze, Verteilung nur nach Fläche, Wert der Schätzung, der
+  Vormieter behält seinen Wert); die Mutationsproben stehen im PR.
 
 **Brennstoffvorrat** (Heizung PR 8, #97, #99): Bei Heizöl, Flüssiggas, Pellets, Holz und Kohle
 (`STOCK_ENERGIES` in [shared/fuelStock.ts](shared/fuelStock.ts)) rechnet
@@ -1509,7 +1556,7 @@ Löschen erledigen die Fremdschlüssel und nicht mehr index.ts. Alle Datenrouten
 `?property=` auf ein Objekt ein (siehe Objekte). `POST /api/tenancies/:id/change` führt den
 Mieterwechsel (Ende, Zwischenablesungen, Nachmieter) in einer Transaktion aus, ganz oder gar
 nicht (#150, `changeTenant` in repository.ts). Daneben Spezialrouten: `/api/properties`
-(Objekte anlegen, ändern, nur leere löschen), `/api/heating-plants` (Heizanlage, siehe dort; der Rumpf beim Anlegen nimmt `adjust` für Name und Wohnungen bisheriger Anlagen, `/:id/replace` ist der Kesseltausch; `PUT /:id/self` richtet die eigene Heizkostenabrechnung ein, 409 mit Positionen; `PUT …/periods/:period/distribution` setzt den Anteil nach Verbrauch; `PUT`/`DELETE /api/units/:id/interim-gaps/:date` die Antwort zu einer fehlenden Zwischenablesung, siehe Eigene Heizkostenabrechnung), `/api/heating-plants/:id/periods` (Heizperioden einer Anlage mit CO₂-Angaben und Warmwasser, siehe CO₂ beim Messdienst), `…/periods/:period/stock` (PUT/DELETE, Vorrat, siehe Brennstoffvorrat), `/api/heating-plants/:id/period` und `/separate` (je mit `/preview`), `/api/heating-settlement/:plant/:period` (samt `/close` und `/history`) und `/api/heating-settlements` (eigene Heizperiode, siehe dort), `/api/heating-plants/:id/deliveries`, `/api/fuel-deliveries/:id` und `/api/properties/:id/degree-days` (siehe Lieferungen), `/api/settings`, `/api/settlement/:year`, `/api/consumption/:year`, `/api/rentledger/:year`
+(Objekte anlegen, ändern, nur leere löschen), `/api/heating-plants` (Heizanlage, siehe dort; der Rumpf beim Anlegen nimmt `adjust` für Name und Wohnungen bisheriger Anlagen, `/:id/replace` ist der Kesseltausch; `PUT /:id/self` richtet die eigene Heizkostenabrechnung ein, 409 mit Positionen; `PUT …/periods/:period/distribution` setzt den Anteil nach Verbrauch; `PUT`/`DELETE …/periods/:period/estimates/:unitId/:part` die Schätzung nach § 9a (siehe dort); `PUT`/`DELETE /api/units/:id/interim-gaps/:date` die Antwort zu einer fehlenden Zwischenablesung, siehe Eigene Heizkostenabrechnung), `/api/heating-plants/:id/periods` (Heizperioden einer Anlage mit CO₂-Angaben und Warmwasser, siehe CO₂ beim Messdienst), `…/periods/:period/stock` (PUT/DELETE, Vorrat, siehe Brennstoffvorrat), `/api/heating-plants/:id/period` und `/separate` (je mit `/preview`), `/api/heating-settlement/:plant/:period` (samt `/close` und `/history`) und `/api/heating-settlements` (eigene Heizperiode, siehe dort), `/api/heating-plants/:id/deliveries`, `/api/fuel-deliveries/:id` und `/api/properties/:id/degree-days` (siehe Lieferungen), `/api/settings`, `/api/settlement/:year`, `/api/consumption/:year`, `/api/rentledger/:year`
 (Mietkonto: Soll/Ist je Monat), `/api/taxreport/:year` (Steuer-Übersicht Anlage V),
 `/api/upload`, `/api/extract` und `/api/intake` (KI-Auswertung, auf Wunsch als Strom, siehe
 unten), die KI-Einstellungen `/api/ai/presets`, `/api/ai/status`, `/api/ai/key` und

@@ -53,7 +53,7 @@ import {
 } from './read.ts'
 import {
   aiSlots, assessmentLines, assessments, baseRents, co2Statements, co2TenantReliefs, heatingPeriods, closedHeatingSettlementHistory, closedHeatingSettlements, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, DEPOSIT_STATUS, EXTERNAL_MEASURES,
-  HCA_SCALES, HEATING_PARTS, HEATING_ROLES, HEATING_TARGETS, INTERIM_GAP_STATUS, interimReadingGaps, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingSelfSpans, heatingPrepaymentOverrides, heatingPrepayments, heatingSeparateSpans, heatingServiceValues,
+  HCA_SCALES, HEATING_PARTS, HEATING_ROLES, HEATING_TARGETS, INTERIM_GAP_STATUS, interimReadingGaps, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingSelfSpans, heatingPrepaymentOverrides, heatingPrepayments, heatingSeparateSpans, heatingServiceValues, heatingEstimates,
   flatRates, METER_TYPES, meters, payments, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, PROPERTY_KINDS,
   readings, settings, tenancies, unitNoConnection, units, fuelCarryFrozen, fuelDeliveries,
 } from './schema.ts'
@@ -1213,6 +1213,13 @@ async function guardUnit(db: Executor, before: Unit | null, after: Unit): Promis
     .innerJoin(tenancies, eq(costItemAmounts.tenancyId, tenancies.id))
     .where(eq(tenancies.unitId, after.id))
   if ((betraege[0]?.n ?? 0) > 0) haengt.push('Einzelbeträge ihrer Mietverhältnisse')
+  // Schätzungen nach § 9a und Werte eines Ablesedienstes gehören zur Heizanlage des bisherigen Objekts
+  // (Durchsicht von #242, G-I3); ohne Zähler griff keine der Prüfungen darüber, und das eigene Backup wurde
+  // danach beim Wiederherstellen abgelehnt.
+  const schaetzungen = await db.select({ n: count() }).from(heatingEstimates).where(eq(heatingEstimates.unitId, after.id))
+  if ((schaetzungen[0]?.n ?? 0) > 0) haengt.push('Schätzungen nach § 9a HeizkostenV')
+  const ablesedienst = await db.select({ n: count() }).from(heatingServiceValues).where(eq(heatingServiceValues.unitId, after.id))
+  if ((ablesedienst[0]?.n ?? 0) > 0) haengt.push('Werte des Ablesedienstes')
   if (haengt.length === 0) return
   throw new CrossPropertyError(
     `Die Wohnung „${after.name}“ kann nicht in ein anderes Objekt wechseln, weil noch ${haengt.join(', ')} ` +
@@ -1422,6 +1429,15 @@ export async function crossPropertyViolations(db: Database): Promise<string[]> {
     .innerJoin(units, eq(heatingServiceValues.unitId, units.id))
     .where(ne(heatingPlants.propertyId, units.propertyId))
   for (const v of ablesedienst) befunde.push(`Ein Wert des Ablesedienstes gehört zur Wohnung „${v.unitName}“ eines anderen Objekts als seine Heizanlage.`)
+  // Schätzungen nach § 9a gehören zu einer Wohnung im Objekt ihrer Heizanlage (Heizung PR 13).
+  const schaetzungen = await db
+    .select({ unitName: units.name })
+    .from(heatingEstimates)
+    .innerJoin(heatingPeriods, eq(heatingEstimates.heatingPeriodId, heatingPeriods.id))
+    .innerJoin(heatingPlants, eq(heatingPeriods.plantId, heatingPlants.id))
+    .innerJoin(units, eq(heatingEstimates.unitId, units.id))
+    .where(ne(heatingPlants.propertyId, units.propertyId))
+  for (const s of schaetzungen) befunde.push(`Eine Schätzung nach § 9a gehört zur Wohnung „${s.unitName}“ eines anderen Objekts als ihre Heizanlage.`)
   return befunde
 }
 

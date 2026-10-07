@@ -12,7 +12,7 @@
 
 import type { TermId } from './glossary.ts'
 // Rechtszahlen aus dem Rechtsregister (Heizung PR 1), in der Fassung von `LAW_AS_OF` wie im Lexikon.
-import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutNotByConsumption, hkvRenewableExemption } from './law/heizkostenv.ts'
+import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutNotByConsumption, hkvEstimateThreshold, hkvRenewableExemption } from './law/heizkostenv.ts'
 import { germanDate, LAW_AS_OF, valueAt } from './law/register.ts'
 import { co2CutMissing, co2FirstPeriodStart } from './law/co2kostaufg.ts'
 
@@ -20,6 +20,7 @@ const SHARE = valueAt(hkvConsumptionShare, LAW_AS_OF)
 const CUT = valueAt(hkvCutNotByConsumption, LAW_AS_OF)
 // Heizung PR 10: der Pflichtanteil nach § 7 Abs. 1 Satz 2 HeizkostenV, aus dem Register.
 const FORCED = valueAt(hkvConsumptionShareForced, LAW_AS_OF)
+const ESTIMATE_THRESHOLD = valueAt(hkvEstimateThreshold, LAW_AS_OF)
 // Heizung PR 6: die Kürzung bei fehlender CO₂-Aufteilung (§ 7 Abs. 4 CO2KostAufG) und der Beginn der
 // Aufteilung (§ 11 Abs. 2 Satz 1) aus dem Register.
 const CO2_CUT = valueAt(co2CutMissing, LAW_AS_OF)
@@ -327,12 +328,14 @@ const GUIDE_DATA = {
       { page: 'kosten', text: 'Erfassen Sie Brennstoff, Betriebsstrom, Wartung und Zählermiete als Position „Heizung und Warmwasser“; der Schlüssel ist „nach Heizkostenverordnung“, dazu der Teil der Heizkosten unter „Weitere Angaben“ und das Ziel.' },
       { page: 'heizkosten', text: 'Bereitet die Heizung auch das Warmwasser, wählen Sie auf der Seite Heizkosten in der Karte „Warmwasser“, wie die Wärme dafür bestimmt wird. Ohne Wärmezähler am Speicher tragen Sie das Warmwasser in m³ und seine Temperatur ein; bei Gas wählen Sie an der Rechnung unter „Kilowattstunden der Rechnung berechnet nach“ Brennwert oder Heizwert.' },
       { page: 'heizkosten', text: 'Prüfen Sie auf der Seite Heizkosten die Ablesungen. Fehlt beim Mieterwechsel eine Zwischenablesung, antworten Sie mit „Nicht möglich“ (mit Grund) oder „Nicht durchgeführt“. Wählen Sie in der Karte Ableseergebnis jede Wohnung und klicken Sie auf „Ableseergebnis drucken“; das Blatt geht an den Mieter dieser Wohnung.' },
+      { page: 'heizkosten', text: 'Kann der Verbrauch einer Wohnung nicht ordnungsgemäß erfasst werden, etwa weil ein Gerät ausgefallen ist, klicken Sie auf der Seite Heizkosten in der Karte „Schätzung (§ 9a)“ bei der Wohnung auf „Schätzen“. Mietfuchs schlägt den Durchschnitt des Gebäudes je m² vor und nennt vorher den Anteil an der Fläche; wählen Sie den Grund, tragen Sie die Begründung ein (sie steht auf der Abrechnung des Mieters), bestätigen Sie, dass der Verbrauch nicht ordnungsgemäß erfasst werden konnte, und klicken Sie auf „Schätzung speichern“.' },
     ],
     result: [
       'Die Kosten jedes Topfs (Heizung, Warmwasser) gehen zum gewählten Anteil nach Verbrauch, der Rest nach Wohnfläche; bei verbundener Warmwasserbereitung teilt Mietfuchs die gemeinsamen Kosten nach der Wärme für das Warmwasser: gemessen am Warmwasserspeicher oder, wo das Messen unzumutbar wäre, nach den Formeln der Heizkostenverordnung; Brennstoff in Litern, Kilogramm oder Kubikmetern mit dem Heizwert laut Rechnung.',
       'Beim Mieterwechsel trägt jeder seinen abgelesenen Verbrauch; die Grundkosten der Heizung teilen sich nach Gradtagen, die des Warmwassers nach Tagen.',
       'Leerstand und Eigennutzung sind Nutzer wie Mieter; ihren Anteil tragen Sie. Die Abrechnung druckt den Block „Heizkostenabrechnung“ mit den Preisen je m², kWh und m³, bei Heizkostenverteilern und Ablesedienst je Einheit.',
       'Bei Heizkostenverteilern zählt jedes Gerät mit seinem Bewertungsfaktor; jeder Mieter bekommt seine Geräte mit Einheiten, Skala und Faktor ausgewiesen. Die Werte eines Ablesedienstes zählen wie abgelesen.',
+      `Ein geschätzter Verbrauch gilt für die ganze Heizperiode der Wohnung; wer bis zu einem Mieterwechsel gültig abgelesen ist, behält seinen Wert. Betrifft die Schätzung mehr als ${ESTIMATE_THRESHOLD} % der Fläche, gehen die Kosten dieses Topfs nur nach der Fläche.`,
     ],
     example: 'Zwei Wohnungen à 50 m², Fernwärme 3.000 €, kein zentrales Warmwasser, 70 % nach Verbrauch. Grundkosten 30 %: 900 €, je Wohnung 450 €. Verbrauchskosten 70 %: 2.100 € für 10.000 kWh. Wohnung A: 4.000 kWh, 840 €, zusammen 1.290 €. Wohnung B: 6.000 kWh, zusammen 1.710 €.',
     caveats: [
@@ -344,15 +347,17 @@ const GUIDE_DATA = {
       { text: 'Bei Zählern, die nicht aus der Ferne ablesbar sind, teilen Sie jedem Mieter das Ergebnis der Ablesung in der Regel innerhalb eines Monats mit.', norm: '§ 6 Abs. 1 HeizkostenV' },
       { text: 'Verwenden dürfen Sie nur Zähler und Heizkostenverteiler, deren Eignung eine sachverständige Stelle bestätigt hat; sie müssen für das Heizsystem geeignet und fachgerecht angebracht sein. Der Bewertungsfaktor eines Heizkostenverteilers hängt am Heizkörper; lassen Sie ihn fachgerecht ermitteln, etwa vom Messdienst oder vom Betrieb, der die Geräte anbringt.', norm: '§ 5 Abs. 1 Satz 2 und 4 HeizkostenV' },
       { text: `Die Wärme für das Warmwasser ist mit einem Wärmezähler zu messen. Eine Formel ist nur erlaubt, wenn das Messen unzumutbar aufwendig wäre; sonst darf jeder Mieter seinen Anteil an den Heiz- und Warmwasserkosten um ${CUT} Prozent kürzen.`, norm: '§ 9 Abs. 2, § 12 Abs. 1 Satz 1 HeizkostenV; BGH, Urteil vom 12.01.2022, VIII ZR 151/20' },
+      { text: 'Geschätzt werden darf nur, wenn der Verbrauch wegen Geräteausfalls oder aus einem anderen zwingenden Grund nicht ordnungsgemäß erfasst werden kann. Auch ein Ablesefehler ist ein solcher Grund, wenn sich der Wert nicht mehr ermitteln lässt; im entschiedenen Fall war die Ablesung nicht nachholbar. Lässt sich ein Wert noch ablesen, ist er abzulesen; eine Ablesung einige Tage neben dem Stichtag ist kein Grund zu schätzen.', norm: '§ 9a Abs. 1 HeizkostenV; BGH, Urteil vom 16.11.2005, VIII ZR 373/04' },
+      { text: 'Für die Grenze des § 9a Abs. 2 zählt Mietfuchs die ganze Fläche einer Wohnung, auch wenn nur ein Teil der Heizperiode geschätzt ist, und prüft Heizung und Warmwasser getrennt. Die Verordnung sagt dazu nichts Ausdrückliches; das ist eine Auslegung von Mietfuchs.', norm: '§ 9a Abs. 2 HeizkostenV' },
       { text: `Für Abrechnungszeiträume, die vor dem ${HEAT_PUMP_FROM} beginnen, galten die Vorschriften zur Verteilung nicht für Gebäude, die überwiegend mit Wärme aus Wärmepumpen versorgt werden. Mietfuchs fragt deshalb bei einer Wärmepumpe, ob sie mehr als die Hälfte der Wärme liefert.`, norm: '§ 11 Abs. 1 Nr. 3 Buchst. a HeizkostenV in der alten Fassung' },
     ],
     gaps: [
       { text: 'Die Angaben nach § 6a HeizkostenV kommen mit einer späteren Version.', issue: 99 },
       { text: 'Verschiedene Geräte in einer Heizanlage (Wärmezähler neben Heizkostenverteilern) brauchen eine Vorerfassung nach Gruppen mit einem eigenen Wärmezähler je Gruppe; die rechnet Mietfuchs noch nicht. Offen ist dabei, ob eine Differenzrechnung genügt (für eine Gemeinschaft der Wohnungseigentümer BGH, V ZR 214/21; für das Mietrecht nicht entschieden) und wie § 6 Abs. 2 zu lesen ist, der auf „§ 5 Absatz 2“ verweist, gemeint ist nach Zusammenhang die Vorerfassung des § 5 Abs. 7.', issue: 218 },
       { text: 'Verdunster wertet Mietfuchs nicht selbst aus und hat das auch nicht vor; übernehmen Sie die Werte des Ablesedienstes.' },
-      { text: 'Fehlt ein Zählerstand zu Beginn oder Ende der Heizperiode, schätzt Mietfuchs ihn noch nicht (§ 9a HeizkostenV); bis dahin verteilt es die Anlage nicht.', issue: 99 },
+      { text: 'Den Durchschnittsverbrauch einer Nutzergruppe als Grundlage der Schätzung rechnet Mietfuchs nicht, denn er setzt die Vorerfassung nach Gruppen voraus.', issue: 218 },
     ],
-    terms: ['heatingCostOrdinance', 'baseCosts', 'consumptionCosts', 'interimReading', 'heatMeter', 'heatCostAllocator', 'hotWaterShare', 'degreeDays'],
+    terms: ['heatingCostOrdinance', 'baseCosts', 'consumptionCosts', 'interimReading', 'heatMeter', 'heatCostAllocator', 'hotWaterShare', 'degreeDays', 'heatingEstimate'],
   },
   tenantChange: {
     title: 'Mieterwechsel und Leerstand im Jahr',

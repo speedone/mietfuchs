@@ -155,6 +155,8 @@ const OWN_CHECK_MESSAGES: Readonly<Record<string, string>> = {
   cost_items_heating_target_category_valid: 'Ein Ziel (Heizung, Warmwasser) gibt es nur bei der Kostenart „Heizung und Warmwasser“.',
   cost_items_heating_system_complete: 'Nach der Heizkostenverordnung verteilt nur eine Position mit Heizanlage, Teil und Ziel. Bitte wählen Sie alle drei.',
   interim_reading_gaps_date_valid: 'Das Datum der Grenze ist kein Datum in der Form JJJJ-MM-TT. Bitte laden Sie die Seite neu.',
+  // Schätzung nach § 9a (Heizung PR 13)
+  heating_estimates_reason_complete: 'Zu einer Schätzung nach § 9a HeizkostenV gehört eine Begründung. Bitte nennen Sie, warum der Verbrauch nicht erfasst werden konnte.',
   fuel_deliveries_invoice_complete: 'Zum Rechnungszeitraum einer Lieferung gehören Beginn und Ende. Bitte tragen Sie beide ein.',
   fuel_deliveries_invoice_from_valid: 'Der Beginn des Rechnungszeitraums ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie es im Kalender.',
   fuel_deliveries_invoice_to_valid: 'Das Ende des Rechnungszeitraums ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie es im Kalender.',

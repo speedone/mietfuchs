@@ -5,7 +5,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   captureOf, coversPeriod, deviceCutoffs, deviceCutoffText, deviceLines, meterFactor, missingRatings, missingRatingsText, mixedCapture, mixedCaptureText, spansPeriod,
-  ratingOf, serviceMeters, type HcaMeter,
+  ratingOf, serviceMeters, withoutEstimatedSwitches, type HcaMeter,
 } from '../src/hca.ts'
 import { planSelf, type SelfInput, type SelfReading, type SelfUnit } from '../src/heating.ts'
 import type { HeatingServiceValue } from '../../shared/types.ts'
@@ -159,7 +159,14 @@ test('Durchsicht #241 N1: Ein Gerät der eingestellten Art befreit die Wohnung n
   assert.deepEqual(m, { heatMeterUnits: ['a'], hcaUnits: ['b'], switched: ['a'] })
   const t = mixedCaptureText('hca', m ?? assert.fail('nicht gemischt'), nameOf)
   assert.match(t, /Bei Wohnung A wechselt das Gerät innerhalb der Heizperiode/)
-  assert.match(t, /Zwischenstand oder, wenn es keinen gibt, nach § 9a HeizkostenV geschätzt\. Das rechnet Mietfuchs mit einer späteren Version\./)
+  // Heizung PR 13: Die Meldung führt zur Schätzung, statt auf eine spätere Version zu vertrösten.
+  assert.match(t, /nicht ordnungsgemäß geht, nach § 9a HeizkostenV zu schätzen: Tragen Sie dann auf der Seite Heizkosten unter „Schätzung \(§ 9a\)“ den Verbrauch der ganzen Heizperiode für diese Wohnung in Einheiten ein\./)
+  assert.doesNotMatch(t, /späteren Version/)
+  // Mit Schätzung ist die Wohnung nicht mehr gemischt (withoutEstimatedSwitches).
+  assert.equal(withoutEstimatedSwitches(m ?? assert.fail('nicht gemischt'), 'hca', new Set(['a'])), null)
+  assert.deepEqual(withoutEstimatedSwitches(m ?? assert.fail('nicht gemischt'), 'hca', new Set(['b'])), m)
+  // Eine dauerhaft anders erfasste Wohnung bleibt gemischt, auch neben einer geschätzten.
+  assert.deepEqual(withoutEstimatedSwitches({ heatMeterUnits: ['a', 'c'], hcaUnits: ['b'], switched: ['a'] }, 'hca', new Set(['a'])), { heatMeterUnits: ['c'], hcaUnits: ['b', 'a'] })
   // Nur ein Wechsel: Die Vorerfassung ist nicht der Weg.
   assert.doesNotMatch(t, /Vorerfassung/)
   // Bei Wärmezählern dieselbe Regel.

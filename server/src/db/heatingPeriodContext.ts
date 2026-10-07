@@ -11,7 +11,7 @@ import { newId } from '../store.ts'
 import type { Database, Executor } from './client.ts'
 import { readHeatingPlants, readProperties } from './read.ts'
 import { HeatingError } from './repository.ts'
-import { closedHeatingSettlements, closedSettlements, co2Statements, fuelCarryFrozen, heatingPeriods, heatingServiceValues } from './schema.ts'
+import { closedHeatingSettlements, closedSettlements, co2Statements, fuelCarryFrozen, heatingEstimates, heatingPeriods, heatingServiceValues } from './schema.ts'
 
 export const closedText = (h: BillingPeriod) =>
   `Die Heizperiode ${periodLabel(h)} ist abgeschlossen; ihre Angaben bleiben, wie sie beim Abschluss waren. Öffnen Sie die Abrechnung wieder, um etwas zu ändern.`
@@ -95,6 +95,10 @@ export async function dropIfEmpty(db: Executor, heatingPeriodId: string): Promis
   // Ebenso die Werte eines Ablesedienstes (Heizung PR 12).
   const [service] = await db.select({ n: count() }).from(heatingServiceValues).where(eq(heatingServiceValues.heatingPeriodId, heatingPeriodId))
   if ((service?.n ?? 0) > 0) return
+  // Ebenso Schätzungen nach § 9a (Heizung PR 13); ohne diese Prüfung nähme das Leeren einer anderen Angabe
+  // sie über den Fremdschlüssel mit.
+  const [estimates] = await db.select({ n: count() }).from(heatingEstimates).where(eq(heatingEstimates.heatingPeriodId, heatingPeriodId))
+  if ((estimates?.n ?? 0) > 0) return
   await db.delete(heatingPeriods).where(eq(heatingPeriods.id, heatingPeriodId))
 }
 

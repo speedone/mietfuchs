@@ -18,7 +18,7 @@
 // Skalen und Faktoren nach [M] Haufe HeizKV § 5.3 und Berliner Mieterverein (übernommen);
 // ⟨Norm offen: VDI 2077; DIN EN 834⟩ (Entwurf 15.3). Ob ein Faktor stimmt, prüft Mietfuchs nicht
 // (Entwurf 16). Diese Datei steht in `ENGINE_FILES` des Wächters (law-literals.test.ts).
-import type { CaptureMethod, HcaDeviceLine, HcaScale, HeatingServiceValue, MeterType } from '../../shared/types.ts'
+import type { CaptureMethod, HcaDeviceLine, HcaScale, HeatingEstimate, HeatingServiceValue, MeterType } from '../../shared/types.ts'
 import { dayBefore, germanDate, type Period } from '../../shared/law/register.ts'
 import { andList } from '../../shared/wording.ts'
 import type { SelfMeter, SelfPlan, SelfReading } from './heating.ts'
@@ -151,6 +151,23 @@ export function serviceUnitsMixed(rows: readonly HeatingServiceValue[]): MixedCa
 export const serviceHeatUnit = (rows: readonly HeatingServiceValue[]): 'kWh' | 'Einheiten' =>
   rows.length > 0 && rows.every((r) => r.heatUnit === 'kWh') ? 'kWh' : 'Einheiten'
 
+// Die Einheit eines Topfs bei einer Erfassung (Durchsicht von #242, G-I1): Warmwasser in m³, Heizung mit
+// Wärmezählern in kWh, mit Heizkostenverteilern in Einheiten, beim Ablesedienst wie er sie nennt. Dieselbe Regel
+// gilt für den Ausweis (calc.ts `potUnitOf`) und für die Einheit, unter der eine Schätzung gespeichert wird.
+export const potUnitFor = (capture: CaptureMethod, pot: 'heating' | 'water', serviceRows: readonly HeatingServiceValue[]): 'kWh' | 'm³' | 'Einheiten' =>
+  pot === 'water' ? 'm³' : capture === 'heatMeter' ? 'kWh' : capture === 'serviceValues' ? serviceHeatUnit(serviceRows) : 'Einheiten'
+
+// Passt eine Schätzung nach § 9a zur Erfassung der Heizperiode (Durchsicht von #242, G-I1)? Gespeichert ist sie mit
+// Erfassung und Einheit; beim Warmwasser zählt nur, ob eigene Zähler oder ein Ablesedienst erfassen, denn
+// Wärmezähler und Heizkostenverteiler lesen dasselbe Warmwasser in m³. Passt sie nicht, rechnet sie nicht: Ein
+// Wert in kWh, verteilt als Einheiten, verschöbe Geld zwischen den Mietern, ohne dass es jemand sähe.
+export function estimateFits(e: Pick<HeatingEstimate, 'part' | 'capture' | 'valueUnit'>, capture: CaptureMethod, serviceRows: readonly HeatingServiceValue[]): boolean {
+  const sameSource = e.part === 'water' ? (e.capture === 'serviceValues') === (capture === 'serviceValues') : e.capture === capture
+  return sameSource && e.valueUnit === potUnitFor(capture, e.part === 'heat' ? 'heating' : 'water', serviceRows)
+}
+// Die Erfassung im Satz („bei Erfassung mit Wärmezählern“).
+export const CAPTURE_TEXT: Record<CaptureMethod, string> = { heatMeter: 'mit Wärmezählern', hca: 'mit Heizkostenverteilern', serviceValues: 'mit Werten eines Ablesedienstes' }
+
 // ---------- Ausweis je Gerät ----------
 
 // Je Heizkostenverteiler die Einheiten der Heizperiode für den Ausweis (Entwurf 8.8: „bei HKV je Gerät;
@@ -202,6 +219,21 @@ export function mixedCapture(capture: CaptureMethod, unitIds: readonly string[],
   const switched = foreign.filter((u) => has(u, own))
   const ownUnits = [...ids].filter((u) => has(u, own) && !switched.includes(u))
   const lists = capture === 'hca' ? { heatMeterUnits: foreign, hcaUnits: ownUnits } : { heatMeterUnits: ownUnits, hcaUnits: foreign }
+  return switched.length > 0 ? { ...lists, switched } : lists
+}
+
+// Heizung PR 13: Eine Wohnung mit Gerätewechsel mitten in der Heizperiode, deren Verbrauch der Heizung nach
+// § 9a geschätzt ist, zählt nicht mehr als gemischt; die Schätzung in der Einheit der eingestellten Erfassung
+// deckt die Zeit mit dem anderen Gerät. Bleibt keine gemischte Wohnung, `null`.
+export function withoutEstimatedSwitches(m: MixedCapture, capture: 'heatMeter' | 'hca', estimated: ReadonlySet<string>): MixedCapture | null {
+  const resolved = (m.switched ?? []).filter((u) => estimated.has(u))
+  if (resolved.length === 0) return m
+  const foreignKey = capture === 'hca' ? 'heatMeterUnits' : 'hcaUnits'
+  const ownKey = capture === 'hca' ? 'hcaUnits' : 'heatMeterUnits'
+  const foreign = m[foreignKey].filter((u) => !resolved.includes(u))
+  if (foreign.length === 0) return null
+  const switched = (m.switched ?? []).filter((u) => !resolved.includes(u))
+  const lists = { [foreignKey]: foreign, [ownKey]: [...m[ownKey], ...resolved] } as Pick<MixedCapture, 'heatMeterUnits' | 'hcaUnits'>
   return switched.length > 0 ? { ...lists, switched } : lists
 }
 
@@ -260,7 +292,8 @@ export function mixedCaptureText(capture: CaptureMethod, m: MixedCapture, nameOf
   const switchedText = switched.length === 0 ? '' :
     `Bei ${andList(switched.map(nameOf))} wechselt das Gerät innerhalb der Heizperiode: Wärmezähler und Heizkostenverteiler haben Ablesungen nur für einen Teil davon. ` +
     'Mietfuchs lässt den Verbrauch des einen Geräts deshalb nicht weg. Liegt der Wechsel am Tag vor dem Beginn der Heizperiode (bei einer Heizperiode im Kalenderjahr am 31.12.), braucht es nur den Stand des neuen Geräts an diesem Tag. ' +
-    `Sonst ist der Verbrauch der Zeit mit dem anderen Gerät in der Einheit der eingestellten Erfassung zu ermitteln: mit einem Zwischenstand oder, wenn es keinen gibt, nach § 9a HeizkostenV geschätzt. Das rechnet Mietfuchs mit einer späteren Version. `
+    'Sonst ist der Verbrauch der Zeit mit dem anderen Gerät in der Einheit der eingestellten Erfassung zu ermitteln, und wenn das nicht ordnungsgemäß geht, nach § 9a HeizkostenV zu schätzen: ' +
+    `Tragen Sie dann auf der Seite Heizkosten unter „Schätzung (§ 9a)“ den Verbrauch der ganzen Heizperiode für ${switched.length === 1 ? 'diese Wohnung' : 'jede dieser Wohnungen'} in ${capture === 'hca' ? 'Einheiten' : 'kWh'} ein. `
   // #218: Die Vorerfassung nach Nutzergruppen kommt mit einer eigenen Erweiterung.
   // Hängt das andere Gerät nur an Wohnungen mit Wechsel, ist die Vorerfassung nicht der Weg.
   const lasting = (capture === 'hca' ? m.heatMeterUnits : m.hcaUnits).some((u) => !switched.includes(u))

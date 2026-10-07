@@ -16,7 +16,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { AiSettings, AiSlot, Co2Statement, DegreeDayValue, FrozenFuelCarry, FuelDelivery, FuelDeliveryPart, Co2TenantRelief, CostItem, HeatingPeriodData, HeatingPlant, HeatingPlantUnit, HeatingPrepaymentOverride, InterimGap, SelfSpanRange, SeparateSpan, PeriodKey, PeriodRules, Meter, Payment, PersonEntry, PrepaymentEntry, Reading, RentEntry, Settings, Tenancy, Unit, ExternalBasis, UploadInfo, StoredAssessment, StoredAssessmentLine } from '../../shared/types.ts'
+import type { AiSettings, AiSlot, Co2Statement, DegreeDayValue, FrozenFuelCarry, FuelDelivery, FuelDeliveryPart, Co2TenantRelief, CostItem, HeatingEstimate, HeatingPeriodData, HeatingPlant, HeatingPlantUnit, HeatingPrepaymentOverride, InterimGap, SelfSpanRange, SeparateSpan, PeriodKey, PeriodRules, Meter, Payment, PersonEntry, PrepaymentEntry, Reading, RentEntry, Settings, Tenancy, Unit, ExternalBasis, UploadInfo, StoredAssessment, StoredAssessmentLine } from '../../shared/types.ts'
 import type { ClosedSettlement } from '../src/store.ts'
 import { applyMigrations, connect, loadMigrations } from '../src/db/client.ts'
 import * as schema from '../src/db/schema.ts'
@@ -218,6 +218,9 @@ type _AssessmentLines = Assert<Matches<typeof schema.assessmentLines.$inferSelec
 type PeriodChangeRow = typeof schema.periodChanges.$inferSelect
 type _PeriodChangeMonth = Assert<Equals<PeriodChangeRow['fromMonth'], PeriodRules['changes'][number]>>
 
+// --- Schätzung nach § 9a (Heizung PR 13) ---
+type _Estimates = Assert<Matches<typeof schema.heatingEstimates.$inferSelect, Omit<HeatingEstimate, 'plantId' | 'period'> & { heatingPeriodId: string }>>
+
 // ---------- Ebene 2: die Zusicherungen an einer echten Datenbank ----------
 
 async function freshDb() {
@@ -276,6 +279,7 @@ test('Migration lässt sich anwenden und legt alle Tabellen an', async () => {
       'fuel_carry_frozen',
       'fuel_deliveries',
       'fuel_delivery_parts',
+      'heating_estimates',
       'heating_period_changes',
       'heating_periods',
       'heating_plant_units',
@@ -1082,6 +1086,35 @@ test('Heizung PR 12: Skala und Faktor nur am Heizkostenverteiler, Faktor über 0
     connection.exec("DELETE FROM meters WHERE unit_id = 'a'")
     connection.exec("DELETE FROM units WHERE id = 'a'")
     assert.deepEqual(connection.rows('SELECT COUNT(*) FROM heating_service_values'), [[0]])
+  } finally {
+    cleanup()
+  }
+})
+
+// ---------- Schätzung nach § 9a (Heizung PR 13) ----------
+
+test('Schätzung: Wert ab 0, Begründung Pflicht, bekannter Weg und Teil, eine Zeile je Wohnung und Topf, fällt mit der Wohnung', async () => {
+  const { connection, cleanup } = await freshDb()
+  try {
+    connection.exec(einWohnung)
+    connection.exec("INSERT INTO heating_plants (id, property_id, energy) VALUES ('hp1', 'objekt-1', 'gas')")
+    connection.exec("INSERT INTO heating_periods (id, plant_id, period) VALUES ('h1', 'hp1', '2025-01')")
+    // Grund, Erfassung und Einheit (Durchsicht von #242, R-I1 und G-I1) hängen hinten an.
+    const insert = (values: string, rest = "'deviceFailure', 'heatMeter', 'kWh'") => rejects(connection, `INSERT INTO heating_estimates (heating_period_id, unit_id, part, value, method, reason, confirmed, cause, capture, value_unit) VALUES (${values}, ${rest})`)
+    assert.equal(insert("'h1', 'u1', 'heat', 12000, 'buildingAverage', 'Zähler defekt', 1"), null)
+    assert.ok(insert("'h1', 'u1', 'heat', 11000, 'buildingAverage', 'Zähler defekt', 1"), 'dieselbe Wohnung und derselbe Topf zweimal')
+    assert.ok(insert("'h1', 'u1', 'water', -1, 'buildingAverage', 'Zähler defekt', 0"), 'negativer Wert')
+    assert.ok(insert("'h1', 'u1', 'water', 30, 'buildingAverage', '  ', 0"), 'ohne Begründung')
+    assert.ok(insert("'h1', 'u1', 'water', 30, 'schaetzen', 'Zähler defekt', 0"), 'unbekannter Weg')
+    assert.ok(insert("'h1', 'u1', 'heating', 30, 'buildingAverage', 'Zähler defekt', 0"), 'unbekannter Teil')
+    assert.ok(insert("'h1', 'zz', 'water', 30, 'buildingAverage', 'Zähler defekt', 0"), 'unbekannte Wohnung')
+    assert.ok(insert("'h1', 'u1', 'water', 30, 'buildingAverage', 'Zähler defekt', 0", "'raten', 'heatMeter', 'm³'"), 'unbekannter Grund')
+    assert.ok(insert("'h1', 'u1', 'water', 30, 'buildingAverage', 'Zähler defekt', 0", "'deviceFailure', 'verdunster', 'm³'"), 'unbekannte Erfassung')
+    assert.ok(insert("'h1', 'u1', 'water', 30, 'buildingAverage', 'Zähler defekt', 0", "'deviceFailure', 'heatMeter', 'Liter'"), 'unbekannte Einheit')
+    assert.ok(insert("'h1', 'u1', 'water', 30, 'buildingAverage', 'Zähler defekt', 0", "NULL, 'heatMeter', 'm³'"), 'ohne Grund')
+    assert.deepEqual(connection.rows('SELECT confirmed FROM heating_estimates'), [[1]])
+    connection.exec("DELETE FROM units WHERE id = 'u1'")
+    assert.equal(Number(connection.rows('SELECT count(*) FROM heating_estimates')[0]?.[0]), 0)
   } finally {
     cleanup()
   }

@@ -41,7 +41,8 @@ const ENGINE_FILES = ['server/src/calc.ts', 'server/src/snapshot.ts', 'shared/he
 const CLIENT_LAW_FILES = ['client/src/components/HeatingCard.tsx', 'client/src/pages/Zaehler.tsx', 'client/src/heatingForm.ts', 'client/src/meterForm.ts']
 const CLIENT_LAW_PATTERNS = [...DATE_PATTERNS, /(?<![\w.])20[12]\d(?!\w|\.\d)/g]
 const CODE_FILES = [...ENGINE_FILES, 'server/src/invoiceAmounts.ts']
-const CODE_PATTERN = /(?<![\w.])(15|50|70|19|16|2021|2024|2027)(?![\w.])/g
+// 25: `hkv.estimate-threshold` (§ 9a Abs. 2 HeizkostenV, Heizung PR 13).
+const CODE_PATTERN = /(?<![\w.])(15|25|50|70|19|16|2021|2024|2027)(?![\w.])/g
 
 type Allowed = { file: string; match: string; reason: string }
 const ALLOWED: readonly Allowed[] = [

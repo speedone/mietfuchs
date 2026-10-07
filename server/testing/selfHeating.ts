@@ -11,7 +11,7 @@
 // nicht als freies Objektliteral (CLAUDE.md). Bekommt ein Typ in einer späteren PR ein Pflichtfeld, nennt
 // der Übersetzer die Stelle hier; die PR ergänzt es mit dem Wert, den ihre Vorgabe setzt.
 import type {
-  CostItem, FuelDelivery, HeatingPart, HeatingPeriodData, HeatingPlant, HeatingServiceValue, HeatingTarget, Meter, MeterType, Reading, Tenancy, Unit,
+  CostItem, FuelDelivery, HeatingEstimate, HeatingPart, HeatingPeriodData, HeatingPlant, HeatingServiceValue, HeatingTarget, Meter, MeterType, Reading, Tenancy, Unit,
 } from '../../shared/types.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import { CALENDAR_RULES, periodKey, periodOfKey } from '../../shared/period.ts'
@@ -37,6 +37,8 @@ export type SelfSnapshotOptions = {
   costItems?: CostItem[]
   // Werte eines Ablesedienstes (Heizung PR 12).
   serviceValues?: HeatingServiceValue[]
+  // Schätzungen nach § 9a (Heizung PR 13).
+  estimates?: HeatingEstimate[]
 }
 
 const P = 'objekt-1'
@@ -86,6 +88,29 @@ export const selfMeter = (id: string, unitId: string | null, name: string, type:
   ({ id, propertyId: P, name, unitId, type, unit: type === 'warmwasser' ? 'm³' : 'kWh', ...over })
 export const selfReading = (meterId: string, date: string, value: number): Reading => ({ id: `${meterId}@${date}`, meterId, date, value })
 
+// Die Zähler und Ablesungen von Beispiel A (Heizung PR 13 herausgezogen, damit Tests einzelne ergänzen oder
+// weglassen können).
+export const selfMeters = (): Meter[] => [
+  selfMeter('wz-a', 'a', 'Wärme A', 'waerme'), selfMeter('xw-a', 'a', 'Warmwasser A', 'warmwasser'),
+  selfMeter('wz-b', 'b', 'Wärme B', 'waerme'), selfMeter('xw-b', 'b', 'Warmwasser B', 'warmwasser'),
+  selfMeter('wz-c', 'c', 'Wärme C', 'waerme'), selfMeter('xw-c', 'c', 'Warmwasser C', 'warmwasser'),
+  selfMeter('ww', null, 'Wärmezähler Warmwasserspeicher', 'waerme', { heatingPlantId: 'hp', heatingRole: 'dhwHeat' }),
+]
+export function selfReadings(year = 2025): Reading[] {
+  const start = `${year - 1}-12-31`
+  const change = `${year}-09-30`
+  const end = `${year}-12-31`
+  return [
+    selfReading('wz-a', start, 1000), selfReading('wz-a', end, 13000),
+    selfReading('wz-b', start, 0), selfReading('wz-b', end, 16000),
+    selfReading('wz-c', start, 500), selfReading('wz-c', change, 7700), selfReading('wz-c', end, 12500),
+    selfReading('xw-a', start, 10), selfReading('xw-a', end, 40),
+    selfReading('xw-b', start, 0), selfReading('xw-b', end, 40),
+    selfReading('xw-c', start, 5), selfReading('xw-c', change, 43), selfReading('xw-c', end, 55),
+    selfReading('ww', start, 0), selfReading('ww', end, 9000),
+  ]
+}
+
 export function selfSnapshot(o: SelfSnapshotOptions = {}): Snapshot {
   const year = o.year ?? 2025
   const key = periodKey(`${year}-01`)
@@ -101,21 +126,8 @@ export function selfSnapshot(o: SelfSnapshotOptions = {}): Snapshot {
     selfTenancy('C1', 'c', '2020-01-01', change),
     selfTenancy('C2', 'c', `${year}-10-01`, null),
   ]
-  const meters = o.meters ?? [
-    selfMeter('wz-a', 'a', 'Wärme A', 'waerme'), selfMeter('xw-a', 'a', 'Warmwasser A', 'warmwasser'),
-    selfMeter('wz-b', 'b', 'Wärme B', 'waerme'), selfMeter('xw-b', 'b', 'Warmwasser B', 'warmwasser'),
-    selfMeter('wz-c', 'c', 'Wärme C', 'waerme'), selfMeter('xw-c', 'c', 'Warmwasser C', 'warmwasser'),
-    selfMeter('ww', null, 'Wärmezähler Warmwasserspeicher', 'waerme', { heatingPlantId: 'hp', heatingRole: 'dhwHeat' }),
-  ]
-  const readings = o.readings ?? [
-    selfReading('wz-a', start, 1000), selfReading('wz-a', end, 13000),
-    selfReading('wz-b', start, 0), selfReading('wz-b', end, 16000),
-    selfReading('wz-c', start, 500), selfReading('wz-c', change, 7700), selfReading('wz-c', end, 12500),
-    selfReading('xw-a', start, 10), selfReading('xw-a', end, 40),
-    selfReading('xw-b', start, 0), selfReading('xw-b', end, 40),
-    selfReading('xw-c', start, 5), selfReading('xw-c', change, 43), selfReading('xw-c', end, 55),
-    selfReading('ww', start, 0), selfReading('ww', end, 9000),
-  ]
+  const meters = o.meters ?? selfMeters()
+  const readings = o.readings ?? selfReadings(year)
   const item = (id: string, description: string, amountCents: number, heatingPart: HeatingPart, heatingTarget: HeatingTarget, extra: Partial<CostItem> = {}): CostItem => ({
     id, propertyId: P, period: key, category: HEATING_CATEGORY, description, amountCents, key: 'heatingSystem',
     heatingPlantId: 'hp', heatingPart, heatingTarget, ...extra,
@@ -135,6 +147,7 @@ export function selfSnapshot(o: SelfSnapshotOptions = {}): Snapshot {
     units, tenancies, costItems, meters, readings, payments: [], closedSettlements: [],
     heatingPlants: [plant, ...(o.plants ?? [])], heatingPeriodRows: rows, fuelDeliveries: deliveries,
     heatingServiceValues: o.serviceValues ?? [],
+    ...(o.estimates ? { heatingEstimates: o.estimates } : {}),
   }
   return snapshotFor(source, P, period)
 }
