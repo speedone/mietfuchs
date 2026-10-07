@@ -395,9 +395,10 @@ test('Durchsicht Runde 2, G2-N-W1: Warmwasser ohne Wärmezähler unter Ausnahme 
   const ohne = notice(run({}), 'heating.dhw-not-metered').text
   assert.equal(tenantCut(ohne, 'Mieter A'), '265,19 €')
   const heat = notice(run({ exemption: 'lowDemand', exemptionScope: 'heat' }), 'heating.dhw-not-metered').text
-  assert.match(heat, /nur den Anteil am Warmwasser, hier: Mieter A \(A\) /)
-  const a = Number(tenantCut(heat, 'Mieter A').replace(/[^0-9,]/g, '').replace(',', '.'))
-  assert.ok(a > 60 && a < 75, `A ${a} €, erwartet rund 67,60 €`)
+  // Runde 3: exakte Beträge (Nachprüfung Geld, unabhängig nachgerechnet) und die Obergrenze nach dem BGH, als Auslegung gekennzeichnet (N2-W1).
+  assert.match(heat, /nur 15 % des Anteils am Warmwasser, hier: Mieter A \(A\) 67,59 €, Mieter B \(B\) 90,12 €, Mieter C1 \(C\) 73,71 € und Mieter C2 \(C\) 23,64 €/)
+  assert.match(heat, /Auslegung von Mietfuchs, entschieden ist es nicht; bis zum Betrag auf Wärme und Warmwasser insgesamt ist eine Kürzung deshalb nicht ausgeschlossen, das wären Mieter A \(A\) 265,19 €/)
+  assert.match(heat, /Der BGH hat dafür im Fall ohne Ausnahme die Kosten für Wärme und Warmwasser insgesamt um 15 % gekürzt \(BGH, Urteil vom 12\.01\.2022, VIII ZR 151\/20\)\. Weil/)
   assert.ok(!codes(run({ exemption: 'lowDemand', exemptionScope: 'both' })).includes('heating.dhw-not-metered'))
 })
 
@@ -436,6 +437,9 @@ test('Durchsicht Runde 2, R2-N-W2: Für den nach § 9a geschätzten Mieter gelte
   assert.doesNotMatch(list, /Mieter A/)
   assert.match(list, /Mieter B \(B\)/)
   assert.match(n.text, /mindestens die Angaben nach Abs\. 5, also Nr\. 2 und 3.*keine Kürzung wegen der Nr\. 1, 4 und 5.*Auslegung von Mietfuchs/s)
+  // Runde 3 (N2-K2): Der Wortlaut nennt § 9a nicht ausdrücklich; er nimmt ihn über „beruhen“ mittelbar aus.
+  assert.match(n.text, /der Wortlaut der Verordnung nennt § 9a nicht ausdrücklich/)
+  assert.doesNotMatch(n.text, /nimmt § 9a nicht aus/)
   assert.deepEqual(infoOf(s).users.find((u) => u.tenancyId === 'A')?.missing, [])
 })
 
@@ -503,4 +507,26 @@ test('Durchsicht Runde 2, G2-N-K2: co2.exempt-deducted nur, wenn der Messdienst 
   const s = computeSettlement(beispiel({ row: { exemption: 'lowDemand', exemptionScope: 'both' } }))
   assert.ok(codes(s).includes('heating.exemption'))
   assert.ok(!codes(s).includes('co2.exempt-deducted' as never), codes(s).join(', '))
+})
+
+// ---------- Durchsicht von #243, Runde 3 ----------
+
+test('Durchsicht Runde 3, N2-H1 und N2-H2: „nach Wohnfläche“ – Mieterwechsel ohne Zwischenablesung ohne Pflicht und Frage; Gradtagzahlen im Rechenweg benannt', () => {
+  const einlieger = (row: Partial<HeatingPeriodData>): Snapshot => beispiel({
+    units: [selfUnit('a', 60, { participates: false, selfUsed: true, selfPersons: 1 }), selfUnit('b', 80)],
+    tenancies: [selfTenancy('B1', 'b', '2020-01-01', '2025-06-30'), selfTenancy('B2', 'b', '2025-07-01', null)],
+    row: { ...ANGABEN, ...row },
+  })
+  const ohne = computeSettlement(einlieger({}))
+  assert.ok(codes(ohne).includes('heating.no-interim-reading-missed'), codes(ohne).join(', '))
+  const flaeche = computeSettlement(einlieger({ agreedOtherwise: 'area' }))
+  assert.ok(!codes(flaeche).includes('heating.no-interim-reading-missed'), codes(flaeche).join(', '))
+  assert.doesNotMatch(flaeche.notices.map((n) => n.text).join(' '), /Zwischenablesung war Pflicht/)
+  const steps = flaeche.statements.find((st) => st.tenancyId === 'B1')?.rows.find((r) => r.costItemId === 'gas')?.steps ?? assert.fail('kein Rechenweg')
+  const text = steps.map((x) => `${x.label}: ${x.value}`).join(' | ')
+  assert.match(text, /Gradtage \(nach Gradtagzahlen geteilt wie § 9b Abs\. 2 HeizkostenV, sinngemäß\)/)
+  assert.match(text, /Verbrauchskosten Heizung: keine: nach der Vereinbarung \(§ 2 HeizkostenV\) nur nach Wohnfläche verteilt/)
+  // Ohne Vereinbarung steht die Klammer nicht da.
+  const ohneSteps = ohne.statements.find((st) => st.tenancyId === 'B1')?.rows.find((r) => r.costItemId === 'gas')?.steps ?? []
+  assert.doesNotMatch(ohneSteps.map((x) => x.value).join(' '), /sinngemäß/)
 })

@@ -9,7 +9,8 @@ const ENERGY_TEXT: Record<HeatingEnergy, string> = {
 }
 const n = (v: number, digits = 2): string => v.toLocaleString('de-DE', { maximumFractionDigits: digits })
 
-export function infoLines(info: HeatingInfoStatement): string[] {
+// `tenancyId`: der Mieter, dessen Block gedruckt wird; für ihn im ersten Jahr gibt es keinen Vorjahresvergleich (Runde 3, N2-K1).
+export function infoLines(info: HeatingInfoStatement, tenancyId?: string): string[] {
   const lines: string[] = []
   if (info.heatExempt) lines.push('Die Heizung ist nach § 11 HeizkostenV von der Verbrauchserfassung ausgenommen; die folgenden Angaben betreffen das Warmwasser.')
   if (info.scope === 'full') {
@@ -26,7 +27,13 @@ export function infoLines(info: HeatingInfoStatement): string[] {
     // Durchsicht von #243, R-W6: ohne Position mit dem Teil Erfassung keine Zahl; mit, für das ganze Gebäude.
     if (info.meteringCents !== null) lines.push(`Entgelte für Erfassungsgeräte, Eichung, Ablesung und Abrechnung, insgesamt für das Gebäude: ${fmtEuro(info.meteringCents)}`)
     // R-W1: der beigelegte Vergleich des Ablesedienstes.
-    if (info.comparisonSource) lines.push(`Vergleich mit einem Durchschnittsnutzer${info.comparisons && !info.comparisonCoversPrev ? '' : ' und mit dem vorhergehenden Abrechnungszeitraum'}: liegt der Abrechnung bei (${info.comparisonSource})`)
+    if (info.comparisonSource) {
+      const user = tenancyId === undefined ? undefined : info.users.find((u) => u.tenancyId === tenancyId)
+      const withPrev = !(info.comparisons && !info.comparisonCoversPrev) && user?.firstPeriod !== true
+      // Ohne Plan (freie Schlüssel) weiß Mietfuchs nicht, ob der Mieter im vorhergehenden Zeitraum schon dort wohnte.
+      const prevText = withPrev ? (tenancyId !== undefined && user === undefined ? ' und, soweit vorhanden, mit dem vorhergehenden Abrechnungszeitraum' : ' und mit dem vorhergehenden Abrechnungszeitraum') : ''
+      lines.push(`Vergleich mit einem Durchschnittsnutzer${prevText}: liegt der Abrechnung bei (${info.comparisonSource})`)
+    }
   }
   lines.push(`Informationen zum Energiesparen, zu Vergleichsprofilen und zu energiebetriebenen Geräten (Stand ${germanDate(info.contactsChecked)}):`)
   for (const c of info.contacts) lines.push(`${c.name}, ${c.url} – ${c.what}`)

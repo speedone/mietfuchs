@@ -1410,7 +1410,8 @@ lässt die Wahl nur für künftige Zeiträume zu. Der Anteil gehört zur **Linie
   beziffert es dann nur auf den Anteil Warmwasser** (`waterBaseOf`: Kosten des Topfs mal Gewicht, abzüglich des
   CO₂-Abzugs im Topf; bei freien Schlüsseln die Positionen mit Ziel Warmwasser, eine Position für beides ohne
   Betrag), ebenso bei der Fernablesbarkeit und der monatlichen Information nur die Warmwassergeräte (Durchsicht
-  von #243). Hat der Messdienst unter voller Ausnahme trotzdem CO₂ abgezogen, bleibt der Abzug zerlegt (der Teil
+  von #243). Beim Warmwasser ohne Wärmezähler ist das als Auslegung gekennzeichnet, und der Betrag auf Wärme und
+  Warmwasser insgesamt (wie BGH VIII ZR 151/20) steht als Obergrenze dabei. Hat der Messdienst unter voller Ausnahme trotzdem CO₂ abgezogen, bleibt der Abzug zerlegt (der Teil
   der eigenen Wohnung ist privat) und `co2.exempt-deducted` sagt es. Eine Vereinbarung nach
   § 2 (`agreedFor`) wirkt nur, solange das Haus im Zeitraum die Voraussetzung erfüllt (`heatingAgreeable`), und
   hebt nur die Kürzung nach § 12 Abs. 1 Satz 1 auf. „Nach Wohnfläche“ verteilt die eigene Abrechnung ganz nach

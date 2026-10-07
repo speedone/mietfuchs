@@ -23,7 +23,8 @@ export const EXEMPTION_OPTIONS: { value: HeatingExemption; label: string; text: 
 export const EXEMPTION_NOT_OFFERED = 'Nicht zur Wahl stehen Alters- und Pflegeheime, Studenten- und Lehrlingsheime und vergleichbare Gebäude (§ 11 Abs. 1 Nr. 2) und die gesondert abgerechneten Kosten der Hausanlagen bei einer Wärmelieferung (Nr. 4); diese Fälle deckt Mietfuchs nicht ab.'
 export const EXEMPTION_SCOPE_OPTIONS: { value: ExemptionScope; label: string }[] = [
   { value: 'heat', label: 'Nein, nur die Wärme' },
-  { value: 'both', label: 'Ja, Wärme und Warmwasser (§ 11 Abs. 2 HeizkostenV)' },
+  // Kurz genug für 390 px (Runde 3, N2-K3).
+  { value: 'both', label: 'Ja, auch das Warmwasser (Abs. 2)' },
 ]
 export const AGREED_OPTIONS: { value: AgreedOtherwise; label: string }[] = [
   { value: 'none', label: 'Keine abweichende Vereinbarung: die Heizkostenverordnung gilt' },

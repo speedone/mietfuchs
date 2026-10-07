@@ -98,3 +98,8 @@ test('Durchsicht Runde 2: Lexikon und Anleitung zu § 9a (R2-N-W2) und zum Verbr
   assert.doesNotMatch(text, /und ob Sie als Unternehmer vermieten/)
   assert.match(text, /ob Ihr Mietvertrag ein Verbrauchervertrag ist/)
 })
+
+test('Durchsicht Runde 3, N2-H2: Lexikon erklärt die Gradtagzahlen beim Wechsel unter einer Vereinbarung nach § 2', async () => {
+  const { GLOSSARY } = await import('../../shared/glossary.ts')
+  assert.match(GLOSSARY.degreeDays.needed, /nach § 2 HeizkostenV eine Verteilung nach Wohnfläche vereinbart.*sinngemäß \(Festlegung von Mietfuchs\)/s)
+})
