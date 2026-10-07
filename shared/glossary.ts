@@ -14,7 +14,8 @@
 // von `LAW_AS_OF`: Das Lexikon erklärt das geltende Recht. Die Zahlen einer Beispielrechnung („70 %
 // nach Verbrauch“) sind gewählt und bleiben stehen.
 import { hkvConsumptionShare, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit } from './law/heizkostenv.ts'
-import { germanDate, LAW_AS_OF, onlyVersion, valueAt } from './law/register.ts'
+import { dayBefore as dayBeforeIso, germanDate, LAW_AS_OF, onlyVersion, valueAt } from './law/register.ts'
+import { practiceEvaporatorWindow } from './law/practice.ts'
 import { co2CutMissing, co2DistrictEtsNew, co2FirstPeriodStart, co2NonResidential, co2Restriction, co2RoundingDecimals, co2StageTable } from './law/co2kostaufg.ts'
 
 const SHARE = valueAt(hkvConsumptionShare, LAW_AS_OF)
@@ -32,6 +33,14 @@ const DHW_Q_AREA = DHW_AREA.kwhPerM2 * DHW_EXAMPLE.areaM2
 const REMOTE_CUT = valueAt(hkvCutRemoteReading, LAW_AS_OF)
 const NEW_DEVICES_AFTER = germanDate(valueAt(hkvRemoteReadingNewDevices, LAW_AS_OF).installedAfter)
 const RETROFIT_FROM = germanDate(onlyVersion(hkvRemoteReadingRetrofit).validFrom ?? '')
+// Heizkostenverteiler (Heizung PR 12): Beispiel mit zwei Bewertungsfaktoren. Die Zahlen des Hauses
+// sind Beispielzahlen und keine Rechtswerte.
+const EVAPORATOR = valueAt(practiceEvaporatorWindow, LAW_AS_OF)
+const HCA = { livingRaw: 500, livingFactor: 1.25, bathRaw: 200, bathFactor: 0.8, houseUnits: 7850, consumptionEuro: 2100 }
+const hcaDe = (n: number) => n.toLocaleString('de-DE', { maximumFractionDigits: 2 })
+const HCA_LIVING = HCA.livingRaw * HCA.livingFactor
+const HCA_BATH = Math.round(HCA.bathRaw * HCA.bathFactor * 100) / 100
+const HCA_FLAT = HCA_LIVING + HCA_BATH
 
 // CO₂ (Heizung PR 6): die Stufentabelle, die Rundung und die 3 % aus dem Register. Die Stufe eines
 // Beispielwerts wird hier nachgeschlagen wie in server/src/co2.ts (unten einschließend), damit das
@@ -202,10 +211,38 @@ export const GLOSSARY = {
   },
   heatCostAllocator: {
     title: 'Heizkostenverteiler',
-    short: `Ein kleines Gerät am Heizkörper, das anzeigt, wie viel dieser Heizkörper im Verhältnis zu den übrigen geheizt hat. Seine Werte sind keine Kilowattstunden, sondern Einheiten, die erst mit den Werten aller Geräte des Hauses etwas bedeuten. Geräte, die nach dem ${NEW_DEVICES_AFTER} eingebaut wurden, müssen aus der Ferne ablesbar sein, alle übrigen ab dem ${RETROFIT_FROM}.`,
-    example: `Im Wohnzimmer zeigt der Verteiler 420 Einheiten, im ganzen Haus sind es 4.200. Auf diesen Heizkörper entfällt damit ein Zehntel der Kosten nach Verbrauch, bei 2.100 € also 210 €. Ist das Gerät nicht fernablesbar, obwohl es das sein müsste, darf der Mieter seinen Anteil an den Heizkosten um ${REMOTE_CUT} % kürzen.`,
+    short:
+      'Ein kleines Gerät am Heizkörper, das anzeigt, wie viel dieser Heizkörper im Verhältnis zu den übrigen geheizt hat. Seine Werte sind keine Kilowattstunden, sondern Einheiten, die erst mit den Werten aller Geräte des Hauses etwas bedeuten. ' +
+      'Bei der Einheitsskala wird der Ablesewert mit dem Bewertungsfaktor des Heizkörpers malgenommen; die Abrechnung nennt den Faktor, damit der Mieter sie nachprüfen kann, so machen es die Messdienste. Bei der Produktskala ist er schon eingerechnet. ' +
+      'Elektronische Geräte setzen am Stichtag auf null und speichern den Wert des Stichtags. ' +
+      `Geräte, die nach dem ${NEW_DEVICES_AFTER} eingebaut wurden, müssen aus der Ferne ablesbar sein, alle übrigen ab dem ${RETROFIT_FROM}.`,
+    example:
+      `Im Wohnzimmer zeigt ein Verteiler mit Einheitsskala ${hcaDe(HCA.livingRaw)}, sein Bewertungsfaktor ist ${hcaDe(HCA.livingFactor)}: das sind ${hcaDe(HCA_LIVING)} Einheiten. ` +
+      `Im Bad zeigt einer ${hcaDe(HCA.bathRaw)} bei Faktor ${hcaDe(HCA.bathFactor)}: ${hcaDe(HCA_BATH)} Einheiten. ` +
+      `Die Wohnung hat damit ${hcaDe(HCA_FLAT)} von ${hcaDe(HCA.houseUnits)} Einheiten des Hauses, also ein Zehntel der Kosten nach Verbrauch, bei ${hcaDe(HCA.consumptionEuro)} € also ${hcaDe((HCA.consumptionEuro * HCA_FLAT) / HCA.houseUnits)} €. ` +
+      `Ist das Gerät nicht fernablesbar, obwohl es das sein müsste, darf der Mieter seinen Anteil an den Heizkosten um ${REMOTE_CUT} % kürzen.`,
     norm: '§§ 5, 12 HeizkostenV',
-    needed: 'Wenn Ihr Messdienst die Heizkosten nach Heizkostenverteilern abrechnet. Mietfuchs wertet ihre Einheiten noch nicht selbst aus; übernehmen Sie dafür die Abrechnung des Messdienstes als Einzelbeträge. Tragen Sie am Zähler ein, ob das Gerät fernablesbar ist und wann es eingebaut wurde; dann sagt die Abrechnung, ob Mieter kürzen dürfen.',
+    needed:
+      'Wenn Ihr Haus Heizkostenverteiler hat. Rechnet ein Messdienst ab, übernehmen Sie seine Beträge als Einzelbeträge. ' +
+      'Rechnen Sie selbst ab und lesen elektronische Geräte selbst ab, tragen Sie an jedem Gerät Skala und Bewertungsfaktor ein, und zum Stichtag den Stichtagswert laut Anzeige. Skala und Faktor finden Sie in der Geräteliste des Messdienstes oder in den Unterlagen des Herstellers. Ein Gerät mit anderem Faktor ist ein neues Gerät. ' +
+      'Verwenden dürfen Sie nur Geräte, deren Eignung eine sachverständige Stelle bestätigt hat (§ 5 Abs. 1 Satz 2 HeizkostenV); der Faktor hängt am Heizkörper und ist fachgerecht zu ermitteln, etwa vom Messdienst. ' +
+      'Verdunster wertet Mietfuchs nicht selbst aus; übernehmen Sie dafür die Werte des Ablesedienstes je Wohnung und Nutzungszeitraum. ' +
+      `Eine Zwischenablesung bei Verdunstern empfiehlt die Arbeitsgemeinschaft Heiz- und Wasserkostenverteilung in der Regel nur, wenn seit der Hauptablesung ${EVAPORATOR.min} bis ${EVAPORATOR.max} ‰ der Gradtagszahlen vergangen sind. Verdunster lassen sich nicht aus der Ferne ablesen; nicht fernablesbare Geräte müssen bis zum ${germanDate(dayBeforeIso(onlyVersion(hkvRemoteReadingRetrofit).validFrom ?? ''))} ersetzt oder nachgerüstet sein. ` +
+      'Tragen Sie am Zähler ein, ob das Gerät fernablesbar ist und wann es eingebaut wurde; dann sagt die Abrechnung, ob Mieter kürzen dürfen.',
+  },
+  serviceReading: {
+    title: 'Ablesedienst',
+    short: 'Ein Unternehmen, das die Geräte in den Wohnungen abliest und Ihnen die Werte je Wohnung und Nutzungszeitraum nennt, ohne selbst die Heizkosten abzurechnen. Bei Heizkostenverteilern nennt es bewertete Einheiten, also die Summe nach den Bewertungsfaktoren der Heizkörper.',
+    example: 'Der Dienst meldet für Wohnung A vom 01.01. bis 30.09. 340 Einheiten und für den Nachmieter vom 01.10. bis 31.12. 100 Einheiten. Sie tragen beide Zeilen ein; Mietfuchs verteilt die Kosten nach Verbrauch nach diesen Einheiten.',
+    norm: '§§ 5, 6 HeizkostenV',
+    needed: 'Wenn ein Dienst Ihre Geräte abliest, Sie die Heizkosten aber selbst abrechnen. Rechnet der Dienst auch ab, übernehmen Sie seine Beträge als Einzelbeträge.',
+  },
+  evaporator: {
+    title: 'Verdunster',
+    short: 'Ein älterer Heizkostenverteiler mit einer Flüssigkeit in einem Glasröhrchen, die je nach Wärme des Heizkörpers verdunstet. Der Ablesedienst tauscht das Röhrchen jährlich und wertet es aus; Mietfuchs übernimmt seine Werte. Verdunster lassen sich nicht aus der Ferne ablesen.',
+    example: `Ein Verdunster zeigt am Stichtag 12 Striche; der Ablesedienst rechnet sie mit dem Bewertungsfaktor des Heizkörpers in Einheiten um und nennt Ihnen die Summe je Wohnung. Ist er nicht bis zum ${germanDate(dayBeforeIso(onlyVersion(hkvRemoteReadingRetrofit).validFrom ?? ''))} durch ein fernablesbares Gerät ersetzt, darf der Mieter um ${REMOTE_CUT} % kürzen.`,
+    norm: '§ 5 Abs. 3, § 12 Abs. 1 Satz 2 HeizkostenV',
+    needed: `Wenn Ihr Haus noch Verdunster hat. Eine Zwischenablesung empfiehlt die Arbeitsgemeinschaft Heiz- und Wasserkostenverteilung in der Regel nur, wenn seit der Hauptablesung ${EVAPORATOR.min} bis ${EVAPORATOR.max} ‰ der Gradtagszahlen vergangen sind; sonst wird nach Gradtagen geteilt.`,
   },
   co2Split: {
     title: 'CO₂-Kostenaufteilung',

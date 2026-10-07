@@ -1,5 +1,6 @@
 // Das Formular eines Zählers, ohne DOM prüfbar (meterForm.test.ts).
-import type { HeatingRole, Meter, MeterType } from './types'
+import type { HcaScale, HeatingRole, Meter, MeterType } from './types'
+import { EMPTY_HCA_FIELDS, hcaFieldsBody, hcaFieldsOf, type HcaFieldsForm } from './hcaForm'
 import { hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit } from '../../shared/law/heizkostenv.ts'
 import { germanDate, LAW_AS_OF, onlyVersion, valueAt } from '../../shared/law/register.ts'
 
@@ -22,6 +23,8 @@ export type MeterForm = {
   installedOn: string
   // Heizung PR 9: die gewählte Heizanlage, wenn das Objekt mehrere hat.
   heatingPlantId: string
+  // Heizung PR 12: Skala und Bewertungsfaktor, nur beim Heizkostenverteiler.
+  hca: HcaFieldsForm
 }
 
 // Die Einheit, die ein Zähler seiner Sparte nach meist zeigt (#142). Vorher stand für jede Sparte
@@ -46,7 +49,7 @@ export function withMeterType(form: MeterForm, type: MeterType): MeterForm {
 }
 
 export const emptyMeterForm = (): MeterForm => ({
-  name: '', unitId: '', type: 'kaltwasser', meterNumber: '', unit: defaultMeterUnit('kaltwasser'), heatingRole: '', keptRole: '', remote: '', installedOn: '', heatingPlantId: '',
+  name: '', unitId: '', type: 'kaltwasser', meterNumber: '', unit: defaultMeterUnit('kaltwasser'), heatingRole: '', keptRole: '', remote: '', installedOn: '', heatingPlantId: '', hca: EMPTY_HCA_FIELDS,
 })
 
 export const meterToForm = (m: Meter): MeterForm => ({
@@ -61,6 +64,7 @@ export const meterToForm = (m: Meter): MeterForm => ({
   remote: m.remoteReadable === true ? 'yes' : m.remoteReadable === false ? 'no' : '',
   installedOn: m.installedOn ?? '',
   heatingPlantId: m.heatingPlantId ?? '',
+  hca: hcaFieldsOf(m),
 })
 
 export const HEATING_ROLE_LABELS: Record<HeatingRole, string> = {
@@ -113,6 +117,9 @@ export type MeterBody = {
   // Fehlen ohne Heizanlage im Rumpf: Eine gespeicherte Angabe bleibt dann, wie sie ist.
   remoteReadable?: boolean | null
   installedOn?: string | null
+  // Heizung PR 12: bei jeder anderen Sparte `null`, sonst lehnte der Server ab.
+  hcaScale: HcaScale | null
+  ratingFactor: number | null
 }
 
 // Der Hilfetext am Einbaudatum, mit den Stichtagen aus dem Register (Durchsicht von #230, M5).
@@ -139,6 +146,8 @@ export function meterBody(form: MeterForm, plantId: string | null): { body: Mete
   const role = form.heatingRole !== '' && heatingRoleOptions(form, plantId !== null).includes(form.heatingRole) ? form.heatingRole : null
   const asks = asksRemote({ ...form, heatingRole: role ?? '' }, plantId !== null)
   const number = form.meterNumber.trim()
+  const hca = hcaFieldsBody(form.type, form.hca)
+  if ('error' in hca) return { error: hca.error }
   return {
     body: {
       name: form.name.trim(),
@@ -153,6 +162,7 @@ export function meterBody(form: MeterForm, plantId: string | null): { body: Mete
         remoteReadable: asks && form.remote !== '' ? form.remote === 'yes' : null,
         installedOn: asks && form.installedOn !== '' ? form.installedOn : null,
       }),
+      ...hca.body,
     },
   }
 }

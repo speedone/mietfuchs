@@ -47,6 +47,7 @@ import {
 } from './db/repository.ts'
 import { removeInterimGap, saveDistribution, saveInterimGap, SelfItemsError, setUpSelf } from './db/heatingSelf.ts'
 import { heatingPeriodViews, removeCo2Statement, saveCo2Statement, saveHotWater } from './db/co2.ts'
+import { saveServiceValues } from './db/serviceValues.ts'
 import { removeStock, saveStock } from './db/fuelStock.ts'
 import { createDelivery, createEstimates, freezeFuelCarries, fuelGapQuestions, listDegreeDays, listDeliveries, removeDelivery, saveDegreeDays, unfreezeFuelCarries, updateDelivery } from './db/fuel.ts'
 import { assignableHeatingItems, createHeatingPlant, listHeatingPlants, removeHeatingPlant, replaceHeatingPlant, updateHeatingPlant } from './db/heating.ts'
@@ -582,6 +583,13 @@ app.delete('/api/heating-plants/:id/periods/:period/co2', async (req, res) => {
 app.put('/api/heating-plants/:id/periods/:period/hot-water', async (req, res) => {
   const saved = await writeData((db) => saveHotWater(db, req.params.id, req.params.period, bodyObject(req)))
   if (!saved) return res.status(404).json({ error: NO_PLANT })
+  res.json(saved)
+})
+// Werte eines Ablesedienstes je Wohnung und Nutzungszeitraum (Heizung PR 12): die ganze Liste der
+// Heizperiode, in einer Transaktion ersetzt (db/serviceValues.ts).
+app.put('/api/heating-plants/:id/periods/:period/service-values', async (req, res) => {
+  const saved = await writeData((db) => saveServiceValues(db, req.params.id, req.params.period, bodyObject(req)))
+  if (saved === null) return res.status(404).json({ error: NO_PLANT })
   res.json(saved)
 })
 

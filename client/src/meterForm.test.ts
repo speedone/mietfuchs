@@ -38,7 +38,7 @@ test('Warmwasser in m³, Heizkostenverteiler in Einheiten (Heizung PR 4)', () =>
 test('Zähler der Heizanlage: nur ohne Wohnung und mit Anlage; Fernablesbarkeit nur bei Geräten nach § 5 HeizkostenV', () => {
   const speicher = { ...emptyMeterForm(), name: 'Speicher', type: 'waerme' as const, unit: 'kWh', heatingRole: 'dhwHeat' as const, remote: 'no' as const, installedOn: '2022-03-01' }
   expect(meterBody(speicher, 'hp1')).toEqual({
-    body: { name: 'Speicher', unitId: null, type: 'waerme', unit: 'kWh', heatingPlantId: 'hp1', heatingRole: 'dhwHeat', remoteReadable: false, installedOn: '2022-03-01' },
+    body: { name: 'Speicher', unitId: null, type: 'waerme', unit: 'kWh', heatingPlantId: 'hp1', heatingRole: 'dhwHeat', remoteReadable: false, installedOn: '2022-03-01', hcaScale: null, ratingFactor: null },
   })
   // Ohne Anlage im Objekt bleibt es ein Hauptzähler, und dann fragt das Formular nicht nach § 5. Die
   // Felder fehlen dann im Rumpf, damit eine gespeicherte Angabe bleibt (Durchsicht von #230, M1).
@@ -65,7 +65,7 @@ test('Bearbeiten: was gespeichert ist, steht wieder im Formular', () => {
   expect(meterToForm({
     id: 'm1', propertyId: 'objekt-1', name: 'Speicher', unitId: null, type: 'waerme', unit: 'kWh',
     heatingPlantId: 'hp1', heatingRole: 'dhwHeat', remoteReadable: false, installedOn: '2022-03-01',
-  })).toEqual({ id: 'm1', name: 'Speicher', unitId: '', type: 'waerme', meterNumber: '', unit: 'kWh', heatingRole: 'dhwHeat', keptRole: 'dhwHeat', remote: 'no', installedOn: '2022-03-01', heatingPlantId: 'hp1' })
+  })).toEqual({ id: 'm1', name: 'Speicher', unitId: '', type: 'waerme', meterNumber: '', unit: 'kWh', heatingRole: 'dhwHeat', keptRole: 'dhwHeat', remote: 'no', installedOn: '2022-03-01', heatingPlantId: 'hp1', hca: { scale: '', factor: '' } })
 })
 
 // Sichtprüfung E19: „Gehört zur Heizanlage?“ stand auch bei Kaltwasser. Ein Wasserzähler ist weder
@@ -116,4 +116,13 @@ describe('Zähler an einer von mehreren Heizanlagen (Heizung PR 9)', () => {
   test('ein gespeicherter Zähler bringt seine Anlage mit', () => {
     expect(meterToForm({ id: 'm', propertyId: 'objekt-1', name: 'Gas', unitId: null, type: 'sonstig', unit: 'm³', heatingPlantId: 'hp2', heatingRole: 'supply' }).heatingPlantId).toBe('hp2')
   })
+})
+
+test('Heizkostenverteiler (Heizung PR 12): Skala und Faktor im Rumpf, beim Bearbeiten wieder im Formular, bei anderer Sparte leer', () => {
+  const hkv = { ...emptyMeterForm(), name: 'Wohnzimmer', unitId: 'eg', type: 'hkv' as const, unit: 'Einheiten', hca: { scale: 'unit' as const, factor: '1,25' } }
+  expect(meterBody(hkv, null)).toMatchObject({ body: { hcaScale: 'unit', ratingFactor: 1.25 } })
+  expect(meterBody({ ...hkv, hca: { scale: 'unit', factor: '0' } }, null)).toEqual({ error: 'Der Bewertungsfaktor ist eine Zahl über 0, etwa 0,8 oder 1,25.' })
+  // Wechselt die Sparte, gehen Skala und Faktor als leer mit, sonst lehnte der Server ab.
+  expect(meterBody({ ...hkv, type: 'waerme' }, null)).toMatchObject({ body: { hcaScale: null, ratingFactor: null } })
+  expect(meterToForm({ id: 'h1', propertyId: 'objekt-1', name: 'Wohnzimmer', unitId: 'eg', type: 'hkv', unit: 'Einheiten', hcaScale: 'unit', ratingFactor: 0.875 }).hca).toEqual({ scale: 'unit', factor: '0,875' })
 })

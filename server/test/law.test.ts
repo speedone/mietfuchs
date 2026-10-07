@@ -11,7 +11,7 @@ import { LAW_PARAMS } from '../../shared/law/params.ts'
 import * as rulesModule from '../../shared/law/rules.ts'
 import { betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths } from '../../shared/law/bgb-betrkv.ts'
 import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvHeatingValues, hkvHeatPumpCapture, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvRenewableExemption, hkvSettlementInfo } from '../../shared/law/heizkostenv.ts'
-import { practiceReadingOffWarning, practiceVacancyPersons } from '../../shared/law/practice.ts'
+import { practiceEvaporatorWindow, practiceReadingOffWarning, practiceVacancyPersons } from '../../shared/law/practice.ts'
 import { ustgStandardRate } from '../../shared/law/ustg.ts'
 import { co2ApplicableFrom, co2CostsBefore, co2CostsCountedFrom, co2CostsExcludedUntil, co2CutMissing, co2DistrictEtsNew, co2FirstPeriodStart, co2NonResidential, co2Restriction, co2RoundingDecimals, co2StageTable } from '../../shared/law/co2kostaufg.ts'
 import { RULES } from '../../shared/law/rules.ts'
@@ -176,7 +176,7 @@ test('Register: jede Konstante vom Typ LawParam in shared/law/ steht in LAW_PARA
     .flatMap((f) => [...fs.readFileSync(path.join(dir, f), 'utf8').matchAll(/^export const (\w+): LawParam</gm)].map((m) => m[1]))
   assert.ok(declared.length >= 7, `nur ${declared.length} Parameter gefunden`)
   const listed = new Set<unknown>(LAW_PARAMS)
-  const modules = { betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths, co2ApplicableFrom, co2CostsBefore, co2CutMissing, co2DistrictEtsNew, co2NonResidential, co2Restriction, co2RoundingDecimals, co2StageTable, hkvConsumptionShare, hkvConsumptionShareForced, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvHeatingValues, hkvHeatPumpCapture, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvRenewableExemption, hkvSettlementInfo, practiceReadingOffWarning, practiceVacancyPersons, ustgStandardRate }
+  const modules = { betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths, co2ApplicableFrom, co2CostsBefore, co2CutMissing, co2DistrictEtsNew, co2NonResidential, co2Restriction, co2RoundingDecimals, co2StageTable, hkvConsumptionShare, hkvConsumptionShareForced, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvHeatingValues, hkvHeatPumpCapture, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvRenewableExemption, hkvSettlementInfo, practiceEvaporatorWindow, practiceReadingOffWarning, practiceVacancyPersons, ustgStandardRate }
   for (const name of declared) {
     assert.ok(name && Object.hasOwn(modules, name), `${name} fehlt in diesem Test`)
     assert.ok(listed.has(Reflect.get(modules, name)), `${name} fehlt in LAW_PARAMS`)
@@ -380,4 +380,11 @@ test('Stichtag hkv.exemption.renewable: Wärmepumpen bis 30.09.2024 in der Ausna
   assert.deepEqual(law(hkvRenewableExemption, year(2025), log), { heatPump: false })
   assert.match(hkvRenewableExemption.describe({ heatPump: true }), /Wärmepumpen.*in der Fassung bis 30\.09\.2024/)
   assert.doesNotMatch(hkvRenewableExemption.describe({ heatPump: false }), /Wärmepumpe/)
+})
+
+test('Stichtag practice.evaporator-window: 400 bis 800 ‰ seit der Hauptablesung, 2015 wie 2030, als Praxis gekennzeichnet', () => {
+  for (const y of [2015, 2025, 2030]) assert.deepEqual(law(practiceEvaporatorWindow, year(y), createLawLog()), { min: 400, max: 800 })
+  const [v] = practiceEvaporatorWindow.versions
+  assert.equal(v?.source.rank, 'practice')
+  assert.match(practiceEvaporatorWindow.norm, /keine Rechtsnorm/)
 })

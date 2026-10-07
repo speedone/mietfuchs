@@ -4,7 +4,7 @@ import { api, ApiError, errorText, fmtEuro } from '../api'
 import Drawer from './Drawer'
 import Term from './Term'
 import {
-  CAPTURE_SELF_OPTIONS, HOT_WATER_OPTIONS, PART_OPTIONS, emptySelfSetup, forcedShare, itemsFromConflict, selfSetupBody, shareBounds, targetOptions,
+  CAPTURE_SELF_OPTIONS, captureHint, HOT_WATER_OPTIONS, PART_OPTIONS, emptySelfSetup, forcedShare, itemsFromConflict, selfSetupBody, shareBounds, targetOptions,
 } from '../heatingSelfForm'
 import { INSULATION_OPTIONS, INSULATION_QUESTION, insulationAsked, insulationExplained, percentOf, unsureShareHint } from '../heatingSelfView'
 
@@ -60,7 +60,7 @@ export default function HeatingSelfSetup({ plant, period, periodLabel, onDone, o
       {error && <div className="error">{error}</div>}
       <p className="muted">
         Mietfuchs verteilt die Kosten dieser Heizanlage dann nach der <Term id="heatingSystem">Heizkostenverordnung</Term>: einen Teil nach dem
-        gemessenen Verbrauch, den Rest nach der Fläche. Fehlende Zähler legt Mietfuchs an; die Stände tragen Sie auf der Seite Zähler ein.
+        gemessenen Verbrauch, den Rest nach der Fläche. Fehlende Wärme- und Warmwasserzähler legt Mietfuchs an; die Stände tragen Sie auf der Seite Zähler ein.
       </p>
       <label className="field grow">
         Bereitet diese Heizung auch das Warmwasser?
@@ -74,6 +74,7 @@ export default function HeatingSelfSetup({ plant, period, periodLabel, onDone, o
         <select value={form.capture} onChange={(e) => setForm({ ...form, capture: e.target.value as CaptureMethod })}>
           {CAPTURE_SELF_OPTIONS.map((o) => <option key={o.value} value={o.value} disabled={o.later}>{o.label}</option>)}
         </select>
+        <small className="muted">{captureHint(form.capture)}</small>
       </label>
       {insulationAsked(plant.energy) && (
         <>

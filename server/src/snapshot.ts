@@ -17,7 +17,7 @@
 // geschnitten und nicht neu erfunden: Was dort dazukommt, kommt hier nur an, wenn es jemand
 // bewusst aufnimmt.
 
-import type { BillingPeriod, Co2Statement, CostItem, DegreeDayValue, FrozenFuelCarry, FuelDelivery, HeatingPeriodData, HeatingPlant, InterimGap, Meter, Payment, PeriodKey, PeriodRules, Property, Reading, StockValue, Tenancy, Unit } from '../../shared/types.ts'
+import type { BillingPeriod, Co2Statement, CostItem, DegreeDayValue, FrozenFuelCarry, FuelDelivery, HeatingPeriodData, HeatingPlant, HeatingServiceValue, InterimGap, Meter, Payment, PeriodKey, PeriodRules, Property, Reading, StockValue, Tenancy, Unit } from '../../shared/types.ts'
 import { calendarPeriod, calendarYearPeriod, parsePeriodKey, periodContaining, periodLabel, periodOfKey, previousPeriod, rulesOf, settlementDeadline } from '../../shared/period.ts'
 import { hasOwnRhythm, heatingPeriodsEndingIn, lineRoot, plantRules, sameFuelLine, settledSeparately, settlementKeyOf, type PlantWay } from '../../shared/heatingPeriod.ts'
 import { isStockEnergy } from '../../shared/fuelStock.ts'
@@ -107,6 +107,8 @@ export type SnapshotCostItem = Pick<
 // Name nur für diesen Hinweis, deshalb optional; Zählernummer und Maßeinheit sind Anzeige, die
 // Jahresübersicht der Zähler-Seite gibt nur `meterId` zurück und der Browser stellt sie daneben.
 export type SnapshotMeter = Pick<Meter, 'id' | 'unitId' | 'type' | 'heatingPlantId' | 'heatingRole' | 'remoteReadable' | 'installedOn'> & Partial<Pick<Meter, 'name'>>
+  // Skala und Bewertungsfaktor eines Heizkostenverteilers (Heizung PR 12).
+  & Partial<Pick<Meter, 'hcaScale' | 'ratingFactor'>>
 
 // Die Heizanlagen des Objekts (Heizung PR 4), eingedampft auf das, was die Berechnung liest. Seit
 // Heizung PR 5 dazu Name, eigene Heizperiode und die Spannen nach Weg d; fehlen sie (ein von Hand
@@ -436,6 +438,9 @@ export type Snapshot = {
   interimGaps?: InterimGap[]
   // Eingefrorene Endstände abgeschlossener Heizperioden mit eigener Abrechnung (Abweichung 9).
   selfClosedEnds?: SelfClosedEnd[]
+  // Werte der Ablesedienste der Anlagen des Objekts (Heizung PR 12, Entwurf 5.8). Fehlt die Angabe
+  // (db.json, Regression), gibt es keine.
+  heatingServiceValues?: HeatingServiceValue[]
 }
 
 // Die Lieferungen im Schnappschuss (Heizung PR 7, Entwurf 5.8). Die Abgrenzung liest Zeitraum, Betrag,
@@ -797,14 +802,21 @@ function withSelfBegin<P extends SnapshotHeatingPlant>(plants: readonly P[], key
 // Der eingefrorene Endstand kommt aus der Abrechnung des Objekts und, bei einer Heizperiode nach Weg d,
 // aus der eigenen Heizkostenabrechnung der Anlage (Durchsicht von #239, I2).
 function selfExtrasOf(
-  source: { interimGaps?: InterimGap[]; closedHeatingSettlements?: readonly (object & { plantId: string })[] },
+  source: { interimGaps?: InterimGap[]; closedHeatingSettlements?: readonly (object & { plantId: string })[]; heatingServiceValues?: HeatingServiceValue[] },
   narrowed: { units: readonly { id: string }[]; closedSettlements: readonly object[] },
   plantIds: readonly string[],
-): Pick<Snapshot, 'interimGaps' | 'selfClosedEnds'> {
+  servicePlantIds: readonly string[] = plantIds,
+): Pick<Snapshot, 'interimGaps' | 'selfClosedEnds' | 'heatingServiceValues'> {
   const gaps = (source.interimGaps ?? []).filter((g) => narrowed.units.some((u) => u.id === g.unitId))
   const heating = (source.closedHeatingSettlements ?? []).filter((c) => plantIds.includes(c.plantId))
   const selfClosedEnds = [...narrowed.closedSettlements, ...heating].flatMap((c) => selfClosedEndsOf(Reflect.get(c, 'settlement')))
-  return { ...(gaps.length > 0 ? { interimGaps: gaps } : {}), ...(selfClosedEnds.length > 0 ? { selfClosedEnds } : {}) }
+  // Werte der Ablesedienste (Heizung PR 12): die der Anlagen des Objekts.
+  const service = (source.heatingServiceValues ?? []).filter((v) => servicePlantIds.includes(v.plantId))
+  return {
+    ...(gaps.length > 0 ? { interimGaps: gaps } : {}),
+    ...(selfClosedEnds.length > 0 ? { selfClosedEnds } : {}),
+    ...(service.length > 0 ? { heatingServiceValues: service } : {}),
+  }
 }
 
 // Der Schnappschuss eines Objekts in einem Abrechnungszeitraum. Die Routen rechnen nur hierüber; den
@@ -825,6 +837,8 @@ export function snapshotFor(
     closedHeatingSettlements?: (SnapshotClosedSettlement & { plantId: string; period: PeriodKey })[]
     // Antworten zu fehlenden Zwischenablesungen (Heizung PR 10).
     interimGaps?: InterimGap[]
+    // Werte der Ablesedienste (Heizung PR 12).
+    heatingServiceValues?: HeatingServiceValue[]
   } & FuelSource,
   propertyId: string,
   period: BillingPeriod,
@@ -930,7 +944,8 @@ export function heatingSnapshotFor(source: Parameters<typeof snapshotFor>[0], pr
     scope: { kind: 'heating', plant },
     ...(fuel ? { fuel } : {}),
     ...(stockChains.length > 0 ? { stockChains } : {}),
-    ...selfExtrasOf(source, narrowed, [plantId]),
+    // Die Werte eines Ablesedienstes über die Linie (Durchsicht von #241, I1).
+    ...selfExtrasOf(source, narrowed, [plantId], [...line]),
   }
 }
 

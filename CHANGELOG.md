@@ -212,8 +212,42 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - Mengen mit Tausenderpunkt („3.000“) liest die Seite Heizkosten jetzt wie Beträge als dreitausend. Beim
   Heizwert und beim Volumen des Warmwassers fragt sie bei „11.325“ nach, ob 11,325 oder 11325 gemeint ist;
   einen Heizwert außerhalb des üblichen Bands der Einheit lehnt Mietfuchs mit einem Satz ab.
+- **Eigene Heizkostenabrechnung nach Heizkostenverteilern.** Je Gerät Skala (Einheits- oder
+  Produktskala) und Bewertungsfaktor, der Stichtagswert laut Anzeige als eigene Eingabe; die Abrechnung
+  nennt jedem Mieter seine Geräte mit Einheiten, Skala und Faktor und zählt den Verbrauch in Einheiten.
+  Dazu die Werte eines Ablesedienstes je Wohnung und Nutzungszeitraum auf der Seite Heizkosten, womit auch
+  Verdunster und Funk-Heizkostenverteiler abgedeckt sind; liefert der Dienst Warmwasserwerte, zählen sie
+  statt der Warmwasserzähler. Mieterwechsel, Leerstand und Zwischenablesung gelten wie bei Wärmezählern
+  ([#99](https://github.com/speedone/mietfuchs/issues/99)).
+- Hinweise: Bewertungsfaktor oder Skala fehlt (die Anlage wird dann nicht verteilt), Stichtag eines Geräts
+  mitten in der Heizperiode, und verschiedene Geräte in einer Anlage. Die dafür nötige Vorerfassung nach
+  § 5 Abs. 7 HeizkostenV kommt später ([#218](https://github.com/speedone/mietfuchs/issues/218)); bis
+  dahin bleibt der Weg über den Messdienst.
+- Womit der Verbrauch erfasst wird, gehört zu jedem Zeitraum der eigenen Heizkostenabrechnung: Wer die
+  Geräte zum Beginn einer Heizperiode wechselt und die Einrichtung ab dieser Heizperiode neu durchläuft,
+  rechnet frühere Heizperioden weiter mit den früheren Geräten. Skala und Faktor eines Geräts, dessen
+  Ablesungen in einer abgeschlossenen Heizperiode zählen, sind gesperrt; ein Gerät mit anderem Faktor ist
+  ein neuer Zähler. Ebenso gehört die Warmwasserbereitung zum Zeitraum; eine Änderung gilt ab der Heizperiode,
+  ab der Sie die Einrichtung neu durchlaufen.
+- Gezählt wird ein Gerät nur in den Heizperioden, die seine Ablesungen überdecken: Ein ausgebauter
+  Wärmezähler und ein neuer Heizkostenverteiler mit dem Wechsel am 31.12. sperren keine der beiden
+  Heizperioden, und ein Heizkostenverteiler neben dem Wärmezähler derselben Wohnung stört nicht, solange eines
+  der beiden die ganze Heizperiode abdeckt. Wechselt das Gerät einer Wohnung mitten in der Heizperiode, etwa am
+  30.06., verteilt Mietfuchs die Anlage nicht und nennt den Weg, statt den Verbrauch des alten Geräts still
+  wegzulassen.
+- Positionen, Verteilung und Ansicht einer Heizperiode richten sich nach deren Warmwasserbereitung, auch wenn
+  die Anlage sie später geändert hat: Eine Wartung 2025 „für Heizung und Warmwasser“ behält ihr Ziel, und ein
+  Ziel, das nicht passt, ersetzt die Seite Kosten nicht mehr still, sondern meldet es am Feld.
+- Beim Mieterwechsel nennt die Abrechnung jedem Mieter nur seine Geräte und Werte in seinem Zeitraum; das
+  Ableseergebnis nennt am Stichtag den Stichtagswert. Der Ablesedienst kann die Heizung in Einheiten oder kWh
+  nennen, das Warmwasser in m³. Nach einem Kesseltausch rechnet die neue Anlage mit denselben Werten des
+  Ablesedienstes. Verdunster lassen sich nicht aus der Ferne ablesen; Lexikon und Karte nennen die Frist bis
+  zum 31.12.2026 (§ 5 Abs. 3 HeizkostenV) und die Kürzung um 3 % danach.
 
 ### Geändert
+
+- Die Ablehnung einer Verteilung „nach Verbrauch“ mit Heizkostenverteilern bei freien Schlüsseln verweist
+  jetzt auf die eigene Heizkostenabrechnung mit der Erfassung „Heizkostenverteiler“.
 
 - Eigene Heizkostenabrechnung: Die Heizung darf jetzt auch bei Heizöl, Flüssiggas, Pellets, Holz und
   Kohle das Warmwasser bereiten; die Einrichtung sperrt das nicht mehr.

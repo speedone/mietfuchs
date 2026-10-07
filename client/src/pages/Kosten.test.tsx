@@ -22,11 +22,13 @@ const METERS: Meter[] = [{ id: 'm1', propertyId: 'objekt-1', name: 'Zähler EG',
 let sent: { url: string; method: string; body: Record<string, unknown> }[]
 let gets: string[]
 let plants: unknown[] = []
+let costItems: unknown[] = []
 
 beforeEach(() => {
   sent = []
   gets = []
   plants = []
+  costItems = []
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
     const method = init?.method ?? 'GET'
     if (method !== 'GET') {
@@ -36,7 +38,7 @@ beforeEach(() => {
     gets.push(url)
     const responses: Record<string, unknown> = {
       '/api/properties': [{ id: 'objekt-1', name: 'Haus', kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null }],
-      '/api/costItems': [],
+      '/api/costItems': costItems,
       '/api/meters': METERS,
       '/api/uploads': [],
       '/api/heating-plants': plants,
@@ -354,4 +356,45 @@ test('Heizung PR 10: bei freien Schlüsseln „nur Heizung“ wählbar, ohne Wah
   fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/i }))
   await waitFor(() => expect(sent).toHaveLength(1))
   expect(sent[0].body).toMatchObject({ key: 'area', heatingTarget: 'heating' })
+})
+
+test('Durchsicht #241 Runde 2, H1: Eine Position 2025 behält ihr Ziel, auch wenn die Anlage seit 2026 kein Warmwasser bereitet; ein unpassendes Ziel wird nie still ersetzt', async () => {
+  const anlage = (selfSpans: unknown[]) => ({
+    id: 'hp1', propertyId: 'objekt-1', name: '', energy: 'gas', supply: 'central', method: 'self', separateSettlement: null,
+    devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null, capturedOnOct2024: null,
+    warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null, periodChanges: [], separateSpans: [], units: null, newDevicesInstall: null,
+    nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null,
+    hotWater: 'none', capture: 'heatMeter', areaBasisHeat: 'area', heatPumpInstalledOn: null, selfSpans,
+  })
+  const wartung = {
+    id: 'c1', propertyId: 'objekt-1', period: '2025-01', year: 2025, category: 'Heizung und Warmwasser', description: 'Wartung Kessel', amountCents: 30000,
+    key: 'heatingSystem', meterType: null, directUnitId: null, customShares: null, participantUnitIds: null, heatingPart: 'operating', heatingTarget: 'both', heatingPlantId: 'hp1',
+  }
+  costItems = [wartung]
+  // 2025 mit Warmwasser eingerichtet, seit 2026 ohne.
+  plants = [anlage([{ from: '2025-01', until: '2026-01', capture: 'heatMeter', hotWater: 'combined' }, { from: '2026-01', until: null, capture: 'heatMeter', hotWater: 'none' }])]
+  render(<PeriodProvider><PropertyProvider><Kosten units={UNITS} settings={null} /></PropertyProvider></PeriodProvider>)
+  fireEvent.click(await screen.findByRole('button', { name: 'Kostenposition bearbeiten' }))
+  await waitFor(() => expect(select(/^Ziel$/).value).toBe('both'))
+  expect([...select(/^Ziel$/).options].map((o) => o.value)).toEqual(['', 'both', 'heating', 'water'])
+  fireEvent.click(screen.getByRole('button', { name: /^Übernehmen$/ }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0]?.body).toMatchObject({ heatingTarget: 'both' })
+  cleanup()
+  // Bereitete die Anlage auch 2025 kein Warmwasser, passt „Heizung und Warmwasser“ nicht: Fehler am Feld,
+  // das gespeicherte Ziel bleibt im Zustand, und gespeichert wird nicht.
+  sent = []
+  plants = [anlage([{ from: '2025-01', until: null, capture: 'heatMeter', hotWater: 'none' }])]
+  render(<PeriodProvider><PropertyProvider><Kosten units={UNITS} settings={null} /></PropertyProvider></PeriodProvider>)
+  fireEvent.click(await screen.findByRole('button', { name: 'Kostenposition bearbeiten' }))
+  await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/gespeicherte Ziel passt nicht/))
+  expect(select(/^Ziel$/).value).toBe('')
+  expect([...select(/^Ziel$/).options].map((o) => o.value)).toEqual(['', 'heating'])
+  fireEvent.click(screen.getByRole('button', { name: /^Übernehmen$/ }))
+  await new Promise((r) => setTimeout(r, 50))
+  expect(sent).toEqual([])
+  fireEvent.change(select(/^Ziel$/), { target: { value: 'heating' } })
+  fireEvent.click(screen.getByRole('button', { name: /^Übernehmen$/ }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0]?.body).toMatchObject({ heatingTarget: 'heating' })
 })

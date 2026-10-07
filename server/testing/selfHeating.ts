@@ -11,7 +11,7 @@
 // nicht als freies Objektliteral (CLAUDE.md). Bekommt ein Typ in einer späteren PR ein Pflichtfeld, nennt
 // der Übersetzer die Stelle hier; die PR ergänzt es mit dem Wert, den ihre Vorgabe setzt.
 import type {
-  CostItem, FuelDelivery, HeatingPart, HeatingPeriodData, HeatingPlant, HeatingTarget, Meter, MeterType, Reading, Tenancy, Unit,
+  CostItem, FuelDelivery, HeatingPart, HeatingPeriodData, HeatingPlant, HeatingServiceValue, HeatingTarget, Meter, MeterType, Reading, Tenancy, Unit,
 } from '../../shared/types.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import { CALENDAR_RULES, periodKey, periodOfKey } from '../../shared/period.ts'
@@ -35,6 +35,8 @@ export type SelfSnapshotOptions = {
   readings?: Reading[]
   deliveries?: FuelDelivery[]
   costItems?: CostItem[]
+  // Werte eines Ablesedienstes (Heizung PR 12).
+  serviceValues?: HeatingServiceValue[]
 }
 
 const P = 'objekt-1'
@@ -46,7 +48,7 @@ const plantOf = (year: number): HeatingPlant => ({
   devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', newDevicesInstall: null, source: 'building', captureInstalledOn: null, capturedOnOct2024: null,
   warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null, periodChanges: [], separateSpans: [], units: null,
   nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null,
-  hotWater: 'combined', capture: 'heatMeter', areaBasisHeat: 'area', heatPumpInstalledOn: null, heatGeneration: null, heatPumpMajority: null,
+  hotWater: 'combined', capture: 'heatMeter', areaBasisHeat: 'area', heatPumpInstalledOn: null, heatGeneration: null, heatPumpMajority: null, hcaModel: null,
   selfSpans: [{ from: periodKey(`${year}-01`), until: null }],
 })
 
@@ -132,6 +134,7 @@ export function selfSnapshot(o: SelfSnapshotOptions = {}): Snapshot {
   const source: Parameters<typeof snapshotFor>[0] = {
     units, tenancies, costItems, meters, readings, payments: [], closedSettlements: [],
     heatingPlants: [plant, ...(o.plants ?? [])], heatingPeriodRows: rows, fuelDeliveries: deliveries,
+    heatingServiceValues: o.serviceValues ?? [],
   }
   return snapshotFor(source, P, period)
 }

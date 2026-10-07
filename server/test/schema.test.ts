@@ -284,6 +284,7 @@ test('Migration lässt sich anwenden und legt alle Tabellen an', async () => {
       'heating_prepayments',
       'heating_self_spans',
       'heating_separate_spans',
+      'heating_service_values',
       'interim_reading_gaps',
       'meters',
       'payments',
@@ -1050,4 +1051,38 @@ test('Heizung PR 11: Der Schnappschuss führt, was der Warmwasseranteil liest (P
   const zeile = { dhwMethod: 'volumeFormula', dhwVolumeM3: 120, dhwTempC: 60 } satisfies Pick<SnapshotHeatingPeriodRow, 'dhwMethod' | 'dhwVolumeM3' | 'dhwTempC'>
   const anlage = { heatGeneration: 'single' } satisfies Pick<SnapshotHeatingPlant, 'heatGeneration'>
   assert.deepEqual([lieferung.fuelGrade, zeile.dhwTempC, anlage.heatGeneration], ['heatingOilEL', 60, 'single'])
+})
+
+// ---------- Heizkostenverteiler und Ablesedienst (Heizung PR 12) ----------
+
+test('Heizung PR 12: Skala und Faktor nur am Heizkostenverteiler, Faktor über 0; Werte des Ablesedienstes ab 0 und mit Datum', async () => {
+  const { connection, cleanup } = await freshDb()
+  try {
+    connection.exec("INSERT INTO units (id, property_id, name, area_m2, participates) VALUES ('a', 'objekt-1', 'A', 50, 1)")
+    connection.exec("INSERT INTO meters (id, property_id, name, unit_id, type, unit) VALUES ('h1', 'objekt-1', 'Wohnzimmer', 'a', 'hkv', 'Einheiten')")
+    connection.exec("INSERT INTO meters (id, property_id, name, unit_id, type, unit) VALUES ('k1', 'objekt-1', 'Kaltwasser', 'a', 'kaltwasser', 'm³')")
+    assert.equal(rejects(connection, "UPDATE meters SET hca_scale = 'unit', rating_factor = 1.25 WHERE id = 'h1'"), null)
+    assert.ok(rejects(connection, "UPDATE meters SET rating_factor = 0 WHERE id = 'h1'"), 'Faktor 0')
+    assert.ok(rejects(connection, "UPDATE meters SET hca_scale = 'linear' WHERE id = 'h1'"), 'unbekannte Skala')
+    assert.ok(rejects(connection, "UPDATE meters SET rating_factor = 1.0 WHERE id = 'k1'"), 'Faktor am Wasserzähler')
+    assert.ok(rejects(connection, "UPDATE meters SET hca_scale = 'product' WHERE id = 'k1'"), 'Skala am Wasserzähler')
+    assert.ok(rejects(connection, "UPDATE meters SET type = 'waerme' WHERE id = 'h1'"), 'Sparte wechselt, Faktor bleibt')
+    connection.exec("INSERT INTO heating_plants (id, property_id, energy) VALUES ('hp', 'objekt-1', 'gas')")
+    assert.deepEqual(connection.rows('SELECT hca_model FROM heating_plants')[0], [null])
+    connection.exec("INSERT INTO heating_periods (id, plant_id, period) VALUES ('h2025', 'hp', '2025-01')")
+    const insert = (from: string, to: string, heat: number, water: string) =>
+      rejects(connection, `INSERT INTO heating_service_values (heating_period_id, unit_id, "from", "to", heat_value, water_value) VALUES ('h2025', 'a', '${from}', '${to}', ${heat}, ${water})`)
+    assert.equal(insert('2025-01-01', '2025-09-30', 340, '12'), null)
+    assert.ok(insert('2025-10-01', '2025-09-30', 10, 'NULL'), 'Ende vor Beginn')
+    assert.ok(insert('2025-10-01', '2025-12-31', -1, 'NULL'), 'negativ')
+    assert.ok(insert('2025-10-01', '2025-12-31', 1, '-1'), 'Warmwasser negativ')
+    assert.ok(insert('01.10.2025', '2025-12-31', 1, 'NULL'), 'kein ISO-Datum')
+    assert.ok(insert('2025-01-01', '2025-12-31', 1, 'NULL'), 'gleicher Schlüssel')
+    // Eine gelöschte Wohnung nimmt ihre Werte mit.
+    connection.exec("DELETE FROM meters WHERE unit_id = 'a'")
+    connection.exec("DELETE FROM units WHERE id = 'a'")
+    assert.deepEqual(connection.rows('SELECT COUNT(*) FROM heating_service_values'), [[0]])
+  } finally {
+    cleanup()
+  }
 })
