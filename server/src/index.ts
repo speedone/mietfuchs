@@ -703,6 +703,7 @@ app.get('/api/heating-plants/:id/periods/:period/co2-sheet', async (req, res) =>
         openingInvoicedBefore2023: row.openingInvoicedBefore2023, closingQuantity: row.closingQuantity, closingMeasuredOn: row.closingMeasuredOn,
       } : null,
       deliveries: stock.fuelDeliveries, overrides: stock.lawOverrides,
+      linkedCents: stock.costItems.reduce<Record<string, number>>((a, c) => (c.fuelDeliveryId ? { ...a, [c.fuelDeliveryId]: (a[c.fuelDeliveryId] ?? 0) + c.amountCents } : a), {}),
     })
   })
   if (!sheet) return res.status(404).json({ error: NO_PLANT })

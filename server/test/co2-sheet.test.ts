@@ -36,6 +36,12 @@ test('Blatt: Rechnungen der Heizperiode mit den Angaben nach § 3 Abs. 1, Summen
   assert.deepEqual([s.deliveries[0]?.emissionFactor, s.deliveries[0]?.amountCents, s.deliveries[0]?.quantity], [0.2664, 315000, 3000])
 })
 
+test('Blatt: ohne eingetragenen Betrag gilt die Summe der verknüpften Positionen', () => {
+  const s = co2SheetOf(input({ deliveries: [lieferung({ amountCents: null })], linkedCents: { d: 314999 } }))
+  assert.equal(s.deliveries[0]?.amountCents, 314999)
+  assert.equal(co2SheetOf(input({ deliveries: [lieferung({ amountCents: null })] })).deliveries[0]?.amountCents, null)
+})
+
 test('Blatt: eingetragene Fläche geht vor; Hinweise der Prüfung stehen an der Rechnung', () => {
   const s = co2SheetOf(input({ enteredAreaM2: 290, deliveries: [lieferung({ co2CostCents: 44159 })] }))
   assert.deepEqual([s.areaM2, s.areaSource], [290, 'entered'])

@@ -140,7 +140,7 @@ export function plausibilityText(f: PlausibilityFinding, fmtCents: (c: number) =
     const bio = f.below
       ? 'Weniger kg können richtig sein, wenn der Lieferant für einen anerkannten Biomasseanteil (etwa Bio-Erdgas oder Bioheizöl) keine Emissionen ansetzt; dann sollte die Rechnung den Anteil nennen. '
       : ''
-    return `„${f.label}“: ${de(f.emissionsKg)} kg CO₂ passen nicht zu ${f.basis}. Mit den Standardwerten der Emissionsberichterstattungsverordnung 2030 wären es ${de(f.expectedKg)} kg. ${bio}` +
+    return `„${f.label}“: ${de(f.emissionsKg, 2)} kg CO₂ passen nicht zu ${f.basis}. Mit den Standardwerten der Emissionsberichterstattungsverordnung 2030 wären es ${de(f.expectedKg, 2)} kg. ${bio}` +
       'Bitte prüfen Sie die Angaben der Rechnung, auch ob Brennwert oder Heizwert gemeint ist (§ 3 Abs. 1 und 2 CO2KostAufG). Mietfuchs rechnet mit den kg der Rechnung.'
   }
   const expected = f.lowCents === f.highCents ? `wären es ${fmtCents(f.lowCents)}` : `wären es zwischen ${fmtCents(f.lowCents)} und ${fmtCents(f.highCents)}`
@@ -150,6 +150,6 @@ export function plausibilityText(f: PlausibilityFinding, fmtCents: (c: number) =
   const years = f.years.length > 1 ? `${f.years.slice(0, -1).join(', ')} und ${f.years.at(-1)}` : String(f.years[0] ?? '')
   const priceText = `${lo === hi ? euroPerT(lo) : `${euroPerT(lo)} bis ${euroPerT(hi)}`} (${years}${ets})`
   const vatText = f.vat.length > 1 ? `${Math.min(...f.vat)} bis ${Math.max(...f.vat)}` : String(f.vat[0] ?? '')
-  return `„${f.label}“: Die CO₂-Kosten von ${fmtCents(f.co2CostCents)} passen nicht zu ${de(f.emissionsKg)} kg CO₂: Bei ${priceText} zuzüglich ${vatText} % Umsatzsteuer ${expected}. ` +
+  return `„${f.label}“: Die CO₂-Kosten von ${fmtCents(f.co2CostCents)} passen nicht zu ${de(f.emissionsKg, 2)} kg CO₂: Bei ${priceText} zuzüglich ${vatText} % Umsatzsteuer ${expected}. ` +
     'Bitte prüfen Sie die Angaben der Rechnung, etwa ob die Umsatzsteuer enthalten ist (§ 3 Abs. 3 CO2KostAufG). Mietfuchs rechnet mit den CO₂-Kosten der Rechnung.'
 }
