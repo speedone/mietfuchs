@@ -580,6 +580,30 @@ test('Nachprüfung W1, Gegenstück: Storno nach Abschluss der Heizperiode der Po
   assert.match(textOf(settle('2024-05', { ...alt, costItems: [position({ id: 'gas', amountCents: 0 })] }), 'fuel.cancelled-after-close'), /in der sie steht, hat 983,39 € als Anteil dieser Heizperiode hinausgebucht/)
 })
 
+test('Invariante (Gerät ausgefallen, Startwert 509): Storno nach Abschluss, Teil lag schon beim Vermieter: die wieder geöffnete Heizperiode bucht nichts gegen, der Teil steht einmal beim Vermieter', () => {
+  // 2024/2025 wird abgeschlossen, als die Rechnung noch keine Position hat (0 eingefroren). 2025/2026 bucht
+  // ihren Teil für 2024/2025 deshalb nicht hinaus, sondern an den Vermieter (`fuelClosedPeriod`), und wird so
+  // abgeschlossen. Dann wird 2024/2025 wieder geöffnet und die Rechnung storniert.
+  const ohne = settle('2024-05', { costItems: [] })
+  const h2 = settle('2025-05', { fuelCarryFrozen: [eingefroren('d', '2024-05', 0)], closedSettlements: [abgeschlossen('2024-05', { fuelCarryRows: frozenFuelRowsOf(ohne) })] })
+  assert.deepEqual(teileVon(h2, 'fuel:d:2025-05:2024-05'), [{ reason: 'fuelClosedPeriod', cents: 98339 }])
+  const h1 = settle('2024-05', {
+    costItems: [position({ id: 'gas', amountCents: 0 })],
+    fuelCarryFrozen: [eingefroren('d', '2025-05', (h2.heating?.[0]?.fuel?.carries ?? []).reduce((a, c) => a + c.cents, 0))],
+    closedSettlements: [abgeschlossen('2025-05', { fuelCarryRows: frozenFuelRowsOf(h2), fuelCarries: frozenFuelCarriesOf(h2) })],
+  })
+  assert.equal(mieterSumme(h1), 0)
+  assert.equal(summe(h1), 0)
+  // Vorher: Gegenbuchung −983,39 € ohne Gegenstück und noch einmal 983,39 € „abgeschlossene Heizperiode“;
+  // über beide Abrechnungen stand der Teil zweimal als vom Vermieter getragen da (1.966,78 €).
+  assert.deepEqual(teileVon(h1, 'fuel:d:2024-05:2025-05'), [])
+  const teile = [...teileVon(h2, 'fuel:d:2025-05:2024-05'), ...teileVon(h1, 'fuel:d:2024-05:2025-05')]
+  assert.equal(teile.filter((p) => p.reason === 'fuelCarry').reduce((a, p) => a + p.cents, 0), 0)
+  assert.equal(teile.filter((p) => p.reason === 'fuelClosedPeriod').reduce((a, p) => a + p.cents, 0), 98339)
+  // Der Hinweis bleibt: Die Mieter von 2025/2026 haben ihren Teil der stornierten Rechnung zu viel getragen.
+  assert.match(textOf(h1, 'fuel.cancelled-after-close'), /enthält dafür 5\.516,61 €, die die Mieter zu viel getragen haben/)
+})
+
 // ---------- Nachprüfung von 47f2373 (Korrekturrunde 4) ----------
 
 test('Nachprüfung M2: 2024/2025 mit Schätzung 907,74 € abgeschlossen, die Rechnung kommt und wird storniert: Gegenbuchung beim Vermieter und Warnung', () => {

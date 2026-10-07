@@ -864,8 +864,16 @@ for (const variant of VARIANTS) {
         const estimates = deliveriesNow.filter((x) => x.estimated)
         // Eine stornierte Rechnung (Positionen ergeben 0 oder weniger) ersetzt keine Schätzung (Nachprüfung, M2).
         const linkedReal = deliveries.filter((d) => items.filter((c) => c.fuelDeliveryId === d.id).reduce((a, c) => a + c.amountCents, 0) > 0)
-        const coveredDay = (day: string) => linkedReal.some((d) => d.from <= day && day <= d.to)
-        const estimatesCovered = estimates.every((e) => coveredDay(e.invoiceFrom ?? '') && coveredDay(e.invoiceTo ?? ''))
+        // Abgeglichen wird eine Schätzung nur von einer Rechnung, deren Positionen in einer anderen Heizperiode
+        // stehen (Entwurf 8.2 Nr. 3: „Kommt die echte Rechnung (in H+1), bucht H+1 ihren Teil für H hinaus“).
+        // Steht die Rechnung in der abgeschlossenen Heizperiode der Schätzung selbst (beim Abschluss storniert,
+        // danach wieder hergestellt), bleibt der eingefrorene Stand, wie er zugestellt wurde; die Positionen beim
+        // Abschluss enthalten die Rechnung dann nicht, und die Schätzung ist durch nichts ersetzt (Startwert 515).
+        const coveredDay = (day: string, own: string) => linkedReal.some((d) => d.from <= day && day <= d.to && !(periodContaining(MAI, d.to).key === own && closed.some((c) => c.period === own)))
+        const estimatesCovered = estimates.every((e) => {
+          const own = periodContaining(MAI, e.invoiceFrom ?? '').key
+          return coveredDay(e.invoiceFrom ?? '', own) && coveredDay(e.invoiceTo ?? '', own)
+        })
         if ((estimates.length === 0 || estimatesCovered) && !selfBlocked) {
           assert.ok(tenants >= positions - up, `${fall}; (vii) Mieter ${tenants} < Positionen ${positions} − ausgewiesen ${up}`)
           assert.ok(tenants <= positions - down, `${fall}; (ii) Mieter ${tenants} > Positionen ${positions} + ausgewiesen ${-down}`)
