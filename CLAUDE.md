@@ -84,7 +84,18 @@ zwei Dinge, die es leistete, deshalb gibt es dafür Ersatz: `POST /api/quit` bee
 aus der Oberfläche (Knopf in der Seitenleiste, nur wenn `STANDALONE`, also Betriebsart `binary`
 oder `package`); ein Start auf belegtem Port fragt `/healthz` und beendet sich still mit Code 0,
 wenn dort schon Mietfuchs antwortet (die Marke dafür ist `app: 'mietfuchs'` im Bericht), sodass
-ein zweiter Klick im Menü nur die Oberfläche nach vorn holt; und scheitert der Start aus einem
+ein zweiter Klick im Menü nur die Oberfläche nach vorn holt. **Der Port wird gebunden, bevor
+die Datenbank geöffnet wird** (#244): Vorher migrierte ein zweiter Start nach einem Update die
+Datei unter der noch laufenden alten Version und legte eine Sicherung samt Merkdatei an, bevor er
+den belegten Port bemerkte. Gebunden und nicht nur nachgefragt, weil zwischen Frage und `listen`
+sonst zwei gleichzeitige Starts beide migrieren könnten; das Binden entscheidet das
+Betriebssystem für genau einen. Eine Sperrdatei im Datenordner wurde verworfen, weil sie nach
+einem Absturz liegen bliebe. Bis Datenbank und Umstieg fertig sind, warten alle Anfragen; nur
+`/healthz` antwortet sofort mit 503, `app: 'mietfuchs'` und `status: 'starting'`, damit ein
+zweiter Start Mietfuchs auch während eines langen Umstiegs erkennt. Wer auf den Start wartet,
+fragt deshalb nach 200 oder nach einem anderen `status` als `starting` (smoke-test.mjs,
+umstieg-praxislauf.mjs). `NKA_TEST_START_DELAY_MS` hält den Start nach dem Binden fest, nur für
+den Test dieses Rennens. Und scheitert der Start aus einem
 anderen Grund, geht unter Linux zusätzlich eine Meldung über `notify-send` hinaus. Für Tests
 gibt `NKA_RUNTIME=binary` die Programmdatei vor, ohne eine zu sein; die Auslieferung des
 Frontends hängt weiterhin an `globalThis.Bun`. Den Klick im Menü selbst prüft kein Test, das

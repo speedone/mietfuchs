@@ -57,14 +57,16 @@ async function withServer(dataDir, work) {
   const base = `http://127.0.0.1:${p}`
   try {
     // Warten, bis er antwortet. /healthz meldet bei einem gescheiterten Umstieg 503, das ist
-    // eine Antwort und kein Fehlschlag.
+    // eine Antwort und kein Fehlschlag. Solange er noch Datenbank und Umstieg vorbereitet, sagt
+    // er `status: 'starting'` (#244); das ist noch keine Antwort über den Bestand.
     for (let i = 0; i < 150; i++) {
       try {
-        await fetch(`${base}/healthz`)
-        break
+        const bericht = /** @type {any} */ (await (await fetch(`${base}/healthz`)).json())
+        if (bericht?.status !== 'starting') break
       } catch {
-        await new Promise((r) => setTimeout(r, 200))
+        // läuft noch nicht
       }
+      await new Promise((r) => setTimeout(r, 200))
     }
     return await work({ base, dataDir, log: () => log.join('') })
   } finally {

@@ -2,6 +2,7 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import multer from 'multer'
 import path from 'node:path'
 import fs from 'node:fs'
+import http from 'node:http'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import AdmZip from 'adm-zip'
@@ -1918,6 +1919,104 @@ function noteAfterChangeover(state: ChangeoverResult['state'], fresh: FreshBacku
   return fresh
 }
 
+// ---------- Erst der Port, dann die Daten (#244) ----------
+//
+// Der Port wird gebunden, **bevor** die Datenbank geöffnet, migriert oder umgestiegen wird.
+// Vorher war es umgekehrt, und ein zweiter Start (Klick im Startmenü, während Mietfuchs schon
+// unsichtbar läuft) migrierte die Datei unter der laufenden Version, legte eine Sicherung samt
+// Merkdatei an, hinter der die alte weiterschrieb, und bemerkte erst danach den belegten Port.
+// Beim Update auf eine Version mit neuen Schritten ist genau das der wahrscheinlichste Weg.
+//
+// Gebunden statt nur nachgefragt: Eine Frage nach /healthz vor dem Öffnen ließe ein Fenster
+// zwischen Frage und `listen`, in dem zwei gleichzeitige Starts beide „frei“ hören und beide
+// migrieren. Das Binden entscheidet das Betriebssystem für genau einen. Eine Sperrdatei im
+// Datenordner leistete dasselbe, bliebe aber nach einem Absturz liegen und bräuchte eine Regel,
+// wann sie verwaist ist; der Port gibt sich mit dem Prozess von selbst frei.
+//
+// Bis Datenbank und Umstieg fertig sind, wartet jede Anfrage und wird danach ganz gewöhnlich
+// beantwortet, so sieht niemand einen halben Stand. Nur /healthz antwortet sofort, mit 503 und
+// `status: 'starting'`: Ein zweiter Start erkennt daran Mietfuchs (`app: 'mietfuchs'`), auch wenn
+// der erste gerade einen langen Umstieg rechnet, und ein Container gilt so lange als nicht bereit.
+let startupDone = false
+let finishStartup: () => void = () => {}
+const startup = new Promise<void>((resolve) => { finishStartup = resolve })
+
+const server = http.createServer((req, res) => {
+  if (startupDone) return app(req, res)
+  if ((req.url ?? '').split('?')[0] === '/healthz') {
+    res.writeHead(503, { 'content-type': 'application/json; charset=utf-8', 'retry-after': '1' })
+    res.end(JSON.stringify({ app: 'mietfuchs', status: 'starting', version: APP_VERSION }))
+    return
+  }
+  void startup.then(() => app(req, res))
+})
+
+// Antwortet auf dem Port bereits Mietfuchs? /healthz nennt sich mit Namen (health.ts), auch
+// während des Startens (oben). Dann ist ein zweiter Start kein Fehler, sondern ein zweiter Klick
+// im Startmenü (#45).
+async function mietfuchsAlreadyOn(url: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${url}/healthz`, { signal: AbortSignal.timeout(2000) })
+    const report: unknown = await res.json()
+    return isObject(report) && report.app === 'mietfuchs'
+  } catch {
+    return false
+  }
+}
+
+// Ohne Konsolenfenster (Startmenü unter Linux) läuft eine Fehlermeldung ins Leere. Dann
+// wenigstens eine Meldung des Systems, sofern es notify-send gibt.
+function notifyDesktop(message: string): void {
+  if (!STANDALONE || process.platform !== 'linux' || process.env.CI) return
+  try {
+    const child = spawn('notify-send', ['--app-name=Mietfuchs', 'Mietfuchs', message], { detached: true, stdio: 'ignore' })
+    child.on('error', () => {}) // ohne notify-send bleibt es bei der Ausgabe auf der Konsole
+    child.unref()
+  } catch {
+    /* egal, die Meldung steht auf der Konsole */
+  }
+}
+
+// Der Start endet hier, ohne dass die Datenbank berührt wurde. Fehler von node:net tragen
+// `code`, das Error selbst nicht.
+async function refuseStart(err: NodeJS.ErrnoException): Promise<never> {
+  if (err.code === 'EADDRINUSE') {
+    const running = `http://127.0.0.1:${PORT}`
+    // Ein zweiter Klick im Startmenü ist kein Fehler: Läuft dort schon Mietfuchs, gehört die
+    // Oberfläche nach vorn (#45).
+    if (STANDALONE && await mietfuchsAlreadyOn(running)) {
+      console.log(`Mietfuchs läuft bereits auf ${running}. Die Oberfläche wird geöffnet.`)
+      if (!process.env.CI) openBrowser(running)
+      process.exit(0)
+    }
+    const message = `Port ${PORT} ist bereits belegt. Dort antwortet ein anderes Programm. Mit NKA_PORT lässt sich ein anderer Port setzen.`
+    console.error(message)
+    notifyDesktop(message)
+  } else {
+    console.error(err)
+    notifyDesktop(`Start fehlgeschlagen: ${err.message}`)
+  }
+  // Fenster kurz offen lassen, damit man die Meldung liest
+  if (STANDALONE) await new Promise((resolve) => setTimeout(resolve, 10000))
+  process.exit(1)
+}
+
+const listenProblem = await new Promise<NodeJS.ErrnoException | null>((resolve) => {
+  server.once('error', resolve)
+  server.listen(PORT, () => {
+    server.off('error', resolve)
+    resolve(null)
+  })
+})
+if (listenProblem) await refuseStart(listenProblem)
+// Ein späterer Fehler des Servers endet wie bisher.
+server.on('error', (err: NodeJS.ErrnoException) => void refuseStart(err))
+
+// Testgriff: hält den Start nach dem Binden und vor dem Öffnen der Datenbank fest, damit ein
+// Test das Rennen zweier gleichzeitiger Starts nachstellen kann. Ein Nutzer setzt ihn nie.
+const startDelayMs = Number(process.env.NKA_TEST_START_DELAY_MS || 0)
+if (startDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, startDelayMs))
+
 try {
   database = await openDatabase({ dataDir: DATA_DIR })
 } catch (err) {
@@ -1929,8 +2028,9 @@ const backupBeforeChangeover = freshBackupOf(database)
 
 // Der Umstieg der vorhandenen Daten, beim ersten Start der neuen Version (siehe
 // db/changeover.ts). Er läuft hier und nicht auf Zuruf, weil niemand einen Befehl eingeben soll,
-// um an seine eigenen Daten zu kommen, und er läuft **vor** `app.listen`: Solange der Server
-// noch nicht antwortet, kann ihm auch niemand dazwischenschreiben.
+// um an seine eigenen Daten zu kommen, und er läuft, **bevor** der Server Anfragen beantwortet:
+// Der Port ist zwar schon gebunden (#244), aber jede Anfrage außer /healthz wartet, bis der
+// Start fertig ist. So kann ihm auch niemand dazwischenschreiben.
 //
 // Scheitert er, geht der Start trotzdem weiter, die Datenrouten bleiben aber gesperrt: Die Daten
 // stehen dann noch in der db.json, und eine leere Datenbank auszugeben wäre schlimmer als eine
@@ -1982,35 +2082,8 @@ function databaseState(): DatabaseState {
   return { open: false, file: databaseFile(DATA_DIR), migrations: 0, detail: openProblem ?? 'nicht geöffnet', changeover: wie, migrated: null }
 }
 
-// Antwortet auf dem Port bereits Mietfuchs? /healthz nennt sich mit Namen (health.ts). Dann ist
-// ein zweiter Start kein Fehler, sondern ein zweiter Klick im Startmenü (#45).
-async function mietfuchsAlreadyOn(url: string): Promise<boolean> {
-  try {
-    const res = await fetch(`${url}/healthz`, { signal: AbortSignal.timeout(2000) })
-    const report: unknown = await res.json()
-    return isObject(report) && report.app === 'mietfuchs'
-  } catch {
-    return false
-  }
-}
-
-// Ohne Konsolenfenster (Startmenü unter Linux) läuft eine Fehlermeldung ins Leere. Dann
-// wenigstens eine Meldung des Systems, sofern es notify-send gibt.
-function notifyDesktop(message: string): void {
-  if (!STANDALONE || process.platform !== 'linux' || process.env.CI) return
-  try {
-    const child = spawn('notify-send', ['--app-name=Mietfuchs', 'Mietfuchs', message], { detached: true, stdio: 'ignore' })
-    child.on('error', () => {}) // ohne notify-send bleibt es bei der Ausgabe auf der Konsole
-    child.unref()
-  } catch {
-    /* egal, die Meldung steht auf der Konsole */
-  }
-}
-
-const server = app.listen(PORT, (err) => {
-  // Express 5 ruft diesen Callback auch bei einem Fehler auf (etwa belegter Port). Den meldet
-  // der error-Handler unten; hier darf dann weder „läuft“ stehen noch der Browser aufgehen.
-  if (err) return
+// Jetzt erst gilt der Start als gelungen: Meldung, Browser und die Anfragen, die gewartet haben.
+{
   // Bewusst 127.0.0.1 statt localhost: Unter Windows löst "localhost" zuerst auf IPv6
   // (::1) auf. Der Server lauscht auf IPv4 (0.0.0.0), und auf ::1 kann ein anderer
   // Dienst sitzen (z. B. WSLs wslrelay), der dann 404 liefert. 127.0.0.1 erzwingt IPv4.
@@ -2058,25 +2131,6 @@ const server = app.listen(PORT, (err) => {
     // auf dem Runner nützt dort niemandem.
     if (!process.env.CI) openBrowser(url)
   }
-})
-// Fehler von node:net tragen `code`, das Error selbst nicht.
-server.on('error', async (err: NodeJS.ErrnoException) => {
-  if (err.code === 'EADDRINUSE') {
-    const running = `http://127.0.0.1:${PORT}`
-    // Ein zweiter Klick im Startmenü ist kein Fehler: Läuft dort schon Mietfuchs, gehört die
-    // Oberfläche nach vorn (#45).
-    if (STANDALONE && await mietfuchsAlreadyOn(running)) {
-      console.log(`Mietfuchs läuft bereits auf ${running}. Die Oberfläche wird geöffnet.`)
-      if (!process.env.CI) openBrowser(running)
-      process.exit(0)
-    }
-    const message = `Port ${PORT} ist bereits belegt. Dort antwortet ein anderes Programm. Mit NKA_PORT lässt sich ein anderer Port setzen.`
-    console.error(message)
-    notifyDesktop(message)
-  } else {
-    console.error(err)
-    notifyDesktop(`Start fehlgeschlagen: ${err.message}`)
-  }
-  if (STANDALONE) setTimeout(() => process.exit(1), 10000) // Fenster kurz offen lassen, damit man die Meldung liest
-  else process.exit(1)
-})
+}
+startupDone = true
+finishStartup()
