@@ -108,7 +108,7 @@ const pairOf = (rowId: unknown): string | null => {
   return d && p && o ? `${d}|${[p, o].sort().join('|')}` : null
 }
 
-function totals(s: unknown): { tenants: number; landlord: number; carry: number; up: number; down: number; pairs: Map<string, { carry: number; flagged: number; estimate: boolean }> } {
+function totals(s: unknown): { tenants: number; landlord: number; carry: number; up: number; down: number; pairs: Map<string, { carry: number; flagged: number; estimate: boolean; carries: number[]; neutral: number[] }> } {
   const num = (v: unknown): number => (typeof v === 'number' ? v : 0)
   const list = (o: unknown, key: string): unknown[] => {
     const v: unknown = o !== null && typeof o === 'object' ? Reflect.get(o, key) : undefined
@@ -120,16 +120,21 @@ function totals(s: unknown): { tenants: number; landlord: number; carry: number;
   const parts = rows.flatMap((r) => list(r, 'landlordParts'))
   const reasonOf = (p: unknown): unknown => (p !== null && typeof p === 'object' ? Reflect.get(p, 'reason') : undefined)
   const centsOf = (p: unknown): number => num(p !== null && typeof p === 'object' ? Reflect.get(p, 'cents') : 0)
-  const pairs = new Map<string, { carry: number; flagged: number; estimate: boolean }>()
+  const pairs = new Map<string, { carry: number; flagged: number; estimate: boolean; carries: number[]; neutral: number[] }>()
   for (const r of rows) {
     const key = pairOf(r !== null && typeof r === 'object' ? Reflect.get(r, 'costItemId') : undefined)
     if (!key) continue
-    const acc = pairs.get(key) ?? { carry: 0, flagged: 0, estimate: false }
-    for (const p of list(r, 'landlordParts')) {
+    const acc = pairs.get(key) ?? { carry: 0, flagged: 0, estimate: false, carries: [], neutral: [] }
+    const parts = list(r, 'landlordParts')
+    for (const p of parts) {
       if (reasonOf(p) === 'fuelEstimateDiff') acc.estimate = true
       if (reasonOf(p) === 'fuelCarry') acc.carry += centsOf(p)
       else if (flaggedReason(reasonOf(p))) acc.flagged += centsOf(p)
     }
+    // Die Gegenbuchung eines Stornos nach Abschluss: Betrag 0, `fuelCarry c` und `fuelClosedPeriod −c` (netto 0).
+    const c = parts.length === 2 && reasonOf(parts[0]) === 'fuelCarry' && reasonOf(parts[1]) === 'fuelClosedPeriod' && centsOf(parts[0]) === -centsOf(parts[1]) ? centsOf(parts[0]) : null
+    if (c !== null) acc.neutral.push(c)
+    else for (const p of parts) if (reasonOf(p) === 'fuelCarry') acc.carries.push(centsOf(p))
     pairs.set(key, acc)
   }
   return {
@@ -390,6 +395,23 @@ function totalsOfDelivery(s: unknown, own: ReadonlySet<string>): number {
     if (own.has(id) && typeof total === 'number') seen.set(id, total)
   }
   return [...seen.values()].reduce((a, v) => a + v, 0)
+}
+
+// Runde 2 zu Startwert 515: Nennt eine Abrechnung die Gutschrift je Mieter bei zu hoher Schätzung
+// (`fuel.estimate-overcharged`), ist der genannte Gesamtbetrag eine ausgewiesene negative Abweichung
+// (`fuelEstimateDiff`), und die Beträge je Mieter ergeben zusammen höchstens ihn.
+const OVERCHARGED = { checked: 0 }
+function overchargedChecks(r: ReturnType<typeof computeSettlement>, where: string): void {
+  const cents = (x: string) => Math.round(Number(x.replace(/\./g, '').replace(',', '.')) * 100)
+  const diffs = r.landlord.rows.flatMap((row) => (row.landlordParts ?? []).filter((p) => p.reason === 'fuelEstimateDiff' && p.cents < 0).map((p) => -p.cents))
+  for (const n of r.notices.filter((x) => x.code === 'fuel.estimate-overcharged')) {
+    OVERCHARGED.checked++
+    const total = cents(n.text.match(/haben ([\d.,]+) € zu viel getragen/)?.[1] ?? assert.fail(`${where}: kein Betrag in ${n.text}`))
+    assert.ok(diffs.includes(total), `${where}: genannt ${total}, ausgewiesen ${diffs.join(', ')}`)
+    const list = n.text.match(/, hier: (.*?)\. Eine Gutschrift/)?.[1] ?? ''
+    const each = [...list.matchAll(/([\d.]+,\d\d) €/g)].map((m) => cents(m[1] ?? ''))
+    assert.ok(each.reduce((a, c) => a + c, 0) <= total, `${where}: Gutschriften je Mieter ${each.join(' + ')} > ${total}`)
+  }
 }
 
 // Wie oft der Tausch in der Variante „Kesseltausch“ gelang (Abdeckung, letzter Test).
@@ -781,7 +803,7 @@ for (const variant of VARIANTS) {
         let selfBlocked = false
         let tenants = 0
         let landlord = 0
-        const pairs = new Map<string, { carry: number; flagged: number; estimate: boolean }>()
+        const pairs = new Map<string, { carry: number; flagged: number; estimate: boolean; carries: number[]; neutral: number[] }>()
         let up = 0
         let down = 0
         const live = new Map<string, ReturnType<typeof computeSettlement>>()
@@ -815,6 +837,7 @@ for (const variant of VARIANTS) {
           if (r && variant.self) selfChecks(r, items.filter((c) => c.period === key), `${fall}; ${key}`)
           if (r && variant.capture) unitChecks(r, expectedUnits.get(key), expectedWater.get(key), `${fall}; ${key}`, variant.name)
           if (r && variant.failure) estimateChecks(r, stock.heatingEstimates.filter((e) => e.plantId === 'hp' && e.period === key), bFacts.get(key) ?? null, `${fall}; ${key}`)
+          if (r) overchargedChecks(r, `${fall}; ${key}`)
           const dhwInput = dhwInputs.get(key)
           if (r && variant.dhw && dhwInput) dhwChecks(r, { method: variant.dhw, ...dhwInput, basis: dhwBasis }, `${fall}; ${key}`)
           if (r && variant.self && r.heating?.find((h) => h.plantId === 'hp')?.self?.ok === false) selfBlocked = true
@@ -830,10 +853,12 @@ for (const variant of VARIANTS) {
           tenants += t.tenants
           landlord += t.landlord
           for (const [k, v] of t.pairs) {
-            const acc = pairs.get(k) ?? { carry: 0, flagged: 0, estimate: false }
+            const acc = pairs.get(k) ?? { carry: 0, flagged: 0, estimate: false, carries: [], neutral: [] }
             acc.carry += v.carry
             acc.flagged += v.flagged
             acc.estimate ||= v.estimate
+            acc.carries.push(...v.carries)
+            acc.neutral.push(...v.neutral)
             pairs.set(k, acc)
           }
           up += t.up
@@ -887,7 +912,14 @@ for (const variant of VARIANTS) {
         const estimateIds = new Set(estimates.map((e) => e.id))
         for (const [k, v] of pairs) {
           if (v.estimate || estimateIds.has(k.split('|')[0] ?? '')) continue
-          assert.ok(v.carry === 0 || v.carry === -v.flagged, `${fall}; (iii) ${k}: Gegenbuchungen ${v.carry}, ausgewiesen ${v.flagged}`)
+          // Runde 2 (Startwerte 196, 397): Eine eingefrorene Gegenbuchung eines Stornos (netto 0) gehört zu dem Stand
+          // der Heizperiode der Positionen, der damals galt. Wurde jene danach wieder geöffnet, steht ihr
+          // Gegenstück (`fuelCarry` mit umgekehrtem Vorzeichen) nirgends mehr; dann zählt die Zeile hier nicht,
+          // denn sie bewegt kein Geld. Steht das Gegenstück noch da, zählt sie wie bisher.
+          const ok = (c: number, f: number) => c === 0 || c === -f
+          const n = v.neutral.reduce((a, x) => a + x, 0)
+          const stale = v.neutral.length > 0 && v.neutral.every((x) => !v.carries.includes(-x))
+          assert.ok(ok(v.carry, v.flagged) || (stale && ok(v.carry - n, v.flagged + n)), `${fall}; (iii) ${k}: Gegenbuchungen ${v.carry}, ausgewiesen ${v.flagged}`)
         }
         // Zuordnung (I1): eine mit 0 eingefrorene Heizperiode bekommt trotzdem ihren Teil hinausgebucht.
         const frozen = await opened.read((db) => readFuelCarryFrozen(db))
@@ -929,6 +961,13 @@ test('Invariante, Schätzung nach § 9a: Abdeckung', () => {
   assert.ok(ESTIMATES.exact25 > 0, 'keine Heizperiode mit genau 25 % geschätzter Fläche geprüft (s6, R-A22)')
   assert.ok(ESTIMATES.kept > 0, 'kein Vormieter mit abgelesenem Verbrauch neben einer Schätzung geprüft (s6, A5)')
   assert.ok(ESTIMATES.complete > 0, 'keine Schätzung neben vollständiger Ablesung geprüft (s6, A9)')
+})
+
+test('Invariante, Gutschrift je Mieter bei zu hoher Schätzung: Abdeckung', () => {
+  if (process.env.INV_LOG) console.log('Gutschrift je Mieter', JSON.stringify(OVERCHARGED))
+  // Nur in langen Läufen; die festen Startwerte erzeugen den Hinweis nicht sicher.
+  if (SEEDS.length < 100) return
+  assert.ok(OVERCHARGED.checked > 0, 'kein Hinweis fuel.estimate-overcharged geprüft')
 })
 
 test('Invariante, Kesseltausch: Abdeckung', () => {
