@@ -51,7 +51,7 @@ export function lawOverrideSlots(overrides: readonly LawOverride[], today: strin
       const official = officialAt(p, validFrom)
       const override = overrides.find((o) => o.paramId === p.id && o.validFrom === validFrom) ?? null
       slots.push({
-        paramId: p.id, title: p.title, norm: p.norm, reason: p.overridable?.reason ?? '', year, validFrom, official, override,
+        paramId: p.id, title: p.title, norm: p.norm, reason: p.overridable?.reason ?? '', year, yearLabel: p.overridable?.yearLabel?.(year) ?? String(year), validFrom, official, override,
         status: official !== null ? 'superseded' : override ? 'entered' : 'open',
       })
     }
@@ -63,12 +63,17 @@ export async function saveLawOverride(db: Executor, paramId: string, year: numbe
   const p = overridable().find((x) => x.id === paramId)
   if (!p) throw new LawOverrideError('Dieser Rechtswert lässt sich nicht eintragen; eintragen dürfen Sie nur Werte, die eine Behörde später veröffentlicht.')
   if (!Number.isInteger(year) || year < 1000 || year > 9999) throw new LawOverrideError('Bitte nennen Sie das Jahr als vierstellige Zahl.')
+  // Weiter als ins Folgejahr veröffentlicht niemand einen Wert; ein Tippfehler wie 2207 fiele sonst nicht auf (G-K4).
+  const last = Number(today.slice(0, 4)) + 1
+  if (year > last) throw new LawOverrideError(`Eintragen lässt sich ein Wert nur bis ${last}; ${year} ist vermutlich ein Tippfehler.`)
   const validFrom = yearStart(year)
   if (!coversDate(p, validFrom)) throw new LawOverrideError(`„${p.title}“ gibt es für ${year} nicht.`)
   if (valueAt(p, validFrom) !== null) throw new LawOverrideError(`Für ${year} steht der amtliche Wert schon im Programm; ein eigener Eintrag ist nicht nötig.`)
   const value: unknown = body !== null && typeof body === 'object' ? Reflect.get(body, 'value') : undefined
   const sourceRaw: unknown = body !== null && typeof body === 'object' ? Reflect.get(body, 'source') : undefined
   if (typeof value !== 'number' || !Number.isFinite(value) || !(value > 0)) throw new LawOverrideError('Der Wert muss eine Zahl größer als 0 sein.')
+  const max = p.overridable?.max ?? Infinity
+  if (value > max) throw new LawOverrideError(`Der Wert darf höchstens ${max.toLocaleString('de-DE')} betragen; bitte prüfen Sie die Eingabe.`)
   const source = typeof sourceRaw === 'string' ? sourceRaw.trim() : ''
   if (source === '') throw new LawOverrideError('Bitte nennen Sie die Quelle, etwa „UBA, Bekanntmachung vom …“.')
   await db.insert(lawOverrides).values({ paramId, validFrom, valueJson: JSON.stringify(value), source, enteredAt: today })

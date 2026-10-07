@@ -2,7 +2,11 @@
 // Heizanlage, keine Zahl ändert sich.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { settleWithDelivery } from '../testing/co2Snapshot.ts'
+import { co2Source, settleWithDelivery } from '../testing/co2Snapshot.ts'
+import { computeSettlement } from '../src/calc.ts'
+import { heatingSnapshotFor, snapshotFor } from '../src/snapshot.ts'
+import { HEATING_CATEGORY } from '../../shared/heating.ts'
+import { CALENDAR_RULES, periodKey, periodOfKey } from '../../shared/period.ts'
 
 const hints = (s: ReturnType<typeof settleWithDelivery>) => (s.notices ?? []).filter((n) => n.code === 'co2.cost-implausible')
 
@@ -59,4 +63,33 @@ test('Fernwärme aus dem Emissionshandel mit Anschluss nach dem Stichtag: keine 
 test('Eine Rechnung, die die Heizperiode nicht berührt, wird hier nicht geprüft', () => {
   const s = settleWithDelivery(2025, { co2CostCents: 1, invoiceFrom: '2024-01-01', invoiceTo: '2024-12-31', invoiceDate: '2025-01-20' })
   assert.equal(hints(s).length, 0)
+})
+
+// ---------- Durchsicht Runde 1 (#246) ----------
+
+const P = (key: string, rules = CALENDAR_RULES) => periodOfKey(rules, periodKey(key)) ?? assert.fail(`kein Zeitraum ${key}`)
+
+test('G-K1: eine stornierte Rechnung (Positionen ergeben 0 €) löst keinen Hinweis aus', () => {
+  const src = co2Source(2025, { co2CostCents: 1000 })
+  const storno = { ...src, costItems: [...src.costItems, { id: 'gut', propertyId: 'objekt-1', period: periodKey('2025-01'), category: HEATING_CATEGORY, description: 'Gutschrift', amountCents: -300000, key: 'area' as const, heatingPlantId: 'hp', fuelDeliveryId: 'd' }] }
+  assert.equal(hints(computeSettlement(snapshotFor(src, 'objekt-1', P('2025-01')))).length, 1, 'ohne Storno: Hinweis')
+  assert.equal(hints(computeSettlement(snapshotFor(storno, 'objekt-1', P('2025-01')))).length, 0)
+})
+
+const eintrag2027 = [{ paramId: 'co2.price', validFrom: '2027-01-01', value: 64.2, source: 'UBA', enteredAt: '2026-12-20' }]
+// Eine Anlage mit eigener Heizperiode Mai bis April im Kalenderobjekt (Weg b): Die Heizperiode 2026/2027 endet
+// in der Abrechnung 2027 und wird als Teil gerechnet.
+const wegB = () => {
+  const src = co2Source(2027, { co2CostCents: 76398, invoiceFrom: '2026-05-01', invoiceTo: '2027-04-30', invoiceDate: '2027-05-20' }, eintrag2027, { periodStartMonth: 5, periodChanges: [], separateSpans: [], separateSettlement: false })
+  return { ...src, costItems: src.costItems.map((c) => ({ ...c, period: periodKey('2026-05') })) }
+}
+
+test('K5 b: Ein eingetragener Wert aus einer Heizperiode nach Weg b steht genau einmal in den Hinweisen', () => {
+  const s = computeSettlement(snapshotFor(wegB(), 'objekt-1', P('2027-01')))
+  assert.equal((s.notices ?? []).filter((n) => n.code === 'law.value-overridden').length, 1)
+})
+
+test('K5 c: Die Heizkostenabrechnung nach Weg d bekommt die Einträge des Vermieters', () => {
+  const snap = heatingSnapshotFor(wegB(), 'objekt-1', 'hp', P('2026-05', { startMonth: 5, changes: [] })) ?? assert.fail('kein Schnappschuss')
+  assert.deepEqual(snap.lawOverrides, eintrag2027)
 })

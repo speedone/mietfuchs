@@ -42,4 +42,14 @@ describe('Abweichung eines abgeschlossenen Jahres (#56)', () => {
     expect(mit?.title).toBe('Die heutige Berechnung weicht vom abgeschlossenen Stand ab')
     expect(mit?.lines.map((l) => l.id)).toEqual(['t', 'law:hkv.cut.not-by-consumption'])
   })
+
+  // Durchsicht von #246, G-K6: Mit einem Wert, der nur der Prüfung dient, wurde nichts gerechnet.
+  test('Prüfwert geändert: der Text sagt „geprüft“ und nicht „gerechnet“', () => {
+    const change = { id: 'co2.price', title: 'CO₂-Preis je Tonne (Plausibilität)', frozenText: '64,20 €/t', currentText: '65,10 €/t', checkOnly: true as const }
+    const v = deviationView(cmp({ valueChanges: [change] }))
+    expect(v?.title).toBe('Prüfwerte seit dem Abschluss geändert')
+    expect(v?.intro).toMatch(/mit dem diese Abrechnung geprüft wurde/)
+    expect(v?.intro).not.toMatch(/gerechnet/)
+    expect(v?.lines).toEqual([{ id: 'law:co2.price', text: 'Prüfwert geändert: CO₂-Preis je Tonne (Plausibilität) von 64,20 €/t auf 65,10 €/t.' }])
+  })
 })

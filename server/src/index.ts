@@ -700,10 +700,11 @@ app.get('/api/heating-plants/:id/periods/:period/co2-sheet', async (req, res) =>
       enteredAreaM2: statement?.areaM2 ?? null,
       stock: row && row.stockUnit !== null ? {
         stockUnit: row.stockUnit, openingQuantity: row.openingQuantity, openingEmissionsKg: row.openingEmissionsKg, openingCo2Cents: row.openingCo2Cents,
-        openingInvoicedBefore2023: row.openingInvoicedBefore2023, closingQuantity: row.closingQuantity, closingMeasuredOn: row.closingMeasuredOn,
+        openingInvoicedBefore2023: row.openingInvoicedBefore2023, openingAlreadySettled: row.openingAlreadySettled, closingQuantity: row.closingQuantity, closingMeasuredOn: row.closingMeasuredOn,
       } : null,
       deliveries: stock.fuelDeliveries, overrides: stock.lawOverrides,
-      linkedCents: stock.costItems.reduce<Record<string, number>>((a, c) => (c.fuelDeliveryId ? { ...a, [c.fuelDeliveryId]: (a[c.fuelDeliveryId] ?? 0) + c.amountCents } : a), {}),
+      items: stock.costItems.filter((c) => c.fuelDeliveryId).map((c) => ({ id: c.id, period: String(c.period), amountCents: c.amountCents, fuelDeliveryId: c.fuelDeliveryId })),
+      today: today(),
     })
   })
   if (!sheet) return res.status(404).json({ error: NO_PLANT })

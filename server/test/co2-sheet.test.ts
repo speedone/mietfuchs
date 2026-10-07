@@ -5,7 +5,7 @@ import { co2SheetOf, type Co2SheetInput } from '../src/co2Sheet.ts'
 import type { FuelDelivery } from '../../shared/types.ts'
 
 // Nur die Felder, die das Blatt liest (`Co2SheetInput` nimmt genau diese).
-const plant: Co2SheetInput['plant'] = { id: 'hp', name: 'Kessel', energy: 'oil', units: null, nonResidential: false, restriction: 'none', districtEtsNew: false }
+const plant: Co2SheetInput['plant'] = { id: 'hp', name: 'Kessel', energy: 'oil', method: 'service', units: null, nonResidential: false, restriction: 'none', districtEtsNew: false }
 const lieferung = (over: Partial<FuelDelivery>): FuelDelivery => ({
   id: 'd', plantId: 'hp', label: 'Heizöl', invoiceDate: '2025-03-15', deliveredAt: '2025-03-15', invoiceFrom: null, invoiceTo: null, unitId: null,
   amountCents: 315000, quantity: 3000, quantityUnit: 'l', energyKwh: null, gasBasis: null, heatingValue: null, fuelGrade: null, emissionsKg: 8028.9, co2CostCents: 52549,
@@ -23,7 +23,7 @@ const input = (over: Partial<Co2SheetInput> = {}): Co2SheetInput => ({
     lieferung({ id: 'alt', deliveredAt: '2024-11-01', invoiceDate: '2024-11-01' }),
     lieferung({ id: 'fremd', plantId: 'andere' }),
   ],
-  overrides: [], ...over,
+  overrides: [], items: [], today: '2026-10-07', ...over,
 })
 
 test('Blatt: Rechnungen der Heizperiode mit den Angaben nach § 3 Abs. 1, Summen, Fläche aus den Wohnungen', () => {
@@ -37,7 +37,7 @@ test('Blatt: Rechnungen der Heizperiode mit den Angaben nach § 3 Abs. 1, Summen
 })
 
 test('Blatt: ohne eingetragenen Betrag gilt die Summe der verknüpften Positionen', () => {
-  const s = co2SheetOf(input({ deliveries: [lieferung({ amountCents: null })], linkedCents: { d: 314999 } }))
+  const s = co2SheetOf(input({ deliveries: [lieferung({ amountCents: null })], items: [{ id: 'a', period: '2025-01', amountCents: 300000, fuelDeliveryId: 'd' }, { id: 'b', period: '2025-01', amountCents: 14999, fuelDeliveryId: 'd' }] }))
   assert.equal(s.deliveries[0]?.amountCents, 314999)
   assert.equal(co2SheetOf(input({ deliveries: [lieferung({ amountCents: null })] })).deliveries[0]?.amountCents, null)
 })
@@ -63,8 +63,64 @@ test('Blatt: Rechnung über einen Zeitraum, die die Heizperiode berührt, steht 
 })
 
 test('Blatt: Vorrat und Einstufungsmerkmale werden durchgereicht', () => {
-  const stock = { stockUnit: 'l' as const, openingQuantity: 2000, openingEmissionsKg: 5352.6, openingCo2Cents: 0, openingInvoicedBefore2023: true, closingQuantity: 1800, closingMeasuredOn: '2025-12-31' }
+  const stock = { stockUnit: 'l' as const, openingQuantity: 2000, openingEmissionsKg: 5352.6, openingCo2Cents: 0, openingInvoicedBefore2023: true, openingAlreadySettled: null, closingQuantity: 1800, closingMeasuredOn: '2025-12-31' }
   const s = co2SheetOf(input({ stock, plant: { ...plant, nonResidential: true, restriction: 'building' } }))
   assert.deepEqual(s.stock, stock)
   assert.deepEqual([s.nonResidential, s.restriction, s.districtEtsNew], [true, 'building', false])
+})
+
+// ---------- Durchsicht Runde 1 (#246) ----------
+
+test('G-W1: Rechnung vor 2023 zählt nur mit ihren kg; Summe 286,63 € statt 573,26 €, die Zeile sagt warum', () => {
+  const zeile = (id: string, am: string) => lieferung({ id, label: `Heizöl ${am}`, deliveredAt: am, invoiceDate: am, emissionsKg: 8028.9, co2CostCents: 28663 })
+  const s = co2SheetOf(input({ h: { key: '2022-05', from: '2022-05-01', to: '2023-04-30' }, deliveries: [zeile('nov', '2022-11-15'), zeile('feb', '2023-02-15')] }))
+  assert.deepEqual(s.totals, { emissionsKg: 16057.8, co2CostCents: 28663 })
+  assert.deepEqual(s.deliveries.map((d) => d.counted), ['kgOnly', 'full'])
+  assert.match(s.deliveries[0]?.note ?? '', /Vor dem 01\.01\.2023 in Rechnung gestellt.*§ 11 Abs\. 2 Satz 2/)
+  assert.equal(s.deliveries[1]?.note, null)
+  assert.deepEqual(s.deliveries[0]?.findings, [], 'nicht berücksichtigt, also auch nicht geprüft')
+})
+
+test('G-W1: stornierte Rechnung und abgedeckte Schätzung zählen nicht; Summe 654,50 € statt 1.963,50 €', () => {
+  const gas: Co2SheetInput['plant'] = { ...plant, energy: 'gas', method: 'manual' }
+  const jahr = { deliveredAt: null, invoiceDate: '2026-01-20', invoiceFrom: '2025-01-01', invoiceTo: '2025-12-31', quantity: null, quantityUnit: null, emissionsKg: 10000, co2CostCents: 65450, amountCents: null }
+  const s = co2SheetOf(input({
+    plant: gas,
+    deliveries: [lieferung({ ...jahr, id: 'alt', label: 'Gas alt' }), lieferung({ ...jahr, id: 'neu', label: 'Gas berichtigt' }), lieferung({ ...jahr, id: 'sch', label: 'Gas geschätzt', estimated: true, amountCents: 300000 })],
+    items: [
+      { id: 'p1', period: '2025-01', amountCents: 300000, fuelDeliveryId: 'alt' }, { id: 'p2', period: '2025-01', amountCents: -300000, fuelDeliveryId: 'alt' },
+      { id: 'p3', period: '2025-01', amountCents: 300000, fuelDeliveryId: 'neu' },
+    ],
+  }))
+  assert.deepEqual(s.totals, { emissionsKg: 10000, co2CostCents: 65450 })
+  assert.deepEqual(s.deliveries.map((d) => [d.id, d.counted]), [['alt', 'none'], ['neu', 'full'], ['sch', 'none']])
+  assert.match(s.deliveries[0]?.note ?? '', /Storniert/)
+  assert.match(s.deliveries[2]?.note ?? '', /Schätzung.*abgedeckt/)
+  assert.deepEqual(s.deliveries.map((d) => d.amountCents), [0, 300000, 300000])
+})
+
+test('G-W2: Anfangsbestand mit CO₂-Kosten in der Summe, außer vor 2023 in Rechnung gestellt oder schon umgelegt', () => {
+  const stock = { stockUnit: 'l' as const, openingQuantity: 1000, openingEmissionsKg: 2676.3, openingCo2Cents: 17517, openingInvoicedBefore2023: false, openingAlreadySettled: null, closingQuantity: 500, closingMeasuredOn: '2025-12-31' }
+  const s = co2SheetOf(input({ stock, deliveries: [lieferung({})] }))
+  assert.deepEqual(s.opening, { emissionsKg: 2676.3, co2CostCents: 17517, co2Counted: true, note: null })
+  assert.deepEqual(s.totals, { emissionsKg: 10705.2, co2CostCents: 70066 })
+  const alt = co2SheetOf(input({ stock: { ...stock, openingInvoicedBefore2023: true }, deliveries: [lieferung({})] }))
+  assert.deepEqual([alt.opening?.co2Counted, alt.totals.co2CostCents, alt.totals.emissionsKg], [false, 52549, 10705.2])
+  assert.match(alt.opening?.note ?? '', /§ 11 Abs\. 2 Satz 2/)
+  const umgelegt = co2SheetOf(input({ stock: { ...stock, openingAlreadySettled: true }, deliveries: [lieferung({})] }))
+  assert.deepEqual([umgelegt.opening?.co2Counted, umgelegt.totals.co2CostCents], [false, 52549])
+  assert.match(umgelegt.opening?.note ?? '', /früheren Abrechnung/)
+})
+
+test('R-W1: Fernwärme aus dem Emissionshandel mit Anschluss nach dem Stichtag: nicht geprüft, mit Grund', () => {
+  const fw: Co2SheetInput['plant'] = { ...plant, energy: 'districtHeating', districtEtsNew: true }
+  const d = lieferung({ deliveredAt: null, invoiceDate: '2026-01-20', invoiceFrom: '2025-01-01', invoiceTo: '2025-12-31', quantity: null, quantityUnit: null, emissionsKg: 9000, co2CostCents: 1000 })
+  const s = co2SheetOf(input({ plant: fw, deliveries: [d] }))
+  assert.deepEqual(s.deliveries[0]?.findings, [])
+  assert.equal(s.checked, false)
+  assert.equal(co2SheetOf(input({ plant: { ...fw, districtEtsNew: false }, deliveries: [d] })).deliveries[0]?.findings.length, 1)
+})
+
+test('R-K6: das Blatt trägt den Tag, an dem es erstellt wurde', () => {
+  assert.equal(co2SheetOf(input()).createdOn, '2026-10-07')
 })

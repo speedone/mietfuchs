@@ -40,8 +40,8 @@ export default function Co2SheetView({ plantId, period, onClose }: { plantId: st
             <thead><tr><th>Rechnung</th>{SHEET_COLUMNS.map((c, j) => <th key={c} className={j >= 5 ? 'num' : undefined}>{c}</th>)}</tr></thead>
             <tbody>
               {sheetRows(sheet).map((r, i) => (
-                <tr key={`${r.label}:${i}`} className={i === sheet.deliveries.length ? 'subtotal' : undefined}>
-                  <td>{r.label}</td>
+                <tr key={`${r.label}:${i}`} className={r.kind === 'sum' ? 'subtotal' : undefined}>
+                  <td>{r.label}{r.note && <div className="muted">{r.note}</div>}</td>
                   {r.cells.map((c, j) => <td key={j} className={j >= 5 ? 'num' : undefined}>{c}</td>)}
                 </tr>
               ))}
@@ -50,7 +50,8 @@ export default function Co2SheetView({ plantId, period, onClose }: { plantId: st
         )}
       <ul>{sheetFacts(sheet).map((f) => <li key={f}>{f}</li>)}</ul>
       {findings.length > 0 && (
-        <div className="hint">
+        // Für den Vermieter, nicht für den Empfänger des Blatts (Durchsicht von #246, R-W2).
+        <div className="hint no-print">
           <strong>Bitte prüfen</strong>
           <ul>{findings.map((f) => <li key={f}>{f}</li>)}</ul>
         </div>

@@ -79,8 +79,9 @@ import { commonPeriod, tenancyOverlaps } from '../../shared/tenancyOverlap.ts'
 import { CALENDAR_RULES, calendarYearPeriod, contextOf, formatDayRange, isCalendarRules, periodContaining, periodDays, periodLabel, periodMonths, periodOfKey, periodsBetween, previousPeriod, rulesOf, settlementDeadline, settlementPeriod, type PeriodContext } from '../../shared/period.ts'
 import { lineRoot, monthSpanText, plantRules, plantSpan, recommendedDeadline, requestMonth, sameBuilding, sameFuelLine, sameLine, sameSpan, separateOwner, servesUnit, settledSeparately } from '../../shared/heatingPeriod.ts'
 import { heatingSnapshotFor, selfAt, snapshotFor, wayOf } from './snapshot.ts'
-import { plantFuel, rangeOf, type FuelCarry, type FuelResult } from './fuel.ts'
-import { co2Plausibility, plausibilityText } from './co2Plausibility.ts'
+import { cancelledDeliveries, plantFuel, rangeOf, type FuelCarry, type FuelResult } from './fuel.ts'
+import { co2Plausibility, etsExempt as etsExemptPlant, plausibilityText } from './co2Plausibility.ts'
+import { LAW_PARAMS } from '../../shared/law/params.ts'
 import { fuelFromDeliveries, fuelFromStock, looseCentsOf, measuredOffset, problemText, settledByDefault, stockKeysOf, stockOf, stockTemplateOfLine, stockTouched, valueOf as stockValueOf, type FuelFigures, type StockPeriodInput, type StockResult } from './fuelStock.ts'
 import { isStockEnergy, STOCK_FUEL_NAMES, STOCK_UNIT_TEXT } from '../../shared/fuelStock.ts'
 import { degreeDayPermille } from '../../shared/degreeDays.ts'
@@ -4672,7 +4673,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         plantSubject)
     }
     let etsExempt = false
-    if (pot.energy === 'districtHeating' && potPlant?.districtEtsNew === true) {
+    if (potPlant && etsExemptPlant({ energy: pot.energy, districtEtsNew: potPlant.districtEtsNew === true })) {
       const ets = law(co2DistrictEtsNew, { period: hPeriod }, lawLog)
       etsExempt = true
       // Der Satz für die Abrechnung (Durchsicht von #233): warum hier nichts aufgeteilt wird.
@@ -4689,17 +4690,20 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Unter einer Ausnahme nach § 11 ohne vereinbarte Abrechnung gilt das CO2KostAufG nicht (§ 2 Abs. 7, Heizung
     // PR 14): dann auch keine Prüfung, dieselbe Bedingung wie die Aufteilung.
     if (!etsExempt && !co2OffByExemption(pot.plantId, String(pot.period.key))) {
-      for (const d of snapshot.fuel?.deliveries ?? []) {
-        if (d.plantId !== pot.plantId) continue
+      // Eine stornierte Rechnung zählt nicht und wird nicht geprüft (Durchsicht von #246, G-K1); dieselbe
+      // Auswahl wie die Bewertung (fuel.ts).
+      const ownDeliveries = (snapshot.fuel?.deliveries ?? []).filter((d) => d.plantId === pot.plantId)
+      const cancelled = cancelledDeliveries(potPlant?.method ?? 'manual', ownDeliveries, snapshot.fuel?.items ?? [])
+      for (const d of ownDeliveries) {
+        if (cancelled.has(d.id)) continue
         const r = rangeOf(d)
         if (!r || r.from > pot.period.to || r.to < pot.period.from) continue
         const checked = co2Plausibility({
           ...d, invoiceDate: d.invoiceDate ?? null, quantity: d.quantity ?? null, quantityUnit: d.quantityUnit ?? null, energyKwh: d.energyKwh ?? null, gasBasis: d.gasBasis ?? null,
         }, pot.energy, lawLog)
-        for (const f of checked) {
-          const text = plausibilityText(f, fmtCents)
-          if (!notices.some((n) => n.code === 'co2.cost-implausible' && n.text === text)) warn('co2.cost-implausible', text, plantSubject)
-        }
+        // Je Anlage und Heizperiode gibt es einen Topf; doppelt wird ein Befund nur über die Teilabrechnungen
+        // nach Weg b, und deren Hinweise führt die Zusammenführung ohnehin nur einmal (Durchsicht von #246, K5 a).
+        for (const f of checked) warn('co2.cost-implausible', plausibilityText(f, fmtCents), plantSubject)
       }
     }
     // Heizung PR 14: unter einer Ausnahme nach § 11 für Wärme und Warmwasser nicht, außer eine Abrechnung ist
@@ -6357,7 +6361,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // Heizperiode nach Weg b kommt der Hinweis schon mit ihren Hinweisen; dann nicht ein zweites Mal.
   for (const v of lawLog.values) {
     if (!v.overridden) continue
-    const text = `${v.title} ${v.validFrom?.slice(0, 4) ?? ''}: ${v.text}, von Ihnen eingetragen (Quelle: ${v.overridden.source}), weil der amtliche Wert noch nicht im Programm steht. ` +
+    const year = Number(v.validFrom?.slice(0, 4))
+    const label = LAW_PARAMS.find((p) => p.id === v.id)?.overridable?.yearLabel?.(year) ?? String(year)
+    const text = `${v.title} ${label}: ${v.text}, von Ihnen eingetragen (Quelle: ${v.overridden.source}), weil der amtliche Wert noch nicht im Programm steht. ` +
       'Bringt ein Update den amtlichen Wert, gilt dieser; bei einer abgeschlossenen Abrechnung nennt die Seite Abrechnung die Änderung dann als „Rechtswert geändert“.'
     if (!notices.some((n) => n.code === 'law.value-overridden' && n.text === text)) warn('law.value-overridden', text)
   }

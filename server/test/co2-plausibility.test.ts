@@ -2,7 +2,7 @@
 // Standardwerte der EBeV 2030, € gegen Preis und Umsatzsteuer. Nur „bitte prüfen“.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { co2Plausibility, plausibilityText, type PlausibilityDelivery } from '../src/co2Plausibility.ts'
+import { co2Plausibility, etsExempt, plausibilityText, type PlausibilityDelivery } from '../src/co2Plausibility.ts'
 import { createLawLog } from '../../shared/law/register.ts'
 
 const base: PlausibilityDelivery = {
@@ -164,4 +164,31 @@ test('Ohne Lieferung nichts im Rechtsstand: Wer nichts einträgt, merkt nichts',
   const log = createLawLog()
   co2Plausibility({ ...base, deliveredAt: '2025-03-15' }, 'oil', log)
   assert.deepEqual(log.values, [])
+})
+
+// ---------- Durchsicht Runde 1 (#246) ----------
+
+test('G-K3: ohne Rechnungsdatum und Liefertag gilt das Ende des Zeitraums; liegt es vor 2023, keine Preisprüfung', () => {
+  const g = { ...base, invoiceFrom: '2022-01-01', invoiceTo: '2022-12-31', emissionsKg: 10000, co2CostCents: 1 }
+  assert.deepEqual(kinds(g, 'gas'), [], 'ob die Rechnung vor 2023 gestellt wurde, ist offen')
+  assert.deepEqual(kinds({ ...g, invoiceFrom: '2023-01-01', invoiceTo: '2023-12-31' }, 'gas'), ['cost'], 'gestellt frühestens am Ende des Zeitraums, also 2023')
+})
+
+test('R-K4: Fernwärme ohne Rechnungsdatum nimmt für den Durchschnittspreis den Liefertag', () => {
+  const fw = { ...base, deliveredAt: '2025-02-10', emissionsKg: 10000 }
+  assert.deepEqual(kinds({ ...fw, co2CostCents: 90000 }, 'districtHeating'), ['cost'])
+  assert.deepEqual(kinds({ ...fw, co2CostCents: 70000 }, 'districtHeating'), [])
+})
+
+test('R-W1: die Ausnahme des § 2 Abs. 4 Satz 2 an einer Stelle', () => {
+  assert.equal(etsExempt({ energy: 'districtHeating', districtEtsNew: true }), true)
+  assert.equal(etsExempt({ energy: 'districtHeating', districtEtsNew: false }), false)
+  assert.equal(etsExempt({ energy: 'gas', districtEtsNew: true }), false)
+})
+
+test('R-K8: der Hinweis nennt die Verordnung kurz, damit er auf dem Handy nicht über den Rand läuft', () => {
+  const [f] = co2Plausibility({ ...base, invoiceFrom: '2025-01-01', invoiceTo: '2025-12-31', energyKwh: 100000, gasBasis: 'hs', emissionsKg: 20088 }, 'gas', createLawLog())
+  if (!f) return assert.fail('kein Hinweis')
+  assert.match(plausibilityText(f, euro), /Standardwerten der EBeV 2030 wären es/)
+  assert.doesNotMatch(plausibilityText(f, euro), /Emissionsberichterstattungsverordnung/)
 })

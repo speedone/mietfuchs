@@ -9,6 +9,7 @@
 // zweite wäre eine Auskunft, die niemand geprüft hat.
 
 import type { AppliedValue, LawValueChange, SettlementComparison, SettlementDeviation } from '../../shared/types.ts'
+import { LAW_PARAMS } from '../../shared/law/params.ts'
 
 type Saldo = { tenancyId: string, tenantName: string, unitName: string, balanceCents: number }
 type Current = { statements: Saldo[], legalBasis?: { values?: readonly AppliedValue[] } }
@@ -44,7 +45,8 @@ function valueChanges(frozen: FrozenValue[], current: readonly AppliedValue[]): 
   return frozen.flatMap((f) => {
     const now = current.find((c) => c.id === f.id && c.validFrom === f.validFrom)
     if (!now || JSON.stringify(now.value) === JSON.stringify(f.value)) return []
-    return [{ id: f.id, title: f.title, frozenText: f.text, currentText: now.text }]
+    const checkOnly = LAW_PARAMS.find((p) => p.id === f.id)?.checkOnly === true
+    return [{ id: f.id, title: f.title, frozenText: f.text, currentText: now.text, ...(checkOnly ? { checkOnly: true as const } : {}) }]
   })
 }
 

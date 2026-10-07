@@ -99,3 +99,13 @@ test('Rechtswerte: zwei Fassungen desselben Werts werden je Fassung verglichen',
   )
   assert.deepEqual(changed.valueChanges.map((c) => `${c.frozenText}→${c.currentText}`), ['12 %→13 %'])
 })
+
+test('G-K6 (#246): ein Wert, der nur der Prüfung dient, ist als solcher gekennzeichnet', () => {
+  const v = (value: number, text: string) => ({ id: 'co2.price', title: 'CO₂-Preis je Tonne (Plausibilität)', norm: '§ 4', cite: 'UBA', value, text, validFrom: '2027-01-01', validTo: '2027-12-31' })
+  const r = compareWithFrozen(
+    { statements: [statement('t', 0)], legalBasis: { asOf: '2026-10-05', rules: [], values: [v(64.2, '64,20 €/t')] } },
+    { statements: [statement('t', 0)], legalBasis: { values: [v(65.1, '65,10 €/t')] } },
+    '2028-12-31', '2028-06-01',
+  )
+  assert.deepEqual(r.valueChanges, [{ id: 'co2.price', title: 'CO₂-Preis je Tonne (Plausibilität)', frozenText: '64,20 €/t', currentText: '65,10 €/t', checkOnly: true }])
+})

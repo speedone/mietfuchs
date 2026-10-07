@@ -398,7 +398,7 @@ const preis: LawParam<number | null, 'deliveryYear'> = {
     { validFrom: '2026-01-01', value: null, source, enacted: 'b' },
   ],
   describe: (v) => (v === null ? 'noch nicht veröffentlicht' : `${v} €/t`),
-  overridable: { reason: 'wird später veröffentlicht' },
+  overridable: { reason: 'wird später veröffentlicht', max: 1000 },
 }
 const fest: LawParam<number, 'deliveryYear'> = {
   id: 'test.fest', title: 'Fest', norm: '§ 5', timing: 'deliveryYear',
@@ -439,7 +439,7 @@ test('Register: veröffentlicht gilt; null ohne Eintrag wird nicht protokolliert
 
 test('Register: eventDate mit Eintrag nach dem Jahr des Datums', () => {
   const ets: LawParam<number | null, 'eventDate'> = {
-    id: 'test.ets', title: 'ETS', norm: '§ 3', timing: 'eventDate', overridable: { reason: 'r' },
+    id: 'test.ets', title: 'ETS', norm: '§ 3', timing: 'eventDate', overridable: { reason: 'r', max: 1000 },
     versions: [{ validFrom: '2026-01-01', validTo: '2026-12-31', value: 73.86, source, enacted: 'a' }, { validFrom: '2027-01-01', value: null, source, enacted: 'b' }],
     describe: (v) => String(v),
   }
@@ -492,4 +492,20 @@ test('Stichtag ustg.gas-heat-network-rate: 7 % vom 01.10.2022 bis 31.03.2024 (§
   assert.equal(law(ustgGasHeatNetworkRate, { date: '2024-03-31' }, createLawLog()), 7)
   assert.equal(coversDate(ustgGasHeatNetworkRate, '2022-09-30'), false)
   assert.equal(coversDate(ustgGasHeatNetworkRate, '2024-04-01'), false)
+})
+
+// ---------- Durchsicht Runde 1 (#246) ----------
+
+test('R-W3: der Rechtsstand nennt die EBeV-Werte mit allen Stellen, samt Umrechnungsfaktoren', () => {
+  const text = co2EbevFactors.describe(valueAt(co2EbevFactors, '2025-01-01'))
+  for (const w of ['0,0558', '0,0655', '0,074', '3,2508', '0,845', '42,8', '46']) assert.ok(text.includes(w), `${w} fehlt in „${text}“`)
+  assert.ok(!text.includes('0,056 '), text)
+})
+
+test('R-W4, G-K4: überschreibbare Werte nennen ihr Jahr richtig und haben eine Obergrenze', () => {
+  assert.equal(co2Price.overridable?.yearLabel?.(2027) ?? '2027', '2027')
+  assert.equal(co2PriceEts.overridable?.yearLabel?.(2027), 'für Rechnungen aus 2027 (Durchschnitt der Versteigerungen 2026)')
+  assert.equal(co2Price.overridable?.max, 1000)
+  assert.equal(co2PriceEts.overridable?.max, 1000)
+  assert.match(co2PriceEts.overridable?.reason ?? '', /Durchschnittspreis eines Jahres .*bis zum 31\. März des Folgejahres.*Rechnungen aus dem Folgejahr/)
 })
