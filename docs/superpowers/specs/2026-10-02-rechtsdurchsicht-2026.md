@@ -260,6 +260,11 @@ Auf bundesfinanzhof.de gelesen. **P**
 6. **HeizkostenV:** Evaluationsbericht nach § 5 Abs. 8 und eine mögliche Novelle zur EED/EPBD. **CO2KostAufG:** Erfahrungsbericht nach § 10.
 7. **BGH VIII. Zivilsenat:** Entscheidungsdatenbank für Betriebs- und Heizkosten nachsehen, denn Leitsatzentscheidungen wie VIII ZR 6/24 erscheinen ohne Pressemitteilung.
 8. **Nachfolger des BMF-Schreibens zu § 35a.**
+9. **Veröffentlichte Werte eintragen** (Heizung PR 17): den CO₂-Preis des Folgejahres nach der Veröffentlichung
+   des UBA (§ 4 Abs. 2 CO2KostAufG, spätestens zehn Werktage vor Jahresbeginn) und den Durchschnittspreis
+   des Emissionshandels des Vorjahres (§ 4 Abs. 3, bis 31.03.) in `shared/law/co2kostaufg.ts` als Wert an die
+   Stelle von `null` setzen (offenes Ende schließen, Folgejahr mit `null`), `law-history.test.ts` ergänzen,
+   `LAW_AS_OF` setzen. Die EBeV 2030 gilt bis 2030; vor 2031 die Nachfolgeverordnung lesen.
 
 ## Anhang: vorbereitete Kommentare (nicht gepostet)
 

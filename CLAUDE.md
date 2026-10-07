@@ -1727,6 +1727,24 @@ einer Änderung eine neue Fassung an statt die alte zu ändern, trägt veröffen
 sieht Bundesgesetzblatt (HeizkostenV, CO2KostAufG, GModG, BetrKV, MessEV) und neue Urteile des
 VIII. Senats zu Heiz- und Betriebskosten durch und setzt zuletzt `LAW_AS_OF`.
 
+**Werte, die erst später veröffentlicht werden** (Heizung PR 17, Entwurf 4.5): `co2.price` (ab 2027) und
+`co2.price-ets` (ab Rechnungsjahr 2027) haben `null` und sind `overridable`. Sie fragt nur
+`lawOverridable`, das einen Eintrag des Vermieters aus `law_overrides` (je Kalenderjahr, mit Quelle;
+[server/src/db/lawOverrides.ts](server/src/db/lawOverrides.ts), Routen `/api/law-overrides`) liest und als
+`overridden` protokolliert; `law()` lehnt überschreibbare Parameter ab. Die Abrechnung nennt einen benutzten
+Eintrag (`law.value-overridden`, hint). Ein Release mit dem amtlichen Wert setzt ihn an die Stelle von `null`
+(die zweite Ausnahme in `law-history.test.ts`), und der Eintrag heißt „überholt“. Gebraucht werden diese
+Werte, die EBeV-Werte und `ustg.gas-heat-network-rate` nur für `co2.cost-implausible`
+([server/src/co2Plausibility.ts](server/src/co2Plausibility.ts), je Rechnung, die die Heizperiode berührt,
+auch bei Vorratsenergien): Spannen über Preisjahre, Emissionshandel und Steuersätze (Mischsatz über die
+Stichtage nach BMF-Schreiben vom 25.10.2022, Rz. 12; Flüssiggas beide Sätze nach Rz. 5), Grenzen 1 €/3 %
+und bei den kg 1 % nach oben, 10 % nach unten wegen anerkannter Biomasseanteile (Festlegung ohne
+Rechtsquelle nach 15.2 F6, `KG_TOLERANCE`, `COST_TOLERANCE`). Mietfuchs rechnet nie kg oder € aus kWh vor,
+es vergleicht nur. Ins Register kommt, was im BGBl. steht oder das UBA nach § 4 Abs. 2, 3 CO2KostAufG
+bekanntmacht; keine Drucksachen. Das Blatt „CO₂-Angaben für den Messdienst“ baut
+[server/src/co2Sheet.ts](server/src/co2Sheet.ts) (#210, nicht abgegrenzt; Betrag ohne Eintrag aus den
+verknüpften Positionen), die Seite Heizkosten zeigt es über `Co2SheetView`.
+
 **Begriffslexikon** (#113): [shared/glossary.ts](shared/glossary.ts) hält jeden Fachbegriff mit
 Erklärung, Beispiel mit Zahlen, Rechtsgrundlage und „Brauche ich das?“. Es war der **erste
 Laufzeitanteil in `shared/`**; der Client bündelt ihn (dafür `allowImportingTsExtensions` in

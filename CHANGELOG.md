@@ -280,6 +280,18 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - Mehr als 70 % nach Verbrauch, wenn es mit den Mietern vereinbart ist (§ 10 HeizkostenV), in der
   Einrichtung und auf der Seite Heizkosten; nie mehr als 100 %.
   ([#99](https://github.com/speedone/mietfuchs/issues/99))
+- **CO₂-Angaben geprüft** ([#97](https://github.com/speedone/mietfuchs/issues/97)): Die Abrechnung prüft
+  kg und CO₂-Kosten jeder erfassten Rechnung gegen die Standardwerte der EBeV 2030, den CO₂-Preis des
+  Lieferjahres (2021 bis 2026), bei Fernwärme den Durchschnittspreis des Emissionshandels, und die
+  Umsatzsteuer, einschließlich des ermäßigten Satzes für Gas und Wärme vom 01.10.2022 bis 31.03.2024 und
+  eines Mischsatzes bei Rechnungen über die Stichtage. Abweichungen nennt sie als Hinweis; keine Zahl
+  ändert sich. Den CO₂-Preis 2027 und spätere Werte, die das Umweltbundesamt noch nicht veröffentlicht
+  hat, können Sie in den Einstellungen mit Quelle eintragen; bringt ein Update den amtlichen Wert, gilt
+  dieser.
+- **Ausdruck „CO₂-Angaben für den Messdienst“** ([#210](https://github.com/speedone/mietfuchs/issues/210)):
+  Auf der Seite Heizkosten stellt Mietfuchs je Heizperiode die Angaben der Rechnungen (kg CO₂, CO₂-Kosten,
+  Emissionsfaktor, Energiegehalt, Menge, Betrag), die Fläche und die Angaben zu §§ 8, 9 CO2KostAufG zum
+  Drucken und Weitergeben zusammen.
 
 ### Geändert
 
