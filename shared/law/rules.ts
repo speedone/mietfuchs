@@ -18,7 +18,7 @@
 // liest, setzt deren `retrieved` und `LAW_AS_OF` auf den Tag der Durchsicht (#110).
 import { betrkvTvSignal } from './bgb-betrkv.ts'
 import { co2CutMissing, co2FirstPeriodStart } from './co2kostaufg.ts'
-import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutNotByConsumption, hkvCutRemoteReading, hkvEstimateThreshold, hkvRemoteReadingRetrofit } from './heizkostenv.ts'
+import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvEstimateThreshold, hkvExemptions, hkvRemoteReadingRetrofit } from './heizkostenv.ts'
 import { dayBefore, germanDate, LAW_AS_OF, onlyVersion, valueAt } from './register.ts'
 
 // Die Fassungen, aus denen die Regeln ihre Grenzen nehmen. Bekommt einer der beiden Parameter eine
@@ -35,6 +35,8 @@ const cut = valueAt(hkvCutNotByConsumption, LAW_AS_OF)
 const remoteCut = valueAt(hkvCutRemoteReading, LAW_AS_OF)
 const forcedShare = valueAt(hkvConsumptionShareForced, LAW_AS_OF)
 const estimateThreshold = valueAt(hkvEstimateThreshold, LAW_AS_OF)
+const infoCut = valueAt(hkvCutInformation, LAW_AS_OF)
+const exemptions = valueAt(hkvExemptions, LAW_AS_OF)
 const CO2_FROM = co2FirstPeriodStart()
 const co2Cut = valueAt(co2CutMissing, LAW_AS_OF)
 
@@ -211,6 +213,26 @@ export const RULES: readonly Rule[] = [
       `Betrifft die Schätzung mehr als ${estimateThreshold} % der für die Verteilung maßgeblichen Fläche, werden die Kosten ausschließlich nach der Fläche verteilt. ` +
       // Durchsicht von #242, R-I5/G-M8: zwei Festlegungen, die die Verordnung nicht ausdrücklich regelt.
       'Mietfuchs zählt dafür die ganze Fläche einer Wohnung, auch wenn nur ein Teil der Heizperiode geschätzt ist, und prüft Heizung und Warmwasser getrennt (Auslegung von Mietfuchs).',
+  },
+  // Heizung PR 14 (#99, Entwurf 10.2): Informationen nach § 6a und Ausnahmen nach § 11. Wortlaut gelesen
+  // am 07.10.2026 auf gesetze-im-internet.de.
+  {
+    code: 'heating-info',
+    title: 'Informationen zur Heizkostenabrechnung',
+    norm: '§ 6a Abs. 1, 3, 5 HeizkostenV; § 12 Abs. 1 Satz 3 HeizkostenV',
+    summary:
+      'Beruht die Abrechnung auf dem erfassten Verbrauch, macht der Vermieter mit ihr Angaben über den Anteil der eingesetzten Energieträger (bei Fernwärme auch die jährlichen Treibhausgasemissionen und den Primärenergiefaktor des Netzes), die erhobenen Steuern, Abgaben und Zölle, die Entgelte für Erfassung, Ablesung und Abrechnung, Kontaktinformationen, beim Verbrauchervertrag die Information zur Streitbeilegung, einen Vergleich mit einem normierten oder durch Vergleichstests ermittelten Durchschnittsnutzer und einen grafischen Vergleich des witterungsbereinigten Verbrauchs mit dem vorhergehenden Zeitraum zugänglich. ' +
+      'Beruht sie nicht auf dem Verbrauch, enthält sie mindestens die Kontaktinformationen und die Information zur Streitbeilegung. Sind fernablesbare Geräte eingebaut, stehen den Mietern außerdem monatliche Verbrauchsinformationen zu. ' +
+      `Teilt der Vermieter diese Informationen nicht oder nicht vollständig mit, darf der Mieter seinen Anteil um ${infoCut} % kürzen.`,
+  },
+  {
+    code: 'heating-exemption',
+    title: 'Ausnahmen von der Heizkostenverordnung',
+    norm: '§ 11 HeizkostenV; § 2 Abs. 7 CO2KostAufG; § 556a Abs. 1 BGB',
+    summary:
+      `Die Vorschriften zur Verbrauchserfassung und Kostenverteilung gelten unter anderem nicht für Räume in Gebäuden mit einem Heizwärmebedarf von weniger als ${exemptions.lowDemandKwhPerM2Year} kWh je m² und Jahr, für Räume, bei denen Erfassung oder Verteilung nur mit Kosten möglich ist, die sich nicht in der Regel innerhalb von ${exemptions.paybackYears} Jahren durch Einsparungen erwirtschaften lassen, ` +
+      `für Räume, die vor dem ${germanDate(exemptions.readyBefore)} bezugsfertig wurden und in denen der Nutzer den Verbrauch nicht beeinflussen kann, für Räume in Gebäuden, die überwiegend mit Wärme aus Wärmerückgewinnung oder Solaranlagen versorgt werden, oder aus Kraft-Wärme-Kopplung oder Abwärme, sofern der Wärmeverbrauch des Gebäudes nicht erfasst wird, und bei einer Befreiung durch die zuständige Stelle. Für das Warmwasser gilt das entsprechend. ` +
+      'Dann gilt der Mietvertrag; ist nichts anderes vereinbart, wird nach der Wohnfläche umgelegt, und Kosten, die von einem erfassten Verbrauch abhängen, nach einem Maßstab, der dem Verbrauch Rechnung trägt. Die CO₂-Kosten werden dann nicht nach dem CO2KostAufG aufgeteilt, außer die Vertragsparteien haben eine Abrechnung der Heiz- und Warmwasserkosten vereinbart.',
   },
 ]
 

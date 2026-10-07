@@ -16,6 +16,8 @@ import FuelCard from '../components/FuelCard'
 import HotWaterCard from '../components/HotWaterCard'
 import StockCard from '../components/StockCard'
 import SelfHeatingCards from '../components/SelfHeatingCards'
+import HeatingInfoCard from '../components/HeatingInfoCard'
+import HeatingRulesCard from '../components/HeatingRulesCard'
 import ServiceValuesCard from '../components/ServiceValuesCard'
 import { showsStockCard } from '../stockForm'
 import Term from '../components/Term'
@@ -109,6 +111,14 @@ export default function Heizkosten({ units, tenancies }: { units: Unit[]; tenanc
                 )}
                 {plant.method === 'self' && (
                   <SelfHeatingCards plant={plant} view={v} self={data?.heating.find((h) => h.plantId === plant.id && h.period === v.period)?.self ?? null} onChanged={() => void load()} />
+                )}
+                {/* Heizung PR 14: Ausnahme, Vereinbarung und monatliche Information je Heizperiode; die Angaben nach
+                    § 6a bei eigener Abrechnung und freien Schlüsseln. Für Etagenheizungen gilt die Verordnung nicht. */}
+                {(plant.supply ?? 'central') === 'central' && (
+                  <HeatingRulesCard key={`rules:${v.period}:${JSON.stringify(v.rules)}`} plant={plant} view={v} onChanged={() => void load()} />
+                )}
+                {(plant.supply ?? 'central') === 'central' && plant.method !== 'service' && v.rules.exemptionScope !== 'both' && (
+                  <HeatingInfoCard key={`info:${v.period}:${JSON.stringify(v.info)}:${v.rules.consumerContract ?? ''}`} plant={plant} view={v} onChanged={() => void load()} />
                 )}
               </div>
             ))}

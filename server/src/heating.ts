@@ -729,7 +729,8 @@ export const selfFromOf = (p: SelfSpanned): string | null => openSelfSpan(p)?.fr
 // Plans); Wärmelieferung nicht (§ 7 Abs. 3), Wärmepumpe und Strom nicht.
 export const OIL_OR_GAS: readonly HeatingEnergy[] = ['gas', 'oil', 'lpg']
 
-export type ShareRow = { period: string; heatConsumptionPct: number | null; waterConsumptionPct: number | null; insulationRule: InsulationRule | null }
+// `above70Agreed` (Heizung PR 14): mehr als 70 % nach Verbrauch sind mit den Mietern vereinbart (§ 10).
+export type ShareRow = { period: string; heatConsumptionPct: number | null; waterConsumptionPct: number | null; insulationRule: InsulationRule | null; above70Agreed?: boolean | null }
 export type ConsumptionShares = {
   heating: number
   // null: kein eigener Wert für das Warmwasser (§ 8 Abs. 1); bei verbundener oder getrennter
@@ -741,6 +742,9 @@ export type ConsumptionShares = {
   changed: boolean
   // Die Antwort zum Wärmeschutz (§ 7 Abs. 1 Satz 2), aus der eigenen Zeile oder der letzten davor.
   insulation: InsulationRule | null
+  // Heizung PR 14: Mehr als 70 % sind vereinbart (§ 10); die Vereinbarung gehört zum Anteil und wird mit ihm
+  // geerbt.
+  above70Agreed: boolean
 }
 
 // Der Anteil nach Verbrauch gehört zur **Linie** einer Anlage (Durchsicht von #239, I3): Beim
@@ -758,7 +762,7 @@ export function lineShareRows(rows: readonly PlantShareRow[], plants: readonly L
   const byPeriod = new Map<string, ShareRow>()
   for (const r of ordered) {
     const cur = byPeriod.get(r.period)
-    const row: ShareRow = { period: r.period, heatConsumptionPct: r.heatConsumptionPct, waterConsumptionPct: r.waterConsumptionPct, insulationRule: r.insulationRule }
+    const row: ShareRow = { period: r.period, heatConsumptionPct: r.heatConsumptionPct, waterConsumptionPct: r.waterConsumptionPct, insulationRule: r.insulationRule, above70Agreed: r.above70Agreed ?? null }
     if (!cur || (cur.heatConsumptionPct === null && r.heatConsumptionPct !== null)) byPeriod.set(r.period, row)
   }
   return [...byPeriod.values()]
@@ -785,14 +789,20 @@ export function consumptionSharesOf(rows: readonly ShareRow[], key: string, ener
   const water = ownHeat !== null ? (own?.waterConsumptionPct ?? null) : (previous?.water ?? null)
   const insulation = own?.insulationRule ?? earlier.find((r) => r.insulationRule !== null)?.insulationRule ?? null
   const isForced = insulation === 'applies' && OIL_OR_GAS.includes(energy)
+  // § 10 (Heizung PR 14): Die Vereinbarung über mehr als 70 % gehört zum Anteil und wird mit ihm geerbt. Beim
+  // Pflichtanteil des § 7 Abs. 1 Satz 2 bleibt ein vereinbarter höherer Anteil (§ 10 nennt § 7 Abs. 1 als
+  // Ganzes; Auslegung von Mietfuchs), nie ein niedrigerer.
+  const agreed = ownHeat !== null ? own?.above70Agreed === true : prevShare?.above70Agreed === true
+  const pflicht = isForced ? forced() : null
   return {
-    heating: isForced ? forced() : heat,
+    heating: pflicht !== null && !(agreed && heat > pflicht) ? pflicht : heat,
     water,
     forced: isForced,
     previous,
     own: ownHeat !== null,
     changed: ownHeat !== null && previous !== null && (ownHeat !== previous.heating || water !== previous.water),
     insulation,
+    above70Agreed: agreed,
   }
 }
 

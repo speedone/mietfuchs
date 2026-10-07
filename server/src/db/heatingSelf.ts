@@ -10,7 +10,7 @@
 // gilt nur für eine Heizperiode, die noch nicht begonnen hat; der erste Anteil darf jederzeit gesetzt
 // werden („Mit welchem Anteil haben Sie bisher abgerechnet?“). 50 bis 70 % (§ 7 Abs. 1, § 8 Abs. 1),
 // bei Öl und Gas mit gedämmten Leitungen 70 % für die Heizung (§ 7 Abs. 1 Satz 2); mehr als 70 % nur
-// mit Vereinbarung (§ 10), das kommt mit PR 14.
+// nur mit Vereinbarung (§ 10, Heizung PR 14: Häkchen `above70Agreed`), nie über 100 %.
 //
 // **Fehlende Zwischenablesung** (Abweichung 8): die Antwort je Wohnung und Grenze.
 import { and, eq, ne } from 'drizzle-orm'
@@ -74,8 +74,8 @@ export function distributionOf(rows: readonly ShareRow[], energy: HeatingEnergy,
   const shares = consumptionSharesOf(rows, h.key, energy, () => valueAt(hkvConsumptionShareForced, h.from))
   const earlier = rows.some((r) => r.period < h.key && r.heatConsumptionPct !== null)
   return {
-    own: { heating: own?.heatConsumptionPct ?? null, water: own?.waterConsumptionPct ?? null, insulationRule: own?.insulationRule ?? null },
-    effective: shares ? { heating: shares.heating, water: shares.water, insulationRule: own?.insulationRule ?? null } : null,
+    own: { heating: own?.heatConsumptionPct ?? null, water: own?.waterConsumptionPct ?? null, insulationRule: own?.insulationRule ?? null, above70Agreed: own?.above70Agreed === true },
+    effective: shares ? { heating: shares.heating, water: shares.water, insulationRule: own?.insulationRule ?? null, above70Agreed: shares.above70Agreed } : null,
     inherited: shares !== null && !shares.own,
     begun: today !== '' && today >= h.from,
     first: shares === null || (!earlier && !shares.own),
@@ -98,7 +98,7 @@ async function lastClosedHeatingPeriod(db: Database, ctx: PlantContext): Promise
 const pctOf = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
 
 // Prüft einen neuen Anteil (Prozent) und gibt Heizung und Warmwasser zurück.
-function checkShares(body: unknown, plant: HeatingPlant, hotWater: HotWater, h: BillingPeriod, rows: readonly ShareRow[], today: string): { heating: number; water: number | null; insulationRule: InsulationRule; toForced: boolean } {
+function checkShares(body: unknown, plant: HeatingPlant, hotWater: HotWater, h: BillingPeriod, rows: readonly ShareRow[], today: string): { heating: number; water: number | null; insulationRule: InsulationRule; toForced: boolean; above70Agreed: boolean } {
   const heating = pctOf(raw(body, 'heatConsumptionPct'))
   // § 8 Abs. 1: eigene Wahl beim Warmwasser (Abweichung 14); ohne zentrales Warmwasser gibt es keinen.
   const withWater = hotWater !== 'none'
@@ -107,19 +107,23 @@ function checkShares(body: unknown, plant: HeatingPlant, hotWater: HotWater, h: 
     throw new HeatingError(400, 'Bitte geben Sie auch den Anteil nach Verbrauch beim Warmwasser an (§ 8 Abs. 1 HeizkostenV); er darf von dem der Heizung abweichen.')
   }
   const insulationRule = oneOfOrUndefined(INSULATION_RULES, raw(body, 'insulationRule')) ?? 'unknown'
+  // § 10 HeizkostenV (Heizung PR 14): Höhere Sätze als 70 % aus einer Vereinbarung bleiben unberührt.
+  const above70Agreed = raw(body, 'above70Agreed') === true
   const { min, max } = valueAt(hkvConsumptionShare, h.from)
   for (const v of withWater ? [heating, water] : [heating]) {
     if (v === null) throw new HeatingError(400, 'Bitte geben Sie an, welcher Anteil der Kosten nach Verbrauch verteilt wird.')
     // Durchsicht von #239, M9: höchstens zwei Nachkommastellen.
     if (Math.abs(Math.round(v * 100) - v * 100) > 1e-9) throw new HeatingError(400, 'Bitte geben Sie den Anteil mit höchstens zwei Nachkommastellen an.')
-    if (v > max) throw new HeatingError(400, `Mehr als ${max} % nach Verbrauch gehen nur mit einer Vereinbarung (§ 10 HeizkostenV); das kommt mit einer späteren Version.`)
+    if (v > 100) throw new HeatingError(400, 'Nach Verbrauch verteilt werden höchstens 100 % der Kosten.')
+    if (v > max && !above70Agreed) throw new HeatingError(400, `Mehr als ${max} % nach Verbrauch gehen nur, wenn es mit den Mietern vereinbart ist (§ 10 HeizkostenV). Ist es vereinbart, setzen Sie das Häkchen „vereinbart“.`)
     if (v < min) throw new HeatingError(400, `Die Heizkostenverordnung verlangt mindestens ${min} % nach Verbrauch (§ 7 Abs. 1, § 8 Abs. 1).`)
   }
   if (heating === null) throw new HeatingError(400, 'Bitte geben Sie den Anteil an.')
   if (insulationRule === 'applies' && OIL_OR_GAS.includes(plant.energy)) {
     const forced = valueAt(hkvConsumptionShareForced, h.from)
-    if (heating !== forced) {
-      throw new HeatingError(400, `Bei Öl- oder Gasheizung, Wärmeschutz unter dem Niveau von 1994 und überwiegend gedämmten Leitungen sind von den Heizkosten ${forced} % nach Verbrauch zu verteilen (§ 7 Abs. 1 Satz 2 HeizkostenV).`)
+    // Mehr als der Pflichtanteil nur mit Vereinbarung (§ 10 nennt § 7 Abs. 1 als Ganzes; Auslegung), nie weniger.
+    if (heating < forced || (heating > forced && !above70Agreed)) {
+      throw new HeatingError(400, `Bei Öl- oder Gasheizung, Wärmeschutz unter dem Niveau von 1994 und überwiegend gedämmten Leitungen sind von den Heizkosten ${forced} % nach Verbrauch zu verteilen (§ 7 Abs. 1 Satz 2 HeizkostenV); mehr nur, wenn es vereinbart ist (§ 10 HeizkostenV).`)
     }
   }
   // § 6 Abs. 4: nur für künftige Zeiträume; der erste Anteil darf jederzeit gesetzt werden.
@@ -136,7 +140,7 @@ function checkShares(body: unknown, plant: HeatingPlant, hotWater: HotWater, h: 
     throw new HeatingError(400,
       `Die Heizperiode hat am ${germanDate(h.from)} begonnen. Den Anteil nach Verbrauch ändern Sie nur für künftige Abrechnungszeiträume, durch Erklärung gegenüber den Mietern und mit Wirkung zum Beginn eines Zeitraums (§ 6 Abs. 4 HeizkostenV). Tragen Sie ihn bei der nächsten Heizperiode ein.`)
   }
-  return { heating, water, insulationRule, toForced }
+  return { heating, water, insulationRule, toForced, above70Agreed }
 }
 
 // Die Zeilen über die Linie der Anlage (Durchsicht von #239, I3).
@@ -167,7 +171,7 @@ export async function saveDistribution(db: Database, plantId: string, period: st
   }
   await db.transaction(async (tx) => {
     const id = await ensureHeatingPeriod(tx, plantId, h.key)
-    await tx.update(heatingPeriods).set({ heatConsumptionPct: next.heating, waterConsumptionPct: next.water, insulationRule: next.insulationRule }).where(eq(heatingPeriods.id, id))
+    await tx.update(heatingPeriods).set({ heatConsumptionPct: next.heating, waterConsumptionPct: next.water, insulationRule: next.insulationRule, above70Agreed: next.above70Agreed }).where(eq(heatingPeriods.id, id))
   })
   return distributionOf(await shareRows(db, plantId), ctx.plant.energy, h, today)
 }
@@ -297,7 +301,7 @@ export async function setUpSelf(db: Database, plantId: string, body: unknown, to
     }
     const id = await ensureHeatingPeriod(tx, plantId, h.key)
     await tx.update(heatingPeriods).set({
-      heatConsumptionPct: shares.heating, waterConsumptionPct: shares.water, insulationRule: shares.insulationRule,
+      heatConsumptionPct: shares.heating, waterConsumptionPct: shares.water, insulationRule: shares.insulationRule, above70Agreed: shares.above70Agreed,
       dhwMethod: after.hotWater === 'combined' ? 'heatMeter' : null,
     }).where(eq(heatingPeriods.id, id))
     for (const p of plans) {

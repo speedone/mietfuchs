@@ -12,6 +12,7 @@
 import { sql } from 'drizzle-orm'
 import { check, index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
 import type {
+  AgreedOtherwise,
   AiJsonMode,
   AiProviderKind,
   AiSlotName,
@@ -28,6 +29,7 @@ import type {
   DevicesRemote,
   DhwMethod,
   EstimateCause,
+  ExemptionScope,
   EstimateMethod,
   EstimatePart,
   EstimateValueUnit,
@@ -38,6 +40,7 @@ import type {
   HcaScale,
   ServiceHeatUnit,
   HeatGeneration,
+  HeatingExemption,
   HeatPumpMajority,
   HeatingEnergy,
   HeatingMethod,
@@ -363,6 +366,10 @@ export const HCA_SCALES = exactly<HcaScale>()(['unit', 'product'] as const)
 export const SERVICE_HEAT_UNITS = exactly<ServiceHeatUnit>()(['units', 'kWh'] as const)
 export const INSULATION_RULES = exactly<InsulationRule>()(['applies', 'notApplies', 'unknown'] as const)
 export const DHW_METHODS = exactly<DhwMethod>()(['heatMeter', 'volumeFormula', 'areaFormula'] as const)
+// Heizung PR 14: Ausnahme nach § 11 und Vereinbarung nach § 2 HeizkostenV je Heizperiode.
+export const HEATING_EXEMPTIONS = exactly<HeatingExemption>()(['none', 'lowDemand', 'disproportionate', 'pre1981', 'renewable', 'authority'] as const)
+export const EXEMPTION_SCOPES = exactly<ExemptionScope>()(['heat', 'both'] as const)
+export const AGREED_OTHERWISE = exactly<AgreedOtherwise>()(['none', 'area', 'fixedPercent', 'consumption'] as const)
 // Warmwasser ohne Wärmezähler (Heizung PR 11): Zeile der Heizwerttabelle und Erzeuger der Anlage.
 export const FUEL_GRADE_VALUES = exactly<FuelGrade>()(['heatingOilEL', 'heavyFuelOil', 'naturalGasH', 'naturalGasL', 'lpg', 'coke', 'lignite', 'hardCoal', 'firewood', 'woodPellets', 'woodChips'] as const)
 export const HEAT_GENERATIONS = exactly<HeatGeneration>()(['single', 'mixed'] as const)
@@ -528,6 +535,17 @@ export const heatingPeriods = sqliteTable(
     openingAlreadySettled: integer('opening_already_settled', { mode: 'boolean' }),
     closingQuantity: real('closing_quantity'),
     closingMeasuredOn: text('closing_measured_on'),
+    // Pflichtangaben und Ausnahmen (Heizung PR 14). Nr. 4 und 5 des § 6a Abs. 3 mit Quelle; Ausnahme nach § 11,
+    // Vereinbarung nach § 2 und die monatliche Information je Heizperiode, geerbt von der vorigen der Linie.
+    // Bedingungen im zweiten Schritt (0035).
+    infoReferenceKwhPerM2: real('info_reference_kwh_per_m2'),
+    infoReferenceSource: text('info_reference_source'),
+    climateFactorSource: text('climate_factor_source'),
+    exemption: text('exemption', { enum: HEATING_EXEMPTIONS }),
+    exemptionScope: text('exemption_scope', { enum: EXEMPTION_SCOPES }),
+    exemptionBillingAgreed: integer('exemption_billing_agreed', { mode: 'boolean' }),
+    agreedOtherwise: text('agreed_otherwise', { enum: AGREED_OTHERWISE }),
+    monthlyInfoElsewhere: integer('monthly_info_elsewhere', { mode: 'boolean' }),
   },
   (t) => [
     uniqueIndex('heating_periods_plant_period_idx').on(t.plantId, t.period),
@@ -548,6 +566,20 @@ export const heatingPeriods = sqliteTable(
     notNegative('heating_periods_opening_co2_not_negative', 'opening_co2_cents'),
     notNegative('heating_periods_closing_quantity_not_negative', 'closing_quantity'),
     check('heating_periods_closing_measured_on_valid', sql.raw(`"closing_measured_on" IS NULL OR "closing_measured_on" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`)),
+    // Pflichtangaben und Ausnahmen (Heizung PR 14). Nr. 4: ein Vergleichswert über 0 und nur mit Quelle; Nr. 5:
+    // Klimafaktoren über 0 und nur mit Quelle; Fernwärme ab 0.
+    check('heating_periods_info_reference_positive', sql.raw('"info_reference_kwh_per_m2" IS NULL OR "info_reference_kwh_per_m2" > 0')),
+    check('heating_periods_info_reference_source_complete', sql.raw(`"info_reference_kwh_per_m2" IS NULL OR length(trim(coalesce("info_reference_source", ''))) > 0`)),
+    check('heating_periods_climate_factor_positive', sql.raw('("climate_factor" IS NULL OR "climate_factor" > 0) AND ("climate_factor_prev" IS NULL OR "climate_factor_prev" > 0)')),
+    check('heating_periods_climate_factor_source_complete', sql.raw(`("climate_factor" IS NULL AND "climate_factor_prev" IS NULL) OR length(trim(coalesce("climate_factor_source", ''))) > 0`)),
+    notNegative('heating_periods_district_ghg_not_negative', 'info_district_ghg'),
+    notNegative('heating_periods_district_pef_not_negative', 'info_district_pef'),
+    oneOf('heating_periods_exemption_known', 'exemption', HEATING_EXEMPTIONS),
+    oneOf('heating_periods_exemption_scope_known', 'exemption_scope', EXEMPTION_SCOPES),
+    // Umfang und vereinbarte Abrechnung gehören zu einer Ausnahme (§ 11 Abs. 2 HeizkostenV; § 2 Abs. 7 CO2KostAufG).
+    check('heating_periods_exemption_scope_valid', sql.raw(`"exemption_scope" IS NULL OR ("exemption" IS NOT NULL AND "exemption" <> 'none')`)),
+    check('heating_periods_exemption_billing_agreed_valid', sql.raw(`"exemption_billing_agreed" IS NULL OR ("exemption" IS NOT NULL AND "exemption" <> 'none')`)),
+    oneOf('heating_periods_agreed_otherwise_known', 'agreed_otherwise', AGREED_OTHERWISE),
   ],
 )
 

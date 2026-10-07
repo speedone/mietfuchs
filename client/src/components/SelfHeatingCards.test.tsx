@@ -64,7 +64,7 @@ test('Pflichtanteil in begonnener Heizperiode nachtragen; „Weiß ich nicht“ 
   fireEvent.change(screen.getByLabelText(/Liegt der Wärmeschutz Ihres Hauses unter dem Anforderungsniveau/), { target: { value: 'applies' } })
   fireEvent.click(screen.getByRole('button', { name: 'Pflichtanteil eintragen' }))
   await waitFor(() => expect(onChanged).toHaveBeenCalled())
-  expect(sent).toEqual([{ heatConsumptionPct: 70, waterConsumptionPct: null, insulationRule: 'applies' }])
+  expect(sent).toEqual([{ heatConsumptionPct: 70, waterConsumptionPct: null, insulationRule: 'applies', above70Agreed: false }])
 })
 
 test('Fernwärme: keine Frage zum Wärmeschutz (Durchsicht von #239, M1)', () => {
@@ -86,7 +86,7 @@ test('Durchsicht #241 Runde 2, H1: Die Verteilung 2025 fragt das Warmwasser nach
   fireEvent.change(screen.getByLabelText(/Warmwasser in %/), { target: { value: '60' } })
   fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
   await waitFor(() => expect(onChanged).toHaveBeenCalled())
-  expect(sent).toEqual([{ heatConsumptionPct: 70, waterConsumptionPct: 60, insulationRule: 'notApplies' }])
+  expect(sent).toEqual([{ heatConsumptionPct: 70, waterConsumptionPct: 60, insulationRule: 'notApplies', above70Agreed: false }])
   cleanup()
   // Umgekehrt: 2025 ohne Warmwasser, die Anlage heute mit; kein Feld, und gespeichert wird ohne Warmwasser.
   sent.length = 0
@@ -95,5 +95,5 @@ test('Durchsicht #241 Runde 2, H1: Die Verteilung 2025 fragt das Warmwasser nach
   expect(screen.queryByLabelText(/Warmwasser in %/)).toBeNull()
   fireEvent.change(screen.getByLabelText(/Heizung in %/), { target: { value: '70' } })
   fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
-  await waitFor(() => expect(sent).toEqual([{ heatConsumptionPct: 70, waterConsumptionPct: null, insulationRule: 'notApplies' }]))
+  await waitFor(() => expect(sent).toEqual([{ heatConsumptionPct: 70, waterConsumptionPct: null, insulationRule: 'notApplies', above70Agreed: false }]))
 })

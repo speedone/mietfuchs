@@ -67,6 +67,8 @@ import { setUpSelf } from '../src/db/heatingSelf.ts'
 import { removeEstimate, saveEstimate } from '../src/db/heatingEstimates.ts'
 import { saveHotWater } from '../src/db/co2.ts'
 import { saveServiceValues } from '../src/db/serviceValues.ts'
+import { saveHeatingRules } from '../src/db/heatingInfo.ts'
+import { heatingRulesOf } from '../src/heatingInfo.ts'
 import { createDelivery, createEstimates, freezeFuelCarries, fuelGapQuestions, unfreezeFuelCarries } from '../src/db/fuel.ts'
 import { openDatabase } from '../src/db/open.ts'
 import { readClosedSettlements, readCostItems, readFuelCarryFrozen, readFuelDeliveries, readStock } from '../src/db/read.ts'
@@ -162,7 +164,7 @@ const SEEDS: number[] = process.env.INV_FROM !== undefined || process.env.INV_TO
   : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 16, 81]
 const STEPS = Number(process.env.INV_STEPS ?? 30)
 
-type Variant = { name: string; lazy: boolean; estimate: boolean; change?: boolean; two?: boolean; swap?: boolean; self?: boolean; hw?: 'combined' | 'separate'; dhw?: 'volumeFormula' | 'areaFormula'; capture?: 'hca' | 'serviceValues'; offset?: boolean; failure?: boolean }
+type Variant = { name: string; lazy: boolean; estimate: boolean; change?: boolean; two?: boolean; swap?: boolean; self?: boolean; hw?: 'combined' | 'separate'; dhw?: 'volumeFormula' | 'areaFormula'; capture?: 'hca' | 'serviceValues'; offset?: boolean; failure?: boolean; rules?: boolean }
 const VARIANTS: Variant[] = [
   { name: 'Grundform', lazy: false, estimate: false },
   { name: 'Rechnung kommt später', lazy: true, estimate: false },
@@ -196,7 +198,44 @@ const VARIANTS: Variant[] = [
   // Mieterwechsel in B, mit und ohne verbundenes Warmwasser.
   { name: 'Eigene Heizkostenabrechnung, Gerät ausgefallen (§ 9a)', lazy: false, estimate: false, self: true, failure: true },
   { name: 'Eigene Heizkostenabrechnung, verbundenes Warmwasser, Gerät ausgefallen (§ 9a)', lazy: true, estimate: false, self: true, hw: 'combined', failure: true },
+  // Heizung PR 14: Ausnahme nach § 11 und Bestätigung der monatlichen Information je Heizperiode, auch in
+  // abgeschlossenen (dort 409), bei eigener Abrechnung, bei freien Schlüsseln und über einen Kesseltausch.
+  { name: 'Eigene Heizkostenabrechnung, verbundenes Warmwasser, Ausnahme je Heizperiode (§ 11)', lazy: false, estimate: false, self: true, hw: 'combined', rules: true },
+  { name: 'Freie Schlüssel, Ausnahme je Heizperiode (§ 11)', lazy: false, estimate: false, rules: true },
+  { name: 'Kesseltausch, Ausnahme je Heizperiode (§ 11)', lazy: true, estimate: false, swap: true, rules: true },
 ]
+
+// Heizung PR 14 (x): Unter einer Ausnahme nach § 11 für Wärme und Warmwasser keine Angaben nach § 6a, kein
+// Kürzungshinweis nach § 12 und keine CO₂-Aufteilung (ohne vereinbarte Abrechnung); nur für die Wärme ist der
+// Ausweis einer des Warmwassers. Die Angaben verändern keine Zeile außer den CO₂-Abzügen: Dieselbe Rechnung ohne
+// sie ergibt je Mieter dieselbe Summe ohne CO₂-Zeilen. Gezählt wird, damit keine Variante still nichts prüft.
+const RULES = { periods: 0, both: 0, heat: 0, agreedBilling: 0 }
+const CUT_CODES = new Set(['heating.no-consumption', 'heating.not-by-consumption', 'heating.dhw-not-metered', 'heating.consumption-share', 'heating.info-incomplete', 'heating.info-open', 'heating.monthly-info', 'heating.share-forced-unsure', 'heating.flat-rate'])
+const RULE_FIELDS = { exemption: null, exemptionScope: null, exemptionBillingAgreed: null, agreedOtherwise: null, monthlyInfoElsewhere: null }
+function rulesChecks(r: ReturnType<typeof computeSettlement>, stock: Awaited<ReturnType<typeof readStock>>, key: string, period: ReturnType<typeof periodOfKey>, where: string): void {
+  if (!period) return
+  const rows = stock.heatingPeriodRows.map((x) => ({ ...x, period: String(x.period) }))
+  const without = computeSettlement(snapshotFor({ ...stock, heatingPeriodRows: stock.heatingPeriodRows.map((x) => ({ ...x, ...RULE_FIELDS })) }, 'objekt-1', period), {})
+  const sumOf = (s: ReturnType<typeof computeSettlement>, t: string) => s.statements.find((x) => x.tenancyId === t)?.rows.filter((x) => x.kind !== 'co2Relief').reduce((a, x) => a + x.shareCents, 0) ?? 0
+  for (const st of r.statements) assert.equal(sumOf(r, st.tenancyId), sumOf(without, st.tenancyId), `${where}; (x) Summe ohne CO₂ von ${st.tenancyId} hängt an den Angaben zu § 11`)
+  RULES.periods++
+  for (const h of r.heating ?? []) {
+    const rules = heatingRulesOf(rows, stock.heatingPlants, h.plantId, key)
+    if (rules.exemptionScope === 'both') {
+      RULES.both++
+      assert.equal(h.info, undefined, `${where}; (x) Angaben nach § 6a trotz Ausnahme bei ${h.plantId}`)
+      const own = (n: { subject?: { kind: string; id: string } }) => n.subject?.id === h.plantId || stock.costItems.some((c) => c.id === n.subject?.id && c.heatingPlantId === h.plantId)
+      const hit = r.notices.filter((n) => CUT_CODES.has(n.code) && own(n))
+      assert.deepEqual(hit.map((n) => n.code), [], `${where}; (x) Kürzungshinweis trotz Ausnahme bei ${h.plantId}`)
+      const relief = r.statements.flatMap((st) => st.rows).filter((x) => x.kind === 'co2Relief' && x.costItemId.includes(`:${h.plantId}:`))
+      if (rules.exemptionBillingAgreed) RULES.agreedBilling++
+      else assert.deepEqual(relief.map((x) => x.costItemId), [], `${where}; (x) CO₂-Aufteilung trotz Ausnahme ohne vereinbarte Abrechnung bei ${h.plantId}`)
+    } else if (rules.exemptionScope === 'heat') {
+      RULES.heat++
+      if (h.info) assert.ok(h.info.heatExempt && h.info.users.every((u) => u.heating === null), `${where}; (x) Vergleich der Heizung trotz Ausnahme der Wärme bei ${h.plantId}`)
+    }
+  }
+}
 
 // Wie oft die eigene Heizkostenabrechnung wirklich verteilt hat (Abdeckung, letzter Test).
 const SELF = { periods: 0, distributed: 0, alpha: 0, formula: 0, units: 0 }
@@ -774,7 +813,25 @@ for (const variant of VARIANTS) {
           // Heizperioden (dort 409). Die übrigen Varianten behalten ihre Folge der Vorgänge.
           const op = pick(variant.failure
             ? ['link', 'link', 'link', 'credit', 'unlink', 'delete', 'close', 'close', 'reopen', 'amount', 'arrive', 'relink', 'storno', 'estimate'] as const
-            : ['link', 'link', 'link', 'credit', 'unlink', 'delete', 'close', 'close', 'reopen', 'amount', 'arrive', 'relink', 'storno'] as const)
+            : variant.rules
+              ? ['link', 'link', 'link', 'credit', 'unlink', 'delete', 'close', 'close', 'reopen', 'amount', 'arrive', 'relink', 'storno', 'rules', 'rules'] as const
+              : ['link', 'link', 'link', 'credit', 'unlink', 'delete', 'close', 'close', 'reopen', 'amount', 'arrive', 'relink', 'storno'] as const)
+          if (op === 'rules') {
+            // Heizung PR 14: eine Antwort zu § 11 und zur monatlichen Information für eine Heizperiode, an der alten
+            // oder (nach dem Tausch) der neuen Anlage.
+            const key = pick(keys)
+            const plantId = variant.swap && swapped && rnd() < 0.5 ? 'hp2' : 'hp'
+            if (!key) continue
+            const exemption = pick(['none', 'lowDemand', 'pre1981', 'authority', null] as const) ?? null
+            const body = {
+              exemption,
+              exemptionScope: pick(['heat', 'both', 'both', null] as const) ?? null,
+              exemptionBillingAgreed: rnd() < 0.3 ? true : null,
+              monthlyInfoElsewhere: rnd() < 0.5 ? rnd() < 0.5 : null,
+            }
+            await attempt(`regeln ${plantId} ${key} ${JSON.stringify(body)}`, () => opened.write((db) => saveHeatingRules(db, plantId, key, body)))
+            continue
+          }
           if (op === 'estimate') {
             const key = pick(keys)
             const u = pick(failureUnits)
@@ -906,6 +963,7 @@ for (const variant of VARIANTS) {
           }
           if (r && variant.self) selfChecks(r, items.filter((c) => c.period === key), `${fall}; ${key}`)
           if (r && variant.capture) unitChecks(r, expectedUnits.get(key), expectedWater.get(key), `${fall}; ${key}`, variant.name)
+          if (r && variant.rules) rulesChecks(r, stock, key, periodOf(key), `${fall}; ${key}`)
           if (r && variant.failure) estimateChecks(r, stock.heatingEstimates.filter((e) => e.plantId === 'hp' && e.period === key), bFacts.get(key) ?? null, `${fall}; ${key}`)
           if (r) overchargedChecks(r, `${fall}; ${key}`)
           if (r) overchargedTenantChecks(r, stock, closed, `${fall}; ${key}`, periodOf, itemKey)
@@ -1063,6 +1121,14 @@ test('Invariante, Gutschrift je Mieter bei zu hoher Schätzung: Abdeckung', () =
   if (SEEDS.length < 100) return
   assert.ok(OVERCHARGED.checked > 0, 'kein Hinweis fuel.estimate-overcharged geprüft')
   assert.ok(OVERCHARGED.tenants > 0, 'keine Gutschrift je Mieter gegen das Kontrafaktum geprüft')
+})
+
+test('Invariante, Ausnahme nach § 11: Abdeckung', () => {
+  if (process.env.INV_LOG) console.log('Ausnahme', JSON.stringify(RULES))
+  if (RULES.periods < 10) return
+  assert.ok(RULES.both > 0, 'keine Heizperiode mit Ausnahme für Wärme und Warmwasser geprüft (x)')
+  assert.ok(RULES.heat > 0, 'keine Heizperiode mit Ausnahme nur der Wärme geprüft (x)')
+  assert.ok(RULES.agreedBilling > 0, 'keine Ausnahme mit vereinbarter Abrechnung geprüft (x)')
 })
 
 test('Invariante, Kesseltausch: Abdeckung', () => {

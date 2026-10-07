@@ -47,6 +47,7 @@ import {
   TenantChangeError, unitDependents, writeSettings, type CollectionName,
 } from './db/repository.ts'
 import { removeInterimGap, saveDistribution, saveInterimGap, SelfItemsError, setUpSelf } from './db/heatingSelf.ts'
+import { saveHeatingInfo, saveHeatingRules } from './db/heatingInfo.ts'
 import { heatingPeriodViews, removeCo2Statement, saveCo2Statement, saveHotWater } from './db/co2.ts'
 import { saveServiceValues } from './db/serviceValues.ts'
 import { removeEstimate, saveEstimate } from './db/heatingEstimates.ts'
@@ -632,6 +633,19 @@ app.put('/api/heating-plants/:id/self', async (req, res) => {
 // Anteil nach Verbrauch einer Heizperiode (§ 6 Abs. 4, § 7 Abs. 1 Satz 2).
 app.put('/api/heating-plants/:id/periods/:period/distribution', async (req, res) => {
   const result = await writeData((db) => saveDistribution(db, req.params.id, req.params.period, bodyObject(req), today()))
+  if (!result) return res.status(404).json({ error: NO_PLANT })
+  res.json(result)
+})
+
+// Angaben nach § 6a HeizkostenV je Heizperiode, und Ausnahme nach § 11, Vereinbarung nach § 2, monatliche
+// Information und Verbrauchervertrag ab einer Heizperiode (Heizung PR 14).
+app.put('/api/heating-plants/:id/periods/:period/info', async (req, res) => {
+  const result = await writeData((db) => saveHeatingInfo(db, req.params.id, req.params.period, bodyObject(req)))
+  if (!result) return res.status(404).json({ error: NO_PLANT })
+  res.json(result)
+})
+app.put('/api/heating-plants/:id/periods/:period/rules', async (req, res) => {
+  const result = await writeData((db) => saveHeatingRules(db, req.params.id, req.params.period, bodyObject(req)))
   if (!result) return res.status(404).json({ error: NO_PLANT })
   res.json(result)
 })

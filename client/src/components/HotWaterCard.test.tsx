@@ -7,10 +7,11 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import HotWaterCard from './HotWaterCard'
 import { periodKey } from '../../../shared/period.ts'
 import type { HeatingPeriodView, HeatingPlant } from '../types'
+import { noInfoView } from '../testing/heatingView'
 
 const view = (over: Partial<HeatingPeriodView> = {}): HeatingPeriodView => ({
   plantId: 'hp', period: periodKey('2025-01'), label: '2025', from: '2025-01-01', to: '2025-12-31', short: false, closed: false,
-  hotWater: { dhwMethod: 'volumeFormula', dhwUnmeasurable: null, dhwHeatKwh: null, totalHeatKwh: null, dhwVolumeM3: null, dhwTempC: 55 },
+  ...noInfoView(), hotWater: { dhwMethod: 'volumeFormula', dhwUnmeasurable: null, dhwHeatKwh: null, totalHeatKwh: null, dhwVolumeM3: null, dhwTempC: 55 },
   hotWaterBasis: { volumeFromMetersM3: 118.25, volumeMissing: null, running: null, suppliedAreaM2: 200 },
   co2: null, items: [], stock: null,
   ...over,
