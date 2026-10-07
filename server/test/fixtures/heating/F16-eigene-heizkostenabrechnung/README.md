@@ -56,4 +56,7 @@ jedes Mieters an der Brennstoffposition (Erdgas): A 1.768,50 € / 6.000,00 € 
 B 223,48 €, C1 113,40 €, C2 64,17 €, zusammen R = 568,66 €.
 
 **Ohne Hinweis** außer dem CO₂-Ausweis: keine Lücke, alle Grenzen abgelesen, Anteil wie im ersten
-Jahr.
+Jahr. **Seit Heizung PR 17** kommt `co2.cost-implausible` (Stufe `hint`) dazu: Die CO₂-Kosten der
+erfundenen Rechnung sind netto (10,8834 t × 55 €/t = 598,59 €); nach § 3 Abs. 3 CO2KostAufG stehen sie
+mit Umsatzsteuer auf der Rechnung (× 1,19 = 712,32 €). Keine Zahl ändert sich, der Fall bleibt so
+stehen, damit er den Hinweis zeigt.

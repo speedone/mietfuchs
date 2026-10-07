@@ -80,6 +80,7 @@ import { CALENDAR_RULES, calendarYearPeriod, contextOf, formatDayRange, isCalend
 import { lineRoot, monthSpanText, plantRules, plantSpan, recommendedDeadline, requestMonth, sameBuilding, sameFuelLine, sameLine, sameSpan, separateOwner, servesUnit, settledSeparately } from '../../shared/heatingPeriod.ts'
 import { heatingSnapshotFor, selfAt, snapshotFor, wayOf } from './snapshot.ts'
 import { plantFuel, rangeOf, type FuelCarry, type FuelResult } from './fuel.ts'
+import { co2Plausibility, plausibilityText } from './co2Plausibility.ts'
 import { fuelFromDeliveries, fuelFromStock, looseCentsOf, measuredOffset, problemText, settledByDefault, stockKeysOf, stockOf, stockTemplateOfLine, stockTouched, valueOf as stockValueOf, type FuelFigures, type StockPeriodInput, type StockResult } from './fuelStock.ts'
 import { isStockEnergy, STOCK_FUEL_NAMES, STOCK_UNIT_TEXT } from '../../shared/fuelStock.ts'
 import { degreeDayPermille } from '../../shared/degreeDays.ts'
@@ -293,6 +294,8 @@ const noticeKinds = {
   'co2.fuel-unknown': { level: 'hint', title: 'Energieträger der Heizung unbekannt', rule: 'co2-split', terms: ['co2Split', 'heatingSystem'] },
   // Heizung PR 14, Durchsicht von #243, G-K3.
   'co2.exempt-deducted': { level: 'warning', title: 'CO₂-Abzug trotz Ausnahme nach § 11', rule: 'heating-exemption', terms: ['co2Deducted', 'heatingCostOrdinance'] },
+  // Heizung PR 17 (#97, Entwurf 15.2 F6): kg oder CO₂-Kosten einer Rechnung passen nicht zum Gesetz.
+  'co2.cost-implausible': { level: 'hint', title: 'CO₂-Angaben der Rechnung prüfen', terms: ['co2Split'] },
   'co2.service-unsplit': { level: 'warning', title: 'Messdienst hat die CO₂-Kosten nicht aufgeteilt', rule: 'co2-split', terms: ['co2Split'] },
   'co2.incomplete': { level: 'warning', title: 'Angaben für den CO₂-Ausweis fehlen', rule: 'co2-split', terms: ['co2Split', 'co2Stage'] },
   'co2.stage-mismatch': { level: 'hint', title: 'Einstufung laut Abrechnung weicht ab', rule: 'co2-split', terms: ['co2Stage', 'co2Area'] },
@@ -4677,6 +4680,26 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         warn('co2.district-ets-exempt',
           `${where}: Die Wärme stammt nach Ihrer Angabe aus einer Anlage im Europäischen Emissionshandel, und das Gebäude wurde erstmals nach dem ${fmtDay(ets.connectedAfter)} an das Wärmenetz angeschlossen. Die CO₂-Kosten werden deshalb nicht aufgeteilt (§ 2 Abs. 4 Satz 2 CO2KostAufG).`,
           plantSubject)
+      }
+    }
+    // Plausibilität der CO₂-Angaben je Rechnung, die diese Heizperiode berührt (Heizung PR 17, #97): nur ein
+    // Hinweis, gerechnet wird mit den Angaben der Rechnung. Bei Wärme aus dem Emissionshandel mit Anschluss
+    // nach dem Stichtag gilt das Gesetz nicht (etsExempt). Für Vorratsenergien dieselben Rechnungen, denn
+    // auch dort stehen kg und CO₂-Kosten auf der Rechnung der Lieferung.
+    // Unter einer Ausnahme nach § 11 ohne vereinbarte Abrechnung gilt das CO2KostAufG nicht (§ 2 Abs. 7, Heizung
+    // PR 14): dann auch keine Prüfung, dieselbe Bedingung wie die Aufteilung.
+    if (!etsExempt && !co2OffByExemption(pot.plantId, String(pot.period.key))) {
+      for (const d of snapshot.fuel?.deliveries ?? []) {
+        if (d.plantId !== pot.plantId) continue
+        const r = rangeOf(d)
+        if (!r || r.from > pot.period.to || r.to < pot.period.from) continue
+        const checked = co2Plausibility({
+          ...d, invoiceDate: d.invoiceDate ?? null, quantity: d.quantity ?? null, quantityUnit: d.quantityUnit ?? null, energyKwh: d.energyKwh ?? null, gasBasis: d.gasBasis ?? null,
+        }, pot.energy, lawLog)
+        for (const f of checked) {
+          const text = plausibilityText(f, fmtCents)
+          if (!notices.some((n) => n.code === 'co2.cost-implausible' && n.text === text)) warn('co2.cost-implausible', text, plantSubject)
+        }
       }
     }
     // Heizung PR 14: unter einer Ausnahme nach § 11 für Wärme und Warmwasser nicht, außer eine Abrechnung ist
