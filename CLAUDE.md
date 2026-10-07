@@ -97,7 +97,9 @@ fragt deshalb nach 200 oder nach einem anderen `status` als `starting` (smoke-te
 umstieg-praxislauf.mjs). `NKA_TEST_START_DELAY_MS` hält den Start nach dem Binden fest, nur für
 den Test dieses Rennens. Bleibt die Antwort auf `/healthz` aus (der erste Start blockiert gerade
 seine Ereignisschleife), fragt der zweite bis zu 30 Sekunden lang erneut, bevor er „anderes
-Programm“ meldet; eine Antwort, die nicht Mietfuchs ist, entscheidet sofort. Ob Bun den Port auf
+Programm“ meldet; eine Antwort, die nicht Mietfuchs ist, entscheidet sofort. Der bewusste Preis:
+Ein fremdes Programm, das auf dem Port Verbindungen annimmt, aber nie antwortet, wird erst nach
+rund 30 Sekunden gemeldet, und die Programmdatei endet danach wie immer erst 10 Sekunden später. Ob Bun den Port auf
 jedem System exklusiv bindet, prüft [scripts/second-start.mjs](scripts/second-start.mjs) in
 release.yml auf allen sechs Programmdateien und in jedem Prüfumfang: zweiter Start auf dem Port
 der laufenden Instanz, mit einer `db.json`, die umsteigen will, erwartet Exit 0 und einen

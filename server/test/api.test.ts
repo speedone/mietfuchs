@@ -729,12 +729,17 @@ test('Belegter Port (#244): antwortet Mietfuchs dort erst nach Sekunden, wartet 
   // Rechnet der erste Start gerade einen langen Abschnitt, der die Ereignisschleife blockiert
   // (die Regression des Umstiegs über viele Jahre, ein großer Migrationsschritt), antwortet sein
   // /healthz erst danach. Der zweite Start darf ihn deshalb nicht nach dem ersten Zeitlimit für ein
-  // fremdes Programm halten (Durchsicht zu #244, K2). Nachgestellt mit einem Dienst, der ab dem
-  // zweiten Start fünf Sekunden lang nichts beantwortet und danach jede Anfrage als Mietfuchs, so
-  // wie eine Ereignisschleife, die danach wieder frei ist. Das Zeitlimit einer einzelnen Frage
-  // (zwei Sekunden) liegt darunter.
+  // fremdes Programm halten (Durchsicht zu #244, K2). Nachgestellt mit einem Dienst, der ab der
+  // **ersten Anfrage** fünf Sekunden lang nichts beantwortet und danach jede Anfrage als
+  // Mietfuchs, so wie eine Ereignisschleife, die danach wieder frei ist. Das Zeitlimit einer
+  // einzelnen Frage (zwei Sekunden) liegt darunter; also kommt die Antwort nur bei einer zweiten
+  // oder späteren Frage an, und das zählt der Dienst mit (Durchsicht Runde 2, N1: ab dem Start
+  // gerechnet hing es an der Startzeit von Node, ob schon die erste Frage durchkam).
   let frei = Infinity
+  let anfragen = 0
   const langsam = http.createServer((req, res) => {
+    anfragen++
+    if (frei === Infinity) frei = Date.now() + 5000
     setTimeout(() => {
       res.writeHead(503, { 'content-type': 'application/json' })
       res.end(JSON.stringify({ app: 'mietfuchs', status: 'starting' }))
@@ -743,12 +748,12 @@ test('Belegter Port (#244): antwortet Mietfuchs dort erst nach Sekunden, wartet 
   const port = String(await listenInTestRange(langsam))
   const dataDir = await dataDirWithPendingWork('migration')
   const vorher = folderFingerprint(dataDir)
-  frei = Date.now() + 5000
   const zweiter = startServerRaw(dataDir, { NKA_PORT: port, NKA_RUNTIME: 'binary' })
   try {
     assert.equal(await waitForExit(zweiter.child, 30000), 0, zweiter.out())
     assert.match(zweiter.out(), /läuft bereits/)
     assert.doesNotMatch(zweiter.out(), /anderes Programm/)
+    assert.ok(anfragen >= 2, `nur ${anfragen} Anfrage(n): Der zweite Start hat nicht nachgefragt`)
     assert.deepEqual(folderFingerprint(dataDir), vorher, zweiter.out())
   } finally {
     zweiter.child.kill()
