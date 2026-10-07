@@ -5,13 +5,19 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { createHeatingPlant, updateHeatingPlant } from '../src/db/heating.ts'
+import { createHeatingPlant, replaceHeatingPlant, updateHeatingPlant } from '../src/db/heating.ts'
+import { saveStock } from '../src/db/fuelStock.ts'
+import { ensureHeatingPeriod } from '../src/db/heatingPeriodContext.ts'
+import { fuelCarryFrozen } from '../src/db/schema.ts'
+import { computeSettlement } from '../src/calc.ts'
+import { snapshotFor } from '../src/snapshot.ts'
+import { CALENDAR_RULES, periodKey, periodOfKey } from '../../shared/period.ts'
 import { createDelivery, updateDelivery } from '../src/db/fuel.ts'
 import { heatingPeriodViews, saveHotWater } from '../src/db/co2.ts'
 import { setUpSelf } from '../src/db/heatingSelf.ts'
 import { openDatabase } from '../src/db/open.ts'
-import { readFuelDeliveries, readHeatingPlants } from '../src/db/read.ts'
-import { createEntity, HeatingError } from '../src/db/repository.ts'
+import { readFuelDeliveries, readHeatingPlants, readStock } from '../src/db/read.ts'
+import { closeSettlement, createEntity, HeatingError, removeEntity } from '../src/db/repository.ts'
 
 type Opened = Awaited<ReturnType<typeof openDatabase>>
 async function withDatabase(run: (opened: Opened) => Promise<void>): Promise<void> {
@@ -34,7 +40,7 @@ async function heizung(opened: Opened, energy: 'oil' | 'gas' | 'districtHeating'
   })
 }
 
-test('Erzeuger der Anlage: ohne Angabe null, „allein“ und „mit weiterem Erzeuger“ werden gespeichert, Unbekanntes ergibt null', async () => {
+test('Erzeuger der Anlage: ohne Angabe null, „allein“ und „mit weiterem Erzeuger“ werden gespeichert, leer heißt keine Antwort', async () => {
   await withDatabase(async (opened) => {
     await heizung(opened)
     const plant = async () => (await opened.read(readHeatingPlants)).find((p) => p.id === 'hp') ?? assert.fail('keine Anlage')
@@ -43,7 +49,7 @@ test('Erzeuger der Anlage: ohne Angabe null, „allein“ und „mit weiterem Er
     assert.equal((await plant()).heatGeneration, 'single')
     await opened.write((db) => updateHeatingPlant(db, 'hp', { heatGeneration: 'mixed' }))
     assert.equal((await plant()).heatGeneration, 'mixed')
-    await opened.write((db) => updateHeatingPlant(db, 'hp', { heatGeneration: 'bivalent' }))
+    await opened.write((db) => updateHeatingPlant(db, 'hp', { heatGeneration: null }))
     assert.equal((await plant()).heatGeneration, null)
     // Ein Teilrumpf ohne das Feld lässt es stehen (repository.ts: zusammengeführt nach Anwesenheit).
     await opened.write((db) => updateHeatingPlant(db, 'hp', { heatGeneration: 'single' }))
@@ -110,7 +116,7 @@ test('Warmwasser bei eigener Abrechnung: Formel mit Volumen und Temperatur; erg�
     await assert.rejects(speichern({ dhwMethod: 'volumeFormula', dhwTempC: 'warm' }), heatingError(400, /keine Zahl/))
     const [view] = await opened.read((db) => heatingPeriodViews(db, 'hp', '2025')) ?? assert.fail('keine Anlage')
     // Zähler der Wohnung A: 132,5 − 100 = 32,5 m³; Fläche nur A (B hat kein Warmwasser).
-    assert.deepEqual(view?.hotWaterBasis, { volumeFromMetersM3: 32.5, suppliedAreaM2: 80 })
+    assert.deepEqual(view?.hotWaterBasis, { volumeFromMetersM3: 32.5, volumeMissing: null, running: null, suppliedAreaM2: 80 })
     assert.equal(view?.hotWater.dhwVolumeM3, 32.5)
   })
 })
@@ -125,5 +131,71 @@ test('Warmwasser beim Messdienst: Volumen und Temperatur werden nicht gespeicher
     assert.deepEqual([r.dhwMethod, r.dhwVolumeM3, r.dhwTempC], ['areaFormula', null, null])
     await opened.write((db) => updateHeatingPlant(db, 'hp', { method: 'manual' }))
     await assert.rejects(opened.write((db) => saveHotWater(db, 'hp', '2025-01', { dhwMethod: 'areaFormula' })), heatingError(400, /Messdienst oder die Gemeinschaft.*eigener Heizkostenabrechnung/))
+  })
+})
+
+// ---------- Durchsicht von #240 ----------
+
+test('Durchsicht #240, Geld-M2 und Recht-I1: unbekannte Antworten zum Erzeuger und zur Wärmepumpe sind ein Fehler; „mehr als die Hälfte“ wird gespeichert', async () => {
+  await withDatabase(async (opened) => {
+    await heizung(opened)
+    await assert.rejects(opened.write((db) => updateHeatingPlant(db, 'hp', { heatGeneration: 'bivalent' })), heatingError(400, /allein erzeugt.*aus der Liste/))
+    await assert.rejects(opened.write((db) => updateHeatingPlant(db, 'hp', { heatPumpMajority: 'vielleicht' })), heatingError(400, /mehr als die Hälfte.*aus der Liste/))
+    for (const v of ['yes', 'no', 'unknown', null] as const) {
+      await opened.write((db) => updateHeatingPlant(db, 'hp', { heatPumpMajority: v }))
+      assert.equal((await opened.read(readHeatingPlants)).find((p) => p.id === 'hp')?.heatPumpMajority, v)
+    }
+  })
+})
+
+test('Durchsicht #240, Geld-I2: Brennwert/Heizwert, Heizwert und Tabellenzeile lassen sich an einer eingefrorenen Lieferung nachtragen, Mengen nicht', async () => {
+  await withDatabase(async (opened) => {
+    await heizung(opened, 'gas')
+    const d = await opened.write((db) => createDelivery(db, 'g1', 'hp', { label: 'Gas 2025', invoiceFrom: '2025-01-01', invoiceTo: '2025-12-31', energyKwh: 40000 })) ?? assert.fail('keine Anlage')
+    await opened.write(async (db) => {
+      const hid = await ensureHeatingPeriod(db, 'hp', periodKey('2025-01'))
+      await db.insert(fuelCarryFrozen).values({ deliveryId: d.id, heatingPeriodId: hid, cents: 0, emissionsKg: 0, co2Cents: 0 })
+    })
+    const g = await opened.write((db) => updateDelivery(db, d.id, { gasBasis: 'hs' })) ?? assert.fail('keine Lieferung')
+    assert.equal(g.gasBasis, 'hs')
+    await assert.rejects(opened.write((db) => updateDelivery(db, d.id, { energyKwh: 41000 })), heatingError(409, /eingefroren/))
+  })
+  await withDatabase(async (opened) => {
+    await heizung(opened)
+    await opened.write((db) => createDelivery(db, 'o1', 'hp', { label: 'Öl', deliveredAt: '2025-10-12', invoiceDate: '2025-10-12', quantity: 3000, quantityUnit: 'l' }))
+    await opened.write((db) => saveStock(db, 'hp', '2025-01', { stockUnit: 'l', openingQuantity: 1000, openingCostCents: 100000, closingQuantity: 500 }))
+    const p = periodOfKey(CALENDAR_RULES, periodKey('2025-01')) ?? assert.fail('kein Zeitraum')
+    await opened.write(async (db) => {
+      const settlement = computeSettlement(snapshotFor(await readStock(db), 'objekt-1', p), {})
+      await closeSettlement(db, { id: 's1', propertyId: 'objekt-1', period: periodKey('2025-01'), closedAt: '2026-03-01', sentAt: null, settlement })
+    })
+    const o = await opened.write((db) => updateDelivery(db, 'o1', { heatingValue: 9.8, fuelGrade: 'heatingOilEL' })) ?? assert.fail('keine Lieferung')
+    assert.deepEqual([o.heatingValue, o.fuelGrade], [9.8, 'heatingOilEL'])
+    await assert.rejects(opened.write((db) => updateDelivery(db, 'o1', { quantity: 2900 })), heatingError(409, /abgeschlossenen Heizperiode/))
+  })
+})
+
+test('Durchsicht #240, Geld-I1 und M5: beim Kesseltausch Vorschlag und Verfahren der Laufzeit; ohne vollständige Stände kein Vorschlag, sondern was fehlt', async () => {
+  await withDatabase(async (opened) => {
+    await eigeneAnlage(opened)
+    await opened.write((db) => createEntity(db, 'readings', 'r15', { meterId: 'ww-a', date: '2025-06-30', value: 115 }))
+    await opened.write((db) => saveHotWater(db, 'hp', '2025-01', { dhwMethod: 'volumeFormula', dhwVolumeM3: 15, dhwTempC: 55 }))
+    await opened.write((db) => replaceHeatingPlant(db, 'hp', 'hp2', { date: '2025-07-01', energy: 'districtHeating', name: 'Neu', previousName: 'Alt' }))
+    const [alt] = await opened.read((db) => heatingPeriodViews(db, 'hp', '2025')) ?? assert.fail('keine Anlage')
+    const [neu] = await opened.read((db) => heatingPeriodViews(db, 'hp2', '2025')) ?? assert.fail('keine Anlage')
+    // 115 − 100 = 15 m³ bis zum Tausch, 132,5 − 115 = 17,5 m³ danach; nicht 32,5 m³ für jede.
+    assert.deepEqual(alt?.hotWaterBasis.running, { from: '2025-01-01', to: '2025-06-30' })
+    assert.equal(alt?.hotWaterBasis.volumeFromMetersM3, 15)
+    assert.deepEqual(neu?.hotWaterBasis.running, { from: '2025-07-01', to: '2025-12-31' })
+    assert.equal(neu?.hotWaterBasis.volumeFromMetersM3, 17.5)
+    // Das Verfahren gilt für die Linie; Volumen hat die neue Anlage noch keins.
+    assert.deepEqual([neu?.hotWater.dhwMethod, neu?.hotWater.dhwTempC, neu?.hotWater.dhwVolumeM3], ['volumeFormula', 55, null])
+  })
+  await withDatabase(async (opened) => {
+    await eigeneAnlage(opened)
+    await opened.write((db) => removeEntity(db, 'readings', 'r2'))
+    const [view] = await opened.read((db) => heatingPeriodViews(db, 'hp', '2025')) ?? assert.fail('keine Anlage')
+    assert.equal(view?.hotWaterBasis.volumeFromMetersM3, null)
+    assert.match(view?.hotWaterBasis.volumeMissing ?? '', /„WW A“.*31\.12\.2025/)
   })
 })

@@ -209,3 +209,10 @@ test('Warmwasseranteil (Heizung PR 11): Beispiel aus dem Entwurf 8.3 nachgerechn
   assert.match(GLOSSARY.hotWaterShare.short, /Heizwert laut Rechnung/)
   assert.match(GLOSSARY.hotWaterShare.needed, /§ 9b Abs\. 2 HeizkostenV/)
 })
+
+test('Durchsicht #240, Recht-I3: Brennwert und Heizwert mit Faktor aus dem Register und Rat zur Rechnung', () => {
+  const t = GLOSSARY.gasCalorificBasis
+  assert.match(t.example, /15\.000 · 1,11 = 16\.650 kWh/)
+  assert.equal(t.norm, '§ 9 Abs. 2 Satz 6 Nr. 1 HeizkostenV')
+  assert.match(t.needed, /steht dort „Brennwert“, wählen Sie „nach Brennwert“/)
+})

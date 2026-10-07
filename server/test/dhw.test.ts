@@ -267,3 +267,16 @@ test('Satz ohne Anteil: nennt, was fehlt; die Wärmepumpe ohne Gesamtwärme mit 
   assert.match(dhwProblemText({ problem: 'heatPumpBasis', reasons: [] }), /§ 9 Abs\. 1 Satz 2.*Gesamtwärmezähler/s)
   assert.match(dhwProblemText(failure({ fuelCoveragePermille: 848.71 })), /Folgerechnung.*Schätzung/s)
 })
+
+test('Durchsicht #240, M2, M4, M10: Festlegungen von Mietfuchs heißen so', () => {
+  assert.match(reasons({ method: 'volumeFormula', heatGeneration: 'mixed' }), /Festlegung von Mietfuchs; § 9 Abs\. 1 Satz 5 HeizkostenV lässt anerkannte Regeln der Technik zu/)
+  const strom = { deliveries: [delivery({ label: 'Strom 2024', energyKwh: 12000 })], stock: null, earlier: null }
+  assert.match(reasons({ energy: 'heatPump', method: 'volumeFormula', generator: strom, h: { from: '2024-01-01', to: '2024-12-31' } }), /Festlegung von Mietfuchs/)
+  assert.match(reasons({ energy: 'other', method: 'areaFormula' }), /Festlegung von Mietfuchs/)
+  const rumpf = share({ method: 'areaFormula', h: { from: '2025-01-01', to: '2025-04-30' }, generator: { deliveries: [gasKwh(20000)], stock: null, earlier: null } })
+  assert.ok(rumpf.steps.some((s) => /zeitanteilig gerechnet \(Festlegung von Mietfuchs\)/.test(s)), rumpf.steps.join('\n'))
+  assert.ok(share(oilInput()).steps.some((s) => /Heizwert der Lieferungen dieser Heizperiode, nach Menge gemittelt; Festlegung von Mietfuchs/.test(s)))
+  const frueher = { deliveries: [], stock: { unit: 'l' as const, consumed: 6000 }, earlier: oil() }
+  assert.ok(share({ energy: 'oil', method: 'volumeFormula', generator: frueher }).steps.some((s) => /letzten Lieferung davor; Festlegung von Mietfuchs/.test(s)))
+  assert.match(reasons({ energy: 'oil', method: 'volumeFormula', generator: { ...frueher, earlier: null } }), /nach einem Kesseltausch mit übernommenem Vorrat bei der bisherigen Anlage/)
+})

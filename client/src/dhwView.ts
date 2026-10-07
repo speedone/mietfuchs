@@ -24,8 +24,12 @@ export function dhwBlock(d: DhwStatement | undefined): DhwBlockView | null {
     title: `Warmwasseranteil ${pct(d.alpha)}`,
     method: DHW_METHOD_TEXT[d.method],
     steps: d.steps,
-    values: d.heatingValues.map((v) =>
-      `Heizwert „${v.label}“: ${v.kwh.toLocaleString('de-DE')} kWh je ${HEATING_VALUE_UNIT_TEXT[v.per]} ` +
-        (v.source === 'invoice' ? 'laut Rechnung' : `aus der Tabelle der Heizkostenverordnung${v.grade ? ` (${FUEL_GRADE_LABELS[v.grade]})` : ''}, weil die Rechnung keinen nennt`)),
+    values: [
+      ...d.heatingValues.map((v) =>
+        `Heizwert „${v.label}“: ${v.kwh.toLocaleString('de-DE')} kWh je ${HEATING_VALUE_UNIT_TEXT[v.per]} ` +
+          (v.source === 'invoice' ? 'laut Rechnung' : `aus der Tabelle der Heizkostenverordnung${v.grade ? ` (${FUEL_GRADE_LABELS[v.grade]})` : ''}, weil die Rechnung keinen nennt`)),
+      // Wie der Satz von PR 10 (Durchsicht von #240, M3): beruht die Energie auf der Schätzung beim Abschluss.
+      ...(d.estimated ? ['Die Energie beruht teils auf einer Schätzung der fehlenden Rechnung.'] : []),
+    ],
   }
 }

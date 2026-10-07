@@ -6,7 +6,8 @@
 // **nur für die Formelwerte** (Entwurf G-B1 abgelehnt, 15.1 Nr. 9). Wogegen Q gestellt wird, hängt am
 // Erzeuger: bei Heizkesseln der Brennstoff (in kWh laut Rechnung oder als Menge mit B = Q / Hᵢ nach
 // Abs. 3), bei Fernwärme die gelieferte Wärme, bei der Wärmepumpe mit Formel der Strom (der Faktor 0,30
-// rechnet auf den Strom um, Entwurf 8.3, F1), bei der Stromheizung gemessen der Strom (wie PR 10,
+// rechnet auf den Strom um: BT-Drs. 20/7619 S. 99, „für die Abrechnung von Strom für Wärmepumpen“, 0,8 / 2,7
+// aus Nutzungsgrad und Jahresarbeitszahl; Entwurf 8.3, F1), bei der Stromheizung gemessen der Strom (wie PR 10,
 // Abweichung 7) und gemessen bei Wärmepumpe und Mischanlage die gemessene Gesamtwärme (Abs. 1 Satz 2
 // und 5, A8).
 //
@@ -139,7 +140,7 @@ export function formulaHeat(i: FormulaInput, log: LawLog): { ok: true; kwh: numb
   const ys = yearShare(i.h, i.running ?? i.h)
   if (ys.share === 1) return { ok: true, kwh: year, steps }
   const kwh = year * ys.share
-  steps.push(`${i.running ? 'Die Anlage lief in dieser Heizperiode' : 'Die Heizperiode umfasst'} ${ys.days} von ${ys.yearDays} Tagen; Warmwasser wird wie in § 9b Abs. 2 HeizkostenV zeitanteilig gerechnet: ${fmtUpTo(year)} kWh · ${ys.days} / ${ys.yearDays} = ${fmtUpTo(kwh)} kWh`)
+  steps.push(`${i.running ? 'Die Anlage lief in dieser Heizperiode' : 'Die Heizperiode umfasst'} ${ys.days} von ${ys.yearDays} Tagen; Warmwasser wird wie in § 9b Abs. 2 HeizkostenV zeitanteilig gerechnet (Festlegung von Mietfuchs): ${fmtUpTo(year)} kWh · ${ys.days} / ${ys.yearDays} = ${fmtUpTo(kwh)} kWh`)
   return { ok: true, kwh, steps }
 }
 
@@ -155,7 +156,8 @@ export type GeneratorInput = {
 
 export type Energy =
   | { ok: true; kind: 'kwh'; kwh: number; basis: 'hs' | 'hi' | null }
-  | { ok: true; kind: 'quantity'; kwh: number; quantity: number; unit: HeatingValueUnit; heatingValue: number; values: DhwHeatingValue[] }
+  // `from`: woher der Heizwert kommt; beim Vorrat aus den Lieferungen der Heizperiode oder der letzten davor.
+  | { ok: true; kind: 'quantity'; kwh: number; quantity: number; unit: HeatingValueUnit; heatingValue: number; values: DhwHeatingValue[]; from: 'invoices' | 'stockPeriod' | 'stockEarlier' }
 
 const UNIT_IN: Record<HeatingValueUnit, string> = { l: 'Litern', m3: 'Kubikmetern', kg: 'Kilogramm', srm: 'Schüttraummetern' }
 // Die kWh einer Rechnung, wie abgerechnet: angegeben, als Menge in kWh oder aus den Teilmengen (PR 7).
@@ -191,7 +193,7 @@ function heatingValueOf(d: EnergyDelivery, energy: HeatingEnergy, unit: HeatingV
 
 // Brennstoff als Menge: B = Q / Hᵢ nach § 9 Abs. 3; nur in den Einheiten der geltenden Fassung (seit
 // 01.12.2021 Liter, Kubikmeter, Kilogramm; Abweichung 2). Mehrere Heizwerte mengengewichtet (Abweichung 6).
-function quantityEnergy(energy: HeatingEnergy, h: Period, unit: HeatingValueUnit, quantity: number, weighted: readonly { d: EnergyDelivery; weight: number }[], log: LawLog): Energy | Failure {
+function quantityEnergy(energy: HeatingEnergy, h: Period, unit: HeatingValueUnit, quantity: number, weighted: readonly { d: EnergyDelivery; weight: number }[], log: LawLog, from: 'invoices' | 'stockPeriod' | 'stockEarlier'): Energy | Failure {
   const table = law(hkvHeatingValues, { period: h }, log)
   if (!table.units.includes(unit)) {
     return fail(`§ 9 Abs. 3 Satz 1 HeizkostenV bestimmt den Brennstoffverbrauch in der geltenden Fassung nur in ${andList(table.units.map((u) => UNIT_IN[u])).replace(/ und ([^ ]+)$/, ' oder $1')}; in ${UNIT_IN[unit]} sieht er ihn nicht vor. Erfassen Sie Vorrat und Lieferungen in Kilogramm, oder tragen Sie die Kilowattstunden laut Rechnung ein`)
@@ -206,7 +208,7 @@ function quantityEnergy(energy: HeatingEnergy, h: Period, unit: HeatingValueUnit
   if (reasons.length > 0) return { ok: false, reasons }
   const totalWeight = weighted.reduce((a, w) => a + w.weight, 0)
   const meanHi = weighted.reduce((a, w, k) => a + w.weight * (values[k]?.kwh ?? 0), 0) / totalWeight
-  return { ok: true, kind: 'quantity', kwh: quantity * meanHi, quantity, unit, heatingValue: meanHi, values }
+  return { ok: true, kind: 'quantity', kwh: quantity * meanHi, quantity, unit, heatingValue: meanHi, values, from }
 }
 
 export function generatorEnergyOf(energy: HeatingEnergy, h: Period, g: GeneratorInput, log: LawLog): Energy | Failure {
@@ -214,9 +216,9 @@ export function generatorEnergyOf(energy: HeatingEnergy, h: Period, g: Generator
     const own = g.deliveries.filter((d) => d.quantityUnit === g.stock?.unit && d.quantity !== null && d.quantity > 0)
     const basis = own.length > 0 ? own.map((d) => ({ d, weight: d.quantity ?? 0 })) : g.earlier ? [{ d: g.earlier, weight: 1 }] : []
     if (basis.length === 0) {
-      return fail('für den Brennstoff aus dem Vorrat ist kein Heizwert bekannt: In dieser Heizperiode gibt es keine Lieferung, und eine frühere ist nicht erfasst; erfassen Sie die letzte Lieferung mit ihrem Heizwert oder der Zeile der Tabelle')
+      return fail('für den Brennstoff aus dem Vorrat ist kein Heizwert bekannt: In dieser Heizperiode gibt es keine Lieferung, und eine frühere ist nicht erfasst; erfassen Sie die letzte Lieferung mit ihrem Heizwert oder der Zeile der Tabelle (nach einem Kesseltausch mit übernommenem Vorrat bei der bisherigen Anlage)')
     }
-    return quantityEnergy(energy, h, g.stock.unit, g.stock.consumed, basis, log)
+    return quantityEnergy(energy, h, g.stock.unit, g.stock.consumed, basis, log, own.length > 0 ? 'stockPeriod' : 'stockEarlier')
   }
   const used = g.deliveries.filter((d) => d.share > 0)
   if (used.length === 0) return fail('in dieser Heizperiode gibt es keine Rechnung des Versorgers mit einem Anteil an ihr; erfassen Sie die Rechnungen als Lieferungen')
@@ -237,7 +239,7 @@ export function generatorEnergyOf(energy: HeatingEnergy, h: Period, g: Generator
     return fail('die Rechnungen nennen weder alle Kilowattstunden noch alle eine Menge in derselben Einheit; erfassen Sie bei allen Rechnungen der Heizperiode die Kilowattstunden oder bei allen die Menge')
   }
   const quantity = used.reduce((a, d) => a + d.share * (d.quantity ?? 0), 0)
-  return quantityEnergy(energy, h, first, quantity, used.map((d) => ({ d, weight: d.share * (d.quantity ?? 0) })), log)
+  return quantityEnergy(energy, h, first, quantity, used.map((d) => ({ d, weight: d.share * (d.quantity ?? 0) })), log, 'invoices')
 }
 
 // ---------- Faktor nach § 9 Abs. 2 Satz 6, nur für Formelwerte ----------
@@ -252,7 +254,7 @@ function formulaFactor(energy: HeatingEnergy, e: Energy, h: Period, log: LawLog)
     return fail('für eine Stromheizung nennt § 9 Abs. 2 Satz 6 HeizkostenV keinen Faktor; bestimmen Sie den Warmwasseranteil mit einem Wärmezähler am Warmwasserspeicher, er wird dann gegen den Strom laut Rechnung gestellt')
   }
   if (energy === 'other') {
-    return fail('bei einem unbekannten Energieträger regelt § 9 HeizkostenV keine Formel; der Anteil lässt sich nur mit gemessener Gesamtwärme bestimmen (§ 9 Abs. 1 Satz 5)')
+    return fail('bei einem unbekannten Energieträger regelt § 9 HeizkostenV keine Formel; Mietfuchs bestimmt den Anteil dann nur mit gemessener Gesamtwärme (Festlegung von Mietfuchs; § 9 Abs. 1 Satz 5 lässt dafür anerkannte Regeln der Technik zu)')
   }
   const f = law(hkvDhwFactors, { period: h }, log)
   if (energy === 'gas' && e.kind === 'kwh') {
@@ -280,7 +282,7 @@ function formulaFactor(energy: HeatingEnergy, e: Energy, h: Period, log: LawLog)
   if (energy === 'heatPump') {
     const hp = f.heatPump
     if (hp === null) {
-      return fail('für Zeiträume, die vor dem Inkrafttreten der Nr. 3 beginnen, sieht § 9 Abs. 2 Satz 6 HeizkostenV keinen Faktor für die Wärmepumpe vor; der Anteil lässt sich dann nur gemessen oder nach anerkannten Regeln der Technik bestimmen (§ 9 Abs. 1 Satz 5)')
+      return fail('für Zeiträume, die vor dem Inkrafttreten der Nr. 3 beginnen, sieht § 9 Abs. 2 Satz 6 HeizkostenV keinen Faktor für die Wärmepumpe vor; Mietfuchs bestimmt den Anteil dann nur gemessen gegen die gemessene Gesamtwärme (Festlegung von Mietfuchs; § 9 Abs. 1 Satz 5 lässt dafür anerkannte Regeln der Technik zu)')
     }
     return {
       ok: true,
@@ -361,7 +363,12 @@ function finish(i: DhwInput, method: DhwMethod, q: number, formula: { kwh: numbe
   const alpha = b / e.quantity
   if (!(alpha > 0 && alpha < 1)) return outOfRange(alpha)
   const unit = HEATING_VALUE_UNIT_TEXT[e.unit]
-  steps.push(`Heizwert: ${fmtUpTo(e.heatingValue, 3)} kWh je ${unit}${e.values.length > 1 ? ' (Mittel der Rechnungen nach Menge)' : ''}${e.values.some((v) => v.source === 'table') ? ' (Tabelle des § 9 Abs. 3 HeizkostenV, weil die Rechnung keinen nennt)' : ''}`)
+  const origin = e.from === 'stockPeriod'
+    ? ' (Brennstoff aus dem Vorrat: Heizwert der Lieferungen dieser Heizperiode, nach Menge gemittelt; Festlegung von Mietfuchs)'
+    : e.from === 'stockEarlier'
+      ? ' (Brennstoff aus dem Vorrat: Heizwert der letzten Lieferung davor; Festlegung von Mietfuchs)'
+      : e.values.length > 1 ? ' (Mittel der Rechnungen nach Menge; Festlegung von Mietfuchs)' : ''
+  steps.push(`Heizwert: ${fmtUpTo(e.heatingValue, 3)} kWh je ${unit}${origin}${e.values.some((v) => v.source === 'table') ? ' (Tabelle des § 9 Abs. 3 HeizkostenV, weil die Rechnung keinen nennt)' : ''}`)
   steps.push(`B = Q / Hᵢ = ${fmtUpTo(q)} kWh / ${fmtUpTo(e.heatingValue, 3)} kWh je ${unit} = ${fmtUpTo(b)} ${unit} (§ 9 Abs. 3 HeizkostenV)`)
   steps.push(`Warmwasseranteil = ${fmtUpTo(b)} / ${fmtUpTo(e.quantity)} ${unit} verbrauchter Brennstoff = ${fmtShare(alpha)}`)
   return {
@@ -405,8 +412,8 @@ function measuredShare(i: DhwInput, log: LawLog): DhwOutcome {
   }
   if (needsTotal) {
     return failed('totalHeatMissing', [i.heatGeneration === 'mixed'
-      ? 'die Anlage erzeugt die Wärme nicht allein; dann braucht es die gemessene Gesamtwärme (Gesamtwärmezähler), und die fehlt (§ 9 Abs. 1 Satz 5 HeizkostenV)'
-      : 'bei einem unbekannten Energieträger braucht es die gemessene Gesamtwärme (Gesamtwärmezähler), und die fehlt (§ 9 Abs. 1 Satz 5 HeizkostenV)'])
+      ? 'die Anlage erzeugt die Wärme nicht allein; Mietfuchs rechnet dann gegen die gemessene Gesamtwärme (Gesamtwärmezähler), und die fehlt (Festlegung von Mietfuchs; § 9 Abs. 1 Satz 5 HeizkostenV lässt anerkannte Regeln der Technik zu)'
+      : 'bei einem unbekannten Energieträger rechnet Mietfuchs gegen die gemessene Gesamtwärme (Gesamtwärmezähler), und die fehlt (Festlegung von Mietfuchs; § 9 Abs. 1 Satz 5 HeizkostenV lässt anerkannte Regeln der Technik zu)'])
   }
   const e = generatorEnergyOf(i.energy, i.h, i.generator, log)
   if (!e.ok) return failed('noFuelEnergy', e.reasons)
@@ -420,7 +427,7 @@ function formulaShare(i: DhwInput, method: 'volumeFormula' | 'areaFormula', log:
     return failed('formulaInput', ['es fehlt die Antwort, ob die Anlage die Wärme allein erzeugt; sie entscheidet, ob eine Formel zulässig ist (§ 9 Abs. 1 Satz 5, Abs. 2 Satz 6 Nr. 3 HeizkostenV)'])
   }
   if (i.heatGeneration === 'mixed') {
-    return failed('formulaInput', ['die Anlage erzeugt die Wärme nicht allein (etwa mit Solaranlage, Heizstab oder zweitem Kessel); dann lässt sich der Anteil nur mit gemessener Gesamtwärme bestimmen (§ 9 Abs. 1 Satz 5 HeizkostenV) und nicht nach einer Formel'])
+    return failed('formulaInput', ['die Anlage erzeugt die Wärme nicht allein (etwa mit Solaranlage, Heizstab oder zweitem Kessel); dann rechnet Mietfuchs den Anteil nur mit gemessener Gesamtwärme und nicht nach einer Formel (Festlegung von Mietfuchs; § 9 Abs. 1 Satz 5 HeizkostenV lässt anerkannte Regeln der Technik zu, Satz 6 Nr. 3 nennt den Faktor nur für die monovalente Wärmepumpe)'])
   }
   const formula = formulaHeat({ method, volumeM3: i.volumeM3, tempC: i.tempC, areaM2: i.suppliedAreaM2, h: i.h, running: i.running ?? null }, log)
   if (!formula.ok) return failed('formulaInput', formula.reasons)

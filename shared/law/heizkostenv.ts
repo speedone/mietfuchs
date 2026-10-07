@@ -214,7 +214,6 @@ const URL_11 = 'https://www.gesetze-im-internet.de/heizkostenv/__11.html'
 // Rechtsstand jeder Abrechnung und ändert sich mit keiner Bestätigung.
 const BGBL_2009 = 'https://www.bgbl.de/xaver/bgbl/start.xav?startbk=Bundesanzeiger_BGBl&jumpTo=bgbl109s3250.pdf'
 const BGBL_2021 = 'https://www.bgbl.de/xaver/bgbl/start.xav?startbk=Bundesanzeiger_BGBl&jumpTo=bgbl121s4964.pdf'
-const BGBL_2023 = 'https://www.recht.bund.de/bgbl/1/2023/280/VO.html'
 const official = (cite: string, url: string): Source => ({ rank: 'law', cite, url, retrieved: '2026-10-05', checked: 'checked' })
 const ENACTED_2021 = 'HeizkostenV i. d. F. der Bekanntmachung vom 05.10.2009 (BGBl. I S. 3250), geändert durch VO v. 24.11.2021 (BGBl. I S. 4964)'
 // Zahlen deutsch geschrieben, mit so vielen Nachkommastellen, wie das Gesetz sie nennt.
@@ -246,7 +245,9 @@ export const hkvDhwAreaFormula: LawParam<{ readonly kwhPerM2: number }, 'periodS
 // § 9 Abs. 2 Satz 6: nur für die nach den Zahlenwertgleichungen bestimmte Wärme, nie für gemessene
 // (Entwurf 8.3, G-B1). Nr. 3 (monovalente Wärmepumpe, 0,30) kam mit Art. 3 Nr. 2 Buchst. b Doppelbuchst. cc
 // G v. 16.10.2023 und gilt seit 01.10.2024 (Art. 6 Abs. 2, BGBl. 2023 I Nr. 280); davor `null`
-// (Abweichung 1 des Plans PR 11). Die Zahl 0,30 rechnet auf den Strom um (Entwurf 8.3, F1).
+// (Abweichung 1 des Plans PR 11). Die Zahl 0,30 rechnet auf den Strom um: Die Begründung nennt sie „für die
+// Abrechnung von Strom für Wärmepumpen“, aus der Jahresarbeitszahl 2,7 und dem Nutzungsgrad 0,8 im Wert 2,5
+// (BT-Drs. 20/7619 S. 99; Entwurf 8.3, F1).
 export const hkvDhwFactors: LawParam<{ readonly gasCalorific: number; readonly heatSupplyDivisor: number; readonly heatPump: number | null }, 'periodStart'> = {
   id: 'hkv.dhw.factors',
   title: 'Umrechnung der Formelwerte für Warmwasser',
@@ -256,7 +257,7 @@ export const hkvDhwFactors: LawParam<{ readonly gasCalorific: number; readonly h
     {
       validTo: '2024-09-30',
       value: { gasCalorific: 1.11, heatSupplyDivisor: 1.15, heatPump: null },
-      source: official('§ 9 Abs. 2 Satz 6 HeizkostenV in der Fassung bis 30.09.2024 (BGBl. 2009 I S. 3253; Nr. 3 angefügt durch Art. 3 G v. 16.10.2023, BGBl. 2023 I Nr. 280)', BGBL_2023),
+      source: official('§ 9 Abs. 2 Satz 6 HeizkostenV in der Fassung bis 30.09.2024 (BGBl. 2009 I S. 3253)', BGBL_2009),
       enacted: ENACTED_2021,
     },
     {

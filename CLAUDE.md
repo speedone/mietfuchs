@@ -1258,14 +1258,20 @@ lässt die Wahl nur für künftige Zeiträume zu. Der Anteil gehört zur **Linie
   Rechenweg als `self.dhw`. Die **Stromheizung** rechnet gemessen gegen den Strom laut Rechnung wie in
   PR 10, nur die Formeln sind dort gesperrt: Eine Anlage, die vorher abrechenbar war, sperrt eine spätere
   PR nicht. Die **Wärmepumpe vor dem 01.10.2024** fiel nach § 11 Abs. 1 Nr. 3 Buchst. a a. F. nicht unter
-  die Verordnung (`hkv.exemption.renewable`, zwei Fassungen): Hinweis statt Fehler, keine
-  Kürzungsbeträge, ohne α gehen Heizung und Warmwasser gemeinsam in den Topf Heizung. Die Kürzung um
+  die Verordnung (`hkv.exemption.renewable`, zwei Fassungen), wenn sie überwiegend versorgte: Die Anlage
+  fragt das (`heat_pump_majority`, unabhängig vom Erzeuger nach § 9); „ja“ und ohne Antwort Hinweis statt
+  Fehler, keine Kürzungsbeträge, ohne α gehen Heizung und Warmwasser gemeinsam in den Topf Heizung; „nein“
+  rechnet nach der Verordnung. Erzeuger- und Überwiegend-Frage stehen an der Anlage (Karte „Heizung“),
+  nicht in der Warmwasser-Karte. Nach einem Kesseltausch mit übernommenem Vorrat zählen für den Heizwert die
+  Lieferungen der Vorgängerin gleicher Energie mit. Brennwert/Heizwert, Heizwert und Tabellenzeile bleiben
+  an eingefrorenen Lieferungen änderbar (`unfrozenAside` in db/fuel.ts); α abgeschlossener Abrechnungen ist
+  eingefroren. Die Kürzung um
   15 % bei einer Formel ohne bestätigten Aufwand (`heating.dhw-not-metered`) gilt auch bei `self`. Tests
   der eigenen Abrechnung bauen Beispiel A mit `selfSnapshot()`
   ([server/testing/selfHeating.ts](server/testing/selfHeating.ts)); ein Test hält den Helfer gleich mit
   dem Weg über die Datenbank. Die Invarianten prüfen Q, Faktor und α gegen die Eingaben (fuel-invariant
   (s4), fuel-stock-invariant (w) mit Heizöl und Heizwert). Migrationen 0029/0030 (`fuel_grade`,
-  `heat_generation`).
+  `heat_generation`, `heat_pump_majority`).
 
 **Brennstoffvorrat** (Heizung PR 8, #97, #99): Bei Heizöl, Flüssiggas, Pellets, Holz und Kohle
 (`STOCK_ENERGIES` in [shared/fuelStock.ts](shared/fuelStock.ts)) rechnet

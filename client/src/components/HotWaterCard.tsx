@@ -4,21 +4,20 @@
 // Mietfuchs die Wärme bestimmt, bei der Volumenformel mit Volumen (Vorschlag aus den Warmwasserzählern)
 // und Temperatur, und ob die Anlage die Wärme allein erzeugt.
 import { useState } from 'react'
-import { api, errorText } from '../api'
+import { api, errorText, fmtDate } from '../api'
 import { useToast } from './feedback'
 import Term from './Term'
 import {
-  HEAT_GENERATION_OPTIONS, HOT_WATER_OPTIONS, SELF_HOT_WATER_OPTIONS, formulaFormOf, hotWaterBody, isFormula, numberText, selfFormulaBody, unmeasurableLabel,
+  HOT_WATER_OPTIONS, SELF_HOT_WATER_OPTIONS, formulaFormOf, hotWaterBody, isFormula, numberText, selfFormulaBody, unconfirmedConsequence, unmeasurableLabel, volumeLabel,
   type FormulaForm, type HotWaterChoice,
 } from '../heatingForm'
-import type { HeatGeneration, HeatingPeriodView, HeatingPlant } from '../types'
+import type { HeatingPeriodView, HeatingPlant } from '../types'
 
-export default function HotWaterCard({ view, plant, onSaved }: { view: HeatingPeriodView; plant: Pick<HeatingPlant, 'id' | 'method' | 'heatGeneration'>; onSaved: () => void }) {
+export default function HotWaterCard({ view, plant, onSaved }: { view: HeatingPeriodView; plant: Pick<HeatingPlant, 'method' | 'heatGeneration'>; onSaved: () => void }) {
   const self = plant.method === 'self'
   const [choice, setChoice] = useState<HotWaterChoice>(view.hotWater.dhwMethod ?? (self ? 'heatMeter' : ''))
   const [unmeasurable, setUnmeasurable] = useState(view.hotWater.dhwUnmeasurable === true)
   const [formula, setFormula] = useState<FormulaForm>(formulaFormOf(view.hotWater))
-  const [generation, setGeneration] = useState<HeatGeneration | ''>(plant.heatGeneration ?? '')
   const [error, setError] = useState('')
   const toast = useToast()
   const options = self ? SELF_HOT_WATER_OPTIONS : HOT_WATER_OPTIONS
@@ -31,10 +30,6 @@ export default function HotWaterCard({ view, plant, onSaved }: { view: HeatingPe
     }
     try {
       await api(`/api/heating-plants/${view.plantId}/periods/${view.period}/hot-water`, { method: 'PUT', body: JSON.stringify({ ...hotWaterBody(choice, unmeasurable), ...extra.body }) })
-      // Die Antwort zum Erzeuger gehört zur Anlage, nicht zur Heizperiode.
-      if (self && isFormula(choice) && generation !== (plant.heatGeneration ?? '')) {
-        await api(`/api/heating-plants/${plant.id}`, { method: 'PUT', body: JSON.stringify({ heatGeneration: generation === '' ? null : generation }) })
-      }
       setError('')
       toast('Angabe zum Warmwasser gespeichert.')
       onSaved()
@@ -59,21 +54,24 @@ export default function HotWaterCard({ view, plant, onSaved }: { view: HeatingPe
           {unmeasurableLabel(choice)}
         </label>
       )}
+      {isFormula(choice) && !unmeasurable && <small className="muted">{unconfirmedConsequence()}</small>}
       {self && isFormula(choice) && (
         <>
-          <label className="field">
-            Erzeugt diese Heizung die Wärme allein?
-            <select value={generation} disabled={view.closed} onChange={(e) => setGeneration(HEAT_GENERATION_OPTIONS.find((o) => o.value === e.target.value)?.value ?? '')}>
-              {HEAT_GENERATION_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-          </label>
+          {plant.heatGeneration !== 'single' && (
+            <p className="muted">
+              {plant.heatGeneration === 'mixed'
+                ? 'Bei der Heizanlage steht, dass sie die Wärme mit einem weiteren Erzeuger erzeugt; dann rechnet keine Formel. Ändern Sie die Angabe in den Stammdaten bei der Heizanlage, wenn sie nicht stimmt.'
+                : 'Ob diese Heizung die Wärme allein erzeugt, beantworten Sie in den Stammdaten bei der Heizanlage; ohne die Antwort rechnet die Formel nicht.'}
+            </p>
+          )}
           {choice === 'volumeFormula' && (
             <>
               <label className="field">
-                Warmwasser in der Heizperiode (m³, gemessen)
+                {volumeLabel(view.hotWaterBasis.running, fmtDate)}
                 <input inputMode="decimal" value={formula.volume} disabled={view.closed} onChange={(e) => setFormula({ ...formula, volume: e.target.value })} />
               </label>
-              {fromMeters !== null && !view.closed && (
+              {view.hotWaterBasis.volumeMissing && !view.closed && <small className="muted">{view.hotWaterBasis.volumeMissing}</small>}
+              {fromMeters !== null && fromMeters > 0 && !view.closed && (
                 <div className="row">
                   <button type="button" className="btn ghost" onClick={() => setFormula({ ...formula, volume: numberText(fromMeters) })}>
                     Aus den Warmwasserzählern übernehmen: {numberText(fromMeters)} m³
@@ -83,13 +81,14 @@ export default function HotWaterCard({ view, plant, onSaved }: { view: HeatingPe
               <label className="field">
                 Mittlere Temperatur des Warmwassers (°C, gemessen oder geschätzt)
                 <input inputMode="decimal" value={formula.temp} disabled={view.closed} onChange={(e) => setFormula({ ...formula, temp: e.target.value })} />
+                <small className="muted">Meist die Temperatur, die am Warmwasserspeicher eingestellt ist, etwa 55 bis 60 °C.</small>
               </label>
             </>
           )}
           {choice === 'areaFormula' && (
             <p className="muted">
               Mietfuchs rechnet mit der Wohnfläche der Wohnungen mit Warmwasser: {numberText(view.hotWaterBasis.suppliedAreaM2)} m². Die Fläche ist nur erlaubt,
-              wenn auch das Warmwasser nicht gemessen werden kann (§ 9 Abs. 2 Satz 4 HeizkostenV).
+              wenn auch das Warmwasser nicht gemessen werden kann (§ 9 Abs. 2 Satz 4 HeizkostenV). Wohnungen mit „kein Anschluss: Warmwasser“ zählen nicht mit.
             </p>
           )}
         </>

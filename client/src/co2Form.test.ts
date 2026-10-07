@@ -62,6 +62,8 @@ test('Pflichtangaben und Zahlen: S, L, Nutzeinheiten; deutsche und technische Sc
   expect(co2Body({ ...f, unitsCount: '0' }, ctx)).toEqual({ error: 'Bitte tragen Sie die Zahl der Nutzeinheiten ein, mindestens 1.' })
   expect(co2Body({ ...f, kgPerM2: 'viel' }, ctx)).toEqual({ error: 'Bitte prüfen Sie „CO₂-Ausstoß je m² und Jahr (kg)“: keine Zahl ab 0.' })
   expect([parseDecimal('46,4'), parseDecimal('46.4'), parseDecimal('1.046,4'), parseDecimal(''), parseDecimal('x')]).toEqual([46.4, 46.4, 1046.4, null, null])
+  // Durchsicht von #240 (M3): deutsche Tausenderpunkte wie bei Beträgen, etwa 3.000 Liter.
+  expect([parseDecimal('3.000'), parseDecimal('12.345.678'), parseDecimal('1.5')]).toEqual([3000, 12345678, 1.5])
   // Hat der Messdienst nicht aufgeteilt, genügt die Antwort.
   expect(co2Body({ ...co2ToForm(null, ctx), answer: 'unsplit' }, ctx)).toMatchObject({ body: { method: 'selfAfterService' } })
 })

@@ -111,6 +111,12 @@ const ENERGY_WORDS: Record<HeatingEnergy, string> = {
   districtHeating: 'Fernwärme', heatPump: 'Wärmepumpe', electric: 'Strom', other: 'unbekanntem Energieträger',
 }
 
+// Was an einer Lieferung änderbar bleibt, wenn eine abgeschlossene Heizperiode sie eingefroren hat: die
+// Bezeichnung und seit Heizung PR 11 (Durchsicht von #240, Geld-I2) die Angaben, nach denen der
+// Warmwasseranteil rechnet (Brennwert/Heizwert, Heizwert laut Rechnung, Zeile der Tabelle). Der Anteil einer
+// abgeschlossenen Abrechnung ist mit ihr eingefroren; die Angaben wirken nur auf offene Heizperioden.
+const unfrozenAside = (d: FuelDelivery) => ({ ...d, label: '', usedByService: true, gasBasis: null, heatingValue: null, fuelGrade: null })
+
 async function guardDelivery(db: Executor, plant: PlantFacts, before: FuelDelivery | null, after: FuelDelivery): Promise<void> {
   const stock = STOCK_ENERGIES.includes(plant.energy)
   if (plant.energy === 'other') throw new HeatingError(400, LATER.other)
@@ -159,8 +165,8 @@ async function guardDelivery(db: Executor, plant: PlantFacts, before: FuelDelive
       throw new HeatingError(400, `Bitte tragen Sie die gelieferte Menge von ${what} in Litern, Kilogramm oder Schüttraummetern ein, wie auf der Rechnung.`)
     }
     // Eine Lieferung in einer abgeschlossenen Heizperiode ist gesperrt (G-A4), auch beim Verschieben
-    // hinein oder hinaus; die Bezeichnung bleibt änderbar.
-    const same = (d: FuelDelivery) => JSON.stringify({ ...d, label: '', usedByService: true })
+    // hinein oder hinaus; die Bezeichnung bleibt änderbar, ebenso die Angaben zum Warmwasseranteil.
+    const same = (d: FuelDelivery) => JSON.stringify(unfrozenAside(d))
     if (before === null || same(before) !== same(after)) {
       for (const date of [before?.deliveredAt ?? null, after.deliveredAt]) {
         const at = date === null ? null : await heatingPeriodAt(db, plant.id, date)
@@ -234,7 +240,7 @@ async function guardDelivery(db: Executor, plant: PlantFacts, before: FuelDelive
     }
   }
   if (before !== null && (await frozenCount(db, before.id)) > 0) {
-    const same = (d: FuelDelivery) => JSON.stringify({ ...d, label: '', usedByService: true })
+    const same = (d: FuelDelivery) => JSON.stringify(unfrozenAside(d))
     if (same(before) !== same(after)) throw new HeatingError(409, frozenText(before.label || 'Lieferung'))
   }
 }

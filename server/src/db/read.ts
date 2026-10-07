@@ -326,6 +326,7 @@ export async function readHeatingPlants(db: Executor): Promise<HeatingPlant[]> {
     areaBasisHeat: p.areaBasisHeat,
     heatPumpInstalledOn: p.heatPumpInstalledOn,
     heatGeneration: p.heatGeneration,
+    heatPumpMajority: p.heatPumpMajority,
     selfSpans: eigene.get(p.id) ?? [],
   }))
 }

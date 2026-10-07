@@ -10,7 +10,7 @@ import type { FuelDelivery, HeatingPeriodView } from '../types'
 
 const view: HeatingPeriodView = {
   plantId: 'hp', period: periodKey('2025-05'), label: '2025/2026', from: '2025-05-01', to: '2026-04-30', short: false, closed: false,
-  hotWater: { dhwMethod: null, dhwUnmeasurable: null, dhwHeatKwh: null, totalHeatKwh: null, dhwVolumeM3: null, dhwTempC: null }, hotWaterBasis: { volumeFromMetersM3: null, suppliedAreaM2: 0 }, co2: null, stock: null,
+  hotWater: { dhwMethod: null, dhwUnmeasurable: null, dhwHeatKwh: null, totalHeatKwh: null, dhwVolumeM3: null, dhwTempC: null }, hotWaterBasis: { volumeFromMetersM3: null, volumeMissing: null, running: null, suppliedAreaM2: 0 }, co2: null, stock: null,
   items: [
     { id: 'gas', description: 'Gas Abschlussrechnung', amountCents: 650000, key: 'area', fuelDeliveryId: 'd' },
     { id: 'wart', description: 'Wartung', amountCents: 20000, key: 'area', fuelDeliveryId: null },
@@ -112,5 +112,16 @@ test('Heizung PR 11: beim Vorrat Heizwert laut Rechnung, ohne ihn die Zeile der 
   render(<FuelCard plant={{ id: 'hp', method: 'self', energy: 'gas' }} view={view} deliveries={[gas]} onSaved={() => {}} />)
   fireEvent.click(screen.getByText('Lieferung eintragen'))
   expect(screen.queryByLabelText(/Heizwert laut Rechnung/)).toBeNull()
-  expect(auswahl('Abgerechnet (laut Rechnung)').value).toBe('')
+  expect(auswahl('Kilowattstunden der Rechnung berechnet nach').value).toBe('')
+  // Ohne Formel für das Warmwasser kein Hinweis; die Angabe ist nicht vorbelegt.
+  expect(screen.queryByText(/ohne sie rechnet die Formel nicht/)).toBeNull()
+})
+
+test('Durchsicht #240, Recht-I3: bei Formel für das Warmwasser sagt die Gasrechnung schon an der Lieferung, dass Brennwert/Heizwert fehlt', () => {
+  const formel = { ...view, hotWater: { ...view.hotWater, dhwMethod: 'volumeFormula' as const } }
+  render(<FuelCard plant={{ id: 'hp', method: 'self', energy: 'gas' }} view={formel} deliveries={[gas]} onSaved={() => {}} />)
+  fireEvent.click(screen.getByText('Lieferung eintragen'))
+  expect(screen.getByText(/ohne sie rechnet die Formel nicht/)).toBeTruthy()
+  fireEvent.change(auswahl('Kilowattstunden der Rechnung berechnet nach'), { target: { value: 'hs' } })
+  expect(screen.queryByText(/ohne sie rechnet die Formel nicht/)).toBeNull()
 })

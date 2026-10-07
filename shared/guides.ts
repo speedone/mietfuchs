@@ -12,7 +12,7 @@
 
 import type { TermId } from './glossary.ts'
 // Rechtszahlen aus dem Rechtsregister (Heizung PR 1), in der Fassung von `LAW_AS_OF` wie im Lexikon.
-import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutNotByConsumption } from './law/heizkostenv.ts'
+import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutNotByConsumption, hkvRenewableExemption } from './law/heizkostenv.ts'
 import { germanDate, LAW_AS_OF, valueAt } from './law/register.ts'
 import { co2CutMissing, co2FirstPeriodStart } from './law/co2kostaufg.ts'
 
@@ -24,6 +24,8 @@ const FORCED = valueAt(hkvConsumptionShareForced, LAW_AS_OF)
 // Aufteilung (§ 11 Abs. 2 Satz 1) aus dem Register.
 const CO2_CUT = valueAt(co2CutMissing, LAW_AS_OF)
 const CO2_FROM = germanDate(co2FirstPeriodStart())
+// Heizung PR 11: seit wann Wärmepumpen nicht mehr von der Heizkostenverordnung ausgenommen sind.
+const HEAT_PUMP_FROM = germanDate(hkvRenewableExemption.versions.find((v) => v.validFrom !== undefined)?.validFrom ?? '')
 
 // Die Seiten, auf die eine Anleitung springen kann. Dieselben Kennungen wie die Navigation;
 // client/src/nav.ts prüft beim Übersetzen, dass jede davon dort vorkommt.
@@ -322,6 +324,7 @@ const GUIDE_DATA = {
       { page: 'stammdaten', text: 'Beantworten Sie danach die Fragen zu Warmwasser, Erfassung, Wärmeschutz und dem Anteil nach Verbrauch und klicken Sie auf „Umstellen“. Nennt Mietfuchs Heizpositionen, wählen Sie für jede Teil und Ziel. Den Anteil und die Antwort zum Wärmeschutz ändern Sie später auf der Seite Heizkosten.' },
       { page: 'zaehler', text: 'Tragen Sie die Stände der angelegten Zähler zu Beginn und Ende der Heizperiode ein, beim Mieterwechsel zum Auszugstag.' },
       { page: 'kosten', text: 'Erfassen Sie Brennstoff, Betriebsstrom, Wartung und Zählermiete als Position „Heizung und Warmwasser“; der Schlüssel ist „nach Heizkostenverordnung“, dazu der Teil der Heizkosten unter „Weitere Angaben“ und das Ziel.' },
+      { page: 'heizkosten', text: 'Bereitet die Heizung auch das Warmwasser, wählen Sie auf der Seite Heizkosten in der Karte „Warmwasser“, wie die Wärme dafür bestimmt wird. Ohne Wärmezähler am Speicher tragen Sie das Warmwasser in m³ und seine Temperatur ein; bei Gas wählen Sie an der Rechnung unter „Kilowattstunden der Rechnung berechnet nach“ Brennwert oder Heizwert.' },
       { page: 'heizkosten', text: 'Prüfen Sie auf der Seite Heizkosten die Ablesungen. Fehlt beim Mieterwechsel eine Zwischenablesung, antworten Sie mit „Nicht möglich“ (mit Grund) oder „Nicht durchgeführt“. Wählen Sie in der Karte Ableseergebnis jede Wohnung und klicken Sie auf „Ableseergebnis drucken“; das Blatt geht an den Mieter dieser Wohnung.' },
     ],
     result: [
@@ -337,6 +340,8 @@ const GUIDE_DATA = {
       { text: 'Die Kosten der Zwischenablesung sind keine Betriebskosten; sie trägt der Vermieter, soweit im Mietvertrag nichts anderes vereinbart ist.', norm: 'BGH VIII ZR 19/07' },
       { text: `Wird entgegen der Verordnung nicht nach Verbrauch verteilt, etwa weil keine Zähler eingebaut sind, darf jeder Mieter seinen Anteil um ${CUT} Prozent kürzen.`, norm: '§ 12 Abs. 1 Satz 1 HeizkostenV' },
       { text: 'Bei Zählern, die nicht aus der Ferne ablesbar sind, teilen Sie jedem Mieter das Ergebnis der Ablesung in der Regel innerhalb eines Monats mit.', norm: '§ 6 Abs. 1 HeizkostenV' },
+      { text: `Die Wärme für das Warmwasser ist mit einem Wärmezähler zu messen. Eine Formel ist nur erlaubt, wenn das Messen unzumutbar aufwendig wäre; sonst darf jeder Mieter seinen Anteil an den Heiz- und Warmwasserkosten um ${CUT} Prozent kürzen.`, norm: '§ 9 Abs. 2, § 12 Abs. 1 Satz 1 HeizkostenV; BGH, Urteil vom 12.01.2022, VIII ZR 151/20' },
+      { text: `Für Abrechnungszeiträume, die vor dem ${HEAT_PUMP_FROM} beginnen, galten die Vorschriften zur Verteilung nicht für Gebäude, die überwiegend mit Wärme aus Wärmepumpen versorgt werden. Mietfuchs fragt deshalb bei einer Wärmepumpe, ob sie mehr als die Hälfte der Wärme liefert.`, norm: '§ 11 Abs. 1 Nr. 3 Buchst. a HeizkostenV in der alten Fassung' },
     ],
     gaps: [
       { text: 'Heizkostenverteiler an den Heizkörpern und die Werte eines Ablesedienstes und die Angaben nach § 6a HeizkostenV kommen mit späteren Versionen.', issue: 99 },
@@ -447,7 +452,7 @@ const GUIDE_DATA = {
       { text: 'Brennstoff, der vor dem 01.01.2023 in Rechnung gestellt wurde, trägt keine CO₂-Kosten; seine kg zählen aber für die Einstufung. Holz und Pellets sind keine Brennstoffe im Sinne des Brennstoffemissionshandels; für sie gibt es keine CO₂-Kosten aufzuteilen.', norm: '§ 11 Abs. 2 Satz 2, § 2 Abs. 1 CO2KostAufG; Anlage 1 BEHG' },
     ],
     gaps: [
-      { text: 'Den Heizwert laut Rechnung liest die Belegauswertung nicht aus; für den Warmwasseranteil der eigenen Heizkostenabrechnung tragen Sie ihn an der Lieferung ein, sonst gilt hilfsweise der Wert der Heizkostenverordnung.' },
+      { text: 'Den Heizwert laut Rechnung liest die Belegauswertung nicht aus; für den Warmwasseranteil der eigenen Heizkostenabrechnung tragen Sie ihn an der Lieferung ein, sonst gilt hilfsweise der Wert der Heizkostenverordnung.', issue: 99 },
     ],
     terms: ['fuelStock', 'fuelDelivery', 'co2Split'],
   },

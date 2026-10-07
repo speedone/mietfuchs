@@ -2722,6 +2722,15 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Heizperiode. Das Volumen gehört zur Anlage selbst, denn bei einem Kesseltausch zählt nur das ihrer
     // Laufzeit; Verfahren und Temperatur gelten wie in PR 10 für die Linie, der Speicher bleibt.
     const stockOfThis = stockOfPlant.get(plant.id)?.result
+    // Kesseltausch mit übernommenem Vorrat (Durchsicht von #240, Geld-I3): Der Brennstoff im Tank stammt aus
+    // Lieferungen der Vorgängerin(nen) gleicher Energie; ihr Heizwert gilt für ihn mit.
+    const stockLine = new Set<string>([plant.id])
+    for (let cur: SnapshotHeatingPlant | undefined = plant; cur?.takesOverStock === true && cur.replacesPlantId;) {
+      const prev: SnapshotHeatingPlant | undefined = allPlants.find((x) => x.id === cur?.replacesPlantId)
+      if (!prev || prev.energy !== plant.energy || stockLine.has(prev.id)) break
+      stockLine.add(prev.id)
+      cur = prev
+    }
     const running = swapStart !== null || swapEnd !== null
       ? { from: swapStart !== null ? dayAfter(swapStart) : period.from, to: swapEnd ?? period.to }
       : null
@@ -2736,7 +2745,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       running,
       fuelLines: (fuelOfPlant?.lines ?? []).map((l) => ({ deliveryId: l.deliveryId, sharePermille: l.sharePermille, energyKwh: l.energyKwh })),
       stock: stockOfThis?.ok ? { unit: stockOfThis.statement.unit, consumedQuantity: stockOfThis.statement.consumed.quantity } : null,
-      deliveries: (snapshot.fuel?.deliveries ?? []).filter((d) => d.plantId === plant.id).map((d) => ({
+      deliveries: (snapshot.fuel?.deliveries ?? []).filter((d) => stockLine.has(d.plantId)).map((d) => ({
         id: d.id, label: d.label, invoiceTo: d.invoiceTo, deliveredAt: d.deliveredAt, invoiceDate: d.invoiceDate ?? null, energyKwh: d.energyKwh ?? null,
         quantity: d.quantity ?? null, quantityUnit: d.quantityUnit ?? null, gasBasis: d.gasBasis ?? null, heatingValue: d.heatingValue ?? null, fuelGrade: d.fuelGrade ?? null, parts: d.parts,
       })),
@@ -2746,12 +2755,15 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       // Die Schätzung beim Abschluss (PR 7) trägt bei der Lieferung `estimated` (PR 10 Abweichung 11).
       fuelEstimated: fuelOfPlant?.lines.some((l) => l.estimated) ?? false,
     })
-    // § 11 Abs. 1 Nr. 3 Buchst. a a. F. (Abweichung 9): Das Register wird nur bei einer Wärmepumpe ohne
-    // weiteren Erzeuger gefragt; so steht der Wert nur dann im Rechtsstand.
-    const renewable = plant.energy === 'heatPump' && (plant.heatGeneration ?? null) !== 'mixed'
-      ? law(hkvRenewableExemption, { period: lawPeriod }, lawLog)
-      : null
-    const oldHeatPumpExemption = renewable?.heatPump === true
+    // § 11 Abs. 1 Nr. 3 Buchst. a a. F. (Abweichung 9; Durchsicht von #240, Recht-I1): ausgenommen waren
+    // Gebäude, die überwiegend mit Wärme aus Wärmepumpen versorgt werden. Das fragt die Anlage
+    // (`heatPumpMajority`, mehr als die Hälfte der Wärme), unabhängig vom Erzeuger nach § 9. „Nein“ heißt: Die
+    // Verordnung galt. Ohne Antwort oder mit „weiß nicht“ rechnet Mietfuchs ohne Kürzung und ohne Sperre und
+    // nennt beide Folgen.
+    const renewable = plant.energy === 'heatPump' ? law(hkvRenewableExemption, { period: lawPeriod }, lawLog) : null
+    const majority = plant.heatPumpMajority ?? null
+    const oldHeatPumpExemption = renewable?.heatPump === true && majority !== 'no'
+    const majorityOpen = oldHeatPumpExemption && majority !== 'yes'
     // Unter dieser Ausnahme bindet § 9 nicht: Ohne bestimmbares α gehen „Heizung und Warmwasser“ ganz in
     // den Topf Heizung (Festlegung, Abweichung 9), und es gibt keinen Fehler.
     const alpha = alphaResult.ok ? alphaResult.alpha : null
@@ -2806,13 +2818,18 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     for (const b of blocked) warn(b.code, `${where}: ${b.text} Bis dahin verteilt Mietfuchs die Heizkosten dieser Anlage nicht; sie stehen beim Vermieter.`, { kind: 'heatingCosts', id: plant.id })
     const plantSubjectSelf: NoticeSubject = { kind: 'heatingCosts', id: plant.id }
     if (renewable && oldHeatPumpExemption) {
+      const together = alpha === null && hotWater === 'combined'
+        ? '; einen Warmwasseranteil nach § 9 HeizkostenV verlangt die Verordnung dann nicht, und die Kosten von Heizung und Warmwasser verteilt Mietfuchs gemeinsam wie die Heizkosten (Festlegung von Mietfuchs)'
+        : ''
       warn('heating.heat-pump-old-exemption',
         `${where}: Für diesen Abrechnungszeitraum galten die Vorschriften der Heizkostenverordnung zur Erfassung und Verteilung nicht für Räume in Gebäuden, die überwiegend mit Wärme aus ${hkvRenewableExemption.describe(renewable)} versorgt werden. ` +
-          'Dann gilt die Verteilung laut Mietvertrag, und Kürzungen nach § 12 HeizkostenV entfallen. Mietfuchs verteilt nach den erfassten Werten, wie Sie es eingerichtet haben' +
-          (alpha === null && hotWater === 'combined'
-            ? '; einen Warmwasseranteil nach § 9 HeizkostenV verlangt die Verordnung dann nicht, und die Kosten von Heizung und Warmwasser verteilt Mietfuchs gemeinsam wie die Heizkosten (Festlegung von Mietfuchs)'
-            : '') +
-          '. Erzeugt ein weiterer Erzeuger einen erheblichen Teil der Wärme, wählen Sie bei der Anlage „mit einem weiteren Erzeuger“; dann galt die Verordnung.',
+          'Mietfuchs wendet die Fassung an, die zu Beginn des Abrechnungszeitraums galt (Festlegung von Mietfuchs). ' +
+          (majorityOpen
+            ? 'Ob das Ihr Gebäude betrifft, hängt davon ab, ob die Wärmepumpe mehr als die Hälfte der Wärme liefert; beantworten Sie die Frage bei der Heizanlage. ' +
+              'Liefert sie mehr als die Hälfte, gilt die Verteilung laut Mietvertrag, und Kürzungen nach § 12 HeizkostenV entfallen. Liefert sie weniger, galt die Verordnung, mit Warmwasseranteil nach § 9 und Kürzungsbeträgen nach § 12. ' +
+              `Bis zur Antwort rechnet Mietfuchs ohne Kürzungsbeträge und verteilt nach den erfassten Werten, wie Sie es eingerichtet haben${together}.`
+            : 'Sie haben angegeben, dass die Wärmepumpe mehr als die Hälfte der Wärme liefert. Dann gilt die Verteilung laut Mietvertrag, und Kürzungen nach § 12 HeizkostenV entfallen. ' +
+              `Mietfuchs verteilt nach den erfassten Werten, wie Sie es eingerichtet haben${together}.`),
         plantSubjectSelf)
     }
     if (alpha && blocked.length === 0) {

@@ -200,12 +200,16 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   [#99](https://github.com/speedone/mietfuchs/issues/99)).
 - Hinweise, wenn der Heizwert aus der Tabelle stammt und wenn der Warmwasseranteil ungewöhnlich ist
   (unter 5 oder über 50 %, nur zur Prüfung).
-- Wärmepumpe in Abrechnungszeiträumen, die vor dem 01.10.2024 beginnen: ein Hinweis, dass die
-  Heizkostenverordnung für überwiegend mit Wärmepumpen versorgte Gebäude damals nicht galt (§ 11 Abs. 1
-  Nr. 3 Buchst. a in der alten Fassung); keine Kürzungsbeträge, und Heizung und Warmwasser werden dann
-  gemeinsam nach dem Heizschlüssel verteilt.
-- An einer Gasrechnung lässt sich angeben, ob nach Brennwert oder nach Heizwert abgerechnet wurde, an
-  einer Lieferung mit Menge der Heizwert laut Rechnung oder die Zeile der Tabelle.
+- Wärmepumpe in Abrechnungszeiträumen, die vor dem 01.10.2024 beginnen: Die Heizanlage fragt, ob die
+  Wärmepumpe mehr als die Hälfte der Wärme des Gebäudes liefert. Dann galt die Heizkostenverordnung damals
+  nicht (§ 11 Abs. 1 Nr. 3 Buchst. a in der alten Fassung): ein Hinweis, keine Kürzungsbeträge, und Heizung
+  und Warmwasser werden gemeinsam nach dem Heizschlüssel verteilt, ohne Warmwasseranteil. Ohne Antwort
+  nennt der Hinweis beide Folgen.
+- Die Heizanlage fragt bei einer Wärmepumpe und bei eigener Abrechnung, ob sie die Wärme allein erzeugt.
+- An einer Gasrechnung lässt sich angeben, ob die Kilowattstunden nach Brennwert oder nach Heizwert
+  berechnet sind, an einer Lieferung mit Menge der Heizwert laut Rechnung oder die Zeile der Tabelle.
+  Beide lassen sich auch nach dem Abschluss einer Heizperiode nachtragen.
+- Mengen mit Tausenderpunkt („3.000“) liest die Seite Heizkosten jetzt wie Beträge als dreitausend.
 
 ### Geändert
 

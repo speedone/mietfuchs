@@ -32,6 +32,7 @@ import type {
   FuelQuantityUnit,
   GasBasis,
   HeatGeneration,
+  HeatPumpMajority,
   HeatingEnergy,
   HeatingMethod,
   HeatingPart,
@@ -355,6 +356,7 @@ export const DHW_METHODS = exactly<DhwMethod>()(['heatMeter', 'volumeFormula', '
 // Warmwasser ohne Wärmezähler (Heizung PR 11): Zeile der Heizwerttabelle und Erzeuger der Anlage.
 export const FUEL_GRADE_VALUES = exactly<FuelGrade>()(['heatingOilEL', 'heavyFuelOil', 'naturalGasH', 'naturalGasL', 'lpg', 'coke', 'lignite', 'hardCoal', 'firewood', 'woodPellets', 'woodChips'] as const)
 export const HEAT_GENERATIONS = exactly<HeatGeneration>()(['single', 'mixed'] as const)
+export const HEAT_PUMP_MAJORITIES = exactly<HeatPumpMajority>()(['yes', 'no', 'unknown'] as const)
 // CO₂-Merkmale der Anlage und Mengen einer Lieferung (Heizung PR 7).
 export const CO2_RESTRICTIONS = exactly<Co2Restriction>()(['none', 'building', 'supply', 'both'] as const)
 export const FUEL_QUANTITY_UNITS = exactly<FuelQuantityUnit>()(['l', 'kg', 'm3', 'kWh', 'srm'] as const)
@@ -416,6 +418,9 @@ export const heatingPlants = sqliteTable(
     heatPumpInstalledOn: text('heat_pump_installed_on'),
     // Ein Erzeuger oder mehrere (Heizung PR 11); NULL heißt: nicht beantwortet.
     heatGeneration: text('heat_generation', { enum: HEAT_GENERATIONS }),
+    // Wärmepumpe: Liefert sie mehr als die Hälfte der Wärme des Gebäudes? (§ 11 Abs. 1 Nr. 3 Buchst. a
+    // HeizkostenV in der Fassung bis 30.09.2024, Heizung PR 11); NULL heißt: nicht beantwortet.
+    heatPumpMajority: text('heat_pump_majority', { enum: HEAT_PUMP_MAJORITIES }),
   },
   () => [
     oneOf('heating_plants_energy_known', 'energy', HEATING_ENERGIES),
@@ -442,6 +447,7 @@ export const heatingPlants = sqliteTable(
     check('heating_plants_self_capture_complete', sql.raw(`"method" <> 'self' OR "capture" IS NOT NULL`)),
     // Warmwasser ohne Wärmezähler (Heizung PR 11).
     oneOf('heating_plants_heat_generation_known', 'heat_generation', HEAT_GENERATIONS),
+    oneOf('heating_plants_heat_pump_majority_known', 'heat_pump_majority', HEAT_PUMP_MAJORITIES),
   ],
 )
 

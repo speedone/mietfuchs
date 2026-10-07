@@ -9,7 +9,7 @@ import type { HeatingPeriodView } from '../types'
 
 const view: HeatingPeriodView = {
   plantId: 'hp', period: periodKey('2025-05'), label: '2025/2026', from: '2025-05-01', to: '2026-04-30', short: false, closed: false,
-  hotWater: { dhwMethod: null, dhwUnmeasurable: null, dhwHeatKwh: null, totalHeatKwh: null, dhwVolumeM3: null, dhwTempC: null }, hotWaterBasis: { volumeFromMetersM3: null, suppliedAreaM2: 0 }, co2: null, items: [], stock: null,
+  hotWater: { dhwMethod: null, dhwUnmeasurable: null, dhwHeatKwh: null, totalHeatKwh: null, dhwVolumeM3: null, dhwTempC: null }, hotWaterBasis: { volumeFromMetersM3: null, volumeMissing: null, running: null, suppliedAreaM2: 0 }, co2: null, items: [], stock: null,
 }
 const facts = { id: 'hp', energy: 'gas', method: 'manual', nonResidential: false, restriction: 'supply', districtEtsNew: false } as const
 

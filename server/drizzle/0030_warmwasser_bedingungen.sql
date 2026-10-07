@@ -81,6 +81,7 @@ CREATE TABLE `__new_heating_plants` (
 	`area_basis_heat` text DEFAULT 'area' NOT NULL,
 	`heat_pump_installed_on` text,
 	`heat_generation` text,
+	`heat_pump_majority` text,
 	FOREIGN KEY (`property_id`) REFERENCES `properties`(`id`) ON UPDATE no action ON DELETE restrict,
 	CONSTRAINT "heating_plants_energy_known" CHECK("energy" IN ('gas', 'oil', 'lpg', 'pellets', 'wood', 'districtHeating', 'heatPump', 'electric', 'coal', 'other')),
 	CONSTRAINT "heating_plants_supply_known" CHECK("supply" IN ('central', 'perUnit')),
@@ -99,9 +100,10 @@ CREATE TABLE `__new_heating_plants` (
 	CONSTRAINT "heating_plants_capture_known" CHECK("capture" IN ('heatMeter', 'hca', 'serviceValues')),
 	CONSTRAINT "heating_plants_area_basis_heat_known" CHECK("area_basis_heat" IN ('area', 'heatedArea')),
 	CONSTRAINT "heating_plants_self_capture_complete" CHECK("method" <> 'self' OR "capture" IS NOT NULL),
-	CONSTRAINT "heating_plants_heat_generation_known" CHECK("heat_generation" IN ('single', 'mixed'))
+	CONSTRAINT "heating_plants_heat_generation_known" CHECK("heat_generation" IN ('single', 'mixed')),
+	CONSTRAINT "heating_plants_heat_pump_majority_known" CHECK("heat_pump_majority" IN ('yes', 'no', 'unknown'))
 );
 --> statement-breakpoint
-INSERT INTO `__new_heating_plants`("id", "property_id", "name", "energy", "supply", "method", "separate_settlement", "devices_remote", "devices_installed_after_2021_12", "new_devices_install", "source", "capture_installed_on", "captured_on_2024_10_01", "warm_rent_average_2022_2024", "change_split", "period_start_month", "units_limited", "non_residential", "restriction", "district_ets_new", "ends_on", "replaces_plant_id", "building_with", "takes_over_stock", "hot_water", "capture", "area_basis_heat", "heat_pump_installed_on", "heat_generation") SELECT "id", "property_id", "name", "energy", "supply", "method", "separate_settlement", "devices_remote", "devices_installed_after_2021_12", "new_devices_install", "source", "capture_installed_on", "captured_on_2024_10_01", "warm_rent_average_2022_2024", "change_split", "period_start_month", "units_limited", "non_residential", "restriction", "district_ets_new", "ends_on", "replaces_plant_id", "building_with", "takes_over_stock", "hot_water", "capture", "area_basis_heat", "heat_pump_installed_on", "heat_generation" FROM `heating_plants`;--> statement-breakpoint
+INSERT INTO `__new_heating_plants`("id", "property_id", "name", "energy", "supply", "method", "separate_settlement", "devices_remote", "devices_installed_after_2021_12", "new_devices_install", "source", "capture_installed_on", "captured_on_2024_10_01", "warm_rent_average_2022_2024", "change_split", "period_start_month", "units_limited", "non_residential", "restriction", "district_ets_new", "ends_on", "replaces_plant_id", "building_with", "takes_over_stock", "hot_water", "capture", "area_basis_heat", "heat_pump_installed_on", "heat_generation", "heat_pump_majority") SELECT "id", "property_id", "name", "energy", "supply", "method", "separate_settlement", "devices_remote", "devices_installed_after_2021_12", "new_devices_install", "source", "capture_installed_on", "captured_on_2024_10_01", "warm_rent_average_2022_2024", "change_split", "period_start_month", "units_limited", "non_residential", "restriction", "district_ets_new", "ends_on", "replaces_plant_id", "building_with", "takes_over_stock", "hot_water", "capture", "area_basis_heat", "heat_pump_installed_on", "heat_generation", "heat_pump_majority" FROM `heating_plants`;--> statement-breakpoint
 DROP TABLE `heating_plants`;--> statement-breakpoint
 ALTER TABLE `__new_heating_plants` RENAME TO `heating_plants`;

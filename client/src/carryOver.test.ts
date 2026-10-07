@@ -215,7 +215,7 @@ describe('Vorjahr mit eigener Heizperiode', () => {
   const plant = (over: Partial<HeatingPlant> = {}): HeatingPlant => ({
     id: 'hp1', propertyId: 'p', name: '', energy: 'gas', supply: 'central', method: 'service', separateSettlement: null,
     devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null, capturedOnOct2024: null,
-    warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: 5, periodChanges: [], separateSpans: [], units: null, newDevicesInstall: null, nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null, hotWater: 'combined', capture: null, areaBasisHeat: 'area', heatPumpInstalledOn: null, heatGeneration: null, ...over,
+    warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: 5, periodChanges: [], separateSpans: [], units: null, newDevicesInstall: null, nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null, hotWater: 'combined', capture: null, areaBasisHeat: 'area', heatPumpInstalledOn: null, heatGeneration: null, heatPumpMajority: null, ...over,
   })
   const at2026 = contextOf(calendarYearPeriod(2026), calendarYearPeriod(2025))
   const heizung = (period: string, over: Partial<CostItem> = {}) =>

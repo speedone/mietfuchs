@@ -18,7 +18,9 @@ import { selfFromOf } from '../heating.ts'
 import { and, eq, inArray } from 'drizzle-orm'
 import { consumptionInPeriod } from '../calc.ts'
 import { suppliedAreaOf } from '../dhw.ts'
-import { servesUnit } from '../../../shared/heatingPeriod.ts'
+import { lineRoot, servesUnit } from '../../../shared/heatingPeriod.ts'
+import { andList } from '../../../shared/wording.ts'
+import { dayBefore, germanDate as germanDay } from '../../../shared/law/register.ts'
 import type { BillingPeriod, Co2Statement, Co2TenantRelief, HeatingPeriodView, PeriodKey } from '../../../shared/types.ts'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 import { co2ApplicableFrom, co2FirstPeriodStart } from '../../../shared/law/co2kostaufg.ts'
@@ -29,7 +31,7 @@ import type { Database, Executor } from './client.ts'
 import { readCo2Statements, readCostItems, readMeters, readReadings, readStock, readUnits } from './read.ts'
 import { stockViewFor } from './fuelStock.ts'
 import { isStockEnergy } from '../../../shared/fuelStock.ts'
-import { asNullableFilled, CrossPropertyError, has, HeatingError, merged, oneOfOrUndefined, raw } from './repository.ts'
+import { asNullableFilled, CrossPropertyError, has, HeatingError, merged, oneOfOrUndefined, plantSpanOf, raw } from './repository.ts'
 import { closedText, dropIfEmpty, ensureHeatingPeriod, heatingPeriodClosed, heatingPeriodOf, plantContext, type PlantContext } from './heatingPeriodContext.ts'
 // Für ältere Importe (Tests): Die Helfer der Heizperioden stehen seit Heizung PR 8 in heatingPeriodContext.ts.
 export { dropIfEmpty, ensureHeatingPeriod } from './heatingPeriodContext.ts'
@@ -75,13 +77,37 @@ export async function heatingPeriodViews(db: Database, plantId: string, periodPa
   const selfBegin = selfFromOf(ctx.plant)
   // Für die Formeln (Heizung PR 11): angeschlossene Wohnungen, ihre Warmwasserzähler und Ablesungen.
   const served = (await readUnits(db)).filter((u) => u.propertyId === ctx.plant.propertyId && servesUnit(ctx.plant, u))
-  const servedIds = new Set(served.map((u) => u.id))
+  // Nur Wohnungen mit Warmwasser (ohne „kein Anschluss: Warmwasser“, #117), wie die versorgte Fläche.
+  const servedIds = new Set(served.filter((u) => !(u.noConnection ?? []).includes('warmwasser')).map((u) => u.id))
   const waterMeters = (await readMeters(db)).filter((m) => m.type === 'warmwasser' && m.unitId !== null && servedIds.has(m.unitId))
   const readings = waterMeters.length > 0 ? await readReadings(db) : []
+  // Kesseltausch (Durchsicht von #240, Geld-I1): Die Anlage heizt nur in ihrer Laufzeit; Vorschlag und
+  // Beschriftung gelten für sie. Verfahren, Temperatur und Bestätigung gelten für die Linie (der Speicher
+  // bleibt), das Volumen ist das der Anlage selbst (wie calc.ts).
+  const span = await plantSpanOf(db, plantId)
+  const allPlants = (await lineRowsOf(db, plantId)).plants
+  const lineIds = new Set(allPlants.filter((x) => lineRoot(x, allPlants) === lineRoot({ id: plantId, replacesPlantId: allPlants.find((y) => y.id === plantId)?.replacesPlantId ?? null }, allPlants)).map((x) => x.id))
+  const lineRowsAll = lineIds.size > 1 ? await db.select().from(heatingPeriods).where(inArray(heatingPeriods.plantId, [...lineIds])) : rows
   const views: HeatingPeriodView[] = []
   for (const h of hs) {
     const row = rows.find((r) => r.period === h.key)
+    const lineRow = lineRowsAll.find((r) => r.plantId !== plantId && r.period === h.key && r.dhwMethod !== null)
     const closed = await heatingPeriodClosed(db, ctx, h)
+    const from = span.from !== null && span.from > h.from ? span.from : h.from
+    const to = span.to !== null && span.to < h.to ? span.to : h.to
+    const running = from !== h.from || to !== h.to ? { from, to } : null
+    // Der Vorschlag für V nur, wenn jeder Warmwasserzähler am Beginn und am Ende abgelesen ist (M5);
+    // sonst nennt die Karte, was fehlt.
+    const missing = waterMeters.flatMap((m) => {
+      const dates = readings.filter((r) => r.meterId === m.id).map((r) => r.date)
+      const gaps = [
+        ...(dates.some((d) => d <= dayBefore(from)) ? [] : [`zum ${germanDay(dayBefore(from))}`]),
+        ...(dates.some((d) => d >= to) ? [] : [`zum ${germanDay(to)}`]),
+      ]
+      return gaps.length > 0 ? [`„${m.name}“ ${gaps.join(' und ')}`] : []
+    })
+    const volume = waterMeters.length === 0 || missing.length > 0 ? null
+      : Math.round(waterMeters.reduce((a, m) => a + consumptionInPeriod(readings.filter((r) => r.meterId === m.id), from, to), 0) * 1000) / 1000
     views.push({
       plantId,
       period: h.key,
@@ -91,15 +117,16 @@ export async function heatingPeriodViews(db: Database, plantId: string, periodPa
       short: h.short,
       closed,
       hotWater: {
-        dhwMethod: row?.dhwMethod ?? null, dhwUnmeasurable: row?.dhwUnmeasurable ?? null,
+        dhwMethod: row?.dhwMethod ?? lineRow?.dhwMethod ?? null, dhwUnmeasurable: row?.dhwUnmeasurable ?? lineRow?.dhwUnmeasurable ?? null,
         dhwHeatKwh: row?.dhwHeatKwh ?? null, totalHeatKwh: row?.totalHeatKwh ?? null,
-        dhwVolumeM3: row?.dhwVolumeM3 ?? null, dhwTempC: row?.dhwTempC ?? null,
+        dhwVolumeM3: row?.dhwVolumeM3 ?? null, dhwTempC: row?.dhwTempC ?? lineRow?.dhwTempC ?? null,
       },
-      // Vorschlag für V aus den Warmwasserzählern der angeschlossenen Wohnungen, auf Liter gerundet, und
-      // die mit Warmwasser versorgte Fläche (§ 9 Abs. 2 Satz 5 Nr. 2 HeizkostenV).
+      // Vorschlag für V aus den Warmwasserzählern der angeschlossenen Wohnungen in der Laufzeit, auf Liter
+      // gerundet, und die mit Warmwasser versorgte Fläche (§ 9 Abs. 2 Satz 5 Nr. 2 HeizkostenV).
       hotWaterBasis: {
-        volumeFromMetersM3: waterMeters.length === 0 ? null
-          : Math.round(waterMeters.reduce((a, m) => a + consumptionInPeriod(readings.filter((r) => r.meterId === m.id), h.from, h.to), 0) * 1000) / 1000,
+        volumeFromMetersM3: volume,
+        volumeMissing: missing.length > 0 ? `Für den Vorschlag aus den Warmwasserzählern fehlt ein Stand: ${andList(missing)}.` : null,
+        running,
         suppliedAreaM2: suppliedAreaOf(served),
       },
       co2: statements.find((s) => s.period === h.key) ?? null,

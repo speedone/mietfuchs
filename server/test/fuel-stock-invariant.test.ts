@@ -375,6 +375,10 @@ for (const { seed, two, tausch, self, dhw } of RUNS) {
         const h = list(s, 'heating').find((x) => str(x, 'plantId') === 'hp' && str(x, 'period') === hkey)
         const selfSt = g(h, 'self')
         const alpha = g(selfSt, 'alpha')
+        // Durchsicht von #240 (Geld-I3): „kein Heizwert bekannt“ ist nur richtig, wenn es bis zum Ende der
+        // Heizperiode wirklich keine Lieferung gibt; sonst wäre der Lauf still übersprungen.
+        const noValue = list(s, 'notices').some((x) => str(x, 'code') === 'heating.dhw-share-invalid' && str(x, 'text').includes('kein Heizwert bekannt'))
+        if (noValue) assert.ok(!allDeliveries.some((d) => d.plantId === 'hp' && d.deliveredAt !== null && periodOfDate(d.deliveredAt) <= y), `${WAY} Startwert ${seed}; (w) ${hkey}: kein Heizwert bekannt, obwohl es Lieferungen gibt`)
         if (g(selfSt, 'ok') !== true || alpha === undefined || alpha === null) return
         DHW_STATS.alpha++
         const where = `${WAY} Startwert ${seed}; (w) ${hkey}`

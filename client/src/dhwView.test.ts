@@ -33,3 +33,8 @@ test('Gemessen gegen kWh laut Rechnung bleibt der Satz von PR 10; Formel und Bre
   expect(showsDhwBlock(formel)).toBe(true)
   expect(showsDhwBlock(undefined)).toBe(false)
 })
+
+test('Durchsicht #240, M3: beruht die Energie auf der Schätzung beim Abschluss, sagt der Block das', () => {
+  expect(dhwBlock({ ...formel, estimated: true })?.values.at(-1)).toBe('Die Energie beruht teils auf einer Schätzung der fehlenden Rechnung.')
+  expect(dhwBlock(formel)?.values).toHaveLength(2)
+})

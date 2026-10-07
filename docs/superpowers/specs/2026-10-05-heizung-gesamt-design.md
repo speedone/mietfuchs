@@ -1731,7 +1731,7 @@ Mietfuchs rechnet nach dem Wortlaut (15,0 %). Ob die technische Regel die gemess
 
 **Beispiel Wärmepumpe (F1, Testfall):** 120 m³, t_w = 60 °C → Q = 15.000 kWh · 0,30 = 4.500 kWh; Strom 12.000 kWh, Wärme 36.000 kWh. α = 4.500 / 12.000 = **37,5 %**; die zweite Fassung hätte 4.500 / 36.000 = 12,5 % gerechnet.
 
-**Beleg zu F1 und eine Spannung** (A8): Der Wortlaut von § 9 Abs. 2 S. 6 Nr. 3 sagt nur „mit 0,30 zu multiplizieren“; § 9 Abs. 1 S. 2 verlangt bei Wärmepumpen die Aufteilung nach Anteilen am **Wärme**verbrauch. Entscheidend ist die Begründung, BT-Drs. 20/7619: Der Faktor gilt „für die Abrechnung von Strom für Wärmepumpen“ und ergibt sich aus einer Jahresarbeitszahl von 2,7 und dem Nutzungsgrad 0,8 in der Zahl 2,5 (0,8 / 2,7 ≈ 0,30). Das Formelergebnis ist also Strom, und α = Q · 0,30 / Strom.
+**Beleg zu F1 und eine Spannung** (A8): Der Wortlaut von § 9 Abs. 2 S. 6 Nr. 3 sagt nur „mit 0,30 zu multiplizieren“; § 9 Abs. 1 S. 2 verlangt bei Wärmepumpen die Aufteilung nach Anteilen am **Wärme**verbrauch. Entscheidend ist die Begründung, BT-Drs. 20/7619 S. 99 (gelesen in der Durchsicht von PR #240): Der Faktor gilt „für die Abrechnung von Strom für Wärmepumpen“ und ergibt sich aus einer Jahresarbeitszahl von 2,7 und dem Nutzungsgrad 0,8 in der Zahl 2,5 (0,8 / 2,7 ≈ 0,30). Das Formelergebnis ist also Strom, und α = Q · 0,30 / Strom.
 
 **Wärmepumpe mit Wärmezähler am Warmwasser, aber ohne Gesamtwärmezähler:** Gemessene Wärme geteilt durch Strom ergäbe etwa das Dreifache. Mietfuchs rechnet dann nicht, sondern meldet `heating.heat-pump-dhw-basis` (error) mit der Bitte, einen Gesamtwärmezähler anzugeben oder die Formel zu wählen. Testfall in 12.2.
 

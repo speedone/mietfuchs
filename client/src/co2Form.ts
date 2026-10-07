@@ -5,6 +5,7 @@
 // Die Frage nach der Abzugszeile hat keine Vorgabe (Entwurf 7.2): Ob abgezogen wurde, steht nur auf
 // dem Papier, und eine Vorgabe wäre bei einem Teil der Messdienste falsch.
 import { fmtEuro, parseEuro } from './api'
+import { parseNumberDe } from './numbers'
 import { enteredCentsOf, serviceProbe } from '../../shared/co2Probe.ts'
 import type { Co2Method, Co2Statement, HeatingPeriodView } from './types'
 
@@ -48,16 +49,14 @@ export type Co2Form = {
 export type Co2Context = { items: HeatingPeriodView['items']; unitsCount: number }
 
 const centsText = (c: number | null): string => (c === null ? '' : (c / 100).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
-// Ohne Tausenderpunkt: „5.421“ läse parseDecimal wie technisch geschrieben als 5,421.
+// Ohne Tausenderpunkt, damit das Feld so dasteht, wie man es tippt.
 const numberText = (n: number | null): string => (n === null ? '' : n.toLocaleString('de-DE', { maximumFractionDigits: 4, useGrouping: false }))
 const serviceItemsOf = (ctx: Co2Context) => ctx.items.filter((i) => i.key === 'amounts')
 
-// Eine Zahl in deutscher („46,4“, „1.046,4“) oder technischer Schreibweise („46.4“).
+// Eine Zahl in deutscher („46,4“, „1.046,4“, „3.000“) oder technischer Schreibweise („46.4“); dieselbe Regel
+// wie bei Beträgen (`parseNumberDe`, Durchsicht von #240, M3): „3.000“ sind dreitausend, nicht drei.
 export function parseDecimal(text: string): number | null {
-  const t = text.trim()
-  if (t === '') return null
-  const n = Number(t.includes(',') ? t.replace(/\./g, '').replace(',', '.') : t)
-  return Number.isFinite(n) ? n : null
+  return parseNumberDe(text)
 }
 
 export function co2ToForm(st: Co2Statement | null, ctx: Co2Context): Co2Form {

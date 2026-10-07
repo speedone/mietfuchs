@@ -37,7 +37,7 @@ import { dayAfter, LAW_AS_OF, valueAt } from '../../../shared/law/register.ts'
 import { asNullableFilled, asNullableText, asText, guardServedChange, has, heatingPeriodAt, heatingRulesOf, HeatingError, insertEntityIn, ISO_DATE, merged, oneOfOrUndefined, raw, sameProperty } from './repository.ts'
 import { buildingCycle, lineRoot, sameLine, servesUnit } from '../../../shared/heatingPeriod.ts'
 import {
-  AREA_BASES_HEAT, CAPTURE_METHODS, CHANGE_SPLITS, CO2_RESTRICTIONS, HEAT_GENERATIONS, HOT_WATER, fuelDeliveries, closedHeatingSettlementHistory, co2Statements, closedHeatingSettlements, closedSettlements, costItems, DEVICES_INSTALLED_AFTER, DEVICES_REMOTE, HEATING_ENERGIES, HEATING_METHODS,
+  AREA_BASES_HEAT, CAPTURE_METHODS, CHANGE_SPLITS, CO2_RESTRICTIONS, HEAT_GENERATIONS, HEAT_PUMP_MAJORITIES, HOT_WATER, fuelDeliveries, closedHeatingSettlementHistory, co2Statements, closedHeatingSettlements, closedSettlements, costItems, DEVICES_INSTALLED_AFTER, DEVICES_REMOTE, HEATING_ENERGIES, HEATING_METHODS,
   HEATING_SOURCES, HEATING_SUPPLIES, NEW_DEVICES_INSTALLS, heatingPeriodChanges, heatingPeriods, heatingPlants, heatingPlantUnits, heatingPrepaymentOverrides, heatingSelfSpans, heatingSeparateSpans, meters, units,
 } from './schema.ts'
 
@@ -73,6 +73,14 @@ function readPlantUnits(value: unknown): HeatingPlantUnit[] {
 function readIds(value: unknown): string[] {
   if (!Array.isArray(value)) return []
   return [...new Set(value.map((v) => asNullableText(v)).filter((v): v is string => v !== null && v !== ''))]
+}
+
+// Eine Antwort aus einer Liste (Heizung PR 11): leer ist keine, ein unbekannter Wert ein Fehler.
+function answerOf<T extends string>(values: readonly T[], v: unknown, what: string): T | null {
+  if (v === null || v === undefined || v === '') return null
+  const known = oneOfOrUndefined(values, v)
+  if (known === undefined) throw new HeatingError(400, `${what}, kennt Mietfuchs so nicht. Bitte wählen Sie aus der Liste.`)
+  return known
 }
 
 function mergeHeatingPlant(current: HeatingPlant, body: unknown): HeatingPlant {
@@ -113,8 +121,10 @@ function mergeHeatingPlant(current: HeatingPlant, body: unknown): HeatingPlant {
     capture: merged(body, 'capture', current.capture, (v) => (v === null ? null : oneOfOrUndefined(CAPTURE_METHODS, v) ?? current.capture)),
     areaBasisHeat: merged(body, 'areaBasisHeat', current.areaBasisHeat, (v) => oneOfOrUndefined(AREA_BASES_HEAT, v) ?? current.areaBasisHeat),
     heatPumpInstalledOn: merged(body, 'heatPumpInstalledOn', current.heatPumpInstalledOn, asNullableFilled),
-    // Warmwasser ohne Wärmezähler (Heizung PR 11): ein Erzeuger oder mehrere; Unbekanntes ist keine Antwort.
-    heatGeneration: merged(body, 'heatGeneration', current.heatGeneration, (v) => oneOfOrUndefined(HEAT_GENERATIONS, v) ?? null),
+    // Heizung PR 11: ein Erzeuger oder mehrere, und bei einer Wärmepumpe, ob sie mehr als die Hälfte der
+    // Wärme liefert. Leer heißt keine Antwort; ein unbekannter Wert ist ein Fehler mit Satz, kein stilles Löschen.
+    heatGeneration: merged(body, 'heatGeneration', current.heatGeneration, (v) => answerOf(HEAT_GENERATIONS, v, 'Ob die Heizung die Wärme allein erzeugt')),
+    heatPumpMajority: merged(body, 'heatPumpMajority', current.heatPumpMajority, (v) => answerOf(HEAT_PUMP_MAJORITIES, v, 'Ob die Wärmepumpe mehr als die Hälfte der Wärme liefert')),
     // Setzt nur die Einrichtung der eigenen Abrechnung; das Zurückschalten löscht ihn (updateHeatingPlant).
     selfSpans: current.selfSpans ?? [],
   }
@@ -127,7 +137,7 @@ const emptyHeatingPlant = (id: string, propertyId: string): HeatingPlant => ({
   capturedOnOct2024: null, warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null,
   periodChanges: [], separateSpans: [], units: null, newDevicesInstall: null,
   nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null,
-  hotWater: 'combined', capture: null, areaBasisHeat: 'area', heatPumpInstalledOn: null, heatGeneration: null, selfSpans: [],
+  hotWater: 'combined', capture: null, areaBasisHeat: 'area', heatPumpInstalledOn: null, heatGeneration: null, heatPumpMajority: null, selfSpans: [],
 })
 
 export async function guardHeatingPlant(db: Executor, before: HeatingPlant | null, after: HeatingPlant): Promise<void> {
@@ -313,7 +323,7 @@ export const plantRow = (p: HeatingPlant) => ({
   nonResidential: p.nonResidential, restriction: p.restriction, districtEtsNew: p.districtEtsNew,
   endsOn: p.endsOn, replacesPlantId: p.replacesPlantId, buildingWith: p.buildingWith, takesOverStock: p.takesOverStock,
   hotWater: p.hotWater, capture: p.capture, areaBasisHeat: p.areaBasisHeat, heatPumpInstalledOn: p.heatPumpInstalledOn,
-  heatGeneration: p.heatGeneration,
+  heatGeneration: p.heatGeneration, heatPumpMajority: p.heatPumpMajority,
 })
 
 // Die Zeiträume der eigenen Heizkostenabrechnung, ganz ersetzt wie die Liste der Wohnungen (Durchsicht von #239).

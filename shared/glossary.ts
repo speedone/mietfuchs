@@ -262,6 +262,17 @@ export const GLOSSARY = {
       'Rechnen Sie selbst ab, misst ein Wärmezähler am Warmwasserspeicher die Wärme; ist keiner da, tragen Sie dort das Warmwasser in m³ und seine Temperatur ein, und nur wenn auch das nicht gemessen wird, rechnet Mietfuchs mit der Wohnfläche. ' +
       'Ist die Heizperiode kürzer als ein Jahr, kürzt Mietfuchs den Jahreswert der Flächenformel nach Tagen, so wie die Verordnung Warmwasserkosten beim Nutzerwechsel zeitanteilig teilt (§ 9b Abs. 2 HeizkostenV); eine ausdrückliche Regel dafür gibt es nicht.',
   },
+  // Heizung PR 11 (Durchsicht von #240, Recht-I3): wonach die Gasrechnung die Kilowattstunden berechnet.
+  gasCalorificBasis: {
+    title: 'Brennwert und Heizwert (Gas)',
+    short:
+      'Gas wird in Kubikmetern gemessen und in Kilowattstunden abgerechnet. Für die Umrechnung nimmt der Versorger meist den Brennwert, der die Wärme im Wasserdampf der Abgase mitzählt, seltener den Heizwert, der sie nicht mitzählt. ' +
+      'Welcher es ist, steht auf der Rechnung bei der Umrechnung von m³ in kWh. Für den Warmwasseranteil nach einer Formel zählt das: Bei Abrechnung nach Brennwert wird der Formelwert mit dem Faktor der Heizkostenverordnung multipliziert.',
+    example:
+      `Ein Haus braucht nach der Formel 15.000 kWh Wärme für das Warmwasser. Rechnet der Versorger nach Brennwert ab, setzt Mietfuchs 15.000 · ${dhwDe(DHW_FACTORS.gasCalorific, 2)} = ${dhwDe(15000 * DHW_FACTORS.gasCalorific)} kWh gegen die Kilowattstunden der Rechnung, nach Heizwert 15.000 kWh.`,
+    norm: '§ 9 Abs. 2 Satz 6 Nr. 1 HeizkostenV',
+    needed: 'Wenn Sie die Heizkosten selbst abrechnen, mit Gas heizen und die Wärme für das Warmwasser nach einer Formel bestimmen. Wählen Sie an der Gasrechnung, wonach die Kilowattstunden berechnet sind; steht dort „Brennwert“, wählen Sie „nach Brennwert“.',
+  },
   // Heizung PR 10 (#99, Entwurf 10.3): die eigene Heizkostenabrechnung. Zahlen aus Beispiel A (8.6).
   baseCosts: {
     title: 'Grundkosten',

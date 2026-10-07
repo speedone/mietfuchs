@@ -105,8 +105,8 @@ const VEROEFFENTLICHT: Record<string, string> = {
   '0028_heizkostenabrechnung_bedingungen': '3898a4defcee79eacb162e80d1c2b74910ff98211ce51289e529337588dfe54e',
   // Heizung PR 11 (Warmwasser). Wird ein Schritt davor vor dem Push neu erzeugt, werden diese beiden
   // Schritte neu erzeugt und die Marken hier ersetzt.
-  '0029_warmwasser': '978a75b72e95aba3b7753c84fb39957607dc4581df4ce124c7d4fb8a10253d44',
-  '0030_warmwasser_bedingungen': 'ae96f77285f6019b63a6ee728f51bdbfd672bd03b74e9f055317f7ff08a0c8e5',
+  '0029_warmwasser': 'f6d62af1554a999b3656e0e6ddaede7801f12ca09919463f0714df3e77077d6d',
+  '0030_warmwasser_bedingungen': '70bd0e5c1985b194afe1a3d309c244d4e4e7a52ef027f484798ad355552d6f16',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

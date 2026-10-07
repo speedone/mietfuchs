@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "c3a84082-ff57-4860-aa2c-a08976337dd7",
-  "prevId": "ee1c1033-d8c6-46db-9dc0-c51bc1d94975",
+  "id": "eb1e2048-1c91-4fec-bbe3-411bb649d2a2",
+  "prevId": "dd744e70-1f0d-4c7c-b35f-67f34715888d",
   "tables": {
     "ai_slots": {
       "name": "ai_slots",
@@ -2897,6 +2897,13 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
+        },
+        "heat_pump_majority": {
+          "name": "heat_pump_majority",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         }
       },
       "indexes": {},
@@ -2989,6 +2996,10 @@
         "heating_plants_heat_generation_known": {
           "name": "heating_plants_heat_generation_known",
           "value": "\"heat_generation\" IN ('single', 'mixed')"
+        },
+        "heating_plants_heat_pump_majority_known": {
+          "name": "heating_plants_heat_pump_majority_known",
+          "value": "\"heat_pump_majority\" IN ('yes', 'no', 'unknown')"
         }
       }
     },

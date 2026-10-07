@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "ee1c1033-d8c6-46db-9dc0-c51bc1d94975",
+  "id": "dd744e70-1f0d-4c7c-b35f-67f34715888d",
   "prevId": "471f8f2b-d314-451d-9d2b-bb4129e19dfe",
   "tables": {
     "ai_slots": {
@@ -2889,6 +2889,13 @@
         },
         "heat_generation": {
           "name": "heat_generation",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "heat_pump_majority": {
+          "name": "heat_pump_majority",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

@@ -1336,6 +1336,8 @@ export type HeatingPlant = {
   // Erzeugt die Anlage die Wärme allein oder mit einem weiteren Erzeuger? (Heizung PR 11, § 9 Abs. 1
   // Satz 5 und Abs. 2 Satz 6 Nr. 3 HeizkostenV). Nur für den Warmwasseranteil nach einer Formel gefragt.
   heatGeneration: HeatGeneration | null
+  // Wärmepumpe: mehr als die Hälfte der Wärme des Gebäudes (Heizung PR 11, § 11 Abs. 1 Nr. 3 Buchst. a a. F.).
+  heatPumpMajority: HeatPumpMajority | null
   // Die Zeiträume der eigenen Heizkostenabrechnung (Durchsicht von #239), aufsteigend; `until` NULL beim
   // laufenden.
   selfSpans?: SelfSpanRange[]
@@ -1397,6 +1399,9 @@ export type FuelGrade =
 // zweiten Erzeuger (Solaranlage, Heizstab, zweiter Kessel)? § 9 Abs. 1 Satz 5 und Abs. 2 Satz 6 Nr. 3
 // HeizkostenV („monovalente Wärmepumpe“). `null` heißt: nicht beantwortet.
 export type HeatGeneration = 'single' | 'mixed'
+// Liefert die Wärmepumpe mehr als die Hälfte der Wärme des Gebäudes? Nur für Abrechnungszeiträume, die vor
+// dem 01.10.2024 beginnen (§ 11 Abs. 1 Nr. 3 Buchst. a HeizkostenV a. F.). `null` heißt: nicht beantwortet.
+export type HeatPumpMajority = 'yes' | 'no' | 'unknown'
 // Die Einheit eines Heizwerts und einer Brennstoffmenge im Sinne des § 9 Abs. 3.
 export type HeatingValueUnit = 'l' | 'm3' | 'kg' | 'srm'
 export type HeatingValueRow = { readonly kwh: number; readonly per: HeatingValueUnit }
@@ -1589,7 +1594,9 @@ export type HeatingPeriodView = {
   hotWater: Pick<HeatingPeriodData, 'dhwMethod' | 'dhwUnmeasurable' | 'dhwHeatKwh' | 'totalHeatKwh' | 'dhwVolumeM3' | 'dhwTempC'>
   // Für die Formeln (Heizung PR 11): Σ der Warmwasserzähler der angeschlossenen Wohnungen in der
   // Heizperiode als Vorschlag für V (null ohne solche Zähler) und die mit Warmwasser versorgte Fläche.
-  hotWaterBasis: { volumeFromMetersM3: number | null; suppliedAreaM2: number }
+  // Beim Kesseltausch (Durchsicht von #240) gelten Vorschlag und Beschriftung der Laufzeit der Anlage
+  // (`running`, sonst null); fehlt ein Stand, sagt `volumeMissing`, welcher.
+  hotWaterBasis: { volumeFromMetersM3: number | null; volumeMissing: string | null; running: { from: string; to: string } | null; suppliedAreaM2: number }
   co2: Co2Statement | null
   items: Pick<CostItem, 'id' | 'description' | 'amountCents' | 'key' | 'tenancyAmounts' | 'selfAmounts' | 'fuelDeliveryId'>[]
   // Der Vorrat dieser Heizperiode (Heizung PR 8); `null` bei einer Anlage ohne Vorratsenergie.

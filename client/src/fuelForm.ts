@@ -245,6 +245,12 @@ export const RESTRICTION_OPTIONS: readonly { value: Co2Restriction; label: strin
 // ---------- Heizwert und Abrechnungsgrundlage (Heizung PR 11, § 9 Abs. 2 Satz 6 Nr. 1 und Abs. 3 HeizkostenV) ----------
 
 // Gas nach Brennwert oder Heizwert: Davon hängt der Faktor 1,11 der Formeln für das Warmwasser ab.
+export const GAS_BASIS_LABEL = 'Kilowattstunden der Rechnung berechnet nach'
+export const GAS_BASIS_MISSING = 'Für den Warmwasseranteil nach einer Formel braucht Mietfuchs diese Angabe (§ 9 Abs. 2 Satz 6 Nr. 1 HeizkostenV); ohne sie rechnet die Formel nicht.'
+// Ohne Angabe und mit einer Formel für das Warmwasser in dieser Heizperiode: schon an der Lieferung sagen,
+// dass sie fehlt (Durchsicht von #240, Recht-I3). Vorbelegt wird nicht.
+export const gasBasisMissing = (form: Pick<FuelForm, 'gasBasis'>, view: { hotWater: { dhwMethod: string | null } }): boolean =>
+  form.gasBasis === '' && (view.hotWater.dhwMethod === 'volumeFormula' || view.hotWater.dhwMethod === 'areaFormula')
 export const GAS_BASIS_OPTIONS: readonly { value: GasBasis | ''; label: string }[] = [
   { value: '', label: 'keine Angabe' },
   { value: 'hs', label: 'nach Brennwert (Hs)' },
