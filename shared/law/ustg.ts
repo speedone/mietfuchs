@@ -31,6 +31,7 @@ const ENACTED = '§ 12 Abs. 1 UStG, Fassung Art. 4 HBeglG 2006 v. 29.06.2006 (BG
 
 export const ustgStandardRate: LawParam<number, 'eventDate'> = {
   id: 'ustg.standard-rate',
+  checkOnly: true,
   title: 'Regelsatz der Umsatzsteuer',
   norm: '§ 12 Abs. 1 UStG',
   timing: 'eventDate',
@@ -58,6 +59,7 @@ export const ustgStandardRate: LawParam<number, 'eventDate'> = {
 // `ustg.standard-rate`.
 export const ustgGasHeatNetworkRate: LawParam<number, 'eventDate'> = {
   id: 'ustg.gas-heat-network-rate',
+  checkOnly: true,
   title: 'Umsatzsteuer auf Gas und Wärme aus Netzen (Plausibilität)',
   norm: '§ 28 Abs. 5 und 6, § 12 Abs. 2 UStG',
   timing: 'eventDate',

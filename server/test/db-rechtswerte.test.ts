@@ -96,3 +96,19 @@ test('Zeilen der Einstellungen: offen bis ins Folgejahr, eingetragen, überholt'
   const spaeter = lawOverrideSlots([{ paramId: 'co2.price', validFrom: '2027-01-01', value: 64.2, source: 'UBA', enteredAt: '2026-12-20' }], '2027-02-01')
   assert.deepEqual(spaeter.filter((s) => s.paramId === 'co2.price').map((s) => [s.year, s.status]), [[2027, 'entered'], [2028, 'open']])
 })
+
+// ---------- Durchsicht Runde 1 (#246) ----------
+
+test('G-K4: Jahr nur bis ins Folgejahr, Wert höchstens 1.000 €/t; die Zeile nennt das Jahr verständlich', async () => {
+  await withDatabase(async (opened) => {
+    await assert.rejects(opened.write((db) => saveLawOverride(db, 'co2.price', 2207, { value: 64, source: 'x' }, '2026-12-20')), refused(/bis 2027/))
+    await assert.rejects(opened.write((db) => saveLawOverride(db, 'co2.price', 2028, { value: 64, source: 'x' }, '2026-12-20')), refused(/bis 2027/))
+    await assert.rejects(opened.write((db) => saveLawOverride(db, 'co2.price', 2027, { value: 1001, source: 'x' }, '2026-12-20')), refused(/höchstens 1\.000/))
+    await assert.rejects(opened.write((db) => saveLawOverride(db, 'co2.price', 2027, { value: 1e308, source: 'x' }, '2026-12-20')), refused(/höchstens 1\.000/))
+    const ok = await opened.write((db) => saveLawOverride(db, 'co2.price', 2028, { value: 70, source: 'x' }, '2027-06-01'))
+    assert.equal(ok.status, 'entered')
+  })
+  const ets = lawOverrideSlots([], '2026-10-07').find((x) => x.paramId === 'co2.price-ets') ?? assert.fail('keine Zeile')
+  assert.equal(ets.yearLabel, 'für Rechnungen aus 2027 (Durchschnitt der Versteigerungen 2026)')
+  assert.equal(lawOverrideSlots([], '2026-10-07').find((x) => x.paramId === 'co2.price')?.yearLabel, '2027')
+})

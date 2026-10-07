@@ -42,8 +42,14 @@ export type LawParam<T extends LawValue, M extends Timing = Timing> = {
   // lückenlos, nicht überlappend, aufsteigend (law.test.ts prüft das)
   versions: readonly Version<T>[]
   describe(value: T): string
-  // nur Werte, die eine Behörde später veröffentlicht (4.5)
-  overridable?: { reason: string }
+  // nur Werte, die eine Behörde später veröffentlicht (4.5). `yearLabel`: wie das Jahr eines Eintrags zu
+  // lesen ist, wenn es nicht das Jahr des Werts selbst ist (der Durchschnittspreis des Emissionshandels gilt
+  // für Rechnungen eines Jahres und stammt aus dem Vorjahr). `max`: Obergrenze eines Eintrags gegen
+  // Tippfehler (Durchsicht von #246, G-K4, R-W4).
+  overridable?: { reason: string; max: number; yearLabel?: (year: number) => string }
+  // Ein Wert, mit dem keine Zahl gerechnet, sondern nur geprüft wird (Plausibilität, Heizung PR 17). Die
+  // Abweichung einer abgeschlossenen Abrechnung sagt dann „geprüft“ statt „gerechnet“ (#246, G-K6).
+  checkOnly?: true
 }
 
 export type Period = { from: string; to: string }

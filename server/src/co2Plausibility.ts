@@ -82,6 +82,11 @@ function vatRates(energy: HeatingEnergy, start: string, end: string, log: LawLog
   return REDUCED_BY_LAW.includes(energy) && whole ? [rate] : [rate, standard]
 }
 
+// Wärme aus Anlagen des Emissionshandels für ein Gebäude mit erstem Anschluss nach dem 01.01.2023: Für sie
+// gilt das Gesetz nicht (§ 2 Abs. 4 Satz 2 CO2KostAufG), also auch nicht die Ausweispflicht des § 3, und
+// geprüft wird nichts. Abrechnung und Blatt fragen diese eine Stelle (Durchsicht von #246, R-W1).
+export const etsExempt = (plant: { energy: HeatingEnergy; districtEtsNew: boolean }): boolean => plant.energy === 'districtHeating' && plant.districtEtsNew
+
 export function co2Plausibility(d: PlausibilityDelivery, energy: HeatingEnergy, log: LawLog): PlausibilityFinding[] {
   if (d.estimated || d.emissionsKg === null || !(d.emissionsKg > 0)) return []
   const start = d.invoiceFrom ?? d.deliveredAt
@@ -102,9 +107,12 @@ export function co2Plausibility(d: PlausibilityDelivery, energy: HeatingEnergy, 
   if (d.co2CostCents === null || !PRICE_ENERGIES.includes(energy)) return out
   // In Rechnung gestellt vor 2023: CO₂-Kosten bleiben unberücksichtigt (§ 11 Abs. 2 Satz 2), also auch
   // keine Preisprüfung. Eine Lieferung von 2022 mit Rechnung von 2023 wird mit dem Preis 2022 geprüft.
-  // Ohne Rechnungsdatum gilt der Liefertag, wie bei der Bestandsrechnung (Heizung PR 8).
+  // Ohne Rechnungsdatum gilt der Liefertag, wie bei der Bestandsrechnung (Heizung PR 8). Fehlt auch er,
+  // kann die Rechnung nicht vor dem Ende ihres Zeitraums gestellt sein: Liegt das Ende ab 2023, zählt sie;
+  // liegt es davor, ist offen, ob sie zählt, und geprüft wird nicht (Durchsicht von #246, G-K3).
   const invoiced = d.invoiceDate ?? d.deliveredAt
-  if (invoiced !== null && (!coversDate(co2CostsBefore, invoiced) || law(co2CostsBefore, { date: invoiced }, log))) return out
+  const costsExcluded = (date: string): boolean => !coversDate(co2CostsBefore, date) || law(co2CostsBefore, { date }, log)
+  if (invoiced !== null ? costsExcluded(invoiced) : costsExcluded(end)) return out
   const years: number[] = []
   for (let y = Number(start.slice(0, 4)); y <= endYear; y++) years.push(y)
   if (!years.every((y) => coversDate(co2Price, yearStart(y)))) return out
@@ -115,8 +123,10 @@ export function co2Plausibility(d: PlausibilityDelivery, energy: HeatingEnergy, 
     prices.push(p)
   }
   if (energy === 'districtHeating') {
-    if (d.invoiceDate === null || !coversDate(co2PriceEts, d.invoiceDate)) return out
-    const ets = lawOverridable(co2PriceEts, { date: d.invoiceDate }, log)
+    // Der Durchschnittspreis richtet sich nach dem Jahr der Rechnung; ohne Rechnungsdatum der Liefertag wie
+    // oben (R-K4). Fehlt beides, ist das Jahr offen, und geprüft wird nicht.
+    if (invoiced === null || !coversDate(co2PriceEts, invoiced)) return out
+    const ets = lawOverridable(co2PriceEts, { date: invoiced }, log)
     if (ets === null) return out
     prices.push(ets)
   }
@@ -142,7 +152,7 @@ export function plausibilityText(f: PlausibilityFinding, fmtCents: (c: number) =
     const bio = f.below
       ? 'Weniger kg können richtig sein, wenn der Lieferant für einen anerkannten Biomasseanteil (etwa Bio-Erdgas oder Bioheizöl) keine Emissionen ansetzt; dann sollte die Rechnung den Anteil nennen. '
       : ''
-    return `„${f.label}“: ${de(f.emissionsKg, 2)} kg CO₂ passen nicht zu ${f.basis}. Mit den Standardwerten der Emissionsberichterstattungsverordnung 2030 wären es ${de(f.expectedKg, 2)} kg. ${bio}` +
+    return `„${f.label}“: ${de(f.emissionsKg, 2)} kg CO₂ passen nicht zu ${f.basis}. Mit den Standardwerten der EBeV 2030 wären es ${de(f.expectedKg, 2)} kg. ${bio}` +
       'Bitte prüfen Sie die Angaben der Rechnung, auch ob Brennwert oder Heizwert gemeint ist (§ 3 Abs. 1 und 2 CO2KostAufG). Mietfuchs rechnet mit den kg der Rechnung.'
   }
   const expected = f.lowCents === f.highCents ? `wären es ${fmtCents(f.lowCents)}` : `wären es zwischen ${fmtCents(f.lowCents)} und ${fmtCents(f.highCents)}`

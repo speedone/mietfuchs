@@ -1743,7 +1743,15 @@ Rechtsquelle nach 15.2 F6, `KG_TOLERANCE`, `COST_TOLERANCE`). Mietfuchs rechnet 
 es vergleicht nur. Ins Register kommt, was im BGBl. steht oder das UBA nach § 4 Abs. 2, 3 CO2KostAufG
 bekanntmacht; keine Drucksachen. Das Blatt „CO₂-Angaben für den Messdienst“ baut
 [server/src/co2Sheet.ts](server/src/co2Sheet.ts) (#210, nicht abgegrenzt; Betrag ohne Eintrag aus den
-verknüpften Positionen), die Seite Heizkosten zeigt es über `Co2SheetView`.
+verknüpften Positionen), die Seite Heizkosten zeigt es über `Co2SheetView`. **Seine Summe zählt nur, was die
+Abrechnung zählt** (Durchsicht von #246): Storno und abgedeckte Schätzung über `cancelledDeliveries` und
+`estimateFactors` aus fuel.ts (dieselbe Auswahl wie die Bewertung; auch die Prüfung in calc.ts überspringt
+Stornos), eine Rechnung vor 2023 nur mit kg, der Anfangsbestand mit seinen CO₂-Kosten nach der Regel der
+Bestandsrechnung; jede nicht zählende Zeile trägt einen Vermerk. Bei Wärme aus dem Emissionshandel mit
+Anschluss nach dem Stichtag prüfen Abrechnung und Blatt nicht (`etsExempt` in co2Plausibility.ts, eine
+Stelle). Das Blatt spricht in der dritten Person, der Kasten „Bitte prüfen“ ist `no-print`; dieselben
+Befunde stehen an der Lieferung auf der Seite Heizkosten. Werte, die nur geprüft werden, tragen
+`checkOnly` (shared/law); die Abweichung einer abgeschlossenen Abrechnung sagt dann „Prüfwert geändert“.
 
 **Begriffslexikon** (#113): [shared/glossary.ts](shared/glossary.ts) hält jeden Fachbegriff mit
 Erklärung, Beispiel mit Zahlen, Rechtsgrundlage und „Brauche ich das?“. Es war der **erste

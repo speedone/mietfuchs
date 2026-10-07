@@ -163,7 +163,7 @@ export function co2CostsCountedFrom(): string {
 const euro2 = (v: number): string => v.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const yearVersion = <T extends number | null>(year: number, value: T, source: Source, enacted: string): Version<T> =>
   ({ validFrom: `${year}-01-01`, validTo: `${year}-12-31`, value, source, enacted })
-const BEHG = 'BEHG vom 12.12.2019 (BGBl. I S. 2728), § 10 Abs. 2 in der am 05.10.2026 auf gesetze-im-internet.de veröffentlichten Fassung'
+const BEHG = 'Brennstoffemissionshandelsgesetz vom 12. Dezember 2019 (BGBl. I S. 2728; 2022 I S. 2098), das zuletzt durch Artikel 2 des Gesetzes vom 27. Februar 2025 (BGBl. 2025 I Nr. 70) geändert worden ist; § 10 Abs. 2'
 const behg = (cite: string): Source => ({ rank: 'law', cite, url: 'https://www.gesetze-im-internet.de/behg/__10.html', retrieved: '2026-10-05', checked: 'checked' })
 
 // Preis je Tonne CO₂ zum Zeitpunkt der Lieferung (§ 3 Abs. 3, § 4 Abs. 1): bis 2025 der Festpreis nach
@@ -171,12 +171,14 @@ const behg = (cite: string): Source => ({ rank: 'law', cite, url: 'https://www.g
 // des Preiskorridors nach § 10 Abs. 2 Satz 4 BEHG (55 bis 65 €, also 60 €; kein Festpreis, D-H4; die
 // DEHSt nennt 60 €), ab 2027 der Durchschnittspreis der Versteigerungen vom 01.07. bis 30.11. des
 // Vorjahres, den das UBA spätestens zehn Werktage vor Jahresbeginn veröffentlicht (§ 4 Abs. 1 Nr. 3,
-// Abs. 2). Bis dahin `null` und überschreibbar (4.5). 2021 und 2022 stehen dabei, obwohl CO₂-Kosten aus
-// Rechnungen vor dem 01.01.2023 unberücksichtigt bleiben (§ 11 Abs. 2 Satz 2): Die Vorschrift knüpft an
-// die Rechnung an, und eine Lieferung von 2022 mit Rechnung von 2023 zählt mit dem Preis zum Zeitpunkt
-// der Lieferung (§ 3 Abs. 3).
+// Abs. 2). Bis dahin `null` und überschreibbar (4.5). 2022 steht dabei, obwohl CO₂-Kosten aus Rechnungen
+// vor dem 01.01.2023 unberücksichtigt bleiben (§ 11 Abs. 2 Satz 2): Die Vorschrift knüpft an die Rechnung
+// an, und eine Lieferung von 2022 mit Rechnung von 2023 zählt mit dem Preis zum Zeitpunkt der Lieferung
+// (§ 3 Abs. 3). 2021 aus demselben Grund für eine sehr späte Rechnung und damit die Fassungen mit dem
+// ersten Festpreis beginnen; praktisch kommt sie kaum vor (Durchsicht von #246, R-K9).
 export const co2Price: LawParam<number | null, 'deliveryYear'> = {
   id: 'co2.price',
+  checkOnly: true,
   title: 'CO₂-Preis je Tonne (Plausibilität)',
   norm: '§ 3 Abs. 3, § 4 Abs. 1 CO2KostAufG',
   timing: 'deliveryYear',
@@ -190,7 +192,7 @@ export const co2Price: LawParam<number | null, 'deliveryYear'> = {
     { validFrom: '2027-01-01', value: null, source: checked('§ 4 Abs. 1 Nr. 3, Abs. 2 CO2KostAufG (Veröffentlichung des UBA steht aus)', '__4.html'), enacted: ENACTED },
   ],
   describe: (v) => (v === null ? 'noch nicht veröffentlicht' : `${euro2(v)} €/t`),
-  overridable: { reason: 'Das Umweltbundesamt veröffentlicht den Preis spätestens zehn Werktage vor Beginn des Jahres (§ 4 Abs. 2 CO2KostAufG).' },
+  overridable: { reason: 'Das Umweltbundesamt veröffentlicht den Preis spätestens zehn Werktage vor Beginn des Jahres (§ 4 Abs. 2 CO2KostAufG).', max: 1000 },
 }
 
 // Durchschnittspreis der Versteigerungen im EU-Emissionshandel für den Anteil einer Wärmelieferung aus
@@ -206,6 +208,7 @@ const DEHST: Source = {
 }
 export const co2PriceEts: LawParam<number | null, 'eventDate'> = {
   id: 'co2.price-ets',
+  checkOnly: true,
   title: 'Durchschnittspreis des EU-Emissionshandels (Plausibilität)',
   norm: '§ 3 Abs. 4 Nr. 4 b, § 4 Abs. 3 CO2KostAufG',
   timing: 'eventDate',
@@ -217,7 +220,11 @@ export const co2PriceEts: LawParam<number | null, 'eventDate'> = {
     { validFrom: '2027-01-01', value: null, source: DEHST, enacted: ENACTED },
   ],
   describe: (v) => (v === null ? 'noch nicht veröffentlicht' : `${euro2(v)} €/t (Durchschnitt des Vorjahres der Rechnung)`),
-  overridable: { reason: 'Das Umweltbundesamt veröffentlicht den Durchschnittspreis bis zum 31. März des Folgejahres (§ 4 Abs. 3 CO2KostAufG).' },
+  overridable: {
+    reason: 'Das Umweltbundesamt veröffentlicht den Durchschnittspreis eines Jahres spätestens bis zum 31. März des Folgejahres (§ 4 Abs. 3 CO2KostAufG); er gilt für Rechnungen aus dem Folgejahr.',
+    max: 1000,
+    yearLabel: (year) => `für Rechnungen aus ${year} (Durchschnitt der Versteigerungen ${year - 1})`,
+  },
 }
 
 // Standardwerte der EBeV 2030, Anlage 2 Teil 4 (BGBl. I 2022, 2881; Vollzitat
@@ -234,6 +241,7 @@ export type EbevFactors = {
 }
 export const co2EbevFactors: LawParam<EbevFactors, 'deliveryYear'> = {
   id: 'co2.ebev-factors',
+  checkOnly: true,
   title: 'Standardwerte der Brennstoffemissionen (Plausibilität)',
   norm: '§ 3 Abs. 2 CO2KostAufG; Anlage 2 Teil 4 EBeV 2030',
   timing: 'deliveryYear',
@@ -244,5 +252,10 @@ export const co2EbevFactors: LawParam<EbevFactors, 'deliveryYear'> = {
     source: { rank: 'law', cite: 'Anlage 2 Teil 4 Nr. 3b, 5b, 6 EBeV 2030', url: 'https://www.gesetze-im-internet.de/ebev_2030/anlage_2.html', retrieved: '2026-10-05', checked: 'checked' },
     enacted: 'Emissionsberichterstattungsverordnung 2030 vom 21. Dezember 2022 (BGBl. I S. 2868)',
   }],
-  describe: (v) => `Erdgas ${v.gas.tPerGj.toLocaleString('de-DE')} t CO₂/GJ; Heizöl EL ${v.oil.tPerGj.toLocaleString('de-DE')} t CO₂/GJ; Flüssiggas ${v.lpg.tPerGj.toLocaleString('de-DE')} t CO₂/GJ`,
+  // Mit allen Stellen der Verordnung (Durchsicht von #246, R-W3): gerundet stünde bei Erdgas 0,056, der Wert
+  // der EBeV 2022, und der Rechtsstand nennte die falsche Verordnung.
+  describe: (v) => {
+    const n = (x: number) => x.toLocaleString('de-DE', { maximumFractionDigits: 6 })
+    return `Erdgas ${n(v.gas.tPerGj)} t CO₂/GJ, ${n(v.gas.hsGjPerMwh)} GJ/MWh nach Brennwert; Heizöl EL ${n(v.oil.tPerGj)} t CO₂/GJ, ${n(v.oil.tPerM3)} t/1000 l, ${n(v.oil.gjPerT)} GJ/t; Flüssiggas ${n(v.lpg.tPerGj)} t CO₂/GJ, ${n(v.lpg.gjPerT)} GJ/t`
+  },
 }

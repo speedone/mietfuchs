@@ -792,6 +792,9 @@ export type LawOverrideSlot = {
   norm: string
   reason: string
   year: number
+  // Wie das Jahr zu lesen ist („2027“, beim Emissionshandel „für Rechnungen aus 2027 (Durchschnitt der
+  // Versteigerungen 2026)“, Durchsicht von #246, R-W4).
+  yearLabel: string
   validFrom: string
   official: number | null
   override: LawOverride | null
@@ -866,7 +869,9 @@ export type SettlementDeviation = {
 // Ein Rechtswert, der heute anders lautet als beim Abschluss (Heizung PR 1, Entwurf 4.4): Das
 // Register hat eine neue Fassung bekommen, etwa nach einer Berichtigung. Die Texte stammen aus der
 // eingefrorenen und aus der heutigen Abrechnung.
-export type LawValueChange = { id: string; title: string; frozenText: string; currentText: string }
+// `checkOnly`: ein Wert, mit dem die Abrechnung nur geprüft und nichts gerechnet hat (Heizung PR 17,
+// Durchsicht von #246, G-K6); fehlt bei allen übrigen.
+export type LawValueChange = { id: string; title: string; frozenText: string; currentText: string; checkOnly?: true }
 export type SettlementComparison = {
   // false, wenn sich der eingefrorene Stand nicht lesen ließ; dann ist „keine Abweichung“ keine
   // Auskunft, und die Oberfläche sagt das.
@@ -1764,9 +1769,19 @@ export type Co2SheetDelivery = {
   co2CostCents: number | null
   amountCents: number | null
   estimated: boolean
+  // Was davon in der Summe zählt (Durchsicht von #246, G-W1), nach denselben Regeln wie die Abrechnung:
+  // `full` kg und CO₂-Kosten, `partial` beides mit `factor` (eine Schätzung für die Tage ohne Rechnung),
+  // `kgOnly` nur die kg (§ 11 Abs. 2 Satz 2), `none` nichts (storniert, abgedeckte Schätzung). `note` sagt
+  // es in der dritten Person, für den Empfänger des Blatts.
+  counted: 'full' | 'partial' | 'kgOnly' | 'none'
+  factor: number
+  note: string | null
   findings: string[]
 }
-export type Co2SheetStock = Pick<HeatingPeriodData, 'stockUnit' | 'openingQuantity' | 'openingEmissionsKg' | 'openingCo2Cents' | 'openingInvoicedBefore2023' | 'closingQuantity' | 'closingMeasuredOn'>
+export type Co2SheetStock = Pick<HeatingPeriodData, 'stockUnit' | 'openingQuantity' | 'openingEmissionsKg' | 'openingCo2Cents' | 'openingInvoicedBefore2023' | 'openingAlreadySettled' | 'closingQuantity' | 'closingMeasuredOn'>
+// Der Anfangsbestand als Zeile des Blatts (G-W2): seine kg zählen immer, seine CO₂-Kosten nur, wenn er
+// nicht vor 2023 in Rechnung gestellt und nicht schon umgelegt wurde.
+export type Co2SheetOpening = { emissionsKg: number; co2CostCents: number | null; co2Counted: boolean; note: string | null }
 // `areaM2`: die Fläche der Einstufung, eingetragen (`entered`) oder die Wohnfläche der Wohnungen, die die
 // Anlage versorgt (`served`); `null`, wenn keine bekannt ist.
 export type Co2Sheet = {
@@ -1782,8 +1797,13 @@ export type Co2Sheet = {
   restriction: Co2Restriction
   districtEtsNew: boolean
   stock: Co2SheetStock | null
+  opening: Co2SheetOpening | null
   deliveries: Co2SheetDelivery[]
   totals: { emissionsKg: number; co2CostCents: number }
+  // Der Tag, an dem das Blatt erstellt wurde (R-K6), und ob geprüft wurde: nicht bei Wärme aus dem
+  // Emissionshandel mit Anschluss nach dem Stichtag (§ 2 Abs. 4 Satz 2, R-W1).
+  createdOn: string
+  checked: boolean
 }
 
 // Eine Gradtagzahl des Deutschen Wetterdienstes für den Ort des Objekts und einen Monat ('JJJJ-MM').

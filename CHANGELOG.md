@@ -290,8 +290,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   dieser.
 - **Ausdruck „CO₂-Angaben für den Messdienst“** ([#210](https://github.com/speedone/mietfuchs/issues/210)):
   Auf der Seite Heizkosten stellt Mietfuchs je Heizperiode die Angaben der Rechnungen (kg CO₂, CO₂-Kosten,
-  Emissionsfaktor, Energiegehalt, Menge, Betrag), die Fläche und die Angaben zu §§ 8, 9 CO2KostAufG zum
-  Drucken und Weitergeben zusammen.
+  Emissionsfaktor, Energiegehalt, Menge, Betrag), den Anfangsbestand eines Vorrats, die Fläche und die
+  Angaben zu §§ 8, 9 CO2KostAufG zum Drucken und Weitergeben zusammen. Die Summe enthält nur, was auch die
+  Abrechnung zählt; stornierte Rechnungen, abgedeckte Schätzungen und Rechnungen vor 2023 stehen mit
+  einem Vermerk darin. Hinweise der Prüfung stehen auch an der Lieferung.
 
 ### Geändert
 

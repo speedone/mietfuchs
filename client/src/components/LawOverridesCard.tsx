@@ -3,7 +3,7 @@
 // Prüfung der CO₂-Angaben auf Rechnungen, und das nächste Update bringt den amtlichen Wert ohnehin.
 import { useEffect, useState } from 'react'
 import { api, errorText } from '../api'
-import { draftOf, overrideBody, statusText, unitOf, type OverrideDraft } from '../lawOverrideForm'
+import { draftOf, earlyHint, fieldLabel, overrideBody, statusText, type OverrideDraft } from '../lawOverrideForm'
 import { useToast } from './feedback'
 import type { LawOverrideSlot } from '../types'
 
@@ -53,7 +53,7 @@ export default function LawOverridesCard() {
         {slots.map((s) => {
           const k = keyOf(s)
           const d = drafts[k] ?? { value: '', source: '' }
-          const unit = unitOf(s)
+          const early = earlyHint(s, new Date().toISOString().slice(0, 10))
           return (
             <div className="field-group" key={k} role="group" aria-label={`${s.title} ${s.year}`}>
               <p><strong>{s.title}</strong> ({s.norm})</p>
@@ -63,7 +63,7 @@ export default function LawOverridesCard() {
                   <p className="muted">{`${s.reason} Tragen Sie den Wert erst ein, wenn er veröffentlicht ist, und nennen Sie die Fundstelle.`}</p>
                   <div className="row">
                     <label className="field">
-                      {unit ? `Wert ${s.year} (${unit})` : `Wert ${s.year}`}
+                      {fieldLabel(s)}
                       <input inputMode="decimal" value={d.value} placeholder="z. B. 64,20" onChange={(e) => setDrafts({ ...drafts, [k]: { ...d, value: e.target.value } })} />
                     </label>
                     <label className="field grow">
@@ -71,6 +71,7 @@ export default function LawOverridesCard() {
                       <input value={d.source} placeholder="UBA, Bekanntmachung vom …" onChange={(e) => setDrafts({ ...drafts, [k]: { ...d, source: e.target.value } })} />
                     </label>
                   </div>
+                  {early && <p className="notice">{early}</p>}
                 </>
               )}
               <div className="row">

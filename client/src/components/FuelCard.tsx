@@ -11,12 +11,15 @@ import type { FuelDelivery, HeatingEnergy, HeatingMethod, HeatingPeriodView, Hea
 
 type TextKey = Exclude<keyof FuelForm, 'usedByService' | 'quantityUnit' | 'unitId' | 'gasBasis' | 'grade'>
 
-export default function FuelCard({ plant, view, deliveries, units = [], onSaved }: {
+export default function FuelCard({ plant, view, deliveries, units = [], findings = {}, onSaved }: {
   plant: { id: string; method: HeatingMethod; energy?: HeatingEnergy } & Partial<Pick<HeatingPlant, 'supply' | 'units'>>
   view: HeatingPeriodView
   deliveries: FuelDelivery[]
   // Die Wohnungen des Objekts, für die Rechnung einer Etagenheizung (Heizung PR 9).
   units?: readonly Pick<Unit, 'id' | 'name'>[]
+  // Die Befunde der CO₂-Prüfung je Lieferung (Heizung PR 17, Durchsicht von #246, R-K7), aus dem Blatt für
+  // den Messdienst, also aus derselben Prüfung wie die Abrechnung.
+  findings?: Readonly<Record<string, readonly string[]>>
   onSaved: () => void
 }) {
   const [editing, setEditing] = useState<string | null>(null)
@@ -129,6 +132,7 @@ export default function FuelCard({ plant, view, deliveries, units = [], onSaved 
           <li key={d.id}>
             <strong>{d.label || 'Lieferung'}</strong> {deliveryLine(d)}
             {stock && !service && <span className="muted"> · {linkedText(d.id)}</span>}
+            {(findings[d.id] ?? []).map((f) => <p key={f} className="hint">{f}</p>)}
             {!view.closed && (
               <span className="row">
                 <button className="btn secondary" onClick={() => open(d)}>Ändern</button>
