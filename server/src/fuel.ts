@@ -206,7 +206,8 @@ export type FuelPlantInput = {
   // (Durchsicht I4). Fehlt die Angabe, gibt es keine.
   loose?: readonly { from: string | null; to: string | null }[]
   // Was abgeschlossene Heizperioden je Lieferung in andere übertragen haben (`period` die abgeschlossene).
-  closedCarries?: readonly { period: string; deliveryId: string; other: string; cents: number; totalCents?: number }[]
+  // `landlordBorne`: Der Teil steht dort beim Vermieter, die andere Heizperiode hat ihn nie hereingebucht.
+  closedCarries?: readonly { period: string; deliveryId: string; other: string; cents: number; totalCents?: number; landlordBorne?: true }[]
 }
 
 // Ein Übertrag der Mieterseite dieser Heizperiode: `out` hinaus in die frühere (die Positionen stehen
@@ -430,10 +431,13 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
           if (out !== 0) {
             // `cancelled`: was die Mieter jener Heizperiode von der Rechnung getragen haben (Summe beim Abschluss
             // ohne den hinausgebuchten Teil); fehlt die Summe im eingefrorenen Stand, der hinausgebuchte Teil.
+            // Hat jene Heizperiode den Teil schon beim Vermieter ausgewiesen (`fuelClosedPeriod`, diese war damals
+            // ohne ihn abgeschlossen), gibt es hier nichts gegenzubuchen: Eine Gegenbuchung hätte kein Gegenstück,
+            // und der Teil stünde ein zweites Mal als vom Vermieter getragen da (Invariante, Startwert 509).
             carries.push({
               deliveryId: d.id, kind: 'in', other: owner, cents: 0, totalCents: 0, ratio: 0, method: 'inside', frozen: true, zeroFrozen: false,
               cancelled: frozenOut?.totalCents !== undefined ? frozenOut.totalCents + out : -out, cancelledOut: -out,
-              landlord: [{ reason: 'fuelCarry', cents: out }, { reason: 'fuelClosedPeriod', cents: -out }], templates: [], estimate: null,
+              landlord: frozenOut?.landlordBorne ? [] : [{ reason: 'fuelCarry', cents: out }, { reason: 'fuelClosedPeriod', cents: -out }], templates: [], estimate: null,
             })
           }
           continue

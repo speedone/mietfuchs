@@ -2357,7 +2357,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           })
           fuelCarryOf.set(id, { carry, step, itemId: t.itemId })
         })
-        fuelCounterRows.push({
+        // Ohne Betrag und ohne Teil beim Vermieter keine Gegenzeile (Storno eines Teils, der schon beim Vermieter lag).
+        if (carry.cents !== 0 || carry.landlord.some((p) => p.cents !== 0)) fuelCounterRows.push({
           costItemId: carryKey,
           category: HEATING_CATEGORY,
           description: carry.kind === 'out' ? `Gegenbuchung: Anteil der Rechnung ${range} für ${periodLabel(carry.other)}` : `Gegenbuchung: Brennstoff ${range} aus einem anderen Zeitraum`,
@@ -4429,7 +4430,11 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     if (fuelOf) {
       report.fuel = {
         coveragePermille: fuelOf.coveragePermille, emissionsKg: fuelOf.emissionsKg, co2Cents: fuelOf.co2Cents, deliveries: fuelOf.lines,
-        carries: fuelOf.carries.map((c) => ({ deliveryId: c.deliveryId, period: c.other.key, cents: c.cents, ...(c.kind === 'out' && c.cancelled === undefined ? { totalCents: c.totalCents } : {}) })), gaps: fuelOf.gaps,
+        carries: fuelOf.carries.map((c) => ({
+          deliveryId: c.deliveryId, period: c.other.key, cents: c.cents,
+          ...(c.kind === 'out' && c.cancelled === undefined ? { totalCents: c.totalCents } : {}),
+          ...(c.kind === 'out' && c.cancelled === undefined && c.landlord.some((p) => p.reason === 'fuelClosedPeriod') ? { landlordBorne: true as const } : {}),
+        })), gaps: fuelOf.gaps,
       }
     }
     const settledHere = settledOn(ids)
