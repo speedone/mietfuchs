@@ -12,8 +12,8 @@ import * as rulesModule from '../../shared/law/rules.ts'
 import { betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths } from '../../shared/law/bgb-betrkv.ts'
 import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvEstimateThreshold, hkvExemptions, hkvHeatingValues, hkvHeatPumpCapture, hkvInfoDistrict, hkvMonthlyInfo, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvRenewableExemption, hkvSettlementInfo } from '../../shared/law/heizkostenv.ts'
 import { practiceEvaporatorWindow, practiceReadingOffWarning, practiceVacancyPersons } from '../../shared/law/practice.ts'
-import { ustgStandardRate } from '../../shared/law/ustg.ts'
-import { co2ApplicableFrom, co2CostsBefore, co2CostsCountedFrom, co2CostsExcludedUntil, co2CutMissing, co2DistrictEtsNew, co2FirstPeriodStart, co2NonResidential, co2Restriction, co2RoundingDecimals, co2StageTable } from '../../shared/law/co2kostaufg.ts'
+import { ustgGasHeatNetworkRate, ustgStandardRate } from '../../shared/law/ustg.ts'
+import { co2ApplicableFrom, co2CostsBefore, co2EbevFactors, co2Price, co2PriceEts, co2CostsCountedFrom, co2CostsExcludedUntil, co2CutMissing, co2DistrictEtsNew, co2FirstPeriodStart, co2NonResidential, co2Restriction, co2RoundingDecimals, co2StageTable } from '../../shared/law/co2kostaufg.ts'
 import { RULES } from '../../shared/law/rules.ts'
 
 const year = (y: number) => ({ period: { from: `${y}-01-01`, to: `${y}-12-31` } })
@@ -176,7 +176,7 @@ test('Register: jede Konstante vom Typ LawParam in shared/law/ steht in LAW_PARA
     .flatMap((f) => [...fs.readFileSync(path.join(dir, f), 'utf8').matchAll(/^export const (\w+): LawParam</gm)].map((m) => m[1]))
   assert.ok(declared.length >= 7, `nur ${declared.length} Parameter gefunden`)
   const listed = new Set<unknown>(LAW_PARAMS)
-  const modules = { betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths, co2ApplicableFrom, co2CostsBefore, co2CutMissing, co2DistrictEtsNew, co2NonResidential, co2Restriction, co2RoundingDecimals, co2StageTable, hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvEstimateThreshold, hkvExemptions, hkvHeatingValues, hkvHeatPumpCapture, hkvInfoDistrict, hkvMonthlyInfo, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvRenewableExemption, hkvSettlementInfo, practiceEvaporatorWindow, practiceReadingOffWarning, practiceVacancyPersons, ustgStandardRate }
+  const modules = { betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths, co2ApplicableFrom, co2CostsBefore, co2CutMissing, co2DistrictEtsNew, co2EbevFactors, co2NonResidential, co2Price, co2PriceEts, co2Restriction, co2RoundingDecimals, co2StageTable, hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvEstimateThreshold, hkvExemptions, hkvHeatingValues, hkvHeatPumpCapture, hkvInfoDistrict, hkvMonthlyInfo, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvRenewableExemption, hkvSettlementInfo, practiceEvaporatorWindow, practiceReadingOffWarning, practiceVacancyPersons, ustgGasHeatNetworkRate, ustgStandardRate }
   for (const name of declared) {
     assert.ok(name && Object.hasOwn(modules, name), `${name} fehlt in diesem Test`)
     assert.ok(listed.has(Reflect.get(modules, name)), `${name} fehlt in LAW_PARAMS`)
@@ -452,4 +452,44 @@ test('Register: coversDate sagt, ob es am Tag eine Fassung gibt', () => {
   assert.equal(coversDate(fest, '2022-12-31'), false)
   assert.equal(coversDate(fest, '2023-01-01'), true)
   assert.equal(coversDate(preis, '2031-06-01'), true)
+})
+
+// ---------- Preise und Standardwerte für die Plausibilität (Heizung PR 17, #97) ----------
+
+test('Stichtag co2.price: 2021 25, 2022 30, 2023 30, 2024 45, 2025 55, 2026 60 (Mittelwert des Korridors), 2027 offen (§ 4 Abs. 1 CO2KostAufG, § 10 Abs. 2 BEHG)', () => {
+  const log = createLawLog()
+  assert.deepEqual([2021, 2022, 2023, 2024, 2025, 2026, 2027, 2030].map((y) => lawOverridable(co2Price, { year: y }, log)), [25, 30, 30, 45, 55, 60, null, null])
+  // Geliefert 2022, in Rechnung gestellt 2023: Die CO₂-Kosten zählen (§ 11 Abs. 2 Satz 2 knüpft an die
+  // Rechnung an), mit dem Preis zum Zeitpunkt der Lieferung (§ 3 Abs. 3). Vor 2021 gab es keinen Preis.
+  assert.equal(coversDate(co2Price, '2022-12-31'), true)
+  assert.equal(coversDate(co2Price, '2020-12-31'), false)
+  assert.equal(co2Price.describe(55), '55,00 €/t')
+  assert.equal(co2Price.describe(null), 'noch nicht veröffentlicht')
+  assert.match(versionAt(co2Price, '2026-06-01').source.cite, /§ 4 Abs\. 1 Nr\. 2 CO2KostAufG/)
+})
+
+test('Stichtag co2.price-ets: nach Rechnungsjahr der Durchschnitt des Vorjahres (§ 3 Abs. 4 Nr. 4 b, § 4 Abs. 3; DEHSt)', () => {
+  const log = createLawLog()
+  assert.deepEqual(['2023-03-01', '2024-03-01', '2025-03-01', '2026-03-01', '2027-03-01'].map((d) => lawOverridable(co2PriceEts, { date: d }, log)), [80.4, 83.68, 65.01, 73.86, null])
+  assert.equal(coversDate(co2PriceEts, '2022-06-30'), false)
+})
+
+test('Stichtag co2.ebev-factors: EBeV 2030 Anlage 2 Teil 4 nur 2023 bis 2030; daraus die bekannten Faktoren', () => {
+  const f = law(co2EbevFactors, { year: 2025 }, createLawLog())
+  const near = (a: number, b: number) => assert.ok(Math.abs(a - b) < 1e-4, `${a} statt ${b}`)
+  near(f.gas.tPerGj * 3.6, 0.20088)
+  near(f.gas.tPerGj * f.gas.hsGjPerMwh, 0.18139)
+  near(f.oil.tPerGj * 3.6, 0.2664)
+  near(f.oil.tPerM3 * f.oil.gjPerT * f.oil.tPerGj, 2.6763)
+  near(f.lpg.tPerGj * 3.6, 0.2358)
+  near(f.lpg.gjPerT * f.lpg.tPerGj, 3.013)
+  assert.equal(coversDate(co2EbevFactors, '2022-12-31'), false)
+  assert.equal(coversDate(co2EbevFactors, '2031-01-01'), false)
+})
+
+test('Stichtag ustg.gas-heat-network-rate: 7 % vom 01.10.2022 bis 31.03.2024 (§ 28 Abs. 5, 6 UStG)', () => {
+  assert.equal(law(ustgGasHeatNetworkRate, { date: '2022-10-01' }, createLawLog()), 7)
+  assert.equal(law(ustgGasHeatNetworkRate, { date: '2024-03-31' }, createLawLog()), 7)
+  assert.equal(coversDate(ustgGasHeatNetworkRate, '2022-09-30'), false)
+  assert.equal(coversDate(ustgGasHeatNetworkRate, '2024-04-01'), false)
 })
