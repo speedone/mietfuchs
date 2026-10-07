@@ -241,3 +241,10 @@ test('Den Block bekommen nur die Mieter, die über die Anlage abgerechnet werden
   })
   assert.deepEqual(infoOf(s).tenancyIds?.slice().sort(), ['A', 'B', 'C1', 'C2'])
 })
+
+test('Ausnahme nur für die Wärme, aber ohne zentrales Warmwasser: die ganze Anlage ist ausgenommen', () => {
+  const s = computeSettlement(beispiel({ plant: { hotWater: 'none' }, row: { exemption: 'lowDemand' } }))
+  assert.equal(s.heating?.find((h) => h.info), undefined)
+  assert.doesNotMatch(notice(s, 'heating.exemption').text, /nur die Wärme/)
+  assert.ok(!codes(s).includes('heating.info-incomplete'))
+})

@@ -16,7 +16,7 @@
 // Tage des Mieters (Festlegung). Nr. 5: Wärmeverbrauch mal Klimafaktor, das Warmwasser unbereinigt daneben
 // (Satz 2, 3); die Faktoren trägt der Vermieter mit Quelle ein. ⟨Norm offen: DIN 94680⟩.
 import type {
-  AgreedOtherwise, ExemptionScope, HeatingEnergy, HeatingExemption, HeatingInfoStatement, HeatingRules, InfoComparison, InfoContact, InfoItem, SelfPot,
+  AgreedOtherwise, ExemptionScope, HeatingEnergy, HeatingExemption, HeatingInfoStatement, HeatingRules, HotWater, InfoComparison, InfoContact, InfoItem, SelfPot,
 } from '../../shared/types.ts'
 import { CONSUMER_CONTRACT_NONE } from '../../shared/heatingInfo.ts'
 import { lineRoot } from '../../shared/heatingPeriod.ts'
@@ -63,6 +63,11 @@ export function heatingRulesOf(rows: readonly RuleRow[], plants: readonly LinePl
     consumerContract: cc?.consumerContract ?? null,
     fromPeriod: { exemption: ex?.period ?? null, agreedOtherwise: ag?.period ?? null, monthlyInfoElsewhere: mo?.period ?? null, consumerContract: cc?.period ?? null },
   }
+}
+
+// Bereitet die Anlage kein Warmwasser, betrifft eine Ausnahme der Wärme die ganze Anlage (wie calc.ts).
+export function effectiveRules(r: HeatingRules, hotWater: HotWater): HeatingRules {
+  return r.exemptionScope === 'heat' && hotWater === 'none' ? { ...r, exemptionScope: 'both' } : r
 }
 
 // ---------- § 6a Abs. 3 und 5 ----------
