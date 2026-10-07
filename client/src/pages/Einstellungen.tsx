@@ -5,6 +5,7 @@ import PageHeader from '../components/PageHeader'
 import { useToast, useConfirm } from '../components/feedback'
 import { UpdateSettings, type UpdateState } from '../components/Update'
 import { AiSettings } from '../components/AiSettings'
+import LawOverridesCard from '../components/LawOverridesCard'
 import { useOpenForm, useProperty } from '../property'
 
 type Props = { settings: Settings; reload: () => Promise<void>; update: UpdateState }
@@ -113,6 +114,8 @@ export default function Einstellungen({ settings, reload, update }: Props) {
       <AiSettings settings={settings} reload={reload} />
 
       <UpdateSettings settings={settings} update={update} reload={reload} />
+
+      <LawOverridesCard />
 
       <div className="card">
         <h2>Daten &amp; Sicherung</h2>
