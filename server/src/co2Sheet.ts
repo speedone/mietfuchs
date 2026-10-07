@@ -20,6 +20,9 @@ export type Co2SheetInput = {
   enteredAreaM2: number | null
   stock: Co2SheetStock | null
   deliveries: readonly FuelDelivery[]
+  // Die Summe der Kostenpositionen je verknüpfter Lieferung: ohne eingetragenen Betrag (freie Schlüssel,
+  // eigene Abrechnung) ist sie der Betrag der Rechnung.
+  linkedCents?: Readonly<Record<string, number>>
   overrides: readonly LawOverride[]
 }
 
@@ -36,7 +39,7 @@ export function co2SheetOf(i: Co2SheetInput): Co2Sheet {
   const deliveries: Co2SheetDelivery[] = touching.map((d) => ({
     id: d.id, label: d.label, invoiceDate: d.invoiceDate, from: d.invoiceFrom, to: d.invoiceTo, deliveredAt: d.deliveredAt,
     quantity: d.quantity, quantityUnit: d.quantityUnit, energyKwh: d.energyKwh, gasBasis: d.gasBasis, emissionFactor: d.emissionFactor,
-    emissionsKg: d.emissionsKg, co2CostCents: d.co2CostCents, amountCents: d.amountCents, estimated: d.estimated,
+    emissionsKg: d.emissionsKg, co2CostCents: d.co2CostCents, amountCents: d.amountCents ?? i.linkedCents?.[d.id] ?? null, estimated: d.estimated,
     findings: co2Plausibility(d, i.plant.energy, log).map((f) => plausibilityText(f, fmtCents)),
   }))
   // Fläche der Einstufung (Entwurf 9.2): eingetragen, sonst die Wohnfläche der versorgten Wohnungen.
