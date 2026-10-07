@@ -1744,6 +1744,48 @@ export type FuelDelivery = {
   parts: FuelDeliveryPart[]
 }
 
+// Das Blatt „CO₂-Angaben für den Messdienst“ (Heizung PR 17, #210): je Rechnung, die die Heizperiode
+// berührt, die Angaben des § 3 Abs. 1 Nr. 1–4 CO2KostAufG samt Menge, Zeitraum, Rechnungsdatum und Betrag,
+// und die Hinweise der Plausibilitätsprüfung als fertige Sätze. Abgegrenzt wird nicht: Der Messdienst
+// rechnet über seinen Zeitraum selbst.
+export type Co2SheetDelivery = {
+  id: string
+  label: string
+  invoiceDate: string | null
+  from: string | null
+  to: string | null
+  deliveredAt: string | null
+  quantity: number | null
+  quantityUnit: FuelQuantityUnit | null
+  energyKwh: number | null
+  gasBasis: GasBasis | null
+  emissionFactor: number | null
+  emissionsKg: number | null
+  co2CostCents: number | null
+  amountCents: number | null
+  estimated: boolean
+  findings: string[]
+}
+export type Co2SheetStock = Pick<HeatingPeriodData, 'stockUnit' | 'openingQuantity' | 'openingEmissionsKg' | 'openingCo2Cents' | 'openingInvoicedBefore2023' | 'closingQuantity' | 'closingMeasuredOn'>
+// `areaM2`: die Fläche der Einstufung, eingetragen (`entered`) oder die Wohnfläche der Wohnungen, die die
+// Anlage versorgt (`served`); `null`, wenn keine bekannt ist.
+export type Co2Sheet = {
+  propertyName: string
+  address: string
+  landlordName: string
+  plantName: string
+  energy: HeatingEnergy
+  period: { key: string; from: string; to: string }
+  areaM2: number | null
+  areaSource: 'entered' | 'served' | null
+  nonResidential: boolean
+  restriction: Co2Restriction
+  districtEtsNew: boolean
+  stock: Co2SheetStock | null
+  deliveries: Co2SheetDelivery[]
+  totals: { emissionsKg: number; co2CostCents: number }
+}
+
 // Eine Gradtagzahl des Deutschen Wetterdienstes für den Ort des Objekts und einen Monat ('JJJJ-MM').
 export type DegreeDayValue = { month: string; value: number }
 

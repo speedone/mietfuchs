@@ -17,7 +17,7 @@ import { compareWithFrozen } from './settlementDiff.ts'
 import { computeSettlement, consumptionOverview, rentLedger, taxPartsFor, taxReportFor, type ComputedSettlement } from './calc.ts'
 import { heatingSnapshotFor, narrowToProperty, snapshotFor } from './snapshot.ts'
 import { calendarPeriod, calendarYearPeriod, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodOfKey, resolvePeriodParam, rulesOf, settlementDeadline, settlementPeriod, startYearOf } from '../../shared/period.ts'
-import type { BillingPeriod, FuelGapQuestion, HeatingPlant } from '../../shared/types.ts'
+import type { BillingPeriod, FuelGapQuestion, HeatingPlant, Unit } from '../../shared/types.ts'
 import { plantRules, settledSeparately } from '../../shared/heatingPeriod.ts'
 import { extractFromFile, classifyDocType, extractMeterReading, type AskProgressEvent, type AskStats } from './extract.ts'
 import { listOllamaModels, findOllama, defaultCandidates, pullOllamaModel } from './ai/ollama.ts'
@@ -51,6 +51,8 @@ import { saveHeatingInfo, saveHeatingRules } from './db/heatingInfo.ts'
 import { heatingPeriodViews, removeCo2Statement, saveCo2Statement, saveHotWater } from './db/co2.ts'
 import { saveServiceValues } from './db/serviceValues.ts'
 import { removeEstimate, saveEstimate } from './db/heatingEstimates.ts'
+import { co2SheetOf } from './co2Sheet.ts'
+import { heatingPeriodOf, plantContext } from './db/heatingPeriodContext.ts'
 import { LawOverrideError, lawOverrideSlots, readLawOverrides, removeLawOverride, saveLawOverride } from './db/lawOverrides.ts'
 import { removeStock, saveStock } from './db/fuelStock.ts'
 import { createDelivery, createEstimates, freezeFuelCarries, fuelGapQuestions, listDegreeDays, listDeliveries, removeDelivery, saveDegreeDays, unfreezeFuelCarries, updateDelivery } from './db/fuel.ts'
@@ -677,6 +679,35 @@ app.delete('/api/units/:id/interim-gaps/:date', async (req, res) => {
 // ---------- Brennstofflieferungen (Heizung PR 7) ----------
 // Was gespeichert wird und was nicht, steht in db/fuel.ts; gerechnet wird in fuel.ts und calc.ts.
 const NO_DELIVERY = 'Diese Lieferung gibt es nicht (mehr). Bitte laden Sie die Seite neu.'
+// Das Blatt „CO₂-Angaben für den Messdienst“ einer Heizperiode (Heizung PR 17, #210): die Rechnungen, die
+// sie berühren, mit den Angaben nach § 3 Abs. 1 CO2KostAufG und den Hinweisen der Prüfung.
+app.get('/api/heating-plants/:id/periods/:period/co2-sheet', async (req, res) => {
+  const sheet = await readData(async (db) => {
+    const ctx = await plantContext(db, req.params.id)
+    if (!ctx) return null
+    const h = heatingPeriodOf(ctx, req.params.period)
+    const stock = await readStock(db)
+    const plant = ctx.plant
+    const property = stock.properties.find((p) => p.id === plant.propertyId)
+    const statement = stock.co2Statements.find((x) => x.plantId === plant.id && x.period === h.key && (x.method === 'self' || x.method === 'selfAfterService'))
+    const row = stock.heatingPeriodRows.find((r) => r.plantId === plant.id && r.period === h.key)
+    const units: Unit[] = stock.units
+    return co2SheetOf({
+      propertyName: property?.name ?? '', address: property?.address ?? '',
+      landlordName: property?.landlordName ?? stock.settings.landlordName,
+      plant, h: { key: String(h.key), from: h.from, to: h.to },
+      units: units.filter((u) => u.propertyId === plant.propertyId),
+      enteredAreaM2: statement?.areaM2 ?? null,
+      stock: row && row.stockUnit !== null ? {
+        stockUnit: row.stockUnit, openingQuantity: row.openingQuantity, openingEmissionsKg: row.openingEmissionsKg, openingCo2Cents: row.openingCo2Cents,
+        openingInvoicedBefore2023: row.openingInvoicedBefore2023, closingQuantity: row.closingQuantity, closingMeasuredOn: row.closingMeasuredOn,
+      } : null,
+      deliveries: stock.fuelDeliveries, overrides: stock.lawOverrides,
+    })
+  })
+  if (!sheet) return res.status(404).json({ error: NO_PLANT })
+  res.json(sheet)
+})
 app.get('/api/heating-plants/:id/deliveries', async (req, res) => {
   const list = await readData((db) => listDeliveries(db, req.params.id))
   if (!list) return res.status(404).json({ error: NO_PLANT })
