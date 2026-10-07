@@ -72,6 +72,21 @@ const SHIPPED: readonly string[] = [
   'hkv.info.district-emissions|2022-01-01||{"scope":"all","thresholdMw":20}',
   'hkv.monthly-info|2022-01-01||{"interval":"monthly"}',
   'hkv.exemptions|||{"lowDemandKwhPerM2Year":15,"readyBefore":"1981-07-01","paybackYears":10}',
+  // 0.11.0 (Heizung PR 17, #97)
+  'co2.ebev-factors|2023-01-01|2030-12-31|{"gas":{"tPerGj":0.0558,"hsGjPerMwh":3.2508},"oil":{"tPerGj":0.074,"tPerM3":0.845,"gjPerT":42.8},"lpg":{"tPerGj":0.0655,"gjPerT":46}}',
+  'co2.price|2021-01-01|2021-12-31|25',
+  'co2.price|2022-01-01|2022-12-31|30',
+  'co2.price|2023-01-01|2023-12-31|30',
+  'co2.price|2024-01-01|2024-12-31|45',
+  'co2.price|2025-01-01|2025-12-31|55',
+  'co2.price|2026-01-01|2026-12-31|60',
+  'co2.price|2027-01-01||null',
+  'co2.price-ets|2023-01-01|2023-12-31|80.4',
+  'co2.price-ets|2024-01-01|2024-12-31|83.68',
+  'co2.price-ets|2025-01-01|2025-12-31|65.01',
+  'co2.price-ets|2026-01-01|2026-12-31|73.86',
+  'co2.price-ets|2027-01-01||null',
+  'ustg.gas-heat-network-rate|2022-10-01|2024-03-31|7',
 ]
 
 const current = (): string[] =>
