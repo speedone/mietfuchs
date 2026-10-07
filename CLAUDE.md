@@ -136,7 +136,9 @@ ohnehin darüber. Beim Anheben alle Stellen mitziehen: `engines` (plus
 `package-lock.json`), README-Badge, Dockerfile, `ci.yml`, `release.yml`. Actions und npm-Pakete
 hält Dependabot aktuell ([.github/dependabot.yml](.github/dependabot.yml), monatlich: Actions
 in einem PR, kleine npm-Updates gebündelt je Ordner, Hauptversionen einzeln). Sicherheitswarnungen
-und automatische Sicherheits-PRs sind im Repo eingeschaltet. Bei Hauptversionen die
+und automatische Sicherheits-PRs sind im Repo eingeschaltet. Den `overrides`-Eintrag für `shell-quote` in der
+Wurzel-`package.json` gibt es, weil `concurrently` (nur Entwicklung, `npm run dev`) es auf 1.9.0
+festnagelt, das eine Sicherheitslücke hat; er kann weg, sobald `concurrently` selbst ≥ 1.11.0 verlangt. Bei Hauptversionen die
 Changelogs gegen unsere Nutzung prüfen; Express 5 etwa ruft den `listen`-Callback auch bei
 Startfehlern auf, und `res.sendFile` braucht `root`, wenn der Installationspfad Punkt-Ordner hat.
 
