@@ -39,7 +39,7 @@ async function haus(opened: Opened): Promise<void> {
 async function schaetzungDirekt(opened: Opened, unitId: string): Promise<string> {
   return opened.write(async (db) => {
     const heatingPeriodId = await ensureHeatingPeriod(db, 'hp', periodKey('2025-01'))
-    await db.insert(heatingEstimates).values({ heatingPeriodId, unitId, part: 'heat', value: 12000, method: 'buildingAverage', reason: 'Zähler defekt', confirmed: true })
+    await db.insert(heatingEstimates).values({ heatingPeriodId, unitId, part: 'heat', value: 12000, method: 'buildingAverage', reason: 'Zähler defekt', confirmed: true, cause: 'deviceFailure', capture: 'heatMeter', valueUnit: 'kWh' })
     return heatingPeriodId
   })
 }
@@ -50,7 +50,7 @@ test('Schätzungen werden mit Anlage und Heizperiode gelesen und stehen im Schna
     await schaetzungDirekt(opened, 'c')
     const stock = await opened.read(readStock)
     assert.deepEqual(stock.heatingEstimates, [
-      { plantId: 'hp', period: '2025-01', unitId: 'c', part: 'heat', value: 12000, method: 'buildingAverage', reason: 'Zähler defekt', confirmed: true },
+      { plantId: 'hp', period: '2025-01', unitId: 'c', part: 'heat', value: 12000, method: 'buildingAverage', reason: 'Zähler defekt', confirmed: true, cause: 'deviceFailure', capture: 'heatMeter', valueUnit: 'kWh' },
     ])
     const p = periodOfKey(CALENDAR_RULES, periodKey('2025-01')) ?? assert.fail('kein Zeitraum')
     assert.deepEqual(snapshotFor(stock, 'objekt-1', p).heatingEstimates?.map((e) => e.unitId), ['c'])
@@ -72,7 +72,7 @@ test('Die Datenbank lehnt eine Schätzung ohne Begründung mit einem eigenen Sat
     try {
       await opened.write(async (db) => {
         const heatingPeriodId = await ensureHeatingPeriod(db, 'hp', periodKey('2025-01'))
-        await db.insert(heatingEstimates).values({ heatingPeriodId, unitId: 'c', part: 'heat', value: 1, method: 'buildingAverage', reason: '  ', confirmed: false })
+        await db.insert(heatingEstimates).values({ heatingPeriodId, unitId: 'c', part: 'heat', value: 1, method: 'buildingAverage', reason: '  ', confirmed: false, cause: 'deviceFailure', capture: 'heatMeter', valueUnit: 'kWh' })
       })
     } catch (e) {
       found = e
@@ -124,13 +124,13 @@ async function eigeneAbrechnung(opened: Opened, over: Record<string, unknown> = 
     }, '2026-02-01', newId)
   })
 }
-const GUT = { value: 12000, method: 'buildingAverage', reason: 'Wärmezähler defekt, Ersatz erst im Januar', confirmed: true }
+const GUT = { value: 12000, method: 'buildingAverage', reason: 'Wärmezähler defekt, Ersatz erst im Januar', confirmed: true, cause: 'deviceFailure' }
 
 test('Schätzung speichern, ändern und entfernen; die leere Heizperiode fällt danach weg', async () => {
   await withDatabase(async (opened) => {
     await eigeneAbrechnung(opened)
     const e = await opened.write((db) => saveEstimate(db, 'hp', '2025-01', 'c', 'heat', { ...GUT, reason: '  Wärmezähler defekt, Ersatz erst im Januar ' }))
-    assert.deepEqual(e, { plantId: 'hp', period: '2025-01', unitId: 'c', part: 'heat', value: 12000, method: 'buildingAverage', reason: 'Wärmezähler defekt, Ersatz erst im Januar', confirmed: true })
+    assert.deepEqual(e, { plantId: 'hp', period: '2025-01', unitId: 'c', part: 'heat', value: 12000, method: 'buildingAverage', reason: 'Wärmezähler defekt, Ersatz erst im Januar', confirmed: true, cause: 'deviceFailure', capture: 'heatMeter', valueUnit: 'kWh' })
     await opened.write((db) => saveEstimate(db, 'hp', '2025-01', 'c', 'heat', { ...GUT, value: 11500, confirmed: false }))
     await opened.write((db) => saveEstimate(db, 'hp', '2025-01', 'c', 'water', { ...GUT, value: 30 }))
     assert.deepEqual((await opened.read(readStock)).heatingEstimates.map((x) => [x.part, x.value, x.confirmed]), [['heat', 11500, false], ['water', 30, true]])

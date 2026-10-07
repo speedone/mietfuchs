@@ -111,9 +111,9 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // erzeugt, werden diese beiden Schritte neu erzeugt und die Marken hier ersetzt.
   '0031_hkv': 'bb0a2160eca94099a689bd27d279213dea7ea0ee45d2903886fb73aad491c226',
   '0032_hkv_bedingungen': '3deed9e24e0f674d9fb16bfebdc3cd41b8944c313d43c6365cb211ceb52a4449',
-  // Heizung PR 13 (Schätzung nach § 9a). Wird ein Schritt von PR 12 vor dem Push neu erzeugt, wird dieser
+  // Heizung PR 13 (Schätzung nach § 9a), neu erzeugt mit der Durchsicht von #242 (Grund, Erfassung, Einheit). Wird ein Schritt von PR 12 vor dem Push neu erzeugt, wird dieser
   // Schritt neu erzeugt und die Marke hier ersetzt.
-  '0033_schaetzung': '82148be2fa335a30cadb97692305f091f23d7d54de66f34194a927f1b2212107',
+  '0033_schaetzung': 'ec08c84ef61a91c67f770f34aaaa321093981bf4f92bdefc120bb980db72e325',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

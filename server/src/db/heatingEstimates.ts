@@ -4,13 +4,13 @@
 import { and, eq } from 'drizzle-orm'
 import { servesUnit } from '../../../shared/heatingPeriod.ts'
 import type { EstimatePart, HeatingEstimate } from '../../../shared/types.ts'
-import { captureOf, hotWaterOf } from '../hca.ts'
+import { captureOf, hotWaterOf, lineServiceRows, potUnitFor } from '../hca.ts'
 import { estimateDeviceType, selfActive } from '../heating.ts'
 import type { Database } from './client.ts'
 import { closedText, dropIfEmpty, ensureHeatingPeriod, heatingPeriodClosed, heatingPeriodOf, plantContext } from './heatingPeriodContext.ts'
-import { readMeters, readUnits } from './read.ts'
+import { readHeatingPlants, readHeatingServiceValues, readMeters, readUnits } from './read.ts'
 import { HeatingError, oneOfOrUndefined, raw } from './repository.ts'
-import { ESTIMATE_METHODS, ESTIMATE_PARTS, heatingEstimates, heatingPeriods } from './schema.ts'
+import { ESTIMATE_CAUSES, ESTIMATE_METHODS, ESTIMATE_PARTS, heatingEstimates, heatingPeriods } from './schema.ts'
 
 const DEVICE_NAME = { waerme: 'keinen Wärmezähler', hkv: 'keinen Heizkostenverteiler', warmwasser: 'keinen Warmwasserzähler' } as const
 
@@ -51,14 +51,22 @@ export async function saveEstimate(db: Database, plantId: string, period: string
   const reasonText = raw(body, 'reason')
   const reason = typeof reasonText === 'string' ? reasonText.trim() : ''
   if (reason === '') throw new HeatingError(400, 'Bitte nennen Sie die Begründung, warum der Verbrauch nicht erfasst werden konnte (etwa „Wärmezähler defekt“).')
+  // Der Grund nach § 9a Abs. 1 Satz 1 als Auswahl (Durchsicht von #242, R-I1).
+  const cause = oneOfOrUndefined(ESTIMATE_CAUSES, raw(body, 'cause'))
+  if (cause === undefined) throw new HeatingError(400, 'Bitte wählen Sie den Grund, aus dem der Verbrauch nicht ordnungsgemäß erfasst werden konnte: Gerät ausgefallen, Gerät zeigt falsch an, Ablesung nicht möglich oder ein anderer zwingender Grund.')
   const confirmed = raw(body, 'confirmed') === true
+  // Erfassung und Einheit der Heizperiode beim Speichern (Durchsicht von #242, G-I1): Wechselt die Erfassung
+  // danach, rechnet die Berechnung die Schätzung nicht mehr, statt den Wert in einer anderen Einheit zu verteilen.
+  const capture = captureOf(ctx.plant, key)
+  const serviceRows = capture === 'serviceValues' ? lineServiceRows(await readHeatingServiceValues(db), await readHeatingPlants(db), plantId, key) : []
+  const valueUnit = potUnitFor(capture, part === 'heat' ? 'heating' : 'water', serviceRows)
   await db.transaction(async (tx) => {
     if (await heatingPeriodClosed(tx, ctx, h)) throw new HeatingError(409, closedText(h))
     const heatingPeriodId = await ensureHeatingPeriod(tx, plantId, h.key)
     await tx.delete(heatingEstimates).where(and(eq(heatingEstimates.heatingPeriodId, heatingPeriodId), eq(heatingEstimates.unitId, unit.id), eq(heatingEstimates.part, part)))
-    await tx.insert(heatingEstimates).values({ heatingPeriodId, unitId: unit.id, part, value, method, reason, confirmed })
+    await tx.insert(heatingEstimates).values({ heatingPeriodId, unitId: unit.id, part, value, method, reason, confirmed, cause, capture, valueUnit })
   })
-  return { plantId, period: h.key, unitId: unit.id, part, value, method, reason, confirmed }
+  return { plantId, period: h.key, unitId: unit.id, part, value, method, reason, confirmed, cause, capture, valueUnit }
 }
 
 // `null`, wenn es die Anlage nicht gibt; sonst, ob etwas entfernt wurde. Eine abgeschlossene Heizperiode

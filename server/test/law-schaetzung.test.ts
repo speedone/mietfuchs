@@ -26,3 +26,22 @@ test('Regel heating-estimate: § 9a, die drei Wege und die Grenze aus dem Regist
   assert.match(rule.summary, /mehr als 25 %/)
   assert.equal(ruleCoverage('heating-estimate', '2025-01-01', '2025-12-31'), 'full')
 })
+
+// Durchsicht von #242: R-I6 (was der BGH entschieden hat), R-I5/G-M8 (Auslegung als solche), R-I1, R-M6, R-M11.
+test('Durchsicht von #242: Regel, Lexikon und Anleitung zur Schätzung', async () => {
+  const rule = RULES.find((r) => r.code === 'heating-estimate') ?? assert.fail('Regel fehlt')
+  assert.doesNotMatch(rule.summary, /Zwingend ist ein Grund erst/)
+  assert.match(rule.summary, /Auch ein Ablesefehler ist ein zwingender Grund, wenn sich der Wert nicht mehr ermitteln lässt/)
+  assert.match(rule.summary, /Kürzung.*verneint/)
+  assert.match(rule.summary, /ganze Fläche.*Heizung und Warmwasser getrennt.*Auslegung von Mietfuchs/s)
+  const { GLOSSARY } = await import('../../shared/glossary.ts')
+  const g = GLOSSARY.heatingEstimate
+  assert.match(`${g.short} ${g.needed}`, /nicht ordnungsgemäß erfasst/)
+  assert.doesNotMatch(`${g.short} ${g.needed}`, /nicht mehr ablesen/)
+  assert.match(g.needed, /muss der Verbrauch so ermittelt werden; ohne Schätzung verteilt Mietfuchs die Anlage nicht/)
+  assert.match(g.needed, /Auslegung von Mietfuchs/)
+  const { GUIDES } = await import('../../shared/guides.ts')
+  const text = JSON.stringify(GUIDES)
+  assert.match(text, /§ 9a Abs\. 1 HeizkostenV; BGH, Urteil vom 16\.11\.2005, VIII ZR 373\/04/)
+  assert.doesNotMatch(text, /zwingend ist ein Grund erst|ließ sich nicht mehr ablesen|nicht mehr ablesen lässt/)
+})

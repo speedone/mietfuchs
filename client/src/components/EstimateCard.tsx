@@ -1,9 +1,9 @@
 import { useState } from 'react'
-import type { EstimateMethod, HeatingPeriodView, HeatingPlant, SelfEstimateOption, SelfEstimateView, SelfHeatingStatement } from '../types'
+import type { EstimateCause, EstimateMethod, HeatingPeriodView, HeatingPlant, SelfEstimateOption, SelfEstimateView, SelfHeatingStatement } from '../types'
 import { api, errorText, fmtDate } from '../api'
 import { useToast } from './feedback'
 import Term from './Term'
-import { chooseMethod, emptyEstimate, estimateBody, METHOD_OPTIONS, NO_PROPOSAL_TEXT, thresholdLines, WHY_TEXT, type EstimateForm } from '../estimateForm'
+import { CAUSE_OPTIONS, chooseMethod, emptyEstimate, estimateBody, METHOD_OPTIONS, NO_PROPOSAL_TEXT, thresholdLines, WHY_TEXT, type EstimateForm } from '../estimateForm'
 import { hkvEstimateThreshold } from '../../../shared/law/heizkostenv.ts'
 import { valueAt } from '../../../shared/law/register.ts'
 
@@ -42,7 +42,8 @@ export default function EstimateCard({ plant, view, self, onChanged }: {
     if ('error' in result) return setError(result.error)
     try {
       await api(url(open), { method: 'PUT', body: JSON.stringify(result.body) })
-      toast('Schätzung gespeichert.')
+      // Durchsicht von #242, R-M2: ohne Bestätigung nicht still „gespeichert“.
+      toast(result.body.confirmed ? 'Schätzung gespeichert.' : 'Gespeichert, aber noch nicht bestätigt; die Abrechnung meldet das.')
       setOpen(null)
       setError('')
       onChanged()
@@ -65,27 +66,42 @@ export default function EstimateCard({ plant, view, self, onChanged }: {
   const others = options.filter((o) => o.why === null && !o.estimated)
   const pot = open ? potOf(open) : undefined
   const proposal = open && form ? open.proposals.find((p) => p.method === form.method) : undefined
+  // Durchsicht von #242, R-M3: die Einheit des Felds; Heizkostenverteiler in bewerteten Einheiten.
+  const unitOf = (o: SelfEstimateOption) => potOf(o)?.consumptionUnit ?? ''
+  const fieldUnit = (o: SelfEstimateOption) => {
+    const u = unitOf(o)
+    if (u !== 'Einheiten') return u
+    return self.serviceValues ? 'Einheiten, wie der Ablesedienst sie nennt' : 'bewerteten Einheiten (Ablesewert × Bewertungsfaktor)'
+  }
   return (
     <div className="card">
       <h3><Term id="heatingEstimate">Schätzung (§ 9a)</Term></h3>
+      {/* Durchsicht von #242: R-I1 (Wortlaut des § 9a Abs. 1), R-M11 (eine Pflicht), G-M6 (die ganze Heizperiode). */}
       <p className="muted no-print">
-        Geschätzt werden darf nur, wenn sich ein Wert nicht mehr ablesen lässt: Das Gerät ist ausgefallen, oder ein anderer zwingender Grund liegt vor.
-        Liegt eine Ablesung einige Tage neben dem Stichtag, gilt sie, wie sie ist. Der geschätzte Verbrauch gilt für die ganze Heizperiode der Wohnung;
-        wer bis zu einem Mieterwechsel gültig abgelesen ist, behält seinen Wert.
+        Kann der Verbrauch einer Wohnung nicht ordnungsgemäß erfasst werden, weil das Gerät ausgefallen ist, falsch anzeigt oder ein anderer zwingender Grund vorliegt,
+        ist er nach § 9a HeizkostenV zu ermitteln; ohne Schätzung verteilt Mietfuchs die Anlage nicht. Liegt eine Ablesung einige Tage neben dem Stichtag, gilt sie, wie sie ist.
+        Der geschätzte Verbrauch gilt für die ganze Heizperiode der Wohnung, auch für Zeiten, die abgelesen sind; nur wer bis zu einem Mieterwechsel gültig abgelesen ist, behält seinen Wert.
       </p>
       {error && <div className="error">{error}</div>}
       {needs.length === 0 && <p>Für keine Wohnung fehlt ein Wert.</p>}
       {needs.map((o) => {
         const e = existingOf(o)
-        const unit = potOf(o)?.consumptionUnit ?? ''
+        const unit = e?.valueUnit ?? unitOf(o)
         return (
-          <div key={`${o.unitId}:${o.part}`} className="row">
+          <div key={`${o.unitId}:${o.part}`} className="row center">
             <span className="grow">
-              {o.unitName}, {POT_TEXT[o.part]}: {e
-                ? `geschätzt ${num(e.value)} ${unit} (${e.confirmed ? 'bestätigt' : 'nicht bestätigt'}; ${e.reason})`
-                : `${o.why ? WHY_TEXT[o.why] : ''}${o.boundary ? ` zum ${fmtDate(o.boundary)}` : ''}`}
+              {o.unitName}, {POT_TEXT[o.part]}: {e?.stale
+                ? `Schätzung in ${e.valueUnit} passt nicht mehr zur Erfassung dieser Heizperiode und wird nicht gerechnet; bitte neu eintragen.`
+                : e
+                  ? `geschätzt ${num(e.value)} ${unit} (${e.confirmed ? 'bestätigt' : 'nicht bestätigt'}; Begründung: „${e.reason}“)`
+                  : `${o.why ? WHY_TEXT[o.why] : ''}${o.boundary ? ` zum ${fmtDate(o.boundary)}` : ''}`}
             </span>
-            {!view.closed && (e
+            {!view.closed && (e?.stale
+              ? <>
+                <button className="btn ghost" onClick={() => start(o)}>Schätzung neu eintragen</button>
+                <button className="btn ghost" onClick={() => remove(o)} aria-label={`Schätzung von ${o.unitName} entfernen`}>Entfernen</button>
+              </>
+              : e
               ? <>
                 <button className="btn ghost" onClick={() => start(o)} aria-label={`Schätzung von ${o.unitName} ändern`}>Ändern</button>
                 <button className="btn ghost" onClick={() => remove(o)} aria-label={`Schätzung von ${o.unitName} entfernen`}>Entfernen</button>
@@ -99,7 +115,7 @@ export default function EstimateCard({ plant, view, self, onChanged }: {
           <summary>Gerät zeigt falsch an, obwohl alle Stände eingetragen sind</summary>
           <p className="muted">Dann sind die Ablesungen unbrauchbar, und Sie schätzen auch hier. Halten Sie in der Begründung fest, woran Sie das erkannt haben.</p>
           {others.map((o) => (
-            <div key={`frei-${o.unitId}:${o.part}`} className="row">
+            <div key={`frei-${o.unitId}:${o.part}`} className="row center">
               <span className="grow">{o.unitName}, {POT_TEXT[o.part]}</span>
               <button className="btn ghost" onClick={() => start(o)} aria-label={`${o.unitName} schätzen`}>Schätzen</button>
             </div>
@@ -119,20 +135,28 @@ export default function EstimateCard({ plant, view, self, onChanged }: {
             <label className="field">Vergleichbare Wohnung
               <select value={form.comparableUnitId} onChange={(ev) => setForm(chooseMethod(form, open, 'comparableUnit', ev.target.value))}>
                 <option value="">— bitte wählen —</option>
-                {open.comparable.map((c) => <option key={c.unitId} value={c.unitId}>{c.unitName} ({num(c.perM2)} je m²)</option>)}
+                {open.comparable.map((c) => <option key={c.unitId} value={c.unitId}>{c.unitName} ({num(c.perM2)} {unitOf(open)} je m²)</option>)}
               </select>
             </label>
           )}
           {proposal && proposal.why !== 'ok' && <p className="muted">{NO_PROPOSAL_TEXT[proposal.why]} Tragen Sie den Wert selbst ein.</p>}
-          <label className="field">Geschätzter Verbrauch{pot ? ` in ${pot.consumptionUnit}` : ''}
+          <label className="field">Geschätzter Verbrauch{pot ? ` in ${fieldUnit(open)}` : ''} für die ganze Heizperiode der Wohnung
             <input inputMode="decimal" value={form.value} onChange={(ev) => setForm({ ...form, value: ev.target.value })} />
+          </label>
+          {/* Durchsicht von #242, R-I1: der Grund des § 9a Abs. 1 Satz 1 als Auswahl. */}
+          <label className="field">Grund nach § 9a Abs. 1
+            <select value={form.cause} onChange={(ev) => setForm({ ...form, cause: ev.target.value as EstimateCause })}>
+              {CAUSE_OPTIONS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+            </select>
           </label>
           <label className="field">Begründung
             <input value={form.reason} placeholder="z. B. Wärmezähler defekt, Ersatz erst im Januar" onChange={(ev) => setForm({ ...form, reason: ev.target.value })} />
           </label>
+          {/* Durchsicht von #242, R-I3: Der Satz steht außerhalb des label, sonst gehörte er zum Namen des Felds. */}
+          <small className="muted">Erscheint so auf der Abrechnung des Mieters dieser Wohnung.</small>
           <label className="checkline">
             <input type="checkbox" checked={form.confirmed} onChange={(ev) => setForm({ ...form, confirmed: ev.target.checked })} />
-            Der Wert ließ sich nicht mehr ablesen (Geräteausfall oder anderer zwingender Grund, § 9a Abs. 1 HeizkostenV).
+            Der Verbrauch ließ sich nicht ordnungsgemäß erfassen, und der richtige Wert lässt sich nicht mehr ermitteln (§ 9a Abs. 1 HeizkostenV).
           </label>
           <div className="row">
             <button className="btn" onClick={save}>Schätzung speichern</button>

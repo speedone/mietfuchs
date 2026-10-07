@@ -207,8 +207,10 @@ export const RULES: readonly Rule[] = [
     norm: '§ 9a HeizkostenV; BGH, Urteil vom 16.11.2005, VIII ZR 373/04',
     summary:
       'Kann der Verbrauch eines Nutzers wegen Geräteausfalls oder aus einem anderen zwingenden Grund nicht ordnungsgemäß erfasst werden, ermittelt ihn der Gebäudeeigentümer: aus dem Verbrauch der betroffenen Räume in vergleichbaren Zeiträumen, aus dem Verbrauch vergleichbarer anderer Räume im selben Abrechnungszeitraum oder aus dem Durchschnittsverbrauch des Gebäudes oder der Nutzergruppe. ' +
-      'Der so ermittelte Verbrauch tritt an die Stelle des erfassten. Zwingend ist ein Grund erst, wenn sich der Fehler nicht mehr beheben lässt. ' +
-      `Betrifft die Schätzung mehr als ${estimateThreshold} % der für die Verteilung maßgeblichen Fläche, werden die Kosten ausschließlich nach der Fläche verteilt.`,
+      'Der so ermittelte Verbrauch tritt an die Stelle des erfassten. Auch ein Ablesefehler ist ein zwingender Grund, wenn sich der Wert nicht mehr ermitteln lässt; im vom BGH entschiedenen Fall war die Ablesung nicht nachholbar. Eine so erstellte Abrechnung kann nicht nach § 12 gekürzt werden; der BGH hat die Kürzung dort verneint. ' +
+      `Betrifft die Schätzung mehr als ${estimateThreshold} % der für die Verteilung maßgeblichen Fläche, werden die Kosten ausschließlich nach der Fläche verteilt. ` +
+      // Durchsicht von #242, R-I5/G-M8: zwei Festlegungen, die die Verordnung nicht ausdrücklich regelt.
+      'Mietfuchs zählt dafür die ganze Fläche einer Wohnung, auch wenn nur ein Teil der Heizperiode geschätzt ist, und prüft Heizung und Warmwasser getrennt (Auslegung von Mietfuchs).',
   },
 ]
 

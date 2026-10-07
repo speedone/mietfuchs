@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import HeatingSelfSetup from './HeatingSelfSetup'
+import { UIProvider } from './feedback'
 import type { HeatingPlant } from '../types'
 
 const plant = { id: 'hp', energy: 'gas', hotWater: 'combined', capture: null, areaBasisHeat: 'area' } as HeatingPlant
@@ -45,5 +46,18 @@ describe('HeatingSelfSetup', () => {
     cleanup()
     render(<HeatingSelfSetup plant={{ ...plant, energy: 'districtHeating' }} period="2025-01" onDone={() => {}} onCancel={() => {}} />)
     expect(screen.queryByLabelText(/Wärmeschutz/)).toBeNull()
+  })
+
+  it('Durchsicht von #242, G-I1: passt eine Schätzung nach dem Wechsel der Erfassung nicht mehr, sagt die Meldung es', async () => {
+    const notice = 'Eine Schätzung nach § 9a passt nicht mehr zur Erfassung der Heizperiode: „C“ (Heizung, eingetragen mit Wärmezählern in kWh).'
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({ plant: { ...plant, method: 'self' }, created: [], converted: 0, estimatesNotice: notice }), { status: 200 }))
+    const onDone = vi.fn()
+    render(<UIProvider><HeatingSelfSetup plant={plant} period="2025-01" onDone={onDone} onCancel={() => {}} /></UIProvider>)
+    fireEvent.change(screen.getByLabelText(/Heizung in %/), { target: { value: '70' } })
+    fireEvent.change(screen.getByLabelText(/Warmwasser in %/), { target: { value: '70' } })
+    fireEvent.change(screen.getByLabelText(/Wärmeschutz/), { target: { value: 'notApplies' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Umstellen' }))
+    await waitFor(() => expect(onDone).toHaveBeenCalled())
+    expect(screen.getByText(notice)).toBeTruthy()
   })
 })

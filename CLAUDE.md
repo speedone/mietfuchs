@@ -1330,22 +1330,37 @@ lässt die Wahl nur für künftige Zeiträume zu. Der Anteil gehört zur **Linie
   Variante gezählt. Migrationen 0031/0032 (`hca_scale`, `rating_factor`, `hca_model`, `heating_self_spans.capture`
   und `.hot_water`, `heating_service_values` mit `heat_unit`).
 - **Schätzung nach § 9a** (Heizung PR 13, #99, [server/src/db/heatingEstimates.ts](server/src/db/heatingEstimates.ts)):
-  Tabelle `heating_estimates` (Heizperiode, Wohnung, Topf `heat`/`water`, Wert, Weg, Begründung Pflicht,
-  Bestätigung; Migration 0033). Eine Schätzung gilt für die ganze Heizperiode der Wohnung in der Einheit der
+  Tabelle `heating_estimates` (Heizperiode, Wohnung, Topf `heat`/`water`, Wert, Weg, Grund aus der Auswahl,
+  Begründung Pflicht, Bestätigung, **Erfassung und Einheit beim Speichern**; Migration 0033). Passen Erfassung
+  oder Einheit nicht mehr zur Heizperiode (`estimateFits` in hca.ts; beim Warmwasser zählt nur eigene Zähler oder
+  Ablesedienst), rechnet die Schätzung nicht, die Wohnung gilt als nicht erfasst, und `heating.estimate-stale`
+  (Stufe `error`) führt zu „Schätzung neu eintragen“; `setUpSelf` nennt solche Schätzungen in
+  `estimatesNotice` (Durchsicht von #242, G-I1). Eine Schätzung gilt für die ganze Heizperiode der Wohnung in der Einheit der
   Erfassung (beim Heizkostenverteiler bewertete Einheiten, ohne Faktor) und tritt in `planSelf` **nur an die
-  Stelle des nicht erfassten Verbrauchs** (§ 9a Abs. 1 Satz 2): Ein Nutzer mit gültigen Ablesungen, etwa der
-  Vormieter bis zur Zwischenablesung, behält seinen Messwert, sonst wanderte Geld zwischen Vor- und Nachmieter;
-  die übrigen tragen zusammen ihren Anteil nach Gradtagen bzw. Tagen und teilen ihn wie nach § 9b Abs. 3. Sind
-  alle Ablesungen vollständig, ersetzt die Schätzung alles (Markierung „unbrauchbar“) und warnt
-  `heating.estimate-complete`. Mit Schätzung sind ein fehlender Stand, ein Zählerwechsel ohne Endstand, negativer
+  Stelle des nicht erfassten Verbrauchs**: Ein Nutzer mit gültigen Ablesungen, etwa der
+  Vormieter bis zur Zwischenablesung, behält seinen Messwert, denn § 9a Abs. 1 Satz 1 erfasst nur den Verbrauch
+  von Nutzern, der nicht ordnungsgemäß erfasst werden kann (Durchsicht von #242, R-I4); die übrigen tragen
+  zusammen ihren Anteil nach Gradtagen bzw. Tagen und teilen ihn wie nach § 9b Abs. 3 (Festlegung). Ohne
+  behaltenen Wert ersetzt die Schätzung auch abgelesene Zeiten desselben Nutzers; Hinweis und Druck sagen das
+  (G-M6). Sind alle Ablesungen vollständig, ersetzt die Schätzung alles (Markierung „unbrauchbar“):
+  `heating.estimate-complete` ist dann ein Hinweis, der nicht färbt, unbestätigt eine Warnung
+  (`heating.estimate-unconfirmed`, R-I7); deckt die Schätzung zwei Stände am selben Tag, warnt
+  `heating.estimate-same-day` (G-M7). Weitere Hinweise: `heating.estimate-no-device` (Gerät danach gelöscht,
+  die Schätzung zählt weiter), `heating.estimate-below-measured` (Schätzung unter dem abgelesenen Teil des
+  Vormieters). Nach einem Kesseltausch steht jeder Hinweis einmal je Linie; abgeschlossen wird weiter je Anlage. Mit Schätzung sind ein fehlender Stand, ein Zählerwechsel ohne Endstand, negativer
   Verbrauch und zwei Stände am selben Tag gedeckt; die Geräte einer geschätzten Wohnung lösen keine Hinweise zu
-  Zwischenablesungen aus (`liveMetersOf`), stehen aber weiter im Ausweis. Überschreitet die geschätzte Fläche
+  fehlenden Zwischenablesungen aus (`liveMetersOf`), stehen aber weiter im Ausweis. Begrenzt eine Ablesung ihres
+  Geräts einen behaltenen Messwert, fragt Mietfuchs bei einer fernen Zwischenablesung wie ohne Schätzung
+  („Ablesung verwenden“ / „Nach § 9b Abs. 3“, `usableAt` in heating.ts, G-I2). Überschreitet die geschätzte Fläche
   eines Topfs die Grenze `hkv.estimate-threshold` (streng größer, über Produkte verglichen, je Topf, Heizung mit
   der Fläche nach § 7 Abs. 1 Satz 5; die Fläche einer Wohnung zählt ganz, auch wenn nur ein Teil ihrer
-  Heizperiode geschätzt ist), geht der Topf nur nach Fläche, ohne Kürzungsbetrag (Auslegung, Entwurf 15.1
-  Nr. 7). Gelesen werden Schätzungen **über die Linie** wie die Werte eines Ablesedienstes (die eigene geht vor);
+  Heizperiode geschätzt ist; beides ist eine **Auslegung von Mietfuchs** und steht so in Hinweis, Dialog, Lexikon
+  und Regel), geht der Topf nur nach Fläche, ohne Kürzungsbetrag und ohne `heating.no-consumption` (Auslegung,
+  Entwurf 15.1 Nr. 7; für eine Abrechnung nach § 9a Abs. 1 hat der BGH die Kürzung verneint, VIII ZR 373/04
+  Leitsatz c). Gelesen werden Schätzungen **über die Linie** wie die Werte eines Ablesedienstes (die eigene geht vor);
   eine Wohnung mit Gerätewechsel mitten in der Heizperiode ist mit Schätzung nicht mehr gemischt
-  (`withoutEstimatedSwitches`). Keine Schätzung für eine Wohnung ohne Gerät (Ausstattungspflicht, 400; beim
+  (`withoutEstimatedSwitches`). Eine Wohnung mit Schätzung oder Werten eines Ablesedienstes wechselt nicht das
+  Objekt (`guardUnit`, G-I3). Keine Schätzung für eine Wohnung ohne Gerät (Ausstattungspflicht, 400; beim
   Ablesedienst prüft Mietfuchs keine Geräte) und nie wegen verschiedener Ablesetage; abgeschlossene
   Heizperioden sind gesperrt (409), `dropIfEmpty` lässt eine Heizperiode mit Schätzung stehen. Die Vorschläge
   (`estimateProposals`: Durchschnitt der übrigen erfassten Wohnungen je m², vergleichbare Wohnung je m²,

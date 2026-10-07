@@ -21,7 +21,7 @@ const TENANTS = ['A', 'B', 'C1', 'C2'] as const
 const base = selfSnapshot()
 const OHNE_ENDE_C = selfReadings().filter((r) => !(r.meterId === 'wz-c' && r.date === '2025-12-31'))
 const estimate = (over: Partial<HeatingEstimate> = {}): HeatingEstimate => ({
-  plantId: 'hp', period: periodKey('2025-01'), unitId: 'c', part: 'heat', value: 12000, method: 'buildingAverage', reason: 'Wärmezähler defekt', confirmed: true, ...over,
+  plantId: 'hp', period: periodKey('2025-01'), unitId: 'c', part: 'heat', value: 12000, method: 'buildingAverage', reason: 'Wärmezähler defekt', confirmed: true, cause: 'deviceFailure', capture: 'heatMeter', valueUnit: 'kWh', ...over,
 })
 const run = (o: SelfSnapshotOptions = {}) => computeSettlement(selfSnapshot(o))
 const sum = (s: ComputedSettlement) => s.statements.reduce((a, st) => a + st.totalShareCents, 0) + s.landlord.rows.reduce((a, r) => a + r.shareCents, 0)
@@ -51,7 +51,7 @@ test('Mit Schätzung: verteilt, Topf Heizung nur nach Fläche (30 % > 25 %), War
   assert.ok(!codes(s).includes('heating.no-consumption'), 'keine Kürzung nach § 12 Abs. 1 Satz 1 (15.1 Nr. 7)')
   // Prüfbericht A5: Der Vormieter behält seinen abgelesenen Verbrauch; geschätzt ist nur der Teil des
   // Nachmieters (12.000 kWh · 360 ‰ = 4.320 kWh).
-  assert.match(textOf(s, 'heating.estimated'), /von C ist nach § 9a HeizkostenV geschätzt: 12\.000 kWh.*Durchschnitt des Gebäudes je m².*Wärmezähler defekt.*Mieter C1 behält seinen abgelesenen Verbrauch.*für Mieter C2 gilt der Anteil der Schätzung nach Gradtagen: 4\.320 kWh/s)
+  assert.match(textOf(s, 'heating.estimated'), /von C ist nach § 9a HeizkostenV geschätzt: 12\.000 kWh.*Durchschnitt des Gebäudes je m².*Wärmezähler defekt.*Mieter C1 behält den abgelesenen Verbrauch.*für Mieter C2 gilt der Anteil der Schätzung nach Gradtagen: 4\.320 kWh/s)
   assert.ok(!codes(s).includes('heating.estimate-complete'))
   assert.equal(s.notices.find((n) => n.code === 'heating.estimated')?.level, 'hint')
   const self = selfOf(s)
@@ -97,11 +97,13 @@ test('Unbestätigt: Warnung statt Hinweis', () => {
   assert.equal(s.notices.find((n) => n.code === 'heating.estimate-unconfirmed')?.level, 'warning')
 })
 
-test('Review Focus 1 (Prüfbericht A9): Schätzung neben vollständiger Ablesung: Warnung, § 9a greift dann nicht; bis zum Entfernen gilt sie', () => {
+// Durchsicht von #242, R-I7: bestätigt ist es ein Hinweis (die Markierung „unbrauchbar“), unbestätigt eine Warnung
+// (schaetzung-durchsicht.test.ts).
+test('Review Focus 1 (Prüfbericht A9): Schätzung neben vollständiger Ablesung: gemeldet, § 9a nur bei nicht ordnungsgemäßer Erfassung; bis zum Entfernen gilt sie', () => {
   const s = run({ estimates: [estimate({ value: 10000 })] })
-  const n = s.notices.find((x) => x.code === 'heating.estimate-complete') ?? assert.fail('keine Warnung')
-  assert.equal(n.level, 'warning')
-  assert.match(n.text, /vollständige.*Ablesungen.*nicht ordnungsgemäß erfasst.*§ 9a.*insoweit falsch.*Entfernen Sie die Schätzung/s)
+  const n = s.notices.find((x) => x.code === 'heating.estimate-complete') ?? assert.fail('kein Hinweis')
+  assert.equal(n.level, 'hint')
+  assert.match(n.text, /vollständig.*ersetzt sie durch die Schätzung.*nicht ordnungsgemäß erfasst.*§ 9a/s)
   assert.ok(!codes(s).includes('heating.estimated'))
   const self = selfOf(s)
   const c1 = self.units.find((u) => u.unitId === 'c')?.users[0] ?? assert.fail('C1')
@@ -147,7 +149,7 @@ test('Leerstand und Eigennutzung: der geschätzte Anteil der Zeit ohne Mieter bl
   const s = computeSettlement(snap)
   assert.deepEqual(s.notices.filter((n) => n.level === 'error').map((n) => n.code), [])
   assert.equal(sum(s), positions(snap))
-  assert.match(textOf(s, 'heating.estimated'), /Mieter C1 behält seinen abgelesenen Verbrauch.*für Leerstand \(Vermieter\) gilt der Anteil/s)
+  assert.match(textOf(s, 'heating.estimated'), /Mieter C1 behält den abgelesenen Verbrauch.*für Leerstand \(Vermieter\) gilt der Anteil/s)
   const leer = selfOf(s).units.find((u) => u.unitId === 'c')?.users.find((u) => u.role === 'vacancy') ?? assert.fail('kein Leerstand')
   assert.ok(leer.heatingEstimated === true && Math.abs((leer.heatingConsumption ?? 0) - 4320) < 1e-9)
 })
@@ -172,7 +174,7 @@ test('Heizkostenverteiler mit Wechsel vom Wärmezähler am 30.06.: mit Schätzun
   }
   const ohne = run(o)
   assert.match(textOf(ohne, 'heating.mixed-capture'), /Bei A wechselt das Gerät.*„Schätzung \(§ 9a\)“.*in Einheiten/s)
-  const snap = selfSnapshot({ ...o, estimates: [estimate({ unitId: 'a', value: 1200, reason: 'Wechsel des Geräts zum 30.06., kein Stand des neuen Geräts zu Beginn' })] })
+  const snap = selfSnapshot({ ...o, estimates: [estimate({ unitId: 'a', value: 1200, capture: 'hca', valueUnit: 'Einheiten', reason: 'Wechsel des Geräts zum 30.06., kein Stand des neuen Geräts zu Beginn' })] })
   const s = computeSettlement(snap)
   assert.ok(!codes(s).includes('heating.mixed-capture'), codes(s).join(', '))
   assert.deepEqual(s.notices.filter((n) => n.level === 'error').map((n) => n.code), [])

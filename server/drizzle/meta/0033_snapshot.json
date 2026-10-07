@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "e3ae8390-28e4-4931-a87b-f9a28228950a",
+  "id": "943dbfeb-fb48-4017-a728-a55180a31007",
   "prevId": "91c92ba0-00f6-4d3c-9413-dd8839a94d3c",
   "tables": {
     "ai_slots": {
@@ -2312,6 +2312,27 @@
           "notNull": true,
           "autoincrement": false,
           "default": false
+        },
+        "cause": {
+          "name": "cause",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "capture": {
+          "name": "capture",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "value_unit": {
+          "name": "value_unit",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
         }
       },
       "indexes": {},
@@ -2355,6 +2376,18 @@
       },
       "uniqueConstraints": {},
       "checkConstraints": {
+        "heating_estimates_cause_known": {
+          "name": "heating_estimates_cause_known",
+          "value": "\"cause\" IN ('deviceFailure', 'wrongReading', 'readingImpossible', 'otherReason')"
+        },
+        "heating_estimates_capture_known": {
+          "name": "heating_estimates_capture_known",
+          "value": "\"capture\" IN ('heatMeter', 'hca', 'serviceValues')"
+        },
+        "heating_estimates_value_unit_known": {
+          "name": "heating_estimates_value_unit_known",
+          "value": "\"value_unit\" IN ('kWh', 'm³', 'Einheiten')"
+        },
         "heating_estimates_part_known": {
           "name": "heating_estimates_part_known",
           "value": "\"part\" IN ('heat', 'water')"

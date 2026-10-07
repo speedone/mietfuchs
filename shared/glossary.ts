@@ -350,15 +350,16 @@ export const GLOSSARY = {
   // Heizung PR 13 (#99, Entwurf 10.3): Schätzung nach § 9a. Die Zahlen des Beispiels sind Beispielzahlen.
   heatingEstimate: {
     title: 'Schätzung bei Geräteausfall',
-    short: 'Fällt ein Zähler oder Heizkostenverteiler aus oder lässt sich ein Wert aus einem anderen zwingenden Grund nicht mehr ablesen, wird der Verbrauch dieser Wohnung geschätzt: aus ihrem Verbrauch in einem vergleichbaren Zeitraum, aus dem Verbrauch einer vergleichbaren Wohnung oder aus dem Durchschnitt des Hauses. Der geschätzte Verbrauch tritt nur an die Stelle dessen, was nicht abgelesen werden konnte; hat ein Vormieter bis zur Zwischenablesung einen gültigen Wert, behält er ihn.',
+    short: 'Fällt ein Zähler oder Heizkostenverteiler aus oder kann der Verbrauch aus einem anderen zwingenden Grund nicht ordnungsgemäß erfasst werden, wird der Verbrauch dieser Wohnung geschätzt: aus ihrem Verbrauch in einem vergleichbaren Zeitraum, aus dem Verbrauch einer vergleichbaren Wohnung oder aus dem Durchschnitt des Hauses. Der geschätzte Verbrauch tritt nur an die Stelle dessen, was nicht abgelesen werden konnte; hat ein Vormieter bis zur Zwischenablesung einen gültigen Wert, behält er ihn.',
     example:
       'Der Wärmezähler einer Wohnung mit 60 m² fällt aus. Die übrigen Wohnungen verbrauchen zusammen 28.000 kWh auf 140 m², das sind 200 kWh je m²: geschätzt werden 60 × 200 = 12.000 kWh. ' +
       `Die Wohnung hat 60 von 200 m², also 30 % der Fläche. Das ist mehr als ${ESTIMATE_THRESHOLD} %, und die Heizkosten werden deshalb in diesem Jahr nur nach der Fläche verteilt.`,
     norm: '§ 9a HeizkostenV',
     needed:
-      'Nur, wenn sich ein Wert nicht mehr ablesen lässt. Ist ein Wert nur einige Tage neben dem Stichtag abgelesen, gilt er, wie er ist; das ist kein Grund zu schätzen. ' +
+      'Nur, wenn der Verbrauch nicht ordnungsgemäß erfasst werden kann: Das Gerät ist ausgefallen, zeigt falsch an, oder ein anderer zwingender Grund verhindert die Ablesung. Dann muss der Verbrauch so ermittelt werden; ohne Schätzung verteilt Mietfuchs die Anlage nicht. ' +
+      'Ist ein Wert nur einige Tage neben dem Stichtag abgelesen, gilt er, wie er ist; das ist kein Grund zu schätzen. ' +
       `Maßgeblich für die Grenze von ${ESTIMATE_THRESHOLD} % ist die Fläche der geschätzten Wohnungen, nicht ihre Zahl: Bei vier gleich großen Wohnungen hat jede genau ${ESTIMATE_THRESHOLD} %, das ist keine Überschreitung. ` +
-      `Sind die Wohnungen verschieden groß, zählt die Fläche: Eine Wohnung mit mehr als ${ESTIMATE_THRESHOLD} % der Fläche überschreitet die Grenze allein, und mehrere kleinere können es zusammen. Geprüft wird für Heizung und Warmwasser getrennt.`,
+      `Sind die Wohnungen verschieden groß, zählt die Fläche: Eine Wohnung mit mehr als ${ESTIMATE_THRESHOLD} % der Fläche überschreitet die Grenze allein, und mehrere kleinere können es zusammen. Mietfuchs zählt die ganze Fläche der Wohnung, auch wenn nur ein Teil der Heizperiode geschätzt ist, und prüft Heizung und Warmwasser getrennt; die Verordnung sagt dazu nichts Ausdrückliches, das ist eine Auslegung von Mietfuchs.`,
   },
   cableTv: {
     title: 'Kabelfernsehen',

@@ -1213,6 +1213,13 @@ async function guardUnit(db: Executor, before: Unit | null, after: Unit): Promis
     .innerJoin(tenancies, eq(costItemAmounts.tenancyId, tenancies.id))
     .where(eq(tenancies.unitId, after.id))
   if ((betraege[0]?.n ?? 0) > 0) haengt.push('Einzelbeträge ihrer Mietverhältnisse')
+  // Schätzungen nach § 9a und Werte eines Ablesedienstes gehören zur Heizanlage des bisherigen Objekts
+  // (Durchsicht von #242, G-I3); ohne Zähler griff keine der Prüfungen darüber, und das eigene Backup wurde
+  // danach beim Wiederherstellen abgelehnt.
+  const schaetzungen = await db.select({ n: count() }).from(heatingEstimates).where(eq(heatingEstimates.unitId, after.id))
+  if ((schaetzungen[0]?.n ?? 0) > 0) haengt.push('Schätzungen nach § 9a HeizkostenV')
+  const ablesedienst = await db.select({ n: count() }).from(heatingServiceValues).where(eq(heatingServiceValues.unitId, after.id))
+  if ((ablesedienst[0]?.n ?? 0) > 0) haengt.push('Werte des Ablesedienstes')
   if (haengt.length === 0) return
   throw new CrossPropertyError(
     `Die Wohnung „${after.name}“ kann nicht in ein anderes Objekt wechseln, weil noch ${haengt.join(', ')} ` +

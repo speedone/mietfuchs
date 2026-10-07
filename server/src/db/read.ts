@@ -361,6 +361,7 @@ export async function readHeatingEstimates(db: Executor): Promise<HeatingEstimat
     .orderBy(heatingPeriods.plantId, heatingPeriods.period, heatingEstimates.unitId, heatingEstimates.part)
   return rows.map(({ e, plantId, period }) => ({
     plantId, period: periodKey(String(period)), unitId: e.unitId, part: e.part, value: e.value, method: e.method, reason: e.reason, confirmed: e.confirmed,
+    cause: e.cause, capture: e.capture, valueUnit: e.valueUnit,
   }))
 }
 

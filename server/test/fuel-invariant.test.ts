@@ -510,7 +510,7 @@ for (const variant of VARIANTS) {
         }
         const failureUnits = ['a', 'b', 'c', 'd']
         const bFacts = new Map<string, BFacts>()
-        const estimateBody = () => ({ value: int(1000, 9000), method: pick(['buildingAverage', 'previousPeriod', 'comparableUnit'] as const), reason: 'Wärmezähler ausgefallen', confirmed: rnd() < 0.7 })
+        const estimateBody = () => ({ value: int(1000, 9000), method: pick(['buildingAverage', 'previousPeriod', 'comparableUnit'] as const), reason: 'Wärmezähler ausgefallen', confirmed: rnd() < 0.7, cause: 'deviceFailure' })
         if (variant.failure) {
           const heatMeters = (await opened.read((db) => readStock(db))).meters.filter((x) => x.type === 'waerme' && x.unitId !== null && (x.heatingPlantId ?? null) === null)
           const gaps: { key: string; unitId: string }[] = []

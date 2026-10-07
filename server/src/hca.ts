@@ -18,7 +18,7 @@
 // Skalen und Faktoren nach [M] Haufe HeizKV § 5.3 und Berliner Mieterverein (übernommen);
 // ⟨Norm offen: VDI 2077; DIN EN 834⟩ (Entwurf 15.3). Ob ein Faktor stimmt, prüft Mietfuchs nicht
 // (Entwurf 16). Diese Datei steht in `ENGINE_FILES` des Wächters (law-literals.test.ts).
-import type { CaptureMethod, HcaDeviceLine, HcaScale, HeatingServiceValue, MeterType } from '../../shared/types.ts'
+import type { CaptureMethod, HcaDeviceLine, HcaScale, HeatingEstimate, HeatingServiceValue, MeterType } from '../../shared/types.ts'
 import { dayBefore, germanDate, type Period } from '../../shared/law/register.ts'
 import { andList } from '../../shared/wording.ts'
 import type { SelfMeter, SelfPlan, SelfReading } from './heating.ts'
@@ -150,6 +150,23 @@ export function serviceUnitsMixed(rows: readonly HeatingServiceValue[]): MixedCa
 // Die Einheit der Heizung beim Ablesedienst: kWh nur, wenn er alle Werte in kWh nennt.
 export const serviceHeatUnit = (rows: readonly HeatingServiceValue[]): 'kWh' | 'Einheiten' =>
   rows.length > 0 && rows.every((r) => r.heatUnit === 'kWh') ? 'kWh' : 'Einheiten'
+
+// Die Einheit eines Topfs bei einer Erfassung (Durchsicht von #242, G-I1): Warmwasser in m³, Heizung mit
+// Wärmezählern in kWh, mit Heizkostenverteilern in Einheiten, beim Ablesedienst wie er sie nennt. Dieselbe Regel
+// gilt für den Ausweis (calc.ts `potUnitOf`) und für die Einheit, unter der eine Schätzung gespeichert wird.
+export const potUnitFor = (capture: CaptureMethod, pot: 'heating' | 'water', serviceRows: readonly HeatingServiceValue[]): 'kWh' | 'm³' | 'Einheiten' =>
+  pot === 'water' ? 'm³' : capture === 'heatMeter' ? 'kWh' : capture === 'serviceValues' ? serviceHeatUnit(serviceRows) : 'Einheiten'
+
+// Passt eine Schätzung nach § 9a zur Erfassung der Heizperiode (Durchsicht von #242, G-I1)? Gespeichert ist sie mit
+// Erfassung und Einheit; beim Warmwasser zählt nur, ob eigene Zähler oder ein Ablesedienst erfassen, denn
+// Wärmezähler und Heizkostenverteiler lesen dasselbe Warmwasser in m³. Passt sie nicht, rechnet sie nicht: Ein
+// Wert in kWh, verteilt als Einheiten, verschöbe Geld zwischen den Mietern, ohne dass es jemand sähe.
+export function estimateFits(e: Pick<HeatingEstimate, 'part' | 'capture' | 'valueUnit'>, capture: CaptureMethod, serviceRows: readonly HeatingServiceValue[]): boolean {
+  const sameSource = e.part === 'water' ? (e.capture === 'serviceValues') === (capture === 'serviceValues') : e.capture === capture
+  return sameSource && e.valueUnit === potUnitFor(capture, e.part === 'heat' ? 'heating' : 'water', serviceRows)
+}
+// Die Erfassung im Satz („bei Erfassung mit Wärmezählern“).
+export const CAPTURE_TEXT: Record<CaptureMethod, string> = { heatMeter: 'mit Wärmezählern', hca: 'mit Heizkostenverteilern', serviceValues: 'mit Werten eines Ablesedienstes' }
 
 // ---------- Ausweis je Gerät ----------
 

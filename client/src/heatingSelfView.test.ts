@@ -151,15 +151,50 @@ describe('Ausweis mit Schätzung (Heizung PR 13)', () => {
     const self = {
       pots: [],
       estimates: [
-        { plantId: 'hp', unitId: 'c', unitName: 'C', part: 'heat' as const, value: 12000, method: 'buildingAverage' as const, reason: 'Wärmezähler defekt', confirmed: true, users: 1, kept: 1, complete: false },
-        { plantId: 'hp', unitId: 'a', unitName: 'A', part: 'heat' as const, value: 9000, method: 'previousPeriod' as const, reason: 'Zähler defekt', confirmed: true, users: 1, kept: 0, complete: false },
+        { plantId: 'hp', unitId: 'c', unitName: 'C', part: 'heat' as const, value: 12000, method: 'buildingAverage' as const, reason: 'Wärmezähler defekt', confirmed: true, cause: 'deviceFailure' as const, capture: 'heatMeter' as const, valueUnit: 'kWh' as const, users: 1, kept: 1, complete: false },
+        { plantId: 'hp', unitId: 'a', unitName: 'A', part: 'heat' as const, value: 9000, method: 'previousPeriod' as const, reason: 'Zähler defekt', confirmed: true, cause: 'deviceFailure' as const, capture: 'heatMeter' as const, valueUnit: 'kWh' as const, users: 1, kept: 0, complete: false },
       ],
     }
     expect(estimateLines(self, 'c', { heatingEstimated: true })).toEqual([
-      'Heizung: Der Verbrauch Ihrer Wohnung ließ sich nicht ablesen (Wärmezähler defekt) und ist nach § 9a HeizkostenV geschätzt, nach dem Durchschnitt des Gebäudes je m²: 12.000 kWh für die ganze Heizperiode. Wer in der Wohnung bis zu einem Wechsel gültig abgelesen ist, behält diesen Wert; Ihnen ist der Anteil Ihrer Zeit an der Schätzung zugerechnet.',
+      // Wortlaut seit der Durchsicht von #242 (R-I1, R-I2); ohne Verbrauch des Nutzers ohne den Satz zum Anteil.
+      'Heizung: Der Verbrauch Ihrer Wohnung konnte nicht ordnungsgemäß erfasst werden (Gerät ausgefallen; Begründung: „Wärmezähler defekt“) und ist nach § 9a HeizkostenV ermittelt, nach dem Durchschnitt des Gebäudes je m²: 12.000 kWh für die ganze Heizperiode der Wohnung. Für die Zeit vor Ihrem Einzug liegt eine gültige Ablesung vor; sie gilt dort weiter.',
     ])
     // Der Vormieter mit gültiger Ablesung bekommt keinen Satz zur Schätzung.
     expect(estimateLines(self, 'c', { heatingEstimated: false })).toEqual([])
     expect(estimateLines({ ...self, estimates: undefined }, 'c', { heatingEstimated: true })).toEqual([])
+  })
+})
+
+// Durchsicht von #242 (Recht): R-I1 Wortlaut, R-I2 nachrechenbarer Satz für den Nachmieter, R-M5 Klammern,
+// R-M8 über der Grenze, R-M9 geschätzter Teil im Topf, G-M6 ganze Heizperiode.
+describe('Durchsicht von #242: Ausweis mit Schätzung', () => {
+  const est = (over: Record<string, unknown> = {}) => ({
+    plantId: 'hp', unitId: 'c', unitName: 'C', part: 'heat' as const, value: 12000, method: 'buildingAverage' as const, reason: 'Wärmezähler defekt (Fachbetrieb)', confirmed: true,
+    cause: 'deviceFailure' as const, capture: 'heatMeter' as const, valueUnit: 'kWh' as const, users: 1, kept: 1, complete: false, ...over,
+  })
+  const heat = { pot: 'heating' as const, costCents: 0, consumptionPct: 70, byAreaOnly: false, areaM2: 200, consumption: 40000, consumptionUnit: 'kWh' as const, baseCentsPerM2: 0, consumptionCentsPerUnit: 1, overThreshold: false, estimatedAreaM2: 60 }
+  it('R-I1/R-I2/R-M5: „nicht ordnungsgemäß erfasst“, Grund aus der Auswahl, Begründung in Anführungszeichen, Anteil des Nachmieters nachrechenbar', () => {
+    const self = { pots: [heat], changeSplit: 'degreeDays' as const, estimates: [est()] }
+    expect(estimateLines(self, 'c', { heatingEstimated: true, heatingConsumption: 4320 })).toEqual([
+      'Heizung: Der Verbrauch Ihrer Wohnung konnte nicht ordnungsgemäß erfasst werden (Gerät ausgefallen; Begründung: „Wärmezähler defekt (Fachbetrieb)“) und ist nach § 9a HeizkostenV ermittelt, nach dem Durchschnitt des Gebäudes je m²: 12.000 kWh für die ganze Heizperiode der Wohnung. ' +
+        'Für die Zeit vor Ihrem Einzug liegt eine gültige Ablesung vor; sie gilt dort weiter. Auf Ihren Zeitraum entfallen 360 ‰ der Gradtage, also 360 ‰ von 12.000 kWh = 4.320 kWh.',
+    ])
+    // Teilung nach Tagen bzw. Warmwasser nach Tagen.
+    expect(estimateLines({ ...self, changeSplit: 'time' as const }, 'c', { heatingEstimated: true, heatingConsumption: 4320 })[0]).toMatch(/360 ‰ der Tage/)
+  })
+  it('G-M6: ein einzelner Nutzer erfährt, dass die Schätzung die ganze Heizperiode ersetzt', () => {
+    const self = { pots: [heat], changeSplit: 'degreeDays' as const, estimates: [est({ kept: 0 })] }
+    expect(estimateLines(self, 'c', { heatingEstimated: true, heatingConsumption: 12000 })[0]).toMatch(/ganze Heizperiode der Wohnung\. Sie gilt auch für Zeiten, für die Ablesungen vorliegen\.$/)
+  })
+  it('R-M8: über der Grenze ist der Verbrauch für die Verteilung nicht maßgeblich', () => {
+    const over = { ...heat, overThreshold: true, consumptionPct: 0 }
+    const self = { pots: [over], changeSplit: 'degreeDays' as const, estimates: [est()] }
+    expect(estimateLines(self, 'c', { heatingEstimated: true, heatingConsumption: 4320 })[0]).toMatch(/Für die Verteilung ist der Verbrauch nicht maßgeblich.*§ 9a Abs\. 2/)
+    const u = { key: 'A', role: 'tenancy' as const, tenancyId: 'A', label: 'Mieter A', from: '2025-01-01', to: '2025-12-31', days: 365, degreeDayPermille: 1000, heatingConsumption: 12000, waterConsumption: null, heatingGroup: false, waterGroup: false, heatingCents: 0, waterCents: 0, heatingCo2Cents: 0, waterCo2Cents: 0 }
+    expect(userLine(u, { pots: [over] })).toContain('Heizung 12.000 kWh (für die Verteilung nicht maßgeblich, § 9a Abs. 2)')
+  })
+  it('R-M9: der Topf nennt, wie viel darin geschätzt ist', () => {
+    expect(potLines({ ...heat, estimatedConsumption: 4320, costCents: 100000 }).join(' ')).toMatch(/davon geschätzt nach § 9a HeizkostenV: 4\.320 kWh/)
+    expect(potLines({ ...heat, estimatedConsumption: 0, costCents: 100000 }).join(' ')).not.toMatch(/geschätzt/)
   })
 })

@@ -1,7 +1,7 @@
 // Dialog der Schätzung nach § 9a HeizkostenV (Heizung PR 13, Entwurf 8.7, N5), ohne DOM prüfbar. Was der
 // Server prüft, prüft er weiter; hier stehen die Sätze vorher und der Flächenanteil, der über die Grenze
 // des § 9a Abs. 2 entscheidet.
-import type { EstimateMethod, EstimatePart, SelfEstimateOption, SelfEstimateView, SelfPotView } from './types'
+import type { EstimateCause, EstimateMethod, EstimatePart, SelfEstimateOption, SelfEstimateView, SelfPotView } from './types'
 import { ambiguousText, ambiguousThousands, parseNumberDe } from './numbers'
 
 export const METHOD_OPTIONS: { value: EstimateMethod; label: string }[] = [
@@ -9,6 +9,15 @@ export const METHOD_OPTIONS: { value: EstimateMethod; label: string }[] = [
   { value: 'previousPeriod', label: 'Verbrauch derselben Wohnung in der vorigen Heizperiode' },
   { value: 'comparableUnit', label: 'Verbrauch einer vergleichbaren Wohnung in dieser Heizperiode, je m² umgerechnet' },
 ]
+// Der Grund nach § 9a Abs. 1 Satz 1 als Auswahl (Durchsicht von #242, R-I1). Er steht mit der Begründung auf der
+// Abrechnung des Mieters.
+export const CAUSE_OPTIONS: { value: EstimateCause; label: string }[] = [
+  { value: 'deviceFailure', label: 'Gerät ausgefallen' },
+  { value: 'wrongReading', label: 'Gerät zeigt falsch an' },
+  { value: 'readingImpossible', label: 'Ablesung nicht möglich' },
+  { value: 'otherReason', label: 'anderer zwingender Grund' },
+]
+export const CAUSE_TEXT = Object.fromEntries(CAUSE_OPTIONS.map((c) => [c.value, c.label])) as Record<EstimateCause, string>
 export const WHY_TEXT: Record<NonNullable<SelfEstimateOption['why']>, string> = {
   noReading: 'Stand fehlt',
   replacement: 'Endstand des alten Geräts beim Zählerwechsel fehlt',
@@ -22,7 +31,7 @@ export const NO_PROPOSAL_TEXT: Record<Exclude<SelfEstimateOption['proposals'][nu
   noMeasured: 'Keine andere Wohnung hat in dieser Heizperiode einen vollständig abgelesenen Verbrauch.',
 }
 
-export type EstimateForm = { method: EstimateMethod; comparableUnitId: string; value: string; reason: string; confirmed: boolean }
+export type EstimateForm = { method: EstimateMethod; comparableUnitId: string; value: string; reason: string; confirmed: boolean; cause: EstimateCause }
 
 // Eine Zahl in deutscher („12.000“, „12.000,5“) oder technischer Schreibweise („12000.5“), wie überall
 // (`parseNumberDe`). Ein Punkt vor genau drei Ziffern ist ein Tausenderpunkt.
@@ -37,10 +46,14 @@ export function proposalValue(option: SelfEstimateOption, method: EstimateMethod
 // wird, wie es dasteht.
 const round = (n: number): string => String(Math.round(n * 1000) / 1000).replace('.', ',')
 
-export function emptyEstimate(option: SelfEstimateOption, existing?: Pick<SelfEstimateView, 'value' | 'method' | 'reason' | 'confirmed'>): EstimateForm {
-  if (existing) return { method: existing.method, comparableUnitId: '', value: round(existing.value), reason: existing.reason, confirmed: existing.confirmed }
+// Eine Schätzung, die nicht mehr zur Erfassung passt (`stale`, Durchsicht von #242, G-I1), wird neu eingetragen: mit
+// dem Vorschlag statt des alten Werts in der alten Einheit, Grund und Begründung bleiben, die Bestätigung nicht.
+export function emptyEstimate(option: SelfEstimateOption, existing?: Pick<SelfEstimateView, 'value' | 'method' | 'reason' | 'confirmed' | 'cause'> & { stale?: boolean }): EstimateForm {
+  if (existing && !existing.stale) return { method: existing.method, comparableUnitId: '', value: round(existing.value), reason: existing.reason, confirmed: existing.confirmed, cause: existing.cause }
   const v = proposalValue(option, 'buildingAverage', '')
-  return { method: 'buildingAverage', comparableUnitId: '', value: v === null ? '' : round(v), reason: '', confirmed: false }
+  // Ohne fehlenden Wert ist der Weg „Gerät zeigt falsch an“ (die Ablesungen sind vollständig, aber unbrauchbar).
+  const cause: EstimateCause = existing?.cause ?? (option.why === null ? 'wrongReading' : 'deviceFailure')
+  return { method: 'buildingAverage', comparableUnitId: '', value: v === null ? '' : round(v), reason: existing?.reason ?? '', confirmed: false, cause }
 }
 
 // Den Vorschlag des gewählten Wegs übernehmen; ohne Vorschlag bleibt der eingetragene Wert stehen.
@@ -55,7 +68,7 @@ const m2 = (n: number): string => n.toLocaleString('de-DE', { maximumFractionDig
 // Der tatsächliche Flächenanteil mit dieser Schätzung und was daraus folgt (§ 9a Abs. 2, „überschreitet“:
 // streng größer, verglichen über Produkte wie in der Berechnung). Der letzte Satz stimmt bei gleich und
 // verschieden großen Wohnungen (Abweichung 9 des Plans).
-export function thresholdLines(pot: Pick<SelfPotView, 'pot' | 'areaM2' | 'estimatedAreaM2'>, option: Pick<SelfEstimateOption, 'areaM2' | 'estimated'>, threshold: number): string[] {
+export function thresholdLines(pot: Pick<SelfPotView, 'pot' | 'areaM2' | 'estimatedAreaM2'>, option: Pick<SelfEstimateOption, 'areaM2' | 'estimated' | 'partlyMeasured'>, threshold: number): string[] {
   const estimated = (pot.estimatedAreaM2 ?? 0) + (option.estimated ? 0 : option.areaM2)
   const share = pot.areaM2 > 0 ? (estimated * 100) / pot.areaM2 : 0
   const verdict = estimated * 100 > pot.areaM2 * threshold
@@ -66,18 +79,22 @@ export function thresholdLines(pot: Pick<SelfPotView, 'pot' | 'areaM2' | 'estima
   return [
     `Maßgeblich ist die Fläche der Wohnungen mit geschätztem Verbrauch, nicht ihre Zahl: mit dieser Schätzung ${m2(estimated)} von ${m2(pot.areaM2)} m², also ${pct(share)} %.`,
     verdict,
-    `Bei vier gleich großen Wohnungen hat jede genau ${threshold} % und überschreitet die Grenze nicht. Eine Wohnung mit mehr als ${threshold} % der Fläche überschreitet die Grenze allein, und mehrere kleinere können es zusammen.`,
+    // Durchsicht von #242, R-M7: allgemein, nicht nur für vier gleich große Wohnungen.
+    `Maßgeblich ist der Flächenanteil, nicht die Zahl der Wohnungen: Eine Wohnung mit mehr als ${threshold} % der Fläche überschreitet die Grenze allein, mehrere kleinere können es zusammen.`,
+    // Durchsicht von #242, R-I5: zwei Festlegungen, als Auslegung benannt.
+    ...(option.partlyMeasured ? ['Gezählt wird die ganze Wohnung, obwohl ein Teil der Heizperiode bis zum Mieterwechsel abgelesen ist.'] : []),
+    'Mietfuchs zählt die ganze Fläche der Wohnung, auch wenn nur ein Teil der Heizperiode geschätzt ist, und prüft Heizung und Warmwasser getrennt; die Verordnung sagt dazu nichts Ausdrückliches, das ist eine Auslegung von Mietfuchs.',
   ]
 }
 
 // Der Rumpf für den Server. Beim Warmwasser (m³) fragt das Formular bei „12.345“ nach, statt zu raten: Dort
 // kommen drei Nachkommastellen ebenso vor wie Tausender. Kilowattstunden und Einheiten liest es mit
 // Tausenderpunkt.
-export function estimateBody(form: EstimateForm, part: EstimatePart): { body: { value: number; method: EstimateMethod; reason: string; confirmed: boolean } } | { error: string } {
+export function estimateBody(form: EstimateForm, part: EstimatePart): { body: { value: number; method: EstimateMethod; reason: string; confirmed: boolean; cause: EstimateCause } } | { error: string } {
   if (part === 'water' && ambiguousThousands(form.value)) return { error: ambiguousText(form.value) }
   const value = parseAmount(form.value)
   if (value === null || value < 0) return { error: 'Der geschätzte Verbrauch ist eine Zahl ab 0.' }
   const reason = form.reason.trim()
   if (reason === '') return { error: 'Bitte nennen Sie die Begründung, warum der Verbrauch nicht erfasst werden konnte (etwa „Wärmezähler defekt“).' }
-  return { body: { value, method: form.method, reason, confirmed: form.confirmed } }
+  return { body: { value, method: form.method, reason, confirmed: form.confirmed, cause: form.cause } }
 }

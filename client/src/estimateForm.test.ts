@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { chooseMethod, emptyEstimate, estimateBody, parseAmount, proposalValue, thresholdLines } from './estimateForm'
+import { CAUSE_OPTIONS, chooseMethod, emptyEstimate, estimateBody, parseAmount, proposalValue, thresholdLines } from './estimateForm'
 import type { SelfEstimateOption, SelfPotView } from './types'
 
 const option = (over: Partial<SelfEstimateOption> = {}): SelfEstimateOption => ({
@@ -19,9 +19,9 @@ const pot = (areaM2: number, estimatedAreaM2 = 0): SelfPotView => ({
 
 describe('Dialog der Schätzung (Heizung PR 13, Entwurf 8.7)', () => {
   it('Vorgabe ist der Durchschnitt des Gebäudes, vorbelegt mit dem Vorschlag', () => {
-    expect(emptyEstimate(option())).toEqual({ method: 'buildingAverage', comparableUnitId: '', value: '12000', reason: '', confirmed: false })
+    expect(emptyEstimate(option())).toEqual({ method: 'buildingAverage', comparableUnitId: '', value: '12000', reason: '', confirmed: false, cause: 'deviceFailure' })
     // Eine gespeicherte Schätzung wird gezeigt, wie sie ist.
-    expect(emptyEstimate(option(), { value: 9000.5, method: 'previousPeriod', reason: 'defekt', confirmed: true })).toEqual({ method: 'previousPeriod', comparableUnitId: '', value: '9000,5', reason: 'defekt', confirmed: true })
+    expect(emptyEstimate(option(), { value: 9000.5, method: 'previousPeriod', reason: 'defekt', confirmed: true, cause: 'wrongReading' })).toEqual({ method: 'previousPeriod', comparableUnitId: '', value: '9000,5', reason: 'defekt', confirmed: true, cause: 'wrongReading' })
   })
   it('vergleichbare Wohnung: der Wert der gewählten Wohnung; Vorperiode ohne Wert lässt den Wert stehen', () => {
     expect(proposalValue(option(), 'comparableUnit', 'a')).toBe(12600.25)
@@ -40,13 +40,13 @@ describe('Dialog der Schätzung (Heizung PR 13, Entwurf 8.7)', () => {
     expect(parseAmount(emptyEstimate(option({ proposals: [{ method: 'buildingAverage', value: 1234.5678, perM2: 1, why: 'ok' }] })).value)).toBe(1234.568)
   })
   it('Begründung Pflicht, Wert ab 0', () => {
-    expect(estimateBody({ method: 'buildingAverage', comparableUnitId: '', value: '12000', reason: ' ', confirmed: true }, 'heat')).toEqual({ error: expect.stringMatching(/Begründung/) })
-    expect(estimateBody({ method: 'buildingAverage', comparableUnitId: '', value: '-1', reason: 'defekt', confirmed: true }, 'heat')).toEqual({ error: expect.stringMatching(/Zahl ab 0/) })
-    expect(estimateBody({ method: 'buildingAverage', comparableUnitId: '', value: '12.000', reason: ' defekt ', confirmed: true }, 'heat')).toEqual({ body: { value: 12000, method: 'buildingAverage', reason: 'defekt', confirmed: true } })
+    expect(estimateBody({ method: 'buildingAverage', comparableUnitId: '', value: '12000', reason: ' ', confirmed: true, cause: 'deviceFailure' as const }, 'heat')).toEqual({ error: expect.stringMatching(/Begründung/) })
+    expect(estimateBody({ method: 'buildingAverage', comparableUnitId: '', value: '-1', reason: 'defekt', confirmed: true, cause: 'deviceFailure' as const }, 'heat')).toEqual({ error: expect.stringMatching(/Zahl ab 0/) })
+    expect(estimateBody({ method: 'buildingAverage', comparableUnitId: '', value: '12.000', reason: ' defekt ', confirmed: true, cause: 'deviceFailure' as const }, 'heat')).toEqual({ body: { value: 12000, method: 'buildingAverage', reason: 'defekt', confirmed: true, cause: 'deviceFailure' } })
   })
   it('Warmwasser: „12.345“ m³ ist mehrdeutig und wird nachgefragt; mit Komma eindeutig', () => {
-    expect(estimateBody({ method: 'buildingAverage', comparableUnitId: '', value: '12.345', reason: 'defekt', confirmed: true }, 'water')).toEqual({ error: expect.stringMatching(/Meinen Sie 12,345 oder 12345/) })
-    expect(estimateBody({ method: 'buildingAverage', comparableUnitId: '', value: '12,345', reason: 'defekt', confirmed: true }, 'water')).toEqual({ body: { value: 12.345, method: 'buildingAverage', reason: 'defekt', confirmed: true } })
+    expect(estimateBody({ method: 'buildingAverage', comparableUnitId: '', value: '12.345', reason: 'defekt', confirmed: true, cause: 'deviceFailure' as const }, 'water')).toEqual({ error: expect.stringMatching(/Meinen Sie 12,345 oder 12345/) })
+    expect(estimateBody({ method: 'buildingAverage', comparableUnitId: '', value: '12,345', reason: 'defekt', confirmed: true, cause: 'deviceFailure' as const }, 'water')).toEqual({ body: { value: 12.345, method: 'buildingAverage', reason: 'defekt', confirmed: true, cause: 'deviceFailure' } })
   })
 })
 
@@ -67,9 +67,33 @@ describe('Grenze des § 9a Abs. 2 vor dem Speichern (N5, Abweichung 9)', () => {
     // Krumme Anteile mit höchstens zwei Nachkommastellen.
     expect(thresholdLines(pot(300), option({ areaM2: 50 }), 25)[0]).toMatch(/50 von 300 m², also 16,67 %/)
   })
-  it('der Satz zu ungleich großen Wohnungen stimmt für jede Größe', () => {
-    const last = thresholdLines(pot(200), option(), 25).at(-1) ?? ''
-    expect(last).toMatch(/Bei vier gleich großen Wohnungen hat jede genau 25 %/)
-    expect(last).toMatch(/Eine Wohnung mit mehr als 25 % der Fläche überschreitet die Grenze allein, und mehrere kleinere können es zusammen/)
+  // Der Satz zu ungleich großen Wohnungen steht seit der Durchsicht von #242 allgemein (R-M7, Test unten).
+})
+
+// Durchsicht von #242 (Recht): R-I1 Gründe als Auswahl, R-I5 Auslegung, R-M7 allgemeiner Satz zur Fläche.
+describe('Durchsicht von #242', () => {
+  it('R-I1: der Grund ist eine Auswahl; vorbelegt „Gerät ausgefallen“, ohne fehlenden Wert „zeigt falsch an“', () => {
+    expect(CAUSE_OPTIONS.map((c) => c.label)).toEqual(['Gerät ausgefallen', 'Gerät zeigt falsch an', 'Ablesung nicht möglich', 'anderer zwingender Grund'])
+    expect(emptyEstimate(option()).cause).toBe('deviceFailure')
+    expect(emptyEstimate(option({ why: null })).cause).toBe('wrongReading')
+    expect(emptyEstimate(option(), { value: 1, method: 'buildingAverage', reason: 'x', confirmed: true, cause: 'readingImpossible' }).cause).toBe('readingImpossible')
+    const form = { ...emptyEstimate(option()), reason: 'defekt', cause: 'otherReason' as const }
+    expect(estimateBody(form, 'heat')).toEqual({ body: { value: 12000, method: 'buildingAverage', reason: 'defekt', confirmed: false, cause: 'otherReason' } })
+  })
+  it('R-I1: eine Schätzung, die nicht mehr zur Erfassung passt, wird neu eingetragen (mit dem Vorschlag, nicht dem alten Wert)', () => {
+    const f = emptyEstimate(option(), { value: 12000, method: 'previousPeriod', reason: 'defekt', confirmed: true, cause: 'deviceFailure', stale: true })
+    expect([f.value, f.method, f.reason, f.confirmed]).toEqual(['12000', 'buildingAverage', 'defekt', false])
+    const g = emptyEstimate(option({ proposals: [{ method: 'buildingAverage', value: 1200, perM2: 20, why: 'ok' }] }), { value: 12000, method: 'buildingAverage', reason: 'defekt', confirmed: true, cause: 'deviceFailure', stale: true })
+    expect(g.value).toBe('1200')
+  })
+  it('R-M7: der letzte Satz gilt für jedes Haus, nicht nur für vier gleich große Wohnungen', () => {
+    const lines = thresholdLines(pot(200), option(), 25)
+    expect(lines.join(' ')).not.toMatch(/vier gleich großen/)
+    expect(lines.join(' ')).toMatch(/Maßgeblich ist der Flächenanteil, nicht die Zahl der Wohnungen: Eine Wohnung mit mehr als 25 % der Fläche überschreitet die Grenze allein, mehrere kleinere können es zusammen/)
+  })
+  it('R-I5: die Flächenregel steht als Auslegung da, bei teilweise abgelesener Wohnung mit eigenem Satz', () => {
+    expect(thresholdLines(pot(200), option(), 25).join(' ')).toMatch(/ganze Fläche der Wohnung.*Heizung und Warmwasser getrennt.*Auslegung von Mietfuchs/s)
+    expect(thresholdLines(pot(200), option({ partlyMeasured: true }), 25).join(' ')).toMatch(/Gezählt wird die ganze Wohnung, obwohl ein Teil der Heizperiode bis zum Mieterwechsel abgelesen ist/)
+    expect(thresholdLines(pot(200), option({ partlyMeasured: false }), 25).join(' ')).not.toMatch(/Gezählt wird die ganze Wohnung/)
   })
 })
