@@ -104,7 +104,7 @@ describe('Cockpit: verlangen die Hinweise etwas?', () => {
     expect(noticesNeedAttention({ warnings: ['a'], notices: [n({ code: 'heating.estimate-over-25', level: 'hint' })] })).toBe(true)
     // Durchsicht von #242, R-I7: bestätigt neben vollständiger Ablesung eine Auskunft; die übrigen Befunde verlangen etwas.
     expect(noticesNeedAttention({ warnings: ['a'], notices: [n({ code: 'heating.estimate-complete', level: 'hint' })] })).toBe(false)
-    for (const code of ['heating.estimate-stale', 'heating.estimate-no-device', 'heating.estimate-below-measured', 'heating.estimate-same-day']) {
+    for (const code of ['heating.estimate-stale', 'heating.estimate-stale-unused', 'heating.estimate-no-device', 'heating.estimate-below-measured', 'heating.estimate-same-day']) {
       expect(noticesNeedAttention({ warnings: ['a'], notices: [n({ code, level: 'warning' })] })).toBe(true)
     }
   })

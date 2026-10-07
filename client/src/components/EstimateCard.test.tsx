@@ -144,3 +144,51 @@ test('G-I1: eine Schätzung, die nicht zur Erfassung passt, steht mit „Schätz
   expect((screen.getByLabelText('Begründung') as HTMLInputElement).value).toBe('Zähler defekt')
   expect((screen.getByLabelText(/Der Verbrauch ließ sich nicht ordnungsgemäß erfassen/) as HTMLInputElement).checked).toBe(false)
 })
+
+// ---------- Durchsicht von #242 Runde 2 (N-I1, N-I2, N-M3) ----------
+
+const staleD = { plantId: 'hp', unitId: 'd', unitName: 'D', part: 'heat' as const, value: 4000, method: 'buildingAverage' as const, reason: 'Zähler zeigt falsch an', confirmed: true, cause: 'wrongReading' as const, capture: 'heatMeter' as const, valueUnit: 'kWh' as const, users: 0, kept: 0, complete: false, stale: true }
+
+test('N-I1: eine veraltete Schätzung neben vollständiger Ablesung steht sichtbar da, mit „Entfernen“ und „Schätzung neu eintragen“', async () => {
+  const calls = mockFetch()
+  const onChanged = vi.fn()
+  render(<EstimateCard plant={plant} view={view} self={{ ...self, estimates: [...(self.estimates ?? []), staleD] }} onChanged={onChanged} />)
+  const row = screen.getByText(/D, Heizung: Schätzung in kWh passt nicht mehr/)
+  expect(row.closest('details')).toBeNull()
+  expect(screen.getByRole('button', { name: 'Schätzung neu eintragen' })).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Schätzung von D entfernen' }))
+  await waitFor(() => expect(onChanged).toHaveBeenCalled())
+  expect(calls).toEqual([['/api/heating-plants/hp/periods/2025-01/estimates/d/heat', 'DELETE', undefined]])
+})
+
+test('N-I2: die Karte sagt nur bei einem ersetzten gemessenen Teilstück, dass abgelesene Zeiten ersetzt werden', () => {
+  const mit = { ...self, estimates: [{ ...(self.estimates?.[0] ?? staleD), replacesMeasured: true }] }
+  const { container } = render(<EstimateCard plant={plant} view={view} self={mit} onChanged={() => {}} />)
+  expect(screen.getByText(/A, Heizung: geschätzt .*ersetzt auch abgelesene Zeiten/)).toBeTruthy()
+  cleanup()
+  render(<EstimateCard plant={plant} view={view} self={self} onChanged={() => {}} />)
+  expect(screen.queryByText(/ersetzt auch abgelesene Zeiten/)).toBeNull()
+  expect(container).toBeTruthy()
+})
+
+test('N-M3: beim Ablesedienst ohne Werte ist die Einheit eine Pflichtauswahl; mit Werten vorbelegt', async () => {
+  const calls = mockFetch()
+  const dienst = { ...self, serviceValues: [], pots: [{ ...self.pots[0]!, consumptionUnit: 'Einheiten' as const }] }
+  render(<EstimateCard plant={plant} view={view} self={dienst} onChanged={() => {}} />)
+  fireEvent.click(screen.getByRole('button', { name: 'C schätzen' }))
+  const einheit = screen.getByLabelText('Einheit der Schätzung') as HTMLSelectElement
+  expect(einheit.value).toBe('')
+  fireEvent.change(screen.getByLabelText('Begründung'), { target: { value: 'Werte fehlen' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Schätzung speichern' }))
+  expect(screen.getByText(/Einheit/, { selector: '.error' })).toBeTruthy()
+  expect(calls).toEqual([])
+  fireEvent.change(einheit, { target: { value: 'kWh' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Schätzung speichern' }))
+  await waitFor(() => expect(calls.length).toBe(1))
+  expect(JSON.parse(calls[0]?.[2] ?? '{}').valueUnit).toBe('kWh')
+  cleanup()
+  const mitWerten = { ...dienst, serviceValues: [{ plantId: 'hp', period: '2025-01', unitId: 'a', from: '2025-01-01', to: '2025-12-31', heatValue: 12000, waterValue: null, heatUnit: 'kWh' as const }] } as unknown as SelfHeatingStatement
+  render(<EstimateCard plant={plant} view={view} self={mitWerten} onChanged={() => {}} />)
+  fireEvent.click(screen.getByRole('button', { name: 'C schätzen' }))
+  expect((screen.getByLabelText('Einheit der Schätzung') as HTMLSelectElement).value).toBe('kWh')
+})

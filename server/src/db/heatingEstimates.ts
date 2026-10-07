@@ -59,7 +59,21 @@ export async function saveEstimate(db: Database, plantId: string, period: string
   // danach, rechnet die Berechnung die Schätzung nicht mehr, statt den Wert in einer anderen Einheit zu verteilen.
   const capture = captureOf(ctx.plant, key)
   const serviceRows = capture === 'serviceValues' ? lineServiceRows(await readHeatingServiceValues(db), await readHeatingPlants(db), plantId, key) : []
-  const valueUnit = potUnitFor(capture, part === 'heat' ? 'heating' : 'water', serviceRows)
+  // Durchsicht Runde 2, N-M3: Beim Ablesedienst steht die Einheit der Heizung erst mit seinen Werten fest. Ohne Werte
+  // nennt der Vermieter sie (Einheiten oder kWh); mit Werten gilt deren Einheit, eine abweichende Angabe wird abgelehnt.
+  const derived = potUnitFor(capture, part === 'heat' ? 'heating' : 'water', serviceRows)
+  const asked = raw(body, 'valueUnit')
+  let valueUnit = derived
+  if (capture === 'serviceValues' && part === 'heat') {
+    const named = asked === 'kWh' || asked === 'Einheiten' ? asked : undefined
+    if (asked !== undefined && asked !== null && named === undefined) throw new HeatingError(400, 'Die Einheit der Schätzung beim Ablesedienst ist „Einheiten“ oder „kWh“.')
+    if (serviceRows.length === 0) {
+      if (named === undefined) throw new HeatingError(400, 'Der Ablesedienst hat für diese Heizperiode noch keine Werte eingetragen. Bitte wählen Sie, in welcher Einheit die Schätzung steht: in Einheiten oder in kWh, wie der Ablesedienst die Heizung nennt.')
+      valueUnit = named
+    } else if (named !== undefined && named !== derived) {
+      throw new HeatingError(400, `Der Ablesedienst nennt die Heizung in dieser Heizperiode in ${derived}; die Einheit der Schätzung ist deshalb ${derived}.`)
+    }
+  }
   await db.transaction(async (tx) => {
     if (await heatingPeriodClosed(tx, ctx, h)) throw new HeatingError(409, closedText(h))
     const heatingPeriodId = await ensureHeatingPeriod(tx, plantId, h.key)

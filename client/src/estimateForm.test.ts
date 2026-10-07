@@ -89,11 +89,18 @@ describe('Durchsicht von #242', () => {
   it('R-M7: der letzte Satz gilt für jedes Haus, nicht nur für vier gleich große Wohnungen', () => {
     const lines = thresholdLines(pot(200), option(), 25)
     expect(lines.join(' ')).not.toMatch(/vier gleich großen/)
-    expect(lines.join(' ')).toMatch(/Maßgeblich ist der Flächenanteil, nicht die Zahl der Wohnungen: Eine Wohnung mit mehr als 25 % der Fläche überschreitet die Grenze allein, mehrere kleinere können es zusammen/)
+    expect(lines.join(' ')).toMatch(/Eine Wohnung mit mehr als 25 % der Fläche überschreitet die Grenze allein, mehrere kleinere können es zusammen/)
   })
   it('R-I5: die Flächenregel steht als Auslegung da, bei teilweise abgelesener Wohnung mit eigenem Satz', () => {
     expect(thresholdLines(pot(200), option(), 25).join(' ')).toMatch(/ganze Fläche der Wohnung.*Heizung und Warmwasser getrennt.*Auslegung von Mietfuchs/s)
     expect(thresholdLines(pot(200), option({ partlyMeasured: true }), 25).join(' ')).toMatch(/Gezählt wird die ganze Wohnung, obwohl ein Teil der Heizperiode bis zum Mieterwechsel abgelesen ist/)
     expect(thresholdLines(pot(200), option({ partlyMeasured: false }), 25).join(' ')).not.toMatch(/Gezählt wird die ganze Wohnung/)
+  })
+})
+
+describe('Durchsicht von #242 Runde 2', () => {
+  it('N-M4: „nicht die Zahl“ steht nur einmal im Dialog', () => {
+    const text = thresholdLines(pot(200), option(), 25).join(' ')
+    expect(text.match(/nicht (ihre|die) Zahl/g)?.length).toBe(1)
   })
 })

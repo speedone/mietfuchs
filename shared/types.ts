@@ -2014,6 +2014,8 @@ export type SelfEstimateView = {
   plantId: string; unitId: string; unitName: string; part: EstimatePart; value: number; method: EstimateMethod; reason: string; confirmed: boolean
   cause: EstimateCause; capture: CaptureMethod; valueUnit: EstimateValueUnit
   users: number; kept: number; complete: boolean; stale?: boolean
+  // Die Schätzung ersetzt bei einem Nutzer ein gemessenes Teilstück (Durchsicht von #242 Runde 2, N-I2); fehlt in älteren Abrechnungen.
+  replacesMeasured?: boolean
 }
 // Für den Dialog der Seite Heizkosten: je Wohnung und Topf mit Gerät, was fehlt (`why`, null heißt:
 // nichts, eine Schätzung wäre die Markierung „unbrauchbar“; `noValues`: der Ablesedienst hat für die Wohnung

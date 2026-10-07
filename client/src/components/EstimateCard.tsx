@@ -31,14 +31,20 @@ export default function EstimateCard({ plant, view, self, onChanged }: {
   const url = (o: Pick<SelfEstimateOption, 'unitId' | 'part'>) => `/api/heating-plants/${existingOf(o)?.plantId ?? plant.id}/periods/${view.period}/estimates/${o.unitId}/${o.part}`
   const potOf = (o: SelfEstimateOption) => self.pots.find((p) => p.pot === POT_OF[o.part])
 
+  const askUnit = (o: SelfEstimateOption) => self.serviceValues !== undefined && o.part === 'heat'
   function start(o: SelfEstimateOption) {
     setOpen(o)
-    setForm(emptyEstimate(o, existingOf(o)))
+    // Durchsicht Runde 2, N-M3: beim Ablesedienst die Einheit aus seinen Werten, ohne Werte Pflichtauswahl.
+    const service = self.serviceValues
+    const known = service && service.length > 0 ? (service.every((r) => r.heatUnit === 'kWh') ? 'kWh' : 'Einheiten') : ''
+    const existing = existingOf(o)
+    const kept = existing && !existing.stale && (existing.valueUnit === 'kWh' || existing.valueUnit === 'Einheiten') ? existing.valueUnit : ''
+    setForm({ ...emptyEstimate(o, existing), ...(service && o.part === 'heat' ? { valueUnit: known || kept } : {}) })
     setError('')
   }
   async function save() {
     if (!open || !form) return
-    const result = estimateBody(form, open.part)
+    const result = estimateBody(form, open.part, askUnit(open))
     if ('error' in result) return setError(result.error)
     try {
       await api(url(open), { method: 'PUT', body: JSON.stringify(result.body) })
@@ -62,16 +68,18 @@ export default function EstimateCard({ plant, view, self, onChanged }: {
     }
   }
 
-  const needs = options.filter((o) => o.why !== null || o.estimated)
-  const others = options.filter((o) => o.why === null && !o.estimated)
+  // Durchsicht Runde 2, N-I1: eine veraltete Schätzung steht immer sichtbar da, auch neben vollständiger Ablesung.
+  const needs = options.filter((o) => o.why !== null || o.estimated || existingOf(o)?.stale === true)
+  const others = options.filter((o) => !needs.includes(o))
   const pot = open ? potOf(open) : undefined
   const proposal = open && form ? open.proposals.find((p) => p.method === form.method) : undefined
   // Durchsicht von #242, R-M3: die Einheit des Felds; Heizkostenverteiler in bewerteten Einheiten.
   const unitOf = (o: SelfEstimateOption) => potOf(o)?.consumptionUnit ?? ''
   const fieldUnit = (o: SelfEstimateOption) => {
+    // Beim Ablesedienst die gewählte Einheit (Durchsicht Runde 2, N-M3).
+    if (askUnit(o)) return form?.valueUnit ? `${form.valueUnit}, wie der Ablesedienst die Heizung nennt` : 'der gewählten Einheit des Ablesedienstes'
     const u = unitOf(o)
-    if (u !== 'Einheiten') return u
-    return self.serviceValues ? 'Einheiten, wie der Ablesedienst sie nennt' : 'bewerteten Einheiten (Ablesewert × Bewertungsfaktor)'
+    return u === 'Einheiten' ? 'bewerteten Einheiten (Ablesewert × Bewertungsfaktor)' : u
   }
   return (
     <div className="card">
@@ -93,7 +101,7 @@ export default function EstimateCard({ plant, view, self, onChanged }: {
               {o.unitName}, {POT_TEXT[o.part]}: {e?.stale
                 ? `Schätzung in ${e.valueUnit} passt nicht mehr zur Erfassung dieser Heizperiode und wird nicht gerechnet; bitte neu eintragen.`
                 : e
-                  ? `geschätzt ${num(e.value)} ${unit} (${e.confirmed ? 'bestätigt' : 'nicht bestätigt'}; Begründung: „${e.reason}“)`
+                  ? `geschätzt ${num(e.value)} ${unit} (${e.confirmed ? 'bestätigt' : 'nicht bestätigt'}; Begründung: „${e.reason}“)${e.replacesMeasured ? '; ersetzt auch abgelesene Zeiten' : ''}`
                   : `${o.why ? WHY_TEXT[o.why] : ''}${o.boundary ? ` zum ${fmtDate(o.boundary)}` : ''}`}
             </span>
             {!view.closed && (e?.stale
@@ -143,6 +151,15 @@ export default function EstimateCard({ plant, view, self, onChanged }: {
           <label className="field">Geschätzter Verbrauch{pot ? ` in ${fieldUnit(open)}` : ''} für die ganze Heizperiode der Wohnung
             <input inputMode="decimal" value={form.value} onChange={(ev) => setForm({ ...form, value: ev.target.value })} />
           </label>
+          {askUnit(open) && (
+            <label className="field">Einheit der Schätzung
+              <select value={form.valueUnit ?? ''} onChange={(ev) => setForm({ ...form, valueUnit: ev.target.value as '' | 'kWh' | 'Einheiten' })}>
+                <option value="">— bitte wählen —</option>
+                <option value="Einheiten">Einheiten</option>
+                <option value="kWh">kWh</option>
+              </select>
+            </label>
+          )}
           {/* Durchsicht von #242, R-I1: der Grund des § 9a Abs. 1 Satz 1 als Auswahl. */}
           <label className="field">Grund nach § 9a Abs. 1
             <select value={form.cause} onChange={(ev) => setForm({ ...form, cause: ev.target.value as EstimateCause })}>

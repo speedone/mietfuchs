@@ -116,6 +116,8 @@ export type SelfUnitPlan = {
   estimateComplete: Record<SelfPot, boolean>
   // Grenzen mit zwei verschiedenen Ständen am selben Tag, die eine Schätzung deckt (Durchsicht von #242, G-M7).
   sameDayCovered: Record<SelfPot, string[]>
+  // Die Schätzung ersetzt ein gemessenes Teilstück eines Nutzers (Durchsicht von #242 Runde 2, N-I2).
+  replacesMeasured: Record<SelfPot, boolean>
 }
 export type SelfProblem =
   | { kind: 'noArea'; pot: SelfPot }
@@ -411,6 +413,7 @@ export function planSelf(input: SelfInput): SelfPlan {
     }
 
     const estimateComplete: Record<SelfPot, boolean> = { heating: false, water: false }
+    const replacesMeasured: Record<SelfPot, boolean> = { heating: false, water: false }
     for (const p of pots) {
       const meters = metersOf(unit.id, p)
       const estimated = estimateOf(unit.id, p)
@@ -501,6 +504,10 @@ export function planSelf(input: SelfInput): SelfPlan {
       estimateComplete[p] = complete
       if (!complete) for (const { g, m } of results) if (m !== null) keep(g, m)
       const takers = complete ? users : results.filter((x) => x.m === null).flatMap((x) => x.g)
+      // Durchsicht von #242 Runde 2, N-I2: Ersetzt die Schätzung bei einem Nutzer ein gemessenes Teilstück (zwei Stände
+      // desselben Geräts mit Abstand in seinem Zeitraum)? Ein bloßer Anfangsstand ist kein abgelesener Zeitraum.
+      replacesMeasured[p] = !complete && takers.some((u) => meters.some((m) => new Set((sortedOf.get(m.id) ?? [])
+        .map((r) => r.date).filter((d) => d >= dayBefore(u.from) && d <= u.to)).size >= 2))
       const splitAll = users.reduce((a, u) => a + splitOf(p, u), 0)
       const part = splitAll > 0 ? (estimated * takers.reduce((a, u) => a + splitOf(p, u), 0)) / splitAll : 0
       consumption[p] += part
@@ -547,7 +554,7 @@ export function planSelf(input: SelfInput): SelfPlan {
       pots.includes(p) && !estimatedPots[p] && metersOf(unit.id, p).length > 0 &&
       !problems.some((x) => x.kind === 'missing' && x.unitId === unit.id && x.pot === p),
     ])) as Record<SelfPot, boolean>
-    return { unit, heatArea: heatAreaOf(unit), users, boundaries: bounds, readings, consumption, measured, estimated: estimatedPots, captured, estimateComplete, sameDayCovered }
+    return { unit, heatArea: heatAreaOf(unit), users, boundaries: bounds, readings, consumption, measured, estimated: estimatedPots, captured, estimateComplete, sameDayCovered, replacesMeasured }
   })
 
   // Summe des Verbrauchs je Topf, dann die Bruchteile.

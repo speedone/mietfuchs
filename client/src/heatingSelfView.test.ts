@@ -182,9 +182,14 @@ describe('Durchsicht von #242: Ausweis mit Schätzung', () => {
     // Teilung nach Tagen bzw. Warmwasser nach Tagen.
     expect(estimateLines({ ...self, changeSplit: 'time' as const }, 'c', { heatingEstimated: true, heatingConsumption: 4320 })[0]).toMatch(/360 ‰ der Tage/)
   })
-  it('G-M6: ein einzelner Nutzer erfährt, dass die Schätzung die ganze Heizperiode ersetzt', () => {
-    const self = { pots: [heat], changeSplit: 'degreeDays' as const, estimates: [est({ kept: 0 })] }
-    expect(estimateLines(self, 'c', { heatingEstimated: true, heatingConsumption: 12000 })[0]).toMatch(/ganze Heizperiode der Wohnung\. Sie gilt auch für Zeiten, für die Ablesungen vorliegen\.$/)
+  // Durchsicht Runde 2, N-I2: nur bei einem ersetzten gemessenen Teilstück, nicht bei bloßem Anfangsstand oder Ablesedienst ohne Werte.
+  it('G-M6/N-I2: der Satz zu abgelesenen Zeiten nur, wenn ein gemessenes Teilstück ersetzt wird', () => {
+    const mit = { pots: [heat], changeSplit: 'degreeDays' as const, estimates: [est({ kept: 0, replacesMeasured: true })] }
+    expect(estimateLines(mit, 'c', { heatingEstimated: true, heatingConsumption: 12000 })[0]).toMatch(/ganze Heizperiode der Wohnung\. Sie gilt auch für Zeiten, für die Ablesungen vorliegen\.$/)
+    const ohne = { pots: [heat], changeSplit: 'degreeDays' as const, estimates: [est({ kept: 0, replacesMeasured: false })] }
+    expect(estimateLines(ohne, 'c', { heatingEstimated: true, heatingConsumption: 12000 })[0]).not.toMatch(/Ablesungen vorliegen/)
+    const dienst = { pots: [heat], changeSplit: 'degreeDays' as const, estimates: [est({ kept: 0, cause: 'otherReason', reason: 'Werte fehlen' })] }
+    expect(estimateLines(dienst, 'c', { heatingEstimated: true, heatingConsumption: 12000 })[0]).not.toMatch(/Ablesungen vorliegen/)
   })
   it('R-M8: über der Grenze ist der Verbrauch für die Verteilung nicht maßgeblich', () => {
     const over = { ...heat, overThreshold: true, consumptionPct: 0 }

@@ -189,7 +189,8 @@ test('Schätzung nur bei eigener Abrechnung, nur mit Gerät, nur an angeschlosse
 test('Werte eines Ablesedienstes: Mietfuchs kennt die Geräte nicht und prüft keins', async () => {
   await withDatabase(async (opened) => {
     await eigeneAbrechnung(opened, { capture: 'serviceValues' })
-    const e = await opened.write((db) => saveEstimate(db, 'hp', '2025-01', 'c', 'heat', GUT))
+    // Ohne Werte des Ablesedienstes nennt der Vermieter die Einheit (Durchsicht von #242 Runde 2, N-M3).
+    const e = await opened.write((db) => saveEstimate(db, 'hp', '2025-01', 'c', 'heat', { ...GUT, valueUnit: 'Einheiten' }))
     assert.equal(e?.unitId, 'c')
   })
 })

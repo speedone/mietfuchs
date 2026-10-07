@@ -143,7 +143,7 @@ test('G-I1 (Probe P1, Datenweg): die Schätzung merkt sich Erfassung und Einheit
     // Gespeichert bleibt sie, wie sie war; die Berechnung rechnet sie nicht mehr (Test oben).
     const stock = await opened.read(readStock)
     assert.deepEqual(stock.heatingEstimates.map((e) => [e.part, e.capture, e.valueUnit, e.value]), [['heat', 'heatMeter', 'kWh', 12000], ['water', 'heatMeter', 'm³', 30]])
-    // Dieselbe Erfassung noch einmal: nichts zu melden.
+    // Dieselbe Erfassung noch einmal: Die Schätzung passt weiter nicht und wird weiter genannt (Durchsicht Runde 2, N-M4).
     const again = await opened.write((db) => setUpSelf(db, 'hp', { ...SETUP, capture: 'hca' }, '2026-02-01', newId))
     assert.match(again?.estimatesNotice ?? '', /„C“/)
   })
@@ -191,7 +191,7 @@ test('G-I3 (Probe P9): eine Wohnung mit Schätzung oder Werten des Ablesedienste
   await withDatabase(async (opened, dataDir) => {
     await haus(opened, { period: '2025-01', heatConsumptionPct: 70, insulationRule: 'notApplies', hotWater: 'none', capture: 'serviceValues', dhwHeatMeter: false, totalHeatMeter: false })
     await opened.write(async (db) => {
-      await saveEstimate(db, 'hp', '2025-01', 'c', 'heat', { ...GUT, reason: 'Werte fehlen', cause: 'otherReason' })
+      await saveEstimate(db, 'hp', '2025-01', 'c', 'heat', { ...GUT, reason: 'Werte fehlen', cause: 'otherReason', valueUnit: 'Einheiten' })
       await saveServiceValues(db, 'hp', '2025-01', { values: [{ unitId: 'b', from: '2025-01-01', to: '2025-12-31', heatValue: 900, heatUnit: 'units' }] })
       await createProperty(db, 'objekt-2', { name: 'Nebenhaus' })
       await db.delete(tenancies)
@@ -239,9 +239,25 @@ test('G-M5: nach einem Kesseltausch steht jeder Hinweis zur Schätzung einmal je
   assert.equal(s.notices.filter((n) => n.code === 'heating.estimate-over-25').length, 1, codes(s).join(', '))
 })
 
-test('G-M6: die Schätzung der ganzen Heizperiode sagt, dass sie auch abgelesene Zeiten desselben Nutzers ersetzt', () => {
-  const s = run({ tenancies: [selfTenancy('A', 'a', '2020-01-01', null), selfTenancy('B', 'b', '2020-01-01', null), selfTenancy('C1', 'c', '2020-01-01', null)], readings: OHNE_ENDE_C.filter((r) => !(r.meterId === 'wz-c' && r.date === '2025-09-30')), estimates: [estimate()] })
-  assert.match(noticeOf(s, 'heating.estimated').text, /ganze Heizperiode.*auch.*abgelesen/s)
+// Durchsicht Runde 2, N-I2: Der Satz steht nur, wenn im Zeitraum des Nutzers wirklich ein gemessenes Teilstück
+// ersetzt wird (zwei Stände desselben Geräts mit Abstand), nicht bei einem bloßen Anfangsstand.
+test('G-M6/N-I2: die Schätzung sagt nur dann, dass sie abgelesene Zeiten ersetzt, wenn es ein gemessenes Teilstück gibt', () => {
+  const allein = [selfTenancy('A', 'a', '2020-01-01', null), selfTenancy('B', 'b', '2020-01-01', null), selfTenancy('C1', 'c', '2020-01-01', null)]
+  const nurAnfang = OHNE_ENDE_C.filter((r) => !(r.meterId === 'wz-c' && r.date === '2025-09-30'))
+  const standard = run({ tenancies: allein, readings: nurAnfang, estimates: [estimate()] })
+  assert.doesNotMatch(noticeOf(standard, 'heating.estimated').text, /abgelesen sind/)
+  assert.equal(selfOf(standard).estimates?.[0]?.replacesMeasured, false)
+  // Neues Gerät ab 15.01. mit zwei Ständen, Anfangsstand fehlt: Das Teilstück 15.01.–30.06. ist gemessen und wird ersetzt.
+  const teil = OHNE_ENDE_C.filter((r) => r.meterId !== 'wz-c').concat([selfReading('wz-c', '2025-01-15', 0), selfReading('wz-c', '2025-06-30', 4000)])
+  const echt = run({ tenancies: allein, readings: teil, estimates: [estimate()] })
+  assert.match(noticeOf(echt, 'heating.estimated').text, /ersetzt den Verbrauch der ganzen Heizperiode, auch für Zeiten, die abgelesen sind/)
+  assert.equal(selfOf(echt).estimates?.[0]?.replacesMeasured, true)
+  // Ablesedienst ohne Werte: nichts abgelesen.
+  const capture: CaptureMethod = 'serviceValues'
+  const sv = (unitId: string, heatValue: number) => ({ plantId: 'hp', period: periodKey('2025-01'), unitId, from: '2025-01-01', to: '2025-12-31', heatValue, waterValue: null, heatUnit: 'units' as const })
+  const dienst = run({ tenancies: allein, plant: { capture, selfSpans: [{ from: periodKey('2025-01'), until: null, capture, hotWater: 'none' }], hotWater: 'none' }, serviceValues: [sv('a', 900), sv('b', 1200)], meters: [], readings: [], estimates: [estimate({ capture, valueUnit: 'Einheiten', value: 900 })] })
+  assert.doesNotMatch(noticeOf(dienst, 'heating.estimated').text, /abgelesen sind/)
+  assert.equal(selfOf(dienst).estimates?.[0]?.replacesMeasured, false)
 })
 
 test('G-M7 (Probe P5): zwei Stände am selben Tag beim Wechsel und eine Schätzung: keine Rede von widerspruchsfreien Ablesungen', () => {
@@ -429,3 +445,65 @@ test('X20: knapp über der Grenze (50 von 199 m², 25,13 %) geht der Topf nach F
   assert.deepEqual([heat.overThreshold, heat.consumptionPct], [true, 0])
   assert.match(noticeOf(s, 'heating.estimate-over-25').text, /50 von 199 m² \(25,125628 %\)/)
 })
+
+// ---------- Durchsicht Runde 2 (N-I1, N-M1, N-M2, N-M3) ----------
+
+test('N-I1: eine veraltete Schätzung neben vollständiger Ablesung ist eine Warnung, gerechnet wird mit den Ablesungen', () => {
+  const mitEnde = (est: HeatingEstimate[]) => {
+    const o = hkvFall(est)
+    return { ...o, readings: [...(o.readings ?? []), selfReading('hk-c', '2025-12-31', 1100)] }
+  }
+  const s = run(mitEnde([estimate({ value: 12000, cause: 'wrongReading' })]))
+  assert.ok(!codes(s).includes('heating.estimate-stale'), codes(s).join(', '))
+  const n = noticeOf(s, 'heating.estimate-stale-unused')
+  assert.equal(n.level, 'warning')
+  assert.match(n.text, /wird nicht verwendet, gerechnet wird mit den Ablesungen von C.*„Entfernen“.*„Schätzung neu eintragen“/s)
+  assert.doesNotMatch(n.text, /gilt als nicht erfasst/)
+  // Geld wie ganz ohne Schätzung.
+  const ohne = run(mitEnde([]))
+  assert.deepEqual(s.statements.map((st) => [st.tenancyId, st.totalShareCents]), ohne.statements.map((st) => [st.tenancyId, st.totalShareCents]))
+  // Ohne verwertbare Ablesung bleibt es ein Fehler (Test G-I1 oben).
+  assert.equal(noticeOf(run(hkvFall([estimate()])), 'heating.estimate-stale').level, 'error')
+})
+
+test('N-M1: die Warmwasser-Schätzung bleibt beim Wechsel Wärmezähler ↔ Heizkostenverteiler gültig, beim Wechsel zum Ablesedienst nicht', () => {
+  const ohneWwC = (o: SelfSnapshotOptions) => ({ ...o, readings: (o.readings ?? []).filter((r) => !(r.meterId === 'xw-c' && r.date === '2025-12-31')) })
+  const hkv = run(ohneWwC(hkvFall([estimate({ part: 'water', value: 50, capture: 'heatMeter', valueUnit: 'm³' })])))
+  assert.ok(!codes(hkv).some((c) => c.startsWith('heating.estimate-stale')), codes(hkv).join(', '))
+  assert.ok(usersOfC(hkv).some((u) => u.waterEstimated === true))
+  const capture: CaptureMethod = 'serviceValues'
+  const sv = (unitId: string) => ({ plantId: 'hp', period: periodKey('2025-01'), unitId, from: '2025-01-01', to: '2025-12-31', heatValue: 900, waterValue: 30, heatUnit: 'units' as const })
+  const dienst = run({ plant: { capture, selfSpans: [{ from: periodKey('2025-01'), until: null, capture, hotWater: 'combined' }] }, serviceValues: [sv('a'), sv('b')], meters: [selfMeter('ww', null, 'Speicher', 'waerme', { heatingPlantId: 'hp', heatingRole: 'dhwHeat' })], readings: [selfReading('ww', '2024-12-31', 0), selfReading('ww', '2025-12-31', 9000)], estimates: [estimate({ part: 'water', value: 50, capture: 'heatMeter', valueUnit: 'm³' })] })
+  assert.ok(codes(dienst).includes('heating.estimate-stale'), codes(dienst).join(', '))
+})
+
+test('N-M2: stehen in der Linie zwei Schätzungen derselben Wohnung, hat jede ihre Hinweise', () => {
+  const s = computeSettlement(kesseltausch([estimate({ value: 12000 }), estimate({ plantId: 'hp2', value: 6000, confirmed: false })]))
+  assert.ok(s.notices.some((n) => n.code === 'heating.estimated' && /12\.000 kWh/.test(n.text)), codes(s).join(', '))
+  assert.ok(s.notices.some((n) => n.code === 'heating.estimate-unconfirmed' && /6\.000 kWh/.test(n.text)), codes(s).join(', '))
+  // Dieselbe Schätzung an beiden Anlagen bleibt einmal (G-M5).
+  assert.equal(computeSettlement(kesseltausch([estimate()])).notices.filter((n) => n.code === 'heating.estimated').length, 1)
+})
+
+test('N-M3: beim Ablesedienst ohne Werte ist die Einheit der Schätzung Pflicht; mit Werten kommt sie von dort', async () => {
+  await withDatabase(async (opened) => {
+    await haus(opened, { period: '2025-01', heatConsumptionPct: 70, insulationRule: 'notApplies', hotWater: 'none', capture: 'serviceValues', dhwHeatMeter: false, totalHeatMeter: false })
+    const status = (e: unknown) => e instanceof Error && Reflect.get(e, 'status') === 400 && /Einheit/.test(e.message)
+    await assert.rejects(opened.write((db) => saveEstimate(db, 'hp', '2025-01', 'c', 'heat', { ...GUT, cause: 'otherReason' })), status)
+    const e = await opened.write((db) => saveEstimate(db, 'hp', '2025-01', 'c', 'heat', { ...GUT, cause: 'otherReason', valueUnit: 'kWh' }))
+    assert.equal(e?.valueUnit, 'kWh')
+    await assert.rejects(opened.write((db) => saveEstimate(db, 'hp', '2025-01', 'c', 'heat', { ...GUT, cause: 'otherReason', valueUnit: 'm³' })), status)
+    // Mit Werten in Einheiten gilt deren Einheit, ohne Angabe.
+    await opened.write((db) => saveServiceValues(db, 'hp', '2025-01', { values: [{ unitId: 'a', from: '2025-01-01', to: '2025-12-31', heatValue: 900, heatUnit: 'units' }] }))
+    const b = await opened.write((db) => saveEstimate(db, 'hp', '2025-01', 'b', 'heat', { ...GUT, cause: 'otherReason' }))
+    assert.equal(b?.valueUnit, 'Einheiten')
+    // Die Schätzung von C in kWh passt danach nicht mehr; ohne Werte für C ist das ein Fehler (N-I1).
+    const stock = await opened.read(readStock)
+    const p = (await import('../../shared/period.ts'))
+    const { snapshotFor } = await import('../src/snapshot.ts')
+    const period = p.periodOfKey(p.CALENDAR_RULES, periodKey('2025-01')) ?? assert.fail('kein Zeitraum')
+    const s = computeSettlement(snapshotFor(stock, 'objekt-1', period))
+    assert.match(noticeOf(s, 'heating.estimate-stale').text, /von C .*in kWh eingetragen.*in Einheiten erfasst/s)
+  })
+})
+

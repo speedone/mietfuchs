@@ -391,6 +391,8 @@ const noticeKinds = {
   'heating.estimate-complete': { level: 'hint', title: 'Schätzung ersetzt vollständige Ablesung', rule: 'heating-estimate', terms: ['heatingEstimate'] },
   // Durchsicht von #242: G-I1, G-M1, G-M2, G-M7.
   'heating.estimate-stale': { level: 'error', title: 'Schätzung passt nicht zur Erfassung', rule: 'heating-estimate', terms: ['heatingEstimate'] },
+  // Durchsicht Runde 2, N-I1: dieselbe Lage neben vollständiger Ablesung; es gilt die Ablesung.
+  'heating.estimate-stale-unused': { level: 'warning', title: 'Veraltete Schätzung nicht verwendet', rule: 'heating-estimate', terms: ['heatingEstimate'] },
   'heating.estimate-no-device': { level: 'warning', title: 'Schätzung ohne Gerät', rule: 'heating-estimate', terms: ['heatingEstimate'] },
   'heating.estimate-below-measured': { level: 'hint', title: 'Schätzung unter dem abgelesenen Verbrauch', rule: 'heating-estimate', terms: ['heatingEstimate'] },
   'heating.estimate-same-day': { level: 'warning', title: 'Schätzung neben zwei Ständen am selben Tag', rule: 'heating-estimate', terms: ['heatingEstimate'] },
@@ -2901,7 +2903,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       const names = snapshot.meters.filter((m) => m.unitId === p.unitId && m.type === otherType && (m.heatingPlantId ?? null) === null).map((m) => `„${m.name || 'ohne Namen'}“`)
       return ` An ${p.unitName} hängt in dieser Heizperiode außerdem ${names.length > 1 ? 'die' : 'der'} ${otherType === 'hkv' ? 'Heizkostenverteiler' : 'Wärmezähler'} ${andList(names)}: Das Gerät wurde gewechselt (siehe den Hinweis zu den Geräten).`
     }
-    // § 9a (Heizung PR 13): Lässt sich ein Wert nicht mehr ablesen, wird geschätzt; nicht bei einer Wohnung ohne
+    // § 9a (Heizung PR 13): Kann der Verbrauch nicht ordnungsgemäß erfasst werden, wird geschätzt; nicht bei einer Wohnung ohne
     // Gerät (Ausstattungspflicht, Abweichung 4 des Plans) und nicht bei zwei Ständen am selben Tag (welcher
     // stimmt, weiß nur der Vermieter). Beim Ablesedienst kennt Mietfuchs keine Geräte; fehlen dort die Werte
     // einer Wohnung, nennt die Meldung die Schätzung ebenfalls.
@@ -3177,6 +3179,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           users: stale ? 0 : u?.users.filter((x) => x.pots[pot].estimated === true).length ?? 0,
           kept: stale ? 0 : u?.users.filter((x) => x.pots[pot].estimated !== true && x.pots[pot].value !== null).length ?? 0,
           complete: stale ? false : u?.estimateComplete[pot] ?? false,
+          replacesMeasured: stale ? false : u?.replacesMeasured[pot] ?? false,
           ...(stale ? { stale: true } : {}),
         }
       }),
@@ -4994,19 +4997,28 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const potWord = (pot: SelfPot) => (pot === 'heating' ? 'für die Heizung' : 'für das Warmwasser')
     // Durchsicht von #242, G-I1: unter einer anderen Erfassung oder Einheit eingetragen; gerechnet wird sie nicht.
     for (const e of sp.staleEstimates) {
-      if (!firstInLine(`${root}|stale|${e.unitId}|${e.part}`)) continue
+      if (!firstInLine(`${root}|stale|${e.plantId}|${e.unitId}|${e.part}`)) continue
       const pot = POT_OF_PART[e.part]
       const name = snapshot.units.find((u) => u.id === e.unitId)?.name ?? e.unitId
-      warn('heating.estimate-stale',
-        `${where}: Die Schätzung nach § 9a ${potWord(pot)} von ${name} wurde bei Erfassung ${CAPTURE_TEXT[e.capture]} in ${e.valueUnit} eingetragen; diese Heizperiode wird jetzt ${CAPTURE_TEXT[sp.capture]} in ${potUnitOf(sp, pot)} erfasst. ` +
-          `Mietfuchs rechnet die Schätzung deshalb nicht, und ${name} gilt als nicht erfasst. Wählen Sie auf der Seite Heizkosten unter „Schätzung (§ 9a)“ bei ${name} „Schätzung neu eintragen“.`,
-        subject)
+      const head = `${where}: Die Schätzung nach § 9a ${potWord(pot)} von ${name} wurde bei Erfassung ${CAPTURE_TEXT[e.capture]} in ${e.valueUnit} eingetragen; diese Heizperiode wird jetzt ${CAPTURE_TEXT[sp.capture]} in ${potUnitOf(sp, pot)} erfasst. `
+      // Durchsicht Runde 2, N-I1: Ist die Wohnung ohne die Schätzung erfasst, gilt die Ablesung (Warnung); sonst ist
+      // sie nicht erfasst (Fehler). Die Karte zeigt die veraltete Schätzung in beiden Fällen mit beiden Knöpfen.
+      if (sp.plan.units.find((u) => u.unit.id === e.unitId)?.captured[pot]) {
+        warn('heating.estimate-stale-unused',
+          `${head}Sie wird nicht verwendet, gerechnet wird mit den Ablesungen von ${name}. Sie können die Schätzung auf der Seite Heizkosten unter „Schätzung (§ 9a)“ bei ${name} mit „Entfernen“ entfernen, oder mit „Schätzung neu eintragen“ neu eintragen, wenn das Gerät falsch anzeigt.`,
+          subject)
+      } else {
+        warn('heating.estimate-stale',
+          `${head}Mietfuchs rechnet die Schätzung deshalb nicht, und ${name} gilt als nicht erfasst. Wählen Sie auf der Seite Heizkosten unter „Schätzung (§ 9a)“ bei ${name} „Schätzung neu eintragen“.`,
+          subject)
+      }
     }
     for (const e of sp.estimates) {
       const pot = POT_OF_PART[e.part]
       const unit = sp.plan.units.find((u) => u.unit.id === e.unitId)
       if (!unit) continue
-      const line = (code: string) => firstInLine(`${root}|${code}|${e.unitId}|${e.part}`)
+      // Je Schätzung, nicht je Wohnung (Durchsicht Runde 2, N-M2): Stehen in der Linie zwei, hat jede ihre Hinweise.
+      const line = (code: string) => firstInLine(`${root}|${code}|${e.plantId}|${e.unitId}|${e.part}`)
       const unitOfPot = potUnitOf(sp, pot)
       const name = unit.unit.name
       const why = `${CAUSE_TEXT[e.cause]}; Begründung: „${e.reason}“`
@@ -5029,7 +5041,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           ? ` Auf ${andList(takers.map(userName))} ist der geschätzte Verbrauch nach ${timeWord} geteilt wie nach § 9b Abs. 3 HeizkostenV; die Verordnung regelt nicht, wie ein für die Wohnung geschätzter Verbrauch auf mehrere Nutzer geht, und Mietfuchs nimmt dafür ihre einzige Teilungsregel (Festlegung von Mietfuchs).`
           : '')
       // Durchsicht von #242, G-M6: Ohne behaltenen Wert ersetzt die Schätzung auch abgelesene Zeiten desselben Nutzers.
-      const whole = kept.length === 0 && !unit.estimateComplete[pot] && unit.readings.some((r) => r.pot === pot && r.date !== null)
+      const whole = unit.replacesMeasured[pot]
         ? ' Die Schätzung ersetzt den Verbrauch der ganzen Heizperiode, auch für Zeiten, die abgelesen sind; § 9a ermittelt den Verbrauch des Abrechnungszeitraums.'
         : ''
       // Durchsicht von #242, G-M1: Das Gerät ist inzwischen gelöscht. Die Schätzung zählt weiter (der Ausfall ist ihr Grund).

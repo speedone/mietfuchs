@@ -153,7 +153,7 @@ export function estimateLines(
       ? ` Für die Zeit vor Ihrem Einzug liegt eine gültige Ablesung vor; sie gilt dort weiter.${shareText}`
       : e.users > 1
         ? ` Er ist auf die Nutzer der Wohnung geteilt wie nach § 9b Abs. 3 HeizkostenV.${shareText}`
-        : e.complete ? '' : ' Sie gilt auch für Zeiten, für die Ablesungen vorliegen.'
+        : e.replacesMeasured ? ' Sie gilt auch für Zeiten, für die Ablesungen vorliegen.' : ''
     const notUsed = pot?.overThreshold ? ' Für die Verteilung ist der Verbrauch nicht maßgeblich: Die geschätzte Fläche des Hauses überschreitet die Grenze des § 9a Abs. 2 HeizkostenV, verteilt wird nur nach Fläche.' : ''
     return `${e.part === 'heat' ? 'Heizung' : 'Warmwasser'}: Der Verbrauch Ihrer Wohnung konnte nicht ordnungsgemäß erfasst werden (${what}) und ist nach § 9a HeizkostenV ermittelt, nach ${METHOD_TEXT[e.method]}: ${num(e.value)} ${unit} für die ganze Heizperiode der Wohnung.${split}${notUsed}`
   })

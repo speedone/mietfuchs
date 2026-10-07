@@ -1333,21 +1333,26 @@ lässt die Wahl nur für künftige Zeiträume zu. Der Anteil gehört zur **Linie
   Tabelle `heating_estimates` (Heizperiode, Wohnung, Topf `heat`/`water`, Wert, Weg, Grund aus der Auswahl,
   Begründung Pflicht, Bestätigung, **Erfassung und Einheit beim Speichern**; Migration 0033). Passen Erfassung
   oder Einheit nicht mehr zur Heizperiode (`estimateFits` in hca.ts; beim Warmwasser zählt nur eigene Zähler oder
-  Ablesedienst), rechnet die Schätzung nicht, die Wohnung gilt als nicht erfasst, und `heating.estimate-stale`
-  (Stufe `error`) führt zu „Schätzung neu eintragen“; `setUpSelf` nennt solche Schätzungen in
-  `estimatesNotice` (Durchsicht von #242, G-I1). Eine Schätzung gilt für die ganze Heizperiode der Wohnung in der Einheit der
+  Ablesedienst), rechnet die Schätzung nicht: Ohne verwertbare Ablesung gilt die Wohnung als nicht erfasst
+  (`heating.estimate-stale`, Stufe `error`), neben vollständiger Ablesung gilt die Ablesung
+  (`heating.estimate-stale-unused`, Warnung, Runde 2 N-I1); die Karte zeigt eine veraltete Schätzung immer
+  sichtbar mit „Entfernen“ und „Schätzung neu eintragen“. `setUpSelf` nennt solche Schätzungen in
+  `estimatesNotice` (Durchsicht von #242, G-I1). Beim Ablesedienst ohne Werte wählt der Vermieter die Einheit
+  der Schätzung (Einheiten oder kWh), mit Werten gilt deren Einheit (N-M3). Eine Schätzung gilt für die ganze Heizperiode der Wohnung in der Einheit der
   Erfassung (beim Heizkostenverteiler bewertete Einheiten, ohne Faktor) und tritt in `planSelf` **nur an die
   Stelle des nicht erfassten Verbrauchs**: Ein Nutzer mit gültigen Ablesungen, etwa der
   Vormieter bis zur Zwischenablesung, behält seinen Messwert, denn § 9a Abs. 1 Satz 1 erfasst nur den Verbrauch
   von Nutzern, der nicht ordnungsgemäß erfasst werden kann (Durchsicht von #242, R-I4); die übrigen tragen
   zusammen ihren Anteil nach Gradtagen bzw. Tagen und teilen ihn wie nach § 9b Abs. 3 (Festlegung). Ohne
-  behaltenen Wert ersetzt die Schätzung auch abgelesene Zeiten desselben Nutzers; Hinweis und Druck sagen das
-  (G-M6). Sind alle Ablesungen vollständig, ersetzt die Schätzung alles (Markierung „unbrauchbar“):
+  behaltenen Wert ersetzt die Schätzung auch abgelesene Zeiten desselben Nutzers; Hinweis, Karte und Druck sagen
+  das nur, wenn wirklich ein gemessenes Teilstück ersetzt wird (zwei Stände desselben Geräts im Zeitraum des
+  Nutzers, `replacesMeasured`; G-M6, Runde 2 N-I2). Sind alle Ablesungen vollständig, ersetzt die Schätzung alles (Markierung „unbrauchbar“):
   `heating.estimate-complete` ist dann ein Hinweis, der nicht färbt, unbestätigt eine Warnung
   (`heating.estimate-unconfirmed`, R-I7); deckt die Schätzung zwei Stände am selben Tag, warnt
   `heating.estimate-same-day` (G-M7). Weitere Hinweise: `heating.estimate-no-device` (Gerät danach gelöscht,
   die Schätzung zählt weiter), `heating.estimate-below-measured` (Schätzung unter dem abgelesenen Teil des
-  Vormieters). Nach einem Kesseltausch steht jeder Hinweis einmal je Linie; abgeschlossen wird weiter je Anlage. Mit Schätzung sind ein fehlender Stand, ein Zählerwechsel ohne Endstand, negativer
+  Vormieters). Nach einem Kesseltausch steht jeder Hinweis einmal je Linie und Schätzung (zwei Schätzungen derselben
+  Wohnung an beiden Anlagen haben je ihre Hinweise, N-M2); abgeschlossen wird weiter je Anlage. Mit Schätzung sind ein fehlender Stand, ein Zählerwechsel ohne Endstand, negativer
   Verbrauch und zwei Stände am selben Tag gedeckt; die Geräte einer geschätzten Wohnung lösen keine Hinweise zu
   fehlenden Zwischenablesungen aus (`liveMetersOf`), stehen aber weiter im Ausweis. Begrenzt eine Ablesung ihres
   Geräts einen behaltenen Messwert, fragt Mietfuchs bei einer fernen Zwischenablesung wie ohne Schätzung

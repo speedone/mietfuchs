@@ -31,7 +31,8 @@ export const NO_PROPOSAL_TEXT: Record<Exclude<SelfEstimateOption['proposals'][nu
   noMeasured: 'Keine andere Wohnung hat in dieser Heizperiode einen vollständig abgelesenen Verbrauch.',
 }
 
-export type EstimateForm = { method: EstimateMethod; comparableUnitId: string; value: string; reason: string; confirmed: boolean; cause: EstimateCause }
+// `valueUnit` (Durchsicht Runde 2, N-M3): nur beim Ablesedienst, die Einheit der Schätzung der Heizung; leer heißt nicht gewählt.
+export type EstimateForm = { method: EstimateMethod; comparableUnitId: string; value: string; reason: string; confirmed: boolean; cause: EstimateCause; valueUnit?: '' | 'kWh' | 'Einheiten' }
 
 // Eine Zahl in deutscher („12.000“, „12.000,5“) oder technischer Schreibweise („12000.5“), wie überall
 // (`parseNumberDe`). Ein Punkt vor genau drei Ziffern ist ein Tausenderpunkt.
@@ -80,7 +81,7 @@ export function thresholdLines(pot: Pick<SelfPotView, 'pot' | 'areaM2' | 'estima
     `Maßgeblich ist die Fläche der Wohnungen mit geschätztem Verbrauch, nicht ihre Zahl: mit dieser Schätzung ${m2(estimated)} von ${m2(pot.areaM2)} m², also ${pct(share)} %.`,
     verdict,
     // Durchsicht von #242, R-M7: allgemein, nicht nur für vier gleich große Wohnungen.
-    `Maßgeblich ist der Flächenanteil, nicht die Zahl der Wohnungen: Eine Wohnung mit mehr als ${threshold} % der Fläche überschreitet die Grenze allein, mehrere kleinere können es zusammen.`,
+    `Eine Wohnung mit mehr als ${threshold} % der Fläche überschreitet die Grenze allein, mehrere kleinere können es zusammen.`,
     // Durchsicht von #242, R-I5: zwei Festlegungen, als Auslegung benannt.
     ...(option.partlyMeasured ? ['Gezählt wird die ganze Wohnung, obwohl ein Teil der Heizperiode bis zum Mieterwechsel abgelesen ist.'] : []),
     'Mietfuchs zählt die ganze Fläche der Wohnung, auch wenn nur ein Teil der Heizperiode geschätzt ist, und prüft Heizung und Warmwasser getrennt; die Verordnung sagt dazu nichts Ausdrückliches, das ist eine Auslegung von Mietfuchs.',
@@ -90,11 +91,16 @@ export function thresholdLines(pot: Pick<SelfPotView, 'pot' | 'areaM2' | 'estima
 // Der Rumpf für den Server. Beim Warmwasser (m³) fragt das Formular bei „12.345“ nach, statt zu raten: Dort
 // kommen drei Nachkommastellen ebenso vor wie Tausender. Kilowattstunden und Einheiten liest es mit
 // Tausenderpunkt.
-export function estimateBody(form: EstimateForm, part: EstimatePart): { body: { value: number; method: EstimateMethod; reason: string; confirmed: boolean; cause: EstimateCause } } | { error: string } {
+export function estimateBody(form: EstimateForm, part: EstimatePart, askUnit = false): { body: { value: number; method: EstimateMethod; reason: string; confirmed: boolean; cause: EstimateCause; valueUnit?: 'kWh' | 'Einheiten' } } | { error: string } {
   if (part === 'water' && ambiguousThousands(form.value)) return { error: ambiguousText(form.value) }
   const value = parseAmount(form.value)
   if (value === null || value < 0) return { error: 'Der geschätzte Verbrauch ist eine Zahl ab 0.' }
   const reason = form.reason.trim()
   if (reason === '') return { error: 'Bitte nennen Sie die Begründung, warum der Verbrauch nicht erfasst werden konnte (etwa „Wärmezähler defekt“).' }
+  // Durchsicht Runde 2, N-M3: Beim Ablesedienst nennt der Vermieter die Einheit, solange der Dienst keine Werte hat.
+  if (askUnit && part === 'heat') {
+    if (!form.valueUnit) return { error: 'Bitte wählen Sie die Einheit der Schätzung: Einheiten oder kWh, wie der Ablesedienst die Heizung nennt.' }
+    return { body: { value, method: form.method, reason, confirmed: form.confirmed, cause: form.cause, valueUnit: form.valueUnit } }
+  }
   return { body: { value, method: form.method, reason, confirmed: form.confirmed, cause: form.cause } }
 }
