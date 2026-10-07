@@ -74,6 +74,10 @@ test('Review Focus 4: Lieferung 2027 ohne Preis keine Prüfung; mit Eintrag gege
 
 test('Review Focus 5: Heizöl, in Rechnung gestellt 2022, wird nicht geprüft', () => {
   assert.deepEqual(kinds({ ...base, deliveredAt: '2022-11-15', invoiceDate: '2022-11-15', quantity: 2000, quantityUnit: 'l', emissionsKg: 1, co2CostCents: 1 }, 'oil'), [])
+  // Auch eine deutliche Abweichung bleibt ohne Hinweis: 8,0289 t × 30 € × 1,19 = 286,63 €, eingetragen 525,49 €.
+  assert.deepEqual(kinds({ ...base, deliveredAt: '2022-11-15', invoiceDate: '2022-11-15', quantity: 3000, quantityUnit: 'l', emissionsKg: 8028.9, co2CostCents: 52549 }, 'oil'), [])
+  // Ohne Rechnungsdatum gilt der Liefertag als Tag der Rechnung, wie bei der Bestandsrechnung.
+  assert.deepEqual(kinds({ ...base, deliveredAt: '2022-11-15', quantity: 3000, quantityUnit: 'l', emissionsKg: 8028.9, co2CostCents: 52549 }, 'oil'), [])
 })
 
 test('Review Focus 5: Heizöl geliefert im Dezember 2022, in Rechnung gestellt 2023: Preis 2022 (30 €/t), keine EBeV-Prüfung', () => {

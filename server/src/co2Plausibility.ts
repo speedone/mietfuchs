@@ -102,7 +102,9 @@ export function co2Plausibility(d: PlausibilityDelivery, energy: HeatingEnergy, 
   if (d.co2CostCents === null || !PRICE_ENERGIES.includes(energy)) return out
   // In Rechnung gestellt vor 2023: CO₂-Kosten bleiben unberücksichtigt (§ 11 Abs. 2 Satz 2), also auch
   // keine Preisprüfung. Eine Lieferung von 2022 mit Rechnung von 2023 wird mit dem Preis 2022 geprüft.
-  if (d.invoiceDate !== null && (!coversDate(co2CostsBefore, d.invoiceDate) || law(co2CostsBefore, { date: d.invoiceDate }, log))) return out
+  // Ohne Rechnungsdatum gilt der Liefertag, wie bei der Bestandsrechnung (Heizung PR 8).
+  const invoiced = d.invoiceDate ?? d.deliveredAt
+  if (invoiced !== null && (!coversDate(co2CostsBefore, invoiced) || law(co2CostsBefore, { date: invoiced }, log))) return out
   const years: number[] = []
   for (let y = Number(start.slice(0, 4)); y <= endYear; y++) years.push(y)
   if (!years.every((y) => coversDate(co2Price, yearStart(y)))) return out
