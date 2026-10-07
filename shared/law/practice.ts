@@ -59,3 +59,27 @@ export const practiceReadingOffWarning: LawParam<ReadingOffWarning, 'periodStart
   }],
   describe: (v) => `Warnung ab ${v.months === 1 ? 'einem Monat' : `${v.months} Monaten`} Abweichung, wenn ein Monat von Oktober bis April dazwischen liegt`,
 }
+
+// Verdunster (Heizung PR 12, Entwurf 3.5, 4.3, 8.1): Eine Zwischenablesung empfiehlt die
+// Arbeitsgemeinschaft Heiz- und Wasserkostenverteilung nur, wenn seit der Hauptablesung 400 bis 800 ‰
+// der Gradtagszahlen vergangen sind; sonst wird nach Gradtagen geteilt. Kein Rechtswert und keine
+// Rechnung in Mietfuchs: Verdunster wertet der Ablesedienst aus, und Mietfuchs nennt die Regel nur im
+// Lexikon.
+export const practiceEvaporatorWindow: LawParam<{ readonly min: number; readonly max: number }, 'periodStart'> = {
+  id: 'practice.evaporator-window',
+  title: 'Zwischenablesung bei Verdunstern',
+  norm: 'Empfehlung der Arbeitsgemeinschaft Heiz- und Wasserkostenverteilung (keine Rechtsnorm)',
+  timing: 'periodStart',
+  versions: [{
+    value: { min: 400, max: 800 },
+    source: {
+      rank: 'practice',
+      cite: 'Berliner Mieterverein, Info 73 (Wiedergabe der Empfehlung der ARGE); ista, Fachwissen Zwischenablesung',
+      url: 'https://www.berliner-mieterverein.de/recht/infoblaetter/info-73-heizkostenabrechnung-worauf-achten-beim-mieterwechsel-zwischenablesung-und-gradtagszahlentabelle.htm',
+      retrieved: '2026-10-05',
+      checked: 'checked',
+    },
+    enacted: 'Empfehlung der ARGE Heiz- und Wasserkostenverteilung, wiedergegeben 2026',
+  }],
+  describe: (v) => `${v.min} bis ${v.max} ‰ der Gradtagszahlen seit der Hauptablesung`,
+}
