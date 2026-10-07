@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { boundaryLight, boundaryText, distributionLines, gapConsequence, heatUnitOf, insulationAsked, percentOf, potLines, READING_RESULT_HINT, readingResult, shareEditable, unsureShareHint, userLine } from './heatingSelfView'
+import { boundaryLight, boundaryText, distributionLines, estimateLines, gapConsequence, heatUnitOf, insulationAsked, percentOf, potLines, READING_RESULT_HINT, readingResult, shareEditable, unsureShareHint, userLine } from './heatingSelfView'
 import { fmtEuro } from './api'
 import type { HeatingDistribution, SelfBoundaryView, SelfHeatingStatement, SelfUnitView } from './types'
 
@@ -133,5 +133,33 @@ describe('Durchsicht #241 Recht-I2: Ableseergebnis am Stichtag nennt den Stichta
       'Warmwasser: 40 m³ am 31.12.2025 (Endstand des alten Zählers; der neue beginnt mit 3)',
     ])
     expect(READING_RESULT_HINT).toMatch(/§ 6 Abs\. 1 Satz 3/)
+  })
+})
+
+describe('Ausweis mit Schätzung (Heizung PR 13)', () => {
+  it('Topf über der Grenze: nur nach Fläche, mit Satz zu § 9a Abs. 2', () => {
+    const lines = potLines({ pot: 'heating', costCents: 562800, consumptionPct: 0, byAreaOnly: false, areaM2: 200, consumption: 40000, consumptionUnit: 'kWh', baseCentsPerM2: 2814, consumptionCentsPerUnit: null, overThreshold: true, estimatedAreaM2: 60 })
+    expect(lines).toContain('Geschätzt ist der Verbrauch für 60 von 200 m²; das überschreitet die Grenze des § 9a Abs. 2 HeizkostenV, deshalb nur nach Fläche verteilt.')
+  })
+  it('Nutzer mit geschätztem Verbrauch, auch gemeinsam nach § 9b Abs. 3', () => {
+    const u = { key: 'C1', role: 'tenancy' as const, tenancyId: 'C1', label: 'Mieter C1', from: '2025-01-01', to: '2025-09-30', days: 273, degreeDayPermille: 640, heatingConsumption: 7680, waterConsumption: null, heatingGroup: true, waterGroup: false, heatingCents: 0, waterCents: 0, heatingCo2Cents: 0, waterCo2Cents: 0, heatingEstimated: true }
+    expect(userLine(u, { pots: [] })).toContain('Heizung 7.680 kWh (geschätzt nach § 9a, gemeinsam nach § 9b Abs. 3)')
+    expect(userLine({ ...u, heatingGroup: false }, { pots: [] })).toContain('Heizung 7.680 kWh (geschätzt nach § 9a),')
+    expect(userLine({ ...u, heatingEstimated: false }, { pots: [] })).toContain('Heizung 7.680 kWh (gemeinsam nach § 9b Abs. 3),')
+  })
+  it('Druck: die Schätzung der eigenen Wohnung mit Weg und Begründung, nie die einer anderen', () => {
+    const self = {
+      pots: [],
+      estimates: [
+        { plantId: 'hp', unitId: 'c', unitName: 'C', part: 'heat' as const, value: 12000, method: 'buildingAverage' as const, reason: 'Wärmezähler defekt', confirmed: true, users: 1, kept: 1, complete: false },
+        { plantId: 'hp', unitId: 'a', unitName: 'A', part: 'heat' as const, value: 9000, method: 'previousPeriod' as const, reason: 'Zähler defekt', confirmed: true, users: 1, kept: 0, complete: false },
+      ],
+    }
+    expect(estimateLines(self, 'c', { heatingEstimated: true })).toEqual([
+      'Heizung: Der Verbrauch Ihrer Wohnung ließ sich nicht ablesen (Wärmezähler defekt) und ist nach § 9a HeizkostenV geschätzt, nach dem Durchschnitt des Gebäudes je m²: 12.000 kWh für die ganze Heizperiode. Wer in der Wohnung bis zu einem Wechsel gültig abgelesen ist, behält diesen Wert; Ihnen ist der Anteil Ihrer Zeit an der Schätzung zugerechnet.',
+    ])
+    // Der Vormieter mit gültiger Ablesung bekommt keinen Satz zur Schätzung.
+    expect(estimateLines(self, 'c', { heatingEstimated: false })).toEqual([])
+    expect(estimateLines({ ...self, estimates: undefined }, 'c', { heatingEstimated: true })).toEqual([])
   })
 })

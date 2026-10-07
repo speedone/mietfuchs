@@ -232,6 +232,13 @@
       "when": 1791344772290,
       "tag": "0032_hkv_bedingungen",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "6",
+      "when": 1791359101182,
+      "tag": "0033_schaetzung",
+      "breakpoints": true
     }
   ]
 }

@@ -48,6 +48,7 @@ import {
 import { removeInterimGap, saveDistribution, saveInterimGap, SelfItemsError, setUpSelf } from './db/heatingSelf.ts'
 import { heatingPeriodViews, removeCo2Statement, saveCo2Statement, saveHotWater } from './db/co2.ts'
 import { saveServiceValues } from './db/serviceValues.ts'
+import { removeEstimate, saveEstimate } from './db/heatingEstimates.ts'
 import { removeStock, saveStock } from './db/fuelStock.ts'
 import { createDelivery, createEstimates, freezeFuelCarries, fuelGapQuestions, listDegreeDays, listDeliveries, removeDelivery, saveDegreeDays, unfreezeFuelCarries, updateDelivery } from './db/fuel.ts'
 import { assignableHeatingItems, createHeatingPlant, listHeatingPlants, removeHeatingPlant, replaceHeatingPlant, updateHeatingPlant } from './db/heating.ts'
@@ -591,6 +592,17 @@ app.put('/api/heating-plants/:id/periods/:period/service-values', async (req, re
   const saved = await writeData((db) => saveServiceValues(db, req.params.id, req.params.period, bodyObject(req)))
   if (saved === null) return res.status(404).json({ error: NO_PLANT })
   res.json(saved)
+})
+// Schätzung nach § 9a (Heizung PR 13): je Heizperiode, Wohnung und Topf (`heat`, `water`), db/heatingEstimates.ts.
+app.put('/api/heating-plants/:id/periods/:period/estimates/:unitId/:part', async (req, res) => {
+  const saved = await writeData((db) => saveEstimate(db, req.params.id, req.params.period, req.params.unitId, req.params.part, bodyObject(req)))
+  if (saved === null) return res.status(404).json({ error: NO_PLANT })
+  res.json(saved)
+})
+app.delete('/api/heating-plants/:id/periods/:period/estimates/:unitId/:part', async (req, res) => {
+  const removed = await writeData((db) => removeEstimate(db, req.params.id, req.params.period, req.params.unitId, req.params.part))
+  if (removed === null) return res.status(404).json({ error: NO_PLANT })
+  res.json({ ok: true, removed })
 })
 
 // Vorrat je Heizperiode (Heizung PR 8): Was gespeichert wird, steht in db/fuelStock.ts.

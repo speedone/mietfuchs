@@ -98,6 +98,12 @@ describe('Cockpit: verlangen die Hinweise etwas?', () => {
     ] })).toBe(false)
     expect(noticesNeedAttention({ warnings: ['a', 'b'], notices: [n({ code: 'basis.vacancy-persons', level: 'hint' }), n({ code: 'meter.main-gap', level: 'hint' })] })).toBe(true)
   })
+  test('Schätzung nach § 9a (Heizung PR 13): bestätigt nein; unbestätigt, über der Grenze und neben vollständiger Ablesung ja', () => {
+    expect(noticesNeedAttention({ warnings: ['a'], notices: [n({ code: 'heating.estimated', level: 'hint' })] })).toBe(false)
+    expect(noticesNeedAttention({ warnings: ['a'], notices: [n({ code: 'heating.estimate-unconfirmed', level: 'warning' })] })).toBe(true)
+    expect(noticesNeedAttention({ warnings: ['a'], notices: [n({ code: 'heating.estimate-over-25', level: 'hint' })] })).toBe(true)
+    expect(noticesNeedAttention({ warnings: ['a'], notices: [n({ code: 'heating.estimate-complete', level: 'warning' })] })).toBe(true)
+  })
   test('Fernablesbarkeit ab 2027 (#110): nein, der Nutzer kann im Programm nichts beheben', () => {
     expect(noticesNeedAttention({ warnings: ['a'], notices: [n({ code: 'heating.remote-reading', level: 'hint' })] })).toBe(false)
     expect(noticesNeedAttention({ warnings: ['a', 'b'], notices: [n({ code: 'heating.remote-reading', level: 'hint' }), n({ code: 'meter.main-gap', level: 'hint' })] })).toBe(true)

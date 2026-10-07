@@ -53,7 +53,7 @@ import {
 } from './read.ts'
 import {
   aiSlots, assessmentLines, assessments, baseRents, co2Statements, co2TenantReliefs, heatingPeriods, closedHeatingSettlementHistory, closedHeatingSettlements, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, DEPOSIT_STATUS, EXTERNAL_MEASURES,
-  HCA_SCALES, HEATING_PARTS, HEATING_ROLES, HEATING_TARGETS, INTERIM_GAP_STATUS, interimReadingGaps, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingSelfSpans, heatingPrepaymentOverrides, heatingPrepayments, heatingSeparateSpans, heatingServiceValues,
+  HCA_SCALES, HEATING_PARTS, HEATING_ROLES, HEATING_TARGETS, INTERIM_GAP_STATUS, interimReadingGaps, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingSelfSpans, heatingPrepaymentOverrides, heatingPrepayments, heatingSeparateSpans, heatingServiceValues, heatingEstimates,
   flatRates, METER_TYPES, meters, payments, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, PROPERTY_KINDS,
   readings, settings, tenancies, unitNoConnection, units, fuelCarryFrozen, fuelDeliveries,
 } from './schema.ts'
@@ -1422,6 +1422,15 @@ export async function crossPropertyViolations(db: Database): Promise<string[]> {
     .innerJoin(units, eq(heatingServiceValues.unitId, units.id))
     .where(ne(heatingPlants.propertyId, units.propertyId))
   for (const v of ablesedienst) befunde.push(`Ein Wert des Ablesedienstes gehört zur Wohnung „${v.unitName}“ eines anderen Objekts als seine Heizanlage.`)
+  // Schätzungen nach § 9a gehören zu einer Wohnung im Objekt ihrer Heizanlage (Heizung PR 13).
+  const schaetzungen = await db
+    .select({ unitName: units.name })
+    .from(heatingEstimates)
+    .innerJoin(heatingPeriods, eq(heatingEstimates.heatingPeriodId, heatingPeriods.id))
+    .innerJoin(heatingPlants, eq(heatingPeriods.plantId, heatingPlants.id))
+    .innerJoin(units, eq(heatingEstimates.unitId, units.id))
+    .where(ne(heatingPlants.propertyId, units.propertyId))
+  for (const s of schaetzungen) befunde.push(`Eine Schätzung nach § 9a gehört zur Wohnung „${s.unitName}“ eines anderen Objekts als ihre Heizanlage.`)
   return befunde
 }
 

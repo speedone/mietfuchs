@@ -1,5 +1,5 @@
 import type { SelfHeatingStatement } from '../types'
-import { potLines, userLine } from '../heatingSelfView'
+import { estimateLines, potLines, userLine } from '../heatingSelfView'
 import { showsDhwBlock } from '../dhwView'
 import DhwBlock from './DhwBlock'
 import HcaBlock from './HcaBlock'
@@ -23,6 +23,8 @@ export default function SelfHeatingBlock({ self, tenancyId, plantName }: { self:
       )}
       {self.pots.flatMap(potLines).map((l) => <p key={l}>{l}</p>)}
       {mine.map((u) => <p key={u.key}><strong>{userLine(u, self)}</strong></p>)}
+      {/* Heizung PR 13: die Schätzung nach § 9a mit Weg und Begründung, nur für die Wohnung des Mieters. */}
+      {mine.flatMap((u) => estimateLines(self, self.units.find((x) => x.users.includes(u))?.unitId, u)).map((l) => <p key={l}>{l}</p>)}
       {/* Heizung PR 12: die Geräte bzw. Werte des Ablesedienstes des Mieters in seinem Zeitraum, mit Skala und Faktor
           (Durchsicht von #241, Recht-I1: ein Nachmieter sieht nicht den Verbrauch seines Vormieters). */}
       {mine.map((u) => (

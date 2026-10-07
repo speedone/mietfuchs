@@ -205,6 +205,21 @@ export function mixedCapture(capture: CaptureMethod, unitIds: readonly string[],
   return switched.length > 0 ? { ...lists, switched } : lists
 }
 
+// Heizung PR 13: Eine Wohnung mit Gerätewechsel mitten in der Heizperiode, deren Verbrauch der Heizung nach
+// § 9a geschätzt ist, zählt nicht mehr als gemischt; die Schätzung in der Einheit der eingestellten Erfassung
+// deckt die Zeit mit dem anderen Gerät. Bleibt keine gemischte Wohnung, `null`.
+export function withoutEstimatedSwitches(m: MixedCapture, capture: 'heatMeter' | 'hca', estimated: ReadonlySet<string>): MixedCapture | null {
+  const resolved = (m.switched ?? []).filter((u) => estimated.has(u))
+  if (resolved.length === 0) return m
+  const foreignKey = capture === 'hca' ? 'heatMeterUnits' : 'hcaUnits'
+  const ownKey = capture === 'hca' ? 'hcaUnits' : 'heatMeterUnits'
+  const foreign = m[foreignKey].filter((u) => !resolved.includes(u))
+  if (foreign.length === 0) return null
+  const switched = (m.switched ?? []).filter((u) => !resolved.includes(u))
+  const lists = { [foreignKey]: foreign, [ownKey]: [...m[ownKey], ...resolved] } as Pick<MixedCapture, 'heatMeterUnits' | 'hcaUnits'>
+  return switched.length > 0 ? { ...lists, switched } : lists
+}
+
 export type MissingRating = { meterId: string; name: string; unitId: string; missing: 'scale' | 'factor' }
 
 export function missingRatings(capture: CaptureMethod, unitIds: readonly string[], meters: readonly HcaMeter[], readings: Reads, h: Period): MissingRating[] {
@@ -260,7 +275,8 @@ export function mixedCaptureText(capture: CaptureMethod, m: MixedCapture, nameOf
   const switchedText = switched.length === 0 ? '' :
     `Bei ${andList(switched.map(nameOf))} wechselt das Gerät innerhalb der Heizperiode: Wärmezähler und Heizkostenverteiler haben Ablesungen nur für einen Teil davon. ` +
     'Mietfuchs lässt den Verbrauch des einen Geräts deshalb nicht weg. Liegt der Wechsel am Tag vor dem Beginn der Heizperiode (bei einer Heizperiode im Kalenderjahr am 31.12.), braucht es nur den Stand des neuen Geräts an diesem Tag. ' +
-    `Sonst ist der Verbrauch der Zeit mit dem anderen Gerät in der Einheit der eingestellten Erfassung zu ermitteln: mit einem Zwischenstand oder, wenn es keinen gibt, nach § 9a HeizkostenV geschätzt. Das rechnet Mietfuchs mit einer späteren Version. `
+    'Sonst ist der Verbrauch der Zeit mit dem anderen Gerät in der Einheit der eingestellten Erfassung zu ermitteln, und wenn das nicht ordnungsgemäß geht, nach § 9a HeizkostenV zu schätzen: ' +
+    `Tragen Sie dann auf der Seite Heizkosten unter „Schätzung (§ 9a)“ den Verbrauch der ganzen Heizperiode für ${switched.length === 1 ? 'diese Wohnung' : 'jede dieser Wohnungen'} in ${capture === 'hca' ? 'Einheiten' : 'kWh'} ein. `
   // #218: Die Vorerfassung nach Nutzergruppen kommt mit einer eigenen Erweiterung.
   // Hängt das andere Gerät nur an Wohnungen mit Wechsel, ist die Vorerfassung nicht der Weg.
   const lasting = (capture === 'hca' ? m.heatMeterUnits : m.hcaUnits).some((u) => !switched.includes(u))

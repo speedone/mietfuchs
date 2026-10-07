@@ -64,6 +64,7 @@ import { eq } from 'drizzle-orm'
 import { computeSettlement } from '../src/calc.ts'
 import { createHeatingPlant, replaceHeatingPlant, updateHeatingPlant } from '../src/db/heating.ts'
 import { setUpSelf } from '../src/db/heatingSelf.ts'
+import { removeEstimate, saveEstimate } from '../src/db/heatingEstimates.ts'
 import { saveHotWater } from '../src/db/co2.ts'
 import { saveServiceValues } from '../src/db/serviceValues.ts'
 import { createDelivery, createEstimates, freezeFuelCarries, fuelGapQuestions, unfreezeFuelCarries } from '../src/db/fuel.ts'
@@ -73,8 +74,11 @@ import { closeSettlement, createEntity, findClosedSettlement, removeEntity, reop
 import { properties } from '../src/db/schema.ts'
 import { snapshotFor } from '../src/snapshot.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
+import { degreeDayPermille } from '../../shared/degreeDays.ts'
+import { hkvDegreeDays } from '../../shared/law/heizkostenv.ts'
+import { onlyVersion } from '../../shared/law/register.ts'
 import { periodContaining, periodKey, periodOfKey } from '../../shared/period.ts'
-import type { PeriodRules } from '../../shared/types.ts'
+import type { HeatingEstimate, PeriodRules } from '../../shared/types.ts'
 
 const MAI: PeriodRules = { startMonth: 5, changes: [] }
 const DAY = 86400000
@@ -153,7 +157,7 @@ const SEEDS: number[] = process.env.INV_FROM !== undefined || process.env.INV_TO
   : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 16, 81]
 const STEPS = Number(process.env.INV_STEPS ?? 30)
 
-type Variant = { name: string; lazy: boolean; estimate: boolean; two?: boolean; swap?: boolean; self?: boolean; hw?: 'combined' | 'separate'; dhw?: 'volumeFormula' | 'areaFormula'; capture?: 'hca' | 'serviceValues'; offset?: boolean }
+type Variant = { name: string; lazy: boolean; estimate: boolean; two?: boolean; swap?: boolean; self?: boolean; hw?: 'combined' | 'separate'; dhw?: 'volumeFormula' | 'areaFormula'; capture?: 'hca' | 'serviceValues'; offset?: boolean; failure?: boolean }
 const VARIANTS: Variant[] = [
   { name: 'Grundform', lazy: false, estimate: false },
   { name: 'Rechnung kommt später', lazy: true, estimate: false },
@@ -181,6 +185,10 @@ const VARIANTS: Variant[] = [
   { name: 'Eigene Heizkostenabrechnung mit Heizkostenverteilern, Kesseltausch', lazy: true, estimate: false, self: true, swap: true, capture: 'hca' },
   { name: 'Eigene Heizkostenabrechnung mit Werten eines Ablesedienstes, Kesseltausch', lazy: true, estimate: false, self: true, swap: true, capture: 'serviceValues' },
   { name: 'Eigene Heizkostenabrechnung mit Heizkostenverteilern, Ablesung neben dem Stichtag', lazy: false, estimate: false, self: true, capture: 'hca', offset: true },
+  // Heizung PR 13: Geräteausfall mit Schätzung nach § 9a, vier Wohnungen (30, 20, 25 und 25 % der Fläche),
+  // Mieterwechsel in B, mit und ohne verbundenes Warmwasser.
+  { name: 'Eigene Heizkostenabrechnung, Gerät ausgefallen (§ 9a)', lazy: false, estimate: false, self: true, failure: true },
+  { name: 'Eigene Heizkostenabrechnung, verbundenes Warmwasser, Gerät ausgefallen (§ 9a)', lazy: true, estimate: false, self: true, hw: 'combined', failure: true },
 ]
 
 // Wie oft die eigene Heizkostenabrechnung wirklich verteilt hat (Abdeckung, letzter Test).
@@ -211,6 +219,71 @@ function unitChecksOf(self: NonNullable<NonNullable<ReturnType<typeof computeSet
       const wantW = water.get(u.unitId) ?? 0
       assert.ok(Math.abs(gotW - wantW) <= 1e-6 * Math.max(1, wantW), `${where}: (s5) Warmwasser ${u.unitName}: ${gotW} statt ${wantW}`)
     }
+  }
+}
+
+// Heizung PR 13, (s6): Geräteausfall mit Schätzung nach § 9a. Je Heizperiode, in der die Anlage verteilt:
+// - die geschätzte Fläche des Topfs ist die Fläche der Wohnungen mit Schätzung, und der Topf geht genau dann nur
+//   nach Fläche, wenn sie 25 % der Fläche **überschreitet** (C und D haben je genau 25 %, das ist keine
+//   Überschreitung);
+// - geht er nur nach Fläche, ist der Anteil nach Verbrauch 0, und jede Wohnung trägt Kosten × Fläche / Fläche des
+//   Topfs (je Nutzer höchstens ein halber Cent daneben); sonst gilt der Anteil nach Verbrauch;
+// - eine geschätzte Wohnung mit einem einzigen Nutzer hat genau den geschätzten Verbrauch;
+// - in B (Mieterwechsel mit Zwischenablesung): Fehlt nur der Endstand, behält der Vormieter seinen abgelesenen
+//   Verbrauch, und die Nutzer danach tragen zusammen die Schätzung mal ihrem Anteil an den Gradtagen (§ 9a Abs. 1
+//   Satz 2, Prüfbericht A5); ist alles abgelesen, ergibt die Schätzung allein den Verbrauch der Wohnung (A9).
+// Σ Zeilen = Σ Positionen prüft (i) wie in jeder Variante.
+const AREAS: Record<string, number> = { a: 60, b: 40, c: 50, d: 50 }
+const ESTIMATES = { checked: 0, over: 0, exact25: 0, kept: 0, complete: 0 }
+type BFacts = { from: string; to: string; kept: number | null; endMissing: boolean; split: string }
+const TABLE = onlyVersion(hkvDegreeDays).value
+function estimateChecks(r: ReturnType<typeof computeSettlement>, estimates: readonly HeatingEstimate[], b: BFacts | null, where: string): void {
+  const self = r.heating?.find((h) => h.plantId === 'hp')?.self
+  if (!self?.ok) return
+  const total = Object.values(AREAS).reduce((a, v) => a + v, 0)
+  const heat = self.pots.find((p) => p.pot === 'heating') ?? assert.fail(`${where}: (s6) kein Topf Heizung`)
+  const area = estimates.filter((e) => e.part === 'heat').reduce((a, e) => a + (AREAS[e.unitId] ?? 0), 0)
+  if (area > 0) ESTIMATES.checked++
+  if (area * 100 === total * 25) ESTIMATES.exact25++
+  const over = area * 100 > total * 25
+  assert.equal(heat.estimatedAreaM2, area, `${where}: (s6) geschätzte Fläche`)
+  assert.equal(heat.overThreshold, over, `${where}: (s6) Grenze bei ${area} von ${total} m²`)
+  if (over) {
+    ESTIMATES.over++
+    assert.equal(heat.consumptionPct, 0, `${where}: (s6) Anteil nach Verbrauch über der Grenze`)
+    for (const u of self.units) {
+      const got = u.users.reduce((a, x) => a + x.heatingCents, 0)
+      const want = (heat.costCents * u.areaM2) / heat.areaM2
+      assert.ok(Math.abs(got - want) <= u.users.length, `${where}: (s6) ${u.unitName} nur nach Fläche: ${got} statt ${want}`)
+    }
+  } else if (!heat.byAreaOnly) {
+    assert.ok(heat.consumptionPct > 0, `${where}: (s6) Anteil nach Verbrauch unter der Grenze`)
+  }
+  for (const e of estimates.filter((x) => x.part === 'heat')) {
+    const u = self.units.find((x) => x.unitId === e.unitId)
+    if (!u || u.users.length !== 1) continue
+    const v = u.users[0]?.heatingConsumption ?? Number.NaN
+    assert.ok(Math.abs(v - e.value) <= 1e-9 * Math.max(1, e.value), `${where}: (s6) ${u.unitName} geschätzt ${e.value}, im Ausweis ${v}`)
+  }
+  const eb = estimates.find((x) => x.part === 'heat' && x.unitId === 'b')
+  const ub = self.units.find((x) => x.unitId === 'b')
+  if (!eb || !ub || !b) return
+  const near = (x: number, y: number) => Math.abs(x - y) <= 1e-6 * Math.max(1, Math.abs(y))
+  const all = ub.users.reduce((a, x) => a + (x.heatingConsumption ?? 0), 0)
+  if (!b.endMissing && b.kept !== null) {
+    // Alles abgelesen: Die Schätzung ersetzt alles (Markierung „unbrauchbar“).
+    ESTIMATES.complete++
+    assert.ok(near(all, eb.value), `${where}: (s6) B vollständig abgelesen, geschätzt ${eb.value}, im Ausweis ${all}`)
+  } else if (b.endMissing && b.kept !== null) {
+    ESTIMATES.kept++
+    const first = ub.users.find((x) => x.tenancyId === 'tb') ?? assert.fail(`${where}: (s6) kein Vormieter in B`)
+    assert.ok(near(first.heatingConsumption ?? Number.NaN, b.kept) && first.heatingEstimated !== true, `${where}: (s6) Vormieter behält ${b.kept}, im Ausweis ${first.heatingConsumption}`)
+    // Geschätzt sind die Nutzer nach der letzten Zwischenablesung; ein Leerstand mit Ablesung zum Einzug
+    // behält ebenfalls seinen Wert.
+    const after = degreeDayPermille([{ from: isoOf(Date.parse(`${b.split}T00:00:00Z`) + DAY), to: b.to }], TABLE)
+    const whole = degreeDayPermille([{ from: b.from, to: b.to }], TABLE)
+    const rest = ub.users.filter((x) => x.heatingEstimated === true).reduce((a, x) => a + (x.heatingConsumption ?? 0), 0)
+    assert.ok(near(rest, (eb.value * after) / whole), `${where}: (s6) Nutzer nach dem Wechsel ${rest} statt ${(eb.value * after) / whole}`)
   }
 }
 
@@ -334,7 +407,7 @@ for (const variant of VARIANTS) {
       const pick = <T,>(xs: readonly T[]): T | undefined => xs[Math.floor(rnd() * xs.length)]
       // Heizung PR 12: Auszug in B am 15.01.2025, Einzug nach 0 bis 30 Tagen Leerstand.
       const CHANGE_END = '2025-01-15'
-      const nextStart = variant.capture ? isoOf(Date.parse(`${CHANGE_END}T00:00:00Z`) + (1 + int(0, 30)) * DAY) : ''
+      const nextStart = variant.capture || variant.failure ? isoOf(Date.parse(`${CHANGE_END}T00:00:00Z`) + (1 + int(0, 30)) * DAY) : ''
       const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-fuel-inv-'))
       const opened = await openDatabase({ dataDir })
       try {
@@ -346,8 +419,15 @@ for (const variant of VARIANTS) {
           await createEntity(db, 'units', 'a', { propertyId: 'objekt-1', name: 'A', areaM2: 60, participates: true })
           await createEntity(db, 'units', 'b', { propertyId: 'objekt-1', name: 'B', areaM2: 40, participates: true })
           await createEntity(db, 'tenancies', 'ta', { unitId: 'a', tenantName: 'Mieter A', persons: 1, start: '2020-01-01' })
-          await createEntity(db, 'tenancies', 'tb', { unitId: 'b', tenantName: 'Mieter B', persons: 1, start: '2020-01-01', ...(variant.capture ? { end: CHANGE_END } : {}) })
-          if (variant.capture) await createEntity(db, 'tenancies', 'tb2', { unitId: 'b', tenantName: 'Mieter B2', persons: 1, start: nextStart })
+          await createEntity(db, 'tenancies', 'tb', { unitId: 'b', tenantName: 'Mieter B', persons: 1, start: '2020-01-01', ...(variant.capture || variant.failure ? { end: CHANGE_END } : {}) })
+          if (variant.capture || variant.failure) await createEntity(db, 'tenancies', 'tb2', { unitId: 'b', tenantName: 'Mieter B2', persons: 1, start: nextStart })
+          // Heizung PR 13: zwei weitere Wohnungen, sodass A 30 %, B 20 %, C und D je genau 25 % der Fläche haben.
+          if (variant.failure) {
+            for (const u of ['c', 'd']) {
+              await createEntity(db, 'units', u, { propertyId: 'objekt-1', name: u.toUpperCase(), areaM2: AREAS[u] ?? 0, participates: true })
+              await createEntity(db, 'tenancies', `t${u}`, { unitId: u, tenantName: `Mieter ${u.toUpperCase()}`, persons: 1, start: '2020-01-01' })
+            }
+          }
           if (variant.two) {
             await createEntity(db, 'units', 'c', { propertyId: 'objekt-1', name: 'C', areaM2: 50, participates: true })
             await createEntity(db, 'tenancies', 'tc', { unitId: 'c', tenantName: 'Mieter C', persons: 1, start: '2020-01-01' })
@@ -398,11 +478,75 @@ for (const variant of VARIANTS) {
               const first = periodOf(keys[0] ?? '')
               await createEntity(db, 'readings', `${meter.id}@0`, { meterId: meter.id, date: isoOf(Date.parse(`${first.from}T00:00:00Z`) - DAY), value })
               for (const key of keys) {
+                // Heizung PR 13: Zwischenablesung beim Wechsel in B (und zu Beginn des neuen Mietverhältnisses).
+                const p = periodOf(key)
+                if (variant.failure && meter.unitId === 'b' && meter.type === 'waerme' && CHANGE_END >= p.from && CHANGE_END < p.to) {
+                  value += int(100, 2000)
+                  await createEntity(db, 'readings', `${meter.id}@wechsel`, { meterId: meter.id, date: CHANGE_END, value, interimFor: CHANGE_END })
+                  const before = isoOf(Date.parse(`${nextStart}T00:00:00Z`) - DAY)
+                  if (before > CHANGE_END) {
+                    value += int(0, 200)
+                    await createEntity(db, 'readings', `${meter.id}@einzug`, { meterId: meter.id, date: before, value, interimFor: before })
+                  }
+                }
                 value += meter.type === 'warmwasser' ? int(5, 50) : meter.heatingRole === 'dhwHeat' ? int(1000, 6000) : int(1000, 9000)
-                await createEntity(db, 'readings', `${meter.id}@${key}`, { meterId: meter.id, date: periodOf(key).to, value })
+                await createEntity(db, 'readings', `${meter.id}@${key}`, { meterId: meter.id, date: p.to, value })
               }
             }
           })
+        }
+        // Heizung PR 13: Geräteausfall. Je Heizperiode fällt bei jeder Wohnung mit 30 % der Endstand des
+        // Wärmezählers weg (damit auch der Anfangsstand der nächsten); die meisten Lücken schätzt der Vermieter
+        // über den echten Schreibweg, manche nicht (dann verteilt die Anlage nicht), und manchmal steht eine
+        // Schätzung neben vollständigen Ablesungen (Prüfbericht A9).
+        const log: string[] = []
+        const attempt = async (what: string, run: () => Promise<unknown>) => {
+          try {
+            await run()
+            log.push(what)
+          } catch (err) {
+            if (!rejected(err)) throw err
+          }
+        }
+        const failureUnits = ['a', 'b', 'c', 'd']
+        const bFacts = new Map<string, BFacts>()
+        const estimateBody = () => ({ value: int(1000, 9000), method: pick(['buildingAverage', 'previousPeriod', 'comparableUnit'] as const), reason: 'Wärmezähler ausgefallen', confirmed: rnd() < 0.7 })
+        if (variant.failure) {
+          const heatMeters = (await opened.read((db) => readStock(db))).meters.filter((x) => x.type === 'waerme' && x.unitId !== null && (x.heatingPlantId ?? null) === null)
+          const gaps: { key: string; unitId: string }[] = []
+          for (const [k, key] of keys.entries()) {
+            for (const m of heatMeters) {
+              if (rnd() >= 0.3 || !m.unitId) continue
+              await opened.write((db) => removeEntity(db, 'readings', `${m.id}@${key}`))
+              log.push(`ausfall ${m.unitId} ${key}`)
+              gaps.push({ key, unitId: m.unitId })
+              const next = keys[k + 1]
+              if (next) gaps.push({ key: next, unitId: m.unitId })
+            }
+          }
+          for (const g of gaps) if (rnd() < 0.85) await attempt(`schätzen ${g.unitId} ${g.key}`, () => opened.write((db) => saveEstimate(db, 'hp', g.key, g.unitId, 'heat', estimateBody())))
+          // Neben vollständigen Ablesungen (A9), je Wohnung und Heizperiode mit 15 %.
+          for (const key of keys) {
+            for (const u of failureUnits) {
+              // B in der Heizperiode des Wechsels öfter, damit (s6) die vollständige Ablesung mit Wechsel sieht.
+              const changeHere = u === 'b' && CHANGE_END >= periodOf(key).from && CHANGE_END < periodOf(key).to
+              if (gaps.some((g) => g.key === key && g.unitId === u) || rnd() >= (changeHere ? 0.6 : 0.15)) continue
+              await attempt(`schätzen* ${u} ${key}`, () => opened.write((db) => saveEstimate(db, 'hp', key, u, 'heat', estimateBody())))
+            }
+          }
+          // Was in B abgelesen ist: Stand zu Beginn und zum Wechsel, und ob der Endstand fehlt.
+          const stockNow = await opened.read((db) => readStock(db))
+          const bMeter = heatMeters.find((m) => m.unitId === 'b')
+          const at = (date: string) => stockNow.readings.find((x) => x.meterId === bMeter?.id && x.date === date)?.value
+          for (const key of keys) {
+            const p = periodOf(key)
+            if (!(CHANGE_END >= p.from && CHANGE_END < p.to)) continue
+            const start = at(isoOf(Date.parse(`${p.from}T00:00:00Z`) - DAY))
+            const change = at(CHANGE_END)
+            const einzug = isoOf(Date.parse(`${nextStart}T00:00:00Z`) - DAY)
+            const split = einzug > CHANGE_END && at(einzug) !== undefined ? einzug : CHANGE_END
+            bFacts.set(key, { from: p.from, to: p.to, kept: start !== undefined && change !== undefined ? change - start : null, endMissing: at(p.to) === undefined, split })
+          }
         }
         // Heizung PR 12: Heizkostenverteiler (je Wohnung zwei, Faktoren mit drei Nachkommastellen, in B eins mit
         // Produktskala), Stichtagswert am Ende jeder Heizperiode, Zwischenablesung beim Wechsel in B; bzw. Werte
@@ -486,15 +630,6 @@ for (const variant of VARIANTS) {
             await opened.write((db) => saveHotWater(db, 'hp', key, { dhwMethod: method, dhwUnmeasurable: true, ...(method === 'volumeFormula' ? { dhwVolumeM3: input.volumeM3, dhwTempC: input.tempC } : {}) }))
           }
         }
-        const log: string[] = []
-        const attempt = async (what: string, run: () => Promise<unknown>) => {
-          try {
-            await run()
-            log.push(what)
-          } catch (err) {
-            if (!rejected(err)) throw err
-          }
-        }
         let n = 0
         // Die Positionen je abgeschlossenem Zeitraum beim Abschluss.
         const atClose = new Map<string, number>()
@@ -543,7 +678,19 @@ for (const variant of VARIANTS) {
         // Tausch sperrt; die Rechnungen der neuen Anlage kommen danach.
         if (variant.self && variant.swap) await replace('replace')
         for (let step = 0; step < STEPS; step++) {
-          const op = pick(['link', 'link', 'link', 'credit', 'unlink', 'delete', 'close', 'close', 'reopen', 'amount', 'arrive', 'relink', 'storno'] as const)
+          // Heizung PR 13: mit Geräteausfall auch Schätzungen ändern oder entfernen, auch in abgeschlossenen
+          // Heizperioden (dort 409). Die übrigen Varianten behalten ihre Folge der Vorgänge.
+          const op = pick(variant.failure
+            ? ['link', 'link', 'link', 'credit', 'unlink', 'delete', 'close', 'close', 'reopen', 'amount', 'arrive', 'relink', 'storno', 'estimate'] as const
+            : ['link', 'link', 'link', 'credit', 'unlink', 'delete', 'close', 'close', 'reopen', 'amount', 'arrive', 'relink', 'storno'] as const)
+          if (op === 'estimate') {
+            const key = pick(keys)
+            const u = pick(failureUnits)
+            if (!key || !u) continue
+            if (rnd() < 0.3) await attempt(`entfernen ${u} ${key}`, () => opened.write((db) => removeEstimate(db, 'hp', key, u, 'heat')))
+            else await attempt(`schätzen~ ${u} ${key}`, () => opened.write((db) => saveEstimate(db, 'hp', key, u, 'heat', estimateBody())))
+            continue
+          }
           const d = pick(deliveries)
           if (!d) continue
           const items = (await opened.read((db) => readCostItems(db))).filter((c) => c.fuelDeliveryId === d.id)
@@ -667,6 +814,7 @@ for (const variant of VARIANTS) {
           }
           if (r && variant.self) selfChecks(r, items.filter((c) => c.period === key), `${fall}; ${key}`)
           if (r && variant.capture) unitChecks(r, expectedUnits.get(key), expectedWater.get(key), `${fall}; ${key}`, variant.name)
+          if (r && variant.failure) estimateChecks(r, stock.heatingEstimates.filter((e) => e.plantId === 'hp' && e.period === key), bFacts.get(key) ?? null, `${fall}; ${key}`)
           const dhwInput = dhwInputs.get(key)
           if (r && variant.dhw && dhwInput) dhwChecks(r, { method: variant.dhw, ...dhwInput, basis: dhwBasis }, `${fall}; ${key}`)
           if (r && variant.self && r.heating?.find((h) => h.plantId === 'hp')?.self?.ok === false) selfBlocked = true
@@ -762,6 +910,17 @@ test('Invariante, eigene Heizkostenabrechnung: Abdeckung', () => {
   assert.ok(SELF.units > 0, 'kein Lauf mit Heizkostenverteilern oder Ablesedienst geprüft (s5)')
   if (process.env.INV_LOG) console.log('(s5) je Variante', JSON.stringify([...UNITS_BY_VARIANT]))
   for (const v of VARIANTS.filter((x) => x.capture)) assert.ok((UNITS_BY_VARIANT.get(v.name) ?? 0) > 0, `(s5) nie geprüft: ${v.name}`)
+})
+
+test('Invariante, Schätzung nach § 9a: Abdeckung', () => {
+  if (process.env.INV_LOG) console.log('Schätzung', JSON.stringify(ESTIMATES))
+  if (SELF.periods < 10) return
+  assert.ok(ESTIMATES.checked > 0, 'keine Heizperiode mit Schätzung geprüft (s6)')
+  assert.ok(ESTIMATES.over > 0, 'keine Heizperiode über der Grenze geprüft (s6)')
+  assert.ok(ESTIMATES.checked > ESTIMATES.over, 'keine Heizperiode mit Schätzung unter der Grenze geprüft (s6)')
+  assert.ok(ESTIMATES.exact25 > 0, 'keine Heizperiode mit genau 25 % geschätzter Fläche geprüft (s6, R-A22)')
+  assert.ok(ESTIMATES.kept > 0, 'kein Vormieter mit abgelesenem Verbrauch neben einer Schätzung geprüft (s6, A5)')
+  assert.ok(ESTIMATES.complete > 0, 'keine Schätzung neben vollständiger Ablesung geprüft (s6, A9)')
 })
 
 test('Invariante, Kesseltausch: Abdeckung', () => {

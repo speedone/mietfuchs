@@ -350,3 +350,20 @@ export const hkvRenewableExemption: LawParam<{ readonly heatPump: boolean }, 'pe
     ? `Wärmerückgewinnung, Wärmepumpen oder Solaranlagen (§ 11 Abs. 1 Nr. 3 Buchst. a HeizkostenV in der Fassung bis ${germanDate('2024-09-30')})`
     : 'Wärmerückgewinnung oder Solaranlagen (§ 11 Abs. 1 Nr. 3 Buchst. a HeizkostenV)'),
 }
+
+// § 9a Abs. 2 HeizkostenV (Heizung PR 13): Überschreitet die von der Schätzung betroffene Wohn- oder
+// Nutzfläche 25 vom Hundert der für die Kostenverteilung maßgeblichen gesamten Fläche, sind die
+// Kosten ausschließlich nach der Fläche zu verteilen. „Überschreitet“: genau 25 % ist keine
+// Überschreitung (R-A22). Geprüft wird je Topf (Entwurf 15.1 Nr. 6).
+export const hkvEstimateThreshold: LawParam<number, 'periodStart'> = {
+  id: 'hkv.estimate-threshold',
+  title: 'Grenze der geschätzten Fläche',
+  norm: '§ 9a Abs. 2 HeizkostenV',
+  timing: 'periodStart',
+  versions: [{
+    value: 25,
+    source: checked('§ 9a Abs. 2 HeizkostenV', 'https://www.gesetze-im-internet.de/heizkostenv/__9a.html'),
+    enacted: ENACTED,
+  }],
+  describe: (v) => `überschreitet ${v} %`,
+}

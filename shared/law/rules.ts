@@ -18,7 +18,7 @@
 // liest, setzt deren `retrieved` und `LAW_AS_OF` auf den Tag der Durchsicht (#110).
 import { betrkvTvSignal } from './bgb-betrkv.ts'
 import { co2CutMissing, co2FirstPeriodStart } from './co2kostaufg.ts'
-import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutNotByConsumption, hkvCutRemoteReading, hkvRemoteReadingRetrofit } from './heizkostenv.ts'
+import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutNotByConsumption, hkvCutRemoteReading, hkvEstimateThreshold, hkvRemoteReadingRetrofit } from './heizkostenv.ts'
 import { dayBefore, germanDate, LAW_AS_OF, onlyVersion, valueAt } from './register.ts'
 
 // Die Fassungen, aus denen die Regeln ihre Grenzen nehmen. Bekommt einer der beiden Parameter eine
@@ -34,6 +34,7 @@ const share = valueAt(hkvConsumptionShare, LAW_AS_OF)
 const cut = valueAt(hkvCutNotByConsumption, LAW_AS_OF)
 const remoteCut = valueAt(hkvCutRemoteReading, LAW_AS_OF)
 const forcedShare = valueAt(hkvConsumptionShareForced, LAW_AS_OF)
+const estimateThreshold = valueAt(hkvEstimateThreshold, LAW_AS_OF)
 const CO2_FROM = co2FirstPeriodStart()
 const co2Cut = valueAt(co2CutMissing, LAW_AS_OF)
 
@@ -197,6 +198,17 @@ export const RULES: readonly Rule[] = [
     summary:
       'Den Anteil nach Verbrauch und die übrigen Maßstäbe wählt der Gebäudeeigentümer. Für künftige Abrechnungszeiträume ändern darf er sie durch Erklärung gegenüber den Nutzern bei Einführung einer Vorerfassung nach Nutzergruppen, nach baulichen Maßnahmen, die nachhaltig Heizenergie einsparen, oder aus anderen sachgerechten Gründen nach ihrer erstmaligen Bestimmung. ' +
       'Festlegung und Änderung sind nur mit Wirkung zum Beginn eines Abrechnungszeitraums zulässig. Den vorgeschriebenen Anteil nach § 7 Abs. 1 Satz 2 wählt er nicht, er gilt.',
+  },
+  // Heizung PR 13 (#99, Entwurf 10.2): Schätzung bei Geräteausfall. Wortlaut gelesen am 05.10.2026 auf
+  // gesetze-im-internet.de.
+  {
+    code: 'heating-estimate',
+    title: 'Schätzung bei Geräteausfall',
+    norm: '§ 9a HeizkostenV; BGH, Urteil vom 16.11.2005, VIII ZR 373/04',
+    summary:
+      'Kann der Verbrauch eines Nutzers wegen Geräteausfalls oder aus einem anderen zwingenden Grund nicht ordnungsgemäß erfasst werden, ermittelt ihn der Gebäudeeigentümer: aus dem Verbrauch der betroffenen Räume in vergleichbaren Zeiträumen, aus dem Verbrauch vergleichbarer anderer Räume im selben Abrechnungszeitraum oder aus dem Durchschnittsverbrauch des Gebäudes oder der Nutzergruppe. ' +
+      'Der so ermittelte Verbrauch tritt an die Stelle des erfassten. Zwingend ist ein Grund erst, wenn sich der Fehler nicht mehr beheben lässt. ' +
+      `Betrifft die Schätzung mehr als ${estimateThreshold} % der für die Verteilung maßgeblichen Fläche, werden die Kosten ausschließlich nach der Fläche verteilt.`,
   },
 ]
 

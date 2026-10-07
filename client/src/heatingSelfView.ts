@@ -1,7 +1,7 @@
 // Die eigene Heizkostenabrechnung auf der Seite Heizkosten und im Druck (Heizung PR 10, Entwurf 3.5,
 // 8.8), ohne DOM prüfbar (heatingSelfView.test.ts). Die Zahlen rechnet der Server; hier stehen nur
 // Sätze und die Ampel.
-import type { HeatingDistribution, HeatingEnergy, InsulationRule, SelfBoundaryView, SelfHeatingStatement, SelfPotView, SelfUnitView, SelfUserView } from './types'
+import type { HeatingDistribution, HeatingEnergy, InsulationRule, SelfBoundaryView, SelfEstimateView, SelfHeatingStatement, SelfPotView, SelfUnitView, SelfUserView } from './types'
 import { fmtDate, fmtEuro } from './api'
 import { hkvConsumptionShareForced, hkvCutNotByConsumption } from '../../shared/law/heizkostenv.ts'
 import { LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
@@ -88,7 +88,9 @@ export function potLines(p: SelfPotView): string[] {
   const base = p.costCents * (1 - p.consumptionPct / 100)
   const lines = [`${POT_LABEL[p.pot]}: ${fmtEuro(p.costCents)}`]
   lines.push(`Grundkosten ${num(100 - p.consumptionPct)} %: ${fmtEuro(Math.round(base))} für ${num(p.areaM2)} m², ${perUnit(p.baseCentsPerM2, 4)} je m²`)
-  if (p.byAreaOnly) lines.push('Kein Verbrauch erfasst: nur nach Fläche verteilt.')
+  // § 9a Abs. 2 (Heizung PR 13): über der Grenze nur nach Fläche.
+  if (p.overThreshold) lines.push(`Geschätzt ist der Verbrauch für ${num(p.estimatedAreaM2 ?? 0)} von ${num(p.areaM2)} m²; das überschreitet die Grenze des § 9a Abs. 2 HeizkostenV, deshalb nur nach Fläche verteilt.`)
+  else if (p.byAreaOnly) lines.push('Kein Verbrauch erfasst: nur nach Fläche verteilt.')
   else if (p.consumptionCentsPerUnit !== null) {
     // „je Einheit“, nicht „je Einheiten“ (Durchsicht von #241, Minor 2).
     lines.push(`Verbrauchskosten ${num(p.consumptionPct)} %: ${fmtEuro(Math.round(p.costCents - base))} für ${num(p.consumption)} ${p.consumptionUnit}, ${perUnit(p.consumptionCentsPerUnit, 6)} je ${p.consumptionUnit === 'Einheiten' ? 'Einheit' : p.consumptionUnit}`)
@@ -105,11 +107,30 @@ export function userLine(u: SelfUserView, self: Pick<SelfHeatingStatement, 'pots
   const time = `${fmtDate(u.from)} bis ${fmtDate(u.to)} (${u.days} Tage, ${num(u.degreeDayPermille)} ‰ der Gradtage)`
   // Der Topfbetrag je Mieter, mit Abzug auch nach CO₂-Abzug: die Grundlage einer Kürzung (Abweichung 15).
   const net = (cents: number, co2: number) => `${fmtEuro(cents)}${co2 > 0 ? `, nach CO₂-Abzug ${fmtEuro(cents - co2)}` : ''}`
-  const parts = [`Heizung ${u.heatingConsumption === null ? 'nicht erfasst' : `${num(u.heatingConsumption)} ${heatUnit}${u.heatingGroup ? ' (gemeinsam nach § 9b Abs. 3)' : ''}`}, ${net(u.heatingCents, u.heatingCo2Cents)}`]
+  // Heizung PR 13: eine Schätzung nach § 9a und die Gruppe nach § 9b Abs. 3 in einer Klammer.
+  const note = (estimated: boolean | undefined, group: boolean) =>
+    estimated ? ` (geschätzt nach § 9a${group ? ', gemeinsam nach § 9b Abs. 3' : ''})` : group ? ' (gemeinsam nach § 9b Abs. 3)' : ''
+  const parts = [`Heizung ${u.heatingConsumption === null ? 'nicht erfasst' : `${num(u.heatingConsumption)} ${heatUnit}${note(u.heatingEstimated, u.heatingGroup)}`}, ${net(u.heatingCents, u.heatingCo2Cents)}`]
   if (self.pots.some((p) => p.pot === 'water')) {
-    parts.push(`Warmwasser ${u.waterConsumption === null ? 'nicht erfasst' : `${num(u.waterConsumption)} m³${u.waterGroup ? ' (gemeinsam nach § 9b Abs. 3)' : ''}`}, ${net(u.waterCents, u.waterCo2Cents)}`)
+    parts.push(`Warmwasser ${u.waterConsumption === null ? 'nicht erfasst' : `${num(u.waterConsumption)} m³${note(u.waterEstimated, u.waterGroup)}`}, ${net(u.waterCents, u.waterCo2Cents)}`)
   }
   return `${u.label}, ${time}: ${parts.join('; ')}`
+}
+
+// Die Schätzung nach § 9a im Druck (Heizung PR 13, Entwurf 8.8 „Schätzungen mit Methode“): nur die der Wohnung
+// des Mieters, und nur, wenn sein Verbrauch daraus kommt; wie bei den Geräten sieht ein Mieter nichts aus
+// anderen Wohnungen (Durchsicht von #241, Recht-I1). Die geschätzte Fläche des Hauses nennt `potLines`.
+const METHOD_TEXT: Record<SelfEstimateView['method'], string> = {
+  previousPeriod: 'dem Verbrauch der Wohnung in einem vergleichbaren Zeitraum',
+  comparableUnit: 'dem Verbrauch einer vergleichbaren Wohnung in diesem Zeitraum',
+  buildingAverage: 'dem Durchschnitt des Gebäudes je m²',
+}
+export function estimateLines(self: Pick<SelfHeatingStatement, 'estimates' | 'pots'>, unitId: string | undefined, u: Pick<SelfUserView, 'heatingEstimated' | 'waterEstimated'>): string[] {
+  return (self.estimates ?? []).filter((e) => e.unitId === unitId && (e.part === 'heat' ? u.heatingEstimated : u.waterEstimated)).map((e) => {
+    const unit = e.part === 'heat' ? heatUnitOf(self) : 'm³'
+    return `${e.part === 'heat' ? 'Heizung' : 'Warmwasser'}: Der Verbrauch Ihrer Wohnung ließ sich nicht ablesen (${e.reason}) und ist nach § 9a HeizkostenV geschätzt, nach ${METHOD_TEXT[e.method]}: ${num(e.value)} ${unit} für die ganze Heizperiode.` +
+      `${e.kept > 0 ? ' Wer in der Wohnung bis zu einem Wechsel gültig abgelesen ist, behält diesen Wert; Ihnen ist der Anteil Ihrer Zeit an der Schätzung zugerechnet.' : e.users > 1 ? ' Er ist auf die Nutzer der Wohnung nach Gradtagen bzw. Tagen geteilt (wie § 9b Abs. 3 HeizkostenV).' : ''}`
+  })
 }
 
 // Das Ableseergebnis geht an jeden Mieter für seine Wohnung (Durchsicht von #239, I2); gedruckt wird eine
