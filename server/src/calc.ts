@@ -410,6 +410,8 @@ const noticeKinds = {
   'heating.estimate-no-device': { level: 'warning', title: 'Schätzung ohne Gerät', rule: 'heating-estimate', terms: ['heatingEstimate'] },
   'heating.estimate-below-measured': { level: 'hint', title: 'Schätzung unter dem abgelesenen Verbrauch', rule: 'heating-estimate', terms: ['heatingEstimate'] },
   'heating.estimate-same-day': { level: 'warning', title: 'Schätzung neben zwei Ständen am selben Tag', rule: 'heating-estimate', terms: ['heatingEstimate'] },
+  // Heizung PR 17 (Entwurf 4.5, 10.1): ein Rechtswert, den der Vermieter eingetragen hat.
+  'law.value-overridden': { level: 'hint', title: 'Selbst eingetragener Rechtswert', terms: ['legalBasis'] },
   'model.prepayment-unsettled': { level: 'warning', title: 'Vorauszahlung ohne Abrechnung', terms: ['prepayment', 'flatRate'] },
   'prepayment.arrears': { level: 'warning', title: 'Rückstand im Mietkonto', terms: ['prepayment'] },
   // #141: ein Hinweis und kein Fehler, denn eine vereinbarte Änderung ist zulässig.
@@ -1871,7 +1873,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // trägt ein, was sie bekommen hat, und am Ende steht es in `legalBasis.values`. Abgefragt wird
   // erst dort, wo ein Wert wirklich gebraucht wird, damit nur Benutztes einfriert. `lawPeriod`
   // spannt den Abrechnungszeitraum (#208).
-  const lawLog = createLawLog()
+  const lawLog = createLawLog(snapshot.lawOverrides ?? [])
   const lawPeriod: Period = { from: yFrom, to: yTo }
   // Zeitraum und Vorzeitraum für den Vergleich der Schlüssel und der Doppelungen (#141).
   const at = contextOf(period, snapshot.previousPeriod)
@@ -6326,6 +6328,15 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           : ''),
       tenancySubject(heatingFlat),
     )
+  }
+
+  // Eingetragene Rechtswerte (Heizung PR 17, Entwurf 4.5): in jeder Abrechnung, die einen nutzt. Aus einer
+  // Heizperiode nach Weg b kommt der Hinweis schon mit ihren Hinweisen; dann nicht ein zweites Mal.
+  for (const v of lawLog.values) {
+    if (!v.overridden) continue
+    const text = `${v.title} ${v.validFrom?.slice(0, 4) ?? ''}: ${v.text}, von Ihnen eingetragen (Quelle: ${v.overridden.source}), weil der amtliche Wert noch nicht im Programm steht. ` +
+      'Bringt ein Update den amtlichen Wert, gilt dieser; bei einer abgeschlossenen Abrechnung nennt die Seite Abrechnung die Änderung dann als „Rechtswert geändert“.'
+    if (!notices.some((n) => n.code === 'law.value-overridden' && n.text === text)) warn('law.value-overridden', text)
   }
 
   // Die Höchstdauer hat P gebildet (shared/period.ts); eingefroren wird sie hier.
