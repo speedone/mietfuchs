@@ -7,7 +7,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement, meterSegments, type ComputedSettlement } from '../src/calc.ts'
 import type { Snapshot, SnapshotReading } from '../src/snapshot.ts'
-import type { CaptureMethod, CostItem, HeatingPlant, HeatingServiceValue } from '../../shared/types.ts'
+import type { CaptureMethod, CostItem, HeatingPlant, HeatingServiceValue, Meter, Reading } from '../../shared/types.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import { dayAfter } from '../../shared/law/register.ts'
 import { selfDelivery, selfMeter, selfReading, selfRow, selfSnapshot } from '../testing/selfHeating.ts'
@@ -258,4 +258,45 @@ test('Durchsicht #241 Recht-I4: Ablesedienst mit Einheiten und kWh gemischt ist 
   const kwh = computeSettlement(withCapture(selfSnapshot({ serviceValues: rows.map((r) => ({ ...r, heatUnit: 'kWh' as const })), meters: METERS().filter((m2) => !HEAT.includes(m2.id)) }), 'serviceValues'))
   assert.equal(selfOf(kwh).pots.find((p) => p.pot === 'heating')?.consumptionUnit, 'kWh')
   assert.deepEqual(amounts(kwh), amounts(computeSettlement(base)))
+})
+
+test('Durchsicht #241 N1: Wechsel Wärmezähler → Heizkostenverteiler am 30.06. in einer Wohnung ist gemischt, statt den Verbrauch des Wärmezählers still wegzulassen', () => {
+  const hkv = (u: string) => selfMeter(`hk-${u}`, u, `HKV ${u}`, 'hkv', { hcaScale: 'product' })
+  const wz = (u: string) => selfMeter(`wz-${u}`, u, `WZ ${u}`, 'waerme')
+  const xw = (u: string) => selfMeter(`xw-${u}`, u, `WW ${u}`, 'warmwasser')
+  const dhw = selfMeter('ww', null, 'Speicher', 'waerme', { heatingPlantId: 'hp', heatingRole: 'dhwHeat' })
+  const water = [
+    selfReading('xw-a', '2024-12-31', 10), selfReading('xw-a', '2025-12-31', 40),
+    selfReading('xw-b', '2024-12-31', 0), selfReading('xw-b', '2025-12-31', 40),
+    selfReading('xw-c', '2024-12-31', 5), selfReading('xw-c', '2025-09-30', 43), selfReading('xw-c', '2025-12-31', 55),
+    selfReading('ww', '2024-12-31', 0), selfReading('ww', '2025-12-31', 9000),
+  ]
+  const hkR = (u: string, e: number, c?: number) => [selfReading(`hk-${u}`, '2024-12-31', 0), ...(c !== undefined ? [selfReading(`hk-${u}`, '2025-09-30', c)] : []), selfReading(`hk-${u}`, '2025-12-31', e)]
+  const plantOf = (capture: CaptureMethod) => ({ capture, selfSpans: [{ from: periodKey('2025-01'), until: null, capture, hotWater: 'combined' as const }] })
+  const run = (capture: CaptureMethod, meters: Meter[], readings: Reading[]) =>
+    computeSettlement(selfSnapshot({ plant: plantOf(capture), meters: [...meters, dhw, xw('a'), xw('b'), xw('c')], readings: [...water, ...readings] }))
+  const total = (s: ComputedSettlement, id: string) => s.statements.find((st) => st.tenancyId === id)?.totalShareCents
+  // Referenz: alle Wohnungen ganzjährig mit Heizkostenverteilern, A trägt 1.794,28 €.
+  const ref = run('hca', [hkv('a'), hkv('b'), hkv('c')], [...hkR('a', 1200), ...hkR('b', 1600), ...hkR('c', 1200, 720)])
+  assert.equal(total(ref, 'A'), 179428)
+  // A mit Wärmezähler bis 30.06. und Heizkostenverteiler ab 30.06.: Vorher zählte nur der
+  // Heizkostenverteiler, A trug 1.349,39 €, der Verbrauch des ersten Halbjahrs fiel weg.
+  const mid = [selfReading('hk-a', '2025-06-30', 0), selfReading('hk-a', '2025-12-31', 600), ...hkR('b', 1600), ...hkR('c', 1200, 720), selfReading('wz-a', '2024-12-31', 0), selfReading('wz-a', '2025-06-30', 6000)]
+  const c = run('hca', [hkv('a'), hkv('b'), hkv('c'), wz('a')], mid)
+  assert.notEqual(total(c, 'A'), 134939)
+  const mixed = c.notices.find((n) => n.code === 'heating.mixed-capture') ?? assert.fail(`nicht gemischt: ${codes(c).join(', ')}`)
+  assert.equal(mixed.level, 'error')
+  assert.match(mixed.text, /Bei A wechselt das Gerät innerhalb der Heizperiode/)
+  assert.match(mixed.text, /§ 9a HeizkostenV/)
+  assert.match(mixed.text, /verteilt Mietfuchs die Heizkosten dieser Anlage nicht/)
+  // Ohne den Wärmezähler bleibt es beim Grenzmodell: Die erste Ablesung gilt, wie sie ist.
+  const c0 = run('hca', [hkv('a'), hkv('b'), hkv('c')], mid.filter((r) => r.meterId !== 'wz-a'))
+  assert.ok(!codes(c0).includes('heating.mixed-capture'))
+  assert.equal(total(c0, 'A'), 134939)
+  // Erfassung mit Wärmezählern, A wechselt am 30.06. zum Heizkostenverteiler: dieselbe Regel, und die
+  // Meldung zum fehlenden Stand des Wärmezählers nennt den Heizkostenverteiler.
+  const wzR = [selfReading('wz-b', '2024-12-31', 0), selfReading('wz-b', '2025-12-31', 16000), selfReading('wz-c', '2024-12-31', 500), selfReading('wz-c', '2025-09-30', 7700), selfReading('wz-c', '2025-12-31', 12500)]
+  const d = run('heatMeter', [wz('a'), wz('b'), wz('c'), hkv('a')], [...wzR, selfReading('wz-a', '2024-12-31', 1000), selfReading('wz-a', '2025-06-30', 7000), selfReading('hk-a', '2025-06-30', 0), selfReading('hk-a', '2025-12-31', 600)])
+  assert.match(d.notices.find((n) => n.code === 'heating.mixed-capture')?.text ?? assert.fail('nicht gemischt'), /Bei A wechselt das Gerät/)
+  assert.match(d.notices.find((n) => n.code === 'heating.self-incomplete')?.text ?? assert.fail('kein fehlender Stand'), /„WZ a“ \(A\) fehlt ein Stand zum 31\.12\.2025.*außerdem der Heizkostenverteiler „HKV a“/s)
 })

@@ -33,6 +33,8 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
   const [printUnit, setPrintUnit] = useState<string>(self?.units[0]?.unitId ?? '')
   const [printing, setPrinting] = useState(false)
   const editable = !d || shareEditable(d)
+  // Die Warmwasserbereitung dieser Heizperiode, nicht die heutige der Anlage (Durchsicht von #241, Runde 2, H1).
+  const hotWater = view.selfHotWater ?? plant.hotWater
   const forced = forcedShare(plant.energy, insulation)
   // Den Pflichtanteil nachzutragen geht auch in einer begonnenen Heizperiode (Durchsicht von #239, C1).
   const toForced = forced !== null && savedInsulation !== 'applies'
@@ -56,8 +58,8 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
 
   async function saveShare() {
     const heat = forced ?? percentOf(share)
-    const water = plant.hotWater === 'none' ? null : (editable ? percentOf(waterShare) : (d?.effective?.water ?? null))
-    if (heat === null || (plant.hotWater !== 'none' && water === null)) {
+    const water = hotWater === 'none' ? null : (editable ? percentOf(waterShare) : (d?.effective?.water ?? null))
+    if (heat === null || (hotWater !== 'none' && water === null)) {
       setError(`Bitte geben Sie den Anteil zwischen ${min} und ${max} % an, mit höchstens zwei Nachkommastellen.`)
       return
     }
@@ -124,7 +126,7 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
               <input inputMode="decimal" value={forced !== null ? String(forced) : share} disabled={forced !== null}
                 onChange={(e) => { if (waterShare === '' || waterShare === share) setWaterShare(e.target.value); setShare(e.target.value) }} />
             </label>
-            {plant.hotWater !== 'none' && editable && (
+            {hotWater !== 'none' && editable && (
               <label className="field">
                 Warmwasser in %
                 <input inputMode="decimal" value={waterShare} onChange={(e) => setWaterShare(e.target.value)} />

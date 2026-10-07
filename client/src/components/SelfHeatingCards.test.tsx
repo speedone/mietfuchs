@@ -71,3 +71,29 @@ test('Fernwärme: keine Frage zum Wärmeschutz (Durchsicht von #239, M1)', () =>
   render(<SelfHeatingCards plant={{ id: 'hp', method: 'self', energy: 'districtHeating', hotWater: 'none' } as HeatingPlant} view={{ period: '2025-01', label: '2025', distribution: null } as HeatingPeriodView} self={null} onChanged={() => undefined} />)
   expect(screen.queryByText(/Wärmeschutzverordnung/)).toBeNull()
 })
+
+test('Durchsicht #241 Runde 2, H1: Die Verteilung 2025 fragt das Warmwasser nach der Bereitung von 2025, nicht nach der heutigen der Anlage', async () => {
+  const sent: unknown[] = []
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+    sent.push(init?.body ? JSON.parse(String(init.body)) : null)
+    return new Response('{}', { status: 200 })
+  })
+  const onChanged = vi.fn()
+  // Die Anlage bereitet seit 2026 kein Warmwasser mehr; 2025 bereitete sie es mit.
+  render(<SelfHeatingCards plant={{ id: 'hp', method: 'self', energy: 'districtHeating', hotWater: 'none' } as HeatingPlant}
+    view={{ period: '2025-01', label: '2025', distribution: null, selfHotWater: 'combined' } as HeatingPeriodView} self={null} onChanged={onChanged} />)
+  fireEvent.change(screen.getByLabelText(/Heizung in %/), { target: { value: '70' } })
+  fireEvent.change(screen.getByLabelText(/Warmwasser in %/), { target: { value: '60' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+  await waitFor(() => expect(onChanged).toHaveBeenCalled())
+  expect(sent).toEqual([{ heatConsumptionPct: 70, waterConsumptionPct: 60, insulationRule: 'notApplies' }])
+  cleanup()
+  // Umgekehrt: 2025 ohne Warmwasser, die Anlage heute mit; kein Feld, und gespeichert wird ohne Warmwasser.
+  sent.length = 0
+  render(<SelfHeatingCards plant={{ id: 'hp', method: 'self', energy: 'districtHeating', hotWater: 'combined' } as HeatingPlant}
+    view={{ period: '2025-01', label: '2025', distribution: null, selfHotWater: 'none' } as HeatingPeriodView} self={null} onChanged={onChanged} />)
+  expect(screen.queryByLabelText(/Warmwasser in %/)).toBeNull()
+  fireEvent.change(screen.getByLabelText(/Heizung in %/), { target: { value: '70' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+  await waitFor(() => expect(sent).toEqual([{ heatConsumptionPct: 70, waterConsumptionPct: null, insulationRule: 'notApplies' }]))
+})

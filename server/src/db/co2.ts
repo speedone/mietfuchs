@@ -139,7 +139,7 @@ export async function heatingPeriodViews(db: Database, plantId: string, periodPa
       stock: stockData ? stockViewFor(stockData, ctx, h, closed) : null,
       // Anteil nach Verbrauch (Heizung PR 10), nur bei eigener Abrechnung.
       // Über die Linie (Durchsicht von #239, I3), und erst ab dem Beginn der eigenen Abrechnung (I1).
-      distribution: ctx.plant.method === 'self' && (selfBegin === null || h.key >= selfBegin)
+      distribution: ctx.plant.method === 'self' && (selfBegin === null || h.key >= selfBegin || self)
         ? distributionOf(lineRows, ctx.plant.energy, h, today)
         : null,
       capture: self ? captureOf(ctx.plant, String(h.key)) : null,

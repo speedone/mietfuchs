@@ -2826,7 +2826,18 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       )
       : null
     const blocked: SelfBlock[] = []
-    for (const p of plan.problems) blocked.push({ code: 'heating.self-incomplete', text: `${selfProblemText(p, plant.areaBasisHeat ?? 'area', capture)}${p.kind === 'missing' && p.reason !== 'sameDay' ? ' Lässt sich ein Wert nicht mehr ablesen, ist er zu schätzen (§ 9a HeizkostenV); das rechnet Mietfuchs mit einer späteren Version.' : ''}` })
+    // Heizkostenverteiler und Ablesedienst (Heizung PR 12, Entwurf 8.1): gemischte Geräte (§ 5 Abs. 7).
+    const unitNameOf = (id: string) => snapshot.units.find((u) => u.id === id)?.name ?? id
+    const hPeriod = { from: period.from, to: period.to }
+    const mixed = capture === 'serviceValues' ? serviceUnitsMixed(serviceRows) : mixedCapture(capture, [...servedIds], snapshot.meters, snapshot.readings, hPeriod)
+    // N1: Fehlt einem Gerät einer Wohnung mit Gerätewechsel ein Stand, nennt die Meldung das andere Gerät mit.
+    const switchedNote = (p: SelfProblem): string => {
+      if (p.kind !== 'missing' || p.pot !== 'heating' || !(mixed?.switched ?? []).includes(p.unitId)) return ''
+      const otherType = capture === 'hca' ? 'waerme' : 'hkv'
+      const names = snapshot.meters.filter((m) => m.unitId === p.unitId && m.type === otherType && (m.heatingPlantId ?? null) === null).map((m) => `„${m.name || 'ohne Namen'}“`)
+      return ` An ${p.unitName} hängt in dieser Heizperiode außerdem ${names.length > 1 ? 'die' : 'der'} ${otherType === 'hkv' ? 'Heizkostenverteiler' : 'Wärmezähler'} ${andList(names)}: Das Gerät wurde gewechselt (siehe den Hinweis zu den Geräten).`
+    }
+    for (const p of plan.problems) blocked.push({ code: 'heating.self-incomplete', text: `${selfProblemText(p, plant.areaBasisHeat ?? 'area', capture)}${p.kind === 'missing' && p.reason !== 'sameDay' ? ' Lässt sich ein Wert nicht mehr ablesen, ist er zu schätzen (§ 9a HeizkostenV); das rechnet Mietfuchs mit einer späteren Version.' : ''}${switchedNote(p)}` })
     if (shares === null) {
       blocked.push({ code: 'heating.self-incomplete', text: 'Für diese Heizperiode ist kein Anteil nach Verbrauch festgelegt. Tragen Sie auf der Seite Heizkosten ein, mit welchem Anteil Sie bisher abgerechnet haben.' })
     } else {
@@ -2858,11 +2869,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     if (stockWithoutTemplate.has(plant.id)) {
       blocked.push({ code: 'heating.self-incomplete', text: 'Für den Verbrauch aus dem Vorrat fehlt eine Brennstoffposition dieser Heizanlage, in dieser Heizperiode und in der vorigen. Erfassen Sie die Brennstoffrechnung als Position nach Heizkostenverordnung.' })
     }
-    // Heizkostenverteiler und Ablesedienst (Heizung PR 12, Entwurf 8.1): gemischte Geräte (§ 5 Abs. 7) und
-    // fehlende Skala oder Faktor verhindern die Verteilung.
-    const unitNameOf = (id: string) => snapshot.units.find((u) => u.id === id)?.name ?? id
-    const hPeriod = { from: period.from, to: period.to }
-    const mixed = capture === 'serviceValues' ? serviceUnitsMixed(serviceRows) : mixedCapture(capture, [...servedIds], snapshot.meters, snapshot.readings, hPeriod)
+    // Gemischte Geräte (§ 5 Abs. 7) und fehlende Skala oder Faktor verhindern die Verteilung.
     if (mixed) blocked.push({ code: 'heating.mixed-capture', text: mixedCaptureText(capture, mixed, unitNameOf) })
     const unrated = missingRatings(capture, [...servedIds], snapshot.meters, snapshot.readings, hPeriod)
     if (unrated.length > 0) blocked.push({ code: 'heating.hca-factor-missing', text: missingRatingsText(unrated, unitNameOf) })

@@ -21,7 +21,7 @@ import { lineRoot, servesUnit } from '../../../shared/heatingPeriod.ts'
 import type {
   BillingPeriod, CostItem, CostKey, HotWater, SelfSpanRange, HeatingDistribution, HeatingEnergy, HeatingPart, HeatingPlant, InterimGap, InsulationRule, Meter,
 } from '../../../shared/types.ts'
-import { consumptionSharesOf, OIL_OR_GAS, POT_METER, selfFromOf, targetProblem, type ShareRow } from '../heating.ts'
+import { consumptionSharesOf, OIL_OR_GAS, POT_METER, selfActive, selfFromOf, targetProblem, type ShareRow } from '../heating.ts'
 import type { Database, Executor } from './client.ts'
 import { closedHeatingKeys, closedText, ensureHeatingPeriod, heatingPeriodClosed, heatingPeriodOf, plantContext, type PlantContext } from './heatingPeriodContext.ts'
 import { readCostItems, readHeatingPlants, readMeters, readUnits } from './read.ts'
@@ -126,8 +126,12 @@ function checkShares(body: unknown, plant: HeatingPlant, hotWater: HotWater, h: 
   // Durchsicht von #239, C1: Den Pflichtwert nach § 7 Abs. 1 Satz 2 nachzutragen ist keine Wahl nach
   // § 6 Abs. 4 (der verweist nur auf § 7 Abs. 1 Satz 1) und geht deshalb auch in einer begonnenen
   // Heizperiode; das Warmwasser bleibt dabei, wie es ist.
-  const toForced = insulationRule === 'applies' && OIL_OR_GAS.includes(plant.energy) && (before === null || before.water === water)
-  if (before !== null && today >= h.from && (before.heating !== heating || before.water !== water) && !toForced) {
+  // Durchsicht von #241, Runde 2: Der Anteil beim Warmwasser ändert sich nur, wo es vorher und nachher einen
+  // gibt. Bereitet die Anlage ab einer Heizperiode kein Warmwasser mehr (oder erstmals), ist das eine
+  // Tatsache der Anlage und keine Wahl eines Maßstabs nach § 6 Abs. 4; der Anteil der Heizung bleibt geschützt.
+  const waterChanged = before !== null && water !== null && before.water !== null && before.water !== water
+  const toForced = insulationRule === 'applies' && OIL_OR_GAS.includes(plant.energy) && !waterChanged
+  if (before !== null && today >= h.from && (before.heating !== heating || waterChanged) && !toForced) {
     throw new HeatingError(400,
       `Die Heizperiode hat am ${germanDate(h.from)} begonnen. Den Anteil nach Verbrauch ändern Sie nur für künftige Abrechnungszeiträume, durch Erklärung gegenüber den Mietern und mit Wirkung zum Beginn eines Zeitraums (§ 6 Abs. 4 HeizkostenV). Tragen Sie ihn bei der nächsten Heizperiode ein.`)
   }
@@ -149,8 +153,10 @@ export async function saveDistribution(db: Database, plantId: string, period: st
   const line = await lineRowsOf(db, plantId)
   const rows = line.merged
   // Der Beginn steht an der Anlage (Durchsicht von #239, W1/W2).
+  // Durchsicht von #241, Runde 2: Seit PR 12 beginnt ein Wechsel der Erfassung oder der Warmwasserbereitung
+  // einen neuen Zeitraum; eine offene Heizperiode eines früheren Zeitraums rechnet weiter selbst ab.
   const begin = selfFromOf(ctx.plant)
-  if (begin !== null && h.key < begin) throw new HeatingError(400, beforeBeginText(begin))
+  if (begin !== null && h.key < begin && !selfActive(ctx.plant, String(h.key))) throw new HeatingError(400, beforeBeginText(begin))
   const next = checkShares(body, ctx.plant, hotWaterOf(ctx.plant, String(h.key)), h, rows, today)
   // In derselben Heizperiode gilt in der Linie ein Anteil (§ 6 Abs. 4; Durchsicht von #239, I3).
   const ids = lineIdsOf(line.plants, plantId)
@@ -245,7 +251,9 @@ export async function setUpSelf(db: Database, plantId: string, body: unknown, to
     )
   }
   for (const a of answers) {
-    const problem = targetProblem(after.hotWater, a.heatingPart, a.heatingTarget ?? null)
+    // Die Warmwasserbereitung der Heizperiode der Position (Durchsicht von #241, Runde 2).
+    const period = offen.find((c) => c.id === a.id)?.period
+    const problem = targetProblem(period !== undefined ? hotWaterOf(after, String(period)) : after.hotWater, a.heatingPart, a.heatingTarget ?? null)
     if (problem !== null) throw new HeatingError(400, `„${offen.find((c) => c.id === a.id)?.description ?? a.id}“: ${problem}.`)
   }
   const currentItems = await readCostItems(db)

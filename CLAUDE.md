@@ -1291,9 +1291,13 @@ lässt die Wahl nur für künftige Zeiträume zu. Der Anteil gehört zur **Linie
   zählen, sind gesperrt (409), ebenso das Löschen; geprüft wird nach Überdeckung, nicht nach Ablesedatum.
   **Gezählt wird ein Gerät nur in Heizperioden, die seine Ablesungen überdecken** (`coversPeriod`: erste vor
   dem Ende, letzte nach dem Tag vor dem Beginn); ein ausgebautes Gerät mit letzter Ablesung am Stichtag
-  muss deshalb nicht gelöscht werden. **Gemischt** ist eine Wohnung, deren Raumwärme in der Heizperiode nur
-  ein Gerät der anderen Art erfasst; ein Heizkostenverteiler neben dem Wärmezähler derselben Wohnung ändert
-  nichts. Das verlangt nach § 5 Abs. 7 eine Vorerfassung, die Mietfuchs nicht rechnet (#218):
+  muss deshalb nicht gelöscht werden. **Gemischt** ist eine Wohnung, an der in der Heizperiode ein Gerät der
+  anderen Art zählt und kein Gerät der eingestellten Art sie **ganz** abdeckt (`spansPeriod`: erste Ablesung am
+  Tag vor dem Beginn oder früher, letzte am Ende oder später); ein Heizkostenverteiler neben dem Wärmezähler
+  derselben Wohnung ändert also nichts, ein Wechsel mitten in der Heizperiode dagegen schon (`switched`, der
+  Satz nennt Zwischenstand bzw. Schätzung nach § 9a, die mit PR 13 kommt, und die Meldung zum fehlenden Stand
+  nennt das andere Gerät). Sonst fiele der Verbrauch des alten Geräts still weg, nachgemessen 1.349,39 € statt
+  1.794,28 €. Das verlangt nach § 5 Abs. 7 eine Vorerfassung, die Mietfuchs nicht rechnet (#218):
   `heating.mixed-capture`, keine Verteilung; Warmwasserzähler und Zähler der Anlage zählen nicht. Beim
   Ablesedienst nennt jede Zeile, ob die Heizung in Einheiten oder kWh steht (`heat_unit`); gemischt ist
   dort, wo beides vorkommt.
@@ -1309,9 +1313,14 @@ lässt die Wahl nur für künftige Zeiträume zu. Der Anteil gehört zur **Linie
   Ablesedienstes, die in seinen Zeitraum fallen. Das Ableseergebnis nennt am Stichtag den Stichtagswert
   (`SelfReadingView.oldEndValue`), nicht die 0. Dass die Abrechnung den Faktor nennt, ist Praxis der
   Messdienste (Berliner Mieterverein), keine Norm; so steht es in Lexikon und Sätzen. **Erfassung und Warmwasserbereitung gehören zum Zeitraum der eigenen Abrechnung**
-  (`heating_self_spans.capture`, `.hot_water`, `captureOf` und `hotWaterOf` in hca.ts; beide ändern sich
+  (`heating_self_spans.capture`, `.hot_water`, `captureOf` und `hotWaterOf` in shared/heatingPeriod.ts, weil die
+  Seiten Kosten und Heizkosten dieselbe Frage stellen; beide ändern sich
   über `PUT` bei eigener Abrechnung nicht, sondern nur mit der Einrichtung ab einer Heizperiode): Eine andere Erfassung beginnt mit der Einrichtung ab einer Heizperiode einen neuen
-  Zeitraum, frühere Heizperioden rechnen weiter nach ihren Geräten; ein Zeitraum von vor PR 12 bekommt beim
+  Zeitraum, frühere Heizperioden rechnen weiter nach ihren Geräten. Ab einer schon begonnenen Heizperiode gilt
+  die neue Einstellung ab deren Beginn: Geräte und Warmwasserbereitung sind Tatsachen der Anlage, keine Maßstäbe
+  nach § 6 Abs. 4; geschützt bleibt der Anteil nach Verbrauch (`checkShares`, beim Warmwasser nur, wo es vorher
+  und nachher einen gibt). Eine offene Heizperiode eines früheren Zeitraums rechnet weiter selbst ab; Verteilung
+  und Ansicht fragen dafür `selfActive`, nicht den Beginn des laufenden Zeitraums. Ein Zeitraum von vor PR 12 bekommt beim
   nächsten Schreiben die bisherige Erfassung der Anlage (`pinSelfSpans`); über `PUT /api/heating-plants/:id`
   ändert sie sich bei eigener Abrechnung nicht. Die Einrichtung legt bei Heizkostenverteilern und
   Ablesedienst keine Wärmezähler an. Die Invariante fuel-invariant hat drei Varianten mit

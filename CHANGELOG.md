@@ -231,7 +231,13 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   ab der Sie die Einrichtung neu durchlaufen.
 - Gezählt wird ein Gerät nur in den Heizperioden, die seine Ablesungen überdecken: Ein ausgebauter
   Wärmezähler und ein neuer Heizkostenverteiler mit dem Wechsel am 31.12. sperren keine der beiden
-  Heizperioden, und ein Heizkostenverteiler neben dem Wärmezähler derselben Wohnung stört nicht.
+  Heizperioden, und ein Heizkostenverteiler neben dem Wärmezähler derselben Wohnung stört nicht, solange eines
+  der beiden die ganze Heizperiode abdeckt. Wechselt das Gerät einer Wohnung mitten in der Heizperiode, etwa am
+  30.06., verteilt Mietfuchs die Anlage nicht und nennt den Weg, statt den Verbrauch des alten Geräts still
+  wegzulassen.
+- Positionen, Verteilung und Ansicht einer Heizperiode richten sich nach deren Warmwasserbereitung, auch wenn
+  die Anlage sie später geändert hat: Eine Wartung 2025 „für Heizung und Warmwasser“ behält ihr Ziel, und ein
+  Ziel, das nicht passt, ersetzt die Seite Kosten nicht mehr still, sondern meldet es am Feld.
 - Beim Mieterwechsel nennt die Abrechnung jedem Mieter nur seine Geräte und Werte in seinem Zeitraum; das
   Ableseergebnis nennt am Stichtag den Stichtagswert. Der Ablesedienst kann die Heizung in Einheiten oder kWh
   nennen, das Warmwasser in m³. Nach einem Kesseltausch rechnet die neue Anlage mit denselben Werten des

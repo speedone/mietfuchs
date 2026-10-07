@@ -9,12 +9,13 @@ import { openDatabase } from '../src/db/open.ts'
 import { readHeatingPlants, readMeters } from '../src/db/read.ts'
 import { closeSettlement, createEntity, createProperty, crossPropertyViolations, HeatingError, removeEntity, updateEntity } from '../src/db/repository.ts'
 import { createHeatingPlant, replaceHeatingPlant, updateHeatingPlant } from '../src/db/heating.ts'
-import { setUpSelf } from '../src/db/heatingSelf.ts'
+import { saveDistribution, setUpSelf } from '../src/db/heatingSelf.ts'
 import { dropIfEmpty, heatingPeriodViews } from '../src/db/co2.ts'
 import { saveServiceValues } from '../src/db/serviceValues.ts'
 import { heatingSelfSpans, heatingServiceValues } from '../src/db/schema.ts'
 import { eq } from 'drizzle-orm'
 import { periodKey } from '../../shared/period.ts'
+import { HEATING_CATEGORY } from '../../shared/heating.ts'
 
 type Opened = Awaited<ReturnType<typeof openDatabase>>
 async function withDatabase(run: (opened: Opened) => Promise<void>): Promise<void> {
@@ -314,5 +315,57 @@ test('Durchsicht #241 I2: nur die Warmwasserbereitung ändert sich ab 2026; auch
       { from: '2025-01', until: '2026-01', capture: 'heatMeter', hotWater: 'combined' },
       { from: '2026-01', until: null, capture: 'heatMeter', hotWater: 'none' },
     ])
+  })
+})
+
+test('Durchsicht #241 Runde 2, M1: Warmwasser 2025 verbunden, seit 2026 keines; Position, Verteilung und Ansicht 2025 fragen 2025', async () => {
+  await withDatabase(async (opened) => {
+    await haus(opened)
+    await opened.write((db) => setUpSelf(db, 'hp', einrichtung('heatMeter'), '2025-03-01', newId))
+    await opened.write((db) => setUpSelf(db, 'hp', { ...einrichtung('heatMeter', '2026-01'), hotWater: 'none', waterConsumptionPct: null }, '2025-11-01', newId))
+    assert.equal((await plantOf(opened)).hotWater, 'none')
+    // Eine Wartung 2025 für Heizung und Warmwasser: anlegen und bearbeiten geht, 2026 nicht.
+    const wartung = (id: string, period: string) => opened.write((db) => createEntity(db, 'costItems', id, {
+      propertyId: 'objekt-1', period, category: HEATING_CATEGORY, description: 'Wartung', amountCents: 24000,
+      key: 'heatingSystem', heatingPlantId: 'hp', heatingPart: 'operating', heatingTarget: 'both',
+    }))
+    await wartung('w25', '2025-01')
+    await opened.write((db) => updateEntity(db, 'costItems', 'w25', { amountCents: 30000 }))
+    await assert.rejects(wartung('w26', '2026-01'), heatingError(400, /.+/))
+    // Die Verteilung 2025 braucht weiter den Anteil beim Warmwasser und speichert ihn.
+    const d = await opened.write((db) => saveDistribution(db, 'hp', '2025-01', { heatConsumptionPct: 70, waterConsumptionPct: 70, insulationRule: 'notApplies' }, '2025-11-01')) ?? assert.fail('keine Anlage')
+    assert.deepEqual([d.own.heating, d.own.water], [70, 70])
+    await assert.rejects(opened.write((db) => saveDistribution(db, 'hp', '2025-01', { heatConsumptionPct: 70, insulationRule: 'notApplies' }, '2025-11-01')), heatingError(400, /Warmwasser/))
+    // Die Ansicht nennt je Heizperiode ihre Warmwasserbereitung.
+    const [v25] = await opened.read((db) => heatingPeriodViews(db, 'hp', '2025')) ?? assert.fail('keine Anlage')
+    const [v26] = await opened.read((db) => heatingPeriodViews(db, 'hp', '2026')) ?? assert.fail('keine Anlage')
+    assert.deepEqual([v25?.selfHotWater, v26?.selfHotWater], ['combined', 'none'])
+    // 2025 gehört zu einem früheren Zeitraum der eigenen Abrechnung und zeigt seine Verteilung weiter.
+    assert.deepEqual([v25?.distribution?.own.heating, v25?.distribution?.own.water], [70, 70])
+  })
+})
+
+test('Durchsicht #241 Runde 2: In einer begonnenen Heizperiode gilt eine neue Warmwasserbereitung ab ihrem Beginn; der Anteil der Heizung bleibt geschützt (§ 6 Abs. 4)', async () => {
+  await withDatabase(async (opened) => {
+    await haus(opened)
+    await opened.write((db) => setUpSelf(db, 'hp', einrichtung('heatMeter'), '2025-03-01', newId))
+    // Am 01.03.2026 eingetragen: Die Anlage bereitet seit Beginn der Heizperiode 2026 kein Warmwasser mehr.
+    // Der Anteil beim Warmwasser entfällt damit, geändert wird kein Maßstab.
+    await opened.write((db) => setUpSelf(db, 'hp', { ...einrichtung('heatMeter', '2026-01'), hotWater: 'none', waterConsumptionPct: null }, '2026-03-01', newId))
+    assert.deepEqual((await plantOf(opened)).selfSpans, [
+      { from: '2025-01', until: '2026-01', capture: 'heatMeter', hotWater: 'combined' },
+      { from: '2026-01', until: null, capture: 'heatMeter', hotWater: 'none' },
+    ])
+    // Zurück zu verbundenem Warmwasser, dafür erstmals ein Anteil beim Warmwasser: ebenso keine Änderung eines Maßstabs.
+    await opened.write((db) => setUpSelf(db, 'hp', { ...einrichtung('heatMeter', '2026-01'), hotWater: 'combined', waterConsumptionPct: 65 }, '2026-04-01', newId))
+    assert.equal((await plantOf(opened)).selfSpans?.find((s) => s.from === '2026-01')?.hotWater, 'combined')
+    // Ein anderer Anteil der Heizung in der begonnenen Heizperiode bleibt abgelehnt, auch zusammen mit einer
+    // neuen Warmwasserbereitung.
+    await assert.rejects(
+      opened.write((db) => setUpSelf(db, 'hp', { ...einrichtung('heatMeter', '2026-01'), hotWater: 'combined', heatConsumptionPct: 60 }, '2026-04-01', newId)),
+      heatingError(400, /§ 6 Abs\. 4/))
+    await assert.rejects(
+      opened.write((db) => saveDistribution(db, 'hp', '2025-01', { heatConsumptionPct: 70, waterConsumptionPct: 60, insulationRule: 'notApplies' }, '2026-04-01')),
+      heatingError(400, /§ 6 Abs\. 4/))
   })
 })

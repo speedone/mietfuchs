@@ -18,7 +18,7 @@
 // Skalen und Faktoren nach [M] Haufe HeizKV § 5.3 und Berliner Mieterverein (übernommen);
 // ⟨Norm offen: VDI 2077; DIN EN 834⟩ (Entwurf 15.3). Ob ein Faktor stimmt, prüft Mietfuchs nicht
 // (Entwurf 16). Diese Datei steht in `ENGINE_FILES` des Wächters (law-literals.test.ts).
-import type { CaptureMethod, HcaDeviceLine, HcaScale, HeatingServiceValue, HotWater, MeterType, SelfSpanRange } from '../../shared/types.ts'
+import type { CaptureMethod, HcaDeviceLine, HcaScale, HeatingServiceValue, MeterType } from '../../shared/types.ts'
 import { dayBefore, germanDate, type Period } from '../../shared/law/register.ts'
 import { andList } from '../../shared/wording.ts'
 import type { SelfMeter, SelfPlan, SelfReading } from './heating.ts'
@@ -38,20 +38,9 @@ const byFrom = <T extends { from: string }>(a: T, b: T): number => (a.from < b.f
 
 // ---------- Erfassung je Heizperiode ----------
 
-// Womit eine Heizperiode erfasst wird (Durchsicht der Vorgänger: keine rückwirkende Umstellung). Jeder
-// Zeitraum der eigenen Abrechnung trägt die Erfassung, mit der er eingerichtet wurde; ein Wechsel der
-// Ausstattung beginnt einen neuen Zeitraum. Ohne Angabe am Zeitraum (Bestand vor PR 12, damals gab es nur
-// Wärmezähler) gilt die der Anlage.
-export function captureOf(p: { capture?: CaptureMethod | null; selfSpans?: readonly SelfSpanRange[] }, key: string): CaptureMethod {
-  const span = (p.selfSpans ?? []).find((s) => key >= s.from && (s.until === null || key < s.until))
-  return span?.capture ?? p.capture ?? 'heatMeter'
-}
-
-// Wie das Warmwasser in einer Heizperiode bereitet wird (Durchsicht von #241, I2), nach demselben Muster.
-export function hotWaterOf(p: { hotWater?: HotWater | null; selfSpans?: readonly SelfSpanRange[] }, key: string): HotWater {
-  const span = (p.selfSpans ?? []).find((s) => key >= s.from && (s.until === null || key < s.until))
-  return span?.hotWater ?? p.hotWater ?? 'combined'
-}
+// `captureOf` und `hotWaterOf` stehen in shared/heatingPeriod.ts, weil die Oberfläche dieselbe Frage stellt
+// (Durchsicht von #241, Runde 2, H1).
+export { captureOf, hotWaterOf } from '../../shared/heatingPeriod.ts'
 
 // ---------- Faktor ----------
 
@@ -88,6 +77,16 @@ export function coversPeriod(meterId: string, readings: readonly { meterId: stri
   const first = dates.reduce((a, d) => (d < a ? d : a))
   const last = dates.reduce((a, d) => (d > a ? d : a))
   return first < h.to && last > dayBefore(h.from)
+}
+
+// Decken die Ablesungen eines Geräts die Heizperiode ganz ab (Durchsicht von #241, N1)? Die erste am Tag vor
+// ihrem Beginn oder früher, die letzte an ihrem Ende oder später.
+export function spansPeriod(meterId: string, readings: readonly { meterId: string; date: string }[], h: Period): boolean {
+  const dates = readings.filter((r) => r.meterId === meterId).map((r) => r.date)
+  if (dates.length === 0) return false
+  const first = dates.reduce((a, d) => (d < a ? d : a))
+  const last = dates.reduce((a, d) => (d > a ? d : a))
+  return first <= dayBefore(h.from) && last >= h.to
 }
 type Reads = readonly { meterId: string; date: string }[]
 
@@ -174,7 +173,9 @@ export function deviceLines(capture: CaptureMethod, plan: Pick<SelfPlan, 'units'
 
 // ---------- Was die Verteilung verhindert oder einen Hinweis braucht ----------
 
-export type MixedCapture = { heatMeterUnits: string[]; hcaUnits: string[] }
+// `switched`: Wohnungen, deren Gerät der eingestellten Art die Heizperiode nur zum Teil abdeckt, neben einem
+// der anderen Art (Wechsel mitten in der Heizperiode).
+export type MixedCapture = { heatMeterUnits: string[]; hcaUnits: string[]; switched?: string[] }
 
 // § 5 Abs. 7 Satz 1 HeizkostenV: „Wird der Verbrauch der von einer Anlage … versorgten Nutzer nicht mit
 // gleichen Ausstattungen erfasst, so sind zunächst durch Vorerfassung vom Gesamtverbrauch die Anteile der
@@ -182,20 +183,26 @@ export type MixedCapture = { heatMeterUnits: string[]; hcaUnits: string[] }
 // Wohnungen derselben Anlage, oder ein Gerät, das nicht zur eingestellten Erfassung passt (Abweichung 1).
 // Beim Ablesedienst liefert der Dienst die Werte.
 //
-// Gemischt ist eine Wohnung, deren Raumwärme in der Heizperiode nur ein Gerät der anderen Art erfasst
-// (Durchsicht von #241, C1): Hat sie ein Gerät der eingestellten Art, wird sie damit erfasst, und ein
-// weiteres Gerät daneben ändert nichts. Gezählt werden nur Geräte, deren Ablesungen die Heizperiode
-// überdecken (`coversPeriod`).
+// Gemischt ist eine Wohnung, deren Raumwärme in der Heizperiode ein Gerät der anderen Art erfasst und
+// kein Gerät der eingestellten Art über die ganze Heizperiode (Durchsicht von #241, C1 und N1): Deckt ein
+// Gerät der eingestellten Art sie ganz ab (`spansPeriod`), wird die Wohnung damit erfasst, und ein weiteres
+// Gerät daneben ändert nichts. Deckt es sie nur zum Teil ab, etwa nach einem Wechsel vom Wärmezähler zum
+// Heizkostenverteiler am 30.06., fiele der Verbrauch des alten Geräts sonst still weg. Das andere Gerät
+// zählt, wenn seine Ablesungen die Heizperiode überdecken (`coversPeriod`).
 export function mixedCapture(capture: CaptureMethod, unitIds: readonly string[], meters: readonly HcaMeter[], readings: Reads, h: Period): MixedCapture | null {
   if (capture === 'serviceValues') return null
   const ids = new Set(unitIds)
   const room = meters.filter((m) => isRoomHeat(m, ids) && coversPeriod(m.id, readings, h))
   const own: 'waerme' | 'hkv' = capture === 'hca' ? 'hkv' : 'waerme'
+  const other: 'waerme' | 'hkv' = own === 'hkv' ? 'waerme' : 'hkv'
   const has = (unitId: string, type: 'waerme' | 'hkv') => room.some((m) => m.unitId === unitId && m.type === type)
-  const foreign = [...ids].filter((u) => !has(u, own) && has(u, own === 'hkv' ? 'waerme' : 'hkv'))
+  const hasFull = (unitId: string) => room.some((m) => m.unitId === unitId && m.type === own && spansPeriod(m.id, readings, h))
+  const foreign = [...ids].filter((u) => !hasFull(u) && has(u, other))
   if (foreign.length === 0) return null
-  const ownUnits = [...ids].filter((u) => has(u, own))
-  return capture === 'hca' ? { heatMeterUnits: foreign, hcaUnits: ownUnits } : { heatMeterUnits: ownUnits, hcaUnits: foreign }
+  const switched = foreign.filter((u) => has(u, own))
+  const ownUnits = [...ids].filter((u) => has(u, own) && !switched.includes(u))
+  const lists = capture === 'hca' ? { heatMeterUnits: foreign, hcaUnits: ownUnits } : { heatMeterUnits: ownUnits, hcaUnits: foreign }
+  return switched.length > 0 ? { ...lists, switched } : lists
 }
 
 export type MissingRating = { meterId: string; name: string; unitId: string; missing: 'scale' | 'factor' }
@@ -247,10 +254,21 @@ export function mixedCaptureText(capture: CaptureMethod, m: MixedCapture, nameOf
     ...(m.heatMeterUnits.length > 0 ? [`Wärmezähler bei ${andList(m.heatMeterUnits.map(nameOf))}`] : []),
     ...(m.hcaUnits.length > 0 ? [`Heizkostenverteiler bei ${andList(m.hcaUnits.map(nameOf))}`] : []),
   ]
+  const switched = m.switched ?? []
+  // N1: Ein Wechsel mitten in der Heizperiode ist kein Dauerzustand; der Weg ist ein anderer als bei
+  // gemischten Geräten.
+  const switchedText = switched.length === 0 ? '' :
+    `Bei ${andList(switched.map(nameOf))} wechselt das Gerät innerhalb der Heizperiode: Wärmezähler und Heizkostenverteiler haben Ablesungen nur für einen Teil davon. ` +
+    'Mietfuchs lässt den Verbrauch des einen Geräts deshalb nicht weg. Liegt der Wechsel am Tag vor dem Beginn der Heizperiode (bei einer Heizperiode im Kalenderjahr am 31.12.), braucht es nur den Stand des neuen Geräts an diesem Tag. ' +
+    `Sonst ist der Verbrauch der Zeit mit dem anderen Gerät in der Einheit der eingestellten Erfassung zu ermitteln: mit einem Zwischenstand oder, wenn es keinen gibt, nach § 9a HeizkostenV geschätzt. Das rechnet Mietfuchs mit einer späteren Version. `
   // #218: Die Vorerfassung nach Nutzergruppen kommt mit einer eigenen Erweiterung.
-  return `Eingestellt ist die Erfassung mit ${CAPTURE_WORDS[capture]}, an den Wohnungen hängen aber ${andList(parts)}. ` +
-    'Wird der Verbrauch nicht mit gleichen Geräten erfasst, ist nach § 5 Abs. 7 HeizkostenV zuerst der Anteil jeder Gruppe am Gesamtverbrauch vorab zu erfassen (Vorerfassung). Das rechnet Mietfuchs noch nicht. ' +
-    'Dafür braucht es je Gruppe von Wohnungen mit gleichen Geräten einen eigenen Wärmezähler. ' +
+  // Hängt das andere Gerät nur an Wohnungen mit Wechsel, ist die Vorerfassung nicht der Weg.
+  const lasting = (capture === 'hca' ? m.heatMeterUnits : m.hcaUnits).some((u) => !switched.includes(u))
+  return `Eingestellt ist die Erfassung mit ${CAPTURE_WORDS[capture]}, an den Wohnungen hängen aber ${andList(parts)}. ${switchedText}` +
+    (lasting
+      ? 'Wird der Verbrauch nicht mit gleichen Geräten erfasst, ist nach § 5 Abs. 7 HeizkostenV zuerst der Anteil jeder Gruppe am Gesamtverbrauch vorab zu erfassen (Vorerfassung). Das rechnet Mietfuchs noch nicht. ' +
+        'Dafür braucht es je Gruppe von Wohnungen mit gleichen Geräten einen eigenen Wärmezähler. '
+      : '') +
     'Lassen Sie diese Heizkosten von einem Messdienst abrechnen und übernehmen Sie dessen Beträge als Einzelbeträge. ' +
     'Ein ausgebautes Gerät zählt nicht mehr mit, sobald seine letzte Ablesung am Tag vor der Heizperiode oder früher liegt; löschen Sie es nicht, seine Ablesungen gehören zu früheren Abrechnungen.'
 }

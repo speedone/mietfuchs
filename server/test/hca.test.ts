@@ -4,7 +4,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  captureOf, coversPeriod, deviceCutoffs, deviceCutoffText, deviceLines, meterFactor, missingRatings, missingRatingsText, mixedCapture, mixedCaptureText,
+  captureOf, coversPeriod, deviceCutoffs, deviceCutoffText, deviceLines, meterFactor, missingRatings, missingRatingsText, mixedCapture, mixedCaptureText, spansPeriod,
   ratingOf, serviceMeters, type HcaMeter,
 } from '../src/hca.ts'
 import { planSelf, type SelfInput, type SelfReading, type SelfUnit } from '../src/heating.ts'
@@ -140,6 +140,38 @@ test('Gemischte Geräte (§ 5 Abs. 7, Review Focus 4): eine Wohnung nur mit Ger�
   assert.match(t, /§ 5 Abs\. 7 HeizkostenV.*Vorerfassung.*eigenen Wärmezähler.*Messdienst/s)
   assert.match(t, /löschen Sie es nicht/)
   assert.doesNotMatch(t, /Bis dahin/)
+})
+
+test('Durchsicht #241 M2: Erfassung mit Heizkostenverteilern 2026, eine Wohnung nur mit dem alten Wärmezähler (letzte Ablesung 31.12.2025) und noch ohne Heizkostenverteiler: nicht gemischt', () => {
+  const H26 = { from: '2026-01-01', to: '2026-12-31' }
+  const wz: HcaMeter = { id: 'wa', unitId: 'a', type: 'waerme', name: 'wa', heatingPlantId: null }
+  const readings = [read('wa', '2024-12-31', 0), read('wa', '2025-12-31', 900), read('b1', '2025-12-31', 0), read('b1', '2026-12-31', 100)]
+  assert.equal(mixedCapture('hca', ['a', 'b'], [wz, hkv('b1', 'b')], readings, H26), null)
+  // 2025 überdeckt der Wärmezähler die Heizperiode: Dort ist A gemischt.
+  assert.deepEqual(mixedCapture('hca', ['a', 'b'], [wz, hkv('b0', 'b')], [...readings, ...cover('b0')], H), { heatMeterUnits: ['a'], hcaUnits: ['b'] })
+})
+
+test('Durchsicht #241 N1: Ein Gerät der eingestellten Art befreit die Wohnung nur, wenn seine Ablesungen die Heizperiode ganz abdecken', () => {
+  const wz = (id: string, unitId: string): HcaMeter => ({ id, unitId, type: 'waerme', name: id, heatingPlantId: null })
+  // A wechselt am 30.06.2025 vom Wärmezähler zum Heizkostenverteiler.
+  const wechsel = [read('wa', '2024-12-31', 0), read('wa', '2025-06-30', 6000), read('a1', '2025-06-30', 0), read('a1', '2025-12-31', 600), ...cover('b1')]
+  const m = mixedCapture('hca', ['a', 'b'], [wz('wa', 'a'), hkv('a1', 'a'), hkv('b1', 'b')], wechsel, H)
+  assert.deepEqual(m, { heatMeterUnits: ['a'], hcaUnits: ['b'], switched: ['a'] })
+  const t = mixedCaptureText('hca', m ?? assert.fail('nicht gemischt'), nameOf)
+  assert.match(t, /Bei Wohnung A wechselt das Gerät innerhalb der Heizperiode/)
+  assert.match(t, /Zwischenstand oder, wenn es keinen gibt, nach § 9a HeizkostenV geschätzt\. Das rechnet Mietfuchs mit einer späteren Version\./)
+  // Nur ein Wechsel: Die Vorerfassung ist nicht der Weg.
+  assert.doesNotMatch(t, /Vorerfassung/)
+  // Bei Wärmezählern dieselbe Regel.
+  const zurueck = [read('a1', '2024-12-31', 0), read('a1', '2025-06-30', 300), read('wa', '2025-06-30', 0), read('wa', '2025-12-31', 6000), ...cover('wb')]
+  assert.deepEqual(mixedCapture('heatMeter', ['a', 'b'], [wz('wa', 'a'), hkv('a1', 'a'), wz('wb', 'b')], zurueck, H), { heatMeterUnits: ['b'], hcaUnits: ['a'], switched: ['a'] })
+  // Deckt das Gerät der eingestellten Art die Heizperiode ganz ab, ändert ein zweites nichts.
+  assert.equal(mixedCapture('hca', ['a', 'b'], [wz('wa', 'a'), hkv('a1', 'a'), hkv('b1', 'b')], [...cover('a1', 'b1'), read('wa', '2024-12-31', 0), read('wa', '2025-06-30', 6000)], H), null)
+  // Ohne Gerät der anderen Art bleibt es beim Grenzmodell von PR 10 (die erste Ablesung gilt, wie sie ist).
+  assert.equal(mixedCapture('hca', ['a', 'b'], [hkv('a1', 'a'), hkv('b1', 'b')], wechsel, H), null)
+  assert.equal(spansPeriod('a1', cover('a1'), H), true)
+  assert.equal(spansPeriod('a1', [read('a1', '2025-01-01', 0), read('a1', '2025-12-31', 5)], H), false)
+  assert.equal(spansPeriod('a1', [read('a1', '2024-12-31', 0), read('a1', '2025-12-30', 5)], H), false)
 })
 
 test('Fehlende Skala oder fehlender Faktor (hca-factor-missing): je Gerät benannt, nur bei Erfassung mit Heizkostenverteilern und nur für Geräte der Heizperiode', () => {
