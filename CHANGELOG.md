@@ -212,8 +212,27 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - Mengen mit Tausenderpunkt („3.000“) liest die Seite Heizkosten jetzt wie Beträge als dreitausend. Beim
   Heizwert und beim Volumen des Warmwassers fragt sie bei „11.325“ nach, ob 11,325 oder 11325 gemeint ist;
   einen Heizwert außerhalb des üblichen Bands der Einheit lehnt Mietfuchs mit einem Satz ab.
+- **Eigene Heizkostenabrechnung nach Heizkostenverteilern.** Je Gerät Skala (Einheits- oder
+  Produktskala) und Bewertungsfaktor, der Stichtagswert laut Anzeige als eigene Eingabe; die Abrechnung
+  nennt jedem Mieter seine Geräte mit Einheiten, Skala und Faktor und zählt den Verbrauch in Einheiten.
+  Dazu die Werte eines Ablesedienstes je Wohnung und Nutzungszeitraum auf der Seite Heizkosten, womit auch
+  Verdunster und Funk-Heizkostenverteiler abgedeckt sind; liefert der Dienst Warmwasserwerte, zählen sie
+  statt der Warmwasserzähler. Mieterwechsel, Leerstand und Zwischenablesung gelten wie bei Wärmezählern
+  ([#99](https://github.com/speedone/mietfuchs/issues/99)).
+- Hinweise: Bewertungsfaktor oder Skala fehlt (die Anlage wird dann nicht verteilt), Stichtag eines Geräts
+  mitten in der Heizperiode, und verschiedene Geräte in einer Anlage. Die dafür nötige Vorerfassung nach
+  § 5 Abs. 7 HeizkostenV kommt später ([#218](https://github.com/speedone/mietfuchs/issues/218)); bis
+  dahin bleibt der Weg über den Messdienst.
+- Womit der Verbrauch erfasst wird, gehört zu jedem Zeitraum der eigenen Heizkostenabrechnung: Wer die
+  Geräte zum Beginn einer Heizperiode wechselt und die Einrichtung ab dieser Heizperiode neu durchläuft,
+  rechnet frühere Heizperioden weiter mit den früheren Geräten. Skala und Faktor eines Geräts, dessen
+  Ablesungen in einer abgeschlossenen Heizperiode zählen, sind gesperrt; ein Gerät mit anderem Faktor ist
+  ein neuer Zähler.
 
 ### Geändert
+
+- Die Ablehnung einer Verteilung „nach Verbrauch“ mit Heizkostenverteilern bei freien Schlüsseln verweist
+  jetzt auf die eigene Heizkostenabrechnung mit der Erfassung „Heizkostenverteiler“.
 
 - Eigene Heizkostenabrechnung: Die Heizung darf jetzt auch bei Heizöl, Flüssiggas, Pellets, Holz und
   Kohle das Warmwasser bereiten; die Einrichtung sperrt das nicht mehr.
