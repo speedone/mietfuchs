@@ -11,7 +11,7 @@ const HEAT_PUMP_UNTIL = hkvRenewableExemption.versions.find((v) => v.value.heatP
 // in zwei Buchstaben, denn die Bedingung „sofern der Wärmeverbrauch des Gebäudes nicht erfasst wird“ gehört nur zu
 // Buchst. b (R-W7); Nr. 1 b mit vollem Wortlaut (R-K1).
 export const EXEMPTION_OPTIONS: { value: HeatingExemption; label: string; text: string }[] = [
-  { value: 'none', label: 'Keine Ausnahme: die Heizkostenverordnung gilt', text: '' },
+  { value: 'none', label: 'Keine Ausnahme', text: '' },
   { value: 'lowDemand', label: `Nr. 1 a: Heizwärmebedarf unter ${EX.lowDemandKwhPerM2Year} kWh/(m²·a)`, text: `Räume in Gebäuden, die einen Heizwärmebedarf von weniger als ${EX.lowDemandKwhPerM2Year} kWh je m² und Jahr aufweisen (§ 11 Abs. 1 Nr. 1 Buchst. a HeizkostenV).` },
   { value: 'disproportionate', label: 'Nr. 1 b: Erfassung unverhältnismäßig teuer', text: `Räume, bei denen das Anbringen der Ausstattung zur Verbrauchserfassung, die Erfassung des Wärmeverbrauchs oder die Verteilung der Kosten des Wärmeverbrauchs nicht oder nur mit unverhältnismäßig hohen Kosten möglich ist; unverhältnismäßig hoch sind Kosten, die nicht durch die Einsparungen erwirtschaftet werden können, die in der Regel innerhalb von ${EX.paybackYears} Jahren erzielt werden können (§ 11 Abs. 1 Nr. 1 Buchst. b HeizkostenV).` },
   { value: 'pre1981', label: `Nr. 1 c: bezugsfertig vor ${germanDate(EX.readyBefore)}`, text: `Räume, die vor dem ${germanDate(EX.readyBefore)} bezugsfertig geworden sind und in denen der Nutzer den Wärmeverbrauch nicht beeinflussen kann (§ 11 Abs. 1 Nr. 1 Buchst. c HeizkostenV).` },

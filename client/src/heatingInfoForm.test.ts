@@ -50,6 +50,8 @@ describe('§ 11 und § 2 (Entwurf 8.9)', () => {
     expect(text('chp')).toMatch(/Kraft-Wärme-Kopplung.*sofern der Wärmeverbrauch des Gebäudes nicht erfasst wird \(§ 11 Abs\. 1 Nr\. 3 Buchst\. b/)
     // R-K6: kurze Beschriftungen, damit das Auswahlfeld nichts abschneidet.
     expect(Math.max(...EXEMPTION_OPTIONS.map((o) => o.label.length))).toBeLessThanOrEqual(45)
+    // Runde 4 (N3-K2): auch „Keine Ausnahme“ passt bei 390 px.
+    expect(EXEMPTION_OPTIONS.find((o) => o.value === 'none')?.label).toBe('Keine Ausnahme')
     // Runde 2, R2-N-K6: Nr. 5 mit ihrem Zweck.
     expect(text('authority')).toMatch(/um einen unangemessenen Aufwand oder sonstige unbillige Härten zu vermeiden/)
     // R-K2: was nicht zur Wahl steht.
