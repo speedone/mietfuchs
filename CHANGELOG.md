@@ -263,7 +263,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Schlüsseln bestätigen Sie dort, dass der Vergleich Ihres Ablesedienstes beiliegt. Fehlt einem Mieter eine
   Angabe, nennt die Abrechnung seine Kürzung um 3 %, einmal, auch wenn zugleich die monatliche
   Verbrauchsinformation fehlt; ist nur die Wärme nach § 11 ausgenommen, nur auf den Anteil Warmwasser. Ist sein
-  Verbrauch nach § 9a geschätzt, entfallen die Vergleiche. Ob die Abrechnung auf dem Verbrauch beruht und damit die
+  Verbrauch nach § 9a geschätzt, verlangt Mietfuchs für ihn nur die Mindestangaben (Kontaktinformationen,
+  Streitbeilegung) und nennt keine Kürzung; das je Mieter anzuwenden ist eine Auslegung. Ob die Abrechnung auf dem Verbrauch beruht und damit die
   volle Pflicht gilt, entscheidet, wie Mietfuchs tatsächlich verteilt, auch bei freien Schlüsseln.
   ([#99](https://github.com/speedone/mietfuchs/issues/99))
 - Karte „Ausnahmen und Vereinbarungen“ auf der Seite Heizkosten, je Heizperiode: Ausnahme nach § 11
@@ -273,7 +274,7 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   für den ausgenommenen Teil keine Kürzung nach § 12, und sind Wärme und Warmwasser ausgenommen, werden die
   CO₂-Kosten nur bei vereinbarter Abrechnung aufgeteilt (§ 2 Abs. 7 CO2KostAufG); die Vereinbarung nach § 2
   hebt nur die Kürzung um 15 % auf, die Informationspflichten bleiben. Ist „nach Wohnfläche“ vereinbart, verteilt
-  die eigene Heizkostenabrechnung nach der Fläche. Wirkt eine Angabe an einer abgeschlossenen Heizperiode vorbei
+  die eigene Heizkostenabrechnung nach der Fläche, auch wenn Ablesungen fehlen. Wirkt eine Angabe an einer abgeschlossenen Heizperiode vorbei
   auf eine offene, fragt die Karte vorher nach.
   ([#99](https://github.com/speedone/mietfuchs/issues/99))
 - Mehr als 70 % nach Verbrauch, wenn es mit den Mietern vereinbart ist (§ 10 HeizkostenV), in der

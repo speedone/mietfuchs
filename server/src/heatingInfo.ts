@@ -119,6 +119,9 @@ export type InfoInput = {
   pots: readonly SelfPot[]
   // Je Mietverhältnis sein Anteil an den Kosten der Fernwärme (0 bis 1), für seinen Teil der Emissionen.
   costShares?: ReadonlyMap<string, number>
+  // Die Bestätigung des beigelegten Vergleichs deckt auch Nr. 5: bei Werten des Ablesedienstes, deren Vorjahr
+  // Mietfuchs nicht rechnet (Durchsicht von #243, Runde 2, R2-N-W1).
+  attachedCoversPrev?: boolean
 }
 
 const filled = (t: string | null | undefined): t is string => typeof t === 'string' && t.trim() !== ''
@@ -216,7 +219,7 @@ export function heatingInfoOf(i: InfoInput): HeatingInfoStatement {
   // Abrechnung zugänglich zu machen).
   const plan = i.plan
   const common = [...missing]
-  const out = { ...base, scope: 'full' as const, carriers, district, taxesText, meteringCents: i.meteringCents, comparisonSource, reference, climate, mixedGeneration: i.mixedGeneration }
+  const out = { ...base, scope: 'full' as const, carriers, district, taxesText, meteringCents: i.meteringCents, comparisonSource, ...(comparisonSource !== null && i.attachedCoversPrev === true ? { comparisonCoversPrev: true as const } : {}), reference, climate, mixedGeneration: i.mixedGeneration }
   if (!plan) {
     if (comparisonSource === null) uncertain.push('4', '5')
     return { ...out, referenceComparable: false, users: [], missing, missingCommon: common, uncertain, comparisons: false }
@@ -231,6 +234,7 @@ export function heatingInfoOf(i: InfoInput): HeatingInfoStatement {
   // Nr. 5 für alle mit Vorjahr: ohne Klimafaktoren (bereinigt wird nur die Wärme, Satz 3). Den rechnet Mietfuchs
   // aus dem Plan; die Bestätigung des beigelegten Vergleichs gilt hier nur für Nr. 4.
   const noFactors = inPots('heating') && (factor === null || factorPrev === null)
+  const coversPrev = comparisonSource !== null && i.attachedCoversPrev === true
   const tenancyIds = [...new Set(plan.units.flatMap((u) => u.users.flatMap((x) => (x.role === 'tenancy' && x.tenancyId ? [x.tenancyId] : []))))]
   const users: InfoComparison[] = tenancyIds.map((id) => {
     const unit = unitOf(plan, id)
@@ -254,10 +258,12 @@ export function heatingInfoOf(i: InfoInput): HeatingInfoStatement {
     // § 9a: Ist sein Verbrauch in einem Topf unter der Verordnung geschätzt, gehören die Vergleiche nach Abs. 3
     // nicht dazu (BR-Drs. 643/21, S. 19 und 22; je Mieter ist Auslegung von Mietfuchs).
     const estimated = (['heating', 'water'] as const).some((p) => inPots(p) && now[p].estimated)
-    const own: InfoItem[] = [...common]
+    // § 9a: Für den geschätzten Mieter gelten nur die Mindestangaben nach Abs. 5 (Nr. 2 und 3); keine Angabe der
+    // Nr. 1, 4 und 5 fehlt für ihn (BR-Drs. 643/21, S. 19 und 22; Runde 2, R2-N-W2).
+    const own: InfoItem[] = estimated ? [] : [...common]
     if (!estimated) {
       if (ref4 === 'missing' || (ref4 === 'ok' && comparisonSource === null && referenceKwh === null)) own.push('4')
-      if (!firstPeriod && (prevUnknown || noFactors)) own.push('5')
+      if (!firstPeriod && (prevUnknown || noFactors) && !coversPrev) own.push('5')
     }
     return {
       tenancyId: id,

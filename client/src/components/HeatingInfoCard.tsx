@@ -108,8 +108,10 @@ export default function HeatingInfoCard({ plant, view, onChanged }: { plant: Hea
             <input value={form.comparisonSource} disabled={view.closed} onChange={set('comparisonSource')} placeholder="z. B. Verbrauchsvergleich des Ablesedienstes, Anlage zur Abrechnung" />
           </label>
           <p className="muted">
-            {self
-              ? 'Mit Heizkostenverteilern, mit Werten des Ablesedienstes oder für das Warmwasser allein rechnet Mietfuchs den Vergleich mit einem Durchschnittsnutzer (Nr. 4) nicht.'
+            {self && view.capture === 'serviceValues'
+              ? 'Mit Werten des Ablesedienstes rechnet Mietfuchs die Vergleiche mit einem Durchschnittsnutzer (Nr. 4) und mit dem vorhergehenden Abrechnungszeitraum (Nr. 5) nicht.'
+              : self
+              ? 'Mit Heizkostenverteilern oder für das Warmwasser allein rechnet Mietfuchs den Vergleich mit einem Durchschnittsnutzer (Nr. 4) nicht.'
               : 'Bei freien Schlüsseln rechnet Mietfuchs die Vergleiche mit einem Durchschnittsnutzer (Nr. 4) und mit dem vorhergehenden Abrechnungszeitraum (Nr. 5) nicht.'}
             {' '}Legt Ihr Ablesedienst einen solchen Vergleich bei, nennen Sie ihn hier; dann gilt die Angabe als zugänglich gemacht, und die Abrechnung nennt ihn mit dieser Quelle.
           </p>

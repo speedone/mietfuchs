@@ -164,7 +164,7 @@ const SEEDS: number[] = process.env.INV_FROM !== undefined || process.env.INV_TO
   : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 16, 81]
 const STEPS = Number(process.env.INV_STEPS ?? 30)
 
-type Variant = { name: string; lazy: boolean; estimate: boolean; change?: boolean; two?: boolean; swap?: boolean; self?: boolean; hw?: 'combined' | 'separate'; dhw?: 'volumeFormula' | 'areaFormula'; capture?: 'hca' | 'serviceValues'; offset?: boolean; failure?: boolean; rules?: boolean }
+type Variant = { name: string; lazy: boolean; estimate: boolean; change?: boolean; two?: boolean; swap?: boolean; self?: boolean; hw?: 'combined' | 'separate'; dhw?: 'volumeFormula' | 'areaFormula'; capture?: 'hca' | 'serviceValues'; offset?: boolean; failure?: boolean; rules?: boolean; einlieger?: boolean }
 const VARIANTS: Variant[] = [
   { name: 'Grundform', lazy: false, estimate: false },
   { name: 'Rechnung kommt später', lazy: true, estimate: false },
@@ -203,13 +203,15 @@ const VARIANTS: Variant[] = [
   { name: 'Eigene Heizkostenabrechnung, verbundenes Warmwasser, Ausnahme je Heizperiode (§ 11)', lazy: false, estimate: false, self: true, hw: 'combined', rules: true },
   { name: 'Freie Schlüssel, Ausnahme je Heizperiode (§ 11)', lazy: false, estimate: false, rules: true },
   { name: 'Kesseltausch, Ausnahme je Heizperiode (§ 11)', lazy: true, estimate: false, swap: true, rules: true },
+  // Durchsicht von #243, Runde 2: Einliegerhaus (A selbst genutzt), damit eine Vereinbarung nach § 2 gilt.
+  { name: 'Eigene Heizkostenabrechnung, Einliegerhaus, Vereinbarung nach § 2 je Heizperiode', lazy: false, estimate: false, self: true, hw: 'combined', rules: true, einlieger: true },
 ]
 
 // Heizung PR 14 (x): Unter einer Ausnahme nach § 11 für Wärme und Warmwasser keine Angaben nach § 6a, kein
 // Kürzungshinweis nach § 12 und keine CO₂-Aufteilung (ohne vereinbarte Abrechnung); nur für die Wärme ist der
 // Ausweis einer des Warmwassers. Die Angaben verändern keine Zeile außer den CO₂-Abzügen: Dieselbe Rechnung ohne
 // sie ergibt je Mieter dieselbe Summe ohne CO₂-Zeilen. Gezählt wird, damit keine Variante still nichts prüft.
-const RULES = { periods: 0, both: 0, heat: 0, agreedBilling: 0 }
+const RULES = { periods: 0, both: 0, heat: 0, agreedBilling: 0, agreedArea: 0 }
 const CUT_CODES = new Set(['heating.no-consumption', 'heating.not-by-consumption', 'heating.dhw-not-metered', 'heating.consumption-share', 'heating.info-incomplete', 'heating.info-open', 'heating.monthly-info', 'heating.share-forced-unsure', 'heating.flat-rate'])
 const RULE_FIELDS = { exemption: null, exemptionScope: null, exemptionBillingAgreed: null, agreedOtherwise: null, monthlyInfoElsewhere: null }
 function rulesChecks(r: ReturnType<typeof computeSettlement>, stock: Awaited<ReturnType<typeof readStock>>, key: string, period: ReturnType<typeof periodOfKey>, where: string): void {
@@ -217,7 +219,15 @@ function rulesChecks(r: ReturnType<typeof computeSettlement>, stock: Awaited<Ret
   const rows = stock.heatingPeriodRows.map((x) => ({ ...x, period: String(x.period) }))
   const without = computeSettlement(snapshotFor({ ...stock, heatingPeriodRows: stock.heatingPeriodRows.map((x) => ({ ...x, ...RULE_FIELDS })) }, 'objekt-1', period), {})
   const sumOf = (s: ReturnType<typeof computeSettlement>, t: string) => s.statements.find((x) => x.tenancyId === t)?.rows.filter((x) => x.kind !== 'co2Relief').reduce((a, x) => a + x.shareCents, 0) ?? 0
-  for (const st of r.statements) assert.equal(sumOf(r, st.tenancyId), sumOf(without, st.tenancyId), `${where}; (x) Summe ohne CO₂ von ${st.tenancyId} hängt an den Angaben zu § 11`)
+  // Eine Vereinbarung „nach Wohnfläche“ verteilt anders (Runde 2); dann gilt nur die Summe über alle Zeilen.
+  const area = (r.heating ?? []).some((h) => heatingRulesOf(rows, stock.heatingPlants, h.plantId, key).agreedOtherwise === 'area' && h.self?.agreedArea === true)
+  if (area) {
+    RULES.agreedArea++
+    const total = (s: ReturnType<typeof computeSettlement>) => s.statements.reduce((a, st) => a + st.rows.reduce((b, x) => b + x.shareCents, 0), 0) + s.landlord.rows.reduce((a, x) => a + x.shareCents, 0)
+    assert.equal(total(r), total(without), `${where}; (x) Summe aller Zeilen hängt an der Vereinbarung nach § 2`)
+  } else {
+    for (const st of r.statements) assert.equal(sumOf(r, st.tenancyId), sumOf(without, st.tenancyId), `${where}; (x) Summe ohne CO₂ von ${st.tenancyId} hängt an den Angaben zu § 11`)
+  }
   RULES.periods++
   for (const h of r.heating ?? []) {
     const rules = heatingRulesOf(rows, stock.heatingPlants, h.plantId, key)
@@ -541,9 +551,9 @@ for (const variant of VARIANTS) {
         const pending: { id: string; plantId: string; body: Record<string, unknown> }[] = []
         await opened.write(async (db) => {
           await db.update(properties).set({ periodStartMonth: 5 }).where(eq(properties.id, 'objekt-1'))
-          await createEntity(db, 'units', 'a', { propertyId: 'objekt-1', name: 'A', areaM2: 60, participates: true })
+          await createEntity(db, 'units', 'a', { propertyId: 'objekt-1', name: 'A', areaM2: 60, ...(variant.einlieger ? { participates: false, selfUsed: true, selfPersons: 1 } : { participates: true }) })
           await createEntity(db, 'units', 'b', { propertyId: 'objekt-1', name: 'B', areaM2: 40, participates: true })
-          await createEntity(db, 'tenancies', 'ta', { unitId: 'a', tenantName: 'Mieter A', persons: 1, start: '2020-01-01' })
+          if (!variant.einlieger) await createEntity(db, 'tenancies', 'ta', { unitId: 'a', tenantName: 'Mieter A', persons: 1, start: '2020-01-01' })
           await createEntity(db, 'tenancies', 'tb', { unitId: 'b', tenantName: 'Mieter B', persons: 1, start: '2020-01-01', ...(variant.capture || variant.failure || variant.change ? { end: CHANGE_END } : {}) })
           if (variant.change) await createEntity(db, 'tenancies', 'tb2', { unitId: 'b', tenantName: 'Mieter B2', persons: 1, start: '2025-01-16' })
           if (variant.capture || variant.failure) await createEntity(db, 'tenancies', 'tb2', { unitId: 'b', tenantName: 'Mieter B2', persons: 1, start: nextStart })
@@ -828,6 +838,7 @@ for (const variant of VARIANTS) {
               exemptionScope: pick(['heat', 'both', 'both', null] as const) ?? null,
               exemptionBillingAgreed: rnd() < 0.3 ? true : null,
               monthlyInfoElsewhere: rnd() < 0.5 ? rnd() < 0.5 : null,
+              ...(variant.einlieger ? { agreedOtherwise: pick(['none', 'area', 'area', 'consumption', 'fixedPercent', null] as const) ?? null } : {}),
             }
             await attempt(`regeln ${plantId} ${key} ${JSON.stringify(body)}`, () => opened.write((db) => saveHeatingRules(db, plantId, key, body)))
             continue
@@ -1129,6 +1140,7 @@ test('Invariante, Ausnahme nach § 11: Abdeckung', () => {
   assert.ok(RULES.both > 0, 'keine Heizperiode mit Ausnahme für Wärme und Warmwasser geprüft (x)')
   assert.ok(RULES.heat > 0, 'keine Heizperiode mit Ausnahme nur der Wärme geprüft (x)')
   assert.ok(RULES.agreedBilling > 0, 'keine Ausnahme mit vereinbarter Abrechnung geprüft (x)')
+  assert.ok(RULES.agreedArea > 0, 'keine Heizperiode mit Vereinbarung „nach Wohnfläche“ geprüft (x)')
 })
 
 test('Invariante, Kesseltausch: Abdeckung', () => {

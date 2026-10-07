@@ -113,3 +113,8 @@ test('Durchsicht von #243, R-W1: Bestätigung des beigelegten Vergleichs bei Hei
   wrap(<HeatingInfoCard plant={PLANT} view={view({ capture: 'heatMeter' })} onChanged={() => {}} />)
   expect(screen.queryByLabelText(/Vergleich des Ablesedienstes liegt der Abrechnung bei/)).toBeNull()
 })
+
+test('Durchsicht von #243, Runde 2, R2-N-W1: bei Werten des Ablesedienstes deckt die Bestätigung Nr. 4 und Nr. 5', () => {
+  wrap(<HeatingInfoCard plant={PLANT} view={view({ capture: 'serviceValues' })} onChanged={() => {}} />)
+  expect(screen.getByText(/Mit Werten des Ablesedienstes rechnet Mietfuchs die Vergleiche mit einem Durchschnittsnutzer \(Nr\. 4\) und mit dem vorhergehenden Abrechnungszeitraum \(Nr\. 5\) nicht/)).toBeTruthy()
+})
