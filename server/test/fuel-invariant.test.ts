@@ -147,8 +147,9 @@ function totals(s: unknown): { tenants: number; landlord: number; carry: number;
     // negativer haben die Mieter zu viel getragen.
     // Heizung PR 12: Der Leerstand (der Vermieter ist Nutzer der leeren Räume) zählt ebenso; ihn gibt es nur in
     // den Varianten mit Mieterwechsel.
-    up: parts.reduce<number>((a, p) => a + (flaggedReason(reasonOf(p)) || reasonOf(p) === 'vacancy' ? Math.max(0, centsOf(p)) : 0), 0),
-    down: parts.reduce<number>((a, p) => a + (flaggedReason(reasonOf(p)) || reasonOf(p) === 'vacancy' ? Math.min(0, centsOf(p)) : 0), 0),
+    // Durchsicht von #243, Runde 3 (N2-K1): ebenso der Eigenanteil einer selbst genutzten Wohnung (Einliegerhaus).
+    up: parts.reduce<number>((a, p) => a + (flaggedReason(reasonOf(p)) || reasonOf(p) === 'vacancy' || reasonOf(p) === 'selfUse' ? Math.max(0, centsOf(p)) : 0), 0),
+    down: parts.reduce<number>((a, p) => a + (flaggedReason(reasonOf(p)) || reasonOf(p) === 'vacancy' || reasonOf(p) === 'selfUse' ? Math.min(0, centsOf(p)) : 0), 0),
     pairs,
   }
 }
@@ -157,11 +158,12 @@ function totals(s: unknown): { tenants: number; landlord: number; carry: number;
 // Nachprüfungen von #233 je eine Rücknahme findet, die die ersten zehn nicht finden (16: Storno nach
 // Abschluss der Heizperiode der Positionen; 81: Schätzfaktor). Ein Storno neben einer Schätzung (M2) und
 // die Lücke nach einem Storno (G1) sieht die Invariante nicht, weil am Ende jede Schätzung von einer echten
-// Rechnung abgedeckt sein muss; dafür stehen Einzeltests in calc-fuel.test.ts. Mit INV_FROM/INV_TO ein
+// Rechnung abgedeckt sein muss; dafür stehen Einzeltests in calc-fuel.test.ts. 607: Einliegerhaus ohne gesperrte
+// Heizperiode, an dem der Eigenanteil in (vii) fehlte (Durchsicht von #243, Runde 3). Mit INV_FROM/INV_TO ein
 // Bereich, z. B. INV_TO=60.
 const SEEDS: number[] = process.env.INV_FROM !== undefined || process.env.INV_TO !== undefined
   ? Array.from({ length: Math.max(0, Number(process.env.INV_TO ?? 10) - Number(process.env.INV_FROM ?? 1) + 1) }, (_, k) => Number(process.env.INV_FROM ?? 1) + k)
-  : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 16, 81]
+  : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 16, 81, 607]
 const STEPS = Number(process.env.INV_STEPS ?? 30)
 
 type Variant = { name: string; lazy: boolean; estimate: boolean; change?: boolean; two?: boolean; swap?: boolean; self?: boolean; hw?: 'combined' | 'separate'; dhw?: 'volumeFormula' | 'areaFormula'; capture?: 'hca' | 'serviceValues'; offset?: boolean; failure?: boolean; rules?: boolean; einlieger?: boolean }
@@ -938,7 +940,10 @@ for (const variant of VARIANTS) {
         let positions = 0
         // Eine Anlage, die die Kernrechnung nicht verteilt (Warmwasseranteil ohne vollständige Rechnungen),
         // gibt alles an den Vermieter; die Schranken (ii) und (vii) gelten dann nicht (Durchsicht von #239).
+        // Durchsicht von #243, Runde 3 (N2-K1): je Heizperiode gewertet, nicht für den ganzen Lauf.
         let selfBlocked = false
+        let bound = { tenants: 0, positions: 0, up: 0, down: 0 }
+        let crossing = false
         let tenants = 0
         let landlord = 0
         const pairs = new Map<string, { carry: number; flagged: number; estimate: boolean; carries: number[]; neutral: number[] }>()
@@ -980,13 +985,18 @@ for (const variant of VARIANTS) {
           if (r) overchargedTenantChecks(r, stock, closed, `${fall}; ${key}`, periodOf, itemKey)
           const dhwInput = dhwInputs.get(key)
           if (r && variant.dhw && dhwInput) dhwChecks(r, { method: variant.dhw, ...dhwInput, basis: dhwBasis }, `${fall}; ${key}`)
-          if (r && variant.self && r.heating?.find((h) => h.plantId === 'hp')?.self?.ok === false) selfBlocked = true
+          let blockedHere = false
+          if (r && variant.self && r.heating?.find((h) => h.plantId === 'hp')?.self?.ok === false) blockedHere = true
           // Heizung PR 11: auch eine abgeschlossene Heizperiode, in der die Anlage nicht verteilt war (etwa eine
           // Lücke in den Rechnungen, die der Warmwasseranteil nach einer Formel nicht überbrückt).
           if (stored && variant.self) {
             const heating: unknown = Reflect.get(Object(stored.settlement), 'heating')
-            if (Array.isArray(heating) && heating.some((x: unknown) => Reflect.get(Object(x), 'plantId') === 'hp' && Reflect.get(Object(Reflect.get(Object(x), 'self')), 'ok') === false)) selfBlocked = true
+            if (Array.isArray(heating) && heating.some((x: unknown) => Reflect.get(Object(x), 'plantId') === 'hp' && Reflect.get(Object(Reflect.get(Object(x), 'self')), 'ok') === false)) blockedHere = true
           }
+          if (blockedHere) selfBlocked = true
+          // Zeilen aus Lieferungen oder dem Vorrat anderer Heizperioden: Dann trägt eine Heizperiode Kosten einer anderen, und
+          // die Schranken lassen sich nicht je Heizperiode trennen.
+          if (/"costItemId":"(fuel|stock):/.test(JSON.stringify(stored ? stored.settlement : r))) crossing = true
           const here = stored ? (atClose.get(key) ?? assert.fail(`${fall}; ${key} ohne Stand beim Abschluss`)) : items.filter((c) => c.period === key).reduce((a, c) => a + c.amountCents, 0)
           assert.equal(t.tenants + t.landlord, here, `${fall}; Σ Zeilen in ${key}`)
           positions += here
@@ -1003,6 +1013,7 @@ for (const variant of VARIANTS) {
           }
           up += t.up
           down += t.down
+          if (!blockedHere) bound = { tenants: bound.tenants + t.tenants, positions: bound.positions + here, up: bound.up + t.up, down: bound.down + t.down }
         }
         // (i) durch den Aufbau
         assert.equal(tenants + landlord, positions, `${fall}; (i)`)
@@ -1052,9 +1063,14 @@ for (const variant of VARIANTS) {
           const all = degreeDayPermille([{ from, to }], TABLE)
           if (cuts.length > 0 && all > 0) unreconciled += Math.abs(f) * degreeDayPermille(cuts, TABLE) / all
         }
-        if ((estimates.length === 0 || estimatesCovered) && !selfBlocked) {
-          assert.ok(tenants >= positions - up, `${fall}; (vii) Mieter ${tenants} < Positionen ${positions} − ausgewiesen ${up}`)
-          assert.ok(tenants <= positions - down + unreconciled + estimates.length, `${fall}; (ii) Mieter ${tenants} > Positionen ${positions} + ausgewiesen ${-down} + nicht abgeglichene Schätzung ${Math.round(unreconciled)}`)
+        // Gesperrte Heizperioden geben alles an den Vermieter; die Schranken gelten über die übrigen (Durchsicht von #243,
+        // Runde 3). Überträge aus dem Vorrat und Lieferungen über Heizperioden hinweg trennen sich dann nicht; deshalb gilt
+        // die Prüfung über die übrigen nur, wenn es keine solchen Zeilen gibt, sonst wie bisher gar nicht. Der nicht
+        // abgeglichene Teil einer eingefrorenen Schätzung (#247, G-K3) bleibt erlaubter Überschuss.
+        const b = !selfBlocked ? { tenants, positions, up, down } : crossing ? null : bound
+        if ((estimates.length === 0 || estimatesCovered) && b) {
+          assert.ok(b.tenants >= b.positions - b.up, `${fall}; (vii) Mieter ${b.tenants} < Positionen ${b.positions} − ausgewiesen ${b.up}`)
+          assert.ok(b.tenants <= b.positions - b.down + unreconciled + estimates.length, `${fall}; (ii) Mieter ${b.tenants} > Positionen ${b.positions} + ausgewiesen ${-b.down} + nicht abgeglichene Schätzung ${Math.round(unreconciled)}`)
         }
         // (iii) je Lieferung und Paar von Heizperioden: Die Gegenbuchungen heben sich auf, oder ein
         // ausgewiesener Teil deckt sie genau (Nachprüfung von 47f2373, H1: über alle Lieferungen summiert

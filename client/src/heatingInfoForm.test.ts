@@ -55,6 +55,8 @@ describe('§ 11 und § 2 (Entwurf 8.9)', () => {
     // R-K2: was nicht zur Wahl steht.
     expect(EXEMPTION_NOT_OFFERED).toMatch(/Pflegeheime.*Nr\. 2.*Hausanlagen.*Nr\. 4/s)
     expect(EXEMPTION_SCOPE_OPTIONS.map((o) => o.value)).toEqual(['heat', 'both'])
+    // Runde 3 (N2-K3): passt bei 390 px.
+    expect(Math.max(...EXEMPTION_SCOPE_OPTIONS.map((o) => o.label.length))).toBeLessThanOrEqual(33)
     expect(AGREED_OPTIONS.map((o) => o.value)).toEqual(['none', 'area', 'fixedPercent', 'consumption'])
   })
   it('Durchsicht von #243: Umfang nur mit Warmwasser (R-K6), CO₂-Satz je Umfang (R-W8), Rückfrage bei abgeschlossenen (G-K1), Verbrauchervertrag (R-K5)', () => {

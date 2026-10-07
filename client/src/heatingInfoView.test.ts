@@ -69,3 +69,13 @@ describe('Durchsicht von #243, Runde 2 (Druck)', () => {
     expect(infoLines({ ...info, comparisonSource: 'Ablesedienst, Anlage 2', comparisonCoversPrev: true })).toContain('Vergleich mit einem Durchschnittsnutzer und mit dem vorhergehenden Abrechnungszeitraum: liegt der Abrechnung bei (Ablesedienst, Anlage 2)')
   })
 })
+
+describe('Durchsicht von #243, Runde 3 (Druck)', () => {
+  it('N2-K1: der Mieter im ersten Jahr bekommt keinen Vorjahresvergleich zugesagt; bei freien Schlüsseln „soweit vorhanden“', () => {
+    const covered = { ...info, comparisonSource: 'Ablesedienst, Anlage 2', comparisonCoversPrev: true as const }
+    expect(infoLines(covered, 'C2')).toContain('Vergleich mit einem Durchschnittsnutzer: liegt der Abrechnung bei (Ablesedienst, Anlage 2)')
+    expect(infoLines(covered, 'A')).toContain('Vergleich mit einem Durchschnittsnutzer und mit dem vorhergehenden Abrechnungszeitraum: liegt der Abrechnung bei (Ablesedienst, Anlage 2)')
+    const frei = { ...info, users: [], comparisons: false, comparisonSource: 'Ablesedienst, Anlage 2' }
+    expect(infoLines(frei, 'A')).toContain('Vergleich mit einem Durchschnittsnutzer und, soweit vorhanden, mit dem vorhergehenden Abrechnungszeitraum: liegt der Abrechnung bei (Ablesedienst, Anlage 2)')
+  })
+})

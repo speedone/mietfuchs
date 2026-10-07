@@ -10,7 +10,7 @@ export default function HeatingInfoBlock({ info, tenancyId, plantName }: { info:
   return (
     <div className="co2-block heating-info-block">
       <h3>Informationen nach § 6a HeizkostenV{plantName ? ` · ${plantName}` : ''}</h3>
-      {infoLines(info).map((l) => <p key={l}>{l}</p>)}
+      {infoLines(info, tenancyId).map((l) => <p key={l}>{l}</p>)}
       {c && c.lines.map((l) => <p key={l}>{l}</p>)}
       {c && c.bars.map((b) => {
         const [now, prev] = barWidths([b.now, b.prev])

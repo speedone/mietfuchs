@@ -3129,14 +3129,20 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       const total = sp.plan.totals[p]
       const area = p === 'heating' ? unit.heatArea : unit.unit.areaM2
       const byDegree = p === 'heating' && sp.changeSplit === 'degreeDays'
+      // Runde 3 (N2-H2): Unter einer Vereinbarung „nach Wohnfläche“ gilt die Verordnung nicht; die Teilung nach
+      // Gradtagzahlen übernimmt Mietfuchs sinngemäß und sagt es.
       const part = u.days < sp.hDays
-        ? byDegree ? ` · ${fmtNum(Math.round(u.degreeDayPermille * 10) / 10)} von ${fmtNum(Math.round(sp.hDegree * 10) / 10)} ‰ Gradtage` : ` · ${u.days}/${sp.hDays} Tage`
+        ? byDegree
+          ? ` · ${fmtNum(Math.round(u.degreeDayPermille * 10) / 10)} von ${fmtNum(Math.round(sp.hDegree * 10) / 10)} ‰ Gradtage${sp.agreedArea ? ' (nach Gradtagzahlen geteilt wie § 9b Abs. 2 HeizkostenV, sinngemäß)' : ''}`
+          : ` · ${u.days}/${sp.hDays} Tage`
         : ''
       steps.push({ label: `Grundkosten ${POT_NAME[p]}`, value: `${fmtNum(area)} von ${fmtNum(total.area)} m²${part}`, term: 'baseCosts' })
       const v = u.pots[p].value
       // Nur der Teil des Nutzers ohne gültige Ablesung ist geschätzt (Heizung PR 13, Abweichung 3 des Plans).
       const estimatedHere = u.pots[p].estimated === true
-      if (total.overThreshold) {
+      if (sp.agreedArea) {
+        steps.push({ label: `Verbrauchskosten ${POT_NAME[p]}`, value: 'keine: nach der Vereinbarung (§ 2 HeizkostenV) nur nach Wohnfläche verteilt', term: 'heatingCostOrdinance' })
+      } else if (total.overThreshold) {
         // § 9a Abs. 2 (Heizung PR 13): der Topf ausschließlich nach Fläche.
         steps.push({ label: `Verbrauchskosten ${POT_NAME[p]}`, value: `geschätzt für ${fmtNum(total.estimatedArea)} von ${fmtNum(total.area)} m², mehr als die Grenze: nur nach Fläche verteilt (§ 9a Abs. 2 HeizkostenV)`, term: 'heatingEstimate' })
       } else {
@@ -5139,7 +5145,11 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           (exemptionScopeOf(pot.plantId, String(pot.period.key)) === 'heat'
             // Durchsicht von #243, Runde 2 (G2-N-W1): Ist nur die Wärme ausgenommen, gelten die Vorschriften der Verordnung
             // nur für das Warmwasser; gekürzt werden darf nur, „soweit“ entgegen ihnen abgerechnet wird (§ 12 Abs. 1 Satz 1).
-            ? `Sonst darf jeder Mieter seinen Anteil um ${cut} % kürzen (§ 9 Abs. 2 Satz 1, § 12 Abs. 1 Satz 1 HeizkostenV; BGH, Urteil vom 12.01.2022, VIII ZR 151/20); weil die Wärme nach Ihrer Angabe nach § 11 HeizkostenV ausgenommen ist, nur den Anteil am Warmwasser${waterCutsOn([pot.plantId], cut)}. `
+            // Runde 3 (N2-W1): Die Beschränkung ist eine Auslegung; der BGH kürzte im Fall ohne Ausnahme auf Wärme und
+            // Warmwasser insgesamt, und dieser Betrag steht als Obergrenze dabei.
+            ? `Sonst darf jeder Mieter seinen Anteil kürzen (§ 9 Abs. 2 Satz 1, § 12 Abs. 1 Satz 1 HeizkostenV). Der BGH hat dafür im Fall ohne Ausnahme die Kosten für Wärme und Warmwasser insgesamt um ${cut} % gekürzt (BGH, Urteil vom 12.01.2022, VIII ZR 151/20). ` +
+              `Weil die Wärme nach Ihrer Angabe nach § 11 HeizkostenV ausgenommen ist, nennt Mietfuchs nur ${cut} % des Anteils am Warmwasser${waterCutsOn([pot.plantId], cut)}: Gekürzt werden darf nur, „soweit“ entgegen den Vorschriften der Verordnung abgerechnet wird (§ 12 Abs. 1 Satz 1), und für die ausgenommene Wärme gelten sie nicht (§ 11 Abs. 1). Das ist eine Auslegung von Mietfuchs, entschieden ist es nicht; ` +
+              `bis zum Betrag auf Wärme und Warmwasser insgesamt ist eine Kürzung deshalb nicht ausgeschlossen${cutsOn(ids, cut).replace(', hier: ', ', das wären ')}. `
             : `Sonst darf jeder Mieter seinen gesamten Anteil an den Heiz- und Warmwasserkosten um ${cut} % kürzen (§ 9 Abs. 2 Satz 1, § 12 Abs. 1 Satz 1 HeizkostenV; BGH, Urteil vom 12.01.2022, VIII ZR 151/20)${cutsOn(ids, cut)}. `) +
           'Trifft die Voraussetzung bei Ihnen zu, bestätigen Sie das auf der Seite Heizkosten und bewahren einen Nachweis auf.',
         plantSubject)
@@ -5369,6 +5379,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
             : `${where}: Die Zwischenablesung zum Wechsel in ${f.unitName} zum ${fmtDay(f.boundary)} lässt nach Ihrer Angabe wegen ihres Zeitpunkts keine hinreichend genaue Ermittlung zu. ` +
               'Die gesamten Kosten der Wohnung werden deshalb aufgeteilt, die Heizkosten nach Gradtagen bzw. Tagen, die Warmwasserkosten nach Tagen (§ 9b Abs. 3 HeizkostenV).',
           subject)
+      } else if (sp.agreedArea) {
+        // Runde 3 (N2-H1): Unter einer Vereinbarung „nach Wohnfläche“ braucht die Verteilung keine Zwischenablesung; § 9b
+        // Abs. 1 betrifft die Verteilung nach Verbrauch. Keine Pflicht, keine Frage.
+        continue
       } else {
         const cut = law(hkvCutNotByConsumption, { period: lawPeriod }, lawLog)
         const noCut = noCutPots(f.pots)
@@ -5717,7 +5731,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const estimated = info.users.filter((u) => u.estimated)
     if (estimated.length > 0) {
       parts.push(`Der Verbrauch von ${andList(estimated.map((u) => nameOf(u.tenancyId)))} ist nach § 9a HeizkostenV geschätzt. Abrechnungen in den Fällen des § 9a nimmt die Begründung der Verordnung von § 6a Abs. 3 aus: „Nicht darunter fallen also die Fälle des § 9a und Fälle, in denen eine Ausnahme gemäß § 11 greift“; für sie gelten mindestens die Angaben nach Abs. 5, also Nr. 2 und 3 (BR-Drs. 643/21, S. 19 und 22). ` +
-        `Mietfuchs verlangt sie für ${estimated.length === 1 ? 'ihn' : 'sie'} deshalb nur in diesem Umfang und nennt für ${estimated.length === 1 ? 'ihn' : 'sie'} keine Kürzung wegen der Nr. 1, 4 und 5; den Vergleich druckt es mit dem geschätzten Wert gekennzeichnet. Dass das je Mieter gilt und nicht für die ganze Abrechnung, ist eine Auslegung von Mietfuchs; der Wortlaut der Verordnung selbst nimmt § 9a nicht aus.`)
+        `Mietfuchs verlangt sie für ${estimated.length === 1 ? 'ihn' : 'sie'} deshalb nur in diesem Umfang und nennt für ${estimated.length === 1 ? 'ihn' : 'sie'} keine Kürzung wegen der Nr. 1, 4 und 5; den Vergleich druckt es mit dem geschätzten Wert gekennzeichnet. Dass das je Mieter gilt und nicht für die ganze Abrechnung, ist eine Auslegung von Mietfuchs; der Wortlaut der Verordnung nennt § 9a nicht ausdrücklich.`)
     }
     if (agreement !== null) parts.push('Eine Vereinbarung über die Verteilung nach § 2 HeizkostenV ersetzt die Informationspflichten nicht.')
     if (info.uncertain.includes('1a')) parts.push(`Bei einem Fernwärmesystem ab ${law(hkvInfoDistrict, { period: hPeriod }, lawLog).thresholdMw} MW gehören Treibhausgasemissionen und Primärenergiefaktor schon in diese Abrechnung; dann bis zu ${cut} %.`)
