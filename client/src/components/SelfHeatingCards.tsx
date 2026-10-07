@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
+import HcaBlock from './HcaBlock'
 import type { HeatingPeriodView, HeatingPlant, InsulationRule, InterimGapStatus, SelfHeatingStatement } from '../types'
 import { api, errorText, fmtDate } from '../api'
 import { useToast } from './feedback'
 import Term from './Term'
 import {
   boundaryLight, boundaryText, distributionLines, gapConsequence, INSULATION_OPTIONS, INSULATION_QUESTION, insulationAsked, insulationExplained,
-  percentOf, potLines, READING_RESULT_HINT, readingResult, shareEditable, unsureShareHint, userLine, type Light,
+  heatUnitOf, percentOf, potLines, READING_RESULT_HINT, readingResult, shareEditable, unsureShareHint, userLine, type Light,
 } from '../heatingSelfView'
 import { forcedShare, shareBounds } from '../heatingSelfForm'
 
@@ -32,6 +33,8 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
   const [printUnit, setPrintUnit] = useState<string>(self?.units[0]?.unitId ?? '')
   const [printing, setPrinting] = useState(false)
   const editable = !d || shareEditable(d)
+  // Die Warmwasserbereitung dieser Heizperiode, nicht die heutige der Anlage (Durchsicht von #241, Runde 2, H1).
+  const hotWater = view.selfHotWater ?? plant.hotWater
   const forced = forcedShare(plant.energy, insulation)
   // Den Pflichtanteil nachzutragen geht auch in einer begonnenen Heizperiode (Durchsicht von #239, C1).
   const toForced = forced !== null && savedInsulation !== 'applies'
@@ -55,8 +58,8 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
 
   async function saveShare() {
     const heat = forced ?? percentOf(share)
-    const water = plant.hotWater === 'none' ? null : (editable ? percentOf(waterShare) : (d?.effective?.water ?? null))
-    if (heat === null || (plant.hotWater !== 'none' && water === null)) {
+    const water = hotWater === 'none' ? null : (editable ? percentOf(waterShare) : (d?.effective?.water ?? null))
+    if (heat === null || (hotWater !== 'none' && water === null)) {
       setError(`Bitte geben Sie den Anteil zwischen ${min} und ${max} % an, mit höchstens zwei Nachkommastellen.`)
       return
     }
@@ -123,7 +126,7 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
               <input inputMode="decimal" value={forced !== null ? String(forced) : share} disabled={forced !== null}
                 onChange={(e) => { if (waterShare === '' || waterShare === share) setWaterShare(e.target.value); setShare(e.target.value) }} />
             </label>
-            {plant.hotWater !== 'none' && editable && (
+            {hotWater !== 'none' && editable && (
               <label className="field">
                 Warmwasser in %
                 <input inputMode="decimal" value={waterShare} onChange={(e) => setWaterShare(e.target.value)} />
@@ -193,6 +196,7 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
           <h3>Verteilung</h3>
           {self.pots.flatMap(potLines).map((l) => <p key={l}>{l}</p>)}
           {self.units.flatMap((u) => u.users).map((u) => <p key={u.key}>{userLine(u, self)}</p>)}
+          <HcaBlock self={self} unitName={(id) => self.units.find((u) => u.unitId === id)?.unitName ?? id} />
         </div>
       )}
       {self && (
@@ -214,7 +218,7 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
               {[...new Set(u.readings.map((r) => r.boundary))].map((date) => (
                 <div key={date}>
                   <span className="muted">{fmtDate(date)}</span>
-                  {readingResult(u, date).map((l) => <div key={l}>{l}</div>)}
+                  {readingResult(u, date, heatUnitOf(self)).map((l) => <div key={l}>{l}</div>)}
                 </div>
               ))}
             </div>

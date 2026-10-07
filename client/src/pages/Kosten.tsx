@@ -47,6 +47,7 @@ import {
 import CostPeriodFields from '../components/CostPeriodFields'
 import TaxYearSelect from '../components/TaxYearSelect'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
+import { hotWaterOf } from '../../../shared/heatingPeriod.ts'
 import { alreadyCarried, carryKeyDetails, carryOverBody, carryOverForm, carryOverRows, withCarryAmount, type CarryRow } from '../carryOver'
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { aiSummary } from '../aiForm'
@@ -76,6 +77,9 @@ const EXTERNAL_UNIT_LABELS: Record<ExternalMeasure, string> = { mea: 'MEA', area
 type Evaluated = { serverFile: string; assessment: AssessmentView }
 
 const NOT_SAVED = 'Die Auswertung ließ sich nicht speichern. Bitte versuchen Sie es noch einmal; gebucht wurde nichts.'
+
+// Durchsicht von #241, Runde 2, H1: Das gespeicherte Ziel passt nicht zur Warmwasserbereitung der Heizperiode.
+const TARGET_INVALID = 'Das gespeicherte Ziel passt nicht dazu, wie die Anlage in dieser Heizperiode das Warmwasser bereitet. Wählen Sie das Ziel neu.'
 
 export default function Kosten({ units, settings, tenancies = [], focus, onFocusDone }: Props) {
   // Wohin die Belege zur Auswertung gehen (siehe aiForm.ts)
@@ -117,13 +121,21 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     ? (plants.find((p) => p.id === (heatingPlantId || ownPlant?.plantId)) ?? (plants.length === 1 ? plants[0] : undefined))
     : undefined
   const selfPlant = plantOfForm?.method === 'self'
-  const targetChoices = plantOfForm ? heatingTargetOptions(selfPlant, plantOfForm.hotWater ?? 'combined', form?.heatingPart ?? '') : []
+  const heatingOption = form?.category === HEATING_CATEGORY && ownPlant
+    ? ownPlant.options.find((o) => o.value === (heatingPeriod || ownPlant.options[0]?.value)) : undefined
+  // Die Warmwasserbereitung der Heizperiode des Formulars, nicht die heutige der Anlage (Durchsicht von #241,
+  // Runde 2, H1): Eine Position 2025 behält ihr Ziel, auch wenn die Anlage seit 2026 kein Warmwasser bereitet.
+  const formHotWater = plantOfForm ? hotWaterOf(plantOfForm, heatingOption?.value ?? key) : 'combined'
+  const targetChoices = plantOfForm ? heatingTargetOptions(selfPlant, formHotWater, form?.heatingPart ?? '') : []
+  // Ein Ziel, das zur Warmwasserbereitung nicht passt, wird nie still ersetzt, sondern als Fehler am Feld
+  // genannt; gespeichert wird erst nach einer Wahl.
+  const targetInvalid = !!form && selfPlant && form.heatingTarget !== '' && !targetChoices.some((o) => o.value === form.heatingTarget)
   useEffect(() => {
     if (!form) return
     // Gespeichert wird, was zu sehen ist: Bei eigener Abrechnung steht der Schlüssel fest, und eine einzige
-    // passende Wahl des Ziels ist zugleich die gespeicherte.
+    // passende Wahl füllt ein leeres Ziel.
     const only = selfPlant && targetChoices.length === 1 ? (targetChoices[0]?.value ?? '') : null
-    const target = selfPlant && !targetChoices.some((o) => o.value === form.heatingTarget) ? (only ?? '') : form.heatingTarget
+    const target = selfPlant && form.heatingTarget === '' && only !== null ? only : form.heatingTarget
     if ((selfPlant && form.key !== 'heatingSystem') || target !== form.heatingTarget) {
       setForm({ ...form, ...(selfPlant ? { key: 'heatingSystem' as const, participants: null } : {}), heatingTarget: target })
     }
@@ -145,8 +157,6 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
       .then((list) => setInvoiceDates(new Map((Array.isArray(list) ? list : []).flatMap((u) => (u.invoiceDate ? [[u.file, u.invoiceDate] as const] : [])))))
       .catch(() => setInvoiceDates(new Map()))
   }, [propertyId])
-  const heatingOption = form?.category === HEATING_CATEGORY && ownPlant
-    ? ownPlant.options.find((o) => o.value === (heatingPeriod || ownPlant.options[0]?.value)) : undefined
   const heatTax = heatingOption && form ? heatingTaxYear(heatingOption, form.taxYear, form.invoiceFile ? invoiceDates.get(form.invoiceFile) : undefined) : null
   // Vorbelegt wird nur, solange kein gültiges Jahr dasteht: Ein vom Vermieter gewähltes Jahr bleibt,
   // auch wenn das Rechnungsdatum später ein anderes nahelegt.
@@ -331,6 +341,10 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     const built = buildCostItemBody(form, units, period, tenancies)
     if ('error' in built) {
       setError(built.error)
+      return
+    }
+    if (targetInvalid) {
+      setError(TARGET_INVALID)
       return
     }
     setError('')
@@ -877,12 +891,13 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
               <label className="field grow">
                 <span>Ziel{selfPlant ? '' : ' (beim Mieterwechsel)'}</span>
                 <select aria-label="Ziel" value={targetChoices.some((o) => o.value === form.heatingTarget) ? form.heatingTarget : ''} onChange={(e) => setForm({ ...form, heatingTarget: targetChoices.find((o) => o.value === e.target.value)?.value ?? '' })}>
-                  {selfPlant && targetChoices.length !== 1 && <option value="">— bitte wählen —</option>}
+                  {selfPlant && (targetChoices.length !== 1 || targetInvalid) && <option value="">— bitte wählen —</option>}
                   {targetChoices.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
                 <small className="muted">{selfPlant
                   ? 'Bereitet die Anlage auch das Warmwasser, gehört der Brennstoff zu Heizung und Warmwasser; Mietfuchs teilt ihn nach dem gemessenen Warmwasseranteil. Den Teil der Heizkosten wählen Sie unter „Weitere Angaben“.'
                   : '„nur Heizung“: Beim Mieterwechsel teilen sich diese Kosten nach Gradtagen statt nach Tagen (§ 9b Abs. 2 HeizkostenV), wenn die Heizanlage so eingestellt ist.'}</small>
+                {targetInvalid && <div className="error" role="alert">{TARGET_INVALID}</div>}
               </label>
             )}
             {/* #141: anders als dieselbe Kostenart im Vorjahr? Dasselbe sagt die Abrechnung. */}

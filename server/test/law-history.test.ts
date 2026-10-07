@@ -60,6 +60,8 @@ const SHIPPED: readonly string[] = [
   'hkv.heating-values|2021-12-01||{"units":["l","m3","kg"],"values":{"heatingOilEL":{"kwh":10,"per":"l"},"heavyFuelOil":{"kwh":10.9,"per":"l"},"naturalGasH":{"kwh":10,"per":"m3"},"naturalGasL":{"kwh":9,"per":"m3"},"lpg":{"kwh":13,"per":"kg"},"coke":{"kwh":8,"per":"kg"},"lignite":{"kwh":5.5,"per":"kg"},"hardCoal":{"kwh":8,"per":"kg"},"firewood":{"kwh":4.1,"per":"kg"},"woodPellets":{"kwh":5,"per":"kg"},"woodChips":{"kwh":4,"per":"kg"}}}',
   'hkv.exemption.renewable||2024-09-30|{"heatPump":true}',
   'hkv.exemption.renewable|2024-10-01||{"heatPump":false}',
+  // 0.11.0 (Heizung PR 12, #99)
+  'practice.evaporator-window|||{"min":400,"max":800}',
 ]
 
 const current = (): string[] =>

@@ -19,7 +19,7 @@
 // fragen beide.
 
 import { periodContaining, periodOfKey, periodsBetween, settlementDeadline } from './period.ts'
-import type { BillingPeriod, PeriodKey, PeriodRules, SeparateSpan, Unit } from './types.ts'
+import type { BillingPeriod, CaptureMethod, HotWater, PeriodKey, PeriodRules, SelfSpanRange, SeparateSpan, Unit } from './types.ts'
 
 export type PlantRhythm = { periodStartMonth: number | null; periodChanges: readonly string[] }
 export type PlantWay = PlantRhythm & { separateSpans: readonly SeparateSpan[] }
@@ -199,4 +199,21 @@ export function monthSpanText(months: readonly string[]): string {
   return first.slice(0, 4) === last.slice(0, 4)
     ? `${monthName(first)} bis ${monthName(last)} ${first.slice(0, 4)}`
     : `${monthName(first)} ${first.slice(0, 4)} bis ${monthName(last)} ${last.slice(0, 4)}`
+}
+
+// ---------- Erfassung und Warmwasser je Zeitraum der eigenen Abrechnung (Heizung PR 12) ----------
+
+// Womit eine Heizperiode erfasst wird (Durchsicht der Vorgänger: keine rückwirkende Umstellung). Jeder
+// Zeitraum der eigenen Abrechnung trägt die Erfassung, mit der er eingerichtet wurde; ein Wechsel der
+// Ausstattung beginnt einen neuen Zeitraum. Ohne Angabe am Zeitraum (Bestand vor PR 12, damals gab es nur
+// Wärmezähler) gilt die der Anlage.
+export function captureOf(p: { capture?: CaptureMethod | null; selfSpans?: readonly SelfSpanRange[] }, key: string): CaptureMethod {
+  const span = (p.selfSpans ?? []).find((s) => key >= s.from && (s.until === null || key < s.until))
+  return span?.capture ?? p.capture ?? 'heatMeter'
+}
+
+// Wie das Warmwasser in einer Heizperiode bereitet wird (Durchsicht von #241, I2), nach demselben Muster.
+export function hotWaterOf(p: { hotWater?: HotWater | null; selfSpans?: readonly SelfSpanRange[] }, key: string): HotWater {
+  const span = (p.selfSpans ?? []).find((s) => key >= s.from && (s.until === null || key < s.until))
+  return span?.hotWater ?? p.hotWater ?? 'combined'
 }

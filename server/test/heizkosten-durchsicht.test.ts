@@ -195,7 +195,7 @@ test('Durchsicht #239 I3a: der Anteil gehört zur Linie; die neue Anlage überni
     assert.equal(n6a.length, 1, 'eine je Linie (Nachprüfung, N2)')
     assert.match(n6a[0]?.text ?? '', /vorhergehenden Abrechnungszeitraum/)
     // Der Kesseltausch erbt den Beginn (Nachprüfung, W1/W2).
-    assert.deepEqual((await opened.read(readStock)).heatingPlants.find((p) => p.id === 'hp2')?.selfSpans, [{ from: '2025-01', until: null }])
+    assert.deepEqual((await opened.read(readStock)).heatingPlants.find((p) => p.id === 'hp2')?.selfSpans, [{ from: '2025-01', until: null, capture: 'heatMeter', hotWater: 'none' }])
     assert.ok(n6a.every((n) => n.level === 'warning' && /um 3 % kürzen \(§ 12 Abs\. 1 Satz 3 HeizkostenV\), hier: Mieter A \(A\) [0-9.,]+ €/.test(n.text)), n6a.map((n) => n.text).join('\n'))
     await assert.rejects(opened.write((db) => saveDistribution(db, 'hp2', '2025-01', { heatConsumptionPct: 60, insulationRule: 'notApplies' }, '2024-12-01')), status(400, /derselben Heizperiode/))
     const d = await opened.write((db) => saveDistribution(db, 'hp2', '2025-01', { heatConsumptionPct: 70, insulationRule: 'notApplies' }, '2024-12-01'))
@@ -256,13 +256,13 @@ test('Nachprüfung #239 W1: zurück auf freie Schlüssel und erneut ab 2026; 202
     await opened.write((db) => updateHeatingPlant(db, 'hp', { method: 'manual', convertItems: 'area' }))
     let stock = await opened.read(readStock)
     // Runde 3: Der Zeitraum mit der abgeschlossenen Heizperiode 2024 endet vor 2025, statt zu verschwinden.
-    assert.deepEqual(stock.heatingPlants.find((p) => p.id === 'hp')?.selfSpans, [{ from: '2024-01', until: '2025-01' }])
+    assert.deepEqual(stock.heatingPlants.find((p) => p.id === 'hp')?.selfSpans, [{ from: '2024-01', until: '2025-01', capture: 'heatMeter', hotWater: 'none' }])
     const rows = stock.heatingPeriodRows.filter((r) => r.plantId === 'hp')
     assert.deepEqual(rows.map((r) => [String(r.period), r.heatConsumptionPct]).sort(), [['2024-01', 70], ['2025-01', null]], 'abgeschlossene bleiben, offene werden geleert')
     await opened.write((db) => createEntity(db, 'costItems', 'g25', { propertyId: 'objekt-1', period: '2025-01', category: HEATING_CATEGORY, description: 'Gas 2025', amountCents: 400000, key: 'area', heatingPlantId: 'hp', heatingPart: 'fuel' }))
     await opened.write((db) => setUpSelf(db, 'hp', { ...NONE, period: '2026-01' }, '2025-12-01', newId))
     stock = await opened.read(readStock)
-    assert.deepEqual(stock.heatingPlants.find((p) => p.id === 'hp')?.selfSpans, [{ from: '2024-01', until: '2025-01' }, { from: '2026-01', until: null }])
+    assert.deepEqual(stock.heatingPlants.find((p) => p.id === 'hp')?.selfSpans, [{ from: '2024-01', until: '2025-01', capture: 'heatMeter', hotWater: 'none' }, { from: '2026-01', until: null, capture: 'heatMeter', hotWater: 'none' }])
     const s = await settle(opened, '2025-06-01')
     const share = (id: string) => s.statements.find((st) => st.tenancyId === id)?.rows.find((r) => r.costItemId === 'g25')?.shareCents
     assert.deepEqual([share('ta'), share('tb')], [100000, 300000])
@@ -283,7 +283,7 @@ test('Nachprüfung #239 W2: die eigene Abrechnung beginnt nicht vor oder in eine
     await assert.rejects(opened.write((db) => setUpSelf(db, 'hp', { ...NONE, period: '2023-01', items: [{ id: 'g2023', heatingPart: 'fuel', heatingTarget: 'heating' }] }, '2025-06-01', newId)), status(400, /beginnt mit der Heizperiode 2025/))
     // Erneut ab einer späteren Heizperiode eingerichtet: Der Beginn bleibt.
     await opened.write((db) => setUpSelf(db, 'hp', { ...NONE, period: '2026-01' }, '2025-06-01', newId))
-    assert.deepEqual((await opened.read(readStock)).heatingPlants.find((p) => p.id === 'hp')?.selfSpans, [{ from: '2025-01', until: null }])
+    assert.deepEqual((await opened.read(readStock)).heatingPlants.find((p) => p.id === 'hp')?.selfSpans, [{ from: '2025-01', until: null, capture: 'heatMeter', hotWater: 'none' }])
     const live = await settle(opened, '2024-06-01')
     const share = (s: typeof live, id: string) => s.statements.find((st) => st.tenancyId === id)?.rows.find((r) => r.costItemId === 'g2024')?.shareCents
     assert.deepEqual([share(live, 'ta'), share(live, 'tb')], [share(s24, 'ta'), share(s24, 'tb')])
@@ -346,7 +346,7 @@ test('Nachprüfung #239 Runde 3: zurück nach abgeschlossener eigener Abrechnung
     await opened.write((db) => updateHeatingPlant(db, 'hp', { method: 'manual', convertItems: 'area' }))
     const stock = await opened.read(readStock)
     const plant = stock.heatingPlants.find((p) => p.id === 'hp')
-    assert.deepEqual([plant?.method, plant?.selfSpans], ['manual', [{ from: '2025-01', until: '2026-01' }]])
+    assert.deepEqual([plant?.method, plant?.selfSpans], ['manual', [{ from: '2025-01', until: '2026-01', capture: 'heatMeter', hotWater: 'none' }]])
     assert.deepEqual(['g2025', 'g2026'].map((id) => stock.costItems.find((c) => c.id === id)?.key), ['heatingSystem', 'area'])
     const live25 = await settle(opened, '2025-06-01')
     const rows = (s: typeof live25) => s.statements.map((st) => [st.tenancyId, st.rows.find((r) => r.costItemId === 'g2025')?.shareCents])
@@ -359,7 +359,7 @@ test('Nachprüfung #239 Runde 3: zurück nach abgeschlossener eigener Abrechnung
     // Erneut einrichten unmittelbar am Ende: Der Zeitraum geht weiter (ein späterer Beginn ergäbe einen zweiten, siehe W1).
     await opened.write((db) => setUpSelf(db, 'hp', { ...NONE, period: '2026-01', items: [{ id: 'g2026', heatingPart: 'fuel', heatingTarget: 'heating' }] }, '2025-12-01', newId))
     const again = (await opened.read(readStock)).heatingPlants.find((p) => p.id === 'hp')
-    assert.deepEqual([again?.method, again?.selfSpans], ['self', [{ from: '2025-01', until: null }]])
+    assert.deepEqual([again?.method, again?.selfSpans], ['self', [{ from: '2025-01', until: null, capture: 'heatMeter', hotWater: 'none' }]])
   })
 })
 

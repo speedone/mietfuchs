@@ -383,7 +383,7 @@ test('Die Verschmelzung erreicht jede Spalte des Schemas', async () => {
   //
   // `id` bleibt außen vor, die vergibt die Route; Fremdschlüssel bekommen eine Kennung, die es
   // wirklich gibt, sonst lehnte die Datenbank schon das Einfügen ab.
-  const proben: { coll: CollectionName, table: SQLiteTable, body: Record<string, unknown> }[] = [
+  const proben: { coll: CollectionName, table: SQLiteTable, body: Record<string, unknown>, id?: string }[] = [
     {
       coll: 'units', table: units,
       body: { propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true, selfUsed: true, selfPersons: 2, mea: 124, rooms: 3, floor: 'EG', notes: 'Notiz' },
@@ -416,6 +416,12 @@ test('Die Verschmelzung erreicht jede Spalte des Schemas', async () => {
         heatingPlantId: 'hp1', heatingRole: 'dhwHeat', remoteReadable: false, installedOn: '2022-03-01',
       },
     },
+    // Heizung PR 12: Skala und Faktor gibt es nur am Heizkostenverteiler einer Wohnung, nie an einem Zähler
+    // der Anlage; eine zweite Probe belegt sie. Jede Spalte muss in einer Probe ihrer Sammlung stehen.
+    {
+      coll: 'meters', table: meters, id: 'probe-hkv',
+      body: { propertyId: 'objekt-1', name: 'Wohnzimmer', unitId: 'u1', type: 'hkv', unit: 'Einheiten', hcaScale: 'unit', ratingFactor: 1.25 },
+    },
     {
       coll: 'readings', table: readings,
       body: { meterId: 'm1', date: '2024-12-31', value: 160, replacement: true, oldEndValue: 155, note: 'Wechsel', interimFor: '2024-12-30' },
@@ -436,8 +442,8 @@ test('Die Verschmelzung erreicht jede Spalte des Schemas', async () => {
       await createDelivery(db, 'd1', 'hp1', { invoiceFrom: '2024-01-01', invoiceTo: '2024-12-31' })
     })
 
-    for (const { coll, table, body } of proben) {
-      const id = `probe-${coll}`
+    for (const { coll, table, body, id: own } of proben) {
+      const id = own ?? `probe-${coll}`
       const gespeichert = await opened.write((db) => createEntity(db, coll, id, body))
       if (coll === 'costItems') {
         assert.deepEqual(fieldOf(gespeichert, 'externalBasis'), body.externalBasis, 'costItems: die Angaben der Gemeinschaft sind verlorengegangen')
@@ -448,9 +454,10 @@ test('Die Verschmelzung erreicht jede Spalte des Schemas', async () => {
         // `externalBasis`; dass jede davon ankommt, prüft der Vergleich darunter.
         if (coll === 'costItems' && EXTERNAL_COLUMNS.has(spalte)) continue
         assert.ok(
-          Object.hasOwn(body, spalte),
+          proben.some((p) => p.coll === coll && Object.hasOwn(p.body, spalte)),
           `${coll}: Die Probe belegt die Spalte „${spalte}" nicht, der Test bewacht sie deshalb nicht`,
         )
+        if (!Object.hasOwn(body, spalte)) continue
         assert.deepEqual(
           fieldOf(gespeichert, spalte), body[spalte],
           `${coll}: Die Spalte „${spalte}" ist beim Verschmelzen verlorengegangen`,

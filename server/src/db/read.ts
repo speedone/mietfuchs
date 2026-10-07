@@ -18,7 +18,7 @@
 // die Abfrage bedient, kann es anders kommen.
 
 import { eq, sql } from 'drizzle-orm'
-import type { AiConsent, AiSettings, AiSlot, Co2Statement, CostItem, DegreeDayValue, FrozenFuelCarry, FuelDelivery, HeatingPeriodData, HeatingPlant, InterimGap, Meter, Payment, PeriodKey, Property, Reading, Settings, Tenancy, Unit } from '../../../shared/types.ts'
+import type { AiConsent, AiSettings, AiSlot, Co2Statement, CostItem, DegreeDayValue, FrozenFuelCarry, FuelDelivery, HeatingPeriodData, HeatingPlant, HeatingServiceValue, InterimGap, Meter, Payment, PeriodKey, Property, Reading, Settings, Tenancy, Unit } from '../../../shared/types.ts'
 import { periodKey } from '../../../shared/period.ts'
 import { migrateAi, type MigratedSettings } from '../ai/settings.ts'
 import { DEFAULT_SETTINGS } from '../defaults.ts'
@@ -26,7 +26,7 @@ import { frozenSettlementOf, type FrozenItemSelfUse, type SnapshotSource } from 
 import type { Executor } from './client.ts'
 import {
   aiSlots, baseRents, closedHeatingSettlements, co2Statements, co2TenantReliefs, degreeDayValues, fuelCarryFrozen, fuelDeliveries, fuelDeliveryParts, heatingPeriods, closedSettlements, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, unitNoConnection, meters, payments,
-  flatRates, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingPrepaymentOverrides, heatingPrepayments, heatingSelfSpans, heatingSeparateSpans, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, readings, settings, tenancies, units,
+  flatRates, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingPrepaymentOverrides, heatingPrepayments, heatingSelfSpans, heatingSeparateSpans, heatingServiceValues, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, readings, settings, tenancies, units,
   interimReadingGaps,
 } from './schema.ts'
 
@@ -65,6 +65,8 @@ export type Stock = SnapshotSource & {
   heatingPeriodRows: HeatingPeriodData[]
   // Antworten zu fehlenden Zwischenablesungen (Heizung PR 10)
   interimGaps: InterimGap[]
+  // Werte der Ablesedienste (Heizung PR 12)
+  heatingServiceValues: HeatingServiceValue[]
   // Lieferungen, eingefrorene Überträge, Ortswerte (Heizung PR 7)
   fuelDeliveries: FuelDelivery[]
   fuelCarryFrozen: FrozenFuelCarry[]
@@ -279,6 +281,9 @@ export async function readMeters(db: Executor): Promise<Meter[]> {
     ...(m.heatingRole !== null ? { heatingRole: m.heatingRole } : {}),
     ...(m.remoteReadable !== null ? { remoteReadable: m.remoteReadable } : {}),
     ...(m.installedOn !== null ? { installedOn: m.installedOn } : {}),
+    // Skala und Bewertungsfaktor eines Heizkostenverteilers (Heizung PR 12).
+    ...(m.hcaScale !== null ? { hcaScale: m.hcaScale } : {}),
+    ...(m.ratingFactor !== null ? { ratingFactor: m.ratingFactor } : {}),
   }))
 }
 
@@ -292,7 +297,7 @@ export async function readHeatingPlants(db: Executor): Promise<HeatingPlant[]> {
   const wechsel = groupBy(await db.select().from(heatingPeriodChanges).orderBy(heatingPeriodChanges.fromMonth), (w) => w.plantId, (w) => w.fromMonth)
   const spannen = groupBy(await db.select().from(heatingSeparateSpans).orderBy(heatingSeparateSpans.from), (s) => s.plantId, (s) => ({ from: s.from, until: s.until }))
   // Zeiträume der eigenen Heizkostenabrechnung (Durchsicht von #239), aufsteigend.
-  const eigene = groupBy(await db.select().from(heatingSelfSpans).orderBy(heatingSelfSpans.from), (s) => s.plantId, (s) => ({ from: s.from, until: s.until }))
+  const eigene = groupBy(await db.select().from(heatingSelfSpans).orderBy(heatingSelfSpans.from), (s) => s.plantId, (s) => ({ from: s.from, until: s.until, ...(s.capture !== null ? { capture: s.capture } : {}), ...(s.hotWater !== null ? { hotWater: s.hotWater } : {}) }))
   return rows.map((p) => ({
     id: p.id,
     propertyId: p.propertyId,
@@ -327,7 +332,21 @@ export async function readHeatingPlants(db: Executor): Promise<HeatingPlant[]> {
     heatPumpInstalledOn: p.heatPumpInstalledOn,
     heatGeneration: p.heatGeneration,
     heatPumpMajority: p.heatPumpMajority,
+    hcaModel: p.hcaModel,
     selfSpans: eigene.get(p.id) ?? [],
+  }))
+}
+
+// Die Werte der Ablesedienste (Heizung PR 12), mit Anlage und Heizperiode aus `heating_periods`, in der
+// Reihenfolge, in der sie angelegt wurden.
+export async function readHeatingServiceValues(db: Executor): Promise<HeatingServiceValue[]> {
+  const rows = await db
+    .select({ v: heatingServiceValues, plantId: heatingPeriods.plantId, period: heatingPeriods.period })
+    .from(heatingServiceValues)
+    .innerJoin(heatingPeriods, eq(heatingServiceValues.heatingPeriodId, heatingPeriods.id))
+    .orderBy(sql`"heating_service_values".rowid`)
+  return rows.map(({ v, plantId, period }) => ({
+    plantId, period: periodKey(String(period)), unitId: v.unitId, from: v.from, to: v.to, heatValue: v.heatValue, waterValue: v.waterValue, heatUnit: v.heatUnit,
   }))
 }
 
@@ -460,6 +479,7 @@ export async function readStock(db: Executor): Promise<Stock> {
     co2Statements: await readCo2Statements(db),
     heatingPeriodRows: await readHeatingPeriodRows(db),
     interimGaps: await readInterimGaps(db),
+    heatingServiceValues: await readHeatingServiceValues(db),
     fuelDeliveries: await readFuelDeliveries(db),
     fuelCarryFrozen: await readFuelCarryFrozen(db),
     degreeDayValues: await readDegreeDayValues(db),

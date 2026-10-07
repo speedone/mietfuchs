@@ -4,6 +4,7 @@
 import type { AreaBasisHeat, CaptureMethod, HeatingEnergy, HeatingPart, HeatingPlant, HeatingTarget, HotWater, InsulationRule } from './types'
 import { hkvConsumptionShare, hkvConsumptionShareForced } from '../../shared/law/heizkostenv.ts'
 import { LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
+import { EVAPORATOR_DEADLINE } from './hcaForm'
 
 export type SelfItemRow = { id: string; description: string; amountCents: number; heatingPart: HeatingPart | ''; heatingTarget: HeatingTarget | '' }
 export type SelfSetupForm = {
@@ -39,9 +40,16 @@ export const HOT_WATER_OPTIONS: { value: HotWater; label: string }[] = [
 ]
 export const CAPTURE_SELF_OPTIONS: { value: CaptureMethod; label: string; later: boolean }[] = [
   { value: 'heatMeter', label: 'Wärmezähler und Warmwasserzähler je Wohnung', later: false },
-  { value: 'hca', label: 'Heizkostenverteiler an den Heizkörpern (kommt mit einer späteren Version)', later: true },
-  { value: 'serviceValues', label: 'Werte eines Ablesedienstes (kommt mit einer späteren Version)', later: true },
+  { value: 'hca', label: 'Heizkostenverteiler an den Heizkörpern, die ich selbst ablese', later: false },
+  { value: 'serviceValues', label: 'Werte eines Ablesedienstes (auch Verdunster und Funk)', later: false },
 ]
+// Was die Erfassung bedeutet (Heizung PR 12, Abweichung 8): Bei Heizkostenverteilern und beim Ablesedienst
+// legt die Einrichtung keine Wärmezähler an.
+export function captureHint(capture: CaptureMethod): string {
+  if (capture === 'hca') return 'Die Heizkostenverteiler legen Sie danach auf der Seite Zähler je Heizkörper an, mit Skala und Bewertungsfaktor. Einen Wärmezähler an einer Wohnung daneben darf es dann nicht geben (§ 5 Abs. 7 HeizkostenV).'
+  if (capture === 'serviceValues') return `Die bewerteten Werte je Wohnung und Nutzungszeitraum tragen Sie danach auf der Seite Heizkosten ein, so wie der Ablesedienst sie nennt; damit sind auch Verdunster abgedeckt. ${EVAPORATOR_DEADLINE}`
+  return 'Je Wohnung ein Wärmezähler und, wenn die Heizung das Warmwasser bereitet, ein Warmwasserzähler.'
+}
 export const PART_OPTIONS: { value: HeatingPart; label: string }[] = [
   { value: 'fuel', label: 'Brennstoff' },
   { value: 'operating', label: 'Betrieb (Strom, Wartung, Reinigung, Messung der Abgase)' },

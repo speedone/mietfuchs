@@ -7,6 +7,7 @@ import { useConfirm, useToast } from './feedback'
 import Drawer from './Drawer'
 import Term from './Term'
 import HeatingPeriodSection from './HeatingPeriodSection'
+import { setupDoneText } from '../hcaForm'
 import HeatingSelfSetup from './HeatingSelfSetup'
 import { useOptionalPeriod } from '../period'
 import { localToday } from '../periodForm'
@@ -463,10 +464,10 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
           period={heatingKeyOf(selfFor)}
           periodLabel={periodLabel(periodContaining(plantRules(selfFor, rulesOf(property)), period?.period.to ?? localToday()))}
           onCancel={() => setSelfFor(null)}
-          onDone={async () => {
+          onDone={async (p) => {
             setSelfFor(null)
             await loadAll()
-            toast('Eigene Heizkostenabrechnung eingerichtet. Tragen Sie die Zählerstände auf der Seite Zähler ein.')
+            toast(setupDoneText(p.capture))
           }}
         />
       )}

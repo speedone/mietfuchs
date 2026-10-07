@@ -297,7 +297,7 @@ test('Pauschale: die Warnung nennt den Betrag nach der Heizkostenverordnung (Ent
 test('Wärmepumpe, deren Erfassung erst im Zeitraum eingebaut wurde: Hinweis, keine Kürzung (§ 12 Abs. 3 Satz 2)', async () => {
   await withDatabase(async (opened) => {
     const snap = await beispielA(opened)
-    const plants = (snap.heatingPlants ?? []).map((p) => ({ ...p, energy: 'heatPump' as const, hotWater: 'none' as const, capturedOnOct2024: false, captureInstalledOn: '2025-06-01' }))
+    const plants = (snap.heatingPlants ?? []).map((p) => ({ ...p, energy: 'heatPump' as const, hotWater: 'none' as const, capturedOnOct2024: false, captureInstalledOn: '2025-06-01', selfSpans: (p.selfSpans ?? []).map((s) => ({ ...s, hotWater: 'none' as const })) }))
     const items = snap.costItems.map((c) => (c.heatingTarget === 'both' || c.heatingTarget === 'water' ? { ...c, heatingTarget: 'heating' as const } : c))
     const s = computeSettlement({ ...snap, heatingPlants: plants, costItems: items, meters: snap.meters.filter((m) => !(m.type === 'waerme' && m.unitId !== null)) })
     assert.match(textOf(s, 'heating.heat-pump-capture'), /01\.10\.2024.*§ 12 Abs\. 3 HeizkostenV.*nach dem 01\.06\.2025 beginnt/s)

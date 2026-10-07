@@ -412,3 +412,66 @@ test('Wärmepumpe: die vier Stichtagsfälle aus 4.7 und F5', () => {
   // Unbekannt: Mietfuchs rechnet nach der Verordnung, die Einrichtung fragt.
   assert.deepEqual(heatPumpVerdict(wp(null, null), '2025-01-01', rule), { kind: 'applies' })
 })
+
+// ---------- Heizkostenverteiler und Ablesedienst im Grenzmodell (Heizung PR 12) ----------
+
+// Beispiel A ohne Warmwasser, mit Heizkostenverteilern statt Wärmezählern: A zwei Geräte mit Einheitsskala
+// (Faktor 1,25 und 0,8), B eins mit Produktskala, C eins mit Faktor 2 und dem Wechsel am 30.09.
+const HKV: SelfMeter[] = [
+  { id: 'a1', name: 'A Wohnzimmer', unitId: 'a', type: 'hkv', factor: 1.25 }, { id: 'a2', name: 'A Bad', unitId: 'a', type: 'hkv', factor: 0.8 },
+  { id: 'b1', name: 'B', unitId: 'b', type: 'hkv', factor: 1 }, { id: 'c1', name: 'C', unitId: 'c', type: 'hkv', factor: 2 },
+]
+const HKV_READINGS: SelfReading[] = [
+  r('a1', '2024-12-31', 0), r('a1', '2025-12-31', 500), r('a2', '2024-12-31', 0), r('a2', '2025-12-31', 200),
+  r('b1', '2024-12-31', 0), r('b1', '2025-12-31', 7065),
+  r('c1', '2024-12-31', 0), r('c1', '2025-09-30', 300), r('c1', '2025-12-31', 500),
+]
+
+test('HKV im Grenzmodell: Differenz mal Faktor des Geräts; Zwischenablesung je Gerät wie bei Wärmezählern', () => {
+  const plan = planSelf(input({ hotWater: 'none', capture: 'hca', meters: HKV, readings: HKV_READINGS }))
+  assert.deepEqual(plan.problems, [])
+  // A: 500 · 1,25 + 200 · 0,8 = 785; B: 7.065; C1: 300 · 2 = 600; C2: 200 · 2 = 400.
+  near(userOf(plan, 'A').pots.heating.value ?? -1, 785, 'A')
+  near(userOf(plan, 'B').pots.heating.value ?? -1, 7065, 'B')
+  near(userOf(plan, 'C1').pots.heating.value ?? -1, 600, 'C1')
+  near(userOf(plan, 'C2').pots.heating.value ?? -1, 400, 'C2')
+  near(plan.totals.heating.consumption, 8850, 'Summe')
+  // Der Ausweis bekommt die abgelesenen Mengen vor dem Faktor.
+  // Je Nutzer (Durchsicht von #241, Recht-I1): C1 300, C2 200.
+  assert.deepEqual(plan.units.find((u) => u.unit.id === 'c')?.measured, [
+    { meterId: 'c1', pot: 'heating', raw: 300, userKeys: ['C1'], from: '2025-01-01', to: '2025-09-30' },
+    { meterId: 'c1', pot: 'heating', raw: 200, userKeys: ['C2'], from: '2025-10-01', to: '2025-12-31' },
+  ])
+  // Ohne Gerät des richtigen Typs fehlt der Wert.
+  const ohne = planSelf(input({ hotWater: 'none', capture: 'hca', meters: HKV.filter((m) => m.unitId !== 'b'), readings: HKV_READINGS }))
+  assert.deepEqual(ohne.problems.map((p) => (p.kind === 'missing' ? [p.unitId, p.reason] : p.kind)), [['b', 'noMeter']])
+  // Ohne `capture` rechnet planSelf wie in PR 10 mit Wärmezählern; die Geräte vom Typ `hkv` zählen dann nicht.
+  assert.equal(planSelf(input({ hotWater: 'none', meters: HKV, readings: HKV_READINGS })).totals.heating.measured, false)
+})
+
+test('Ablesedienst als gedachter Zähler: Zeilen je Nutzungszeitraum ergeben dieselben Werte; eine Lücke an einem Wechsel bleibt eine Lücke', () => {
+  const svc = (unitId: string, values: [string, string, number][]) => {
+    const id = `ablesedienst-heizung:${unitId}`
+    const readings: SelfReading[] = [r(id, '2024-12-31', 0)]
+    let sum = 0
+    for (const [, to, v] of values) {
+      sum += v
+      readings.push(r(id, to, sum))
+    }
+    return { meter: { id, name: `Ablesedienst ${unitId}`, unitId, type: 'waerme' as const, factor: 1 }, readings }
+  }
+  const a = svc('a', [['2025-01-01', '2025-12-31', 12000]])
+  const b = svc('b', [['2025-01-01', '2025-12-31', 16000]])
+  const c = svc('c', [['2025-01-01', '2025-09-30', 7200], ['2025-10-01', '2025-12-31', 4800]])
+  const plan = planSelf(input({ hotWater: 'none', capture: 'serviceValues', meters: [a.meter, b.meter, c.meter], readings: [...a.readings, ...b.readings, ...c.readings] }))
+  assert.deepEqual(plan.problems, [])
+  near(userOf(plan, 'C1').pots.heating.value ?? -1, 7200, 'C1 wie mit Wärmezähler')
+  near(userOf(plan, 'C2').pots.heating.value ?? -1, 4800, 'C2')
+  // Lücke: C hat eine Zeile bis 15.09., dann ab 01.10. Am 30.09. (Wechsel) steht kein eigener Stand;
+  // die Ablesung vom 15.09. liegt 15 Tage daneben und gilt wie abgelesen (PR 10), es wird nichts aufgefüllt.
+  const luecke = svc('c', [['2025-01-01', '2025-09-15', 7000], ['2025-10-01', '2025-12-31', 4800]])
+  const mitLuecke = planSelf(input({ hotWater: 'none', capture: 'serviceValues', meters: [a.meter, b.meter, luecke.meter], readings: [...a.readings, ...b.readings, ...luecke.readings] }))
+  near(userOf(mitLuecke, 'C1').pots.heating.value ?? -1, 7000, 'C1 bis zur letzten Zeile')
+  near(userOf(mitLuecke, 'C2').pots.heating.value ?? -1, 4800, 'C2')
+  assert.ok(mitLuecke.findings.some((f) => f.kind === 'interimOff' && f.boundary === '2025-09-30' && f.readingDate === '2025-09-15'))
+})

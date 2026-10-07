@@ -107,6 +107,10 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // Schritte neu erzeugt und die Marken hier ersetzt.
   '0029_warmwasser': 'f6d62af1554a999b3656e0e6ddaede7801f12ca09919463f0714df3e77077d6d',
   '0030_warmwasser_bedingungen': '70bd0e5c1985b194afe1a3d309c244d4e4e7a52ef027f484798ad355552d6f16',
+  // Heizung PR 12 (Heizkostenverteiler und Ablesedienst). Wird ein Schritt davor vor dem Push neu
+  // erzeugt, werden diese beiden Schritte neu erzeugt und die Marken hier ersetzt.
+  '0031_hkv': 'bb0a2160eca94099a689bd27d279213dea7ea0ee45d2903886fb73aad491c226',
+  '0032_hkv_bedingungen': '3deed9e24e0f674d9fb16bfebdc3cd41b8944c313d43c6365cb211ceb52a4449',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

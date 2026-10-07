@@ -13,6 +13,9 @@ import PageHeader from '../components/PageHeader'
 import Term from '../components/Term'
 import { useToast, useConfirm } from '../components/feedback'
 import Table from '../components/Table'
+import HcaFields from '../components/HcaFields'
+import CutoffReadingForm from '../components/CutoffReadingForm'
+import { hcaSummary, isCutoffReading, ratedText } from '../hcaForm'
 import { useFocusTarget, useScrollToFocus, type FocusProps } from '../focus'
 
 type Props = { units: Unit[] } & FocusProps
@@ -198,6 +201,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
                     setReadingForm={setReadingForm}
                     onSaveReading={() => saveReading(m.id)}
                     onDeleteReading={deleteReading}
+                    onSaved={() => { void load(); toast('Stichtagswert gespeichert.') }}
                   />
                 )
               })}
@@ -232,15 +236,16 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
           <div className="row">
             <label className="field grow">
               Name
-              <input value={meterForm.name} onChange={(e) => setMeterForm({ ...meterForm, name: e.target.value })} placeholder="z. B. Hauptwasserzähler" />
+              <input value={meterForm.name} onChange={(e) => setMeterForm({ ...meterForm, name: e.target.value })} placeholder={meterForm.type === 'hkv' ? 'z. B. Wohnzimmer' : 'z. B. Hauptwasserzähler'} />
             </label>
             <label className="field grow">
               <span>Zuordnung (<Term id="mainMeter">Haupt- oder Zwischenzähler</Term>)</span>
               <select value={meterForm.unitId} onChange={(e) => setMeterForm({ ...meterForm, unitId: e.target.value })}>
-                <option value="">Haus (Hauptzähler)</option>
+                {/* Ein Heizkostenverteiler sitzt an einem Heizkörper einer Wohnung (Durchsicht von #241, Minor 11). */}
+                <option value="">{meterForm.type === 'hkv' ? '— bitte Wohnung wählen —' : 'Haus (Hauptzähler)'}</option>
                 {units.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
               </select>
-              <small className="muted">Bei einer <Term id="granny">Einliegerwohnung</Term> mit eigenem Zwischenzähler: den Zähler des Hauses als Hauptzähler anlegen, den Zwischenzähler an der Wohnung.</small>
+              {meterForm.type !== 'hkv' && <small className="muted">Bei einer <Term id="granny">Einliegerwohnung</Term> mit eigenem Zwischenzähler: den Zähler des Hauses als Hauptzähler anlegen, den Zwischenzähler an der Wohnung.</small>}
             </label>
             <label className="field grow">
               Sparte
@@ -258,6 +263,8 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
               Einheit
               <input value={meterForm.unit} onChange={(e) => setMeterForm({ ...meterForm, unit: e.target.value })} />
             </label>
+            {/* Heizung PR 12: Skala und Bewertungsfaktor des Heizkostenverteilers. */}
+            {meterForm.type === 'hkv' && <HcaFields form={meterForm.hca} onChange={(hca) => setMeterForm({ ...meterForm, hca })} />}
             {heatingRoleOptions(meterForm, plants.length > 0).length > 0 && (
               <label className="field grow">
                 Gehört zur Heizanlage?
@@ -315,14 +322,16 @@ function FragmentRow(props: {
   setReadingForm: (f: ReadingForm) => void
   onSaveReading: () => void
   onDeleteReading: (r: Reading) => void
+  onSaved: () => void
 }) {
-  const { meter: m, focused, cons, open, readings, unitName, onToggle, onEdit, onDelete, readingForm, setReadingForm, onSaveReading, onDeleteReading } = props
+  const { meter: m, focused, cons, open, readings, unitName, onToggle, onEdit, onDelete, readingForm, setReadingForm, onSaveReading, onDeleteReading, onSaved } = props
   return (
     <>
       <tr className={focused ? 'focus-target' : undefined}>
         <td>
           {m.name}
           {m.meterNumber && <div className="muted">Nr. {m.meterNumber}</div>}
+          {hcaSummary(m) && <div className="muted">{hcaSummary(m)}</div>}
           {cons?.warnings.map((w, i) => <div key={i} className="error">{w}</div>)}
         </td>
         <td>{unitName}</td>
@@ -331,6 +340,7 @@ function FragmentRow(props: {
           {cons && cons.readingCount >= 2
             ? `${cons.consumption.toLocaleString('de-DE')}${m.unit ? ` ${m.unit}` : ''}`
             : <span className="muted">zu wenig Ablesungen</span>}
+          {cons && cons.readingCount >= 2 && ratedText(m, cons.consumption) && <div className="muted">{ratedText(m, cons.consumption)}</div>}
         </td>
         <td className="actions no-print">
           <button className="btn small secondary" onClick={onToggle}>{open ? 'Schließen' : `Ablesungen (${readings.length})`}</button>
@@ -358,10 +368,10 @@ function FragmentRow(props: {
                       <td>{fmtDate(r.date)}</td>
                       <td className="num">
                         {r.value.toLocaleString('de-DE')}
-                        {r.replacement && <div className="muted">Endstand alt: {oldEndText(r.oldEndValue)}</div>}
+                        {r.replacement && <div className="muted">{isCutoffReading(m.type, r) ? 'Stichtagswert' : 'Endstand alt'}: {oldEndText(r.oldEndValue)}</div>}
                       </td>
                       <td className="muted">
-                        {r.replacement && <span className="badge gray">Zählerwechsel</span>} {r.note}
+                        {r.replacement && <span className="badge gray">{isCutoffReading(m.type, r) ? 'Stichtag' : 'Zählerwechsel'}</span>} {r.note}
                       </td>
                       <td className="actions"><button className="icon-btn danger" title="Löschen" aria-label="Ablesung löschen" onClick={() => onDeleteReading(r)}>🗑</button></td>
                     </tr>
@@ -400,6 +410,7 @@ function FragmentRow(props: {
               Tipp: Beim Mieterwechsel am Auszugstag eine Zwischenablesung erfassen — dann wird der
               Verbrauch exakt statt tagesanteilig geschätzt aufgeteilt.
             </p>
+            {m.type === 'hkv' && <CutoffReadingForm meterId={m.id} onSaved={onSaved} />}
           </td>
         </tr>
       )}

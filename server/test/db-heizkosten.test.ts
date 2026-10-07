@@ -76,7 +76,6 @@ test('Einrichtung: Anteil 50 bis 70 %, Pflichtanteil bei gedämmten Leitungen, W
     await assert.rejects(opened.write((db) => setUpSelf(db, 'hp', { ...SETUP, items, heatConsumptionPct: 75 }, '2026-02-01', newId)), status(400, /§ 10 HeizkostenV.*späteren Version/))
     await assert.rejects(opened.write((db) => setUpSelf(db, 'hp', { ...SETUP, items, heatConsumptionPct: 45 }, '2026-02-01', newId)), status(400, /mindestens 50/))
     await assert.rejects(opened.write((db) => setUpSelf(db, 'hp', { ...SETUP, items, heatConsumptionPct: 60, insulationRule: 'applies' }, '2026-02-01', newId)), status(400, /70 %.*§ 7 Abs\. 1 Satz 2/))
-    await assert.rejects(opened.write((db) => setUpSelf(db, 'hp', { ...SETUP, items, capture: 'hca' }, '2026-02-01', newId)), status(400, /späteren Version/))
     // § 8 Abs. 1: Der Anteil beim Warmwasser ist eine eigene Wahl, nie still der der Heizung (Abweichung 14).
     await assert.rejects(opened.write((db) => setUpSelf(db, 'hp', { ...SETUP, items, waterConsumptionPct: undefined }, '2026-02-01', newId)), status(400, /Warmwasser.*§ 8 Abs\. 1/))
     await assert.rejects(opened.write((db) => setUpSelf(db, 'hp', { ...SETUP, items: [{ id: 'gas', heatingPart: 'fuel', heatingTarget: 'heating' }] }, '2026-02-01', newId)), status(400, /§ 9 Abs\. 1/))

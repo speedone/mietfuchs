@@ -347,6 +347,8 @@ const collectionsWithTable = (stock: ReturnType<typeof straightenForDatabase>): 
 const NOT_IN_DB_JSON = new Set(['period', 'propertyId', 'mea', 'externalMeasure', 'externalTotal', 'externalTotalCents', 'participantsLimited', 'costModel', 'heatingModel', 'serviceFrom', 'serviceTo', 'taxYear', 'heatingPart', 'heatingTarget', 'interimFor',
   // Die Heizanlage (Heizung PR 4) kennt die db.json nicht; ihre Rundreise prüft db-repository.test.ts.
   'heatingPlantId', 'heatingRole', 'remoteReadable', 'installedOn',
+  // Skala und Faktor des Heizkostenverteilers (Heizung PR 12) ebenso.
+  'hcaScale', 'ratingFactor',
   // Ebenso die Lieferung einer Position (Heizung PR 7); ihre Rundreise prüft db-fuel.test.ts.
   'fuelDeliveryId'])
 

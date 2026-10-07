@@ -34,6 +34,7 @@
 
 import { beforeBeginText } from './selfLine.ts'
 import { selfActive, selfFromOf } from '../heating.ts'
+import { captureOf, coversPeriod, hotWaterOf } from '../hca.ts'
 import { and, count, desc, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm'
 import type { BillingPeriod, CostItem, ExternalBasis, HeatingPlant, HeatingPrepaymentOverride, InterimGapStatus, Meter, MeterType, Payment, PeriodKey, PeriodRules, PersonEntry, PrepaymentEntry, Property, Reading, RentEntry, SplitPreviewPart, Tenancy, Unit, UnitDependents } from '../../../shared/types.ts'
 import { CALENDAR_RULES, calendarPeriod, paymentYear, formatDayRange, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, spansTwoYears, startYearOf } from '../../../shared/period.ts'
@@ -52,7 +53,7 @@ import {
 } from './read.ts'
 import {
   aiSlots, assessmentLines, assessments, baseRents, co2Statements, co2TenantReliefs, heatingPeriods, closedHeatingSettlementHistory, closedHeatingSettlements, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, DEPOSIT_STATUS, EXTERNAL_MEASURES,
-  HEATING_PARTS, HEATING_ROLES, HEATING_TARGETS, INTERIM_GAP_STATUS, interimReadingGaps, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingSelfSpans, heatingPrepaymentOverrides, heatingPrepayments, heatingSeparateSpans,
+  HCA_SCALES, HEATING_PARTS, HEATING_ROLES, HEATING_TARGETS, INTERIM_GAP_STATUS, interimReadingGaps, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingSelfSpans, heatingPrepaymentOverrides, heatingPrepayments, heatingSeparateSpans, heatingServiceValues,
   flatRates, METER_TYPES, meters, payments, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, PROPERTY_KINDS,
   readings, settings, tenancies, unitNoConnection, units, fuelCarryFrozen, fuelDeliveries,
 } from './schema.ts'
@@ -403,6 +404,11 @@ function mergeMeter(current: Meter, body: unknown): Meter {
     // Fernablesbar und eingebaut am (§ 5 Abs. 2, 3 HeizkostenV); `null` heißt unbekannt.
     remoteReadable: merged(body, 'remoteReadable', current.remoteReadable ?? null, (v) => (typeof v === 'boolean' ? v : null)),
     installedOn: merged(body, 'installedOn', current.installedOn ?? null, asNullableFilled),
+    // Skala und Bewertungsfaktor eines Heizkostenverteilers (Heizung PR 12, Entwurf 8.1). Eine unbekannte
+    // Skala ist keine Angabe; ein Faktor, der keine Zahl ist, wird nicht still geleert, sondern abgelehnt
+    // (`guardMeter`), denn mit ihm steht ein Betrag in der Abrechnung.
+    hcaScale: merged(body, 'hcaScale', current.hcaScale ?? null, (v) => oneOfOrUndefined(HCA_SCALES, v) ?? null),
+    ratingFactor: merged(body, 'ratingFactor', current.ratingFactor ?? null, (v) => (v === null || v === undefined ? null : typeof v === 'number' && Number.isFinite(v) ? v : Number.NaN)),
   }
 }
 
@@ -483,11 +489,12 @@ export class HeatingError extends Error {
 
 const PLANT_GONE = 'Diese Heizanlage gibt es nicht (mehr). Bitte laden Sie die Seite neu; gespeichert wurde nichts.'
 
-// Nach Heizkostenverteilern verteilt Mietfuchs erst mit deren Bewertungsfaktoren (PR 12); rohe
-// Einheiten verschiedener Heizkörper sind nicht vergleichbar.
+// Nach Heizkostenverteilern verteilt Mietfuchs nur in der eigenen Heizkostenabrechnung, denn dort stehen
+// Skala und Bewertungsfaktor jedes Geräts (Heizung PR 12, Abweichung 4). Ein Schlüssel „nach Verbrauch“
+// hätte sie nicht; rohe Einheiten verschiedener Heizkörper sind nicht vergleichbar.
 const HKV_KEY =
-  'Nach Heizkostenverteilern verteilt Mietfuchs noch nicht selbst; dafür braucht es die Bewertungsfaktoren der Geräte, und die kommen mit einer späteren Version. ' +
-  'Übernehmen Sie bis dahin die Abrechnung des Messdienstes als Einzelbeträge (Schlüssel „Einzelbeträge“).'
+  'Nach Heizkostenverteilern verteilt Mietfuchs in der eigenen Heizkostenabrechnung, denn dort stehen Skala und Bewertungsfaktor jedes Geräts. ' +
+  'Richten Sie dafür unter Stammdaten bei der Heizung „Selbst abrechnen“ mit der Erfassung „Heizkostenverteiler“ ein, oder übernehmen Sie die Abrechnung des Messdienstes als Einzelbeträge (Schlüssel „Einzelbeträge“).'
 
 async function plantOf(db: Executor, plantId: string): Promise<{ propertyId: string; supply: HeatingPlant['supply']; name: string } | undefined> {
   return (await db.select({ propertyId: heatingPlants.propertyId, supply: heatingPlants.supply, name: heatingPlants.name }).from(heatingPlants).where(eq(heatingPlants.id, plantId)))[0]
@@ -812,7 +819,7 @@ export async function guardHeatingSystem(db: Executor, after: CostItem): Promise
   const plantId = after.heatingPlantId === undefined && after.category === HEATING_CATEGORY ? await plantForNewItem(db, after) : (after.heatingPlantId ?? null)
   const [row] = plantId === null ? [] : await db.select({ method: heatingPlants.method, hotWater: heatingPlants.hotWater }).from(heatingPlants).where(eq(heatingPlants.id, plantId))
   const plant = row && plantId !== null
-    ? { ...row, selfSpans: await db.select({ from: heatingSelfSpans.from, until: heatingSelfSpans.until }).from(heatingSelfSpans).where(eq(heatingSelfSpans.plantId, plantId)) }
+    ? { ...row, selfSpans: await db.select({ from: heatingSelfSpans.from, until: heatingSelfSpans.until, hotWater: heatingSelfSpans.hotWater }).from(heatingSelfSpans).where(eq(heatingSelfSpans.plantId, plantId)) }
     : undefined
   if (after.key === 'heatingSystem') {
     // Durchsicht von #239: nur in Heizperioden der eigenen Abrechnung (`selfActive`), also ab ihrem Beginn
@@ -825,7 +832,8 @@ export async function guardHeatingSystem(db: Executor, after: CostItem): Promise
       throw new HeatingError(400,
         'Nach der Heizkostenverordnung verteilt Mietfuchs nur Positionen einer Heizanlage mit eigener Heizkostenabrechnung. Richten Sie sie in den Stammdaten unter „Heizung“ ein oder wählen Sie einen anderen Schlüssel.')
     }
-    const problem = targetProblem(plant.hotWater, after.heatingPart ?? null, target)
+    // Die Warmwasserbereitung der Heizperiode der Position (Durchsicht von #241, I2).
+    const problem = targetProblem(hotWaterOf(plant, String(after.period)), after.heatingPart ?? null, target)
     if (problem !== null) throw new HeatingError(400, `${problem}.`)
     return
   }
@@ -1035,13 +1043,57 @@ export async function sameProperty(db: Executor, propertyId: string, unitIds: st
 
 const noGuard = async (): Promise<void> => {}
 
-async function guardMeter(db: Executor, _before: Meter | null, after: Meter): Promise<void> {
+// Die erste abgeschlossene Heizperiode, in der eine Ablesung des Heizkostenverteilers mit dieser Erfassung
+// zählt (Heizung PR 12), als Bezeichnung; sonst `null`.
+async function closedHcaPeriodOf(db: Executor, m: Meter): Promise<string | null> {
+  if (!m.unitId) return null
+  const unit = (await db.select({ id: units.id, propertyId: units.propertyId }).from(units).where(eq(units.id, m.unitId)))[0]
+  if (!unit) return null
+  const plants = (await readHeatingPlants(db)).filter((p) => p.propertyId === unit.propertyId && servesUnit(p, unit))
+  const own = (await db.select({ meterId: readings.meterId, date: readings.date }).from(readings).where(eq(readings.meterId, m.id)))
+  const dates = own.map((r) => r.date).sort()
+  const first = dates[0]
+  const last = dates[dates.length - 1]
+  if (first === undefined || last === undefined) return null
+  // Jede Heizperiode, die die Ablesungen überdecken (Durchsicht von #241, M1), nicht nur die, in die ein
+  // Ablesedatum fällt: Mit Ablesungen am 31.12.2024 und 04.01.2026 zählt das Gerät in 2025.
+  for (const plant of plants) {
+    for (let day = first; day <= last;) {
+      const at = await heatingPeriodAt(db, plant.id, day)
+      if (!at) break
+      const key = String(at.period.key)
+      if (at.closed && coversPeriod(m.id, own, at.period) && selfActive(plant, key) && captureOf(plant, key) === 'hca') return periodLabel(at.period)
+      day = dayAfterIso(at.period.to)
+    }
+  }
+  return null
+}
+
+async function guardMeter(db: Executor, before: Meter | null, after: Meter): Promise<void> {
   await sameProperty(db, after.propertyId, after.unitId ? [after.unitId] : [], 'Der Zähler')
   if (after.type === 'hkv' && !after.unitId) {
     throw new HeatingError(400, 'Ein Heizkostenverteiler sitzt an einem Heizkörper einer Wohnung. Bitte wählen Sie bei der Zuordnung die Wohnung.')
   }
   if (after.installedOn && !ISO_DATE.test(after.installedOn)) {
     throw new HeatingError(400, 'Das Einbaudatum ist kein Datum. Bitte wählen Sie es im Kalender oder lassen Sie das Feld leer.')
+  }
+  // Skala und Faktor nur am Heizkostenverteiler (Heizung PR 12); sonst lehnte die Prüfbedingung ohne Satz ab.
+  if (after.type !== 'hkv' && ((after.hcaScale ?? null) !== null || (after.ratingFactor ?? null) !== null)) {
+    throw new HeatingError(400, 'Skala und Bewertungsfaktor gibt es nur bei einem Heizkostenverteiler. Lassen Sie beide Felder leer oder wählen Sie die Sparte „Heizkostenverteiler“.')
+  }
+  if (after.ratingFactor !== undefined && after.ratingFactor !== null && !(after.ratingFactor > 0)) {
+    throw new HeatingError(400, 'Der Bewertungsfaktor ist eine Zahl über 0, etwa 0,8 oder 1,25. Er steht in der Geräteliste des Messdienstes oder in den Unterlagen des Herstellers.')
+  }
+  // Skala oder Faktor eines Geräts, dessen Ablesungen in einer abgeschlossenen Heizperiode mit
+  // Heizkostenverteilern zählen (Review Focus 1): Mit anderem Faktor rechnete sie anders, als sie zugestellt
+  // wurde, und jede offene Heizperiode danach still mit. Ein Gerät mit anderem Faktor ist ein neuer Zähler.
+  if (before && before.type === 'hkv' && ((before.hcaScale ?? null) !== (after.hcaScale ?? null) || (before.ratingFactor ?? null) !== (after.ratingFactor ?? null))) {
+    const closed = await closedHcaPeriodOf(db, before)
+    if (closed !== null) {
+      throw new HeatingError(409,
+        `Die Ablesungen von „${before.name}“ zählen in der abgeschlossenen Heizperiode ${closed}; mit anderer Skala oder anderem Faktor rechnete sie anders, als sie zugestellt wurde. ` +
+          'Hat das Gerät einen anderen Faktor bekommen, etwa nach einem Tausch, legen Sie es als neuen Zähler an. War der Faktor falsch eingetragen, öffnen Sie die Abrechnung wieder und berichtigen ihn dann.')
+    }
   }
   const plantId = after.heatingPlantId
   if (!plantId) return
@@ -1361,6 +1413,15 @@ export async function crossPropertyViolations(db: Database): Promise<string[]> {
     .innerJoin(heatingPlants, eq(fuelDeliveries.plantId, heatingPlants.id))
     .where(ne(heatingPlants.propertyId, costItems.propertyId))
   for (const c of lieferungen) befunde.push(`Die Kostenposition „${c.description}“ zeigt auf eine Lieferung einer Heizanlage eines anderen Objekts.`)
+  // Werte eines Ablesedienstes gehören zu einer Wohnung im Objekt ihrer Heizanlage (Heizung PR 12).
+  const ablesedienst = await db
+    .select({ unitName: units.name })
+    .from(heatingServiceValues)
+    .innerJoin(heatingPeriods, eq(heatingServiceValues.heatingPeriodId, heatingPeriods.id))
+    .innerJoin(heatingPlants, eq(heatingPeriods.plantId, heatingPlants.id))
+    .innerJoin(units, eq(heatingServiceValues.unitId, units.id))
+    .where(ne(heatingPlants.propertyId, units.propertyId))
+  for (const v of ablesedienst) befunde.push(`Ein Wert des Ablesedienstes gehört zur Wohnung „${v.unitName}“ eines anderen Objekts als seine Heizanlage.`)
   return befunde
 }
 
@@ -1549,6 +1610,7 @@ const costItemRow = (c: CostItem) => ({
 const meterRow = (m: Meter) => ({
   id: m.id, propertyId: m.propertyId, name: m.name, unitId: m.unitId, type: m.type, meterNumber: orNull(m.meterNumber), unit: m.unit,
   heatingPlantId: m.heatingPlantId ?? null, heatingRole: m.heatingRole ?? null, remoteReadable: m.remoteReadable ?? null, installedOn: m.installedOn ?? null,
+  hcaScale: m.hcaScale ?? null, ratingFactor: m.ratingFactor ?? null,
 })
 const readingRow = (r: Reading) => ({
   id: r.id, meterId: r.meterId, date: r.date, value: r.value,
@@ -1712,7 +1774,16 @@ const meterCollection: Collection<Meter> = {
   merge: mergeMeter,
   insert: async (db, m) => { await db.insert(meters).values(meterRow(m)) },
   replace: async (db, m) => { await db.update(meters).set(meterRow(m)).where(eq(meters.id, m.id)) },
-  remove: async (db, id) => { await db.delete(meters).where(eq(meters.id, id)) },
+  // Heizung PR 12 (Durchsicht von #241, M1): Ein Heizkostenverteiler, der in einer abgeschlossenen
+  // Heizperiode zählt, bleibt; mit ihm fielen seine Ablesungen (CASCADE).
+  remove: async (db, id) => {
+    const m = (await readMeters(db)).find((x) => x.id === id)
+    const closed = m && m.type === 'hkv' ? await closedHcaPeriodOf(db, m) : null
+    if (m && closed !== null) {
+      throw new HeatingError(409, `Die Ablesungen von „${m.name}“ zählen in der abgeschlossenen Heizperiode ${closed}; mit dem Gerät fielen sie weg. Ein ausgebautes Gerät lassen Sie stehen; es zählt in späteren Heizperioden nicht mehr mit.`)
+    }
+    await db.delete(meters).where(eq(meters.id, id))
+  },
 }
 
 const readingCollection: Collection<Reading> = {
