@@ -9,7 +9,7 @@
 //
 // **Eine Fassung wird nie geändert, nur eine neue angelegt** (4.4). Was ausgeliefert ist, hält
 // server/test/law-history.test.ts als Zahl fest.
-import type { AppliedValue, LawValue } from '../types.ts'
+import type { AppliedValue, LawOverride, LawValue } from '../types.ts'
 
 export type SourceRank = 'law' | 'court' | 'technical' | 'practice' | 'software' | 'interpretation'
 // `checked`: am Tag `retrieved` an der Quelle gelesen; `adopted`: so übernommen aus einem Entwurf
@@ -20,8 +20,8 @@ export type Source = { rank: SourceRank; cite: string; url: string; retrieved: s
 
 // Nach welchem Zeitpunkt sich die Fassung richtet (Entwurf 3.13). Jeder Parameter hat genau eine
 // Zeitregel (N6 der dritten Fassung); braucht ein Fall zwei, sind es zwei Parameter. `incurred`
-// und `deliveryYear` kommen mit PR 18 und PR 17: Die Überladungen von `law()` nehmen sie bis
-// dahin nicht an.
+// kommt mit PR 18; die Überladungen von `law()` nehmen sie bis dahin nicht an. `deliveryYear`
+// (Heizung PR 17): die Fassung am 1. Januar des Lieferjahres (§ 3 Abs. 2 und 3 CO2KostAufG).
 export type Timing = 'periodStart' | 'incurred' | 'overlap' | 'eventDate' | 'deliveryYear'
 
 // Eine Fassung. Die Grenzen sind ISO-Daten und gelten einschließlich; fehlt eine, gilt die Fassung
@@ -97,11 +97,22 @@ export function valueAt<T extends LawValue>(param: LawParam<T>, date: string): T
   return versionAt(param, date).value
 }
 
-// Das Protokoll einer Berechnung: was sie abgefragt hat. Es wird hineingereicht und ist kein
-// globaler Zustand, denn zwei Abrechnungen rechnen nebeneinander.
-export type LawLog = { readonly values: AppliedValue[] }
-export function createLawLog(): LawLog {
-  return { values: [] }
+// Ob das Register an einem Tag eine Fassung hat. Für Stellen, die einen Wert nur dort brauchen, wo es ihn
+// gibt (Plausibilität vor 2023, Umsatzsteuer im Übergangszeitraum), statt auf den Fehler von versionAt zu
+// warten.
+export function coversDate<T extends LawValue>(param: LawParam<T>, date: string): boolean {
+  return param.versions.some((v) => contains(v, date))
+}
+
+// Der 1. Januar eines Jahres, wie `deliveryYear` und die Einträge ihn tragen.
+export const yearStart = (year: number): string => `${String(year).padStart(4, '0')}-01-01`
+
+// Das Protokoll einer Berechnung: was sie abgefragt hat, und die Einträge des Vermieters für Werte, die
+// noch nicht veröffentlicht sind (Heizung PR 17). Es wird hineingereicht und ist kein globaler Zustand,
+// denn zwei Abrechnungen rechnen nebeneinander.
+export type LawLog = { readonly values: AppliedValue[]; readonly overrides: readonly LawOverride[] }
+export function createLawLog(overrides: readonly LawOverride[] = []): LawLog {
+  return { values: [], overrides }
 }
 
 function record<T extends LawValue>(log: LawLog, param: LawParam<T>, version: Version<T>): void {
@@ -126,17 +137,47 @@ export type OverlapAnswer<T extends LawValue> = { coverage: Coverage; value: T; 
 // gilt.
 export function law<T extends LawValue>(param: LawParam<T, 'periodStart'>, ctx: { period: Period }, log: LawLog): T
 export function law<T extends LawValue>(param: LawParam<T, 'eventDate'>, ctx: { date: string }, log: LawLog): T
+export function law<T extends LawValue>(param: LawParam<T, 'deliveryYear'>, ctx: { year: number }, log: LawLog): T
 export function law<T extends LawValue>(param: LawParam<T, 'overlap'>, ctx: { period: Period }, log: LawLog): OverlapAnswer<T>
 export function law<T extends LawValue>(
-  param: LawParam<T, 'periodStart' | 'eventDate' | 'overlap'>,
-  ctx: { period: Period } | { date: string },
+  param: LawParam<T, 'periodStart' | 'eventDate' | 'deliveryYear' | 'overlap'>,
+  ctx: { period: Period } | { date: string } | { year: number },
   log: LawLog,
 ): T | OverlapAnswer<T> {
+  // Ein Wert, den der Vermieter eintragen darf, geht über lawOverridable (Abweichung 1 des Plans zu
+  // Heizung PR 17): Hier würde ein `null` sonst still durchgereicht und der Eintrag übersehen.
+  if (param.overridable) throw new Error(`Rechtswert „${param.id}“ ist überschreibbar; bitte lawOverridable nehmen`)
   if (param.timing === 'overlap' && 'period' in ctx) return overlap(param, ctx.period, log)
-  const date = 'period' in ctx ? ctx.period.from : ctx.date
+  const date = 'period' in ctx ? ctx.period.from : 'year' in ctx ? yearStart(ctx.year) : ctx.date
   const version = versionAt(param, date)
   record(log, param, version)
   return version.value
+}
+
+// Ein überschreibbarer Wert (Entwurf 4.5): Ist er veröffentlicht, gilt er, auch wenn ein Eintrag
+// dasteht (der ist dann überholt). Sonst gilt der Eintrag des Vermieters für das Jahr und wird als
+// `overridden` protokolliert. Fehlt beides, ist die Antwort `null`, und protokolliert wird nichts
+// (wie `none` bei `overlap`, Durchsicht von #221, I1).
+export function lawOverridable(param: LawParam<number | null, 'deliveryYear'>, ctx: { year: number }, log: LawLog): number | null
+export function lawOverridable(param: LawParam<number | null, 'eventDate'>, ctx: { date: string }, log: LawLog): number | null
+export function lawOverridable(param: LawParam<number | null, 'deliveryYear' | 'eventDate'>, ctx: { year: number } | { date: string }, log: LawLog): number | null {
+  if (!param.overridable) throw new Error(`Rechtswert „${param.id}“ ist nicht überschreibbar; bitte law nehmen`)
+  const date = 'year' in ctx ? yearStart(ctx.year) : ctx.date
+  const version = versionAt(param, date)
+  if (version.value !== null) {
+    record(log, param, version)
+    return version.value
+  }
+  const from = yearStart(Number(date.slice(0, 4)))
+  const entry = log.overrides.find((o) => o.paramId === param.id && o.validFrom === from)
+  if (!entry) return null
+  if (!log.values.some((a) => a.id === param.id && a.validFrom === from)) {
+    log.values.push({
+      id: param.id, title: param.title, norm: param.norm, cite: entry.source, value: entry.value, text: param.describe(entry.value),
+      validFrom: from, validTo: `${from.slice(0, 4)}-12-31`, overridden: { source: entry.source, enteredAt: entry.enteredAt },
+    })
+  }
+  return entry.value
 }
 
 // `overlap`: gilt, sobald der Zeitraum die Fassung berührt (Kabelregel). Berührt er keine, sagt
