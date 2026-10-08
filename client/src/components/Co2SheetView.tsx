@@ -3,7 +3,7 @@
 // sie an Stelle ihrer Karten; die Logik der Texte steht in co2Sheet.ts.
 import { useEffect, useState } from 'react'
 import { api, errorText } from '../api'
-import { SHEET_COLUMNS, sheetFacts, sheetHead, sheetRows } from '../co2Sheet'
+import { SHEET_COLUMNS, sheetFacts, sheetHead, sheetNotes, sheetRows } from '../co2Sheet'
 import Table from './Table'
 import type { Co2Sheet } from '../types'
 
@@ -18,6 +18,11 @@ export default function Co2SheetView({ plantId, period, onClose }: { plantId: st
   if (!sheet) return <div className="card"><p className="muted">Wird geladen …</p></div>
   const head = sheetHead(sheet)
   const findings = sheet.deliveries.flatMap((d) => d.findings)
+  const rows = sheetRows(sheet)
+  const notes = sheetNotes(rows)
+  // Die Nummer je Zeile, in derselben Reihenfolge wie `sheetNotes`.
+  let counter = 0
+  const refs = rows.map((r) => (r.sub !== null || r.note !== null ? ++counter : null))
   return (
     <div className="card">
       <div className="no-print">
@@ -39,20 +44,22 @@ export default function Co2SheetView({ plantId, period, onClose }: { plantId: st
           <Table>
             <thead><tr><th>Rechnung</th>{SHEET_COLUMNS.map((c, j) => <th key={c} className={j >= 5 ? 'num' : undefined}>{c}</th>)}</tr></thead>
             <tbody>
-              {sheetRows(sheet).flatMap((r, i) => [
+              {rows.map((r, i) => (
                 <tr key={`${r.label}:${i}`} className={r.kind === 'sum' || r.kind === 'billing' ? 'subtotal' : undefined}>
-                  <td>{r.label}</td>
+                  <td>{r.label}{refs[i] !== null && <sup>{refs[i]}</sup>}</td>
                   {r.cells.map((c, j) => <td key={j} className={j >= 5 ? 'num' : undefined}>{c}</td>)}
-                </tr>,
-                // Vermerk und Teil in der Heizperiode über die volle Breite (Runde 3, klein): In der schmalen
-                // ersten Spalte brach der Text auf dem Handy über viele Zeilen um.
-                ...[r.sub, r.note].filter((t): t is string => t !== null).map((t) => (
-                  <tr key={`${r.label}:${i}:${t}`}><td colSpan={SHEET_COLUMNS.length + 1} className="muted">{t}</td></tr>
-                )),
-              ])}
+                </tr>
+              ))}
             </tbody>
           </Table>
         )}
+      {notes.length > 0 && (
+        // Unter der Tabelle und nicht als Zeile darin (Runde 4, W-O1): Die Tabelle scrollt auf dem Handy seitlich,
+        // ein Vermerk über ihre ganze Breite lief dort aus dem Bild.
+        <ol className="sheet-notes">
+          {notes.map((n) => <li key={n.ref} value={n.ref}>{n.label}: {n.lines.join(' ')}</li>)}
+        </ol>
+      )}
       <ul>{sheetFacts(sheet).map((f) => <li key={f}>{f}</li>)}</ul>
       {sheet.opening?.adminNote && (
         // Die genauen Gründe einer unvollständigen Bestandsrechnung sind für den Vermieter (W-N4).
