@@ -1630,6 +1630,9 @@ export type Co2Assessment = {
   // oder die Wohnfläche der versorgten Wohnungen, Entwurf 9.2, 9.5).
   adjustments?: Co2Adjustment[]
   areaSource?: 'entered' | 'served'
+  // `building`: die gemeinsame Fläche mehrerer Anlagen eines Gebäudes (§ 5 Abs. 1 Satz 2 CO2KostAufG);
+  // `plant`: die der Anlage. Fehlt in einer vorher abgeschlossenen Abrechnung.
+  areaScope?: 'plant' | 'building'
 }
 
 // Eine Heizanlage in einer Abrechnung, mit der Heizperiode, die darin abgerechnet wird.

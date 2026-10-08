@@ -178,3 +178,7 @@ test('Wächter: kein gedruckter Text des Blatts spricht den Leser an', () => {
   }
   expect(n).toBeGreaterThan(100)
 })
+
+test('Nach Runde 4: Ohne Herkunft der Fläche (vorher abgeschlossene Abrechnung) steht sie ohne Zusatz da', () => {
+  expect(sheetFacts({ ...sheet, areaSource: null })[0]).toBe('Fläche für die Einstufung: 300 m²')
+})

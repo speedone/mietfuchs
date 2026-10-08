@@ -117,6 +117,7 @@ export function sheetNotes(rows: readonly SheetRow[]): { ref: number; label: str
 export function sheetFacts(s: Co2Sheet): string[] {
   const area = s.areaM2 === null
     ? 'Fläche für die Einstufung: nicht angegeben'
+    : s.areaSource === null ? `Fläche für die Einstufung: ${num(s.areaM2, 2)} m²`
     : `Fläche für die Einstufung: ${num(s.areaM2, 2)} m² (${s.areaSource === 'entered' ? 'vom Vermieter angegeben'
       : s.areaSource === 'building' ? 'gemeinsame Wohnfläche der Wohnungen aller Heizanlagen des Gebäudes, wie die Abrechnung einstuft; § 5 Abs. 1 Satz 2 CO2KostAufG'
         : 'Summe der Wohnflächen der versorgten Wohnungen laut Vermieter'})`
