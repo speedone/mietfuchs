@@ -146,7 +146,7 @@ test('Fall b: H−1 mit Schätzung 907,74 € abgeschlossen; H bucht 983,39 € 
   const aus = carryOf(r)
   assert.equal(aus.cents, -98339)
   assert.deepEqual(aus.landlord, [{ reason: 'fuelCarry', cents: 90774 }, { reason: 'fuelEstimateDiff', cents: 7565 }])
-  assert.deepEqual(aus.estimate, { cents: 90774, ids: ['e'], ratios: [1] })
+  assert.deepEqual(aus.estimate, { cents: 90774, ids: ['e'], ratios: [1], frozen: [90774], cuts: [{ from: '2025-03-15', to: '2025-04-30' }] })
   assert.equal(551661 + 90774 + 7565, 650000, 'Summe 5.516,61 + 907,74 + 75,65 = 6.500,00 €')
 })
 

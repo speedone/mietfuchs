@@ -4211,26 +4211,67 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           subject)
       } else {
         // Zu hoch geschätzt (A4, B9): Ein Rückzahlungsanspruch folgt daraus nicht sicher (Einwendungsfrist,
-        // § 556 Abs. 3 Satz 5 und 6 BGB); eine Gutschrift ist jederzeit zulässig. Je Mieter im Verhältnis
-        // seiner Übertragszeilen der Schätzung im eingefrorenen Stand, und zwar nur des Teils, den die Rechnung
-        // abdeckt (`ratios`): E ist dieser Teil, nicht die ganze Schätzung. Mit allen Zeilen stand hier ein
-        // Vielfaches des zu viel getragenen Betrags (Invariante, Startwert 515: 11.675,31 € statt 2.158,05 €).
-        // Verteilt wird nach dem Restverfahren, damit die genannten Beträge zusammen nie mehr ergeben.
-        const factor = E !== 0 ? -diff / E : 0
-        const byTenant = new Map<string, { name: string; exact: number }>()
+        // § 556 Abs. 3 Satz 5 und 6 BGB); eine Gutschrift ist jederzeit zulässig.
+        // Je Mieter (Durchsicht #247, G-W2): sein Anteil an der Schätzung **in den Tagen, die die Rechnung
+        // abdeckt**. Die eingefrorene Übertragszeile eines Mietverhältnisses ist über seine Tage in der
+        // Heizperiode verteilt; davon zählt der Teil seiner Tage im abgedeckten Zeitraum. Wer dort nicht wohnte,
+        // bekommt nichts (vorher je Mieter im Verhältnis der ganzen Zeile, auch für B1, der vor dem abgedeckten
+        // Zeitraum ausgezogen war). Je Schätzung zählt ihr abgedeckter Betrag (`frozen` × `ratios`), damit mehrere
+        // Schätzungen mit ihrem Gewicht eingehen. Was im abgedeckten Zeitraum beim Vermieter lag (Leerstand),
+        // bekommt kein Mieter; der Text nennt dann nur den Teil der Mieter (G-K2). Verteilt wird nach dem
+        // Restverfahren, die Beträge ergeben zusammen nie mehr als die Abweichung.
+        const est = carry.estimate
+        const dayNo = (iso: string) => Math.round(Date.parse(`${iso}T00:00:00Z`) / 86400000)
+        const daysOfSpan = (from: string, to: string) => (to < from ? 0 : dayNo(to) - dayNo(from) + 1)
+        const maxIso = (a: string, b: string) => (a > b ? a : b)
+        const minIso = (a: string, b: string) => (a < b ? a : b)
+        const P = carry.other
+        const covered = est.frozen.map((f, k) => f * (est.ratios[k] ?? 0))
+        const coveredAll = covered.reduce((a, v) => a + v, 0)
+        // Je Schätzung zuerst die Teile der Mieter im abgedeckten Zeitraum; ihr Nenner ist, was die Schätzung dort
+        // allen zugeteilt hat. Bei voller Vermietung sind das die Teile der Mieter selbst (die eingefrorenen
+        // Zeilen sind auf den Cent gerundet, daher die Toleranz von einem halben Cent je Zeile), sonst der
+        // Betrag der Schätzung für diese Tage nach Tagen (der Rest lag beim Vermieter, etwa Leerstand).
+        const portions = new Map<number, { tenancyId: string; name: string; portion: number }[]>()
         for (const row of other.fuelRows) {
-          const k = carry.estimate.ids.findIndex((id) => row.costItemId.startsWith(`fuel:${id}:`))
-          if (k < 0) continue
-          const entry = byTenant.get(row.tenancyId) ?? { name: `${row.tenantName} (${row.unitName})`, exact: 0 }
-          entry.exact += row.shareCents * (carry.estimate.ratios[k] ?? 0) * factor
-          byTenant.set(row.tenancyId, entry)
+          const k = est.ids.findIndex((id) => row.costItemId.startsWith(`fuel:${id}:`))
+          const cut = est.cuts[k]
+          if (k < 0 || !cut) continue
+          const t = snapshot.tenancies.find((x) => x.id === row.tenancyId)
+          const from = t?.start ?? P.from
+          const to = t?.end ?? P.to
+          const inP = daysOfSpan(maxIso(from, P.from), minIso(to, P.to))
+          const inCut = daysOfSpan(maxIso(from, cut.from), minIso(to, cut.to))
+          if (inP === 0) continue
+          const list = portions.get(k) ?? []
+          list.push({ tenancyId: row.tenancyId, name: `${row.tenantName} (${row.unitName})`, portion: (row.shareCents * inCut) / inP })
+          portions.set(k, list)
+        }
+        const byTenant = new Map<string, { name: string; exact: number }>()
+        for (const [k, list] of portions) {
+          const cut = est.cuts[k]
+          const f = est.frozen[k] ?? 0
+          if (!cut || f === 0 || coveredAll === 0) continue
+          const allocated = (f * daysOfSpan(cut.from, cut.to)) / daysOfSpan(P.from, P.to)
+          const tenants = list.reduce((a, x) => a + x.portion, 0)
+          const all = Math.abs(allocated) - Math.abs(tenants) <= list.length * 0.5 ? tenants : allocated
+          if (all === 0) continue
+          for (const x of list) {
+            const entry = byTenant.get(x.tenancyId) ?? { name: x.name, exact: 0 }
+            entry.exact += (-diff * ((covered[k] ?? 0) / coveredAll) * x.portion) / all
+            byTenant.set(x.tenancyId, entry)
+          }
         }
         const entries = [...byTenant.entries()]
-        const credit = Math.min(-diff, Math.round(entries.reduce((a, [, e]) => a + e.exact, 0)))
+        const credit = Math.max(0, Math.min(-diff, Math.round(entries.reduce((a, [, e]) => a + e.exact, 0))))
         const credits = distributeCents(credit, entries.map(([key, e]) => ({ key, landlord: false, raw: e.exact })))
-        const list = entries.map(([, e], k) => `${e.name} ${fmtCents(credits[k] ?? 0)}`)
+        const list = entries.flatMap(([, e], k) => ((credits[k] ?? 0) !== 0 ? [`${e.name} ${fmtCents(credits[k] ?? 0)}`] : []))
+        const hier = list.length > 0 ? `, hier: ${andList(list)}` : ''
         warn('fuel.estimate-overcharged',
-          `${where}: Für ${periodLabel(carry.other)} war ${fmtCents(E)} geschätzt; tatsächlich entfallen nur ${fmtCents(X)}. Die Mieter dieser Heizperiode haben ${fmtCents(-diff)} zu viel getragen${list.length > 0 ? `, hier: ${andList(list)}` : ''}. ` +
+          `${where}: Für ${periodLabel(carry.other)} war ${fmtCents(E)} geschätzt; tatsächlich entfallen nur ${fmtCents(X)}. ` +
+            (credit === -diff
+              ? `Die Mieter dieser Heizperiode haben ${fmtCents(-diff)} zu viel getragen${hier}. `
+              : `Die Abweichung beträgt ${fmtCents(-diff)}; davon haben die Mieter dieser Heizperiode ${fmtCents(credit)} zu viel getragen${hier}. Der Rest lag bei Ihnen. `) +
             `Eine Gutschrift ist jederzeit zulässig und wird empfohlen. Öffnen Sie die Abrechnung ${other.label} wieder oder erfassen Sie die Gutschrift; bis dahin steht der Betrag bei Ihnen als Abweichung von der Schätzung.`,
           subject)
       }

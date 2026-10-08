@@ -70,7 +70,7 @@ import { saveServiceValues } from '../src/db/serviceValues.ts'
 import { createDelivery, createEstimates, freezeFuelCarries, fuelGapQuestions, unfreezeFuelCarries } from '../src/db/fuel.ts'
 import { openDatabase } from '../src/db/open.ts'
 import { readClosedSettlements, readCostItems, readFuelCarryFrozen, readFuelDeliveries, readStock } from '../src/db/read.ts'
-import { closeSettlement, createEntity, findClosedSettlement, removeEntity, reopenSettlement, updateEntity } from '../src/db/repository.ts'
+import { closeSettlement, createEntity, findClosedSettlement, removeEntity, reopenSettlement, settlementHistory, updateEntity } from '../src/db/repository.ts'
 import { properties } from '../src/db/schema.ts'
 import { snapshotFor } from '../src/snapshot.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
@@ -406,11 +406,17 @@ function overchargedChecks(r: ReturnType<typeof computeSettlement>, where: strin
   const diffs = r.landlord.rows.flatMap((row) => (row.landlordParts ?? []).filter((p) => p.reason === 'fuelEstimateDiff' && p.cents < 0).map((p) => -p.cents))
   for (const n of r.notices.filter((x) => x.code === 'fuel.estimate-overcharged')) {
     OVERCHARGED.checked++
-    const total = cents(n.text.match(/haben ([\d.,]+) € zu viel getragen/)?.[1] ?? assert.fail(`${where}: kein Betrag in ${n.text}`))
-    assert.ok(diffs.includes(total), `${where}: genannt ${total}, ausgewiesen ${diffs.join(', ')}`)
-    const list = n.text.match(/, hier: (.*?)\. Eine Gutschrift/)?.[1] ?? ''
+    // Ganz bei den Mietern: „haben X zu viel getragen“; teilweise beim Vermieter (Durchsicht #247, G-K2): „Die
+    // Abweichung beträgt D; davon haben die Mieter dieser Heizperiode X zu viel getragen“.
+    const teil = n.text.match(/Die Abweichung beträgt ([\d.,]+) €; davon haben die Mieter dieser Heizperiode ([\d.,]+) € zu viel getragen/)
+    const ganz = n.text.match(/Die Mieter dieser Heizperiode haben ([\d.,]+) € zu viel getragen/)
+    const abweichung = cents(teil?.[1] ?? ganz?.[1] ?? assert.fail(`${where}: kein Betrag in ${n.text}`))
+    const total = cents(teil?.[2] ?? ganz?.[1] ?? '')
+    assert.ok(diffs.includes(abweichung), `${where}: genannt ${abweichung}, ausgewiesen ${diffs.join(', ')}`)
+    assert.ok(total <= abweichung, `${where}: Mieter ${total} > Abweichung ${abweichung}`)
+    const list = n.text.match(/, hier: (.*?)\. (Eine Gutschrift|Der Rest)/)?.[1] ?? ''
     const each = [...list.matchAll(/([\d.]+,\d\d) €/g)].map((m) => cents(m[1] ?? ''))
-    assert.ok(each.reduce((a, c) => a + c, 0) <= total, `${where}: Gutschriften je Mieter ${each.join(' + ')} > ${total}`)
+    assert.ok(each.reduce((a, c) => a + c, 0) === total || (each.length === 0 && total === 0), `${where}: Gutschriften je Mieter ${each.join(' + ')} ≠ ${total}`)
   }
 }
 
@@ -893,15 +899,28 @@ for (const variant of VARIANTS) {
         // stehen (Entwurf 8.2 Nr. 3: „Kommt die echte Rechnung (in H+1), bucht H+1 ihren Teil für H hinaus“).
         // Steht die Rechnung in der abgeschlossenen Heizperiode der Schätzung selbst (beim Abschluss storniert,
         // danach wieder hergestellt), bleibt der eingefrorene Stand, wie er zugestellt wurde; die Positionen beim
-        // Abschluss enthalten die Rechnung dann nicht, und die Schätzung ist durch nichts ersetzt (Startwert 515).
-        const coveredDay = (day: string, own: string) => linkedReal.some((d) => d.from <= day && day <= d.to && !(periodContaining(MAI, d.to).key === own && closed.some((c) => c.period === own)))
-        const estimatesCovered = estimates.every((e) => {
-          const own = periodContaining(MAI, e.invoiceFrom ?? '').key
-          return coveredDay(e.invoiceFrom ?? '', own) && coveredDay(e.invoiceTo ?? '', own)
-        })
+        // Abschluss enthalten die Rechnung dann nicht, und die Schätzung ist durch nichts ersetzt (Startwerte 515,
+        // 452, 78). Durchsicht #247, G-K3: Statt (ii) dann für den ganzen Lauf auszulassen, gilt genau dieser Teil
+        // der eingefrorenen Schätzung als erlaubter Überschuss, nach Gradtagen wie `estimatesIn` (je Schätzung
+        // höchstens ein Cent Rundung).
+        const coveredDay = (day: string) => linkedReal.some((d) => d.from <= day && day <= d.to)
+        const estimatesCovered = estimates.every((e) => coveredDay(e.invoiceFrom ?? '') && coveredDay(e.invoiceTo ?? ''))
+        const frozenNow = await opened.read((db) => readFuelCarryFrozen(db))
+        let unreconciled = 0
+        for (const e of estimates) {
+          const from = e.invoiceFrom ?? ''
+          const to = e.invoiceTo ?? ''
+          const own = periodContaining(MAI, from).key
+          if (!closed.some((c) => c.period === own)) continue
+          const f = frozenNow.find((x) => x.deliveryId === e.id && x.period === own)?.cents ?? 0
+          const cuts = linkedReal.filter((d) => periodContaining(MAI, d.to).key === own)
+            .map((d) => ({ from: d.from > from ? d.from : from, to: d.to < to ? d.to : to })).filter((r) => r.from <= r.to)
+          const all = degreeDayPermille([{ from, to }], TABLE)
+          if (cuts.length > 0 && all > 0) unreconciled += Math.abs(f) * degreeDayPermille(cuts, TABLE) / all
+        }
         if ((estimates.length === 0 || estimatesCovered) && !selfBlocked) {
           assert.ok(tenants >= positions - up, `${fall}; (vii) Mieter ${tenants} < Positionen ${positions} − ausgewiesen ${up}`)
-          assert.ok(tenants <= positions - down, `${fall}; (ii) Mieter ${tenants} > Positionen ${positions} + ausgewiesen ${-down}`)
+          assert.ok(tenants <= positions - down + unreconciled + estimates.length, `${fall}; (ii) Mieter ${tenants} > Positionen ${positions} + ausgewiesen ${-down} + nicht abgeglichene Schätzung ${Math.round(unreconciled)}`)
         }
         // (iii) je Lieferung und Paar von Heizperioden: Die Gegenbuchungen heben sich auf, oder ein
         // ausgewiesener Teil deckt sie genau (Nachprüfung von 47f2373, H1: über alle Lieferungen summiert
@@ -910,15 +929,25 @@ for (const variant of VARIANTS) {
         // (`fuelEstimateDiff`): Dort steht die Gegenbuchung der Schätzung unter deren Kennung, nicht unter der
         // der Rechnung (Nachprüfung von 5bee89f, M-a).
         const estimateIds = new Set(estimates.map((e) => e.id))
+        // Die Überträge früherer, wieder geöffneter Abschlüsse je Paar (G-W1).
+        const historyCarries = new Map<string, number[]>()
+        for (const key of keys) {
+          for (const h of await opened.read((db) => settlementHistory(db, 'objekt-1', periodKey(key)))) {
+            for (const [pk, pv] of totals(h.settlement).pairs) historyCarries.set(pk, [...(historyCarries.get(pk) ?? []), ...pv.carries])
+          }
+        }
         for (const [k, v] of pairs) {
           if (v.estimate || estimateIds.has(k.split('|')[0] ?? '')) continue
           // Runde 2 (Startwerte 196, 397): Eine eingefrorene Gegenbuchung eines Stornos (netto 0) gehört zu dem Stand
           // der Heizperiode der Positionen, der damals galt. Wurde jene danach wieder geöffnet, steht ihr
           // Gegenstück (`fuelCarry` mit umgekehrtem Vorzeichen) nirgends mehr; dann zählt die Zeile hier nicht,
-          // denn sie bewegt kein Geld. Steht das Gegenstück noch da, zählt sie wie bisher.
+          // denn sie bewegt kein Geld. Durchsicht #247, G-W1: Veraltet ist sie nur, wenn ihr Gegenstück
+          // nachweislich in einem früheren, wieder geöffneten Abschluss stand (`closed_settlement_history`); eine
+          // Gegenbuchung, deren Gegenstück es nie gab, ist der Fehler von Startwert 509 und bleibt rot.
           const ok = (c: number, f: number) => c === 0 || c === -f
           const n = v.neutral.reduce((a, x) => a + x, 0)
-          const stale = v.neutral.length > 0 && v.neutral.every((x) => !v.carries.includes(-x))
+          const earlier = historyCarries.get(k) ?? []
+          const stale = v.neutral.length > 0 && v.neutral.every((x) => !v.carries.includes(-x) && earlier.includes(-x))
           assert.ok(ok(v.carry, v.flagged) || (stale && ok(v.carry - n, v.flagged + n)), `${fall}; (iii) ${k}: Gegenbuchungen ${v.carry}, ausgewiesen ${v.flagged}`)
         }
         // Zuordnung (I1): eine mit 0 eingefrorene Heizperiode bekommt trotzdem ihren Teil hinausgebucht.
