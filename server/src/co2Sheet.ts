@@ -117,15 +117,15 @@ export function co2SheetOf(i: Co2SheetInput): Co2Sheet {
             : !counted ? `Vor dem ${from} in Rechnung gestellt: Die CO₂-Kosten bleiben unberücksichtigt (§ 11 Abs. 2 Satz 2 CO2KostAufG).` : null
           return {
             quantity: v.quantity, emissionsKg: v.emissionsKg, co2CostCents: own && row?.openingCo2Cents != null ? row.openingCo2Cents : v.co2Cents, countedCents: v.co2Cents,
-            kgCounted: true, co2Counted: counted, note, adminNote: null,
+            kgCounted: true, co2Counted: counted, note, adminNote: null, source: own ? 'entered' : 'carried',
           }
         })()
       : row && (row.openingQuantity !== null || row.openingEmissionsKg !== null)
         ? {
-            quantity: row.openingQuantity, emissionsKg: row.openingEmissionsKg, co2CostCents: row.openingCo2Cents, countedCents: 0, kgCounted: false, co2Counted: false,
+            quantity: row.openingQuantity, emissionsKg: row.openingEmissionsKg, co2CostCents: row.openingCo2Cents, countedCents: 0, kgCounted: false, co2Counted: false, source: 'entered',
             note: r.problem.kind === 'missing'
               ? `Nicht berücksichtigt: Für die Bestandsrechnung des Vorrats${where(r.problem.period)} ${r.problem.what.length === 1 ? 'fehlt' : 'fehlen'} ${count(r.problem.what.length)} (${r.problem.what.join('; ')}). Ohne sie rechnet auch die Abrechnung den Vorrat nicht.`
-              : `Nicht berücksichtigt: Die Bestandsrechnung des Vorrats${where(r.problem.period)} ist unvollständig; der Anfangsbestand ist deshalb nicht berücksichtigt.`,
+              : `Nicht berücksichtigt: Die Bestandsrechnung des Vorrats${where(r.problem.period)} geht nicht auf.`,
             adminNote: r.problem.kind === 'invalid' ? `Die Bestandsrechnung geht nicht auf: ${r.problem.reasons.join('; ')}.` : null,
           }
         : null
@@ -151,16 +151,23 @@ export function co2SheetOf(i: Co2SheetInput): Co2Sheet {
       ? { source: co2.basis, emissionsKg: co2.emissionsKg, co2Cents: co2.totalCents, kgPerM2: co2.kgPerM2, areaM2: co2.areaM2, landlordPermille: co2.landlordPermille, stage: co2.stage }
       : null,
   }
-  // Fläche der Einstufung (Entwurf 9.2): eingetragen, sonst die Wohnfläche der versorgten Wohnungen.
+  // Fläche der Einstufung (Entwurf 9.2): Stuft die Abrechnung ein, ihre Fläche (Runde 4: eine Quelle). Bei
+  // mehreren Anlagen eines Gebäudes ist das die gemeinsame (`jointAreaOf` in calc.ts, § 5 Abs. 1 Satz 2
+  // CO2KostAufG), nicht die der eigenen Wohnungen. Sonst eingetragen, sonst die der versorgten Wohnungen.
   const served = i.units.filter((u) => servesUnit(i.plant, u)).reduce((a, u) => a + (u.areaM2 > 0 ? u.areaM2 : 0), 0)
-  const area = i.enteredAreaM2 ?? (served > 0 ? served : null)
+  const own = i.enteredAreaM2 ?? (served > 0 ? served : null)
+  const ownSource: Co2Sheet['areaSource'] = i.enteredAreaM2 !== null ? 'entered' : own !== null ? 'served' : null
+  const billed = co2 && co2.areaM2 !== null ? co2.areaM2 : null
+  const area = billed ?? own
+  const areaSource: Co2Sheet['areaSource'] = billed === null ? ownSource
+    : own !== null && Math.abs(billed - own) < 0.005 ? (co2?.areaSource ?? ownSource) : 'building'
   const kg = deliveries.reduce((a, d) => a + (d.counted === 'none' ? 0 : (d.emissionsKg ?? 0) * d.factor), opening?.kgCounted ? (opening.emissionsKg ?? 0) : 0)
   const co2Sum = deliveries.reduce((a, d) => a + (d.counted === 'full' || d.counted === 'partial' ? (d.co2CostCents ?? 0) * d.factor : 0), opening?.countedCents ?? 0)
   return {
     propertyName: i.propertyName, address: i.address, landlordName: i.landlordName,
     plantName: i.plant.name, energy: i.plant.energy, createdOn: i.today, checked,
     period: { key: i.h.key, from: i.h.from, to: i.h.to },
-    areaM2: area, areaSource: i.enteredAreaM2 !== null ? 'entered' : area !== null ? 'served' : null,
+    areaM2: area, areaSource,
     nonResidential: i.plant.nonResidential, restriction: i.plant.restriction, districtEtsNew: i.plant.districtEtsNew,
     stock: i.stock, opening, billing, deliveries,
     totals: { emissionsKg: Math.round(kg * 100) / 100, co2CostCents: Math.round(co2Sum) },

@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { hasSheet, sheetFacts, sheetHead, sheetRows } from './co2Sheet'
+import { hasSheet, sheetFacts, sheetHead, sheetNotes, sheetRows } from './co2Sheet'
 import { fmtEuro } from './api'
 import type { Co2Sheet, Co2SheetDelivery } from './types'
 
@@ -16,6 +16,8 @@ const sheet: Co2Sheet = {
   totals: { emissionsKg: 8028.9, co2CostCents: 52549 },
 }
 const FOOT = 'Angaben je Rechnung nach § 3 Abs. 1 Nr. 1 bis 4 CO2KostAufG, wie sie der Lieferant ausweist. Die Summe der Rechnungen ist nicht der CO₂-Ausstoß des Abrechnungszeitraums: Auf ihn umgerechnet (§ 5 Abs. 1 Satz 5 CO2KostAufG) und ohne den Endbestand eines Vorrats (§ 7 Abs. 1 CO2KostAufG: im Abrechnungszeitraum verursacht) sind erst die Zeilen darunter, wie die Abrechnung sie ansetzt. Nicht gezählt sind Angaben, die nach dem CO2KostAufG unberücksichtigt bleiben'
+// Ohne Zeilen der Abrechnung unter der Summe (Runde 4, K-1): kein Verweis auf „die Zeilen darunter“.
+const FOOT_OHNE = 'Angaben je Rechnung nach § 3 Abs. 1 Nr. 1 bis 4 CO2KostAufG, wie sie der Lieferant ausweist. Die Summe der Rechnungen ist nicht der CO₂-Ausstoß des Abrechnungszeitraums (§ 5 Abs. 1 Satz 5, § 7 Abs. 1 CO2KostAufG); die Abrechnung kann ihn derzeit nicht abgrenzen. Nicht gezählt sind Angaben, die nach dem CO2KostAufG unberücksichtigt bleiben'
 
 test('Kopf, Zeilen und Angaben zur Einstufung', () => {
   expect(sheetHead(sheet)).toEqual({ title: 'CO₂-Angaben für den Messdienst', lines: ['Haus am Park, Parkweg 1', 'Vermieter: Erika Muster', 'Heizanlage: Kessel (Öl)', 'Heizperiode: 01.01.2025 bis 31.12.2025', 'Stand: 07.10.2026'] })
@@ -26,7 +28,7 @@ test('Kopf, Zeilen und Angaben zur Einstufung', () => {
   expect(sheetFacts(sheet)).toEqual([
     'Fläche für die Einstufung: 300 m² (Summe der Wohnflächen der versorgten Wohnungen laut Vermieter)',
     'Kein Nichtwohngebäude (§ 8 CO2KostAufG); keine Beschränkung nach § 9 CO2KostAufG',
-    `${FOOT}.`,
+    `${FOOT_OHNE}.`,
   ])
 })
 
@@ -34,7 +36,7 @@ test('S-W1 Vorrat: abzüglich Endbestand und Verbrauch wie in der Abrechnung; Ei
   const s: Co2Sheet = {
     ...sheet,
     stock: { stockUnit: 'l', openingQuantity: 1000, openingEmissionsKg: 2676.3, openingCo2Cents: 17517, openingInvoicedBefore2023: false, openingAlreadySettled: null, closingQuantity: 1800, closingMeasuredOn: '2025-12-31' },
-    opening: { quantity: 1000, emissionsKg: 2676.3, co2CostCents: 17517, countedCents: 17517, kgCounted: true, co2Counted: true, note: null, adminNote: null },
+    opening: { quantity: 1000, emissionsKg: 2676.3, co2CostCents: 17517, countedCents: 17517, kgCounted: true, co2Counted: true, note: null, adminNote: null, source: 'entered' },
     billing: {
       closing: { quantity: 1800, emissionsKg: 4817.34, co2Cents: 31529, measuredOn: '2025-12-31' },
       consumed: { quantity: 2200, emissionsKg: 5887.86, co2Cents: 38537 },
@@ -48,7 +50,8 @@ test('S-W1 Vorrat: abzüglich Endbestand und Verbrauch wie in der Abrechnung; Ei
   expect(rows[3]?.cells.slice(5, 7)).toEqual(['−4.817,34 kg', `−${fmtEuro(31529)}`])
   expect(rows[4]?.cells.slice(5, 7)).toEqual(['5.887,86 kg', fmtEuro(38537)])
   expect(sheetFacts(s)).toContain('Vorrat: Anfangsbestand 1.000 l mit 2.676,3 kg CO₂; Endbestand 1.800 l am 31.12.2025')
-  expect(sheetFacts(s)).toContain('Einstufung laut Abrechnung: 19,6 kg CO₂ je m² Wohnfläche (300 m²), Stufe 17 bis unter 22 kg, Vermieter 20 % der CO₂-Kosten')
+  expect(sheetFacts(s)).toContain('Einstufung laut Abrechnung: 19,6 kg CO₂ je m² Wohnfläche, Stufe 17 bis unter 22 kg, Vermieter 20 % der CO₂-Kosten')
+  expect(sheetFacts(s).at(-1)).toBe(`${FOOT}.`)
 })
 
 test('S-W1 Zeitraumrechnungen: je Rechnung der Teil in der Heizperiode, die Summe davon; hochgerechnet nur benannt', () => {
@@ -82,15 +85,15 @@ test('G-W1, G-W2, S-K1: Vermerke an den Zeilen; der Anfangsbestand zeigt den Bet
   const s: Co2Sheet = {
     ...sheet,
     stock: { stockUnit: 'l', openingQuantity: 1000, openingEmissionsKg: 2676.3, openingCo2Cents: 17517, openingInvoicedBefore2023: false, openingAlreadySettled: true, closingQuantity: 500, closingMeasuredOn: '2025-12-31' },
-    opening: { quantity: 1000, emissionsKg: 2676.3, co2CostCents: 17517, countedCents: 0, kgCounted: true, co2Counted: false, note: 'Schon mit einer früheren Abrechnung umgelegt …', adminNote: null },
+    opening: { quantity: 1000, emissionsKg: 2676.3, co2CostCents: 17517, countedCents: 0, kgCounted: true, co2Counted: false, note: 'Schon mit einer früheren Abrechnung umgelegt …', adminNote: null, source: 'entered' },
     deliveries: [heizoel, { ...heizoel, id: 'x', label: 'Heizöl alt', counted: 'none', note: 'Storniert: Die Kostenpositionen dieser Rechnung ergeben 0 €; sie zählt nicht.' }],
     totals: { emissionsKg: 10705.2, co2CostCents: 52549 },
   }
   const rows = sheetRows(s)
   expect(rows[0]).toEqual({ kind: 'opening', label: 'Anfangsbestand (Vorrat, nur die kg zählen)', note: 'Schon mit einer früheren Abrechnung umgelegt …', sub: null, cells: ['', '', '1.000 l', '–', '–', '2.676,3 kg', fmtEuro(17517), ''] })
   expect(rows[2]?.label).toBe('Heizöl alt (zählt nicht)')
-  expect(sheetFacts(s).at(-1)).toBe(`${FOOT} (siehe Vermerke).`)
-  const ohneKg = sheetRows({ ...s, opening: { quantity: 1000, emissionsKg: null, co2CostCents: 17517, countedCents: 0, kgCounted: false, co2Counted: false, note: 'Nicht berücksichtigt …', adminNote: null } })
+  expect(sheetFacts(s).at(-1)).toBe(`${FOOT_OHNE} (siehe Vermerke).`)
+  const ohneKg = sheetRows({ ...s, opening: { quantity: 1000, emissionsKg: null, co2CostCents: 17517, countedCents: 0, kgCounted: false, co2Counted: false, note: 'Nicht berücksichtigt …', adminNote: null, source: 'entered' } })
   expect(ohneKg[0]?.label).toBe('Anfangsbestand (Vorrat, zählt nicht)')
 })
 
@@ -113,4 +116,65 @@ test('Ein Blatt gibt es, sobald eine Rechnung die Heizperiode berührt', () => {
   expect(hasSheet([{ invoiceFrom: '2026-03-01', invoiceTo: '2027-02-28', deliveredAt: null }], h)).toBe(true)
   expect(hasSheet([{ invoiceFrom: null, invoiceTo: null, deliveredAt: '2026-04-30' }], h)).toBe(true)
   expect(hasSheet([{ invoiceFrom: null, invoiceTo: null, deliveredAt: null }], h)).toBe(false)
+})
+
+// ---------- Runde 4 ----------
+
+test('K-1: Der Fußsatz verweist nur dann auf „die Zeilen darunter“, wenn es sie gibt', () => {
+  expect(sheetFacts(sheet).at(-1)).not.toMatch(/Zeilen darunter/)
+  const mit = { ...sheet, billing: { ...noBilling, inPeriod: { emissionsKg: 8028.9, co2Cents: 52549, coveragePermille: 1000 } } }
+  expect(sheetFacts(mit).at(-1)).toMatch(/sind erst die Zeilen darunter/)
+})
+
+test('W-O1: Vermerke und Teile in der Heizperiode stehen unter der Tabelle, mit Verweis an der Zeile', () => {
+  const s: Co2Sheet = {
+    ...sheet,
+    opening: { quantity: 1000, emissionsKg: 2676.3, co2CostCents: 17517, countedCents: 0, kgCounted: false, co2Counted: false, note: 'Nicht berücksichtigt: A.', adminNote: null, source: 'entered' },
+    deliveries: [heizoel, { ...heizoel, id: 'x', label: 'Heizöl Mai', note: 'Storniert: B.', inPeriod: { emissionsKg: 100, co2Cents: 655, sharePermille: 500, method: 'degreeDays' } }],
+  }
+  expect(sheetNotes(sheetRows(s))).toEqual([
+    { ref: 1, label: 'Anfangsbestand (Vorrat, zählt nicht)', lines: ['Nicht berücksichtigt: A.'] },
+    { ref: 2, label: 'Heizöl Mai', lines: [`davon in der Heizperiode: 100 kg, ${fmtEuro(655)} (500 ‰, nach der Gradtagszahlentabelle)`, 'Storniert: B.'] },
+  ])
+})
+
+test('S-K1, Vorperiode: der übernommene Anfangsbestand ist so beschriftet', () => {
+  const o = { quantity: 1000, emissionsKg: 2676.3, co2CostCents: 17517, countedCents: 17517, kgCounted: true, co2Counted: true, note: null, adminNote: null, source: 'carried' as const }
+  expect(sheetRows({ ...sheet, opening: o })[0]?.label).toBe('Anfangsbestand (Vorrat, aus der Vorperiode übernommen)')
+  expect(sheetRows({ ...sheet, opening: { ...o, co2Counted: false } })[0]?.label).toBe('Anfangsbestand (Vorrat, aus der Vorperiode übernommen, nur die kg zählen)')
+})
+
+test('Fläche aus der Abrechnung: mehrere Anlagen eines Gebäudes', () => {
+  expect(sheetFacts({ ...sheet, areaM2: 100, areaSource: 'building' })[0]).toBe('Fläche für die Einstufung: 100 m² (gemeinsame Wohnfläche der Wohnungen aller Heizanlagen des Gebäudes, wie die Abrechnung einstuft; § 5 Abs. 1 Satz 2 CO2KostAufG)')
+})
+
+// Wächter (Runde 4, K-3): Kein gedruckter Text des Blatts spricht den Leser an, auch nicht mit „Bitte …“:
+// Beschriftungen, Zellen, Vermerke, Teile in der Heizperiode, Zeilen der Abrechnung und Angaben, über alle Fälle.
+test('Wächter: kein gedruckter Text des Blatts spricht den Leser an', () => {
+  const opening = { quantity: 1000, emissionsKg: 2676.3, co2CostCents: 17517, countedCents: 0, kgCounted: false, co2Counted: false, note: 'Nicht berücksichtigt: A.', adminNote: 'Die Bestandsrechnung geht nicht auf: … verknüpfen Sie …', source: 'entered' as const }
+  const stock = { stockUnit: 'l' as const, openingQuantity: 1000, openingEmissionsKg: 2676.3, openingCo2Cents: 17517, openingInvoicedBefore2023: true, openingAlreadySettled: null, closingQuantity: 800, closingMeasuredOn: '2025-12-31' }
+  const teil = { ...heizoel, inPeriod: { emissionsKg: 100, co2Cents: 655, sharePermille: 500, method: 'degreeDays' as const } }
+  const basis = { source: 'deliveries' as const, emissionsKg: 5000, co2Cents: 32725, kgPerM2: 16.7, areaM2: 300, landlordPermille: 100, stage: { from: 12, to: 17, landlordPercent: 10 } }
+  const faelle: Co2Sheet[] = [
+    sheet,
+    { ...sheet, areaSource: 'entered' }, { ...sheet, areaSource: 'building' }, { ...sheet, areaM2: null, areaSource: null },
+    { ...sheet, nonResidential: true, restriction: 'both' }, { ...sheet, restriction: 'building' }, { ...sheet, restriction: 'supply' },
+    { ...sheet, stock, opening, deliveries: [teil, { ...heizoel, counted: 'partial', estimated: true, note: 'Schätzung …' }] },
+    { ...sheet, stock, opening: { ...opening, source: 'carried', co2Counted: true, kgCounted: true }, billing: { closing: { quantity: 800, emissionsKg: 2141, co2Cents: 11776, measuredOn: '2025-12-31' }, consumed: { quantity: 3200, emissionsKg: 8564, co2Cents: 56090 }, inPeriod: null, basis: { ...basis, source: 'stock' } } },
+    { ...sheet, deliveries: [teil], billing: { closing: null, consumed: null, inPeriod: { emissionsKg: 4500, co2Cents: 29453, coveragePermille: 900 }, basis } },
+    { ...sheet, energy: 'districtHeating', districtEtsNew: true, checked: false, deliveries: [teil] },
+    { ...sheet, energy: 'districtHeating', districtEtsNew: true },
+  ]
+  const ANREDE = /\b(Sie|Ihr\w*|Ihnen)\b|[Bb]itte/
+  let n = 0
+  for (const s of faelle) {
+    const rows = sheetRows(s)
+    const texte = [
+      ...sheetHead(s).lines, ...rows.flatMap((r) => [r.label, ...r.cells, r.note ?? '', r.sub ?? '']),
+      ...sheetNotes(rows).flatMap((x) => [x.label, ...x.lines]), ...sheetFacts(s),
+    ].filter((t) => t !== '')
+    n += texte.length
+    for (const t of texte) expect(t).not.toMatch(ANREDE)
+  }
+  expect(n).toBeGreaterThan(100)
 })

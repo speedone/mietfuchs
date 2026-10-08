@@ -1798,6 +1798,9 @@ export type Co2SheetOpening = {
   co2Counted: boolean
   note: string | null
   adminNote: string | null
+  // `entered`: in dieser Heizperiode eingetragen; `carried`: aus dem Endbestand der Vorperiode übernommen,
+  // dann gibt es keine Rechnung, und die CO₂-Kosten sind die übernommenen (Runde 4, S-K1).
+  source: 'entered' | 'carried'
 }
 // Was die Abrechnung der Heizperiode daraus macht (Durchsicht von #246, Runde 3, S-W1): gelesen aus ihrem
 // Ergebnis (`heating[]`), nicht vom Blatt gerechnet. `closing`/`consumed` aus der Bestandsrechnung des
@@ -1828,7 +1831,8 @@ export type Co2Sheet = {
   energy: HeatingEnergy
   period: { key: string; from: string; to: string }
   areaM2: number | null
-  areaSource: 'entered' | 'served' | null
+  // `building`: die gemeinsame Fläche mehrerer Anlagen eines Gebäudes, wie die Abrechnung sie einstuft.
+  areaSource: 'entered' | 'served' | 'building' | null
   nonResidential: boolean
   restriction: Co2Restriction
   districtEtsNew: boolean

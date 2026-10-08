@@ -79,7 +79,7 @@ test('S-K1: der Anfangsbestand zeigt den eingetragenen Betrag; berücksichtigt i
 
 test('W-N4 und Klein: Vermerke in der dritten Person, mit Heizperiode und Zahl der fehlenden Angaben; Gründe für den Vermieter nur ungedruckt', () => {
   const ungueltig = both(oelSource({}, false)).sheet
-  assert.match(ungueltig.opening?.note ?? '', /Bestandsrechnung des Vorrats \(Heizperiode 2025\) ist unvollständig/)
+  assert.match(ungueltig.opening?.note ?? '', /Bestandsrechnung des Vorrats \(Heizperiode 2025\) geht nicht auf\./)
   assert.match(ungueltig.opening?.adminNote ?? '', /verknüpfen Sie/)
   const zwei = both(oelSource({ openingInvoicedBefore2023: null, openingEmissionsKg: null })).sheet
   assert.match(zwei.opening?.note ?? '', /Heizperiode 2025\) fehlen zwei Angaben \(/)
@@ -87,7 +87,9 @@ test('W-N4 und Klein: Vermerke in der dritten Person, mit Heizperiode und Zahl d
   assert.match(eine.opening?.note ?? '', /fehlt eine Angabe \(ob der Anfangsbestand vor dem 01\.01\.2023 in Rechnung gestellt wurde\)/)
 })
 
-// Wächter: Kein gedruckter Vermerk des Blatts spricht den Leser an, über alle Vermerkarten (W-N4).
+// Wächter: Kein gedruckter Vermerk des Blatts spricht den Leser an, über alle Vermerkarten (W-N4), auch nicht
+// mit einer Aufforderung ohne „Sie“ (Runde 4, K-3). Die übrigen gedruckten Texte prüft co2Sheet.test.ts.
+const ANREDE = /\b(Sie|Ihr\w*|Ihnen)\b|[Bb]itte/
 test('Wächter: kein Vermerk des Blatts spricht den Leser an', () => {
   const faelle: Src[] = [
     oelSource({}), oelSource({}, false), oelSource({ openingInvoicedBefore2023: null }), oelSource({ openingEmissionsKg: null }), oelSource({ openingInvoicedBefore2023: true }),
@@ -103,7 +105,7 @@ test('Wächter: kein Vermerk des Blatts spricht den Leser an', () => {
     return [s.opening?.note ?? null, ...s.deliveries.map((d) => d.note)].filter((n): n is string => n !== null)
   })
   assert.ok(notes.length >= 8, `zu wenige Vermerke: ${notes.length}`)
-  for (const n of notes) assert.doesNotMatch(n, /\b(Sie|Ihr|Ihre|Ihren|Ihnen|Ihrer)\b/, n)
+  for (const n of notes) assert.doesNotMatch(n, ANREDE, n)
 })
 
 test('Emissionshandel mit Anschluss nach dem Stichtag: keine Grundlage der Aufteilung auf dem Blatt', () => {
@@ -118,6 +120,7 @@ test('Invariante: abgegrenzte Zeile des Blatts = CO₂-Grundlage der Abrechnung,
   const from = Number(process.env.INV_FROM ?? 1)
   const to = Number(process.env.INV_TO ?? 120)
   let geprueft = 0
+  let luecken = 0
   for (let seed = from; seed <= to; seed++) {
     let x = seed
     const rnd = () => ((x = (x * 1103515245 + 12345) % 2147483648) / 2147483648)
@@ -157,6 +160,8 @@ test('Invariante: abgegrenzte Zeile des Blatts = CO₂-Grundlage der Abrechnung,
         ...(base.fuelDeliveries[0] ?? assert.fail('keine Lieferung')), id: `g${i}`, label: `Gas ${i}`, invoiceFrom: iso(i === 0 ? b : b), invoiceTo: iso((bounds[i + 1] ?? 730) - 1),
         invoiceDate: null, emissionsKg: int(1000, 20000), co2CostCents: int(5000, 150000),
       }))
+      // Mit Lücke (Runde 4, Gegenmutation a): eine Rechnung fehlt, die Abrechnung rechnet die kg hoch.
+      if (n > 2 && rnd() < 0.4) ds.splice(int(0, ds.length - 1), 1)
       src = { ...base, fuelDeliveries: ds, costItems: ds.map((d, i) => ({ ...(base.costItems[0] ?? assert.fail('keine Position')), id: `p${i}`, fuelDeliveryId: d.id, amountCents: int(1000, 5000) * 100 })) }
     }
     const { sheet, heating } = both(src)
@@ -168,9 +173,17 @@ test('Invariante: abgegrenzte Zeile des Blatts = CO₂-Grundlage der Abrechnung,
     } else if (sheet.billing?.inPeriod && sheet.billing?.inPeriod.coveragePermille === 1000) {
       assert.ok(Math.abs(sheet.billing?.inPeriod.emissionsKg - co2.emissionsKg) < 0.011, `${fall}: ${sheet.billing?.inPeriod.emissionsKg} gegen ${co2.emissionsKg}`)
       assert.equal(sheet.billing?.inPeriod.co2Cents, co2.totalCents, fall)
+    } else if (sheet.billing?.inPeriod) {
+      // Lücke: die abgegrenzte Zeile ist die Summe der abgegrenzten Teile der Abrechnung, die € gleich der
+      // Grundlage (nur die kg werden hochgerechnet).
+      const teile = (heating?.fuel?.deliveries ?? []).reduce((a, l) => a + (l.emissionsKg ?? 0), 0)
+      assert.ok(Math.abs(sheet.billing.inPeriod.emissionsKg - teile) < 1e-6, `${fall}: ${sheet.billing.inPeriod.emissionsKg} gegen ${teile}`)
+      assert.equal(sheet.billing.inPeriod.co2Cents, co2.totalCents, fall)
+      luecken++
     } else continue
     assert.deepEqual([sheet.billing?.basis?.emissionsKg, sheet.billing?.basis?.co2Cents], [co2.emissionsKg, co2.totalCents], fall)
     geprueft++
   }
   assert.ok(geprueft >= (to - from + 1) / 3, `zu wenige geprüfte Fälle: ${geprueft}`)
+  if (to - from >= 50) assert.ok(luecken >= 5, `zu wenige Fälle mit Lücke: ${luecken}`)
 })
