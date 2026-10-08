@@ -4,7 +4,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement } from '../src/calc.ts'
-import { co2SheetFor } from '../src/co2Sheet.ts'
+import { co2SheetFor, co2SheetOf } from '../src/co2Sheet.ts'
 import { heatingSnapshotFor, snapshotFor, type SnapshotCostItem, type SnapshotHeatingPeriodRow, type SnapshotHeatingPlant } from '../src/snapshot.ts'
 import { co2Source } from '../testing/co2Snapshot.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
@@ -104,8 +104,10 @@ test('Fläche aus der Abrechnung: zwei Anlagen im selben Gebäude, das Blatt nen
   }
   const { sheet, heating } = both(src, 'H1')
   const co2 = heating?.co2 ?? assert.fail('keine CO₂-Aufteilung')
-  // Gemeinsam: 9.000 kg auf 100 m² (60 + 40); die eigene Anlage versorgt nur 60 m².
+  // Gemeinsam: 9.000 kg auf 100 m² (60 + 40); die eigene Anlage versorgt nur 60 m². Die Abrechnung sagt selbst,
+  // dass die Fläche die des Gebäudes ist (Nach Runde 4: `areaScope`), das Blatt liest es.
   assert.equal(co2.areaM2, 100)
+  assert.equal(co2.areaScope, 'building')
   assert.deepEqual([sheet.areaM2, sheet.areaSource], [100, 'building'])
 })
 
@@ -126,4 +128,25 @@ test('S-K1, Vorperiode: Ein übernommener Anfangsbestand ist als übernommen gek
 test('Klein 2: geht die Bestandsrechnung nicht auf, sagt der Vermerk genau das, einmal „nicht berücksichtigt“', () => {
   const note = both(oelSource([VORRAT], false)).sheet.opening?.note ?? assert.fail('kein Vermerk')
   assert.equal(note, 'Nicht berücksichtigt: Die Bestandsrechnung des Vorrats (Heizperiode 2025) geht nicht auf.')
+})
+
+// Nach Runde 4: Ob die Fläche die gemeinsame eines Gebäudes ist, entscheidet die Abrechnung (`areaScope`); das
+// Blatt schließt es nicht aus einer Abweichung.
+test('Nach Runde 4: eine Anlage allein heißt „plant“, auch wenn ihre Fläche von der der Wohnungen abweicht', () => {
+  const { heating } = both(oelSource([VORRAT]))
+  const h = heating ?? assert.fail('keine Anlage')
+  const co2 = h.co2 ?? assert.fail('keine CO₂-Aufteilung')
+  assert.equal(co2.areaScope, 'plant')
+  // Die Abrechnung stuft mit 80 m² ein (etwa weil nur bestimmte Wohnungen beteiligt sind); die Wohnungen haben 100 m².
+  const input = (heating: HeatingStatement | null) => ({
+    propertyName: '', address: '', landlordName: '', today: '2026-10-07', overrides: [], items: [], stock: null, enteredAreaM2: null,
+    plant: { id: 'hp', name: 'Kessel', energy: 'oil' as const, method: 'manual' as const, units: null, nonResidential: false, restriction: 'none' as const, districtEtsNew: false },
+    h: { key: '2025-01', from: '2025-01-01', to: '2025-12-31' }, units: [{ id: 'a', areaM2: 60 }, { id: 'b', areaM2: 40 }], deliveries: [], heating,
+  })
+  const abweichend = co2SheetOf(input({ ...h, co2: { ...co2, areaM2: 80, areaScope: 'plant' } }))
+  assert.deepEqual([abweichend.areaM2, abweichend.areaSource], [80, 'served'])
+  // Eine abgeschlossene Abrechnung von vorher kennt das Feld nicht: Fläche ohne Zusatz.
+  const { areaScope: _weg, ...alt } = { ...co2, areaM2: 100 }
+  const eingefroren = co2SheetOf(input({ ...h, co2: alt }))
+  assert.deepEqual([eingefroren.areaM2, eingefroren.areaSource], [100, null])
 })

@@ -5164,6 +5164,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         coveragePermille: own.coveragePermille,
         adjustments: split.adjustments,
         areaSource: entered !== null ? 'entered' : 'served',
+        // Ob die Fläche die gemeinsame mehrerer Anlagen eines Gebäudes ist (Nachprüfung von #246): das Blatt
+        // für den Messdienst liest es, statt es aus einer Abweichung zu schließen. Kein Betrag hängt daran.
+        areaScope: building.length > 0 ? 'building' : 'plant',
       }
     }
     // Warmwasser beim Messdienst (#211, Entwurf 7.7): Laut Abrechnung nach einer Formel bestimmt, ohne

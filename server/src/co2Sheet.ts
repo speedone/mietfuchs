@@ -159,8 +159,10 @@ export function co2SheetOf(i: Co2SheetInput): Co2Sheet {
   const ownSource: Co2Sheet['areaSource'] = i.enteredAreaM2 !== null ? 'entered' : own !== null ? 'served' : null
   const billed = co2 && co2.areaM2 !== null ? co2.areaM2 : null
   const area = billed ?? own
+  // Woher die Fläche stammt, sagt die Abrechnung (`areaScope`, Nach Runde 4); ohne das Feld (vorher
+  // abgeschlossen) steht die Fläche ohne Zusatz da.
   const areaSource: Co2Sheet['areaSource'] = billed === null ? ownSource
-    : own !== null && Math.abs(billed - own) < 0.005 ? (co2?.areaSource ?? ownSource) : 'building'
+    : co2?.areaScope === 'building' ? 'building' : co2?.areaScope === 'plant' ? (co2.areaSource ?? null) : null
   const kg = deliveries.reduce((a, d) => a + (d.counted === 'none' ? 0 : (d.emissionsKg ?? 0) * d.factor), opening?.kgCounted ? (opening.emissionsKg ?? 0) : 0)
   const co2Sum = deliveries.reduce((a, d) => a + (d.counted === 'full' || d.counted === 'partial' ? (d.co2CostCents ?? 0) * d.factor : 0), opening?.countedCents ?? 0)
   return {
