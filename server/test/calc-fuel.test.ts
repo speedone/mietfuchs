@@ -182,11 +182,11 @@ test('Invariante (Abschluss mit Schätzung, Startwert 515): Die Rechnung deckt d
 // Mieter dort weniger trägt, hat er zu viel getragen. Die Aufteilung nach Mietzeit im abgedeckten Zeitraum aus
 // Runde 3 war falsch: Mietfuchs verteilt Brennstoff über die ganze Heizperiode, gleich wann er verbraucht wurde.
 const vorjahr = lieferung({ id: 'v', label: 'Gas 2023/2024', invoiceFrom: '2023-05-01', invoiceTo: '2024-04-30' })
-const gutschriftFall = (opts: { tenancies: ReturnType<typeof mieter>[]; estimates: FuelDelivery[]; units?: Quelle['units']; key?: SnapshotCostItem['key'] }) => {
+const gutschriftFall = (opts: { tenancies: ReturnType<typeof mieter>[]; estimates: FuelDelivery[]; units?: Quelle['units']; key?: SnapshotCostItem['key']; invoiceKey?: SnapshotCostItem['key'] }) => {
   const units = opts.units ? { units: opts.units } : {}
   const key = opts.key ?? 'area'
   const vorjahrPosition = position({ id: 'gasv', fuelDeliveryId: 'v', period: periodKey('2023-05'), amountCents: 600000, key })
-  const gas = position({ id: 'gas', key })
+  const gas = position({ id: 'gas', key: opts.invoiceKey ?? key })
   const zu = settle('2024-05', { ...units, tenancies: opts.tenancies, fuelDeliveries: [vorjahr, ...opts.estimates], costItems: [vorjahrPosition] })
   const carries = zu.heating?.[0]?.fuel?.carries ?? []
   const h = settle('2025-05', {
@@ -250,6 +250,21 @@ test('Durchsicht #247 Runde 4: Personenschlüssel mit Personenänderung und Miet
   wieKontrafaktum(f)
   assert.equal(f.summe, -f.diff)
   assert.doesNotMatch(f.text, /Der Rest lag bei Ihnen/)
+})
+
+test('Durchsicht #247 Runde 5 (G-K2): Rechnung mit anderem Schlüssel als die Vorlage der Schätzung: der Hinweis sagt, dass die Beträge je Mieter nur genähert sind', () => {
+  // Vorlage nach Fläche, Rechnung nach Personen: Die echte Rechnung wäre anders verteilt worden. Kontrafaktum
+  // A 1.098,64 €, B1 364,60 €, B2 122,45 €; der Hinweis kann nur nach dem Schlüssel der Schätzung aufteilen.
+  const tenancies = [
+    { ...mieter('ta', 'a'), persons: 4, personHistory: [{ from: '2020-01-01', persons: 1 }, { from: '2025-03-01', persons: 4 }] },
+    { ...mieter('tb1', 'b'), tenantName: 'Mieter B1', persons: 2, personHistory: [{ from: '2020-01-01', persons: 2 }], end: '2025-02-28' },
+    { ...mieter('tb2', 'b'), tenantName: 'Mieter B2', persons: 1, personHistory: [{ from: '2025-03-01', persons: 1 }], start: '2025-03-01' },
+  ]
+  const estimates = [schaetzungVon('e', '2025-01-01', '2025-04-30', 900000)]
+  const anders = gutschriftFall({ tenancies, estimates, key: 'area', invoiceKey: 'persons' })
+  assert.match(anders.text, /Die Rechnung ist nach einem anderen Umlageschlüssel verteilt als die Schätzung; die Beträge je Mieter sind nach dem Schlüssel der Schätzung aufgeteilt und nur eine Näherung\. Bitte prüfen Sie sie\./)
+  // Gleicher Schlüssel: kein solcher Satz.
+  assert.doesNotMatch(gutschriftFall({ tenancies, estimates, key: 'persons' }).text, /nur eine Näherung/)
 })
 
 test('Durchsicht #247 G-K1/G-K2: Leerstand: die Mieter bekommen ihren Teil, und der Text nennt nur ihn', () => {

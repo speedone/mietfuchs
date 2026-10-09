@@ -4237,11 +4237,21 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         const credits = distributeCents(credit, entries.map(([key, e]) => ({ key, landlord: false, raw: e.exact })))
         const list = entries.flatMap(([, e], k) => ((credits[k] ?? 0) !== 0 ? [`${e.name} ${fmtCents(credits[k] ?? 0)}`] : []))
         const hier = list.length > 0 ? `, hier: ${andList(list)}` : ''
+        // Durchsicht #247, Runde 5 (G-K2): Ist die Rechnung nach einem anderen Schlüssel verteilt als die Vorlage
+        // der Schätzung, wäre sie anders auf die Mieter gefallen; die Beträge je Mieter sind dann nur genähert.
+        // Verglichen werden die Schlüssel der Positionen, deren Zeilen eingefroren sind, mit denen der Rechnung;
+        // eine inzwischen gelöschte Vorlage zählt nicht.
+        const keyOf = (id: string) => fuel?.items.find((c) => c.id === id)?.key
+        const templateKeys = new Set(other.fuelRows.filter((row) => est.ids.some((id) => row.costItemId.startsWith(`fuel:${id}:`))).map((row) => keyOf(row.costItemId.split(':').at(-1) ?? '')).filter((k) => k !== undefined))
+        const invoiceKeys = new Set((fuel?.items ?? []).filter((c) => c.fuelDeliveryId === carry.deliveryId && c.amountCents !== 0).map((c) => c.key))
+        const mixed = list.length > 0 && templateKeys.size > 0 && invoiceKeys.size > 0 && [...invoiceKeys].some((k) => !templateKeys.has(k) || templateKeys.size > 1)
+        const naeherung = mixed ? 'Die Rechnung ist nach einem anderen Umlageschlüssel verteilt als die Schätzung; die Beträge je Mieter sind nach dem Schlüssel der Schätzung aufgeteilt und nur eine Näherung. Bitte prüfen Sie sie. ' : ''
         warn('fuel.estimate-overcharged',
           `${where}: Für ${periodLabel(carry.other)} war ${fmtCents(E)} geschätzt; tatsächlich entfallen nur ${fmtCents(X)}. ` +
             (credit === -diff
               ? `Die Mieter dieser Heizperiode haben ${fmtCents(-diff)} zu viel getragen${hier}. `
               : `Die Abweichung beträgt ${fmtCents(-diff)}; davon haben die Mieter dieser Heizperiode ${fmtCents(credit)} zu viel getragen${hier}. Der Rest lag bei Ihnen. `) +
+            naeherung +
             `Eine Gutschrift ist jederzeit zulässig und wird empfohlen. Öffnen Sie die Abrechnung ${other.label} wieder oder erfassen Sie die Gutschrift; bis dahin steht der Betrag bei Ihnen als Abweichung von der Schätzung.`,
           subject)
       }

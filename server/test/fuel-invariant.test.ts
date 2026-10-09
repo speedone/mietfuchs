@@ -402,7 +402,7 @@ function totalsOfDelivery(s: unknown, own: ReadonlySet<string>): number {
 // Runde 2 zu Startwert 515: Nennt eine Abrechnung die Gutschrift je Mieter bei zu hoher Schätzung
 // (`fuel.estimate-overcharged`), ist der genannte Gesamtbetrag eine ausgewiesene negative Abweichung
 // (`fuelEstimateDiff`), und die Beträge je Mieter ergeben zusammen höchstens ihn.
-const OVERCHARGED = { checked: 0, tenants: 0, approximate: 0 }
+const OVERCHARGED = { checked: 0, tenants: 0, approximate: 0, secondInvoice: 0, mixedKeys: 0, templateUnknown: 0 }
 function overchargedChecks(r: ReturnType<typeof computeSettlement>, where: string): void {
   const cents = (x: string) => Math.round(Number(x.replace(/\./g, '').replace(',', '.')) * 100)
   const diffs = r.landlord.rows.flatMap((row) => (row.landlordParts ?? []).filter((p) => p.reason === 'fuelEstimateDiff' && p.cents < 0).map((p) => -p.cents))
@@ -426,14 +426,17 @@ function overchargedChecks(r: ReturnType<typeof computeSettlement>, where: strin
 // wird offen gerechnet, mit der echten Rechnung statt der Schätzung (eingefrorener Stand und Abschluss von P
 // entfallen). Was ein Mieter dort an den Zeilen der Schätzungen und der Rechnung weniger trägt, hat er zu viel
 // getragen. Geprüft wird nur, wo das Kontrafaktum genau ist; die übrigen Fälle zählen als Näherung und werden
-// nicht geprüft:
-// - Deckt außer der Rechnung eine weitere echte Lieferung eine Schätzung von P ab, mischt das Kontrafaktum beide
-//   Rechnungen, der Hinweis nennt nur die eine.
-// - Haben die Positionen der Rechnung einen anderen Schlüssel als die Vorlage der Schätzung, wäre die echte
-//   Rechnung anders verteilt worden; der Hinweis kann das nicht wissen (Kommentar in calc.ts).
+// nicht geprüft, je Grund gezählt (Durchsicht #247, Runde 5: eng gefasst):
+// - `secondInvoice`: Außer der Rechnung deckt eine weitere Lieferung eine Schätzung von P ab, die fuel.ts als
+//   Rechnung zählt (Positionen zusammen ≠ 0; eine stornierte mit Summe 0 zählt nicht). Dann mischt das
+//   Kontrafaktum beide Rechnungen, der Hinweis nennt nur die eine.
+// - `mixedKeys`: Die Positionen der Rechnung haben einen anderen Schlüssel als die Vorlage der Schätzung. Die
+//   echte Rechnung wäre anders verteilt worden; der Hinweis sagt dann, dass er nur nähert (Runde 5, G-K2).
+// - `templateUnknown`: Alle Vorlagepositionen der Schätzung sind gelöscht; ihr Schlüssel ist nicht bekannt. Der
+//   Schlüssel einer gelöschten Position kommt aus `itemKey` (beim Anlegen gemerkt), nicht aus dem Bestand.
 // Je Mieter höchstens 1 Cent daneben (beide Seiten sind auf den Cent gerundet).
 type InvStock = Awaited<ReturnType<typeof readStock>>
-function overchargedTenantChecks(r: ReturnType<typeof computeSettlement>, stock: InvStock, closed: readonly { period: string; settlement: unknown }[], where: string, periodOf: (key: string) => NonNullable<ReturnType<typeof periodOfKey>>): void {
+function overchargedTenantChecks(r: ReturnType<typeof computeSettlement>, stock: InvStock, closed: readonly { period: string; settlement: unknown }[], where: string, periodOf: (key: string) => NonNullable<ReturnType<typeof periodOfKey>>, itemKey: ReadonlyMap<string, string>): void {
   const cents = (x: string) => Math.round(Number(x.replace(/\./g, '').replace(',', '.')) * 100)
   const g = (o: unknown, k: string): unknown => (o !== null && typeof o === 'object' ? Reflect.get(o, k) : undefined)
   const arr = (o: unknown, k: string): unknown[] => { const v = g(o, k); return Array.isArray(v) ? v : [] }
@@ -448,10 +451,14 @@ function overchargedTenantChecks(r: ReturnType<typeof computeSettlement>, stock:
     const frozenRows = arr(stored.settlement, 'statements').flatMap((st) => arr(st, 'rows').map((row) => ({ tenant: `${String(g(st, 'tenantName'))} (${String(g(st, 'unitName'))})`, id: String(g(row, 'costItemId')), cents: Number(g(row, 'shareCents')) || 0 })))
     const estimates = stock.fuelDeliveries.filter((x) => x.estimated && frozenRows.some((row) => row.id.startsWith(`fuel:${x.id}:${P}:`)))
     const overlaps = (a: { invoiceFrom: string | null; invoiceTo: string | null }, b: { invoiceFrom: string | null; invoiceTo: string | null }) => !!a.invoiceFrom && !!a.invoiceTo && !!b.invoiceFrom && !!b.invoiceTo && a.invoiceFrom <= b.invoiceTo && b.invoiceFrom <= a.invoiceTo
-    const others = stock.fuelDeliveries.filter((x) => !x.estimated && x.id !== d && estimates.some((e) => overlaps(x, e)))
-    const templateKeys = new Set(frozenRows.filter((row) => estimates.some((e) => row.id.startsWith(`fuel:${e.id}:${P}:`))).map((row) => stock.costItems.find((c) => c.id === row.id.split(':').at(-1))?.key))
-    const invoiceKeys = new Set(stock.costItems.filter((c) => c.fuelDeliveryId === d).map((c) => c.key))
-    if (others.length > 0 || templateKeys.size !== 1 || invoiceKeys.size !== 1 || [...templateKeys][0] !== [...invoiceKeys][0]) { OVERCHARGED.approximate++; continue }
+    const sumOf = (id: string) => stock.costItems.filter((c) => c.fuelDeliveryId === id).reduce((a, c) => a + c.amountCents, 0)
+    const others = stock.fuelDeliveries.filter((x) => !x.estimated && x.id !== d && sumOf(x.id) !== 0 && estimates.some((e) => overlaps(x, e)))
+    const keyOf = (id: string) => stock.costItems.find((c) => c.id === id)?.key ?? itemKey.get(id)
+    const templateIds = frozenRows.filter((row) => estimates.some((e) => row.id.startsWith(`fuel:${e.id}:${P}:`))).map((row) => row.id.split(':').at(-1) ?? '')
+    const templateKeys = new Set(frozenRows.filter((row) => estimates.some((e) => row.id.startsWith(`fuel:${e.id}:${P}:`))).map((row) => keyOf(row.id.split(':').at(-1) ?? '')).filter((k) => k !== undefined))
+    const invoiceKeys = new Set(stock.costItems.filter((c) => c.fuelDeliveryId === d && c.amountCents !== 0).map((c) => c.key))
+    const skip = others.length > 0 ? 'secondInvoice' : templateKeys.size === 0 ? 'templateUnknown' : templateKeys.size !== 1 || invoiceKeys.size !== 1 || [...templateKeys][0] !== [...invoiceKeys][0] ? 'mixedKeys' : null
+    if (skip) { OVERCHARGED.approximate++; OVERCHARGED[skip]++; if (skip === 'mixedKeys' && templateIds.every((id) => stock.costItems.some((c) => c.id === id)) && [...invoiceKeys].some((k) => !templateKeys.has(k))) assert.match(n.text, /nur eine Näherung/, `${where}: Schlüssel gemischt, der Hinweis sagt es nicht`); continue }
     const open: InvStock = { ...stock }
     open.closedSettlements = stock.closedSettlements.filter((c): c is InvStock['closedSettlements'][number] => c.period !== P)
     open.fuelCarryFrozen = stock.fuelCarryFrozen.filter((f) => f.period !== P)
@@ -543,6 +550,8 @@ for (const variant of VARIANTS) {
         })
         const deliveryPlant = new Map(all.map((d) => [d.id, d.plantId]))
         const itemPlant = new Map<string, string>()
+        // Der Schlüssel jeder angelegten Position, auch wenn sie später gelöscht wird (Runde 5, G-K1).
+        const itemKey = new Map<string, string>()
         const keys: string[] = []
         const firstFrom = all.reduce((a, d) => (d.from < a ? d.from : a), all[0]?.from ?? '')
         const lastTo = all.reduce((a, d) => (d.to > a ? d.to : a), '')
@@ -728,6 +737,7 @@ for (const variant of VARIANTS) {
             heatingPlantId: d.plantId, fuelDeliveryId: d.id, taxYear: Number(owner.to.slice(0, 4)), ...participants, ...selfKey,
           }))
           itemPlant.set(id, d.plantId)
+          itemKey.set(id, String(selfKey.key))
           return made
         }
         // Der Tausch am ersten Tag der zweiten Rechnung; er kann abgelehnt werden (abgeschlossene Heizperiode).
@@ -898,7 +908,7 @@ for (const variant of VARIANTS) {
           if (r && variant.capture) unitChecks(r, expectedUnits.get(key), expectedWater.get(key), `${fall}; ${key}`, variant.name)
           if (r && variant.failure) estimateChecks(r, stock.heatingEstimates.filter((e) => e.plantId === 'hp' && e.period === key), bFacts.get(key) ?? null, `${fall}; ${key}`)
           if (r) overchargedChecks(r, `${fall}; ${key}`)
-          if (r) overchargedTenantChecks(r, stock, closed, `${fall}; ${key}`, periodOf)
+          if (r) overchargedTenantChecks(r, stock, closed, `${fall}; ${key}`, periodOf, itemKey)
           const dhwInput = dhwInputs.get(key)
           if (r && variant.dhw && dhwInput) dhwChecks(r, { method: variant.dhw, ...dhwInput, basis: dhwBasis }, `${fall}; ${key}`)
           if (r && variant.self && r.heating?.find((h) => h.plantId === 'hp')?.self?.ok === false) selfBlocked = true
