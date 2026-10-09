@@ -162,11 +162,13 @@ const SEEDS: number[] = process.env.INV_FROM !== undefined || process.env.INV_TO
   : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 16, 81]
 const STEPS = Number(process.env.INV_STEPS ?? 30)
 
-type Variant = { name: string; lazy: boolean; estimate: boolean; two?: boolean; swap?: boolean; self?: boolean; hw?: 'combined' | 'separate'; dhw?: 'volumeFormula' | 'areaFormula'; capture?: 'hca' | 'serviceValues'; offset?: boolean; failure?: boolean }
+type Variant = { name: string; lazy: boolean; estimate: boolean; change?: boolean; two?: boolean; swap?: boolean; self?: boolean; hw?: 'combined' | 'separate'; dhw?: 'volumeFormula' | 'areaFormula'; capture?: 'hca' | 'serviceValues'; offset?: boolean; failure?: boolean }
 const VARIANTS: Variant[] = [
   { name: 'Grundform', lazy: false, estimate: false },
   { name: 'Rechnung kommt später', lazy: true, estimate: false },
-  { name: 'Abschluss mit Schätzung', lazy: true, estimate: true },
+  // Durchsicht #247, Runde 4: mit Mieterwechsel in B am 15.01.2025 (fest, ohne Zufall), damit die Gutschrift je
+  // Mieter bei einer zu hohen Schätzung auch über einen Wechsel geprüft wird.
+  { name: 'Abschluss mit Schätzung', lazy: true, estimate: true, change: true },
   { name: 'Zwei Anlagen', lazy: false, estimate: false, two: true },
   // Durchsicht von #238, I3: Gas wird an einem Tag durch Fernwärme ersetzt; die Rechnungen danach kommen
   // erst nach dem Tausch und gehören der neuen Anlage.
@@ -400,7 +402,7 @@ function totalsOfDelivery(s: unknown, own: ReadonlySet<string>): number {
 // Runde 2 zu Startwert 515: Nennt eine Abrechnung die Gutschrift je Mieter bei zu hoher Schätzung
 // (`fuel.estimate-overcharged`), ist der genannte Gesamtbetrag eine ausgewiesene negative Abweichung
 // (`fuelEstimateDiff`), und die Beträge je Mieter ergeben zusammen höchstens ihn.
-const OVERCHARGED = { checked: 0 }
+const OVERCHARGED = { checked: 0, tenants: 0, approximate: 0 }
 function overchargedChecks(r: ReturnType<typeof computeSettlement>, where: string): void {
   const cents = (x: string) => Math.round(Number(x.replace(/\./g, '').replace(',', '.')) * 100)
   const diffs = r.landlord.rows.flatMap((row) => (row.landlordParts ?? []).filter((p) => p.reason === 'fuelEstimateDiff' && p.cents < 0).map((p) => -p.cents))
@@ -417,6 +419,55 @@ function overchargedChecks(r: ReturnType<typeof computeSettlement>, where: strin
     const list = n.text.match(/, hier: (.*?)\. (Eine Gutschrift|Der Rest)/)?.[1] ?? ''
     const each = [...list.matchAll(/([\d.]+,\d\d) €/g)].map((m) => cents(m[1] ?? ''))
     assert.ok(each.reduce((a, c) => a + c, 0) === total || (each.length === 0 && total === 0), `${where}: Gutschriften je Mieter ${each.join(' + ')} ≠ ${total}`)
+  }
+}
+
+// Durchsicht #247, Runde 4: Die Gutschrift je Mieter wird gegen das **Kontrafaktum** geprüft. Dieselbe Heizperiode P
+// wird offen gerechnet, mit der echten Rechnung statt der Schätzung (eingefrorener Stand und Abschluss von P
+// entfallen). Was ein Mieter dort an den Zeilen der Schätzungen und der Rechnung weniger trägt, hat er zu viel
+// getragen. Geprüft wird nur, wo das Kontrafaktum genau ist; die übrigen Fälle zählen als Näherung und werden
+// nicht geprüft:
+// - Deckt außer der Rechnung eine weitere echte Lieferung eine Schätzung von P ab, mischt das Kontrafaktum beide
+//   Rechnungen, der Hinweis nennt nur die eine.
+// - Haben die Positionen der Rechnung einen anderen Schlüssel als die Vorlage der Schätzung, wäre die echte
+//   Rechnung anders verteilt worden; der Hinweis kann das nicht wissen (Kommentar in calc.ts).
+// Je Mieter höchstens 1 Cent daneben (beide Seiten sind auf den Cent gerundet).
+type InvStock = Awaited<ReturnType<typeof readStock>>
+function overchargedTenantChecks(r: ReturnType<typeof computeSettlement>, stock: InvStock, closed: readonly { period: string; settlement: unknown }[], where: string, periodOf: (key: string) => NonNullable<ReturnType<typeof periodOfKey>>): void {
+  const cents = (x: string) => Math.round(Number(x.replace(/\./g, '').replace(',', '.')) * 100)
+  const g = (o: unknown, k: string): unknown => (o !== null && typeof o === 'object' ? Reflect.get(o, k) : undefined)
+  const arr = (o: unknown, k: string): unknown[] => { const v = g(o, k); return Array.isArray(v) ? v : [] }
+  for (const n of r.notices.filter((x) => x.code === 'fuel.estimate-overcharged')) {
+    const abw = cents(n.text.match(/(?:Die Abweichung beträgt|Die Mieter dieser Heizperiode haben) ([\d.,]+) €/)?.[1] ?? '')
+    const rows = r.landlord.rows.filter((row) => row.costItemId.startsWith('fuel:') && (row.landlordParts ?? []).some((p) => p.reason === 'fuelEstimateDiff' && p.cents === -abw))
+    if (rows.length !== 1) continue
+    const [, d, , P] = (rows[0]?.costItemId ?? '').split(':')
+    const stored = closed.find((c) => c.period === P)
+    const delivery = stock.fuelDeliveries.find((x) => x.id === d)
+    if (!d || !P || !stored || !delivery?.invoiceFrom || !delivery.invoiceTo) continue
+    const frozenRows = arr(stored.settlement, 'statements').flatMap((st) => arr(st, 'rows').map((row) => ({ tenant: `${String(g(st, 'tenantName'))} (${String(g(st, 'unitName'))})`, id: String(g(row, 'costItemId')), cents: Number(g(row, 'shareCents')) || 0 })))
+    const estimates = stock.fuelDeliveries.filter((x) => x.estimated && frozenRows.some((row) => row.id.startsWith(`fuel:${x.id}:${P}:`)))
+    const overlaps = (a: { invoiceFrom: string | null; invoiceTo: string | null }, b: { invoiceFrom: string | null; invoiceTo: string | null }) => !!a.invoiceFrom && !!a.invoiceTo && !!b.invoiceFrom && !!b.invoiceTo && a.invoiceFrom <= b.invoiceTo && b.invoiceFrom <= a.invoiceTo
+    const others = stock.fuelDeliveries.filter((x) => !x.estimated && x.id !== d && estimates.some((e) => overlaps(x, e)))
+    const templateKeys = new Set(frozenRows.filter((row) => estimates.some((e) => row.id.startsWith(`fuel:${e.id}:${P}:`))).map((row) => stock.costItems.find((c) => c.id === row.id.split(':').at(-1))?.key))
+    const invoiceKeys = new Set(stock.costItems.filter((c) => c.fuelDeliveryId === d).map((c) => c.key))
+    if (others.length > 0 || templateKeys.size !== 1 || invoiceKeys.size !== 1 || [...templateKeys][0] !== [...invoiceKeys][0]) { OVERCHARGED.approximate++; continue }
+    const open: InvStock = { ...stock }
+    open.closedSettlements = stock.closedSettlements.filter((c): c is InvStock['closedSettlements'][number] => c.period !== P)
+    open.fuelCarryFrozen = stock.fuelCarryFrozen.filter((f) => f.period !== P)
+    const offen = computeSettlement(snapshotFor(open, 'objekt-1', periodOf(P)), {})
+    const ids = [d, ...estimates.map((e) => e.id)]
+    const mine = (id: string) => ids.some((x) => id.startsWith(`fuel:${x}:`))
+    const expected = new Map<string, number>()
+    for (const row of frozenRows) if (mine(row.id)) expected.set(row.tenant, (expected.get(row.tenant) ?? 0) + row.cents)
+    for (const st of offen.statements) for (const row of st.rows) if (mine(row.costItemId)) expected.set(`${st.tenantName} (${st.unitName})`, (expected.get(`${st.tenantName} (${st.unitName})`) ?? 0) - row.shareCents)
+    const list = n.text.match(/, hier: (.*?)\. (Eine Gutschrift|Der Rest)/)?.[1] ?? ''
+    const named = new Map([...list.matchAll(/(Mieter [^,(]*?\([^)]*\)) ([\d.]+,\d\d) €/g)].map((m) => [m[1] ?? '', cents(m[2] ?? '')]))
+    OVERCHARGED.tenants++
+    for (const [tenant, c] of expected) {
+      assert.ok(Math.abs((named.get(tenant) ?? 0) - c) <= 1, `${where}: Gutschrift ${tenant} ${named.get(tenant) ?? 0}, Kontrafaktum ${c}; ${n.text}`)
+    }
+    for (const tenant of named.keys()) assert.ok(expected.has(tenant), `${where}: ${tenant} genannt, im Kontrafaktum nicht beteiligt; ${n.text}`)
   }
 }
 
@@ -447,7 +498,8 @@ for (const variant of VARIANTS) {
           await createEntity(db, 'units', 'a', { propertyId: 'objekt-1', name: 'A', areaM2: 60, participates: true })
           await createEntity(db, 'units', 'b', { propertyId: 'objekt-1', name: 'B', areaM2: 40, participates: true })
           await createEntity(db, 'tenancies', 'ta', { unitId: 'a', tenantName: 'Mieter A', persons: 1, start: '2020-01-01' })
-          await createEntity(db, 'tenancies', 'tb', { unitId: 'b', tenantName: 'Mieter B', persons: 1, start: '2020-01-01', ...(variant.capture || variant.failure ? { end: CHANGE_END } : {}) })
+          await createEntity(db, 'tenancies', 'tb', { unitId: 'b', tenantName: 'Mieter B', persons: 1, start: '2020-01-01', ...(variant.capture || variant.failure || variant.change ? { end: CHANGE_END } : {}) })
+          if (variant.change) await createEntity(db, 'tenancies', 'tb2', { unitId: 'b', tenantName: 'Mieter B2', persons: 1, start: '2025-01-16' })
           if (variant.capture || variant.failure) await createEntity(db, 'tenancies', 'tb2', { unitId: 'b', tenantName: 'Mieter B2', persons: 1, start: nextStart })
           // Heizung PR 13: zwei weitere Wohnungen, sodass A 30 %, B 20 %, C und D je genau 25 % der Fläche haben.
           if (variant.failure) {
@@ -668,7 +720,9 @@ for (const variant of VARIANTS) {
           // Mit zwei Anlagen verteilt jede Position nur über die Wohnungen ihrer Anlage.
           const participants = variant.two ? { participantUnitIds: d.plantId === 'hp' ? ['a', 'b'] : ['c'] } : {}
           const target = variant.hw === 'combined' ? 'both' : variant.hw === 'separate' ? (rnd() < 0.5 ? 'heating' : 'water') : 'heating'
-          const selfKey = variant.self ? { key: 'heatingSystem', heatingPart: 'fuel', heatingTarget: target } : { key }
+          // Mit Mieterwechsel (Runde 4) alle Positionen nach Fläche, damit die Gutschrift je Mieter genau gegen das
+          // Kontrafaktum geprüft werden kann; die Zufallsfolge bleibt dieselbe.
+          const selfKey = variant.self ? { key: 'heatingSystem', heatingPart: 'fuel', heatingTarget: target } : { key: variant.change ? 'area' : key }
           const made = await opened.write((db) => createEntity(db, 'costItems', id, {
             propertyId: 'objekt-1', period: owner.key, category: HEATING_CATEGORY, description: id, amountCents,
             heatingPlantId: d.plantId, fuelDeliveryId: d.id, taxYear: Number(owner.to.slice(0, 4)), ...participants, ...selfKey,
@@ -844,6 +898,7 @@ for (const variant of VARIANTS) {
           if (r && variant.capture) unitChecks(r, expectedUnits.get(key), expectedWater.get(key), `${fall}; ${key}`, variant.name)
           if (r && variant.failure) estimateChecks(r, stock.heatingEstimates.filter((e) => e.plantId === 'hp' && e.period === key), bFacts.get(key) ?? null, `${fall}; ${key}`)
           if (r) overchargedChecks(r, `${fall}; ${key}`)
+          if (r) overchargedTenantChecks(r, stock, closed, `${fall}; ${key}`, periodOf)
           const dhwInput = dhwInputs.get(key)
           if (r && variant.dhw && dhwInput) dhwChecks(r, { method: variant.dhw, ...dhwInput, basis: dhwBasis }, `${fall}; ${key}`)
           if (r && variant.self && r.heating?.find((h) => h.plantId === 'hp')?.self?.ok === false) selfBlocked = true
@@ -997,6 +1052,7 @@ test('Invariante, Gutschrift je Mieter bei zu hoher Schätzung: Abdeckung', () =
   // Nur in langen Läufen; die festen Startwerte erzeugen den Hinweis nicht sicher.
   if (SEEDS.length < 100) return
   assert.ok(OVERCHARGED.checked > 0, 'kein Hinweis fuel.estimate-overcharged geprüft')
+  assert.ok(OVERCHARGED.tenants > 0, 'keine Gutschrift je Mieter gegen das Kontrafaktum geprüft')
 })
 
 test('Invariante, Kesseltausch: Abdeckung', () => {
