@@ -4212,55 +4212,25 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       } else {
         // Zu hoch geschätzt (A4, B9): Ein Rückzahlungsanspruch folgt daraus nicht sicher (Einwendungsfrist,
         // § 556 Abs. 3 Satz 5 und 6 BGB); eine Gutschrift ist jederzeit zulässig.
-        // Je Mieter (Durchsicht #247, G-W2): sein Anteil an der Schätzung **in den Tagen, die die Rechnung
-        // abdeckt**. Die eingefrorene Übertragszeile eines Mietverhältnisses ist über seine Tage in der
-        // Heizperiode verteilt; davon zählt der Teil seiner Tage im abgedeckten Zeitraum. Wer dort nicht wohnte,
-        // bekommt nichts (vorher je Mieter im Verhältnis der ganzen Zeile, auch für B1, der vor dem abgedeckten
-        // Zeitraum ausgezogen war). Je Schätzung zählt ihr abgedeckter Betrag (`frozen` × `ratios`), damit mehrere
-        // Schätzungen mit ihrem Gewicht eingehen. Was im abgedeckten Zeitraum beim Vermieter lag (Leerstand),
-        // bekommt kein Mieter; der Text nennt dann nur den Teil der Mieter (G-K2). Verteilt wird nach dem
+        // Je Mieter sein Anteil an den eingefrorenen Zeilen der Schätzung, je Schätzung mit dem Teil, den die
+        // Rechnung abdeckt (`ratios`): Gutschrift = Zeile × ratio × (−diff) / E. Das ist genau, was er ohne die
+        // Schätzung weniger getragen hätte, denn die echte Rechnung wäre nach demselben Schlüssel über dieselbe
+        // Heizperiode verteilt worden, je Mietverhältnis nach seinen Tagen darin, gleich wann der Brennstoff
+        // verbraucht wurde (Durchsicht #247, Runde 4: Die Aufteilung nach Mietzeit im abgedeckten Zeitraum aus
+        // Runde 3 war falsch und ist zurückgenommen). Genähert ist es nur, wenn die Positionen der echten
+        // Rechnung einen anderen Schlüssel haben als die Vorlage der Schätzung. Zeilen des Vermieters
+        // (Leerstand) sind keine Mieterzeilen; ihren Teil nennt der Text als Rest (G-K2). Verteilt wird nach dem
         // Restverfahren, die Beträge ergeben zusammen nie mehr als die Abweichung.
         const est = carry.estimate
-        const dayNo = (iso: string) => Math.round(Date.parse(`${iso}T00:00:00Z`) / 86400000)
-        const daysOfSpan = (from: string, to: string) => (to < from ? 0 : dayNo(to) - dayNo(from) + 1)
-        const maxIso = (a: string, b: string) => (a > b ? a : b)
-        const minIso = (a: string, b: string) => (a < b ? a : b)
-        const P = carry.other
-        const covered = est.frozen.map((f, k) => f * (est.ratios[k] ?? 0))
-        const coveredAll = covered.reduce((a, v) => a + v, 0)
-        // Je Schätzung zuerst die Teile der Mieter im abgedeckten Zeitraum; ihr Nenner ist, was die Schätzung dort
-        // allen zugeteilt hat. Bei voller Vermietung sind das die Teile der Mieter selbst (die eingefrorenen
-        // Zeilen sind auf den Cent gerundet, daher die Toleranz von einem halben Cent je Zeile), sonst der
-        // Betrag der Schätzung für diese Tage nach Tagen (der Rest lag beim Vermieter, etwa Leerstand).
-        const portions = new Map<number, { tenancyId: string; name: string; portion: number }[]>()
+        const coveredAll = est.frozen.reduce((a, f, k) => a + f * (est.ratios[k] ?? 0), 0)
+        const factor = coveredAll !== 0 ? -diff / coveredAll : 0
+        const byTenant = new Map<string, { name: string; exact: number }>()
         for (const row of other.fuelRows) {
           const k = est.ids.findIndex((id) => row.costItemId.startsWith(`fuel:${id}:`))
-          const cut = est.cuts[k]
-          if (k < 0 || !cut) continue
-          const t = snapshot.tenancies.find((x) => x.id === row.tenancyId)
-          const from = t?.start ?? P.from
-          const to = t?.end ?? P.to
-          const inP = daysOfSpan(maxIso(from, P.from), minIso(to, P.to))
-          const inCut = daysOfSpan(maxIso(from, cut.from), minIso(to, cut.to))
-          if (inP === 0) continue
-          const list = portions.get(k) ?? []
-          list.push({ tenancyId: row.tenancyId, name: `${row.tenantName} (${row.unitName})`, portion: (row.shareCents * inCut) / inP })
-          portions.set(k, list)
-        }
-        const byTenant = new Map<string, { name: string; exact: number }>()
-        for (const [k, list] of portions) {
-          const cut = est.cuts[k]
-          const f = est.frozen[k] ?? 0
-          if (!cut || f === 0 || coveredAll === 0) continue
-          const allocated = (f * daysOfSpan(cut.from, cut.to)) / daysOfSpan(P.from, P.to)
-          const tenants = list.reduce((a, x) => a + x.portion, 0)
-          const all = Math.abs(allocated) - Math.abs(tenants) <= list.length * 0.5 ? tenants : allocated
-          if (all === 0) continue
-          for (const x of list) {
-            const entry = byTenant.get(x.tenancyId) ?? { name: x.name, exact: 0 }
-            entry.exact += (-diff * ((covered[k] ?? 0) / coveredAll) * x.portion) / all
-            byTenant.set(x.tenancyId, entry)
-          }
+          if (k < 0) continue
+          const entry = byTenant.get(row.tenancyId) ?? { name: `${row.tenantName} (${row.unitName})`, exact: 0 }
+          entry.exact += row.shareCents * (est.ratios[k] ?? 0) * factor
+          byTenant.set(row.tenancyId, entry)
         }
         const entries = [...byTenant.entries()]
         const credit = Math.max(0, Math.min(-diff, Math.round(entries.reduce((a, [, e]) => a + e.exact, 0))))

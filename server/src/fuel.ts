@@ -237,9 +237,8 @@ export type FuelCarry = {
   templates: { itemId: string; raw: number }[]
   // `ratios[k]`: der Anteil der eingefrorenen Schätzung `ids[k]`, den die Rechnung abdeckt (nach Gradtagen); nur
   // dieser Teil ihrer Zeilen ist mit der Rechnung zu vergleichen (Invariante, Startwert 515). `frozen[k]`: ihr
-  // eingefrorener Betrag, `cuts[k]`: die Tage, die die Rechnung von ihr abdeckt (Durchsicht #247, G-W2: die
-  // Gutschrift je Mieter richtet sich nach seiner Mietzeit darin).
-  estimate: { cents: number; ids: string[]; ratios: number[]; frozen: number[]; cuts: DayRange[] } | null
+  // eingefrorener Betrag.
+  estimate: { cents: number; ids: string[]; ratios: number[]; frozen: number[] } | null
 }
 
 export type FuelResult = {
@@ -386,7 +385,6 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
       const ids: string[] = []
       const ratios: number[] = []
       const frozenCents: number[] = []
-      const cuts: DayRange[] = []
       for (const e of input.deliveries.filter((x) => x.estimated)) {
         const er = rangeOf(e)
         const f = frozenOf(e.id, other.key)
@@ -399,9 +397,8 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
         ids.push(e.id)
         ratios.push(ratio)
         frozenCents.push(f.cents)
-        cuts.push(cut)
       }
-      return { cents: roundHalf(cents), ids, ratios, frozen: frozenCents, cuts }
+      return { cents: roundHalf(cents), ids, ratios, frozen: frozenCents }
     }
     for (const d of effective) {
       const r = rangeFor(d)
@@ -464,7 +461,7 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
           if (!f || f.cents === 0) {
             // Mit Schätzung abgeschlossen (Nachprüfung von 47f2373, M2): Die Mieter jener Heizperiode haben
             // die Schätzung getragen; die Abweichung ist die ganze Schätzung, wie X − Schätzung bei X = 0.
-            const est = f ? { cents: 0, ids: [], ratios: [], frozen: [], cuts: [] } : input.closed.has(other.key) ? estimatesIn(other, r) : { cents: 0, ids: [], ratios: [], frozen: [], cuts: [] }
+            const est = f ? { cents: 0, ids: [], ratios: [], frozen: [] } : input.closed.has(other.key) ? estimatesIn(other, r) : { cents: 0, ids: [], ratios: [], frozen: [] }
             if (est.cents === 0) continue
             carries.push({
               deliveryId: d.id, kind: 'out', other, cents: 0, totalCents: 0, ratio: 0, method: 'inside', frozen: true, zeroFrozen: false, cancelled: est.cents,
