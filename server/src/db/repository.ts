@@ -41,7 +41,7 @@ import type { BillingPeriod, CostItem, ExternalBasis, HeatingPlant, HeatingPrepa
 import { CALENDAR_RULES, calendarPeriod, paymentYear, formatDayRange, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, spansTwoYears, startYearOf } from '../../../shared/period.ts'
 import { heatingPeriodsEndingIn, isObjectPeriod, plantRules, plantSpan, servesUnit, spanOf } from '../../../shared/heatingPeriod.ts'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
-import { GENERAL_POWER_CATEGORY } from '../../../shared/operatingPower.ts'
+import { GENERAL_POWER_CATEGORY, POWER_GENERATED } from '../../../shared/operatingPower.ts'
 import { targetProblem } from '../heating.ts'
 import { andList } from '../../../shared/wording.ts'
 import type { MigratedSettings } from '../ai/settings.ts'
@@ -1176,7 +1176,14 @@ async function guardOperatingPower(db: Executor, before: CostItem | null, after:
     if (!(after.amountCents > 0)) {
       throw new HeatingError(400, `„${after.description}“ ist als Betriebsstrom gekennzeichnet, der auch im Allgemeinstrom steckt, und braucht deshalb einen positiven Betrag.`)
     }
-    if (after.heatingPart !== undefined && after.heatingPart !== 'operating') {
+    if (after.heatingPart === 'fuel') {
+      // R-W2 (Durchsicht von #252): Strom zur Wärmeerzeugung über den Hauszähler gibt es nur bei einer
+      // Anlage, die mit Strom heizt.
+      const [p] = after.heatingPlantId ? await db.select({ energy: heatingPlants.energy }).from(heatingPlants).where(eq(heatingPlants.id, after.heatingPlantId)) : []
+      if (!p || !POWER_GENERATED.includes(p.energy)) {
+        throw new HeatingError(400, `„${after.description}“ ist Brennstoff/Energie einer Anlage, die nicht mit Strom heizt; „steckt auch im Allgemeinstrom“ gibt es beim Teil „Brennstoff/Energie“ nur für den Strom einer Wärmepumpe oder Stromheizung.`)
+      }
+    } else if (after.heatingPart !== undefined && after.heatingPart !== 'operating') {
       throw new HeatingError(400, `„${after.description}“ ist als Teil der Heizkosten nicht „Betrieb“; Betriebsstrom gibt es nur beim Teil „Betrieb“ oder ohne Teil.`)
     }
   }

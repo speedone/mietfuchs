@@ -5,10 +5,12 @@
 // Betriebsstrom.
 import { deductionChoiceOf, deductionChoices, generalChoices, OPERATING_POWER_OPTIONS, showsDeductionLink, showsOperatingPower, withDeductionChoice, withGeneralChoice, type ItemForm } from '../costForm'
 import Term from './Term'
-import type { CostItem } from '../types'
+import type { CostItem, HeatingEnergy } from '../types'
 
-export default function OperatingPowerFields({ form, items, periodKey, onChange }: { form: ItemForm; items: readonly CostItem[]; periodKey: string; onChange: (next: ItemForm) => void }) {
-  const heating = showsOperatingPower(form)
+// `plantEnergy`: die Energie der Anlage der Heizposition (R-W2: Strom zur Wärmeerzeugung bei Wärmepumpe und Stromheizung).
+export default function OperatingPowerFields({ form, items, periodKey, plantEnergy, onChange }: { form: ItemForm; items: readonly CostItem[]; periodKey: string; plantEnergy?: HeatingEnergy; onChange: (next: ItemForm) => void }) {
+  const heating = showsOperatingPower(form, plantEnergy)
+  const generation = form.heatingPart === 'fuel'
   const deduction = showsDeductionLink(form)
   if (!heating && !deduction) return null
   const marked = (heating && form.operatingPower === 'included') || (deduction && form.operatingPower === 'deduction')
@@ -16,14 +18,24 @@ export default function OperatingPowerFields({ form, items, periodKey, onChange 
     <>
       {heating && (
         <label className="field">
-          <span>Läuft dieser <Term id="operatingPower">Betriebsstrom</Term> über den Stromzähler des Hauses?</span>
+          {generation
+            ? <span>Läuft dieser Strom über den Stromzähler des Hauses?</span>
+            : <span>Läuft dieser <Term id="operatingPower">Betriebsstrom</Term> über den Stromzähler des Hauses?</span>}
           <select value={form.operatingPower === 'included' ? 'included' : ''} onChange={(e) => onChange({ ...form, operatingPower: e.target.value === 'included' ? 'included' : '' })}>
             {OPERATING_POWER_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
-          <small className="muted">
-            Dann gehört er zu den Heiz- und Warmwasserkosten, oder Sie tragen ihn selbst; im Allgemeinstrom darf er nicht stehen (§ 7 Abs. 2, § 8 Abs. 2 HeizkostenV; BGH, Urteil vom 03.06.2016, V ZR 166/15).
-            Ziehen Sie ihn dort ab, etwa mit der Karte „Betriebsstrom“ auf der Seite Heizkosten.
-          </small>
+          {generation ? (
+            <small className="muted">
+              Dann steckt der Strom der Wärmepumpe oder des Elektrokessels auch in der Rechnung des Allgemeinstroms und ist dort abzuziehen. Die
+              Heizkostenverordnung nennt ihn neben den Brennstoffen (§ 7 Abs. 2, § 8 Abs. 2 HeizkostenV); dass er wie der Betriebsstrom herauszurechnen ist, ist
+              eine Auslegung von Mietfuchs. Verknüpfen Sie den Abzug beim Allgemeinstrom mit dieser Position.
+            </small>
+          ) : (
+            <small className="muted">
+              Dann gehört er zu den Heiz- und Warmwasserkosten, oder Sie tragen ihn selbst; im Allgemeinstrom darf er nicht stehen (§ 7 Abs. 2, § 8 Abs. 2 HeizkostenV; BGH, Urteil vom 03.06.2016, V ZR 166/15).
+              Ziehen Sie ihn dort ab, etwa mit der Karte „Betriebsstrom“ auf der Seite Heizkosten.
+            </small>
+          )}
         </label>
       )}
       {deduction && (

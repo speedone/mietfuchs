@@ -102,14 +102,20 @@ test('Selbst geschätzt: ohne Grundlage, ohne Betrag oder über der Stromrechnun
   assert.equal(fehler({ cents: 105000, basis: 'x', billCents: 105000 }), '')
 })
 
-// P-W5 mit R2-W1: Bei Wärmepumpe und Stromheizung ist nur der Strom des Erzeugers selbst Brennstoff
-// (§ 7 Abs. 2 HeizkostenV); Umwälzpumpen und Regelung über den Hauszähler bleiben Betriebsstrom und
-// sind beim Allgemeinstrom abzuziehen (§ 7 Abs. 2, § 8 Abs. 2 HeizkostenV; V ZR 166/15 Rn. 13).
+// P-W5, R2-W1, R-W2 (Durchsicht von #252): § 7 Abs. 2 HeizkostenV nennt seit dem 01.10.2024 die „Kosten des
+// zur Wärmeerzeugung verbrauchten Stroms“ neben den Brennstoffen; der Strom ist also kein Brennstoff, aber
+// auch kein Betriebsstrom. Dass er aus dem Allgemeinstrom herauszurechnen ist, ist eine Auslegung.
+// Umwälzpumpen und Regelung über den Hauszähler bleiben Betriebsstrom (V ZR 166/15 Rn. 13).
 test('Wärmepumpe und Stromheizung: keine Schätzhilfe, eigener Satz mit dem Weg für Pumpen und Regelung; jede andere Energie: Hilfe', () => {
   for (const [energy, erzeuger] of [['heatPump', 'Wärmepumpe'], ['electric', 'Stromheizung']] as const) {
     const satz = operatingPowerRefusal(energy) ?? assert.fail(`${energy}: keine Ablehnung`)
-    assert.match(satz, new RegExp(`Bei einer ${erzeuger} ist der Strom, den .* selbst verbraucht, Brennstoff und kein Betriebsstrom \\(§ 7 Abs\\. 2 HeizkostenV\\)`))
-    assert.match(satz, /als Brennstoffkosten in die Heizposition/)
+    assert.match(satz, new RegExp(`Bei einer ${erzeuger} gehört der Strom, den .* zur Wärmeerzeugung verbraucht, zu den Heiz- und Warmwasserkosten, und zwar nicht als Betriebsstrom`))
+    assert.match(satz, /seit dem 01\.10\.2024 eigens neben den Brennstoffen \(„Kosten des zur Wärmeerzeugung verbrauchten Stroms“, § 7 Abs\. 2, § 8 Abs\. 2 HeizkostenV\)/)
+    assert.match(satz, /Teil „Brennstoff\/Energie“/)
+    assert.match(satz, /ist eine Auslegung von Mietfuchs/)
+    // R-W2: Den Abzug für diesen Strom kann Mietfuchs jetzt mit der Heizposition verknüpfen.
+    assert.match(satz, /kennzeichnen Sie die Heizposition im Kostenformular/)
+    assert.doesNotMatch(satz, /Brennstoff und kein Betriebsstrom|ist der Strom Brennstoff|Kosten der verbrauchten Brennstoffe|noch nicht mit der Heizposition verknüpfen/)
     assert.match(satz, /Umwälzpumpen oder Regelung/)
     assert.match(satz, /beim Allgemeinstrom abzuziehen \(§ 7 Abs\. 2, § 8 Abs\. 2 HeizkostenV; BGH, Urteil vom 03\.06\.2016, V ZR 166\/15, Rn\. 13\)/)
     assert.match(satz, /im Kostenformular als Betriebsstrom/)

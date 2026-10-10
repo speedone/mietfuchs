@@ -79,7 +79,7 @@ test('Prüfbedingungen: Betriebsstrom nur an Heizkosten (Teil Betrieb), Abzug nu
       `INSERT INTO cost_items (id, property_id, period, category, description, amount_cents, key${extra}) VALUES ('${id}', 'objekt-1', '2025-01', '${category}', 'x', ${amount}, 'area'${values})`
     assert.equal(rejects(c, insert('bs', 'Heizung und Warmwasser', 14784, ', heating_part, operating_power', ", 'operating', 'included'")), null)
     assert.equal(rejects(c, insert('bs2', 'Heizung und Warmwasser', 14784, ', operating_power', ", 'included'")), null)
-    assert.match(rejects(c, insert('a', 'Heizung und Warmwasser', 1, ', heating_part, operating_power', ", 'fuel', 'included'")) ?? '', /cost_items_operating_power_included_valid/)
+    assert.match(rejects(c, insert('a', 'Heizung und Warmwasser', 1, ', heating_part, operating_power', ", 'metering', 'included'")) ?? '', /cost_items_operating_power_included_valid/)
     assert.match(rejects(c, insert('b', 'Grundsteuer', 1, ', operating_power', ", 'included'")) ?? '', /cost_items_operating_power_included_valid/)
     assert.match(rejects(c, insert('d', 'Beleuchtung/Allgemeinstrom', 100, ', operating_power, operating_power_general_id', ", 'deduction', 'bs'")) ?? '', /cost_items_operating_power_deduction_valid/)
     assert.match(rejects(c, insert('e', 'Gebäudereinigung', -100, ', operating_power, operating_power_general_id', ", 'deduction', 'bs'")) ?? '', /cost_items_operating_power_deduction_valid/)
@@ -263,7 +263,7 @@ test('Schätzhilfe bei Wärmepumpe und Stromheizung: 400 mit dem Satz zum Brenns
       await opened.write((db) => createHeatingPlant(db, 'hp', 'objekt-1', { energy, method: 'service' }))
       await opened.write((db) => createEntity(db, 'costItems', 'strom', strom))
       await assert.rejects(opened.write((db) => bookOperatingPower(db, 'hp', schaetzung(), ids)),
-        (e: unknown) => e instanceof HeatingError && e.status === 400 && /selbst verbraucht, Brennstoff und kein Betriebsstrom/.test(e.message) && /Umwälzpumpen oder Regelung/.test(e.message))
+        (e: unknown) => e instanceof HeatingError && e.status === 400 && /zur Wärmeerzeugung verbraucht, zu den Heiz- und Warmwasserkosten, und zwar nicht als Betriebsstrom/.test(e.message) && /Umwälzpumpen oder Regelung/.test(e.message))
       assert.equal((await markierte(opened)).length, 0, energy)
     })
   }
@@ -604,4 +604,25 @@ test('G-K4: „included“ nur mit positivem Betrag; Bedingung und Wächter mit 
   } finally {
     fs.rmSync(dir, { recursive: true, force: true })
   }
+})
+
+// ---------- Durchsicht von #252, R-W2: Strom zur Wärmeerzeugung über den Hauszähler ----------
+
+test('R-W2: der Abzug darf auf die Strom-Position (Teil „Brennstoff“) einer Wärmepumpe oder Stromheizung zeigen, mit denselben Prüfungen; bei Gas nicht', async () => {
+  for (const energy of ['heatPump', 'electric'] as const) {
+    await withDatabase(async (opened) => {
+      await opened.write((db) => createHeatingPlant(db, 'hp', 'objekt-1', { energy, method: 'manual' }))
+      await opened.write((db) => createEntity(db, 'costItems', 'wp', heizung({ description: 'Strom der Wärmepumpe', heatingPart: 'fuel', amountCents: 60000, heatingPlantId: 'hp' })))
+      const ab = await opened.write((db) => createEntity(db, 'costItems', 'ab', abzug('wp', { amountCents: -60000 })))
+      assert.deepEqual([fieldOf(ab, 'operatingPowerItemId'), fieldOf(ab, 'operatingPowerGeneralId')], ['wp', 'hausstrom'], energy)
+      // Dieselben Prüfungen: kein Objektwechsel, solange der Abzug auf die Position zeigt.
+      await opened.write((db) => createProperty(db, 'objekt-2', { name: 'Zweites Haus' }))
+      await assert.rejects(opened.write((db) => updateEntity(db, 'costItems', 'wp', { propertyId: 'objekt-2', heatingPlantId: null, heatingPart: null })), (e: unknown) => e instanceof CrossPropertyError)
+    })
+  }
+  await withDatabase(async (opened) => {
+    await opened.write((db) => createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'gas', method: 'manual' }))
+    await assert.rejects(opened.write((db) => createEntity(db, 'costItems', 'gas', heizung({ description: 'Gas', heatingPart: 'fuel', heatingPlantId: 'hp' }))),
+      (e: unknown) => e instanceof HeatingError && e.status === 400 && /Wärmepumpe oder Stromheizung/.test(e.message))
+  })
 })

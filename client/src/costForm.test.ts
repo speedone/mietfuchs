@@ -767,3 +767,18 @@ test('Betriebsstrom: Abzug wählt seine Stromrechnung desselben Zeitraums und ü
   expect(withOperatingPower({}, mit)).toMatchObject({ operatingPower: 'deduction', operatingPowerGeneralId: 'strom' })
   expect(withGeneralChoice(mit, '', [strom]).operatingPowerGeneralId).toBe('')
 })
+
+// Durchsicht von #252, R-W2: Bei Wärmepumpe und Stromheizung fragt das Formular auch an der Strom-Position
+// (Teil „Brennstoff“), ob sie über den Zähler des Hauses läuft; bei Gas nicht.
+test('Betriebsstrom: Strom zur Wärmeerzeugung bei Wärmepumpe und Stromheizung lässt sich kennzeichnen', () => {
+  const wp = { ...EMPTY_ITEM_FORM, category: 'Heizung und Warmwasser', heatingPart: 'fuel' as const, operatingPower: 'included' as const }
+  expect(showsOperatingPower(wp, 'heatPump')).toBe(true)
+  expect(showsOperatingPower(wp, 'electric')).toBe(true)
+  expect(showsOperatingPower(wp, 'gas')).toBe(false)
+  expect(showsOperatingPower(wp)).toBe(false)
+  expect(withOperatingPower({}, wp, 'heatPump')).toMatchObject({ operatingPower: 'included' })
+  expect(withOperatingPower({}, wp, 'gas')).toMatchObject({ operatingPower: null })
+  const built = buildBody({ ...wp, amount: '600,00', description: 'Strom der Wärmepumpe' }, [], 2025, undefined, 'heatPump')
+  if ('error' in built) throw new Error(built.error)
+  expect(built.body.operatingPower).toBe('included')
+})
