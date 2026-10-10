@@ -649,3 +649,22 @@ test('G2-N-W2: Objekt Mai–April mit Anlage im Kalenderjahr: Abzug im Steuerjah
     assert.deepEqual([await steuer(2025), await steuer(2026)], vorher)
   })
 })
+
+// ---------- Nachprüfung von #252, G2-K1: dieselbe Summenregel im Kostenformular ----------
+
+test('G2-K1: Abzüge über der Stromrechnung lehnt auch das Kostenformular ab, beim Abzug wie beim Verkleinern der Rechnung', async () => {
+  await withDatabase(async (opened) => {
+    // Hausstrom 1.050,00 €: ein Handabzug von 1.200,00 € ist zu viel.
+    await assert.rejects(opened.write((db) => createEntity(db, 'costItems', 'hand', abzug(null, { amountCents: -120000 }))),
+      (e: unknown) => e instanceof HeatingError && e.status === 400 && /1\.200,00 €/.test(e.message) && /1\.050,00 €/.test(e.message))
+    await opened.write((db) => createEntity(db, 'costItems', 'a1', abzug(null, { amountCents: -30000 })))
+    await assert.rejects(opened.write((db) => createEntity(db, 'costItems', 'a2', abzug(null, { amountCents: -80000 }))),
+      (e: unknown) => e instanceof HeatingError && e.status === 400 && /mehr als die Rechnung/.test(e.message))
+    await assert.rejects(opened.write((db) => updateEntity(db, 'costItems', 'a1', { amountCents: -110000 })),
+      (e: unknown) => e instanceof HeatingError && e.status === 400 && /mehr als die Rechnung/.test(e.message))
+    // Nach einer Buchung von 300 € lässt sich die Rechnung nicht auf 100 € verkleinern.
+    await assert.rejects(opened.write((db) => updateEntity(db, 'costItems', 'hausstrom', { amountCents: 10000 })),
+      (e: unknown) => e instanceof HeatingError && e.status === 400 && /300,00 €/.test(e.message))
+    await opened.write((db) => updateEntity(db, 'costItems', 'hausstrom', { amountCents: 30000 }))
+  })
+})

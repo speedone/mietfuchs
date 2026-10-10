@@ -41,7 +41,7 @@ import type { BillingPeriod, CostItem, ExternalBasis, HeatingPlant, HeatingPrepa
 import { CALENDAR_RULES, calendarPeriod, paymentYear, formatDayRange, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, spansTwoYears, startYearOf } from '../../../shared/period.ts'
 import { heatingPeriodsEndingIn, isObjectPeriod, plantRules, plantSpan, servesUnit, spanOf } from '../../../shared/heatingPeriod.ts'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
-import { GENERAL_POWER_CATEGORY, POWER_GENERATED } from '../../../shared/operatingPower.ts'
+import { euro as operatingPowerEuro, GENERAL_POWER_CATEGORY, POWER_GENERATED } from '../../../shared/operatingPower.ts'
 import { targetProblem } from '../heating.ts'
 import { andList } from '../../../shared/wording.ts'
 import type { MigratedSettings } from '../ai/settings.ts'
@@ -1251,6 +1251,16 @@ async function guardDeductionSource(db: Executor, after: CostItem, options: Cost
   if (g.period !== after.period && !options.periodChange) {
     throw new HeatingError(400, `Ein Abzug steht im selben Zeitraum wie seine Stromrechnung „${g.description}“.`)
   }
+  // Nachprüfung von #252, G2-K1: dieselbe Summenregel wie in der Schätzhilfe. Beim Zeitraumwechsel gilt sie
+  // für den Endstand (`settleOperatingPowerLinks`).
+  if (!options.periodChange) {
+    const others = await db.select({ amountCents: costItems.amountCents }).from(costItems)
+      .where(and(eq(costItems.operatingPowerGeneralId, after.operatingPowerGeneralId), ne(costItems.id, after.id)))
+    const deducted = -others.reduce((a, c) => a + c.amountCents, 0) - after.amountCents
+    if (deducted > g.amountCents) {
+      throw new HeatingError(400, `Aus der Stromrechnung „${g.description}“ (${operatingPowerEuro(g.amountCents)}) wären damit ${operatingPowerEuro(deducted)} abgezogen, mehr als die Rechnung. Prüfen Sie die Abzüge.`)
+    }
+  }
 }
 
 // Die Abzüge, die aus einer Stromrechnung gerechnet wurden (G-K3).
@@ -1263,7 +1273,16 @@ async function deductionsFrom(db: Executor, generalId: string): Promise<string[]
 async function guardGeneralWithDeductions(db: Executor, before: CostItem | null, after: CostItem, options: CostItemGuardOptions = {}): Promise<void> {
   if (!before || before.category !== GENERAL_POWER_CATEGORY || before.operatingPower !== undefined) return
   const stillGeneral = after.category === GENERAL_POWER_CATEGORY && after.amountCents > 0 && after.operatingPower === undefined && (after.period === before.period || options.periodChange === true)
-  if (stillGeneral) return
+  if (stillGeneral) {
+    // G2-K1: Die Rechnung wird nicht kleiner als die Abzüge aus ihr (beim Zeitraumwechsel: Endstand).
+    if (options.periodChange || after.amountCents >= before.amountCents) return
+    const abgezogen = -(await db.select({ amountCents: costItems.amountCents }).from(costItems).where(eq(costItems.operatingPowerGeneralId, after.id)))
+      .reduce((a, c) => a + c.amountCents, 0)
+    if (abgezogen > after.amountCents) {
+      throw new HeatingError(400, `Aus „${before.description}“ sind ${operatingPowerEuro(abgezogen)} abgezogen; die Rechnung kann nicht kleiner sein. Ändern Sie zuerst die Abzüge.`)
+    }
+    return
+  }
   const abzuege = await deductionsFrom(db, after.id)
   if (abzuege.length > 0) {
     throw new HeatingError(400, `Aus „${before.description}“ ist der Abzug ${abzuege.join(', ')} gerechnet. Kostenart, Zeitraum und positiver Betrag der Stromrechnung bleiben, solange er besteht; löschen oder ändern Sie zuerst den Abzug.`)
