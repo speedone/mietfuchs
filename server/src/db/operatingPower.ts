@@ -87,9 +87,12 @@ export async function bookOperatingPower(db: Database, plantId: string, body: un
     throw new HeatingError(400, `Die Stromrechnung „${general.description}“${generalPeriod ? ` (${periodLabel(generalPeriod)})` : ''} liegt nicht in der Heizperiode ${periodLabel(h)}; den Betriebsstrom dieser Heizperiode enthält sie nicht. Wählen Sie die Stromrechnung, deren Zeitraum sich mit der Heizperiode überschneidet.`)
   }
   // G-K1, G-K2: Betriebsstrom und Abzug sind eine Umbuchung aus der Stromrechnung und zählen in der
-  // Steuer zu deren Jahr. Angegeben wird es nur, wo der Zeitraum zwei Kalenderjahre berührt; sonst ist es
-  // das Jahr des Zeitraums (repository.ts).
+  // Steuer zu einem Jahr. Berührt die Heizperiode zwei Kalenderjahre, ist es das der Stromrechnung; sonst
+  // ist es das Jahr der Heizperiode, und führend ist dann der Betriebsstrom (G2-N-W2): Sein Jahr lässt sich
+  // nicht anders stellen, der Abzug bekommt dasselbe. Angegeben wird es nur, wo ein Zeitraum zwei
+  // Kalenderjahre berührt; sonst ist es das Jahr des Zeitraums (repository.ts).
   const taxYear = general.taxYear ?? startYearOf(general.period)
+  const heatingTaxYear = spansTwoYears(h) ? taxYear : Number(h.from.slice(0, 4))
   if (general.key === 'amounts') {
     throw new HeatingError(400, 'Der Allgemeinstrom ist nach Einzelbeträgen verteilt; einen Abzug in derselben Verteilung gibt es nicht. Ziehen Sie den Betriebsstrom bitte in den Beträgen selbst ab.')
   }
@@ -161,7 +164,8 @@ export async function bookOperatingPower(db: Database, plantId: string, body: un
     // P-K9: Beim Messdienst hat der Abzug kein Gegenstück in Mietfuchs; die Beschreibung sagt, wohin der
     // Betrag gehört. Meldet der Vermieter ihn nicht, trägt er ihn selbst (zulässig, V ZR 166/15 Rn. 15).
     description: `Abzug Betriebsstrom Heizung (${how})${plant.method === 'service' ? ', an Messdienst gemeldet' : ''}`,
-    amountCents: -share.cents, ...distributionOf(general), ...(spansTwoYears(generalPeriod) ? { taxYear } : {}),
+    amountCents: -share.cents, ...distributionOf(general),
+    ...(spansTwoYears(generalPeriod) ? { taxYear: heatingBody ? heatingTaxYear : taxYear } : {}),
     operatingPower: 'deduction', operatingPowerBasis, operatingPowerGeneralId: general.id, ...(heatingId ? { operatingPowerItemId: heatingId } : {}),
   }
   await db.transaction(async (tx) => {

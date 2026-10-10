@@ -10,7 +10,8 @@ import { applyMigrations, connect, loadMigrations, type Connection } from '../sr
 import { eq } from 'drizzle-orm'
 import { createHeatingPlant } from '../src/db/heating.ts'
 import { bookOperatingPower } from '../src/db/operatingPower.ts'
-import { readCostItems } from '../src/db/read.ts'
+import { readCostItems, readStock } from '../src/db/read.ts'
+import { taxReportFor } from '../src/calc.ts'
 import { costItems, heatingPlants, properties } from '../src/db/schema.ts'
 import { periodKey } from '../../shared/period.ts'
 import { openDatabase, type OpenedDatabase } from '../src/db/open.ts'
@@ -624,5 +625,27 @@ test('R-W2: der Abzug darf auf die Strom-Position (Teil „Brennstoff“) einer 
     await opened.write((db) => createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'gas', method: 'manual' }))
     await assert.rejects(opened.write((db) => createEntity(db, 'costItems', 'gas', heizung({ description: 'Gas', heatingPart: 'fuel', heatingPlantId: 'hp' }))),
       (e: unknown) => e instanceof HeatingError && e.status === 400 && /Wärmepumpe oder Stromheizung/.test(e.message))
+  })
+})
+
+// ---------- Nachprüfung von #252, G2-N-W2: führend ist das Steuerjahr des Betriebsstroms ----------
+
+// Objekt Mai–April, Anlage im Kalenderjahr: Der Betriebsstrom der Heizperiode 2025 zählt zu 2025 und lässt
+// sich nicht anders stellen; der Abzug aus der Stromrechnung 2025/2026 bekommt deshalb dasselbe Jahr. Die
+// Anlage V beider Jahre bleibt, wie sie ohne Betriebsstrom wäre (Umbuchung, Δ 0).
+test('G2-N-W2: Objekt Mai–April mit Anlage im Kalenderjahr: Abzug im Steuerjahr des Betriebsstroms, Anlage V beider Jahre unverändert', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => db.update(properties).set({ periodStartMonth: 5 }).where(eq(properties.id, 'objekt-1')))
+    await opened.write((db) => createEntity(db, 'units', 'u1', { propertyId: 'objekt-1', name: 'A', areaM2: 80, participates: true }))
+    await opened.write((db) => createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'gas', method: 'manual' }))
+    await opened.write((db) => db.update(heatingPlants).set({ periodStartMonth: 1 }).where(eq(heatingPlants.id, 'hp')))
+    await opened.write((db) => createEntity(db, 'costItems', 'gas', heizung({ period: '2025-01', description: 'Gas 2025', amountCents: 500000, heatingPart: 'fuel', operatingPower: null, heatingPlantId: 'hp' })))
+    await opened.write((db) => createEntity(db, 'costItems', 'strom', { ...strom, period: '2025-05', taxYear: 2026, description: 'Hausstrom 2025/2026', amountCents: 100000 }))
+    const steuer = async (jahr: number) => taxReportFor(await opened.read((db) => readStock(db)), 'objekt-1', jahr).expenses.totalCents
+    const vorher = [await steuer(2025), await steuer(2026)]
+    const b = await opened.write((db) => bookOperatingPower(db, 'hp', { period: '2025-01', generalItemId: 'strom', ownCents: 10000, basis: 'Bruchteil' }, ids))
+    const h = b?.heatingItem ?? assert.fail('kein Betriebsstrom')
+    assert.deepEqual([h.period, h.taxYear, b?.deduction.period, b?.deduction.taxYear], ['2025-01', undefined, '2025-05', 2025])
+    assert.deepEqual([await steuer(2025), await steuer(2026)], vorher)
   })
 })
