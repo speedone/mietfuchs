@@ -78,7 +78,7 @@ test('G-W1: schon gebuchter Betriebsstrom und Abzug stehen auf der Karte; eine 4
   const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => {
     calls++
     return calls === 1
-      ? new Response(JSON.stringify({ error: 'Für diese Heizperiode oder diese Stromrechnung ist schon gebucht: „Betriebsstrom Heizung (geschätzt)“.' }), { status: 409, headers: { 'content-type': 'application/json' } })
+      ? new Response(JSON.stringify({ error: 'Für diese Heizperiode oder diese Stromrechnung ist schon gebucht: „Betriebsstrom Heizung (geschätzt)“.', question: 'despiteExisting' }), { status: 409, headers: { 'content-type': 'application/json' } })
       : new Response(JSON.stringify({}), { status: 201, headers: { 'content-type': 'application/json' } })
   })
   vi.stubGlobal('fetch', fetchMock)
@@ -115,4 +115,30 @@ test('R-K5, R-K2: Fernwärme mit Hausanlage und Abs. 4; der Bruchteil als Ausleg
   expect(screen.queryByText(/Brenner/)).toBeNull()
   fireEvent.click(screen.getByLabelText(/Betrag selbst geschätzt/))
   expect(screen.getByText(/Für Wohnungseigentümer lässt der Bundesgerichtshof .*Bruchteil der Brennstoffkosten.*Auslegung von Mietfuchs/)).toBeTruthy()
+})
+
+// Nachprüfung von #252, G2-H1: „Trotzdem anlegen“ nur bei der Rückfrage wegen vorhandener Buchung; jede andere
+// 409 ist eine Meldung. Wechselt die Stromrechnung, gilt die Rückfrage nicht mehr.
+test('G2-H1: andere 409 ohne „Trotzdem anlegen“; die Rückfrage verschwindet beim Wechsel der Stromrechnung', async () => {
+  const zweite: CostItem = { ...strom, id: 'strom2', description: 'Hausstrom Hinterhaus' }
+  const antwort = (body: Record<string, unknown>) => new Response(JSON.stringify(body), { status: 409, headers: { 'content-type': 'application/json' } })
+  let next = antwort({ error: 'Der Allgemeinstrom „Hausstrom 2025“ steht in einer abgeschlossenen Abrechnung.' })
+  vi.stubGlobal('fetch', vi.fn(async () => next))
+  try {
+    render(<OperatingPowerCard plant={plant} view={view} rules={CALENDAR_RULES} items={[strom, zweite]} onBooked={vi.fn()} />)
+    fireEvent.change(screen.getByLabelText(/Stromrechnung des Hauses/), { target: { value: 'strom' } })
+    fireEvent.click(screen.getByLabelText(/Betrag selbst geschätzt/))
+    fireEvent.change(screen.getByLabelText(/geschätzter Betrag/), { target: { value: '83,16' } })
+    fireEvent.change(screen.getByLabelText(/^Grundlage der Schätzung/), { target: { value: 'x' } })
+    fireEvent.click(screen.getByRole('button', { name: /als Betriebsstrom und Abzug anlegen/ }))
+    await vi.waitFor(() => expect(screen.getByRole('button', { name: /als Betriebsstrom und Abzug anlegen/ }).hasAttribute('disabled')).toBe(false))
+    expect(screen.queryByRole('button', { name: /Trotzdem anlegen/ })).toBeNull()
+    next = antwort({ error: 'Für diese Heizperiode oder diese Stromrechnung ist schon gebucht: „X“.', question: 'despiteExisting' })
+    fireEvent.click(screen.getByRole('button', { name: /als Betriebsstrom und Abzug anlegen/ }))
+    await screen.findByRole('button', { name: /Trotzdem anlegen/ })
+    fireEvent.change(screen.getByLabelText(/Stromrechnung des Hauses/), { target: { value: 'strom2' } })
+    expect(screen.queryByRole('button', { name: /Trotzdem anlegen/ })).toBeNull()
+  } finally {
+    vi.unstubAllGlobals()
+  }
 })

@@ -1,6 +1,6 @@
 // Karte „Betriebsstrom“ auf der Seite Heizkosten (Heizung PR 15, #212): Schätzung nach Leistung und
 // Heiztagen, gemessen oder selbst geschätzt, Vorschau, und Betriebsstrom samt Abzug mit einem Klick.
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api, ApiError, errorText, fmtEuro } from '../api'
 import { bookedOperatingPower, emptyOperatingPowerForm, generalItemOptions, operatingPowerPreview, operatingPowerRequest } from '../operatingPowerForm'
 import { operatingPowerRefusal } from '../../../shared/operatingPower.ts'
@@ -16,6 +16,8 @@ export default function OperatingPowerCard({ plant, view, rules, items, onBooked
   const [busy, setBusy] = useState(false)
   // Durchsicht von #252, G-W1: die Rückfrage des Servers bei einer zweiten Buchung.
   const [question, setQuestion] = useState<string | null>(null)
+  // G2-H1: Ändert sich das Formular (etwa die Stromrechnung), gilt die Rückfrage nicht mehr.
+  useEffect(() => setQuestion(null), [form])
   const toast = useToast()
   // P-W5, R2-W1, R-W2: Bei Wärmepumpe und Stromheizung gehört der Strom zur Wärmeerzeugung zu den Heizkosten,
   // aber nicht als Betriebsstrom; die Karte sagt das, nennt den Weg über das Kostenformular und rechnet nichts.
@@ -45,7 +47,7 @@ export default function OperatingPowerCard({ plant, view, rules, items, onBooked
       setForm(emptyOperatingPowerForm())
       onBooked()
     } catch (e) {
-      if (e instanceof ApiError && e.status === 409 && !despiteExisting) setQuestion(e.message)
+      if (e instanceof ApiError && e.status === 409 && e.data.question === 'despiteExisting' && !despiteExisting) setQuestion(e.message)
       else toast(errorText(e), 'error')
     } finally {
       setBusy(false)
@@ -53,7 +55,7 @@ export default function OperatingPowerCard({ plant, view, rules, items, onBooked
   }
 
   const what = service ? 'Abzug' : 'Betriebsstrom und Abzug'
-  const booked = bookedOperatingPower(items, plant.id, String(view.period))
+  const booked = bookedOperatingPower(items, plant.id, { period: String(view.period), from: view.from, to: view.to }, rules)
   return (
     <section className="card">
       <h2><Term id="operatingPower">Betriebsstrom</Term></h2>
