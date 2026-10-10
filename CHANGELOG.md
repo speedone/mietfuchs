@@ -306,13 +306,22 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Rechnungsbetrag einschließlich Grundpreis. Die Grundlage der Schätzung bleibt an beiden Positionen
   gespeichert und steht im Rechenweg, denn bestreitet ein Mieter den Betrag, müssen Sie sie darlegen
   (BGH, Versäumnisurteil vom 20.02.2008, VIII ZR 27/07, Leitsatz 3). Einen von Hand erfassten Abzug
-  verknüpfen Sie im Kostenformular mit dem Betriebsstrom. Steht der Allgemeinstrom in einer
-  abgeschlossenen Abrechnung, legt die Karte nichts an; ein Abzug, der dort nach dem Abschluss angelegt
-  oder geändert wurde, zählt nur mit dem, was die zugestellte Abrechnung gutgeschrieben hat, und der
-  Hinweis sagt es. Bei Wärmepumpe und Stromheizung ist der Strom des Erzeugers Brennstoff und gehört in
-  die Heizposition; Umwälzpumpen und Regelung über den Hauszähler kennzeichnen Sie im Kostenformular als
-  Betriebsstrom. Einen Bruchteil der Brennstoffkosten lässt der BGH als Schätzgrundlage zu; Mietfuchs
-  rechnet keinen Prozentsatz vor, das Lexikon nennt die Literaturwerte.
+  verknüpfen Sie im Kostenformular mit dem Betriebsstrom und mit der Stromrechnung, aus der er stammt;
+  er übernimmt deren Verteilung, und die Rechnung lässt sich nicht löschen, solange er besteht. Die
+  Abrechnung meldet einen Abzug, der anders verteilt ist als seine Rechnung, mehr Abzug als Rechnung und
+  Betriebsstrom und Abzug in verschiedenen Steuerjahren. Die Karte bietet nur Stromrechnungen an, die
+  die Heizperiode berühren, übernimmt deren Jahr der Zahlung (auch bei Abrechnung von Mai bis April),
+  zeigt, was schon gebucht ist, und fragt bei einer zweiten Buchung zurück. Steht der Allgemeinstrom in
+  einer abgeschlossenen Abrechnung, legt die Karte nichts an; ein Abzug, der dort nach dem Abschluss
+  angelegt oder geändert wurde, zählt nur mit dem, was die zugestellte Abrechnung gutgeschrieben hat, und
+  der Hinweis sagt je Fall, was zu tun ist und wo nach Ablauf der Frist die Grenze liegt (§ 556 Abs. 3
+  Satz 3 BGB). Bei Wärmepumpe und Stromheizung gehört der Strom zur Wärmeerzeugung zu den Heizkosten,
+  aber nicht als Betriebsstrom (§ 7 Abs. 2 HeizkostenV nennt ihn neben den Brennstoffen); läuft er über
+  den Hauszähler, kennzeichnen Sie seine Heizposition und verknüpfen den Abzug, als Auslegung von
+  Mietfuchs gekennzeichnet. Umwälzpumpen und Regelung kennzeichnen Sie dort als Betriebsstrom, bei
+  Fernwärme die der Hausanlage (§ 7 Abs. 4, § 8 Abs. 4 HeizkostenV). Einen Bruchteil der
+  Brennstoffkosten lässt der BGH für Wohnungseigentümer als Schätzgrundlage zu; Mietfuchs rechnet keinen
+  Prozentsatz vor, das Lexikon nennt die Literaturwerte.
 
 ### Geändert
 

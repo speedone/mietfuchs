@@ -295,7 +295,8 @@ test('Lexikon: Betriebsstrom nennt § 7 Abs. 2 HeizkostenV, das Urteil und rechn
   assert.match(t.example, /147,84 €/)
   // V ZR 166/15 Rn. 14: Der Bruchteil der Brennstoffkosten ist eine zulässige Schätzgrundlage; die
   // Prozentwerte gibt der BGH nur aus der Literatur wieder, ohne selbst einen festzulegen.
-  assert.match(t.example, /lässt auch einen Bruchteil der Brennstoffkosten als Schätzgrundlage zu/)
+  // R-K2 (Durchsicht von #252): Das ist für Wohnungseigentümer entschieden, nicht für Vermieter.
+  assert.match(t.example, /Für Wohnungseigentümer lässt der Bundesgerichtshof auch einen Bruchteil der Brennstoffkosten als Schätzgrundlage zu/)
   assert.match(t.example, /legt aber selbst keinen Wert fest/)
   assert.doesNotMatch(t.example, /nicht gebilligt/)
   assert.match(t.example, /einschließlich Grundpreis/)
@@ -304,6 +305,12 @@ test('Lexikon: Betriebsstrom nennt § 7 Abs. 2 HeizkostenV, das Urteil und rechn
   // erlaubte Stelle. Der Wortlaut ist deshalb hier festgehalten.
   assert.match(t.example, /3–6 % Jennißen, 4–10 % Schmidt-Futterer\/Lammel, 8–10 % Wall oder höchstens 5 % Gies/)
   assert.match(t.needed, /offenkundig ungeeignet/)
+  // R-K2: Ermessen und Verfahren stammen aus dem WEG-Urteil; für Vermieter ist die Übertragung Auslegung.
+  assert.match(t.needed, /Für Wohnungseigentümer hat der Bundesgerichtshof entschieden, dass die Wahl des Verfahrens in ihrem Ermessen liegt, solange es nicht offenkundig ungeeignet ist\. Er nennt eine Berechnung aus dem Stromverbrauchswert der angeschlossenen Geräte und den Heiztagen sowie einen Bruchteil der Brennstoffkosten \(BGH, Urteil vom 03\.06\.2016, V ZR 166\/15, Rn\. 14\)\./)
+  assert.match(t.needed, /Dass Sie als Vermieter dieselbe Wahl haben, ist eine Auslegung von Mietfuchs; entschieden ist für Mietverhältnisse, dass Sie schätzen dürfen und die Grundlagen offenlegen müssen/)
+  assert.doesNotMatch(t.needed, /Welches Verfahren Sie wählen, liegt in Ihrem Ermessen/)
+  // R-K5: Fernwärme über Abs. 4.
+  assert.match(t.needed, /Bei Fernwärme gilt dasselbe für Pumpen und Regelung der Hausanlage \(§ 7 Abs\. 4, § 8 Abs\. 4 HeizkostenV\)/)
   // P-K5: Der Vermieter darf ihn auch selbst tragen; unzulässig ist nur der Allgemeinstrom.
   assert.doesNotMatch(t.needed, /bei jeder Zentralheizung/)
   assert.match(t.needed, /oder Sie tragen ihn selbst; im Allgemeinstrom darf er nicht stehen/)

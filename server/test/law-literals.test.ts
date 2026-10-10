@@ -59,6 +59,8 @@ const ALLOWED: readonly Allowed[] = [
   { file: 'shared/glossary.ts', match: '8–10 %', reason: 'Literaturwert (Wall), vom BGH in V ZR 166/15 Rn. 14 wiedergegeben, ohne eigene Festlegung; kein Rechtswert (Entwurf 4.3)' },
   { file: 'shared/operatingPower.ts', match: '01.10.2024', reason: 'Inkrafttreten der Fassung von § 7 Abs. 2 HeizkostenV mit dem „zur Wärmeerzeugung verbrauchten Strom“ (Art. 3, Art. 6 Abs. 2 G v. 16.10.2023), nur im Text; keine Rechnung hängt daran (Durchsicht von #252, R-W2)' },
   { file: 'shared/operatingPower.ts', match: '03.06.2016', reason: 'Datum einer Entscheidung im Zitat (BGH V ZR 166/15, Betriebsstrom bei Wärmepumpe und Stromheizung), kein Rechtswert' },
+  { file: 'server/src/operatingPower.ts', match: '17.11.2004', reason: 'Datum einer Entscheidung im Zitat (BGH VIII ZR 115/04, Grenze der Korrektur nach § 556 Abs. 3 Satz 3 BGB), kein Rechtswert' },
+  { file: 'server/src/operatingPower.ts', match: '12.12.2007', reason: 'Datum einer Entscheidung im Zitat (BGH VIII ZR 190/06, Grenze der Korrektur auch beim Guthaben), kein Rechtswert' },
   { file: 'server/src/operatingPower.ts', match: '03.06.2016', reason: 'Datum einer Entscheidung im Zitat (BGH V ZR 166/15, Betriebsstrom), kein Rechtswert' },
   { file: 'server/src/invoiceAmounts.ts', match: 'Math.max(50,', reason: 'Rundungstoleranz der Schnellerfassung (mindestens 0,50 €), keine Rechtszahl' },
 ]

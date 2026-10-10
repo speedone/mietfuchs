@@ -34,6 +34,18 @@ Plausibilität der CO₂-Angaben und Ausdruck für den Messdienst“). Der PR ge
 (CLAUDE.md, „Durchsicht vor jedem PR und vor jedem Merge“). Abgeglichen ist dieser Plan mit dem Code
 an `6571bdd`, siehe „Abgleich mit dem Code (Stand 6571bdd)“.
 
+## Durchsicht von PR #252 (10.10.2026)
+
+Die Durchsicht nach der Umsetzung (Geld und Recht) hat den Stand des PR geändert; die Codeauszüge der
+Tasks unten zeigen den Stand davor. Umgesetzt: Der Abzug zeigt auf seine Stromrechnung (G-K3, Schritte
+0039/0040); die Schätzhilfe begrenzt die Summe der Abzüge auf die Rechnung und fragt bei einer zweiten
+Buchung zurück (G-W1); kein Verweis über die Objektgrenze (G-W2); nur Stromrechnungen, die die
+Heizperiode berühren, mit deren Jahr der Zahlung (G-K1, G-K2, N1); `included` nur mit positivem Betrag
+(G-K4); Strom zur Wärmeerzeugung von Wärmepumpe und Stromheizung richtig zitiert und abziehbar (R-W2);
+eigene Texte je Zustand eines Abzugs in einer abgeschlossenen Abrechnung (R-W1, R-K1, R-K3); Ermessen als
+WEG-Rechtsprechung gekennzeichnet (R-K2); § 12 Abs. 3 HeizkostenV richtig beschrieben (R-K4); Fernwärme
+mit § 7 Abs. 4, § 8 Abs. 4 (R-K5).
+
 ## Rechtsprüfung 09.10.2026 eingearbeitet
 
 Die Rechtsprüfung dieses Plans vom 09.10.2026 hat fünf wichtige Befunde (P-W1 bis P-W5) und zehn kleine
@@ -73,9 +85,10 @@ nachgerechnet und richtig; die Wiedergabe von V ZR 166/15 ist richtig.
   V ZR 166/15 ist gerade der Fall, in dem sie es nicht getan hatte. **Folge:** Der Satz verweist auf
   die Pflicht der Gemeinschaft und bittet, die Hausgeldabrechnung zu prüfen und sich sonst an die
   Verwaltung zu wenden (Task 4).
-- **P-W5: Bei Wärmepumpe und Stromheizung ist Strom Brennstoff, nicht Betriebsstrom.** § 7 Abs. 2
-  HeizkostenV nennt „die Kosten der verbrauchten Brennstoffe“; der Entwurf rechnet den Strom der
-  Wärmepumpe selbst so (8.3). Die Schätzhilfe hätte ihn als Teil „Betrieb“ angelegt. **Folge:** Für
+- **P-W5: Bei Wärmepumpe und Stromheizung ist der Strom zur Wärmeerzeugung kein Betriebsstrom.** § 7
+  Abs. 2 HeizkostenV nennt seit 01.10.2024 die „Kosten des zur Wärmeerzeugung verbrauchten Stroms“
+  **neben** den Brennstoffen (berichtigt mit der Durchsicht von #252, R-W2; vorher stand hier, der Strom
+  sei Brennstoff). Die Schätzhilfe hätte ihn als Teil „Betrieb“ angelegt. **Folge:** Für
   `energy` `heatPump` und `electric` gibt es keine Schätzhilfe; Karte und Route sagen in einem eigenen
   Satz, dass der Strom dort als Brennstoffkosten in die Heizposition gehört (Task 3, 4, 6). Test je
   Energieart. Der Fall „Strom der Wärmepumpe läuft über den Allgemeinstrom“ ist ein Vorschlag für ein
@@ -406,15 +419,17 @@ für PR 15). Jede der folgenden Festlegungen hat dort keine Grundlage und ist hi
    legt nur den Abzug an (ohne Verknüpfung), beschrieben als „Abzug Betriebsstrom Heizung (…), an
    Messdienst gemeldet“ (P-K9), und sagt, dass der Betrag dem Messdienst zu melden ist. Meldet der
    Vermieter ihn nicht, trägt er den Betriebsstrom selbst; das ist zulässig (V ZR 166/15 Rn. 15).
-   **Wärmepumpe und Stromheizung (P-W5):** keine Schätzhilfe. Der Strom ist dort Brennstoff („Kosten der
-   verbrauchten Brennstoffe“, § 7 Abs. 2 HeizkostenV; Entwurf 8.3) und gehört als Brennstoffkosten (Teil
-   `fuel`) in die Heizposition; die Bedingung `…_included_valid` lässt `included` an `fuel` ohnehin
-   nicht zu. Der Fall „Strom der Wärmepumpe läuft ohne eigenen Zähler über den Allgemeinstrom“ ist nicht
-   Teil dieses Plans (Vorschlag für ein Issue, Task 7): Eine Schätzung nach Leistung und Laufzeit wäre
-   für einen Verdichter kaum vertretbar, und § 12 Abs. 3 HeizkostenV verlangt ohnehin eine Erfassung:
-   Wurde der Verbrauch aus Wärmepumpen am 01.10.2024 noch nicht erfasst, war sie bis zum Ablauf des
-   30.09.2025 einzubauen, und die Verordnung gilt ab dem Abrechnungszeitraum danach (`hkv.heat-pump.capture`,
-   PR 10; Wortlaut am 10.10.2026 auf gesetze-im-internet.de gelesen, R2-K6).
+   **Wärmepumpe und Stromheizung (P-W5, berichtigt mit der Durchsicht von #252, R-W2 und R-K4):** keine
+   Schätzhilfe. Der Strom zur Wärmeerzeugung gehört zu den Heizkosten, aber weder als Brennstoff noch als
+   Betriebsstrom: § 7 Abs. 2 HeizkostenV nennt seit 01.10.2024 die „Kosten des zur Wärmeerzeugung
+   verbrauchten Stroms“ neben den Brennstoffen, § 8 Abs. 2 verweist darauf. In Mietfuchs steht er im Teil
+   `fuel` der Heizposition. Läuft er über den Hauszähler, darf diese Position `included` tragen und ein
+   Abzug auf sie zeigen (Prüfung der Energie in repository.ts); dass er wie der Betriebsstrom aus dem
+   Allgemeinstrom herauszurechnen ist, ist eine Auslegung (entschieden ist es für den Betriebsstrom) und
+   steht so im Text. § 12 Abs. 3 HeizkostenV verlangte bis zum Ablauf des 30.09.2025 eine Ausstattung, die
+   den Wärme- und Warmwasserverbrauch der Nutzer erfasst, wo dieser am 01.10.2024 noch nicht erfasst
+   wurde; einen eigenen Stromzähler der Wärmepumpe verlangt die Vorschrift nicht, und ob deren Strom
+   geschätzt werden darf, regelt sie nicht.
 6. **Abzug in der Verteilung des Allgemeinstroms (Festlegung).** Der Abzug übernimmt Schlüssel,
    Zählertyp, Direktzuordnung, vereinbarte Anteile und Teilnehmer der Allgemeinstrom-Position; so mindert
    er jeden Anteil genau im Verhältnis. Bei `amounts` und `external` lehnt die Hilfe ab (Review Focus 1),
@@ -2752,8 +2767,8 @@ Refs #212"
   Positionen gespeichert und steht im Rechenweg, denn bestreitet ein Mieter den Betrag, müssen Sie sie
   darlegen (BGH, Versäumnisurteil vom 20.02.2008, VIII ZR 27/07). Einen von Hand erfassten Abzug
   verknüpfen Sie im Kostenformular mit dem Betriebsstrom. Steht der Allgemeinstrom in einer
-  abgeschlossenen Abrechnung, legt die Karte nichts an. Bei Wärmepumpe und Stromheizung ist der Strom
-  Brennstoff und gehört in die Heizposition. Einen Bruchteil der Brennstoffkosten lässt der BGH als
+  abgeschlossenen Abrechnung, legt die Karte nichts an. Bei Wärmepumpe und Stromheizung gehört der Strom
+  zur Wärmeerzeugung zu den Heizkosten, aber nicht als Betriebsstrom (§ 7 Abs. 2 HeizkostenV). Einen Bruchteil der Brennstoffkosten lässt der BGH als
   Schätzgrundlage zu; Mietfuchs rechnet keinen Prozentsatz vor, das Lexikon nennt die Literaturwerte.
 ```
 
@@ -2778,8 +2793,8 @@ Im Abschnitt der Berechnungs-Engine hinter dem Absatz zum Leerstand beim Persone
   Abrechnung steht. Die Grundlage der Schätzung steht als Text in `cost_items.operating_power_basis` an
   beiden Positionen und im Rechenweg (`no-print`), denn bestreitet ein Mieter den Betrag, muss der
   Vermieter sie darlegen (BGH, Versäumnisurteil vom 20.02.2008, VIII ZR 27/07, Leitsatz 3). Bei
-  Wärmepumpe und Stromheizung gibt es keine Hilfe: Der Strom ist dort Brennstoff (§ 7 Abs. 2
-  HeizkostenV). Die Prozentspannen der Literatur stehen nur im Lexikon: BGH V ZR 166/15 Rn. 14 lässt
+  Wärmepumpe und Stromheizung gibt es keine Hilfe: Der Strom zur Wärmeerzeugung steht in § 7 Abs. 2
+  HeizkostenV neben den Brennstoffen. Die Prozentspannen der Literatur stehen nur im Lexikon: BGH V ZR 166/15 Rn. 14 lässt
   den Bruchteil der Brennstoffkosten als Schätzgrundlage zu, gibt die Werte aber nur wieder und legt
   keinen fest; Mietfuchs rechnet ihn bewusst nicht vor. Kein Eintrag im Regelverzeichnis, denn der
   änderte den Rechtsstand jeder Abrechnung.
@@ -2791,10 +2806,9 @@ Nicht anlegen, nur im PR-Text als Vorschlag nennen (CLAUDE.md, „Issues sind ö
 Anlegen nachfragen“):
 
 1. „Betriebsstrom fehlt: Hinweis bei Zentralheizung ohne Betriebsstrom-Position“ (Abweichung 8).
-2. „Wärmepumpe: Strom der Wärmepumpe läuft ohne eigenen Zähler über den Allgemeinstrom“ (P-W5): Der
-   Strom ist dort Brennstoff und gehört ganz zu den Heizkosten; § 12 Abs. 3 HeizkostenV verlangt eine
-   Erfassung (bis zum Ablauf des 30.09.2025 nachzurüsten, `hkv.heat-pump.capture`; R2-K6). Zu klären ist, ob Mietfuchs dafür einen Abzug
-   beim Allgemeinstrom als Brennstoff anlegen soll und wie der Betrag ohne Zähler belegt wird.
+2. „Wärmepumpe ohne Abzug: Hinweis, wenn der Strom der Wärmepumpe über den Allgemeinstrom läuft“ (P-W5,
+   nach der Durchsicht von #252): Kennzeichnen und Verknüpfen gehen seit R-W2; ein automatischer Hinweis
+   bei einer Wärmepumpe ohne gekennzeichnete Strom-Position fehlt noch.
 
 - [ ] **Step 3: Gesamtprüfung**
 

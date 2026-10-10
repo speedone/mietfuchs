@@ -2094,9 +2094,22 @@ die ganze fachliche Komplexität:
   Grundlage der Schätzung steht als Text in `cost_items.operating_power_basis` an beiden Positionen und
   im Rechenweg (`no-print`), denn bestreitet ein Mieter den Betrag, muss der Vermieter sie darlegen
   (BGH, Versäumnisurteil vom 20.02.2008, VIII ZR 27/07, Leitsatz 3). Bei Wärmepumpe und Stromheizung
-  gibt es keine Hilfe, denn der Strom des Erzeugers ist Brennstoff (§ 7 Abs. 2 HeizkostenV); Umwälzpumpen
-  und Regelung bleiben Betriebsstrom, deshalb prüft `guardOperatingPower` die Energie der Anlage nicht,
-  und Kennzeichnen und Verknüpfen im Kostenformular gehen dort weiter. „Aus dem Vorjahr übernehmen“
+  gibt es keine Hilfe: Der Strom zur Wärmeerzeugung gehört zu den Heizkosten, ist aber weder Brennstoff
+  noch Betriebsstrom (§ 7 Abs. 2 HeizkostenV nennt seit 01.10.2024 die „Kosten des zur Wärmeerzeugung
+  verbrauchten Stroms“ neben den Brennstoffen). Seine Heizposition (Teil `fuel`) darf trotzdem `included`
+  tragen, wenn die Anlage mit Strom heizt (`POWER_GENERATED`, geprüft in `guardOperatingPower`), damit
+  ein Abzug auf sie zeigen kann; das Herausrechnen ist als Auslegung gekennzeichnet. Umwälzpumpen und
+  Regelung bleiben Betriebsstrom. **Durchsicht von #252:** Der Abzug zeigt außerdem auf seine
+  Stromrechnung (`operating_power_general_id`, Schritt 0039 mit Datenanweisung, Bedingungen in 0040):
+  dasselbe Objekt und derselbe Zeitraum, Löschen und Umstellen der Rechnung gesperrt, solange er besteht;
+  Hinweise `heating.operating-power-key` (anders verteilt als die Rechnung), `-exceeds` (mehr Abzug als
+  Rechnung) und `-tax-year` (Betriebsstrom und Abzug in verschiedenen Steuerjahren). Die Schätzhilfe
+  nimmt nur eine Stromrechnung, die die Heizperiode berührt, übernimmt deren Jahr der Zahlung, wo der
+  Zeitraum zwei Kalenderjahre berührt, lehnt eine Summe der Abzüge über der Rechnung ab (400) und fragt
+  bei schon gebuchtem Betriebsstrom zurück (409, `despiteExisting`). Kein Objektwechsel, solange ein
+  Verweis besteht; `crossPropertyViolations` kennt beide. `included` nur mit positivem Betrag. Liegt ein
+  Abzug in einer abgeschlossenen Abrechnung, hat jeder Zustand seinen eigenen Text, und keiner rät zu
+  einem neuen Abzug in einem anderen Jahr. „Aus dem Vorjahr übernehmen“
   behält nur die Kennzeichnung `included`, nicht Grundlage und Abzug. Die Prozentspannen der Literatur
   stehen nur im Lexikon: BGH V ZR 166/15 Rn. 14 lässt den Bruchteil der Brennstoffkosten als
   Schätzgrundlage zu, gibt die Werte aber nur wieder und legt keinen fest; Mietfuchs rechnet ihn bewusst
