@@ -17,7 +17,7 @@
 // geschnitten und nicht neu erfunden: Was dort dazukommt, kommt hier nur an, wenn es jemand
 // bewusst aufnimmt.
 
-import type { BillingPeriod, Co2Statement, CostItem, DegreeDayValue, FrozenFuelCarry, FuelDelivery, HeatingEstimate, HeatingPeriodData, HeatingPlant, HeatingServiceValue, InterimGap, Meter, Payment, PeriodKey, PeriodRules, Property, Reading, StockValue, Tenancy, Unit } from '../../shared/types.ts'
+import type { BillingPeriod, Co2Statement, CostItem, DegreeDayValue, FrozenFuelCarry, FuelDelivery, HeatingEstimate, HeatingPeriodData, HeatingPlant, HeatingServiceValue, InterimGap, LawOverride, Meter, Payment, PeriodKey, PeriodRules, Property, Reading, StockValue, Tenancy, Unit } from '../../shared/types.ts'
 import { calendarPeriod, calendarYearPeriod, parsePeriodKey, periodContaining, periodLabel, periodOfKey, previousPeriod, rulesOf, settlementDeadline } from '../../shared/period.ts'
 import { hasOwnRhythm, heatingPeriodsEndingIn, lineRoot, plantRules, sameFuelLine, settledSeparately, settlementKeyOf, type PlantWay } from '../../shared/heatingPeriod.ts'
 import { isStockEnergy } from '../../shared/fuelStock.ts'
@@ -474,6 +474,9 @@ export type Snapshot = {
   // Schätzungen nach § 9a der Anlagen des Objekts (Heizung PR 13), Wohnungen des Objekts. Fehlt die Angabe,
   // gibt es keine.
   heatingEstimates?: HeatingEstimate[]
+  // Einträge des Vermieters für noch nicht veröffentlichte Rechtswerte (Heizung PR 17, Entwurf 4.5);
+  // installationsweit. Fehlt die Angabe, gibt es keine.
+  lawOverrides?: LawOverride[]
 }
 
 // Die Lieferungen im Schnappschuss (Heizung PR 7, Entwurf 5.8). Die Abgrenzung liest Zeitraum, Betrag,
@@ -884,6 +887,8 @@ export function snapshotFor(
     heatingServiceValues?: HeatingServiceValue[]
     // Schätzungen nach § 9a (Heizung PR 13).
     heatingEstimates?: HeatingEstimate[]
+    // Rechtswerte des Vermieters (Heizung PR 17).
+    lawOverrides?: LawOverride[]
   } & FuelSource,
   propertyId: string,
   period: BillingPeriod,
@@ -940,6 +945,7 @@ export function snapshotFor(
     ...(fuel ? { fuel } : {}),
     ...(stockChains.length > 0 ? { stockChains } : {}),
     ...selfExtrasOf(source, narrowed, plants.map((p) => p.id)),
+    ...((source.lawOverrides?.length ?? 0) > 0 ? { lawOverrides: source.lawOverrides } : {}),
   }
 }
 
@@ -991,6 +997,7 @@ export function heatingSnapshotFor(source: Parameters<typeof snapshotFor>[0], pr
     ...(stockChains.length > 0 ? { stockChains } : {}),
     // Die Werte eines Ablesedienstes über die Linie (Durchsicht von #241, I1).
     ...selfExtrasOf(source, narrowed, [plantId], [...line]),
+    ...((source.lawOverrides?.length ?? 0) > 0 ? { lawOverrides: source.lawOverrides } : {}),
   }
 }
 

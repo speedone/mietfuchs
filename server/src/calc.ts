@@ -63,11 +63,12 @@ import { CO2_RELIEF_LABEL } from '../../shared/co2Probe.ts'
 import { ausweisGaps, CO2_FUELS, co2Assessment, co2DeductionsOf, FORMULA_METHODS, co2PotsOf, itemBasisUnits, L_TOLERANCE_CENTS, perUnitClassification, perUnitExceeding, perUnitReliefs, reliefsByShare, spanningPlants, type PerUnitFuel, restage, selfSplit, SERVICE_FUEL_TOLERANCE_CENTS, shownReliefs, stageRanges, tableFactor, tenantLines as co2TenantLines, type Co2Pot, type ReliefShare } from './co2.ts'
 // Zahlen und Daten der Rechtsregeln kommen aus dem Rechtsregister (Heizung PR 1) und stehen hier
 // nicht als Literal; server/test/law-literals.test.ts wacht darüber.
-import { createLawLog, dayAfter, dayBefore, law, LAW_AS_OF, onlyVersion, recordVersionAt, valueAt, type Period } from '../../shared/law/register.ts'
+import { createLawLog, dayAfter, dayBefore, law, LAW_AS_OF, onlyVersion, recordVersionAt, VALUE_CHANGE_LABEL, valueAt, type Period } from '../../shared/law/register.ts'
 import { betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths } from '../../shared/law/bgb-betrkv.ts'
 import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvEstimateThreshold, hkvExemptions, hkvInfoDistrict, hkvMonthlyInfo, hkvHeatPumpCapture, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvRenewableExemption, hkvSettlementInfo, type DegreeDayTable } from '../../shared/law/heizkostenv.ts'
 import { plantDevices, remoteReadingVerdict, servedUnitIds } from './remoteReading.ts'
 import { heatingInfoOf, heatingRulesOf, planByConsumption, type RuleRow } from './heatingInfo.ts'
+import { co2ExemptionOf, co2OffByExemptionOf, exemptionScopeFor, exemptionText as exemptionTextOf } from './co2Exemption.ts'
 import { AGREED_FIXED_SELF_TEXT, INFO_CONTACTS, INFO_CONTACTS_CHECKED } from '../../shared/heatingInfo.ts'
 import { practiceReadingOffWarning, practiceVacancyPersons } from '../../shared/law/practice.ts'
 import { HEATING_CATEGORY, heatingByConsumption, heatingFindings, mayAgreeOtherwise, PART_OF_POT, POT_OF_PART } from '../../shared/heating.ts'
@@ -79,7 +80,9 @@ import { commonPeriod, tenancyOverlaps } from '../../shared/tenancyOverlap.ts'
 import { CALENDAR_RULES, calendarYearPeriod, contextOf, formatDayRange, isCalendarRules, periodContaining, periodDays, periodLabel, periodMonths, periodOfKey, periodsBetween, previousPeriod, rulesOf, settlementDeadline, settlementPeriod, type PeriodContext } from '../../shared/period.ts'
 import { lineRoot, monthSpanText, plantRules, plantSpan, recommendedDeadline, requestMonth, sameBuilding, sameFuelLine, sameLine, sameSpan, separateOwner, servesUnit, settledSeparately } from '../../shared/heatingPeriod.ts'
 import { heatingSnapshotFor, selfAt, snapshotFor, wayOf } from './snapshot.ts'
-import { plantFuel, rangeOf, type FuelCarry, type FuelResult } from './fuel.ts'
+import { cancelledDeliveries, plantFuel, rangeOf, type FuelCarry, type FuelResult } from './fuel.ts'
+import { co2Plausibility, etsExempt as etsExemptPlant, plausibilityText } from './co2Plausibility.ts'
+import { LAW_PARAMS } from '../../shared/law/params.ts'
 import { fuelFromDeliveries, fuelFromStock, looseCentsOf, measuredOffset, problemText, settledByDefault, stockKeysOf, stockOf, stockTemplateOfLine, stockTouched, valueOf as stockValueOf, type FuelFigures, type StockPeriodInput, type StockResult } from './fuelStock.ts'
 import { isStockEnergy, STOCK_FUEL_NAMES, STOCK_UNIT_TEXT } from '../../shared/fuelStock.ts'
 import { degreeDayPermille } from '../../shared/degreeDays.ts'
@@ -293,6 +296,8 @@ const noticeKinds = {
   'co2.fuel-unknown': { level: 'hint', title: 'Energieträger der Heizung unbekannt', rule: 'co2-split', terms: ['co2Split', 'heatingSystem'] },
   // Heizung PR 14, Durchsicht von #243, G-K3.
   'co2.exempt-deducted': { level: 'warning', title: 'CO₂-Abzug trotz Ausnahme nach § 11', rule: 'heating-exemption', terms: ['co2Deducted', 'heatingCostOrdinance'] },
+  // Heizung PR 17 (#97, Entwurf 15.2 F6): kg oder CO₂-Kosten einer Rechnung passen nicht zum Gesetz.
+  'co2.cost-implausible': { level: 'hint', title: 'CO₂-Angaben der Rechnung prüfen', terms: ['co2Split', 'ebev'] },
   'co2.service-unsplit': { level: 'warning', title: 'Messdienst hat die CO₂-Kosten nicht aufgeteilt', rule: 'co2-split', terms: ['co2Split'] },
   'co2.incomplete': { level: 'warning', title: 'Angaben für den CO₂-Ausweis fehlen', rule: 'co2-split', terms: ['co2Split', 'co2Stage'] },
   'co2.stage-mismatch': { level: 'hint', title: 'Einstufung laut Abrechnung weicht ab', rule: 'co2-split', terms: ['co2Stage', 'co2Area'] },
@@ -410,6 +415,8 @@ const noticeKinds = {
   'heating.estimate-no-device': { level: 'warning', title: 'Schätzung ohne Gerät', rule: 'heating-estimate', terms: ['heatingEstimate'] },
   'heating.estimate-below-measured': { level: 'hint', title: 'Schätzung unter dem abgelesenen Verbrauch', rule: 'heating-estimate', terms: ['heatingEstimate'] },
   'heating.estimate-same-day': { level: 'warning', title: 'Schätzung neben zwei Ständen am selben Tag', rule: 'heating-estimate', terms: ['heatingEstimate'] },
+  // Heizung PR 17 (Entwurf 4.5, 10.1): ein Rechtswert, den der Vermieter eingetragen hat.
+  'law.value-overridden': { level: 'hint', title: 'Selbst eingetragener Rechtswert', terms: ['legalBasis'] },
   'model.prepayment-unsettled': { level: 'warning', title: 'Vorauszahlung ohne Abrechnung', terms: ['prepayment', 'flatRate'] },
   'prepayment.arrears': { level: 'warning', title: 'Rückstand im Mietkonto', terms: ['prepayment'] },
   // #141: ein Hinweis und kein Fehler, denn eine vereinbarte Änderung ist zulässig.
@@ -1858,6 +1865,32 @@ function keyChangeText(item: SnapshotCostItem, previous: readonly SnapshotCostIt
     'Bei einer vermieteten Eigentumswohnung gilt, soweit nichts anderes vereinbart ist, der jeweils geltende Maßstab der Gemeinschaft; widerspricht er billigem Ermessen, wird nach Absatz 1 umgelegt, also in der Regel nach Wohnfläche (§ 556a Abs. 3 BGB). Ist die Änderung so vereinbart, ist nichts zu tun.'
 }
 
+// Die Bestandsrechnung einer Anlage mit Vorratsenergie für eine Heizperiode, wie die Abrechnung sie rechnet.
+// Eigene Funktion seit Heizung PR 17 (Nachprüfung von #246, O2a/O2b): Das Blatt „CO₂-Angaben für den
+// Messdienst“ liest dieselbe Entscheidung, statt eine eigene Regel für den Anfangsbestand zu haben.
+// `countedAt` sagt, ob die CO₂-Kosten einer Rechnung dieses Tages zählen (§ 11 Abs. 2 Satz 2); ohne Angaben
+// zum Vorrat wird es nicht gefragt (Entwurf 1.2 Nr. 1).
+export function plantStockOf(
+  snapshot: Pick<Snapshot, 'stockChains'>,
+  plant: Pick<SnapshotHeatingPlant, 'id' | 'energy' | 'method'>,
+  periodKey: string,
+  countedAt: (date: string) => boolean,
+): { result: StockResult; chain: StockPeriodInput[]; last: StockPeriodInput } | null {
+  if (!isStockEnergy(plant.energy)) return null
+  const chain = (snapshot.stockChains ?? []).find((c) => c.plantId === plant.id && c.period === periodKey)?.chain ?? []
+  const last = chain.at(-1)
+  if (!last) return null
+  const touched = stockTouched(chain)
+  const result = stockOf(chain, {
+    needCost: plant.method !== 'service',
+    needCo2: CO2_FUELS.includes(plant.energy),
+    countedAt: touched ? countedAt : () => true,
+    excludedUntil: co2CostsExcludedUntil(),
+    countedFrom: co2CostsCountedFrom(),
+  })
+  return { result, chain, last }
+}
+
 export function computeSettlement(snapshot: Snapshot, options: SettlementOptions = {}): ComputedSettlement {
   // Der Abrechnungszeitraum (#208). Grenzen, Tage und Monate kommen von hier; `year` ist das
   // Kalenderjahr des Beginns und steht nur noch im Ergebnis und an den Kabelzeilen (siehe dort).
@@ -1871,7 +1904,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // trägt ein, was sie bekommen hat, und am Ende steht es in `legalBasis.values`. Abgefragt wird
   // erst dort, wo ein Wert wirklich gebraucht wird, damit nur Benutztes einfriert. `lawPeriod`
   // spannt den Abrechnungszeitraum (#208).
-  const lawLog = createLawLog()
+  const lawLog = createLawLog(snapshot.lawOverrides ?? [])
   const lawPeriod: Period = { from: yFrom, to: yTo }
   // Zeitraum und Vorzeitraum für den Vergleich der Schlüssel und der Doppelungen (#141).
   const at = contextOf(period, snapshot.previousPeriod)
@@ -2399,19 +2432,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const statement = (snapshot.co2Statements ?? []).find((x) => x.plantId === plant.id && x.period === period.key)
     // Heizung PR 10: auch bei der eigenen Heizkostenabrechnung (Entwurf 8.2).
     if (plant.method === 'service' && statement?.method !== 'selfAfterService') continue
-    const chain = (snapshot.stockChains ?? []).find((c) => c.plantId === plant.id && c.period === period.key)?.chain ?? []
-    const last = chain.at(-1)
-    if (!last) continue
-    // Ohne Angaben zum Vorrat keine Abfrage des Registers (Entwurf 1.2 Nr. 1).
-    const touched = stockTouched(chain)
-    const result = stockOf(chain, {
-      needCost: plant.method !== 'service',
-      needCo2: CO2_FUELS.includes(plant.energy),
-      countedAt: touched ? stockCountedAt : () => true,
-      excludedUntil: co2CostsExcludedUntil(),
-      countedFrom: co2CostsCountedFrom(),
-    })
-    stockOfPlant.set(plant.id, { plant, result, chain, last })
+    const found = plantStockOf(snapshot, plant, String(period.key), stockCountedAt)
+    if (!found) continue
+    stockOfPlant.set(plant.id, { plant, ...found })
   }
   // Übertragsposten bei freien Schlüsseln (Entwurf 8.2 „Wie das in die Abrechnung kommt“). Die
   // Rechnungen bleiben Positionen in voller Höhe, Steuer und Belegarchiv stimmen damit. Den Unterschied
@@ -2665,13 +2688,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const p = plantId ? rulePlants.find((x) => x.id === plantId) : undefined
     return p && (p.supply ?? 'central') === 'central' ? p : undefined
   }
-  // Bereitet die Anlage in der Heizperiode kein Warmwasser, betrifft eine Ausnahme der Wärme die ganze Anlage.
-  const exemptionScopeOf = (plantId: string | null | undefined, key: string): ExemptionScope | null => {
-    const p = centralPlant(plantId)
-    if (!p || !plantId) return null
-    const s = periodRulesFor(plantId, key).exemptionScope
-    return s === 'heat' && hotWaterOf(p, key) === 'none' ? 'both' : s
-  }
+  // Bereitet die Anlage in der Heizperiode kein Warmwasser, betrifft eine Ausnahme der Wärme die ganze Anlage
+  // (`exemptionScopeFor` in co2Exemption.ts, dieselbe Regel wie für das Blatt).
+  const exemptionScopeOf = (plantId: string | null | undefined, key: string): ExemptionScope | null =>
+    plantId ? exemptionScopeFor(centralPlant(plantId), periodRulesFor(plantId, key), key) : null
   const exemptPot = (plantId: string, pot: SelfPot, key: string): boolean => {
     const s = exemptionScopeOf(plantId, key)
     return s === 'both' || (s === 'heat' && pot === 'heating')
@@ -2693,10 +2713,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // Warmwasserkosten ist vereinbart. Ist nur die Wärme ausgenommen, teilt Mietfuchs weiter auf, denn das
   // Warmwasser bleibt unter der Verordnung und das Gesetz unterscheidet den Fall nicht (Auslegung zur sicheren
   // Seite: Ohne Aufteilung dürften die Mieter sonst kürzen).
-  const co2OffByExemption = (plantId: string, key: string): boolean => {
-    if (exemptionScopeOf(plantId, key) !== 'both') return false
-    return !periodRulesFor(plantId, key).exemptionBillingAgreed
-  }
+  // Die Regel steht in co2Exemption.ts, damit das Blatt für den Messdienst dieselbe fragt (#246).
+  const co2OffByExemption = (plantId: string, key: string): boolean => co2OffByExemptionOf(centralPlant(plantId), periodRulesFor(plantId, key), key)
   // ---------- Eigene Heizkostenabrechnung (Heizung PR 10, Entwurf 6.1 Nr. 4.3, 8) ----------
   // Je Anlage mit `method = 'self'`, deren Heizperiode der Zeitraum dieser Berechnung ist (dieselben
   // Anlagen wie bei den Lieferungen, `fuelPlants`), der Plan: Nutzer, Ablesungen, Gruppen und Bruchteile
@@ -4667,7 +4685,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         plantSubject)
     }
     let etsExempt = false
-    if (pot.energy === 'districtHeating' && potPlant?.districtEtsNew === true) {
+    if (potPlant && etsExemptPlant({ energy: pot.energy, districtEtsNew: potPlant.districtEtsNew === true })) {
       const ets = law(co2DistrictEtsNew, { period: hPeriod }, lawLog)
       etsExempt = true
       // Der Satz für die Abrechnung (Durchsicht von #233): warum hier nichts aufgeteilt wird.
@@ -4675,6 +4693,33 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         warn('co2.district-ets-exempt',
           `${where}: Die Wärme stammt nach Ihrer Angabe aus einer Anlage im Europäischen Emissionshandel, und das Gebäude wurde erstmals nach dem ${fmtDay(ets.connectedAfter)} an das Wärmenetz angeschlossen. Die CO₂-Kosten werden deshalb nicht aufgeteilt (§ 2 Abs. 4 Satz 2 CO2KostAufG).`,
           plantSubject)
+      }
+    }
+    // Plausibilität der CO₂-Angaben je Rechnung, die diese Heizperiode berührt (Heizung PR 17, #97): nur ein
+    // Hinweis, gerechnet wird mit den Angaben der Rechnung. Bei Wärme aus dem Emissionshandel mit Anschluss
+    // nach dem Stichtag gilt das Gesetz nicht (etsExempt). Für Vorratsenergien dieselben Rechnungen, denn
+    // auch dort stehen kg und CO₂-Kosten auf der Rechnung der Lieferung.
+    // Unter einer Ausnahme nach § 11 ohne vereinbarte Abrechnung gilt das CO2KostAufG nicht (§ 2 Abs. 7, Heizung
+    // PR 14): dann auch keine Prüfung, dieselbe Bedingung wie die Aufteilung.
+    const co2Check: NonNullable<HeatingStatement['co2Check']> = { applies: !etsExempt && !co2OffByExemption(pot.plantId, String(pot.period.key)), exemption: null, findings: [] }
+    report.co2Check = co2Check
+    if (co2Check.applies) {
+      // Eine stornierte Rechnung zählt nicht und wird nicht geprüft (Durchsicht von #246, G-K1); dieselbe
+      // Auswahl wie die Bewertung (fuel.ts).
+      const ownDeliveries = (snapshot.fuel?.deliveries ?? []).filter((d) => d.plantId === pot.plantId)
+      const cancelled = cancelledDeliveries(potPlant?.method ?? 'manual', ownDeliveries, snapshot.fuel?.items ?? [])
+      for (const d of ownDeliveries) {
+        if (cancelled.has(d.id)) continue
+        const r = rangeOf(d)
+        if (!r || r.from > pot.period.to || r.to < pot.period.from) continue
+        const checked = co2Plausibility({
+          ...d, invoiceDate: d.invoiceDate ?? null, quantity: d.quantity ?? null, quantityUnit: d.quantityUnit ?? null, energyKwh: d.energyKwh ?? null, gasBasis: d.gasBasis ?? null,
+        }, pot.energy, lawLog)
+        // Je Anlage und Heizperiode gibt es einen Topf; doppelt wird ein Befund nur über die Teilabrechnungen
+        // nach Weg b, und deren Hinweise führt die Zusammenführung ohnehin nur einmal (Durchsicht von #246, K5 a).
+        const texts = checked.map((f) => plausibilityText(f, fmtCents))
+        co2Check.findings.push({ deliveryId: d.id, texts })
+        for (const t of texts) warn('co2.cost-implausible', t, plantSubject)
       }
     }
     // Heizung PR 14: unter einer Ausnahme nach § 11 für Wärme und Warmwasser nicht, außer eine Abrechnung ist
@@ -5119,6 +5164,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         coveragePermille: own.coveragePermille,
         adjustments: split.adjustments,
         areaSource: entered !== null ? 'entered' : 'served',
+        // Ob die Fläche die gemeinsame mehrerer Anlagen eines Gebäudes ist (Nachprüfung von #246): das Blatt
+        // für den Messdienst liest es, statt es aus einer Abweichung zu schließen. Kein Betrag hängt daran.
+        areaScope: building.length > 0 ? 'building' : 'plant',
       }
     }
     // Warmwasser beim Messdienst (#211, Entwurf 7.7): Laut Abrechnung nach einer Formel bestimmt, ohne
@@ -5487,21 +5535,15 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     '4': 'der Vergleich mit einem normierten oder durch Vergleichstests ermittelten Durchschnittsnutzer (Nr. 4)',
     '5': 'der witterungsbereinigte Vergleich mit dem vorhergehenden Abrechnungszeitraum in grafischer Form (Nr. 5)',
   }
-  const exemptionText = (e: HeatingExemption, hPeriod: Period): string => {
-    const v = law(hkvExemptions, { period: hPeriod }, lawLog)
-    switch (e) {
-      case 'lowDemand': return `Räume in einem Gebäude mit einem Heizwärmebedarf von weniger als ${v.lowDemandKwhPerM2Year} kWh je m² und Jahr (§ 11 Abs. 1 Nr. 1 Buchst. a HeizkostenV)`
-      // Durchsicht von #243, R-K1: der ganze Wortlaut des Buchst. b.
-      case 'disproportionate': return `Räume, bei denen das Anbringen der Ausstattung zur Verbrauchserfassung, die Erfassung des Wärmeverbrauchs oder die Verteilung der Kosten des Wärmeverbrauchs nicht oder nur mit unverhältnismäßig hohen Kosten möglich ist; unverhältnismäßig hoch sind Kosten, die nicht durch die Einsparungen erwirtschaftet werden können, die in der Regel innerhalb von ${v.paybackYears} Jahren erzielt werden können (§ 11 Abs. 1 Nr. 1 Buchst. b HeizkostenV)`
-      case 'pre1981': return `Räume, die vor dem ${fmtDay(v.readyBefore)} bezugsfertig geworden sind und in denen der Nutzer den Wärmeverbrauch nicht beeinflussen kann (§ 11 Abs. 1 Nr. 1 Buchst. c HeizkostenV)`
-      // Durchsicht von #243, R-W7: Die Bedingung „sofern der Wärmeverbrauch des Gebäudes nicht erfasst wird“ gehört
-      // nur zu Buchst. b. Zwei Fassungen des Buchst. a: für Zeiträume, die vor dem 01.10.2024 beginnen, mit Wärmepumpen.
-      case 'renewable': return `Räume in einem Gebäude, das überwiegend mit Wärme aus ${hkvRenewableExemption.describe(law(hkvRenewableExemption, { period: hPeriod }, lawLog))} versorgt wird`
-      case 'chp': return 'Räume in einem Gebäude, das überwiegend mit Wärme aus Anlagen der Kraft-Wärme-Kopplung oder aus Anlagen zur Verwertung von Abwärme versorgt wird, sofern der Wärmeverbrauch des Gebäudes nicht erfasst wird (§ 11 Abs. 1 Nr. 3 Buchst. b HeizkostenV)'
-      case 'authority': return 'eine Befreiung durch die nach Landesrecht zuständige Stelle wegen besonderer Umstände, um einen unangemessenen Aufwand oder sonstige unbillige Härten zu vermeiden (§ 11 Abs. 1 Nr. 5 HeizkostenV)'
-      case 'none': return ''
-    }
+  const exemptionText = (e: HeatingExemption, hPeriod: Period): string => exemptionTextOf(e, hPeriod, lawLog)
+  // Die Ausnahme, unter der das CO2KostAufG nicht gilt, im Wortlaut der Abrechnung (§ 2 Abs. 7 CO2KostAufG): für
+  // das Blatt für den Messdienst, das sie liest statt sie herzuleiten (#246).
+  for (const report of heatingStatements) {
+    if (!report.co2Check || report.co2Check.applies) continue
+    const key = String(report.period)
+    report.co2Check.exemption = co2ExemptionOf(centralPlant(report.plantId), periodRulesFor(report.plantId, key), key, { from: report.from, to: report.to }, lawLog)
   }
+
   // Ist ein Gerät in der Heizperiode in Betrieb? Seine Ablesungen überdecken sie (wie bei Heizkostenverteilern,
   // Durchsicht von #241, C1), oder es hat noch keine; ein ausgebautes Gerät zählt nicht.
   const deviceInUse = (meterId: string, h: Period): boolean => !snapshot.readings.some((r) => r.meterId === meterId) || coversPeriod(meterId, snapshot.readings, h)
@@ -6326,6 +6368,19 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           : ''),
       tenancySubject(heatingFlat),
     )
+  }
+
+  // Eingetragene Rechtswerte (Heizung PR 17, Entwurf 4.5): in jeder Abrechnung, die einen nutzt. Aus einer
+  // Heizperiode nach Weg b kommt der Hinweis schon mit ihren Hinweisen; dann nicht ein zweites Mal.
+  for (const v of lawLog.values) {
+    if (!v.overridden) continue
+    const year = Number(v.validFrom?.slice(0, 4))
+    const param = LAW_PARAMS.find((p) => p.id === v.id)
+    const label = param?.overridable?.yearLabel?.(year) ?? String(year)
+    const change = param?.checkOnly ? VALUE_CHANGE_LABEL.check : VALUE_CHANGE_LABEL.law
+    const text = `${v.title} ${label}: ${v.text}, von Ihnen eingetragen (Quelle: ${v.overridden.source}), weil der amtliche Wert noch nicht im Programm steht. ` +
+      `Bringt ein Update den amtlichen Wert, gilt dieser; bei einer abgeschlossenen Abrechnung nennt die Seite Abrechnung die Änderung dann als „${change}“.`
+    if (!notices.some((n) => n.code === 'law.value-overridden' && n.text === text)) warn('law.value-overridden', text)
   }
 
   // Die Höchstdauer hat P gebildet (shared/period.ts); eingefroren wird sie hier.

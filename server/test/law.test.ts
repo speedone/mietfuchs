@@ -6,14 +6,14 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createLawLog, dayAfter, dayBefore, germanDate, law, LAW_AS_OF, onlyVersion, recordVersionAt, valueAt, versionAt, type LawParam } from '../../shared/law/register.ts'
+import { coversDate, createLawLog, dayAfter, dayBefore, germanDate, law, LAW_AS_OF, lawOverridable, onlyVersion, recordVersionAt, valueAt, versionAt, yearStart, type LawParam } from '../../shared/law/register.ts'
 import { LAW_PARAMS } from '../../shared/law/params.ts'
 import * as rulesModule from '../../shared/law/rules.ts'
 import { betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths } from '../../shared/law/bgb-betrkv.ts'
 import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvEstimateThreshold, hkvExemptions, hkvHeatingValues, hkvHeatPumpCapture, hkvInfoDistrict, hkvMonthlyInfo, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvRenewableExemption, hkvSettlementInfo } from '../../shared/law/heizkostenv.ts'
 import { practiceEvaporatorWindow, practiceReadingOffWarning, practiceVacancyPersons } from '../../shared/law/practice.ts'
-import { ustgStandardRate } from '../../shared/law/ustg.ts'
-import { co2ApplicableFrom, co2CostsBefore, co2CostsCountedFrom, co2CostsExcludedUntil, co2CutMissing, co2DistrictEtsNew, co2FirstPeriodStart, co2NonResidential, co2Restriction, co2RoundingDecimals, co2StageTable } from '../../shared/law/co2kostaufg.ts'
+import { ustgGasHeatNetworkRate, ustgStandardRate } from '../../shared/law/ustg.ts'
+import { co2ApplicableFrom, co2CostsBefore, co2EbevFactors, co2Price, co2PriceEts, co2CostsCountedFrom, co2CostsExcludedUntil, co2CutMissing, co2DistrictEtsNew, co2FirstPeriodStart, co2NonResidential, co2Restriction, co2RoundingDecimals, co2StageTable } from '../../shared/law/co2kostaufg.ts'
 import { RULES } from '../../shared/law/rules.ts'
 
 const year = (y: number) => ({ period: { from: `${y}-01-01`, to: `${y}-12-31` } })
@@ -176,7 +176,7 @@ test('Register: jede Konstante vom Typ LawParam in shared/law/ steht in LAW_PARA
     .flatMap((f) => [...fs.readFileSync(path.join(dir, f), 'utf8').matchAll(/^export const (\w+): LawParam</gm)].map((m) => m[1]))
   assert.ok(declared.length >= 7, `nur ${declared.length} Parameter gefunden`)
   const listed = new Set<unknown>(LAW_PARAMS)
-  const modules = { betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths, co2ApplicableFrom, co2CostsBefore, co2CutMissing, co2DistrictEtsNew, co2NonResidential, co2Restriction, co2RoundingDecimals, co2StageTable, hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvEstimateThreshold, hkvExemptions, hkvHeatingValues, hkvHeatPumpCapture, hkvInfoDistrict, hkvMonthlyInfo, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvRenewableExemption, hkvSettlementInfo, practiceEvaporatorWindow, practiceReadingOffWarning, practiceVacancyPersons, ustgStandardRate }
+  const modules = { betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths, co2ApplicableFrom, co2CostsBefore, co2CutMissing, co2DistrictEtsNew, co2EbevFactors, co2NonResidential, co2Price, co2PriceEts, co2Restriction, co2RoundingDecimals, co2StageTable, hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvEstimateThreshold, hkvExemptions, hkvHeatingValues, hkvHeatPumpCapture, hkvInfoDistrict, hkvMonthlyInfo, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvRenewableExemption, hkvSettlementInfo, practiceEvaporatorWindow, practiceReadingOffWarning, practiceVacancyPersons, ustgGasHeatNetworkRate, ustgStandardRate }
   for (const name of declared) {
     assert.ok(name && Object.hasOwn(modules, name), `${name} fehlt in diesem Test`)
     assert.ok(listed.has(Reflect.get(modules, name)), `${name} fehlt in LAW_PARAMS`)
@@ -387,4 +387,125 @@ test('Stichtag practice.evaporator-window: 400 bis 800 ‰ seit der Hauptablesun
   const [v] = practiceEvaporatorWindow.versions
   assert.equal(v?.source.rank, 'practice')
   assert.match(practiceEvaporatorWindow.norm, /keine Rechtsnorm/)
+})
+
+// ---------- Werte, die später veröffentlicht werden (Heizung PR 17, Entwurf 4.5) ----------
+
+const preis: LawParam<number | null, 'deliveryYear'> = {
+  id: 'test.preis', title: 'Preis', norm: '§ 4', timing: 'deliveryYear',
+  versions: [
+    { validFrom: '2025-01-01', validTo: '2025-12-31', value: 55, source, enacted: 'a' },
+    { validFrom: '2026-01-01', value: null, source, enacted: 'b' },
+  ],
+  describe: (v) => (v === null ? 'noch nicht veröffentlicht' : `${v} €/t`),
+  overridable: { reason: 'wird später veröffentlicht', max: 1000, unit: '€/t' },
+}
+const fest: LawParam<number, 'deliveryYear'> = {
+  id: 'test.fest', title: 'Fest', norm: '§ 5', timing: 'deliveryYear',
+  versions: [{ validFrom: '2023-01-01', validTo: '2030-12-31', value: 3, source, enacted: 'a' }],
+  describe: (v) => String(v),
+}
+
+test('Register: deliveryYear fragt die Fassung am 1. Januar des Jahres', () => {
+  const log = createLawLog()
+  assert.equal(law(fest, { year: 2023 }, log), 3)
+  assert.equal(law(fest, { year: 2030 }, log), 3)
+  assert.throws(() => law(fest, { year: 2031 }, log), /Kein Rechtswert/)
+  assert.equal(yearStart(2027), '2027-01-01')
+})
+
+test('Register: ein überschreibbarer Wert geht nur über lawOverridable (Abweichung 1)', () => {
+  assert.throws(() => law(preis as unknown as LawParam<number, 'deliveryYear'>, { year: 2025 }, createLawLog()), /lawOverridable/)
+  assert.throws(() => lawOverridable(fest as unknown as LawParam<number | null, 'deliveryYear'>, { year: 2025 }, createLawLog()), /nicht überschreibbar/)
+})
+
+test('Register: veröffentlicht gilt; null ohne Eintrag wird nicht protokolliert; ein Eintrag gilt je Jahr und wird gekennzeichnet', () => {
+  const ohne = createLawLog()
+  assert.equal(lawOverridable(preis, { year: 2025 }, ohne), 55)
+  assert.equal(lawOverridable(preis, { year: 2027 }, ohne), null)
+  assert.deepEqual(ohne.values.map((v) => v.validFrom), ['2025-01-01'])
+  const eintrag = { paramId: 'test.preis', validFrom: '2027-01-01', value: 64.2, source: 'UBA, Bekanntmachung vom 15.12.2026', enteredAt: '2026-12-20' }
+  const mit = createLawLog([eintrag])
+  assert.equal(lawOverridable(preis, { year: 2027 }, mit), 64.2)
+  assert.equal(lawOverridable(preis, { year: 2027 }, mit), 64.2)
+  assert.equal(lawOverridable(preis, { year: 2028 }, mit), null, 'ein Eintrag gilt nur für sein Jahr')
+  assert.deepEqual(mit.values, [{
+    id: 'test.preis', title: 'Preis', norm: '§ 4', cite: 'UBA, Bekanntmachung vom 15.12.2026', value: 64.2, text: '64.2 €/t',
+    validFrom: '2027-01-01', validTo: '2027-12-31', overridden: { source: 'UBA, Bekanntmachung vom 15.12.2026', enteredAt: '2026-12-20' },
+  }])
+  // Ein Eintrag für ein Jahr mit veröffentlichtem Wert ist überholt und gilt nicht (4.5).
+  assert.equal(lawOverridable(preis, { year: 2025 }, createLawLog([{ ...eintrag, validFrom: '2025-01-01', value: 99 }])), 55)
+})
+
+test('Register: eventDate mit Eintrag nach dem Jahr des Datums', () => {
+  const ets: LawParam<number | null, 'eventDate'> = {
+    id: 'test.ets', title: 'ETS', norm: '§ 3', timing: 'eventDate', overridable: { reason: 'r', max: 1000, unit: '€/t' },
+    versions: [{ validFrom: '2026-01-01', validTo: '2026-12-31', value: 73.86, source, enacted: 'a' }, { validFrom: '2027-01-01', value: null, source, enacted: 'b' }],
+    describe: (v) => String(v),
+  }
+  const log = createLawLog([{ paramId: 'test.ets', validFrom: '2027-01-01', value: 70, source: 'UBA', enteredAt: '2027-04-01' }])
+  assert.equal(lawOverridable(ets, { date: '2026-02-10' }, log), 73.86)
+  assert.equal(lawOverridable(ets, { date: '2027-02-10' }, log), 70)
+})
+
+test('Register: coversDate sagt, ob es am Tag eine Fassung gibt', () => {
+  assert.equal(coversDate(fest, '2022-12-31'), false)
+  assert.equal(coversDate(fest, '2023-01-01'), true)
+  assert.equal(coversDate(preis, '2031-06-01'), true)
+})
+
+// ---------- Preise und Standardwerte für die Plausibilität (Heizung PR 17, #97) ----------
+
+test('Stichtag co2.price: 2021 25, 2022 30, 2023 30, 2024 45, 2025 55, 2026 60 (Mittelwert des Korridors), 2027 offen (§ 4 Abs. 1 CO2KostAufG, § 10 Abs. 2 BEHG)', () => {
+  const log = createLawLog()
+  assert.deepEqual([2021, 2022, 2023, 2024, 2025, 2026, 2027, 2030].map((y) => lawOverridable(co2Price, { year: y }, log)), [25, 30, 30, 45, 55, 60, null, null])
+  // Geliefert 2022, in Rechnung gestellt 2023: Die CO₂-Kosten zählen (§ 11 Abs. 2 Satz 2 knüpft an die
+  // Rechnung an), mit dem Preis zum Zeitpunkt der Lieferung (§ 3 Abs. 3). Vor 2021 gab es keinen Preis.
+  assert.equal(coversDate(co2Price, '2022-12-31'), true)
+  assert.equal(coversDate(co2Price, '2020-12-31'), false)
+  assert.equal(co2Price.describe(55), '55,00 €/t')
+  assert.equal(co2Price.describe(null), 'noch nicht veröffentlicht')
+  assert.match(versionAt(co2Price, '2026-06-01').source.cite, /§ 4 Abs\. 1 Nr\. 2 CO2KostAufG/)
+})
+
+test('Stichtag co2.price-ets: nach Rechnungsjahr der Durchschnitt des Vorjahres (§ 3 Abs. 4 Nr. 4 b, § 4 Abs. 3; DEHSt)', () => {
+  const log = createLawLog()
+  assert.deepEqual(['2023-03-01', '2024-03-01', '2025-03-01', '2026-03-01', '2027-03-01'].map((d) => lawOverridable(co2PriceEts, { date: d }, log)), [80.4, 83.68, 65.01, 73.86, null])
+  assert.equal(coversDate(co2PriceEts, '2022-06-30'), false)
+})
+
+test('Stichtag co2.ebev-factors: EBeV 2030 Anlage 2 Teil 4 nur 2023 bis 2030; daraus die bekannten Faktoren', () => {
+  const f = law(co2EbevFactors, { year: 2025 }, createLawLog())
+  const near = (a: number, b: number) => assert.ok(Math.abs(a - b) < 1e-4, `${a} statt ${b}`)
+  near(f.gas.tPerGj * 3.6, 0.20088)
+  near(f.gas.tPerGj * f.gas.hsGjPerMwh, 0.18139)
+  near(f.oil.tPerGj * 3.6, 0.2664)
+  near(f.oil.tPerM3 * f.oil.gjPerT * f.oil.tPerGj, 2.6763)
+  near(f.lpg.tPerGj * 3.6, 0.2358)
+  near(f.lpg.gjPerT * f.lpg.tPerGj, 3.013)
+  assert.equal(coversDate(co2EbevFactors, '2022-12-31'), false)
+  assert.equal(coversDate(co2EbevFactors, '2031-01-01'), false)
+})
+
+test('Stichtag ustg.gas-heat-network-rate: 7 % vom 01.10.2022 bis 31.03.2024 (§ 28 Abs. 5, 6 UStG)', () => {
+  assert.equal(law(ustgGasHeatNetworkRate, { date: '2022-10-01' }, createLawLog()), 7)
+  assert.equal(law(ustgGasHeatNetworkRate, { date: '2024-03-31' }, createLawLog()), 7)
+  assert.equal(coversDate(ustgGasHeatNetworkRate, '2022-09-30'), false)
+  assert.equal(coversDate(ustgGasHeatNetworkRate, '2024-04-01'), false)
+})
+
+// ---------- Durchsicht Runde 1 (#246) ----------
+
+test('R-W3: der Rechtsstand nennt die EBeV-Werte mit allen Stellen, samt Umrechnungsfaktoren', () => {
+  const text = co2EbevFactors.describe(valueAt(co2EbevFactors, '2025-01-01'))
+  for (const w of ['0,0558', '0,0655', '0,074', '3,2508', '0,845', '42,8', '46']) assert.ok(text.includes(w), `${w} fehlt in „${text}“`)
+  assert.ok(!text.includes('0,056 '), text)
+})
+
+test('R-W4, G-K4: überschreibbare Werte nennen ihr Jahr richtig und haben eine Obergrenze', () => {
+  assert.equal(co2Price.overridable?.yearLabel?.(2027) ?? '2027', '2027')
+  assert.equal(co2PriceEts.overridable?.yearLabel?.(2027), 'für Rechnungen aus 2027 (Durchschnitt der Versteigerungen 2026)')
+  assert.equal(co2Price.overridable?.max, 1000)
+  assert.equal(co2PriceEts.overridable?.max, 1000)
+  assert.match(co2PriceEts.overridable?.reason ?? '', /Durchschnittspreis eines Jahres .*bis zum 31\. März des Folgejahres.*Rechnungen aus dem Folgejahr/)
 })

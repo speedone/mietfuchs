@@ -16,7 +16,7 @@
 import { hkvConsumptionShare, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvEstimateThreshold, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit } from './law/heizkostenv.ts'
 import { dayBefore as dayBeforeIso, germanDate, LAW_AS_OF, onlyVersion, valueAt } from './law/register.ts'
 import { practiceEvaporatorWindow } from './law/practice.ts'
-import { co2CutMissing, co2DistrictEtsNew, co2FirstPeriodStart, co2NonResidential, co2Restriction, co2RoundingDecimals, co2StageTable } from './law/co2kostaufg.ts'
+import { co2CutMissing, co2DistrictEtsNew, co2EbevFactors, co2FirstPeriodStart, co2NonResidential, co2Restriction, co2RoundingDecimals, co2StageTable } from './law/co2kostaufg.ts'
 
 const SHARE = valueAt(hkvConsumptionShare, LAW_AS_OF)
 const CUT = valueAt(hkvCutNotByConsumption, LAW_AS_OF)
@@ -38,6 +38,10 @@ const RETROFIT_FROM = germanDate(onlyVersion(hkvRemoteReadingRetrofit).validFrom
 // Heizkostenverteiler (Heizung PR 12): Beispiel mit zwei Bewertungsfaktoren. Die Zahlen des Hauses
 // sind Beispielzahlen und keine Rechtswerte.
 const EVAPORATOR = valueAt(practiceEvaporatorWindow, LAW_AS_OF)
+// Standardwerte der EBeV 2030 für das Beispiel (Heizung PR 17, Durchsicht von #246, Runde 2, N2): Erdgas nach
+// Brennwert, 100.000 kWh × t CO₂/GJ × GJ/MWh.
+const EBEV = valueAt(co2EbevFactors, LAW_AS_OF)
+const ebevDe = (n: number, digits: number) => n.toLocaleString('de-DE', { maximumFractionDigits: digits })
 const HCA = { livingRaw: 500, livingFactor: 1.25, bathRaw: 200, bathFactor: 0.8, houseUnits: 7850, consumptionEuro: 2100 }
 const hcaDe = (n: number) => n.toLocaleString('de-DE', { maximumFractionDigits: 2 })
 const HCA_LIVING = HCA.livingRaw * HCA.livingFactor
@@ -599,11 +603,18 @@ export const GLOSSARY = {
     example: '100,00 € auf drei gleich große Wohnungen sind je 33,3333 €. Gerundet wären das zusammen 99,99 €; den fehlenden Cent bekommt eine der drei, die dann 33,34 € trägt.',
     needed: 'Nein, Mietfuchs erledigt das selbst. Es erklärt nur, warum ein Anteil einen Cent vom rechnerischen Wert abweicht.',
   },
+  ebev: {
+    title: 'Emissionsberichterstattungsverordnung (EBeV 2030)',
+    short: 'Die Verordnung nennt für jeden Brennstoff Standardwerte: wie viel CO₂ eine Menge Gas, Heizöl oder Flüssiggas beim Verbrennen ausstößt. Lieferanten rechnen damit die kg CO₂ auf ihrer Rechnung aus; Mietfuchs vergleicht die kg Ihrer Rechnung mit diesen Werten und meldet eine größere Abweichung als Hinweis.',
+    example: `Erdgas nach Brennwert: ${ebevDe(EBEV.gas.tPerGj, 4)} t CO₂ je GJ und ${ebevDe(EBEV.gas.hsGjPerMwh, 4)} GJ je MWh. 100.000 kWh sind 100 MWh, also 100 × ${ebevDe(EBEV.gas.hsGjPerMwh, 4)} × ${ebevDe(EBEV.gas.tPerGj, 4)} = ${ebevDe(100 * EBEV.gas.hsGjPerMwh * EBEV.gas.tPerGj, 3)} t, rund ${ebevDe(Math.round(100000 * EBEV.gas.hsGjPerMwh * EBEV.gas.tPerGj), 0)} kg CO₂. Steht auf der Rechnung deutlich mehr, ist womöglich nach Heizwert statt nach Brennwert gerechnet.`,
+    norm: '§ 3 Abs. 2 CO2KostAufG; Anlage 2 Teil 4 EBeV 2030',
+    needed: 'Sie müssen nichts tun. Die kg CO₂ stehen auf der Rechnung Ihres Lieferanten; Mietfuchs nutzt die Werte nur zur Prüfung. Weniger kg als nach den Standardwerten können richtig sein, wenn ein anerkannter Biomasseanteil (Bio-Erdgas, Bioheizöl) abgezogen ist.',
+  },
   legalBasis: {
     title: 'Rechtsstand',
     short: 'Das Datum, auf dem die Regeln in Mietfuchs stehen, und die Regeln, die im Abrechnungsjahr gelten; beim Abschließen wird er mit der Abrechnung eingefroren.',
     example: 'Eine Abrechnung für 2023 mit Rechtsstand 30.09.2026 nennt die Regel zum Kabelfernsehen, denn 2023 war es bei Anlagen von vor dem 01.12.2021 noch umlagefähig; eine für 2025 nennt sie nicht mehr.',
-    needed: 'Sie müssen nichts tun. Er zeigt, nach welchen Regeln eine Abrechnung erstellt wurde.',
+    needed: 'Sie müssen nichts tun. Er zeigt, nach welchen Regeln eine Abrechnung erstellt wurde. Werte, die eine Behörde erst später veröffentlicht, etwa den CO₂-Preis des neuen Jahres, können Sie in den Einstellungen mit Quelle selbst eintragen; Mietfuchs braucht sie nur für die Prüfung Ihrer Rechnungen. Bringt ein Update den amtlichen Wert, gilt dieser.',
   },
 } satisfies Record<string, Term>
 

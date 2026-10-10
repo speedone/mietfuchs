@@ -56,3 +56,8 @@ drei Wärmezähler 10.000 kWh (Festlegung des Plans, der Entwurf nennt keine Zä
   Restcent der Rechnung l2 steht wie in der Abrechnung bei der Eigennutzung).
 - Der Abstand 1.916,68 € − 1.883,34 € = 33,34 € ist genau der gedruckte Eigenanteil an den Überträgen
   (633,34 € − 600,00 €); die Steuerseite erklärt ihn (`stockCarrySelfCents`, PR 8).
+
+**Seit Heizung PR 17** prüft die Abrechnung kg und CO₂-Kosten beider Lieferungen: 3.000 l × 0,845 t/1000 l
+× 42,8 GJ/t × 0,074 t CO₂/GJ = 8.028,85 kg und 8,0289 t × 55 €/t × 1,19 = 525,49 €; 2.500 l ergeben
+6.690,71 kg und 437,91 €. Beide passen, es gibt keinen Hinweis; die benutzten Werte (`co2.ebev-factors`,
+`co2.price`, `ustg.standard-rate`) stehen im Rechtsstand.

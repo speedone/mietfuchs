@@ -6,6 +6,7 @@
 
 import { fmtDate, fmtEuro } from './api'
 import type { SettlementComparison } from './types'
+import { VALUE_CHANGE_LABEL } from '../../shared/law/register.ts'
 
 const saldo = (cents: number | null): string =>
   cents === null ? 'nicht enthalten' : cents > 0 ? `Guthaben ${fmtEuro(cents)}` : cents < 0 ? `Nachzahlung ${fmtEuro(-cents)}` : 'ausgeglichen'
@@ -24,8 +25,18 @@ export function deviationView(cmp: SettlementComparison | undefined): DeviationV
   // Ein geänderter Rechtswert (Heizung PR 1): ein neuer Stand des Rechtsregisters, etwa nach einer
   // Berichtigung. Er steht unter den Salden, und allein bekommt er einen eigenen Titel, denn dann
   // ergibt die heutige Berechnung dieselben Zahlen.
-  const valueLines = cmp.valueChanges.map((v) => ({ id: `law:${v.id}`, text: `Rechtswert geändert: ${v.title} von ${v.frozenText} auf ${v.currentText}.` }))
+  const valueLines = cmp.valueChanges.map((v) => ({ id: `law:${v.id}`, text: `${v.checkOnly ? VALUE_CHANGE_LABEL.check : VALUE_CHANGE_LABEL.law}: ${v.title} von ${v.frozenText} auf ${v.currentText}.` }))
   if (cmp.deviations.length === 0 && valueLines.length === 0) return null
+  // Nur Werte, mit denen geprüft und nichts gerechnet wurde (Heizung PR 17, Durchsicht von #246, G-K6).
+  if (cmp.deviations.length === 0 && cmp.valueChanges.every((v) => v.checkOnly)) {
+    return {
+      title: 'Prüfwerte seit dem Abschluss geändert',
+      intro:
+        'Seit dem Abschluss hat sich ein Wert geändert, mit dem diese Abrechnung geprüft wurde, etwa der CO₂-Preis für die Plausibilität der Rechnungen. ' +
+        'Keine Zahl der Abrechnung hängt daran. Die verschickte Abrechnung bleibt, wie sie ist.',
+      lines: valueLines,
+    }
+  }
   if (cmp.deviations.length === 0) {
     return {
       title: 'Rechtswerte seit dem Abschluss geändert',

@@ -194,3 +194,10 @@ describe('Cockpit: eine Zeile je Hinweis', () => {
     expect(attentionLines({ warnings: ['a', 'b'] })).toEqual(['a', 'b'])
   })
 })
+
+test('Rechtsstand: ein eingetragener Wert nennt die Quelle des Vermieters (Heizung PR 17)', () => {
+  const lines = legalBasisLines({ asOf: '2026-10-05', rules: [], values: [{ id: 'co2.price', title: 'CO₂-Preis je Tonne (Plausibilität)', norm: '§ 4', cite: 'UBA', value: 64.2, text: '64,20 €/t', validFrom: '2027-01-01', validTo: '2027-12-31', overridden: { source: 'UBA', enteredAt: '2026-12-20' } }] })
+  expect(lines.values).toEqual(['CO₂-Preis je Tonne (Plausibilität): 64,20 €/t, von Ihnen eingetragen (Quelle: UBA), gilt ab 01.01.2027 bis 31.12.2027'])
+  const amtlich = legalBasisLines({ asOf: '2026-10-05', rules: [], values: [{ id: 'co2.price', title: 'CO₂-Preis je Tonne (Plausibilität)', norm: '§ 4', cite: '§ 4 Abs. 1 Nr. 1 CO2KostAufG', value: 55, text: '55,00 €/t', validFrom: '2025-01-01', validTo: '2025-12-31' }] })
+  expect(amtlich.values).toEqual(['CO₂-Preis je Tonne (Plausibilität): 55,00 €/t (§ 4 Abs. 1 Nr. 1 CO2KostAufG), gilt ab 01.01.2025 bis 31.12.2025'])
+})

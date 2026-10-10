@@ -290,6 +290,7 @@ test('Migration lässt sich anwenden und legt alle Tabellen an', async () => {
       'heating_separate_spans',
       'heating_service_values',
       'interim_reading_gaps',
+      'law_overrides',
       'meters',
       'payments',
       'period_changes',

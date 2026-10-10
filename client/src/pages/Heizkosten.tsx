@@ -1,16 +1,19 @@
 // Die Seite „Heizkosten“ (Heizung PR 6 und 7, Entwurf 11.4): je Heizanlage und Heizperiode des gewählten
 // Zeitraums die Karten „CO₂-Kosten“ und „Warmwasser“ (beim Messdienst), „Lieferungen“ und „CO₂: Angaben
 // zum Gebäude“, seit Heizung PR 8 „Vorrat“ bei Heizöl, Flüssiggas, Pellets, Holz und Kohle, dazu einmal
-// „Gradtagzahlen Ihres Orts“. Sie steht erst ab einer Heizanlage in der
-// Navigation (`navFor`).
+// „Gradtagzahlen Ihres Orts“. Seit Heizung PR 17 je Heizperiode mit Rechnungen der Ausdruck „CO₂-Angaben
+// für den Messdienst“ (#210), der die Seite ersetzt, bis man zurückgeht. Sie steht erst ab einer
+// Heizanlage in der Navigation (`navFor`).
 import { useCallback, useEffect, useState } from 'react'
-import type { DegreeDayValue, FuelDelivery, HeatingPeriodView, HeatingPlant, HeatingStatement, Tenancy, Unit } from '../types'
+import type { Co2Sheet, DegreeDayValue, FuelDelivery, HeatingPeriodView, HeatingPlant, HeatingStatement, Tenancy, Unit } from '../types'
 import { api, errorText } from '../api'
 import { usePeriod } from '../period'
 import { useProperty, withProperty } from '../property'
 import PageHeader from '../components/PageHeader'
 import Co2Card from '../components/Co2Card'
 import Co2FactsCard from '../components/Co2FactsCard'
+import Co2SheetView from '../components/Co2SheetView'
+import { hasSheet } from '../co2Sheet'
 import DegreeDaysCard from '../components/DegreeDaysCard'
 import FuelCard from '../components/FuelCard'
 import HotWaterCard from '../components/HotWaterCard'
@@ -27,13 +30,16 @@ import { servesUnit } from '../../../shared/heatingPeriod.ts'
 import { germanDate } from '../../../shared/law/register.ts'
 
 // `heating`: der Ausweis der Abrechnung des Zeitraums (Heizung PR 10), für die eigene Heizkostenabrechnung.
-type Loaded = { plants: HeatingPlant[]; views: Record<string, HeatingPeriodView[]>; deliveries: Record<string, FuelDelivery[]>; degreeDays: DegreeDayValue[]; heating: HeatingStatement[] }
+// `findings`: die Befunde der CO₂-Prüfung je Anlage und Heizperiode, je Lieferung (Heizung PR 17, #246 R-K7).
+type Loaded = { plants: HeatingPlant[]; views: Record<string, HeatingPeriodView[]>; deliveries: Record<string, FuelDelivery[]>; degreeDays: DegreeDayValue[]; heating: HeatingStatement[]; findings: Record<string, Record<string, string[]>> }
 
 export default function Heizkosten({ units, tenancies }: { units: Unit[]; tenancies: Tenancy[] }) {
   const { property } = useProperty()
   const period = usePeriod()
   const [data, setData] = useState<Loaded | null>(null)
   const [error, setError] = useState('')
+  // Der Ausdruck für den Messdienst (Heizung PR 17): Anlage und Heizperiode, oder keiner.
+  const [sheetFor, setSheetFor] = useState<{ plantId: string; period: string } | null>(null)
   const load = useCallback(async () => {
     try {
       const plants = await api<HeatingPlant[]>(withProperty('/api/heating-plants', property?.id))
@@ -44,7 +50,12 @@ export default function Heizkosten({ units, tenancies }: { units: Unit[]; tenanc
       const heating = plants.some((p) => p.method === 'self')
         ? ((await api<{ heating?: HeatingStatement[] }>(withProperty(`/api/settlement/${encodeURIComponent(period.param)}`, property?.id))).heating ?? [])
         : []
+      // Die Befunde der Prüfung kommen aus dem Blatt für den Messdienst: dieselbe Prüfung wie in der Abrechnung.
+      const sheetKeys = plants.flatMap((p, i) => (CO2_ENERGIES.includes(p.energy) ? (views[i] ?? []).filter((v) => hasSheet(deliveries[i] ?? [], v)).map((v) => ({ p, v })) : []))
+      const sheets = await Promise.all(sheetKeys.map(({ p, v }) => api<Co2Sheet>(`/api/heating-plants/${p.id}/periods/${encodeURIComponent(String(v.period))}/co2-sheet`)))
+      const findings = Object.fromEntries(sheetKeys.map(({ p, v }, i) => [`${p.id}:${v.period}`, Object.fromEntries((sheets[i]?.deliveries ?? []).map((d) => [d.id, d.findings]))]))
       setData({
+        findings,
         heating,
         plants,
         views: Object.fromEntries(plants.map((p, i) => [p.id, views[i] ?? []])),
@@ -65,6 +76,8 @@ export default function Heizkosten({ units, tenancies }: { units: Unit[]; tenanc
   // Die Wohnfläche der versorgten Wohnungen, mit derselben Regel wie die Berechnung (`servesUnit`).
   const servedArea = (plant: HeatingPlant): number =>
     units.filter((u) => servesUnit(plant, u)).reduce((a, u) => a + (u.areaM2 || 0), 0)
+
+  if (sheetFor) return <Co2SheetView plantId={sheetFor.plantId} period={sheetFor.period} onClose={() => setSheetFor(null)} />
 
   return (
     <div>
@@ -97,9 +110,22 @@ export default function Heizkosten({ units, tenancies }: { units: Unit[]; tenanc
                 {(plant.method === 'service' || (plant.method === 'self' && (v.selfHotWater ?? plant.hotWater) === 'combined')) && (
                   <HotWaterCard key={`hw:${v.period}:${JSON.stringify(v.hotWater)}:${plant.heatGeneration ?? ''}`} view={v} plant={plant} onSaved={() => void load()} />
                 )}
-                <FuelCard plant={plant} view={v} deliveries={ownedBy(data?.deliveries[plant.id] ?? [], v)} units={units} onSaved={() => void load()} />
+                <FuelCard plant={plant} view={v} deliveries={ownedBy(data?.deliveries[plant.id] ?? [], v)} units={units} findings={data?.findings[`${plant.id}:${v.period}`] ?? {}} onSaved={() => void load()} />
                 {showsStockCard(plant, v) && <StockCard key={`stock:${v.period}:${JSON.stringify(v.stock?.row ?? null)}`} view={v} co2Fields={CO2_ENERGIES.includes(plant.energy)} energy={plant.energy} onSaved={() => void load()} />}
                 {v.from >= first && CO2_ENERGIES.includes(plant.energy) && <Co2FactsCard plant={plant} view={v} servedAreaM2={servedArea(plant)} onSaved={() => void load()} />}
+                {/* Heizung PR 17 (#210): die CO₂-Angaben der Rechnungen zum Weitergeben, sobald es Rechnungen gibt. */}
+                {CO2_ENERGIES.includes(plant.energy) && hasSheet(data?.deliveries[plant.id] ?? [], v) && (
+                  <div className="card no-print">
+                    <h2>CO₂-Angaben für den Messdienst</h2>
+                    <p className="muted">
+                      Ein Blatt mit den CO₂-Angaben Ihrer Rechnungen dieser Heizperiode (kg CO₂, CO₂-Kosten, Energiegehalt, Menge) und den Angaben zum
+                      Gebäude, zum Ausdrucken oder Weitergeben an den Messdienst, die Gemeinschaft oder Ihr Steuerbüro.
+                    </p>
+                    <div className="row">
+                      <button className="btn secondary" type="button" onClick={() => setSheetFor({ plantId: plant.id, period: String(v.period) })}>Blatt „CO₂-Angaben für den Messdienst“ öffnen</button>
+                    </div>
+                  </div>
+                )}
                 {/* Heizung PR 12: die Werte des Ablesedienstes, wenn diese Heizperiode so erfasst wird. */}
                 {v.capture === 'serviceValues' && (
                   <ServiceValuesCard

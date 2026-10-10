@@ -2,7 +2,9 @@
 // ist die eigentliche Sicherung des Registers: Eine Fassung wird nie geändert, nur eine neue
 // angelegt. Wer einen Wert berichtigt, legt eine neue Fassung an und **ergänzt** hier eine Zeile;
 // eine bestehende Zeile ändert niemand. Einzige Ausnahme: Das offene Ende einer Fassung darf
-// geschlossen werden, wenn eine neue anschließt (Durchsicht von #221, M2). Eine abgeschlossene Abrechnung bleibt dabei, wie sie ist,
+// geschlossen werden, wenn eine neue anschließt (Durchsicht von #221, M2). Zweite Ausnahme (Heizung
+// PR 17): Ein Wert `null`, den eine Behörde später veröffentlicht, darf durch den veröffentlichten ersetzt
+// werden (Entwurf 4.5). Eine abgeschlossene Abrechnung bleibt dabei, wie sie ist,
 // und `deviation` zeigt die Auswirkung (CHANGELOG-Satz nach 4.4).
 //
 // Format je Zeile: Kennung, Grenzen (leer = offen) und der Wert als JSON.
@@ -70,6 +72,21 @@ const SHIPPED: readonly string[] = [
   'hkv.info.district-emissions|2022-01-01||{"scope":"all","thresholdMw":20}',
   'hkv.monthly-info|2022-01-01||{"interval":"monthly"}',
   'hkv.exemptions|||{"lowDemandKwhPerM2Year":15,"readyBefore":"1981-07-01","paybackYears":10}',
+  // 0.11.0 (Heizung PR 17, #97)
+  'co2.ebev-factors|2023-01-01|2030-12-31|{"gas":{"tPerGj":0.0558,"hsGjPerMwh":3.2508},"oil":{"tPerGj":0.074,"tPerM3":0.845,"gjPerT":42.8},"lpg":{"tPerGj":0.0655,"gjPerT":46}}',
+  'co2.price|2021-01-01|2021-12-31|25',
+  'co2.price|2022-01-01|2022-12-31|30',
+  'co2.price|2023-01-01|2023-12-31|30',
+  'co2.price|2024-01-01|2024-12-31|45',
+  'co2.price|2025-01-01|2025-12-31|55',
+  'co2.price|2026-01-01|2026-12-31|60',
+  'co2.price|2027-01-01||null',
+  'co2.price-ets|2023-01-01|2023-12-31|80.4',
+  'co2.price-ets|2024-01-01|2024-12-31|83.68',
+  'co2.price-ets|2025-01-01|2025-12-31|65.01',
+  'co2.price-ets|2026-01-01|2026-12-31|73.86',
+  'co2.price-ets|2027-01-01||null',
+  'ustg.gas-heat-network-rate|2022-10-01|2024-03-31|7',
 ]
 
 const current = (): string[] =>
@@ -86,9 +103,16 @@ function historyProblems(shipped: readonly string[], now: readonly string[]): st
     const [cid, cfrom, cto, ...cvalue] = parts(closed)
     return to === '' && cto !== '' && cid === id && cfrom === from && cvalue.join('|') === value.join('|')
   }
+  // Heizung PR 17 (Abweichung 3): Ein ausgelieferter Wert `null` (noch nicht veröffentlicht) darf einen
+  // Wert bekommen und dabei sein offenes Ende schließen.
+  const fills = (open: string, filled: string): boolean => {
+    const [id, from, to, ...value] = parts(open)
+    const [fid, ffrom, fto, ...fvalue] = parts(filled)
+    return fid === id && ffrom === from && value.join('|') === 'null' && fvalue.join('|') !== 'null' && (to === '' || fto === to)
+  }
   return [
-    ...shipped.filter((line) => !now.some((n) => n === line || closes(line, n))).map((line) => `ausgelieferte Fassung geändert oder entfernt: ${line}`),
-    ...now.filter((line) => !shipped.some((x) => x === line || closes(x, line))).map((line) => `neue Fassung ohne Zeile in law-history.test.ts: ${line}`),
+    ...shipped.filter((line) => !now.some((n) => n === line || closes(line, n) || fills(line, n))).map((line) => `ausgelieferte Fassung geändert oder entfernt: ${line}`),
+    ...now.filter((line) => !shipped.some((x) => x === line || closes(x, line) || fills(x, line))).map((line) => `neue Fassung ohne Zeile in law-history.test.ts: ${line}`),
   ]
 }
 
@@ -111,4 +135,10 @@ test('Register-Geschichte: offenes Ende schließen ist erlaubt, jede andere Änd
   // Entfernt, oder neu ohne Zeile
   assert.equal(historyProblems(shipped, ['a|2021-01-01||19']).length, 1)
   assert.equal(historyProblems(shipped, ['a|2021-01-01||19', 'b||2024-06-30|1', 'c|||3']).length, 1)
+  // Heizung PR 17 (Abweichung 3): Ein veröffentlichter Wert ersetzt null und darf das offene Ende schließen.
+  const offen = ['p|2027-01-01||null']
+  assert.deepEqual(historyProblems([...offen, 'p|2028-01-01||null'], ['p|2027-01-01|2027-12-31|64.2', 'p|2028-01-01||null']), [])
+  assert.deepEqual(historyProblems(offen, ['p|2027-01-01||64.2']), [])
+  // Ein Wert, der schon dastand, wird nicht still ersetzt, auch nicht durch null.
+  assert.equal(historyProblems(['p|2026-01-01|2026-12-31|60'], ['p|2026-01-01|2026-12-31|null']).length, 2)
 })

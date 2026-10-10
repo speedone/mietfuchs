@@ -265,6 +265,40 @@ export type FuelResult = {
   estimatesWithoutTemplate: { deliveryId: string; cents: number }[]
 }
 
+// Storniert (Nachprüfung von 47f2373, M2/G1): Bei freien Schlüsseln und der eigenen Abrechnung ergeben
+// die Positionen einer Rechnung 0. Sie verdrängt keine Schätzung, deckt keine Tage ab und zählt nicht in
+// der Bewertung; ihre Überträge bleiben, damit eine abgeschlossene Heizperiode ihre Gegenbuchung bekommt.
+// Eigene Funktion seit Heizung PR 17: Das Blatt für den Messdienst und die Plausibilität fragen dieselbe
+// Auswahl wie die Bewertung.
+export function cancelledDeliveries(method: HeatingMethod, deliveries: readonly Pick<FuelDeliveryInput, 'id' | 'estimated'>[], items: readonly FuelItem[]): Set<string> {
+  const withItems = method === 'manual' || method === 'self'
+  const out = new Set<string>()
+  if (!withItems) return out
+  for (const d of deliveries) {
+    if (d.estimated) continue
+    const mine = items.filter((c) => c.fuelDeliveryId === d.id)
+    if (mine.length > 0 && mine.reduce((a, c) => a + c.amountCents, 0) === 0) out.add(d.id)
+  }
+  return out
+}
+
+// Eine Schätzung zählt nur für die Tage, die keine echte Rechnung abdeckt (8.2, Wiederöffnen;
+// Durchsicht von #233, I3): ganz abgedeckt gar nicht (0), teilweise im Verhältnis der Gradtage der
+// übrigen Tage, dieselbe Regel wie `estimatesIn` unten.
+export function estimateFactors(deliveries: readonly Pick<FuelDeliveryInput, 'id' | 'estimated' | 'invoiceFrom' | 'invoiceTo' | 'deliveredAt'>[], cancelled: ReadonlySet<string>, table: DegreeDayTable): Map<string, number> {
+  const real = deliveries.filter((d) => !d.estimated && !cancelled.has(d.id))
+  const realUnion = unionOf(real.map(rangeOf).filter(isRange))
+  const estimateFactor = new Map<string, number>()
+  for (const d of deliveries.filter((x) => x.estimated)) {
+    const r = rangeOf(d)
+    if (!r) continue
+    const rest = subtractRanges(r, realUnion)
+    const all = degreeDayPermille([r], table)
+    estimateFactor.set(d.id, all > 0 ? degreeDayPermille(rest, table) / all : rest.reduce((a, x) => a + daysOf(x), 0) / daysOf(r))
+  }
+  return estimateFactor
+}
+
 // Die Lieferungen einer Anlage in einer Heizperiode. `null`, wenn keine die Heizperiode berührt und
 // nichts übertragen wird: Dann gibt es nichts zu bewerten und keine Lücke zu melden.
 export function plantFuel(input: FuelPlantInput): FuelResult | null {
@@ -274,24 +308,10 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
   const withItems = input.method === 'manual' || input.method === 'self'
   const ranged = input.deliveries.filter((d) => rangeOf(d) !== null)
   const itemsOf = (id: string): FuelItem[] => input.items.filter((c) => c.fuelDeliveryId === id)
-  // Storniert (Nachprüfung von 47f2373, M2/G1): Bei freien Schlüsseln ergeben die Positionen einer
-  // Rechnung 0. Sie verdrängt keine Schätzung, deckt keine Tage ab und zählt nicht in der Bewertung; ihre
-  // Überträge bleiben, damit eine abgeschlossene Heizperiode ihre Gegenbuchung bekommt.
-  const cancelled = (d: FuelDeliveryInput): boolean =>
-    withItems && !d.estimated && itemsOf(d.id).length > 0 && itemsOf(d.id).reduce((a, c) => a + c.amountCents, 0) === 0
+  const cancelledIds = cancelledDeliveries(input.method, ranged, input.items)
+  const cancelled = (d: FuelDeliveryInput): boolean => cancelledIds.has(d.id)
+  const estimateFactor = estimateFactors(ranged, cancelledIds, ctx.table)
   const real = ranged.filter((d) => !d.estimated && !cancelled(d))
-  const realUnion = unionOf(real.map(rangeOf).filter(isRange))
-  // Eine Schätzung zählt nur für die Tage, die keine echte Rechnung abdeckt (8.2, Wiederöffnen;
-  // Durchsicht von #233, I3): ganz abgedeckt gar nicht, teilweise im Verhältnis der Gradtage der
-  // übrigen Tage, dieselbe Regel wie `estimatesIn` unten.
-  const estimateFactor = new Map<string, number>()
-  for (const d of ranged.filter((x) => x.estimated)) {
-    const r = rangeOf(d)
-    if (!r) continue
-    const rest = subtractRanges(r, realUnion)
-    const all = degreeDayPermille([r], ctx.table)
-    estimateFactor.set(d.id, all > 0 ? degreeDayPermille(rest, ctx.table) / all : rest.reduce((a, x) => a + daysOf(x), 0) / daysOf(r))
-  }
   const effective = ranged.filter((d) => !d.estimated || (estimateFactor.get(d.id) ?? 0) > 0)
   const counted = effective.filter((d) => !cancelled(d))
   const totalOf = (d: FuelDeliveryInput): number =>

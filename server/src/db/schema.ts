@@ -1609,3 +1609,26 @@ export const co2TenantReliefs = sqliteTable(
   },
   (t) => [primaryKey({ columns: [t.statementId, t.tenancyId] }), notNegative('co2_tenant_reliefs_cents_not_negative', 'cents')],
 )
+
+// ---------- Rechtswerte des Vermieters (Heizung PR 17, Entwurf 4.5, 5.9) ----------
+
+// Ein vom Vermieter eingetragener Wert für einen überschreibbaren Parameter des Rechtsregisters, je
+// Kalenderjahr (Abweichung 2 des Plans). Installationsweit, nicht je Objekt: Ein Preis gilt für alle
+// Häuser. Kein Verweis auf das Register, denn das steht im Programm und nicht in der Datenbank; ein
+// Eintrag zu einem Parameter, den das Programm nicht (mehr) kennt, wird gelesen und nicht benutzt.
+export const lawOverrides = sqliteTable(
+  'law_overrides',
+  {
+    paramId: text('param_id').notNull(),
+    validFrom: text('valid_from').notNull(),
+    valueJson: text('value_json').notNull(),
+    source: text('source').notNull(),
+    enteredAt: text('entered_at').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.paramId, t.validFrom] }),
+    check('law_overrides_valid_from_valid', sql.raw(`"valid_from" GLOB '[0-9][0-9][0-9][0-9]-01-01'`)),
+    check('law_overrides_source_complete', sql.raw('length(trim("source")) > 0')),
+    check('law_overrides_value_is_json', sql.raw('json_valid("value_json")')),
+  ],
+)

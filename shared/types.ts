@@ -777,6 +777,28 @@ export type AppliedValue = {
   text: string
   validFrom?: string
   validTo?: string
+  // Vom Vermieter eingetragen, weil der amtliche Wert noch nicht im Programm stand (Heizung PR 17,
+  // Entwurf 4.5); `source` ist seine Angabe, `enteredAt` der Tag des Eintrags.
+  overridden?: { source: string; enteredAt: string }
+}
+// Ein vom Vermieter eingetragener Rechtswert (Heizung PR 17, Entwurf 4.5, 5.9): nur für überschreibbare
+// Parameter und nur für ein Jahr, in dem das Register `null` hat. `validFrom` ist der 1. Januar.
+export type LawOverride = { paramId: string; validFrom: string; value: number; source: string; enteredAt: string }
+export type LawOverrideStatus = 'open' | 'entered' | 'superseded'
+// Eine Zeile der Einstellungen: ein überschreibbarer Wert eines Jahres, amtlich oder eingetragen.
+export type LawOverrideSlot = {
+  paramId: string
+  title: string
+  norm: string
+  reason: string
+  year: number
+  // Wie das Jahr zu lesen ist („2027“, beim Emissionshandel „für Rechnungen aus 2027 (Durchschnitt der
+  // Versteigerungen 2026)“, Durchsicht von #246, R-W4).
+  yearLabel: string
+  validFrom: string
+  official: number | null
+  override: LawOverride | null
+  status: LawOverrideStatus
 }
 // Datum des Rechtsregisters, die Regeln, die im Abrechnungsjahr gelten, und die Rechtswerte, mit
 // denen gerechnet wurde. Wird mit der Abrechnung eingefroren, damit eine spätere Rechtsänderung
@@ -847,7 +869,9 @@ export type SettlementDeviation = {
 // Ein Rechtswert, der heute anders lautet als beim Abschluss (Heizung PR 1, Entwurf 4.4): Das
 // Register hat eine neue Fassung bekommen, etwa nach einer Berichtigung. Die Texte stammen aus der
 // eingefrorenen und aus der heutigen Abrechnung.
-export type LawValueChange = { id: string; title: string; frozenText: string; currentText: string }
+// `checkOnly`: ein Wert, mit dem die Abrechnung nur geprüft und nichts gerechnet hat (Heizung PR 17,
+// Durchsicht von #246, G-K6); fehlt bei allen übrigen.
+export type LawValueChange = { id: string; title: string; frozenText: string; currentText: string; checkOnly?: true }
 export type SettlementComparison = {
   // false, wenn sich der eingefrorene Stand nicht lesen ließ; dann ist „keine Abweichung“ keine
   // Auskunft, und die Oberfläche sagt das.
@@ -1606,6 +1630,9 @@ export type Co2Assessment = {
   // oder die Wohnfläche der versorgten Wohnungen, Entwurf 9.2, 9.5).
   adjustments?: Co2Adjustment[]
   areaSource?: 'entered' | 'served'
+  // `building`: die gemeinsame Fläche mehrerer Anlagen eines Gebäudes (§ 5 Abs. 1 Satz 2 CO2KostAufG);
+  // `plant`: die der Anlage. Fehlt in einer vorher abgeschlossenen Abrechnung.
+  areaScope?: 'plant' | 'building'
 }
 
 // Eine Heizanlage in einer Abrechnung, mit der Heizperiode, die darin abgerechnet wird.
@@ -1629,6 +1656,12 @@ export type HeatingStatement = {
   // die Vergleiche); nicht beim Messdienst, bei einer Etagenheizung und wenn Wärme und Warmwasser nach § 11
   // ausgenommen sind. Nach einem Kesseltausch einmal je Linie. Fehlt in älteren Abrechnungen.
   info?: HeatingInfoStatement
+  // Die Prüfung der CO₂-Angaben nach dem CO2KostAufG (Heizung PR 17, #246): ob das Gesetz für diese Heizperiode
+  // gilt (`applies`; nicht bei Wärme aus dem Emissionshandel mit Anschluss nach dem Stichtag, § 2 Abs. 4 Satz 2,
+  // und nicht unter einer Ausnahme nach § 11 HeizkostenV für Wärme und Warmwasser ohne vereinbarte Abrechnung,
+  // § 2 Abs. 7), die Ausnahme im Wortlaut der Abrechnung (`exemption`) und die Befunde je Rechnung. Anzeige und
+  // Blatt für den Messdienst lesen sie von hier. Fehlt in älteren Abrechnungen.
+  co2Check?: { applies: boolean; exemption: string | null; findings: { deliveryId: string; texts: string[] }[] }
 }
 
 // Was die Seite Heizkosten zu einer Heizperiode lädt (Heizung PR 6): die Angabe zum Warmwasser, die
@@ -1723,6 +1756,107 @@ export type FuelDelivery = {
   estimated: boolean
   usedByService: boolean
   parts: FuelDeliveryPart[]
+}
+
+// Das Blatt „CO₂-Angaben für den Messdienst“ (Heizung PR 17, #210): je Rechnung, die die Heizperiode
+// berührt, die Angaben des § 3 Abs. 1 Nr. 1–4 CO2KostAufG samt Menge, Zeitraum, Rechnungsdatum und Betrag,
+// und die Hinweise der Plausibilitätsprüfung als fertige Sätze. Abgegrenzt wird nicht: Der Messdienst
+// rechnet über seinen Zeitraum selbst.
+export type Co2SheetDelivery = {
+  id: string
+  label: string
+  invoiceDate: string | null
+  from: string | null
+  to: string | null
+  deliveredAt: string | null
+  quantity: number | null
+  quantityUnit: FuelQuantityUnit | null
+  energyKwh: number | null
+  gasBasis: GasBasis | null
+  emissionFactor: number | null
+  emissionsKg: number | null
+  co2CostCents: number | null
+  amountCents: number | null
+  estimated: boolean
+  // Was davon in der Summe zählt (Durchsicht von #246, G-W1), nach denselben Regeln wie die Abrechnung:
+  // `full` kg und CO₂-Kosten, `partial` beides mit `factor` (eine Schätzung für die Tage ohne Rechnung),
+  // `kgOnly` nur die kg (§ 11 Abs. 2 Satz 2), `none` nichts (storniert, abgedeckte Schätzung). `note` sagt
+  // es in der dritten Person, für den Empfänger des Blatts.
+  counted: 'full' | 'partial' | 'kgOnly' | 'none'
+  factor: number
+  note: string | null
+  // Der Teil dieser Rechnung, den die Abrechnung der Heizperiode zuordnet (`fuel.deliveries`), mit Anteil in
+  // Promille und Verfahren; `null` ohne Abgrenzung (Vorrat, Messdienst ohne Lieferzeilen).
+  inPeriod: { emissionsKg: number | null; co2Cents: number | null; sharePermille: number; method: FuelMethod } | null
+  findings: string[]
+}
+export type Co2SheetStock = Pick<HeatingPeriodData, 'stockUnit' | 'openingQuantity' | 'openingEmissionsKg' | 'openingCo2Cents' | 'openingInvoicedBefore2023' | 'openingAlreadySettled' | 'closingQuantity' | 'closingMeasuredOn'>
+// Der Anfangsbestand als Zeile des Blatts (G-W2): seine kg zählen immer, seine CO₂-Kosten nur, wenn er
+// nicht vor 2023 in Rechnung gestellt und nicht schon umgelegt wurde.
+// Seit der Nachprüfung von #246 (O2a/O2b) die Entscheidung der Bestandsrechnung der Abrechnung: `co2CostCents`
+// sind die dort berücksichtigten CO₂-Kosten; rechnet die Abrechnung den Vorrat nicht, die eingetragenen.
+// `co2CostCents` ist der Betrag laut Rechnung bzw. Eintrag (wie bei den Rechnungen), `countedCents` der davon
+// berücksichtigte Teil (Durchsicht von #246, Runde 3, S-K1). `adminNote`: die genauen Gründe einer
+// unvollständigen Bestandsrechnung für den Vermieter, nicht gedruckt (W-N4).
+export type Co2SheetOpening = {
+  quantity: number | null
+  emissionsKg: number | null
+  co2CostCents: number | null
+  countedCents: number
+  kgCounted: boolean
+  co2Counted: boolean
+  note: string | null
+  adminNote: string | null
+  // `entered`: in dieser Heizperiode eingetragen; `carried`: aus dem Endbestand der Vorperiode übernommen,
+  // dann gibt es keine Rechnung, und die CO₂-Kosten sind die übernommenen (Runde 4, S-K1).
+  source: 'entered' | 'carried'
+}
+// Was die Abrechnung der Heizperiode daraus macht (Durchsicht von #246, Runde 3, S-W1): gelesen aus ihrem
+// Ergebnis (`heating[]`), nicht vom Blatt gerechnet. `closing`/`consumed` aus der Bestandsrechnung des
+// Vorrats, `inPeriod` die Summe der auf die Heizperiode abgegrenzten Rechnungen (`fuel.deliveries`) samt
+// Abdeckung, `basis` die Grundlage der CO₂-Aufteilung mit kg/m² und Stufe (`co2`). Jede Angabe fehlt, wo
+// die Abrechnung sie nicht hat.
+export type Co2SheetBilling = {
+  closing: { quantity: number; emissionsKg: number; co2Cents: number; measuredOn: string | null } | null
+  consumed: { quantity: number; emissionsKg: number; co2Cents: number } | null
+  inPeriod: { emissionsKg: number; co2Cents: number; coveragePermille: number } | null
+  basis: {
+    source: 'stock' | 'deliveries'
+    emissionsKg: number | null
+    co2Cents: number | null
+    kgPerM2: number | null
+    areaM2: number | null
+    landlordPermille: number | null
+    stage: Co2StageRange | null
+  } | null
+}
+// `areaM2`: die Fläche der Einstufung, eingetragen (`entered`) oder die Wohnfläche der Wohnungen, die die
+// Anlage versorgt (`served`); `null`, wenn keine bekannt ist.
+export type Co2Sheet = {
+  propertyName: string
+  address: string
+  landlordName: string
+  plantName: string
+  energy: HeatingEnergy
+  period: { key: string; from: string; to: string }
+  areaM2: number | null
+  // `building`: die gemeinsame Fläche mehrerer Anlagen eines Gebäudes, wie die Abrechnung sie einstuft.
+  areaSource: 'entered' | 'served' | 'building' | null
+  nonResidential: boolean
+  restriction: Co2Restriction
+  districtEtsNew: boolean
+  stock: Co2SheetStock | null
+  opening: Co2SheetOpening | null
+  billing: Co2SheetBilling
+  deliveries: Co2SheetDelivery[]
+  totals: { emissionsKg: number; co2CostCents: number }
+  // Der Tag, an dem das Blatt erstellt wurde (R-K6), und ob geprüft wurde: nicht bei Wärme aus dem
+  // Emissionshandel mit Anschluss nach dem Stichtag (§ 2 Abs. 4 Satz 2, R-W1).
+  createdOn: string
+  checked: boolean
+  // Die Ausnahme nach § 11 HeizkostenV, unter der das CO2KostAufG nicht gilt (§ 2 Abs. 7), im Wortlaut der
+  // Abrechnung (`co2Check.exemption`); `null` sonst.
+  exemption: string | null
 }
 
 // Eine Gradtagzahl des Deutschen Wetterdienstes für den Ort des Objekts und einen Monat ('JJJJ-MM').

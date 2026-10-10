@@ -27,7 +27,7 @@ import { tenancyStamp } from '../../shared/tenancyStamp.ts'
 import { calendarPeriod } from '../../shared/period.ts'
 import type { JsonSchema } from '../src/ai/ollama.ts'
 import type {
-  AiKeyInfo, AiPreset, AiRecommendations, AiSettings, AiSlot, AiSlotName, AiStatus, AssessmentLine, AssignableHeatingItem, Co2Statement, DegreeDayValue, FuelDelivery, FuelGapQuestion, Notice, HeatingDistribution, HeatingEstimate, HeatingPeriodView, HeatingPlant, InterimGap, AssessmentView, BookingPreview, CostItem, Extraction, LineDecision, LineFields,
+  AiKeyInfo, AiPreset, AiRecommendations, AiSettings, AiSlot, AiSlotName, AiStatus, AssessmentLine, AssignableHeatingItem, Co2Statement, DegreeDayValue, FuelDelivery, FuelGapQuestion, Notice, HeatingDistribution, HeatingEstimate, HeatingPeriodView, HeatingPlant, InterimGap, LawOverrideSlot, Co2Sheet, AssessmentView, BookingPreview, CostItem, Extraction, LineDecision, LineFields,
   Meter, MeterReadingExtraction, OllamaStatus, Payment, Property, Reading, Settings, Settlement, StockView, TaxReport, Tenancy, Unit, UnitDependents,
   UpdateStatus, UploadEntry, UploadInfo,
 } from '../../shared/types.ts'
@@ -6613,6 +6613,50 @@ test('Pflichtangaben nach § 6a und Ausnahmen über die Routen (Heizung PR 14): 
     assert.equal((await send('PUT', `/api/heating-plants/${plant.id}/periods/2025-01/rules`, { agreedOtherwise: 'area' })).status, 400)
     assert.equal((await send('PUT', '/api/heating-plants/gibt-es-nicht/periods/2025-01/info', {})).status, 404)
     assert.equal((await send('PUT', '/api/heating-plants/gibt-es-nicht/periods/2025-01/rules', {})).status, 404)
+  } finally {
+    s.stop()
+  }
+})
+
+// ---------- Rechtswerte des Vermieters (Heizung PR 17) ----------
+
+test('Rechtswerte über die Routen: Liste, eintragen, ablehnen, entfernen (Heizung PR 17)', async () => {
+  const s = await startServer()
+  try {
+    const send = (url: string, init: RequestInit) => fetch(`${s.base}${url}`, { ...init, headers: { 'content-type': 'application/json' } })
+    const liste = await s.api<LawOverrideSlot[]>('/api/law-overrides')
+    assert.ok(liste.some((x) => x.paramId === 'co2.price' && x.status === 'open'))
+    const gesetzt = await send('/api/law-overrides/co2.price/2027', { method: 'PUT', body: JSON.stringify({ value: 64.2, source: 'UBA' }) })
+    assert.equal(gesetzt.status, 200, await gesetzt.clone().text())
+    assert.equal((await jsonOf<LawOverrideSlot>(gesetzt)).status, 'entered')
+    const falsch = await send('/api/law-overrides/co2.price/2026', { method: 'PUT', body: JSON.stringify({ value: 61, source: 'x' }) })
+    assert.equal(falsch.status, 400)
+    assert.match(await errorFrom(falsch), /amtliche Wert/)
+    assert.ok((await s.api<LawOverrideSlot[]>('/api/law-overrides')).some((x) => x.paramId === 'co2.price' && x.year === 2027 && x.status === 'entered'))
+    const weg = await send('/api/law-overrides/co2.price/2027', { method: 'DELETE' })
+    assert.equal(weg.status, 200)
+    assert.deepEqual(await jsonOf<unknown>(weg), { ok: true, removed: true })
+  } finally {
+    s.stop()
+  }
+})
+
+test('Blatt für den Messdienst über die Route: 200 mit Rechnungen, 404 ohne Anlage (Heizung PR 17, #210)', async () => {
+  const s = await startServer()
+  try {
+    const send = (url: string, init: RequestInit) => fetch(`${s.base}${url}`, { ...init, headers: { 'content-type': 'application/json' } })
+    await s.api<Unit>('/api/units', jsonPost({ name: 'EG', areaM2: 80, participates: true }))
+    const { plant } = await jsonOf<{ plant: HeatingPlant }>(await send('/api/heating-plants', jsonPost({ energy: 'gas', method: 'service' })))
+    const angelegt = await send(`/api/heating-plants/${plant.id}/deliveries`, jsonPost({ label: 'Gas 2025', invoiceFrom: '2025-01-01', invoiceTo: '2025-12-31', invoiceDate: '2026-01-20', amountCents: 300000, energyKwh: 100000, gasBasis: 'hs', emissionsKg: 18139, co2CostCents: 117000 }))
+    assert.equal(angelegt.status, 201, await angelegt.clone().text())
+    const blatt = await send(`/api/heating-plants/${plant.id}/periods/2025-01/co2-sheet`, { method: 'GET' })
+    assert.equal(blatt.status, 200, await blatt.clone().text())
+    const sheet = await jsonOf<Co2Sheet>(blatt)
+    assert.deepEqual(sheet.deliveries.map((d) => d.label), ['Gas 2025'])
+    assert.deepEqual([sheet.areaM2, sheet.areaSource], [80, 'served'])
+    // 18,139 t × 55 €/t × 1,19 = 1.187,20 €, eingetragen 1.170,00 €: innerhalb der Grenze.
+    assert.deepEqual(sheet.deliveries[0]?.findings, [])
+    assert.equal((await send('/api/heating-plants/fehlt/periods/2025-01/co2-sheet', { method: 'GET' })).status, 404)
   } finally {
     s.stop()
   }

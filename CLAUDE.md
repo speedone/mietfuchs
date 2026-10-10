@@ -1727,6 +1727,43 @@ einer Änderung eine neue Fassung an statt die alte zu ändern, trägt veröffen
 sieht Bundesgesetzblatt (HeizkostenV, CO2KostAufG, GModG, BetrKV, MessEV) und neue Urteile des
 VIII. Senats zu Heiz- und Betriebskosten durch und setzt zuletzt `LAW_AS_OF`.
 
+**Werte, die erst später veröffentlicht werden** (Heizung PR 17, Entwurf 4.5): `co2.price` (ab 2027) und
+`co2.price-ets` (ab Rechnungsjahr 2027) haben `null` und sind `overridable`. Sie fragt nur
+`lawOverridable`, das einen Eintrag des Vermieters aus `law_overrides` (je Kalenderjahr, mit Quelle;
+[server/src/db/lawOverrides.ts](server/src/db/lawOverrides.ts), Routen `/api/law-overrides`) liest und als
+`overridden` protokolliert; `law()` lehnt überschreibbare Parameter ab. Die Abrechnung nennt einen benutzten
+Eintrag (`law.value-overridden`, hint). Ein Release mit dem amtlichen Wert setzt ihn an die Stelle von `null`
+(die zweite Ausnahme in `law-history.test.ts`), und der Eintrag heißt „überholt“. Gebraucht werden diese
+Werte, die EBeV-Werte und `ustg.gas-heat-network-rate` nur für `co2.cost-implausible`
+([server/src/co2Plausibility.ts](server/src/co2Plausibility.ts), je Rechnung, die die Heizperiode berührt,
+auch bei Vorratsenergien): Spannen über Preisjahre, Emissionshandel und Steuersätze (Mischsatz über die
+Stichtage nach BMF-Schreiben vom 25.10.2022, Rz. 12; Flüssiggas beide Sätze nach Rz. 5), Grenzen 1 €/3 %
+und bei den kg 1 % nach oben, 10 % nach unten wegen anerkannter Biomasseanteile (Festlegung ohne
+Rechtsquelle nach 15.2 F6, `KG_TOLERANCE`, `COST_TOLERANCE`). Mietfuchs rechnet nie kg oder € aus kWh vor,
+es vergleicht nur. Ins Register kommt, was im BGBl. steht oder das UBA nach § 4 Abs. 2, 3 CO2KostAufG
+bekanntmacht; keine Drucksachen. Das Blatt „CO₂-Angaben für den Messdienst“ baut
+[server/src/co2Sheet.ts](server/src/co2Sheet.ts) (#210, nicht abgegrenzt; Betrag ohne Eintrag aus den
+verknüpften Positionen), die Seite Heizkosten zeigt es über `Co2SheetView`. **Seine Summe zählt nur, was die
+Abrechnung zählt** (Durchsicht von #246): Storno und abgedeckte Schätzung über `cancelledDeliveries` und
+`estimateFactors` aus fuel.ts (dieselbe Auswahl wie die Bewertung; auch die Prüfung in calc.ts überspringt
+Stornos), eine Rechnung vor 2023 nur mit kg, der Anfangsbestand mit seinen CO₂-Kosten nach der Regel der
+Bestandsrechnung; jede nicht zählende Zeile trägt einen Vermerk. Bei Wärme aus dem Emissionshandel mit
+Anschluss nach dem Stichtag prüfen Abrechnung und Blatt nicht (`etsExempt` in co2Plausibility.ts, eine
+Stelle). Das Blatt spricht in der dritten Person, der Kasten „Bitte prüfen“ ist `no-print`; dieselben
+Befunde stehen an der Lieferung auf der Seite Heizkosten. **Das Blatt rechnet nichts, was die Abrechnung
+entscheidet** (Runde 3 von #246): Endbestand, Verbrauch, der Teil je Rechnung in der Heizperiode sowie kg/m²
+und Stufe kommen aus dem Ergebnis der Abrechnung (`heating[].stock`, `fuel`, `co2`, als `billing`);
+`co2SheetFor` rechnet dafür die Abrechnung, in der die Heizperiode steht. Eine Zufallsprüfung in
+co2-sheet-runde3.test.ts hält die abgegrenzte Zeile gleich der CO₂-Grundlage der Abrechnung, auch bei einer Lücke.
+Auch die Fläche der Einstufung kommt von dort (bei mehreren Anlagen eines Gebäudes die gemeinsame, `areaSource:
+'building'`). Vermerke stehen nummeriert unter der Tabelle (`sheetNotes`), nicht als Zeile darin: Die Tabelle
+scrollt auf dem Handy seitlich. Ob das CO2KostAufG gilt und welche Befunde die Prüfung je Rechnung hat, steht in
+`heating[].co2Check` (`applies`, `exemption`, `findings`); Blatt und Karte „Lieferungen“ lesen es von dort, auch
+die Ausnahme nach § 11 für Wärme und Warmwasser ohne vereinbarte Abrechnung (§ 2 Abs. 7). Die Regel dazu steht einmal in
+[server/src/co2Exemption.ts](server/src/co2Exemption.ts) (`co2OffByExemptionOf`, `exemptionText`); steht eine Heizperiode in
+keiner Abrechnung, fragt das Blatt sie mit den Periodendaten (`heatingRulesOf`) selbst. Werte, die nur geprüft werden, tragen
+`checkOnly` (shared/law); die Abweichung einer abgeschlossenen Abrechnung sagt dann „Prüfwert geändert“.
+
 **Begriffslexikon** (#113): [shared/glossary.ts](shared/glossary.ts) hält jeden Fachbegriff mit
 Erklärung, Beispiel mit Zahlen, Rechtsgrundlage und „Brauche ich das?“. Es war der **erste
 Laufzeitanteil in `shared/`**; der Client bündelt ihn (dafür `allowImportingTsExtensions` in
