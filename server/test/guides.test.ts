@@ -685,3 +685,18 @@ test('Heizung PR 12: „Heizkosten selbst abrechnen“ nennt Heizkostenverteiler
   assert.ok(g.gaps.every((x) => !/Heizkostenverteiler an den Heizkörpern und die Werte eines Ablesedienstes/.test(x.text)))
   for (const id of ids) assert.doesNotMatch(JSON.stringify(GUIDES[id].gaps), /mit Heizkostenverteilern (an den Heizkörpern rechnet Mietfuchs noch nicht|selbst abrechnen)|Eine eigene Heizkostenabrechnung mit Heizkostenverteilern;/, id)
 })
+
+test('Anleitungen: Betriebsstrom steht bei Mehrfamilienhaus und Messdienst, mit Norm (Heizung PR 15)', () => {
+  for (const id of ['multiFamily', 'meteringService'] as const) {
+    const c = GUIDES[id].caveats.find((x) => x.text.includes('Betriebsstrom'))
+    if (!c) return assert.fail(`${id}: kein Satz zum Betriebsstrom`)
+    // P-K3: Der Betriebsstrom geht auch in das Warmwasser (§ 8 Abs. 2 HeizkostenV).
+    assert.match(c.norm ?? '', /§ 7 Abs\. 2, § 8 Abs\. 2 HeizkostenV; BGH, Urteil vom 03\.06\.2016, V ZR 166\/15/)
+    // P-K5: selbst tragen ist zulässig; nur im Allgemeinstrom darf er nicht stehen. R2-K5: mit „Sie“,
+    // wo der Satz es braucht.
+    assert.match(c.text, id === 'multiFamily' ? /verteilen Sie .* oder tragen ihn selbst/ : /oder tragen Sie ihn selbst/)
+    // P-W2, R2-K5: der Weg „Betrag selbst geschätzt“ steht in beiden.
+    assert.match(c.text, /selbst geschätzten Betrag/)
+    assert.ok(GUIDES[id].terms.includes('operatingPower'), `${id}: Begriff fehlt`)
+  }
+})

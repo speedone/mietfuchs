@@ -17,8 +17,8 @@
 // geschnitten und nicht neu erfunden: Was dort dazukommt, kommt hier nur an, wenn es jemand
 // bewusst aufnimmt.
 
-import type { BillingPeriod, Co2Statement, CostItem, DegreeDayValue, FrozenFuelCarry, FuelDelivery, HeatingEstimate, HeatingPeriodData, HeatingPlant, HeatingServiceValue, InterimGap, LawOverride, Meter, Payment, PeriodKey, PeriodRules, Property, Reading, StockValue, Tenancy, Unit } from '../../shared/types.ts'
-import { calendarPeriod, calendarYearPeriod, parsePeriodKey, periodContaining, periodLabel, periodOfKey, previousPeriod, rulesOf, settlementDeadline } from '../../shared/period.ts'
+import type { BillingPeriod, Co2Statement, CostItem, DegreeDayValue, FrozenFuelCarry, FuelDelivery, HeatingEstimate, HeatingPeriodData, HeatingPlant, HeatingServiceValue, InterimGap, LawOverride, Meter, OperatingPowerCredit, OperatingPowerDeduction, Payment, PeriodKey, PeriodRules, Property, Reading, StockValue, Tenancy, Unit } from '../../shared/types.ts'
+import { calendarPeriod, calendarYearPeriod, parsePeriodKey, periodContaining, periodLabel, periodOfKey, previousPeriod, rulesOf, settlementDeadline, startYearOf } from '../../shared/period.ts'
 import { hasOwnRhythm, heatingPeriodsEndingIn, lineRoot, plantRules, sameFuelLine, settledSeparately, settlementKeyOf, type PlantWay } from '../../shared/heatingPeriod.ts'
 import { isStockEnergy } from '../../shared/fuelStock.ts'
 import { dayAfter, germanDate } from '../../shared/law/register.ts'
@@ -99,6 +99,13 @@ export type SnapshotCostItem = Pick<
   | 'heatingPlantId'
   // Die Lieferung (Heizung PR 7): Der Teil einer anderen Heizperiode folgt dem Schlüssel der Position.
   | 'fuelDeliveryId'
+  // Betriebsstrom (Heizung PR 15): Kennzeichnung und Verweis für den Hinweis auf den doppelt verteilten
+  // Betriebsstrom, die Grundlage der Schätzung für den Rechenweg (P-W1); verteilt wird nach keinem.
+  | 'operatingPower'
+  | 'operatingPowerItemId'
+  | 'operatingPowerBasis'
+  // Die Stromrechnung eines Abzugs (Durchsicht von #252, G-K3): für die Hinweise zu Verteilung und Summe.
+  | 'operatingPowerGeneralId'
 >
 
 // Gelesen werden Kennung, Wohnung (null = Hauptzähler) und Zählertyp, dazu die Angaben zur
@@ -477,6 +484,10 @@ export type Snapshot = {
   // Einträge des Vermieters für noch nicht veröffentlichte Rechtswerte (Heizung PR 17, Entwurf 4.5);
   // installationsweit. Fehlt die Angabe, gibt es keine.
   lawOverrides?: LawOverride[]
+  // Abzüge des Betriebsstroms beim Allgemeinstrom aus allen Zeiträumen des Objekts (Heizung PR 15). Sie
+  // gehören zu der Position, auf die sie zeigen, nicht zum Zeitraum (Review Focus 5). Fehlt das Feld
+  // (ein von Hand gebauter Schnappschuss, der Umstieg), gibt es keine.
+  operatingPowerDeductions?: OperatingPowerDeduction[]
 }
 
 // Die Lieferungen im Schnappschuss (Heizung PR 7, Entwurf 5.8). Die Abgrenzung liest Zeitraum, Betrag,
@@ -872,6 +883,39 @@ function selfExtrasOf(
 // den Schlüssel ihrer Heizperiode, nicht den von P (Entwurf 3.0); ein gleicher Schlüssel hieße nicht
 // dieselben Tage. Sie gehen deshalb nicht in `costItems`, sondern je Heizperiode, die in P endet, in
 // `heatingParts`. Ohne eigene Heizperiode bleibt alles wie bisher.
+// Was ein Abzug in einem abgeschlossenen Zeitraum den Mietern gebracht hat (P-W3, R2-W2), gelesen am
+// eingefrorenen Stand: mit seinem Betrag darin (`credited`), mit einem anderen (`changed`, nach dem
+// Abschluss geändert), gar nicht (`missing`, danach angelegt) oder unlesbar (`unknown`).
+function creditOf(label: string, itemTotals: Record<string, number> | null | undefined, c: Pick<SnapshotCostItem, 'id' | 'amountCents'>): OperatingPowerCredit {
+  if (itemTotals === null || itemTotals === undefined) return { label, state: 'unknown' }
+  const frozen = Object.hasOwn(itemTotals, c.id) ? itemTotals[c.id] : undefined
+  if (frozen === undefined) return { label, state: 'missing' }
+  return frozen === c.amountCents ? { label, state: 'credited' } : { label, state: 'changed', frozenCents: frozen }
+}
+
+// Die Abzüge des Betriebsstroms eines Objekts (Heizung PR 15), in der Reihenfolge der Positionen. Steht
+// ein Abzug in einem abgeschlossenen Zeitraum, zählt er nur mit dem, was der eingefrorene Stand führt
+// (`creditOf`): Was dort nicht steht, hat kein Mieter bekommen.
+export function deductionsOf(
+  items: readonly (SnapshotCostItem & { propertyId: string })[],
+  propertyId: string,
+  closed: readonly { period: PeriodKey; itemTotals?: Record<string, number> | null }[],
+  rules: PeriodRules,
+): OperatingPowerDeduction[] {
+  return items
+    .filter((c) => c.propertyId === propertyId && c.operatingPower === 'deduction')
+    .map((c) => {
+      const frozen = closed.find((s) => s.period === c.period)
+      const p = periodOfKey(rules, c.period)
+      return {
+        id: c.id, itemId: c.operatingPowerItemId ?? null, period: c.period, description: c.description, amountCents: c.amountCents,
+        closed: frozen ? creditOf(p ? periodLabel(p) : String(c.period), frozen.itemTotals, c) : null,
+        // N1: das Jahr der Zahlung wie in der Steuerübersicht (`taxYearOf`).
+        taxYear: c.taxYear ?? (p ? Number(p.from.slice(0, 4)) : startYearOf(c.period)),
+      }
+    })
+}
+
 export function snapshotFor(
   source: PropertyScopedSource & {
     properties?: (SnapshotProperty & { id: string, periodRules?: PeriodRules })[]
@@ -946,6 +990,8 @@ export function snapshotFor(
     ...(stockChains.length > 0 ? { stockChains } : {}),
     ...selfExtrasOf(source, narrowed, plants.map((p) => p.id)),
     ...((source.lawOverrides?.length ?? 0) > 0 ? { lawOverrides: source.lawOverrides } : {}),
+    // Betriebsstrom (Heizung PR 15): Abzüge aus allen Zeiträumen des Objekts.
+    operatingPowerDeductions: deductionsOf(narrowed.costItems, propertyId, narrowed.closedSettlements, objectRules),
   }
 }
 
@@ -998,6 +1044,9 @@ export function heatingSnapshotFor(source: Parameters<typeof snapshotFor>[0], pr
     // Die Werte eines Ablesedienstes über die Linie (Durchsicht von #241, I1).
     ...selfExtrasOf(source, narrowed, [plantId], [...line]),
     ...((source.lawOverrides?.length ?? 0) > 0 ? { lawOverrides: source.lawOverrides } : {}),
+    // Betriebsstrom (Heizung PR 15): Der Allgemeinstrom gehört zur Abrechnung des Objekts, und
+    // abgeschlossen ist er mit ihr.
+    operatingPowerDeductions: deductionsOf(narrowed.costItems, propertyId, narrowed.closedSettlements, objectRules),
   }
 }
 

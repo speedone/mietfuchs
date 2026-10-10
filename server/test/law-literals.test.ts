@@ -30,7 +30,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 
 const PERCENT_PATTERNS = [/um \d+ ?%/g, /\d+ ?% kürzen/g, /\d+ bis \d+ ?%/g, /\d+ und höchstens \d+ ?%/g, /\d+ Prozent/g, /\d+ vom Hundert/g, /\d+–\d+ ?%/g]
 const DATE_PATTERNS = [/\d{4}-\d{2}-\d{2}/g, /\d{2}\.\d{2}\.\d{4}/g]
-const ENGINE_FILES = ['server/src/calc.ts', 'server/src/snapshot.ts', 'shared/heating.ts', 'shared/period.ts', 'shared/heatingPeriod.ts', 'shared/degreeDays.ts', 'server/src/remoteReading.ts', 'server/src/co2.ts', 'server/src/fuel.ts', 'server/src/fuelStock.ts', 'shared/fuelStock.ts', 'server/src/heating.ts', 'server/src/dhw.ts', 'server/src/hca.ts', 'server/src/heatingInfo.ts', 'server/src/co2Plausibility.ts']
+const ENGINE_FILES = ['server/src/calc.ts', 'server/src/snapshot.ts', 'shared/heating.ts', 'shared/period.ts', 'shared/heatingPeriod.ts', 'shared/degreeDays.ts', 'server/src/remoteReading.ts', 'server/src/co2.ts', 'server/src/fuel.ts', 'server/src/fuelStock.ts', 'shared/fuelStock.ts', 'server/src/heating.ts', 'server/src/dhw.ts', 'server/src/hca.ts', 'server/src/heatingInfo.ts', 'server/src/co2Plausibility.ts', 'shared/operatingPower.ts', 'server/src/operatingPower.ts']
 // Rechtszahlen als Zahl im Code (Durchsicht von #221, I2): Die Muster oben sehen nur Texte, eine
 // Zeile wie `Math.round((share * 15) / 100)` oder `year >= 2021` fiele durch. Geprüft wird der Code
 // ohne Zeichenketten und Kommentare, in den Dateien der Berechnung und in invoiceAmounts.ts, auf die
@@ -54,6 +54,14 @@ const ALLOWED: readonly Allowed[] = [
   { file: 'server/src/calc.ts', match: '08.01.2013', reason: 'Datum einer Entscheidung im Zitat (BGH VIII ZR 180/12), kein Rechtswert' },
   { file: 'server/src/calc.ts', match: '12.01.2022', reason: 'Datum einer Entscheidung im Zitat (BGH VIII ZR 151/20, Warmwasser ohne Wärmezähler), kein Rechtswert' },
   { file: 'server/src/calc.ts', match: '30.04.2008', reason: 'Datum einer Entscheidung im Zitat (BGH VIII ZR 240/07, eigene Heizperiode), kein Rechtswert' },
+  { file: 'shared/glossary.ts', match: '3–6 %', reason: 'Literaturwert (Jennißen), vom BGH in V ZR 166/15 Rn. 14 wiedergegeben; der BGH lässt den Bruchteil der Brennstoffkosten als Schätzgrundlage zu, legt aber keinen Wert fest; kein Rechtswert (Entwurf 4.3)' },
+  { file: 'shared/glossary.ts', match: '4–10 %', reason: 'Literaturwert (Schmidt-Futterer/Lammel), vom BGH in V ZR 166/15 Rn. 14 wiedergegeben, ohne eigene Festlegung; kein Rechtswert (Entwurf 4.3)' },
+  { file: 'shared/glossary.ts', match: '8–10 %', reason: 'Literaturwert (Wall), vom BGH in V ZR 166/15 Rn. 14 wiedergegeben, ohne eigene Festlegung; kein Rechtswert (Entwurf 4.3)' },
+  { file: 'shared/operatingPower.ts', match: '01.10.2024', reason: 'Inkrafttreten der Fassung von § 7 Abs. 2 HeizkostenV mit dem „zur Wärmeerzeugung verbrauchten Strom“ (Art. 3, Art. 6 Abs. 2 G v. 16.10.2023), nur im Text; keine Rechnung hängt daran (Durchsicht von #252, R-W2)' },
+  { file: 'shared/operatingPower.ts', match: '03.06.2016', reason: 'Datum einer Entscheidung im Zitat (BGH V ZR 166/15, Betriebsstrom bei Wärmepumpe und Stromheizung), kein Rechtswert' },
+  { file: 'server/src/operatingPower.ts', match: '17.11.2004', reason: 'Datum einer Entscheidung im Zitat (BGH VIII ZR 115/04, Grenze der Korrektur nach § 556 Abs. 3 Satz 3 BGB), kein Rechtswert' },
+  { file: 'server/src/operatingPower.ts', match: '12.12.2007', reason: 'Datum einer Entscheidung im Zitat (BGH VIII ZR 190/06, Grenze der Korrektur auch beim Guthaben), kein Rechtswert' },
+  { file: 'server/src/operatingPower.ts', match: '03.06.2016', reason: 'Datum einer Entscheidung im Zitat (BGH V ZR 166/15, Betriebsstrom), kein Rechtswert' },
   { file: 'server/src/invoiceAmounts.ts', match: 'Math.max(50,', reason: 'Rundungstoleranz der Schnellerfassung (mindestens 0,50 €), keine Rechtszahl' },
 ]
 
