@@ -11,10 +11,10 @@ import { eq } from 'drizzle-orm'
 import { createHeatingPlant } from '../src/db/heating.ts'
 import { bookOperatingPower } from '../src/db/operatingPower.ts'
 import { readCostItems } from '../src/db/read.ts'
-import { heatingPlants } from '../src/db/schema.ts'
+import { costItems, heatingPlants } from '../src/db/schema.ts'
 import { periodKey } from '../../shared/period.ts'
 import { openDatabase, type OpenedDatabase } from '../src/db/open.ts'
-import { closeSettlement, createEntity, createProperty, CrossPropertyError, findEntity, HeatingError, removeEntity, updateEntity } from '../src/db/repository.ts'
+import { closeSettlement, createEntity, createProperty, CrossPropertyError, crossPropertyViolations, findEntity, HeatingError, removeEntity, updateEntity } from '../src/db/repository.ts'
 
 const tempDir = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-betriebsstrom-'))
 
@@ -476,5 +476,40 @@ test('G-W1: beim Messdienst fragt schon ein vorhandener Abzug aus derselben Stro
     await opened.write((db) => bookOperatingPower(db, 'hp', body, ids))
     await assert.rejects(opened.write((db) => bookOperatingPower(db, 'hp', body, ids)),
       (e: unknown) => e instanceof HeatingError && e.status === 409 && /Abzug Betriebsstrom Heizung \(selbst geschätzt\), an Messdienst gemeldet/.test(e.message))
+  })
+})
+
+// ---------- Durchsicht von #252, G-W2: kein Verweis über die Objektgrenze ----------
+
+test('G-W2: Betriebsstrom, Stromrechnung oder Abzug wechseln nicht das Objekt, solange der Verweis besteht (auch mit Leeren der Anlage)', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => createProperty(db, 'objekt-2', { name: 'Zweites Haus' }))
+    await opened.write((db) => createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'gas', method: 'manual' }))
+    await opened.write((db) => createEntity(db, 'costItems', 'bs', heizung({ heatingPlantId: 'hp' })))
+    await opened.write((db) => createEntity(db, 'costItems', 'ab', abzug('bs')))
+    const quer = (e: unknown) => e instanceof CrossPropertyError && /anderen Objekt/.test(e.message)
+    await assert.rejects(opened.write((db) => updateEntity(db, 'costItems', 'bs', { propertyId: 'objekt-2', heatingPlantId: null, heatingPart: null })), quer)
+    await assert.rejects(opened.write((db) => updateEntity(db, 'costItems', 'hausstrom', { propertyId: 'objekt-2' })), quer)
+    await assert.rejects(opened.write((db) => updateEntity(db, 'costItems', 'ab', { propertyId: 'objekt-2' })), quer)
+    const stand = await opened.read((db) => db.select({ id: costItems.id, propertyId: costItems.propertyId }).from(costItems))
+    assert.deepEqual(stand.map((c) => c.propertyId), ['objekt-1', 'objekt-1', 'objekt-1'])
+    // Ohne Abzug darf der Betriebsstrom das Objekt wechseln.
+    await opened.write((db) => removeEntity(db, 'costItems', 'ab'))
+    await opened.write((db) => updateEntity(db, 'costItems', 'bs', { propertyId: 'objekt-2', heatingPlantId: null, heatingPart: null }))
+  })
+})
+
+test('G-W2: die Prüfung beim Wiederherstellen kennt beide Verweise des Abzugs', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => createProperty(db, 'objekt-2', { name: 'Zweites Haus' }))
+    await opened.write((db) => createEntity(db, 'costItems', 'bs', heizung()))
+    await opened.write((db) => createEntity(db, 'costItems', 'ab', abzug('bs')))
+    assert.deepEqual(await opened.read((db) => crossPropertyViolations(db)), [])
+    // So steht es in einem Backup aus einem Stand vor der Prüfung.
+    await opened.write((db) => db.update(costItems).set({ propertyId: 'objekt-2' }).where(eq(costItems.id, 'bs')))
+    await opened.write((db) => db.update(costItems).set({ propertyId: 'objekt-2' }).where(eq(costItems.id, 'hausstrom')))
+    const befunde = await opened.read((db) => crossPropertyViolations(db))
+    assert.ok(befunde.some((b) => /„Abzug Betriebsstrom Heizung“ zeigt auf den Betriebsstrom „Betriebsstrom Heizung“ eines anderen Objekts/.test(b)), befunde.join('\n'))
+    assert.ok(befunde.some((b) => /„Abzug Betriebsstrom Heizung“ zeigt auf die Stromrechnung „Allgemeinstrom 2025“ eines anderen Objekts/.test(b)), befunde.join('\n'))
   })
 })
