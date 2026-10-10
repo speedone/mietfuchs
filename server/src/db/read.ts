@@ -266,6 +266,11 @@ export async function readCostItems(db: Executor): Promise<CostItem[]> {
       ...(c.heatingPlantId !== null ? { heatingPlantId: c.heatingPlantId } : {}),
       // Die Lieferung (Heizung PR 7), ebenso nur, wenn es sie gibt.
       ...(c.fuelDeliveryId !== null ? { fuelDeliveryId: c.fuelDeliveryId } : {}),
+      // Betriebsstrom (Heizung PR 15): ebenso nur, wenn es die Angabe gibt.
+      ...(c.operatingPower !== null ? { operatingPower: c.operatingPower } : {}),
+      ...(c.operatingPowerItemId !== null ? { operatingPowerItemId: c.operatingPowerItemId } : {}),
+      ...(c.operatingPowerBasis !== null ? { operatingPowerBasis: c.operatingPowerBasis } : {}),
+      ...(c.operatingPowerGeneralId !== null ? { operatingPowerGeneralId: c.operatingPowerGeneralId } : {}),
     }
   })
 }

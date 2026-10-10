@@ -35,11 +35,13 @@
 import { beforeBeginText } from './selfLine.ts'
 import { selfActive, selfFromOf } from '../heating.ts'
 import { captureOf, coversPeriod, hotWaterOf } from '../hca.ts'
-import { and, count, desc, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm'
+import { and, count, desc, eq, inArray, isNotNull, ne, or, sql } from 'drizzle-orm'
+import { alias } from 'drizzle-orm/sqlite-core'
 import type { BillingPeriod, CostItem, ExternalBasis, HeatingPlant, HeatingPrepaymentOverride, InterimGapStatus, Meter, MeterType, Payment, PeriodKey, PeriodRules, PersonEntry, PrepaymentEntry, Property, Reading, RentEntry, SplitPreviewPart, Tenancy, Unit, UnitDependents } from '../../../shared/types.ts'
 import { CALENDAR_RULES, calendarPeriod, paymentYear, formatDayRange, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, spansTwoYears, startYearOf } from '../../../shared/period.ts'
 import { heatingPeriodsEndingIn, isObjectPeriod, plantRules, plantSpan, servesUnit, spanOf } from '../../../shared/heatingPeriod.ts'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
+import { euro as operatingPowerEuro, GENERAL_POWER_CATEGORY, POWER_GENERATED } from '../../../shared/operatingPower.ts'
 import { targetProblem } from '../heating.ts'
 import { andList } from '../../../shared/wording.ts'
 import type { MigratedSettings } from '../ai/settings.ts'
@@ -53,7 +55,7 @@ import {
 } from './read.ts'
 import {
   aiSlots, assessmentLines, assessments, baseRents, co2Statements, co2TenantReliefs, heatingPeriods, closedHeatingSettlementHistory, closedHeatingSettlements, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, DEPOSIT_STATUS, EXTERNAL_MEASURES,
-  HCA_SCALES, HEATING_PARTS, HEATING_ROLES, HEATING_TARGETS, INTERIM_GAP_STATUS, interimReadingGaps, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingSelfSpans, heatingPrepaymentOverrides, heatingPrepayments, heatingSeparateSpans, heatingServiceValues, heatingEstimates,
+  HCA_SCALES, HEATING_PARTS, OPERATING_POWER, HEATING_ROLES, HEATING_TARGETS, INTERIM_GAP_STATUS, interimReadingGaps, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingSelfSpans, heatingPrepaymentOverrides, heatingPrepayments, heatingSeparateSpans, heatingServiceValues, heatingEstimates,
   flatRates, METER_TYPES, meters, payments, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, PROPERTY_KINDS,
   readings, settings, tenancies, unitNoConnection, units, fuelCarryFrozen, fuelDeliveries,
 } from './schema.ts'
@@ -383,6 +385,12 @@ function mergeCostItem(current: CostItem, body: unknown): CostItem {
         : current.category === HEATING_CATEGORY ? (current.heatingPlantId ?? null) : undefined,
     // Die Lieferung (Heizung PR 7); `null` löst die Verknüpfung.
     fuelDeliveryId: merged(body, 'fuelDeliveryId', current.fuelDeliveryId, asNullableFilled),
+    // Betriebsstrom (Heizung PR 15). `null` leert; fehlt das Feld, bleibt die Angabe (Review Focus 3,
+    // ein alter Tab). Eine leere Grundlage gilt als keine.
+    operatingPower: merged(body, 'operatingPower', current.operatingPower, (v) => oneOfOrUndefined(OPERATING_POWER, v)),
+    operatingPowerItemId: merged(body, 'operatingPowerItemId', current.operatingPowerItemId, (v) => (typeof v === 'string' && v !== '' ? v : undefined)),
+    operatingPowerBasis: merged(body, 'operatingPowerBasis', current.operatingPowerBasis, (v) => (typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined)),
+    operatingPowerGeneralId: merged(body, 'operatingPowerGeneralId', current.operatingPowerGeneralId, (v) => (typeof v === 'string' && v !== '' ? v : undefined)),
   }
 }
 
@@ -942,7 +950,10 @@ async function requirePeriods(db: Executor, propertyId: string, keys: readonly s
 // Ein Teil, dessen Leistungszeitraum und Zeitraum unverändert bleiben (der Betrag wird berichtigt),
 // ist weiter erlaubt. **Heizkosten werden nie nach Tagen geteilt** (G-C1, VIII ZR 156/11); sie
 // nimmt die Prüfung an, und die Abrechnung warnt (`period.heating-mismatch`).
-export type CostItemGuardOptions = { splitPart?: boolean }
+// `periodChange` (Nachprüfung von #252, G2-N-W1): Beim Wechsel des Abrechnungszeitraums wandern Stromrechnung
+// und Abzüge nacheinander; die Prüfungen auf denselben Zeitraum und die Summe gelten dann für den
+// Endstand (`settleOperatingPowerLinks`), nicht für jeden Zwischenschritt.
+export type CostItemGuardOptions = { splitPart?: boolean; periodChange?: boolean }
 
 async function requireServiceAndTax(db: Executor, before: CostItem | null, after: CostItem, options: CostItemGuardOptions): Promise<void> {
   const what = `„${after.description}“`
@@ -1141,6 +1152,141 @@ async function guardCostItem(db: Executor, before: CostItem | null, after: CostI
   await sameProperty(db, after.propertyId, ziele, 'Die Kostenposition')
   await guardCostItemHeating(db, before, after)
   await guardFuelLink(db, before, after)
+  await guardOperatingPower(db, before, after, options)
+}
+
+// Betriebsstrom und Abzug (Heizung PR 15, #212). Ein Abzug gehört zu genau einer Betriebsstrom-Position
+// desselben Objekts; ohne Verweis gehört er zu einer Anlage mit Messdienst. Die Datenbank prüft Kostenart
+// und Vorzeichen (Bedingungen), hier steht, was an einer anderen Zeile hängt. Die Energie der Anlage
+// prüft diese Funktion bewusst nicht (R2-W1): Auch bei einer Wärmepumpe ist der Strom von Umwälzpumpen
+// und Regelung Betriebsstrom; abgelehnt wird dort nur die Schätzhilfe (db/operatingPower.ts).
+async function guardOperatingPower(db: Executor, before: CostItem | null, after: CostItem, options: CostItemGuardOptions = {}): Promise<void> {
+  // Durchsicht von #252, G-W2: Zeigt ein Abzug auf diese Position (als Betriebsstrom oder als
+  // Stromrechnung), bleibt sie in ihrem Objekt; sonst minderte der Abzug den Allgemeinstrom des einen
+  // Hauses für den Betriebsstrom des anderen. Den Abzug selbst prüfen die Verweise weiter unten.
+  if (before && before.propertyId !== after.propertyId) {
+    const abzuege = await db.select({ description: costItems.description }).from(costItems)
+      .where(or(eq(costItems.operatingPowerItemId, after.id), eq(costItems.operatingPowerGeneralId, after.id)))
+    if (abzuege.length > 0) {
+      throw new CrossPropertyError(`Zu „${after.description}“ gehört der Abzug ${abzuege.map((a) => `„${a.description}“`).join(', ')} beim Allgemeinstrom; er zeigte dann auf eine Position in einem anderen Objekt. Löschen Sie zuerst den Abzug.`)
+    }
+  }
+  if (after.operatingPower === 'included') {
+    if (after.category !== HEATING_CATEGORY) {
+      throw new HeatingError(400, `Betriebsstrom gibt es nur bei der Kostenart „${HEATING_CATEGORY}“.`)
+    }
+    // Durchsicht von #252, G-K4: Eine Gutschrift ist kein Strom, der im Allgemeinstrom steckt.
+    if (!(after.amountCents > 0)) {
+      throw new HeatingError(400, `„${after.description}“ ist als Betriebsstrom gekennzeichnet, der auch im Allgemeinstrom steckt, und braucht deshalb einen positiven Betrag.`)
+    }
+    if (after.heatingPart === 'fuel') {
+      // R-W2 (Durchsicht von #252): Strom zur Wärmeerzeugung über den Hauszähler gibt es nur bei einer
+      // Anlage, die mit Strom heizt.
+      const [p] = after.heatingPlantId ? await db.select({ energy: heatingPlants.energy }).from(heatingPlants).where(eq(heatingPlants.id, after.heatingPlantId)) : []
+      if (!p || !POWER_GENERATED.includes(p.energy)) {
+        throw new HeatingError(400, `„${after.description}“ ist Brennstoff/Energie einer Anlage, die nicht mit Strom heizt; „steckt auch im Allgemeinstrom“ gibt es beim Teil „Brennstoff/Energie“ nur für den Strom einer Wärmepumpe oder Stromheizung.`)
+      }
+    } else if (after.heatingPart !== undefined && after.heatingPart !== 'operating') {
+      throw new HeatingError(400, `„${after.description}“ ist als Teil der Heizkosten nicht „Betrieb“; Betriebsstrom gibt es nur beim Teil „Betrieb“ oder ohne Teil.`)
+    }
+  }
+  if (after.operatingPower === 'deduction') {
+    if (after.category !== GENERAL_POWER_CATEGORY) {
+      throw new HeatingError(400, `Ein Abzug des Betriebsstroms gehört zur Kostenart „${GENERAL_POWER_CATEGORY}“.`)
+    }
+    if (!(after.amountCents < 0)) {
+      throw new HeatingError(400, `„${after.description}“ ist ein Abzug und braucht einen negativen Betrag.`)
+    }
+  }
+  if (after.operatingPowerItemId !== undefined) {
+    if (after.operatingPower !== 'deduction') {
+      throw new HeatingError(400, 'Nur ein Abzug beim Allgemeinstrom zeigt auf eine Betriebsstrom-Position.')
+    }
+    const [target] = await db
+      .select({ propertyId: costItems.propertyId, operatingPower: costItems.operatingPower, description: costItems.description })
+      .from(costItems).where(eq(costItems.id, after.operatingPowerItemId))
+    if (!target) throw new HeatingError(400, 'Die Betriebsstrom-Position, zu der dieser Abzug gehört, gibt es nicht (mehr).')
+    if (target.propertyId !== after.propertyId) {
+      throw new CrossPropertyError(`Der Abzug „${after.description}“ gehört zu einem anderen Objekt als der Betriebsstrom „${target.description}“.`)
+    }
+    if (target.operatingPower !== 'included') {
+      throw new HeatingError(400, `„${target.description}“ ist nicht als Betriebsstrom gekennzeichnet, der auch im Allgemeinstrom steckt; ein Abzug kann nicht zu ihr gehören.`)
+    }
+  }
+  if (before?.operatingPower === 'included' && after.operatingPower !== 'included') {
+    const abzuege = await db.select({ description: costItems.description }).from(costItems).where(eq(costItems.operatingPowerItemId, after.id))
+    if (abzuege.length > 0) {
+      throw new HeatingError(400, `Zu „${after.description}“ gehört der Abzug ${abzuege.map((a) => `„${a.description}“`).join(', ')} beim Allgemeinstrom. Löschen Sie zuerst den Abzug, sonst stünde er ohne Betriebsstrom da.`)
+    }
+  }
+  // P-W1: Die Grundlage der Schätzung gehört zu Betriebsstrom oder Abzug.
+  if (after.operatingPowerBasis !== undefined && after.operatingPower === undefined) {
+    throw new HeatingError(400, 'Eine Grundlage der Schätzung gibt es nur bei Betriebsstrom oder seinem Abzug beim Allgemeinstrom.')
+  }
+  await guardDeductionSource(db, after, options)
+  await guardGeneralWithDeductions(db, before, after, options)
+}
+
+// Durchsicht von #252, G-K3: Ein Abzug zeigt auf die Stromrechnung, aus der er gerechnet wurde, im selben
+// Objekt und Zeitraum. Ohne diesen Verweis bliebe ein Abzug nach dem Löschen oder Umstellen der Rechnung
+// still stehen, und der Allgemeinstrom wäre netto negativ oder anders verteilt als die Rechnung.
+async function guardDeductionSource(db: Executor, after: CostItem, options: CostItemGuardOptions = {}): Promise<void> {
+  if (after.operatingPowerGeneralId !== undefined && after.operatingPower !== 'deduction') {
+    throw new HeatingError(400, 'Nur ein Abzug des Betriebsstroms zeigt auf eine Stromrechnung.')
+  }
+  if (after.operatingPower !== 'deduction') return
+  if (after.operatingPowerGeneralId === undefined) {
+    throw new HeatingError(400, `Bitte wählen Sie zu „${after.description}“ die Stromrechnung des Allgemeinstroms, aus der der Abzug gerechnet wurde.`)
+  }
+  const [g] = await db
+    .select({ propertyId: costItems.propertyId, period: costItems.period, category: costItems.category, amountCents: costItems.amountCents, operatingPower: costItems.operatingPower, description: costItems.description })
+    .from(costItems).where(eq(costItems.id, after.operatingPowerGeneralId))
+  if (!g) throw new HeatingError(400, 'Die Stromrechnung, aus der dieser Abzug gerechnet wurde, gibt es nicht (mehr).')
+  if (g.propertyId !== after.propertyId) {
+    throw new CrossPropertyError(`Der Abzug „${after.description}“ gehört zu einem anderen Objekt als die Stromrechnung „${g.description}“.`)
+  }
+  if (g.category !== GENERAL_POWER_CATEGORY || !(g.amountCents > 0) || g.operatingPower !== null) {
+    throw new HeatingError(400, `„${g.description}“ ist keine Stromrechnung des Allgemeinstroms mit positivem Betrag; ein Abzug kann nicht aus ihr gerechnet sein.`)
+  }
+  if (g.period !== after.period && !options.periodChange) {
+    throw new HeatingError(400, `Ein Abzug steht im selben Zeitraum wie seine Stromrechnung „${g.description}“.`)
+  }
+  // Nachprüfung von #252, G2-K1: dieselbe Summenregel wie in der Schätzhilfe. Beim Zeitraumwechsel gilt sie
+  // für den Endstand (`settleOperatingPowerLinks`).
+  if (!options.periodChange) {
+    const others = await db.select({ amountCents: costItems.amountCents }).from(costItems)
+      .where(and(eq(costItems.operatingPowerGeneralId, after.operatingPowerGeneralId), ne(costItems.id, after.id)))
+    const deducted = -others.reduce((a, c) => a + c.amountCents, 0) - after.amountCents
+    if (deducted > g.amountCents) {
+      throw new HeatingError(400, `Aus der Stromrechnung „${g.description}“ (${operatingPowerEuro(g.amountCents)}) wären damit ${operatingPowerEuro(deducted)} abgezogen, mehr als die Rechnung. Prüfen Sie die Abzüge.`)
+    }
+  }
+}
+
+// Die Abzüge, die aus einer Stromrechnung gerechnet wurden (G-K3).
+async function deductionsFrom(db: Executor, generalId: string): Promise<string[]> {
+  return (await db.select({ description: costItems.description }).from(costItems).where(eq(costItems.operatingPowerGeneralId, generalId))).map((a) => `„${a.description}“`)
+}
+
+// Eine Stromrechnung mit Abzügen bleibt Stromrechnung: Kostenart, positiver Betrag, keine Kennzeichnung,
+// derselbe Zeitraum (G-K3).
+async function guardGeneralWithDeductions(db: Executor, before: CostItem | null, after: CostItem, options: CostItemGuardOptions = {}): Promise<void> {
+  if (!before || before.category !== GENERAL_POWER_CATEGORY || before.operatingPower !== undefined) return
+  const stillGeneral = after.category === GENERAL_POWER_CATEGORY && after.amountCents > 0 && after.operatingPower === undefined && (after.period === before.period || options.periodChange === true)
+  if (stillGeneral) {
+    // G2-K1: Die Rechnung wird nicht kleiner als die Abzüge aus ihr (beim Zeitraumwechsel: Endstand).
+    if (options.periodChange || after.amountCents >= before.amountCents) return
+    const abgezogen = -(await db.select({ amountCents: costItems.amountCents }).from(costItems).where(eq(costItems.operatingPowerGeneralId, after.id)))
+      .reduce((a, c) => a + c.amountCents, 0)
+    if (abgezogen > after.amountCents) {
+      throw new HeatingError(400, `Aus „${before.description}“ sind ${operatingPowerEuro(abgezogen)} abgezogen; die Rechnung kann nicht kleiner sein. Ändern Sie zuerst die Abzüge.`)
+    }
+    return
+  }
+  const abzuege = await deductionsFrom(db, after.id)
+  if (abzuege.length > 0) {
+    throw new HeatingError(400, `Aus „${before.description}“ ist der Abzug ${abzuege.join(', ')} gerechnet. Kostenart, Zeitraum und positiver Betrag der Stromrechnung bleiben, solange er besteht; löschen oder ändern Sie zuerst den Abzug.`)
+  }
 }
 
 // Eine Wohnung darf das Objekt wechseln, solange nichts Objektgebundenes an ihr hängt. Ihr
@@ -1438,6 +1584,17 @@ export async function crossPropertyViolations(db: Database): Promise<string[]> {
     .innerJoin(units, eq(heatingEstimates.unitId, units.id))
     .where(ne(heatingPlants.propertyId, units.propertyId))
   for (const s of schaetzungen) befunde.push(`Eine Schätzung nach § 9a gehört zur Wohnung „${s.unitName}“ eines anderen Objekts als ihre Heizanlage.`)
+  // Betriebsstrom (Durchsicht von #252, G-W2): Ein Abzug zeigt nur auf Betriebsstrom und Stromrechnung
+  // seines Objekts.
+  const ziel = alias(costItems, 'ziel')
+  for (const [spalte, was] of [[costItems.operatingPowerItemId, 'den Betriebsstrom'], [costItems.operatingPowerGeneralId, 'die Stromrechnung']] as const) {
+    const quer = await db
+      .select({ description: costItems.description, target: ziel.description })
+      .from(costItems)
+      .innerJoin(ziel, eq(spalte, ziel.id))
+      .where(ne(costItems.propertyId, ziel.propertyId))
+    for (const c of quer) befunde.push(`Der Abzug „${c.description}“ zeigt auf ${was} „${c.target}“ eines anderen Objekts.`)
+  }
   return befunde
 }
 
@@ -1622,6 +1779,8 @@ const costItemRow = (c: CostItem) => ({
   heatingTarget: orNull(c.heatingTarget),
   heatingPlantId: c.heatingPlantId ?? null,
   fuelDeliveryId: c.fuelDeliveryId ?? null,
+  operatingPower: orNull(c.operatingPower), operatingPowerItemId: orNull(c.operatingPowerItemId),
+  operatingPowerBasis: orNull(c.operatingPowerBasis), operatingPowerGeneralId: orNull(c.operatingPowerGeneralId),
 })
 const meterRow = (m: Meter) => ({
   id: m.id, propertyId: m.propertyId, name: m.name, unitId: m.unitId, type: m.type, meterNumber: orNull(m.meterNumber), unit: m.unit,
@@ -1777,6 +1936,13 @@ const costItemCollection: Collection<CostItem> = {
     await writeCostItemShares(db, entity)
   },
   remove: async (db, id) => {
+    // Heizung PR 15: ein Satz statt des Fremdschlüssels (Review Focus 2), für den Betriebsstrom wie für die
+    // Stromrechnung, aus der ein Abzug gerechnet wurde (Durchsicht von #252, G-K3).
+    const abzuege = await db.select({ description: costItems.description }).from(costItems)
+      .where(or(eq(costItems.operatingPowerItemId, id), eq(costItems.operatingPowerGeneralId, id)))
+    if (abzuege.length > 0) {
+      throw new HeatingError(400, `Zu dieser Position gehört ${abzuege.length === 1 ? 'der Abzug' : 'die Abzüge'} ${abzuege.map((a) => `„${a.description}“`).join(', ')} beim Allgemeinstrom. Löschen Sie zuerst den Abzug, damit der Allgemeinstrom nicht still gemindert bleibt.`)
+    }
     const [c] = await db.select({ fuelDeliveryId: costItems.fuelDeliveryId, period: costItems.period }).from(costItems).where(eq(costItems.id, id))
     if (c) await guardFrozenLink(db, { id, fuelDeliveryId: c.fuelDeliveryId, period: c.period }, null)
     await db.delete(costItems).where(eq(costItems.id, id))
@@ -1943,7 +2109,7 @@ export type PartWrite = { period: PeriodKey; amountCents: number; labor35aCents:
 // Schreiben wie das gewöhnliche Anlegen; `base` gibt alles Übrige (Schlüssel, Anteile, Beleg).
 // `keepId`: Die Kennung bleibt am Teil dieses Zeitraums, sonst am ersten. Ohne Transaktion, denn
 // beide Aufrufer (Aufteilen, Wechsel des Rhythmus) laufen schon in einer.
-export async function writeCostItemParts(tx: Executor, base: CostItem, parts: readonly PartWrite[], newId: () => string, keepId: string | null): Promise<string[]> {
+export async function writeCostItemParts(tx: Executor, base: CostItem, parts: readonly PartWrite[], newId: () => string, keepId: string | null, guardOptions: CostItemGuardOptions = { splitPart: true }): Promise<string[]> {
   const keepAt = Math.max(0, parts.findIndex((p) => p.period === base.period))
   const written: string[] = []
   for (const [i, part] of parts.entries()) {
@@ -1951,7 +2117,7 @@ export async function writeCostItemParts(tx: Executor, base: CostItem, parts: re
     const entity = mergeCostItem(keepId !== null && i === keepAt ? base : { ...base, id }, {
       period: part.period, amountCents: part.amountCents, labor35aCents: part.labor35aCents, description: part.description, taxYear: part.taxYear,
     })
-    await guardCostItem(tx, keepId !== null && i === keepAt ? base : null, entity, {}, { splitPart: true })
+    await guardCostItem(tx, keepId !== null && i === keepAt ? base : null, entity, {}, guardOptions)
     if (keepId !== null && i === keepAt) await costItemCollection.replace(tx, entity)
     else await costItemCollection.insert(tx, entity)
     written.push(id)
@@ -1965,7 +2131,7 @@ export async function writeCostItemParts(tx: Executor, base: CostItem, parts: re
 // einer Belegauswertung und der Beleg auf einen verbleibenden Teil derselben Rechnung: Mit
 // `SET NULL` stünde die schon gebuchte Rechnung sonst wieder offen im Posteingang und ließe sich ein
 // zweites Mal buchen (#184). Ohne Transaktion, der Aufrufer läuft in einer.
-export async function rewriteCostItemFamily(tx: Executor, members: readonly CostItem[], parts: readonly PartWrite[], newId: () => string): Promise<string[]> {
+export async function rewriteCostItemFamily(tx: Executor, members: readonly CostItem[], parts: readonly PartWrite[], newId: () => string, guardOptions: CostItemGuardOptions = { splitPart: true }): Promise<string[]> {
   const first = members[0]
   if (first === undefined) return []
   const unused = [...members]
@@ -1981,13 +2147,13 @@ export async function rewriteCostItemFamily(tx: Executor, members: readonly Cost
     const member = chosen[i]
     if (member !== undefined) {
       const entity = mergeCostItem(member, fields)
-      await guardCostItem(tx, member, entity, {}, { splitPart: true })
+      await guardCostItem(tx, member, entity, {}, guardOptions)
       await costItemCollection.replace(tx, entity)
       written.push(member.id)
     } else {
       const id = newId()
       const entity = mergeCostItem({ ...first, id }, fields)
-      await guardCostItem(tx, null, entity, {}, { splitPart: true })
+      await guardCostItem(tx, null, entity, {}, guardOptions)
       await costItemCollection.insert(tx, entity)
       written.push(id)
     }
@@ -2310,4 +2476,38 @@ export async function invoiceFilesInUse(db: Database, files: string[]): Promise<
 export async function sharesForUnit(db: Database, unitId: string): Promise<number> {
   const rows = await db.select({ unitId: costItemShares.unitId }).from(costItemShares).where(eq(costItemShares.unitId, unitId))
   return rows.length
+}
+
+// Nachprüfung von #252, G2-N-W1: Nach dem Wechsel des Abrechnungszeitraums zeigt jeder Abzug auf den Teil
+// seiner Stromrechnung im selben Zeitraum (`parts`: je ursprünglicher Position die geschriebenen Teile),
+// und die Prüfungen des Betriebsstroms gelten für den Endstand. Scheitert eine, wirft die Funktion einen
+// `PeriodError`; der Wechsel antwortet dann mit 409 und Vorschau, die Transaktion schreibt nichts.
+export async function settleOperatingPowerLinks(tx: Executor, propertyId: string, parts: ReadonlyMap<string, readonly { id: string; period: PeriodKey }[]>): Promise<void> {
+  const all = (await readCostItems(tx)).filter((c) => c.propertyId === propertyId)
+  const byId = new Map(all.map((c) => [c.id, c]))
+  const familyOf = (id: string) => [...parts.values()].find((list) => list.some((p) => p.id === id)) ?? []
+  for (const d of all) {
+    if (d.operatingPower !== 'deduction' || d.operatingPowerGeneralId === undefined) continue
+    const g = byId.get(d.operatingPowerGeneralId)
+    if (g && g.period === d.period) continue
+    const same = familyOf(d.operatingPowerGeneralId).find((p) => p.period === d.period)
+    if (same) {
+      await tx.update(costItems).set({ operatingPowerGeneralId: same.id }).where(eq(costItems.id, d.id))
+      byId.set(d.id, { ...d, operatingPowerGeneralId: same.id })
+    }
+  }
+  const deductions = [...byId.values()].filter((c) => c.operatingPower === 'deduction')
+  for (const d of deductions) {
+    const g = d.operatingPowerGeneralId === undefined ? undefined : byId.get(d.operatingPowerGeneralId)
+    if (!g || g.period !== d.period || g.category !== GENERAL_POWER_CATEGORY || !(g.amountCents > 0)) {
+      throw new PeriodError(`Nach dem Wechsel stünde der Abzug „${d.description}“ ohne seine Stromrechnung im selben Zeitraum. Löschen Sie den Abzug vor dem Wechsel und legen Sie ihn danach neu an.`)
+    }
+  }
+  for (const g of byId.values()) {
+    if (g.operatingPower !== undefined) continue
+    const deducted = -deductions.filter((d) => d.operatingPowerGeneralId === g.id).reduce((a, d) => a + d.amountCents, 0)
+    if (deducted > g.amountCents) {
+      throw new PeriodError(`Nach dem Wechsel wäre aus „${g.description}“ mehr abgezogen, als die Rechnung beträgt. Löschen Sie die Abzüge vor dem Wechsel und legen Sie sie danach neu an.`)
+    }
+  }
 }

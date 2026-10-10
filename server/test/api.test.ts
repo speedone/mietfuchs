@@ -6661,3 +6661,72 @@ test('Blatt für den Messdienst über die Route: 200 mit Rechnungen, 404 ohne An
     s.stop()
   }
 })
+
+// ---------- Betriebsstrom (Heizung PR 15) ----------
+
+test('Betriebsstrom über die Route: 201 mit beiden Positionen, 404 ohne Anlage, 400 mit Satz', async () => {
+  const s = await startServer()
+  try {
+    const send = (url: string, init: RequestInit) => fetch(`${s.base}${url}`, { ...init, headers: { 'content-type': 'application/json' } })
+    const { plant } = await jsonOf<{ plant: HeatingPlant }>(await send('/api/heating-plants', jsonPost({ energy: 'gas', method: 'service' })))
+    const strom = await s.api<CostItem>('/api/costItems', jsonPost({ period: '2025-01', category: 'Beleuchtung/Allgemeinstrom', description: 'Hausstrom', amountCents: 105000, key: 'area' }))
+    const body = { period: '2025-01', generalItemId: strom.id, billKwh: 3000, devices: [{ label: 'Pumpe', watts: 45, hoursPerDay: 24 }], heatingDays: 220 }
+    const angelegt = await send(`/api/heating-plants/${plant.id}/operating-power`, jsonPost(body))
+    assert.equal(angelegt.status, 201)
+    const b = await jsonOf<{ share: { cents: number }; deduction: CostItem; heatingItem: CostItem | null }>(angelegt)
+    // 45 W × 24 h × 220 Tage = 237,6 kWh; 237,6 / 3.000 × 1.050,00 € = 83,16 €
+    assert.deepEqual([b.share.cents, b.deduction.amountCents, b.heatingItem], [8316, -8316, null])
+    // P-W1: Die Grundlage kommt über die Route mit und bleibt in der Liste der Positionen.
+    assert.match(b.deduction.operatingPowerBasis ?? '', /Pumpe: 45 W × 24 h × 220 Tage = 237,6 kWh/)
+    const liste = await s.api<CostItem[]>('/api/costItems')
+    assert.equal(liste.find((c) => c.id === b.deduction.id)?.operatingPowerBasis, b.deduction.operatingPowerBasis)
+    assert.equal((await send('/api/heating-plants/fehlt/operating-power', jsonPost(body))).status, 404)
+    const falsch = await send(`/api/heating-plants/${plant.id}/operating-power`, jsonPost({ ...body, billKwh: 0 }))
+    assert.equal(falsch.status, 400)
+    assert.match(await errorFrom(falsch), /kWh der Stromrechnung/)
+  } finally {
+    s.stop()
+  }
+})
+
+// Der Schnappschuss der Route führt die Abzüge (snapshotFor): Mit Abzug kein Hinweis, ohne ihn der Betrag.
+test('Betriebsstrom in der Abrechnung über die Route: mit Abzug still, nach dem Löschen des Abzugs die Warnung', async () => {
+  const s = await startServer()
+  try {
+    const send = (url: string, init: RequestInit) => fetch(`${s.base}${url}`, { ...init, headers: { 'content-type': 'application/json' } })
+    const unit = await s.api<Unit>('/api/units', jsonPost({ name: 'EG', areaM2: 80, participates: true }))
+    await s.api('/api/tenancies', jsonPost({ unitId: unit.id, tenantName: 'Mieter', personHistory: [{ from: '2025-01-01', persons: 1 }], start: '2025-01-01', end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [] }))
+    const { plant } = await jsonOf<{ plant: HeatingPlant }>(await send('/api/heating-plants', jsonPost({ energy: 'gas', method: 'manual' })))
+    await s.api<CostItem>('/api/costItems', jsonPost({ period: '2025-01', category: 'Heizung und Warmwasser', description: 'Gas', amountCents: 300000, key: 'area', heatingPart: 'fuel', heatingPlantId: plant.id }))
+    const strom = await s.api<CostItem>('/api/costItems', jsonPost({ period: '2025-01', category: 'Beleuchtung/Allgemeinstrom', description: 'Hausstrom', amountCents: 105000, key: 'area' }))
+    const b = await jsonOf<{ deduction: CostItem; heatingItem: CostItem | null }>(await send(`/api/heating-plants/${plant.id}/operating-power`,
+      jsonPost({ period: '2025-01', generalItemId: strom.id, billKwh: 3000, devices: [{ label: 'Pumpe', watts: 45, hoursPerDay: 24 }], heatingDays: 220 })))
+    const doppelt = (st: Settlement) => (st.notices ?? []).filter((n) => n.code === 'heating.operating-power-double')
+    assert.equal(doppelt(await s.api<Settlement>('/api/settlement/2025-01')).length, 0)
+    assert.equal((await send(`/api/costItems/${b.deduction.id}`, { method: 'DELETE' })).status, 200)
+    const [n] = doppelt(await s.api<Settlement>('/api/settlement/2025-01'))
+    assert.match(n?.text ?? '', /abgezogen sind dort 0,00 € statt 83,16 €/)
+  } finally {
+    s.stop()
+  }
+})
+
+// Nachprüfung von #252, G2-H1: Die Rückfrage wegen vorhandener Buchung trägt ihr eigenes Kennzeichen; die
+// Oberfläche bietet „Trotzdem anlegen“ nur dann an.
+test('Betriebsstrom über die Route: zweite Buchung 409 mit question „despiteExisting“', async () => {
+  const s = await startServer()
+  try {
+    const send = (url: string, init: RequestInit) => fetch(`${s.base}${url}`, { ...init, headers: { 'content-type': 'application/json' } })
+    const { plant } = await jsonOf<{ plant: HeatingPlant }>(await send('/api/heating-plants', jsonPost({ energy: 'gas', method: 'service' })))
+    const strom = await s.api<CostItem>('/api/costItems', jsonPost({ period: '2025-01', category: 'Beleuchtung/Allgemeinstrom', description: 'Hausstrom', amountCents: 105000, key: 'area' }))
+    const body = { period: '2025-01', generalItemId: strom.id, ownCents: 10000, basis: 'x' }
+    assert.equal((await send(`/api/heating-plants/${plant.id}/operating-power`, jsonPost(body))).status, 201)
+    const zweite = await send(`/api/heating-plants/${plant.id}/operating-power`, jsonPost(body))
+    assert.equal(zweite.status, 409)
+    const json = await jsonOf<{ error?: string; question?: string }>(zweite)
+    assert.equal(json.question, 'despiteExisting')
+    assert.match(json.error ?? '', /schon gebucht/)
+  } finally {
+    s.stop()
+  }
+})

@@ -82,6 +82,8 @@ import { lineRoot, monthSpanText, plantRules, plantSpan, recommendedDeadline, re
 import { heatingSnapshotFor, selfAt, snapshotFor, wayOf } from './snapshot.ts'
 import { cancelledDeliveries, plantFuel, rangeOf, type FuelCarry, type FuelResult } from './fuel.ts'
 import { co2Plausibility, etsExempt as etsExemptPlant, plausibilityText } from './co2Plausibility.ts'
+import { operatingPowerFindings, operatingPowerText } from './operatingPower.ts'
+import { GENERAL_POWER_CATEGORY } from '../../shared/operatingPower.ts'
 import { LAW_PARAMS } from '../../shared/law/params.ts'
 import { fuelFromDeliveries, fuelFromStock, looseCentsOf, measuredOffset, problemText, settledByDefault, stockKeysOf, stockOf, stockTemplateOfLine, stockTouched, valueOf as stockValueOf, type FuelFigures, type StockPeriodInput, type StockResult } from './fuelStock.ts'
 import { isStockEnergy, STOCK_FUEL_NAMES, STOCK_UNIT_TEXT } from '../../shared/fuelStock.ts'
@@ -415,6 +417,14 @@ const noticeKinds = {
   'heating.estimate-no-device': { level: 'warning', title: 'Schätzung ohne Gerät', rule: 'heating-estimate', terms: ['heatingEstimate'] },
   'heating.estimate-below-measured': { level: 'hint', title: 'Schätzung unter dem abgelesenen Verbrauch', rule: 'heating-estimate', terms: ['heatingEstimate'] },
   'heating.estimate-same-day': { level: 'warning', title: 'Schätzung neben zwei Ständen am selben Tag', rule: 'heating-estimate', terms: ['heatingEstimate'] },
+  // Heizung PR 15 (#212): Betriebsstrom, der auch im Allgemeinstrom steckt, ohne Abzug in gleicher Höhe.
+  // Durchsicht von #252, G-K3: ein Abzug, der anders verteilt ist als seine Stromrechnung.
+  'heating.operating-power-key': { level: 'warning', title: 'Abzug anders verteilt als die Stromrechnung', terms: ['operatingPower', 'allocationKey'] },
+  // Durchsicht von #252, G-W1: mehr Abzug als Stromrechnung.
+  'heating.operating-power-exceeds': { level: 'warning', title: 'Mehr Abzug als Stromrechnung', terms: ['operatingPower'] },
+  // Durchsicht von #252, N1: Betriebsstrom und Abzug in verschiedenen Steuerjahren.
+  'heating.operating-power-tax-year': { level: 'warning', title: 'Betriebsstrom und Abzug in verschiedenen Steuerjahren', terms: ['operatingPower'] },
+  'heating.operating-power-double': { level: 'warning', title: 'Betriebsstrom und Abzug beim Allgemeinstrom passen nicht zusammen', terms: ['operatingPower', 'heatingCostOrdinance'] },
   // Heizung PR 17 (Entwurf 4.5, 10.1): ein Rechtswert, den der Vermieter eingetragen hat.
   'law.value-overridden': { level: 'hint', title: 'Selbst eingetragener Rechtswert', terms: ['legalBasis'] },
   'model.prepayment-unsettled': { level: 'warning', title: 'Vorauszahlung ohne Abrechnung', terms: ['prepayment', 'flatRate'] },
@@ -4038,6 +4048,11 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         { label: 'Umlageschlüssel', value: KEY_LABELS[item.key] || item.key, term: 'allocationKey' },
       ]
       if (carry) steps.unshift(carry.step)
+      // Die Grundlage der Schätzung des Betriebsstroms (Heizung PR 15, P-W1): Bestreitet ein Mieter den
+      // Betrag, muss der Vermieter sie darlegen. Nur im Rechenweg, der nicht gedruckt wird.
+      if (item.operatingPowerBasis) {
+        steps.push({ label: 'Grundlage der Schätzung', value: item.operatingPowerBasis.split('\n').join('; '), term: 'operatingPower' })
+      }
       if (c) {
         // Laut Gemeinschaftsabrechnung (#144): erst der Schritt der Gemeinschaft, dann die
         // Verteilung im Objekt. Die Verteilbasis der ganzen Anlage steht nicht noch einmal da.
@@ -6381,6 +6396,51 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const text = `${v.title} ${label}: ${v.text}, von Ihnen eingetragen (Quelle: ${v.overridden.source}), weil der amtliche Wert noch nicht im Programm steht. ` +
       `Bringt ein Update den amtlichen Wert, gilt dieser; bei einer abgeschlossenen Abrechnung nennt die Seite Abrechnung die Änderung dann als „${change}“.`
     if (!notices.some((n) => n.code === 'law.value-overridden' && n.text === text)) warn('law.value-overridden', text)
+  }
+
+  // Betriebsstrom im Allgemeinstrom (Heizung PR 15, #212): geprüft werden die Positionen, die diese
+  // Abrechnung verteilt (`items`); bei Weg b tut das der Unteraufruf der Heizperiode, und sein Hinweis
+  // wird übernommen (ohne Doppel, PR 5). Die Abzüge kommen aus allen Zeiträumen; einer in einer
+  // abgeschlossenen Abrechnung zählt nur mit dem, was im eingefrorenen Stand steht (P-W3, R2-W2).
+  for (const f of operatingPowerFindings(items, snapshot.operatingPowerDeductions ?? [])) {
+    warn('heating.operating-power-double', operatingPowerText(f, fmtCents), itemSubject({ id: f.itemId }))
+  }
+  // Durchsicht von #252, G-K3: Ein Abzug mindert seine Stromrechnung nur dann im Verhältnis, wenn er
+  // verteilt ist wie sie (Schlüssel, Zähler, Wohnung, Anteile, Teilnehmer; dieselbe Regel wie beim
+  // gemerkten Schlüssel, shared/allocation.ts). Sonst verschieben sich die Anteile der Mieter.
+  // Durchsicht von #252, G-K2 und N1: Betriebsstrom und Abzug sind eine Umbuchung aus der Stromrechnung;
+  // in verschiedenen Steuerjahren stünden beide Jahre der Anlage V falsch.
+  for (const item of items) {
+    if (item.operatingPower !== 'included') continue
+    const itemTaxYear = taxYearOf(item, period)
+    for (const d of snapshot.operatingPowerDeductions ?? []) {
+      if (d.itemId !== item.id || d.taxYear === undefined || d.taxYear === itemTaxYear) continue
+      warn('heating.operating-power-tax-year',
+        `„${item.description}“ zählt in der Steuerübersicht zum Jahr ${itemTaxYear}, der Abzug „${d.description}“ zum Jahr ${d.taxYear}. ` +
+        `Beides ist eine Umbuchung aus derselben Stromrechnung und gehört in dasselbe Jahr. Stellen Sie beim Abzug „${d.description}“ im Kostenformular das Jahr der Zahlung ${itemTaxYear} ein; das Jahr des Betriebsstroms hängt an seiner Heizperiode.`,
+        itemSubject(item))
+    }
+  }
+  // Durchsicht von #252, G-W1: Aus einer Stromrechnung ist höchstens ihr Betrag abzuziehen; sonst ist der
+  // Allgemeinstrom netto negativ, und die Mieter bekommen mehr gutgeschrieben, als er kostet.
+  for (const g of items) {
+    if (g.category !== GENERAL_POWER_CATEGORY || g.operatingPower !== undefined || !(g.amountCents > 0)) continue
+    const deducted = -items.filter((d) => d.operatingPower === 'deduction' && d.operatingPowerGeneralId === g.id).reduce((a, d) => a + d.amountCents, 0)
+    if (deducted <= g.amountCents) continue
+    warn('heating.operating-power-exceeds',
+      `Aus der Stromrechnung „${g.description}“ (${fmtCents(g.amountCents)}) sind ${fmtCents(deducted)} abgezogen, ${fmtCents(deducted - g.amountCents)} mehr als die Rechnung. ` +
+      'Der Allgemeinstrom ist damit netto negativ; meist ist ein Betriebsstrom doppelt gebucht. Prüfen Sie die Abzüge im Kostenformular.',
+      itemSubject(g))
+  }
+  for (const d of items) {
+    if (d.operatingPower !== 'deduction' || !d.operatingPowerGeneralId) continue
+    const g = items.find((c) => c.id === d.operatingPowerGeneralId)
+    if (!g || sameAllocation(allocationOf(d), allocationOf(g))) continue
+    const how = d.key === g.key ? `beide nach „${KEY_LABELS[d.key]}“, aber mit anderen Angaben (Teilnehmer, Anteile, Zähler oder Wohnung)` : `der Abzug nach „${KEY_LABELS[d.key]}“, die Rechnung nach „${KEY_LABELS[g.key]}“`
+    warn('heating.operating-power-key',
+      `„${d.description}“ (${fmtCents(-d.amountCents)}) ist anders verteilt als die Stromrechnung „${g.description}“, aus der er gerechnet wurde: ${how}. ` +
+      'Damit verschieben sich die Anteile der Mieter am Allgemeinstrom. Verteilen Sie den Abzug im Kostenformular wie die Rechnung.',
+      itemSubject(d))
   }
 
   // Die Höchstdauer hat P gebildet (shared/period.ts); eingefroren wird sie hier.

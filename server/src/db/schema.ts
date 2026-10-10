@@ -10,7 +10,7 @@
 //   Zeitangaben sind ISO-Zeichenketten mit inklusiven Grenzen, gerechnet in UTC.
 
 import { sql } from 'drizzle-orm'
-import { check, index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
+import { check, index, integer, primaryKey, real, sqliteTable, text, uniqueIndex, type AnySQLiteColumn } from 'drizzle-orm/sqlite-core'
 import type {
   AgreedOtherwise,
   AiJsonMode,
@@ -45,6 +45,7 @@ import type {
   HeatingEnergy,
   HeatingMethod,
   HeatingPart,
+  OperatingPower,
   HeatingRole,
   HeatingSource,
   HeatingSupply,
@@ -84,6 +85,8 @@ export const EXTERNAL_MEASURES = exactly<ExternalMeasure>()(['mea', 'area', 'uni
 export const COST_MODELS = exactly<CostModel>()(['settlement', 'flatRate', 'inclusive'] as const)
 export const METER_TYPES = exactly<MeterType>()(['kaltwasser', 'warmwasser', 'strom', 'waerme', 'hkv', 'sonstig'] as const)
 export const HEATING_PARTS = exactly<HeatingPart>()(['fuel', 'operating', 'metering'] as const)
+// Betriebsstrom der Heizung (Heizung PR 15, #212): an Heizkosten `included`, am Allgemeinstrom `deduction`.
+export const OPERATING_POWER = exactly<OperatingPower>()(['included', 'deduction'] as const)
 export const DEPOSIT_STATUS = exactly<DepositStatus>()(['offen', 'erhalten', 'teilweise', 'zurückgezahlt'] as const)
 const AI_PROVIDERS = exactly<AiProviderKind>()(['ollama', 'openai'] as const)
 const AI_JSON_MODES = exactly<AiJsonMode>()(['auto', 'schema', 'object', 'prompt'] as const)
@@ -1019,6 +1022,17 @@ export const costItems = sqliteTable(
     fuelDeliveryId: text('fuel_delivery_id').references(() => fuelDeliveries.id, { onDelete: 'restrict' }),
     // Ziel bei Heizung und Warmwasser (Heizung PR 10): beides, nur Heizung, nur Warmwasser.
     heatingTarget: text('heating_target', { enum: HEATING_TARGETS }),
+    // Betriebsstrom der Heizung (Heizung PR 15, #212). `RESTRICT` auf die eigene Tabelle: Ein
+    // Betriebsstrom mit Abzug wird nicht still gelöscht, denn der Abzug mindert den Allgemeinstrom
+    // eines womöglich anderen Zeitraums (repository.ts lehnt mit einem Satz ab).
+    operatingPower: text('operating_power', { enum: OPERATING_POWER }),
+    operatingPowerItemId: text('operating_power_item_id').references((): AnySQLiteColumn => costItems.id, { onDelete: 'restrict' }),
+    // Die Grundlage der Schätzung (P-W1), Zeile für Zeile. Text und kein JSON: Gerechnet wird damit
+    // nicht, sie belegt, wie geschätzt wurde.
+    operatingPowerBasis: text('operating_power_basis'),
+    // Die Stromrechnung, aus der ein Abzug gerechnet wurde (Durchsicht von #252, G-K3). `RESTRICT`: Eine
+    // Rechnung mit Abzügen wird nicht still gelöscht, sonst bliebe der Allgemeinstrom netto negativ.
+    operatingPowerGeneralId: text('operating_power_general_id').references((): AnySQLiteColumn => costItems.id, { onDelete: 'restrict' }),
   },
   (t) => [
     // Der einzige Filter, den der Schnappschuss wirklich setzt: die Kostenpositionen eines
@@ -1052,6 +1066,21 @@ export const costItems = sqliteTable(
     ),
     // Eine Lieferung gehört nur zu einer Heizposition (Heizung PR 7).
     check('cost_items_fuel_delivery_category_valid', sql.raw(`"fuel_delivery_id" IS NULL OR "category" = 'Heizung und Warmwasser'`)),
+    // Betriebsstrom (Heizung PR 15): nur an Heizkosten mit Teil „Betrieb“ oder ohne Teil; der Abzug nur
+    // am Allgemeinstrom und als Gutschrift; ein Verweis nur am Abzug; eine Grundlage nur an einer
+    // gekennzeichneten Position (P-W1).
+    oneOf('cost_items_operating_power_known', 'operating_power', OPERATING_POWER),
+    // R-W2 (Durchsicht von #252): auch beim Teil „Brennstoff/Energie“, für den Strom einer Wärmepumpe oder
+    // Stromheizung; welche Anlage mit Strom heizt, prüft repository.ts.
+    check('cost_items_operating_power_included_valid', sql.raw(`"operating_power" IS NOT 'included' OR ("category" = 'Heizung und Warmwasser' AND ("heating_part" IS NULL OR "heating_part" IN ('operating', 'fuel')))`)),
+    check('cost_items_operating_power_deduction_valid', sql.raw(`"operating_power" IS NOT 'deduction' OR ("category" = 'Beleuchtung/Allgemeinstrom' AND "amount_cents" < 0)`)),
+    check('cost_items_operating_power_link_valid', sql.raw(`"operating_power_item_id" IS NULL OR "operating_power" IS 'deduction'`)),
+    check('cost_items_operating_power_basis_valid', sql.raw(`"operating_power_basis" IS NULL OR "operating_power" IS NOT NULL`)),
+    // Durchsicht von #252, G-K3: Ein Abzug zeigt auf seine Stromrechnung, und nur ein Abzug tut das.
+    check('cost_items_operating_power_general_valid', sql.raw(`"operating_power_general_id" IS NULL OR "operating_power" IS 'deduction'`)),
+    // G-K4: Betriebsstrom ist keine Gutschrift.
+    check('cost_items_operating_power_included_positive', sql.raw(`"operating_power" IS NOT 'included' OR "amount_cents" > 0`)),
+    check('cost_items_operating_power_source_complete', sql.raw(`"operating_power" IS NOT 'deduction' OR "operating_power_general_id" IS NOT NULL`)),
     // Eine Summe der Anlage von null ergäbe eine Division durch null im Rechenweg.
     check('cost_items_external_total_positive', sql.raw('"external_total" > 0')),
     check(

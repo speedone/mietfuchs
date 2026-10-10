@@ -2075,6 +2075,51 @@ die ganze fachliche Komplexität:
   Leerstand“), der gedruckte `basisText` die Summe („(davon N Leerstand)“). Beide Hinweise färben
   die Cockpit-Ampel nicht (`INFORMATIONAL` in client/src/notices.ts). Abgeschlossene Abrechnungen bleiben, `deviation` zeigt
   den Unterschied.
+- **Betriebsstrom der Heizung** (#212, Heizung PR 15): `cost_items.operating_power` sagt an einer
+  Heizposition `included` (der Strom läuft über den Zähler des Hauses und steckt im Allgemeinstrom), an
+  einer Position „Beleuchtung/Allgemeinstrom“ `deduction` (der Abzug); der Abzug zeigt mit
+  `operating_power_item_id` auf seinen Betriebsstrom (`RESTRICT`, Löschen mit einem Satz gesperrt).
+  Die Verweisbedingung vergleicht mit `IS` statt `=`: `NULL = 'deduction'` ist in SQLite kein Verstoß.
+  Die Abrechnung prüft jede Position, die sie verteilt, gegen die Abzüge **aus allen Zeiträumen**
+  (`operatingPowerDeductions` im Schnappschuss, `deductionsOf`), denn eine eigene Heizperiode und der
+  Allgemeinstrom liegen oft in verschiedenen; `heating.operating-power-double` nennt die Differenz. Ein
+  Abzug in einer abgeschlossenen Abrechnung hat vier Zustände am eingefrorenen Stand (`itemTotals`):
+  gutgeschrieben, geändert (es zählt der eingefrorene Betrag), nicht darin (zählt nicht) und unlesbar
+  (zählt nicht, aber der Text behauptet nichts und bittet nicht um neue Zustellung); je ein eigener
+  Satz. Die Schätzhilfe (`shared/operatingPower.ts`, Route `POST /api/heating-plants/:id/operating-power`,
+  `server/src/db/operatingPower.ts`) rechnet kWh aus Leistung, Laufzeit und Tagen je Gerät, nimmt den
+  Zwischenzähler oder einen selbst geschätzten Betrag mit Pflichtgrundlage, Euro als Anteil an der
+  Stromrechnung samt Grundpreis (Festlegung im Schätzermessen, im Rechenweg benannt), und legt beide
+  Positionen in einer Transaktion an; 409, wenn Heizperiode oder Allgemeinstrom abgeschlossen sind. Die
+  Grundlage der Schätzung steht als Text in `cost_items.operating_power_basis` an beiden Positionen und
+  im Rechenweg (`no-print`), denn bestreitet ein Mieter den Betrag, muss der Vermieter sie darlegen
+  (BGH, Versäumnisurteil vom 20.02.2008, VIII ZR 27/07, Leitsatz 3). Bei Wärmepumpe und Stromheizung
+  gibt es keine Hilfe: Der Strom zur Wärmeerzeugung gehört zu den Heizkosten, ist aber weder Brennstoff
+  noch Betriebsstrom (§ 7 Abs. 2 HeizkostenV nennt seit 01.10.2024 die „Kosten des zur Wärmeerzeugung
+  verbrauchten Stroms“ neben den Brennstoffen). Seine Heizposition (Teil `fuel`) darf trotzdem `included`
+  tragen, wenn die Anlage mit Strom heizt (`POWER_GENERATED`, geprüft in `guardOperatingPower`), damit
+  ein Abzug auf sie zeigen kann; das Herausrechnen ist als Auslegung gekennzeichnet. Umwälzpumpen und
+  Regelung bleiben Betriebsstrom. **Durchsicht von #252:** Der Abzug zeigt außerdem auf seine
+  Stromrechnung (`operating_power_general_id`, Schritt 0039 mit Datenanweisung, Bedingungen in 0040):
+  dasselbe Objekt und derselbe Zeitraum, Löschen und Umstellen der Rechnung gesperrt, solange er besteht;
+  Hinweise `heating.operating-power-key` (anders verteilt als die Rechnung), `-exceeds` (mehr Abzug als
+  Rechnung) und `-tax-year` (Betriebsstrom und Abzug in verschiedenen Steuerjahren). Die Schätzhilfe
+  nimmt nur eine Stromrechnung, die die Heizperiode berührt, übernimmt deren Jahr der Zahlung, wo der
+  Zeitraum zwei Kalenderjahre berührt, lehnt eine Summe der Abzüge über der Rechnung ab (400) und fragt
+  bei schon gebuchtem Betriebsstrom zurück (409 mit `question: 'despiteExisting'`; nur dann bietet die
+  Karte „Trotzdem anlegen“). Dieselbe Summenregel gilt im Kostenformular (Abzug anlegen oder ändern,
+  Rechnung verkleinern). Führend beim Steuerjahr ist der Betriebsstrom, dessen Jahr an der Heizperiode
+  hängt; der Abzug bekommt dasselbe. Beim Wechsel des Abrechnungszeitraums wandern Rechnung und Abzüge
+  als Einheit: Die Prüfungen gelten für den Endstand (Option `periodChange`, `settleOperatingPowerLinks`),
+  beim Aufteilen zeigt jeder Teil des Abzugs auf den Teil der Rechnung im selben Zeitraum, und ein
+  Scheitern ist eine 409 mit Vorschau. Kein Objektwechsel, solange ein
+  Verweis besteht; `crossPropertyViolations` kennt beide. `included` nur mit positivem Betrag. Liegt ein
+  Abzug in einer abgeschlossenen Abrechnung, hat jeder Zustand seinen eigenen Text, und keiner rät zu
+  einem neuen Abzug in einem anderen Jahr. „Aus dem Vorjahr übernehmen“
+  behält nur die Kennzeichnung `included`, nicht Grundlage und Abzug. Die Prozentspannen der Literatur
+  stehen nur im Lexikon: BGH V ZR 166/15 Rn. 14 lässt den Bruchteil der Brennstoffkosten als
+  Schätzgrundlage zu, gibt die Werte aber nur wieder und legt keinen fest; Mietfuchs rechnet ihn bewusst
+  nicht vor. Kein Eintrag im Regelverzeichnis, denn der änderte den Rechtsstand jeder Abrechnung.
 - **Überschneidende Mietverhältnisse einer Wohnung** (#204): Wann sich zwei überschneiden (ein
   gemeinsamer Tag, inklusive Grenzen), steht einmal in [shared/tenancyOverlap.ts](shared/tenancyOverlap.ts);
   Server und Oberfläche fragen dieselbe Funktion. Gerechnet wird wie erfasst, jedes mit vollem
