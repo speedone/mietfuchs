@@ -118,6 +118,8 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // davor neu erzeugt, werden diese beiden neu erzeugt.
   '0034_pflichtangaben': 'ccb396773010e9ce632fafa32d034bc8a2878179b9cb367f8fc2b1df33525149',
   '0035_pflichtangaben_bedingungen': '33f3efa315491aedc2588d98d155ded3528c08674b88d6923b4d887348655348',
+  // Heizung PR 17 (Rechtswerte des Vermieters), beim Einreihen hinter PR 14 neu erzeugt (vorher 0034_rechtswerte).
+  '0036_rechtswerte': 'fa04523c822daae898ca0df2f0232974756e1ee0b16c4548f983e482bbead86b',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {
