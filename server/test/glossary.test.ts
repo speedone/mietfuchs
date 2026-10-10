@@ -276,3 +276,42 @@ test('N2 (Runde 2): Lexikon „EBeV 2030“ mit den Werten aus dem Register; der
   assert.match(GLOSSARY.ebev.example, /0,0558/)
   assert.ok(NOTICE_KINDS['co2.cost-implausible']?.terms.includes('ebev'))
 })
+
+// Heizung PR 15 (#212): Betriebsstrom, mit der Schätzung des BGH als Beispiel und den Spannen der
+// Literatur nur als Literaturwerte ohne Festlegung des BGH (Entwurf 4.3 letzter Absatz).
+test('Lexikon: Betriebsstrom nennt § 7 Abs. 2 HeizkostenV, das Urteil und rechnet das Beispiel richtig', () => {
+  const t = GLOSSARY.operatingPower
+  assert.match(t.norm ?? '', /§ 7 Abs\. 2, § 8 Abs\. 2 HeizkostenV/)
+  // P-K3: Der Warmwasseranteil steht in § 8 Abs. 2 HeizkostenV und § 2 Nr. 5 Buchst. a BetrKV.
+  assert.match(t.norm ?? '', /§ 2 Nr\. 4 Buchst\. a, Nr\. 5 Buchst\. a und Nr\. 11 BetrKV/)
+  assert.match(t.norm ?? '', /V ZR 166\/15/)
+  // P-K4: die Entscheidung des VIII. Senats für das Mietrecht, nur mit Leitsatz 3, ohne Randnummer.
+  assert.match(t.norm ?? '', /BGH, Versäumnisurteil vom 20\.02\.2008, VIII ZR 27\/07 \(Leitsatz 3\)/)
+  assert.doesNotMatch(`${t.norm} ${t.needed} ${t.example} ${t.short}`, /VIII ZR 27\/07, Rn\./)
+  // 120 W × 6 h + 45 W × 24 h + 5 W × 24 h an 220 Tagen = 422,4 kWh; 422,4 / 3.000 von 1.050,00 €.
+  assert.equal(((120 * 6 + 45 * 24 + 5 * 24) * 220) / 1000, 422.4)
+  assert.equal(Math.round((105000 * 422.4) / 3000), 14784)
+  assert.match(t.example, /422,4 kWh/)
+  assert.match(t.example, /147,84 €/)
+  // V ZR 166/15 Rn. 14: Der Bruchteil der Brennstoffkosten ist eine zulässige Schätzgrundlage; die
+  // Prozentwerte gibt der BGH nur aus der Literatur wieder, ohne selbst einen festzulegen.
+  assert.match(t.example, /lässt auch einen Bruchteil der Brennstoffkosten als Schätzgrundlage zu/)
+  assert.match(t.example, /legt aber selbst keinen Wert fest/)
+  assert.doesNotMatch(t.example, /nicht gebilligt/)
+  assert.match(t.example, /einschließlich Grundpreis/)
+  // P-K7: die vier Spannen mit ihren Autoren. „oder höchstens 5 %“ trifft kein Muster des Wächters
+  // (law-literals.test.ts); wer daraus „… und höchstens 5 %“ macht, bekommt dort einen Treffer ohne
+  // erlaubte Stelle. Der Wortlaut ist deshalb hier festgehalten.
+  assert.match(t.example, /3–6 % Jennißen, 4–10 % Schmidt-Futterer\/Lammel, 8–10 % Wall oder höchstens 5 % Gies/)
+  assert.match(t.needed, /offenkundig ungeeignet/)
+  // P-K5: Der Vermieter darf ihn auch selbst tragen; unzulässig ist nur der Allgemeinstrom.
+  assert.doesNotMatch(t.needed, /bei jeder Zentralheizung/)
+  assert.match(t.needed, /oder Sie tragen ihn selbst; im Allgemeinstrom darf er nicht stehen/)
+  // P-W1: aufbewahren, denn bei Bestreiten sind die Grundlagen darzulegen.
+  assert.match(t.needed, /müssen Sie die Grundlagen Ihrer Schätzung darlegen \(BGH, Versäumnisurteil vom 20\.02\.2008, VIII ZR 27\/07, Leitsatz 3\)/)
+  // P-W5 mit R2-W1: Brennstoff ist nur der Strom, den Wärmepumpe oder Elektrokessel selbst verbrauchen;
+  // Umwälzpumpen und Regelung über den Hauszähler bleiben Betriebsstrom.
+  assert.match(t.needed, /Wärmepumpe oder einer Stromheizung ist der Strom, den die Wärmepumpe oder der Elektrokessel selbst verbraucht, Brennstoff und kein Betriebsstrom/)
+  assert.match(t.needed, /Umwälzpumpen oder Regelung/)
+  assert.match(t.needed, /beim Allgemeinstrom abzuziehen \(§ 7 Abs\. 2, § 8 Abs\. 2 HeizkostenV\)/)
+})

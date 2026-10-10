@@ -54,6 +54,9 @@ const ALLOWED: readonly Allowed[] = [
   { file: 'server/src/calc.ts', match: '08.01.2013', reason: 'Datum einer Entscheidung im Zitat (BGH VIII ZR 180/12), kein Rechtswert' },
   { file: 'server/src/calc.ts', match: '12.01.2022', reason: 'Datum einer Entscheidung im Zitat (BGH VIII ZR 151/20, Warmwasser ohne Wärmezähler), kein Rechtswert' },
   { file: 'server/src/calc.ts', match: '30.04.2008', reason: 'Datum einer Entscheidung im Zitat (BGH VIII ZR 240/07, eigene Heizperiode), kein Rechtswert' },
+  { file: 'shared/glossary.ts', match: '3–6 %', reason: 'Literaturwert (Jennißen), vom BGH in V ZR 166/15 Rn. 14 wiedergegeben; der BGH lässt den Bruchteil der Brennstoffkosten als Schätzgrundlage zu, legt aber keinen Wert fest; kein Rechtswert (Entwurf 4.3)' },
+  { file: 'shared/glossary.ts', match: '4–10 %', reason: 'Literaturwert (Schmidt-Futterer/Lammel), vom BGH in V ZR 166/15 Rn. 14 wiedergegeben, ohne eigene Festlegung; kein Rechtswert (Entwurf 4.3)' },
+  { file: 'shared/glossary.ts', match: '8–10 %', reason: 'Literaturwert (Wall), vom BGH in V ZR 166/15 Rn. 14 wiedergegeben, ohne eigene Festlegung; kein Rechtswert (Entwurf 4.3)' },
   { file: 'server/src/invoiceAmounts.ts', match: 'Math.max(50,', reason: 'Rundungstoleranz der Schnellerfassung (mindestens 0,50 €), keine Rechtszahl' },
 ]
 
