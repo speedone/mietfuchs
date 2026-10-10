@@ -350,7 +350,9 @@ const NOT_IN_DB_JSON = new Set(['period', 'propertyId', 'mea', 'externalMeasure'
   // Skala und Faktor des Heizkostenverteilers (Heizung PR 12) ebenso.
   'hcaScale', 'ratingFactor',
   // Ebenso die Lieferung einer Position (Heizung PR 7); ihre Rundreise prüft db-fuel.test.ts.
-  'fuelDeliveryId'])
+  'fuelDeliveryId',
+  // Betriebsstrom (Heizung PR 15) kennt die db.json nicht; seine Rundreise prüft db-repository.test.ts.
+  'operatingPower', 'operatingPowerItemId', 'operatingPowerBasis'])
 
 test('Rundreise: die Probe belegt jede Spalte des Schemas', () => {
   // Der Wächter über dem Wächter. Der Test darunter kann nur finden, was in der Probe steht;

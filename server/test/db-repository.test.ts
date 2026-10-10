@@ -409,6 +409,22 @@ test('Die Verschmelzung erreicht jede Spalte des Schemas', async () => {
         heatingPlantId: 'hp1', fuelDeliveryId: 'd1',
       },
     },
+    // Heizung PR 15: Betriebsstrom gibt es nur beim Teil „Betrieb“, die Probe oben ist Brennstoff; der
+    // Abzug zeigt auf diese zweite Probe und belegt den Verweis.
+    {
+      coll: 'costItems', table: costItems, id: 'probe-betriebsstrom',
+      body: {
+        propertyId: 'objekt-1', period: '2024-01', category: 'Heizung und Warmwasser', description: 'Betriebsstrom', amountCents: 14784, key: 'area',
+        heatingPart: 'operating', operatingPower: 'included', operatingPowerBasis: 'Grundlage',
+      },
+    },
+    {
+      coll: 'costItems', table: costItems, id: 'probe-abzug',
+      body: {
+        propertyId: 'objekt-1', period: '2024-01', category: 'Beleuchtung/Allgemeinstrom', description: 'Abzug', amountCents: -14784, key: 'area',
+        operatingPower: 'deduction', operatingPowerItemId: 'probe-betriebsstrom', operatingPowerBasis: 'Grundlage',
+      },
+    },
     {
       coll: 'meters', table: meters,
       body: {
