@@ -203,6 +203,11 @@ export function carryOverForm(row: CarryRow): ItemForm {
     heatingPart: row.source.heatingPart ?? '',
     heatingTarget: row.source.heatingTarget ?? '',
     invoiceFile: undefined,
+    // Betriebsstrom (Heizung PR 15): Dass er über den Hauszähler läuft, gilt weiter; die Grundlage der
+    // Schätzung gilt nur für ihr Jahr, und ein Abzug gehört zu dem Betriebsstrom, auf den er zeigt.
+    operatingPower: row.source.operatingPower === 'included' ? 'included' : '',
+    operatingPowerItemId: '',
+    operatingPowerBasis: '',
   }
 }
 
