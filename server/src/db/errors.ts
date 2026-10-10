@@ -174,6 +174,10 @@ const OWN_CHECK_MESSAGES: Readonly<Record<string, string>> = {
   fuel_delivery_parts_from_valid: 'Der Beginn einer Teilmenge ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie es im Kalender.',
   fuel_delivery_parts_to_valid: 'Das Ende einer Teilmenge ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie es im Kalender.',
   fuel_delivery_parts_order_valid: 'Eine Teilmenge endet vor ihrem Beginn. Bitte prüfen Sie die beiden Daten.',
+  // Rechtswerte des Vermieters (Heizung PR 17); die Route prüft vorher, die Bedingungen sind das Netz darunter.
+  law_overrides_valid_from_valid: 'Ein eingetragener Rechtswert gilt immer ab dem 1. Januar eines Jahres. Bitte laden Sie die Seite neu.',
+  law_overrides_source_complete: 'Zu einem eingetragenen Rechtswert gehört die Quelle, etwa „UBA, Bekanntmachung vom …“.',
+  law_overrides_value_is_json: 'Der eingetragene Rechtswert ließ sich nicht speichern. Das ist ein Fehler in Mietfuchs und keiner in Ihren Daten. Bitte melden Sie ihn.',
 }
 
 function checkMessage(name: string): string {
