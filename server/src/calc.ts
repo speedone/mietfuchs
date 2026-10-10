@@ -83,6 +83,7 @@ import { heatingSnapshotFor, selfAt, snapshotFor, wayOf } from './snapshot.ts'
 import { cancelledDeliveries, plantFuel, rangeOf, type FuelCarry, type FuelResult } from './fuel.ts'
 import { co2Plausibility, etsExempt as etsExemptPlant, plausibilityText } from './co2Plausibility.ts'
 import { operatingPowerFindings, operatingPowerText } from './operatingPower.ts'
+import { GENERAL_POWER_CATEGORY } from '../../shared/operatingPower.ts'
 import { LAW_PARAMS } from '../../shared/law/params.ts'
 import { fuelFromDeliveries, fuelFromStock, looseCentsOf, measuredOffset, problemText, settledByDefault, stockKeysOf, stockOf, stockTemplateOfLine, stockTouched, valueOf as stockValueOf, type FuelFigures, type StockPeriodInput, type StockResult } from './fuelStock.ts'
 import { isStockEnergy, STOCK_FUEL_NAMES, STOCK_UNIT_TEXT } from '../../shared/fuelStock.ts'
@@ -419,6 +420,8 @@ const noticeKinds = {
   // Heizung PR 15 (#212): Betriebsstrom, der auch im Allgemeinstrom steckt, ohne Abzug in gleicher Höhe.
   // Durchsicht von #252, G-K3: ein Abzug, der anders verteilt ist als seine Stromrechnung.
   'heating.operating-power-key': { level: 'warning', title: 'Abzug anders verteilt als die Stromrechnung', terms: ['operatingPower', 'allocationKey'] },
+  // Durchsicht von #252, G-W1: mehr Abzug als Stromrechnung.
+  'heating.operating-power-exceeds': { level: 'warning', title: 'Mehr Abzug als Stromrechnung', terms: ['operatingPower'] },
   'heating.operating-power-double': { level: 'warning', title: 'Betriebsstrom und Abzug beim Allgemeinstrom passen nicht zusammen', terms: ['operatingPower', 'heatingCostOrdinance'] },
   // Heizung PR 17 (Entwurf 4.5, 10.1): ein Rechtswert, den der Vermieter eingetragen hat.
   'law.value-overridden': { level: 'hint', title: 'Selbst eingetragener Rechtswert', terms: ['legalBasis'] },
@@ -6403,6 +6406,17 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // Durchsicht von #252, G-K3: Ein Abzug mindert seine Stromrechnung nur dann im Verhältnis, wenn er
   // verteilt ist wie sie (Schlüssel, Zähler, Wohnung, Anteile, Teilnehmer; dieselbe Regel wie beim
   // gemerkten Schlüssel, shared/allocation.ts). Sonst verschieben sich die Anteile der Mieter.
+  // Durchsicht von #252, G-W1: Aus einer Stromrechnung ist höchstens ihr Betrag abzuziehen; sonst ist der
+  // Allgemeinstrom netto negativ, und die Mieter bekommen mehr gutgeschrieben, als er kostet.
+  for (const g of items) {
+    if (g.category !== GENERAL_POWER_CATEGORY || g.operatingPower !== undefined || !(g.amountCents > 0)) continue
+    const deducted = -items.filter((d) => d.operatingPower === 'deduction' && d.operatingPowerGeneralId === g.id).reduce((a, d) => a + d.amountCents, 0)
+    if (deducted <= g.amountCents) continue
+    warn('heating.operating-power-exceeds',
+      `Aus der Stromrechnung „${g.description}“ (${fmtCents(g.amountCents)}) sind ${fmtCents(deducted)} abgezogen, ${fmtCents(deducted - g.amountCents)} mehr als die Rechnung. ` +
+      'Der Allgemeinstrom ist damit netto negativ; meist ist ein Betriebsstrom doppelt gebucht. Prüfen Sie die Abzüge im Kostenformular.',
+      itemSubject(g))
+  }
   for (const d of items) {
     if (d.operatingPower !== 'deduction' || !d.operatingPowerGeneralId) continue
     const g = items.find((c) => c.id === d.operatingPowerGeneralId)

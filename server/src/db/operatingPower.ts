@@ -9,7 +9,7 @@
 // Die Grundlage der Schätzung (P-W1) steht an beiden Positionen: Bestreitet ein Mieter den Betrag, muss
 // der Vermieter sie darlegen (BGH, Versäumnisurteil vom 20.02.2008, VIII ZR 27/07, Leitsatz 3).
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
-import { basisOf, GENERAL_POWER_CATEGORY, operatingPowerRefusal, operatingPowerShare, ownEstimateShare } from '../../../shared/operatingPower.ts'
+import { basisOf, euro, GENERAL_POWER_CATEGORY, operatingPowerRefusal, operatingPowerShare, ownEstimateShare } from '../../../shared/operatingPower.ts'
 import type { CostItem, OperatingPowerDevice } from '../../../shared/types.ts'
 import type { Database } from './client.ts'
 import { heatingPeriodClosed, heatingPeriodOf, plantContext } from './heatingPeriodContext.ts'
@@ -97,6 +97,20 @@ export async function bookOperatingPower(db: Database, plantId: string, body: un
       billCents: general.amountCents,
     })
   if ('error' in share) throw new HeatingError(400, share.error)
+  // Durchsicht von #252, G-W1: Aus einer Stromrechnung lässt sich nicht mehr abziehen, als sie beträgt;
+  // sonst wäre der Allgemeinstrom netto negativ und der Betriebsstrom doppelt verteilt.
+  const fromGeneral = items.filter((c) => c.operatingPowerGeneralId === general.id)
+  const deducted = -fromGeneral.reduce((a, c) => a + c.amountCents, 0)
+  if (deducted + share.cents > general.amountCents) {
+    throw new HeatingError(400, `Aus der Stromrechnung „${general.description}“ (${euro(general.amountCents)}) sind schon ${euro(deducted)} abgezogen (${fromGeneral.map((c) => `„${c.description}“`).join(', ')}); mit ${euro(share.cents)} wären es ${euro(deducted + share.cents)}, mehr als die Rechnung. Prüfen Sie die vorhandenen Abzüge.`)
+  }
+  // Ein zweiter Betriebsstrom derselben Anlage und Heizperiode oder ein zweiter Abzug aus derselben
+  // Rechnung ist meist eine doppelte Buchung; nach einem Kesseltausch im Jahr ist er richtig. Deshalb eine
+  // Rückfrage und keine Sperre (wie `despiteCandidates` bei der Belegbuchung).
+  const booked = [...items.filter((c) => c.operatingPower === 'included' && c.heatingPlantId === plant.id && c.period === h.key), ...fromGeneral]
+  if (booked.length > 0 && raw(body, 'despiteExisting') !== true) {
+    throw new HeatingError(409, `Für diese Heizperiode oder diese Stromrechnung ist schon gebucht: ${booked.map((c) => `„${c.description}“ (${euro(Math.abs(c.amountCents))})`).join(', ')}. Eine zweite Buchung verteilt den Betriebsstrom doppelt. Legen Sie nur dann noch einmal an, wenn es ein weiterer Betriebsstrom ist, etwa nach einem Kesseltausch im Jahr.`)
+  }
   const how = HOW[method]
   const operatingPowerBasis = basisOf(share.steps)
 

@@ -182,3 +182,16 @@ test('G-K3: Abzug anders verteilt als seine Stromrechnung → Hinweis mit Betrag
   assert.match(n.text, /Wohnfläche/)
   assert.equal(kind(settle([betriebsstrom, hausstrom, { ...ab, key: 'area' }], [abzug(14784)])).length, 0)
 })
+
+// G-W1: Mehr Abzug als die Stromrechnung beträgt, macht den Allgemeinstrom netto negativ.
+test('G-W1: Summe der Abzüge über der Stromrechnung → Hinweis mit dem Betrag darüber', () => {
+  const strom: SnapshotCostItem = { ...hausstrom, amountCents: 100000 }
+  const ab = (id: string, cents: number): SnapshotCostItem => ({ ...strom, id, description: `Abzug ${id}`, amountCents: -cents, operatingPower: 'deduction', operatingPowerGeneralId: 'strom' })
+  const kind = (s: ReturnType<typeof settle>) => (s.notices ?? []).filter((n) => n.code === 'heating.operating-power-exceeds')
+  const [n] = kind(settle([strom, ab('a1', 60000), ab('a2', 60000)], []))
+  if (!n) return assert.fail('kein Hinweis')
+  assert.equal(n.level, 'warning')
+  assert.deepEqual(n.subject, { kind: 'costItem', id: 'strom' })
+  assert.match(n.text, /Aus der Stromrechnung „Hausstrom“ \(1\.000,00 €\) sind 1\.200,00 € abgezogen, 200,00 € mehr als die Rechnung/)
+  assert.equal(kind(settle([strom, ab('a1', 60000), ab('a2', 40000)], [])).length, 0)
+})
