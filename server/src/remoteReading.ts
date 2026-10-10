@@ -102,9 +102,11 @@ function answerLevel(plant: RemotePlant, period: Period, log: LawLog): Judged {
   return { level: 'fine', ask: false }
 }
 
-export function plantVerdict(plant: RemotePlant, meters: readonly RemoteMeter[], units: readonly RemoteUnit[], period: Period, log: LawLog): RemoteVerdict {
+// `waterOnly`: Nach § 11 ist nur die Wärme ausgenommen; dann zählen nur die Warmwasserzähler (Heizung PR 14,
+// Durchsicht von #243, R-K12).
+export function plantVerdict(plant: RemotePlant, meters: readonly RemoteMeter[], units: readonly RemoteUnit[], period: Period, log: LawLog, waterOnly = false): RemoteVerdict {
   const answer = answerLevel(plant, period, log)
-  const known = plantDevices(plant, meters, units)
+  const known = plantDevices(plant, meters, units).filter((m) => !waterOnly || m.type === 'warmwasser')
   // Versorgt die Anlage Wohnungen, an denen Mietfuchs kein Gerät kennt, kann es dort weitere,
   // nicht fernablesbare geben.
   const recorded = new Set(known.map((m) => m.unitId).filter((u): u is string => typeof u === 'string'))
@@ -145,9 +147,9 @@ export function plantVerdict(plant: RemotePlant, meters: readonly RemoteMeter[],
 
 // Über alle Anlagen des Objekts: das Schwerere gilt. `null` ohne Anlage; dann bleibt es beim
 // Hinweis aus PR 1.
-export function remoteReadingVerdict(plants: readonly RemotePlant[], meters: readonly RemoteMeter[], units: readonly RemoteUnit[], period: Period, log: LawLog): RemoteVerdict | null {
+export function remoteReadingVerdict(plants: readonly RemotePlant[], meters: readonly RemoteMeter[], units: readonly RemoteUnit[], period: Period, log: LawLog, waterOnly: ReadonlySet<string> = new Set()): RemoteVerdict | null {
   if (plants.length === 0) return null
-  const verdicts = plants.map((p) => plantVerdict(p, meters, units, period, log))
+  const verdicts = plants.map((p) => plantVerdict(p, meters, units, period, log, waterOnly.has(p.id)))
   const level = top(verdicts.map((v) => v.level))
   const atLevel = verdicts.filter((v) => v.level === level)
   return {

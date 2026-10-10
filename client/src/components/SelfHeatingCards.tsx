@@ -29,6 +29,8 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
   const d = view.distribution ?? null
   const savedInsulation: InsulationRule | '' = d?.own.insulationRule ?? d?.effective?.insulationRule ?? ''
   const [insulation, setInsulation] = useState<InsulationRule | ''>(savedInsulation)
+  // § 10 HeizkostenV (Heizung PR 14): mehr als 70 % nach Vereinbarung, mit dem Anteil gespeichert.
+  const [agreed, setAgreed] = useState<boolean>(d?.own.above70Agreed ?? d?.effective?.above70Agreed ?? false)
   // Eine Zwischenablesung, die „nicht möglich“ war, braucht einen Grund (I3).
   const [reasonFor, setReasonFor] = useState<{ key: string; reason: string } | null>(null)
   const [printUnit, setPrintUnit] = useState<string>(self?.units[0]?.unitId ?? '')
@@ -36,7 +38,9 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
   const editable = !d || shareEditable(d)
   // Die Warmwasserbereitung dieser Heizperiode, nicht die heutige der Anlage (Durchsicht von #241, Runde 2, H1).
   const hotWater = view.selfHotWater ?? plant.hotWater
-  const forced = forcedShare(plant.energy, insulation)
+  const forcedRaw = forcedShare(plant.energy, insulation)
+  // Mit Vereinbarung darf der Anteil über dem Pflichtanteil liegen.
+  const forced = forcedRaw !== null && !agreed ? forcedRaw : null
   // Den Pflichtanteil nachzutragen geht auch in einer begonnenen Heizperiode (Durchsicht von #239, C1).
   const toForced = forced !== null && savedInsulation !== 'applies'
   const hint = unsureShareHint(plant.energy, insulation, d?.effective?.heating ?? percentOf(share))
@@ -72,6 +76,7 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
           heatConsumptionPct: heat,
           waterConsumptionPct: water,
           insulationRule: insulationAsked(plant.energy) ? (insulation === '' ? 'unknown' : insulation) : 'notApplies',
+          above70Agreed: agreed,
         }),
       })
       setError('')
@@ -134,6 +139,15 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
               </label>
             )}
             <button className="btn secondary" onClick={saveShare}>{editable ? 'Speichern' : 'Pflichtanteil eintragen'}</button>
+          </div>
+        )}
+        {editable && (
+          <div className="no-print">
+            <label className="checkline">
+              <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
+              Mehr als {max} % nach Verbrauch sind mit den Mietern vereinbart (§ 10 HeizkostenV)
+            </label>
+            <p className="muted">Nur ankreuzen, wenn es im Mietvertrag oder einer Vereinbarung mit den Mietern steht; mehr als 100 % gibt es nicht. Die Angabe gilt mit dem Anteil.</p>
           </div>
         )}
         {!editable && insulationAsked(plant.energy) && !toForced && insulation !== savedInsulation && (

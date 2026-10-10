@@ -57,6 +57,7 @@ import { eq } from 'drizzle-orm'
 import { computeSettlement } from '../src/calc.ts'
 import { heatingPeriodViews } from '../src/db/co2.ts'
 import { createDelivery, unfreezeFuelCarries, updateDelivery } from '../src/db/fuel.ts'
+import { saveHeatingRules } from '../src/db/heatingInfo.ts'
 import { saveStock } from '../src/db/fuelStock.ts'
 import { createHeatingPlant, replaceHeatingPlant } from '../src/db/heating.ts'
 import { setUpSelf } from '../src/db/heatingSelf.ts'
@@ -128,22 +129,28 @@ const SELF_STATS = { ...STATS, distributed: 0 }
 // Heizung PR 11: eigene Abrechnung mit verbundenem Warmwasser.
 const DHW_SEEDS = SELF_SEEDS
 const DHW_STATS = { ...STATS, distributed: 0, alpha: 0, table: 0 }
+// Heizung PR 14: eigene Abrechnung, dazu Antworten zu § 11 und zur monatlichen Information je Heizperiode, auch in
+// abgeschlossenen (dort 409). Die Ausnahme ändert nur Hinweise und die CO₂-Aufteilung; (i) und (ii) gelten weiter.
+const RULE_SEEDS = SELF_SEEDS
+const RULE_STATS = { ...STATS, distributed: 0, rules: 0 }
 const RUNS = [
   ...(process.env.INV_PLANTS === '2' ? [] : SEEDS.map((seed) => ({ seed, two: false, tausch: false, self: false, dhw: false }))),
   ...TWO_SEEDS.map((seed) => ({ seed, two: true, tausch: false, self: false, dhw: false })),
   ...TAUSCH_SEEDS.map((seed) => ({ seed, two: false, tausch: true, self: false, dhw: false })),
   ...SELF_SEEDS.map((seed) => ({ seed, two: false, tausch: false, self: true, dhw: false })),
   ...DHW_SEEDS.map((seed) => ({ seed, two: false, tausch: false, self: true, dhw: true })),
+  ...RULE_SEEDS.map((seed) => ({ seed, two: false, tausch: false, self: true, dhw: false, rules: true })),
 ]
-for (const { seed, two, tausch, self, dhw } of RUNS) {
-  test(`Invariante Vorrat (Weg ${WAY}, Startwert ${seed}${two ? ', zwei Anlagen' : ''}${tausch ? ', Kesseltausch' : ''}${self ? ', eigene Heizkostenabrechnung' : ''}${dhw ? ' mit Warmwasser' : ''}): jede Lieferung über alle Heizperioden genau einmal verbraucht`, async () => {
+for (const { seed, two, tausch, self, dhw, ...rest } of RUNS) {
+  const rules = 'rules' in rest && rest.rules === true
+  test(`Invariante Vorrat (Weg ${WAY}, Startwert ${seed}${two ? ', zwei Anlagen' : ''}${tausch ? ', Kesseltausch' : ''}${self ? ', eigene Heizkostenabrechnung' : ''}${dhw ? ' mit Warmwasser' : ''}${rules ? ', Ausnahme je Heizperiode' : ''}): jede Lieferung über alle Heizperioden genau einmal verbraucht`, async () => {
     const PLANTS = two || tausch ? ['hp', 'hp2'] : ['hp']
     // Kesseltausch: Tag und Brennstoff der neuen Anlage, sobald getauscht ist.
     let swap = null as { date: string; energy: 'oil' | 'lpg' } | null
     const itemPlant = new Map<string, string>()
     const deliveryPlant = new Map<string, string>()
     // Die Läufe mit zwei Anlagen zählen getrennt, damit die Grenzen der Abdeckung bleiben.
-    const stats = dhw ? DHW_STATS : self ? SELF_STATS : tausch ? TAUSCH_STATS : two ? TWO_STATS : STATS
+    const stats = rules ? RULE_STATS : dhw ? DHW_STATS : self ? SELF_STATS : tausch ? TAUSCH_STATS : two ? TWO_STATS : STATS
     // Heizung PR 11: die Stände des Wärmezählers am Speicher je Ende einer Heizperiode.
     const dhwAt = new Map<string, number>()
     const rnd = zufall(seed * 31 + 5 + (tausch ? 1000 : 0))
@@ -248,8 +255,13 @@ for (const { seed, two, tausch, self, dhw } of RUNS) {
       // beide Anlagen, und Lieferungen nach dem Tag gehören der neuen.
       if (tausch) await replace(pick([2024, 2025, 2026]) ?? 2025)
       for (let step = 0; step < STEPS; step++) {
-        const op = pick(['deliver', 'deliver', 'amount', 'amount', 'closing', 'closing', 'measured', 'close', 'close', 'reopen', 'unlink', 'quantity', 'reown', 'external', ...(tausch ? ['replace' as const] : [])] as const)
+        const op = pick(['deliver', 'deliver', 'amount', 'amount', 'closing', 'closing', 'measured', 'close', 'close', 'reopen', 'unlink', 'quantity', 'reown', 'external', ...(tausch ? ['replace' as const] : []), ...(rules ? ['rules' as const, 'rules' as const] : [])] as const)
         const year = pick(YEARS) ?? 2023
+        if (op === 'rules') {
+          const body = { exemption: pick(['none', 'lowDemand', 'chp', 'authority', null] as const) ?? null, exemptionScope: pick(['heat', 'both', null] as const) ?? null, exemptionBillingAgreed: rnd() < 0.3 ? true : null, monthlyInfoElsewhere: rnd() < 0.5 }
+          if (await attempt(`regeln ${hkeyOf(year)} ${JSON.stringify(body)}`, () => opened.write((db) => saveHeatingRules(db, 'hp', hkeyOf(year), body)))) RULE_STATS.rules++
+          continue
+        }
         if (op === 'replace') {
           await replace(year)
           continue
@@ -419,7 +431,7 @@ for (const { seed, two, tausch, self, dhw } of RUNS) {
           }
         }
         // Heizung PR 10: nach der Verordnung verteilt (Abdeckung).
-        if (self && list(s, 'heating').some((x) => str(x, 'plantId') === plant && str(x, 'period') === hkey && g(g(x, 'self'), 'ok') === true)) (dhw ? DHW_STATS : SELF_STATS).distributed++
+        if (self && list(s, 'heating').some((x) => str(x, 'plantId') === plant && str(x, 'period') === hkey && g(g(x, 'self'), 'ok') === true)) (rules ? RULE_STATS : dhw ? DHW_STATS : SELF_STATS).distributed++
         if (dhw && !stored) dhwStockChecks(s, hkey, y)
         return { key: hkey, positions, ...readSettlement(s, hkey, plant, itemPlant) }
       })
@@ -533,4 +545,11 @@ test('Invariante Vorrat: Abdeckung', () => {
   assert.ok(STATS.iiiChecked * 5 >= STATS.periods, `(iii) nur ${STATS.iiiChecked}-mal geprüft`)
   assert.ok((STATS.pairs - STATS.nonzero) * 5 >= STATS.pairs * 4, `(iv′) nur ${STATS.pairs - STATS.nonzero} Paare ohne Abweichung`)
   assert.ok(STATS.reown > 0 && STATS.external > 0 && STATS.settledOpenings > 0 && STATS.late > 0, 'ein Vorgang des Generators kommt nicht vor')
+})
+
+test('Invariante Vorrat, Ausnahme je Heizperiode: Abdeckung', () => {
+  if (RULE_STATS.periods < 10) return
+  assert.ok(RULE_STATS.rules > 0, 'keine Antwort zu § 11 gespeichert')
+  // Ein Teil der Vorgänge sind hier Antworten statt Lieferungen; deshalb eine niedrigere Schranke als bei SELF_STATS.
+  assert.ok(RULE_STATS.distributed * 8 > RULE_STATS.periods, `nur ${RULE_STATS.distributed} von ${RULE_STATS.periods} Heizperioden nach der Verordnung verteilt`)
 })

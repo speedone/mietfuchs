@@ -15,6 +15,8 @@ export type SelfSetupForm = {
   // Anteil beim Warmwasser, eine eigene Wahl (§ 8 Abs. 1, Abweichung 14)
   waterShare: string
   insulation: InsulationRule | ''
+  // Mehr als 70 % nach Verbrauch sind mit den Mietern vereinbart (§ 10 HeizkostenV, Heizung PR 14).
+  above70Agreed: boolean
   areaBasisHeat: AreaBasisHeat
   dhwHeatMeter: boolean
   totalHeatMeter: boolean
@@ -25,6 +27,7 @@ export type SelfSetupBody = {
   heatConsumptionPct: number
   waterConsumptionPct: number | null
   insulationRule: InsulationRule
+  above70Agreed: boolean
   hotWater: HotWater
   capture: CaptureMethod
   areaBasisHeat: AreaBasisHeat
@@ -82,6 +85,7 @@ export function emptySelfSetup(plant: Pick<HeatingPlant, 'energy' | 'hotWater' |
     share: '',
     waterShare: '',
     insulation: '',
+    above70Agreed: false,
     areaBasisHeat: plant.areaBasisHeat ?? 'area',
     dhwHeatMeter: true,
     totalHeatMeter: plant.energy === 'heatPump' || plant.energy === 'districtHeating',
@@ -119,7 +123,9 @@ export function selfSetupBody(form: SelfSetupForm, energy: HeatingEnergy): { bod
     const t = text.trim().replace(',', '.')
     return /^\d+(\.\d{1,2})?$/.test(t) ? Number(t) : null
   }
-  const share = forced ?? percent(form.share)
+  // Ein vereinbarter höherer Anteil geht dem Pflichtanteil vor (§ 10 HeizkostenV), nie ein niedrigerer.
+  const typed = percent(form.share)
+  const share = forced !== null && !(form.above70Agreed && typed !== null && typed > forced) ? forced : typed
   if (share === null || !Number.isFinite(share)) return { error: `Bitte geben Sie den Anteil nach Verbrauch an, zwischen ${min} und ${max} %, mit höchstens zwei Nachkommastellen.` }
   // § 8 Abs. 1: beim Warmwasser eine eigene Wahl; ohne zentrales Warmwasser keine (Abweichung 14).
   const water = form.hotWater === 'none' ? null : percent(form.waterShare)
@@ -128,7 +134,8 @@ export function selfSetupBody(form: SelfSetupForm, energy: HeatingEnergy): { bod
   }
   for (const v of water === null ? [share] : [share, water]) {
     if (v < min) return { error: `Die Heizkostenverordnung verlangt mindestens ${min} % nach Verbrauch (§ 7 Abs. 1, § 8 Abs. 1).` }
-    if (v > max) return { error: `Mehr als ${max} % nach Verbrauch gehen nur mit einer Vereinbarung (§ 10 HeizkostenV); das kommt mit einer späteren Version.` }
+    if (v > 100) return { error: 'Nach Verbrauch verteilt werden höchstens 100 % der Kosten.' }
+    if (v > max && !form.above70Agreed) return { error: `Mehr als ${max} % nach Verbrauch gehen nur, wenn es mit den Mietern vereinbart ist (§ 10 HeizkostenV). Ist es vereinbart, setzen Sie das Häkchen „vereinbart“.` }
   }
   const items: SelfSetupBody['items'] = []
   for (const row of form.items) {
@@ -140,7 +147,7 @@ export function selfSetupBody(form: SelfSetupForm, energy: HeatingEnergy): { bod
   }
   return {
     body: {
-      period: form.period, heatConsumptionPct: share, waterConsumptionPct: water, insulationRule, hotWater: form.hotWater, capture: form.capture,
+      period: form.period, heatConsumptionPct: share, waterConsumptionPct: water, insulationRule, above70Agreed: form.above70Agreed, hotWater: form.hotWater, capture: form.capture,
       areaBasisHeat: form.areaBasisHeat, dhwHeatMeter: form.hotWater === 'combined' && form.dhwHeatMeter, totalHeatMeter: form.totalHeatMeter, items,
     },
   }

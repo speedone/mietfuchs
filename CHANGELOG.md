@@ -184,8 +184,7 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   für die Sie sie einrichten; frühere bleiben bei ihrem Schlüssel. Nach einem Kesseltausch gilt der Anteil
   nach Verbrauch weiter, und der Tausch fragt den Stand des Wärmezählers am Warmwasserspeicher ab. Den
   vorgeschriebenen Anteil bei Öl- und Gasheizung können Sie auch in einer begonnenen Heizperiode
-  nachtragen. Bis Mietfuchs die Angaben nach § 6a HeizkostenV erstellt, warnt die Abrechnung und nennt die
-  Kürzung je Mieter.
+  nachtragen. Die Angaben nach § 6a HeizkostenV druckt die Abrechnung mit (siehe unten).
 - Bei einer Wärmepumpe fragt die Einrichtung auch, ob sie erst nach dem Stichtag der Verordnung
   eingebaut wurde.
 - **Warmwasser ohne Wärmezähler.** Bei der eigenen Heizkostenabrechnung bestimmt Mietfuchs den
@@ -253,9 +252,44 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   benannt. Eine Schätzung neben vollständigen Ablesungen wird gemeldet. Wechselt danach die Erfassung der
   Heizperiode, rechnet die Schätzung nicht mehr, bis Sie sie neu eintragen. Auch ein Gerätewechsel mitten in der Heizperiode lässt sich so
   abrechnen. ([#99](https://github.com/speedone/mietfuchs/issues/99))
+- Heizkostenabrechnung mit den Informationen nach § 6a HeizkostenV: Die Abrechnung druckt je Mieter die
+  eingesetzten Energieträger, die Steuern und Abgaben laut Rechnung, die Entgelte der Erfassung, Kontaktadressen
+  zum Energiesparen, beim Verbrauchervertrag die Information zur Streitbeilegung und, bei eigener Abrechnung,
+  den Vergleich mit einem Durchschnittsnutzer und den witterungsbereinigten Vergleich mit dem vorhergehenden
+  Abrechnungszeitraum als Balken, beides nur mit den eigenen Zahlen des Mieters; bei Fernwärme die jährlichen Treibhausgasemissionen.
+  Den Vergleichswert des Durchschnittsnutzers und die Klimafaktoren tragen Sie auf der Seite Heizkosten in der
+  Karte „Angaben zur Abrechnung (§ 6a)“ mit ihrer Quelle ein; einen Durchschnitt des eigenen Hauses rechnet
+  Mietfuchs nicht, denn die Begründung der Verordnung schließt ihn aus. Bei Heizkostenverteilern und freien
+  Schlüsseln bestätigen Sie dort, dass der Vergleich Ihres Ablesedienstes beiliegt. Fehlt einem Mieter eine
+  Angabe, nennt die Abrechnung seine Kürzung um 3 %, einmal, auch wenn zugleich die monatliche
+  Verbrauchsinformation fehlt; ist nur die Wärme nach § 11 ausgenommen, nur auf den Anteil Warmwasser. Ist sein
+  Verbrauch nach § 9a geschätzt, verlangt Mietfuchs für ihn nur die Mindestangaben (Kontaktinformationen,
+  Streitbeilegung) und nennt keine Kürzung; das je Mieter anzuwenden ist eine Auslegung. Ob die Abrechnung auf dem Verbrauch beruht und damit die
+  volle Pflicht gilt, entscheidet, wie Mietfuchs tatsächlich verteilt, auch bei freien Schlüsseln.
+  ([#99](https://github.com/speedone/mietfuchs/issues/99))
+- Karte „Ausnahmen und Vereinbarungen“ auf der Seite Heizkosten, je Heizperiode: Ausnahme nach § 11
+  HeizkostenV, für die Wärme oder für Wärme und Warmwasser, die abweichende Vereinbarung im Zweifamilienhaus mit
+  eigener Wohnung (§ 2) und die Bestätigung, dass die Mieter die monatliche Verbrauchsinformation anders
+  bekommen. Jede Antwort gilt ab dieser Heizperiode und ändert keine frühere. Unter der Ausnahme nennt Mietfuchs
+  für den ausgenommenen Teil keine Kürzung nach § 12, und sind Wärme und Warmwasser ausgenommen, werden die
+  CO₂-Kosten nur bei vereinbarter Abrechnung aufgeteilt (§ 2 Abs. 7 CO2KostAufG); die Vereinbarung nach § 2
+  hebt nur die Kürzung um 15 % auf, die Informationspflichten bleiben. Ist „nach Wohnfläche“ vereinbart, verteilt
+  die eigene Heizkostenabrechnung nach der Fläche, auch wenn Ablesungen fehlen. Wirkt eine Angabe an einer abgeschlossenen Heizperiode vorbei
+  auf eine offene, fragt die Karte vorher nach.
+  ([#99](https://github.com/speedone/mietfuchs/issues/99))
+- Mehr als 70 % nach Verbrauch, wenn es mit den Mietern vereinbart ist (§ 10 HeizkostenV), in der
+  Einrichtung und auf der Seite Heizkosten; nie mehr als 100 %.
+  ([#99](https://github.com/speedone/mietfuchs/issues/99))
 
 ### Geändert
 
+- Neue Warnung „Monatliche Verbrauchsinformation“ bei einer Heizanlage, deren Zähler oder
+  Heizkostenverteiler als fernablesbar eingetragen sind: Seit 2022 stehen den Mietern dann monatliche
+  Informationen zu, sonst bis zu 3 % Kürzung. Bekommen Ihre Mieter sie über den Messdienst (in einem Portal
+  nur mit einer Nachricht jeden Monat), bestätigen Sie das in der Karte „Ausnahmen und Vereinbarungen“.
+  Die Warnung zu den Angaben nach § 6a bei der eigenen Heizkostenabrechnung heißt jetzt „Angaben zur
+  Heizkostenabrechnung unvollständig“ und erscheint auch bei freien Schlüsseln, deren Heizkosten nach
+  Zählern verteilt werden; keine Zahl ändert sich. ([#99](https://github.com/speedone/mietfuchs/issues/99))
 - Der Fehler „Heizkostenabrechnung unvollständig“ bei einem fehlenden Stand, einem Zählerwechsel ohne
   Endstand, negativem Verbrauch oder fehlenden Werten des Ablesedienstes verweist jetzt auf die Schätzung
   statt auf eine spätere Version. ([#99](https://github.com/speedone/mietfuchs/issues/99))

@@ -702,3 +702,16 @@ test('Gerät, das geschätzt werden kann: je Erfassung und Topf', () => {
   assert.equal(estimateDeviceType('heatMeter', 'water'), 'warmwasser')
   assert.equal(estimateDeviceType('serviceValues', 'water'), null)
 })
+
+test('§ 10 (Heizung PR 14): mehr als 70 % nach Vereinbarung erbt mit dem Anteil; § 7 Abs. 1 Satz 2 bleibt Mindestanteil', () => {
+  const rows = [{ period: '2024-01', heatConsumptionPct: 80, waterConsumptionPct: 80, insulationRule: 'notApplies' as const, above70Agreed: true }]
+  const geerbt = consumptionSharesOf(rows, '2025-01', 'gas', seventy) ?? assert.fail('kein Anteil')
+  assert.deepEqual([geerbt.heating, geerbt.above70Agreed, geerbt.insulation], [80, true, 'notApplies'])
+  const eigen = consumptionSharesOf([...rows, { period: '2025-01', heatConsumptionPct: 70, waterConsumptionPct: 70, insulationRule: 'unknown' as const, above70Agreed: null }], '2025-01', 'gas', seventy) ?? assert.fail('kein Anteil')
+  assert.deepEqual([eigen.heating, eigen.above70Agreed, eigen.insulation], [70, false, 'unknown'])
+  // Pflichtanteil mit Vereinbarung darüber: der vereinbarte höhere Wert gilt; ohne Vereinbarung der Pflichtanteil.
+  const pflicht = consumptionSharesOf([{ period: '2025-01', heatConsumptionPct: 85, waterConsumptionPct: 70, insulationRule: 'applies' as const, above70Agreed: true }], '2025-01', 'oil', seventy) ?? assert.fail('kein Anteil')
+  assert.deepEqual([pflicht.heating, pflicht.forced], [85, true])
+  const ohne = consumptionSharesOf([{ period: '2025-01', heatConsumptionPct: 85, waterConsumptionPct: 70, insulationRule: 'applies' as const, above70Agreed: false }], '2025-01', 'oil', seventy) ?? assert.fail('kein Anteil')
+  assert.equal(ohne.heating, 70)
+})
