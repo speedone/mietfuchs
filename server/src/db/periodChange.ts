@@ -32,12 +32,13 @@ import {
 } from '../../../shared/period.ts'
 import { dayAfter } from '../../../shared/law/register.ts'
 import type { BillingPeriod, CostItem, PeriodChangePreview, PeriodEffect, PeriodKey, PeriodRules, Property, Tenancy } from '../../../shared/types.ts'
-import { baseDescription, splitByService, type ServicePart } from '../serviceSplit.ts'
+import { baseDescription, splitAlike, splitByService, type ServicePart } from '../serviceSplit.ts'
 import type { Database, Transaction } from './client.ts'
 import { readClosedSettlements, readCostItems, readHeatingPlants, readProperties, readStock, readTenancies, readUnits } from './read.ts'
 import { dryRun, earliestTenancyStart, lostClaims, outcomeOf } from './dryRun.ts'
 import { HeatingError, PeriodConflict, PeriodError, rewriteCostItemFamily, settleOperatingPowerLinks, writeCostItemParts } from './repository.ts'
-import { assessmentLines, assessments, closedSettlementHistory, costItems, periodChanges, prepaymentOverrides, properties } from './schema.ts'
+import { assessmentLines, assessments, closedSettlementHistory, periodChanges, prepaymentOverrides, properties } from './schema.ts'
+import { GENERAL_POWER_CATEGORY } from '../../../shared/operatingPower.ts'
 import { euro } from '../../../shared/costItem.ts'
 
 const MONTH_NAMES = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember']
@@ -655,6 +656,19 @@ async function writeChangeIn(
     await tx.update(properties).set({ periodStartMonth: next.startMonth }).where(eq(properties.id, propertyId))
     await tx.delete(periodChanges).where(eq(periodChanges.propertyId, propertyId))
     if (next.changes.length > 0) await tx.insert(periodChanges).values(next.changes.map((fromMonth) => ({ propertyId, fromMonth })))
+    // G4-K1 (Nachprüfung von #252): Teilt sich eine Stromrechnung über ihren Leistungszeitraum von selbst, teilt
+    // sich ihr Abzug im selben Verhältnis, gleich wie seine Gruppe beantwortet wird: Der Betriebsstrom steckt in
+    // jedem Teil der Rechnung nach Tagen.
+    const generalParts = new Map(plan.splits.filter((s) => s.item.category === GENERAL_POWER_CATEGORY && s.item.operatingPower === undefined).map((s) => [s.item.id, s.parts]))
+    const alike = async (item: CostItem): Promise<boolean> => {
+      const parts = item.operatingPower === 'deduction' && item.operatingPowerGeneralId !== undefined ? generalParts.get(item.operatingPowerGeneralId) : undefined
+      if (!parts) return false
+      const own = splitAlike(item, parts)
+      remember(item, own.map((p) => p.period.key), await writeCostItemParts(tx, item, own.map((p) => ({
+        period: p.period.key, amountCents: p.amountCents, labor35aCents: null, description: p.description, taxYear: taxYearIn(p.period, item),
+      })), newId, item.id, guard))
+      return true
+    }
     for (const { item, parts, family } of plan.splits) {
       const writes = parts.map((p) => ({
         period: p.period.key, amountCents: p.amountCents, labor35aCents: p.labor35aCents, description: p.description, taxYear: taxYearIn(p.period, item),
@@ -662,18 +676,11 @@ async function writeChangeIn(
       const ids = family ? await rewriteCostItemFamily(tx, family, writes, newId, guard) : await writeCostItemParts(tx, item, writes, newId, item.id, guard)
       remember(item, writes.map((w) => w.period), ids)
     }
-    // G3-H (Nachprüfung Geld Runde 2): Ein Abzug mit Betriebsstrom-Position folgt beim Aufteilen nicht den Tagen
-    // seiner Rechnung, sondern dem Betriebsstrom, der als Heizkosten nie nach Tagen geteilt wird. Er wird erst
-    // geschrieben, wenn feststeht, wo der Betriebsstrom steht (unten).
-    const deferred: { item: CostItem; parts: ServicePart[]; old: BillingPeriod }[] = []
     for (const [id, g] of plan.groups) {
       if (answers.groups[id] === 'split' && g.split !== null) {
         for (const item of g.items) {
+          if (await alike(item)) continue
           const parts = g.split.get(item.id) ?? []
-          if (item.operatingPower === 'deduction' && item.operatingPowerItemId !== undefined) {
-            deferred.push({ item, parts, old: g.old })
-            continue
-          }
           remember(item, parts.map((p) => p.period.key), await writeCostItemParts(tx, { ...item, serviceFrom: g.old.from, serviceTo: g.old.to }, parts.map((p) => ({
             period: p.period.key, amountCents: p.amountCents, labor35aCents: p.labor35aCents, description: p.description, taxYear: taxYearIn(p.period, item),
           })), newId, item.id, guard))
@@ -682,22 +689,9 @@ async function writeChangeIn(
       }
       const target = g.options.find((p) => p.key === answers.groups[id]) ?? null
       if (target === null) continue
-      for (const item of g.items) await move(item, target)
+      for (const item of g.items) if (!(await alike(item))) await move(item, target)
     }
     for (const { item, target } of plan.regrows) await move(item, target)
-    for (const { item, parts, old } of deferred) {
-      // Steht der Betriebsstrom in einem Zeitraum des Objekts, wandert der Abzug ganz dorthin. Hat die Anlage eine
-      // eigene Heizperiode, deren Schlüssel kein Zeitraum des Objekts ist, bleibt es bei den Tagen der Rechnung.
-      const [bs] = await tx.select({ period: costItems.period }).from(costItems).where(eq(costItems.id, item.operatingPowerItemId ?? ''))
-      const target = bs ? periodOfKey(next, bs.period) : null
-      if (target) {
-        await move(item, target)
-        continue
-      }
-      remember(item, parts.map((p) => p.period.key), await writeCostItemParts(tx, { ...item, serviceFrom: old.from, serviceTo: old.to }, parts.map((p) => ({
-        period: p.period.key, amountCents: p.amountCents, labor35aCents: p.labor35aCents, description: p.description, taxYear: taxYearIn(p.period, item),
-      })), newId, item.id, guard))
-    }
     for (const r of plan.overrideRekeys) {
       await tx.update(prepaymentOverrides).set({ period: r.to }).where(and(eq(prepaymentOverrides.tenancyId, r.tenancyId), eq(prepaymentOverrides.period, r.from)))
     }
