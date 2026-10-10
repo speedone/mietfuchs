@@ -2106,7 +2106,13 @@ die ganze fachliche Komplexität:
   Rechnung) und `-tax-year` (Betriebsstrom und Abzug in verschiedenen Steuerjahren). Die Schätzhilfe
   nimmt nur eine Stromrechnung, die die Heizperiode berührt, übernimmt deren Jahr der Zahlung, wo der
   Zeitraum zwei Kalenderjahre berührt, lehnt eine Summe der Abzüge über der Rechnung ab (400) und fragt
-  bei schon gebuchtem Betriebsstrom zurück (409, `despiteExisting`). Kein Objektwechsel, solange ein
+  bei schon gebuchtem Betriebsstrom zurück (409 mit `question: 'despiteExisting'`; nur dann bietet die
+  Karte „Trotzdem anlegen“). Dieselbe Summenregel gilt im Kostenformular (Abzug anlegen oder ändern,
+  Rechnung verkleinern). Führend beim Steuerjahr ist der Betriebsstrom, dessen Jahr an der Heizperiode
+  hängt; der Abzug bekommt dasselbe. Beim Wechsel des Abrechnungszeitraums wandern Rechnung und Abzüge
+  als Einheit: Die Prüfungen gelten für den Endstand (Option `periodChange`, `settleOperatingPowerLinks`),
+  beim Aufteilen zeigt jeder Teil des Abzugs auf den Teil der Rechnung im selben Zeitraum, und ein
+  Scheitern ist eine 409 mit Vorschau. Kein Objektwechsel, solange ein
   Verweis besteht; `crossPropertyViolations` kennt beide. `included` nur mit positivem Betrag. Liegt ein
   Abzug in einer abgeschlossenen Abrechnung, hat jeder Zustand seinen eigenen Text, und keiner rät zu
   einem neuen Abzug in einem anderen Jahr. „Aus dem Vorjahr übernehmen“

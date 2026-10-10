@@ -311,7 +311,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Abrechnung meldet einen Abzug, der anders verteilt ist als seine Rechnung, mehr Abzug als Rechnung und
   Betriebsstrom und Abzug in verschiedenen Steuerjahren. Die Karte bietet nur Stromrechnungen an, die
   die Heizperiode berühren, übernimmt deren Jahr der Zahlung (auch bei Abrechnung von Mai bis April),
-  zeigt, was schon gebucht ist, und fragt bei einer zweiten Buchung zurück. Steht der Allgemeinstrom in
+  zeigt, was schon gebucht ist, und fragt bei einer zweiten Buchung zurück; mehr Abzug als Rechnung
+  lehnt auch das Kostenformular ab, und ein Wechsel des Abrechnungszeitraums nimmt Rechnung und Abzüge
+  gemeinsam mit. Steht der Allgemeinstrom in
   einer abgeschlossenen Abrechnung, legt die Karte nichts an; ein Abzug, der dort nach dem Abschluss
   angelegt oder geändert wurde, zählt nur mit dem, was die zugestellte Abrechnung gutgeschrieben hat, und
   der Hinweis sagt je Fall, was zu tun ist und wo nach Ablauf der Frist die Grenze liegt (§ 556 Abs. 3
