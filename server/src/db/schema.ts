@@ -1076,6 +1076,8 @@ export const costItems = sqliteTable(
     check('cost_items_operating_power_basis_valid', sql.raw(`"operating_power_basis" IS NULL OR "operating_power" IS NOT NULL`)),
     // Durchsicht von #252, G-K3: Ein Abzug zeigt auf seine Stromrechnung, und nur ein Abzug tut das.
     check('cost_items_operating_power_general_valid', sql.raw(`"operating_power_general_id" IS NULL OR "operating_power" IS 'deduction'`)),
+    // G-K4: Betriebsstrom ist keine Gutschrift.
+    check('cost_items_operating_power_included_positive', sql.raw(`"operating_power" IS NOT 'included' OR "amount_cents" > 0`)),
     check('cost_items_operating_power_source_complete', sql.raw(`"operating_power" IS NOT 'deduction' OR "operating_power_general_id" IS NOT NULL`)),
     // Eine Summe der Anlage von null ergäbe eine Division durch null im Rechenweg.
     check('cost_items_external_total_positive', sql.raw('"external_total" > 0')),
