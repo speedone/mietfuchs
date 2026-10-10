@@ -2298,6 +2298,166 @@ test('Invariante: mit zwei Objekten rechnet jedes, als wäre es allein', () => {
   }
 })
 
+// ---------- Reihenfolge der Datensätze ----------
+// Die Sammlungen sind Mengen (siehe die Schnappschuss-Grenze oben): In welcher Reihenfolge Wohnungen,
+// Zähler, Ablesungen oder die Einträge einer Staffel in der Datenbank stehen, darf keine Zahl
+// verschieben. Die Invariante zu §35a prüfte das schon, aber nur für drei Sammlungen und nur an den
+// Summen je Mieter. Nachgemessen: Ohne das Sortieren der Geräte in unitCoveredDays und ohne das in
+// personsAt blieb die ganze Suite grün, ohne das in meterSegments fiel es nur einem Test der
+// Warmwasser-Aufteilung auf. Hier wird alles umgedreht, und verglichen werden alle vier Rechnungen
+// ganz.
+//
+// **Eine Ausnahme ist gewollt**: Zwei Ablesungen desselben Zählers am selben Tag ordnet die
+// Reihenfolge der Datei (#69, `ORDER BY rowid` in db/read.ts). randomDb erzeugt keine, und der
+// Test prüft das, statt es anzunehmen.
+function reversedDb(db: Db): Db {
+  const back = <T>(list: T[] | undefined): T[] | undefined => list?.slice().reverse()
+  return {
+    ...db,
+    units: db.units.slice().reverse(),
+    tenancies: db.tenancies.slice().reverse().map((t) => ({
+      ...t,
+      personHistory: t.personHistory.slice().reverse(),
+      prepayments: t.prepayments.slice().reverse(),
+      baseRents: t.baseRents.slice().reverse(),
+      ...(t.flatRates ? { flatRates: back(t.flatRates) } : {}),
+      ...(t.heatingPrepayments ? { heatingPrepayments: back(t.heatingPrepayments) } : {}),
+      prepaymentOverrides: Object.fromEntries(Object.entries(t.prepaymentOverrides).reverse()),
+    })),
+    meters: db.meters.slice().reverse(),
+    readings: db.readings.slice().reverse(),
+    payments: db.payments.slice().reverse(),
+    costItems: db.costItems.slice().reverse().map((c) => ({
+      ...c,
+      ...(c.customShares ? { customShares: Object.fromEntries(Object.entries(c.customShares).reverse()) } : {}),
+    })),
+  }
+}
+
+// Verglichen wird als Menge. Manche Listen ordnet die Rechnung selbst (Mieter nach Namen, Monate),
+// andere folgen bewusst der Reihenfolge, in der der Vermieter die Kosten angelegt hat; das ist eine
+// Frage der Darstellung und keine der Zahlen. Jede Liste wird deshalb sortiert.
+// **Die Sätze der Abrechnung bleiben außen vor**, und das ist eine Entscheidung: Ein Hinweis, der
+// mehrere Mieter nennt („Für M2 (W2) und M3 (W3) …“), und ein Rechenweg, der Wohnungen aufzählt
+// („W0: 94 Tage …; W1: 120 Tage …“, ebenso in der Steuerübersicht), folgen der Reihenfolge der Datei, und das ist dieselbe
+// Darstellungsfrage im Satz. Von jedem Hinweis werden Code, Stufe und Art des betroffenen Eintrags
+// verglichen, also ob derselbe Befund gemeldet wird; die Zahlen des Rechenwegs stehen ohnehin in
+// den Anteilen. Die Meldungen der Verbrauchsübersicht nennen je Zähler einen Befund und werden als
+// Menge von Sätzen verglichen, denn an ihnen hängt die Ampel „Zählerstände“.
+function asSet(value: unknown, wording: ReadonlySet<string> = new Set()): unknown {
+  if (Array.isArray(value)) return value.map((v) => asSet(v, wording)).sort((a, b) => compareText(JSON.stringify(a), JSON.stringify(b)))
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value)
+      .filter(([k]) => !wording.has(k))
+      .sort(([a], [b]) => compareText(a, b))
+      .map(([k, v]) => [k, k === 'subject' && v && typeof v === 'object' && 'kind' in v ? v.kind : asSet(v, wording)]))
+  }
+  return value
+}
+
+const allFour = (db: Db) => {
+  const snapshot = snapshotFromDb(db, 2025)
+  return {
+    settlement: computeSettlement(snapshot),
+    ledger: rentLedger(snapshot),
+    tax: taxReport(snapshot),
+    consumption: consumptionOverview(snapshot),
+  }
+}
+
+test('Invariante: die Reihenfolge der Datensätze und Staffeleinträge ändert keine Zahl und keinen Befund', () => {
+  const rnd = makeRng(27126)
+  for (let i = 0; i < 400; i++) {
+    const db = randomDb(rnd)
+    // Je Staffel zwei Einträge mit verschiedenen Stichtagen, damit es etwas zu ordnen gibt.
+    for (const t of db.tenancies) {
+      const later = '2025-07'
+      t.prepayments.push({ from: later, monthlyCents: Math.floor(rnd() * 30000) })
+      t.baseRents.push({ from: '2020-01', monthlyCents: 50000 }, { from: later, monthlyCents: 50000 + Math.floor(rnd() * 20000) })
+      if (t.start < '2025-07-01') t.personHistory.push({ from: '2025-07-01', persons: Math.floor(rnd() * 5) })
+      if (t.flatRates) t.flatRates.push({ from: later, monthlyCents: Math.floor(rnd() * 15000) })
+      if (rnd() < 0.3) t.heatingPrepayments = [{ from: '2020-01', monthlyCents: Math.floor(rnd() * 8000) }, { from: later, monthlyCents: Math.floor(rnd() * 8000) }]
+      if (rnd() < 0.3) t.prepaymentOverrides = { '2024-01': Math.floor(rnd() * 200000), '2025-01': Math.floor(rnd() * 200000) }
+    }
+    // Ein Zähler, der im Jahr gegen ein neues Gerät mit eigener Kennung getauscht wurde, dazu ein
+    // Hauptzähler. Ob die Wohnung das ganze Jahr gemessen ist, setzt die Rechnung aus beiden Geräten
+    // zusammen, und davon hängt ab, ob der Hauptzähler zur Basis wird (#116). randomDb kennt je
+    // Wohnung nur ein Gerät; ohne diesen Zusatz blieb eine Rechnung unbemerkt, die die Geräte in der
+    // Reihenfolge der Datei aneinanderhängt.
+    if (rnd() < 0.5) {
+      db.units.push({ id: 'tausch', name: 'Tausch', areaM2: 50, participates: true })
+      db.tenancies.push(tenancy({ id: 'tt', unitId: 'tausch', tenantName: 'MT', persons: 2, personHistory: [{ from: '2020-01-01', persons: 2 }] }))
+      db.meters.push(
+        { id: 'alt', unitId: 'tausch', type: 'kaltwasser', name: 'alt', unit: 'm³' },
+        { id: 'neu', unitId: 'tausch', type: 'kaltwasser', name: 'neu', unit: 'm³' },
+        { id: 'haupt', unitId: null, type: 'kaltwasser', name: 'haupt', unit: 'm³' },
+      )
+      db.readings.push(
+        { id: 'alt-a', meterId: 'alt', date: '2024-12-31', value: 0 },
+        { id: 'alt-b', meterId: 'alt', date: '2025-06-30', value: 40 },
+        { id: 'neu-a', meterId: 'neu', date: '2025-06-30', value: 0 },
+        { id: 'neu-b', meterId: 'neu', date: '2025-12-31', value: 30 },
+        { id: 'haupt-a', meterId: 'haupt', date: '2024-12-31', value: 0 },
+        { id: 'haupt-b', meterId: 'haupt', date: '2025-12-31', value: 500 },
+      )
+      db.costItems.push({ id: 'wasser', year: 2025, category: 'Wasser/Abwasser', description: 'Wasser', amountCents: 120000, key: 'meter', meterType: 'kaltwasser' })
+    }
+    const sameDay = new Set<string>()
+    for (const r of db.readings) {
+      const key = `${r.meterId}@${r.date}`
+      if (sameDay.has(key)) assert.fail(`Fall ${i}: zwei Ablesungen am selben Tag (${key}); dort entscheidet die Datei`)
+      sameDay.add(key)
+    }
+    const fall = `Fall ${i}\n${JSON.stringify(db)}`
+    const vorwaerts = allFour(db)
+    const rueckwaerts = allFour(reversedDb(db))
+    const sentences = new Set(['text', 'warnings', 'steps'])
+    assert.deepEqual(asSet(rueckwaerts.settlement, sentences), asSet(vorwaerts.settlement, sentences), `${fall}: Abrechnung`)
+    assert.deepEqual(asSet(rueckwaerts.ledger, sentences), asSet(vorwaerts.ledger, sentences), `${fall}: Mietkonto`)
+    assert.deepEqual(asSet(rueckwaerts.tax, sentences), asSet(vorwaerts.tax, sentences), `${fall}: Steuer`)
+    assert.deepEqual(asSet(rueckwaerts.consumption), asSet(vorwaerts.consumption), `${fall}: Verbrauch`)
+  }
+})
+
+// ---------- Ganze Cent ----------
+// Geld steht in ganzen Cent, und zwar in jedem Feld, das so heißt, nicht nur in den Anteilen, deren
+// Summen die Invarianten oben prüfen: Zwei halbe Cent ergeben zusammen wieder einen ganzen, die
+// Summenprobe sieht sie also nicht. Geprüft wird jedes Feld mit der Endung `Cents` in allen vier
+// Rechnungen, auch die, die nur zum Vergleich daneben stehen (nachgemessen: ein ungerundeter
+// Vergleichswert „nach Fläche“ in der Steuerübersicht blieb sonst in der ganzen Suite unbemerkt).
+// Unter einem Feld `…Cents` ist alles Geld, auch eine Liste oder Zuordnung von Beträgen.
+function leaves(value: unknown, where: string, out: [string, unknown][]): void {
+  if (Array.isArray(value)) value.forEach((v, k) => leaves(v, `${where}[${k}]`, out))
+  else if (value && typeof value === 'object') for (const [k, v] of Object.entries(value)) leaves(v, `${where}.${k}`, out)
+  else out.push([where, value])
+}
+
+function centFields(value: unknown, where: string, out: [string, unknown][] = []): [string, unknown][] {
+  if (Array.isArray(value)) value.forEach((v, k) => centFields(v, `${where}[${k}]`, out))
+  else if (value && typeof value === 'object') {
+    for (const [k, v] of Object.entries(value)) {
+      if (k.endsWith('Cents')) leaves(v, `${where}.${k}`, out)
+      else centFields(v, `${where}.${k}`, out)
+    }
+  }
+  return out
+}
+
+test('Invariante: jeder Betrag in Cent ist eine ganze Zahl, in allen vier Rechnungen', () => {
+  const rnd = makeRng(171717)
+  let gezaehlt = 0
+  for (let i = 0; i < 400; i++) {
+    const db = randomDb(rnd)
+    for (const [where, v] of centFields(allFour(db), 'Ergebnis')) {
+      // Ein fehlender Vergleichswert ist kein Betrag.
+      if (v === null || v === undefined) continue
+      gezaehlt++
+      assert.ok(Number.isInteger(v), `Fall ${i}: ${where} = ${String(v)} ist kein ganzer Cent\n${JSON.stringify(db)}`)
+    }
+  }
+  assert.ok(gezaehlt > 50000, `nur ${gezaehlt} Beträge geprüft`)
+})
+
 // Mietkonto im laufenden Jahr (Refs #133, zweite Browserabnahme): Monate ab dem laufenden sind noch
 // nicht fällig und kein Rückstand. Dieselbe Regel wie beim Hinweis auf einen Rückstand.
 test('Mietkonto mit Stichtag: künftige Monate sind „noch nicht fällig“ und kein Rückstand', () => {
