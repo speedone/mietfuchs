@@ -411,8 +411,10 @@ für PR 15). Jede der folgenden Festlegungen hat dort keine Grundlage und ist hi
    `fuel`) in die Heizposition; die Bedingung `…_included_valid` lässt `included` an `fuel` ohnehin
    nicht zu. Der Fall „Strom der Wärmepumpe läuft ohne eigenen Zähler über den Allgemeinstrom“ ist nicht
    Teil dieses Plans (Vorschlag für ein Issue, Task 7): Eine Schätzung nach Leistung und Laufzeit wäre
-   für einen Verdichter kaum vertretbar, und seit 01.10.2024 verlangt § 12 Abs. 3 HeizkostenV ohnehin
-   eine Erfassung (`hkv.heat-pump.capture`, PR 10).
+   für einen Verdichter kaum vertretbar, und § 12 Abs. 3 HeizkostenV verlangt ohnehin eine Erfassung:
+   Wurde der Verbrauch aus Wärmepumpen am 01.10.2024 noch nicht erfasst, war sie bis zum Ablauf des
+   30.09.2025 einzubauen, und die Verordnung gilt ab dem Abrechnungszeitraum danach (`hkv.heat-pump.capture`,
+   PR 10; Wortlaut am 10.10.2026 auf gesetze-im-internet.de gelesen, R2-K6).
 6. **Abzug in der Verteilung des Allgemeinstroms (Festlegung).** Der Abzug übernimmt Schlüssel,
    Zählertyp, Direktzuordnung, vereinbarte Anteile und Teilnehmer der Allgemeinstrom-Position; so mindert
    er jeden Anteil genau im Verhältnis. Bei `amounts` und `external` lehnt die Hilfe ab (Review Focus 1),
@@ -2790,8 +2792,8 @@ Anlegen nachfragen“):
 
 1. „Betriebsstrom fehlt: Hinweis bei Zentralheizung ohne Betriebsstrom-Position“ (Abweichung 8).
 2. „Wärmepumpe: Strom der Wärmepumpe läuft ohne eigenen Zähler über den Allgemeinstrom“ (P-W5): Der
-   Strom ist dort Brennstoff und gehört ganz zu den Heizkosten; seit 01.10.2024 verlangt § 12 Abs. 3
-   HeizkostenV eine Erfassung (`hkv.heat-pump.capture`). Zu klären ist, ob Mietfuchs dafür einen Abzug
+   Strom ist dort Brennstoff und gehört ganz zu den Heizkosten; § 12 Abs. 3 HeizkostenV verlangt eine
+   Erfassung (bis zum Ablauf des 30.09.2025 nachzurüsten, `hkv.heat-pump.capture`; R2-K6). Zu klären ist, ob Mietfuchs dafür einen Abzug
    beim Allgemeinstrom als Brennstoff anlegen soll und wie der Betrag ohne Zähler belegt wird.
 
 - [ ] **Step 3: Gesamtprüfung**
