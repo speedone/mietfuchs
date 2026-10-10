@@ -2111,7 +2111,9 @@ die ganze fachliche Komplexität:
   Rechnung verkleinern). Führend beim Steuerjahr ist der Betriebsstrom, dessen Jahr an der Heizperiode
   hängt; der Abzug bekommt dasselbe. Beim Wechsel des Abrechnungszeitraums wandern Rechnung und Abzüge
   als Einheit: Die Prüfungen gelten für den Endstand (Option `periodChange`, `settleOperatingPowerLinks`),
-  beim Aufteilen zeigt jeder Teil des Abzugs auf den Teil der Rechnung im selben Zeitraum, und ein
+  beim Aufteilen folgt ein Abzug mit Betriebsstrom-Position diesem (Heizkosten werden nicht nach Tagen
+  geteilt), ohne sie (Messdienst) den Tagen der Rechnung, jeder Teil zeigt auf den Teil der Rechnung im
+  selben Zeitraum, und ein
   Scheitern ist eine 409 mit Vorschau. Kein Objektwechsel, solange ein
   Verweis besteht; `crossPropertyViolations` kennt beide. `included` nur mit positivem Betrag. Liegt ein
   Abzug in einer abgeschlossenen Abrechnung, hat jeder Zustand seinen eigenen Text, und keiner rät zu
