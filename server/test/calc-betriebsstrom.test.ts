@@ -230,6 +230,9 @@ test('N1: Abzug in einem anderen Steuerjahr als sein Betriebsstrom → Hinweis; 
   if (!n) return assert.fail('kein Hinweis')
   assert.equal(n.level, 'warning')
   assert.match(n.text, /„Betriebsstrom Heizung“ zählt in der Steuerübersicht zum Jahr 2025, der Abzug „Abzug Betriebsstrom Heizung“ zum Jahr 2024/)
+  // G2-N-W2: Der Rat richtet sich an die Position, deren Jahr sich einstellen lässt: den Abzug.
+  assert.match(n.text, /Stellen Sie beim Abzug „Abzug Betriebsstrom Heizung“ im Kostenformular das Jahr der Zahlung 2025 ein/)
+  assert.doesNotMatch(n.text, /bei beiden/)
   assert.equal(kind(settle([betriebsstrom, hausstrom], [{ ...abzug(14784), taxYear: 2025 }])).length, 0)
 })
 

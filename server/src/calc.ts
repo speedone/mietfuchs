@@ -6417,7 +6417,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       if (d.itemId !== item.id || d.taxYear === undefined || d.taxYear === itemTaxYear) continue
       warn('heating.operating-power-tax-year',
         `„${item.description}“ zählt in der Steuerübersicht zum Jahr ${itemTaxYear}, der Abzug „${d.description}“ zum Jahr ${d.taxYear}. ` +
-        'Beides ist eine Umbuchung aus derselben Stromrechnung und gehört in ihr Jahr; stellen Sie im Kostenformular bei beiden das Jahr der Zahlung der Stromrechnung ein.',
+        `Beides ist eine Umbuchung aus derselben Stromrechnung und gehört in dasselbe Jahr. Stellen Sie beim Abzug „${d.description}“ im Kostenformular das Jahr der Zahlung ${itemTaxYear} ein; das Jahr des Betriebsstroms hängt an seiner Heizperiode.`,
         itemSubject(item))
     }
   }
