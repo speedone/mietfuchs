@@ -68,6 +68,7 @@ import { betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths } from '../../sha
 import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvEstimateThreshold, hkvExemptions, hkvInfoDistrict, hkvMonthlyInfo, hkvHeatPumpCapture, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvRenewableExemption, hkvSettlementInfo, type DegreeDayTable } from '../../shared/law/heizkostenv.ts'
 import { plantDevices, remoteReadingVerdict, servedUnitIds } from './remoteReading.ts'
 import { heatingInfoOf, heatingRulesOf, planByConsumption, type RuleRow } from './heatingInfo.ts'
+import { co2ExemptionOf, co2OffByExemptionOf, exemptionScopeFor, exemptionText as exemptionTextOf } from './co2Exemption.ts'
 import { AGREED_FIXED_SELF_TEXT, INFO_CONTACTS, INFO_CONTACTS_CHECKED } from '../../shared/heatingInfo.ts'
 import { practiceReadingOffWarning, practiceVacancyPersons } from '../../shared/law/practice.ts'
 import { HEATING_CATEGORY, heatingByConsumption, heatingFindings, mayAgreeOtherwise, PART_OF_POT, POT_OF_PART } from '../../shared/heating.ts'
@@ -2687,13 +2688,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const p = plantId ? rulePlants.find((x) => x.id === plantId) : undefined
     return p && (p.supply ?? 'central') === 'central' ? p : undefined
   }
-  // Bereitet die Anlage in der Heizperiode kein Warmwasser, betrifft eine Ausnahme der Wärme die ganze Anlage.
-  const exemptionScopeOf = (plantId: string | null | undefined, key: string): ExemptionScope | null => {
-    const p = centralPlant(plantId)
-    if (!p || !plantId) return null
-    const s = periodRulesFor(plantId, key).exemptionScope
-    return s === 'heat' && hotWaterOf(p, key) === 'none' ? 'both' : s
-  }
+  // Bereitet die Anlage in der Heizperiode kein Warmwasser, betrifft eine Ausnahme der Wärme die ganze Anlage
+  // (`exemptionScopeFor` in co2Exemption.ts, dieselbe Regel wie für das Blatt).
+  const exemptionScopeOf = (plantId: string | null | undefined, key: string): ExemptionScope | null =>
+    plantId ? exemptionScopeFor(centralPlant(plantId), periodRulesFor(plantId, key), key) : null
   const exemptPot = (plantId: string, pot: SelfPot, key: string): boolean => {
     const s = exemptionScopeOf(plantId, key)
     return s === 'both' || (s === 'heat' && pot === 'heating')
@@ -2715,10 +2713,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // Warmwasserkosten ist vereinbart. Ist nur die Wärme ausgenommen, teilt Mietfuchs weiter auf, denn das
   // Warmwasser bleibt unter der Verordnung und das Gesetz unterscheidet den Fall nicht (Auslegung zur sicheren
   // Seite: Ohne Aufteilung dürften die Mieter sonst kürzen).
-  const co2OffByExemption = (plantId: string, key: string): boolean => {
-    if (exemptionScopeOf(plantId, key) !== 'both') return false
-    return !periodRulesFor(plantId, key).exemptionBillingAgreed
-  }
+  // Die Regel steht in co2Exemption.ts, damit das Blatt für den Messdienst dieselbe fragt (#246).
+  const co2OffByExemption = (plantId: string, key: string): boolean => co2OffByExemptionOf(centralPlant(plantId), periodRulesFor(plantId, key), key)
   // ---------- Eigene Heizkostenabrechnung (Heizung PR 10, Entwurf 6.1 Nr. 4.3, 8) ----------
   // Je Anlage mit `method = 'self'`, deren Heizperiode der Zeitraum dieser Berechnung ist (dieselben
   // Anlagen wie bei den Lieferungen, `fuelPlants`), der Plan: Nutzer, Ablesungen, Gruppen und Bruchteile
@@ -5539,27 +5535,13 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     '4': 'der Vergleich mit einem normierten oder durch Vergleichstests ermittelten Durchschnittsnutzer (Nr. 4)',
     '5': 'der witterungsbereinigte Vergleich mit dem vorhergehenden Abrechnungszeitraum in grafischer Form (Nr. 5)',
   }
-  const exemptionText = (e: HeatingExemption, hPeriod: Period): string => {
-    const v = law(hkvExemptions, { period: hPeriod }, lawLog)
-    switch (e) {
-      case 'lowDemand': return `Räume in einem Gebäude mit einem Heizwärmebedarf von weniger als ${v.lowDemandKwhPerM2Year} kWh je m² und Jahr (§ 11 Abs. 1 Nr. 1 Buchst. a HeizkostenV)`
-      // Durchsicht von #243, R-K1: der ganze Wortlaut des Buchst. b.
-      case 'disproportionate': return `Räume, bei denen das Anbringen der Ausstattung zur Verbrauchserfassung, die Erfassung des Wärmeverbrauchs oder die Verteilung der Kosten des Wärmeverbrauchs nicht oder nur mit unverhältnismäßig hohen Kosten möglich ist; unverhältnismäßig hoch sind Kosten, die nicht durch die Einsparungen erwirtschaftet werden können, die in der Regel innerhalb von ${v.paybackYears} Jahren erzielt werden können (§ 11 Abs. 1 Nr. 1 Buchst. b HeizkostenV)`
-      case 'pre1981': return `Räume, die vor dem ${fmtDay(v.readyBefore)} bezugsfertig geworden sind und in denen der Nutzer den Wärmeverbrauch nicht beeinflussen kann (§ 11 Abs. 1 Nr. 1 Buchst. c HeizkostenV)`
-      // Durchsicht von #243, R-W7: Die Bedingung „sofern der Wärmeverbrauch des Gebäudes nicht erfasst wird“ gehört
-      // nur zu Buchst. b. Zwei Fassungen des Buchst. a: für Zeiträume, die vor dem 01.10.2024 beginnen, mit Wärmepumpen.
-      case 'renewable': return `Räume in einem Gebäude, das überwiegend mit Wärme aus ${hkvRenewableExemption.describe(law(hkvRenewableExemption, { period: hPeriod }, lawLog))} versorgt wird`
-      case 'chp': return 'Räume in einem Gebäude, das überwiegend mit Wärme aus Anlagen der Kraft-Wärme-Kopplung oder aus Anlagen zur Verwertung von Abwärme versorgt wird, sofern der Wärmeverbrauch des Gebäudes nicht erfasst wird (§ 11 Abs. 1 Nr. 3 Buchst. b HeizkostenV)'
-      case 'authority': return 'eine Befreiung durch die nach Landesrecht zuständige Stelle wegen besonderer Umstände, um einen unangemessenen Aufwand oder sonstige unbillige Härten zu vermeiden (§ 11 Abs. 1 Nr. 5 HeizkostenV)'
-      case 'none': return ''
-    }
-  }
+  const exemptionText = (e: HeatingExemption, hPeriod: Period): string => exemptionTextOf(e, hPeriod, lawLog)
   // Die Ausnahme, unter der das CO2KostAufG nicht gilt, im Wortlaut der Abrechnung (§ 2 Abs. 7 CO2KostAufG): für
   // das Blatt für den Messdienst, das sie liest statt sie herzuleiten (#246).
   for (const report of heatingStatements) {
-    if (!report.co2Check || report.co2Check.applies || !co2OffByExemption(report.plantId, String(report.period))) continue
-    const e = periodRulesFor(report.plantId, String(report.period)).exemption
-    if (e && e !== 'none') report.co2Check.exemption = exemptionText(e, { from: report.from, to: report.to })
+    if (!report.co2Check || report.co2Check.applies) continue
+    const key = String(report.period)
+    report.co2Check.exemption = co2ExemptionOf(centralPlant(report.plantId), periodRulesFor(report.plantId, key), key, { from: report.from, to: report.to }, lawLog)
   }
 
   // Ist ein Gerät in der Heizperiode in Betrieb? Seine Ablesungen überdecken sie (wie bei Heizkostenverteilern,

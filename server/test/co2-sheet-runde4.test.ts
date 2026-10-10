@@ -186,3 +186,37 @@ test('Gegentest: mit vereinbarter Abrechnung (§ 2 Abs. 7) bleibt alles wie ohne
   }
   assert.deepEqual(vereinbart.sheet.deliveries.map((d) => d.findings), ohne.sheet.deliveries.map((d) => d.findings))
 })
+
+// Ohne Position in der Heizperiode (beim Messdienst der übliche Ablauf: das Blatt entsteht vor seiner Rechnung),
+// hier eine Anlage mit eigener Heizperiode Mai bis April. Die Abrechnung führt die Anlage trotzdem, weil sie
+// Lieferungen hat; steht die Heizperiode in gar keiner Abrechnung, fragt das Blatt dieselbe Regel
+// (`co2ExemptionOf` in co2Exemption.ts, Rückweg geprüft in co2-sheet.test.ts).
+const HM = periodKey('2025-05')
+const hMai = periodOfKey({ startMonth: 5, changes: [] }, HM) ?? assert.fail('keine Heizperiode')
+const ohnePosition = (rules: Partial<SnapshotHeatingPeriodRow>, positions = false): Src => {
+  const src = co2Source(2025, { invoiceFrom: '2025-05-01', invoiceTo: '2026-04-30', invoiceDate: '2026-05-10', co2CostCents: 55000 }, [], { periodStartMonth: 5, periodChanges: [], separateSpans: [], separateSettlement: false })
+  return {
+    ...src,
+    costItems: positions ? src.costItems.map((c) => ({ ...c, period: HM })) : [],
+    heatingPeriodRows: [{ plantId: 'hp', period: HM, dhwMethod: null, dhwUnmeasurable: null, ...rules }],
+  }
+}
+
+test('Ohne Position, Ausnahme nach § 11 ohne vereinbarte Abrechnung: keine §§ 8, 9, keine Summe, keine Befunde, die Ausnahme', () => {
+  const src = ohnePosition({ exemption: 'authority', exemptionScope: 'both' })
+  const sheet = co2SheetFor(src, 'objekt-1', 'hp', hMai, '2026-10-07') ?? assert.fail('kein Blatt')
+  assert.equal(sheet.billing.basis, null)
+  assert.equal(sheet.checked, false)
+  assert.match(sheet.exemption ?? '', /§ 11 Abs\. 1 Nr\. 5 HeizkostenV/)
+  assert.deepEqual(sheet.deliveries.map((d) => d.findings), [[]])
+  // Derselbe Wortlaut wie in der Abrechnung, sobald es eine Position gibt.
+  const mit = ohnePosition({ exemption: 'authority', exemptionScope: 'both' }, true)
+  assert.equal(sheet.exemption, (co2SheetFor(mit, 'objekt-1', 'hp', hMai, '2026-10-07') ?? assert.fail('kein Blatt')).exemption)
+  assert.ok(sheet.exemption)
+})
+
+test('Gegentest ohne Position: mit vereinbarter Abrechnung (§ 2 Abs. 7) gilt das Gesetz, keine Ausnahme', () => {
+  const sheet = co2SheetFor(ohnePosition({ exemption: 'authority', exemptionScope: 'both', exemptionBillingAgreed: true }), 'objekt-1', 'hp', hMai, '2026-10-07') ?? assert.fail('kein Blatt')
+  assert.equal(sheet.checked, true)
+  assert.equal(sheet.exemption, null)
+})

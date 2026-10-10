@@ -16,18 +16,20 @@ import { periodContaining, rulesOf } from '../../shared/period.ts'
 import { co2CostsBefore, co2CostsCountedFrom } from '../../shared/law/co2kostaufg.ts'
 import { hkvDegreeDays } from '../../shared/law/heizkostenv.ts'
 import { createLawLog, germanDate, valueAt } from '../../shared/law/register.ts'
-import type { BillingPeriod, Co2Sheet, Co2SheetBilling, Co2SheetDelivery, Co2SheetOpening, Co2SheetStock, FuelDelivery, HeatingPlant, HeatingStatement, LawOverride, Unit } from '../../shared/types.ts'
+import type { BillingPeriod, Co2Sheet, Co2SheetBilling, Co2SheetDelivery, Co2SheetOpening, Co2SheetStock, FuelDelivery, HeatingPlant, HeatingRules, HeatingStatement, LawOverride, Unit } from '../../shared/types.ts'
 import { computeSettlement, plantStockOf } from './calc.ts'
 import type { StockResult } from './fuelStock.ts'
 import { heatingSnapshotFor, snapshotFor, wayOf } from './snapshot.ts'
 import { etsExempt } from './co2Plausibility.ts'
+import { co2ExemptionOf } from './co2Exemption.ts'
+import { heatingRulesOf } from './heatingInfo.ts'
 import { cancelledDeliveries, estimateFactors, rangeOf, type FuelItem } from './fuel.ts'
 
 export type Co2SheetInput = {
   propertyName: string
   address: string
   landlordName: string
-  plant: Pick<HeatingPlant, 'id' | 'name' | 'energy' | 'method' | 'units' | 'nonResidential' | 'restriction' | 'districtEtsNew'>
+  plant: Pick<HeatingPlant, 'id' | 'name' | 'energy' | 'method' | 'units' | 'nonResidential' | 'restriction' | 'districtEtsNew'> & Partial<Pick<HeatingPlant, 'supply' | 'hotWater' | 'selfSpans'>>
   h: { key: string; from: string; to: string }
   units: readonly Pick<Unit, 'id' | 'areaM2' | 'noConnection'>[]
   enteredAreaM2: number | null
@@ -36,6 +38,9 @@ export type Co2SheetInput = {
   stockResult?: StockResult | null
   // Die Anlage in der Abrechnung, in der diese Heizperiode steht (Runde 3, S-W1); fehlt, wenn es keine gibt.
   heating?: HeatingStatement | null
+  // Die Angaben der Heizperiode nach § 11 und § 2 (`heatingRulesOf`). Gelesen nur, wenn die Heizperiode in
+  // keiner Abrechnung steht (`heating` fehlt); dann fragt das Blatt dieselbe Regel wie die Abrechnung.
+  rules?: HeatingRules | null
   deliveries: readonly FuelDelivery[]
   // Die Kostenpositionen, die auf eine Lieferung zeigen: ihre Summe ist der Betrag einer Rechnung ohne
   // eingetragenen Betrag, und ergibt sie 0, ist die Rechnung storniert.
@@ -71,8 +76,10 @@ export function co2SheetOf(i: Co2SheetInput): Co2Sheet {
   // Stichtag (§ 2 Abs. 4 Satz 2, R-W1) und nicht unter einer Ausnahme nach § 11 für Wärme und Warmwasser ohne
   // vereinbarte Abrechnung (§ 2 Abs. 7). Steht die Heizperiode in keiner Abrechnung (keine Position, keine
   // Lieferung mit Wirkung), gibt es keine Befunde; ob das Gesetz gilt, sagt dann die Anlage selbst.
+  // Rückweg ohne Abrechnung: dieselbe Regel wie in calc.ts (`co2ExemptionOf`), mit denselben Periodendaten.
   const check = i.heating?.co2Check ?? null
-  const checked = check ? check.applies : !etsExempt(i.plant)
+  const exemption = check ? check.exemption : i.rules ? co2ExemptionOf(i.plant, i.rules, i.h.key, { from: i.h.from, to: i.h.to }, createLawLog(i.overrides)) : null
+  const checked = check ? check.applies : !etsExempt(i.plant) && exemption === null
   const from = germanDate(co2CostsCountedFrom())
   const deliveries: Co2SheetDelivery[] = touching.map((d) => {
     const linked = i.items.filter((c) => c.fuelDeliveryId === d.id)
@@ -171,7 +178,7 @@ export function co2SheetOf(i: Co2SheetInput): Co2Sheet {
   const co2Sum = deliveries.reduce((a, d) => a + (d.counted === 'full' || d.counted === 'partial' ? (d.co2CostCents ?? 0) * d.factor : 0), opening?.countedCents ?? 0)
   return {
     propertyName: i.propertyName, address: i.address, landlordName: i.landlordName,
-    plantName: i.plant.name, energy: i.plant.energy, createdOn: i.today, checked, exemption: check?.exemption ?? null,
+    plantName: i.plant.name, energy: i.plant.energy, createdOn: i.today, checked, exemption,
     period: { key: i.h.key, from: i.h.from, to: i.h.to },
     areaM2: area, areaSource,
     nonResidential: i.plant.nonResidential, restriction: i.plant.restriction, districtEtsNew: i.plant.districtEtsNew,
@@ -184,7 +191,7 @@ export function co2SheetOf(i: Co2SheetInput): Co2Sheet {
 // Abrechnung der Heizperiode. `null` ohne Anlage.
 export function co2SheetFor(
   source: Parameters<typeof heatingSnapshotFor>[0] & {
-    heatingPlants?: (Pick<HeatingPlant, 'id' | 'energy' | 'method' | 'units' | 'propertyId'> & Partial<Pick<HeatingPlant, 'name' | 'nonResidential' | 'restriction' | 'districtEtsNew'>>)[]
+    heatingPlants?: (Pick<HeatingPlant, 'id' | 'energy' | 'method' | 'units' | 'propertyId'> & Partial<Pick<HeatingPlant, 'name' | 'nonResidential' | 'restriction' | 'districtEtsNew' | 'supply' | 'hotWater' | 'selfSpans' | 'replacesPlantId'>>)[]
     fuelDeliveries?: FuelDelivery[]
     lawOverrides?: LawOverride[]
   },
@@ -219,6 +226,7 @@ export function co2SheetFor(
     } : null,
     stockResult: found?.result ?? null,
     heating,
+    rules: heatingRulesOf((source.heatingPeriodRows ?? []).map((r) => ({ ...r, period: String(r.period) })), source.heatingPlants ?? [], plantId, key),
     deliveries: source.fuelDeliveries ?? [],
     items: source.costItems.flatMap((c) => (c.fuelDeliveryId ? [{ id: c.id, period: String(c.period), amountCents: c.amountCents, fuelDeliveryId: c.fuelDeliveryId }] : [])),
     overrides: source.lawOverrides ?? [],

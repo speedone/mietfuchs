@@ -2,6 +2,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { co2SheetOf, type Co2SheetInput } from '../src/co2Sheet.ts'
+import { co2ExemptionOf } from '../src/co2Exemption.ts'
+import { heatingRulesOf } from '../src/heatingInfo.ts'
+import { createLawLog } from '../../shared/law/register.ts'
 import type { FuelDelivery, HeatingStatement } from '../../shared/types.ts'
 
 // Nur die Felder, die das Blatt liest (`Co2SheetInput` nimmt genau diese).
@@ -147,3 +150,30 @@ test('O1: ohne Rechnungsdatum und Liefertag mit Zeitraumende vor 2023 ist offen,
   assert.deepEqual([neu.deliveries[0]?.counted, neu.totals.co2CostCents], ['full', 35700])
 })
 
+
+// Rückweg ohne Abrechnung (#246): Steht die Heizperiode in keiner Abrechnung, etwa weil noch keine Position
+// erfasst ist (beim Messdienst der übliche Ablauf), liest das Blatt die Periodendaten und fragt dieselbe Regel wie
+// die Abrechnung (`co2ExemptionOf`). Unter einer Ausnahme nach § 11 für Wärme und Warmwasser ohne vereinbarte
+// Abrechnung: keine §§ 8, 9, keine Summe, keine Befunde, die Ausnahme (§ 2 Abs. 7).
+test('Rückweg ohne Abrechnung: Ausnahme nach § 11 ohne vereinbarte Abrechnung aus den Periodendaten', () => {
+  const rules = (over: Record<string, unknown>) => heatingRulesOf([{ plantId: 'hp', period: '2025-01', ...over }], [{ id: 'hp' }], 'hp', '2025-01')
+  const aus = rules({ exemption: 'authority', exemptionScope: 'both' })
+  const s = co2SheetOf(input({ heating: null, rules: aus }))
+  assert.equal(s.checked, false)
+  assert.equal(s.exemption, co2ExemptionOf(plant, aus, '2025-01', { from: '2025-01-01', to: '2025-12-31' }, createLawLog([])))
+  assert.match(s.exemption ?? '', /§ 11 Abs\. 1 Nr\. 5 HeizkostenV/)
+  assert.ok(s.deliveries.every((d) => d.findings.length === 0))
+  // Gegentest: mit vereinbarter Abrechnung (§ 2 Abs. 7) gilt das Gesetz.
+  const vereinbart = co2SheetOf(input({ heating: null, rules: rules({ exemption: 'authority', exemptionScope: 'both', exemptionBillingAgreed: true }) }))
+  assert.deepEqual([vereinbart.checked, vereinbart.exemption], [true, null])
+  // Nur die Wärme ausgenommen, und die Anlage bereitet Warmwasser: weiter aufgeteilt.
+  assert.deepEqual([co2SheetOf(input({ heating: null, rules: rules({ exemption: 'authority', exemptionScope: 'heat' }) })).checked], [true])
+  // Bereitet sie kein Warmwasser, betrifft die Ausnahme der Wärme die ganze Anlage.
+  assert.equal(co2SheetOf(input({ plant: { ...plant, hotWater: 'none' }, heating: null, rules: rules({ exemption: 'authority', exemptionScope: 'heat' }) })).checked, false)
+})
+
+// Das Blatt liest, ob das Gesetz gilt, aus der Abrechnung und leitet es nicht aus Anlage und Ausnahme her.
+test('Mit Abrechnung entscheidet `co2Check.applies`, nicht die Anlage', () => {
+  assert.equal(co2SheetOf(input({ heating: heating({ applies: false, exemption: null, findings: [] }) })).checked, false)
+  assert.equal(co2SheetOf(input({ plant: { ...plant, districtEtsNew: true, energy: 'districtHeating' }, heating: heating({ applies: true, exemption: null, findings: [] }) })).checked, true)
+})
