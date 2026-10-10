@@ -30,7 +30,7 @@ import type { ComputedSettlement } from '../src/calc.ts'
 import type { Co2Statement } from '../../shared/types.ts'
 import { splitByService } from '../src/serviceSplit.ts'
 import os from 'node:os'
-import { openDatabase } from '../src/db/open.ts'
+import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { readStock } from '../src/db/read.ts'
 import { createEntity } from '../src/db/repository.ts'
 import { createHeatingPlant } from '../src/db/heating.ts'
@@ -317,7 +317,7 @@ const checks: Record<GuideId, () => void | Promise<void>> = {
   heatingSelf: async () => {
     // Zwei Wohnungen à 50 m², Fernwärme ohne zentrales Warmwasser, 70 % nach Verbrauch (Heizung PR 10).
     const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-guide-heating-'))
-    const opened = await openDatabase({ dataDir })
+    const opened = await openFreshDatabase(dataDir)
     try {
       let n = 0
       await opened.write(async (db) => {

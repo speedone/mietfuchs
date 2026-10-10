@@ -9,7 +9,8 @@ import { eq } from 'drizzle-orm'
 import { bookingPeriod, bookingTaxYear, periodForYear } from '../../shared/assessment.ts'
 import { CALENDAR_RULES, periodKey } from '../../shared/period.ts'
 import type { CostItem, LineDecision, PeriodRules } from '../../shared/types.ts'
-import { openDatabase, type OpenedDatabase } from '../src/db/open.ts'
+import type { OpenedDatabase } from '../src/db/open.ts'
+import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { createEntity, orphanPeriodKeys } from '../src/db/repository.ts'
 import { heatingPlants, properties } from '../src/db/schema.ts'
 import { createHeatingPlant } from '../src/db/heating.ts'
@@ -41,7 +42,7 @@ async function withWorld(work: (opened: OpenedDatabase, uploadDir: string) => Pr
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-buchung-zeitraum-'))
   const uploadDir = path.join(dataDir, 'uploads')
   fs.mkdirSync(uploadDir, { recursive: true })
-  const opened = await openDatabase({ dataDir })
+  const opened = await openFreshDatabase(dataDir)
   try {
     await opened.write((db) => createEntity(db, 'units', 'u1', { propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true }))
     await work(opened, uploadDir)

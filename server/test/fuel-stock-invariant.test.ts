@@ -61,7 +61,7 @@ import { saveHeatingRules } from '../src/db/heatingInfo.ts'
 import { saveStock } from '../src/db/fuelStock.ts'
 import { createHeatingPlant, replaceHeatingPlant } from '../src/db/heating.ts'
 import { setUpSelf } from '../src/db/heatingSelf.ts'
-import { openDatabase } from '../src/db/open.ts'
+import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { readClosedSettlements, readCostItems, readFuelDeliveries, readHeatingPlants, readStock } from '../src/db/read.ts'
 import { closeSettlement, createEntity, findClosedSettlement, reopenSettlement, updateEntity } from '../src/db/repository.ts'
 import { heatingPlants } from '../src/db/schema.ts'
@@ -168,7 +168,7 @@ for (const { seed, two, tausch, self, dhw, ...rest } of RUNS) {
       return m <= 12 ? `${y}-${String(m).padStart(2, '0')}-15` : `${y + 1}-${String(m - 12).padStart(2, '0')}-15`
     }
     const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-stock-inv-'))
-    const opened = await openDatabase({ dataDir })
+    const opened = await openFreshDatabase(dataDir)
     try {
       await opened.write(async (db) => {
         await createEntity(db, 'units', 'a', { propertyId: 'objekt-1', name: 'A', areaM2: 60, participates: true })

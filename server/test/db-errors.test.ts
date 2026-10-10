@@ -17,7 +17,8 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { connect } from '../src/db/client.ts'
-import { databaseFile, openDatabase, type OpenedDatabase } from '../src/db/open.ts'
+import { databaseFile, type OpenedDatabase } from '../src/db/open.ts'
+import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { databaseProblem } from '../src/db/errors.ts'
 import { assessments, closedSettlements, costItems, prepayments, readings, tenancies, units } from '../src/db/schema.ts'
 import { calendarPeriod, periodKey } from '../../shared/period.ts'
@@ -27,7 +28,7 @@ const tempDir = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-f
 // Ein Bestand, an dem sich jeder Verstoß auslösen lässt.
 async function withDatabase(work: (opened: OpenedDatabase) => Promise<void>): Promise<void> {
   const dataDir = tempDir()
-  const opened = await openDatabase({ dataDir })
+  const opened = await openFreshDatabase(dataDir)
   try {
     await opened.write(async (db) => {
       await db.insert(units).values({ propertyId: 'objekt-1', id: 'u1', name: 'EG', areaM2: 50, participates: true })
@@ -232,7 +233,7 @@ test('Jede Prüfbedingung im Schema folgt der Namenskonvention', async () => {
   // Kommt eine Bedingung mit anderem Namen hinzu, bekäme der Nutzer die Rückfallmeldung, ohne
   // dass es jemandem auffiele. Hier fällt es auf.
   const dataDir = tempDir()
-  const opened = await openDatabase({ dataDir })
+  const opened = await openFreshDatabase(dataDir)
   opened.close()
   // Über die rohe Verbindung und nicht über Drizzle: Der Proxy-Treiber liefert Zeilen als
   // Listen, und `all` bildete sie erst auf Feldnamen ab. Hier steht ohnehin nur eine Spalte.

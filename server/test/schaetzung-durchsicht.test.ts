@@ -15,6 +15,7 @@ import { hkvCutNotByConsumption } from '../../shared/law/heizkostenv.ts'
 import { LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
 import { selfDelivery, selfMeter, selfMeters, selfReading, selfReadings, selfRow, selfSnapshot, selfTenancy, selfUnit, type SelfSnapshotOptions } from '../testing/selfHeating.ts'
 import { openDatabase } from '../src/db/open.ts'
+import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { readStock } from '../src/db/read.ts'
 import { createEntity, createProperty, crossPropertyViolations, updateEntity } from '../src/db/repository.ts'
 import { saveEstimate } from '../src/db/heatingEstimates.ts'
@@ -81,7 +82,7 @@ const hkvFall = (est: HeatingEstimate[]): SelfSnapshotOptions => {
 type Opened = Awaited<ReturnType<typeof openDatabase>>
 async function withDatabase(run: (opened: Opened, dataDir: string) => Promise<void>): Promise<void> {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-schaetzung-durchsicht-'))
-  const opened = await openDatabase({ dataDir })
+  const opened = await openFreshDatabase(dataDir)
   try {
     await run(opened, dataDir)
   } finally {

@@ -7,7 +7,8 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { openDatabase, type OpenedDatabase } from '../src/db/open.ts'
+import type { OpenedDatabase } from '../src/db/open.ts'
+import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import type { Database } from '../src/db/client.ts'
 import { closeSettlement, createEntity, createProperty, CrossPropertyError, findEntity, HeatingError, PeriodError, removeEntity, removeProperty, updateEntity } from '../src/db/repository.ts'
 import { assignableHeatingItems, createHeatingPlant, heatingPlantViolations, listHeatingPlants, removeHeatingPlant, replaceHeatingPlant, updateHeatingPlant } from '../src/db/heating.ts'
@@ -21,7 +22,7 @@ const tempDir = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-h
 
 async function withDatabase(work: (opened: OpenedDatabase) => Promise<void>): Promise<void> {
   const dataDir = tempDir()
-  const opened = await openDatabase({ dataDir })
+  const opened = await openFreshDatabase(dataDir)
   try {
     await work(opened)
   } finally {

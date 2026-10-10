@@ -1,5 +1,5 @@
 // Was die KI-Auswertung aus der Antwort eines Modells übernimmt. Geprüft wird hier nur das
-// Einengen der Werte, nicht der Weg zum Anbieter — den decken api.test.ts und der Smoke-Test ab.
+// Einengen der Werte, nicht der Weg zum Anbieter — den decken die Tests api-*.test.ts und der Smoke-Test ab.
 //
 // Grundsatz des Werkzeugs: Die KI füllt vor, ein Mensch prüft. Verworfen wird deshalb nur, was
 // niemand gebrauchen kann. Die Schemas verlangen für Beträge und Zählerstände eine Zahl,

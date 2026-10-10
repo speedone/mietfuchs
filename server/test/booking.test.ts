@@ -7,7 +7,8 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import type { CostItem, LineDecision, LineFields } from '../../shared/types.ts'
-import { openDatabase, type OpenedDatabase } from '../src/db/open.ts'
+import type { OpenedDatabase } from '../src/db/open.ts'
+import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { closeSettlement, createEntity, createProperty, removeEntity, updateEntity } from '../src/db/repository.ts'
 import { readStock } from '../src/db/read.ts'
 import { saveAssessment, type AssessmentRecord, type NewAssessment } from '../src/db/assessments.ts'
@@ -23,7 +24,7 @@ async function withWorld(work: (w: World) => Promise<void>): Promise<void> {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-buchung-'))
   const uploadDir = path.join(dataDir, 'uploads')
   fs.mkdirSync(uploadDir, { recursive: true })
-  const opened = await openDatabase({ dataDir })
+  const opened = await openFreshDatabase(dataDir)
   try {
     await opened.write((db) => createEntity(db, 'units', 'u1', { propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true }))
     await work({ opened, uploadDir })
