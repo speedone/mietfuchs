@@ -7,9 +7,14 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { applyMigrations, connect, loadMigrations, type Connection } from '../src/db/client.ts'
+import { eq } from 'drizzle-orm'
 import { createHeatingPlant } from '../src/db/heating.ts'
+import { bookOperatingPower } from '../src/db/operatingPower.ts'
+import { readCostItems } from '../src/db/read.ts'
+import { heatingPlants } from '../src/db/schema.ts'
+import { periodKey } from '../../shared/period.ts'
 import { openDatabase, type OpenedDatabase } from '../src/db/open.ts'
-import { createEntity, createProperty, CrossPropertyError, findEntity, HeatingError, removeEntity, updateEntity } from '../src/db/repository.ts'
+import { closeSettlement, createEntity, createProperty, CrossPropertyError, findEntity, HeatingError, removeEntity, updateEntity } from '../src/db/repository.ts'
 
 const tempDir = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-betriebsstrom-'))
 
@@ -183,5 +188,178 @@ test('Review Focus 2: Betriebsstrom mit Abzug lässt sich nicht löschen; mit ei
       (e: unknown) => e instanceof HeatingError && e.status === 400 && /„Abzug Betriebsstrom Heizung“/.test(e.message) && /Löschen Sie zuerst den Abzug/.test(e.message))
     assert.equal(await opened.write((db) => removeEntity(db, 'costItems', 'ab')), true)
     assert.equal(await opened.write((db) => removeEntity(db, 'costItems', 'bs')), true)
+  })
+})
+
+// ---------- Schätzhilfe: Betriebsstrom und Abzug in einer Transaktion (Task 4) ----------
+
+const strom = { propertyId: 'objekt-1', period: '2025-01', category: 'Beleuchtung/Allgemeinstrom', description: 'Hausstrom 2025', amountCents: 105000, key: 'area' }
+const schaetzung = (over: Record<string, unknown> = {}) => ({
+  period: '2025-01', generalItemId: 'strom', billKwh: 3000,
+  devices: [{ label: 'Brenner', watts: 120, hoursPerDay: 6 }, { label: 'Umwälzpumpe', watts: 45, hoursPerDay: 24 }, { label: 'Regelung', watts: 5, hoursPerDay: 24 }],
+  heatingDays: 220, ...over,
+})
+let n = 0
+const ids = () => `neu-${++n}`
+const markierte = async (opened: OpenedDatabase) => (await opened.read((db) => readCostItems(db))).filter((c) => c.operatingPower !== undefined)
+
+test('Schätzhilfe bei freien Schlüsseln: Betriebsstrom nach dem Schlüssel des Brennstoffs, Abzug nach dem des Allgemeinstroms', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'gas', method: 'manual' }))
+    await opened.write((db) => createEntity(db, 'costItems', 'gas', heizung({ description: 'Gas', heatingPart: 'fuel', operatingPower: null, key: 'meter', meterType: 'waerme', heatingPlantId: 'hp' })))
+    await opened.write((db) => createEntity(db, 'costItems', 'strom', { ...strom, key: 'units' }))
+    const b = await opened.write((db) => bookOperatingPower(db, 'hp', schaetzung(), ids))
+    if (!b) return assert.fail('keine Anlage')
+    assert.equal(b.method, 'estimate')
+    assert.equal(b.share.cents, 14784)
+    const h = b.heatingItem ?? assert.fail('kein Betriebsstrom')
+    assert.deepEqual([h.category, h.amountCents, h.key, h.meterType, h.heatingPart, h.operatingPower, h.heatingPlantId, h.period],
+      ['Heizung und Warmwasser', 14784, 'meter', 'waerme', 'operating', 'included', 'hp', '2025-01'])
+    assert.match(h.description, /Betriebsstrom Heizung \(geschätzt\)/)
+    assert.deepEqual([b.deduction.category, b.deduction.amountCents, b.deduction.key, b.deduction.operatingPower, b.deduction.operatingPowerItemId, b.deduction.period],
+      ['Beleuchtung/Allgemeinstrom', -14784, 'units', 'deduction', h.id, '2025-01'])
+    // P-W1: Die Grundlage mit allen Eingaben steht an beiden Positionen, gelesen aus der Datenbank.
+    const grundlage = [
+      'Brenner: 120 W × 6 h × 220 Tage = 158,4 kWh',
+      'Umwälzpumpe: 45 W × 24 h × 220 Tage = 237,6 kWh',
+      'Regelung: 5 W × 24 h × 220 Tage = 26,4 kWh',
+      'zusammen 422,4 kWh von 3.000 kWh der Stromrechnung = 14,08 %',
+      '14,08 % des Rechnungsbetrags einschließlich Grundpreis (1.050,00 €) = 147,84 €',
+    ].join('\n')
+    assert.deepEqual((await markierte(opened)).map((c) => c.operatingPowerBasis), [grundlage, grundlage])
+  })
+})
+
+// P-W2: der dritte Weg, etwa für einen Bruchteil der Brennstoffkosten (V ZR 166/15 Rn. 14).
+test('Schätzhilfe „Betrag selbst geschätzt“: Betrag und Grundlage an beiden Positionen, ohne Prozentsatz', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'gas', method: 'manual' }))
+    await opened.write((db) => createEntity(db, 'costItems', 'gas', heizung({ description: 'Gas', heatingPart: 'fuel', operatingPower: null, heatingPlantId: 'hp' })))
+    await opened.write((db) => createEntity(db, 'costItems', 'strom', strom))
+    const b = await opened.write((db) => bookOperatingPower(db, 'hp', { period: '2025-01', generalItemId: 'strom', ownCents: 14784, basis: 'Bruchteil der Brennstoffkosten 2025' }, ids))
+    const h = b?.heatingItem ?? assert.fail('kein Betriebsstrom')
+    assert.equal(b?.method, 'own')
+    assert.deepEqual([h.amountCents, b?.deduction.amountCents], [14784, -14784])
+    assert.match(h.description, /\(selbst geschätzt\)/)
+    assert.equal(h.operatingPowerBasis, 'selbst geschätzt: 147,84 €\nGrundlage der Schätzung: Bruchteil der Brennstoffkosten 2025')
+    assert.equal(b?.deduction.operatingPowerBasis, h.operatingPowerBasis)
+    await assert.rejects(opened.write((db) => bookOperatingPower(db, 'hp', { period: '2025-01', generalItemId: 'strom', ownCents: 14784, basis: '' }, ids)),
+      (e: unknown) => e instanceof HeatingError && e.status === 400 && /Grundlage der Schätzung/.test(e.message))
+  })
+})
+
+// P-W5 mit R2-W1: Bei Wärmepumpe und Stromheizung keine Schätzhilfe; der Satz nennt den Weg für Pumpen
+// und Regelung über das Kostenformular.
+test('Schätzhilfe bei Wärmepumpe und Stromheizung: 400 mit dem Satz zum Brennstoff, nichts angelegt', async () => {
+  for (const energy of ['heatPump', 'electric'] as const) {
+    await withDatabase(async (opened) => {
+      await opened.write((db) => createHeatingPlant(db, 'hp', 'objekt-1', { energy, method: 'service' }))
+      await opened.write((db) => createEntity(db, 'costItems', 'strom', strom))
+      await assert.rejects(opened.write((db) => bookOperatingPower(db, 'hp', schaetzung(), ids)),
+        (e: unknown) => e instanceof HeatingError && e.status === 400 && /selbst verbraucht, Brennstoff und kein Betriebsstrom/.test(e.message) && /Umwälzpumpen oder Regelung/.test(e.message))
+      assert.equal((await markierte(opened)).length, 0, energy)
+    })
+  }
+})
+
+test('Schätzhilfe bei eigener Abrechnung: Schlüssel nach Heizkostenverordnung, Teil Betrieb, Ziel beides', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'gas', method: 'manual' }))
+    // Die eigene Abrechnung richtet PR 10 über die Einrichtung ein; für diesen Test genügen Methode und
+    // Erfassung (die Bedingung heating_plants_self_capture_complete verlangt sie).
+    await opened.write((db) => db.update(heatingPlants).set({ method: 'self', capture: 'heatMeter' }).where(eq(heatingPlants.id, 'hp')))
+    await opened.write((db) => createEntity(db, 'costItems', 'strom', strom))
+    const b = await opened.write((db) => bookOperatingPower(db, 'hp', schaetzung({ devices: null, heatingDays: null, measuredKwh: 500 }), ids))
+    const h = b?.heatingItem ?? assert.fail('kein Betriebsstrom')
+    assert.equal(b?.method, 'measured')
+    assert.deepEqual([h.key, h.heatingPart, h.heatingTarget, h.amountCents], ['heatingSystem', 'operating', 'both', 17500])
+    assert.match(h.description, /\(gemessen\)/)
+  })
+})
+
+test('Schätzhilfe beim Messdienst: nur der Abzug, ohne Verweis, beschrieben als an den Messdienst gemeldet (P-K9)', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'gas', method: 'service' }))
+    await opened.write((db) => createEntity(db, 'costItems', 'strom', strom))
+    const b = await opened.write((db) => bookOperatingPower(db, 'hp', schaetzung(), ids))
+    assert.equal(b?.heatingItem, null)
+    assert.deepEqual([b?.deduction.amountCents, b?.deduction.operatingPowerItemId], [-14784, undefined])
+    assert.equal(b?.deduction.description, 'Abzug Betriebsstrom Heizung (geschätzt), an Messdienst gemeldet')
+    assert.match(b?.deduction.operatingPowerBasis ?? '', /147,84 €/)
+  })
+})
+
+const gemeinschaftsSatz = (message: string): boolean =>
+  /dazu ist die Gemeinschaft verpflichtet \(BGH, Urteil vom 03\.06\.2016, V ZR 166\/15\)/.test(message) &&
+  /Prüfen Sie in der Hausgeldabrechnung, ob der Betriebsstrom bei den Heizkosten steht/.test(message) &&
+  /wenden Sie sich an die Verwaltung/.test(message) &&
+  // R2-K2: Die eigene Abrechnung an die Mieter übernähme denselben Fehler.
+  /Für Ihre Abrechnung an die Mieter gilt dasselbe \(§ 7 Abs\. 2 HeizkostenV\)/.test(message) &&
+  !/tut das die Gemeinschaft/.test(message)
+
+test('Schätzhilfe lehnt ab: Allgemeinstrom mit Einzelbeträgen oder Gemeinschaftsabrechnung (Review Focus 1, P-W4), ohne Brennstoffposition (P-K2), keine Stromposition, zu viele kWh (Review Focus 4)', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'gas', method: 'manual' }))
+    await opened.write((db) => createEntity(db, 'costItems', 'strom', strom))
+    // P-K2: verteilt wird nach § 7 Abs. 1, Abs. 2 zählt nur die Kosten auf.
+    await assert.rejects(opened.write((db) => bookOperatingPower(db, 'hp', schaetzung(), ids)),
+      (e: unknown) => e instanceof HeatingError && e.status === 400 && /Brennstoffposition/.test(e.message) && /\(§ 7 Abs\. 1 und 2 HeizkostenV\)/.test(e.message))
+    await opened.write((db) => createEntity(db, 'costItems', 'gas', heizung({ description: 'Gas', heatingPart: 'fuel', operatingPower: null, heatingPlantId: 'hp' })))
+    await assert.rejects(opened.write((db) => bookOperatingPower(db, 'hp', schaetzung({ generalItemId: 'gas' }), ids)),
+      (e: unknown) => e instanceof HeatingError && e.status === 400 && /Beleuchtung\/Allgemeinstrom/.test(e.message))
+    await assert.rejects(opened.write((db) => bookOperatingPower(db, 'hp', schaetzung({ devices: [{ label: 'Brenner', watts: 120000, hoursPerDay: 6 }] }), ids)),
+      (e: unknown) => e instanceof HeatingError && e.status === 400 && /über dem Verbrauch der Stromrechnung/.test(e.message))
+    await opened.write((db) => updateEntity(db, 'costItems', 'strom', { key: 'amounts', tenancyAmounts: {} }))
+    await assert.rejects(opened.write((db) => bookOperatingPower(db, 'hp', schaetzung(), ids)),
+      (e: unknown) => e instanceof HeatingError && e.status === 400 && /in den Beträgen selbst ab/.test(e.message))
+    await opened.write((db) => updateEntity(db, 'costItems', 'strom', { key: 'external', externalBasis: { measure: 'mea', total: 10000, totalCents: 1000000 } }))
+    // P-W4: V ZR 166/15 ist gerade der Fall, in dem die Gemeinschaft es nicht getan hatte.
+    await assert.rejects(opened.write((db) => bookOperatingPower(db, 'hp', schaetzung(), ids)),
+      (e: unknown) => e instanceof HeatingError && e.status === 400 && /Allgemeinstrom ist laut Gemeinschaftsabrechnung verteilt/.test(e.message) && gemeinschaftsSatz(e.message))
+    // Nichts angelegt: weder Betriebsstrom noch Abzug.
+    assert.equal((await markierte(opened)).length, 0)
+  })
+})
+
+// R2-K1: Auch die Brennstoffposition kann nach Einzelbeträgen oder laut Gemeinschaftsabrechnung verteilt
+// sein; je ein eigener Satz, bei der Gemeinschaft derselbe Verweis auf ihre Pflicht wie beim Allgemeinstrom.
+test('Schätzhilfe lehnt ab: Brennstoffposition nach Einzelbeträgen oder laut Gemeinschaftsabrechnung, je mit eigenem Satz (R2-K1)', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'gas', method: 'manual' }))
+    await opened.write((db) => createEntity(db, 'costItems', 'strom', strom))
+    await opened.write((db) => createEntity(db, 'costItems', 'gas', heizung({ description: 'Gas', heatingPart: 'fuel', operatingPower: null, heatingPlantId: 'hp', key: 'amounts', tenancyAmounts: {} })))
+    await assert.rejects(opened.write((db) => bookOperatingPower(db, 'hp', schaetzung(), ids)),
+      (e: unknown) => e instanceof HeatingError && e.status === 400 && /„Gas“ ist nach Einzelbeträgen verteilt/.test(e.message) && /Einzelbeträge/.test(e.message) && !/Gemeinschaft/.test(e.message))
+    await opened.write((db) => updateEntity(db, 'costItems', 'gas', { key: 'external', tenancyAmounts: null, externalBasis: { measure: 'mea', total: 10000, totalCents: 1000000 } }))
+    await assert.rejects(opened.write((db) => bookOperatingPower(db, 'hp', schaetzung(), ids)),
+      (e: unknown) => e instanceof HeatingError && e.status === 400 && /„Gas“ ist laut Gemeinschaftsabrechnung verteilt/.test(e.message) && gemeinschaftsSatz(e.message) && !/in den Beträgen selbst/.test(e.message))
+    assert.equal((await markierte(opened)).length, 0)
+  })
+})
+
+test('Schätzhilfe: abgeschlossene Heizperiode → 409, unbekannte Heizperiode → 400, unbekannte Anlage → null', async () => {
+  await withDatabase(async (opened) => {
+    assert.equal(await opened.write((db) => bookOperatingPower(db, 'fehlt', schaetzung(), ids)), null)
+    await opened.write((db) => createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'gas', method: 'service' }))
+    await opened.write((db) => createEntity(db, 'costItems', 'strom', strom))
+    await assert.rejects(opened.write((db) => bookOperatingPower(db, 'hp', schaetzung({ period: '2025-13' }), ids)),
+      (e: unknown) => e instanceof HeatingError && e.status === 400)
+    await opened.write((db) => closeSettlement(db, { id: 'a1', propertyId: 'objekt-1', period: periodKey('2025-01'), closedAt: '2026-03-01T00:00:00Z', sentAt: null, settlement: {} }))
+    await assert.rejects(opened.write((db) => bookOperatingPower(db, 'hp', schaetzung(), ids)),
+      (e: unknown) => e instanceof HeatingError && e.status === 409)
+    assert.equal((await markierte(opened)).length, 0)
+  })
+})
+
+// P-W3: Die Heizperiode ist offen, der Allgemeinstrom steht aber in einer abgeschlossenen Abrechnung. Ein
+// Abzug dort erreichte die Mieter nicht mehr; der Betriebsstrom würde zweimal gezahlt (V ZR 166/15 Rn. 13).
+test('Schätzhilfe: Allgemeinstrom in einer abgeschlossenen Abrechnung → 409 mit Satz, nichts angelegt', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'gas', method: 'service' }))
+    await opened.write((db) => createEntity(db, 'costItems', 'strom24', { ...strom, period: '2024-01', description: 'Hausstrom 2024' }))
+    await opened.write((db) => closeSettlement(db, { id: 'a0', propertyId: 'objekt-1', period: periodKey('2024-01'), closedAt: '2025-03-01T00:00:00Z', sentAt: '2025-03-02', settlement: {} }))
+    await assert.rejects(opened.write((db) => bookOperatingPower(db, 'hp', schaetzung({ generalItemId: 'strom24' }), ids)),
+      (e: unknown) => e instanceof HeatingError && e.status === 409 && /Allgemeinstrom „Hausstrom 2024“ steht in einer abgeschlossenen Abrechnung/.test(e.message))
+    assert.equal((await markierte(opened)).length, 0)
   })
 })

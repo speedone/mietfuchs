@@ -6661,3 +6661,30 @@ test('Blatt für den Messdienst über die Route: 200 mit Rechnungen, 404 ohne An
     s.stop()
   }
 })
+
+// ---------- Betriebsstrom (Heizung PR 15) ----------
+
+test('Betriebsstrom über die Route: 201 mit beiden Positionen, 404 ohne Anlage, 400 mit Satz', async () => {
+  const s = await startServer()
+  try {
+    const send = (url: string, init: RequestInit) => fetch(`${s.base}${url}`, { ...init, headers: { 'content-type': 'application/json' } })
+    const { plant } = await jsonOf<{ plant: HeatingPlant }>(await send('/api/heating-plants', jsonPost({ energy: 'gas', method: 'service' })))
+    const strom = await s.api<CostItem>('/api/costItems', jsonPost({ period: '2025-01', category: 'Beleuchtung/Allgemeinstrom', description: 'Hausstrom', amountCents: 105000, key: 'area' }))
+    const body = { period: '2025-01', generalItemId: strom.id, billKwh: 3000, devices: [{ label: 'Pumpe', watts: 45, hoursPerDay: 24 }], heatingDays: 220 }
+    const angelegt = await send(`/api/heating-plants/${plant.id}/operating-power`, jsonPost(body))
+    assert.equal(angelegt.status, 201)
+    const b = await jsonOf<{ share: { cents: number }; deduction: CostItem; heatingItem: CostItem | null }>(angelegt)
+    // 45 W × 24 h × 220 Tage = 237,6 kWh; 237,6 / 3.000 × 1.050,00 € = 83,16 €
+    assert.deepEqual([b.share.cents, b.deduction.amountCents, b.heatingItem], [8316, -8316, null])
+    // P-W1: Die Grundlage kommt über die Route mit und bleibt in der Liste der Positionen.
+    assert.match(b.deduction.operatingPowerBasis ?? '', /Pumpe: 45 W × 24 h × 220 Tage = 237,6 kWh/)
+    const liste = await s.api<CostItem[]>('/api/costItems')
+    assert.equal(liste.find((c) => c.id === b.deduction.id)?.operatingPowerBasis, b.deduction.operatingPowerBasis)
+    assert.equal((await send('/api/heating-plants/fehlt/operating-power', jsonPost(body))).status, 404)
+    const falsch = await send(`/api/heating-plants/${plant.id}/operating-power`, jsonPost({ ...body, billKwh: 0 }))
+    assert.equal(falsch.status, 400)
+    assert.match(await errorFrom(falsch), /kWh der Stromrechnung/)
+  } finally {
+    s.stop()
+  }
+})

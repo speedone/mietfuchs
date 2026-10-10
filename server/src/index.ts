@@ -57,6 +57,7 @@ import { LawOverrideError, lawOverrideSlots, readLawOverrides, removeLawOverride
 import { removeStock, saveStock } from './db/fuelStock.ts'
 import { createDelivery, createEstimates, freezeFuelCarries, fuelGapQuestions, listDegreeDays, listDeliveries, removeDelivery, saveDegreeDays, unfreezeFuelCarries, updateDelivery } from './db/fuel.ts'
 import { assignableHeatingItems, createHeatingPlant, listHeatingPlants, removeHeatingPlant, replaceHeatingPlant, updateHeatingPlant } from './db/heating.ts'
+import { bookOperatingPower } from './db/operatingPower.ts'
 import { applyHeatingPeriodChange, previewHeatingPeriodChange } from './db/heatingPeriodChange.ts'
 import { testTodayOf } from './testToday.ts'
 import { applySeparate, previewSeparate } from './db/separateSettlement.ts'
@@ -545,6 +546,12 @@ app.post('/api/heating-plants/:id/replace', async (req, res) => {
   const result = await writeData((db) => replaceHeatingPlant(db, req.params.id, newId(), bodyObject(req)))
   if (!result) return res.status(404).json({ error: 'Diese Heizanlage gibt es nicht (mehr). Bitte laden Sie die Seite neu.' })
   res.status(201).json(result)
+})
+// Betriebsstrom und Abzug beim Allgemeinstrom gemeinsam anlegen (Heizung PR 15, #212).
+app.post('/api/heating-plants/:id/operating-power', async (req, res) => {
+  const booked = await writeData((db) => bookOperatingPower(db, req.params.id, bodyObject(req), newId))
+  if (!booked) return res.status(404).json({ error: 'Diese Heizanlage gibt es nicht (mehr). Bitte laden Sie die Seite neu.' })
+  res.status(201).json(booked)
 })
 app.put('/api/heating-plants/:id', async (req, res) => {
   const plant = await writeData((db) => updateHeatingPlant(db, req.params.id, bodyObject(req)))
