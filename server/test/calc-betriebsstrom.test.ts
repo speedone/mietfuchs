@@ -50,32 +50,58 @@ test('Abzug in einer abgeschlossenen Abrechnung: gutgeschrieben zählt, ohne Hin
   assert.equal(codes(settle([betriebsstrom, hausstrom], [abzug(14784, 'ab', '2024-01', { label: '2024', state: 'credited' })])).length, 0)
 })
 
-test('Abzug in einer abgeschlossenen Abrechnung: nicht im eingefrorenen Stand → nicht gutgeschrieben, wieder öffnen, Grenze der Nachforderung', () => {
-  const n = codes(settle([betriebsstrom, hausstrom], [abzug(14784, 'ab', '2024-01', { label: '2024', state: 'missing' })]))[0] ?? assert.fail('kein Hinweis')
+// R-W1 (Durchsicht von #252): Liegt der Abzug in einer abgeschlossenen Abrechnung, hat jeder Zustand seinen
+// eigenen Kopf. Nur „nicht gutgeschrieben“ nennt „zweimal“; keiner rät zu einem neuen Abzug in einem
+// anderen Jahr, denn der käme bei anderen Abrechnungen an.
+const DEADLINE = /Ist die Abrechnungsfrist abgelaufen, darf die neue Abrechnung den Mieter nicht schlechter stellen als die zugestellte: keine höhere Nachforderung, kein geringeres Guthaben und auch bei keiner einzelnen Position mehr als zuvor, es sei denn, Sie haben die Verspätung nicht zu vertreten \(§ 556 Abs\. 3 Satz 3 BGB; BGH, Urteile vom 17\.11\.2004, VIII ZR 115\/04, und vom 12\.12\.2007, VIII ZR 190\/06\)/
+const geschlossen = (state: OperatingPowerDeduction['closed'], cents = 14784) => codes(settle([betriebsstrom, hausstrom], [abzug(cents, 'ab', '2024-01', state)]))[0] ?? assert.fail('kein Hinweis')
+
+test('R-W1: nicht im eingefrorenen Stand → eigener Kopf, die Mieter zahlen zweimal, wieder öffnen, kein zweiter Abzug, Fristgrenze (R-K1)', () => {
+  const n = geschlossen({ label: '2024', state: 'missing' })
   assert.equal(n.level, 'warning')
-  assert.match(n.text, /abgezogen sind dort 0,00 € statt 147,84 €/)
-  assert.match(n.text, /Der Abzug „Abzug Betriebsstrom Heizung“ \(147,84 €\) steht in der abgeschlossenen Abrechnung 2024, aber nicht in ihrem eingefrorenen Stand; den Mietern ist er nicht gutgeschrieben/)
-  assert.match(n.text, /Öffnen Sie die Abrechnung 2024 wieder und stellen Sie sie neu zu/)
-  // R2-K4: Nach Ablauf der Frist keine höhere Nachforderung.
-  assert.match(n.text, /Nach Ablauf der Abrechnungsfrist darf die neue Abrechnung keine höhere Nachforderung enthalten als die zugestellte \(§ 556 Abs\. 3 Satz 3 BGB\)/)
+  assert.match(n.text, /^„Betriebsstrom Heizung“: Dieser Betriebsstrom steckt nach Ihrer Angabe auch in der Stromrechnung des Allgemeinstroms\. Der Abzug dafür steht in einer abgeschlossenen Abrechnung\./)
+  assert.match(n.text, /Der Abzug „Abzug Betriebsstrom Heizung“ \(147,84 €\) gehört zur abgeschlossenen Abrechnung 2024, steht aber nicht in ihrem eingefrorenen Stand\. Den Mietern ist er dort nicht gutgeschrieben, sie zahlen diesen Strom also zweimal\./)
+  assert.match(n.text, /Öffnen Sie die Abrechnung 2024 wieder und stellen Sie sie neu zu\. Legen Sie keinen zweiten Abzug in einem anderen Jahr an/)
+  assert.match(n.text, /Eine Gutschrift dürfen Sie auch nach Ablauf der Abrechnungsfrist noch nachholen/)
+  assert.match(n.text, DEADLINE)
+  assert.doesNotMatch(n.text, /Erfassen Sie beim Allgemeinstrom einen Abzug in Höhe des Betriebsstroms|abgezogen sind dort/)
 })
 
-test('Abzug in einer abgeschlossenen Abrechnung: unlesbarer Stand → unbekannt, keine Aufforderung zur neuen Zustellung, Warnung bleibt', () => {
-  const n = codes(settle([betriebsstrom, hausstrom], [abzug(14784, 'ab', '2024-01', { label: '2024', state: 'unknown' })]))[0] ?? assert.fail('kein Hinweis')
+test('R-W1: unlesbarer Stand → kein „doppelt verteilt“, kein Rat zu einem neuen Abzug, nur die zugestellte Abrechnung prüfen', () => {
+  const n = geschlossen({ label: '2024', state: 'unknown' })
   assert.equal(n.level, 'warning')
-  assert.match(n.text, /Der Abzug „Abzug Betriebsstrom Heizung“ \(147,84 €\) steht in der abgeschlossenen Abrechnung 2024; ob er dort gutgeschrieben ist, lässt sich aus dem eingefrorenen Stand nicht lesen\. Prüfen Sie die zugestellte Abrechnung\./)
-  assert.doesNotMatch(n.text, /nicht gutgeschrieben/)
-  assert.doesNotMatch(n.text, /stellen Sie sie neu zu/)
+  assert.match(n.text, /Der Abzug „Abzug Betriebsstrom Heizung“ \(147,84 €\) gehört zur abgeschlossenen Abrechnung 2024\. Ob er dort gutgeschrieben ist, lässt sich aus dem gespeicherten Stand nicht lesen\. Sehen Sie bitte in der zugestellten Abrechnung nach\. Steht er dort, ist nichts zu tun\./)
+  assert.match(n.text, /Legen Sie keinen zweiten Abzug an, sonst bekommen die Mieter ihn womöglich zweimal gutgeschrieben/)
+  assert.doesNotMatch(n.text, /doppelt verteilt|Erfassen Sie beim Allgemeinstrom|nicht gutgeschrieben/)
 })
 
-test('Abzug in einer abgeschlossenen Abrechnung: Betrag nach dem Abschluss geändert → gezählt wird der eingefrorene Betrag', () => {
-  // Eingefroren: 100,00 €; heute 147,84 €. Gutgeschrieben sind 100,00 €; 47,84 € werden doppelt verteilt.
-  const n = codes(settle([betriebsstrom, hausstrom], [abzug(14784, 'ab', '2024-01', { label: '2024', state: 'changed', frozenCents: -10000 })]))[0] ?? assert.fail('kein Hinweis')
-  assert.match(n.text, /abgezogen sind dort 100,00 € statt 147,84 €; 47,84 € werden damit doppelt verteilt/)
-  assert.match(n.text, /Der Abzug „Abzug Betriebsstrom Heizung“ steht in der abgeschlossenen Abrechnung 2024 mit einem anderen Betrag; gutgeschrieben sind dort 100,00 € statt 147,84 €/)
-  assert.doesNotMatch(n.text, /nicht gutgeschrieben/)
+// R-W1, Zusatzbefund: Wer bei „unbekannt“ doch einen zweiten Abzug anlegt, darf keine stille Abrechnung
+// bekommen; stand der erste in der zugestellten, sind es zwei Gutschriften.
+test('R-W1: unbekannt neben einem offenen Abzug gleicher Höhe bleibt nicht stumm und nennt beide', () => {
+  const n = codes(settle([betriebsstrom, hausstrom], [abzug(14784, 'ab', '2024-01', { label: '2024', state: 'unknown' }), { ...abzug(14784, 'ab2', '2025-01'), description: 'Abzug 2025' }]))[0] ?? assert.fail('stumm')
+  assert.match(n.text, /Daneben sind beim Allgemeinstrom weitere 147,84 € abgezogen \(„Abzug 2025“\)/)
+  assert.match(n.text, /Steht der Abzug „Abzug Betriebsstrom Heizung“ in der zugestellten Abrechnung, ist den Mietern der Betriebsstrom zweimal gutgeschrieben/)
+})
+
+test('R-W1: nach dem Abschluss vergrößert → gezählt wird der eingefrorene Betrag, wieder öffnen, kein weiterer Abzug', () => {
+  // Eingefroren 100,00 €, heute 147,84 €: 47,84 € zahlen die Mieter dort doppelt.
+  const n = geschlossen({ label: '2024', state: 'changed', frozenCents: -10000 })
+  assert.match(n.text, /Der Abzug „Abzug Betriebsstrom Heizung“ steht in der abgeschlossenen Abrechnung 2024 mit 100,00 € statt 147,84 €, denn der Betrag wurde nach dem Abschluss geändert\. 47,84 € zahlen die Mieter dort also doppelt\./)
+  assert.match(n.text, /Soll der neue Betrag gelten, öffnen Sie die Abrechnung 2024 wieder und stellen Sie sie neu zu\. Legen Sie dafür keinen weiteren Abzug an\./)
+  assert.match(n.text, DEADLINE)
+  assert.doesNotMatch(n.text, /Erfassen Sie beim Allgemeinstrom einen Abzug in Höhe des Betriebsstroms|nicht gutgeschrieben/)
   // Gleicht der eingefrorene Betrag den Betriebsstrom aus, gibt es keinen Hinweis.
   assert.equal(codes(settle([betriebsstrom, hausstrom], [abzug(20000, 'ab', '2024-01', { label: '2024', state: 'changed', frozenCents: -14784 })])).length, 0)
+})
+
+// R-K3: Nach dem Abschluss verkleinert: Den Mietern ist mehr gutgeschrieben; das trägt der Vermieter, und
+// eine Korrektur zu ihren Lasten ist nach der Frist ausgeschlossen. Kein „passen Sie an“.
+test('R-K3: nach dem Abschluss verkleinert → der Vermieter trägt den Unterschied, zulässig, kein Rat zum Anpassen oder Wiederöffnen', () => {
+  const n = geschlossen({ label: '2024', state: 'changed', frozenCents: -20000 })
+  assert.match(n.text, /Der Abzug „Abzug Betriebsstrom Heizung“ steht in der abgeschlossenen Abrechnung 2024 mit 200,00 € statt 147,84 €, denn der Betrag wurde nach dem Abschluss verkleinert\. Den Mietern ist dort 52,16 € mehr gutgeschrieben als der Betriebsstrom; diesen Teil des Allgemeinstroms tragen Sie selbst\./)
+  assert.match(n.text, /Das benachteiligt die Mieter nicht und ist nach Auffassung von Mietfuchs zulässig \(vgl\. BGH, Urteil vom 03\.06\.2016, V ZR 166\/15, Rn\. 15\)/)
+  assert.match(n.text, /Eine Korrektur zu Lasten der Mieter ist nach Ablauf der Abrechnungsfrist ausgeschlossen \(§ 556 Abs\. 3 Satz 3 BGB\)/)
+  assert.doesNotMatch(n.text, /passen Sie|öffnen Sie|Erfassen Sie/)
 })
 
 // P-W2: Ein von Hand erfasster Abzug zählt, sobald er verknüpft ist; unverknüpft bleibt die Warnung.
@@ -140,7 +166,7 @@ test('Befund rein: nur Positionen mit „included“, Abzüge nur über ihren Ve
     { id: 'x', description: 'X', amountCents: 100 },
   ]
   const fremd: OperatingPowerDeduction = { id: 'y', itemId: null, period: periodKey('2025-01'), description: 'Messdienst', amountCents: -50, closed: null }
-  assert.deepEqual(operatingPowerFindings(items, [fremd]), [{ itemId: 'bs', generation: false, description: 'B', amountCents: 100, deductedCents: 0, differenceCents: 100, closedIssues: [] }])
+  assert.deepEqual(operatingPowerFindings(items, [fremd]), [{ itemId: 'bs', generation: false, description: 'B', amountCents: 100, deductedCents: 0, differenceCents: 100, closedIssues: [], others: [] }])
 })
 
 test('Schnappschuss: deductionsOf nimmt Abzüge des Objekts aus allen Zeiträumen und liest den eingefrorenen Stand (P-W3, R2-W2)', () => {

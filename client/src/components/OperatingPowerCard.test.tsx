@@ -105,3 +105,14 @@ test('G-W1: schon gebuchter Betriebsstrom und Abzug stehen auf der Karte; eine 4
   }
 })
 const assert_fail = (): never => { throw new Error('keine Liste „Schon gebucht“') }
+
+// Durchsicht von #252, R-K5: Fernwärme hat keinen Brenner; die Kosten der Hausanlage stehen in § 7 Abs. 4.
+// R-K2: Der Bruchteil der Brennstoffkosten ist für Wohnungseigentümer entschieden.
+test('R-K5, R-K2: Fernwärme mit Hausanlage und Abs. 4; der Bruchteil als Auslegung für Vermieter', () => {
+  render(<OperatingPowerCard plant={{ ...plant, energy: 'districtHeating' }} view={view} rules={CALENDAR_RULES} items={[strom]} onBooked={vi.fn()} />)
+  expect(screen.getByText(/Umwälzpumpen und Regelung der Hausanlage, also der Heizung hinter dem Fernwärmeanschluss/)).toBeTruthy()
+  expect(screen.getByText(/§ 7 Abs\. 2 und 4, § 8 Abs\. 2 und 4 HeizkostenV/)).toBeTruthy()
+  expect(screen.queryByText(/Brenner/)).toBeNull()
+  fireEvent.click(screen.getByLabelText(/Betrag selbst geschätzt/))
+  expect(screen.getByText(/Für Wohnungseigentümer lässt der Bundesgerichtshof .*Bruchteil der Brennstoffkosten.*Auslegung von Mietfuchs/)).toBeTruthy()
+})

@@ -17,8 +17,8 @@ export default function OperatingPowerCard({ plant, view, rules, items, onBooked
   // Durchsicht von #252, G-W1: die Rückfrage des Servers bei einer zweiten Buchung.
   const [question, setQuestion] = useState<string | null>(null)
   const toast = useToast()
-  // P-W5, R2-W1: Bei Wärmepumpe und Stromheizung ist der Strom des Erzeugers Brennstoff; die Karte sagt
-  // das, nennt den Weg für Pumpen und Regelung und rechnet nichts.
+  // P-W5, R2-W1, R-W2: Bei Wärmepumpe und Stromheizung gehört der Strom zur Wärmeerzeugung zu den Heizkosten,
+  // aber nicht als Betriebsstrom; die Karte sagt das, nennt den Weg über das Kostenformular und rechnet nichts.
   const refusal = operatingPowerRefusal(plant.energy)
   if (refusal) {
     return (
@@ -58,9 +58,11 @@ export default function OperatingPowerCard({ plant, view, rules, items, onBooked
     <section className="card">
       <h2><Term id="operatingPower">Betriebsstrom</Term></h2>
       {/* P-K1: Rechtsaussage mit Norm; P-K5: selbst tragen ist zulässig. */}
+      {/* R-K5 (Durchsicht von #252): Fernwärme hat keinen Brenner; die Hausanlage steht in § 7 Abs. 4, § 8 Abs. 4. */}
       <p>
-        Läuft der Strom für Brenner, Umwälzpumpe und Regelung über den Stromzähler des Hauses, gehört er zu den Heiz- und Warmwasserkosten
-        oder Sie tragen ihn selbst; im Allgemeinstrom darf er nicht stehen und ist dort abzuziehen (§ 7 Abs. 2, § 8 Abs. 2 HeizkostenV; BGH, Urteil vom 03.06.2016, V ZR 166/15).
+        {plant.energy === 'districtHeating'
+          ? 'Läuft der Strom für Umwälzpumpen und Regelung der Hausanlage, also der Heizung hinter dem Fernwärmeanschluss, über den Stromzähler des Hauses, gehört er zu den Heiz- und Warmwasserkosten oder Sie tragen ihn selbst; im Allgemeinstrom darf er nicht stehen und ist dort abzuziehen (§ 7 Abs. 2 und 4, § 8 Abs. 2 und 4 HeizkostenV; BGH, Urteil vom 03.06.2016, V ZR 166/15).'
+          : 'Läuft der Strom für Brenner, Umwälzpumpe und Regelung über den Stromzähler des Hauses, gehört er zu den Heiz- und Warmwasserkosten oder Sie tragen ihn selbst; im Allgemeinstrom darf er nicht stehen und ist dort abzuziehen (§ 7 Abs. 2, § 8 Abs. 2 HeizkostenV; BGH, Urteil vom 03.06.2016, V ZR 166/15).'}
         {service
           ? ' Mietfuchs rechnet den Anteil an der Stromrechnung und legt den Abzug an; denselben Betrag melden Sie Ihrem Messdienst als Betriebsstrom.'
           : ' Mietfuchs rechnet den Anteil an der Stromrechnung und legt beide Positionen an.'}
@@ -120,8 +122,9 @@ export default function OperatingPowerCard({ plant, view, rules, items, onBooked
           <label className="field"><span>geschätzter Betrag (€)</span><input inputMode="decimal" value={form.ownAmount} disabled={view.closed} onChange={(e) => setForm({ ...form, ownAmount: e.target.value })} /></label>
           <label className="field"><span>Grundlage der Schätzung</span><textarea rows={3} value={form.basis} disabled={view.closed} onChange={(e) => setForm({ ...form, basis: e.target.value })} /></label>
           <p className="hint">
-            Der Bundesgerichtshof lässt als Schätzgrundlage auch einen Bruchteil der Brennstoffkosten zu; gemeint sind die Brennstoffkosten, nicht der
-            Allgemeinstrom. Mietfuchs gibt keinen Prozentsatz vor; nennen Sie, wie Sie geschätzt haben.
+            Für Wohnungseigentümer lässt der Bundesgerichtshof als Schätzgrundlage auch einen Bruchteil der Brennstoffkosten zu (BGH, Urteil vom 03.06.2016, V ZR 166/15, Rn. 14);
+            dass das auch für Sie als Vermieter gilt, ist eine Auslegung von Mietfuchs. Gemeint sind die Brennstoffkosten, nicht der Allgemeinstrom. Mietfuchs gibt keinen
+            Prozentsatz vor; nennen Sie, wie Sie geschätzt haben.
           </p>
         </>
       )}

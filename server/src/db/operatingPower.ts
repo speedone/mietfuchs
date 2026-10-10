@@ -58,7 +58,8 @@ export async function bookOperatingPower(db: Database, plantId: string, body: un
   const ctx = await plantContext(db, plantId)
   if (!ctx) return null
   const plant = ctx.plant
-  // P-W5, R2-W1: Bei Wärmepumpe und Stromheizung ist der Strom des Erzeugers Brennstoff; keine Schätzhilfe.
+  // P-W5, R2-W1, R-W2: Bei Wärmepumpe und Stromheizung gehört der Strom zur Wärmeerzeugung zu den Heizkosten,
+  // aber nicht als Betriebsstrom (§ 7 Abs. 2 HeizkostenV); keine Schätzhilfe.
   // Pumpen und Regelung lassen sich im Kostenformular kennzeichnen und verknüpfen (repository.ts).
   const refusal = operatingPowerRefusal(plant.energy)
   if (refusal) throw new HeatingError(400, refusal)
