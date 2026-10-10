@@ -57,7 +57,7 @@ import { LawOverrideError, lawOverrideSlots, readLawOverrides, removeLawOverride
 import { removeStock, saveStock } from './db/fuelStock.ts'
 import { createDelivery, createEstimates, freezeFuelCarries, fuelGapQuestions, listDegreeDays, listDeliveries, removeDelivery, saveDegreeDays, unfreezeFuelCarries, updateDelivery } from './db/fuel.ts'
 import { assignableHeatingItems, createHeatingPlant, listHeatingPlants, removeHeatingPlant, replaceHeatingPlant, updateHeatingPlant } from './db/heating.ts'
-import { bookOperatingPower } from './db/operatingPower.ts'
+import { bookOperatingPower, OperatingPowerQuestion } from './db/operatingPower.ts'
 import { applyHeatingPeriodChange, previewHeatingPeriodChange } from './db/heatingPeriodChange.ts'
 import { testTodayOf } from './testToday.ts'
 import { applySeparate, previewSeparate } from './db/separateSettlement.ts'
@@ -549,7 +549,14 @@ app.post('/api/heating-plants/:id/replace', async (req, res) => {
 })
 // Betriebsstrom und Abzug beim Allgemeinstrom gemeinsam anlegen (Heizung PR 15, #212).
 app.post('/api/heating-plants/:id/operating-power', async (req, res) => {
-  const booked = await writeData((db) => bookOperatingPower(db, req.params.id, bodyObject(req), newId))
+  let booked: Awaited<ReturnType<typeof bookOperatingPower>>
+  try {
+    booked = await writeData((db) => bookOperatingPower(db, req.params.id, bodyObject(req), newId))
+  } catch (err) {
+    // Nachprüfung von #252, G2-H1: die Rückfrage mit eigenem Kennzeichen.
+    if (err instanceof OperatingPowerQuestion) return res.status(409).json({ error: err.message, question: 'despiteExisting' })
+    throw err
+  }
   if (!booked) return res.status(404).json({ error: 'Diese Heizanlage gibt es nicht (mehr). Bitte laden Sie die Seite neu.' })
   res.status(201).json(booked)
 })

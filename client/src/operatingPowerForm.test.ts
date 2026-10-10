@@ -1,6 +1,6 @@
 // Die Karte „Betriebsstrom“ (Heizung PR 15, #212) ohne DOM: Auswahl der Stromrechnung, Vorschau und Rumpf.
 import { expect, test } from 'vitest'
-import { emptyOperatingPowerForm, generalItemOptions, operatingPowerPreview, operatingPowerRequest, type OperatingPowerForm } from './operatingPowerForm'
+import { bookedOperatingPower, emptyOperatingPowerForm, generalItemOptions, operatingPowerPreview, operatingPowerRequest, type OperatingPowerForm } from './operatingPowerForm'
 import { CALENDAR_RULES, periodKey } from '../../shared/period.ts'
 import type { CostItem } from './types'
 
@@ -66,4 +66,12 @@ test('Selbst geschätzt: Vorschau mit Grundlage, Rumpf mit Cent und Grundlage', 
   expect(operatingPowerPreview(form, [strom])).toEqual({ ok: true, cents: 14784, lines: ['selbst geschätzt: 147,84 €', 'Grundlage der Schätzung: Bruchteil der Brennstoffkosten 2025'] })
   expect(operatingPowerRequest(form, '2025-01')).toEqual({ period: '2025-01', generalItemId: 'strom', ownCents: 14784, basis: 'Bruchteil der Brennstoffkosten 2025' })
   expect(operatingPowerPreview({ ...form, basis: '' }, [strom])).toMatchObject({ ok: false, text: expect.stringMatching(/Grundlage der Schätzung/) })
+})
+
+// Nachprüfung von #252, G2-H4: dieselbe Zeitraumregel wie der Server; beim Messdienst mit eigener Heizperiode
+// stehen die Abzüge der Stromrechnungen, die die Heizperiode berühren, in „Schon gebucht“.
+test('Schon gebucht: Messdienst mit Heizperiode Mai–April zeigt den Abzug aus der Stromrechnung 2025, nicht den aus 2024', () => {
+  const ab = (id: string, period: string): CostItem => ({ ...strom, id, period: periodKey(period), description: `Abzug ${id}`, amountCents: -100, operatingPower: 'deduction', operatingPowerGeneralId: 'strom' })
+  const liste = bookedOperatingPower([ab('a25', '2025-01'), ab('a24', '2024-01')], 'hp', { period: periodKey('2025-05'), from: '2025-05-01', to: '2026-04-30' }, CALENDAR_RULES)
+  expect(liste.map((c) => c.id)).toEqual(['a25'])
 })

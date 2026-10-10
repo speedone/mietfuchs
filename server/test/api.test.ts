@@ -6710,3 +6710,23 @@ test('Betriebsstrom in der Abrechnung über die Route: mit Abzug still, nach dem
     s.stop()
   }
 })
+
+// Nachprüfung von #252, G2-H1: Die Rückfrage wegen vorhandener Buchung trägt ihr eigenes Kennzeichen; die
+// Oberfläche bietet „Trotzdem anlegen“ nur dann an.
+test('Betriebsstrom über die Route: zweite Buchung 409 mit question „despiteExisting“', async () => {
+  const s = await startServer()
+  try {
+    const send = (url: string, init: RequestInit) => fetch(`${s.base}${url}`, { ...init, headers: { 'content-type': 'application/json' } })
+    const { plant } = await jsonOf<{ plant: HeatingPlant }>(await send('/api/heating-plants', jsonPost({ energy: 'gas', method: 'service' })))
+    const strom = await s.api<CostItem>('/api/costItems', jsonPost({ period: '2025-01', category: 'Beleuchtung/Allgemeinstrom', description: 'Hausstrom', amountCents: 105000, key: 'area' }))
+    const body = { period: '2025-01', generalItemId: strom.id, ownCents: 10000, basis: 'x' }
+    assert.equal((await send(`/api/heating-plants/${plant.id}/operating-power`, jsonPost(body))).status, 201)
+    const zweite = await send(`/api/heating-plants/${plant.id}/operating-power`, jsonPost(body))
+    assert.equal(zweite.status, 409)
+    const json = await jsonOf<{ error?: string; question?: string }>(zweite)
+    assert.equal(json.question, 'despiteExisting')
+    assert.match(json.error ?? '', /schon gebucht/)
+  } finally {
+    s.stop()
+  }
+})

@@ -1,6 +1,6 @@
 // Die Karte „Betriebsstrom“ der Seite Heizkosten (Heizung PR 15, #212), DOM-frei. Die Rechnung kommt aus
 // shared/operatingPower.ts, dieselbe wie auf dem Server.
-import { GENERAL_POWER_CATEGORY, operatingPowerShare, ownEstimateShare } from '../../shared/operatingPower.ts'
+import { GENERAL_POWER_CATEGORY, operatingPowerShare, ownEstimateShare, touchesHeatingPeriod } from '../../shared/operatingPower.ts'
 import { fmtEuro, parseEuro } from './api'
 import { parseNumberDe } from './numbers'
 import { periodLabel, periodOfKey } from '../../shared/period.ts'
@@ -36,7 +36,7 @@ export function generalItemOptions(items: readonly CostItem[], span: { from: str
       .filter((c) => c.category === GENERAL_POWER_CATEGORY && c.amountCents > 0 && c.operatingPower === undefined)
       .flatMap((c) => {
         const p = periodOfKey(rules, c.period)
-        return p && p.to >= span.from && p.from <= span.to ? [{ value: c.id, label: `${c.description} · ${periodLabel(p)} · ${fmtEuro(c.amountCents)}` }] : []
+        return p && touchesHeatingPeriod(p, span) ? [{ value: c.id, label: `${c.description} · ${periodLabel(p)} · ${fmtEuro(c.amountCents)}` }] : []
       }),
   ]
 }
@@ -60,12 +60,18 @@ export function operatingPowerPreview(form: OperatingPowerForm, items: readonly 
 }
 
 // Durchsicht von #252, G-W1: was zu Anlage und Heizperiode schon gebucht ist, damit niemand dieselbe
-// Schätzung zweimal anlegt. Beim Messdienst gibt es keinen Betriebsstrom, nur Abzüge ohne Verweis.
-export function bookedOperatingPower(items: readonly CostItem[], plantId: string, period: string): CostItem[] {
-  const own = items.filter((c) => c.operatingPower === 'included' && c.heatingPlantId === plantId && c.period === period)
+// Schätzung zweimal anlegt. Beim Messdienst gibt es keinen Betriebsstrom, nur Abzüge ohne Verweis; sie
+// stehen im Zeitraum ihrer Stromrechnung, und es zählen die, deren Zeitraum die Heizperiode berührt
+// (dieselbe Regel wie der Server, G2-H4).
+export function bookedOperatingPower(items: readonly CostItem[], plantId: string, heating: { period: string; from: string; to: string }, rules: PeriodRules): CostItem[] {
+  const own = items.filter((c) => c.operatingPower === 'included' && c.heatingPlantId === plantId && c.period === heating.period)
   const ids = new Set(own.map((c) => c.id))
-  const deductions = items.filter((c) => c.operatingPower === 'deduction' &&
-    (c.operatingPowerItemId !== undefined ? ids.has(c.operatingPowerItemId) : c.period === period))
+  const deductions = items.filter((c) => {
+    if (c.operatingPower !== 'deduction') return false
+    if (c.operatingPowerItemId !== undefined) return ids.has(c.operatingPowerItemId)
+    const p = periodOfKey(rules, c.period)
+    return p !== null && touchesHeatingPeriod(p, heating)
+  })
   return [...own, ...deductions]
 }
 

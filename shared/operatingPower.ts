@@ -105,6 +105,11 @@ export function operatingPowerRefusal(energy: HeatingEnergy): string | null {
     'Erfassen Sie ihn dann im Kostenformular als Betriebsstrom und verknüpfen Sie den Abzug.'
 }
 
+// Ob eine Stromrechnung den Betriebsstrom einer Heizperiode enthalten kann: Ihr Zeitraum berührt die
+// Heizperiode (Durchsicht von #252, G-K1 und N1). Eine Quelle für Server und Karte (G2-H4).
+export const touchesHeatingPeriod = (general: { from: string; to: string }, heating: { from: string; to: string }): boolean =>
+  general.to >= heating.from && general.from <= heating.to
+
 // Die Grundlage der Schätzung, wie sie an Betriebsstrom und Abzug gespeichert wird (P-W1): der Rechenweg
 // mit allen Eingaben, eine Zeile je Schritt.
 export const basisOf = (steps: readonly string[]): string => steps.join('\n')

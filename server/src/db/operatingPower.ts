@@ -9,7 +9,7 @@
 // Die Grundlage der Schätzung (P-W1) steht an beiden Positionen: Bestreitet ein Mieter den Betrag, muss
 // der Vermieter sie darlegen (BGH, Versäumnisurteil vom 20.02.2008, VIII ZR 27/07, Leitsatz 3).
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
-import { basisOf, euro, GENERAL_POWER_CATEGORY, operatingPowerRefusal, operatingPowerShare, ownEstimateShare } from '../../../shared/operatingPower.ts'
+import { basisOf, euro, GENERAL_POWER_CATEGORY, operatingPowerRefusal, operatingPowerShare, ownEstimateShare, touchesHeatingPeriod } from '../../../shared/operatingPower.ts'
 import type { CostItem, OperatingPowerDevice } from '../../../shared/types.ts'
 import { periodLabel, periodOfKey, spansTwoYears, startYearOf } from '../../../shared/period.ts'
 import type { Database } from './client.ts'
@@ -18,6 +18,14 @@ import { readCostItems } from './read.ts'
 import { has, HeatingError, insertCostItemIn, itemPeriodClosed, raw } from './repository.ts'
 
 export type OperatingPowerMethod = 'estimate' | 'measured' | 'own'
+
+// Nachprüfung von #252, G2-H1: die Rückfrage wegen vorhandener Buchung, eigens erkennbar, damit die Oberfläche
+// nur hier „Trotzdem anlegen“ anbietet und jede andere 409 als Meldung zeigt.
+export class OperatingPowerQuestion extends HeatingError {
+  constructor(message: string) {
+    super(409, message)
+  }
+}
 export type OperatingPowerBooking = { method: OperatingPowerMethod; share: { cents: number; steps: string[] }; heatingItem: CostItem | null; deduction: CostItem }
 
 const numberOrNull = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
@@ -83,7 +91,7 @@ export async function bookOperatingPower(db: Database, plantId: string, body: un
   // Stromrechnung, deren Zeitraum sich mit ihr überschneidet; ein Abzug aus einer anderen käme bei den
   // Mietern eines anderen Zeitraums an.
   const generalPeriod = periodOfKey(ctx.objectRules, general.period)
-  if (!generalPeriod || generalPeriod.to < h.from || generalPeriod.from > h.to) {
+  if (!generalPeriod || !touchesHeatingPeriod(generalPeriod, h)) {
     throw new HeatingError(400, `Die Stromrechnung „${general.description}“${generalPeriod ? ` (${periodLabel(generalPeriod)})` : ''} liegt nicht in der Heizperiode ${periodLabel(h)}; den Betriebsstrom dieser Heizperiode enthält sie nicht. Wählen Sie die Stromrechnung, deren Zeitraum sich mit der Heizperiode überschneidet.`)
   }
   // G-K1, G-K2: Betriebsstrom und Abzug sind eine Umbuchung aus der Stromrechnung und zählen in der
@@ -125,7 +133,7 @@ export async function bookOperatingPower(db: Database, plantId: string, body: un
   // Rückfrage und keine Sperre (wie `despiteCandidates` bei der Belegbuchung).
   const booked = [...items.filter((c) => c.operatingPower === 'included' && c.heatingPlantId === plant.id && c.period === h.key), ...fromGeneral]
   if (booked.length > 0 && raw(body, 'despiteExisting') !== true) {
-    throw new HeatingError(409, `Für diese Heizperiode oder diese Stromrechnung ist schon gebucht: ${booked.map((c) => `„${c.description}“ (${euro(Math.abs(c.amountCents))})`).join(', ')}. Eine zweite Buchung verteilt den Betriebsstrom doppelt. Legen Sie nur dann noch einmal an, wenn es ein weiterer Betriebsstrom ist, etwa nach einem Kesseltausch im Jahr.`)
+    throw new OperatingPowerQuestion(`Für diese Heizperiode oder diese Stromrechnung ist schon gebucht: ${booked.map((c) => `„${c.description}“ (${euro(Math.abs(c.amountCents))})`).join(', ')}. Eine zweite Buchung verteilt den Betriebsstrom doppelt. Legen Sie nur dann noch einmal an, wenn es ein weiterer Betriebsstrom ist, etwa nach einem Kesseltausch im Jahr.`)
   }
   const how = HOW[method]
   const operatingPowerBasis = basisOf(share.steps)
