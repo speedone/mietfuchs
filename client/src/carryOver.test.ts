@@ -269,3 +269,19 @@ describe('Vorjahr mit eigener Heizperiode', () => {
     expect(carryOverBody({ ...row, amount: '100' }, UNITS, calendarYearPeriod(2026))).toMatchObject({ body: { period: '2026-01' } })
   })
 })
+
+// Betriebsstrom (Heizung PR 15, #212): Die Kennzeichnung „läuft über den Hauszähler“ ist eine Tatsache der
+// Anlage und kommt mit; die Grundlage der Schätzung gilt nur für ihr Jahr, und ein Abzug gehört zu dem
+// Betriebsstrom, auf den er zeigt. Käme der Verweis mit, zählte der Abzug des neuen Jahres beim
+// Betriebsstrom des Vorjahres, und beim neuen bliebe die Warnung stumm verfehlt.
+test('Betriebsstrom: Übernahme behält die Kennzeichnung, nicht die Grundlage und keinen Abzug', () => {
+  const bs = item({ period: calendarPeriod(2025), category: 'Heizung und Warmwasser', description: 'Betriebsstrom 2025', heatingPart: 'operating', operatingPower: 'included', operatingPowerBasis: 'Pumpe 45 W' })
+  const ab = item({ period: calendarPeriod(2025), category: 'Beleuchtung/Allgemeinstrom', description: 'Abzug Betriebsstrom 2025', amountCents: -14784, operatingPower: 'deduction', operatingPowerItemId: bs.id, operatingPowerBasis: 'Pumpe 45 W' })
+  const rows = carryOverRows([bs, ab], 2026)
+  const neu = carryOverBody(withCarryAmount(rowOf(rows, 'Betriebsstrom 2025'), '150,00'), UNITS, 2026)
+  if ('error' in neu) throw new Error(neu.error)
+  expect([neu.body.operatingPower, neu.body.operatingPowerItemId, neu.body.operatingPowerBasis]).toEqual(['included', null, null])
+  const abzug = carryOverBody(withCarryAmount(rowOf(rows, 'Abzug Betriebsstrom 2025'), '-150,00'), UNITS, 2026)
+  if ('error' in abzug) throw new Error(abzug.error)
+  expect([abzug.body.operatingPower, abzug.body.operatingPowerItemId, abzug.body.operatingPowerBasis]).toEqual([null, null, null])
+})

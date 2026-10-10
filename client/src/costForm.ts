@@ -4,7 +4,9 @@
 import type { BillingPeriod, CostItem, CostKey, ExternalMeasure, HeatingPart, HeatingTarget, HotWater, Meter, MeterType, PeriodKey, SplitPreviewPart, Tenancy, Unit } from './types'
 import { CATEGORIES, KEY_LABELS, defaultKeyFor, isNotAllocable } from './types'
 import { PARTICIPANT_KEYS as SHARED_PARTICIPANT_KEYS, allocationOf, comparablePrevious, previousAllocation, sameAllocation, type Allocation } from '../../shared/allocation.ts'
-import { parseEuro } from './api'
+import { fmtEuro, parseEuro } from './api'
+import { changeLabel } from './periodForm'
+import { GENERAL_POWER_CATEGORY } from '../../shared/operatingPower.ts'
 import { sameCostCandidates, type DuplicateItem } from '../../shared/duplicates.ts'
 import { parseNumberDe } from './numbers'
 import { targetOptions } from './heatingSelfForm'
@@ -52,6 +54,11 @@ export type ItemForm = {
   // noch nicht gewählt bei der eigenen Heizkostenabrechnung.
   heatingTarget: HeatingTarget | ''
   invoiceFile?: string
+  // Betriebsstrom der Heizung (Heizung PR 15): Kennzeichnung, Verweis des Abzugs und Grundlage der
+  // Schätzung, leer heißt keine Angabe. Das Formular liest sie ein und schickt sie zurück (Review Focus 3).
+  operatingPower: '' | 'included' | 'deduction'
+  operatingPowerItemId: string
+  operatingPowerBasis: string
 }
 
 export const EMPTY_ITEM_FORM: ItemForm = {
@@ -75,6 +82,9 @@ export const EMPTY_ITEM_FORM: ItemForm = {
   taxYear: '',
   heatingPart: '',
   heatingTarget: '',
+  operatingPower: '',
+  operatingPowerItemId: '',
+  operatingPowerBasis: '',
 }
 
 // Formular aus einer gespeicherten Position füllen
@@ -104,6 +114,9 @@ export function itemToForm(i: CostItem): ItemForm {
     heatingPart: i.heatingPart ?? '',
     heatingTarget: i.heatingTarget ?? '',
     invoiceFile: i.invoiceFile ?? undefined,
+    operatingPower: i.operatingPower ?? '',
+    operatingPowerItemId: i.operatingPowerItemId ?? '',
+    operatingPowerBasis: i.operatingPowerBasis ?? '',
   }
 }
 
@@ -501,7 +514,63 @@ function draftOf(form: ItemForm, units: Unit[], tenancies: Tenancy[] | undefined
 export function buildCostItemBody(form: ItemForm, units: Unit[], period: number | BillingPeriod, tenancies?: Tenancy[]): BuildResult {
   // Eine Jahreszahl ist das Kalenderjahr (Tests, Kalenderobjekt); sonst der gewählte Zeitraum (#208).
   const p = typeof period === 'number' ? calendarYearPeriod(period) : period
-  return costItemBody(draftOf(form, units, tenancies, p), units, p.key)
+  const result = costItemBody(draftOf(form, units, tenancies, p), units, p.key)
+  return 'body' in result ? { body: withOperatingPower(result.body, form) } : result
+}
+
+// ---------- Betriebsstrom der Heizung (Heizung PR 15, #212) ----------
+
+// Die Frage, ob dieser Strom auch im Allgemeinstrom steckt. Nur bei Heizkosten mit Teil „Betrieb“ oder
+// ohne Teil, wie die Bedingung der Datenbank.
+export const OPERATING_POWER_OPTIONS: { value: '' | 'included'; label: string }[] = [
+  { value: '', label: 'Nein (eigener Stromvertrag oder kein Betriebsstrom)' },
+  { value: 'included', label: 'Ja, er läuft über den Stromzähler des Hauses' },
+]
+export const showsOperatingPower = (form: Pick<ItemForm, 'category' | 'heatingPart'>): boolean =>
+  form.category === HEATING_CATEGORY && (form.heatingPart === '' || form.heatingPart === 'operating')
+
+// Ein Abzug am Allgemeinstrom (P-W2): negativer Betrag bei „Beleuchtung/Allgemeinstrom“. Dann fragt das
+// Formular, zu welchem Betriebsstrom er gehört, damit auch ein von Hand erfasster Abzug zählt.
+export const showsDeductionLink = (form: Pick<ItemForm, 'category' | 'amount'>): boolean =>
+  form.category === GENERAL_POWER_CATEGORY && (parseEuro(form.amount) ?? 0) < 0
+
+// Der Zeitraum einer Betriebsstrom-Position in der Auswahl. Ohne die Regeln des Objekts und der Anlage
+// gibt es keine Beschriftung wie auf der Seite; ein Kalenderjahr heißt deshalb nach seinem Jahr, jeder
+// andere Zeitraum nach seinem Beginn („ab Mai 2025“).
+const periodText = (key: string): string => (key.slice(5, 7) === '01' ? key.slice(0, 4) : `ab ${changeLabel(key)}`)
+export function deductionChoices(items: readonly CostItem[]): { value: string; label: string }[] {
+  return [
+    { value: '', label: 'Nein, kein Abzug des Betriebsstroms' },
+    { value: 'service', label: 'Ja, der Betrag ist dem Messdienst als Betriebsstrom gemeldet' },
+    ...items.filter((c) => c.operatingPower === 'included')
+      .map((c) => ({ value: c.id, label: `Ja, zu „${c.description}“ (${periodText(c.period)}, ${fmtEuro(c.amountCents)})` })),
+  ]
+}
+export const deductionChoiceOf = (form: Pick<ItemForm, 'operatingPower' | 'operatingPowerItemId'>): string =>
+  form.operatingPower !== 'deduction' ? '' : form.operatingPowerItemId || 'service'
+export function withDeductionChoice(form: ItemForm, value: string): ItemForm {
+  if (value === '') return { ...form, operatingPower: '', operatingPowerItemId: '', operatingPowerBasis: '' }
+  return { ...form, operatingPower: 'deduction', operatingPowerItemId: value === 'service' ? '' : value }
+}
+
+// Der Rumpf trägt die drei Felder bei Heizkosten und beim Allgemeinstrom (Review Focus 3): Das Formular
+// hat sie eingelesen und schickt sie zurück, wie sie sind. Ohne Kennzeichnung keine Grundlage (Bedingung
+// `…_basis_valid`). Bei jeder anderen Kostenart kein Feld; der Server lässt dann stehen, was da ist.
+export type OperatingPowerBody = { operatingPower: 'included' | 'deduction' | null; operatingPowerItemId: string | null; operatingPowerBasis: string | null }
+export function withOperatingPower<B extends object>(
+  body: B,
+  form: Pick<ItemForm, 'category' | 'heatingPart' | 'amount' | 'operatingPower' | 'operatingPowerItemId' | 'operatingPowerBasis'>,
+): B & Partial<OperatingPowerBody> {
+  const basis = (marked: boolean) => (marked && form.operatingPowerBasis.trim() !== '' ? form.operatingPowerBasis.trim() : null)
+  if (form.category === HEATING_CATEGORY) {
+    const included = showsOperatingPower(form) && form.operatingPower === 'included'
+    return { ...body, operatingPower: included ? 'included' : null, operatingPowerItemId: null, operatingPowerBasis: basis(included) }
+  }
+  if (form.category === GENERAL_POWER_CATEGORY) {
+    const deduction = showsDeductionLink(form) && form.operatingPower === 'deduction'
+    return { ...body, operatingPower: deduction ? 'deduction' : null, operatingPowerItemId: deduction && form.operatingPowerItemId ? form.operatingPowerItemId : null, operatingPowerBasis: basis(deduction) }
+  }
+  return body
 }
 
 // Hinweise, die an der Kostenart und am Abrechnungsjahr hängen (#107). Dieselbe Regel meldet die
