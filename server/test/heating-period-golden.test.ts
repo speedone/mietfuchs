@@ -6,7 +6,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { openDatabase } from '../src/db/open.ts'
+import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { createEntity } from '../src/db/repository.ts'
 import { createHeatingPlant } from '../src/db/heating.ts'
 import { applyHeatingPeriodChange, previewHeatingPeriodChange } from '../src/db/heatingPeriodChange.ts'
@@ -20,7 +20,7 @@ const TODAY = '2026-10-05'
 
 test('F14: eigene Heizperiode, Auszug 31.10.2025, Abrechnung nur mit Heizkosten', async () => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-f14-'))
-  const opened = await openDatabase({ dataDir })
+  const opened = await openFreshDatabase(dataDir)
   try {
     await opened.write(async (db) => {
       await createEntity(db, 'units', 'eg', { propertyId: 'objekt-1', name: 'EG', areaM2: 60, participates: true })

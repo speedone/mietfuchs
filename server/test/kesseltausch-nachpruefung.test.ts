@@ -9,7 +9,8 @@ import { eq } from 'drizzle-orm'
 import { createDelivery, freezeFuelCarries, unfreezeFuelCarries } from '../src/db/fuel.ts'
 import { saveStock } from '../src/db/fuelStock.ts'
 import { createHeatingPlant, listHeatingPlants, removeHeatingPlant, replaceHeatingPlant, straightenHeatingPlants, updateHeatingPlant } from '../src/db/heating.ts'
-import { openDatabase, type OpenedDatabase } from '../src/db/open.ts'
+import type { OpenedDatabase } from '../src/db/open.ts'
+import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { readStock } from '../src/db/read.ts'
 import { closeSettlement, createEntity, HeatingError, reopenSettlement } from '../src/db/repository.ts'
 import { heatingPlants } from '../src/db/schema.ts'
@@ -23,7 +24,7 @@ const P = (y: number) => periodOfKey(CALENDAR_RULES, periodKey(`${y}-01`)) ?? as
 
 async function withDatabase<T>(work: (opened: OpenedDatabase) => Promise<T>): Promise<T> {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-oeloel-'))
-  const opened = await openDatabase({ dataDir })
+  const opened = await openFreshDatabase(dataDir)
   try {
     return await work(opened)
   } finally {

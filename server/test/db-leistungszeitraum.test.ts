@@ -9,7 +9,8 @@ import os from 'node:os'
 import path from 'node:path'
 import { eq } from 'drizzle-orm'
 import { applyMigrations, connect, loadMigrations, type Connection } from '../src/db/client.ts'
-import { openDatabase, type OpenedDatabase } from '../src/db/open.ts'
+import type { OpenedDatabase } from '../src/db/open.ts'
+import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { createEntity, findEntity, PeriodError, updateEntity } from '../src/db/repository.ts'
 import { periodChanges, properties } from '../src/db/schema.ts'
 import { formatDayRange, spansTwoYears } from '../../shared/period.ts'
@@ -27,7 +28,7 @@ function rejects(connection: Connection, sql: string): string | null {
 
 async function withDatabase(work: (opened: OpenedDatabase) => Promise<void>): Promise<void> {
   const dataDir = tempDir()
-  const opened = await openDatabase({ dataDir })
+  const opened = await openFreshDatabase(dataDir)
   try {
     await work(opened)
   } finally {

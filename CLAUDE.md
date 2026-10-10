@@ -277,10 +277,17 @@ ohne weiteres Zutun dabei.
    (fester Startwert, also reproduzierbar): Mieteranteile + Vermieteranteil = Gesamtkosten,
    keine negativen Anteile, Eigenanteil ≤ Vermieteranteil. Einzelfall-Tests übersehen genau
    die schiefen Konstellationen — ein Geldverlust bei der Direktzuordnung fiel erst hier auf.
-2. [server/test/api.test.ts](server/test/api.test.ts) — Integration: startet den Server als
+2. `server/test/api-*.test.ts` — Integration: startet den Server als
    eigenen Prozess mit `NKA_DATA_DIR` auf einem Wegwerf-Ordner (deshalb gibt es diese
    Variable) und prüft die Routen. Berührt nie eine vorhandene `db.json`. `NKA_UPDATE_URL`
    zeigt dort standardmäßig auf einen geschlossenen Port, damit kein Test GitHub erreicht.
+   **Zehn Dateien nach Themen statt einer** (#263): `node --test` verteilt nur Dateien auf
+   Prozesse, nicht die Tests einer Datei, und die eine api.test.ts mit rund 270 Serverstarts
+   bestimmte allein das Ende des ganzen Laufs (418 von 420 Sekunden). Die gemeinsamen Helfer
+   (Antworttypen, `startServerIn`, `startServerRaw`, die nachgebauten Dienste) stehen in
+   [server/testing/api.ts](server/testing/api.ts); was nur ein Teil braucht, steht bei ihm.
+   Ein neuer Test gehört in die Datei seines Themas; wird eine Datei deutlich länger als die
+   anderen, lohnt das Teilen wieder.
 
 **Wer für eine Prüfung einen Server startet, setzt drei Dinge**, und zwar immer zusammen. Das
 gilt für Tests, für Skripte und für jede Probe von Hand:
@@ -296,7 +303,7 @@ gilt für Tests, für Skripte und für jede Probe von Hand:
   `NKA_RUNTIME=binary` gesetzt ist, um den gepackten Betrieb nachzustellen.
 - **`NKA_UPDATE_URL`** auf einen geschlossenen Port, damit keine Anfrage zu GitHub hinausgeht.
 
-Dieselben drei stehen in [api.test.ts](server/test/api.test.ts) (`startServerIn` und
+Dieselben drei stehen in [server/testing/api.ts](server/testing/api.ts) (`startServerIn` und
 `startServerRaw`) und in [scripts/umstieg-praxislauf.mjs](scripts/umstieg-praxislauf.mjs); wer
 einen neuen Prüfpfad baut, nimmt sie von dort.
 
@@ -304,9 +311,29 @@ einen neuen Prüfpfad baut, nimmt sie von dort.
 versehentlich überschrieben werden. Das ist kein Übereifer: `startServerIn` setzte es gar nicht,
 ein Aufrufer stellt mit `NKA_RUNTIME: 'binary'` die Programmdatei nach, und damit riss **jeder
 volle Testlauf** ein Browserfenster auf, auf einem Zufallsport, weil `NKA_PORT` dort `'0'` ist.
-Ein Wächter in api.test.ts liest deshalb den `env`-Block jedes Serverstarts und verlangt das
-`CI`. Geprüft wird der Quelltext, denn am Verhalten ließe es sich nur messen, indem der Test
-genau das tut, was er verhindern soll.
+Ein Wächter in api-start.test.ts liest deshalb den `env`-Block jedes Serverstarts in jeder
+Datei unter `server/test/` und `server/testing/` und verlangt das `CI`. Geprüft wird der
+Quelltext, denn am Verhalten ließe es sich nur messen, indem der Test genau das tut, was er
+verhindern soll.
+
+**Frische Datenbank für einen Test: die Vorlage** (#263,
+[server/testing/freshDatabase.ts](server/testing/freshDatabase.ts)). Wer eine leere, voll
+migrierte Datenbank braucht, nimmt `openFreshDatabase(dataDir)` statt `openDatabase({ dataDir })`
+auf einem leeren Ordner. Die ganze Kette je Test kostete gut eine Viertelsekunde (ein fsync je
+Schritt), in der Invariante mit über 1.700 Läufen je Abschnitt war das im Profil rund 40 Prozent
+der Rechenzeit. So geht es: Je Testprozess entsteht beim ersten Aufruf **einmal** eine Vorlage,
+mit `openDatabase` auf einem Wegwerf-Ordner, also mit der Kette, wie sie gerade auf der Platte
+steht; nichts davon wird eingecheckt, und die Vorlage endet mit ihrem Prozess. Jeder Test bekommt
+eine Dateikopie in seinen eigenen Ordner (zulässig, weil die Vorlage geschlossen ist und ohne
+WAL läuft), **geöffnet wieder mit `openDatabase`**: Fremdschlüssel, `integrity_check`,
+Schreibprobe und Abgleich mit der Kette laufen also wie bei jedem Start, kein Pragma muss
+nachgestellt werden. Musste beim Öffnen der Kopie noch ein Schritt nachgeholt werden, ist die
+Vorlage veraltet, und der Helfer wirft, statt es still nachzuholen.
+[fresh-database.test.ts](server/test/fresh-database.test.ts) vergleicht die Kopie mit einer frisch
+migrierten Datenbank (Aufbau, Inhalt, Pragmas). **Bei der echten Kette bleiben** alle Tests, die
+die Kette selbst prüfen: db-open, db-changeover, db-objekte, migrations, migration-notice,
+legacy-guard, ueberschneidung-bestand, die Serverstarts der Integrationstests und alles über
+`openDatabaseWithStock` (der eingefrorene Eingang: 0000, Bestand, dann die Kette).
 3. `client/src/**/*.test.ts(x)` — vitest. Die Entscheidungslogik der Formulare liegt in
    [client/src/costForm.ts](client/src/costForm.ts) und
    [client/src/unitForm.ts](client/src/unitForm.ts), damit sie ohne DOM prüfbar ist; die
@@ -1964,7 +1991,7 @@ beiden Seiten), die dreimal einen Geldfehler hatte.
   Praxislauf (Fall 14) und Browserprobe gibt es ein nachgebautes Ollama mit den Abnahmefällen
   ([scripts/fake-ollama.mjs](scripts/fake-ollama.mjs)).
 - **Testgriff `NKA_TEST_ASSESSMENT_DELAY_MS`**: verzögert das Speichern einer Auswertung um so
-  viele Millisekunden, nur für Tests (api.test.ts legt damit einen Abbruch in das Fenster zwischen
+  viele Millisekunden, nur für Tests (api-belegbuchung.test.ts legt damit einen Abbruch in das Fenster zwischen
   Antwort der KI und Speichern). Ohne die Variable gibt es keine Pause; ein Nutzer setzt sie nie.
 - **Testgriff `NKA_TEST_TODAY`** (Laienprobe Heizung, Durchsicht): ein fester Tag als JJJJ-MM-TT für
   die Uhr des Servers (`today()` in index.ts, server/src/testToday.ts), nur für Tests. Prüfbestände mit
@@ -2271,7 +2298,7 @@ Die Grenze zu [client/src/types.ts](client/src/types.ts) hängt an einer einzige
 Aufzählungstyps nach `shared/`, denn nur dann kauft man sich damit etwas ein, nämlich dass eine
 Änderung nicht auf einer Seite ankommt und auf der anderen nicht. Was nur eine Seite kennt,
 bleibt bei ihr, und zwar auch dann, wenn es über die Leitung geht: `Db` und `ComputedSettlement`
-im Server, die Formularzustände im Client, und ebenso `ClientSettings` in api.test.ts, das genau
+im Server, die Formularzustände im Client, und ebenso `ClientSettings` in server/testing/api.ts, das genau
 die Antwort von `GET /api/settings` beschreibt und trotzdem nur den Server etwas angeht, weil
 der Client sie nie so liest.
 
