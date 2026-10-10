@@ -37,13 +37,13 @@ test('Karte: Norm an der Rechtsaussage, Hinweis auf die Darlegungslast, drei Weg
 test('Karte bei Wärmepumpe und Stromheizung: Satz zum Brennstoff, keine Eingaben; bei Gas die Hilfe', () => {
   for (const energy of ['heatPump', 'electric'] as const) {
     const { unmount } = render(<OperatingPowerCard plant={{ ...plant, energy }} view={view} rules={CALENDAR_RULES} items={[strom]} onBooked={vi.fn()} />)
-    expect(screen.getByText(/selbst verbraucht, Brennstoff und kein Betriebsstrom/)).toBeTruthy()
+    expect(screen.getByText(/zur Wärmeerzeugung verbraucht, zu den Heiz- und Warmwasserkosten, und zwar nicht als Betriebsstrom/)).toBeTruthy()
     expect(screen.getByText(/Umwälzpumpen oder Regelung/)).toBeTruthy()
     expect(screen.queryByLabelText(/Stromrechnung des Hauses/)).toBeNull()
     unmount()
   }
   render(<OperatingPowerCard plant={plant} view={view} rules={CALENDAR_RULES} items={[strom]} onBooked={vi.fn()} />)
-  expect(screen.queryByText(/Brennstoff und kein Betriebsstrom/)).toBeNull()
+  expect(screen.queryByText(/nicht als Betriebsstrom/)).toBeNull()
 })
 
 test('Anlegen: schickt den Rumpf an die Route und meldet beim Messdienst, dass der Betrag zu melden ist', async () => {

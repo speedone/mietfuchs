@@ -18,6 +18,9 @@ export type OperatingPowerClosedIssue = {
 
 export type OperatingPowerFinding = {
   itemId: string
+  // R-W2: Strom zur Wärmeerzeugung einer Wärmepumpe oder Stromheizung (Teil „Brennstoff/Energie“) statt
+  // Betriebsstrom; der Text sagt dann, dass das Herausrechnen eine Auslegung ist.
+  generation: boolean
   description: string
   amountCents: number
   deductedCents: number
@@ -35,7 +38,7 @@ function creditedCents(d: OperatingPowerDeduction): number {
 }
 
 export function operatingPowerFindings(
-  distributed: readonly Pick<CostItem, 'id' | 'description' | 'amountCents' | 'operatingPower'>[],
+  distributed: readonly Pick<CostItem, 'id' | 'description' | 'amountCents' | 'operatingPower' | 'heatingPart'>[],
   deductions: readonly OperatingPowerDeduction[],
 ): OperatingPowerFinding[] {
   const out: OperatingPowerFinding[] = []
@@ -50,7 +53,7 @@ export function operatingPowerFindings(
       if (c === null || c.state === 'credited') return []
       return [{ description: d.description, label: c.label, amountCents: -d.amountCents, state: c.state, frozenCents: c.state === 'changed' ? -c.frozenCents : null }]
     })
-    out.push({ itemId: item.id, description: item.description, amountCents: item.amountCents, deductedCents, differenceCents, closedIssues })
+    out.push({ itemId: item.id, generation: item.heatingPart === 'fuel', description: item.description, amountCents: item.amountCents, deductedCents, differenceCents, closedIssues })
   }
   return out
 }
@@ -78,10 +81,13 @@ function closedText(n: OperatingPowerClosedIssue, fmtCents: (c: number) => strin
 // Norm nennt auch das Warmwasser (P-K3); selbst tragen ist zulässig (P-K5, V ZR 166/15 Rn. 15), heißt
 // aber, den Betriebsstrom aus den Heizkosten zu nehmen (R2-K3).
 export function operatingPowerText(f: OperatingPowerFinding, fmtCents: (c: number) => string): string {
-  const head = `„${f.description}“: Dieser Betriebsstrom steckt nach Ihrer Angabe auch in der Stromrechnung des Allgemeinstroms`
+  const head = `„${f.description}“: Dieser ${f.generation ? 'Strom zur Wärmeerzeugung' : 'Betriebsstrom'} steckt nach Ihrer Angabe auch in der Stromrechnung des Allgemeinstroms`
+  // R-W2: Für den Strom zur Wärmeerzeugung ist das Herausrechnen eine Auslegung; entschieden ist es für den Betriebsstrom.
+  const generationLaw = 'Dass er aus dem Allgemeinstrom herauszurechnen ist wie der Betriebsstrom, ist eine Auslegung von Mietfuchs (§ 7 Abs. 2, § 8 Abs. 2 HeizkostenV; zum Betriebsstrom BGH, Urteil vom 03.06.2016, V ZR 166/15, Rn. 13). '
   const frozen = f.closedIssues.map((n) => closedText(n, fmtCents)).join('')
   if (f.differenceCents > 0) {
     return `${head}; abgezogen sind dort ${fmtCents(f.deductedCents)} statt ${fmtCents(f.amountCents)}; ${fmtCents(f.differenceCents)} werden damit doppelt verteilt. ` +
+      (f.generation ? generationLaw : '') +
       'Erfassen Sie beim Allgemeinstrom einen Abzug in Höhe des Betriebsstroms, etwa mit der Karte „Betriebsstrom“ auf der Seite Heizkosten, ' +
       'oder nehmen Sie den Betriebsstrom aus den Heizkosten heraus und tragen ihn selbst (§ 7 Abs. 2, § 8 Abs. 2 HeizkostenV; BGH, Urteil vom 03.06.2016, V ZR 166/15, Rn. 13 und 15).' +
       frozen

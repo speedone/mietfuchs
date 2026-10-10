@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "b157d062-e962-4986-a8f8-98d3a245967a",
+  "id": "43412586-9bb8-4f78-b7b0-764a048b4167",
   "prevId": "e4ead73c-3d78-4434-b122-e3586a8b5a16",
   "tables": {
     "ai_slots": {
@@ -1706,7 +1706,7 @@
         },
         "cost_items_operating_power_included_valid": {
           "name": "cost_items_operating_power_included_valid",
-          "value": "\"operating_power\" IS NOT 'included' OR (\"category\" = 'Heizung und Warmwasser' AND (\"heating_part\" IS NULL OR \"heating_part\" = 'operating'))"
+          "value": "\"operating_power\" IS NOT 'included' OR (\"category\" = 'Heizung und Warmwasser' AND (\"heating_part\" IS NULL OR \"heating_part\" IN ('operating', 'fuel')))"
         },
         "cost_items_operating_power_deduction_valid": {
           "name": "cost_items_operating_power_deduction_valid",

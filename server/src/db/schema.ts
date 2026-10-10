@@ -1070,7 +1070,9 @@ export const costItems = sqliteTable(
     // am Allgemeinstrom und als Gutschrift; ein Verweis nur am Abzug; eine Grundlage nur an einer
     // gekennzeichneten Position (P-W1).
     oneOf('cost_items_operating_power_known', 'operating_power', OPERATING_POWER),
-    check('cost_items_operating_power_included_valid', sql.raw(`"operating_power" IS NOT 'included' OR ("category" = 'Heizung und Warmwasser' AND ("heating_part" IS NULL OR "heating_part" = 'operating'))`)),
+    // R-W2 (Durchsicht von #252): auch beim Teil „Brennstoff/Energie“, für den Strom einer Wärmepumpe oder
+    // Stromheizung; welche Anlage mit Strom heizt, prüft repository.ts.
+    check('cost_items_operating_power_included_valid', sql.raw(`"operating_power" IS NOT 'included' OR ("category" = 'Heizung und Warmwasser' AND ("heating_part" IS NULL OR "heating_part" IN ('operating', 'fuel')))`)),
     check('cost_items_operating_power_deduction_valid', sql.raw(`"operating_power" IS NOT 'deduction' OR ("category" = 'Beleuchtung/Allgemeinstrom' AND "amount_cents" < 0)`)),
     check('cost_items_operating_power_link_valid', sql.raw(`"operating_power_item_id" IS NULL OR "operating_power" IS 'deduction'`)),
     check('cost_items_operating_power_basis_valid', sql.raw(`"operating_power_basis" IS NULL OR "operating_power" IS NOT NULL`)),

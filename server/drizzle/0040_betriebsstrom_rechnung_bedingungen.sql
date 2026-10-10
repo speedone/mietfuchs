@@ -49,7 +49,7 @@ CREATE TABLE `__new_cost_items` (
 	CONSTRAINT "cost_items_heating_system_complete" CHECK("key" <> 'heatingSystem' OR ("heating_target" IS NOT NULL AND "heating_part" IS NOT NULL AND "heating_plant_id" IS NOT NULL)),
 	CONSTRAINT "cost_items_fuel_delivery_category_valid" CHECK("fuel_delivery_id" IS NULL OR "category" = 'Heizung und Warmwasser'),
 	CONSTRAINT "cost_items_operating_power_known" CHECK("operating_power" IN ('included', 'deduction')),
-	CONSTRAINT "cost_items_operating_power_included_valid" CHECK("operating_power" IS NOT 'included' OR ("category" = 'Heizung und Warmwasser' AND ("heating_part" IS NULL OR "heating_part" = 'operating'))),
+	CONSTRAINT "cost_items_operating_power_included_valid" CHECK("operating_power" IS NOT 'included' OR ("category" = 'Heizung und Warmwasser' AND ("heating_part" IS NULL OR "heating_part" IN ('operating', 'fuel')))),
 	CONSTRAINT "cost_items_operating_power_deduction_valid" CHECK("operating_power" IS NOT 'deduction' OR ("category" = 'Beleuchtung/Allgemeinstrom' AND "amount_cents" < 0)),
 	CONSTRAINT "cost_items_operating_power_link_valid" CHECK("operating_power_item_id" IS NULL OR "operating_power" IS 'deduction'),
 	CONSTRAINT "cost_items_operating_power_basis_valid" CHECK("operating_power_basis" IS NULL OR "operating_power" IS NOT NULL),

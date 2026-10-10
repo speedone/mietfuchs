@@ -140,7 +140,7 @@ test('Befund rein: nur Positionen mit „included“, Abzüge nur über ihren Ve
     { id: 'x', description: 'X', amountCents: 100 },
   ]
   const fremd: OperatingPowerDeduction = { id: 'y', itemId: null, period: periodKey('2025-01'), description: 'Messdienst', amountCents: -50, closed: null }
-  assert.deepEqual(operatingPowerFindings(items, [fremd]), [{ itemId: 'bs', description: 'B', amountCents: 100, deductedCents: 0, differenceCents: 100, closedIssues: [] }])
+  assert.deepEqual(operatingPowerFindings(items, [fremd]), [{ itemId: 'bs', generation: false, description: 'B', amountCents: 100, deductedCents: 0, differenceCents: 100, closedIssues: [] }])
 })
 
 test('Schnappschuss: deductionsOf nimmt Abzüge des Objekts aus allen Zeiträumen und liest den eingefrorenen Stand (P-W3, R2-W2)', () => {
@@ -205,4 +205,17 @@ test('N1: Abzug in einem anderen Steuerjahr als sein Betriebsstrom → Hinweis; 
   assert.equal(n.level, 'warning')
   assert.match(n.text, /„Betriebsstrom Heizung“ zählt in der Steuerübersicht zum Jahr 2025, der Abzug „Abzug Betriebsstrom Heizung“ zum Jahr 2024/)
   assert.equal(kind(settle([betriebsstrom, hausstrom], [{ ...abzug(14784), taxYear: 2025 }])).length, 0)
+})
+
+// R-W2: Der Strom einer Wärmepumpe über den Hauszähler steckt auch im Allgemeinstrom; der Hinweis nennt ihn
+// als Strom zur Wärmeerzeugung und kennzeichnet die Übertragung der Rechtsprechung als Auslegung.
+test('R-W2: Strom zur Wärmeerzeugung ohne Abzug → Hinweis mit Betrag, als Auslegung gekennzeichnet', () => {
+  const wp: SnapshotCostItem = { ...betriebsstrom, id: 'wp', description: 'Strom der Wärmepumpe', heatingPart: 'fuel', amountCents: 60000 }
+  const [n] = codes(settle([wp, hausstrom], []))
+  if (!n) return assert.fail('kein Hinweis')
+  assert.match(n.text, /„Strom der Wärmepumpe“: Dieser Strom zur Wärmeerzeugung steckt nach Ihrer Angabe auch in der Stromrechnung des Allgemeinstroms/)
+  assert.match(n.text, /600,00 € werden damit doppelt verteilt/)
+  assert.match(n.text, /Auslegung von Mietfuchs/)
+  assert.match(n.text, /§ 7 Abs\. 2, § 8 Abs\. 2 HeizkostenV/)
+  assert.equal(codes(settle([wp, hausstrom], [{ ...abzug(60000), itemId: 'wp' }])).length, 0)
 })

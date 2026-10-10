@@ -1,12 +1,12 @@
 // Entscheidungslogik des Kostenposition-Formulars, bewusst getrennt von der Darstellung:
 // Auswahllisten, Validierung und der Rumpf, der an die API geht. Diese Stelle bestimmt, was
 // tatsächlich gespeichert wird — sie ist in client/src/costForm.test.ts geprüft.
-import type { BillingPeriod, CostItem, CostKey, ExternalMeasure, HeatingPart, HeatingTarget, HotWater, Meter, MeterType, PeriodKey, SplitPreviewPart, Tenancy, Unit } from './types'
+import type { BillingPeriod, CostItem, CostKey, ExternalMeasure, HeatingEnergy, HeatingPart, HeatingTarget, HotWater, Meter, MeterType, PeriodKey, SplitPreviewPart, Tenancy, Unit } from './types'
 import { CATEGORIES, KEY_LABELS, defaultKeyFor, isNotAllocable } from './types'
 import { PARTICIPANT_KEYS as SHARED_PARTICIPANT_KEYS, allocationOf, comparablePrevious, previousAllocation, sameAllocation, type Allocation } from '../../shared/allocation.ts'
 import { fmtEuro, parseEuro } from './api'
 import { changeLabel } from './periodForm'
-import { GENERAL_POWER_CATEGORY } from '../../shared/operatingPower.ts'
+import { GENERAL_POWER_CATEGORY, POWER_GENERATED } from '../../shared/operatingPower.ts'
 import { sameCostCandidates, type DuplicateItem } from '../../shared/duplicates.ts'
 import { parseNumberDe } from './numbers'
 import { targetOptions } from './heatingSelfForm'
@@ -515,11 +515,12 @@ function draftOf(form: ItemForm, units: Unit[], tenancies: Tenancy[] | undefined
 
 // Validiert das Formular und baut den API-Rumpf, mit derselben Prüfung wie der Server
 // (shared/costItem.ts).
-export function buildCostItemBody(form: ItemForm, units: Unit[], period: number | BillingPeriod, tenancies?: Tenancy[]): BuildResult {
+// `plantEnergy`: die Energie der Anlage der Heizposition, für die Kennzeichnung des Stroms zur Wärmeerzeugung (R-W2).
+export function buildCostItemBody(form: ItemForm, units: Unit[], period: number | BillingPeriod, tenancies?: Tenancy[], plantEnergy?: HeatingEnergy): BuildResult {
   // Eine Jahreszahl ist das Kalenderjahr (Tests, Kalenderobjekt); sonst der gewählte Zeitraum (#208).
   const p = typeof period === 'number' ? calendarYearPeriod(period) : period
   const result = costItemBody(draftOf(form, units, tenancies, p), units, p.key)
-  return 'body' in result ? { body: withOperatingPower(result.body, form) } : result
+  return 'body' in result ? { body: withOperatingPower(result.body, form, plantEnergy) } : result
 }
 
 // ---------- Betriebsstrom der Heizung (Heizung PR 15, #212) ----------
@@ -530,8 +531,11 @@ export const OPERATING_POWER_OPTIONS: { value: '' | 'included'; label: string }[
   { value: '', label: 'Nein (eigener Stromvertrag oder kein Betriebsstrom)' },
   { value: 'included', label: 'Ja, er läuft über den Stromzähler des Hauses' },
 ]
-export const showsOperatingPower = (form: Pick<ItemForm, 'category' | 'heatingPart'>): boolean =>
-  form.category === HEATING_CATEGORY && (form.heatingPart === '' || form.heatingPart === 'operating')
+// R-W2 (Durchsicht von #252): bei einer Wärmepumpe oder Stromheizung auch an der Strom-Position (Teil
+// „Brennstoff/Energie“), denn auch dieser Strom läuft oft über den Zähler des Hauses.
+export const showsOperatingPower = (form: Pick<ItemForm, 'category' | 'heatingPart'>, plantEnergy?: HeatingEnergy): boolean =>
+  form.category === HEATING_CATEGORY && (form.heatingPart === '' || form.heatingPart === 'operating' ||
+    (form.heatingPart === 'fuel' && plantEnergy !== undefined && POWER_GENERATED.includes(plantEnergy)))
 
 // Ein Abzug am Allgemeinstrom (P-W2): negativer Betrag bei „Beleuchtung/Allgemeinstrom“. Dann fragt das
 // Formular, zu welchem Betriebsstrom er gehört, damit auch ein von Hand erfasster Abzug zählt.
@@ -582,10 +586,11 @@ export type OperatingPowerBody = { operatingPower: 'included' | 'deduction' | nu
 export function withOperatingPower<B extends object>(
   body: B,
   form: Pick<ItemForm, 'category' | 'heatingPart' | 'amount' | 'operatingPower' | 'operatingPowerItemId' | 'operatingPowerGeneralId' | 'operatingPowerBasis'>,
+  plantEnergy?: HeatingEnergy,
 ): B & Partial<OperatingPowerBody> {
   const basis = (marked: boolean) => (marked && form.operatingPowerBasis.trim() !== '' ? form.operatingPowerBasis.trim() : null)
   if (form.category === HEATING_CATEGORY) {
-    const included = showsOperatingPower(form) && form.operatingPower === 'included'
+    const included = showsOperatingPower(form, plantEnergy) && form.operatingPower === 'included'
     return { ...body, operatingPower: included ? 'included' : null, operatingPowerItemId: null, operatingPowerGeneralId: null, operatingPowerBasis: basis(included) }
   }
   if (form.category === GENERAL_POWER_CATEGORY) {

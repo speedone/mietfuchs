@@ -84,17 +84,23 @@ export function ownEstimateShare(i: { cents: number | null; basis: string; billC
   return { cents: i.cents, steps: [`selbst geschätzt: ${euro(i.cents)}`, `Grundlage der Schätzung: ${basis}`] }
 }
 
-// Wärmepumpe und Stromheizung (P-W5, R2-W1): Der Strom, den Wärmepumpe oder Elektrokessel selbst
-// verbrauchen, ist Brennstoff („Kosten der verbrauchten Brennstoffe“, § 7 Abs. 2 HeizkostenV; Entwurf 8.3)
-// und gehört als Teil „Brennstoff/Energie“ in die Heizposition; für ihn gilt die Schätzhilfe nicht.
-// Umwälzpumpen und Regelung, die über den Zähler des Hauses laufen, bleiben aber Betriebsstrom und sind
-// beim Allgemeinstrom abzuziehen (V ZR 166/15 Rn. 13); der Satz nennt den Weg über das Kostenformular,
-// das Kennzeichnen und Verknüpfen auch bei diesen Anlagen erlaubt. `null`: Die Schätzhilfe gilt.
-const FUEL_IS_POWER: readonly HeatingEnergy[] = ['heatPump', 'electric']
+// Wärmepumpe und Stromheizung (P-W5, R2-W1, R-W2 der Durchsicht von #252): Der Strom, den Wärmepumpe
+// oder Elektrokessel zur Wärmeerzeugung verbrauchen, gehört zu den Heiz- und Warmwasserkosten, aber weder
+// als Brennstoff noch als Betriebsstrom: § 7 Abs. 2 HeizkostenV nennt seit dem 01.10.2024 die „Kosten des
+// zur Wärmeerzeugung verbrauchten Stroms“ eigens neben den Brennstoffen (§ 8 Abs. 2 verweist darauf). In
+// Mietfuchs steht er im Teil „Brennstoff/Energie“ der Heizposition; die Schätzhilfe gilt für ihn nicht.
+// Läuft er über den Zähler des Hauses, ist er aus dem Allgemeinstrom herauszurechnen; das ist eine
+// Auslegung (entschieden hat der BGH es für den Betriebsstrom), und der Satz sagt das. Umwälzpumpen und
+// Regelung bleiben Betriebsstrom. `null`: Die Schätzhilfe gilt.
+export const POWER_GENERATED: readonly HeatingEnergy[] = ['heatPump', 'electric']
 export function operatingPowerRefusal(energy: HeatingEnergy): string | null {
-  if (!FUEL_IS_POWER.includes(energy)) return null
-  const own = energy === 'heatPump' ? 'Bei einer Wärmepumpe ist der Strom, den sie selbst verbraucht,' : 'Bei einer Stromheizung ist der Strom, den der Elektrokessel selbst verbraucht,'
-  return `${own} Brennstoff und kein Betriebsstrom (§ 7 Abs. 2 HeizkostenV); er gehört als Brennstoffkosten in die Heizposition („Heizung und Warmwasser“, Teil „Brennstoff/Energie“), und die Schätzhilfe gilt dafür nicht. ` +
+  if (!POWER_GENERATED.includes(energy)) return null
+  const own = energy === 'heatPump' ? 'Bei einer Wärmepumpe gehört der Strom, den sie zur Wärmeerzeugung verbraucht,' : 'Bei einer Stromheizung gehört der Strom, den der Elektrokessel zur Wärmeerzeugung verbraucht,'
+  return `${own} zu den Heiz- und Warmwasserkosten, und zwar nicht als Betriebsstrom: Die Heizkostenverordnung nennt ihn seit dem 01.10.2024 eigens neben den Brennstoffen („Kosten des zur Wärmeerzeugung verbrauchten Stroms“, § 7 Abs. 2, § 8 Abs. 2 HeizkostenV). ` +
+    'Erfassen Sie ihn in der Heizposition („Heizung und Warmwasser“, Teil „Brennstoff/Energie“); die Schätzhilfe gilt dafür nicht. ' +
+    'Läuft dieser Strom nicht über einen eigenen Zähler, sondern über den Stromzähler des Hauses, steckt er auch in der Rechnung des Allgemeinstroms und muss dort heraus; sonst zahlen die Mieter ihn doppelt oder nach dem falschen Schlüssel. ' +
+    'Dass für ihn dasselbe gilt wie für den Betriebsstrom (BGH, Urteil vom 03.06.2016, V ZR 166/15, Rn. 13), ist eine Auslegung von Mietfuchs; entschieden hat der Bundesgerichtshof es für den Betriebsstrom. ' +
+    'Dann kennzeichnen Sie die Heizposition im Kostenformular („Läuft dieser Strom über den Stromzähler des Hauses?“) und verknüpfen den Abzug beim Allgemeinstrom mit ihr. ' +
     'Laufen Umwälzpumpen oder Regelung über den Stromzähler des Hauses, ist deren Strom Betriebsstrom: Er gehört zu den Heiz- und Warmwasserkosten und ist beim Allgemeinstrom abzuziehen (§ 7 Abs. 2, § 8 Abs. 2 HeizkostenV; BGH, Urteil vom 03.06.2016, V ZR 166/15, Rn. 13). ' +
     'Erfassen Sie ihn dann im Kostenformular als Betriebsstrom und verknüpfen Sie den Abzug.'
 }

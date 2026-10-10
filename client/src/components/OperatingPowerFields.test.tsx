@@ -53,3 +53,14 @@ test('Abzug: Auswahl der Stromrechnung zeigt den gespeicherten Wert, eine Wahl �
   fireEvent.change(select, { target: { value: 'strom' } })
   expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ operatingPowerGeneralId: 'strom', key: 'units' }))
 })
+
+// R-W2: Bei einer Wärmepumpe fragt das Formular auch an der Strom-Position, mit der Auslegung im Satz.
+test('Strom der Wärmepumpe (Teil „Brennstoff“): Frage mit Auslegung; bei Gas keine Frage', () => {
+  const form: ItemForm = { ...EMPTY_ITEM_FORM, category: 'Heizung und Warmwasser', heatingPart: 'fuel' }
+  render(<OperatingPowerFields form={form} items={[]} periodKey={periodKey('2025-01')} plantEnergy="heatPump" onChange={vi.fn()} />)
+  expect(screen.getByLabelText(/Läuft dieser Strom über den Stromzähler des Hauses/)).toBeTruthy()
+  expect(screen.getByText(/Auslegung von Mietfuchs/)).toBeTruthy()
+  cleanup()
+  const gas = render(<OperatingPowerFields form={form} items={[]} periodKey={periodKey('2025-01')} plantEnergy="gas" onChange={vi.fn()} />)
+  expect(gas.container.textContent).toBe('')
+})

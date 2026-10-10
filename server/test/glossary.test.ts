@@ -309,9 +309,12 @@ test('Lexikon: Betriebsstrom nennt § 7 Abs. 2 HeizkostenV, das Urteil und rechn
   assert.match(t.needed, /oder Sie tragen ihn selbst; im Allgemeinstrom darf er nicht stehen/)
   // P-W1: aufbewahren, denn bei Bestreiten sind die Grundlagen darzulegen.
   assert.match(t.needed, /müssen Sie die Grundlagen Ihrer Schätzung darlegen \(BGH, Versäumnisurteil vom 20\.02\.2008, VIII ZR 27\/07, Leitsatz 3\)/)
-  // P-W5 mit R2-W1: Brennstoff ist nur der Strom, den Wärmepumpe oder Elektrokessel selbst verbrauchen;
-  // Umwälzpumpen und Regelung über den Hauszähler bleiben Betriebsstrom.
-  assert.match(t.needed, /Wärmepumpe oder einer Stromheizung ist der Strom, den die Wärmepumpe oder der Elektrokessel selbst verbraucht, Brennstoff und kein Betriebsstrom/)
+  // P-W5, R2-W1, R-W2: Der Strom zur Wärmeerzeugung gehört zu den Heizkosten, aber nicht als Betriebsstrom
+  // und nicht als Brennstoff (§ 7 Abs. 2 HeizkostenV nennt ihn neben den Brennstoffen); das Herausrechnen aus
+  // dem Allgemeinstrom ist als Auslegung gekennzeichnet. Umwälzpumpen und Regelung bleiben Betriebsstrom.
+  assert.match(t.needed, /Bei einer Wärmepumpe oder Stromheizung gehört der Strom, den Wärmepumpe oder Elektrokessel zur Wärmeerzeugung verbrauchen, zu den Heizkosten, aber nicht als Betriebsstrom \(§ 7 Abs\. 2 HeizkostenV: „Kosten des zur Wärmeerzeugung verbrauchten Stroms“\)/)
+  assert.match(t.needed, /Auslegung von Mietfuchs/)
+  assert.doesNotMatch(`${t.needed} ${t.short} ${t.example}`, /Brennstoff und kein Betriebsstrom|ist der Strom Brennstoff|Kosten der verbrauchten Brennstoffe/)
   assert.match(t.needed, /Umwälzpumpen oder Regelung/)
   assert.match(t.needed, /beim Allgemeinstrom abzuziehen \(§ 7 Abs\. 2, § 8 Abs\. 2 HeizkostenV\)/)
 })
