@@ -70,7 +70,7 @@ import { saveServiceValues } from '../src/db/serviceValues.ts'
 import { createDelivery, createEstimates, freezeFuelCarries, fuelGapQuestions, unfreezeFuelCarries } from '../src/db/fuel.ts'
 import { openDatabase } from '../src/db/open.ts'
 import { readClosedSettlements, readCostItems, readFuelCarryFrozen, readFuelDeliveries, readStock } from '../src/db/read.ts'
-import { closeSettlement, createEntity, findClosedSettlement, removeEntity, reopenSettlement, updateEntity } from '../src/db/repository.ts'
+import { closeSettlement, createEntity, findClosedSettlement, removeEntity, reopenSettlement, settlementHistory, updateEntity } from '../src/db/repository.ts'
 import { properties } from '../src/db/schema.ts'
 import { snapshotFor } from '../src/snapshot.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
@@ -108,7 +108,7 @@ const pairOf = (rowId: unknown): string | null => {
   return d && p && o ? `${d}|${[p, o].sort().join('|')}` : null
 }
 
-function totals(s: unknown): { tenants: number; landlord: number; carry: number; up: number; down: number; pairs: Map<string, { carry: number; flagged: number; estimate: boolean }> } {
+function totals(s: unknown): { tenants: number; landlord: number; carry: number; up: number; down: number; pairs: Map<string, { carry: number; flagged: number; estimate: boolean; carries: number[]; neutral: number[] }> } {
   const num = (v: unknown): number => (typeof v === 'number' ? v : 0)
   const list = (o: unknown, key: string): unknown[] => {
     const v: unknown = o !== null && typeof o === 'object' ? Reflect.get(o, key) : undefined
@@ -120,16 +120,21 @@ function totals(s: unknown): { tenants: number; landlord: number; carry: number;
   const parts = rows.flatMap((r) => list(r, 'landlordParts'))
   const reasonOf = (p: unknown): unknown => (p !== null && typeof p === 'object' ? Reflect.get(p, 'reason') : undefined)
   const centsOf = (p: unknown): number => num(p !== null && typeof p === 'object' ? Reflect.get(p, 'cents') : 0)
-  const pairs = new Map<string, { carry: number; flagged: number; estimate: boolean }>()
+  const pairs = new Map<string, { carry: number; flagged: number; estimate: boolean; carries: number[]; neutral: number[] }>()
   for (const r of rows) {
     const key = pairOf(r !== null && typeof r === 'object' ? Reflect.get(r, 'costItemId') : undefined)
     if (!key) continue
-    const acc = pairs.get(key) ?? { carry: 0, flagged: 0, estimate: false }
-    for (const p of list(r, 'landlordParts')) {
+    const acc = pairs.get(key) ?? { carry: 0, flagged: 0, estimate: false, carries: [], neutral: [] }
+    const parts = list(r, 'landlordParts')
+    for (const p of parts) {
       if (reasonOf(p) === 'fuelEstimateDiff') acc.estimate = true
       if (reasonOf(p) === 'fuelCarry') acc.carry += centsOf(p)
       else if (flaggedReason(reasonOf(p))) acc.flagged += centsOf(p)
     }
+    // Die Gegenbuchung eines Stornos nach Abschluss: Betrag 0, `fuelCarry c` und `fuelClosedPeriod −c` (netto 0).
+    const c = parts.length === 2 && reasonOf(parts[0]) === 'fuelCarry' && reasonOf(parts[1]) === 'fuelClosedPeriod' && centsOf(parts[0]) === -centsOf(parts[1]) ? centsOf(parts[0]) : null
+    if (c !== null) acc.neutral.push(c)
+    else for (const p of parts) if (reasonOf(p) === 'fuelCarry') acc.carries.push(centsOf(p))
     pairs.set(key, acc)
   }
   return {
@@ -157,11 +162,13 @@ const SEEDS: number[] = process.env.INV_FROM !== undefined || process.env.INV_TO
   : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 16, 81]
 const STEPS = Number(process.env.INV_STEPS ?? 30)
 
-type Variant = { name: string; lazy: boolean; estimate: boolean; two?: boolean; swap?: boolean; self?: boolean; hw?: 'combined' | 'separate'; dhw?: 'volumeFormula' | 'areaFormula'; capture?: 'hca' | 'serviceValues'; offset?: boolean; failure?: boolean }
+type Variant = { name: string; lazy: boolean; estimate: boolean; change?: boolean; two?: boolean; swap?: boolean; self?: boolean; hw?: 'combined' | 'separate'; dhw?: 'volumeFormula' | 'areaFormula'; capture?: 'hca' | 'serviceValues'; offset?: boolean; failure?: boolean }
 const VARIANTS: Variant[] = [
   { name: 'Grundform', lazy: false, estimate: false },
   { name: 'Rechnung kommt später', lazy: true, estimate: false },
-  { name: 'Abschluss mit Schätzung', lazy: true, estimate: true },
+  // Durchsicht #247, Runde 4: mit Mieterwechsel in B am 15.01.2025 (fest, ohne Zufall), damit die Gutschrift je
+  // Mieter bei einer zu hohen Schätzung auch über einen Wechsel geprüft wird.
+  { name: 'Abschluss mit Schätzung', lazy: true, estimate: true, change: true },
   { name: 'Zwei Anlagen', lazy: false, estimate: false, two: true },
   // Durchsicht von #238, I3: Gas wird an einem Tag durch Fernwärme ersetzt; die Rechnungen danach kommen
   // erst nach dem Tausch und gehören der neuen Anlage.
@@ -392,6 +399,85 @@ function totalsOfDelivery(s: unknown, own: ReadonlySet<string>): number {
   return [...seen.values()].reduce((a, v) => a + v, 0)
 }
 
+// Runde 2 zu Startwert 515: Nennt eine Abrechnung die Gutschrift je Mieter bei zu hoher Schätzung
+// (`fuel.estimate-overcharged`), ist der genannte Gesamtbetrag eine ausgewiesene negative Abweichung
+// (`fuelEstimateDiff`), und die Beträge je Mieter ergeben zusammen höchstens ihn.
+const OVERCHARGED = { checked: 0, tenants: 0, approximate: 0, secondInvoice: 0, mixedKeys: 0, templateUnknown: 0 }
+function overchargedChecks(r: ReturnType<typeof computeSettlement>, where: string): void {
+  const cents = (x: string) => Math.round(Number(x.replace(/\./g, '').replace(',', '.')) * 100)
+  const diffs = r.landlord.rows.flatMap((row) => (row.landlordParts ?? []).filter((p) => p.reason === 'fuelEstimateDiff' && p.cents < 0).map((p) => -p.cents))
+  for (const n of r.notices.filter((x) => x.code === 'fuel.estimate-overcharged')) {
+    OVERCHARGED.checked++
+    // Ganz bei den Mietern: „haben X zu viel getragen“; teilweise beim Vermieter (Durchsicht #247, G-K2): „Die
+    // Abweichung beträgt D; davon haben die Mieter dieser Heizperiode X zu viel getragen“.
+    const teil = n.text.match(/Die Abweichung beträgt ([\d.,]+) €; davon haben die Mieter dieser Heizperiode ([\d.,]+) € zu viel getragen/)
+    const ganz = n.text.match(/Die Mieter dieser Heizperiode haben ([\d.,]+) € zu viel getragen/)
+    const abweichung = cents(teil?.[1] ?? ganz?.[1] ?? assert.fail(`${where}: kein Betrag in ${n.text}`))
+    const total = cents(teil?.[2] ?? ganz?.[1] ?? '')
+    assert.ok(diffs.includes(abweichung), `${where}: genannt ${abweichung}, ausgewiesen ${diffs.join(', ')}`)
+    assert.ok(total <= abweichung, `${where}: Mieter ${total} > Abweichung ${abweichung}`)
+    const list = n.text.match(/, hier: (.*?)\. (Eine Gutschrift|Der Rest)/)?.[1] ?? ''
+    const each = [...list.matchAll(/([\d.]+,\d\d) €/g)].map((m) => cents(m[1] ?? ''))
+    assert.ok(each.reduce((a, c) => a + c, 0) === total || (each.length === 0 && total === 0), `${where}: Gutschriften je Mieter ${each.join(' + ')} ≠ ${total}`)
+  }
+}
+
+// Durchsicht #247, Runde 4: Die Gutschrift je Mieter wird gegen das **Kontrafaktum** geprüft. Dieselbe Heizperiode P
+// wird offen gerechnet, mit der echten Rechnung statt der Schätzung (eingefrorener Stand und Abschluss von P
+// entfallen). Was ein Mieter dort an den Zeilen der Schätzungen und der Rechnung weniger trägt, hat er zu viel
+// getragen. Geprüft wird nur, wo das Kontrafaktum genau ist; die übrigen Fälle zählen als Näherung und werden
+// nicht geprüft, je Grund gezählt (Durchsicht #247, Runde 5: eng gefasst):
+// - `secondInvoice`: Außer der Rechnung deckt eine weitere Lieferung eine Schätzung von P ab, die fuel.ts als
+//   Rechnung zählt (Positionen zusammen ≠ 0; eine stornierte mit Summe 0 zählt nicht). Dann mischt das
+//   Kontrafaktum beide Rechnungen, der Hinweis nennt nur die eine.
+// - `mixedKeys`: Die Positionen der Rechnung haben einen anderen Schlüssel als die Vorlage der Schätzung. Die
+//   echte Rechnung wäre anders verteilt worden; der Hinweis sagt dann, dass er nur nähert (Runde 5, G-K2).
+// - `templateUnknown`: Alle Vorlagepositionen der Schätzung sind gelöscht; ihr Schlüssel ist nicht bekannt. Der
+//   Schlüssel einer gelöschten Position kommt aus `itemKey` (beim Anlegen gemerkt), nicht aus dem Bestand.
+// Je Mieter höchstens 1 Cent daneben (beide Seiten sind auf den Cent gerundet).
+type InvStock = Awaited<ReturnType<typeof readStock>>
+function overchargedTenantChecks(r: ReturnType<typeof computeSettlement>, stock: InvStock, closed: readonly { period: string; settlement: unknown }[], where: string, periodOf: (key: string) => NonNullable<ReturnType<typeof periodOfKey>>, itemKey: ReadonlyMap<string, string>): void {
+  const cents = (x: string) => Math.round(Number(x.replace(/\./g, '').replace(',', '.')) * 100)
+  const g = (o: unknown, k: string): unknown => (o !== null && typeof o === 'object' ? Reflect.get(o, k) : undefined)
+  const arr = (o: unknown, k: string): unknown[] => { const v = g(o, k); return Array.isArray(v) ? v : [] }
+  for (const n of r.notices.filter((x) => x.code === 'fuel.estimate-overcharged')) {
+    const abw = cents(n.text.match(/(?:Die Abweichung beträgt|Die Mieter dieser Heizperiode haben) ([\d.,]+) €/)?.[1] ?? '')
+    const rows = r.landlord.rows.filter((row) => row.costItemId.startsWith('fuel:') && (row.landlordParts ?? []).some((p) => p.reason === 'fuelEstimateDiff' && p.cents === -abw))
+    if (rows.length !== 1) continue
+    const [, d, , P] = (rows[0]?.costItemId ?? '').split(':')
+    const stored = closed.find((c) => c.period === P)
+    const delivery = stock.fuelDeliveries.find((x) => x.id === d)
+    if (!d || !P || !stored || !delivery?.invoiceFrom || !delivery.invoiceTo) continue
+    const frozenRows = arr(stored.settlement, 'statements').flatMap((st) => arr(st, 'rows').map((row) => ({ tenant: `${String(g(st, 'tenantName'))} (${String(g(st, 'unitName'))})`, id: String(g(row, 'costItemId')), cents: Number(g(row, 'shareCents')) || 0 })))
+    const estimates = stock.fuelDeliveries.filter((x) => x.estimated && frozenRows.some((row) => row.id.startsWith(`fuel:${x.id}:${P}:`)))
+    const overlaps = (a: { invoiceFrom: string | null; invoiceTo: string | null }, b: { invoiceFrom: string | null; invoiceTo: string | null }) => !!a.invoiceFrom && !!a.invoiceTo && !!b.invoiceFrom && !!b.invoiceTo && a.invoiceFrom <= b.invoiceTo && b.invoiceFrom <= a.invoiceTo
+    const sumOf = (id: string) => stock.costItems.filter((c) => c.fuelDeliveryId === id).reduce((a, c) => a + c.amountCents, 0)
+    const others = stock.fuelDeliveries.filter((x) => !x.estimated && x.id !== d && sumOf(x.id) !== 0 && estimates.some((e) => overlaps(x, e)))
+    const keyOf = (id: string) => stock.costItems.find((c) => c.id === id)?.key ?? itemKey.get(id)
+    const templateIds = frozenRows.filter((row) => estimates.some((e) => row.id.startsWith(`fuel:${e.id}:${P}:`))).map((row) => row.id.split(':').at(-1) ?? '')
+    const templateKeys = new Set(frozenRows.filter((row) => estimates.some((e) => row.id.startsWith(`fuel:${e.id}:${P}:`))).map((row) => keyOf(row.id.split(':').at(-1) ?? '')).filter((k) => k !== undefined))
+    const invoiceKeys = new Set(stock.costItems.filter((c) => c.fuelDeliveryId === d && c.amountCents !== 0).map((c) => c.key))
+    const skip = others.length > 0 ? 'secondInvoice' : templateKeys.size === 0 ? 'templateUnknown' : templateKeys.size !== 1 || invoiceKeys.size !== 1 || [...templateKeys][0] !== [...invoiceKeys][0] ? 'mixedKeys' : null
+    if (skip) { OVERCHARGED.approximate++; OVERCHARGED[skip]++; if (skip === 'mixedKeys' && templateIds.every((id) => stock.costItems.some((c) => c.id === id)) && [...invoiceKeys].some((k) => !templateKeys.has(k))) assert.match(n.text, /nur eine Näherung/, `${where}: Schlüssel gemischt, der Hinweis sagt es nicht`); continue }
+    const open: InvStock = { ...stock }
+    open.closedSettlements = stock.closedSettlements.filter((c): c is InvStock['closedSettlements'][number] => c.period !== P)
+    open.fuelCarryFrozen = stock.fuelCarryFrozen.filter((f) => f.period !== P)
+    const offen = computeSettlement(snapshotFor(open, 'objekt-1', periodOf(P)), {})
+    const ids = [d, ...estimates.map((e) => e.id)]
+    const mine = (id: string) => ids.some((x) => id.startsWith(`fuel:${x}:`))
+    const expected = new Map<string, number>()
+    for (const row of frozenRows) if (mine(row.id)) expected.set(row.tenant, (expected.get(row.tenant) ?? 0) + row.cents)
+    for (const st of offen.statements) for (const row of st.rows) if (mine(row.costItemId)) expected.set(`${st.tenantName} (${st.unitName})`, (expected.get(`${st.tenantName} (${st.unitName})`) ?? 0) - row.shareCents)
+    const list = n.text.match(/, hier: (.*?)\. (Eine Gutschrift|Der Rest)/)?.[1] ?? ''
+    const named = new Map([...list.matchAll(/(Mieter [^,(]*?\([^)]*\)) ([\d.]+,\d\d) €/g)].map((m) => [m[1] ?? '', cents(m[2] ?? '')]))
+    OVERCHARGED.tenants++
+    for (const [tenant, c] of expected) {
+      assert.ok(Math.abs((named.get(tenant) ?? 0) - c) <= 1, `${where}: Gutschrift ${tenant} ${named.get(tenant) ?? 0}, Kontrafaktum ${c}; ${n.text}`)
+    }
+    for (const tenant of named.keys()) assert.ok(expected.has(tenant), `${where}: ${tenant} genannt, im Kontrafaktum nicht beteiligt; ${n.text}`)
+  }
+}
+
 // Wie oft der Tausch in der Variante „Kesseltausch“ gelang (Abdeckung, letzter Test).
 const SWAPS = { runs: 0, done: 0 }
 
@@ -419,7 +505,8 @@ for (const variant of VARIANTS) {
           await createEntity(db, 'units', 'a', { propertyId: 'objekt-1', name: 'A', areaM2: 60, participates: true })
           await createEntity(db, 'units', 'b', { propertyId: 'objekt-1', name: 'B', areaM2: 40, participates: true })
           await createEntity(db, 'tenancies', 'ta', { unitId: 'a', tenantName: 'Mieter A', persons: 1, start: '2020-01-01' })
-          await createEntity(db, 'tenancies', 'tb', { unitId: 'b', tenantName: 'Mieter B', persons: 1, start: '2020-01-01', ...(variant.capture || variant.failure ? { end: CHANGE_END } : {}) })
+          await createEntity(db, 'tenancies', 'tb', { unitId: 'b', tenantName: 'Mieter B', persons: 1, start: '2020-01-01', ...(variant.capture || variant.failure || variant.change ? { end: CHANGE_END } : {}) })
+          if (variant.change) await createEntity(db, 'tenancies', 'tb2', { unitId: 'b', tenantName: 'Mieter B2', persons: 1, start: '2025-01-16' })
           if (variant.capture || variant.failure) await createEntity(db, 'tenancies', 'tb2', { unitId: 'b', tenantName: 'Mieter B2', persons: 1, start: nextStart })
           // Heizung PR 13: zwei weitere Wohnungen, sodass A 30 %, B 20 %, C und D je genau 25 % der Fläche haben.
           if (variant.failure) {
@@ -463,6 +550,8 @@ for (const variant of VARIANTS) {
         })
         const deliveryPlant = new Map(all.map((d) => [d.id, d.plantId]))
         const itemPlant = new Map<string, string>()
+        // Der Schlüssel jeder angelegten Position, auch wenn sie später gelöscht wird (Runde 5, G-K1).
+        const itemKey = new Map<string, string>()
         const keys: string[] = []
         const firstFrom = all.reduce((a, d) => (d.from < a ? d.from : a), all[0]?.from ?? '')
         const lastTo = all.reduce((a, d) => (d.to > a ? d.to : a), '')
@@ -640,12 +729,15 @@ for (const variant of VARIANTS) {
           // Mit zwei Anlagen verteilt jede Position nur über die Wohnungen ihrer Anlage.
           const participants = variant.two ? { participantUnitIds: d.plantId === 'hp' ? ['a', 'b'] : ['c'] } : {}
           const target = variant.hw === 'combined' ? 'both' : variant.hw === 'separate' ? (rnd() < 0.5 ? 'heating' : 'water') : 'heating'
-          const selfKey = variant.self ? { key: 'heatingSystem', heatingPart: 'fuel', heatingTarget: target } : { key }
+          // Mit Mieterwechsel (Runde 4) alle Positionen nach Fläche, damit die Gutschrift je Mieter genau gegen das
+          // Kontrafaktum geprüft werden kann; die Zufallsfolge bleibt dieselbe.
+          const selfKey = variant.self ? { key: 'heatingSystem', heatingPart: 'fuel', heatingTarget: target } : { key: variant.change ? 'area' : key }
           const made = await opened.write((db) => createEntity(db, 'costItems', id, {
             propertyId: 'objekt-1', period: owner.key, category: HEATING_CATEGORY, description: id, amountCents,
             heatingPlantId: d.plantId, fuelDeliveryId: d.id, taxYear: Number(owner.to.slice(0, 4)), ...participants, ...selfKey,
           }))
           itemPlant.set(id, d.plantId)
+          itemKey.set(id, String(selfKey.key))
           return made
         }
         // Der Tausch am ersten Tag der zweiten Rechnung; er kann abgelehnt werden (abgeschlossene Heizperiode).
@@ -781,7 +873,7 @@ for (const variant of VARIANTS) {
         let selfBlocked = false
         let tenants = 0
         let landlord = 0
-        const pairs = new Map<string, { carry: number; flagged: number; estimate: boolean }>()
+        const pairs = new Map<string, { carry: number; flagged: number; estimate: boolean; carries: number[]; neutral: number[] }>()
         let up = 0
         let down = 0
         const live = new Map<string, ReturnType<typeof computeSettlement>>()
@@ -815,6 +907,8 @@ for (const variant of VARIANTS) {
           if (r && variant.self) selfChecks(r, items.filter((c) => c.period === key), `${fall}; ${key}`)
           if (r && variant.capture) unitChecks(r, expectedUnits.get(key), expectedWater.get(key), `${fall}; ${key}`, variant.name)
           if (r && variant.failure) estimateChecks(r, stock.heatingEstimates.filter((e) => e.plantId === 'hp' && e.period === key), bFacts.get(key) ?? null, `${fall}; ${key}`)
+          if (r) overchargedChecks(r, `${fall}; ${key}`)
+          if (r) overchargedTenantChecks(r, stock, closed, `${fall}; ${key}`, periodOf, itemKey)
           const dhwInput = dhwInputs.get(key)
           if (r && variant.dhw && dhwInput) dhwChecks(r, { method: variant.dhw, ...dhwInput, basis: dhwBasis }, `${fall}; ${key}`)
           if (r && variant.self && r.heating?.find((h) => h.plantId === 'hp')?.self?.ok === false) selfBlocked = true
@@ -830,10 +924,12 @@ for (const variant of VARIANTS) {
           tenants += t.tenants
           landlord += t.landlord
           for (const [k, v] of t.pairs) {
-            const acc = pairs.get(k) ?? { carry: 0, flagged: 0, estimate: false }
+            const acc = pairs.get(k) ?? { carry: 0, flagged: 0, estimate: false, carries: [], neutral: [] }
             acc.carry += v.carry
             acc.flagged += v.flagged
             acc.estimate ||= v.estimate
+            acc.carries.push(...v.carries)
+            acc.neutral.push(...v.neutral)
             pairs.set(k, acc)
           }
           up += t.up
@@ -864,11 +960,32 @@ for (const variant of VARIANTS) {
         const estimates = deliveriesNow.filter((x) => x.estimated)
         // Eine stornierte Rechnung (Positionen ergeben 0 oder weniger) ersetzt keine Schätzung (Nachprüfung, M2).
         const linkedReal = deliveries.filter((d) => items.filter((c) => c.fuelDeliveryId === d.id).reduce((a, c) => a + c.amountCents, 0) > 0)
+        // Abgeglichen wird eine Schätzung nur von einer Rechnung, deren Positionen in einer anderen Heizperiode
+        // stehen (Entwurf 8.2 Nr. 3: „Kommt die echte Rechnung (in H+1), bucht H+1 ihren Teil für H hinaus“).
+        // Steht die Rechnung in der abgeschlossenen Heizperiode der Schätzung selbst (beim Abschluss storniert,
+        // danach wieder hergestellt), bleibt der eingefrorene Stand, wie er zugestellt wurde; die Positionen beim
+        // Abschluss enthalten die Rechnung dann nicht, und die Schätzung ist durch nichts ersetzt (Startwerte 515,
+        // 452, 78). Durchsicht #247, G-K3: Statt (ii) dann für den ganzen Lauf auszulassen, gilt genau dieser Teil
+        // der eingefrorenen Schätzung als erlaubter Überschuss, nach Gradtagen wie `estimatesIn` (je Schätzung
+        // höchstens ein Cent Rundung).
         const coveredDay = (day: string) => linkedReal.some((d) => d.from <= day && day <= d.to)
         const estimatesCovered = estimates.every((e) => coveredDay(e.invoiceFrom ?? '') && coveredDay(e.invoiceTo ?? ''))
+        const frozenNow = await opened.read((db) => readFuelCarryFrozen(db))
+        let unreconciled = 0
+        for (const e of estimates) {
+          const from = e.invoiceFrom ?? ''
+          const to = e.invoiceTo ?? ''
+          const own = periodContaining(MAI, from).key
+          if (!closed.some((c) => c.period === own)) continue
+          const f = frozenNow.find((x) => x.deliveryId === e.id && x.period === own)?.cents ?? 0
+          const cuts = linkedReal.filter((d) => periodContaining(MAI, d.to).key === own)
+            .map((d) => ({ from: d.from > from ? d.from : from, to: d.to < to ? d.to : to })).filter((r) => r.from <= r.to)
+          const all = degreeDayPermille([{ from, to }], TABLE)
+          if (cuts.length > 0 && all > 0) unreconciled += Math.abs(f) * degreeDayPermille(cuts, TABLE) / all
+        }
         if ((estimates.length === 0 || estimatesCovered) && !selfBlocked) {
           assert.ok(tenants >= positions - up, `${fall}; (vii) Mieter ${tenants} < Positionen ${positions} − ausgewiesen ${up}`)
-          assert.ok(tenants <= positions - down, `${fall}; (ii) Mieter ${tenants} > Positionen ${positions} + ausgewiesen ${-down}`)
+          assert.ok(tenants <= positions - down + unreconciled + estimates.length, `${fall}; (ii) Mieter ${tenants} > Positionen ${positions} + ausgewiesen ${-down} + nicht abgeglichene Schätzung ${Math.round(unreconciled)}`)
         }
         // (iii) je Lieferung und Paar von Heizperioden: Die Gegenbuchungen heben sich auf, oder ein
         // ausgewiesener Teil deckt sie genau (Nachprüfung von 47f2373, H1: über alle Lieferungen summiert
@@ -877,9 +994,26 @@ for (const variant of VARIANTS) {
         // (`fuelEstimateDiff`): Dort steht die Gegenbuchung der Schätzung unter deren Kennung, nicht unter der
         // der Rechnung (Nachprüfung von 5bee89f, M-a).
         const estimateIds = new Set(estimates.map((e) => e.id))
+        // Die Überträge früherer, wieder geöffneter Abschlüsse je Paar (G-W1).
+        const historyCarries = new Map<string, number[]>()
+        for (const key of keys) {
+          for (const h of await opened.read((db) => settlementHistory(db, 'objekt-1', periodKey(key)))) {
+            for (const [pk, pv] of totals(h.settlement).pairs) historyCarries.set(pk, [...(historyCarries.get(pk) ?? []), ...pv.carries])
+          }
+        }
         for (const [k, v] of pairs) {
           if (v.estimate || estimateIds.has(k.split('|')[0] ?? '')) continue
-          assert.ok(v.carry === 0 || v.carry === -v.flagged, `${fall}; (iii) ${k}: Gegenbuchungen ${v.carry}, ausgewiesen ${v.flagged}`)
+          // Runde 2 (Startwerte 196, 397): Eine eingefrorene Gegenbuchung eines Stornos (netto 0) gehört zu dem Stand
+          // der Heizperiode der Positionen, der damals galt. Wurde jene danach wieder geöffnet, steht ihr
+          // Gegenstück (`fuelCarry` mit umgekehrtem Vorzeichen) nirgends mehr; dann zählt die Zeile hier nicht,
+          // denn sie bewegt kein Geld. Durchsicht #247, G-W1: Veraltet ist sie nur, wenn ihr Gegenstück
+          // nachweislich in einem früheren, wieder geöffneten Abschluss stand (`closed_settlement_history`); eine
+          // Gegenbuchung, deren Gegenstück es nie gab, ist der Fehler von Startwert 509 und bleibt rot.
+          const ok = (c: number, f: number) => c === 0 || c === -f
+          const n = v.neutral.reduce((a, x) => a + x, 0)
+          const earlier = historyCarries.get(k) ?? []
+          const stale = v.neutral.length > 0 && v.neutral.every((x) => !v.carries.includes(-x) && earlier.includes(-x))
+          assert.ok(ok(v.carry, v.flagged) || (stale && ok(v.carry - n, v.flagged + n)), `${fall}; (iii) ${k}: Gegenbuchungen ${v.carry}, ausgewiesen ${v.flagged}`)
         }
         // Zuordnung (I1): eine mit 0 eingefrorene Heizperiode bekommt trotzdem ihren Teil hinausgebucht.
         const frozen = await opened.read((db) => readFuelCarryFrozen(db))
@@ -921,6 +1055,14 @@ test('Invariante, Schätzung nach § 9a: Abdeckung', () => {
   assert.ok(ESTIMATES.exact25 > 0, 'keine Heizperiode mit genau 25 % geschätzter Fläche geprüft (s6, R-A22)')
   assert.ok(ESTIMATES.kept > 0, 'kein Vormieter mit abgelesenem Verbrauch neben einer Schätzung geprüft (s6, A5)')
   assert.ok(ESTIMATES.complete > 0, 'keine Schätzung neben vollständiger Ablesung geprüft (s6, A9)')
+})
+
+test('Invariante, Gutschrift je Mieter bei zu hoher Schätzung: Abdeckung', () => {
+  if (process.env.INV_LOG) console.log('Gutschrift je Mieter', JSON.stringify(OVERCHARGED))
+  // Nur in langen Läufen; die festen Startwerte erzeugen den Hinweis nicht sicher.
+  if (SEEDS.length < 100) return
+  assert.ok(OVERCHARGED.checked > 0, 'kein Hinweis fuel.estimate-overcharged geprüft')
+  assert.ok(OVERCHARGED.tenants > 0, 'keine Gutschrift je Mieter gegen das Kontrafaktum geprüft')
 })
 
 test('Invariante, Kesseltausch: Abdeckung', () => {
