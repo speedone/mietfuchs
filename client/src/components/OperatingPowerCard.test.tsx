@@ -111,7 +111,8 @@ const assert_fail = (): never => { throw new Error('keine Liste „Schon gebucht
 test('R-K5, R-K2: Fernwärme mit Hausanlage und Abs. 4; der Bruchteil als Auslegung für Vermieter', () => {
   render(<OperatingPowerCard plant={{ ...plant, energy: 'districtHeating' }} view={view} rules={CALENDAR_RULES} items={[strom]} onBooked={vi.fn()} />)
   expect(screen.getByText(/Umwälzpumpen und Regelung der Hausanlage, also der Heizung hinter dem Fernwärmeanschluss/)).toBeTruthy()
-  expect(screen.getByText(/§ 7 Abs\. 2 und 4, § 8 Abs\. 2 und 4 HeizkostenV/)).toBeTruthy()
+  // R2-H-A: Für die Hausanlage hinter dem Fernwärmeanschluss ist das Urteil eine Übertragung.
+  expect(screen.getByText(/§ 7 Abs\. 2 und 4, § 8 Abs\. 2 und 4 HeizkostenV; vgl\. BGH, Urteil vom 03\.06\.2016, V ZR 166\/15/)).toBeTruthy()
   expect(screen.queryByText(/Brenner/)).toBeNull()
   fireEvent.click(screen.getByLabelText(/Betrag selbst geschätzt/))
   expect(screen.getByText(/Für Wohnungseigentümer lässt der Bundesgerichtshof .*Bruchteil der Brennstoffkosten.*Auslegung von Mietfuchs/)).toBeTruthy()

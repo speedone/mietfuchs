@@ -63,7 +63,7 @@ export default function OperatingPowerCard({ plant, view, rules, items, onBooked
       {/* R-K5 (Durchsicht von #252): Fernwärme hat keinen Brenner; die Hausanlage steht in § 7 Abs. 4, § 8 Abs. 4. */}
       <p>
         {plant.energy === 'districtHeating'
-          ? 'Läuft der Strom für Umwälzpumpen und Regelung der Hausanlage, also der Heizung hinter dem Fernwärmeanschluss, über den Stromzähler des Hauses, gehört er zu den Heiz- und Warmwasserkosten oder Sie tragen ihn selbst; im Allgemeinstrom darf er nicht stehen und ist dort abzuziehen (§ 7 Abs. 2 und 4, § 8 Abs. 2 und 4 HeizkostenV; BGH, Urteil vom 03.06.2016, V ZR 166/15).'
+          ? 'Läuft der Strom für Umwälzpumpen und Regelung der Hausanlage, also der Heizung hinter dem Fernwärmeanschluss, über den Stromzähler des Hauses, gehört er zu den Heiz- und Warmwasserkosten oder Sie tragen ihn selbst; im Allgemeinstrom darf er nicht stehen und ist dort abzuziehen (§ 7 Abs. 2 und 4, § 8 Abs. 2 und 4 HeizkostenV; vgl. BGH, Urteil vom 03.06.2016, V ZR 166/15).'
           : 'Läuft der Strom für Brenner, Umwälzpumpe und Regelung über den Stromzähler des Hauses, gehört er zu den Heiz- und Warmwasserkosten oder Sie tragen ihn selbst; im Allgemeinstrom darf er nicht stehen und ist dort abzuziehen (§ 7 Abs. 2, § 8 Abs. 2 HeizkostenV; BGH, Urteil vom 03.06.2016, V ZR 166/15).'}
         {service
           ? ' Mietfuchs rechnet den Anteil an der Stromrechnung und legt den Abzug an; denselben Betrag melden Sie Ihrem Messdienst als Betriebsstrom.'

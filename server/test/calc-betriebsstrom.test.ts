@@ -100,7 +100,6 @@ test('R-K3: nach dem Abschluss verkleinert → der Vermieter trägt den Untersch
   const n = geschlossen({ label: '2024', state: 'changed', frozenCents: -20000 })
   assert.match(n.text, /Der Abzug „Abzug Betriebsstrom Heizung“ steht in der abgeschlossenen Abrechnung 2024 mit 200,00 € statt 147,84 €, denn der Betrag wurde nach dem Abschluss verkleinert\. Den Mietern ist dort 52,16 € mehr gutgeschrieben als der Betriebsstrom; diesen Teil des Allgemeinstroms tragen Sie selbst\./)
   assert.match(n.text, /Das benachteiligt die Mieter nicht und ist nach Auffassung von Mietfuchs zulässig \(vgl\. BGH, Urteil vom 03\.06\.2016, V ZR 166\/15, Rn\. 15\)/)
-  assert.match(n.text, /Eine Korrektur zu Lasten der Mieter ist nach Ablauf der Abrechnungsfrist ausgeschlossen \(§ 556 Abs\. 3 Satz 3 BGB\)/)
   assert.doesNotMatch(n.text, /passen Sie|öffnen Sie|Erfassen Sie/)
 })
 
@@ -246,7 +245,21 @@ test('R-W2: Strom zur Wärmeerzeugung ohne Abzug → Hinweis mit Betrag, als Aus
   assert.match(n.text, /600,00 € werden damit doppelt verteilt/)
   assert.match(n.text, /Auslegung von Mietfuchs/)
   assert.match(n.text, /§ 7 Abs\. 2, § 8 Abs\. 2 HeizkostenV/)
+  // R2-W-A: kein „Betriebsstrom“ für diesen Strom, kein Verweis auf die Karte, die ihn ablehnt; das Zitat
+  // steht nur mit dem Auslegungssatz.
+  assert.doesNotMatch(n.text, /Betriebsstroms? aus den Heizkosten|Abzug in Höhe des Betriebsstroms|Karte „Betriebsstrom“/)
+  assert.match(n.text, /Erfassen Sie im Kostenformular beim Allgemeinstrom einen Abzug in Höhe dieses Stroms und verknüpfen Sie ihn mit dieser Position, oder nehmen Sie den Strom zur Wärmeerzeugung aus den Heizkosten heraus und tragen ihn selbst\./)
+  assert.match(n.text, /Für den Betriebsstrom hat der Bundesgerichtshof das entschieden \(BGH, Urteil vom 03\.06\.2016, V ZR 166\/15, Rn\. 13 f\. und 15\); dass es für den Strom zur Wärmeerzeugung ebenso gilt, ist eine Auslegung von Mietfuchs \(§ 7 Abs\. 2, § 8 Abs\. 2 HeizkostenV\)/)
   assert.equal(codes(settle([wp, hausstrom], [{ ...abzug(60000), itemId: 'wp' }])).length, 0)
+  // Zu viel abgezogen, abgeschlossen verkleinert und offener Rest: überall „dieser Strom“ statt „Betriebsstrom“.
+  for (const text of [
+    codes(settle([wp, hausstrom], [{ ...abzug(70000), itemId: 'wp' }]))[0]?.text,
+    codes(settle([wp, hausstrom], [{ ...abzug(60000, 'ab', '2024-01', { label: '2024', state: 'changed', frozenCents: -70000 }), itemId: 'wp' }]))[0]?.text,
+    codes(settle([wp, hausstrom], [{ ...abzug(30000, 'ab', '2024-01', { label: '2024', state: 'missing' }), itemId: 'wp' }]))[0]?.text,
+  ]) {
+    if (!text) return assert.fail('kein Hinweis')
+    assert.doesNotMatch(text, /Abzug in Höhe des Betriebsstroms|Betriebsstrom aus den Heizkosten|als der Betriebsstrom|an den Betriebsstrom|der Betriebsstrom zweimal|Karte „Betriebsstrom“/, text)
+  }
 })
 
 // G2-K3 (O3): Gleicher Schlüssel, aber andere Teilnehmer der Rechnung verschieben ebenso Geld (gemessen: B
@@ -257,4 +270,30 @@ test('G2-K3: Rechnung auf Teilnehmer beschränkt, Abzug nicht → Hinweis „and
   const [n] = (settle([betriebsstrom, strom, ab], [abzug(14784)]).notices ?? []).filter((x) => x.code === 'heating.operating-power-key')
   if (!n) return assert.fail('kein Hinweis')
   assert.match(n.text, /beide nach „Wohnfläche“, aber mit anderen Angaben/)
+})
+
+// R2-K-A: „unbekannt“ neben einem weiteren Abzug. Liegt der weitere in einem offenen Zeitraum, darf er gelöscht
+// werden; ist er in einer zugestellten Abrechnung gutgeschrieben, nicht: Dann trägt der Vermieter die doppelte
+// Gutschrift, denn nach der Frist ist keine Korrektur zu Lasten der Mieter möglich. „zweimal“ nur bei gleichen
+// Beträgen, sonst der Betrag.
+test('R2-K-A: unbekannt + offener Abzug kleiner → Betrag statt „zweimal“, löschen erlaubt', () => {
+  const n = codes(settle([betriebsstrom, hausstrom], [abzug(14784, 'ab', '2024-01', { label: '2024', state: 'unknown' }), { ...abzug(5000, 'ab2', '2025-01'), description: 'Abzug 2025' }]))[0] ?? assert.fail('stumm')
+  assert.match(n.text, /ist den Mietern zusätzlich 50,00 € gutgeschrieben; löschen Sie dann den weiteren Abzug/)
+  assert.doesNotMatch(n.text, /der Betriebsstrom zweimal gutgeschrieben/)
+})
+
+test('R2-K-A: unbekannt + in einer zugestellten Abrechnung gutgeschriebener Abzug → kein Rat zum Löschen, Vermieter trägt, Fristsatz', () => {
+  const n = codes(settle([betriebsstrom, hausstrom], [abzug(14784, 'ab', '2024-01', { label: '2024', state: 'unknown' }), { ...abzug(14784, 'ab2', '2023-01', { label: '2023', state: 'credited' }), description: 'Abzug 2023' }]))[0] ?? assert.fail('stumm')
+  assert.match(n.text, /Daneben ist in der zugestellten Abrechnung 2023 ein weiterer Abzug von 147,84 € gutgeschrieben \(„Abzug 2023“\)/)
+  assert.match(n.text, /ist den Mietern der Betriebsstrom zweimal gutgeschrieben/)
+  assert.match(n.text, /Eine schon zugestellte doppelte Gutschrift lässt sich nach Ablauf der Abrechnungsfrist nicht mehr zu Lasten der Mieter korrigieren; den Betrag tragen Sie dann selbst/)
+  assert.match(n.text, DEADLINE)
+  assert.doesNotMatch(n.text, /löschen Sie/)
+})
+
+// R2-K-B: verkleinerter Abzug mit dem vollständigen Fristsatz (Ausnahme und beide Urteile).
+test('R2-K-B: verkleinerter Abzug nennt den Fristsatz mit Ausnahme und beiden Urteilen', () => {
+  const n = geschlossen({ label: '2024', state: 'changed', frozenCents: -20000 })
+  assert.match(n.text, DEADLINE)
+  assert.doesNotMatch(n.text, /Eine Korrektur zu Lasten der Mieter ist nach Ablauf der Abrechnungsfrist ausgeschlossen \(§ 556 Abs\. 3 Satz 3 BGB\)\./)
 })

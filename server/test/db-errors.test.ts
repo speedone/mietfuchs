@@ -351,7 +351,9 @@ test('Betriebsstrom: jede Bedingung, deren Endung allein den falschen Satz ergä
     const insert = (id: string, category: string, amount: number, extra: string, values: string) =>
       `INSERT INTO cost_items (id, property_id, period, category, description, amount_cents, key${extra}) VALUES ('${id}', 'objekt-1', '2025-01', '${category}', 'x', ${amount}, 'area'${values})`
     const included = await run(insert('a', 'Grundsteuer', 1, ', operating_power', ", 'included'"))
-    assert.match(included, /Betriebsstrom gibt es nur bei der Kostenart „Heizung und Warmwasser“/, included)
+    // R2-K-C: Der Satz nennt den Strom der Wärmepumpe nicht „Betriebsstrom“.
+    assert.match(included, /Betriebsstrom oder Strom zur Wärmeerzeugung, der auch im Allgemeinstrom steckt, gibt es nur bei der Kostenart „Heizung und Warmwasser“/, included)
+    assert.match(included, /Strom einer Wärmepumpe oder Stromheizung beim Teil „Brennstoff\/Energie“/, included)
     const deduction = await run(insert('b', 'Beleuchtung/Allgemeinstrom', 100, ', operating_power', ", 'deduction'"))
     assert.match(deduction, /Abzug des Betriebsstroms/, deduction)
     // Ein Verweis auf eine vorhandene Position, damit nicht der Fremdschlüssel antwortet.

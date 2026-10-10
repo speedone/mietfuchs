@@ -27,8 +27,9 @@ export type OperatingPowerFinding = {
   deductedCents: number
   differenceCents: number
   closedIssues: OperatingPowerClosedIssue[]
-  // Die übrigen Abzüge (offen oder gutgeschrieben), mit ihrem heutigen Betrag (R-W1).
-  others: { description: string; amountCents: number }[]
+  // Die übrigen Abzüge (offen oder gutgeschrieben), mit ihrem heutigen Betrag (R-W1); `credited`: die
+  // abgeschlossene Abrechnung, in der er gutgeschrieben ist, sonst null (offen; R2-K-A).
+  others: { description: string; amountCents: number; credited: string | null }[]
 }
 
 // Was ein Abzug den Mietern gutgeschrieben hat (als positiver Betrag): offen oder gutgeschrieben sein
@@ -59,7 +60,7 @@ export function operatingPowerFindings(
       return [{ description: d.description, label: c.label, amountCents: -d.amountCents, state: c.state, frozenCents: c.state === 'changed' ? -c.frozenCents : null }]
     })
     if (differenceCents === 0 && !closedIssues.some((c) => c.state === 'unknown')) continue
-    const others = mine.filter((d) => d.closed === null || d.closed.state === 'credited').map((d) => ({ description: d.description, amountCents: -d.amountCents }))
+    const others = mine.filter((d) => d.closed === null || d.closed.state === 'credited').map((d) => ({ description: d.description, amountCents: -d.amountCents, credited: d.closed?.label ?? null }))
     out.push({ itemId: item.id, generation: item.heatingPart === 'fuel', description: item.description, amountCents: item.amountCents, deductedCents, differenceCents, closedIssues, others })
   }
   return out
@@ -70,12 +71,16 @@ export function operatingPowerFindings(
 const DEADLINE = 'Ist die Abrechnungsfrist abgelaufen, darf die neue Abrechnung den Mieter nicht schlechter stellen als die zugestellte: keine höhere Nachforderung, kein geringeres Guthaben und auch bei keiner einzelnen Position mehr als zuvor, es sei denn, Sie haben die Verspätung nicht zu vertreten (§ 556 Abs. 3 Satz 3 BGB; BGH, Urteile vom 17.11.2004, VIII ZR 115/04, und vom 12.12.2007, VIII ZR 190/06).'
 
 const LAW = '(§ 7 Abs. 2, § 8 Abs. 2 HeizkostenV; BGH, Urteil vom 03.06.2016, V ZR 166/15)'
-const LAW_SELF = '(§ 7 Abs. 2, § 8 Abs. 2 HeizkostenV; BGH, Urteil vom 03.06.2016, V ZR 166/15, Rn. 13 und 15)'
+// R2-H-C: Rn. 13 trägt, dass er nicht im Allgemeinstrom stehen darf, Rn. 14 das Schätzen des Anteils,
+// Rn. 15 das Selbsttragen.
+const LAW_SELF = '(§ 7 Abs. 2, § 8 Abs. 2 HeizkostenV; BGH, Urteil vom 03.06.2016, V ZR 166/15, Rn. 13 f. und 15)'
+// R2-W-A: Für den Strom zur Wärmeerzeugung steht das Zitat nur zusammen mit der Auslegung.
+const GENERATION_LAW = 'Für den Betriebsstrom hat der Bundesgerichtshof das entschieden (BGH, Urteil vom 03.06.2016, V ZR 166/15, Rn. 13 f. und 15); dass es für den Strom zur Wärmeerzeugung ebenso gilt, ist eine Auslegung von Mietfuchs (§ 7 Abs. 2, § 8 Abs. 2 HeizkostenV).'
 
 // Ein Satz je Abzug in einer abgeschlossenen Abrechnung (R-W1, R2-W2, R-K3). Nur wo feststeht, dass er nicht
 // oder zu wenig gutgeschrieben ist, steht die Bitte, die Abrechnung wieder zu öffnen; kein Satz rät zu
 // einem neuen Abzug in einem anderen Jahr, denn der käme bei anderen Abrechnungen an.
-function closedText(n: OperatingPowerClosedIssue, fmtCents: (c: number) => string): string {
+function closedText(n: OperatingPowerClosedIssue, fmtCents: (c: number) => string, what: string): string {
   if (n.state === 'unknown') {
     return ` Der Abzug „${n.description}“ (${fmtCents(n.amountCents)}) gehört zur abgeschlossenen Abrechnung ${n.label}. Ob er dort gutgeschrieben ist, lässt sich aus dem gespeicherten Stand nicht lesen. ` +
       `Sehen Sie bitte in der zugestellten Abrechnung nach. Steht er dort, ist nichts zu tun. Fehlt er, öffnen Sie die Abrechnung ${n.label} wieder und stellen Sie sie neu zu. ` +
@@ -84,9 +89,8 @@ function closedText(n: OperatingPowerClosedIssue, fmtCents: (c: number) => strin
   const frozen = n.frozenCents ?? 0
   if (n.state === 'changed' && frozen > n.amountCents) {
     return ` Der Abzug „${n.description}“ steht in der abgeschlossenen Abrechnung ${n.label} mit ${fmtCents(frozen)} statt ${fmtCents(n.amountCents)}, denn der Betrag wurde nach dem Abschluss verkleinert. ` +
-      `Den Mietern ist dort ${fmtCents(frozen - n.amountCents)} mehr gutgeschrieben als der Betriebsstrom; diesen Teil des Allgemeinstroms tragen Sie selbst. ` +
-      'Das benachteiligt die Mieter nicht und ist nach Auffassung von Mietfuchs zulässig (vgl. BGH, Urteil vom 03.06.2016, V ZR 166/15, Rn. 15). ' +
-      'Eine Korrektur zu Lasten der Mieter ist nach Ablauf der Abrechnungsfrist ausgeschlossen (§ 556 Abs. 3 Satz 3 BGB).'
+      `Den Mietern ist dort ${fmtCents(frozen - n.amountCents)} mehr gutgeschrieben als ${what === 'Betriebsstrom' ? 'der Betriebsstrom' : 'dieser Strom'}; diesen Teil des Allgemeinstroms tragen Sie selbst. ` +
+      `Das benachteiligt die Mieter nicht und ist nach Auffassung von Mietfuchs zulässig (vgl. BGH, Urteil vom 03.06.2016, V ZR 166/15, Rn. 15). ${DEADLINE}`
   }
   if (n.state === 'changed') {
     return ` Der Abzug „${n.description}“ steht in der abgeschlossenen Abrechnung ${n.label} mit ${fmtCents(frozen)} statt ${fmtCents(n.amountCents)}, denn der Betrag wurde nach dem Abschluss geändert. ` +
@@ -109,30 +113,50 @@ export function operatingPowerText(f: OperatingPowerFinding, fmtCents: (c: numbe
   const what = f.generation ? 'Strom zur Wärmeerzeugung' : 'Betriebsstrom'
   const head = `„${f.description}“: Dieser ${what} steckt nach Ihrer Angabe auch in der Stromrechnung des Allgemeinstroms`
   // R-W2: Für den Strom zur Wärmeerzeugung ist das Herausrechnen eine Auslegung; entschieden ist es für den Betriebsstrom.
-  const generationLaw = f.generation
-    ? ' Dass er aus dem Allgemeinstrom herauszurechnen ist wie der Betriebsstrom, ist eine Auslegung von Mietfuchs (§ 7 Abs. 2, § 8 Abs. 2 HeizkostenV; zum Betriebsstrom BGH, Urteil vom 03.06.2016, V ZR 166/15, Rn. 13).'
-    : ''
+  // R2-W-A: Für den Strom zur Wärmeerzeugung kein „Betriebsstrom“ und kein Verweis auf die Karte, die ihn
+  // ablehnt; der Abzug entsteht von Hand im Kostenformular, verknüpft mit dieser Position.
+  const generationLaw = f.generation ? ` ${GENERATION_LAW}` : ''
+  const asThis = f.generation ? 'dieser Strom' : 'der Betriebsstrom'
   if (f.closedIssues.length === 0) {
     if (f.differenceCents > 0) {
-      return `${head}; abgezogen sind dort ${fmtCents(f.deductedCents)} statt ${fmtCents(f.amountCents)}; ${fmtCents(f.differenceCents)} werden damit doppelt verteilt. ` +
-        'Erfassen Sie beim Allgemeinstrom einen Abzug in Höhe des Betriebsstroms, etwa mit der Karte „Betriebsstrom“ auf der Seite Heizkosten, ' +
-        `oder nehmen Sie den Betriebsstrom aus den Heizkosten heraus und tragen ihn selbst ${LAW_SELF}.${generationLaw}`
+      const advice = f.generation
+        ? 'Erfassen Sie im Kostenformular beim Allgemeinstrom einen Abzug in Höhe dieses Stroms und verknüpfen Sie ihn mit dieser Position, oder nehmen Sie den Strom zur Wärmeerzeugung aus den Heizkosten heraus und tragen ihn selbst.'
+        : `Erfassen Sie beim Allgemeinstrom einen Abzug in Höhe des Betriebsstroms, etwa mit der Karte „Betriebsstrom“ auf der Seite Heizkosten, oder nehmen Sie den Betriebsstrom aus den Heizkosten heraus und tragen ihn selbst ${LAW_SELF}.`
+      return `${head}; abgezogen sind dort ${fmtCents(f.deductedCents)} statt ${fmtCents(f.amountCents)}; ${fmtCents(f.differenceCents)} werden damit doppelt verteilt. ${advice}${generationLaw}`
     }
-    return `${head}; abgezogen sind dort ${fmtCents(f.deductedCents)}, ${fmtCents(-f.differenceCents)} mehr als der Betriebsstrom. ` +
-      `Diesen Teil des Allgemeinstroms tragen Sie damit selbst; passen Sie den Abzug an den Betriebsstrom an ${LAW}.${generationLaw}`
+    return `${head}; abgezogen sind dort ${fmtCents(f.deductedCents)}, ${fmtCents(-f.differenceCents)} mehr als ${asThis}. ` +
+      `Diesen Teil des Allgemeinstroms tragen Sie damit selbst; passen Sie den Abzug an ${f.generation ? 'diesen Strom' : 'den Betriebsstrom'} an${f.generation ? '.' : ` ${LAW}.`}${generationLaw}`
   }
   const lead = `${head}. ${f.closedIssues.length === 1 ? 'Der Abzug dafür steht' : 'Abzüge dafür stehen'} in einer abgeschlossenen Abrechnung.`
-  const sentences = f.closedIssues.map((n) => closedText(n, fmtCents)).join('')
+  const sentences = f.closedIssues.map((n) => closedText(n, fmtCents, what)).join('')
   // Was gemessen an den heutigen Beträgen aller Abzüge noch fehlt.
   const otherCents = f.others.reduce((a, o) => a + o.amountCents, 0)
   const rest = f.amountCents - f.closedIssues.reduce((a, n) => a + n.amountCents, 0) - otherCents
   const unknown = f.closedIssues.filter((n) => n.state === 'unknown')
   let tail = ''
   if (unknown.length > 0 && otherCents > 0) {
-    tail = ` Daneben sind beim Allgemeinstrom weitere ${fmtCents(otherCents)} abgezogen (${f.others.map((o) => `„${o.description}“`).join(', ')}). ` +
-      `Steht der Abzug ${unknown.map((n) => `„${n.description}“`).join(', ')} in der zugestellten Abrechnung, ist den Mietern der Betriebsstrom zweimal gutgeschrieben; löschen Sie dann den weiteren Abzug.`
+    // R2-K-A: Löschen nur, wo der weitere Abzug offen ist; ist er schon zugestellt, trägt der Vermieter die
+    // doppelte Gutschrift. „zweimal“ nur bei gleichen Beträgen, sonst der Betrag.
+    const unknownCents = unknown.reduce((a, n) => a + n.amountCents, 0)
+    const twice = (cents: number) => (cents === unknownCents ? `${asThis} zweimal gutgeschrieben` : `zusätzlich ${fmtCents(Math.min(cents, unknownCents))} gutgeschrieben`)
+    const names = unknown.map((n) => `„${n.description}“`).join(', ')
+    const open = f.others.filter((o) => o.credited === null)
+    const credited = f.others.filter((o) => o.credited !== null)
+    const openCents = open.reduce((a, o) => a + o.amountCents, 0)
+    const creditedCents = credited.reduce((a, o) => a + o.amountCents, 0)
+    if (credited.length > 0) {
+      tail += ` Daneben ${credited.map((o) => `ist in der zugestellten Abrechnung ${o.credited} ein weiterer Abzug von ${fmtCents(o.amountCents)} gutgeschrieben („${o.description}“)`).join('; ')}. ` +
+        `Steht der Abzug ${names} ebenfalls in der zugestellten Abrechnung, ist den Mietern ${twice(creditedCents)}. ` +
+        `Eine schon zugestellte doppelte Gutschrift lässt sich nach Ablauf der Abrechnungsfrist nicht mehr zu Lasten der Mieter korrigieren; den Betrag tragen Sie dann selbst. ${DEADLINE}`
+    }
+    if (open.length > 0) {
+      tail += ` Daneben sind beim Allgemeinstrom weitere ${fmtCents(openCents)} abgezogen (${open.map((o) => `„${o.description}“`).join(', ')}). ` +
+        `Steht der Abzug ${names} in der zugestellten Abrechnung, ist den Mietern ${twice(openCents)}; löschen Sie dann den weiteren Abzug.`
+    }
   } else if (rest > 0) {
-    tail = ` Außerdem fehlen ${fmtCents(rest)}. Erfassen Sie dafür beim Allgemeinstrom einen Abzug, etwa mit der Karte „Betriebsstrom“ auf der Seite Heizkosten ${LAW}.`
+    tail = f.generation
+      ? ` Außerdem fehlen ${fmtCents(rest)}. Erfassen Sie dafür im Kostenformular beim Allgemeinstrom einen Abzug und verknüpfen Sie ihn mit dieser Position.`
+      : ` Außerdem fehlen ${fmtCents(rest)}. Erfassen Sie dafür beim Allgemeinstrom einen Abzug, etwa mit der Karte „Betriebsstrom“ auf der Seite Heizkosten ${LAW}.`
   }
   return `${lead}${sentences}${tail}${generationLaw}`
 }

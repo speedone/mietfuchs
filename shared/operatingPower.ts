@@ -99,9 +99,9 @@ export function operatingPowerRefusal(energy: HeatingEnergy): string | null {
   return `${own} zu den Heiz- und Warmwasserkosten, und zwar nicht als Betriebsstrom: Die Heizkostenverordnung nennt ihn seit dem 01.10.2024 eigens neben den Brennstoffen („Kosten des zur Wärmeerzeugung verbrauchten Stroms“, § 7 Abs. 2, § 8 Abs. 2 HeizkostenV). ` +
     'Erfassen Sie ihn in der Heizposition („Heizung und Warmwasser“, Teil „Brennstoff/Energie“); die Schätzhilfe gilt dafür nicht. ' +
     'Läuft dieser Strom nicht über einen eigenen Zähler, sondern über den Stromzähler des Hauses, steckt er auch in der Rechnung des Allgemeinstroms und muss dort heraus; sonst zahlen die Mieter ihn doppelt oder nach dem falschen Schlüssel. ' +
-    'Dass für ihn dasselbe gilt wie für den Betriebsstrom (BGH, Urteil vom 03.06.2016, V ZR 166/15, Rn. 13), ist eine Auslegung von Mietfuchs; entschieden hat der Bundesgerichtshof es für den Betriebsstrom. ' +
+    'Dass für ihn dasselbe gilt wie für den Betriebsstrom (BGH, Urteil vom 03.06.2016, V ZR 166/15, Rn. 13 f.), ist eine Auslegung von Mietfuchs; entschieden hat der Bundesgerichtshof es für den Betriebsstrom. ' +
     'Dann kennzeichnen Sie die Heizposition im Kostenformular („Läuft dieser Strom über den Stromzähler des Hauses?“) und verknüpfen den Abzug beim Allgemeinstrom mit ihr. ' +
-    'Laufen Umwälzpumpen oder Regelung über den Stromzähler des Hauses, ist deren Strom Betriebsstrom: Er gehört zu den Heiz- und Warmwasserkosten und ist beim Allgemeinstrom abzuziehen (§ 7 Abs. 2, § 8 Abs. 2 HeizkostenV; BGH, Urteil vom 03.06.2016, V ZR 166/15, Rn. 13). ' +
+    'Laufen Umwälzpumpen oder Regelung über den Stromzähler des Hauses, ist deren Strom Betriebsstrom: Er gehört zu den Heiz- und Warmwasserkosten und ist beim Allgemeinstrom abzuziehen (§ 7 Abs. 2, § 8 Abs. 2 HeizkostenV; BGH, Urteil vom 03.06.2016, V ZR 166/15, Rn. 13 f.). ' +
     'Erfassen Sie ihn dann im Kostenformular als Betriebsstrom und verknüpfen Sie den Abzug.'
 }
 
