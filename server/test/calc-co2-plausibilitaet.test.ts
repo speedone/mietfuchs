@@ -93,3 +93,18 @@ test('K5 c: Die Heizkostenabrechnung nach Weg d bekommt die Einträge des Vermie
   const snap = heatingSnapshotFor(wegB(), 'objekt-1', 'hp', P('2026-05', { startMonth: 5, changes: [] })) ?? assert.fail('kein Schnappschuss')
   assert.deepEqual(snap.lawOverrides, eintrag2027)
 })
+
+// Beim Einreihen hinter Heizung PR 14 (#243): Unter einer Ausnahme nach § 11 für Wärme und Warmwasser ohne
+// vereinbarte Abrechnung gilt das CO2KostAufG nicht (§ 2 Abs. 7); dann prüft Mietfuchs auch nicht, dieselbe
+// Bedingung wie die Aufteilung. Mit vereinbarter Abrechnung wird wieder geprüft.
+test('Ausnahme nach § 11 für Wärme und Warmwasser: keine Prüfung, außer die Abrechnung ist vereinbart', () => {
+  const P = periodOfKey(CALENDAR_RULES, periodKey('2025-01')) ?? assert.fail('kein Zeitraum')
+  const mit = (rules: Record<string, unknown>) => {
+    const src = co2Source(2025, { co2CostCents: 55000 })
+    return computeSettlement(snapshotFor({ ...src, heatingPeriodRows: [{ plantId: 'hp', period: P.key, dhwMethod: null, dhwUnmeasurable: null, ...rules }] }, 'objekt-1', P))
+  }
+  assert.equal(hints(mit({})).length, 1, 'ohne Ausnahme geprüft')
+  assert.equal(hints(mit({ exemption: 'authority', exemptionScope: 'both' })).length, 0)
+  assert.equal(hints(mit({ exemption: 'authority', exemptionScope: 'both', exemptionBillingAgreed: true })).length, 1)
+  assert.equal(hints(mit({ exemption: 'authority', exemptionScope: 'heat' })).length, 1, 'nur die Wärme ausgenommen: weiter aufgeteilt, weiter geprüft')
+})
