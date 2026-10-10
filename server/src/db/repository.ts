@@ -36,6 +36,7 @@ import { beforeBeginText } from './selfLine.ts'
 import { selfActive, selfFromOf } from '../heating.ts'
 import { captureOf, coversPeriod, hotWaterOf } from '../hca.ts'
 import { and, count, desc, eq, inArray, isNotNull, ne, or, sql } from 'drizzle-orm'
+import { alias } from 'drizzle-orm/sqlite-core'
 import type { BillingPeriod, CostItem, ExternalBasis, HeatingPlant, HeatingPrepaymentOverride, InterimGapStatus, Meter, MeterType, Payment, PeriodKey, PeriodRules, PersonEntry, PrepaymentEntry, Property, Reading, RentEntry, SplitPreviewPart, Tenancy, Unit, UnitDependents } from '../../../shared/types.ts'
 import { CALENDAR_RULES, calendarPeriod, paymentYear, formatDayRange, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, spansTwoYears, startYearOf } from '../../../shared/period.ts'
 import { heatingPeriodsEndingIn, isObjectPeriod, plantRules, plantSpan, servesUnit, spanOf } from '../../../shared/heatingPeriod.ts'
@@ -1157,6 +1158,16 @@ async function guardCostItem(db: Executor, before: CostItem | null, after: CostI
 // prüft diese Funktion bewusst nicht (R2-W1): Auch bei einer Wärmepumpe ist der Strom von Umwälzpumpen
 // und Regelung Betriebsstrom; abgelehnt wird dort nur die Schätzhilfe (db/operatingPower.ts).
 async function guardOperatingPower(db: Executor, before: CostItem | null, after: CostItem): Promise<void> {
+  // Durchsicht von #252, G-W2: Zeigt ein Abzug auf diese Position (als Betriebsstrom oder als
+  // Stromrechnung), bleibt sie in ihrem Objekt; sonst minderte der Abzug den Allgemeinstrom des einen
+  // Hauses für den Betriebsstrom des anderen. Den Abzug selbst prüfen die Verweise weiter unten.
+  if (before && before.propertyId !== after.propertyId) {
+    const abzuege = await db.select({ description: costItems.description }).from(costItems)
+      .where(or(eq(costItems.operatingPowerItemId, after.id), eq(costItems.operatingPowerGeneralId, after.id)))
+    if (abzuege.length > 0) {
+      throw new CrossPropertyError(`Zu „${after.description}“ gehört der Abzug ${abzuege.map((a) => `„${a.description}“`).join(', ')} beim Allgemeinstrom; er zeigte dann auf eine Position in einem anderen Objekt. Löschen Sie zuerst den Abzug.`)
+    }
+  }
   if (after.operatingPower === 'included') {
     if (after.category !== HEATING_CATEGORY) {
       throw new HeatingError(400, `Betriebsstrom gibt es nur bei der Kostenart „${HEATING_CATEGORY}“.`)
@@ -1540,6 +1551,17 @@ export async function crossPropertyViolations(db: Database): Promise<string[]> {
     .innerJoin(units, eq(heatingEstimates.unitId, units.id))
     .where(ne(heatingPlants.propertyId, units.propertyId))
   for (const s of schaetzungen) befunde.push(`Eine Schätzung nach § 9a gehört zur Wohnung „${s.unitName}“ eines anderen Objekts als ihre Heizanlage.`)
+  // Betriebsstrom (Durchsicht von #252, G-W2): Ein Abzug zeigt nur auf Betriebsstrom und Stromrechnung
+  // seines Objekts.
+  const ziel = alias(costItems, 'ziel')
+  for (const [spalte, was] of [[costItems.operatingPowerItemId, 'den Betriebsstrom'], [costItems.operatingPowerGeneralId, 'die Stromrechnung']] as const) {
+    const quer = await db
+      .select({ description: costItems.description, target: ziel.description })
+      .from(costItems)
+      .innerJoin(ziel, eq(spalte, ziel.id))
+      .where(ne(costItems.propertyId, ziel.propertyId))
+    for (const c of quer) befunde.push(`Der Abzug „${c.description}“ zeigt auf ${was} „${c.target}“ eines anderen Objekts.`)
+  }
   return befunde
 }
 
