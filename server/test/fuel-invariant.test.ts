@@ -961,6 +961,9 @@ for (const variant of VARIANTS) {
         let selfBlocked = false
         let bound = { tenants: 0, positions: 0, up: 0, down: 0 }
         let crossing = false
+        // Die gesperrten Heizperioden (Nachbesserung #243 nach dem Rebase): Für die Schranke über die übrigen zählen nur
+        // Schätzungen, deren eigene Heizperiode nicht gesperrt ist.
+        const blockedKeys = new Set<string>()
         // Durchsicht von #243, Runde 4 (R3-K1): Vermieterteile einer nicht gesperrten Heizperiode außerhalb der erlaubten
         // Gründe. Geprüft wird das, wo die Schranken (ii) und (vii) entfallen.
         const stray: string[] = []
@@ -1014,6 +1017,7 @@ for (const variant of VARIANTS) {
             if (Array.isArray(heating) && heating.some((x: unknown) => Reflect.get(Object(x), 'plantId') === 'hp' && Reflect.get(Object(Reflect.get(Object(x), 'self')), 'ok') === false)) blockedHere = true
           }
           if (blockedHere) selfBlocked = true
+          if (blockedHere) blockedKeys.add(key)
           if (!blockedHere) stray.push(...strayParts(stored ? stored.settlement : r).map((x) => `${key}: ${x}`))
           // Zeilen aus Lieferungen oder dem Vorrat anderer Heizperioden: Dann trägt eine Heizperiode Kosten einer anderen, und
           // die Schranken lassen sich nicht je Heizperiode trennen.
@@ -1073,10 +1077,14 @@ for (const variant of VARIANTS) {
         const estimatesCovered = estimates.every((e) => coveredDay(e.invoiceFrom ?? '') && coveredDay(e.invoiceTo ?? ''))
         const frozenNow = await opened.read((db) => readFuelCarryFrozen(db))
         let unreconciled = 0
-        for (const e of estimates) {
+        // Je Schätzung: ihre eigene Heizperiode, für den Zuschlag von 1 Cent und den Überschuss nach Gradtagen.
+        const estimateOwn = (e: { invoiceFrom?: string | null }) => periodContaining(MAI, e.invoiceFrom ?? '').key
+        // Ist eine Heizperiode gesperrt, gilt die Schranke nur über die übrigen; dann zählen nur deren Schätzungen.
+        const counted = selfBlocked ? estimates.filter((e) => !blockedKeys.has(estimateOwn(e))) : estimates
+        for (const e of counted) {
           const from = e.invoiceFrom ?? ''
           const to = e.invoiceTo ?? ''
-          const own = periodContaining(MAI, from).key
+          const own = estimateOwn(e)
           if (!closed.some((c) => c.period === own)) continue
           const f = frozenNow.find((x) => x.deliveryId === e.id && x.period === own)?.cents ?? 0
           const cuts = linkedReal.filter((d) => periodContaining(MAI, d.to).key === own)
@@ -1094,7 +1102,7 @@ for (const variant of VARIANTS) {
         }
         if ((estimates.length === 0 || estimatesCovered) && b) {
           assert.ok(b.tenants >= b.positions - b.up, `${fall}; (vii) Mieter ${b.tenants} < Positionen ${b.positions} − ausgewiesen ${b.up}`)
-          assert.ok(b.tenants <= b.positions - b.down + unreconciled + estimates.length, `${fall}; (ii) Mieter ${b.tenants} > Positionen ${b.positions} + ausgewiesen ${-b.down} + nicht abgeglichene Schätzung ${Math.round(unreconciled)}`)
+          assert.ok(b.tenants <= b.positions - b.down + unreconciled + counted.length, `${fall}; (ii) Mieter ${b.tenants} > Positionen ${b.positions} + ausgewiesen ${-b.down} + nicht abgeglichene Schätzung ${Math.round(unreconciled)}`)
         }
         // (iii) je Lieferung und Paar von Heizperioden: Die Gegenbuchungen heben sich auf, oder ein
         // ausgewiesener Teil deckt sie genau (Nachprüfung von 47f2373, H1: über alle Lieferungen summiert
