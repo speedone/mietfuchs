@@ -3,7 +3,7 @@
 // Geprüft wird hier das Öffnen selbst: der Datenordner, die Fremdschlüssel, die Unversehrtheit
 // der Datei, eine Datei aus einer neueren Version, der Hinweis auf ein Netzlaufwerk und die
 // Reihung der Schreibvorgänge. Dass der Server sie beim Start wirklich öffnet, prüft
-// api.test.ts gegen den laufenden Prozess.
+// api-start.test.ts gegen den laufenden Prozess.
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'

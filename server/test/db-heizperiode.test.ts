@@ -8,7 +8,8 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { eq } from 'drizzle-orm'
-import { openDatabase, type OpenedDatabase } from '../src/db/open.ts'
+import type { OpenedDatabase } from '../src/db/open.ts'
+import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import type { Database } from '../src/db/client.ts'
 import { createEntity, createProperty, CrossPropertyError, findEntity, HeatingError, orphanPeriodKeys, PeriodError, updateEntity } from '../src/db/repository.ts'
 import { createHeatingPlant, listHeatingPlants, removeHeatingPlant, updateHeatingPlant } from '../src/db/heating.ts'
@@ -18,7 +19,7 @@ import { periodKey } from '../../shared/period.ts'
 
 async function withDatabase(work: (opened: OpenedDatabase) => Promise<void>): Promise<void> {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-heizperiode-'))
-  const opened = await openDatabase({ dataDir })
+  const opened = await openFreshDatabase(dataDir)
   try {
     await work(opened)
   } finally {

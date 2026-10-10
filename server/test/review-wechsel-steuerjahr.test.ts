@@ -5,7 +5,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { eq } from 'drizzle-orm'
 import type { CostItem } from '../../shared/types.ts'
-import { openDatabase } from '../src/db/open.ts'
+import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { createEntity } from '../src/db/repository.ts'
 import { readStock } from '../src/db/read.ts'
 import { properties } from '../src/db/schema.ts'
@@ -17,7 +17,7 @@ const ids = () => `neu-${++n}`
 
 test('Review B2: Steuerjahr der Teile beim Wechsel von Mai–April auf Kalenderjahr', async () => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mf-review-'))
-  const opened = await openDatabase({ dataDir })
+  const opened = await openFreshDatabase(dataDir)
   try {
     await opened.write(async (db) => {
       await db.update(properties).set({ periodStartMonth: 5 }).where(eq(properties.id, 'objekt-1'))

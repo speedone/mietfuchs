@@ -21,6 +21,7 @@ import type { Db } from '../src/store.ts'
 import { straightenForDatabase } from '../src/legacy/migrate.ts'
 import { connect, loadMigrations } from '../src/db/client.ts'
 import { databaseFile, openDatabase } from '../src/db/open.ts'
+import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { readStock } from '../src/db/read.ts'
 import { openDatabaseWithStock } from '../testing/database.ts'
 import { archiveDatabaseProblem, archiveInfoText, originText, writeDatabaseSnapshot } from '../src/db/backup.ts'
@@ -209,7 +210,7 @@ test('Ein Archiv mit einem Zeitraum, den es für sein Objekt nicht gibt, wird be
 
 async function withHeatingDatabase(fill: (db: Database) => Promise<void>): Promise<string | null> {
   const dataDir = tempDir()
-  const opened = await openDatabase({ dataDir })
+  const opened = await openFreshDatabase(dataDir)
   try {
     await opened.write(fill)
     const ziel = path.join(dataDir, 'schnappschuss.sqlite')

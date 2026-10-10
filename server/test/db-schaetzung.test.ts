@@ -5,6 +5,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { openDatabase } from '../src/db/open.ts'
+import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { readStock } from '../src/db/read.ts'
 import { closeSettlement, createEntity, createProperty, crossPropertyViolations, removeEntity } from '../src/db/repository.ts'
 import { removeEstimate, saveEstimate } from '../src/db/heatingEstimates.ts'
@@ -19,7 +20,7 @@ import { CALENDAR_RULES, periodKey, periodOfKey } from '../../shared/period.ts'
 type Opened = Awaited<ReturnType<typeof openDatabase>>
 async function withDatabase(run: (opened: Opened) => Promise<void>): Promise<void> {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-schaetzung-'))
-  const opened = await openDatabase({ dataDir })
+  const opened = await openFreshDatabase(dataDir)
   try {
     await run(opened)
   } finally {

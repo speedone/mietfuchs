@@ -8,7 +8,8 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { eq } from 'drizzle-orm'
-import { openDatabase, type OpenedDatabase } from '../src/db/open.ts'
+import type { OpenedDatabase } from '../src/db/open.ts'
+import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { closeSettlement, createEntity } from '../src/db/repository.ts'
 import { createHeatingPlant } from '../src/db/heating.ts'
 import { applySeparate, previewSeparate } from '../src/db/separateSettlement.ts'
@@ -53,7 +54,7 @@ const heatingKeysOf = (settlement: unknown): string[] => {
 async function scenario(seed: number): Promise<void> {
   const r = rng(seed)
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), `mietfuchs-invariante-${seed}-`))
-  const opened: OpenedDatabase = await openDatabase({ dataDir })
+  const opened: OpenedDatabase = await openFreshDatabase(dataDir)
   try {
     const startMonth = `${2023 + pick(r, 2)}-${String(1 + pick(r, 6)).padStart(2, '0')}`
     // Ein offenes Mietverhältnis endet hier mit der letzten Heizperiode, die ganz in YEARS liegt: Sonst

@@ -16,7 +16,8 @@ import os from 'node:os'
 import path from 'node:path'
 import { getTableColumns } from 'drizzle-orm'
 import type { SQLiteTable } from 'drizzle-orm/sqlite-core'
-import { openDatabase, type OpenedDatabase } from '../src/db/open.ts'
+import type { OpenedDatabase } from '../src/db/open.ts'
+import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import {
   closeSettlement, createEntity, createProperty, crossPropertyViolations, findClosedSettlement, findEntity,
   invoiceFilesInUse, listCollection, listProperties, removeEntity, removeProperty, reopenSettlement, setSentAt,
@@ -33,7 +34,7 @@ const tempDir = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-r
 
 async function withDatabase(work: (opened: OpenedDatabase) => Promise<void>): Promise<void> {
   const dataDir = tempDir()
-  const opened = await openDatabase({ dataDir })
+  const opened = await openFreshDatabase(dataDir)
   try {
     await work(opened)
   } finally {

@@ -8,7 +8,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { computeSettlement } from '../src/calc.ts'
-import { openDatabase } from '../src/db/open.ts'
+import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { applyPeriodChange, previewPeriodChange } from '../src/db/periodChange.ts'
 import { readStock } from '../src/db/read.ts'
 import { createEntity } from '../src/db/repository.ts'
@@ -17,7 +17,7 @@ import { periodKey, periodOfKey } from '../../shared/period.ts'
 
 test('F18 Rumpfzeitraum: 157,81 / 322,19 €, Frist 30.04.2026, Vorschlag 228 €', async () => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-f18-'))
-  const opened = await openDatabase({ dataDir })
+  const opened = await openFreshDatabase(dataDir)
   try {
     await opened.write(async (db) => {
       await createEntity(db, 'units', 'u1', { propertyId: 'objekt-1', name: 'EG', areaM2: 60, participates: true })

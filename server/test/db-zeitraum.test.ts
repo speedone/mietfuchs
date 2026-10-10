@@ -9,6 +9,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { applyMigrations, connect, loadMigrations, type Connection } from '../src/db/client.ts'
 import { openDatabase } from '../src/db/open.ts'
+import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { readStock } from '../src/db/read.ts'
 import { eq } from 'drizzle-orm'
 import { createEntity, createProperty, findEntity, PeriodError, removeProperty, updateEntity, updateProperty } from '../src/db/repository.ts'
@@ -139,7 +140,7 @@ test('Eindeutig: je Objekt und Zeitraum ein Abschluss, je Mietverhältnis und Ze
 
 test('Lesen und Schreiben: Position, Jahreskorrektur und Objekt tragen ihren Zeitraum', async () => {
   const dir = tempDir()
-  const opened = await openDatabase({ dataDir: dir })
+  const opened = await openFreshDatabase(dir)
   try {
     await opened.write((db) => createEntity(db, 'units', 'u1', { propertyId: 'objekt-1', name: 'EG', areaM2: 60, participates: true }))
     await opened.write((db) => createEntity(db, 'tenancies', 't1', {
@@ -165,7 +166,7 @@ test('Lesen und Schreiben: Position, Jahreskorrektur und Objekt tragen ihren Zei
 test('Auswertung: ohne Objekt kein gewählter Zeitraum, mit Objekt der Kalenderzeitraum des gewählten Jahres', async () => {
   // Review Focus 2: Die Prüfbedingung „nur mit Objekt“ ließe das Lösen vom Objekt sonst scheitern.
   const dir = tempDir()
-  const opened = await openDatabase({ dataDir: dir })
+  const opened = await openFreshDatabase(dir)
   try {
     await opened.write(async (db) => {
       await db.insert(assessments).values({ id: 'a1', file: 'a.pdf', propertyId: 'objekt-1', year: 2025, requestedYear: 2024, requestedPeriod: periodKey('2024-01'), createdAt: '2026-01-01T00:00:00Z' })
@@ -200,7 +201,7 @@ const position = (over: Record<string, unknown>) => ({ propertyId: 'objekt-1', c
 
 test('Schreiben: eine Position braucht einen Zeitraum ihres Objekts; year eines alten Tabs nur beim Kalenderobjekt', async () => {
   const dir = tempDir()
-  const opened = await openDatabase({ dataDir: dir })
+  const opened = await openFreshDatabase(dir)
   try {
     // Kalenderobjekt: die Jahreszahl eines alten Tabs geht, ein Zeitraum ab Mai nicht.
     await opened.write((db) => createEntity(db, 'costItems', 'c1', position({ year: 2025 })))
@@ -225,7 +226,7 @@ test('Schreiben: eine Position braucht einen Zeitraum ihres Objekts; year eines 
 
 test('Schreiben: Jahreskorrektur nur unter einem Zeitraum des Objekts; die Jahreszahl eines alten Tabs nur beim Kalenderobjekt', async () => {
   const dir = tempDir()
-  const opened = await openDatabase({ dataDir: dir })
+  const opened = await openFreshDatabase(dir)
   try {
     await opened.write((db) => createEntity(db, 'units', 'u1', { propertyId: 'objekt-1', name: 'EG', areaM2: 60, participates: true }))
     await opened.write((db) => createEntity(db, 'tenancies', 't1', { unitId: 'u1', tenantName: 'A', persons: 1, start: '2024-01-01', prepaymentOverrides: { '2025': 1 } }))
@@ -246,7 +247,7 @@ test('Schreiben: Jahreskorrektur nur unter einem Zeitraum des Objekts; die Jahre
 test('Ein Objekt löschen, an dem eine Auswertung mit gewähltem Zeitraum hängt, gelingt', async () => {
   // Review Focus 2: `ON DELETE SET NULL` träfe die Prüfbedingung „gewählter Zeitraum nur mit Objekt“.
   const dir = tempDir()
-  const opened = await openDatabase({ dataDir: dir })
+  const opened = await openFreshDatabase(dir)
   try {
     await opened.write((db) => createProperty(db, 'objekt-2', { name: 'Gartenweg 3', kind: 'mfh', address: '' }))
     await opened.write(async (db) => {
@@ -266,7 +267,7 @@ test('Der Rhythmus lässt sich nicht über PUT /api/properties setzen, nur über
   // Bleibt grün und hält fest, dass es keine Hintertür gibt: Ein Wechsel ohne Vorschau ließe
   // Positionen und Jahreskorrekturen ohne Zeitraum zurück.
   const dir = tempDir()
-  const opened = await openDatabase({ dataDir: dir })
+  const opened = await openFreshDatabase(dir)
   try {
     const p = await opened.write((db) => updateProperty(db, 'objekt-1', { periodRules: { startMonth: 5, changes: ['2026-05'] }, periodStartMonth: 5 }))
     assert.deepEqual(p?.periodRules, { startMonth: 1, changes: [] })
@@ -281,7 +282,7 @@ test('Der Rhythmus lässt sich nicht über PUT /api/properties setzen, nur über
 // schickt, ist gelöscht, und eine Jahreszahl geht dem gleichzeitig mitgeschickten 'JJJJ-01' vor.
 test('Jahreskorrektur aus einem alten Tab: die Jahreszahlen gelten vollständig, was fehlt, ist gelöscht', async () => {
   const dir = tempDir()
-  const opened = await openDatabase({ dataDir: dir })
+  const opened = await openFreshDatabase(dir)
   try {
     const korrektur = async () => Reflect.get((await opened.read(readStock)).tenancies[0] ?? {}, 'prepaymentOverrides')
     await opened.write((db) => createEntity(db, 'units', 'u1', { propertyId: 'objekt-1', name: 'EG', areaM2: 60, participates: true }))
@@ -302,7 +303,7 @@ test('Jahreskorrektur aus einem alten Tab: die Jahreszahlen gelten vollständig,
 // Durchsicht von #222 (M3): Ein ungültiger Zeitraum wird abgelehnt und nicht still ersetzt.
 test('Schreiben: ein ungültiger Zeitraum einer Position wird abgelehnt, beim Anlegen wie beim Ändern', async () => {
   const dir = tempDir()
-  const opened = await openDatabase({ dataDir: dir })
+  const opened = await openFreshDatabase(dir)
   try {
     await assert.rejects(opened.write((db) => createEntity(db, 'costItems', 'c1', position({ period: '2025-13' }))),
       (err: unknown) => err instanceof PeriodError && /Ungültiger Zeitraum/.test(err.message))

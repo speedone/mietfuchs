@@ -70,7 +70,7 @@ import { saveServiceValues } from '../src/db/serviceValues.ts'
 import { saveHeatingRules } from '../src/db/heatingInfo.ts'
 import { heatingRulesOf } from '../src/heatingInfo.ts'
 import { createDelivery, createEstimates, freezeFuelCarries, fuelGapQuestions, unfreezeFuelCarries } from '../src/db/fuel.ts'
-import { openDatabase } from '../src/db/open.ts'
+import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { readClosedSettlements, readCostItems, readFuelCarryFrozen, readFuelDeliveries, readStock } from '../src/db/read.ts'
 import { closeSettlement, createEntity, findClosedSettlement, removeEntity, reopenSettlement, settlementHistory, updateEntity } from '../src/db/repository.ts'
 import { properties } from '../src/db/schema.ts'
@@ -563,7 +563,7 @@ for (const variant of VARIANTS) {
       const CHANGE_END = '2025-01-15'
       const nextStart = variant.capture || variant.failure ? isoOf(Date.parse(`${CHANGE_END}T00:00:00Z`) + (1 + int(0, 30)) * DAY) : ''
       const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-fuel-inv-'))
-      const opened = await openDatabase({ dataDir })
+      const opened = await openFreshDatabase(dataDir)
       try {
         const deliveries: { id: string; from: string; to: string; plantId: string }[] = []
         const all: { id: string; from: string; to: string; plantId: string }[] = []

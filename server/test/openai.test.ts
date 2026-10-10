@@ -1,7 +1,7 @@
 // Hilfsfunktionen des Moduls für OpenAI-kompatible Dienste (#18): Umformung des JSON-Schemas
 // für den strikten Modus, Lesen der Fehlerformate verschiedener Dienste, Lesen des SSE-Stroms
 // und das Herauslösen von JSON aus einer Antwort. Das Zusammenspiel mit einem nachgebauten
-// Dienst prüft api.test.ts.
+// Dienst prüft api-openai.test.ts.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { toStrictSchema, stripAddedNulls, readProviderError, readCompletionStream, parseJsonContent } from '../src/ai/openai.ts'
