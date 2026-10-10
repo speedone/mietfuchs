@@ -120,6 +120,10 @@ const VEROEFFENTLICHT: Record<string, string> = {
   '0035_pflichtangaben_bedingungen': '33f3efa315491aedc2588d98d155ded3528c08674b88d6923b4d887348655348',
   // Heizung PR 17 (Rechtswerte des Vermieters), beim Einreihen hinter PR 14 neu erzeugt (vorher 0034_rechtswerte).
   '0036_rechtswerte': 'fa04523c822daae898ca0df2f0232974756e1ee0b16c4548f983e482bbead86b',
+  // Heizung PR 15 (#212): Betriebsstrom, Spalten und Bedingungen. Wird vor dem Merge ein anderer PR
+  // davor eingereiht, werden beide Schritte neu erzeugt und die Marken hier ersetzt (wie 0036 bei PR 17).
+  '0037_betriebsstrom': '3db36489ededcfad423b5357b9ef630bf8cd5e519d60c906ae5d588bc0652010',
+  '0038_betriebsstrom_bedingungen': '014caffd9f0830b49f0f773ffef8f1e9b13bf01becd9bb17f398711b2396713d',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

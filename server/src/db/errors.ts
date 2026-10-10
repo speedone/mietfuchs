@@ -147,6 +147,11 @@ const OWN_CHECK_MESSAGES: Readonly<Record<string, string>> = {
   // Lieferungen (Heizung PR 7)
   heating_plants_ets_district_valid: 'Die Angabe zur Wärme aus dem Emissionshandel gibt es nur bei Fernwärme.',
   cost_items_fuel_delivery_category_valid: 'Eine Lieferung gehört nur zu einer Position der Kostenart „Heizung und Warmwasser“.',
+  // Betriebsstrom (Heizung PR 15).
+  cost_items_operating_power_included_valid: 'Betriebsstrom gibt es nur bei der Kostenart „Heizung und Warmwasser“ mit dem Teil „Betrieb“ oder ohne Teil.',
+  cost_items_operating_power_deduction_valid: 'Ein Abzug des Betriebsstroms gehört zur Kostenart „Beleuchtung/Allgemeinstrom“ und hat einen negativen Betrag.',
+  cost_items_operating_power_link_valid: 'Nur ein Abzug beim Allgemeinstrom zeigt auf eine Betriebsstrom-Position. Bitte laden Sie die Seite neu.',
+  cost_items_operating_power_basis_valid: 'Eine Grundlage der Schätzung gibt es nur bei Betriebsstrom oder seinem Abzug.',
   // Eigene Heizkostenabrechnung (Heizung PR 10)
   heating_plants_self_capture_complete: 'Für die eigene Heizkostenabrechnung braucht die Heizanlage die Angabe, womit der Verbrauch erfasst wird.',
   heating_self_spans_from_valid: 'Der Beginn eines Zeitraums der eigenen Heizkostenabrechnung ist keine Heizperiode.',

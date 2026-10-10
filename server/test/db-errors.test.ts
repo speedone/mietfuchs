@@ -343,3 +343,23 @@ test('Lieferungen: jede Bedingung, deren Endung allein den falschen Satz ergäbe
     assert.match(teil, /Teilmenge endet vor ihrem Beginn/, teil)
   })
 })
+
+test('Betriebsstrom: jede Bedingung, deren Endung allein den falschen Satz ergäbe, hat ihren eigenen (Heizung PR 15)', async () => {
+  // Die Schreibprüfung in repository.ts fängt das vorher ab; die Bedingungen sind das Netz darunter.
+  await withDatabase(async (opened) => {
+    const run = (statement: string) => messageOfFailure(opened, () => opened.write((db) => db.run(sql.raw(statement))))
+    const insert = (id: string, category: string, amount: number, extra: string, values: string) =>
+      `INSERT INTO cost_items (id, property_id, period, category, description, amount_cents, key${extra}) VALUES ('${id}', 'objekt-1', '2025-01', '${category}', 'x', ${amount}, 'area'${values})`
+    const included = await run(insert('a', 'Grundsteuer', 1, ', operating_power', ", 'included'"))
+    assert.match(included, /Betriebsstrom gibt es nur bei der Kostenart „Heizung und Warmwasser“/, included)
+    const deduction = await run(insert('b', 'Beleuchtung/Allgemeinstrom', 100, ', operating_power', ", 'deduction'"))
+    assert.match(deduction, /Abzug des Betriebsstroms/, deduction)
+    // Ein Verweis auf eine vorhandene Position, damit nicht der Fremdschlüssel antwortet.
+    await opened.write((db) => db.run(sql.raw(insert('bs', 'Heizung und Warmwasser', 1, ', heating_part, operating_power', ", 'operating', 'included'"))))
+    const link = await run(insert('c', 'Beleuchtung/Allgemeinstrom', -100, ', operating_power_item_id', ", 'bs'"))
+    assert.match(link, /Nur ein Abzug/, link)
+    const basis = await run(insert('d', 'Grundsteuer', 1, ', operating_power_basis', ", 'x'"))
+    assert.match(basis, /Grundlage der Schätzung/, basis)
+    for (const text of [included, deduction, link, basis]) assert.doesNotMatch(text, /JJJJ-MM/, text)
+  })
+})

@@ -40,6 +40,7 @@ import type { BillingPeriod, CostItem, ExternalBasis, HeatingPlant, HeatingPrepa
 import { CALENDAR_RULES, calendarPeriod, paymentYear, formatDayRange, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, spansTwoYears, startYearOf } from '../../../shared/period.ts'
 import { heatingPeriodsEndingIn, isObjectPeriod, plantRules, plantSpan, servesUnit, spanOf } from '../../../shared/heatingPeriod.ts'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
+import { GENERAL_POWER_CATEGORY } from '../../../shared/operatingPower.ts'
 import { targetProblem } from '../heating.ts'
 import { andList } from '../../../shared/wording.ts'
 import type { MigratedSettings } from '../ai/settings.ts'
@@ -53,7 +54,7 @@ import {
 } from './read.ts'
 import {
   aiSlots, assessmentLines, assessments, baseRents, co2Statements, co2TenantReliefs, heatingPeriods, closedHeatingSettlementHistory, closedHeatingSettlements, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, DEPOSIT_STATUS, EXTERNAL_MEASURES,
-  HCA_SCALES, HEATING_PARTS, HEATING_ROLES, HEATING_TARGETS, INTERIM_GAP_STATUS, interimReadingGaps, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingSelfSpans, heatingPrepaymentOverrides, heatingPrepayments, heatingSeparateSpans, heatingServiceValues, heatingEstimates,
+  HCA_SCALES, HEATING_PARTS, OPERATING_POWER, HEATING_ROLES, HEATING_TARGETS, INTERIM_GAP_STATUS, interimReadingGaps, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingSelfSpans, heatingPrepaymentOverrides, heatingPrepayments, heatingSeparateSpans, heatingServiceValues, heatingEstimates,
   flatRates, METER_TYPES, meters, payments, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, PROPERTY_KINDS,
   readings, settings, tenancies, unitNoConnection, units, fuelCarryFrozen, fuelDeliveries,
 } from './schema.ts'
@@ -383,6 +384,11 @@ function mergeCostItem(current: CostItem, body: unknown): CostItem {
         : current.category === HEATING_CATEGORY ? (current.heatingPlantId ?? null) : undefined,
     // Die Lieferung (Heizung PR 7); `null` löst die Verknüpfung.
     fuelDeliveryId: merged(body, 'fuelDeliveryId', current.fuelDeliveryId, asNullableFilled),
+    // Betriebsstrom (Heizung PR 15). `null` leert; fehlt das Feld, bleibt die Angabe (Review Focus 3,
+    // ein alter Tab). Eine leere Grundlage gilt als keine.
+    operatingPower: merged(body, 'operatingPower', current.operatingPower, (v) => oneOfOrUndefined(OPERATING_POWER, v)),
+    operatingPowerItemId: merged(body, 'operatingPowerItemId', current.operatingPowerItemId, (v) => (typeof v === 'string' && v !== '' ? v : undefined)),
+    operatingPowerBasis: merged(body, 'operatingPowerBasis', current.operatingPowerBasis, (v) => (typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined)),
   }
 }
 
@@ -1141,6 +1147,56 @@ async function guardCostItem(db: Executor, before: CostItem | null, after: CostI
   await sameProperty(db, after.propertyId, ziele, 'Die Kostenposition')
   await guardCostItemHeating(db, before, after)
   await guardFuelLink(db, before, after)
+  await guardOperatingPower(db, before, after)
+}
+
+// Betriebsstrom und Abzug (Heizung PR 15, #212). Ein Abzug gehört zu genau einer Betriebsstrom-Position
+// desselben Objekts; ohne Verweis gehört er zu einer Anlage mit Messdienst. Die Datenbank prüft Kostenart
+// und Vorzeichen (Bedingungen), hier steht, was an einer anderen Zeile hängt. Die Energie der Anlage
+// prüft diese Funktion bewusst nicht (R2-W1): Auch bei einer Wärmepumpe ist der Strom von Umwälzpumpen
+// und Regelung Betriebsstrom; abgelehnt wird dort nur die Schätzhilfe (db/operatingPower.ts).
+async function guardOperatingPower(db: Executor, before: CostItem | null, after: CostItem): Promise<void> {
+  if (after.operatingPower === 'included') {
+    if (after.category !== HEATING_CATEGORY) {
+      throw new HeatingError(400, `Betriebsstrom gibt es nur bei der Kostenart „${HEATING_CATEGORY}“.`)
+    }
+    if (after.heatingPart !== undefined && after.heatingPart !== 'operating') {
+      throw new HeatingError(400, `„${after.description}“ ist als Teil der Heizkosten nicht „Betrieb“; Betriebsstrom gibt es nur beim Teil „Betrieb“ oder ohne Teil.`)
+    }
+  }
+  if (after.operatingPower === 'deduction') {
+    if (after.category !== GENERAL_POWER_CATEGORY) {
+      throw new HeatingError(400, `Ein Abzug des Betriebsstroms gehört zur Kostenart „${GENERAL_POWER_CATEGORY}“.`)
+    }
+    if (!(after.amountCents < 0)) {
+      throw new HeatingError(400, `„${after.description}“ ist ein Abzug und braucht einen negativen Betrag.`)
+    }
+  }
+  if (after.operatingPowerItemId !== undefined) {
+    if (after.operatingPower !== 'deduction') {
+      throw new HeatingError(400, 'Nur ein Abzug beim Allgemeinstrom zeigt auf eine Betriebsstrom-Position.')
+    }
+    const [target] = await db
+      .select({ propertyId: costItems.propertyId, operatingPower: costItems.operatingPower, description: costItems.description })
+      .from(costItems).where(eq(costItems.id, after.operatingPowerItemId))
+    if (!target) throw new HeatingError(400, 'Die Betriebsstrom-Position, zu der dieser Abzug gehört, gibt es nicht (mehr).')
+    if (target.propertyId !== after.propertyId) {
+      throw new CrossPropertyError(`Der Abzug „${after.description}“ gehört zu einem anderen Objekt als der Betriebsstrom „${target.description}“.`)
+    }
+    if (target.operatingPower !== 'included') {
+      throw new HeatingError(400, `„${target.description}“ ist nicht als Betriebsstrom gekennzeichnet, der auch im Allgemeinstrom steckt; ein Abzug kann nicht zu ihr gehören.`)
+    }
+  }
+  if (before?.operatingPower === 'included' && after.operatingPower !== 'included') {
+    const abzuege = await db.select({ description: costItems.description }).from(costItems).where(eq(costItems.operatingPowerItemId, after.id))
+    if (abzuege.length > 0) {
+      throw new HeatingError(400, `Zu „${after.description}“ gehört der Abzug ${abzuege.map((a) => `„${a.description}“`).join(', ')} beim Allgemeinstrom. Löschen Sie zuerst den Abzug, sonst stünde er ohne Betriebsstrom da.`)
+    }
+  }
+  // P-W1: Die Grundlage der Schätzung gehört zu Betriebsstrom oder Abzug.
+  if (after.operatingPowerBasis !== undefined && after.operatingPower === undefined) {
+    throw new HeatingError(400, 'Eine Grundlage der Schätzung gibt es nur bei Betriebsstrom oder seinem Abzug beim Allgemeinstrom.')
+  }
 }
 
 // Eine Wohnung darf das Objekt wechseln, solange nichts Objektgebundenes an ihr hängt. Ihr
@@ -1622,6 +1678,8 @@ const costItemRow = (c: CostItem) => ({
   heatingTarget: orNull(c.heatingTarget),
   heatingPlantId: c.heatingPlantId ?? null,
   fuelDeliveryId: c.fuelDeliveryId ?? null,
+  operatingPower: orNull(c.operatingPower), operatingPowerItemId: orNull(c.operatingPowerItemId),
+  operatingPowerBasis: orNull(c.operatingPowerBasis),
 })
 const meterRow = (m: Meter) => ({
   id: m.id, propertyId: m.propertyId, name: m.name, unitId: m.unitId, type: m.type, meterNumber: orNull(m.meterNumber), unit: m.unit,
@@ -1777,6 +1835,11 @@ const costItemCollection: Collection<CostItem> = {
     await writeCostItemShares(db, entity)
   },
   remove: async (db, id) => {
+    // Heizung PR 15: ein Satz statt des Fremdschlüssels (Review Focus 2).
+    const abzuege = await db.select({ description: costItems.description }).from(costItems).where(eq(costItems.operatingPowerItemId, id))
+    if (abzuege.length > 0) {
+      throw new HeatingError(400, `Zu dieser Position gehört ${abzuege.length === 1 ? 'der Abzug' : 'die Abzüge'} ${abzuege.map((a) => `„${a.description}“`).join(', ')} beim Allgemeinstrom. Löschen Sie zuerst den Abzug, damit der Allgemeinstrom nicht still gemindert bleibt.`)
+    }
     const [c] = await db.select({ fuelDeliveryId: costItems.fuelDeliveryId, period: costItems.period }).from(costItems).where(eq(costItems.id, id))
     if (c) await guardFrozenLink(db, { id, fuelDeliveryId: c.fuelDeliveryId, period: c.period }, null)
     await db.delete(costItems).where(eq(costItems.id, id))
