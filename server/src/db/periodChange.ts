@@ -36,7 +36,7 @@ import { baseDescription, splitByService, type ServicePart } from '../serviceSpl
 import type { Database, Transaction } from './client.ts'
 import { readClosedSettlements, readCostItems, readHeatingPlants, readProperties, readStock, readTenancies, readUnits } from './read.ts'
 import { dryRun, earliestTenancyStart, lostClaims, outcomeOf } from './dryRun.ts'
-import { PeriodConflict, PeriodError, rewriteCostItemFamily, writeCostItemParts } from './repository.ts'
+import { HeatingError, PeriodConflict, PeriodError, rewriteCostItemFamily, settleOperatingPowerLinks, writeCostItemParts } from './repository.ts'
 import { assessmentLines, assessments, closedSettlementHistory, periodChanges, prepaymentOverrides, properties } from './schema.ts'
 import { euro } from '../../../shared/costItem.ts'
 
@@ -620,6 +620,9 @@ export async function applyPeriodChange(
     // falsche Anfrage (I1): 409 mit der Vorschau, die Transaktion hat nichts geschrieben.
     if (err instanceof PeriodError) return { error: `${err.message} Gespeichert wurde nichts.`, preview: checked }
     if (err instanceof PeriodConflict) return { error: err.message, preview: checked }
+    // Nachprüfung von #252, G2-N-W1: auch eine Prüfung des Betriebsstroms ist hier ein Konflikt mit dem
+    // Bestand, nie eine nackte 400.
+    if (err instanceof HeatingError) return { error: `${err.message} Gespeichert wurde nichts.`, preview: checked }
     throw err
   }
   const property = (await readProperties(db)).find((p) => p.id === propertyId)
@@ -640,8 +643,14 @@ async function writeChangeIn(
   // Positionen gehen durch dieselbe Verschmelzung und Schreibprüfung wie beim Speichern
   // (`writeCostItemParts`), auch die verschobenen: ein rohes Update umginge die Prüfung des Jahres
   // der Zahlung (Durchsicht von #226, I1).
-  const move = (item: CostItem, target: BillingPeriod) =>
-    writeCostItemParts(tx, item, [{ period: target.key, amountCents: item.amountCents, labor35aCents: item.labor35aCents ?? null, description: item.description, taxYear: taxYearIn(target, item) }], newId, item.id)
+  // Nachprüfung von #252, G2-N-W1: Stromrechnung und Abzüge wandern nacheinander; geprüft wird der Endstand
+  // (`settleOperatingPowerLinks`), und dafür merkt sich der Wechsel die Teile jeder Position.
+  const guard = { splitPart: true, periodChange: true }
+  const written = new Map<string, { id: string; period: PeriodKey }[]>()
+  const remember = (item: CostItem, periods: readonly PeriodKey[], ids: readonly string[]) =>
+    written.set(item.id, ids.map((id, i) => ({ id, period: periods[i] ?? item.period })))
+  const move = async (item: CostItem, target: BillingPeriod) =>
+    remember(item, [target.key], await writeCostItemParts(tx, item, [{ period: target.key, amountCents: item.amountCents, labor35aCents: item.labor35aCents ?? null, description: item.description, taxYear: taxYearIn(target, item) }], newId, item.id, guard))
   {
     await tx.update(properties).set({ periodStartMonth: next.startMonth }).where(eq(properties.id, propertyId))
     await tx.delete(periodChanges).where(eq(periodChanges.propertyId, propertyId))
@@ -650,16 +659,16 @@ async function writeChangeIn(
       const writes = parts.map((p) => ({
         period: p.period.key, amountCents: p.amountCents, labor35aCents: p.labor35aCents, description: p.description, taxYear: taxYearIn(p.period, item),
       }))
-      if (family) await rewriteCostItemFamily(tx, family, writes, newId)
-      else await writeCostItemParts(tx, item, writes, newId, item.id)
+      const ids = family ? await rewriteCostItemFamily(tx, family, writes, newId, guard) : await writeCostItemParts(tx, item, writes, newId, item.id, guard)
+      remember(item, writes.map((w) => w.period), ids)
     }
     for (const [id, g] of plan.groups) {
       if (answers.groups[id] === 'split' && g.split !== null) {
         for (const item of g.items) {
           const parts = g.split.get(item.id) ?? []
-          await writeCostItemParts(tx, { ...item, serviceFrom: g.old.from, serviceTo: g.old.to }, parts.map((p) => ({
+          remember(item, parts.map((p) => p.period.key), await writeCostItemParts(tx, { ...item, serviceFrom: g.old.from, serviceTo: g.old.to }, parts.map((p) => ({
             period: p.period.key, amountCents: p.amountCents, labor35aCents: p.labor35aCents, description: p.description, taxYear: taxYearIn(p.period, item),
-          })), newId, item.id)
+          })), newId, item.id, guard))
         }
         continue
       }
@@ -681,5 +690,6 @@ async function writeChangeIn(
       if (rows.length > 0) await tx.insert(prepaymentOverrides).values(rows)
     }
     for (const m of plan.assessmentMoves) await tx.update(assessments).set({ requestedPeriod: m.to }).where(eq(assessments.id, m.id))
+    await settleOperatingPowerLinks(tx, propertyId, written)
   }
 }

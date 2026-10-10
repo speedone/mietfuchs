@@ -950,7 +950,10 @@ async function requirePeriods(db: Executor, propertyId: string, keys: readonly s
 // Ein Teil, dessen Leistungszeitraum und Zeitraum unverändert bleiben (der Betrag wird berichtigt),
 // ist weiter erlaubt. **Heizkosten werden nie nach Tagen geteilt** (G-C1, VIII ZR 156/11); sie
 // nimmt die Prüfung an, und die Abrechnung warnt (`period.heating-mismatch`).
-export type CostItemGuardOptions = { splitPart?: boolean }
+// `periodChange` (Nachprüfung von #252, G2-N-W1): Beim Wechsel des Abrechnungszeitraums wandern Stromrechnung
+// und Abzüge nacheinander; die Prüfungen auf denselben Zeitraum und die Summe gelten dann für den
+// Endstand (`settleOperatingPowerLinks`), nicht für jeden Zwischenschritt.
+export type CostItemGuardOptions = { splitPart?: boolean; periodChange?: boolean }
 
 async function requireServiceAndTax(db: Executor, before: CostItem | null, after: CostItem, options: CostItemGuardOptions): Promise<void> {
   const what = `„${after.description}“`
@@ -1149,7 +1152,7 @@ async function guardCostItem(db: Executor, before: CostItem | null, after: CostI
   await sameProperty(db, after.propertyId, ziele, 'Die Kostenposition')
   await guardCostItemHeating(db, before, after)
   await guardFuelLink(db, before, after)
-  await guardOperatingPower(db, before, after)
+  await guardOperatingPower(db, before, after, options)
 }
 
 // Betriebsstrom und Abzug (Heizung PR 15, #212). Ein Abzug gehört zu genau einer Betriebsstrom-Position
@@ -1157,7 +1160,7 @@ async function guardCostItem(db: Executor, before: CostItem | null, after: CostI
 // und Vorzeichen (Bedingungen), hier steht, was an einer anderen Zeile hängt. Die Energie der Anlage
 // prüft diese Funktion bewusst nicht (R2-W1): Auch bei einer Wärmepumpe ist der Strom von Umwälzpumpen
 // und Regelung Betriebsstrom; abgelehnt wird dort nur die Schätzhilfe (db/operatingPower.ts).
-async function guardOperatingPower(db: Executor, before: CostItem | null, after: CostItem): Promise<void> {
+async function guardOperatingPower(db: Executor, before: CostItem | null, after: CostItem, options: CostItemGuardOptions = {}): Promise<void> {
   // Durchsicht von #252, G-W2: Zeigt ein Abzug auf diese Position (als Betriebsstrom oder als
   // Stromrechnung), bleibt sie in ihrem Objekt; sonst minderte der Abzug den Allgemeinstrom des einen
   // Hauses für den Betriebsstrom des anderen. Den Abzug selbst prüfen die Verweise weiter unten.
@@ -1220,14 +1223,14 @@ async function guardOperatingPower(db: Executor, before: CostItem | null, after:
   if (after.operatingPowerBasis !== undefined && after.operatingPower === undefined) {
     throw new HeatingError(400, 'Eine Grundlage der Schätzung gibt es nur bei Betriebsstrom oder seinem Abzug beim Allgemeinstrom.')
   }
-  await guardDeductionSource(db, after)
-  await guardGeneralWithDeductions(db, before, after)
+  await guardDeductionSource(db, after, options)
+  await guardGeneralWithDeductions(db, before, after, options)
 }
 
 // Durchsicht von #252, G-K3: Ein Abzug zeigt auf die Stromrechnung, aus der er gerechnet wurde, im selben
 // Objekt und Zeitraum. Ohne diesen Verweis bliebe ein Abzug nach dem Löschen oder Umstellen der Rechnung
 // still stehen, und der Allgemeinstrom wäre netto negativ oder anders verteilt als die Rechnung.
-async function guardDeductionSource(db: Executor, after: CostItem): Promise<void> {
+async function guardDeductionSource(db: Executor, after: CostItem, options: CostItemGuardOptions = {}): Promise<void> {
   if (after.operatingPowerGeneralId !== undefined && after.operatingPower !== 'deduction') {
     throw new HeatingError(400, 'Nur ein Abzug des Betriebsstroms zeigt auf eine Stromrechnung.')
   }
@@ -1245,7 +1248,7 @@ async function guardDeductionSource(db: Executor, after: CostItem): Promise<void
   if (g.category !== GENERAL_POWER_CATEGORY || !(g.amountCents > 0) || g.operatingPower !== null) {
     throw new HeatingError(400, `„${g.description}“ ist keine Stromrechnung des Allgemeinstroms mit positivem Betrag; ein Abzug kann nicht aus ihr gerechnet sein.`)
   }
-  if (g.period !== after.period) {
+  if (g.period !== after.period && !options.periodChange) {
     throw new HeatingError(400, `Ein Abzug steht im selben Zeitraum wie seine Stromrechnung „${g.description}“.`)
   }
 }
@@ -1257,9 +1260,9 @@ async function deductionsFrom(db: Executor, generalId: string): Promise<string[]
 
 // Eine Stromrechnung mit Abzügen bleibt Stromrechnung: Kostenart, positiver Betrag, keine Kennzeichnung,
 // derselbe Zeitraum (G-K3).
-async function guardGeneralWithDeductions(db: Executor, before: CostItem | null, after: CostItem): Promise<void> {
+async function guardGeneralWithDeductions(db: Executor, before: CostItem | null, after: CostItem, options: CostItemGuardOptions = {}): Promise<void> {
   if (!before || before.category !== GENERAL_POWER_CATEGORY || before.operatingPower !== undefined) return
-  const stillGeneral = after.category === GENERAL_POWER_CATEGORY && after.amountCents > 0 && after.operatingPower === undefined && after.period === before.period
+  const stillGeneral = after.category === GENERAL_POWER_CATEGORY && after.amountCents > 0 && after.operatingPower === undefined && (after.period === before.period || options.periodChange === true)
   if (stillGeneral) return
   const abzuege = await deductionsFrom(db, after.id)
   if (abzuege.length > 0) {
@@ -2087,7 +2090,7 @@ export type PartWrite = { period: PeriodKey; amountCents: number; labor35aCents:
 // Schreiben wie das gewöhnliche Anlegen; `base` gibt alles Übrige (Schlüssel, Anteile, Beleg).
 // `keepId`: Die Kennung bleibt am Teil dieses Zeitraums, sonst am ersten. Ohne Transaktion, denn
 // beide Aufrufer (Aufteilen, Wechsel des Rhythmus) laufen schon in einer.
-export async function writeCostItemParts(tx: Executor, base: CostItem, parts: readonly PartWrite[], newId: () => string, keepId: string | null): Promise<string[]> {
+export async function writeCostItemParts(tx: Executor, base: CostItem, parts: readonly PartWrite[], newId: () => string, keepId: string | null, guardOptions: CostItemGuardOptions = { splitPart: true }): Promise<string[]> {
   const keepAt = Math.max(0, parts.findIndex((p) => p.period === base.period))
   const written: string[] = []
   for (const [i, part] of parts.entries()) {
@@ -2095,7 +2098,7 @@ export async function writeCostItemParts(tx: Executor, base: CostItem, parts: re
     const entity = mergeCostItem(keepId !== null && i === keepAt ? base : { ...base, id }, {
       period: part.period, amountCents: part.amountCents, labor35aCents: part.labor35aCents, description: part.description, taxYear: part.taxYear,
     })
-    await guardCostItem(tx, keepId !== null && i === keepAt ? base : null, entity, {}, { splitPart: true })
+    await guardCostItem(tx, keepId !== null && i === keepAt ? base : null, entity, {}, guardOptions)
     if (keepId !== null && i === keepAt) await costItemCollection.replace(tx, entity)
     else await costItemCollection.insert(tx, entity)
     written.push(id)
@@ -2109,7 +2112,7 @@ export async function writeCostItemParts(tx: Executor, base: CostItem, parts: re
 // einer Belegauswertung und der Beleg auf einen verbleibenden Teil derselben Rechnung: Mit
 // `SET NULL` stünde die schon gebuchte Rechnung sonst wieder offen im Posteingang und ließe sich ein
 // zweites Mal buchen (#184). Ohne Transaktion, der Aufrufer läuft in einer.
-export async function rewriteCostItemFamily(tx: Executor, members: readonly CostItem[], parts: readonly PartWrite[], newId: () => string): Promise<string[]> {
+export async function rewriteCostItemFamily(tx: Executor, members: readonly CostItem[], parts: readonly PartWrite[], newId: () => string, guardOptions: CostItemGuardOptions = { splitPart: true }): Promise<string[]> {
   const first = members[0]
   if (first === undefined) return []
   const unused = [...members]
@@ -2125,13 +2128,13 @@ export async function rewriteCostItemFamily(tx: Executor, members: readonly Cost
     const member = chosen[i]
     if (member !== undefined) {
       const entity = mergeCostItem(member, fields)
-      await guardCostItem(tx, member, entity, {}, { splitPart: true })
+      await guardCostItem(tx, member, entity, {}, guardOptions)
       await costItemCollection.replace(tx, entity)
       written.push(member.id)
     } else {
       const id = newId()
       const entity = mergeCostItem({ ...first, id }, fields)
-      await guardCostItem(tx, null, entity, {}, { splitPart: true })
+      await guardCostItem(tx, null, entity, {}, guardOptions)
       await costItemCollection.insert(tx, entity)
       written.push(id)
     }
@@ -2454,4 +2457,38 @@ export async function invoiceFilesInUse(db: Database, files: string[]): Promise<
 export async function sharesForUnit(db: Database, unitId: string): Promise<number> {
   const rows = await db.select({ unitId: costItemShares.unitId }).from(costItemShares).where(eq(costItemShares.unitId, unitId))
   return rows.length
+}
+
+// Nachprüfung von #252, G2-N-W1: Nach dem Wechsel des Abrechnungszeitraums zeigt jeder Abzug auf den Teil
+// seiner Stromrechnung im selben Zeitraum (`parts`: je ursprünglicher Position die geschriebenen Teile),
+// und die Prüfungen des Betriebsstroms gelten für den Endstand. Scheitert eine, wirft die Funktion einen
+// `PeriodError`; der Wechsel antwortet dann mit 409 und Vorschau, die Transaktion schreibt nichts.
+export async function settleOperatingPowerLinks(tx: Executor, propertyId: string, parts: ReadonlyMap<string, readonly { id: string; period: PeriodKey }[]>): Promise<void> {
+  const all = (await readCostItems(tx)).filter((c) => c.propertyId === propertyId)
+  const byId = new Map(all.map((c) => [c.id, c]))
+  const familyOf = (id: string) => [...parts.values()].find((list) => list.some((p) => p.id === id)) ?? []
+  for (const d of all) {
+    if (d.operatingPower !== 'deduction' || d.operatingPowerGeneralId === undefined) continue
+    const g = byId.get(d.operatingPowerGeneralId)
+    if (g && g.period === d.period) continue
+    const same = familyOf(d.operatingPowerGeneralId).find((p) => p.period === d.period)
+    if (same) {
+      await tx.update(costItems).set({ operatingPowerGeneralId: same.id }).where(eq(costItems.id, d.id))
+      byId.set(d.id, { ...d, operatingPowerGeneralId: same.id })
+    }
+  }
+  const deductions = [...byId.values()].filter((c) => c.operatingPower === 'deduction')
+  for (const d of deductions) {
+    const g = d.operatingPowerGeneralId === undefined ? undefined : byId.get(d.operatingPowerGeneralId)
+    if (!g || g.period !== d.period || g.category !== GENERAL_POWER_CATEGORY || !(g.amountCents > 0)) {
+      throw new PeriodError(`Nach dem Wechsel stünde der Abzug „${d.description}“ ohne seine Stromrechnung im selben Zeitraum. Löschen Sie den Abzug vor dem Wechsel und legen Sie ihn danach neu an.`)
+    }
+  }
+  for (const g of byId.values()) {
+    if (g.operatingPower !== undefined) continue
+    const deducted = -deductions.filter((d) => d.operatingPowerGeneralId === g.id).reduce((a, d) => a + d.amountCents, 0)
+    if (deducted > g.amountCents) {
+      throw new PeriodError(`Nach dem Wechsel wäre aus „${g.description}“ mehr abgezogen, als die Rechnung beträgt. Löschen Sie die Abzüge vor dem Wechsel und legen Sie sie danach neu an.`)
+    }
+  }
 }
