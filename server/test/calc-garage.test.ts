@@ -10,7 +10,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { computeSettlement, type ComputedSettlement } from '../src/calc.ts'
-import { openDatabase } from '../src/db/open.ts'
+import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { createEntity } from '../src/db/repository.ts'
 import { snapshotOf, type SnapshotCostItem, type SnapshotSource, type SnapshotTenancy, type SnapshotUnit } from '../src/snapshot.ts'
 
@@ -97,7 +97,7 @@ test('Alle Einheiten mit 0 m² und 0 Personen: keine Division durch null, die Ko
 
 test('Datenbank: 0 m² und 0 Personen werden angenommen', async () => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-garage-'))
-  const opened = await openDatabase({ dataDir })
+  const opened = await openFreshDatabase(dataDir)
   try {
     const u = await opened.write((db) => createEntity(db, 'units', 'g', { propertyId: 'objekt-1', name: 'Garage', areaM2: 0, participates: true }))
     assert.equal(Reflect.get(u, 'areaM2'), 0)

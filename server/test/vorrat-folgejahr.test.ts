@@ -11,7 +11,8 @@ import { computeSettlement, type ComputedSettlement } from '../src/calc.ts'
 import { createDelivery } from '../src/db/fuel.ts'
 import { saveStock } from '../src/db/fuelStock.ts'
 import { createHeatingPlant } from '../src/db/heating.ts'
-import { openDatabase, type OpenedDatabase } from '../src/db/open.ts'
+import type { OpenedDatabase } from '../src/db/open.ts'
+import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { readStock } from '../src/db/read.ts'
 import { createEntity, updateEntity } from '../src/db/repository.ts'
 import { snapshotFor } from '../src/snapshot.ts'
@@ -24,7 +25,7 @@ const tenants = (r: ComputedSettlement): number => r.statements.reduce((a, st) =
 
 async function withDatabase(work: (opened: OpenedDatabase) => Promise<void>): Promise<void> {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-folgejahr-'))
-  const opened = await openDatabase({ dataDir })
+  const opened = await openFreshDatabase(dataDir)
   try { await work(opened) } finally { opened.close(); fs.rmSync(dataDir, { recursive: true, force: true }) }
 }
 async function bestand(opened: OpenedDatabase, c2: '2025-01' | null): Promise<void> {

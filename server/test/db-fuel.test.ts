@@ -13,6 +13,7 @@ import type { HeatingStatement } from '../../shared/types.ts'
 import { ensureHeatingPeriod } from '../src/db/co2.ts'
 import { createHeatingPlant, removeHeatingPlant, updateHeatingPlant } from '../src/db/heating.ts'
 import { openDatabase } from '../src/db/open.ts'
+import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { closeSettlement, createEntity, createProperty, CrossPropertyError, crossPropertyViolations, findEntity, HeatingError, removeEntity, updateEntity } from '../src/db/repository.ts'
 import { costItems, fuelCarryFrozen, heatingPlants } from '../src/db/schema.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
@@ -21,7 +22,7 @@ import { periodKey } from '../../shared/period.ts'
 type Opened = Awaited<ReturnType<typeof openDatabase>>
 async function withDatabase(run: (opened: Opened) => Promise<void>): Promise<void> {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-fuel-'))
-  const opened = await openDatabase({ dataDir })
+  const opened = await openFreshDatabase(dataDir)
   try {
     await run(opened)
   } finally {

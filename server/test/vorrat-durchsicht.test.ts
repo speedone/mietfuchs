@@ -11,6 +11,7 @@ import { createDelivery, removeDelivery, unfreezeFuelCarries, updateDelivery } f
 import { removeStock, saveStock } from '../src/db/fuelStock.ts'
 import { createHeatingPlant, updateHeatingPlant } from '../src/db/heating.ts'
 import { openDatabase } from '../src/db/open.ts'
+import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { readClosedSettlements, readStock } from '../src/db/read.ts'
 import { closeSettlement, createEntity, HeatingError, reopenSettlement, updateEntity } from '../src/db/repository.ts'
 import { snapshotFor } from '../src/snapshot.ts'
@@ -21,7 +22,7 @@ import { calendarYearPeriod, periodKey } from '../../shared/period.ts'
 type Opened = Awaited<ReturnType<typeof openDatabase>>
 async function withHouse(run: (h: House) => Promise<void>): Promise<void> {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-vorrat-dv-'))
-  const opened = await openDatabase({ dataDir })
+  const opened = await openFreshDatabase(dataDir)
   try {
     await opened.write(async (db) => {
       await createEntity(db, 'units', 'a', { propertyId: 'objekt-1', name: 'A', areaM2: 60, participates: true })

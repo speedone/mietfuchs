@@ -9,13 +9,14 @@ import { createDelivery, removeDelivery, updateDelivery } from '../src/db/fuel.t
 import { removeStock, saveStock } from '../src/db/fuelStock.ts'
 import { createHeatingPlant, updateHeatingPlant } from '../src/db/heating.ts'
 import { openDatabase } from '../src/db/open.ts'
+import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { closeSettlement, createEntity, HeatingError, reopenSettlement } from '../src/db/repository.ts'
 import { periodKey } from '../../shared/period.ts'
 
 type Opened = Awaited<ReturnType<typeof openDatabase>>
 async function withDatabase(run: (opened: Opened) => Promise<void>): Promise<void> {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-vorrat-'))
-  const opened = await openDatabase({ dataDir })
+  const opened = await openFreshDatabase(dataDir)
   try {
     await run(opened)
   } finally {

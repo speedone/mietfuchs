@@ -6,6 +6,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { openDatabase } from '../src/db/open.ts'
+import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { readStock } from '../src/db/read.ts'
 import { closeSettlement, createEntity, updateProperty } from '../src/db/repository.ts'
 import { createHeatingPlant, replaceHeatingPlant, updateHeatingPlant } from '../src/db/heating.ts'
@@ -22,7 +23,7 @@ import type { HeatingPeriodData } from '../../shared/types.ts'
 type Opened = Awaited<ReturnType<typeof openDatabase>>
 async function withDatabase(run: (opened: Opened) => Promise<void>): Promise<void> {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-pflichtangaben-'))
-  const opened = await openDatabase({ dataDir })
+  const opened = await openFreshDatabase(dataDir)
   try {
     await run(opened)
   } finally {

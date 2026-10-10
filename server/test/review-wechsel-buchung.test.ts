@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import type { CostItem, LineDecision } from '../../shared/types.ts'
-import { openDatabase } from '../src/db/open.ts'
+import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { createEntity } from '../src/db/repository.ts'
 import { readStock } from '../src/db/read.ts'
 import { saveAssessment } from '../src/db/assessments.ts'
@@ -21,7 +21,7 @@ const ids = () => `neu-${++n}`
 test('Review B2: gebuchte Rechnung, Wechsel mit den Vorschlägen, danach zweite Buchung an die Position', async () => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mf-review-'))
   const uploadDir = path.join(dataDir, 'uploads'); fs.mkdirSync(uploadDir, { recursive: true })
-  const opened = await openDatabase({ dataDir })
+  const opened = await openFreshDatabase(dataDir)
   try {
     await opened.write(async (db) => {
       await createEntity(db, 'units', 'eg', { propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true })
@@ -64,7 +64,7 @@ test('Review B2: gebuchte Rechnung, Wechsel mit den Vorschlägen, danach zweite 
 test('Review B2 (a): Wer trotzdem teilt, kann eine weitere Zeile nicht mit einem Teil verknüpfen', async () => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mf-review-'))
   const uploadDir = path.join(dataDir, 'uploads'); fs.mkdirSync(uploadDir, { recursive: true })
-  const opened = await openDatabase({ dataDir })
+  const opened = await openFreshDatabase(dataDir)
   try {
     await opened.write(async (db) => {
       await createEntity(db, 'units', 'eg', { propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true })

@@ -8,6 +8,7 @@ import { eq } from 'drizzle-orm'
 import { heatingPeriodViews, removeCo2Statement, saveCo2Statement, saveHotWater } from '../src/db/co2.ts'
 import { createHeatingPlant, heatingPlantViolations, removeHeatingPlant, updateHeatingPlant } from '../src/db/heating.ts'
 import { openDatabase } from '../src/db/open.ts'
+import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { readCo2Statements, readHeatingPeriodRows } from '../src/db/read.ts'
 import { closeSettlement, createEntity, createProperty, crossPropertyViolations, CrossPropertyError, HeatingError, updateEntity } from '../src/db/repository.ts'
 import { heatingPeriods, heatingPlants, units } from '../src/db/schema.ts'
@@ -17,7 +18,7 @@ import { periodKey } from '../../shared/period.ts'
 type Opened = Awaited<ReturnType<typeof openDatabase>>
 async function withDatabase(run: (opened: Opened) => Promise<void>): Promise<void> {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-co2-'))
-  const opened = await openDatabase({ dataDir })
+  const opened = await openFreshDatabase(dataDir)
   try {
     await run(opened)
   } finally {

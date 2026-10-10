@@ -434,7 +434,7 @@ async function co2Statement() {
 }
 
 // Vorrat (Heizung PR 8): Die Route gibt es, und bei einer Gasheizung lehnt sie mit einem Satz ab.
-// Rechnen prüfen calc-vorrat.test.ts und api.test.ts; die Anlage der Prüfung heizt mit Gas.
+// Rechnen prüfen calc-vorrat.test.ts und api-heizung.test.ts; die Anlage der Prüfung heizt mit Gas.
 async function stockRoute() {
   const [anlage] = (await request('/api/heating-plants')).body
   const antwort = await request(`/api/heating-plants/${anlage.id}/periods/2025-01/stock`, json('PUT', { stockUnit: 'l', closingQuantity: 100 }))

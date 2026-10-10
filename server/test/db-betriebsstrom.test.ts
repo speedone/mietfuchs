@@ -14,7 +14,8 @@ import { readCostItems, readStock } from '../src/db/read.ts'
 import { taxReportFor } from '../src/calc.ts'
 import { costItems, heatingPlants, properties } from '../src/db/schema.ts'
 import { periodKey } from '../../shared/period.ts'
-import { openDatabase, type OpenedDatabase } from '../src/db/open.ts'
+import type { OpenedDatabase } from '../src/db/open.ts'
+import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { closeSettlement, createEntity, createProperty, CrossPropertyError, crossPropertyViolations, findEntity, HeatingError, removeEntity, updateEntity } from '../src/db/repository.ts'
 
 const tempDir = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-betriebsstrom-'))
@@ -30,7 +31,7 @@ function rejects(connection: Connection, sql: string): string | null {
 
 async function withDatabase(work: (opened: OpenedDatabase) => Promise<void>): Promise<void> {
   const dataDir = tempDir()
-  const opened = await openDatabase({ dataDir })
+  const opened = await openFreshDatabase(dataDir)
   try {
     // Die Stromrechnung, auf die jeder Abzug zeigt (Durchsicht von #252, G-K3).
     await opened.write((db) => createEntity(db, 'costItems', 'hausstrom', { propertyId: 'objekt-1', period: '2025-01', category: 'Beleuchtung/Allgemeinstrom', description: 'Allgemeinstrom 2025', amountCents: 105000, key: 'area' }))

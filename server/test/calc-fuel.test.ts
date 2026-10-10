@@ -9,7 +9,7 @@ import path from 'node:path'
 import { eq } from 'drizzle-orm'
 import { createHeatingPlant } from '../src/db/heating.ts'
 import { createDelivery, freezeFuelCarries } from '../src/db/fuel.ts'
-import { openDatabase } from '../src/db/open.ts'
+import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { readStock } from '../src/db/read.ts'
 import { closeSettlement, createEntity, removeEntity } from '../src/db/repository.ts'
 import { properties } from '../src/db/schema.ts'
@@ -860,7 +860,7 @@ test('Nachprüfung G-a: Schätzung ohne Rechnung, aus der sie ihren Schlüssel n
 
 test('Durchsicht #247 G-K4: Abschluss mit stornierter Rechnung über die Datenbank: gespeichert, gelesen, der Hinweis sagt „storniert“', async () => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-storno-'))
-  const opened = await openDatabase({ dataDir })
+  const opened = await openFreshDatabase(dataDir)
   try {
     await opened.write(async (db) => {
       await db.update(properties).set({ periodStartMonth: 5 }).where(eq(properties.id, 'objekt-1'))

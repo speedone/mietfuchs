@@ -16,13 +16,14 @@ import { createDelivery, updateDelivery } from '../src/db/fuel.ts'
 import { heatingPeriodViews, saveHotWater } from '../src/db/co2.ts'
 import { setUpSelf } from '../src/db/heatingSelf.ts'
 import { openDatabase } from '../src/db/open.ts'
+import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { readClosedSettlements, readFuelDeliveries, readHeatingPlants, readStock } from '../src/db/read.ts'
 import { closeSettlement, createEntity, HeatingError, removeEntity } from '../src/db/repository.ts'
 
 type Opened = Awaited<ReturnType<typeof openDatabase>>
 async function withDatabase(run: (opened: Opened) => Promise<void>): Promise<void> {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-warmwasser-'))
-  const opened = await openDatabase({ dataDir })
+  const opened = await openFreshDatabase(dataDir)
   try {
     await run(opened)
   } finally {
