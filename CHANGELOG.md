@@ -296,6 +296,23 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   einem Vermerk darin. Hinweise der Prüfung stehen auch an der Lieferung. Unter der Summe der Rechnungen
   (nicht abgegrenzt) steht, was die Abrechnung daraus macht: beim Vorrat Endbestand und Verbrauch in der
   Heizperiode, sonst der Teil der Rechnungen in der Heizperiode, dazu die Einstufung laut Abrechnung.
+- **Betriebsstrom der Heizung** ([#212](https://github.com/speedone/mietfuchs/issues/212)): Eine
+  Heizposition lässt sich als Betriebsstrom kennzeichnen, der über den Stromzähler des Hauses läuft.
+  Steht beim Allgemeinstrom kein Abzug in gleicher Höhe, nennt die Abrechnung den Betrag, der doppelt
+  verteilt wird (§ 7 Abs. 2, § 8 Abs. 2 HeizkostenV; BGH, Urteil vom 03.06.2016, V ZR 166/15). Die
+  Karte „Betriebsstrom“ auf der Seite Heizkosten schätzt ihn nach Leistung der Geräte und Heiztagen,
+  auf Wunsch mit eigenen Tagen je Gerät, nimmt den Zwischenzähler oder einen selbst geschätzten Betrag
+  mit Grundlage und legt Betriebsstrom und Abzug gemeinsam an; der Euro-Betrag ist der Anteil am
+  Rechnungsbetrag einschließlich Grundpreis. Die Grundlage der Schätzung bleibt an beiden Positionen
+  gespeichert und steht im Rechenweg, denn bestreitet ein Mieter den Betrag, müssen Sie sie darlegen
+  (BGH, Versäumnisurteil vom 20.02.2008, VIII ZR 27/07, Leitsatz 3). Einen von Hand erfassten Abzug
+  verknüpfen Sie im Kostenformular mit dem Betriebsstrom. Steht der Allgemeinstrom in einer
+  abgeschlossenen Abrechnung, legt die Karte nichts an; ein Abzug, der dort nach dem Abschluss angelegt
+  oder geändert wurde, zählt nur mit dem, was die zugestellte Abrechnung gutgeschrieben hat, und der
+  Hinweis sagt es. Bei Wärmepumpe und Stromheizung ist der Strom des Erzeugers Brennstoff und gehört in
+  die Heizposition; Umwälzpumpen und Regelung über den Hauszähler kennzeichnen Sie im Kostenformular als
+  Betriebsstrom. Einen Bruchteil der Brennstoffkosten lässt der BGH als Schätzgrundlage zu; Mietfuchs
+  rechnet keinen Prozentsatz vor, das Lexikon nennt die Literaturwerte.
 
 ### Geändert
 
