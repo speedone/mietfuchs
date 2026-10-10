@@ -11,7 +11,7 @@ import { eq } from 'drizzle-orm'
 import { createHeatingPlant } from '../src/db/heating.ts'
 import { bookOperatingPower } from '../src/db/operatingPower.ts'
 import { readCostItems } from '../src/db/read.ts'
-import { costItems, heatingPlants } from '../src/db/schema.ts'
+import { costItems, heatingPlants, properties } from '../src/db/schema.ts'
 import { periodKey } from '../../shared/period.ts'
 import { openDatabase, type OpenedDatabase } from '../src/db/open.ts'
 import { closeSettlement, createEntity, createProperty, CrossPropertyError, crossPropertyViolations, findEntity, HeatingError, removeEntity, updateEntity } from '../src/db/repository.ts'
@@ -511,5 +511,70 @@ test('G-W2: die Prüfung beim Wiederherstellen kennt beide Verweise des Abzugs',
     const befunde = await opened.read((db) => crossPropertyViolations(db))
     assert.ok(befunde.some((b) => /„Abzug Betriebsstrom Heizung“ zeigt auf den Betriebsstrom „Betriebsstrom Heizung“ eines anderen Objekts/.test(b)), befunde.join('\n'))
     assert.ok(befunde.some((b) => /„Abzug Betriebsstrom Heizung“ zeigt auf die Stromrechnung „Allgemeinstrom 2025“ eines anderen Objekts/.test(b)), befunde.join('\n'))
+  })
+})
+
+// ---------- Durchsicht von #252, G-K1, G-K2, N1: Zeitraum und Steuerjahr der Stromrechnung ----------
+
+const maiApril = {
+  anlage: async (opened: OpenedDatabase, method: 'manual' | 'service') => {
+    await opened.write((db) => createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'gas', method }))
+    await opened.write((db) => db.update(heatingPlants).set({ periodStartMonth: 5 }).where(eq(heatingPlants.id, 'hp')))
+  },
+  objekt: async (opened: OpenedDatabase, method: 'manual' | 'service') => {
+    await opened.write((db) => db.update(properties).set({ periodStartMonth: 5 }).where(eq(properties.id, 'objekt-1')))
+    await opened.write((db) => createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'gas', method }))
+  },
+}
+const eigen = { period: '2025-05', ownCents: 30000, basis: 'Bruchteil der Brennstoffkosten' }
+
+test('G-K1: Anlage Mai–April, eigene Abrechnung: Betriebsstrom bekommt das Steuerjahr der Stromrechnung 2025, der Abzug keins', async () => {
+  await withDatabase(async (opened) => {
+    await maiApril.anlage(opened, 'manual')
+    await opened.write((db) => createEntity(db, 'costItems', 'gas', heizung({ period: '2025-05', description: 'Gas', heatingPart: 'fuel', operatingPower: null, heatingPlantId: 'hp', taxYear: 2026 })))
+    await opened.write((db) => createEntity(db, 'costItems', 'strom', strom))
+    const b = await opened.write((db) => bookOperatingPower(db, 'hp', { ...eigen, generalItemId: 'strom' }, ids))
+    const h = b?.heatingItem ?? assert.fail('kein Betriebsstrom')
+    assert.deepEqual([h.period, h.taxYear, b?.deduction.period, b?.deduction.taxYear], ['2025-05', 2025, '2025-01', undefined])
+  })
+})
+
+test('G-K1: Objekt Mai–April, eigene Abrechnung: beide Positionen im Steuerjahr der Stromrechnung (2026)', async () => {
+  await withDatabase(async (opened) => {
+    await maiApril.objekt(opened, 'manual')
+    await opened.write((db) => createEntity(db, 'costItems', 'gas', heizung({ period: '2025-05', description: 'Gas', heatingPart: 'fuel', operatingPower: null, heatingPlantId: 'hp', taxYear: 2026 })))
+    await opened.write((db) => createEntity(db, 'costItems', 'strom', { ...strom, period: '2025-05', taxYear: 2026 }))
+    const b = await opened.write((db) => bookOperatingPower(db, 'hp', { ...eigen, generalItemId: 'strom' }, ids))
+    const h = b?.heatingItem ?? assert.fail('kein Betriebsstrom')
+    assert.deepEqual([h.taxYear, b?.deduction.taxYear], [2026, 2026])
+  })
+})
+
+test('G-K1: Kalenderobjekt mit Messdienst-Anlage Mai–April: nur der Abzug, im Kalenderjahr der Stromrechnung', async () => {
+  await withDatabase(async (opened) => {
+    await maiApril.anlage(opened, 'service')
+    await opened.write((db) => createEntity(db, 'costItems', 'strom', strom))
+    const b = await opened.write((db) => bookOperatingPower(db, 'hp', { ...eigen, generalItemId: 'strom' }, ids))
+    assert.deepEqual([b?.heatingItem, b?.deduction.period, b?.deduction.taxYear], [null, '2025-01', undefined])
+  })
+})
+
+test('G-K1: Objekt Mai–April mit Messdienst: der Abzug bekommt das Steuerjahr der Stromrechnung', async () => {
+  await withDatabase(async (opened) => {
+    await maiApril.objekt(opened, 'service')
+    await opened.write((db) => createEntity(db, 'costItems', 'strom', { ...strom, period: '2025-05', taxYear: 2026 }))
+    const b = await opened.write((db) => bookOperatingPower(db, 'hp', { ...eigen, generalItemId: 'strom' }, ids))
+    assert.deepEqual([b?.deduction.period, b?.deduction.taxYear], ['2025-05', 2026])
+  })
+})
+
+// N1: Die Stromrechnung 2024 enthält den Betriebsstrom 2025 nicht; ein Abzug dort käme bei den Mietern 2024 an.
+test('N1: Stromrechnung 2024 zur Heizperiode 2025 → 400, nichts angelegt', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'gas', method: 'service' }))
+    await opened.write((db) => createEntity(db, 'costItems', 'strom24', { ...strom, period: '2024-01', description: 'Hausstrom 2024' }))
+    await assert.rejects(opened.write((db) => bookOperatingPower(db, 'hp', { period: '2025-01', generalItemId: 'strom24', ownCents: 10000, basis: 'x' }, ids)),
+      (e: unknown) => e instanceof HeatingError && e.status === 400 && /„Hausstrom 2024“/.test(e.message) && /Heizperiode 2025/.test(e.message))
+    assert.equal((await markierte(opened)).length, 0)
   })
 })

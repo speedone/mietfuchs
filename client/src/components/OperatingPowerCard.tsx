@@ -6,10 +6,11 @@ import { bookedOperatingPower, emptyOperatingPowerForm, generalItemOptions, oper
 import { operatingPowerRefusal } from '../../../shared/operatingPower.ts'
 import { useToast } from './feedback'
 import Term from './Term'
-import type { CostItem, HeatingPeriodView, HeatingPlant } from '../types'
+import type { CostItem, HeatingPeriodView, HeatingPlant, PeriodRules } from '../types'
 
-export default function OperatingPowerCard({ plant, view, items, onBooked }: {
-  plant: Pick<HeatingPlant, 'id' | 'method' | 'energy'>; view: Pick<HeatingPeriodView, 'period' | 'label' | 'closed'>; items: readonly CostItem[]; onBooked: () => void
+// `rules`: der Rhythmus des Objekts, nach dem die Stromrechnungen ihren Zeitraum haben (G-K1).
+export default function OperatingPowerCard({ plant, view, rules, items, onBooked }: {
+  plant: Pick<HeatingPlant, 'id' | 'method' | 'energy'>; view: Pick<HeatingPeriodView, 'period' | 'label' | 'from' | 'to' | 'closed'>; rules: PeriodRules; items: readonly CostItem[]; onBooked: () => void
 }) {
   const [form, setForm] = useState(emptyOperatingPowerForm)
   const [busy, setBusy] = useState(false)
@@ -78,7 +79,7 @@ export default function OperatingPowerCard({ plant, view, items, onBooked }: {
       <label className="field">
         <span>Stromrechnung des Hauses</span>
         <select value={form.generalItemId} disabled={view.closed} onChange={(e) => setForm({ ...form, generalItemId: e.target.value })}>
-          {generalItemOptions(items).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          {generalItemOptions(items, view, rules).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
       </label>
       {form.mode !== 'own' && (

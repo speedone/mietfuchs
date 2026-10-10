@@ -195,3 +195,14 @@ test('G-W1: Summe der Abzüge über der Stromrechnung → Hinweis mit dem Betrag
   assert.match(n.text, /Aus der Stromrechnung „Hausstrom“ \(1\.000,00 €\) sind 1\.200,00 € abgezogen, 200,00 € mehr als die Rechnung/)
   assert.equal(kind(settle([strom, ab('a1', 60000), ab('a2', 40000)], [])).length, 0)
 })
+
+// G-K2, N1: Betriebsstrom und Abzug sind eine Umbuchung zwischen Kostenarten und gehören in dasselbe
+// Steuerjahr; sonst stehen beide Jahre der Anlage V falsch (gemessen 900 € statt 1.000 € und 100 € statt 0 €).
+test('N1: Abzug in einem anderen Steuerjahr als sein Betriebsstrom → Hinweis; im selben → still', () => {
+  const kind = (s: ReturnType<typeof settle>) => (s.notices ?? []).filter((n) => n.code === 'heating.operating-power-tax-year')
+  const [n] = kind(settle([betriebsstrom, hausstrom], [{ ...abzug(14784, 'ab', '2024-01'), taxYear: 2024 }]))
+  if (!n) return assert.fail('kein Hinweis')
+  assert.equal(n.level, 'warning')
+  assert.match(n.text, /„Betriebsstrom Heizung“ zählt in der Steuerübersicht zum Jahr 2025, der Abzug „Abzug Betriebsstrom Heizung“ zum Jahr 2024/)
+  assert.equal(kind(settle([betriebsstrom, hausstrom], [{ ...abzug(14784), taxYear: 2025 }])).length, 0)
+})

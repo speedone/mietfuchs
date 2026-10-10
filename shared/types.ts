@@ -2360,4 +2360,7 @@ export type OperatingPowerDeduction = {
   description: string
   amountCents: number
   closed: OperatingPowerCredit | null
+  // Das Steuerjahr des Abzugs (Durchsicht von #252, N1), zum Vergleich mit seinem Betriebsstrom. Fehlt es
+  // (ein von Hand gebauter Schnappschuss), wird nicht verglichen.
+  taxYear?: number
 }

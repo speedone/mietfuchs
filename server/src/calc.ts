@@ -422,6 +422,8 @@ const noticeKinds = {
   'heating.operating-power-key': { level: 'warning', title: 'Abzug anders verteilt als die Stromrechnung', terms: ['operatingPower', 'allocationKey'] },
   // Durchsicht von #252, G-W1: mehr Abzug als Stromrechnung.
   'heating.operating-power-exceeds': { level: 'warning', title: 'Mehr Abzug als Stromrechnung', terms: ['operatingPower'] },
+  // Durchsicht von #252, N1: Betriebsstrom und Abzug in verschiedenen Steuerjahren.
+  'heating.operating-power-tax-year': { level: 'warning', title: 'Betriebsstrom und Abzug in verschiedenen Steuerjahren', terms: ['operatingPower'] },
   'heating.operating-power-double': { level: 'warning', title: 'Betriebsstrom und Abzug beim Allgemeinstrom passen nicht zusammen', terms: ['operatingPower', 'heatingCostOrdinance'] },
   // Heizung PR 17 (Entwurf 4.5, 10.1): ein Rechtswert, den der Vermieter eingetragen hat.
   'law.value-overridden': { level: 'hint', title: 'Selbst eingetragener Rechtswert', terms: ['legalBasis'] },
@@ -6406,6 +6408,19 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // Durchsicht von #252, G-K3: Ein Abzug mindert seine Stromrechnung nur dann im Verhältnis, wenn er
   // verteilt ist wie sie (Schlüssel, Zähler, Wohnung, Anteile, Teilnehmer; dieselbe Regel wie beim
   // gemerkten Schlüssel, shared/allocation.ts). Sonst verschieben sich die Anteile der Mieter.
+  // Durchsicht von #252, G-K2 und N1: Betriebsstrom und Abzug sind eine Umbuchung aus der Stromrechnung;
+  // in verschiedenen Steuerjahren stünden beide Jahre der Anlage V falsch.
+  for (const item of items) {
+    if (item.operatingPower !== 'included') continue
+    const itemTaxYear = taxYearOf(item, period)
+    for (const d of snapshot.operatingPowerDeductions ?? []) {
+      if (d.itemId !== item.id || d.taxYear === undefined || d.taxYear === itemTaxYear) continue
+      warn('heating.operating-power-tax-year',
+        `„${item.description}“ zählt in der Steuerübersicht zum Jahr ${itemTaxYear}, der Abzug „${d.description}“ zum Jahr ${d.taxYear}. ` +
+        'Beides ist eine Umbuchung aus derselben Stromrechnung und gehört in ihr Jahr; stellen Sie im Kostenformular bei beiden das Jahr der Zahlung der Stromrechnung ein.',
+        itemSubject(item))
+    }
+  }
   // Durchsicht von #252, G-W1: Aus einer Stromrechnung ist höchstens ihr Betrag abzuziehen; sonst ist der
   // Allgemeinstrom netto negativ, und die Mieter bekommen mehr gutgeschrieben, als er kostet.
   for (const g of items) {

@@ -18,7 +18,7 @@
 // bewusst aufnimmt.
 
 import type { BillingPeriod, Co2Statement, CostItem, DegreeDayValue, FrozenFuelCarry, FuelDelivery, HeatingEstimate, HeatingPeriodData, HeatingPlant, HeatingServiceValue, InterimGap, LawOverride, Meter, OperatingPowerCredit, OperatingPowerDeduction, Payment, PeriodKey, PeriodRules, Property, Reading, StockValue, Tenancy, Unit } from '../../shared/types.ts'
-import { calendarPeriod, calendarYearPeriod, parsePeriodKey, periodContaining, periodLabel, periodOfKey, previousPeriod, rulesOf, settlementDeadline } from '../../shared/period.ts'
+import { calendarPeriod, calendarYearPeriod, parsePeriodKey, periodContaining, periodLabel, periodOfKey, previousPeriod, rulesOf, settlementDeadline, startYearOf } from '../../shared/period.ts'
 import { hasOwnRhythm, heatingPeriodsEndingIn, lineRoot, plantRules, sameFuelLine, settledSeparately, settlementKeyOf, type PlantWay } from '../../shared/heatingPeriod.ts'
 import { isStockEnergy } from '../../shared/fuelStock.ts'
 import { dayAfter, germanDate } from '../../shared/law/register.ts'
@@ -906,10 +906,12 @@ export function deductionsOf(
     .filter((c) => c.propertyId === propertyId && c.operatingPower === 'deduction')
     .map((c) => {
       const frozen = closed.find((s) => s.period === c.period)
-      const p = frozen ? periodOfKey(rules, c.period) : null
+      const p = periodOfKey(rules, c.period)
       return {
         id: c.id, itemId: c.operatingPowerItemId ?? null, period: c.period, description: c.description, amountCents: c.amountCents,
         closed: frozen ? creditOf(p ? periodLabel(p) : String(c.period), frozen.itemTotals, c) : null,
+        // N1: das Jahr der Zahlung wie in der Steuerübersicht (`taxYearOf`).
+        taxYear: c.taxYear ?? (p ? Number(p.from.slice(0, 4)) : startYearOf(c.period)),
       }
     })
 }

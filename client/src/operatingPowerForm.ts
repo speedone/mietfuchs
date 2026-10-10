@@ -3,7 +3,8 @@
 import { GENERAL_POWER_CATEGORY, operatingPowerShare, ownEstimateShare } from '../../shared/operatingPower.ts'
 import { fmtEuro, parseEuro } from './api'
 import { parseNumberDe } from './numbers'
-import type { CostItem } from './types'
+import { periodLabel, periodOfKey } from '../../shared/period.ts'
+import type { CostItem, PeriodRules } from './types'
 
 // `days` leer heißt: die Heiztage (P-K8).
 export type DeviceRow = { label: string; watts: string; hours: string; days: string }
@@ -26,12 +27,17 @@ export const emptyOperatingPowerForm = (): OperatingPowerForm => ({
 // „3.000“ und „45,5“ wie im übrigen Formular; leer oder unlesbar ist null.
 const num = (text: string): number | null => (text.trim() === '' ? null : parseNumberDe(text))
 
-export function generalItemOptions(items: readonly CostItem[]): { value: string; label: string }[] {
+// Durchsicht von #252, G-K1 und N1: nur Stromrechnungen, deren Zeitraum (nach den Regeln des Objekts)
+// sich mit der Heizperiode überschneidet, wie der Server es verlangt; beschriftet mit dem Zeitraum.
+export function generalItemOptions(items: readonly CostItem[], span: { from: string; to: string }, rules: PeriodRules): { value: string; label: string }[] {
   return [
     { value: '', label: 'Bitte wählen …' },
     ...items
       .filter((c) => c.category === GENERAL_POWER_CATEGORY && c.amountCents > 0 && c.operatingPower === undefined)
-      .map((c) => ({ value: c.id, label: `${c.description} · ${fmtEuro(c.amountCents)}` })),
+      .flatMap((c) => {
+        const p = periodOfKey(rules, c.period)
+        return p && p.to >= span.from && p.from <= span.to ? [{ value: c.id, label: `${c.description} · ${periodLabel(p)} · ${fmtEuro(c.amountCents)}` }] : []
+      }),
   ]
 }
 
