@@ -6688,3 +6688,25 @@ test('Betriebsstrom über die Route: 201 mit beiden Positionen, 404 ohne Anlage,
     s.stop()
   }
 })
+
+// Der Schnappschuss der Route führt die Abzüge (snapshotFor): Mit Abzug kein Hinweis, ohne ihn der Betrag.
+test('Betriebsstrom in der Abrechnung über die Route: mit Abzug still, nach dem Löschen des Abzugs die Warnung', async () => {
+  const s = await startServer()
+  try {
+    const send = (url: string, init: RequestInit) => fetch(`${s.base}${url}`, { ...init, headers: { 'content-type': 'application/json' } })
+    const unit = await s.api<Unit>('/api/units', jsonPost({ name: 'EG', areaM2: 80, participates: true }))
+    await s.api('/api/tenancies', jsonPost({ unitId: unit.id, tenantName: 'Mieter', personHistory: [{ from: '2025-01-01', persons: 1 }], start: '2025-01-01', end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [] }))
+    const { plant } = await jsonOf<{ plant: HeatingPlant }>(await send('/api/heating-plants', jsonPost({ energy: 'gas', method: 'manual' })))
+    await s.api<CostItem>('/api/costItems', jsonPost({ period: '2025-01', category: 'Heizung und Warmwasser', description: 'Gas', amountCents: 300000, key: 'area', heatingPart: 'fuel', heatingPlantId: plant.id }))
+    const strom = await s.api<CostItem>('/api/costItems', jsonPost({ period: '2025-01', category: 'Beleuchtung/Allgemeinstrom', description: 'Hausstrom', amountCents: 105000, key: 'area' }))
+    const b = await jsonOf<{ deduction: CostItem; heatingItem: CostItem | null }>(await send(`/api/heating-plants/${plant.id}/operating-power`,
+      jsonPost({ period: '2025-01', generalItemId: strom.id, billKwh: 3000, devices: [{ label: 'Pumpe', watts: 45, hoursPerDay: 24 }], heatingDays: 220 })))
+    const doppelt = (st: Settlement) => (st.notices ?? []).filter((n) => n.code === 'heating.operating-power-double')
+    assert.equal(doppelt(await s.api<Settlement>('/api/settlement/2025-01')).length, 0)
+    assert.equal((await send(`/api/costItems/${b.deduction.id}`, { method: 'DELETE' })).status, 200)
+    const [n] = doppelt(await s.api<Settlement>('/api/settlement/2025-01'))
+    assert.match(n?.text ?? '', /abgezogen sind dort 0,00 € statt 83,16 €/)
+  } finally {
+    s.stop()
+  }
+})

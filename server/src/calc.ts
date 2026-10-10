@@ -82,6 +82,7 @@ import { lineRoot, monthSpanText, plantRules, plantSpan, recommendedDeadline, re
 import { heatingSnapshotFor, selfAt, snapshotFor, wayOf } from './snapshot.ts'
 import { cancelledDeliveries, plantFuel, rangeOf, type FuelCarry, type FuelResult } from './fuel.ts'
 import { co2Plausibility, etsExempt as etsExemptPlant, plausibilityText } from './co2Plausibility.ts'
+import { operatingPowerFindings, operatingPowerText } from './operatingPower.ts'
 import { LAW_PARAMS } from '../../shared/law/params.ts'
 import { fuelFromDeliveries, fuelFromStock, looseCentsOf, measuredOffset, problemText, settledByDefault, stockKeysOf, stockOf, stockTemplateOfLine, stockTouched, valueOf as stockValueOf, type FuelFigures, type StockPeriodInput, type StockResult } from './fuelStock.ts'
 import { isStockEnergy, STOCK_FUEL_NAMES, STOCK_UNIT_TEXT } from '../../shared/fuelStock.ts'
@@ -415,6 +416,8 @@ const noticeKinds = {
   'heating.estimate-no-device': { level: 'warning', title: 'Schätzung ohne Gerät', rule: 'heating-estimate', terms: ['heatingEstimate'] },
   'heating.estimate-below-measured': { level: 'hint', title: 'Schätzung unter dem abgelesenen Verbrauch', rule: 'heating-estimate', terms: ['heatingEstimate'] },
   'heating.estimate-same-day': { level: 'warning', title: 'Schätzung neben zwei Ständen am selben Tag', rule: 'heating-estimate', terms: ['heatingEstimate'] },
+  // Heizung PR 15 (#212): Betriebsstrom, der auch im Allgemeinstrom steckt, ohne Abzug in gleicher Höhe.
+  'heating.operating-power-double': { level: 'warning', title: 'Betriebsstrom und Abzug beim Allgemeinstrom passen nicht zusammen', terms: ['operatingPower', 'heatingCostOrdinance'] },
   // Heizung PR 17 (Entwurf 4.5, 10.1): ein Rechtswert, den der Vermieter eingetragen hat.
   'law.value-overridden': { level: 'hint', title: 'Selbst eingetragener Rechtswert', terms: ['legalBasis'] },
   'model.prepayment-unsettled': { level: 'warning', title: 'Vorauszahlung ohne Abrechnung', terms: ['prepayment', 'flatRate'] },
@@ -4038,6 +4041,11 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         { label: 'Umlageschlüssel', value: KEY_LABELS[item.key] || item.key, term: 'allocationKey' },
       ]
       if (carry) steps.unshift(carry.step)
+      // Die Grundlage der Schätzung des Betriebsstroms (Heizung PR 15, P-W1): Bestreitet ein Mieter den
+      // Betrag, muss der Vermieter sie darlegen. Nur im Rechenweg, der nicht gedruckt wird.
+      if (item.operatingPowerBasis) {
+        steps.push({ label: 'Grundlage der Schätzung', value: item.operatingPowerBasis.split('\n').join('; '), term: 'operatingPower' })
+      }
       if (c) {
         // Laut Gemeinschaftsabrechnung (#144): erst der Schritt der Gemeinschaft, dann die
         // Verteilung im Objekt. Die Verteilbasis der ganzen Anlage steht nicht noch einmal da.
@@ -6381,6 +6389,14 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const text = `${v.title} ${label}: ${v.text}, von Ihnen eingetragen (Quelle: ${v.overridden.source}), weil der amtliche Wert noch nicht im Programm steht. ` +
       `Bringt ein Update den amtlichen Wert, gilt dieser; bei einer abgeschlossenen Abrechnung nennt die Seite Abrechnung die Änderung dann als „${change}“.`
     if (!notices.some((n) => n.code === 'law.value-overridden' && n.text === text)) warn('law.value-overridden', text)
+  }
+
+  // Betriebsstrom im Allgemeinstrom (Heizung PR 15, #212): geprüft werden die Positionen, die diese
+  // Abrechnung verteilt (`items`); bei Weg b tut das der Unteraufruf der Heizperiode, und sein Hinweis
+  // wird übernommen (ohne Doppel, PR 5). Die Abzüge kommen aus allen Zeiträumen; einer in einer
+  // abgeschlossenen Abrechnung zählt nur mit dem, was im eingefrorenen Stand steht (P-W3, R2-W2).
+  for (const f of operatingPowerFindings(items, snapshot.operatingPowerDeductions ?? [])) {
+    warn('heating.operating-power-double', operatingPowerText(f, fmtCents), itemSubject({ id: f.itemId }))
   }
 
   // Die Höchstdauer hat P gebildet (shared/period.ts); eingefroren wird sie hier.
