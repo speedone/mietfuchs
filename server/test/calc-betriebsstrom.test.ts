@@ -39,8 +39,10 @@ test('Ohne Abzug: warning mit Betrag, der doppelt verteilt wird', () => {
   assert.match(n.text, /V ZR 166\/15/)
   // P-K3: auch der Warmwasseranteil (§ 8 Abs. 2 HeizkostenV).
   assert.match(n.text, /§ 7 Abs\. 2, § 8 Abs\. 2 HeizkostenV/)
-  // P-K5 mit R2-K3: Selbst tragen ist zulässig, aber nur, wenn der Betriebsstrom aus den Heizkosten herausgeht.
-  assert.match(n.text, /oder nehmen Sie den Betriebsstrom aus den Heizkosten heraus und tragen ihn selbst/)
+  // R3-W-1: Selbst tragen heißt, er steht weder in den Heizkosten noch ungekürzt im Allgemeinstrom. Der einzige Weg
+  // ist deshalb der Abzug; kein Rat, ihn nur aus den Heizkosten zu nehmen (V ZR 166/15 Rn. 13).
+  assert.match(n.text, /Erfassen Sie beim Allgemeinstrom einen Abzug in Höhe des Betriebsstroms, etwa mit der Karte „Betriebsstrom“ auf der Seite Heizkosten\. Wollen Sie ihn nicht umlegen, ziehen Sie ihn ebenso beim Allgemeinstrom ab und nehmen ihn zusätzlich aus den Heizkosten heraus; dann tragen Sie ihn selbst/)
+  assert.doesNotMatch(n.text, /oder nehmen Sie den Betriebsstrom aus den Heizkosten heraus/)
   assert.ok(s.warnings.includes(n.text))
 })
 
@@ -80,7 +82,8 @@ test('R-W1: unlesbarer Stand → kein „doppelt verteilt“, kein Rat zu einem 
 test('R-W1: unbekannt neben einem offenen Abzug gleicher Höhe bleibt nicht stumm und nennt beide', () => {
   const n = codes(settle([betriebsstrom, hausstrom], [abzug(14784, 'ab', '2024-01', { label: '2024', state: 'unknown' }), { ...abzug(14784, 'ab2', '2025-01'), description: 'Abzug 2025' }]))[0] ?? assert.fail('stumm')
   assert.match(n.text, /Daneben sind beim Allgemeinstrom weitere 147,84 € abgezogen \(„Abzug 2025“\)/)
-  assert.match(n.text, /Steht der Abzug „Abzug Betriebsstrom Heizung“ in der zugestellten Abrechnung, ist den Mietern der Betriebsstrom zweimal gutgeschrieben/)
+  // R3-H-2: Die Abrechnung des unlesbaren Abzugs mit Namen.
+  assert.match(n.text, /Steht der Abzug „Abzug Betriebsstrom Heizung“ in der zugestellten Abrechnung 2024, ist den Mietern der Betriebsstrom zweimal gutgeschrieben/)
 })
 
 test('R-W1: nach dem Abschluss vergrößert → gezählt wird der eingefrorene Betrag, wieder öffnen, kein weiterer Abzug', () => {
@@ -230,7 +233,9 @@ test('N1: Abzug in einem anderen Steuerjahr als sein Betriebsstrom → Hinweis; 
   assert.equal(n.level, 'warning')
   assert.match(n.text, /„Betriebsstrom Heizung“ zählt in der Steuerübersicht zum Jahr 2025, der Abzug „Abzug Betriebsstrom Heizung“ zum Jahr 2024/)
   // G2-N-W2: Der Rat richtet sich an die Position, deren Jahr sich einstellen lässt: den Abzug.
-  assert.match(n.text, /Stellen Sie beim Abzug „Abzug Betriebsstrom Heizung“ im Kostenformular das Jahr der Zahlung 2025 ein/)
+  // R3-H-1: „Steuerjahr der Betriebsstrom-Position“, nicht „Jahr der Zahlung“.
+  assert.match(n.text, /Stellen Sie beim Abzug „Abzug Betriebsstrom Heizung“ im Kostenformular das Steuerjahr der Betriebsstrom-Position ein \(2025\)/)
+  assert.doesNotMatch(n.text, /Jahr der Zahlung/)
   assert.doesNotMatch(n.text, /bei beiden/)
   assert.equal(kind(settle([betriebsstrom, hausstrom], [{ ...abzug(14784), taxYear: 2025 }])).length, 0)
 })
@@ -248,8 +253,12 @@ test('R-W2: Strom zur Wärmeerzeugung ohne Abzug → Hinweis mit Betrag, als Aus
   // R2-W-A: kein „Betriebsstrom“ für diesen Strom, kein Verweis auf die Karte, die ihn ablehnt; das Zitat
   // steht nur mit dem Auslegungssatz.
   assert.doesNotMatch(n.text, /Betriebsstroms? aus den Heizkosten|Abzug in Höhe des Betriebsstroms|Karte „Betriebsstrom“/)
-  assert.match(n.text, /Erfassen Sie im Kostenformular beim Allgemeinstrom einen Abzug in Höhe dieses Stroms und verknüpfen Sie ihn mit dieser Position, oder nehmen Sie den Strom zur Wärmeerzeugung aus den Heizkosten heraus und tragen ihn selbst\./)
-  assert.match(n.text, /Für den Betriebsstrom hat der Bundesgerichtshof das entschieden \(BGH, Urteil vom 03\.06\.2016, V ZR 166\/15, Rn\. 13 f\. und 15\); dass es für den Strom zur Wärmeerzeugung ebenso gilt, ist eine Auslegung von Mietfuchs \(§ 7 Abs\. 2, § 8 Abs\. 2 HeizkostenV\)/)
+  // R3-W-1 auch hier: nur der Abzug, und wer nicht umlegen will, nimmt ihn zusätzlich aus den Heizkosten.
+  assert.match(n.text, /Erfassen Sie im Kostenformular beim Allgemeinstrom einen Abzug in Höhe dieses Stroms und verknüpfen Sie ihn mit dieser Position\. Wollen Sie ihn nicht umlegen, ziehen Sie ihn ebenso beim Allgemeinstrom ab und nehmen ihn zusätzlich aus den Heizkosten heraus; dann tragen Sie ihn selbst\./)
+  assert.doesNotMatch(n.text, /aus den Heizkosten heraus und tragen ihn selbst/)
+  // R3-K-1: Der Auslegungssatz steht für sich, ohne „das“ als Rückbezug.
+  assert.match(n.text, /Dass dieser Strom nicht im Allgemeinstrom stehen darf, hat der Bundesgerichtshof für den Betriebsstrom entschieden \(BGH, Urteil vom 03\.06\.2016, V ZR 166\/15, Rn\. 13 f\. und 15\); dass es für den Strom zur Wärmeerzeugung ebenso gilt, ist eine Auslegung von Mietfuchs \(§ 7 Abs\. 2, § 8 Abs\. 2 HeizkostenV\)/)
+  assert.doesNotMatch(n.text, /hat der Bundesgerichtshof das entschieden/)
   assert.equal(codes(settle([wp, hausstrom], [{ ...abzug(60000), itemId: 'wp' }])).length, 0)
   // Zu viel abgezogen, abgeschlossen verkleinert und offener Rest: überall „dieser Strom“ statt „Betriebsstrom“.
   for (const text of [
@@ -286,8 +295,10 @@ test('R2-K-A: unbekannt + in einer zugestellten Abrechnung gutgeschriebener Abzu
   const n = codes(settle([betriebsstrom, hausstrom], [abzug(14784, 'ab', '2024-01', { label: '2024', state: 'unknown' }), { ...abzug(14784, 'ab2', '2023-01', { label: '2023', state: 'credited' }), description: 'Abzug 2023' }]))[0] ?? assert.fail('stumm')
   assert.match(n.text, /Daneben ist in der zugestellten Abrechnung 2023 ein weiterer Abzug von 147,84 € gutgeschrieben \(„Abzug 2023“\)/)
   assert.match(n.text, /ist den Mietern der Betriebsstrom zweimal gutgeschrieben/)
-  assert.match(n.text, /Eine schon zugestellte doppelte Gutschrift lässt sich nach Ablauf der Abrechnungsfrist nicht mehr zu Lasten der Mieter korrigieren; den Betrag tragen Sie dann selbst/)
-  assert.match(n.text, DEADLINE)
+  assert.match(n.text, /Eine schon zugestellte doppelte Gutschrift lässt sich nach Ablauf der Abrechnungsfrist nicht mehr zu Lasten der Mieter korrigieren; den Betrag tragen Sie dann selbst \(§ 556 Abs\. 3 Satz 3 BGB; BGH, Urteil vom 17\.11\.2004, VIII ZR 115\/04\)/)
+  // R3-H-2: Steht der weitere Abzug schon in der zugestellten Abrechnung, wird keine neue empfohlen; ohne Fristsatz.
+  assert.match(n.text, /Steht der Abzug „Abzug Betriebsstrom Heizung“ in der zugestellten Abrechnung 2024/)
+  assert.doesNotMatch(n.text, DEADLINE)
   assert.doesNotMatch(n.text, /löschen Sie/)
 })
 
