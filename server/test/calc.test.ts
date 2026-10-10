@@ -2322,6 +2322,7 @@ function reversedDb(db: Db): Db {
       baseRents: t.baseRents.slice().reverse(),
       ...(t.flatRates ? { flatRates: back(t.flatRates) } : {}),
       ...(t.heatingPrepayments ? { heatingPrepayments: back(t.heatingPrepayments) } : {}),
+      prepaymentOverrides: Object.fromEntries(Object.entries(t.prepaymentOverrides).reverse()),
     })),
     meters: db.meters.slice().reverse(),
     readings: db.readings.slice().reverse(),
@@ -2336,19 +2337,20 @@ function reversedDb(db: Db): Db {
 // Verglichen wird als Menge. Manche Listen ordnet die Rechnung selbst (Mieter nach Namen, Monate),
 // andere folgen bewusst der Reihenfolge, in der der Vermieter die Kosten angelegt hat; das ist eine
 // Frage der Darstellung und keine der Zahlen. Jede Liste wird deshalb sortiert.
-// **Die Sätze bleiben außen vor**, und das ist eine Entscheidung: Ein Hinweis, der mehrere Mieter
-// nennt („Für M2 (W2) und M3 (W3) …“), und ein Rechenweg, der Wohnungen aufzählt („W0: 94 Tage …;
-// W1: 120 Tage …“), folgen der Reihenfolge der Datei, und das ist dieselbe Darstellungsfrage im
-// Satz. Von jedem Hinweis werden Code, Stufe und Art des betroffenen Eintrags verglichen, also ob
-// derselbe Befund gemeldet wird; die Zahlen des Rechenwegs stehen ohnehin in den Anteilen.
-const WORDING = new Set(['text', 'warnings', 'steps'])
-function asSet(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(asSet).sort((a, b) => compareText(JSON.stringify(a), JSON.stringify(b)))
+// **Die Sätze der Abrechnung bleiben außen vor**, und das ist eine Entscheidung: Ein Hinweis, der
+// mehrere Mieter nennt („Für M2 (W2) und M3 (W3) …“), und ein Rechenweg, der Wohnungen aufzählt
+// („W0: 94 Tage …; W1: 120 Tage …“, ebenso in der Steuerübersicht), folgen der Reihenfolge der Datei, und das ist dieselbe
+// Darstellungsfrage im Satz. Von jedem Hinweis werden Code, Stufe und Art des betroffenen Eintrags
+// verglichen, also ob derselbe Befund gemeldet wird; die Zahlen des Rechenwegs stehen ohnehin in
+// den Anteilen. Die Meldungen der Verbrauchsübersicht nennen je Zähler einen Befund und werden als
+// Menge von Sätzen verglichen, denn an ihnen hängt die Ampel „Zählerstände“.
+function asSet(value: unknown, wording: ReadonlySet<string> = new Set()): unknown {
+  if (Array.isArray(value)) return value.map((v) => asSet(v, wording)).sort((a, b) => compareText(JSON.stringify(a), JSON.stringify(b)))
   if (value && typeof value === 'object') {
     return Object.fromEntries(Object.entries(value)
-      .filter(([k]) => !WORDING.has(k))
+      .filter(([k]) => !wording.has(k))
       .sort(([a], [b]) => compareText(a, b))
-      .map(([k, v]) => [k, k === 'subject' && v && typeof v === 'object' && 'kind' in v ? v.kind : asSet(v)]))
+      .map(([k, v]) => [k, k === 'subject' && v && typeof v === 'object' && 'kind' in v ? v.kind : asSet(v, wording)]))
   }
   return value
 }
@@ -2373,6 +2375,9 @@ test('Invariante: die Reihenfolge der Datensätze und Staffeleinträge ändert k
       t.prepayments.push({ from: later, monthlyCents: Math.floor(rnd() * 30000) })
       t.baseRents.push({ from: '2020-01', monthlyCents: 50000 }, { from: later, monthlyCents: 50000 + Math.floor(rnd() * 20000) })
       if (t.start < '2025-07-01') t.personHistory.push({ from: '2025-07-01', persons: Math.floor(rnd() * 5) })
+      if (t.flatRates) t.flatRates.push({ from: later, monthlyCents: Math.floor(rnd() * 15000) })
+      if (rnd() < 0.3) t.heatingPrepayments = [{ from: '2020-01', monthlyCents: Math.floor(rnd() * 8000) }, { from: later, monthlyCents: Math.floor(rnd() * 8000) }]
+      if (rnd() < 0.3) t.prepaymentOverrides = { '2024-01': Math.floor(rnd() * 200000), '2025-01': Math.floor(rnd() * 200000) }
     }
     // Ein Zähler, der im Jahr gegen ein neues Gerät mit eigener Kennung getauscht wurde, dazu ein
     // Hauptzähler. Ob die Wohnung das ganze Jahr gemessen ist, setzt die Rechnung aus beiden Geräten
@@ -2406,9 +2411,10 @@ test('Invariante: die Reihenfolge der Datensätze und Staffeleinträge ändert k
     const fall = `Fall ${i}\n${JSON.stringify(db)}`
     const vorwaerts = allFour(db)
     const rueckwaerts = allFour(reversedDb(db))
-    assert.deepEqual(asSet(rueckwaerts.settlement), asSet(vorwaerts.settlement), `${fall}: Abrechnung`)
-    assert.deepEqual(asSet(rueckwaerts.ledger), asSet(vorwaerts.ledger), `${fall}: Mietkonto`)
-    assert.deepEqual(asSet(rueckwaerts.tax), asSet(vorwaerts.tax), `${fall}: Steuer`)
+    const sentences = new Set(['text', 'warnings', 'steps'])
+    assert.deepEqual(asSet(rueckwaerts.settlement, sentences), asSet(vorwaerts.settlement, sentences), `${fall}: Abrechnung`)
+    assert.deepEqual(asSet(rueckwaerts.ledger, sentences), asSet(vorwaerts.ledger, sentences), `${fall}: Mietkonto`)
+    assert.deepEqual(asSet(rueckwaerts.tax, sentences), asSet(vorwaerts.tax, sentences), `${fall}: Steuer`)
     assert.deepEqual(asSet(rueckwaerts.consumption), asSet(vorwaerts.consumption), `${fall}: Verbrauch`)
   }
 })
@@ -2419,11 +2425,18 @@ test('Invariante: die Reihenfolge der Datensätze und Staffeleinträge ändert k
 // Summenprobe sieht sie also nicht. Geprüft wird jedes Feld mit der Endung `Cents` in allen vier
 // Rechnungen, auch die, die nur zum Vergleich daneben stehen (nachgemessen: ein ungerundeter
 // Vergleichswert „nach Fläche“ in der Steuerübersicht blieb sonst in der ganzen Suite unbemerkt).
+// Unter einem Feld `…Cents` ist alles Geld, auch eine Liste oder Zuordnung von Beträgen.
+function leaves(value: unknown, where: string, out: [string, unknown][]): void {
+  if (Array.isArray(value)) value.forEach((v, k) => leaves(v, `${where}[${k}]`, out))
+  else if (value && typeof value === 'object') for (const [k, v] of Object.entries(value)) leaves(v, `${where}.${k}`, out)
+  else out.push([where, value])
+}
+
 function centFields(value: unknown, where: string, out: [string, unknown][] = []): [string, unknown][] {
   if (Array.isArray(value)) value.forEach((v, k) => centFields(v, `${where}[${k}]`, out))
   else if (value && typeof value === 'object') {
     for (const [k, v] of Object.entries(value)) {
-      if (k.endsWith('Cents') && (typeof v !== 'object' || v === null)) out.push([`${where}.${k}`, v])
+      if (k.endsWith('Cents')) leaves(v, `${where}.${k}`, out)
       else centFields(v, `${where}.${k}`, out)
     }
   }
@@ -2442,7 +2455,7 @@ test('Invariante: jeder Betrag in Cent ist eine ganze Zahl, in allen vier Rechnu
       assert.ok(Number.isInteger(v), `Fall ${i}: ${where} = ${String(v)} ist kein ganzer Cent\n${JSON.stringify(db)}`)
     }
   }
-  assert.ok(gezaehlt > 10000, `nur ${gezaehlt} Beträge geprüft`)
+  assert.ok(gezaehlt > 50000, `nur ${gezaehlt} Beträge geprüft`)
 })
 
 // Mietkonto im laufenden Jahr (Refs #133, zweite Browserabnahme): Monate ab dem laufenden sind noch
