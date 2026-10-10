@@ -12,7 +12,7 @@ import { applyPeriodChange, previewPeriodChange } from '../src/db/periodChange.t
 import { createHeatingPlant } from '../src/db/heating.ts'
 import { bookOperatingPower } from '../src/db/operatingPower.ts'
 import { readCostItems } from '../src/db/read.ts'
-import { createEntity, saveCostItemSplit } from '../src/db/repository.ts'
+import { createEntity, saveCostItemSplit, updateEntity } from '../src/db/repository.ts'
 import { eq } from 'drizzle-orm'
 import { properties } from '../src/db/schema.ts'
 import type { CostItem } from '../../shared/types.ts'
@@ -51,9 +51,9 @@ async function bestand(opened: OpenedDatabase, method: 'service' | 'manual'): Pr
 const items = (opened: OpenedDatabase): Promise<CostItem[]> => opened.read((db) => readCostItems(db))
 const sum = (list: readonly CostItem[]) => list.reduce((a, c) => a + c.amountCents, 0)
 
-async function wechsel(opened: OpenedDatabase, kalt: string) {
+async function wechsel(opened: OpenedDatabase, kalt: string, heizung?: string) {
   const preview = (await opened.read((db) => previewPeriodChange(db, 'objekt-1', MAI_AB_2025, TODAY))) ?? assert.fail('kein Objekt')
-  const groups = Object.fromEntries(preview.groups.map((g) => [g.id, g.id.endsWith('|heizung') ? g.from : kalt]))
+  const groups = Object.fromEntries(preview.groups.map((g) => [g.id, g.id.endsWith('|heizung') ? (heizung ?? g.from) : kalt]))
   return opened.write((db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, { understood: true, groups, token: preview.token }, ids, TODAY))
 }
 
@@ -78,9 +78,12 @@ for (const method of ['service', 'manual'] as const) {
           const ausDieser = -sum(abzuege.filter((x) => x.operatingPowerGeneralId === g.id))
           assert.ok(ausDieser <= g.amountCents, `${g.id}: mehr Abzug als Rechnung`)
         }
-        if (kalt === 'split') {
-          // Dieselben Tagesanteile: 120 von 365 Tagen im Rumpf.
+        if (kalt === 'split' && method === 'service') {
+          // Beim Messdienst ohne Betriebsstrom-Position dieselben Tagesanteile: 120 von 365 Tagen im Rumpf.
           assert.deepEqual(abzuege.map((d) => [d.period, d.amountCents]).sort(), [['2025-01', -3288], ['2025-05', -6712]])
+        } else if (kalt === 'split') {
+          // G3-H: Mit eigener Abrechnung folgt der Abzug seinem Betriebsstrom, der mit der Heizgruppe im Rumpf bleibt.
+          assert.deepEqual(abzuege.map((d) => [d.period, d.amountCents]), [['2025-01', -10000]])
         } else {
           assert.deepEqual(abzuege.map((d) => d.period), [kalt])
         }
@@ -130,6 +133,56 @@ test('G2-N-W1: ein Wechsel, der den Teil einer Rechnung mit Abzug entfernt, antw
     assert.match(r.error, /Abzug/)
     assert.match(r.error, /Gespeichert wurde nichts/)
     assert.ok('preview' in r && r.preview, 'Vorschau fehlt')
+    assert.deepEqual(await items(opened), vorher)
+  })
+})
+
+// G3-H (Nachprüfung Geld Runde 2): Beim Aufteilen nach Tagen folgt der Abzug seiner Betriebsstrom-Position und
+// nicht den Tagen der Rechnung. Mit Mieterwechsel zwischen Rumpf und neuem Zeitraum: In jedem Zeitraum steht so
+// viel Abzug wie Betriebsstrom, kein Mieter zahlt den Strom doppelt.
+for (const heizung of ['2025-01', '2025-05']) {
+  test(`G3-H: aufteilen mit eigener Abrechnung, Heizung ${heizung}: je Zeitraum Abzug gleich Betriebsstrom, auch beim Mieterwechsel`, async () => {
+    await withDatabase(async (opened) => {
+      await opened.write(async (db) => {
+        await createEntity(db, 'units', 'u1', { propertyId: 'objekt-1', name: 'A', areaM2: 80, participates: true })
+        await createEntity(db, 'units', 'u2', { propertyId: 'objekt-1', name: 'B', areaM2: 20, participates: true })
+        await createEntity(db, 'tenancies', 't-alt', { unitId: 'u1', tenantName: 'Alt', persons: 1, start: '2024-01-01', end: '2025-04-30' })
+        await createEntity(db, 'tenancies', 't-neu', { unitId: 'u1', tenantName: 'Neu', persons: 1, start: '2025-05-01' })
+        await createEntity(db, 'tenancies', 't-b', { unitId: 'u2', tenantName: 'B', persons: 1, start: '2024-01-01' })
+        await createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'gas', method: 'manual' })
+        await createEntity(db, 'costItems', 'gas', { propertyId: 'objekt-1', period: '2025-01', category: 'Heizung und Warmwasser', description: 'Gas 2025', amountCents: 500000, key: 'area', heatingPart: 'fuel', heatingPlantId: 'hp' })
+        await createEntity(db, 'costItems', 'hs', { propertyId: 'objekt-1', period: '2025-01', category: 'Beleuchtung/Allgemeinstrom', description: 'Hausstrom 2025', amountCents: 100000, key: 'area' })
+      })
+      await opened.write((db) => bookOperatingPower(db, 'hp', { period: '2025-01', generalItemId: 'hs', ownCents: 10000, basis: 'Bruchteil' }, ids))
+      const vorher = await items(opened)
+      const r = await wechsel(opened, 'split', heizung)
+      if (!r || 'error' in r) return assert.fail(r ? r.error : 'kein Objekt')
+      const nachher = await items(opened)
+      assert.equal(sum(nachher), sum(vorher))
+      for (const p of new Set(nachher.map((c) => c.period))) {
+        const hier = nachher.filter((c) => c.period === p)
+        const betriebsstrom = sum(hier.filter((c) => c.operatingPower === 'included'))
+        const abzug = 0 - sum(hier.filter((c) => c.operatingPower === 'deduction'))
+        assert.equal(abzug, betriebsstrom, `Zeitraum ${p}: Abzug ${abzug}, Betriebsstrom ${betriebsstrom}`)
+      }
+    })
+  })
+}
+
+// G3-H: Reicht der Teil der Rechnung im Zeitraum des Betriebsstroms nicht, 409 mit Vorschau.
+test('G3-H: Teil der Rechnung im Zeitraum des Betriebsstroms zu klein → 409 mit Vorschau, nichts gespeichert', async () => {
+  await withDatabase(async (opened) => {
+    await bestand(opened, 'manual')
+    // Abzug von 100 € auf 400 € erhöhen: Im Rumpf stehen nur 328,77 € der Rechnung.
+    const ab = (await items(opened)).find((c) => c.operatingPower === 'deduction') ?? assert.fail('kein Abzug')
+    const bs = (await items(opened)).find((c) => c.operatingPower === 'included') ?? assert.fail('kein Betriebsstrom')
+    await opened.write((db) => updateEntity(db, 'costItems', bs.id, { amountCents: 40000 }))
+    await opened.write((db) => updateEntity(db, 'costItems', ab.id, { amountCents: -40000 }))
+    const vorher = await items(opened)
+    const r = await wechsel(opened, 'split')
+    if (!r || !('error' in r)) return assert.fail('angenommen')
+    assert.ok('preview' in r && r.preview)
+    assert.match(r.error, /mehr abgezogen, als die Rechnung beträgt/)
     assert.deepEqual(await items(opened), vorher)
   })
 })
