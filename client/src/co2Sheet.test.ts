@@ -10,7 +10,7 @@ const heizoel: Co2SheetDelivery = {
 const noBilling = { closing: null, consumed: null, inPeriod: null, basis: null }
 const sheet: Co2Sheet = {
   propertyName: 'Haus am Park', address: 'Parkweg 1', landlordName: 'Erika Muster', plantName: 'Kessel', energy: 'oil', createdOn: '2026-10-07', checked: true,
-  period: { key: '2025-01', from: '2025-01-01', to: '2025-12-31' }, areaM2: 300, areaSource: 'served', nonResidential: false, restriction: 'none', districtEtsNew: false,
+  period: { key: '2025-01', from: '2025-01-01', to: '2025-12-31' }, areaM2: 300, areaSource: 'served', nonResidential: false, restriction: 'none', districtEtsNew: false, exemption: null,
   stock: null, opening: null, billing: noBilling,
   deliveries: [heizoel],
   totals: { emissionsKg: 8028.9, co2CostCents: 52549 },
@@ -181,4 +181,20 @@ test('Wächter: kein gedruckter Text des Blatts spricht den Leser an', () => {
 
 test('Nach Runde 4: Ohne Herkunft der Fläche (vorher abgeschlossene Abrechnung) steht sie ohne Zusatz da', () => {
   expect(sheetFacts({ ...sheet, areaSource: null })[0]).toBe('Fläche für die Einstufung: 300 m²')
+})
+
+// Ausnahme nach § 11 für Wärme und Warmwasser ohne vereinbarte Abrechnung (#246): Das Blatt nennt sie, wie die
+// Abrechnung sie ausweist (`exemption`), und druckt keine Angaben zu §§ 8, 9 und keine Summe.
+test('Ausnahme nach § 11: keine Angaben zu §§ 8, 9, keine Summe, dafür die Ausnahme im Wortlaut der Abrechnung', () => {
+  const aus: Co2Sheet = { ...sheet, checked: false, exemption: 'eine Befreiung durch die nach Landesrecht zuständige Stelle (§ 11 Abs. 1 Nr. 5 HeizkostenV)' }
+  const facts = sheetFacts(aus)
+  expect(facts.some((f) => /§ 8|§ 9/.test(f))).toBe(false)
+  expect(facts.some((f) => f.startsWith('Fläche für die Einstufung'))).toBe(false)
+  expect(facts).toContain('Ausnahme von der Heizkostenverordnung für Wärme und Warmwasser: eine Befreiung durch die nach Landesrecht zuständige Stelle (§ 11 Abs. 1 Nr. 5 HeizkostenV). Eine Abrechnung der Heiz- und Warmwasserkosten mit den Mietern ist nicht vereinbart; nach § 2 Abs. 7 CO2KostAufG werden die CO₂-Kosten deshalb nicht aufgeteilt, die Angaben nicht geprüft.')
+  expect(facts.at(-1)).toBe('Angaben je Rechnung, wie sie der Lieferant ausweist. Nach § 2 Abs. 7 CO2KostAufG werden die CO₂-Kosten hier nicht aufgeteilt; eine Summe entfällt deshalb.')
+  expect(sheetRows(aus).some((r) => r.kind === 'sum' || r.kind === 'billing')).toBe(false)
+  for (const t of facts) expect(t).not.toMatch(/\b(Sie|Ihr\w*|Ihnen)\b|[Bb]itte/)
+  // Gegentest: mit vereinbarter Abrechnung liefert die Abrechnung keine Ausnahme, das Blatt bleibt wie bisher.
+  expect(sheetFacts({ ...sheet, exemption: null })).toEqual(sheetFacts(sheet))
+  expect(sheetFacts(sheet).some((f) => f.startsWith('Ausnahme'))).toBe(false)
 })

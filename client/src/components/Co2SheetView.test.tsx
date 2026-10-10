@@ -8,7 +8,7 @@ import type { Co2Sheet } from '../types'
 
 const sheet: Co2Sheet = {
   propertyName: 'Haus am Park', address: 'Parkweg 1', landlordName: 'Erika Muster', plantName: 'Kessel', energy: 'oil', createdOn: '2026-10-07', checked: true,
-  period: { key: '2025-01', from: '2025-01-01', to: '2025-12-31' }, areaM2: 300, areaSource: 'served', nonResidential: false, restriction: 'none', districtEtsNew: false,
+  period: { key: '2025-01', from: '2025-01-01', to: '2025-12-31' }, areaM2: 300, areaSource: 'served', nonResidential: false, restriction: 'none', districtEtsNew: false, exemption: null,
   stock: null, opening: { quantity: 1000, emissionsKg: 2676.3, co2CostCents: 17517, countedCents: 0, kgCounted: false, co2Counted: false, note: 'Nicht berücksichtigt: Die Bestandsrechnung des Vorrats ist unvollständig.', adminNote: 'Die Bestandsrechnung geht nicht auf: … verknüpfen Sie …', source: 'entered' },
   billing: { closing: null, consumed: null, inPeriod: null, basis: null },
   deliveries: [{

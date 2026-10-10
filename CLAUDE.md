@@ -1757,7 +1757,9 @@ und Stufe kommen aus dem Ergebnis der Abrechnung (`heating[].stock`, `fuel`, `co
 co2-sheet-runde3.test.ts hält die abgegrenzte Zeile gleich der CO₂-Grundlage der Abrechnung, auch bei einer Lücke.
 Auch die Fläche der Einstufung kommt von dort (bei mehreren Anlagen eines Gebäudes die gemeinsame, `areaSource:
 'building'`). Vermerke stehen nummeriert unter der Tabelle (`sheetNotes`), nicht als Zeile darin: Die Tabelle
-scrollt auf dem Handy seitlich. Werte, die nur geprüft werden, tragen
+scrollt auf dem Handy seitlich. Ob das CO2KostAufG gilt und welche Befunde die Prüfung je Rechnung hat, steht in
+`heating[].co2Check` (`applies`, `exemption`, `findings`); Blatt und Karte „Lieferungen“ lesen es von dort, auch
+die Ausnahme nach § 11 für Wärme und Warmwasser ohne vereinbarte Abrechnung (§ 2 Abs. 7). Werte, die nur geprüft werden, tragen
 `checkOnly` (shared/law); die Abweichung einer abgeschlossenen Abrechnung sagt dann „Prüfwert geändert“.
 
 **Begriffslexikon** (#113): [shared/glossary.ts](shared/glossary.ts) hält jeden Fachbegriff mit

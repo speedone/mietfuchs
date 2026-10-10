@@ -150,3 +150,39 @@ test('Nach Runde 4: eine Anlage allein heißt „plant“, auch wenn ihre Fläch
   const eingefroren = co2SheetOf(input({ ...h, co2: alt }))
   assert.deepEqual([eingefroren.areaM2, eingefroren.areaSource], [100, null])
 })
+
+// Ausnahme nach § 11 für Wärme und Warmwasser ohne vereinbarte Abrechnung (Restpunkt nach dem Umstellen auf
+// PR 14): Das CO2KostAufG gilt nicht (§ 2 Abs. 7). Das Blatt liest das aus der Abrechnung (`co2Check`):
+// keine Angaben zu §§ 8, 9, keine Befunde, dafür die Ausnahme, wie die Abrechnung sie ausweist.
+const ausnahme = (rules: Partial<SnapshotHeatingPeriodRow>): Src => {
+  const src = co2Source(2025, { co2CostCents: 55000 })
+  return { ...src, heatingPeriodRows: [{ plantId: 'hp', period: P.key, dhwMethod: null, dhwUnmeasurable: null, ...rules }] }
+}
+
+test('Ausnahme nach § 11 ohne vereinbarte Abrechnung: das Blatt prüft nicht, stuft nicht ein und nennt die Ausnahme', () => {
+  const { sheet, heating } = both(ausnahme({ exemption: 'authority', exemptionScope: 'both' }))
+  const check = heating?.co2Check ?? assert.fail('kein co2Check in der Abrechnung')
+  assert.equal(check.applies, false)
+  assert.match(check.exemption ?? '', /§ 11 Abs\. 1 Nr\. 5 HeizkostenV/)
+  assert.deepEqual(check.findings, [])
+  assert.equal(sheet.checked, false)
+  assert.equal(sheet.exemption, check.exemption)
+  assert.deepEqual(sheet.deliveries.map((d) => d.findings), [[]])
+  assert.equal(sheet.billing.basis, null)
+})
+
+test('Gegentest: mit vereinbarter Abrechnung (§ 2 Abs. 7) bleibt alles wie ohne Ausnahme', () => {
+  const ohne = both(ausnahme({}))
+  const vereinbart = both(ausnahme({ exemption: 'authority', exemptionScope: 'both', exemptionBillingAgreed: true }))
+  for (const { sheet, heating } of [ohne, vereinbart]) {
+    const check = heating?.co2Check ?? assert.fail('kein co2Check in der Abrechnung')
+    assert.equal(check.applies, true)
+    assert.equal(check.exemption, null)
+    assert.equal(sheet.checked, true)
+    assert.equal(sheet.exemption, null)
+    // Die Befunde des Blatts sind die der Abrechnung, je Rechnung.
+    assert.deepEqual(sheet.deliveries.map((d) => d.findings), check.findings.map((f) => f.texts))
+    assert.equal(sheet.deliveries[0]?.findings.length, 1)
+  }
+  assert.deepEqual(vereinbart.sheet.deliveries.map((d) => d.findings), ohne.sheet.deliveries.map((d) => d.findings))
+})

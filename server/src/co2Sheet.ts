@@ -20,7 +20,7 @@ import type { BillingPeriod, Co2Sheet, Co2SheetBilling, Co2SheetDelivery, Co2She
 import { computeSettlement, plantStockOf } from './calc.ts'
 import type { StockResult } from './fuelStock.ts'
 import { heatingSnapshotFor, snapshotFor, wayOf } from './snapshot.ts'
-import { co2Plausibility, etsExempt, plausibilityText } from './co2Plausibility.ts'
+import { etsExempt } from './co2Plausibility.ts'
 import { cancelledDeliveries, estimateFactors, rangeOf, type FuelItem } from './fuel.ts'
 
 export type Co2SheetInput = {
@@ -66,10 +66,13 @@ export function co2SheetOf(i: Co2SheetInput): Co2Sheet {
   })
   const cancelled = cancelledDeliveries(i.plant.method, mine, i.items)
   const factors = estimateFactors(mine.filter((d) => rangeOf(d) !== null), cancelled, valueAt(hkvDegreeDays, i.h.from))
-  // Bei Wärme aus dem Emissionshandel mit Anschluss nach dem Stichtag gilt das Gesetz nicht (§ 2 Abs. 4
-  // Satz 2): keine Prüfung, dieselbe Regel wie in der Abrechnung (R-W1).
-  const checked = !etsExempt(i.plant)
-  const log = createLawLog(i.overrides)
+  // Ob das CO2KostAufG gilt und was die Prüfung je Rechnung findet, entscheidet die Abrechnung (`co2Check`, eine
+  // Quelle; #246 nach dem Umstellen auf PR 14): nicht bei Wärme aus dem Emissionshandel mit Anschluss nach dem
+  // Stichtag (§ 2 Abs. 4 Satz 2, R-W1) und nicht unter einer Ausnahme nach § 11 für Wärme und Warmwasser ohne
+  // vereinbarte Abrechnung (§ 2 Abs. 7). Steht die Heizperiode in keiner Abrechnung (keine Position, keine
+  // Lieferung mit Wirkung), gibt es keine Befunde; ob das Gesetz gilt, sagt dann die Anlage selbst.
+  const check = i.heating?.co2Check ?? null
+  const checked = check ? check.applies : !etsExempt(i.plant)
   const from = germanDate(co2CostsCountedFrom())
   const deliveries: Co2SheetDelivery[] = touching.map((d) => {
     const linked = i.items.filter((c) => c.fuelDeliveryId === d.id)
@@ -91,7 +94,8 @@ export function co2SheetOf(i: Co2SheetInput): Co2Sheet {
         const line = i.heating?.fuel?.deliveries.find((l) => l.deliveryId === d.id)
         return line ? { emissionsKg: line.emissionsKg, co2Cents: line.co2Cents, sharePermille: line.sharePermille, method: line.method } : null
       })(),
-      findings: checked && counted !== 'none' ? co2Plausibility(d, i.plant.energy, log).map((f) => plausibilityText(f, fmtCents)) : [],
+      // Eine Zeile, die nicht zählt (Storno, abgedeckte Schätzung), zeigt keine Befunde.
+      findings: checked && counted !== 'none' ? (check?.findings.find((f) => f.deliveryId === d.id)?.texts ?? []) : [],
     }
   })
   // Der Anfangsbestand eines Vorrats (G-W2): Das Blatt hat dafür keine eigene Regel, sondern liest die
@@ -167,7 +171,7 @@ export function co2SheetOf(i: Co2SheetInput): Co2Sheet {
   const co2Sum = deliveries.reduce((a, d) => a + (d.counted === 'full' || d.counted === 'partial' ? (d.co2CostCents ?? 0) * d.factor : 0), opening?.countedCents ?? 0)
   return {
     propertyName: i.propertyName, address: i.address, landlordName: i.landlordName,
-    plantName: i.plant.name, energy: i.plant.energy, createdOn: i.today, checked,
+    plantName: i.plant.name, energy: i.plant.energy, createdOn: i.today, checked, exemption: check?.exemption ?? null,
     period: { key: i.h.key, from: i.h.from, to: i.h.to },
     areaM2: area, areaSource,
     nonResidential: i.plant.nonResidential, restriction: i.plant.restriction, districtEtsNew: i.plant.districtEtsNew,
