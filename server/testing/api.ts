@@ -283,7 +283,7 @@ export async function startServerIn(dataDir: string, env: NodeJS.ProcessEnv = {}
       NKA_DATA_DIR: dataDir,
       // **Hinter `...env`, damit es kein Aufrufer versehentlich abschaltet.** Ohne `CI` oeffnet
       // der Server den Standard-Browser, sobald er sich fuer die Programmdatei haelt, und genau
-      // das tut ein Aufrufer weiter unten mit `NKA_RUNTIME: 'binary'`. Jeder volle Testlauf riss
+      // das tut ein Aufrufer in api-start.test.ts mit `NKA_RUNTIME: 'binary'`. Jeder volle Testlauf riss
       // damit einen Tab auf einem Zufallsport auf. Siehe die Regel in CLAUDE.md.
       CI: 'true',
     },
