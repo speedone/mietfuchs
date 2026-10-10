@@ -140,6 +140,11 @@ export function sheetFacts(s: Co2Sheet): string[] {
     facts.push(`Wärme aus Anlagen des Emissionshandels, erster Anschluss nach dem ${germanDate(onlyVersion(co2DistrictEtsNew).value.connectedAfter)} (§ 2 Abs. 4 Satz 2 CO2KostAufG)` +
       (s.checked ? '' : ': Die CO₂-Kosten werden nicht aufgeteilt, die Angaben deshalb nicht geprüft.'))
   }
+  // Die Ausnahme nach § 11 HeizkostenV im Wortlaut der Abrechnung (#246): Dann gilt das Gesetz nicht (§ 2 Abs. 7).
+  if (s.exemption) {
+    facts.push(`Ausnahme von der Heizkostenverordnung für Wärme und Warmwasser: ${s.exemption}. Eine Abrechnung der Heiz- und Warmwasserkosten mit den Mietern ist nicht vereinbart; ` +
+      'nach § 2 Abs. 7 CO2KostAufG werden die CO₂-Kosten deshalb nicht aufgeteilt, die Angaben nicht geprüft.')
+  }
   if (s.stock) {
     const unit = s.stock.stockUnit ? ` ${STOCK_UNIT_TEXT[s.stock.stockUnit]}` : ''
     const before = s.stock.openingInvoicedBefore2023 ? ' (vor 2023 in Rechnung gestellt, ohne CO₂-Kosten nach § 11 Abs. 2 Satz 2 CO2KostAufG)' : ''
@@ -158,7 +163,7 @@ export function sheetFacts(s: Co2Sheet): string[] {
           '(§ 7 Abs. 1 CO2KostAufG: im Abrechnungszeitraum verursacht) sind erst die Zeilen darunter, wie die Abrechnung sie ansetzt. '
         : 'Die Summe der Rechnungen ist nicht der CO₂-Ausstoß des Abrechnungszeitraums (§ 5 Abs. 1 Satz 5, § 7 Abs. 1 CO2KostAufG); die Abrechnung kann ihn derzeit nicht abgrenzen. ') +
       `Nicht gezählt sind Angaben, die nach dem CO2KostAufG unberücksichtigt bleiben${notes ? ' (siehe Vermerke)' : ''}.`
-    : 'Angaben je Rechnung, wie sie der Lieferant ausweist. Nach § 2 Abs. 4 Satz 2 CO2KostAufG werden die CO₂-Kosten dieser Wärme nicht aufgeteilt; eine Summe entfällt deshalb.')
+    : `Angaben je Rechnung, wie sie der Lieferant ausweist. Nach ${s.exemption ? '§ 2 Abs. 7' : '§ 2 Abs. 4 Satz 2'} CO2KostAufG werden die CO₂-Kosten ${s.exemption ? 'hier' : 'dieser Wärme'} nicht aufgeteilt; eine Summe entfällt deshalb.`)
   return facts
 }
 

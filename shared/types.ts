@@ -1656,6 +1656,12 @@ export type HeatingStatement = {
   // die Vergleiche); nicht beim Messdienst, bei einer Etagenheizung und wenn Wärme und Warmwasser nach § 11
   // ausgenommen sind. Nach einem Kesseltausch einmal je Linie. Fehlt in älteren Abrechnungen.
   info?: HeatingInfoStatement
+  // Die Prüfung der CO₂-Angaben nach dem CO2KostAufG (Heizung PR 17, #246): ob das Gesetz für diese Heizperiode
+  // gilt (`applies`; nicht bei Wärme aus dem Emissionshandel mit Anschluss nach dem Stichtag, § 2 Abs. 4 Satz 2,
+  // und nicht unter einer Ausnahme nach § 11 HeizkostenV für Wärme und Warmwasser ohne vereinbarte Abrechnung,
+  // § 2 Abs. 7), die Ausnahme im Wortlaut der Abrechnung (`exemption`) und die Befunde je Rechnung. Anzeige und
+  // Blatt für den Messdienst lesen sie von hier. Fehlt in älteren Abrechnungen.
+  co2Check?: { applies: boolean; exemption: string | null; findings: { deliveryId: string; texts: string[] }[] }
 }
 
 // Was die Seite Heizkosten zu einer Heizperiode lädt (Heizung PR 6): die Angabe zum Warmwasser, die
@@ -1848,6 +1854,9 @@ export type Co2Sheet = {
   // Emissionshandel mit Anschluss nach dem Stichtag (§ 2 Abs. 4 Satz 2, R-W1).
   createdOn: string
   checked: boolean
+  // Die Ausnahme nach § 11 HeizkostenV, unter der das CO2KostAufG nicht gilt (§ 2 Abs. 7), im Wortlaut der
+  // Abrechnung (`co2Check.exemption`); `null` sonst.
+  exemption: string | null
 }
 
 // Eine Gradtagzahl des Deutschen Wetterdienstes für den Ort des Objekts und einen Monat ('JJJJ-MM').

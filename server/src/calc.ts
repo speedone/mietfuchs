@@ -4705,7 +4705,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // auch dort stehen kg und CO₂-Kosten auf der Rechnung der Lieferung.
     // Unter einer Ausnahme nach § 11 ohne vereinbarte Abrechnung gilt das CO2KostAufG nicht (§ 2 Abs. 7, Heizung
     // PR 14): dann auch keine Prüfung, dieselbe Bedingung wie die Aufteilung.
-    if (!etsExempt && !co2OffByExemption(pot.plantId, String(pot.period.key))) {
+    const co2Check: NonNullable<HeatingStatement['co2Check']> = { applies: !etsExempt && !co2OffByExemption(pot.plantId, String(pot.period.key)), exemption: null, findings: [] }
+    report.co2Check = co2Check
+    if (co2Check.applies) {
       // Eine stornierte Rechnung zählt nicht und wird nicht geprüft (Durchsicht von #246, G-K1); dieselbe
       // Auswahl wie die Bewertung (fuel.ts).
       const ownDeliveries = (snapshot.fuel?.deliveries ?? []).filter((d) => d.plantId === pot.plantId)
@@ -4719,7 +4721,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         }, pot.energy, lawLog)
         // Je Anlage und Heizperiode gibt es einen Topf; doppelt wird ein Befund nur über die Teilabrechnungen
         // nach Weg b, und deren Hinweise führt die Zusammenführung ohnehin nur einmal (Durchsicht von #246, K5 a).
-        for (const f of checked) warn('co2.cost-implausible', plausibilityText(f, fmtCents), plantSubject)
+        const texts = checked.map((f) => plausibilityText(f, fmtCents))
+        co2Check.findings.push({ deliveryId: d.id, texts })
+        for (const t of texts) warn('co2.cost-implausible', t, plantSubject)
       }
     }
     // Heizung PR 14: unter einer Ausnahme nach § 11 für Wärme und Warmwasser nicht, außer eine Abrechnung ist
@@ -5550,6 +5554,14 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       case 'none': return ''
     }
   }
+  // Die Ausnahme, unter der das CO2KostAufG nicht gilt, im Wortlaut der Abrechnung (§ 2 Abs. 7 CO2KostAufG): für
+  // das Blatt für den Messdienst, das sie liest statt sie herzuleiten (#246).
+  for (const report of heatingStatements) {
+    if (!report.co2Check || report.co2Check.applies || !co2OffByExemption(report.plantId, String(report.period))) continue
+    const e = periodRulesFor(report.plantId, String(report.period)).exemption
+    if (e && e !== 'none') report.co2Check.exemption = exemptionText(e, { from: report.from, to: report.to })
+  }
+
   // Ist ein Gerät in der Heizperiode in Betrieb? Seine Ablesungen überdecken sie (wie bei Heizkostenverteilern,
   // Durchsicht von #241, C1), oder es hat noch keine; ein ausgebautes Gerät zählt nicht.
   const deviceInUse = (meterId: string, h: Period): boolean => !snapshot.readings.some((r) => r.meterId === meterId) || coversPeriod(meterId, snapshot.readings, h)
