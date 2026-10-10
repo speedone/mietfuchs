@@ -155,6 +155,13 @@ const OWN_CHECK_MESSAGES: Readonly<Record<string, string>> = {
   cost_items_heating_target_category_valid: 'Ein Ziel (Heizung, Warmwasser) gibt es nur bei der Kostenart „Heizung und Warmwasser“.',
   cost_items_heating_system_complete: 'Nach der Heizkostenverordnung verteilt nur eine Position mit Heizanlage, Teil und Ziel. Bitte wählen Sie alle drei.',
   interim_reading_gaps_date_valid: 'Das Datum der Grenze ist kein Datum in der Form JJJJ-MM-TT. Bitte laden Sie die Seite neu.',
+  // Pflichtangaben und Ausnahmen (Heizung PR 14)
+  heating_periods_info_reference_positive: 'Der Vergleichswert ist eine Zahl größer als 0 (kWh je m² Wohnfläche in der Heizperiode).',
+  heating_periods_info_reference_source_complete: 'Bitte nennen Sie die Quelle des Vergleichswerts, etwa die Vergleichsdaten Ihres Ablesedienstes. Ein Durchschnitt aus Ihrem eigenen Haus ist kein zulässiger Vergleich.',
+  heating_periods_climate_factor_positive: 'Der Klimafaktor ist eine Zahl größer als 0.',
+  heating_periods_climate_factor_source_complete: 'Bitte nennen Sie die Quelle der Klimafaktoren, etwa „Deutscher Wetterdienst, Klimafaktoren“ mit Postleitzahl und Zeitraum.',
+  heating_periods_exemption_scope_valid: 'Ob die Ausnahme auch das Warmwasser betrifft, fragt Mietfuchs nur bei einer Ausnahme nach § 11 HeizkostenV. Bitte laden Sie die Seite neu.',
+  heating_periods_exemption_billing_agreed_valid: 'Die vereinbarte Abrechnung nach § 2 Abs. 7 CO2KostAufG gibt es nur bei einer Ausnahme nach § 11 HeizkostenV. Bitte laden Sie die Seite neu.',
   // Schätzung nach § 9a (Heizung PR 13)
   heating_estimates_reason_complete: 'Zu einer Schätzung nach § 9a HeizkostenV gehört eine Begründung. Bitte nennen Sie, warum der Verbrauch nicht erfasst werden konnte.',
   fuel_deliveries_invoice_complete: 'Zum Rechnungszeitraum einer Lieferung gehören Beginn und Ende. Bitte tragen Sie beide ein.',

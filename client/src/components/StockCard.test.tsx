@@ -6,6 +6,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import StockCard from './StockCard'
 import { periodKey } from '../../../shared/period.ts'
 import type { HeatingPeriodView, StockView } from '../types'
+import { noInfoView } from '../testing/heatingView'
 
 const STOCK: StockView = {
   row: { stockUnit: 'kg', openingQuantity: 1000, openingCostCents: 30000, openingEmissionsKg: null, openingCo2Cents: null, openingInvoicedBefore2023: null, openingAlreadySettled: null, closingQuantity: 400, closingMeasuredOn: null },
@@ -13,7 +14,7 @@ const STOCK: StockView = {
 }
 const view = (stock: StockView): HeatingPeriodView => ({
   plantId: 'hp', period: periodKey('2025-01'), label: '2025', from: '2025-01-01', to: '2025-12-31', short: false, closed: false,
-  hotWater: { dhwMethod: null, dhwUnmeasurable: null, dhwHeatKwh: null, totalHeatKwh: null, dhwVolumeM3: null, dhwTempC: null }, hotWaterBasis: { volumeFromMetersM3: null, volumeMissing: null, running: null, suppliedAreaM2: 0 }, co2: null, items: [], stock,
+  ...noInfoView(), hotWater: { dhwMethod: null, dhwUnmeasurable: null, dhwHeatKwh: null, totalHeatKwh: null, dhwVolumeM3: null, dhwTempC: null }, hotWaterBasis: { volumeFromMetersM3: null, volumeMissing: null, running: null, suppliedAreaM2: 0 }, co2: null, items: [], stock,
 })
 let sent: { url: string; method: string; body: Record<string, unknown> }[]
 beforeEach(() => {

@@ -64,6 +64,12 @@ const SHIPPED: readonly string[] = [
   'practice.evaporator-window|||{"min":400,"max":800}',
   // 0.11.0 (Heizung PR 13, #99)
   'hkv.estimate-threshold|||25',
+  // 0.11.0 (Heizung PR 14, #99)
+  'hkv.cut.information|||3',
+  'hkv.info.district-emissions||2021-12-31|{"scope":"largeOnly","thresholdMw":20}',
+  'hkv.info.district-emissions|2022-01-01||{"scope":"all","thresholdMw":20}',
+  'hkv.monthly-info|2022-01-01||{"interval":"monthly"}',
+  'hkv.exemptions|||{"lowDemandKwhPerM2Year":15,"readyBefore":"1981-07-01","paybackYears":10}',
 ]
 
 const current = (): string[] =>

@@ -13,7 +13,7 @@
 // Rechtszahlen kommen aus dem Rechtsregister (shared/law/, Heizung PR 1), und zwar in der Fassung
 // von `LAW_AS_OF`: Das Lexikon erklärt das geltende Recht. Die Zahlen einer Beispielrechnung („70 %
 // nach Verbrauch“) sind gewählt und bleiben stehen.
-import { hkvConsumptionShare, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvEstimateThreshold, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit } from './law/heizkostenv.ts'
+import { hkvConsumptionShare, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvEstimateThreshold, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit } from './law/heizkostenv.ts'
 import { dayBefore as dayBeforeIso, germanDate, LAW_AS_OF, onlyVersion, valueAt } from './law/register.ts'
 import { practiceEvaporatorWindow } from './law/practice.ts'
 import { co2CutMissing, co2DistrictEtsNew, co2FirstPeriodStart, co2NonResidential, co2Restriction, co2RoundingDecimals, co2StageTable } from './law/co2kostaufg.ts'
@@ -32,6 +32,7 @@ const DHW_Q_VOLUME = DHW_VOLUME.effort * DHW_EXAMPLE.volumeM3 * (DHW_EXAMPLE.tem
 const DHW_Q_AREA = DHW_AREA.kwhPerM2 * DHW_EXAMPLE.areaM2
 const REMOTE_CUT = valueAt(hkvCutRemoteReading, LAW_AS_OF)
 const ESTIMATE_THRESHOLD = valueAt(hkvEstimateThreshold, LAW_AS_OF)
+const INFO_CUT = valueAt(hkvCutInformation, LAW_AS_OF)
 const NEW_DEVICES_AFTER = germanDate(valueAt(hkvRemoteReadingNewDevices, LAW_AS_OF).installedAfter)
 const RETROFIT_FROM = germanDate(onlyVersion(hkvRemoteReadingRetrofit).validFrom ?? '')
 // Heizkostenverteiler (Heizung PR 12): Beispiel mit zwei Bewertungsfaktoren. Die Zahlen des Hauses
@@ -361,6 +362,26 @@ export const GLOSSARY = {
       `Maßgeblich für die Grenze von ${ESTIMATE_THRESHOLD} % ist die Fläche der geschätzten Wohnungen, nicht ihre Zahl: Bei vier gleich großen Wohnungen hat jede genau ${ESTIMATE_THRESHOLD} %, das ist keine Überschreitung. ` +
       `Sind die Wohnungen verschieden groß, zählt die Fläche: Eine Wohnung mit mehr als ${ESTIMATE_THRESHOLD} % der Fläche überschreitet die Grenze allein, und mehrere kleinere können es zusammen. Mietfuchs zählt die ganze Fläche der Wohnung, auch wenn nur ein Teil der Heizperiode geschätzt ist, und prüft Heizung und Warmwasser getrennt; die Verordnung sagt dazu nichts Ausdrückliches, das ist eine Auslegung von Mietfuchs.`,
   },
+  // Heizung PR 14 (#99, Entwurf 10.3). Die Zahlen sind Beispielzahlen.
+  billingInfo: {
+    title: 'Angaben zur Heizkostenabrechnung',
+    short: 'Zur Heizkostenabrechnung nach Verbrauch gehören Angaben über die Energieträger, die Steuern und Abgaben, die Kosten der Zähler und der Ablesung, Kontaktadressen zum Energiesparen, beim Verbrauchervertrag die Streitbeilegung, ein Vergleich mit einem Durchschnittsnutzer aus Vergleichsdaten und ein grafischer Vergleich mit dem vorhergehenden Abrechnungszeitraum, bereinigt um die Witterung.',
+    example: `Fehlt eine dieser Angaben, darf der Mieter seinen Anteil an den Heizkosten um ${INFO_CUT} % kürzen: bei 1.200 € Heizkosten um ${(1200 * INFO_CUT) / 100} €. Das ist ein Kürzungsrecht, auch wenn mehrere Angaben fehlen und auch wenn die monatliche Verbrauchsinformation fehlt; es summieren sich nur Kürzungsrechte aus verschiedenen Sätzen des § 12 Abs. 1 HeizkostenV, etwa dieses und das wegen nicht fernablesbarer Geräte (BR-Drs. 643/21, S. 23 f.).`,
+    norm: '§ 6a HeizkostenV; § 12 Abs. 1 Satz 3 HeizkostenV',
+    needed:
+      'Ja, wenn Sie die Heizkosten nach Verbrauch abrechnen. Mietfuchs rechnet die meisten Angaben aus Ihren Daten. Steuern und Abgaben, bei Fernwärme die Werte des Netzes, den Vergleichswert eines Durchschnittsnutzers mit seiner Quelle und die Klimafaktoren tragen Sie auf der Seite Heizkosten ein. ' +
+      'Ein Durchschnitt Ihres eigenen Hauses ist kein solcher Vergleich: Gemeint sind nach der Begründung der Verordnung anonymisierte Verbraucher aus den Beständen der Ablesedienste. ' +
+      'Rechnen Sie mit Heizkostenverteilern oder freien Schlüsseln ab, legt meist der Ablesedienst den Vergleich bei; das bestätigen Sie mit seiner Quelle. Ist der Verbrauch eines Mieters geschätzt (§ 9a), gelten nach der Begründung der Verordnung nur die Mindestangaben, also die Kontaktinformationen und beim Verbrauchervertrag die Streitbeilegung; dass Mietfuchs das je Mieter anwendet, ist eine Auslegung.',
+  },
+  climateFactor: {
+    title: 'Klimafaktor',
+    short: 'Eine Zahl, mit der ein Heizwärmeverbrauch auf ein durchschnittliches Klima umgerechnet wird; so lassen sich ein milder und ein kalter Winter vergleichen. Der Deutsche Wetterdienst veröffentlicht Klimafaktoren je Postleitzahl für Zeiträume von zwölf Monaten.',
+    example: 'Ein Mieter verbrauchte 12.000 kWh, der Klimafaktor für seinen Ort ist 1,08: witterungsbereinigt 12.960 kWh. Im Vorjahr waren es 11.500 kWh bei einem Faktor von 1,15, witterungsbereinigt 13.225 kWh. Bereinigt hat er also weniger geheizt.',
+    norm: '§ 6a Abs. 3 Satz 1 Nr. 5, Satz 2 bis 4 HeizkostenV',
+    needed:
+      'Ja, für den Vergleich mit dem vorhergehenden Abrechnungszeitraum. Die Faktoren sucht Mietfuchs nicht selbst heraus; Sie tragen sie mit ihrer Quelle ein, etwa die Klimafaktoren des Deutschen Wetterdienstes zu Ihrer Postleitzahl für die zwölf Monate der Heizperiode. ' +
+      'Als Verfahren nach anerkannten Regeln der Technik nennt die Begründung der Verordnung „insbesondere die technische Regel VDI 3807“; die Klimafaktoren des Deutschen Wetterdienstes sind auf die Vereinfachungen „zugeschnitten“, die die Ministerien dafür bekannt machen, und „kostenfrei im Internet“ (BR-Drs. 643/21, S. 21). Bereinigt wird nur die Wärme, das Warmwasser nicht.',
+  },
   cableTv: {
     title: 'Kabelfernsehen',
     short: 'Die Gebühren für das TV-Signal eines Kabelanschlusses sind seit dem 01.07.2024 keine umlagefähigen Betriebskosten mehr, bei Anlagen ab dem 01.12.2021 waren sie es nie. Bei Anlagen, die vor dem 01.12.2021 errichtet wurden, bleibt der Betriebsstrom umlagefähig, bei einer Gemeinschaftsantenne des Hauses auch ihre Prüfung und Einstellung durch eine Fachkraft; bei neueren Anlagen auch das nicht.',
@@ -507,7 +528,7 @@ export const GLOSSARY = {
     short: 'Eine Tabelle, die ein Jahr Heizwärme auf die Monate verteilt: Im Winter wird viel geheizt, im Sommer kaum. Ein Jahr hat 1.000 Promille.',
     example: `Januar bis April zusammen ${winterPermille} Promille. Eine Gasrechnung über 700 € für diese vier Monate entspricht 700 € / ${(winterPermille / 1000).toLocaleString('de-DE')} ≈ ${deEuro(Math.round(70000 / (winterPermille / 1000)))} € im Jahr, also rund ${deEuro(Math.round(70000 / (winterPermille / 1000) / 12))} € im Monat.`,
     norm: '§ 9b Abs. 2 HeizkostenV (Gradtagszahlen nach den anerkannten Regeln der Technik)',
-    needed: 'Im Rumpfzeitraum rechnet Mietfuchs damit den Vorschlag für die neue Vorauszahlung hoch. Reicht eine Gas-, Fernwärme- oder Stromrechnung über das Ende der Heizperiode hinaus, teilt es damit den Verbrauch auf die Heizperioden auf, wenn weder ein Zählerstand zum Stichtag noch eine Zwischenrechnung des Versorgers vorliegt. Die Werte stammen aus der Praxis der Messdienste; die Norm DIN 94680, in der sie heute stehen, hat Mietfuchs nicht gelesen.',
+    needed: 'Im Rumpfzeitraum rechnet Mietfuchs damit den Vorschlag für die neue Vorauszahlung hoch. Reicht eine Gas-, Fernwärme- oder Stromrechnung über das Ende der Heizperiode hinaus, teilt es damit den Verbrauch auf die Heizperioden auf, wenn weder ein Zählerstand zum Stichtag noch eine Zwischenrechnung des Versorgers vorliegt. Bei eigener Heizkostenabrechnung teilt es damit beim Mieterwechsel die Grundkosten der Heizung (§ 9b Abs. 2 HeizkostenV), auch wenn nach § 2 HeizkostenV eine Verteilung nach Wohnfläche vereinbart ist: Die Verteilungsregeln treten dann hinter die Vereinbarung zurück (§ 2 HeizkostenV), und Mietfuchs übernimmt die Regel zum Wechsel sinngemäß (Festlegung von Mietfuchs). Wollen Sie beim Wechsel zeitanteilig teilen, stellen Sie das an der Heizanlage ein. Die Werte stammen aus der Praxis der Messdienste; die Norm DIN 94680, in der sie heute stehen, hat Mietfuchs nicht gelesen.',
   },
 
   fuelDelivery: {

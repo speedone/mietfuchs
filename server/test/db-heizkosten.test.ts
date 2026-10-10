@@ -73,7 +73,7 @@ test('Einrichtung: Anteil 50 bis 70 %, Pflichtanteil bei gedämmten Leitungen, W
   await withDatabase(async (opened) => {
     await haus(opened)
     const items = [{ id: 'gas', heatingPart: 'fuel', heatingTarget: 'both' }]
-    await assert.rejects(opened.write((db) => setUpSelf(db, 'hp', { ...SETUP, items, heatConsumptionPct: 75 }, '2026-02-01', newId)), status(400, /§ 10 HeizkostenV.*späteren Version/))
+    await assert.rejects(opened.write((db) => setUpSelf(db, 'hp', { ...SETUP, items, heatConsumptionPct: 75 }, '2026-02-01', newId)), status(400, /§ 10 HeizkostenV.*vereinbart/))
     await assert.rejects(opened.write((db) => setUpSelf(db, 'hp', { ...SETUP, items, heatConsumptionPct: 45 }, '2026-02-01', newId)), status(400, /mindestens 50/))
     await assert.rejects(opened.write((db) => setUpSelf(db, 'hp', { ...SETUP, items, heatConsumptionPct: 60, insulationRule: 'applies' }, '2026-02-01', newId)), status(400, /70 %.*§ 7 Abs\. 1 Satz 2/))
     // § 8 Abs. 1: Der Anteil beim Warmwasser ist eine eigene Wahl, nie still der der Heizung (Abweichung 14).

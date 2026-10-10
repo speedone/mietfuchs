@@ -15,7 +15,11 @@ describe('Einrichtung Schritt 7 (Heizung PR 10)', () => {
     expect([min, max]).toEqual([50, 70])
     expect(selfSetupBody(filled({ share: '' }), 'gas')).toEqual({ error: expect.stringMatching(/zwischen 50 und 70 %/) })
     expect(selfSetupBody(filled({ share: '45' }), 'gas')).toEqual({ error: expect.stringMatching(/mindestens 50 %/) })
-    expect(selfSetupBody(filled({ share: '80' }), 'gas')).toEqual({ error: expect.stringMatching(/§ 10 HeizkostenV.*späteren Version/) })
+    expect(selfSetupBody(filled({ share: '80' }), 'gas')).toEqual({ error: expect.stringMatching(/§ 10 HeizkostenV.*vereinbart/) })
+    // Heizung PR 14: mit Vereinbarung über 70 %, nie über 100 %.
+    const vereinbart = selfSetupBody(filled({ share: '80', waterShare: '80', above70Agreed: true }), 'gas')
+    expect('body' in vereinbart && [vereinbart.body.heatConsumptionPct, vereinbart.body.above70Agreed]).toEqual([80, true])
+    expect(selfSetupBody(filled({ share: '101', waterShare: '70', above70Agreed: true }), 'gas')).toEqual({ error: expect.stringMatching(/höchstens 100 %/) })
   })
   it('§ 7 Abs. 1 Satz 2: bei Öl oder Gas und Wärmeschutz vor 1994 sind es 70 %, sonst gilt die Wahl', () => {
     expect(forcedShare('gas', 'applies')).toBe(70)
@@ -64,7 +68,7 @@ describe('Einrichtung Schritt 7 (Heizung PR 10)', () => {
     if (!gas || !wartung) throw new Error('zwei Positionen erwartet')
     const done = selfSetupBody({ ...form, items: [{ ...gas, heatingTarget: 'both' }, { ...wartung, heatingPart: 'operating', heatingTarget: 'both' }] }, 'gas')
     expect(done).toEqual({ body: {
-      period: '2025-01', heatConsumptionPct: 70, waterConsumptionPct: 70, insulationRule: 'notApplies', hotWater: 'combined', capture: 'heatMeter', areaBasisHeat: 'area',
+      period: '2025-01', heatConsumptionPct: 70, waterConsumptionPct: 70, insulationRule: 'notApplies', above70Agreed: false, hotWater: 'combined', capture: 'heatMeter', areaBasisHeat: 'area',
       dhwHeatMeter: true, totalHeatMeter: false,
       items: [{ id: 'c1', heatingPart: 'fuel', heatingTarget: 'both' }, { id: 'c2', heatingPart: 'operating', heatingTarget: 'both' }],
     } })

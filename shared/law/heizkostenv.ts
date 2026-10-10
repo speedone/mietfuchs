@@ -367,3 +367,65 @@ export const hkvEstimateThreshold: LawParam<number, 'periodStart'> = {
   }],
   describe: (v) => `überschreitet ${v} %`,
 }
+
+// ---------- Pflichtangaben und Ausnahmen (Heizung PR 14, #99) ----------
+// Wortlaut gelesen am 07.10.2026 auf gesetze-im-internet.de (§§ 6a, 11, 12 HeizkostenV).
+const read14 = (cite: string, url: string): Source => ({ rank: 'law', cite, url, retrieved: '2026-10-07', checked: 'checked' })
+const URL_6A = 'https://www.gesetze-im-internet.de/heizkostenv/__6a.html'
+
+// § 12 Abs. 1 Satz 3 HeizkostenV: „Dasselbe ist anzuwenden, wenn der Gebäudeeigentümer die Informationen nach
+// § 6a nicht oder nicht vollständig mitteilt.“ Dasselbe heißt das Recht des Satzes 2, den auf den Nutzer
+// entfallenden Anteil um 3 vom Hundert zu kürzen; ein Recht, nicht eines je fehlender Angabe. Eine eigene
+// Fassung neben `hkv.cut.remote-reading`, denn beide Sätze können sich getrennt ändern.
+export const hkvCutInformation: LawParam<number, 'periodStart'> = {
+  id: 'hkv.cut.information',
+  title: 'Kürzung bei fehlenden Informationen nach § 6a',
+  norm: '§ 12 Abs. 1 Satz 3 HeizkostenV',
+  timing: 'periodStart',
+  versions: [{ value: 3, source: read14('§ 12 Abs. 1 Satz 2 und 3 HeizkostenV', 'https://www.gesetze-im-internet.de/heizkostenv/__12.html'), enacted: ENACTED }],
+  describe: (v) => `${v} %`,
+}
+
+// § 6a Abs. 3 Satz 1 Nr. 1 Buchst. a: Treibhausgasemissionen und Primärenergiefaktor des Fernwärmenetzes,
+// „bei Fernwärmesystemen mit einer thermischen Gesamtleistung unter 20 Megawatt jedoch erst ab dem
+// 1. Januar 2022“. Ob der Beginn des Abrechnungszeitraums gemeint ist, sagt der Wortlaut nicht; Mietfuchs
+// liest es so (Auslegung) und nennt fehlende Werte für einen Zeitraum davor nur als „bis zu“, denn die
+// Leistung des Netzes kennt es nicht.
+export type DistrictEmissions = { readonly scope: 'largeOnly' | 'all'; readonly thresholdMw: number }
+const districtSource = (): Source => ({ rank: 'interpretation', cite: '§ 6a Abs. 3 Satz 1 Nr. 1 Buchst. a HeizkostenV', url: URL_6A, retrieved: '2026-10-07', checked: 'checked' })
+export const hkvInfoDistrict: LawParam<DistrictEmissions, 'periodStart'> = {
+  id: 'hkv.info.district-emissions',
+  title: 'Treibhausgasemissionen und Primärenergiefaktor der Fernwärme',
+  norm: '§ 6a Abs. 3 Satz 1 Nr. 1 Buchst. a HeizkostenV',
+  timing: 'periodStart',
+  versions: [
+    { validTo: '2021-12-31', value: { scope: 'largeOnly', thresholdMw: 20 }, source: districtSource(), enacted: `${ENACTED}; Zeitregel nach dem Beginn des Zeitraums als Auslegung von Mietfuchs` },
+    { validFrom: '2022-01-01', value: { scope: 'all', thresholdMw: 20 }, source: districtSource(), enacted: `${ENACTED}; Zeitregel nach dem Beginn des Zeitraums als Auslegung von Mietfuchs` },
+  ],
+  describe: (v) => (v.scope === 'all' ? 'für jedes Fernwärmesystem' : `nur für Fernwärmesysteme ab ${v.thresholdMw} MW`),
+}
+
+// § 6a Abs. 1 Satz 1 Nr. 2, Abs. 2: Bei fernablesbaren Geräten monatliche Abrechnungs- oder
+// Verbrauchsinformationen ab dem 01.01.2022. `overlap`: Ein Zeitraum, der diese Zeit berührt, ist
+// betroffen. Die Information selbst erzeugt Mietfuchs noch nicht (Heizung PR 22).
+export const hkvMonthlyInfo: LawParam<{ readonly interval: string }, 'overlap'> = {
+  id: 'hkv.monthly-info',
+  title: 'Monatliche Verbrauchsinformation',
+  norm: '§ 6a Abs. 1 Satz 1 Nr. 2, Abs. 2 HeizkostenV',
+  timing: 'overlap',
+  versions: [{ validFrom: '2022-01-01', value: { interval: 'monthly' }, source: read14('§ 6a Abs. 1 und 2 HeizkostenV', URL_6A), enacted: ENACTED }],
+  describe: () => 'monatlich bei fernablesbaren Geräten',
+}
+
+// § 11 Abs. 1 Nr. 1 HeizkostenV: die Zahlen der Ausnahmen, für die Auswahl in der Oberfläche, das Lexikon
+// und die Hinweise. Mietfuchs prüft keine dieser Voraussetzungen; der Vermieter wählt und bewahrt den
+// Nachweis auf.
+export type Exemptions = { readonly lowDemandKwhPerM2Year: number; readonly readyBefore: string; readonly paybackYears: number }
+export const hkvExemptions: LawParam<Exemptions, 'periodStart'> = {
+  id: 'hkv.exemptions',
+  title: 'Ausnahmen von der Heizkostenverordnung',
+  norm: '§ 11 Abs. 1 HeizkostenV',
+  timing: 'periodStart',
+  versions: [{ value: { lowDemandKwhPerM2Year: 15, readyBefore: '1981-07-01', paybackYears: 10 }, source: read14('§ 11 HeizkostenV', URL_11), enacted: ENACTED }],
+  describe: (v) => `Heizwärmebedarf unter ${v.lowDemandKwhPerM2Year} kWh je m² und Jahr; bezugsfertig vor ${germanDate(v.readyBefore)}; Einsparung in ${v.paybackYears} Jahren`,
+}

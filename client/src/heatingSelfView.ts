@@ -4,6 +4,7 @@
 import type { HeatingDistribution, HeatingEnergy, InsulationRule, SelfBoundaryView, SelfEstimateView, SelfHeatingStatement, SelfPotView, SelfUnitView, SelfUserView } from './types'
 import { fmtDate, fmtEuro } from './api'
 import { CAUSE_TEXT } from './estimateForm'
+import { shareBounds } from './heatingSelfForm'
 import { hkvConsumptionShareForced, hkvCutNotByConsumption } from '../../shared/law/heizkostenv.ts'
 import { LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
 
@@ -77,6 +78,8 @@ export function distributionLines(d: HeatingDistribution): string[] {
   const water = d.effective.water === null ? '' : `, Warmwasser ${d.effective.water} %`
   const lines = [`Heizung ${d.effective.heating} %${water} nach Verbrauch${d.inherited ? ', übernommen aus der vorigen Heizperiode' : ''}`]
   if (d.forcedPercent !== null) lines.push(`Vorgeschrieben: ${d.forcedPercent} % bei den Heizkosten (§ 7 Abs. 1 Satz 2 HeizkostenV).`)
+  // Heizung PR 14: mehr als 70 % mit Vereinbarung (§ 10 HeizkostenV).
+  if (d.effective.above70Agreed) lines.push(`Mehr als ${shareBounds().max} % nach Verbrauch sind mit den Mietern vereinbart (§ 10 HeizkostenV).`)
   if (!shareEditable(d)) lines.push('Die Heizperiode hat begonnen; einen anderen Anteil tragen Sie für die nächste ein (§ 6 Abs. 4 HeizkostenV).')
   return lines
 }

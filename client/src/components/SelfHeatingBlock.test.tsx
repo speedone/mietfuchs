@@ -26,3 +26,11 @@ test('Der Nachmieter sieht sein Gerätesegment, nicht das des Vormieters', () =>
   expect(screen.getByText(/Ablesewert 200 × Bewertungsfaktor 1,25 = 250 Einheiten/)).toBeTruthy()
   expect(screen.queryByText(/Ablesewert 300/)).toBeNull()
 })
+
+test('Durchsicht von #243, G-W3: Nach einer Vereinbarung nach § 2 „nach Wohnfläche“ sagt der Druck es', () => {
+  render(<SelfHeatingBlock self={{ ...self, agreedArea: true }} tenancyId="C2" plantName="" />)
+  expect(screen.getByText(/Verteilt nach der Wohnfläche, wie mit den Mietern vereinbart \(§ 2 HeizkostenV\)/)).toBeTruthy()
+  cleanup()
+  render(<SelfHeatingBlock self={self} tenancyId="C2" plantName="" />)
+  expect(screen.queryByText(/wie mit den Mietern vereinbart/)).toBeNull()
+})

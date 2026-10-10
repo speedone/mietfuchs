@@ -1380,6 +1380,27 @@ export type HeatingPeriodData = {
   climateFactorPrev: number | null
   consumerContract: string | null
   infoContactsConfirmed: boolean | null
+  // § 6a Abs. 3 Nr. 4 und 5 (Heizung PR 14): der Vergleichswert eines Durchschnittsnutzers in kWh je m²
+  // Wohnfläche für die Heizperiode, mit Quelle (etwa die Vergleichswerte des Ablesedienstes; kein Durchschnitt
+  // des eigenen Hauses, BR-Drs. 643/21, S. 19, 21), und die Quelle der beiden Klimafaktoren.
+  infoReferenceKwhPerM2: number | null
+  infoReferenceSource: string | null
+  climateFactorSource: string | null
+  // Ausnahme nach § 11, Vereinbarung nach § 2 und die monatliche Verbrauchsinformation (Heizung PR 14). Sie
+  // stehen **je Heizperiode** und gelten ab ihr für die folgenden der Linie, bis eine spätere etwas anderes sagt
+  // (`periodRulesOf` in server/src/heatingInfo.ts); `null` heißt: nicht beantwortet, es gilt die vorige.
+  // So ändert eine Antwort keine frühere Heizperiode, weder eine offene noch eine abgeschlossene.
+  // `exemptionScope`: nur die Wärme (`heat`) oder auch das Warmwasser (`both`, § 11 Abs. 2); ohne Antwort
+  // nur die Wärme. `exemptionBillingAgreed`: § 2 Abs. 7 CO2KostAufG. `agreedOtherwise`: `none` heißt
+  // ausdrücklich keine Vereinbarung.
+  exemption: HeatingExemption | null
+  exemptionScope: ExemptionScope | null
+  exemptionBillingAgreed: boolean | null
+  agreedOtherwise: AgreedOtherwise | null
+  monthlyInfoElsewhere: boolean | null
+  // Durchsicht von #243, R-W1: Quelle des beigelegten Vergleichs des Ablesedienstes (§ 6a Abs. 3 Nr. 4, bei
+  // freien Schlüsseln Nr. 4 und 5), wo Mietfuchs ihn nicht rechnet; `null`: nicht bestätigt.
+  infoComparisonSource: string | null
   // Vorrat (Heizung PR 8, Entwurf 5.3, 8.2): Einheit, Anfangsbestand mit Wert, kg und CO₂-Kosten, ob
   // er vor dem 01.01.2023 in Rechnung gestellt wurde, Endbestand und Tag der Peilung. Eingetragen wird
   // der Anfangsbestand nur in der ersten Heizperiode mit Vorrat; danach ist er der Endbestand der
@@ -1604,6 +1625,10 @@ export type HeatingStatement = {
   stock?: HeatingStockStatement | null
   // Die eigene Heizkostenabrechnung dieser Heizperiode (Heizung PR 10), nur bei `method = 'self'`.
   self?: SelfHeatingStatement
+  // Die Informationen nach § 6a (Heizung PR 14), bei eigener Abrechnung und bei freien Schlüsseln (dort ohne
+  // die Vergleiche); nicht beim Messdienst, bei einer Etagenheizung und wenn Wärme und Warmwasser nach § 11
+  // ausgenommen sind. Nach einem Kesseltausch einmal je Linie. Fehlt in älteren Abrechnungen.
+  info?: HeatingInfoStatement
 }
 
 // Was die Seite Heizkosten zu einer Heizperiode lädt (Heizung PR 6): die Angabe zum Warmwasser, die
@@ -1634,6 +1659,14 @@ export type HeatingPeriodView = {
   serviceValues?: HeatingServiceValue[]
   // Die Warmwasserbereitung dieser Heizperiode bei eigener Abrechnung (Durchsicht von #241, I2), sonst `null`.
   selfHotWater?: HotWater | null
+  // Heizung PR 14: die Eingaben zu § 6a dieser Heizperiode (eigene Zeile), die geltenden Angaben zu § 11, § 2,
+  // monatlicher Information und Verbrauchervertrag und die Antworten der eigenen Zeile (`null`: keine).
+  info: HeatingInfoInputs
+  rules: HeatingRules
+  ownRules: Pick<HeatingPeriodData, 'exemption' | 'exemptionScope' | 'exemptionBillingAgreed' | 'agreedOtherwise' | 'monthlyInfoElsewhere' | 'consumerContract'>
+  // Durchsicht von #243: bereitet die Anlage Warmwasser (R-K6), und erlaubt das Haus eine Vereinbarung nach § 2 (R-K7)?
+  centralHotWater: boolean
+  agreeable: boolean
 }
 
 // ---------- Brennstofflieferungen (Heizung PR 7, Entwurf 5.4, 8.2) ----------
@@ -1870,10 +1903,11 @@ export type InterimGap = { unitId: string; date: string; status: InterimGapStatu
 // Vorperiode; `begun`: die Heizperiode hat begonnen, ein anderer Anteil ist gesperrt; `first`: es
 // gibt noch keinen Anteil.
 export type HeatingDistribution = {
-  own: { heating: number | null; water: number | null; insulationRule: InsulationRule | null }
+  own: { heating: number | null; water: number | null; insulationRule: InsulationRule | null; above70Agreed?: boolean }
   // `water` ist null, wenn es kein zentrales Warmwasser gibt oder der Wert fehlt (§ 8 Abs. 1 verlangt
   // eine eigene Wahl, Abweichung 14).
-  effective: { heating: number; water: number | null; insulationRule: InsulationRule | null } | null
+  // `above70Agreed` (Heizung PR 14): mehr als 70 % nach Verbrauch sind vereinbart (§ 10).
+  effective: { heating: number; water: number | null; insulationRule: InsulationRule | null; above70Agreed?: boolean } | null
   inherited: boolean
   begun: boolean
   first: boolean
@@ -1963,7 +1997,9 @@ export type SelfHeatingStatement = {
   alpha: { percent: number; dhwHeatKwh: number; referenceKwh: number; reference: 'fuel' | 'totalHeat'; estimated: boolean } | null
   // Der Rechenweg zum Warmwasseranteil (Heizung PR 11, Entwurf 8.8 „α mit Methode“); fehlt ohne α.
   dhw?: DhwStatement
-  shares: { heating: number; water: number | null; forced: boolean; previous: { heating: number; water: number | null } | null } | null
+  shares: { heating: number; water: number | null; forced: boolean; previous: { heating: number; water: number | null } | null; above70Agreed?: boolean } | null
+  // Verteilt nach einer Vereinbarung nach § 2 HeizkostenV „nach Wohnfläche“ (Durchsicht von #243, G-W3).
+  agreedArea?: true
   pots: SelfPotView[]
   units: SelfUnitView[]
   // Heizkostenverteiler je Gerät mit Skala und Faktor (Heizung PR 12, Entwurf 8.8) bzw. die Werte des
@@ -2042,4 +2078,102 @@ export type SelfEstimateOption = {
   partlyMeasured?: boolean
   proposals: EstimateProposal[]
   comparable: ComparableUnit[]
+}
+
+// ---------- Informationen nach § 6a HeizkostenV (Heizung PR 14) ----------
+
+export type InfoContact = { name: string; url: string; what: string }
+// `renewable`: § 11 Abs. 1 Nr. 3 Buchst. a (Wärmerückgewinnung, Solar; bis 30.09.2024 auch Wärmepumpen); `chp`:
+// Buchst. b (Kraft-Wärme-Kopplung, Abwärme), nur wenn der Wärmeverbrauch des Gebäudes nicht erfasst wird.
+export type HeatingExemption = 'none' | 'lowDemand' | 'disproportionate' | 'pre1981' | 'renewable' | 'chp' | 'authority'
+// Welche Töpfe eine Ausnahme nach § 11 betrifft: nur die Wärme (Abs. 1) oder auch das Warmwasser (Abs. 2,
+// „entsprechend“).
+export type ExemptionScope = 'heat' | 'both'
+// Vereinbarung nach § 2 HeizkostenV über die Verteilung; `none`: ausdrücklich keine.
+export type AgreedOtherwise = 'none' | 'area' | 'fixedPercent' | 'consumption'
+// Die Nummern des § 6a Abs. 3 Satz 1 HeizkostenV.
+export type InfoItem = '1a' | '1b' | '1c' | '2' | '3' | '4' | '5'
+// Was der Vermieter je Heizperiode zu § 6a einträgt, und die Postleitzahl des Objekts für den Hinweis zum
+// Klimafaktor (Heizung PR 14).
+export type HeatingInfoInputs = Pick<HeatingPeriodData, 'infoTaxesText' | 'infoDistrictGhg' | 'infoDistrictPef' | 'climateFactor' | 'climateFactorPrev' | 'climateFactorSource' | 'infoReferenceKwhPerM2' | 'infoReferenceSource' | 'infoComparisonSource'> & { postalCode: string | null }
+// Ausnahme, Vereinbarung, monatliche Information und Verbrauchervertrag einer Heizperiode, wie sie gelten
+// (eigene Zeile oder geerbt von der vorigen der Linie). `fromPeriod` je Angabe: die Heizperiode, aus der sie
+// stammt (`null`: keine Antwort, es gilt die Vorgabe).
+export type HeatingRules = {
+  exemption: HeatingExemption
+  // Mit Ausnahme der geltende Umfang (ohne Antwort `heat`); ohne Ausnahme null.
+  exemptionScope: ExemptionScope | null
+  exemptionBillingAgreed: boolean
+  agreedOtherwise: AgreedOtherwise
+  monthlyInfoElsewhere: boolean
+  consumerContract: string | null
+  fromPeriod: { exemption: string | null; agreedOtherwise: string | null; monthlyInfoElsewhere: string | null; consumerContract: string | null }
+}
+// Vergleich je Mieter (Nr. 4 und 5). Verbrauch in der Einheit des Topfs; `null`: nicht erfasst.
+// `referenceKwh`: der Vergleichswert des Durchschnittsnutzers, umgerechnet auf Wohnfläche und Tage des
+// Mieters; kein Hausdurchschnitt.
+export type InfoComparison = {
+  tenancyId: string
+  label: string
+  days: number
+  prevDays: number | null
+  heating: { now: number | null; estimated: boolean; referenceKwh: number | null; prev: number | null; nowAdjusted: number | null; prevAdjusted: number | null } | null
+  water: { now: number | null; prev: number | null } | null
+  // Der Mieter wohnte im vorhergehenden Zeitraum nicht in der Wohnung (Entwurf 15.1 Nr. 14).
+  firstPeriod: boolean
+  // Er wohnte dort, aber Mietfuchs kennt seinen Verbrauch im vorhergehenden Zeitraum nicht (keine
+  // vergleichbare Ablesung, andere Erfassung, Werte eines Ablesedienstes).
+  prevUnknown: boolean
+  // Sein Verbrauch ist nach § 9a geschätzt: Die Vergleiche nach § 6a Abs. 3 gehören dann nicht dazu
+  // (BR-Drs. 643/21, S. 19), und Mietfuchs nennt für ihn keine Kürzung dafür (Durchsicht von #243, R-W5).
+  estimated: boolean
+  // Was nur ihm fehlt (Nr. 4 ohne Wohnfläche, Nr. 5 ohne bekannten Vorjahresverbrauch; Durchsicht von #243, R-W2).
+  missing: InfoItem[]
+  // Sein Anteil an den jährlichen Treibhausgasemissionen der Fernwärme in kg CO₂-Äquivalent.
+  ghgKg: number | null
+}
+// Die Informationen nach § 6a einer Anlage (bei einem Kesseltausch: ihrer Linie) und Heizperiode.
+export type HeatingInfoStatement = {
+  // `full`: § 6a Abs. 3; `minimal`: Abs. 5, nur Nr. 2 und 3.
+  scope: 'full' | 'minimal'
+  // Nr. 1 a: die Energieträger mit ihrem Anteil in Prozent (`null`: nicht bekannt).
+  carriers: { energy: HeatingEnergy; percent: number | null }[]
+  // Bei Fernwärme: Faktor laut Versorger (g CO₂-Äquivalent je kWh), Primärenergiefaktor und die jährliche
+  // Menge in kg CO₂-Äquivalent (Faktor mal gelieferte kWh der Heizperiode).
+  district: { ghg: number | null; pef: number | null; annualKg: number | null } | null
+  taxesText: string | null
+  // Nr. 1 c: die Entgelte aus den Positionen mit dem Teil „Erfassung“, für das ganze Gebäude; `null`: keine
+  // Position trägt ihn (Durchsicht von #243, R-W6).
+  meteringCents: number | null
+  // Der beigelegte Vergleich des Ablesedienstes mit Quelle (R-W1); `null`: nicht bestätigt.
+  comparisonSource: string | null
+  // Er deckt auch Nr. 5 (Werte des Ablesedienstes, Runde 2).
+  comparisonCoversPrev?: true
+  // Nr. 4: der eingetragene Vergleichswert mit Quelle (`null`: fehlt) und ob Mietfuchs ihn mit dem Verbrauch
+  // vergleichen kann (Wärme in kWh; nicht bei Heizkostenverteilern oder ausgenommener Wärme).
+  reference: { kwhPerM2: number; source: string } | null
+  referenceComparable: boolean
+  contacts: InfoContact[]
+  contactsChecked: string
+  // Nr. 3: `none` kein Verbrauchervertrag, `text` die Information, `unknown` unbeantwortet.
+  dispute: { kind: 'none' } | { kind: 'text'; text: string } | { kind: 'unknown' }
+  climate: { factor: number | null; factorPrev: number | null; source: string | null }
+  units: { heating: string; water: string }
+  users: InfoComparison[]
+  // Sicher fehlend, und vielleicht fehlend (Fernwärme vor 2022, Verbrauchervertrag unbeantwortet, erstes Jahr
+  // eines Mieters).
+  missing: InfoItem[]
+  uncertain: InfoItem[]
+  // Was für jeden Mieter fehlt (die Angaben zur Anlage); was nur einzelnen fehlt, steht bei `users[].missing`
+  // (Durchsicht von #243, R-W2). Fehlt in Abrechnungen, die vorher abgeschlossen wurden.
+  missingCommon?: InfoItem[]
+  // Ob Mietfuchs die Vergleiche Nr. 4 und 5 gerechnet hat (nur aus der eigenen Abrechnung), ob die Anlage
+  // einen weiteren Erzeuger hat und ob die Wärme nach § 11 ausgenommen ist (die Angaben betreffen dann das
+  // Warmwasser).
+  comparisons: boolean
+  mixedGeneration: boolean
+  heatExempt: boolean
+  // Die Mietverhältnisse, die über diese Anlage abgerechnet werden; nur sie bekommen den Block gedruckt. Fehlt in
+  // einer Abrechnung, die vor diesem Feld abgeschlossen wurde.
+  tenancyIds?: string[]
 }

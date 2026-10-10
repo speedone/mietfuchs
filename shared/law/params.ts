@@ -5,7 +5,7 @@ import type { LawParam, Timing } from './register.ts'
 import type { LawValue } from '../types.ts'
 import { betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths } from './bgb-betrkv.ts'
 import { co2ApplicableFrom, co2CostsBefore, co2CutMissing, co2DistrictEtsNew, co2NonResidential, co2Restriction, co2RoundingDecimals, co2StageTable } from './co2kostaufg.ts'
-import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvEstimateThreshold, hkvHeatingValues, hkvHeatPumpCapture, hkvRenewableExemption, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvSettlementInfo } from './heizkostenv.ts'
+import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvEstimateThreshold, hkvExemptions, hkvHeatingValues, hkvHeatPumpCapture, hkvInfoDistrict, hkvMonthlyInfo, hkvRenewableExemption, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvSettlementInfo } from './heizkostenv.ts'
 import { practiceEvaporatorWindow, practiceReadingOffWarning, practiceVacancyPersons } from './practice.ts'
 import { ustgStandardRate } from './ustg.ts'
 
@@ -40,4 +40,9 @@ export const LAW_PARAMS: readonly LawParam<LawValue, Timing>[] = [
   hkvRenewableExemption,
   hkvEstimateThreshold,
   practiceEvaporatorWindow,
+  // Heizung PR 14
+  hkvCutInformation,
+  hkvInfoDistrict,
+  hkvMonthlyInfo,
+  hkvExemptions,
 ]

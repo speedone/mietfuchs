@@ -1119,3 +1119,40 @@ test('Schätzung: Wert ab 0, Begründung Pflicht, bekannter Weg und Teil, eine Z
     cleanup()
   }
 })
+
+// ---------- Pflichtangaben und Ausnahmen (Heizung PR 14) ----------
+
+test('Heizperiode: Ausnahme nach § 11 mit Umfang und vereinbarter Abrechnung, Vereinbarung nach § 2, monatliche Information (je Heizperiode)', async () => {
+  const { connection, cleanup } = await freshDb()
+  try {
+    connection.exec(eineAnlage)
+    connection.exec("INSERT INTO heating_periods (id, plant_id, period) VALUES ('h1', 'hp1', '2025-01')")
+    assert.deepEqual(connection.rows("SELECT exemption, exemption_scope, exemption_billing_agreed, agreed_otherwise, monthly_info_elsewhere FROM heating_periods")[0], [null, null, null, null, null])
+    assert.ok(rejects(connection, "UPDATE heating_periods SET exemption = 'heim' WHERE id = 'h1'"), 'unbekannte Ausnahme')
+    assert.ok(rejects(connection, "UPDATE heating_periods SET agreed_otherwise = 'pauschal' WHERE id = 'h1'"), 'unbekannte Vereinbarung')
+    assert.ok(rejects(connection, "UPDATE heating_periods SET exemption_billing_agreed = 1 WHERE id = 'h1'"), 'Abrechnung vereinbart ohne Ausnahme')
+    assert.ok(rejects(connection, "UPDATE heating_periods SET exemption = 'none', exemption_scope = 'heat' WHERE id = 'h1'"), 'Umfang ohne Ausnahme')
+    assert.ok(rejects(connection, "UPDATE heating_periods SET exemption = 'lowDemand', exemption_scope = 'water' WHERE id = 'h1'"), 'unbekannter Umfang')
+    assert.equal(rejects(connection, "UPDATE heating_periods SET exemption = 'lowDemand', exemption_scope = 'heat', exemption_billing_agreed = 1, agreed_otherwise = 'none', monthly_info_elsewhere = 1 WHERE id = 'h1'"), null)
+  } finally {
+    cleanup()
+  }
+})
+
+test('Heizperiode: Vergleichswert (§ 6a Abs. 3 Nr. 4) und Klimafaktoren (Nr. 5) nur über 0 und nur mit Quelle', async () => {
+  const { connection, cleanup } = await freshDb()
+  try {
+    connection.exec(eineAnlage)
+    connection.exec("INSERT INTO heating_periods (id, plant_id, period) VALUES ('h1', 'hp1', '2025-01')")
+    assert.match(rejects(connection, "UPDATE heating_periods SET info_reference_kwh_per_m2 = 0, info_reference_source = 'x' WHERE id = 'h1'") ?? '', /heating_periods_info_reference_positive/)
+    assert.match(rejects(connection, "UPDATE heating_periods SET info_reference_kwh_per_m2 = 120 WHERE id = 'h1'") ?? '', /heating_periods_info_reference_source_complete/)
+    assert.match(rejects(connection, "UPDATE heating_periods SET info_reference_kwh_per_m2 = 120, info_reference_source = '  ' WHERE id = 'h1'") ?? '', /heating_periods_info_reference_source_complete/)
+    assert.equal(rejects(connection, "UPDATE heating_periods SET info_reference_kwh_per_m2 = 120, info_reference_source = 'Vergleichswerte des Ablesedienstes 2025' WHERE id = 'h1'"), null)
+    assert.match(rejects(connection, "UPDATE heating_periods SET climate_factor = 1.08 WHERE id = 'h1'") ?? '', /heating_periods_climate_factor_source_complete/)
+    assert.match(rejects(connection, "UPDATE heating_periods SET climate_factor_prev = 0, climate_factor_source = 'DWD' WHERE id = 'h1'") ?? '', /heating_periods_climate_factor_positive/)
+    assert.equal(rejects(connection, "UPDATE heating_periods SET climate_factor = 1.08, climate_factor_prev = 1.15, climate_factor_source = 'DWD, Klimafaktoren 79100' WHERE id = 'h1'"), null)
+    assert.ok(rejects(connection, "UPDATE heating_periods SET info_district_ghg = -1 WHERE id = 'h1'"), 'negative Emissionen')
+  } finally {
+    cleanup()
+  }
+})

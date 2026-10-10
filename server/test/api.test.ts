@@ -6594,3 +6594,26 @@ test('Ablesedienst (Heizung PR 12): PUT speichert die Werte, eine Überschneidun
     s.stop()
   }
 })
+
+test('Pflichtangaben nach § 6a und Ausnahmen über die Routen (Heizung PR 14): speichern, Satz bei Fehler, 404', async () => {
+  const s = await startServer()
+  const send = (method: string, url: string, body?: unknown) =>
+    fetch(`${s.base}${url}`, { method, headers: { 'content-type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) })
+  try {
+    await s.api('/api/units', { method: 'POST', body: JSON.stringify({ name: 'EG', areaM2: 60, participates: true }) })
+    const { plant } = await jsonOf<{ plant: HeatingPlant }>(await send('POST', '/api/heating-plants', { energy: 'gas', method: 'manual' }))
+    const ok = await send('PUT', `/api/heating-plants/${plant.id}/periods/2025-01/info`, { climateFactor: 1.08, climateFactorSource: 'DWD' })
+    assert.equal(ok.status, 200)
+    assert.equal((await jsonOf<{ climateFactor: number }>(ok)).climateFactor, 1.08)
+    const falsch = await send('PUT', `/api/heating-plants/${plant.id}/periods/2025-01/info`, { climateFactor: -2 })
+    assert.equal(falsch.status, 400)
+    assert.match(await errorFrom(falsch), /Klimafaktor/)
+    const rules = await send('PUT', `/api/heating-plants/${plant.id}/periods/2025-01/rules`, { exemption: 'lowDemand', consumerContract: 'none' })
+    assert.deepEqual(await jsonOf<Record<string, unknown>>(rules), { exemption: 'lowDemand', exemptionScope: null, exemptionBillingAgreed: null, agreedOtherwise: null, monthlyInfoElsewhere: null, consumerContract: 'none', later: { closed: [] } })
+    assert.equal((await send('PUT', `/api/heating-plants/${plant.id}/periods/2025-01/rules`, { agreedOtherwise: 'area' })).status, 400)
+    assert.equal((await send('PUT', '/api/heating-plants/gibt-es-nicht/periods/2025-01/info', {})).status, 404)
+    assert.equal((await send('PUT', '/api/heating-plants/gibt-es-nicht/periods/2025-01/rules', {})).status, 404)
+  } finally {
+    s.stop()
+  }
+})

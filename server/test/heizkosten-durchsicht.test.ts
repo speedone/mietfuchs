@@ -190,8 +190,9 @@ test('Durchsicht #239 I3a: der Anteil gehört zur Linie; die neue Anlage überni
     assert.deepEqual(s.notices.filter((n) => n.level === 'error').map((n) => n.code), [])
     assert.equal(tenantsOf(s, 'gas2'), 100000, 'die Kosten der neuen Anlage tragen die Mieter')
     assert.equal(tenantsOf(s, 'gas1'), 300000)
-    // Recht I1: bis PR 14 die Warnung zu § 6a Abs. 3 mit der Kürzung je Mieter (§ 12 Abs. 1 Satz 3).
-    const n6a = s.notices.filter((n) => n.code === 'heating.self-6a-missing')
+    // Recht I1: die Warnung zu § 6a Abs. 3 mit der Kürzung je Mieter (§ 12 Abs. 1 Satz 3); seit Heizung PR 14
+    // `heating.info-incomplete`, weiter einmal je Linie.
+    const n6a = s.notices.filter((n) => n.code === 'heating.info-incomplete')
     assert.equal(n6a.length, 1, 'eine je Linie (Nachprüfung, N2)')
     assert.match(n6a[0]?.text ?? '', /vorhergehenden Abrechnungszeitraum/)
     // Der Kesseltausch erbt den Beginn (Nachprüfung, W1/W2).
@@ -307,7 +308,7 @@ test('Nachprüfung #239 N2: Warnung zu § 6a erst ab Zeiträumen, die am 01.12.2
       }
       for (const y of [2021, 2022, 2023]) await createEntity(db, 'costItems', `w${y}`, { propertyId: 'objekt-1', period: `${y}-01`, category: HEATING_CATEGORY, description: `Wartung ${y}`, amountCents: 100000, key: 'heatingSystem', heatingPlantId: 'hp', heatingPart: 'operating', heatingTarget: 'heating' })
     })
-    const codes6a = async (day: string) => (await settle(opened, day)).notices.filter((n) => n.code === 'heating.self-6a-missing').map((n) => n.text)
+    const codes6a = async (day: string) => (await settle(opened, day)).notices.filter((n) => n.code === 'heating.info-incomplete' || n.code === 'heating.info-open').map((n) => n.text)
     assert.deepEqual(await codes6a('2021-06-01'), [])
     const n22 = await codes6a('2022-06-01')
     assert.equal(n22.length, 1)
