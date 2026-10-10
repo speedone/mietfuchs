@@ -117,7 +117,9 @@ test('Wärmepumpe und Stromheizung: keine Schätzhilfe, eigener Satz mit dem Weg
     assert.match(satz, /kennzeichnen Sie die Heizposition im Kostenformular/)
     assert.doesNotMatch(satz, /Brennstoff und kein Betriebsstrom|ist der Strom Brennstoff|Kosten der verbrauchten Brennstoffe|noch nicht mit der Heizposition verknüpfen/)
     assert.match(satz, /Umwälzpumpen oder Regelung/)
-    assert.match(satz, /beim Allgemeinstrom abzuziehen \(§ 7 Abs\. 2, § 8 Abs\. 2 HeizkostenV; BGH, Urteil vom 03\.06\.2016, V ZR 166\/15, Rn\. 13\)/)
+    // R2-H-C: Rn. 13 trägt die Unzulässigkeit, Rn. 14 das Schätzen des Anteils.
+    assert.match(satz, /beim Allgemeinstrom abzuziehen \(§ 7 Abs\. 2, § 8 Abs\. 2 HeizkostenV; BGH, Urteil vom 03\.06\.2016, V ZR 166\/15, Rn\. 13 f\.\)/)
+    assert.match(satz, /Dass für ihn dasselbe gilt wie für den Betriebsstrom \(BGH, Urteil vom 03\.06\.2016, V ZR 166\/15, Rn\. 13 f\.\), ist eine Auslegung von Mietfuchs/)
     assert.match(satz, /im Kostenformular als Betriebsstrom/)
     assert.match(satz, /verknüpfen Sie den Abzug/)
     // Der frühere Satz erklärte jeden Strom zum Brennstoff.
