@@ -578,3 +578,30 @@ test('N1: Stromrechnung 2024 zur Heizperiode 2025 → 400, nichts angelegt', asy
     assert.equal((await markierte(opened)).length, 0)
   })
 })
+
+// ---------- Durchsicht von #252, G-K4: Betriebsstrom ist keine Gutschrift ----------
+
+test('G-K4: „included“ nur mit positivem Betrag; Bedingung und Wächter mit Satz, alter Bestand verliert nur die Kennzeichnung', async () => {
+  await withDatabase(async (opened) => {
+    await assert.rejects(opened.write((db) => createEntity(db, 'costItems', 'g', heizung({ description: 'Gutschrift Betriebsstrom', amountCents: -100 }))),
+      (e: unknown) => e instanceof HeatingError && e.status === 400 && /„Gutschrift Betriebsstrom“/.test(e.message) && /positiven Betrag/.test(e.message))
+    await opened.write((db) => createEntity(db, 'costItems', 'bs', heizung()))
+    await assert.rejects(opened.write((db) => updateEntity(db, 'costItems', 'bs', { amountCents: 0 })),
+      (e: unknown) => e instanceof HeatingError && e.status === 400 && /positiven Betrag/.test(e.message))
+  })
+  const dir = tempDir()
+  try {
+    const c = await connect(path.join(dir, 'db.sqlite'))
+    const migrations = await loadMigrations()
+    const bis = migrations.findIndex((m) => m.tag.endsWith('_betriebsstrom_rechnung'))
+    applyMigrations(c, migrations.slice(0, bis))
+    c.exec("INSERT INTO cost_items (id, property_id, period, category, description, amount_cents, key, heating_part, operating_power, operating_power_basis) VALUES ('g', 'objekt-1', '2025-01', 'Heizung und Warmwasser', 'g', -100, 'area', 'operating', 'included', 'x')")
+    applyMigrations(c, migrations)
+    assert.deepEqual(c.rows("SELECT operating_power, operating_power_basis, amount_cents FROM cost_items WHERE id = 'g'"), [[null, null, -100]])
+    c.exec('PRAGMA foreign_keys = ON')
+    assert.match(rejects(c, "INSERT INTO cost_items (id, property_id, period, category, description, amount_cents, key, operating_power) VALUES ('h', 'objekt-1', '2025-01', 'Heizung und Warmwasser', 'h', -1, 'area', 'included')") ?? '', /cost_items_operating_power_included_positive/)
+    c.close()
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})

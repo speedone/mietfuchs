@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "21d856a0-d7ff-4eaf-835a-6a81881492e2",
+  "id": "b157d062-e962-4986-a8f8-98d3a245967a",
   "prevId": "e4ead73c-3d78-4434-b122-e3586a8b5a16",
   "tables": {
     "ai_slots": {
@@ -1723,6 +1723,10 @@
         "cost_items_operating_power_general_valid": {
           "name": "cost_items_operating_power_general_valid",
           "value": "\"operating_power_general_id\" IS NULL OR \"operating_power\" IS 'deduction'"
+        },
+        "cost_items_operating_power_included_positive": {
+          "name": "cost_items_operating_power_included_positive",
+          "value": "\"operating_power\" IS NOT 'included' OR \"amount_cents\" > 0"
         },
         "cost_items_operating_power_source_complete": {
           "name": "cost_items_operating_power_source_complete",

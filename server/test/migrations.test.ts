@@ -125,8 +125,8 @@ const VEROEFFENTLICHT: Record<string, string> = {
   '0037_betriebsstrom': '3db36489ededcfad423b5357b9ef630bf8cd5e519d60c906ae5d588bc0652010',
   '0038_betriebsstrom_bedingungen': '014caffd9f0830b49f0f773ffef8f1e9b13bf01becd9bb17f398711b2396713d',
   // Durchsicht von #252: Verweis des Abzugs auf seine Stromrechnung (G-K3) und weitere Bedingungen.
-  '0039_betriebsstrom_rechnung': 'cc50fb4419c11548ce2ecb3f75da5dac259cd2d2b626e8f39d932f1e57c9c7ff',
-  '0040_betriebsstrom_rechnung_bedingungen': '99b141e66a836575d9058c3b85381a3e4b75eb14ce790cc15414c84dd1aa8d55',
+  '0039_betriebsstrom_rechnung': 'd22026ba92def77199d78861dc8b87da6ba326acde9427582461d2a206196b00',
+  '0040_betriebsstrom_rechnung_bedingungen': 'f8851e5b6dde311263b68d088e1671476b54e40b8e05fce3739e7ce5e6aa9811',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

@@ -154,6 +154,7 @@ const OWN_CHECK_MESSAGES: Readonly<Record<string, string>> = {
   cost_items_operating_power_basis_valid: 'Eine Grundlage der Schätzung gibt es nur bei Betriebsstrom oder seinem Abzug.',
   // Durchsicht von #252, G-K3.
   cost_items_operating_power_general_valid: 'Nur ein Abzug des Betriebsstroms zeigt auf eine Stromrechnung. Bitte laden Sie die Seite neu.',
+  cost_items_operating_power_included_positive: 'Betriebsstrom, der auch im Allgemeinstrom steckt, hat einen positiven Betrag; eine Gutschrift ist kein Betriebsstrom.',
   cost_items_operating_power_source_complete: 'Ein Abzug des Betriebsstroms braucht die Stromrechnung, aus der er gerechnet wurde.',
   // Eigene Heizkostenabrechnung (Heizung PR 10)
   heating_plants_self_capture_complete: 'Für die eigene Heizkostenabrechnung braucht die Heizanlage die Angabe, womit der Verbrauch erfasst wird.',

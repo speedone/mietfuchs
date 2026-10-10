@@ -1172,6 +1172,10 @@ async function guardOperatingPower(db: Executor, before: CostItem | null, after:
     if (after.category !== HEATING_CATEGORY) {
       throw new HeatingError(400, `Betriebsstrom gibt es nur bei der Kostenart „${HEATING_CATEGORY}“.`)
     }
+    // Durchsicht von #252, G-K4: Eine Gutschrift ist kein Strom, der im Allgemeinstrom steckt.
+    if (!(after.amountCents > 0)) {
+      throw new HeatingError(400, `„${after.description}“ ist als Betriebsstrom gekennzeichnet, der auch im Allgemeinstrom steckt, und braucht deshalb einen positiven Betrag.`)
+    }
     if (after.heatingPart !== undefined && after.heatingPart !== 'operating') {
       throw new HeatingError(400, `„${after.description}“ ist als Teil der Heizkosten nicht „Betrieb“; Betriebsstrom gibt es nur beim Teil „Betrieb“ oder ohne Teil.`)
     }

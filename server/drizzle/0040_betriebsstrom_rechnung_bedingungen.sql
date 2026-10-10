@@ -54,6 +54,7 @@ CREATE TABLE `__new_cost_items` (
 	CONSTRAINT "cost_items_operating_power_link_valid" CHECK("operating_power_item_id" IS NULL OR "operating_power" IS 'deduction'),
 	CONSTRAINT "cost_items_operating_power_basis_valid" CHECK("operating_power_basis" IS NULL OR "operating_power" IS NOT NULL),
 	CONSTRAINT "cost_items_operating_power_general_valid" CHECK("operating_power_general_id" IS NULL OR "operating_power" IS 'deduction'),
+	CONSTRAINT "cost_items_operating_power_included_positive" CHECK("operating_power" IS NOT 'included' OR "amount_cents" > 0),
 	CONSTRAINT "cost_items_operating_power_source_complete" CHECK("operating_power" IS NOT 'deduction' OR "operating_power_general_id" IS NOT NULL),
 	CONSTRAINT "cost_items_external_total_positive" CHECK("external_total" > 0),
 	CONSTRAINT "cost_items_external_complete" CHECK(("external_measure" IS NULL) = ("external_total" IS NULL) AND ("external_measure" IS NULL) = ("external_total_cents" IS NULL))
