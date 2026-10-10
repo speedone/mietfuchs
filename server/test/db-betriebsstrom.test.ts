@@ -668,3 +668,13 @@ test('G2-K1: Abzüge über der Stromrechnung lehnt auch das Kostenformular ab, b
     await opened.write((db) => updateEntity(db, 'costItems', 'hausstrom', { amountCents: 30000 }))
   })
 })
+
+// Nachprüfung von #252, G2-K3 (O1): Die Rechnung wechselt nicht still den Zeitraum, der Abzug bliebe im alten.
+test('G2-K3: Stromrechnung mit Abzug wechselt im Kostenformular nicht den Zeitraum', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => createEntity(db, 'costItems', 'ab', abzug(null)))
+    await assert.rejects(opened.write((db) => updateEntity(db, 'costItems', 'hausstrom', { period: '2024-01' })),
+      (e: unknown) => e instanceof HeatingError && e.status === 400 && /Zeitraum/.test(e.message) && /„Abzug Betriebsstrom Heizung“/.test(e.message))
+    assert.equal(fieldOf(await opened.read((db) => findEntity(db, 'costItems', 'hausstrom')), 'period'), '2025-01')
+  })
+})
