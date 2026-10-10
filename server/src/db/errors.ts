@@ -147,6 +147,15 @@ const OWN_CHECK_MESSAGES: Readonly<Record<string, string>> = {
   // Lieferungen (Heizung PR 7)
   heating_plants_ets_district_valid: 'Die Angabe zur Wärme aus dem Emissionshandel gibt es nur bei Fernwärme.',
   cost_items_fuel_delivery_category_valid: 'Eine Lieferung gehört nur zu einer Position der Kostenart „Heizung und Warmwasser“.',
+  // Betriebsstrom (Heizung PR 15).
+  cost_items_operating_power_included_valid: 'Betriebsstrom oder Strom zur Wärmeerzeugung, der auch im Allgemeinstrom steckt, gibt es nur bei der Kostenart „Heizung und Warmwasser“: Betriebsstrom beim Teil „Betrieb“ oder ohne Teil, Strom einer Wärmepumpe oder Stromheizung beim Teil „Brennstoff/Energie“.',
+  cost_items_operating_power_deduction_valid: 'Ein Abzug des Betriebsstroms gehört zur Kostenart „Beleuchtung/Allgemeinstrom“ und hat einen negativen Betrag.',
+  cost_items_operating_power_link_valid: 'Nur ein Abzug beim Allgemeinstrom zeigt auf eine Betriebsstrom-Position. Bitte laden Sie die Seite neu.',
+  cost_items_operating_power_basis_valid: 'Eine Grundlage der Schätzung gibt es nur bei Betriebsstrom oder seinem Abzug.',
+  // Durchsicht von #252, G-K3.
+  cost_items_operating_power_general_valid: 'Nur ein Abzug des Betriebsstroms zeigt auf eine Stromrechnung. Bitte laden Sie die Seite neu.',
+  cost_items_operating_power_included_positive: 'Betriebsstrom, der auch im Allgemeinstrom steckt, hat einen positiven Betrag; eine Gutschrift ist kein Betriebsstrom.',
+  cost_items_operating_power_source_complete: 'Ein Abzug des Betriebsstroms braucht die Stromrechnung, aus der er gerechnet wurde.',
   // Eigene Heizkostenabrechnung (Heizung PR 10)
   heating_plants_self_capture_complete: 'Für die eigene Heizkostenabrechnung braucht die Heizanlage die Angabe, womit der Verbrauch erfasst wird.',
   heating_self_spans_from_valid: 'Der Beginn eines Zeitraums der eigenen Heizkostenabrechnung ist keine Heizperiode.',

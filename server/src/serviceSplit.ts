@@ -55,3 +55,19 @@ export function splitByService(rules: PeriodRules, item: SplitItem): ServicePart
     }
   })
 }
+
+// Eine Position im selben Verhältnis geteilt wie eine andere (Nachprüfung von #252, G4-K1): ein Abzug des
+// Betriebsstroms wie seine Stromrechnung, deren Teile `parts` sind. Gewichtet wird mit den Tagen der Teile,
+// die Beschreibung bekommt denselben Zusatz.
+export function splitAlike(item: { id: string; description: string; amountCents: number }, parts: readonly ServicePart[]): ServicePart[] {
+  const weights = parts.map((p) => p.days)
+  const amounts = byDays(item.amountCents, weights, parts.map((p) => `${item.id}|${p.period.key}`))
+  const base = baseDescription(item.description)
+  return parts.map((p, i) => ({
+    period: p.period,
+    days: p.days,
+    amountCents: amounts[i] ?? 0,
+    labor35aCents: null,
+    description: parts.length > 1 ? `${base}${SUFFIX.exec(p.description)?.[0] ?? ''}` : item.description,
+  }))
+}

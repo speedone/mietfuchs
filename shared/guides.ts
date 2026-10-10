@@ -129,12 +129,13 @@ const GUIDE_DATA = {
       { text: `Bei einer Zentralheizung sind mindestens ${SHARE.min} und höchstens ${SHARE.max} Prozent der Heiz- und Warmwasserkosten nach Verbrauch zu verteilen. Wird nicht nach Verbrauch abgerechnet, darf der Mieter seinen Anteil um ${CUT} Prozent kürzen.`, norm: '§ 7 Abs. 1, § 8 Abs. 1, § 12 Abs. 1 HeizkostenV' },
       { text: 'Verwaltungskosten sowie Instandhaltung und Instandsetzung sind keine Betriebskosten; erfassen Sie sie als „Nicht umlagefähig“.', norm: '§ 1 Abs. 2 BetrKV' },
       { text: `Fallen für die Heizung CO₂-Kosten an, sind sie zwischen Ihnen und dem Mieter nach dem CO₂-Ausstoß des Gebäudes aufzuteilen. Die Heizkostenabrechnung muss den Anteil des Mieters, die Einstufung des Gebäudes und die Berechnungsgrundlagen ausweisen; fehlt das, darf der Mieter seinen Anteil an den Heizkosten um ${CO2_CUT} Prozent kürzen. Verteilen Sie die Heizkosten selbst nach einem Schlüssel, teilt Mietfuchs die CO₂-Kosten auf, wenn Sie die Rechnungen Ihres Versorgers auf der Seite Heizkosten als Lieferungen eintragen, bei Heizöl, Flüssiggas und Kohle dazu Anfangs- und Endbestand des Vorrats; rechnet ein Messdienst ab, übernehmen Sie seine Angaben dort.`, norm: '§ 5 Abs. 2, § 7 Abs. 3 und 4 CO2KostAufG' },
+      { text: 'Den Strom für Brenner, Umwälzpumpe und Regelung der Zentralheizung (Betriebsstrom) verteilen Sie mit den Heiz- und Warmwasserkosten oder tragen ihn selbst; als Allgemeinstrom dürfen Sie ihn nicht verteilen. Läuft er über den Stromzähler des Hauses, schätzen Sie ihn und ziehen ihn beim Allgemeinstrom ab; die Karte „Betriebsstrom“ auf der Seite Heizkosten rechnet das nach Leistung und Heiztagen vor oder nimmt Ihren selbst geschätzten Betrag und legt beide Positionen an.', norm: '§ 7 Abs. 2, § 8 Abs. 2 HeizkostenV; BGH, Urteil vom 03.06.2016, V ZR 166/15' },
     ],
     gaps: [
       { text: 'Verschiedene Geräte in einer Heizanlage (Wärmezähler neben Heizkostenverteilern) brauchen eine Vorerfassung nach Gruppen; die rechnet Mietfuchs noch nicht.', issue: 218 },
       { text: 'Die Differenz zwischen Hauptzähler und Wohnungszählern als eigener Posten, Eichfristen und geschätzte Ablesungen.', issue: 98 },
     ],
-    terms: ['allocationKey', 'distributionBasis', 'billingUnit', 'participants', 'ownShare', 'heatingCostOrdinance'],
+    terms: ['allocationKey', 'distributionBasis', 'billingUnit', 'participants', 'ownShare', 'heatingCostOrdinance', 'operatingPower'],
   },
   condo: {
     title: 'Vermietete Eigentumswohnung mit Hausgeldabrechnung',
@@ -278,12 +279,13 @@ const GUIDE_DATA = {
       { text: 'Weist die Abrechnung keinen CO₂-Anteil des Vermieters aus, fragen Sie beim Messdienst nach, bevor Sie abrechnen. Oder beantworten Sie die Frage nach der Abzugszeile mit „gar nicht aufgeteilt“ und tragen die Rechnung des Versorgers auf der Seite Heizkosten als Lieferung ein, „vom Messdienst angesetzt“; dann teilt Mietfuchs selbst auf.' },
       { text: 'Nicht jeder Messdienst setzt für eine selbstgenutzte Wohnung einen vom Vermieter übernommenen CO₂-Anteil an. Sehen Sie deshalb in die Einzelabrechnung Ihrer Wohnung, bevor Sie in der Karte „CO₂-Kosten“ etwas eintragen (Schritt 3).' },
       { text: 'Wo in der Abrechnung die Summe der Kosten aller Nutzer steht, beschreibt die Anleitung zum Aufteilen der CO₂-Kosten.' },
+      { text: 'Melden Sie dem Messdienst auch den Betriebsstrom der Heizung (Brenner, Umwälzpumpe, Regelung), damit er ihn mit den Heiz- und Warmwasserkosten verteilt, oder tragen Sie ihn selbst; als Allgemeinstrom dürfen Sie ihn nicht verteilen. Läuft er über den Stromzähler des Hauses, ziehen Sie denselben Betrag beim Allgemeinstrom ab; die Karte „Betriebsstrom“ auf der Seite Heizkosten schätzt ihn nach Leistung und Heiztagen oder nimmt Ihren selbst geschätzten Betrag und legt den Abzug an.', norm: '§ 7 Abs. 2, § 8 Abs. 2 HeizkostenV; BGH, Urteil vom 03.06.2016, V ZR 166/15' },
     ],
     gaps: [
       { text: 'Die Abrechnung des Messdienstes per KI auslesen und den Mietverhältnissen zuordnen; heute tragen Sie die Beträge von Hand ein.', issue: 103 },
       { text: 'Verschiedene Geräte in einer Heizanlage (Wärmezähler neben Heizkostenverteilern) brauchen eine Vorerfassung nach Gruppen; die rechnet Mietfuchs noch nicht.', issue: 218 },
     ],
-    terms: ['individualAmounts', 'heatingCostOrdinance', 'ownShare', 'labor35a', 'co2Deducted'],
+    terms: ['individualAmounts', 'heatingCostOrdinance', 'ownShare', 'labor35a', 'co2Deducted', 'operatingPower'],
   },
   co2Costs: {
     title: 'CO₂-Kosten der Heizung aufteilen',

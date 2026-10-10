@@ -288,6 +288,16 @@ export type CostItem = {
   // Schlussrechnung und Gutschrift zeigen auf dieselbe Lieferung und werden im selben Verhältnis
   // abgegrenzt. Nur bei der Kostenart „Heizung und Warmwasser“ einer Anlage mit freien Schlüsseln.
   fuelDeliveryId?: string | null
+  // Betriebsstrom der Heizung (Heizung PR 15): siehe `OperatingPower`. `operatingPowerItemId` nur am
+  // Abzug: die Betriebsstrom-Position, zu der er gehört. `operatingPowerBasis` (P-W1): die Grundlage
+  // der Schätzung, Zeile für Zeile, an Betriebsstrom und Abzug; bestreitet ein Mieter den Betrag, muss
+  // der Vermieter sie darlegen (BGH, Versäumnisurteil vom 20.02.2008, VIII ZR 27/07, Leitsatz 3).
+  operatingPower?: OperatingPower
+  operatingPowerItemId?: string
+  operatingPowerBasis?: string
+  // Nur am Abzug: die Stromrechnung („Beleuchtung/Allgemeinstrom“), aus der er gerechnet wurde
+  // (Durchsicht von #252, G-K3). Sie lässt sich nicht löschen, solange Abzüge auf sie zeigen.
+  operatingPowerGeneralId?: string
 }
 
 // Ein Teil einer aufgeteilten Rechnung in der Vorschau (#208, Entwurf 3.4). `needsTaxYear`: Der
@@ -2310,4 +2320,47 @@ export type HeatingInfoStatement = {
   // Die Mietverhältnisse, die über diese Anlage abgerechnet werden; nur sie bekommen den Block gedruckt. Fehlt in
   // einer Abrechnung, die vor diesem Feld abgeschlossen wurde.
   tenancyIds?: string[]
+}
+
+// ---------- Betriebsstrom der Heizung (Heizung PR 15, #212) ----------
+
+// An einer Position „Heizung und Warmwasser“ heißt `included`: Dieser Betriebsstrom (Brenner,
+// Umwälzpumpe, Regelung) steckt auch in der Stromrechnung des Allgemeinstroms, weil er über den Zähler
+// des Hauses läuft, gemessen mit Zwischenzähler oder geschätzt. An einer Position
+// „Beleuchtung/Allgemeinstrom“ heißt `deduction`: der Abzug dieses Stroms. Ohne Angabe ist eine
+// Position weder das eine noch das andere.
+export type OperatingPower = 'included' | 'deduction'
+
+// Ein Gerät der Heizung für die Schätzung nach Leistung und Heiztagen (BGH, Urteil vom 03.06.2016,
+// V ZR 166/15, Rn. 14: „Stromverbrauchswert der angeschlossenen Geräte und … Heiztage“). `days`: eigene
+// Betriebstage des Geräts (P-K8, etwa die Warmwasserpumpe das ganze Jahr); fehlt die Angabe, gelten die
+// Heiztage.
+export type OperatingPowerDevice = { label: string; watts: number; hoursPerDay: number; days?: number | null }
+
+// Was ein Abzug in einer abgeschlossenen Abrechnung den Mietern gebracht hat (P-W3, R2-W2), gelesen am
+// eingefrorenen Stand (`itemTotals`):
+// - `credited`: Er steht dort mit seinem heutigen Betrag, ist also gutgeschrieben.
+// - `changed`: Er steht dort, aber mit einem anderen Betrag (`frozenCents`), weil er nach dem Abschluss
+//   geändert wurde; gutgeschrieben ist der eingefrorene Betrag.
+// - `missing`: Er steht nicht darin, wurde also nach dem Abschluss angelegt; gutgeschrieben ist nichts.
+// - `unknown`: Der eingefrorene Stand führt keine Beträge je Position (ältere oder unlesbare
+//   Abrechnung); ob er gutgeschrieben ist, lässt sich nicht lesen.
+export type OperatingPowerCredit =
+  | { label: string; state: 'credited' | 'missing' | 'unknown' }
+  | { label: string; state: 'changed'; frozenCents: number }
+
+// Ein Abzug beim Allgemeinstrom, wie der Schnappschuss ihn führt: aus allen Zeiträumen des Objekts,
+// denn er gehört zu der Betriebsstrom-Position, auf die er zeigt, und nicht zum Zeitraum. `itemId` ist
+// null bei einer Anlage mit Messdienst, dessen Beträge den Betriebsstrom enthalten. `closed`: `null`,
+// wenn sein Zeitraum offen ist; sonst die abgeschlossene Abrechnung und was er dort gebracht hat.
+export type OperatingPowerDeduction = {
+  id: string
+  itemId: string | null
+  period: PeriodKey
+  description: string
+  amountCents: number
+  closed: OperatingPowerCredit | null
+  // Das Steuerjahr des Abzugs (Durchsicht von #252, N1), zum Vergleich mit seinem Betriebsstrom. Fehlt es
+  // (ein von Hand gebauter Schnappschuss), wird nicht verglichen.
+  taxYear?: number
 }

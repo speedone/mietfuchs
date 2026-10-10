@@ -104,6 +104,12 @@ export type CostItemBody = {
   taxYear: number | null
   heatingPart: HeatingPart | null
   heatingTarget: HeatingTarget | null
+  // Betriebsstrom der Heizung (Heizung PR 15): nur das Kostenformular setzt sie (client/src/costForm.ts,
+  // `withOperatingPower`); fehlen sie, lässt der Server die Angabe stehen.
+  operatingPower?: 'included' | 'deduction' | null
+  operatingPowerItemId?: string | null
+  operatingPowerBasis?: string | null
+  operatingPowerGeneralId?: string | null
 }
 
 // **Nicht umlagefähig, aber einer Einheit zuzuordnen** (#163): Für die Abrechnung bleibt es dabei,
