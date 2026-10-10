@@ -2305,6 +2305,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         frozen: fuel.frozen.filter((f) => f.plantId === plant.id),
         closed: new Set(fuel.closed.filter((c) => c.plantId === plant.id).map((c) => c.period)),
         closedCarries: fuel.closed.filter((c) => c.plantId === plant.id).flatMap((c) => (c.carries ?? []).map((x) => ({ period: c.period, ...x }))),
+        closedCancelled: fuel.closed.filter((c) => c.plantId === plant.id).flatMap((c) => (c.cancelled ?? []).map((deliveryId) => ({ period: c.period, deliveryId }))),
         ctx: {
           table: law(hkvDegreeDays, { period: lawPeriod }, lawLog),
           local: new Map(fuel.degreeDays.map((v) => [v.month, v.value])),
@@ -2357,7 +2358,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           })
           fuelCarryOf.set(id, { carry, step, itemId: t.itemId })
         })
-        fuelCounterRows.push({
+        // Ohne Betrag und ohne Teil beim Vermieter keine Gegenzeile (Storno eines Teils, der schon beim Vermieter lag).
+        if (carry.cents !== 0 || carry.landlord.some((p) => p.cents !== 0)) fuelCounterRows.push({
           costItemId: carryKey,
           category: HEATING_CATEGORY,
           description: carry.kind === 'out' ? `Gegenbuchung: Anteil der Rechnung ${range} für ${periodLabel(carry.other)}` : `Gegenbuchung: Brennstoff ${range} aus einem anderen Zeitraum`,
@@ -4148,7 +4150,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     for (const u of result.ownerClosedUnlinked) {
       const owner = closedOf(u.owner.key)
       warn('fuel.owner-closed-unlinked',
-        `${where}: Zur Rechnung „${nameOf(u.deliveryId)}“ gehörten heute ${fmtCents(u.cents)} in diese Heizperiode. Die Abrechnung ${owner?.label ?? periodLabel(u.owner)}, in der die Rechnung steht, ist abgeschlossen; ihre Position war beim Abschluss noch nicht mit der Lieferung verknüpft, deshalb ist die Rechnung dort ganz verteilt und hier kommt nichts dazu. ` +
+        `${where}: Zur Rechnung „${nameOf(u.deliveryId)}“ gehörten heute ${fmtCents(u.cents)} in diese Heizperiode. Die Abrechnung ${owner?.label ?? periodLabel(u.owner)}, in der die Rechnung steht, ist abgeschlossen; ` +
+          (u.cancelled
+            ? 'beim Abschluss ergaben ihre Positionen zusammen 0 € (storniert), deshalb ist dort nichts von ihr verteilt und hier kommt nichts dazu. Solange jene Abrechnung abgeschlossen bleibt, verteilt Mietfuchs die Rechnung nirgends. '
+            : 'ihre Position war beim Abschluss noch nicht mit der Lieferung verknüpft, deshalb ist die Rechnung dort ganz verteilt und hier kommt nichts dazu. ') +
           'Soll dieser Teil hierher, öffnen Sie jene Abrechnung wieder und schließen sie neu ab.',
         subject)
     }
@@ -4179,7 +4184,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       if (carry.landlord.some((p) => p.reason === 'fuelClosedPeriod')) {
         // Zwei Lagen (Nachprüfung, M-b): ohne Schätzung abgeschlossen, oder abgeschlossen, als die
         // Lieferung noch keine Position hatte (mit 0 eingefroren).
-        const lead = carry.zeroFrozen
+        const lead = carry.zeroFrozenCancelled
+          ? `Als die Abrechnung ${other.label} abgeschlossen wurde, ergaben die Positionen der Rechnung ${name} zusammen 0 € (storniert). Ihr Teil für ${periodLabel(carry.other)} (${fmtCents(X)}) ist dort deshalb nicht verteilt; bis Sie ihn nachfordern, steht er bei Ihnen. `
+          : carry.zeroFrozen
           ? `Als die Abrechnung ${other.label} abgeschlossen wurde, war die Rechnung ${name} noch mit keiner Position verknüpft. Ihr Teil für ${periodLabel(carry.other)} (${fmtCents(X)}) ist dort deshalb nicht verteilt; bis Sie ihn nachfordern, steht er bei Ihnen. `
           : `Der Teil der Rechnung ${name} für ${periodLabel(carry.other)} (${fmtCents(X)}) gehört in die Abrechnung ${other.label}, die ohne Schätzung abgeschlossen wurde; bis Sie ihn nachfordern, steht er bei Ihnen. `
         warn('fuel.closed-period-part',
@@ -4204,19 +4211,47 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           subject)
       } else {
         // Zu hoch geschätzt (A4, B9): Ein Rückzahlungsanspruch folgt daraus nicht sicher (Einwendungsfrist,
-        // § 556 Abs. 3 Satz 5 und 6 BGB); eine Gutschrift ist jederzeit zulässig. Je Mieter im Verhältnis
-        // seiner Übertragszeilen der Schätzung im eingefrorenen Stand.
-        const factor = E !== 0 ? -diff / E : 0
-        const byTenant = new Map<string, { name: string; cents: number }>()
+        // § 556 Abs. 3 Satz 5 und 6 BGB); eine Gutschrift ist jederzeit zulässig.
+        // Je Mieter sein Anteil an den eingefrorenen Zeilen der Schätzung, je Schätzung mit dem Teil, den die
+        // Rechnung abdeckt (`ratios`): Gutschrift = Zeile × ratio × (−diff) / E. Das ist genau, was er ohne die
+        // Schätzung weniger getragen hätte, denn die echte Rechnung wäre nach demselben Schlüssel über dieselbe
+        // Heizperiode verteilt worden, je Mietverhältnis nach seinen Tagen darin, gleich wann der Brennstoff
+        // verbraucht wurde (Durchsicht #247, Runde 4: Die Aufteilung nach Mietzeit im abgedeckten Zeitraum aus
+        // Runde 3 war falsch und ist zurückgenommen). Genähert ist es nur, wenn die Positionen der echten
+        // Rechnung einen anderen Schlüssel haben als die Vorlage der Schätzung. Zeilen des Vermieters
+        // (Leerstand) sind keine Mieterzeilen; ihren Teil nennt der Text als Rest (G-K2). Verteilt wird nach dem
+        // Restverfahren, die Beträge ergeben zusammen nie mehr als die Abweichung.
+        const est = carry.estimate
+        const coveredAll = est.frozen.reduce((a, f, k) => a + f * (est.ratios[k] ?? 0), 0)
+        const factor = coveredAll !== 0 ? -diff / coveredAll : 0
+        const byTenant = new Map<string, { name: string; exact: number }>()
         for (const row of other.fuelRows) {
-          if (!carry.estimate.ids.some((id) => row.costItemId.startsWith(`fuel:${id}:`))) continue
-          const entry = byTenant.get(row.tenancyId) ?? { name: `${row.tenantName} (${row.unitName})`, cents: 0 }
-          entry.cents += row.shareCents
+          const k = est.ids.findIndex((id) => row.costItemId.startsWith(`fuel:${id}:`))
+          if (k < 0) continue
+          const entry = byTenant.get(row.tenancyId) ?? { name: `${row.tenantName} (${row.unitName})`, exact: 0 }
+          entry.exact += row.shareCents * (est.ratios[k] ?? 0) * factor
           byTenant.set(row.tenancyId, entry)
         }
-        const list = [...byTenant.values()].map((e) => `${e.name} ${fmtCents(Math.round(e.cents * factor))}`)
+        const entries = [...byTenant.entries()]
+        const credit = Math.max(0, Math.min(-diff, Math.round(entries.reduce((a, [, e]) => a + e.exact, 0))))
+        const credits = distributeCents(credit, entries.map(([key, e]) => ({ key, landlord: false, raw: e.exact })))
+        const list = entries.flatMap(([, e], k) => ((credits[k] ?? 0) !== 0 ? [`${e.name} ${fmtCents(credits[k] ?? 0)}`] : []))
+        const hier = list.length > 0 ? `, hier: ${andList(list)}` : ''
+        // Durchsicht #247, Runde 5 (G-K2): Ist die Rechnung nach einem anderen Schlüssel verteilt als die Vorlage
+        // der Schätzung, wäre sie anders auf die Mieter gefallen; die Beträge je Mieter sind dann nur genähert.
+        // Verglichen werden die Schlüssel der Positionen, deren Zeilen eingefroren sind, mit denen der Rechnung;
+        // eine inzwischen gelöschte Vorlage zählt nicht.
+        const keyOf = (id: string) => fuel?.items.find((c) => c.id === id)?.key
+        const templateKeys = new Set(other.fuelRows.filter((row) => est.ids.some((id) => row.costItemId.startsWith(`fuel:${id}:`))).map((row) => keyOf(row.costItemId.split(':').at(-1) ?? '')).filter((k) => k !== undefined))
+        const invoiceKeys = new Set((fuel?.items ?? []).filter((c) => c.fuelDeliveryId === carry.deliveryId && c.amountCents !== 0).map((c) => c.key))
+        const mixed = list.length > 0 && templateKeys.size > 0 && invoiceKeys.size > 0 && [...invoiceKeys].some((k) => !templateKeys.has(k) || templateKeys.size > 1)
+        const naeherung = mixed ? 'Die Rechnung ist nach einem anderen Umlageschlüssel verteilt als die Schätzung; die Beträge je Mieter sind nach dem Schlüssel der Schätzung aufgeteilt und nur eine Näherung. Bitte prüfen Sie sie. ' : ''
         warn('fuel.estimate-overcharged',
-          `${where}: Für ${periodLabel(carry.other)} war ${fmtCents(E)} geschätzt; tatsächlich entfallen nur ${fmtCents(X)}. Die Mieter dieser Heizperiode haben ${fmtCents(-diff)} zu viel getragen${list.length > 0 ? `, hier: ${andList(list)}` : ''}. ` +
+          `${where}: Für ${periodLabel(carry.other)} war ${fmtCents(E)} geschätzt; tatsächlich entfallen nur ${fmtCents(X)}. ` +
+            (credit === -diff
+              ? `Die Mieter dieser Heizperiode haben ${fmtCents(-diff)} zu viel getragen${hier}. `
+              : `Die Abweichung beträgt ${fmtCents(-diff)}; davon haben die Mieter dieser Heizperiode ${fmtCents(credit)} zu viel getragen${hier}. Der Rest lag bei Ihnen. `) +
+            naeherung +
             `Eine Gutschrift ist jederzeit zulässig und wird empfohlen. Öffnen Sie die Abrechnung ${other.label} wieder oder erfassen Sie die Gutschrift; bis dahin steht der Betrag bei Ihnen als Abweichung von der Schätzung.`,
           subject)
       }
@@ -4429,7 +4464,12 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     if (fuelOf) {
       report.fuel = {
         coveragePermille: fuelOf.coveragePermille, emissionsKg: fuelOf.emissionsKg, co2Cents: fuelOf.co2Cents, deliveries: fuelOf.lines,
-        carries: fuelOf.carries.map((c) => ({ deliveryId: c.deliveryId, period: c.other.key, cents: c.cents, ...(c.kind === 'out' && c.cancelled === undefined ? { totalCents: c.totalCents } : {}) })), gaps: fuelOf.gaps,
+        carries: fuelOf.carries.map((c) => ({
+          deliveryId: c.deliveryId, period: c.other.key, cents: c.cents,
+          ...(c.kind === 'out' && c.cancelled === undefined ? { totalCents: c.totalCents } : {}),
+          ...(c.kind === 'out' && c.cancelled === undefined && c.landlord.some((p) => p.reason === 'fuelClosedPeriod') ? { landlordBorne: true as const } : {}),
+        })), gaps: fuelOf.gaps,
+        ...(fuelOf.zeroInvoices.length > 0 ? { zeroInvoiceIds: fuelOf.zeroInvoices.map((z) => z.deliveryId) } : {}),
       }
     }
     const settledHere = settledOn(ids)

@@ -3,12 +3,22 @@
 // die Gasrechnung 15.03.2025–14.03.2026 über 6.500 € steht in der Heizperiode 2025/2026.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { eq } from 'drizzle-orm'
+import { createHeatingPlant } from '../src/db/heating.ts'
+import { createDelivery, freezeFuelCarries } from '../src/db/fuel.ts'
+import { openDatabase } from '../src/db/open.ts'
+import { readStock } from '../src/db/read.ts'
+import { closeSettlement, createEntity, removeEntity } from '../src/db/repository.ts'
+import { properties } from '../src/db/schema.ts'
 import { computeSettlement, type ComputedSettlement } from '../src/calc.ts'
 import { fuelGapQuestions } from '../src/db/fuel.ts'
-import { frozenFuelCarriesOf, frozenFuelRowsOf, snapshotFor, type SnapshotCostItem, type SnapshotHeatingPlant } from '../src/snapshot.ts'
+import { frozenFuelCancelledOf, frozenFuelCarriesOf, frozenFuelRowsOf, snapshotFor, type SnapshotCostItem, type SnapshotHeatingPlant } from '../src/snapshot.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import { CALENDAR_RULES, periodContaining, periodKey, periodOfKey } from '../../shared/period.ts'
-import type { BillingPeriod, Co2Statement, FrozenFuelCarry, FuelDelivery, LandlordPart, PeriodRules } from '../../shared/types.ts'
+import type { BillingPeriod, Co2Statement, FrozenFuelCarry, FuelDelivery, LandlordPart, PeriodRules, PersonEntry } from '../../shared/types.ts'
 
 const MAI: PeriodRules = { startMonth: 5, changes: [] }
 const P = (key: string, rules: PeriodRules = MAI): BillingPeriod => periodOfKey(rules, periodKey(key)) ?? assert.fail(`kein Zeitraum ${key}`)
@@ -28,7 +38,7 @@ const position = (over: Partial<SnapshotCostItem> & { id: string }): SnapshotCos
   heatingPlantId: 'hp', fuelDeliveryId: 'd', ...over,
 })
 const mieter = (id: string, unitId: string) => ({
-  id, unitId, tenantName: `Mieter ${unitId.toUpperCase()}`, persons: 1, personHistory: [], start: '2020-01-01', end: null,
+  id, unitId, tenantName: `Mieter ${unitId.toUpperCase()}`, persons: 1, personHistory: [] as PersonEntry[], start: '2020-01-01', end: null as string | null,
   prepayments: [], prepaymentOverrides: {}, baseRents: [],
 })
 const abgeschlossen = (key: string, over: Record<string, unknown> = {}) => ({
@@ -143,6 +153,155 @@ test('Fall e: Schätzung 1.050,00 € zu hoch; −66,61 € und die Gutschrift j
   assert.equal(n.level, 'warning')
   assert.match(n.text, /haben 66,61 € zu viel getragen, hier: Mieter A \(A\) 39,97 € und Mieter B \(B\) 26,64 €\. Eine Gutschrift ist jederzeit zulässig und wird empfohlen\./)
   assert.equal(summe(h), 650000)
+})
+
+test('Invariante (Abschluss mit Schätzung, Startwert 515): Die Rechnung deckt die Schätzung nur teilweise ab; die Gutschriften je Mieter ergeben zusammen den Betrag, den die Mieter zu viel getragen haben', () => {
+  // Geschätzt ist 01.01.–30.04.2025 (9.000,00 €), die Rechnung beginnt am 15.03.2025: Nur der Teil der Schätzung
+  // für 15.03.–30.04. ist mit der Rechnung zu vergleichen, und nur er geht in die Gutschrift je Mieter.
+  const e = lieferung({ id: 'e', label: 'Schätzung', invoiceFrom: '2025-01-01', invoiceTo: '2025-04-30', amountCents: 900000, estimated: true })
+  const h = settle('2025-05', {
+    fuelDeliveries: [lieferung(), e],
+    fuelCarryFrozen: [eingefroren('e', '2024-05', 900000)],
+    closedSettlements: [abgeschlossen('2024-05', { fuelCarryRows: zeilenDerSchaetzung(540000, 360000) })],
+  })
+  const n = h.notices.find((x) => x.code === 'fuel.estimate-overcharged') ?? assert.fail(codes(h).join(', '))
+  const cents = (s: string) => Math.round(Number(s.replace(/\./g, '').replace(',', '.')) * 100)
+  const total = cents(n.text.match(/haben ([\d.,]+) € zu viel getragen/)?.[1] ?? assert.fail(n.text))
+  const diff = teileVon(h, 'fuel:d:2025-05:2024-05').find((p) => p.reason === 'fuelEstimateDiff')?.cents ?? assert.fail('keine Abweichung')
+  assert.equal(total, -diff)
+  const each = [...n.text.matchAll(/Mieter [AB] \([AB]\) ([\d.,]+) €/g)].map((m) => cents(m[1] ?? ''))
+  assert.equal(each.length, 2)
+  // Vorher: der Faktor −diff/E auf alle Zeilen der Schätzung, also rund 9.000 € / E-fach zu viel.
+  assert.equal(each.reduce((a, c) => a + c, 0), total, n.text)
+})
+
+// ---------- Durchsicht von #247, Runden 3 und 4: Gutschrift je Mieter bei zu hoher Schätzung ----------
+// Der eingefrorene Stand von 2024/2025 entsteht wie in der Anwendung: Die Schätzung wird mit dem Schlüssel der
+// Vorjahresrechnung über die Heizperiode verteilt, je Mietverhältnis nach seinen Tagen darin. Erwartet wird das
+// **Kontrafaktum** (Runde 4): dieselbe Heizperiode offen mit der echten Rechnung statt der Schätzung; was ein
+// Mieter dort weniger trägt, hat er zu viel getragen. Die Aufteilung nach Mietzeit im abgedeckten Zeitraum aus
+// Runde 3 war falsch: Mietfuchs verteilt Brennstoff über die ganze Heizperiode, gleich wann er verbraucht wurde.
+const vorjahr = lieferung({ id: 'v', label: 'Gas 2023/2024', invoiceFrom: '2023-05-01', invoiceTo: '2024-04-30' })
+const gutschriftFall = (opts: { tenancies: ReturnType<typeof mieter>[]; estimates: FuelDelivery[]; units?: Quelle['units']; key?: SnapshotCostItem['key']; invoiceKey?: SnapshotCostItem['key'] }) => {
+  const units = opts.units ? { units: opts.units } : {}
+  const key = opts.key ?? 'area'
+  const vorjahrPosition = position({ id: 'gasv', fuelDeliveryId: 'v', period: periodKey('2023-05'), amountCents: 600000, key })
+  const gas = position({ id: 'gas', key: opts.invoiceKey ?? key })
+  const zu = settle('2024-05', { ...units, tenancies: opts.tenancies, fuelDeliveries: [vorjahr, ...opts.estimates], costItems: [vorjahrPosition] })
+  const carries = zu.heating?.[0]?.fuel?.carries ?? []
+  const h = settle('2025-05', {
+    ...units,
+    tenancies: opts.tenancies,
+    fuelDeliveries: [lieferung(), vorjahr, ...opts.estimates],
+    costItems: [gas, vorjahrPosition],
+    fuelCarryFrozen: opts.estimates.map((e) => eingefroren(e.id, '2024-05', carries.filter((c) => c.deliveryId === e.id).reduce((a, c) => a + c.cents, 0))),
+    closedSettlements: [abgeschlossen('2024-05', { fuelCarryRows: frozenFuelRowsOf(zu) })],
+  })
+  // Kontrafaktum: 2024/2025 offen, die Rechnung ist da; die Schätzung zählt nur noch für die Tage ohne Rechnung.
+  const offen = settle('2024-05', { ...units, tenancies: opts.tenancies, fuelDeliveries: [lieferung(), vorjahr, ...opts.estimates], costItems: [gas, vorjahrPosition] })
+  const ids = ['d', ...opts.estimates.map((e) => e.id)]
+  const fuelOf = (r: ComputedSettlement) => new Map(r.statements.map((st) => [st.tenantName, st.rows.filter((row) => ids.some((id) => row.costItemId.startsWith(`fuel:${id}:`))).reduce((a, row) => a + row.shareCents, 0)]))
+  const vorher = fuelOf(zu)
+  const nachher = fuelOf(offen)
+  const kontrafaktum: Record<string, number> = {}
+  for (const [name, c] of vorher) if (c - (nachher.get(name) ?? 0) !== 0) kontrafaktum[name] = c - (nachher.get(name) ?? 0)
+  const n = h.notices.find((x) => x.code === 'fuel.estimate-overcharged') ?? assert.fail(codes(h).join(', '))
+  const cents = (x: string) => Math.round(Number(x.replace(/\./g, '').replace(',', '.')) * 100)
+  const diff = teileVon(h, 'fuel:d:2025-05:2024-05').find((p) => p.reason === 'fuelEstimateDiff')?.cents ?? assert.fail('keine Abweichung')
+  const je = Object.fromEntries([...n.text.matchAll(/(Mieter [A-Z0-9]+) \([A-Z]\) ([\d.]+,\d\d) €/g)].map((m) => [m[1] ?? '', cents(m[2] ?? '')]))
+  return { text: n.text, diff, je, kontrafaktum, summe: Object.values(je).reduce((a, c) => a + c, 0) }
+}
+const fmtCentsTest = (c: number) => `${(c / 100).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).replace(/\./g, '\\.')} €`
+const schaetzungVon = (id: string, from: string, to: string, cents: number) => lieferung({ id, label: `Schätzung ${id}`, invoiceFrom: from, invoiceTo: to, amountCents: cents, estimated: true })
+// Je Mieter höchstens 1 Cent neben dem Kontrafaktum (beide Seiten sind auf den Cent gerundet).
+const wieKontrafaktum = (f: ReturnType<typeof gutschriftFall>) => {
+  assert.deepEqual(Object.keys(f.je).sort(), Object.keys(f.kontrafaktum).sort(), `${f.text} / ${JSON.stringify(f.kontrafaktum)}`)
+  for (const [name, c] of Object.entries(f.kontrafaktum)) assert.ok(Math.abs((f.je[name] ?? Number.NaN) - c) <= 1, `${name}: ${f.je[name]} statt ${c}; ${f.text}`)
+}
+
+test('Durchsicht #247 Runde 4: Mieterwechsel in der Schätzung: jeder Mieter bekommt, was er ohne die Schätzung weniger getragen hätte', () => {
+  // B1 wohnt bis 28.02.2025, B2 ab 01.03.2025; die Rechnung deckt die Schätzung ab 15.03.2025 ab. Die Schätzung wie
+  // die echte Rechnung wären über die ganze Heizperiode nach Fläche und Tagen verteilt worden, B1 trug also
+  // seinen Teil daran. Runde 3 gab B1 nichts und B2 634,27 €.
+  const f = gutschriftFall({
+    tenancies: [mieter('ta', 'a'), { ...mieter('tb1', 'b'), tenantName: 'Mieter B1', end: '2025-02-28' }, { ...mieter('tb2', 'b'), tenantName: 'Mieter B2', start: '2025-03-01' }],
+    estimates: [schaetzungVon('e', '2025-01-01', '2025-04-30', 900000)],
+  })
+  assert.equal(f.diff, -158569)
+  assert.deepEqual(f.kontrafaktum, { 'Mieter A': 95142, 'Mieter B1': 52827, 'Mieter B2': 10600 })
+  wieKontrafaktum(f)
+  assert.equal(f.summe, 158569)
+  assert.doesNotMatch(f.text, /Der Rest lag bei Ihnen/)
+})
+
+test('Durchsicht #247 Runde 4: Personenschlüssel mit Personenänderung und Mieterwechsel: wie das Kontrafaktum, kein Rest beim Vermieter', () => {
+  // A 1 Person, ab 01.03.2025 4; B1 2 Personen bis 28.02.2025, B2 1 Person ab 01.03.2025. Runde 3 nannte hier
+  // A 714,01 € und B2 475,58 € und rechnete 396,10 € dem Vermieter zu, ohne Leerstand.
+  const f = gutschriftFall({
+    key: 'persons',
+    tenancies: [
+      { ...mieter('ta', 'a'), persons: 4, personHistory: [{ from: '2020-01-01', persons: 1 }, { from: '2025-03-01', persons: 4 }] },
+      { ...mieter('tb1', 'b'), tenantName: 'Mieter B1', persons: 2, personHistory: [{ from: '2020-01-01', persons: 2 }], end: '2025-02-28' },
+      { ...mieter('tb2', 'b'), tenantName: 'Mieter B2', persons: 1, personHistory: [{ from: '2025-03-01', persons: 1 }], start: '2025-03-01' },
+    ],
+    estimates: [schaetzungVon('e', '2025-01-01', '2025-04-30', 900000)],
+  })
+  assert.deepEqual(f.kontrafaktum, { 'Mieter A': 71402, 'Mieter B1': 79219, 'Mieter B2': 7948 })
+  wieKontrafaktum(f)
+  assert.equal(f.summe, -f.diff)
+  assert.doesNotMatch(f.text, /Der Rest lag bei Ihnen/)
+})
+
+test('Durchsicht #247 Runde 5 (G-K2): Rechnung mit anderem Schlüssel als die Vorlage der Schätzung: der Hinweis sagt, dass die Beträge je Mieter nur genähert sind', () => {
+  // Vorlage nach Fläche, Rechnung nach Personen: Die echte Rechnung wäre anders verteilt worden. Kontrafaktum
+  // A 1.098,64 €, B1 364,60 €, B2 122,45 €; der Hinweis kann nur nach dem Schlüssel der Schätzung aufteilen.
+  const tenancies = [
+    { ...mieter('ta', 'a'), persons: 4, personHistory: [{ from: '2020-01-01', persons: 1 }, { from: '2025-03-01', persons: 4 }] },
+    { ...mieter('tb1', 'b'), tenantName: 'Mieter B1', persons: 2, personHistory: [{ from: '2020-01-01', persons: 2 }], end: '2025-02-28' },
+    { ...mieter('tb2', 'b'), tenantName: 'Mieter B2', persons: 1, personHistory: [{ from: '2025-03-01', persons: 1 }], start: '2025-03-01' },
+  ]
+  const estimates = [schaetzungVon('e', '2025-01-01', '2025-04-30', 900000)]
+  const anders = gutschriftFall({ tenancies, estimates, key: 'area', invoiceKey: 'persons' })
+  assert.match(anders.text, /Die Rechnung ist nach einem anderen Umlageschlüssel verteilt als die Schätzung; die Beträge je Mieter sind nach dem Schlüssel der Schätzung aufgeteilt und nur eine Näherung\. Bitte prüfen Sie sie\./)
+  // Gleicher Schlüssel: kein solcher Satz.
+  assert.doesNotMatch(gutschriftFall({ tenancies, estimates, key: 'persons' }).text, /nur eine Näherung/)
+})
+
+test('Durchsicht #247 G-K1/G-K2: Leerstand: die Mieter bekommen ihren Teil, und der Text nennt nur ihn', () => {
+  // B ist ab 01.03.2025 leer: Den Teil der Schätzung für die leeren Tage trug der Vermieter (Leerstand).
+  const f = gutschriftFall({
+    tenancies: [mieter('ta', 'a'), { ...mieter('tb', 'b'), end: '2025-02-28' }],
+    estimates: [schaetzungVon('e', '2025-01-01', '2025-04-30', 900000)],
+  })
+  assert.equal(f.diff, -158569)
+  wieKontrafaktum(f)
+  const mieterTeil = f.summe
+  assert.ok(mieterTeil < 158569)
+  assert.match(f.text, new RegExp(`Die Abweichung beträgt 1\\.585,69 €; davon haben die Mieter dieser Heizperiode ${fmtCentsTest(mieterTeil)} zu viel getragen, hier: .*\\. Der Rest lag bei Ihnen\\.`))
+})
+
+test('Durchsicht #247 G-K1: zwei Schätzungen, verschieden weit abgedeckt: jede zählt mit ihrem abgedeckten Teil', () => {
+  // März geschätzt (die Rechnung deckt ihn ab dem 15. ab), April geschätzt (ganz abgedeckt); B1 wohnt bis 31.03.,
+  // B2 ab 01.04.
+  const f = gutschriftFall({
+    tenancies: [mieter('ta', 'a'), { ...mieter('tb1', 'b'), tenantName: 'Mieter B1', end: '2025-03-31' }, { ...mieter('tb2', 'b'), tenantName: 'Mieter B2', start: '2025-04-01' }],
+    estimates: [schaetzungVon('e1', '2025-03-01', '2025-03-31', 300000), schaetzungVon('e2', '2025-04-01', '2025-04-30', 200000)],
+  })
+  assert.equal(f.summe, -f.diff, f.text)
+  wieKontrafaktum(f)
+})
+
+test('Durchsicht #247 G-K4 (M10): drei gleiche Wohnungen: die Gutschriften je Mieter ergeben zusammen genau die Abweichung, nicht einen Cent mehr oder weniger', () => {
+  // Je Mieter ein Drittel; einzeln gerundet ergäben drei Drittel einen Cent zu wenig oder zu viel.
+  const flat = { participates: true, propertyId: 'objekt-1' }
+  const f = gutschriftFall({
+    units: [{ id: 'a', name: 'A', areaM2: 50, ...flat }, { id: 'b', name: 'B', areaM2: 50, ...flat }, { id: 'c', name: 'C', areaM2: 50, ...flat }],
+    tenancies: [mieter('ta', 'a'), mieter('tb', 'b'), mieter('tc', 'c')],
+    estimates: [schaetzungVon('e', '2025-01-01', '2025-04-30', 900001)],
+  })
+  assert.notEqual(-f.diff % 3, 0, 'der Fall braucht eine Abweichung, die sich nicht in Drittel teilen lässt')
+  assert.equal(Object.keys(f.je).length, 3, f.text)
+  assert.equal(f.summe, -f.diff, f.text)
 })
 
 test('Fall f: H−1 wieder offen; die Schätzung zählt nicht mehr, H−1 bucht die echte Rechnung herein (Review Focus 3)', () => {
@@ -565,6 +724,28 @@ test('Nachprüfung (gering): Position erst nach dem Abschluss ihrer Heizperiode 
   assert.match(textOf(h1, 'fuel.owner-closed-unlinked'), /Abrechnung 2025\/2026, in der die Rechnung steht, ist abgeschlossen; ihre Position war beim Abschluss noch nicht mit der Lieferung verknüpft/)
 })
 
+test('Invariante (Startwert 515): Rechnung beim Abschluss ihrer Heizperiode verknüpft, aber storniert: der Hinweis sagt „storniert“, nicht „nicht verknüpft“', () => {
+  const storniert = settle('2025-05', { costItems: [position({ id: 'gas', amountCents: 0 })] })
+  const ueber = { closedSettlements: [abgeschlossen('2025-05', { fuelCarryRows: frozenFuelRowsOf(storniert), fuelCarries: frozenFuelCarriesOf(storniert), fuelCancelled: frozenFuelCancelledOf(storniert) })] }
+  const h1 = settle('2024-05', ueber)
+  assert.equal(mieterSumme(h1), 0)
+  const t = textOf(h1, 'fuel.owner-closed-unlinked')
+  assert.match(t, /Zur Rechnung „Gas 2025\/2026“ gehörten heute 983,39 € in diese Heizperiode\. Die Abrechnung 2025\/2026, in der die Rechnung steht, ist abgeschlossen; beim Abschluss ergaben ihre Positionen zusammen 0 € \(storniert\)/)
+  assert.doesNotMatch(t, /noch nicht mit der Lieferung verknüpft/)
+})
+
+test('Invariante (Startwerte 196, 397): mit 0 eingefroren, weil die Rechnung beim Abschluss storniert war: der Hinweis sagt „storniert“, nicht „nicht verknüpft“', () => {
+  const vorher = settle('2024-05', { costItems: [position({ id: 'gas', amountCents: 0 })] })
+  const h = settle('2025-05', {
+    fuelCarryFrozen: [eingefroren('d', '2024-05', 0)],
+    closedSettlements: [abgeschlossen('2024-05', { fuelCarryRows: frozenFuelRowsOf(vorher), fuelCancelled: [{ plantId: 'hp', period: '2024-05', deliveryId: 'd' }] })],
+  })
+  assert.deepEqual(teileVon(h, 'fuel:d:2025-05:2024-05'), [{ reason: 'fuelClosedPeriod', cents: 98339 }])
+  const t = textOf(h, 'fuel.closed-period-part')
+  assert.match(t, /Als die Abrechnung 2024\/2025 abgeschlossen wurde, ergaben die Positionen der Rechnung „Gas 2025\/2026“ zusammen 0 € \(storniert\)\. Ihr Teil für 2024\/2025 \(983,39 €\) ist dort deshalb nicht verteilt/)
+  assert.doesNotMatch(t, /noch mit keiner Position verknüpft/)
+})
+
 test('Nachprüfung W1, Gegenstück: Storno nach Abschluss der Heizperiode der Positionen: die offene davor verteilt nichts und weist die Gegenbuchung aus', () => {
   const h2 = settle('2025-05')
   const ueber = { closedSettlements: [abgeschlossen('2025-05', { fuelCarryRows: frozenFuelRowsOf(h2), fuelCarries: frozenFuelCarriesOf(h2) })] }
@@ -578,6 +759,32 @@ test('Nachprüfung W1, Gegenstück: Storno nach Abschluss der Heizperiode der Po
   // Ein eingefrorener Stand ohne die Summe der Rechnung nennt nur den hinausgebuchten Teil.
   const alt = { closedSettlements: [abgeschlossen('2025-05', { fuelCarryRows: frozenFuelRowsOf(h2), fuelCarries: frozenFuelCarriesOf(h2).map(({ totalCents: _t, ...c }) => c) })] }
   assert.match(textOf(settle('2024-05', { ...alt, costItems: [position({ id: 'gas', amountCents: 0 })] }), 'fuel.cancelled-after-close'), /in der sie steht, hat 983,39 € als Anteil dieser Heizperiode hinausgebucht/)
+})
+
+test('Invariante (Gerät ausgefallen, Startwert 509): Storno nach Abschluss, Teil lag schon beim Vermieter: die wieder geöffnete Heizperiode bucht nichts gegen, der Teil steht einmal beim Vermieter', () => {
+  // 2024/2025 wird abgeschlossen, als die Rechnung noch keine Position hat (0 eingefroren). 2025/2026 bucht
+  // ihren Teil für 2024/2025 deshalb nicht hinaus, sondern an den Vermieter (`fuelClosedPeriod`), und wird so
+  // abgeschlossen. Dann wird 2024/2025 wieder geöffnet und die Rechnung storniert.
+  const ohne = settle('2024-05', { costItems: [] })
+  const h2 = settle('2025-05', { fuelCarryFrozen: [eingefroren('d', '2024-05', 0)], closedSettlements: [abgeschlossen('2024-05', { fuelCarryRows: frozenFuelRowsOf(ohne) })] })
+  assert.deepEqual(teileVon(h2, 'fuel:d:2025-05:2024-05'), [{ reason: 'fuelClosedPeriod', cents: 98339 }])
+  const h1 = settle('2024-05', {
+    costItems: [position({ id: 'gas', amountCents: 0 })],
+    fuelCarryFrozen: [eingefroren('d', '2025-05', (h2.heating?.[0]?.fuel?.carries ?? []).reduce((a, c) => a + c.cents, 0))],
+    closedSettlements: [abgeschlossen('2025-05', { fuelCarryRows: frozenFuelRowsOf(h2), fuelCarries: frozenFuelCarriesOf(h2) })],
+  })
+  assert.equal(mieterSumme(h1), 0)
+  assert.equal(summe(h1), 0)
+  // Vorher: Gegenbuchung −983,39 € ohne Gegenstück und noch einmal 983,39 € „abgeschlossene Heizperiode“;
+  // über beide Abrechnungen stand der Teil zweimal als vom Vermieter getragen da (1.966,78 €).
+  assert.deepEqual(teileVon(h1, 'fuel:d:2024-05:2025-05'), [])
+  // Ohne Betrag und ohne Teil steht auch keine leere Gegenzeile beim Vermieter (Durchsicht #247, G-K4/M9).
+  assert.equal(h1.landlord.rows.some((r) => r.costItemId === 'fuel:d:2024-05:2025-05'), false)
+  const teile = [...teileVon(h2, 'fuel:d:2025-05:2024-05'), ...teileVon(h1, 'fuel:d:2024-05:2025-05')]
+  assert.equal(teile.filter((p) => p.reason === 'fuelCarry').reduce((a, p) => a + p.cents, 0), 0)
+  assert.equal(teile.filter((p) => p.reason === 'fuelClosedPeriod').reduce((a, p) => a + p.cents, 0), 98339)
+  // Der Hinweis bleibt: Die Mieter von 2025/2026 haben ihren Teil der stornierten Rechnung zu viel getragen.
+  assert.match(textOf(h1, 'fuel.cancelled-after-close'), /enthält dafür 5\.516,61 €, die die Mieter zu viel getragen haben/)
 })
 
 // ---------- Nachprüfung von 47f2373 (Korrekturrunde 4) ----------
@@ -647,4 +854,41 @@ test('Nachprüfung G-a: Schätzung ohne Rechnung, aus der sie ihren Schlüssel n
   const n = h.notices.find((x) => x.code === 'fuel.estimate-undistributed') ?? assert.fail(codes(h).join(', '))
   assert.equal(n.level, 'warning')
   assert.match(n.text, /Die Schätzung „Schätzung“ \(907,74 €\) verteilt Mietfuchs nicht/)
+})
+
+// ---------- Durchsicht von #247, Runde 3 (G-K4): der Storno-Merker über die Datenbank ----------
+
+test('Durchsicht #247 G-K4: Abschluss mit stornierter Rechnung über die Datenbank: gespeichert, gelesen, der Hinweis sagt „storniert“', async () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-storno-'))
+  const opened = await openDatabase({ dataDir })
+  try {
+    await opened.write(async (db) => {
+      await db.update(properties).set({ periodStartMonth: 5 }).where(eq(properties.id, 'objekt-1'))
+      await createEntity(db, 'units', 'a', { propertyId: 'objekt-1', name: 'A', areaM2: 60, participates: true })
+      await createEntity(db, 'units', 'b', { propertyId: 'objekt-1', name: 'B', areaM2: 40, participates: true })
+      await createEntity(db, 'tenancies', 'ta', { unitId: 'a', tenantName: 'Mieter A', persons: 1, start: '2020-01-01' })
+      await createEntity(db, 'tenancies', 'tb', { unitId: 'b', tenantName: 'Mieter B', persons: 1, start: '2020-01-01' })
+      await createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'gas', method: 'manual' })
+      await createDelivery(db, 'd', 'hp', { label: 'Gas 2025/2026', invoiceFrom: '2025-03-15', invoiceTo: '2026-03-14', fixedCents: null })
+      const fields = { propertyId: 'objekt-1', period: '2025-05', category: HEATING_CATEGORY, key: 'area', heatingPlantId: 'hp', fuelDeliveryId: 'd', taxYear: 2026 }
+      await createEntity(db, 'costItems', 'gas', { ...fields, description: 'Gas', amountCents: 650000 })
+      await createEntity(db, 'costItems', 'storno', { ...fields, description: 'Storno', amountCents: -650000 })
+    })
+    const periodOf = (key: string) => periodOfKey(MAI, periodKey(key)) ?? assert.fail(key)
+    // 2025/2026 abschließen, solange die Rechnung storniert ist, wie in index.ts.
+    await opened.write(async (db) => db.transaction(async (tx) => {
+      const settlement = computeSettlement(snapshotFor(await readStock(tx), 'objekt-1', periodOf('2025-05')), {})
+      await closeSettlement(tx, { id: 's1', propertyId: 'objekt-1', period: periodKey('2025-05'), closedAt: '2027-01-01', sentAt: null, settlement })
+      await freezeFuelCarries(tx, settlement)
+    }))
+    // Danach das Storno löschen; 2024/2025 ist offen.
+    await opened.write((db) => removeEntity(db, 'costItems', 'storno'))
+    const h1 = computeSettlement(snapshotFor(await opened.read((db) => readStock(db)), 'objekt-1', periodOf('2024-05')), {})
+    const t = textOf(h1, 'fuel.owner-closed-unlinked')
+    assert.match(t, /beim Abschluss ergaben ihre Positionen zusammen 0 € \(storniert\)/)
+    assert.doesNotMatch(t, /noch nicht mit der Lieferung verknüpft/)
+  } finally {
+    opened.close()
+    fs.rmSync(dataDir, { recursive: true, force: true })
+  }
 })

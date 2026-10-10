@@ -1725,7 +1725,10 @@ export type FuelDeliveryLine = {
 // Ein Übertrag der Mieterseite dieser Heizperiode aus oder in die Heizperiode `period`.
 // `totalCents`: die Summe der Positionen der Rechnung, aus der der Übertrag gerechnet ist (Nachprüfung von
 // 47f2373: Wird sie nach dem Abschluss storniert, nennt die andere Heizperiode, was die Mieter zu viel trugen).
-export type FuelCarryLine = { deliveryId: string; period: PeriodKey; cents: number; totalCents?: number }
+// `landlordBorne`: Der hinausgebuchte Teil steht beim Vermieter (`fuelClosedPeriod`), weil die andere Heizperiode
+// beim Abschluss schon ohne ihn abgeschlossen war; sie hat ihn also nie hereingebucht, und eine Gegenbuchung
+// dort gäbe es zweimal (Invariante, Startwert 509).
+export type FuelCarryLine = { deliveryId: string; period: PeriodKey; cents: number; totalCents?: number; landlordBorne?: true }
 
 // Der Vorschlag einer geschätzten Lieferung für eine Lücke (8.2 Nr. 2), aus der letzten Rechnung.
 export type FuelEstimateProposal = {
@@ -1753,6 +1756,10 @@ export type FuelAssessment = {
   deliveries: FuelDeliveryLine[]
   carries: FuelCarryLine[]
   gaps: FuelGap[]
+  // Lieferungen, deren Positionen zusammen 0 € ergeben (als storniert behandelt) und die die Heizperiode
+  // berühren. Eingefroren sagt das einer anderen Heizperiode, dass die Rechnung beim Abschluss verknüpft, aber
+  // storniert war, und nicht unverknüpft (Runde 2 zu Startwert 515). Fehlt das Feld, gab es keine.
+  zeroInvoiceIds?: string[]
 }
 
 // Die Rückfrage beim Abschluss (8.2, Dialog „Trotzdem abschließen?“).

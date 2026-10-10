@@ -206,7 +206,10 @@ export type FuelPlantInput = {
   // (Durchsicht I4). Fehlt die Angabe, gibt es keine.
   loose?: readonly { from: string | null; to: string | null }[]
   // Was abgeschlossene Heizperioden je Lieferung in andere übertragen haben (`period` die abgeschlossene).
-  closedCarries?: readonly { period: string; deliveryId: string; other: string; cents: number; totalCents?: number }[]
+  // `landlordBorne`: Der Teil steht dort beim Vermieter, die andere Heizperiode hat ihn nie hereingebucht.
+  // Was abgeschlossene Heizperioden als storniert behandelt haben (Positionen zusammen 0 €), je Lieferung.
+  closedCancelled?: readonly { period: string; deliveryId: string }[]
+  closedCarries?: readonly { period: string; deliveryId: string; other: string; cents: number; totalCents?: number; landlordBorne?: true }[]
 }
 
 // Ein Übertrag der Mieterseite dieser Heizperiode: `out` hinaus in die frühere (die Positionen stehen
@@ -224,13 +227,18 @@ export type FuelCarry = {
   frozen: boolean
   // Die andere Heizperiode hat 0 eingefroren, weil die Lieferung beim Abschluss noch keine Position hatte.
   zeroFrozen: boolean
+  // Dazu (Runde 2, Startwerte 196 und 397): Die Rechnung war damals verknüpft, ihre Positionen ergaben aber 0 €.
+  zeroFrozenCancelled?: boolean
   // Storniert (Summe der Positionen 0): was die abgeschlossene Heizperiode `other` hereingebucht hatte.
   cancelled?: number
   // Beim Gegenstück: der Teil, den die abgeschlossene Heizperiode der Positionen hierher hinausgebucht hat.
   cancelledOut?: number
   landlord: { reason: 'fuelCarry' | 'fuelClosedPeriod' | 'fuelEstimateDiff'; cents: number }[]
   templates: { itemId: string; raw: number }[]
-  estimate: { cents: number; ids: string[] } | null
+  // `ratios[k]`: der Anteil der eingefrorenen Schätzung `ids[k]`, den die Rechnung abdeckt (nach Gradtagen); nur
+  // dieser Teil ihrer Zeilen ist mit der Rechnung zu vergleichen (Invariante, Startwert 515). `frozen[k]`: ihr
+  // eingefrorener Betrag.
+  estimate: { cents: number; ids: string[]; ratios: number[]; frozen: number[] } | null
 }
 
 export type FuelResult = {
@@ -247,7 +255,8 @@ export type FuelResult = {
   looseWithoutRange: boolean
   // Lieferungen, deren Heizperiode der Positionen abgeschlossen ist, ohne hierher etwas hinausgebucht zu
   // haben, obwohl heute `cents` hierher gehörten.
-  ownerClosedUnlinked: { deliveryId: string; owner: BillingPeriod; cents: number }[]
+  // `cancelled`: Die Position war beim Abschluss verknüpft, ergab aber zusammen 0 € (storniert).
+  ownerClosedUnlinked: { deliveryId: string; owner: BillingPeriod; cents: number; cancelled: boolean }[]
   // Rechnungen, deren Positionen zusammen 0 € ergeben und die die Heizperiode berühren: Mietfuchs
   // behandelt sie als storniert (Nachprüfung von 5bee89f, M-b).
   zeroInvoices: { deliveryId: string; label: string }[]
@@ -371,9 +380,11 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
   if (withItems) {
     // Die Schätzungen einer abgeschlossenen Heizperiode, die eine echte Rechnung ersetzt, mit ihrem
     // eingefrorenen Betrag im Verhältnis der Gradtage, die die Rechnung von ihnen abdeckt.
-    const estimatesIn = (other: BillingPeriod, r: DayRange): { cents: number; ids: string[] } => {
+    const estimatesIn = (other: BillingPeriod, r: DayRange): NonNullable<FuelCarry['estimate']> => {
       let cents = 0
       const ids: string[] = []
+      const ratios: number[] = []
+      const frozenCents: number[] = []
       for (const e of input.deliveries.filter((x) => x.estimated)) {
         const er = rangeOf(e)
         const f = frozenOf(e.id, other.key)
@@ -381,10 +392,13 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
         const cut = intersect(er, r)
         if (!cut) continue
         const all = degreeDayPermille([er], ctx.table)
-        cents += f.cents * (all > 0 ? degreeDayPermille([cut], ctx.table) / all : daysOf(cut) / daysOf(er))
+        const ratio = all > 0 ? degreeDayPermille([cut], ctx.table) / all : daysOf(cut) / daysOf(er)
+        cents += f.cents * ratio
         ids.push(e.id)
+        ratios.push(ratio)
+        frozenCents.push(f.cents)
       }
-      return { cents: roundHalf(cents), ids }
+      return { cents: roundHalf(cents), ids, ratios, frozen: frozenCents }
     }
     for (const d of effective) {
       const r = rangeFor(d)
@@ -430,10 +444,13 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
           if (out !== 0) {
             // `cancelled`: was die Mieter jener Heizperiode von der Rechnung getragen haben (Summe beim Abschluss
             // ohne den hinausgebuchten Teil); fehlt die Summe im eingefrorenen Stand, der hinausgebuchte Teil.
+            // Hat jene Heizperiode den Teil schon beim Vermieter ausgewiesen (`fuelClosedPeriod`, diese war damals
+            // ohne ihn abgeschlossen), gibt es hier nichts gegenzubuchen: Eine Gegenbuchung hätte kein Gegenstück,
+            // und der Teil stünde ein zweites Mal als vom Vermieter getragen da (Invariante, Startwert 509).
             carries.push({
               deliveryId: d.id, kind: 'in', other: owner, cents: 0, totalCents: 0, ratio: 0, method: 'inside', frozen: true, zeroFrozen: false,
               cancelled: frozenOut?.totalCents !== undefined ? frozenOut.totalCents + out : -out, cancelledOut: -out,
-              landlord: [{ reason: 'fuelCarry', cents: out }, { reason: 'fuelClosedPeriod', cents: -out }], templates: [], estimate: null,
+              landlord: frozenOut?.landlordBorne ? [] : [{ reason: 'fuelCarry', cents: out }, { reason: 'fuelClosedPeriod', cents: -out }], templates: [], estimate: null,
             })
           }
           continue
@@ -444,7 +461,7 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
           if (!f || f.cents === 0) {
             // Mit Schätzung abgeschlossen (Nachprüfung von 47f2373, M2): Die Mieter jener Heizperiode haben
             // die Schätzung getragen; die Abweichung ist die ganze Schätzung, wie X − Schätzung bei X = 0.
-            const est = f ? { cents: 0, ids: [] } : input.closed.has(other.key) ? estimatesIn(other, r) : { cents: 0, ids: [] }
+            const est = f ? { cents: 0, ids: [], ratios: [], frozen: [] } : input.closed.has(other.key) ? estimatesIn(other, r) : { cents: 0, ids: [], ratios: [], frozen: [] }
             if (est.cents === 0) continue
             carries.push({
               deliveryId: d.id, kind: 'out', other, cents: 0, totalCents: 0, ratio: 0, method: 'inside', frozen: true, zeroFrozen: false, cancelled: est.cents,
@@ -483,7 +500,9 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
             }
           }
           carries.push({
-            deliveryId: d.id, kind: 'out', other, cents: -X, totalCents: T, ratio: s.ratio, method: s.method, frozen: f !== null, zeroFrozen: found !== null && f === null, landlord,
+            deliveryId: d.id, kind: 'out', other, cents: -X, totalCents: T, ratio: s.ratio, method: s.method, frozen: f !== null, zeroFrozen: found !== null && f === null,
+            ...(found !== null && f === null && (input.closedCancelled ?? []).some((c) => c.period === other.key && c.deliveryId === d.id) ? { zeroFrozenCancelled: true } : {}),
+            landlord,
             templates: items.map((c) => ({ itemId: c.id, raw: (-X * c.amountCents) / T })), estimate,
           })
         }
@@ -503,7 +522,8 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
         // die Rechnung ganz verteilt; hier kommt nichts dazu, aber ein Hinweis (Nachprüfung von #233).
         if (!f && ownerOut === 0) {
           const calc = roundHalf(T * s.ratio)
-          if (calc !== 0) ownerClosedUnlinked.push({ deliveryId: d.id, owner, cents: calc })
+          const wasCancelled = (input.closedCancelled ?? []).some((c) => c.period === owner.key && c.deliveryId === d.id)
+          if (calc !== 0) ownerClosedUnlinked.push({ deliveryId: d.id, owner, cents: calc, cancelled: wasCancelled })
         }
         if (Y === 0) continue
         carries.push({
