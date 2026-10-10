@@ -248,3 +248,13 @@ test('R-W2: Strom zur Wärmeerzeugung ohne Abzug → Hinweis mit Betrag, als Aus
   assert.match(n.text, /§ 7 Abs\. 2, § 8 Abs\. 2 HeizkostenV/)
   assert.equal(codes(settle([wp, hausstrom], [{ ...abzug(60000), itemId: 'wp' }])).length, 0)
 })
+
+// G2-K3 (O3): Gleicher Schlüssel, aber andere Teilnehmer der Rechnung verschieben ebenso Geld (gemessen: B
+// −60,00 € Allgemeinstrom). Der Hinweis vergleicht deshalb die ganze Verteilung, nicht nur den Schlüssel.
+test('G2-K3: Rechnung auf Teilnehmer beschränkt, Abzug nicht → Hinweis „anders verteilt“', () => {
+  const strom: SnapshotCostItem = { ...hausstrom, participantUnitIds: ['u1'] }
+  const ab: SnapshotCostItem = { ...hausstrom, id: 'ab', description: 'Abzug Betriebsstrom Heizung', amountCents: -14784, operatingPower: 'deduction', operatingPowerItemId: 'bs', operatingPowerGeneralId: 'strom' }
+  const [n] = (settle([betriebsstrom, strom, ab], [abzug(14784)]).notices ?? []).filter((x) => x.code === 'heating.operating-power-key')
+  if (!n) return assert.fail('kein Hinweis')
+  assert.match(n.text, /beide nach „Wohnfläche“, aber mit anderen Angaben/)
+})
