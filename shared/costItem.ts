@@ -109,6 +109,7 @@ export type CostItemBody = {
   operatingPower?: 'included' | 'deduction' | null
   operatingPowerItemId?: string | null
   operatingPowerBasis?: string | null
+  operatingPowerGeneralId?: string | null
 }
 
 // **Nicht umlagefähig, aber einer Einheit zuzuordnen** (#163): Für die Abrechnung bleibt es dabei,

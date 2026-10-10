@@ -31,6 +31,8 @@ async function withDatabase(work: (opened: OpenedDatabase) => Promise<void>): Pr
   const dataDir = tempDir()
   const opened = await openDatabase({ dataDir })
   try {
+    // Die Stromrechnung, auf die jeder Abzug zeigt (Durchsicht von #252, G-K3).
+    await opened.write((db) => createEntity(db, 'costItems', 'hausstrom', { propertyId: 'objekt-1', period: '2025-01', category: 'Beleuchtung/Allgemeinstrom', description: 'Allgemeinstrom 2025', amountCents: 105000, key: 'area' }))
     await work(opened)
   } finally {
     opened.close()
@@ -45,7 +47,7 @@ const heizung = (over: Record<string, unknown> = {}) => ({
 })
 const abzug = (itemId: string | null, over: Record<string, unknown> = {}) => ({
   propertyId: 'objekt-1', period: '2025-01', category: 'Beleuchtung/Allgemeinstrom', description: 'Abzug Betriebsstrom Heizung',
-  amountCents: -14784, key: 'area', operatingPower: 'deduction', operatingPowerItemId: itemId, ...over,
+  amountCents: -14784, key: 'area', operatingPower: 'deduction', operatingPowerItemId: itemId, operatingPowerGeneralId: 'hausstrom', ...over,
 })
 
 test('Kette: die Schritte betriebsstrom und betriebsstrom_bedingungen bringen drei nullbare Spalten, jeder Bestand bleibt NULL', async () => {
@@ -79,13 +81,18 @@ test('Prüfbedingungen: Betriebsstrom nur an Heizkosten (Teil Betrieb), Abzug nu
     assert.equal(rejects(c, insert('bs2', 'Heizung und Warmwasser', 14784, ', operating_power', ", 'included'")), null)
     assert.match(rejects(c, insert('a', 'Heizung und Warmwasser', 1, ', heating_part, operating_power', ", 'fuel', 'included'")) ?? '', /cost_items_operating_power_included_valid/)
     assert.match(rejects(c, insert('b', 'Grundsteuer', 1, ', operating_power', ", 'included'")) ?? '', /cost_items_operating_power_included_valid/)
-    assert.match(rejects(c, insert('d', 'Beleuchtung/Allgemeinstrom', 100, ', operating_power', ", 'deduction'")) ?? '', /cost_items_operating_power_deduction_valid/)
-    assert.match(rejects(c, insert('e', 'Gebäudereinigung', -100, ', operating_power', ", 'deduction'")) ?? '', /cost_items_operating_power_deduction_valid/)
+    assert.match(rejects(c, insert('d', 'Beleuchtung/Allgemeinstrom', 100, ', operating_power, operating_power_general_id', ", 'deduction', 'bs'")) ?? '', /cost_items_operating_power_deduction_valid/)
+    assert.match(rejects(c, insert('e', 'Gebäudereinigung', -100, ', operating_power, operating_power_general_id', ", 'deduction', 'bs'")) ?? '', /cost_items_operating_power_deduction_valid/)
     assert.match(rejects(c, insert('f', 'Beleuchtung/Allgemeinstrom', -100, ', operating_power_item_id', ", 'bs'")) ?? '', /cost_items_operating_power_link_valid/)
     assert.match(rejects(c, insert('g', 'Heizung und Warmwasser', 1, ', operating_power', ", 'sonst'")) ?? '', /cost_items_operating_power_known/)
     // P-W1: Eine Grundlage der Schätzung gibt es nur an einer gekennzeichneten Position.
     assert.match(rejects(c, insert('i', 'Grundsteuer', 1, ', operating_power_basis', ", 'Grundlage'")) ?? '', /cost_items_operating_power_basis_valid/)
-    assert.equal(rejects(c, insert('h', 'Beleuchtung/Allgemeinstrom', -14784, ', operating_power, operating_power_item_id, operating_power_basis', ", 'deduction', 'bs', 'Pumpe: 45 W × 24 h × 220 Tage = 237,6 kWh'")), null)
+    // G-K3: Ein Abzug zeigt auf seine Stromrechnung, und nur ein Abzug tut das.
+    assert.equal(rejects(c, insert('strom', 'Beleuchtung/Allgemeinstrom', 105000, '', '')), null)
+    assert.match(rejects(c, insert('h0', 'Beleuchtung/Allgemeinstrom', -14784, ', operating_power, operating_power_item_id', ", 'deduction', 'bs'")) ?? '', /cost_items_operating_power_source_complete/)
+    assert.match(rejects(c, insert('h1', 'Beleuchtung/Allgemeinstrom', -14784, ', operating_power_general_id', ", 'strom'")) ?? '', /cost_items_operating_power_general_valid/)
+    assert.equal(rejects(c, insert('h', 'Beleuchtung/Allgemeinstrom', -14784, ', operating_power, operating_power_item_id, operating_power_general_id, operating_power_basis', ", 'deduction', 'bs', 'strom', 'Pumpe: 45 W × 24 h × 220 Tage = 237,6 kWh'")), null)
+    assert.match(rejects(c, "DELETE FROM cost_items WHERE id = 'strom'") ?? '', /FOREIGN KEY/)
     // RESTRICT: Der Betriebsstrom lässt sich nicht löschen, solange der Abzug auf ihn zeigt.
     assert.match(rejects(c, "DELETE FROM cost_items WHERE id = 'bs'") ?? '', /FOREIGN KEY/)
     c.close()
@@ -102,7 +109,7 @@ test('Schreiben: Betriebsstrom und Abzug werden gelesen, wie sie gespeichert sin
     assert.deepEqual([fieldOf(ab, 'operatingPower'), fieldOf(ab, 'operatingPowerItemId'), fieldOf(ab, 'operatingPowerBasis')], ['deduction', 'bs', 'Pumpe: 45 W × 24 h × 220 Tage = 237,6 kWh'])
     const ohne = await opened.write((db) => createEntity(db, 'costItems', 'gs', { propertyId: 'objekt-1', period: '2025-01', category: 'Grundsteuer', description: 'G', amountCents: 100, key: 'area' }))
     // Ohne Angabe fehlen die Schlüssel ganz (die Rundreise in db-stock.test.ts vergleicht streng).
-    assert.deepEqual(['operatingPower', 'operatingPowerItemId', 'operatingPowerBasis'].filter((k) => Object.hasOwn(Object(ohne), k)), [])
+    assert.deepEqual(['operatingPower', 'operatingPowerItemId', 'operatingPowerGeneralId', 'operatingPowerBasis'].filter((k) => Object.hasOwn(Object(ohne), k)), [])
   })
 })
 
@@ -112,7 +119,7 @@ test('Review Focus 3: der Abzug bleibt gekennzeichnet, wenn ein alter Tab ihn oh
     await opened.write((db) => createEntity(db, 'costItems', 'ab', abzug('bs', { operatingPowerBasis: 'Grundlage' })))
     await opened.write((db) => updateEntity(db, 'costItems', 'ab', { description: 'Abzug Betriebsstrom 2025', amountCents: -15000 }))
     const ab = await opened.read((db) => findEntity(db, 'costItems', 'ab'))
-    assert.deepEqual([fieldOf(ab, 'operatingPower'), fieldOf(ab, 'operatingPowerItemId'), fieldOf(ab, 'operatingPowerBasis'), fieldOf(ab, 'amountCents')], ['deduction', 'bs', 'Grundlage', -15000])
+    assert.deepEqual([fieldOf(ab, 'operatingPower'), fieldOf(ab, 'operatingPowerItemId'), fieldOf(ab, 'operatingPowerGeneralId'), fieldOf(ab, 'operatingPowerBasis'), fieldOf(ab, 'amountCents')], ['deduction', 'bs', 'hausstrom', 'Grundlage', -15000])
   })
 })
 
@@ -132,10 +139,10 @@ test('P-W2: ein von Hand erfasster Abzug lässt sich nachträglich mit dem Betri
   await withDatabase(async (opened) => {
     await opened.write((db) => createEntity(db, 'costItems', 'bs', heizung()))
     await opened.write((db) => createEntity(db, 'costItems', 'hand', { propertyId: 'objekt-1', period: '2025-01', category: 'Beleuchtung/Allgemeinstrom', description: 'Abzug Heizstrom 5 % der Brennstoffkosten', amountCents: -14784, key: 'area' }))
-    await opened.write((db) => updateEntity(db, 'costItems', 'hand', { operatingPower: 'deduction', operatingPowerItemId: 'bs', operatingPowerBasis: '5 % der Brennstoffkosten 2025 (2.956,80 €)' }))
+    await opened.write((db) => updateEntity(db, 'costItems', 'hand', { operatingPower: 'deduction', operatingPowerItemId: 'bs', operatingPowerGeneralId: 'hausstrom', operatingPowerBasis: '5 % der Brennstoffkosten 2025 (2.956,80 €)' }))
     const hand = await opened.read((db) => findEntity(db, 'costItems', 'hand'))
     assert.deepEqual([fieldOf(hand, 'operatingPower'), fieldOf(hand, 'operatingPowerItemId')], ['deduction', 'bs'])
-    await opened.write((db) => updateEntity(db, 'costItems', 'hand', { operatingPower: null, operatingPowerItemId: null, operatingPowerBasis: null }))
+    await opened.write((db) => updateEntity(db, 'costItems', 'hand', { operatingPower: null, operatingPowerItemId: null, operatingPowerGeneralId: null, operatingPowerBasis: null }))
     assert.equal(fieldOf(await opened.read((db) => findEntity(db, 'costItems', 'hand')), 'operatingPower'), undefined)
   })
 })
@@ -216,8 +223,8 @@ test('Schätzhilfe bei freien Schlüsseln: Betriebsstrom nach dem Schlüssel des
     assert.deepEqual([h.category, h.amountCents, h.key, h.meterType, h.heatingPart, h.operatingPower, h.heatingPlantId, h.period],
       ['Heizung und Warmwasser', 14784, 'meter', 'waerme', 'operating', 'included', 'hp', '2025-01'])
     assert.match(h.description, /Betriebsstrom Heizung \(geschätzt\)/)
-    assert.deepEqual([b.deduction.category, b.deduction.amountCents, b.deduction.key, b.deduction.operatingPower, b.deduction.operatingPowerItemId, b.deduction.period],
-      ['Beleuchtung/Allgemeinstrom', -14784, 'units', 'deduction', h.id, '2025-01'])
+    assert.deepEqual([b.deduction.category, b.deduction.amountCents, b.deduction.key, b.deduction.operatingPower, b.deduction.operatingPowerItemId, b.deduction.operatingPowerGeneralId, b.deduction.period],
+      ['Beleuchtung/Allgemeinstrom', -14784, 'units', 'deduction', h.id, 'strom', '2025-01'])
     // P-W1: Die Grundlage mit allen Eingaben steht an beiden Positionen, gelesen aus der Datenbank.
     const grundlage = [
       'Brenner: 120 W × 6 h × 220 Tage = 158,4 kWh',
@@ -362,4 +369,69 @@ test('Schätzhilfe: Allgemeinstrom in einer abgeschlossenen Abrechnung → 409 m
       (e: unknown) => e instanceof HeatingError && e.status === 409 && /Allgemeinstrom „Hausstrom 2024“ steht in einer abgeschlossenen Abrechnung/.test(e.message))
     assert.equal((await markierte(opened)).length, 0)
   })
+})
+
+// ---------- Durchsicht von #252, G-K3: der Abzug kennt seine Stromrechnung ----------
+
+test('G-K3: ein Abzug braucht seine Stromrechnung, und die ist Allgemeinstrom mit positivem Betrag im selben Objekt und Zeitraum', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => createEntity(db, 'costItems', 'bs', heizung()))
+    await assert.rejects(opened.write((db) => createEntity(db, 'costItems', 'x1', abzug('bs', { operatingPowerGeneralId: null }))),
+      (e: unknown) => e instanceof HeatingError && e.status === 400 && /Stromrechnung/.test(e.message))
+    await assert.rejects(opened.write((db) => createEntity(db, 'costItems', 'x2', abzug('bs', { operatingPowerGeneralId: 'fehlt' }))),
+      (e: unknown) => e instanceof HeatingError && e.status === 400 && /Stromrechnung/.test(e.message) && /gibt es nicht/.test(e.message))
+    await opened.write((db) => createEntity(db, 'costItems', 'gs', { propertyId: 'objekt-1', period: '2025-01', category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 100, key: 'area' }))
+    await assert.rejects(opened.write((db) => createEntity(db, 'costItems', 'x3', abzug('bs', { operatingPowerGeneralId: 'gs' }))),
+      (e: unknown) => e instanceof HeatingError && e.status === 400 && /„Grundsteuer“ ist keine Stromrechnung/.test(e.message))
+    await opened.write((db) => createEntity(db, 'costItems', 'strom24', { propertyId: 'objekt-1', period: '2024-01', category: 'Beleuchtung/Allgemeinstrom', description: 'Allgemeinstrom 2024', amountCents: 90000, key: 'area' }))
+    await assert.rejects(opened.write((db) => createEntity(db, 'costItems', 'x4', abzug('bs', { operatingPowerGeneralId: 'strom24' }))),
+      (e: unknown) => e instanceof HeatingError && e.status === 400 && /im selben Zeitraum/.test(e.message))
+    await opened.write((db) => createProperty(db, 'objekt-2', { name: 'Zweites Haus' }))
+    await opened.write((db) => createEntity(db, 'costItems', 'strom2', { propertyId: 'objekt-2', period: '2025-01', category: 'Beleuchtung/Allgemeinstrom', description: 'Strom Haus 2', amountCents: 50000, key: 'area' }))
+    await assert.rejects(opened.write((db) => createEntity(db, 'costItems', 'x5', abzug(null, { operatingPowerGeneralId: 'strom2' }))),
+      (e: unknown) => e instanceof CrossPropertyError)
+    const ab = await opened.write((db) => createEntity(db, 'costItems', 'ab', abzug('bs')))
+    assert.equal(fieldOf(ab, 'operatingPowerGeneralId'), 'hausstrom')
+  })
+})
+
+test('G-K3: die Stromrechnung mit Abzug lässt sich nicht löschen und nicht zur Gutschrift oder anderen Kostenart machen', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => createEntity(db, 'costItems', 'ab', abzug(null)))
+    await assert.rejects(opened.write((db) => removeEntity(db, 'costItems', 'hausstrom')),
+      (e: unknown) => e instanceof HeatingError && e.status === 400 && /„Abzug Betriebsstrom Heizung“/.test(e.message) && /Löschen Sie zuerst den Abzug/.test(e.message))
+    await assert.rejects(opened.write((db) => updateEntity(db, 'costItems', 'hausstrom', { category: 'Gebäudereinigung' })),
+      (e: unknown) => e instanceof HeatingError && e.status === 400 && /Abzug/.test(e.message))
+    await assert.rejects(opened.write((db) => updateEntity(db, 'costItems', 'hausstrom', { amountCents: -100 })),
+      (e: unknown) => e instanceof HeatingError && e.status === 400 && /Abzug/.test(e.message))
+    assert.equal(await opened.write((db) => removeEntity(db, 'costItems', 'ab')), true)
+    assert.equal(await opened.write((db) => removeEntity(db, 'costItems', 'hausstrom')), true)
+  })
+})
+
+test('G-K3: Schritt …_betriebsstrom_rechnung hängt vorhandene Abzüge an die Stromrechnung ihres Zeitraums; ohne Rechnung verlieren sie nur die Kennzeichnung', async () => {
+  const dir = tempDir()
+  try {
+    const connection = await connect(path.join(dir, 'db.sqlite'))
+    const migrations = await loadMigrations()
+    const bis = migrations.findIndex((m) => m.tag.endsWith('_betriebsstrom_rechnung'))
+    if (bis < 0) assert.fail('Schritt …_betriebsstrom_rechnung fehlt')
+    applyMigrations(connection, migrations.slice(0, bis))
+    const row = (id: string, period: string, category: string, amount: number, extra: string, values: string) =>
+      connection.exec(`INSERT INTO cost_items (id, property_id, period, category, description, amount_cents, key${extra}) VALUES ('${id}', 'objekt-1', '${period}', '${category}', '${id}', ${amount}, 'area'${values})`)
+    row('bs', '2025-01', 'Heizung und Warmwasser', 14784, ', heating_part, operating_power', ", 'operating', 'included'")
+    row('klein', '2025-01', 'Beleuchtung/Allgemeinstrom', 20000, '', '')
+    row('gross', '2025-01', 'Beleuchtung/Allgemeinstrom', 105000, '', '')
+    row('ab', '2025-01', 'Beleuchtung/Allgemeinstrom', -14784, ', operating_power, operating_power_item_id, operating_power_basis', ", 'deduction', 'bs', 'Grundlage'")
+    row('ab26', '2026-01', 'Beleuchtung/Allgemeinstrom', -5000, ', operating_power, operating_power_item_id, operating_power_basis', ", 'deduction', 'bs', 'Grundlage'")
+    applyMigrations(connection, migrations)
+    assert.deepEqual(connection.rows("SELECT id, operating_power, operating_power_item_id, operating_power_general_id, operating_power_basis, amount_cents FROM cost_items WHERE id IN ('ab', 'ab26') ORDER BY id"), [
+      ['ab', 'deduction', 'bs', 'gross', 'Grundlage', -14784],
+      ['ab26', null, null, null, null, -5000],
+    ])
+    assert.deepEqual(connection.rows('PRAGMA foreign_key_check'), [])
+    connection.close()
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
 })

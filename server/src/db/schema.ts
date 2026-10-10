@@ -1030,6 +1030,9 @@ export const costItems = sqliteTable(
     // Die Grundlage der Schätzung (P-W1), Zeile für Zeile. Text und kein JSON: Gerechnet wird damit
     // nicht, sie belegt, wie geschätzt wurde.
     operatingPowerBasis: text('operating_power_basis'),
+    // Die Stromrechnung, aus der ein Abzug gerechnet wurde (Durchsicht von #252, G-K3). `RESTRICT`: Eine
+    // Rechnung mit Abzügen wird nicht still gelöscht, sonst bliebe der Allgemeinstrom netto negativ.
+    operatingPowerGeneralId: text('operating_power_general_id').references((): AnySQLiteColumn => costItems.id, { onDelete: 'restrict' }),
   },
   (t) => [
     // Der einzige Filter, den der Schnappschuss wirklich setzt: die Kostenpositionen eines
@@ -1071,6 +1074,9 @@ export const costItems = sqliteTable(
     check('cost_items_operating_power_deduction_valid', sql.raw(`"operating_power" IS NOT 'deduction' OR ("category" = 'Beleuchtung/Allgemeinstrom' AND "amount_cents" < 0)`)),
     check('cost_items_operating_power_link_valid', sql.raw(`"operating_power_item_id" IS NULL OR "operating_power" IS 'deduction'`)),
     check('cost_items_operating_power_basis_valid', sql.raw(`"operating_power_basis" IS NULL OR "operating_power" IS NOT NULL`)),
+    // Durchsicht von #252, G-K3: Ein Abzug zeigt auf seine Stromrechnung, und nur ein Abzug tut das.
+    check('cost_items_operating_power_general_valid', sql.raw(`"operating_power_general_id" IS NULL OR "operating_power" IS 'deduction'`)),
+    check('cost_items_operating_power_source_complete', sql.raw(`"operating_power" IS NOT 'deduction' OR "operating_power_general_id" IS NOT NULL`)),
     // Eine Summe der Anlage von null ergäbe eine Division durch null im Rechenweg.
     check('cost_items_external_total_positive', sql.raw('"external_total" > 0')),
     check(

@@ -274,6 +274,20 @@
       "when": 1791636460403,
       "tag": "0038_betriebsstrom_bedingungen",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "6",
+      "when": 1791643656243,
+      "tag": "0039_betriebsstrom_rechnung",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "6",
+      "when": 1791643762389,
+      "tag": "0040_betriebsstrom_rechnung_bedingungen",
+      "breakpoints": true
     }
   ]
 }

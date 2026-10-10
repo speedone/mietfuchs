@@ -419,10 +419,14 @@ test('Die Verschmelzung erreicht jede Spalte des Schemas', async () => {
       },
     },
     {
+      coll: 'costItems', table: costItems, id: 'probe-strom',
+      body: { propertyId: 'objekt-1', period: '2024-01', category: 'Beleuchtung/Allgemeinstrom', description: 'Hausstrom', amountCents: 105000, key: 'area' },
+    },
+    {
       coll: 'costItems', table: costItems, id: 'probe-abzug',
       body: {
         propertyId: 'objekt-1', period: '2024-01', category: 'Beleuchtung/Allgemeinstrom', description: 'Abzug', amountCents: -14784, key: 'area',
-        operatingPower: 'deduction', operatingPowerItemId: 'probe-betriebsstrom', operatingPowerBasis: 'Grundlage',
+        operatingPower: 'deduction', operatingPowerItemId: 'probe-betriebsstrom', operatingPowerGeneralId: 'probe-strom', operatingPowerBasis: 'Grundlage',
       },
     },
     {

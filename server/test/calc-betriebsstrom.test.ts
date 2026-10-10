@@ -166,3 +166,19 @@ test('Schnappschuss: deductionsOf nimmt Abzüge des Objekts aus allen Zeiträume
   assert.deepEqual(deductionsOf(items, 'o1', [{ period: periodKey('2024-01'), itemTotals: null }], CALENDAR_RULES)[0]?.closed, { label: '2024', state: 'unknown' })
   assert.deepEqual(deductionsOf(items, 'o1', [{ period: periodKey('2024-01') }], CALENDAR_RULES)[0]?.closed, { label: '2024', state: 'unknown' })
 })
+
+// G-K3: Der Abzug gehört zu seiner Stromrechnung und muss verteilt sein wie sie, sonst verschieben sich die
+// Anteile der Mieter (gemessen: 300 € von 1.000 € nach Einheiten, Rechnung danach auf Fläche, 90 €).
+test('G-K3: Abzug anders verteilt als seine Stromrechnung → Hinweis mit Betrag; gleich verteilt → still', () => {
+  const ab: SnapshotCostItem = { ...hausstrom, id: 'ab', description: 'Abzug Betriebsstrom Heizung', amountCents: -14784, key: 'units', operatingPower: 'deduction', operatingPowerItemId: 'bs', operatingPowerGeneralId: 'strom' }
+  const kind = (s: ReturnType<typeof settle>) => (s.notices ?? []).filter((n) => n.code === 'heating.operating-power-key')
+  const [n, ...rest] = kind(settle([betriebsstrom, hausstrom, ab], [abzug(14784)]))
+  if (!n) return assert.fail('kein Hinweis')
+  assert.equal(rest.length, 0)
+  assert.equal(n.level, 'warning')
+  assert.deepEqual(n.subject, { kind: 'costItem', id: 'ab' })
+  assert.match(n.text, /„Abzug Betriebsstrom Heizung“ \(147,84 €\) ist anders verteilt als die Stromrechnung „Hausstrom“/)
+  assert.match(n.text, /Wohneinheiten/)
+  assert.match(n.text, /Wohnfläche/)
+  assert.equal(kind(settle([betriebsstrom, hausstrom, { ...ab, key: 'area' }], [abzug(14784)])).length, 0)
+})

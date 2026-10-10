@@ -15,7 +15,7 @@ const bs: CostItem = { id: 'bs', propertyId: 'o', period: periodKey('2025-01'), 
 test('Heizkosten: Frage mit Norm (P-K1), Grundlage der Schätzung sichtbar und änderbar (P-W1)', () => {
   const onChange = vi.fn()
   const form: ItemForm = { ...EMPTY_ITEM_FORM, category: 'Heizung und Warmwasser', operatingPower: 'included', operatingPowerBasis: 'Pumpe: 45 W × 24 h × 220 Tage = 237,6 kWh' }
-  render(<OperatingPowerFields form={form} items={[bs]} onChange={onChange} />)
+  render(<OperatingPowerFields form={form} items={[bs]} periodKey={periodKey('2025-01')} onChange={onChange} />)
   expect(screen.getByText(/§ 7 Abs\. 2, § 8 Abs\. 2 HeizkostenV; BGH, Urteil vom 03\.06\.2016, V ZR 166\/15/)).toBeTruthy()
   expect(screen.getByText(/BGH, Versäumnisurteil vom 20\.02\.2008, VIII ZR 27\/07, Leitsatz 3/)).toBeTruthy()
   const basis = screen.getByLabelText(/Grundlage der Schätzung/) as HTMLTextAreaElement
@@ -25,19 +25,31 @@ test('Heizkosten: Frage mit Norm (P-K1), Grundlage der Schätzung sichtbar und �
 })
 
 test('Heizkosten mit Teil „Brennstoff“ und andere Kostenarten: keine Frage', () => {
-  const { container } = render(<OperatingPowerFields form={{ ...EMPTY_ITEM_FORM, category: 'Heizung und Warmwasser', heatingPart: 'fuel' }} items={[bs]} onChange={vi.fn()} />)
+  const { container } = render(<OperatingPowerFields form={{ ...EMPTY_ITEM_FORM, category: 'Heizung und Warmwasser', heatingPart: 'fuel' }} items={[bs]} periodKey={periodKey('2025-01')} onChange={vi.fn()} />)
   expect(container.textContent).toBe('')
   cleanup()
-  const other = render(<OperatingPowerFields form={{ ...EMPTY_ITEM_FORM, category: 'Grundsteuer' }} items={[bs]} onChange={vi.fn()} />)
+  const other = render(<OperatingPowerFields form={{ ...EMPTY_ITEM_FORM, category: 'Grundsteuer' }} items={[bs]} periodKey={periodKey('2025-01')} onChange={vi.fn()} />)
   expect(other.container.textContent).toBe('')
 })
 
 test('Allgemeinstrom mit negativem Betrag: die Auswahl zeigt den gespeicherten Verweis (angezeigter = gespeicherter Wert)', () => {
   const onChange = vi.fn()
   const form: ItemForm = { ...EMPTY_ITEM_FORM, category: 'Beleuchtung/Allgemeinstrom', amount: '-147,84', operatingPower: 'deduction', operatingPowerItemId: 'bs' }
-  render(<OperatingPowerFields form={form} items={[bs]} onChange={onChange} />)
+  render(<OperatingPowerFields form={form} items={[bs]} periodKey={periodKey('2025-01')} onChange={onChange} />)
   const select = screen.getByLabelText(/Abzug des Betriebsstroms/) as HTMLSelectElement
   expect(select.value).toBe('bs')
   fireEvent.change(select, { target: { value: '' } })
-  expect(onChange).toHaveBeenCalledWith({ ...form, operatingPower: '', operatingPowerItemId: '', operatingPowerBasis: '' })
+  expect(onChange).toHaveBeenCalledWith({ ...form, operatingPower: '', operatingPowerItemId: '', operatingPowerGeneralId: '', operatingPowerBasis: '' })
+})
+
+// G-K3: Der Abzug nennt seine Stromrechnung; die Auswahl zeigt den gespeicherten Wert und übernimmt die Verteilung.
+test('Abzug: Auswahl der Stromrechnung zeigt den gespeicherten Wert, eine Wahl übernimmt den Schlüssel', () => {
+  const strom: CostItem = { id: 'strom', propertyId: 'o', period: periodKey('2025-01'), category: 'Beleuchtung/Allgemeinstrom', description: 'Hausstrom 2025', amountCents: 105000, key: 'units' }
+  const onChange = vi.fn()
+  const form: ItemForm = { ...EMPTY_ITEM_FORM, category: 'Beleuchtung/Allgemeinstrom', amount: '-147,84', key: 'area', operatingPower: 'deduction', operatingPowerItemId: 'bs', operatingPowerGeneralId: '' }
+  render(<OperatingPowerFields form={form} items={[bs, strom]} periodKey={periodKey('2025-01')} onChange={onChange} />)
+  const select = screen.getByLabelText(/Stromrechnung, aus der der Abzug stammt/) as HTMLSelectElement
+  expect(select.value).toBe('')
+  fireEvent.change(select, { target: { value: 'strom' } })
+  expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ operatingPowerGeneralId: 'strom', key: 'units' }))
 })

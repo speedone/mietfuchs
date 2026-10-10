@@ -360,6 +360,11 @@ test('Betriebsstrom: jede Bedingung, deren Endung allein den falschen Satz ergä
     assert.match(link, /Nur ein Abzug/, link)
     const basis = await run(insert('d', 'Grundsteuer', 1, ', operating_power_basis', ", 'x'"))
     assert.match(basis, /Grundlage der Schätzung/, basis)
-    for (const text of [included, deduction, link, basis]) assert.doesNotMatch(text, /JJJJ-MM/, text)
+    // Durchsicht von #252, G-K3: der Verweis auf die Stromrechnung.
+    const ohneRechnung = await run(insert('e', 'Beleuchtung/Allgemeinstrom', -100, ', operating_power', ", 'deduction'"))
+    assert.match(ohneRechnung, /braucht die Stromrechnung/, ohneRechnung)
+    const rechnungOhneAbzug = await run(insert('f', 'Beleuchtung/Allgemeinstrom', 100, ', operating_power_general_id', ", 'bs'"))
+    assert.match(rechnungOhneAbzug, /Nur ein Abzug des Betriebsstroms zeigt auf eine Stromrechnung/, rechnungOhneAbzug)
+    for (const text of [included, deduction, link, basis, ohneRechnung, rechnungOhneAbzug]) assert.doesNotMatch(text, /JJJJ-MM/, text)
   })
 })
