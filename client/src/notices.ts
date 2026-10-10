@@ -131,7 +131,9 @@ export function legalBasisLines(legalBasis: LegalBasis | undefined): { head: str
     // Kabelregel 2025), läse sich sonst wie geltendes Recht des Jahres (Durchsicht von #221, I1).
     values: (legalBasis.values ?? []).map((v) => {
       const range = [v.validFrom && `ab ${fmtDate(v.validFrom)}`, v.validTo && `bis ${fmtDate(v.validTo)}`].filter(Boolean).join(' ')
-      return `${v.title}: ${v.text} (${v.cite})${range ? `, gilt ${range}` : ''}`
+      // Vom Vermieter eingetragen (Heizung PR 17): seine Quelle statt einer Fundstelle des Registers.
+      const origin = v.overridden ? `, von Ihnen eingetragen (Quelle: ${v.overridden.source})` : ` (${v.cite})`
+      return `${v.title}: ${v.text}${origin}${range ? `, gilt ${range}` : ''}`
     }),
     valuesNote: legalBasis.values ? null : 'Rechtswerte nicht gespeichert (vor 0.11.0)',
   }

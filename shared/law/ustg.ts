@@ -31,6 +31,7 @@ const ENACTED = '§ 12 Abs. 1 UStG, Fassung Art. 4 HBeglG 2006 v. 29.06.2006 (BG
 
 export const ustgStandardRate: LawParam<number, 'eventDate'> = {
   id: 'ustg.standard-rate',
+  checkOnly: true,
   title: 'Regelsatz der Umsatzsteuer',
   norm: '§ 12 Abs. 1 UStG',
   timing: 'eventDate',
@@ -45,5 +46,29 @@ export const ustgStandardRate: LawParam<number, 'eventDate'> = {
     },
     { validFrom: '2021-01-01', value: 19, source: RATE, enacted: ENACTED },
   ],
+  describe: (v) => `${v} %`,
+}
+
+// Ermäßigter Satz für Gas über das Erdgasnetz und Wärme über ein Wärmenetz (Heizung PR 17, Abweichung 5
+// des Plans): § 28 Abs. 5 und 6 UStG wenden § 12 Abs. 2 („sieben Prozent“) vom 01.10.2022 bis 31.03.2024
+// auch auf diese Lieferungen an (beide am 05.10.2026 auf gesetze-im-internet.de gelesen). Maßgeblich ist
+// der Tag, an dem die Lieferung ausgeführt ist, bei Gas und Wärme grundsätzlich das Ende des
+// Ablesezeitraums (BMF-Schreiben vom 25.10.2022, Rz. 4); Rz. 12 erlaubt die Aufteilung eines
+// Ablesezeitraums über die Stichtage (Mischsatz). Gebraucht nur für die Plausibilität der CO₂-Kosten
+// (server/src/co2Plausibility.ts). Außerhalb des Zeitraums gibt es keine Fassung; dann gilt
+// `ustg.standard-rate`.
+export const ustgGasHeatNetworkRate: LawParam<number, 'eventDate'> = {
+  id: 'ustg.gas-heat-network-rate',
+  checkOnly: true,
+  title: 'Umsatzsteuer auf Gas und Wärme aus Netzen (Plausibilität)',
+  norm: '§ 28 Abs. 5 und 6, § 12 Abs. 2 UStG',
+  timing: 'eventDate',
+  versions: [{
+    validFrom: '2022-10-01',
+    validTo: '2024-03-31',
+    value: 7,
+    source: checked('§ 28 Abs. 5 und 6 UStG', 'https://www.gesetze-im-internet.de/ustg_1980/__28.html'),
+    enacted: '§ 28 Abs. 5 und 6 UStG in der am 05.10.2026 auf gesetze-im-internet.de veröffentlichten Fassung',
+  }],
   describe: (v) => `${v} %`,
 }

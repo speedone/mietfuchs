@@ -39,3 +39,9 @@ r_i, und die vier ergeben zusammen genau L. Der Vermieter trägt L als `co2Share
 **Hinweise.** `co2.service-unsplit` entfällt; stattdessen `co2.service-unsplit-healed` („bis zu 3 %“,
 Entwurf 15.1 Nr. 3) und `co2.share-approximated` (der Messdienst weist den Brennstoffanteil je Nutzer
 nicht aus).
+
+**Seit Heizung PR 17** meldet die Abrechnung zusätzlich `co2.cost-implausible` (Stufe `hint`): kg und
+CO₂-Kosten der erfundenen Rechnung passen nicht nach § 3 Abs. 3 CO2KostAufG zusammen. Die Rechnung läuft
+über 2025 und 2026 (55 bzw. 60 €/t), also wären es rund 5,40 t × 55 bis 60 €/t × 1,19 = rund 354 € bis
+386 €, nicht 600,00 €. Keine Zahl ändert sich. Mit der echten Rechnung (Gegenprüfung E.10) entfällt
+der Hinweis.

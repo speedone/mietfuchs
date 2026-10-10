@@ -165,6 +165,9 @@ test('F13 Mai–April mit eigener Aufteilung: E umgerechnet, C ganz (G-A3), 26,9
       assert.ok(codes.includes('co2.service-unsplit-healed') && codes.includes('co2.share-approximated'), fall)
       assert.match(s.notices.find((n) => n.code === 'fuel.uncovered')?.text ?? '', /15\.03\.–30\.04\.2026 \(47 Tage, 151,3 ‰ der Gradtage\)/, fall)
       assert.ok(s.legalBasis.values?.some((x) => x.id === 'hkv.degree-days'), `${fall}: Gradtagstabelle im Rechtsstand`)
+      // Seit Heizung PR 17: kg und CO₂-Kosten der erfundenen Rechnung passen nicht nach § 3 Abs. 3 CO2KostAufG
+      // zusammen (rund 5,40 t × 55 bis 60 €/t × 1,19 = rund 354 € bis 386 €, nicht 600,00 €); keine Zahl ändert sich.
+      assert.match(s.notices.find((n) => n.code === 'co2.cost-implausible')?.text ?? '', /CO₂-Kosten von 600,00 € passen nicht/, fall)
     })
   }
 })
@@ -233,6 +236,9 @@ test('F16 Eigene Heizkostenabrechnung: 1.961,89 / 2.615,84 / 1.331,52 / 750,75 �
     const self = s.heating?.[0]?.self ?? assert.fail('kein Ausweis')
     assert.equal(Math.round((self.alpha?.percent ?? 0) * 10) / 10, 15)
     assert.deepEqual(self.pots.map((p) => [p.pot, p.costCents]), [['heating', 562800], ['water', 103200]])
+    // Seit Heizung PR 17: Die CO₂-Kosten der Rechnung (598,59 €) sind netto; mit Umsatzsteuer (§ 3 Abs. 3
+    // CO2KostAufG) wären es 712,32 €. Ein Hinweis, keine Zahl ändert sich (README).
+    assert.deepEqual(s.notices.filter((n) => n.code === 'co2.cost-implausible').map((n) => /598,59 € passen nicht .* wären es 712,32 €/.test(n.text)), [true])
   })
 })
 
@@ -267,6 +273,10 @@ test('F17 Heizöl mit Vorrat: 5.750,00 € nach Verbrauch, Überträge durch die
     assert.deepEqual(s.landlord.rows.find((r) => r.costItemId === key)?.landlordParts, [{ reason: 'fuelCarry', cents: -10000 }])
     assert.deepEqual(['ta', 'tb', 'tc'].map((t) => entlastung(s, t)), [-17283, -19702, -14863])
     assert.equal(s.totalCostsCents, 565000)
+    // Heizung PR 17: Beide Rechnungen sind nach EBeV 2030 und Preis 2025 gerechnet; kein Hinweis, die Werte
+    // der Prüfung stehen im Rechtsstand.
+    assert.ok(!s.notices.some((n) => n.code === 'co2.cost-implausible'))
+    assert.ok(['co2.ebev-factors', 'co2.price', 'ustg.standard-rate'].every((id) => s.legalBasis.values.some((v) => v.id === id)))
   })
 })
 

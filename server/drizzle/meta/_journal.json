@@ -253,6 +253,13 @@
       "when": 1791376570679,
       "tag": "0035_pflichtangaben_bedingungen",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "6",
+      "when": 1791610297865,
+      "tag": "0036_rechtswerte",
+      "breakpoints": true
     }
   ]
 }

@@ -244,6 +244,9 @@ tr:last-child td { border-bottom: none; }
 td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 tfoot td { font-weight: 700; border-top: 2px solid var(--line); }
 tr.subtotal td { font-weight: 600; background: var(--bg); border-bottom: 1px solid var(--input-border); }
+/* Vermerke des CO₂-Blatts unter der Tabelle (Runde 4 von #246, W-O1): umbrechen in der Breite der Seite. */
+.sheet-notes { margin: 8px 0 0; padding-left: 1.6em; font-size: 0.92em; color: var(--muted); overflow-wrap: anywhere; }
+.sheet-notes li { margin: 2px 0; }
 tr.group-head td { font-weight: 600; background: var(--accent-soft); color: var(--accent-text); border-bottom: 1px solid var(--input-border); padding-top: 11px; padding-bottom: 11px; }
 tr.group-head td a { color: inherit; font-weight: 400; margin-left: 8px; }
 .muted { color: var(--muted); font-size: 13px; }

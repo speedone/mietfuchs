@@ -18,7 +18,8 @@
 // die Abfrage bedient, kann es anders kommen.
 
 import { eq, sql } from 'drizzle-orm'
-import type { AiConsent, AiSettings, AiSlot, Co2Statement, CostItem, DegreeDayValue, FrozenFuelCarry, FuelDelivery, HeatingEstimate, HeatingPeriodData, HeatingPlant, HeatingServiceValue, InterimGap, Meter, Payment, PeriodKey, Property, Reading, Settings, Tenancy, Unit } from '../../../shared/types.ts'
+import type { AiConsent, AiSettings, AiSlot, Co2Statement, CostItem, DegreeDayValue, FrozenFuelCarry, FuelDelivery, HeatingEstimate, HeatingPeriodData, HeatingPlant, HeatingServiceValue, InterimGap, LawOverride, Meter, Payment, PeriodKey, Property, Reading, Settings, Tenancy, Unit } from '../../../shared/types.ts'
+import { readLawOverrides } from './lawOverrides.ts'
 import { periodKey } from '../../../shared/period.ts'
 import { migrateAi, type MigratedSettings } from '../ai/settings.ts'
 import { DEFAULT_SETTINGS } from '../defaults.ts'
@@ -69,6 +70,8 @@ export type Stock = SnapshotSource & {
   heatingServiceValues: HeatingServiceValue[]
   // Schätzungen nach § 9a (Heizung PR 13)
   heatingEstimates: HeatingEstimate[]
+  // Rechtswerte, die der Vermieter eingetragen hat (Heizung PR 17); installationsweit.
+  lawOverrides: LawOverride[]
   // Lieferungen, eingefrorene Überträge, Ortswerte (Heizung PR 7)
   fuelDeliveries: FuelDelivery[]
   fuelCarryFrozen: FrozenFuelCarry[]
@@ -496,6 +499,7 @@ export async function readStock(db: Executor): Promise<Stock> {
     interimGaps: await readInterimGaps(db),
     heatingServiceValues: await readHeatingServiceValues(db),
     heatingEstimates: await readHeatingEstimates(db),
+    lawOverrides: await readLawOverrides(db),
     fuelDeliveries: await readFuelDeliveries(db),
     fuelCarryFrozen: await readFuelCarryFrozen(db),
     degreeDayValues: await readDegreeDayValues(db),

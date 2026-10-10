@@ -17,7 +17,7 @@ import { compareWithFrozen } from './settlementDiff.ts'
 import { computeSettlement, consumptionOverview, rentLedger, taxPartsFor, taxReportFor, type ComputedSettlement } from './calc.ts'
 import { heatingSnapshotFor, narrowToProperty, snapshotFor } from './snapshot.ts'
 import { calendarPeriod, calendarYearPeriod, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodOfKey, resolvePeriodParam, rulesOf, settlementDeadline, settlementPeriod, startYearOf } from '../../shared/period.ts'
-import type { BillingPeriod, FuelGapQuestion, HeatingPlant } from '../../shared/types.ts'
+import type { BillingPeriod, FuelGapQuestion, HeatingPlant, Unit } from '../../shared/types.ts'
 import { plantRules, settledSeparately } from '../../shared/heatingPeriod.ts'
 import { extractFromFile, classifyDocType, extractMeterReading, type AskProgressEvent, type AskStats } from './extract.ts'
 import { listOllamaModels, findOllama, defaultCandidates, pullOllamaModel } from './ai/ollama.ts'
@@ -51,6 +51,9 @@ import { saveHeatingInfo, saveHeatingRules } from './db/heatingInfo.ts'
 import { heatingPeriodViews, removeCo2Statement, saveCo2Statement, saveHotWater } from './db/co2.ts'
 import { saveServiceValues } from './db/serviceValues.ts'
 import { removeEstimate, saveEstimate } from './db/heatingEstimates.ts'
+import { co2SheetFor } from './co2Sheet.ts'
+import { heatingPeriodOf, plantContext } from './db/heatingPeriodContext.ts'
+import { LawOverrideError, lawOverrideSlots, readLawOverrides, removeLawOverride, saveLawOverride } from './db/lawOverrides.ts'
 import { removeStock, saveStock } from './db/fuelStock.ts'
 import { createDelivery, createEstimates, freezeFuelCarries, fuelGapQuestions, listDegreeDays, listDeliveries, removeDelivery, saveDegreeDays, unfreezeFuelCarries, updateDelivery } from './db/fuel.ts'
 import { assignableHeatingItems, createHeatingPlant, listHeatingPlants, removeHeatingPlant, replaceHeatingPlant, updateHeatingPlant } from './db/heating.ts'
@@ -494,6 +497,19 @@ app.put('/api/properties/:id', async (req, res) => {
 const TEST_TODAY = testTodayOf(process.env.NKA_TEST_TODAY)
 const today = (): string => TEST_TODAY.value ?? new Date().toISOString().slice(0, 10)
 
+// Rechtswerte, die eine Behörde später veröffentlicht (Heizung PR 17, Entwurf 4.5): je Parameter und
+// Jahr ein Eintrag des Vermieters mit Quelle. Installationsweit, deshalb ohne `?property=`.
+app.get('/api/law-overrides', async (_req, res) => {
+  res.json(lawOverrideSlots(await readData(readLawOverrides), today()))
+})
+app.put('/api/law-overrides/:paramId/:year', async (req, res) => {
+  res.json(await writeData((db) => saveLawOverride(db, req.params.paramId, Number(req.params.year), bodyObject(req), today())))
+})
+app.delete('/api/law-overrides/:paramId/:year', async (req, res) => {
+  const removed = await writeData((db) => removeLawOverride(db, req.params.paramId, Number(req.params.year)))
+  res.json({ ok: true, removed })
+})
+
 app.delete('/api/properties/:id', async (req, res) => {
   const result = await writeData((db) => removeProperty(db, req.params.id))
   if (result.removed) return res.json({ ok: true })
@@ -663,6 +679,23 @@ app.delete('/api/units/:id/interim-gaps/:date', async (req, res) => {
 // ---------- Brennstofflieferungen (Heizung PR 7) ----------
 // Was gespeichert wird und was nicht, steht in db/fuel.ts; gerechnet wird in fuel.ts und calc.ts.
 const NO_DELIVERY = 'Diese Lieferung gibt es nicht (mehr). Bitte laden Sie die Seite neu.'
+// Das Blatt „CO₂-Angaben für den Messdienst“ einer Heizperiode (Heizung PR 17, #210): die Rechnungen, die
+// sie berühren, mit den Angaben nach § 3 Abs. 1 CO2KostAufG und den Hinweisen der Prüfung.
+app.get('/api/heating-plants/:id/periods/:period/co2-sheet', async (req, res) => {
+  const sheet = await readData(async (db) => {
+    const ctx = await plantContext(db, req.params.id)
+    if (!ctx) return null
+    const h = heatingPeriodOf(ctx, req.params.period)
+    const stock = await readStock(db)
+    const property = stock.properties.find((p) => p.id === ctx.plant.propertyId)
+    // Dieselben Daten und dieselbe Bestandsrechnung wie die Abrechnung (Nachprüfung von #246, O2a/O2b).
+    return co2SheetFor(stock, ctx.plant.propertyId, ctx.plant.id, h, today(), {
+      propertyName: property?.name ?? '', address: property?.address ?? '', landlordName: property?.landlordName ?? stock.settings.landlordName,
+    })
+  })
+  if (!sheet) return res.status(404).json({ error: NO_PLANT })
+  res.json(sheet)
+})
 app.get('/api/heating-plants/:id/deliveries', async (req, res) => {
   const list = await readData((db) => listDeliveries(db, req.params.id))
   if (!list) return res.status(404).json({ error: NO_PLANT })
@@ -2229,7 +2262,7 @@ app.use('/api', (err: unknown, req: Request, res: Response, next: NextFunction) 
   // Eigene Heizkostenabrechnung (Heizung PR 10): die Liste der Positionen, die umzustellen sind.
   if (err instanceof SelfItemsError) return res.status(409).json({ error: err.message, items: err.items })
   // Ablehnungen, deren Meldung schon für den Nutzer geschrieben ist (#92).
-  if (err instanceof RouteProblem || err instanceof CrossPropertyError || err instanceof PeriodError || err instanceof PeriodConflict || err instanceof TenantChangeError || err instanceof BookingRefusal || err instanceof HeatingError || err instanceof StaleTenancyError) {
+  if (err instanceof RouteProblem || err instanceof CrossPropertyError || err instanceof PeriodError || err instanceof PeriodConflict || err instanceof TenantChangeError || err instanceof BookingRefusal || err instanceof HeatingError || err instanceof StaleTenancyError || err instanceof LawOverrideError) {
     return res.status(err.status).json({ error: err.message })
   }
   // **Fehler der Datenbank bekommen ihre eigene Meldung** (db/errors.ts). Ohne diese Zeile käme

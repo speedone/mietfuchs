@@ -8,7 +8,9 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement, type ComputedSettlement } from '../src/calc.ts'
 import { snapshotOf, type Snapshot, type SnapshotCostItem, type SnapshotSource, type SnapshotTenancy, type SnapshotUnit } from '../src/snapshot.ts'
-import { LAW_AS_OF } from '../../shared/law/register.ts'
+import { LAW_AS_OF, VALUE_CHANGE_LABEL } from '../../shared/law/register.ts'
+import { compareWithFrozen } from '../src/settlementDiff.ts'
+import { settleWithDelivery, settleWithDelivery2027 } from '../testing/co2Snapshot.ts'
 
 const tenancy = (id: string, unitId: string, over: Partial<SnapshotTenancy> = {}): SnapshotTenancy => ({
   id, unitId, tenantName: id, persons: 1, personHistory: [{ from: '2020-01-01', persons: 1 }], start: '2020-01-01', end: null,
@@ -102,4 +104,45 @@ test('Rechtswerte: Frist und Höchstdauer des Zeitraums frieren in jeder Abrechn
   const bgb = s.legalBasis.values.filter((v) => v.id.startsWith('bgb.')).map((v) => [v.id, v.value])
   assert.deepEqual(bgb.sort(), [['bgb.deadline-months', 12], ['bgb.max-period-months', 12]])
   assert.equal(s.deadline, '2026-12-31')
+})
+
+test('Eintrag des Vermieters: die Abrechnung nennt ihn als Hinweis und im Rechtsstand (Heizung PR 17)', () => {
+  const s = settleWithDelivery2027([{ paramId: 'co2.price', validFrom: '2027-01-01', value: 64.2, source: 'UBA, Bekanntmachung vom 15.12.2026', enteredAt: '2026-12-20' }])
+  const found = (s.notices ?? []).filter((x) => x.code === 'law.value-overridden')
+  assert.equal(found.length, 1)
+  const n = found[0] ?? assert.fail('kein Hinweis')
+  assert.equal(n.level, 'hint')
+  assert.match(n.text, /CO₂-Preis je Tonne \(Plausibilität\) 2027: 64,20 €\/t, von Ihnen eingetragen \(Quelle: UBA, Bekanntmachung vom 15\.12\.2026\)/)
+  const v = s.legalBasis.values.find((x) => x.id === 'co2.price' && x.validFrom === '2027-01-01') ?? assert.fail('nicht im Rechtsstand')
+  assert.deepEqual(v.overridden, { source: 'UBA, Bekanntmachung vom 15.12.2026', enteredAt: '2026-12-20' })
+  assert.ok(!(s.notices ?? []).some((x) => x.code === 'co2.cost-implausible'), '763,98 € passen zum Eintrag')
+  // Ohne Eintrag: kein Preis, keine Prüfung, kein Hinweis.
+  const ohne = settleWithDelivery2027([])
+  assert.ok(!(ohne.notices ?? []).some((x) => x.code === 'law.value-overridden' || x.code === 'co2.cost-implausible'))
+  assert.ok(!ohne.legalBasis.values.some((x) => x.id === 'co2.price'))
+})
+
+test('Review Focus 4: bringt ein Release den amtlichen Wert, zeigt der Vergleich mit dem abgeschlossenen Stand die Änderung', () => {
+  const eingetragen = settleWithDelivery2027([{ paramId: 'co2.price', validFrom: '2027-01-01', value: 64.2, source: 'UBA', enteredAt: '2026-12-20' }])
+  // Der heutige Stand mit amtlichem Wert, nachgestellt: dieselbe Fassung, ein anderer Wert, kein Eintrag mehr.
+  const amtlich = { ...eingetragen, legalBasis: { ...eingetragen.legalBasis, values: eingetragen.legalBasis.values.map((v) => (v.id === 'co2.price' ? { id: v.id, title: v.title, norm: v.norm, cite: 'UBA', value: 65.1, text: '65,10 €/t', validFrom: v.validFrom, validTo: v.validTo } : v)) } }
+  const cmp = compareWithFrozen(eingetragen, amtlich, '2028-12-31', '2028-06-01')
+  assert.deepEqual(cmp.valueChanges.map((c) => [c.id, c.frozenText, c.currentText]), [['co2.price', '64,20 €/t', '65,10 €/t']])
+})
+
+test('R-W4: ein eingetragener Durchschnittspreis nennt das Jahr der Rechnungen und das der Versteigerungen', () => {
+  const s = settleWithDelivery(2027, { co2CostCents: 84371, invoiceDate: '2027-02-10' }, [
+    { paramId: 'co2.price', validFrom: '2027-01-01', value: 64.2, source: 'UBA', enteredAt: '2026-12-20' },
+    { paramId: 'co2.price-ets', validFrom: '2027-01-01', value: 70.9, source: 'DEHSt', enteredAt: '2027-03-20' },
+  ], { energy: 'districtHeating' })
+  const texts = (s.notices ?? []).filter((n) => n.code === 'law.value-overridden').map((n) => n.text)
+  assert.ok(texts.some((t) => /Durchschnittspreis des EU-Emissionshandels \(Plausibilität\) für Rechnungen aus 2027 \(Durchschnitt der Versteigerungen 2026\): 70,90 €\/t/.test(t)), texts.join(' | '))
+  assert.ok(texts.some((t) => /CO₂-Preis je Tonne \(Plausibilität\) 2027: 64,20 €\/t/.test(t)), texts.join(' | '))
+})
+
+test('N1 (Runde 2): der Hinweis nennt die Beschriftung, die die Seite Abrechnung bei einem Prüfwert zeigt', () => {
+  const s = settleWithDelivery2027([{ paramId: 'co2.price', validFrom: '2027-01-01', value: 64.2, source: 'UBA', enteredAt: '2026-12-20' }])
+  const n = (s.notices ?? []).find((x) => x.code === 'law.value-overridden') ?? assert.fail('kein Hinweis')
+  assert.ok(n.text.includes(`„${VALUE_CHANGE_LABEL.check}“`), n.text)
+  assert.ok(!n.text.includes(VALUE_CHANGE_LABEL.law), n.text)
 })
