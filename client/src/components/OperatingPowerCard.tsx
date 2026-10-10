@@ -1,8 +1,8 @@
 // Karte „Betriebsstrom“ auf der Seite Heizkosten (Heizung PR 15, #212): Schätzung nach Leistung und
 // Heiztagen, gemessen oder selbst geschätzt, Vorschau, und Betriebsstrom samt Abzug mit einem Klick.
 import { useState } from 'react'
-import { api, errorText, fmtEuro } from '../api'
-import { emptyOperatingPowerForm, generalItemOptions, operatingPowerPreview, operatingPowerRequest } from '../operatingPowerForm'
+import { api, ApiError, errorText, fmtEuro } from '../api'
+import { bookedOperatingPower, emptyOperatingPowerForm, generalItemOptions, operatingPowerPreview, operatingPowerRequest } from '../operatingPowerForm'
 import { operatingPowerRefusal } from '../../../shared/operatingPower.ts'
 import { useToast } from './feedback'
 import Term from './Term'
@@ -13,6 +13,8 @@ export default function OperatingPowerCard({ plant, view, items, onBooked }: {
 }) {
   const [form, setForm] = useState(emptyOperatingPowerForm)
   const [busy, setBusy] = useState(false)
+  // Durchsicht von #252, G-W1: die Rückfrage des Servers bei einer zweiten Buchung.
+  const [question, setQuestion] = useState<string | null>(null)
   const toast = useToast()
   // P-W5, R2-W1: Bei Wärmepumpe und Stromheizung ist der Strom des Erzeugers Brennstoff; die Karte sagt
   // das, nennt den Weg für Pumpen und Regelung und rechnet nichts.
@@ -30,23 +32,27 @@ export default function OperatingPowerCard({ plant, view, items, onBooked }: {
   const setDevice = (i: number, key: 'label' | 'watts' | 'hours' | 'days', value: string) =>
     setForm({ ...form, devices: form.devices.map((d, k) => (k === i ? { ...d, [key]: value } : d)) })
 
-  async function book() {
+  async function book(despiteExisting = false) {
     setBusy(true)
     try {
-      await api(`/api/heating-plants/${plant.id}/operating-power`, { method: 'POST', body: JSON.stringify(operatingPowerRequest(form, String(view.period))) })
+      const body = { ...operatingPowerRequest(form, String(view.period)), ...(despiteExisting ? { despiteExisting: true } : {}) }
+      await api(`/api/heating-plants/${plant.id}/operating-power`, { method: 'POST', body: JSON.stringify(body) })
+      setQuestion(null)
       toast(service
         ? 'Der Abzug beim Allgemeinstrom ist angelegt. Melden Sie denselben Betrag Ihrem Messdienst als Betriebsstrom.'
         : 'Betriebsstrom und Abzug beim Allgemeinstrom sind angelegt.')
       setForm(emptyOperatingPowerForm())
       onBooked()
     } catch (e) {
-      toast(errorText(e), 'error')
+      if (e instanceof ApiError && e.status === 409 && !despiteExisting) setQuestion(e.message)
+      else toast(errorText(e), 'error')
     } finally {
       setBusy(false)
     }
   }
 
   const what = service ? 'Abzug' : 'Betriebsstrom und Abzug'
+  const booked = bookedOperatingPower(items, plant.id, String(view.period))
   return (
     <section className="card">
       <h2><Term id="operatingPower">Betriebsstrom</Term></h2>
@@ -63,6 +69,12 @@ export default function OperatingPowerCard({ plant, view, items, onBooked }: {
         Mietfuchs speichert Ihre Angaben als Grundlage der Schätzung an {service ? 'der Position' : 'beiden Positionen'}. Bewahren Sie Typenschilder und Rechnungen auf: Bestreitet ein Mieter
         den Betrag, müssen Sie die Grundlagen Ihrer Schätzung darlegen (BGH, Versäumnisurteil vom 20.02.2008, VIII ZR 27/07, Leitsatz 3).
       </p>
+      {booked.length > 0 && (
+        <div className="notice">
+          <strong>Schon gebucht in dieser Heizperiode:</strong>
+          <ul>{booked.map((c) => <li key={c.id}>{c.description} · {fmtEuro(c.amountCents)}</li>)}</ul>
+        </div>
+      )}
       <label className="field">
         <span>Stromrechnung des Hauses</span>
         <select value={form.generalItemId} disabled={view.closed} onChange={(e) => setForm({ ...form, generalItemId: e.target.value })}>
@@ -117,7 +129,13 @@ export default function OperatingPowerCard({ plant, view, items, onBooked }: {
       ) : (
         <p className="hint">{preview.text}</p>
       )}
-      <button type="button" className="btn" disabled={view.closed || busy || !preview.ok} onClick={book}>
+      {question && (
+        <div className="notice">
+          <p>{question}</p>
+          <button type="button" className="btn" disabled={busy} onClick={() => void book(true)}>Trotzdem anlegen</button>
+        </div>
+      )}
+      <button type="button" className="btn" disabled={view.closed || busy || !preview.ok} onClick={() => void book()}>
         {preview.ok ? `${fmtEuro(preview.cents)} als ${what} anlegen` : `${what} anlegen`}
       </button>
     </section>

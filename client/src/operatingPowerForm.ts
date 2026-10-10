@@ -53,6 +53,16 @@ export function operatingPowerPreview(form: OperatingPowerForm, items: readonly 
   return 'error' in r ? { ok: false, text: r.error } : { ok: true, cents: r.cents, lines: r.steps }
 }
 
+// Durchsicht von #252, G-W1: was zu Anlage und Heizperiode schon gebucht ist, damit niemand dieselbe
+// Schätzung zweimal anlegt. Beim Messdienst gibt es keinen Betriebsstrom, nur Abzüge ohne Verweis.
+export function bookedOperatingPower(items: readonly CostItem[], plantId: string, period: string): CostItem[] {
+  const own = items.filter((c) => c.operatingPower === 'included' && c.heatingPlantId === plantId && c.period === period)
+  const ids = new Set(own.map((c) => c.id))
+  const deductions = items.filter((c) => c.operatingPower === 'deduction' &&
+    (c.operatingPowerItemId !== undefined ? ids.has(c.operatingPowerItemId) : c.period === period))
+  return [...own, ...deductions]
+}
+
 export function operatingPowerRequest(form: OperatingPowerForm, period: string): Record<string, unknown> {
   if (form.mode === 'own') return { period, generalItemId: form.generalItemId, ownCents: parseEuro(form.ownAmount), basis: form.basis.trim() }
   const base = { period, generalItemId: form.generalItemId, billKwh: num(form.billKwh) }

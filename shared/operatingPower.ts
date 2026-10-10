@@ -20,7 +20,8 @@ export type OperatingPowerInput = {
 export type OperatingPowerShare = { kwh: number; measured: boolean; permille: number; cents: number; steps: string[] }
 
 const de = (n: number, digits: number): string => n.toLocaleString('de-DE', { minimumFractionDigits: digits, maximumFractionDigits: digits })
-const euro = (cents: number): string => `${de(cents / 100, 2)} €`
+// Euro mit gewöhnlichem Leerzeichen, wie die Texte der Berechnung.
+export const euro = (cents: number): string => `${de(cents / 100, 2)} €`
 const kwhText = (kwh: number): string => `${kwh.toLocaleString('de-DE', { maximumFractionDigits: 1 })} kWh`
 const positive = (n: number | null): n is number => typeof n === 'number' && Number.isFinite(n) && n > 0
 

@@ -435,3 +435,46 @@ test('G-K3: Schritt …_betriebsstrom_rechnung hängt vorhandene Abzüge an die 
     fs.rmSync(dir, { recursive: true, force: true })
   }
 })
+
+// ---------- Durchsicht von #252, G-W1: zweite Buchung derselben Schätzung ----------
+
+const zweiMal = async (opened: OpenedDatabase, method: 'manual' | 'service' = 'manual') => {
+  await opened.write((db) => createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'gas', method }))
+  if (method === 'manual') await opened.write((db) => createEntity(db, 'costItems', 'gas', heizung({ description: 'Gas', heatingPart: 'fuel', operatingPower: null, heatingPlantId: 'hp' })))
+  await opened.write((db) => createEntity(db, 'costItems', 'strom', { ...strom, amountCents: 100000 }))
+}
+
+test('G-W1: 2 × 600 € aus 1.000 € Stromrechnung → die zweite Buchung 400 mit beiden Beträgen, nichts angelegt', async () => {
+  await withDatabase(async (opened) => {
+    await zweiMal(opened)
+    const body = { period: '2025-01', generalItemId: 'strom', ownCents: 60000, basis: 'Bruchteil der Brennstoffkosten' }
+    await opened.write((db) => bookOperatingPower(db, 'hp', body, ids))
+    await assert.rejects(opened.write((db) => bookOperatingPower(db, 'hp', { ...body, despiteExisting: true }, ids)),
+      (e: unknown) => e instanceof HeatingError && e.status === 400 && /1\.200,00 €/.test(e.message) && /1\.000,00 €/.test(e.message))
+    assert.equal((await markierte(opened)).length, 2)
+  })
+})
+
+test('G-W1: schon gebuchter Betriebsstrom derselben Anlage und Heizperiode → 409 mit Rückfrage; mit Bestätigung angelegt (Kesseltausch)', async () => {
+  await withDatabase(async (opened) => {
+    await zweiMal(opened)
+    const body = { period: '2025-01', generalItemId: 'strom', ownCents: 30000, basis: 'alter Kessel bis Juni' }
+    await opened.write((db) => bookOperatingPower(db, 'hp', body, ids))
+    await assert.rejects(opened.write((db) => bookOperatingPower(db, 'hp', { ...body, basis: 'neuer Kessel ab Juli' }, ids)),
+      (e: unknown) => e instanceof HeatingError && e.status === 409 && /schon/.test(e.message) && /Betriebsstrom Heizung \(selbst geschätzt\)/.test(e.message))
+    assert.equal((await markierte(opened)).length, 2)
+    const b = await opened.write((db) => bookOperatingPower(db, 'hp', { ...body, basis: 'neuer Kessel ab Juli', despiteExisting: true }, ids))
+    assert.equal(b?.deduction.amountCents, -30000)
+    assert.equal((await markierte(opened)).length, 4)
+  })
+})
+
+test('G-W1: beim Messdienst fragt schon ein vorhandener Abzug aus derselben Stromrechnung zurück', async () => {
+  await withDatabase(async (opened) => {
+    await zweiMal(opened, 'service')
+    const body = { period: '2025-01', generalItemId: 'strom', ownCents: 30000, basis: 'geschätzt' }
+    await opened.write((db) => bookOperatingPower(db, 'hp', body, ids))
+    await assert.rejects(opened.write((db) => bookOperatingPower(db, 'hp', body, ids)),
+      (e: unknown) => e instanceof HeatingError && e.status === 409 && /Abzug Betriebsstrom Heizung \(selbst geschätzt\), an Messdienst gemeldet/.test(e.message))
+  })
+})

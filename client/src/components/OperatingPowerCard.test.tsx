@@ -67,3 +67,41 @@ test('Anlegen: schickt den Rumpf an die Route und meldet beim Messdienst, dass d
     vi.unstubAllGlobals()
   }
 })
+
+// Durchsicht von #252, G-W1: Die Karte zeigt, was zu Anlage und Heizperiode schon gebucht ist, und fragt bei
+// einer zweiten Buchung zurück, statt still doppelt anzulegen.
+test('G-W1: schon gebuchter Betriebsstrom und Abzug stehen auf der Karte; eine 409 fragt mit „Trotzdem anlegen“ zurück', async () => {
+  const bs: CostItem = { id: 'bs', propertyId: 'o', period: periodKey('2025-01'), category: 'Heizung und Warmwasser', description: 'Betriebsstrom Heizung (geschätzt)', amountCents: 8316, key: 'area', heatingPlantId: 'hp', operatingPower: 'included' }
+  const ab: CostItem = { ...strom, id: 'ab', description: 'Abzug Betriebsstrom Heizung (geschätzt)', amountCents: -8316, operatingPower: 'deduction', operatingPowerItemId: 'bs', operatingPowerGeneralId: 'strom' }
+  const fremd: CostItem = { ...bs, id: 'fremd', heatingPlantId: 'andere', description: 'Betriebsstrom andere Anlage' }
+  let calls = 0
+  const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => {
+    calls++
+    return calls === 1
+      ? new Response(JSON.stringify({ error: 'Für diese Heizperiode oder diese Stromrechnung ist schon gebucht: „Betriebsstrom Heizung (geschätzt)“.' }), { status: 409, headers: { 'content-type': 'application/json' } })
+      : new Response(JSON.stringify({}), { status: 201, headers: { 'content-type': 'application/json' } })
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  const onBooked = vi.fn()
+  try {
+    render(<OperatingPowerCard plant={plant} view={view} items={[strom, bs, ab, fremd]} onBooked={onBooked} />)
+    const gebucht = screen.getByText(/Schon gebucht/).closest('div') ?? assert_fail()
+    expect(gebucht.textContent).toMatch(/Betriebsstrom Heizung \(geschätzt\)/)
+    expect(gebucht.textContent).toMatch(/Abzug Betriebsstrom Heizung \(geschätzt\)/)
+    expect(gebucht.textContent).not.toMatch(/andere Anlage/)
+    fireEvent.change(screen.getByLabelText(/Stromrechnung des Hauses/), { target: { value: 'strom' } })
+    fireEvent.click(screen.getByLabelText(/Betrag selbst geschätzt/))
+    fireEvent.change(screen.getByLabelText(/geschätzter Betrag/), { target: { value: '83,16' } })
+    fireEvent.change(screen.getByLabelText(/^Grundlage der Schätzung/), { target: { value: 'neuer Kessel' } })
+    fireEvent.click(screen.getByRole('button', { name: /als Betriebsstrom und Abzug anlegen/ }))
+    const nochmal = await screen.findByRole('button', { name: /Trotzdem anlegen/ })
+    expect(screen.getByText(/ist schon gebucht/)).toBeTruthy()
+    expect(onBooked).not.toHaveBeenCalled()
+    fireEvent.click(nochmal)
+    await vi.waitFor(() => expect(onBooked).toHaveBeenCalled())
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toMatchObject({ despiteExisting: true, ownCents: 8316 })
+  } finally {
+    vi.unstubAllGlobals()
+  }
+})
+const assert_fail = (): never => { throw new Error('keine Liste „Schon gebucht“') }
