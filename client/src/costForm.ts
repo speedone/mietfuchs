@@ -59,6 +59,8 @@ export type ItemForm = {
   operatingPower: '' | 'included' | 'deduction'
   operatingPowerItemId: string
   operatingPowerBasis: string
+  // Die Stromrechnung eines Abzugs (Durchsicht von #252, G-K3), leer heißt noch nicht gewählt.
+  operatingPowerGeneralId: string
 }
 
 export const EMPTY_ITEM_FORM: ItemForm = {
@@ -85,6 +87,7 @@ export const EMPTY_ITEM_FORM: ItemForm = {
   operatingPower: '',
   operatingPowerItemId: '',
   operatingPowerBasis: '',
+  operatingPowerGeneralId: '',
 }
 
 // Formular aus einer gespeicherten Position füllen
@@ -117,6 +120,7 @@ export function itemToForm(i: CostItem): ItemForm {
     operatingPower: i.operatingPower ?? '',
     operatingPowerItemId: i.operatingPowerItemId ?? '',
     operatingPowerBasis: i.operatingPowerBasis ?? '',
+    operatingPowerGeneralId: i.operatingPowerGeneralId ?? '',
   }
 }
 
@@ -549,26 +553,47 @@ export function deductionChoices(items: readonly CostItem[]): { value: string; l
 export const deductionChoiceOf = (form: Pick<ItemForm, 'operatingPower' | 'operatingPowerItemId'>): string =>
   form.operatingPower !== 'deduction' ? '' : form.operatingPowerItemId || 'service'
 export function withDeductionChoice(form: ItemForm, value: string): ItemForm {
-  if (value === '') return { ...form, operatingPower: '', operatingPowerItemId: '', operatingPowerBasis: '' }
+  if (value === '') return { ...form, operatingPower: '', operatingPowerItemId: '', operatingPowerGeneralId: '', operatingPowerBasis: '' }
   return { ...form, operatingPower: 'deduction', operatingPowerItemId: value === 'service' ? '' : value }
+}
+
+// Die Stromrechnungen, aus denen ein Abzug gerechnet sein kann (G-K3): Allgemeinstrom mit positivem
+// Betrag und ohne Kennzeichnung im Zeitraum des Abzugs, wie der Server es verlangt.
+export function generalChoices(items: readonly CostItem[], period: string): { value: string; label: string }[] {
+  return [
+    { value: '', label: 'Bitte wählen …' },
+    ...items.filter((c) => c.category === GENERAL_POWER_CATEGORY && c.amountCents > 0 && c.operatingPower === undefined && c.period === period)
+      .map((c) => ({ value: c.id, label: `${c.description} · ${fmtEuro(c.amountCents)}` })),
+  ]
+}
+// Mit der Stromrechnung übernimmt der Abzug ihre Verteilung (G-K3): Schlüssel, Zähler, Wohnung, Anteile,
+// Teilnehmer. So mindert er jeden Anteil im Verhältnis; die Abrechnung meldet eine Abweichung.
+export function withGeneralChoice(form: ItemForm, id: string, items: readonly CostItem[]): ItemForm {
+  const g = items.find((c) => c.id === id)
+  if (!g) return { ...form, operatingPowerGeneralId: '' }
+  const f = itemToForm(g)
+  return { ...form, operatingPowerGeneralId: g.id, key: f.key, meterType: f.meterType, directUnitId: f.directUnitId, customShares: f.customShares, participants: f.participants }
 }
 
 // Der Rumpf trägt die drei Felder bei Heizkosten und beim Allgemeinstrom (Review Focus 3): Das Formular
 // hat sie eingelesen und schickt sie zurück, wie sie sind. Ohne Kennzeichnung keine Grundlage (Bedingung
 // `…_basis_valid`). Bei jeder anderen Kostenart kein Feld; der Server lässt dann stehen, was da ist.
-export type OperatingPowerBody = { operatingPower: 'included' | 'deduction' | null; operatingPowerItemId: string | null; operatingPowerBasis: string | null }
+export type OperatingPowerBody = { operatingPower: 'included' | 'deduction' | null; operatingPowerItemId: string | null; operatingPowerGeneralId: string | null; operatingPowerBasis: string | null }
 export function withOperatingPower<B extends object>(
   body: B,
-  form: Pick<ItemForm, 'category' | 'heatingPart' | 'amount' | 'operatingPower' | 'operatingPowerItemId' | 'operatingPowerBasis'>,
+  form: Pick<ItemForm, 'category' | 'heatingPart' | 'amount' | 'operatingPower' | 'operatingPowerItemId' | 'operatingPowerGeneralId' | 'operatingPowerBasis'>,
 ): B & Partial<OperatingPowerBody> {
   const basis = (marked: boolean) => (marked && form.operatingPowerBasis.trim() !== '' ? form.operatingPowerBasis.trim() : null)
   if (form.category === HEATING_CATEGORY) {
     const included = showsOperatingPower(form) && form.operatingPower === 'included'
-    return { ...body, operatingPower: included ? 'included' : null, operatingPowerItemId: null, operatingPowerBasis: basis(included) }
+    return { ...body, operatingPower: included ? 'included' : null, operatingPowerItemId: null, operatingPowerGeneralId: null, operatingPowerBasis: basis(included) }
   }
   if (form.category === GENERAL_POWER_CATEGORY) {
     const deduction = showsDeductionLink(form) && form.operatingPower === 'deduction'
-    return { ...body, operatingPower: deduction ? 'deduction' : null, operatingPowerItemId: deduction && form.operatingPowerItemId ? form.operatingPowerItemId : null, operatingPowerBasis: basis(deduction) }
+    return {
+      ...body, operatingPower: deduction ? 'deduction' : null, operatingPowerItemId: deduction && form.operatingPowerItemId ? form.operatingPowerItemId : null,
+      operatingPowerGeneralId: deduction && form.operatingPowerGeneralId ? form.operatingPowerGeneralId : null, operatingPowerBasis: basis(deduction),
+    }
   }
   return body
 }

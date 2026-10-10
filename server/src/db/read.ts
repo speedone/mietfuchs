@@ -270,6 +270,7 @@ export async function readCostItems(db: Executor): Promise<CostItem[]> {
       ...(c.operatingPower !== null ? { operatingPower: c.operatingPower } : {}),
       ...(c.operatingPowerItemId !== null ? { operatingPowerItemId: c.operatingPowerItemId } : {}),
       ...(c.operatingPowerBasis !== null ? { operatingPowerBasis: c.operatingPowerBasis } : {}),
+      ...(c.operatingPowerGeneralId !== null ? { operatingPowerGeneralId: c.operatingPowerGeneralId } : {}),
     }
   })
 }

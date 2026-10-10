@@ -33,7 +33,7 @@ export function fakeBooking(start: { items: CostItem[]; units: Unit[]; meters?: 
       if (w.kind === 'createItem') {
         // Die Felder aus #208 stehen im Rumpf als `null`, an der Position fehlen sie dann.
         // Betriebsstrom (Heizung PR 15) setzt nur das Kostenformular; die Belegbuchung schickt ihn nicht.
-        const { invoiceFile, serviceFrom, serviceTo, taxYear, heatingPart, heatingTarget, operatingPower: _op, operatingPowerItemId: _opItem, operatingPowerBasis: _opBasis, ...rest } = w.body
+        const { invoiceFile, serviceFrom, serviceTo, taxYear, heatingPart, heatingTarget, operatingPower: _op, operatingPowerItemId: _opItem, operatingPowerBasis: _opBasis, operatingPowerGeneralId: _opGeneral, ...rest } = w.body
         items = [...items, {
           ...rest, id: w.id, ...(invoiceFile ? { invoiceFile } : {}),
           ...(serviceFrom !== null && serviceTo !== null ? { serviceFrom, serviceTo } : {}),

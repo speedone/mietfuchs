@@ -835,7 +835,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
               <input value={form.labor35a} onChange={(e) => setForm({ ...form, labor35a: e.target.value })} placeholder="optional" />
             </label>
             {/* Betriebsstrom (Heizung PR 15): sichtbar ohne Aufklappen, wer ihn braucht. */}
-            <OperatingPowerFields form={form} items={items} onChange={setForm} />
+            <OperatingPowerFields form={form} items={items} periodKey={key} onChange={setForm} />
             <details className="extra-details" open={!!(selfPlant || form.serviceFrom || form.serviceTo || form.taxYear || form.heatingPart !== '' || (heatTax ? heatTax.show : showsTaxYear(period, needsTaxYear)))}>
               <summary>Weitere Angaben — Leistungszeitraum{(heatTax ? heatTax.show : showsTaxYear(period, needsTaxYear)) ? ', Jahr der Zahlung' : ''}{form.category === HEATING_CATEGORY ? ', Brennstoff/Energie' : ''} (optional)</summary>
               <CostPeriodFields form={form} onChange={setForm} showTaxYear={heatTax ? heatTax.show : showsTaxYear(period, needsTaxYear)} years={heatTax?.show ? heatTax.years : taxYearOptions(year)} />

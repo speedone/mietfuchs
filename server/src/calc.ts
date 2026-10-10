@@ -417,6 +417,8 @@ const noticeKinds = {
   'heating.estimate-below-measured': { level: 'hint', title: 'Schätzung unter dem abgelesenen Verbrauch', rule: 'heating-estimate', terms: ['heatingEstimate'] },
   'heating.estimate-same-day': { level: 'warning', title: 'Schätzung neben zwei Ständen am selben Tag', rule: 'heating-estimate', terms: ['heatingEstimate'] },
   // Heizung PR 15 (#212): Betriebsstrom, der auch im Allgemeinstrom steckt, ohne Abzug in gleicher Höhe.
+  // Durchsicht von #252, G-K3: ein Abzug, der anders verteilt ist als seine Stromrechnung.
+  'heating.operating-power-key': { level: 'warning', title: 'Abzug anders verteilt als die Stromrechnung', terms: ['operatingPower', 'allocationKey'] },
   'heating.operating-power-double': { level: 'warning', title: 'Betriebsstrom und Abzug beim Allgemeinstrom passen nicht zusammen', terms: ['operatingPower', 'heatingCostOrdinance'] },
   // Heizung PR 17 (Entwurf 4.5, 10.1): ein Rechtswert, den der Vermieter eingetragen hat.
   'law.value-overridden': { level: 'hint', title: 'Selbst eingetragener Rechtswert', terms: ['legalBasis'] },
@@ -6397,6 +6399,19 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // abgeschlossenen Abrechnung zählt nur mit dem, was im eingefrorenen Stand steht (P-W3, R2-W2).
   for (const f of operatingPowerFindings(items, snapshot.operatingPowerDeductions ?? [])) {
     warn('heating.operating-power-double', operatingPowerText(f, fmtCents), itemSubject({ id: f.itemId }))
+  }
+  // Durchsicht von #252, G-K3: Ein Abzug mindert seine Stromrechnung nur dann im Verhältnis, wenn er
+  // verteilt ist wie sie (Schlüssel, Zähler, Wohnung, Anteile, Teilnehmer; dieselbe Regel wie beim
+  // gemerkten Schlüssel, shared/allocation.ts). Sonst verschieben sich die Anteile der Mieter.
+  for (const d of items) {
+    if (d.operatingPower !== 'deduction' || !d.operatingPowerGeneralId) continue
+    const g = items.find((c) => c.id === d.operatingPowerGeneralId)
+    if (!g || sameAllocation(allocationOf(d), allocationOf(g))) continue
+    const how = d.key === g.key ? `beide nach „${KEY_LABELS[d.key]}“, aber mit anderen Angaben (Teilnehmer, Anteile, Zähler oder Wohnung)` : `der Abzug nach „${KEY_LABELS[d.key]}“, die Rechnung nach „${KEY_LABELS[g.key]}“`
+    warn('heating.operating-power-key',
+      `„${d.description}“ (${fmtCents(-d.amountCents)}) ist anders verteilt als die Stromrechnung „${g.description}“, aus der er gerechnet wurde: ${how}. ` +
+      'Damit verschieben sich die Anteile der Mieter am Allgemeinstrom. Verteilen Sie den Abzug im Kostenformular wie die Rechnung.',
+      itemSubject(d))
   }
 
   // Die Höchstdauer hat P gebildet (shared/period.ts); eingefroren wird sie hier.

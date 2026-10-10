@@ -3,11 +3,11 @@
 // (P-W2); an beiden die Grundlage der Schätzung (P-W1). Die Norm steht dabei (P-K1). Die Energie der
 // Anlage spielt hier keine Rolle (R2-W1): Auch bei einer Wärmepumpe sind Umwälzpumpen und Regelung
 // Betriebsstrom.
-import { deductionChoiceOf, deductionChoices, OPERATING_POWER_OPTIONS, showsDeductionLink, showsOperatingPower, withDeductionChoice, type ItemForm } from '../costForm'
+import { deductionChoiceOf, deductionChoices, generalChoices, OPERATING_POWER_OPTIONS, showsDeductionLink, showsOperatingPower, withDeductionChoice, withGeneralChoice, type ItemForm } from '../costForm'
 import Term from './Term'
 import type { CostItem } from '../types'
 
-export default function OperatingPowerFields({ form, items, onChange }: { form: ItemForm; items: readonly CostItem[]; onChange: (next: ItemForm) => void }) {
+export default function OperatingPowerFields({ form, items, periodKey, onChange }: { form: ItemForm; items: readonly CostItem[]; periodKey: string; onChange: (next: ItemForm) => void }) {
   const heating = showsOperatingPower(form)
   const deduction = showsDeductionLink(form)
   if (!heating && !deduction) return null
@@ -32,6 +32,16 @@ export default function OperatingPowerFields({ form, items, onChange }: { form: 
           <select value={deductionChoiceOf(form)} onChange={(e) => onChange(withDeductionChoice(form, e.target.value))}>
             {deductionChoices(items).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
+        </label>
+      )}
+      {/* Durchsicht von #252, G-K3: Der Abzug nennt die Rechnung, aus der er stammt, und übernimmt ihre Verteilung. */}
+      {deduction && form.operatingPower === 'deduction' && (
+        <label className="field">
+          <span>Stromrechnung, aus der der Abzug stammt</span>
+          <select value={form.operatingPowerGeneralId} onChange={(e) => onChange(withGeneralChoice(form, e.target.value, items))}>
+            {generalChoices(items, periodKey).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+          <small className="muted">Der Abzug wird verteilt wie diese Rechnung, damit er jeden Anteil im selben Verhältnis mindert.</small>
         </label>
       )}
       {marked && (

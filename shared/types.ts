@@ -295,6 +295,9 @@ export type CostItem = {
   operatingPower?: OperatingPower
   operatingPowerItemId?: string
   operatingPowerBasis?: string
+  // Nur am Abzug: die Stromrechnung („Beleuchtung/Allgemeinstrom“), aus der er gerechnet wurde
+  // (Durchsicht von #252, G-K3). Sie lässt sich nicht löschen, solange Abzüge auf sie zeigen.
+  operatingPowerGeneralId?: string
 }
 
 // Ein Teil einer aufgeteilten Rechnung in der Vorschau (#208, Entwurf 3.4). `needsTaxYear`: Der

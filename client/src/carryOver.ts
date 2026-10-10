@@ -208,6 +208,7 @@ export function carryOverForm(row: CarryRow): ItemForm {
     operatingPower: row.source.operatingPower === 'included' ? 'included' : '',
     operatingPowerItemId: '',
     operatingPowerBasis: '',
+    operatingPowerGeneralId: '',
   }
 }
 

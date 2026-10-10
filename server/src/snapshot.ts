@@ -104,6 +104,8 @@ export type SnapshotCostItem = Pick<
   | 'operatingPower'
   | 'operatingPowerItemId'
   | 'operatingPowerBasis'
+  // Die Stromrechnung eines Abzugs (Durchsicht von #252, G-K3): für die Hinweise zu Verteilung und Summe.
+  | 'operatingPowerGeneralId'
 >
 
 // Gelesen werden Kennung, Wohnung (null = Hauptzähler) und Zählertyp, dazu die Angaben zur

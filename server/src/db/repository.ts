@@ -35,7 +35,7 @@
 import { beforeBeginText } from './selfLine.ts'
 import { selfActive, selfFromOf } from '../heating.ts'
 import { captureOf, coversPeriod, hotWaterOf } from '../hca.ts'
-import { and, count, desc, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm'
+import { and, count, desc, eq, inArray, isNotNull, ne, or, sql } from 'drizzle-orm'
 import type { BillingPeriod, CostItem, ExternalBasis, HeatingPlant, HeatingPrepaymentOverride, InterimGapStatus, Meter, MeterType, Payment, PeriodKey, PeriodRules, PersonEntry, PrepaymentEntry, Property, Reading, RentEntry, SplitPreviewPart, Tenancy, Unit, UnitDependents } from '../../../shared/types.ts'
 import { CALENDAR_RULES, calendarPeriod, paymentYear, formatDayRange, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, spansTwoYears, startYearOf } from '../../../shared/period.ts'
 import { heatingPeriodsEndingIn, isObjectPeriod, plantRules, plantSpan, servesUnit, spanOf } from '../../../shared/heatingPeriod.ts'
@@ -389,6 +389,7 @@ function mergeCostItem(current: CostItem, body: unknown): CostItem {
     operatingPower: merged(body, 'operatingPower', current.operatingPower, (v) => oneOfOrUndefined(OPERATING_POWER, v)),
     operatingPowerItemId: merged(body, 'operatingPowerItemId', current.operatingPowerItemId, (v) => (typeof v === 'string' && v !== '' ? v : undefined)),
     operatingPowerBasis: merged(body, 'operatingPowerBasis', current.operatingPowerBasis, (v) => (typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined)),
+    operatingPowerGeneralId: merged(body, 'operatingPowerGeneralId', current.operatingPowerGeneralId, (v) => (typeof v === 'string' && v !== '' ? v : undefined)),
   }
 }
 
@@ -1197,6 +1198,51 @@ async function guardOperatingPower(db: Executor, before: CostItem | null, after:
   if (after.operatingPowerBasis !== undefined && after.operatingPower === undefined) {
     throw new HeatingError(400, 'Eine Grundlage der Schätzung gibt es nur bei Betriebsstrom oder seinem Abzug beim Allgemeinstrom.')
   }
+  await guardDeductionSource(db, after)
+  await guardGeneralWithDeductions(db, before, after)
+}
+
+// Durchsicht von #252, G-K3: Ein Abzug zeigt auf die Stromrechnung, aus der er gerechnet wurde, im selben
+// Objekt und Zeitraum. Ohne diesen Verweis bliebe ein Abzug nach dem Löschen oder Umstellen der Rechnung
+// still stehen, und der Allgemeinstrom wäre netto negativ oder anders verteilt als die Rechnung.
+async function guardDeductionSource(db: Executor, after: CostItem): Promise<void> {
+  if (after.operatingPowerGeneralId !== undefined && after.operatingPower !== 'deduction') {
+    throw new HeatingError(400, 'Nur ein Abzug des Betriebsstroms zeigt auf eine Stromrechnung.')
+  }
+  if (after.operatingPower !== 'deduction') return
+  if (after.operatingPowerGeneralId === undefined) {
+    throw new HeatingError(400, `Bitte wählen Sie zu „${after.description}“ die Stromrechnung des Allgemeinstroms, aus der der Abzug gerechnet wurde.`)
+  }
+  const [g] = await db
+    .select({ propertyId: costItems.propertyId, period: costItems.period, category: costItems.category, amountCents: costItems.amountCents, operatingPower: costItems.operatingPower, description: costItems.description })
+    .from(costItems).where(eq(costItems.id, after.operatingPowerGeneralId))
+  if (!g) throw new HeatingError(400, 'Die Stromrechnung, aus der dieser Abzug gerechnet wurde, gibt es nicht (mehr).')
+  if (g.propertyId !== after.propertyId) {
+    throw new CrossPropertyError(`Der Abzug „${after.description}“ gehört zu einem anderen Objekt als die Stromrechnung „${g.description}“.`)
+  }
+  if (g.category !== GENERAL_POWER_CATEGORY || !(g.amountCents > 0) || g.operatingPower !== null) {
+    throw new HeatingError(400, `„${g.description}“ ist keine Stromrechnung des Allgemeinstroms mit positivem Betrag; ein Abzug kann nicht aus ihr gerechnet sein.`)
+  }
+  if (g.period !== after.period) {
+    throw new HeatingError(400, `Ein Abzug steht im selben Zeitraum wie seine Stromrechnung „${g.description}“.`)
+  }
+}
+
+// Die Abzüge, die aus einer Stromrechnung gerechnet wurden (G-K3).
+async function deductionsFrom(db: Executor, generalId: string): Promise<string[]> {
+  return (await db.select({ description: costItems.description }).from(costItems).where(eq(costItems.operatingPowerGeneralId, generalId))).map((a) => `„${a.description}“`)
+}
+
+// Eine Stromrechnung mit Abzügen bleibt Stromrechnung: Kostenart, positiver Betrag, keine Kennzeichnung,
+// derselbe Zeitraum (G-K3).
+async function guardGeneralWithDeductions(db: Executor, before: CostItem | null, after: CostItem): Promise<void> {
+  if (!before || before.category !== GENERAL_POWER_CATEGORY || before.operatingPower !== undefined) return
+  const stillGeneral = after.category === GENERAL_POWER_CATEGORY && after.amountCents > 0 && after.operatingPower === undefined && after.period === before.period
+  if (stillGeneral) return
+  const abzuege = await deductionsFrom(db, after.id)
+  if (abzuege.length > 0) {
+    throw new HeatingError(400, `Aus „${before.description}“ ist der Abzug ${abzuege.join(', ')} gerechnet. Kostenart, Zeitraum und positiver Betrag der Stromrechnung bleiben, solange er besteht; löschen oder ändern Sie zuerst den Abzug.`)
+  }
 }
 
 // Eine Wohnung darf das Objekt wechseln, solange nichts Objektgebundenes an ihr hängt. Ihr
@@ -1679,7 +1725,7 @@ const costItemRow = (c: CostItem) => ({
   heatingPlantId: c.heatingPlantId ?? null,
   fuelDeliveryId: c.fuelDeliveryId ?? null,
   operatingPower: orNull(c.operatingPower), operatingPowerItemId: orNull(c.operatingPowerItemId),
-  operatingPowerBasis: orNull(c.operatingPowerBasis),
+  operatingPowerBasis: orNull(c.operatingPowerBasis), operatingPowerGeneralId: orNull(c.operatingPowerGeneralId),
 })
 const meterRow = (m: Meter) => ({
   id: m.id, propertyId: m.propertyId, name: m.name, unitId: m.unitId, type: m.type, meterNumber: orNull(m.meterNumber), unit: m.unit,
@@ -1835,8 +1881,10 @@ const costItemCollection: Collection<CostItem> = {
     await writeCostItemShares(db, entity)
   },
   remove: async (db, id) => {
-    // Heizung PR 15: ein Satz statt des Fremdschlüssels (Review Focus 2).
-    const abzuege = await db.select({ description: costItems.description }).from(costItems).where(eq(costItems.operatingPowerItemId, id))
+    // Heizung PR 15: ein Satz statt des Fremdschlüssels (Review Focus 2), für den Betriebsstrom wie für die
+    // Stromrechnung, aus der ein Abzug gerechnet wurde (Durchsicht von #252, G-K3).
+    const abzuege = await db.select({ description: costItems.description }).from(costItems)
+      .where(or(eq(costItems.operatingPowerItemId, id), eq(costItems.operatingPowerGeneralId, id)))
     if (abzuege.length > 0) {
       throw new HeatingError(400, `Zu dieser Position gehört ${abzuege.length === 1 ? 'der Abzug' : 'die Abzüge'} ${abzuege.map((a) => `„${a.description}“`).join(', ')} beim Allgemeinstrom. Löschen Sie zuerst den Abzug, damit der Allgemeinstrom nicht still gemindert bleibt.`)
     }

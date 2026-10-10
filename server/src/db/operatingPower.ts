@@ -134,7 +134,7 @@ export async function bookOperatingPower(db: Database, plantId: string, body: un
     // Betrag gehört. Meldet der Vermieter ihn nicht, trägt er ihn selbst (zulässig, V ZR 166/15 Rn. 15).
     description: `Abzug Betriebsstrom Heizung (${how})${plant.method === 'service' ? ', an Messdienst gemeldet' : ''}`,
     amountCents: -share.cents, ...distributionOf(general),
-    operatingPower: 'deduction', operatingPowerBasis, ...(heatingId ? { operatingPowerItemId: heatingId } : {}),
+    operatingPower: 'deduction', operatingPowerBasis, operatingPowerGeneralId: general.id, ...(heatingId ? { operatingPowerItemId: heatingId } : {}),
   }
   await db.transaction(async (tx) => {
     if (heatingBody && heatingId) await insertCostItemIn(tx, heatingId, heatingBody)
