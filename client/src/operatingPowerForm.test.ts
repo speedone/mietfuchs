@@ -1,7 +1,7 @@
 // Die Karte „Betriebsstrom“ (Heizung PR 15, #212) ohne DOM: Auswahl der Stromrechnung, Vorschau und Rumpf.
 import { expect, test } from 'vitest'
 import { emptyOperatingPowerForm, generalItemOptions, operatingPowerPreview, operatingPowerRequest, type OperatingPowerForm } from './operatingPowerForm'
-import { periodKey } from '../../shared/period.ts'
+import { CALENDAR_RULES, periodKey } from '../../shared/period.ts'
 import type { CostItem } from './types'
 
 const strom: CostItem = { id: 'strom', propertyId: 'o', period: periodKey('2025-01'), category: 'Beleuchtung/Allgemeinstrom', description: 'Hausstrom 2025', amountCents: 105000, key: 'area' }
@@ -14,10 +14,21 @@ const ausgefuellt = (over: Partial<OperatingPowerForm> = {}): OperatingPowerForm
 test('Auswahl: nur Allgemeinstrom mit positivem Betrag und ohne Kennzeichnung, mit leerem ersten Eintrag', () => {
   const abzug: CostItem = { ...strom, id: 'ab', amountCents: -100, operatingPower: 'deduction' }
   const grund: CostItem = { ...strom, id: 'g', category: 'Grundsteuer' }
-  expect(generalItemOptions([strom, abzug, grund])).toEqual([
+  expect(generalItemOptions([strom, abzug, grund], { from: '2025-01-01', to: '2025-12-31' }, CALENDAR_RULES)).toEqual([
     { value: '', label: 'Bitte wählen …' },
-    { value: 'strom', label: 'Hausstrom 2025 · 1.050,00\u00a0€' },
+    { value: 'strom', label: 'Hausstrom 2025 · 2025 · 1.050,00\u00a0€' },
   ])
+})
+
+// Durchsicht von #252, G-K1 und N1: nur Stromrechnungen, deren Zeitraum sich mit der Heizperiode
+// überschneidet, beschriftet mit ihrem Zeitraum.
+test('Auswahl: nur Stromrechnungen, die die Heizperiode berühren; bei Heizperiode Mai–April beide Kalenderjahre', () => {
+  const alt: CostItem = { ...strom, id: 'alt', period: periodKey('2024-01'), description: 'Hausstrom' }
+  const neu: CostItem = { ...strom, id: 'neu', period: periodKey('2026-01'), description: 'Hausstrom' }
+  const kalender = generalItemOptions([alt, strom, neu], { from: '2025-01-01', to: '2025-12-31' }, CALENDAR_RULES).map((o) => o.value)
+  expect(kalender).toEqual(['', 'strom'])
+  const maiApril = generalItemOptions([alt, strom, neu], { from: '2025-05-01', to: '2026-04-30' }, CALENDAR_RULES).map((o) => o.label)
+  expect(maiApril).toEqual(['Bitte wählen …', 'Hausstrom 2025 · 2025 · 1.050,00\u00a0€', 'Hausstrom · 2026 · 1.050,00\u00a0€'])
 })
 
 test('Vorschau: 147,84 € mit Rechenweg; ohne Stromrechnung ein Satz', () => {

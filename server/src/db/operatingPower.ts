@@ -11,6 +11,7 @@
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 import { basisOf, euro, GENERAL_POWER_CATEGORY, operatingPowerRefusal, operatingPowerShare, ownEstimateShare } from '../../../shared/operatingPower.ts'
 import type { CostItem, OperatingPowerDevice } from '../../../shared/types.ts'
+import { periodLabel, periodOfKey, spansTwoYears, startYearOf } from '../../../shared/period.ts'
 import type { Database } from './client.ts'
 import { heatingPeriodClosed, heatingPeriodOf, plantContext } from './heatingPeriodContext.ts'
 import { readCostItems } from './read.ts'
@@ -77,6 +78,17 @@ export async function bookOperatingPower(db: Database, plantId: string, body: un
   if (await itemPeriodClosed(db, general)) {
     throw new HeatingError(409, `Der Allgemeinstrom „${general.description}“ steht in einer abgeschlossenen Abrechnung; ein Abzug dort käme bei den Mietern nicht mehr an. Öffnen Sie diese Abrechnung wieder, bevor Sie den Betriebsstrom erfassen, oder wählen Sie die Stromrechnung eines offenen Zeitraums.`)
   }
+  // Durchsicht von #252, G-K1 und N1: Der Betriebsstrom einer Heizperiode steckt nur in einer
+  // Stromrechnung, deren Zeitraum sich mit ihr überschneidet; ein Abzug aus einer anderen käme bei den
+  // Mietern eines anderen Zeitraums an.
+  const generalPeriod = periodOfKey(ctx.objectRules, general.period)
+  if (!generalPeriod || generalPeriod.to < h.from || generalPeriod.from > h.to) {
+    throw new HeatingError(400, `Die Stromrechnung „${general.description}“${generalPeriod ? ` (${periodLabel(generalPeriod)})` : ''} liegt nicht in der Heizperiode ${periodLabel(h)}; den Betriebsstrom dieser Heizperiode enthält sie nicht. Wählen Sie die Stromrechnung, deren Zeitraum sich mit der Heizperiode überschneidet.`)
+  }
+  // G-K1, G-K2: Betriebsstrom und Abzug sind eine Umbuchung aus der Stromrechnung und zählen in der
+  // Steuer zu deren Jahr. Angegeben wird es nur, wo der Zeitraum zwei Kalenderjahre berührt; sonst ist es
+  // das Jahr des Zeitraums (repository.ts).
+  const taxYear = general.taxYear ?? startYearOf(general.period)
   if (general.key === 'amounts') {
     throw new HeatingError(400, 'Der Allgemeinstrom ist nach Einzelbeträgen verteilt; einen Abzug in derselben Verteilung gibt es nicht. Ziehen Sie den Betriebsstrom bitte in den Beträgen selbst ab.')
   }
@@ -119,6 +131,7 @@ export async function bookOperatingPower(db: Database, plantId: string, body: un
     const base = {
       propertyId: plant.propertyId, period: h.key, category: HEATING_CATEGORY, description: `Betriebsstrom Heizung (${how})`,
       amountCents: share.cents, heatingPlantId: plant.id, heatingPart: 'operating', operatingPower: 'included', operatingPowerBasis,
+      ...(spansTwoYears(h) ? { taxYear } : {}),
     }
     if (plant.method === 'self') {
       heatingBody = { ...base, key: 'heatingSystem', heatingTarget: 'both' }
@@ -147,7 +160,7 @@ export async function bookOperatingPower(db: Database, plantId: string, body: un
     // P-K9: Beim Messdienst hat der Abzug kein Gegenstück in Mietfuchs; die Beschreibung sagt, wohin der
     // Betrag gehört. Meldet der Vermieter ihn nicht, trägt er ihn selbst (zulässig, V ZR 166/15 Rn. 15).
     description: `Abzug Betriebsstrom Heizung (${how})${plant.method === 'service' ? ', an Messdienst gemeldet' : ''}`,
-    amountCents: -share.cents, ...distributionOf(general),
+    amountCents: -share.cents, ...distributionOf(general), ...(spansTwoYears(generalPeriod) ? { taxYear } : {}),
     operatingPower: 'deduction', operatingPowerBasis, operatingPowerGeneralId: general.id, ...(heatingId ? { operatingPowerItemId: heatingId } : {}),
   }
   await db.transaction(async (tx) => {
