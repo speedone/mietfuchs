@@ -337,3 +337,10 @@ test('Lexikon: Betriebsstrom nennt die Angabe an der Heizanlage und was der Hinw
   assert.ok(t.needed.includes('Ein Zwischenzähler hinter dem Stromzähler des Hauses ist kein eigener Stromvertrag: Sein Strom steckt in der Stromrechnung des Hauses und ist beim Allgemeinstrom abzuziehen; der Zwischenzähler erspart nur das Schätzen.'))
   assert.doesNotMatch(t.needed, /Der Hinweis schweigt, sobald/)
 })
+
+// #268, Durchsicht S4: Bei Eigennutzung ist der private Teil keine Werbungskosten (§ 12 Nr. 1 EStG); der Satz sagt deshalb „soweit“.
+test('Lexikon Betriebsstrom: die Stromrechnung zählt zu den Werbungskosten, soweit Sie das Haus vermieten', () => {
+  const text = GLOSSARY.operatingPower.needed
+  assert.ok(text.includes('und sie gehört zu Ihren Werbungskosten, soweit Sie das Haus vermieten (§ 9 Abs. 1 Satz 1 EStG).'), text)
+  assert.doesNotMatch(text, /ganz zu Ihren Werbungskosten/)
+})

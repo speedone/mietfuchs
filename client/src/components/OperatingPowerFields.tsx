@@ -46,7 +46,8 @@ export default function OperatingPowerFields({ form, items, periodKey, plantEner
           <select value={deductionChoiceOf(form)} onChange={(e) => onChange(withDeductionChoice(form, e.target.value))}>
             {deductionChoices(items, { service }).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
-          {!service && (
+          {/* Durchsicht S3: nur bei der Antwort „trage ihn selbst“, für die der Satz stimmt. */}
+          {!service && deductionChoiceOf(form) === 'service' && (
             <small className="muted">
               Die Mieter bekommen den Betrag beim Allgemeinstrom gutgeschrieben, und der Betriebsstrom steht nicht in den Heizkosten. In der
               Steuerübersicht zählt Mietfuchs ihn trotzdem zu Ihren Werbungskosten, denn Sie haben die ganze Stromrechnung bezahlt.
