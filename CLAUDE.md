@@ -2199,6 +2199,41 @@ die ganze fachliche Komplexität:
   gilt (§ 12 Abs. 3 Satz 2). Abgefragt wird das Register erst, wenn der Hinweis sonst käme, damit es nicht
   im Rechtsstand jeder Abrechnung mit Wärmepumpe steht. Das Herausrechnen und die Schätzung sind beim
   Strom zur Wärmeerzeugung als Auslegung gekennzeichnet; entschieden ist beides für den Betriebsstrom.
+- **Wärmelieferung, Contracting** (#213, Heizung PR 16, [shared/heatDelivery.ts](shared/heatDelivery.ts),
+  [server/src/heatDelivery.ts](server/src/heatDelivery.ts)): `heating_plants.contracting` (Schritte 0043/0044)
+  an jeder zentralen Anlage außer Fernwärme, **auch an der Wärmepumpe** (Prüfung R-M4); `energy` ist dann der
+  Brennstoff des Kessels. Dazu `heat_delivery_since`, `previous_supply` (`landlord` | `tenant`) und
+  `switch_announced_on`, nur bei Fernwärme oder Contracting. **Eine Naht:** `asBilledPlant` in `snapshotFor` und
+  `heatingSnapshotFor` gibt der Berechnung bei Contracting `energy = 'districtHeating'` und daneben
+  `fuelEnergy`; damit gelten die Regeln der Fernwärme ohne weitere Zeile (kein Pflichtanteil nach § 7 Abs. 1
+  Satz 2 wegen § 7 Abs. 3, ÷ 1,15 nach § 9 Abs. 2 Satz 6 Nr. 2, kein Vorrat, Lieferungen als Wärmerechnungen).
+  `asBilledPlant` ist idempotent (calc.ts baut Schnappschüsse auch aus Schnappschüssen). Schreibwege, Oberfläche,
+  Betriebsstrom und das Blatt für den Messdienst fragen `billingEnergy`; der Wächter
+  [heat-delivery-guard.test.ts](server/test/heat-delivery-guard.test.ts) verbietet dort `plant.energy` in
+  Entscheidungen (Vorrat, Heizwerttabelle, Pflichtanteil, CO₂-Felder, Betriebsstrom), mit benannten Ausnahmen.
+  **Ausnahmen der Naht:** § 2 Abs. 4 Satz 2 CO2KostAufG hängt an der gespeicherten Energie; ob CO₂ aufzuteilen
+  ist, sagt `co2Required` nach dem Brennstoff des Lieferanten (`NO_CO2_FUELS`: Pellets, Holz, Strom, Wärmepumpe;
+  „Sonstiges“ bleibt pflichtig, Auslegung); die Informationen nach § 6a nennen den Brennstoff (`generatorEnergy`)
+  und verlangen Werte eines Wärmenetzes nur bei Fernwärme ohne Merkmal (§ 6a Abs. 3 Satz 1 Nr. 1 Buchst. a,
+  Prüfung C-M2); bei Contracting mit Wärmepumpe sperrt dhw.ts die Formeln (`heating.dhw-share-invalid`), denn
+  offen ist, ob Satz 6 Nr. 2 oder Nr. 3 gilt; gemessen rechnet sie gegen die gelieferte Wärme. Die übrigen
+  Regeln der Wärmepumpe (§ 11 Abs. 1 Nr. 3 a. F., § 12 Abs. 3) wendet die Berechnung bei Contracting nicht an.
+  Nach dem Betriebsstrom fragt Mietfuchs bei Contracting wie bei Fernwärme nicht (Prüfung C-M3). **Umschalten**
+  des Merkmals an einer Anlage mit Lieferungen, Vorrat oder CO₂-Angaben ist gesperrt (409, Weg über den
+  Kesseltausch), denn die Abrechnung hängt am Merkmal und nicht an einem Datum; der Kesseltausch nimmt Merkmal
+  und Angaben an (`SWAP_FIELDS`) und vergleicht nach der Energie der Abrechnung, Gas → Gas mit Contracting ist
+  also ein Tausch (Prüfung C-M1); die Oberfläche schlägt den Tag des Tauschs als Tag der Umstellung vor.
+  `heating.contracting` (hint, färbt das Cockpit nicht, führt zur Anlage) nennt für Mieter, deren Mietvertrag
+  vor der Umstellung geschlossen wurde (`contractDate`, sonst Mietbeginn) und am Tag noch lief, ohne Pauschale
+  oder Inklusivmiete bei der Heizung: die beiden Voraussetzungen des § 556c Abs. 1 BGB, die Ankündigung als
+  eigene Pflicht (Abs. 2) mit § 11 Abs. 3 WärmeLV bei Zugang ab dem Tag `noticeMonths` Monate vorher
+  (Auslegung entsprechend §§ 187, 188 BGB), den Weg über § 5 WärmeLV; bei vorheriger Eigenversorgung der Mieter
+  BGH VIII ZR 46/25 und 47/25 (Volltext geprüft am 11.10.2026: § 556c gilt nicht; im entschiedenen Fall
+  jedenfalls § 7 Abs. 2, § 8 Abs. 2 HeizkostenV, der volle Umfang offen); vor dem 01.07.2013 einen eigenen
+  Text (VIII ZR 54/04). Der Wortlaut folgt der rechtlichen Gegenprüfung. Die Zahlen kommen aus
+  `bgb.heat-delivery-switch` (ab 01.07.2013, `eventDate`); kein Eintrag im Regelverzeichnis, damit § 556c
+  nicht im Rechtsstand jeder Abrechnung steht. Nicht abgebildet: die Lieferung mit unmittelbarer Abrechnung
+  des Lieferanten (§ 1 Abs. 3, § 11 Abs. 1 Nr. 4 HeizkostenV) und Contracting bei Etagenheizungen.
 - **Überschneidende Mietverhältnisse einer Wohnung** (#204): Wann sich zwei überschneiden (ein
   gemeinsamer Tag, inklusive Grenzen), steht einmal in [shared/tenancyOverlap.ts](shared/tenancyOverlap.ts);
   Server und Oberfläche fragen dieselbe Funktion. Gerechnet wird wie erfasst, jedes mit vollem
