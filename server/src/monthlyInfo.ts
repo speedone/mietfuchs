@@ -15,7 +15,7 @@
 // Die Geräte sind die der Linie (Kesseltausch): Die Information gilt dem Nutzer, nicht dem Kessel.
 import type { HeatingPlant, MonthlyInfoAmounts, MonthlyInfoGap, MonthlyInfoMonth, MonthlyInfoRow, MonthlyInfoUser } from '../../shared/types.ts'
 import { hkvDhwVolumeFormula, hkvMonthlyInfo } from '../../shared/law/heizkostenv.ts'
-import { dayBefore, law, type LawLog } from '../../shared/law/register.ts'
+import { dayAfter, dayBefore, law, type LawLog } from '../../shared/law/register.ts'
 import { addMonths, monthBounds, monthsBetween } from '../../shared/monthlyInfo.ts'
 import { plantDevices, type RemoteMeter, type RemotePlant, type RemoteUnit } from './remoteReading.ts'
 import type { SnapshotReading } from './snapshot.ts'
@@ -87,22 +87,71 @@ type Measured = MonthlyInfoAmounts & { gaps: MonthlyInfoGap[] }
 
 // Was die Geräte einer Wohnung zwischen zwei Tagesenden gemessen haben. Fehlt einem Gerät einer Größe der
 // Wert, fehlt die ganze Größe: Ein halber Verbrauch sähe aus wie ein ganzer.
-function measure(devices: readonly RemoteMeter[], readings: readonly SnapshotReading[], startDay: string, endDay: string, dhw: () => { factor: number; gap: boolean }): Measured {
+//
+// Gemessen wird mit den Geräten, die in diesem Fenster messen, nicht mit denen des Monats, für den die
+// Information gilt (Durchsicht S1): Für den Vormonat und den Vorjahresmonat zählt der Zähler, der damals hing.
+// Ein Wechsel auf einen neuen Zähler (kein `replacement` am selben Zähler) ist eine Kette (Durchsicht M1): Der
+// alte misst bis zu seiner letzten Ablesung, der neue ab seiner ersten, am selben Tag oder am Folgetag; fehlt
+// dazwischen ein Tag, ist es eine Lücke. Ein Gerät, das erst am Ende des Fensters abgelesen wird, misst darin
+// nichts, ebenso eines, das am Anfang zum letzten Mal abgelesen und danach ersetzt ist.
+function measure(unitDevices: readonly RemoteMeter[], readings: readonly SnapshotReading[], startDay: string, endDay: string, dhw: () => { factor: number; gap: boolean }): Measured {
   const gaps = new Set<MonthlyInfoGap>()
+  const datesOf = (id: string): string[] => readings.filter((x) => x.meterId === id && x.date >= startDay && x.date <= endDay).map((x) => x.date).sort()
+  const devices = unitDevices.filter((d) => !(d.installedOn && d.installedOn > endDay) && (datesOf(d.id).length > 0 || inUseAt(d, unitDevices, readings, endDay)))
   const sumOf = (list: readonly RemoteMeter[]): number | null => {
     if (list.length === 0) return null
     let sum = 0
     let ok = true
-    for (const d of list) {
-      const v = exactConsumption(readings.filter((x) => x.meterId === d.id), startDay, endDay)
-      if (v === null) {
-        gaps.add('noReading')
-        ok = false
-      } else if (v < 0) {
-        gaps.add('negative')
-        ok = false
-      } else sum += v
+    let measured = 0
+    const fail = (g: MonthlyInfoGap): void => {
+      gaps.add(g)
+      ok = false
     }
+    const add = (v: number | null): void => {
+      measured++
+      if (v === null) fail('noReading')
+      else if (v < 0) fail('negative')
+      else sum += v
+    }
+    const parts: { id: string; first: string; last: string }[] = []
+    for (const d of list) {
+      const dates = datesOf(d.id)
+      const first = dates[0]
+      const last = dates.at(-1)
+      if (first === undefined || last === undefined) {
+        fail('noReading')
+        continue
+      }
+      const own = readings.filter((x) => x.meterId === d.id)
+      if (first === startDay && last === endDay) add(exactConsumption(own, startDay, endDay))
+      // Neu und erst am Ende abgelesen: misst in diesem Fenster nichts. Hat es schon vorher Stände, fehlt der am Anfang.
+      else if (first === endDay && !own.some((x) => x.date < endDay)) continue
+      else if (last === startDay && !inUseAt(d, unitDevices, readings, endDay)) continue
+      else parts.push({ id: d.id, first, last })
+    }
+    // Ketten von Geräten, die einander ablösen, vom Anfang bis zum Ende des Fensters.
+    const open = [...parts]
+    while (ok && open.length > 0) {
+      const begin = open.findIndex((p) => p.first === startDay)
+      if (begin < 0) {
+        fail('noReading')
+        break
+      }
+      let [p] = open.splice(begin, 1)
+      while (ok && p) {
+        add(exactConsumption(readings.filter((x) => x.meterId === p?.id), p.first, p.last))
+        if (p.last === endDay) break
+        const prev = p
+        const next = open.findIndex((q) => q.first === prev.last || q.first === dayAfter(prev.last))
+        if (next < 0) {
+          fail('noReading')
+          break
+        }
+        ;[p] = open.splice(next, 1)
+      }
+    }
+    // Hat kein Gerät etwas gemessen, ist nichts erhoben, auch nicht 0.
+    if (ok && measured === 0) fail('noReading')
     return ok ? sum : null
   }
   const hca = devices.filter((d) => d.type === 'hkv')
@@ -175,15 +224,17 @@ export function monthlyInfoMonths(i: MonthlyInfoInput, log: LawLog): MonthlyInfo
     for (const unit of i.units) {
       const devices = running.filter((m) => m.unitId === unit.id)
       if (devices.length === 0) continue
+      // Gemessen wird mit allen Geräten der Wohnung; welche im Fenster messen, entscheidet `measure`.
+      const unitDevices = all.filter((m) => m.unitId === unit.id)
       for (const t of i.tenancies.filter((x) => x.unitId === unit.id)) {
         const slice = sliceOf(t, month)
         if (!slice) continue
-        const now = measure(devices, i.readings, dayBefore(slice.from), slice.to, dhw)
+        const now = measure(unitDevices, i.readings, dayBefore(slice.from), slice.to, dhw)
         // Vormonat und Vorjahresmonat: nur desselben Mietverhältnisses und nur, soweit erhoben; je Größe für sich.
         const earlier = (m: string): MonthlyInfoAmounts | null => {
           const s = sliceOf(t, m)
           if (!s) return null
-          const e = measure(devices, i.readings, dayBefore(s.from), s.to, dhw)
+          const e = measure(unitDevices, i.readings, dayBefore(s.from), s.to, dhw)
           return e.heatKwh === null && e.dhwM3 === null ? null : { heatKwh: e.heatKwh, dhwM3: e.dhwM3, dhwKwh: e.dhwKwh }
         }
         const ref = row?.referenceKwhPerM2 ?? null

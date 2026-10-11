@@ -160,6 +160,61 @@ test('Prüfung M5: ein ausgebautes Gerät (ein Nachfolger übernimmt) zählt nic
   assert.deepEqual([n3.users[0]?.heatKwh, n3.users[0]?.gaps], [null, ['noReading']])
 })
 
+// Durchsicht M1, S1: Wechsel auf einen neuen Zähler (kein `replacement` am selben Zähler), nur Wärme.
+const wechselBasis = (wa2: { installedOn: string }, readings: SnapshotReading[], over: Partial<MonthlyInfoInput> = {}): MonthlyInfoInput => basis({
+  meters: [
+    { id: 'wa', unitId: 'a', type: 'waerme', heatingPlantId: null, heatingRole: null, remoteReadable: true, installedOn: '2023-05-01' },
+    { id: 'wa2', unitId: 'a', type: 'waerme', heatingPlantId: null, heatingRole: null, remoteReadable: true, installedOn: wa2.installedOn },
+  ],
+  readings,
+  ...over,
+})
+const novOf = (i: MonthlyInfoInput, month = '2025-11') => monthlyInfoMonths(i, createLawLog()).find((m) => m.month === month) ?? assert.fail(`${month} fehlt`)
+
+test('Durchsicht M1: Wechsel auf einen neuen Zähler am 15.11. – alter und neuer Zähler zusammen 700 kWh, keine Lücke', () => {
+  const i = wechselBasis({ installedOn: '2025-11-15' }, [r('wa', '2025-10-31', 5400), r('wa', '2025-11-15', 5800), r('wa2', '2025-11-15', 0), r('wa2', '2025-11-30', 300), r('wa2', '2025-12-31', 700)])
+  const nov = novOf(i)
+  assert.deepEqual([nov.users[0]?.heatKwh, nov.users[0]?.gaps, nov.complete], [700, [], true])
+  assert.ok(!openMonths(monthlyInfoMonths(i, createLawLog())).some((o) => o.month === '2025-11'))
+  // Der neue Zähler erst am Folgetag abgelesen: kein Tag fehlt, ebenso 700 kWh.
+  const folgetag = wechselBasis({ installedOn: '2025-11-16' }, [r('wa', '2025-10-31', 5400), r('wa', '2025-11-15', 5800), r('wa2', '2025-11-16', 0), r('wa2', '2025-11-30', 300)])
+  assert.deepEqual([novOf(folgetag).users[0]?.heatKwh, novOf(folgetag).users[0]?.gaps], [700, []])
+  // Fehlt dazwischen ein Tag, bleibt es eine Lücke.
+  const luecke = wechselBasis({ installedOn: '2025-11-17' }, [r('wa', '2025-10-31', 5400), r('wa', '2025-11-15', 5800), r('wa2', '2025-11-17', 0), r('wa2', '2025-11-30', 300)])
+  assert.deepEqual([novOf(luecke).users[0]?.heatKwh, novOf(luecke).users[0]?.gaps], [null, ['noReading']])
+})
+
+test('Durchsicht M1: Wechsel am Monatsende 30.11. – der alte Zähler misst den November ganz (700 kWh)', () => {
+  const i = wechselBasis({ installedOn: '2025-11-30' }, [r('wa', '2025-10-31', 5400), r('wa', '2025-11-30', 6100), r('wa2', '2025-11-30', 0), r('wa2', '2025-12-31', 400)])
+  assert.deepEqual([novOf(i).users[0]?.heatKwh, novOf(i).users[0]?.gaps], [700, []])
+  // Im Dezember misst der neue: 400 kWh, Vormonat mit dem alten 700 kWh (für Dezember ist kein Vergleichswert eingetragen).
+  const dez = novOf(i, '2025-12')
+  assert.deepEqual([dez.users[0]?.heatKwh, dez.users[0]?.gaps, dez.users[0]?.previousMonth?.heatKwh], [400, ['reference'], 700])
+})
+
+test('Kette: ein Zähler mit älteren Ständen, dem der Stand am Anfang fehlt, ist eine Lücke und keine 0; ein ganz neuer misst nichts', () => {
+  const ohneAnfang = basis({ meters: basis().meters.filter((m) => m.id === 'wa'), readings: [r('wa', '2025-10-31', 5400), r('wa', '2025-12-31', 6800)] })
+  assert.deepEqual([novOf(ohneAnfang, '2025-12').users[0]?.heatKwh, novOf(ohneAnfang, '2025-12').users[0]?.gaps], [null, ['noReading', 'reference']])
+  // Ein zweiter Wärmezähler, der zugleich läuft und dem der Stand am Anfang fehlt: kein halber Verbrauch.
+  const zwei = wechselBasis({ installedOn: '2023-05-01' }, [r('wa', '2025-10-31', 5400), r('wa', '2025-11-30', 6100), r('wa2', '2025-09-30', 10), r('wa2', '2025-11-30', 90)])
+  assert.deepEqual([novOf(zwei).users[0]?.heatKwh, novOf(zwei).users[0]?.gaps], [null, ['noReading']])
+  // Nur ein neuer Zähler, erst am Monatsende abgelesen: Im November ist nichts erhoben, auch nicht 0.
+  const nurNeu = basis({ meters: [{ id: 'wa2', unitId: 'a', type: 'waerme', heatingPlantId: null, heatingRole: null, remoteReadable: true, installedOn: '2025-11-30' }], readings: [r('wa2', '2025-11-30', 0), r('wa2', '2025-12-31', 400)] })
+  assert.deepEqual([novOf(nurNeu).users[0]?.heatKwh, novOf(nurNeu).users[0]?.gaps], [null, ['noReading']])
+})
+
+test('Durchsicht S1: Vormonat und Vorjahresmonat nach dem Wechsel mit den Geräten des jeweiligen Monats', () => {
+  const i = wechselBasis({ installedOn: '2025-12-01' }, [
+    r('wa', '2025-10-31', 5400), r('wa', '2025-11-30', 6100),
+    r('wa2', '2025-11-30', 0), r('wa2', '2025-12-31', 900), r('wa2', '2026-10-31', 3000), r('wa2', '2026-11-30', 3650),
+  ], { h: { from: '2025-01-01', to: '2026-12-31' }, asOf: '2027-01-10' })
+  const months = monthlyInfoMonths(i, createLawLog())
+  const dez = months.find((m) => m.month === '2025-12') ?? assert.fail('Dezember fehlt')
+  assert.deepEqual([dez.users[0]?.heatKwh, dez.users[0]?.previousMonth], [900, { heatKwh: 700, dhwM3: null, dhwKwh: null }])
+  const nov26 = months.find((m) => m.month === '2026-11') ?? assert.fail('November 2026 fehlt')
+  assert.deepEqual([nov26.users[0]?.heatKwh, nov26.users[0]?.previousYear], [650, { heatKwh: 700, dhwM3: null, dhwKwh: null }])
+})
+
 test('Fehlt einem von zwei Warmwasserzählern die Ablesung, steht kein halber Verbrauch da', () => {
   const zwei = basis({
     meters: [...basis().meters, { id: 'ww2', unitId: 'a', type: 'warmwasser', heatingPlantId: null, heatingRole: null, remoteReadable: true, installedOn: null }],
