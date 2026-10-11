@@ -24,6 +24,7 @@ import StockCard from '../components/StockCard'
 import SelfHeatingCards from '../components/SelfHeatingCards'
 import HeatingInfoCard from '../components/HeatingInfoCard'
 import HeatingRulesCard from '../components/HeatingRulesCard'
+import MonthlyInfoCard from '../components/MonthlyInfoCard'
 import ServiceValuesCard from '../components/ServiceValuesCard'
 import { showsStockCard } from '../stockForm'
 import Term from '../components/Term'
@@ -158,6 +159,12 @@ export default function Heizkosten({ units, tenancies }: { units: Unit[]; tenanc
                 )}
                 {(plant.supply ?? 'central') === 'central' && plant.method !== 'service' && v.rules.exemptionScope !== 'both' && (
                   <HeatingInfoCard key={`info:${v.period}:${JSON.stringify(v.info)}:${v.rules.consumerContract ?? ''}`} plant={plant} view={v} onChanged={() => void load()} />
+                )}
+                {/* Heizung PR 22: die monatliche Verbrauchsinformation, wenn Mietfuchs sie bei eigener Abrechnung erstellt. Ob das
+                    so ist, sagt der Server (`managed`); ohne sie oder mit „anders mitgeteilt“ bleibt die Karte leer. Der Schlüssel
+                    lädt sie neu, wenn sich die Angaben der Heizperiode ändern. */}
+                {(plant.supply ?? 'central') === 'central' && plant.method === 'self' && v.rules.exemptionScope !== 'both' && (
+                  <MonthlyInfoCard key={`monthly:${v.period}:${JSON.stringify(v.rules)}:${JSON.stringify(v.hotWater)}`} plantId={plant.id} period={String(v.period)} propertyName={property?.name ?? ''} />
                 )}
               </div>
             ))}
