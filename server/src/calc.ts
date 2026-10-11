@@ -60,7 +60,7 @@ import type {
 import { rulesFor } from '../../shared/law/rules.ts'
 import { co2ApplicableFrom, co2CostsBefore, co2CostsCountedFrom, co2CostsExcludedUntil, co2CutMissing, co2DistrictEtsNew, co2FirstPeriodStart, co2NonResidential, co2Restriction, co2RoundingDecimals, co2StageTable } from '../../shared/law/co2kostaufg.ts'
 import { CO2_RELIEF_LABEL } from '../../shared/co2Probe.ts'
-import { ausweisGaps, CO2_FUELS, co2Assessment, co2Required, co2DeductionsOf, FORMULA_METHODS, co2PotsOf, itemBasisUnits, L_TOLERANCE_CENTS, perUnitClassification, perUnitExceeding, perUnitReliefs, reliefsByShare, spanningPlants, type PerUnitFuel, restage, selfSplit, SERVICE_FUEL_TOLERANCE_CENTS, shownReliefs, stageRanges, tableFactor, tenantLines as co2TenantLines, type Co2Pot, type ReliefShare } from './co2.ts'
+import { ausweisGaps, CO2_FUELS, co2Assessment, co2Required, NO_CO2_FUELS, co2DeductionsOf, FORMULA_METHODS, co2PotsOf, itemBasisUnits, L_TOLERANCE_CENTS, perUnitClassification, perUnitExceeding, perUnitReliefs, reliefsByShare, spanningPlants, type PerUnitFuel, restage, selfSplit, SERVICE_FUEL_TOLERANCE_CENTS, shownReliefs, stageRanges, tableFactor, tenantLines as co2TenantLines, type Co2Pot, type ReliefShare } from './co2.ts'
 // Zahlen und Daten der Rechtsregeln kommen aus dem Rechtsregister (Heizung PR 1) und stehen hier
 // nicht als Literal; server/test/law-literals.test.ts wacht darüber.
 import { createLawLog, dayAfter, dayBefore, law, LAW_AS_OF, onlyVersion, recordVersionAt, VALUE_CHANGE_LABEL, valueAt, type Period } from '../../shared/law/register.ts'
@@ -3167,16 +3167,20 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // (`heatPumpMajority`, mehr als die Hälfte der Wärme), unabhängig vom Erzeuger nach § 9. „Nein“ heißt: Die
     // Verordnung galt. Ohne Antwort oder mit „weiß nicht“ rechnet Mietfuchs ohne Kürzung und ohne Sperre und
     // nennt beide Folgen.
-    const renewable = plant.energy === 'heatPump' ? law(hkvRenewableExemption, { period: lawPeriod }, lawLog) : null
+    // Durchsicht von #272, M1: § 11 Abs. 1 Nr. 3 Buchst. a a. F. und § 12 Abs. 3 hängen am Wärmeerzeuger, nicht am
+    // Betreiber (§ 1 Abs. 1 Nr. 2: Wärmelieferung „auch aus Anlagen nach Nummer 1“); bei Contracting zählt deshalb der
+    // Erzeuger des Lieferanten (`generatorEnergy`, Auslegung am Wortlaut, nicht entschieden).
+    const generator = generatorEnergy(plant)
+    const renewable = generator === 'heatPump' ? law(hkvRenewableExemption, { period: lawPeriod }, lawLog) : null
     const majority = plant.heatPumpMajority ?? null
     const oldHeatPumpExemption = renewable?.heatPump === true && majority !== 'no'
     const majorityOpen = oldHeatPumpExemption && majority !== 'yes'
     // Unter dieser Ausnahme bindet § 9 nicht: Ohne bestimmbares α gehen „Heizung und Warmwasser“ ganz in
     // den Topf Heizung (Festlegung, Abweichung 9), und es gibt keinen Fehler.
     const alpha = alphaResult.ok ? alphaResult.alpha : null
-    const verdict = plant.energy === 'heatPump'
+    const verdict = generator === 'heatPump'
       ? heatPumpVerdict(
-        { energy: plant.energy, capturedOnOct2024: plant.capturedOnOct2024 ?? null, captureInstalledOn: plant.captureInstalledOn ?? null, heatPumpInstalledOn: plant.heatPumpInstalledOn ?? null },
+        { energy: generator, capturedOnOct2024: plant.capturedOnOct2024 ?? null, captureInstalledOn: plant.captureInstalledOn ?? null, heatPumpInstalledOn: plant.heatPumpInstalledOn ?? null },
         period.from, law(hkvHeatPumpCapture, { date: period.from }, lawLog),
       )
       : null
@@ -4900,7 +4904,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // auch dort stehen kg und CO₂-Kosten auf der Rechnung der Lieferung.
     // Unter einer Ausnahme nach § 11 ohne vereinbarte Abrechnung gilt das CO2KostAufG nicht (§ 2 Abs. 7, Heizung
     // PR 14): dann auch keine Prüfung, dieselbe Bedingung wie die Aufteilung.
-    const co2Check: NonNullable<HeatingStatement['co2Check']> = { applies: !etsExempt && !co2OffByExemption(pot.plantId, String(pot.period.key)), exemption: null, findings: [] }
+    // Heizung PR 16: auch nicht bei Contracting mit einem Brennstoff ohne CO₂-Kosten (§ 2 Abs. 1 Satz 2 CO2KostAufG).
+    const noCo2Fuel = pot.fuelEnergy !== undefined && NO_CO2_FUELS.includes(pot.fuelEnergy)
+    const co2Check: NonNullable<HeatingStatement['co2Check']> = { applies: !etsExempt && !noCo2Fuel && !co2OffByExemption(pot.plantId, String(pot.period.key)), exemption: null, findings: [] }
     report.co2Check = co2Check
     if (co2Check.applies) {
       // Eine stornierte Rechnung zählt nicht und wird nicht geprüft (Durchsicht von #246, G-K1); dieselbe
@@ -4936,7 +4942,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Nur für Brennstoffe, für die es Standardwerte nach § 7 Abs. 4 BEHG gibt (§ 2 Abs. 1 CO2KostAufG):
     // Gas, Heizöl, Flüssiggas, Kohle; Fernwärme nur, wenn die Rechnung CO₂-Kosten ausweist. Strom einer
     // Wärmepumpe ist kein solcher Brennstoff (Durchsicht von #233, C1).
-    const co2Relevant = CO2_FUELS.includes(pot.energy) || (pot.energy === 'districtHeating' && (fuelOf?.lines.some((l) => l.co2Cents !== null) ?? false))
+    // Heizung PR 16: Bei Contracting mit einem Brennstoff ohne CO₂-Kosten (Pellets, Holz, Strom, Wärmepumpe) gibt es
+    // nichts aufzuteilen, auch wenn eine Rechnung CO₂-Werte trägt; dieselbe Regel wie `co2Required`.
+    const co2Relevant = co2Required(pot) && (CO2_FUELS.includes(pot.energy) || (pot.energy === 'districtHeating' && (fuelOf?.lines.some((l) => l.co2Cents !== null) ?? false)))
     // Vorratsenergien (Heizung PR 8, Entwurf 8.2, Naht N1): E und C des verbrauchten Brennstoffs aus der
     // Bestandsrechnung. Bei freien Schlüsseln ohne Bestand wie geliefert (mit `fuel.manual-by-delivery`);
     // beim Messdienst ohne Aufteilung wird ohne Bestand nicht aufgeteilt (G-B4).
