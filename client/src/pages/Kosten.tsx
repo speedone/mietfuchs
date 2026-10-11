@@ -341,7 +341,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
 
   async function saveItem() {
     if (!form) return
-    // Heizung PR 16: nach der Energie der Abrechnung (bei Contracting bezahlt der Lieferant den Strom des Kessels).
+    // Heizung PR 16: nach der Energie der Abrechnung (bei Contracting bezahlt in der Regel der Lieferant den Strom des Kessels).
     const built = buildCostItemBody(form, units, period, tenancies, plantOfForm ? billingEnergy(plantOfForm) : undefined)
     if ('error' in built) {
       setError(built.error)

@@ -143,3 +143,12 @@ test('G2-H1: andere 409 ohne „Trotzdem anlegen“; die Rückfrage verschwindet
     vi.unstubAllGlobals()
   }
 })
+
+// Durchsicht von #272, S4: Wer den Strom des Kessels bezahlt, ist eine Frage des Vertrags; wie im Lexikon „in der Regel“.
+test('Karte bei Contracting: der Lieferant bezahlt den Strom des Kessels in der Regel, die Wärmepumpe des Lieferanten ohne Sperrsatz', () => {
+  for (const energy of ['gas', 'heatPump'] as const) {
+    const { unmount } = render(<OperatingPowerCard plant={{ ...plant, energy, contracting: true }} view={view} rules={CALENDAR_RULES} items={[strom]} onBooked={vi.fn()} />)
+    expect(screen.getByText(/Den Strom für Brenner und Kessel bezahlt bei Contracting in der Regel der Lieferant; er steckt dann im Wärmepreis\./)).toBeTruthy()
+    unmount()
+  }
+})
