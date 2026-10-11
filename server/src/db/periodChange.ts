@@ -171,6 +171,28 @@ function tokenOf(p: Omit<PeriodChangePreview, 'token' | 'periods'>): string {
   return crypto.createHash('sha256').update(JSON.stringify([p.rules, p.newShort, p.blocked, p.moves, p.groups, p.overrides, p.assessments, p.taxYears])).digest('hex')
 }
 
+// Jahre in Worten: „2025“ bzw. „2025 bis 2027“ (Recht H-2 der zweiten Nachprüfung von #265).
+const yearsText = (years: readonly number[]): string => {
+  const first = years[0]
+  const last = years[years.length - 1]
+  return first === last ? String(first) : `${first} bis ${last}`
+}
+
+// Geld H1 (Nachprüfung fc20455): Ein Ziel der Heizgruppe, an dem das Jahr des Betriebsstroms in keine Spanne seines
+// Abzugsteils passt. `years`: die Jahre, die der Betriebsstrom dort haben kann (eines, wenn der Zeitraum in einem
+// Kalenderjahr liegt).
+export function noYearText(i: { target: string; power: string; years: readonly number[]; deduction: string; deductionLabel: string; span: readonly number[] }): string {
+  const where = i.years.length === 1 ? `im Jahr der Zahlung ${i.years[0]}` : `in einem der Jahre ${yearsText(i.years)}`
+  return `Ganz nach ${i.target} verschoben, stünde „${i.power}“ ${where}; sein Abzug „${i.deduction}“ in ${i.deductionLabel} folgt ihm, dort ist aber nur ${yearsText(i.span)} möglich. ` +
+    'So lässt sich der Wechsel nicht speichern; wählen Sie für die Heizkosten einen anderen Zeitraum.'
+}
+
+// Geld H2, Variante (b), mit Recht H-1 der zweiten Nachprüfung von #265: Ein Teil des Abzugs bleibt in einem festen
+// Steuerjahr. Welches Jahr steuerlich gilt, entscheidet Mietfuchs nicht; der Satz nennt, wonach es sich richtet.
+export const shiftText = (cents: number, fixed: number, year: number): string =>
+  `Ein Teil des Abzugs (${euro(cents)}) bleibt im Steuerjahr ${fixed}, der Betriebsstrom steht im Steuerjahr ${year}; in der Anlage V verschiebt sich dieser Betrag zwischen den Jahren. ` +
+  'Welches Jahr steuerlich gilt, richtet sich danach, wann Sie die Stromrechnung bezahlt haben (§ 11 Abs. 2 EStG).'
+
 // Eine Stromrechnung mit Leistungszeitraum, die der Wechsel nicht teilt, bleibt ganz in ihrem Zeitraum (K1).
 function stayingParts(next: PeriodRules, g: CostItem): ServicePart[] {
   const p = periodOfKey(next, g.period)
@@ -527,14 +549,14 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
     const power = byId.get(d.powerItemId)
     if (power === undefined) continue
     const span = d.entry.options
-    const tell = (target: BillingPeriod, year: string) => conflict(power.id, target,
-      `Ganz nach ${periodLabel(target)} verschoben, stünde „${power.description}“ im Jahr der Zahlung ${year}; sein Abzug „${d.entry.description}“ in ${d.entry.label} folgt ihm, dort ist aber nur ${span[0]} bis ${span[span.length - 1]} möglich. So lässt sich der Wechsel nicht speichern; wählen Sie für die Heizkosten einen anderen Zeitraum.`)
+    const tell = (target: BillingPeriod, years: readonly number[]) => conflict(power.id, target,
+      noYearText({ target: periodLabel(target), power: power.description, years, deduction: d.entry.description, deductionLabel: d.entry.label, span }))
     for (const e of taxEntries.values()) {
       if (e.costItemId !== power.id) continue
       const options = e.options.filter((y) => span.includes(y))
       const target = periodOfKey(next, e.period)
       if (options.length === 0) {
-        if (target) tell(target, `${e.options[0]} bis ${e.options[e.options.length - 1]}`)
+        if (target) tell(target, e.options)
         continue
       }
       e.options = options
@@ -542,7 +564,7 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
     }
     for (const g of groups.values()) {
       if (!g.items.some((i) => i.id === power.id)) continue
-      for (const o of g.options) if (!spansTwoYears(o) && !span.includes(startYearOf(o.key))) tell(o, String(startYearOf(o.key)))
+      for (const o of g.options) if (!spansTwoYears(o) && !span.includes(startYearOf(o.key))) tell(o, [startYearOf(o.key)])
     }
   }
   // Geld H2, Variante (b) (Nachtrag nach Fixrunde 82d8a7a): Ein Teil eines folgenden Abzugs in einem Zeitraum innerhalb
@@ -561,8 +583,6 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
       fixedByPower.set(item.operatingPowerItemId, byYear)
     }
   }
-  const shiftText = (cents: number, fixed: number, year: number) =>
-    `Ein Teil des Abzugs (${euro(cents)}) bleibt im Steuerjahr ${fixed}, der Betriebsstrom steht in ${year}; in der Anlage V verschiebt sich dieser Betrag zwischen den Jahren.`
   const shiftsAt = (powerId: string, year: number): string[] =>
     [...(fixedByPower.get(powerId) ?? new Map<number, number>())].filter(([fixed, cents]) => fixed !== year && cents > 0).map(([fixed, cents]) => shiftText(cents, fixed, year))
   for (const e of taxEntries.values()) {
