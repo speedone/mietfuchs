@@ -3,7 +3,7 @@
 // Berechnungsgrundlagen. Beim Messdienst stehen die Werte laut dessen Abrechnung; die Stufe ordnet
 // Mietfuchs nach (Entwurf 9.2).
 import { fmtDate, fmtEuro } from './api'
-import { ENERGY_OPTIONS } from './heatingForm'
+import { energyLabelOf } from './heatingForm'
 import type { HeatingStatement } from './types'
 
 export type Co2BlockView = { title: string; lines: { label: string; value: string }[]; table: { range: string; percent: string; marked: boolean }[]; notes: string[] }
@@ -22,7 +22,8 @@ export function co2Block(h: HeatingStatement, tenancyId: string): Co2BlockView |
   const own = c.basis === 'deliveries' || c.basis === 'stock'
   const fromStock = c.basis === 'stock'
   const lines: { label: string; value: string }[] = [
-    { label: 'Energieträger', value: ENERGY_OPTIONS.find((o) => o.value === h.energy)?.label ?? h.energy },
+    // Heizung PR 16: bei Contracting die Wärmelieferung mit dem Brennstoff des Lieferanten.
+    { label: 'Energieträger', value: energyLabelOf(h) },
     { label: 'Heizperiode', value: `${fmtDate(h.from)} – ${fmtDate(h.to)}` },
   ]
   if (c.emissionsKg !== null) {

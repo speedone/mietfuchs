@@ -93,7 +93,7 @@ test('Laienprobe B8, B9: „Niemand“ fragt nicht nach Fernablesung; Hilfesätz
   expect(valueOf(/Wer erstellt Ihre Heizkostenabrechnung/)).toBe('manual')
   expect(screen.queryByLabelText(/aus der Ferne ablesbar/)).toBeNull()
   expect(screen.queryByLabelText(/nach dem 01\.12\.2021 eingebaut/)).toBeNull()
-  expect(screen.getByText(/wählen Sie Fernwärme, auch wenn im Keller ein Kessel steht/)).toBeTruthy()
+  expect(screen.getByText(/Kommt die Wärme aus einem Wärmenetz, wählen Sie Fernwärme. Betreibt ein Lieferant den Kessel in Ihrem Haus/)).toBeTruthy()
   expect(screen.getByText(/etwa von ista, Techem, Brunata, Minol oder KALO/)).toBeTruthy()
   expect(screen.getByText(/Angeschlossen ist jede Wohnung, die von dieser Heizung warm wird/)).toBeTruthy()
   fireEvent.change(screen.getByLabelText(/Wer erstellt Ihre Heizkostenabrechnung/), { target: { value: 'service' } })
@@ -240,4 +240,15 @@ test('„Ich selbst“: die Anlage entsteht bei „Niemand“, danach öffnet Sc
   fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }))
   await waitFor(() => expect(screen.getByRole('button', { name: 'Umstellen' })).toBeTruthy())
   expect(sent[0]?.body).toMatchObject({ method: 'manual' })
+})
+
+// Heizung PR 16: Der angezeigte Wert der Auswahl „Wer versorgte vorher?“ ist der gespeicherte, und das Häkchen steht.
+test('Wärmelieferung: die Auswahl „Wer versorgte vorher?“ zeigt den gespeicherten Wert', async () => {
+  plants = [{ ...PLANT, energy: 'gas', contracting: true, heatDeliverySince: '2025-10-01', previousSupply: 'tenant' }]
+  renderCard()
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Ändern' })).toBeTruthy())
+  fireEvent.click(screen.getByRole('button', { name: 'Ändern' }))
+  expect(valueOf(/Wer versorgte vorher/)).toBe('tenant')
+  expect((screen.getByLabelText(/Ein Dritter betreibt die Heizung/) as HTMLInputElement).checked).toBe(true)
+  expect((screen.getByLabelText(/Tag der Umstellung/) as HTMLInputElement).value).toBe('2025-10-01')
 })

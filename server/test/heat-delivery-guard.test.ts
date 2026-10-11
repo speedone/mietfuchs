@@ -37,6 +37,7 @@ type Allowed = { file: string; match: string; reason: string }
 const ALLOWED: readonly Allowed[] = [
   { file: 'client/src/components/HeatingCard.tsx', match: "form.energy === 'heatPump'", reason: 'Fragen zur Wärmepumpe (§ 11 Abs. 1 Nr. 3 a. F., § 12 Abs. 3 HeizkostenV) hängen am Erzeuger, auch bei Contracting.' },
   { file: 'client/src/heatingForm.ts', match: "form.energy === 'heatPump'", reason: 'Frage zum Erzeuger für den Warmwasseranteil; hängt am Erzeuger.' },
+  { file: 'client/src/heatingForm.ts', match: "form.energy === 'districtHeating' || (form.contracting", reason: 'Die Angaben zur Umstellung fragt das Formular bei Fernwärme oder Contracting (`asksSwitch`); das ist die Frage nach der Wärmelieferung selbst.' },
   { file: 'client/src/components/HeatingInfoCard.tsx', match: "plant.energy === 'districtHeating'", reason: 'Werte des Wärmenetzes nur bei Fernwärme (§ 6a Abs. 3 Satz 1 Nr. 1 Buchst. a HeizkostenV), nicht bei Contracting (Prüfung C-M2).' },
   { file: 'client/src/components/Co2FactsCard.tsx', match: "plant.energy === 'districtHeating'", reason: 'Emissionshandel (§ 2 Abs. 4 Satz 2 CO2KostAufG) nur bei Fernwärme; eine Ausnahme der Naht.' },
   { file: 'client/src/stockView.ts', match: 'CO2_ENERGIES.includes(h.energy', reason: 'Die Heizperiode der Abrechnung trägt schon die Energie der Abrechnung; einen Vorrat gibt es bei Contracting nicht.' },
