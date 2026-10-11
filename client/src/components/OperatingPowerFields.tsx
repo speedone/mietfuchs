@@ -62,7 +62,7 @@ export default function OperatingPowerFields({ form, items, periodKey, plantEner
           <textarea rows={4} value={form.operatingPowerBasis} onChange={(e) => onChange({ ...form, operatingPowerBasis: e.target.value })} />
           <small className="muted">
             Bewahren Sie die Angaben auf: Bestreitet ein Mieter den Betrag, müssen Sie die Grundlagen Ihrer Schätzung darlegen
-            (BGH, Versäumnisurteil vom 20.02.2008, VIII ZR 27/07, Leitsatz 3). Ändern Sie den Betrag, ändern Sie die Grundlage mit.
+            (BGH, Versäumnisurteil vom 20.02.2008, VIII ZR 27/07, Leitsatz c). Ändern Sie den Betrag, ändern Sie die Grundlage mit.
           </small>
         </label>
       )}

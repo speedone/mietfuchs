@@ -291,7 +291,7 @@ export type CostItem = {
   // Betriebsstrom der Heizung (Heizung PR 15): siehe `OperatingPower`. `operatingPowerItemId` nur am
   // Abzug: die Betriebsstrom-Position, zu der er gehört. `operatingPowerBasis` (P-W1): die Grundlage
   // der Schätzung, Zeile für Zeile, an Betriebsstrom und Abzug; bestreitet ein Mieter den Betrag, muss
-  // der Vermieter sie darlegen (BGH, Versäumnisurteil vom 20.02.2008, VIII ZR 27/07, Leitsatz 3).
+  // der Vermieter sie darlegen (BGH, Versäumnisurteil vom 20.02.2008, VIII ZR 27/07, Leitsatz c).
   operatingPower?: OperatingPower
   operatingPowerItemId?: string
   operatingPowerBasis?: string
@@ -1316,6 +1316,22 @@ export type HeatingRole = 'supply' | 'dhwHeat' | 'totalHeat'
 export type InsulationRule = 'applies' | 'notApplies' | 'unknown'
 export type DhwMethod = 'heatMeter' | 'volumeFormula' | 'areaFormula'
 
+// Wie der Betriebsstrom einer Zentralheizung mit Brenner erfasst ist (#266), eine freiwillige Angabe an der
+// Anlage. Entscheidend ist der Stromvertrag, nicht der Zähler (Rechtsprüfung des Plans, M-1):
+// - `ownMeter`: Die Heizung hat einen eigenen Stromvertrag mit eigenem Zähler und eigener Rechnung; diese
+//   Rechnung wird als Heizposition mit dem Teil „Betrieb“ erfasst und umgelegt.
+// - `deducted`: Der Strom läuft über die Stromrechnung des Hauses und wird beim Allgemeinstrom abgezogen
+//   (gemessen mit Zwischenzähler oder geschätzt), gleich ob er danach über die Heizkosten umgelegt oder
+//   selbst getragen wird. Ein Zwischenzähler hinter dem Hauszähler fällt hierunter, denn er ersetzt nur das
+//   Schätzen, nicht den Abzug (BGH, Versäumnisurteil vom 20.02.2008, VIII ZR 27/07, Rn. 32).
+// - `landlordPays`: eigener Stromvertrag mit eigenem Zähler und eigener Rechnung, deren Kosten der Vermieter
+//   selbst trägt; in Mietfuchs steht davon nichts. Das schadet den Mietern nicht, vorausgesetzt, der Strom
+//   steht auch nicht im Allgemeinstrom (BGH, Beschluss vom 13.09.2011, VIII ZR 45/11, Rn. 3; vgl. BGH, Urteil
+//   vom 03.06.2016, V ZR 166/15, Rn. 15: „trägt er diese selbst, so dass der Mieter in seinen Rechten nicht
+//   beeinträchtigt wird“).
+// `null` an der Anlage heißt keine Angabe; der Hinweis verhält sich dann wie vor #266.
+export type OperatingPowerHandling = 'ownMeter' | 'deducted' | 'landlordPays'
+
 // Eine angeschlossene Wohnung. Die beheizte Fläche (§ 7 Abs. 1 Satz 5) kommt mit PR 10.
 export type HeatingPlantUnit = { unitId: string; heatedAreaM2: number | null }
 
@@ -1383,6 +1399,9 @@ export type HeatingPlant = {
   heatPumpMajority: HeatPumpMajority | null
   // Bauart der Heizkostenverteiler (Heizung PR 12, Entwurf 5.3), nur zur Beschreibung im Ausweis.
   hcaModel: string | null
+  // Wie der Betriebsstrom erfasst ist (#266); `null` heißt keine Angabe. Ausgewertet nur, wo Mietfuchs danach fragt
+  // (`asksOperatingPowerHandling` in shared/operatingPower.ts); eine Anlage ohne Frage behält den Wert unbeachtet.
+  operatingPowerHandling: OperatingPowerHandling | null
   // Die Zeiträume der eigenen Heizkostenabrechnung (Durchsicht von #239), aufsteigend; `until` NULL beim
   // laufenden.
   selfSpans?: SelfSpanRange[]

@@ -82,7 +82,7 @@ import { lineRoot, monthSpanText, plantRules, plantSpan, recommendedDeadline, re
 import { heatingSnapshotFor, selfAt, snapshotFor, wayOf } from './snapshot.ts'
 import { cancelledDeliveries, plantFuel, rangeOf, type FuelCarry, type FuelResult } from './fuel.ts'
 import { co2Plausibility, etsExempt as etsExemptPlant, plausibilityText } from './co2Plausibility.ts'
-import { generationPowerText, missingOperatingPowerText, missingPowerFindings, operatingPowerFindings, operatingPowerText } from './operatingPower.ts'
+import { billMissingText, deductionMissingText, generationPowerText, missingOperatingPowerText, missingPowerFindings, operatingPowerFindings, operatingPowerText } from './operatingPower.ts'
 import { GENERAL_POWER_CATEGORY } from '../../shared/operatingPower.ts'
 import { LAW_PARAMS } from '../../shared/law/params.ts'
 import { fuelFromDeliveries, fuelFromStock, looseCentsOf, measuredOffset, problemText, settledByDefault, stockKeysOf, stockOf, stockTemplateOfLine, stockTouched, valueOf as stockValueOf, type FuelFigures, type StockPeriodInput, type StockResult } from './fuelStock.ts'
@@ -429,6 +429,10 @@ const noticeKinds = {
   // Wärmeerzeugung einer Wärmepumpe oder eines Elektrokessels womöglich im Allgemeinstrom (#253).
   'heating.operating-power-missing': { level: 'hint', title: 'Betriebsstrom der Heizung fehlt', terms: ['operatingPower', 'heatingCostOrdinance'] },
   'heating.generation-power-missing': { level: 'hint', title: 'Strom zur Wärmeerzeugung womöglich im Allgemeinstrom', terms: ['operatingPower', 'heatingCostOrdinance'] },
+  // #266: mit Angabe an der Anlage. Fehlt der Abzug trotz Angabe, ist das der Fall aus BGH V ZR 166/15 und VIII ZR 27/07
+  // und färbt die Ampel; fehlt nur die Rechnung des eigenen Stromvertrags, trägt der Vermieter eigenes Geld (INFORMATIONAL).
+  'heating.operating-power-deduction-missing': { level: 'hint', title: 'Abzug des Betriebsstroms fehlt', terms: ['operatingPower', 'heatingCostOrdinance'] },
+  'heating.operating-power-bill-missing': { level: 'hint', title: 'Rechnung des Heizungsstromzählers fehlt', terms: ['operatingPower'] },
   // Heizung PR 17 (Entwurf 4.5, 10.1): ein Rechtswert, den der Vermieter eingetragen hat.
   'law.value-overridden': { level: 'hint', title: 'Selbst eingetragener Rechtswert', terms: ['legalBasis'] },
   'model.prepayment-unsettled': { level: 'warning', title: 'Vorauszahlung ohne Abrechnung', terms: ['prepayment', 'flatRate'] },
@@ -6458,6 +6462,15 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     for (const f of missingPowerFindings({ period, plants, items, heatingParts: snapshot.heatingParts ?? [] })) {
       if (f.kind === 'operating') {
         warn('heating.operating-power-missing', missingOperatingPowerText(f, label), { kind: 'heatingCosts', id: f.plantId })
+        continue
+      }
+      // #266: mit Angabe an der Anlage, wie der Betriebsstrom erfasst ist.
+      if (f.kind === 'deductionMissing') {
+        warn('heating.operating-power-deduction-missing', deductionMissingText(f, label), { kind: 'heatingCosts', id: f.plantId })
+        continue
+      }
+      if (f.kind === 'billMissing') {
+        warn('heating.operating-power-bill-missing', billMissingText(f, label), { kind: 'heatingCosts', id: f.plantId })
         continue
       }
       const betrkv = law(betrkvGenerationPower, { period: lawPeriod }, lawLog)

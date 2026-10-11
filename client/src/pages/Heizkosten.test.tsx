@@ -2,7 +2,7 @@
 // Seite „Heizkosten“ bei einer Anlage, die niemand abrechnet (Review der Laienprobe, Runde 2, Punkt 8):
 // Der Rat lässt die Heizposition stehen und bucht den CO₂-Anteil als Gutschrift plus „Nicht umlagefähig“.
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
 import Heizkosten from './Heizkosten'
@@ -50,4 +50,25 @@ test('Nachprüfung von 47f2373: Bei Fernwärme spricht der Rat von der Fernwärm
   expect(await screen.findByText(/Der CO₂-Ausstoß laut Fernwärmerechnung/, undefined, { timeout: 5000 })).toBeTruthy()
   expect(screen.getByText(/sobald Sie die Fernwärmerechnung unten als Lieferung eintragen/)).toBeTruthy()
   expect(screen.queryByText(/Gas- oder Ölrechnung/)).toBeNull()
+})
+
+// #266: Die Karte „Betriebsstrom der Heizung“ steht je Anlage über den Heizperioden, aber nur, wo Mietfuchs danach fragt.
+test('Karte „Betriebsstrom der Heizung“: bei der Gasheizung ohne Messdienst, nicht beim Messdienst', async () => {
+  render(<PeriodProvider><PropertyProvider><Heizkosten units={[]} tenancies={[]} /></PropertyProvider></PeriodProvider>)
+  expect(await screen.findByLabelText('Wie ist der Betriebsstrom dieser Heizung erfasst?', undefined, { timeout: 5000 })).toBeTruthy()
+  cleanup()
+  const calls: string[] = []
+  vi.stubGlobal('fetch', async (url: string) => {
+    const path = url.split('?')[0] ?? ''
+    calls.push(path)
+    const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
+    if (path === '/api/properties') return json([{ id: 'objekt-1', name: 'Haus', kind: 'zfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null }])
+    if (path === '/api/heating-plants') return json([{ ...PLANT, method: 'service' }])
+    return json([])
+  })
+  render(<PeriodProvider><PropertyProvider><Heizkosten units={[]} tenancies={[]} /></PropertyProvider></PeriodProvider>)
+  // Geladen ist die Seite, wenn die Gradtagzahlen abgefragt sind (der letzte Abruf von `load`).
+  await waitFor(() => expect(calls).toContain('/api/properties/objekt-1/degree-days'), { timeout: 5000 })
+  await new Promise((r) => setTimeout(r, 50))
+  expect(screen.queryByLabelText('Wie ist der Betriebsstrom dieser Heizung erfasst?')).toBeNull()
 })

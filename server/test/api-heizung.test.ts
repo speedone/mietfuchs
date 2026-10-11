@@ -790,3 +790,64 @@ test('Betriebsstrom über die Route: zweite Buchung 409 mit question „despiteE
     s.stop()
   }
 })
+
+// #266: Die Angabe, wie der Betriebsstrom erfasst ist, über die Route der Anlage; sie übersteht Backup und
+// Wiederherstellen.
+test('Angabe zum Betriebsstrom über die Route: speichern, leeren, 400 mit Satz, Merge nach Anwesenheit, Backup', async () => {
+  const s = await startServer()
+  try {
+    const send = (url: string, init: RequestInit) => fetch(`${s.base}${url}`, { ...init, headers: { 'content-type': 'application/json' } })
+    const { plant } = await jsonOf<{ plant: HeatingPlant }>(await send('/api/heating-plants', jsonPost({ energy: 'gas', method: 'manual' })))
+    assert.equal(plant.operatingPowerHandling, null)
+    const put = (body: unknown) => send(`/api/heating-plants/${plant.id}`, { method: 'PUT', body: JSON.stringify(body) })
+    const gelesen = async () => (await s.api<HeatingPlant[]>('/api/heating-plants')).find((p) => p.id === plant.id)?.operatingPowerHandling
+    for (const v of ['ownMeter', 'landlordPays', 'deducted'] as const) {
+      const res = await put({ operatingPowerHandling: v })
+      assert.equal(res.status, 200, v)
+      assert.equal(await gelesen(), v)
+    }
+    assert.equal((await put({ name: 'Kessel' })).status, 200)
+    assert.equal(await gelesen(), 'deducted', 'ein PUT ohne den Schlüssel lässt die Angabe stehen')
+    const falsch = await put({ operatingPowerHandling: 'foo' })
+    assert.equal(falsch.status, 400)
+    assert.match(await errorFrom(falsch), /^Wie der Betriebsstrom dieser Heizung erfasst ist, kennt Mietfuchs so nicht\. Bitte wählen Sie aus der Liste\./)
+    assert.equal(await gelesen(), 'deducted', 'nach dem Fehler unverändert')
+    const archiv = await fetch(`${s.base}/api/backup`)
+    const fd = new FormData()
+    fd.append('file', new Blob([await archiv.arrayBuffer()], { type: 'application/zip' }), 'backup.zip')
+    assert.equal((await put({ operatingPowerHandling: '' })).status, 200)
+    assert.equal(await gelesen(), null)
+    assert.equal((await fetch(`${s.base}/api/restore`, { method: 'POST', body: fd })).status, 200)
+    assert.equal(await gelesen(), 'deducted', 'das Backup bringt die Angabe zurück')
+    assert.equal((await put({ operatingPowerHandling: null })).status, 200)
+    assert.equal(await gelesen(), null)
+  } finally {
+    s.stop()
+  }
+})
+
+// #266: Über die Route kommt die Angabe in der Abrechnung an (snapshotFor reicht sie durch).
+test('Angabe zum Betriebsstrom in der Abrechnung über die Route: Wartung erfasst, mit „abgezogen“ der Hinweis, mit „Vermieter trägt“ still', async () => {
+  const s = await startServer()
+  try {
+    const send = (url: string, init: RequestInit) => fetch(`${s.base}${url}`, { ...init, headers: { 'content-type': 'application/json' } })
+    const unit = await s.api<Unit>('/api/units', jsonPost({ name: 'EG', areaM2: 80, participates: true }))
+    await s.api('/api/tenancies', jsonPost({ unitId: unit.id, tenantName: 'Mieter', personHistory: [{ from: '2025-01-01', persons: 1 }], start: '2025-01-01', end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [] }))
+    const { plant } = await jsonOf<{ plant: HeatingPlant }>(await send('/api/heating-plants', jsonPost({ energy: 'gas', method: 'manual' })))
+    await s.api<CostItem>('/api/costItems', jsonPost({ period: '2025-01', category: 'Heizung und Warmwasser', description: 'Gas', amountCents: 300000, key: 'area', heatingPart: 'fuel', heatingPlantId: plant.id }))
+    await s.api<CostItem>('/api/costItems', jsonPost({ period: '2025-01', category: 'Heizung und Warmwasser', description: 'Wartung', amountCents: 30000, key: 'area', heatingPart: 'operating', heatingPlantId: plant.id }))
+    await s.api<CostItem>('/api/costItems', jsonPost({ period: '2025-01', category: 'Beleuchtung/Allgemeinstrom', description: 'Hausstrom', amountCents: 105000, key: 'area' }))
+    const codes = async () => ((await s.api<Settlement>('/api/settlement/2025-01')).notices ?? []).map((n) => n.code).filter((c) => c.startsWith('heating.operating-power'))
+    assert.deepEqual(await codes(), [], 'ohne Angabe schweigt der Hinweis bei erfasster Wartung')
+    const vorher = await s.api<Settlement>('/api/settlement/2025-01')
+    const put = (v: string | null) => send(`/api/heating-plants/${plant.id}`, { method: 'PUT', body: JSON.stringify({ operatingPowerHandling: v }) })
+    assert.equal((await put('deducted')).status, 200)
+    assert.deepEqual(await codes(), ['heating.operating-power-deduction-missing'])
+    // Keine Zahl ändert sich.
+    assert.deepEqual((await s.api<Settlement>('/api/settlement/2025-01')).statements, vorher.statements)
+    assert.equal((await put('landlordPays')).status, 200)
+    assert.deepEqual(await codes(), [])
+  } finally {
+    s.stop()
+  }
+})

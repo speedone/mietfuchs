@@ -46,6 +46,7 @@ import type {
   HeatingMethod,
   HeatingPart,
   OperatingPower,
+  OperatingPowerHandling,
   HeatingRole,
   HeatingSource,
   HeatingSupply,
@@ -87,6 +88,8 @@ export const METER_TYPES = exactly<MeterType>()(['kaltwasser', 'warmwasser', 'st
 export const HEATING_PARTS = exactly<HeatingPart>()(['fuel', 'operating', 'metering'] as const)
 // Betriebsstrom der Heizung (Heizung PR 15, #212): an Heizkosten `included`, am Allgemeinstrom `deduction`.
 export const OPERATING_POWER = exactly<OperatingPower>()(['included', 'deduction'] as const)
+// Wie der Betriebsstrom einer Heizanlage erfasst ist (#266); Beschriftungen in shared/operatingPower.ts.
+export const OPERATING_POWER_HANDLINGS = exactly<OperatingPowerHandling>()(['ownMeter', 'deducted', 'landlordPays'] as const)
 export const DEPOSIT_STATUS = exactly<DepositStatus>()(['offen', 'erhalten', 'teilweise', 'zurückgezahlt'] as const)
 const AI_PROVIDERS = exactly<AiProviderKind>()(['ollama', 'openai'] as const)
 const AI_JSON_MODES = exactly<AiJsonMode>()(['auto', 'schema', 'object', 'prompt'] as const)
@@ -443,6 +446,9 @@ export const heatingPlants = sqliteTable(
     heatPumpMajority: text('heat_pump_majority', { enum: HEAT_PUMP_MAJORITIES }),
     // Bauart der Heizkostenverteiler (Heizung PR 12, Entwurf 5.3), nur zur Beschreibung im Ausweis.
     hcaModel: text('hca_model'),
+    // Wie der Betriebsstrom erfasst ist (#266); NULL heißt keine Angabe, der Hinweis verhält sich dann wie zuvor.
+    // Die Bedingung kommt im zweiten Schritt (README der Migrationen).
+    operatingPowerHandling: text('operating_power_handling', { enum: OPERATING_POWER_HANDLINGS }),
   },
   () => [
     oneOf('heating_plants_energy_known', 'energy', HEATING_ENERGIES),
@@ -470,6 +476,8 @@ export const heatingPlants = sqliteTable(
     // Warmwasser ohne Wärmezähler (Heizung PR 11).
     oneOf('heating_plants_heat_generation_known', 'heat_generation', HEAT_GENERATIONS),
     oneOf('heating_plants_heat_pump_majority_known', 'heat_pump_majority', HEAT_PUMP_MAJORITIES),
+    // Angabe zum Betriebsstrom (#266).
+    oneOf('heating_plants_operating_power_handling_known', 'operating_power_handling', OPERATING_POWER_HANDLINGS),
   ],
 )
 

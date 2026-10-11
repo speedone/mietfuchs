@@ -115,6 +115,17 @@ describe('Cockpit: verlangen die Hinweise etwas?', () => {
     expect(attentionLevel({ warnings: ['a'], notices: [n({ code: 'heating.operating-power-missing', level: 'hint' })] })).toBe('gruen')
     expect(attentionLevel({ warnings: ['a'], notices: [n({ code: 'heating.generation-power-missing', level: 'hint' })] })).toBe('gelb')
   })
+  // #266: Mit Angabe an der Anlage. Fehlt der Abzug, obwohl der Vermieter angibt, dass der Strom über die Rechnung des
+  // Hauses läuft, ist das der Fall aus BGH V ZR 166/15 und VIII ZR 27/07 (gelb). Fehlt nur die Rechnung des eigenen
+  // Stromvertrags, trägt der Vermieter eigenes Geld (färbt nicht).
+  test('Betriebsstrom mit Angabe: „Abzug fehlt“ gelb, „Rechnung fehlt“ färbt nicht', () => {
+    const ad = { warnings: ['a'], notices: [n({ code: 'heating.operating-power-deduction-missing', level: 'hint' })] }
+    expect(noticesNeedAttention(ad)).toBe(true)
+    expect(attentionLevel(ad)).toBe('gelb')
+    const ab = { warnings: ['a'], notices: [n({ code: 'heating.operating-power-bill-missing', level: 'hint' })] }
+    expect(noticesNeedAttention(ab)).toBe(false)
+    expect(attentionLevel(ab)).toBe('gruen')
+  })
   test('Fernablesbarkeit ab 2027 (#110): nein, der Nutzer kann im Programm nichts beheben', () => {
     expect(noticesNeedAttention({ warnings: ['a'], notices: [n({ code: 'heating.remote-reading', level: 'hint' })] })).toBe(false)
     expect(noticesNeedAttention({ warnings: ['a', 'b'], notices: [n({ code: 'heating.remote-reading', level: 'hint' }), n({ code: 'meter.main-gap', level: 'hint' })] })).toBe(true)
