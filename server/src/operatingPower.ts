@@ -378,10 +378,19 @@ export type BalanceSource = {
   cents: number
   plant: string | null | undefined
   linkedDescription: string | null
+  // Durchsicht S1: Woher der Beitrag kommt, für Zeilenname und Texte. `kept`: Abzug ohne Verweis (selbst getragen).
+  // `otherYear`: das Gegenstück (Heizposition bzw. Abzug) steht in einem anderen Steuerjahr. `sameYear`: Paar im selben
+  // Steuerjahr oder Heizposition ganz ohne Abzug.
+  situation: 'kept' | 'otherYear' | 'sameYear'
 }
+// Die Lage der ganzen Zeile: `kept` nur Abzüge ohne Verweis; `otherYear` nur Paare über zwei Steuerjahre; `mixed`
+// beides; `mismatch`: Abzug und Betriebsstrom sind im selben Steuerjahr verschieden hoch, oder eine Heizposition hat
+// gar keinen Abzug. Nur dann ist etwas zu prüfen.
+export type BalanceKind = 'kept' | 'otherYear' | 'mixed' | 'mismatch'
 export type BalanceNote = { costItemId: string; description: string; amountCents: number }
 export type OperatingPowerBalance = {
   cents: number
+  kind: BalanceKind
   sources: BalanceSource[]
   // Abzüge ohne Verweis bei Messdienst: zählen nicht (gemeldet).
   reported: BalanceNote[]
@@ -389,9 +398,18 @@ export type OperatingPowerBalance = {
   ambiguous: BalanceNote[]
 }
 
-// `lookup`: jede Position, die ein Verweis treffen kann, auch aus anderen Zeiträumen; sie liefert nur die Anlage und
-// die Beschreibung der verknüpften Heizposition.
-export function operatingPowerBalance(parts: readonly BalancePart[], lookup: (id: string) => BalanceItem | undefined): OperatingPowerBalance {
+// `linkable`: jede Position des Objekts, auch aus anderen Zeiträumen und Steuerjahren (Durchsicht M1). Sie liefert die
+// Anlage und die Beschreibung der verknüpften Heizposition und sagt, ob eine Heizposition anderswo einen Abzug hat;
+// Beträge kommen nie daraus.
+export function operatingPowerBalance(parts: readonly BalancePart[], linkable: readonly BalanceItem[]): OperatingPowerBalance {
+  const byId = new Map(linkable.map((c) => [c.id, c]))
+  for (const p of parts) for (const c of p.items) byId.set(c.id, c)
+  const lookup = (id: string) => byId.get(id)
+  const yearItems = parts.flatMap((p) => p.items)
+  const yearIds = new Set(yearItems.map((c) => c.id))
+  const linkedAnywhere = new Set([...byId.values()].filter((c) => c.operatingPower === 'deduction' && c.operatingPowerItemId).map((c) => c.operatingPowerItemId))
+  const yearDeductionsOf = (id: string) => yearItems.filter((c) => c.operatingPower === 'deduction' && c.operatingPowerItemId === id)
+  let mismatch = false
   const sources: BalanceSource[] = []
   const reported: BalanceNote[] = []
   const ambiguous: BalanceNote[] = []
@@ -399,7 +417,11 @@ export function operatingPowerBalance(parts: readonly BalancePart[], lookup: (id
     const service = serviceReceivesOperatingPower(p.plants, p.period)
     for (const c of p.items) {
       if (c.operatingPower === 'included') {
-        sources.push({ part, kind: 'included', costItemId: c.id, description: c.description, cents: -c.amountCents, plant: c.heatingPlantId ?? null, linkedDescription: null })
+        const mine = yearDeductionsOf(c.id)
+        const situation = mine.length === 0 && linkedAnywhere.has(c.id) ? 'otherYear' : 'sameYear'
+        // Im selben Jahr verschieden hoch, oder gar kein Abzug: der Abstand entsteht in diesem Jahr.
+        if (situation === 'sameYear' && -mine.reduce((a, d) => a + d.amountCents, 0) !== c.amountCents) mismatch = true
+        sources.push({ part, kind: 'included', costItemId: c.id, description: c.description, cents: -c.amountCents, plant: c.heatingPlantId ?? null, linkedDescription: null, situation })
         continue
       }
       if (c.operatingPower !== 'deduction') continue
@@ -410,13 +432,18 @@ export function operatingPowerBalance(parts: readonly BalancePart[], lookup: (id
         continue
       }
       const linked = c.operatingPowerItemId ? lookup(c.operatingPowerItemId) : undefined
+      const situation = !c.operatingPowerItemId ? 'kept'
+        : linked && yearIds.has(linked.id) && linked.operatingPower === 'included' ? 'sameYear' : 'otherYear'
       sources.push({
         part, kind: 'deduction', costItemId: c.id, description: c.description, cents: -c.amountCents,
-        plant: linked ? linked.heatingPlantId ?? null : undefined, linkedDescription: linked?.description ?? null,
+        plant: linked ? linked.heatingPlantId ?? null : undefined, linkedDescription: linked?.description ?? null, situation,
       })
     }
   })
-  return { cents: sources.reduce((a, s) => a + s.cents, 0), sources, reported, ambiguous }
+  const kept = sources.some((s) => s.situation === 'kept')
+  const otherYear = sources.some((s) => s.situation === 'otherYear')
+  const kind: BalanceKind = mismatch ? 'mismatch' : kept && otherYear ? 'mixed' : kept ? 'kept' : otherYear ? 'otherYear' : 'mismatch'
+  return { cents: sources.reduce((a, s) => a + s.cents, 0), kind, sources, reported, ambiguous }
 }
 
 // Negativer Allgemeinstrom ohne Kennzeichnung, wo im Zeitraum eine zentrale Anlage des Hauses ohne Messdienst heizt

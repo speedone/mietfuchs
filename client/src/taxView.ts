@@ -299,23 +299,35 @@ export function assignedUnitItems(report: TaxReport): AssignedUnitItem[] {
 
 // ---------- Betriebsstrom der Heizung (#268) ----------
 //
-// Der Text zum Ausgleich beim Betriebsstrom, je nach Richtung. Fundstellen: Werbungskosten sind die Aufwendungen
+// Der Text zum Ausgleich beim Betriebsstrom. Fundstellen: Werbungskosten sind die Aufwendungen
 // (§ 9 Abs. 1 Satz 1 EStG), abgesetzt im Jahr der Zahlung (§ 11 Abs. 2 Satz 1 EStG); die Stromrechnung ist eine
 // Zahlung, ein Abzug und eine Heizposition „steckt auch in der Stromrechnung“ sind Ausschnitte davon. Mit Eigennutzung
 // ein Satz zum Maßstab des privaten Teils, denn der ist eine Auslegung (Entscheidung R-4).
+// Durchsicht S1: Der Text folgt der Lage (`operatingPowerBalanceKind`). „Selbst getragen“ nur beim Abzug ohne Verweis;
+// „prüfen“ nur, wenn Abzug und Betriebsstrom im selben Steuerjahr verschieden hoch sind. Ein Paar über zwei
+// Steuerjahre ist richtig erfasst, dort ist nichts zu tun. Fehlt die Lage (ältere Antwort), gilt der neutrale Text.
 export function operatingPowerBalanceText(report: TaxReport): string | null {
   const c = report.operatingPowerBalanceCents ?? 0
   if (c === 0) return null
   const own = report.selfOccupiedExists
     ? ' Den privaten Teil teilt Mietfuchs nach Ihrem Eigenanteil an den Heizkosten der Anlage, bei einem Abzug ohne Verweis nach der Wohnfläche des ganzen Gebäudes; beides ist eine Auslegung.'
     : ''
-  return c > 0
-    ? `Beim Allgemeinstrom ist mehr Betriebsstrom der Heizung abgezogen, als in den Heizkosten steht (${fmtEuro(c)}). Diesen Teil legen Sie nicht um und tragen ihn selbst. ` +
-      'Die Abrechnung an die Mieter mindert das, Ihre Werbungskosten nicht: Bezahlt haben Sie die ganze Stromrechnung (§ 9 Abs. 1 Satz 1, § 11 Abs. 2 Satz 1 EStG). ' +
-      `Mietfuchs rechnet den Betrag deshalb in der Zeile „Betriebsstrom der Heizung, selbst getragen“ wieder hinzu.${own}`
-    : `In den Heizkosten steht mehr Betriebsstrom der Heizung, als beim Allgemeinstrom abgezogen ist (${fmtEuro(-c)}). Diesen Strom enthält auch die Stromrechnung, bezahlt haben Sie ihn aber nur einmal. ` +
-      'Damit die Stromrechnung nur einmal in den Werbungskosten steht (§ 9 Abs. 1 Satz 1 EStG), zieht Mietfuchs den Betrag in der Zeile „Betriebsstrom der Heizung, Ausgleich zur Heizposition“ wieder ab. ' +
-      `Prüfen Sie in der Abrechnung, ob der Abzug beim Allgemeinstrom zum Betriebsstrom passt.${own}`
+  const line = '„Betriebsstrom der Heizung, Ausgleich“'
+  const once = `Bezahlt haben Sie die Stromrechnung einmal; damit sie genau einmal in den Werbungskosten steht (§ 9 Abs. 1 Satz 1 EStG), gleicht Mietfuchs das in der Zeile ${line} aus.`
+  switch (report.operatingPowerBalanceKind) {
+    case 'kept':
+      return `Beim Allgemeinstrom ist Betriebsstrom der Heizung abgezogen, ohne dass er in den Heizkosten steht (${fmtEuro(c)}). Diesen Teil legen Sie nicht um und tragen ihn selbst. ` +
+        'Die Abrechnung an die Mieter mindert das, Ihre Werbungskosten nicht: Bezahlt haben Sie die ganze Stromrechnung (§ 9 Abs. 1 Satz 1, § 11 Abs. 2 Satz 1 EStG). ' +
+        `Mietfuchs rechnet den Betrag deshalb in der Zeile „Betriebsstrom der Heizung, selbst getragen“ wieder hinzu.${own}`
+    case 'otherYear':
+      return `Abzug beim Allgemeinstrom und Betriebsstrom in den Heizkosten stehen in verschiedenen Steuerjahren (Ausgleich in diesem Jahr ${fmtEuro(c)}). ` +
+        `Jedes Jahr zählt die in ihm bezahlte Stromrechnung; die Zeile ${line} hebt auf, was zum anderen Jahr gehört. Zu tun ist nichts.${own}`
+    case 'mixed':
+      return `Ein Teil des Ausgleichs (${fmtEuro(c)}) ist Betriebsstrom, den Sie nicht umlegen und selbst tragen (Abzug ohne Verweis); ein Teil gehört zu Abzug und Betriebsstrom in verschiedenen Steuerjahren. ${once}${own}`
+    default:
+      return `Abzug beim Allgemeinstrom und Betriebsstrom in den Heizkosten sind in diesem Steuerjahr verschieden hoch (Ausgleich ${fmtEuro(c)}). ${once} ` +
+        `Prüfen Sie in der Abrechnung, ob der Abzug beim Allgemeinstrom zum Betriebsstrom passt.${own}`
+  }
 }
 
 // Heizung PR 8 (N8): Die Abrechnung rechnet den Brennstoff nach Verbrauch, die Steuerübersicht nach

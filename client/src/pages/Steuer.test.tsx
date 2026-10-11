@@ -182,7 +182,7 @@ const LAGEN: Record<TaxHint, Lage> = {
     text: /bestimmten Einheiten zugeordnet/,
   },
   // #268: Ausgleich beim Betriebsstrom, nicht eindeutige Meldung an den Messdienst, negativer Allgemeinstrom ohne Kennzeichnung.
-  operatingPowerBalance: { report: REPORT({ operatingPowerBalanceCents: 20000 }), text: /Diesen Teil legen Sie nicht um und tragen ihn selbst/ },
+  operatingPowerBalance: { report: REPORT({ operatingPowerBalanceCents: 20000, operatingPowerBalanceKind: 'kept' }), text: /Diesen Teil legen Sie nicht um und tragen ihn selbst/ },
   operatingPowerAmbiguous: {
     report: REPORT({ operatingPowerAmbiguous: [{ costItemId: 'ab', description: 'Abzug Heizung', amountCents: -20000 }] }),
     text: /zählt als dem Messdienst gemeldet/,

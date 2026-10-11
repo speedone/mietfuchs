@@ -1043,6 +1043,10 @@ export type TaxReport = {
   // Stromrechnung stecken, im Steuerjahr, mit Vorzeichen. Steht als eigene Zeile beim Allgemeinstrom, damit der Strom
   // genau die bezahlte Stromrechnung ist. Nur ≠ 0.
   operatingPowerBalanceCents?: number
+  // Woher der Ausgleich kommt (Durchsicht S1 zu #268), für den Text der Seite: `kept` Abzüge ohne Verweis (selbst
+  // getragen), `otherYear` Abzug und Betriebsstrom in verschiedenen Steuerjahren, `mixed` beides, `mismatch` im selben
+  // Steuerjahr verschieden hoch. Nur zusammen mit `operatingPowerBalanceCents`.
+  operatingPowerBalanceKind?: 'kept' | 'otherYear' | 'mixed' | 'mismatch'
   // Abzüge ohne Verweis, die als dem Messdienst gemeldet gelten, obwohl im Zeitraum zugleich eine Anlage ohne
   // Messdienst heizt (R-6 zu #268). Nur, wenn es welche gibt.
   operatingPowerAmbiguous?: { costItemId: string; description: string; amountCents: number }[]
