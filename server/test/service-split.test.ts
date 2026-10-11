@@ -81,7 +81,8 @@ test('Eigenschaften: Σ Abzüge je Teil ≤ Teil der Rechnung, Zeilen- und Spalt
   for (let fall = 0; fall < 4000; fall++) {
     const anzahl = 1 + rnd(4)
     const tage = Array.from({ length: anzahl }, () => 1 + rnd(200))
-    const rechnung = 1 + rnd(200000)
+    // Die Hälfte der Fälle mit winzigen Rechnungen: Dort treten Rundungsfälle auf, die große Beträge verbergen.
+    const rechnung = rnd(2) === 0 ? 1 + rnd(20) : 1 + rnd(200000)
     const summeTage = tage.reduce((a, t) => a + t, 0)
     // Die Teile der Rechnung nach Tagen (wie splitByService), mit Restcent an den größten Rest.
     const roh = tage.map((t) => (rechnung * t) / summeTage)
@@ -113,4 +114,20 @@ test('Eigenschaften: Σ Abzüge je Teil ≤ Teil der Rechnung, Zeilen- und Spalt
     })
     if (gesamt === rechnung) beträge.forEach((b, k) => assert.equal(-out.reduce((a, z) => a + (z[k]?.amountCents ?? 0), 0), b, `Fall ${fall}: Teil ${k} nicht genau`))
   }
+})
+
+// Gegenbeispiele aus der Mutationsprüfung, je von Hand nachvollziehbar.
+test('Nach Tagen läge ein Teil über der Rechnung: 4 Cent über 10/31/30 Tage (0/2/2), Abzug 3 Cent nach Beträgen 0/2/1', () => {
+  // Nach Tagen: 3 × 10/71 = 0,42, 3 × 31/71 = 1,31, 3 × 30/71 = 1,27 → 0 + 1 + 1, Restcent an 0,42 → 1/1/1, also 1 Cent
+  // aus einem Teil, der 0 Cent beträgt. Nach Beträgen: 0, 1,5, 1,5 → 0/1/1, Restcent nach der Reihenfolge → 0/2/1.
+  const out = splitDeductionsAlike([{ id: 'a', description: 'Abzug', amountCents: -3 }], teile([0, 2, 2], [10, 31, 30]))
+  assert.deepEqual(out[0]?.map((p) => p.amountCents), [0, -2, -1])
+})
+
+test('Teilschritt 2 nach dem Rest, nicht nach dem ursprünglichen Betrag: drei Teile zu 1 Cent, zwei Abzüge zu 1 Cent', () => {
+  // Gemeinsam 2 Cent → 1/1/0. Teil 1: Quoten 0,5 / 0,5, Restcent nach Kennung an d0 → d0 1, d1 0. Teil 2: übrig sind
+  // d0 0 und d1 1 → d1 1. Nach dem ursprünglichen Betrag bekäme d0 auch in Teil 2 den Cent und im letzten Teil −1.
+  const [d0, d1] = splitDeductionsAlike([{ id: 'd0', description: 'Abzug', amountCents: -1 }, { id: 'd1', description: 'Abzug', amountCents: -1 }], teile([1, 1, 1]))
+  assert.deepEqual(d0?.map((p) => p.amountCents), [-1, 0, 0])
+  assert.deepEqual(d1?.map((p) => p.amountCents), [0, -1, 0])
 })
