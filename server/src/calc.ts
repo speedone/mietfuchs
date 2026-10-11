@@ -422,8 +422,8 @@ const noticeKinds = {
   'heating.operating-power-key': { level: 'warning', title: 'Abzug anders verteilt als die Stromrechnung', terms: ['operatingPower', 'allocationKey'] },
   // Durchsicht von #252, G-W1: mehr Abzug als Stromrechnung.
   'heating.operating-power-exceeds': { level: 'warning', title: 'Mehr Abzug als Stromrechnung', terms: ['operatingPower'] },
-  // Durchsicht von #252, N1: Betriebsstrom und Abzug in verschiedenen Steuerjahren.
-  'heating.operating-power-tax-year': { level: 'warning', title: 'Betriebsstrom und Abzug in verschiedenen Steuerjahren', terms: ['operatingPower'] },
+  // Durchsicht von #252, N1: Den Hinweis `heating.operating-power-tax-year` (Betriebsstrom und Abzug in verschiedenen
+  // Steuerjahren) gibt es seit #268 nicht mehr: Die Steuerübersicht gleicht je Steuerjahr aus, es verschiebt sich nichts.
   'heating.operating-power-double': { level: 'warning', title: 'Betriebsstrom und Abzug beim Allgemeinstrom passen nicht zusammen', terms: ['operatingPower', 'heatingCostOrdinance'] },
   // Folge-PR zu #252: Betriebsstrom fehlt (#224; färbt die Ampel nicht, Entscheidung F6) und Strom zur
   // Wärmeerzeugung einer Wärmepumpe oder eines Elektrokessels womöglich im Allgemeinstrom (#253).
@@ -6566,22 +6566,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // Durchsicht von #252, G-K3: Ein Abzug mindert seine Stromrechnung nur dann im Verhältnis, wenn er
   // verteilt ist wie sie (Schlüssel, Zähler, Wohnung, Anteile, Teilnehmer; dieselbe Regel wie beim
   // gemerkten Schlüssel, shared/allocation.ts). Sonst verschieben sich die Anteile der Mieter.
-  // Durchsicht von #252, G-K2 und N1: Betriebsstrom und Abzug sind eine Umbuchung aus der Stromrechnung;
-  // in verschiedenen Steuerjahren stünden beide Jahre der Anlage V falsch.
-  for (const item of items) {
-    if (item.operatingPower !== 'included') continue
-    const itemTaxYear = taxYearOf(item, period)
-    for (const d of snapshot.operatingPowerDeductions ?? []) {
-      if (d.itemId !== item.id || d.taxYear === undefined || d.taxYear === itemTaxYear) continue
-      warn('heating.operating-power-tax-year',
-        `„${item.description}“ zählt in der Steuerübersicht zum Jahr ${itemTaxYear}, der Abzug „${d.description}“ zum Jahr ${d.taxYear}. ` +
-        `Beides ist eine Umbuchung aus derselben Stromrechnung und gehört in dasselbe Jahr. Stellen Sie beim Abzug „${d.description}“ im Kostenformular unter „Jahr der Zahlung (Steuer)“ das Jahr der Betriebsstrom-Position ein (${itemTaxYear}); das Jahr des Betriebsstroms hängt an seiner Heizperiode. ` +
-        // Recht-H-1 und K-4 (Folge-PR zu #252): gegen die Feldhilfe „Maßgeblich ist, wann Sie gezahlt haben“; nicht
-        // „heben sich auf“, denn bei teilweiser Eigennutzung bleibt je Jahr ein Rest (splitForTax).
-        'Das widerspricht nicht der Regel, dass zählt, wann Sie gezahlt haben: Betriebsstrom und Abzug sind keine eigene Zahlung, sondern teilen die Stromrechnung nur auf; zusammen ändern sie die Summe Ihrer Kosten nicht, und die Stromrechnung selbst bleibt im Jahr ihrer Zahlung (§ 11 Abs. 2 EStG).',
-        itemSubject(item))
-    }
-  }
+  // Durchsicht von #252, G-K2 und N1: Betriebsstrom und Abzug in verschiedenen Steuerjahren standen bis #268 in beiden
+  // Jahren der Anlage V falsch, und hier stand ein Hinweis. Seit #268 gleicht die Steuerübersicht je Steuerjahr aus
+  // (`operatingPowerBalance`): Jedes Jahr zeigt die in ihm bezahlten Rechnungen, nichts verschiebt sich, der Hinweis
+  // entfällt (Zahlen in calc-steuer-betriebsstrom.test.ts, „Verschiedene Steuerjahre“).
   // Durchsicht von #252, G-W1: Aus einer Stromrechnung ist höchstens ihr Betrag abzuziehen; sonst ist der
   // Allgemeinstrom netto negativ, und die Mieter bekommen mehr gutgeschrieben, als er kostet.
   for (const g of items) {

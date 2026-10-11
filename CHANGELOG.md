@@ -308,8 +308,7 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   (BGH, Versäumnisurteil vom 20.02.2008, VIII ZR 27/07, Leitsatz c). Einen von Hand erfassten Abzug
   verknüpfen Sie im Kostenformular mit dem Betriebsstrom und mit der Stromrechnung, aus der er stammt;
   er übernimmt deren Verteilung, und die Rechnung lässt sich nicht löschen, solange er besteht. Die
-  Abrechnung meldet einen Abzug, der anders verteilt ist als seine Rechnung, mehr Abzug als Rechnung und
-  Betriebsstrom und Abzug in verschiedenen Steuerjahren. Die Karte bietet nur Stromrechnungen an, die
+  Abrechnung meldet einen Abzug, der anders verteilt ist als seine Rechnung, und mehr Abzug als Rechnung. Die Karte bietet nur Stromrechnungen an, die
   die Heizperiode berühren, übernimmt deren Jahr der Zahlung (auch bei Abrechnung von Mai bis April),
   zeigt, was schon gebucht ist, und fragt bei einer zweiten Buchung zurück; mehr Abzug als Rechnung
   lehnt auch das Kostenformular ab, und ein Wechsel des Abrechnungszeitraums nimmt Rechnung und Abzüge
@@ -330,7 +329,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   zählt nicht doppelt. Die Übersicht zeigt dafür die Zeile „Betriebsstrom der Heizung“ beim Allgemeinstrom,
   bei Eigennutzung mit dem privaten Teil nach Ihrem Eigenanteil an den Heizkosten (eine Auslegung), und
   auch das ZIP „Belege für die Steuer“ führt sie. Im Kostenformular heißt der Abzug ohne Verweis ohne
-  Messdienst „Ja, ich lege ihn nicht um und trage ihn selbst“. Die Abrechnung an die Mieter ändert sich nicht.
+  Messdienst „Ja, ich lege ihn nicht um und trage ihn selbst“. Stehen Abzug und Betriebsstrom in verschiedenen
+  Steuerjahren, verschiebt sich in der Anlage V nichts mehr; jedes Jahr zeigt die in ihm bezahlten Rechnungen. Der
+  Hinweis dazu und der Satz in der Vorschau beim Wechsel des Abrechnungszeitraums entfallen deshalb. Die Abrechnung an
+  die Mieter ändert sich nicht.
 - **Hinweis, wenn der Betriebsstrom der Heizung fehlt** ([#224](https://github.com/speedone/mietfuchs/issues/224)):
   Hat eine Zentralheizung mit Brenner im Abrechnungszeitraum weder einen Betriebsstrom noch einen Abzug beim
   Allgemeinstrom, sagt die Abrechnung das, mit dem Weg über die Karte „Betriebsstrom“ (§ 7 Abs. 2, § 8 Abs. 2
@@ -362,8 +364,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - Beim Wechsel des Abrechnungszeitraums folgt der Abzug des Betriebsstroms immer seiner Stromrechnung, auch
   wenn deren Leistungszeitraum ganz in einem neuen Zeitraum liegt; bisher lehnte der Wechsel das ab. Mehrere
   Abzüge einer Rechnung werden gemeinsam geteilt, sodass aus keinem Teil mehr abgezogen wird, als er beträgt,
-  und das Jahr der Zahlung eines Abzugs folgt seinem Betriebsstrom. Bleibt ein Teil des Abzugs in einem festen Steuerjahr, während der Betriebsstrom in ein anderes geht, sagt die Vorschau vorher, welcher Betrag sich in der Anlage V verschiebt. Der Hinweis zu verschiedenen Steuerjahren
-  und die Hilfe am Feld „Jahr der Zahlung (Steuer)“ erklären, warum dort das Jahr des Betriebsstroms gilt.
+  und das Jahr der Zahlung eines Abzugs folgt seinem Betriebsstrom. Die Hilfe am Feld „Jahr der Zahlung (Steuer)“
+  erklärt, warum dort das Jahr des Betriebsstroms gilt.
 
 ### Geändert
 
