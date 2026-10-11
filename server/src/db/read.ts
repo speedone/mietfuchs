@@ -344,6 +344,11 @@ export async function readHeatingPlants(db: Executor): Promise<HeatingPlant[]> {
     heatPumpMajority: p.heatPumpMajority,
     hcaModel: p.hcaModel,
     operatingPowerHandling: p.operatingPowerHandling,
+    // Wärmelieferung (Heizung PR 16).
+    contracting: p.contracting,
+    heatDeliverySince: p.heatDeliverySince,
+    previousSupply: p.previousSupply,
+    switchAnnouncedOn: p.switchAnnouncedOn,
     selfSpans: eigene.get(p.id) ?? [],
   }))
 }
