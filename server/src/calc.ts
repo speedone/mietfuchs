@@ -989,7 +989,9 @@ export function stockCarrySelfCents(settlement: Pick<ComputedSettlement, 'landlo
     .reduce((a, r) => a + (r.landlordParts ?? []).filter((x) => x.reason === 'selfUse').reduce((b, x) => b + x.cents, 0), 0)
 }
 
-export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[]): TaxReport {
+// `linkable`: Positionen, auf die ein Abzug zeigen kann, auch aus anderen Jahren (#268, Durchsicht M1); nur für die
+// Anlage und die Beschreibung eines Verweises, nie für Beträge.
+export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], options: { linkable?: readonly SnapshotCostItem[] } = {}): TaxReport {
   const year = snapshot.year
   // Die Steuerübersicht rechnet im Kalenderjahr (§ 11 EStG, #208). Ohne Teile: der Schnappschuss
   // eines Kalenderjahres. Mit Teilen: die Abrechnungen, die das Jahr berühren; `snapshot` liefert
@@ -1122,6 +1124,7 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[]): TaxRe
   // Steuerjahr genau die bezahlte Stromrechnung ist. Sie geht nicht durch den eingefrorenen Stand (keine Position der
   // Abrechnung) und nicht in den Eigenanteil laut Abrechnung.
   const lookup = new Map<string, SnapshotCostItem>()
+  for (const c of options.linkable ?? []) lookup.set(c.id, c)
   for (const p of used) {
     for (const c of [...p.snapshot.costItems, ...(p.snapshot.heatingParts ?? []).flatMap((x) => x.items), ...p.items]) lookup.set(c.id, c)
   }
@@ -1330,7 +1333,10 @@ export function taxPartsFor(source: Parameters<typeof snapshotFor>[0], propertyI
 export function taxReportFor(source: Parameters<typeof snapshotFor>[0], propertyId: string, year: number): TaxReport {
   const calendar = snapshotFor(source, propertyId, calendarYearPeriod(year))
   const parts = taxPartsFor(source, propertyId, year)
-  return parts === null ? taxReport(calendar) : taxReport(calendar, parts)
+  // Durchsicht M1 zu #268: Ein Abzug kann auf eine Heizposition in einem anderen Steuerjahr zeigen; der Schnappschuss
+  // kennt nur die Positionen seines Zeitraums. Deshalb bekommt die Übersicht alle Positionen des Objekts für Verweise.
+  const all = source.costItems.filter((c) => c.propertyId === propertyId)
+  return taxReport(calendar, parts ?? undefined, { linkable: all })
 }
 
 // Die Anlage-V-Gruppe einer Kostenart, `null` für die Rücklage (#143). Bewusst nach

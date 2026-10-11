@@ -351,6 +351,19 @@ test('Verschiedene Steuerjahre mit Eigennutzung: privat je Jahr wie beim Paar im
   assert.deepEqual(getrennt, [[690000, 148000], [600000, 120000]])
   assert.deepEqual(zusammen, getrennt)
 })
+
+test('Verschiedene Steuerjahre, Heizschlüssel nach Einheiten (Durchsicht M1, T12): der Verweis ins andere Jahr wird aufgelöst, privat nach dem Heizanteil 1/3', () => {
+  // Nach Flächen wären es 20 %, nach dem Heizanteil 1/3: Hier unterscheiden sich beide.
+  // Gas 6.000 je Jahr nach Einheiten → eigen 2.000. Strom 900 in 2025 nach Einheiten → 300. Abzug −150 in 2025 → −50,
+  // verknüpft mit der Heizposition 150 (nach Einheiten) in 2026 → eigen 50.
+  // 2025: 6.900; privat 2.000 + 300 − 50 + 150 × 2.000/6.000 = 2.300 (nach Fläche wären es 2.280).
+  // 2026: 6.000; privat 2.000 + 50 − 150 × 2.050/6.150 = 2.000.
+  const units = { key: 'units' as const }
+  const getrennt = tax2(eigen([gas(600000, '2025-01', units), hausstrom(90000), abzug('ab', 15000, 'bs'), gas(600000, '2026-01', units), betrieb('bs', 15000, units, '2026-01')]))
+  const zusammen = tax2(eigen([gas(600000, '2025-01', units), hausstrom(90000), abzug('ab', 15000, 'bs'), betrieb('bs', 15000, units), gas(600000, '2026-01', units)]))
+  assert.deepEqual(zusammen, [[690000, 230000], [600000, 200000]])
+  assert.deepEqual(getrennt, zusammen)
+})
 const tax2 = (src: Source) => [2025, 2026].map((y) => [tax(src, y).expenses.totalCents, tax(src, y).expenses.privateCents])
 
 test('K2: abgeschlossene Abrechnung, danach DG größer erfasst: privater Teil der Zeile aus dem eingefrorenen Heizanteil', () => {
