@@ -236,6 +236,10 @@ test('N1: Abzug in einem anderen Steuerjahr als sein Betriebsstrom → Hinweis; 
   // R4-H-1: das Feld mit seinem Namen in der Oberfläche, das Jahr wie bei der Betriebsstrom-Position.
   assert.match(n.text, /Stellen Sie beim Abzug „Abzug Betriebsstrom Heizung“ im Kostenformular unter „Jahr der Zahlung \(Steuer\)“ das Jahr der Betriebsstrom-Position ein \(2025\)/)
   assert.doesNotMatch(n.text, /bei beiden/)
+  // Recht-H-1 und K-4 (Folge-PR zu #252): gegen die Feldhilfe „Maßgeblich ist, wann Sie gezahlt haben“, ohne „heben
+  // sich auf“ (bei teilweiser Eigennutzung bleibt je Jahr ein Rest).
+  assert.match(n.text, /Das widerspricht nicht der Regel, dass zählt, wann Sie gezahlt haben: Betriebsstrom und Abzug sind keine eigene Zahlung, sondern teilen die Stromrechnung nur auf; zusammen ändern sie die Summe Ihrer Kosten nicht, und die Stromrechnung selbst bleibt im Jahr ihrer Zahlung \(§ 11 Abs\. 2 EStG\)\.$/)
+  assert.doesNotMatch(n.text, /heben sich/)
   assert.equal(kind(settle([betriebsstrom, hausstrom], [{ ...abzug(14784), taxYear: 2025 }])).length, 0)
 })
 

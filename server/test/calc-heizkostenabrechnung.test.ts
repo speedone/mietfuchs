@@ -306,6 +306,30 @@ test('Wärmepumpe, deren Erfassung erst im Zeitraum eingebaut wurde: Hinweis, ke
   })
 })
 
+// K-2 (Rechtsprüfung des Plans zum Folge-PR von #252): Meldet dieselbe Abrechnung, dass die Heizkostenverordnung für
+// diese Wärmepumpe noch nicht gilt (§ 12 Abs. 3 Satz 2), nennt der Hinweis zum Strom der Wärmepumpe sie nicht; sonst
+// widersprächen sich zwei Hinweise. Zum Vergleich dieselbe Anlage mit Erfassung am 01.10.2024.
+test('K-2: Strom der Wärmepumpe im Allgemeinstrom: keine HeizkostenV im Text, solange sie für die Anlage noch nicht gilt', async () => {
+  await withDatabase(async (opened) => {
+    const snap = await beispielA(opened)
+    const plantsWith = (captured: boolean) => (snap.heatingPlants ?? []).map((p) => ({ ...p, energy: 'heatPump' as const, hotWater: 'none' as const, capturedOnOct2024: captured, captureInstalledOn: captured ? null : '2025-06-01', selfSpans: (p.selfSpans ?? []).map((s) => ({ ...s, hotWater: 'none' as const })) }))
+    // Keine Stromrechnung der Wärmepumpe: Der Brennstoff wird zur Position „Betrieb“, dazu der Hausstrom.
+    const items = [
+      ...snap.costItems.map((c) => ({ ...(c.heatingTarget === 'both' || c.heatingTarget === 'water' ? { ...c, heatingTarget: 'heating' as const } : c), ...(c.heatingPart === 'fuel' ? { heatingPart: 'operating' as const, fuelDeliveryId: undefined } : {}) })),
+      { id: 'hausstrom', period: periodKey('2025-01'), category: 'Beleuchtung/Allgemeinstrom', description: 'Hausstrom', amountCents: 100000, key: 'area' as const },
+    ]
+    const meters = snap.meters.filter((m) => !(m.type === 'waerme' && m.unitId !== null))
+    const noch = computeSettlement({ ...snap, heatingPlants: plantsWith(false), costItems: items, meters })
+    assert.ok(codes(noch).includes('heating.heat-pump-capture'))
+    const text = textOf(noch, 'heating.generation-power-missing')
+    assert.match(text, /BetrKV seit dem 01\.01\.2024 zu den Heizkosten\. Läuft er/)
+    assert.doesNotMatch(text, /HeizkostenV seit/)
+    const gilt = computeSettlement({ ...snap, heatingPlants: plantsWith(true), costItems: items, meters })
+    assert.ok(!codes(gilt).includes('heating.heat-pump-capture'))
+    assert.match(textOf(gilt, 'heating.generation-power-missing'), /§ 7 Abs\. 2 HeizkostenV seit dem 01\.10\.2024/)
+  })
+})
+
 test('Abweichung 11: beruht der Warmwasseranteil auf der Schätzung beim Abschluss, sagt ein Hinweis das', async () => {
   await withDatabase(async (opened) => {
     const snap = await beispielA(opened)
