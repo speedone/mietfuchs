@@ -388,4 +388,6 @@ test('Lexikon monthlyConsumptionInfo (Heizung PR 22): Mitteilen jeden Monat, kWh
   assert.match(t.needed, /nicht von den Nutzern desselben Hauses/)
   assert.match(t.needed, /um 3 % kürzen/)
   assert.match(t.needed, /nicht höchstrichterlich geklärt; Mietfuchs rechnet vorsorglich mit den vollen 3 % \(Auslegung\)/)
+  assert.match(t.needed, /jeden Monat, auch außerhalb der Heizperiode.*Auslegung/s)
+  assert.match(t.needed, /ab dem ersten Tag des Folgemonats als fällig.*Festlegung von Mietfuchs/s)
 })

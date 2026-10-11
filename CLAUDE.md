@@ -1502,8 +1502,10 @@ Wohnung ganz fernablesbar ist, sonst „möglich“, und bei gemischter Ausstatt
 (BR-Drs. 643/21, S. 18); beides und der einzelne fehlende Monat sind als Auslegung benannt. Abgezogen wird
 nichts. Karte [MonthlyInfoCard.tsx](client/src/components/MonthlyInfoCard.tsx) auf der Seite Heizkosten, Blatt
 [MonthlyInfoSheet.tsx](client/src/components/MonthlyInfoSheet.tsx) als Portal an `body`, gedruckt mit
-`body.print-monthly-info` ohne `#root`. Einschränkung: Die Warmwassertemperatur lässt sich heute nur in der Karte
-„Warmwasser“ eintragen, also bei verbundenem Warmwasser; bei getrenntem bleibt der Monat ohne Umrechnung offen.
+`body.print-monthly-info` ohne `#root`. Die Warmwassertemperatur steht bei verbundenem Warmwasser in der Karte
+„Warmwasser“, bei getrenntem in dieser Karte (`saveDhwTemperature` in db/co2.ts, dieselbe Prüfung und Spalte;
+ohne sie könnte der Vermieter die genannte Kürzung nicht abwenden). Alle Monate statt nur der Heizperiode
+(Vorblatt der BR-Drs. 643/21) und „fällig ab dem 1. des Folgemonats“ stehen als Auslegung bzw. Festlegung im Text.
 
 **Brennstoffvorrat** (Heizung PR 8, #97, #99): Bei Heizöl, Flüssiggas, Pellets, Holz und Kohle
 (`STOCK_ENERGIES` in [shared/fuelStock.ts](shared/fuelStock.ts)) rechnet
