@@ -68,6 +68,18 @@ test('Abzug ohne Verweis: ohne Messdienst „trage ihn selbst“ samt Hinweis zu
   expect(screen.queryByText(/zu Ihren Werbungskosten/)).toBeNull()
 })
 
+// Durchsicht S3: Der Satz zur Steuer gehört nur zur Antwort „trage ihn selbst“, nicht zum verknüpften Abzug und nicht zu „Nein“.
+test('Abzug ohne Messdienst: verknüpft oder „Nein“ ohne Satz zur Steuer', () => {
+  const linked: ItemForm = { ...EMPTY_ITEM_FORM, category: 'Beleuchtung/Allgemeinstrom', amount: '-147,84', operatingPower: 'deduction', operatingPowerItemId: 'bs' }
+  render(<OperatingPowerFields form={linked} items={[bs]} periodKey={periodKey('2025-01')} service={false} onChange={vi.fn()} />)
+  expect((screen.getByLabelText(/Abzug des Betriebsstroms/) as HTMLSelectElement).value).toBe('bs')
+  expect(screen.queryByText(/zu Ihren Werbungskosten/)).toBeNull()
+  cleanup()
+  render(<OperatingPowerFields form={{ ...linked, operatingPower: '', operatingPowerItemId: '' }} items={[bs]} periodKey={periodKey('2025-01')} service={false} onChange={vi.fn()} />)
+  expect((screen.getByLabelText(/Abzug des Betriebsstroms/) as HTMLSelectElement).value).toBe('')
+  expect(screen.queryByText(/zu Ihren Werbungskosten/)).toBeNull()
+})
+
 // G-K3: Der Abzug nennt seine Stromrechnung; die Auswahl zeigt den gespeicherten Wert und übernimmt die Verteilung.
 test('Abzug: Auswahl der Stromrechnung zeigt den gespeicherten Wert, eine Wahl übernimmt den Schlüssel', () => {
   const strom: CostItem = { id: 'strom', propertyId: 'o', period: periodKey('2025-01'), category: 'Beleuchtung/Allgemeinstrom', description: 'Hausstrom 2025', amountCents: 105000, key: 'units' }
