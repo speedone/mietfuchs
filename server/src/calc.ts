@@ -1647,7 +1647,7 @@ function operatingPowerBalanceItem(
       steps.push(...quotaSteps)
     }
     if (byArea) {
-      steps.push({ label: 'Zuordnung', value: 'nach Wohn- und Nutzfläche des ganzen Gebäudes, denn ein Abzug ohne Verweis gehört zu keiner bestimmten Anlage; das ist eine Auslegung von Mietfuchs (BFH, Urteil vom 24.06.2008, IX R 26/06)', term: 'mixedUse' })
+      steps.push({ label: 'Zuordnung', value: 'nach Wohn- und Nutzfläche des ganzen Gebäudes wie bei Kosten des ganzen Gebäudes, denn ein Abzug ohne Verweis gehört zu keiner bestimmten Anlage; das ist eine Auslegung von Mietfuchs', term: 'mixedUse' })
       steps.push({ label: 'Betroffene Fläche', value: `${fmtNum(totalArea)} m² (ganzes Gebäude), davon selbstgenutzt ${fmtNum(selfArea)} m²` })
     }
     if (unsplittable) {

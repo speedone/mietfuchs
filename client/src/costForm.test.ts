@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest'
+import { OPERATING_POWER_KEPT } from '../../shared/operatingPower.ts'
 import { generalChoices, withGeneralChoice, deductionChoiceOf, deductionChoices, itemToForm as itemToFormOf, OPERATING_POWER_OPTIONS, showsDeductionLink, showsOperatingPower, withDeductionChoice, withOperatingPower, buildCostItemBody as buildBody } from './costForm'
 import type { CostItem as CostItemOf } from './types'
 import { calendarPeriod, periodKey } from '../../shared/period.ts'
@@ -738,13 +739,20 @@ test('Betriebsstrom: Abzug am Allgemeinstrom bleibt beim Bearbeiten erhalten und
   // Die Auswahl bei einem Abzug (negativer Betrag am Allgemeinstrom): kein Abzug, Messdienst, jeder Betriebsstrom.
   expect(showsDeductionLink(form)).toBe(true)
   expect(showsDeductionLink({ ...form, amount: '10,00' })).toBe(false)
-  expect(deductionChoices([bs, ab])).toEqual([
+  expect(deductionChoices([bs, ab], { service: true })).toEqual([
     { value: '', label: 'Nein, kein Abzug des Betriebsstroms' },
     { value: 'service', label: 'Ja, der Betrag ist dem Messdienst als Betriebsstrom gemeldet' },
     { value: 'bs', label: 'Ja, zu „Betriebsstrom Heizung (geschätzt)“ (2025, 147,84\u00a0€)' },
   ])
   expect(deductionChoiceOf(form)).toBe('bs')
-  const hand = { ...EMPTY_ITEM_FORM, category: 'Beleuchtung/Allgemeinstrom', amount: '-147,84' }
+  // #268: Ohne Messdienst im Zeitraum heißt der Abzug ohne Verweis „selbst getragen“; gespeichert wird dasselbe.
+  expect(deductionChoices([bs], { service: false })).toEqual([
+    { value: '', label: 'Nein, kein Abzug des Betriebsstroms' },
+    { value: 'service', label: OPERATING_POWER_KEPT },
+    { value: 'bs', label: 'Ja, zu „Betriebsstrom Heizung (geschätzt)“ (2025, 147,84 €)' },
+  ])
+  expect(OPERATING_POWER_KEPT).toBe('Ja, ich lege ihn nicht um und trage ihn selbst')
+  const hand ={ ...EMPTY_ITEM_FORM, category: 'Beleuchtung/Allgemeinstrom', amount: '-147,84' }
   expect(deductionChoiceOf(hand)).toBe('')
   const verknuepft = withDeductionChoice(hand, 'bs')
   expect(withOperatingPower({}, verknuepft)).toEqual({ operatingPower: 'deduction', operatingPowerItemId: 'bs', operatingPowerGeneralId: null, operatingPowerBasis: null })

@@ -8,7 +8,9 @@ import Term from './Term'
 import type { CostItem, HeatingEnergy } from '../types'
 
 // `plantEnergy`: die Energie der Anlage der Heizposition (R-W2: Strom zur Wärmeerzeugung bei Wärmepumpe und Stromheizung).
-export default function OperatingPowerFields({ form, items, periodKey, plantEnergy, onChange }: { form: ItemForm; items: readonly CostItem[]; periodKey: string; plantEnergy?: HeatingEnergy; onChange: (next: ItemForm) => void }) {
+// `service`: Heizt im Zeitraum eine Anlage mit Messdienst? Dann heißt der Abzug ohne Verweis „dem Messdienst gemeldet“,
+// sonst „selbst getragen“ (#268, `serviceReceivesOperatingPower`).
+export default function OperatingPowerFields({ form, items, periodKey, plantEnergy, service, onChange }: { form: ItemForm; items: readonly CostItem[]; periodKey: string; plantEnergy?: HeatingEnergy; service: boolean; onChange: (next: ItemForm) => void }) {
   const heating = showsOperatingPower(form, plantEnergy)
   const generation = form.heatingPart === 'fuel'
   const deduction = showsDeductionLink(form)
@@ -42,8 +44,14 @@ export default function OperatingPowerFields({ form, items, periodKey, plantEner
         <label className="field">
           <span>Abzug des <Term id="operatingPower">Betriebsstroms</Term> der Heizung?</span>
           <select value={deductionChoiceOf(form)} onChange={(e) => onChange(withDeductionChoice(form, e.target.value))}>
-            {deductionChoices(items).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            {deductionChoices(items, { service }).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
+          {!service && (
+            <small className="muted">
+              Die Mieter bekommen den Betrag beim Allgemeinstrom gutgeschrieben, und der Betriebsstrom steht nicht in den Heizkosten. In der
+              Steuerübersicht zählt Mietfuchs ihn trotzdem zu Ihren Werbungskosten, denn Sie haben die ganze Stromrechnung bezahlt.
+            </small>
+          )}
         </label>
       )}
       {/* Durchsicht von #252, G-K3: Der Abzug nennt die Rechnung, aus der er stammt, und übernimmt ihre Verteilung. */}
