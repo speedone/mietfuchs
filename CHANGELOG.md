@@ -277,6 +277,17 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   die eigene Heizkostenabrechnung nach der Fläche, auch wenn Ablesungen fehlen. Wirkt eine Angabe an einer abgeschlossenen Heizperiode vorbei
   auf eine offene, fragt die Karte vorher nach.
   ([#99](https://github.com/speedone/mietfuchs/issues/99))
+- Monatliche Verbrauchsinformation: Rechnen Sie die Heizkosten selbst ab und sind Zähler als fernablesbar
+  eingetragen, erstellt Mietfuchs auf der Seite Heizkosten in der Karte „Monatliche Verbrauchsinformation“ je
+  Mieter und Monat die Information nach § 6a HeizkostenV aus den Zählerständen genau am Monatsende, nie
+  geschätzt: Verbrauch der Heizung in kWh, Warmwasser in m³ und getrennt davon umgerechnet in kWh (angelehnt
+  an § 9 Abs. 2 Satz 2, ohne Summe), Vergleich mit Vormonat und Vorjahresmonat desselben Mieters und mit einem
+  Durchschnittsnutzer, dessen Vergleichswert Sie mit Quelle eintragen. Das Blatt je Mieter lässt sich drucken
+  und nennt keinen anderen Nutzer; den Tag der Mitteilung vermerken Sie je Monat. Fehlt ein Monat oder ist er
+  unvollständig, nennt die Abrechnung die Monate und je Mieter einmal die Kürzung um 3 %, für Mieter mit nicht
+  ganz fernablesbarer Wohnung mit dem Vorbehalt der Einzelfallprüfung; beides ist als Auslegung gekennzeichnet,
+  abgezogen wird nichts. Heizkostenverteiler ergeben keine kWh, dann erstellt der Ablesedienst die Information.
+  ([#99](https://github.com/speedone/mietfuchs/issues/99))
 - Mehr als 70 % nach Verbrauch, wenn es mit den Mietern vereinbart ist (§ 10 HeizkostenV), in der
   Einrichtung und auf der Seite Heizkosten; nie mehr als 100 %.
   ([#99](https://github.com/speedone/mietfuchs/issues/99))
@@ -404,6 +415,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Die Warnung zu den Angaben nach § 6a bei der eigenen Heizkostenabrechnung heißt jetzt „Angaben zur
   Heizkostenabrechnung unvollständig“ und erscheint auch bei freien Schlüsseln, deren Heizkosten nach
   Zählern verteilt werden; keine Zahl ändert sich. ([#99](https://github.com/speedone/mietfuchs/issues/99))
+- Die Warnung „Monatliche Verbrauchsinformation“ nennt bei eigener Heizkostenabrechnung mit als fernablesbar
+  eingetragenen Zählern die Monate, die nicht mitgeteilt oder unvollständig sind, statt „bis zu 3 %“ pauschal;
+  ist nur die Anlage als fernablesbar angegeben oder liefert der Ablesedienst die Werte, bleibt sie wie bisher.
+  Die Fundstelle der Begründung zur Summierung der Kürzungsrechte heißt jetzt richtig BR-Drs. 643/21, S. 24 f.
+  ([#99](https://github.com/speedone/mietfuchs/issues/99))
 - Der Fehler „Heizkostenabrechnung unvollständig“ bei einem fehlenden Stand, einem Zählerwechsel ohne
   Endstand, negativem Verbrauch oder fehlenden Werten des Ablesedienstes verweist jetzt auf die Schätzung
   statt auf eine spätere Version. ([#99](https://github.com/speedone/mietfuchs/issues/99))
