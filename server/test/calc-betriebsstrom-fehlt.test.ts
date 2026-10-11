@@ -89,6 +89,18 @@ test('A: Anlage mit eigener Heizperiode (Weg b): einmal in P, nicht auch im Unte
   silent(settle(haus([heizung('gas', '2024-05', 500000, { heatingPart: 'fuel', taxYear: 2025 }), heizung('bs', '2024-05', 10000, { heatingPart: 'operating', operatingPower: 'included', operatingPowerBasis: 'x', taxYear: 2025 }), hausstrom(), abzug()], [plant])))
 })
 
+// Nur in der Gesamtberechnung: Ein Unteraufruf einer Heizperiode (Weg b) oder eine Heizkostenabrechnung (Weg d) meldet
+// nichts, auch wenn sein Bestand Allgemeinstrom enthielte; sonst stünde der Hinweis doppelt.
+test('A und B nur in der Gesamtberechnung, nicht in Teil- oder Heizkostenabrechnungen', () => {
+  for (const [plant, items] of [[anlage(), [brennstoff(), hausstrom()]], [wp(), [hausstrom()]]] as const) {
+    const src = haus([...items], [plant])
+    assert.equal([...found(settle(src), A), ...found(settle(src), B)].length, 1, 'in der Gesamtberechnung genau ein Hinweis')
+    const snap = snapshotFor(src, 'objekt-1', of(CALENDAR_RULES, '2025-01'))
+    const p = snap.heatingPlants?.[0] ?? assert.fail('keine Anlage')
+    for (const kind of ['heatingPart', 'heating'] as const) silent(computeSettlement({ ...snap, scope: { kind, plant: p } }))
+  }
+})
+
 // Negativfälle A.3.
 test('A-n1: Betriebsstrom gekennzeichnet mit gleich hohem Abzug: still', () => silent(settle(haus([brennstoff(), betriebsstrom(), hausstrom(), abzug()]))))
 test('A-n2: Betriebsstrom über eigenen Zähler (Heizposition „Betrieb“ ohne Kennzeichnung): still', () =>
@@ -180,6 +192,13 @@ test('B-n2: Strom-Position gekennzeichnet mit gleich hohem Abzug: still', () =>
   silent(settle(haus([heizung('bs', '2025-01', 30000, { heatingPart: 'fuel', operatingPower: 'included', operatingPowerBasis: 'x', description: 'WP-Strom' }), hausstrom(), abzug({ amountCents: -30000 })], [wp()]))))
 test('B-n3: gekennzeichnet ohne Abzug: nur der Hinweis auf den doppelt verteilten Strom', () => {
   const s = settle(haus([heizung('bs', '2025-01', 30000, { heatingPart: 'fuel', operatingPower: 'included', operatingPowerBasis: 'x', description: 'WP-Strom' }), hausstrom()], [wp()]))
+  assert.equal(found(s, B).length, 0)
+  assert.equal(found(s, 'heating.operating-power-double').length, 1)
+})
+// Pumpen und Regelung der Wärmepumpe als Betriebsstrom gekennzeichnet, ohne Abzug und ohne Stromrechnung der Wärmepumpe:
+// Der Hinweis auf den doppelt verteilten Betriebsstrom genügt (Bedingung 3 in B.2).
+test('B-n3b: Betriebsstrom der Wärmepumpe gekennzeichnet ohne Abzug: kein Hinweis B, nur der doppelt verteilte Betriebsstrom', () => {
+  const s = settle(haus([betriebsstrom(), hausstrom()], [wp()]))
   assert.equal(found(s, B).length, 0)
   assert.equal(found(s, 'heating.operating-power-double').length, 1)
 })
