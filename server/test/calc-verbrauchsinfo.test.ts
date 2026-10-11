@@ -118,6 +118,12 @@ test('Prüfung M8: gemischte Ausstattung – „um 3 %“ für den Mieter mit fe
   const halb = monthlyOf(fern(beispiel({ row: ANGABEN }), ['wz-a'])) ?? assert.fail('kein Hinweis')
   assert.match(halb.text, /Bei Mieter A \(A\), Mieter B \(B\), Mieter C1 \(C\) und Mieter C2 \(C\) ist die Wohnung nicht oder nur zum Teil fernablesbar/)
   assert.doesNotMatch(halb.text, /darf ein Mieter, dessen Wohnung/)
+  // War die Wohnung nur in einem Teil der offenen Monate ganz fernablesbar (Warmwasserzähler ab Juli ohne
+  // Fernablesung), gilt für den Mieter der Vorbehalt, nicht „um 3 %“.
+  const s = fern(beispiel({ row: ANGABEN }), ['wz-a'])
+  const spaeter = { ...s, meters: s.meters.map((m) => (m.id === 'xw-a' ? { ...m, installedOn: '2025-07-01' } : m)) }
+  const teils = monthlyOf(spaeter) ?? assert.fail('kein Hinweis')
+  assert.match(teils.text, /Bei Mieter A \(A\), Mieter B \(B\)/)
 })
 
 test('Prüfung M4: Ausnahme nur der Wärme – nur Warmwassergeräte, Kürzung am Warmwasser', () => {
@@ -125,8 +131,13 @@ test('Prüfung M4: Ausnahme nur der Wärme – nur Warmwassergeräte, Kürzung a
   assert.equal(monthlyOf(fern(beispiel({ row: heat }), ['wz-a', 'wz-b', 'wz-c'])), undefined)
   const n = monthlyOf(fern(beispiel({ row: heat }))) ?? assert.fail('kein Hinweis')
   assert.match(n.text, /seinen Anteil am Warmwasser um 3 % kürzen/)
-  // Die Wärme ist keine Lücke: Mit Monatsständen und Temperatur fehlt nichts.
+  // Die Wärme ist keine Lücke: Mit Monatsständen und Temperatur fehlt nichts, auch wenn den Wärmezählern die
+  // Stände am Monatsende fehlen.
   assert.equal(monthlyOf(voll(zeilen(), heat)), undefined)
+  const ohneWaerme = voll(zeilen(), heat)
+  const original = new Set(beispiel().readings.map((r) => `${r.meterId}@${r.date}`))
+  const nurWasser = { ...ohneWaerme, readings: ohneWaerme.readings.filter((r) => !r.meterId.startsWith('wz-') || original.has(`${r.meterId}@${r.date}`)) }
+  assert.equal(monthlyOf(nurWasser), undefined)
 })
 
 test('Prüfung M5: nur die Angabe an der Anlage – der Hinweis von PR 14 bleibt und sagt, was Mietfuchs braucht', () => {

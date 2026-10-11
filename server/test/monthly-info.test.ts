@@ -78,6 +78,9 @@ test('November: Wärme 700 kWh, Warmwasser 2,5 m³ = 281,25 kWh umgerechnet, get
   assert.deepEqual([okt.complete, okt.sent, okt.users[0]?.gaps], [false, false, ['reference']])
   assert.deepEqual(openMonths(months).map((o) => o.month), ['2025-01', '2025-02', '2025-03', '2025-04', '2025-05', '2025-06', '2025-07', '2025-08', '2025-09', '2025-10'])
   assert.deepEqual(openMonths(months).find((o) => o.month === '2025-10'), { month: '2025-10', tenancyIds: ['t1'], notSent: true, gaps: ['reference'] })
+  // Vollständig, aber nicht als mitgeteilt vermerkt, ist der Monat offen, ohne Lücke.
+  const ungesendet = monthlyInfoMonths(basis({ rows: basis().rows.map((x) => ({ ...x, sentOn: null })) }), createLawLog())
+  assert.deepEqual(openMonths(ungesendet).find((o) => o.month === '2025-11'), { month: '2025-11', tenancyIds: ['t1'], notSent: true, gaps: [] })
   // Ohne Stichtag (Golden, Regression) ist jeder Monat fällig.
   assert.ok(monthlyInfoMonths(basis({ asOf: undefined }), createLawLog()).every((m) => m.due))
 })
@@ -190,6 +193,9 @@ test('Prüfung S5: Kesseltausch – die Zeile des Monats ist die der Anlage, die
   assert.equal(heatingPlantAt([alt, neu], '2025-05-31')?.id, 'alt')
   assert.equal(heatingPlantAt([alt, neu], '2025-06-15')?.id, 'alt')
   assert.equal(heatingPlantAt([alt, neu], '2025-06-30')?.id, 'neu')
+  // Unabhängig von der Reihenfolge: Die neue heizt erst nach dem letzten Tag der alten.
+  assert.equal(heatingPlantAt([neu, alt], '2025-05-31')?.id, 'alt')
+  assert.equal(heatingPlantAt([neu, alt], '2025-06-30')?.id, 'neu')
   const row = (plantId: string, month: string, ref: number) => ({ plantId, month, referenceKwhPerM2: ref, referenceSource: 'Ablesedienst', sentOn: null })
   const months = monthlyInfoMonths(basis({ plants: [alt, neu], rows: [row('alt', '2025-03', 7), row('alt', '2025-11', 1), row('neu', '2025-11', 9)] }), createLawLog())
   assert.equal(months.find((m) => m.month === '2025-03')?.row?.referenceKwhPerM2, 7)
