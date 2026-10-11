@@ -51,6 +51,8 @@ export type SnapshotTenancy = Pick<
   | 'costModel'
   | 'heatingModel'
   | 'flatRates'
+  // Datum des Mietvertrags, für den Hinweis zur Umstellung auf Wärmelieferung (Heizung PR 16, § 556c BGB).
+  | 'contractDate'
   // Heizstaffel und Heizkorrekturen (Heizung PR 5)
   | 'heatingPrepayments'
   | 'heatingPrepaymentOverrides'
