@@ -130,6 +130,12 @@ export const asksOperatingPowerHandling = (plant: { energy: HeatingEnergy; metho
 // Frage und Beschriftungen, eine Quelle für Oberfläche und Hinweistexte, damit beide wortgleich sind. Entscheidend
 // ist der Stromvertrag mit eigener Rechnung, nicht der Zähler: Ein Zwischenzähler hinter dem Zähler des Hauses
 // gehört zu `deducted` (Rechtsprüfung des Plans, M-1).
+// Frage und Antwort des Kostenformulars an einer Heizposition „Betrieb“ (client/src/components/OperatingPowerFields.tsx,
+// `OPERATING_POWER_OPTIONS` in client/src/costForm.ts). Der Hinweis „Abzug fehlt“ zitiert beide wörtlich (#266, R-4);
+// OperatingPowerFields.test.tsx hält die gerenderte Frage an dieser Konstante fest.
+export const OPERATING_POWER_INCLUDED_QUESTION = 'Läuft dieser Betriebsstrom über den Stromzähler des Hauses?'
+export const OPERATING_POWER_INCLUDED_YES = 'Ja, er läuft über den Stromzähler des Hauses'
+
 export const OPERATING_POWER_HANDLING_QUESTION = 'Wie ist der Betriebsstrom dieser Heizung erfasst?'
 export const OPERATING_POWER_HANDLING_LABELS: Record<OperatingPowerHandling | '', string> = {
   '': 'Keine Angabe',

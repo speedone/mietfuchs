@@ -9,6 +9,7 @@ import { snapshotFor } from '../src/snapshot.ts'
 import { CALENDAR_RULES, periodKey, periodOfKey } from '../../shared/period.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import type { BillingPeriod, HeatingEnergy, PeriodRules } from '../../shared/types.ts'
+import { OPERATING_POWER_HANDLING_LABELS, OPERATING_POWER_HANDLING_QUESTION, OPERATING_POWER_INCLUDED_QUESTION, OPERATING_POWER_INCLUDED_YES } from '../../shared/operatingPower.ts'
 
 type Source = Parameters<typeof snapshotFor>[0]
 type Plant = NonNullable<Source['heatingPlants']>[number]
@@ -62,12 +63,18 @@ test('A: Gasheizung mit Brennstoff und Allgemeinstrom, sonst nichts: ein Hinweis
   assert.match(n.text, /^Für die Heizanlage „Kessel“ ist für 2025 kein Betriebsstrom erfasst \(keine Heizposition mit dem Teil „Betrieb“\), und beim Allgemeinstrom „Hausstrom“ steht kein Abzug dafür\./)
   assert.match(n.text, /§ 7 Abs\. 2, § 8 Abs\. 2 HeizkostenV; § 2 Nr\. 4 Buchst\. a, Nr\. 5 Buchst\. a BetrKV/)
   assert.match(n.text, /dort darf er nicht stehen \(BGH, Urteil vom 03\.06\.2016, V ZR 166\/15, Rn\. 13\)/)
-  assert.match(n.text, /VIII ZR 27\/07, Leitsatz 3/)
+  // Rechtsprüfung zu #266, K-1: Die Leitsätze heißen amtlich a), b), c).
+  assert.match(n.text, /VIII ZR 27\/07, Leitsatz c\)/)
+  assert.doesNotMatch(n.text, /Leitsatz 3/)
   // R3-W-1: selbst tragen nur über den Abzug.
   assert.match(n.text, /Wollen Sie ihn nicht umlegen, ziehen Sie ihn trotzdem beim Allgemeinstrom ab; dann tragen Sie ihn selbst \(V ZR 166\/15, Rn\. 15\)/)
   assert.doesNotMatch(n.text, /nur aus den Heizkosten/)
-  // K-1 und H-3.
-  assert.match(n.text, /Tragen Sie den Strom eines eigenen Zählers selbst, ist nichts falsch; der Hinweis bleibt dann stehen\./)
+  // #266 (M-1): Der rechtmäßige Fall ist der eigene Stromvertrag, nicht ein Zwischenzähler; der Hinweis bleibt nicht mehr
+  // stehen, sondern führt zur Angabe an der Anlage, mit der Frage wortgleich zur Oberfläche.
+  assert.doesNotMatch(n.text, /der Hinweis bleibt dann stehen/)
+  assert.match(n.text, /Hat die Heizung einen eigenen Stromvertrag mit eigener Rechnung, erfassen Sie diese Rechnung als Heizposition mit dem Teil „Betrieb“; dann entfällt dieser Hinweis\./)
+  assert.match(n.text, /Hat die Heizung einen eigenen Stromvertrag mit eigenem Zähler und eigener Rechnung und tragen Sie diese Kosten selbst, ist nichts falsch; ein Zwischenzähler hinter dem Zähler des Hauses gehört nicht dazu\./)
+  assert.ok(n.text.includes(`Geben Sie auf der Seite Heizkosten bei „${OPERATING_POWER_HANDLING_QUESTION}“ an, wie er erfasst ist; dann weist Mietfuchs gezielt darauf hin oder schweigt.`))
   assert.match(n.text, /Gilt für einen Mieter beim Allgemeinstrom eine Pauschale oder Inklusivmiete, folgt daraus für ihn nichts\./)
 })
 
@@ -154,8 +161,10 @@ test('B: Wärmepumpe, nur Wartung, Allgemeinstrom 2025: ein Hinweis (hint) mit b
   // K-3: die Schätzung als Auslegung, mit dem eigenen Zähler als sicherem Weg.
   assert.match(n.text, /für den Strom einer Wärmepumpe oder eines Elektrokessels ist es eine Auslegung von Mietfuchs, und bei einem so großen Anteil ist ein eigener Zähler der sichere Weg/)
   assert.doesNotMatch(n.text, /bleibt nur eine Schätzung/)
+  // B behält den Satz zum eigenen Zähler (#266 ändert nur A).
   assert.match(n.text, /Tragen Sie den Strom eines eigenen Zählers selbst, ist nichts falsch; der Hinweis bleibt dann stehen\./)
   assert.match(n.text, /Gilt für einen Mieter beim Allgemeinstrom eine Pauschale oder Inklusivmiete, folgt daraus für ihn nichts\./)
+  assert.match(n.text, /VIII ZR 27\/07, Leitsatz c\)/)
   assert.equal(found(s, A).length, 0)
   // Der Rechtsstand führt beide Fassungen.
   assert.deepEqual((s.legalBasis.values ?? []).filter((v) => v.id.endsWith('generation-power')).map((v) => v.id).sort(), ['betrkv.generation-power', 'hkv.generation-power'])
@@ -370,4 +379,56 @@ test('Kein Zahlenwechsel: jede Angabe rechnet wie ohne Angabe und wie „sonstig
     const vergleich = zahlen(settle(haus([...items], [anlage({ energy: 'other' })])))
     for (const v of [null, ...HANDLINGS]) assert.deepEqual(zahlen(settle(haus([...items], [mitAngabe(v)]))), vergleich, `${v}`)
   }
+})
+
+// ---------- Texte der Hinweise mit Angabe (#266, Wortlaut nach Rechtsprüfung und Gegenprüfung des Plans) ----------
+
+const FLAT = 'Gilt für einen Mieter beim Allgemeinstrom eine Pauschale oder Inklusivmiete, folgt daraus für ihn nichts.'
+
+test('Text „Abzug fehlt“: Angabe, Lage, Rechtsquellen, netto eingetragener Allgemeinstrom, Weg zur Änderung', () => {
+  const n = one(settle(haus([brennstoff(), wartung(), hausstrom()], [mitAngabe('deducted')])), AD)
+  assert.match(n.text, /^Für die Heizanlage „Kessel“ haben Sie angegeben, dass der Betriebsstrom über die Stromrechnung des Hauses läuft und beim Allgemeinstrom abgezogen wird\. Für 2025 steht beim Allgemeinstrom „Hausstrom“ aber kein Abzug dafür\. /)
+  // R-3: bedingt, nicht als Tatsache.
+  assert.doesNotMatch(n.text, /So wird/)
+  assert.match(n.text, /Steht der Betriebsstrom ungekürzt in dieser Stromrechnung, wird er mit dem Schlüssel des Allgemeinstroms verteilt; dort darf er nicht stehen \(BGH, Versäumnisurteil vom 20\.02\.2008, VIII ZR 27\/07, Rn\. 32; ebenso BGH, Urteil vom 03\.06\.2016, V ZR 166\/15, Rn\. 13\)\./)
+  // K-2: HeizkostenV nur, soweit sie für die Anlage gilt.
+  assert.match(n.text, /Er gehört zu den Heiz- und Warmwasserkosten \(§ 2 Nr\. 4 Buchst\. a, Nr\. 5 Buchst\. a BetrKV; § 7 Abs\. 2, § 8 Abs\. 2 HeizkostenV, soweit sie für die Anlage gilt\)\./)
+  assert.match(n.text, /Ist er noch nirgends erfasst, nehmen Sie die Karte „Betriebsstrom“ auf der Seite Heizkosten; sie legt Betriebsstrom und Abzug gemeinsam an\./)
+  assert.match(n.text, /Ohne Zwischenzähler dürfen Sie ihn schätzen; bestreitet ein Mieter den Betrag, müssen Sie die Grundlagen darlegen \(BGH, Versäumnisurteil vom 20\.02\.2008, VIII ZR 27\/07, Leitsatz c\)\./)
+  // S-1: mietrechtliche Primärquelle zuerst.
+  assert.match(n.text, /Wollen Sie ihn nicht umlegen, ziehen Sie ihn trotzdem beim Allgemeinstrom ab; dann tragen Sie ihn selbst \(BGH, Beschluss vom 13\.09\.2011, VIII ZR 45\/11, Rn\. 3; vgl\. V ZR 166\/15, Rn\. 15\)\./)
+  // M-3 mit dem Wortlaut der Gegenprüfung; R-6: kein Satz zur Steuer in #266.
+  assert.match(n.text, /Haben Sie beim Allgemeinstrom schon den um den Betriebsstrom geminderten Betrag eingetragen, ist die Abrechnung deshalb nicht formell unwirksam \(BGH, Urteil vom 20\.01\.2016, VIII ZR 93\/15, Leitsatz und Rn\. 19\); materiell muss der Abzug stimmen \(VIII ZR 27\/07, Leitsatz c\)\. Tragen Sie dort trotzdem den Rechnungsbetrag ein und erfassen Sie den Abzug gesondert; dann erkennt Mietfuchs den Abzug\./)
+  assert.doesNotMatch(n.text, /Steuer/)
+  assert.match(n.text, /Hat die Heizung einen eigenen Stromvertrag mit eigener Rechnung \(nicht nur einen Zwischenzähler\), ändern Sie die Angabe auf der Seite Heizkosten\./)
+  assert.ok(n.text.endsWith(` ${FLAT}`))
+  // Mit Wartung als „Betrieb“ (Lage O) der Satz dazu.
+  assert.match(n.text, /Eine Heizposition mit dem Teil „Betrieb“ ersetzt diesen Abzug nicht: Die Kosten der Wartung sind andere als die des Betriebsstroms; § 7 Abs\. 2 HeizkostenV nennt beide getrennt als Bestandteile derselben Kostenart\./)
+})
+
+test('Text „Abzug fehlt“: der Satz zur Heizposition „Betrieb“ nur, wenn es sie gibt; er nennt Frage und Antwort des Kostenformulars wörtlich', () => {
+  const ohne = one(settle(haus([brennstoff(), hausstrom()], [mitAngabe('deducted')])), AD)
+  assert.doesNotMatch(ohne.text, /ersetzt diesen Abzug nicht/)
+  assert.doesNotMatch(ohne.text, /zweites Mal/)
+  // M-4/R-4: Ist die Heizposition „Betrieb“ der Betriebsstrom selbst, darf die Karte ihn nicht ein zweites Mal anlegen.
+  const n = one(settle(haus([brennstoff(), heizung('bs', '2025-01', 9000, { heatingPart: 'operating', description: 'Heizstrom' }), hausstrom()], [mitAngabe('deducted')])), AD)
+  assert.ok(n.text.includes(
+    `Steht dort schon der Betriebsstrom selbst, legen Sie ihn nicht ein zweites Mal an, auch nicht mit der Karte „Betriebsstrom“: Wählen Sie an dieser Position im Kostenformular bei „${OPERATING_POWER_INCLUDED_QUESTION}“ die Antwort „${OPERATING_POWER_INCLUDED_YES}“ und erfassen Sie dann beim Allgemeinstrom einen Abzug in derselben Höhe, verknüpft mit dieser Position. Ist sie die Wartung, nehmen Sie die Karte wie unten beschrieben.`,
+  ), n.text)
+  assert.match(one(settle(haus([heizung('alt', '2025-01', 500000, { description: 'Heizkosten' }), hausstrom()], [mitAngabe('deducted')])), AD).text, /legen Sie ihn nicht ein zweites Mal an/)
+  // Ohne Namen der Anlage und mit mehreren Stromrechnungen.
+  const zwei = one(settle(haus([brennstoff(), hausstrom(), hausstrom('2025-01', { id: 'hs2', description: 'Strom Keller' })], [mitAngabe('deducted', { name: '' })])), AD)
+  assert.match(zwei.text, /^Für die Heizanlage haben Sie angegeben, .* Für 2025 steht beim Allgemeinstrom „Hausstrom“ und weiteren aber kein Abzug dafür\./)
+})
+
+test('Text „Rechnung fehlt“: Angabe, Bedingung für „schadet nicht“, Quellen, andere Verbraucher, Beschriftung aus der Konstante', () => {
+  const n = one(settle(haus([brennstoff()], [mitAngabe('ownMeter')])), AB)
+  assert.match(n.text, /^Für die Heizanlage „Kessel“ haben Sie angegeben, dass die Heizung einen eigenen Stromvertrag mit eigener Rechnung hat und Sie diese Rechnung als Heizposition erfassen\. Für 2025 ist aber keine Heizposition mit dem Teil „Betrieb“ erfasst\. /)
+  // M-2: nur unter der Bedingung; S-2: kein „Solange“.
+  assert.match(n.text, /Steht die Rechnung dieses Zählers auch nicht beim Allgemeinstrom, schadet das den Mietern nicht: Rechnen Sie den Betriebsstrom nicht ab, tragen Sie ihn selbst \(BGH, Beschluss vom 13\.09\.2011, VIII ZR 45\/11, Rn\. 3; vgl\. BGH, Urteil vom 03\.06\.2016, V ZR 166\/15, Rn\. 15\)\./)
+  assert.doesNotMatch(n.text, /Solange/)
+  assert.doesNotMatch(n.text, /^.*Den Mietern schadet das nicht/)
+  assert.match(n.text, /Beim Allgemeinstrom darf der Betriebsstrom nicht stehen \(BGH, Versäumnisurteil vom 20\.02\.2008, VIII ZR 27\/07, Rn\. 32\)\./)
+  assert.match(n.text, /Erfassen Sie die Rechnung des Zählers als Position „Heizung und Warmwasser“ mit dem Teil „Betrieb“; hängen an diesem Zähler auch andere Verbraucher, gehört nur der Anteil der Heizung dorthin\./)
+  assert.ok(n.text.endsWith(`Wollen Sie den Strom nicht umlegen, wählen Sie auf der Seite Heizkosten „${OPERATING_POWER_HANDLING_LABELS.landlordPays}“; dann entfällt dieser Hinweis.`), n.text)
 })
