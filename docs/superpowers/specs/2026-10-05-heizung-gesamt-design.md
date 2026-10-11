@@ -308,7 +308,7 @@ Grundlage sind die Prüfungen der Pläne PR 10–22 vom 05.10.2026 und die Ände
 
 | Thema | Entscheidung | Beleg | Abschnitt |
 |---|---|---|---|
-| § 6a Abs. 3 Nr. 4 (Durchschnittsnutzer) | **Kein Hausdurchschnitt.** Der Vergleichswert kommt vom Vermieter mit Quelle. Bei Heizkostenverteilern genügt die Bestätigung „Vergleich des Messdienstes liegt bei“. | BR-Drs. 643/21, S. 18 (zu Abs. 2 Nr. 3: „nicht ein Vergleich mit den Nutzern im selben Gebäude“) und S. 20 (zu Abs. 3 Nr. 4: entsprechend) | 8.8, 15.2 F5, 15.3 |
+| § 6a Abs. 3 Nr. 4 (Durchschnittsnutzer) | **Kein Hausdurchschnitt.** Der Vergleichswert kommt vom Vermieter mit Quelle. Bei Heizkostenverteilern genügt die Bestätigung „Vergleich des Messdienstes liegt bei“. | BR-Drs. 643/21, S. 19 (zu Abs. 2 Nr. 3: „nicht ein Vergleich mit den Nutzern im selben Gebäude“) und S. 21 (zu Abs. 3 Nr. 4: entsprechend; Seiten berichtigt am 12.10.2026, Heizung PR 22) | 8.8, 15.2 F5, 15.3 |
 | Eichfrist | Neue Fristen ab **03.11.2021** (3. ÄndVO MessEV, BGBl. I 2021 S. 4742). Davor, 2015–2021: Kaltwasser 6, Warmwasser 5, Wärmezähler 5 Jahre. Für Warm- und Wärmezähler mit Kennzeichnung 2016–2021 gibt es keinen Vorschlag. Die Eichfrist von Gas- und Stromzählern ergibt sich aus Anlage 7 Nr. 5.6 und 6, nicht aus § 35. | MessEV Anlage 7, §§ 34, 35; MessEG § 37; frühere Fassungen über buzer (vor dem Merge am BGBl. bestätigen) | 3.12, 4.3 |
 | § 5a Abs. 4, Notfalleinbau | Zwölf Monate **ab dem Einbau**, nicht das Kalenderjahr 2028 | BT-Drs. 21/7009, S. 154 | 4.3, 15.1 Nr. 24 |
 | § 5a und Contracting | Erfasst: § 5a gilt auch für Anlagen, die Dritte im Contracting betreiben. Keine Sperre. | BT-Drs. 21/6278, S. 124 | 4.3, 13 PR 18 |
@@ -336,7 +336,7 @@ Grundlage sind die Prüfungen der Pläne PR 10–22 vom 05.10.2026 und die Ände
 |---|---|---|---|
 | Betriebsstrom | Der BGH lässt den **Bruchteil der Brennstoffkosten** als Schätzgrundlage zu und nennt Literaturwerte, ohne selbst einen Wert festzulegen. Die Hilfe bekommt einen Weg „Betrag selbst geschätzt“. Die Spannen bleiben Lexikontext, kein Rechenweg. | [R] V ZR 166/15, Rn. 14 (geprüft über rewis) | 13 PR 15, 16 |
 | Umsatzsteuer, Mischsatz | Bei Ablesezeiträumen über den 01.10.2022 oder den 01.04.2024 ist jeder Satz zwischen 7 und 19 % plausibel. | BMF-Schreiben vom 25.10.2022, Rz. 12 (Aufteilung nach Tagen bzw. Verbrauch) | 13 PR 17 |
-| Monatliche Information (§ 6a Abs. 1, 2) | „Um 3 %“ nur für Mieter, deren Wohnung selbst fernablesbar ausgestattet ist. Bei gemischter Ausstattung: „im Einzelfall zu prüfen, möglich ist eine Kürzung um 3 %“. | BR-Drs. 643/21, S. 17 (Einzelfallprüfung bei gemischter Ausstattung) | 8.8, 13 PR 22 |
+| Monatliche Information (§ 6a Abs. 1, 2) | „Um 3 %“ nur für Mieter, deren Wohnung selbst fernablesbar ausgestattet ist. Bei gemischter Ausstattung: „im Einzelfall zu prüfen, möglich ist eine Kürzung um 3 %“. | BR-Drs. 643/21, S. 18 (Einzelfallprüfung bei gemischter Ausstattung; Seite berichtigt am 12.10.2026, Heizung PR 22) | 8.8, 13 PR 22 |
 
 **Neu in 15.1 und 15.2** (aus den Prüfungen von PR 11, 18 und 19, jeweils als Auslegung):
 
@@ -2592,7 +2592,7 @@ Für jede Festlegung stehen hier der Rechercheweg, die konservativste oder verbr
 **F5: § 6a Abs. 3 Nr. 4 und 5**
 
 - *Recherche:* Die Bekanntmachung der Vereinfachungen nach § 6a Abs. 3 S. 4 wurde nicht gefunden. Nächste amtliche Grundlage sind die GEG-Bekanntmachung „Regeln für Energieverbrauchswerte im Wohngebäudebestand“ (29.03.2021, BAnz 16.04.2021) und die [Klimafaktoren des DWD](https://www.dwd.de/DE/leistungen/klimafaktoren/klimafaktoren.html). Nr. 4 vermutlich in DIN 94680.
-- *Lösung:* **Kein Hausdurchschnitt** (BR-Drs. 643/21, S. 18 und 20, siehe 8.8). Der Vergleichswert für Nr. 4 kommt vom Vermieter mit Quelle; bei Heizkostenverteilern genügt die Bestätigung, dass der Vergleich des Messdienstes beiliegt. Für Nr. 5 Klimafaktor des DWD. ⟨Norm offen: DIN 94680⟩
+- *Lösung:* **Kein Hausdurchschnitt** (BR-Drs. 643/21, S. 19 und 21, siehe 8.8; Seiten berichtigt am 12.10.2026). Der Vergleichswert für Nr. 4 kommt vom Vermieter mit Quelle; bei Heizkostenverteilern genügt die Bestätigung, dass der Vergleich des Messdienstes beiliegt. Für Nr. 5 Klimafaktor des DWD. ⟨Norm offen: DIN 94680⟩
 - *Hinweis:* Der Druckblock nennt die Grundlage.
 
 **F6: Plausibilitätsgrenzen**
