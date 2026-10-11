@@ -44,6 +44,7 @@ export const TAX_HINTS = [
   'mixedUseSplit', 'mixedUseKeyNotArea', 'mixedUseAreaMissing', 'mixedUseDirectOutside', 'mixedUseChangedInYear',
   'mixedUseClosedChanged', 'mixedUseLabor35a', 'mixedUseNotCalculated', 'mixedUseExcludedArea', 'mixedUseClosedItemsChanged',
   'mixedUseAssignedUnits',
+  'operatingPowerBalance', 'operatingPowerAmbiguous', 'unmarkedPowerCredits',
 ] as const
 
 export type TaxHint = (typeof TAX_HINTS)[number]
@@ -123,11 +124,21 @@ export type TaxHint = (typeof TAX_HINTS)[number]
 //                        offen. Ohne selbstgenutzte Einheit wirkt die Zuordnung nicht.
 //   `mixedUseNotCalculated` Was Mietfuchs nicht rechnet: AfA, Schuldzinsen, § 82b EStDV,
 //                        verbilligte Vermietung.
+//   `operatingPowerBalance` Abzüge beim Allgemeinstrom und Heizpositionen, die auch in der
+//                        Stromrechnung stecken, gleichen sich im Jahr nicht aus (#268); die Übersicht
+//                        rechnet die Zeile „Betriebsstrom der Heizung“ hinzu oder ab und sagt warum.
+//   `operatingPowerAmbiguous` Ein Abzug ohne Verweis zählt als dem Messdienst gemeldet, obwohl im
+//                        Zeitraum auch eine Anlage ohne Messdienst heizt (R-6 zu #268).
+//   `unmarkedPowerCredits` Negativer Allgemeinstrom ohne Kennzeichnung neben einer zentralen Anlage
+//                        ohne Messdienst (#268): ein Abzug aus der Zeit vor der Kennzeichnung?
 
 export function taxHints(report: TaxReport, basis: Basis, propertyKind?: PropertyKind): TaxHint[] {
   const hints: TaxHint[] = []
   if (report.reserveContributionCents !== 0) hints.push('reserveContribution')
   if (report.reserveSuspects.length > 0) hints.push('reserveSuspected')
+  if ((report.operatingPowerBalanceCents ?? 0) !== 0) hints.push('operatingPowerBalance')
+  if ((report.operatingPowerAmbiguous ?? []).length > 0) hints.push('operatingPowerAmbiguous')
+  if ((report.unmarkedPowerCredits ?? []).length > 0) hints.push('unmarkedPowerCredits')
   if (propertyKind === 'etw') hints.push('etwHousingMoney')
   const { tenancies, inclusive, partlyInclusive, flatRate } = report.costModels
   if (tenancies > 0 && inclusive === tenancies) hints.push('inclusiveLine24')
@@ -284,6 +295,27 @@ export function assignedUnitItems(report: TaxReport): AssignedUnitItem[] {
           : 'area'
     return [{ costItemId: x.costItemId, description: x.description, amountCents: x.amountCents, units: x.taxUnits.map((u) => u.unitName), effect }]
   })
+}
+
+// ---------- Betriebsstrom der Heizung (#268) ----------
+//
+// Der Text zum Ausgleich beim Betriebsstrom, je nach Richtung. Fundstellen: Werbungskosten sind die Aufwendungen
+// (§ 9 Abs. 1 Satz 1 EStG), abgesetzt im Jahr der Zahlung (§ 11 Abs. 2 Satz 1 EStG); die Stromrechnung ist eine
+// Zahlung, ein Abzug und eine Heizposition „steckt auch in der Stromrechnung“ sind Ausschnitte davon. Mit Eigennutzung
+// ein Satz zum Maßstab des privaten Teils, denn der ist eine Auslegung (Entscheidung R-4).
+export function operatingPowerBalanceText(report: TaxReport): string | null {
+  const c = report.operatingPowerBalanceCents ?? 0
+  if (c === 0) return null
+  const own = report.selfOccupiedExists
+    ? ' Den privaten Teil teilt Mietfuchs nach Ihrem Eigenanteil an den Heizkosten der Anlage, bei einem Abzug ohne Verweis nach der Wohnfläche des ganzen Gebäudes; beides ist eine Auslegung.'
+    : ''
+  return c > 0
+    ? `Beim Allgemeinstrom ist mehr Betriebsstrom der Heizung abgezogen, als in den Heizkosten steht (${fmtEuro(c)}). Diesen Teil legen Sie nicht um und tragen ihn selbst. ` +
+      'Die Abrechnung an die Mieter mindert das, Ihre Werbungskosten nicht: Bezahlt haben Sie die ganze Stromrechnung (§ 9 Abs. 1 Satz 1, § 11 Abs. 2 Satz 1 EStG). ' +
+      `Mietfuchs rechnet den Betrag deshalb in der Zeile „Betriebsstrom der Heizung, selbst getragen“ wieder hinzu.${own}`
+    : `In den Heizkosten steht mehr Betriebsstrom der Heizung, als beim Allgemeinstrom abgezogen ist (${fmtEuro(-c)}). Diesen Strom enthält auch die Stromrechnung, bezahlt haben Sie ihn aber nur einmal. ` +
+      'Damit die Stromrechnung nur einmal in den Werbungskosten steht (§ 9 Abs. 1 Satz 1 EStG), zieht Mietfuchs den Betrag in der Zeile „Betriebsstrom der Heizung, Ausgleich zur Heizposition“ wieder ab. ' +
+      `Prüfen Sie in der Abrechnung, ob der Abzug beim Allgemeinstrom zum Betriebsstrom passt.${own}`
 }
 
 // Heizung PR 8 (N8): Die Abrechnung rechnet den Brennstoff nach Verbrauch, die Steuerübersicht nach
