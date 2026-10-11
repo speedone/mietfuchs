@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import { fmtEuro } from './api'
 import {
-  defaultGrade, degreeDaysBody, degreeDaysToForm, deliveryLine, deliveryOptions, deliveryUnitId, emptyFuelForm, fuelBody, fuelToForm, gradeOptions, monthsOf, ownedBy, RESTRICTION_OPTIONS, stockFuelBody, unitWordFor,
+  asksCo2Facts, defaultGrade, degreeDaysBody, degreeDaysToForm, deliveryLine, deliveryOptions, deliveryUnitId, emptyFuelForm, fuelBody, fuelToForm, gradeOptions, monthsOf, ownedBy, RESTRICTION_OPTIONS, stockFuelBody, unitWordFor,
 } from './fuelForm'
 import type { FuelDelivery } from './types'
 
@@ -131,4 +131,18 @@ test('Nachprüfung #240, W1: „11.325“ als Heizwert ist mehrdeutig und wird n
   expect('body' in komma && komma.body.heatingValue).toBe(11.325)
   const menge = stockFuelBody({ ...form, quantity: '1.200' }, 'self')
   expect('body' in menge && menge.body.quantity).toBe(1200)
+})
+
+// Heizung PR 16: CO₂-Angaben nach der Energie der Abrechnung und dem Brennstoff des Lieferanten (§ 2 Abs. 1 Satz 2
+// CO2KostAufG): Pellet-Contracting hat keine CO₂-Kosten aufzuteilen, Gas-Contracting schon, wie Fernwärme.
+test('CO₂-Angaben bei Contracting nach dem Brennstoff des Lieferanten', () => {
+  expect(asksCo2Facts({ energy: 'pellets', contracting: true })).toBe(false)
+  // Nachprüfung von #272, N1: mit einem weiteren Erzeuger des Lieferanten (Gasspitzenkessel) bleiben die Felder.
+  expect(asksCo2Facts({ energy: 'heatPump', contracting: true, heatGeneration: 'mixed' })).toBe(true)
+  expect(asksCo2Facts({ energy: 'heatPump', contracting: true, heatGeneration: 'single' })).toBe(false)
+  expect(asksCo2Facts({ energy: 'gas', contracting: true })).toBe(true)
+  expect(asksCo2Facts({ energy: 'other', contracting: true })).toBe(true)
+  expect(asksCo2Facts({ energy: 'districtHeating' })).toBe(true)
+  expect(asksCo2Facts({ energy: 'pellets' })).toBe(false)
+  expect(asksCo2Facts({ energy: 'oil' })).toBe(true)
 })

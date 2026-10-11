@@ -5,6 +5,7 @@ import type { AreaBasisHeat, CaptureMethod, HeatingEnergy, HeatingPart, HeatingP
 import { hkvConsumptionShare, hkvConsumptionShareForced } from '../../shared/law/heizkostenv.ts'
 import { LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
 import { EVAPORATOR_DEADLINE } from './hcaForm'
+import { billingEnergy } from '../../shared/heatDelivery.ts'
 
 export type SelfItemRow = { id: string; description: string; amountCents: number; heatingPart: HeatingPart | ''; heatingTarget: HeatingTarget | '' }
 export type SelfSetupForm = {
@@ -75,7 +76,7 @@ export function forcedShare(energy: HeatingEnergy, insulation: InsulationRule | 
   return insulation === 'applies' && ['oil', 'gas', 'lpg'].includes(energy) ? valueAt(hkvConsumptionShareForced, LAW_AS_OF) : null
 }
 
-export function emptySelfSetup(plant: Pick<HeatingPlant, 'energy' | 'hotWater' | 'capture' | 'areaBasisHeat'>, period: string): SelfSetupForm {
+export function emptySelfSetup(plant: Pick<HeatingPlant, 'energy' | 'hotWater' | 'capture' | 'areaBasisHeat'> & { contracting?: boolean }, period: string): SelfSetupForm {
   return {
     period,
     // Heizung PR 11: Verbundenes Warmwasser geht bei jeder Energie; bei Brennstoff in Litern, Kilogramm oder
@@ -88,7 +89,8 @@ export function emptySelfSetup(plant: Pick<HeatingPlant, 'energy' | 'hotWater' |
     above70Agreed: false,
     areaBasisHeat: plant.areaBasisHeat ?? 'area',
     dhwHeatMeter: true,
-    totalHeatMeter: plant.energy === 'heatPump' || plant.energy === 'districtHeating',
+    // Heizung PR 16: bei Contracting wie bei Fernwärme.
+    totalHeatMeter: billingEnergy(plant) === 'heatPump' || billingEnergy(plant) === 'districtHeating',
     items: [],
   }
 }

@@ -36,3 +36,11 @@ test('Rumpf: leer heißt null, sonst die Angabe', () => {
   expect(handlingBody('')).toEqual({ operatingPowerHandling: null })
   expect(handlingBody('deducted')).toEqual({ operatingPowerHandling: 'deducted' })
 })
+
+// Heizung PR 16 (Prüfung C-M3): Bei Contracting betreibt der Lieferant den Brenner; Mietfuchs fragt wie bei
+// Fernwärme nicht, und der Hinweis „Betriebsstrom fehlt“ schweigt dort ebenso.
+test('Contracting: keine Frage nach dem Betriebsstrom, wie bei Fernwärme', () => {
+  expect(showsHandlingCard(plant({ contracting: true }))).toBe(false)
+  expect(showsHandlingCard(plant({ energy: 'oil', contracting: true }))).toBe(false)
+  expect(showsHandlingCard(plant({ contracting: false }))).toBe(true)
+})

@@ -15,6 +15,7 @@ import { and, count, eq, inArray } from 'drizzle-orm'
 import { formatDayRange, parsePeriodKey, periodContaining, periodLabel, periodsBetween } from '../../../shared/period.ts'
 import type { BillingPeriod, DegreeDayValue, FuelDelivery, FuelDeliveryPart, FuelGapQuestion, HeatingEnergy, HeatingMethod, HeatingStatement, HeatingSupply, PeriodKey } from '../../../shared/types.ts'
 import { STOCK_ENERGIES } from '../fuel.ts'
+import { billingEnergy } from '../../../shared/heatDelivery.ts'
 import { dayAfter, germanDate } from '../../../shared/law/register.ts'
 import type { Database, Executor } from './client.ts'
 import { dropIfEmpty, ensureHeatingPeriod } from './heatingPeriodContext.ts'
@@ -93,10 +94,11 @@ const emptyDelivery = (id: string, plantId: string): FuelDelivery => ({
   emissionFactor: null, gridFeeCents: null, bioCostCents: null, sharePermille: null, fixedCents: null, estimated: false, usedByService: true, parts: [],
 })
 
-type PlantFacts = { id: string; energy: HeatingEnergy; method: HeatingMethod; supply: HeatingSupply; name: string }
+// `contracting` (Heizung PR 16): Bei Contracting sind Lieferungen Wärmerechnungen wie bei Fernwärme (`billingEnergy`).
+type PlantFacts = { id: string; energy: HeatingEnergy; method: HeatingMethod; supply: HeatingSupply; name: string; contracting: boolean }
 
 async function plantOf(db: Executor, plantId: string): Promise<PlantFacts | null> {
-  const [p] = await db.select({ id: heatingPlants.id, energy: heatingPlants.energy, method: heatingPlants.method, supply: heatingPlants.supply, name: heatingPlants.name }).from(heatingPlants).where(eq(heatingPlants.id, plantId))
+  const [p] = await db.select({ id: heatingPlants.id, energy: heatingPlants.energy, method: heatingPlants.method, supply: heatingPlants.supply, name: heatingPlants.name, contracting: heatingPlants.contracting }).from(heatingPlants).where(eq(heatingPlants.id, plantId))
   return p ?? null
 }
 
@@ -124,8 +126,11 @@ const ENERGY_WORDS: Record<HeatingEnergy, string> = {
 const unfrozenAside = (d: FuelDelivery) => ({ ...d, label: '', usedByService: true, gasBasis: null, heatingValue: null, fuelGrade: null })
 
 async function guardDelivery(db: Executor, plant: PlantFacts, before: FuelDelivery | null, after: FuelDelivery): Promise<void> {
-  const stock = STOCK_ENERGIES.includes(plant.energy)
-  if (plant.energy === 'other') throw new HeatingError(400, LATER.other)
+  // Heizung PR 16 (Prüfung C-M4): nach der Energie der Abrechnung. Bei Contracting, auch mit „Sonstiges“, sind
+  // Lieferungen Wärmerechnungen; sonst blieben CO₂-Angaben ohne Ausweg aus.
+  const energy = billingEnergy(plant)
+  const stock = STOCK_ENERGIES.includes(energy)
+  if (energy === 'other') throw new HeatingError(400, LATER.other)
   // Lieferungen mit Wohnung (Heizung PR 9, Entwurf 5.4 F8): bei einer Etagenheizung immer, sonst nie.
   // Eine Rechnung, deren Positionen einer Wohnung zugeordnet sind, gehört zu dieser.
   if (plant.supply === 'perUnit') {
@@ -245,13 +250,13 @@ async function guardDelivery(db: Executor, plant: PlantFacts, before: FuelDelive
   // Die Zeile der Heizwerttabelle (Heizung PR 11): nur bei Heizkesseln (§ 9 Abs. 3 HeizkostenV) und nur
   // eine, die zum Energieträger der Anlage passt.
   if (after.fuelGrade !== null) {
-    if (!isBoiler(plant.energy)) {
+    if (!isBoiler(energy)) {
       throw new HeatingError(400, `Die Tabelle der Heizwerte gilt nur bei Heizkesseln (§ 9 Abs. 3 HeizkostenV). Bei dieser Heizung zählen die Kilowattstunden laut Rechnung; lassen Sie die Tabellenzeile bei ${label} leer.`)
     }
-    const fitting = GRADES_BY_ENERGY[plant.energy]
+    const fitting = GRADES_BY_ENERGY[energy]
     if (!fitting.includes(after.fuelGrade)) {
       throw new HeatingError(400,
-        `Die Tabellenzeile „${FUEL_GRADE_LABELS[after.fuelGrade]}“ passt nicht zu einer Heizung mit ${ENERGY_WORDS[plant.energy]}. Passend ${fitting.length === 1 ? 'ist' : 'sind'} ${fitting.map((g) => FUEL_GRADE_LABELS[g]).join(' oder ')}.`)
+        `Die Tabellenzeile „${FUEL_GRADE_LABELS[after.fuelGrade]}“ passt nicht zu einer Heizung mit ${ENERGY_WORDS[energy]}. Passend ${fitting.length === 1 ? 'ist' : 'sind'} ${fitting.map((g) => FUEL_GRADE_LABELS[g]).join(' oder ')}.`)
     }
   }
   if (before !== null && (await frozenCount(db, before.id)) > 0) {
@@ -309,7 +314,7 @@ export async function removeDelivery(db: Database, id: string): Promise<boolean>
   if ((await frozenCount(db, id)) > 0) throw new HeatingError(409, frozenText(current.label || 'Lieferung'))
   // Vorrat (Heizung PR 8): eine Lieferung in einer abgeschlossenen Heizperiode bleibt.
   const plant = await plantOf(db, current.plantId)
-  if (plant && STOCK_ENERGIES.includes(plant.energy) && current.deliveredAt !== null) {
+  if (plant && STOCK_ENERGIES.includes(billingEnergy(plant)) && current.deliveredAt !== null) {
     const at = await heatingPeriodAt(db, plant.id, current.deliveredAt)
     if (at?.closed) throw new HeatingError(409, stockClosedText(at.period))
     const took = await stockTakenOverBy(db, plant.id, current.deliveredAt)

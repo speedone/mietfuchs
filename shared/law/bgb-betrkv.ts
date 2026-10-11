@@ -66,3 +66,25 @@ export const bgbDeadlineMonths: LawParam<number, 'periodStart'> = {
   versions: [{ value: 12, source: bgb556('§ 556 Abs. 3 Satz 2 BGB'), enacted: '§ 556 Abs. 3 BGB' }],
   describe: (v) => `Zugang bis zum Ablauf des ${v}. Monats nach Ende des Zeitraums`,
 }
+
+// Umstellung auf Wärmelieferung im laufenden Mietverhältnis (Heizung PR 16, #213). Wortlaut am 11.10.2026
+// gelesen: § 556c BGB (Abs. 1 Satz 2: „Beträgt der Jahresnutzungsgrad der bestehenden Anlage vor der
+// Umstellung mindestens 80 Prozent, kann sich der Wärmelieferant … auf die Verbesserung der Betriebsführung
+// der Anlage beschränken“; Abs. 2: „Der Vermieter hat die Umstellung spätestens drei Monate zuvor in Textform
+// anzukündigen“) und § 11 Abs. 1 WärmeLV (https://www.gesetze-im-internet.de/w_rmelv/__11.html). `eventDate`:
+// der Tag der Umstellung. Die erste Fassung beginnt mit dem Inkrafttreten der WärmeLV am 01.07.2013 (§ 13
+// WärmeLV, primär); dass § 556c Abs. 1 und 2 am selben Tag in Kraft traten, steht nur sekundär fest. Für eine
+// Umstellung davor gibt es keine Fassung; der Hinweis hat dann einen eigenen Text (server/src/heatDelivery.ts).
+export const bgbHeatDeliverySwitch: LawParam<{ readonly noticeMonths: number; readonly efficiencyPercent: number }, 'eventDate'> = {
+  id: 'bgb.heat-delivery-switch',
+  title: 'Umstellung auf Wärmelieferung im laufenden Mietverhältnis',
+  norm: '§ 556c BGB; § 11 WärmeLV',
+  timing: 'eventDate',
+  versions: [{
+    validFrom: '2013-07-01',
+    value: { noticeMonths: 3, efficiencyPercent: 80 },
+    source: { rank: 'law', cite: '§ 556c Abs. 1 Satz 2, Abs. 2 BGB; § 11 Abs. 1, § 13 WärmeLV', url: 'https://www.gesetze-im-internet.de/bgb/__556c.html', retrieved: '2026-10-11', checked: 'checked' },
+    enacted: '§ 556c BGB eingefügt durch Art. 1 G v. 11.03.2013 (BGBl. I S. 434); Wärmelieferverordnung vom 7. Juni 2013 (BGBl. I S. 1509)',
+  }],
+  describe: (v) => `Ankündigung spätestens ${v.noticeMonths} Monate vor der Umstellung; ab ${v.efficiencyPercent} % Jahresnutzungsgrad genügt eine verbesserte Betriebsführung`,
+}

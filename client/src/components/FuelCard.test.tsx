@@ -132,3 +132,16 @@ test('Ein Befund der CO₂-Prüfung steht an der Zeile der Lieferung', () => {
   render(<FuelCard plant={{ id: 'hp', method: 'manual' }} view={view} deliveries={[gas]} findings={{ [gas.id]: ['„Gas“: Die CO₂-Kosten passen nicht'] }} onSaved={() => {}} />)
   expect(screen.getByText('„Gas“: Die CO₂-Kosten passen nicht').className).toMatch(/hint/)
 })
+
+// Nachprüfung von #272, F1: Erzeugt der Lieferant die Wärme mit Wärmepumpe und Gasspitzenkessel (`mixed`), sind CO₂-Kosten
+// aufzuteilen; die Karte muss die Felder dafür zeigen, sonst bliebe co2.missing ohne Ausweg. Die reine Wärmepumpe nicht.
+test('Contracting mit Wärmepumpe und Gasspitzenkessel: die Lieferung hat die CO₂-Felder; reine Wärmepumpe nicht', () => {
+  const { unmount } = render(<FuelCard plant={{ id: 'hp', method: 'manual', energy: 'heatPump', contracting: true, heatGeneration: 'mixed' }} view={view} deliveries={[gas]} onSaved={() => {}} />)
+  fireEvent.click(screen.getByText('Lieferung eintragen'))
+  expect(screen.getByLabelText('CO₂-Ausstoß laut Rechnung (kg)')).toBeTruthy()
+  expect(screen.getByLabelText('CO₂-Kosten laut Rechnung')).toBeTruthy()
+  unmount()
+  render(<FuelCard plant={{ id: 'hp', method: 'manual', energy: 'heatPump', contracting: true, heatGeneration: 'single' }} view={view} deliveries={[gas]} onSaved={() => {}} />)
+  fireEvent.click(screen.getByText('Lieferung eintragen'))
+  expect(screen.queryByLabelText('CO₂-Ausstoß laut Rechnung (kg)')).toBeNull()
+})

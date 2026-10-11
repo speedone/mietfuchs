@@ -368,6 +368,33 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   und das Jahr der Zahlung eines Abzugs folgt seinem Betriebsstrom. Die Hilfe am Feld „Jahr der Zahlung (Steuer)“
   erklärt, warum dort das Jahr des Betriebsstroms gilt.
 
+- **Wärmelieferung und Contracting** ([#213](https://github.com/speedone/mietfuchs/issues/213)): Betreibt ein
+  Dritter die Heizung im Haus und liefert die Wärme, setzen Sie bei der Heizanlage das Häkchen „Contracting“ und
+  wählen den Brennstoff seines Kessels, auch bei einer Wärmepumpe. Die Anlage rechnet dann wie Fernwärme: kein
+  Pflichtanteil von 70 % nach Verbrauch (§ 7 Abs. 3 HeizkostenV), Formelwerte für das Warmwasser ÷ 1,15, kein
+  Vorrat bei Ihnen, und die Rechnungen des Lieferanten sind Wärmerechnungen. CO₂-Angaben verlangt Mietfuchs nach
+  dem Brennstoff des Lieferanten: bei Gas, Öl, Flüssiggas, Kohle und „Etwas anderes“ wie bei Fernwärme, bei
+  Pellets, Holz, Strom und Wärmepumpe nicht (§ 2 Abs. 1 Satz 2 CO2KostAufG). Die Informationen nach § 6a
+  HeizkostenV nennen den Brennstoff des Kessels und verlangen keine Werte eines Wärmenetzes; nach dem
+  Betriebsstrom fragt Mietfuchs wie bei Fernwärme nicht. Bei Contracting mit einer Wärmepumpe rechnet Mietfuchs
+  den Warmwasseranteil nur gemessen, denn ob der Formelwert durch 1,15 zu teilen oder mit 0,30 zu malnehmen ist,
+  regelt die Verordnung nicht. Die Ausnahme für Gebäude, die überwiegend mit Wärme aus Wärmepumpen versorgt wurden
+  (§ 11 Abs. 1 Nr. 3 Buchst. a HeizkostenV in der Fassung bis 30.09.2024), und der Übergang nach § 12 Abs. 3 gelten
+  auch bei Contracting mit einer Wärmepumpe, denn beide knüpfen an den Wärmeerzeuger an (§ 1 Abs. 1 Nr. 2: Wärmelieferung
+  „auch aus Anlagen nach Nummer 1“; Auslegung am Wortlaut). Wer während laufender Mietverhältnisse umgestellt hat, trägt den Tag der
+  Umstellung ein; die Abrechnung nennt dann für die Mieter, deren Vertrag vorher lief, die Voraussetzungen des
+  § 556c BGB und die Ankündigung nach der Wärmelieferverordnung (auch bei einer Betriebskostenpauschale, denn
+  § 556 Abs. 2 BGB lässt Betriebskosten „als Pauschale oder als Vorauszahlung“ ausweisen; das ist eine Auslegung;
+  nicht bei einer Inklusivmiete), bei fehlender oder verspäteter Ankündigung die
+  Folge nach § 11 Abs. 3 WärmeLV, und bei vorheriger Eigenversorgung der Mieter die Rechtslage nach BGH,
+  Urteile vom 20.05.2026, VIII ZR 46/25 und 47/25 (im entschiedenen Fall jedenfalls die Kosten nach § 7 Abs. 2,
+  § 8 Abs. 2 HeizkostenV; ob mehr, hängt von der Vereinbarung ab). Eine Umstellung in einem laufenden Zeitraum
+  erfassen Sie mit „Heizung erneuert (Kessel getauscht)“; an einer Anlage mit Lieferungen, Vorrat oder
+  CO₂-Angaben oder mit Heizpositionen oder Angaben eines offenen Zeitraums lässt sich das Häkchen nicht umschalten,
+  sonst rechnete Mietfuchs auch die Zeit davor um. Der
+  Hilfetext zur Energie riet bisher, Contracting als Fernwärme einzutragen; so eingetragene Anlagen bleiben
+  Fernwärme und rechnen weiter richtig, nur ohne bekannten Brennstoff. Ohne Häkchen und ohne Tag der
+  Umstellung ändert sich keine Zahl und kein Hinweis.
 ### Geändert
 
 - Neue Warnung „Monatliche Verbrauchsinformation“ bei einer Heizanlage, deren Zähler oder
