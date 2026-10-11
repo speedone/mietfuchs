@@ -695,7 +695,7 @@ app.put('/api/heating-plants/:id/periods/:period/dhw-temperature', async (req, r
   res.json(saved)
 })
 app.put('/api/heating-plants/:id/monthly-info/:month', async (req, res) => {
-  const saved = await writeData((db) => saveMonthlyInfoRow(db, req.params.id, req.params.month, bodyObject(req)))
+  const saved = await writeData((db) => saveMonthlyInfoRow(db, req.params.id, req.params.month, bodyObject(req), today()))
   if (!saved) return res.status(404).json({ error: NO_PLANT })
   res.json(saved)
 })

@@ -83,6 +83,9 @@ test('Review Focus 5 und Prüfungen: Mitteilung frühestens nach Monatsende; Ver
     await assert.rejects(save('2025-11', { sentOn: '2025-11-30' }), status(400, /November 2025 nennt den Verbrauch des ganzen Monats und kann frühestens am 01\.12\.2025 mitgeteilt werden/))
     assert.equal((await save('2025-11', { sentOn: '2025-12-01' }))?.sentOn, '2025-12-01')
     await assert.rejects(save('2025-11', { sentOn: '05.12.2025' }), status(400, /kein Datum/))
+    // Kann-Befund K3: nicht in der Zukunft, sonst gälte der Monat vorab als mitgeteilt.
+    await assert.rejects(opened.write((db) => saveMonthlyInfoRow(db, 'hp', '2025-11', { sentOn: '2025-12-05' }, '2025-12-03')), status(400, /liegt nach dem heutigen Tag/))
+    assert.equal((await opened.write((db) => saveMonthlyInfoRow(db, 'hp', '2025-11', { sentOn: '2025-12-03' }, '2025-12-03')))?.sentOn, '2025-12-03')
     await assert.rejects(save('2025-11', { sentOn: '2025-02-30' }), status(400, /kein Datum/))
     await assert.rejects(save('2025-10', { referenceKwhPerM2: 10 }), status(400, /Quelle.*eigenen Haus/))
     await assert.rejects(save('2025-10', { referenceKwhPerM2: 0, referenceSource: 'x' }), status(400, /größer als 0/))

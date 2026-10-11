@@ -64,6 +64,8 @@ test('Fernablesbar, nichts erstellt: Warnung mit allen Monaten und Lücken, „u
   assert.equal(n.level, 'warning')
   assert.match(n.text, /seit dem 01\.01\.2022 jeden Monat eine Verbrauchsinformation zu \(§ 6a Abs\. 1 und 2 HeizkostenV\)/)
   assert.match(n.text, /Nicht als mitgeteilt vermerkt: Januar bis Dezember 2025\./)
+  // Kann-Befund K4: § 6a Abs. 2 Nr. 3 im Wortlaut.
+  assert.match(n.text, /Vergleich mit einem Durchschnittsnutzer derselben Nutzerkategorie\./)
   // Alle Monate statt nur der Heizperiode der Richtlinie, als Auslegung gekennzeichnet (Prüfung K1).
   assert.match(n.text, /für jeden Monat, auch außerhalb der Heizperiode: Die Verordnung sagt nur „monatlich“, das Vorblatt der Begründung nennt „während der Heizperiode“ \(BR-Drs\. 643\/21\); das ist eine vorsichtige Auslegung zu Ihren Lasten\./)
   assert.match(n.text, /Unvollständig: Januar bis Dezember 2025 \(Zählerstand genau am Monatsende fehlt, auch bei einem ausgefallenen Gerät; Vergleich mit einem Durchschnittsnutzer fehlt\)\./)
