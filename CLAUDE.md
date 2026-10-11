@@ -2146,7 +2146,9 @@ die ganze fachliche Komplexität:
   Nur so ist aus keinem Teil mehr abgezogen, als er beträgt, auch bei drei und mehr Teilen und wenn die
   Abzüge die ganze Rechnung ergeben (Restverfahren nach Tagen ist nicht monoton). Das Jahr der Zahlung
   eines Abzugsteils fragt die Vorschau nicht, es ist das der Betriebsstrom-Position nach dem Wechsel
-  (`derivedYears`). Geprüft wird das
+  (`derivedYears`); angeboten werden nur Jahre im Schnitt der Spannen dieser Teile, und ein Teil mit festem Jahr
+  (Zeitraum in einem Kalenderjahr) bekommt am abweichenden Jahr einen Satz zur Verschiebung in der Anlage V
+  (`notes` am Eintrag, `taxShifts` am Ziel). Geprüft wird das
   **je Mieter** gegen von Hand hergeleitete Beträge, nicht je Zeitraum: „Abzug gleich Betriebsstrom je
   Zeitraum“ hielt auch ein falsches Ergebnis aus. Ein
   Scheitern ist eine 409 mit Vorschau. Kein Objektwechsel, solange ein
