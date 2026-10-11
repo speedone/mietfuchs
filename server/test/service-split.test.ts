@@ -3,7 +3,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { baseDescription, splitByService } from '../src/serviceSplit.ts'
+import { baseDescription, splitByService, splitDeductionsAlike, type ServicePart } from '../src/serviceSplit.ts'
 import type { PeriodRules } from '../../shared/types.ts'
 
 const MAI: PeriodRules = { startMonth: 5, changes: [] }
@@ -46,4 +46,88 @@ test('Ein Leistungszeitraum in einem einzigen Zeitraum ergibt einen Teil ohne Zu
 test('Ein zweites Aufteilen hängt keinen zweiten Zusatz an', () => {
   assert.equal(baseDescription('Grundsteuer 2025 (anteilig 01.01.–30.04.2025)'), 'Grundsteuer 2025')
   assert.equal(baseDescription('Grundsteuer 2025'), 'Grundsteuer 2025')
+})
+
+// ---------- Abzüge des Betriebsstroms wie ihre Rechnung (Folge-PR zu #252, Geld-H1, F7) ----------
+
+const teile = (beträge: readonly number[], tage: readonly number[] = beträge.map(() => 100)): ServicePart[] =>
+  beträge.map((amountCents, i) => ({
+    period: { key: `2025-${String(i + 1).padStart(2, '0')}`, from: '2025-01-01', to: '2025-01-31', short: false } as ServicePart['period'],
+    days: tage[i] ?? 100, amountCents, labor35aCents: null, description: `Hausstrom (anteilig ${i})`,
+  }))
+
+test('Ein Abzug teilt sich nach den Beträgen der Teile: 100 € und 900 € aus 1.000 € wie bisher nach Tagen', () => {
+  const r = teile([32877, 67123], [120, 245])
+  assert.deepEqual(splitDeductionsAlike([{ id: 'a', description: 'Abzug', amountCents: -10000 }], r)[0]?.map((p) => p.amountCents), [-3288, -6712])
+  assert.deepEqual(splitDeductionsAlike([{ id: 'a', description: 'Abzug', amountCents: -90000 }], r)[0]?.map((p) => p.amountCents), [-29589, -60411])
+})
+
+test('H1: zwei Abzüge zusammen gleich der Rechnung: je Teil genau die Rechnung, Restcent nach Kennung', () => {
+  const r = teile([32877, 67123], [120, 245])
+  const [d1, d2] = splitDeductionsAlike([{ id: 'd1', description: 'Abzug 1', amountCents: -50000 }, { id: 'd2', description: 'Abzug 2', amountCents: -50000 }], r)
+  assert.deepEqual(d1?.map((p) => p.amountCents), [-16439, -33561])
+  assert.deepEqual(d2?.map((p) => p.amountCents), [-16438, -33562])
+})
+
+// Eigenschaften über ganze Zahlen (fester Startwert): je Teil höchstens die Rechnung, jeder Abzug genau sein Betrag,
+// jeder Teil genau die gemeinsame Quote, kein Vorzeichenwechsel; auch bei drei und vier Teilen und wenn die Abzüge die
+// ganze Rechnung ergeben. Nach Tagen geteilt bräche die erste Eigenschaft (Alabama-Paradox, Geldprüfung F7).
+test('Eigenschaften: Σ Abzüge je Teil ≤ Teil der Rechnung, Zeilen- und Spaltensummen, Vorzeichen', () => {
+  let seed = 20261011
+  const rnd = (n: number): number => {
+    seed = (seed * 1103515245 + 12345) % 2147483648
+    return seed % n
+  }
+  for (let fall = 0; fall < 4000; fall++) {
+    const anzahl = 1 + rnd(4)
+    const tage = Array.from({ length: anzahl }, () => 1 + rnd(200))
+    // Die Hälfte der Fälle mit winzigen Rechnungen: Dort treten Rundungsfälle auf, die große Beträge verbergen.
+    const rechnung = rnd(2) === 0 ? 1 + rnd(20) : 1 + rnd(200000)
+    const summeTage = tage.reduce((a, t) => a + t, 0)
+    // Die Teile der Rechnung nach Tagen (wie splitByService), mit Restcent an den größten Rest.
+    const roh = tage.map((t) => (rechnung * t) / summeTage)
+    const beträge = roh.map(Math.floor)
+    let rest = rechnung - beträge.reduce((a, b) => a + b, 0)
+    for (const i of roh.map((r, i) => [r - Math.floor(r), i] as const).sort((a, b) => b[0] - a[0]).map(([, i]) => i)) {
+      if (rest-- <= 0) break
+      beträge[i] = (beträge[i] ?? 0) + 1
+    }
+    const zahl = 1 + rnd(3)
+    const gesamt = rnd(3) === 0 ? rechnung : rnd(rechnung + 1)
+    const abzüge: number[] = []
+    let offen = gesamt
+    for (let j = 0; j < zahl; j++) {
+      const c = j === zahl - 1 ? offen : rnd(offen + 1)
+      abzüge.push(c)
+      offen -= c
+    }
+    const r = teile(beträge, tage)
+    const out = splitDeductionsAlike(abzüge.map((c, j) => ({ id: `d${j}`, description: 'Abzug', amountCents: -c || 0 })), r)
+    abzüge.forEach((c, j) => {
+      const zeile = out[j] ?? assert.fail('Zeile fehlt')
+      assert.equal(zeile.reduce((a, p) => a + p.amountCents, 0), -c || 0, `Fall ${fall}: Abzug ${j} ergibt nicht seinen Betrag`)
+      assert.ok(zeile.every((p) => p.amountCents <= 0 && Number.isInteger(p.amountCents)), `Fall ${fall}: Vorzeichen`)
+    })
+    beträge.forEach((b, k) => {
+      const spalte = -out.reduce((a, z) => a + (z[k]?.amountCents ?? 0), 0)
+      assert.ok(spalte <= b, `Fall ${fall}: aus Teil ${k} (${b}) sind ${spalte} abgezogen`)
+    })
+    if (gesamt === rechnung) beträge.forEach((b, k) => assert.equal(-out.reduce((a, z) => a + (z[k]?.amountCents ?? 0), 0), b, `Fall ${fall}: Teil ${k} nicht genau`))
+  }
+})
+
+// Gegenbeispiele aus der Mutationsprüfung, je von Hand nachvollziehbar.
+test('Nach Tagen läge ein Teil über der Rechnung: 4 Cent über 10/31/30 Tage (0/2/2), Abzug 3 Cent nach Beträgen 0/2/1', () => {
+  // Nach Tagen: 3 × 10/71 = 0,42, 3 × 31/71 = 1,31, 3 × 30/71 = 1,27 → 0 + 1 + 1, Restcent an 0,42 → 1/1/1, also 1 Cent
+  // aus einem Teil, der 0 Cent beträgt. Nach Beträgen: 0, 1,5, 1,5 → 0/1/1, Restcent nach der Reihenfolge → 0/2/1.
+  const out = splitDeductionsAlike([{ id: 'a', description: 'Abzug', amountCents: -3 }], teile([0, 2, 2], [10, 31, 30]))
+  assert.deepEqual(out[0]?.map((p) => p.amountCents), [0, -2, -1])
+})
+
+test('Teilschritt 2 nach dem Rest, nicht nach dem ursprünglichen Betrag: drei Teile zu 1 Cent, zwei Abzüge zu 1 Cent', () => {
+  // Gemeinsam 2 Cent → 1/1/0. Teil 1: Quoten 0,5 / 0,5, Restcent nach Kennung an d0 → d0 1, d1 0. Teil 2: übrig sind
+  // d0 0 und d1 1 → d1 1. Nach dem ursprünglichen Betrag bekäme d0 auch in Teil 2 den Cent und im letzten Teil −1.
+  const [d0, d1] = splitDeductionsAlike([{ id: 'd0', description: 'Abzug', amountCents: -1 }, { id: 'd1', description: 'Abzug', amountCents: -1 }], teile([1, 1, 1]))
+  assert.deepEqual(d0?.map((p) => p.amountCents), [-1, 0, 0])
+  assert.deepEqual(d1?.map((p) => p.amountCents), [0, -1, 0])
 })

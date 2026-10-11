@@ -48,6 +48,14 @@ export default function CostPeriodFields({ form, onChange, showTaxYear, years }:
             {years.map((y) => <option key={y} value={String(y)}>{y}</option>)}
           </select>
           <small className="muted">Maßgeblich ist, wann Sie gezahlt haben (§ 11 Abs. 2 EStG).</small>
+          {/* Recht-H-1 und K-4 (Folge-PR zu #252): Strom der Heizung über den Zähler des Hauses und sein Abzug. */}
+          {(form.operatingPower === 'included' || form.operatingPower === 'deduction') && (
+            <small className="muted">
+              Läuft Strom der Heizung über den Zähler des Hauses, gilt für die Heizposition und ihren Abzug beim Allgemeinstrom dasselbe Jahr, nämlich
+              das der Heizposition: Beide teilen die Stromrechnung nur auf und ändern zusammen die Summe Ihrer Kosten nicht; die Stromrechnung selbst
+              bleibt im Jahr ihrer Zahlung.
+            </small>
+          )}
           {/* Laienprobe B15, Review Runde 1: Eine Position hat ein Jahr; Abschläge über zwei Jahre gehören in zwei. */}
           <small className="muted">
             Haben Sie die Rechnung in Abschlägen über zwei Kalenderjahre bezahlt, etwa monatlich für Gas, Wasser oder Müll, gehört jeder Abschlag

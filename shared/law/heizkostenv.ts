@@ -1,11 +1,11 @@
 // Parameter der Heizkostenverordnung (Heizung PR 1, Entwurf 4.3). Wortlaut geprüft am 05.10.2026
-// auf gesetze-im-internet.de, Fassung Art. 3 G v. 16.10.2023 (BGBl. I Nr. 280); das Gesetz vom
+// auf gesetze-im-internet.de, Fassung Art. 3 G v. 16.10.2023 (BGBl. 2023 I Nr. 280); das Gesetz vom
 // 23.07.2026 ändert die Verordnung nicht (Entwurf Abschnitt 2).
 import type { LawParam, Source } from './register.ts'
 import { germanDate } from './register.ts'
 import type { HeatingValueTable } from '../types.ts'
 
-const ENACTED = 'HeizkostenV, Fassung Art. 3 G v. 16.10.2023 (BGBl. I Nr. 280)'
+const ENACTED = 'HeizkostenV, Fassung Art. 3 G v. 16.10.2023 (BGBl. 2023 I Nr. 280)'
 const checked = (cite: string, url: string): Source => ({ rank: 'law', cite, url, retrieved: '2026-10-05', checked: 'checked' })
 
 // Mindestens 50 und höchstens 70 % der Kosten nach erfasstem Verbrauch, für Heizung (§ 7 Abs. 1
@@ -190,6 +190,24 @@ export const hkvSettlementInfo: LawParam<boolean, 'periodStart'> = {
 // der Installation beginnt (Satz 2; BT-Drs. 20/7619: Installation der Ausstattung). Zeitregel nach
 // dem Ereignis (Entwurf 3.13). Ohne Erfassung nach dem 30.09.2025 rechnet Mietfuchs mit 15 % nach
 // § 12 Abs. 1 Satz 1, als Auslegung (Entwurf 15.1 Nr. 22, `heatPumpVerdict` in heating.ts).
+// Strom zur Wärmeerzeugung (Folge-PR zu #252, #253): Seit dem 01.10.2024 nennt § 7 Abs. 2 Satz 1 HeizkostenV „die
+// Kosten des zur Wärmeerzeugung verbrauchten Stroms“ (eingefügt durch Art. 3 Nr. 1, in Kraft nach Art. 6 Abs. 2 des
+// Gesetzes vom 16.10.2023, BGBl. 2023 I Nr. 280; am amtlichen Text gelesen am 11.10.2026); § 8 Abs. 2 verweist
+// darauf. `overlap`: Der Hinweis nennt die Vorschrift nur in einem Zeitraum, der diese Fassung berührt.
+export const hkvGenerationPower: LawParam<{ readonly since: string }, 'overlap'> = {
+  id: 'hkv.generation-power',
+  title: 'Strom zur Wärmeerzeugung bei den Heizkosten (Heizkostenverordnung)',
+  norm: '§ 7 Abs. 2 Satz 1, § 8 Abs. 2 HeizkostenV',
+  timing: 'overlap',
+  versions: [{
+    validFrom: '2024-10-01',
+    value: { since: '2024-10-01' },
+    source: { rank: 'law', cite: '§ 7 Abs. 2 Satz 1 HeizkostenV, eingefügt durch Art. 3 Nr. 1, in Kraft nach Art. 6 Abs. 2 G v. 16.10.2023 (BGBl. 2023 I Nr. 280)', url: 'https://www.recht.bund.de/eli/bund/bgbl-1/2023/280', retrieved: '2026-10-11', checked: 'checked' },
+    enacted: ENACTED,
+  }],
+  describe: (v) => `der zur Wärmeerzeugung verbrauchte Strom zählt seit dem ${germanDate(v.since)} zu den Kosten des Betriebs der zentralen Heizungsanlage`,
+}
+
 export type HeatPumpCapture = { readonly capturedBy: string; readonly installBy: string }
 export const hkvHeatPumpCapture: LawParam<HeatPumpCapture, 'eventDate'> = {
   id: 'hkv.heat-pump.capture',

@@ -32,7 +32,7 @@ import {
 } from '../../../shared/period.ts'
 import { dayAfter } from '../../../shared/law/register.ts'
 import type { BillingPeriod, CostItem, PeriodChangePreview, PeriodEffect, PeriodKey, PeriodRules, Property, Tenancy } from '../../../shared/types.ts'
-import { baseDescription, splitAlike, splitByService, type ServicePart } from '../serviceSplit.ts'
+import { baseDescription, splitByService, splitDeductionsAlike, type ServicePart } from '../serviceSplit.ts'
 import type { Database, Transaction } from './client.ts'
 import { readClosedSettlements, readCostItems, readHeatingPlants, readProperties, readStock, readTenancies, readUnits } from './read.ts'
 import { dryRun, earliestTenancyStart, lostClaims, outcomeOf } from './dryRun.ts'
@@ -137,6 +137,13 @@ type Plan = {
   assessmentMoves: { id: string; to: PeriodKey }[]
   // Positionen eines Zeitraums, der nur wächst und danach über zwei Kalenderjahre reicht (M4).
   regrows: { item: CostItem; target: BillingPeriod }[]
+  // Abzüge des Betriebsstroms, deren Stromrechnung einen Leistungszeitraum hat (Folge-PR zu #252, Geld-K1): Sie
+  // folgen dem Endzustand ihrer Rechnung, gemeinsam geteilt (`splitDeductionsAlike`), und stehen in keiner Gruppe.
+  follows: { item: CostItem; parts: ServicePart[] }[]
+  byId: ReadonlyMap<string, CostItem>
+  // G-H4: Das Jahr der Zahlung dieser Teile eines Abzugs wird nicht gefragt, sondern ist das seiner
+  // Betriebsstrom-Position (`powerItemId`) nach dem Wechsel (Entscheidung G2-N-W2).
+  derivedYears: Map<string, { powerItemId: string; entry: PeriodChangePreview['taxYears'][number] }>
   taxEntries: Map<string, PeriodChangePreview['taxYears'][number]>
   next: PeriodRules
   before: PeriodRules
@@ -162,6 +169,34 @@ function taxEntry(item: CostItem, p: BillingPeriod): PeriodChangePreview['taxYea
 // hängt am heutigen Tag und gehört nicht dazu.
 function tokenOf(p: Omit<PeriodChangePreview, 'token' | 'periods'>): string {
   return crypto.createHash('sha256').update(JSON.stringify([p.rules, p.newShort, p.blocked, p.moves, p.groups, p.overrides, p.assessments, p.taxYears])).digest('hex')
+}
+
+// Jahre in Worten: „2025“ bzw. „2025 bis 2027“ (Recht H-2 der zweiten Nachprüfung von #265).
+const yearsText = (years: readonly number[]): string => {
+  const first = years[0]
+  const last = years[years.length - 1]
+  return first === last ? String(first) : `${first} bis ${last}`
+}
+
+// Geld H1 (Nachprüfung fc20455): Ein Ziel der Heizgruppe, an dem das Jahr des Betriebsstroms in keine Spanne seines
+// Abzugsteils passt. `years`: die Jahre, die der Betriebsstrom dort haben kann (eines, wenn der Zeitraum in einem
+// Kalenderjahr liegt).
+export function noYearText(i: { target: string; power: string; years: readonly number[]; deduction: string; deductionLabel: string; span: readonly number[] }): string {
+  const where = i.years.length === 1 ? `im Jahr der Zahlung ${i.years[0]}` : `in einem der Jahre ${yearsText(i.years)}`
+  return `Ganz nach ${i.target} verschoben, stünde „${i.power}“ ${where}; sein Abzug „${i.deduction}“ in ${i.deductionLabel} folgt ihm, dort ist aber nur ${yearsText(i.span)} möglich. ` +
+    'So lässt sich der Wechsel nicht speichern; wählen Sie für die Heizkosten einen anderen Zeitraum.'
+}
+
+// Geld H2, Variante (b), mit Recht H-1 der zweiten Nachprüfung von #265: Ein Teil des Abzugs bleibt in einem festen
+// Steuerjahr. Welches Jahr steuerlich gilt, entscheidet Mietfuchs nicht; der Satz nennt, wonach es sich richtet.
+export const shiftText = (cents: number, fixed: number, year: number): string =>
+  `Ein Teil des Abzugs (${euro(cents)}) bleibt im Steuerjahr ${fixed}, der Betriebsstrom steht im Steuerjahr ${year}; in der Anlage V verschiebt sich dieser Betrag zwischen den Jahren. ` +
+  'Welches Jahr steuerlich gilt, richtet sich danach, wann Sie die Stromrechnung bezahlt haben (§ 11 Abs. 2 EStG).'
+
+// Eine Stromrechnung mit Leistungszeitraum, die der Wechsel nicht teilt, bleibt ganz in ihrem Zeitraum (K1).
+function stayingParts(next: PeriodRules, g: CostItem): ServicePart[] {
+  const p = periodOfKey(next, g.period)
+  return p === null ? [] : [{ period: p, days: overlapDays(p, p), amountCents: g.amountCents, labor35aCents: null, description: g.description }]
 }
 
 async function planPeriodChange(db: Database, propertyId: string, rawRules: unknown, today: string): Promise<Plan | null> {
@@ -275,6 +310,18 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
     }).map((p) => (fixed && p.description === base ? { ...p, description: `${base} (anteilig ${formatDayRange(first.from, last.to)})` } : p))
     return { family: moving, parts }
   }
+  // Folge-PR zu #252 (Geld-K1, -H1): Ein Abzug des Betriebsstroms folgt immer seiner Stromrechnung. Hat sie einen
+  // Leistungszeitraum, steht ihr Endzustand schon im Plan fest; der Abzug geht dann in keine Gruppe und wird nicht
+  // nach eigenem Leistungszeitraum geteilt, sondern mit allen Abzügen derselben Rechnung gemeinsam wie sie.
+  const byId = new Map(items.map((c) => [c.id, c]))
+  const isGeneral = (c: CostItem): boolean => c.category === GENERAL_POWER_CATEGORY && c.operatingPower === undefined
+  const generalOf = (c: CostItem): CostItem | undefined => {
+    if (c.operatingPower !== 'deduction' || c.operatingPowerGeneralId === undefined) return undefined
+    const g = byId.get(c.operatingPowerGeneralId)
+    return g !== undefined && isGeneral(g) ? g : undefined
+  }
+  const withService = (c: CostItem): boolean => c.serviceFrom !== undefined && c.serviceTo !== undefined
+  const followers: CostItem[] = []
   const done = new Set<string>()
   for (const item of items) {
     if (item.heatingPlantId && ownPlantIds.has(item.heatingPlantId)) continue
@@ -286,7 +333,13 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
       if (a.now !== null && spansTwoYears(a.now)) regrows.push({ item, target: a.now })
       continue
     }
-    if (item.category !== HEATING_CATEGORY && item.serviceFrom !== undefined && item.serviceTo !== undefined) {
+    const general = generalOf(item)
+    if (general !== undefined && withService(general)) {
+      followers.push(item)
+      continue
+    }
+    // Ein Abzug auf eine Rechnung ohne Leistungszeitraum geht mit ihr in die Gruppe, auch wenn er selbst einen trägt.
+    if (item.category !== HEATING_CATEGORY && item.serviceFrom !== undefined && item.serviceTo !== undefined && general === undefined) {
       if (done.has(item.id)) continue
       const whole = wholeInvoice(item, familyOf(item))
       if (whole !== null) {
@@ -321,6 +374,41 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
       else g.split = null
     }
     groups.set(id, g)
+  }
+
+  // Der Endzustand jeder Stromrechnung mit Leistungszeitraum, an der ein folgender Abzug hängt: ihre Teile aus
+  // `splits` (auch als Familie einer schon aufgeteilten Rechnung, H2), sonst bleibt sie ganz in ihrem Zeitraum
+  // (K1: Leistungszeitraum ganz in einem neuen Zeitraum, die Rechnung steht deshalb nicht in `splits`).
+  const follows: Plan['follows'] = []
+  const pools = new Map<string, { parts: ServicePart[]; deductions: CostItem[] }>()
+  for (const d of followers) {
+    const g = generalOf(d)
+    if (g === undefined) continue
+    const index = splits.findIndex((s) => (s.family ?? [s.item]).some((m) => m.id === g.id))
+    const key = index >= 0 ? `split:${index}` : `stay:${g.id}`
+    const pool = pools.get(key) ?? { parts: index >= 0 ? splits[index]?.parts ?? [] : stayingParts(next, g), deductions: [] }
+    pool.deductions.push(d)
+    pools.set(key, pool)
+  }
+  for (const pool of pools.values()) {
+    if (pool.parts.length === 0) continue
+    const shares = splitDeductionsAlike(pool.deductions, pool.parts)
+    pool.deductions.forEach((d, j) => follows.push({ item: d, parts: shares[j] ?? [] }))
+  }
+  // Ohne Leistungszeitraum steht die Rechnung mit ihren Abzügen in einer Gruppe. Beim Aufteilen nach Tagen teilen sich
+  // die Abzüge gemeinsam wie die Teile der Rechnung (H1), nicht jeder für sich nach Tagen.
+  for (const g of groups.values()) {
+    if (g.split === null) continue
+    const byGeneral = new Map<string, CostItem[]>()
+    for (const item of g.items) {
+      const general = generalOf(item)
+      if (general === undefined || !g.items.includes(general) || !g.split.has(general.id)) continue
+      byGeneral.set(general.id, [...(byGeneral.get(general.id) ?? []), item])
+    }
+    for (const [generalId, deductions] of byGeneral) {
+      const shares = splitDeductionsAlike(deductions, g.split.get(generalId) ?? [])
+      deductions.forEach((d, j) => g.split?.set(d.id, shares[j] ?? []))
+    }
   }
 
   const overrideRekeys: Plan['overrideRekeys'] = []
@@ -374,7 +462,10 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
       costItemId: item.id, description: family ? baseDescription(item.description) : item.description,
       amountCents: (family ?? [item]).reduce((sum, c) => sum + c.amountCents, 0),
       parts: parts.map((p) => ({ period: p.period.key, label: periodLabel(p.period), amountCents: p.amountCents })),
-    })),
+    })).concat(follows.map(({ item, parts }) => ({
+      costItemId: item.id, description: item.description, amountCents: item.amountCents,
+      parts: parts.map((p) => ({ period: p.period.key, label: periodLabel(p.period), amountCents: p.amountCents })),
+    }))),
     groups: [...groups.entries()].map(([id, g]) => {
       const a = changed(g.from) ?? noFinding(g.from)
       const yearIn = (item: CostItem, p: BillingPeriod): number => (spansTwoYears(p) ? taxEntry(item, p).suggested : Number(p.from.slice(0, 4)))
@@ -426,13 +517,101 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
     token: '',
   }
   const taxEntries: Plan['taxEntries'] = new Map()
-  const ask = (item: CostItem, p: BillingPeriod) => { if (spansTwoYears(p)) taxEntries.set(taxKey(item, p), taxEntry(item, p)) }
+  const derivedYears: Plan['derivedYears'] = new Map()
+  // G-H4 (Folge-PR zu #252): Ein Abzug nimmt das Jahr seiner Betriebsstrom-Position, solange es in der Spanne des
+  // Zeitraums liegt (gemessen am heutigen Jahr des Betriebsstroms); dann fragt die Vorschau nicht. Sonst wie bisher.
+  const ask = (item: CostItem, p: BillingPeriod) => {
+    if (!spansTwoYears(p)) return
+    const entry = taxEntry(item, p)
+    const power = item.operatingPower === 'deduction' && item.operatingPowerItemId !== undefined ? byId.get(item.operatingPowerItemId) : undefined
+    if (power !== undefined && entry.options.includes(effectiveTaxYear(power))) {
+      derivedYears.set(entry.key, { powerItemId: power.id, entry })
+      return
+    }
+    taxEntries.set(entry.key, entry)
+  }
   for (const { item, parts } of splits) for (const part of parts) ask(item, part.period)
+  for (const { item, parts } of follows) for (const part of parts) ask(item, part.period)
   for (const g of groups.values()) for (const o of g.options) for (const item of g.items) ask(item, o)
   for (const { item, target } of regrows) ask(item, target)
+  // Geld H1 (Nachprüfung fc20455): Die Teile eines Abzugs nehmen das Jahr ihrer Betriebsstrom-Position. Die
+  // Vorschau bietet für den Betriebsstrom deshalb nur Jahre an, die in jeder Spanne seiner abgeleiteten Abzugsteile
+  // liegen; geht ein Ziel gar nicht (kein gemeinsames Jahr, oder das feste Jahr eines Zeitraums in einem
+  // Kalenderjahr passt nicht), sagt sie es an diesem Ziel vorher. Der 409 beim Schreiben bleibt als Netz.
+  const conflicts = new Map<string, string[]>()
+  const conflict = (powerId: string, target: BillingPeriod, text: string) => {
+    for (const g of preview.groups) {
+      if (!g.items.some((i) => i.costItemId === powerId) || !g.options.some((o) => o.key === target.key)) continue
+      conflicts.set(`${g.id}|${target.key}`, [...(conflicts.get(`${g.id}|${target.key}`) ?? []), text])
+    }
+  }
+  for (const d of derivedYears.values()) {
+    const power = byId.get(d.powerItemId)
+    if (power === undefined) continue
+    const span = d.entry.options
+    const tell = (target: BillingPeriod, years: readonly number[]) => conflict(power.id, target,
+      noYearText({ target: periodLabel(target), power: power.description, years, deduction: d.entry.description, deductionLabel: d.entry.label, span }))
+    for (const e of taxEntries.values()) {
+      if (e.costItemId !== power.id) continue
+      const options = e.options.filter((y) => span.includes(y))
+      const target = periodOfKey(next, e.period)
+      if (options.length === 0) {
+        if (target) tell(target, e.options)
+        continue
+      }
+      e.options = options
+      e.suggested = Math.min(Math.max(e.suggested, options[0] ?? e.suggested), options[options.length - 1] ?? e.suggested)
+    }
+    for (const g of groups.values()) {
+      if (!g.items.some((i) => i.id === power.id)) continue
+      for (const o of g.options) if (!spansTwoYears(o) && !span.includes(startYearOf(o.key))) tell(o, [startYearOf(o.key)])
+    }
+  }
+  // Geld H2, Variante (b) (Nachtrag nach Fixrunde 82d8a7a): Ein Teil eines folgenden Abzugs in einem Zeitraum innerhalb
+  // eines Kalenderjahrs hat ein festes Steuerjahr. Steht der Betriebsstrom nach der Antwort in einem anderen Jahr,
+  // verschiebt sich dieser Betrag in der Anlage V zwischen den Jahren. Die Vorschau sagt das am gewählten Jahr (`notes`)
+  // bzw. am Ziel mit festem Jahr vorher; sie begrenzt nichts, denn das richtige Steuerjahr hängt an der Zahlung der
+  // Stromrechnung, die Mietfuchs nicht kennt.
+  const fixedByPower = new Map<string, Map<number, number>>()
+  for (const { item, parts } of follows) {
+    if (item.operatingPowerItemId === undefined) continue
+    for (const p of parts) {
+      if (spansTwoYears(p.period)) continue
+      const byYear = fixedByPower.get(item.operatingPowerItemId) ?? new Map<number, number>()
+      const year = startYearOf(p.period.key)
+      byYear.set(year, (byYear.get(year) ?? 0) + Math.abs(p.amountCents))
+      fixedByPower.set(item.operatingPowerItemId, byYear)
+    }
+  }
+  const shiftsAt = (powerId: string, year: number): string[] =>
+    [...(fixedByPower.get(powerId) ?? new Map<number, number>())].filter(([fixed, cents]) => fixed !== year && cents > 0).map(([fixed, cents]) => shiftText(cents, fixed, year))
+  for (const e of taxEntries.values()) {
+    if (!fixedByPower.has(e.costItemId)) continue
+    const notes = e.options.flatMap((year) => shiftsAt(e.costItemId, year).map((text) => ({ year, text })))
+    if (notes.length > 0) e.notes = notes
+  }
+  for (const powerId of fixedByPower.keys()) {
+    for (const g of groups.values()) {
+      if (!g.items.some((i) => i.id === powerId)) continue
+      for (const o of g.options) {
+        if (spansTwoYears(o)) continue
+        for (const text of shiftsAt(powerId, startYearOf(o.key))) conflict(powerId, o, text)
+      }
+    }
+  }
+  for (const g of preview.groups) {
+    for (const o of g.options) {
+      const texts = conflicts.get(`${g.id}|${o.key}`)
+      if (!texts) continue
+      const text = [...new Set(texts)].join(' ')
+      const shift = g.taxShifts.find((t) => t.key === o.key)
+      if (shift) shift.text = `${shift.text} ${text}`
+      else g.taxShifts.push({ key: o.key, text })
+    }
+  }
   preview.taxYears = [...taxEntries.values()]
   preview.token = tokenOf(preview)
-  return { preview, splits, groups, overrideRekeys, overrideAsks: [...asks.values()], assessmentMoves, regrows, taxEntries, next, before }
+  return { preview, splits, groups, overrideRekeys, overrideAsks: [...asks.values()], assessmentMoves, regrows, follows, byId, derivedYears, taxEntries, next, before }
 }
 
 // Warum das Aufteilen einer Gruppe nicht vorbelegt wird (Review der Laienprobe, Runde 1): Eine
@@ -639,13 +818,37 @@ async function writeChange(
 
 async function writeChangeIn(
   tx: Transaction, plan: Plan, answers: Answers, propertyId: string, next: PeriodRules, newId: () => string,
-  taxYearIn: (target: BillingPeriod, item: CostItem) => number | null,
+  rawTaxYearIn: (target: BillingPeriod, item: CostItem) => number | null,
 ): Promise<void> {
   // Positionen gehen durch dieselbe Verschmelzung und Schreibprüfung wie beim Speichern
   // (`writeCostItemParts`), auch die verschobenen: ein rohes Update umginge die Prüfung des Jahres
   // der Zahlung (Durchsicht von #226, I1).
   // Nachprüfung von #252, G2-N-W1: Stromrechnung und Abzüge wandern nacheinander; geprüft wird der Endstand
   // (`settleOperatingPowerLinks`), und dafür merkt sich der Wechsel die Teile jeder Position.
+  // G-H4: Für die Teile eines Abzugs, deren Jahr nicht gefragt wurde, gilt das Jahr seiner Betriebsstrom-Position
+  // nach dem Wechsel: deren Antwort im neuen Zeitraum, sonst ihr heutiges Jahr.
+  const askedYearIn = rawTaxYearIn
+  const powerYear = (power: CostItem): number => {
+    const regrow = plan.regrows.find((r) => r.item.id === power.id)
+    if (regrow) return askedYearIn(regrow.target, power) ?? startYearOf(regrow.target.key)
+    for (const [id, g] of plan.groups) {
+      if (!g.items.some((i) => i.id === power.id)) continue
+      const target = g.options.find((p) => p.key === answers.groups[id])
+      if (target) return askedYearIn(target, power) ?? startYearOf(target.key)
+    }
+    return effectiveTaxYear(power)
+  }
+  const taxYearIn = (target: BillingPeriod, item: CostItem): number | null => {
+    const derived = plan.derivedYears.get(taxKey(item, target))
+    if (derived === undefined) return askedYearIn(target, item)
+    const power = plan.byId.get(derived.powerItemId)
+    if (power === undefined) return derived.entry.suggested
+    const year = powerYear(power)
+    if (!derived.entry.options.includes(year)) {
+      throw new PeriodError(`Das Jahr der Zahlung des Abzugs „${item.description}“ folgt dem Betriebsstrom „${power.description}“ (${year}); in ${derived.entry.label} ist nur ${derived.entry.options[0]} bis ${derived.entry.options[derived.entry.options.length - 1]} möglich. Stellen Sie beim Betriebsstrom ein Jahr in dieser Spanne ein.`)
+    }
+    return year
+  }
   const guard = { splitPart: true, periodChange: true }
   const written = new Map<string, { id: string; period: PeriodKey }[]>()
   const remember = (item: CostItem, periods: readonly PeriodKey[], ids: readonly string[]) =>
@@ -656,19 +859,6 @@ async function writeChangeIn(
     await tx.update(properties).set({ periodStartMonth: next.startMonth }).where(eq(properties.id, propertyId))
     await tx.delete(periodChanges).where(eq(periodChanges.propertyId, propertyId))
     if (next.changes.length > 0) await tx.insert(periodChanges).values(next.changes.map((fromMonth) => ({ propertyId, fromMonth })))
-    // G4-K1 (Nachprüfung von #252): Teilt sich eine Stromrechnung über ihren Leistungszeitraum von selbst, teilt
-    // sich ihr Abzug im selben Verhältnis, gleich wie seine Gruppe beantwortet wird: Der Betriebsstrom steckt in
-    // jedem Teil der Rechnung nach Tagen.
-    const generalParts = new Map(plan.splits.filter((s) => s.item.category === GENERAL_POWER_CATEGORY && s.item.operatingPower === undefined).map((s) => [s.item.id, s.parts]))
-    const alike = async (item: CostItem): Promise<boolean> => {
-      const parts = item.operatingPower === 'deduction' && item.operatingPowerGeneralId !== undefined ? generalParts.get(item.operatingPowerGeneralId) : undefined
-      if (!parts) return false
-      const own = splitAlike(item, parts)
-      remember(item, own.map((p) => p.period.key), await writeCostItemParts(tx, item, own.map((p) => ({
-        period: p.period.key, amountCents: p.amountCents, labor35aCents: null, description: p.description, taxYear: taxYearIn(p.period, item),
-      })), newId, item.id, guard))
-      return true
-    }
     for (const { item, parts, family } of plan.splits) {
       const writes = parts.map((p) => ({
         period: p.period.key, amountCents: p.amountCents, labor35aCents: p.labor35aCents, description: p.description, taxYear: taxYearIn(p.period, item),
@@ -679,7 +869,6 @@ async function writeChangeIn(
     for (const [id, g] of plan.groups) {
       if (answers.groups[id] === 'split' && g.split !== null) {
         for (const item of g.items) {
-          if (await alike(item)) continue
           const parts = g.split.get(item.id) ?? []
           remember(item, parts.map((p) => p.period.key), await writeCostItemParts(tx, { ...item, serviceFrom: g.old.from, serviceTo: g.old.to }, parts.map((p) => ({
             period: p.period.key, amountCents: p.amountCents, labor35aCents: p.labor35aCents, description: p.description, taxYear: taxYearIn(p.period, item),
@@ -689,9 +878,15 @@ async function writeChangeIn(
       }
       const target = g.options.find((p) => p.key === answers.groups[id]) ?? null
       if (target === null) continue
-      for (const item of g.items) if (!(await alike(item))) await move(item, target)
+      for (const item of g.items) await move(item, target)
     }
     for (const { item, target } of plan.regrows) await move(item, target)
+    // Folge-PR zu #252 (Geld-K1, -H1): Die Abzüge auf eine Rechnung mit Leistungszeitraum folgen deren Teilen.
+    for (const { item, parts } of plan.follows) {
+      remember(item, parts.map((p) => p.period.key), await writeCostItemParts(tx, item, parts.map((p) => ({
+        period: p.period.key, amountCents: p.amountCents, labor35aCents: null, description: p.description, taxYear: taxYearIn(p.period, item),
+      })), newId, item.id, guard))
+    }
     for (const r of plan.overrideRekeys) {
       await tx.update(prepaymentOverrides).set({ period: r.to }).where(and(eq(prepaymentOverrides.tenancyId, r.tenancyId), eq(prepaymentOverrides.period, r.from)))
     }

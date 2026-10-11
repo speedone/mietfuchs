@@ -64,8 +64,8 @@ import { ausweisGaps, CO2_FUELS, co2Assessment, co2DeductionsOf, FORMULA_METHODS
 // Zahlen und Daten der Rechtsregeln kommen aus dem Rechtsregister (Heizung PR 1) und stehen hier
 // nicht als Literal; server/test/law-literals.test.ts wacht darüber.
 import { createLawLog, dayAfter, dayBefore, law, LAW_AS_OF, onlyVersion, recordVersionAt, VALUE_CHANGE_LABEL, valueAt, type Period } from '../../shared/law/register.ts'
-import { betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths } from '../../shared/law/bgb-betrkv.ts'
-import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvEstimateThreshold, hkvExemptions, hkvInfoDistrict, hkvMonthlyInfo, hkvHeatPumpCapture, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvRenewableExemption, hkvSettlementInfo, type DegreeDayTable } from '../../shared/law/heizkostenv.ts'
+import { betrkvGenerationPower, betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths } from '../../shared/law/bgb-betrkv.ts'
+import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvEstimateThreshold, hkvExemptions, hkvGenerationPower, hkvInfoDistrict, hkvMonthlyInfo, hkvHeatPumpCapture, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvRenewableExemption, hkvSettlementInfo, type DegreeDayTable } from '../../shared/law/heizkostenv.ts'
 import { plantDevices, remoteReadingVerdict, servedUnitIds } from './remoteReading.ts'
 import { heatingInfoOf, heatingRulesOf, planByConsumption, type RuleRow } from './heatingInfo.ts'
 import { co2ExemptionOf, co2OffByExemptionOf, exemptionScopeFor, exemptionText as exemptionTextOf } from './co2Exemption.ts'
@@ -82,7 +82,7 @@ import { lineRoot, monthSpanText, plantRules, plantSpan, recommendedDeadline, re
 import { heatingSnapshotFor, selfAt, snapshotFor, wayOf } from './snapshot.ts'
 import { cancelledDeliveries, plantFuel, rangeOf, type FuelCarry, type FuelResult } from './fuel.ts'
 import { co2Plausibility, etsExempt as etsExemptPlant, plausibilityText } from './co2Plausibility.ts'
-import { operatingPowerFindings, operatingPowerText } from './operatingPower.ts'
+import { generationPowerText, missingOperatingPowerText, missingPowerFindings, operatingPowerFindings, operatingPowerText } from './operatingPower.ts'
 import { GENERAL_POWER_CATEGORY } from '../../shared/operatingPower.ts'
 import { LAW_PARAMS } from '../../shared/law/params.ts'
 import { fuelFromDeliveries, fuelFromStock, looseCentsOf, measuredOffset, problemText, settledByDefault, stockKeysOf, stockOf, stockTemplateOfLine, stockTouched, valueOf as stockValueOf, type FuelFigures, type StockPeriodInput, type StockResult } from './fuelStock.ts'
@@ -425,6 +425,10 @@ const noticeKinds = {
   // Durchsicht von #252, N1: Betriebsstrom und Abzug in verschiedenen Steuerjahren.
   'heating.operating-power-tax-year': { level: 'warning', title: 'Betriebsstrom und Abzug in verschiedenen Steuerjahren', terms: ['operatingPower'] },
   'heating.operating-power-double': { level: 'warning', title: 'Betriebsstrom und Abzug beim Allgemeinstrom passen nicht zusammen', terms: ['operatingPower', 'heatingCostOrdinance'] },
+  // Folge-PR zu #252: Betriebsstrom fehlt (#224; färbt die Ampel nicht, Entscheidung F6) und Strom zur
+  // Wärmeerzeugung einer Wärmepumpe oder eines Elektrokessels womöglich im Allgemeinstrom (#253).
+  'heating.operating-power-missing': { level: 'hint', title: 'Betriebsstrom der Heizung fehlt', terms: ['operatingPower', 'heatingCostOrdinance'] },
+  'heating.generation-power-missing': { level: 'hint', title: 'Strom zur Wärmeerzeugung womöglich im Allgemeinstrom', terms: ['operatingPower', 'heatingCostOrdinance'] },
   // Heizung PR 17 (Entwurf 4.5, 10.1): ein Rechtswert, den der Vermieter eingetragen hat.
   'law.value-overridden': { level: 'hint', title: 'Selbst eingetragener Rechtswert', terms: ['legalBasis'] },
   'model.prepayment-unsettled': { level: 'warning', title: 'Vorauszahlung ohne Abrechnung', terms: ['prepayment', 'flatRate'] },
@@ -6417,7 +6421,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       if (d.itemId !== item.id || d.taxYear === undefined || d.taxYear === itemTaxYear) continue
       warn('heating.operating-power-tax-year',
         `„${item.description}“ zählt in der Steuerübersicht zum Jahr ${itemTaxYear}, der Abzug „${d.description}“ zum Jahr ${d.taxYear}. ` +
-        `Beides ist eine Umbuchung aus derselben Stromrechnung und gehört in dasselbe Jahr. Stellen Sie beim Abzug „${d.description}“ im Kostenformular unter „Jahr der Zahlung (Steuer)“ das Jahr der Betriebsstrom-Position ein (${itemTaxYear}); das Jahr des Betriebsstroms hängt an seiner Heizperiode.`,
+        `Beides ist eine Umbuchung aus derselben Stromrechnung und gehört in dasselbe Jahr. Stellen Sie beim Abzug „${d.description}“ im Kostenformular unter „Jahr der Zahlung (Steuer)“ das Jahr der Betriebsstrom-Position ein (${itemTaxYear}); das Jahr des Betriebsstroms hängt an seiner Heizperiode. ` +
+        // Recht-H-1 und K-4 (Folge-PR zu #252): gegen die Feldhilfe „Maßgeblich ist, wann Sie gezahlt haben“; nicht
+        // „heben sich auf“, denn bei teilweiser Eigennutzung bleibt je Jahr ein Rest (splitForTax).
+        'Das widerspricht nicht der Regel, dass zählt, wann Sie gezahlt haben: Betriebsstrom und Abzug sind keine eigene Zahlung, sondern teilen die Stromrechnung nur auf; zusammen ändern sie die Summe Ihrer Kosten nicht, und die Stromrechnung selbst bleibt im Jahr ihrer Zahlung (§ 11 Abs. 2 EStG).',
         itemSubject(item))
     }
   }
@@ -6441,6 +6448,29 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       `„${d.description}“ (${fmtCents(-d.amountCents)}) ist anders verteilt als die Stromrechnung „${g.description}“, aus der er gerechnet wurde: ${how}. ` +
       'Damit verschieben sich die Anteile der Mieter am Allgemeinstrom. Verteilen Sie den Abzug im Kostenformular wie die Rechnung.',
       itemSubject(d))
+  }
+
+  // Folge-PR zu #252 (#224, #253): Betriebsstrom fehlt, und Strom zur Wärmeerzeugung womöglich im Allgemeinstrom.
+  // Nur in der Gesamtberechnung, denn nur dort stehen Allgemeinstrom und Heizperiode zusammen; die Heizperioden
+  // einer Anlage mit eigener Heizperiode kommen aus `heatingParts`. Das Register wird erst gefragt, wenn der
+  // Hinweis sonst käme, damit es nicht im Rechtsstand jeder Abrechnung mit Wärmepumpe steht.
+  if (scope === 'all') {
+    for (const f of missingPowerFindings({ period, plants, items, heatingParts: snapshot.heatingParts ?? [] })) {
+      if (f.kind === 'operating') {
+        warn('heating.operating-power-missing', missingOperatingPowerText(f, label), { kind: 'heatingCosts', id: f.plantId })
+        continue
+      }
+      const betrkv = law(betrkvGenerationPower, { period: lawPeriod }, lawLog)
+      if (betrkv.coverage === 'none') continue
+      // K-2 (Rechtsprüfung des Plans): Gilt die Heizkostenverordnung für diese Wärmepumpe noch nicht (§ 12 Abs. 3
+      // Satz 2), nennt der Text sie nicht.
+      const notYet = notices.some((n) => n.code === 'heating.heat-pump-capture' && n.subject?.id === f.plantId)
+      const hkv = notYet ? null : law(hkvGenerationPower, { period: lawPeriod }, lawLog)
+      const first = f.generals[0]
+      warn('heating.generation-power-missing',
+        generationPowerText(f, label, fmtDay(betrkv.value.since), hkv && hkv.coverage !== 'none' ? fmtDay(hkv.value.since) : null),
+        first ? itemSubject(first) : { kind: 'heatingCosts', id: f.plantId })
+    }
   }
 
   // Die Höchstdauer hat P gebildet (shared/period.ts); eingefroren wird sie hier.
