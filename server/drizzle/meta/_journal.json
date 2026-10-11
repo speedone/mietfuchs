@@ -302,6 +302,20 @@
       "when": 1791746001457,
       "tag": "0042_betriebsstrom_angabe_bedingungen",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "6",
+      "when": 1791756522415,
+      "tag": "0043_waermelieferung",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "6",
+      "when": 1791756533265,
+      "tag": "0044_waermelieferung_bedingungen",
+      "breakpoints": true
     }
   ]
 }

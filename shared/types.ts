@@ -1350,6 +1350,11 @@ export type DhwMethod = 'heatMeter' | 'volumeFormula' | 'areaFormula'
 // `null` an der Anlage heißt keine Angabe; der Hinweis verhält sich dann wie vor #266.
 export type OperatingPowerHandling = 'ownMeter' | 'deducted' | 'landlordPays'
 
+// Wer vor der Umstellung auf Wärmelieferung versorgte (Heizung PR 16, #213): der Vermieter mit eigener Anlage
+// (die Mieter trugen die Heizkosten als Betriebskosten, § 556c BGB) oder die Mieter selbst, etwa mit
+// Einzelöfen (BGH, Urteil vom 20.05.2026, VIII ZR 46/25: § 556c gilt dann nicht).
+export type PreviousSupply = 'landlord' | 'tenant'
+
 // Eine angeschlossene Wohnung. Die beheizte Fläche (§ 7 Abs. 1 Satz 5) kommt mit PR 10.
 export type HeatingPlantUnit = { unitId: string; heatedAreaM2: number | null }
 
@@ -1420,6 +1425,16 @@ export type HeatingPlant = {
   // Wie der Betriebsstrom erfasst ist (#266); `null` heißt keine Angabe. Ausgewertet nur, wo Mietfuchs danach fragt
   // (`asksOperatingPowerHandling` in shared/operatingPower.ts); eine Anlage ohne Frage behält den Wert unbeachtet.
   operatingPowerHandling: OperatingPowerHandling | null
+  // Wärmelieferung (Heizung PR 16, #213). `contracting`: Ein Dritter betreibt die Anlage im Haus und liefert
+  // Wärme (eigenständig gewerbliche Wärmelieferung, § 1 Abs. 1 Nr. 2 HeizkostenV); `energy` ist dann der
+  // Brennstoff seines Kessels. Fernwärme ist es ohne Merkmal. Bei beiden: Tag einer Umstellung während
+  // laufender Mietverhältnisse, wer vorher versorgte, und wann die Umstellungsankündigung zuging (§ 556c Abs. 2
+  // BGB, § 11 WärmeLV). Gesetzt oder entfernt wird das Merkmal an einer Anlage mit Lieferungen, Vorrat oder
+  // CO₂-Angaben nur über den Kesseltausch.
+  contracting: boolean
+  heatDeliverySince: string | null
+  previousSupply: PreviousSupply | null
+  switchAnnouncedOn: string | null
   // Die Zeiträume der eigenen Heizkostenabrechnung (Durchsicht von #239), aufsteigend; `until` NULL beim
   // laufenden.
   selfSpans?: SelfSpanRange[]

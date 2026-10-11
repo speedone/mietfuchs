@@ -23,7 +23,8 @@ import { and, count, eq, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle
 import type { AssignableHeatingItem, HeatingPlant, HeatingPlantUnit, PeriodKey, SelfSpanRange } from '../../../shared/types.ts'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 import { plantRules } from '../../../shared/heatingPeriod.ts'
-import { CO2_FUELS } from '../co2.ts'
+import { co2Required } from '../co2.ts'
+import { billingEnergy, CONTRACTING_ENERGIES, isHeatDelivery } from '../../../shared/heatDelivery.ts'
 import { STOCK_ENERGIES } from '../fuel.ts'
 import { openCo2Periods } from './co2.ts'
 import { parsePeriodKey, periodContaining, periodKey, periodLabel, periodOfKey, rulesOf } from '../../../shared/period.ts'
@@ -38,7 +39,7 @@ import { asNullableFilled, asNullableText, asText, guardServedChange, has, heati
 import { buildingCycle, lineRoot, sameLine, servesUnit } from '../../../shared/heatingPeriod.ts'
 import {
   AREA_BASES_HEAT, CAPTURE_METHODS, CHANGE_SPLITS, CO2_RESTRICTIONS, HEAT_GENERATIONS, HEAT_PUMP_MAJORITIES, HOT_WATER, fuelDeliveries, closedHeatingSettlementHistory, co2Statements, closedHeatingSettlements, closedSettlements, costItems, DEVICES_INSTALLED_AFTER, DEVICES_REMOTE, HEATING_ENERGIES, HEATING_METHODS,
-  HEATING_SOURCES, HEATING_SUPPLIES, NEW_DEVICES_INSTALLS, OPERATING_POWER_HANDLINGS, heatingPeriodChanges, heatingPeriods, heatingPlants, heatingPlantUnits, heatingPrepaymentOverrides, heatingSelfSpans, heatingSeparateSpans, meters, units,
+  HEATING_SOURCES, HEATING_SUPPLIES, NEW_DEVICES_INSTALLS, OPERATING_POWER_HANDLINGS, PREVIOUS_SUPPLIES, co2Statements as co2StatementRows, heatingPeriodChanges, heatingPeriods, heatingPlants, heatingPlantUnits, heatingPrepaymentOverrides, heatingSelfSpans, heatingSeparateSpans, meters, units,
 } from './schema.ts'
 
 // Die Sätze der Sperren. Jeder sagt, was bis dahin geht.
@@ -132,6 +133,11 @@ function mergeHeatingPlant(current: HeatingPlant, body: unknown): HeatingPlant {
     // Wie der Betriebsstrom erfasst ist (#266): an jeder Anlage angenommen (E4), ausgewertet nur, wo Mietfuchs
     // danach fragt; so geht beim Umschalten auf den Messdienst und zurück nichts still verloren.
     operatingPowerHandling: merged(body, 'operatingPowerHandling', current.operatingPowerHandling ?? null, (v) => answerOf(OPERATING_POWER_HANDLINGS, v, 'Wie der Betriebsstrom dieser Heizung erfasst ist')),
+    // Wärmelieferung (Heizung PR 16, #213). Leer heißt keine Angabe; ein unbekannter Wert ist ein Fehler mit Satz.
+    contracting: merged(body, 'contracting', current.contracting, (v) => v === true),
+    heatDeliverySince: merged(body, 'heatDeliverySince', current.heatDeliverySince, asNullableFilled),
+    previousSupply: merged(body, 'previousSupply', current.previousSupply, (v) => answerOf(PREVIOUS_SUPPLIES, v, 'Wer vorher versorgte')),
+    switchAnnouncedOn: merged(body, 'switchAnnouncedOn', current.switchAnnouncedOn, asNullableFilled),
     // Setzt nur die Einrichtung der eigenen Abrechnung; das Zurückschalten löscht ihn (updateHeatingPlant).
     selfSpans: current.selfSpans ?? [],
   }
@@ -145,9 +151,28 @@ const emptyHeatingPlant = (id: string, propertyId: string): HeatingPlant => ({
   periodChanges: [], separateSpans: [], units: null, newDevicesInstall: null,
   nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null,
   hotWater: 'combined', capture: null, areaBasisHeat: 'area', heatPumpInstalledOn: null, heatGeneration: null, heatPumpMajority: null, hcaModel: null, operatingPowerHandling: null, selfSpans: [],
+  contracting: false, heatDeliverySince: null, previousSupply: null, switchAnnouncedOn: null,
 })
 
 export async function guardHeatingPlant(db: Executor, before: HeatingPlant | null, after: HeatingPlant): Promise<void> {
+  // Wärmelieferung (Heizung PR 16, #213). Contracting gibt es bei jeder zentralen Anlage außer der Fernwärme,
+  // auch bei der Wärmepumpe (Prüfung R-M4); die Angaben zur Umstellung nur bei einer Wärmelieferung.
+  if (after.contracting && !CONTRACTING_ENERGIES.includes(after.energy)) {
+    throw new HeatingError(400, 'Fernwärme ist ohne Merkmal Wärmelieferung. Bitte nehmen Sie das Häkchen bei „Contracting“ heraus.')
+  }
+  // Prüfung R-S8: eine Grenze von Mietfuchs, keine Rechtsaussage.
+  if (after.contracting && after.supply !== 'central') {
+    throw new HeatingError(400, 'Contracting bildet Mietfuchs bisher nur bei einer zentralen Heizung ab.')
+  }
+  if (!isHeatDelivery(after) && (after.heatDeliverySince !== null || after.previousSupply !== null || after.switchAnnouncedOn !== null)) {
+    throw new HeatingError(400, 'Angaben zur Umstellung auf Wärmelieferung gibt es nur bei Fernwärme oder Contracting.')
+  }
+  for (const [value, what] of [[after.heatDeliverySince, 'Der Tag der Umstellung'], [after.switchAnnouncedOn, 'Der Tag, an dem die Ankündigung zuging,']] as const) {
+    if (value !== null && !ISO_DATE.test(value)) throw new HeatingError(400, `${what} ist kein Datum. Bitte wählen Sie ihn im Kalender.`)
+  }
+  if (after.switchAnnouncedOn !== null && after.heatDeliverySince === null) {
+    throw new HeatingError(400, 'Eine Ankündigung ohne Tag der Umstellung lässt sich nicht prüfen. Bitte tragen Sie den Tag der Umstellung ein oder leeren Sie beide.')
+  }
   // Etagenheizung auf Vertrag des Vermieters (Heizung PR 9, Entwurf 9.3, 11.2): Die Rechnung jeder
   // Wohnung gehört direkt zu ihr, also freie Schlüssel mit Direktzuordnung. Vorratsenergien rechnet
   // Mietfuchs dafür nicht, denn der Vorrat hängt an der Anlage, nicht an der Wohnung (Festlegung 3).
@@ -217,19 +242,34 @@ export async function guardHeatingPlant(db: Executor, before: HeatingPlant | nul
     const [lieferungen] = await db.select({ n: count() }).from(fuelDeliveries).where(eq(fuelDeliveries.plantId, after.id))
     // Lieferungen mit Rechnungszeitraum (Gas, Fernwärme, Strom) und mit Lieferdatum für den Vorrat
     // (Heizung PR 8) sind verschieden gebaut; ein Wechsel dazwischen ließe sie still anders rechnen.
-    const stockBefore = STOCK_ENERGIES.includes(before.energy)
-    const stockAfter = STOCK_ENERGIES.includes(after.energy)
+    // Heizung PR 16: nach der Energie der Abrechnung; bei Contracting rechnet die Anlage Wärme, keinen Vorrat.
+    const stockBefore = STOCK_ENERGIES.includes(billingEnergy(before))
+    const stockAfter = STOCK_ENERGIES.includes(billingEnergy(after))
+    // Ein Umschalten auf oder aus Contracting (Prüfung C-M1): Die Abrechnung hängt am Merkmal der Anlage und nicht
+    // an einem Datum; mit Lieferungen, Vorrat oder CO₂-Angaben rechnete sie auch die Zeit davor anders. Die
+    // Umstellung in einem offenen Zeitraum geht deshalb nur über den Kesseltausch.
+    if (billingEnergy(before) !== billingEnergy(after) && before.contracting !== after.contracting) {
+      const [vorrat] = await db.select({ n: count() }).from(heatingPeriods)
+        .where(and(eq(heatingPeriods.plantId, after.id), or(isNotNull(heatingPeriods.stockUnit), isNotNull(heatingPeriods.openingQuantity), isNotNull(heatingPeriods.closingQuantity))))
+      const [co2] = await db.select({ n: count() }).from(co2StatementRows).innerJoin(heatingPeriods, eq(co2StatementRows.heatingPeriodId, heatingPeriods.id)).where(eq(heatingPeriods.plantId, after.id))
+      if ((lieferungen?.n ?? 0) + (vorrat?.n ?? 0) + (co2?.n ?? 0) > 0) {
+        const since = after.heatDeliverySince ?? before.heatDeliverySince
+        throw new HeatingError(409, after.contracting
+          ? `An dieser Anlage stehen Lieferungen, ein Vorrat oder CO₂-Angaben. Wurde ${since ? `zum ${germanDay(since)} ` : ''}auf Wärmelieferung umgestellt, erfassen Sie das mit „Heizung erneuert (Kessel getauscht)“; sonst rechnete Mietfuchs auch die Zeit davor als Wärmelieferung.`
+          : 'An dieser Anlage stehen Lieferungen, ein Vorrat oder CO₂-Angaben. Endete die Wärmelieferung und heizen Sie seitdem mit einer eigenen Anlage, erfassen Sie das mit „Heizung erneuert (Kessel getauscht)“; sonst rechnete Mietfuchs auch die Zeit davor als eigene Heizung.')
+      }
+    }
     // Auch ein eingetragener Vorrat zählt (Durchsicht von #237, M2; Nachprüfung: jeder, auch in einer
     // abgeschlossenen Heizperiode): Mit einem anderen Energieträger stimmte die Bestandsrechnung nicht mehr,
     // und eine wieder geöffnete Heizperiode rechnete ohne ihren Vorrat.
-    if (before.energy !== after.energy && stockBefore && !stockAfter) {
+    if (billingEnergy(before) !== billingEnergy(after) && stockBefore && !stockAfter) {
       const [vorrat] = await db.select({ n: count() }).from(heatingPeriods)
         .where(and(eq(heatingPeriods.plantId, after.id), or(isNotNull(heatingPeriods.stockUnit), isNotNull(heatingPeriods.openingQuantity), isNotNull(heatingPeriods.closingQuantity))))
       if ((vorrat?.n ?? 0) > 0) {
         throw new HeatingError(409, `An dieser Anlage ist ein Vorrat eingetragen (Anfangs- oder Endbestand); mit einem anderen Energieträger stimmte die Bestandsrechnung nicht mehr. ${SWAP_HINT}`)
       }
     }
-    if (before.energy !== after.energy && (stockBefore !== stockAfter || after.energy === 'other') && (lieferungen?.n ?? 0) > 0) {
+    if (billingEnergy(before) !== billingEnergy(after) && (stockBefore !== stockAfter || billingEnergy(after) === 'other') && (lieferungen?.n ?? 0) > 0) {
       throw new HeatingError(400, stockBefore
         ? `An dieser Anlage stehen Lieferungen für den Vorrat (Lieferdatum und Menge); Gas, Fernwärme und Strom werden nach dem Rechnungszeitraum abgegrenzt. War der Energieträger falsch eingetragen, entfernen Sie die Lieferungen zuerst. ${SWAP_HINT}`
         : `An dieser Anlage stehen Lieferungen mit Rechnungszeitraum; Heizöl, Flüssiggas, Pellets, Holz und Kohle rechnet Mietfuchs über den Vorrat mit Lieferdatum und Menge. War der Energieträger falsch eingetragen, entfernen Sie die Lieferungen zuerst. ${SWAP_HINT}`)
@@ -331,6 +371,7 @@ export const plantRow = (p: HeatingPlant) => ({
   hotWater: p.hotWater, capture: p.capture, areaBasisHeat: p.areaBasisHeat, heatPumpInstalledOn: p.heatPumpInstalledOn,
   heatGeneration: p.heatGeneration, heatPumpMajority: p.heatPumpMajority, hcaModel: p.hcaModel ?? null,
   operatingPowerHandling: p.operatingPowerHandling ?? null,
+  contracting: p.contracting, heatDeliverySince: p.heatDeliverySince, previousSupply: p.previousSupply, switchAnnouncedOn: p.switchAnnouncedOn,
 })
 
 // Heizung PR 12: Ein Zeitraum ohne eigene Erfassung (von vor PR 12) bekommt beim nächsten Schreiben die
@@ -561,7 +602,7 @@ async function takesOverStockOf(db: Executor, current: HeatingPlant, plants: rea
   // Ohne Antwort gilt ja; dieselbe Antwort ändert nichts.
   if (typeof v !== 'boolean' || v === (current.takesOverStock ?? true)) return current.takesOverStock
   const before = plants.find((p) => p.id === current.replacesPlantId)
-  if (!before || before.energy !== current.energy || !STOCK_ENERGIES.includes(current.energy)) {
+  if (!before || before.energy !== current.energy || billingEnergy(before) !== billingEnergy(current) || !STOCK_ENERGIES.includes(billingEnergy(current))) {
     throw new HeatingError(400, 'Ob die neue Heizanlage den Brennstoff im Tank weiter verheizt, fragt Mietfuchs nur nach einem Kesseltausch mit demselben Brennstoff.')
   }
   const first = await firstPeriodOf(db, plants, current)
@@ -577,7 +618,9 @@ async function takesOverStockOf(db: Executor, current: HeatingPlant, plants: rea
 // nicht abgeschlossen sind: Nur deren Angaben lassen sich entfernen, die übrigen sind eingefroren.
 function guardCo2Plant(current: HeatingPlant, next: HeatingPlant, openCo2: readonly string[]): void {
   const leavesService = current.method === 'service' && next.method !== 'service'
-  const leavesCo2 = next.energy !== current.energy && !CO2_FUELS.includes(next.energy) && next.energy !== 'districtHeating'
+  // Heizung PR 16: nach der Energie der Abrechnung und, bei Contracting, dem Brennstoff des Lieferanten.
+  const co2Of = (p: HeatingPlant) => co2Required({ energy: billingEnergy(p), ...(p.contracting ? { fuelEnergy: p.energy } : {}) })
+  const leavesCo2 = (next.energy !== current.energy || next.contracting !== current.contracting) && !co2Of(next)
   if ((!leavesService && !leavesCo2) || openCo2.length === 0) return
   throw new HeatingError(409,
     `Zu dieser Heizanlage sind CO₂-Angaben erfasst (Heizperiode ${openCo2.join(', ')}). ` +
@@ -596,7 +639,9 @@ const germanDay = (iso: string): string => `${iso.slice(8, 10)}.${iso.slice(5, 7
 
 // Was der Rumpf des Kesseltauschs an der neuen Anlage setzen darf; alles andere übernimmt sie von der
 // alten (Gebäude, Geräte, Rhythmus, Merkmale nach § 8 und § 9 CO2KostAufG).
-const SWAP_FIELDS = ['name', 'energy', 'method', 'source', 'devicesRemote', 'devicesInstalledAfter2021', 'newDevicesInstall', 'captureInstalledOn', 'capturedOnOct2024', 'warmRentAverageCents', 'districtEtsNew'] as const
+// Heizung PR 16 (Prüfung C-M1): Contracting und die Angaben zur Umstellung, denn eine Umstellung in einem
+// offenen Zeitraum geht über den Tausch.
+const SWAP_FIELDS = ['name', 'energy', 'method', 'source', 'devicesRemote', 'devicesInstalledAfter2021', 'newDevicesInstall', 'captureInstalledOn', 'capturedOnOct2024', 'warmRentAverageCents', 'districtEtsNew', 'contracting', 'heatDeliverySince', 'previousSupply', 'switchAnnouncedOn'] as const
 
 // Der Kesseltausch (Heizung PR 9): Die bisherige Anlage endet am Tag vor `date`, eine neue beginnt an
 // `date` mit denselben Wohnungen. Beide bekommen einen Namen und die Liste der Wohnungen, denn ab dann
@@ -628,7 +673,10 @@ export async function replaceHeatingPlant(db: Database, oldId: string, newId: st
   // Gleicher Energieträger über einen Zähler (Gas, Fernwärme, Strom; Recht I1 der Durchsicht von #238):
   // Die Rechnungen laufen weiter wie bisher, ein Tausch würde die Jahresrechnung nur zerschneiden. Bei
   // einer Vorratsenergie geht der Restbestand dagegen an die neue Anlage über (siehe Abrechnung).
-  if (newEnergy === old.energy && !STOCK_ENERGIES.includes(old.energy)) {
+  // Heizung PR 16 (Prüfung C-M1): verglichen nach der Energie der Abrechnung; Gas → Gas mit Contracting ist ein
+  // Tausch. Fehlt die Angabe, bleibt es beim Merkmal der alten Anlage.
+  const newContracting = has(body, 'contracting') ? raw(body, 'contracting') === true : old.contracting
+  if (newEnergy === old.energy && newContracting === old.contracting && !STOCK_ENERGIES.includes(billingEnergy(old))) {
     throw new HeatingError(409, 'Bleibt der Energieträger gleich und läuft er über denselben Zähler, brauchen Sie keinen Tausch; ändern Sie nur die Angaben der Anlage.')
   }
   const endsOn = isoDayBefore(date)
@@ -670,7 +718,10 @@ export async function replaceHeatingPlant(db: Database, oldId: string, newId: st
   const served = (await readUnits(db)).filter((u) => u.propertyId === old.propertyId && servesUnit(old, u)).map((u) => ({ unitId: u.id, heatedAreaM2: null }))
   const picked: Record<string, unknown> = {}
   for (const k of SWAP_FIELDS) if (has(body, k)) picked[k] = raw(body, k)
+  // Die Angaben zur Umstellung gehen nur mit, wenn auch die neue Anlage Wärme geliefert bekommt (Heizung PR 16).
+  const keepsDelivery = isHeatDelivery(old) && isHeatDelivery({ energy: newEnergy, contracting: newContracting })
   const base: HeatingPlant = { ...old, id: newId, name: '', separateSpans: [], units: served, endsOn: null, replacesPlantId: oldId, takesOverStock: null,
+    ...(keepsDelivery ? {} : { heatDeliverySince: null, previousSupply: null, switchAnnouncedOn: null }),
     // Der Beginn der eigenen Abrechnung geht nur mit, wenn die alte Anlage selbst abrechnet (Runde 3).
     selfSpans: openSelfSpan(old) ? [{ from: openSelfSpan(old)?.from ?? '', until: null, capture: openSelfSpan(old)?.capture ?? old.capture ?? 'heatMeter', hotWater: openSelfSpan(old)?.hotWater ?? old.hotWater }] : [] }
   const merged = mergeHeatingPlant(base, picked)
@@ -682,9 +733,10 @@ export async function replaceHeatingPlant(db: Database, oldId: string, newId: st
   const answer = raw(body, 'takesOverStock')
   const plant: HeatingPlant = {
     ...merged,
-    name: merged.name.trim() || `${ENERGY_NAMES[merged.energy]} ab ${germanDay(date)}`,
+    name: merged.name.trim() || `${merged.contracting ? 'Wärmelieferung' : ENERGY_NAMES[merged.energy]} ab ${germanDay(date)}`,
     districtEtsNew: merged.energy === 'districtHeating' && merged.districtEtsNew,
-    takesOverStock: merged.energy === old.energy && STOCK_ENERGIES.includes(old.energy) ? answer !== false : null,
+    // Bei Contracting führt der Lieferant den Vorrat (Heizung PR 16); die Frage gibt es dann nicht.
+    takesOverStock: merged.energy === old.energy && billingEnergy(merged) === billingEnergy(old) && STOCK_ENERGIES.includes(billingEnergy(old)) ? answer !== false : null,
   }
   const previousName = asText(raw(body, 'previousName'), '').trim() || old.name.trim() || `${ENERGY_NAMES[old.energy]} bis ${germanDay(endsOn)}`
   const previous: HeatingPlant = { ...old, name: previousName, units: served, endsOn }
