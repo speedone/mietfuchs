@@ -187,12 +187,6 @@ export function noYearText(i: { target: string; power: string; years: readonly n
     'So lässt sich der Wechsel nicht speichern; wählen Sie für die Heizkosten einen anderen Zeitraum.'
 }
 
-// Geld H2, Variante (b), mit Recht H-1 der zweiten Nachprüfung von #265: Ein Teil des Abzugs bleibt in einem festen
-// Steuerjahr. Welches Jahr steuerlich gilt, entscheidet Mietfuchs nicht; der Satz nennt, wonach es sich richtet.
-export const shiftText = (cents: number, fixed: number, year: number): string =>
-  `Ein Teil des Abzugs (${euro(cents)}) bleibt im Steuerjahr ${fixed}, der Betriebsstrom steht im Steuerjahr ${year}; in der Anlage V verschiebt sich dieser Betrag zwischen den Jahren. ` +
-  'Welches Jahr steuerlich gilt, richtet sich danach, wann Sie die Stromrechnung bezahlt haben (§ 11 Abs. 2 EStG).'
-
 // Eine Stromrechnung mit Leistungszeitraum, die der Wechsel nicht teilt, bleibt ganz in ihrem Zeitraum (K1).
 function stayingParts(next: PeriodRules, g: CostItem): ServicePart[] {
   const p = periodOfKey(next, g.period)
@@ -567,38 +561,10 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
       for (const o of g.options) if (!spansTwoYears(o) && !span.includes(startYearOf(o.key))) tell(o, [startYearOf(o.key)])
     }
   }
-  // Geld H2, Variante (b) (Nachtrag nach Fixrunde 82d8a7a): Ein Teil eines folgenden Abzugs in einem Zeitraum innerhalb
-  // eines Kalenderjahrs hat ein festes Steuerjahr. Steht der Betriebsstrom nach der Antwort in einem anderen Jahr,
-  // verschiebt sich dieser Betrag in der Anlage V zwischen den Jahren. Die Vorschau sagt das am gewählten Jahr (`notes`)
-  // bzw. am Ziel mit festem Jahr vorher; sie begrenzt nichts, denn das richtige Steuerjahr hängt an der Zahlung der
-  // Stromrechnung, die Mietfuchs nicht kennt.
-  const fixedByPower = new Map<string, Map<number, number>>()
-  for (const { item, parts } of follows) {
-    if (item.operatingPowerItemId === undefined) continue
-    for (const p of parts) {
-      if (spansTwoYears(p.period)) continue
-      const byYear = fixedByPower.get(item.operatingPowerItemId) ?? new Map<number, number>()
-      const year = startYearOf(p.period.key)
-      byYear.set(year, (byYear.get(year) ?? 0) + Math.abs(p.amountCents))
-      fixedByPower.set(item.operatingPowerItemId, byYear)
-    }
-  }
-  const shiftsAt = (powerId: string, year: number): string[] =>
-    [...(fixedByPower.get(powerId) ?? new Map<number, number>())].filter(([fixed, cents]) => fixed !== year && cents > 0).map(([fixed, cents]) => shiftText(cents, fixed, year))
-  for (const e of taxEntries.values()) {
-    if (!fixedByPower.has(e.costItemId)) continue
-    const notes = e.options.flatMap((year) => shiftsAt(e.costItemId, year).map((text) => ({ year, text })))
-    if (notes.length > 0) e.notes = notes
-  }
-  for (const powerId of fixedByPower.keys()) {
-    for (const g of groups.values()) {
-      if (!g.items.some((i) => i.id === powerId)) continue
-      for (const o of g.options) {
-        if (spansTwoYears(o)) continue
-        for (const text of shiftsAt(powerId, startYearOf(o.key))) conflict(powerId, o, text)
-      }
-    }
-  }
+  // Geld H2, Variante (b) (Nachtrag nach Fixrunde 82d8a7a): Hier sagte die Vorschau, dass sich ein Teil eines folgenden
+  // Abzugs mit festem Steuerjahr in der Anlage V verschiebt, wenn der Betriebsstrom in ein anderes Jahr geht. Seit #268
+  // gleicht die Steuerübersicht je Steuerjahr aus (Σ Abzüge − Σ Heizpositionen `included`): Jedes Jahr zeigt die in ihm
+  // bezahlten Rechnungen, es verschiebt sich nichts, und der Satz entfällt.
   for (const g of preview.groups) {
     for (const o of g.options) {
       const texts = conflicts.get(`${g.id}|${o.key}`)

@@ -324,6 +324,31 @@ test('Mai bis April mit Eigennutzung: der Eigenanteil laut Abrechnung enthält d
   assert.equal(r.selfUsedShareCents, 255000)
 })
 
+// Verschiedene Steuerjahre (#268, Auftrag zum früheren Hinweis `heating.operating-power-tax-year` und zum Satz der
+// Vorschau „in der Anlage V verschiebt sich dieser Betrag“): Steht der Abzug in einem anderen Steuerjahr als seine
+// Heizposition, verschiebt sich nichts mehr. Jedes Jahr zeigt die in ihm bezahlten Rechnungen, und die Zahlen gleichen
+// denen eines Paars im selben Jahr, auch der private Teil.
+test('Verschiedene Steuerjahre: Abzug 2025, Heizposition 2026, ohne Eigennutzung jedes Jahr die bezahlten Rechnungen', () => {
+  // 2025: Gas 5.000 + Strom 1.000 − Abzug 100 + C 100 = 6.000 (bis #268: 5.900). 2026: Gas 5.000 + Heizposition 100
+  // + C −100 = 5.000 (bis #268: 5.100). Bezahlt: 6.000 und 5.000.
+  const getrennt = haus([gas(), hausstrom(), abzug('ab', 10000, 'bs'), gas(500000, '2026-01'), betrieb('bs', 10000, {}, '2026-01')])
+  assert.deepEqual([tax(getrennt, 2025).expenses.totalCents, tax(getrennt, 2026).expenses.totalCents], [600000, 500000])
+  const zusammen = haus([gas(), hausstrom(), abzug('ab', 10000, 'bs'), betrieb('bs', 10000), gas(500000, '2026-01')])
+  assert.deepEqual([tax(zusammen, 2025).expenses.totalCents, tax(zusammen, 2026).expenses.totalCents], [600000, 500000])
+})
+
+test('Verschiedene Steuerjahre mit Eigennutzung: privat je Jahr wie beim Paar im selben Jahr (1.480 und 1.200)', () => {
+  // EG 70 (t1), OG 50 (t2), DG 30 eigen. Gas 6.000 je Jahr nach Fläche (eigen 1.200), Strom 900 in 2025 nach Einheiten
+  // (eigen 300). Abzug −150 in 2025 nach Einheiten (eigen −50), verknüpft mit der Heizposition 150 in 2026 (eigen 30).
+  // 2025: 6.000 + 900 − 150 + C 150 = 6.900; privat 1.200 + 300 − 50 + 150 × 20 % = 1.480.
+  // 2026: 6.000 + 150 + C −150 = 6.000; privat 1.200 + 30 − 150 × (1.230 / 6.150 = 20 %) = 1.200.
+  const getrennt = tax2(eigen([gas(600000), hausstrom(90000), abzug('ab', 15000, 'bs'), gas(600000, '2026-01'), betrieb('bs', 15000, {}, '2026-01')]))
+  const zusammen = tax2(eigen([gas(600000), hausstrom(90000), abzug('ab', 15000, 'bs'), betrieb('bs', 15000), gas(600000, '2026-01')]))
+  assert.deepEqual(getrennt, [[690000, 148000], [600000, 120000]])
+  assert.deepEqual(zusammen, getrennt)
+})
+const tax2 = (src: Source) => [2025, 2026].map((y) => [tax(src, y).expenses.totalCents, tax(src, y).expenses.privateCents])
+
 test('E ohne Fläche der eigenen Einheit: Zeile nicht aufteilbar, privat 0', () => {
   const src = eigen([gas(600000), hausstrom(90000), abzug('ab', 15000)])
   const units = (src.units ?? []).map((u) => (u.id === 'u3' ? { ...u, areaM2: 0 } : u))

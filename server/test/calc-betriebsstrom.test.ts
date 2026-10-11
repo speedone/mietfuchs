@@ -2,7 +2,7 @@
 // Heizposition auch in der Stromrechnung des Hauses, muss dort ein Abzug in gleicher Höhe stehen.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { computeSettlement } from '../src/calc.ts'
+import { computeSettlement, NOTICE_KINDS } from '../src/calc.ts'
 import { operatingPowerFindings } from '../src/operatingPower.ts'
 import { deductionsOf, snapshotOfPeriod, type SnapshotCostItem, type SnapshotSource, type SnapshotTenancy } from '../src/snapshot.ts'
 import { CALENDAR_RULES, periodKey, periodOfKey, previousPeriod } from '../../shared/period.ts'
@@ -224,23 +224,16 @@ test('G-W1: Summe der Abzüge über der Stromrechnung → Hinweis mit dem Betrag
   assert.equal(kind(settle([strom, ab('a1', 60000), ab('a2', 40000)], [])).length, 0)
 })
 
-// G-K2, N1: Betriebsstrom und Abzug sind eine Umbuchung zwischen Kostenarten und gehören in dasselbe
-// Steuerjahr; sonst stehen beide Jahre der Anlage V falsch (gemessen 900 € statt 1.000 € und 100 € statt 0 €).
-test('N1: Abzug in einem anderen Steuerjahr als sein Betriebsstrom → Hinweis; im selben → still', () => {
+// G-K2, N1, seit #268 umgekehrt: Bis #268 standen Betriebsstrom und Abzug in verschiedenen Steuerjahren in beiden
+// Jahren der Anlage V falsch (gemessen 900 € statt 1.000 € und 100 € statt 0 €), und dieser Hinweis riet, das Jahr des
+// Abzugs anzugleichen. Seit #268 rechnet die Steuerübersicht je Steuerjahr den Ausgleich C (Abzüge − Heizpositionen
+// `included`); jedes Jahr zeigt dann genau die in ihm bezahlten Rechnungen, und es verschiebt sich nichts mehr. Die
+// Zahlen dazu stehen in calc-steuer-betriebsstrom.test.ts („Verschiedene Steuerjahre“). Der Hinweis entfällt.
+test('N1 (#268): Abzug in einem anderen Steuerjahr als sein Betriebsstrom → kein Hinweis mehr', () => {
   const kind = (s: ReturnType<typeof settle>) => (s.notices ?? []).filter((n) => n.code === 'heating.operating-power-tax-year')
-  const [n] = kind(settle([betriebsstrom, hausstrom], [{ ...abzug(14784, 'ab', '2024-01'), taxYear: 2024 }]))
-  if (!n) return assert.fail('kein Hinweis')
-  assert.equal(n.level, 'warning')
-  assert.match(n.text, /„Betriebsstrom Heizung“ zählt in der Steuerübersicht zum Jahr 2025, der Abzug „Abzug Betriebsstrom Heizung“ zum Jahr 2024/)
-  // G2-N-W2: Der Rat richtet sich an die Position, deren Jahr sich einstellen lässt: den Abzug.
-  // R4-H-1: das Feld mit seinem Namen in der Oberfläche, das Jahr wie bei der Betriebsstrom-Position.
-  assert.match(n.text, /Stellen Sie beim Abzug „Abzug Betriebsstrom Heizung“ im Kostenformular unter „Jahr der Zahlung \(Steuer\)“ das Jahr der Betriebsstrom-Position ein \(2025\)/)
-  assert.doesNotMatch(n.text, /bei beiden/)
-  // Recht-H-1 und K-4 (Folge-PR zu #252): gegen die Feldhilfe „Maßgeblich ist, wann Sie gezahlt haben“, ohne „heben
-  // sich auf“ (bei teilweiser Eigennutzung bleibt je Jahr ein Rest).
-  assert.match(n.text, /Das widerspricht nicht der Regel, dass zählt, wann Sie gezahlt haben: Betriebsstrom und Abzug sind keine eigene Zahlung, sondern teilen die Stromrechnung nur auf; zusammen ändern sie die Summe Ihrer Kosten nicht, und die Stromrechnung selbst bleibt im Jahr ihrer Zahlung \(§ 11 Abs\. 2 EStG\)\.$/)
-  assert.doesNotMatch(n.text, /heben sich/)
+  assert.equal(kind(settle([betriebsstrom, hausstrom], [{ ...abzug(14784, 'ab', '2024-01'), taxYear: 2024 }])).length, 0)
   assert.equal(kind(settle([betriebsstrom, hausstrom], [{ ...abzug(14784), taxYear: 2025 }])).length, 0)
+  assert.equal(NOTICE_KINDS['heating.operating-power-tax-year'], undefined)
 })
 
 // R-W2: Der Strom einer Wärmepumpe über den Hauszähler steckt auch im Allgemeinstrom; der Hinweis nennt ihn

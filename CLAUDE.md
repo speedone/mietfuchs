@@ -2130,7 +2130,7 @@ die ganze fachliche Komplexität:
   Stromrechnung (`operating_power_general_id`, Schritt 0039 mit Datenanweisung, Bedingungen in 0040):
   dasselbe Objekt und derselbe Zeitraum, Löschen und Umstellen der Rechnung gesperrt, solange er besteht;
   Hinweise `heating.operating-power-key` (anders verteilt als die Rechnung), `-exceeds` (mehr Abzug als
-  Rechnung) und `-tax-year` (Betriebsstrom und Abzug in verschiedenen Steuerjahren). Die Schätzhilfe
+  Rechnung); `-tax-year` (Betriebsstrom und Abzug in verschiedenen Steuerjahren) entfällt seit #268, siehe Steuer. Die Schätzhilfe
   nimmt nur eine Stromrechnung, die die Heizperiode berührt, übernimmt deren Jahr der Zahlung, wo der
   Zeitraum zwei Kalenderjahre berührt, lehnt eine Summe der Abzüge über der Rechnung ab (400) und fragt
   bei schon gebuchtem Betriebsstrom zurück (409 mit `question: 'despiteExisting'`; nur dann bietet die
@@ -2146,9 +2146,9 @@ die ganze fachliche Komplexität:
   Nur so ist aus keinem Teil mehr abgezogen, als er beträgt, auch bei drei und mehr Teilen und wenn die
   Abzüge die ganze Rechnung ergeben (Restverfahren nach Tagen ist nicht monoton). Das Jahr der Zahlung
   eines Abzugsteils fragt die Vorschau nicht, es ist das der Betriebsstrom-Position nach dem Wechsel
-  (`derivedYears`); angeboten werden nur Jahre im Schnitt der Spannen dieser Teile, und ein Teil mit festem Jahr
-  (Zeitraum in einem Kalenderjahr) bekommt am abweichenden Jahr einen Satz zur Verschiebung in der Anlage V
-  (`notes` am Eintrag, `taxShifts` am Ziel). Geprüft wird das
+  (`derivedYears`); angeboten werden nur Jahre im Schnitt der Spannen dieser Teile. Einen Satz zur Verschiebung in der
+  Anlage V bei einem Teil mit festem Jahr gibt es seit #268 nicht mehr, denn die Steuerübersicht gleicht je Steuerjahr
+  aus und es verschiebt sich nichts. Geprüft wird das
   **je Mieter** gegen von Hand hergeleitete Beträge, nicht je Zeitraum: „Abzug gleich Betriebsstrom je
   Zeitraum“ hielt auch ein falsches Ergebnis aus. Ein
   Scheitern ist eine 409 mit Vorschau. Kein Objektwechsel, solange ein
@@ -2340,7 +2340,10 @@ die ganze fachliche Komplexität:
   Positionen des Steuerjahres, **mit Vorzeichen und ohne Klemme**, und `taxReport` stellt C als
   abgeleitete Zeile `operating-power-balance:<Jahr>` beim Allgemeinstrom dazu
   (`TaxExpenseItem.operatingPowerBalance`). Damit ist der Strom in jedem Jahr die bezahlte Rechnung,
-  auch wenn Abzug und Betriebsstrom in verschiedenen Steuerjahren stehen; eine Sonderregel für
+  auch wenn Abzug und Betriebsstrom in verschiedenen Steuerjahren stehen (deshalb entfielen der Hinweis
+  `heating.operating-power-tax-year` und der Satz zur Verschiebung in der Vorschau des Zeitraumwechsels; mit
+  Eigennutzung bleibt der private Teil des Paars im Jahr des Abzugs, die Summe je Jahr wie beim Paar im selben Jahr);
+  eine Sonderregel für
   Verweise über Jahre gibt es bewusst nicht (eine Klemme bei 0 und „anderes Jahr neutral“ waren
   beide nachgemessen falsch). Ausgenommen sind Abzüge **ohne Verweis**, wenn eine Anlage mit
   Messdienst den Zeitraum berührt (`serviceReceivesOperatingPower` in shared/operatingPower.ts,
