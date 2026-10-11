@@ -127,6 +127,9 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // Durchsicht von #252: Verweis des Abzugs auf seine Stromrechnung (G-K3) und weitere Bedingungen.
   '0039_betriebsstrom_rechnung': 'd22026ba92def77199d78861dc8b87da6ba326acde9427582461d2a206196b00',
   '0040_betriebsstrom_rechnung_bedingungen': 'e2eecf27fec26048119dc209fdf662657fd9dc3309a90345e00c9e9225e40bf1',
+  // Angabe an der Heizanlage, wie der Betriebsstrom erfasst ist (#266).
+  '0041_betriebsstrom_angabe': '94e4d24d44f0e495635b97cada6b1aaca11c08e8a81a493172f40fd701aae751',
+  '0042_betriebsstrom_angabe_bedingungen': '8135925667a0a3c6c12c40ba421dbc9d5447f8ab376ba6927363c9253b4e4d22',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

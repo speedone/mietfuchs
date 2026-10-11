@@ -1399,6 +1399,9 @@ export type HeatingPlant = {
   heatPumpMajority: HeatPumpMajority | null
   // Bauart der Heizkostenverteiler (Heizung PR 12, Entwurf 5.3), nur zur Beschreibung im Ausweis.
   hcaModel: string | null
+  // Wie der Betriebsstrom erfasst ist (#266); `null` heißt keine Angabe. Ausgewertet nur, wo Mietfuchs danach fragt
+  // (`asksOperatingPowerHandling` in shared/operatingPower.ts); eine Anlage ohne Frage behält den Wert unbeachtet.
+  operatingPowerHandling: OperatingPowerHandling | null
   // Die Zeiträume der eigenen Heizkostenabrechnung (Durchsicht von #239), aufsteigend; `until` NULL beim
   // laufenden.
   selfSpans?: SelfSpanRange[]

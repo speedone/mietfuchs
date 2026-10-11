@@ -14,7 +14,8 @@ import { closeSettlement, createEntity, createProperty, CrossPropertyError, find
 import { assignableHeatingItems, createHeatingPlant, heatingPlantViolations, listHeatingPlants, removeHeatingPlant, replaceHeatingPlant, updateHeatingPlant } from '../src/db/heating.ts'
 import { createDelivery } from '../src/db/fuel.ts'
 import { previewSeparate } from '../src/db/separateSettlement.ts'
-import { meters } from '../src/db/schema.ts'
+import { meters, OPERATING_POWER_HANDLINGS } from '../src/db/schema.ts'
+import { applyMigrations, connect, loadMigrations } from '../src/db/client.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import { periodKey } from '../../shared/period.ts'
 
@@ -52,7 +53,7 @@ test('Anlegen: Vorgaben, und so steht sie in der Liste', async () => {
       devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null,
       capturedOnOct2024: null, warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null, units: null,
       newDevicesInstall: null,
-      nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null, hotWater: 'combined', capture: null, areaBasisHeat: 'area', heatPumpInstalledOn: null, heatGeneration: null, heatPumpMajority: null, hcaModel: null, selfSpans: [],
+      nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null, hotWater: 'combined', capture: null, areaBasisHeat: 'area', heatPumpInstalledOn: null, heatGeneration: null, heatPumpMajority: null, hcaModel: null, operatingPowerHandling: null, selfSpans: [],
       periodChanges: [], separateSpans: [],
     })
     assert.deepEqual(await opened.read((db) => listHeatingPlants(db, 'objekt-1')), [plant])
@@ -425,5 +426,90 @@ test('Kesseltausch: nicht in einer abgeschlossenen Heizperiode, nicht bei einer 
     await assert.rejects(() => opened.write((db) => replaceHeatingPlant(db, 'hp1', 'hp2', { date: '2025-07-01', energy: 'districtHeating' })), refused(409, /abgeschlossen/))
     await opened.write((db) => createHeatingPlant(db, 'etage', 'objekt-1', { buildingWith: 'own', name: 'Thermen', energy: 'gas', supply: 'perUnit', method: 'manual', units: [], adjust: [{ id: 'hp1', name: 'Zentral', units: [{ unitId: 'eg', heatedAreaM2: null }] }] }))
     await assert.rejects(() => opened.write((db) => replaceHeatingPlant(db, 'etage', 'hp3', { date: '2026-03-01', energy: 'gas' })), refused(400, /Etagenheizung/))
+  })
+})
+
+// ---------- Angabe zum Betriebsstrom (#266) ----------
+
+test('Kette: Schritt betriebsstrom_angabe bringt eine nullbare Spalte, jede vorhandene Anlage bleibt ohne Angabe', async () => {
+  const dir = tempDir()
+  try {
+    const connection = await connect(path.join(dir, 'db.sqlite'))
+    const migrations = await loadMigrations()
+    const bis = migrations.findIndex((m) => m.tag.endsWith('_betriebsstrom_angabe'))
+    if (bis < 0) assert.fail('Schritt …_betriebsstrom_angabe fehlt')
+    assert.ok(migrations.some((m) => m.tag.endsWith('_betriebsstrom_angabe_bedingungen')), 'Schritt …_betriebsstrom_angabe_bedingungen fehlt')
+    applyMigrations(connection, migrations.slice(0, bis))
+    connection.exec(`INSERT INTO properties (id, name, kind, address) VALUES ('o2', 'Haus', 'mfh', '')`)
+    connection.exec(`INSERT INTO heating_plants (id, property_id, energy) VALUES ('alt', 'o2', 'gas')`)
+    applyMigrations(connection, migrations)
+    assert.deepEqual(connection.rows("SELECT operating_power_handling FROM heating_plants WHERE id = 'alt'"), [[null]])
+    connection.close()
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('Prüfbedingung: nur bekannte Angaben zum Betriebsstrom, NULL erlaubt', async () => {
+  const dir = tempDir()
+  try {
+    const c = await connect(path.join(dir, 'db.sqlite'))
+    applyMigrations(c, await loadMigrations())
+    c.exec(`INSERT INTO properties (id, name, kind, address) VALUES ('o2', 'Haus', 'mfh', '')`)
+    const insert = (id: string, value: string) => `INSERT INTO heating_plants (id, property_id, energy, operating_power_handling) VALUES ('${id}', 'o2', 'gas', ${value})`
+    const rejects = (sql: string): string | null => {
+      try {
+        c.exec(sql)
+        return null
+      } catch (err) {
+        return err instanceof Error ? err.message : String(err)
+      }
+    }
+    assert.match(rejects(insert('x', "'foo'")) ?? '', /heating_plants_operating_power_handling_known/)
+    assert.equal(rejects(insert('n', 'NULL')), null)
+    for (const v of OPERATING_POWER_HANDLINGS) assert.equal(rejects(insert(`p-${v}`, `'${v}'`)), null, v)
+    c.close()
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('Angabe zum Betriebsstrom: neue Anlage ohne, jede Angabe wird gespeichert, leer heißt keine, unbekannt ist ein Fehler mit Satz', async () => {
+  await withDatabase(async (opened) => {
+    const { plant } = await opened.write((db) => createHeatingPlant(db, 'hp1', 'objekt-1', { energy: 'gas' }))
+    assert.equal(plant.operatingPowerHandling, null)
+    const gelesen = async () => (await opened.read((db) => listHeatingPlants(db, 'objekt-1'))).find((p) => p.id === 'hp1')?.operatingPowerHandling
+    for (const v of OPERATING_POWER_HANDLINGS) {
+      assert.equal((await opened.write((db) => updateHeatingPlant(db, 'hp1', { operatingPowerHandling: v })))?.operatingPowerHandling, v)
+      assert.equal(await gelesen(), v, `gelesen ${v}`)
+    }
+    // Ein anderes Feld ändern lässt die Angabe stehen (Verschmelzen nach Anwesenheit des Schlüssels).
+    await opened.write((db) => updateHeatingPlant(db, 'hp1', { name: 'Kessel' }))
+    assert.equal(await gelesen(), 'landlordPays')
+    await assert.rejects(() => opened.write((db) => updateHeatingPlant(db, 'hp1', { operatingPowerHandling: 'foo' })), refused(400, /Wie der Betriebsstrom dieser Heizung erfasst ist, kennt Mietfuchs so nicht\. Bitte wählen Sie aus der Liste\./))
+    assert.equal(await gelesen(), 'landlordPays', 'nach dem Fehler unverändert')
+    for (const leer of ['', null]) {
+      await opened.write((db) => updateHeatingPlant(db, 'hp1', { operatingPowerHandling: 'deducted' }))
+      assert.equal((await opened.write((db) => updateHeatingPlant(db, 'hp1', { operatingPowerHandling: leer })))?.operatingPowerHandling, null)
+      assert.equal(await gelesen(), null)
+    }
+    // Angelegt mit Angabe.
+    await opened.write((db) => createProperty(db, 'objekt-2', { name: 'Zweites Haus', kind: 'mfh', address: '' }))
+    const { plant: zweite } = await opened.write((db) => createHeatingPlant(db, 'hp2', 'objekt-2', { energy: 'oil', operatingPowerHandling: 'ownMeter' }))
+    assert.equal(zweite.operatingPowerHandling, 'ownMeter')
+  })
+})
+
+test('Angabe zum Betriebsstrom: der Kesseltausch übernimmt sie (E3)', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write(async (db) => {
+      await wohnung(db, 'eg')
+      await createHeatingPlant(db, 'hp1', 'objekt-1', { energy: 'oil', method: 'manual', operatingPowerHandling: 'deducted' })
+    })
+    const { plant, previous } = (await opened.write((db) => replaceHeatingPlant(db, 'hp1', 'hp2', { date: '2025-07-01', energy: 'gas', name: 'Gastherme', previousName: 'Ölkessel' }))) ?? assert.fail('keine Anlage')
+    assert.equal(plant.operatingPowerHandling, 'deducted')
+    assert.equal(previous.operatingPowerHandling, 'deducted')
+    const gelesen = await opened.read((db) => listHeatingPlants(db, 'objekt-1'))
+    assert.deepEqual(gelesen.map((p) => [p.id, p.operatingPowerHandling]), [['hp1', 'deducted'], ['hp2', 'deducted']])
   })
 })
