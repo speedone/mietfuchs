@@ -20,8 +20,10 @@
 //   versorgt werden“ (§ 6a Abs. 3 Satz 1 Nr. 1 Buchst. a), also nicht bei Contracting (Prüfung C-M2).
 // - Bei Contracting mit einer Wärmepumpe sperrt Mietfuchs die Formeln für den Warmwasseranteil, weil offen ist,
 //   ob § 9 Abs. 2 Satz 6 Nr. 2 (÷ 1,15) oder Nr. 3 (× 0,30) gilt (Prüfung R-M4, server/src/dhw.ts); gemessen
-//   rechnet sie gegen die gelieferte Wärme. Die übrigen Regeln der Wärmepumpe (§ 11 Abs. 1 Nr. 3 a. F., § 12
-//   Abs. 3 HeizkostenV) wendet die Berechnung bei Contracting nicht an; sie rechnet wie bei Fernwärme.
+//   rechnet sie gegen die gelieferte Wärme.
+// - § 11 Abs. 1 Nr. 3 Buchst. a a. F. („mit Wärme aus … Wärmepumpen- … anlagen“) und § 12 Abs. 3 HeizkostenV („Wärme
+//   oder Warmwasser aus Wärmepumpen“) hängen am Wärmeerzeuger, nicht am Betreiber; die Berechnung fragt dafür
+//   `generatorEnergy` (Durchsicht von #272, M1; Auslegung am Wortlaut, nicht entschieden).
 import type { HeatingEnergy, HeatingPlant } from './types.ts'
 
 // Contracting gibt es bei jeder zentralen Anlage (§ 1 Abs. 1 Nr. 2 HeizkostenV: „auch aus Anlagen nach

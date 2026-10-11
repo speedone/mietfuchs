@@ -132,3 +132,27 @@ test('Blatt für den Messdienst: Contracting mit Öl ist Wärmelieferung, ohne V
   const sheet = co2SheetFor({ ...src, heatingPeriodRows: [{ plantId: 'hp', period: P, dhwMethod: null, dhwUnmeasurable: null, ...vorrat }] }, 'objekt-1', 'hp', calendarYearPeriod(2025), '2026-10-12') ?? assert.fail('kein Blatt')
   assert.deepEqual([sheet.energy, sheet.contracting, sheet.fuelEnergy, sheet.opening ?? null], ['districtHeating', true, 'oil', null])
 })
+
+// Durchsicht von #272, M1: § 11 Abs. 1 Nr. 3 Buchst. a a. F. („mit Wärme aus … Wärmepumpen- … anlagen“) und § 12 Abs. 3
+// HeizkostenV („Wärme oder Warmwasser aus Wärmepumpen“) hängen am Wärmeerzeuger, nicht am Betreiber (§ 1 Abs. 1 Nr. 2:
+// Wärmelieferung „auch aus Anlagen nach Nummer 1“). Contracting mit Wärmepumpe rechnet dafür wie die eigene Wärmepumpe
+// (Auslegung am Wortlaut). Mit gemessener Gesamtwärme ist der Warmwasseranteil in beiden Fällen derselbe; ohne sie
+// rechnet die eigene Wärmepumpe keinen Anteil (§ 9 Abs. 1 Satz 2, `heatPumpBasis`), Contracting gegen die gelieferte
+// Wärme laut Rechnung. Ohne Contracting ergeben die Zahlen der Durchsicht A 1.995,90 €, B 2.661,20 €, C1 1.229,10 €,
+// C2 773,80 € (2023, ohne Gesamtwärme).
+test('Contracting mit Wärmepumpe: alte Ausnahme (2023) und Übergang nach § 12 Abs. 3 (2025) wie bei der eigenen Wärmepumpe', () => {
+  const pumpe = { energy: 'heatPump' as const, heatGeneration: 'single' as const, capturedOnOct2024: false, captureInstalledOn: '2026-03-01', heatPumpMajority: 'yes' as const }
+  const sums = (r: ComputedSettlement) => Object.fromEntries(r.statements.map((st) => [st.tenancyId, st.rows.reduce((a, x) => a + x.shareCents, 0)]))
+  const heat = (r: ComputedSettlement) => codes(r).filter((c) => c.startsWith('heating.heat-pump') || c === 'heating.info-incomplete' || c.startsWith('co2.')).sort()
+  assert.deepEqual(sums(computeSettlement(selfSnapshot({ year: 2023, plant: pumpe }))), { A: 199590, B: 266120, C1: 122910, C2: 77380 })
+  for (const year of [2023, 2025]) {
+    const row = { totalHeatKwh: 60000 }
+    const eigen = computeSettlement(selfSnapshot({ year, plant: pumpe, row }))
+    const con = computeSettlement(selfSnapshot({ year, plant: { ...pumpe, contracting: true }, row }))
+    assert.deepEqual(heat(con), heat(eigen), `${year}`)
+    assert.deepEqual(sums(con), sums(eigen), `${year}`)
+    assert.ok(codes(con).includes('heating.heat-pump-capture'), `${year}: ${codes(con).join(', ')}`)
+    if (year === 2023) assert.ok(codes(con).includes('heating.heat-pump-old-exemption'), codes(con).join(', '))
+    assert.ok(!codes(con).includes('heating.info-incomplete'), `${year}: keine Kürzung nach § 12`)
+  }
+})
