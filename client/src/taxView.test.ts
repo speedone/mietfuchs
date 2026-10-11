@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { TaxExpenseItem, TaxReport } from './types'
-import { allocationLabel, assignedUnitItems, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, prepaymentNote, settlementSourcesText, showsSplit, stockCarryNote, surplusCentsFor, taxHints } from './taxView'
+import { allocationLabel, assignedUnitItems, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, operatingPowerBalanceText, prepaymentNote, settlementSourcesText, showsSplit, stockCarryNote, surplusCentsFor, taxHints } from './taxView'
 import { fmtEuro } from './api'
 import { periodKey } from '../../shared/period.ts'
 
@@ -293,5 +293,54 @@ describe('Vorrat (Heizung PR 8, N8)', () => {
     expect(stockCarryNote(mit(3333))).toBe(`Der Eigenanteil der Abrechnung ist um ${fmtEuro(3333)} höher als der private Teil hier: Brennstoff aus dem Vorrat, steuerlich bereits 2024 oder früher abgeflossen. ${tail}`)
     expect(stockCarryNote(mit(-500))).toBe(`Der Eigenanteil der Abrechnung ist um ${fmtEuro(500)} niedriger als der private Teil hier: Brennstoff, der im Vorrat bleibt, steuerlich 2025 abgeflossen und erst später verbraucht. ${tail}`)
     expect(stockCarryNote(report({}))).toBeNull()
+  })
+})
+
+describe('Betriebsstrom der Heizung (#268)', () => {
+  const tax = (rest: Partial<TaxReport>) => report({}, rest)
+  it('Hinweis nur bei einem Ausgleich ungleich 0', () => {
+    expect(taxHints(tax({ operatingPowerBalanceCents: 20000 }), 'ist')).toContain('operatingPowerBalance')
+    expect(taxHints(tax({ operatingPowerBalanceCents: -10000 }), 'ist')).toContain('operatingPowerBalance')
+    expect(taxHints(tax({}), 'ist')).not.toContain('operatingPowerBalance')
+  })
+  it('selbst getragen (kept): Betrag, Fundstellen und die Zeile; mit Eigennutzung der Satz zur Auslegung', () => {
+    const text = operatingPowerBalanceText(tax({ operatingPowerBalanceCents: 20000, operatingPowerBalanceKind: 'kept' }))
+    expect(text).toContain(`Beim Allgemeinstrom ist Betriebsstrom der Heizung abgezogen, ohne dass er in den Heizkosten steht (${fmtEuro(20000)}).`)
+    expect(text).toContain('§ 9 Abs. 1 Satz 1, § 11 Abs. 2 Satz 1 EStG')
+    expect(text).toContain('„Betriebsstrom der Heizung, selbst getragen“')
+    expect(text).not.toContain('Auslegung')
+    expect(text).not.toContain('Prüfen Sie')
+    expect(operatingPowerBalanceText(tax({ operatingPowerBalanceCents: 20000, operatingPowerBalanceKind: 'kept', selfOccupiedExists: true }))).toContain('beides ist eine Auslegung')
+  })
+  // Durchsicht S1: Ein Paar über zwei Steuerjahre ist richtig erfasst; kein „selbst“, kein „prüfen“, in beiden Richtungen.
+  it('verschiedene Steuerjahre (otherYear): neutral, nichts zu tun', () => {
+    for (const c of [20000, -20000]) {
+      const text = operatingPowerBalanceText(tax({ operatingPowerBalanceCents: c, operatingPowerBalanceKind: 'otherYear' })) ?? ''
+      expect(text).toContain(`Abzug beim Allgemeinstrom und Betriebsstrom in den Heizkosten stehen in verschiedenen Steuerjahren (Ausgleich in diesem Jahr ${fmtEuro(c)}).`)
+      expect(text).toContain('„Betriebsstrom der Heizung, Ausgleich“')
+      expect(text).toContain('Zu tun ist nichts.')
+      expect(text).not.toMatch(/selbst|Prüfen Sie/)
+    }
+  })
+  it('im selben Jahr verschieden hoch (mismatch): ohne Unterstellung, mit „prüfen“', () => {
+    const text = operatingPowerBalanceText(tax({ operatingPowerBalanceCents: -10000, operatingPowerBalanceKind: 'mismatch' })) ?? ''
+    expect(text).toContain(`Abzug beim Allgemeinstrom und Betriebsstrom in den Heizkosten sind in diesem Steuerjahr verschieden hoch (Ausgleich ${fmtEuro(-10000)}).`)
+    expect(text).toContain('„Betriebsstrom der Heizung, Ausgleich“')
+    expect(text).toContain('Prüfen Sie in der Abrechnung, ob der Abzug beim Allgemeinstrom zum Betriebsstrom passt.')
+    expect(text).not.toMatch(/selbst/)
+    expect(operatingPowerBalanceText(tax({}))).toBeNull()
+  })
+  it('gemischt (mixed): beides benannt, ohne „prüfen“', () => {
+    const text = operatingPowerBalanceText(tax({ operatingPowerBalanceCents: 25000, operatingPowerBalanceKind: 'mixed' })) ?? ''
+    expect(text).toContain('Abzug ohne Verweis')
+    expect(text).toContain('in verschiedenen Steuerjahren')
+    expect(text).not.toContain('Prüfen Sie')
+  })
+  it('nicht eindeutig (R-6) und negativer Allgemeinstrom ohne Kennzeichnung', () => {
+    const note = [{ costItemId: 'ab', description: 'Abzug Heizung', amountCents: -20000 }]
+    expect(taxHints(tax({ operatingPowerAmbiguous: note }), 'ist')).toContain('operatingPowerAmbiguous')
+    expect(taxHints(tax({ unmarkedPowerCredits: note }), 'ist')).toContain('unmarkedPowerCredits')
+    expect(taxHints(tax({}), 'ist')).not.toContain('operatingPowerAmbiguous')
+    expect(taxHints(tax({}), 'ist')).not.toContain('unmarkedPowerCredits')
   })
 })

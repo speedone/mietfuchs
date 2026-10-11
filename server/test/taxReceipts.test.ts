@@ -1,6 +1,7 @@
 // „Belege für die Steuer“ (#170): ein ZIP je Objekt und Jahr, geordnet nach den Gruppen der
 // Anlage V, mit allen Positionen, auch den nicht umlagefähigen.
-import { calendarPeriod } from '../../shared/period.ts'
+import { CALENDAR_RULES, calendarPeriod } from '../../shared/period.ts'
+import { taxReportFor } from '../src/calc.ts'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import type { CostItem } from '../../shared/types.ts'
@@ -112,4 +113,35 @@ test('Steuer-Belege: ein ungültiger §35a-Lohnanteil steht wie in der Steuerüb
   assert.ok(zeilen.includes('Laufende Betriebskosten;Gartenpflege;Position zuviel;;10,00;;;;kein Beleg'), zeilen.join('\n'))
   assert.ok(zeilen.includes('Laufende Betriebskosten;Hauswart;Position negativ;;10,00;;;;kein Beleg'), zeilen.join('\n'))
   assert.ok(zeilen.includes('Laufende Betriebskosten;Gebäudereinigung;Position gut;;10,00;;;6,00;kein Beleg'), zeilen.join('\n'))
+})
+
+// #268: Der Ausgleich beim Betriebsstrom ist keine Position, gehört aber zu den Werbungskosten der Übersicht. Im ZIP
+// steht er als eigene Zeile ohne eigenen Beleg; die Summen der Spalten sind dann die der Steuerübersicht.
+test('Steuer-Belege (#268): der Ausgleich beim Betriebsstrom steht als Zeile ohne eigenen Beleg, Summen wie in der Übersicht', () => {
+  const plant = {
+    id: 'hp1', propertyId: 'p1', name: 'Kessel', method: 'manual' as const, source: 'building' as const, supply: 'central' as const, energy: 'gas' as const,
+    devicesRemote: 'unknown' as const, devicesInstalledAfter2021: 'unknown' as const, newDevicesInstall: null, units: null,
+    periodStartMonth: null, periodChanges: [], separateSpans: [], separateSettlement: false, endsOn: null, replacesPlantId: null,
+  }
+  const items = [
+    item('gas', { category: 'Heizung und Warmwasser', description: 'Gas', amountCents: 500000, heatingPlantId: 'hp1', heatingPart: 'fuel' }),
+    item('hs', { category: 'Beleuchtung/Allgemeinstrom', description: 'Hausstrom', amountCents: 100000, key: 'units' }),
+    item('ab', { category: 'Beleuchtung/Allgemeinstrom', description: 'Abzug Betriebsstrom', amountCents: -20000, key: 'units', operatingPower: 'deduction', operatingPowerGeneralId: 'hs' }),
+  ]
+  const source = {
+    properties: [{ id: 'p1', kind: 'mfh' as const, cableBuiltBeforeDec2021: null, periodRules: CALENDAR_RULES }],
+    units: [{ id: 'u1', propertyId: 'p1', name: 'EG', areaM2: 60, participates: true }, { id: 'u2', propertyId: 'p1', name: 'OG', areaM2: 40, participates: true }],
+    tenancies: [], costItems: items, meters: [], readings: [], payments: [], closedSettlements: [], heatingPlants: [plant],
+  }
+  const report = taxReportFor(source, 'p1', 2025)
+  const split = new Map(report.expenses.items.map((i) => [i.costItemId, i]))
+  const plan = planTaxArchive(items, names, new Map(), split, report.expenses.items.filter((i) => i.operatingPowerBalance))
+  const zeilen = plan.overviewCsv.replace(/^﻿/, '').trim().split('\r\n')
+  assert.ok(zeilen.includes('Laufende Betriebskosten;Beleuchtung/Allgemeinstrom;Betriebsstrom der Heizung, selbst getragen;;200,00;0,00;200,00;;kein eigener Beleg (Teil der Stromrechnung)'), zeilen.join('\n'))
+  const cents = (s: string | undefined) => Math.round(Number((s ?? '').replace(',', '.')) * 100)
+  const rows = zeilen.slice(1).map((z) => z.split(';'))
+  const strom = rows.filter((r) => r[1] === 'Beleuchtung/Allgemeinstrom').reduce((a, r) => a + cents(r[4]), 0)
+  assert.equal(strom, 100000, 'Allgemeinstrom 1.000 − 200 + 200: die bezahlte Stromrechnung')
+  assert.equal(rows.reduce((a, r) => a + cents(r[4]), 0), report.expenses.totalCents)
+  assert.equal(rows.reduce((a, r) => a + cents(r[6]), 0), report.expenses.deductibleCents)
 })

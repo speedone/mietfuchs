@@ -41,19 +41,23 @@ describe('Karte „Abrechnungszeitraum“ (#208)', () => {
   })
 })
 
-// Folge-PR zu #252, Geld H2: Der Satz zur Verschiebung in der Anlage V steht nur beim gewählten Jahr.
-describe('Jahr des Betriebsstroms: Satz zur Verschiebung', () => {
+// Folge-PR zu #252, Geld H2, seit #268 umgekehrt: Bis #268 stand beim gewählten Jahr des Betriebsstroms ein Satz, dass
+// sich ein Teil des Abzugs in der Anlage V zwischen den Jahren verschiebt. Seit #268 gleicht die Steuerübersicht je
+// Steuerjahr aus, es verschiebt sich nichts, und die Auswahl des Jahres steht ohne Warnung da.
+describe('Jahr des Betriebsstroms: kein Satz zur Verschiebung (#268)', () => {
   const preview: PeriodChangePreview = {
     rules: { startMonth: 1, changes: ['2025-05'] }, periods: [], newShort: [], blocked: [], moves: [], effects: [], overrides: [], assessments: [], token: 't', groups: [],
-    taxYears: [{ key: 'bs|2025-05', costItemId: 'bs', description: 'Betriebsstrom', period: periodKey('2025-05'), label: '2025/2026', suggested: 2025, options: [2025, 2026],
-      notes: [{ year: 2026, text: 'Ein Teil des Abzugs (32,88 €) bleibt im Steuerjahr 2025, der Betriebsstrom steht im Steuerjahr 2026; in der Anlage V verschiebt sich dieser Betrag zwischen den Jahren. Welches Jahr steuerlich gilt, richtet sich danach, wann Sie die Stromrechnung bezahlt haben (§ 11 Abs. 2 EStG).' }] }],
+    taxYears: [{ key: 'bs|2025-05', costItemId: 'bs', description: 'Betriebsstrom', period: periodKey('2025-05'), label: '2025/2026', suggested: 2025, options: [2025, 2026] }],
   }
-  test('bei 2025 kein Satz, bei 2026 der Satz', () => {
-    render(<PreviewAnswers preview={preview} answers={initialAnswers(preview)} onChange={() => {}} />)
-    expect(screen.queryByText(/verschiebt sich dieser Betrag/)).toBeNull()
-    cleanup()
-    render(<PreviewAnswers preview={preview} answers={{ ...initialAnswers(preview), taxYears: { 'bs|2025-05': '2026' } }} onChange={() => {}} />)
-    expect(screen.getByText(/bleibt im Steuerjahr 2025, der Betriebsstrom steht im Steuerjahr 2026/)).toBeTruthy()
+  test('bei 2025 und bei 2026 keine Warnung an der Auswahl', () => {
+    for (const year of ['2025', '2026']) {
+      const { container } = render(<PreviewAnswers preview={preview} answers={{ ...initialAnswers(preview), taxYears: { 'bs|2025-05': year } }} onChange={() => {}} />)
+      const select = screen.getByLabelText(/Jahr der Zahlung \(Steuer\) für „Betriebsstrom“/) as HTMLSelectElement
+      expect(select.value).toBe(year)
+      expect(select.closest('label')?.querySelector('.warn')).toBeNull()
+      expect(container.textContent).not.toMatch(/verschiebt sich/)
+      cleanup()
+    }
   })
 })
 

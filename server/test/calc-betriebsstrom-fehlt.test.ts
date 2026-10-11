@@ -9,7 +9,7 @@ import { snapshotFor } from '../src/snapshot.ts'
 import { CALENDAR_RULES, periodKey, periodOfKey } from '../../shared/period.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import type { BillingPeriod, HeatingEnergy, PeriodRules } from '../../shared/types.ts'
-import { OPERATING_POWER_HANDLING_LABELS, OPERATING_POWER_HANDLING_QUESTION, OPERATING_POWER_INCLUDED_QUESTION, OPERATING_POWER_INCLUDED_YES } from '../../shared/operatingPower.ts'
+import { OPERATING_POWER_HANDLING_LABELS, OPERATING_POWER_HANDLING_QUESTION, OPERATING_POWER_INCLUDED_QUESTION, OPERATING_POWER_INCLUDED_YES, OPERATING_POWER_KEPT } from '../../shared/operatingPower.ts'
 
 type Source = Parameters<typeof snapshotFor>[0]
 type Plant = NonNullable<Source['heatingPlants']>[number]
@@ -68,6 +68,8 @@ test('A: Gasheizung mit Brennstoff und Allgemeinstrom, sonst nichts: ein Hinweis
   assert.doesNotMatch(n.text, /Leitsatz 3/)
   // R3-W-1: selbst tragen nur über den Abzug.
   assert.match(n.text, /Wollen Sie ihn nicht umlegen, ziehen Sie ihn trotzdem beim Allgemeinstrom ab; dann tragen Sie ihn selbst \(V ZR 166\/15, Rn\. 15\)/)
+  // #268: die Antwort im Kostenformular wörtlich.
+  assert.ok(n.text.includes(`Den Abzug erfassen Sie dann im Kostenformular beim Allgemeinstrom mit der Antwort „${OPERATING_POWER_KEPT}“.`), n.text)
   assert.doesNotMatch(n.text, /nur aus den Heizkosten/)
   // #266 (M-1): Der rechtmäßige Fall ist der eigene Stromvertrag, nicht ein Zwischenzähler; der Hinweis bleibt nicht mehr
   // stehen, sondern führt zur Angabe an der Anlage, mit der Frage wortgleich zur Oberfläche.
@@ -397,6 +399,8 @@ test('Text „Abzug fehlt“: Angabe, Lage, Rechtsquellen, netto eingetragener A
   assert.match(n.text, /Ohne Zwischenzähler dürfen Sie ihn schätzen; bestreitet ein Mieter den Betrag, müssen Sie die Grundlagen darlegen \(BGH, Versäumnisurteil vom 20\.02\.2008, VIII ZR 27\/07, Leitsatz c\)\./)
   // S-1: mietrechtliche Primärquelle zuerst.
   assert.match(n.text, /Wollen Sie ihn nicht umlegen, ziehen Sie ihn trotzdem beim Allgemeinstrom ab; dann tragen Sie ihn selbst \(BGH, Beschluss vom 13\.09\.2011, VIII ZR 45\/11, Rn\. 3; vgl\. V ZR 166\/15, Rn\. 15\)\./)
+  // #268: die Antwort im Kostenformular wörtlich, ohne Satz zur Steuer (R-8).
+  assert.ok(n.text.includes(`Den Abzug erfassen Sie dann im Kostenformular beim Allgemeinstrom mit der Antwort „${OPERATING_POWER_KEPT}“.`), n.text)
   // M-3 mit dem Wortlaut der Gegenprüfung; R-6: kein Satz zur Steuer in #266.
   assert.match(n.text, /Haben Sie beim Allgemeinstrom schon den um den Betriebsstrom geminderten Betrag eingetragen, ist die Abrechnung deshalb nicht formell unwirksam \(BGH, Urteil vom 20\.01\.2016, VIII ZR 93\/15, Leitsatz und Rn\. 19\); materiell muss der Abzug stimmen \(VIII ZR 27\/07, Leitsatz c\)\. Tragen Sie dort trotzdem den Rechnungsbetrag ein und erfassen Sie den Abzug gesondert; dann erkennt Mietfuchs den Abzug\./)
   assert.doesNotMatch(n.text, /Steuer/)

@@ -2130,7 +2130,7 @@ die ganze fachliche Komplexität:
   Stromrechnung (`operating_power_general_id`, Schritt 0039 mit Datenanweisung, Bedingungen in 0040):
   dasselbe Objekt und derselbe Zeitraum, Löschen und Umstellen der Rechnung gesperrt, solange er besteht;
   Hinweise `heating.operating-power-key` (anders verteilt als die Rechnung), `-exceeds` (mehr Abzug als
-  Rechnung) und `-tax-year` (Betriebsstrom und Abzug in verschiedenen Steuerjahren). Die Schätzhilfe
+  Rechnung); `-tax-year` (Betriebsstrom und Abzug in verschiedenen Steuerjahren) entfällt seit #268, siehe Steuer. Die Schätzhilfe
   nimmt nur eine Stromrechnung, die die Heizperiode berührt, übernimmt deren Jahr der Zahlung, wo der
   Zeitraum zwei Kalenderjahre berührt, lehnt eine Summe der Abzüge über der Rechnung ab (400) und fragt
   bei schon gebuchtem Betriebsstrom zurück (409 mit `question: 'despiteExisting'`; nur dann bietet die
@@ -2146,9 +2146,9 @@ die ganze fachliche Komplexität:
   Nur so ist aus keinem Teil mehr abgezogen, als er beträgt, auch bei drei und mehr Teilen und wenn die
   Abzüge die ganze Rechnung ergeben (Restverfahren nach Tagen ist nicht monoton). Das Jahr der Zahlung
   eines Abzugsteils fragt die Vorschau nicht, es ist das der Betriebsstrom-Position nach dem Wechsel
-  (`derivedYears`); angeboten werden nur Jahre im Schnitt der Spannen dieser Teile, und ein Teil mit festem Jahr
-  (Zeitraum in einem Kalenderjahr) bekommt am abweichenden Jahr einen Satz zur Verschiebung in der Anlage V
-  (`notes` am Eintrag, `taxShifts` am Ziel). Geprüft wird das
+  (`derivedYears`); angeboten werden nur Jahre im Schnitt der Spannen dieser Teile. Einen Satz zur Verschiebung in der
+  Anlage V bei einem Teil mit festem Jahr gibt es seit #268 nicht mehr, denn die Steuerübersicht gleicht je Steuerjahr
+  aus und es verschiebt sich nichts. Geprüft wird das
   **je Mieter** gegen von Hand hergeleitete Beträge, nicht je Zeitraum: „Abzug gleich Betriebsstrom je
   Zeitraum“ hielt auch ein falsches Ergebnis aus. Ein
   Scheitern ist eine 409 mit Vorschau. Kein Objektwechsel, solange ein
@@ -2330,6 +2330,45 @@ die ganze fachliche Komplexität:
   Grundsteuer 2025, im Februar 2026 gezahlt, steht damit in der Anlage V 2025, obwohl sie nach
   § 11 Abs. 2 EStG in 2026 abfließt. Solange die Einnahmenseite ebenfalls auf Soll stand, war das
   symmetrisch schief. Das Datenmodell dafür zu erweitern ist eine eigene Entscheidung.
+  **Betriebsstrom: die Stromrechnung zählt genau einmal** (#268). Eine Heizposition `included`
+  („steckt auch in der Stromrechnung“) und ein Abzug beim Allgemeinstrom (`operatingPower:
+  'deduction'`) sind beide nur Ausschnitte derselben bezahlten Stromrechnung, keine eigene Zahlung.
+  Summiert mit Vorzeichen stand der Strom als G − Σ Abzug + Σ Heizposition da: Ein selbst
+  getragener Abzug ohne Gegenstück senkte die Werbungskosten wie eine Gutschrift, eine Heizposition
+  über dem Abzug zählte doppelt. `operatingPowerBalance` (server/src/operatingPower.ts) rechnet je
+  Steuerjahr **C = Σ Betrag der Abzüge − Σ Betrag der Heizpositionen `included`**, über alle
+  Positionen des Steuerjahres, **mit Vorzeichen und ohne Klemme**, und `taxReport` stellt C als
+  abgeleitete Zeile `operating-power-balance:<Jahr>` beim Allgemeinstrom dazu
+  (`TaxExpenseItem.operatingPowerBalance`). Damit ist der Strom in jedem Jahr die bezahlte Rechnung,
+  auch wenn Abzug und Betriebsstrom in verschiedenen Steuerjahren stehen (deshalb entfielen der Hinweis
+  `heating.operating-power-tax-year` und der Satz zur Verschiebung in der Vorschau des Zeitraumwechsels). Mit
+  Eigennutzung ergibt ein verknüpftes Paar über zwei Steuerjahre je Jahr dieselben Zahlen wie das Paar im selben Jahr,
+  sofern die Anlage im Jahr des Abzugs Heizkosten hat (sonst gilt dort die Fläche); dafür löst `taxReportFor` den
+  Verweis über alle Positionen des Objekts auf (`linkable`), denn der Schnappschuss kennt nur sein Jahr (Durchsicht M1).
+  Zeilenname und Texte folgen der Lage (`operatingPowerBalanceKind`): „selbst getragen“ nur beim Abzug ohne Verweis,
+  „prüfen“ nur, wenn Abzug und Betriebsstrom im selben Steuerjahr verschieden hoch sind;
+  eine Sonderregel für
+  Verweise über Jahre gibt es bewusst nicht (eine Klemme bei 0 und „anderes Jahr neutral“ waren
+  beide nachgemessen falsch). Ausgenommen sind Abzüge **ohne Verweis**, wenn eine Anlage mit
+  Messdienst den Zeitraum berührt (`serviceReceivesOperatingPower` in shared/operatingPower.ts,
+  dieselbe Frage wie im Kostenformular): Dann ist der Betrag nach Angabe des Nutzers dem Messdienst
+  gemeldet und steckt in dessen Betrag. Mietfuchs folgt dieser Angabe; ist in Wahrheit nichts
+  gemeldet, fehlt der Betrag, und das ist eine bekannte Grenze. Heizt im Zeitraum zugleich eine
+  Anlage ohne Messdienst (Kesseltausch), nennt die Seite den Abzug als nicht eindeutig
+  (`operatingPowerAmbiguous`). Ohne Messdienst heißt dieselbe Wahl im Formular „Ja, ich lege ihn
+  nicht um und trage ihn selbst“ (`OPERATING_POWER_KEPT`). **Der private Teil folgt dem
+  Heizanteil**: jeder Beitrag zu C mal Eigenanteil an den Heizkosten seiner Anlage in der Abrechnung
+  seines Teils, so wie die Übersicht diese Heizpositionen aufteilt (bei abgeschlossener Abrechnung
+  also eingefroren); dann ergibt ein verknüpfter Abzug über dem Betriebsstrom dasselbe wie das richtige Paar. Ohne
+  zuordenbare Anlage (Abzug ohne Verweis) gilt die Fläche des ganzen Gebäudes (BFH IX R 26/06); das kann vom Paar
+  abweichen, etwa wenn die Anlage die eigene Wohnung gar nicht heizt. Beides ist
+  Auslegung und steht so im Rechenweg und auf der Seite. Die Zeile geht nicht durch den eingefrorenen
+  Stand (`closedItemsChanged` bleibt), nicht in `selfUsedShareCents` und steht im Steuer-ZIP ohne
+  eigenen Beleg. Negativer Allgemeinstrom **ohne** Kennzeichnung bleibt, wie er ist (Gutschrift und
+  Abzug sind nicht zu unterscheiden), die Seite weist nur darauf hin (`unmarkedPowerCredits`). Die
+  Abrechnung an die Mieter bleibt unberührt. Zusicherungen in
+  [calc-steuer-betriebsstrom.test.ts](server/test/calc-steuer-betriebsstrom.test.ts) und als
+  Invariante in [invariant-betriebsstrom-steuer.test.ts](server/test/invariant-betriebsstrom-steuer.test.ts).
 
 **Das Datenmodell steht in [shared/types.ts](shared/types.ts)** (Unit, Tenancy, Meter, Reading,
 CostItem, Settings, Settlement …) und gilt für Server und Client gleichermaßen. Die Datei
