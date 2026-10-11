@@ -432,3 +432,27 @@ test('Text „Rechnung fehlt“: Angabe, Bedingung für „schadet nicht“, Que
   assert.match(n.text, /Erfassen Sie die Rechnung des Zählers als Position „Heizung und Warmwasser“ mit dem Teil „Betrieb“; hängen an diesem Zähler auch andere Verbraucher, gehört nur der Anteil der Heizung dorthin\./)
   assert.ok(n.text.endsWith(`Wollen Sie den Strom nicht umlegen, wählen Sie auf der Seite Heizkosten „${OPERATING_POWER_HANDLING_LABELS.landlordPays}“; dann entfällt dieser Hinweis.`), n.text)
 })
+
+// S-1 (Durchsicht von #269): Nach einem Kesseltausch trägt die stillgelegte Anlage dieselbe Angabe wie die neue. Eine
+// Heizposition ohne Anlage kann zu jeder Anlage ohne eigene Heizperiode gehören; gemeldet wird aber nur für die, die im
+// Zeitraum noch läuft.
+const tausch = (handling: Plant['operatingPowerHandling'], endsOn: string) => [
+  mitAngabe(handling, { id: 'alt', name: 'Alt', endsOn }),
+  mitAngabe(handling, { id: 'hp1', name: 'Neu', replacesPlantId: 'alt' }),
+]
+const ohneAnlage = () => brennstoff('2025-01', { heatingPlantId: undefined })
+const planten = (s: ComputedSettlement) => [A, AD, AB].flatMap((c) => found(s, c).map((n) => `${n.code}@${n.subject?.id}`))
+
+test('S-1: Kesseltausch, alte Anlage endete vor dem Zeitraum: Hinweis nur für die neue (Abzug, eigener Vertrag, ohne Angabe)', () => {
+  for (const [handling, code] of [['deducted', AD], ['ownMeter', AB], [null, A]] as const) {
+    const items = handling === 'ownMeter' ? [ohneAnlage()] : [ohneAnlage(), hausstrom()]
+    assert.deepEqual(planten(settle(haus(items, tausch(handling, '2024-06-30')))), [`${code}@hp1`], String(handling))
+  }
+})
+
+test('S-1: endet die alte Anlage im Zeitraum, wird sie weiter geprüft', () => {
+  for (const [handling, code] of [['deducted', AD], ['ownMeter', AB], [null, A]] as const) {
+    const items = handling === 'ownMeter' ? [ohneAnlage()] : [ohneAnlage(), hausstrom()]
+    assert.deepEqual(planten(settle(haus(items, tausch(handling, '2025-06-30')))), [`${code}@alt`, `${code}@hp1`], String(handling))
+  }
+})
