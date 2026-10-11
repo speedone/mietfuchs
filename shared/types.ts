@@ -2465,8 +2465,9 @@ export type MonthlyInfoUser = MonthlyInfoAmounts & {
 }
 
 // Ein Monat einer Heizperiode. `due`: der Monat ist abgelaufen (Folgemonat erreicht); `complete`: jede
-// Information enthält alles nach Abs. 2; `sent`: als mitgeteilt vermerkt.
-export type MonthlyInfoMonth = { month: string; due: boolean; row: MonthlyInfoRow | null; users: MonthlyInfoUser[]; complete: boolean; sent: boolean }
+// Information enthält alles nach Abs. 2; `sent`: als mitgeteilt vermerkt; `mixed`: im Haus ist am Monatsende
+// mindestens ein Gerät nicht fernablesbar (gemischte Ausstattung, BR-Drs. 643/21, S. 18).
+export type MonthlyInfoMonth = { month: string; due: boolean; row: MonthlyInfoRow | null; users: MonthlyInfoUser[]; complete: boolean; sent: boolean; mixed: boolean }
 
 // Was die Karte der Seite Heizkosten zu einer Heizperiode lädt. `managed`: Mietfuchs erstellt die
 // Information (eigene Abrechnung mit eigenen Zählern, mindestens ein Gerät als fernablesbar eingetragen);
