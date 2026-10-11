@@ -366,3 +366,10 @@ test('Lexikon Betriebsstrom: schweigt bei Fernwärme und bei Wärmelieferung dur
   assert.match(t.needed, /bei Fernwärme und bei Wärmelieferung durch einen Contractor/)
   assert.match(t.needed, /Laufen Pumpen oder Regelung der Hausanlage über den Stromzähler des Hauses, gehört ihr Strom zu den Kosten der Hausanlage \(§ 7 Abs\. 4, § 8 Abs\. 4 HeizkostenV\) und ist beim Allgemeinstrom abzuziehen\./)
 })
+
+// Durchsicht von #272, S1 (Entscheidung nach der Gegenprüfung): Pauschale einbezogen über den Wortlaut von § 556 Abs. 2 BGB,
+// als Auslegung gekennzeichnet; kein BGH-Beleg dafür.
+test('Lexikon Wärmelieferung: Betriebskostenpauschale unter § 556c als Auslegung, Inklusivmiete nicht', () => {
+  const t = GLOSSARY.heatDelivery.needed
+  assert.match(t, /Auch wer eine Betriebskostenpauschale zahlt, trägt die Heizkosten als Betriebskosten, denn § 556 Abs\. 2 BGB lässt sie „als Pauschale oder als Vorauszahlung“ ausweisen \(Auslegung von Mietfuchs\); bei einer Inklusivmiete fehlt die Umlagevereinbarung, und § 556c gilt nicht\./)
+})
