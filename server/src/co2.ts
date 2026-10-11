@@ -5,6 +5,7 @@ import type { Co2Stage } from '../../shared/law/co2kostaufg.ts'
 import type { BillingPeriod, Co2Adjustment, Co2Assessment, Co2StageRange, Co2Statement, Co2TenantLine, Co2TenantRelief, DhwMethod, HeatingEnergy, HeatingMethod, HeatingSource } from '../../shared/types.ts'
 import { serviceProbe, type ProbeResult } from '../../shared/co2Probe.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
+import { NO_CO2_FUELS } from '../../shared/heatDelivery.ts'
 import type { Snapshot, SnapshotCostItem, SnapshotHeatingPeriodRow, SnapshotUnit } from './snapshot.ts'
 
 // Brennstoffe mit Standardwert für den Emissionsfaktor nach der EBeV, die das Gesetz erfasst (§ 2
@@ -14,13 +15,8 @@ import type { Snapshot, SnapshotCostItem, SnapshotHeatingPeriodRow, SnapshotUnit
 // als „nicht erfasst“ (W8).
 export const CO2_FUELS: readonly HeatingEnergy[] = ['gas', 'oil', 'lpg', 'coal']
 
-// Brennstoffe ohne CO₂-Aufteilung (Entwurf W8): Für sie entstehen keine CO₂-Kosten nach dem BEHG, die das
-// CO2KostAufG aufteilen könnte. Bei Wärmelieferung zählt der „für die Wärmeerzeugung eingesetzte Brennstoff“
-// (§ 2 Abs. 1 Satz 2 CO2KostAufG); kennt Mietfuchs ihn (Contracting, Heizung PR 16), entfällt bei diesen die
-// Pflicht. „Sonstiges“ steht bewusst nicht hier und bleibt CO₂-pflichtig: Was der Lieferant verheizt, weiß
-// Mietfuchs dann nicht, und ob CO₂-Kosten anfallen, weist er aus (§ 3 Abs. 4); das ist eine Auslegung zu Lasten
-// des Vermieters (Prüfung R-K4). Fernwärme ohne Merkmal hat keinen bekannten Brennstoff und bleibt erfasst.
-export const NO_CO2_FUELS: readonly HeatingEnergy[] = ['pellets', 'wood', 'electric', 'heatPump']
+// Brennstoffe ohne CO₂-Aufteilung (Heizung PR 16), in shared/heatDelivery.ts begründet.
+export { NO_CO2_FUELS }
 
 // Ob für einen Topf CO₂-Angaben nötig sind (sonst `co2.missing`): ein Brennstoff mit Standardwert oder eine
 // Wärmelieferung, außer der Lieferant heizt bekanntermaßen ohne CO₂-Kosten.
@@ -184,6 +180,8 @@ export type Co2Pot = {
   plantId: string
   plantName: string
   energy: HeatingEnergy
+  // Bei Contracting (Heizung PR 16) der Brennstoff des Lieferanten; `energy` ist dann `districtHeating`.
+  fuelEnergy?: HeatingEnergy
   method: HeatingMethod
   source: HeatingSource
   period: BillingPeriod
@@ -233,6 +231,7 @@ export function co2PotsOf(snapshot: Snapshot, items: readonly SnapshotCostItem[]
       plantId: plant.id,
       plantName: plant.name ?? '',
       energy: plant.energy,
+      ...(plant.fuelEnergy !== undefined ? { fuelEnergy: plant.fuelEnergy } : {}),
       method: plant.method,
       source: plant.source,
       period,

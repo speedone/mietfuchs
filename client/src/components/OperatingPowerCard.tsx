@@ -7,10 +7,11 @@ import { operatingPowerRefusal } from '../../../shared/operatingPower.ts'
 import { useToast } from './feedback'
 import Term from './Term'
 import type { CostItem, HeatingPeriodView, HeatingPlant, PeriodRules } from '../types'
+import { billingEnergy } from '../../../shared/heatDelivery.ts'
 
 // `rules`: der Rhythmus des Objekts, nach dem die Stromrechnungen ihren Zeitraum haben (G-K1).
 export default function OperatingPowerCard({ plant, view, rules, items, onBooked }: {
-  plant: Pick<HeatingPlant, 'id' | 'method' | 'energy'>; view: Pick<HeatingPeriodView, 'period' | 'label' | 'from' | 'to' | 'closed'>; rules: PeriodRules; items: readonly CostItem[]; onBooked: () => void
+  plant: Pick<HeatingPlant, 'id' | 'method' | 'energy'> & Partial<Pick<HeatingPlant, 'contracting'>>; view: Pick<HeatingPeriodView, 'period' | 'label' | 'from' | 'to' | 'closed'>; rules: PeriodRules; items: readonly CostItem[]; onBooked: () => void
 }) {
   const [form, setForm] = useState(emptyOperatingPowerForm)
   const [busy, setBusy] = useState(false)
@@ -21,7 +22,9 @@ export default function OperatingPowerCard({ plant, view, rules, items, onBooked
   const toast = useToast()
   // P-W5, R2-W1, R-W2: Bei Wärmepumpe und Stromheizung gehört der Strom zur Wärmeerzeugung zu den Heizkosten,
   // aber nicht als Betriebsstrom; die Karte sagt das, nennt den Weg über das Kostenformular und rechnet nichts.
-  const refusal = operatingPowerRefusal(plant.energy)
+  // Heizung PR 16 (Prüfung C-M3): bei Contracting wie bei Fernwärme; den Strom des Kessels bezahlt der Lieferant.
+  const energy = billingEnergy(plant)
+  const refusal = operatingPowerRefusal(energy)
   if (refusal) {
     return (
       <section className="card">
@@ -62,7 +65,9 @@ export default function OperatingPowerCard({ plant, view, rules, items, onBooked
       {/* P-K1: Rechtsaussage mit Norm; P-K5: selbst tragen ist zulässig. */}
       {/* R-K5 (Durchsicht von #252): Fernwärme hat keinen Brenner; die Hausanlage steht in § 7 Abs. 4, § 8 Abs. 4. */}
       <p>
-        {plant.energy === 'districtHeating'
+        {plant.contracting === true
+          ? 'Den Strom für Brenner und Kessel bezahlt bei Contracting der Lieferant. Läuft der Strom für Umwälzpumpen und Regelung der Hausanlage über den Stromzähler des Hauses, gehört er zu den Heiz- und Warmwasserkosten oder Sie tragen ihn selbst; im Allgemeinstrom darf er nicht stehen und ist dort abzuziehen (§ 7 Abs. 4, § 8 Abs. 4 HeizkostenV; vgl. BGH, Urteil vom 03.06.2016, V ZR 166/15).'
+          : energy === 'districtHeating'
           ? 'Läuft der Strom für Umwälzpumpen und Regelung der Hausanlage, also der Heizung hinter dem Fernwärmeanschluss, über den Stromzähler des Hauses, gehört er zu den Heiz- und Warmwasserkosten oder Sie tragen ihn selbst; im Allgemeinstrom darf er nicht stehen und ist dort abzuziehen (§ 7 Abs. 2 und 4, § 8 Abs. 2 und 4 HeizkostenV; vgl. BGH, Urteil vom 03.06.2016, V ZR 166/15).'
           : 'Läuft der Strom für Brenner, Umwälzpumpe und Regelung über den Stromzähler des Hauses, gehört er zu den Heiz- und Warmwasserkosten oder Sie tragen ihn selbst; im Allgemeinstrom darf er nicht stehen und ist dort abzuziehen (§ 7 Abs. 2, § 8 Abs. 2 HeizkostenV; BGH, Urteil vom 03.06.2016, V ZR 166/15).'}
         {service

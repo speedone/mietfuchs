@@ -300,6 +300,8 @@ function formulaFactor(energy: HeatingEnergy, e: Energy, h: Period, log: LawLog)
 
 export type DhwInput = {
   energy: HeatingEnergy
+  // Bei Contracting (Heizung PR 16) der Brennstoff des Lieferanten; `energy` ist dann `districtHeating`.
+  fuelEnergy?: HeatingEnergy
   heatGeneration: HeatGeneration | null
   h: Period
   // Kesseltausch (PR 9): die Laufzeit der Anlage in der Heizperiode, wenn sie kürzer ist; sonst null.
@@ -423,6 +425,17 @@ function measuredShare(i: DhwInput, log: LawLog): DhwOutcome {
 }
 
 function formulaShare(i: DhwInput, method: 'volumeFormula' | 'areaFormula', log: LawLog): DhwOutcome {
+  // Contracting mit einer Wärmepumpe (Heizung PR 16, Prüfung R-M4, Gegenprüfung): Die Verordnung regelt nicht,
+  // ob Satz 6 Nr. 2 (Wärmelieferung) oder Nr. 3 (monovalente Wärmepumpe) gilt. Mietfuchs rät keine der beiden
+  // Zahlen und rechnet den Anteil dann nur gemessen. Vor der Nr. 3 gab es keinen Faktor für die Wärmepumpe;
+  // auch dann nur gemessen (Festlegung von Mietfuchs, dieselbe Haltung).
+  if (i.energy === 'districtHeating' && i.fuelEnergy === 'heatPump') {
+    const f = law(hkvDhwFactors, { period: i.h }, log)
+    return failed('formulaInput', [f.heatPump === null
+      ? 'bei Contracting mit einer Wärmepumpe rechnet Mietfuchs den Warmwasseranteil nur mit gemessener Wärme (Festlegung von Mietfuchs); bitte messen Sie die Wärme für das Warmwasser mit einem Wärmezähler (§ 9 Abs. 2 Satz 1)'
+      // Wortlaut der Gegenprüfung, als Teilsatz hinter „denn“ (`dhwProblemText`).
+      : `bei Contracting mit einer Wärmepumpe regelt die Heizkostenverordnung nicht, ob der Formelwert durch ${fmt(f.heatSupplyDivisor, 2)} zu dividieren (Wärmelieferung) oder bei einer monovalenten Wärmepumpe mit ${fmt(f.heatPump, 2)} zu multiplizieren ist (§ 9 Abs. 2 Satz 6 Nr. 2 und 3 HeizkostenV); Mietfuchs rät keine der beiden Zahlen; bitte messen Sie die Wärme für das Warmwasser mit einem Wärmezähler (§ 9 Abs. 2 Satz 1)`])
+  }
   if (i.heatGeneration === null) {
     return failed('formulaInput', ['es fehlt die Antwort, ob die Anlage die Wärme allein erzeugt; sie entscheidet, ob eine Formel zulässig ist (§ 9 Abs. 1 Satz 5, Abs. 2 Satz 6 Nr. 3 HeizkostenV)'])
   }
@@ -455,7 +468,7 @@ export function dhwShareOf(i: DhwInput, log: LawLog): DhwOutcome {
 // verbrauchte Menge (PR 8), und der Heizwert kommt von den Lieferungen der Heizperiode oder, ohne sie,
 // von der jüngsten früheren (Abweichung 6).
 export type DhwContext = {
-  plant: { energy: HeatingEnergy; heatGeneration?: HeatGeneration | null }
+  plant: { energy: HeatingEnergy; heatGeneration?: HeatGeneration | null; fuelEnergy?: HeatingEnergy }
   row: { dhwMethod: DhwMethod | null; dhwVolumeM3?: number | null; dhwTempC?: number | null } | null
   h: Period
   // Kesseltausch (PR 9): die Laufzeit der Anlage in der Heizperiode, wenn sie kürzer ist.
@@ -488,6 +501,7 @@ export function dhwInputOf(c: DhwContext): DhwInput {
   }
   return {
     energy: c.plant.energy,
+    ...(c.plant.fuelEnergy !== undefined ? { fuelEnergy: c.plant.fuelEnergy } : {}),
     heatGeneration: c.plant.heatGeneration ?? null,
     h: c.h,
     running: c.running ?? null,

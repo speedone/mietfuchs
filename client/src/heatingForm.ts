@@ -8,6 +8,7 @@
 // Nichts davon ändert eine Zahl der Abrechnung.
 import type { DevicesInstalledAfter, DevicesRemote, DhwMethod, HeatGeneration, HeatPumpMajority, HeatingEnergy, HeatingPeriodView, HeatingPlant, HeatingPlantUnit, Meter, NewDevicesInstall, PropertyKind, Unit } from './types'
 import { isStockEnergy } from '../../shared/fuelStock.ts'
+import { billingEnergy } from '../../shared/heatDelivery.ts'
 import { parseEuro } from './api'
 import { hkvConsumptionShare, hkvCutNotByConsumption, hkvHeatPumpCapture, hkvRemoteReadingNewDevices, hkvRenewableExemption } from '../../shared/law/heizkostenv.ts'
 import { dayAfter, germanDate, LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
@@ -357,8 +358,9 @@ export const swapMetersOf = (plant: Pick<HeatingPlant, 'id' | 'method' | 'replac
 }
 
 // Bei demselben Vorratsbrennstoff fragt der Tausch, ob die neue Anlage den Brennstoff weiter verheizt.
-export const asksTakeOver = (form: Pick<SwapForm, 'energy'>, previous: Pick<HeatingPlant, 'energy'>): boolean =>
-  form.energy === previous.energy && isStockEnergy(previous.energy)
+// Bei Contracting führt der Lieferant den Vorrat (Heizung PR 16); dann fragt der Tausch nicht.
+export const asksTakeOver = (form: Pick<SwapForm, 'energy'> & { contracting?: boolean }, previous: Pick<HeatingPlant, 'energy'> & { contracting?: boolean }): boolean =>
+  form.energy === previous.energy && billingEnergy({ energy: form.energy, contracting: form.contracting }) === billingEnergy(previous) && isStockEnergy(billingEnergy(previous))
 
 // Getauscht wird eine laufende zentrale Anlage; bei getrennter Heizkostenabrechnung kommt das später.
 export const canSwap = (p: Pick<HeatingPlant, 'endsOn' | 'supply' | 'separateSpans'>): boolean =>

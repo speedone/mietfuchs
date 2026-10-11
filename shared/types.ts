@@ -1708,6 +1708,10 @@ export type HeatingStatement = {
   from: string
   to: string
   co2: Co2Assessment | null
+  // Wärmelieferung durch einen Contractor (Heizung PR 16): `energy` ist dann `districtHeating` (die Energie der
+  // Abrechnung), `fuelEnergy` der Brennstoff des Lieferanten, für die Beschriftung. Fehlen beide ohne Contracting.
+  contracting?: boolean
+  fuelEnergy?: HeatingEnergy
   // Lieferungen, Abgrenzung, Überträge und Lücken dieser Heizperiode (Heizung PR 7); fehlt ohne Lieferungen.
   fuel?: FuelAssessment
   // Die Bestandsrechnung dieser Heizperiode (Heizung PR 8). Sie friert mit dem Abschluss ein; die
@@ -1902,6 +1906,10 @@ export type Co2Sheet = {
   landlordName: string
   plantName: string
   energy: HeatingEnergy
+  // Wärmelieferung durch einen Contractor (Heizung PR 16): `energy` ist `districtHeating`, `fuelEnergy` der
+  // Brennstoff des Lieferanten.
+  contracting?: boolean
+  fuelEnergy?: HeatingEnergy
   period: { key: string; from: string; to: string }
   areaM2: number | null
   // `building`: die gemeinsame Fläche mehrerer Anlagen eines Gebäudes, wie die Abrechnung sie einstuft.

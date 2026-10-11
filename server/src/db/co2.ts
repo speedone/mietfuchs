@@ -14,6 +14,7 @@
 //
 // Diese Datei importiert aus repository.ts und read.ts, nie umgekehrt.
 import { lineRowsOf } from './selfLine.ts'
+import { billingEnergy } from '../../../shared/heatDelivery.ts'
 import { selfActive, selfFromOf } from '../heating.ts'
 import { captureOf, hotWaterOf, lineServiceRows } from '../hca.ts'
 import { and, eq, inArray } from 'drizzle-orm'
@@ -76,7 +77,7 @@ export async function heatingPeriodViews(db: Database, plantId: string, periodPa
   const items = (await readCostItems(db)).filter((c) => c.heatingPlantId === plantId && c.category === HEATING_CATEGORY)
   // Der Vorrat (Heizung PR 8) nur bei Heizöl, Flüssiggas, Pellets, Holz und Kohle; seit Heizung PR 10
   // auch bei der eigenen Heizkostenabrechnung (Entwurf 8.2).
-  const stockData = isStockEnergy(ctx.plant.energy) ? await readStock(db) : null
+  const stockData = isStockEnergy(billingEnergy(ctx.plant)) ? await readStock(db) : null
   const lineRows = ctx.plant.method === 'self' ? (await lineRowsOf(db, plantId)).merged : []
   const selfBegin = selfFromOf(ctx.plant)
   // Für die Formeln (Heizung PR 11): angeschlossene Wohnungen, ihre Warmwasserzähler und Ablesungen.
@@ -145,7 +146,7 @@ export async function heatingPeriodViews(db: Database, plantId: string, periodPa
       // Anteil nach Verbrauch (Heizung PR 10), nur bei eigener Abrechnung.
       // Über die Linie (Durchsicht von #239, I3), und erst ab dem Beginn der eigenen Abrechnung (I1).
       distribution: ctx.plant.method === 'self' && (selfBegin === null || h.key >= selfBegin || self)
-        ? distributionOf(lineRows, ctx.plant.energy, h, today)
+        ? distributionOf(lineRows, billingEnergy(ctx.plant), h, today)
         : null,
       capture: self ? captureOf(ctx.plant, String(h.key)) : null,
       selfHotWater: self ? hotWaterOf(ctx.plant, String(h.key)) : null,

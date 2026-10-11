@@ -11,12 +11,13 @@
 // nur mit ihren kg (§ 11 Abs. 2 Satz 2), den Anfangsbestand mit seinen CO₂-Kosten nach derselben Regel.
 // Was nicht zählt, bleibt sichtbar und sagt warum. Die Texte stehen in der dritten Person: Das Blatt geht
 // an Dritte.
+import { asBilledPlant } from '../../shared/heatDelivery.ts'
 import { plantRules, servesUnit, settledSeparately } from '../../shared/heatingPeriod.ts'
 import { periodContaining, rulesOf } from '../../shared/period.ts'
 import { co2CostsBefore, co2CostsCountedFrom } from '../../shared/law/co2kostaufg.ts'
 import { hkvDegreeDays } from '../../shared/law/heizkostenv.ts'
 import { createLawLog, germanDate, valueAt } from '../../shared/law/register.ts'
-import type { BillingPeriod, Co2Sheet, Co2SheetBilling, Co2SheetDelivery, Co2SheetOpening, Co2SheetStock, FuelDelivery, HeatingPlant, HeatingRules, HeatingStatement, LawOverride, Unit } from '../../shared/types.ts'
+import type { BillingPeriod, Co2Sheet, Co2SheetBilling, Co2SheetDelivery, Co2SheetOpening, Co2SheetStock, FuelDelivery, HeatingEnergy, HeatingPlant, HeatingRules, HeatingStatement, LawOverride, Unit } from '../../shared/types.ts'
 import { computeSettlement, plantStockOf } from './calc.ts'
 import type { StockResult } from './fuelStock.ts'
 import { heatingSnapshotFor, snapshotFor, wayOf } from './snapshot.ts'
@@ -29,7 +30,7 @@ export type Co2SheetInput = {
   propertyName: string
   address: string
   landlordName: string
-  plant: Pick<HeatingPlant, 'id' | 'name' | 'energy' | 'method' | 'units' | 'nonResidential' | 'restriction' | 'districtEtsNew'> & Partial<Pick<HeatingPlant, 'supply' | 'hotWater' | 'selfSpans'>>
+  plant: Pick<HeatingPlant, 'id' | 'name' | 'energy' | 'method' | 'units' | 'nonResidential' | 'restriction' | 'districtEtsNew'> & Partial<Pick<HeatingPlant, 'supply' | 'hotWater' | 'selfSpans' | 'contracting'>> & { fuelEnergy?: HeatingEnergy }
   h: { key: string; from: string; to: string }
   units: readonly Pick<Unit, 'id' | 'areaM2' | 'noConnection'>[]
   enteredAreaM2: number | null
@@ -179,6 +180,8 @@ export function co2SheetOf(i: Co2SheetInput): Co2Sheet {
   return {
     propertyName: i.propertyName, address: i.address, landlordName: i.landlordName,
     plantName: i.plant.name, energy: i.plant.energy, createdOn: i.today, checked, exemption,
+    // Wärmelieferung (Heizung PR 16): der Brennstoff des Lieferanten für die Beschriftung.
+    ...(i.plant.contracting === true && i.plant.fuelEnergy !== undefined ? { contracting: true, fuelEnergy: i.plant.fuelEnergy } : {}),
     period: { key: i.h.key, from: i.h.from, to: i.h.to },
     areaM2: area, areaSource,
     nonResidential: i.plant.nonResidential, restriction: i.plant.restriction, districtEtsNew: i.plant.districtEtsNew,
@@ -201,7 +204,10 @@ export function co2SheetFor(
   today: string,
   meta: { propertyName: string; address: string; landlordName: string } = { propertyName: '', address: '', landlordName: '' },
 ): Co2Sheet | null {
-  const plant = (source.heatingPlants ?? []).find((p) => p.id === plantId && p.propertyId === propertyId)
+  // Die Anlage, wie die Abrechnung sie sieht (Heizung PR 16, Prüfung C-S2): bei Contracting mit der Energie der
+  // Abrechnung, sonst läse das Blatt einen Vorrat und beschriftete den Brennstoff als Energieträger.
+  const stored = (source.heatingPlants ?? []).find((p) => p.id === plantId && p.propertyId === propertyId)
+  const plant = stored ? asBilledPlant(stored) : undefined
   const snap = plant ? heatingSnapshotFor(source, propertyId, plantId, h) : null
   if (!plant || !snap) return null
   const key = String(h.key)

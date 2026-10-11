@@ -13,6 +13,7 @@ import { basisOf, euro, GENERAL_POWER_CATEGORY, operatingPowerRefusal, operating
 import type { CostItem, OperatingPowerDevice } from '../../../shared/types.ts'
 import { periodLabel, periodOfKey, spansTwoYears, startYearOf } from '../../../shared/period.ts'
 import type { Database } from './client.ts'
+import { billingEnergy } from '../../../shared/heatDelivery.ts'
 import { heatingPeriodClosed, heatingPeriodOf, plantContext } from './heatingPeriodContext.ts'
 import { readCostItems } from './read.ts'
 import { has, HeatingError, insertCostItemIn, itemPeriodClosed, raw } from './repository.ts'
@@ -69,7 +70,9 @@ export async function bookOperatingPower(db: Database, plantId: string, body: un
   // P-W5, R2-W1, R-W2: Bei Wärmepumpe und Stromheizung gehört der Strom zur Wärmeerzeugung zu den Heizkosten,
   // aber nicht als Betriebsstrom (§ 7 Abs. 2 HeizkostenV); keine Schätzhilfe.
   // Pumpen und Regelung lassen sich im Kostenformular kennzeichnen und verknüpfen (repository.ts).
-  const refusal = operatingPowerRefusal(plant.energy)
+  // Heizung PR 16 (Prüfung C-M3): Bei Contracting bezahlt der Lieferant den Strom zur Wärmeerzeugung; Pumpen und
+  // Regelung der Hausanlage über den Stromzähler des Hauses gehören zu den Kosten der Hausanlage.
+  const refusal = operatingPowerRefusal(billingEnergy(plant))
   if (refusal) throw new HeatingError(400, refusal)
   // heatingPeriodOf wirft selbst HeatingError(400), wenn es die Heizperiode nicht gibt.
   const h = heatingPeriodOf(ctx, textOf(raw(body, 'period')))
