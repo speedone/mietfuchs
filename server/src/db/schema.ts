@@ -490,13 +490,13 @@ export const heatingPlants = sqliteTable(
     // Wärmelieferung (Heizung PR 16, #213): Contracting nicht bei Fernwärme (sie ist ohne Merkmal
     // Wärmelieferung), nur zentral; Angaben zur Umstellung nur bei Fernwärme oder Contracting; eine Ankündigung
     // nur mit Tag der Umstellung.
-    check('heating_plants_contracting_energy', sql.raw(`"contracting" = 0 OR "energy" <> 'districtHeating'`)),
-    check('heating_plants_contracting_central', sql.raw(`"contracting" = 0 OR "supply" = 'central'`)),
-    check('heating_plants_delivery_only', sql.raw(`("heat_delivery_since" IS NULL AND "previous_supply" IS NULL AND "switch_announced_on" IS NULL) OR "contracting" = 1 OR "energy" = 'districtHeating'`)),
-    check('heating_plants_delivery_since_date', sql.raw(`"heat_delivery_since" IS NULL OR "heat_delivery_since" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`)),
-    check('heating_plants_announced_date', sql.raw(`"switch_announced_on" IS NULL OR "switch_announced_on" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`)),
+    check('heating_plants_contracting_energy_valid', sql.raw(`"contracting" = 0 OR "energy" <> 'districtHeating'`)),
+    check('heating_plants_contracting_central_valid', sql.raw(`"contracting" = 0 OR "supply" = 'central'`)),
+    check('heating_plants_delivery_only_valid', sql.raw(`("heat_delivery_since" IS NULL AND "previous_supply" IS NULL AND "switch_announced_on" IS NULL) OR "contracting" = 1 OR "energy" = 'districtHeating'`)),
+    check('heating_plants_delivery_since_valid', sql.raw(`"heat_delivery_since" IS NULL OR "heat_delivery_since" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`)),
+    check('heating_plants_announced_valid', sql.raw(`"switch_announced_on" IS NULL OR "switch_announced_on" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`)),
     oneOf('heating_plants_previous_supply_known', 'previous_supply', PREVIOUS_SUPPLIES),
-    check('heating_plants_announced_needs_since', sql.raw('"switch_announced_on" IS NULL OR "heat_delivery_since" IS NOT NULL')),
+    check('heating_plants_announced_since_valid', sql.raw('"switch_announced_on" IS NULL OR "heat_delivery_since" IS NOT NULL')),
   ],
 )
 

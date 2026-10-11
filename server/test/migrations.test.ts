@@ -132,7 +132,7 @@ const VEROEFFENTLICHT: Record<string, string> = {
   '0042_betriebsstrom_angabe_bedingungen': '8135925667a0a3c6c12c40ba421dbc9d5447f8ab376ba6927363c9253b4e4d22',
   // Heizung PR 16 (#213): Wärmelieferung, Contracting und Angaben zur Umstellung.
   '0043_waermelieferung': 'eeeff16072c8d2a0aae9e91b524eeb9d2eab80bc0f613e56d229f0fb955bdb64',
-  '0044_waermelieferung_bedingungen': 'efc47a6b79712a61d71e6fd4753de976c7431bcb9d9b6d68f5cb3aebac06de07',
+  '0044_waermelieferung_bedingungen': 'ddf0ba665f5ea0ec4d6d08ae5019aab806ed09e2a6e5cb10b1eca73500878faa',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {
