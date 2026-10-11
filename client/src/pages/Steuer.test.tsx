@@ -181,6 +181,16 @@ const LAGEN: Record<TaxHint, Lage> = {
     report: MIXED([POS({ allocation: 'direct-self', description: 'Malerarbeiten', amountCents: 100000, privateCents: 100000, deductibleCents: 0, deductiblePercent: null, taxUnits: [{ unitId: 'EG', unitName: 'EG' }] })]),
     text: /bestimmten Einheiten zugeordnet/,
   },
+  // #268: Ausgleich beim Betriebsstrom, nicht eindeutige Meldung an den Messdienst, negativer Allgemeinstrom ohne Kennzeichnung.
+  operatingPowerBalance: { report: REPORT({ operatingPowerBalanceCents: 20000 }), text: /Diesen Teil legen Sie nicht um und tragen ihn selbst/ },
+  operatingPowerAmbiguous: {
+    report: REPORT({ operatingPowerAmbiguous: [{ costItemId: 'ab', description: 'Abzug Heizung', amountCents: -20000 }] }),
+    text: /zählt als dem Messdienst gemeldet/,
+  },
+  unmarkedPowerCredits: {
+    report: REPORT({ unmarkedPowerCredits: [{ costItemId: 'gut', description: 'Abzug alt', amountCents: -20000 }] }),
+    text: /ein negativer Betrag ohne Kennzeichnung/,
+  },
 }
 
 for (const hint of TAX_HINTS) {

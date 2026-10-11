@@ -7,7 +7,7 @@ import { useProperty, withProperty } from '../property'
 import { effectiveLandlord, letterhead } from '../landlord'
 import PageHeader from '../components/PageHeader'
 import Table from '../components/Table'
-import { allocationLabel, assignedUnitItems, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, prepaymentNote, settlementSourcesText, showsSplit, stockCarryNote, surplusCentsFor, taxHints, type Basis } from '../taxView'
+import { allocationLabel, assignedUnitItems, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, operatingPowerBalanceText, prepaymentNote, settlementSourcesText, showsSplit, stockCarryNote, surplusCentsFor, taxHints, type Basis } from '../taxView'
 import { StepList } from '../components/CalcSteps'
 import Term from '../components/Term'
 import { andList } from '../../../shared/wording.ts'
@@ -273,6 +273,28 @@ export default function Steuer({ settings }: Props) {
                 {data.reserveSuspects.length === 1 ? ' steht' : ' stehen'} oben in den Werbungskosten. Ist es die Zuführung,
                 stellen Sie unter <em>Kosten</em> die Kostenart „Zuführung Erhaltungsrücklage“ ein: Abziehbar ist sie erst,
                 wenn die Gemeinschaft das Geld ausgibt (BFH, Urteil vom 14.01.2025, IX R 19/24).
+              </div>
+            )}
+            {/* #268: Betriebsstrom der Heizung. Die Stromrechnung zählt genau einmal zu den Werbungskosten. */}
+            {hints.includes('operatingPowerBalance') && (
+              <div className="notice">{operatingPowerBalanceText(data)}</div>
+            )}
+            {hints.includes('operatingPowerAmbiguous') && (
+              <div className="notice">
+                {andList((data.operatingPowerAmbiguous ?? []).map((r) => `„${r.description}“ (${fmtEuro(r.amountCents)})`))}{' '}
+                {(data.operatingPowerAmbiguous ?? []).length === 1 ? 'zählt' : 'zählen'} als dem Messdienst gemeldet, denn im
+                Zeitraum heizt eine Anlage mit Messdienst. Zugleich heizt dort eine Anlage ohne Messdienst, etwa nach einem
+                Kesseltausch. Ob der Betrag dem Messdienst gemeldet ist, kann Mietfuchs nicht erkennen. Ist er es nicht, tragen
+                Sie diesen Betriebsstrom selbst, und er gehört zusätzlich zu Ihren Werbungskosten (§ 9 Abs. 1 Satz 1 EStG); die
+                Übersicht zählt ihn dann nicht mit.
+              </div>
+            )}
+            {hints.includes('unmarkedPowerCredits') && (
+              <div className="notice">
+                Beim Allgemeinstrom steht ein negativer Betrag ohne Kennzeichnung:{' '}
+                {andList((data.unmarkedPowerCredits ?? []).map((r) => `„${r.description}“ (${fmtEuro(r.amountCents)})`))}. Die
+                Übersicht zählt ihn wie erfasst. Ist es ein Abzug für den Betriebsstrom der Heizung, kennzeichnen Sie ihn unter{' '}
+                <em>Kosten</em> bei der Frage nach dem Abzug des Betriebsstroms; sonst fehlt er in Ihren Werbungskosten.
               </div>
             )}
 
