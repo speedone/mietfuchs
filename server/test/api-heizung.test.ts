@@ -825,3 +825,29 @@ test('Angabe zum Betriebsstrom über die Route: speichern, leeren, 400 mit Satz,
     s.stop()
   }
 })
+
+// #266: Über die Route kommt die Angabe in der Abrechnung an (snapshotFor reicht sie durch).
+test('Angabe zum Betriebsstrom in der Abrechnung über die Route: Wartung erfasst, mit „abgezogen“ der Hinweis, mit „Vermieter trägt“ still', async () => {
+  const s = await startServer()
+  try {
+    const send = (url: string, init: RequestInit) => fetch(`${s.base}${url}`, { ...init, headers: { 'content-type': 'application/json' } })
+    const unit = await s.api<Unit>('/api/units', jsonPost({ name: 'EG', areaM2: 80, participates: true }))
+    await s.api('/api/tenancies', jsonPost({ unitId: unit.id, tenantName: 'Mieter', personHistory: [{ from: '2025-01-01', persons: 1 }], start: '2025-01-01', end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [] }))
+    const { plant } = await jsonOf<{ plant: HeatingPlant }>(await send('/api/heating-plants', jsonPost({ energy: 'gas', method: 'manual' })))
+    await s.api<CostItem>('/api/costItems', jsonPost({ period: '2025-01', category: 'Heizung und Warmwasser', description: 'Gas', amountCents: 300000, key: 'area', heatingPart: 'fuel', heatingPlantId: plant.id }))
+    await s.api<CostItem>('/api/costItems', jsonPost({ period: '2025-01', category: 'Heizung und Warmwasser', description: 'Wartung', amountCents: 30000, key: 'area', heatingPart: 'operating', heatingPlantId: plant.id }))
+    await s.api<CostItem>('/api/costItems', jsonPost({ period: '2025-01', category: 'Beleuchtung/Allgemeinstrom', description: 'Hausstrom', amountCents: 105000, key: 'area' }))
+    const codes = async () => ((await s.api<Settlement>('/api/settlement/2025-01')).notices ?? []).map((n) => n.code).filter((c) => c.startsWith('heating.operating-power'))
+    assert.deepEqual(await codes(), [], 'ohne Angabe schweigt der Hinweis bei erfasster Wartung')
+    const vorher = await s.api<Settlement>('/api/settlement/2025-01')
+    const put = (v: string | null) => send(`/api/heating-plants/${plant.id}`, { method: 'PUT', body: JSON.stringify({ operatingPowerHandling: v }) })
+    assert.equal((await put('deducted')).status, 200)
+    assert.deepEqual(await codes(), ['heating.operating-power-deduction-missing'])
+    // Keine Zahl ändert sich.
+    assert.deepEqual((await s.api<Settlement>('/api/settlement/2025-01')).statements, vorher.statements)
+    assert.equal((await put('landlordPays')).status, 200)
+    assert.deepEqual(await codes(), [])
+  } finally {
+    s.stop()
+  }
+})
