@@ -90,6 +90,8 @@ const SHIPPED: readonly string[] = [
   // 0.11.0 (Folge-PR zu #252, #253)
   'betrkv.generation-power|2024-01-01||{"since":"2024-01-01"}',
   'hkv.generation-power|2024-10-01||{"since":"2024-10-01"}',
+  // 0.11.0 (Heizung PR 16, #213)
+  'bgb.heat-delivery-switch|2013-07-01||{"noticeMonths":3,"efficiencyPercent":80}',
 ]
 
 const current = (): string[] =>
