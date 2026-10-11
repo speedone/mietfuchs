@@ -1,0 +1,1 @@
+ALTER TABLE `heating_plants` ADD `operating_power_handling` text;

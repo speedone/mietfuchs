@@ -38,7 +38,7 @@ import { asNullableFilled, asNullableText, asText, guardServedChange, has, heati
 import { buildingCycle, lineRoot, sameLine, servesUnit } from '../../../shared/heatingPeriod.ts'
 import {
   AREA_BASES_HEAT, CAPTURE_METHODS, CHANGE_SPLITS, CO2_RESTRICTIONS, HEAT_GENERATIONS, HEAT_PUMP_MAJORITIES, HOT_WATER, fuelDeliveries, closedHeatingSettlementHistory, co2Statements, closedHeatingSettlements, closedSettlements, costItems, DEVICES_INSTALLED_AFTER, DEVICES_REMOTE, HEATING_ENERGIES, HEATING_METHODS,
-  HEATING_SOURCES, HEATING_SUPPLIES, NEW_DEVICES_INSTALLS, heatingPeriodChanges, heatingPeriods, heatingPlants, heatingPlantUnits, heatingPrepaymentOverrides, heatingSelfSpans, heatingSeparateSpans, meters, units,
+  HEATING_SOURCES, HEATING_SUPPLIES, NEW_DEVICES_INSTALLS, OPERATING_POWER_HANDLINGS, heatingPeriodChanges, heatingPeriods, heatingPlants, heatingPlantUnits, heatingPrepaymentOverrides, heatingSelfSpans, heatingSeparateSpans, meters, units,
 } from './schema.ts'
 
 // Die Sätze der Sperren. Jeder sagt, was bis dahin geht.
@@ -129,6 +129,9 @@ function mergeHeatingPlant(current: HeatingPlant, body: unknown): HeatingPlant {
       const text = asNullableFilled(v)
       return text === null ? null : text.trim() === '' ? null : text.trim()
     }),
+    // Wie der Betriebsstrom erfasst ist (#266): an jeder Anlage angenommen (E4), ausgewertet nur, wo Mietfuchs
+    // danach fragt; so geht beim Umschalten auf den Messdienst und zurück nichts still verloren.
+    operatingPowerHandling: merged(body, 'operatingPowerHandling', current.operatingPowerHandling ?? null, (v) => answerOf(OPERATING_POWER_HANDLINGS, v, 'Wie der Betriebsstrom dieser Heizung erfasst ist')),
     // Setzt nur die Einrichtung der eigenen Abrechnung; das Zurückschalten löscht ihn (updateHeatingPlant).
     selfSpans: current.selfSpans ?? [],
   }
@@ -141,7 +144,7 @@ const emptyHeatingPlant = (id: string, propertyId: string): HeatingPlant => ({
   capturedOnOct2024: null, warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null,
   periodChanges: [], separateSpans: [], units: null, newDevicesInstall: null,
   nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null,
-  hotWater: 'combined', capture: null, areaBasisHeat: 'area', heatPumpInstalledOn: null, heatGeneration: null, heatPumpMajority: null, hcaModel: null, selfSpans: [],
+  hotWater: 'combined', capture: null, areaBasisHeat: 'area', heatPumpInstalledOn: null, heatGeneration: null, heatPumpMajority: null, hcaModel: null, operatingPowerHandling: null, selfSpans: [],
 })
 
 export async function guardHeatingPlant(db: Executor, before: HeatingPlant | null, after: HeatingPlant): Promise<void> {
@@ -327,6 +330,7 @@ export const plantRow = (p: HeatingPlant) => ({
   endsOn: p.endsOn, replacesPlantId: p.replacesPlantId, buildingWith: p.buildingWith, takesOverStock: p.takesOverStock,
   hotWater: p.hotWater, capture: p.capture, areaBasisHeat: p.areaBasisHeat, heatPumpInstalledOn: p.heatPumpInstalledOn,
   heatGeneration: p.heatGeneration, heatPumpMajority: p.heatPumpMajority, hcaModel: p.hcaModel ?? null,
+  operatingPowerHandling: p.operatingPowerHandling ?? null,
 })
 
 // Heizung PR 12: Ein Zeitraum ohne eigene Erfassung (von vor PR 12) bekommt beim nächsten Schreiben die

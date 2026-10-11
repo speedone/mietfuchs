@@ -790,3 +790,38 @@ test('Betriebsstrom über die Route: zweite Buchung 409 mit question „despiteE
     s.stop()
   }
 })
+
+// #266: Die Angabe, wie der Betriebsstrom erfasst ist, über die Route der Anlage; sie übersteht Backup und
+// Wiederherstellen.
+test('Angabe zum Betriebsstrom über die Route: speichern, leeren, 400 mit Satz, Merge nach Anwesenheit, Backup', async () => {
+  const s = await startServer()
+  try {
+    const send = (url: string, init: RequestInit) => fetch(`${s.base}${url}`, { ...init, headers: { 'content-type': 'application/json' } })
+    const { plant } = await jsonOf<{ plant: HeatingPlant }>(await send('/api/heating-plants', jsonPost({ energy: 'gas', method: 'manual' })))
+    assert.equal(plant.operatingPowerHandling, null)
+    const put = (body: unknown) => send(`/api/heating-plants/${plant.id}`, { method: 'PUT', body: JSON.stringify(body) })
+    const gelesen = async () => (await s.api<HeatingPlant[]>('/api/heating-plants')).find((p) => p.id === plant.id)?.operatingPowerHandling
+    for (const v of ['ownMeter', 'landlordPays', 'deducted'] as const) {
+      const res = await put({ operatingPowerHandling: v })
+      assert.equal(res.status, 200, v)
+      assert.equal(await gelesen(), v)
+    }
+    assert.equal((await put({ name: 'Kessel' })).status, 200)
+    assert.equal(await gelesen(), 'deducted', 'ein PUT ohne den Schlüssel lässt die Angabe stehen')
+    const falsch = await put({ operatingPowerHandling: 'foo' })
+    assert.equal(falsch.status, 400)
+    assert.match(await errorFrom(falsch), /^Wie der Betriebsstrom dieser Heizung erfasst ist, kennt Mietfuchs so nicht\. Bitte wählen Sie aus der Liste\./)
+    assert.equal(await gelesen(), 'deducted', 'nach dem Fehler unverändert')
+    const archiv = await fetch(`${s.base}/api/backup`)
+    const fd = new FormData()
+    fd.append('file', new Blob([await archiv.arrayBuffer()], { type: 'application/zip' }), 'backup.zip')
+    assert.equal((await put({ operatingPowerHandling: '' })).status, 200)
+    assert.equal(await gelesen(), null)
+    assert.equal((await fetch(`${s.base}/api/restore`, { method: 'POST', body: fd })).status, 200)
+    assert.equal(await gelesen(), 'deducted', 'das Backup bringt die Angabe zurück')
+    assert.equal((await put({ operatingPowerHandling: null })).status, 200)
+    assert.equal(await gelesen(), null)
+  } finally {
+    s.stop()
+  }
+})
