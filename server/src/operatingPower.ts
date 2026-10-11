@@ -221,6 +221,9 @@ export function missingPowerFindings(input: {
   const out: MissingPowerFinding[] = []
   for (const plant of input.plants) {
     if ((plant.supply ?? 'central') !== 'central' || plant.source !== 'building' || plant.method === 'service') continue
+    // Eine Anlage, die vor dem Zeitraum stillgelegt wurde, hat dort nichts zu melden (S-1, #266): Nach einem Kesseltausch
+    // trägt sie dieselbe Angabe wie die neue, und eine Heizposition ohne Anlage würde sonst beiden zugerechnet.
+    if (plant.endsOn && plant.endsOn < input.period.from) continue
     const generation = POWER_GENERATED.includes(plant.energy)
     // A gilt, wo Mietfuchs nach der Angabe fragt (Brenner, F3); eine Stelle für Frage und Hinweis (#266).
     if (!generation && !asksOperatingPowerHandling(plant)) continue
@@ -242,7 +245,6 @@ export function missingPowerFindings(input: {
     // O: eine Heizposition „Betrieb“ (ohne Kennzeichnung, die steht oben) oder eine ohne Teil.
     const operatingPart = heat.some((c) => c.heatingPart === 'operating' || partless(c))
     if (generation) {
-      if (plant.endsOn && plant.endsOn < input.period.from) continue
       const replaced = plant.replacesPlantId ? input.plants.find((p) => p.id === plant.replacesPlantId) : undefined
       if (replaced?.endsOn && replaced.endsOn >= input.period.to) continue
       if (heat.some((c) => c.heatingPart === 'fuel' || Boolean(c.fuelDeliveryId) || partless(c))) continue
