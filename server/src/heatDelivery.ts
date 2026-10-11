@@ -29,7 +29,7 @@ type TenancyFacts = { tenantName: string; unitId: string; start: string; end: st
 
 // Je Anlage mit eingetragener Umstellung, deren Positionen diese Abrechnung verteilt, die Mieter, deren Mietvertrag
 // vor dem Tag der Umstellung geschlossen wurde und am Tag der Umstellung noch lief. Maßgeblich ist der Vertrag
-// (VIII ZR 46/25 Rn. 30: ein „zum Zeitpunkt der beabsichtigten Umstellung bereits laufender Mietvertrag“);
+// (BGH, Urteil vom 20.05.2026, VIII ZR 46/25: ein „zum Zeitpunkt der beabsichtigten Umstellung bereits laufender Mietvertrag“);
 // ohne eingetragenes Vertragsdatum nimmt Mietfuchs den Mietbeginn (Prüfung C-S7). Ausgenommen sind Mietverhältnisse
 // mit Inklusivmiete bei der Heizung: Ohne Umlagevereinbarung tragen sie die Heizkosten nicht als Betriebskosten.
 // Eine Betriebskostenpauschale zählt dagegen mit, denn § 556 Abs. 2 BGB lässt Betriebskosten „als Pauschale oder als
