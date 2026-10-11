@@ -38,6 +38,10 @@ const DHW_Q_AREA = DHW_AREA.kwhPerM2 * DHW_EXAMPLE.areaM2
 const REMOTE_CUT = valueAt(hkvCutRemoteReading, LAW_AS_OF)
 const ESTIMATE_THRESHOLD = valueAt(hkvEstimateThreshold, LAW_AS_OF)
 const INFO_CUT = valueAt(hkvCutInformation, LAW_AS_OF)
+// Monatliche Verbrauchsinformation (Heizung PR 22): Beispielzahlen eines Haushalts; die Umrechnung des
+// Warmwassers mit den Werten des Registers.
+const MONTHLY = { areaM2: 60, heatKwh: 700, dhwM3: 2.5, tempC: 55, prevHeatKwh: 400, prevM3: 2, lastYearHeatKwh: 350, refPerM2: 10 }
+const MONTHLY_DHW_KWH = DHW_VOLUME.effort * MONTHLY.dhwM3 * (MONTHLY.tempC - DHW_VOLUME.coldWaterC)
 const NEW_DEVICES_AFTER = germanDate(valueAt(hkvRemoteReadingNewDevices, LAW_AS_OF).installedAfter)
 const RETROFIT_FROM = germanDate(onlyVersion(hkvRemoteReadingRetrofit).validFrom ?? '')
 // Heizkostenverteiler (Heizung PR 12): Beispiel mit zwei Bewertungsfaktoren. Die Zahlen des Hauses
@@ -398,6 +402,21 @@ export const GLOSSARY = {
       'Ja, wenn Sie die Heizkosten nach Verbrauch abrechnen. Mietfuchs rechnet die meisten Angaben aus Ihren Daten. Steuern und Abgaben, bei Fernwärme die Werte des Netzes, den Vergleichswert eines Durchschnittsnutzers mit seiner Quelle und die Klimafaktoren tragen Sie auf der Seite Heizkosten ein. ' +
       'Ein Durchschnitt Ihres eigenen Hauses ist kein solcher Vergleich: Gemeint sind nach der Begründung der Verordnung anonymisierte Verbraucher aus den Beständen der Ablesedienste. ' +
       'Rechnen Sie mit Heizkostenverteilern oder freien Schlüsseln ab, legt meist der Ablesedienst den Vergleich bei; das bestätigen Sie mit seiner Quelle. Ist der Verbrauch eines Mieters geschätzt (§ 9a), gelten nach der Begründung der Verordnung nur die Mindestangaben, also die Kontaktinformationen und beim Verbrauchervertrag die Streitbeilegung; dass Mietfuchs das je Mieter anwendet, ist eine Auslegung.',
+  },
+  // Heizung PR 22: § 6a Abs. 1 Nr. 2, Abs. 2, § 12 Abs. 1 Satz 3 HeizkostenV und die Begründung (BR-Drs. 643/21,
+  // S. 18 f.), gelesen am 05.10.2026, Gegenprüfung vom 12.10.2026. Die Zahlen sind Beispielzahlen.
+  monthlyConsumptionInfo: {
+    title: 'Monatliche Verbrauchsinformation',
+    short: 'Sind Zähler oder Heizkostenverteiler fernablesbar, bekommt jeder Mieter jeden Monat seinen Verbrauch für Heizung und Warmwasser in Kilowattstunden, verglichen mit dem Vormonat, dem Vorjahresmonat und einem Durchschnittsnutzer.',
+    example: `Im November verbraucht ein Haushalt mit ${MONTHLY.areaM2} m² ${MONTHLY.heatKwh} kWh für die Heizung (gemessen) und ${dhwDe(MONTHLY.dhwM3, 1)} m³ Warmwasser; bei ${MONTHLY.tempC} °C Warmwassertemperatur sind das umgerechnet etwa ${dhwDe(MONTHLY_DHW_KWH)} kWh, angelehnt an § 9 Abs. 2 Satz 2 HeizkostenV einschließlich der Verluste der Erzeugung. Beides steht getrennt da und wird nicht zusammengezählt. ` +
+      `Im Oktober waren es ${MONTHLY.prevHeatKwh} kWh Heizung und ${MONTHLY.prevM3} m³ Warmwasser, im November des Vorjahres ${MONTHLY.lastYearHeatKwh} kWh Heizung. Ein Durchschnittsnutzer verbraucht laut Vergleichswert des Ablesedienstes ${MONTHLY.refPerM2} kWh je m² × ${MONTHLY.areaM2} m² = ${MONTHLY.refPerM2 * MONTHLY.areaM2} kWh.`,
+    norm: '§ 6a Abs. 1 und 2, § 12 Abs. 1 Satz 3 HeizkostenV',
+    needed:
+      'Ja, wenn Zähler oder Heizkostenverteiler fernablesbar sind. Sind im Haus nur einige Geräte fernablesbar, ist nach der Begründung der Verordnung im Einzelfall zu prüfen, ob die monatliche Information möglich und zumutbar ist (BR-Drs. 643/21, S. 18). ' +
+      'Die Information muss den Mieter erreichen: als Brief oder E-Mail, oder in einem Portal oder einer App, wenn er jeden Monat eine Nachricht bekommt, dass sie dort steht. ' +
+      'Der Vergleich mit einem Durchschnittsnutzer stammt nicht von den Nutzern desselben Hauses, sondern aus Vergleichsdaten, etwa des Ablesedienstes. ' +
+      `Fehlt die Information oder ist sie unvollständig, darf ein Mieter, dessen Wohnung fernablesbar ausgestattet ist, seinen Anteil an den Heizkosten um ${INFO_CUT} % kürzen. Ob schon ein einzelner fehlender Monat die volle Kürzung erlaubt, ist nicht höchstrichterlich geklärt; Mietfuchs rechnet vorsorglich mit den vollen ${INFO_CUT} % (Auslegung). ` +
+      'Rechnen Sie die Heizkosten selbst ab, erstellt Mietfuchs die Information auf der Seite Heizkosten aus den Zählerständen am Monatsende; zukommen lassen müssen Sie sie den Mietern selbst.',
   },
   climateFactor: {
     title: 'Klimafaktor',
