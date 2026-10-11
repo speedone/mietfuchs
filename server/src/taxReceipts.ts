@@ -53,22 +53,39 @@ export type TaxArchivePlan = {
 //
 // `split`: je Position privat und abziehbar aus der Steuerübersicht (#163).
 export type TaxSplitOfItem = Pick<TaxExpenseItem, 'privateCents' | 'deductibleCents'>
+// `derived`: Zeilen der Steuerübersicht, die keine Position sind (#268, Ausgleich beim Betriebsstrom). Sie stehen in
+// der Übersicht mit ihrem Betrag und ihrer Aufteilung, aber ohne Beleg, denn ihr Beleg ist die Stromrechnung.
 export function planTaxArchive(
   items: CostItem[], names: Map<string, string>, booked: ReadonlyMap<string, readonly string[]> = new Map(),
-  split: ReadonlyMap<string, TaxSplitOfItem> = new Map(),
+  split: ReadonlyMap<string, TaxSplitOfItem> = new Map(), derived: readonly TaxExpenseItem[] = [],
 ): TaxArchivePlan {
   const rank = (group: string) => GROUPS.indexOf(group)
-  const sorted = [...items].sort((a, b) =>
-    rank(taxGroupOf(a.category)) - rank(taxGroupOf(b.category)) ||
-    a.category.localeCompare(b.category, 'de') ||
-    a.description.localeCompare(b.description, 'de'))
+  type Row = { c: Pick<CostItem, 'id' | 'category' | 'description' | 'vendor' | 'amountCents' | 'invoiceFile' | 'labor35aCents'>; derived: boolean }
+  const all: Row[] = [
+    ...items.map((c) => ({ c, derived: false })),
+    ...derived.map((d) => ({ c: { id: d.costItemId, category: d.category, description: d.description, amountCents: d.amountCents }, derived: true })),
+  ]
+  const sorted = all.sort((a, b) =>
+    rank(taxGroupOf(a.c.category)) - rank(taxGroupOf(b.c.category)) ||
+    a.c.category.localeCompare(b.c.category, 'de') ||
+    Number(a.derived) - Number(b.derived) ||
+    a.c.description.localeCompare(b.c.description, 'de'))
 
   const files: TaxArchivePlan['files'] = []
   const placed = new Map<string, string>() // Gruppe|Datei → Pfad im Archiv
   const taken = new Set<string>()
   const rows: string[] = []
-  for (const c of sorted) {
+  for (const { c, derived: isDerived } of sorted) {
     const group = taxGroupOf(c.category)
+    if (isDerived) {
+      const part = derived.find((d) => d.costItemId === c.id)
+      rows.push([
+        textField(group), textField(c.category), textField(c.description), '', csvField(euro(c.amountCents)),
+        part ? csvField(euro(part.privateCents)) : '', part ? csvField(euro(part.deductibleCents)) : '', '',
+        textField('kein eigener Beleg (Teil der Stromrechnung)'),
+      ].join(';'))
+      continue
+    }
     const parts: string[] = []
     for (const file of new Set([c.invoiceFile, ...(booked.get(c.id) ?? [])].filter((f): f is string => !!f))) {
       const original = names.get(file)
