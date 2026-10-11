@@ -4,7 +4,7 @@
 // (§ 7 Abs. 2 HeizkostenV; BGH, Urteil vom 03.06.2016, V ZR 166/15). Die Abzüge zählen über ihren
 // Verweis und aus jedem Zeitraum (Review Focus 5); geprüft werden nur die Positionen, die die
 // Abrechnung verteilt, damit der Hinweis genau einmal erscheint, nämlich dort, wo der Betriebsstrom steht.
-import type { CostItem, HeatingEnergy, HeatingMethod, HeatingSource, HeatingSupply, OperatingPowerDeduction } from '../../shared/types.ts'
+import type { CostItem, HeatingEnergy, HeatingMethod, HeatingSource, HeatingSupply, OperatingPowerDeduction, OperatingPowerHandling } from '../../shared/types.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import { asksOperatingPowerHandling, GENERAL_POWER_CATEGORY, POWER_GENERATED } from '../../shared/operatingPower.ts'
 
@@ -185,15 +185,21 @@ export function operatingPowerText(f: OperatingPowerFinding, fmtCents: (c: numbe
 //   fragt calc.ts im Register ab.
 
 type PowerItem = Pick<CostItem, 'id' | 'category' | 'description' | 'amountCents' | 'key' | 'heatingPart' | 'heatingPlantId' | 'fuelDeliveryId' | 'operatingPower' | 'operatingPowerItemId'>
-export type PowerPlant = { id: string; name?: string; energy: HeatingEnergy; method: HeatingMethod; source: HeatingSource; supply?: HeatingSupply; periodStartMonth?: number | null; endsOn?: string | null; replacesPlantId?: string | null }
+export type PowerPlant = { id: string; name?: string; energy: HeatingEnergy; method: HeatingMethod; source: HeatingSource; supply?: HeatingSupply; periodStartMonth?: number | null; endsOn?: string | null; replacesPlantId?: string | null; operatingPowerHandling?: OperatingPowerHandling | null }
 
+// `operating`: A ohne Angabe an der Anlage (#224). Mit Angabe (#266) `deductionMissing` (Strom über die Rechnung des
+// Hauses, aber kein Abzug) oder `billMissing` (eigener Stromvertrag, aber keine Heizposition „Betrieb“).
+// `generation`: B (#253), unabhängig von der Angabe.
 export type MissingPowerFinding = {
-  kind: 'operating' | 'generation'
+  kind: 'operating' | 'deductionMissing' | 'billMissing' | 'generation'
   plantId: string
   plantName: string
   energy: HeatingEnergy
-  // Die Stromrechnungen des Allgemeinstroms in P, in der Reihenfolge der Positionen.
+  // Die Stromrechnungen des Allgemeinstroms in P, in der Reihenfolge der Positionen; bei `billMissing` auch leer.
   generals: { id: string; description: string }[]
+  // Ob die Anlage in P eine Heizposition „Betrieb“ ohne Kennzeichnung oder eine ohne Teil hat (Lage O); bei
+  // `deductionMissing` sagt der Text dann, dass sie den Abzug nicht ersetzt und wie man nicht doppelt bucht.
+  hasOperatingPart: boolean
 }
 
 export function missingPowerFindings(input: {
@@ -204,8 +210,9 @@ export function missingPowerFindings(input: {
   // Die Heizperioden der Anlagen mit eigener Heizperiode, die in P stehen (Weg b und d).
   heatingParts: readonly { plantId: string; items: readonly PowerItem[] }[]
 }): MissingPowerFinding[] {
+  // G: Allgemeinstrom in P. Ohne ihn ist nichts herauszurechnen (F2); nur „Rechnung fehlt“ kommt auch ohne, denn er
+  // betrifft die Rechnung des eigenen Stromvertrags und nicht den Allgemeinstrom.
   const generals = input.items.filter((c) => c.category === GENERAL_POWER_CATEGORY && c.amountCents > 0 && c.operatingPower === undefined && c.key !== 'external' && c.key !== 'amounts')
-  if (generals.length === 0) return []
   // Zu welcher Anlage eine Heizposition gehört, soweit bekannt. Ein Abzug auf eine unbekannte Position oder ohne
   // Verweis („dem Messdienst gemeldet“) gilt für jede Anlage als Antwort: lieber still als falsch.
   const plantOf = new Map<string, string>()
@@ -217,14 +224,23 @@ export function missingPowerFindings(input: {
     const generation = POWER_GENERATED.includes(plant.energy)
     // A gilt, wo Mietfuchs nach der Angabe fragt (Brenner, F3); eine Stelle für Frage und Hinweis (#266).
     if (!generation && !asksOperatingPowerHandling(plant)) continue
+    // Die Angabe zählt nur, wo Mietfuchs nach ihr fragt; B kennt sie nicht (#266, E5).
+    const handling = generation ? null : (plant.operatingPowerHandling ?? null)
+    // Eigener Stromvertrag, dessen Kosten der Vermieter selbst trägt: rechtmäßig, nichts zu prüfen.
+    if (handling === 'landlordPays') continue
+    if (handling !== 'ownMeter' && generals.length === 0) continue
     const own = (plant.periodStartMonth ?? null) !== null
     // Eine Heizposition ohne Anlage kann zu jeder Anlage ohne eigene Heizperiode gehören.
     const heat = own
       ? input.heatingParts.filter((p) => p.plantId === plant.id).flatMap((p) => p.items)
       : input.items.filter((c) => c.category === HEATING_CATEGORY && (c.heatingPlantId === plant.id || !c.heatingPlantId))
+    // I: gekennzeichneter Betriebsstrom; fehlt dessen Abzug, meldet das schon `heating.operating-power-double`.
     if (heat.some((c) => c.operatingPower === 'included')) continue
+    // D: ein Abzug in P, der zu dieser Anlage gehören kann.
     if (deductions.some((d) => !d.operatingPowerItemId || (plantOf.get(d.operatingPowerItemId) ?? plant.id) === plant.id)) continue
     const partless = (c: PowerItem): boolean => c.heatingPart === undefined && !c.fuelDeliveryId
+    // O: eine Heizposition „Betrieb“ (ohne Kennzeichnung, die steht oben) oder eine ohne Teil.
+    const operatingPart = heat.some((c) => c.heatingPart === 'operating' || partless(c))
     if (generation) {
       if (plant.endsOn && plant.endsOn < input.period.from) continue
       const replaced = plant.replacesPlantId ? input.plants.find((p) => p.id === plant.replacesPlantId) : undefined
@@ -232,9 +248,13 @@ export function missingPowerFindings(input: {
       if (heat.some((c) => c.heatingPart === 'fuel' || Boolean(c.fuelDeliveryId) || partless(c))) continue
     } else {
       if (!heat.some((c) => c.amountCents > 0)) continue
-      if (heat.some((c) => c.heatingPart === 'operating' || partless(c))) continue
+      // Ohne Angabe und beim eigenen Stromvertrag gilt O als Antwort. Beim Strom über die Rechnung des Hauses nicht:
+      // Eine Wartung ersetzt den Abzug nicht (§ 7 Abs. 2 HeizkostenV nennt beide getrennt), und genau dieser Fall
+      // blieb ohne Angabe stumm (#266).
+      if (handling !== 'deducted' && operatingPart) continue
     }
-    out.push({ kind: generation ? 'generation' : 'operating', plantId: plant.id, plantName: plant.name ?? '', energy: plant.energy, generals: generals.map((g) => ({ id: g.id, description: g.description })) })
+    const kind = generation ? 'generation' : handling === 'deducted' ? 'deductionMissing' : handling === 'ownMeter' ? 'billMissing' : 'operating'
+    out.push({ kind, plantId: plant.id, plantName: plant.name ?? '', energy: plant.energy, generals: generals.map((g) => ({ id: g.id, description: g.description })), hasOperatingPart: operatingPart })
   }
   return out
 }
@@ -257,6 +277,16 @@ export function missingOperatingPowerText(f: MissingPowerFinding, label: string)
     'Erfassen Sie ihn dann mit der Karte „Betriebsstrom“ auf der Seite Heizkosten. Ohne Zwischenzähler dürfen Sie ihn schätzen; bestreitet ein Mieter den Betrag, müssen Sie die Grundlagen darlegen (BGH, Versäumnisurteil vom 20.02.2008, VIII ZR 27/07, Leitsatz 3). ' +
     'Wollen Sie ihn nicht umlegen, ziehen Sie ihn trotzdem beim Allgemeinstrom ab; dann tragen Sie ihn selbst (V ZR 166/15, Rn. 15). ' +
     `Hat die Heizung einen eigenen Stromzähler, erfassen Sie dessen Rechnung als Heizposition mit dem Teil „Betrieb“; dann entfällt dieser Hinweis. ${OWN_METER_SELF} ${FLAT_TENANTS}`
+}
+
+// #266: Text des Hinweises `heating.operating-power-deduction-missing`.
+export function deductionMissingText(f: MissingPowerFinding, label: string): string {
+  return `${plantText(f)}: ${label}`
+}
+
+// #266: Text des Hinweises `heating.operating-power-bill-missing`.
+export function billMissingText(f: MissingPowerFinding, label: string): string {
+  return `${plantText(f)}: ${label}`
 }
 
 // B (#253): Text des Hinweises `heating.generation-power-missing`. `betrkvSince` und `hkvSince` kommen aus dem

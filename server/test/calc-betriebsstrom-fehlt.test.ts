@@ -234,3 +234,134 @@ test('Kein Zahlenwechsel: dieselbe Abrechnung ohne die Hinweise rechnet gleich',
     assert.deepEqual(zahlen(mit), zahlen(ohneHinweis))
   }
 })
+
+// ---------- Angabe an der Anlage, wie der Betriebsstrom erfasst ist (#266) ----------
+// Mit Angabe kommt der Hinweis gezielt oder schweigt; ohne Angabe bleibt alles wie oben (Plan pr266, Abschnitt 4).
+
+const AD = 'heating.operating-power-deduction-missing'
+const AB = 'heating.operating-power-bill-missing'
+const HANDLINGS = ['ownMeter', 'deducted', 'landlordPays'] as const
+const alle = (s: ComputedSettlement) => [...found(s, A), ...found(s, B), ...found(s, AD), ...found(s, AB)].map((n) => n.code)
+const still = (s: ComputedSettlement) => assert.deepEqual(alle(s), [])
+const mitAngabe = (operatingPowerHandling: Plant['operatingPowerHandling'], over: Partial<Plant> = {}) => anlage({ operatingPowerHandling, ...over })
+
+test('D1: Abzug angegeben, Wartung als „Betrieb“, Hausstrom ohne Abzug: genau ein Hinweis „Abzug fehlt“ (hint), kein A', () => {
+  const s = settle(haus([brennstoff(), wartung(), hausstrom()], [mitAngabe('deducted')]))
+  const n = one(s, AD)
+  assert.equal(n.level, 'hint')
+  assert.equal(n.title, 'Abzug des Betriebsstroms fehlt')
+  assert.deepEqual(n.subject, { kind: 'heatingCosts', id: 'hp1' })
+  assert.deepEqual(alle(s), [AD])
+})
+test('D1b: Abzug angegeben, Heizposition „Betrieb“ ohne Kennzeichnung (vielleicht der Betriebsstrom selbst): Hinweis „Abzug fehlt“', () =>
+  assert.deepEqual(alle(settle(haus([brennstoff(), heizung('bs', '2025-01', 9000, { heatingPart: 'operating', description: 'Heizstrom' }), hausstrom()], [mitAngabe('deducted')]))), [AD]))
+test('D1c: Abzug angegeben, Heizposition ohne Teil (alter Bestand): Hinweis „Abzug fehlt“', () =>
+  assert.deepEqual(alle(settle(haus([heizung('alt', '2025-01', 500000, { description: 'Heizkosten' }), hausstrom()], [mitAngabe('deducted')]))), [AD]))
+test('D1d: Abzug angegeben, nur Brennstoff: Hinweis „Abzug fehlt“ statt A', () =>
+  assert.deepEqual(alle(settle(haus([brennstoff(), hausstrom()], [mitAngabe('deducted')]))), [AD]))
+test('D2: Abzug angegeben, Betriebsstrom gekennzeichnet samt Abzug mit Verweis: still', () =>
+  still(settle(haus([brennstoff(), wartung(), betriebsstrom(), hausstrom(), abzug()], [mitAngabe('deducted')]))))
+test('D3: Abzug angegeben, Abzug ohne Verweis: still', () =>
+  still(settle(haus([brennstoff(), wartung(), hausstrom(), abzug({ operatingPowerItemId: undefined })], [mitAngabe('deducted')]))))
+test('D4: Abzug angegeben, gekennzeichnet ohne Abzug: nur der Hinweis auf den doppelt verteilten Betriebsstrom', () => {
+  const s = settle(haus([brennstoff(), betriebsstrom(), hausstrom()], [mitAngabe('deducted')]))
+  still(s)
+  assert.equal(found(s, 'heating.operating-power-double').length, 1)
+})
+test('D5: Abzug angegeben, kein Allgemeinstrom: still', () => still(settle(haus([brennstoff(), wartung()], [mitAngabe('deducted')]))))
+test('D6: Abzug angegeben, Allgemeinstrom nur laut Gemeinschaftsabrechnung oder nach Einzelbeträgen: still', () => {
+  still(settle(haus([brennstoff(), wartung(), hausstrom('2025-01', { key: 'external', externalBasis: { measure: 'mea', total: 1000, totalCents: 500000 } })], [mitAngabe('deducted')])))
+  still(settle(haus([brennstoff(), wartung(), hausstrom('2025-01', { key: 'amounts', tenancyAmounts: { t1: 50000, t2: 50000 } })], [mitAngabe('deducted')])))
+})
+test('D7: Abzug angegeben, ein Abzug nur im Vorjahr: Hinweis im laufenden Jahr', () => {
+  const src = haus([brennstoff(), wartung(), hausstrom(), hausstrom('2024-01', { id: 'hs24' }), abzug({ id: 'ab24', period: periodKey('2024-01'), operatingPowerItemId: undefined, operatingPowerGeneralId: 'hs24' })], [mitAngabe('deducted')])
+  assert.deepEqual(alle(settle(src)), [AD])
+  assert.deepEqual(alle(settle(src, '2024-01')), [], '2024 hat seinen Abzug')
+})
+test('D8: zwei Anlagen mit Abzug angegeben, der Abzug gehört zur ersten: Hinweis nur für die zweite', () => {
+  const s = settle(haus([brennstoff(), heizung('oel', '2025-01', 300000, { heatingPlantId: 'hp2', heatingPart: 'fuel', description: 'Öl' }), betriebsstrom(), hausstrom(), abzug()],
+    [mitAngabe('deducted'), mitAngabe('deducted', { id: 'hp2', name: 'Ölkessel', energy: 'oil' })]))
+  assert.deepEqual([...found(s, AD), ...found(s, A)].map((n) => [n.code, n.subject?.id]), [[AD, 'hp2']])
+})
+test('D9: Abzug angegeben, Anlage ohne Heizkosten im Zeitraum: still', () =>
+  still(settle(haus([hausstrom(), brennstoff('2024-01')], [mitAngabe('deducted')]))))
+test('D10: Abzug angegeben, eigene Heizperiode (Weg b): einmal in P, nicht im Unteraufruf', () => {
+  const plant = mitAngabe('deducted', { periodStartMonth: 5 })
+  const src = haus([heizung('gas', '2024-05', 500000, { heatingPart: 'fuel', taxYear: 2025 }), heizung('w', '2024-05', 30000, { heatingPart: 'operating', description: 'Wartung', taxYear: 2025 }), hausstrom()], [plant])
+  assert.deepEqual(alle(settle(src)), [AD])
+  const snap = snapshotFor(src, 'objekt-1', of(CALENDAR_RULES, '2025-01'))
+  const p = snap.heatingPlants?.[0] ?? assert.fail('keine Anlage')
+  for (const kind of ['heatingPart', 'heating'] as const) still(computeSettlement({ ...snap, scope: { kind, plant: p } }))
+})
+
+test('O1: eigener Stromvertrag angegeben, nur Brennstoff, ohne Allgemeinstrom: genau ein Hinweis „Rechnung fehlt“ (hint)', () => {
+  const s = settle(haus([brennstoff()], [mitAngabe('ownMeter')]))
+  const n = one(s, AB)
+  assert.equal(n.level, 'hint')
+  assert.equal(n.title, 'Rechnung des Heizungsstromzählers fehlt')
+  assert.deepEqual(n.subject, { kind: 'heatingCosts', id: 'hp1' })
+  assert.deepEqual(alle(s), [AB])
+  // Mit Allgemeinstrom ebenso.
+  assert.deepEqual(alle(settle(haus([brennstoff(), hausstrom()], [mitAngabe('ownMeter')]))), [AB])
+})
+test('O2: eigener Stromvertrag mit Wartung als „Betrieb“: still', () => still(settle(haus([brennstoff(), wartung(), hausstrom()], [mitAngabe('ownMeter')]))))
+test('O3: eigener Stromvertrag, Heizposition ohne Teil: still', () => still(settle(haus([heizung('alt', '2025-01', 500000, { description: 'Heizkosten' }), hausstrom()], [mitAngabe('ownMeter')]))))
+test('O4: eigener Stromvertrag mit Abzug ohne Verweis: still', () => still(settle(haus([brennstoff(), hausstrom(), abzug({ operatingPowerItemId: undefined })], [mitAngabe('ownMeter')]))))
+test('O5: eigener Stromvertrag, Betriebsstrom gekennzeichnet: kein „Rechnung fehlt“', () => {
+  const s = settle(haus([brennstoff(), betriebsstrom()], [mitAngabe('ownMeter')]))
+  assert.equal(found(s, AB).length, 0)
+  still(settle(haus([brennstoff(), betriebsstrom(), hausstrom(), abzug()], [mitAngabe('ownMeter')])))
+})
+test('O6: eigener Stromvertrag, Anlage ohne Heizkosten im Zeitraum: still', () => still(settle(haus([brennstoff('2024-01')], [mitAngabe('ownMeter')]))))
+
+test('L1/L2: Vermieter trägt den Strom des eigenen Vertrags: still, mit und ohne Wartung', () => {
+  still(settle(haus([brennstoff(), hausstrom()], [mitAngabe('landlordPays')])))
+  still(settle(haus([brennstoff(), wartung(), hausstrom()], [mitAngabe('landlordPays')])))
+  still(settle(haus([brennstoff()], [mitAngabe('landlordPays')])))
+})
+
+test('N1: ohne Angabe wie bisher: A beim Brennstoff allein, still mit Wartung', () => {
+  assert.deepEqual(alle(settle(haus([brennstoff(), hausstrom()], [mitAngabe(null)]))), [A])
+  still(settle(haus([brennstoff(), wartung(), hausstrom()], [mitAngabe(null)])))
+  // Fehlt das Feld (von Hand gebauter Schnappschuss), ebenso.
+  const { operatingPowerHandling: _weg, ...ohneFeld } = anlage()
+  assert.deepEqual(alle(settle(haus([brennstoff(), hausstrom()], [ohneFeld as Plant]))), [A])
+  still(settle(haus([brennstoff(), wartung(), hausstrom()], [ohneFeld as Plant])))
+})
+
+test('X1: jede Angabe bei Fernwärme, Messdienst, Gemeinschaft, Etagenheizung, „sonstige“ und Wärmepumpe: nicht ausgewertet', () => {
+  const ohneFrage: Partial<Plant>[] = [{ energy: 'districtHeating' }, { energy: 'other' }, { method: 'service' }, { source: 'homeowners', method: 'service' }, { supply: 'perUnit' }, { energy: 'electric' }]
+  for (const v of HANDLINGS) {
+    for (const over of ohneFrage) {
+      for (const items of [[brennstoff(), hausstrom()], [brennstoff(), wartung(), hausstrom()], [brennstoff()]]) {
+        const mit = settle(haus([...items], [mitAngabe(v, over)]))
+        const ohne = settle(haus([...items], [mitAngabe(null, over)]))
+        assert.deepEqual(alle(mit), alle(ohne), `${v} ${JSON.stringify(over)}`)
+        assert.deepEqual([...found(mit, AD), ...found(mit, AB)], [], `${v} ${JSON.stringify(over)}`)
+      }
+    }
+    // Wärmepumpe: B bleibt genau wie ohne Angabe.
+    for (const items of [[wartung(), hausstrom()], [hausstrom()], [brennstoff(), hausstrom()]]) {
+      assert.deepEqual(alle(settle(haus([...items], [wp({ operatingPowerHandling: v })]))), alle(settle(haus([...items], [wp()]))), `WP ${v}`)
+    }
+    assert.deepEqual(alle(settle(haus([wartung(), hausstrom()], [wp({ operatingPowerHandling: v })]))), [B])
+  }
+})
+
+test('X2: „Abzug fehlt“ und „Rechnung fehlt“ nur in der Gesamtberechnung, nicht in Teil- oder Heizkostenabrechnungen', () => {
+  for (const [v, items] of [['deducted', [brennstoff(), wartung(), hausstrom()]], ['ownMeter', [brennstoff(), hausstrom()]]] as const) {
+    const src = haus([...items], [mitAngabe(v)])
+    assert.equal(alle(settle(src)).length, 1, `${v}: in der Gesamtberechnung genau ein Hinweis`)
+    const snap = snapshotFor(src, 'objekt-1', of(CALENDAR_RULES, '2025-01'))
+    const p = snap.heatingPlants?.[0] ?? assert.fail('keine Anlage')
+    for (const kind of ['heatingPart', 'heating'] as const) still(computeSettlement({ ...snap, scope: { kind, plant: p } }))
+  }
+})
+
+test('Kein Zahlenwechsel: jede Angabe rechnet wie ohne Angabe und wie „sonstige“', () => {
+  const zahlen = (s: ComputedSettlement) => ({ statements: s.statements, landlord: s.landlord, selfUsedShareCents: s.selfUsedShareCents, totalCostsCents: s.totalCostsCents })
+  for (const items of [[brennstoff(), hausstrom()], [brennstoff(), wartung(), hausstrom()], [brennstoff()], [brennstoff(), betriebsstrom(), hausstrom()]]) {
+    const vergleich = zahlen(settle(haus([...items], [anlage({ energy: 'other' })])))
+    for (const v of [null, ...HANDLINGS]) assert.deepEqual(zahlen(settle(haus([...items], [mitAngabe(v)]))), vergleich, `${v}`)
+  }
+})
