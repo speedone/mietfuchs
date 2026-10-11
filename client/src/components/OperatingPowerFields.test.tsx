@@ -6,6 +6,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import OperatingPowerFields from './OperatingPowerFields'
 import { EMPTY_ITEM_FORM, type ItemForm } from '../costForm'
 import { periodKey } from '../../../shared/period.ts'
+import { OPERATING_POWER_INCLUDED_QUESTION, OPERATING_POWER_INCLUDED_YES } from '../../../shared/operatingPower.ts'
 import type { CostItem } from '../types'
 
 afterEach(cleanup)
@@ -17,11 +18,21 @@ test('Heizkosten: Frage mit Norm (P-K1), Grundlage der Schätzung sichtbar und �
   const form: ItemForm = { ...EMPTY_ITEM_FORM, category: 'Heizung und Warmwasser', operatingPower: 'included', operatingPowerBasis: 'Pumpe: 45 W × 24 h × 220 Tage = 237,6 kWh' }
   render(<OperatingPowerFields form={form} items={[bs]} periodKey={periodKey('2025-01')} onChange={onChange} />)
   expect(screen.getByText(/§ 7 Abs\. 2, § 8 Abs\. 2 HeizkostenV; BGH, Urteil vom 03\.06\.2016, V ZR 166\/15/)).toBeTruthy()
-  expect(screen.getByText(/BGH, Versäumnisurteil vom 20\.02\.2008, VIII ZR 27\/07, Leitsatz 3/)).toBeTruthy()
+  expect(screen.getByText(/BGH, Versäumnisurteil vom 20\.02\.2008, VIII ZR 27\/07, Leitsatz c/)).toBeTruthy()
   const basis = screen.getByLabelText(/Grundlage der Schätzung/) as HTMLTextAreaElement
   expect(basis.value).toBe('Pumpe: 45 W × 24 h × 220 Tage = 237,6 kWh')
   fireEvent.change(basis, { target: { value: 'neu' } })
   expect(onChange).toHaveBeenCalledWith({ ...form, operatingPowerBasis: 'neu' })
+})
+
+// #266 (R-4): Der Hinweis „Abzug des Betriebsstroms fehlt“ zitiert Frage und Antwort wörtlich aus shared/operatingPower.ts.
+test('Heizkosten: Frage und Antwort stehen wortgleich wie im Hinweis „Abzug fehlt“', () => {
+  const form: ItemForm = { ...EMPTY_ITEM_FORM, category: 'Heizung und Warmwasser', heatingPart: 'operating' }
+  render(<OperatingPowerFields form={form} items={[]} periodKey={periodKey('2025-01')} onChange={vi.fn()} />)
+  const select = screen.getByLabelText(/über den Stromzähler des Hauses\?/) as HTMLSelectElement
+  expect(select.closest('label')?.querySelector('span')?.textContent).toBe(OPERATING_POWER_INCLUDED_QUESTION)
+  expect([...select.options].map((o) => o.textContent)).toContain(OPERATING_POWER_INCLUDED_YES)
+  expect(select.querySelector('option[value="included"]')?.textContent).toBe(OPERATING_POWER_INCLUDED_YES)
 })
 
 test('Heizkosten mit Teil „Brennstoff“ und andere Kostenarten: keine Frage', () => {

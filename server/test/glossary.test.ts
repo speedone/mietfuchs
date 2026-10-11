@@ -285,8 +285,8 @@ test('Lexikon: Betriebsstrom nennt § 7 Abs. 2 HeizkostenV, das Urteil und rechn
   // P-K3: Der Warmwasseranteil steht in § 8 Abs. 2 HeizkostenV und § 2 Nr. 5 Buchst. a BetrKV.
   assert.match(t.norm ?? '', /§ 2 Nr\. 4 Buchst\. a, Nr\. 5 Buchst\. a und Nr\. 11 BetrKV/)
   assert.match(t.norm ?? '', /V ZR 166\/15/)
-  // P-K4: die Entscheidung des VIII. Senats für das Mietrecht, nur mit Leitsatz 3, ohne Randnummer.
-  assert.match(t.norm ?? '', /BGH, Versäumnisurteil vom 20\.02\.2008, VIII ZR 27\/07 \(Leitsatz 3\)/)
+  // P-K4: die Entscheidung des VIII. Senats für das Mietrecht, nur mit Leitsatz c (amtlich a, b, c; Rechtsprüfung zu #266, K-1), ohne Randnummer.
+  assert.match(t.norm ?? '', /BGH, Versäumnisurteil vom 20\.02\.2008, VIII ZR 27\/07 \(Leitsatz c\)/)
   assert.doesNotMatch(`${t.norm} ${t.needed} ${t.example} ${t.short}`, /VIII ZR 27\/07, Rn\./)
   // 120 W × 6 h + 45 W × 24 h + 5 W × 24 h an 220 Tagen = 422,4 kWh; 422,4 / 3.000 von 1.050,00 €.
   assert.equal(((120 * 6 + 45 * 24 + 5 * 24) * 220) / 1000, 422.4)
@@ -315,7 +315,7 @@ test('Lexikon: Betriebsstrom nennt § 7 Abs. 2 HeizkostenV, das Urteil und rechn
   assert.doesNotMatch(t.needed, /bei jeder Zentralheizung/)
   assert.match(t.needed, /oder Sie tragen ihn selbst; im Allgemeinstrom darf er nicht stehen/)
   // P-W1: aufbewahren, denn bei Bestreiten sind die Grundlagen darzulegen.
-  assert.match(t.needed, /müssen Sie die Grundlagen Ihrer Schätzung darlegen \(BGH, Versäumnisurteil vom 20\.02\.2008, VIII ZR 27\/07, Leitsatz 3\)/)
+  assert.match(t.needed, /müssen Sie die Grundlagen Ihrer Schätzung darlegen \(BGH, Versäumnisurteil vom 20\.02\.2008, VIII ZR 27\/07, Leitsatz c\)/)
   // P-W5, R2-W1, R-W2: Der Strom zur Wärmeerzeugung gehört zu den Heizkosten, aber nicht als Betriebsstrom
   // und nicht als Brennstoff (§ 7 Abs. 2 HeizkostenV nennt ihn neben den Brennstoffen); das Herausrechnen aus
   // dem Allgemeinstrom ist als Auslegung gekennzeichnet. Umwälzpumpen und Regelung bleiben Betriebsstrom.

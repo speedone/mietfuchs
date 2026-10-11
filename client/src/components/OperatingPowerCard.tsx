@@ -72,7 +72,7 @@ export default function OperatingPowerCard({ plant, view, rules, items, onBooked
       {/* P-W1 */}
       <p className="hint">
         Mietfuchs speichert Ihre Angaben als Grundlage der Schätzung an {service ? 'der Position' : 'beiden Positionen'}. Bewahren Sie Typenschilder und Rechnungen auf: Bestreitet ein Mieter
-        den Betrag, müssen Sie die Grundlagen Ihrer Schätzung darlegen (BGH, Versäumnisurteil vom 20.02.2008, VIII ZR 27/07, Leitsatz 3).
+        den Betrag, müssen Sie die Grundlagen Ihrer Schätzung darlegen (BGH, Versäumnisurteil vom 20.02.2008, VIII ZR 27/07, Leitsatz c).
       </p>
       {booked.length > 0 && (
         <div className="notice">

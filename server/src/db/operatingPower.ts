@@ -7,7 +7,7 @@
 // verteilt den Betriebsstrom in seinen Beträgen.
 //
 // Die Grundlage der Schätzung (P-W1) steht an beiden Positionen: Bestreitet ein Mieter den Betrag, muss
-// der Vermieter sie darlegen (BGH, Versäumnisurteil vom 20.02.2008, VIII ZR 27/07, Leitsatz 3).
+// der Vermieter sie darlegen (BGH, Versäumnisurteil vom 20.02.2008, VIII ZR 27/07, Leitsatz c).
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 import { basisOf, euro, GENERAL_POWER_CATEGORY, operatingPowerRefusal, operatingPowerShare, ownEstimateShare, touchesHeatingPeriod } from '../../../shared/operatingPower.ts'
 import type { CostItem, OperatingPowerDevice } from '../../../shared/types.ts'

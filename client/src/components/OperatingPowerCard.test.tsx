@@ -24,7 +24,7 @@ test('Die Auswahl der Stromrechnung zeigt den gewählten Wert (CLAUDE.md, angeze
 test('Karte: Norm an der Rechtsaussage, Hinweis auf die Darlegungslast, drei Wege', () => {
   render(<OperatingPowerCard plant={plant} view={view} rules={CALENDAR_RULES} items={[strom]} onBooked={vi.fn()} />)
   expect(screen.getByText(/§ 7 Abs\. 2, § 8 Abs\. 2 HeizkostenV; BGH, Urteil vom 03\.06\.2016, V ZR 166\/15/)).toBeTruthy()
-  expect(screen.getByText(/BGH, Versäumnisurteil vom 20\.02\.2008, VIII ZR 27\/07, Leitsatz 3/)).toBeTruthy()
+  expect(screen.getByText(/BGH, Versäumnisurteil vom 20\.02\.2008, VIII ZR 27\/07, Leitsatz c/)).toBeTruthy()
   expect(screen.getByLabelText(/geschätzt nach Leistung und Heiztagen/)).toBeTruthy()
   expect(screen.getByLabelText(/gemessen mit Zwischenzähler/)).toBeTruthy()
   fireEvent.click(screen.getByLabelText(/Betrag selbst geschätzt/))

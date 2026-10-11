@@ -291,7 +291,7 @@ export type CostItem = {
   // Betriebsstrom der Heizung (Heizung PR 15): siehe `OperatingPower`. `operatingPowerItemId` nur am
   // Abzug: die Betriebsstrom-Position, zu der er gehört. `operatingPowerBasis` (P-W1): die Grundlage
   // der Schätzung, Zeile für Zeile, an Betriebsstrom und Abzug; bestreitet ein Mieter den Betrag, muss
-  // der Vermieter sie darlegen (BGH, Versäumnisurteil vom 20.02.2008, VIII ZR 27/07, Leitsatz 3).
+  // der Vermieter sie darlegen (BGH, Versäumnisurteil vom 20.02.2008, VIII ZR 27/07, Leitsatz c).
   operatingPower?: OperatingPower
   operatingPowerItemId?: string
   operatingPowerBasis?: string

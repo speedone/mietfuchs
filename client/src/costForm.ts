@@ -6,7 +6,7 @@ import { CATEGORIES, KEY_LABELS, defaultKeyFor, isNotAllocable } from './types'
 import { PARTICIPANT_KEYS as SHARED_PARTICIPANT_KEYS, allocationOf, comparablePrevious, previousAllocation, sameAllocation, type Allocation } from '../../shared/allocation.ts'
 import { fmtEuro, parseEuro } from './api'
 import { changeLabel } from './periodForm'
-import { GENERAL_POWER_CATEGORY, POWER_GENERATED } from '../../shared/operatingPower.ts'
+import { GENERAL_POWER_CATEGORY, OPERATING_POWER_INCLUDED_YES, POWER_GENERATED } from '../../shared/operatingPower.ts'
 import { sameCostCandidates, type DuplicateItem } from '../../shared/duplicates.ts'
 import { parseNumberDe } from './numbers'
 import { targetOptions } from './heatingSelfForm'
@@ -529,7 +529,8 @@ export function buildCostItemBody(form: ItemForm, units: Unit[], period: number 
 // ohne Teil, wie die Bedingung der Datenbank.
 export const OPERATING_POWER_OPTIONS: { value: '' | 'included'; label: string }[] = [
   { value: '', label: 'Nein (eigener Stromvertrag oder kein Betriebsstrom)' },
-  { value: 'included', label: 'Ja, er läuft über den Stromzähler des Hauses' },
+  // Wortgleich im Hinweis „Abzug des Betriebsstroms fehlt“ (#266).
+  { value: 'included', label: OPERATING_POWER_INCLUDED_YES },
 ]
 // R-W2 (Durchsicht von #252): bei einer Wärmepumpe oder Stromheizung auch an der Strom-Position (Teil
 // „Brennstoff/Energie“), denn auch dieser Strom läuft oft über den Zähler des Hauses.
