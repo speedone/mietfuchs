@@ -149,7 +149,9 @@ test('M1a: Heizposition 300, Abzug 200 verknüpft: 6.000 statt 6.100 (C = −100
   assert.equal(r.expenses.totalCents, 600000)
   const z = line(r) ?? assert.fail('keine Zeile')
   assert.equal(z.amountCents, -10000)
-  assert.equal(z.description, 'Betriebsstrom der Heizung, Ausgleich zur Heizposition')
+  // Durchsicht S1: neutral benannt; im selben Jahr verschieden hoch, also ein Satz zum Prüfen.
+  assert.equal(z.description, 'Betriebsstrom der Heizung, Ausgleich')
+  assert.equal(r.operatingPowerBalanceKind, 'mismatch')
   assert.equal(r.operatingPowerBalanceCents, -10000)
   // Allgemeinstrom 1.000 − 200 − 100 = 700, Heizung 5.000 + 300 = 5.300: zusammen 6.000, Strom also einmal gezählt.
   assert.equal(strom(r), 70000)
@@ -395,4 +397,51 @@ test('E ohne Fläche der eigenen Einheit: Zeile nicht aufteilbar, privat 0', () 
 test('Ohne selbstgenutzte Einheit ist an der Zeile nichts privat, auch mit Vorzeichen', () => {
   const r = tax(haus([gas(), betrieb('bs', 30000), hausstrom(), abzug('ab', 20000, 'bs')]))
   assert.deepEqual([line(r)?.privateCents, line(r)?.deductibleCents], [0, -10000])
+})
+
+// ---------- Wortlaut der Zeile je Lage (Durchsicht S1, K1) ----------
+const texts = (r: TaxReport, year = 2025) => (line(r, year)?.steps ?? []).map((x) => `${x.label}: ${x.value}`).join('\n')
+
+test('S1: Paar über zwei Steuerjahre (M2) heißt neutral, nennt den Verweis und rät zu nichts', () => {
+  const src = haus([gas(), hausstrom(), abzug('ab', 20000, 'bs'), gas(500000, '2026-01'), betrieb('bs', 20000, {}, '2026-01')])
+  for (const year of [2025, 2026]) {
+    const r = tax(src, year)
+    const z = line(r, year) ?? assert.fail(`keine Zeile ${year}`)
+    assert.equal(z.description, 'Betriebsstrom der Heizung, Ausgleich')
+    assert.equal(r.operatingPowerBalanceKind, 'otherYear')
+    const t = texts(r, year)
+    assert.doesNotMatch(t, /ohne Verweis|selbst|Prüfen Sie/, t)
+    assert.match(t, /in verschiedenen Steuerjahren/, t)
+  }
+  assert.match(texts(tax(src, 2025)), /„Abzug ab“ 200,00 €, verknüpft mit der Heizposition „Betriebsstrom bs“ in einem anderen Steuerjahr/)
+  assert.match(texts(tax(src, 2026), 2026), /„Betriebsstrom bs“ 200,00 €, steckt auch in der Stromrechnung; ihr Abzug steht in einem anderen Steuerjahr/)
+})
+
+test('S1: V11 (verknüpfter Abzug 200 über der Heizposition 100) unterstellt kein Selbsttragen, sagt aber „prüfen“', () => {
+  const r = tax(haus([gas(), betrieb('bs', 10000), hausstrom(), abzug('ab', 20000, 'bs')]))
+  assert.equal(r.operatingPowerBalanceKind, 'mismatch')
+  assert.equal(line(r)?.description, 'Betriebsstrom der Heizung, Ausgleich')
+  const t = texts(r)
+  assert.doesNotMatch(t, /selbst/, t)
+  assert.match(t, /Prüfen Sie in der Abrechnung, ob der Abzug beim Allgemeinstrom zum Betriebsstrom passt\./)
+})
+
+test('S1: Abzug ohne Verweis (V1) und Paar plus freier Abzug (V6) heißen „selbst getragen“; K1: kein „-0,00“', () => {
+  for (const src of [haus([gas(), hausstrom(), abzug('ab', 20000)]), haus([gas(), betrieb('bs', 12000), hausstrom(), abzug('ab1', 12000, 'bs'), abzug('ab2', 8000)])]) {
+    const r = tax(src)
+    assert.equal(r.operatingPowerBalanceKind, 'kept')
+    assert.equal(line(r)?.description, 'Betriebsstrom der Heizung, selbst getragen')
+    const t = texts(r)
+    assert.match(t, /tragen ihn selbst/)
+    assert.doesNotMatch(t, /-0,00|−0,00|Prüfen Sie/, t)
+  }
+})
+
+test('S1: freier Abzug neben einem Paar über zwei Steuerjahre: gemischt, ohne „prüfen“', () => {
+  const src = haus([gas(), hausstrom(), abzug('frei', 5000), abzug('ab', 20000, 'bs'), gas(500000, '2026-01'), betrieb('bs', 20000, {}, '2026-01')])
+  const r = tax(src)
+  assert.equal(r.operatingPowerBalanceKind, 'mixed')
+  assert.equal(line(r)?.amountCents, 25000)
+  assert.equal(line(r)?.description, 'Betriebsstrom der Heizung, Ausgleich')
+  assert.doesNotMatch(texts(r), /Prüfen Sie/)
 })

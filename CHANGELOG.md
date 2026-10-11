@@ -327,7 +327,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   ([#268](https://github.com/speedone/mietfuchs/issues/268)): Ein Abzug, den Sie nicht umlegen und selbst
   tragen, mindert nur die Abrechnung an die Mieter, und Betriebsstrom, der zugleich in den Heizkosten steht,
   zählt nicht doppelt. Die Übersicht zeigt dafür die Zeile „Betriebsstrom der Heizung“ beim Allgemeinstrom,
-  bei Eigennutzung mit dem privaten Teil nach Ihrem Eigenanteil an den Heizkosten (eine Auslegung), und
+  bei Eigennutzung mit dem privaten Teil nach Ihrem Eigenanteil an den Heizkosten der verknüpften Anlage, bei einem
+  Abzug ohne Verweis nach der Fläche des ganzen Gebäudes (beides eine Auslegung), und
   auch das ZIP „Belege für die Steuer“ führt sie. Im Kostenformular heißt der Abzug ohne Verweis ohne
   Messdienst „Ja, ich lege ihn nicht um und trage ihn selbst“. Stehen Abzug und Betriebsstrom in verschiedenen
   Steuerjahren, verschiebt sich in der Anlage V nichts mehr; jedes Jahr zeigt die in ihm bezahlten Rechnungen. Der

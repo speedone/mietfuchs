@@ -1129,7 +1129,7 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
     for (const c of [...p.snapshot.costItems, ...(p.snapshot.heatingParts ?? []).flatMap((x) => x.items), ...p.items]) lookup.set(c.id, c)
   }
   const balanceParts = used.map((p) => ({ items: p.items, plants: p.snapshot.heatingPlants ?? [], period: p.snapshot.period }))
-  const balance = operatingPowerBalance(balanceParts, (id) => lookup.get(id))
+  const balance = operatingPowerBalance(balanceParts, [...lookup.values()])
   const balanceItem = balance.cents !== 0 ? operatingPowerBalanceItem(balance, used, splits, snapshot.units, year) : null
   if (balanceItem) split.items.set(balanceItem.costItemId, balanceItem)
   const ambiguous = balance.ambiguous
@@ -1281,7 +1281,7 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
     selfOccupiedExists,
     excludedExists,
     costModels,
-    ...(balance.cents !== 0 ? { operatingPowerBalanceCents: balance.cents } : {}),
+    ...(balance.cents !== 0 ? { operatingPowerBalanceCents: balance.cents, operatingPowerBalanceKind: balance.kind } : {}),
     ...(ambiguous.length > 0 ? { operatingPowerAmbiguous: ambiguous } : {}),
     ...(unmarked.length > 0 ? { unmarkedPowerCredits: unmarked } : {}),
     selfUsedShareCents,
@@ -1565,8 +1565,8 @@ function splitForTax(snapshot: Snapshot, items: SnapshotCostItem[], settlement: 
 // Die Zeile zum Ausgleich C (server/src/operatingPower.ts). **Der private Teil folgt dem Heizanteil** (R-4): Jeder
 // Beitrag zu C wird mit dem Eigenanteil an den Heizkosten seiner Anlage in der Abrechnung seines Teils gewichtet, so
 // wie diese Steuerübersicht die Heizpositionen dieser Anlage aufteilt (bei abgeschlossener Abrechnung also aus dem
-// eingefrorenen Stand). Dann ergibt „selbst getragen“ steuerlich dasselbe wie „richtig gepaart“, und Abrechnung und
-// Steuer nennen denselben Eigenanteil. Lässt sich keine Anlage zuordnen (Abzug ohne Verweis) oder hat die Anlage dort
+// eingefrorenen Stand). Dann ergibt ein verknüpfter Abzug über dem Betriebsstrom steuerlich dasselbe wie das richtige
+// Paar, und Abrechnung und Steuer nennen denselben Eigenanteil; beim Abzug ohne Verweis gilt die Fläche (unten). Lässt sich keine Anlage zuordnen (Abzug ohne Verweis) oder hat die Anlage dort
 // keine Heizkosten, gilt die Wohn- und Nutzfläche des ganzen Gebäudes (BFH, Urteil vom 24.06.2008, IX R 26/06), wie
 // bei einer nicht umlagefähigen Gebäudeposition. Beides ist eine Auslegung von Mietfuchs: Für den Maßstab gibt es keine
 // Norm, die Abgrenzung zum Privaten folgt aus § 9 Abs. 1 Satz 1 und § 12 Nr. 1 EStG. Gerundet wird einmal, über die
@@ -1605,24 +1605,31 @@ function operatingPowerBalanceItem(
   const steps: CalcStep[] = []
   const deductions = balance.sources.filter((s) => s.kind === 'deduction')
   const included = balance.sources.filter((s) => s.kind === 'included')
+  // Durchsicht S1: Die Texte folgen der Lage. „Selbst getragen“ nur beim Abzug ohne Verweis, „prüfen“ nur, wenn Abzug
+  // und Betriebsstrom im selben Steuerjahr verschieden hoch sind; ein Paar über zwei Steuerjahre ist richtig erfasst.
   for (const s of deductions) {
-    steps.push({ label: 'Abzug beim Allgemeinstrom', value: `„${s.description}“ ${fmtCents(s.cents)}, ${s.linkedDescription !== null ? `verknüpft mit der Heizposition „${s.linkedDescription}“` : 'ohne Verweis auf eine Heizposition und ohne Messdienst'}`, term: 'operatingPower' })
+    const how = s.situation === 'kept' ? 'ohne Verweis auf eine Heizposition und ohne Messdienst'
+      : `verknüpft mit der Heizposition „${s.linkedDescription ?? ''}“${s.situation === 'otherYear' ? ' in einem anderen Steuerjahr' : ''}`
+    steps.push({ label: 'Abzug beim Allgemeinstrom', value: `„${s.description}“ ${fmtCents(s.cents)}, ${how}`, term: 'operatingPower' })
   }
   for (const s of included) {
-    steps.push({ label: 'Betriebsstrom in den Heizkosten', value: `„${s.description}“ ${fmtCents(-s.cents)}, steckt auch in der Stromrechnung`, term: 'operatingPower' })
+    steps.push({ label: 'Betriebsstrom in den Heizkosten', value: `„${s.description}“ ${fmtCents(0 - s.cents)}, steckt auch in der Stromrechnung${s.situation === 'otherYear' ? '; ihr Abzug steht in einem anderen Steuerjahr' : ''}`, term: 'operatingPower' })
   }
   for (const r of balance.reported) {
-    steps.push({ label: 'Abzug, dem Messdienst gemeldet', value: `„${r.description}“ ${fmtCents(-r.amountCents)}, zählt hier nicht: Nach Ihrer Angabe steckt der Betrag in den Kosten des Messdienstes` })
+    steps.push({ label: 'Abzug, dem Messdienst gemeldet', value: `„${r.description}“ ${fmtCents(0 - r.amountCents)}, zählt hier nicht: Nach Ihrer Angabe steckt der Betrag in den Kosten des Messdienstes` })
   }
   const deducted = deductions.reduce((a, s) => a + s.cents, 0)
-  const inHeating = -included.reduce((a, s) => a + s.cents, 0)
+  // K1 der Durchsicht: `0 - …`, damit ohne Heizposition „0,00 €“ steht und nicht „-0,00 €“.
+  const inHeating = included.reduce((a, s) => a - s.cents, 0)
   steps.push({ label: 'Ausgleich', value: `${fmtCents(deducted)} abgezogen − ${fmtCents(inHeating)} in den Heizkosten = ${fmtCents(cents)}` })
-  steps.push({
-    label: 'Hinweis',
-    value: cents > 0
-      ? 'Beim Allgemeinstrom ist mehr Betriebsstrom abgezogen, als in den Heizkosten steht. Diesen Teil legen Sie nicht um und tragen ihn selbst. Bezahlt haben Sie ihn mit der Stromrechnung; er gehört deshalb zu den Werbungskosten (§ 9 Abs. 1 Satz 1, § 11 Abs. 2 Satz 1 EStG). Der Abzug mindert nur die Abrechnung an die Mieter.'
-      : 'In den Heizkosten steht mehr Betriebsstrom, als beim Allgemeinstrom abgezogen ist. Diesen Teil enthält auch die Stromrechnung, bezahlt haben Sie ihn aber nur einmal; Mietfuchs zählt die Stromrechnung deshalb nur einmal zu den Werbungskosten (§ 9 Abs. 1 Satz 1 EStG). Prüfen Sie in der Abrechnung, ob der Abzug beim Allgemeinstrom zum Betriebsstrom passt.',
-  })
+  const once = 'Bezahlt haben Sie die Stromrechnung einmal; Mietfuchs zählt sie deshalb genau einmal zu den Werbungskosten (§ 9 Abs. 1 Satz 1 EStG).'
+  const hint: Record<OperatingPowerBalance['kind'], string> = {
+    kept: 'Beim Allgemeinstrom ist Betriebsstrom abgezogen, ohne dass er in den Heizkosten steht. Diesen Teil legen Sie nicht um und tragen ihn selbst. Bezahlt haben Sie ihn mit der Stromrechnung; er gehört deshalb zu den Werbungskosten (§ 9 Abs. 1 Satz 1, § 11 Abs. 2 Satz 1 EStG). Der Abzug mindert nur die Abrechnung an die Mieter.',
+    otherYear: `Abzug beim Allgemeinstrom und Betriebsstrom in den Heizkosten stehen in verschiedenen Steuerjahren. Der Ausgleich hebt in jedem Jahr auf, was zum anderen gehört, sodass jedes Jahr die in ihm bezahlte Stromrechnung zählt. ${once}`,
+    mixed: `Ein Teil ist Betriebsstrom, den Sie nicht umlegen und selbst tragen (Abzug ohne Verweis); ein Teil gehört zu Abzug und Betriebsstrom in verschiedenen Steuerjahren. ${once}`,
+    mismatch: `Abzug beim Allgemeinstrom und Betriebsstrom in den Heizkosten sind in diesem Steuerjahr verschieden hoch. ${once} Prüfen Sie in der Abrechnung, ob der Abzug beim Allgemeinstrom zum Betriebsstrom passt.`,
+  }
+  steps.push({ label: 'Hinweis', value: hint[balance.kind] })
 
   // Der private Teil, Beitrag für Beitrag.
   let raw = 0
@@ -1670,7 +1677,8 @@ function operatingPowerBalanceItem(
     costItemId: balanceLineId(year),
     category: GENERAL_POWER_CATEGORY,
     group: groupOf(GENERAL_POWER_CATEGORY) ?? 'Sonstige Werbungskosten',
-    description: cents > 0 ? 'Betriebsstrom der Heizung, selbst getragen' : 'Betriebsstrom der Heizung, Ausgleich zur Heizposition',
+    // Durchsicht S1: „selbst getragen“ nur, wenn es das ist; sonst neutral.
+    description: balance.kind === 'kept' ? 'Betriebsstrom der Heizung, selbst getragen' : 'Betriebsstrom der Heizung, Ausgleich',
     amountCents: cents,
     privateCents,
     deductibleCents,

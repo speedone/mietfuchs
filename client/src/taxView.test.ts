@@ -303,19 +303,38 @@ describe('Betriebsstrom der Heizung (#268)', () => {
     expect(taxHints(tax({ operatingPowerBalanceCents: -10000 }), 'ist')).toContain('operatingPowerBalance')
     expect(taxHints(tax({}), 'ist')).not.toContain('operatingPowerBalance')
   })
-  it('selbst getragen: Betrag, Fundstellen und die Zeile; mit Eigennutzung der Satz zur Auslegung', () => {
-    const text = operatingPowerBalanceText(tax({ operatingPowerBalanceCents: 20000 }))
-    expect(text).toContain(`Beim Allgemeinstrom ist mehr Betriebsstrom der Heizung abgezogen, als in den Heizkosten steht (${fmtEuro(20000)}).`)
+  it('selbst getragen (kept): Betrag, Fundstellen und die Zeile; mit Eigennutzung der Satz zur Auslegung', () => {
+    const text = operatingPowerBalanceText(tax({ operatingPowerBalanceCents: 20000, operatingPowerBalanceKind: 'kept' }))
+    expect(text).toContain(`Beim Allgemeinstrom ist Betriebsstrom der Heizung abgezogen, ohne dass er in den Heizkosten steht (${fmtEuro(20000)}).`)
     expect(text).toContain('§ 9 Abs. 1 Satz 1, § 11 Abs. 2 Satz 1 EStG')
     expect(text).toContain('„Betriebsstrom der Heizung, selbst getragen“')
     expect(text).not.toContain('Auslegung')
-    expect(operatingPowerBalanceText(tax({ operatingPowerBalanceCents: 20000, selfOccupiedExists: true }))).toContain('beides ist eine Auslegung')
+    expect(text).not.toContain('Prüfen Sie')
+    expect(operatingPowerBalanceText(tax({ operatingPowerBalanceCents: 20000, operatingPowerBalanceKind: 'kept', selfOccupiedExists: true }))).toContain('beides ist eine Auslegung')
   })
-  it('Ausgleich zur Heizposition: die Stromrechnung zählt nur einmal', () => {
-    const text = operatingPowerBalanceText(tax({ operatingPowerBalanceCents: -10000 }))
-    expect(text).toContain(`In den Heizkosten steht mehr Betriebsstrom der Heizung, als beim Allgemeinstrom abgezogen ist (${fmtEuro(10000)}).`)
-    expect(text).toContain('„Betriebsstrom der Heizung, Ausgleich zur Heizposition“')
+  // Durchsicht S1: Ein Paar über zwei Steuerjahre ist richtig erfasst; kein „selbst“, kein „prüfen“, in beiden Richtungen.
+  it('verschiedene Steuerjahre (otherYear): neutral, nichts zu tun', () => {
+    for (const c of [20000, -20000]) {
+      const text = operatingPowerBalanceText(tax({ operatingPowerBalanceCents: c, operatingPowerBalanceKind: 'otherYear' })) ?? ''
+      expect(text).toContain(`Abzug beim Allgemeinstrom und Betriebsstrom in den Heizkosten stehen in verschiedenen Steuerjahren (Ausgleich in diesem Jahr ${fmtEuro(c)}).`)
+      expect(text).toContain('„Betriebsstrom der Heizung, Ausgleich“')
+      expect(text).toContain('Zu tun ist nichts.')
+      expect(text).not.toMatch(/selbst|Prüfen Sie/)
+    }
+  })
+  it('im selben Jahr verschieden hoch (mismatch): ohne Unterstellung, mit „prüfen“', () => {
+    const text = operatingPowerBalanceText(tax({ operatingPowerBalanceCents: -10000, operatingPowerBalanceKind: 'mismatch' })) ?? ''
+    expect(text).toContain(`Abzug beim Allgemeinstrom und Betriebsstrom in den Heizkosten sind in diesem Steuerjahr verschieden hoch (Ausgleich ${fmtEuro(-10000)}).`)
+    expect(text).toContain('„Betriebsstrom der Heizung, Ausgleich“')
+    expect(text).toContain('Prüfen Sie in der Abrechnung, ob der Abzug beim Allgemeinstrom zum Betriebsstrom passt.')
+    expect(text).not.toMatch(/selbst/)
     expect(operatingPowerBalanceText(tax({}))).toBeNull()
+  })
+  it('gemischt (mixed): beides benannt, ohne „prüfen“', () => {
+    const text = operatingPowerBalanceText(tax({ operatingPowerBalanceCents: 25000, operatingPowerBalanceKind: 'mixed' })) ?? ''
+    expect(text).toContain('Abzug ohne Verweis')
+    expect(text).toContain('in verschiedenen Steuerjahren')
+    expect(text).not.toContain('Prüfen Sie')
   })
   it('nicht eindeutig (R-6) und negativer Allgemeinstrom ohne Kennzeichnung', () => {
     const note = [{ costItemId: 'ab', description: 'Abzug Heizung', amountCents: -20000 }]

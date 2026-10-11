@@ -2341,8 +2341,12 @@ die ganze fachliche Komplexität:
   abgeleitete Zeile `operating-power-balance:<Jahr>` beim Allgemeinstrom dazu
   (`TaxExpenseItem.operatingPowerBalance`). Damit ist der Strom in jedem Jahr die bezahlte Rechnung,
   auch wenn Abzug und Betriebsstrom in verschiedenen Steuerjahren stehen (deshalb entfielen der Hinweis
-  `heating.operating-power-tax-year` und der Satz zur Verschiebung in der Vorschau des Zeitraumwechsels; mit
-  Eigennutzung bleibt der private Teil des Paars im Jahr des Abzugs, die Summe je Jahr wie beim Paar im selben Jahr);
+  `heating.operating-power-tax-year` und der Satz zur Verschiebung in der Vorschau des Zeitraumwechsels). Mit
+  Eigennutzung ergibt ein verknüpftes Paar über zwei Steuerjahre je Jahr dieselben Zahlen wie das Paar im selben Jahr,
+  sofern die Anlage im Jahr des Abzugs Heizkosten hat (sonst gilt dort die Fläche); dafür löst `taxReportFor` den
+  Verweis über alle Positionen des Objekts auf (`linkable`), denn der Schnappschuss kennt nur sein Jahr (Durchsicht M1).
+  Zeilenname und Texte folgen der Lage (`operatingPowerBalanceKind`): „selbst getragen“ nur beim Abzug ohne Verweis,
+  „prüfen“ nur, wenn Abzug und Betriebsstrom im selben Steuerjahr verschieden hoch sind;
   eine Sonderregel für
   Verweise über Jahre gibt es bewusst nicht (eine Klemme bei 0 und „anderes Jahr neutral“ waren
   beide nachgemessen falsch). Ausgenommen sind Abzüge **ohne Verweis**, wenn eine Anlage mit
@@ -2355,8 +2359,9 @@ die ganze fachliche Komplexität:
   nicht um und trage ihn selbst“ (`OPERATING_POWER_KEPT`). **Der private Teil folgt dem
   Heizanteil**: jeder Beitrag zu C mal Eigenanteil an den Heizkosten seiner Anlage in der Abrechnung
   seines Teils, so wie die Übersicht diese Heizpositionen aufteilt (bei abgeschlossener Abrechnung
-  also eingefroren); dann ergibt „selbst getragen“ dasselbe wie „richtig gepaart“. Ohne zuordenbare
-  Anlage (Abzug ohne Verweis) gilt die Fläche des ganzen Gebäudes (BFH IX R 26/06). Beides ist
+  also eingefroren); dann ergibt ein verknüpfter Abzug über dem Betriebsstrom dasselbe wie das richtige Paar. Ohne
+  zuordenbare Anlage (Abzug ohne Verweis) gilt die Fläche des ganzen Gebäudes (BFH IX R 26/06); das kann vom Paar
+  abweichen, etwa wenn die Anlage die eigene Wohnung gar nicht heizt. Beides ist
   Auslegung und steht so im Rechenweg und auf der Seite. Die Zeile geht nicht durch den eingefrorenen
   Stand (`closedItemsChanged` bleibt), nicht in `selfUsedShareCents` und steht im Steuer-ZIP ohne
   eigenen Beleg. Negativer Allgemeinstrom **ohne** Kennzeichnung bleibt, wie er ist (Gutschrift und
