@@ -130,6 +130,9 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // Angabe an der Heizanlage, wie der Betriebsstrom erfasst ist (#266).
   '0041_betriebsstrom_angabe': '94e4d24d44f0e495635b97cada6b1aaca11c08e8a81a493172f40fd701aae751',
   '0042_betriebsstrom_angabe_bedingungen': '8135925667a0a3c6c12c40ba421dbc9d5447f8ab376ba6927363c9253b4e4d22',
+  // Heizung PR 16 (#213): Wärmelieferung, Contracting und Angaben zur Umstellung.
+  '0043_waermelieferung': 'eeeff16072c8d2a0aae9e91b524eeb9d2eab80bc0f613e56d229f0fb955bdb64',
+  '0044_waermelieferung_bedingungen': 'ddf0ba665f5ea0ec4d6d08ae5019aab806ed09e2a6e5cb10b1eca73500878faa',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

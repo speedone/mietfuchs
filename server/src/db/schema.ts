@@ -47,6 +47,7 @@ import type {
   HeatingPart,
   OperatingPower,
   OperatingPowerHandling,
+  PreviousSupply,
   HeatingRole,
   HeatingSource,
   HeatingSupply,
@@ -90,6 +91,8 @@ export const HEATING_PARTS = exactly<HeatingPart>()(['fuel', 'operating', 'meter
 export const OPERATING_POWER = exactly<OperatingPower>()(['included', 'deduction'] as const)
 // Wie der Betriebsstrom einer Heizanlage erfasst ist (#266); Beschriftungen in shared/operatingPower.ts.
 export const OPERATING_POWER_HANDLINGS = exactly<OperatingPowerHandling>()(['ownMeter', 'deducted', 'landlordPays'] as const)
+// Wer vor der Umstellung auf Wärmelieferung versorgte (Heizung PR 16, #213).
+export const PREVIOUS_SUPPLIES = exactly<PreviousSupply>()(['landlord', 'tenant'] as const)
 export const DEPOSIT_STATUS = exactly<DepositStatus>()(['offen', 'erhalten', 'teilweise', 'zurückgezahlt'] as const)
 const AI_PROVIDERS = exactly<AiProviderKind>()(['ollama', 'openai'] as const)
 const AI_JSON_MODES = exactly<AiJsonMode>()(['auto', 'schema', 'object', 'prompt'] as const)
@@ -449,6 +452,12 @@ export const heatingPlants = sqliteTable(
     // Wie der Betriebsstrom erfasst ist (#266); NULL heißt keine Angabe, der Hinweis verhält sich dann wie zuvor.
     // Die Bedingung kommt im zweiten Schritt (README der Migrationen).
     operatingPowerHandling: text('operating_power_handling', { enum: OPERATING_POWER_HANDLINGS }),
+    // Wärmelieferung (Heizung PR 16, #213): Contracting, Tag der Umstellung, wer vorher versorgte, Zugang der
+    // Umstellungsankündigung. Die Bedingungen kommen im zweiten Schritt (README der Migrationen).
+    contracting: integer('contracting', { mode: 'boolean' }).notNull().default(false),
+    heatDeliverySince: text('heat_delivery_since'),
+    previousSupply: text('previous_supply', { enum: PREVIOUS_SUPPLIES }),
+    switchAnnouncedOn: text('switch_announced_on'),
   },
   () => [
     oneOf('heating_plants_energy_known', 'energy', HEATING_ENERGIES),
@@ -478,6 +487,16 @@ export const heatingPlants = sqliteTable(
     oneOf('heating_plants_heat_pump_majority_known', 'heat_pump_majority', HEAT_PUMP_MAJORITIES),
     // Angabe zum Betriebsstrom (#266).
     oneOf('heating_plants_operating_power_handling_known', 'operating_power_handling', OPERATING_POWER_HANDLINGS),
+    // Wärmelieferung (Heizung PR 16, #213): Contracting nicht bei Fernwärme (sie ist ohne Merkmal
+    // Wärmelieferung), nur zentral; Angaben zur Umstellung nur bei Fernwärme oder Contracting; eine Ankündigung
+    // nur mit Tag der Umstellung.
+    check('heating_plants_contracting_energy_valid', sql.raw(`"contracting" = 0 OR "energy" <> 'districtHeating'`)),
+    check('heating_plants_contracting_central_valid', sql.raw(`"contracting" = 0 OR "supply" = 'central'`)),
+    check('heating_plants_delivery_only_valid', sql.raw(`("heat_delivery_since" IS NULL AND "previous_supply" IS NULL AND "switch_announced_on" IS NULL) OR "contracting" = 1 OR "energy" = 'districtHeating'`)),
+    check('heating_plants_delivery_since_valid', sql.raw(`"heat_delivery_since" IS NULL OR "heat_delivery_since" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`)),
+    check('heating_plants_announced_valid', sql.raw(`"switch_announced_on" IS NULL OR "switch_announced_on" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`)),
+    oneOf('heating_plants_previous_supply_known', 'previous_supply', PREVIOUS_SUPPLIES),
+    check('heating_plants_announced_since_valid', sql.raw('"switch_announced_on" IS NULL OR "heat_delivery_since" IS NOT NULL')),
   ],
 )
 

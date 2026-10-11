@@ -42,6 +42,7 @@ import { CALENDAR_RULES, calendarPeriod, paymentYear, formatDayRange, isCalendar
 import { heatingPeriodsEndingIn, isObjectPeriod, plantRules, plantSpan, servesUnit, spanOf } from '../../../shared/heatingPeriod.ts'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 import { euro as operatingPowerEuro, GENERAL_POWER_CATEGORY, POWER_GENERATED } from '../../../shared/operatingPower.ts'
+import { billingEnergy } from '../../../shared/heatDelivery.ts'
 import { targetProblem } from '../heating.ts'
 import { andList } from '../../../shared/wording.ts'
 import type { MigratedSettings } from '../ai/settings.ts'
@@ -538,7 +539,7 @@ async function isPeriodClosed(db: Executor, propertyId: string, period: CostItem
 
 // Ist der Zeitraum einer Position abgeschlossen? Bei einer Heizposition mit eigener Heizperiode
 // (Heizung PR 5): ihre Heizkostenabrechnung (Weg d) oder die Abrechnung, in der ihre Heizperiode endet.
-export async function itemPeriodClosed(db: Executor, c: CostItem): Promise<boolean> {
+export async function itemPeriodClosed(db: Executor, c: Pick<CostItem, 'heatingPlantId' | 'propertyId' | 'period'>): Promise<boolean> {
   const heating = c.heatingPlantId ? await heatingRulesOf(db, c.heatingPlantId) : null
   if (!heating?.own || !c.heatingPlantId) return isPeriodClosed(db, c.propertyId, c.period)
   const h = periodOfKey(heating.rules, c.period)
@@ -1182,8 +1183,9 @@ async function guardOperatingPower(db: Executor, before: CostItem | null, after:
     if (after.heatingPart === 'fuel') {
       // R-W2 (Durchsicht von #252): Strom zur Wärmeerzeugung über den Hauszähler gibt es nur bei einer
       // Anlage, die mit Strom heizt.
-      const [p] = after.heatingPlantId ? await db.select({ energy: heatingPlants.energy }).from(heatingPlants).where(eq(heatingPlants.id, after.heatingPlantId)) : []
-      if (!p || !POWER_GENERATED.includes(p.energy)) {
+      // Heizung PR 16: bei Contracting nach der Energie der Abrechnung; den Strom zur Wärmeerzeugung bezahlt dann der Lieferant.
+      const [p] = after.heatingPlantId ? await db.select({ energy: heatingPlants.energy, contracting: heatingPlants.contracting }).from(heatingPlants).where(eq(heatingPlants.id, after.heatingPlantId)) : []
+      if (!p || !POWER_GENERATED.includes(billingEnergy(p))) {
         throw new HeatingError(400, `„${after.description}“ ist Brennstoff/Energie einer Anlage, die nicht mit Strom heizt; „steckt auch im Allgemeinstrom“ gibt es beim Teil „Brennstoff/Energie“ nur für den Strom einer Wärmepumpe oder Stromheizung.`)
       }
     } else if (after.heatingPart !== undefined && after.heatingPart !== 'operating') {

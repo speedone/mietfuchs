@@ -1,6 +1,6 @@
 // Die Einrichtung „Heizung“ (Heizung PR 4, Entwurf 11.2), ohne DOM.
 import { describe, expect, test } from 'vitest'
-import { asksGeneration, asksNewInstall, asksTakeOver, buildingOptions, canSwap, connectionNote, emptyHeatingForm, emptySwapForm, formulaFormOf, HEAT_GENERATION_OPTIONS, HOT_WATER_OPTIONS, hotWaterBody, isFormula, parseDecimal, SELF_HOT_WATER_OPTIONS, selfFormulaBody, PER_UNIT_ENERGY_OPTIONS, plantOptions, swapBody, swapMetersOf, unmeasurableLabel, heatingPlantBody, heatingSummary, heatingToForm, whoHint, whoOptions, type HeatingForm } from './heatingForm'
+import { asksContracting, asksSwitch, contractingSwap, energyLabelOf, HOW_TO_TELL, PREVIOUS_SUPPLY_OPTIONS, asksGeneration, asksNewInstall, asksTakeOver, buildingOptions, canSwap, connectionNote, emptyHeatingForm, emptySwapForm, formulaFormOf, HEAT_GENERATION_OPTIONS, HOT_WATER_OPTIONS, hotWaterBody, isFormula, parseDecimal, SELF_HOT_WATER_OPTIONS, selfFormulaBody, PER_UNIT_ENERGY_OPTIONS, plantOptions, swapBody, swapMetersOf, unmeasurableLabel, heatingPlantBody, heatingSummary, heatingToForm, whoHint, whoOptions, type HeatingForm } from './heatingForm'
 import type { HeatingPlant, Unit } from './types'
 
 const UNITS: Pick<Unit, 'id' | 'name' | 'noConnection'>[] = [{ id: 'eg', name: 'EG' }, { id: 'og', name: 'OG' }, { id: 'garage', name: 'Garage', noConnection: ['waerme'] }]
@@ -9,7 +9,7 @@ const PLANT: HeatingPlant = {
   id: 'hp1', propertyId: 'objekt-1', name: '', energy: 'heatPump', supply: 'central', method: 'service', separateSettlement: null,
   devicesRemote: 'partial', devicesInstalledAfter2021: 'some', source: 'building', captureInstalledOn: '2025-06-01', capturedOnOct2024: false,
   warmRentAverageCents: 123456, changeSplit: 'degreeDays', periodStartMonth: null, periodChanges: [], separateSpans: [], units: [{ unitId: 'og', heatedAreaM2: null }],
-  newDevicesInstall: 'single', nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null, hotWater: 'combined', capture: null, areaBasisHeat: 'area', heatPumpInstalledOn: null, heatGeneration: null, heatPumpMajority: null, hcaModel: null, operatingPowerHandling: null,
+  newDevicesInstall: 'single', nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null, hotWater: 'combined', capture: null, areaBasisHeat: 'area', heatPumpInstalledOn: null, heatGeneration: null, heatPumpMajority: null, hcaModel: null, operatingPowerHandling: null, contracting: false, heatDeliverySince: null, previousSupply: null, switchAnnouncedOn: null,
 }
 
 describe('Einrichtung Heizung', () => {
@@ -19,6 +19,7 @@ describe('Einrichtung Heizung', () => {
       body: {
         energy: 'gas', supply: 'central', method: 'service', source: 'building', devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown',
         capturedOnOct2024: null, captureInstalledOn: null, warmRentAverageCents: null, heatPumpInstalledOn: null, units: null, newDevicesInstall: null, name: '', buildingWith: null,
+        contracting: false, heatDeliverySince: null, previousSupply: null, switchAnnouncedOn: null,
       },
       adjust: [],
       setUpSelf: false,
@@ -232,6 +233,8 @@ describe('Kessel getauscht (Heizung PR 9)', () => {
     const f = { ...emptySwapForm(OEL), date: '2025-07-01', energy: 'oil' as const }
     expect(asksTakeOver(f, OEL)).toBe(true)
     expect(asksTakeOver({ energy: 'gas' }, OEL)).toBe(false)
+    // Heizung PR 16: Öl → Öl mit Contracting ist Wärmelieferung; den Vorrat führt der Lieferant.
+    expect(asksTakeOver({ energy: 'oil', contracting: true }, OEL)).toBe(false)
     expect(swapBody(f, OEL)).toEqual({ body: { date: '2025-07-01', energy: 'oil', name: '', previousName: '', takesOverStock: true } })
     expect(swapBody({ ...f, takesOverStock: 'no' }, OEL)).toMatchObject({ body: { takesOverStock: false } })
   })
@@ -299,4 +302,80 @@ test('Nachprüfung #240, W1: Volumen „60.125“ ist mehrdeutig und wird nachge
   expect(selfFormulaBody('volumeFormula', { volume: '60.125', temp: '60' })).toEqual({ error: 'Volumen des Warmwassers: Meinen Sie 60,125 oder 60125? Bitte schreiben Sie Nachkommastellen mit Komma (60,125) und Tausender ohne Punkt (60125).' })
   expect(selfFormulaBody('volumeFormula', { volume: '1.200,5', temp: '60' })).toEqual({ body: { dhwVolumeM3: 1200.5, dhwTempC: 60 } })
   expect(selfFormulaBody('volumeFormula', { volume: '1.234.567', temp: '60' })).toEqual({ body: { dhwVolumeM3: 1234567, dhwTempC: 60 } })
+})
+
+// ---------- Wärmelieferung (Heizung PR 16, #213) ----------
+
+describe('Wärmelieferung (Heizung PR 16)', () => {
+  test('Contracting bei jeder zentralen Anlage außer Fernwärme, auch bei der Wärmepumpe (Prüfung R-M4); Umstellung bei Contracting oder Fernwärme', () => {
+    expect(asksContracting('gas')).toBe(true)
+    expect(asksContracting('pellets')).toBe(true)
+    expect(asksContracting('heatPump')).toBe(true)
+    expect(asksContracting('districtHeating')).toBe(false)
+    expect(asksContracting('perUnit')).toBe(false)
+    expect(asksContracting('')).toBe(false)
+    expect(asksSwitch(ausgefuellt({ energy: 'districtHeating' }))).toBe(true)
+    expect(asksSwitch(ausgefuellt({ energy: 'gas', contracting: false }))).toBe(false)
+    expect(asksSwitch(ausgefuellt({ energy: 'gas', contracting: true }))).toBe(true)
+    expect(asksSwitch(ausgefuellt({ energy: 'perUnit', contracting: true }))).toBe(false)
+  })
+
+  test('Rumpf: Angaben zur Umstellung nur, wo gefragt; Contracting fällt bei Fernwärme und Etagenheizung weg', () => {
+    const body = heatingPlantBody(ausgefuellt({ contracting: true, deliverySince: '2025-10-01', previousSupply: 'landlord', announcedOn: '2025-06-15' }), UNITS)
+    expect('body' in body && body.body).toMatchObject({ contracting: true, heatDeliverySince: '2025-10-01', previousSupply: 'landlord', switchAnnouncedOn: '2025-06-15' })
+    const pumpe = heatingPlantBody(ausgefuellt({ energy: 'heatPump', contracting: true }), UNITS)
+    expect('body' in pumpe && pumpe.body).toMatchObject({ energy: 'heatPump', contracting: true })
+    const fern = heatingPlantBody(ausgefuellt({ energy: 'districtHeating', contracting: true, deliverySince: '2025-10-01' }), UNITS)
+    expect('body' in fern && fern.body).toMatchObject({ contracting: false, heatDeliverySince: '2025-10-01' })
+    const ohne = heatingPlantBody(ausgefuellt({ energy: 'gas', contracting: false, deliverySince: '2025-10-01', previousSupply: 'tenant' }), UNITS)
+    expect('body' in ohne && ohne.body).toMatchObject({ contracting: false, heatDeliverySince: null, previousSupply: null, switchAnnouncedOn: null })
+    const etage = heatingPlantBody(ausgefuellt({ energy: 'perUnit', contract: 'landlord', perUnitEnergy: 'gas', ownMeters: true, contracting: true, deliverySince: '2025-10-01' }), UNITS)
+    expect('body' in etage && etage.body).toMatchObject({ supply: 'perUnit', contracting: false, heatDeliverySince: null })
+    expect(heatingPlantBody(ausgefuellt({ contracting: true, announcedOn: '2025-06-15' }), UNITS))
+      .toEqual({ error: 'Eine Ankündigung ohne Tag der Umstellung lässt sich nicht prüfen. Bitte tragen Sie den Tag der Umstellung ein oder leeren Sie beide.' })
+  })
+
+  test('Formular: gespeicherte Angaben kommen zurück', () => {
+    const f = heatingToForm({ ...PLANT, energy: 'gas', contracting: true, heatDeliverySince: '2025-10-01', previousSupply: 'tenant', switchAnnouncedOn: null }, UNITS)
+    expect([f.contracting, f.deliverySince, f.previousSupply, f.announcedOn]).toEqual([true, '2025-10-01', 'tenant', ''])
+  })
+
+  // Prüfung R-S2: maßgeblich ist der Vertrag; die Fälle ohne § 556c (Heizkosten in der Miete, schon vorher ein
+  // Lieferant) stehen beim neutralen Eintrag, dann ist der Text der Abrechnung bedingt.
+  test('Wer versorgte vorher? Beschriftungen nach der Prüfung', () => {
+    expect(PREVIOUS_SUPPLY_OPTIONS.map((o) => o.value)).toEqual(['', 'landlord', 'tenant'])
+    expect(PREVIOUS_SUPPLY_OPTIONS[1]?.label).toBe('Ich, mit einer eigenen Heizung; die Mieter zahlten die Heizkosten als Betriebskosten')
+    expect(PREVIOUS_SUPPLY_OPTIONS[0]?.label).toMatch(/Heizkosten in der Miete enthalten.*schon vorher ein Wärmelieferant/)
+  })
+
+  // Prüfung C-M5: Der alte Rat („Steht dort Wärmelieferung, wählen Sie Fernwärme, auch wenn im Keller ein Kessel steht“)
+  // widerspräche dem Merkmal.
+  test('Woran erkenne ich das? Contracting ist der Brennstoff des Kessels mit dem Häkchen', () => {
+    expect(HOW_TO_TELL.energy).toBe('Woran erkenne ich das? Am Brennstoff auf Ihrer Rechnung. Kommt die Wärme aus einem Wärmenetz, wählen Sie Fernwärme. Betreibt ein Lieferant den Kessel in Ihrem Haus und stellt Ihnen Wärme in Rechnung (Contracting), wählen Sie den Brennstoff des Kessels und setzen darunter das Häkchen „Ein Dritter betreibt die Heizung …“. Eine Wärmepumpe ist „Wärmepumpe“, nicht „Strom“; „Strom“ heißt Nachtspeicher- oder Elektroheizung.')
+  })
+
+  test('Beschriftung: Contracting nennt den Brennstoff', () => {
+    expect(energyLabelOf({ energy: 'districtHeating', contracting: true, fuelEnergy: 'gas' })).toBe('Wärmelieferung (Contracting, erzeugt mit Gas)')
+    expect(energyLabelOf({ energy: 'districtHeating', contracting: true, fuelEnergy: 'pellets' })).toBe('Wärmelieferung (Contracting, erzeugt mit Pellets)')
+    expect(energyLabelOf({ energy: 'districtHeating' })).toBe('Fernwärme')
+    expect(energyLabelOf({ energy: 'oil' })).toBe('Öl')
+    expect(heatingSummary({ ...PLANT, energy: 'gas', contracting: true }, UNITS)[0]).toBe('Energie: Wärmelieferung (Contracting, erzeugt mit Gas)')
+  })
+
+  // Prüfung C-M1: Die Umstellung in einem offenen Zeitraum geht über den Kesseltausch; der Tag des Tauschs ist als Tag
+  // der Umstellung vorgeschlagen, wenn die bisherige Anlage keine Wärmelieferung war.
+  test('Kesseltausch auf Contracting: Tag der Umstellung vorgeschlagen, Angaben im Rumpf', () => {
+    const OEL: HeatingPlant = { ...PLANT, energy: 'oil', method: 'manual', units: null }
+    const f = contractingSwap({ ...emptySwapForm(OEL), date: '2025-10-01', energy: 'oil' }, true, OEL)
+    expect([f.contracting, f.deliverySince]).toEqual([true, '2025-10-01'])
+    expect(asksTakeOver(f, OEL)).toBe(false)
+    expect(swapBody({ ...f, previousSupply: 'landlord' }, OEL)).toEqual({ body: { date: '2025-10-01', energy: 'oil', name: '', previousName: '', contracting: true, heatDeliverySince: '2025-10-01', previousSupply: 'landlord' } })
+    // War die bisherige schon Wärmelieferung, gibt es keinen Vorschlag.
+    const fern: HeatingPlant = { ...PLANT, energy: 'districtHeating', method: 'manual' }
+    expect(contractingSwap({ ...emptySwapForm(fern), date: '2025-10-01', energy: 'gas' }, true, fern).deliverySince).toBe('')
+    // Zurück zur eigenen Heizung: contracting false und keine Angaben.
+    const zurueck = swapBody(contractingSwap(f, false, OEL), OEL)
+    expect(zurueck).toMatchObject({ body: { contracting: false } })
+    expect('body' in zurueck && 'heatDeliverySince' in zurueck.body).toBe(false)
+  })
 })

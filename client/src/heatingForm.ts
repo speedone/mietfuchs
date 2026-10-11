@@ -6,8 +6,9 @@
 // Abrechnung, Heizung PR 10) steht in heatingSelfForm.ts: Wer „Ich selbst“ wählt, legt die Anlage hier
 // zunächst bei „Niemand“ an, und Schritt 7 stellt sie in einer Transaktion um (Abweichung 21 des Plans).
 // Nichts davon ändert eine Zahl der Abrechnung.
-import type { DevicesInstalledAfter, DevicesRemote, DhwMethod, HeatGeneration, HeatPumpMajority, HeatingEnergy, HeatingPeriodView, HeatingPlant, HeatingPlantUnit, Meter, NewDevicesInstall, PropertyKind, Unit } from './types'
+import type { DevicesInstalledAfter, DevicesRemote, DhwMethod, HeatGeneration, HeatPumpMajority, HeatingEnergy, HeatingPeriodView, HeatingPlant, HeatingPlantUnit, HeatingStatement, Meter, NewDevicesInstall, PreviousSupply, PropertyKind, Unit } from './types'
 import { isStockEnergy } from '../../shared/fuelStock.ts'
+import { billingEnergy, CONTRACTING_ENERGIES, isHeatDelivery } from '../../shared/heatDelivery.ts'
 import { parseEuro } from './api'
 import { hkvConsumptionShare, hkvCutNotByConsumption, hkvHeatPumpCapture, hkvRemoteReadingNewDevices, hkvRenewableExemption } from '../../shared/law/heizkostenv.ts'
 import { dayAfter, germanDate, LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
@@ -58,12 +59,18 @@ export type HeatingForm = {
   // Wärmepumpe, ob sie mehr als die Hälfte der Wärme des Gebäudes liefert. Keine Vorbelegung.
   generation: HeatGeneration | ''
   majority: HeatPumpMajority | ''
+  // Wärmelieferung (Heizung PR 16, #213): Contracting und die Angaben zur Umstellung während laufender Mietverhältnisse.
+  contracting: boolean
+  deliverySince: string
+  previousSupply: '' | PreviousSupply
+  announcedOn: string
 }
 
 // Was die Einrichtung schickt. Die übrigen Felder der Anlage behalten ihre Vorgabe.
 export type HeatingPlantBody = Pick<
   HeatingPlant,
   'energy' | 'supply' | 'method' | 'source' | 'devicesRemote' | 'devicesInstalledAfter2021' | 'capturedOnOct2024' | 'captureInstalledOn' | 'warmRentAverageCents' | 'units' | 'newDevicesInstall' | 'name' | 'buildingWith'
+  | 'contracting' | 'heatDeliverySince' | 'previousSupply' | 'switchAnnouncedOn'
 > & Partial<Pick<HeatingPlant, 'heatPumpInstalledOn' | 'heatGeneration' | 'heatPumpMajority'>> & { takesOverStock?: boolean }
 // Name und Wohnungen einer bisherigen Anlage, die mit dem Anlegen geändert werden (Heizung PR 9).
 export type AdjustRow = { id: string; name: string; units: HeatingPlantUnit[] }
@@ -181,7 +188,9 @@ const SELF_SUPPLY = 'Hat jeder Mieter einen eigenen Vertrag für seine Heizung, 
 // Der Satz unter der zweiten Frage.
 // „Woran erkenne ich das?“ je Frage der Einrichtung (Entwurf 11.2, Laienprobe B9).
 export const HOW_TO_TELL = {
-  energy: 'Woran erkenne ich das? Am Brennstoff auf Ihrer Rechnung. Steht dort „Wärmelieferung“ oder „Fernwärme“, wählen Sie Fernwärme, auch wenn im Keller ein Kessel steht. Eine Wärmepumpe ist „Wärmepumpe“, nicht „Strom“; „Strom“ heißt Nachtspeicher- oder Elektroheizung.',
+  // Heizung PR 16 (Prüfung C-M5): Contracting ist der Brennstoff des Kessels mit dem Häkchen. Bestände, die dem früheren
+  // Rat („Wärmelieferung: Fernwärme wählen“) gefolgt sind, bleiben Fernwärme und rechnen richtig, nur ohne Brennstoff.
+  energy: 'Woran erkenne ich das? Am Brennstoff auf Ihrer Rechnung. Kommt die Wärme aus einem Wärmenetz, wählen Sie Fernwärme. Betreibt ein Lieferant den Kessel in Ihrem Haus und stellt Ihnen Wärme in Rechnung (Contracting), wählen Sie den Brennstoff des Kessels und setzen darunter das Häkchen „Ein Dritter betreibt die Heizung …“. Eine Wärmepumpe ist „Wärmepumpe“, nicht „Strom“; „Strom“ heißt Nachtspeicher- oder Elektroheizung.',
   who: 'Woran erkenne ich das? Bekommen Sie jedes Jahr eine Heizkostenabrechnung mit Beträgen je Wohnung, etwa von ista, Techem, Brunata, Minol oder KALO, wählen Sie „Ein Messdienst oder die Hausverwaltung“; das gilt auch für die Abrechnung einer Hausverwaltung. Gibt es keine Zähler oder Heizkostenverteiler in den Wohnungen, wählen Sie „Niemand“.',
   units: 'Woran erkenne ich das? Angeschlossen ist jede Wohnung, die von dieser Heizung warm wird. Eine Garage oder eine Wohnung mit eigener Gastherme gehört nicht dazu.',
   // Recht I5 der Durchsicht von #238: bei der Etagenheizung ein eigener Satz.
@@ -220,7 +229,8 @@ export function emptyHeatingForm(units: readonly UnitInfo[], others: readonly He
   return {
     energy: '', contract: '', who: '', unitIds: defaultUnitIds(units).filter((id) => !taken.has(id)), remote: 'unknown', installedAfter: 'unknown',
     captured: 'unknown', captureInstalledOn: '', heatPumpInstalledOn: '', warmRentAverage: '', newInstall: '',
-    name: '', perUnitEnergy: '', building: '', ownMeters: false, takesOverStock: '', generation: '', majority: '', otherNames: Object.fromEntries(others.filter((p) => p.name.trim() === '' || p.units === null).map((p) => [p.id, p.name])),
+    name: '', perUnitEnergy: '', building: '', ownMeters: false, takesOverStock: '', generation: '', majority: '',
+    contracting: false, deliverySince: '', previousSupply: '', announcedOn: '', otherNames: Object.fromEntries(others.filter((p) => p.name.trim() === '' || p.units === null).map((p) => [p.id, p.name])),
   }
 }
 
@@ -248,7 +258,43 @@ export function heatingToForm(plant: HeatingPlant, units: readonly UnitInfo[]): 
     takesOverStock: plant.takesOverStock === null ? '' : plant.takesOverStock ? 'yes' : 'no',
     generation: plant.heatGeneration ?? '',
     majority: plant.heatPumpMajority ?? '',
+    contracting: plant.contracting,
+    deliverySince: plant.heatDeliverySince ?? '',
+    previousSupply: plant.previousSupply ?? '',
+    announcedOn: plant.switchAnnouncedOn ?? '',
   }
+}
+
+// ---------- Wärmelieferung (Heizung PR 16, #213) ----------
+
+// Prüfung R-S2: Maßgeblich ist der Mietvertrag (BGH VIII ZR 46/25 Rn. 30). Die Fälle, in denen § 556c nicht greift,
+// weil die Mieter die Heizkosten nicht als Betriebskosten trugen oder schon vorher ein Lieferant versorgte, stehen beim
+// neutralen Eintrag; der Text der Abrechnung ist dann bedingt.
+export const PREVIOUS_SUPPLY_OPTIONS: { value: '' | PreviousSupply; label: string }[] = [
+  { value: '', label: 'Keine Angabe oder anders (etwa Heizkosten in der Miete enthalten, oder schon vorher ein Wärmelieferant)' },
+  { value: 'landlord', label: 'Ich, mit einer eigenen Heizung; die Mieter zahlten die Heizkosten als Betriebskosten' },
+  { value: 'tenant', label: 'Die Mieter selbst, etwa mit Einzelöfen oder Gasthermen' },
+]
+export const CONTRACTING_LABEL = 'Ein Dritter betreibt die Heizung im Haus und liefert die Wärme (Contracting)'
+export const SWITCH_HINT = 'Nur ausfüllen, wenn Sie umgestellt haben, während Mietverträge schon bestanden.'
+// Contracting bei jeder zentralen Anlage außer Fernwärme, auch bei der Wärmepumpe (Prüfung R-M4).
+export const asksContracting = (energy: HeatingForm['energy']): boolean => energy !== '' && energy !== 'perUnit' && CONTRACTING_ENERGIES.includes(energy)
+// Die Angaben zur Umstellung bei Fernwärme oder Contracting.
+export const asksSwitch = (form: Pick<HeatingForm, 'energy' | 'contracting'>): boolean =>
+  form.energy === 'districtHeating' || (form.contracting && asksContracting(form.energy))
+
+// Die Beschriftung des Energieträgers im Ausweis und in der Karte: bei Contracting mit dem Brennstoff des Lieferanten.
+export function energyLabelOf(h: Pick<HeatingStatement, 'energy' | 'contracting' | 'fuelEnergy'>): string {
+  const label = (e: HeatingEnergy): string => ENERGY_OPTIONS.find((o) => o.value === e)?.label ?? e
+  return h.contracting === true && h.fuelEnergy !== undefined ? `Wärmelieferung (Contracting, erzeugt mit ${label(h.fuelEnergy)})` : label(h.energy)
+}
+
+// Contracting beim Kesseltausch an- oder abwählen (Prüfung C-M1): War die bisherige Anlage keine Wärmelieferung, ist der
+// Tag des Tauschs als Tag der Umstellung vorgeschlagen.
+export function contractingSwap(form: SwapForm, checked: boolean, previous: Pick<HeatingPlant, 'energy' | 'contracting'>): SwapForm {
+  if (!checked) return { ...form, contracting: false, deliverySince: '', previousSupply: '', announcedOn: '' }
+  const proposed = (form.deliverySince ?? '') === '' && !isHeatDelivery(previous) ? form.date : (form.deliverySince ?? '')
+  return { ...form, contracting: true, deliverySince: proposed }
 }
 
 // `others`: die übrigen Anlagen des Objekts; `editingId`: die Anlage, die geändert wird (dann gibt es
@@ -293,11 +339,19 @@ export function heatingPlantBody(form: HeatingForm, units: readonly UnitInfo[], 
       body: {
         name, buildingWith, energy: form.perUnitEnergy, supply: 'perUnit', method: 'manual', source: 'building', devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown',
         capturedOnOct2024: null, captureInstalledOn: null, warmRentAverageCents: null, units: unitList, newDevicesInstall: null,
+        contracting: false, heatDeliverySince: null, previousSupply: null, switchAnnouncedOn: null,
       },
       adjust,
     }
   }
   const energy: HeatingEnergy = form.energy
+  // Heizung PR 16: Contracting und die Angaben zur Umstellung, nur wo gefragt; sonst leer, damit kein früherer Wert
+  // stehen bleibt (der Server ergänzt nur, was im Rumpf steht).
+  const contracting = form.contracting && asksContracting(form.energy)
+  const sw = asksSwitch({ energy: form.energy, contracting })
+  if (sw && form.announcedOn !== '' && form.deliverySince === '') {
+    return { error: 'Eine Ankündigung ohne Tag der Umstellung lässt sich nicht prüfen. Bitte tragen Sie den Tag der Umstellung ein oder leeren Sie beide.' }
+  }
   const who = form.who
   if (who === '') return { error: 'Bitte wählen Sie, wer die Heizkostenabrechnung erstellt.' }
   if (form.unitIds.length === 0) return { error: 'Bitte haken Sie mindestens eine Wohnung an, die an dieser Heizung hängt.' }
@@ -336,6 +390,10 @@ export function heatingPlantBody(form: HeatingForm, units: readonly UnitInfo[], 
       ...(form.takesOverStock === '' ? {} : { takesOverStock: form.takesOverStock === 'yes' }),
       ...(asksGeneration(form) ? { heatGeneration: form.generation === '' ? null : form.generation } : {}),
       ...(heatPump ? { heatPumpMajority: form.majority === '' ? null : form.majority } : {}),
+      contracting,
+      heatDeliverySince: sw && form.deliverySince !== '' ? form.deliverySince : null,
+      previousSupply: sw && form.previousSupply !== '' ? form.previousSupply : null,
+      switchAnnouncedOn: sw && form.announcedOn !== '' ? form.announcedOn : null,
     },
     adjust,
   }
@@ -343,8 +401,11 @@ export function heatingPlantBody(form: HeatingForm, units: readonly UnitInfo[], 
 
 // ---------- Kessel getauscht (Heizung PR 9) ----------
 
-export type SwapForm = { date: string; energy: HeatingEnergy | ''; name: string; previousName: string; takesOverStock: 'yes' | 'no'; meterValues?: Record<string, string> }
-export type SwapBody = { date: string; energy: HeatingEnergy; name: string; previousName: string; takesOverStock?: boolean; meterReadings?: { meterId: string; value: number }[] }
+// Heizung PR 16: Contracting und die Angaben zur Umstellung (`contractingSwap`); fehlen sie, fragt der Tausch nicht.
+export type SwapForm = { date: string; energy: HeatingEnergy | ''; name: string; previousName: string; takesOverStock: 'yes' | 'no'; meterValues?: Record<string, string>
+  contracting?: boolean; deliverySince?: string; previousSupply?: '' | PreviousSupply; announcedOn?: string }
+export type SwapBody = { date: string; energy: HeatingEnergy; name: string; previousName: string; takesOverStock?: boolean; meterReadings?: { meterId: string; value: number }[]
+  contracting?: boolean; heatDeliverySince?: string; previousSupply?: PreviousSupply; switchAnnouncedOn?: string }
 
 // Bei der eigenen Heizkostenabrechnung fragt der Tausch die Stände der Zähler der Anlage (Wärme am
 // Warmwasserspeicher, Gesamtwärme) am letzten Tag der bisherigen ab (Durchsicht von #239, I3): Mit ihnen
@@ -357,8 +418,9 @@ export const swapMetersOf = (plant: Pick<HeatingPlant, 'id' | 'method' | 'replac
 }
 
 // Bei demselben Vorratsbrennstoff fragt der Tausch, ob die neue Anlage den Brennstoff weiter verheizt.
-export const asksTakeOver = (form: Pick<SwapForm, 'energy'>, previous: Pick<HeatingPlant, 'energy'>): boolean =>
-  form.energy === previous.energy && isStockEnergy(previous.energy)
+// Bei Contracting führt der Lieferant den Vorrat (Heizung PR 16); dann fragt der Tausch nicht.
+export const asksTakeOver = (form: Pick<SwapForm, 'energy'> & { contracting?: boolean }, previous: Pick<HeatingPlant, 'energy'> & { contracting?: boolean }): boolean =>
+  form.energy === previous.energy && billingEnergy({ energy: form.energy, contracting: form.contracting }) === billingEnergy(previous) && isStockEnergy(billingEnergy(previous))
 
 // Getauscht wird eine laufende zentrale Anlage; bei getrennter Heizkostenabrechnung kommt das später.
 export const canSwap = (p: Pick<HeatingPlant, 'endsOn' | 'supply' | 'separateSpans'>): boolean =>
@@ -378,7 +440,18 @@ export function swapBody(form: SwapForm, previous: Pick<HeatingPlant, 'energy'>,
     if (value === null) return { error: `Der Stand für „${m.name}“ ist keine Zahl.` }
     meterReadings.push({ meterId: m.id, value })
   }
-  const body: SwapBody = { date: form.date, energy: form.energy, name: form.name.trim(), previousName: form.previousName.trim(), ...(meterReadings.length > 0 ? { meterReadings } : {}) }
+  // Heizung PR 16: Contracting nur, wo der Tausch es gefragt hat; die Angaben zur Umstellung nur mit Wert.
+  const contracting = form.contracting === undefined ? {} : { contracting: form.contracting && asksContracting(form.energy) }
+  const sw = form.contracting === true && asksContracting(form.energy)
+  if (sw && (form.announcedOn ?? '') !== '' && (form.deliverySince ?? '') === '') {
+    return { error: 'Eine Ankündigung ohne Tag der Umstellung lässt sich nicht prüfen. Bitte tragen Sie den Tag der Umstellung ein oder leeren Sie beide.' }
+  }
+  const delivery = sw ? {
+    ...(form.deliverySince ? { heatDeliverySince: form.deliverySince } : {}),
+    ...(form.previousSupply ? { previousSupply: form.previousSupply } : {}),
+    ...(form.announcedOn ? { switchAnnouncedOn: form.announcedOn } : {}),
+  } : {}
+  const body: SwapBody = { date: form.date, energy: form.energy, name: form.name.trim(), previousName: form.previousName.trim(), ...(meterReadings.length > 0 ? { meterReadings } : {}), ...contracting, ...delivery }
   return { body: asksTakeOver(form, previous) ? { ...body, takesOverStock: form.takesOverStock === 'yes' } : body }
 }
 
@@ -389,7 +462,8 @@ export const connectionNote = (u: Pick<Unit, 'noConnection'>): string | null =>
 // Die Zeilen der Karte, wenn eine Anlage eingerichtet ist. Ohne Liste versorgt die Anlage jede
 // Einheit mit Wärmeanschluss (`servesUnit`); die übrigen nennt die Zeile, sonst hieße es „alle“.
 export function heatingSummary(plant: HeatingPlant, units: readonly Pick<Unit, 'id' | 'name' | 'noConnection'>[], plants: readonly HeatingPlant[] = []): string[] {
-  const energyLabel = ENERGY_OPTIONS.find((o) => o.value === plant.energy)?.label ?? plant.energy
+  // Heizung PR 16: bei Contracting „Wärmelieferung (Contracting, erzeugt mit …)“.
+  const energyLabel = energyLabelOf({ energy: billingEnergy(plant), contracting: plant.contracting, fuelEnergy: plant.energy })
   const perUnit = plant.supply === 'perUnit'
   const energy = perUnit ? `${energyLabel}, Etagenheizung je Wohnung (Vertrag bei Ihnen)` : energyLabel
   const who = perUnit

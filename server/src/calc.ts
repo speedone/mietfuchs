@@ -60,11 +60,12 @@ import type {
 import { rulesFor } from '../../shared/law/rules.ts'
 import { co2ApplicableFrom, co2CostsBefore, co2CostsCountedFrom, co2CostsExcludedUntil, co2CutMissing, co2DistrictEtsNew, co2FirstPeriodStart, co2NonResidential, co2Restriction, co2RoundingDecimals, co2StageTable } from '../../shared/law/co2kostaufg.ts'
 import { CO2_RELIEF_LABEL } from '../../shared/co2Probe.ts'
-import { ausweisGaps, CO2_FUELS, co2Assessment, co2DeductionsOf, FORMULA_METHODS, co2PotsOf, itemBasisUnits, L_TOLERANCE_CENTS, perUnitClassification, perUnitExceeding, perUnitReliefs, reliefsByShare, spanningPlants, type PerUnitFuel, restage, selfSplit, SERVICE_FUEL_TOLERANCE_CENTS, shownReliefs, stageRanges, tableFactor, tenantLines as co2TenantLines, type Co2Pot, type ReliefShare } from './co2.ts'
+import { ausweisGaps, CO2_FUELS, co2Assessment, co2Required, NO_CO2_FUELS, co2DeductionsOf, FORMULA_METHODS, co2PotsOf, itemBasisUnits, L_TOLERANCE_CENTS, perUnitClassification, perUnitExceeding, perUnitReliefs, reliefsByShare, spanningPlants, type PerUnitFuel, restage, selfSplit, SERVICE_FUEL_TOLERANCE_CENTS, shownReliefs, stageRanges, tableFactor, tenantLines as co2TenantLines, type Co2Pot, type ReliefShare } from './co2.ts'
 // Zahlen und Daten der Rechtsregeln kommen aus dem Rechtsregister (Heizung PR 1) und stehen hier
 // nicht als Literal; server/test/law-literals.test.ts wacht darüber.
 import { createLawLog, dayAfter, dayBefore, law, LAW_AS_OF, onlyVersion, recordVersionAt, VALUE_CHANGE_LABEL, valueAt, type Period } from '../../shared/law/register.ts'
-import { betrkvGenerationPower, betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths } from '../../shared/law/bgb-betrkv.ts'
+import { betrkvGenerationPower, betrkvTvSignal, bgbDeadlineMonths, bgbHeatDeliverySwitch, bgbMaxPeriodMonths } from '../../shared/law/bgb-betrkv.ts'
+import { switchFindings, switchText } from './heatDelivery.ts'
 import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvEstimateThreshold, hkvExemptions, hkvGenerationPower, hkvInfoDistrict, hkvMonthlyInfo, hkvHeatPumpCapture, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvRenewableExemption, hkvSettlementInfo, type DegreeDayTable } from '../../shared/law/heizkostenv.ts'
 import { plantDevices, remoteReadingVerdict, servedUnitIds } from './remoteReading.ts'
 import { heatingInfoOf, heatingRulesOf, planByConsumption, type RuleRow } from './heatingInfo.ts'
@@ -78,6 +79,7 @@ import { allocationOf, comparablePrevious, sameAllocation, sameUnits } from '../
 import { possibleDuplicates } from '../../shared/duplicates.ts'
 import { commonPeriod, tenancyOverlaps } from '../../shared/tenancyOverlap.ts'
 import { CALENDAR_RULES, calendarYearPeriod, contextOf, formatDayRange, isCalendarRules, periodContaining, periodDays, periodLabel, periodMonths, periodOfKey, periodsBetween, previousPeriod, rulesOf, settlementDeadline, settlementPeriod, type PeriodContext } from '../../shared/period.ts'
+import { generatorEnergy, noCo2Supplier } from '../../shared/heatDelivery.ts'
 import { lineRoot, monthSpanText, plantRules, plantSpan, recommendedDeadline, requestMonth, sameBuilding, sameFuelLine, sameLine, sameSpan, separateOwner, servesUnit, settledSeparately } from '../../shared/heatingPeriod.ts'
 import { heatingSnapshotFor, selfAt, snapshotFor, wayOf } from './snapshot.ts'
 import { cancelledDeliveries, plantFuel, rangeOf, type FuelCarry, type FuelResult } from './fuel.ts'
@@ -428,6 +430,10 @@ const noticeKinds = {
   // Folge-PR zu #252: Betriebsstrom fehlt (#224; färbt die Ampel nicht, Entscheidung F6) und Strom zur
   // Wärmeerzeugung einer Wärmepumpe oder eines Elektrokessels womöglich im Allgemeinstrom (#253).
   'heating.operating-power-missing': { level: 'hint', title: 'Betriebsstrom der Heizung fehlt', terms: ['operatingPower', 'heatingCostOrdinance'] },
+  // Heizung PR 16 (#213): Umstellung auf Wärmelieferung im laufenden Mietverhältnis. Ein Hinweis, denn Mietfuchs
+  // kann die Voraussetzungen des § 556c BGB nicht prüfen und nichts beziffern. Der Titel nennt § 556c nicht, denn
+  // der Text sagt auch, wann er nicht gilt (Prüfung R-S3).
+  'heating.contracting': { level: 'hint', title: 'Umstellung auf Wärmelieferung', terms: ['heatDelivery', 'heatingCostOrdinance'] },
   'heating.generation-power-missing': { level: 'hint', title: 'Strom zur Wärmeerzeugung womöglich im Allgemeinstrom', terms: ['operatingPower', 'heatingCostOrdinance'] },
   // #266: mit Angabe an der Anlage. Fehlt der Abzug trotz Angabe, ist das der Fall aus BGH V ZR 166/15 und VIII ZR 27/07
   // und färbt die Ampel; fehlt nur die Rechnung des eigenen Stromvertrags, trägt der Vermieter eigenes Geld (INFORMATIONAL).
@@ -3138,7 +3144,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const alphaResult = hotWaterShareOf({
       hotWater,
       log: lawLog,
-      plant: { energy: plant.energy, heatGeneration: plant.heatGeneration ?? null },
+      plant: { energy: plant.energy, heatGeneration: plant.heatGeneration ?? null, ...(plant.fuelEnergy !== undefined ? { fuelEnergy: plant.fuelEnergy } : {}) },
       row: own || lineOwn
         ? { dhwMethod: own?.dhwMethod ?? lineOwn?.dhwMethod ?? null, dhwVolumeM3: own?.dhwVolumeM3 ?? null, dhwTempC: own?.dhwTempC ?? lineOwn?.dhwTempC ?? null }
         : null,
@@ -3161,16 +3167,20 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // (`heatPumpMajority`, mehr als die Hälfte der Wärme), unabhängig vom Erzeuger nach § 9. „Nein“ heißt: Die
     // Verordnung galt. Ohne Antwort oder mit „weiß nicht“ rechnet Mietfuchs ohne Kürzung und ohne Sperre und
     // nennt beide Folgen.
-    const renewable = plant.energy === 'heatPump' ? law(hkvRenewableExemption, { period: lawPeriod }, lawLog) : null
+    // Durchsicht von #272, M1: § 11 Abs. 1 Nr. 3 Buchst. a a. F. und § 12 Abs. 3 hängen am Wärmeerzeuger, nicht am
+    // Betreiber (§ 1 Abs. 1 Nr. 2: Wärmelieferung „auch aus Anlagen nach Nummer 1“); bei Contracting zählt deshalb der
+    // Erzeuger des Lieferanten (`generatorEnergy`, Auslegung am Wortlaut, nicht entschieden).
+    const generator = generatorEnergy(plant)
+    const renewable = generator === 'heatPump' ? law(hkvRenewableExemption, { period: lawPeriod }, lawLog) : null
     const majority = plant.heatPumpMajority ?? null
     const oldHeatPumpExemption = renewable?.heatPump === true && majority !== 'no'
     const majorityOpen = oldHeatPumpExemption && majority !== 'yes'
     // Unter dieser Ausnahme bindet § 9 nicht: Ohne bestimmbares α gehen „Heizung und Warmwasser“ ganz in
     // den Topf Heizung (Festlegung, Abweichung 9), und es gibt keinen Fehler.
     const alpha = alphaResult.ok ? alphaResult.alpha : null
-    const verdict = plant.energy === 'heatPump'
+    const verdict = generator === 'heatPump'
       ? heatPumpVerdict(
-        { energy: plant.energy, capturedOnOct2024: plant.capturedOnOct2024 ?? null, captureInstalledOn: plant.captureInstalledOn ?? null, heatPumpInstalledOn: plant.heatPumpInstalledOn ?? null },
+        { energy: generator, capturedOnOct2024: plant.capturedOnOct2024 ?? null, captureInstalledOn: plant.captureInstalledOn ?? null, heatPumpInstalledOn: plant.heatPumpInstalledOn ?? null },
         period.from, law(hkvHeatPumpCapture, { date: period.from }, lawLog),
       )
       : null
@@ -4420,7 +4430,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       }
     }
     for (const g of result.gaps) {
-      const zaehler = plant.energy === 'gas' ? 'den Gaszähler' : plant.energy === 'districtHeating' ? 'den Wärmezähler der Übergabestation' : 'den Stromzähler der Wärmepumpe'
+      // Heizung PR 16 (Prüfung C-K3): bei Contracting der Wärmezähler, nach dem der Lieferant abrechnet.
+      const zaehler = plant.energy === 'gas' ? 'den Gaszähler' : plant.contracting === true ? 'den Wärmezähler, nach dem der Lieferant abrechnet' : plant.energy === 'districtHeating' ? 'den Wärmezähler der Übergabestation' : 'den Stromzähler der Wärmepumpe'
       // Durchsicht von #233: Ein Zählerstand schließt die Lücke nicht, er macht nur die Aufteilung der
       // Folgerechnung genauer (Stufe 1 braucht Stände am Tag vor ihrem Beginn, an ihrem Ende und am
       // Stichtag).
@@ -4815,7 +4826,12 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const where = `${pot.plantName ? `Heizanlage „${pot.plantName}“` : 'Heizanlage'}, Heizperiode ${periodLabel(pot.period)}`
     const ids = new Set<string>([...pot.items.map((c) => c.id), pot.reliefKey])
     const plantSubject: NoticeSubject = { kind: 'heatingCosts', id: pot.plantId }
-    const report: HeatingStatement = { plantId: pot.plantId, plantName: pot.plantName, energy: pot.energy, period: pot.period.key, from: pot.period.from, to: pot.period.to, co2: null }
+    // Wärmelieferung (Heizung PR 16): Contracting und der Brennstoff des Lieferanten, für die Beschriftung.
+    const billed = plants.find((x) => x.id === pot.plantId)
+    const report: HeatingStatement = {
+      plantId: pot.plantId, plantName: pot.plantName, energy: pot.energy, period: pot.period.key, from: pot.period.from, to: pot.period.to, co2: null,
+      ...(billed?.contracting === true && billed.fuelEnergy !== undefined ? { contracting: true, fuelEnergy: billed.fuelEnergy } : {}),
+    }
     heatingStatements.push(report)
     // Lieferungen, Abgrenzung, Überträge und Lücken dieser Heizperiode (Heizung PR 7).
     const fuelOf = fuelResults.get(pot.plantId)?.result
@@ -4888,7 +4904,13 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // auch dort stehen kg und CO₂-Kosten auf der Rechnung der Lieferung.
     // Unter einer Ausnahme nach § 11 ohne vereinbarte Abrechnung gilt das CO2KostAufG nicht (§ 2 Abs. 7, Heizung
     // PR 14): dann auch keine Prüfung, dieselbe Bedingung wie die Aufteilung.
-    const co2Check: NonNullable<HeatingStatement['co2Check']> = { applies: !etsExempt && !co2OffByExemption(pot.plantId, String(pot.period.key)), exemption: null, findings: [] }
+    // Heizung PR 16: auch nicht bei Contracting mit einem Brennstoff ohne CO₂-Kosten (§ 2 Abs. 1 Satz 2 CO2KostAufG).
+    // Nachprüfung von #272, N1: nur, wenn der Lieferant allein ohne CO₂-Kosten heizt und die Rechnung keine ausweist.
+    // Die Zeilen der Abgrenzung gehören zur Heizperiode dieser Berechnung, also zu diesem Topf (F2): Eine Rechnung ganz
+    // in einer anderen Heizperiode steht nicht darin.
+    const invoiceCo2 = fuelResults.get(pot.plantId)?.result.lines.some((l) => (l.co2Cents ?? 0) > 0) ?? false
+    const noCo2Fuel = noCo2Supplier(pot) && !invoiceCo2
+    const co2Check: NonNullable<HeatingStatement['co2Check']> = { applies: !etsExempt && !noCo2Fuel && !co2OffByExemption(pot.plantId, String(pot.period.key)), exemption: null, findings: [] }
     report.co2Check = co2Check
     if (co2Check.applies) {
       // Eine stornierte Rechnung zählt nicht und wird nicht geprüft (Durchsicht von #246, G-K1); dieselbe
@@ -4924,7 +4946,11 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Nur für Brennstoffe, für die es Standardwerte nach § 7 Abs. 4 BEHG gibt (§ 2 Abs. 1 CO2KostAufG):
     // Gas, Heizöl, Flüssiggas, Kohle; Fernwärme nur, wenn die Rechnung CO₂-Kosten ausweist. Strom einer
     // Wärmepumpe ist kein solcher Brennstoff (Durchsicht von #233, C1).
-    const co2Relevant = CO2_FUELS.includes(pot.energy) || (pot.energy === 'districtHeating' && (fuelOf?.lines.some((l) => l.co2Cents !== null) ?? false))
+    // Heizung PR 16: Bei Contracting mit einem Brennstoff ohne CO₂-Kosten (Pellets, Holz, Strom, Wärmepumpe), den der
+    // Lieferant allein einsetzt, gibt es nichts aufzuteilen (`co2Required`). Erzeugt er die Wärme mit einem weiteren
+    // Erzeuger (`mixed`) oder weist eine Rechnung dieser Heizperiode CO₂-Kosten über 0 aus (`invoiceCo2`), wird
+    // aufgeteilt (Nachprüfung von #272, N1).
+    const co2Relevant = (co2Required(pot) || invoiceCo2) && (CO2_FUELS.includes(pot.energy) || (pot.energy === 'districtHeating' && (fuelOf?.lines.some((l) => l.co2Cents !== null) ?? false)))
     // Vorratsenergien (Heizung PR 8, Entwurf 8.2, Naht N1): E und C des verbrauchten Brennstoffs aus der
     // Bestandsrechnung. Bei freien Schlüsseln ohne Bestand wie geliefert (mit `fuel.manual-by-delivery`);
     // beim Messdienst ohne Aufteilung wird ohne Bestand nicht aufgeteilt (G-B4).
@@ -5106,7 +5132,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Eine Anlage, die in diesem Zeitraum nicht heizt (Kesseltausch), steht hier nur mit der Rechnung, die in
     // einen anderen Zeitraum abgegrenzt wird; dort gilt der Hinweis, nicht hier (Nachprüfung von #238).
     if (!st && applicable && settledHere && !ownSplit && (!potPlant || activeIn(potPlant))) {
-      if (CO2_FUELS.includes(pot.energy) || pot.energy === 'districtHeating') {
+      // Heizung PR 16: bei Contracting nach dem Brennstoff des Lieferanten (§ 2 Abs. 1 Satz 2 CO2KostAufG).
+      if (co2Required(pot)) {
         const cut = law(co2CutMissing, { period: hPeriod }, lawLog)
         warn('co2.missing',
           `${where}: ${co2Duty(pot.energy === 'districtHeating' ? 'Weist Ihr Wärmelieferant CO₂-Kosten aus, sind sie' : 'Bei Gas, Heizöl, Flüssiggas und Kohle sind die CO₂-Kosten')} ` +
@@ -5843,7 +5870,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         const lines = fuelResults.get(id)?.result.lines ?? []
         return lines.length > 0 && lines.every((l) => l.energyKwh !== null) ? lines.reduce((a, l) => a + (l.energyKwh ?? 0), 0) : null
       }
-      const district = groupPlants.find((p) => p.energy === 'districtHeating')
+      // Heizung PR 16 (Prüfung C-M2): Werte des Wärmenetzes nur bei Fernwärme (§ 6a Abs. 3 Satz 1 Nr. 1 Buchst. a
+      // HeizkostenV: „bei Nutzern, die mit Fernwärme aus Fernwärmesystemen versorgt werden“), nicht bei Contracting;
+      // der eingesetzte Energieträger ist dort der Brennstoff des Kessels (`generatorEnergy`).
+      const district = groupPlants.find((p) => p.energy === 'districtHeating' && p.contracting !== true)
       const districtSp = district ? selfPlans.get(district.id) : undefined
       const costShares = districtSp?.weights
         ? new Map(districtSp.plan.units.flatMap((u) => u.users.flatMap((x): [string, number][] => {
@@ -5854,7 +5884,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       const metering = potItems.filter((c) => c.heatingPart === 'metering')
       info = heatingInfoOf({
         byConsumption: byKeys,
-        carriers: groupPlants.map((p) => ({ energy: p.energy, kwh: kwhOfPlant(p.id) })),
+        carriers: groupPlants.map((p) => ({ energy: generatorEnergy(p), kwh: kwhOfPlant(p.id) })),
         mixedGeneration: groupPlants.some((p) => (p.heatGeneration ?? null) === 'mixed'),
         district: district ? { required: law(hkvInfoDistrict, { period: hPeriod }, lawLog).scope === 'largeOnly' ? 'maybe' : 'yes', deliveredKwh: kwhOfPlant(district.id) } : null,
         row: ownRow ? {
@@ -6636,6 +6666,17 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         generationPowerText(f, label, fmtDay(betrkv.value.since), hkv && hkv.coverage !== 'none' ? fmtDay(hkv.value.since) : null),
         first ? itemSubject(first) : { kind: 'heatingCosts', id: f.plantId })
     }
+  }
+
+  // Umstellung auf Wärmelieferung (Heizung PR 16, #213): in der Abrechnung, die die Heizkosten der Anlage verteilt
+  // (`items`; bei Weg b der Unteraufruf der Heizperiode, übernommen ohne Doppel), für die Mieter, deren Vertrag
+  // schon vorher lief. Der Hinweis führt zur Anlage, wo die Umstellung eingetragen wird (Prüfung C-S10). Eine
+  // Umstellung vor der ersten Fassung erkennt Mietfuchs am Beginn dieser Fassung, nicht an einem Fehler des
+  // Registers; der Rechtswert wird nur gefragt, wenn der Hinweis kommt.
+  const switchFrom = onlyVersion(bgbHeatDeliverySwitch).validFrom ?? ''
+  for (const f of switchFindings(plants, items, snapshot.tenancies.filter((t) => statements.has(t.id)), snapshot.units)) {
+    const rule = f.since >= switchFrom ? law(bgbHeatDeliverySwitch, { date: f.since }, lawLog) : null
+    warn('heating.contracting', switchText(f, rule, fmtDay, switchFrom), { kind: 'heatingPlant', id: f.plantId })
   }
 
   // Die Höchstdauer hat P gebildet (shared/period.ts); eingefroren wird sie hier.

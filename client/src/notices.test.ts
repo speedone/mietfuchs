@@ -115,6 +115,13 @@ describe('Cockpit: verlangen die Hinweise etwas?', () => {
     expect(attentionLevel({ warnings: ['a'], notices: [n({ code: 'heating.operating-power-missing', level: 'hint' })] })).toBe('gruen')
     expect(attentionLevel({ warnings: ['a'], notices: [n({ code: 'heating.generation-power-missing', level: 'hint' })] })).toBe('gelb')
   })
+  // Heizung PR 16 (Prüfung C-S8): Der Hinweis zur Umstellung auf Wärmelieferung erscheint jedes Jahr, solange ein Mieter
+  // von vor der Umstellung bleibt, und lässt sich nicht beheben; er färbt nicht.
+  test('Umstellung auf Wärmelieferung: färbt das Cockpit nicht', () => {
+    const c = { warnings: ['a'], notices: [n({ code: 'heating.contracting', level: 'hint' })] }
+    expect(noticesNeedAttention(c)).toBe(false)
+    expect(attentionLevel(c)).toBe('gruen')
+  })
   // #266: Mit Angabe an der Anlage. Fehlt der Abzug, obwohl der Vermieter angibt, dass der Strom über die Rechnung des
   // Hauses läuft, ist das der Fall aus BGH V ZR 166/15 und VIII ZR 27/07 (gelb). Fehlt nur die Rechnung des eigenen
   // Stromvertrags, trägt der Vermieter eigenes Geld (färbt nicht).

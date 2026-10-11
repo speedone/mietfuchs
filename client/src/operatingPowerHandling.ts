@@ -3,7 +3,7 @@
 import type { HeatingPlant, OperatingPowerHandling } from './types'
 import { asksOperatingPowerHandling, OPERATING_POWER_HANDLING_LABELS } from '../../shared/operatingPower.ts'
 
-export const showsHandlingCard = (plant: Pick<HeatingPlant, 'energy' | 'method' | 'source' | 'supply'>): boolean => asksOperatingPowerHandling(plant)
+export const showsHandlingCard = (plant: Pick<HeatingPlant, 'energy' | 'method' | 'source' | 'supply'> & Partial<Pick<HeatingPlant, 'contracting'>>): boolean => asksOperatingPowerHandling(plant)
 
 // „Keine Angabe“ zuerst; sie ist zugleich der Eintrag für eine Anlage ohne Angabe (angezeigter = gespeicherter Wert).
 const ORDER: ('' | OperatingPowerHandling)[] = ['', 'ownMeter', 'deducted', 'landlordPays']

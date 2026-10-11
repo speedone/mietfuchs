@@ -88,3 +88,12 @@ describe('Durchsicht von #239', () => {
     expect('body' in r && r.body.heatConsumptionPct).toBe(65.25)
   })
 })
+
+// Heizung PR 16: Bei Contracting rechnet die eigene Abrechnung wie bei Fernwärme: kein Pflichtanteil nach § 7 Abs. 1
+// Satz 2 (§ 7 Abs. 3 HeizkostenV), und ein Gesamtwärmezähler wird vorgeschlagen.
+describe('Wärmelieferung (Heizung PR 16)', () => {
+  it('Contracting mit Gas: Gesamtwärmezähler vorgeschlagen', () => {
+    expect(emptySelfSetup({ ...plant, contracting: true }, '2025-01').totalHeatMeter).toBe(true)
+    expect(emptySelfSetup(plant, '2025-01').totalHeatMeter).toBe(false)
+  })
+})

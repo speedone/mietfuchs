@@ -9,6 +9,7 @@ import Term from './Term'
 import HeatingPeriodSection from './HeatingPeriodSection'
 import { setupDoneText } from '../hcaForm'
 import HeatingSelfSetup from './HeatingSelfSetup'
+import HeatDeliveryFields from './HeatDeliveryFields'
 import { useOptionalPeriod } from '../period'
 import { localToday } from '../periodForm'
 import { plantRules } from '../../../shared/heatingPeriod.ts'
@@ -17,6 +18,7 @@ import { useFocusTarget, type FocusProps } from '../focus'
 import {
   CAPTURE_OPTIONS, CONTRACT_OPTIONS, ENERGY_OPTIONS, HOW_TO_TELL, asksRemote, INSTALLED_OPTIONS, NEW_DEVICES_AFTER, NEW_INSTALL_OPTIONS, NEW_INSTALL_QUESTION, PER_UNIT_ENERGY_OPTIONS, REMOTE_OPTIONS, TAKES_OVER_BACK, TAKES_OVER_HINT, takesOverBack, TAKES_OVER_OPTIONS, TAKES_OVER_QUESTION, asksNewInstall, asksTakeOver, buildingOptions, canSwap, emptyHeatingForm, emptySwapForm, heatingPlantBody,
   connectionNote, heatingSummary, heatingToForm, NEWER_THAN, swapBody, swapMetersOf, whoHint, whoOptions, type CaptureAnswer, type EnergyAnswer, type HeatingForm, type PerUnitContract, type SwapForm, type WhoSettles,
+  asksContracting, asksSwitch, CONTRACTING_LABEL, contractingSwap,
   asksGeneration, GENERATION_QUESTION, HEAT_GENERATION_OPTIONS, MAJORITY_EXPLAINED, MAJORITY_OPTIONS, MAJORITY_QUESTION,
 } from '../heatingForm'
 
@@ -331,6 +333,18 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
             </select>
           </label>
           <small className="muted">{HOW_TO_TELL.energy}</small>
+          {/* Heizung PR 16 (#213): Contracting bei einer zentralen Anlage außer Fernwärme, und die Umstellung. */}
+          {asksContracting(form.energy) && (
+            <label className="field grow">
+              <span>
+                <input type="checkbox" checked={form.contracting} onChange={(e) => setForm({ ...form, contracting: e.target.checked })} />
+                {' '}{CONTRACTING_LABEL}
+              </span>
+            </label>
+          )}
+          {asksSwitch(form) && (
+            <HeatDeliveryFields values={form} onChange={(v) => setForm({ ...form, ...v })} />
+          )}
           {form.energy === 'perUnit' ? (
             <>
               <label className="field grow">
@@ -492,7 +506,8 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
             Vorrat bleiben bei der bisherigen. Ist noch Brennstoff im Tank, tragen Sie ihn als Endbestand zum letzten Betriebstag ein. Heizt die
             neue Anlage mit demselben Brennstoff aus demselben Tank, wird er ihr Anfangsbestand; sonst tragen die Mieter den{' '}
             <Term id="boilerSwap">Restbestand</Term> nicht, und er steht mit seinem Wert bei Ihnen. Bleibt der Energieträger gleich und läuft
-            er über denselben Zähler, etwa Gas, brauchen Sie keinen Tausch.
+            er über denselben Zähler, etwa Gas, brauchen Sie keinen Tausch. Stellen Sie während eines Abrechnungszeitraums auf
+            Wärmelieferung durch einen Dritten (Contracting) um oder zurück, erfassen Sie das ebenfalls hier, auch beim selben Brennstoff.
           </p>
           <label className="field grow">
             Seit wann heizt die neue Heizung?
@@ -505,6 +520,21 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
               {ENERGY_OPTIONS.flatMap((o) => (o.value === 'perUnit' ? [] : [<option key={o.value} value={o.value}>{o.label}</option>]))}
             </select>
           </label>
+          {/* Heizung PR 16 (Prüfung C-M1): Die Umstellung auf Wärmelieferung oder zurück in einem offenen Zeitraum. */}
+          {asksContracting(swap.form.energy) && (
+            <label className="field grow">
+              <span>
+                <input type="checkbox" checked={swap.form.contracting ?? swap.plant.contracting} onChange={(e) => setSwap({ ...swap, form: contractingSwap(swap.form, e.target.checked, swap.plant) })} />
+                {' '}{CONTRACTING_LABEL}
+              </span>
+            </label>
+          )}
+          {swap.form.contracting === true && asksContracting(swap.form.energy) && (
+            <HeatDeliveryFields
+              values={{ deliverySince: swap.form.deliverySince ?? '', previousSupply: swap.form.previousSupply ?? '', announcedOn: swap.form.announcedOn ?? '' }}
+              onChange={(v) => setSwap({ ...swap, form: { ...swap.form, ...v } })}
+            />
+          )}
           {asksTakeOver(swap.form, swap.plant) && (
             <label className="field grow">
               {TAKES_OVER_QUESTION}

@@ -344,3 +344,32 @@ test('Lexikon Betriebsstrom: die Stromrechnung zählt zu den Werbungskosten, sow
   assert.ok(text.includes('und sie gehört zu Ihren Werbungskosten, soweit Sie das Haus vermieten (§ 9 Abs. 1 Satz 1 EStG).'), text)
   assert.doesNotMatch(text, /ganz zu Ihren Werbungskosten/)
 })
+
+// Heizung PR 16 (#213): Wärmelieferung. Die Ankündigung ist eine eigene Pflicht und keine Voraussetzung der
+// Kostentragung (§ 556c Abs. 1 und 2 BGB, § 11 Abs. 3 WärmeLV; Prüfung R-M1).
+test('Lexikon: Wärmelieferung nennt § 556c, WärmeLV, § 7 Abs. 3 und die Zahlen aus dem Register (Heizung PR 16)', () => {
+  const t = GLOSSARY.heatDelivery
+  for (const n of [/§ 556c BGB/, /WärmeLV/, /§ 7 Abs\. 3 und 4/, /§ 9 Abs\. 2 Satz 6 Nr\. 2/, /§ 3 Abs\. 4 CO2KostAufG/, /§ 2 Nr\. 4 Buchst\. c BetrKV/]) assert.match(t.norm, n)
+  assert.match(t.short, /nicht der Pflichtanteil von 70 % für ältere, nicht nach der Wärmeschutzverordnung 1994 gedämmte Gebäude mit Öl- oder Gasheizung und überwiegend gedämmten Leitungen/)
+  assert.match(t.short, /§ 7 Abs\. 3 HeizkostenV verweist nicht auf Abs\. 1 Satz 2/)
+  assert.match(t.example, /÷ 1,15/)
+  assert.match(t.example, /heizt er mit Gas, Öl oder Kohle, muss der Lieferant die CO₂-Angaben ausweisen/)
+  assert.match(t.needed, /bessere Effizienz und keine höheren Kosten als vorher\. Außerdem ist die Umstellung spätestens 3 Monate vorher in Textform anzukündigen; fehlt die Ankündigung, beginnt die Frist für Einwendungen gegen die Abrechnung erst später \(§ 11 Abs\. 3 WärmeLV\)/)
+  assert.doesNotMatch(t.needed, /und eine Ankündigung/)
+  assert.match(t.needed, /im entschiedenen Fall jedenfalls/)
+})
+
+// Prüfung C-M3: Bei Contracting schweigt der Hinweis zum Betriebsstrom wie bei Fernwärme; Pumpen und Regelung
+// der Hausanlage über den Stromzähler des Hauses gehören zu den Kosten der Hausanlage.
+test('Lexikon Betriebsstrom: schweigt bei Fernwärme und bei Wärmelieferung durch einen Contractor (Heizung PR 16)', () => {
+  const t = GLOSSARY.operatingPower
+  assert.match(t.needed, /bei Fernwärme und bei Wärmelieferung durch einen Contractor/)
+  assert.match(t.needed, /Laufen Pumpen oder Regelung der Hausanlage über den Stromzähler des Hauses, gehört ihr Strom zu den Kosten der Hausanlage \(§ 7 Abs\. 4, § 8 Abs\. 4 HeizkostenV\) und ist beim Allgemeinstrom abzuziehen\./)
+})
+
+// Durchsicht von #272, S1 (Entscheidung nach der Gegenprüfung): Pauschale einbezogen über den Wortlaut von § 556 Abs. 2 BGB,
+// als Auslegung gekennzeichnet; kein BGH-Beleg dafür.
+test('Lexikon Wärmelieferung: Betriebskostenpauschale unter § 556c als Auslegung, Inklusivmiete nicht', () => {
+  const t = GLOSSARY.heatDelivery.needed
+  assert.match(t, /Auch wer eine Betriebskostenpauschale zahlt, trägt die Heizkosten als Betriebskosten, denn § 556 Abs\. 2 BGB lässt sie „als Pauschale oder als Vorauszahlung“ ausweisen \(Auslegung von Mietfuchs\); bei einer Inklusivmiete fehlt die Umlagevereinbarung, und § 556c gilt nicht\./)
+})

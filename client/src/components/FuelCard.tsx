@@ -5,14 +5,15 @@ import { useState } from 'react'
 import { api, errorText, fmtEuro } from '../api'
 import { useConfirm, useToast } from './feedback'
 import Term from './Term'
-import { CO2_ENERGIES, GAS_BASIS_LABEL, GAS_BASIS_MISSING, gasBasisMissing, defaultGrade, deliveryLine, deliveryOptions, deliveryUnitId, emptyFuelForm, fuelBody, fuelToForm, GAS_BASIS_OPTIONS, gradeOptions, STOCK_QUANTITY_OPTIONS, stockFuelBody, unitWordFor, type FuelForm } from '../fuelForm'
+import { asksCo2Facts, GAS_BASIS_LABEL, GAS_BASIS_MISSING, gasBasisMissing, defaultGrade, deliveryLine, deliveryOptions, deliveryUnitId, emptyFuelForm, fuelBody, fuelToForm, GAS_BASIS_OPTIONS, gradeOptions, STOCK_QUANTITY_OPTIONS, stockFuelBody, unitWordFor, type FuelForm } from '../fuelForm'
 import { isStockEnergy } from '../../../shared/fuelStock.ts'
+import { billingEnergy } from '../../../shared/heatDelivery.ts'
 import type { FuelDelivery, HeatingEnergy, HeatingMethod, HeatingPeriodView, HeatingPlant, Unit } from '../types'
 
 type TextKey = Exclude<keyof FuelForm, 'usedByService' | 'quantityUnit' | 'unitId' | 'gasBasis' | 'grade'>
 
 export default function FuelCard({ plant, view, deliveries, units = [], findings = {}, onSaved }: {
-  plant: { id: string; method: HeatingMethod; energy?: HeatingEnergy } & Partial<Pick<HeatingPlant, 'supply' | 'units'>>
+  plant: { id: string; method: HeatingMethod; energy?: HeatingEnergy } & Partial<Pick<HeatingPlant, 'supply' | 'units' | 'contracting' | 'heatGeneration'>>
   view: HeatingPeriodView
   deliveries: FuelDelivery[]
   // Die Wohnungen des Objekts, für die Rechnung einer Etagenheizung (Heizung PR 9).
@@ -29,7 +30,9 @@ export default function FuelCard({ plant, view, deliveries, units = [], findings
   const confirm = useConfirm()
   const service = plant.method === 'service'
   // Heizöl, Flüssiggas, Pellets, Holz und Kohle (Heizung PR 8): Lieferdatum und Menge für den Vorrat.
-  const stock = plant.energy !== undefined && isStockEnergy(plant.energy)
+  // Heizung PR 16: nach der Energie der Abrechnung; bei Contracting sind Lieferungen Wärmerechnungen.
+  const energy = plant.energy === undefined ? undefined : billingEnergy({ energy: plant.energy, contracting: plant.contracting })
+  const stock = energy !== undefined && isStockEnergy(energy)
   const set = <K extends keyof FuelForm>(key: K, value: FuelForm[K]) => setForm((f) => ({ ...f, [key]: value }))
   const options = deliveryOptions(deliveries)
   // Beim Vorrat (Durchsicht von #237, M5): der Betrag aus den verknüpften Positionen dieser Heizperiode.
@@ -40,7 +43,7 @@ export default function FuelCard({ plant, view, deliveries, units = [], findings
 
   function open(d: FuelDelivery | null) {
     // Heizung PR 11: Die Zeile der Heizwerttabelle ist nur vorbelegt, wo es genau eine gibt.
-    setForm(d ? fuelToForm(d) : { ...emptyFuelForm(), grade: plant.energy ? defaultGrade(plant.energy) : '' })
+    setForm(d ? fuelToForm(d) : { ...emptyFuelForm(), grade: energy ? defaultGrade(energy) : '' })
     setEditing(d ? d.id : 'neu')
     setError('')
   }
@@ -185,11 +188,11 @@ export default function FuelCard({ plant, view, deliveries, units = [], findings
             {/* Heizung PR 11: für den Warmwasseranteil der Heizwert laut Rechnung, sonst die Zeile der Tabelle (§ 9 Abs. 3 HeizkostenV). */}
             <div className="row">
               {text('heatingValue', `Heizwert laut Rechnung (kWh je ${unitWordFor(form.quantityUnit)})`)}
-              {form.heatingValue.trim() === '' && plant.energy !== undefined && gradeOptions(plant.energy).length > 0 && (
+              {form.heatingValue.trim() === '' && energy !== undefined && gradeOptions(energy).length > 0 && (
                 <label className="field">
                   Steht kein Heizwert auf der Rechnung: Brennstoff laut Heizkostenverordnung
-                  <select value={form.grade} onChange={(e) => set('grade', gradeOptions(plant.energy ?? 'other').find((o) => o.value === e.target.value)?.value ?? '')}>
-                    {(plant.energy ? gradeOptions(plant.energy) : []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  <select value={form.grade} onChange={(e) => set('grade', gradeOptions(energy ?? 'other').find((o) => o.value === e.target.value)?.value ?? '')}>
+                    {(energy ? gradeOptions(energy) : []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
                 </label>
               )}
@@ -204,7 +207,7 @@ export default function FuelCard({ plant, view, deliveries, units = [], findings
               {text('fixed', 'davon fester Preisbestandteil (Grund-, Mess-, Verrechnungspreis)')}
               {text('energyKwh', 'Energie (kWh)')}
             </div>
-            {plant.energy === 'gas' && (<>
+            {energy === 'gas' && (<>
               <label className="field">
                 {GAS_BASIS_LABEL}
                 <select value={form.gasBasis} onChange={(e) => set('gasBasis', GAS_BASIS_OPTIONS.find((o) => o.value === e.target.value)?.value ?? '')}>
@@ -216,7 +219,7 @@ export default function FuelCard({ plant, view, deliveries, units = [], findings
             </>)}
           </>)}
           {/* Bei Strom einer Wärmepumpe gibt es keine CO₂-Kosten aufzuteilen (§ 2 Abs. 1 CO2KostAufG). */}
-          {(plant.energy === undefined || CO2_ENERGIES.includes(plant.energy)) && (
+          {(plant.energy === undefined || asksCo2Facts({ energy: plant.energy, contracting: plant.contracting, heatGeneration: plant.heatGeneration ?? null })) && (
             <div className="row">
               {text('emissionsKg', 'CO₂-Ausstoß laut Rechnung (kg)')}
               {text('co2Cost', 'CO₂-Kosten laut Rechnung')}

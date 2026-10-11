@@ -27,7 +27,8 @@ import HeatingRulesCard from '../components/HeatingRulesCard'
 import ServiceValuesCard from '../components/ServiceValuesCard'
 import { showsStockCard } from '../stockForm'
 import Term from '../components/Term'
-import { CO2_ENERGIES, monthsOf, ownedBy } from '../fuelForm'
+import { asksCo2Facts, monthsOf, ownedBy } from '../fuelForm'
+import { billingEnergy } from '../../../shared/heatDelivery.ts'
 import { co2FirstPeriodStart } from '../../../shared/law/co2kostaufg.ts'
 import { servesUnit } from '../../../shared/heatingPeriod.ts'
 import { germanDate } from '../../../shared/law/register.ts'
@@ -57,7 +58,7 @@ export default function Heizkosten({ units, tenancies }: { units: Unit[]; tenanc
         ? ((await api<{ heating?: HeatingStatement[] }>(withProperty(`/api/settlement/${encodeURIComponent(period.param)}`, property?.id))).heating ?? [])
         : []
       // Die Befunde der Prüfung kommen aus dem Blatt für den Messdienst: dieselbe Prüfung wie in der Abrechnung.
-      const sheetKeys = plants.flatMap((p, i) => (CO2_ENERGIES.includes(p.energy) ? (views[i] ?? []).filter((v) => hasSheet(deliveries[i] ?? [], v)).map((v) => ({ p, v })) : []))
+      const sheetKeys = plants.flatMap((p, i) => (asksCo2Facts(p) ? (views[i] ?? []).filter((v) => hasSheet(deliveries[i] ?? [], v)).map((v) => ({ p, v })) : []))
       const sheets = await Promise.all(sheetKeys.map(({ p, v }) => api<Co2Sheet>(`/api/heating-plants/${p.id}/periods/${encodeURIComponent(String(v.period))}/co2-sheet`)))
       const findings = Object.fromEntries(sheetKeys.map(({ p, v }, i) => [`${p.id}:${v.period}`, Object.fromEntries((sheets[i]?.deliveries ?? []).map((d) => [d.id, d.findings]))]))
       setData({
@@ -99,10 +100,10 @@ export default function Heizkosten({ units, tenancies }: { units: Unit[]; tenanc
       {(data?.plants ?? []).map((plant) => (
         <div key={plant.id}>
           <>
-            {plant.method !== 'service' && CO2_ENERGIES.includes(plant.energy) && (data?.deliveries[plant.id] ?? []).length === 0 && (
+            {plant.method !== 'service' && asksCo2Facts(plant) && (data?.deliveries[plant.id] ?? []).length === 0 && (
               <div className="card">
-                <p>Verteilen Sie die Heizkosten selbst nach einem <Term id="allocationKey">Umlageschlüssel</Term> (bei der Frage, wer abrechnet: „Niemand“), teilt Mietfuchs die CO₂-Kosten selbst auf, sobald Sie die {invoiceName(plant.energy)} unten als Lieferung eintragen; Gutschrift und Position „Nicht umlagefähig“ entfallen dann.</p>
-                <ManualCo2Advice energy={plant.energy} />
+                <p>Verteilen Sie die Heizkosten selbst nach einem <Term id="allocationKey">Umlageschlüssel</Term> (bei der Frage, wer abrechnet: „Niemand“), teilt Mietfuchs die CO₂-Kosten selbst auf, sobald Sie die {invoiceName(plant)} unten als Lieferung eintragen; Gutschrift und Position „Nicht umlagefähig“ entfallen dann.</p>
+                <ManualCo2Advice plant={plant} />
               </div>
             )}
             {/* #266: wie der Betriebsstrom erfasst ist, je Anlage über den Heizperioden. */}
@@ -123,10 +124,10 @@ export default function Heizkosten({ units, tenancies }: { units: Unit[]; tenanc
                 )}
                 <FuelCard plant={plant} view={v} deliveries={ownedBy(data?.deliveries[plant.id] ?? [], v)} units={units} findings={data?.findings[`${plant.id}:${v.period}`] ?? {}} onSaved={() => void load()} />
                 <OperatingPowerCard plant={plant} view={v} rules={period.rules} items={data?.items ?? []} onBooked={() => void load()} />
-                {showsStockCard(plant, v) && <StockCard key={`stock:${v.period}:${JSON.stringify(v.stock?.row ?? null)}`} view={v} co2Fields={CO2_ENERGIES.includes(plant.energy)} energy={plant.energy} onSaved={() => void load()} />}
-                {v.from >= first && CO2_ENERGIES.includes(plant.energy) && <Co2FactsCard plant={plant} view={v} servedAreaM2={servedArea(plant)} onSaved={() => void load()} />}
+                {showsStockCard(plant, v) && <StockCard key={`stock:${v.period}:${JSON.stringify(v.stock?.row ?? null)}`} view={v} co2Fields={asksCo2Facts(plant)} energy={billingEnergy(plant)} onSaved={() => void load()} />}
+                {v.from >= first && asksCo2Facts(plant) && <Co2FactsCard plant={plant} view={v} servedAreaM2={servedArea(plant)} onSaved={() => void load()} />}
                 {/* Heizung PR 17 (#210): die CO₂-Angaben der Rechnungen zum Weitergeben, sobald es Rechnungen gibt. */}
-                {CO2_ENERGIES.includes(plant.energy) && hasSheet(data?.deliveries[plant.id] ?? [], v) && (
+                {asksCo2Facts(plant) && hasSheet(data?.deliveries[plant.id] ?? [], v) && (
                   <div className="card no-print">
                     <h2>CO₂-Angaben für den Messdienst</h2>
                     <p className="muted">
@@ -173,12 +174,14 @@ export default function Heizkosten({ units, tenancies }: { units: Unit[]; tenanc
 // Der Rat aus der Laienprobe, solange Mietfuchs die CO₂-Kosten nicht selbst aufteilt (ohne Lieferungen
 // oder bei der eigenen Heizkostenabrechnung): was zu tun ist, damit niemand kürzen darf.
 // Bei Fernwärme gibt es keine Gas- oder Ölrechnung, sondern die Rechnung für die Fernwärme.
-const invoiceName = (energy: HeatingPlant['energy']): string => (energy === 'districtHeating' ? 'Fernwärmerechnung' : 'Gas- oder Ölrechnung')
+// Heizung PR 16: bei Contracting die Rechnung des Wärmelieferanten, nicht die Fernwärmerechnung.
+const invoiceName = (plant: Pick<HeatingPlant, 'energy'> & { contracting?: boolean }): string =>
+  (plant.contracting === true ? 'Rechnung Ihres Wärmelieferanten' : billingEnergy(plant) === 'districtHeating' ? 'Fernwärmerechnung' : 'Gas- oder Ölrechnung')
 
-function ManualCo2Advice({ energy }: { energy: HeatingPlant['energy'] }) {
+function ManualCo2Advice({ plant }: { plant: Pick<HeatingPlant, 'energy'> & { contracting?: boolean } }) {
   return (
     <p>
-      Bis dahin teilen Sie die CO₂-Kosten selbst auf: Der CO₂-Ausstoß laut {invoiceName(energy)}, geteilt durch die Wohnfläche, ergibt die
+      Bis dahin teilen Sie die CO₂-Kosten selbst auf: Der CO₂-Ausstoß laut {invoiceName(plant)}, geteilt durch die Wohnfläche, ergibt die
       Stufe und damit Ihren Anteil an den CO₂-Kosten der Rechnung (<Term id="co2Split">CO₂-Kosten aufteilen</Term>). Lassen Sie die
       Heizposition, wie sie ist. Erfassen Sie Ihren Anteil als Gutschrift „CO₂-Anteil Vermieter“ in der Kostenart „Heizung und Warmwasser“
       mit demselben Umlageschlüssel (Betrag mit Minus) und denselben Betrag noch einmal als Position der Kostenart „Nicht umlagefähig“. So

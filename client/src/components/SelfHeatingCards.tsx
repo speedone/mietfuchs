@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import EstimateCard from './EstimateCard'
 import HcaBlock from './HcaBlock'
 import type { HeatingPeriodView, HeatingPlant, InsulationRule, InterimGapStatus, SelfHeatingStatement } from '../types'
+import { billingEnergy } from '../../../shared/heatDelivery.ts'
 import { api, errorText, fmtDate } from '../api'
 import { useToast } from './feedback'
 import Term from './Term'
@@ -38,12 +39,14 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
   const editable = !d || shareEditable(d)
   // Die Warmwasserbereitung dieser Heizperiode, nicht die heutige der Anlage (Durchsicht von #241, Runde 2, H1).
   const hotWater = view.selfHotWater ?? plant.hotWater
-  const forcedRaw = forcedShare(plant.energy, insulation)
+  // Heizung PR 16: nach der Energie der Abrechnung; bei Contracting gilt der Pflichtanteil nicht (§ 7 Abs. 3).
+  const energy = billingEnergy(plant)
+  const forcedRaw = forcedShare(energy, insulation)
   // Mit Vereinbarung darf der Anteil über dem Pflichtanteil liegen.
   const forced = forcedRaw !== null && !agreed ? forcedRaw : null
   // Den Pflichtanteil nachzutragen geht auch in einer begonnenen Heizperiode (Durchsicht von #239, C1).
   const toForced = forced !== null && savedInsulation !== 'applies'
-  const hint = unsureShareHint(plant.energy, insulation, d?.effective?.heating ?? percentOf(share))
+  const hint = unsureShareHint(energy, insulation, d?.effective?.heating ?? percentOf(share))
 
   useEffect(() => {
     if (!printing) return
@@ -75,7 +78,7 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
         body: JSON.stringify({
           heatConsumptionPct: heat,
           waterConsumptionPct: water,
-          insulationRule: insulationAsked(plant.energy) ? (insulation === '' ? 'unknown' : insulation) : 'notApplies',
+          insulationRule: insulationAsked(energy) ? (insulation === '' ? 'unknown' : insulation) : 'notApplies',
           above70Agreed: agreed,
         }),
       })
@@ -111,7 +114,7 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
           (<Term id="consumptionCosts">Verbrauchskosten</Term>), den Rest nach der Fläche (<Term id="baseCosts">Grundkosten</Term>).
         </p>
         {d ? distributionLines(d).map((l) => <p key={l}>{l}</p>) : <p className="muted">Noch kein Anteil festgelegt.</p>}
-        {insulationAsked(plant.energy) && (
+        {insulationAsked(energy) && (
           <div className="no-print">
             <label className="field grow">
               <span>{INSULATION_QUESTION} (<Term id="forcedConsumptionShare">Pflichtanteil</Term>)</span>
@@ -150,7 +153,7 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
             <p className="muted">Nur ankreuzen, wenn es im Mietvertrag oder einer Vereinbarung mit den Mietern steht; mehr als 100 % gibt es nicht. Die Angabe gilt mit dem Anteil.</p>
           </div>
         )}
-        {!editable && insulationAsked(plant.energy) && !toForced && insulation !== savedInsulation && (
+        {!editable && insulationAsked(energy) && !toForced && insulation !== savedInsulation && (
           <div className="row no-print">
             <button className="btn secondary" onClick={saveShare}>Antwort speichern</button>
           </div>

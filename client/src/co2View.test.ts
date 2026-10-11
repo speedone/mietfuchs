@@ -73,3 +73,9 @@ test('Eigene Aufteilung aus dem Vorrat (Heizung PR 8): Ausstoß des verbrauchten
   expect(v.lines.find((l) => l.label === 'CO₂-Ausstoß des verbrauchten Brennstoffs')?.value).toBe('15.254,9 kg (Anfangsbestand + Lieferungen − Endbestand)')
   expect(v.notes[0]).toMatch(/aus den Lieferungen und dem Vorrat/)
 })
+
+// Heizung PR 16 (Prüfung C-S3): Bei Contracting nennt der Ausweis die Wärmelieferung mit dem Brennstoff des Lieferanten.
+test('Contracting: der Ausweis nennt Wärmelieferung mit Brennstoff', () => {
+  const v = co2Block({ ...anlage(bewertung()), energy: 'districtHeating', contracting: true, fuelEnergy: 'gas' }, 'ta') ?? assert.fail('kein Block')
+  expect(v.lines.find((l) => l.label === 'Energieträger')?.value).toBe('Wärmelieferung (Contracting, erzeugt mit Gas)')
+})

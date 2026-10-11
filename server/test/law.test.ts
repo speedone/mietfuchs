@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url'
 import { coversDate, createLawLog, dayAfter, dayBefore, germanDate, law, LAW_AS_OF, lawOverridable, onlyVersion, recordVersionAt, valueAt, versionAt, yearStart, type LawParam } from '../../shared/law/register.ts'
 import { LAW_PARAMS } from '../../shared/law/params.ts'
 import * as rulesModule from '../../shared/law/rules.ts'
-import { betrkvGenerationPower, betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths } from '../../shared/law/bgb-betrkv.ts'
+import { betrkvGenerationPower, betrkvTvSignal, bgbDeadlineMonths, bgbHeatDeliverySwitch, bgbMaxPeriodMonths } from '../../shared/law/bgb-betrkv.ts'
 import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvEstimateThreshold, hkvExemptions, hkvGenerationPower, hkvHeatingValues, hkvHeatPumpCapture, hkvInfoDistrict, hkvMonthlyInfo, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvRenewableExemption, hkvSettlementInfo } from '../../shared/law/heizkostenv.ts'
 import { practiceEvaporatorWindow, practiceReadingOffWarning, practiceVacancyPersons } from '../../shared/law/practice.ts'
 import { ustgGasHeatNetworkRate, ustgStandardRate } from '../../shared/law/ustg.ts'
@@ -176,7 +176,7 @@ test('Register: jede Konstante vom Typ LawParam in shared/law/ steht in LAW_PARA
     .flatMap((f) => [...fs.readFileSync(path.join(dir, f), 'utf8').matchAll(/^export const (\w+): LawParam</gm)].map((m) => m[1]))
   assert.ok(declared.length >= 7, `nur ${declared.length} Parameter gefunden`)
   const listed = new Set<unknown>(LAW_PARAMS)
-  const modules = { betrkvGenerationPower, betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths, co2ApplicableFrom, co2CostsBefore, co2CutMissing, co2DistrictEtsNew, co2EbevFactors, co2NonResidential, co2Price, co2PriceEts, co2Restriction, co2RoundingDecimals, co2StageTable, hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvEstimateThreshold, hkvExemptions, hkvGenerationPower, hkvHeatingValues, hkvHeatPumpCapture, hkvInfoDistrict, hkvMonthlyInfo, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvRenewableExemption, hkvSettlementInfo, practiceEvaporatorWindow, practiceReadingOffWarning, practiceVacancyPersons, ustgGasHeatNetworkRate, ustgStandardRate }
+  const modules = { betrkvGenerationPower, betrkvTvSignal, bgbDeadlineMonths, bgbHeatDeliverySwitch, bgbMaxPeriodMonths, co2ApplicableFrom, co2CostsBefore, co2CutMissing, co2DistrictEtsNew, co2EbevFactors, co2NonResidential, co2Price, co2PriceEts, co2Restriction, co2RoundingDecimals, co2StageTable, hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvEstimateThreshold, hkvExemptions, hkvGenerationPower, hkvHeatingValues, hkvHeatPumpCapture, hkvInfoDistrict, hkvMonthlyInfo, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvRenewableExemption, hkvSettlementInfo, practiceEvaporatorWindow, practiceReadingOffWarning, practiceVacancyPersons, ustgGasHeatNetworkRate, ustgStandardRate }
   for (const name of declared) {
     assert.ok(name && Object.hasOwn(modules, name), `${name} fehlt in diesem Test`)
     assert.ok(listed.has(Reflect.get(modules, name)), `${name} fehlt in LAW_PARAMS`)
@@ -528,4 +528,19 @@ test('Register: BGBl. 2023 I Nr. 280 mit Jahr; BetrKV-Beschreibung nach dem Wort
     if (v.enacted.includes('Nr. 280')) assert.match(v.enacted, /BGBl\. 2023 I Nr\. 280/, `${p.id}: ${v.enacted}`)
   }
   assert.match(betrkvGenerationPower.describe({ since: '2024-01-01' }), /zu den Kosten des Betriebs der zentralen Heizungsanlage$/)
+})
+
+// Heizung PR 16 (#213): Umstellung auf Wärmelieferung. Die erste Fassung beginnt mit dem Inkrafttreten der
+// Wärmelieferverordnung (§ 13 WärmeLV); für eine Umstellung davor gibt es keine.
+test('Stichtag bgb.heat-delivery-switch: ab 01.07.2013 drei Monate und 80 %, davor keine Fassung (§ 556c BGB, § 11, § 13 WärmeLV)', () => {
+  const log = createLawLog()
+  assert.deepEqual(law(bgbHeatDeliverySwitch, { date: '2013-07-01' }, log), { noticeMonths: 3, efficiencyPercent: 80 })
+  assert.deepEqual(law(bgbHeatDeliverySwitch, { date: '2025-10-01' }, log), { noticeMonths: 3, efficiencyPercent: 80 })
+  assert.throws(() => valueAt(bgbHeatDeliverySwitch, '2013-06-30'), /Kein Rechtswert/)
+  assert.equal(log.values.length, 1)
+  assert.equal(bgbHeatDeliverySwitch.describe({ noticeMonths: 3, efficiencyPercent: 80 }), 'Ankündigung spätestens 3 Monate vor der Umstellung; ab 80 % Jahresnutzungsgrad genügt eine verbesserte Betriebsführung')
+  const v = versionAt(bgbHeatDeliverySwitch, '2020-01-01')
+  assert.equal(v.source.url, 'https://www.gesetze-im-internet.de/bgb/__556c.html')
+  assert.match(v.source.cite, /§ 11 Abs\. 1/)
+  assert.equal(v.source.checked, 'checked')
 })
