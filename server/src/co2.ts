@@ -2,10 +2,10 @@
 // Rechtswerte reicht der Aufrufer aus dem Register herein (`law()` protokolliert sie); hier steht
 // keine Zahl der Stufentabelle und kein Datum (law-literals.test.ts).
 import type { Co2Stage } from '../../shared/law/co2kostaufg.ts'
-import type { BillingPeriod, Co2Adjustment, Co2Assessment, Co2StageRange, Co2Statement, Co2TenantLine, Co2TenantRelief, DhwMethod, HeatingEnergy, HeatingMethod, HeatingSource } from '../../shared/types.ts'
+import type { BillingPeriod, Co2Adjustment, Co2Assessment, Co2StageRange, Co2Statement, Co2TenantLine, Co2TenantRelief, DhwMethod, HeatGeneration, HeatingEnergy, HeatingMethod, HeatingSource } from '../../shared/types.ts'
 import { serviceProbe, type ProbeResult } from '../../shared/co2Probe.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
-import { NO_CO2_FUELS } from '../../shared/heatDelivery.ts'
+import { NO_CO2_FUELS, noCo2Supplier } from '../../shared/heatDelivery.ts'
 import type { Snapshot, SnapshotCostItem, SnapshotHeatingPeriodRow, SnapshotUnit } from './snapshot.ts'
 
 // Brennstoffe mit Standardwert für den Emissionsfaktor nach der EBeV, die das Gesetz erfasst (§ 2
@@ -20,9 +20,9 @@ export { NO_CO2_FUELS }
 
 // Ob für einen Topf CO₂-Angaben nötig sind (sonst `co2.missing`): ein Brennstoff mit Standardwert oder eine
 // Wärmelieferung, außer der Lieferant heizt bekanntermaßen ohne CO₂-Kosten.
-export const co2Required = (pot: { energy: HeatingEnergy; fuelEnergy?: HeatingEnergy }): boolean =>
-  CO2_FUELS.includes(pot.energy) ||
-  (pot.energy === 'districtHeating' && !(pot.fuelEnergy !== undefined && NO_CO2_FUELS.includes(pot.fuelEnergy)))
+// Mit einem weiteren Erzeuger des Lieferanten (`mixed`) bleibt die Pflicht (Nachprüfung von #272, N1, `noCo2Supplier`).
+export const co2Required = (pot: { energy: HeatingEnergy; fuelEnergy?: HeatingEnergy; heatGeneration?: HeatGeneration | null }): boolean =>
+  CO2_FUELS.includes(pot.energy) || (pot.energy === 'districtHeating' && !noCo2Supplier(pot))
 
 // Warmwasser ohne Wärmezähler (§ 9 Abs. 2 Satz 2 und 4 HeizkostenV).
 export const FORMULA_METHODS: readonly DhwMethod[] = ['volumeFormula', 'areaFormula']
@@ -182,6 +182,8 @@ export type Co2Pot = {
   energy: HeatingEnergy
   // Bei Contracting (Heizung PR 16) der Brennstoff des Lieferanten; `energy` ist dann `districtHeating`.
   fuelEnergy?: HeatingEnergy
+  // Bei Contracting: erzeugt der Lieferant die Wärme allein oder mit einem weiteren Erzeuger (Nachprüfung von #272, N1).
+  heatGeneration?: HeatGeneration | null
   method: HeatingMethod
   source: HeatingSource
   period: BillingPeriod
@@ -231,7 +233,7 @@ export function co2PotsOf(snapshot: Snapshot, items: readonly SnapshotCostItem[]
       plantId: plant.id,
       plantName: plant.name ?? '',
       energy: plant.energy,
-      ...(plant.fuelEnergy !== undefined ? { fuelEnergy: plant.fuelEnergy } : {}),
+      ...(plant.fuelEnergy !== undefined ? { fuelEnergy: plant.fuelEnergy, heatGeneration: plant.heatGeneration ?? null } : {}),
       method: plant.method,
       source: plant.source,
       period,

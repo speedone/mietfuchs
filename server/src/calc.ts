@@ -79,7 +79,7 @@ import { allocationOf, comparablePrevious, sameAllocation, sameUnits } from '../
 import { possibleDuplicates } from '../../shared/duplicates.ts'
 import { commonPeriod, tenancyOverlaps } from '../../shared/tenancyOverlap.ts'
 import { CALENDAR_RULES, calendarYearPeriod, contextOf, formatDayRange, isCalendarRules, periodContaining, periodDays, periodLabel, periodMonths, periodOfKey, periodsBetween, previousPeriod, rulesOf, settlementDeadline, settlementPeriod, type PeriodContext } from '../../shared/period.ts'
-import { generatorEnergy } from '../../shared/heatDelivery.ts'
+import { generatorEnergy, noCo2Supplier } from '../../shared/heatDelivery.ts'
 import { lineRoot, monthSpanText, plantRules, plantSpan, recommendedDeadline, requestMonth, sameBuilding, sameFuelLine, sameLine, sameSpan, separateOwner, servesUnit, settledSeparately } from '../../shared/heatingPeriod.ts'
 import { heatingSnapshotFor, selfAt, snapshotFor, wayOf } from './snapshot.ts'
 import { cancelledDeliveries, plantFuel, rangeOf, type FuelCarry, type FuelResult } from './fuel.ts'
@@ -4905,7 +4905,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Unter einer Ausnahme nach § 11 ohne vereinbarte Abrechnung gilt das CO2KostAufG nicht (§ 2 Abs. 7, Heizung
     // PR 14): dann auch keine Prüfung, dieselbe Bedingung wie die Aufteilung.
     // Heizung PR 16: auch nicht bei Contracting mit einem Brennstoff ohne CO₂-Kosten (§ 2 Abs. 1 Satz 2 CO2KostAufG).
-    const noCo2Fuel = pot.fuelEnergy !== undefined && NO_CO2_FUELS.includes(pot.fuelEnergy)
+    // Nachprüfung von #272, N1: nur, wenn der Lieferant allein ohne CO₂-Kosten heizt und die Rechnung keine ausweist.
+    const invoiceCo2 = fuelResults.get(pot.plantId)?.result.lines.some((l) => (l.co2Cents ?? 0) > 0) ?? false
+    const noCo2Fuel = noCo2Supplier(pot) && !invoiceCo2
     const co2Check: NonNullable<HeatingStatement['co2Check']> = { applies: !etsExempt && !noCo2Fuel && !co2OffByExemption(pot.plantId, String(pot.period.key)), exemption: null, findings: [] }
     report.co2Check = co2Check
     if (co2Check.applies) {
@@ -4944,7 +4946,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Wärmepumpe ist kein solcher Brennstoff (Durchsicht von #233, C1).
     // Heizung PR 16: Bei Contracting mit einem Brennstoff ohne CO₂-Kosten (Pellets, Holz, Strom, Wärmepumpe) gibt es
     // nichts aufzuteilen, auch wenn eine Rechnung CO₂-Werte trägt; dieselbe Regel wie `co2Required`.
-    const co2Relevant = co2Required(pot) && (CO2_FUELS.includes(pot.energy) || (pot.energy === 'districtHeating' && (fuelOf?.lines.some((l) => l.co2Cents !== null) ?? false)))
+    const co2Relevant = (co2Required(pot) || invoiceCo2) && (CO2_FUELS.includes(pot.energy) || (pot.energy === 'districtHeating' && (fuelOf?.lines.some((l) => l.co2Cents !== null) ?? false)))
     // Vorratsenergien (Heizung PR 8, Entwurf 8.2, Naht N1): E und C des verbrauchten Brennstoffs aus der
     // Bestandsrechnung. Bei freien Schlüsseln ohne Bestand wie geliefert (mit `fuel.manual-by-delivery`);
     // beim Messdienst ohne Aufteilung wird ohne Bestand nicht aufgeteilt (G-B4).

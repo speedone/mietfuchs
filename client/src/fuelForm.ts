@@ -6,7 +6,7 @@ import { ambiguousText, ambiguousThousands } from './numbers'
 import { formatDayRange } from '../../shared/period.ts'
 import { germanDate } from '../../shared/law/register.ts'
 import { STOCK_UNIT_LABELS, STOCK_UNIT_TEXT } from '../../shared/fuelStock.ts'
-import type { Co2Restriction, DegreeDayValue, FuelDelivery, FuelGrade, GasBasis, HeatingEnergy, HeatingMethod, HeatingPlant, StockUnit } from './types'
+import type { Co2Restriction, DegreeDayValue, FuelDelivery, FuelGrade, GasBasis, HeatGeneration, HeatingEnergy, HeatingMethod, HeatingPlant, StockUnit } from './types'
 import { FUEL_GRADE_LABELS, GRADES_BY_ENERGY, HEATING_VALUE_UNIT_TEXT } from '../../shared/fuelGrades.ts'
 import { billingEnergy, NO_CO2_FUELS } from '../../shared/heatDelivery.ts'
 
@@ -18,8 +18,9 @@ export const CO2_ENERGIES: readonly HeatingEnergy[] = ['gas', 'oil', 'lpg', 'coa
 
 // Ob für eine Anlage CO₂-Angaben gefragt werden (Heizung PR 16): nach der Energie der Abrechnung und, bei
 // Contracting, dem Brennstoff des Lieferanten; dieselbe Regel wie `co2Required` in server/src/co2.ts.
-export const asksCo2Facts = (plant: { energy: HeatingEnergy; contracting?: boolean }): boolean =>
-  CO2_ENERGIES.includes(billingEnergy(plant)) && !(plant.contracting === true && NO_CO2_FUELS.includes(plant.energy))
+// Mit einem weiteren Erzeuger des Lieferanten (`mixed`) bleiben die Felder (Nachprüfung von #272, N1).
+export const asksCo2Facts = (plant: { energy: HeatingEnergy; contracting?: boolean; heatGeneration?: HeatGeneration | null }): boolean =>
+  CO2_ENERGIES.includes(billingEnergy(plant)) && !(plant.contracting === true && NO_CO2_FUELS.includes(plant.energy) && plant.heatGeneration !== 'mixed')
 
 export type FuelForm = {
   label: string

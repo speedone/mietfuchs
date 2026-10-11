@@ -24,7 +24,7 @@
 // - § 11 Abs. 1 Nr. 3 Buchst. a a. F. („mit Wärme aus … Wärmepumpen- … anlagen“) und § 12 Abs. 3 HeizkostenV („Wärme
 //   oder Warmwasser aus Wärmepumpen“) hängen am Wärmeerzeuger, nicht am Betreiber; die Berechnung fragt dafür
 //   `generatorEnergy` (Durchsicht von #272, M1; Auslegung am Wortlaut, nicht entschieden).
-import type { HeatingEnergy, HeatingPlant } from './types.ts'
+import type { HeatGeneration, HeatingEnergy, HeatingPlant } from './types.ts'
 
 // Contracting gibt es bei jeder zentralen Anlage (§ 1 Abs. 1 Nr. 2 HeizkostenV: „auch aus Anlagen nach
 // Nummer 1“), auch bei der Wärmepumpe: § 556c Abs. 1 BGB und § 1 WärmeLV schränken nicht nach dem Erzeuger
@@ -41,6 +41,13 @@ export const CONTRACTING_ENERGIES: readonly HeatingEnergy[] = ['gas', 'oil', 'lp
 // Abrechnung (`co2Required` in server/src/co2.ts) und Oberfläche (`asksCo2Facts` in client/src/fuelForm.ts)
 // dasselbe meinen müssen.
 export const NO_CO2_FUELS: readonly HeatingEnergy[] = ['pellets', 'wood', 'electric', 'heatPump']
+
+// Ob der Lieferant bekanntermaßen ohne CO₂-Kosten heizt (Nachprüfung von #272, N1): Sein Brennstoff steht in
+// `NO_CO2_FUELS`, und er erzeugt die Wärme allein damit. Mit einem weiteren Erzeuger (`mixed`, etwa einem
+// Gasspitzenkessel) gilt das Gesetz „hinsichtlich der für die Wärmeerzeugung eingesetzten Brennstoffe“ (§ 2 Abs. 1
+// Satz 2 CO2KostAufG) weiter; welche das sind, weist der Lieferant aus.
+export const noCo2Supplier = (plant: { fuelEnergy?: HeatingEnergy; heatGeneration?: HeatGeneration | null }): boolean =>
+  plant.fuelEnergy !== undefined && NO_CO2_FUELS.includes(plant.fuelEnergy) && plant.heatGeneration !== 'mixed'
 
 // Wärmelieferung im Sinne von § 1 Abs. 1 Nr. 2 HeizkostenV: Fernwärme oder Contracting.
 export const isHeatDelivery = (plant: Pick<HeatingPlant, 'energy'> & { contracting?: boolean }): boolean =>

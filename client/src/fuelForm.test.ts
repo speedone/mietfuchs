@@ -137,6 +137,9 @@ test('Nachprüfung #240, W1: „11.325“ als Heizwert ist mehrdeutig und wird n
 // CO2KostAufG): Pellet-Contracting hat keine CO₂-Kosten aufzuteilen, Gas-Contracting schon, wie Fernwärme.
 test('CO₂-Angaben bei Contracting nach dem Brennstoff des Lieferanten', () => {
   expect(asksCo2Facts({ energy: 'pellets', contracting: true })).toBe(false)
+  // Nachprüfung von #272, N1: mit einem weiteren Erzeuger des Lieferanten (Gasspitzenkessel) bleiben die Felder.
+  expect(asksCo2Facts({ energy: 'heatPump', contracting: true, heatGeneration: 'mixed' })).toBe(true)
+  expect(asksCo2Facts({ energy: 'heatPump', contracting: true, heatGeneration: 'single' })).toBe(false)
   expect(asksCo2Facts({ energy: 'gas', contracting: true })).toBe(true)
   expect(asksCo2Facts({ energy: 'other', contracting: true })).toBe(true)
   expect(asksCo2Facts({ energy: 'districtHeating' })).toBe(true)

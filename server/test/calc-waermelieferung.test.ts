@@ -147,12 +147,50 @@ test('Contracting mit Wärmepumpe: alte Ausnahme (2023) und Übergang nach § 12
   assert.deepEqual(sums(computeSettlement(selfSnapshot({ year: 2023, plant: pumpe }))), { A: 199590, B: 266120, C1: 122910, C2: 77380 })
   for (const year of [2023, 2025]) {
     const row = { totalHeatKwh: 60000 }
-    const eigen = computeSettlement(selfSnapshot({ year, plant: pumpe, row }))
-    const con = computeSettlement(selfSnapshot({ year, plant: { ...pumpe, contracting: true }, row }))
+    // Die Rechnung einer Wärmepumpe trägt keine CO₂-Werte (Nachprüfung von #272, N1: mit Werten über 0 würde aufgeteilt).
+    const deliveries = [selfDelivery({ emissionsKg: null, co2CostCents: null }, year)]
+    const eigen = computeSettlement(selfSnapshot({ year, plant: pumpe, row, deliveries }))
+    const con = computeSettlement(selfSnapshot({ year, plant: { ...pumpe, contracting: true }, row, deliveries }))
     assert.deepEqual(heat(con), heat(eigen), `${year}`)
     assert.deepEqual(sums(con), sums(eigen), `${year}`)
     assert.ok(codes(con).includes('heating.heat-pump-capture'), `${year}: ${codes(con).join(', ')}`)
     if (year === 2023) assert.ok(codes(con).includes('heating.heat-pump-old-exemption'), codes(con).join(', '))
     assert.ok(!codes(con).includes('heating.info-incomplete'), `${year}: keine Kürzung nach § 12`)
   }
+})
+
+// Nachprüfung von #272, N1: § 2 Abs. 1 Satz 2 CO2KostAufG erfasst Wärmelieferung „hinsichtlich der für die Wärmeerzeugung
+// eingesetzten Brennstoffe“. Erzeugt der Lieferant die Wärme nicht allein mit der Wärmepumpe (etwa mit Gasspitzenkessel,
+// `mixed`) oder weist die Rechnung CO₂-Kosten aus, wird aufgeteilt wie bisher; nur die reine Wärmepumpe bleibt ohne.
+test('Contracting mit Wärmepumpe und Gasspitzenkessel: CO₂ wird aufgeteilt wie bei Gas-Contracting; reine Wärmepumpe nicht', () => {
+  const row = { totalHeatKwh: 60000 }
+  const base = { heatGeneration: 'mixed' as const, capturedOnOct2024: true, contracting: true }
+  const sums = (r: ComputedSettlement) => Object.fromEntries(r.statements.map((st) => [st.tenancyId, st.rows.reduce((a, x) => a + x.shareCents, 0)]))
+  const co2Share = (r: ComputedSettlement) => r.landlord.rows.flatMap((x) => x.landlordParts ?? []).filter((x) => x.reason === 'co2Share').reduce((a, x) => a + x.cents, 0)
+  const wp = computeSettlement(selfSnapshot({ plant: { ...base, energy: 'heatPump' }, row }))
+  const gas = computeSettlement(selfSnapshot({ plant: { ...base, energy: 'gas' }, row }))
+  assert.ok(co2Share(gas) > 0, 'Gas-Contracting teilt auf')
+  assert.equal(co2Share(wp), co2Share(gas))
+  assert.deepEqual(sums(wp), sums(gas))
+  assert.deepEqual([co2Share(wp), sums(wp)], [CO2_SHARE, MIXED_SUMS])
+  // Gegenprobe: Die reine Wärmepumpe des Lieferanten ohne CO₂-Kosten auf der Rechnung bleibt ohne Aufteilung und Hinweis.
+  const rein = computeSettlement(selfSnapshot({ plant: { ...base, energy: 'heatPump', heatGeneration: 'single' }, row, deliveries: [selfDelivery({ emissionsKg: null, co2CostCents: null })] }))
+  assert.equal(co2Share(rein), 0)
+  assert.ok(!codes(rein).some((c) => c.startsWith('co2.')), codes(rein).join(', '))
+  // Weist die Rechnung der reinen Wärmepumpe doch CO₂-Kosten über 0 aus, wird aufgeteilt (Regel der Nachprüfung).
+  assert.ok(co2Share(computeSettlement(selfSnapshot({ plant: { ...base, energy: 'heatPump', heatGeneration: 'single' }, row }))) > 0)
+})
+// Aus dem Lauf: Vermieteranteil an den CO₂-Kosten 568,66 €, Anteile der Mieter nach Abzug.
+const CO2_SHARE = 56866
+const MIXED_SUMS = { A: 179428, B: 239236, C1: 121812, C2: 68658 }
+
+// Gegenmutation N1.1 überlebte (der Gasspitzenkessel wirkte nur über die CO₂-Werte der Rechnung): Fehlen sie, kommt bei
+// `mixed` der bestehende Hinweis co2.missing, bei der reinen Wärmepumpe nicht.
+test('Contracting mit Wärmepumpe und Gasspitzenkessel ohne CO₂-Angaben: co2.missing; reine Wärmepumpe still', () => {
+  const ohneCo2 = [selfDelivery({ emissionsKg: null, co2CostCents: null })]
+  const plantOf = (heatGeneration: 'mixed' | 'single') => ({ energy: 'heatPump' as const, heatGeneration, capturedOnOct2024: true, contracting: true })
+  const mixed = computeSettlement(selfSnapshot({ plant: plantOf('mixed'), row: { totalHeatKwh: 60000 }, deliveries: ohneCo2 }))
+  assert.ok(codes(mixed).includes('co2.missing'), codes(mixed).join(', '))
+  const single = computeSettlement(selfSnapshot({ plant: plantOf('single'), row: { totalHeatKwh: 60000 }, deliveries: ohneCo2 }))
+  assert.ok(!codes(single).includes('co2.missing'), codes(single).join(', '))
 })
