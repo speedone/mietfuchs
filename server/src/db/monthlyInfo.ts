@@ -24,7 +24,8 @@ const lineOf = <P extends Pick<HeatingPlant, 'id' | 'replacesPlantId'>>(plant: P
 
 // Ein Teilrumpf ergänzt (wie PUT überall in Mietfuchs), `null` leert. Gespeichert wird an der Anlage der Linie,
 // die am Monatsende heizt (Prüfung S5): Die Information gilt dem Nutzer, nicht dem Kessel. Ohne Anlage null.
-export async function saveMonthlyInfoRow(db: Executor, plantId: string, month: string, body: unknown): Promise<MonthlyInfoRow | null> {
+// `today` (die Route gibt ihn mit): Ein Tag der Mitteilung danach ließe den Monat vorab als mitgeteilt gelten.
+export async function saveMonthlyInfoRow(db: Executor, plantId: string, month: string, body: unknown, today?: string): Promise<MonthlyInfoRow | null> {
   const plants = await readHeatingPlants(db)
   const plant = plants.find((p) => p.id === plantId)
   if (!plant) return null
@@ -49,6 +50,9 @@ export async function saveMonthlyInfoRow(db: Executor, plantId: string, month: s
     const earliest = dayAfter(monthBounds(month).to)
     if (sent < earliest) {
       throw new HeatingError(400, `Die Information für ${monthName(month)} nennt den Verbrauch des ganzen Monats und kann frühestens am ${germanDate(earliest)} mitgeteilt werden.`)
+    }
+    if (today !== undefined && sent > today) {
+      throw new HeatingError(400, `Der Tag der Mitteilung (${germanDate(sent)}) liegt nach dem heutigen Tag. Vermerken Sie ihn, wenn die Information den Mietern zugegangen ist.`)
     }
   }
   const next: MonthlyInfoRow = { plantId: target, month, referenceKwhPerM2: ref, referenceSource: source, sentOn: sent }
