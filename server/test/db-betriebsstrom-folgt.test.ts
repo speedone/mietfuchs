@@ -179,13 +179,13 @@ test('K1-split: Leistungszeitraum ganz im Rumpf, kalte Gruppe „nach Tagen auft
 // Abzüge zu je −500 €. Teile der Rechnung 32.877 / 67.123. Einzeln nach Tagen geteilt ergaben die Abzüge in 2025/26
 // zusammen 67.124 (> 67.123, 409). Gemeinsam: d1 −16.439 / −33.561, d2 −16.438 / −33.562. Je Mieter (jede Position
 // für sich gerundet, #202): Rumpf netto A +1, B1 −1 Cent; 2025/26 netto A −1, B2 +1 Cent (F5: der Cent bleibt).
-async function hausH1(opened: OpenedDatabase): Promise<void> {
+async function hausH1(opened: OpenedDatabase, strom: Record<string, unknown> = { serviceFrom: '2025-01-01', serviceTo: '2025-12-31' }): Promise<void> {
   await mieter(opened)
   await opened.write(async (db) => {
     await createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'gas', method: 'manual' })
     await createEntity(db, 'costItems', 'gas', { propertyId: 'objekt-1', period: '2025-01', category: 'Heizung und Warmwasser', description: 'Gas', amountCents: 500000, key: 'area', heatingPart: 'fuel', heatingPlantId: 'hp' })
     await createEntity(db, 'costItems', 'bs', { propertyId: 'objekt-1', period: '2025-01', category: 'Heizung und Warmwasser', description: 'Betriebsstrom', amountCents: 100000, key: 'area', heatingPart: 'operating', heatingPlantId: 'hp', operatingPower: 'included', operatingPowerBasis: 'Zwischenzähler' })
-    await createEntity(db, 'costItems', 'hs', { propertyId: 'objekt-1', period: '2025-01', category: 'Beleuchtung/Allgemeinstrom', description: 'Hausstrom', amountCents: 100000, key: 'area', serviceFrom: '2025-01-01', serviceTo: '2025-12-31' })
+    await createEntity(db, 'costItems', 'hs', { propertyId: 'objekt-1', period: '2025-01', category: 'Beleuchtung/Allgemeinstrom', description: 'Hausstrom', amountCents: 100000, key: 'area', ...strom })
     for (const id of ['d1', 'd2']) {
       await createEntity(db, 'costItems', id, { propertyId: 'objekt-1', period: '2025-01', category: 'Beleuchtung/Allgemeinstrom', description: `Abzug ${id}`, amountCents: -50000, key: 'area', operatingPower: 'deduction', operatingPowerItemId: 'bs', operatingPowerGeneralId: 'hs', operatingPowerBasis: 'Zwischenzähler' })
     }
@@ -232,6 +232,42 @@ test('H2: zweiter Wechsel über eine schon geteilte Rechnung verschiebt je Miete
     assert.deepEqual(strom.filter((c) => c.operatingPower === undefined).map((c) => [c.period, c.amountCents]).sort(), [['2025-01', 16712], ['2025-01', 32877], ['2025-07', 50411]])
     assert.deepEqual(strom.filter((c) => c.operatingPower === 'deduction').map((c) => [c.period, c.amountCents]).sort(), [['2025-01', -1671], ['2025-01', -3288], ['2025-07', -5041]])
     assert.deepEqual(await jeMieter(opened, ['2025-01', '2025-07']), soll)
+  })
+})
+
+// H2b: zweiter Wechsel, in dem **beide** Teile der Rechnung wandern („Juli ab 2024“: 01.07.2024–30.06.2025 und
+// 01.07.2025–30.06.2026). Die bewegten Teile (32.877 + 67.123) werden als eine Rechnung über 01.01.–31.12.2025 neu
+// geteilt: 181 und 184 Tage, 49.589 / 50.411. Beide Abzüge (−3.288, −6.712) teilen sich gemeinsam: Summe 10.000 →
+// 4.959 / 5.041; im ersten Teil 4.959 × 3.288/10.000 = 1.630,52 und × 6.712/10.000 = 3.328,48, Restcent an den
+// größeren Rest, also −1.631 und −3.328; im zweiten der Rest, −1.657 und −3.384. Heizgruppe nach 2025-07.
+// Je Mieter (Einheiten, im ersten Zeitraum A 365, B1 304, B2 61 Tage; jede Position für sich gerundet):
+// A 4.529,99, B1 185,86, B2 1.284,15 (zusammen 6.000,00 €). Dass B1 mehr trägt als vor dem Wechsel, folgt aus dem
+// neuen Zeitraum (seine Tage darin), nicht aus der Regel für den Abzug.
+test('H2b: zweiter Wechsel, beide Teile der Rechnung wandern: Abzüge gemeinsam, je Mieter wie von Hand gerechnet', async () => {
+  await withDatabase(async (opened) => {
+    await haus(opened, { strom: { serviceFrom: '2025-01-01', serviceTo: '2025-12-31' } })
+    const erster = await wechsel(opened, MAI_AB_2025, 'split', '2025-05')
+    if (!erster.r || 'error' in erster.r) return assert.fail(erster.r ? erster.r.error : 'kein Objekt')
+    const zweiter = await wechsel(opened, { startMonth: 1, changes: ['2024-07'] }, '2025-07', '2025-07')
+    if (!zweiter.r || 'error' in zweiter.r) return assert.fail(zweiter.r ? zweiter.r.error : 'kein Objekt')
+    const nachher = await items(opened)
+    verweiseStimmen(nachher)
+    const strom = nachher.filter((c) => c.category === 'Beleuchtung/Allgemeinstrom')
+    assert.deepEqual(strom.filter((c) => c.operatingPower === undefined).map((c) => [c.period, c.amountCents]).sort(), [['2024-07', 49589], ['2025-07', 50411]])
+    assert.deepEqual(strom.filter((c) => c.operatingPower === 'deduction').map((c) => [c.period, c.amountCents]).sort(), [['2024-07', -1631], ['2024-07', -3328], ['2025-07', -1657], ['2025-07', -3384]])
+    assert.deepEqual(await jeMieter(opened, ['2024-07', '2025-07']), { 'Mieter A': 452999, 'Mieter B1': 18586, 'Mieter B2': 128415 })
+  })
+})
+
+// H1 ohne Leistungszeitraum: Die Rechnung steht mit ihren Abzügen in der kalten Gruppe; „nach Tagen aufteilen“ teilt
+// beide Abzüge gemeinsam wie die Rechnung (32.877 / 67.123), nicht jeden für sich nach Tagen (das ergab 409).
+test('H1-Gruppe: Rechnung ohne Leistungszeitraum, zwei Abzüge gleich der Rechnung, Gruppe aufgeteilt: gemeinsam, je Mieter wie H1', async () => {
+  await withDatabase(async (opened) => {
+    await hausH1(opened, {})
+    const { r } = await wechsel(opened, MAI_AB_2025, 'split', '2025-01')
+    if (!r || 'error' in r) return assert.fail(r ? r.error : 'kein Objekt')
+    verweiseStimmen(await items(opened))
+    assert.deepEqual(await jeMieter(opened, ['2025-01', '2025-05']), { 'Mieter A': 480000, 'Mieter B1': 119999, 'Mieter B2': 1 })
   })
 })
 
