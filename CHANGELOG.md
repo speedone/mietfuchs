@@ -287,6 +287,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   unvollständig, nennt die Abrechnung die Monate und je Mieter einmal die Kürzung um 3 %, für Mieter mit nicht
   ganz fernablesbarer Wohnung mit dem Vorbehalt der Einzelfallprüfung; beides ist als Auslegung gekennzeichnet,
   abgezogen wird nichts. Heizkostenverteiler ergeben keine kWh, dann erstellt der Ablesedienst die Information.
+  Bei getrennt bereitetem Warmwasser tragen Sie die mittlere Warmwassertemperatur für die Umrechnung in derselben
+  Karte ein. Mietfuchs verlangt die Information für jeden Monat, auch außerhalb der Heizperiode (Auslegung).
   ([#99](https://github.com/speedone/mietfuchs/issues/99))
 - Mehr als 70 % nach Verbrauch, wenn es mit den Mietern vereinbart ist (§ 10 HeizkostenV), in der
   Einrichtung und auf der Seite Heizkosten; nie mehr als 100 %.

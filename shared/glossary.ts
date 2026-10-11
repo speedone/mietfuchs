@@ -416,6 +416,7 @@ export const GLOSSARY = {
       'Die Information muss den Mieter erreichen: als Brief oder E-Mail, oder in einem Portal oder einer App, wenn er jeden Monat eine Nachricht bekommt, dass sie dort steht. ' +
       'Der Vergleich mit einem Durchschnittsnutzer stammt nicht von den Nutzern desselben Hauses, sondern aus Vergleichsdaten, etwa des Ablesedienstes. ' +
       `Fehlt die Information oder ist sie unvollständig, darf ein Mieter, dessen Wohnung fernablesbar ausgestattet ist, seinen Anteil an den Heizkosten um ${INFO_CUT} % kürzen. Ob schon ein einzelner fehlender Monat die volle Kürzung erlaubt, ist nicht höchstrichterlich geklärt; Mietfuchs rechnet vorsorglich mit den vollen ${INFO_CUT} % (Auslegung). ` +
+      'Mietfuchs verlangt die Information für jeden Monat, auch außerhalb der Heizperiode: Die Verordnung sagt nur „monatlich“, das Vorblatt der Begründung nennt „während der Heizperiode“ (BR-Drs. 643/21); das ist eine vorsichtige Auslegung. Einen Monat zählt Mietfuchs ab dem ersten Tag des Folgemonats als fällig; eine Frist nennt die Verordnung nicht, das ist eine Festlegung von Mietfuchs. ' +
       'Rechnen Sie die Heizkosten selbst ab, erstellt Mietfuchs die Information auf der Seite Heizkosten aus den Zählerständen am Monatsende; zukommen lassen müssen Sie sie den Mietern selbst.',
   },
   climateFactor: {

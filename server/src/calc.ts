@@ -5997,6 +5997,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       const unknownPart = unknownText(unknown)
       warn('heating.monthly-info',
         `${where}: Nach Ihren Angaben sind Zähler oder Heizkostenverteiler fernablesbar. Dann steht den Mietern seit dem ${fmtDay(monthly.validFrom ?? '')} jeden Monat eine Verbrauchsinformation zu (§ 6a Abs. 1 und 2 HeizkostenV): der Verbrauch des Monats in Kilowattstunden, der Vergleich mit dem Vormonat und dem entsprechenden Monat des Vorjahres, soweit diese Daten erhoben worden sind, und der Vergleich mit einem Durchschnittsnutzer. ` +
+          'Mietfuchs verlangt sie für jeden Monat, auch außerhalb der Heizperiode: Die Verordnung sagt nur „monatlich“, das Vorblatt der Begründung nennt „während der Heizperiode“ (BR-Drs. 643/21); das ist eine vorsichtige Auslegung zu Ihren Lasten. ' +
           (notSent.length > 0 ? `Nicht als mitgeteilt vermerkt: ${monthRanges(notSent)}. ` : '') +
           (incomplete.length > 0 ? `Unvollständig: ${incomplete.join('; ')}. ` : '') +
           cutText + namedText + (unknownPart ? `${unknownPart.trim()} ` : '') +
