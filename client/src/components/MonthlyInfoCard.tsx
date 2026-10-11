@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { api, errorText } from '../api'
 import { useToast } from './feedback'
+import Table from './Table'
 import Term from './Term'
 import MonthlyInfoSheet from './MonthlyInfoSheet'
 import { EMPTY_ROW_FORM, monthStatus, periodReferenceText, rowBody, rowToForm, type MonthlyRowForm } from '../monthlyInfoForm'
@@ -77,7 +78,7 @@ export default function MonthlyInfoCard({ plantId, period, propertyName = '' }: 
 
   return (
     <div className="card">
-      <h2>Monatliche Verbrauchsinformation <Term id="monthlyConsumptionInfo" /></h2>
+      <h2><Term id="monthlyConsumptionInfo">Monatliche Verbrauchsinformation</Term></h2>
       <p className="muted">
         Zähler Ihrer Mieter sind aus der Ferne ablesbar. Dann steht jedem Mieter jeden Monat seine Verbrauchsinformation zu. Mietfuchs erstellt sie aus
         den Zählerständen genau am Monatsende; zukommen lassen müssen Sie sie selbst, als Brief oder E-Mail, und hier vermerken Sie, wann. Den
@@ -88,31 +89,29 @@ export default function MonthlyInfoCard({ plantId, period, propertyName = '' }: 
         <p className="muted">Die mittlere Warmwassertemperatur für die Umrechnung tragen Sie in der Karte „Warmwasser“ dieser Heizperiode ein; auch eine geschätzte genügt.</p>
       )}
       {error && <div className="error">{error}</div>}
-      <div className="table-scroll">
-        <table className="table">
-          <thead><tr><th>Monat</th><th>Stand</th><th>Vergleichswert (kWh je m²)</th><th>Quelle</th><th>Mitgeteilt am</th><th /></tr></thead>
-          <tbody>
-            {view.months.map((m) => {
-              const status = monthStatus(m)
-              const f = forms[m.month] ?? EMPTY_ROW_FORM
-              const label = monthName(m.month)
-              return (
-                <tr key={m.month}>
-                  <td>{label}</td>
-                  <td><span className={`chip ${TONE_CHIP[status.tone]}`}>{status.text}</span></td>
-                  <td><input aria-label={`Vergleichswert ${label} (kWh je m²)`} inputMode="decimal" value={f.reference} onChange={(e) => set(m.month, 'reference', e.target.value)} /></td>
-                  <td><input aria-label={`Quelle ${label}`} value={f.source} onChange={(e) => set(m.month, 'source', e.target.value)} /></td>
-                  <td><input aria-label={`Mitgeteilt am ${label}`} type="date" value={f.sentOn} onChange={(e) => set(m.month, 'sentOn', e.target.value)} /></td>
-                  <td className="row">
-                    <button className="btn secondary" type="button" onClick={() => void save(m.month)}>Speichern</button>
-                    {m.due && m.users.length > 0 && <button className="btn secondary" type="button" onClick={() => setPrinting(m.month)}>Drucken</button>}
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
+      <Table>
+        <thead><tr><th>Monat</th><th>Stand</th><th>Vergleichswert (kWh je m²)</th><th>Quelle</th><th>Mitgeteilt am</th><th /></tr></thead>
+        <tbody>
+          {view.months.map((m) => {
+            const status = monthStatus(m)
+            const f = forms[m.month] ?? EMPTY_ROW_FORM
+            const label = monthName(m.month)
+            return (
+              <tr key={m.month}>
+                <td>{label}</td>
+                <td><span className={`chip ${TONE_CHIP[status.tone]}`}>{status.text}</span></td>
+                <td><input aria-label={`Vergleichswert ${label} (kWh je m²)`} inputMode="decimal" value={f.reference} onChange={(e) => set(m.month, 'reference', e.target.value)} /></td>
+                <td><input aria-label={`Quelle ${label}`} value={f.source} onChange={(e) => set(m.month, 'source', e.target.value)} /></td>
+                <td><input aria-label={`Mitgeteilt am ${label}`} type="date" value={f.sentOn} onChange={(e) => set(m.month, 'sentOn', e.target.value)} /></td>
+                <td className="row">
+                  <button className="btn secondary" type="button" onClick={() => void save(m.month)}>Speichern</button>
+                  {m.due && m.users.length > 0 && <button className="btn secondary" type="button" onClick={() => setPrinting(m.month)}>Drucken</button>}
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </Table>
       {toPrint && createPortal(<MonthlyInfoSheet month={toPrint} propertyName={propertyName} />, document.body)}
     </div>
   )
