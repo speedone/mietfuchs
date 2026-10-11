@@ -512,6 +512,49 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
   for (const { item, parts } of follows) for (const part of parts) ask(item, part.period)
   for (const g of groups.values()) for (const o of g.options) for (const item of g.items) ask(item, o)
   for (const { item, target } of regrows) ask(item, target)
+  // Geld H1 (Nachprüfung fc20455): Die Teile eines Abzugs nehmen das Jahr ihrer Betriebsstrom-Position. Die
+  // Vorschau bietet für den Betriebsstrom deshalb nur Jahre an, die in jeder Spanne seiner abgeleiteten Abzugsteile
+  // liegen; geht ein Ziel gar nicht (kein gemeinsames Jahr, oder das feste Jahr eines Zeitraums in einem
+  // Kalenderjahr passt nicht), sagt sie es an diesem Ziel vorher. Der 409 beim Schreiben bleibt als Netz.
+  const conflicts = new Map<string, string[]>()
+  const conflict = (powerId: string, target: BillingPeriod, text: string) => {
+    for (const g of preview.groups) {
+      if (!g.items.some((i) => i.costItemId === powerId) || !g.options.some((o) => o.key === target.key)) continue
+      conflicts.set(`${g.id}|${target.key}`, [...(conflicts.get(`${g.id}|${target.key}`) ?? []), text])
+    }
+  }
+  for (const d of derivedYears.values()) {
+    const power = byId.get(d.powerItemId)
+    if (power === undefined) continue
+    const span = d.entry.options
+    const tell = (target: BillingPeriod, year: string) => conflict(power.id, target,
+      `Ganz nach ${periodLabel(target)} verschoben, stünde „${power.description}“ im Jahr der Zahlung ${year}; sein Abzug „${d.entry.description}“ in ${d.entry.label} folgt ihm, dort ist aber nur ${span[0]} bis ${span[span.length - 1]} möglich. So lässt sich der Wechsel nicht speichern; wählen Sie für die Heizkosten einen anderen Zeitraum.`)
+    for (const e of taxEntries.values()) {
+      if (e.costItemId !== power.id) continue
+      const options = e.options.filter((y) => span.includes(y))
+      const target = periodOfKey(next, e.period)
+      if (options.length === 0) {
+        if (target) tell(target, `${e.options[0]} bis ${e.options[e.options.length - 1]}`)
+        continue
+      }
+      e.options = options
+      e.suggested = Math.min(Math.max(e.suggested, options[0] ?? e.suggested), options[options.length - 1] ?? e.suggested)
+    }
+    for (const g of groups.values()) {
+      if (!g.items.some((i) => i.id === power.id)) continue
+      for (const o of g.options) if (!spansTwoYears(o) && !span.includes(startYearOf(o.key))) tell(o, String(startYearOf(o.key)))
+    }
+  }
+  for (const g of preview.groups) {
+    for (const o of g.options) {
+      const texts = conflicts.get(`${g.id}|${o.key}`)
+      if (!texts) continue
+      const text = [...new Set(texts)].join(' ')
+      const shift = g.taxShifts.find((t) => t.key === o.key)
+      if (shift) shift.text = `${shift.text} ${text}`
+      else g.taxShifts.push({ key: o.key, text })
+    }
+  }
   preview.taxYears = [...taxEntries.values()]
   preview.token = tokenOf(preview)
   return { preview, splits, groups, overrideRekeys, overrideAsks: [...asks.values()], assessmentMoves, regrows, follows, byId, derivedYears, taxEntries, next, before }

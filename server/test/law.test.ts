@@ -520,3 +520,12 @@ test('Stichtag strom zur Wärmeerzeugung: BetrKV ab 2024, HeizkostenV ab 01.10.2
   assert.equal(law(hkvGenerationPower, { period: { from: '2024-01-01', to: '2024-09-30' } }, log).coverage, 'none')
   assert.equal(law(hkvGenerationPower, year(2025), log).coverage, 'full')
 })
+
+// Recht H-5 (Nachprüfung fc20455): Fundstellen des Gesetzes vom 16.10.2023 mit Jahr, und die BetrKV mit ihrem Wortlaut
+// „Kosten des Betriebs der zentralen Heizungsanlage“.
+test('Register: BGBl. 2023 I Nr. 280 mit Jahr; BetrKV-Beschreibung nach dem Wortlaut', () => {
+  for (const p of LAW_PARAMS) for (const v of p.versions) {
+    if (v.enacted.includes('Nr. 280')) assert.match(v.enacted, /BGBl\. 2023 I Nr\. 280/, `${p.id}: ${v.enacted}`)
+  }
+  assert.match(betrkvGenerationPower.describe({ since: '2024-01-01' }), /zu den Kosten des Betriebs der zentralen Heizungsanlage$/)
+})

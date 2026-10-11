@@ -1,11 +1,11 @@
 // Parameter der Heizkostenverordnung (Heizung PR 1, Entwurf 4.3). Wortlaut geprüft am 05.10.2026
-// auf gesetze-im-internet.de, Fassung Art. 3 G v. 16.10.2023 (BGBl. I Nr. 280); das Gesetz vom
+// auf gesetze-im-internet.de, Fassung Art. 3 G v. 16.10.2023 (BGBl. 2023 I Nr. 280); das Gesetz vom
 // 23.07.2026 ändert die Verordnung nicht (Entwurf Abschnitt 2).
 import type { LawParam, Source } from './register.ts'
 import { germanDate } from './register.ts'
 import type { HeatingValueTable } from '../types.ts'
 
-const ENACTED = 'HeizkostenV, Fassung Art. 3 G v. 16.10.2023 (BGBl. I Nr. 280)'
+const ENACTED = 'HeizkostenV, Fassung Art. 3 G v. 16.10.2023 (BGBl. 2023 I Nr. 280)'
 const checked = (cite: string, url: string): Source => ({ rank: 'law', cite, url, retrieved: '2026-10-05', checked: 'checked' })
 
 // Mindestens 50 und höchstens 70 % der Kosten nach erfasstem Verbrauch, für Heizung (§ 7 Abs. 1

@@ -335,7 +335,7 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - **Hinweis, wenn der Strom einer Wärmepumpe im Allgemeinstrom mitlaufen kann** ([#253](https://github.com/speedone/mietfuchs/issues/253)):
   Hat eine Wärmepumpe oder ein Elektrokessel keine eigene Stromrechnung und steht beim Allgemeinstrom kein
   Abzug, weist die Abrechnung darauf hin. Seit dem 01.01.2024 zählt § 2 Nr. 4 Buchst. a BetrKV diesen Strom zu
-  den Heizkosten, seit dem 01.10.2024 auch § 7 Abs. 2 HeizkostenV; dass er aus dem Allgemeinstrom
+  den Heizkosten, seit dem 01.10.2024 auch § 7 Abs. 2 HeizkostenV, soweit sie für die Anlage gilt; dass er aus dem Allgemeinstrom
   herauszurechnen ist, ist eine Auslegung von Mietfuchs und steht so da. Für Zeiträume vor 2024 kommt der
   Hinweis nicht.
 - Beim Wechsel des Abrechnungszeitraums folgt der Abzug des Betriebsstroms immer seiner Stromrechnung, auch
