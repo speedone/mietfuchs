@@ -700,3 +700,10 @@ test('Anleitungen: Betriebsstrom steht bei Mehrfamilienhaus und Messdienst, mit 
     assert.ok(GUIDES[id].terms.includes('operatingPower'), `${id}: Begriff fehlt`)
   }
 })
+
+// #266: Beim Mehrfamilienhaus die Angabe an der Anlage, und ein Zwischenzähler wird abgelesen statt geschätzt (K-5).
+test('Anleitungen: Mehrfamilienhaus nennt die Angabe zum Betriebsstrom und den Zwischenzähler (#266)', () => {
+  const c = GUIDES.multiFamily.caveats.find((x) => x.text.includes('Betriebsstrom')) ?? assert.fail('kein Satz zum Betriebsstrom')
+  assert.match(c.text, /Läuft er über den Stromzähler des Hauses, schätzen Sie ihn oder lesen Sie den Zwischenzähler ab und ziehen ihn beim Allgemeinstrom ab;/)
+  assert.ok(c.text.endsWith('Geben Sie auf der Seite Heizkosten an, wie der Betriebsstrom erfasst ist; dann weist Mietfuchs gezielt darauf hin, wenn der Abzug fehlt.'), c.text)
+})

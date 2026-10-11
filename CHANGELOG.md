@@ -305,7 +305,7 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   mit Grundlage und legt Betriebsstrom und Abzug gemeinsam an; der Euro-Betrag ist der Anteil am
   Rechnungsbetrag einschließlich Grundpreis. Die Grundlage der Schätzung bleibt an beiden Positionen
   gespeichert und steht im Rechenweg, denn bestreitet ein Mieter den Betrag, müssen Sie sie darlegen
-  (BGH, Versäumnisurteil vom 20.02.2008, VIII ZR 27/07, Leitsatz 3). Einen von Hand erfassten Abzug
+  (BGH, Versäumnisurteil vom 20.02.2008, VIII ZR 27/07, Leitsatz c). Einen von Hand erfassten Abzug
   verknüpfen Sie im Kostenformular mit dem Betriebsstrom und mit der Stromrechnung, aus der er stammt;
   er übernimmt deren Verteilung, und die Rechnung lässt sich nicht löschen, solange er besteht. Die
   Abrechnung meldet einen Abzug, der anders verteilt ist als seine Rechnung, mehr Abzug als Rechnung und
@@ -328,10 +328,24 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Hat eine Zentralheizung mit Brenner im Abrechnungszeitraum weder einen Betriebsstrom noch einen Abzug beim
   Allgemeinstrom, sagt die Abrechnung das, mit dem Weg über die Karte „Betriebsstrom“ (§ 7 Abs. 2, § 8 Abs. 2
   HeizkostenV; § 2 Nr. 4 Buchst. a BetrKV; BGH, Urteil vom 03.06.2016, V ZR 166/15). Der Hinweis ist eine
-  Auskunft und färbt das Cockpit nicht. Er schweigt bewusst, sobald für die Anlage irgendeine Heizposition
-  „Betrieb“ erfasst ist, auch wenn es nur die Wartung ist, und ebenso bei Fernwärme, bei einer Heizung mit
-  Messdienst und ohne Allgemeinstrom: Dort lässt sich ohne weitere Angabe nicht erkennen, ob der Betriebsstrom
-  fehlt.
+  Auskunft und färbt das Cockpit nicht. Ohne Angabe an der Heizanlage schweigt er bewusst, sobald für die Anlage
+  irgendeine Heizposition „Betrieb“ erfasst ist, auch wenn es nur die Wartung ist, und ebenso bei Fernwärme, bei
+  einer Heizung mit Messdienst und ohne Allgemeinstrom: Dort lässt sich ohne weitere Angabe nicht erkennen, ob
+  der Betriebsstrom fehlt.
+- **Angabe an der Heizanlage, wie der Betriebsstrom erfasst ist** ([#266](https://github.com/speedone/mietfuchs/issues/266)):
+  Auf der Seite Heizkosten fragt die Karte „Betriebsstrom der Heizung“ bei einer Zentralheizung mit Brenner ohne
+  Messdienst, ob die Heizung einen eigenen Stromvertrag mit eigener Rechnung hat oder über die Stromrechnung des
+  Hauses läuft, auch mit Zwischenzähler. Mit „über die Stromrechnung des Hauses, beim Allgemeinstrom abgezogen“
+  meldet die Abrechnung „Abzug des Betriebsstroms fehlt“, wenn beim Allgemeinstrom kein Abzug steht, auch wenn
+  die Wartung als Heizposition „Betrieb“ erfasst ist; das ist die Lage aus BGH, Urteil vom 03.06.2016,
+  V ZR 166/15 (Wohnungseigentum), und BGH, Versäumnisurteil vom 20.02.2008, VIII ZR 27/07 (Mietrecht):
+  Betriebsstrom im Allgemeinstrom ohne Abzug, und eine erfasste Wartung ändert daran nichts. Dieser Hinweis
+  färbt das Cockpit gelb. Ist die Heizposition „Betrieb“ schon der Betriebsstrom selbst, sagt er, wie man ihn
+  nicht doppelt anlegt, und er nennt den netto eingetragenen Allgemeinstrom (BGH, Urteil vom 20.01.2016,
+  VIII ZR 93/15). Mit „eigener Stromvertrag, Rechnung als Heizposition erfasst“ weist die Abrechnung darauf hin,
+  wenn keine Heizposition „Betrieb“ erfasst ist; das ist eine Auskunft. Mit „eigener Stromvertrag, die Kosten
+  trägt der Vermieter selbst“ schweigt der Hinweis. Ohne Angabe bleibt alles wie bisher; die Angabe ändert keine
+  Zahl der Abrechnung und übersteht den Kesseltausch.
 - **Hinweis, wenn der Strom einer Wärmepumpe im Allgemeinstrom mitlaufen kann** ([#253](https://github.com/speedone/mietfuchs/issues/253)):
   Hat eine Wärmepumpe oder ein Elektrokessel keine eigene Stromrechnung und steht beim Allgemeinstrom kein
   Abzug, weist die Abrechnung darauf hin. Seit dem 01.01.2024 zählt § 2 Nr. 4 Buchst. a BetrKV diesen Strom zu

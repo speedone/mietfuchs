@@ -2120,7 +2120,7 @@ die ganze fachliche Komplexität:
   Positionen in einer Transaktion an; 409, wenn Heizperiode oder Allgemeinstrom abgeschlossen sind. Die
   Grundlage der Schätzung steht als Text in `cost_items.operating_power_basis` an beiden Positionen und
   im Rechenweg (`no-print`), denn bestreitet ein Mieter den Betrag, muss der Vermieter sie darlegen
-  (BGH, Versäumnisurteil vom 20.02.2008, VIII ZR 27/07, Leitsatz 3). Bei Wärmepumpe und Stromheizung
+  (BGH, Versäumnisurteil vom 20.02.2008, VIII ZR 27/07, Leitsatz c). Bei Wärmepumpe und Stromheizung
   gibt es keine Hilfe: Der Strom zur Wärmeerzeugung gehört zu den Heizkosten, ist aber weder Brennstoff
   noch Betriebsstrom (§ 7 Abs. 2 HeizkostenV nennt seit 01.10.2024 die „Kosten des zur Wärmeerzeugung
   verbrauchten Stroms“ neben den Brennstoffen). Seine Heizposition (Teil `fuel`) darf trotzdem `included`
@@ -2165,11 +2165,32 @@ die ganze fachliche Komplexität:
   Anlage mit Brenner (nicht Fernwärme, nicht „sonstige“), ohne Messdienst, ohne Eigentümergemeinschaft, mit
   Heizkosten im Zeitraum und Allgemeinstrom (nicht `external`/`amounts`), wenn keine Heizposition
   gekennzeichnet ist, keine den Teil „Betrieb“ hat, keine ohne Teil ist und kein Abzug als Antwort gilt
-  (ohne Verweis oder auf eine Position dieser Anlage). **Die Grenze ist gewollt:** Er schweigt, sobald
-  irgendeine Position „Betrieb“ besteht, auch nur die Wartung, denn ohne Angabe an der Anlage ist sie von
-  einer Rechnung über einen eigenen Zähler nicht zu unterscheiden, und wegklicken lässt sich ein Hinweis
-  nicht. Er färbt die Cockpit-Ampel nicht (`INFORMATIONAL`), weil er auch den rechtmäßigen Fall „eigener
-  Zähler, Vermieter trägt selbst“ trifft. `heating.generation-power-missing` kommt bei Wärmepumpe und
+  (ohne Verweis oder auf eine Position dieser Anlage). **Die Grenze ist gewollt:** Ohne Angabe an der Anlage
+  schweigt er, sobald irgendeine Position „Betrieb“ besteht, auch nur die Wartung, denn dann ist sie von
+  einer Rechnung über einen eigenen Stromvertrag nicht zu unterscheiden, und wegklicken lässt sich ein
+  Hinweis nicht. Er färbt die Cockpit-Ampel nicht (`INFORMATIONAL`), weil er auch den rechtmäßigen Fall
+  „eigener Stromvertrag, Vermieter trägt selbst“ trifft. **Die Angabe an der Anlage** (#266,
+  `heating_plants.operating_power_handling`, Schritte 0041/0042, Karte „Betriebsstrom der Heizung“ auf der
+  Seite Heizkosten) unterscheidet die Fälle: `deducted` (über die Stromrechnung des Hauses, auch mit
+  Zwischenzähler, beim Allgemeinstrom abgezogen) meldet `heating.operating-power-deduction-missing`, wenn
+  Allgemeinstrom da ist, aber weder Abzug noch gekennzeichneter Betriebsstrom, **auch wenn eine Position
+  „Betrieb“ besteht**; das ist die Lage aus V ZR 166/15 und VIII ZR 27/07, deshalb färbt er gelb.
+  `ownMeter` (eigener Stromvertrag, Rechnung als Heizposition „Betrieb“) meldet
+  `heating.operating-power-bill-missing`, wenn weder Position „Betrieb“ noch ohne Teil noch Kennzeichnung
+  noch Abzug besteht, **auch ohne Allgemeinstrom** (er betrifft die eigene Rechnung); er färbt nicht, denn
+  der Vermieter verliert nur eigenes Geld. `landlordPays` schweigt immer, `null` verhält sich wie vor #266.
+  Die Werte richten sich nach **Stromvertrag und Rechnung, nicht nach dem Zähler** (E1 mit Rechtsprüfung
+  M-1): Läuft der Strom über die Rechnung des Hauses, muss er dort heraus, gleich wer ihn trägt, und ein
+  Zwischenzähler ersetzt nur das Schätzen (VIII ZR 27/07, Rn. 32). Eigene Codes statt Varianten (E6), weil
+  Stufe und Ampel am Code hängen. Die Angabe steht an der Anlage, nicht je Heizperiode (E2), der Kesseltausch
+  übernimmt sie (E3), der Server nimmt sie an jeder Anlage an (E4), und ob gefragt und ausgewertet wird,
+  entscheidet einmal `asksOperatingPowerHandling` in shared/operatingPower.ts (E5). Frage, Beschriftungen
+  und die zitierte Frage des Kostenformulars stehen dort als Konstanten, damit Hinweis, Lexikon und
+  Oberfläche wortgleich sind (OperatingPowerFields.test.tsx hält die gerenderte Frage fest). Ist die
+  Position „Betrieb“ womöglich schon der Betriebsstrom selbst, sagt `deduction-missing`, ihn zu kennzeichnen
+  statt mit der Karte ein zweites Mal anzulegen; die Karte sieht eine Position ohne Kennzeichnung nicht.
+  Keine Zahl ändert sich; ein Satz zur Steuer beim Weg „abziehen und selbst tragen“ steht bewusst nicht
+  darin (eigener Befund). `heating.generation-power-missing` kommt bei Wärmepumpe und
   Elektrokessel ohne eigene Stromrechnung (Teil `fuel`, ohne Teil, Lieferung) und ohne Abzug, auch ganz
   ohne Heizposition, solange die Anlage im Zeitraum besteht; er färbt gelb. Die Daten der Fassungen kommen
   aus dem Register (`betrkv.generation-power` ab 01.01.2024, `hkv.generation-power` ab 01.10.2024, beide

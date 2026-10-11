@@ -63,6 +63,8 @@ const ALLOWED: readonly Allowed[] = [
   { file: 'server/src/operatingPower.ts', match: '12.12.2007', reason: 'Datum einer Entscheidung im Zitat (BGH VIII ZR 190/06, Grenze der Korrektur auch beim Guthaben), kein Rechtswert' },
   { file: 'server/src/operatingPower.ts', match: '03.06.2016', reason: 'Datum einer Entscheidung im Zitat (BGH V ZR 166/15, Betriebsstrom), kein Rechtswert' },
   { file: 'server/src/operatingPower.ts', match: '20.02.2008', reason: 'Datum einer Entscheidung im Zitat (BGH VIII ZR 27/07, Schätzung des Betriebsstroms; Folge-PR zu #252, #224 und #253), kein Rechtswert' },
+  { file: 'server/src/operatingPower.ts', match: '13.09.2011', reason: 'Datum einer Entscheidung im Zitat (BGH VIII ZR 45/11, Rn. 3: Betriebsstrom nicht abgerechnet, den Mietern unschädlich; #266), kein Rechtswert' },
+  { file: 'server/src/operatingPower.ts', match: '20.01.2016', reason: 'Datum einer Entscheidung im Zitat (BGH VIII ZR 93/15, netto eingetragene Kostenart formell wirksam; #266), kein Rechtswert' },
   { file: 'server/src/invoiceAmounts.ts', match: 'Math.max(50,', reason: 'Rundungstoleranz der Schnellerfassung (mindestens 0,50 €), keine Rechtszahl' },
 ]
 
