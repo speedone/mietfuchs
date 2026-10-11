@@ -2,7 +2,7 @@
 // 166/15 Rn. 14) oder gemessen, als Anteil an der Stromrechnung (Abweichung 3), oder selbst geschätzt.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { basisOf, operatingPowerRefusal, operatingPowerShare, ownEstimateShare, type OperatingPowerInput } from '../../shared/operatingPower.ts'
+import { basisOf, nonServiceHeats, operatingPowerRefusal, operatingPowerShare, ownEstimateShare, serviceReceivesOperatingPower, type OperatingPowerInput } from '../../shared/operatingPower.ts'
 
 const GERAETE = [
   { label: 'Brenner', watts: 120, hoursPerDay: 6 },
@@ -133,4 +133,47 @@ test('Wärmepumpe und Stromheizung: keine Schätzhilfe, eigener Satz mit dem Weg
 
 test('Grundlage (P-W1): die Zeilen des Rechenwegs, je eine Zeile', () => {
   assert.equal(basisOf(['a: 1 kWh', 'b: 2 kWh']), 'a: 1 kWh\nb: 2 kWh')
+})
+
+// ---------- #268: Bekommt ein Messdienst den Betriebsstrom? ----------
+// Ein Abzug ohne Verweis gilt als dem Messdienst gemeldet, wenn eine Anlage mit Messdienst im Zeitraum des Abzugs
+// heizt (R-6). Die Spanne einer Anlage endet an `endsOn` und beginnt am Tag nach dem Ende ihrer Vorgängerin; beide
+// Grenzen inklusiv.
+const P2025 = { from: '2025-01-01', to: '2025-12-31' }
+const P2026 = { from: '2026-01-01', to: '2026-12-31' }
+type TestPlant = { id: string; method: 'manual' | 'service' | 'self'; endsOn: string | null; replacesPlantId: string | null }
+const kessel = (over: Partial<TestPlant> = {}): TestPlant => ({ id: 'a', method: 'manual', endsOn: null, replacesPlantId: null, ...over })
+
+test('#268 Messdienst-Prädikat: Messdienst ohne Ende ja, ohne Messdienst nein', () => {
+  assert.equal(serviceReceivesOperatingPower([kessel({ method: 'service' })], P2025), true)
+  assert.equal(serviceReceivesOperatingPower([kessel()], P2025), false)
+  assert.equal(serviceReceivesOperatingPower([kessel({ method: 'self' })], P2025), false)
+  assert.equal(serviceReceivesOperatingPower([], P2025), false)
+})
+
+test('#268 Messdienst-Prädikat: Ende 30.06.2025 berührt 2025, nicht 2026; Grenze inklusiv', () => {
+  const alt = kessel({ method: 'service', endsOn: '2025-06-30' })
+  assert.equal(serviceReceivesOperatingPower([alt], P2025), true)
+  assert.equal(serviceReceivesOperatingPower([alt], P2026), false)
+  // Ende genau am ersten Tag des Zeitraums: Sie heizt an diesem Tag noch.
+  assert.equal(serviceReceivesOperatingPower([kessel({ method: 'service', endsOn: '2026-01-01' })], P2026), true)
+  assert.equal(serviceReceivesOperatingPower([kessel({ method: 'service', endsOn: '2025-12-31' })], P2026), false)
+})
+
+test('#268 Messdienst-Prädikat: Nachfolger mit Messdienst ab 01.01.2026 berührt 2025 nicht, wohl aber 2026', () => {
+  const alt = kessel({ id: 'alt', endsOn: '2025-12-31' })
+  const neu = kessel({ id: 'neu', method: 'service', replacesPlantId: 'alt' })
+  assert.equal(serviceReceivesOperatingPower([alt, neu], P2025), false)
+  assert.equal(serviceReceivesOperatingPower([alt, neu], P2026), true)
+  // Vorgängerin endet am 30.12.2025: Der Nachfolger beginnt am 31.12.2025, dem letzten Tag des Zeitraums.
+  assert.equal(serviceReceivesOperatingPower([{ ...alt, endsOn: '2025-12-30' }, neu], P2025), true)
+})
+
+test('#268 Mehrdeutig: im Zeitraum heizt zugleich eine Anlage ohne Messdienst (R-6)', () => {
+  const alt = kessel({ id: 'alt', method: 'service', endsOn: '2025-06-30' })
+  const neu = kessel({ id: 'neu', replacesPlantId: 'alt' })
+  assert.equal(nonServiceHeats([alt, neu], P2025), true)
+  assert.equal(nonServiceHeats([alt], P2025), false)
+  // Die Anlage ohne Messdienst endete vor dem Zeitraum.
+  assert.equal(nonServiceHeats([{ ...alt, endsOn: null }, { ...neu, replacesPlantId: null, endsOn: '2024-12-31' }], P2025), false)
 })

@@ -82,7 +82,7 @@ import { lineRoot, monthSpanText, plantRules, plantSpan, recommendedDeadline, re
 import { heatingSnapshotFor, selfAt, snapshotFor, wayOf } from './snapshot.ts'
 import { cancelledDeliveries, plantFuel, rangeOf, type FuelCarry, type FuelResult } from './fuel.ts'
 import { co2Plausibility, etsExempt as etsExemptPlant, plausibilityText } from './co2Plausibility.ts'
-import { billMissingText, deductionMissingText, generationPowerText, missingOperatingPowerText, missingPowerFindings, operatingPowerFindings, operatingPowerText } from './operatingPower.ts'
+import { billMissingText, deductionMissingText, generationPowerText, missingOperatingPowerText, missingPowerFindings, operatingPowerBalance, operatingPowerFindings, operatingPowerText, unmarkedPowerCredits, type OperatingPowerBalance } from './operatingPower.ts'
 import { GENERAL_POWER_CATEGORY } from '../../shared/operatingPower.ts'
 import { LAW_PARAMS } from '../../shared/law/params.ts'
 import { fuelFromDeliveries, fuelFromStock, looseCentsOf, measuredOffset, problemText, settledByDefault, stockKeysOf, stockOf, stockTemplateOfLine, stockTouched, valueOf as stockValueOf, type FuelFigures, type StockPeriodInput, type StockResult } from './fuelStock.ts'
@@ -1118,6 +1118,19 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[]): TaxRe
     closedSelfUseDiffers: splits.some((s) => s.closedSelfUseDiffers),
     closedItemsChanged: splits.reduce((a, s) => a + s.closedItemsChanged, 0),
   }
+  // Ausgleich beim Betriebsstrom (#268): eine abgeleitete Zeile beim Allgemeinstrom, damit der Strom in jedem
+  // Steuerjahr genau die bezahlte Stromrechnung ist. Sie geht nicht durch den eingefrorenen Stand (keine Position der
+  // Abrechnung) und nicht in den Eigenanteil laut Abrechnung.
+  const lookup = new Map<string, SnapshotCostItem>()
+  for (const p of used) {
+    for (const c of [...p.snapshot.costItems, ...(p.snapshot.heatingParts ?? []).flatMap((x) => x.items), ...p.items]) lookup.set(c.id, c)
+  }
+  const balanceParts = used.map((p) => ({ items: p.items, plants: p.snapshot.heatingPlants ?? [], period: p.snapshot.period }))
+  const balance = operatingPowerBalance(balanceParts, (id) => lookup.get(id))
+  const balanceItem = balance.cents !== 0 ? operatingPowerBalanceItem(balance, used, splits, snapshot.units, year) : null
+  if (balanceItem) split.items.set(balanceItem.costItemId, balanceItem)
+  const ambiguous = balance.ambiguous
+  const unmarked = unmarkedPowerCredits(balanceParts)
   const byGroup = new Map<string, Map<string, TaxExpenseCategory>>()
   // Zuführung zur Erhaltungsrücklage (#143): nicht unter den Werbungskosten, sondern daneben.
   let reserveContributionCents = 0
@@ -1140,6 +1153,15 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[]): TaxRe
     // Nur ein gültiger Lohnanteil, dieselbe Regel wie in der Abrechnung (#148).
     prev.labor35aCents += validLabor35aCents(item) ?? 0
     cats.set(item.category, prev)
+  }
+  if (balanceItem) {
+    const cats = byGroup.get(balanceItem.group) ?? new Map<string, TaxExpenseCategory>()
+    byGroup.set(balanceItem.group, cats)
+    const prev = cats.get(balanceItem.category) ?? { category: balanceItem.category, amountCents: 0, labor35aCents: 0, privateCents: 0, deductibleCents: 0 }
+    prev.amountCents += balanceItem.amountCents
+    prev.privateCents += balanceItem.privateCents
+    prev.deductibleCents += balanceItem.deductibleCents
+    cats.set(balanceItem.category, prev)
   }
   const groups: TaxExpenseGroup[] = [...byGroup.entries()]
     .map(([group, cats]) => {
@@ -1228,7 +1250,7 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[]): TaxRe
   // Position.
   const selfUsedShareCents = same !== undefined
     ? same.part.snapshot.closedSettlement?.selfUsedShareCents ?? same.settlement.selfUsedShareCents
-    : [...split.items.values()].filter((i) => i.allocation === 'settlement').reduce((a, i) => a + i.privateCents, 0)
+    : [...split.items.values()].filter((i) => i.allocation === 'settlement' && !i.operatingPowerBalance).reduce((a, i) => a + i.privateCents, 0)
 
   return {
     year,
@@ -1256,6 +1278,9 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[]): TaxRe
     selfOccupiedExists,
     excludedExists,
     costModels,
+    ...(balance.cents !== 0 ? { operatingPowerBalanceCents: balance.cents } : {}),
+    ...(ambiguous.length > 0 ? { operatingPowerAmbiguous: ambiguous } : {}),
+    ...(unmarked.length > 0 ? { unmarkedPowerCredits: unmarked } : {}),
     selfUsedShareCents,
     // Der Überschuss rechnet mit dem abziehbaren Teil (#163). Ohne Eigennutzung ist er die
     // Bruttosumme, und die Zahl bleibt, wie sie war.
@@ -1527,6 +1552,131 @@ function splitForTax(snapshot: Snapshot, items: SnapshotCostItem[], settlement: 
   const selfIds = new Set(units.filter(isSelf).map((u) => u.id))
   const selfUseChangedInYear = snapshot.tenancies.some((t) => selfIds.has(t.unitId) && rangeOverlapDays(t.start, t.end, snapshot.period.from, snapshot.period.to) > 0)
   return { items: result, selfUseChangedInYear, closedSelfUseDiffers, closedItemsChanged }
+}
+
+// ---------- Ausgleich beim Betriebsstrom in der Steuer (#268) ----------
+//
+// Die Zeile zum Ausgleich C (server/src/operatingPower.ts). **Der private Teil folgt dem Heizanteil** (R-4): Jeder
+// Beitrag zu C wird mit dem Eigenanteil an den Heizkosten seiner Anlage in der Abrechnung seines Teils gewichtet, so
+// wie diese Steuerübersicht die Heizpositionen dieser Anlage aufteilt (bei abgeschlossener Abrechnung also aus dem
+// eingefrorenen Stand). Dann ergibt „selbst getragen“ steuerlich dasselbe wie „richtig gepaart“, und Abrechnung und
+// Steuer nennen denselben Eigenanteil. Lässt sich keine Anlage zuordnen (Abzug ohne Verweis) oder hat die Anlage dort
+// keine Heizkosten, gilt die Wohn- und Nutzfläche des ganzen Gebäudes (BFH, Urteil vom 24.06.2008, IX R 26/06), wie
+// bei einer nicht umlagefähigen Gebäudeposition. Beides ist eine Auslegung von Mietfuchs: Für den Maßstab gibt es keine
+// Norm, die Abgrenzung zum Privaten folgt aus § 9 Abs. 1 Satz 1 und § 12 Nr. 1 EStG. Gerundet wird einmal, über die
+// ganze Zeile; mit Vorzeichen, denn ein negativer Ausgleich hat einen negativen privaten Teil.
+const balanceLineId = (year: number): string => `operating-power-balance:${year}`
+
+function operatingPowerBalanceItem(
+  balance: OperatingPowerBalance, used: readonly TaxPart[], splits: readonly TaxSplit[], units: readonly SnapshotUnit[], year: number,
+): TaxExpenseItem {
+  const cents = balance.cents
+  const isSelf = (u: SnapshotUnit) => !!u.selfUsed && !u.participates
+  const areaOf = (u: SnapshotUnit) => u.areaM2 || 0
+  const selfUnits = units.filter(isSelf)
+  const totalArea = units.reduce((a, u) => a + areaOf(u), 0)
+  const selfArea = selfUnits.reduce((a, u) => a + areaOf(u), 0)
+  const missing = selfUnits.filter((u) => !(areaOf(u) > 0))
+  const areaOk = selfUnits.length === 0 || (missing.length === 0 && totalArea > 0)
+
+  // Eigenanteil an den Heizkosten einer Anlage in einem Teil, wie diese Übersicht die Heizpositionen aufteilt.
+  const heatQuota = (part: number, plant: string | null): { privateCents: number; amountCents: number } | null => {
+    const p = used[part]
+    const s = splits[part]
+    if (!p || !s) return null
+    let privateCents = 0
+    let amountCents = 0
+    for (const c of p.items) {
+      if (c.category !== HEATING_CATEGORY || (c.heatingPlantId ?? null) !== plant) continue
+      const x = s.items.get(c.id)
+      if (!x) continue
+      privateCents += x.privateCents
+      amountCents += x.amountCents
+    }
+    return amountCents > 0 ? { privateCents, amountCents } : null
+  }
+
+  const steps: CalcStep[] = []
+  const deductions = balance.sources.filter((s) => s.kind === 'deduction')
+  const included = balance.sources.filter((s) => s.kind === 'included')
+  for (const s of deductions) {
+    steps.push({ label: 'Abzug beim Allgemeinstrom', value: `„${s.description}“ ${fmtCents(s.cents)}, ${s.linkedDescription !== null ? `verknüpft mit der Heizposition „${s.linkedDescription}“` : 'ohne Verweis auf eine Heizposition und ohne Messdienst'}`, term: 'operatingPower' })
+  }
+  for (const s of included) {
+    steps.push({ label: 'Betriebsstrom in den Heizkosten', value: `„${s.description}“ ${fmtCents(-s.cents)}, steckt auch in der Stromrechnung`, term: 'operatingPower' })
+  }
+  for (const r of balance.reported) {
+    steps.push({ label: 'Abzug, dem Messdienst gemeldet', value: `„${r.description}“ ${fmtCents(-r.amountCents)}, zählt hier nicht: Nach Ihrer Angabe steckt der Betrag in den Kosten des Messdienstes` })
+  }
+  const deducted = deductions.reduce((a, s) => a + s.cents, 0)
+  const inHeating = -included.reduce((a, s) => a + s.cents, 0)
+  steps.push({ label: 'Ausgleich', value: `${fmtCents(deducted)} abgezogen − ${fmtCents(inHeating)} in den Heizkosten = ${fmtCents(cents)}` })
+  steps.push({
+    label: 'Hinweis',
+    value: cents > 0
+      ? 'Beim Allgemeinstrom ist mehr Betriebsstrom abgezogen, als in den Heizkosten steht. Diesen Teil legen Sie nicht um und tragen ihn selbst. Bezahlt haben Sie ihn mit der Stromrechnung; er gehört deshalb zu den Werbungskosten (§ 9 Abs. 1 Satz 1, § 11 Abs. 2 Satz 1 EStG). Der Abzug mindert nur die Abrechnung an die Mieter.'
+      : 'In den Heizkosten steht mehr Betriebsstrom, als beim Allgemeinstrom abgezogen ist. Diesen Teil enthält auch die Stromrechnung, bezahlt haben Sie ihn aber nur einmal; Mietfuchs zählt die Stromrechnung deshalb nur einmal zu den Werbungskosten (§ 9 Abs. 1 Satz 1 EStG). Prüfen Sie in der Abrechnung, ob der Abzug beim Allgemeinstrom zum Betriebsstrom passt.',
+  })
+
+  // Der private Teil, Beitrag für Beitrag.
+  let raw = 0
+  let byArea = false
+  let unsplittable = false
+  const quotaSteps: CalcStep[] = []
+  const seen = new Set<string>()
+  for (const s of balance.sources) {
+    const q = s.plant !== undefined ? heatQuota(s.part, s.plant) : null
+    if (q) {
+      raw += (s.cents * q.privateCents) / q.amountCents
+      const key = `${s.part}|${s.plant}`
+      if (!seen.has(key)) {
+        seen.add(key)
+        quotaSteps.push({ label: 'Eigenanteil an den Heizkosten der Anlage', value: `${fmtCents(q.privateCents)} von ${fmtCents(q.amountCents)} (${fmtNum(Math.round((q.privateCents / q.amountCents) * 10000) / 100)} %)`, term: 'ownShare' })
+      }
+    } else if (!areaOk) {
+      unsplittable = true
+    } else {
+      byArea = true
+      if (totalArea > 0) raw += (s.cents * selfArea) / totalArea
+    }
+  }
+  const privateCents = roundHalfAway(raw)
+  if (selfUnits.length > 0) {
+    if (quotaSteps.length > 0) {
+      steps.push({ label: 'Zuordnung', value: 'verhältnismäßig nach dem Eigenanteil an den Heizkosten derselben Anlage laut Nebenkostenabrechnung; das ist eine Auslegung von Mietfuchs', term: 'mixedUse' })
+      steps.push(...quotaSteps)
+    }
+    if (byArea) {
+      steps.push({ label: 'Zuordnung', value: 'nach Wohn- und Nutzfläche des ganzen Gebäudes, denn ein Abzug ohne Verweis gehört zu keiner bestimmten Anlage; das ist eine Auslegung von Mietfuchs (BFH, Urteil vom 24.06.2008, IX R 26/06)', term: 'mixedUse' })
+      steps.push({ label: 'Betroffene Fläche', value: `${fmtNum(totalArea)} m² (ganzes Gebäude), davon selbstgenutzt ${fmtNum(selfArea)} m²` })
+    }
+    if (unsplittable) {
+      steps.push({ label: 'Zuordnung', value: `nicht aufteilbar: Für ${andList(missing.length > 0 ? missing.map((u) => u.name) : selfUnits.map((u) => u.name))} ist keine Fläche hinterlegt; der Betrag ist insoweit ungekürzt angesetzt`, term: 'mixedUse' })
+    }
+    steps.push({ label: 'Rechnung', value: `privat ${fmtExactEuro(raw)}` })
+    steps.push({ label: 'privat, auf Cent gerundet', value: fmtCents(privateCents), term: 'ownShare' })
+  }
+  const allocation: TaxAllocation = unsplittable ? 'unsplittable' : byArea ? 'area' : 'settlement'
+  const deductibleCents = cents - privateCents
+  const deductiblePercent = allocation !== 'unsplittable' ? Math.round((deductibleCents / cents) * 10000) / 100 : null
+  steps.push({ label: 'abziehbar', value: deductiblePercent !== null ? `${fmtCents(deductibleCents)} (${fmtNum(deductiblePercent)} %)` : fmtCents(deductibleCents) })
+  return {
+    costItemId: balanceLineId(year),
+    category: GENERAL_POWER_CATEGORY,
+    group: groupOf(GENERAL_POWER_CATEGORY) ?? 'Sonstige Werbungskosten',
+    description: cents > 0 ? 'Betriebsstrom der Heizung, selbst getragen' : 'Betriebsstrom der Heizung, Ausgleich zur Heizposition',
+    amountCents: cents,
+    privateCents,
+    deductibleCents,
+    labor35aCents: 0,
+    allocation,
+    deductiblePercent,
+    areaPrivateCents: null,
+    settlementPrivateCents: null,
+    steps,
+    taxUnits: null,
+    operatingPowerBalance: true,
+  }
 }
 
 // ---------- Hilfen ----------
