@@ -41,6 +41,22 @@ describe('Karte „Abrechnungszeitraum“ (#208)', () => {
   })
 })
 
+// Folge-PR zu #252, Geld H2: Der Satz zur Verschiebung in der Anlage V steht nur beim gewählten Jahr.
+describe('Jahr des Betriebsstroms: Satz zur Verschiebung', () => {
+  const preview: PeriodChangePreview = {
+    rules: { startMonth: 1, changes: ['2025-05'] }, periods: [], newShort: [], blocked: [], moves: [], effects: [], overrides: [], assessments: [], token: 't', groups: [],
+    taxYears: [{ key: 'bs|2025-05', costItemId: 'bs', description: 'Betriebsstrom', period: periodKey('2025-05'), label: '2025/2026', suggested: 2025, options: [2025, 2026],
+      notes: [{ year: 2026, text: 'Ein Teil des Abzugs (32,88 €) bleibt im Steuerjahr 2025, der Betriebsstrom steht in 2026; in der Anlage V verschiebt sich dieser Betrag zwischen den Jahren.' }] }],
+  }
+  test('bei 2025 kein Satz, bei 2026 der Satz', () => {
+    render(<PreviewAnswers preview={preview} answers={initialAnswers(preview)} onChange={() => {}} />)
+    expect(screen.queryByText(/verschiebt sich dieser Betrag/)).toBeNull()
+    cleanup()
+    render(<PreviewAnswers preview={preview} answers={{ ...initialAnswers(preview), taxYears: { 'bs|2025-05': '2026' } }} onChange={() => {}} />)
+    expect(screen.getByText(/bleibt im Steuerjahr 2025, der Betriebsstrom steht in 2026/)).toBeTruthy()
+  })
+})
+
 describe('Laienprobe (B2, B3, B4)', () => {
   const basis: PeriodChangePreview = {
     rules: { startMonth: 1, changes: ['2025-07'] }, newShort: [{ key: periodKey('2025-01'), label: '01.01.–30.06.2025' }], blocked: [], moves: [], effects: [], overrides: [], assessments: [], token: 't', taxYears: [],

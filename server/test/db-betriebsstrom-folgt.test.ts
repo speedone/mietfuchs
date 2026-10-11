@@ -393,6 +393,24 @@ test('Geld H1: ein Ziel ohne passendes Jahr nennt die Vorschau vorher; gewählt 
   })
 })
 
+// Geld H2, Variante (b) (Nachtrag nach Fixrunde 82d8a7a): Fall P1 des Prüfers. „Mai ab 2025“, Hausstrom mit
+// Leistungszeitraum 2025, Heizung nach 2025/26. Der Teil des Abzugs im Rumpf (−32,88 €) liegt in einem Kalenderjahr,
+// sein Jahr ist fest 2025. Wählt der Vermieter für den Betriebsstrom 2026 oder 2027, verschiebt sich dieser Betrag in
+// der Anlage V zwischen den Jahren; die Vorschau sagt das an diesem Jahr vorher. Bei 2025 sagt sie nichts, und keine
+// Auswahl wird begrenzt.
+test('Geld H2: die Vorschau nennt, welcher Teil des Abzugs bei einem anderen Jahr des Betriebsstroms im festen Jahr bleibt', async () => {
+  await withDatabase(async (opened) => {
+    await haus(opened, { strom: { serviceFrom: '2025-01-01', serviceTo: '2025-12-31' } })
+    const bs = (await items(opened)).find((c) => c.operatingPower === 'included') ?? assert.fail('kein Betriebsstrom')
+    const preview = (await opened.read((db) => previewPeriodChange(db, 'objekt-1', MAI_AB_2025, TODAY))) ?? assert.fail('kein Objekt')
+    const eintrag = preview.taxYears.find((t) => t.costItemId === bs.id && t.period === '2025-05') ?? assert.fail('Betriebsstrom nicht gefragt')
+    assert.deepEqual(eintrag.options, [2025, 2026, 2027])
+    const notes = eintrag.notes ?? []
+    assert.deepEqual(notes.map((n) => n.year), [2026, 2027])
+    assert.match(notes[0]?.text ?? '', /^Ein Teil des Abzugs \(32,88\s€\) bleibt im Steuerjahr 2025, der Betriebsstrom steht in 2026; in der Anlage V verschiebt sich dieser Betrag zwischen den Jahren\.$/)
+  })
+})
+
 // G-H4 beim Aufteilen: Der Teil des Abzugs in 2025/26 (über zwei Kalenderjahre) nimmt das Jahr, das der Betriebsstrom
 // dort bekommt, auch wenn die Antwort für den Abzug etwas anderes sagt.
 test('G-H4: aufgeteilter Abzug: der Teil über zwei Kalenderjahre nimmt das Jahr des Betriebsstroms', async () => {
