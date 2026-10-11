@@ -156,6 +156,8 @@ export function PreviewAnswers({ preview, answers, onChange }: { preview: Period
           <select value={answers.taxYears[t.key] ?? String(t.suggested)} onChange={(e) => onChange({ ...answers, taxYears: { ...answers.taxYears, [t.key]: e.target.value } })}>
             {t.options.map((y) => <option key={y} value={String(y)}>{y}</option>)}
           </select>
+          {/* Folge-PR zu #252, Geld H2: was dieses Jahr in der Anlage V verschiebt. */}
+          {(t.notes ?? []).filter((n) => String(n.year) === (answers.taxYears[t.key] ?? String(t.suggested))).map((n) => <small key={n.text} className="warn">{n.text}</small>)}
         </label>
       ))}
       {preview.overrides.map((o) => (

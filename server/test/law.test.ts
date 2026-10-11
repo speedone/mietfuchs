@@ -9,8 +9,8 @@ import { fileURLToPath } from 'node:url'
 import { coversDate, createLawLog, dayAfter, dayBefore, germanDate, law, LAW_AS_OF, lawOverridable, onlyVersion, recordVersionAt, valueAt, versionAt, yearStart, type LawParam } from '../../shared/law/register.ts'
 import { LAW_PARAMS } from '../../shared/law/params.ts'
 import * as rulesModule from '../../shared/law/rules.ts'
-import { betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths } from '../../shared/law/bgb-betrkv.ts'
-import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvEstimateThreshold, hkvExemptions, hkvHeatingValues, hkvHeatPumpCapture, hkvInfoDistrict, hkvMonthlyInfo, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvRenewableExemption, hkvSettlementInfo } from '../../shared/law/heizkostenv.ts'
+import { betrkvGenerationPower, betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths } from '../../shared/law/bgb-betrkv.ts'
+import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvEstimateThreshold, hkvExemptions, hkvGenerationPower, hkvHeatingValues, hkvHeatPumpCapture, hkvInfoDistrict, hkvMonthlyInfo, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvRenewableExemption, hkvSettlementInfo } from '../../shared/law/heizkostenv.ts'
 import { practiceEvaporatorWindow, practiceReadingOffWarning, practiceVacancyPersons } from '../../shared/law/practice.ts'
 import { ustgGasHeatNetworkRate, ustgStandardRate } from '../../shared/law/ustg.ts'
 import { co2ApplicableFrom, co2CostsBefore, co2EbevFactors, co2Price, co2PriceEts, co2CostsCountedFrom, co2CostsExcludedUntil, co2CutMissing, co2DistrictEtsNew, co2FirstPeriodStart, co2NonResidential, co2Restriction, co2RoundingDecimals, co2StageTable } from '../../shared/law/co2kostaufg.ts'
@@ -176,7 +176,7 @@ test('Register: jede Konstante vom Typ LawParam in shared/law/ steht in LAW_PARA
     .flatMap((f) => [...fs.readFileSync(path.join(dir, f), 'utf8').matchAll(/^export const (\w+): LawParam</gm)].map((m) => m[1]))
   assert.ok(declared.length >= 7, `nur ${declared.length} Parameter gefunden`)
   const listed = new Set<unknown>(LAW_PARAMS)
-  const modules = { betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths, co2ApplicableFrom, co2CostsBefore, co2CutMissing, co2DistrictEtsNew, co2EbevFactors, co2NonResidential, co2Price, co2PriceEts, co2Restriction, co2RoundingDecimals, co2StageTable, hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvEstimateThreshold, hkvExemptions, hkvHeatingValues, hkvHeatPumpCapture, hkvInfoDistrict, hkvMonthlyInfo, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvRenewableExemption, hkvSettlementInfo, practiceEvaporatorWindow, practiceReadingOffWarning, practiceVacancyPersons, ustgGasHeatNetworkRate, ustgStandardRate }
+  const modules = { betrkvGenerationPower, betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths, co2ApplicableFrom, co2CostsBefore, co2CutMissing, co2DistrictEtsNew, co2EbevFactors, co2NonResidential, co2Price, co2PriceEts, co2Restriction, co2RoundingDecimals, co2StageTable, hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvEstimateThreshold, hkvExemptions, hkvGenerationPower, hkvHeatingValues, hkvHeatPumpCapture, hkvInfoDistrict, hkvMonthlyInfo, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvRenewableExemption, hkvSettlementInfo, practiceEvaporatorWindow, practiceReadingOffWarning, practiceVacancyPersons, ustgGasHeatNetworkRate, ustgStandardRate }
   for (const name of declared) {
     assert.ok(name && Object.hasOwn(modules, name), `${name} fehlt in diesem Test`)
     assert.ok(listed.has(Reflect.get(modules, name)), `${name} fehlt in LAW_PARAMS`)
@@ -508,4 +508,24 @@ test('R-W4, G-K4: überschreibbare Werte nennen ihr Jahr richtig und haben eine 
   assert.equal(co2Price.overridable?.max, 1000)
   assert.equal(co2PriceEts.overridable?.max, 1000)
   assert.match(co2PriceEts.overridable?.reason ?? '', /Durchschnittspreis eines Jahres .*bis zum 31\. März des Folgejahres.*Rechnungen aus dem Folgejahr/)
+})
+
+// Folge-PR zu #252 (#253, F4): Der zur Wärmeerzeugung verbrauchte Strom steht seit dem 01.01.2024 in § 2 Nr. 4 Buchst. a
+// BetrKV und seit dem 01.10.2024 in § 7 Abs. 2 HeizkostenV (Art. 4, Art. 3 Nr. 1 und Art. 6 G v. 16.10.2023).
+test('Stichtag strom zur Wärmeerzeugung: BetrKV ab 2024, HeizkostenV ab 01.10.2024', () => {
+  const log = createLawLog()
+  assert.equal(law(betrkvGenerationPower, year(2023), log).coverage, 'none')
+  assert.equal(law(betrkvGenerationPower, year(2024), log).coverage, 'full')
+  assert.equal(law(hkvGenerationPower, year(2024), log).coverage, 'partial')
+  assert.equal(law(hkvGenerationPower, { period: { from: '2024-01-01', to: '2024-09-30' } }, log).coverage, 'none')
+  assert.equal(law(hkvGenerationPower, year(2025), log).coverage, 'full')
+})
+
+// Recht H-5 (Nachprüfung fc20455): Fundstellen des Gesetzes vom 16.10.2023 mit Jahr, und die BetrKV mit ihrem Wortlaut
+// „Kosten des Betriebs der zentralen Heizungsanlage“.
+test('Register: BGBl. 2023 I Nr. 280 mit Jahr; BetrKV-Beschreibung nach dem Wortlaut', () => {
+  for (const p of LAW_PARAMS) for (const v of p.versions) {
+    if (v.enacted.includes('Nr. 280')) assert.match(v.enacted, /BGBl\. 2023 I Nr\. 280/, `${p.id}: ${v.enacted}`)
+  }
+  assert.match(betrkvGenerationPower.describe({ since: '2024-01-01' }), /zu den Kosten des Betriebs der zentralen Heizungsanlage$/)
 })

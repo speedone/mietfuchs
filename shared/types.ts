@@ -354,7 +354,9 @@ export type PeriodChangePreview = {
   // Das Jahr der Zahlung (Entwurf 3.10) je Position und Zeitraum über zwei Kalenderjahre, in den sie
   // gelangt (Durchsicht von #226, I1, M4). `key` ist 'Kennung|Zeitraum'; vorbelegt mit dem bisherigen
   // Jahr, in die erlaubte Spanne geklemmt. Bei einer Gruppe steht je wählbarem Zeitraum ein Eintrag.
-  taxYears: { key: string; costItemId: string; description: string; period: PeriodKey; label: string; suggested: number; options: number[] }[]
+  // `notes` (Folge-PR zu #252, Geld H2): ein Satz, den die Oberfläche zeigt, wenn genau dieses Jahr gewählt ist, etwa
+  // dass ein Teil eines Abzugs in einem festen Steuerjahr bleibt, während der Betriebsstrom in diesem steht.
+  taxYears: { key: string; costItemId: string; description: string; period: PeriodKey; label: string; suggested: number; options: number[]; notes?: { year: number; text: string }[] }[]
   // Die Marke dieser Vorschau (M2): Stimmt sie beim Wechsel nicht mehr, hat sich der Bestand
   // inzwischen geändert, und der Server antwortet mit 409 und der neuen Vorschau.
   token: string

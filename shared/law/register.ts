@@ -62,7 +62,7 @@ export type Coverage = 'full' | 'partial' | 'none'
 
 // Der Rechtsstand: das jüngste `retrieved` im Register (law.test.ts prüft das). Wer einen Wert
 // prüft oder eine Fassung anlegt, setzt ihn auf den Tag der Durchsicht (#110).
-export const LAW_AS_OF = '2026-10-07'
+export const LAW_AS_OF = '2026-10-11'
 
 // ---------- Datumshelfer, Zeichen für Zeichen wie compareText in calc.ts ----------
 
