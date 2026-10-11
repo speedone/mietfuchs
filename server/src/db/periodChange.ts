@@ -545,6 +545,40 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
       for (const o of g.options) if (!spansTwoYears(o) && !span.includes(startYearOf(o.key))) tell(o, String(startYearOf(o.key)))
     }
   }
+  // Geld H2, Variante (b) (Nachtrag nach Fixrunde 82d8a7a): Ein Teil eines folgenden Abzugs in einem Zeitraum innerhalb
+  // eines Kalenderjahrs hat ein festes Steuerjahr. Steht der Betriebsstrom nach der Antwort in einem anderen Jahr,
+  // verschiebt sich dieser Betrag in der Anlage V zwischen den Jahren. Die Vorschau sagt das am gewählten Jahr (`notes`)
+  // bzw. am Ziel mit festem Jahr vorher; sie begrenzt nichts, denn das richtige Steuerjahr hängt an der Zahlung der
+  // Stromrechnung, die Mietfuchs nicht kennt.
+  const fixedByPower = new Map<string, Map<number, number>>()
+  for (const { item, parts } of follows) {
+    if (item.operatingPowerItemId === undefined) continue
+    for (const p of parts) {
+      if (spansTwoYears(p.period)) continue
+      const byYear = fixedByPower.get(item.operatingPowerItemId) ?? new Map<number, number>()
+      const year = startYearOf(p.period.key)
+      byYear.set(year, (byYear.get(year) ?? 0) + Math.abs(p.amountCents))
+      fixedByPower.set(item.operatingPowerItemId, byYear)
+    }
+  }
+  const shiftText = (cents: number, fixed: number, year: number) =>
+    `Ein Teil des Abzugs (${euro(cents)}) bleibt im Steuerjahr ${fixed}, der Betriebsstrom steht in ${year}; in der Anlage V verschiebt sich dieser Betrag zwischen den Jahren.`
+  const shiftsAt = (powerId: string, year: number): string[] =>
+    [...(fixedByPower.get(powerId) ?? new Map<number, number>())].filter(([fixed, cents]) => fixed !== year && cents > 0).map(([fixed, cents]) => shiftText(cents, fixed, year))
+  for (const e of taxEntries.values()) {
+    if (!fixedByPower.has(e.costItemId)) continue
+    const notes = e.options.flatMap((year) => shiftsAt(e.costItemId, year).map((text) => ({ year, text })))
+    if (notes.length > 0) e.notes = notes
+  }
+  for (const powerId of fixedByPower.keys()) {
+    for (const g of groups.values()) {
+      if (!g.items.some((i) => i.id === powerId)) continue
+      for (const o of g.options) {
+        if (spansTwoYears(o)) continue
+        for (const text of shiftsAt(powerId, startYearOf(o.key))) conflict(powerId, o, text)
+      }
+    }
+  }
   for (const g of preview.groups) {
     for (const o of g.options) {
       const texts = conflicts.get(`${g.id}|${o.key}`)
