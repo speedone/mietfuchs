@@ -232,6 +232,8 @@ describe('Kessel getauscht (Heizung PR 9)', () => {
     const f = { ...emptySwapForm(OEL), date: '2025-07-01', energy: 'oil' as const }
     expect(asksTakeOver(f, OEL)).toBe(true)
     expect(asksTakeOver({ energy: 'gas' }, OEL)).toBe(false)
+    // Heizung PR 16: Öl → Öl mit Contracting ist Wärmelieferung; den Vorrat führt der Lieferant.
+    expect(asksTakeOver({ energy: 'oil', contracting: true }, OEL)).toBe(false)
     expect(swapBody(f, OEL)).toEqual({ body: { date: '2025-07-01', energy: 'oil', name: '', previousName: '', takesOverStock: true } })
     expect(swapBody({ ...f, takesOverStock: 'no' }, OEL)).toMatchObject({ body: { takesOverStock: false } })
   })

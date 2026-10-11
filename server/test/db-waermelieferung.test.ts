@@ -12,7 +12,11 @@ import { createHeatingPlant, replaceHeatingPlant, updateHeatingPlant } from '../
 import { createDelivery } from '../src/db/fuel.ts'
 import { saveStock } from '../src/db/fuelStock.ts'
 import { saveCo2Statement } from '../src/db/co2.ts'
-import { HeatingError } from '../src/db/repository.ts'
+import { createEntity, HeatingError } from '../src/db/repository.ts'
+import { saveDistribution } from '../src/db/heatingSelf.ts'
+import { bookOperatingPower } from '../src/db/operatingPower.ts'
+import { heatingPlants } from '../src/db/schema.ts'
+import { eq } from 'drizzle-orm'
 
 const tempDir = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-waermelieferung-'))
 function rejects(connection: Connection, sql: string): string | null {
@@ -164,5 +168,66 @@ test('C-M1: Gas → Gas mit Contracting ist ein Tausch; Gas → Gas ohne Merkmal
     // Und zurück zur eigenen Heizung: auch das ist ein Tausch, und die Angaben zur Umstellung fallen weg.
     const back = await opened.write((db) => replaceHeatingPlant(db, 'hp2', 'hp3', { date: '2026-10-01', energy: 'gas', contracting: false }))
     assert.deepEqual([back?.plant.contracting, back?.plant.heatDeliverySince, back?.plant.previousSupply], [false, null, null])
+  })
+})
+
+// Review Focus 1 und 2 an den Schreibwegen (Prüfung C-M4, C-M6): Bei Contracting rechnet die Anlage Wärme.
+test('Schreibwege: Contracting mit Öl hat keinen Vorrat, Lieferungen sind Wärmerechnungen ohne Heizwerttabelle', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'oil', method: 'manual', contracting: true }))
+    // Den Vorrat führt der Lieferant.
+    await assert.rejects(opened.write((db) => saveStock(db, 'hp', '2025-01', { stockUnit: 'l', openingQuantity: 2000, openingCostCents: 190000 })), refused(400, /Vorrat/))
+    // Eine Wärmerechnung mit Rechnungszeitraum, nicht eine Öllieferung mit Lieferdatum.
+    await opened.write((db) => createDelivery(db, 'w', 'hp', { label: 'Wärme 2025', invoiceFrom: '2025-01-01', invoiceTo: '2025-12-31', energyKwh: 40000 }))
+    // Die Heizwerttabelle gilt nur bei eigenen Kesseln (§ 9 Abs. 3 HeizkostenV).
+    await assert.rejects(opened.write((db) => createDelivery(db, 'w2', 'hp', { label: 'Wärme', invoiceFrom: '2026-01-01', invoiceTo: '2026-12-31', quantity: 100, quantityUnit: 'l', fuelGrade: 'heatingOilEL' })), refused(400, /nur bei Heizkesseln/))
+  })
+})
+
+test('Prüfung C-M4: Contracting mit „Sonstiges“ nimmt Wärmerechnungen an, sonst blieben CO₂-Angaben ohne Ausweg', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'other', method: 'manual', contracting: true }))
+    const d = await opened.write((db) => createDelivery(db, 'w', 'hp', { label: 'Wärme 2025', invoiceFrom: '2025-01-01', invoiceTo: '2025-12-31', emissionsKg: 9000, co2CostCents: 49500 }))
+    assert.equal(d?.co2CostCents, 49500)
+  })
+  // Ohne Contracting bleibt es bei der Sperre.
+  await withDatabase(async (opened) => {
+    await opened.write((db) => createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'other', method: 'manual' }))
+    await assert.rejects(opened.write((db) => createDelivery(db, 'x', 'hp', { label: 'X', invoiceFrom: '2025-01-01', invoiceTo: '2025-12-31' })), refused(400, /Energieträger/))
+  })
+})
+
+test('Review Focus 1: Gas-Contracting in einem ungedämmten Altbau, 60 % nach Verbrauch werden angenommen (§ 7 Abs. 3)', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'gas', method: 'manual', contracting: true }))
+    await opened.write((db) => db.update(heatingPlants).set({ method: 'self', capture: 'heatMeter' }).where(eq(heatingPlants.id, 'hp')))
+    const d = await opened.write((db) => saveDistribution(db, 'hp', '2026-01', { heatConsumptionPct: 60, waterConsumptionPct: 60, insulationRule: 'applies' }, '2025-11-01'))
+    assert.deepEqual([d?.own.heating, d?.effective?.heating], [60, 60])
+  })
+  // Gegenprobe: eigene Gasheizung verlangt 70 %.
+  await withDatabase(async (opened) => {
+    await opened.write((db) => createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'gas', method: 'manual' }))
+    await opened.write((db) => db.update(heatingPlants).set({ method: 'self', capture: 'heatMeter' }).where(eq(heatingPlants.id, 'hp')))
+    await assert.rejects(opened.write((db) => saveDistribution(db, 'hp', '2026-01', { heatConsumptionPct: 60, waterConsumptionPct: 60, insulationRule: 'applies' }, '2025-11-01')), refused(400, /§ 7 Abs\. 1 Satz 2/))
+  })
+})
+
+// Prüfung C-M3: Contracting wie Fernwärme. Den Strom zur Wärmeerzeugung bezahlt der Lieferant; der Strom von Pumpen
+// und Regelung der Hausanlage lässt sich als Betriebsstrom erfassen, auch bei einer Wärmepumpe des Lieferanten.
+test('Betriebsstrom bei Contracting mit Wärmepumpe: Schätzhilfe statt der Sperre zum Strom der Wärmeerzeugung', async () => {
+  await withDatabase(async (opened) => {
+    let n = 0
+    const ids = () => `id${++n}`
+    await opened.write(async (db) => {
+      await createEntity(db, 'units', 'a', { propertyId: 'objekt-1', name: 'A', areaM2: 50, participates: true })
+      await createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'heatPump', method: 'manual', contracting: true })
+      await createEntity(db, 'costItems', 'w', { propertyId: 'objekt-1', period: '2025-01', category: 'Heizung und Warmwasser', description: 'Wärme', amountCents: 500000, key: 'area', heatingPart: 'fuel', heatingPlantId: 'hp' })
+      await createEntity(db, 'costItems', 'hs', { propertyId: 'objekt-1', period: '2025-01', category: 'Beleuchtung/Allgemeinstrom', description: 'Hausstrom', amountCents: 100000, key: 'units' })
+    })
+    const r = await opened.write((db) => bookOperatingPower(db, 'hp', { period: '2025-01', generalItemId: 'hs', ownCents: 5000, basis: 'Pumpen der Hausanlage' }, ids))
+    assert.ok(r, 'gebucht')
+    // „Steckt auch im Allgemeinstrom“ beim Teil Brennstoff/Energie gibt es nur für Strom der eigenen Wärmeerzeugung.
+    await assert.rejects(opened.write((db) => createEntity(db, 'costItems', 'f', { propertyId: 'objekt-1', period: '2025-01', category: 'Heizung und Warmwasser', description: 'Strom', amountCents: 10000, key: 'area', heatingPart: 'fuel', heatingPlantId: 'hp', operatingPower: 'included' })),
+      (e: unknown) => e instanceof Error && /nicht mit Strom heizt/.test(e.message))
   })
 })

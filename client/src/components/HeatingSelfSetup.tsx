@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { AreaBasisHeat, CaptureMethod, HeatingPart, HeatingPlant, HeatingTarget, HotWater, InsulationRule } from '../types'
+import { billingEnergy } from '../../../shared/heatDelivery.ts'
 import { api, ApiError, errorText, fmtEuro } from '../api'
 import Drawer from './Drawer'
 import { useToast } from './feedback'
@@ -21,11 +22,13 @@ export default function HeatingSelfSetup({ plant, period, periodLabel, onDone, o
   const toast = useToast()
   const [busy, setBusy] = useState(false)
   const { min, max } = shareBounds()
-  const forced = forcedShare(plant.energy, form.insulation)
-  const hint = unsureShareHint(plant.energy, form.insulation, percentOf(form.share))
+  // Heizung PR 16: nach der Energie der Abrechnung; bei Contracting gilt der Pflichtanteil nicht (§ 7 Abs. 3).
+  const energy = billingEnergy(plant)
+  const forced = forcedShare(energy, form.insulation)
+  const hint = unsureShareHint(energy, form.insulation, percentOf(form.share))
 
   async function submit() {
-    const result = selfSetupBody(form, plant.energy)
+    const result = selfSetupBody(form, energy)
     if ('error' in result) {
       setError(result.error)
       return
@@ -80,7 +83,7 @@ export default function HeatingSelfSetup({ plant, period, periodLabel, onDone, o
         </select>
         <small className="muted">{captureHint(form.capture)}</small>
       </label>
-      {insulationAsked(plant.energy) && (
+      {insulationAsked(energy) && (
         <>
           <label className="field grow">
             <span>{INSULATION_QUESTION} (<Term id="forcedConsumptionShare">Pflichtanteil</Term>)</span>

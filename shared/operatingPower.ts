@@ -2,6 +2,7 @@
 // Server dieselbe.
 import type { HeatingEnergy, HeatingMethod, HeatingSource, HeatingSupply, OperatingPowerDevice, OperatingPowerHandling } from './types.ts'
 import { plantSpan } from './heatingPeriod.ts'
+import { billingEnergy } from './heatDelivery.ts'
 
 // Die Kostenart des Allgemeinstroms (§ 2 Nr. 11 BetrKV, Beleuchtung). Dieselbe Zeichenkette wie in
 // shared/categories.ts; categories.test.ts hält beide zusammen.
@@ -148,8 +149,10 @@ export const OPERATING_POWER_BURNERS: readonly HeatingEnergy[] = ['gas', 'oil', 
 // Ob Mietfuchs an dieser Anlage fragt, wie der Betriebsstrom erfasst ist. Dieselbe Regel entscheidet, wann der
 // Hinweis „Betriebsstrom fehlt“ überhaupt kommen kann (server/src/operatingPower.ts), damit die Frage genau dort
 // steht, wohin der Hinweis führt: zentral, im eigenen Haus (keine Gemeinschaft), ohne Messdienst, mit Brenner.
-export const asksOperatingPowerHandling = (plant: { energy: HeatingEnergy; method: HeatingMethod; source: HeatingSource; supply?: HeatingSupply | null }): boolean =>
-  (plant.supply ?? 'central') === 'central' && plant.source === 'building' && plant.method !== 'service' && OPERATING_POWER_BURNERS.includes(plant.energy)
+// Bei Contracting betreibt der Lieferant den Brenner und bezahlt seinen Strom; Mietfuchs fragt dann wie bei
+// Fernwärme nicht (Heizung PR 16, Prüfung C-M3). `billingEnergy` gibt das auch für die Anlage der Berechnung.
+export const asksOperatingPowerHandling = (plant: { energy: HeatingEnergy; method: HeatingMethod; source: HeatingSource; supply?: HeatingSupply | null; contracting?: boolean }): boolean =>
+  (plant.supply ?? 'central') === 'central' && plant.source === 'building' && plant.method !== 'service' && OPERATING_POWER_BURNERS.includes(billingEnergy(plant))
 
 // Frage und Beschriftungen, eine Quelle für Oberfläche und Hinweistexte, damit beide wortgleich sind. Entscheidend
 // ist der Stromvertrag mit eigener Rechnung, nicht der Zähler: Ein Zwischenzähler hinter dem Zähler des Hauses

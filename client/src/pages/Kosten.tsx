@@ -6,6 +6,7 @@ import { plantOptions } from '../heatingForm'
 import { filedUnderSettlement } from '../costPeriods'
 import { calendarPeriod, periodContext, periodOfKey, spansTwoYears } from '../../../shared/period.ts'
 import { CATEGORIES, KEY_LABELS, METER_TYPE_LABELS, isNotAllocable, usageOf } from '../types'
+import { billingEnergy } from '../../../shared/heatDelivery.ts'
 import {
   EMPTY_ITEM_FORM,
   basisUnitsOf,
@@ -340,7 +341,8 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
 
   async function saveItem() {
     if (!form) return
-    const built = buildCostItemBody(form, units, period, tenancies, plantOfForm?.energy)
+    // Heizung PR 16: nach der Energie der Abrechnung (bei Contracting bezahlt der Lieferant den Strom des Kessels).
+    const built = buildCostItemBody(form, units, period, tenancies, plantOfForm ? billingEnergy(plantOfForm) : undefined)
     if ('error' in built) {
       setError(built.error)
       return
@@ -836,7 +838,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
               <input value={form.labor35a} onChange={(e) => setForm({ ...form, labor35a: e.target.value })} placeholder="optional" />
             </label>
             {/* Betriebsstrom (Heizung PR 15): sichtbar ohne Aufklappen, wer ihn braucht. */}
-            <OperatingPowerFields form={form} items={items} periodKey={key} plantEnergy={plantOfForm?.energy} service={serviceReceivesOperatingPower(plants, period)} onChange={setForm} />
+            <OperatingPowerFields form={form} items={items} periodKey={key} plantEnergy={plantOfForm ? billingEnergy(plantOfForm) : undefined} service={serviceReceivesOperatingPower(plants, period)} onChange={setForm} />
             <details className="extra-details" open={!!(selfPlant || form.serviceFrom || form.serviceTo || form.taxYear || form.heatingPart !== '' || (heatTax ? heatTax.show : showsTaxYear(period, needsTaxYear)))}>
               <summary>Weitere Angaben — Leistungszeitraum{(heatTax ? heatTax.show : showsTaxYear(period, needsTaxYear)) ? ', Jahr der Zahlung' : ''}{form.category === HEATING_CATEGORY ? ', Brennstoff/Energie' : ''} (optional)</summary>
               <CostPeriodFields form={form} onChange={setForm} showTaxYear={heatTax ? heatTax.show : showsTaxYear(period, needsTaxYear)} years={heatTax?.show ? heatTax.years : taxYearOptions(year)} />

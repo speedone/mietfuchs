@@ -60,7 +60,7 @@ import type {
 import { rulesFor } from '../../shared/law/rules.ts'
 import { co2ApplicableFrom, co2CostsBefore, co2CostsCountedFrom, co2CostsExcludedUntil, co2CutMissing, co2DistrictEtsNew, co2FirstPeriodStart, co2NonResidential, co2Restriction, co2RoundingDecimals, co2StageTable } from '../../shared/law/co2kostaufg.ts'
 import { CO2_RELIEF_LABEL } from '../../shared/co2Probe.ts'
-import { ausweisGaps, CO2_FUELS, co2Assessment, co2DeductionsOf, FORMULA_METHODS, co2PotsOf, itemBasisUnits, L_TOLERANCE_CENTS, perUnitClassification, perUnitExceeding, perUnitReliefs, reliefsByShare, spanningPlants, type PerUnitFuel, restage, selfSplit, SERVICE_FUEL_TOLERANCE_CENTS, shownReliefs, stageRanges, tableFactor, tenantLines as co2TenantLines, type Co2Pot, type ReliefShare } from './co2.ts'
+import { ausweisGaps, CO2_FUELS, co2Assessment, co2Required, co2DeductionsOf, FORMULA_METHODS, co2PotsOf, itemBasisUnits, L_TOLERANCE_CENTS, perUnitClassification, perUnitExceeding, perUnitReliefs, reliefsByShare, spanningPlants, type PerUnitFuel, restage, selfSplit, SERVICE_FUEL_TOLERANCE_CENTS, shownReliefs, stageRanges, tableFactor, tenantLines as co2TenantLines, type Co2Pot, type ReliefShare } from './co2.ts'
 // Zahlen und Daten der Rechtsregeln kommen aus dem Rechtsregister (Heizung PR 1) und stehen hier
 // nicht als Literal; server/test/law-literals.test.ts wacht darüber.
 import { createLawLog, dayAfter, dayBefore, law, LAW_AS_OF, onlyVersion, recordVersionAt, VALUE_CHANGE_LABEL, valueAt, type Period } from '../../shared/law/register.ts'
@@ -78,6 +78,7 @@ import { allocationOf, comparablePrevious, sameAllocation, sameUnits } from '../
 import { possibleDuplicates } from '../../shared/duplicates.ts'
 import { commonPeriod, tenancyOverlaps } from '../../shared/tenancyOverlap.ts'
 import { CALENDAR_RULES, calendarYearPeriod, contextOf, formatDayRange, isCalendarRules, periodContaining, periodDays, periodLabel, periodMonths, periodOfKey, periodsBetween, previousPeriod, rulesOf, settlementDeadline, settlementPeriod, type PeriodContext } from '../../shared/period.ts'
+import { generatorEnergy } from '../../shared/heatDelivery.ts'
 import { lineRoot, monthSpanText, plantRules, plantSpan, recommendedDeadline, requestMonth, sameBuilding, sameFuelLine, sameLine, sameSpan, separateOwner, servesUnit, settledSeparately } from '../../shared/heatingPeriod.ts'
 import { heatingSnapshotFor, selfAt, snapshotFor, wayOf } from './snapshot.ts'
 import { cancelledDeliveries, plantFuel, rangeOf, type FuelCarry, type FuelResult } from './fuel.ts'
@@ -3138,7 +3139,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const alphaResult = hotWaterShareOf({
       hotWater,
       log: lawLog,
-      plant: { energy: plant.energy, heatGeneration: plant.heatGeneration ?? null },
+      plant: { energy: plant.energy, heatGeneration: plant.heatGeneration ?? null, ...(plant.fuelEnergy !== undefined ? { fuelEnergy: plant.fuelEnergy } : {}) },
       row: own || lineOwn
         ? { dhwMethod: own?.dhwMethod ?? lineOwn?.dhwMethod ?? null, dhwVolumeM3: own?.dhwVolumeM3 ?? null, dhwTempC: own?.dhwTempC ?? lineOwn?.dhwTempC ?? null }
         : null,
@@ -4420,7 +4421,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       }
     }
     for (const g of result.gaps) {
-      const zaehler = plant.energy === 'gas' ? 'den Gaszähler' : plant.energy === 'districtHeating' ? 'den Wärmezähler der Übergabestation' : 'den Stromzähler der Wärmepumpe'
+      // Heizung PR 16 (Prüfung C-K3): bei Contracting der Wärmezähler, nach dem der Lieferant abrechnet.
+      const zaehler = plant.energy === 'gas' ? 'den Gaszähler' : plant.contracting === true ? 'den Wärmezähler, nach dem der Lieferant abrechnet' : plant.energy === 'districtHeating' ? 'den Wärmezähler der Übergabestation' : 'den Stromzähler der Wärmepumpe'
       // Durchsicht von #233: Ein Zählerstand schließt die Lücke nicht, er macht nur die Aufteilung der
       // Folgerechnung genauer (Stufe 1 braucht Stände am Tag vor ihrem Beginn, an ihrem Ende und am
       // Stichtag).
@@ -4815,7 +4817,12 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const where = `${pot.plantName ? `Heizanlage „${pot.plantName}“` : 'Heizanlage'}, Heizperiode ${periodLabel(pot.period)}`
     const ids = new Set<string>([...pot.items.map((c) => c.id), pot.reliefKey])
     const plantSubject: NoticeSubject = { kind: 'heatingCosts', id: pot.plantId }
-    const report: HeatingStatement = { plantId: pot.plantId, plantName: pot.plantName, energy: pot.energy, period: pot.period.key, from: pot.period.from, to: pot.period.to, co2: null }
+    // Wärmelieferung (Heizung PR 16): Contracting und der Brennstoff des Lieferanten, für die Beschriftung.
+    const billed = plants.find((x) => x.id === pot.plantId)
+    const report: HeatingStatement = {
+      plantId: pot.plantId, plantName: pot.plantName, energy: pot.energy, period: pot.period.key, from: pot.period.from, to: pot.period.to, co2: null,
+      ...(billed?.contracting === true && billed.fuelEnergy !== undefined ? { contracting: true, fuelEnergy: billed.fuelEnergy } : {}),
+    }
     heatingStatements.push(report)
     // Lieferungen, Abgrenzung, Überträge und Lücken dieser Heizperiode (Heizung PR 7).
     const fuelOf = fuelResults.get(pot.plantId)?.result
@@ -5106,7 +5113,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Eine Anlage, die in diesem Zeitraum nicht heizt (Kesseltausch), steht hier nur mit der Rechnung, die in
     // einen anderen Zeitraum abgegrenzt wird; dort gilt der Hinweis, nicht hier (Nachprüfung von #238).
     if (!st && applicable && settledHere && !ownSplit && (!potPlant || activeIn(potPlant))) {
-      if (CO2_FUELS.includes(pot.energy) || pot.energy === 'districtHeating') {
+      // Heizung PR 16: bei Contracting nach dem Brennstoff des Lieferanten (§ 2 Abs. 1 Satz 2 CO2KostAufG).
+      if (co2Required(pot)) {
         const cut = law(co2CutMissing, { period: hPeriod }, lawLog)
         warn('co2.missing',
           `${where}: ${co2Duty(pot.energy === 'districtHeating' ? 'Weist Ihr Wärmelieferant CO₂-Kosten aus, sind sie' : 'Bei Gas, Heizöl, Flüssiggas und Kohle sind die CO₂-Kosten')} ` +
@@ -5843,7 +5851,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         const lines = fuelResults.get(id)?.result.lines ?? []
         return lines.length > 0 && lines.every((l) => l.energyKwh !== null) ? lines.reduce((a, l) => a + (l.energyKwh ?? 0), 0) : null
       }
-      const district = groupPlants.find((p) => p.energy === 'districtHeating')
+      // Heizung PR 16 (Prüfung C-M2): Werte des Wärmenetzes nur bei Fernwärme (§ 6a Abs. 3 Satz 1 Nr. 1 Buchst. a
+      // HeizkostenV: „bei Nutzern, die mit Fernwärme aus Fernwärmesystemen versorgt werden“), nicht bei Contracting;
+      // der eingesetzte Energieträger ist dort der Brennstoff des Kessels (`generatorEnergy`).
+      const district = groupPlants.find((p) => p.energy === 'districtHeating' && p.contracting !== true)
       const districtSp = district ? selfPlans.get(district.id) : undefined
       const costShares = districtSp?.weights
         ? new Map(districtSp.plan.units.flatMap((u) => u.users.flatMap((x): [string, number][] => {
@@ -5854,7 +5865,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       const metering = potItems.filter((c) => c.heatingPart === 'metering')
       info = heatingInfoOf({
         byConsumption: byKeys,
-        carriers: groupPlants.map((p) => ({ energy: p.energy, kwh: kwhOfPlant(p.id) })),
+        carriers: groupPlants.map((p) => ({ energy: generatorEnergy(p), kwh: kwhOfPlant(p.id) })),
         mixedGeneration: groupPlants.some((p) => (p.heatGeneration ?? null) === 'mixed'),
         district: district ? { required: law(hkvInfoDistrict, { period: hPeriod }, lawLog).scope === 'largeOnly' ? 'maybe' : 'yes', deliveredKwh: kwhOfPlant(district.id) } : null,
         row: ownRow ? {

@@ -185,7 +185,7 @@ export async function guardHeatingPlant(db: Executor, before: HeatingPlant | nul
     if (after.energy === 'districtHeating') {
       throw new HeatingError(400, 'Fernwärme ist keine Etagenheizung, auch wenn jede Wohnung eine eigene Übergabestation hat. Wählen Sie bei der Heizung „Fernwärme“.')
     }
-    if (STOCK_ENERGIES.includes(after.energy)) {
+    if (STOCK_ENERGIES.includes(billingEnergy(after))) {
       throw new HeatingError(400, 'Etagenheizungen mit eigenem Tank oder Lager je Wohnung (Heizöl, Flüssiggas, Pellets, Holz, Kohle) rechnet Mietfuchs nicht, denn der Vorrat wird je Heizanlage geführt. Erfassen Sie ihre Kosten wie bisher direkt bei der Wohnung.')
     }
   }

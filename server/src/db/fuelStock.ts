@@ -17,6 +17,7 @@ import { dayAfter, germanDate, valueAt } from '../../../shared/law/register.ts'
 import { periodContaining, periodLabel } from '../../../shared/period.ts'
 import type { BillingPeriod, HeatingPlant, HeatingStockStatement, StockRow, StockView } from '../../../shared/types.ts'
 import { CO2_FUELS } from '../co2.ts'
+import { billingEnergy } from '../../../shared/heatDelivery.ts'
 import { problemText, readFrozenStock, settledByDefault, stockOf, type StockOptions, type StockPeriodInput } from '../fuelStock.ts'
 import { stockChainsOf } from '../snapshot.ts'
 import type { Database } from './client.ts'
@@ -43,11 +44,11 @@ const OPENING_KEYS = ['openingQuantity', 'openingCostCents', 'openingEmissionsKg
 // Was die Bestandsrechnung einer Anlage verlangt (fuelStock.ts): Beträge, wenn nach Verbrauch verteilt
 // wird (freie Schlüssel), kg und CO₂-Kosten bei Heizöl, Flüssiggas und Kohle. Das Register beantwortet
 // § 11 Abs. 2 Satz 2 hier ohne Protokoll; in der Abrechnung protokolliert `law()`.
-export function stockOptionsFor(plant: Pick<HeatingPlant, 'energy' | 'method'>): StockOptions {
+export function stockOptionsFor(plant: Pick<HeatingPlant, 'energy' | 'method'> & { contracting?: boolean }): StockOptions {
   return {
     // Heizung PR 10 (N9): auch bei der eigenen Heizkostenabrechnung.
     needCost: plant.method !== 'service',
-    needCo2: CO2_FUELS.includes(plant.energy),
+    needCo2: CO2_FUELS.includes(billingEnergy(plant)),
     countedAt: (date) => !valueAt(co2CostsBefore, date),
     excludedUntil: co2CostsExcludedUntil(),
     countedFrom: co2CostsCountedFrom(),
@@ -168,8 +169,9 @@ function mergeStock(current: StockRow, body: unknown): StockRow {
 }
 
 // Gilt für eine Anlage überhaupt ein Vorrat, den Mietfuchs rechnet?
+// Bei Contracting führt der Lieferant den Vorrat; der Vermieter bezahlt Wärme (Heizung PR 16).
 function guardPlant(ctx: PlantContext): void {
-  if (!isStockEnergy(ctx.plant.energy)) throw new HeatingError(400, NOT_STOCK)
+  if (!isStockEnergy(billingEnergy(ctx.plant))) throw new HeatingError(400, NOT_STOCK)
 }
 
 // `null`, wenn es die Anlage nicht gibt; die Route macht daraus ihre 404.
@@ -192,7 +194,7 @@ export async function saveStock(db: Database, plantId: string, period: string, b
   const prev = chain.length > 1 ? chain[chain.length - 2] : undefined
   if (prev && OPENING_KEYS.some((k) => has(body, k) && raw(body, k) !== null && raw(body, k) !== '')) {
     // Nach einem Kesseltausch mit demselben Brennstoff ist es der Restbestand der alten Anlage (Nachprüfung von #238).
-    const before = ctx.plant.replacesPlantId && ctx.plant.takesOverStock !== false ? stock.heatingPlants.find((p) => p.id === ctx.plant.replacesPlantId && p.energy === ctx.plant.energy) : undefined
+    const before = ctx.plant.replacesPlantId && ctx.plant.takesOverStock !== false ? stock.heatingPlants.find((p) => p.id === ctx.plant.replacesPlantId && p.energy === ctx.plant.energy && billingEnergy(p) === billingEnergy(ctx.plant)) : undefined
     if (before?.endsOn && h.from <= dayAfter(before.endsOn) && dayAfter(before.endsOn) <= h.to) {
       throw new HeatingError(400, `Der Anfangsbestand ist der Restbestand der Heizanlage „${before.name.trim() || 'vor dem Tausch'}“ zum ${germanDate(before.endsOn)}; ändern Sie ihn dort als Endbestand. Verheizt die neue Heizanlage den Brennstoff im Tank nicht weiter, wählen Sie bei ihr unter „Verheizt der neue Kessel den Brennstoff im Tank weiter?“ „Nein“; dann tragen Sie hier einen eigenen Anfangsbestand ein.`)
     }
@@ -227,7 +229,7 @@ export async function removeStock(db: Database, plantId: string, period: string)
   const h = heatingPeriodOf(ctx, period)
   const [own] = await db.select().from(heatingPeriods).where(and(eq(heatingPeriods.plantId, plantId), eq(heatingPeriods.period, h.key)))
   if (!own || Object.values(rowOf(own)).every((v) => v === null)) return false
-  const locked = isStockEnergy(ctx.plant.energy) ? lockedBy(chainOf(await readStock(db), ctx, h), ctx, h) : null
+  const locked = isStockEnergy(billingEnergy(ctx.plant)) ? lockedBy(chainOf(await readStock(db), ctx, h), ctx, h) : null
   await db.transaction(async (tx) => {
     if (await heatingPeriodClosed(tx, ctx, h)) throw new HeatingError(409, closedText(h))
     if (locked && (own.stockUnit !== null || own.closingQuantity !== null)) throw new HeatingError(409, lockedText(locked.label))

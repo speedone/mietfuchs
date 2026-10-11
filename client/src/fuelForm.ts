@@ -8,12 +8,18 @@ import { germanDate } from '../../shared/law/register.ts'
 import { STOCK_UNIT_LABELS, STOCK_UNIT_TEXT } from '../../shared/fuelStock.ts'
 import type { Co2Restriction, DegreeDayValue, FuelDelivery, FuelGrade, GasBasis, HeatingEnergy, HeatingMethod, HeatingPlant, StockUnit } from './types'
 import { FUEL_GRADE_LABELS, GRADES_BY_ENERGY, HEATING_VALUE_UNIT_TEXT } from '../../shared/fuelGrades.ts'
+import { billingEnergy, NO_CO2_FUELS } from '../../shared/heatDelivery.ts'
 
 // Energieträger, bei denen CO₂-Kosten aufzuteilen sind: Brennstoffe mit Standardwerten nach § 7 Abs. 4
 // BEHG (§ 2 Abs. 1 CO2KostAufG) und Fernwärme, wenn der Lieferant CO₂-Kosten ausweist. Dieselbe Liste
 // wie `CO2_FUELS` in server/src/co2.ts, dazu Fernwärme (Durchsicht von #233, C1). Strom einer Wärmepumpe
 // gehört nicht dazu.
 export const CO2_ENERGIES: readonly HeatingEnergy[] = ['gas', 'oil', 'lpg', 'coal', 'districtHeating']
+
+// Ob für eine Anlage CO₂-Angaben gefragt werden (Heizung PR 16): nach der Energie der Abrechnung und, bei
+// Contracting, dem Brennstoff des Lieferanten; dieselbe Regel wie `co2Required` in server/src/co2.ts.
+export const asksCo2Facts = (plant: { energy: HeatingEnergy; contracting?: boolean }): boolean =>
+  CO2_ENERGIES.includes(billingEnergy(plant)) && !(plant.contracting === true && NO_CO2_FUELS.includes(plant.energy))
 
 export type FuelForm = {
   label: string

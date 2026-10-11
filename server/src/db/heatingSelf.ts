@@ -21,6 +21,7 @@ import { captureOf, lineRoot, servesUnit } from '../../../shared/heatingPeriod.t
 import type {
   BillingPeriod, CostItem, CostKey, HotWater, SelfSpanRange, HeatingDistribution, HeatingEnergy, HeatingPart, HeatingPlant, InterimGap, InsulationRule, Meter,
 } from '../../../shared/types.ts'
+import { billingEnergy } from '../../../shared/heatDelivery.ts'
 import { consumptionSharesOf, OIL_OR_GAS, POT_METER, selfActive, selfFromOf, targetProblem, type ShareRow } from '../heating.ts'
 import type { Database, Executor } from './client.ts'
 import { closedHeatingKeys, closedText, ensureHeatingPeriod, heatingPeriodClosed, heatingPeriodOf, plantContext, type PlantContext } from './heatingPeriodContext.ts'
@@ -119,7 +120,9 @@ function checkShares(body: unknown, plant: HeatingPlant, hotWater: HotWater, h: 
     if (v < min) throw new HeatingError(400, `Die Heizkostenverordnung verlangt mindestens ${min} % nach Verbrauch (§ 7 Abs. 1, § 8 Abs. 1).`)
   }
   if (heating === null) throw new HeatingError(400, 'Bitte geben Sie den Anteil an.')
-  if (insulationRule === 'applies' && OIL_OR_GAS.includes(plant.energy)) {
+  // Heizung PR 16: Bei Wärmelieferung gilt der Pflichtanteil nicht (§ 7 Abs. 3 HeizkostenV verweist nur auf Abs. 1
+  // Satz 1 und 3 bis 5); `billingEnergy` ist dann Fernwärme.
+  if (insulationRule === 'applies' && OIL_OR_GAS.includes(billingEnergy(plant))) {
     const forced = valueAt(hkvConsumptionShareForced, h.from)
     // Mehr als der Pflichtanteil nur mit Vereinbarung (§ 10 nennt § 7 Abs. 1 als Ganzes; Auslegung), nie weniger.
     if (heating < forced || (heating > forced && !above70Agreed)) {
@@ -127,7 +130,7 @@ function checkShares(body: unknown, plant: HeatingPlant, hotWater: HotWater, h: 
     }
   }
   // § 6 Abs. 4: nur für künftige Zeiträume; der erste Anteil darf jederzeit gesetzt werden.
-  const before = consumptionSharesOf(rows, h.key, plant.energy, () => valueAt(hkvConsumptionShareForced, h.from))
+  const before = consumptionSharesOf(rows, h.key, billingEnergy(plant), () => valueAt(hkvConsumptionShareForced, h.from))
   // Durchsicht von #239, C1: Den Pflichtwert nach § 7 Abs. 1 Satz 2 nachzutragen ist keine Wahl nach
   // § 6 Abs. 4 (der verweist nur auf § 7 Abs. 1 Satz 1) und geht deshalb auch in einer begonnenen
   // Heizperiode; das Warmwasser bleibt dabei, wie es ist.
@@ -135,7 +138,7 @@ function checkShares(body: unknown, plant: HeatingPlant, hotWater: HotWater, h: 
   // gibt. Bereitet die Anlage ab einer Heizperiode kein Warmwasser mehr (oder erstmals), ist das eine
   // Tatsache der Anlage und keine Wahl eines Maßstabs nach § 6 Abs. 4; der Anteil der Heizung bleibt geschützt.
   const waterChanged = before !== null && water !== null && before.water !== null && before.water !== water
-  const toForced = insulationRule === 'applies' && OIL_OR_GAS.includes(plant.energy) && !waterChanged
+  const toForced = insulationRule === 'applies' && OIL_OR_GAS.includes(billingEnergy(plant)) && !waterChanged
   if (before !== null && today >= h.from && (before.heating !== heating || waterChanged) && !toForced) {
     throw new HeatingError(400,
       `Die Heizperiode hat am ${germanDate(h.from)} begonnen. Den Anteil nach Verbrauch ändern Sie nur für künftige Abrechnungszeiträume, durch Erklärung gegenüber den Mietern und mit Wirkung zum Beginn eines Zeitraums (§ 6 Abs. 4 HeizkostenV). Tragen Sie ihn bei der nächsten Heizperiode ein.`)
@@ -173,7 +176,7 @@ export async function saveDistribution(db: Database, plantId: string, period: st
     const id = await ensureHeatingPeriod(tx, plantId, h.key)
     await tx.update(heatingPeriods).set({ heatConsumptionPct: next.heating, waterConsumptionPct: next.water, insulationRule: next.insulationRule, above70Agreed: next.above70Agreed }).where(eq(heatingPeriods.id, id))
   })
-  return distributionOf(await shareRows(db, plantId), ctx.plant.energy, h, today)
+  return distributionOf(await shareRows(db, plantId), billingEnergy(ctx.plant), h, today)
 }
 
 type ItemAnswer = { id: string; heatingPart: HeatingPart; heatingTarget: CostItem['heatingTarget'] }

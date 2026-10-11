@@ -17,10 +17,11 @@
 // geschnitten und nicht neu erfunden: Was dort dazukommt, kommt hier nur an, wenn es jemand
 // bewusst aufnimmt.
 
-import type { BillingPeriod, Co2Statement, CostItem, DegreeDayValue, FrozenFuelCarry, FuelDelivery, HeatingEstimate, HeatingPeriodData, HeatingPlant, HeatingServiceValue, InterimGap, LawOverride, Meter, OperatingPowerCredit, OperatingPowerDeduction, Payment, PeriodKey, PeriodRules, Property, Reading, StockValue, Tenancy, Unit } from '../../shared/types.ts'
+import type { BillingPeriod, Co2Statement, CostItem, DegreeDayValue, FrozenFuelCarry, FuelDelivery, HeatingEnergy, HeatingEstimate, HeatingPeriodData, HeatingPlant, HeatingServiceValue, InterimGap, LawOverride, Meter, OperatingPowerCredit, OperatingPowerDeduction, Payment, PeriodKey, PeriodRules, Property, Reading, StockValue, Tenancy, Unit } from '../../shared/types.ts'
 import { calendarPeriod, calendarYearPeriod, parsePeriodKey, periodContaining, periodLabel, periodOfKey, previousPeriod, rulesOf, settlementDeadline, startYearOf } from '../../shared/period.ts'
 import { hasOwnRhythm, heatingPeriodsEndingIn, lineRoot, plantRules, sameFuelLine, settledSeparately, settlementKeyOf, type PlantWay } from '../../shared/heatingPeriod.ts'
 import { isStockEnergy } from '../../shared/fuelStock.ts'
+import { asBilledPlant } from '../../shared/heatDelivery.ts'
 import { dayAfter, germanDate } from '../../shared/law/register.ts'
 import { isStockFuelItem, readFrozenStock, settledByDefault, stockKeysOf, stockTemplateOfLine, type PreviousFuel, type StockPeriodInput } from './fuelStock.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
@@ -131,6 +132,11 @@ export type SnapshotHeatingPlant = Pick<HeatingPlant, 'id' | 'energy' | 'method'
   & Partial<Pick<HeatingPlant, 'heatGeneration' | 'heatPumpMajority'>>
   // Wie der Betriebsstrom erfasst ist (#266), nur für den Hinweis „Betriebsstrom fehlt“; fehlt sie, keine Angabe.
   & Partial<Pick<HeatingPlant, 'operatingPowerHandling'>>
+  // Wärmelieferung (Heizung PR 16): Bei Contracting trägt `energy` die Energie der Abrechnung (Fernwärme) und
+  // `fuelEnergy` den Brennstoff des Lieferanten (`asBilledPlant` in shared/heatDelivery.ts, gesetzt in
+  // `snapshotFor` und `heatingSnapshotFor`). Fehlen die Felder, ist es keine Wärmelieferung durch einen Dritten.
+  & Partial<Pick<HeatingPlant, 'contracting' | 'heatDeliverySince' | 'previousSupply' | 'switchAnnouncedOn'>>
+  & { fuelEnergy?: HeatingEnergy }
 // Seit Heizung PR 9 die Versorgung (`supply`); fehlt sie, ist die Anlage zentral.
 // Die Angaben je Heizperiode, die die Berechnung liest: Warmwasser laut Messdienst (Heizung PR 6, #211)
 // und der Vorrat (Heizung PR 8). Die Felder des Vorrats sind optional, damit ein von Hand gebauter
@@ -942,7 +948,8 @@ export function snapshotFor(
   const found = source.properties?.find((p) => p.id === propertyId)
   const objectRules = rulesOf(found)
   const narrowed = narrowToProperty(source, propertyId)
-  const plants = withSelfBegin((source.heatingPlants ?? []).filter((p) => p.propertyId === propertyId),
+  // Heizung PR 16: Contracting rechnet wie Fernwärme (die Naht `asBilledPlant`).
+  const plants = withSelfBegin((source.heatingPlants ?? []).filter((p) => p.propertyId === propertyId).map(asBilledPlant),
     (p) => (hasOwnRhythm(wayOf(p)) ? heatingPeriodsEndingIn(plantRules(wayOf(p), objectRules), period).map((h) => String(h.key)) : [String(period.key)]))
   const own = plants.filter((p) => (p.periodStartMonth ?? null) !== null)
   const ownIds = new Set(own.map((p) => p.id))
@@ -1005,7 +1012,7 @@ export function snapshotFor(
 export function heatingSnapshotFor(source: Parameters<typeof snapshotFor>[0], propertyId: string, plantId: string, h: BillingPeriod): Snapshot | null {
   const found = source.properties?.find((p) => p.id === propertyId)
   const objectRules = rulesOf(found)
-  const plants = withSelfBegin((source.heatingPlants ?? []).filter((p) => p.propertyId === propertyId), () => [String(h.key)])
+  const plants = withSelfBegin((source.heatingPlants ?? []).filter((p) => p.propertyId === propertyId).map(asBilledPlant), () => [String(h.key)])
   const plant = plants.find((p) => p.id === plantId)
   if (!plant) return null
   // Die Zeilen der Linie (Durchsicht von #239, I3): Der Anteil nach Verbrauch gilt über den Tausch.
