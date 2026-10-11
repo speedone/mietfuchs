@@ -13,7 +13,7 @@ import os from 'node:os'
 import path from 'node:path'
 import type { OpenedDatabase } from '../src/db/open.ts'
 import { openFreshDatabase } from '../testing/freshDatabase.ts'
-import { applyPeriodChange, previewPeriodChange } from '../src/db/periodChange.ts'
+import { applyPeriodChange, noYearText, previewPeriodChange } from '../src/db/periodChange.ts'
 import { createHeatingPlant } from '../src/db/heating.ts'
 import { bookOperatingPower } from '../src/db/operatingPower.ts'
 import { readCostItems, readStock } from '../src/db/read.ts'
@@ -385,7 +385,7 @@ test('Geld H1: ein Ziel ohne passendes Jahr nennt die Vorschau vorher; gewählt 
     const hinweis = heizung.taxShifts.find((t) => t.key === '2025-05') ?? assert.fail(`kein Hinweis am Ziel 05–12/2025: ${JSON.stringify(heizung.taxShifts)}`)
     assert.match(hinweis.text, /stünde „Betriebsstrom Heizung \(selbst geschätzt\)“ im Jahr der Zahlung 2025; sein Abzug .* folgt ihm, dort ist aber nur 2026 bis 2028 möglich\. So lässt sich der Wechsel nicht speichern/)
     // Geld H2: Der Teil des Abzugs in 01/2026 bleibt fest in 2026, der Betriebsstrom stünde am Ziel 05–12/2025 in 2025.
-    assert.match(hinweis.text, /Ein Teil des Abzugs \([\d,]+\s€\) bleibt im Steuerjahr 2026, der Betriebsstrom steht in 2025; in der Anlage V verschiebt sich dieser Betrag zwischen den Jahren\./)
+    assert.match(hinweis.text, /Ein Teil des Abzugs \([\d,]+\s€\) bleibt im Steuerjahr 2026, der Betriebsstrom steht im Steuerjahr 2025; in der Anlage V verschiebt sich dieser Betrag zwischen den Jahren\./)
     const vorher = await items(opened)
     const groups = Object.fromEntries(preview.groups.map((g) => [g.id, g.heating ? '2025-05' : 'split']))
     const r = await opened.write((db) => applyPeriodChange(db, 'objekt-1', regeln, { understood: true, groups, taxYears: {}, token: preview.token }, ids, TODAY))
@@ -409,8 +409,40 @@ test('Geld H2: die Vorschau nennt, welcher Teil des Abzugs bei einem anderen Jah
     assert.deepEqual(eintrag.options, [2025, 2026, 2027])
     const notes = eintrag.notes ?? []
     assert.deepEqual(notes.map((n) => n.year), [2026, 2027])
-    assert.match(notes[0]?.text ?? '', /^Ein Teil des Abzugs \(32,88\s€\) bleibt im Steuerjahr 2025, der Betriebsstrom steht in 2026; in der Anlage V verschiebt sich dieser Betrag zwischen den Jahren\.$/)
+    assert.match(notes[0]?.text ?? '', /^Ein Teil des Abzugs \(32,88\s€\) bleibt im Steuerjahr 2025, der Betriebsstrom steht im Steuerjahr 2026; in der Anlage V verschiebt sich dieser Betrag zwischen den Jahren\. Welches Jahr steuerlich gilt, richtet sich danach, wann Sie die Stromrechnung bezahlt haben \(§ 11 Abs\. 2 EStG\)\.$/)
   })
+})
+
+// Geld K1 der zweiten Nachprüfung von #265: Mai-Objekt, Wechsel auf „Januar ab 2026“. Der Zeitraum 2025/26 zerfällt in
+// 05–12/2025 (fest 2025) und 2026 (fest 2026); der Abzug folgt dem Hausstrom (Leistungszeitraum 2025/26) nach Tagen,
+// −67,12 € und −32,88 €. Bleiben Betriebsstrom und Gas in 05–12/2025, ändert sich ihr Jahr nicht, die Gruppe hat dort
+// also noch keinen Satz zur Steuer; der Teil des Abzugs in 2026 (32,88 €) verschiebt sich trotzdem, und das muss am
+// Ziel 2025-05 stehen.
+test('Geld K1: Satz zur Verschiebung an einem Ziel, an dem sonst kein Steuerjahr wechselt', async () => {
+  await withDatabase(async (opened) => {
+    await mieter(opened)
+    await opened.write(async (db) => {
+      await db.update(properties).set({ periodStartMonth: 5 }).where(eq(properties.id, 'objekt-1'))
+      await createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'gas', method: 'manual' })
+      await createEntity(db, 'costItems', 'gas', { propertyId: 'objekt-1', period: '2025-05', category: 'Heizung und Warmwasser', description: 'Gas', amountCents: 500000, key: 'area', heatingPart: 'fuel', heatingPlantId: 'hp', taxYear: 2025 })
+      await createEntity(db, 'costItems', 'hs', { propertyId: 'objekt-1', period: '2025-05', category: 'Beleuchtung/Allgemeinstrom', description: 'Hausstrom', amountCents: 100000, key: 'units', serviceFrom: '2025-05-01', serviceTo: '2026-04-30', taxYear: 2025 })
+    })
+    await opened.write((db) => bookOperatingPower(db, 'hp', { period: '2025-05', generalItemId: 'hs', ownCents: 10000, basis: 'Bruchteil' }, ids))
+    const preview = (await opened.read((db) => previewPeriodChange(db, 'objekt-1', { startMonth: 5, changes: ['2026-01'] }, TODAY))) ?? assert.fail('kein Objekt')
+    const heizung = preview.groups.find((g) => g.heating) ?? assert.fail('keine Heizgruppe')
+    assert.deepEqual(heizung.taxShifts.map((t) => t.key).sort(), ['2025-05', '2026-01'])
+    const mai = heizung.taxShifts.find((t) => t.key === '2025-05')?.text ?? ''
+    assert.match(mai, /^Ein Teil des Abzugs \(32,88\s€\) bleibt im Steuerjahr 2026, der Betriebsstrom steht im Steuerjahr 2025; in der Anlage V verschiebt sich dieser Betrag zwischen den Jahren\./)
+  })
+})
+
+// Recht H-2 der zweiten Nachprüfung von #265: „nur 2025 möglich“ bei gleichen Grenzen, „in einem der Jahre …“ bei einer
+// Spanne. Beides kommt im erreichbaren Bestand nicht vor (siehe Bericht); deshalb wird der Satz für sich geprüft.
+test('Recht H-2: Wortlaut des Satzes ohne passendes Jahr', () => {
+  const base = { target: '05–12/2025', power: 'Betriebsstrom', deduction: 'Abzug', deductionLabel: '2026/2027' }
+  assert.equal(noYearText({ ...base, years: [2025], span: [2026] }),
+    'Ganz nach 05–12/2025 verschoben, stünde „Betriebsstrom“ im Jahr der Zahlung 2025; sein Abzug „Abzug“ in 2026/2027 folgt ihm, dort ist aber nur 2026 möglich. So lässt sich der Wechsel nicht speichern; wählen Sie für die Heizkosten einen anderen Zeitraum.')
+  assert.match(noYearText({ ...base, years: [2024, 2025, 2026], span: [2027, 2028, 2029] }), /stünde „Betriebsstrom“ in einem der Jahre 2024 bis 2026; .* dort ist aber nur 2027 bis 2029 möglich\./)
 })
 
 // G-H4 beim Aufteilen: Der Teil des Abzugs in 2025/26 (über zwei Kalenderjahre) nimmt das Jahr, das der Betriebsstrom
