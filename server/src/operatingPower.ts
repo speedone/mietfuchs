@@ -4,9 +4,9 @@
 // (§ 7 Abs. 2 HeizkostenV; BGH, Urteil vom 03.06.2016, V ZR 166/15). Die Abzüge zählen über ihren
 // Verweis und aus jedem Zeitraum (Review Focus 5); geprüft werden nur die Positionen, die die
 // Abrechnung verteilt, damit der Hinweis genau einmal erscheint, nämlich dort, wo der Betriebsstrom steht.
-import type { CostItem, HeatingEnergy, OperatingPowerDeduction } from '../../shared/types.ts'
+import type { CostItem, HeatingEnergy, HeatingMethod, HeatingSource, HeatingSupply, OperatingPowerDeduction } from '../../shared/types.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
-import { GENERAL_POWER_CATEGORY, POWER_GENERATED } from '../../shared/operatingPower.ts'
+import { asksOperatingPowerHandling, GENERAL_POWER_CATEGORY, POWER_GENERATED } from '../../shared/operatingPower.ts'
 
 // Ein Abzug in einer abgeschlossenen Abrechnung, der den Mietern nicht oder nicht so gutgeschrieben ist,
 // wie er heute dasteht (P-W3, R2-W2). `frozenCents` nur bei `changed`: der eingefrorene Betrag.
@@ -185,12 +185,7 @@ export function operatingPowerText(f: OperatingPowerFinding, fmtCents: (c: numbe
 //   fragt calc.ts im Register ab.
 
 type PowerItem = Pick<CostItem, 'id' | 'category' | 'description' | 'amountCents' | 'key' | 'heatingPart' | 'heatingPlantId' | 'fuelDeliveryId' | 'operatingPower' | 'operatingPowerItemId'>
-export type PowerPlant = { id: string; name?: string; energy: HeatingEnergy; method: string; source: string; supply?: string; periodStartMonth?: number | null; endsOn?: string | null; replacesPlantId?: string | null }
-
-// Womit eine Zentralheizung Betriebsstrom für Brenner, Pumpen und Regelung braucht (A). Fernwärme ist ausgenommen
-// (F3): Ob die Hausanlage Pumpen oder Regelung am Zähler des Hauses hat, hängt an Anlage und Vertrag. „Sonstige“
-// ebenso, denn darunter kann alles fallen.
-const BURNERS: readonly HeatingEnergy[] = ['gas', 'oil', 'lpg', 'pellets', 'wood', 'coal']
+export type PowerPlant = { id: string; name?: string; energy: HeatingEnergy; method: HeatingMethod; source: HeatingSource; supply?: HeatingSupply; periodStartMonth?: number | null; endsOn?: string | null; replacesPlantId?: string | null }
 
 export type MissingPowerFinding = {
   kind: 'operating' | 'generation'
@@ -220,7 +215,8 @@ export function missingPowerFindings(input: {
   for (const plant of input.plants) {
     if ((plant.supply ?? 'central') !== 'central' || plant.source !== 'building' || plant.method === 'service') continue
     const generation = POWER_GENERATED.includes(plant.energy)
-    if (!generation && !BURNERS.includes(plant.energy)) continue
+    // A gilt, wo Mietfuchs nach der Angabe fragt (Brenner, F3); eine Stelle für Frage und Hinweis (#266).
+    if (!generation && !asksOperatingPowerHandling(plant)) continue
     const own = (plant.periodStartMonth ?? null) !== null
     // Eine Heizposition ohne Anlage kann zu jeder Anlage ohne eigene Heizperiode gehören.
     const heat = own

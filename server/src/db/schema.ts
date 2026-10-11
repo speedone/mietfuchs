@@ -46,6 +46,7 @@ import type {
   HeatingMethod,
   HeatingPart,
   OperatingPower,
+  OperatingPowerHandling,
   HeatingRole,
   HeatingSource,
   HeatingSupply,
@@ -87,6 +88,8 @@ export const METER_TYPES = exactly<MeterType>()(['kaltwasser', 'warmwasser', 'st
 export const HEATING_PARTS = exactly<HeatingPart>()(['fuel', 'operating', 'metering'] as const)
 // Betriebsstrom der Heizung (Heizung PR 15, #212): an Heizkosten `included`, am Allgemeinstrom `deduction`.
 export const OPERATING_POWER = exactly<OperatingPower>()(['included', 'deduction'] as const)
+// Wie der Betriebsstrom einer Heizanlage erfasst ist (#266); Beschriftungen in shared/operatingPower.ts.
+export const OPERATING_POWER_HANDLINGS = exactly<OperatingPowerHandling>()(['ownMeter', 'deducted', 'landlordPays'] as const)
 export const DEPOSIT_STATUS = exactly<DepositStatus>()(['offen', 'erhalten', 'teilweise', 'zurückgezahlt'] as const)
 const AI_PROVIDERS = exactly<AiProviderKind>()(['ollama', 'openai'] as const)
 const AI_JSON_MODES = exactly<AiJsonMode>()(['auto', 'schema', 'object', 'prompt'] as const)

@@ -1,6 +1,6 @@
 // Betriebsstrom der Heizung (Heizung PR 15, #212): die Rechnung der Schätzhilfe, für Formular und
 // Server dieselbe.
-import type { HeatingEnergy, OperatingPowerDevice } from './types.ts'
+import type { HeatingEnergy, HeatingMethod, HeatingSource, HeatingSupply, OperatingPowerDevice, OperatingPowerHandling } from './types.ts'
 
 // Die Kostenart des Allgemeinstroms (§ 2 Nr. 11 BetrKV, Beleuchtung). Dieselbe Zeichenkette wie in
 // shared/categories.ts; categories.test.ts hält beide zusammen.
@@ -113,3 +113,27 @@ export const touchesHeatingPeriod = (general: { from: string; to: string }, heat
 // Die Grundlage der Schätzung, wie sie an Betriebsstrom und Abzug gespeichert wird (P-W1): der Rechenweg
 // mit allen Eingaben, eine Zeile je Schritt.
 export const basisOf = (steps: readonly string[]): string => steps.join('\n')
+
+// ---------- Angabe an der Heizanlage, wie der Betriebsstrom erfasst ist (#266) ----------
+
+// Womit eine Zentralheizung Betriebsstrom für Brenner, Pumpen und Regelung braucht. Fernwärme ist ausgenommen:
+// Ob die Hausanlage Pumpen oder Regelung am Zähler des Hauses hat, hängt an Anlage und Vertrag. „Sonstige“
+// ebenso, denn darunter kann alles fallen. Wärmepumpe und Elektrokessel haben einen eigenen Hinweis.
+export const OPERATING_POWER_BURNERS: readonly HeatingEnergy[] = ['gas', 'oil', 'lpg', 'pellets', 'wood', 'coal']
+
+// Ob Mietfuchs an dieser Anlage fragt, wie der Betriebsstrom erfasst ist. Dieselbe Regel entscheidet, wann der
+// Hinweis „Betriebsstrom fehlt“ überhaupt kommen kann (server/src/operatingPower.ts), damit die Frage genau dort
+// steht, wohin der Hinweis führt: zentral, im eigenen Haus (keine Gemeinschaft), ohne Messdienst, mit Brenner.
+export const asksOperatingPowerHandling = (plant: { energy: HeatingEnergy; method: HeatingMethod; source: HeatingSource; supply?: HeatingSupply | null }): boolean =>
+  (plant.supply ?? 'central') === 'central' && plant.source === 'building' && plant.method !== 'service' && OPERATING_POWER_BURNERS.includes(plant.energy)
+
+// Frage und Beschriftungen, eine Quelle für Oberfläche und Hinweistexte, damit beide wortgleich sind. Entscheidend
+// ist der Stromvertrag mit eigener Rechnung, nicht der Zähler: Ein Zwischenzähler hinter dem Zähler des Hauses
+// gehört zu `deducted` (Rechtsprüfung des Plans, M-1).
+export const OPERATING_POWER_HANDLING_QUESTION = 'Wie ist der Betriebsstrom dieser Heizung erfasst?'
+export const OPERATING_POWER_HANDLING_LABELS: Record<OperatingPowerHandling | '', string> = {
+  '': 'Keine Angabe',
+  ownMeter: 'Eigener Stromvertrag (eigener Zähler mit eigener Rechnung), Rechnung als Heizposition „Betrieb“ erfasst',
+  deducted: 'Über die Stromrechnung des Hauses (auch mit Zwischenzähler), beim Allgemeinstrom abgezogen',
+  landlordPays: 'Eigener Stromvertrag (eigener Zähler mit eigener Rechnung), die Kosten trägt der Vermieter selbst',
+}
