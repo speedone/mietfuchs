@@ -17,7 +17,7 @@ import { dayAfter, germanDate, valueAt } from '../../../shared/law/register.ts'
 import { periodContaining, periodLabel } from '../../../shared/period.ts'
 import type { BillingPeriod, HeatingPlant, HeatingStockStatement, StockRow, StockView } from '../../../shared/types.ts'
 import { CO2_FUELS } from '../co2.ts'
-import { billingEnergy } from '../../../shared/heatDelivery.ts'
+import { asBilledPlant, billingEnergy } from '../../../shared/heatDelivery.ts'
 import { problemText, readFrozenStock, settledByDefault, stockOf, type StockOptions, type StockPeriodInput } from '../fuelStock.ts'
 import { stockChainsOf } from '../snapshot.ts'
 import type { Database } from './client.ts'
@@ -71,7 +71,9 @@ function chainOf(stock: Stock, ctx: PlantContext, h: BillingPeriod): StockPeriod
     closedHeatingSettlements: stock.closedHeatingSettlements,
     heatingPeriodRows: stock.heatingPeriodRows,
     fuelDeliveries: stock.fuelDeliveries,
-  }, ctx.plant, ctx.objectRules, [h], stock.heatingPlants.filter((p) => p.propertyId === ctx.plant.propertyId))
+    // Heizung PR 16: die Anlagen, wie die Berechnung sie sieht (`asBilledPlant`); sonst gälte eine Nachfolgerin mit
+    // Contracting und demselben Brennstoff hier als Übernahme des Restbestands, in der Abrechnung aber nicht.
+  }, asBilledPlant(ctx.plant), ctx.objectRules, [h], stock.heatingPlants.filter((p) => p.propertyId === ctx.plant.propertyId).map(asBilledPlant))
   return entry?.chain ?? []
 }
 
