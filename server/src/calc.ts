@@ -4906,6 +4906,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // PR 14): dann auch keine Prüfung, dieselbe Bedingung wie die Aufteilung.
     // Heizung PR 16: auch nicht bei Contracting mit einem Brennstoff ohne CO₂-Kosten (§ 2 Abs. 1 Satz 2 CO2KostAufG).
     // Nachprüfung von #272, N1: nur, wenn der Lieferant allein ohne CO₂-Kosten heizt und die Rechnung keine ausweist.
+    // Die Zeilen der Abgrenzung gehören zur Heizperiode dieser Berechnung, also zu diesem Topf (F2): Eine Rechnung ganz
+    // in einer anderen Heizperiode steht nicht darin.
     const invoiceCo2 = fuelResults.get(pot.plantId)?.result.lines.some((l) => (l.co2Cents ?? 0) > 0) ?? false
     const noCo2Fuel = noCo2Supplier(pot) && !invoiceCo2
     const co2Check: NonNullable<HeatingStatement['co2Check']> = { applies: !etsExempt && !noCo2Fuel && !co2OffByExemption(pot.plantId, String(pot.period.key)), exemption: null, findings: [] }
@@ -4944,8 +4946,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Nur für Brennstoffe, für die es Standardwerte nach § 7 Abs. 4 BEHG gibt (§ 2 Abs. 1 CO2KostAufG):
     // Gas, Heizöl, Flüssiggas, Kohle; Fernwärme nur, wenn die Rechnung CO₂-Kosten ausweist. Strom einer
     // Wärmepumpe ist kein solcher Brennstoff (Durchsicht von #233, C1).
-    // Heizung PR 16: Bei Contracting mit einem Brennstoff ohne CO₂-Kosten (Pellets, Holz, Strom, Wärmepumpe) gibt es
-    // nichts aufzuteilen, auch wenn eine Rechnung CO₂-Werte trägt; dieselbe Regel wie `co2Required`.
+    // Heizung PR 16: Bei Contracting mit einem Brennstoff ohne CO₂-Kosten (Pellets, Holz, Strom, Wärmepumpe), den der
+    // Lieferant allein einsetzt, gibt es nichts aufzuteilen (`co2Required`). Erzeugt er die Wärme mit einem weiteren
+    // Erzeuger (`mixed`) oder weist eine Rechnung dieser Heizperiode CO₂-Kosten über 0 aus (`invoiceCo2`), wird
+    // aufgeteilt (Nachprüfung von #272, N1).
     const co2Relevant = (co2Required(pot) || invoiceCo2) && (CO2_FUELS.includes(pot.energy) || (pot.energy === 'districtHeating' && (fuelOf?.lines.some((l) => l.co2Cents !== null) ?? false)))
     // Vorratsenergien (Heizung PR 8, Entwurf 8.2, Naht N1): E und C des verbrauchten Brennstoffs aus der
     // Bestandsrechnung. Bei freien Schlüsseln ohne Bestand wie geliefert (mit `fuel.manual-by-delivery`);

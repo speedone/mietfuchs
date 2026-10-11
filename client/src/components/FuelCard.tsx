@@ -13,7 +13,7 @@ import type { FuelDelivery, HeatingEnergy, HeatingMethod, HeatingPeriodView, Hea
 type TextKey = Exclude<keyof FuelForm, 'usedByService' | 'quantityUnit' | 'unitId' | 'gasBasis' | 'grade'>
 
 export default function FuelCard({ plant, view, deliveries, units = [], findings = {}, onSaved }: {
-  plant: { id: string; method: HeatingMethod; energy?: HeatingEnergy } & Partial<Pick<HeatingPlant, 'supply' | 'units' | 'contracting'>>
+  plant: { id: string; method: HeatingMethod; energy?: HeatingEnergy } & Partial<Pick<HeatingPlant, 'supply' | 'units' | 'contracting' | 'heatGeneration'>>
   view: HeatingPeriodView
   deliveries: FuelDelivery[]
   // Die Wohnungen des Objekts, für die Rechnung einer Etagenheizung (Heizung PR 9).
@@ -219,7 +219,7 @@ export default function FuelCard({ plant, view, deliveries, units = [], findings
             </>)}
           </>)}
           {/* Bei Strom einer Wärmepumpe gibt es keine CO₂-Kosten aufzuteilen (§ 2 Abs. 1 CO2KostAufG). */}
-          {(plant.energy === undefined || asksCo2Facts({ energy: plant.energy, contracting: plant.contracting })) && (
+          {(plant.energy === undefined || asksCo2Facts({ energy: plant.energy, contracting: plant.contracting, heatGeneration: plant.heatGeneration ?? null })) && (
             <div className="row">
               {text('emissionsKg', 'CO₂-Ausstoß laut Rechnung (kg)')}
               {text('co2Cost', 'CO₂-Kosten laut Rechnung')}
