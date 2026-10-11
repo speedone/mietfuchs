@@ -2426,3 +2426,58 @@ export type OperatingPowerDeduction = {
   // (ein von Hand gebauter Schnappschuss), wird nicht verglichen.
   taxYear?: number
 }
+
+// ---------- Monatliche Verbrauchsinformation (Heizung PR 22, § 6a Abs. 1 Nr. 2, Abs. 2 HeizkostenV) ----------
+
+// Je Anlage und Monat ('JJJJ-MM'): der Vergleichswert eines Durchschnittsnutzers in kWh je m² Wohnfläche
+// mit seiner Quelle (Abs. 2 Nr. 3; nicht aus dem eigenen Haus, BR-Drs. 643/21, S. 19) und der Tag, an dem
+// die Information den Mietern mitgeteilt wurde. Gespeichert an der Anlage, die am Monatsende heizt;
+// gelesen über die ganze Linie (Kesseltausch).
+export type MonthlyInfoRow = { plantId: string; month: string; referenceKwhPerM2: number | null; referenceSource: string | null; sentOn: string | null }
+
+// Warum eine Information unvollständig ist: keine Ablesung genau an den Monatsgrenzen (auch bei einem
+// ausgefallenen Gerät), negativer Verbrauch, Heizkostenverteiler (keine kWh), Warmwasser ohne
+// Temperatur für die Umrechnung, kein Vergleichswert.
+export type MonthlyInfoGap = 'noReading' | 'negative' | 'hca' | 'dhwTemp' | 'reference'
+
+// Was in einem Monat gemessen bzw. gerechnet ist, je Größe für sich: Wärme in kWh (gemessen), Warmwasser
+// in m³ (gemessen) und in kWh (umgerechnet, angelehnt an § 9 Abs. 2 Satz 2 HeizkostenV; Auslegung). Keine
+// Summe, weil die umgerechnete Warmwasserwärme die Verluste der Erzeugung enthält und die gemessene Wärme
+// nicht. `null`: nicht erhoben bzw. nicht umrechenbar.
+export type MonthlyInfoAmounts = { heatKwh: number | null; dhwM3: number | null; dhwKwh: number | null }
+
+// Die Information eines Mieters für einen Monat (`from`/`to`: seine Tage in diesem Monat). `remote`: Alle
+// Geräte seiner Wohnung sind am Monatsende fernablesbar (für die Kürzung; bei gemischter Ausstattung ist
+// im Einzelfall zu prüfen, BR-Drs. 643/21, S. 18). Vormonat und Vorjahresmonat nur aus demselben
+// Mietverhältnis und nur, soweit erhoben (sonst null).
+export type MonthlyInfoUser = MonthlyInfoAmounts & {
+  tenancyId: string
+  tenantName: string
+  unitName: string
+  areaM2: number
+  from: string
+  to: string
+  remote: boolean
+  previousMonth: MonthlyInfoAmounts | null
+  previousYear: MonthlyInfoAmounts | null
+  referenceKwh: number | null
+  gaps: MonthlyInfoGap[]
+}
+
+// Ein Monat einer Heizperiode. `due`: der Monat ist abgelaufen (Folgemonat erreicht); `complete`: jede
+// Information enthält alles nach Abs. 2; `sent`: als mitgeteilt vermerkt.
+export type MonthlyInfoMonth = { month: string; due: boolean; row: MonthlyInfoRow | null; users: MonthlyInfoUser[]; complete: boolean; sent: boolean }
+
+// Was die Karte der Seite Heizkosten zu einer Heizperiode lädt. `managed`: Mietfuchs erstellt die
+// Information (eigene Abrechnung mit eigenen Zählern, mindestens ein Gerät als fernablesbar eingetragen);
+// `elsewhere`: der Vermieter hat bestätigt, dass die Mieter sie anders mitgeteilt bekommen (PR 14).
+// `periodReference`: der Vergleichswert der Heizperiode für die Angaben nach § 6a Abs. 3 Nr. 4 (PR 14), nur
+// als Hinweis für die Karte; er gilt für die ganze Heizperiode und wird nicht auf Monate übertragen.
+export type MonthlyInfoView = {
+  plantId: string
+  period: PeriodKey
+  managed: boolean
+  elsewhere: boolean
+  months: MonthlyInfoMonth[]
+  periodReference: { kwhPerM2: number; source: string | null } | null
+}
