@@ -17,7 +17,7 @@ export const betrkvTvSignal: LawParam<{ readonly newSystemsFrom: string }, 'over
     validTo: '2024-06-30',
     value: { newSystemsFrom: '2021-12-01' },
     source: { rank: 'law', cite: '§ 2 Satz 1 Nr. 15 Buchst. a und b, Satz 2 BetrKV', url: 'https://www.gesetze-im-internet.de/betrkv/__2.html', retrieved: '2026-10-05', checked: 'checked' },
-    enacted: 'BetrKV, Fassung Art. 4 G v. 16.10.2023 (BGBl. I Nr. 280)',
+    enacted: 'BetrKV, Fassung Art. 4 G v. 16.10.2023 (BGBl. 2023 I Nr. 280)',
   }],
   describe: (v) => `umlagefähig nur bei Anlagen, die vor dem ${germanDate(v.newSystemsFrom)} errichtet wurden`,
 }
@@ -36,9 +36,9 @@ export const betrkvGenerationPower: LawParam<{ readonly since: string }, 'overla
     validFrom: '2024-01-01',
     value: { since: '2024-01-01' },
     source: { rank: 'law', cite: '§ 2 Satz 1 Nr. 4 Buchst. a BetrKV, eingefügt durch Art. 4, in Kraft nach Art. 6 Abs. 1 G v. 16.10.2023 (BGBl. 2023 I Nr. 280)', url: 'https://www.recht.bund.de/eli/bund/bgbl-1/2023/280', retrieved: '2026-10-11', checked: 'checked' },
-    enacted: 'BetrKV, Fassung Art. 4 G v. 16.10.2023 (BGBl. I Nr. 280)',
+    enacted: 'BetrKV, Fassung Art. 4 G v. 16.10.2023 (BGBl. 2023 I Nr. 280)',
   }],
-  describe: (v) => `der zur Wärmeerzeugung verbrauchte Strom zählt seit dem ${germanDate(v.since)} zu den Kosten der zentralen Heizungsanlage`,
+  describe: (v) => `der zur Wärmeerzeugung verbrauchte Strom zählt seit dem ${germanDate(v.since)} zu den Kosten des Betriebs der zentralen Heizungsanlage`,
 }
 
 const bgb556 = (cite: string): Source => ({ rank: 'law', cite, url: 'https://www.gesetze-im-internet.de/bgb/__556.html', retrieved: '2026-10-05', checked: 'checked' })

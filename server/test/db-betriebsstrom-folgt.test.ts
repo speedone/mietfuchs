@@ -18,6 +18,8 @@ import { createHeatingPlant } from '../src/db/heating.ts'
 import { bookOperatingPower } from '../src/db/operatingPower.ts'
 import { readCostItems, readStock } from '../src/db/read.ts'
 import { createEntity } from '../src/db/repository.ts'
+import { eq } from 'drizzle-orm'
+import { properties } from '../src/db/schema.ts'
 import type { CostItem, PeriodRules } from '../../shared/types.ts'
 import { computeSettlement } from '../src/calc.ts'
 import { snapshotFor } from '../src/snapshot.ts'
@@ -336,6 +338,58 @@ test('G-H3/G-H4: wachsender Zeitraum: Rechnung und Abzug bleiben zusammen, der A
     assert.equal(nach(abzug.id).operatingPowerGeneralId, 'hs')
     assert.equal(nach(bs.id).taxYear, 2026)
     assert.equal(nach(abzug.id).taxYear, 2026)
+  })
+})
+
+// Geld H1 (Nachprüfung fc20455): Fall des Prüfers. Nach „Mai ab 2025“ (aufgeteilt, Heizung 2025/26) folgt „Juli ab 2024“
+// mit Heizung 2025-07. Der Betriebsstrom landet in 01.07.2025–30.06.2026 (möglich 2025 bis 2027), seine Abzugsteile in
+// 2024/2025 (2024 bis 2026) und 2025/2026 (2025 bis 2027). Angeboten wird nur der Schnitt, 2025 und 2026; 2027 hätte
+// beim Speichern 409 ergeben.
+test('Geld H1: das Jahr des Betriebsstroms wird nur im Schnitt mit den Spannen seiner Abzugsteile angeboten', async () => {
+  await withDatabase(async (opened) => {
+    await haus(opened, { strom: { serviceFrom: '2025-01-01', serviceTo: '2025-12-31' } })
+    const erster = await wechsel(opened, MAI_AB_2025, 'split', '2025-05')
+    if (!erster.r || 'error' in erster.r) return assert.fail(erster.r ? erster.r.error : 'kein Objekt')
+    const bs = (await items(opened)).find((c) => c.operatingPower === 'included') ?? assert.fail('kein Betriebsstrom')
+    const regeln: PeriodRules = { startMonth: 1, changes: ['2024-07'] }
+    const preview = (await opened.read((db) => previewPeriodChange(db, 'objekt-1', regeln, TODAY))) ?? assert.fail('kein Objekt')
+    const eintrag = preview.taxYears.find((t) => t.costItemId === bs.id && t.period === '2025-07') ?? assert.fail('Betriebsstrom nicht gefragt')
+    assert.deepEqual(eintrag.options, [2025, 2026])
+    assert.ok(eintrag.options.includes(eintrag.suggested))
+    // Mit 2026 wird gespeichert, und alle Teile der Abzüge tragen 2026.
+    const { r } = await wechsel(opened, regeln, '2025-07', '2025-07', { [`${bs.id}|2025-07`]: 2026 })
+    if (!r || 'error' in r) return assert.fail(r ? r.error : 'kein Objekt')
+    const teile = (await items(opened)).filter((c) => c.operatingPower === 'deduction')
+    assert.deepEqual(teile.map((d) => d.taxYear), [2026, 2026, 2026, 2026])
+  })
+})
+
+// Geld H1, leerer Schnitt: Zeitraum 2025/2026 (Mai bis April) mit Hausstrom, Betriebsstrom und Abzug im Jahr der Zahlung
+// 2026. Der Wechsel auf „Januar ab 2026“ und „Februar ab 2026“ zerlegt ihn in 05–12/2025 (nur 2025), 01/2026 und
+// 02/2026–01/2027 (2026 bis 2028). Der Teil des Abzugs im letzten Zeitraum folgt dem Betriebsstrom; legte man die
+// Heizkosten nach 05–12/2025, stünde der Betriebsstrom fest in 2025, außerhalb der Spanne. Die Vorschau sagt das an
+// diesem Ziel vorher; wer es trotzdem wählt, bekommt 409 und es wird nichts geschrieben.
+test('Geld H1: ein Ziel ohne passendes Jahr nennt die Vorschau vorher; gewählt ergibt es 409', async () => {
+  await withDatabase(async (opened) => {
+    await mieter(opened)
+    await opened.write(async (db) => {
+      await db.update(properties).set({ periodStartMonth: 5 }).where(eq(properties.id, 'objekt-1'))
+      await createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'gas', method: 'manual' })
+      await createEntity(db, 'costItems', 'gas', { propertyId: 'objekt-1', period: '2025-05', category: 'Heizung und Warmwasser', description: 'Gas', amountCents: 500000, key: 'area', heatingPart: 'fuel', heatingPlantId: 'hp', taxYear: 2026 })
+      await createEntity(db, 'costItems', 'hs', { propertyId: 'objekt-1', period: '2025-05', category: 'Beleuchtung/Allgemeinstrom', description: 'Hausstrom', amountCents: 100000, key: 'units', serviceFrom: '2025-05-01', serviceTo: '2026-04-30', taxYear: 2026 })
+    })
+    await opened.write((db) => bookOperatingPower(db, 'hp', { period: '2025-05', generalItemId: 'hs', ownCents: 10000, basis: 'Bruchteil' }, ids))
+    const regeln: PeriodRules = { startMonth: 5, changes: ['2026-01', '2026-02'] }
+    const preview = (await opened.read((db) => previewPeriodChange(db, 'objekt-1', regeln, TODAY))) ?? assert.fail('kein Objekt')
+    const heizung = preview.groups.find((g) => g.heating) ?? assert.fail('keine Heizgruppe')
+    const hinweis = heizung.taxShifts.find((t) => t.key === '2025-05') ?? assert.fail(`kein Hinweis am Ziel 05–12/2025: ${JSON.stringify(heizung.taxShifts)}`)
+    assert.match(hinweis.text, /stünde „Betriebsstrom Heizung \(selbst geschätzt\)“ im Jahr der Zahlung 2025; sein Abzug .* folgt ihm, dort ist aber nur 2026 bis 2028 möglich\. So lässt sich der Wechsel nicht speichern/)
+    const vorher = await items(opened)
+    const groups = Object.fromEntries(preview.groups.map((g) => [g.id, g.heating ? '2025-05' : 'split']))
+    const r = await opened.write((db) => applyPeriodChange(db, 'objekt-1', regeln, { understood: true, groups, taxYears: {}, token: preview.token }, ids, TODAY))
+    if (!r || !('error' in r)) return assert.fail('angenommen')
+    assert.match(r.error, /folgt dem Betriebsstrom/)
+    assert.deepEqual(await items(opened), vorher)
   })
 })
 
