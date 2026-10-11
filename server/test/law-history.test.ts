@@ -87,6 +87,9 @@ const SHIPPED: readonly string[] = [
   'co2.price-ets|2026-01-01|2026-12-31|73.86',
   'co2.price-ets|2027-01-01||null',
   'ustg.gas-heat-network-rate|2022-10-01|2024-03-31|7',
+  // 0.11.0 (Folge-PR zu #252, #253)
+  'betrkv.generation-power|2024-01-01||{"since":"2024-01-01"}',
+  'hkv.generation-power|2024-10-01||{"since":"2024-10-01"}',
 ]
 
 const current = (): string[] =>

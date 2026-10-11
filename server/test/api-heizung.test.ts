@@ -754,10 +754,15 @@ test('Betriebsstrom in der Abrechnung über die Route: mit Abzug still, nach dem
     const { plant } = await jsonOf<{ plant: HeatingPlant }>(await send('/api/heating-plants', jsonPost({ energy: 'gas', method: 'manual' })))
     await s.api<CostItem>('/api/costItems', jsonPost({ period: '2025-01', category: 'Heizung und Warmwasser', description: 'Gas', amountCents: 300000, key: 'area', heatingPart: 'fuel', heatingPlantId: plant.id }))
     const strom = await s.api<CostItem>('/api/costItems', jsonPost({ period: '2025-01', category: 'Beleuchtung/Allgemeinstrom', description: 'Hausstrom', amountCents: 105000, key: 'area' }))
+    // Folge-PR zu #252 (#224): Vor der Buchung fehlt der Betriebsstrom; der Hinweis kommt über die Route genau einmal
+    // (snapshotFor führt Anlage, Heizpositionen und Abzüge) und entfällt mit der Buchung.
+    const fehlt = (st: Settlement) => (st.notices ?? []).filter((n) => n.code === 'heating.operating-power-missing')
+    assert.equal(fehlt(await s.api<Settlement>('/api/settlement/2025-01')).length, 1)
     const b = await jsonOf<{ deduction: CostItem; heatingItem: CostItem | null }>(await send(`/api/heating-plants/${plant.id}/operating-power`,
       jsonPost({ period: '2025-01', generalItemId: strom.id, billKwh: 3000, devices: [{ label: 'Pumpe', watts: 45, hoursPerDay: 24 }], heatingDays: 220 })))
     const doppelt = (st: Settlement) => (st.notices ?? []).filter((n) => n.code === 'heating.operating-power-double')
     assert.equal(doppelt(await s.api<Settlement>('/api/settlement/2025-01')).length, 0)
+    assert.equal(fehlt(await s.api<Settlement>('/api/settlement/2025-01')).length, 0)
     assert.equal((await send(`/api/costItems/${b.deduction.id}`, { method: 'DELETE' })).status, 200)
     const [n] = doppelt(await s.api<Settlement>('/api/settlement/2025-01'))
     assert.match(n?.text ?? '', /abgezogen sind dort 0,00 € statt 83,16 €/)

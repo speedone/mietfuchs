@@ -4,7 +4,9 @@
 // (§ 7 Abs. 2 HeizkostenV; BGH, Urteil vom 03.06.2016, V ZR 166/15). Die Abzüge zählen über ihren
 // Verweis und aus jedem Zeitraum (Review Focus 5); geprüft werden nur die Positionen, die die
 // Abrechnung verteilt, damit der Hinweis genau einmal erscheint, nämlich dort, wo der Betriebsstrom steht.
-import type { CostItem, OperatingPowerDeduction } from '../../shared/types.ts'
+import type { CostItem, HeatingEnergy, OperatingPowerDeduction } from '../../shared/types.ts'
+import { HEATING_CATEGORY } from '../../shared/heating.ts'
+import { GENERAL_POWER_CATEGORY, POWER_GENERATED } from '../../shared/operatingPower.ts'
 
 // Ein Abzug in einer abgeschlossenen Abrechnung, der den Mietern nicht oder nicht so gutgeschrieben ist,
 // wie er heute dasteht (P-W3, R2-W2). `frozenCents` nur bei `changed`: der eingefrorene Betrag.
@@ -166,4 +168,114 @@ export function operatingPowerText(f: OperatingPowerFinding, fmtCents: (c: numbe
       : ` Außerdem fehlen ${fmtCents(rest)}. Erfassen Sie dafür beim Allgemeinstrom einen Abzug, etwa mit der Karte „Betriebsstrom“ auf der Seite Heizkosten ${LAW}.`
   }
   return `${lead}${sentences}${tail}${generationLaw}`
+}
+
+// ---------- Betriebsstrom fehlt (#224) und Strom zur Wärmeerzeugung im Allgemeinstrom (#253) ----------
+//
+// Folge-PR zu #252. Beide Hinweise sind Auskunft und ändern keine Zahl. Sie kommen nur in der Gesamtberechnung
+// eines Zeitraums P und nur, wo die Lage eindeutig ist; im Zweifel schweigen sie, denn wegklicken lassen sie sich
+// nicht (Entscheidung F1). Was sie bewusst nicht sehen:
+// - A (Betriebsstrom fehlt) schweigt, sobald die Anlage irgendeine Heizposition „Betrieb“ hat, auch wenn es nur
+//   die Wartung ist: Ohne Angabe des Vermieters lässt sie sich von einer Rechnung über einen eigenen Zähler nicht
+//   unterscheiden. Ebenso bei einer Heizposition ohne Teil, bei Fernwärme (F3) und ohne Allgemeinstrom (F2).
+// - Beide schweigen beim Messdienst: Dessen Beträge enthalten den Betriebsstrom meist, und ob er über einen
+//   eigenen Zähler lief, sieht Mietfuchs nicht. Ebenso bei der Eigentumswohnung (Pflicht der Gemeinschaft) und
+//   bei der Etagenheizung.
+// - B (Wärmepumpe, Elektrokessel) schweigt für Zeiträume ganz vor dem Inkrafttreten der BetrKV-Fassung (F4); das
+//   fragt calc.ts im Register ab.
+
+type PowerItem = Pick<CostItem, 'id' | 'category' | 'description' | 'amountCents' | 'key' | 'heatingPart' | 'heatingPlantId' | 'fuelDeliveryId' | 'operatingPower' | 'operatingPowerItemId'>
+export type PowerPlant = { id: string; name?: string; energy: HeatingEnergy; method: string; source: string; supply?: string; periodStartMonth?: number | null; endsOn?: string | null; replacesPlantId?: string | null }
+
+// Womit eine Zentralheizung Betriebsstrom für Brenner, Pumpen und Regelung braucht (A). Fernwärme ist ausgenommen
+// (F3): Ob die Hausanlage Pumpen oder Regelung am Zähler des Hauses hat, hängt an Anlage und Vertrag. „Sonstige“
+// ebenso, denn darunter kann alles fallen.
+const BURNERS: readonly HeatingEnergy[] = ['gas', 'oil', 'lpg', 'pellets', 'wood', 'coal']
+
+export type MissingPowerFinding = {
+  kind: 'operating' | 'generation'
+  plantId: string
+  plantName: string
+  energy: HeatingEnergy
+  // Die Stromrechnungen des Allgemeinstroms in P, in der Reihenfolge der Positionen.
+  generals: { id: string; description: string }[]
+}
+
+export function missingPowerFindings(input: {
+  period: { from: string; to: string }
+  plants: readonly PowerPlant[]
+  // Die Positionen des Zeitraums P.
+  items: readonly PowerItem[]
+  // Die Heizperioden der Anlagen mit eigener Heizperiode, die in P stehen (Weg b und d).
+  heatingParts: readonly { plantId: string; items: readonly PowerItem[] }[]
+}): MissingPowerFinding[] {
+  const generals = input.items.filter((c) => c.category === GENERAL_POWER_CATEGORY && c.amountCents > 0 && c.operatingPower === undefined && c.key !== 'external' && c.key !== 'amounts')
+  if (generals.length === 0) return []
+  // Zu welcher Anlage eine Heizposition gehört, soweit bekannt. Ein Abzug auf eine unbekannte Position oder ohne
+  // Verweis („dem Messdienst gemeldet“) gilt für jede Anlage als Antwort: lieber still als falsch.
+  const plantOf = new Map<string, string>()
+  for (const c of [...input.items, ...input.heatingParts.flatMap((p) => p.items)]) if (c.heatingPlantId) plantOf.set(c.id, c.heatingPlantId)
+  const deductions = input.items.filter((c) => c.operatingPower === 'deduction')
+  const out: MissingPowerFinding[] = []
+  for (const plant of input.plants) {
+    if ((plant.supply ?? 'central') !== 'central' || plant.source !== 'building' || plant.method === 'service') continue
+    const generation = POWER_GENERATED.includes(plant.energy)
+    if (!generation && !BURNERS.includes(plant.energy)) continue
+    const own = (plant.periodStartMonth ?? null) !== null
+    // Eine Heizposition ohne Anlage kann zu jeder Anlage ohne eigene Heizperiode gehören.
+    const heat = own
+      ? input.heatingParts.filter((p) => p.plantId === plant.id).flatMap((p) => p.items)
+      : input.items.filter((c) => c.category === HEATING_CATEGORY && (c.heatingPlantId === plant.id || !c.heatingPlantId))
+    if (heat.some((c) => c.operatingPower === 'included')) continue
+    if (deductions.some((d) => !d.operatingPowerItemId || (plantOf.get(d.operatingPowerItemId) ?? plant.id) === plant.id)) continue
+    const partless = (c: PowerItem): boolean => c.heatingPart === undefined && !c.fuelDeliveryId
+    if (generation) {
+      if (plant.endsOn && plant.endsOn < input.period.from) continue
+      const replaced = plant.replacesPlantId ? input.plants.find((p) => p.id === plant.replacesPlantId) : undefined
+      if (replaced?.endsOn && replaced.endsOn >= input.period.to) continue
+      if (heat.some((c) => c.heatingPart === 'fuel' || Boolean(c.fuelDeliveryId) || partless(c))) continue
+    } else {
+      if (!heat.some((c) => c.amountCents > 0)) continue
+      if (heat.some((c) => c.heatingPart === 'operating' || partless(c))) continue
+    }
+    out.push({ kind: generation ? 'generation' : 'operating', plantId: plant.id, plantName: plant.name ?? '', energy: plant.energy, generals: generals.map((g) => ({ id: g.id, description: g.description })) })
+  }
+  return out
+}
+
+const plantText = (f: MissingPowerFinding): string => (f.plantName ? `Für die Heizanlage „${f.plantName}“` : 'Für die Heizanlage')
+const generalsText = (f: MissingPowerFinding): string => {
+  const first = f.generals[0]
+  return first === undefined ? '' : `„${first.description}“${f.generals.length > 1 ? ' und weiteren' : ''}`
+}
+// K-1 (Rechtsprüfung des Plans): der rechtmäßige Fall, in dem nichts zu tun ist (V ZR 166/15, Rn. 15).
+const OWN_METER_SELF = 'Tragen Sie den Strom eines eigenen Zählers selbst, ist nichts falsch; der Hinweis bleibt dann stehen.'
+// H-3: Wer beim Allgemeinstrom pauschal oder inklusive zahlt, wird dort nicht abgerechnet.
+const FLAT_TENANTS = 'Gilt für einen Mieter beim Allgemeinstrom eine Pauschale oder Inklusivmiete, folgt daraus für ihn nichts.'
+
+// A (#224): Text des Hinweises `heating.operating-power-missing`.
+export function missingOperatingPowerText(f: MissingPowerFinding, label: string): string {
+  return `${plantText(f)} ist für ${label} kein Betriebsstrom erfasst (keine Heizposition mit dem Teil „Betrieb“), und beim Allgemeinstrom ${generalsText(f)} steht kein Abzug dafür. ` +
+    'Brenner, Umwälzpumpen und Regelung einer Zentralheizung verbrauchen Strom. Dieser Betriebsstrom gehört zu den Heiz- und Warmwasserkosten (§ 7 Abs. 2, § 8 Abs. 2 HeizkostenV; § 2 Nr. 4 Buchst. a, Nr. 5 Buchst. a BetrKV). ' +
+    'Läuft er über den Stromzähler des Hauses, steckt er in dieser Stromrechnung und wird mit ihrem Schlüssel verteilt; dort darf er nicht stehen (BGH, Urteil vom 03.06.2016, V ZR 166/15, Rn. 13). ' +
+    'Erfassen Sie ihn dann mit der Karte „Betriebsstrom“ auf der Seite Heizkosten. Ohne Zwischenzähler dürfen Sie ihn schätzen; bestreitet ein Mieter den Betrag, müssen Sie die Grundlagen darlegen (BGH, Versäumnisurteil vom 20.02.2008, VIII ZR 27/07, Leitsatz 3). ' +
+    'Wollen Sie ihn nicht umlegen, ziehen Sie ihn trotzdem beim Allgemeinstrom ab; dann tragen Sie ihn selbst (V ZR 166/15, Rn. 15). ' +
+    `Hat die Heizung einen eigenen Stromzähler, erfassen Sie dessen Rechnung als Heizposition mit dem Teil „Betrieb“; dann entfällt dieser Hinweis. ${OWN_METER_SELF} ${FLAT_TENANTS}`
+}
+
+// B (#253): Text des Hinweises `heating.generation-power-missing`. `betrkvSince` und `hkvSince` kommen aus dem
+// Register, deutsch geschrieben; `hkvSince` ist null, wo der Zeitraum die Fassung der HeizkostenV nicht berührt
+// oder die Verordnung für diese Wärmepumpe noch nicht gilt (§ 12 Abs. 3 Satz 2 HeizkostenV, K-2). K-3: Die
+// Schätzung ist nur für den Betriebsstrom entschieden.
+export function generationPowerText(f: MissingPowerFinding, label: string, betrkvSince: string, hkvSince: string | null): string {
+  const device = f.energy === 'heatPump' ? 'Wärmepumpe' : 'Elektrokessel'
+  const ofDevice = f.energy === 'heatPump' ? 'der Wärmepumpe' : 'des Elektrokessels'
+  const hkv = hkvSince === null ? '' : `, § 7 Abs. 2 HeizkostenV seit dem ${hkvSince} (§ 8 Abs. 2 HeizkostenV verweist darauf)`
+  return `${plantText(f)} (${device}) ist für ${label} keine Rechnung über den Strom erfasst, den sie zur Wärmeerzeugung verbraucht (keine Heizposition mit dem Teil „Brennstoff/Energie“), und beim Allgemeinstrom ${generalsText(f)} steht kein Abzug dafür. ` +
+    `Diesen Strom zählt § 2 Nr. 4 Buchst. a BetrKV seit dem ${betrkvSince} zu den Heizkosten${hkv}. ` +
+    'Läuft er über den Stromzähler des Hauses, steckt er in dieser Stromrechnung und wird mit dem Schlüssel des Allgemeinstroms verteilt statt mit den Heizkosten. ' +
+    'Dass er dann aus dem Allgemeinstrom herauszurechnen ist, ist eine Auslegung von Mietfuchs: Entschieden hat der Bundesgerichtshof das für den Betriebsstrom (BGH, Urteil vom 03.06.2016, V ZR 166/15, Rn. 13 f.). ' +
+    `Erfassen Sie den Strom ${ofDevice} in diesem Fall als Heizposition mit dem Teil „Brennstoff/Energie“, beantworten Sie dort „Läuft dieser Strom über den Stromzähler des Hauses?“ mit Ja und erfassen Sie beim Allgemeinstrom einen Abzug in derselben Höhe, verknüpft mit dieser Position. ` +
+    'Ohne eigenen Zähler müssten Sie den Anteil schätzen; für den Betriebsstrom ist das zulässig (BGH, Versäumnisurteil vom 20.02.2008, VIII ZR 27/07, Leitsatz 3), für den Strom einer Wärmepumpe oder eines Elektrokessels ist es eine Auslegung von Mietfuchs, und bei einem so großen Anteil ist ein eigener Zähler der sichere Weg. Halten Sie die Grundlage der Schätzung im Kostenformular fest. ' +
+    `Hat das Gerät einen eigenen Zähler, erfassen Sie dessen Rechnung als Heizposition mit dem Teil „Brennstoff/Energie“; dann entfällt dieser Hinweis. ${OWN_METER_SELF} ${FLAT_TENANTS}`
 }

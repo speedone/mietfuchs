@@ -108,6 +108,13 @@ describe('Cockpit: verlangen die Hinweise etwas?', () => {
       expect(noticesNeedAttention({ warnings: ['a'], notices: [n({ code, level: 'warning' })] })).toBe(true)
     }
   })
+  // Folge-PR zu #252, F6: „Betriebsstrom fehlt“ trifft auch den rechtmäßigen Fall „eigener Zähler, Vermieter trägt“ und
+  // färbt nicht; „Strom zur Wärmeerzeugung im Allgemeinstrom“ lässt sich immer beheben und färbt gelb.
+  test('Betriebsstrom fehlt: nein; Strom der Wärmepumpe im Allgemeinstrom: ja (gelb)', () => {
+    expect(noticesNeedAttention({ warnings: ['a'], notices: [n({ code: 'heating.operating-power-missing', level: 'hint' })] })).toBe(false)
+    expect(attentionLevel({ warnings: ['a'], notices: [n({ code: 'heating.operating-power-missing', level: 'hint' })] })).toBe('gruen')
+    expect(attentionLevel({ warnings: ['a'], notices: [n({ code: 'heating.generation-power-missing', level: 'hint' })] })).toBe('gelb')
+  })
   test('Fernablesbarkeit ab 2027 (#110): nein, der Nutzer kann im Programm nichts beheben', () => {
     expect(noticesNeedAttention({ warnings: ['a'], notices: [n({ code: 'heating.remote-reading', level: 'hint' })] })).toBe(false)
     expect(noticesNeedAttention({ warnings: ['a', 'b'], notices: [n({ code: 'heating.remote-reading', level: 'hint' }), n({ code: 'meter.main-gap', level: 'hint' })] })).toBe(true)
