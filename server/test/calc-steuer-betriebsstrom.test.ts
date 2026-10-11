@@ -195,7 +195,10 @@ test('V8: Messdienst-Anlage eines anderen Objekts zählt nicht', () => {
 test('V9: abgeschlossene Abrechnung: Zeile da, keine Position gilt als geändert', () => {
   const base = haus([gas(), hausstrom(), abzug('ab', 20000)])
   const frozen = frozenSettlementOf(settle(base))
-  const r = tax({ ...base, closedSettlements: [{ period: calendarPeriod(2025), ...frozen }] } as Source)
+  const closed = { ...base, closedSettlements: [{ propertyId: 'objekt-1', period: calendarPeriod(2025), ...frozen }] } as Source
+  // Probe: Der eingefrorene Stand kommt wirklich an, sonst prüfte dieser Test nichts (Gegenmutation G8 überlebte zuerst).
+  assert.ok(snapshotFor(closed, 'objekt-1', of(CALENDAR_RULES, '2025-01')).closedSettlement, 'kein eingefrorener Stand im Schnappschuss')
+  const r = tax(closed)
   assert.equal(r.expenses.totalCents, 600000)
   assert.equal(r.closedItemsChanged, 0)
   assert.equal(r.closedSelfUseDiffers, false)
@@ -281,6 +284,44 @@ test('R-4 mit Teilnehmern, Abzug ohne Verweis: keine Anlage zuzuordnen, also Fl�
   const r = tax(eigen([gas(600000, '2025-01', nurEgDg), hausstrom(90000), abzug('ab', 15000)]))
   assert.deepEqual([r.expenses.totalCents, r.expenses.privateCents], [690000, 208000])
   assert.ok(line(r)?.steps.some((s) => s.value.includes('Auslegung')), 'der Rechenweg nennt die Auslegung')
+})
+
+test('R-4 mit zwei Anlagen: der Heizanteil der Anlage der Heizposition, nicht der aller Heizkosten', () => {
+  // Kessel hp1 heizt EG (t1, 70 m²) und DG (eigen, 30 m²): Gas 3.000 → eigen 900 (30 %). Kessel hp2 heizt nur OG (t2):
+  // Gas 3.000 → eigen 0. Heizposition 200 an hp1 (EG und DG), ohne Abzug → eigen 60. Strom 900 nach Einheiten: je 300.
+  // Heute 7.100 / privat 900 + 60 + 300 = 1.260. C = −200; Heizanteil hp1 (900 + 60) / (3.000 + 200) = 30 % → −60.
+  // Über alle Heizkosten wären es (960 / 6.200) × −200 = −30,97.
+  const nurEgDg = { participantUnitIds: ['u1', 'u3'] }
+  const src = eigen([
+    gas(300000, '2025-01', nurEgDg),
+    heizung('gas2', 300000, { description: 'Gas OG', heatingPart: 'fuel', heatingPlantId: 'hp2', participantUnitIds: ['u2'] }),
+    betrieb('bs', 20000, nurEgDg), hausstrom(90000),
+  ], { heatingPlants: [anlage(), anlage({ id: 'hp2', name: 'Kessel OG' })] } as Partial<Source>)
+  const r = tax(src)
+  assert.deepEqual([r.expenses.totalCents, r.expenses.privateCents], [690000, 120000])
+  assert.deepEqual([line(r)?.amountCents, line(r)?.privateCents], [-20000, -6000])
+})
+
+test('Mai bis April mit Eigennutzung: der Eigenanteil laut Abrechnung enthält die abgeleitete Zeile nicht', () => {
+  // EG 50 m² (t1), DG 50 m² eigen. Zeitraum ab Mai 2025, alles im Steuerjahr 2025. Gas 4.000 nach Fläche → eigen
+  // 2.000; Strom 1.000 nach Einheiten → eigen 500; Abzug −200 verknüpft → eigen −100; Heizposition 300 nach Fläche
+  // → eigen 150. Eigenanteil laut Abrechnung 2.000 + 500 − 100 + 150 = 2.550. C = 200 − 300 = −100, Heizanteil
+  // (2.000 + 150) / (4.000 + 300) = 50 % → −50, verhältnismäßig „laut Abrechnung“, aber keine Position der Abrechnung.
+  const MAI: PeriodRules = { startMonth: 5, changes: [] }
+  const src = haus([
+    gas(400000, '2025-05'), betrieb('bs', 30000, {}, '2025-05'), hausstrom(100000, '2025-05'), abzug('ab', 20000, 'bs', {}, '2025-05'),
+  ], [anlage()], {
+    properties: [{ id: 'objekt-1', kind: 'mfh', cableBuiltBeforeDec2021: null, periodRules: MAI }],
+    units: [
+      { id: 'u1', propertyId: 'objekt-1', name: 'EG', areaM2: 50, participates: true },
+      { id: 'u3', propertyId: 'objekt-1', name: 'DG', areaM2: 50, participates: false, selfUsed: true, selfPersons: 1 },
+    ],
+    tenancies: [mieter('t1', 'u1')],
+  } as Partial<Source>)
+  const r = tax(src)
+  assert.equal(r.income.prepaymentSettlementCents, null, 'kein Zeitraum gleich dem Kalenderjahr')
+  assert.deepEqual([line(r)?.amountCents, line(r)?.privateCents, line(r)?.allocation], [-10000, -5000, 'settlement'])
+  assert.equal(r.selfUsedShareCents, 255000)
 })
 
 test('E ohne Fläche der eigenen Einheit: Zeile nicht aufteilbar, privat 0', () => {
