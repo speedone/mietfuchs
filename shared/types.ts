@@ -2481,4 +2481,7 @@ export type MonthlyInfoView = {
   elsewhere: boolean
   months: MonthlyInfoMonth[]
   periodReference: { kwhPerM2: number; source: string | null } | null
+  // Die mittlere Warmwassertemperatur der Heizperiode für die Umrechnung in kWh; `here`: Sie wird in dieser Karte
+  // eingetragen (getrenntes Warmwasser), sonst in der Karte „Warmwasser“.
+  dhwTemp: { tempC: number | null; here: boolean }
 }

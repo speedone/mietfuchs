@@ -906,6 +906,11 @@ test('Monatliche Verbrauchsinformation: Monate einer Heizperiode lesen, Vergleic
     assert.equal((await send('/api/heating-plants/gibt-es-nicht/monthly-info/2025-11', { method: 'PUT', body: '{}' })).status, 404)
     assert.equal((await send('/api/heating-plants/gibt-es-nicht/periods/2025-01/monthly-info', { method: 'GET' })).status, 404)
     assert.equal((await send(`/api/heating-plants/${plant.id}/periods/2025-13/monthly-info`, { method: 'GET' })).status, 400)
+    // Die Warmwassertemperatur hier nur bei eigener Abrechnung mit getrenntem Warmwasser.
+    const temp = await send(`/api/heating-plants/${plant.id}/periods/2025-01/dhw-temperature`, { method: 'PUT', body: JSON.stringify({ dhwTempC: 55 }) })
+    assert.equal(temp.status, 400)
+    assert.match(await errorFrom(temp), /Karte „Warmwasser“/)
+    assert.equal((await send('/api/heating-plants/gibt-es-nicht/periods/2025-01/dhw-temperature', { method: 'PUT', body: '{}' })).status, 404)
   } finally {
     s.stop()
   }

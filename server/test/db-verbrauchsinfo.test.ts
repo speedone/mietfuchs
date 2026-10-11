@@ -15,6 +15,7 @@ import { createHeatingPlant, replaceHeatingPlant } from '../src/db/heating.ts'
 import { setUpSelf } from '../src/db/heatingSelf.ts'
 import { saveHeatingRules } from '../src/db/heatingInfo.ts'
 import { monthlyInfoView, saveMonthlyInfoRow } from '../src/db/monthlyInfo.ts'
+import { saveDhwTemperature } from '../src/db/co2.ts'
 
 async function withDatabase(work: (opened: OpenedDatabase) => Promise<void>): Promise<void> {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-verbrauchsinfo-'))
@@ -93,7 +94,7 @@ test('Review Focus 5 und Prüfungen: Mitteilung frühestens nach Monatsende; Ver
 })
 
 // Ein Haus mit zwei Wohnungen, eigene Abrechnung mit Wärme- und Warmwasserzählern (Heizperiode 2025).
-async function haus(opened: OpenedDatabase): Promise<string[]> {
+async function haus(opened: OpenedDatabase, hotWater: 'combined' | 'separate' = 'combined'): Promise<string[]> {
   await opened.write(async (db) => {
     for (const [u, area] of [['a', 60], ['b', 40]] as const) {
       await createEntity(db, 'units', u, { propertyId: 'objekt-1', name: u.toUpperCase(), areaM2: area, participates: true })
@@ -101,7 +102,7 @@ async function haus(opened: OpenedDatabase): Promise<string[]> {
     }
     await createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'gas', method: 'manual' })
   })
-  const setup = await opened.write((db) => setUpSelf(db, 'hp', { period: '2025-01', heatConsumptionPct: 70, waterConsumptionPct: 70, insulationRule: 'notApplies', hotWater: 'combined', capture: 'heatMeter', dhwHeatMeter: true, totalHeatMeter: false }, '2025-12-10', newId))
+  const setup = await opened.write((db) => setUpSelf(db, 'hp', { period: '2025-01', heatConsumptionPct: 70, waterConsumptionPct: 70, insulationRule: 'notApplies', hotWater, capture: 'heatMeter', dhwHeatMeter: hotWater === 'combined', totalHeatMeter: false }, '2025-12-10', newId))
   return (setup?.created ?? []).filter((m) => m.unitId !== null).map((m) => m.id)
 }
 
@@ -141,5 +142,46 @@ test('Prüfung S5: Kesseltausch – gespeichert an der Anlage, die am Monatsende
     const vorher = await opened.write((db) => saveMonthlyInfoRow(db, 'neu', '2025-03', { sentOn: '2025-04-02' }))
     const nachher = await opened.write((db) => saveMonthlyInfoRow(db, 'hp', '2025-11', { sentOn: '2025-12-02' }))
     assert.deepEqual([vorher?.plantId, nachher?.plantId], ['hp', 'neu'])
+  })
+})
+
+test('Getrenntes Warmwasser: die Temperatur für die Umrechnung lässt sich hier eintragen, und dann ist der Monat vollständig', async () => {
+  await withDatabase(async (opened) => {
+    const meterIds = await haus(opened, 'separate')
+    const stock = await opened.read(readStock)
+    const mine = stock.meters.filter((m) => meterIds.includes(m.id) && m.unitId === 'a')
+    assert.deepEqual(mine.map((m) => m.type).sort(), ['waerme', 'warmwasser'])
+    // Nur die Wohnung A, damit nur ihre Lücken zählen.
+    await opened.write(async (db) => {
+      await updateEntity(db, 'tenancies', 'tb', { end: '2024-12-31' })
+      for (const m of mine) {
+        await updateEntity(db, 'meters', m.id, { remoteReadable: true })
+        for (const [date, value] of [['2025-10-31', m.type === 'waerme' ? 5400 : 20], ['2025-11-30', m.type === 'waerme' ? 6100 : 22.5]] as const) {
+          await createEntity(db, 'readings', newId(), { meterId: m.id, date, value })
+        }
+      }
+    })
+    await opened.write((db) => saveMonthlyInfoRow(db, 'hp', '2025-11', { referenceKwhPerM2: 10, referenceSource: 'Ablesedienst', sentOn: '2025-12-05' }))
+    const nov = async () => (await opened.read((db) => monthlyInfoView(db, 'hp', '2025-01', '2025-12-10')))?.months.find((m) => m.month === '2025-11') ?? assert.fail('November fehlt')
+    const vorher = await opened.read((db) => monthlyInfoView(db, 'hp', '2025-01', '2025-12-10'))
+    assert.deepEqual(vorher?.dhwTemp, { tempC: null, here: true })
+    assert.deepEqual([(await nov()).complete, (await nov()).users[0]?.gaps], [false, ['dhwTemp']])
+    // Dieselbe Prüfung wie in der Karte „Warmwasser“, derselbe Speicherort (heating_periods.dhw_temp_c).
+    await assert.rejects(opened.write((db) => saveDhwTemperature(db, 'hp', '2025-01', { dhwTempC: 120 })), status(400, /zwischen 0 und 100 °C/))
+    await assert.rejects(opened.write((db) => saveDhwTemperature(db, 'hp', '2025-01', { dhwTempC: 'warm' })), status(400, /keine Zahl/))
+    assert.deepEqual(await opened.write((db) => saveDhwTemperature(db, 'hp', '2025-01', { dhwTempC: 55 })), { dhwTempC: 55 })
+    const row = (await opened.read(readStock)).heatingPeriodRows.find((r) => r.plantId === 'hp' && String(r.period) === '2025-01')
+    assert.equal(row?.dhwTempC, 55)
+    const n = await nov()
+    assert.deepEqual([n.complete, n.users[0]?.dhwKwh, n.users[0]?.gaps], [true, 281.25, []])
+    assert.equal(await opened.write((db) => saveDhwTemperature(db, 'gibt-es-nicht', '2025-01', { dhwTempC: 55 })), null)
+  })
+})
+
+test('Verbundenes Warmwasser: die Temperatur gehört in die Karte „Warmwasser“, nicht hierher', async () => {
+  await withDatabase(async (opened) => {
+    await haus(opened)
+    assert.deepEqual((await opened.read((db) => monthlyInfoView(db, 'hp', '2025-01', '2025-12-10')))?.dhwTemp, { tempC: null, here: false })
+    await assert.rejects(opened.write((db) => saveDhwTemperature(db, 'hp', '2025-01', { dhwTempC: 55 })), status(400, /Karte „Warmwasser“/))
   })
 })

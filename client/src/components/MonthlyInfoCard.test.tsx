@@ -12,7 +12,7 @@ import { periodKey } from '../../../shared/period.ts'
 const erika: MonthlyInfoUser = { tenancyId: 't1', tenantName: 'Erika Mustermann', unitName: 'EG', areaM2: 60, from: '2025-11-01', to: '2025-11-30', remote: true, heatKwh: 700, dhwM3: null, dhwKwh: null, previousMonth: null, previousYear: null, referenceKwh: null, gaps: ['reference'] }
 const nov: MonthlyInfoMonth = { month: '2025-11', due: true, complete: false, sent: false, mixed: false, row: null, users: [erika] }
 const view = (over: Partial<MonthlyInfoView> = {}): MonthlyInfoView => ({
-  plantId: 'hp', period: periodKey('2025-01'), managed: true, elsewhere: false, periodReference: null, months: [nov], ...over,
+  plantId: 'hp', period: periodKey('2025-01'), managed: true, elsewhere: false, periodReference: null, dhwTemp: { tempC: null, here: false }, months: [nov], ...over,
 })
 
 let sent: { url: string; method: string; body: Record<string, unknown> }[]
@@ -81,4 +81,21 @@ test('Das Blatt eines Mieters nennt keinen anderen Nutzer', () => {
   expect(pages[0]?.textContent).toMatch(/Erika Mustermann/)
   expect(pages[0]?.textContent).not.toMatch(/Max Beispiel|OG|300 kWh/)
   expect(pages[1]?.textContent).not.toMatch(/Erika Mustermann|700 kWh/)
+})
+
+test('Getrenntes Warmwasser: die Temperatur für die Umrechnung wird hier eingetragen und an die Heizperiode geschickt', async () => {
+  served = view({ dhwTemp: { tempC: null, here: true } })
+  wrap(<MonthlyInfoCard plantId="hp" period="2025-01" />)
+  fireEvent.change(await screen.findByLabelText('Mittlere Warmwassertemperatur (°C)'), { target: { value: '55,5' } })
+  fireEvent.click(screen.getByText('Temperatur speichern', { selector: 'button' }))
+  await waitFor(() => expect(sent.find((x) => x.method === 'PUT')).toEqual({
+    url: '/api/heating-plants/hp/periods/2025-01/dhw-temperature', method: 'PUT', body: { dhwTempC: 55.5 },
+  }))
+})
+
+test('Verbundenes Warmwasser: kein Feld hier, sondern der Verweis auf die Karte „Warmwasser“', async () => {
+  served = view({ months: [{ ...nov, users: [{ ...erika, dhwM3: 2, gaps: ['dhwTemp'] }] }] })
+  wrap(<MonthlyInfoCard plantId="hp" period="2025-01" />)
+  expect(await screen.findByText(/in der Karte „Warmwasser“ dieser Heizperiode ein/)).toBeTruthy()
+  expect(screen.queryByLabelText('Mittlere Warmwassertemperatur (°C)')).toBeNull()
 })
