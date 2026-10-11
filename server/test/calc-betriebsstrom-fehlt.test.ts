@@ -311,6 +311,10 @@ test('O5: eigener Stromvertrag, Betriebsstrom gekennzeichnet: kein „Rechnung f
   const s = settle(haus([brennstoff(), betriebsstrom()], [mitAngabe('ownMeter')]))
   assert.equal(found(s, AB).length, 0)
   still(settle(haus([brennstoff(), betriebsstrom(), hausstrom(), abzug()], [mitAngabe('ownMeter')])))
+  // Auch eine Kennzeichnung am Teil „Brennstoff/Energie“ (die Datenbank lässt sie zu) zählt als erfasster Strom.
+  const s2 = settle(haus([brennstoff(), betriebsstrom({ heatingPart: 'fuel' })], [mitAngabe('ownMeter')]))
+  assert.equal(found(s2, AB).length, 0)
+  assert.equal(found(s2, 'heating.operating-power-double').length, 1)
 })
 test('O6: eigener Stromvertrag, Anlage ohne Heizkosten im Zeitraum: still', () => still(settle(haus([brennstoff('2024-01')], [mitAngabe('ownMeter')]))))
 
@@ -340,9 +344,11 @@ test('X1: jede Angabe bei Fernwärme, Messdienst, Gemeinschaft, Etagenheizung, �
         assert.deepEqual([...found(mit, AD), ...found(mit, AB)], [], `${v} ${JSON.stringify(over)}`)
       }
     }
-    // Wärmepumpe: B bleibt genau wie ohne Angabe.
-    for (const items of [[wartung(), hausstrom()], [hausstrom()], [brennstoff(), hausstrom()]]) {
-      assert.deepEqual(alle(settle(haus([...items], [wp({ operatingPowerHandling: v })]))), alle(settle(haus([...items], [wp()]))), `WP ${v}`)
+    // Wärmepumpe: B bleibt genau wie ohne Angabe, auch beim Messdienst, bei der Gemeinschaft und als Etagenheizung.
+    for (const over of [{}, { method: 'service' }, { source: 'homeowners', method: 'service' }, { supply: 'perUnit' }] as Partial<Plant>[]) {
+      for (const items of [[wartung(), hausstrom()], [hausstrom()], [brennstoff(), hausstrom()]]) {
+        assert.deepEqual(alle(settle(haus([...items], [wp({ operatingPowerHandling: v, ...over })]))), alle(settle(haus([...items], [wp(over)]))), `WP ${v} ${JSON.stringify(over)}`)
+      }
     }
     assert.deepEqual(alle(settle(haus([wartung(), hausstrom()], [wp({ operatingPowerHandling: v })]))), [B])
   }
