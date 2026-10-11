@@ -174,6 +174,10 @@ test('#268 Mehrdeutig: im Zeitraum heizt zugleich eine Anlage ohne Messdienst (R
   const neu = kessel({ id: 'neu', replacesPlantId: 'alt' })
   assert.equal(nonServiceHeats([alt, neu], P2025), true)
   assert.equal(nonServiceHeats([alt], P2025), false)
+  // Durchsicht T1, T1b: Eine Etagenheizung oder eine Anlage der Gemeinschaft läuft nicht über den Zähler des Hauses.
+  assert.equal(nonServiceHeats([{ ...alt, endsOn: null }, { ...neu, replacesPlantId: null, supply: 'perUnit' as const }], P2025), false)
+  assert.equal(nonServiceHeats([{ ...alt, endsOn: null }, { ...neu, replacesPlantId: null, source: 'homeowners' as const }], P2025), false)
+  assert.equal(nonServiceHeats([{ ...alt, endsOn: null }, { ...neu, replacesPlantId: null, supply: 'central' as const, source: 'building' as const }], P2025), true)
   // Die Anlage ohne Messdienst endete vor dem Zeitraum.
   assert.equal(nonServiceHeats([{ ...alt, endsOn: null }, { ...neu, replacesPlantId: null, endsOn: '2024-12-31' }], P2025), false)
 })
