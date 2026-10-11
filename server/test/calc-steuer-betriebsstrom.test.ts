@@ -349,6 +349,24 @@ test('Verschiedene Steuerjahre mit Eigennutzung: privat je Jahr wie beim Paar im
 })
 const tax2 = (src: Source) => [2025, 2026].map((y) => [tax(src, y).expenses.totalCents, tax(src, y).expenses.privateCents])
 
+test('K2: abgeschlossene Abrechnung, danach DG größer erfasst: privater Teil der Zeile aus dem eingefrorenen Heizanteil', () => {
+  // E3 (Heizposition 200, Abzug 150 verknüpft), abgeschlossen mit DG 30 m²: eingefroren Gas eigen 1.200, Heizposition
+  // eigen 40, Heizanteil (1.200 + 40) / 6.200 = 20 %, Zeile C = −50 → privat −10.
+  // Danach DG mit 60 m² erfasst (zusammen 180 m²): heute wären es Gas 6.000 × 60/180 = 2.000 und Heizposition 66,67,
+  // Heizanteil 2.066,67 / 6.200 = 33,3 % → privat −16,67. Es gilt der eingefrorene Stand, also −10.
+  const base = eigen([gas(600000), betrieb('bs', 20000), hausstrom(90000), abzug('ab', 15000, 'bs')])
+  const frozen = frozenSettlementOf(settle(base))
+  const units = (base.units ?? []).map((u) => (u.id === 'u3' ? { ...u, areaM2: 60 } : u))
+  const later = { ...base, units, closedSettlements: [{ propertyId: 'objekt-1', period: calendarPeriod(2025), ...frozen }] } as Source
+  assert.ok(snapshotFor(later, 'objekt-1', of(CALENDAR_RULES, '2025-01')).closedSettlement, 'kein eingefrorener Stand im Schnappschuss')
+  const r = tax(later)
+  assert.equal(r.closedSelfUseDiffers, true, 'heute rechnet die Abrechnung anders')
+  assert.equal(r.closedItemsChanged, 0)
+  assert.deepEqual([line(r)?.amountCents, line(r)?.privateCents, line(r)?.deductibleCents], [-5000, -1000, -4000])
+  // Gegenprobe ohne Abschluss: der heutige Heizanteil.
+  assert.equal(line(tax({ ...base, units } as Source))?.privateCents, -1667)
+})
+
 test('E ohne Fläche der eigenen Einheit: Zeile nicht aufteilbar, privat 0', () => {
   const src = eigen([gas(600000), hausstrom(90000), abzug('ab', 15000)])
   const units = (src.units ?? []).map((u) => (u.id === 'u3' ? { ...u, areaM2: 0 } : u))
