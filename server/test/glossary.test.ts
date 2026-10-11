@@ -4,6 +4,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { GLOSSARY } from '../../shared/glossary.ts'
+import { OPERATING_POWER_HANDLING_LABELS, OPERATING_POWER_HANDLING_QUESTION } from '../../shared/operatingPower.ts'
 import { NOTICE_KINDS } from '../src/calc.ts'
 
 test('Lexikon: jeder Eintrag ist vollständig, und jedes Beispiel rechnet mit Zahlen', () => {
@@ -324,4 +325,15 @@ test('Lexikon: Betriebsstrom nennt § 7 Abs. 2 HeizkostenV, das Urteil und rechn
   assert.doesNotMatch(`${t.needed} ${t.short} ${t.example}`, /Brennstoff und kein Betriebsstrom|ist der Strom Brennstoff|Kosten der verbrauchten Brennstoffe/)
   assert.match(t.needed, /Umwälzpumpen oder Regelung/)
   assert.match(t.needed, /beim Allgemeinstrom abzuziehen \(§ 7 Abs\. 2, § 8 Abs\. 2 HeizkostenV\)/)
+})
+
+// #266: Die Angabe an der Anlage, mit den Beschriftungen wortgleich zur Oberfläche, und der Zwischenzähler (M-1).
+test('Lexikon: Betriebsstrom nennt die Angabe an der Heizanlage und was der Hinweis damit tut (#266)', () => {
+  const t = GLOSSARY.operatingPower
+  const L = OPERATING_POWER_HANDLING_LABELS
+  assert.ok(t.needed.includes(`Wie der Betriebsstrom erfasst ist, geben Sie auf der Seite Heizkosten an („${OPERATING_POWER_HANDLING_QUESTION}“).`), t.needed)
+  assert.ok(t.needed.includes('Ohne diese Angabe schweigt der Hinweis, sobald für die Anlage irgendeine Heizposition mit dem Teil „Betrieb“ erfasst ist, auch wenn es nur die Wartung ist.'))
+  assert.ok(t.needed.includes(`Mit „${L.deducted}“ kommt er, wenn der Abzug fehlt, auch wenn die Wartung erfasst ist; mit „${L.ownMeter}“ kommt er, wenn keine Heizposition „Betrieb“ erfasst ist; mit „${L.landlordPays}“ schweigt er.`))
+  assert.ok(t.needed.includes('Ein Zwischenzähler hinter dem Stromzähler des Hauses ist kein eigener Stromvertrag: Sein Strom steckt in der Stromrechnung des Hauses und ist beim Allgemeinstrom abzuziehen; der Zwischenzähler erspart nur das Schätzen.'))
+  assert.doesNotMatch(t.needed, /Der Hinweis schweigt, sobald/)
 })
