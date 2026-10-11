@@ -30,9 +30,11 @@ type TenancyFacts = { tenantName: string; unitId: string; start: string; end: st
 // Je Anlage mit eingetragener Umstellung, deren Positionen diese Abrechnung verteilt, die Mieter, deren Mietvertrag
 // vor dem Tag der Umstellung geschlossen wurde und am Tag der Umstellung noch lief. Maßgeblich ist der Vertrag
 // (VIII ZR 46/25 Rn. 30: ein „zum Zeitpunkt der beabsichtigten Umstellung bereits laufender Mietvertrag“);
-// ohne eingetragenes Vertragsdatum nimmt Mietfuchs den Mietbeginn (Prüfung C-S7). Mietverhältnisse mit Pauschale
-// oder Inklusivmiete bei der Heizung tragen die Heizkosten nicht als Betriebskosten und erfüllen § 556c Abs. 1
-// deshalb nicht (Prüfung R-S1). Die Energie ist die der Abrechnung, bei Contracting also `districtHeating`.
+// ohne eingetragenes Vertragsdatum nimmt Mietfuchs den Mietbeginn (Prüfung C-S7). Ausgenommen sind Mietverhältnisse
+// mit Inklusivmiete bei der Heizung: Ohne Umlagevereinbarung tragen sie die Heizkosten nicht als Betriebskosten.
+// Eine Betriebskostenpauschale zählt dagegen mit, denn § 556 Abs. 2 BGB lässt Betriebskosten „als Pauschale oder als
+// Vorauszahlung“ ausweisen; der Mieter trägt sie also auch dann (Auslegung am Wortlaut; Durchsicht von #272, S1).
+// Die Energie ist die der Abrechnung, bei Contracting also `districtHeating`.
 export function switchFindings(
   plants: readonly PlantFacts[],
   items: readonly Pick<CostItem, 'heatingPlantId'>[],
@@ -47,7 +49,7 @@ export function switchFindings(
     const served = new Set(units.filter((u) => servesUnit(p, u)).map((u) => u.id))
     const tenants = tenancies
       .filter((t) => served.has(t.unitId) && (t.contractDate ?? t.start) < since && (t.end === null || t.end >= since))
-      .filter((t) => (t.heatingModel ?? 'settlement') === 'settlement')
+      .filter((t) => t.heatingModel !== 'inclusive')
       .map((t) => t.tenantName)
     if (tenants.length === 0) continue
     out.push({ plantId: p.id, since, previousSupply: p.previousSupply ?? null, announcedOn: p.switchAnnouncedOn ?? null, tenants })
@@ -73,6 +75,11 @@ const names = (list: readonly string[]): string => (list.length === 1 ? list[0] 
 // eine Auslegung (eine Primärquelle zur Fristberechnung nach § 556c Abs. 2 gibt es nicht), und sie ist die
 // vorsichtigere (Prüfung R-S6).
 export const announcedInTime = (announcedOn: string, since: string, noticeMonths: number): boolean => announcedOn < subtractMonths(since, noticeMonths)
+// Der letzte Tag, an dem die Ankündigung nach dieser Auslegung zugehen muss.
+export const lastAnnouncementDay = (since: string, noticeMonths: number): string => {
+  const limit = subtractMonths(since, noticeMonths)
+  return new Date(Date.parse(`${limit}T00:00:00Z`) - 86400000).toISOString().slice(0, 10)
+}
 
 // `rule` ist null, wenn das Register für den Tag der Umstellung keine Fassung hat (vor dem 01.07.2013). `firstDay`
 // ist der Beginn der ersten Fassung von `bgb.heat-delivery-switch` (calc.ts reicht ihn aus dem Register herein,
@@ -113,7 +120,11 @@ export function switchText(f: SwitchFinding, rule: { noticeMonths: number; effic
     ? ' Ob und wann die Umstellungsankündigung zuging, ist nicht erfasst.'
     : announcedInTime(f.announcedOn, f.since, rule.noticeMonths)
       ? ''
-      : ` Die Umstellungsankündigung ging am ${fmtDay(f.announcedOn)} zu, weniger als ${rule.noticeMonths} Monate vor der Umstellung. ` +
+      // Durchsicht von #272, S3: Die Frist ist im Text als vorsichtige Auslegung gekennzeichnet; ging die Ankündigung
+      // erst nach der Umstellung zu, sagt der Satz das.
+      : (f.announcedOn > f.since
+        ? ` Die Umstellungsankündigung ging erst am ${fmtDay(f.announcedOn)} zu, nach der Umstellung. `
+        : ` Die Umstellungsankündigung ging am ${fmtDay(f.announcedOn)} zu und damit nicht spätestens ${rule.noticeMonths} Monate vor der Umstellung (Mietfuchs rechnet vorsichtig: Bei einer Umstellung am ${fmtDay(f.since)} muss sie bis zum ${fmtDay(lastAnnouncementDay(f.since, rule.noticeMonths))} zugehen; das ist eine Auslegung). `) +
         'Ohne ordnungsgemäße Ankündigung beginnt die Frist für Einwendungen gegen die Abrechnung der Wärmelieferkosten (§ 556 Abs. 3 Satz 5 BGB) frühestens, wenn der Mieter eine Mitteilung erhalten hat, die § 11 Abs. 1 und 2 WärmeLV entspricht (§ 11 Abs. 3 WärmeLV).'
   return `${lead} ${conditions}${missing}${notice}`
 }

@@ -57,8 +57,11 @@ test('Prüfung C-S7: maßgeblich ist das Vertragsdatum; Vertrag vor der Umstellu
   assert.match(n.text, /Meier und Schulz/)
 })
 
-test('Prüfung R-S1: Pauschale und Inklusivmiete bei der Heizung erfüllen § 556c Abs. 1 nicht; ausgezogene Mieter auch nicht', () => {
-  const r = settle(gasCon({ previousSupply: 'landlord' }), [mieter('ta', 'Meier', 'a', '2010-01-01', { heatingModel: 'inclusive' }), mieter('tb', 'Schulz', 'b', '2010-01-01', { heatingModel: 'flatRate' })])
+// Durchsicht von #272, S1 (mit Gegenprüfung): Wer eine Betriebskostenpauschale zahlt, trägt Betriebskosten, denn § 556
+// Abs. 2 BGB lässt sie „als Pauschale oder als Vorauszahlung“ ausweisen (Auslegung am Wortlaut); bei der Inklusivmiete
+// fehlt eine Umlagevereinbarung. Ausgezogene Mieter betrifft die Umstellung nicht.
+test('§ 556c: Inklusivmiete bei der Heizung ausgenommen, Pauschale nicht; ausgezogene Mieter auch nicht', () => {
+  const r = settle(gasCon({ previousSupply: 'landlord' }), [mieter('ta', 'Meier', 'a', '2010-01-01', { heatingModel: 'inclusive' })])
   assert.equal(umstellung(r).length, 0)
   const aus = settle(gasCon({ previousSupply: 'landlord' }), [mieter('ta', 'Meier', 'a', '2010-01-01', { end: '2025-09-30' })])
   assert.equal(umstellung(aus).length, 0)
@@ -66,10 +69,15 @@ test('Prüfung R-S1: Pauschale und Inklusivmiete bei der Heizung erfüllen § 55
 
 test('§ 11 Abs. 3 WärmeLV: Ankündigung zu spät oder nicht erfasst (Prüfung R-M3, R-S6)', () => {
   const spaet = one(settle(gasCon({ previousSupply: 'landlord', switchAnnouncedOn: '2025-07-01' })))
-  assert.match(spaet.text, /Die Umstellungsankündigung ging am 01\.07\.2025 zu, weniger als 3 Monate vor der Umstellung\. Ohne ordnungsgemäße Ankündigung beginnt die Frist für Einwendungen gegen die Abrechnung der Wärmelieferkosten \(§ 556 Abs\. 3 Satz 5 BGB\) frühestens, wenn der Mieter eine Mitteilung erhalten hat, die § 11 Abs\. 1 und 2 WärmeLV entspricht \(§ 11 Abs\. 3 WärmeLV\)\./)
+  // Durchsicht von #272, S3: Die Frist ist als vorsichtige Auslegung gekennzeichnet.
+  assert.match(spaet.text, /Die Umstellungsankündigung ging am 01\.07\.2025 zu und damit nicht spätestens 3 Monate vor der Umstellung \(Mietfuchs rechnet vorsichtig: Bei einer Umstellung am 01\.10\.2025 muss sie bis zum 30\.06\.2025 zugehen; das ist eine Auslegung\)\. Ohne ordnungsgemäße Ankündigung beginnt die Frist für Einwendungen gegen die Abrechnung der Wärmelieferkosten \(§ 556 Abs\. 3 Satz 5 BGB\) frühestens, wenn der Mieter eine Mitteilung erhalten hat, die § 11 Abs\. 1 und 2 WärmeLV entspricht \(§ 11 Abs\. 3 WärmeLV\)\./)
   // Rückwärts gerechnet entsprechend §§ 187, 188 Abs. 2 BGB (Auslegung): Zugang bis 30.06. bei Umstellung am 01.10.
   const rechtzeitig = one(settle(gasCon({ previousSupply: 'landlord', switchAnnouncedOn: '2025-06-30' })))
-  assert.doesNotMatch(rechtzeitig.text, /weniger als/)
+  assert.doesNotMatch(rechtzeitig.text, /nicht spätestens|Auslegung\)/)
+  // Ging sie erst nach der Umstellung zu, sagt der Satz das.
+  const danach = one(settle(gasCon({ previousSupply: 'landlord', switchAnnouncedOn: '2025-10-05' })))
+  assert.match(danach.text, /Die Umstellungsankündigung ging erst am 05\.10\.2025 zu, nach der Umstellung\. Ohne ordnungsgemäße Ankündigung/)
+  assert.doesNotMatch(danach.text, /spätestens 3 Monate vor der Umstellung \(/)
   const ohne = one(settle(gasCon({ previousSupply: 'landlord' })))
   assert.match(ohne.text, /Ob und wann die Umstellungsankündigung zuging, ist nicht erfasst\./)
 })
@@ -123,13 +131,14 @@ test('Weg b: eigene Heizperiode Mai bis April, der Hinweis kommt aus der Heizper
   assert.match(umstellung(r)[0]?.text ?? '', /Mieter A und Mieter B/)
 })
 
-// Gegenmutation M4.2 überlebte: Ohne weitere Kosten fehlt ein Mietverhältnis mit Pauschale ohnehin in der Abrechnung.
-// Mit einer kalten Position steht es darin, und die Regel nach § 556c Abs. 1 (Prüfung R-S1) muss selbst greifen.
-test('Prüfung R-S1: Heizpauschale mit kalten Betriebskosten in der Abrechnung, trotzdem kein Hinweis zu § 556c', () => {
+// Gegenmutation M4.2 überlebte zunächst: Ohne weitere Kosten fehlt ein Mietverhältnis mit Pauschale ohnehin in der
+// Abrechnung. Mit einer kalten Position steht es darin. Nach der Durchsicht von #272, S1, bekommt es den Hinweis.
+test('§ 556c: Heizpauschale mit kalten Betriebskosten in der Abrechnung bekommt den Hinweis (Durchsicht von #272, S1)', () => {
   const muell: SnapshotCostItem = { id: 'mu', period: P, category: 'Müllabfuhr', description: 'Müll', amountCents: 30000, key: 'area' }
   const tenancies = [mieter('ta', 'Meier', 'a', '2010-01-01', { heatingModel: 'flatRate' })]
   const r = computeSettlement({ ...snapshotOf({ ...source(tenancies), costItems: [position, muell] }, 2025), heatingPlants: [asBilledPlant(gasCon({ previousSupply: 'landlord' }))], co2Statements: [] })
   assert.ok(r.statements.some((st) => st.tenancyId === 'ta'), 'Meier steht in der Abrechnung')
-  assert.equal(umstellung(r).length, 0)
-  assert.deepEqual(switchFindings([asBilledPlant(gasCon())], [position], tenancies, units), [])
+  assert.match(one(r).text, /Für Meier lief der Mietvertrag/)
+  assert.equal(switchFindings([asBilledPlant(gasCon())], [position], tenancies, units).length, 1)
+  assert.deepEqual(switchFindings([asBilledPlant(gasCon())], [position], [{ ...tenancies[0] ?? assert.fail(), heatingModel: 'inclusive' }], units), [])
 })
