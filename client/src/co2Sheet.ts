@@ -3,7 +3,7 @@
 // Dritte (Messdienst, Gemeinschaft, Steuerbüro): Die Texte stehen in der dritten Person und sprechen den
 // Vermieter nicht an (Durchsicht von #246, R-W2).
 import { fmtDate, fmtEuro } from './api'
-import { ENERGY_OPTIONS } from './heatingForm'
+import { energyLabelOf } from './heatingForm'
 import { STOCK_UNIT_TEXT } from '../../shared/fuelStock.ts'
 import { co2DistrictEtsNew } from '../../shared/law/co2kostaufg.ts'
 import { germanDate, onlyVersion } from '../../shared/law/register.ts'
@@ -19,7 +19,8 @@ export const SHEET_COLUMNS = ['Rechnung vom', 'Zeitraum', 'Menge', 'Energiegehal
 
 const num = (n: number, digits: number): string => n.toLocaleString('de-DE', { maximumFractionDigits: digits })
 const UNIT_TEXT: Record<FuelQuantityUnit, string> = { ...STOCK_UNIT_TEXT, m3: 'm³', kWh: 'kWh' }
-const energyLabel = (s: Pick<Co2Sheet, 'energy'>): string => ENERGY_OPTIONS.find((o) => o.value === s.energy)?.label ?? s.energy
+// Heizung PR 16: bei Contracting die Wärmelieferung mit dem Brennstoff des Lieferanten.
+const energyLabel = (s: Pick<Co2Sheet, 'energy' | 'contracting' | 'fuelEnergy'>): string => energyLabelOf(s)
 
 export function sheetHead(s: Co2Sheet): { title: string; lines: string[] } {
   // Steht der Name schon am Anfang der Anschrift („Lindenweg 12“), nur die Anschrift (R-K6).

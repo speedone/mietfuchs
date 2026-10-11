@@ -198,3 +198,8 @@ test('Ausnahme nach § 11: keine Angaben zu §§ 8, 9, keine Summe, dafür die A
   expect(sheetFacts({ ...sheet, exemption: null })).toEqual(sheetFacts(sheet))
   expect(sheetFacts(sheet).some((f) => f.startsWith('Ausnahme'))).toBe(false)
 })
+
+// Heizung PR 16 (Prüfung C-S3): Das Blatt für den Messdienst nennt bei Contracting die Wärmelieferung mit Brennstoff.
+test('Contracting: Kopf des Blatts mit Wärmelieferung und Brennstoff', () => {
+  expect(sheetHead({ ...sheet, energy: 'districtHeating', contracting: true, fuelEnergy: 'oil' }).lines[2]).toBe('Heizanlage: Kessel (Wärmelieferung (Contracting, erzeugt mit Öl))')
+})

@@ -851,3 +851,39 @@ test('Angabe zum Betriebsstrom in der Abrechnung über die Route: Wartung erfass
     s.stop()
   }
 })
+
+// Heizung PR 16 (#213): Contracting und die Angaben zur Umstellung über die Routen der Anlage und des Kesseltauschs; sie
+// überstehen Backup und Wiederherstellen, und die Abrechnung nennt die Umstellung.
+test('Wärmelieferung über die Routen: anlegen, Umschalten mit Lieferung gesperrt, Kesseltausch, Abrechnung, Backup', async () => {
+  const s = await startServer()
+  try {
+    const send = (url: string, init: RequestInit) => fetch(`${s.base}${url}`, { ...init, headers: { 'content-type': 'application/json' } })
+    const unit = await s.api<Unit>('/api/units', jsonPost({ name: 'EG', areaM2: 80, participates: true }))
+    await s.api('/api/tenancies', jsonPost({ unitId: unit.id, tenantName: 'Meier', personHistory: [{ from: '2010-01-01', persons: 1 }], start: '2010-01-01', end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [] }))
+    const { plant } = await jsonOf<{ plant: HeatingPlant }>(await send('/api/heating-plants', jsonPost({ energy: 'gas', method: 'manual' })))
+    assert.equal(plant.contracting, false)
+    await s.api('/api/heating-plants/' + plant.id + '/deliveries', jsonPost({ label: 'Gas', invoiceFrom: '2025-01-01', invoiceTo: '2025-09-30' }))
+    const umschalten = await send(`/api/heating-plants/${plant.id}`, { method: 'PUT', body: JSON.stringify({ contracting: true }) })
+    assert.equal(umschalten.status, 409)
+    assert.match(await errorFrom(umschalten), /„Heizung erneuert \(Kessel getauscht\)“/)
+    const tausch = await send(`/api/heating-plants/${plant.id}/replace`, { method: 'POST', body: JSON.stringify({ date: '2025-10-01', energy: 'gas', contracting: true, heatDeliverySince: '2025-10-01', previousSupply: 'landlord' }) })
+    assert.equal(tausch.status, 201)
+    const neu = (await jsonOf<{ plant: HeatingPlant }>(tausch)).plant
+    assert.deepEqual([neu.contracting, neu.heatDeliverySince, neu.previousSupply], [true, '2025-10-01', 'landlord'])
+    await s.api<CostItem>('/api/costItems', jsonPost({ period: '2025-01', category: 'Heizung und Warmwasser', description: 'Wärme Oktober bis Dezember', amountCents: 90000, key: 'area', heatingPlantId: neu.id }))
+    const notices = async () => ((await s.api<Settlement>('/api/settlement/2025-01')).notices ?? []).filter((n) => n.code === 'heating.contracting')
+    const [n] = await notices()
+    assert.match(n?.text ?? '', /Für Meier lief der Mietvertrag schon vor der Umstellung auf Wärmelieferung am 01\.10\.2025/)
+    const archiv = await fetch(`${s.base}/api/backup`)
+    const fd = new FormData()
+    fd.append('file', new Blob([await archiv.arrayBuffer()], { type: 'application/zip' }), 'backup.zip')
+    assert.equal((await send(`/api/heating-plants/${neu.id}`, { method: 'PUT', body: JSON.stringify({ heatDeliverySince: null, previousSupply: null }) })).status, 200)
+    assert.equal((await notices()).length, 0)
+    assert.equal((await fetch(`${s.base}/api/restore`, { method: 'POST', body: fd })).status, 200)
+    const zurueck = (await s.api<HeatingPlant[]>('/api/heating-plants')).find((p) => p.id === neu.id)
+    assert.deepEqual([zurueck?.contracting, zurueck?.heatDeliverySince, zurueck?.previousSupply], [true, '2025-10-01', 'landlord'])
+    assert.equal((await notices()).length, 1)
+  } finally {
+    s.stop()
+  }
+})
