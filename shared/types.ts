@@ -949,6 +949,10 @@ export type TaxExpenseItem = {
   // unter `unitName`, damit die Regression des Umstiegs den Namen wie überall als Beschriftung
   // ausnimmt (regression.ts): Eine Wohnung ohne Namen in der db.json heißt danach ''.
   taxUnits: { unitId: string; unitName: string }[] | null
+  // Die abgeleitete Zeile „Betriebsstrom der Heizung“ (#268): keine Kostenposition, sondern der Ausgleich zwischen
+  // Abzügen beim Allgemeinstrom und Heizpositionen, die auch in der Stromrechnung stecken. `costItemId` ist dann
+  // `operating-power-balance:<Jahr>`.
+  operatingPowerBalance?: true
 }
 
 export type TaxReport = {
@@ -1035,6 +1039,16 @@ export type TaxReport = {
   // der Anlage V).
   // `inclusive`: kalt und warm inklusiv; `partlyInclusive`: nur eines von beiden.
   costModels: { tenancies: number; inclusive: number; partlyInclusive: number; flatRate: number }
+  // Ausgleich beim Betriebsstrom der Heizung (#268): Σ Abzüge beim Allgemeinstrom − Σ Heizpositionen, die auch in der
+  // Stromrechnung stecken, im Steuerjahr, mit Vorzeichen. Steht als eigene Zeile beim Allgemeinstrom, damit der Strom
+  // genau die bezahlte Stromrechnung ist. Nur ≠ 0.
+  operatingPowerBalanceCents?: number
+  // Abzüge ohne Verweis, die als dem Messdienst gemeldet gelten, obwohl im Zeitraum zugleich eine Anlage ohne
+  // Messdienst heizt (R-6 zu #268). Nur, wenn es welche gibt.
+  operatingPowerAmbiguous?: { costItemId: string; description: string; amountCents: number }[]
+  // Negativer Allgemeinstrom ohne Kennzeichnung neben einer zentralen Anlage ohne Messdienst (#268). Nur, wenn es
+  // welche gibt.
+  unmarkedPowerCredits?: { costItemId: string; description: string; amountCents: number }[]
 }
 
 // Ein Beleg im Belegordner (#170). `mtime` ist die Zeit der Datei und nur noch für ältere Tabs

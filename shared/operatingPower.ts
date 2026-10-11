@@ -1,6 +1,7 @@
 // Betriebsstrom der Heizung (Heizung PR 15, #212): die Rechnung der Schätzhilfe, für Formular und
 // Server dieselbe.
 import type { HeatingEnergy, HeatingMethod, HeatingSource, HeatingSupply, OperatingPowerDevice, OperatingPowerHandling } from './types.ts'
+import { plantSpan } from './heatingPeriod.ts'
 
 // Die Kostenart des Allgemeinstroms (§ 2 Nr. 11 BetrKV, Beleuchtung). Dieselbe Zeichenkette wie in
 // shared/categories.ts; categories.test.ts hält beide zusammen.
@@ -109,6 +110,24 @@ export function operatingPowerRefusal(energy: HeatingEnergy): string | null {
 // Heizperiode (Durchsicht von #252, G-K1 und N1). Eine Quelle für Server und Karte (G2-H4).
 export const touchesHeatingPeriod = (general: { from: string; to: string }, heating: { from: string; to: string }): boolean =>
   general.to >= heating.from && general.from <= heating.to
+
+// ---------- Bekommt ein Messdienst den Betriebsstrom? (#268) ----------
+//
+// Ein Abzug ohne Verweis auf eine Heizposition heißt im Formular „dem Messdienst als Betriebsstrom gemeldet“, wenn
+// eine Anlage mit Messdienst im Zeitraum des Abzugs heizt; sonst „ich lege ihn nicht um und trage ihn selbst“. Die
+// Steuerübersicht fragt dasselbe: Nur im zweiten Fall steht dem Abzug keine Position gegenüber. Die Spanne einer
+// Anlage reicht vom Tag nach dem Ende ihrer Vorgängerin bis `endsOn` (plantSpan), beide Grenzen inklusiv. Keine
+// weitere Bedingung an Versorgung oder Quelle: Der Nutzer hat den Weg gewählt, und Mietfuchs folgt ihm.
+type SpanPlant = { id: string; method: HeatingMethod; endsOn?: string | null; replacesPlantId?: string | null }
+export const heatsIn = (plant: SpanPlant, plants: readonly SpanPlant[], period: { from: string; to: string }): boolean => {
+  const span = plantSpan(plant, plants)
+  return (span.from === null || span.from <= period.to) && (span.to === null || span.to >= period.from)
+}
+export const serviceReceivesOperatingPower = (plants: readonly SpanPlant[], period: { from: string; to: string }): boolean =>
+  plants.some((p) => p.method === 'service' && heatsIn(p, plants, period))
+// R-6: Heizt im selben Zeitraum zugleich eine Anlage ohne Messdienst, ist nicht eindeutig, ob der Abzug gemeldet ist.
+export const nonServiceHeats = (plants: readonly SpanPlant[], period: { from: string; to: string }): boolean =>
+  plants.some((p) => p.method !== 'service' && heatsIn(p, plants, period))
 
 // Die Grundlage der Schätzung, wie sie an Betriebsstrom und Abzug gespeichert wird (P-W1): der Rechenweg
 // mit allen Eingaben, eine Zeile je Schritt.
