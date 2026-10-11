@@ -2138,9 +2138,15 @@ die ganze fachliche Komplexität:
   Rechnung verkleinern). Führend beim Steuerjahr ist der Betriebsstrom, dessen Jahr an der Heizperiode
   hängt; der Abzug bekommt dasselbe. Beim Wechsel des Abrechnungszeitraums wandern Rechnung und Abzüge
   als Einheit: Die Prüfungen gelten für den Endstand (Option `periodChange`, `settleOperatingPowerLinks`),
-  beim Aufteilen wird der Abzug immer im selben Verhältnis geteilt wie seine Rechnung (auch wenn die
-  Rechnung sich über ihren Leistungszeitraum von selbst teilt), denn der Betriebsstrom steckt in jedem Teil
-  der Rechnung nach Tagen; jeder Teil zeigt auf den Teil der Rechnung im selben Zeitraum. Geprüft wird das
+  der Abzug folgt immer dem Endzustand seiner Rechnung (auch wenn deren Leistungszeitraum ganz in einem
+  neuen Zeitraum liegt und die Gruppe des Abzugs woandershin geht; dann steht er in der Vorschau unter
+  `moves` und in keiner Gruppe), denn der Betriebsstrom steckt in jedem Teil der Rechnung; jeder Teil zeigt
+  auf den Teil der Rechnung im selben Zeitraum. Mehrere Abzüge einer Rechnung werden **gemeinsam** geteilt
+  (`splitDeductionsAlike` in serviceSplit.ts), und zwar nach den **Beträgen** der Teile, nicht nach Tagen:
+  Nur so ist aus keinem Teil mehr abgezogen, als er beträgt, auch bei drei und mehr Teilen und wenn die
+  Abzüge die ganze Rechnung ergeben (Restverfahren nach Tagen ist nicht monoton). Das Jahr der Zahlung
+  eines Abzugsteils fragt die Vorschau nicht, es ist das der Betriebsstrom-Position nach dem Wechsel
+  (`derivedYears`). Geprüft wird das
   **je Mieter** gegen von Hand hergeleitete Beträge, nicht je Zeitraum: „Abzug gleich Betriebsstrom je
   Zeitraum“ hielt auch ein falsches Ergebnis aus. Ein
   Scheitern ist eine 409 mit Vorschau. Kein Objektwechsel, solange ein
@@ -2151,6 +2157,25 @@ die ganze fachliche Komplexität:
   stehen nur im Lexikon: BGH V ZR 166/15 Rn. 14 lässt den Bruchteil der Brennstoffkosten als
   Schätzgrundlage zu, gibt die Werte aber nur wieder und legt keinen fest; Mietfuchs rechnet ihn bewusst
   nicht vor. Kein Eintrag im Regelverzeichnis, denn der änderte den Rechtsstand jeder Abrechnung.
+- **Betriebsstrom fehlt und Strom der Wärmepumpe im Allgemeinstrom** (#224, #253, Folge-PR zu #252,
+  `missingPowerFindings` in server/src/operatingPower.ts): zwei Hinweise der Stufe `hint`, nur in der
+  Gesamtberechnung, beide reine Auskunft. `heating.operating-power-missing` kommt bei einer zentralen
+  Anlage mit Brenner (nicht Fernwärme, nicht „sonstige“), ohne Messdienst, ohne Eigentümergemeinschaft, mit
+  Heizkosten im Zeitraum und Allgemeinstrom (nicht `external`/`amounts`), wenn keine Heizposition
+  gekennzeichnet ist, keine den Teil „Betrieb“ hat, keine ohne Teil ist und kein Abzug als Antwort gilt
+  (ohne Verweis oder auf eine Position dieser Anlage). **Die Grenze ist gewollt:** Er schweigt, sobald
+  irgendeine Position „Betrieb“ besteht, auch nur die Wartung, denn ohne Angabe an der Anlage ist sie von
+  einer Rechnung über einen eigenen Zähler nicht zu unterscheiden, und wegklicken lässt sich ein Hinweis
+  nicht. Er färbt die Cockpit-Ampel nicht (`INFORMATIONAL`), weil er auch den rechtmäßigen Fall „eigener
+  Zähler, Vermieter trägt selbst“ trifft. `heating.generation-power-missing` kommt bei Wärmepumpe und
+  Elektrokessel ohne eigene Stromrechnung (Teil `fuel`, ohne Teil, Lieferung) und ohne Abzug, auch ganz
+  ohne Heizposition, solange die Anlage im Zeitraum besteht; er färbt gelb. Die Daten der Fassungen kommen
+  aus dem Register (`betrkv.generation-power` ab 01.01.2024, `hkv.generation-power` ab 01.10.2024, beide
+  `overlap`, BGBl. 2023 I Nr. 280): ganz vor 2024 schweigt er, die HeizkostenV nennt er nur, wo der Zeitraum
+  ihre Fassung berührt und `heating.heat-pump-capture` für die Anlage nicht meldet, dass sie noch nicht
+  gilt (§ 12 Abs. 3 Satz 2). Abgefragt wird das Register erst, wenn der Hinweis sonst käme, damit es nicht
+  im Rechtsstand jeder Abrechnung mit Wärmepumpe steht. Das Herausrechnen und die Schätzung sind beim
+  Strom zur Wärmeerzeugung als Auslegung gekennzeichnet; entschieden ist beides für den Betriebsstrom.
 - **Überschneidende Mietverhältnisse einer Wohnung** (#204): Wann sich zwei überschneiden (ein
   gemeinsamer Tag, inklusive Grenzen), steht einmal in [shared/tenancyOverlap.ts](shared/tenancyOverlap.ts);
   Server und Oberfläche fragen dieselbe Funktion. Gerechnet wird wie erfasst, jedes mit vollem
