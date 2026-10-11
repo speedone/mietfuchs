@@ -11,7 +11,7 @@
 // nicht als freies Objektliteral (CLAUDE.md). Bekommt ein Typ in einer späteren PR ein Pflichtfeld, nennt
 // der Übersetzer die Stelle hier; die PR ergänzt es mit dem Wert, den ihre Vorgabe setzt.
 import type {
-  CostItem, FuelDelivery, HeatingEstimate, HeatingPart, HeatingPeriodData, HeatingPlant, HeatingServiceValue, HeatingTarget, Meter, MeterType, Reading, Tenancy, Unit,
+  CostItem, FuelDelivery, HeatingEstimate, HeatingPart, HeatingPeriodData, HeatingPlant, HeatingServiceValue, HeatingTarget, Meter, MeterType, MonthlyInfoRow, Reading, Tenancy, Unit,
 } from '../../shared/types.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import { CALENDAR_RULES, periodKey, periodOfKey } from '../../shared/period.ts'
@@ -39,6 +39,8 @@ export type SelfSnapshotOptions = {
   serviceValues?: HeatingServiceValue[]
   // Schätzungen nach § 9a (Heizung PR 13).
   estimates?: HeatingEstimate[]
+  // Monatliche Verbrauchsinformation (Heizung PR 22).
+  monthlyInfoRows?: MonthlyInfoRow[]
 }
 
 const P = 'objekt-1'
@@ -151,6 +153,7 @@ export function selfSnapshot(o: SelfSnapshotOptions = {}): Snapshot {
     heatingPlants: [plant, ...(o.plants ?? [])], heatingPeriodRows: rows, fuelDeliveries: deliveries,
     heatingServiceValues: o.serviceValues ?? [],
     ...(o.estimates ? { heatingEstimates: o.estimates } : {}),
+    ...(o.monthlyInfoRows ? { monthlyInfoRows: o.monthlyInfoRows } : {}),
   }
   return snapshotFor(source, P, period)
 }

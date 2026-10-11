@@ -56,12 +56,14 @@ test('Vollständig: nur das erste Jahr von C2 („bis zu“, Auslegung) als Hinw
   assert.equal(sumRows(s), sumRows(computeSettlement(beispiel())))
 })
 
-test('Monatliche Information: fernablesbarer Zähler → Warnung „bis zu 3 %“; bestätigt → keine; unbekannt → nichts (Anlegen ändert keinen Hinweis)', () => {
+test('Monatliche Information: fernablesbarer Zähler → Warnung mit den offenen Monaten (Heizung PR 22); bestätigt → keine; unbekannt → nichts (Anlegen ändert keinen Hinweis)', () => {
   const base = mitAngaben()
   const fern: Snapshot = { ...base, meters: base.meters.map((m) => (m.id === 'wz-a' ? { ...m, remoteReadable: true } : m)) }
   const n = notice(computeSettlement(fern), 'heating.monthly-info')
   assert.equal(n.level, 'warning')
-  assert.match(n.text, /seit dem 01\.01\.2022 monatliche Verbrauchsinformationen.*bis zu 3 %.*Portal mit einer Nachricht jeden Monat.*BR-Drs\. 643\/21/s)
+  // Seit Heizung PR 22 erstellt Mietfuchs die Information bei eigener Abrechnung selbst und nennt die offenen Monate;
+  // nur wz-a ist fernablesbar, die Ausstattung also gemischt (Einzelfallprüfung, BR-Drs. 643/21, S. 18).
+  assert.match(n.text, /seit dem 01\.01\.2022 jeden Monat eine Verbrauchsinformation.*Nicht als mitgeteilt vermerkt: Januar bis Dezember 2025.*nicht oder nur zum Teil fernablesbar.*Einzelfall.*Portal mit einer Nachricht jeden Monat.*BR-Drs\. 643\/21/s)
   const bestaetigt = mitAngaben({ monthlyInfoElsewhere: true })
   const fernBestaetigt: Snapshot = { ...bestaetigt, meters: bestaetigt.meters.map((m) => (m.id === 'wz-a' ? { ...m, remoteReadable: true } : m)) }
   assert.ok(!codes(computeSettlement(fernBestaetigt)).some((c) => c.startsWith('heating.monthly-info')))
@@ -339,7 +341,7 @@ test('Durchsicht R-W4: monatliche Information und Angaben zur Abrechnung sind ei
   assert.match(info.text, /auch wenn die monatliche Verbrauchsinformation fehlt/)
   // Fehlt zur Abrechnung nichts (nur das erste Jahr von C2 offen), nennt die monatliche Information ihre Beträge selbst.
   const voll = notice(computeSettlement(fernAlle(mitAngaben(), ['wz-a'])), 'heating.monthly-info')
-  assert.match(voll.text, /hier bis zu: Mieter A \(A\) 53,83 €/)
+  assert.match(voll.text, /hier: Mieter A \(A\) 53,83 €/)
   // „soweit diese Daten erhoben worden sind“ (§ 6a Abs. 2 Nr. 2, R-K10).
   assert.match(voll.text, /Vormonat und dem entsprechenden Monat des Vorjahres, soweit diese Daten erhoben worden sind/)
 })
@@ -369,7 +371,7 @@ test('Durchsicht R-K12: Ausnahme nur der Wärme – für die monatliche Informat
   const heat = { exemption: 'lowDemand' as const, exemptionScope: 'heat' as const }
   assert.ok(!codes(computeSettlement(fernAlle(mitAngaben(heat), ['wz-a', 'wz-b']))).includes('heating.monthly-info'))
   const n = notice(computeSettlement(fernAlle(mitAngaben(heat), ['xw-a'])), 'heating.monthly-info')
-  assert.match(n.text, /seinen Anteil am Warmwasser um bis zu 3 %/)
+  assert.match(n.text, /seinen Anteil am Warmwasser um 3 % kürzen/)
 })
 
 test('Durchsicht R-W7, R-K1, R-W8: Wortlaut des § 11 und die CO₂-Sätze je Umfang', () => {

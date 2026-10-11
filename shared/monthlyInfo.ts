@@ -2,7 +2,19 @@
 // Server (Hinweistexte) und Oberfläche (Karte, Blatt). Gerechnet wird aus der Zeichenkette ('JJJJ-MM') und
 // in UTC, wie überall in Mietfuchs, damit keine Zeitzone einen Tag verschiebt.
 
-const MONTH_NAMES = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember']
+import type { MonthlyInfoGap } from './types.ts'
+
+// Warum die Information eines Monats unvollständig ist, für den Hinweis der Abrechnung und die Karte. Keine
+// Semikolons: Der Hinweis trennt mehrere Gründe damit.
+export const MONTHLY_INFO_GAP_TEXT: Readonly<Record<MonthlyInfoGap, string>> = {
+  noReading: 'Zählerstand genau am Monatsende fehlt, auch bei einem ausgefallenen Gerät',
+  negative: 'negativer Verbrauch, bitte die Zählerstände prüfen',
+  hca: 'Heizkostenverteiler zeigen keine Kilowattstunden, lassen Sie die Information vom Ablesedienst erstellen',
+  dhwTemp: 'mittlere Warmwassertemperatur für die Umrechnung in kWh fehlt, eine geschätzte genügt',
+  reference: 'Vergleich mit einem Durchschnittsnutzer fehlt',
+}
+
+const MONTH_NAMES =['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember']
 
 const parts = (month: string): [number, number] => [Number(month.slice(0, 4)), Number(month.slice(5, 7))]
 const fmt = (y: number, m: number): string => `${String(y).padStart(4, '0')}-${String(m).padStart(2, '0')}`
