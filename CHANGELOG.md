@@ -324,6 +324,25 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Fernwärme die der Hausanlage (§ 7 Abs. 4, § 8 Abs. 4 HeizkostenV). Einen Bruchteil der
   Brennstoffkosten lässt der BGH für Wohnungseigentümer als Schätzgrundlage zu; Mietfuchs rechnet keinen
   Prozentsatz vor, das Lexikon nennt die Literaturwerte.
+- **Hinweis, wenn der Betriebsstrom der Heizung fehlt** ([#224](https://github.com/speedone/mietfuchs/issues/224)):
+  Hat eine Zentralheizung mit Brenner im Abrechnungszeitraum weder einen Betriebsstrom noch einen Abzug beim
+  Allgemeinstrom, sagt die Abrechnung das, mit dem Weg über die Karte „Betriebsstrom“ (§ 7 Abs. 2, § 8 Abs. 2
+  HeizkostenV; § 2 Nr. 4 Buchst. a BetrKV; BGH, Urteil vom 03.06.2016, V ZR 166/15). Der Hinweis ist eine
+  Auskunft und färbt das Cockpit nicht. Er schweigt bewusst, sobald für die Anlage irgendeine Heizposition
+  „Betrieb“ erfasst ist, auch wenn es nur die Wartung ist, und ebenso bei Fernwärme, bei einer Heizung mit
+  Messdienst und ohne Allgemeinstrom: Dort lässt sich ohne weitere Angabe nicht erkennen, ob der Betriebsstrom
+  fehlt.
+- **Hinweis, wenn der Strom einer Wärmepumpe im Allgemeinstrom mitlaufen kann** ([#253](https://github.com/speedone/mietfuchs/issues/253)):
+  Hat eine Wärmepumpe oder ein Elektrokessel keine eigene Stromrechnung und steht beim Allgemeinstrom kein
+  Abzug, weist die Abrechnung darauf hin. Seit dem 01.01.2024 zählt § 2 Nr. 4 Buchst. a BetrKV diesen Strom zu
+  den Heizkosten, seit dem 01.10.2024 auch § 7 Abs. 2 HeizkostenV; dass er aus dem Allgemeinstrom
+  herauszurechnen ist, ist eine Auslegung von Mietfuchs und steht so da. Für Zeiträume vor 2024 kommt der
+  Hinweis nicht.
+- Beim Wechsel des Abrechnungszeitraums folgt der Abzug des Betriebsstroms immer seiner Stromrechnung, auch
+  wenn deren Leistungszeitraum ganz in einem neuen Zeitraum liegt; bisher lehnte der Wechsel das ab. Mehrere
+  Abzüge einer Rechnung werden gemeinsam geteilt, sodass aus keinem Teil mehr abgezogen wird, als er beträgt,
+  und das Jahr der Zahlung eines Abzugs folgt seinem Betriebsstrom. Der Hinweis zu verschiedenen Steuerjahren
+  und die Hilfe am Feld „Jahr der Zahlung (Steuer)“ erklären, warum dort das Jahr des Betriebsstroms gilt.
 
 ### Geändert
 
