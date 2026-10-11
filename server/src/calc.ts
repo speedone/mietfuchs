@@ -5769,8 +5769,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     lineGroups.set(k, [...(lineGroups.get(k) ?? []), report])
   }
   // Satz 3 ist ein Kürzungsrecht: Lücken innerhalb des Satzes summieren sich nicht, nur Kürzungsrechte aus
-  // verschiedenen Sätzen des § 12 Abs. 1 (BR-Drs. 643/21, S. 23 f., Durchsicht von #243, R-W4).
-  const ONE_RIGHT = 'Das ist ein Kürzungsrecht, auch wenn mehrere Angaben fehlen und auch wenn die monatliche Verbrauchsinformation fehlt: § 12 Abs. 1 Satz 3 HeizkostenV erfasst alle Informationen nach § 6a, und es summieren sich nur Kürzungsrechte aus verschiedenen Sätzen des § 12 Abs. 1 (BR-Drs. 643/21, S. 23 f.).'
+  // verschiedenen Sätzen des § 12 Abs. 1 (BR-Drs. 643/21, S. 24 f., Durchsicht von #243, R-W4).
+  const ONE_RIGHT = 'Das ist ein Kürzungsrecht, auch wenn mehrere Angaben fehlen und auch wenn die monatliche Verbrauchsinformation fehlt: § 12 Abs. 1 Satz 3 HeizkostenV erfasst alle Informationen nach § 6a, und es summieren sich nur Kürzungsrechte aus verschiedenen Sätzen des § 12 Abs. 1 (BR-Drs. 643/21, S. 24 f.).'
   for (const group of lineGroups.values()) {
     const first = group[0]
     if (!first) continue
@@ -5937,7 +5937,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       warn('heating.monthly-info',
         `${where}: Nach Ihren Angaben sind Zähler oder Heizkostenverteiler fernablesbar. Dann stehen den Mietern seit dem ${fmtDay(monthly.validFrom ?? '')} monatliche Verbrauchsinformationen zu: der Verbrauch des letzten Monats in Kilowattstunden, der Vergleich mit dem Vormonat und dem entsprechenden Monat des Vorjahres, soweit diese Daten erhoben worden sind, und der Vergleich mit einem Durchschnittsnutzer (§ 6a Abs. 1 und 2 HeizkostenV). ` +
           `Fehlen sie, darf jeder Mieter seinen Anteil${waterWord} um bis zu ${cut} % kürzen (§ 12 Abs. 1 Satz 3 HeizkostenV)${rest.length === 0 ? '.' : ''}${amounts} ` +
-          'Das ist dasselbe Kürzungsrecht wie bei fehlenden Angaben zur Heizkostenabrechnung und kommt nicht hinzu: Satz 3 erfasst alle Informationen nach § 6a, und es summieren sich nur Kürzungsrechte aus verschiedenen Sätzen des § 12 Abs. 1 (BR-Drs. 643/21, S. 23 f.). ' +
+          'Das ist dasselbe Kürzungsrecht wie bei fehlenden Angaben zur Heizkostenabrechnung und kommt nicht hinzu: Satz 3 erfasst alle Informationen nach § 6a, und es summieren sich nur Kürzungsrechte aus verschiedenen Sätzen des § 12 Abs. 1 (BR-Drs. 643/21, S. 24 f.). ' +
           'Mietfuchs erstellt diese Informationen nicht. Bekommen Ihre Mieter sie anders, etwa vom Messdienst als Brief oder E-Mail oder in einem Portal mit einer Nachricht jeden Monat, dass sie dort steht, bestätigen Sie das auf der Seite Heizkosten in der Karte „Ausnahmen und Vereinbarungen“. ' +
           'Ein Portal ohne diese Nachricht genügt nach der Begründung der Verordnung nicht: Mitgeteilt ist die Information erst, wenn sie den Mieter erreicht (BR-Drs. 643/21, S. 18 f.).',
         subject)

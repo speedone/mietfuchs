@@ -1469,7 +1469,7 @@ lässt die Wahl nur für künftige Zeiträume zu. Der Anteil gehört zur **Linie
   auch Nr. 5 (`attachedCoversPrev`). Ohne Position mit dem Teil Erfassung druckt Nr. 1 c keine Zahl (`meteringCents`
   `null`, offen). Jede sicher fehlende Angabe ergibt `heating.info-incomplete` mit 3 % für die betroffenen Mieter
   (ein Kürzungsrecht nach Satz 3, auch mit der monatlichen Information: deren Hinweis nennt die Beträge nicht
-  ein zweites Mal; BR-Drs. 643/21, S. 23 f.), nur für Zeiträume ab dem 01.12.2021 (`hkv.settlement-info`). `heating.monthly-info` nur, wenn ein Gerät, das in der
+  ein zweites Mal; BR-Drs. 643/21, S. 24 f.), nur für Zeiträume ab dem 01.12.2021 (`hkv.settlement-info`). `heating.monthly-info` nur, wenn ein Gerät, das in der
   Heizperiode in Betrieb ist (Ablesungen überdecken sie, `coversPeriod`, oder es hat noch keine), als fernablesbar eingetragen ist oder die Anlage es angibt; ohne Angabe schweigt
   es, denn das Anlegen einer Anlage ändert keinen Hinweis (Entwurf 11.2). Kontaktadressen in
   `shared/heatingInfo.ts`, jährlich prüfen. Seite Heizkosten: Karten „Ausnahmen und Vereinbarungen“

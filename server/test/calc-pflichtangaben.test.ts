@@ -33,7 +33,7 @@ test('Ohne Angaben: Nr. 1 b, 4 und 5 fehlen sicher (3 % je Mieter), Nr. 3 vielle
   assert.match(n.text, /Es fehlen: die erhobenen Steuern, Abgaben und Zölle \(Nr\. 1 b\), der Vergleich mit einem normierten oder durch Vergleichstests ermittelten Durchschnittsnutzer \(Nr\. 4\) und der witterungsbereinigte Vergleich/)
   assert.match(n.text, /Durchschnitt aus Ihrem eigenen Haus ist kein zulässiger Vergleich/)
   assert.match(n.text, /um 3 % kürzen \(§ 12 Abs\. 1 Satz 3 HeizkostenV\), hier: Mieter A \(A\) [0-9.,]+ €/)
-  assert.match(n.text, /ein Kürzungsrecht, auch wenn mehrere Angaben fehlen/)
+  assert.match(n.text, /ein Kürzungsrecht, auch wenn mehrere Angaben fehlen.*\(BR-Drs\. 643\/21, S\. 24 f\.\)/s)
   assert.match(n.text, /Verbrauchervertrag.*bis zu 3 %/s)
   assert.ok(s.legalBasis.values?.some((v) => v.id === 'hkv.cut.information'))
   // Die Warnung aus der Durchsicht von #239 ist ersetzt.
@@ -332,7 +332,7 @@ test('Durchsicht R-W4: monatliche Information und Angaben zur Abrechnung sind ei
   const s = computeSettlement(fernAlle(beispiel(), ['wz-a']))
   const monthly = notice(s, 'heating.monthly-info')
   const info = notice(s, 'heating.info-incomplete')
-  assert.match(monthly.text, /dasselbe Kürzungsrecht wie bei fehlenden Angaben zur Heizkostenabrechnung und kommt nicht hinzu.*verschiedenen Sätzen des § 12 Abs\. 1 \(BR-Drs\. 643\/21, S\. 23 f\.\)/s)
+  assert.match(monthly.text, /dasselbe Kürzungsrecht wie bei fehlenden Angaben zur Heizkostenabrechnung und kommt nicht hinzu.*verschiedenen Sätzen des § 12 Abs\. 1 \(BR-Drs\. 643\/21, S\. 24 f\.\)/s)
   assert.match(monthly.text, /Die Beträge je Mieter stehen beim Hinweis zu den Angaben zur Heizkostenabrechnung\./)
   assert.doesNotMatch(monthly.text, /[0-9],[0-9]{2} €/)
   assert.match(info.text, /hier: Mieter A \(A\) 53,83 €/)
