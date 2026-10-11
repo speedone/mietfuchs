@@ -82,7 +82,7 @@ import { lineRoot, monthSpanText, plantRules, plantSpan, recommendedDeadline, re
 import { heatingSnapshotFor, selfAt, snapshotFor, wayOf } from './snapshot.ts'
 import { cancelledDeliveries, plantFuel, rangeOf, type FuelCarry, type FuelResult } from './fuel.ts'
 import { co2Plausibility, etsExempt as etsExemptPlant, plausibilityText } from './co2Plausibility.ts'
-import { billMissingText, deductionMissingText, generationPowerText, missingOperatingPowerText, missingPowerFindings, operatingPowerFindings, operatingPowerText } from './operatingPower.ts'
+import { billMissingText, deductionMissingText, generationPowerText, missingOperatingPowerText, missingPowerFindings, operatingPowerBalance, operatingPowerFindings, operatingPowerText, unmarkedPowerCredits, type OperatingPowerBalance } from './operatingPower.ts'
 import { GENERAL_POWER_CATEGORY } from '../../shared/operatingPower.ts'
 import { LAW_PARAMS } from '../../shared/law/params.ts'
 import { fuelFromDeliveries, fuelFromStock, looseCentsOf, measuredOffset, problemText, settledByDefault, stockKeysOf, stockOf, stockTemplateOfLine, stockTouched, valueOf as stockValueOf, type FuelFigures, type StockPeriodInput, type StockResult } from './fuelStock.ts'
@@ -422,8 +422,8 @@ const noticeKinds = {
   'heating.operating-power-key': { level: 'warning', title: 'Abzug anders verteilt als die Stromrechnung', terms: ['operatingPower', 'allocationKey'] },
   // Durchsicht von #252, G-W1: mehr Abzug als Stromrechnung.
   'heating.operating-power-exceeds': { level: 'warning', title: 'Mehr Abzug als Stromrechnung', terms: ['operatingPower'] },
-  // Durchsicht von #252, N1: Betriebsstrom und Abzug in verschiedenen Steuerjahren.
-  'heating.operating-power-tax-year': { level: 'warning', title: 'Betriebsstrom und Abzug in verschiedenen Steuerjahren', terms: ['operatingPower'] },
+  // Durchsicht von #252, N1: Den Hinweis `heating.operating-power-tax-year` (Betriebsstrom und Abzug in verschiedenen
+  // Steuerjahren) gibt es seit #268 nicht mehr: Die Steuerübersicht gleicht je Steuerjahr aus, es verschiebt sich nichts.
   'heating.operating-power-double': { level: 'warning', title: 'Betriebsstrom und Abzug beim Allgemeinstrom passen nicht zusammen', terms: ['operatingPower', 'heatingCostOrdinance'] },
   // Folge-PR zu #252: Betriebsstrom fehlt (#224; färbt die Ampel nicht, Entscheidung F6) und Strom zur
   // Wärmeerzeugung einer Wärmepumpe oder eines Elektrokessels womöglich im Allgemeinstrom (#253).
@@ -989,7 +989,9 @@ export function stockCarrySelfCents(settlement: Pick<ComputedSettlement, 'landlo
     .reduce((a, r) => a + (r.landlordParts ?? []).filter((x) => x.reason === 'selfUse').reduce((b, x) => b + x.cents, 0), 0)
 }
 
-export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[]): TaxReport {
+// `linkable`: Positionen, auf die ein Abzug zeigen kann, auch aus anderen Jahren (#268, Durchsicht M1); nur für die
+// Anlage und die Beschreibung eines Verweises, nie für Beträge.
+export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], options: { linkable?: readonly SnapshotCostItem[] } = {}): TaxReport {
   const year = snapshot.year
   // Die Steuerübersicht rechnet im Kalenderjahr (§ 11 EStG, #208). Ohne Teile: der Schnappschuss
   // eines Kalenderjahres. Mit Teilen: die Abrechnungen, die das Jahr berühren; `snapshot` liefert
@@ -1118,6 +1120,20 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[]): TaxRe
     closedSelfUseDiffers: splits.some((s) => s.closedSelfUseDiffers),
     closedItemsChanged: splits.reduce((a, s) => a + s.closedItemsChanged, 0),
   }
+  // Ausgleich beim Betriebsstrom (#268): eine abgeleitete Zeile beim Allgemeinstrom, damit der Strom in jedem
+  // Steuerjahr genau die bezahlte Stromrechnung ist. Sie geht nicht durch den eingefrorenen Stand (keine Position der
+  // Abrechnung) und nicht in den Eigenanteil laut Abrechnung.
+  const lookup = new Map<string, SnapshotCostItem>()
+  for (const c of options.linkable ?? []) lookup.set(c.id, c)
+  for (const p of used) {
+    for (const c of [...p.snapshot.costItems, ...(p.snapshot.heatingParts ?? []).flatMap((x) => x.items), ...p.items]) lookup.set(c.id, c)
+  }
+  const balanceParts = used.map((p) => ({ items: p.items, plants: p.snapshot.heatingPlants ?? [], period: p.snapshot.period }))
+  const balance = operatingPowerBalance(balanceParts, [...lookup.values()])
+  const balanceItem = balance.cents !== 0 ? operatingPowerBalanceItem(balance, used, splits, snapshot.units, year) : null
+  if (balanceItem) split.items.set(balanceItem.costItemId, balanceItem)
+  const ambiguous = balance.ambiguous
+  const unmarked = unmarkedPowerCredits(balanceParts)
   const byGroup = new Map<string, Map<string, TaxExpenseCategory>>()
   // Zuführung zur Erhaltungsrücklage (#143): nicht unter den Werbungskosten, sondern daneben.
   let reserveContributionCents = 0
@@ -1140,6 +1156,15 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[]): TaxRe
     // Nur ein gültiger Lohnanteil, dieselbe Regel wie in der Abrechnung (#148).
     prev.labor35aCents += validLabor35aCents(item) ?? 0
     cats.set(item.category, prev)
+  }
+  if (balanceItem) {
+    const cats = byGroup.get(balanceItem.group) ?? new Map<string, TaxExpenseCategory>()
+    byGroup.set(balanceItem.group, cats)
+    const prev = cats.get(balanceItem.category) ?? { category: balanceItem.category, amountCents: 0, labor35aCents: 0, privateCents: 0, deductibleCents: 0 }
+    prev.amountCents += balanceItem.amountCents
+    prev.privateCents += balanceItem.privateCents
+    prev.deductibleCents += balanceItem.deductibleCents
+    cats.set(balanceItem.category, prev)
   }
   const groups: TaxExpenseGroup[] = [...byGroup.entries()]
     .map(([group, cats]) => {
@@ -1228,7 +1253,7 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[]): TaxRe
   // Position.
   const selfUsedShareCents = same !== undefined
     ? same.part.snapshot.closedSettlement?.selfUsedShareCents ?? same.settlement.selfUsedShareCents
-    : [...split.items.values()].filter((i) => i.allocation === 'settlement').reduce((a, i) => a + i.privateCents, 0)
+    : [...split.items.values()].filter((i) => i.allocation === 'settlement' && !i.operatingPowerBalance).reduce((a, i) => a + i.privateCents, 0)
 
   return {
     year,
@@ -1256,6 +1281,9 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[]): TaxRe
     selfOccupiedExists,
     excludedExists,
     costModels,
+    ...(balance.cents !== 0 ? { operatingPowerBalanceCents: balance.cents, operatingPowerBalanceKind: balance.kind } : {}),
+    ...(ambiguous.length > 0 ? { operatingPowerAmbiguous: ambiguous } : {}),
+    ...(unmarked.length > 0 ? { unmarkedPowerCredits: unmarked } : {}),
     selfUsedShareCents,
     // Der Überschuss rechnet mit dem abziehbaren Teil (#163). Ohne Eigennutzung ist er die
     // Bruttosumme, und die Zahl bleibt, wie sie war.
@@ -1305,7 +1333,10 @@ export function taxPartsFor(source: Parameters<typeof snapshotFor>[0], propertyI
 export function taxReportFor(source: Parameters<typeof snapshotFor>[0], propertyId: string, year: number): TaxReport {
   const calendar = snapshotFor(source, propertyId, calendarYearPeriod(year))
   const parts = taxPartsFor(source, propertyId, year)
-  return parts === null ? taxReport(calendar) : taxReport(calendar, parts)
+  // Durchsicht M1 zu #268: Ein Abzug kann auf eine Heizposition in einem anderen Steuerjahr zeigen; der Schnappschuss
+  // kennt nur die Positionen seines Zeitraums. Deshalb bekommt die Übersicht alle Positionen des Objekts für Verweise.
+  const all = source.costItems.filter((c) => c.propertyId === propertyId)
+  return taxReport(calendar, parts ?? undefined, { linkable: all })
 }
 
 // Die Anlage-V-Gruppe einer Kostenart, `null` für die Rücklage (#143). Bewusst nach
@@ -1527,6 +1558,139 @@ function splitForTax(snapshot: Snapshot, items: SnapshotCostItem[], settlement: 
   const selfIds = new Set(units.filter(isSelf).map((u) => u.id))
   const selfUseChangedInYear = snapshot.tenancies.some((t) => selfIds.has(t.unitId) && rangeOverlapDays(t.start, t.end, snapshot.period.from, snapshot.period.to) > 0)
   return { items: result, selfUseChangedInYear, closedSelfUseDiffers, closedItemsChanged }
+}
+
+// ---------- Ausgleich beim Betriebsstrom in der Steuer (#268) ----------
+//
+// Die Zeile zum Ausgleich C (server/src/operatingPower.ts). **Der private Teil folgt dem Heizanteil** (R-4): Jeder
+// Beitrag zu C wird mit dem Eigenanteil an den Heizkosten seiner Anlage in der Abrechnung seines Teils gewichtet, so
+// wie diese Steuerübersicht die Heizpositionen dieser Anlage aufteilt (bei abgeschlossener Abrechnung also aus dem
+// eingefrorenen Stand). Dann ergibt ein verknüpfter Abzug über dem Betriebsstrom steuerlich dasselbe wie das richtige
+// Paar, und Abrechnung und Steuer nennen denselben Eigenanteil; beim Abzug ohne Verweis gilt die Fläche (unten). Lässt sich keine Anlage zuordnen (Abzug ohne Verweis) oder hat die Anlage dort
+// keine Heizkosten, gilt die Wohn- und Nutzfläche des ganzen Gebäudes (BFH, Urteil vom 24.06.2008, IX R 26/06), wie
+// bei einer nicht umlagefähigen Gebäudeposition. Beides ist eine Auslegung von Mietfuchs: Für den Maßstab gibt es keine
+// Norm, die Abgrenzung zum Privaten folgt aus § 9 Abs. 1 Satz 1 und § 12 Nr. 1 EStG. Gerundet wird einmal, über die
+// ganze Zeile; mit Vorzeichen, denn ein negativer Ausgleich hat einen negativen privaten Teil.
+const balanceLineId = (year: number): string => `operating-power-balance:${year}`
+
+function operatingPowerBalanceItem(
+  balance: OperatingPowerBalance, used: readonly TaxPart[], splits: readonly TaxSplit[], units: readonly SnapshotUnit[], year: number,
+): TaxExpenseItem {
+  const cents = balance.cents
+  const isSelf = (u: SnapshotUnit) => !!u.selfUsed && !u.participates
+  const areaOf = (u: SnapshotUnit) => u.areaM2 || 0
+  const selfUnits = units.filter(isSelf)
+  const totalArea = units.reduce((a, u) => a + areaOf(u), 0)
+  const selfArea = selfUnits.reduce((a, u) => a + areaOf(u), 0)
+  const missing = selfUnits.filter((u) => !(areaOf(u) > 0))
+  const areaOk = selfUnits.length === 0 || (missing.length === 0 && totalArea > 0)
+
+  // Eigenanteil an den Heizkosten einer Anlage in einem Teil, wie diese Übersicht die Heizpositionen aufteilt.
+  const heatQuota = (part: number, plant: string | null): { privateCents: number; amountCents: number } | null => {
+    const p = used[part]
+    const s = splits[part]
+    if (!p || !s) return null
+    let privateCents = 0
+    let amountCents = 0
+    for (const c of p.items) {
+      if (c.category !== HEATING_CATEGORY || (c.heatingPlantId ?? null) !== plant) continue
+      const x = s.items.get(c.id)
+      if (!x) continue
+      privateCents += x.privateCents
+      amountCents += x.amountCents
+    }
+    return amountCents > 0 ? { privateCents, amountCents } : null
+  }
+
+  const steps: CalcStep[] = []
+  const deductions = balance.sources.filter((s) => s.kind === 'deduction')
+  const included = balance.sources.filter((s) => s.kind === 'included')
+  // Durchsicht S1: Die Texte folgen der Lage. „Selbst getragen“ nur beim Abzug ohne Verweis, „prüfen“ nur, wenn Abzug
+  // und Betriebsstrom im selben Steuerjahr verschieden hoch sind; ein Paar über zwei Steuerjahre ist richtig erfasst.
+  for (const s of deductions) {
+    const how = s.situation === 'kept' ? 'ohne Verweis auf eine Heizposition und ohne Messdienst'
+      : `verknüpft mit der Heizposition „${s.linkedDescription ?? ''}“${s.situation === 'otherYear' ? ' in einem anderen Steuerjahr' : ''}`
+    steps.push({ label: 'Abzug beim Allgemeinstrom', value: `„${s.description}“ ${fmtCents(s.cents)}, ${how}`, term: 'operatingPower' })
+  }
+  for (const s of included) {
+    steps.push({ label: 'Betriebsstrom in den Heizkosten', value: `„${s.description}“ ${fmtCents(0 - s.cents)}, steckt auch in der Stromrechnung${s.situation === 'otherYear' ? '; ihr Abzug steht in einem anderen Steuerjahr' : ''}`, term: 'operatingPower' })
+  }
+  for (const r of balance.reported) {
+    steps.push({ label: 'Abzug, dem Messdienst gemeldet', value: `„${r.description}“ ${fmtCents(0 - r.amountCents)}, zählt hier nicht: Nach Ihrer Angabe steckt der Betrag in den Kosten des Messdienstes` })
+  }
+  const deducted = deductions.reduce((a, s) => a + s.cents, 0)
+  // K1 der Durchsicht: `0 - …`, damit ohne Heizposition „0,00 €“ steht und nicht „-0,00 €“.
+  const inHeating = included.reduce((a, s) => a - s.cents, 0)
+  steps.push({ label: 'Ausgleich', value: `${fmtCents(deducted)} abgezogen − ${fmtCents(inHeating)} in den Heizkosten = ${fmtCents(cents)}` })
+  const once = 'Bezahlt haben Sie die Stromrechnung einmal; Mietfuchs zählt sie deshalb genau einmal zu den Werbungskosten (§ 9 Abs. 1 Satz 1 EStG).'
+  const hint: Record<OperatingPowerBalance['kind'], string> = {
+    kept: 'Beim Allgemeinstrom ist Betriebsstrom abgezogen, ohne dass er in den Heizkosten steht. Diesen Teil legen Sie nicht um und tragen ihn selbst. Bezahlt haben Sie ihn mit der Stromrechnung; er gehört deshalb zu den Werbungskosten (§ 9 Abs. 1 Satz 1, § 11 Abs. 2 Satz 1 EStG). Der Abzug mindert nur die Abrechnung an die Mieter.',
+    otherYear: `Abzug beim Allgemeinstrom und Betriebsstrom in den Heizkosten stehen in verschiedenen Steuerjahren. Der Ausgleich hebt in jedem Jahr auf, was zum anderen gehört, sodass jedes Jahr die in ihm bezahlte Stromrechnung zählt. ${once}`,
+    mixed: `Ein Teil ist Betriebsstrom, den Sie nicht umlegen und selbst tragen (Abzug ohne Verweis); ein Teil gehört zu Abzug und Betriebsstrom in verschiedenen Steuerjahren. ${once}`,
+    mismatch: `Abzug beim Allgemeinstrom und Betriebsstrom in den Heizkosten sind in diesem Steuerjahr verschieden hoch. ${once} Prüfen Sie in der Abrechnung, ob der Abzug beim Allgemeinstrom zum Betriebsstrom passt.`,
+  }
+  steps.push({ label: 'Hinweis', value: hint[balance.kind] })
+
+  // Der private Teil, Beitrag für Beitrag.
+  let raw = 0
+  let byArea = false
+  let unsplittable = false
+  const quotaSteps: CalcStep[] = []
+  const seen = new Set<string>()
+  for (const s of balance.sources) {
+    const q = s.plant !== undefined ? heatQuota(s.part, s.plant) : null
+    if (q) {
+      raw += (s.cents * q.privateCents) / q.amountCents
+      const key = `${s.part}|${s.plant}`
+      if (!seen.has(key)) {
+        seen.add(key)
+        quotaSteps.push({ label: 'Eigenanteil an den Heizkosten der Anlage', value: `${fmtCents(q.privateCents)} von ${fmtCents(q.amountCents)} (${fmtNum(Math.round((q.privateCents / q.amountCents) * 10000) / 100)} %)`, term: 'ownShare' })
+      }
+    } else if (!areaOk) {
+      unsplittable = true
+    } else {
+      byArea = true
+      if (totalArea > 0) raw += (s.cents * selfArea) / totalArea
+    }
+  }
+  const privateCents = roundHalfAway(raw)
+  if (selfUnits.length > 0) {
+    if (quotaSteps.length > 0) {
+      steps.push({ label: 'Zuordnung', value: 'verhältnismäßig nach dem Eigenanteil an den Heizkosten derselben Anlage laut Nebenkostenabrechnung; das ist eine Auslegung von Mietfuchs', term: 'mixedUse' })
+      steps.push(...quotaSteps)
+    }
+    if (byArea) {
+      steps.push({ label: 'Zuordnung', value: 'nach Wohn- und Nutzfläche des ganzen Gebäudes wie bei Kosten des ganzen Gebäudes, denn ein Abzug ohne Verweis gehört zu keiner bestimmten Anlage; das ist eine Auslegung von Mietfuchs', term: 'mixedUse' })
+      steps.push({ label: 'Betroffene Fläche', value: `${fmtNum(totalArea)} m² (ganzes Gebäude), davon selbstgenutzt ${fmtNum(selfArea)} m²` })
+    }
+    if (unsplittable) {
+      steps.push({ label: 'Zuordnung', value: `nicht aufteilbar: Für ${andList(missing.length > 0 ? missing.map((u) => u.name) : selfUnits.map((u) => u.name))} ist keine Fläche hinterlegt; der Betrag ist insoweit ungekürzt angesetzt`, term: 'mixedUse' })
+    }
+    steps.push({ label: 'Rechnung', value: `privat ${fmtExactEuro(raw)}` })
+    steps.push({ label: 'privat, auf Cent gerundet', value: fmtCents(privateCents), term: 'ownShare' })
+  }
+  const allocation: TaxAllocation = unsplittable ? 'unsplittable' : byArea ? 'area' : 'settlement'
+  const deductibleCents = cents - privateCents
+  const deductiblePercent = allocation !== 'unsplittable' ? Math.round((deductibleCents / cents) * 10000) / 100 : null
+  steps.push({ label: 'abziehbar', value: deductiblePercent !== null ? `${fmtCents(deductibleCents)} (${fmtNum(deductiblePercent)} %)` : fmtCents(deductibleCents) })
+  return {
+    costItemId: balanceLineId(year),
+    category: GENERAL_POWER_CATEGORY,
+    group: groupOf(GENERAL_POWER_CATEGORY) ?? 'Sonstige Werbungskosten',
+    // Durchsicht S1: „selbst getragen“ nur, wenn es das ist; sonst neutral.
+    description: balance.kind === 'kept' ? 'Betriebsstrom der Heizung, selbst getragen' : 'Betriebsstrom der Heizung, Ausgleich',
+    amountCents: cents,
+    privateCents,
+    deductibleCents,
+    labor35aCents: 0,
+    allocation,
+    deductiblePercent,
+    areaPrivateCents: null,
+    settlementPrivateCents: null,
+    steps,
+    taxUnits: null,
+    operatingPowerBalance: true,
+  }
 }
 
 // ---------- Hilfen ----------
@@ -6416,22 +6580,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // Durchsicht von #252, G-K3: Ein Abzug mindert seine Stromrechnung nur dann im Verhältnis, wenn er
   // verteilt ist wie sie (Schlüssel, Zähler, Wohnung, Anteile, Teilnehmer; dieselbe Regel wie beim
   // gemerkten Schlüssel, shared/allocation.ts). Sonst verschieben sich die Anteile der Mieter.
-  // Durchsicht von #252, G-K2 und N1: Betriebsstrom und Abzug sind eine Umbuchung aus der Stromrechnung;
-  // in verschiedenen Steuerjahren stünden beide Jahre der Anlage V falsch.
-  for (const item of items) {
-    if (item.operatingPower !== 'included') continue
-    const itemTaxYear = taxYearOf(item, period)
-    for (const d of snapshot.operatingPowerDeductions ?? []) {
-      if (d.itemId !== item.id || d.taxYear === undefined || d.taxYear === itemTaxYear) continue
-      warn('heating.operating-power-tax-year',
-        `„${item.description}“ zählt in der Steuerübersicht zum Jahr ${itemTaxYear}, der Abzug „${d.description}“ zum Jahr ${d.taxYear}. ` +
-        `Beides ist eine Umbuchung aus derselben Stromrechnung und gehört in dasselbe Jahr. Stellen Sie beim Abzug „${d.description}“ im Kostenformular unter „Jahr der Zahlung (Steuer)“ das Jahr der Betriebsstrom-Position ein (${itemTaxYear}); das Jahr des Betriebsstroms hängt an seiner Heizperiode. ` +
-        // Recht-H-1 und K-4 (Folge-PR zu #252): gegen die Feldhilfe „Maßgeblich ist, wann Sie gezahlt haben“; nicht
-        // „heben sich auf“, denn bei teilweiser Eigennutzung bleibt je Jahr ein Rest (splitForTax).
-        'Das widerspricht nicht der Regel, dass zählt, wann Sie gezahlt haben: Betriebsstrom und Abzug sind keine eigene Zahlung, sondern teilen die Stromrechnung nur auf; zusammen ändern sie die Summe Ihrer Kosten nicht, und die Stromrechnung selbst bleibt im Jahr ihrer Zahlung (§ 11 Abs. 2 EStG).',
-        itemSubject(item))
-    }
-  }
+  // Durchsicht von #252, G-K2 und N1: Betriebsstrom und Abzug in verschiedenen Steuerjahren standen bis #268 in beiden
+  // Jahren der Anlage V falsch, und hier stand ein Hinweis. Seit #268 gleicht die Steuerübersicht je Steuerjahr aus
+  // (`operatingPowerBalance`): Jedes Jahr zeigt die in ihm bezahlten Rechnungen, nichts verschiebt sich, der Hinweis
+  // entfällt (Zahlen in calc-steuer-betriebsstrom.test.ts, „Verschiedene Steuerjahre“).
   // Durchsicht von #252, G-W1: Aus einer Stromrechnung ist höchstens ihr Betrag abzuziehen; sonst ist der
   // Allgemeinstrom netto negativ, und die Mieter bekommen mehr gutgeschrieben, als er kostet.
   for (const g of items) {

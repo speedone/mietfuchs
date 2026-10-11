@@ -6,7 +6,7 @@ import { CATEGORIES, KEY_LABELS, defaultKeyFor, isNotAllocable } from './types'
 import { PARTICIPANT_KEYS as SHARED_PARTICIPANT_KEYS, allocationOf, comparablePrevious, previousAllocation, sameAllocation, type Allocation } from '../../shared/allocation.ts'
 import { fmtEuro, parseEuro } from './api'
 import { changeLabel } from './periodForm'
-import { GENERAL_POWER_CATEGORY, OPERATING_POWER_INCLUDED_YES, POWER_GENERATED } from '../../shared/operatingPower.ts'
+import { GENERAL_POWER_CATEGORY, OPERATING_POWER_INCLUDED_YES, OPERATING_POWER_KEPT, POWER_GENERATED } from '../../shared/operatingPower.ts'
 import { sameCostCandidates, type DuplicateItem } from '../../shared/duplicates.ts'
 import { parseNumberDe } from './numbers'
 import { targetOptions } from './heatingSelfForm'
@@ -547,10 +547,13 @@ export const showsDeductionLink = (form: Pick<ItemForm, 'category' | 'amount'>):
 // gibt es keine Beschriftung wie auf der Seite; ein Kalenderjahr heißt deshalb nach seinem Jahr, jeder
 // andere Zeitraum nach seinem Beginn („ab Mai 2025“).
 const periodText = (key: string): string => (key.slice(5, 7) === '01' ? key.slice(0, 4) : `ab ${changeLabel(key)}`)
-export function deductionChoices(items: readonly CostItem[]): { value: string; label: string }[] {
+// #268: Der Abzug ohne Verweis heißt nach dem, was er ist. Heizt im Zeitraum eine Anlage mit Messdienst
+// (`serviceReceivesOperatingPower`), ist der Betrag dem Messdienst gemeldet; sonst trägt der Vermieter den
+// Betriebsstrom selbst. Gespeichert wird beides gleich (kein Verweis); die Steuerübersicht stellt dieselbe Frage.
+export function deductionChoices(items: readonly CostItem[], { service }: { service: boolean }): { value: string; label: string }[] {
   return [
     { value: '', label: 'Nein, kein Abzug des Betriebsstroms' },
-    { value: 'service', label: 'Ja, der Betrag ist dem Messdienst als Betriebsstrom gemeldet' },
+    { value: 'service', label: service ? 'Ja, der Betrag ist dem Messdienst als Betriebsstrom gemeldet' : OPERATING_POWER_KEPT },
     ...items.filter((c) => c.operatingPower === 'included')
       .map((c) => ({ value: c.id, label: `Ja, zu „${c.description}“ (${periodText(c.period)}, ${fmtEuro(c.amountCents)})` })),
   ]

@@ -6,7 +6,7 @@
 // Abrechnung verteilt, damit der Hinweis genau einmal erscheint, nämlich dort, wo der Betriebsstrom steht.
 import type { CostItem, HeatingEnergy, HeatingMethod, HeatingSource, HeatingSupply, OperatingPowerDeduction, OperatingPowerHandling } from '../../shared/types.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
-import { asksOperatingPowerHandling, GENERAL_POWER_CATEGORY, OPERATING_POWER_HANDLING_LABELS, OPERATING_POWER_HANDLING_QUESTION, OPERATING_POWER_INCLUDED_QUESTION, OPERATING_POWER_INCLUDED_YES, POWER_GENERATED } from '../../shared/operatingPower.ts'
+import { asksOperatingPowerHandling, GENERAL_POWER_CATEGORY, nonServiceHeats, OPERATING_POWER_HANDLING_LABELS, OPERATING_POWER_HANDLING_QUESTION, OPERATING_POWER_INCLUDED_QUESTION, OPERATING_POWER_INCLUDED_YES, OPERATING_POWER_KEPT, POWER_GENERATED, serviceReceivesOperatingPower } from '../../shared/operatingPower.ts'
 
 // Ein Abzug in einer abgeschlossenen Abrechnung, der den Mietern nicht oder nicht so gutgeschrieben ist,
 // wie er heute dasteht (P-W3, R2-W2). `frozenCents` nur bei `changed`: der eingefrorene Betrag.
@@ -273,6 +273,9 @@ const OWN_METER_SELF = 'Tragen Sie den Strom eines eigenen Zählers selbst, ist 
 // Die Leitsätze von VIII ZR 27/07 heißen amtlich a), b), c) (Rechtsprüfung zu #266, K-1).
 const ESTIMATE_LAW = 'BGH, Versäumnisurteil vom 20.02.2008, VIII ZR 27/07, Leitsatz c'
 const FLAT_TENANTS = 'Gilt für einen Mieter beim Allgemeinstrom eine Pauschale oder Inklusivmiete, folgt daraus für ihn nichts.'
+// #268: Der Weg „selbst tragen“ mit der Antwort des Kostenformulars, wortgleich. Kein Satz zur Steuer (R-8): Die
+// Steuerübersicht rechnet den Abzug von selbst richtig.
+const KEPT_SENTENCE = `Den Abzug erfassen Sie dann im Kostenformular beim Allgemeinstrom mit der Antwort „${OPERATING_POWER_KEPT}“.`
 
 // A (#224): Text des Hinweises `heating.operating-power-missing`.
 export function missingOperatingPowerText(f: MissingPowerFinding, label: string): string {
@@ -281,6 +284,8 @@ export function missingOperatingPowerText(f: MissingPowerFinding, label: string)
     'Läuft er über den Stromzähler des Hauses, steckt er in dieser Stromrechnung und wird mit ihrem Schlüssel verteilt; dort darf er nicht stehen (BGH, Urteil vom 03.06.2016, V ZR 166/15, Rn. 13). ' +
     `Erfassen Sie ihn dann mit der Karte „Betriebsstrom“ auf der Seite Heizkosten. Ohne Zwischenzähler dürfen Sie ihn schätzen; bestreitet ein Mieter den Betrag, müssen Sie die Grundlagen darlegen (${ESTIMATE_LAW}). ` +
     'Wollen Sie ihn nicht umlegen, ziehen Sie ihn trotzdem beim Allgemeinstrom ab; dann tragen Sie ihn selbst (V ZR 166/15, Rn. 15). ' +
+    // #268: die Antwort im Kostenformular wörtlich, damit die Steuerübersicht den Abzug als selbst getragen erkennt.
+    `${KEPT_SENTENCE} ` +
     'Hat die Heizung einen eigenen Stromvertrag mit eigener Rechnung, erfassen Sie diese Rechnung als Heizposition mit dem Teil „Betrieb“; dann entfällt dieser Hinweis. ' +
     // #266 (Rechtsprüfung M-1): Entscheidend ist der Stromvertrag; ein Zwischenzähler ersetzt nur das Schätzen.
     'Hat die Heizung einen eigenen Stromvertrag mit eigenem Zähler und eigener Rechnung und tragen Sie diese Kosten selbst, ist nichts falsch; ein Zwischenzähler hinter dem Zähler des Hauses gehört nicht dazu. ' +
@@ -306,6 +311,7 @@ export function deductionMissingText(f: MissingPowerFinding, label: string): str
     'Ist er noch nirgends erfasst, nehmen Sie die Karte „Betriebsstrom“ auf der Seite Heizkosten; sie legt Betriebsstrom und Abzug gemeinsam an. ' +
     `Ohne Zwischenzähler dürfen Sie ihn schätzen; bestreitet ein Mieter den Betrag, müssen Sie die Grundlagen darlegen (${ESTIMATE_LAW}). ` +
     'Wollen Sie ihn nicht umlegen, ziehen Sie ihn trotzdem beim Allgemeinstrom ab; dann tragen Sie ihn selbst (BGH, Beschluss vom 13.09.2011, VIII ZR 45/11, Rn. 3; vgl. V ZR 166/15, Rn. 15). ' +
+    `${KEPT_SENTENCE} ` +
     'Haben Sie beim Allgemeinstrom schon den um den Betriebsstrom geminderten Betrag eingetragen, ist die Abrechnung deshalb nicht formell unwirksam (BGH, Urteil vom 20.01.2016, VIII ZR 93/15, Leitsatz und Rn. 19); materiell muss der Abzug stimmen (VIII ZR 27/07, Leitsatz c). ' +
     'Tragen Sie dort trotzdem den Rechnungsbetrag ein und erfassen Sie den Abzug gesondert; dann erkennt Mietfuchs den Abzug. ' +
     `Hat die Heizung einen eigenen Stromvertrag mit eigener Rechnung (nicht nur einen Zwischenzähler), ändern Sie die Angabe auf der Seite Heizkosten. ${FLAT_TENANTS}`
@@ -338,4 +344,115 @@ export function generationPowerText(f: MissingPowerFinding, label: string, betrk
     `Erfassen Sie den Strom ${ofDevice} in diesem Fall als Heizposition mit dem Teil „Brennstoff/Energie“, beantworten Sie dort „Läuft dieser Strom über den Stromzähler des Hauses?“ mit Ja und erfassen Sie beim Allgemeinstrom einen Abzug in derselben Höhe, verknüpft mit dieser Position. ` +
     `Ohne eigenen Zähler müssten Sie den Anteil schätzen; für den Betriebsstrom ist das zulässig (${ESTIMATE_LAW}), für den Strom einer Wärmepumpe oder eines Elektrokessels ist es eine Auslegung von Mietfuchs, und bei einem so großen Anteil ist ein eigener Zähler der sichere Weg. Halten Sie die Grundlage der Schätzung im Kostenformular fest. ` +
     `Hat das Gerät einen eigenen Zähler, erfassen Sie dessen Rechnung als Heizposition mit dem Teil „Brennstoff/Energie“; dann entfällt dieser Hinweis. ${OWN_METER_SELF} ${FLAT_TENANTS}`
+}
+
+// ---------- Steuer: Ausgleich beim Betriebsstrom (#268) ----------
+//
+// Eine Heizposition „steckt auch in der Stromrechnung“ (`included`) und ein Abzug beim Allgemeinstrom sind beide nur
+// Ausschnitte derselben bezahlten Stromrechnung; keine von beiden ist eine eigene Zahlung. Die Steuerübersicht summiert
+// aber jede Position mit Vorzeichen und rechnete den Strom damit als G − Σ Abzug + Σ Heizposition. Werbungskosten sind
+// die Aufwendungen (§ 9 Abs. 1 Satz 1 EStG) im Jahr der Zahlung (§ 11 Abs. 2 Satz 1 EStG), beim Strom also genau G.
+// Der Ausgleich je Steuerjahr ist deshalb
+//   C = Σ Betrag der Abzüge − Σ Betrag der Heizpositionen `included`,
+// mit Vorzeichen und ohne Klemme (Entscheidungen R-2, R-3 zu #268), über alle Positionen des Steuerjahres und nicht je
+// Teil oder je Paar: Ein Verweis in ein anderes Steuerjahr braucht so keine Sonderregel, jedes Jahr stimmt für sich.
+// Ausgenommen sind Abzüge ohne Verweis, wenn eine Anlage mit Messdienst den Zeitraum des Abzugs berührt: Sie heißen im
+// Formular „dem Messdienst als Betriebsstrom gemeldet“, und dann steckt der Betrag im Betrag des Messdienstes, der als
+// Heizposition dasteht. Mietfuchs folgt dieser Angabe; ist nichts gemeldet, fehlt der Betrag (R-5, bekannte Grenze).
+// Heizt im Zeitraum zugleich eine Anlage ohne Messdienst, ist das nicht eindeutig, und die Steuerseite sagt es (R-6).
+// Die Abrechnung bleibt unberührt; das hier ist eine Zeile der Steuerübersicht.
+
+type BalanceItem = Pick<CostItem, 'id' | 'category' | 'description' | 'amountCents' | 'heatingPlantId' | 'operatingPower' | 'operatingPowerItemId'>
+type BalancePlant = { id: string; method: HeatingMethod; source?: HeatingSource; supply?: HeatingSupply; endsOn?: string | null; replacesPlantId?: string | null }
+export type BalancePart = { items: readonly BalanceItem[]; plants: readonly BalancePlant[]; period: { from: string; to: string } }
+
+// Ein Beitrag zu C. `cents` mit Vorzeichen: ein Abzug zählt mit seinem Betrag (positiv), eine Heizposition mit dem
+// negativen. `plant`: die Anlage, nach deren Heizkosten der private Teil geht (R-4); `undefined`, wenn sich keine
+// zuordnen lässt (Abzug ohne Verweis oder Verweis auf eine unbekannte Position). `part`: der Teil der Steuerübersicht,
+// aus dessen Abrechnung der Eigenanteil kommt.
+export type BalanceSource = {
+  part: number
+  kind: 'deduction' | 'included'
+  costItemId: string
+  description: string
+  cents: number
+  plant: string | null | undefined
+  linkedDescription: string | null
+  // Durchsicht S1: Woher der Beitrag kommt, für Zeilenname und Texte. `kept`: Abzug ohne Verweis (selbst getragen).
+  // `otherYear`: das Gegenstück (Heizposition bzw. Abzug) steht in einem anderen Steuerjahr. `sameYear`: Paar im selben
+  // Steuerjahr oder Heizposition ganz ohne Abzug.
+  situation: 'kept' | 'otherYear' | 'sameYear'
+}
+// Die Lage der ganzen Zeile: `kept` nur Abzüge ohne Verweis; `otherYear` nur Paare über zwei Steuerjahre; `mixed`
+// beides; `mismatch`: Abzug und Betriebsstrom sind im selben Steuerjahr verschieden hoch, oder eine Heizposition hat
+// gar keinen Abzug. Nur dann ist etwas zu prüfen.
+export type BalanceKind = 'kept' | 'otherYear' | 'mixed' | 'mismatch'
+export type BalanceNote = { costItemId: string; description: string; amountCents: number }
+export type OperatingPowerBalance = {
+  cents: number
+  kind: BalanceKind
+  sources: BalanceSource[]
+  // Abzüge ohne Verweis bei Messdienst: zählen nicht (gemeldet).
+  reported: BalanceNote[]
+  // Davon die, bei denen im Zeitraum zugleich eine Anlage ohne Messdienst heizt (R-6).
+  ambiguous: BalanceNote[]
+}
+
+// `linkable`: jede Position des Objekts, auch aus anderen Zeiträumen und Steuerjahren (Durchsicht M1). Sie liefert die
+// Anlage und die Beschreibung der verknüpften Heizposition und sagt, ob eine Heizposition anderswo einen Abzug hat;
+// Beträge kommen nie daraus.
+export function operatingPowerBalance(parts: readonly BalancePart[], linkable: readonly BalanceItem[]): OperatingPowerBalance {
+  const byId = new Map(linkable.map((c) => [c.id, c]))
+  for (const p of parts) for (const c of p.items) byId.set(c.id, c)
+  const lookup = (id: string) => byId.get(id)
+  const yearItems = parts.flatMap((p) => p.items)
+  const yearIds = new Set(yearItems.map((c) => c.id))
+  const linkedAnywhere = new Set([...byId.values()].filter((c) => c.operatingPower === 'deduction' && c.operatingPowerItemId).map((c) => c.operatingPowerItemId))
+  const yearDeductionsOf = (id: string) => yearItems.filter((c) => c.operatingPower === 'deduction' && c.operatingPowerItemId === id)
+  let mismatch = false
+  const sources: BalanceSource[] = []
+  const reported: BalanceNote[] = []
+  const ambiguous: BalanceNote[] = []
+  parts.forEach((p, part) => {
+    const service = serviceReceivesOperatingPower(p.plants, p.period)
+    for (const c of p.items) {
+      if (c.operatingPower === 'included') {
+        const mine = yearDeductionsOf(c.id)
+        const situation = mine.length === 0 && linkedAnywhere.has(c.id) ? 'otherYear' : 'sameYear'
+        // Im selben Jahr verschieden hoch, oder gar kein Abzug: der Abstand entsteht in diesem Jahr.
+        if (situation === 'sameYear' && -mine.reduce((a, d) => a + d.amountCents, 0) !== c.amountCents) mismatch = true
+        sources.push({ part, kind: 'included', costItemId: c.id, description: c.description, cents: -c.amountCents, plant: c.heatingPlantId ?? null, linkedDescription: null, situation })
+        continue
+      }
+      if (c.operatingPower !== 'deduction') continue
+      const note = { costItemId: c.id, description: c.description, amountCents: c.amountCents }
+      if (!c.operatingPowerItemId && service) {
+        reported.push(note)
+        if (nonServiceHeats(p.plants, p.period)) ambiguous.push(note)
+        continue
+      }
+      const linked = c.operatingPowerItemId ? lookup(c.operatingPowerItemId) : undefined
+      const situation = !c.operatingPowerItemId ? 'kept'
+        : linked && yearIds.has(linked.id) && linked.operatingPower === 'included' ? 'sameYear' : 'otherYear'
+      sources.push({
+        part, kind: 'deduction', costItemId: c.id, description: c.description, cents: -c.amountCents,
+        plant: linked ? linked.heatingPlantId ?? null : undefined, linkedDescription: linked?.description ?? null, situation,
+      })
+    }
+  })
+  const kept = sources.some((s) => s.situation === 'kept')
+  const otherYear = sources.some((s) => s.situation === 'otherYear')
+  const kind: BalanceKind = mismatch ? 'mismatch' : kept && otherYear ? 'mixed' : kept ? 'kept' : otherYear ? 'otherYear' : 'mismatch'
+  return { cents: sources.reduce((a, s) => a + s.cents, 0), kind, sources, reported, ambiguous }
+}
+
+// Negativer Allgemeinstrom ohne Kennzeichnung, wo im Zeitraum eine zentrale Anlage des Hauses ohne Messdienst heizt
+// (Plan zu #268, Schritt 5): Ein Abzug ohne Kennzeichnung zählt die Steuerübersicht wie erfasst, also wie eine
+// Gutschrift. Sie weist nur darauf hin; keine Zahl ändert sich.
+export function unmarkedPowerCredits(parts: readonly BalancePart[]): BalanceNote[] {
+  return parts.flatMap((p) => {
+    if (!nonServiceHeats(p.plants, p.period)) return []
+    return p.items.filter((c) => c.category === GENERAL_POWER_CATEGORY && c.amountCents < 0 && c.operatingPower === undefined)
+      .map((c) => ({ costItemId: c.id, description: c.description, amountCents: c.amountCents }))
+  })
 }

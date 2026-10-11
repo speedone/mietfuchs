@@ -354,9 +354,9 @@ export type PeriodChangePreview = {
   // Das Jahr der Zahlung (Entwurf 3.10) je Position und Zeitraum über zwei Kalenderjahre, in den sie
   // gelangt (Durchsicht von #226, I1, M4). `key` ist 'Kennung|Zeitraum'; vorbelegt mit dem bisherigen
   // Jahr, in die erlaubte Spanne geklemmt. Bei einer Gruppe steht je wählbarem Zeitraum ein Eintrag.
-  // `notes` (Folge-PR zu #252, Geld H2): ein Satz, den die Oberfläche zeigt, wenn genau dieses Jahr gewählt ist, etwa
-  // dass ein Teil eines Abzugs in einem festen Steuerjahr bleibt, während der Betriebsstrom in diesem steht.
-  taxYears: { key: string; costItemId: string; description: string; period: PeriodKey; label: string; suggested: number; options: number[]; notes?: { year: number; text: string }[] }[]
+  // Den Satz `notes` je Jahr (Folge-PR zu #252, Geld H2: ein Teil eines Abzugs bleibt in einem festen Steuerjahr) gibt
+  // es seit #268 nicht mehr: Die Steuerübersicht gleicht je Steuerjahr aus, in der Anlage V verschiebt sich nichts.
+  taxYears: { key: string; costItemId: string; description: string; period: PeriodKey; label: string; suggested: number; options: number[] }[]
   // Die Marke dieser Vorschau (M2): Stimmt sie beim Wechsel nicht mehr, hat sich der Bestand
   // inzwischen geändert, und der Server antwortet mit 409 und der neuen Vorschau.
   token: string
@@ -949,6 +949,10 @@ export type TaxExpenseItem = {
   // unter `unitName`, damit die Regression des Umstiegs den Namen wie überall als Beschriftung
   // ausnimmt (regression.ts): Eine Wohnung ohne Namen in der db.json heißt danach ''.
   taxUnits: { unitId: string; unitName: string }[] | null
+  // Die abgeleitete Zeile „Betriebsstrom der Heizung“ (#268): keine Kostenposition, sondern der Ausgleich zwischen
+  // Abzügen beim Allgemeinstrom und Heizpositionen, die auch in der Stromrechnung stecken. `costItemId` ist dann
+  // `operating-power-balance:<Jahr>`.
+  operatingPowerBalance?: true
 }
 
 export type TaxReport = {
@@ -1035,6 +1039,20 @@ export type TaxReport = {
   // der Anlage V).
   // `inclusive`: kalt und warm inklusiv; `partlyInclusive`: nur eines von beiden.
   costModels: { tenancies: number; inclusive: number; partlyInclusive: number; flatRate: number }
+  // Ausgleich beim Betriebsstrom der Heizung (#268): Σ Abzüge beim Allgemeinstrom − Σ Heizpositionen, die auch in der
+  // Stromrechnung stecken, im Steuerjahr, mit Vorzeichen. Steht als eigene Zeile beim Allgemeinstrom, damit der Strom
+  // genau die bezahlte Stromrechnung ist. Nur ≠ 0.
+  operatingPowerBalanceCents?: number
+  // Woher der Ausgleich kommt (Durchsicht S1 zu #268), für den Text der Seite: `kept` Abzüge ohne Verweis (selbst
+  // getragen), `otherYear` Abzug und Betriebsstrom in verschiedenen Steuerjahren, `mixed` beides, `mismatch` im selben
+  // Steuerjahr verschieden hoch. Nur zusammen mit `operatingPowerBalanceCents`.
+  operatingPowerBalanceKind?: 'kept' | 'otherYear' | 'mixed' | 'mismatch'
+  // Abzüge ohne Verweis, die als dem Messdienst gemeldet gelten, obwohl im Zeitraum zugleich eine Anlage ohne
+  // Messdienst heizt (R-6 zu #268). Nur, wenn es welche gibt.
+  operatingPowerAmbiguous?: { costItemId: string; description: string; amountCents: number }[]
+  // Negativer Allgemeinstrom ohne Kennzeichnung neben einer zentralen Anlage ohne Messdienst (#268). Nur, wenn es
+  // welche gibt.
+  unmarkedPowerCredits?: { costItemId: string; description: string; amountCents: number }[]
 }
 
 // Ein Beleg im Belegordner (#170). `mtime` ist die Zeit der Datei und nur noch für ältere Tabs

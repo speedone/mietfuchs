@@ -384,8 +384,9 @@ test('Geld H1: ein Ziel ohne passendes Jahr nennt die Vorschau vorher; gewählt 
     const heizung = preview.groups.find((g) => g.heating) ?? assert.fail('keine Heizgruppe')
     const hinweis = heizung.taxShifts.find((t) => t.key === '2025-05') ?? assert.fail(`kein Hinweis am Ziel 05–12/2025: ${JSON.stringify(heizung.taxShifts)}`)
     assert.match(hinweis.text, /stünde „Betriebsstrom Heizung \(selbst geschätzt\)“ im Jahr der Zahlung 2025; sein Abzug .* folgt ihm, dort ist aber nur 2026 bis 2028 möglich\. So lässt sich der Wechsel nicht speichern/)
-    // Geld H2: Der Teil des Abzugs in 01/2026 bleibt fest in 2026, der Betriebsstrom stünde am Ziel 05–12/2025 in 2025.
-    assert.match(hinweis.text, /Ein Teil des Abzugs \([\d,]+\s€\) bleibt im Steuerjahr 2026, der Betriebsstrom steht im Steuerjahr 2025; in der Anlage V verschiebt sich dieser Betrag zwischen den Jahren\./)
+    // Geld H2, seit #268 umgekehrt: Der Teil des Abzugs in 01/2026 bleibt fest in 2026, der Betriebsstrom stünde am Ziel
+    // 05–12/2025 in 2025. In der Anlage V verschiebt sich dadurch nichts mehr (Ausgleich je Steuerjahr), also kein Satz.
+    assert.doesNotMatch(hinweis.text, /verschiebt sich/)
     const vorher = await items(opened)
     const groups = Object.fromEntries(preview.groups.map((g) => [g.id, g.heating ? '2025-05' : 'split']))
     const r = await opened.write((db) => applyPeriodChange(db, 'objekt-1', regeln, { understood: true, groups, taxYears: {}, token: preview.token }, ids, TODAY))
@@ -397,28 +398,27 @@ test('Geld H1: ein Ziel ohne passendes Jahr nennt die Vorschau vorher; gewählt 
 
 // Geld H2, Variante (b) (Nachtrag nach Fixrunde 82d8a7a): Fall P1 des Prüfers. „Mai ab 2025“, Hausstrom mit
 // Leistungszeitraum 2025, Heizung nach 2025/26. Der Teil des Abzugs im Rumpf (−32,88 €) liegt in einem Kalenderjahr,
-// sein Jahr ist fest 2025. Wählt der Vermieter für den Betriebsstrom 2026 oder 2027, verschiebt sich dieser Betrag in
-// der Anlage V zwischen den Jahren; die Vorschau sagt das an diesem Jahr vorher. Bei 2025 sagt sie nichts, und keine
-// Auswahl wird begrenzt.
-test('Geld H2: die Vorschau nennt, welcher Teil des Abzugs bei einem anderen Jahr des Betriebsstroms im festen Jahr bleibt', async () => {
+// sein Jahr ist fest 2025. Bis #268 verschob sich dieser Betrag in der Anlage V, wenn der Vermieter für den
+// Betriebsstrom 2026 oder 2027 wählte, und die Vorschau sagte das. Seit #268 gleicht die Steuerübersicht je Steuerjahr
+// aus: Es verschiebt sich nichts, die Vorschau sagt nichts, und keine Auswahl wird begrenzt.
+test('Geld H2 (#268): bei einem anderen Jahr des Betriebsstroms als dem festen Jahr des Abzugsteils kein Satz zur Verschiebung', async () => {
   await withDatabase(async (opened) => {
     await haus(opened, { strom: { serviceFrom: '2025-01-01', serviceTo: '2025-12-31' } })
     const bs = (await items(opened)).find((c) => c.operatingPower === 'included') ?? assert.fail('kein Betriebsstrom')
     const preview = (await opened.read((db) => previewPeriodChange(db, 'objekt-1', MAI_AB_2025, TODAY))) ?? assert.fail('kein Objekt')
     const eintrag = preview.taxYears.find((t) => t.costItemId === bs.id && t.period === '2025-05') ?? assert.fail('Betriebsstrom nicht gefragt')
     assert.deepEqual(eintrag.options, [2025, 2026, 2027])
-    const notes = eintrag.notes ?? []
-    assert.deepEqual(notes.map((n) => n.year), [2026, 2027])
-    assert.match(notes[0]?.text ?? '', /^Ein Teil des Abzugs \(32,88\s€\) bleibt im Steuerjahr 2025, der Betriebsstrom steht im Steuerjahr 2026; in der Anlage V verschiebt sich dieser Betrag zwischen den Jahren\. Welches Jahr steuerlich gilt, richtet sich danach, wann Sie die Stromrechnung bezahlt haben \(§ 11 Abs\. 2 EStG\)\.$/)
+    assert.equal(Object.hasOwn(eintrag, 'notes'), false, JSON.stringify(eintrag))
+    assert.ok(preview.groups.every((g) => g.taxShifts.every((t) => !/verschiebt sich/.test(t.text))), JSON.stringify(preview.groups.map((g) => g.taxShifts)))
   })
 })
 
 // Geld K1 der zweiten Nachprüfung von #265: Mai-Objekt, Wechsel auf „Januar ab 2026“. Der Zeitraum 2025/26 zerfällt in
 // 05–12/2025 (fest 2025) und 2026 (fest 2026); der Abzug folgt dem Hausstrom (Leistungszeitraum 2025/26) nach Tagen,
 // −67,12 € und −32,88 €. Bleiben Betriebsstrom und Gas in 05–12/2025, ändert sich ihr Jahr nicht, die Gruppe hat dort
-// also noch keinen Satz zur Steuer; der Teil des Abzugs in 2026 (32,88 €) verschiebt sich trotzdem, und das muss am
-// Ziel 2025-05 stehen.
-test('Geld K1: Satz zur Verschiebung an einem Ziel, an dem sonst kein Steuerjahr wechselt', async () => {
+// also noch keinen Satz zur Steuer. Bis #268 verschob sich der Teil des Abzugs in 2026 (32,88 €) trotzdem, und das stand
+// am Ziel 2025-05. Seit #268 verschiebt sich nichts mehr (Ausgleich je Steuerjahr); am Ziel 2025-05 steht kein Satz.
+test('Geld K1 (#268): an einem Ziel, an dem sonst kein Steuerjahr wechselt, kein Satz zur Verschiebung', async () => {
   await withDatabase(async (opened) => {
     await mieter(opened)
     await opened.write(async (db) => {
@@ -430,9 +430,8 @@ test('Geld K1: Satz zur Verschiebung an einem Ziel, an dem sonst kein Steuerjahr
     await opened.write((db) => bookOperatingPower(db, 'hp', { period: '2025-05', generalItemId: 'hs', ownCents: 10000, basis: 'Bruchteil' }, ids))
     const preview = (await opened.read((db) => previewPeriodChange(db, 'objekt-1', { startMonth: 5, changes: ['2026-01'] }, TODAY))) ?? assert.fail('kein Objekt')
     const heizung = preview.groups.find((g) => g.heating) ?? assert.fail('keine Heizgruppe')
-    assert.deepEqual(heizung.taxShifts.map((t) => t.key).sort(), ['2025-05', '2026-01'])
-    const mai = heizung.taxShifts.find((t) => t.key === '2025-05')?.text ?? ''
-    assert.match(mai, /^Ein Teil des Abzugs \(32,88\s€\) bleibt im Steuerjahr 2026, der Betriebsstrom steht im Steuerjahr 2025; in der Anlage V verschiebt sich dieser Betrag zwischen den Jahren\./)
+    assert.deepEqual(heizung.taxShifts.map((t) => t.key).sort(), ['2026-01'])
+    assert.ok(heizung.taxShifts.every((t) => !/verschiebt sich/.test(t.text)), JSON.stringify(heizung.taxShifts))
   })
 })
 
