@@ -2330,6 +2330,37 @@ die ganze fachliche Komplexität:
   Grundsteuer 2025, im Februar 2026 gezahlt, steht damit in der Anlage V 2025, obwohl sie nach
   § 11 Abs. 2 EStG in 2026 abfließt. Solange die Einnahmenseite ebenfalls auf Soll stand, war das
   symmetrisch schief. Das Datenmodell dafür zu erweitern ist eine eigene Entscheidung.
+  **Betriebsstrom: die Stromrechnung zählt genau einmal** (#268). Eine Heizposition `included`
+  („steckt auch in der Stromrechnung“) und ein Abzug beim Allgemeinstrom (`operatingPower:
+  'deduction'`) sind beide nur Ausschnitte derselben bezahlten Stromrechnung, keine eigene Zahlung.
+  Summiert mit Vorzeichen stand der Strom als G − Σ Abzug + Σ Heizposition da: Ein selbst
+  getragener Abzug ohne Gegenstück senkte die Werbungskosten wie eine Gutschrift, eine Heizposition
+  über dem Abzug zählte doppelt. `operatingPowerBalance` (server/src/operatingPower.ts) rechnet je
+  Steuerjahr **C = Σ Betrag der Abzüge − Σ Betrag der Heizpositionen `included`**, über alle
+  Positionen des Steuerjahres, **mit Vorzeichen und ohne Klemme**, und `taxReport` stellt C als
+  abgeleitete Zeile `operating-power-balance:<Jahr>` beim Allgemeinstrom dazu
+  (`TaxExpenseItem.operatingPowerBalance`). Damit ist der Strom in jedem Jahr die bezahlte Rechnung,
+  auch wenn Abzug und Betriebsstrom in verschiedenen Steuerjahren stehen; eine Sonderregel für
+  Verweise über Jahre gibt es bewusst nicht (eine Klemme bei 0 und „anderes Jahr neutral“ waren
+  beide nachgemessen falsch). Ausgenommen sind Abzüge **ohne Verweis**, wenn eine Anlage mit
+  Messdienst den Zeitraum berührt (`serviceReceivesOperatingPower` in shared/operatingPower.ts,
+  dieselbe Frage wie im Kostenformular): Dann ist der Betrag nach Angabe des Nutzers dem Messdienst
+  gemeldet und steckt in dessen Betrag. Mietfuchs folgt dieser Angabe; ist in Wahrheit nichts
+  gemeldet, fehlt der Betrag, und das ist eine bekannte Grenze. Heizt im Zeitraum zugleich eine
+  Anlage ohne Messdienst (Kesseltausch), nennt die Seite den Abzug als nicht eindeutig
+  (`operatingPowerAmbiguous`). Ohne Messdienst heißt dieselbe Wahl im Formular „Ja, ich lege ihn
+  nicht um und trage ihn selbst“ (`OPERATING_POWER_KEPT`). **Der private Teil folgt dem
+  Heizanteil**: jeder Beitrag zu C mal Eigenanteil an den Heizkosten seiner Anlage in der Abrechnung
+  seines Teils, so wie die Übersicht diese Heizpositionen aufteilt (bei abgeschlossener Abrechnung
+  also eingefroren); dann ergibt „selbst getragen“ dasselbe wie „richtig gepaart“. Ohne zuordenbare
+  Anlage (Abzug ohne Verweis) gilt die Fläche des ganzen Gebäudes (BFH IX R 26/06). Beides ist
+  Auslegung und steht so im Rechenweg und auf der Seite. Die Zeile geht nicht durch den eingefrorenen
+  Stand (`closedItemsChanged` bleibt), nicht in `selfUsedShareCents` und steht im Steuer-ZIP ohne
+  eigenen Beleg. Negativer Allgemeinstrom **ohne** Kennzeichnung bleibt, wie er ist (Gutschrift und
+  Abzug sind nicht zu unterscheiden), die Seite weist nur darauf hin (`unmarkedPowerCredits`). Die
+  Abrechnung an die Mieter bleibt unberührt. Zusicherungen in
+  [calc-steuer-betriebsstrom.test.ts](server/test/calc-steuer-betriebsstrom.test.ts) und als
+  Invariante in [invariant-betriebsstrom-steuer.test.ts](server/test/invariant-betriebsstrom-steuer.test.ts).
 
 **Das Datenmodell steht in [shared/types.ts](shared/types.ts)** (Unit, Tenancy, Meter, Reading,
 CostItem, Settings, Settlement …) und gilt für Server und Client gleichermaßen. Die Datei

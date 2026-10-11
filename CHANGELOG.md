@@ -323,7 +323,14 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Mietfuchs gekennzeichnet. Umwälzpumpen und Regelung kennzeichnen Sie dort als Betriebsstrom, bei
   Fernwärme die der Hausanlage (§ 7 Abs. 4, § 8 Abs. 4 HeizkostenV). Einen Bruchteil der
   Brennstoffkosten lässt der BGH für Wohnungseigentümer als Schätzgrundlage zu; Mietfuchs rechnet keinen
-  Prozentsatz vor, das Lexikon nennt die Literaturwerte.
+  Prozentsatz vor, das Lexikon nennt die Literaturwerte. In der Steuerübersicht zählt die Stromrechnung des
+  Allgemeinstroms in jedem Steuerjahr genau einmal zu den Werbungskosten
+  ([#268](https://github.com/speedone/mietfuchs/issues/268)): Ein Abzug, den Sie nicht umlegen und selbst
+  tragen, mindert nur die Abrechnung an die Mieter, und Betriebsstrom, der zugleich in den Heizkosten steht,
+  zählt nicht doppelt. Die Übersicht zeigt dafür die Zeile „Betriebsstrom der Heizung“ beim Allgemeinstrom,
+  bei Eigennutzung mit dem privaten Teil nach Ihrem Eigenanteil an den Heizkosten (eine Auslegung), und
+  auch das ZIP „Belege für die Steuer“ führt sie. Im Kostenformular heißt der Abzug ohne Verweis ohne
+  Messdienst „Ja, ich lege ihn nicht um und trage ihn selbst“. Die Abrechnung an die Mieter ändert sich nicht.
 - **Hinweis, wenn der Betriebsstrom der Heizung fehlt** ([#224](https://github.com/speedone/mietfuchs/issues/224)):
   Hat eine Zentralheizung mit Brenner im Abrechnungszeitraum weder einen Betriebsstrom noch einen Abzug beim
   Allgemeinstrom, sagt die Abrechnung das, mit dem Weg über die Karte „Betriebsstrom“ (§ 7 Abs. 2, § 8 Abs. 2
