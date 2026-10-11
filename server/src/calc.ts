@@ -64,7 +64,8 @@ import { ausweisGaps, CO2_FUELS, co2Assessment, co2Required, co2DeductionsOf, FO
 // Zahlen und Daten der Rechtsregeln kommen aus dem Rechtsregister (Heizung PR 1) und stehen hier
 // nicht als Literal; server/test/law-literals.test.ts wacht darüber.
 import { createLawLog, dayAfter, dayBefore, law, LAW_AS_OF, onlyVersion, recordVersionAt, VALUE_CHANGE_LABEL, valueAt, type Period } from '../../shared/law/register.ts'
-import { betrkvGenerationPower, betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths } from '../../shared/law/bgb-betrkv.ts'
+import { betrkvGenerationPower, betrkvTvSignal, bgbDeadlineMonths, bgbHeatDeliverySwitch, bgbMaxPeriodMonths } from '../../shared/law/bgb-betrkv.ts'
+import { switchFindings, switchText } from './heatDelivery.ts'
 import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvEstimateThreshold, hkvExemptions, hkvGenerationPower, hkvInfoDistrict, hkvMonthlyInfo, hkvHeatPumpCapture, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvRenewableExemption, hkvSettlementInfo, type DegreeDayTable } from '../../shared/law/heizkostenv.ts'
 import { plantDevices, remoteReadingVerdict, servedUnitIds } from './remoteReading.ts'
 import { heatingInfoOf, heatingRulesOf, planByConsumption, type RuleRow } from './heatingInfo.ts'
@@ -429,6 +430,10 @@ const noticeKinds = {
   // Folge-PR zu #252: Betriebsstrom fehlt (#224; färbt die Ampel nicht, Entscheidung F6) und Strom zur
   // Wärmeerzeugung einer Wärmepumpe oder eines Elektrokessels womöglich im Allgemeinstrom (#253).
   'heating.operating-power-missing': { level: 'hint', title: 'Betriebsstrom der Heizung fehlt', terms: ['operatingPower', 'heatingCostOrdinance'] },
+  // Heizung PR 16 (#213): Umstellung auf Wärmelieferung im laufenden Mietverhältnis. Ein Hinweis, denn Mietfuchs
+  // kann die Voraussetzungen des § 556c BGB nicht prüfen und nichts beziffern. Der Titel nennt § 556c nicht, denn
+  // der Text sagt auch, wann er nicht gilt (Prüfung R-S3).
+  'heating.contracting': { level: 'hint', title: 'Umstellung auf Wärmelieferung', terms: ['heatDelivery', 'heatingCostOrdinance'] },
   'heating.generation-power-missing': { level: 'hint', title: 'Strom zur Wärmeerzeugung womöglich im Allgemeinstrom', terms: ['operatingPower', 'heatingCostOrdinance'] },
   // #266: mit Angabe an der Anlage. Fehlt der Abzug trotz Angabe, ist das der Fall aus BGH V ZR 166/15 und VIII ZR 27/07
   // und färbt die Ampel; fehlt nur die Rechnung des eigenen Stromvertrags, trägt der Vermieter eigenes Geld (INFORMATIONAL).
@@ -6647,6 +6652,17 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         generationPowerText(f, label, fmtDay(betrkv.value.since), hkv && hkv.coverage !== 'none' ? fmtDay(hkv.value.since) : null),
         first ? itemSubject(first) : { kind: 'heatingCosts', id: f.plantId })
     }
+  }
+
+  // Umstellung auf Wärmelieferung (Heizung PR 16, #213): in der Abrechnung, die die Heizkosten der Anlage verteilt
+  // (`items`; bei Weg b der Unteraufruf der Heizperiode, übernommen ohne Doppel), für die Mieter, deren Vertrag
+  // schon vorher lief. Der Hinweis führt zur Anlage, wo die Umstellung eingetragen wird (Prüfung C-S10). Eine
+  // Umstellung vor der ersten Fassung erkennt Mietfuchs am Beginn dieser Fassung, nicht an einem Fehler des
+  // Registers; der Rechtswert wird nur gefragt, wenn der Hinweis kommt.
+  const switchFrom = onlyVersion(bgbHeatDeliverySwitch).validFrom ?? ''
+  for (const f of switchFindings(plants, items, snapshot.tenancies.filter((t) => statements.has(t.id)), snapshot.units)) {
+    const rule = f.since >= switchFrom ? law(bgbHeatDeliverySwitch, { date: f.since }, lawLog) : null
+    warn('heating.contracting', switchText(f, rule, fmtDay, switchFrom), { kind: 'heatingPlant', id: f.plantId })
   }
 
   // Die Höchstdauer hat P gebildet (shared/period.ts); eingefroren wird sie hier.

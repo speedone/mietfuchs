@@ -49,7 +49,10 @@ const INFORMATIONAL = new Set(['basis.unit-zero', 'basis.tenancy-zero', 'basis.v
   'heating.operating-power-missing',
   // #266: Fehlt nur die Rechnung des eigenen Stromvertrags, trägt der Vermieter eigenes Geld; den Mietern schadet das
   // nicht. „Abzug des Betriebsstroms fehlt“ steht bewusst nicht hier: Er ist der Fall des BGH mit ausdrücklicher Angabe.
-  'heating.operating-power-bill-missing'])
+  'heating.operating-power-bill-missing',
+  // Heizung PR 16 (Prüfung C-S8): Die Umstellung auf Wärmelieferung nennt jedes Jahr die Rechtslage für die Mieter von
+  // vor der Umstellung; beheben lässt sie sich nicht, und sie färbt deshalb nicht.
+  'heating.contracting'])
 export function noticesNeedAttention(settlement: Pick<Settlement, 'notices' | 'warnings'>): boolean {
   return noticesOf(settlement).some((n) => !INFORMATIONAL.has(n.code))
 }
