@@ -108,5 +108,6 @@ export async function monthlyInfoView(db: Database, plantId: string, periodText:
     elsewhere: rules.monthlyInfoElsewhere,
     months,
     periodReference: ref === null ? null : { kwhPerM2: ref, source: ownRow?.infoReferenceSource ?? null },
+    dhwTemp: { tempC: dhwTempC, here: plant.method === 'self' && hotWaterOf(plant, key) === 'separate' },
   }
 }

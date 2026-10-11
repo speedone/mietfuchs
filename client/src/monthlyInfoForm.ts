@@ -29,6 +29,16 @@ export function rowBody(form: MonthlyRowForm): { body: { referenceKwhPerM2: numb
   return { body: { referenceKwhPerM2: ref, referenceSource: source, sentOn: form.sentOn || null } }
 }
 
+// Die mittlere Warmwassertemperatur bei getrenntem Warmwasser, mit der Prüfung des Servers (readFormulaInputs in
+// server/src/db/co2.ts, wie in der Karte „Warmwasser“).
+export function tempBody(text: string): { body: { dhwTempC: number | null } } | { error: string } {
+  const t = text.trim()
+  if (t === '') return { body: { dhwTempC: null } }
+  const v = parseDecimal(t)
+  if (v === null || !(v > 0 && v < 100)) return { error: 'Die mittlere Temperatur des Warmwassers liegt zwischen 0 und 100 °C.' }
+  return { body: { dhwTempC: v } }
+}
+
 export const gapText = (g: MonthlyInfoGap): string => MONTHLY_INFO_GAP_TEXT[g]
 
 export function monthStatus(m: MonthlyInfoMonth): { text: string; tone: 'ok' | 'open' | 'warn' | 'none' } {

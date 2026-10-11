@@ -1,6 +1,6 @@
 // Formularlogik der Karte „Monatliche Verbrauchsinformation“ und das Blatt je Mieter (Heizung PR 22).
 import { expect, test } from 'vitest'
-import { gapText, monthStatus, periodReferenceText, rowBody, rowToForm, sheetLines } from './monthlyInfoForm'
+import { gapText, monthStatus, periodReferenceText, rowBody, rowToForm, sheetLines, tempBody } from './monthlyInfoForm'
 import type { MonthlyInfoMonth, MonthlyInfoUser } from './types'
 
 const user: MonthlyInfoUser = {
@@ -63,4 +63,12 @@ test('Prüfung S13: der Vergleichswert der Heizperiode als Hinweis, nicht übern
   expect(periodReferenceText({ kwhPerM2: 150, source: 'Ablesedienst 2025' })).toBe(
     'Für die Angaben zur Heizkostenabrechnung haben Sie für die ganze Heizperiode 150 kWh je m² eingetragen (Quelle: Ablesedienst 2025). Für jeden Monat braucht es einen eigenen Wert; Mietfuchs teilt den Wert der Heizperiode nicht auf, denn der Verbrauch verteilt sich nicht gleichmäßig über das Jahr.',
   )
+})
+
+test('Warmwassertemperatur: Zahl zwischen 0 und 100 °C wie in der Karte „Warmwasser“, leer ist null', () => {
+  expect(tempBody('55')).toEqual({ body: { dhwTempC: 55 } })
+  expect(tempBody('52,5')).toEqual({ body: { dhwTempC: 52.5 } })
+  expect(tempBody('')).toEqual({ body: { dhwTempC: null } })
+  expect(tempBody('120')).toEqual({ error: 'Die mittlere Temperatur des Warmwassers liegt zwischen 0 und 100 °C.' })
+  expect(tempBody('warm')).toEqual({ error: 'Die mittlere Temperatur des Warmwassers liegt zwischen 0 und 100 °C.' })
 })

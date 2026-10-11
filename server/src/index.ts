@@ -49,7 +49,7 @@ import {
 import { removeInterimGap, saveDistribution, saveInterimGap, SelfItemsError, setUpSelf } from './db/heatingSelf.ts'
 import { saveHeatingInfo, saveHeatingRules } from './db/heatingInfo.ts'
 import { monthlyInfoView, saveMonthlyInfoRow } from './db/monthlyInfo.ts'
-import { heatingPeriodViews, removeCo2Statement, saveCo2Statement, saveHotWater } from './db/co2.ts'
+import { heatingPeriodViews, removeCo2Statement, saveCo2Statement, saveDhwTemperature, saveHotWater } from './db/co2.ts'
 import { saveServiceValues } from './db/serviceValues.ts'
 import { removeEstimate, saveEstimate } from './db/heatingEstimates.ts'
 import { co2SheetFor } from './co2Sheet.ts'
@@ -687,6 +687,12 @@ app.get('/api/heating-plants/:id/periods/:period/monthly-info', async (req, res)
   const view = await readData((db) => monthlyInfoView(db, req.params.id, req.params.period, today()))
   if (!view) return res.status(404).json({ error: NO_PLANT })
   res.json(view)
+})
+// Die mittlere Warmwassertemperatur bei getrenntem Warmwasser, für die Umrechnung in der Verbrauchsinformation.
+app.put('/api/heating-plants/:id/periods/:period/dhw-temperature', async (req, res) => {
+  const saved = await writeData((db) => saveDhwTemperature(db, req.params.id, req.params.period, bodyObject(req)))
+  if (!saved) return res.status(404).json({ error: NO_PLANT })
+  res.json(saved)
 })
 app.put('/api/heating-plants/:id/monthly-info/:month', async (req, res) => {
   const saved = await writeData((db) => saveMonthlyInfoRow(db, req.params.id, req.params.month, bodyObject(req)))

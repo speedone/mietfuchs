@@ -8,7 +8,7 @@ import { useToast } from './feedback'
 import Table from './Table'
 import Term from './Term'
 import MonthlyInfoSheet from './MonthlyInfoSheet'
-import { EMPTY_ROW_FORM, monthStatus, periodReferenceText, rowBody, rowToForm, type MonthlyRowForm } from '../monthlyInfoForm'
+import { EMPTY_ROW_FORM, monthStatus, periodReferenceText, rowBody, rowToForm, tempBody, type MonthlyRowForm } from '../monthlyInfoForm'
 import { monthName } from '../../../shared/monthlyInfo.ts'
 import type { MonthlyInfoRow, MonthlyInfoView } from '../types'
 
@@ -20,6 +20,7 @@ export default function MonthlyInfoCard({ plantId, period, propertyName = '' }: 
   const [forms, setForms] = useState<Record<string, MonthlyRowForm>>({})
   const [printing, setPrinting] = useState<string | null>(null)
   const [error, setError] = useState('')
+  const [temp, setTemp] = useState('')
   const toast = useToast()
 
   async function load() {
@@ -27,6 +28,7 @@ export default function MonthlyInfoCard({ plantId, period, propertyName = '' }: 
       const v = await api<MonthlyInfoView>(`/api/heating-plants/${plantId}/periods/${period}/monthly-info`)
       setView(v)
       setForms(Object.fromEntries(v.months.map((m) => [m.month, rowToForm(m.row)])))
+      setTemp(v.dhwTemp.tempC === null ? '' : v.dhwTemp.tempC.toLocaleString('de-DE', { maximumFractionDigits: 2 }))
       setError('')
     } catch (e) {
       setError(errorText(e))
@@ -69,6 +71,23 @@ export default function MonthlyInfoCard({ plantId, period, propertyName = '' }: 
     }
   }
 
+  // Bei getrenntem Warmwasser gibt es die Karte „Warmwasser“ nicht; ohne Temperatur bliebe jeder Monat mit
+  // Warmwasserzähler unvollständig, und der Vermieter könnte die genannte Kürzung nicht abwenden.
+  async function saveTemp() {
+    const r = tempBody(temp)
+    if ('error' in r) {
+      setError(r.error)
+      return
+    }
+    try {
+      await api(`/api/heating-plants/${plantId}/periods/${period}/dhw-temperature`, { method: 'PUT', body: JSON.stringify(r.body) })
+      toast('Gespeichert.')
+      await load()
+    } catch (e) {
+      setError(errorText(e))
+    }
+  }
+
   if (!view || !view.managed || view.elsewhere || view.months.length === 0) return error ? <div className="error">{error}</div> : null
   const set = (month: string, key: keyof MonthlyRowForm, value: string) =>
     setForms((f) => ({ ...f, [month]: { ...(f[month] ?? EMPTY_ROW_FORM), [key]: value } }))
@@ -85,7 +104,16 @@ export default function MonthlyInfoCard({ plantId, period, propertyName = '' }: 
         Vergleichswert eines Durchschnittsnutzers nennt Ihnen etwa Ihr Ablesedienst; ein Durchschnitt aus Ihrem eigenen Haus genügt nicht.
       </p>
       {reference && <p className="muted">{reference}</p>}
-      {gaps.has('dhwTemp') && (
+      {view.dhwTemp.here ? (
+        <div className="row">
+          <label className="field">
+            Mittlere Warmwassertemperatur (°C)
+            <input inputMode="decimal" value={temp} onChange={(e) => setTemp(e.target.value)} />
+          </label>
+          <button className="btn secondary" type="button" onClick={() => void saveTemp()}>Temperatur speichern</button>
+          <p className="muted">Damit rechnet Mietfuchs das Warmwasser in Kilowattstunden um, für die ganze Heizperiode; auch eine geschätzte Temperatur genügt.</p>
+        </div>
+      ) : gaps.has('dhwTemp') && (
         <p className="muted">Die mittlere Warmwassertemperatur für die Umrechnung tragen Sie in der Karte „Warmwasser“ dieser Heizperiode ein; auch eine geschätzte genügt.</p>
       )}
       {error && <div className="error">{error}</div>}
