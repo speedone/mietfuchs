@@ -316,6 +316,13 @@
       "when": 1791758783838,
       "tag": "0044_waermelieferung_bedingungen",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "6",
+      "when": 1791763279225,
+      "tag": "0045_verbrauchsinfo",
+      "breakpoints": true
     }
   ]
 }

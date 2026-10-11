@@ -18,7 +18,7 @@
 // die Abfrage bedient, kann es anders kommen.
 
 import { eq, sql } from 'drizzle-orm'
-import type { AiConsent, AiSettings, AiSlot, Co2Statement, CostItem, DegreeDayValue, FrozenFuelCarry, FuelDelivery, HeatingEstimate, HeatingPeriodData, HeatingPlant, HeatingServiceValue, InterimGap, LawOverride, Meter, Payment, PeriodKey, Property, Reading, Settings, Tenancy, Unit } from '../../../shared/types.ts'
+import type { AiConsent, AiSettings, AiSlot, Co2Statement, CostItem, DegreeDayValue, FrozenFuelCarry, FuelDelivery, HeatingEstimate, HeatingPeriodData, HeatingPlant, HeatingServiceValue, InterimGap, LawOverride, Meter, MonthlyInfoRow, Payment, PeriodKey, Property, Reading, Settings, Tenancy, Unit } from '../../../shared/types.ts'
 import { readLawOverrides } from './lawOverrides.ts'
 import { periodKey } from '../../../shared/period.ts'
 import { migrateAi, type MigratedSettings } from '../ai/settings.ts'
@@ -28,7 +28,7 @@ import type { Executor } from './client.ts'
 import {
   aiSlots, baseRents, closedHeatingSettlements, co2Statements, co2TenantReliefs, degreeDayValues, fuelCarryFrozen, fuelDeliveries, fuelDeliveryParts, heatingPeriods, closedSettlements, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, unitNoConnection, meters, payments,
   flatRates, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingPrepaymentOverrides, heatingPrepayments, heatingSelfSpans, heatingSeparateSpans, heatingServiceValues, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, readings, settings, tenancies, units,
-  interimReadingGaps, heatingEstimates,
+  interimReadingGaps, heatingEstimates, heatingMonthlyInfo,
 } from './schema.ts'
 
 // Eine abgeschlossene Abrechnung, wie sie in der Datenbank steht. `settlement` bleibt
@@ -72,6 +72,8 @@ export type Stock = SnapshotSource & {
   heatingEstimates: HeatingEstimate[]
   // Rechtswerte, die der Vermieter eingetragen hat (Heizung PR 17); installationsweit.
   lawOverrides: LawOverride[]
+  // Monatliche Verbrauchsinformation je Anlage und Monat (Heizung PR 22)
+  monthlyInfoRows: MonthlyInfoRow[]
   // Lieferungen, eingefrorene Überträge, Ortswerte (Heizung PR 7)
   fuelDeliveries: FuelDelivery[]
   fuelCarryFrozen: FrozenFuelCarry[]
@@ -495,6 +497,13 @@ export async function readClosedHeatingSettlements(db: Executor): Promise<Stored
   }))
 }
 
+// Monatliche Verbrauchsinformation (Heizung PR 22): Vergleichswert und Tag der Mitteilung je Anlage und
+// Monat, in der Reihenfolge des Anlegens.
+export async function readMonthlyInfoRows(db: Executor): Promise<MonthlyInfoRow[]> {
+  const rows = await db.select().from(heatingMonthlyInfo).orderBy(INSERTION_ORDER)
+  return rows.map((x) => ({ plantId: x.plantId, month: x.month, referenceKwhPerM2: x.referenceKwhPerM2, referenceSource: x.referenceSource, sentOn: x.sentOn }))
+}
+
 // Der ganze Bestand. Braucht ihn, wer rechnet (der Schnappschuss) oder wer ihn als Ganzes
 // vergleicht (der Umstieg und sein Gleichstand).
 export async function readStock(db: Executor): Promise<Stock> {
@@ -511,6 +520,7 @@ export async function readStock(db: Executor): Promise<Stock> {
     heatingServiceValues: await readHeatingServiceValues(db),
     heatingEstimates: await readHeatingEstimates(db),
     lawOverrides: await readLawOverrides(db),
+    monthlyInfoRows: await readMonthlyInfoRows(db),
     fuelDeliveries: await readFuelDeliveries(db),
     fuelCarryFrozen: await readFuelCarryFrozen(db),
     degreeDayValues: await readDegreeDayValues(db),
