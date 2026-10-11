@@ -22,7 +22,7 @@ export default function OperatingPowerCard({ plant, view, rules, items, onBooked
   const toast = useToast()
   // P-W5, R2-W1, R-W2: Bei Wärmepumpe und Stromheizung gehört der Strom zur Wärmeerzeugung zu den Heizkosten,
   // aber nicht als Betriebsstrom; die Karte sagt das, nennt den Weg über das Kostenformular und rechnet nichts.
-  // Heizung PR 16 (Prüfung C-M3): bei Contracting wie bei Fernwärme; den Strom des Kessels bezahlt der Lieferant.
+  // Heizung PR 16 (Prüfung C-M3): bei Contracting wie bei Fernwärme; den Strom des Kessels bezahlt in der Regel der Lieferant.
   const energy = billingEnergy(plant)
   const refusal = operatingPowerRefusal(energy)
   if (refusal) {
@@ -66,7 +66,7 @@ export default function OperatingPowerCard({ plant, view, rules, items, onBooked
       {/* R-K5 (Durchsicht von #252): Fernwärme hat keinen Brenner; die Hausanlage steht in § 7 Abs. 4, § 8 Abs. 4. */}
       <p>
         {plant.contracting === true
-          ? 'Den Strom für Brenner und Kessel bezahlt bei Contracting der Lieferant. Läuft der Strom für Umwälzpumpen und Regelung der Hausanlage über den Stromzähler des Hauses, gehört er zu den Heiz- und Warmwasserkosten oder Sie tragen ihn selbst; im Allgemeinstrom darf er nicht stehen und ist dort abzuziehen (§ 7 Abs. 4, § 8 Abs. 4 HeizkostenV; vgl. BGH, Urteil vom 03.06.2016, V ZR 166/15).'
+          ? 'Den Strom für Brenner und Kessel bezahlt bei Contracting in der Regel der Lieferant; er steckt dann im Wärmepreis. Läuft der Strom für Umwälzpumpen und Regelung der Hausanlage über den Stromzähler des Hauses, gehört er zu den Heiz- und Warmwasserkosten oder Sie tragen ihn selbst; im Allgemeinstrom darf er nicht stehen und ist dort abzuziehen (§ 7 Abs. 4, § 8 Abs. 4 HeizkostenV; vgl. BGH, Urteil vom 03.06.2016, V ZR 166/15).'
           : energy === 'districtHeating'
           ? 'Läuft der Strom für Umwälzpumpen und Regelung der Hausanlage, also der Heizung hinter dem Fernwärmeanschluss, über den Stromzähler des Hauses, gehört er zu den Heiz- und Warmwasserkosten oder Sie tragen ihn selbst; im Allgemeinstrom darf er nicht stehen und ist dort abzuziehen (§ 7 Abs. 2 und 4, § 8 Abs. 2 und 4 HeizkostenV; vgl. BGH, Urteil vom 03.06.2016, V ZR 166/15).'
           : 'Läuft der Strom für Brenner, Umwälzpumpe und Regelung über den Stromzähler des Hauses, gehört er zu den Heiz- und Warmwasserkosten oder Sie tragen ihn selbst; im Allgemeinstrom darf er nicht stehen und ist dort abzuziehen (§ 7 Abs. 2, § 8 Abs. 2 HeizkostenV; BGH, Urteil vom 03.06.2016, V ZR 166/15).'}

@@ -70,7 +70,7 @@ export async function bookOperatingPower(db: Database, plantId: string, body: un
   // P-W5, R2-W1, R-W2: Bei Wärmepumpe und Stromheizung gehört der Strom zur Wärmeerzeugung zu den Heizkosten,
   // aber nicht als Betriebsstrom (§ 7 Abs. 2 HeizkostenV); keine Schätzhilfe.
   // Pumpen und Regelung lassen sich im Kostenformular kennzeichnen und verknüpfen (repository.ts).
-  // Heizung PR 16 (Prüfung C-M3): Bei Contracting bezahlt der Lieferant den Strom zur Wärmeerzeugung; Pumpen und
+  // Heizung PR 16 (Prüfung C-M3): Bei Contracting bezahlt in der Regel der Lieferant den Strom zur Wärmeerzeugung; Pumpen und
   // Regelung der Hausanlage über den Stromzähler des Hauses gehören zu den Kosten der Hausanlage.
   const refusal = operatingPowerRefusal(billingEnergy(plant))
   if (refusal) throw new HeatingError(400, refusal)
