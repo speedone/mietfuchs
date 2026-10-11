@@ -384,6 +384,8 @@ test('Geld H1: ein Ziel ohne passendes Jahr nennt die Vorschau vorher; gewählt 
     const heizung = preview.groups.find((g) => g.heating) ?? assert.fail('keine Heizgruppe')
     const hinweis = heizung.taxShifts.find((t) => t.key === '2025-05') ?? assert.fail(`kein Hinweis am Ziel 05–12/2025: ${JSON.stringify(heizung.taxShifts)}`)
     assert.match(hinweis.text, /stünde „Betriebsstrom Heizung \(selbst geschätzt\)“ im Jahr der Zahlung 2025; sein Abzug .* folgt ihm, dort ist aber nur 2026 bis 2028 möglich\. So lässt sich der Wechsel nicht speichern/)
+    // Geld H2: Der Teil des Abzugs in 01/2026 bleibt fest in 2026, der Betriebsstrom stünde am Ziel 05–12/2025 in 2025.
+    assert.match(hinweis.text, /Ein Teil des Abzugs \([\d,]+\s€\) bleibt im Steuerjahr 2026, der Betriebsstrom steht in 2025; in der Anlage V verschiebt sich dieser Betrag zwischen den Jahren\./)
     const vorher = await items(opened)
     const groups = Object.fromEntries(preview.groups.map((g) => [g.id, g.heating ? '2025-05' : 'split']))
     const r = await opened.write((db) => applyPeriodChange(db, 'objekt-1', regeln, { understood: true, groups, taxYears: {}, token: preview.token }, ids, TODAY))
