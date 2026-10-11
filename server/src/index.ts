@@ -48,6 +48,7 @@ import {
 } from './db/repository.ts'
 import { removeInterimGap, saveDistribution, saveInterimGap, SelfItemsError, setUpSelf } from './db/heatingSelf.ts'
 import { saveHeatingInfo, saveHeatingRules } from './db/heatingInfo.ts'
+import { monthlyInfoView, saveMonthlyInfoRow } from './db/monthlyInfo.ts'
 import { heatingPeriodViews, removeCo2Statement, saveCo2Statement, saveHotWater } from './db/co2.ts'
 import { saveServiceValues } from './db/serviceValues.ts'
 import { removeEstimate, saveEstimate } from './db/heatingEstimates.ts'
@@ -678,6 +679,19 @@ app.put('/api/heating-plants/:id/periods/:period/rules', async (req, res) => {
   const result = await writeData((db) => saveHeatingRules(db, req.params.id, req.params.period, bodyObject(req)))
   if (!result) return res.status(404).json({ error: NO_PLANT })
   res.json(result)
+})
+
+// Monatliche Verbrauchsinformation (Heizung PR 22, § 6a Abs. 1 Nr. 2, Abs. 2 HeizkostenV): die Monate einer
+// Heizperiode je Mieter, und je Anlage und Monat Vergleichswert und Tag der Mitteilung (db/monthlyInfo.ts).
+app.get('/api/heating-plants/:id/periods/:period/monthly-info', async (req, res) => {
+  const view = await readData((db) => monthlyInfoView(db, req.params.id, req.params.period, today()))
+  if (!view) return res.status(404).json({ error: NO_PLANT })
+  res.json(view)
+})
+app.put('/api/heating-plants/:id/monthly-info/:month', async (req, res) => {
+  const saved = await writeData((db) => saveMonthlyInfoRow(db, req.params.id, req.params.month, bodyObject(req)))
+  if (!saved) return res.status(404).json({ error: NO_PLANT })
+  res.json(saved)
 })
 
 // Keine Zwischenablesung an einer Grenze: nicht möglich oder nicht durchgeführt (Entwurf 3.5).

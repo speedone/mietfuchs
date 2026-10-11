@@ -187,6 +187,11 @@ const OWN_CHECK_MESSAGES: Readonly<Record<string, string>> = {
   law_overrides_valid_from_valid: 'Ein eingetragener Rechtswert gilt immer ab dem 1. Januar eines Jahres. Bitte laden Sie die Seite neu.',
   law_overrides_source_complete: 'Zu einem eingetragenen Rechtswert gehört die Quelle, etwa „UBA, Bekanntmachung vom …“.',
   law_overrides_value_is_json: 'Der eingetragene Rechtswert ließ sich nicht speichern. Das ist ein Fehler in Mietfuchs und keiner in Ihren Daten. Bitte melden Sie ihn.',
+  // Monatliche Verbrauchsinformation (Heizung PR 22); db/monthlyInfo.ts prüft vorher.
+  heating_monthly_info_month_valid: 'Der Monat der Verbrauchsinformation ist kein Monat in der Form JJJJ-MM. Bitte laden Sie die Seite neu.',
+  heating_monthly_info_reference_positive: 'Der Vergleichswert ist eine Zahl größer als 0 (kWh je m² Wohnfläche im Monat).',
+  heating_monthly_info_reference_source_complete: 'Bitte nennen Sie die Quelle des Vergleichswerts, etwa die Vergleichsdaten Ihres Ablesedienstes. Ein Durchschnitt aus Ihrem eigenen Haus ist kein zulässiger Vergleich.',
+  heating_monthly_info_sent_on_valid: 'Der Tag der Mitteilung ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie ihn im Kalender.',
 }
 
 function checkMessage(name: string): string {
