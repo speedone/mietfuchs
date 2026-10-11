@@ -128,9 +128,11 @@ export const serviceReceivesOperatingPower = (plants: readonly SpanPlant[], peri
 // Die Antwort am Abzug ohne Verweis, wenn kein Messdienst im Zeitraum heizt (#268). Die Hinweise „Betriebsstrom fehlt“
 // und „Abzug fehlt“ zitieren sie wörtlich; OperatingPowerFields.test.tsx hält die gerenderte Auswahl daran fest.
 export const OPERATING_POWER_KEPT = 'Ja, ich lege ihn nicht um und trage ihn selbst'
-// R-6: Heizt im selben Zeitraum zugleich eine Anlage ohne Messdienst, ist nicht eindeutig, ob der Abzug gemeldet ist.
-export const nonServiceHeats = (plants: readonly SpanPlant[], period: { from: string; to: string }): boolean =>
-  plants.some((p) => p.method !== 'service' && heatsIn(p, plants, period))
+// R-6: Heizt im selben Zeitraum zugleich eine zentrale Anlage des Hauses ohne Messdienst, ist nicht eindeutig, ob der
+// Abzug gemeldet ist. Eine Etagenheizung oder eine Anlage der Gemeinschaft zählt nicht (Durchsicht T1, T1b): Ihr Strom
+// läuft nicht über den Zähler des Hauses. Dieselbe Bedingung wie bei `unmarkedPowerCredits`.
+export const nonServiceHeats = (plants: readonly (SpanPlant & { supply?: HeatingSupply | null; source?: HeatingSource })[], period: { from: string; to: string }): boolean =>
+  plants.some((p) => p.method !== 'service' && (p.supply ?? 'central') === 'central' && (p.source ?? 'building') === 'building' && heatsIn(p, plants, period))
 
 // Die Grundlage der Schätzung, wie sie an Betriebsstrom und Abzug gespeichert wird (P-W1): der Rechenweg
 // mit allen Eingaben, eine Zeile je Schritt.

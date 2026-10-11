@@ -221,6 +221,10 @@ test('V12: Kesseltausch, Messdienst bis 30.06., danach ohne: Abzug ohne Verweis 
   assert.equal(r.expenses.totalCents, 580000)
   assert.equal(line(r), undefined)
   assert.deepEqual(r.operatingPowerAmbiguous, [{ costItemId: 'ab', description: 'Abzug ab', amountCents: -20000 }])
+  // Durchsicht T1, T1b: daneben nur eine Etagenheizung oder eine Anlage der Gemeinschaft ohne Messdienst: eindeutig.
+  const service = anlage({ method: 'service' })
+  assert.equal(tax(haus([gas(), hausstrom(), abzug('ab', 20000)], [service, anlage({ id: 'etage', supply: 'perUnit' })])).operatingPowerAmbiguous, undefined)
+  assert.equal(tax(haus([gas(), hausstrom(), abzug('ab', 20000)], [service, anlage({ id: 'weg', source: 'homeowners' })])).operatingPowerAmbiguous, undefined)
   // Nur Messdienst im Zeitraum: eindeutig, kein Hinweis.
   assert.equal(tax(haus([gas(), hausstrom(), abzug('ab', 20000)], [anlage({ method: 'service' })])).operatingPowerAmbiguous, undefined)
 })

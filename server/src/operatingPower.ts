@@ -6,7 +6,7 @@
 // Abrechnung verteilt, damit der Hinweis genau einmal erscheint, nämlich dort, wo der Betriebsstrom steht.
 import type { CostItem, HeatingEnergy, HeatingMethod, HeatingSource, HeatingSupply, OperatingPowerDeduction, OperatingPowerHandling } from '../../shared/types.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
-import { asksOperatingPowerHandling, GENERAL_POWER_CATEGORY, heatsIn, nonServiceHeats, OPERATING_POWER_HANDLING_LABELS, OPERATING_POWER_HANDLING_QUESTION, OPERATING_POWER_INCLUDED_QUESTION, OPERATING_POWER_INCLUDED_YES, OPERATING_POWER_KEPT, POWER_GENERATED, serviceReceivesOperatingPower } from '../../shared/operatingPower.ts'
+import { asksOperatingPowerHandling, GENERAL_POWER_CATEGORY, nonServiceHeats, OPERATING_POWER_HANDLING_LABELS, OPERATING_POWER_HANDLING_QUESTION, OPERATING_POWER_INCLUDED_QUESTION, OPERATING_POWER_INCLUDED_YES, OPERATING_POWER_KEPT, POWER_GENERATED, serviceReceivesOperatingPower } from '../../shared/operatingPower.ts'
 
 // Ein Abzug in einer abgeschlossenen Abrechnung, der den Mietern nicht oder nicht so gutgeschrieben ist,
 // wie er heute dasteht (P-W3, R2-W2). `frozenCents` nur bei `changed`: der eingefrorene Betrag.
@@ -424,8 +424,7 @@ export function operatingPowerBalance(parts: readonly BalancePart[], lookup: (id
 // Gutschrift. Sie weist nur darauf hin; keine Zahl ändert sich.
 export function unmarkedPowerCredits(parts: readonly BalancePart[]): BalanceNote[] {
   return parts.flatMap((p) => {
-    const own = p.plants.some((x) => x.method !== 'service' && (x.supply ?? 'central') === 'central' && (x.source ?? 'building') === 'building' && heatsIn(x, p.plants, p.period))
-    if (!own) return []
+    if (!nonServiceHeats(p.plants, p.period)) return []
     return p.items.filter((c) => c.category === GENERAL_POWER_CATEGORY && c.amountCents < 0 && c.operatingPower === undefined)
       .map((c) => ({ costItemId: c.id, description: c.description, amountCents: c.amountCents }))
   })
