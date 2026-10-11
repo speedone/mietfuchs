@@ -125,6 +125,9 @@ export const heatsIn = (plant: SpanPlant, plants: readonly SpanPlant[], period: 
 }
 export const serviceReceivesOperatingPower = (plants: readonly SpanPlant[], period: { from: string; to: string }): boolean =>
   plants.some((p) => p.method === 'service' && heatsIn(p, plants, period))
+// Die Antwort am Abzug ohne Verweis, wenn kein Messdienst im Zeitraum heizt (#268). Die Hinweise „Betriebsstrom fehlt“
+// und „Abzug fehlt“ zitieren sie wörtlich; OperatingPowerFields.test.tsx hält die gerenderte Auswahl daran fest.
+export const OPERATING_POWER_KEPT = 'Ja, ich lege ihn nicht um und trage ihn selbst'
 // R-6: Heizt im selben Zeitraum zugleich eine Anlage ohne Messdienst, ist nicht eindeutig, ob der Abzug gemeldet ist.
 export const nonServiceHeats = (plants: readonly SpanPlant[], period: { from: string; to: string }): boolean =>
   plants.some((p) => p.method !== 'service' && heatsIn(p, plants, period))

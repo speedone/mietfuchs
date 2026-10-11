@@ -6,7 +6,7 @@
 // Abrechnung verteilt, damit der Hinweis genau einmal erscheint, nämlich dort, wo der Betriebsstrom steht.
 import type { CostItem, HeatingEnergy, HeatingMethod, HeatingSource, HeatingSupply, OperatingPowerDeduction, OperatingPowerHandling } from '../../shared/types.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
-import { asksOperatingPowerHandling, GENERAL_POWER_CATEGORY, heatsIn, nonServiceHeats, OPERATING_POWER_HANDLING_LABELS, OPERATING_POWER_HANDLING_QUESTION, OPERATING_POWER_INCLUDED_QUESTION, OPERATING_POWER_INCLUDED_YES, POWER_GENERATED, serviceReceivesOperatingPower } from '../../shared/operatingPower.ts'
+import { asksOperatingPowerHandling, GENERAL_POWER_CATEGORY, heatsIn, nonServiceHeats, OPERATING_POWER_HANDLING_LABELS, OPERATING_POWER_HANDLING_QUESTION, OPERATING_POWER_INCLUDED_QUESTION, OPERATING_POWER_INCLUDED_YES, OPERATING_POWER_KEPT, POWER_GENERATED, serviceReceivesOperatingPower } from '../../shared/operatingPower.ts'
 
 // Ein Abzug in einer abgeschlossenen Abrechnung, der den Mietern nicht oder nicht so gutgeschrieben ist,
 // wie er heute dasteht (P-W3, R2-W2). `frozenCents` nur bei `changed`: der eingefrorene Betrag.
@@ -273,6 +273,9 @@ const OWN_METER_SELF = 'Tragen Sie den Strom eines eigenen Zählers selbst, ist 
 // Die Leitsätze von VIII ZR 27/07 heißen amtlich a), b), c) (Rechtsprüfung zu #266, K-1).
 const ESTIMATE_LAW = 'BGH, Versäumnisurteil vom 20.02.2008, VIII ZR 27/07, Leitsatz c'
 const FLAT_TENANTS = 'Gilt für einen Mieter beim Allgemeinstrom eine Pauschale oder Inklusivmiete, folgt daraus für ihn nichts.'
+// #268: Der Weg „selbst tragen“ mit der Antwort des Kostenformulars, wortgleich. Kein Satz zur Steuer (R-8): Die
+// Steuerübersicht rechnet den Abzug von selbst richtig.
+const KEPT_SENTENCE = `Den Abzug erfassen Sie dann im Kostenformular beim Allgemeinstrom mit der Antwort „${OPERATING_POWER_KEPT}“.`
 
 // A (#224): Text des Hinweises `heating.operating-power-missing`.
 export function missingOperatingPowerText(f: MissingPowerFinding, label: string): string {
@@ -281,6 +284,8 @@ export function missingOperatingPowerText(f: MissingPowerFinding, label: string)
     'Läuft er über den Stromzähler des Hauses, steckt er in dieser Stromrechnung und wird mit ihrem Schlüssel verteilt; dort darf er nicht stehen (BGH, Urteil vom 03.06.2016, V ZR 166/15, Rn. 13). ' +
     `Erfassen Sie ihn dann mit der Karte „Betriebsstrom“ auf der Seite Heizkosten. Ohne Zwischenzähler dürfen Sie ihn schätzen; bestreitet ein Mieter den Betrag, müssen Sie die Grundlagen darlegen (${ESTIMATE_LAW}). ` +
     'Wollen Sie ihn nicht umlegen, ziehen Sie ihn trotzdem beim Allgemeinstrom ab; dann tragen Sie ihn selbst (V ZR 166/15, Rn. 15). ' +
+    // #268: die Antwort im Kostenformular wörtlich, damit die Steuerübersicht den Abzug als selbst getragen erkennt.
+    `${KEPT_SENTENCE} ` +
     'Hat die Heizung einen eigenen Stromvertrag mit eigener Rechnung, erfassen Sie diese Rechnung als Heizposition mit dem Teil „Betrieb“; dann entfällt dieser Hinweis. ' +
     // #266 (Rechtsprüfung M-1): Entscheidend ist der Stromvertrag; ein Zwischenzähler ersetzt nur das Schätzen.
     'Hat die Heizung einen eigenen Stromvertrag mit eigenem Zähler und eigener Rechnung und tragen Sie diese Kosten selbst, ist nichts falsch; ein Zwischenzähler hinter dem Zähler des Hauses gehört nicht dazu. ' +
@@ -306,6 +311,7 @@ export function deductionMissingText(f: MissingPowerFinding, label: string): str
     'Ist er noch nirgends erfasst, nehmen Sie die Karte „Betriebsstrom“ auf der Seite Heizkosten; sie legt Betriebsstrom und Abzug gemeinsam an. ' +
     `Ohne Zwischenzähler dürfen Sie ihn schätzen; bestreitet ein Mieter den Betrag, müssen Sie die Grundlagen darlegen (${ESTIMATE_LAW}). ` +
     'Wollen Sie ihn nicht umlegen, ziehen Sie ihn trotzdem beim Allgemeinstrom ab; dann tragen Sie ihn selbst (BGH, Beschluss vom 13.09.2011, VIII ZR 45/11, Rn. 3; vgl. V ZR 166/15, Rn. 15). ' +
+    `${KEPT_SENTENCE} ` +
     'Haben Sie beim Allgemeinstrom schon den um den Betriebsstrom geminderten Betrag eingetragen, ist die Abrechnung deshalb nicht formell unwirksam (BGH, Urteil vom 20.01.2016, VIII ZR 93/15, Leitsatz und Rn. 19); materiell muss der Abzug stimmen (VIII ZR 27/07, Leitsatz c). ' +
     'Tragen Sie dort trotzdem den Rechnungsbetrag ein und erfassen Sie den Abzug gesondert; dann erkennt Mietfuchs den Abzug. ' +
     `Hat die Heizung einen eigenen Stromvertrag mit eigener Rechnung (nicht nur einen Zwischenzähler), ändern Sie die Angabe auf der Seite Heizkosten. ${FLAT_TENANTS}`
