@@ -35,7 +35,7 @@ import { openSelfSpan } from '../heating.ts'
 import { SELF_VIA_SETUP, SelfItemsError, selfItemsOf } from './heatingSelf.ts'
 import { hkvCutNotByConsumption } from '../../../shared/law/heizkostenv.ts'
 import { dayAfter, LAW_AS_OF, valueAt } from '../../../shared/law/register.ts'
-import { asNullableFilled, asNullableText, asText, guardServedChange, has, heatingPeriodAt, heatingRulesOf, HeatingError, insertEntityIn, ISO_DATE, merged, oneOfOrUndefined, raw, sameProperty } from './repository.ts'
+import { asNullableFilled, asNullableText, asText, guardServedChange, has, heatingPeriodAt, heatingRulesOf, HeatingError, insertEntityIn, ISO_DATE, itemPeriodClosed, merged, oneOfOrUndefined, raw, sameProperty } from './repository.ts'
 import { buildingCycle, lineRoot, sameLine, servesUnit } from '../../../shared/heatingPeriod.ts'
 import {
   AREA_BASES_HEAT, CAPTURE_METHODS, CHANGE_SPLITS, CO2_RESTRICTIONS, HEAT_GENERATIONS, HEAT_PUMP_MAJORITIES, HOT_WATER, fuelDeliveries, closedHeatingSettlementHistory, co2Statements, closedHeatingSettlements, closedSettlements, costItems, DEVICES_INSTALLED_AFTER, DEVICES_REMOTE, HEATING_ENERGIES, HEATING_METHODS,
@@ -252,11 +252,21 @@ export async function guardHeatingPlant(db: Executor, before: HeatingPlant | nul
       const [vorrat] = await db.select({ n: count() }).from(heatingPeriods)
         .where(and(eq(heatingPeriods.plantId, after.id), or(isNotNull(heatingPeriods.stockUnit), isNotNull(heatingPeriods.openingQuantity), isNotNull(heatingPeriods.closingQuantity))))
       const [co2] = await db.select({ n: count() }).from(co2StatementRows).innerJoin(heatingPeriods, eq(co2StatementRows.heatingPeriodId, heatingPeriods.id)).where(eq(heatingPeriods.plantId, after.id))
-      if ((lieferungen?.n ?? 0) + (vorrat?.n ?? 0) + (co2?.n ?? 0) > 0) {
+      // Durchsicht von #272, S2 (R16-1): auch Heizpositionen eines offenen Zeitraums und gespeicherte Angaben einer offenen
+      // Heizperiode (Verteilung, Warmwasser); sonst rechneten sie rückwirkend mit einem anderen Pflichtanteil oder Faktor.
+      // Abgeschlossene bleiben, wie sie zugestellt wurden.
+      const openOf = async (period: string): Promise<boolean> => !(await itemPeriodClosed(db, { heatingPlantId: after.id, propertyId: after.propertyId, period: periodKey(period) }))
+      let offen = 0
+      for (const c of await db.select({ period: costItems.period }).from(costItems).where(eq(costItems.heatingPlantId, after.id))) if (await openOf(String(c.period))) offen++
+      const zeilen = await db.select({ period: heatingPeriods.period }).from(heatingPeriods).where(and(eq(heatingPeriods.plantId, after.id), or(
+        isNotNull(heatingPeriods.heatConsumptionPct), isNotNull(heatingPeriods.waterConsumptionPct), isNotNull(heatingPeriods.insulationRule), isNotNull(heatingPeriods.dhwMethod),
+        isNotNull(heatingPeriods.dhwHeatKwh), isNotNull(heatingPeriods.totalHeatKwh), isNotNull(heatingPeriods.dhwVolumeM3), isNotNull(heatingPeriods.dhwTempC))))
+      for (const z of zeilen) if (await openOf(String(z.period))) offen++
+      if ((lieferungen?.n ?? 0) + (vorrat?.n ?? 0) + (co2?.n ?? 0) + offen > 0) {
         const since = after.heatDeliverySince ?? before.heatDeliverySince
         throw new HeatingError(409, after.contracting
-          ? `An dieser Anlage stehen Lieferungen, ein Vorrat oder CO₂-Angaben. Wurde ${since ? `zum ${germanDay(since)} ` : ''}auf Wärmelieferung umgestellt, erfassen Sie das mit „Heizung erneuert (Kessel getauscht)“; sonst rechnete Mietfuchs auch die Zeit davor als Wärmelieferung.`
-          : 'An dieser Anlage stehen Lieferungen, ein Vorrat oder CO₂-Angaben. Endete die Wärmelieferung und heizen Sie seitdem mit einer eigenen Anlage, erfassen Sie das mit „Heizung erneuert (Kessel getauscht)“; sonst rechnete Mietfuchs auch die Zeit davor als eigene Heizung.')
+          ? `An dieser Anlage stehen Heizpositionen oder Angaben eines offenen Zeitraums, Lieferungen, ein Vorrat oder CO₂-Angaben. Wurde ${since ? `zum ${germanDay(since)} ` : ''}auf Wärmelieferung umgestellt, erfassen Sie das mit „Heizung erneuert (Kessel getauscht)“; sonst rechnete Mietfuchs auch die Zeit davor als Wärmelieferung.`
+          : 'An dieser Anlage stehen Heizpositionen oder Angaben eines offenen Zeitraums, Lieferungen, ein Vorrat oder CO₂-Angaben. Endete die Wärmelieferung und heizen Sie seitdem mit einer eigenen Anlage, erfassen Sie das mit „Heizung erneuert (Kessel getauscht)“; sonst rechnete Mietfuchs auch die Zeit davor als eigene Heizung.')
       }
     }
     // Auch ein eingetragener Vorrat zählt (Durchsicht von #237, M2; Nachprüfung: jeder, auch in einer

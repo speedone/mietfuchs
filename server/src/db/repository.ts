@@ -539,7 +539,7 @@ async function isPeriodClosed(db: Executor, propertyId: string, period: CostItem
 
 // Ist der Zeitraum einer Position abgeschlossen? Bei einer Heizposition mit eigener Heizperiode
 // (Heizung PR 5): ihre Heizkostenabrechnung (Weg d) oder die Abrechnung, in der ihre Heizperiode endet.
-export async function itemPeriodClosed(db: Executor, c: CostItem): Promise<boolean> {
+export async function itemPeriodClosed(db: Executor, c: Pick<CostItem, 'heatingPlantId' | 'propertyId' | 'period'>): Promise<boolean> {
   const heating = c.heatingPlantId ? await heatingRulesOf(db, c.heatingPlantId) : null
   if (!heating?.own || !c.heatingPlantId) return isPeriodClosed(db, c.propertyId, c.period)
   const h = periodOfKey(heating.rules, c.period)

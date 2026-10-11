@@ -12,11 +12,12 @@ import { createHeatingPlant, replaceHeatingPlant, updateHeatingPlant } from '../
 import { createDelivery } from '../src/db/fuel.ts'
 import { saveStock } from '../src/db/fuelStock.ts'
 import { saveCo2Statement } from '../src/db/co2.ts'
-import { createEntity, HeatingError } from '../src/db/repository.ts'
+import { closeSettlement, createEntity, HeatingError } from '../src/db/repository.ts'
 import { saveDistribution } from '../src/db/heatingSelf.ts'
 import { bookOperatingPower } from '../src/db/operatingPower.ts'
 import { heatingPlants } from '../src/db/schema.ts'
 import { eq } from 'drizzle-orm'
+import { periodKey } from '../../shared/period.ts'
 
 const tempDir = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-waermelieferung-'))
 function rejects(connection: Connection, sql: string): string | null {
@@ -109,7 +110,7 @@ test('Anlage: Contracting anlegen und ändern; Fernwärme und Etagenheizung lehn
 
 // Prüfung C-M1: Ein Umschalten des Merkmals an einer Anlage mit Lieferungen, Vorrat oder CO₂-Angaben rechnete
 // auch die Zeit davor als Wärmelieferung. Gesperrt, mit dem Weg über den Kesseltausch.
-const SWAP_SENTENCE = /An dieser Anlage stehen Lieferungen, ein Vorrat oder CO₂-Angaben\. Wurde .*auf Wärmelieferung umgestellt, erfassen Sie das mit „Heizung erneuert \(Kessel getauscht\)“; sonst rechnete Mietfuchs auch die Zeit davor als Wärmelieferung\./
+const SWAP_SENTENCE = /An dieser Anlage stehen Heizpositionen oder Angaben eines offenen Zeitraums, Lieferungen, ein Vorrat oder CO₂-Angaben\. Wurde .*auf Wärmelieferung umgestellt, erfassen Sie das mit „Heizung erneuert \(Kessel getauscht\)“; sonst rechnete Mietfuchs auch die Zeit davor als Wärmelieferung\./
 
 test('C-M1: Contracting an einer Anlage mit Lieferungen umzuschalten wird abgelehnt, in beide Richtungen', async () => {
   await withDatabase(async (opened) => {
@@ -229,5 +230,33 @@ test('Betriebsstrom bei Contracting mit Wärmepumpe: Schätzhilfe statt der Sper
     // „Steckt auch im Allgemeinstrom“ beim Teil Brennstoff/Energie gibt es nur für Strom der eigenen Wärmeerzeugung.
     await assert.rejects(opened.write((db) => createEntity(db, 'costItems', 'f', { propertyId: 'objekt-1', period: '2025-01', category: 'Heizung und Warmwasser', description: 'Strom', amountCents: 10000, key: 'area', heatingPart: 'fuel', heatingPlantId: 'hp', operatingPower: 'included' })),
       (e: unknown) => e instanceof Error && /nicht mit Strom heizt/.test(e.message))
+  })
+})
+
+// Durchsicht von #272, S2 (R16-1): Auch ohne Lieferungen rechneten offene Zeiträume nach dem Umschalten rückwirkend anders
+// (Pflichtanteil 70 % statt 60 %, × 1,11 statt ÷ 1,15). Gesperrt ist das Umschalten deshalb auch mit einer Heizposition
+// in einem offenen Zeitraum oder einer gespeicherten Verteilung; der Weg ist der Kesseltausch.
+const SWAP_ANY = /„Heizung erneuert \(Kessel getauscht\)“/
+test('Durchsicht von #272, S2: Umschalten mit Heizposition im offenen Zeitraum oder gespeicherter Verteilung gesperrt', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'gas', method: 'manual' }))
+    await opened.write((db) => createEntity(db, 'costItems', 'w', { propertyId: 'objekt-1', period: '2025-01', category: 'Heizung und Warmwasser', description: 'Gas', amountCents: 500000, key: 'area', heatingPlantId: 'hp' }))
+    const e = await opened.write((db) => updateHeatingPlant(db, 'hp', { contracting: true })).then(() => null, (x: unknown) => x)
+    assert.ok(refused(409, SWAP_ANY)(e), String(e))
+  })
+  await withDatabase(async (opened) => {
+    await opened.write((db) => createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'gas', method: 'manual', contracting: true }))
+    await opened.write((db) => db.update(heatingPlants).set({ method: 'self', capture: 'heatMeter' }).where(eq(heatingPlants.id, 'hp')))
+    await opened.write((db) => saveDistribution(db, 'hp', '2026-01', { heatConsumptionPct: 60, waterConsumptionPct: 60, insulationRule: 'applies' }, '2025-11-01'))
+    const e = await opened.write((db) => updateHeatingPlant(db, 'hp', { contracting: false })).then(() => null, (x: unknown) => x)
+    assert.ok(refused(409, SWAP_ANY)(e), String(e))
+  })
+  // Eine Heizposition in einem abgeschlossenen Zeitraum hält das Umschalten nicht auf; ihr Stand ist eingefroren.
+  await withDatabase(async (opened) => {
+    await opened.write((db) => createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'gas', method: 'manual' }))
+    await opened.write((db) => createEntity(db, 'costItems', 'w', { propertyId: 'objekt-1', period: '2024-01', category: 'Heizung und Warmwasser', description: 'Gas', amountCents: 500000, key: 'area', heatingPlantId: 'hp' }))
+    await opened.write((db) => closeSettlement(db, { id: 's1', propertyId: 'objekt-1', period: periodKey('2024-01'), closedAt: '2025-03-01', sentAt: null, settlement: {} }))
+    const p = await opened.write((db) => updateHeatingPlant(db, 'hp', { contracting: true }))
+    assert.equal(p?.contracting, true)
   })
 })
