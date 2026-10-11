@@ -194,3 +194,18 @@ test('Contracting mit Wärmepumpe und Gasspitzenkessel ohne CO₂-Angaben: co2.m
   const single = computeSettlement(selfSnapshot({ plant: plantOf('single'), row: { totalHeatKwh: 60000 }, deliveries: ohneCo2 }))
   assert.ok(!codes(single).includes('co2.missing'), codes(single).join(', '))
 })
+
+// Nachprüfung von #272, F2: Ob die Rechnung CO₂-Kosten ausweist, zählt nur für die Heizperiode des Topfs. CO₂-Werte einer
+// Rechnung, die ganz in einer anderen Heizperiode liegt, lösen hier keine Aufteilung aus.
+test('Reine Wärmepumpe des Lieferanten: CO₂ nur auf einer Rechnung einer anderen Heizperiode löst keine Aufteilung aus', () => {
+  const row = { totalHeatKwh: 60000 }
+  const plant = { energy: 'heatPump' as const, heatGeneration: 'single' as const, capturedOnOct2024: true, contracting: true }
+  const deliveries = [
+    selfDelivery({ emissionsKg: null, co2CostCents: null }),
+    selfDelivery({ id: 'd0', label: 'Wärme 2024', invoiceDate: '2025-01-15', invoiceFrom: '2024-01-01', invoiceTo: '2024-12-31', emissionsKg: 9000, co2CostCents: 50000 }),
+  ]
+  const r = computeSettlement(selfSnapshot({ plant, row, deliveries }))
+  const co2Share = r.landlord.rows.flatMap((x) => x.landlordParts ?? []).filter((x) => x.reason === 'co2Share').reduce((a, x) => a + x.cents, 0)
+  assert.equal(co2Share, 0)
+  assert.ok(!codes(r).some((c) => c.startsWith('co2.')), codes(r).join(', '))
+})
