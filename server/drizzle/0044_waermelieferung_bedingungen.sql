@@ -57,13 +57,13 @@ CREATE TABLE `__new_heating_plants` (
 	CONSTRAINT "heating_plants_heat_generation_known" CHECK("heat_generation" IN ('single', 'mixed')),
 	CONSTRAINT "heating_plants_heat_pump_majority_known" CHECK("heat_pump_majority" IN ('yes', 'no', 'unknown')),
 	CONSTRAINT "heating_plants_operating_power_handling_known" CHECK("operating_power_handling" IN ('ownMeter', 'deducted', 'landlordPays')),
-	CONSTRAINT "heating_plants_contracting_energy" CHECK("contracting" = 0 OR "energy" <> 'districtHeating'),
-	CONSTRAINT "heating_plants_contracting_central" CHECK("contracting" = 0 OR "supply" = 'central'),
-	CONSTRAINT "heating_plants_delivery_only" CHECK(("heat_delivery_since" IS NULL AND "previous_supply" IS NULL AND "switch_announced_on" IS NULL) OR "contracting" = 1 OR "energy" = 'districtHeating'),
-	CONSTRAINT "heating_plants_delivery_since_date" CHECK("heat_delivery_since" IS NULL OR "heat_delivery_since" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
-	CONSTRAINT "heating_plants_announced_date" CHECK("switch_announced_on" IS NULL OR "switch_announced_on" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+	CONSTRAINT "heating_plants_contracting_energy_valid" CHECK("contracting" = 0 OR "energy" <> 'districtHeating'),
+	CONSTRAINT "heating_plants_contracting_central_valid" CHECK("contracting" = 0 OR "supply" = 'central'),
+	CONSTRAINT "heating_plants_delivery_only_valid" CHECK(("heat_delivery_since" IS NULL AND "previous_supply" IS NULL AND "switch_announced_on" IS NULL) OR "contracting" = 1 OR "energy" = 'districtHeating'),
+	CONSTRAINT "heating_plants_delivery_since_valid" CHECK("heat_delivery_since" IS NULL OR "heat_delivery_since" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+	CONSTRAINT "heating_plants_announced_valid" CHECK("switch_announced_on" IS NULL OR "switch_announced_on" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
 	CONSTRAINT "heating_plants_previous_supply_known" CHECK("previous_supply" IN ('landlord', 'tenant')),
-	CONSTRAINT "heating_plants_announced_needs_since" CHECK("switch_announced_on" IS NULL OR "heat_delivery_since" IS NOT NULL)
+	CONSTRAINT "heating_plants_announced_since_valid" CHECK("switch_announced_on" IS NULL OR "heat_delivery_since" IS NOT NULL)
 );
 --> statement-breakpoint
 INSERT INTO `__new_heating_plants`("id", "property_id", "name", "energy", "supply", "method", "separate_settlement", "devices_remote", "devices_installed_after_2021_12", "new_devices_install", "source", "capture_installed_on", "captured_on_2024_10_01", "warm_rent_average_2022_2024", "change_split", "period_start_month", "units_limited", "non_residential", "restriction", "district_ets_new", "ends_on", "replaces_plant_id", "building_with", "takes_over_stock", "hot_water", "capture", "area_basis_heat", "heat_pump_installed_on", "heat_generation", "heat_pump_majority", "hca_model", "operating_power_handling", "contracting", "heat_delivery_since", "previous_supply", "switch_announced_on") SELECT "id", "property_id", "name", "energy", "supply", "method", "separate_settlement", "devices_remote", "devices_installed_after_2021_12", "new_devices_install", "source", "capture_installed_on", "captured_on_2024_10_01", "warm_rent_average_2022_2024", "change_split", "period_start_month", "units_limited", "non_residential", "restriction", "district_ets_new", "ends_on", "replaces_plant_id", "building_with", "takes_over_stock", "hot_water", "capture", "area_basis_heat", "heat_pump_installed_on", "heat_generation", "heat_pump_majority", "hca_model", "operating_power_handling", "contracting", "heat_delivery_since", "previous_supply", "switch_announced_on" FROM `heating_plants`;--> statement-breakpoint

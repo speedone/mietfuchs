@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "c15d3373-9580-4741-ab57-6d2b23b7fd20",
+  "id": "230e3e49-869e-4f56-a7a8-a3100df7b479",
   "prevId": "914ad9c6-2ddc-4d89-873e-b3d011075787",
   "tables": {
     "ai_slots": {
@@ -3387,32 +3387,32 @@
           "name": "heating_plants_operating_power_handling_known",
           "value": "\"operating_power_handling\" IN ('ownMeter', 'deducted', 'landlordPays')"
         },
-        "heating_plants_contracting_energy": {
-          "name": "heating_plants_contracting_energy",
+        "heating_plants_contracting_energy_valid": {
+          "name": "heating_plants_contracting_energy_valid",
           "value": "\"contracting\" = 0 OR \"energy\" <> 'districtHeating'"
         },
-        "heating_plants_contracting_central": {
-          "name": "heating_plants_contracting_central",
+        "heating_plants_contracting_central_valid": {
+          "name": "heating_plants_contracting_central_valid",
           "value": "\"contracting\" = 0 OR \"supply\" = 'central'"
         },
-        "heating_plants_delivery_only": {
-          "name": "heating_plants_delivery_only",
+        "heating_plants_delivery_only_valid": {
+          "name": "heating_plants_delivery_only_valid",
           "value": "(\"heat_delivery_since\" IS NULL AND \"previous_supply\" IS NULL AND \"switch_announced_on\" IS NULL) OR \"contracting\" = 1 OR \"energy\" = 'districtHeating'"
         },
-        "heating_plants_delivery_since_date": {
-          "name": "heating_plants_delivery_since_date",
+        "heating_plants_delivery_since_valid": {
+          "name": "heating_plants_delivery_since_valid",
           "value": "\"heat_delivery_since\" IS NULL OR \"heat_delivery_since\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'"
         },
-        "heating_plants_announced_date": {
-          "name": "heating_plants_announced_date",
+        "heating_plants_announced_valid": {
+          "name": "heating_plants_announced_valid",
           "value": "\"switch_announced_on\" IS NULL OR \"switch_announced_on\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'"
         },
         "heating_plants_previous_supply_known": {
           "name": "heating_plants_previous_supply_known",
           "value": "\"previous_supply\" IN ('landlord', 'tenant')"
         },
-        "heating_plants_announced_needs_since": {
-          "name": "heating_plants_announced_needs_since",
+        "heating_plants_announced_since_valid": {
+          "name": "heating_plants_announced_since_valid",
           "value": "\"switch_announced_on\" IS NULL OR \"heat_delivery_since\" IS NOT NULL"
         }
       }
