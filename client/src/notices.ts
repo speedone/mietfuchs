@@ -46,7 +46,10 @@ const INFORMATIONAL = new Set(['basis.unit-zero', 'basis.tenancy-zero', 'basis.v
   'heating.estimated', 'heating.estimate-complete',
   // Folge-PR zu #252 (#224, Entscheidung F6): Der Hinweis trifft auch den rechtmäßigen Fall „eigener Zähler,
   // Vermieter trägt den Strom selbst“ und lässt sich ohne Buchung nicht beheben; er färbt deshalb nicht.
-  'heating.operating-power-missing'])
+  'heating.operating-power-missing',
+  // #266: Fehlt nur die Rechnung des eigenen Stromvertrags, trägt der Vermieter eigenes Geld; den Mietern schadet das
+  // nicht. „Abzug des Betriebsstroms fehlt“ steht bewusst nicht hier: Er ist der Fall des BGH mit ausdrücklicher Angabe.
+  'heating.operating-power-bill-missing'])
 export function noticesNeedAttention(settlement: Pick<Settlement, 'notices' | 'warnings'>): boolean {
   return noticesOf(settlement).some((n) => !INFORMATIONAL.has(n.code))
 }
