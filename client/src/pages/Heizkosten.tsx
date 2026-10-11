@@ -3,7 +3,7 @@
 // zum Gebäude“, seit Heizung PR 8 „Vorrat“ bei Heizöl, Flüssiggas, Pellets, Holz und Kohle, dazu einmal
 // „Gradtagzahlen Ihres Orts“. Seit Heizung PR 17 je Heizperiode mit Rechnungen der Ausdruck „CO₂-Angaben
 // für den Messdienst“ (#210), der die Seite ersetzt, bis man zurückgeht. Sie steht erst ab einer
-// Heizanlage in der Navigation (`navFor`).
+// Heizanlage in der Navigation (`navFor`). Seit #266 je Anlage die Karte „Betriebsstrom der Heizung“.
 import { useCallback, useEffect, useState } from 'react'
 import type { Co2Sheet, CostItem, DegreeDayValue, FuelDelivery, HeatingPeriodView, HeatingPlant, HeatingStatement, Tenancy, Unit } from '../types'
 import { api, errorText } from '../api'
@@ -17,6 +17,8 @@ import { hasSheet } from '../co2Sheet'
 import DegreeDaysCard from '../components/DegreeDaysCard'
 import FuelCard from '../components/FuelCard'
 import OperatingPowerCard from '../components/OperatingPowerCard'
+import OperatingPowerHandlingCard from '../components/OperatingPowerHandlingCard'
+import { showsHandlingCard } from '../operatingPowerHandling'
 import HotWaterCard from '../components/HotWaterCard'
 import StockCard from '../components/StockCard'
 import SelfHeatingCards from '../components/SelfHeatingCards'
@@ -102,6 +104,10 @@ export default function Heizkosten({ units, tenancies }: { units: Unit[]; tenanc
                 <p>Verteilen Sie die Heizkosten selbst nach einem <Term id="allocationKey">Umlageschlüssel</Term> (bei der Frage, wer abrechnet: „Niemand“), teilt Mietfuchs die CO₂-Kosten selbst auf, sobald Sie die {invoiceName(plant.energy)} unten als Lieferung eintragen; Gutschrift und Position „Nicht umlagefähig“ entfallen dann.</p>
                 <ManualCo2Advice energy={plant.energy} />
               </div>
+            )}
+            {/* #266: wie der Betriebsstrom erfasst ist, je Anlage über den Heizperioden. */}
+            {showsHandlingCard(plant) && (
+              <OperatingPowerHandlingCard key={`ophandling:${plant.operatingPowerHandling ?? ''}`} plant={plant} onSaved={() => void load()} />
             )}
             {(data?.views[plant.id] ?? []).map((v) => (
               <div key={v.period}>
