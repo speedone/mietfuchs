@@ -341,7 +341,7 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - Beim Wechsel des Abrechnungszeitraums folgt der Abzug des Betriebsstroms immer seiner Stromrechnung, auch
   wenn deren Leistungszeitraum ganz in einem neuen Zeitraum liegt; bisher lehnte der Wechsel das ab. Mehrere
   Abzüge einer Rechnung werden gemeinsam geteilt, sodass aus keinem Teil mehr abgezogen wird, als er beträgt,
-  und das Jahr der Zahlung eines Abzugs folgt seinem Betriebsstrom. Der Hinweis zu verschiedenen Steuerjahren
+  und das Jahr der Zahlung eines Abzugs folgt seinem Betriebsstrom. Bleibt ein Teil des Abzugs in einem festen Steuerjahr, während der Betriebsstrom in ein anderes geht, sagt die Vorschau vorher, welcher Betrag sich in der Anlage V verschiebt. Der Hinweis zu verschiedenen Steuerjahren
   und die Hilfe am Feld „Jahr der Zahlung (Steuer)“ erklären, warum dort das Jahr des Betriebsstroms gilt.
 
 ### Geändert
