@@ -2216,18 +2216,22 @@ die ganze fachliche Komplexität:
   „Sonstiges“ bleibt pflichtig, Auslegung); die Informationen nach § 6a nennen den Brennstoff (`generatorEnergy`)
   und verlangen Werte eines Wärmenetzes nur bei Fernwärme ohne Merkmal (§ 6a Abs. 3 Satz 1 Nr. 1 Buchst. a,
   Prüfung C-M2); bei Contracting mit Wärmepumpe sperrt dhw.ts die Formeln (`heating.dhw-share-invalid`), denn
-  offen ist, ob Satz 6 Nr. 2 oder Nr. 3 gilt; gemessen rechnet sie gegen die gelieferte Wärme. Die übrigen
-  Regeln der Wärmepumpe (§ 11 Abs. 1 Nr. 3 a. F., § 12 Abs. 3) wendet die Berechnung bei Contracting nicht an.
+  offen ist, ob Satz 6 Nr. 2 oder Nr. 3 gilt; gemessen rechnet sie gegen die gelieferte Wärme. § 11 Abs. 1 Nr. 3
+  Buchst. a a. F. und § 12 Abs. 3 hängen am Wärmeerzeuger (`generatorEnergy` in calc.ts, Durchsicht von #272, M1;
+  Auslegung am Wortlaut von § 1 Abs. 1 Nr. 2); bei Contracting mit Pellets, Holz, Strom oder Wärmepumpe teilt die
+  Berechnung kein CO₂ auf und prüft keine CO₂-Werte, auch wenn eine Rechnung welche trägt.
   Nach dem Betriebsstrom fragt Mietfuchs bei Contracting wie bei Fernwärme nicht (Prüfung C-M3). **Umschalten**
-  des Merkmals an einer Anlage mit Lieferungen, Vorrat oder CO₂-Angaben ist gesperrt (409, Weg über den
+  des Merkmals an einer Anlage mit Lieferungen, Vorrat, CO₂-Angaben oder Heizpositionen und Angaben (Verteilung,
+  Warmwasser) eines offenen Zeitraums ist gesperrt (409, Weg über den
   Kesseltausch), denn die Abrechnung hängt am Merkmal und nicht an einem Datum; der Kesseltausch nimmt Merkmal
   und Angaben an (`SWAP_FIELDS`) und vergleicht nach der Energie der Abrechnung, Gas → Gas mit Contracting ist
   also ein Tausch (Prüfung C-M1); die Oberfläche schlägt den Tag des Tauschs als Tag der Umstellung vor.
   `heating.contracting` (hint, färbt das Cockpit nicht, führt zur Anlage) nennt für Mieter, deren Mietvertrag
-  vor der Umstellung geschlossen wurde (`contractDate`, sonst Mietbeginn) und am Tag noch lief, ohne Pauschale
-  oder Inklusivmiete bei der Heizung: die beiden Voraussetzungen des § 556c Abs. 1 BGB, die Ankündigung als
+  vor der Umstellung geschlossen wurde (`contractDate`, sonst Mietbeginn) und am Tag noch lief, ohne Inklusivmiete
+  bei der Heizung (eine Betriebskostenpauschale zählt mit, § 556 Abs. 2 BGB, Auslegung; Durchsicht von #272, S1): die beiden Voraussetzungen des § 556c Abs. 1 BGB, die Ankündigung als
   eigene Pflicht (Abs. 2) mit § 11 Abs. 3 WärmeLV bei Zugang ab dem Tag `noticeMonths` Monate vorher
-  (Auslegung entsprechend §§ 187, 188 BGB), den Weg über § 5 WärmeLV; bei vorheriger Eigenversorgung der Mieter
+  (Auslegung entsprechend §§ 187, 188 BGB, im Text als vorsichtige Auslegung mit dem letzten Tag genannt; eine
+  Ankündigung nach der Umstellung hat einen eigenen Satz), den Weg über § 5 WärmeLV; bei vorheriger Eigenversorgung der Mieter
   BGH VIII ZR 46/25 und 47/25 (Volltext geprüft am 11.10.2026: § 556c gilt nicht; im entschiedenen Fall
   jedenfalls § 7 Abs. 2, § 8 Abs. 2 HeizkostenV, der volle Umfang offen); vor dem 01.07.2013 einen eigenen
   Text (VIII ZR 54/04). Der Wortlaut folgt der rechtlichen Gegenprüfung. Die Zahlen kommen aus
