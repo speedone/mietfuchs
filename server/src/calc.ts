@@ -6591,7 +6591,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const what =
       `Mietfuchs weiß nicht, womit das Haus geheizt wird. ${co2Duty('Heizen Sie mit Gas, Heizöl, Flüssiggas oder Kohle oder weist Ihr Wärmelieferant CO₂-Kosten aus, sind die CO₂-Kosten')} ` +
       `Fehlt das, darf jeder Mieter seinen Anteil an den Heizkosten um ${cut} % kürzen (§ 7 Abs. 4 CO2KostAufG)${cutsOn(new Set(looseRest.map((c) => c.id)), cut)}. ` +
-      'Richten Sie unter Stammdaten die Heizung ein; dann sagt Mietfuchs, was zu tun ist.'
+      'Richten Sie unter Stammdaten die Heizung ein; dann sagt Mietfuchs, was zu tun ist. ' +
+      // Heizung PR 19: Wer selbst heizt, ist von diesem Hinweis ausgenommen, sobald das Mietverhältnis es sagt.
+      'Bezieht der Mieter Brennstoff oder Wärme über einen eigenen Vertrag, etwa für eine Gastherme in der Wohnung, stellen Sie sein Mietverhältnis unter Heizung auf „Mieter heizt selbst“; dann entfällt die Kürzung.'
     const setUp: NoticeSubject = { kind: 'heatingPlant', id: '' }
     if (lawPeriod.from.slice(0, 4) === first.slice(0, 4)) {
       warn('co2.missing-first-year',
