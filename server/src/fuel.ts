@@ -236,6 +236,9 @@ export type FuelCarry = {
   // #251, R-2: Die abgeschlossene Heizperiode `other` hat `frozen` eingefroren, heute entfallen `today` auf sie.
   // Hinausgebucht wird `today`; der Unterschied steht beim Vermieter.
   frozenPart?: { frozen: number; today: number }
+  // Daneben eine eingefrorene Schätzung (die Lieferung war beim Abschluss eine Gutschrift ohne Rechnung): der eingefrorene
+  // Teil der Lieferung, den der Hinweis neben der Schätzung nennt (Durchsicht #277, S2).
+  estimateFrozenPart?: number
   landlord: { reason: 'fuelCarry' | 'fuelClosedPeriod' | 'fuelEstimateDiff'; cents: number }[]
   templates: { itemId: string; raw: number }[]
   // `ratios[k]`: der Anteil der eingefrorenen Schätzung `ids[k]`, den die Rechnung abdeckt (nach Gradtagen); nur
@@ -579,7 +582,7 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
             const booked = f.cents + (withEstimate ? est.cents : 0)
             carries.push({
               deliveryId: d.id, kind: 'out', other, cents: -calc, totalCents: T, ratio: s.ratio, method: s.method, frozen: true, zeroFrozen: false,
-              ...(withEstimate ? {} : { frozenPart: { frozen: f.cents, today: calc } }),
+              ...(withEstimate ? { estimateFrozenPart: f.cents } : { frozenPart: { frozen: f.cents, today: calc } }),
               landlord: withEstimate
                 ? [{ reason: 'fuelCarry', cents: booked }, ...(calc - booked !== 0 ? [{ reason: 'fuelEstimateDiff' as const, cents: calc - booked }] : [])]
                 : [{ reason: 'fuelCarry', cents: f.cents }, { reason: 'fuelClosedPeriod', cents: calc - f.cents }],
