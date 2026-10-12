@@ -2,7 +2,8 @@
 import type { HcaScale, HeatingRole, Meter, MeterType } from './types'
 import { EMPTY_HCA_FIELDS, hcaFieldsBody, hcaFieldsOf, type HcaFieldsForm } from './hcaForm'
 import { hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit } from '../../shared/law/heizkostenv.ts'
-import { germanDate, LAW_AS_OF, onlyVersion, valueAt } from '../../shared/law/register.ts'
+import { dayBefore, germanDate, LAW_AS_OF, onlyVersion, valueAt } from '../../shared/law/register.ts'
+import { calibrationEnd } from '../../shared/calibration.ts'
 
 // Fernablesbar? Leer heißt „weiß ich nicht“.
 export type RemoteAnswer = '' | 'yes' | 'no'
@@ -25,6 +26,8 @@ export type MeterForm = {
   heatingPlantId: string
   // Heizung PR 12: Skala und Bewertungsfaktor, nur beim Heizkostenverteiler.
   hca: HcaFieldsForm
+  // Heizung PR 21: geeicht bis Ende dieses Jahres; leer heißt „nicht angegeben“.
+  calibratedUntil: string
 }
 
 // Die Einheit, die ein Zähler seiner Sparte nach meist zeigt (#142). Vorher stand für jede Sparte
@@ -49,7 +52,7 @@ export function withMeterType(form: MeterForm, type: MeterType): MeterForm {
 }
 
 export const emptyMeterForm = (): MeterForm => ({
-  name: '', unitId: '', type: 'kaltwasser', meterNumber: '', unit: defaultMeterUnit('kaltwasser'), heatingRole: '', keptRole: '', remote: '', installedOn: '', heatingPlantId: '', hca: EMPTY_HCA_FIELDS,
+  name: '', unitId: '', type: 'kaltwasser', meterNumber: '', unit: defaultMeterUnit('kaltwasser'), heatingRole: '', keptRole: '', remote: '', installedOn: '', heatingPlantId: '', hca: EMPTY_HCA_FIELDS, calibratedUntil: '',
 })
 
 export const meterToForm = (m: Meter): MeterForm => ({
@@ -65,6 +68,7 @@ export const meterToForm = (m: Meter): MeterForm => ({
   installedOn: m.installedOn ?? '',
   heatingPlantId: m.heatingPlantId ?? '',
   hca: hcaFieldsOf(m),
+  calibratedUntil: m.calibratedUntil == null ? '' : String(m.calibratedUntil),
 })
 
 export const HEATING_ROLE_LABELS: Record<HeatingRole, string> = {
@@ -120,6 +124,8 @@ export type MeterBody = {
   // Heizung PR 12: bei jeder anderen Sparte `null`, sonst lehnte der Server ab.
   hcaScale: HcaScale | null
   ratingFactor: number | null
+  // Heizung PR 21: bei jeder Sparte, auch ohne Heizanlage; beim Heizkostenverteiler immer `null`.
+  calibratedUntil: number | null
 }
 
 // Der Hilfetext am Einbaudatum, mit den Stichtagen aus dem Register (Durchsicht von #230, M5).
@@ -148,6 +154,10 @@ export function meterBody(form: MeterForm, plantId: string | null): { body: Mete
   const number = form.meterNumber.trim()
   const hca = hcaFieldsBody(form.type, form.hca)
   if ('error' in hca) return { error: hca.error }
+  const until = form.calibratedUntil.trim()
+  if (asksCalibration(form) && until !== '' && !/^[1-9]\d{3}$/.test(until)) {
+    return { error: 'Bitte tragen Sie das Eichjahr vierstellig ein, so wie es der Messdienst oder der Eichschein nennt, oder lassen Sie das Feld leer.' }
+  }
   return {
     body: {
       name: form.name.trim(),
@@ -158,6 +168,8 @@ export function meterBody(form: MeterForm, plantId: string | null): { body: Mete
       unit: form.unit.trim() || defaultMeterUnit(form.type),
       heatingPlantId: role === null ? null : plantId,
       heatingRole: role,
+      // Heizkostenverteiler sind nicht eichpflichtig (Entwurf 3.12): nie ein Eichjahr.
+      calibratedUntil: asksCalibration(form) && until !== '' ? Number(until) : null,
       ...(plantId === null ? {} : {
         remoteReadable: asks && form.remote !== '' ? form.remote === 'yes' : null,
         installedOn: asks && form.installedOn !== '' ? form.installedOn : null,
@@ -172,3 +184,45 @@ export function meterBody(form: MeterForm, plantId: string | null): { body: Mete
 export function oldEndText(value: number | null | undefined): string {
   return value == null ? 'fehlt' : value.toLocaleString('de-DE')
 }
+
+// ---------- Eichfrist (Heizung PR 21, #98) ----------
+
+// Das Feld gibt es für jede Sparte außer Heizkostenverteilern (Plan PR 21, Abweichung 7): Auch Gas- und
+// Stromzähler sind eichpflichtig (Anlage 7 Nr. 5.6 und Nr. 6 MessEV).
+export const asksCalibration = (form: Pick<MeterForm, 'type'>): boolean => form.type !== 'hkv'
+
+const ASK_SOURCE = 'Tragen Sie das Jahr ein, das der Messdienst oder der Eichschein nennt.'
+
+// Der Vorschlag „geeicht bis“ aus der Jahreszahl auf dem Zähler (Eichmarke: das Jahr, in dem die Frist beginnt,
+// Anlage 8 MessEV; Kennzeichnung „M22“: das Jahr der Anbringung, als Jahr des Inverkehrbringens vermutet). Das Ende
+// rechnet shared/calibration.ts; alle Zahlen und Daten kommen aus dem Register.
+export function calibrationSuggestion(type: MeterType, markedYear: string): { year: number; text: string } | { reason: string } {
+  const text = markedYear.trim()
+  if (!/^[1-9]\d{3}$/.test(text)) return { reason: 'Bitte nennen Sie die Jahreszahl vierstellig, wie auf dem Zähler.' }
+  const year = Number(text)
+  const end = calibrationEnd(type, year)
+  if (end.kind === 'notInRegister') {
+    return { reason: `Für diese Sparte schlägt Mietfuchs kein Jahr vor, denn ihre Eichfrist hängt von der Bauart ab. ${ASK_SOURCE.replace('der Messdienst', 'der Versorger, der Messdienst')}` }
+  }
+  if (end.kind === 'beforeRegister') {
+    return { reason: `Für Zähler mit einer Jahreszahl vor ${end.firstYear} schlägt Mietfuchs kein Jahr vor: Bis dahin galt die Eichordnung, deren Fristen Mietfuchs nicht führt. ${ASK_SOURCE}` }
+  }
+  if (end.change === null) {
+    return { year: end.year, text: `Vorschlag: geeicht bis Ende ${end.year} (Jahreszahl auf dem Zähler ${year}, Eichfrist ${end.years} Jahre).` }
+  }
+  const { from, before, after } = end.change
+  const sameYear = Number(from.slice(0, 4)) === year
+    ? ` Wurde der Zähler nach dem ${germanDate(dayBefore(from))} gekennzeichnet oder geeicht, galten von Anfang an ${after} Jahre; das Ende ist dasselbe.`
+    : ''
+  return {
+    year: end.year,
+    text:
+      `Vorschlag: geeicht bis Ende ${end.year} (Jahreszahl auf dem Zähler ${year}). Seine Eichfrist von ${before} Jahren lief am ${germanDate(from)} noch, als sie auf ${after} Jahre stieg. ` +
+      `Die Änderungsverordnung enthält dafür keine Übergangsregel; Mietfuchs rechnet wie die Eichbehörden und Messdienste mit den ${after} Jahren (Auslegung). Steht auf dem Zähler noch das alte Ende, gilt im Zweifel das Jahr laut Messdienst.${sameYear}`,
+  }
+}
+
+// Der Hinweis unter dem Vorschlag (Prüfung des Plans, M4; § 34 Abs. 1 Satz 3, Anlage 8 MessEV).
+export const CALIBRATION_MARK_HELP =
+  'Die Jahreszahl auf der Eichmarke nennt das Jahr, in dem die Eichfrist beginnt. Wurde der Zähler erst nach Ablauf der alten Frist neu geeicht, beginnt die neue Frist mit dem Ablauf der alten; auf der Marke steht dann dieses Jahr und nicht das Jahr der Eichung (§ 34 Abs. 1 Satz 3, Anlage 8 MessEV). ' +
+  'Eine Bauartzulassung nach dem früheren Eichrecht kann eine andere Frist bestimmen (§ 34 Abs. 1 Nr. 2 MessEV). Nehmen Sie im Zweifel das Jahr laut Eichschein oder Messdienst.'
