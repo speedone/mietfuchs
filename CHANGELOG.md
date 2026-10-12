@@ -604,6 +604,25 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Vermieters“ in einem Zeitraum unter einem Jahr nicht in den Vorschlag nach § 560 BGB ein; der Vorschlag war um
   den hochgerechneten Abzug zu hoch. Jetzt wird sie mit dem Faktor ihrer Heizpositionen hochgerechnet, wie beim
   Messdienst. Keine Zahl einer Abrechnung ändert sich, nur der Vorschlag.
+- **Heizkosten: Lieferung mit negativer Summe (Gutschrift ohne Rechnung).** Ergaben die Positionen
+  einer Lieferung zusammen weniger als 0 €, rechnete Mietfuchs sie wie eine Rechnung: Sie deckte Tage
+  ab, verdrängte dort eine Schätzung, diente als Vorlage für einen negativen Schätzvorschlag und
+  zählte CO₂-Ausstoß. Jetzt belegt sie keinen Verbrauch und zählt dafür wie ein Storno; ihr Betrag
+  mindert weiter die Heizkosten der Heizperioden ihres Zeitraums. Ein Hinweis nennt sie, und die
+  Seite Heizkosten fragt „Was ist diese Gutschrift?“: einer anderen Lieferung zuordnen, Anleitung für
+  den Zahlbetrag nach Abzug der Abschläge, oder bestätigen, dass die Rechnung nicht in Mietfuchs
+  steht. Im Vorrat macht eine solche Lieferung die Bestandsrechnung ungültig, statt den Endbestand
+  mit einem negativen Wert zu bewerten. Hatte eine abgeschlossene Heizperiode einen anderen Teil einer
+  Rechnung eingefroren, als heute auf sie entfiele (Rechnung danach gemindert, auch bis unter 0 €,
+  oder gestiegen), trugen die Mieter der offenen Heizperiode den Unterschied; mit Mieterwechsel waren
+  das im gemessenen Fall 2.332,08 € zu viel für den Vormieter und ebenso viel zu viel Gutschrift für
+  den Nachmieter. Jetzt tragen sie nur ihren heutigen Teil, der Unterschied steht beim Vermieter mit
+  dem Hinweis, dass die Mieter der abgeschlossenen Abrechnung zu viel getragen haben, bzw. was sich
+  dort nachfordern ließe. Dabei behoben: Eine teilweise abgedeckte, eingefrorene Schätzung wurde beim
+  Abgleich ein zweites Mal gekürzt, sodass der Hinweis eine Nachforderung statt einer Gutschrift
+  nennen konnte. Offene Abrechnungen mit solchen Lieferungen können sich dadurch ändern;
+  abgeschlossene bleiben unverändert, die Abweichung zeigt die heutige Berechnung
+  ([#251](https://github.com/speedone/mietfuchs/issues/251)).
 - **Messdienst-Abrechnung mit Vorwegabzug: der CO₂-Anteil des Vermieters fehlte in der
   Steuerübersicht.** Die Anleitung „Fertige Abrechnung eines Messdienstes übernehmen“ ließ als
   Betrag den Gesamtbetrag der Abrechnung eintragen. Techem und ista ziehen den CO₂-Anteil, den der

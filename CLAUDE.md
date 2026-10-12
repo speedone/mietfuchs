@@ -1137,6 +1137,29 @@ mehrere je Lieferung (Abschlag, Schlussrechnung, Gutschrift). Abgegrenzt wird in
   die Gegenbuchungen auf oder ein ausgewiesener Teil desselben Paars deckt sie genau (eine Summe über
   alle Lieferungen ließe eine falsche Gegenbuchung hinter einem berechtigten Teil verschwinden). Feste Startwerte, mehr mit `INV_FROM`/`INV_TO`; jede
   Rücknahme der Befunde der Durchsicht macht sie rot (Mutationsprobe).
+- **Gutschrift ohne Rechnung** (#251): Ob eine Lieferung Rechnung, Storno oder Gutschrift ohne
+  Rechnung ist, entscheidet **eine** Stelle, `invoiceStatusOf` in fuel.ts (Summe der Positionen > 0,
+  = 0, < 0; Bewertung, Blatt für den Messdienst und Plausibilität fragen `notInvoiceDeliveries`). Eine
+  Lieferung mit negativer Summe belegt keinen Verbrauch (§ 7 Abs. 2 HeizkostenV): keine Tage, keine
+  Verdrängung einer Schätzung, keine Vorlage für einen Vorschlag (`templateFor` nur mit Summe > 0),
+  kein CO₂, im Vorrat ungültig mit Satz. Ihr Geld wird nach Anteil verteilt wie das einer Rechnung;
+  das ist Auslegung am Verbrauchsprinzip (BGH VIII ZR 156/11) und steht so im Hinweis
+  `fuel.credit-only` (bestätigt `fuel.credit-only-confirmed`, Stufe `hint`, über
+  `fuel_deliveries.credit_note_kind = 'standalone'`, Migration 0046/0047; die Angabe steuert nur die
+  Stufe, keine Zahl). `POST /api/fuel-deliveries/:id/reassign-credit` (`reassignCredit`) hängt die
+  Positionen an die Lieferung, die sie berichtigt, in deren Heizperiode; 409, solange eine der
+  beiden abgeschlossen ist. Oberfläche: `client/src/fuelCredit.ts`.
+  **Eingefrorener Teil ≠ heutiger Teil** (R-2): Hat eine abgeschlossene Heizperiode einen anderen Teil
+  einer Rechnung eingefroren als heute auf sie entfiele, bucht die Heizperiode der Positionen nur den
+  heutigen hinaus (`frozenPart` am Übertrag); der Unterschied steht beim Vermieter als
+  `fuelClosedPeriod` (darüber: `fuel.reduced-after-close`, die Mieter jener Abrechnung haben zu viel
+  getragen; darunter: `fuel.closed-period-part`, nachfordern nur dort). Der eingefrorene Übertrag führt
+  dafür `bookedCents`, damit ein späteres Storno das Hereingebuchte gegenbucht. **`estimatesIn`** (R-3)
+  nimmt als ersetzt den Betrag der Schätzung für die Tage, die keine andere echte Rechnung abdeckt,
+  höchstens den eingefrorenen; der eingefrorene Betrag ist schon um die beim Abschluss abgedeckten
+  Tage gekürzt. Die Invariante prüft dazu (c1) Abdeckung ohne Gutschriften, (c2) keinen negativen
+  Vorschlag, (c3) je Mieter gegen die offene andere Heizperiode, und die Gutschrift je Mieter auch neben
+  einer zweiten Rechnung (doppeltes Kontrafaktum); Variante „Gutschrift ohne Rechnung“.
 - **Gesperrt bis zu ihren PRs:** Vorratsenergien (PR 8), Lieferungen je Wohnung (PR 9), Netzentgelte
   und Biobrennstoff (PR 18), Methode `self` (PR 10); jeder Satz sagt, was bis dahin geht.
 - **Golden F15 und F12** ([server/test/fixtures/heating/](server/test/fixtures/heating/)): F15 ist das
