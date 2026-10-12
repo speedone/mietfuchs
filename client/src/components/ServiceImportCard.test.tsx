@@ -51,6 +51,21 @@ test('Der Beleg geht mit Objekt und Jahr an die Anlage; die Prüfansicht zeigt d
   expect(posted).toEqual([{ url: '/api/heating-plants/hp/service-statement', fields: { propertyId: 'objekt-1', year: '2025' } }])
 })
 
+test('Durchsicht S4: steht Kaltwasser mit Einzelbeträgen schon im Abrechnungszeitraum, ist der Block nicht vorgehakt', async () => {
+  result.extraction.blocks.push({ title: 'Kaltwasser', category: 'Wasser/Abwasser', totalEur: 100, lines: [{ label: 'Mustermann, Erika', unitLabel: null, from: null, to: null, amountEur: 100, vacancy: false }] })
+  try {
+    render(<ServiceImportCard plant={{ id: 'hp', propertyId: 'objekt-1' }} view={view()} object={{ key: periodKey('2025-01'), from: '2025-01-01', to: '2025-12-31' }} tenancies={TENANCIES} units={UNITS}
+      items={[{ period: periodKey('2025-01'), key: 'amounts', category: 'Wasser/Abwasser' }, { period: periodKey('2024-01'), key: 'amounts', category: 'Müllabfuhr' }]} onSaved={() => {}} />)
+    fireEvent.change(screen.getByLabelText('Messdienstabrechnung wählen'), { target: { files: [new File(['x'], 'abrechnung.jpg', { type: 'image/jpeg' })] } })
+    const kalt = await screen.findByLabelText('Kaltwasser')
+    const heiz = screen.getByLabelText('Heizung und Warmwasser')
+    if (!(kalt instanceof HTMLInputElement) || !(heiz instanceof HTMLInputElement)) throw new Error('kein Haken')
+    expect([heiz.checked, kalt.checked]).toEqual([true, false])
+  } finally {
+    result.extraction.blocks.pop()
+  }
+})
+
 test('In einer abgeschlossenen Heizperiode gibt es nichts auszulesen', () => {
   render(<ServiceImportCard plant={{ id: 'hp', propertyId: 'objekt-1' }} view={view(true)} object={{ key: periodKey('2025-01'), from: '2025-01-01', to: '2025-12-31' }} tenancies={TENANCIES} units={UNITS} onSaved={() => {}} />)
   expect(screen.queryByLabelText('Messdienstabrechnung wählen')).toBeNull()

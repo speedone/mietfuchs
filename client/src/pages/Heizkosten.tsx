@@ -127,7 +127,7 @@ export default function Heizkosten({ units, tenancies }: { units: Unit[]; tenanc
                 <h2 className="section-title">{plant.name || 'Heizanlage'}, Heizperiode {v.label}</h2>
                 {/* Heizung PR 20 (#103): die Abrechnung des Messdienstes mit der KI auslesen; übernommen wird in der Prüfansicht. */}
                 {plant.method === 'service' && (
-                  <ServiceImportCard plant={plant} view={v} object={period.period} tenancies={tenancies} units={units} co2={v.from >= first} onSaved={() => void load()} />
+                  <ServiceImportCard plant={plant} view={v} object={period.period} tenancies={tenancies} units={units} items={data?.items ?? []} co2={v.from >= first} onSaved={() => void load()} />
                 )}
                 {plant.method === 'service' && (v.from >= first ? (
                   <Co2Card key={`${v.period}:${v.co2?.method ?? ''}`} view={v} tenancies={tenancies} unitsCount={plant.units?.length ?? units.length} hasSelfUsed={units.some((u) => u.selfUsed === true)} onSaved={() => void load()} />

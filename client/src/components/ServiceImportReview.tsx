@@ -8,7 +8,7 @@ import Table from './Table'
 import Term from './Term'
 import { CO2_ANSWER_OPTIONS, CO2_EXAMPLE, CO2_QUESTION, co2Body, co2ToForm, probeLine, type Co2Answer } from '../co2Form'
 import {
-  answerConflict, blockBlocked, co2FormFromExtraction, deductionHint, DHW_LABELS, dhwNote, draftsOf, itemBodies, serviceChecks, targetOptions,
+  answerConflict, blockBlocked, co2FormFromExtraction, deductionHint, DHW_LABELS, dhwNote, draftsOf, duplicateBlocks, itemBodies, serviceChecks, targetOptions,
   type BlockDraft, type ImportContext,
 } from '../serviceImport'
 import { spansTwoYears } from '../../../shared/period.ts'
@@ -45,6 +45,17 @@ export default function ServiceImportReview({ x, file, ctx, view, co2 = true, on
     if (r.bodies.length === 0) {
       setError('Es ist kein Block zum Anlegen gewählt. Setzen Sie den Haken bei den Blöcken, die Sie übernehmen wollen.')
       return
+    }
+    // Durchsicht S4: Gibt es den Block schon (erneut ausgelesen), wird nicht still ein zweites Mal angelegt.
+    const twice = duplicateBlocks(x, drafts, ctx)
+    if (twice.length > 0) {
+      const ok = await confirm({
+        title: 'Diese Kosten gibt es schon',
+        message: `Für ${twice.map((t) => `„${t}“`).join(', ')} stehen schon Einzelbeträge in der Abrechnung. Legen Sie die Positionen nur an, wenn sie noch fehlen; sonst stünden die Kosten doppelt in der Abrechnung.`,
+        confirmLabel: 'Trotzdem anlegen',
+        defaultChoice: 'cancel',
+      })
+      if (!ok) return
     }
     setBusy(true)
     let created = 0
