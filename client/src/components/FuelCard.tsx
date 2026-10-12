@@ -5,15 +5,26 @@ import { useState } from 'react'
 import { api, errorText, fmtEuro } from '../api'
 import { useConfirm, useToast } from './feedback'
 import Term from './Term'
-import { asksCo2Facts, STOCK_BIO_ONLY_ZERO, GAS_BASIS_LABEL, GAS_BASIS_MISSING, gasBasisMissing, defaultGrade, deliveryLine, deliveryOptions, deliveryUnitId, emptyFuelForm, fuelBody, fuelToForm, GAS_BASIS_OPTIONS, gradeOptions, STOCK_QUANTITY_OPTIONS, stockFuelBody, unitWordFor, type FuelForm } from '../fuelForm'
+import { asksCo2Facts, STOCK_BIO_ONLY_ZERO, GAS_BASIS_LABEL, GAS_BASIS_MISSING, gasBasisMissing, defaultGrade, deliveryLine, deliveryOptions, deliveryUnitId, emptyFuelForm, fuelBody, fuelToForm, GAS_BASIS_OPTIONS, gradeOptions, METERED_QUANTITY_OPTIONS, STOCK_QUANTITY_OPTIONS, stockFuelBody, unitWordFor, type FuelForm, type FuelPartForm } from '../fuelForm'
+import { aiRequest, progressText, type AiProgress } from '../aiRequest'
+import { heatingUpload } from '../aiUpload'
+import { fuelChecks, fuelFormFromExtraction } from '../fuelImport'
 import { isStockEnergy } from '../../../shared/fuelStock.ts'
 import { billingEnergy } from '../../../shared/heatDelivery.ts'
-import type { FuelDelivery, HeatingEnergy, HeatingMethod, HeatingPeriodView, HeatingPlant, Unit } from '../types'
+import { startYearOf } from '../../../shared/period.ts'
+import type { FuelDelivery, FuelExtractResult, HeatingEnergy, HeatingMethod, HeatingPeriodView, HeatingPlant, Unit } from '../types'
 
-type TextKey = Exclude<keyof FuelForm, 'usedByService' | 'quantityUnit' | 'unitId' | 'gasBasis' | 'grade'>
+type TextKey = Exclude<keyof FuelForm, 'usedByService' | 'quantityUnit' | 'unitId' | 'gasBasis' | 'grade' | 'parts'>
+
+// Die Spalten einer Teilmenge laut Rechnung (Heizung PR 20).
+const PART_FIELDS: readonly { key: keyof FuelPartForm; label: string }[] = [
+  { key: 'from', label: 'von' }, { key: 'to', label: 'bis' }, { key: 'energyKwh', label: 'kWh' }, { key: 'amount', label: 'Betrag' },
+  { key: 'fixed', label: 'davon fest' }, { key: 'emissionsKg', label: 'kg CO₂' }, { key: 'co2Cost', label: 'CO₂-Kosten' },
+]
+const EMPTY_PART: FuelPartForm = { from: '', to: '', energyKwh: '', amount: '', fixed: '', emissionsKg: '', co2Cost: '' }
 
 export default function FuelCard({ plant, view, deliveries, units = [], findings = {}, onSaved }: {
-  plant: { id: string; method: HeatingMethod; energy?: HeatingEnergy } & Partial<Pick<HeatingPlant, 'supply' | 'units' | 'contracting' | 'heatGeneration' | 'gmodg43InstalledOn'>>
+  plant: { id: string; method: HeatingMethod; energy?: HeatingEnergy } & Partial<Pick<HeatingPlant, 'supply' | 'units' | 'contracting' | 'heatGeneration' | 'gmodg43InstalledOn' | 'propertyId'>>
   view: HeatingPeriodView
   deliveries: FuelDelivery[]
   // Die Wohnungen des Objekts, für die Rechnung einer Etagenheizung (Heizung PR 9).
@@ -26,6 +37,9 @@ export default function FuelCard({ plant, view, deliveries, units = [], findings
   const [editing, setEditing] = useState<string | null>(null)
   const [form, setForm] = useState<FuelForm>(emptyFuelForm)
   const [error, setError] = useState('')
+  // Heizung PR 20: die Prüfungen einer mit der KI gelesenen Rechnung und der Fortschritt beim Lesen.
+  const [checks, setChecks] = useState<string[]>([])
+  const [reading, setReading] = useState<AiProgress | null | 'start'>(null)
   const toast = useToast()
   const confirm = useConfirm()
   const service = plant.method === 'service'
@@ -49,7 +63,27 @@ export default function FuelCard({ plant, view, deliveries, units = [], findings
     // Heizung PR 11: Die Zeile der Heizwerttabelle ist nur vorbelegt, wo es genau eine gibt.
     setForm(d ? fuelToForm(d) : { ...emptyFuelForm(), grade: energy ? defaultGrade(energy) : '' })
     setEditing(d ? d.id : 'neu')
+    setChecks([])
     setError('')
+  }
+
+  // Heizung PR 20 (#103): Die KI liest die Rechnung, das Formular einer neuen Lieferung ist damit vorbelegt;
+  // gespeichert wird erst mit „Lieferung speichern“. Der Beleg liegt mit Objekt und Jahr im Belegordner.
+  async function readInvoice(file: File) {
+    setReading('start')
+    setError('')
+    try {
+      const fd = plant.propertyId ? await heatingUpload(file, { propertyId: plant.propertyId, year: startYearOf(view.period) }) : await heatingUpload(file, null)
+      const r = await aiRequest<FuelExtractResult>(`/api/heating-plants/${plant.id}/fuel-invoice`, fd, { onProgress: setReading })
+      const place = { method: plant.method, stock, halfSplit }
+      setForm(fuelFormFromExtraction(r.extraction, { ...emptyFuelForm(), grade: energy ? defaultGrade(energy) : '' }, place))
+      setChecks(fuelChecks(r.extraction, place))
+      setEditing('neu')
+    } catch (e) {
+      setError(errorText(e))
+    } finally {
+      setReading(null)
+    }
   }
 
   async function save() {
@@ -164,6 +198,7 @@ export default function FuelCard({ plant, view, deliveries, units = [], findings
       )}
       {editing !== null && (
         <div className="field-group">
+          {checks.length > 0 && <ul className="notice">{checks.map((c) => <li key={c}>{c}</li>)}</ul>}
           {plant.supply === 'perUnit' && (
             <label className="field grow">
               Wohnung
@@ -211,10 +246,20 @@ export default function FuelCard({ plant, view, deliveries, units = [], findings
               {text('fixed', 'davon fester Preisbestandteil (Grund-, Mess-, Verrechnungspreis)')}
               {text('energyKwh', 'Energie (kWh)')}
             </div>
+            {/* Heizung PR 20: die Menge laut Rechnung, wie sie auf dem Beleg steht. */}
+            <div className="row">
+              {text('quantity', 'Menge')}
+              <label className="field">
+                Einheit
+                <select aria-label="Einheit der Menge laut Rechnung" value={form.quantityUnit} onChange={(e) => set('quantityUnit', METERED_QUANTITY_OPTIONS.find((o) => o.value === e.target.value)?.value ?? '')}>
+                  {METERED_QUANTITY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </label>
+            </div>
             {energy === 'gas' && (<>
               <label className="field">
                 {GAS_BASIS_LABEL}
-                <select value={form.gasBasis} onChange={(e) => set('gasBasis', GAS_BASIS_OPTIONS.find((o) => o.value === e.target.value)?.value ?? '')}>
+                <select aria-label={GAS_BASIS_LABEL} value={form.gasBasis} onChange={(e) => set('gasBasis', GAS_BASIS_OPTIONS.find((o) => o.value === e.target.value)?.value ?? '')}>
                   {GAS_BASIS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </label>
@@ -227,6 +272,31 @@ export default function FuelCard({ plant, view, deliveries, units = [], findings
             <div className="row">
               {text('emissionsKg', 'CO₂-Ausstoß laut Rechnung (kg)')}
               {text('co2Cost', 'CO₂-Kosten laut Rechnung')}
+              {text('emissionFactor', 'Emissionsfaktor laut Rechnung (kg CO₂ je kWh)')}
+            </div>
+          )}
+          {/* Heizung PR 20: Teilmengen laut Rechnung (Stufe 3), etwa bei einer Preisänderung; nicht beim Vorrat. */}
+          {!stock && (
+            <div className="field-group">
+              <div className="field-group-label">Teilmengen laut Rechnung, wenn die Rechnung Teilzeiträume mit eigener Menge und eigenem Betrag ausweist</div>
+              {form.parts.map((p, i) => (
+                <div className="row" key={i}>
+                  {PART_FIELDS.map((f) => (
+                    <label className="field" key={f.key}>
+                      {f.label}
+                      <input
+                        aria-label={`Teilmenge ${i + 1}: ${f.label}`}
+                        type={f.key === 'from' || f.key === 'to' ? 'date' : 'text'}
+                        inputMode={f.key === 'from' || f.key === 'to' ? undefined : 'decimal'}
+                        value={p[f.key]}
+                        onChange={(e) => set('parts', form.parts.map((q, j) => (j === i ? { ...q, [f.key]: e.target.value } : q)))}
+                      />
+                    </label>
+                  ))}
+                  <button className="btn ghost" type="button" onClick={() => set('parts', form.parts.filter((_, j) => j !== i))}>Teilmenge entfernen</button>
+                </div>
+              ))}
+              <div className="row"><button className="btn secondary" type="button" onClick={() => set('parts', [...form.parts, EMPTY_PART])}>Teilmenge hinzufügen</button></div>
             </div>
           )}
           {halfSplit && (
@@ -255,7 +325,17 @@ export default function FuelCard({ plant, view, deliveries, units = [], findings
         </div>
       )}
       {error && <div className="error">{error}</div>}
-      {!view.closed && editing === null && <div className="row"><button className="btn" onClick={() => open(null)}>Lieferung eintragen</button></div>}
+      {!view.closed && editing === null && (
+        <div className="row">
+          <button className="btn" onClick={() => open(null)}>Lieferung eintragen</button>
+          {reading === null ? (
+            <label className="btn secondary">
+              Rechnung mit KI auslesen
+              <input type="file" className="sr-only" aria-label="Rechnung mit KI auslesen" accept="application/pdf,image/*" onChange={(e) => { const f = e.target.files?.[0]; if (f) void readInvoice(f) }} />
+            </label>
+          ) : <span className="muted">{progressText(reading === 'start' ? null : reading)}</span>}
+        </div>
+      )}
     </div>
   )
 }

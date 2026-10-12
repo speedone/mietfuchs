@@ -6,7 +6,7 @@ import { ambiguousText, ambiguousThousands } from './numbers'
 import { formatDayRange } from '../../shared/period.ts'
 import { germanDate } from '../../shared/law/register.ts'
 import { STOCK_UNIT_LABELS, STOCK_UNIT_TEXT } from '../../shared/fuelStock.ts'
-import type { Co2Restriction, DegreeDayValue, FuelDelivery, FuelGrade, GasBasis, HeatGeneration, HeatingEnergy, HeatingMethod, HeatingPlant, StockUnit } from './types'
+import type { Co2Restriction, DegreeDayValue, FuelDelivery, FuelGrade, FuelQuantityUnit, GasBasis, HeatGeneration, HeatingEnergy, HeatingMethod, HeatingPlant, StockUnit } from './types'
 import { FUEL_GRADE_LABELS, GRADES_BY_ENERGY, HEATING_VALUE_UNIT_TEXT } from '../../shared/fuelGrades.ts'
 import { billingEnergy, NO_CO2_FUELS } from '../../shared/heatDelivery.ts'
 
@@ -22,6 +22,9 @@ export const CO2_ENERGIES: readonly HeatingEnergy[] = ['gas', 'oil', 'lpg', 'coa
 export const asksCo2Facts = (plant: { energy: HeatingEnergy; contracting?: boolean; heatGeneration?: HeatGeneration | null }): boolean =>
   CO2_ENERGIES.includes(billingEnergy(plant)) && !(plant.contracting === true && NO_CO2_FUELS.includes(plant.energy) && plant.heatGeneration !== 'mixed')
 
+// Eine Teilmenge laut Rechnung im Formular (Heizung PR 20, Stufe 3 in 3.2 des Entwurfs).
+export type FuelPartForm = { from: string; to: string; energyKwh: string; amount: string; fixed: string; emissionsKg: string; co2Cost: string }
+
 export type FuelForm = {
   label: string
   invoiceFrom: string
@@ -33,11 +36,12 @@ export type FuelForm = {
   co2Cost: string
   energyKwh: string
   usedByService: boolean
-  // Vorrat (Heizung PR 8): Lieferdatum, Rechnungsdatum und Menge.
+  // Vorrat (Heizung PR 8): Lieferdatum, Rechnungsdatum und Menge. Seit Heizung PR 20 die Menge auch bei Gas,
+  // Fernwärme und Strom (m³ oder kWh laut Rechnung); der Vorrat nimmt nur Liter, Kilogramm und Schüttraummeter.
   deliveredAt: string
   invoiceDate: string
   quantity: string
-  quantityUnit: StockUnit | ''
+  quantityUnit: FuelQuantityUnit | ''
   // Etagenheizung (Heizung PR 9): die Wohnung, deren Heizung die Rechnung betrifft.
   unitId: string
   // Heizung PR 11 (Warmwasseranteil der eigenen Abrechnung): bei Gas, ob nach Brennwert oder Heizwert
@@ -49,17 +53,21 @@ export type FuelForm = {
   // Heizung PR 18 (§ 5a CO2KostAufG): Netzentgelte und Kosten des Pflichtanteils an Biobrennstoff laut Rechnung.
   gridFee: string
   bioCost: string
+  // Heizung PR 20: der Emissionsfaktor laut Rechnung (§ 3 Abs. 1 Nr. 3 CO2KostAufG) und die Teilmengen.
+  emissionFactor: string
+  parts: FuelPartForm[]
 }
 
 export const emptyFuelForm = (): FuelForm => ({
   label: '', invoiceFrom: '', invoiceTo: '', amount: '', fixed: '', sharePercent: '', emissionsKg: '', co2Cost: '', energyKwh: '', usedByService: true,
   deliveredAt: '', invoiceDate: '', quantity: '', quantityUnit: '', unitId: '', gasBasis: '', heatingValue: '', grade: '', gridFee: '', bioCost: '',
+  emissionFactor: '', parts: [],
 })
 
 const centsText = (cents: number | null): string =>
   cents === null ? '' : (cents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-const numberText = (n: number | null): string =>
-  n === null ? '' : n.toLocaleString('de-DE', { maximumFractionDigits: 4, useGrouping: false })
+const numberText = (n: number | null, digits = 4): string =>
+  n === null ? '' : n.toLocaleString('de-DE', { maximumFractionDigits: digits, useGrouping: false })
 
 export function fuelToForm(d: FuelDelivery): FuelForm {
   return {
@@ -76,13 +84,18 @@ export function fuelToForm(d: FuelDelivery): FuelForm {
     deliveredAt: d.deliveredAt ?? '',
     invoiceDate: d.invoiceDate ?? '',
     quantity: numberText(d.quantity),
-    quantityUnit: d.quantityUnit === 'l' || d.quantityUnit === 'kg' || d.quantityUnit === 'srm' ? d.quantityUnit : '',
+    quantityUnit: d.quantityUnit ?? '',
     unitId: d.unitId ?? '',
     gasBasis: d.gasBasis ?? '',
     heatingValue: numberText(d.heatingValue),
     grade: d.fuelGrade ?? '',
     gridFee: centsText(d.gridFeeCents),
     bioCost: centsText(d.bioCostCents),
+    emissionFactor: numberText(d.emissionFactor, 6),
+    parts: d.parts.map((p) => ({
+      from: p.from, to: p.to, energyKwh: numberText(p.energyKwh), amount: centsText(p.amountCents), fixed: centsText(p.fixedCents),
+      emissionsKg: numberText(p.emissionsKg), co2Cost: centsText(p.co2CostCents),
+    })),
   }
 }
 
@@ -102,6 +115,14 @@ export const STOCK_QUANTITY_OPTIONS: readonly { value: StockUnit | ''; label: st
   { value: 'srm', label: STOCK_UNIT_LABELS.srm },
 ]
 
+// Die Einheiten der Menge bei Gas, Fernwärme und Strom (Heizung PR 20), mit leerer Vorauswahl.
+export const METERED_QUANTITY_OPTIONS: readonly { value: FuelQuantityUnit | ''; label: string }[] = [
+  { value: '', label: 'keine Angabe' },
+  { value: 'm3', label: 'm³' },
+  { value: 'kWh', label: 'kWh' },
+]
+const isStockUnit = (u: FuelQuantityUnit | ''): u is StockUnit => u === 'l' || u === 'kg' || u === 'srm'
+
 // Der Rumpf einer Lieferung von Heizöl, Flüssiggas, Pellets, Holz oder Kohle (Heizung PR 8): Lieferdatum
 // und Menge statt Rechnungszeitraum; abgegrenzt wird über Anfangs- und Endbestand. Den Betrag gibt es
 // nur beim Messdienst (bei freien Schlüsseln steht er in den verknüpften Positionen).
@@ -110,6 +131,9 @@ export function stockFuelBody(form: FuelForm, method: HeatingMethod, opts: HalfS
   const quantity = form.quantity.trim() === '' ? null : parseDecimal(form.quantity)
   if (quantity === null || !(quantity > 0)) return { error: 'Bitte geben Sie die gelieferte Menge an, wie auf der Rechnung.' }
   if (form.quantityUnit === '') return { error: 'Bitte wählen Sie die Einheit der Menge.' }
+  if (!isStockUnit(form.quantityUnit)) return { error: 'Beim Vorrat geben Sie die Menge in Litern, Kilogramm oder Schüttraummetern an, wie auf der Rechnung.' }
+  const factor = form.emissionFactor.trim() === '' ? null : parseDecimal(form.emissionFactor)
+  if (form.emissionFactor.trim() !== '' && (factor === null || factor < 0)) return { error: 'Der Emissionsfaktor ist eine Zahl ab 0.' }
   const amount = method === 'service' && form.amount.trim() !== '' ? parseEuro(form.amount) : null
   if (method === 'service' && form.amount.trim() !== '' && amount === null) return { error: 'Der Rechnungsbetrag ist kein Betrag.' }
   const kg = form.emissionsKg.trim() === '' ? null : parseDecimal(form.emissionsKg)
@@ -134,6 +158,7 @@ export function stockFuelBody(form: FuelForm, method: HeatingMethod, opts: HalfS
       ...(method === 'service' ? { amountCents: amount, usedByService: form.usedByService } : {}),
       emissionsKg: kg,
       co2CostCents: co2,
+      emissionFactor: factor,
       ...(opts.halfSplit ? { bioCostCents: bio } : {}),
     },
   }
@@ -162,8 +187,24 @@ export function fuelBody(form: FuelForm, method: HeatingMethod, opts: HalfSplitO
   const share = decimal(form.sharePercent, 'Der eingetragene Anteil')
   const grid = opts.halfSplit ? euro(form.gridFee, 'Die Angabe zu den Netzentgelten') : null
   const bio = opts.halfSplit ? euro(form.bioCost, 'Die Angabe zum Biobrennstoff') : null
-  for (const v of [fixed, co2, amount, kg, kwh, share, grid, bio]) if (v !== null && typeof v === 'object') return v
+  const factor = decimal(form.emissionFactor, 'Der Emissionsfaktor')
+  const quantity = decimal(form.quantity, 'Die Menge')
+  for (const v of [fixed, co2, amount, kg, kwh, share, grid, bio, factor, quantity]) if (v !== null && typeof v === 'object') return v
   const num = (v: number | null | { error: string }): number | null => (typeof v === 'number' ? v : null)
+  // Teilmengen laut Rechnung (Heizung PR 20): je Zeile Zeitraum und Betrag, wie der Server sie verlangt.
+  const parts: Record<string, unknown>[] = []
+  for (const [i, p] of form.parts.entries()) {
+    const label = `Teilmenge ${i + 1}`
+    if (p.from === '' || p.to === '' || p.from > p.to) return { error: `${label}: Bitte geben Sie den Zeitraum an (von bis).` }
+    const partAmount = euro(p.amount, `${label}: Der Betrag`)
+    if (partAmount === null) return { error: `${label}: Jede Teilmenge braucht ihren Betrag laut Rechnung.` }
+    const partFixed = euro(p.fixed, `${label}: Der feste Preisbestandteil`)
+    const partCo2 = euro(p.co2Cost, `${label}: Die CO₂-Kosten`)
+    const partKwh = decimal(p.energyKwh, `${label}: Die Energie`)
+    const partKg = decimal(p.emissionsKg, `${label}: Der CO₂-Ausstoß`)
+    for (const v of [partAmount, partFixed, partCo2, partKwh, partKg]) if (v !== null && typeof v === 'object') return v
+    parts.push({ from: p.from, to: p.to, energyKwh: num(partKwh), amountCents: num(partAmount), fixedCents: num(partFixed), emissionsKg: num(partKg), co2CostCents: num(partCo2) })
+  }
   const sharePercent = num(share)
   if (sharePercent !== null && sharePercent > 100) return { error: 'Der eingetragene Anteil liegt zwischen 0 und 100 %.' }
   const body: Record<string, unknown> = {
@@ -179,6 +220,10 @@ export function fuelBody(form: FuelForm, method: HeatingMethod, opts: HalfSplitO
     gasBasis: form.gasBasis === '' ? null : form.gasBasis,
     ...(method === 'service' ? { usedByService: form.usedByService } : {}),
     ...(opts.halfSplit ? { gridFeeCents: num(grid), bioCostCents: num(bio) } : {}),
+    quantity: num(quantity),
+    quantityUnit: form.quantityUnit === 'm3' || form.quantityUnit === 'kWh' ? form.quantityUnit : null,
+    emissionFactor: num(factor),
+    parts,
   }
   return { body }
 }
