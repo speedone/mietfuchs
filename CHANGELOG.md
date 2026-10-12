@@ -456,6 +456,21 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   vereinbarter Vorauszahlung, und eine Erstattung gibt es nur bei „Mieter heizt selbst“. Der Vorschlag für die
   neue Vorauszahlung rechnet ohne die Erstattung. In der Steuerübersicht wirkt eine verrechnete Erstattung über die
   Zahlungen, eine ausgezahlte steht im Jahr der Auszahlung bei den Werbungskosten.
+- **Die KI liest Messdienstabrechnung und Lieferantenrechnung**
+  ([#103](https://github.com/speedone/mietfuchs/issues/103)): Auf der Seite Heizkosten liest die Karte
+  „Messdienstabrechnung auslesen“ die Heiz- und Warmwasserkostenabrechnung eines Messdienstes: Nutzerbeträge je
+  Kostenblock, Zeitraum, Nutzeinheiten, die Summe der Nutzerkosten, die Zeile „Abzüglich CO₂-Kosten Vermieter“,
+  Brennstoffkosten, den CO₂-Block und die Ermittlung des Warmwassers. Jede Nutzerzeile wird nur bei genau einem
+  Treffer einem Mieter, der eigenen Wohnung oder dem Leerstand zugeordnet, sonst ordnen Sie sie zu; der Betrag der
+  Heizposition ist die Summe vor dem Abzug. Kalte Blöcke übernimmt die Karte nur, wenn die Heizperiode dem
+  Abrechnungszeitraum gleicht, und reicht ein Zeitraum über zwei Kalenderjahre, fragt sie je Block nach dem Jahr der
+  Zahlung. Die Frage nach der Abzugszeile bleibt ohne Vorgabe; widerspricht Ihre Antwort der gelesenen Zeile, sagt die
+  Karte es. In der Karte „Lieferungen“ füllt „Rechnung mit KI auslesen“ das Formular aus der Rechnung eines Brennstoff-
+  oder Wärmelieferanten vor: Rechnungsbetrag vor Abschlägen, Menge, Teilmengen bei einer Preisänderung, Heizwert und die
+  Angaben nach § 3 Abs. 1 CO2KostAufG samt Emissionsfaktor. Den Preisbestandteil für den nach § 43 Abs. 1 GModG anteilig
+  zu nutzenden Brennstoff übernimmt sie nur, wo Mietfuchs ihn rechnet, und sagt sonst, warum nicht. Gespeichert wird in
+  beiden Karten erst, wenn Sie übernehmen. Lieferungen von Gas, Fernwärme und Strom tragen jetzt auch Menge, Teilmengen
+  und Emissionsfaktor, Lieferungen aus dem Vorrat den Emissionsfaktor.
 ### Geändert
 
 - Neue Warnung „Monatliche Verbrauchsinformation“ bei einer Heizanlage, deren Zähler oder

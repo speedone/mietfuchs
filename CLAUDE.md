@@ -2588,6 +2588,33 @@ fertigen Abrechnung steht, client/src/types.ts eine eigene für die Eingabe-Ober
   `fetch` (Node und Bun brechen ab, wenn so lange keine Antwort-Header kommen, Ollama schickt
   sie erst mit dem ersten Token). Unter Node über `node:http(s)`, unter Bun über `fetch` mit
   `timeout: false`. Für KI-Anfragen deshalb nicht `fetch` direkt nehmen.
+- [server/src/extractHeating.ts](server/src/extractHeating.ts) (Heizung PR 20, #103): Messdienstabrechnung
+  und Lieferantenrechnung, über `POST /api/heating-plants/:id/service-statement` (nur bei `method:
+  'service'`) und `…/fuel-invoice`, als derselbe Strom wie `/api/extract`; Text und Seitenbilder stellt
+  `documentMaterial` aus extract.ts zusammen, für jede Belegart gleich. Je Belegart **ein** Ausgang
+  (`toServiceExtraction`, `toFuelExtraction`) und kein eigener Eingang, denn dazwischen rechnet Mietfuchs
+  nur Netto-Teilmengen hoch, mit derselben Prüfung `vatExplainsGap` wie #34; die beiden Felder, die Mietfuchs
+  selbst setzt (`amountsAdjusted`, `amountsNetUnadjusted`), liest der Ausgang nie aus der Antwort. Die
+  Abzugszeile steht oft mit typografischem Minus da und wird als Betrag gelesen. **Gespeichert wird nichts außer
+  dem Beleg** (mit Objekt und Jahr aus dem Formular im Posteingang, bis er an eine Position kommt; eine
+  Lieferung hat keinen Beleg), und es entsteht keine Auswertung der Belegbuchung, denn Nutzerzeilen und
+  Lieferungen sind keine Rechnungspositionen. Die Seite Heizkosten zeigt den Vorschlag und schreibt über die
+  bestehenden Routen, wenn der Vermieter übernimmt: die Karte „Messdienstabrechnung auslesen“
+  (`client/src/serviceImport.ts`, `ServiceImportReview.tsx`) und „Rechnung mit KI auslesen“ in der Karte
+  „Lieferungen“ (`client/src/fuelImport.ts`). Eine Nutzerzeile wird nur bei genau einem Treffer zugeordnet
+  (Name unter den Mietverhältnissen, die den Zeitraum berühren, bei mehreren die Lage; „Leerstand“ und
+  „Eigentümer“ an ihren Wörtern). Der Betrag der Heizposition ist S plus Abzugszeile (Entwurf 7.1). Die gefundene
+  Abzugszeile steht als Satz neben der Frage, gewählt wird nichts vor (Entwurf 7.2); widerspricht die Antwort
+  („nur ausgewiesen“, „gar nicht aufgeteilt“), warnt die Karte. Die CO₂-Angaben werden vorbelegt, nie mit leeren
+  Werten überschrieben, und mit der eben angelegten Heizposition verknüpft. Kalte Blöcke einer Komplettabrechnung
+  nur, wenn die Heizperiode dem Objektzeitraum gleicht (Festlegung, Leistungsprinzip; Einzelbeträge lassen sich
+  nicht nach Tagen teilen). Reicht der Zeitraum über zwei Kalenderjahre, fragt die Karte je Block nach dem Jahr
+  der Zahlung, wie `requireTaxYear` es verlangt. Bei der Lieferantenrechnung übernimmt das Formular den
+  Preisbestandteil nach § 3 Abs. 1 Nr. 6 CO2KostAufG nur, wo der Server ihn annimmt (`bioAccepted`: Heizung
+  nach § 43 Abs. 1 GModG, nicht aus dem Vorrat, nicht ab der Grenze von § 5a Abs. 3 Nr. 3), und nennt sonst den
+  Grund; beim Vorrat bleiben Rechnungszeitraum und Teilmengen leer. Bei freien Schlüsseln nimmt eine Lieferung
+  keinen Betrag an, dann nennt die Karte ihn als Satz. Den Energiegehalt einer Lieferung aus dem Vorrat
+  speichert das Formular weiterhin nicht, denn dhw.ts nähme ihn vor Menge und Heizwert.
 
 **Rohe Antwort und Zusage: zwei Beschreibungen, eine Grenze** (#63). Die Auswertung eines Belegs
 durchläuft zwei Stadien, und jedes hat seinen eigenen Typ. `RawExtraction` und `RawPosition` in
@@ -2724,7 +2751,13 @@ Oberfläche zeigt dazu den dpi-Wert bei A4.
 [scripts/ai-eval.mjs](scripts/ai-eval.mjs)): vergleicht echte Ollama-Modelle auf GitHub-Runnern
 ohne Grafikkarte an erfundenen Belegen in [scripts/ai-eval/](scripts/ai-eval/), je als PDF mit
 Textebene, Scan und Foto. Start von Hand oder per Label `ai-eval` an einem PR. Neue
-Beispielbelege nur erfunden, nie echte Rechnungen.
+Beispielbelege nur erfunden, nie echte Rechnungen. Die Belege `metering-service`, `gas-supplier`
+und `heating-oil` (`kind` in cases.json) laufen über die Routen einer Heizanlage, die der Lauf
+anlegt; bewertet wird in [scripts/ai-eval/score.mjs](scripts/ai-eval/score.mjs) mit gepflegter
+`score.d.mts` daneben (getestet ohne Modell in `server/test/ai-eval-score.test.ts`), denn
+ai-eval.mjs startet beim Laden den Lauf. Das nachgebaute Ollama
+([scripts/fake-ollama.mjs](scripts/fake-ollama.mjs)) beantwortet die drei Belege richtig, erkannt am
+Schema; so lässt sich die Verdrahtung ohne Modell prüfen.
 
 **Update-Hinweis** ([server/src/update.ts](server/src/update.ts)): Nur mit Zustimmung
 (`settings.updateCheck === 'on'`, beim ersten Start im Cockpit gefragt) fragt der Server

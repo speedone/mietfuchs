@@ -654,7 +654,15 @@ test('CO₂-Kosten aufteilen (Heizung PR 6): Ort von S je Messdienst, Muster nur
   assert.ok(g.steps.some((s) => s.page === 'heizkosten' && s.text.includes('„Ich finde diese Zeile nicht“')))
   assert.ok(g.caveats.some((c) => /3 Prozent/.test(c.text) && c.norm === '§ 7 Abs. 3 und 4 CO2KostAufG'))
   assert.match(g.applies, /01\.01\.2023/)
-  for (const n of [210, 103]) assert.ok(g.gaps.some((x) => x.issue === n), `#${n} fehlt`)
+  assert.ok(g.gaps.some((x) => x.issue === 210), '#210 fehlt')
+})
+
+test('meteringService nennt das Auslesen mit der KI als Vorschlag, den der Vermieter prüft; #103 ist keine Lücke mehr (Heizung PR 20)', () => {
+  const text = JSON.stringify(GUIDES.meteringService)
+  assert.match(text, /Messdienstabrechnung auslesen/)
+  assert.match(text, /prüfen jede Zahl am Beleg/)
+  for (const g of Object.values(GUIDES)) assert.ok(!g.gaps.some((x) => x.issue === 103), g.title)
+  assert.match(JSON.stringify(GUIDES.supplierInvoice), /Rechnung mit KI auslesen/)
 })
 
 test('Heizkosten selbst abrechnen (Heizung PR 10): Pflichten mit Norm, Lücken mit Issue, und die übrigen Anleitungen sagen nicht mehr „noch nicht“', () => {
