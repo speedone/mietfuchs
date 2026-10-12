@@ -262,6 +262,7 @@ const GUIDE_DATA = {
       { page: 'kosten', text: 'Bewohnen Sie selbst eine Wohnung, tragen Sie in deren Feld den Betrag ein, den die Abrechnung für Ihre Wohnung nennt, ohne etwas dazuzurechnen. Den Teil des CO₂-Anteils, der auf Ihre Wohnung entfällt, tragen Sie auf der Seite Heizkosten in der Karte „CO₂-Kosten“ unter „davon für Ihre selbst bewohnte Wohnung“ ein: Steht auf der Einzelabrechnung Ihrer Wohnung ein vom Vermieter übernommener CO₂-Betrag, nehmen Sie diesen. Nennt die Abrechnung solche Beträge bei den Mietern, aber nicht bei Ihrer Wohnung, tragen Sie 0 ein; dann gehört nichts davon ins Private. Nur wenn sie gar keine Beträge je Wohnung nennt, lassen Sie das Feld leer, und Mietfuchs rechnet näherungsweise: CO₂-Anteil × Betrag Ihrer Wohnung ÷ Summe aller Nutzerbeträge für Heizung und Warmwasser.' },
       { page: 'kosten', text: 'Nennt die Abrechnung Arbeitskosten, tragen Sie sie unter „§35a-Lohn“ ein. Die Abrechnung selbst hängen Sie unter „Beleg (Rechnungskopie)“ an.' },
       { page: 'heizkosten', text: `Für Abrechnungszeiträume, die am oder nach dem ${CO2_FROM} beginnen, öffnen Sie die Seite Heizkosten und füllen die Karte „CO₂-Kosten“ aus: die Antwort auf die Frage nach der Abzugszeile, die Summe der Kosten aller Nutzer und die Zahlen der CO₂-Seite der Abrechnung. Die Zeile „Probe“ zeigt, ob der Betrag Ihrer Position dazu passt. Die Seite erscheint, sobald unter Stammdaten eine Heizanlage eingerichtet ist.` },
+      { page: 'heizkosten', text: 'Statt abzutippen, können Sie die Abrechnung auf der Seite Heizkosten in der Karte „Messdienstabrechnung auslesen“ hochladen: Die KI liest Nutzerbeträge, Summen, CO₂-Angaben und die Ermittlung des Warmwassers und schlägt sie vor. Sie ordnen jede Nutzerzeile einem Mieter, Ihrer eigenen Wohnung oder dem Leerstand zu und prüfen jede Zahl am Beleg, bevor Sie mit „Positionen anlegen“, „CO₂-Angaben übernehmen“ und „Ermittlung übernehmen“ speichern. Den Betrag der Heizposition setzt Mietfuchs dabei schon vor dem Abzug des CO₂-Anteils an.' },
       { page: 'abrechnung', text: 'Prüfen Sie in der Abrechnung, ob für jeden Mieter ein Betrag eingetragen ist.' },
     ],
     result: [
@@ -282,7 +283,6 @@ const GUIDE_DATA = {
       { text: 'Melden Sie dem Messdienst auch den Betriebsstrom der Heizung (Brenner, Umwälzpumpe, Regelung), damit er ihn mit den Heiz- und Warmwasserkosten verteilt, oder tragen Sie ihn selbst; als Allgemeinstrom dürfen Sie ihn nicht verteilen. Läuft er über den Stromzähler des Hauses, ziehen Sie denselben Betrag beim Allgemeinstrom ab; die Karte „Betriebsstrom“ auf der Seite Heizkosten schätzt ihn nach Leistung und Heiztagen oder nimmt Ihren selbst geschätzten Betrag und legt den Abzug an.', norm: '§ 7 Abs. 2, § 8 Abs. 2 HeizkostenV; BGH, Urteil vom 03.06.2016, V ZR 166/15' },
     ],
     gaps: [
-      { text: 'Die Abrechnung des Messdienstes per KI auslesen und den Mietverhältnissen zuordnen; heute tragen Sie die Beträge von Hand ein.', issue: 103 },
       { text: 'Verschiedene Geräte in einer Heizanlage (Wärmezähler neben Heizkostenverteilern) brauchen eine Vorerfassung nach Gruppen; die rechnet Mietfuchs noch nicht.', issue: 218 },
     ],
     terms: ['individualAmounts', 'heatingCostOrdinance', 'ownShare', 'labor35a', 'co2Deducted', 'operatingPower'],
@@ -314,7 +314,6 @@ const GUIDE_DATA = {
     ],
     gaps: [
       { text: 'Die CO₂-Angaben für den Messdienst ausdrucken.', issue: 210 },
-      { text: 'Die Abrechnung des Messdienstes per KI auslesen.', issue: 103 },
     ],
     terms: ['co2Split', 'co2Stage', 'co2Deducted', 'co2Area'],
   },
@@ -428,7 +427,7 @@ const GUIDE_DATA = {
     steps: [
       { page: 'stammdaten', text: 'Richten Sie in der Karte „Heizung“ die Heizanlage ein, falls noch nicht geschehen; bei der Frage, wer abrechnet, wählen Sie „Niemand“.' },
       { page: 'kosten', text: 'Erfassen Sie die Rechnung wie gewohnt mit „+ Kostenposition manuell erfassen“ und der Kostenart „Heizung und Warmwasser“, und zwar im Zeitraum, in dem die Rechnung endet.' },
-      { page: 'heizkosten', text: 'Klicken Sie auf der Seite Heizkosten in der Karte „Lieferungen“ auf „Lieferung eintragen“, tragen Sie den Rechnungszeitraum laut Rechnung ein und, wenn die Rechnung sie ausweist, die festen Preisbestandteile und die CO₂-Angaben, dann „Lieferung speichern“.' },
+      { page: 'heizkosten', text: 'Klicken Sie auf der Seite Heizkosten in der Karte „Lieferungen“ auf „Lieferung eintragen“, tragen Sie den Rechnungszeitraum laut Rechnung ein und, wenn die Rechnung sie ausweist, die festen Preisbestandteile und die CO₂-Angaben, dann „Lieferung speichern“. Mit „Rechnung mit KI auslesen“ füllt die KI das Formular aus der Rechnung vor, samt Teilmengen bei einer Preisänderung; prüfen Sie jede Zahl, bevor Sie speichern.' },
       { page: 'heizkosten', text: 'Wählen Sie darunter bei „Welche Position gehört zu welcher Rechnung?“ an Ihrer Position die Lieferung. Ohne diese Verknüpfung grenzt Mietfuchs nichts ab und verteilt die Position ganz in ihrem Zeitraum.' },
       { page: 'zaehler', text: 'Genauer als nach Gradtagen wird es mit einem Zählerstand des Versorgungszählers zum Ende der Heizperiode; erfassen Sie ihn mit „Ablesung speichern“.' },
     ],

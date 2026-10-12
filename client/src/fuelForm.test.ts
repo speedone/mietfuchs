@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import { fmtEuro } from './api'
 import {
-  asksCo2Facts, defaultGrade, degreeDaysBody, degreeDaysToForm, deliveryLine, deliveryOptions, deliveryUnitId, emptyFuelForm, fuelBody, fuelToForm, gradeOptions, monthsOf, ownedBy, RESTRICTION_OPTIONS, stockFuelBody, unitWordFor,
+  METERED_QUANTITY_OPTIONS, STOCK_QUANTITY_OPTIONS, asksCo2Facts, defaultGrade, degreeDaysBody, degreeDaysToForm, deliveryLine, deliveryOptions, deliveryUnitId, emptyFuelForm, fuelBody, fuelToForm, gradeOptions, monthsOf, ownedBy, RESTRICTION_OPTIONS, stockFuelBody, unitWordFor,
 } from './fuelForm'
 import type { FuelDelivery } from './types'
 
@@ -19,6 +19,7 @@ test('Lieferung ins Formular und zurück: Beträge, Zahlen, Anteil in Prozent', 
   expect(r.body).toEqual({
     label: 'Gas 2025/2026', invoiceFrom: '2025-03-15', invoiceTo: '2026-03-14', amountCents: 311747, fixedCents: 12000, sharePermille: 900,
     emissionsKg: 5406.17, co2CostCents: 60000, energyKwh: 29886, gasBasis: null, usedByService: true,
+    quantity: null, quantityUnit: null, emissionFactor: null, parts: [],
   })
 })
 
@@ -73,7 +74,7 @@ test('Lieferung für den Vorrat: Lieferdatum und Menge statt Rechnungszeitraum; 
   const form = fuelToForm(oel)
   expect([form.deliveredAt, form.invoiceDate, form.quantity, form.quantityUnit]).toEqual(['2025-10-10', '2025-10-12', '2500', 'l'])
   expect(stockFuelBody(form, 'manual')).toEqual({
-    body: { label: '', deliveredAt: '2025-10-10', invoiceDate: '2025-10-12', heatingValue: null, fuelGrade: null, quantity: 2500, quantityUnit: 'l', emissionsKg: 6690.75, co2CostCents: 43791 },
+    body: { label: '', deliveredAt: '2025-10-10', invoiceDate: '2025-10-12', heatingValue: null, fuelGrade: null, quantity: 2500, quantityUnit: 'l', emissionsKg: 6690.75, co2CostCents: 43791, emissionFactor: null },
   })
   expect(stockFuelBody({ ...form, amount: '2.500,00' }, 'service')).toMatchObject({ body: { amountCents: 250000, usedByService: true } })
   expect(stockFuelBody({ ...form, deliveredAt: '' }, 'manual')).toEqual({ error: 'Bitte geben Sie das Lieferdatum an. Beim Vorrat zählt eine Lieferung zur Heizperiode, in der sie geliefert wurde.' })
@@ -169,4 +170,47 @@ test('Vorrat bei einer Heizung nach § 43: beim Biobrennstoff nur 0 (Prüfung M1
   const r = stockFuelBody(form, 'manual')
   if ('error' in r) throw new Error(r.error)
   expect('bioCostCents' in r.body).toBe(false)
+})
+
+// ---------- Heizung PR 20: Menge, Emissionsfaktor und Teilmengen laut Rechnung ----------
+
+test('Gas, Fernwärme, Strom: Menge in m³ oder kWh, Emissionsfaktor und Teilmengen gehen hin und zurück', () => {
+  const mitTeilen: FuelDelivery = {
+    ...gas, quantity: 2890, quantityUnit: 'm3', emissionFactor: 0.20088,
+    parts: [{ from: '2025-03-15', to: '2025-12-31', energyKwh: 22410, amountCents: 288577, fixedCents: 16565, emissionsKg: 4065, co2CostCents: 26605 }],
+  }
+  const form = fuelToForm(mitTeilen)
+  expect([form.quantity, form.quantityUnit, form.emissionFactor]).toEqual(['2890', 'm3', '0,20088'])
+  expect(form.parts).toEqual([{ from: '2025-03-15', to: '2025-12-31', energyKwh: '22410', amount: '2.885,77', fixed: '165,65', emissionsKg: '4065', co2Cost: '266,05' }])
+  const r = fuelBody(form, 'manual')
+  if ('error' in r) throw new Error(r.error)
+  expect(r.body).toMatchObject({ quantity: 2890, quantityUnit: 'm3', emissionFactor: 0.20088, parts: mitTeilen.parts })
+  expect(METERED_QUANTITY_OPTIONS.map((o) => o.value)).toEqual(['', 'm3', 'kWh'])
+  expect(STOCK_QUANTITY_OPTIONS.map((o) => o.value)).toEqual(['', 'l', 'kg', 'srm'])
+})
+
+test('Teilmengen: Zeitraum und Betrag sind Pflicht, Zahlen werden geprüft', () => {
+  const zeitraum = { ...emptyFuelForm(), invoiceFrom: '2025-03-15', invoiceTo: '2026-03-14' }
+  const teil = { from: '2025-03-15', to: '2025-12-31', energyKwh: '', amount: '100,00', fixed: '', emissionsKg: '', co2Cost: '' }
+  expect(fuelBody({ ...zeitraum, parts: [{ ...teil, to: '' }] }, 'manual')).toEqual({ error: 'Teilmenge 1: Bitte geben Sie den Zeitraum an (von bis).' })
+  expect(fuelBody({ ...zeitraum, parts: [{ ...teil, from: '2026-01-01' }] }, 'manual')).toEqual({ error: 'Teilmenge 1: Bitte geben Sie den Zeitraum an (von bis).' })
+  expect(fuelBody({ ...zeitraum, parts: [{ ...teil, amount: '' }] }, 'manual')).toEqual({ error: 'Teilmenge 1: Jede Teilmenge braucht ihren Betrag laut Rechnung.' })
+  expect(fuelBody({ ...zeitraum, parts: [teil, { ...teil, co2Cost: 'viel' }] }, 'manual')).toEqual({ error: 'Teilmenge 2: Die CO₂-Kosten sind kein Betrag.' })
+  expect(fuelBody({ ...zeitraum, co2Cost: 'viel' }, 'manual')).toEqual({ error: 'Die CO₂-Kosten sind kein Betrag.' })
+  expect(fuelBody({ ...zeitraum, parts: [{ ...teil, energyKwh: '-5' }] }, 'manual')).toEqual({ error: 'Teilmenge 1: Die Energie ist eine Zahl ab 0.' })
+  expect(fuelBody({ ...zeitraum, emissionFactor: 'hoch' }, 'manual')).toEqual({ error: 'Der Emissionsfaktor ist eine Zahl ab 0.' })
+  expect(fuelBody({ ...zeitraum, quantity: '-1' }, 'manual')).toEqual({ error: 'Die Menge ist eine Zahl ab 0.' })
+  // Eine Einheit, die das Auswahlfeld nicht anbietet, zeigt es leer; gespeichert wird dann auch keine.
+  const liter = fuelBody({ ...zeitraum, quantity: '5', quantityUnit: 'l' }, 'manual')
+  expect('body' in liter && liter.body.quantityUnit).toBe(null)
+  const ok = fuelBody({ ...zeitraum, parts: [teil] }, 'manual')
+  expect('body' in ok && ok.body.parts).toEqual([{ from: '2025-03-15', to: '2025-12-31', energyKwh: null, amountCents: 10000, fixedCents: null, emissionsKg: null, co2CostCents: null }])
+})
+
+test('Vorrat: eine Menge in m³ oder kWh lehnt das Formular mit Satz ab (Prüfung M4)', () => {
+  const form = fuelToForm(oel)
+  expect(stockFuelBody({ ...form, quantityUnit: 'm3' }, 'manual')).toEqual({ error: 'Beim Vorrat geben Sie die Menge in Litern, Kilogramm oder Schüttraummetern an, wie auf der Rechnung.' })
+  expect(stockFuelBody({ ...form, emissionFactor: '0,2664' }, 'manual')).toMatchObject({ body: { emissionFactor: 0.2664 } })
+  // Eine gespeicherte Menge in m³ einer Gasrechnung bleibt im Formular stehen.
+  expect(fuelToForm({ ...gas, quantity: 2890, quantityUnit: 'm3' }).quantityUnit).toBe('m3')
 })

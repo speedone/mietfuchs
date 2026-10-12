@@ -20,6 +20,7 @@ import { calendarPeriod, calendarYearPeriod, isCalendarRules, parsePeriodKey, pe
 import type { BillingPeriod, FuelGapQuestion, HeatingPlant, Unit } from '../../shared/types.ts'
 import { plantRules, settledSeparately } from '../../shared/heatingPeriod.ts'
 import { extractFromFile, classifyDocType, extractMeterReading, type AskProgressEvent, type AskStats } from './extract.ts'
+import { extractFuelInvoice, extractServiceStatement } from './extractHeating.ts'
 import { listOllamaModels, findOllama, defaultCandidates, pullOllamaModel } from './ai/ollama.ts'
 import { createRecommendations } from './ai/recommendations.ts'
 import { listOpenAiModels } from './ai/openai.ts'
@@ -1469,6 +1470,66 @@ app.post('/api/intake', fileWithPages, async (req: Request, res: Response) => {
       const assessment = await rememberAssessment(req, file, extraction, signal)
       answer.done({ file: file.filename, kind: 'rechnung', extraction, assessment, stats })
     }
+  } catch (err) {
+    answer.fail({ file: file.filename, error: messageOf(err), stats })
+  }
+})
+
+// ---------- KI: Messdienstabrechnung und Lieferantenrechnung (Heizung PR 20, #103) ----------
+//
+// Beide Routen antworten wie /api/extract (Strom mit Fortschritt, Abbruch über die Kennung) und speichern
+// nichts außer dem Beleg im Belegarchiv: Was die KI liest, ist ein Vorschlag, den die Seite Heizkosten zeigt;
+// übernommen wird über die bestehenden Routen, wenn der Vermieter es will. Der Beleg liegt mit Objekt und
+// Jahr aus dem Formular im Posteingang, bis er an eine Position kommt (die Messdienstabrechnung mit
+// „Positionen anlegen“); eine Lieferung hat keinen Beleg. Eine Auswertung für die Belegbuchung (#170)
+// entsteht hier nicht: Ihre Zeilen sind Rechnungspositionen, keine Nutzerzeilen oder Lieferungen.
+//
+// Lehnt die Route ab, bevor ausgewertet wird, verschwindet der Beleg wieder, den multer schon abgelegt hat.
+const discardUpload = (req: Request): void => {
+  const f = uploadedFile(req)
+  if (f) fs.rmSync(f.path, { force: true })
+}
+async function plantForAi(req: Request, res: Response): Promise<HeatingPlant | null> {
+  const id = req.params.id
+  const plant = await readData(async (db) => (await readHeatingPlants(db)).find((p) => p.id === id) ?? null)
+  if (!plant) {
+    discardUpload(req)
+    res.status(404).json({ error: NO_PLANT })
+  }
+  return plant
+}
+const SERVICE_ONLY = 'Eine Messdienstabrechnung lässt sich nur bei einer Heizanlage, die ein Messdienst oder die Gemeinschaft abrechnet, übernehmen. Stellen Sie das unter Stammdaten bei der Heizung ein.'
+
+app.post('/api/heating-plants/:id/service-statement', fileWithPages, async (req: Request, res: Response) => {
+  const plant = await plantForAi(req, res)
+  if (!plant) return
+  if (plant.method !== 'service') {
+    discardUpload(req)
+    return res.status(400).json({ error: SERVICE_ONLY })
+  }
+  const file = await documentOf(req, res)
+  if (!file) return
+  const answer = aiResponse(req, res)
+  const { signal, stats, onProgress } = answer
+  try {
+    const extraction = await extractServiceStatement(file.path, file.mimetype, effectiveSettings(), { ...aiInput(req), signal, stats, onProgress })
+    answer.done({ file: file.filename, extraction, stats })
+  } catch (err) {
+    answer.fail({ file: file.filename, error: messageOf(err), stats })
+  }
+})
+
+app.post('/api/heating-plants/:id/fuel-invoice', fileWithPages, async (req: Request, res: Response) => {
+  const plant = await plantForAi(req, res)
+  if (!plant) return
+  const file = await documentOf(req, res)
+  if (!file) return
+  const answer = aiResponse(req, res)
+  const { signal, stats, onProgress } = answer
+  try {
+    const extraction = await extractFuelInvoice(file.path, file.mimetype, effectiveSettings(), { ...aiInput(req), signal, stats, onProgress })
+    await rememberInvoiceDate(file.filename, extraction.invoiceDate)
+    answer.done({ file: file.filename, extraction, stats })
   } catch (err) {
     answer.fail({ file: file.filename, error: messageOf(err), stats })
   }

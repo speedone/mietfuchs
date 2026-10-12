@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "about": "Sollwerte der erfundenen Beispielbelege für den KI-Prüflauf (scripts/ai-eval.mjs). Beträge brutto in Euro. positions: null heißt, die einzelnen Positionen werden nicht bewertet, weil der Beleg sie nur netto ausweist.",
+  "about": "Sollwerte der erfundenen Beispielbelege für den KI-Prüflauf (scripts/ai-eval.mjs). Beträge brutto in Euro. positions: null heißt, die einzelnen Positionen werden nicht bewertet, weil der Beleg sie nur netto ausweist. kind: service (Messdienstabrechnung) und fuel (Lieferantenrechnung) laufen über die Routen einer Heizanlage (Heizung PR 20); ohne kind über /api/extract.",
   "cases": [
     {
       "name": "water",
@@ -81,6 +81,80 @@
           { "amount": 172.55, "category": "Nicht umlagefähig" }
         ],
         "labor35a": 2826.25
+      }
+    },
+    {
+      "name": "metering-service",
+      "label": "Heizkostenabrechnung eines Messdienstes (3 Seiten)",
+      "kind": "service",
+      "file": "invoices/metering-service.html",
+      "pages": 3,
+      "photo": false,
+      "expected": {
+        "vendor": "Wärmedienst Beispiel",
+        "periodStart": "2025-01-01",
+        "periodEnd": "2025-12-31",
+        "unitsCount": 4,
+        "usersTotal": 3944.50,
+        "deduction": 87.50,
+        "fuelGross": 3540.00,
+        "fuelNet": 3452.50,
+        "co2": { "emissionsKg": 4456.4, "areaM2": 194.6, "kgPerM2": 22.9, "landlordPercent": 30, "totalEur": 291.67, "landlordEur": 87.50 },
+        "dhwMethod": "volumeFormula",
+        "blocks": [
+          { "category": "Heizung und Warmwasser", "total": 3944.50, "lines": [1180.25, 702.10, 1065.40, 996.75], "vacancyLines": 1 },
+          { "category": "Wasser/Abwasser", "total": 1236.00, "lines": [402.00, 85.00, 377.00, 372.00], "vacancyLines": 1 }
+        ]
+      }
+    },
+    {
+      "name": "gas-supplier",
+      "label": "Jahresrechnung Erdgas mit Preisänderung (2 Seiten)",
+      "kind": "fuel",
+      "file": "invoices/gas-supplier.html",
+      "pages": 2,
+      "photo": false,
+      "expected": {
+        "vendor": "Stadtwerke Beispielstadt",
+        "total": 4067.80,
+        "periodStart": "2025-03-15",
+        "periodEnd": "2026-03-14",
+        "fixed": 207.06,
+        "quantity": 2890,
+        "quantityUnit": "m3",
+        "energyKwh": 31285,
+        "gasBasis": "hs",
+        "heatingValue": null,
+        "emissionsKg": 5674.8,
+        "co2Cost": 380.99,
+        "emissionFactor": 0.20088,
+        "bioCost": null,
+        "parts": [
+          { "from": "2025-03-15", "to": "2025-12-31", "energyKwh": 22410, "amount": 2885.77, "fixed": 165.65, "emissionsKg": 4065.0, "co2Cost": 266.05 },
+          { "from": "2026-01-01", "to": "2026-03-14", "energyKwh": 8875, "amount": 1182.03, "fixed": 41.41, "emissionsKg": 1609.8, "co2Cost": 114.94 }
+        ]
+      }
+    },
+    {
+      "name": "heating-oil",
+      "label": "Heizöllieferung mit Heizwert (1 Seite)",
+      "kind": "fuel",
+      "file": "invoices/heating-oil.html",
+      "pages": 1,
+      "photo": false,
+      "expected": {
+        "vendor": "Heizöl Beispiel",
+        "total": 3150.00,
+        "deliveredAt": "2025-10-12",
+        "quantity": 3000,
+        "quantityUnit": "l",
+        "energyKwh": 30150,
+        "heatingValue": 10.05,
+        "emissionsKg": 8032.0,
+        "co2Cost": 525.69,
+        "emissionFactor": 0.2664,
+        "bioCost": null,
+        "parts": []
       }
     }
   ]

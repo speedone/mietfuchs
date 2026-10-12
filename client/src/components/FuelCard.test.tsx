@@ -6,7 +6,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import FuelCard from './FuelCard'
 import { periodKey } from '../../../shared/period.ts'
-import type { FuelDelivery, HeatingPeriodView } from '../types'
+import type { FuelDelivery, FuelExtractResult, HeatingPeriodView } from '../types'
 import { noInfoView } from '../testing/heatingView'
 
 const assert = { fail: (): never => { throw new Error('nicht gefunden') } }
@@ -173,4 +173,134 @@ test('Ölheizung nach § 43: das Feld Biobrennstoff erscheint beim Vorrat und se
   fireEvent.change(screen.getByLabelText(/Biobrennstoff, Preisbestandteil/), { target: { value: '0' } })
   fireEvent.click(screen.getByText('Lieferung speichern'))
   await waitFor(() => expect(sent.at(-1)).toMatchObject({ url: '/api/heating-plants/oel/deliveries', method: 'POST', body: { bioCostCents: 0, quantity: 3000 } }))
+})
+
+// ---------- Heizung PR 20 (#103): Lieferantenrechnung mit der KI auslesen ----------
+
+const extraction: FuelExtractResult = {
+  file: 'gas.pdf',
+  extraction: {
+    vendor: 'Stadtwerke Beispielstadt', invoiceDate: '2026-03-20', periodStart: '2025-03-15', periodEnd: '2026-03-14',
+    totalGrossEur: 4067.8, fixedEur: 207.06, quantity: 2890, quantityUnit: 'm3', energyKwh: 31285, gasBasis: 'hs', heatingValue: null,
+    emissionsKg: 5674.8, co2CostEur: 380.99, co2CostNet: false, emissionFactor: 0.20088, bioCostEur: null,
+    parts: [
+      { from: '2025-03-15', to: '2025-12-31', energyKwh: 22410, amountEur: 2885.77, fixedEur: 165.65, emissionsKg: 4065, co2CostEur: 266.05 },
+      { from: '2026-01-01', to: '2026-03-14', energyKwh: 8875, amountEur: 1182.03, fixedEur: 41.41, emissionsKg: 1609.8, co2CostEur: 114.94 },
+    ],
+    amountsNetUnadjusted: false,
+  },
+}
+// Antwortet auf den Beleg mit der Auswertung, auf alles andere wie oben.
+const withExtraction = (result: FuelExtractResult) => {
+  const fields: Record<string, string>[] = []
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if (init?.body instanceof FormData) {
+      const f: Record<string, string> = { url }
+      init.body.forEach((v, k) => { if (typeof v === 'string' && k !== 'requestId') f[k] = v })
+      fields.push(f)
+      return new Response(JSON.stringify(result), { status: 200, headers: { 'content-type': 'application/json' } })
+    }
+    sent.push({ url, method: init?.method ?? 'GET', body: JSON.parse(String(init?.body ?? '{}')) })
+    return new Response(JSON.stringify({ ai: {} }), { status: 200, headers: { 'content-type': 'application/json' } })
+  })
+  return fields
+}
+const choose = (file = new File(['x'], 'gas.jpg', { type: 'image/jpeg' })) =>
+  fireEvent.change(screen.getByLabelText('Rechnung mit KI auslesen'), { target: { files: [file] } })
+
+test('Neue Auswahlfelder zeigen den gespeicherten Wert: Einheit der Menge und Bezug der kWh bei Gas (Prüfung M4)', () => {
+  render(<FuelCard plant={{ id: 'hp', method: 'manual', energy: 'gas' }} view={view} deliveries={[{ ...gas, quantity: 2890, quantityUnit: 'm3', gasBasis: 'hs' }]} onSaved={() => {}} />)
+  fireEvent.click(screen.getByText('Ändern'))
+  expect(auswahl('Einheit der Menge laut Rechnung').value).toBe('m3')
+  expect(auswahl('Kilowattstunden der Rechnung berechnet nach').value).toBe('hs')
+  expect((screen.getByLabelText('Emissionsfaktor laut Rechnung (kg CO₂ je kWh)') as HTMLInputElement).value).toBe('')
+  // Beim Vorrat gibt es die Auswahl für Gas nicht, und „Einheit der Menge“ nur einmal.
+  cleanup()
+  render(<FuelCard plant={{ id: 'hp', method: 'manual', energy: 'oil' }} view={view} deliveries={[]} onSaved={() => {}} />)
+  fireEvent.click(screen.getByText('Lieferung eintragen'))
+  expect(screen.queryByLabelText('Einheit der Menge laut Rechnung')).toBeNull()
+  expect(screen.getAllByLabelText('Einheit der Menge')).toHaveLength(1)
+})
+
+test('Rechnung mit KI auslesen: das Formular ist vorbelegt, Teilmengen inklusive, gespeichert erst mit „Lieferung speichern“', async () => {
+  const fields = withExtraction(extraction)
+  render(<FuelCard plant={{ id: 'hp', method: 'service', energy: 'gas', propertyId: 'objekt-1' }} view={view} deliveries={[]} onSaved={() => {}} />)
+  choose()
+  expect(await screen.findByDisplayValue('4.067,80')).toBeTruthy()
+  expect(fields).toEqual([{ url: '/api/heating-plants/hp/fuel-invoice', propertyId: 'objekt-1', year: '2025' }])
+  expect(sent.filter((x) => x.method !== 'GET')).toEqual([])
+  expect(auswahl('Einheit der Menge laut Rechnung').value).toBe('m3')
+  expect(auswahl('Kilowattstunden der Rechnung berechnet nach').value).toBe('hs')
+  expect(screen.getByDisplayValue('2.885,77')).toBeTruthy()
+  fireEvent.click(screen.getByText('Lieferung speichern'))
+  await waitFor(() => expect(sent.find((x) => x.method === 'POST')).toMatchObject({
+    url: '/api/heating-plants/hp/deliveries',
+    body: { amountCents: 406780, quantity: 2890, quantityUnit: 'm3', emissionFactor: 0.20088, gasBasis: 'hs', parts: [{ from: '2025-03-15', amountCents: 288577 }, { from: '2026-01-01', amountCents: 118203 }] },
+  }))
+})
+
+test('Rechnung mit KI auslesen bei freien Schlüsseln: der Betrag steht als Satz da, die Prüfungen stehen über dem Formular', async () => {
+  withExtraction({ ...extraction, extraction: { ...extraction.extraction, co2CostNet: true } })
+  render(<FuelCard plant={{ id: 'hp', method: 'manual', energy: 'gas' }} view={view} deliveries={[]} onSaved={() => {}} />)
+  choose()
+  expect(await screen.findByText(/Bei freien Schlüsseln steht der Rechnungsbetrag in der Kostenposition/)).toBeTruthy()
+  expect(screen.getByText(/ohne Umsatzsteuer/)).toBeTruthy()
+  expect(screen.queryByLabelText('Rechnungsbetrag')).toBeNull()
+  // Eine Teilmenge lässt sich entfernen; danach fehlt sie im Rumpf.
+  fireEvent.click(screen.getAllByText('Teilmenge entfernen')[1] ?? assert.fail())
+  fireEvent.click(screen.getByText('Lieferung speichern'))
+  await waitFor(() => expect(sent.find((x) => x.method === 'POST')?.body.parts).toEqual([
+    { from: '2025-03-15', to: '2025-12-31', energyKwh: 22410, amountCents: 288577, fixedCents: 16565, emissionsKg: 4065, co2CostCents: 26605 },
+  ]))
+})
+
+test('Ölheizung nach § 43: ein gelesener Betrag zum Biobrennstoff kommt nicht ins Feld, die Karte sagt warum (Prüfung M6)', async () => {
+  const oel: FuelExtractResult = { file: 'oel.pdf', extraction: { ...extraction.extraction, periodStart: undefined, periodEnd: undefined, deliveredAt: '2029-10-12', quantity: 3000, quantityUnit: 'l', gasBasis: null, parts: [], bioCostEur: 12.5 } }
+  withExtraction(oel)
+  render(<FuelCard plant={{ id: 'hp', method: 'manual', energy: 'oil', gmodg43InstalledOn: '2027-03-01' }} view={{ ...view, items: [] }} deliveries={[]} onSaved={() => {}} />)
+  choose()
+  expect(await screen.findByText(/bei Brennstoff aus einem Vorrat noch nicht rechnet/)).toBeTruthy()
+  expect((screen.getByLabelText(/Biobrennstoff, Preisbestandteil/) as HTMLInputElement).value).toBe('')
+  expect(auswahl('Einheit der Menge').value).toBe('l')
+})
+
+test('Gasheizung ohne Einbau nach § 43: der gelesene Biobrennstoff wird genannt, nicht übernommen; ein neues Formular hat keine alten Prüfungen', async () => {
+  withExtraction({ ...extraction, extraction: { ...extraction.extraction, bioCostEur: 12.5 } })
+  render(<FuelCard plant={{ id: 'hp', method: 'service', energy: 'gas', gmodg43InstalledOn: null }} view={view} deliveries={[]} onSaved={() => {}} />)
+  choose()
+  expect(await screen.findByText(/kein Einbau nach § 43 Abs\. 1 GModG eingetragen/)).toBeTruthy()
+  expect(screen.queryByLabelText(/Biobrennstoff, Preisbestandteil/)).toBeNull()
+  fireEvent.click(screen.getByText('Lieferung speichern'))
+  await waitFor(() => expect(sent.find((x) => x.method === 'POST')?.body).not.toHaveProperty('bioCostCents'))
+  fireEvent.click(screen.getByText('Lieferung eintragen'))
+  expect(screen.queryByText(/kein Einbau nach § 43 Abs\. 1 GModG eingetragen/)).toBeNull()
+})
+
+test('Rechnung mit KI auslesen gibt es nur, solange nichts bearbeitet wird und die Heizperiode offen ist', () => {
+  render(<FuelCard plant={{ id: 'hp', method: 'manual' }} view={view} deliveries={[]} onSaved={() => {}} />)
+  expect(screen.getByLabelText('Rechnung mit KI auslesen')).toBeTruthy()
+  fireEvent.click(screen.getByText('Lieferung eintragen'))
+  expect(screen.queryByLabelText('Rechnung mit KI auslesen')).toBeNull()
+  cleanup()
+  render(<FuelCard plant={{ id: 'hp', method: 'manual' }} view={{ ...view, closed: true }} deliveries={[]} onSaved={() => {}} />)
+  expect(screen.queryByLabelText('Rechnung mit KI auslesen')).toBeNull()
+})
+
+test('Durchsicht S1: bei Wärmepumpe und Contracting ohne CO₂-Brennstoff geht keine gelesene CO₂-Angabe in den Rumpf', async () => {
+  for (const plant of [
+    { id: 'hp', method: 'service' as const, energy: 'heatPump' as const },
+    { id: 'hp', method: 'service' as const, energy: 'heatPump' as const, contracting: true, heatGeneration: 'single' as const },
+  ]) {
+    sent = []
+    withExtraction(extraction)
+    render(<FuelCard plant={plant} view={view} deliveries={[]} onSaved={() => {}} />)
+    choose()
+    expect(await screen.findByText(/fragt Mietfuchs sie nicht ab und hat sie nicht übernommen/)).toBeTruthy()
+    fireEvent.click(screen.getByText('Lieferung speichern'))
+    await waitFor(() => expect(sent.some((x) => x.method === 'POST')).toBe(true))
+    const body = sent.find((x) => x.method === 'POST')?.body ?? assert.fail()
+    expect([body.co2CostCents, body.emissionsKg, body.emissionFactor, body.gasBasis]).toEqual([null, null, null, null])
+    expect((body.parts as { co2CostCents: unknown; emissionsKg: unknown }[]).map((p) => [p.co2CostCents, p.emissionsKg])).toEqual([[null, null], [null, null]])
+    cleanup()
+  }
 })
