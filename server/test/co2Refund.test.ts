@@ -124,6 +124,8 @@ test('Vorauszahlung vereinbart: nach der Staffel, nicht nach dem Gezahlten; nich
   assert.equal(prepaymentAgreed({ prepayments: [{ from: '2020-01', monthlyCents: 0 }, { from: '2025-07', monthlyCents: 5000 }] }, p), true)
   assert.equal(prepaymentAgreed({ prepayments: [{ from: '2026-01', monthlyCents: 5000 }] }, p), false)
   assert.equal(prepaymentAgreed({ prepayments: [{ from: '2020-01', monthlyCents: 10000 }], costModel: 'flatRate' }, p), false)
+  // Durchsicht K-1: Eine Heizvorauszahlung ist eine Vorauszahlung auf Betriebskosten, auch wenn die kalten Kosten pauschal sind.
+  assert.equal(prepaymentAgreed({ prepayments: [], heatingPrepayments: [{ from: '2024-05', monthlyCents: 9000 }], costModel: 'flatRate' }, p), true)
   assert.equal(prepaymentAgreed({ prepayments: [{ from: '2020-01', monthlyCents: 10000 }], costModel: 'inclusive' }, p), false)
   // Eine eigene Heizvorauszahlung ist ebenso eine Vorauszahlung auf Betriebskosten.
   assert.equal(prepaymentAgreed({ prepayments: [], heatingPrepayments: [{ from: '2024-05', monthlyCents: 9000 }] }, p), true)

@@ -12,7 +12,7 @@ import { billingEnergy, CONTRACTING_ENERGIES, isHeatDelivery } from '../../share
 import { parseEuro } from './api'
 import { hkvConsumptionShare, hkvCutNotByConsumption, hkvHeatPumpCapture, hkvRemoteReadingNewDevices, hkvRenewableExemption } from '../../shared/law/heizkostenv.ts'
 import { dayAfter, germanDate, LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
-import { co2SelfSupply } from '../../shared/law/co2kostaufg.ts'
+import { co2SelfSupply, halfSplitEnactedOn } from '../../shared/law/co2kostaufg.ts'
 import { lineRoot, sameLine } from '../../shared/heatingPeriod.ts'
 import { parseMeterValue } from './tenantChange'
 import { ambiguousText, ambiguousThousands, parseNumberDe } from './numbers'
@@ -215,7 +215,7 @@ const REFUND_TEXT =
   `Der Mieter kann den Anteil seiner CO₂-Kosten, den nach dem Stufenmodell Sie tragen, binnen ${SELF.claimMonths} Monaten nach der Abrechnung seines Lieferanten in Textform von Ihnen verlangen (§ 6 Abs. 2 CO2KostAufG). ` +
   'Erfassen Sie seine Anzeige auf der Seite Kosten unter „CO₂-Erstattung“. Ist eine Vorauszahlung auf Betriebskosten vereinbart, können Sie den Betrag in der nächsten Betriebskostenabrechnung nach der Anzeige verrechnen; ' +
   `sonst zahlen Sie ihn spätestens ${SELF.refundMonths} Monate nach der Anzeige aus. ` +
-  'Bei Abschluss des Mietvertrags und beim Einbau einer Heizung nach § 43 GModG müssen Sie den Mieter in Textform auf den Erstattungsanspruch und auf die Pflicht nach § 43 Abs. 1 GModG hinweisen (§ 6 Abs. 2 Satz 6).'
+  `Bei Abschluss eines Mietvertrags ab dem ${germanDate(halfSplitEnactedOn())} und beim Einbau einer Heizung nach § 43 GModG müssen Sie den Mieter in Textform auf den Erstattungsanspruch und auf die Pflicht nach § 43 Abs. 1 GModG hinweisen (§ 6 Abs. 2 Satz 6).`
 const SELF_SUPPLY = `Hat jeder Mieter einen eigenen Vertrag für seine Heizung, gibt es keine Heizkostenabrechnung des Hauses, und Mietfuchs legt keine Heizanlage an. ${REFUND_TEXT}`
 // Zentrale Heizung, Brennstoffvertrag beim Mieter (Prüfung M1, S7): keine Anlage, denn der Vermieter bezieht weder
 // Brennstoff noch Wärme. Was ihm für die Anlage selbst entsteht, legt er um wie vereinbart (§ 2 Nr. 4 a BetrKV).
