@@ -7,15 +7,17 @@ import { heatingUpload } from '../aiUpload'
 import ServiceImportReview from './ServiceImportReview'
 import type { ImportContext } from '../serviceImport'
 import { startYearOf } from '../../../shared/period.ts'
-import type { BillingPeriod, HeatingPeriodView, HeatingPlant, ServiceExtractResult, Tenancy, Unit } from '../types'
+import type { BillingPeriod, CostItem, HeatingPeriodView, HeatingPlant, ServiceExtractResult, Tenancy, Unit } from '../types'
 
-export default function ServiceImportCard({ plant, view, object, tenancies, units, co2 = true, onSaved }: {
+export default function ServiceImportCard({ plant, view, object, tenancies, units, items = [], co2 = true, onSaved }: {
   plant: Pick<HeatingPlant, 'id' | 'propertyId'>
   view: HeatingPeriodView
   // Der Abrechnungszeitraum des Objekts, für die kalten Blöcke einer Komplettabrechnung.
   object: Pick<BillingPeriod, 'key' | 'from' | 'to'>
   tenancies: readonly Tenancy[]
   units: readonly Unit[]
+  // Die Positionen des Objekts, um kalte Blöcke zu erkennen, die schon erfasst sind (Durchsicht S4).
+  items?: readonly Pick<CostItem, 'period' | 'key' | 'category'>[]
   // Sind für diese Heizperiode CO₂-Kosten aufzuteilen? Sonst fragt die Prüfansicht nicht danach.
   co2?: boolean
   onSaved: () => void
@@ -48,6 +50,7 @@ export default function ServiceImportCard({ plant, view, object, tenancies, unit
     heating: { key: String(view.period), from: view.from, to: view.to },
     object: { key: String(object.key), from: object.from, to: object.to },
     tenancies, units, existingAmountItems: view.items.filter((i) => i.key === 'amounts').length,
+    existingAmountCategories: items.filter((i) => i.key === 'amounts' && String(i.period) === String(object.key)).map((i) => i.category),
   }
   return (
     <div className="card">

@@ -143,6 +143,19 @@ test('Nach „Positionen anlegen“ verknüpft „CO₂-Angaben übernehmen“ d
   await waitFor(() => expect(sent.find((s) => s.url.endsWith('/co2'))?.body).toMatchObject({ serviceCostItemId: 'neu' }))
 })
 
+test('Durchsicht S4: einen Block, den es schon gibt, legt „Positionen anlegen“ nur nach Rückfrage an', async () => {
+  render(<ServiceImportReview x={x} file="beleg.pdf" ctx={{ ...ctx, existingAmountItems: 1 }} view={view()} onDone={() => {}} />)
+  const haken = screen.getByLabelText('Heizung und Warmwasser')
+  if (!(haken instanceof HTMLInputElement)) throw new Error('kein Haken')
+  expect(haken.checked).toBe(false)
+  fireEvent.click(haken)
+  fireEvent.change(select('Zuordnung „Herr Unbekannt“'), { target: { value: 'vacancy' } })
+  fireEvent.click(screen.getByText('Positionen anlegen'))
+  await new Promise((r) => setTimeout(r, 20))
+  // Ohne Bestätigung (der Dialog sagt hier nein) wird nichts angelegt.
+  expect(sent.filter((s) => s.method === 'POST')).toEqual([])
+})
+
 test('Durchsicht S3: scheitert ein späterer Block, legt ein zweiter Klick den angelegten nicht noch einmal an', async () => {
   const zwei: ServiceStatementExtraction = { ...x, blocks: [...x.blocks, { title: 'Kaltwasser', category: 'Wasser/Abwasser', totalEur: 100, lines: [
     { label: 'Mustermann, Erika', unitLabel: 'EG links', from: null, to: null, amountEur: 100, vacancy: false },

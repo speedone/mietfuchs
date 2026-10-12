@@ -2,7 +2,7 @@
 // Prüfungen und die Rümpfe für die bestehenden Routen, ohne DOM.
 import { expect, test } from 'vitest'
 import {
-  answerConflict, blockBlocked, co2FormFromExtraction, deductionHint, dhwNote, draftsOf, itemBodies, matchLine, serviceChecks, targetOptions,
+  answerConflict, blockBlocked, co2FormFromExtraction, deductionHint, dhwNote, draftsOf, duplicateBlocks, itemBodies, matchLine, serviceChecks, targetOptions,
   type ImportContext,
 } from './serviceImport'
 import { co2ToForm } from './co2Form'
@@ -212,4 +212,16 @@ test('Eine Zeile ohne Betrag lässt sich nur dem Leerstand zuordnen', () => {
   const r = itemBodies(ohne, leer, ctx, 'beleg.pdf')
   if ('error' in r) throw new Error(r.error)
   expect(r.bodies[0]).toMatchObject({ tenancyAmounts: {}, selfAmounts: {} })
+})
+
+test('Durchsicht S4: erneut ausgelesen, sind auch kalte Blöcke mit vorhandenen Einzelbeträgen nicht vorgehakt, mit Satz und Rückfrage', () => {
+  const nochmal: ImportContext = { ...ctx, existingAmountItems: 1, existingAmountCategories: ['Wasser/Abwasser'] }
+  expect(draftsOf(x, nochmal).map((d) => d.include)).toEqual([false, false])
+  expect(serviceChecks(x, nochmal)).toContain('Im Abrechnungszeitraum gibt es schon Einzelbeträge der Kostenart „Wasser/Abwasser“. Übernehmen Sie den Block „Kaltwasser und Abwasser“ nur, wenn er noch fehlt; sonst stünden die Kosten doppelt in der Abrechnung.')
+  // Wer die Haken trotzdem setzt, wird gefragt: beide Blöcke stünden doppelt.
+  const trotzdem = draftsOf(x, nochmal).map((d) => ({ ...d, include: true }))
+  expect(duplicateBlocks(x, trotzdem, nochmal)).toEqual(['Heizung und Warmwasser', 'Kaltwasser und Abwasser'])
+  expect(duplicateBlocks(x, draftsOf(x, ctx), ctx)).toEqual([])
+  // Eine andere Kostenart ist kein Grund.
+  expect(draftsOf(x, { ...ctx, existingAmountCategories: ['Müllabfuhr'] })[1]?.include).toBe(true)
 })

@@ -20,6 +20,10 @@ export type ImportContext = {
   tenancies: readonly Pick<Tenancy, 'id' | 'unitId' | 'tenantName' | 'start' | 'end'>[]
   units: readonly Pick<Unit, 'id' | 'name' | 'selfUsed'>[]
   existingAmountItems: number
+  // Kostenarten, für die im Abrechnungszeitraum des Objekts schon eine Position mit Einzelbeträgen steht
+  // (Durchsicht S4): Wird dieselbe Abrechnung erneut ausgelesen, stünden kalte Blöcke sonst doppelt da, und
+  // `cost.possible-duplicate` schwiege, weil beide Positionen einen Beleg tragen.
+  existingAmountCategories?: readonly string[]
 }
 
 // Je Block: übernehmen, Kostenart, Betrag der Position, das Ziel je Nutzerzeile (`''` offen, `'vacancy'`,
@@ -106,6 +110,19 @@ export function blockBlocked(block: ServiceBlock, ctx: ImportContext): string | 
     'Mietfuchs ordnet kalte Kosten dem Zeitraum zu, in dem sie entstanden sind, und kann Einzelbeträge je Mieter nicht auf zwei Abrechnungszeiträume aufteilen. Erfassen Sie den Block bitte auf der Seite Kosten.'
 }
 
+const coldTaken = (category: string, ctx: ImportContext): boolean =>
+  !isHeating(category) && (ctx.existingAmountCategories ?? []).includes(category)
+
+// Die gewählten Blöcke, die es in der Abrechnung schon gibt; vor dem Anlegen fragt die Prüfansicht nach.
+export function duplicateBlocks(x: ServiceStatementExtraction, drafts: readonly BlockDraft[], ctx: ImportContext): string[] {
+  return x.blocks.flatMap((b, i) => {
+    const d = drafts[i]
+    if (!d?.include) return []
+    const taken = isHeating(d.category) ? ctx.existingAmountItems > 0 : coldTaken(d.category, ctx)
+    return taken ? [blockName(b)] : []
+  })
+}
+
 export function draftsOf(x: ServiceStatementExtraction, ctx: ImportContext): BlockDraft[] {
   return x.blocks.map((b) => {
     const heating = isHeating(b.category)
@@ -113,7 +130,7 @@ export function draftsOf(x: ServiceStatementExtraction, ctx: ImportContext): Blo
     const total = blockCents(b) + (heating && x.deductionEur !== null ? cents(x.deductionEur) : 0)
     return {
       // Review Focus 4: Stehen schon Einzelbeträge in der Heizperiode, ist der Heizblock nicht vorgehakt.
-      include: heating ? ctx.existingAmountItems === 0 : blockBlocked(b, ctx) === null,
+      include: heating ? ctx.existingAmountItems === 0 : blockBlocked(b, ctx) === null && !coldTaken(b.category, ctx),
       category: b.category,
       amount: euroText(total),
       targets: b.lines.map((l) => matchLine(l, ctx)),
@@ -143,6 +160,11 @@ export function serviceChecks(x: ServiceStatementExtraction, ctx: ImportContext)
   }
   if (x.co2?.landlordEur != null && x.deductionEur !== null && cents(x.co2.landlordEur) !== cents(x.deductionEur)) {
     out.push(`Der CO₂-Anteil des Vermieters ist ${fmtEuro(cents(x.co2.landlordEur))}, die Abzugszeile ${fmtEuro(cents(x.deductionEur))}.`)
+  }
+  for (const b of x.blocks) {
+    if (coldTaken(b.category, ctx) && blockBlocked(b, ctx) === null) {
+      out.push(`Im Abrechnungszeitraum gibt es schon Einzelbeträge der Kostenart „${b.category}“. Übernehmen Sie den Block „${blockName(b)}“ nur, wenn er noch fehlt; sonst stünden die Kosten doppelt in der Abrechnung.`)
+    }
   }
   if (ctx.existingAmountItems > 0) {
     out.push('In dieser Heizperiode gibt es schon Einzelbeträge eines Messdienstes. Übernehmen Sie nur, was noch fehlt; sonst stünden die Heizkosten doppelt in der Abrechnung.')
