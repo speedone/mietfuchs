@@ -299,9 +299,6 @@ export function invoiceStatusOf(method: HeatingMethod, deliveries: readonly Pick
 }
 const withStatus = (status: ReadonlyMap<string, InvoiceStatus>, wanted: readonly InvoiceStatus[]): Set<string> =>
   new Set([...status].filter(([, s]) => wanted.includes(s)).map(([id]) => id))
-export function cancelledDeliveries(method: HeatingMethod, deliveries: readonly Pick<FuelDeliveryInput, 'id' | 'estimated'>[], items: readonly FuelItem[]): Set<string> {
-  return withStatus(invoiceStatusOf(method, deliveries, items), ['cancelled'])
-}
 // Storno und Gutschrift ohne Rechnung: Beide decken keine Tage ab, verdrängen keine Schätzung und zählen nicht in der
 // Bewertung, im Blatt für den Messdienst und in der Plausibilität.
 export function notInvoiceDeliveries(method: HeatingMethod, deliveries: readonly Pick<FuelDeliveryInput, 'id' | 'estimated'>[], items: readonly FuelItem[]): Set<string> {

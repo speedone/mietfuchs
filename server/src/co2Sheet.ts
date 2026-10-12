@@ -6,7 +6,7 @@
 // Messdienst; auch die Gemeinschaft oder ein Steuerberater braucht es.
 //
 // Die Summe zählt nur, was auch die Abrechnung zählt (Durchsicht von #246, G-W1, G-W2): Eine stornierte
-// Rechnung und eine von Rechnungen abgedeckte Schätzung gar nicht (`cancelledDeliveries`,
+// Rechnung, eine Gutschrift ohne Rechnung (#251) und eine von Rechnungen abgedeckte Schätzung gar nicht (`invoiceStatusOf`,
 // `estimateFactors` aus fuel.ts, dieselbe Auswahl wie die Bewertung), eine Rechnung vor dem 01.01.2023
 // nur mit ihren kg (§ 11 Abs. 2 Satz 2), den Anfangsbestand mit seinen CO₂-Kosten nach derselben Regel.
 // Was nicht zählt, bleibt sichtbar und sagt warum. Die Texte stehen in der dritten Person: Das Blatt geht
@@ -26,7 +26,7 @@ import { heatingSnapshotFor, snapshotFor, wayOf } from './snapshot.ts'
 import { etsExempt } from './co2Plausibility.ts'
 import { co2ExemptionOf } from './co2Exemption.ts'
 import { heatingRulesOf } from './heatingInfo.ts'
-import { cancelledDeliveries, estimateFactors, rangeOf, type FuelItem } from './fuel.ts'
+import { estimateFactors, invoiceStatusOf, notInvoiceDeliveries, rangeOf, type FuelItem } from './fuel.ts'
 
 export type Co2SheetInput = {
   propertyName: string
@@ -74,8 +74,9 @@ export function co2SheetOf(i: Co2SheetInput): Co2Sheet {
     const r = rangeOf(d)
     return r !== null && r.from <= i.h.to && r.to >= i.h.from
   })
-  const cancelled = cancelledDeliveries(i.plant.method, mine, i.items)
-  const factors = estimateFactors(mine.filter((d) => rangeOf(d) !== null), cancelled, valueAt(hkvDegreeDays, i.h.from))
+  // Storno und Gutschrift ohne Rechnung (#251) zählen nicht, dieselbe Auswahl wie die Bewertung (fuel.ts).
+  const status = invoiceStatusOf(i.plant.method, mine, i.items)
+  const factors = estimateFactors(mine.filter((d) => rangeOf(d) !== null), notInvoiceDeliveries(i.plant.method, mine, i.items), valueAt(hkvDegreeDays, i.h.from))
   // Ob das CO2KostAufG gilt und was die Prüfung je Rechnung findet, entscheidet die Abrechnung (`co2Check`, eine
   // Quelle; #246 nach dem Umstellen auf PR 14): nicht bei Wärme aus dem Emissionshandel mit Anschluss nach dem
   // Stichtag (§ 2 Abs. 4 Satz 2, R-W1) und nicht unter einer Ausnahme nach § 11 für Wärme und Warmwasser ohne
@@ -93,7 +94,8 @@ export function co2SheetOf(i: Co2SheetInput): Co2Sheet {
     const factor = d.estimated ? (factors.get(d.id) ?? 1) : 1
     const costs = costsCount(d)
     const [counted, note]: [Co2SheetDelivery['counted'], string | null] =
-      cancelled.has(d.id) ? ['none', 'Storniert: Die Kostenpositionen dieser Rechnung ergeben 0 €; sie zählt nicht.']
+      status.get(d.id) === 'cancelled' ? ['none', 'Storniert: Die Kostenpositionen dieser Rechnung ergeben 0 €; sie zählt nicht.']
+        : status.get(d.id) === 'creditOnly' ? ['none', 'Gutschrift ohne Rechnung: Die Kostenpositionen dieser Lieferung ergeben zusammen weniger als 0 €; sie belegt keinen Verbrauch und zählt nicht.']
         : d.estimated && factor === 0 ? ['none', 'Schätzung, die durch Rechnungen über denselben Zeitraum abgedeckt ist; sie zählt nicht.']
           : costs === false ? ['kgOnly', `Vor dem ${from} in Rechnung gestellt: Die kg zählen für die Einstufung, die CO₂-Kosten bleiben unberücksichtigt (§ 11 Abs. 2 Satz 2 CO2KostAufG).`]
             : costs === null ? ['kgOnly', `Ohne Rechnungsdatum: Ob die CO₂-Kosten zählen, hängt davon ab, ob die Rechnung vor dem ${from} gestellt wurde (§ 11 Abs. 2 Satz 2 CO2KostAufG); gezählt sind nur die kg.`]
