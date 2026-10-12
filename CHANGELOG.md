@@ -437,7 +437,7 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Wohnungsmarkt liegt (mit Geltung der Verordnung), am Mietverhältnis der Tag der Mitteilung nach § 5d Abs. 4
   und an der Lieferung Netzentgelte und Biobrennstoff. Biobrennstoff aus einem Vorrat und die Grenze von 30 % ab
   2040 rechnet Mietfuchs noch nicht ([#227](https://github.com/speedone/mietfuchs/issues/227)); die Abrechnung
-  sagt das, außer an jeder Lieferung ist 0 eingetragen. Das Blatt „CO₂-Angaben für den Messdienst“ nennt die
+  sagt das, außer an jeder Lieferung ab dem 01.01.2029 ist 0 eingetragen (früher gelieferter Brennstoff enthält keinen Pflichtanteil). Das Blatt „CO₂-Angaben für den Messdienst“ nennt die
   Teilung nach § 5a und die Netzentgelte und Biobrennstoffkosten der Rechnungen. Ohne Tag des Einbaus ändert sich
   keine Zahl und kein Hinweis.
 ### Geändert
