@@ -17,7 +17,7 @@
 // geschnitten und nicht neu erfunden: Was dort dazukommt, kommt hier nur an, wenn es jemand
 // bewusst aufnimmt.
 
-import type { BillingPeriod, Co2Statement, CostItem, DegreeDayValue, FrozenFuelCarry, FuelDelivery, HeatingEnergy, HeatingEstimate, HeatingPeriodData, HeatingPlant, HeatingServiceValue, InterimGap, LawOverride, Meter, MonthlyInfoRow, OperatingPowerCredit, OperatingPowerDeduction, Payment, PeriodKey, PeriodRules, Property, Reading, StockValue, Tenancy, Unit } from '../../shared/types.ts'
+import type { BillingPeriod, Co2Refund, Co2Statement, CostItem, DegreeDayValue, FrozenFuelCarry, FuelDelivery, HeatingEnergy, HeatingEstimate, HeatingPeriodData, HeatingPlant, HeatingServiceValue, InterimGap, LawOverride, Meter, MonthlyInfoRow, OperatingPowerCredit, OperatingPowerDeduction, Payment, PeriodKey, PeriodRules, Property, Reading, StockValue, Tenancy, Unit } from '../../shared/types.ts'
 import { calendarPeriod, calendarYearPeriod, parsePeriodKey, periodContaining, periodLabel, periodOfKey, previousPeriod, rulesOf, settlementDeadline, startYearOf } from '../../shared/period.ts'
 import { hasOwnRhythm, heatingPeriodsEndingIn, lineRoot, plantRules, sameFuelLine, settledSeparately, settlementKeyOf, type PlantWay } from '../../shared/heatingPeriod.ts'
 import { isStockEnergy } from '../../shared/fuelStock.ts'
@@ -509,6 +509,12 @@ export type Snapshot = {
   // die der Anlagen dieses Schnappschusses (bei getrennter Heizkostenabrechnung die der Linie). Fehlt das Feld,
   // gibt es keine; die Abrechnung nennt dann jeden fälligen Monat als nicht mitgeteilt.
   monthlyInfoRows?: MonthlyInfoRow[]
+  // CO₂-Erstattungen an Mieter, die selbst heizen, der Mietverhältnisse des Objekts (Heizung PR 19), und wann welche
+  // abgeschlossene Abrechnung versandt wurde (für „die nächste auf die Anzeige folgende Abrechnung“, § 6 Abs. 2
+  // Satz 4 CO2KostAufG). Nur gesetzt, wenn es Erstattungen gibt; wer nichts einträgt, hat einen unveränderten
+  // Schnappschuss.
+  co2Refunds?: Co2Refund[]
+  settlementsSent?: { period: PeriodKey; sentAt: string | null }[]
 }
 
 // Die Lieferungen im Schnappschuss (Heizung PR 7, Entwurf 5.8). Die Abgrenzung liest Zeitraum, Betrag,
@@ -964,6 +970,8 @@ export function snapshotFor(
     lawOverrides?: LawOverride[]
     // Monatliche Verbrauchsinformation (Heizung PR 22).
     monthlyInfoRows?: MonthlyInfoRow[]
+    // CO₂-Erstattungen an Mieter, die selbst heizen (Heizung PR 19); sie erben das Objekt über das Mietverhältnis.
+    co2Refunds?: Co2Refund[]
   } & FuelSource,
   propertyId: string,
   period: BillingPeriod,
@@ -1008,6 +1016,15 @@ export function snapshotFor(
   }
   const stockChains = plants.flatMap((p) =>
     stockChainsOf(stockSource, p, objectRules, hasOwnRhythm(wayOf(p)) ? heatingPeriodsEndingIn(plantRules(wayOf(p), objectRules), period) : [period], plants))
+  // CO₂-Erstattungen (Heizung PR 19): die der Mietverhältnisse dieses Objekts, mit den Versanddaten seiner Abschlüsse.
+  const tenancyIds = new Set(narrowed.tenancies.map((t) => t.id))
+  const refunds = (source.co2Refunds ?? []).filter((r) => tenancyIds.has(r.tenancyId))
+  const refundPart = refunds.length > 0
+    ? {
+        co2Refunds: refunds,
+        settlementsSent: narrowed.closedSettlements.map((c) => ({ period: c.period, sentAt: 'sentAt' in c && typeof c.sentAt === 'string' ? c.sentAt : null })),
+      }
+    : {}
   return {
     ...snapshotOfPeriod(general, period, previousPeriod(objectRules, period)),
     propertyId,
@@ -1024,6 +1041,7 @@ export function snapshotFor(
     ...((source.lawOverrides?.length ?? 0) > 0 ? { lawOverrides: source.lawOverrides } : {}),
     // Betriebsstrom (Heizung PR 15): Abzüge aus allen Zeiträumen des Objekts.
     operatingPowerDeductions: deductionsOf(narrowed.costItems, propertyId, narrowed.closedSettlements, objectRules),
+    ...refundPart,
   }
 }
 

@@ -59,14 +59,14 @@ import type {
 // Abrechnungsjahres (siehe snapshot.ts). Welche Sammlung darin nach Jahr eingegrenzt sein darf,
 // entscheidet dort die Ablage und nicht hier.
 import { rulesFor } from '../../shared/law/rules.ts'
-import { co2ApplicableFrom, co2CostsBefore, co2CostsCountedFrom, co2CostsExcludedUntil, co2CutMissing, co2DistrictEtsNew, co2FirstPeriodStart, co2HalfSplit, co2HalfSplitEmergency, co2HalfSplitNewBuildings, co2HalfSplitTwoFamily, co2NonResidential, co2Restriction, co2RoundingDecimals, co2StageTable, halfSplitBioFirstDay, halfSplitFirstDay } from '../../shared/law/co2kostaufg.ts'
+import { co2ApplicableFrom, co2CostsBefore, co2CostsCountedFrom, co2CostsExcludedUntil, co2CutMissing, co2DistrictEtsNew, co2FirstPeriodStart, co2HalfSplit, co2HalfSplitEmergency, co2HalfSplitNewBuildings, co2HalfSplitTwoFamily, co2NonResidential, co2Restriction, co2RoundingDecimals, co2SelfSupply, co2StageTable, halfSplitBioFirstDay, halfSplitEnactedOn, halfSplitFirstDay } from '../../shared/law/co2kostaufg.ts'
 import { gmodgHeating43 } from '../../shared/law/gmodg.ts'
 import { applicableRanges, blendedPermille, halfAmounts, halfSplitStatus, intersect as intersectRange, termsFromDeliveries, termsFromPieces, termsWeight, tightMarketIn, twoFamilyOf, type HalfDelivery, type HalfSplitStatus, type HalfSplitTerm, type Piece, type TwoFamily } from './halfSplit.ts'
 import { CO2_RELIEF_LABEL } from '../../shared/co2Probe.ts'
 import { ausweisGaps, CO2_FUELS, co2Assessment, co2Required, NO_CO2_FUELS, co2DeductionsOf, FORMULA_METHODS, co2PotsOf, itemBasisUnits, L_TOLERANCE_CENTS, perUnitClassification, perUnitExceeding, perUnitReliefs, gmodgKeyOf, HALF_SPLIT_TOLERANCE_PERMILLE, reliefKeysOf, reliefsByShare, spanningPlants, type PerUnitFuel, restage, selfSplit, SERVICE_FUEL_TOLERANCE_CENTS, shownReliefs, stageRanges, tableFactor, tenantLines as co2TenantLines, type Co2Pot, type ReliefShare } from './co2.ts'
 // Zahlen und Daten der Rechtsregeln kommen aus dem Rechtsregister (Heizung PR 1) und stehen hier
 // nicht als Literal; server/test/law-literals.test.ts wacht darüber.
-import { createLawLog, dayAfter, dayBefore, law, LAW_AS_OF, onlyVersion, recordVersionAt, VALUE_CHANGE_LABEL, valueAt, type Period } from '../../shared/law/register.ts'
+import { coversDate, createLawLog, dayAfter, dayBefore, law, LAW_AS_OF, onlyVersion, recordVersionAt, VALUE_CHANGE_LABEL, valueAt, type Period } from '../../shared/law/register.ts'
 import { betrkvGenerationPower, betrkvTvSignal, bgbDeadlineMonths, bgbHeatDeliverySwitch, bgbMaxPeriodMonths } from '../../shared/law/bgb-betrkv.ts'
 import { switchFindings, switchText } from './heatDelivery.ts'
 import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvEstimateThreshold, hkvExemptions, hkvGenerationPower, hkvInfoDistrict, hkvMonthlyInfo, hkvHeatPumpCapture, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvRenewableExemption, hkvSettlementInfo, type DegreeDayTable } from '../../shared/law/heizkostenv.ts'
@@ -95,6 +95,7 @@ import { LAW_PARAMS } from '../../shared/law/params.ts'
 import { fuelFromDeliveries, fuelFromStock, looseCentsOf, measuredOffset, problemText, settledByDefault, stockKeysOf, stockOf, stockTemplateOfLine, stockTouched, valueOf as stockValueOf, type FuelFigures, type StockPeriodInput, type StockResult } from './fuelStock.ts'
 import { isStockEnergy, STOCK_FUEL_NAMES, STOCK_UNIT_TEXT } from '../../shared/fuelStock.ts'
 import { degreeDayPermille, type DayRange } from '../../shared/degreeDays.ts'
+import { claimDeadline, nextSettlement, prepaymentAgreed, refundDueDate, refundLawAt, refundProposal, refundSteps, type LawAsk } from './co2Refund.ts'
 import { annualFactors, type AnnualBasis } from './prepaymentSuggestion.ts'
 import {
   boundaryReadingsOf, consumptionSharesOf, estimateDeviceType, estimateKey, estimateProposals, heatPumpVerdict, lineShareRows, OIL_OR_GAS, hotWaterShareOf, measuredBetween, planSelf, sortReadings, targetProblem, usersOf, weightsOf,
@@ -479,6 +480,11 @@ const noticeKinds = {
   // Heizung PR 19 (#97): Mieter, die selbst heizen (Prüfung M3).
   'co2.self-supply-items': { level: 'hint', title: 'Heizkosten bei einem Mieter, der selbst heizt', rule: 'co2-self-supply', terms: ['co2Refund', 'co2Split'] },
   'co2.self-supply-mixed': { level: 'error', title: 'Mieter heizt selbst und hängt an Ihrer Heizanlage', rule: 'co2-self-supply', terms: ['co2Refund', 'heatingSystem'] },
+  'co2.refund-late': { level: 'hint', title: 'CO₂-Erstattung nach Ablauf der Frist verlangt', rule: 'co2-self-supply', terms: ['co2Refund'] },
+  'co2.refund-not-next': { level: 'hint', title: 'CO₂-Erstattung nicht in der nächsten Abrechnung', rule: 'co2-self-supply', terms: ['co2Refund'] },
+  'co2.refund-due': { level: 'warning', title: 'CO₂-Erstattung fällig', rule: 'co2-self-supply', terms: ['co2Refund'] },
+  'co2.refund-differs': { level: 'hint', title: 'CO₂-Erstattung weicht von der Nachrechnung ab', rule: 'co2-self-supply', terms: ['co2Refund'] },
+  'co2.refund-not-self': { level: 'error', title: 'CO₂-Erstattung bei einem Mieter, der nicht selbst heizt', rule: 'co2-self-supply', terms: ['co2Refund'] },
 } satisfies Record<string, NoticeKind>
 // Was die eigene CO₂-Aufteilung liest (Heizung PR 7 und 8): aus den Lieferungen des Versorgers oder aus
 // der Bestandsrechnung des Vorrats. `stock`: aus dem Vorrat.
@@ -500,6 +506,16 @@ function makeNotice(code: NoticeCode, text: string, subject: NoticeSubject | und
   return { code, level: kind.level, title: kind.title, text, ...(subject ? { subject } : {}), ...(kind.rule ? { rule: kind.rule } : {}), terms: kind.terms }
 }
 const itemSubject = (item: { id: string }): NoticeSubject => ({ kind: 'costItem', id: item.id })
+
+// CO₂-Erstattung an Mieter, die selbst heizen (Heizung PR 19): Kostenart und Beschriftung der Gutschriftzeile. Eine
+// eigene Kostenart, denn die Zeile ist keine Heizkostenzeile und darf in keine Grundlage einer Kürzung fallen.
+const CO2_REFUND_CATEGORY = 'CO₂-Erstattung'
+const CO2_REFUND_LABEL = 'CO₂-Erstattung bei eigener Heizung (§ 6 Abs. 2 CO2KostAufG)'
+
+// Was ein Mieter im Zeitraum an wiederkehrenden Kosten trägt: ohne Erstattungen, denn eine Erstattung fällt nicht
+// wieder an (§ 560 Abs. 4 BGB: angemessen sind die voraussichtlichen Kosten).
+export const recurringShareCents = (st: Pick<Statement, 'rows' | 'totalShareCents'>): number =>
+  st.totalShareCents - st.rows.filter((r) => r.kind === 'co2Refund').reduce((a, r) => a + r.shareCents, 0)
 const meterSubject = (reading: SnapshotReading): NoticeSubject => ({ kind: 'meter', id: reading.meterId })
 // Nennt eine Meldung mehrere Wohnungen oder Mietverhältnisse, führt der Knopf zur ersten; die
 // Seite ist dieselbe.
@@ -7158,6 +7174,102 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     warn('heating.contracting', switchText(f, rule, fmtDay, switchFrom), { kind: 'heatingPlant', id: f.plantId })
   }
 
+  // ---------- CO₂-Erstattung an Mieter, die selbst heizen (§ 6 Abs. 2 CO2KostAufG, Heizung PR 19) ----------
+  // Verrechnet in diesem Zeitraum: eine Gutschriftzeile beim Mieter und die Gegenzeile beim Vermieter; die Summe
+  // aller Zeilen bleibt die der Positionen. Nicht verrechnet und nicht ausgezahlt: ab der Fälligkeit eine Warnung
+  // in jeder Abrechnung. Die Steuer liest nichts davon (Entwurf 6.4 Nr. 3): Verrechnet der Vermieter, steckt die
+  // Erstattung in der kleineren Zahlung; zahlt er aus, erfasst er eine negative Zahlung.
+  if (scope === 'all') {
+    for (const r of snapshot.co2Refunds ?? []) {
+      const t = snapshot.tenancies.find((x) => x.id === r.tenancyId)
+      // Vor 2023 gibt es keine Erstattung (§ 11 Abs. 2); db/co2Refunds.ts lehnt das schon beim Speichern ab.
+      if (!t || !coversDate(co2SelfSupply, r.supplierBilledAt)) continue
+      const tenancySubject: NoticeSubject = { kind: 'tenancy', id: r.tenancyId }
+      const st = statements.get(r.tenancyId)
+      // Prüfung M4: nur, wer sich selbst mit Wärme versorgt; sonst bekäme der Mieter seinen CO₂-Anteil doppelt.
+      if (t.heatingModel !== 'selfSupply') {
+        if (r.settlePeriod === period.key || r.settlePeriod === null) {
+          warn('co2.refund-not-self',
+            `Für ${t.tenantName} ist eine CO₂-Erstattung von ${fmtCents(r.amountCents)} eingetragen, das Mietverhältnis steht unter Heizung aber nicht auf „Mieter heizt selbst“. ` +
+              'Eine Erstattung nach § 6 Abs. 2 CO2KostAufG steht nur einem Mieter zu, der sich selbst mit Wärme versorgt; Mietfuchs verrechnet sie deshalb nicht. Stellen Sie das Mietverhältnis um, wenn das zutrifft, oder löschen Sie die Erstattung.',
+            tenancySubject)
+        }
+        continue
+      }
+      const self = law(co2SelfSupply, { date: r.supplierBilledAt }, lawLog)
+      const due = refundDueDate(r.claimedAt, self.refundMonths)
+      if (r.settlePeriod === period.key && st) {
+        const ask: LawAsk = {
+          applicable: (p) => law(co2ApplicableFrom, { period: p }, lawLog),
+          stageTable: (p) => law(co2StageTable, { period: p }, lawLog),
+          decimals: (p) => law(co2RoundingDecimals, { period: p }, lawLog),
+          restriction: (p) => law(co2Restriction, { period: p }, lawLog),
+          selfSupply: () => self,
+          pieces: (p) => law(co2HalfSplit, { period: p, weights: (x) => degreeDayPermille([x], law(hkvDegreeDays, { period: p }, lawLog)) }, lawLog).map(({ from, to, value }) => ({ from, to, value })),
+          degreeDays: (p) => law(hkvDegreeDays, { period: p }, lawLog),
+        }
+        const rl = refundLawAt(r, ask)
+        const proposal = rl ? refundProposal(r, rl) : null
+        const steps = refundSteps(proposal, r, r.amountCents, {
+          euro: fmtCents, exact: fmtExactEuro, num: fmtNum, applicableFrom: fmtDay(co2FirstPeriodStart()), cutPercent: self.ownAppliancesCutPercent,
+        })
+        st.rows.push({
+          costItemId: `co2refund:${r.id}`, kind: 'co2Refund', category: CO2_REFUND_CATEGORY, description: CO2_REFUND_LABEL, totalCents: -r.amountCents,
+          keyLabel: 'Erstattung', basisText: `Anzeige vom ${fmtDay(r.claimedAt)}`, shareCents: -r.amountCents, labor35aCents: 0, steps,
+        })
+        st.totalShareCents -= r.amountCents
+        landlordRows.push({
+          costItemId: `co2refund:${r.id}`, category: CO2_REFUND_CATEGORY, description: CO2_REFUND_LABEL, totalCents: 0,
+          keyLabel: 'Erstattung', shareCents: r.amountCents, landlordParts: [{ reason: 'co2Refund', cents: r.amountCents }],
+        })
+        // Geschuldet ist der Anteil nach § 6 Abs. 2 Satz 1; gebucht ist der eingetragene Betrag.
+        if (proposal && proposal.excluded !== 'overYear' && proposal.cents !== r.amountCents) {
+          warn('co2.refund-differs',
+            `Die eingetragene CO₂-Erstattung an ${t.tenantName} (${fmtCents(r.amountCents)}) weicht von der Nachrechnung nach den eingetragenen Grundlagen ab (${fmtCents(proposal.cents)}). ` +
+              'Zu erstatten ist der Anteil, den Sie nach § 6 Abs. 2 Satz 1 CO2KostAufG zu tragen haben; gebucht ist der eingetragene Betrag. Prüfen Sie die Anzeige des Mieters und die Grundlagen.',
+            tenancySubject)
+        }
+        const deadline = claimDeadline(r.supplierBilledAt, self.claimMonths)
+        if (r.claimedAt > deadline) {
+          warn('co2.refund-late',
+            `${t.tenantName} hat die CO₂-Erstattung am ${fmtDay(r.claimedAt)} geltend gemacht; die Abrechnung des Lieferanten stammt vom ${fmtDay(r.supplierBilledAt)}. ` +
+              `Die Frist von ${self.claimMonths} Monaten (§ 6 Abs. 2 Satz 3 CO2KostAufG) endete am ${fmtDay(deadline)}. Die Frist ist nach der Begründung des Gesetzes eine Ausschlussfrist (BT-Drs. 20/3172, S. 34, damals noch mit sechs Monaten); den Anspruch müssen Sie dann voraussichtlich nicht erfüllen. Mietfuchs verrechnet ihn, weil Sie ihn eingetragen haben.`,
+            tenancySubject)
+        }
+        const months = law(bgbDeadlineMonths, { period: lawPeriod }, lawLog)
+        const lived = periodsBetween(objectRules, t.start, period.to).filter((p) => t.start <= p.to && (t.end === null || t.end >= p.from))
+        const candidates = lived.map((p) => ({ key: p.key, from: p.from, deadline: settlementDeadline(p, months), sentAt: snapshot.settlementsSent?.find((s) => s.period === p.key)?.sentAt ?? null }))
+        const next = nextSettlement(r.claimedAt, candidates)
+        const nextPeriod = lived.find((p) => p.key === next)
+        // Satz 4 verlangt eine vereinbarte Vorauszahlung: die Staffel und das Nebenkostenmodell, nicht das Gezahlte
+        // (BT-Drs. 20/3172, S. 35: bei Pauschale oder ohne Umlage ist auszuzahlen).
+        if (!prepaymentAgreed(t, period)) {
+          warn('co2.refund-not-next',
+            `Mit ${t.tenantName} ist für diesen Zeitraum keine Vorauszahlung auf Betriebskosten vereinbart (keine Staffel mit Vorauszahlung, oder Pauschale bzw. Inklusivmiete). Verrechnen dürfen Sie die CO₂-Erstattung nach § 6 Abs. 2 Satz 4 CO2KostAufG nur bei vereinbarter Vorauszahlung; ` +
+              `zahlen Sie sie spätestens am ${fmtDay(due)} aus (Satz 5) und tragen Sie die Auszahlung ein.`,
+            tenancySubject)
+        } else if (next !== period.key) {
+          warn('co2.refund-not-next',
+            `${t.tenantName} hat die CO₂-Erstattung am ${fmtDay(r.claimedAt)} geltend gemacht. Verrechnen dürfen Sie sie nach § 6 Abs. 2 Satz 4 CO2KostAufG in der nächsten Betriebskostenabrechnung nach der Anzeige, in der Regel` +
+              (nextPeriod ? ` die für ${periodLabel(nextPeriod)}` : '') +
+              `. Sonst ist sie spätestens am ${fmtDay(due)} auszuzahlen (Satz 5).`,
+            tenancySubject)
+        }
+        continue
+      }
+      const open = r.paidOutOn === null && (r.settlePeriod === null || (r.settlePeriod === period.key && !st))
+      if (open && r.claimedAt <= period.to && due <= period.to) {
+        warn('co2.refund-due',
+          `${t.tenantName} hat am ${fmtDay(r.claimedAt)} eine CO₂-Erstattung von ${fmtCents(r.amountCents)} geltend gemacht. Wird sie nicht verrechnet, war sie spätestens am ${fmtDay(due)} zu erstatten (§ 6 Abs. 2 Satz 5 CO2KostAufG); bei vereinbarter Vorauszahlung wird sie mit Ablauf der Frist der Abrechnung fällig, in der sie zu verrechnen ist (BT-Drs. 20/3172, S. 35). ` +
+            'Verrechnen Sie sie in dieser Abrechnung oder zahlen Sie sie aus, tragen Sie den Tag der Auszahlung ein und erfassen Sie die Auszahlung als negative Zahlung im Mietkonto.' +
+            (r.nonResidential
+              ? ` Ob diese Frist auch im Nichtwohngebäude gilt, ist nach dem Wortlaut nicht sicher: § 8 Abs. 2 verweist auf § 6 Abs. 2 Satz 2 bis 4, und seit dem ${fmtDay(halfSplitEnactedOn())} steht die Frist in Satz 5. Nach der Begründung des Gesetzes sollen dieselben Fristen gelten (BT-Drs. 20/3172, S. 37); Mietfuchs warnt deshalb.`
+              : ''),
+          tenancySubject)
+      }
+    }
+  }
+
   // Die Höchstdauer hat P gebildet (shared/period.ts); eingefroren wird sie hier.
   law(bgbMaxPeriodMonths, { period: lawPeriod }, lawLog)
   // Vorschlag nach § 560 Abs. 4 BGB (#208, Entwurf 3.7, Heizung PR 5): je Position ein Faktor auf
@@ -7326,7 +7438,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       st.suggestedMonthlyCents = Math.max(0, Math.round((annual * diy) / st.days / 12 / 100) * 100)
     } else {
       // Nie negativ: Überwiegen Gutschriften, gibt es keine Vorauszahlung unter 0 (Integrationsdurchsicht).
-      st.suggestedMonthlyCents = Math.max(0, Math.round((st.totalShareCents * diy) / st.days / 12 / 100) * 100)
+      // Ohne CO₂-Erstattung: Sie fällt nicht wieder an (Heizung PR 19, `recurringShareCents`).
+      st.suggestedMonthlyCents = Math.max(0, Math.round((recurringShareCents(st) * diy) / st.days / 12 / 100) * 100)
     }
   }
   return result
