@@ -134,6 +134,9 @@ test('Anlage: Merkmale anlegen und prüfen (Abweichung 11)', async () => {
     const neu = await opened.write((db) => updateHeatingPlant(db, 'hp', { gmodg43InstalledOn: '2026-06-01', newBuildingFirstUse: '2027-02-01', buildingApplicationBefore20260513: false }))
     assert.deepEqual([neu?.newBuildingFirstUse, neu?.buildingApplicationBefore20260513], ['2027-02-01', false])
     await assert.rejects(opened.write((db) => updateHeatingPlant(db, 'hp', { newBuildingFirstUse: '2030-01-02' })), heatingError(400, /beim Grundsatz, dass die Mieter die Betriebskosten tragen/))
+    // Erstmals genutzt am 31.12.2029 ist noch „bis zum Ablauf des 31. Dezember 2029“ (§ 5b Satz 1).
+    assert.equal((await opened.write((db) => updateHeatingPlant(db, 'hp', { newBuildingFirstUse: '2029-12-31' })))?.newBuildingFirstUse, '2029-12-31')
+    await opened.write((db) => updateHeatingPlant(db, 'hp', { newBuildingFirstUse: '2027-02-01' }))
     await assert.rejects(opened.write((db) => updateHeatingPlant(db, 'hp', { newBuildingFirstUse: '01.02.2027' })), heatingError(400, /Tag der ersten Nutzung/))
     // Die vorherige Pflicht fällt ohne Notfalleinbau, der Bauantrag ohne Neubau.
     const pflicht = await opened.write((db) => updateHeatingPlant(db, 'hp', { gmodg43InstalledOn: '2027-06-15', emergencyInstall: false, emergencyPriorDuty: true, newBuildingFirstUse: null }))
@@ -153,6 +156,9 @@ test('Lieferung: Netzentgelte nur bei einer Heizung nach § 43, Biobrennstoff ni
     const d = await opened.write((db) => createDelivery(db, 'd1', 'hp', { ...gas, gridFeeCents: 30000, bioCostCents: 0 }))
     assert.deepEqual([d?.gridFeeCents, d?.bioCostCents], [30000, 0])
     await assert.rejects(opened.write((db) => updateDelivery(db, 'd1', { invoiceFrom: '2040-01-01', invoiceTo: '2040-12-31', bioCostCents: 5000 })), heatingError(400, /2040/))
+    // Eine Rechnung, die am 01.01.2040 endet, berührt die Zeit ab 2040 schon.
+    await assert.rejects(opened.write((db) => updateDelivery(db, 'd1', { invoiceFrom: '2039-01-01', invoiceTo: '2040-01-01', bioCostCents: 5000 })), heatingError(400, /2040/))
+    assert.equal((await opened.write((db) => updateDelivery(db, 'd1', { invoiceFrom: '2039-01-01', invoiceTo: '2039-12-31', bioCostCents: 5000 })))?.bioCostCents, 5000)
     // Eine 0 ist eine Angabe und auch ab 2040 erlaubt (Abweichung 10).
     assert.equal((await opened.write((db) => updateDelivery(db, 'd1', { invoiceFrom: '2040-01-01', invoiceTo: '2040-12-31', bioCostCents: 0 })))?.bioCostCents, 0)
   })
@@ -174,6 +180,13 @@ test('Lieferung bei Contracting mit Gas: Netzentgelte nach dem Brennstoff des Li
     await opened.write((db) => createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'gas', method: 'manual', contracting: true, gmodg43InstalledOn: '2027-03-01' }))
     const d = await opened.write((db) => createDelivery(db, 'w', 'hp', { label: 'Wärme 2028', invoiceFrom: '2028-01-01', invoiceTo: '2028-12-31', gridFeeCents: 30000 }))
     assert.equal(d?.gridFeeCents, 30000)
+  })
+  await withDatabase(async (opened) => {
+    // Contracting mit Heizöl: Den Brennstoff führt der Lieferant, nicht der Vermieter im Tank; der Biobrennstoff
+    // steht auf seiner Wärmerechnung und ist ein Betrag (Abweichung 11).
+    await opened.write((db) => createHeatingPlant(db, 'hp2', 'objekt-1', { energy: 'oil', method: 'manual', contracting: true, gmodg43InstalledOn: '2027-03-01' }))
+    const oel = await opened.write((db) => createDelivery(db, 'w2', 'hp2', { label: 'Wärme 2029', invoiceFrom: '2029-01-01', invoiceTo: '2029-12-31', bioCostCents: 5000 }))
+    assert.equal(oel?.bioCostCents, 5000)
   })
 })
 
