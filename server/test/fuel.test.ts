@@ -156,12 +156,17 @@ test('Fall c: H−1 ohne Schätzung abgeschlossen; 983,39 € beim Vermieter', (
   assert.deepEqual(aus.landlord, [{ reason: 'fuelClosedPeriod', cents: 98339 }])
 })
 
-test('Fall d: eingefrorener Wert geht vor, auch wenn ein später erfasster Zählerstand 200 ‰ ergäbe', () => {
+// #251, R-2: Bis dahin trugen die Mieter von H den Unterschied (6.500 € − 983,39 € statt 6.500 € − 1.300 €, also
+// 316,61 € Brennstoff, der in H−1 verbraucht wurde). Das verletzt das Verbrauchsprinzip (BGH VIII ZR 156/11): Die
+// Mieter von H tragen nur den heutigen Teil von H, H−1 behält, was sie eingefroren hat, und der Unterschied steht beim
+// Vermieter (`fuelClosedPeriod`), der ihn nur mit einer berichtigten Abrechnung von H−1 nachfordern kann.
+test('Fall d: Was H−1 eingefroren hat, bleibt; ergäbe ein später erfasster Zählerstand 200 ‰, trägt H nur ihren heutigen Teil, die 316,61 € stehen beim Vermieter', () => {
   const readings = [{ date: '2025-03-14', value: 0 }, { date: '2025-04-30', value: 200 }, { date: '2026-03-14', value: 1000 }]
   const offen = carryOf(plantFuel(input({ ctx: { ...ctx, readings } })))
   assert.equal(offen.cents, -130000)
   const zu = carryOf(plantFuel(input({ ctx: { ...ctx, readings }, closed: new Set(['2024-05']), frozen: [{ deliveryId: 'd', period: '2024-05', cents: 98339, emissionsKg: 0, co2Cents: 0 }] })))
-  assert.deepEqual([zu.cents, zu.frozen, zu.landlord], [-98339, true, [{ reason: 'fuelCarry', cents: 98339 }]])
+  assert.deepEqual([zu.cents, zu.frozen, zu.landlord], [-130000, true, [{ reason: 'fuelCarry', cents: 98339 }, { reason: 'fuelClosedPeriod', cents: 31661 }]])
+  assert.deepEqual(zu.frozenPart, { frozen: 98339, today: 130000 })
 })
 
 test('Fall e: Schätzung 1.050,00 € zu hoch; Differenz −66,61 €', () => {
@@ -259,4 +264,20 @@ test('#251 1d: Eine Gutschrift ohne Rechnung steht nicht in der Bewertung und z�
   assert.equal(mit.co2Cents, ohne.co2Cents)
   assert.deepEqual(mit.creditOnly, [{ deliveryId: 'd1', label: 'Rechnung d1', cents: -30451, confirmed: false }])
   assert.deepEqual(mit.zeroInvoices, [])
+})
+
+// #251, R-3 (Prüfbericht M2, Verdacht V1): Schätzung 3.000,00 € vom 01.02. bis 30.04.2025; beim Abschluss von 2024/2025
+// deckte d0 (bis 14.03.2025) den Teil davor ab, eingefroren sind 42,03 % = 1.260,75 €. Die Rechnung d deckt genau die
+// übrigen Tage ab und ersetzt damit die ganzen 1.260,75 €, nicht 529,83 € (der Faktor 0,4203 zweimal).
+test('#251 R-3: Eine teilweise abgedeckte, eingefrorene Schätzung wird nicht zweimal gekürzt: 1.260,75 € ersetzt, Abweichung −277,36 €', () => {
+  const e = delivery({ id: 'e', label: 'Schätzung', invoiceFrom: '2025-02-01', invoiceTo: '2025-04-30', amountCents: 300000, estimated: true })
+  const frozen = [{ deliveryId: 'e', period: '2024-05', cents: 126075, emissionsKg: 0, co2Cents: 0 }]
+  const r = plantFuel(input({ deliveries: [VORJAHR, GAS, e], items: [vorjahrItem, gasItem], closed: new Set(['2024-05']), frozen }))
+  const c = carryOf(r)
+  assert.equal(c.cents, -98339)
+  assert.deepEqual(c.estimate, { cents: 126075, ids: ['e'], ratios: [1], frozen: [126075] })
+  assert.deepEqual(c.landlord, [{ reason: 'fuelCarry', cents: 126075 }, { reason: 'fuelEstimateDiff', cents: -27736 }])
+  // Storniert: Die Mieter von 2024/2025 haben die ganzen 1.260,75 € zu viel getragen.
+  const storno = carryOf(plantFuel(input({ deliveries: [VORJAHR, GAS, e], items: [vorjahrItem, gasItem, { ...gasItem, id: 'st', amountCents: -650000 }], closed: new Set(['2024-05']), frozen })))
+  assert.equal(storno.cancelled, 126075)
 })
