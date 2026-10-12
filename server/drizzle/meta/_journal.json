@@ -351,6 +351,34 @@
       "when": 1791769374403,
       "tag": "0049_gmodg_bedingungen",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "6",
+      "when": 1791771029751,
+      "tag": "0050_heizmodell_bedingungen",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "6",
+      "when": 1791771766716,
+      "tag": "0051_co2_erstattung",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "6",
+      "when": 1791774344705,
+      "tag": "0052_selbstversorgung_art",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "6",
+      "when": 1791774352608,
+      "tag": "0053_selbstversorgung_art_bedingungen",
+      "breakpoints": true
     }
   ]
 }

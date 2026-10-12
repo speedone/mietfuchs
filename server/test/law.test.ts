@@ -16,7 +16,7 @@ import { ustgGasHeatNetworkRate, ustgStandardRate } from '../../shared/law/ustg.
 import { co2ApplicableFrom, co2CostsBefore, co2EbevFactors, co2Price, co2PriceEts, co2CostsCountedFrom, co2CostsExcludedUntil, co2CutMissing, co2DistrictEtsNew, co2FirstPeriodStart, co2NonResidential, co2Restriction, co2RoundingDecimals, co2StageTable } from '../../shared/law/co2kostaufg.ts'
 import { RULES, rulesFor } from '../../shared/law/rules.ts'
 import { CALIBRATED_METER_TYPES, messevCalibrationYears } from '../../shared/law/messev.ts'
-import { co2HalfSplit, co2HalfSplitEmergency, co2HalfSplitNewBuildings, co2HalfSplitTwoFamily, halfSplitBioFirstDay, halfSplitFirstDay } from '../../shared/law/co2kostaufg.ts'
+import { co2HalfSplit, co2HalfSplitEmergency, co2HalfSplitNewBuildings, co2HalfSplitTwoFamily, co2SelfSupply, halfSplitBioFirstDay, halfSplitEnactedOn, halfSplitFirstDay } from '../../shared/law/co2kostaufg.ts'
 import { bioCapFrom, gmodgHeating43 } from '../../shared/law/gmodg.ts'
 import { degreeDayPermille } from '../../shared/degreeDays.ts'
 
@@ -180,7 +180,7 @@ test('Register: jede Konstante vom Typ LawParam in shared/law/ steht in LAW_PARA
     .flatMap((f) => [...fs.readFileSync(path.join(dir, f), 'utf8').matchAll(/^export const (\w+): LawParam</gm)].map((m) => m[1]))
   assert.ok(declared.length >= 7, `nur ${declared.length} Parameter gefunden`)
   const listed = new Set<unknown>(LAW_PARAMS)
-  const modules = { betrkvGenerationPower, betrkvTvSignal, bgbDeadlineMonths, bgbHeatDeliverySwitch, bgbMaxPeriodMonths, co2ApplicableFrom, co2CostsBefore, co2CutMissing, co2DistrictEtsNew, co2EbevFactors, co2HalfSplit, co2HalfSplitEmergency, co2HalfSplitNewBuildings, co2HalfSplitTwoFamily, co2NonResidential, co2Price, co2PriceEts, co2Restriction, co2RoundingDecimals, co2StageTable, gmodgHeating43, hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvEstimateThreshold, hkvExemptions, hkvGenerationPower, hkvHeatingValues, hkvHeatPumpCapture, hkvInfoDistrict, hkvMonthlyInfo, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvRenewableExemption, hkvSettlementInfo, practiceEvaporatorWindow, practiceReadingOffWarning, practiceVacancyPersons, ustgGasHeatNetworkRate, ustgStandardRate, messevCalibrationYears }
+  const modules = { betrkvGenerationPower, betrkvTvSignal, bgbDeadlineMonths, bgbHeatDeliverySwitch, bgbMaxPeriodMonths, co2ApplicableFrom, co2CostsBefore, co2CutMissing, co2DistrictEtsNew, co2EbevFactors, co2HalfSplit, co2HalfSplitEmergency, co2HalfSplitNewBuildings, co2HalfSplitTwoFamily, co2NonResidential, co2Price, co2SelfSupply, co2PriceEts, co2Restriction, co2RoundingDecimals, co2StageTable, gmodgHeating43, hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvEstimateThreshold, hkvExemptions, hkvGenerationPower, hkvHeatingValues, hkvHeatPumpCapture, hkvInfoDistrict, hkvMonthlyInfo, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvRenewableExemption, hkvSettlementInfo, practiceEvaporatorWindow, practiceReadingOffWarning, practiceVacancyPersons, ustgGasHeatNetworkRate, ustgStandardRate, messevCalibrationYears }
   for (const name of declared) {
     assert.ok(name && Object.hasOwn(modules, name), `${name} fehlt in diesem Test`)
     assert.ok(listed.has(Reflect.get(modules, name)), `${name} fehlt in LAW_PARAMS`)
@@ -695,4 +695,17 @@ test('§ 5b, § 5a Abs. 4, § 5d Abs. 3 und § 43 GModG im Register', () => {
   assert.equal(v.source.url, 'https://www.gesetze-im-internet.de/geg/__43.html')
   assert.match(v.source.cite, /BGBl\. 2026 I Nr\. 226/)
   assert.equal(v.source.retrieved, '2026-10-11')
+})
+
+test('Stichtag co2.self-supply: ab 2023 zwölf Monate für Anzeige und Erstattung, 5 % bei eigenen Geräten, 50 % im Nichtwohngebäude (Heizung PR 19)', () => {
+  const log = createLawLog()
+  assert.deepEqual(law(co2SelfSupply, { date: '2025-01-20' }, log), { claimMonths: 12, refundMonths: 12, ownAppliancesCutPercent: 5, nonResidentialPermille: 500 })
+  assert.throws(() => valueAt(co2SelfSupply, '2022-12-31'), /Kein Rechtswert/)
+  const v = versionAt(co2SelfSupply, '2025-01-20')
+  assert.equal(v.source.url, 'https://www.gesetze-im-internet.de/co2kostaufg/__6.html')
+  // Am 12.10.2026 im Wortlaut gelesen (Gegenprüfung PR 19); LAW_AS_OF bleibt das jüngste Abrufdatum.
+  assert.equal(v.source.retrieved, '2026-10-12')
+  assert.match(v.enacted, /BGBl\. 2026 I Nr\. 226/)
+  assert.equal(log.values.length, 1)
+  assert.equal(halfSplitEnactedOn(), '2026-07-29')
 })

@@ -49,6 +49,7 @@ import {
 import { removeInterimGap, saveDistribution, saveInterimGap, SelfItemsError, setUpSelf } from './db/heatingSelf.ts'
 import { saveHeatingInfo, saveHeatingRules } from './db/heatingInfo.ts'
 import { monthlyInfoView, saveMonthlyInfoRow } from './db/monthlyInfo.ts'
+import { createRefund, listRefunds, removeRefund, updateRefund } from './db/co2Refunds.ts'
 import { heatingPeriodViews, removeCo2Statement, saveCo2Statement, saveDhwTemperature, saveHotWater } from './db/co2.ts'
 import { saveServiceValues } from './db/serviceValues.ts'
 import { removeEstimate, saveEstimate } from './db/heatingEstimates.ts'
@@ -708,6 +709,27 @@ app.put('/api/units/:id/interim-gaps/:date', async (req, res) => {
 })
 app.delete('/api/units/:id/interim-gaps/:date', async (req, res) => {
   res.json({ ok: true, removed: await writeData((db) => removeInterimGap(db, req.params.id, req.params.date)) })
+})
+
+// ---------- CO₂-Erstattung an Mieter, die selbst heizen (Heizung PR 19, #97) ----------
+// Das Objekt ergibt sich beim Schreiben aus dem Mietverhältnis; gelistet wird je Objekt. Die Prüfungen stehen in
+// db/co2Refunds.ts; HeatingError und PeriodError gibt die Fehlerbehandlung mit ihrem Status weiter.
+const NO_REFUND = 'Diese Erstattung gibt es nicht (mehr). Bitte laden Sie die Seite neu.'
+app.get('/api/co2-refunds', async (req, res) => {
+  res.json(await readData(async (db) => listRefunds(db, await propertyOf(db, req))))
+})
+app.post('/api/co2-refunds', async (req, res) => {
+  res.status(201).json(await writeData((db) => createRefund(db, newId(), bodyObject(req))))
+})
+app.put('/api/co2-refunds/:id', async (req, res) => {
+  const r = await writeData((db) => updateRefund(db, req.params.id, bodyObject(req)))
+  if (!r) return res.status(404).json({ error: NO_REFUND })
+  res.json(r)
+})
+app.delete('/api/co2-refunds/:id', async (req, res) => {
+  const removed = await writeData((db) => removeRefund(db, req.params.id))
+  if (!removed) return res.status(404).json({ error: NO_REFUND })
+  res.json({ ok: true })
 })
 
 // ---------- Brennstofflieferungen (Heizung PR 7) ----------

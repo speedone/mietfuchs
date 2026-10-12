@@ -207,6 +207,18 @@ const OWN_CHECK_MESSAGES: Readonly<Record<string, string>> = {
   heating_monthly_info_reference_positive: 'Der Vergleichswert ist eine Zahl größer als 0 (kWh je m² Wohnfläche im Monat).',
   heating_monthly_info_reference_source_complete: 'Bitte nennen Sie die Quelle des Vergleichswerts, etwa die Vergleichsdaten Ihres Ablesedienstes. Ein Durchschnitt aus Ihrem eigenen Haus ist kein zulässiger Vergleich.',
   heating_monthly_info_sent_on_valid: 'Der Tag der Mitteilung ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie ihn im Kalender.',
+  // CO₂-Erstattung an Mieter, die selbst heizen (Heizung PR 19); db/co2Refunds.ts prüft vorher.
+  tenancies_self_supply_kind_valid: 'Welche Heizung der Mieter selbst betreibt, gibt es nur bei „Mieter heizt selbst“. Bitte laden Sie die Seite neu.',
+  co2_refunds_settled_or_paid_valid: 'Eine CO₂-Erstattung wird entweder in einer Abrechnung verrechnet oder ausgezahlt, nicht beides.',
+  co2_refunds_billed_complete: 'Zum Zeitraum des Lieferanten gehören Beginn und Ende. Bitte tragen Sie beide ein oder lassen Sie beide leer.',
+  co2_refunds_billed_order_valid: 'Der Zeitraum des Lieferanten endet vor seinem Beginn. Bitte prüfen Sie die beiden Daten.',
+  co2_refunds_metered_valid: 'Eine getrennte Messung des Wärmeverbrauchs gibt es nur bei gewerblicher Nutzung des Brennstoffs.',
+  co2_refunds_billed_at_valid: 'Der Tag der Abrechnung des Lieferanten ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie ihn im Kalender.',
+  co2_refunds_claimed_at_valid: 'Der Tag der Anzeige des Mieters ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie ihn im Kalender.',
+  co2_refunds_paid_out_valid: 'Der Tag der Auszahlung ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie ihn im Kalender.',
+  co2_refunds_billed_from_valid: 'Der Beginn des Zeitraums des Lieferanten ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie ihn im Kalender.',
+  co2_refunds_billed_to_valid: 'Das Ende des Zeitraums des Lieferanten ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie es im Kalender.',
+  co2_refunds_half_split_valid: 'Der Tag, ab dem § 5a CO2KostAufG gilt, ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie ihn im Kalender.',
 }
 
 function checkMessage(name: string): string {

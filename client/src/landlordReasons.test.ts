@@ -46,3 +46,7 @@ test('Brennstoff anderer Heizperioden (Heizung PR 7)', () => {
 test('§ 5a: Netzentgelte und Biobrennstoff des Vermieters (Heizung PR 18)', () => {
   expect(landlordReasonText(row({ landlordParts: [{ reason: 'gmodgShare', cents: 7950 }] }))).toBe('Netzentgelte und Biobrennstoff (§ 5a CO2KostAufG)')
 })
+
+test('CO₂-Erstattung an einen Mieter, der selbst heizt (Heizung PR 19)', () => {
+  expect(landlordReasonText(row({ landlordParts: [{ reason: 'co2Refund', cents: 5000 }] }))).toBe('CO₂-Erstattung an den Mieter (§ 6 Abs. 2 CO2KostAufG)')
+})

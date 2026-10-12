@@ -366,3 +366,40 @@ export const co2HalfSplitTwoFamily: LawParam<{ readonly maxDwellings: number }, 
   versions: [{ value: { maxDwellings: 2 }, source: checked5a('§ 5d Abs. 3, 4 CO2KostAufG', '__5d.html'), enacted: ENACTED_5A }],
   describe: (v) => `im selbst bewohnten Gebäude mit höchstens ${v.maxDwellings} Wohnungen und gemeinsamer Wärmeversorgung nur CO₂-Kosten nach Stufen, außer im angespannten Wohnungsmarkt`,
 }
+
+// ---------- Erstattung an Mieter, die selbst heizen (Heizung PR 19, #97) ----------
+// Wortlaut am 12.10.2026 gelesen (Fassung Art. 5 G v. 23.07.2026, BGBl. 2026 I Nr. 226). § 6 Abs. 2 Satz 1:
+// „Versorgt sich der Mieter selbst mit Wärme oder mit Wärme und Warmwasser“, hat der Vermieter ihm den Anteil zu
+// erstatten, den er „nach § 5 Absatz 3, § 5a Absatz 3 oder § 5b zu tragen hat“; das gilt für eine Etagenheizung
+// ebenso wie für eine zentrale Heizung, deren Brennstoff der Mieter selbst bezieht (§ 2 Abs. 1 „in getrennten
+// oder verbundenen Anlagen“; BT-Drs. 20/3172, S. 34). Satz 3: Anzeige in Textform „innerhalb von zwölf Monaten
+// ab dem Zeitpunkt, in dem der Lieferant … die Lieferung gegenüber dem Mieter abgerechnet hat“; Satz 5:
+// Erstattung „spätestens zwölf Monate nach Anzeige“, wenn keine Betriebskostenabrechnung erfolgt oder nicht
+// verrechnet wird. § 6 Abs. 3 Satz 2: „um 5 Prozent zu kürzen“ bei eigenen Geräten zu anderen Zwecken (nach der
+// Begründung nur, wenn das Gerät dem Mieter gehört und er es selbst gewählt hat, BT-Drs. 20/3172, S. 35).
+// § 8 Abs. 2: im Nichtwohngebäude „50 Prozent der Kohlendioxidkosten zu erstatten“. Derselbe Wert wie
+// `co2NonResidential` (§ 8 Abs. 1), aber eine andere Norm: Abs. 1 begrenzt eine Vereinbarung, Abs. 2 bestimmt die
+// Erstattung; deshalb steht er hier eigens (Prüfung K1). `eventDate`: die Abrechnung des Lieferanten gegenüber
+// dem Mieter. Die Zahlen gelten seit dem 01.01.2023 unverändert. Das Gesetz vom 23.07.2026 (Art. 5 Nr. 6 Buchst. c,
+// BT-Drs. 21/6278, S. 64) hat in § 6 Abs. 2 Satz 1 durch zwei Sätze ersetzt: den neuen Satz 1 (Verweis auf § 5a, § 5b)
+// und Satz 2 (Umrechnung nach § 5 Abs. 1 Satz 5). Dadurch wurden die Sätze 2 bis 4 a. F. zu den Sätzen 3 bis 5 n. F.;
+// angefügt wurde Satz 6 (Hinweispflicht). Deshalb steht die Auszahlungsfrist seit dem 29.07.2026 in Satz 5.
+export type SelfSupply = { readonly claimMonths: number; readonly refundMonths: number; readonly ownAppliancesCutPercent: number; readonly nonResidentialPermille: number }
+const checked6 = (cite: string, page: string): Source => ({ rank: 'law', cite, url: `${BASE}${page}`, retrieved: '2026-10-12', checked: 'checked' })
+export const co2SelfSupply: LawParam<SelfSupply, 'eventDate'> = {
+  id: 'co2.self-supply',
+  title: 'Erstattung an Mieter, die selbst heizen',
+  norm: '§ 6 Abs. 2, 3, § 8 Abs. 2 CO2KostAufG',
+  timing: 'eventDate',
+  versions: [{
+    validFrom: '2023-01-01',
+    value: { claimMonths: 12, refundMonths: 12, ownAppliancesCutPercent: 5, nonResidentialPermille: 500 },
+    source: checked6('§ 6 Abs. 2 Satz 3, 5, Abs. 3 Satz 2, § 8 Abs. 2 CO2KostAufG', '__6.html'),
+    enacted: ENACTED,
+  }],
+  describe: (v) => `Anzeige binnen ${v.claimMonths} Monaten nach der Abrechnung des Lieferanten; Erstattung spätestens ${v.refundMonths} Monate nach der Anzeige; ${v.ownAppliancesCutPercent} % weniger bei eigenen Geräten zu anderen Zwecken; im Nichtwohngebäude ${v.nonResidentialPermille / 10} %`,
+}
+
+// Der Tag, an dem §§ 5a bis 5d und die Neufassung von § 6 Abs. 2 in Kraft traten (Art. 9 Abs. 1 G v. 23.07.2026:
+// am Tag nach der Verkündung vom 28.07.2026), für Texte, die ihn nennen.
+export const halfSplitEnactedOn = (): string => '2026-07-29'

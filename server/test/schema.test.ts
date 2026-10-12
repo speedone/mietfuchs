@@ -16,7 +16,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { AiSettings, AiSlot, Co2Statement, DegreeDayValue, FrozenFuelCarry, FuelDelivery, FuelDeliveryPart, Co2TenantRelief, CostItem, HeatingEstimate, HeatingPeriodData, HeatingPlant, HeatingPlantUnit, HeatingPrepaymentOverride, InterimGap, MonthlyInfoRow, SelfSpanRange, SeparateSpan, PeriodKey, PeriodRules, Meter, Payment, PersonEntry, PrepaymentEntry, Reading, RentEntry, Settings, Tenancy, Unit, ExternalBasis, UploadInfo, StoredAssessment, StoredAssessmentLine } from '../../shared/types.ts'
+import type { AiSettings, AiSlot, Co2Refund, Co2Statement, DegreeDayValue, FrozenFuelCarry, FuelDelivery, FuelDeliveryPart, Co2TenantRelief, CostItem, HeatingEstimate, HeatingPeriodData, HeatingPlant, HeatingPlantUnit, HeatingPrepaymentOverride, InterimGap, MonthlyInfoRow, SelfSpanRange, SeparateSpan, PeriodKey, PeriodRules, Meter, Payment, PersonEntry, PrepaymentEntry, Reading, RentEntry, Settings, Tenancy, Unit, ExternalBasis, UploadInfo, StoredAssessment, StoredAssessmentLine } from '../../shared/types.ts'
 import type { ClosedSettlement } from '../src/store.ts'
 import { applyMigrations, connect, loadMigrations } from '../src/db/client.ts'
 import * as schema from '../src/db/schema.ts'
@@ -150,6 +150,8 @@ type _InterimGaps = Assert<Matches<typeof schema.interimReadingGaps.$inferSelect
 type Co2StatementColumns = Omit<Co2Statement, 'plantId' | 'period' | 'reliefs'>
 type _Co2Statements = Assert<Matches<typeof schema.co2Statements.$inferSelect, Co2StatementColumns>>
 type _Co2Reliefs = Assert<Matches<Omit<typeof schema.co2TenantReliefs.$inferSelect, 'statementId'>, Co2TenantRelief>>
+// --- CO₂-Erstattung an Mieter, die selbst heizen (Heizung PR 19) ---
+type _Co2Refunds = Assert<Matches<typeof schema.co2Refunds.$inferSelect, Co2Refund>>
 // --- Lieferungen (Heizung PR 7) ---
 // Die Teilmengen stehen in einer eigenen Tabelle; eingefroren wird je Zeile in `heating_periods`.
 type _FuelDeliveries = Assert<Matches<typeof schema.fuelDeliveries.$inferSelect, Omit<FuelDelivery, 'parts'>>>
@@ -269,6 +271,7 @@ test('Migration lässt sich anwenden und legt alle Tabellen an', async () => {
       'closed_heating_settlements',
       'closed_settlement_history',
       'closed_settlements',
+      'co2_refunds',
       'co2_statements',
       'co2_tenant_reliefs',
       'cost_item_amounts',

@@ -1,7 +1,9 @@
-import type { CostModel, NotSettled, Tenancy, Unit } from './types'
+import type { CostModel, HeatingModel, NotSettled, SelfSupplyKind, Tenancy, Unit } from './types'
 import { fmtDate, fmtEuro } from './api'
 import { overlapsOf } from '../../shared/tenancyOverlap.ts'
 import { andList } from '../../shared/wording.ts'
+import { co2SelfSupply, halfSplitEnactedOn } from '../../shared/law/co2kostaufg.ts'
+import { germanDate, LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
 
 // Das Nebenkostenmodell am Mietverhältnis (#93) in der Oberfläche: Beschriftungen und der Rumpf.
 // Die Regeln der Berechnung stehen in calc.ts; hier steht nur, wie sie heißen.
@@ -12,15 +14,39 @@ export const COST_MODEL_LABELS: Record<CostModel, string> = {
   inclusive: 'in der Miete enthalten (Inklusiv-/Warmmiete)',
 }
 
+// Für die Heizung zusätzlich „Mieter heizt selbst“ (Heizung PR 19, #97): Der Mieter bezieht Brennstoff oder Wärme
+// über einen eigenen Vertrag, etwa für eine Gastherme oder eine zentrale Heizung. Nur hier wählbar, nie bei den
+// kalten Kosten.
+export const HEATING_MODEL_LABELS: Record<HeatingModel, string> = {
+  ...COST_MODEL_LABELS,
+  selfSupply: 'Mieter heizt selbst (eigener Vertrag für Brennstoff oder Wärme)',
+}
+
+// Welche Heizung der Mieter selbst betreibt (Durchsicht S-2). Bei der zentralen Heizung prüft die Abrechnung, ob ihr
+// Betriebsstrom im Allgemeinstrom steckt; bei der Heizung in der Wohnung läuft er über den Zähler des Mieters.
+export const SELF_SUPPLY_KIND_OPTIONS: { value: SelfSupplyKind | ''; label: string }[] = [
+  { value: '', label: 'Keine Angabe' },
+  { value: 'perUnit', label: 'Eine Heizung in der Wohnung, etwa eine Gastherme' },
+  { value: 'central', label: 'Eine zentrale Heizung im Haus, deren Brennstoff der Mieter bezieht' },
+]
+
+// Der Satz unter der Auswahl, wenn der Mieter selbst heizt (Prüfung M1, S1; § 6 Abs. 2 Satz 3, 6 CO2KostAufG).
+const SELF = valueAt(co2SelfSupply, LAW_AS_OF)
+export const SELF_SUPPLY_TENANCY_HINT =
+  'Der Mieter bezieht Brennstoff oder Wärme über einen eigenen Vertrag, etwa für eine Gastherme in der Wohnung oder für eine zentrale Heizung, deren Brennstoff er selbst kauft. ' +
+  'Wartung und Betriebsstrom, die Sie tragen, rechnet Mietfuchs weiter ab. ' +
+  `Den Anteil seiner CO₂-Kosten, den nach dem Stufenmodell Sie tragen, kann er binnen ${SELF.claimMonths} Monaten nach der Abrechnung seines Lieferanten in Textform von Ihnen verlangen (§ 6 Abs. 2 CO2KostAufG); erfassen Sie seine Anzeige auf der Seite Kosten unter „CO₂-Erstattung“. ` +
+  `Bei Abschluss eines Mietvertrags ab dem ${germanDate(halfSplitEnactedOn())} und beim Einbau einer Heizung nach § 43 GModG müssen Sie ihn in Textform auf den Erstattungsanspruch und auf die Pflicht nach § 43 Abs. 1 GModG hinweisen (§ 6 Abs. 2 Satz 6 CO2KostAufG).`
+
 // Die Staffel der Pauschale erscheint nur, wenn eine der beiden Arten pauschal ist. Sie ist eine
 // eigene Staffel und nicht die der Vorauszahlung: Das Mietkonto führt sie im Soll, die
 // Abrechnung rechnet sie nie an.
-export function showsFlatRates(costModel: CostModel | undefined, heatingModel: CostModel | undefined): boolean {
+export function showsFlatRates(costModel: CostModel | undefined, heatingModel: HeatingModel | undefined): boolean {
   return costModel === 'flatRate' || heatingModel === 'flatRate'
 }
 
 // „Abrechnung“ ist die Voreinstellung und wird als null gespeichert.
-export function costModelBody(costModel: CostModel, heatingModel: CostModel): { costModel: CostModel | null, heatingModel: CostModel | null } {
+export function costModelBody(costModel: CostModel, heatingModel: HeatingModel): { costModel: CostModel | null, heatingModel: HeatingModel | null } {
   return {
     costModel: costModel === 'settlement' ? null : costModel,
     heatingModel: heatingModel === 'settlement' ? null : heatingModel,
@@ -38,11 +64,13 @@ export function notSettledText(n: NotSettled): string {
 
 // Das Kennzeichen in der Liste der Mietverhältnisse (#142): nichts, solange beides abgerechnet
 // wird, denn das ist der Normalfall. Sind beide Arten gleich, ein Wort, sonst beide getrennt.
-const SHORT: Record<CostModel, string> = { settlement: 'abgerechnet', flatRate: 'pauschal', inclusive: 'inklusiv' }
-export function costModelBadge(costModel: CostModel | null | undefined, heatingModel: CostModel | null | undefined): string | null {
+const SHORT: Record<HeatingModel, string> = { settlement: 'abgerechnet', flatRate: 'pauschal', inclusive: 'inklusiv', selfSupply: 'selbst' }
+export function costModelBadge(costModel: CostModel | null | undefined, heatingModel: HeatingModel | null | undefined): string | null {
   const cold = costModel ?? 'settlement'
   const heat = heatingModel ?? 'settlement'
   if (cold === 'settlement' && heat === 'settlement') return null
+  // Heizt der Mieter selbst und wird kalt abgerechnet, genügt die Heizung (Heizung PR 19).
+  if (cold === 'settlement' && heat === 'selfSupply') return 'Heizung selbst'
   if (cold === heat) return cold === 'flatRate' ? 'Pauschale' : 'inklusiv'
   return `kalt ${SHORT[cold]} · Heizung ${SHORT[heat]}`
 }
