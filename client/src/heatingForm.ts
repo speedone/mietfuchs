@@ -119,8 +119,9 @@ export const FUEL_CONTRACT_OPTIONS: { value: FuelContract; label: string }[] = [
 ]
 // Gefragt nur bei einer neuen zentralen Anlage mit einem Brennstoff, den ein Mieter selbst kaufen kann und für den
 // das CO2KostAufG gilt; beim Ändern einer Anlage steht schon fest, dass Sie den Brennstoff beziehen.
+const SELF_SUPPLY_FUELS: readonly HeatingEnergy[] = ['gas', 'oil', 'lpg', 'coal']
 export const asksFuelContract = (form: Pick<HeatingForm, 'energy' | 'contracting'>, editingId: string | null): boolean =>
-  editingId === null && (form.energy === 'gas' || form.energy === 'oil' || form.energy === 'lpg' || form.energy === 'coal') && !form.contracting
+  editingId === null && form.energy !== '' && form.energy !== 'perUnit' && SELF_SUPPLY_FUELS.includes(billingEnergy({ energy: form.energy, contracting: form.contracting }))
 
 // Womit Etagenheizungen auf Vertrag des Vermieters heizen können (Heizung PR 9). Ohne Vorratsenergien:
 // Der Vorrat wird je Heizanlage geführt, nicht je Wohnung.
