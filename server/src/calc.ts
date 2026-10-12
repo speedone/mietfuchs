@@ -87,7 +87,7 @@ import { CALENDAR_RULES, calendarYearPeriod, contextOf, formatDayRange, isCalend
 import { generatorEnergy, noCo2Supplier } from '../../shared/heatDelivery.ts'
 import { lineRoot, monthSpanText, plantRules, plantSpan, recommendedDeadline, requestMonth, sameBuilding, sameFuelLine, sameLine, sameSpan, separateOwner, servesUnit, settledSeparately } from '../../shared/heatingPeriod.ts'
 import { heatingSnapshotFor, selfAt, snapshotFor, wayOf } from './snapshot.ts'
-import { cancelledDeliveries, deliveryShare, plantFuel, rangeOf, type FuelCarry, type FuelResult, type ShareContext } from './fuel.ts'
+import { deliveryShare, notInvoiceDeliveries, plantFuel, rangeOf, type FuelCarry, type FuelResult, type ShareContext } from './fuel.ts'
 import { co2Plausibility, etsExempt as etsExemptPlant, plausibilityText } from './co2Plausibility.ts'
 import { billMissingText, deductionMissingText, generationPowerText, selfSupplyPowerText, missingOperatingPowerText, missingPowerFindings, operatingPowerBalance, operatingPowerFindings, operatingPowerText, unmarkedPowerCredits, type OperatingPowerBalance } from './operatingPower.ts'
 import { GENERAL_POWER_CATEGORY } from '../../shared/operatingPower.ts'
@@ -5273,10 +5273,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const co2Check: NonNullable<HeatingStatement['co2Check']> = { applies: !etsExempt && !noCo2Fuel && !co2OffByExemption(pot.plantId, String(pot.period.key)), exemption: null, findings: [] }
     report.co2Check = co2Check
     if (co2Check.applies) {
-      // Eine stornierte Rechnung zählt nicht und wird nicht geprüft (Durchsicht von #246, G-K1); dieselbe
-      // Auswahl wie die Bewertung (fuel.ts).
+      // Eine stornierte Rechnung und eine Gutschrift ohne Rechnung (#251) zählen nicht und werden nicht geprüft
+      // (Durchsicht von #246, G-K1); dieselbe Auswahl wie die Bewertung (fuel.ts).
       const ownDeliveries = (snapshot.fuel?.deliveries ?? []).filter((d) => d.plantId === pot.plantId)
-      const cancelled = cancelledDeliveries(potPlant?.method ?? 'manual', ownDeliveries, snapshot.fuel?.items ?? [])
+      const cancelled = notInvoiceDeliveries(potPlant?.method ?? 'manual', ownDeliveries, snapshot.fuel?.items ?? [])
       for (const d of ownDeliveries) {
         if (cancelled.has(d.id)) continue
         const r = rangeOf(d)

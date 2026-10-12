@@ -76,6 +76,12 @@ test('G-K1: eine stornierte Rechnung (Positionen ergeben 0 €) löst keinen Hin
   assert.equal(hints(computeSettlement(snapshotFor(storno, 'objekt-1', P('2025-01')))).length, 0)
 })
 
+test('#251: eine Gutschrift ohne Rechnung (Positionen ergeben weniger als 0 €) löst keinen Hinweis aus', () => {
+  const src = co2Source(2025, { co2CostCents: 1000 })
+  const gutschrift = { ...src, costItems: [...src.costItems, { id: 'gut', propertyId: 'objekt-1', period: periodKey('2025-01'), category: HEATING_CATEGORY, description: 'Gutschrift', amountCents: -400000, key: 'area' as const, heatingPlantId: 'hp', fuelDeliveryId: 'd' }] }
+  assert.equal(hints(computeSettlement(snapshotFor(gutschrift, 'objekt-1', P('2025-01')))).length, 0)
+})
+
 const eintrag2027 = [{ paramId: 'co2.price', validFrom: '2027-01-01', value: 64.2, source: 'UBA', enteredAt: '2026-12-20' }]
 // Eine Anlage mit eigener Heizperiode Mai bis April im Kalenderobjekt (Weg b): Die Heizperiode 2026/2027 endet
 // in der Abrechnung 2027 und wird als Teil gerechnet.
