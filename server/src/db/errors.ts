@@ -186,6 +186,18 @@ const OWN_CHECK_MESSAGES: Readonly<Record<string, string>> = {
   fuel_delivery_parts_from_valid: 'Der Beginn einer Teilmenge ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie es im Kalender.',
   fuel_delivery_parts_to_valid: 'Das Ende einer Teilmenge ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie es im Kalender.',
   fuel_delivery_parts_order_valid: 'Eine Teilmenge endet vor ihrem Beginn. Bitte prüfen Sie die beiden Daten.',
+  // §§ 5a, 5b, 5d CO2KostAufG (Heizung PR 18); die Prüfungen in db/heating.ts und repository.ts fangen das vorher ab.
+  heating_plants_gmodg_energy_valid: '§ 43 Abs. 1 GModG betrifft nur eine Gas-, Öl- oder Flüssiggasheizung. Bei anderen Heizungen lassen Sie den Tag des Einbaus leer.',
+  heating_plants_gmodg_date_valid: 'Der Tag des Einbaus ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie ihn im Kalender.',
+  heating_plants_first_use_date_valid: 'Der Tag, an dem das neue Gebäude erstmals genutzt wurde, ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie ihn im Kalender.',
+  heating_plants_gmodg_facts_valid: 'Notfalleinbau und Neubau gibt es nur bei einer Heizung nach § 43 Abs. 1 GModG mit Tag des Einbaus. Bitte tragen Sie zuerst den Tag des Einbaus ein.',
+  heating_plants_prior_duty_valid: 'Die Frage nach der ausgefallenen Heizung gibt es nur bei einem Einbau nach irreparablem Ausfall. Bitte laden Sie die Seite neu.',
+  heating_plants_application_valid: 'Die Frage nach dem Bauantrag gibt es nur bei einem Neubau. Bitte laden Sie die Seite neu.',
+  properties_tight_market_dates_valid: 'Die Geltung der Verordnung zum angespannten Wohnungsmarkt gibt es nur bei „ja“. Bitte laden Sie die Seite neu.',
+  properties_tight_market_from_valid: 'Der Beginn der Verordnung ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie ihn im Kalender.',
+  properties_tight_market_to_valid: 'Das Ende der Verordnung ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie es im Kalender.',
+  properties_tight_market_order_valid: 'Der Beginn der Verordnung liegt nach dem Ende. Bitte prüfen Sie beide Tage.',
+  tenancies_half_split_notice_valid: 'Der Tag der Mitteilung nach § 5d Abs. 4 CO2KostAufG ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie ihn im Kalender.',
   // Rechtswerte des Vermieters (Heizung PR 17); die Route prüft vorher, die Bedingungen sind das Netz darunter.
   law_overrides_valid_from_valid: 'Ein eingetragener Rechtswert gilt immer ab dem 1. Januar eines Jahres. Bitte laden Sie die Seite neu.',
   law_overrides_source_complete: 'Zu einem eingetragenen Rechtswert gehört die Quelle, etwa „UBA, Bekanntmachung vom …“.',

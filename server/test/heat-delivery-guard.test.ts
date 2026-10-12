@@ -45,6 +45,10 @@ const ALLOWED: readonly Allowed[] = [
   { file: 'server/src/db/heating.ts', match: "after.energy !== 'districtHeating'", reason: 'Emissionshandel (§ 2 Abs. 4 Satz 2 CO2KostAufG) nur bei Fernwärme; eine Ausnahme der Naht.' },
   { file: 'server/src/db/heating.ts', match: "merged.energy === 'districtHeating'", reason: 'Emissionshandel nur bei Fernwärme.' },
   { file: 'client/src/fuelForm.ts', match: 'NO_CO2_FUELS.includes(plant.energy)', reason: 'Der Brennstoff des Lieferanten entscheidet über die CO₂-Pflicht (§ 2 Abs. 1 Satz 2 CO2KostAufG); eine Ausnahme der Naht.' },
+  // Heizung PR 18 (#215, Abweichung 11 des Plans): Netzentgelte nach § 5a Abs. 1 Nr. 1 CO2KostAufG gibt es bei der
+  // „Belieferung mit Gas“; bei Contracting zählt der Brennstoff des Lieferanten, nicht die Energie der Abrechnung.
+  { file: 'server/src/db/fuel.ts', match: "plant.energy !== 'gas'", reason: 'Netzentgelte nach § 5a Abs. 1 Nr. 1 CO2KostAufG hängen an der Belieferung mit Gas, bei Contracting an der des Lieferanten; eine Ausnahme der Naht.' },
+  { file: 'client/src/components/FuelCard.tsx', match: "plant.energy === 'gas'", reason: 'Das Feld Netzentgelte (§ 5a Abs. 1 Nr. 1 CO2KostAufG) hängt an der Belieferung mit Gas, bei Contracting an der des Lieferanten; eine Ausnahme der Naht.' },
 ]
 
 function files(dir: string): string[] {

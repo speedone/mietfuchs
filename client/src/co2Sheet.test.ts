@@ -203,3 +203,19 @@ test('Ausnahme nach § 11: keine Angaben zu §§ 8, 9, keine Summe, dafür die A
 test('Contracting: Kopf des Blatts mit Wärmelieferung und Brennstoff', () => {
   expect(sheetHead({ ...sheet, energy: 'districtHeating', contracting: true, fuelEnergy: 'oil' }).lines[2]).toBe('Heizanlage: Kessel (Wärmelieferung (Contracting, erzeugt mit Öl))')
 })
+
+test('§ 5a (Heizung PR 18): das Blatt nennt Einbau, Teilung nach Anfall, Netzentgelte und Biobrennstoff je Rechnung', () => {
+  const gas = { ...heizoel, label: 'Gas 2027/2028', quantity: null, quantityUnit: null, gridFeeCents: 30000, bioCostCents: 0 }
+  const facts = sheetFacts({
+    ...sheet, energy: 'gas', deliveries: [gas],
+    halfSplit: { installedOn: '2027-03-01', status: 'applies', newBuilding: false, excluded: [], sharePermille: 530, landlordGridFeeCents: 7950, landlordBioCents: 0, twoFamily: null },
+  })
+  expect(facts).toContain('Heizung nach § 43 Abs. 1 GModG, eingebaut am 01.03.2027: Netzentgelte und CO₂-Kosten werden ab dem 01.01.2028 hälftig geteilt, Biobrennstoff ab dem 01.01.2029 (§ 5a CO2KostAufG); in dieser Heizperiode fallen nach Gradtagen 53 % der CO₂-Kosten in die Teilung. Den Anteil des Vermieters an Netzentgelten und Biobrennstoff zieht er vor der Verteilung ab (§ 7 Abs. 5 CO2KostAufG): Netzentgelte ' + fmtEuro(7950) + ', Biobrennstoff ' + fmtEuro(0) + '.')
+  expect(facts).toContain('Netzentgelte und Biobrennstoff laut Rechnung: Gas 2027/2028: Netzentgelte ' + fmtEuro(30000) + ', Biobrennstoff ' + fmtEuro(0))
+  const notfall = sheetFacts({ ...sheet, halfSplit: { installedOn: '2027-06-15', status: 'applies', newBuilding: false, excluded: [{ from: '2027-06-15', to: '2028-06-15', rule: 'emergency1' }], sharePermille: 0, landlordGridFeeCents: null, landlordBioCents: null, twoFamily: null } })
+  expect(notfall.some((f) => f.includes('Nach § 5a Abs. 4 CO2KostAufG keine Teilung bis 15.06.2028'))).toBe(true)
+  const zfh = sheetFacts({ ...sheet, halfSplit: { installedOn: '2027-03-01', status: 'applies', newBuilding: false, excluded: [], sharePermille: 0, landlordGridFeeCents: null, landlordBioCents: null, twoFamily: 'excepted' } })
+  expect(zfh.some((f) => f.includes('§ 5d Abs. 3 CO2KostAufG'))).toBe(true)
+  // Ohne Heizung nach § 43 keine Angabe.
+  expect(sheetFacts(sheet).some((f) => f.includes('§ 43'))).toBe(false)
+})

@@ -420,6 +420,26 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Zeile „Eichfrist“, die Ampel „Zählerstände“ bleibt unberührt. Die Werte werden weiter verwendet, keine Zahl
   einer Abrechnung ändert sich, und wer nichts einträgt, sieht nichts.
   ([#98](https://github.com/speedone/mietfuchs/issues/98))
+- **Hälftige Teilung ab 2028 nach §§ 5a, 5b, 5d CO2KostAufG** ([#215](https://github.com/speedone/mietfuchs/issues/215)):
+  Bei einer Gas-, Öl- oder Flüssiggasheizung, die nach dem 29.07.2026 in ein bestehendes Gebäude eingebaut
+  wurde (§ 43 Abs. 1 GModG), oder einer solchen Heizung in einem Neubau tragen Vermieter und Mieter ab dem
+  01.01.2028 die Gasnetzentgelte und die CO₂-Kosten je zur Hälfte, ab dem 01.01.2029 auch die Kosten des
+  Pflichtanteils an Biobrennstoff, höchstens für 30 % des verbrauchten Brennstoffs. Mietfuchs teilt anteilig
+  nach Anfall, je Rechnung nach Zählerstand, Zwischenrechnung oder Gradtagen; dass auch die CO₂-Kosten nach
+  Anfall geteilt werden, ist eine Auslegung und steht so da. Den Anteil des Vermieters an Netzentgelten und
+  Biobrennstoff zieht die Abrechnung als eigene Zeile ab (§ 7 Abs. 5); fehlt eine Angabe an der Gasrechnung,
+  nennt sie die Kürzung von 3 % je Mieter. Notfalleinbau (§ 5a Abs. 4; nach einem Ausfall 2028 zwölf Monate ab
+  dem Einbau, so die Gesetzesbegründung), Neubau mit Bauantrag vor dem 13.05.2026 (§ 5b) und das selbst bewohnte
+  Gebäude mit höchstens zwei Wohnungen an einer gemeinsamen Heizung außerhalb angespannter Wohnungsmärkte
+  (§ 5d Abs. 3) sind berücksichtigt, ebenso Anlagen, die ein Contractor betreibt. § 9 kürzt nur den Anteil nach
+  Stufen, nicht die Hälfte nach § 5a; das ist eine Auslegung zu Ihren Lasten. Neu dafür an der Heizanlage die
+  Karte „Heizung nach § 43 GModG“, am Objekt die Frage, ob das Gebäude in einem Gebiet mit angespanntem
+  Wohnungsmarkt liegt (mit Geltung der Verordnung), am Mietverhältnis der Tag der Mitteilung nach § 5d Abs. 4
+  und an der Lieferung Netzentgelte und Biobrennstoff. Biobrennstoff aus einem Vorrat und die Grenze von 30 % ab
+  2040 rechnet Mietfuchs noch nicht ([#227](https://github.com/speedone/mietfuchs/issues/227)); die Abrechnung
+  sagt das, außer an jeder Lieferung ab dem 01.01.2029 ist 0 eingetragen (früher gelieferter Brennstoff enthält keinen Pflichtanteil). Das Blatt „CO₂-Angaben für den Messdienst“ nennt die
+  Teilung nach § 5a und die Netzentgelte und Biobrennstoffkosten der Rechnungen. Ohne Tag des Einbaus ändert sich
+  keine Zahl und kein Hinweis.
 ### Geändert
 
 - Neue Warnung „Monatliche Verbrauchsinformation“ bei einer Heizanlage, deren Zähler oder
@@ -542,6 +562,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
+- **Vorschlag für die Vorauszahlung im Rumpfzeitraum ohne CO₂-Abzug** ([#215](https://github.com/speedone/mietfuchs/issues/215)):
+  Teilte Mietfuchs die CO₂-Kosten bei freien Schlüsseln selbst auf, ging die Abzugszeile „CO₂-Anteil des
+  Vermieters“ in einem Zeitraum unter einem Jahr nicht in den Vorschlag nach § 560 BGB ein; der Vorschlag war um
+  den hochgerechneten Abzug zu hoch. Jetzt wird sie mit dem Faktor ihrer Heizpositionen hochgerechnet, wie beim
+  Messdienst. Keine Zahl einer Abrechnung ändert sich, nur der Vorschlag.
 - **Messdienst-Abrechnung mit Vorwegabzug: der CO₂-Anteil des Vermieters fehlte in der
   Steuerübersicht.** Die Anleitung „Fertige Abrechnung eines Messdienstes übernehmen“ ließ als
   Betrag den Gesamtbetrag der Abrechnung eintragen. Techem und ista ziehen den CO₂-Anteil, den der

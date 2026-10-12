@@ -2,7 +2,7 @@ import { expect, test } from 'vitest'
 import { fmtEuro } from './api'
 import { co2Block } from './co2View'
 import { periodKey } from '../../shared/period.ts'
-import type { Co2Assessment, HeatingStatement } from './types'
+import type { Co2Assessment, Co2HalfSplit, HeatingStatement } from './types'
 
 // `node:assert` gibt es im Client nicht; für die eine Stelle, die ohne Block abbrechen soll.
 const assert = { fail: (text: string): never => { throw new Error(text) } }
@@ -78,4 +78,29 @@ test('Eigene Aufteilung aus dem Vorrat (Heizung PR 8): Ausstoß des verbrauchten
 test('Contracting: der Ausweis nennt Wärmelieferung mit Brennstoff', () => {
   const v = co2Block({ ...anlage(bewertung()), energy: 'districtHeating', contracting: true, fuelEnergy: 'gas' }, 'ta') ?? assert.fail('kein Block')
   expect(v.lines.find((l) => l.label === 'Energieträger')?.value).toBe('Wärmelieferung (Contracting, erzeugt mit Gas)')
+})
+
+// ---------- Hälftige Teilung nach § 5a (Heizung PR 18, Entwurf 9.5) ----------
+
+const eigen = (halfSplit: Co2HalfSplit, adjustments: Co2Assessment['adjustments'] = ['halfSplit']): HeatingStatement => anlage(bewertung({
+  method: 'self', deducted: false, basis: 'deliveries', landlordPermille: 547, adjustments, halfSplit,
+  tenants: [{ tenancyId: 'ta', landlordCents: 21163, tenantCents: 17526, approximated: false }],
+}))
+
+test('Ausweis: § 5a anteilig mit Netzentgelten (Entwurf 9.5)', () => {
+  const view = co2Block(eigen({ co2SharePermille: 530, landlordGridFeeCents: 7950, landlordBioCents: 0, basis: 'existing', twoFamily: null }), 'ta') ?? assert.fail('kein Block')
+  expect(view.lines).toEqual(expect.arrayContaining([
+    { label: 'Hälftige Teilung nach § 5a CO2KostAufG', value: '53 % der CO₂-Kosten nach Anfall' },
+    { label: 'Netzentgelte: Anteil des Vermieters', value: fmtEuro(7950) },
+  ]))
+  expect(view.lines.some((l) => l.label.startsWith('Biobrennstoff'))).toBe(false)
+  // Die Teilung ist keine Beschränkung nach § 9: kein Satz über § 9 Abs. 2.
+  expect(view.notes.some((n) => /§ 9/.test(n))).toBe(false)
+  expect(view.notes).toContain('Bei einer Heizung nach § 43 Abs. 1 GModG tragen Vermieter und Mieter die CO₂-Kosten ab 2028 je zur Hälfte (§ 5a Abs. 3 CO2KostAufG); der Anteil des Vermieters mischt die Stufe und die Hälfte nach dem Anfall in der Heizperiode.')
+  const zfh = co2Block(eigen({ co2SharePermille: 0, landlordGridFeeCents: null, landlordBioCents: null, basis: 'existing', twoFamily: 'excepted' }, ['twoFamily']), 'ta') ?? assert.fail('kein Block')
+  expect(zfh.notes).toEqual(expect.arrayContaining(['Zweifamilienhaus mit Eigennutzung: keine hälftige Teilung (§ 5d Abs. 3 CO2KostAufG).']))
+  expect(zfh.notes.some((n) => /§ 9/.test(n))).toBe(false)
+  const neu = co2Block(eigen({ co2SharePermille: 1000, landlordGridFeeCents: 0, landlordBioCents: 1200, basis: 'newBuilding', twoFamily: null }), 'ta') ?? assert.fail('kein Block')
+  expect(neu.lines).toEqual(expect.arrayContaining([{ label: 'Biobrennstoff: Anteil des Vermieters', value: fmtEuro(1200) }]))
+  expect(neu.notes).toContain('Neubau: hälftige Teilung nach § 5b CO2KostAufG.')
 })

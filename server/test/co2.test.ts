@@ -5,8 +5,9 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { distributeCents } from '../src/calc.ts'
 import {
-  ausweisGaps, reliefsByShare, restage, roundSpecific, selfLandlordRaw, selfSplit, shownReliefs, stageOf, stageRanges, tableFactor,
+  ausweisGaps, HALF_SPLIT_TOLERANCE_PERMILLE, perUnitReliefs, reliefsByShare, restage, roundSpecific, selfLandlordRaw, selfSplit, shownReliefs, stageOf, stageRanges, tableFactor,
 } from '../src/co2.ts'
+import { blendedPermille } from '../src/halfSplit.ts'
 import { serviceProbe } from '../../shared/co2Probe.ts'
 import { co2StageTable } from '../../shared/law/co2kostaufg.ts'
 import { createLawLog, law, LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
@@ -169,4 +170,60 @@ test('selfSplit: Rumpf 01.01.–30.04.2025 kürzt die Tabelle; 5,0 kg je m² →
   const s = eigen({ emissionsKg: 3000, areaM2: 600, ranges: stageRanges(TABELLE, faktor) })
   assert.deepEqual([s.value, s.stage?.landlordPercent], [5, 10])
   assert.equal(eigen({ emissionsKg: 3000, areaM2: 600 }).stage?.landlordPercent, 0, 'ungekürzt läge 5,0 unter 12')
+})
+
+// ---------- Hälftige Teilung (Heizung PR 18, Entwurf 9.2 Nr. 4) ----------
+
+test('selfSplit: § 5a mischt den Anteil nach Anfall; § 9 kürzt nur den Teil nach Stufen (Abweichung 5)', () => {
+  const halb = [{ permille: 500, weight: 0.53 }]
+  const s = eigen({ halfSplit: halb })
+  assert.equal(s.stage?.landlordPercent, 60)
+  assert.ok(near(s.permille ?? 0, 547), 'Mischanteil')
+  assert.ok(near(s.landlordRaw ?? 0, (77379 * 547) / 1000), 'L exakt')
+  assert.deepEqual(s.adjustments, ['halfSplit'])
+  const gebaeude = eigen({ halfSplit: halb, restriction: { factor: 0.5, bothSplit: false, both: false } })
+  assert.ok(near(gebaeude.permille ?? 0, 300 * 0.47 + 500 * 0.53), '§ 9 nur auf die Stufe')
+  assert.deepEqual(gebaeude.adjustments, ['restrictionHalf', 'halfSplit'])
+  // Ganz hälftig braucht keine Fläche; im Zweifamilienhaus ohne Teilung nur die Stufe.
+  assert.equal(eigen({ areaM2: null, halfSplit: [{ permille: 500, weight: 1 }] }).permille, 500)
+  assert.deepEqual(eigen({ twoFamily: true }).adjustments, ['twoFamily'])
+  assert.equal(eigen({ twoFamily: true }).permille, 600)
+  // § 9 Abs. 2 (keine Aufteilung) und Teilung ab 2028: außerhalb 0 ‰, in der Teilung 500 ‰, auch ohne
+  // Fläche; § 9 kürzt den Teil nach § 5a nicht (Abweichung 5). Vorher ging hier der Teil nach § 5a verloren.
+  const keine = { factor: 0.5, bothSplit: false, both: true }
+  assert.ok(near(eigen({ halfSplit: halb, restriction: keine }).permille ?? 0, 265), '§ 9 Abs. 2 mit Stufe')
+  const ohneFlaeche = eigen({ areaM2: null, halfSplit: halb, restriction: keine })
+  assert.ok(near(ohneFlaeche.permille ?? 0, 265), '§ 9 Abs. 2 ohne Fläche')
+  assert.deepEqual(ohneFlaeche.adjustments, ['restrictionNone', 'halfSplit'])
+  // Ohne Teilung bleibt es, wie PR 7 es rechnet.
+  assert.equal(eigen({ areaM2: null, restriction: keine }).permille, null)
+  // Ohne Fläche und nur teilweise geteilt fehlt die Einstufung weiterhin.
+  assert.equal(eigen({ areaM2: null, halfSplit: halb }).permille, null)
+})
+
+test('Nachstufung: der Messdienst mit 50 % für die ganze Heizperiode passt nicht zum Anteil nach Anfall (Review Focus 5)', () => {
+  const ranges = stageRanges(TABELLE, 1)
+  const st = { serviceKgPerM2: 40.2, serviceEmissionsKg: null, serviceAreaM2: null, areaM2: null, serviceLandlordPermille: 500, serviceTotalCents: 77379, serviceLandlordCents: 38690 }
+  // Prüfung M4: der vorhandene Parameter `adjust` (§ 8, § 9) bleibt, gemischt wird darüber, mit Toleranz.
+  const blend = (p: number): number | null => blendedPermille(p, [{ permille: 500, weight: 0.53 }])
+  assert.equal(restage(st, ranges, 1, blend, HALF_SPLIT_TOLERANCE_PERMILLE).percentOk, false)
+  assert.equal(restage({ ...st, serviceLandlordPermille: 547, serviceLandlordCents: 42326 }, ranges, 1, blend, HALF_SPLIT_TOLERANCE_PERMILLE).percentOk, true)
+  assert.equal(restage({ ...st, serviceLandlordPermille: 548, serviceLandlordCents: 42404 }, ranges, 1, blend, HALF_SPLIT_TOLERANCE_PERMILLE).percentOk, true)
+  assert.equal(restage({ ...st, serviceLandlordPermille: 549, serviceLandlordCents: 42481 }, ranges, 1, blend, HALF_SPLIT_TOLERANCE_PERMILLE).percentOk, false)
+  // § 9 Abs. 1 mit Teilung: der Anteil nach Stufen halbiert, dann gemischt (300 · 0,47 + 500 · 0,53 = 406 ‰).
+  const halbiert = (p: number): number | null => blendedPermille(p * 0.5, [{ permille: 500, weight: 0.53 }])
+  assert.equal(restage({ ...st, serviceLandlordPermille: 406, serviceLandlordCents: 31416 }, ranges, 1, halbiert, HALF_SPLIT_TOLERANCE_PERMILLE).percentOk, true)
+  // Ohne Teilung bleibt der Vergleich genau wie bisher.
+  assert.equal(restage({ ...st, serviceLandlordPermille: 600, serviceLandlordCents: 46427 }, ranges, 1).percentOk, true)
+  assert.equal(restage({ ...st, serviceLandlordPermille: 601, serviceLandlordCents: 46505 }, ranges, 1).percentOk, false)
+})
+
+test('Etagenheizung: der Anteil je Wohnung kann verschieden sein', () => {
+  const list = [
+    { unitId: 'eg', rented: true, delivered: true, areaM2: 100, emissionsKg: 0, co2Cents: 10000, fuelCents: 100000, shares: [{ tenancyId: 't1', exact: 100000 }] },
+    { unitId: 'og', rented: true, delivered: true, areaM2: 100, emissionsKg: 0, co2Cents: 10000, fuelCents: 100000, shares: [{ tenancyId: 't2', exact: 100000 }] },
+  ]
+  const raws = perUnitReliefs((unitId) => (unitId === 'eg' ? 400 : 500), list)
+  assert.deepEqual(raws.map((x) => [x.tenancyId, x.raw]), [['t1', 4000], ['t2', 5000]])
+  assert.deepEqual(perUnitReliefs(400, list).map((x) => x.raw), [4000, 4000])
 })

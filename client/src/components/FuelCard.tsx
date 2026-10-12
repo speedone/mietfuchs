@@ -5,7 +5,7 @@ import { useState } from 'react'
 import { api, errorText, fmtEuro } from '../api'
 import { useConfirm, useToast } from './feedback'
 import Term from './Term'
-import { asksCo2Facts, GAS_BASIS_LABEL, GAS_BASIS_MISSING, gasBasisMissing, defaultGrade, deliveryLine, deliveryOptions, deliveryUnitId, emptyFuelForm, fuelBody, fuelToForm, GAS_BASIS_OPTIONS, gradeOptions, STOCK_QUANTITY_OPTIONS, stockFuelBody, unitWordFor, type FuelForm } from '../fuelForm'
+import { asksCo2Facts, STOCK_BIO_ONLY_ZERO, GAS_BASIS_LABEL, GAS_BASIS_MISSING, gasBasisMissing, defaultGrade, deliveryLine, deliveryOptions, deliveryUnitId, emptyFuelForm, fuelBody, fuelToForm, GAS_BASIS_OPTIONS, gradeOptions, STOCK_QUANTITY_OPTIONS, stockFuelBody, unitWordFor, type FuelForm } from '../fuelForm'
 import { isStockEnergy } from '../../../shared/fuelStock.ts'
 import { billingEnergy } from '../../../shared/heatDelivery.ts'
 import type { FuelDelivery, HeatingEnergy, HeatingMethod, HeatingPeriodView, HeatingPlant, Unit } from '../types'
@@ -13,7 +13,7 @@ import type { FuelDelivery, HeatingEnergy, HeatingMethod, HeatingPeriodView, Hea
 type TextKey = Exclude<keyof FuelForm, 'usedByService' | 'quantityUnit' | 'unitId' | 'gasBasis' | 'grade'>
 
 export default function FuelCard({ plant, view, deliveries, units = [], findings = {}, onSaved }: {
-  plant: { id: string; method: HeatingMethod; energy?: HeatingEnergy } & Partial<Pick<HeatingPlant, 'supply' | 'units' | 'contracting' | 'heatGeneration'>>
+  plant: { id: string; method: HeatingMethod; energy?: HeatingEnergy } & Partial<Pick<HeatingPlant, 'supply' | 'units' | 'contracting' | 'heatGeneration' | 'gmodg43InstalledOn'>>
   view: HeatingPeriodView
   deliveries: FuelDelivery[]
   // Die Wohnungen des Objekts, für die Rechnung einer Etagenheizung (Heizung PR 9).
@@ -33,6 +33,10 @@ export default function FuelCard({ plant, view, deliveries, units = [], findings
   // Heizung PR 16: nach der Energie der Abrechnung; bei Contracting sind Lieferungen Wärmerechnungen.
   const energy = plant.energy === undefined ? undefined : billingEnergy({ energy: plant.energy, contracting: plant.contracting })
   const stock = energy !== undefined && isStockEnergy(energy)
+  // Heizung PR 18: Netzentgelte und Biobrennstoff nur bei einer Heizung nach § 43 Abs. 1 GModG; Netzentgelte nur bei
+  // der Belieferung mit Gas, bei Contracting nach dem Brennstoff des Lieferanten (`plant.energy`).
+  const halfSplit = (plant.gmodg43InstalledOn ?? null) !== null
+  const gasDelivered = plant.energy === 'gas'
   const set = <K extends keyof FuelForm>(key: K, value: FuelForm[K]) => setForm((f) => ({ ...f, [key]: value }))
   const options = deliveryOptions(deliveries)
   // Beim Vorrat (Durchsicht von #237, M5): der Betrag aus den verknüpften Positionen dieser Heizperiode.
@@ -54,7 +58,7 @@ export default function FuelCard({ plant, view, deliveries, units = [], findings
       setError(unit.error)
       return
     }
-    const r = stock ? stockFuelBody(form, plant.method) : fuelBody(form, plant.method)
+    const r = stock ? stockFuelBody(form, plant.method, { halfSplit }) : fuelBody(form, plant.method, { halfSplit })
     if ('error' in r) {
       setError(r.error)
       return
@@ -225,6 +229,13 @@ export default function FuelCard({ plant, view, deliveries, units = [], findings
               {text('co2Cost', 'CO₂-Kosten laut Rechnung')}
             </div>
           )}
+          {halfSplit && (
+            <div className="row">
+              {!stock && gasDelivered && text('gridFee', 'Netzentgelte laut Rechnung (€, ohne Entgelte des Messstellenbetreibers; § 40 Abs. 3 Nr. 4 EnWG)')}
+              {text('bioCost', 'Biobrennstoff, Preisbestandteil nach § 3 Abs. 1 Nr. 6 CO2KostAufG (€)')}
+            </div>
+          )}
+          {halfSplit && stock && <small className="muted">Bei Brennstoff aus dem Tank nur 0, wenn die Lieferung keinen Pflichtanteil an Biobrennstoff enthält. {STOCK_BIO_ONLY_ZERO}</small>}
           {!stock && (
             <details className="extra-details">
               <summary>Weitere Angaben</summary>

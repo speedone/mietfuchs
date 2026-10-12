@@ -17,7 +17,7 @@
 // `LAW_AS_OF` aus register.ts. Wer eine Regel ändert oder ergänzt, prüft die Parameter, aus denen sie
 // liest, setzt deren `retrieved` und `LAW_AS_OF` auf den Tag der Durchsicht (#110).
 import { betrkvTvSignal } from './bgb-betrkv.ts'
-import { co2CutMissing, co2FirstPeriodStart } from './co2kostaufg.ts'
+import { co2CutMissing, co2FirstPeriodStart, co2HalfSplit, co2HalfSplitTwoFamily, halfSplitBioFirstDay, halfSplitFirstDay } from './co2kostaufg.ts'
 import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvEstimateThreshold, hkvExemptions, hkvRemoteReadingRetrofit } from './heizkostenv.ts'
 import { messevCalibrationYears } from './messev.ts'
 import { dayBefore, germanDate, LAW_AS_OF, onlyVersion, valueAt } from './register.ts'
@@ -45,6 +45,11 @@ const calibration = valueAt(messevCalibrationYears, LAW_AS_OF)
 const calibrationYears = calibration.kaltwasser === calibration.warmwasser && calibration.warmwasser === calibration.waerme
   ? `je ${calibration.kaltwasser} Jahre`
   : messevCalibrationYears.describe(calibration)
+// Hälftige Teilung nach § 5a (Heizung PR 18): die Stichtage und die Grenze beim Biobrennstoff aus dem Register.
+const HALF_FROM = halfSplitFirstDay()
+const HALF_BIO_FROM = halfSplitBioFirstDay()
+const halfLater = valueAt(co2HalfSplit, HALF_BIO_FROM)
+const twoFamily = valueAt(co2HalfSplitTwoFamily, LAW_AS_OF)
 
 export type Rule = {
   code: string
@@ -158,6 +163,20 @@ export const RULES: readonly Rule[] = [
       'wird der Anteil des Vermieters um die Hälfte gekürzt; stehen sie beidem entgegen, werden die CO₂-Kosten nicht aufgeteilt. ' +
       'Darauf berufen kann sich der Vermieter nur, wenn er dem Mieter die Umstände nachweist.',
     validFrom: CO2_FROM,
+  },
+  {
+    // Heizung PR 18 (#215): §§ 5a, 5b, 5d CO2KostAufG im Wortlaut am 11.10.2026 gelesen (Fassung Art. 5 G v.
+    // 23.07.2026, BGBl. 2026 I Nr. 226). Die gemeinsame Wärmeversorgung nach § 5d Abs. 3 Satz 1 steht dabei
+    // (Prüfung M9), ebenso die Grenze beim Biobrennstoff (K2).
+    code: 'co2-half-split',
+    title: 'Hälftige Teilung bei einer Heizung nach § 43 GModG',
+    norm: '§§ 5a, 5b, 5d CO2KostAufG',
+    summary:
+      `Bei einer Gas-, Öl- oder Flüssiggasheizung, die nach § 43 Abs. 1 GModG eingebaut wurde, tragen Vermieter und Mieter ab dem ${germanDate(HALF_FROM)} ` +
+      `die Gasnetzentgelte und die CO₂-Kosten je zur Hälfte, ab dem ${germanDate(HALF_BIO_FROM)} auch die Kosten des Pflichtanteils an Biobrennstoff, ` +
+      `höchstens für ${(halfLater.bioCapPermille ?? 0) / 10} % des verbrauchten Brennstoffs; in Neubauten entsprechend (§ 5b). ` +
+      `Im selbst bewohnten Gebäude mit höchstens ${twoFamily.maxDwellings === 2 ? 'zwei' : twoFamily.maxDwellings} Wohnungen, die beide an derselben Heizung hängen, gilt außerhalb angespannter Wohnungsmärkte weiter das Stufenmodell (§ 5d Abs. 3).`,
+    validFrom: HALF_FROM,
   },
   {
     // Heizung PR 7 (#97): § 7 Abs. 2 HeizkostenV im Wortlaut, BGH VIII ZR 156/11 Rn. 14 geprüft am

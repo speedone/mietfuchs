@@ -2294,6 +2294,35 @@ die ganze fachliche Komplexität:
   `bgb.heat-delivery-switch` (ab 01.07.2013, `eventDate`); kein Eintrag im Regelverzeichnis, damit § 556c
   nicht im Rechtsstand jeder Abrechnung steht. Nicht abgebildet: die Lieferung mit unmittelbarer Abrechnung
   des Lieferanten (§ 1 Abs. 3, § 11 Abs. 1 Nr. 4 HeizkostenV) und Contracting bei Etagenheizungen.
+- **Hälftige Teilung nach § 5a CO2KostAufG** (#215, Heizung PR 18, [server/src/halfSplit.ts](server/src/halfSplit.ts),
+  [shared/law/gmodg.ts](shared/law/gmodg.ts)): Ab 2028 trägt der Vermieter bei einer Heizung nach § 43 Abs. 1 GModG
+  die Hälfte der Gasnetzentgelte und CO₂-Kosten, ab 2029 des Pflichtanteils an Biobrennstoff (bis 30 % des
+  Brennstoffs). Merkmale: `heating_plants.gmodg43_installed_on` (gesetzt heißt „Heizung nach § 43“, nur Gas, Öl,
+  Flüssiggas, nach dem 29.07.2026 außer im Neubau), `emergency_install`, `emergency_prior_duty` (gefragt als „war die
+  ausgefallene eine solche Heizung, nach dem 29.07.2026 eingebaut?“, Prüfung M8), `new_building_first_use`,
+  `building_application_before_2026_05_13`; `tenancies.half_split_notice_on` (§ 5d Abs. 4 je Mieter);
+  `properties.tight_market` mit `tight_market_from`/`_to` (Geltung der Verordnung); Schritte 0048/0049, die
+  Bedingungen an NULL-fähigen Merkmalen vergleichen mit `IS 1`, weil `= 1` bei NULL die Bedingung bestehen ließe.
+  **Die Zeitregel ist `incurred`**: `law()` teilt den Zeitraum an den Fassungen von `co2.half-split` und gewichtet
+  nach Anfall; je Lieferung nach den Stufen 1–5 (`deliveryShare` mit dem `ctx` aus `fuelResults`), ohne Lieferungen
+  (Messdienst, Vorrat) nach Gradtagen; dass auch die CO₂-Kosten nach Anfall geteilt werden, ist Auslegung (15.1
+  Nr. 13). Vor 2028 und ohne Merkmal fragt `halfSplitOf` das Register nicht. § 5a Abs. 4 Satz 2 heißt zwölf Monate
+  ab dem Einbau (BT-Drs. 21/7009, S. 154), „zwölf Monate ab“ rechnet `eventPeriodEnd` (§§ 187, 188 BGB); ein Einbau
+  genau zwölf Monate vor dem 01.01.2028 wird nach dem Wortlaut geteilt und als Auslegung genannt. `selfSplit` mischt
+  den Anteil nach Stufen (mit § 8 und § 9) und die Hälfte; § 9 kürzt nur den Teil nach Stufen (Auslegung zulasten
+  des Vermieters; bei § 9 Abs. 2 ist der Teil nach Stufen 0 ‰, nie „unbekannt“). Die Nachstufung des Messdienstes
+  mischt über den vorhandenen Parameter `adjust` von `restage` mit Toleranz 1 ‰. Die Etagenheizung mischt je Wohnung
+  nach ihren Rechnungen. Im selbst bewohnten Gebäude mit höchstens zwei Wohnungen an einer zentralen Anlage gilt
+  die Ausnahme des § 5d Abs. 3 nur bei festgestellten Voraussetzungen: Gebiet in der Heizperiode „nein“ und für
+  jeden Mieter eine zählende Mitteilung, vor Beginn der Heizperiode oder, wenn der Vertrag schon vor den
+  Voraussetzungen bestand, bis zum Ende der Abrechnungsfrist (§ 5d Abs. 4 Satz 2). Contracting ist eingeschlossen
+  (BT-Drs. 21/6278, S. 124); ob Gas, entscheidet `generatorEnergy` (Ausnahme der Naht, im Wächter benannt).
+  Netzentgelte und Biobrennstoff stehen als Zeilen `gmodgRelief` unter `gmodg:<Anlage>:<Heizperiode>` mit Grund
+  `gmodgShare` (§ 7 Abs. 5), verteilt nach dem Anteil am Brennstoff; **jede Stelle, die die CO₂-Abzugszeile an
+  `reliefKey` erkennt, fragt `reliefKeysOf`** (Kürzungsbeträge, Ausweis der eigenen Abrechnung, Vorschlag nach
+  § 560 im Rumpf; Prüfung M5). Fehlen Netzentgelte oder Biobrennstoff an einer Lieferung mit Tagen in der Teilung,
+  warnt `co2.half-split-missing` mit 3 % je Mieter; Biobrennstoff aus dem Vorrat rechnet Mietfuchs nicht (Warnung,
+  außer an jeder Lieferung ab dem 01.01.2029 (oder ohne Datum) steht 0, Durchsicht S3; ein Betrag über 0 wird abgelehnt, ebenso ab 2040).
 - **Überschneidende Mietverhältnisse einer Wohnung** (#204): Wann sich zwei überschneiden (ein
   gemeinsamer Tag, inklusive Grenzen), steht einmal in [shared/tenancyOverlap.ts](shared/tenancyOverlap.ts);
   Server und Oberfläche fragen dieselbe Funktion. Gerechnet wird wie erfasst, jedes mit vollem

@@ -28,7 +28,7 @@
 import { degreeDayPermille } from '../../shared/degreeDays.ts'
 import type { DegreeDayTable, HeatPumpCapture } from '../../shared/law/heizkostenv.ts'
 import type { ReadingOffWarning } from '../../shared/law/practice.ts'
-import { dayAfter, dayBefore, type LawLog } from '../../shared/law/register.ts'
+import { dayAfter, dayBefore, shiftMonths, type LawLog } from '../../shared/law/register.ts'
 import { dhwInputOf, dhwShareOf, type DhwContext, type DhwProblem } from './dhw.ts'
 import { lineRoot } from '../../shared/heatingPeriod.ts'
 import type {
@@ -260,16 +260,8 @@ export function measuredBetween(sorted: readonly SelfReading[], a: SelfReading, 
 }
 
 // Ein Datum n Monate später (n negativ: früher), am Monatsende abgeschnitten (31.01. + 1 Monat =
-// 28.02.).
-export function addMonths(iso: string, n: number): string {
-  const y = Number(iso.slice(0, 4))
-  const m = Number(iso.slice(5, 7)) - 1 + n
-  const ty = y + Math.floor(m / 12)
-  const tm = ((m % 12) + 12) % 12
-  const last = new Date(Date.UTC(ty, tm + 1, 0)).getUTCDate()
-  const d = Math.min(Number(iso.slice(8, 10)), last)
-  return `${String(ty).padStart(4, '0')}-${String(tm + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
-}
+// 28.02.). Seit Heizung PR 18 dieselbe Rechnung wie `shiftMonths` im Rechtsregister (Prüfung K1).
+export const addMonths = (iso: string, n: number): string => shiftMonths(iso, n)
 
 // Wie weit eine Ablesung neben ihrer Grenze liegt: Tage, Gradtagsanteil der Tage dazwischen (ohne
 // den früheren der beiden Tage, denn eine Ablesung gilt zum Tagesende) und ob die Warngrenze erreicht

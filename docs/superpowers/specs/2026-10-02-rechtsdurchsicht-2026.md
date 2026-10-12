@@ -265,6 +265,14 @@ Auf bundesfinanzhof.de gelesen. **P**
    des Emissionshandels des Vorjahres (§ 4 Abs. 3, bis 31.03.) in `shared/law/co2kostaufg.ts` als Wert an die
    Stelle von `null` setzen (offenes Ende schließen, Folgejahr mit `null`), `law-history.test.ts` ergänzen,
    `LAW_AS_OF` setzen. Die EBeV 2030 gilt bis 2030; vor 2031 die Nachfolgeverordnung lesen.
+10. **§§ 5a–5d CO2KostAufG und § 43 GModG** (Heizung PR 18, #215): Wortlaut prüfen, insbesondere ob Rechtsprechung
+    zu § 5a Abs. 4 Satz 2 vorliegt (Mietfuchs: zwölf Monate ab dem Einbau nach BT-Drs. 21/7009, S. 154), ob § 9
+    auf den Anteil nach § 5a angewandt wird (Mietfuchs: nein, Auslegung), ob § 5d Abs. 4 für Abs. 3 gilt, ob die
+    Kürzungen nach § 7 Abs. 4 und Abs. 5 Satz 3 zusammen 3 % oder 6 % ergeben und wie die Hybridheizung zu
+    behandeln ist. Ob die Pflichtanteile des § 43 Abs. 1 GModG die Grenze von 30 % vor 2040 übersteigen (dann die
+    Sperre für Biobrennstoff ab `bioCapFrom()` vorziehen). Die Verordnungen zum angespannten Wohnungsmarkt laufen
+    aus (§ 556d Abs. 2 Satz 4 BGB: spätestens mit Ablauf des 31.12.2029); bei Gesetzesänderung die Frage am Objekt
+    anpassen.
 
 ## Anhang: vorbereitete Kommentare (nicht gepostet)
 

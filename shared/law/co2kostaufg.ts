@@ -260,3 +260,109 @@ export const co2EbevFactors: LawParam<EbevFactors, 'deliveryYear'> = {
     return `Erdgas ${n(v.gas.tPerGj)} t CO₂/GJ, ${n(v.gas.hsGjPerMwh)} GJ/MWh nach Brennwert; Heizöl EL ${n(v.oil.tPerGj)} t CO₂/GJ, ${n(v.oil.tPerM3)} t/1000 l, ${n(v.oil.gjPerT)} GJ/t; Flüssiggas ${n(v.lpg.tPerGj)} t CO₂/GJ, ${n(v.lpg.gjPerT)} GJ/t`
   },
 }
+
+// ---------- §§ 5a, 5b, 5d (Heizung PR 18, #215) ----------
+// Eingefügt durch Art. 5 G v. 23.07.2026 (BGBl. 2026 I Nr. 226), in Kraft seit 29.07.2026 (Art. 9 Abs. 1).
+// Wortlaut am 05.10.2026 und erneut am 11.10.2026 auf gesetze-im-internet.de und am Regelungstext gelesen
+// (Prüfung des Plans, M3); `retrieved` ist deshalb der 11.10.2026.
+const checked5a = (cite: string, page: string): Source => ({ rank: 'law', cite, url: `${BASE}${page}`, retrieved: '2026-10-11', checked: 'checked' })
+const ENACTED_5A = 'CO2KostAufG §§ 5a bis 5d, eingefügt durch Art. 5 G v. 23.07.2026 (BGBl. 2026 I Nr. 226)'
+
+// Was der Vermieter bei einer Heizung nach § 43 Abs. 1 GModG trägt, in ‰ (§ 5a Abs. 3): Netzentgelte und
+// CO₂-Kosten ab dem 01.01.2028 hälftig, Kosten des Pflichtanteils an Biobrennstoff ab dem 01.01.2029 hälftig
+// „bezüglich des Brennstoffanteils von maximal 30 Prozent am insgesamt verbrauchten Brennstoff“. `null`: keine
+// Teilung, es gilt § 5 Abs. 2. Zeitregel `incurred`: Für Netzentgelte und Biobrennstoff sagt Abs. 1 „im
+// Abrechnungszeitraum ab dem … angefallen“ mit Umrechnung nach § 5 Abs. 1 Satz 5; für die CO₂-Kosten sagt
+// Abs. 3 Nr. 2 nur „ab dem 1. Januar 2028“, und Mietfuchs teilt sie ebenso nach Anfall (Auslegung, Entwurf
+// 15.1 Nr. 13; die Begründung spricht von Abrechnungszeiträumen „ab dem 01. Januar 2028“, BT-Drs. 21/6278,
+// S. 124).
+export type HalfSplitValue = { readonly gridFeePermille: number | null; readonly co2Permille: number | null; readonly bioPermille: number | null; readonly bioCapPermille: number | null }
+const SPLIT_5A = checked5a('§ 5a Abs. 1, 3 CO2KostAufG', '__5a.html')
+export const co2HalfSplit: LawParam<HalfSplitValue, 'incurred'> = {
+  id: 'co2.half-split',
+  title: 'Hälftige Teilung bei einer Heizung nach § 43 Abs. 1 GModG',
+  norm: '§ 5a Abs. 1, 3 CO2KostAufG',
+  timing: 'incurred',
+  versions: [
+    { validTo: '2027-12-31', value: { gridFeePermille: null, co2Permille: null, bioPermille: null, bioCapPermille: null }, source: SPLIT_5A, enacted: ENACTED_5A },
+    { validFrom: '2028-01-01', validTo: '2028-12-31', value: { gridFeePermille: 500, co2Permille: 500, bioPermille: null, bioCapPermille: null }, source: SPLIT_5A, enacted: ENACTED_5A },
+    { validFrom: '2029-01-01', value: { gridFeePermille: 500, co2Permille: 500, bioPermille: 500, bioCapPermille: 300 }, source: SPLIT_5A, enacted: ENACTED_5A },
+  ],
+  describe: (v) => {
+    if (v.co2Permille === null || v.gridFeePermille === null) return 'keine hälftige Teilung, es gilt das Stufenmodell (§ 5 Abs. 2)'
+    const base = `Vermieter trägt ${v.gridFeePermille / 10} % der Gasnetzentgelte und ${v.co2Permille / 10} % der CO₂-Kosten`
+    return v.bioPermille === null || v.bioCapPermille === null
+      ? base
+      : `${base} sowie ${v.bioPermille / 10} % der Kosten des Pflichtanteils an Biobrennstoff, höchstens für ${v.bioCapPermille / 10} % des verbrauchten Brennstoffs`
+  },
+}
+
+// Der erste Tag mit hälftiger Teilung der CO₂-Kosten und der erste mit Biobrennstoff, für Texte und um
+// Zeiträume davor gar nicht erst zu fragen (sonst stünde § 5a im Rechtsstand jeder Abrechnung 2027).
+export function halfSplitFirstDay(): string {
+  const v = co2HalfSplit.versions.find((x) => x.value.co2Permille !== null)?.validFrom
+  if (!v) throw new Error('Rechtsregister: Beginn der hälftigen Teilung fehlt')
+  return v
+}
+export function halfSplitBioFirstDay(): string {
+  const v = co2HalfSplit.versions.find((x) => x.value.bioPermille !== null)?.validFrom
+  if (!v) throw new Error('Rechtsregister: Beginn der Teilung des Biobrennstoffs fehlt')
+  return v
+}
+
+// § 5b: § 5a gilt entsprechend in Gebäuden, die „bis zum Ablauf des 31. Dezember 2029 neu errichtet und
+// erstmals genutzt werden“, nicht aber, wenn „die Bauantragstellung oder der Antrag auf Zustimmung oder die
+// Bauanzeige vor dem 13. Mai 2026 erfolgte“. `eventDate`: der Tag der ersten Nutzung.
+export const co2HalfSplitNewBuildings: LawParam<{ readonly firstUseUntil: string; readonly applicationFrom: string }, 'eventDate'> = {
+  id: 'co2.half-split.new-buildings',
+  title: 'Hälftige Teilung in Neubauten',
+  norm: '§ 5b CO2KostAufG',
+  timing: 'eventDate',
+  versions: [{ value: { firstUseUntil: '2029-12-31', applicationFrom: '2026-05-13' }, source: checked5a('§ 5b CO2KostAufG', '__5b.html'), enacted: ENACTED_5A }],
+  describe: (v) => `§ 5a gilt entsprechend in Gebäuden, die bis ${germanDate(v.firstUseUntil)} errichtet und erstmals genutzt werden, außer bei Bauantrag, Antrag auf Zustimmung oder Bauanzeige vor dem ${germanDate(v.applicationFrom)}`,
+}
+
+// § 5a Abs. 4 im Wortlaut (Fassung Art. 5 G v. 23.07.2026): „Wird eine Heizungsanlage nach § 43 Absatz 1 des
+// Gebäudemodernisierungsgesetzes aufgrund eines irreparablen Ausfalls der bestehenden Heizungsanlage weniger als
+// zwölf Monate vor dem 1. Januar 2028 neu eingebaut, finden die Absätze 1 bis 3 für zwölf Monate ab dem Einbau
+// der Heizungsanlage keine Anwendung. Während des in § 43 Absatz 7 Satz 1 des Gebäudemodernisierungsgesetzes
+// genannten Zeitraums kommen die Absätze 1 bis 3 nicht zur Anwendung, wenn zum Zeitpunkt des irreparablen
+// Ausfalls der bestehenden Heizungsanlage keine Pflicht nach § 43 Absatz 1 des Gebäudemodernisierungsgesetzes
+// besteht. Im Fall des § 43 Absatz 7 Satz 2 des Gebäudemodernisierungsgesetzes finden die Absätze 1 bis 3 für
+// zwölf Monate ab dem Zeitpunkt des Einbaus der Heizungsanlage keine Anwendung, wenn zum Zeitpunkt des
+// irreparablen Ausfalls der bestehenden Heizungsanlage keine Pflicht nach § 43 Absatz 1 des
+// Gebäudemodernisierungsgesetzes besteht.“
+// Mit den Zeiträumen aus § 43 Abs. 7 GModG:
+// Satz 1 „weniger als zwölf Monate vor dem 1. Januar 2028“ eingebaut → zwölf Monate ab Einbau keine Teilung;
+// Satz 2 bei einem Einbau im Zeitraum des § 43 Abs. 7 Satz 1 GModG (01.01.–31.12.2028) keine Teilung
+// während der Übergangszeit dieser Vorschrift, also zwölf Monate ab dem Einbau, wenn beim Ausfall keine
+// Pflicht nach § 43 Abs. 1 bestand (Begründung, BT-Drs. 21/7009, S. 154: „erst nach einer Übergangszeit von
+// 12 Monaten ab dem Einbau“; Auslegung, Entwurf 15.1 Nr. 24); Satz 3 im Fall des § 43 Abs. 7 Satz 2 (Einbau
+// ab 01.01.2029) zwölf Monate ab Einbau keine Teilung, unter derselben Bedingung. `installedFrom`/`installedTo`
+// ist das Fenster des Einbaus für Satz 2. `eventDate`: der Einbau.
+export const co2HalfSplitEmergency: LawParam<{ readonly windowMonths: number; readonly before: string; readonly installedFrom: string; readonly installedTo: string; readonly laterFrom: string }, 'eventDate'> = {
+  id: 'co2.half-split.emergency',
+  title: 'Keine hälftige Teilung nach einem Notfalleinbau',
+  norm: '§ 5a Abs. 4 CO2KostAufG; § 43 Abs. 7 GModG',
+  timing: 'eventDate',
+  versions: [{
+    value: { windowMonths: 12, before: '2028-01-01', installedFrom: '2028-01-01', installedTo: '2028-12-31', laterFrom: '2029-01-01' },
+    source: checked5a('§ 5a Abs. 4 CO2KostAufG; § 43 Abs. 7 Satz 1, 2 GModG (Art. 1 G v. 23.07.2026, BGBl. 2026 I Nr. 226)', '__5a.html'),
+    enacted: ENACTED_5A,
+  }],
+  describe: (v) => `nach irreparablem Ausfall: ${v.windowMonths} Monate ab Einbau keine Teilung bei Einbau weniger als ${v.windowMonths} Monate vor dem ${germanDate(v.before)}; ohne vorherige Pflicht nach § 43 Abs. 1 GModG ebenso ${v.windowMonths} Monate ab einem Einbau vom ${germanDate(v.installedFrom)} bis ${germanDate(v.installedTo)} oder ab dem ${germanDate(v.laterFrom)}`,
+}
+
+// § 5d Abs. 3: im vom Vermieter selbst bewohnten Gebäude „mit nicht mehr als zwei Wohnungen“, wenn „beide
+// Wohnungen durch eine gemeinsame Wärmeversorgung versorgt werden“, keine hälftige Teilung, der Vermieter trägt
+// „nur die Kohlendioxidkosten gemäß § 5 Absatz 2“; nicht in einem Gebiet nach § 556d Abs. 2 Satz 1, § 558
+// Abs. 3 Satz 3 oder § 577a Abs. 2 Satz 2 BGB. Berücksichtigt nur nach Mitteilung in Textform (Abs. 4; dass
+// Abs. 4 für Abs. 3 gilt, ist Auslegung, Entwurf 15.1 Nr. 20).
+export const co2HalfSplitTwoFamily: LawParam<{ readonly maxDwellings: number }, 'periodStart'> = {
+  id: 'co2.half-split.two-family',
+  title: 'Keine hälftige Teilung im selbst bewohnten Zweifamilienhaus',
+  norm: '§ 5d Abs. 3, 4 CO2KostAufG',
+  timing: 'periodStart',
+  versions: [{ value: { maxDwellings: 2 }, source: checked5a('§ 5d Abs. 3, 4 CO2KostAufG', '__5d.html'), enacted: ENACTED_5A }],
+  describe: (v) => `im selbst bewohnten Gebäude mit höchstens ${v.maxDwellings} Wohnungen und gemeinsamer Wärmeversorgung nur CO₂-Kosten nach Stufen, außer im angespannten Wohnungsmarkt`,
+}

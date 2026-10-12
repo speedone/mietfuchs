@@ -405,3 +405,28 @@ test('Lexikon meterCalibration: Frist und Beispiel aus dem Register, Beginn und 
   assert.match(t.needed, /im Prozess die Richtigkeit der abgelesenen Werte zur Überzeugung des Tatrichters nachweisen/)
   assert.match(t.needed, /§ 35 MessEV/)
 })
+
+test('Lexikon: hälftige Teilung nach § 5a nennt §§ 5a, 5b, 5d, § 7 Abs. 5 und rechnet das Beispiel nach (Heizung PR 18)', () => {
+  const t = GLOSSARY.co2HalfSplit
+  for (const n of [/§§ 5a, 5b, 5d/, /§ 7 Abs\. 5/, /§ 43 Abs\. 1/]) assert.match(t.norm ?? '', n)
+  assert.match(t.example, /271,80 €/)
+  assert.equal(Math.round(0.47 * 60000 * 0.4 + 0.53 * 60000 * 0.5), 27180)
+  assert.match(t.example, /150,00 €/)
+  assert.equal(30000 * 0.5, 15000)
+  assert.match(t.needed, /§ 556d BGB/)
+  assert.match(t.needed, /§ 558 Abs\. 3 BGB/)
+  assert.match(t.needed, /§ 577a Abs\. 2 BGB/)
+  // Prüfung M9 (Wortlaut der Gegenprüfung): die gemeinsame Wärmeversorgung; S9: das Gebiet, nicht die Gemeinde;
+  // S12: die Mitteilung als Voraussetzung ist Auslegung; K4: Kündigungssperrfrist; K8: die Höhe der Kürzung.
+  assert.match(t.needed, /die beide über eine gemeinsame Heizung versorgt werden \(§ 5d Abs\. 3 CO2KostAufG\)/)
+  assert.match(t.needed, /in keinem Gebiet liegt/)
+  assert.match(t.needed, /Teile einer Gemeinde/)
+  // Durchsicht K3: die Mitteilung mit der Abrechnung als Regelfall der Begründung.
+  assert.match(t.needed, /genügt nach der Begründung in der Regel die Mitteilung mit der Abrechnung/)
+  assert.match(t.needed, /Auslegung/)
+  assert.match(t.needed, /Kündigungssperrfrist/)
+  assert.match(t.short, /um 3 % kürzen \(§ 7 Abs\. 5 Satz 3, Abs\. 4 CO2KostAufG\)/)
+  assert.match(t.short, /höchstens für 30 % des Brennstoffs/)
+  // Grenze dieses Stands mit Verweis (Entscheidung des Koordinators): Vorrat und 30 % ab 2040 in #227.
+  assert.match(t.needed, /Vorrat .* Grenze von 30 % ab 2040 rechnet Mietfuchs noch nicht \(#227\)/)
+})

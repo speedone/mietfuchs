@@ -351,6 +351,8 @@ const NOT_IN_DB_JSON = new Set(['period', 'propertyId', 'mea', 'externalMeasure'
   'hcaScale', 'ratingFactor',
   // Das Eichjahr (Heizung PR 21) ebenso; seine Rundreise prüfen db-repository.test.ts und db-eichfrist.test.ts.
   'calibratedUntil',
+  // Die Mitteilung nach § 5d Abs. 4 (Heizung PR 18) ebenso; ihre Rundreise prüft db-repository.test.ts.
+  'halfSplitNoticeOn',
   // Ebenso die Lieferung einer Position (Heizung PR 7); ihre Rundreise prüft db-fuel.test.ts.
   'fuelDeliveryId',
   // Betriebsstrom (Heizung PR 15) kennt die db.json nicht; seine Rundreise prüft db-repository.test.ts.

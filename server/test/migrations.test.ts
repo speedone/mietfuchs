@@ -141,6 +141,11 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // anderer PR davor eingereiht (PR 18, PR 19), werden beide Schritte neu erzeugt und die Marken hier ersetzt.
   '0046_eichfrist': '63919a2e200380422b92dbd2a3f4a213a4d28a7bb96beee94e94c099b79dff69',
   '0047_eichfrist_bedingungen': '49516eb29851052b6872639d50790b3c7909e52f8796d5ab0eb92afc9e9b5113',
+  // Heizung PR 18 (#215): Merkmale nach §§ 5a, 5b, 5d CO2KostAufG an Heizanlage, Objekt und Mietverhältnis, danach
+  // ihre Bedingungen im Neubau der drei Tabellen. Wird vor dem Merge ein anderer PR davor eingereiht, werden beide
+  // Schritte neu erzeugt und die Marken hier ersetzt.
+  '0048_gmodg': 'ef5a9fb55225d55c3f156396388a0e5e72d0912b2d7094d4f307a930ebd949ff',
+  '0049_gmodg_bedingungen': 'cd6436edeb5048ad3e74fcac65330714d91c947dfeb8ae603ae0ead5570bb127',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

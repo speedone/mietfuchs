@@ -4,6 +4,7 @@ import type { Property, PropertyKind } from '../types'
 import { propertyBody, propertyToForm, type PropertyForm, CABLE_LABELS, type CableAnswer } from '../propertyForm'
 import { PROPERTY_KIND_LABELS } from '../types'
 import Term from './Term'
+import TightMarketField from './TightMarketField'
 import { api, errorText } from '../api'
 import { useOpenForm, useProperty, useSwitchProperty } from '../property'
 import { useConfirm, useToast } from './feedback'
@@ -160,6 +161,8 @@ export default function PropertyCard() {
           </select>
         </label>
       </div>
+      {/* Heizung PR 18: § 5d CO2KostAufG, mit der Geltung der Verordnung. */}
+      <TightMarketField value={form.tightMarket} from={form.tightMarketFrom} to={form.tightMarketTo} onChange={(c) => setForm({ ...form, ...c })} />
       <details className="extra-details" open={form.own}>
         <summary>Abweichender Vermieter oder Bankverbindung</summary>
         <p className="muted">
