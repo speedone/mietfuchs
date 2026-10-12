@@ -157,3 +157,30 @@ test('Rumpf vor 2028: die CO₂-Abzugszeile der eigenen Aufteilung geht mit dem 
   assert.deepEqual(vorschlag(mit), [['ta', 19100], ['tb', 11500], ['tc', 7600]])
   assert.ok(vorschlag(netto).every(([, c]) => Number(c) > 0))
 })
+
+// Durchsicht S1: Die Abzugszeile gehört zum Brennstoff, nicht zur Wartung. Mit einer Wartungsposition ohne
+// Lieferung im selben Topf mittelte der Rückfall über alle Heizpositionen, und der Vorschlag war zu niedrig.
+test('Rumpf vor 2028 mit Wartung: die CO₂-Abzugszeile geht nur mit dem Faktor des Brennstoffs in den Vorschlag', () => {
+  const R27: PeriodRules = { startMonth: 1, changes: ['2027-05'] }
+  const p = periodOfKey(R27, periodKey('2027-01')) ?? assert.fail('kein Rumpf')
+  // `marked`: der Brennstoff nur als solcher gekennzeichnet, ohne Verweis auf die Lieferung.
+  const q = (amountCents: number, co2: boolean, marked = false) => three({
+    properties: [{ id: 'objekt-1', kind: 'mfh', cableBuiltBeforeDec2021: null, tightMarket: null, periodRules: R27 }],
+    heatingPlants: [plant({ gmodg43InstalledOn: null })],
+    costItems: [
+      item({ id: 'gas', period: periodKey('2027-01'), amountCents, serviceFrom: '2027-01-01', serviceTo: '2027-04-30', ...(marked ? { fuelDeliveryId: undefined } : {}) }),
+      item({ id: 'wart', period: periodKey('2027-01'), description: 'Wartung', amountCents: 300000, heatingPart: 'operating', fuelDeliveryId: undefined, serviceFrom: '2027-01-01', serviceTo: '2027-04-30' }),
+    ],
+    fuelDeliveries: [delivery({ invoiceFrom: '2027-01-01', invoiceTo: '2027-04-30', label: 'Gas Jan–Apr 2027', emissionsKg: co2 ? 24105.6 : null, co2CostCents: co2 ? 60000 : null })],
+    tenancies: ['a', 'b', 'c'].map((u) => ({
+      id: `t${u}`, unitId: u, tenantName: `Mieter ${u.toUpperCase()}`, persons: 1, personHistory: [], start: '2020-01-01', end: null,
+      prepayments: [{ from: '2020-01', monthlyCents: 10000 }], prepaymentOverrides: {}, baseRents: [],
+    })),
+  })
+  const mit = computeSettlement(snapshotFor(q(300000, true), 'objekt-1', p))
+  const netto = computeSettlement(snapshotFor(q(243000, false), 'objekt-1', p))
+  const vorschlag = (r: typeof mit) => r.statements.map((s) => [s.tenancyId, s.suggestedMonthlyCents])
+  assert.deepEqual(vorschlag(mit), vorschlag(netto))
+  assert.deepEqual(vorschlag(mit), [['ta', 57100], ['tb', 34300], ['tc', 22800]])
+  assert.deepEqual(vorschlag(computeSettlement(snapshotFor(q(300000, true, true), 'objekt-1', p))), [['ta', 57100], ['tb', 34300], ['tc', 22800]])
+})

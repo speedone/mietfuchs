@@ -264,6 +264,15 @@ test('Contracting mit Gas (Abweichung 11): Netzentgelte nach dem Brennstoff des 
   // Contracting mit Heizöl: keine Netzentgelte zu teilen, auch wenn eine Zahl dasteht.
   const oel = settle('2027-05', { heatingPlants: [plant({ contracting: true, energy: 'oil' })], fuelDeliveries: [delivery({ gridFeeCents: 30000 })] })
   assert.deepEqual(partsOf(oel, 'gmodg:hp:2027-05'), [])
+  // Durchsicht S2: Den Biobrennstoff muss der Contractor ausweisen, die Netzentgelte nennt das Gesetz dort nicht.
+  const text = textOf(r, 'co2.half-split')
+  assert.match(text, /Den Preisbestandteil für Biobrennstoff muss der Contractor ausweisen \(§ 3 Abs\. 1 Nr\. 6, Abs\. 4 CO2KostAufG\)\. Die Netzentgelte seiner Gaslieferung fordern Sie bei ihm an; eine Pflicht, sie Ihnen auszuweisen, nennt das Gesetz nicht\./)
+  assert.doesNotMatch(text, /müssen auf seiner Rechnung stehen/)
+  // Durchsicht K2: Netzentgelte nur bei Gas.
+  const oelText = textOf(oel, 'co2.half-split')
+  assert.doesNotMatch(oelText, /Gasnetzentgelte und|Netzentgelte seiner|Hälfte der Netzentgelte/)
+  assert.match(oelText, /Den Preisbestandteil für Biobrennstoff muss der Contractor ausweisen/)
+  assert.match(oelText, /tragen Sie die Hälfte der CO₂-Kosten/)
 })
 
 test('Zweifamilienhaus mit Ausnahme: keine Netzentgelte beim Vermieter (§ 5d Abs. 3: „nur die Kohlendioxidkosten“)', () => {

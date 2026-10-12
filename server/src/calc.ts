@@ -4993,7 +4993,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     }
     const parts: string[] = [
       `${where}: Die Heizung wurde am ${fmtDay(s.from)} nach § 43 Abs. 1 GModG eingebaut${s.basis === 'newBuilding' ? ', in einem Neubau (§ 5b CO2KostAufG)' : ''}. ` +
-        `Ab dem ${fmtDay(halfSplitFirstDay())} tragen Sie die Hälfte der Gasnetzentgelte und der CO₂-Kosten, ab dem ${fmtDay(halfSplitBioFirstDay())} auch die Hälfte der Kosten des Pflichtanteils an Biobrennstoff, höchstens für ${fmtNum(cap / 10)} % des verbrauchten Brennstoffs (§ 5a Abs. 3 CO2KostAufG).`,
+        `Ab dem ${fmtDay(halfSplitFirstDay())} tragen Sie die Hälfte ${half.gas ? 'der Gasnetzentgelte und ' : ''}der CO₂-Kosten, ab dem ${fmtDay(halfSplitBioFirstDay())} auch die Hälfte der Kosten des Pflichtanteils an Biobrennstoff, höchstens für ${fmtNum(cap / 10)} % des verbrauchten Brennstoffs (§ 5a Abs. 3 CO2KostAufG).`,
     ]
     if (byDays.length > 0) {
       // Prüfung S11: die Lesart nach Anfall mit der Gegenstimme der Begründung.
@@ -5024,10 +5024,13 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     if (pot.method === 'service' || potPlant?.source === 'homeowners') {
       // Prüfung S10: Verpflichtet ist der Vermieter (§ 7 Abs. 5 Satz 1), nicht der Messdienst.
       const cut = law(co2CutMissing, { period: hPeriod }, lawLog)
-      parts.push(`Die Hälfte der Netzentgelte und der Kosten des Biobrennstoffs müssen Sie von den Heizkosten abziehen, bevor verteilt wird (§ 7 Abs. 5 CO2KostAufG); rechnet ein Messdienst für Sie ab, prüfen Sie das in seiner Abrechnung. Fehlt es, darf jeder Mieter seinen Anteil an den Heizkosten um ${cut} % kürzen (§ 7 Abs. 5 Satz 3, Abs. 4 CO2KostAufG)${cutsOn(ids, cut)}.`)
+      parts.push(`Die Hälfte ${half.gas ? 'der Netzentgelte und ' : ''}der Kosten des Biobrennstoffs müssen Sie von den Heizkosten abziehen, bevor verteilt wird (§ 7 Abs. 5 CO2KostAufG); rechnet ein Messdienst für Sie ab, prüfen Sie das in seiner Abrechnung. Fehlt es, darf jeder Mieter seinen Anteil an den Heizkosten um ${cut} % kürzen (§ 7 Abs. 5 Satz 3, Abs. 4 CO2KostAufG)${cutsOn(ids, cut)}.`)
     }
     if (potPlant?.contracting) {
-      parts.push('Die Anlage betreibt ein Contractor; § 5a gilt auch dann (Begründung, BT-Drs. 21/6278, S. 124). Netzentgelte und Biobrennstoff müssen auf seiner Rechnung stehen; fehlen sie, fordern Sie sie bei ihm an.')
+      // Durchsicht S2: den Biobrennstoff muss der Contractor ausweisen (§ 3 Abs. 4), die Netzentgelte nicht.
+      parts.push('Die Anlage betreibt ein Contractor; § 5a gilt auch dann (Begründung, BT-Drs. 21/6278, S. 124). ' +
+        'Den Preisbestandteil für Biobrennstoff muss der Contractor ausweisen (§ 3 Abs. 1 Nr. 6, Abs. 4 CO2KostAufG).' +
+        (half.gas ? ' Die Netzentgelte seiner Gaslieferung fordern Sie bei ihm an; eine Pflicht, sie Ihnen auszuweisen, nennt das Gesetz nicht.' : ''))
     }
     // Abweichung 12 des Plans; Prüfung M10 im Wortlaut der Gegenprüfung.
     parts.push('Für Mietverhältnisse über Räume, die keine Wohnräume sind, gilt die Teilung nicht (§ 5a Abs. 1: Wohnraummietverhältnisse); Mietfuchs behandelt alle Mietverhältnisse als Wohnraum. ' +
@@ -7206,8 +7209,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // dem Vorschlag, und der war zu hoch).
   const itemById = new Map(allItems.map((c) => [c.id, c]))
   // Die Abzugszeilen nach § 7 Abs. 1 und Abs. 5 (`co2:`, `gmodg:`, Heizung PR 18, Prüfung M5) gehören zu den
-  // Messdienstpositionen ihres Topfs, ohne solche (eigene Aufteilung bei freien Schlüsseln) zu allen Heizpositionen
-  // des Topfs. Vorher ging die CO₂-Abzugszeile der eigenen Aufteilung mit 0 ein, und der Vorschlag war zu hoch
+  // Messdienstpositionen ihres Topfs, ohne solche (eigene Aufteilung bei freien Schlüsseln) zu seinen
+  // Brennstoffpositionen und erst ohne diese zu allen Heizpositionen des Topfs. Vorher ging die CO₂-Abzugszeile der eigenen Aufteilung mit 0 ein, und der Vorschlag war zu hoch
   // (Behebung mit Heizung PR 18; nur der Vorschlag, keine Zahl der Abrechnung).
   const reliefFactor = (rows: readonly SettlementRow[], key: string, factors: ReadonlyMap<string, number>): number => {
     const potKey = key.replace(/^gmodg:/, 'co2:')
@@ -7216,7 +7219,13 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       return c !== undefined && c.category === HEATING_CATEGORY && `co2:${c.heatingPlantId ?? ''}:${c.period}` === potKey
     })
     const service = inPot.filter((r) => itemById.get(r.costItemId)?.key === 'amounts')
-    const own = service.length === 0 ? inPot : service
+    // Durchsicht S1: ohne Messdienst die Brennstoffpositionen, wie beim Anteil x_t; die Übertragszeilen tragen
+    // `heatingPart: 'fuel'`. Erst ohne solche alle Heizpositionen. Sonst minderte die Wartung den Faktor.
+    const fuel = inPot.filter((r) => {
+      const c = itemById.get(r.costItemId)
+      return c?.fuelDeliveryId != null || c?.heatingPart === 'fuel'
+    })
+    const own = service.length > 0 ? service : fuel.length > 0 ? fuel : inPot
     const sum = own.reduce((a, r) => a + r.shareCents, 0)
     return sum === 0 ? 0 : own.reduce((a, r) => a + r.shareCents * (factors.get(r.costItemId) ?? 0), 0) / sum
   }
