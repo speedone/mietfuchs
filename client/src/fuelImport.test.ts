@@ -20,8 +20,8 @@ const oel: FuelInvoiceExtraction = {
   ...gas, vendor: 'Heizöl Beispiel', invoiceDate: '2025-10-14', periodStart: undefined, periodEnd: undefined, deliveredAt: '2025-10-12', totalGrossEur: 3150, quantity: 3000, quantityUnit: 'l',
   gasBasis: null, heatingValue: 10.05, energyKwh: 30150, emissionsKg: 8032, co2CostEur: 525.69, emissionFactor: 0.2664, parts: [], fixedEur: null,
 }
-const service: FuelImportPlace = { method: 'service', stock: false, halfSplit: false }
-const manual: FuelImportPlace = { method: 'manual', stock: false, halfSplit: false }
+const service: FuelImportPlace = { method: 'service', stock: false, halfSplit: false, co2: true, gas: true }
+const manual: FuelImportPlace = { method: 'manual', stock: false, halfSplit: false, co2: true, gas: true }
 
 test('Formular aus der Auswertung: alle Angaben nach § 3 Abs. 1, Teilmengen, Bezeichnung; der Rumpf trägt sie', () => {
   const f = fuelFormFromExtraction(gas, emptyFuelForm(), service)
@@ -43,7 +43,7 @@ test('Formular aus der Auswertung: alle Angaben nach § 3 Abs. 1, Teilmengen, Be
 })
 
 test('Heizöl: Liefertag statt Zeitraum, Heizwert laut Rechnung, Menge in Litern; der Vorrat speichert Emissionsfaktor und Rechnungsdatum', () => {
-  const f = fuelFormFromExtraction(oel, emptyFuelForm(), { method: 'manual', stock: true, halfSplit: false })
+  const f = fuelFormFromExtraction(oel, emptyFuelForm(), { method: 'manual', stock: true, halfSplit: false, co2: true, gas: false })
   expect([f.label, f.deliveredAt, f.invoiceDate, f.invoiceFrom, f.quantity, f.quantityUnit, f.heatingValue, f.parts]).toEqual(['Heizöl Beispiel 12.10.2025', '2025-10-12', '2025-10-14', '', '3000', 'l', '10,05', []])
   const r = stockFuelBody(f, 'manual')
   if ('error' in r) throw new Error(r.error)
@@ -51,7 +51,7 @@ test('Heizöl: Liefertag statt Zeitraum, Heizwert laut Rechnung, Menge in Litern
 })
 
 test('Beim Vorrat bleiben Zeitraum und Teilmengen leer, die der Server dort ablehnt; eine Gasmenge erscheint nicht als Vorratseinheit', () => {
-  const f = fuelFormFromExtraction(gas, emptyFuelForm(), { method: 'manual', stock: true, halfSplit: false })
+  const f = fuelFormFromExtraction(gas, emptyFuelForm(), { method: 'manual', stock: true, halfSplit: false, co2: true, gas: false })
   expect([f.invoiceFrom, f.invoiceTo, f.parts, f.quantityUnit]).toEqual(['', '', [], ''])
   const g = fuelFormFromExtraction({ ...gas, quantityUnit: 'l' }, emptyFuelForm(), manual)
   expect(g.quantityUnit).toBe('')
@@ -106,7 +106,7 @@ test('Prüfung M6: Biobrennstoff nicht übernommen, je nach Grund ein eigener Sa
   expect(fuelChecks(mitBio, service)).toEqual([
     `Die Rechnung weist ${fmtEuro(1250)} als Preisbestandteil für den nach § 43 Abs. 1 GModG anteilig zu nutzenden Brennstoff aus (§ 3 Abs. 1 Nr. 6 CO2KostAufG). Mietfuchs hat ihn nicht übernommen, weil an dieser Heizanlage kein Einbau nach § 43 Abs. 1 GModG eingetragen ist. Diese Pflicht gilt nur für eine Gas-, Öl- oder Flüssiggasheizung, die nach dem 29.07.2026 in ein bestehendes Gebäude eingebaut wurde. Trifft das zu, tragen Sie den Tag des Einbaus an der Heizanlage ein und lesen Sie die Rechnung erneut aus.`,
   ])
-  expect(fuelChecks({ ...oel, deliveredAt: '2030-01-31', bioCostEur: 12.5 }, { method: 'service', stock: true, halfSplit: true })).toEqual([
+  expect(fuelChecks({ ...oel, deliveredAt: '2030-01-31', bioCostEur: 12.5 }, { method: 'service', stock: true, halfSplit: true, co2: true, gas: false })).toEqual([
     `Die Rechnung weist ${fmtEuro(1250)} als Preisbestandteil für den nach § 43 Abs. 1 GModG anteilig zu nutzenden Brennstoff aus (§ 3 Abs. 1 Nr. 6 CO2KostAufG). Mietfuchs hat ihn nicht übernommen, weil Mietfuchs diesen Preisbestandteil bei Brennstoff aus einem Vorrat noch nicht rechnet. Bitte bewahren Sie die Rechnung auf.`,
   ])
   expect(fuelChecks({ ...mitBio, periodEnd: '2040-01-31' }, { ...service, halfSplit: true })).toEqual([
@@ -117,4 +117,20 @@ test('Prüfung M6: Biobrennstoff nicht übernommen, je nach Grund ein eigener Sa
   ])
   // Eine 0 ist eine Angabe und kein Befund.
   expect(fuelChecks({ ...gas, bioCostEur: 0 }, service)).toEqual([])
+})
+
+test('Durchsicht S1: nur vorbelegen, was die Karte zeigt; CO₂-Angaben ohne Feld nennt ein Satz', () => {
+  const ohne: FuelImportPlace = { method: 'service', stock: false, halfSplit: false, co2: false, gas: false }
+  const f = fuelFormFromExtraction(gas, emptyFuelForm(), ohne)
+  expect([f.emissionsKg, f.co2Cost, f.emissionFactor, f.gasBasis]).toEqual(['', '', '', ''])
+  expect(f.parts.map((p) => [p.emissionsKg, p.co2Cost])).toEqual([['', ''], ['', '']])
+  expect(f.parts.map((p) => p.amount)).toEqual(['2.885,77', '1.182,03'])
+  const r = fuelBody(f, 'service')
+  if ('error' in r) throw new Error(r.error)
+  expect([r.body.co2CostCents, r.body.emissionsKg, r.body.emissionFactor, r.body.gasBasis]).toEqual([null, null, null, null])
+  expect(fuelChecks(gas, ohne)).toContain(`Die Rechnung nennt CO₂-Angaben (5.674,8 kg CO₂, CO₂-Kosten ${fmtEuro(38099)}). Bei dieser Heizanlage fragt Mietfuchs sie nicht ab und hat sie nicht übernommen.`)
+  expect(fuelChecks({ ...gas, emissionsKg: null, co2CostEur: null, emissionFactor: null, parts: [] }, ohne)).toEqual([])
+  // Eine Heizanlage ohne Gas bekommt keinen Bezug der kWh, die mit Gas schon.
+  expect(fuelFormFromExtraction(gas, emptyFuelForm(), { ...ohne, co2: true }).gasBasis).toBe('')
+  expect(fuelFormFromExtraction(gas, emptyFuelForm(), { ...ohne, co2: true, gas: true }).gasBasis).toBe('hs')
 })

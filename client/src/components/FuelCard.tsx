@@ -75,7 +75,9 @@ export default function FuelCard({ plant, view, deliveries, units = [], findings
     try {
       const fd = plant.propertyId ? await heatingUpload(file, { propertyId: plant.propertyId, year: startYearOf(view.period) }) : await heatingUpload(file, null)
       const r = await aiRequest<FuelExtractResult>(`/api/heating-plants/${plant.id}/fuel-invoice`, fd, { onProgress: setReading })
-      const place = { method: plant.method, stock, halfSplit }
+      // Durchsicht S1: nur vorbelegen, was die Karte unten zeigt (CO₂-Felder, Bezug der kWh bei Gas).
+      const co2 = plant.energy === undefined || asksCo2Facts({ energy: plant.energy, contracting: plant.contracting, heatGeneration: plant.heatGeneration ?? null })
+      const place = { method: plant.method, stock, halfSplit, co2, gas: !stock && energy === 'gas' }
       setForm(fuelFormFromExtraction(r.extraction, { ...emptyFuelForm(), grade: energy ? defaultGrade(energy) : '' }, place))
       setChecks(fuelChecks(r.extraction, place))
       setEditing('neu')
