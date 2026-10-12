@@ -393,3 +393,15 @@ test('Lexikon monthlyConsumptionInfo (Heizung PR 22): Mitteilen jeden Monat, kWh
   assert.match(t.needed, /jeden Monat, auch außerhalb der Heizperiode.*Auslegung/s)
   assert.match(t.needed, /ab dem ersten Tag des Folgemonats als fällig.*Festlegung von Mietfuchs/s)
 })
+
+test('Lexikon meterCalibration: Frist und Beispiel aus dem Register, Beginn und Ende, HKV ohne Eichung, Beweislast mit dem Leitsatz', () => {
+  const t = GLOSSARY.meterCalibration
+  assert.match(t.short, /beträgt 6 Jahre/)
+  assert.match(t.short, /Jahr der Kennzeichnung/)
+  assert.match(t.short, /mit dem Ende des Jahres/)
+  assert.match(t.short, /Heizkostenverteiler sind nicht eichpflichtig/)
+  assert.match(t.example, /„M22“.*bis Ende 2028.*31\.12\.2028.*01\.01\.2029/s)
+  assert.match(t.norm ?? '', /§ 33, § 37 Abs\. 1 MessEG; § 34, § 35 und Anlage 7 MessEV/)
+  assert.match(t.needed, /im Prozess die Richtigkeit der abgelesenen Werte zur Überzeugung des Tatrichters nachweisen/)
+  assert.match(t.needed, /§ 35 MessEV/)
+})

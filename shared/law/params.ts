@@ -6,6 +6,7 @@ import type { LawValue } from '../types.ts'
 import { betrkvGenerationPower, betrkvTvSignal, bgbDeadlineMonths, bgbHeatDeliverySwitch, bgbMaxPeriodMonths } from './bgb-betrkv.ts'
 import { co2ApplicableFrom, co2CostsBefore, co2CutMissing, co2DistrictEtsNew, co2EbevFactors, co2NonResidential, co2Price, co2PriceEts, co2Restriction, co2RoundingDecimals, co2StageTable } from './co2kostaufg.ts'
 import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvEstimateThreshold, hkvExemptions, hkvGenerationPower, hkvHeatingValues, hkvHeatPumpCapture, hkvInfoDistrict, hkvMonthlyInfo, hkvRenewableExemption, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvSettlementInfo } from './heizkostenv.ts'
+import { messevCalibrationYears } from './messev.ts'
 import { practiceEvaporatorWindow, practiceReadingOffWarning, practiceVacancyPersons } from './practice.ts'
 import { ustgGasHeatNetworkRate, ustgStandardRate } from './ustg.ts'
 
@@ -54,4 +55,6 @@ export const LAW_PARAMS: readonly LawParam<LawValue, Timing>[] = [
   hkvGenerationPower,
   // Heizung PR 16 (#213)
   bgbHeatDeliverySwitch,
+  // Heizung PR 21 (#98)
+  messevCalibrationYears,
 ]

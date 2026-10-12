@@ -5,7 +5,7 @@
 // verbietet die Zahlen außerhalb dieses Ordners.
 //
 // Diese Datei hält nur die Typen und die Abfrage. Die Werte stehen je Gesetz daneben
-// (heizkostenv.ts, bgb-betrkv.ts, ustg.ts, practice.ts) und gesammelt in params.ts.
+// (heizkostenv.ts, bgb-betrkv.ts, ustg.ts, practice.ts, messev.ts) und gesammelt in params.ts.
 //
 // **Eine Fassung wird nie geändert, nur eine neue angelegt** (4.4). Was ausgeliefert ist, hält
 // server/test/law-history.test.ts als Zahl fest.
@@ -62,7 +62,7 @@ export type Coverage = 'full' | 'partial' | 'none'
 
 // Der Rechtsstand: das jüngste `retrieved` im Register (law.test.ts prüft das). Wer einen Wert
 // prüft oder eine Fassung anlegt, setzt ihn auf den Tag der Durchsicht (#110).
-export const LAW_AS_OF = '2026-10-11'
+export const LAW_AS_OF = '2026-10-12'
 
 // ---------- Datumshelfer, Zeichen für Zeichen wie compareText in calc.ts ----------
 

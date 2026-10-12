@@ -14,7 +14,8 @@ import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvC
 import { practiceEvaporatorWindow, practiceReadingOffWarning, practiceVacancyPersons } from '../../shared/law/practice.ts'
 import { ustgGasHeatNetworkRate, ustgStandardRate } from '../../shared/law/ustg.ts'
 import { co2ApplicableFrom, co2CostsBefore, co2EbevFactors, co2Price, co2PriceEts, co2CostsCountedFrom, co2CostsExcludedUntil, co2CutMissing, co2DistrictEtsNew, co2FirstPeriodStart, co2NonResidential, co2Restriction, co2RoundingDecimals, co2StageTable } from '../../shared/law/co2kostaufg.ts'
-import { RULES } from '../../shared/law/rules.ts'
+import { RULES, rulesFor } from '../../shared/law/rules.ts'
+import { CALIBRATED_METER_TYPES, messevCalibrationYears } from '../../shared/law/messev.ts'
 
 const year = (y: number) => ({ period: { from: `${y}-01-01`, to: `${y}-12-31` } })
 
@@ -176,7 +177,7 @@ test('Register: jede Konstante vom Typ LawParam in shared/law/ steht in LAW_PARA
     .flatMap((f) => [...fs.readFileSync(path.join(dir, f), 'utf8').matchAll(/^export const (\w+): LawParam</gm)].map((m) => m[1]))
   assert.ok(declared.length >= 7, `nur ${declared.length} Parameter gefunden`)
   const listed = new Set<unknown>(LAW_PARAMS)
-  const modules = { betrkvGenerationPower, betrkvTvSignal, bgbDeadlineMonths, bgbHeatDeliverySwitch, bgbMaxPeriodMonths, co2ApplicableFrom, co2CostsBefore, co2CutMissing, co2DistrictEtsNew, co2EbevFactors, co2NonResidential, co2Price, co2PriceEts, co2Restriction, co2RoundingDecimals, co2StageTable, hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvEstimateThreshold, hkvExemptions, hkvGenerationPower, hkvHeatingValues, hkvHeatPumpCapture, hkvInfoDistrict, hkvMonthlyInfo, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvRenewableExemption, hkvSettlementInfo, practiceEvaporatorWindow, practiceReadingOffWarning, practiceVacancyPersons, ustgGasHeatNetworkRate, ustgStandardRate }
+  const modules = { betrkvGenerationPower, betrkvTvSignal, bgbDeadlineMonths, bgbHeatDeliverySwitch, bgbMaxPeriodMonths, co2ApplicableFrom, co2CostsBefore, co2CutMissing, co2DistrictEtsNew, co2EbevFactors, co2NonResidential, co2Price, co2PriceEts, co2Restriction, co2RoundingDecimals, co2StageTable, hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvEstimateThreshold, hkvExemptions, hkvGenerationPower, hkvHeatingValues, hkvHeatPumpCapture, hkvInfoDistrict, hkvMonthlyInfo, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvRenewableExemption, hkvSettlementInfo, practiceEvaporatorWindow, practiceReadingOffWarning, practiceVacancyPersons, ustgGasHeatNetworkRate, ustgStandardRate, messevCalibrationYears }
   for (const name of declared) {
     assert.ok(name && Object.hasOwn(modules, name), `${name} fehlt in diesem Test`)
     assert.ok(listed.has(Reflect.get(modules, name)), `${name} fehlt in LAW_PARAMS`)
@@ -543,4 +544,48 @@ test('Stichtag bgb.heat-delivery-switch: ab 01.07.2013 drei Monate und 80 %, dav
   assert.equal(v.source.url, 'https://www.gesetze-im-internet.de/bgb/__556c.html')
   assert.match(v.source.cite, /§ 11 Abs\. 1/)
   assert.equal(v.source.checked, 'checked')
+})
+
+// ---------- MessEV (Heizung PR 21, #98) ----------
+
+test('Stichtag messev.calibration-years: ab 01.01.2015 Kaltwasser 6, Warmwasser und Wärme 5; ab 03.11.2021 je 6; davor keine Fassung', () => {
+  const log = createLawLog()
+  assert.deepEqual(law(messevCalibrationYears, { date: '2021-11-03' }, log), { kaltwasser: 6, warmwasser: 6, waerme: 6 })
+  assert.deepEqual(law(messevCalibrationYears, { date: '2028-06-30' }, log), { kaltwasser: 6, warmwasser: 6, waerme: 6 })
+  assert.equal(log.values.length, 1, 'dieselbe Fassung zweimal abgefragt ist ein Eintrag')
+  assert.equal(log.values[0]?.text, 'Kaltwasser-, Warmwasser- und Wärmezähler je 6 Jahre')
+  assert.deepEqual(law(messevCalibrationYears, { date: '2021-11-02' }, createLawLog()), { kaltwasser: 6, warmwasser: 5, waerme: 5 })
+  assert.deepEqual(law(messevCalibrationYears, { date: '2015-01-01' }, createLawLog()), { kaltwasser: 6, warmwasser: 5, waerme: 5 })
+  assert.equal(messevCalibrationYears.describe({ kaltwasser: 6, warmwasser: 5, waerme: 5 }), 'Kaltwasserzähler 6, Warmwasserzähler 5, Wärmezähler 5 Jahre')
+  // Vor der MessEV (Eichordnung) führt das Register keine Fassung.
+  assert.throws(() => law(messevCalibrationYears, { date: '2014-12-31' }, createLawLog()), /Kein Rechtswert „messev.calibration-years“ am 2014-12-31/)
+})
+
+test('messev.calibration-years: Fundstellen am Wortlaut, die frühere Fassung amtlich aus der Begründung der Änderungsverordnung', () => {
+  const neu = versionAt(messevCalibrationYears, '2022-01-01')
+  assert.equal(neu.validFrom, '2021-11-03')
+  assert.equal(neu.source.checked, 'checked')
+  assert.equal(neu.source.retrieved, '2026-10-12')
+  assert.match(neu.source.cite, /Anlage 7 Nr\. 5\.5\.1, 5\.5\.2, 7\.1 MessEV/)
+  assert.match(neu.enacted, /BGBl\. I S\. 4742/)
+  const alt = versionAt(messevCalibrationYears, '2018-01-01')
+  assert.deepEqual([alt.validFrom, alt.validTo], ['2015-01-01', '2021-11-02'])
+  assert.equal(alt.source.checked, 'checked')
+  assert.match(alt.source.cite, /BR-Drs\. 599\/21/)
+  assert.match(alt.source.url, /0599-21\.pdf$/)
+  assert.match(alt.enacted, /BGBl\. I S\. 2010/)
+  assert.deepEqual([...CALIBRATED_METER_TYPES], ['kaltwasser', 'warmwasser', 'waerme'])
+})
+
+test('Regel meter-calibration: nennt Frist aus dem Register, MessEG, § 35 MessEV und das Urteil; steht nicht im Rechtsstand einer Abrechnung', () => {
+  const rule = RULES.find((r) => r.code === 'meter-calibration') ?? assert.fail('Regel fehlt')
+  assert.match(rule.norm, /§ 31 Abs\. 2 Nr\. 3, § 33 Abs\. 1, § 37 Abs\. 1 MessEG; § 34, § 35, Anlage 7 MessEV; BGH, Urteil vom 17\.11\.2010, VIII ZR 112\/10/)
+  assert.match(rule.summary, /je 6 Jahre/)
+  assert.match(rule.summary, /mit dem Ende des Jahres/)
+  assert.match(rule.summary, /Heizkostenverteiler sind nicht eichpflichtig/)
+  assert.match(rule.summary, /Vermutung ihrer Richtigkeit nicht zu/)
+  assert.equal(rule.validFrom, undefined)
+  // Angewendet wird sie auf der Zähler-Seite, nicht in der Abrechnung (Prüfung des Plans, S13).
+  assert.equal(rule.scope, 'meters')
+  for (const y of [2015, 2022, 2026]) assert.ok(!rulesFor(`${y}-01-01`, `${y}-12-31`).some((r) => r.code === 'meter-calibration'), String(y))
 })
