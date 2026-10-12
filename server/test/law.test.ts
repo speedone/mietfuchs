@@ -16,6 +16,9 @@ import { ustgGasHeatNetworkRate, ustgStandardRate } from '../../shared/law/ustg.
 import { co2ApplicableFrom, co2CostsBefore, co2EbevFactors, co2Price, co2PriceEts, co2CostsCountedFrom, co2CostsExcludedUntil, co2CutMissing, co2DistrictEtsNew, co2FirstPeriodStart, co2NonResidential, co2Restriction, co2RoundingDecimals, co2StageTable } from '../../shared/law/co2kostaufg.ts'
 import { RULES, rulesFor } from '../../shared/law/rules.ts'
 import { CALIBRATED_METER_TYPES, messevCalibrationYears } from '../../shared/law/messev.ts'
+import { co2HalfSplit, co2HalfSplitEmergency, co2HalfSplitNewBuildings, co2HalfSplitTwoFamily, halfSplitBioFirstDay, halfSplitFirstDay } from '../../shared/law/co2kostaufg.ts'
+import { bioCapFrom, gmodgHeating43 } from '../../shared/law/gmodg.ts'
+import { degreeDayPermille } from '../../shared/degreeDays.ts'
 
 const year = (y: number) => ({ period: { from: `${y}-01-01`, to: `${y}-12-31` } })
 
@@ -177,7 +180,7 @@ test('Register: jede Konstante vom Typ LawParam in shared/law/ steht in LAW_PARA
     .flatMap((f) => [...fs.readFileSync(path.join(dir, f), 'utf8').matchAll(/^export const (\w+): LawParam</gm)].map((m) => m[1]))
   assert.ok(declared.length >= 7, `nur ${declared.length} Parameter gefunden`)
   const listed = new Set<unknown>(LAW_PARAMS)
-  const modules = { betrkvGenerationPower, betrkvTvSignal, bgbDeadlineMonths, bgbHeatDeliverySwitch, bgbMaxPeriodMonths, co2ApplicableFrom, co2CostsBefore, co2CutMissing, co2DistrictEtsNew, co2EbevFactors, co2NonResidential, co2Price, co2PriceEts, co2Restriction, co2RoundingDecimals, co2StageTable, hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvEstimateThreshold, hkvExemptions, hkvGenerationPower, hkvHeatingValues, hkvHeatPumpCapture, hkvInfoDistrict, hkvMonthlyInfo, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvRenewableExemption, hkvSettlementInfo, practiceEvaporatorWindow, practiceReadingOffWarning, practiceVacancyPersons, ustgGasHeatNetworkRate, ustgStandardRate, messevCalibrationYears }
+  const modules = { betrkvGenerationPower, betrkvTvSignal, bgbDeadlineMonths, bgbHeatDeliverySwitch, bgbMaxPeriodMonths, co2ApplicableFrom, co2CostsBefore, co2CutMissing, co2DistrictEtsNew, co2EbevFactors, co2HalfSplit, co2HalfSplitEmergency, co2HalfSplitNewBuildings, co2HalfSplitTwoFamily, co2NonResidential, co2Price, co2PriceEts, co2Restriction, co2RoundingDecimals, co2StageTable, gmodgHeating43, hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvEstimateThreshold, hkvExemptions, hkvGenerationPower, hkvHeatingValues, hkvHeatPumpCapture, hkvInfoDistrict, hkvMonthlyInfo, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvRenewableExemption, hkvSettlementInfo, practiceEvaporatorWindow, practiceReadingOffWarning, practiceVacancyPersons, ustgGasHeatNetworkRate, ustgStandardRate, messevCalibrationYears }
   for (const name of declared) {
     assert.ok(name && Object.hasOwn(modules, name), `${name} fehlt in diesem Test`)
     assert.ok(listed.has(Reflect.get(modules, name)), `${name} fehlt in LAW_PARAMS`)
@@ -646,4 +649,50 @@ test('Fristende ab einem Ereignis nach §§ 187 Abs. 1, 188 Abs. 2, 3 BGB', () =
   assert.equal(shiftMonths('2028-01-01', -12), '2027-01-01')
   assert.equal(shiftMonths('2028-03-31', -1), '2028-02-29')
   assert.equal(daysIn({ from: '2028-01-01', to: '2028-04-30' }), 121)
+})
+
+// ---------- §§ 5a, 5b, 5d CO2KostAufG und § 43 GModG (Heizung PR 18, #215) ----------
+
+test('Stichtag co2.half-split (Entwurf 4.7): H 2027-05 → 530 ‰ der Gradtage hälftig, Vermieter 271,80 € (3.9)', () => {
+  const log = createLawLog()
+  const h = { from: '2027-05-01', to: '2028-04-30' }
+  const table = law(hkvDegreeDays, { period: h }, log)
+  const teile = law(co2HalfSplit, { period: h, weights: (r) => degreeDayPermille([r], table) }, log)
+  assert.deepEqual(teile.map((t) => [t.from, t.to, t.value.co2Permille]), [['2027-05-01', '2027-12-31', null], ['2028-01-01', '2028-04-30', 500]])
+  const nach = teile[1]?.weight ?? assert.fail('kein Teil ab 2028')
+  assert.ok(Math.abs(nach - 0.53) < 1e-9, `Gradtage ab 01.01.2028: ${nach}`)
+  // 0,47 · 600 € · 40 % + 0,53 · 600 € · 50 % = 271,80 €
+  const vermieter = (1 - nach) * 60000 * 0.4 + nach * 60000 * ((teile[1]?.value.co2Permille ?? 0) / 1000)
+  assert.equal(Math.round(vermieter), 27180)
+})
+
+test('Stichtag co2.half-split: Netzentgelte und CO₂ ab 01.01.2028, Biobrennstoff ab 01.01.2029 bis 30 %', () => {
+  assert.deepEqual(valueAt(co2HalfSplit, '2027-12-31'), { gridFeePermille: null, co2Permille: null, bioPermille: null, bioCapPermille: null })
+  assert.deepEqual(valueAt(co2HalfSplit, '2028-01-01'), { gridFeePermille: 500, co2Permille: 500, bioPermille: null, bioCapPermille: null })
+  assert.deepEqual(valueAt(co2HalfSplit, '2029-01-01'), { gridFeePermille: 500, co2Permille: 500, bioPermille: 500, bioCapPermille: 300 })
+  assert.equal(halfSplitFirstDay(), '2028-01-01')
+  assert.equal(halfSplitBioFirstDay(), '2029-01-01')
+  const v = versionAt(co2HalfSplit, '2028-06-01')
+  assert.equal(v.source.url, 'https://www.gesetze-im-internet.de/co2kostaufg/__5a.html')
+  // Am 11.10.2026 an der Quelle gelesen (Prüfung M3); LAW_AS_OF bleibt das jüngste Abrufdatum.
+  assert.equal(v.source.retrieved, '2026-10-11')
+  assert.match(v.enacted, /BGBl\. 2026 I Nr\. 226/)
+})
+
+test('§ 5b, § 5a Abs. 4, § 5d Abs. 3 und § 43 GModG im Register', () => {
+  const log = createLawLog()
+  assert.deepEqual(law(co2HalfSplitNewBuildings, { date: '2029-03-01' }, log), { firstUseUntil: '2029-12-31', applicationFrom: '2026-05-13' })
+  assert.deepEqual(law(co2HalfSplitEmergency, { date: '2027-06-15' }, log), { windowMonths: 12, before: '2028-01-01', installedFrom: '2028-01-01', installedTo: '2028-12-31', laterFrom: '2029-01-01' })
+  assert.deepEqual(law(co2HalfSplitTwoFamily, { period: { from: '2028-01-01', to: '2028-12-31' } }, log), { maxDwellings: 2 })
+  const g = law(gmodgHeating43, { date: '2027-03-01' }, log)
+  assert.equal(g.installedAfter, '2026-07-29')
+  assert.deepEqual(g.energies, ['gas', 'oil', 'lpg'])
+  assert.deepEqual(g.mandatory.map((m) => [m.from, m.permille]), [['2029-01-01', 100], ['2030-01-01', 150], ['2035-01-01', 300], ['2040-01-01', 600]])
+  // Ab 2040 übersteigt der Pflichtanteil die Grenze von 30 % (Abweichung 10).
+  assert.equal(bioCapFrom(), '2040-01-01')
+  // Prüfung S7: die Einzelnorm auf gesetze-im-internet.de, der Regelungstext in der Fundstelle.
+  const v = versionAt(gmodgHeating43, '2027-03-01')
+  assert.equal(v.source.url, 'https://www.gesetze-im-internet.de/geg/__43.html')
+  assert.match(v.source.cite, /BGBl\. 2026 I Nr\. 226/)
+  assert.equal(v.source.retrieved, '2026-10-11')
 })

@@ -19,7 +19,13 @@ import { dayBefore as dayBeforeIso, germanDate, LAW_AS_OF, onlyVersion, valueAt 
 import { practiceEvaporatorWindow } from './law/practice.ts'
 import { messevCalibrationYears } from './law/messev.ts'
 import { OPERATING_POWER_HANDLING_LABELS, OPERATING_POWER_HANDLING_QUESTION } from './operatingPower.ts'
-import { co2CutMissing, co2DistrictEtsNew, co2EbevFactors, co2FirstPeriodStart, co2NonResidential, co2Restriction, co2RoundingDecimals, co2StageTable } from './law/co2kostaufg.ts'
+import { co2CutMissing, co2DistrictEtsNew, co2EbevFactors, co2FirstPeriodStart, co2HalfSplit, co2HalfSplitTwoFamily, co2NonResidential, co2Restriction, co2RoundingDecimals, co2StageTable, halfSplitBioFirstDay, halfSplitFirstDay } from './law/co2kostaufg.ts'
+import { gmodgHeating43 } from './law/gmodg.ts'
+
+// Hälftige Teilung nach § 5a (Heizung PR 18): Stichtage, Grenze beim Biobrennstoff, Zweifamilienhaus und § 43 GModG.
+const HALF = valueAt(co2HalfSplit, halfSplitBioFirstDay())
+const TWO = valueAt(co2HalfSplitTwoFamily, LAW_AS_OF)
+const HEATING43 = valueAt(gmodgHeating43, LAW_AS_OF)
 
 const SHARE = valueAt(hkvConsumptionShare, LAW_AS_OF)
 const CUT = valueAt(hkvCutNotByConsumption, LAW_AS_OF)
@@ -313,6 +319,21 @@ export const GLOSSARY = {
     example: 'Die Kostenaufstellung nennt „Anlieferung Brennstoff“ 3.540,00 €, darunter „Abzüglich CO₂-Kosten Vermieter“ 87,50 €, und verteilt 3.452,50 €. Zusammen mit Strom, Wartung und Messdienstkosten ergeben die Kosten aller Nutzer 3.845,51 €; bezahlt haben Sie 3.845,51 € + 87,50 € = 3.933,01 €, und das ist der Betrag Ihrer Position.',
     norm: '§ 7 Abs. 1 CO2KostAufG',
     needed: 'Ja, wenn Ihre Abrechnung eine solche Zeile hat: Dann beantworten Sie die Frage in der Karte „CO₂-Kosten“ auf der Seite Heizkosten mit „Ja“.',
+  },
+  // Heizung PR 18 (#215). Wortlaut §§ 5a–5d, 6 Abs. 1, 7 Abs. 5 CO2KostAufG und § 43 GModG am 11.10.2026 gelesen.
+  // Die Ausnahme nach § 5d Abs. 3 im Wortlaut der Gegenprüfung (M9), das Gebiet statt der Gemeinde (S9), die
+  // Mitteilung als Auslegung (S12), die Kündigungssperrfrist (K4) und die Höhe der Kürzung (K8).
+  co2HalfSplit: {
+    title: 'Hälftige Teilung ab 2028 (§ 5a CO2KostAufG)',
+    short: `Bei einer Gas-, Öl- oder Flüssiggasheizung, die nach dem ${germanDate(HEATING43.installedAfter)} in ein bestehendes Haus eingebaut wurde, tragen Sie ab dem ${germanDate(halfSplitFirstDay())} die Hälfte der Gasnetzentgelte und der CO₂-Kosten statt eines Anteils nach Stufen, ab dem ${germanDate(halfSplitBioFirstDay())} auch die Hälfte der Kosten des vorgeschriebenen Anteils an Biobrennstoff (höchstens für ${(HALF.bioCapPermille ?? 0) / 10} % des Brennstoffs). Abziehen müssen Sie Ihren Anteil in der Heizkostenabrechnung; sonst darf jeder Mieter seinen Anteil an den Heizkosten um ${CO2_CUT} % kürzen (§ 7 Abs. 5 Satz 3, Abs. 4 CO2KostAufG).`,
+    example: 'Heizperiode 01.05.2027–30.04.2028, Stufe 40 %, CO₂-Kosten 600 €; nach der Gradtagstabelle fallen 530 ‰ ab dem 01.01.2028 an. Sie tragen 0,47 × 600 € × 40 % + 0,53 × 600 € × 50 % = 271,80 €. Netzentgelte 2028 von 300,00 €: davon tragen Sie 150,00 €.',
+    norm: '§§ 5a, 5b, 5d, § 6 Abs. 1 Satz 2, § 7 Abs. 5 CO2KostAufG; § 43 Abs. 1, 7 GModG',
+    needed: `Nur bei einer Heizung nach § 43 Abs. 1 GModG und Abrechnungen mit Tagen ab ${halfSplitFirstDay().slice(0, 4)}. Tragen Sie dann den Tag des Einbaus an der Heizung ein und bei jeder Gasrechnung die Netzentgelte. ` +
+      'Ausnahmen: Nach einem Notfalleinbau ruht die Teilung zeitweise (§ 5a Abs. 4). ' +
+      `In einem Gebäude mit höchstens ${TWO.maxDwellings} Wohnungen, von denen Sie eine selbst bewohnen und die beide über eine gemeinsame Heizung versorgt werden (§ 5d Abs. 3 CO2KostAufG), gilt weiter das Stufenmodell, ` +
+      'wenn Sie das dem Mieter in Textform mitgeteilt haben (bei Abschluss des Mietvertrags; bestand der Vertrag schon, bevor die Voraussetzungen eintraten, genügt die Mitteilung mit der Abrechnung; dass die Mitteilung auch für diese Ausnahme nötig ist, ist eine Auslegung, Mietfuchs verlangt sie, damit Sie sicher gehen) ' +
+      'und das Gebäude in keinem Gebiet liegt, das eine Verordnung zur Mietpreisbremse (§ 556d BGB), zur Kappungsgrenze (§ 558 Abs. 3 BGB) oder zur Kündigungssperrfrist (§ 577a Abs. 2 BGB) bestimmt; manche Verordnungen nennen nur Teile einer Gemeinde. ' +
+      'Einen Härtefall nach § 5d Abs. 1 rechnet Mietfuchs nicht.',
   },
   hotWaterShare: {
     title: 'Warmwasseranteil',

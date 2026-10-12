@@ -33,3 +33,13 @@ test('rulesFor nennt nur Regeln, deren Gültigkeit den Zeitraum berührt', () =>
 test('Unbekannter Code ist ein Programmfehler und keine stille Antwort', () => {
   assert.throws(() => ruleCoverage('gibt-es-nicht', '2025-01-01', '2025-12-31'))
 })
+
+test('§ 5a: die Regel co2-half-split gilt ab 2028, nicht 2027 (Heizung PR 18)', () => {
+  assert.equal(ruleCoverage('co2-half-split', '2027-01-01', '2027-12-31'), 'none')
+  assert.equal(ruleCoverage('co2-half-split', '2027-05-01', '2028-04-30'), 'partial')
+  assert.equal(ruleCoverage('co2-half-split', '2028-01-01', '2028-12-31'), 'full')
+  const r = RULES.find((x) => x.code === 'co2-half-split') ?? assert.fail('keine Regel')
+  // Prüfung M9: die gemeinsame Wärmeversorgung gehört zur Ausnahme; K2: die Grenze beim Biobrennstoff.
+  assert.match(r.summary, /beide an derselben Heizung hängen/)
+  assert.match(r.summary, /höchstens für 30 % des verbrauchten Brennstoffs/)
+})
