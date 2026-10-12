@@ -100,7 +100,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
     if (unitIds.length === 0) return
     try {
       const tenancies = await api<Tenancy[]>(withProperty('/api/tenancies', propertyId))
-      const offer = selfSupplyOffer(unitIds, tenancies, localToday(), central)
+      const offer = selfSupplyOffer(unitIds, tenancies, localToday(), central, units)
       if ('error' in offer) {
         setError(offer.error)
         return
