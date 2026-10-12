@@ -23,7 +23,7 @@ import { dropIfEmpty, ensureHeatingPeriod } from './heatingPeriodContext.ts'
 import { readDegreeDayValues, readFuelDeliveries } from './read.ts'
 import { asNullableFilled, asText, frozenDeliveryText, HeatingError, heatingPeriodAt, plantServesUnit, stockTakenOverBy, stockTakenOverText, heatingRulesOf, ISO_DATE, merged, oneOfOrUndefined, plantSpanOf, raw } from './repository.ts'
 import { FUEL_GRADE_LABELS, GRADES_BY_ENERGY, HEATING_VALUE_UNIT_TEXT, isBoiler } from '../../../shared/fuelGrades.ts'
-import { costItems, degreeDayValues, FUEL_GRADE_VALUES, FUEL_QUANTITY_UNITS, fuelCarryFrozen, fuelDeliveries, fuelDeliveryParts, GAS_BASES, heatingPeriods, heatingPlants, properties } from './schema.ts'
+import { costItems, CREDIT_NOTE_KINDS, degreeDayValues, FUEL_GRADE_VALUES, FUEL_QUANTITY_UNITS, fuelCarryFrozen, fuelDeliveries, fuelDeliveryParts, GAS_BASES, heatingPeriods, heatingPlants, properties } from './schema.ts'
 
 const LATER = {
   other: 'Tragen Sie zuerst bei der Heizanlage den Energieträger ein; Lieferungen gibt es für Gas, Fernwärme und Strom einer Wärmepumpe.',
@@ -85,13 +85,15 @@ function mergeDelivery(current: FuelDelivery, body: unknown): FuelDelivery {
     fixedCents: merged(body, 'fixedCents', current.fixedCents, nullableInt),
     usedByService: merged(body, 'usedByService', current.usedByService, (v) => v !== false),
     parts: merged(body, 'parts', current.parts, readParts),
+    // #251: Antwort auf „Was ist diese Gutschrift?“; ein unbekannter Wert heißt „nicht beantwortet“.
+    creditNoteKind: merged(body, 'creditNoteKind', current.creditNoteKind, (v) => oneOfOrUndefined(CREDIT_NOTE_KINDS, v) ?? null),
   }
 }
 
 const emptyDelivery = (id: string, plantId: string): FuelDelivery => ({
   id, plantId, label: '', invoiceDate: null, deliveredAt: null, invoiceFrom: null, invoiceTo: null, unitId: null, amountCents: null,
   quantity: null, quantityUnit: null, energyKwh: null, gasBasis: null, heatingValue: null, fuelGrade: null, emissionsKg: null, co2CostCents: null,
-  emissionFactor: null, gridFeeCents: null, bioCostCents: null, sharePermille: null, fixedCents: null, estimated: false, usedByService: true, parts: [],
+  emissionFactor: null, gridFeeCents: null, bioCostCents: null, sharePermille: null, fixedCents: null, estimated: false, usedByService: true, parts: [], creditNoteKind: null,
 })
 
 // `contracting` (Heizung PR 16): Bei Contracting sind Lieferungen Wärmerechnungen wie bei Fernwärme (`billingEnergy`).
@@ -124,7 +126,8 @@ const ENERGY_WORDS: Record<HeatingEnergy, string> = {
 // Warmwasseranteil rechnet (Brennwert/Heizwert, Heizwert laut Rechnung, Zeile der Tabelle). Der Anteil einer
 // abgeschlossenen Abrechnung ist mit ihr eingefroren; die Angaben wirken nur auf offene Heizperioden, in der
 // abgeschlossenen erscheinen sie nur als Abweichung der heutigen Rechnung (`deviation`, settlementDiff.ts).
-const unfrozenAside = (d: FuelDelivery) => ({ ...d, label: '', usedByService: true, gasBasis: null, heatingValue: null, fuelGrade: null })
+// #251: ebenso die Antwort zur Gutschrift ohne Rechnung, die nur die Stufe eines Hinweises steuert.
+const unfrozenAside = (d: FuelDelivery) => ({ ...d, label: '', usedByService: true, gasBasis: null, heatingValue: null, fuelGrade: null, creditNoteKind: null })
 
 async function guardDelivery(db: Executor, plant: PlantFacts, before: FuelDelivery | null, after: FuelDelivery): Promise<void> {
   // Heizung PR 16 (Prüfung C-M4): nach der Energie der Abrechnung. Bei Contracting, auch mit „Sonstiges“, sind
@@ -348,6 +351,65 @@ export async function removeDelivery(db: Database, id: string): Promise<boolean>
   }
   await db.transaction(async (tx) => { await tx.delete(fuelDeliveries).where(eq(fuelDeliveries.id, id)) })
   return true
+}
+
+// ---------- Gutschrift ohne Rechnung zuordnen (#251) ----------
+
+// Antwort „Sie berichtigt eine andere Lieferung“: Die Positionen einer Lieferung, die zusammen weniger als 0 € ergeben,
+// hängen danach an der Lieferung derselben Anlage, die sie berichtigen, und stehen in deren Heizperiode. Hat der
+// Lieferant Brennstoff zurückgenommen, berichtigt der Rumpf Menge, kg und CO₂-Kosten der Zielrechnung (§ 3 Abs. 3
+// CO2KostAufG: der CO₂-Kostenanteil hängt an der Menge; ein Preisnachlass lässt ihn unberührt). In einer
+// Transaktion; ist eine der beiden Heizperioden abgeschlossen oder hat eine abgeschlossene einen Teil der Gutschrift
+// eingefroren, wird nichts geändert. `null`: Diese Lieferung gibt es nicht.
+export type ReassignCreditResult = { target: FuelDelivery; sourceEmpty: boolean; moved: string[] }
+export async function reassignCredit(db: Database, sourceId: string, body: unknown): Promise<ReassignCreditResult | null> {
+  const deliveries = await readFuelDeliveries(db)
+  const source = deliveries.find((d) => d.id === sourceId)
+  if (!source) return null
+  const name = `„${source.label || 'Lieferung'}“`
+  const targetId = raw(body, 'targetId')
+  const target = typeof targetId === 'string' ? deliveries.find((d) => d.id === targetId && d.id !== sourceId) : undefined
+  if (!target) throw new HeatingError(400, `Bitte wählen Sie die Lieferung, die die Gutschrift ${name} berichtigt.`)
+  if (target.plantId !== source.plantId) throw new HeatingError(400, `Die Gutschrift ${name} gehört nur zu einer Lieferung derselben Heizanlage.`)
+  if (target.estimated) throw new HeatingError(400, `„${target.label || 'Lieferung'}“ ist eine Schätzung; eine Gutschrift gehört zu einer echten Rechnung.`)
+  const plant = await plantOf(db, source.plantId)
+  if (!plant) return null
+  const all = await db.select({ id: costItems.id, deliveryId: costItems.fuelDeliveryId, amountCents: costItems.amountCents, period: costItems.period }).from(costItems)
+    .where(inArray(costItems.fuelDeliveryId, [source.id, target.id]))
+  const mine = all.filter((c) => c.deliveryId === source.id)
+  const sum = (id: string) => all.filter((c) => c.deliveryId === id).reduce((a, c) => a + c.amountCents, 0)
+  if (mine.length === 0 || sum(source.id) >= 0) {
+    throw new HeatingError(400, `Die Positionen der Lieferung ${name} ergeben nicht weniger als 0 €; zuordnen lässt sich nur eine Gutschrift ohne Rechnung.`)
+  }
+  if (sum(target.id) <= 0) throw new HeatingError(400, `Die Positionen der Lieferung „${target.label || 'Lieferung'}“ ergeben nicht mehr als 0 €; eine Gutschrift gehört zu einer Rechnung.`)
+  const heating = await heatingRulesOf(db, plant.id)
+  const targetEnd = target.invoiceTo ?? target.deliveredAt
+  const sourceEnd = source.invoiceTo ?? source.deliveredAt
+  if (!heating || targetEnd === null || sourceEnd === null) throw new HeatingError(400, `Bitte tragen Sie zuerst die Zeiträume der Lieferungen ein.`)
+  for (const date of [sourceEnd, targetEnd]) {
+    const at = await heatingPeriodAt(db, plant.id, date)
+    if (at?.closed) throw new HeatingError(409, `Die Abrechnung ${periodLabel(at.period)} ist abgeschlossen; eine Zuordnung änderte sie. Öffnen Sie die Abrechnung ${periodLabel(at.period)} zuerst wieder.`)
+  }
+  if ((await frozenCount(db, source.id)) > 0) throw new HeatingError(409, frozenText(source.label || 'Lieferung'))
+  // Berichtigte Mengenfelder der Zielrechnung, mit denselben Prüfungen wie beim Ändern einer Lieferung.
+  const fields = Object.fromEntries((['quantity', 'emissionsKg', 'co2CostCents'] as const).flatMap((k) => (raw(body, k) !== undefined ? [[k, raw(body, k)]] : [])))
+  const next = mergeDelivery(target, fields)
+  const period = periodContaining(heating.rules, targetEnd).key
+  await db.transaction(async (tx) => {
+    if (Object.keys(fields).length > 0) {
+      try {
+        await guardDelivery(tx, plant, target, next)
+      } catch (err) {
+        if (err instanceof HeatingError) throw new HeatingError(err.status, `Die Gutschrift ${name} ist nicht zugeordnet: ${err.message}`)
+        throw err
+      }
+      await tx.update(fuelDeliveries).set(rowOf(next)).where(eq(fuelDeliveries.id, target.id))
+    }
+    for (const c of mine) await tx.update(costItems).set({ fuelDeliveryId: target.id, period }).where(eq(costItems.id, c.id))
+  })
+  const saved = (await readFuelDeliveries(db)).find((x) => x.id === target.id) ?? target
+  const [left] = await db.select({ n: count() }).from(costItems).where(eq(costItems.fuelDeliveryId, source.id))
+  return { target: saved, sourceEmpty: (left?.n ?? 0) === 0, moved: mine.map((c) => c.id) }
 }
 
 // ---------- Ortswerte der Gradtagzahlen (Stufe 4 in 3.2) ----------

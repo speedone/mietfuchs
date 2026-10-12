@@ -1984,7 +1984,11 @@ export type FuelDelivery = {
   estimated: boolean
   usedByService: boolean
   parts: FuelDeliveryPart[]
+  // #251: Ergeben die Positionen zusammen weniger als 0 € (Gutschrift ohne Rechnung), hat der Vermieter angegeben,
+  // dass die Rechnung dazu nicht in Mietfuchs steht (`standalone`); `null` heißt nicht beantwortet.
+  creditNoteKind: CreditNoteKind | null
 }
+export type CreditNoteKind = 'standalone'
 
 // Das Blatt „CO₂-Angaben für den Messdienst“ (Heizung PR 17, #210): je Rechnung, die die Heizperiode
 // berührt, die Angaben des § 3 Abs. 1 Nr. 1–4 CO2KostAufG samt Menge, Zeitraum, Rechnungsdatum und Betrag,

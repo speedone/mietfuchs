@@ -49,7 +49,7 @@ test('S-W1 Zeitraumrechnungen: je Rechnung der Teil in der Heizperiode und die S
   const gas = (id: string, from: string, to: string): FuelDelivery => ({
     id, plantId: 'hp', label: `Gas ${from}`, invoiceDate: null, deliveredAt: null, invoiceFrom: from, invoiceTo: to, unitId: null, amountCents: null, quantity: null, quantityUnit: null,
     energyKwh: null, gasBasis: null, heatingValue: null, fuelGrade: null, emissionsKg: 10000, co2CostCents: 65450, emissionFactor: null, gridFeeCents: null, bioCostCents: null,
-    sharePermille: null, fixedCents: null, estimated: false, usedByService: true, parts: [],
+    sharePermille: null, fixedCents: null, estimated: false, usedByService: true, parts: [], creditNoteKind: null,
   })
   const src = co2Source(2025, {})
   const both2 = {

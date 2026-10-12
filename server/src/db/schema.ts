@@ -38,6 +38,7 @@ import type {
   ExternalMeasure,
   FuelGrade,
   FuelQuantityUnit,
+  CreditNoteKind,
   GasBasis,
   HcaScale,
   ServiceHeatUnit,
@@ -413,6 +414,8 @@ export const HEAT_PUMP_MAJORITIES = exactly<HeatPumpMajority>()(['yes', 'no', 'u
 export const CO2_RESTRICTIONS = exactly<Co2Restriction>()(['none', 'building', 'supply', 'both'] as const)
 export const FUEL_QUANTITY_UNITS = exactly<FuelQuantityUnit>()(['l', 'kg', 'm3', 'kWh', 'srm'] as const)
 export const GAS_BASES = exactly<GasBasis>()(['hs', 'hi'] as const)
+// #251: Antwort auf „Was ist diese Gutschrift?“, gespeichert nur „Gutschrift, deren Rechnung nicht in Mietfuchs steht“.
+export const CREDIT_NOTE_KINDS = exactly<CreditNoteKind>()(['standalone'] as const)
 // Eigene Heizkostenabrechnung (Heizung PR 10).
 export const HEATING_TARGETS = exactly<HeatingTarget>()(['both', 'heating', 'water'] as const)
 export const HOT_WATER = exactly<HotWater>()(['combined', 'separate', 'none'] as const)
@@ -946,12 +949,16 @@ export const fuelDeliveries = sqliteTable(
     fixedCents: integer('fixed_cents'),
     estimated: integer('estimated', { mode: 'boolean' }).notNull().default(false),
     usedByService: integer('used_by_service', { mode: 'boolean' }).notNull().default(true),
+    // #251: `null` heißt „nicht beantwortet“; steuert nur die Stufe des Hinweises, keine Zahl.
+    creditNoteKind: text('credit_note_kind', { enum: CREDIT_NOTE_KINDS }),
   },
   () => [
     oneOf('fuel_deliveries_quantity_unit_known', 'quantity_unit', FUEL_QUANTITY_UNITS),
     oneOf('fuel_deliveries_gas_basis_known', 'gas_basis', GAS_BASES),
     // Heizung PR 11.
     oneOf('fuel_deliveries_fuel_grade_known', 'fuel_grade', FUEL_GRADE_VALUES),
+    // #251, eigener Schritt nach der Spalte (Neubau der Tabelle, drizzle/README.md).
+    oneOf('fuel_deliveries_credit_note_kind_known', 'credit_note_kind', CREDIT_NOTE_KINDS),
     check('fuel_deliveries_invoice_complete', sql.raw('("invoice_from" IS NULL) = ("invoice_to" IS NULL)')),
     isoDate('fuel_deliveries_invoice_from_valid', 'invoice_from'),
     isoDate('fuel_deliveries_invoice_to_valid', 'invoice_to'),

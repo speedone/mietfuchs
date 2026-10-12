@@ -12,7 +12,7 @@ const plant: Co2SheetInput['plant'] = { id: 'hp', name: 'Kessel', energy: 'oil',
 const lieferung = (over: Partial<FuelDelivery>): FuelDelivery => ({
   id: 'd', plantId: 'hp', label: 'Heizöl', invoiceDate: '2025-03-15', deliveredAt: '2025-03-15', invoiceFrom: null, invoiceTo: null, unitId: null,
   amountCents: 315000, quantity: 3000, quantityUnit: 'l', energyKwh: null, gasBasis: null, heatingValue: null, fuelGrade: null, emissionsKg: 8028.9, co2CostCents: 52549,
-  emissionFactor: 0.2664, gridFeeCents: null, bioCostCents: null, sharePermille: null, fixedCents: null, estimated: false, usedByService: true, parts: [], ...over,
+  emissionFactor: 0.2664, gridFeeCents: null, bioCostCents: null, sharePermille: null, fixedCents: null, estimated: false, usedByService: true, parts: [], creditNoteKind: null, ...over,
 })
 const unit = (id: string, areaM2: number, over: Partial<Co2SheetInput['units'][number]> = {}): Co2SheetInput['units'][number] => ({ id, areaM2, ...over })
 const input = (over: Partial<Co2SheetInput> = {}): Co2SheetInput => ({

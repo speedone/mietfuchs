@@ -80,7 +80,7 @@ export function selfDelivery(over: Partial<FuelDelivery> = {}, year = 2025): Fue
     id: 'd1', plantId: 'hp', label: 'Erdgas', invoiceDate: `${year + 1}-01-15`, deliveredAt: null, invoiceFrom: `${year}-01-01`, invoiceTo: `${year}-12-31`,
     unitId: null, amountCents: null, quantity: null, quantityUnit: null, energyKwh: 60000, gasBasis: null, heatingValue: null, fuelGrade: null,
     emissionsKg: 10883.4, co2CostCents: 59859, emissionFactor: null, gridFeeCents: null, bioCostCents: null, sharePermille: null, fixedCents: 0,
-    estimated: false, usedByService: true, parts: [],
+    estimated: false, usedByService: true, parts: [], creditNoteKind: null,
     ...over,
   }
 }

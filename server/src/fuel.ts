@@ -33,9 +33,9 @@ export type ShareContext = { table: DegreeDayTable; local: ReadonlyMap<string, n
 export type FuelDeliveryInput = Pick<
   FuelDelivery,
   'id' | 'label' | 'invoiceFrom' | 'invoiceTo' | 'deliveredAt' | 'amountCents' | 'fixedCents' | 'sharePermille' | 'emissionsKg' | 'co2CostCents' | 'estimated' | 'usedByService' | 'parts'
-> & Partial<Pick<FuelDelivery, 'energyKwh'>> & { creditNoteKind?: 'standalone' | null }
-// `energyKwh` seit Heizung PR 10 (Warmwasseranteil der eigenen Heizkostenabrechnung); optional, damit ein
-// von Hand gebauter Schnappschuss sie nicht nennen muss.
+> & Partial<Pick<FuelDelivery, 'energyKwh' | 'creditNoteKind'>>
+// `energyKwh` seit Heizung PR 10 (Warmwasseranteil der eigenen Heizkostenabrechnung), `creditNoteKind` seit #251;
+// optional, damit ein von Hand gebauter Schnappschuss sie nicht nennen muss.
 
 // Die Energie einer Lieferung in kWh, wie abgerechnet: an der Lieferung, sonst die Summe der Teilmengen,
 // wenn jede eine nennt (Heizung PR 10).

@@ -1,0 +1,1 @@
+ALTER TABLE `fuel_deliveries` ADD `credit_note_kind` text;
