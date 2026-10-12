@@ -4,7 +4,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { co2SheetFor } from '../src/co2Sheet.ts'
 import { periodKey, periodOfKey } from '../../shared/period.ts'
-import { delivery, MAI, plant, three } from '../testing/halfSplitSnapshot.ts'
+import { delivery, item, MAI, plant, tenant, three } from '../testing/halfSplitSnapshot.ts'
 import type { FuelDelivery } from '../../shared/types.ts'
 
 const H27 = periodOfKey(MAI, periodKey('2027-05')) ?? assert.fail('kein Zeitraum')
@@ -31,4 +31,25 @@ test('Notfalleinbau: das Blatt nennt die Zeit ohne Teilung; ohne Merkmal oder vo
   assert.equal(ohne.halfSplit, undefined)
   const vorher = co2SheetFor(quelle(plant(), [delivery({ invoiceFrom: '2026-05-01', invoiceTo: '2027-04-30' })]), 'objekt-1', 'hp', H26, '2027-06-01') ?? assert.fail('kein Blatt')
   assert.equal(vorher.halfSplit, undefined)
+})
+
+// Durchsicht M2: Die Ausnahme nach § 5d Abs. 3 gilt unabhängig davon, wer die Heizkosten verteilt. Beim
+// Messdienst füllt die Abrechnung keine eigene Aufteilung; das Blatt nennt die Ausnahme trotzdem.
+test('Zweifamilienhaus beim Messdienst: Ausnahme nach § 5d Abs. 3, kein Anteil in der Teilung', () => {
+  const zfh = {
+    ...three(),
+    properties: [{ id: 'objekt-1', kind: 'zfh' as const, cableBuiltBeforeDec2021: null, tightMarket: false, periodRules: MAI }],
+    units: [
+      { id: 'a', name: 'Oben', areaM2: 300, participates: true, propertyId: 'objekt-1' },
+      { id: 'b', name: 'Unten', areaM2: 300, participates: false, selfUsed: true, selfPersons: 1, propertyId: 'objekt-1' },
+    ],
+    tenancies: [{ ...tenant('ta', 'a'), halfSplitNoticeOn: '2027-04-01' }],
+    costItems: [item({ id: 'gas', key: 'amounts', tenancyAmounts: { ta: 450000 } })],
+    heatingPlants: [plant({ method: 'service' })],
+    fuelDeliveries: [delivery()],
+  }
+  const s = co2SheetFor(zfh, 'objekt-1', 'hp', H27, '2028-06-01') ?? assert.fail('kein Blatt')
+  const h = s.halfSplit ?? assert.fail('keine Angaben zu § 5a')
+  assert.equal(h.sharePermille, 0)
+  assert.equal(h.twoFamily, 'excepted')
 })

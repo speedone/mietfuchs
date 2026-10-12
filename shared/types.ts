@@ -1769,6 +1769,9 @@ export type HeatingStatement = {
   // § 2 Abs. 7), die Ausnahme im Wortlaut der Abrechnung (`exemption`) und die Befunde je Rechnung. Anzeige und
   // Blatt für den Messdienst lesen sie von hier. Fehlt in älteren Abrechnungen.
   co2Check?: { applies: boolean; exemption: string | null; findings: { deliveryId: string; texts: string[] }[] }
+  // Zweifamilienhaus nach § 5d Abs. 3 CO2KostAufG (Heizung PR 18, Durchsicht M2), gleich wer verteilt: `excepted`
+  // ohne hälftige Teilung, `split` mit ihr trotz Zweifamilienhaus. Fehlt, wenn die Ausnahme nicht in Frage kommt.
+  halfSplitTwoFamily?: 'excepted' | 'split'
 }
 
 // Was die Seite Heizkosten zu einer Heizperiode lädt (Heizung PR 6): die Angabe zum Warmwasser, die

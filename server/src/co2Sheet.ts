@@ -214,9 +214,11 @@ function halfSplitOfSheet(i: Co2SheetInput): Co2SheetHalfSplit | null {
     emergency: i.plant.emergencyInstall === true ? valueAt(co2HalfSplitEmergency, installed) : null,
   })
   const billed = i.heating?.co2?.halfSplit ?? null
+  // § 5d Abs. 3 gilt auch beim Messdienst (Durchsicht M2): aus der Anlage der Abrechnung, gleich wer verteilt.
+  const twoFamily = i.heating?.halfSplitTwoFamily ?? billed?.twoFamily ?? null
   const span = { from: i.h.from, to: i.h.to }
   const table = valueAt(hkvDegreeDays, i.h.from)
-  const share = billed?.twoFamily === 'excepted' ? 0
+  const share = twoFamily === 'excepted' ? 0
     : termsWeight(termsFromPieces(versionsIn(co2HalfSplit, span), applicableRanges(status, span), (r) => degreeDayPermille([r], table), (v) => v.co2Permille)) * 1000
   return {
     installedOn: installed,
@@ -226,7 +228,7 @@ function halfSplitOfSheet(i: Co2SheetInput): Co2SheetHalfSplit | null {
     sharePermille: share,
     landlordGridFeeCents: billed?.landlordGridFeeCents ?? null,
     landlordBioCents: billed?.landlordBioCents ?? null,
-    twoFamily: billed?.twoFamily ?? null,
+    twoFamily,
   }
 }
 

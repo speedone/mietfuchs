@@ -4954,6 +4954,43 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     if (half.status.kind !== 'applies') return
     const s = half.status
     const cap = valueAt(co2HalfSplit, halfSplitBioFirstDay()).bioCapPermille ?? 0
+    // § 5d Abs. 3, 4: das Zweifamilienhaus mit Eigennutzung.
+    const twoFamilyNotice = (): void => {
+      const two = half.two
+      if (two.kind === 'notApplicable') return
+      const intro = `${where}: Sie bewohnen das Gebäude selbst, es hat höchstens ${two.kind === 'excepted' || two.kind === 'split' ? (half.rules.maxDwellings === 2 ? 'zwei' : String(half.rules.maxDwellings ?? '')) : ''} Wohnungen, und beide hängen an dieser Heizung.`
+      const withSettlement = two.kind === 'excepted' ? two.notices.filter((n) => n.withSettlement).map((n) => n.tenantName) : []
+      const text = two.kind === 'excepted'
+        ? `${intro} Das Gebäude liegt nach Ihrer Angabe in dieser Heizperiode in keinem Gebiet, das eine Verordnung nach § 556d Abs. 2 Satz 1, § 558 Abs. 3 Satz 3 oder § 577a Abs. 2 Satz 2 BGB als angespannten Wohnungsmarkt bestimmt, und Sie haben das ${andList(two.notices.map((n) => `${n.tenantName} am ${fmtDay(n.noticeOn)}`))} in Textform mitgeteilt (dass die Mitteilung auch für Abs. 3 nötig ist, ist eine Auslegung; Mietfuchs verlangt sie, damit Sie sicher gehen). ` +
+          (withSettlement.length > 0
+            ? `Bei ${andList(withSettlement)} bestand der Mietvertrag schon, bevor die Voraussetzungen eintraten; dann genügt die Mitteilung bei der ersten Geltendmachung, in der Regel mit dieser Abrechnung (§ 5d Abs. 4 Satz 2 CO2KostAufG; BT-Drs. 21/7009, S. 156). Ist sie noch nicht zugegangen, legen Sie sie der Abrechnung in Textform bei. `
+            : '') +
+          'Dann tragen Sie nur die CO₂-Kosten nach dem Stufenmodell und keine Netzentgelte und keinen Biobrennstoff (§ 5d Abs. 3, 4 CO2KostAufG). Jeder neue Mieter muss die Mitteilung bei Abschluss seines Mietvertrags bekommen (§ 5d Abs. 4 Satz 1).'
+        : two.reason === 'tightMarket'
+          ? `${intro} Das Gebäude liegt nach Ihrer Angabe in dieser Heizperiode in einem Gebiet mit angespanntem Wohnungsmarkt; die Ausnahme des § 5d Abs. 3 gilt dann nicht (Satz 2), und es wird hälftig geteilt. Gilt die Verordnung nur für einen Teil der Heizperiode, teilt Mietfuchs trotzdem für die ganze hälftig (Festlegung).`
+          : two.reason === 'tightMarketUnknown'
+            ? `${intro} Ob das Gebäude in einem Gebiet liegt, das eine Verordnung zur Mietpreisbremse (§ 556d BGB), zur Kappungsgrenze (§ 558 Abs. 3 BGB) oder zur Kündigungssperrfrist (§ 577a Abs. 2 BGB) bestimmt, ist nicht angegeben; manche Verordnungen nennen nur Teile einer Gemeinde. Bis dahin teilt Mietfuchs hälftig; tragen Sie die Antwort beim Objekt ein, bei „ja“ mit der Geltung der Verordnung.`
+            : [
+              intro,
+              two.missing.length > 0
+                ? `Für ${andList(two.missing)} ist keine Mitteilung in Textform eingetragen; die Ausnahme setzt sie voraus (§ 5d Abs. 4; dass das auch für Abs. 3 gilt, ist eine Auslegung). Bestand der Mietvertrag schon, bevor die Voraussetzungen eintraten, genügt die Mitteilung mit dieser Abrechnung (Satz 2); tragen Sie dann am Mietverhältnis den Tag ein, an dem sie zugeht.`
+                : '',
+              two.late.length > 0
+                ? `Die Mitteilung an ${andList(two.late.map((n) => `${n.tenantName} vom ${fmtDay(n.noticeOn)}`))} kam zu spät für diese Heizperiode; später mitgeteilte Umstände werden im jeweiligen Abrechnungszeitraum nicht berücksichtigt (§ 5d Abs. 4 Satz 4 CO2KostAufG). In dieser Heizperiode wird hälftig geteilt, ab der nächsten nicht mehr.`
+                : '',
+              'Mietfuchs wendet die Ausnahme nur an, wenn für jeden Mieter der Heizperiode eine rechtzeitige Mitteilung eingetragen ist (Festlegung).',
+            ].filter((x) => x !== '').join(' ')
+      warn('co2.half-split-two-family', text, plantSubject)
+    }
+    if (half.two.kind === 'excepted') {
+      // Durchsicht M3: Unter der Ausnahme weder Teilungssatz noch Abzug samt Kürzung noch Vorrat.
+      warn('co2.half-split',
+        `${where}: Die Heizung wurde am ${fmtDay(s.from)} nach § 43 Abs. 1 GModG eingebaut${s.basis === 'newBuilding' ? ', in einem Neubau (§ 5b CO2KostAufG)' : ''}. ` +
+          'Die hälftige Teilung nach § 5a gilt hier wegen § 5d Abs. 3 CO2KostAufG nicht; Sie tragen nur die CO₂-Kosten nach dem Stufenmodell (siehe den Hinweis zum Zweifamilienhaus).',
+        plantSubject)
+      twoFamilyNotice()
+      return
+    }
     const parts: string[] = [
       `${where}: Die Heizung wurde am ${fmtDay(s.from)} nach § 43 Abs. 1 GModG eingebaut${s.basis === 'newBuilding' ? ', in einem Neubau (§ 5b CO2KostAufG)' : ''}. ` +
         `Ab dem ${fmtDay(halfSplitFirstDay())} tragen Sie die Hälfte der Gasnetzentgelte und der CO₂-Kosten, ab dem ${fmtDay(halfSplitBioFirstDay())} auch die Hälfte der Kosten des Pflichtanteils an Biobrennstoff, höchstens für ${fmtNum(cap / 10)} % des verbrauchten Brennstoffs (§ 5a Abs. 3 CO2KostAufG).`,
@@ -5010,31 +5047,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           `${BIO_ZERO_TEXT} Tragen Sie die 0 dann an jeder Lieferung beim Biobrennstoff ein.`,
         plantSubject)
     }
-    const two = half.two
-    if (two.kind === 'notApplicable') return
-    const intro = `${where}: Sie bewohnen das Gebäude selbst, es hat höchstens ${two.kind === 'excepted' || two.kind === 'split' ? (half.rules.maxDwellings === 2 ? 'zwei' : String(half.rules.maxDwellings ?? '')) : ''} Wohnungen, und beide hängen an dieser Heizung.`
-    const withSettlement = two.kind === 'excepted' ? two.notices.filter((n) => n.withSettlement).map((n) => n.tenantName) : []
-    const text = two.kind === 'excepted'
-      ? `${intro} Das Gebäude liegt nach Ihrer Angabe in dieser Heizperiode in keinem Gebiet, das eine Verordnung nach § 556d Abs. 2 Satz 1, § 558 Abs. 3 Satz 3 oder § 577a Abs. 2 Satz 2 BGB als angespannten Wohnungsmarkt bestimmt, und Sie haben das ${andList(two.notices.map((n) => `${n.tenantName} am ${fmtDay(n.noticeOn)}`))} in Textform mitgeteilt (dass die Mitteilung auch für Abs. 3 nötig ist, ist eine Auslegung; Mietfuchs verlangt sie, damit Sie sicher gehen). ` +
-        (withSettlement.length > 0
-          ? `Bei ${andList(withSettlement)} bestand der Mietvertrag schon, bevor die Voraussetzungen eintraten; dann genügt die Mitteilung bei der ersten Geltendmachung, in der Regel mit dieser Abrechnung (§ 5d Abs. 4 Satz 2 CO2KostAufG; BT-Drs. 21/7009, S. 156). Ist sie noch nicht zugegangen, legen Sie sie der Abrechnung in Textform bei. `
-          : '') +
-        'Dann tragen Sie nur die CO₂-Kosten nach dem Stufenmodell und keine Netzentgelte und keinen Biobrennstoff (§ 5d Abs. 3, 4 CO2KostAufG). Jeder neue Mieter muss die Mitteilung bei Abschluss seines Mietvertrags bekommen (§ 5d Abs. 4 Satz 1).'
-      : two.reason === 'tightMarket'
-        ? `${intro} Das Gebäude liegt nach Ihrer Angabe in dieser Heizperiode in einem Gebiet mit angespanntem Wohnungsmarkt; die Ausnahme des § 5d Abs. 3 gilt dann nicht (Satz 2), und es wird hälftig geteilt. Gilt die Verordnung nur für einen Teil der Heizperiode, teilt Mietfuchs trotzdem für die ganze hälftig (Festlegung).`
-        : two.reason === 'tightMarketUnknown'
-          ? `${intro} Ob das Gebäude in einem Gebiet liegt, das eine Verordnung zur Mietpreisbremse (§ 556d BGB), zur Kappungsgrenze (§ 558 Abs. 3 BGB) oder zur Kündigungssperrfrist (§ 577a Abs. 2 BGB) bestimmt, ist nicht angegeben; manche Verordnungen nennen nur Teile einer Gemeinde. Bis dahin teilt Mietfuchs hälftig; tragen Sie die Antwort beim Objekt ein, bei „ja“ mit der Geltung der Verordnung.`
-          : [
-            intro,
-            two.missing.length > 0
-              ? `Für ${andList(two.missing)} ist keine Mitteilung in Textform eingetragen; die Ausnahme setzt sie voraus (§ 5d Abs. 4; dass das auch für Abs. 3 gilt, ist eine Auslegung). Bestand der Mietvertrag schon, bevor die Voraussetzungen eintraten, genügt die Mitteilung mit dieser Abrechnung (Satz 2); tragen Sie dann am Mietverhältnis den Tag ein, an dem sie zugeht.`
-              : '',
-            two.late.length > 0
-              ? `Die Mitteilung an ${andList(two.late.map((n) => `${n.tenantName} vom ${fmtDay(n.noticeOn)}`))} kam zu spät für diese Heizperiode; später mitgeteilte Umstände werden im jeweiligen Abrechnungszeitraum nicht berücksichtigt (§ 5d Abs. 4 Satz 4 CO2KostAufG). In dieser Heizperiode wird hälftig geteilt, ab der nächsten nicht mehr.`
-              : '',
-            'Mietfuchs wendet die Ausnahme nur an, wenn für jeden Mieter der Heizperiode eine rechtzeitige Mitteilung eingetragen ist (Festlegung).',
-          ].filter((x) => x !== '').join(' ')
-    warn('co2.half-split-two-family', text, plantSubject)
+    twoFamilyNotice()
   }
   for (const pot of co2Pots) {
     // Ohne Positionen kein Topf, außer die Anlage hat Lieferungen (Heizung PR 7): Dann gehört ihre
@@ -5159,6 +5172,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // nach Gradtagen (ohne Lieferungen) dient der Nachstufung des Messdienstes, dem Hinweis und dem Vorrat
     // (Abweichung 2 des Plans).
     const half = applicable ? halfSplitOf(potPlant, hPeriod) : NO_HALF
+    // § 5d Abs. 3 gilt unabhängig davon, wer verteilt (Durchsicht M2): auch beim Messdienst, für das Blatt.
+    if (half.status.kind === 'applies' && half.two.kind !== 'notApplicable') report.halfSplitTwoFamily = half.two.kind
     const co2TermsByDays = termsFromPieces(half.piecesOf(hPeriod), half.applicable, half.weigh, (v) => v.co2Permille)
     if (co2OffByExemption(pot.plantId, String(pot.period.key)) && co2Deductions.has(pot.carrierId ?? '') && settledHere) {
       warn('co2.exempt-deducted',
