@@ -1,6 +1,6 @@
 // Die Einrichtung „Heizung“ (Heizung PR 4, Entwurf 11.2), ohne DOM.
 import { describe, expect, test } from 'vitest'
-import { asksContracting, asksSwitch, contractingSwap, energyLabelOf, HOW_TO_TELL, PREVIOUS_SUPPLY_OPTIONS, asksGeneration, asksNewInstall, asksTakeOver, buildingOptions, canSwap, connectionNote, emptyHeatingForm, emptySwapForm, formulaFormOf, HEAT_GENERATION_OPTIONS, HOT_WATER_OPTIONS, hotWaterBody, isFormula, parseDecimal, SELF_HOT_WATER_OPTIONS, selfFormulaBody, PER_UNIT_ENERGY_OPTIONS, plantOptions, swapBody, swapMetersOf, unmeasurableLabel, heatingPlantBody, heatingSummary, heatingToForm, whoHint, whoOptions, type HeatingForm } from './heatingForm'
+import { asksContracting, asksFuelContract, FUEL_CONTRACT_OPTIONS, selfSupplyOffer, asksSwitch, contractingSwap, energyLabelOf, HOW_TO_TELL, PREVIOUS_SUPPLY_OPTIONS, asksGeneration, asksNewInstall, asksTakeOver, buildingOptions, canSwap, connectionNote, emptyHeatingForm, emptySwapForm, formulaFormOf, HEAT_GENERATION_OPTIONS, HOT_WATER_OPTIONS, hotWaterBody, isFormula, parseDecimal, SELF_HOT_WATER_OPTIONS, selfFormulaBody, PER_UNIT_ENERGY_OPTIONS, plantOptions, swapBody, swapMetersOf, unmeasurableLabel, heatingPlantBody, heatingSummary, heatingToForm, whoHint, whoOptions, type HeatingForm } from './heatingForm'
 import type { HeatingPlant, Unit } from './types'
 
 const UNITS: Pick<Unit, 'id' | 'name' | 'noConnection'>[] = [{ id: 'eg', name: 'EG' }, { id: 'og', name: 'OG' }, { id: 'garage', name: 'Garage', noConnection: ['waerme'] }]
@@ -35,7 +35,8 @@ describe('Einrichtung Heizung', () => {
 
   test('Eigene Heizung je Wohnung: beim Mieter keine Anlage, beim Vermieter eine Etagenheizung', () => {
     expect(heatingPlantBody(ausgefuellt({ energy: 'perUnit' }), UNITS)).toEqual({ error: 'Wer hat den Vertrag für die Heizung in der Wohnung?' })
-    expect(heatingPlantBody(ausgefuellt({ energy: 'perUnit', contract: 'tenant' }), UNITS)).toEqual({ none: expect.stringMatching(/keine Heizanlage/) })
+    // Heizung PR 19: der Anspruch nach § 6 Abs. 2 CO2KostAufG wird erklärt, und die Wohnungen gehen an das Angebot „Mieter heizt selbst“.
+    expect(heatingPlantBody(ausgefuellt({ energy: 'perUnit', contract: 'tenant' }), UNITS)).toEqual({ none: expect.stringMatching(/keine Heizanlage.*Seite Kosten unter „CO₂-Erstattung“/), selfSupplyUnitIds: ['eg', 'og'], central: false })
     expect(heatingPlantBody(ausgefuellt({ energy: 'perUnit', contract: 'landlord' }), UNITS)).toEqual({ error: 'Womit heizen die Etagenheizungen?' })
   })
 
@@ -377,5 +378,47 @@ describe('Wärmelieferung (Heizung PR 16)', () => {
     const zurueck = swapBody(contractingSwap(f, false, OEL), OEL)
     expect(zurueck).toMatchObject({ body: { contracting: false } })
     expect('body' in zurueck && 'heatDeliverySince' in zurueck.body).toBe(false)
+  })
+})
+
+// Heizung PR 19 (#97, Prüfung M1, Gegenprüfung M1): zentrale Heizung mit Brennstoffvertrag beim Mieter.
+describe('Wer hat den Liefervertrag für den Brennstoff? (Heizung PR 19)', () => {
+  test('gefragt bei Gas, Öl, Flüssiggas und Kohle einer neuen zentralen Anlage, nicht bei Contracting, Fernwärme oder beim Ändern', () => {
+    for (const energy of ['gas', 'oil', 'lpg', 'coal'] as const) expect(asksFuelContract(ausgefuellt({ energy }), null)).toBe(true)
+    for (const energy of ['heatPump', 'districtHeating', 'pellets', 'perUnit'] as const) expect(asksFuelContract(ausgefuellt({ energy }), null)).toBe(false)
+    expect(asksFuelContract(ausgefuellt({ energy: 'gas', contracting: true }), null)).toBe(false)
+    expect(asksFuelContract(ausgefuellt({ energy: 'gas' }), 'hp1')).toBe(false)
+    // Voreinstellung „Ich“: Wer nichts ändert, merkt nichts.
+    expect(emptyHeatingForm(UNITS).fuelContract).toBe('landlord')
+    expect(FUEL_CONTRACT_OPTIONS.map((o) => o.value)).toEqual(['landlord', 'tenantAll', 'tenantOthers'])
+  })
+
+  test('„Der Mieter, der alle angeschlossenen Wohnungen gemietet hat“: keine Anlage, die Erklärung und die Wohnungen für das Angebot', () => {
+    const r = heatingPlantBody(ausgefuellt({ energy: 'oil', fuelContract: 'tenantAll', who: '' }), UNITS)
+    if (!('none' in r)) throw new Error(JSON.stringify(r))
+    expect(r.selfSupplyUnitIds).toEqual(['eg', 'og'])
+    expect(r.central).toBe(true)
+    expect(r.none).toMatch(/Wartung, Messungen nach dem Immissionsschutzrecht oder Betriebsstrom über Ihren Zähler/)
+    expect(r.none).toMatch(/§ 6 Abs\. 2 CO2KostAufG/)
+    expect(r.none).toMatch(/§ 6 Abs\. 2 Satz 6/)
+    expect(heatingPlantBody(ausgefuellt({ energy: 'oil', fuelContract: 'tenantAll', unitIds: [] }), UNITS)).toEqual({ error: 'Bitte haken Sie mindestens eine Wohnung an, die an dieser Heizung hängt.' })
+  })
+
+  test('„Ein Mieter, und darüber werden auch andere Wohnungen versorgt“: nicht abgedeckt, mit dem Satz der Gegenprüfung', () => {
+    expect(heatingPlantBody(ausgefuellt({ energy: 'gas', fuelContract: 'tenantOthers' }), UNITS)).toEqual({
+      error: 'Liefert ein Mieter über seinen Vertrag auch Wärme an andere Wohnungen, regeln Heizkostenverordnung und CO2KostAufG die Verteilung nicht ausdrücklich für diesen Fall. Mietfuchs rechnet das nicht; bitte klären Sie die Abrechnung gesondert.',
+    })
+  })
+
+  test('Das Angebot: laufende Mietverhältnisse der Wohnungen; bei der zentralen Heizung nur ein Mieter, sonst nicht abgedeckt', () => {
+    const t = (id: string, unitId: string, tenantName: string, over: { end?: string | null; heatingModel?: 'selfSupply' } = {}) =>
+      ({ id, unitId, tenantName, start: '2020-01-01', end: null, ...over })
+    const list = [t('a', 'eg', 'Mieter A'), t('b', 'og', 'Mieter A'), t('c', 'og', 'Früher', { end: '2023-12-31' }), t('d', 'garage', 'Mieter G')]
+    expect(selfSupplyOffer(['eg', 'og'], list, '2026-10-12', true)).toEqual({ tenancyIds: ['a', 'b'], names: ['Mieter A'] })
+    expect(selfSupplyOffer(['eg', 'og'], [...list, t('e', 'og', 'Mieter B')], '2026-10-12', true)).toEqual({ error: expect.stringMatching(/^Liefert ein Mieter über seinen Vertrag auch Wärme an andere Wohnungen/) })
+    // Etagenheizung: jeder Mieter hat seinen eigenen Vertrag.
+    expect(selfSupplyOffer(['eg', 'og'], [...list, t('e', 'og', 'Mieter B')], '2026-10-12', false)).toEqual({ tenancyIds: ['a', 'b', 'e'], names: ['Mieter A', 'Mieter B'] })
+    // Schon umgestellt: kein Angebot.
+    expect(selfSupplyOffer(['eg'], [t('a', 'eg', 'Mieter A', { heatingModel: 'selfSupply' })], '2026-10-12', true)).toEqual({ tenancyIds: [], names: [] })
   })
 })

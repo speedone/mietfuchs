@@ -89,12 +89,19 @@ export type PersonEntry = {
 // Betriebskostenpauschale (§ 556 Abs. 2 BGB) oder Inklusivmiete.
 export type CostModel = 'settlement' | 'flatRate' | 'inclusive'
 
+// Für Heizung und Warmwasser zusätzlich `selfSupply` (Heizung PR 19, #97): Der Mieter versorgt sich selbst mit
+// Wärme, er bezieht den Brennstoff oder die Wärme über einen eigenen Vertrag (Etagenheizung oder zentrale
+// Heizung mit Brennstoffvertrag beim Mieter; § 5 Abs. 3, § 6 Abs. 2 CO2KostAufG). Was der Vermieter dafür
+// selbst trägt, etwa Wartung und Betriebsstrom, wird abgerechnet wie bei `settlement` (`allocationModel` in
+// calc.ts); gegen die CO₂-Kosten des Mieters steht die Erstattung nach § 6 Abs. 2.
+export type HeatingModel = CostModel | 'selfSupply'
+
 export type Tenancy = {
   id: string
   unitId: string
   // Getrennt für kalte Kosten und für Heizung und Warmwasser (#93); fehlend heißt `settlement`.
   costModel?: CostModel
-  heatingModel?: CostModel
+  heatingModel?: HeatingModel
   // Die Pauschale je Monat (#93), eine eigene Staffel und nicht die der Vorauszahlung: Das
   // Mietkonto führt sie im Soll, die Abrechnung rechnet sie nie an. Stünde sie in der Staffel
   // der Vorauszahlung, würde sie bei einem gemischten Modell gegen die abgerechneten Kosten
@@ -763,6 +770,7 @@ export type NotSettled = {
   tenantName: string
   unitName: string
   costModel: CostModel
+  // Wie abgerechnet wird; `selfSupply` erscheint hier nie, es wird abgerechnet wie `settlement` (Heizung PR 19).
   heatingModel: CostModel
 }
 

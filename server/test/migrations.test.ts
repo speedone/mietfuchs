@@ -146,6 +146,8 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // Schritte neu erzeugt und die Marken hier ersetzt.
   '0048_gmodg': 'ef5a9fb55225d55c3f156396388a0e5e72d0912b2d7094d4f307a930ebd949ff',
   '0049_gmodg_bedingungen': 'cd6436edeb5048ad3e74fcac65330714d91c947dfeb8ae603ae0ead5570bb127',
+  // Heizung PR 19 (#97): „Mieter heizt selbst“ an der Bedingung des Heizmodells. Entsteht #251 vorher, wird neu nummeriert.
+  '0050_heizmodell_bedingungen': '979c6a51940cb3e849ecf5c40bd31e557eeeb021be61c7fe47d298c3ee7326f6',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

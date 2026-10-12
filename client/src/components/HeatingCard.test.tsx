@@ -252,3 +252,38 @@ test('Wärmelieferung: die Auswahl „Wer versorgte vorher?“ zeigt den gespeic
   expect((screen.getByLabelText(/Ein Dritter betreibt die Heizung/) as HTMLInputElement).checked).toBe(true)
   expect((screen.getByLabelText(/Tag der Umstellung/) as HTMLInputElement).value).toBe('2025-10-01')
 })
+
+// Heizung PR 19 (#97, Prüfung M1): zentrale Heizung, Brennstoffvertrag beim Mieter. Keine Anlage; nach Rückfrage
+// stehen die laufenden Mietverhältnisse auf „Mieter heizt selbst“.
+test('Zentrale Heizung, Brennstoffvertrag beim Mieter: keine Anlage, nach Rückfrage selfSupply an den Mietverhältnissen', async () => {
+  const mieter = (id: string, unitId: string) => ({ id, unitId, tenantName: 'Mieter A', persons: 1, personHistory: [], start: '2020-01-01', end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [] })
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    const method = init?.method ?? 'GET'
+    const path = url.split('?')[0]
+    if (method !== 'GET') {
+      sent.push({ method, url, body: JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown> })
+      return json({ ok: true })
+    }
+    if (path === '/api/properties') return json([{ id: 'objekt-1', name: 'Haus', kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null }])
+    if (path === '/api/tenancies') return json([mieter('ta', 'eg'), mieter('tb', 'og')])
+    return json([])
+  })
+  render(<PropertyProvider><UIProvider><HeatingCard units={UNITS} /></UIProvider></PropertyProvider>)
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Heizung einrichten' })).toBeTruthy())
+  fireEvent.click(screen.getByRole('button', { name: 'Heizung einrichten' }))
+  fireEvent.change(await screen.findByLabelText(/Womit wird geheizt/), { target: { value: 'oil' } })
+  expect(valueOf(/Wer hat den Liefervertrag für den Brennstoff/)).toBe('landlord')
+  fireEvent.change(screen.getByLabelText(/Wer hat den Liefervertrag für den Brennstoff/), { target: { value: 'tenantAll' } })
+  expect(valueOf(/Wer hat den Liefervertrag für den Brennstoff/)).toBe('tenantAll')
+  expect(screen.queryByLabelText(/Wer erstellt Ihre Heizkostenabrechnung/)).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }))
+  const dialog = await screen.findByRole('dialog')
+  expect(within(dialog).getByText(/Die laufenden Mietverhältnisse von Mieter A werden unter Heizung auf „Mieter heizt selbst“ gestellt/)).toBeTruthy()
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Umstellen' }))
+  await waitFor(() => expect(sent).toHaveLength(2))
+  expect(sent.map((s) => [s.method, s.url, s.body])).toEqual([
+    ['PUT', '/api/tenancies/ta', { heatingModel: 'selfSupply' }],
+    ['PUT', '/api/tenancies/tb', { heatingModel: 'selfSupply' }],
+  ])
+  expect(sent.some((s) => s.url.startsWith('/api/heating-plants'))).toBe(false)
+})

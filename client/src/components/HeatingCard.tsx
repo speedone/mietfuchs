@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { AssignableHeatingItem, DevicesInstalledAfter, DevicesRemote, HeatingEnergy, HeatingPlant, Meter, NewDevicesInstall, Unit } from '../types'
+import type { AssignableHeatingItem, DevicesInstalledAfter, DevicesRemote, HeatingEnergy, HeatingPlant, Meter, NewDevicesInstall, Tenancy, Unit } from '../types'
 import { api, errorText, fmtEuro } from '../api'
 import { useProperty, withProperty } from '../property'
 import { periodContaining, periodLabel, periodOfKey, rulesOf } from '../../../shared/period.ts'
@@ -19,6 +19,7 @@ import {
   CAPTURE_OPTIONS, CONTRACT_OPTIONS, ENERGY_OPTIONS, HOW_TO_TELL, asksRemote, INSTALLED_OPTIONS, NEW_DEVICES_AFTER, NEW_INSTALL_OPTIONS, NEW_INSTALL_QUESTION, PER_UNIT_ENERGY_OPTIONS, REMOTE_OPTIONS, TAKES_OVER_BACK, TAKES_OVER_HINT, takesOverBack, TAKES_OVER_OPTIONS, TAKES_OVER_QUESTION, asksNewInstall, asksTakeOver, buildingOptions, canSwap, emptyHeatingForm, emptySwapForm, heatingPlantBody,
   connectionNote, heatingSummary, heatingToForm, NEWER_THAN, swapBody, swapMetersOf, whoHint, whoOptions, type CaptureAnswer, type EnergyAnswer, type HeatingForm, type PerUnitContract, type SwapForm, type WhoSettles,
   asksContracting, asksSwitch, CONTRACTING_LABEL, contractingSwap,
+  asksFuelContract, FUEL_CONTRACT_OPTIONS, FUEL_CONTRACT_QUESTION, selfSupplyOffer,
   asksGeneration, GENERATION_QUESTION, HEAT_GENERATION_OPTIONS, MAJORITY_EXPLAINED, MAJORITY_OPTIONS, MAJORITY_QUESTION,
 } from '../heatingForm'
 
@@ -92,6 +93,33 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
     setForm(null)
   }
 
+  // Heizung PR 19 (Prüfung M1): Heizt der Mieter selbst, stellt die Karte nach Rückfrage die laufenden
+  // Mietverhältnisse der angehakten Wohnungen auf „Mieter heizt selbst“. Bei der zentralen Heizung nur, wenn es ein
+  // einziger Mieter ist; sonst sagt sie, dass Mietfuchs das nicht abdeckt.
+  async function offerSelfSupply(unitIds: string[], central: boolean) {
+    if (unitIds.length === 0) return
+    try {
+      const tenancies = await api<Tenancy[]>(withProperty('/api/tenancies', propertyId))
+      const offer = selfSupplyOffer(unitIds, tenancies, localToday(), central)
+      if ('error' in offer) {
+        setError(offer.error)
+        return
+      }
+      if (offer.tenancyIds.length === 0) return
+      const ok = await confirm({
+        title: 'Auf „Mieter heizt selbst“ stellen?',
+        message: `Die laufenden Mietverhältnisse von ${offer.names.join(', ')} werden unter Heizung auf „Mieter heizt selbst“ gestellt. Wartung und Betriebsstrom, die Sie tragen, rechnet Mietfuchs weiter ab; Hinweise auf eine CO₂-Kürzung entfallen dafür.`,
+        confirmLabel: 'Umstellen',
+      })
+      if (!ok) return
+      for (const id of offer.tenancyIds) await api(`/api/tenancies/${id}`, { method: 'PUT', body: JSON.stringify({ heatingModel: 'selfSupply' }) })
+      toast('Umgestellt.')
+      await onChanged?.()
+    } catch (e) {
+      setError(errorText(e))
+    }
+  }
+
   async function save() {
     if (!form) return
     const others = plants.filter((p) => p.id !== editingId)
@@ -103,6 +131,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
     if ('none' in result) {
       close()
       toast(result.none)
+      await offerSelfSupply(result.selfSupplyUnitIds, result.central)
       return
     }
     const back = editingId !== null && takesOverBack(plants.find((p) => p.id === editingId), form)
@@ -211,6 +240,9 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
 
   const kind = property?.kind ?? 'mfh'
   // Welche Wohnungen an der Anlage hängen, bei zentraler Heizung wie bei der Etagenheizung (Heizung PR 9).
+  // Heizung PR 19: Der Mieter hat den Vertrag (Etagenheizung oder zentrale Heizung).
+  const fuelByTenant = form !== null && asksFuelContract(form, editingId) && form.fuelContract !== 'landlord'
+  const selfSupplyForm = form !== null && ((form.energy === 'perUnit' && form.contract === 'tenant') || fuelByTenant)
   const unitChoice = form && (
     <fieldset className="field grow no-connection">
       <legend className="field-legend">Welche Wohnungen hängen an dieser Heizung?</legend>
@@ -227,7 +259,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
           </label>
         ))}
       </div>
-      <small className="muted">{form.energy === 'perUnit' ? HOW_TO_TELL.unitsPerUnit : HOW_TO_TELL.units}</small>
+      <small className="muted">{selfSupplyForm ? HOW_TO_TELL.unitsSelfSupply : form.energy === 'perUnit' ? HOW_TO_TELL.unitsPerUnit : HOW_TO_TELL.units}</small>
     </fieldset>
   )
   const periodText = (key: AssignableHeatingItem['period']): string => {
@@ -354,6 +386,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
                   {CONTRACT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </label>
+              {form.contract === 'tenant' && unitChoice}
               {form.contract === 'landlord' && (
                 <>
                   <label className="field grow">
@@ -377,8 +410,28 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
                 </>
               )}
             </>
+          ) : fuelByTenant ? (
+            <>
+              {/* Heizung PR 19: zentrale Heizung, Brennstoffvertrag beim Mieter; keine Anlage. */}
+              <label className="field grow">
+                {FUEL_CONTRACT_QUESTION}
+                <select value={form.fuelContract} onChange={(e) => setForm({ ...form, fuelContract: FUEL_CONTRACT_OPTIONS.find((o) => o.value === e.target.value)?.value ?? 'landlord' })}>
+                  {FUEL_CONTRACT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </label>
+              {form.fuelContract === 'tenantAll' && unitChoice}
+              <small className="muted">Mehr dazu: <Term id="co2Refund">CO₂-Erstattung</Term></small>
+            </>
           ) : (
             <>
+              {asksFuelContract(form, editingId) && (
+                <label className="field grow">
+                  {FUEL_CONTRACT_QUESTION}
+                  <select value={form.fuelContract} onChange={(e) => setForm({ ...form, fuelContract: FUEL_CONTRACT_OPTIONS.find((o) => o.value === e.target.value)?.value ?? 'landlord' })}>
+                    {FUEL_CONTRACT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </label>
+              )}
               <label className="field grow">
                 Wer erstellt Ihre Heizkostenabrechnung?
                 <select value={form.who} onChange={(e) => setForm({ ...form, who: e.target.value as WhoSettles })}>
