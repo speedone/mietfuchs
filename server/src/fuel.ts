@@ -244,6 +244,9 @@ export type FuelCarry = {
   estimate: { cents: number; ids: string[]; ratios: number[]; frozen: number[] } | null
 }
 
+// Durchsicht #277, S1: Eine Vorlage für einen Schätzvorschlag deckt mindestens 100 ‰ der Gradtage der Lücke ab.
+const MAX_TEMPLATE_FACTOR = 10
+
 export type FuelResult = {
   lines: FuelDeliveryLine[]
   carries: FuelCarry[]
@@ -645,16 +648,29 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
   const gaps: FuelGap[] = billCoverage.gaps.map((g) => {
     const permille = degreeDayPermille([g], ctx.table)
     let estimate: FuelGap['estimate'] = null
-    const t = withItems && !looseWithoutRange ? templateFor(g.from) : null
-    if (t) {
+    // Die Vorlage (8.2 Nr. 2), wie `templateFor`, aber nur eine Rechnung, die mindestens 100 ‰ der Gradtage der Lücke
+    // abdeckt (Faktor höchstens 10; nach Zählerstand dieselbe Grenze an der Menge). Eine Vorlage mit fast keinen Gradtagen
+    // ergäbe sonst einen beliebig hohen Vorschlag (Durchsicht #277, S1: 50,00 € über zwei Julitage → 54.400,00 €). Sonst die
+    // nächstältere; trägt keine, gibt es keinen Vorschlag, und die Lücke nennt die zu kurze (`shortTemplate`).
+    const scaled = (t: FuelDeliveryInput) => {
       const tr = rangeFor(t)
-      const T = totalOf(t)
-      const fixed = t.fixedCents ?? 0
       const qGap = ctx.readings ? meterQuantity(ctx.readings, g) : null
       const qT = ctx.readings ? meterQuantity(ctx.readings, tr) : null
       const byMeter = qGap !== null && qT !== null && qT > 0
       const tPermille = degreeDayPermille([tr], ctx.table)
       const factor = byMeter ? (qGap ?? 0) / (qT ?? 1) : tPermille > 0 ? permille / tPermille : daysOf(g) / daysOf(tr)
+      return { t, tr, byMeter, factor }
+    }
+    const candidates = withItems && !looseWithoutRange
+      ? real.filter((d) => itemsOf(d.id).length > 0 && totalOf(d) > 0).sort((a, b) => (rangeFor(a).to < rangeFor(b).to ? 1 : -1))
+      : []
+    const ordered = [...candidates.filter((d) => rangeFor(d).to < g.from), ...candidates.filter((d) => rangeFor(d).to >= g.from)].map(scaled)
+    const chosen = ordered.find((c) => c.factor <= MAX_TEMPLATE_FACTOR) ?? null
+    const shortTemplate = chosen === null && ordered[0] ? labelOf(ordered[0].t) : null
+    if (chosen) {
+      const { t, tr, byMeter, factor } = chosen
+      const T = totalOf(t)
+      const fixed = t.fixedCents ?? 0
       const amountCents = roundHalf((T - fixed) * factor + (fixed * daysOf(g)) / daysOf(tr))
       // #251 (c2): Liegt der feste Bestandteil der Vorlage über ihrer Summe (etwa nach Storno und Gutschrift), ergäbe der
       // Vorschlag 0 € oder weniger; geschätzt wird dann nicht, die Lücke bleibt mit ihrem Hinweis stehen.
@@ -670,7 +686,7 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
     }
     const zero = zeroInvoices.filter((z) => intersect(z.range, g) !== null).map((z) => z.label)
     const credit = creditOnly.filter((z) => intersect(z.range, g) !== null).map((z) => z.label)
-    return { from: g.from, to: g.to, days: daysOf(g), permille, estimate, ...(zero.length > 0 ? { zeroInvoices: zero } : {}), ...(credit.length > 0 ? { creditOnly: credit } : {}) }
+    return { from: g.from, to: g.to, days: daysOf(g), permille, estimate, ...(zero.length > 0 ? { zeroInvoices: zero } : {}), ...(credit.length > 0 ? { creditOnly: credit } : {}), ...(shortTemplate ? { shortTemplate } : {}) }
   })
 
   return {

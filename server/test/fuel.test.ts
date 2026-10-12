@@ -301,3 +301,18 @@ test('#251 R-3: zwei Rechnungen über dieselben Tage einer Schätzung lösen sie
   assert.ok(Math.abs(summe - 90774) <= 1, `zusammen ${summe} statt 90774`)
   assert.ok((carryOf(r, 'd3').estimate?.cents ?? 0) > 0, 'd3 löst keinen Tag ab')
 })
+
+// Durchsicht #277, S1 (Invariante, Startwert 447): Eine Vorlage mit fast keinen Gradtagen ergab beliebig hohe Vorschläge
+// (50,00 € über zwei Julitage → 3.050,00 € für Mai/Juni, 54.400,00 € für den Rest der Heizperiode). Vorlage ist nur eine
+// Rechnung, die mindestens 100 ‰ der Gradtage der zu schätzenden Spanne abdeckt; sonst die nächstältere, sonst keine.
+test('#277 S1: Keine Vorlage für den Schätzvorschlag, die weniger als 100 ‰ der Gradtage der Lücke abdeckt', () => {
+  const N = delivery({ id: 'n', label: 'Nachlieferung', invoiceFrom: '2025-07-01', invoiceTo: '2025-07-02' })
+  const nItem = { id: 'pn', period: '2025-05', amountCents: 5000, fuelDeliveryId: 'n' }
+  const allein = plantFuel(input({ deliveries: [N], items: [nItem] })) ?? assert.fail('kein Ergebnis')
+  assert.deepEqual(allein.gaps.map((g) => [g.from, g.to, g.estimate?.amountCents ?? null, g.shortTemplate ?? null]), [
+    ['2025-05-01', '2025-06-30', null, 'Nachlieferung'],
+    ['2025-07-03', '2026-04-30', null, 'Nachlieferung'],
+  ])
+  const mitAlter = plantFuel(input({ deliveries: [VORJAHR, N], items: [vorjahrItem, nItem] })) ?? assert.fail('kein Ergebnis')
+  assert.deepEqual(mitAlter.gaps.map((g) => [g.from, g.estimate?.basedOn ?? null]), [['2025-05-01', 'Gas 2024/2025'], ['2025-07-03', 'Gas 2024/2025']])
+})
