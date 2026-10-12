@@ -234,10 +234,15 @@ export function selfSupplyOffer(
   tenancies: readonly { id: string; unitId: string; tenantName: string; start: string; end: string | null; heatingModel?: string }[],
   today: string,
   central: boolean,
+  units: readonly { id: string; selfUsed?: boolean; participates?: boolean }[] = [],
 ): { tenancyIds: string[]; names: string[] } | { error: string } {
   const running = tenancies.filter((t) => unitIds.includes(t.unitId) && t.start <= today && (t.end === null || t.end >= today))
   const names = [...new Set(running.map((t) => t.tenantName.trim()))]
   if (central && names.length > 1) return { error: NOT_COVERED }
+  // Durchsicht S-4: Bei der zentralen Heizung ist auch eine angehakte selbstgenutzte oder leere Einheit Wärme an Dritte
+  // (der Vermieter oder eine Wohnung, die über den Vertrag des Mieters mitbeheizt wird).
+  if (central && unitIds.some((id) => units.find((u) => u.id === id)?.selfUsed === true && units.find((u) => u.id === id)?.participates !== true)) return { error: NOT_COVERED }
+  if (central && unitIds.some((id) => !running.some((t) => t.unitId === id))) return { error: NOT_COVERED }
   const open = running.filter((t) => t.heatingModel !== 'selfSupply')
   return { tenancyIds: open.map((t) => t.id), names: [...new Set(open.map((t) => t.tenantName.trim()))] }
 }
