@@ -112,3 +112,18 @@ describe('Durchsicht von #239, I3', () => {
     expect(gapProblem(['w'], {}, { status: '', reason: '' })).toMatch(/fehlt ein Zählerstand/)
   })
 })
+
+// Heizung PR 19 (Durchsicht S-3): „Mieter heizt selbst“ ist meist eine Eigenschaft der Wohnung; der Nachmieter übernimmt
+// es samt der Art, sonst bekäme er wieder den Hinweis auf eine CO₂-Kürzung, die ihm nicht zusteht.
+test('Mieterwechsel: der Nachmieter heizt ebenfalls selbst, mit derselben Art; sonst bleibt es bei der Abrechnung', () => {
+  const selbst = buildTenantChange(input({ tenancy: { start: '2024-01-01', heatingModel: 'selfSupply', selfSupplyKind: 'central' } }))
+  if (!('body' in selbst)) throw new Error(JSON.stringify(selbst))
+  expect(selbst.body.newTenancy).toMatchObject({ heatingModel: 'selfSupply', selfSupplyKind: 'central' })
+  const ohneArt = buildTenantChange(input({ tenancy: { start: '2024-01-01', heatingModel: 'selfSupply' } }))
+  if (!('body' in ohneArt)) throw new Error(JSON.stringify(ohneArt))
+  expect(ohneArt.body.newTenancy).toMatchObject({ heatingModel: 'selfSupply' })
+  expect(ohneArt.body.newTenancy).not.toHaveProperty('selfSupplyKind')
+  const normal = buildTenantChange(input({ tenancy: { start: '2024-01-01', heatingModel: 'flatRate' } }))
+  if (!('body' in normal)) throw new Error(JSON.stringify(normal))
+  expect(normal.body.newTenancy).not.toHaveProperty('heatingModel')
+})
