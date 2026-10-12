@@ -102,6 +102,8 @@ const SHIPPED: readonly string[] = [
   'co2.half-split.emergency|||{"windowMonths":12,"before":"2028-01-01","installedFrom":"2028-01-01","installedTo":"2028-12-31","laterFrom":"2029-01-01"}',
   'co2.half-split.new-buildings|||{"firstUseUntil":"2029-12-31","applicationFrom":"2026-05-13"}',
   'co2.half-split.two-family|||{"maxDwellings":2}',
+  // 0.11.0 (Heizung PR 19, #97)
+  'co2.self-supply|2023-01-01||{"claimMonths":12,"refundMonths":12,"ownAppliancesCutPercent":5,"nonResidentialPermille":500}',
   'gmodg.heating-43|||{"installedAfter":"2026-07-29","energies":["gas","oil","lpg"],"mandatory":[{"from":"2029-01-01","permille":100},{"from":"2030-01-01","permille":150},{"from":"2035-01-01","permille":300},{"from":"2040-01-01","permille":600}]}',
 ]
 
