@@ -1155,9 +1155,12 @@ mehrere je Lieferung (Abschlag, Schlussrechnung, Gutschrift). Abgegrenzt wird in
   `fuelClosedPeriod` (darüber: `fuel.reduced-after-close`, die Mieter jener Abrechnung haben zu viel
   getragen; darunter: `fuel.closed-period-part`, nachfordern nur dort). Der eingefrorene Übertrag führt
   dafür `bookedCents`, damit ein späteres Storno das Hereingebuchte gegenbucht. **`estimatesIn`** (R-3)
-  nimmt als ersetzt den Betrag der Schätzung für die Tage, die keine andere echte Rechnung abdeckt,
-  höchstens den eingefrorenen; der eingefrorene Betrag ist schon um die beim Abschluss abgedeckten
-  Tage gekürzt. Die Invariante prüft dazu (c1) Abdeckung ohne Gutschriften, (c2) keinen negativen
+  nimmt als ersetzt den Betrag der Schätzung für die Tage, die die Rechnung abdeckt; Tage, die
+  mehrere Rechnungen anderer Heizperioden abdecken, zählen für jede zu ihrem Teil, und zusammen
+  ersetzen sie höchstens den eingefrorenen Betrag (der ist schon um die beim Abschluss abgedeckten
+  Tage gekürzt). Hat die abgeschlossene Heizperiode neben dem Teil einer Lieferung eine Schätzung
+  eingefroren (die Lieferung war damals eine Gutschrift ohne Rechnung), gilt beides zusammen gegen den
+  heutigen Teil (`fuelEstimateDiff`). Einen Schätzvorschlag gibt es nur über 0 €. Die Invariante prüft dazu (c1) Abdeckung ohne Gutschriften, (c2) keinen negativen
   Vorschlag, (c3) je Mieter gegen die offene andere Heizperiode, und die Gutschrift je Mieter auch neben
   einer zweiten Rechnung (doppeltes Kontrafaktum); Variante „Gutschrift ohne Rechnung“.
 - **Gesperrt bis zu ihren PRs:** Vorratsenergien (PR 8), Lieferungen je Wohnung (PR 9), Netzentgelte
