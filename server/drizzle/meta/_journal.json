@@ -323,6 +323,20 @@
       "when": 1791763279225,
       "tag": "0045_verbrauchsinfo",
       "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "6",
+      "when": 1791766068552,
+      "tag": "0046_eichfrist",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "6",
+      "when": 1791766080332,
+      "tag": "0047_eichfrist_bedingungen",
+      "breakpoints": true
     }
   ]
 }

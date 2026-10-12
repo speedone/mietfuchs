@@ -434,7 +434,7 @@ test('Die Verschmelzung erreicht jede Spalte des Schemas', async () => {
       coll: 'meters', table: meters,
       body: {
         propertyId: 'objekt-1', name: 'Speicher', unitId: null, type: 'waerme', meterNumber: 'ABC', unit: 'kWh',
-        heatingPlantId: 'hp1', heatingRole: 'dhwHeat', remoteReadable: false, installedOn: '2022-03-01',
+        heatingPlantId: 'hp1', heatingRole: 'dhwHeat', remoteReadable: false, installedOn: '2022-03-01', calibratedUntil: 2028,
       },
     },
     // Heizung PR 12: Skala und Faktor gibt es nur am Heizkostenverteiler einer Wohnung, nie an einem Zähler

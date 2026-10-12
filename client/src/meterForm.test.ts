@@ -1,7 +1,7 @@
 // Die Einheit eines Zählers folgt seiner Sparte (#142): Ein Wärmezähler, bei dem niemand die
 // Einheit geändert hat, zeigte „m³“.
 import { describe, expect, test } from 'vitest'
-import { asksRemote, defaultMeterUnit, emptyMeterForm, heatingRoleLabel, heatingRoleOptions, meterBody, meterPlantId, meterToForm, oldEndText, withMeterType } from './meterForm'
+import { asksCalibration, asksRemote, calibrationSuggestion, defaultMeterUnit, emptyMeterForm, heatingRoleLabel, heatingRoleOptions, meterBody, meterPlantId, meterToForm, oldEndText, withMeterType } from './meterForm'
 
 test('Vorgabe der Einheit je Sparte: Wasser m³, Wärme und Strom kWh, Sonstiges leer', () => {
   expect(defaultMeterUnit('kaltwasser')).toBe('m³')
@@ -38,7 +38,7 @@ test('Warmwasser in m³, Heizkostenverteiler in Einheiten (Heizung PR 4)', () =>
 test('Zähler der Heizanlage: nur ohne Wohnung und mit Anlage; Fernablesbarkeit nur bei Geräten nach § 5 HeizkostenV', () => {
   const speicher = { ...emptyMeterForm(), name: 'Speicher', type: 'waerme' as const, unit: 'kWh', heatingRole: 'dhwHeat' as const, remote: 'no' as const, installedOn: '2022-03-01' }
   expect(meterBody(speicher, 'hp1')).toEqual({
-    body: { name: 'Speicher', unitId: null, type: 'waerme', unit: 'kWh', heatingPlantId: 'hp1', heatingRole: 'dhwHeat', remoteReadable: false, installedOn: '2022-03-01', hcaScale: null, ratingFactor: null },
+    body: { name: 'Speicher', unitId: null, type: 'waerme', unit: 'kWh', heatingPlantId: 'hp1', heatingRole: 'dhwHeat', remoteReadable: false, installedOn: '2022-03-01', hcaScale: null, ratingFactor: null, calibratedUntil: null },
   })
   // Ohne Anlage im Objekt bleibt es ein Hauptzähler, und dann fragt das Formular nicht nach § 5. Die
   // Felder fehlen dann im Rumpf, damit eine gespeicherte Angabe bleibt (Durchsicht von #230, M1).
@@ -65,7 +65,7 @@ test('Bearbeiten: was gespeichert ist, steht wieder im Formular', () => {
   expect(meterToForm({
     id: 'm1', propertyId: 'objekt-1', name: 'Speicher', unitId: null, type: 'waerme', unit: 'kWh',
     heatingPlantId: 'hp1', heatingRole: 'dhwHeat', remoteReadable: false, installedOn: '2022-03-01',
-  })).toEqual({ id: 'm1', name: 'Speicher', unitId: '', type: 'waerme', meterNumber: '', unit: 'kWh', heatingRole: 'dhwHeat', keptRole: 'dhwHeat', remote: 'no', installedOn: '2022-03-01', heatingPlantId: 'hp1', hca: { scale: '', factor: '' } })
+  })).toEqual({ id: 'm1', name: 'Speicher', unitId: '', type: 'waerme', meterNumber: '', unit: 'kWh', heatingRole: 'dhwHeat', keptRole: 'dhwHeat', remote: 'no', installedOn: '2022-03-01', heatingPlantId: 'hp1', hca: { scale: '', factor: '' }, calibratedUntil: '' })
 })
 
 // Sichtprüfung E19: „Gehört zur Heizanlage?“ stand auch bei Kaltwasser. Ein Wasserzähler ist weder
@@ -125,4 +125,65 @@ test('Heizkostenverteiler (Heizung PR 12): Skala und Faktor im Rumpf, beim Bearb
   // Wechselt die Sparte, gehen Skala und Faktor als leer mit, sonst lehnte der Server ab.
   expect(meterBody({ ...hkv, type: 'waerme' }, null)).toMatchObject({ body: { hcaScale: null, ratingFactor: null } })
   expect(meterToForm({ id: 'h1', propertyId: 'objekt-1', name: 'Wohnzimmer', unitId: 'eg', type: 'hkv', unit: 'Einheiten', hcaScale: 'unit', ratingFactor: 0.875 }).hca).toEqual({ scale: 'unit', factor: '0,875' })
+})
+
+describe('Eichfrist (Heizung PR 21, #98)', () => {
+  const vierstellig = 'Bitte tragen Sie das Eichjahr vierstellig ein, so wie es der Messdienst oder der Eichschein nennt, oder lassen Sie das Feld leer.'
+
+  test('Eichjahr ins Formular und zurück, auch ohne Heizanlage; leer ist null; beim Heizkostenverteiler nie', () => {
+    const m = { id: 'm1', propertyId: 'objekt-1', name: 'Kaltwasser', unitId: null, type: 'kaltwasser' as const, unit: 'm³', calibratedUntil: 2028 }
+    const form = meterToForm(m)
+    expect(form.calibratedUntil).toBe('2028')
+    const r = meterBody(form, null)
+    if ('error' in r) throw new Error(r.error)
+    expect(r.body.calibratedUntil).toBe(2028)
+    // Mit Heizanlage ebenso (Prüfung des Plans, S11: nicht nur im Teil für die Heizanlage).
+    const mitAnlage = meterBody(form, 'hp1')
+    expect('body' in mitAnlage && mitAnlage.body.calibratedUntil).toBe(2028)
+    const leer = meterBody({ ...form, calibratedUntil: ' ' }, null)
+    expect('body' in leer && leer.body.calibratedUntil).toBe(null)
+    expect(meterToForm({ ...m, calibratedUntil: null }).calibratedUntil).toBe('')
+    expect(emptyMeterForm().calibratedUntil).toBe('')
+    const hkv = meterBody({ ...emptyMeterForm(), name: 'HKV', type: 'hkv', unitId: 'u1', calibratedUntil: '2028' }, null)
+    expect('body' in hkv && hkv.body.calibratedUntil).toBe(null)
+    expect(asksCalibration({ type: 'hkv' })).toBe(false)
+    for (const type of ['kaltwasser', 'warmwasser', 'waerme', 'strom', 'sonstig'] as const) expect(asksCalibration({ type })).toBe(true)
+  })
+
+  test('Eichjahr, das keine vierstellige Jahreszahl ist, ergibt einen Satz', () => {
+    for (const bad of ['28', '2028,5', '0999', 'M22', '20280']) {
+      expect(meterBody({ ...emptyMeterForm(), name: 'K', calibratedUntil: bad }, null)).toEqual({ error: vierstellig })
+    }
+  })
+
+  test('Vorschlag aus der Jahreszahl auf dem Zähler: Jahreszahl plus Frist aus dem Register', () => {
+    expect(calibrationSuggestion('warmwasser', '2022')).toEqual({ year: 2028, text: 'Vorschlag: geeicht bis Ende 2028 (Jahreszahl auf dem Zähler 2022, Eichfrist 6 Jahre).' })
+    expect(calibrationSuggestion('kaltwasser', ' 2025 ')).toEqual({ year: 2031, text: 'Vorschlag: geeicht bis Ende 2031 (Jahreszahl auf dem Zähler 2025, Eichfrist 6 Jahre).' })
+    expect(calibrationSuggestion('kaltwasser', '2018')).toEqual({ year: 2024, text: 'Vorschlag: geeicht bis Ende 2024 (Jahreszahl auf dem Zähler 2018, Eichfrist 6 Jahre).' })
+    // Warmwasser 2015: fünf Jahre, Ablauf Ende 2020, vor dem Inkrafttreten der sechs Jahre.
+    expect(calibrationSuggestion('warmwasser', '2015')).toEqual({ year: 2020, text: 'Vorschlag: geeicht bis Ende 2020 (Jahreszahl auf dem Zähler 2015, Eichfrist 5 Jahre).' })
+  })
+
+  test('Review Focus 5 nach Vorgabe R21-1: eine am 03.11.2021 laufende Frist mit sechs Jahren, als Auslegung benannt', () => {
+    const s = calibrationSuggestion('waerme', '2016')
+    if (!('year' in s)) throw new Error('kein Vorschlag')
+    expect(s.year).toBe(2022)
+    expect(s.text).toMatch(/^Vorschlag: geeicht bis Ende 2022 \(Jahreszahl auf dem Zähler 2016\)\./)
+    expect(s.text).toMatch(/Eichfrist von 5 Jahren lief am 03\.11\.2021 noch, als sie auf 6 Jahre stieg/)
+    expect(s.text).toContain('Die Änderungsverordnung vom 26.10.2021 enthält keine Übergangsregel. Mietfuchs wendet die Frist von 6 Jahren auch auf Fristen an, die am 03.11.2021 noch liefen; eine schon abgelaufene Frist lebt nicht wieder auf. Das ist eine Auslegung.')
+    expect(s.text).not.toMatch(/Eichbehörden|Messdienste/)
+    expect(s.text).not.toMatch(/gekennzeichnet oder geeicht, galten/)
+    const im = calibrationSuggestion('warmwasser', '2021')
+    expect('year' in im && im.year).toBe(2027)
+    expect('text' in im && im.text).toMatch(/Wurde der Zähler nach dem 02\.11\.2021 gekennzeichnet oder geeicht, galten von Anfang an 6 Jahre/)
+  })
+
+  test('Kein Vorschlag vor der MessEV, für Gas, Strom und Sonstiges und bei unlesbarer Jahreszahl', () => {
+    const eo = calibrationSuggestion('kaltwasser', '2014')
+    expect('reason' in eo && eo.reason).toMatch(/vor 2015.*Eichordnung.*Messdienst oder der Eichschein/s)
+    const strom = calibrationSuggestion('strom', '2024')
+    expect('reason' in strom && strom.reason).toMatch(/hängt von der Bauart ab/)
+    expect('reason' in calibrationSuggestion('sonstig', '2024')).toBe(true)
+    expect(calibrationSuggestion('waerme', '22')).toEqual({ reason: 'Bitte nennen Sie die Jahreszahl vierstellig, wie auf dem Zähler.' })
+  })
 })

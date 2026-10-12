@@ -1254,6 +1254,8 @@ export const meters = sqliteTable(
     // Skala und Bewertungsfaktor eines Heizkostenverteilers (Heizung PR 12); nur bei `hkv`.
     hcaScale: text('hca_scale', { enum: HCA_SCALES }),
     ratingFactor: real('rating_factor'),
+    // Geeicht bis Ende dieses Jahres (Heizung PR 21, #98, Entwurf 3.12); null heißt nicht eingetragen.
+    calibratedUntil: integer('calibrated_until'),
   },
   () => [
     // Der Zählertyp verbindet Zähler und Kostenposition (`cost_items.meter_type`). Ein
@@ -1269,6 +1271,11 @@ export const meters = sqliteTable(
     oneOf('meters_hca_scale_known', 'hca_scale', HCA_SCALES),
     check('meters_rating_factor_positive', sql.raw('"rating_factor" > 0')),
     check('meters_hca_fields_valid', sql.raw(`"type" = 'hkv' OR ("rating_factor" IS NULL AND "hca_scale" IS NULL)`)),
+    // Eichjahr (Heizung PR 21): eine ganze, vierstellige Jahreszahl, wie der Schlüssel der Jahreskorrektur, und
+    // nie an einem Heizkostenverteiler (nicht eichpflichtig, Entwurf 3.12). `typeof`, weil eine Spalte mit
+    // INTEGER-Affinität eine Kommazahl als REAL behält und `BETWEEN` sie durchließe.
+    check('meters_calibrated_until_valid', sql.raw(`"calibrated_until" IS NULL OR (typeof("calibrated_until") = 'integer' AND "calibrated_until" BETWEEN 1000 AND 9999)`)),
+    check('meters_calibrated_until_hca_valid', sql.raw(`"calibrated_until" IS NULL OR "type" <> 'hkv'`)),
   ],
 )
 
