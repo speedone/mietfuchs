@@ -398,3 +398,17 @@ test('Durchsicht #241 Runde 2, H1: Eine Position 2025 behält ihr Ziel, auch wen
   await waitFor(() => expect(sent).toHaveLength(1))
   expect(sent[0]?.body).toMatchObject({ heatingTarget: 'heating' })
 })
+
+// Heizung PR 19 (#97): Die Karte „CO₂-Erstattung“ steht nur da, wenn ein Mieter selbst heizt.
+test('CO₂-Erstattung: Karte nur bei einem Mieter, der selbst heizt', async () => {
+  const mieter = (heatingModel?: 'selfSupply') => [
+    { id: 't1', unitId: 'u2', tenantName: 'Meier', persons: 1, personHistory: [], start: '2020-01-01', end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [], ...(heatingModel ? { heatingModel } : {}) },
+  ]
+  const { unmount } = render(<PeriodProvider><PropertyProvider><Kosten units={UNITS} settings={null} tenancies={mieter()} /></PropertyProvider></PeriodProvider>)
+  await waitFor(() => expect(screen.getByRole('button', { name: /Kostenposition manuell erfassen/i })).toBeTruthy())
+  expect(screen.queryByText(/CO₂-Erstattung an Mieter, die selbst heizen/)).toBeNull()
+  unmount()
+  render(<PeriodProvider><PropertyProvider><Kosten units={UNITS} settings={null} tenancies={mieter('selfSupply')} /></PropertyProvider></PeriodProvider>)
+  expect(await screen.findByText(/CO₂-Erstattung an Mieter, die selbst heizen/)).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Erstattung erfassen' })).toBeTruthy()
+})
