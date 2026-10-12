@@ -348,3 +348,29 @@ test('§ 5d Abs. 4: Endete die Verordnung vor der Heizperiode, traten die Voraus
   assert.ok(Math.abs((r.heating?.[0]?.co2?.landlordPermille ?? 0) - 600) < 1e-9)
   assert.match(textOf(r, 'co2.half-split-two-family'), /Satz 2/)
 })
+
+// Durchsicht M3: Gilt die Ausnahme nach § 5d Abs. 3, nennt der Hinweis zu § 5a weder den Teilungssatz noch den
+// Abzug samt Kürzung, sondern nur, dass § 5a hier nicht gilt; beim Messdienst wie bei der eigenen Aufteilung.
+test('§ 5d Abs. 3 mit Ausnahme: der Hinweis zu § 5a nennt keine Teilung und keine Kürzung (manual und service)', () => {
+  const manual = zfh(false, '2027-04-01')
+  const service = settle('2027-05', {
+    properties: [{ id: 'objekt-1', kind: 'zfh', cableBuiltBeforeDec2021: null, tightMarket: false, periodRules: { startMonth: 5, changes: [] } }],
+    units: [
+      { id: 'a', name: 'Oben', areaM2: 300, participates: true, propertyId: 'objekt-1' },
+      { id: 'b', name: 'Unten', areaM2: 300, participates: false, selfUsed: true, selfPersons: 1, propertyId: 'objekt-1' },
+    ],
+    tenancies: [{ id: 'ta', unitId: 'a', tenantName: 'Mieter A', persons: 1, personHistory: [], start: '2020-01-01', end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [], halfSplitNoticeOn: '2027-04-01' }],
+    costItems: [item({ id: 'gas', key: 'amounts', tenancyAmounts: { ta: 450000 } })],
+    heatingPlants: [plant({ method: 'service' })],
+    fuelDeliveries: [delivery()],
+  })
+  for (const [name, r] of [['manual', manual], ['service', service]] as const) {
+    const text = textOf(r, 'co2.half-split')
+    assert.match(text, /Die hälftige Teilung nach § 5a gilt hier wegen § 5d Abs\. 3/, name)
+    assert.doesNotMatch(text, /tragen Sie die Hälfte/, name)
+    assert.doesNotMatch(text, /der CO₂-Kosten in die Teilung/, name)
+    assert.doesNotMatch(text, /kürzen/, name)
+    assert.equal(textsOf(r, 'co2.half-split-missing').length, 0, name)
+    assert.match(textOf(r, 'co2.half-split-two-family'), /nur die CO₂-Kosten nach dem Stufenmodell/, name)
+  }
+})
