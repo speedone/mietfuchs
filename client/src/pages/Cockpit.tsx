@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { CostItem, HeatingPlant, HeatingSettlementInfo, Meter, NoticeSubject, PeriodKey, Settings, Settlement, Tenancy, Unit, UploadEntry } from '../types'
+import type { CostItem, HeatingPlant, HeatingSettlementInfo, Meter, Notice, NoticeSubject, PeriodKey, Settings, Settlement, Tenancy, Unit, UploadEntry } from '../types'
 import { cockpitHeatingRows } from '../heatingSettlementView'
 import { heatingRowTarget, itemsOfSettlement } from '../costPeriods'
 import { localToday } from '../periodForm'
@@ -13,7 +13,7 @@ import { LAW_AS_OF, valueAt } from '../../../shared/law/register.ts'
 import { usePeriod, useSwitchPeriod } from '../period'
 import { useProperty, withProperty } from '../property'
 import { consentPending } from '../update'
-import { heatingWithoutConsumption, meterReadiness } from '../meterCheck'
+import { calibrationDetail, heatingWithoutConsumption, meterReadiness, overdueMeters } from '../meterCheck'
 import { attentionDetail, attentionLevel, attentionLines } from '../notices'
 import { missingAreaCheck, zeroAreaUnits } from '../unitForm'
 import { UpdateConsent } from '../components/Update'
@@ -29,7 +29,7 @@ type Props = {
 }
 
 // Verbrauchsangaben des Servers (gleiche Form wie auf der Zähler-Seite)
-type Consumption = { meterId: string; consumption: number; readingCount: number; warnings: string[] }
+type Consumption = { meterId: string; consumption: number; readingCount: number; warnings: string[]; notices?: Notice[] }
 
 type Level = 'gruen' | 'gelb' | 'rot' | 'leer'
 
@@ -182,6 +182,12 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
         list.push({ title: 'Zählerstände', level: 'gruen',
           detail: `${relevant.length} Zähler mit Anfangs- und Endstand erfasst.` })
       }
+    }
+    // 3b. Eichfrist (Heizung PR 21): eine eigene gelbe Zeile, denn Mietfuchs rechnet mit den Werten; die Ampel
+    // „Zählerstände“ bleibt unberührt (Prüfung des Plans, M1).
+    const overdue = overdueMeters(meters, consumption)
+    if (overdue.length > 0) {
+      list.push({ title: 'Eichfrist', level: 'gelb', tab: 'zaehler', cta: 'Zähler prüfen', detail: calibrationDetail(overdue) })
     }
 
     // 4. Verteilbasis: ausgenommene Wohnungen mit Wohnfläche sind fast immer ein Versehen.
