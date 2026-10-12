@@ -14,11 +14,10 @@
 // Nummern nicht, die Vierte Änderungsverordnung (mWv 31.01.2024) ebenfalls nicht. Vor 2015 galt die
 // Eichordnung; dafür führt das Register keine Fassung.
 //
-// **Übergang:** Eine Übergangsregel für Zähler, deren Frist am 03.11.2021 lief, enthält die Verordnung
-// nicht (Art. 2 regelt nur das Inkrafttreten, § 58 Abs. 7 betrifft § 25). Mietfuchs liest das so, dass ab
-// dem Inkrafttreten die neue Zahl auch für eine noch laufende Frist gilt, eine schon abgelaufene aber nicht
-// wieder auflebt (Auslegung; ebenso die Eichbehörden und die Messdienste). Gerechnet wird das in
-// shared/calibration.ts (`calibrationEnd`), nicht hier.
+// **Übergang** (Art. 2 regelt nur das Inkrafttreten, § 58 Abs. 7 betrifft § 25): Die Änderungsverordnung vom
+// 26.10.2021 enthält keine Übergangsregel. Mietfuchs wendet die Frist von 6 Jahren auch auf Fristen an, die am
+// 03.11.2021 noch liefen; eine schon abgelaufene Frist lebt nicht wieder auf. Das ist eine Auslegung. Gerechnet
+// wird das in shared/calibration.ts (`calibrationEnd`), nicht hier.
 //
 // Zeitregel `eventDate`: Maßgeblich ist der Tag, an dem die Frist beginnt, also der Tag der Eichung oder
 // des Inverkehrbringens (§ 34 Abs. 1 Satz 2 MessEV, § 37 Abs. 1 Satz 2 MessEG).
@@ -31,6 +30,9 @@ export type CalibrationYears = { readonly kaltwasser: number; readonly warmwasse
 // Die Sparten, für die das Register eine Eichfrist führt und das Formular ein Jahr vorschlägt. Gas- und
 // Stromzähler sind ebenfalls eichpflichtig (Anlage 7 Nr. 5.6 und Nr. 6), ihre Frist hängt aber von der Bauart ab.
 export const CALIBRATED_METER_TYPES = ['kaltwasser', 'warmwasser', 'waerme'] as const
+
+// Der Tag der Verordnung, mit der eine Fassung eingeführt wurde, nach ihrem Beginn (für den Satz zum Übergang).
+export const CALIBRATION_AMENDED_ON: Readonly<Record<string, string>> = { '2021-11-03': '2021-10-26' }
 
 export const messevCalibrationYears: LawParam<CalibrationYears, 'eventDate'> = {
   id: 'messev.calibration-years',

@@ -4,6 +4,7 @@ import { EMPTY_HCA_FIELDS, hcaFieldsBody, hcaFieldsOf, type HcaFieldsForm } from
 import { hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit } from '../../shared/law/heizkostenv.ts'
 import { dayBefore, germanDate, LAW_AS_OF, onlyVersion, valueAt } from '../../shared/law/register.ts'
 import { calibrationEnd } from '../../shared/calibration.ts'
+import { CALIBRATION_AMENDED_ON } from '../../shared/law/messev.ts'
 
 // Fernablesbar? Leer heißt „weiß ich nicht“.
 export type RemoteAnswer = '' | 'yes' | 'no'
@@ -211,6 +212,7 @@ export function calibrationSuggestion(type: MeterType, markedYear: string): { ye
     return { year: end.year, text: `Vorschlag: geeicht bis Ende ${end.year} (Jahreszahl auf dem Zähler ${year}, Eichfrist ${end.years} Jahre).` }
   }
   const { from, before, after } = end.change
+  const amendedOn = CALIBRATION_AMENDED_ON[from]
   const sameYear = Number(from.slice(0, 4)) === year
     ? ` Wurde der Zähler nach dem ${germanDate(dayBefore(from))} gekennzeichnet oder geeicht, galten von Anfang an ${after} Jahre; das Ende ist dasselbe.`
     : ''
@@ -218,7 +220,8 @@ export function calibrationSuggestion(type: MeterType, markedYear: string): { ye
     year: end.year,
     text:
       `Vorschlag: geeicht bis Ende ${end.year} (Jahreszahl auf dem Zähler ${year}). Seine Eichfrist von ${before} Jahren lief am ${germanDate(from)} noch, als sie auf ${after} Jahre stieg. ` +
-      `Die Änderungsverordnung enthält dafür keine Übergangsregel; Mietfuchs rechnet wie die Eichbehörden und Messdienste mit den ${after} Jahren (Auslegung). Steht auf dem Zähler noch das alte Ende, gilt im Zweifel das Jahr laut Messdienst.${sameYear}`,
+      `Die Änderungsverordnung${amendedOn ? ` vom ${germanDate(amendedOn)}` : ''} enthält keine Übergangsregel. Mietfuchs wendet die Frist von ${after} Jahren auch auf Fristen an, die am ${germanDate(from)} noch liefen; eine schon abgelaufene Frist lebt nicht wieder auf. Das ist eine Auslegung. ` +
+      `Steht auf dem Zähler noch das alte Ende, gilt im Zweifel das Jahr laut Messdienst oder Eichschein.${sameYear}`,
   }
 }
 

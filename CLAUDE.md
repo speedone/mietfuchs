@@ -2127,10 +2127,13 @@ die ganze fachliche Komplexität:
   (`messev.calibration-years`, Zeitregel `eventDate`): ab 01.01.2015 Kaltwasser 6, Warmwasser und Wärme 5
   Jahre (amtlich aus BR-Drs. 599/21, Begründung zu Art. 1 Nr. 11 a), ab 03.11.2021 je 6 (Dritte
   Änderungsverordnung, BGBl. 2021 I S. 4742). **Die Verordnung hat keine Übergangsregel** (Art. 2 nur
-  Inkrafttreten, § 58 Abs. 7 MessEV betrifft § 25, am Wortlaut gelesen am 12.10.2026). Mietfuchs rechnet eine
-  am Inkrafttreten noch laufende Frist mit der neuen Zahl und lässt eine abgelaufene nicht wieder aufleben
-  (`calibrationEnd` in shared/calibration.ts, Auslegung wie Eichbehörden und Messdienste; Jahreszahl 2016 bis
-  2021 ergibt J + 6, bis 2015 J + 5). Der Vorschlag im Zählerformular sagt das als Auslegung; gefragt wird
+  Inkrafttreten, § 58 Abs. 7 MessEV betrifft § 25, am Wortlaut gelesen am 12.10.2026). Die Änderungsverordnung
+  vom 26.10.2021 enthält keine Übergangsregel. Mietfuchs wendet die Frist von 6 Jahren auch auf Fristen an, die
+  am 03.11.2021 noch liefen; eine schon abgelaufene Frist lebt nicht wieder auf. Das ist eine Auslegung.
+  Gerechnet wird sie in `calibrationEnd` (shared/calibration.ts; Jahreszahl 2016 bis 2021 ergibt J + 6, bis 2015 J + 5). Eine Praxis
+  von Behörden oder Messdiensten wird nirgends als Beleg genannt, denn dafür gibt es keine Quelle (Durchsicht
+  S1); Hinweis, Regel und Lexikon zitieren Leitsatz c wörtlich („abgelesenen Verbrauchswerten“, Durchsicht M1),
+  ein Test hält beide Wortlaute fest. Der Vorschlag im Zählerformular sagt es mit demselben Satz; gefragt wird
   nach der Jahreszahl auf dem Zähler (Eichmarke: Jahr des Fristbeginns, Anlage 8; „M22“: Jahr der
   Kennzeichnung, vermutet als Inverkehrbringen). Hinweis, Regel und Lexikon zitieren BGH VIII ZR 112/10 nur
   mit dem Wortlaut von Leitsatz c. Gas- und Stromzähler haben das Feld, aber keinen Vorschlag (Frist nach

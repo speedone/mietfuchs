@@ -412,8 +412,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   er geeicht ist. Aus der Jahreszahl auf dem Zähler („M22“ oder die Jahresangabe der Eichmarke) schlägt
   Mietfuchs das Jahr vor: bei Kalt- und Warmwasserzählern und Wärmezählern sechs Jahre; bei Warmwasser- und
   Wärmezählern bis zur Jahreszahl 2015 fünf Jahre, denn deren Frist lief vor der Verlängerung am 03.11.2021
-  ab. Lief die Frist an diesem Tag noch, rechnet Mietfuchs wie die Eichbehörden mit sechs Jahren; die
-  Änderungsverordnung hat dafür keine Übergangsregel, das steht als Auslegung im Vorschlag. Stammt eine
+  ab. Die Änderungsverordnung vom 26.10.2021 enthält keine Übergangsregel. Mietfuchs wendet die Frist von
+  6 Jahren auch auf Fristen an, die am 03.11.2021 noch liefen; eine schon abgelaufene Frist lebt nicht wieder
+  auf. Das ist eine Auslegung. Der Vorschlag nennt sie. Stammt eine
   Ablesung des Zeitraums aus der Zeit nach Ablauf, warnt die Zähler-Seite und nennt die Beweislast nach dem
   Bundesgerichtshof und die Verlängerung im Stichprobenverfahren; das Cockpit zeigt dazu eine eigene gelbe
   Zeile „Eichfrist“, die Ampel „Zählerstände“ bleibt unberührt. Die Werte werden weiter verwendet, keine Zahl
