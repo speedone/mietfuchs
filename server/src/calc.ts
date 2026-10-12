@@ -5040,14 +5040,21 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Biobrennstoff aus dem Vorrat (Abweichung 10): rechnet dieser Stand nicht; der Vermieter muss es selbst tun.
     // Steht an jeder Lieferung der Anlage eine 0, ist im Tank kein Pflichtanteil, und es gibt nichts zu teilen
     // (Abweichung 9).
+    // Durchsicht S3: Brennstoff, der vor dem Stichtag geliefert wurde, enthält keinen Pflichtanteil; gefragt
+    // werden nur Lieferungen ab dann (oder ohne Datum). Sonst bliebe die Warnung an einer gesperrten Lieferung
+    // einer abgeschlossenen Heizperiode ohne Ausweg stehen.
     const plantDeliveries = (snapshot.fuel?.deliveries ?? []).filter((d) => d.plantId === pot.plantId)
-    const noBioInStock = plantDeliveries.length > 0 && plantDeliveries.every((d) => d.bioCostCents === 0)
+    const fromBioDay = plantDeliveries.filter((d) => {
+      const on = d.deliveredAt ?? d.invoiceDate ?? d.invoiceTo
+      return on === null || on >= halfSplitBioFirstDay()
+    })
+    const noBioInStock = plantDeliveries.length > 0 && fromBioDay.every((d) => d.bioCostCents === 0)
     if (isStockEnergy(pot.energy) && !noBioInStock && half.applicable.some((a) => a.to >= halfSplitBioFirstDay())) {
       const cut = law(co2CutMissing, { period: hPeriod }, lawLog)
       warn('co2.half-split-missing',
         `${where}: Ab dem ${fmtDay(halfSplitBioFirstDay())} tragen Sie die Hälfte der Kosten des Pflichtanteils an Biobrennstoff, höchstens für ${fmtNum(cap / 10)} % des verbrauchten Brennstoffs (§ 5a Abs. 1 Nr. 2, Abs. 3 Nr. 3 CO2KostAufG). Für Brennstoff aus dem Vorrat rechnet Mietfuchs diesen Anteil mit einer späteren Version. ` +
           `Ermitteln Sie ihn bis dahin selbst und ziehen Sie ihn in der Abrechnung ab; sonst darf jeder Mieter seinen Anteil an den Heizkosten um ${cut} % kürzen (§ 7 Abs. 5 Satz 3, Abs. 4 CO2KostAufG)${cutsOn(ids, cut)}. ` +
-          `${BIO_ZERO_TEXT} Tragen Sie die 0 dann an jeder Lieferung beim Biobrennstoff ein.`,
+          `${BIO_ZERO_TEXT} Tragen Sie die 0 dann an jeder Lieferung ab dem ${fmtDay(halfSplitBioFirstDay())} beim Biobrennstoff ein; früher gelieferter Brennstoff enthält keinen Pflichtanteil.`,
         plantSubject)
     }
     twoFamilyNotice()

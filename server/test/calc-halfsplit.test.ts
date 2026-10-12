@@ -256,6 +256,22 @@ test('Review Focus 4: Ölheizung nach § 43 ab 2029, Biobrennstoff aus dem Vorra
   assert.ok(!codesOf(vorher).includes('co2.half-split-missing'))
 })
 
+// Durchsicht S3: Brennstoff, der vor 2029 geliefert wurde, enthält keinen Pflichtanteil an Biobrennstoff. Eine
+// solche Lieferung liegt oft in einer abgeschlossenen Heizperiode und ist gesperrt; fehlt dort die Angabe, gäbe es
+// sonst eine dauerhafte Warnung samt Kürzung ohne Ausweg.
+test('Vorrat ab 2029: nur Lieferungen ab dem 01.01.2029 brauchen die Angabe zum Biobrennstoff', () => {
+  const oel = (deliveries: ReturnType<typeof delivery>[]) => settle('2029-05', {
+    heatingPlants: [plant({ energy: 'oil' })],
+    costItems: [item({ id: 'oel', period: periodKey('2029-05'), description: 'Heizöl', fuelDeliveryId: null })],
+    fuelDeliveries: deliveries,
+  })
+  const alt = delivery({ id: 'alt', label: 'Heizöl 2028', invoiceFrom: null, invoiceTo: null, deliveredAt: '2028-09-01', quantity: 3000, quantityUnit: 'l', bioCostCents: null })
+  const neu = (bioCostCents: number | null) => delivery({ id: 'neu', label: 'Heizöl 2029', invoiceFrom: null, invoiceTo: null, deliveredAt: '2029-09-01', quantity: 3000, quantityUnit: 'l', bioCostCents })
+  assert.ok(!codesOf(oel([alt, neu(0)])).includes('co2.half-split-missing'))
+  assert.ok(!codesOf(oel([alt])).includes('co2.half-split-missing'))
+  assert.match(textOf(oel([alt, neu(null)]), 'co2.half-split-missing'), /an jeder Lieferung ab dem 01\.01\.2029 beim Biobrennstoff/)
+})
+
 test('Contracting mit Gas (Abweichung 11): Netzentgelte nach dem Brennstoff des Lieferanten', () => {
   // snapshotFor macht daraus über asBilledPlant (PR 16) energy 'districtHeating' mit fuelEnergy 'gas'.
   const r = settle('2027-05', { heatingPlants: [plant({ contracting: true })], fuelDeliveries: [delivery({ gridFeeCents: 30000 })] })
