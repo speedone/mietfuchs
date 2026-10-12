@@ -2,8 +2,8 @@ import type { CostModel, HeatingModel, NotSettled, SelfSupplyKind, Tenancy, Unit
 import { fmtDate, fmtEuro } from './api'
 import { overlapsOf } from '../../shared/tenancyOverlap.ts'
 import { andList } from '../../shared/wording.ts'
-import { co2SelfSupply } from '../../shared/law/co2kostaufg.ts'
-import { LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
+import { co2SelfSupply, halfSplitEnactedOn } from '../../shared/law/co2kostaufg.ts'
+import { germanDate, LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
 
 // Das Nebenkostenmodell am Mietverhältnis (#93) in der Oberfläche: Beschriftungen und der Rumpf.
 // Die Regeln der Berechnung stehen in calc.ts; hier steht nur, wie sie heißen.
@@ -36,7 +36,7 @@ export const SELF_SUPPLY_TENANCY_HINT =
   'Der Mieter bezieht Brennstoff oder Wärme über einen eigenen Vertrag, etwa für eine Gastherme in der Wohnung oder für eine zentrale Heizung, deren Brennstoff er selbst kauft. ' +
   'Wartung und Betriebsstrom, die Sie tragen, rechnet Mietfuchs weiter ab. ' +
   `Den Anteil seiner CO₂-Kosten, den nach dem Stufenmodell Sie tragen, kann er binnen ${SELF.claimMonths} Monaten nach der Abrechnung seines Lieferanten in Textform von Ihnen verlangen (§ 6 Abs. 2 CO2KostAufG); erfassen Sie seine Anzeige auf der Seite Kosten unter „CO₂-Erstattung“. ` +
-  'Bei Abschluss des Mietvertrags und beim Einbau einer Heizung nach § 43 GModG müssen Sie ihn in Textform auf den Erstattungsanspruch und auf die Pflicht nach § 43 Abs. 1 GModG hinweisen (§ 6 Abs. 2 Satz 6 CO2KostAufG).'
+  `Bei Abschluss eines Mietvertrags ab dem ${germanDate(halfSplitEnactedOn())} und beim Einbau einer Heizung nach § 43 GModG müssen Sie ihn in Textform auf den Erstattungsanspruch und auf die Pflicht nach § 43 Abs. 1 GModG hinweisen (§ 6 Abs. 2 Satz 6 CO2KostAufG).`
 
 // Die Staffel der Pauschale erscheint nur, wenn eine der beiden Arten pauschal ist. Sie ist eine
 // eigene Staffel und nicht die der Vorauszahlung: Das Mietkonto führt sie im Soll, die

@@ -133,7 +133,6 @@ export function prepaymentAgreed(
   t: { prepayments: Staffel; heatingPrepayments?: Staffel; costModel?: 'settlement' | 'flatRate' | 'inclusive' },
   p: { from: string; to: string },
 ): boolean {
-  if (t.costModel === 'flatRate' || t.costModel === 'inclusive') return false
   const startMonth = p.from.slice(0, 7)
   const endMonth = p.to.slice(0, 7)
   const inPeriod = (list: Staffel): boolean => {
@@ -143,7 +142,10 @@ export function prepaymentAgreed(
       return e.monthlyCents > 0 && e.from <= endMonth && (until === undefined || until > startMonth)
     })
   }
-  return inPeriod(t.prepayments) || inPeriod(t.heatingPrepayments ?? [])
+  // Durchsicht K-1: Die Staffel der Nebenkosten zählt nur ohne Pauschale oder Inklusivmiete für die kalten Kosten; eine
+  // eigene Heizvorauszahlung ist auch dann eine Vorauszahlung auf Betriebskosten.
+  const cold = t.costModel !== 'flatRate' && t.costModel !== 'inclusive' && inPeriod(t.prepayments)
+  return cold || inPeriod(t.heatingPrepayments ?? [])
 }
 
 export type RefundStepText = { euro: (cents: number) => string; exact: (cents: number) => string; num: (n: number) => string; applicableFrom: string; cutPercent: number }

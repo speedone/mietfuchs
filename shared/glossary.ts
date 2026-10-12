@@ -19,7 +19,7 @@ import { dayBefore as dayBeforeIso, germanDate, LAW_AS_OF, onlyVersion, valueAt 
 import { practiceEvaporatorWindow } from './law/practice.ts'
 import { messevCalibrationYears } from './law/messev.ts'
 import { OPERATING_POWER_HANDLING_LABELS, OPERATING_POWER_HANDLING_QUESTION } from './operatingPower.ts'
-import { co2CutMissing, co2DistrictEtsNew, co2EbevFactors, co2FirstPeriodStart, co2HalfSplit, co2HalfSplitTwoFamily, co2NonResidential, co2Restriction, co2RoundingDecimals, co2SelfSupply, co2StageTable, halfSplitBioFirstDay, halfSplitFirstDay } from './law/co2kostaufg.ts'
+import { co2CutMissing, co2DistrictEtsNew, co2EbevFactors, co2FirstPeriodStart, co2HalfSplit, co2HalfSplitTwoFamily, co2NonResidential, co2Restriction, co2RoundingDecimals, co2SelfSupply, co2StageTable, halfSplitBioFirstDay, halfSplitEnactedOn, halfSplitFirstDay } from './law/co2kostaufg.ts'
 import { bioCapFrom, gmodgHeating43 } from './law/gmodg.ts'
 
 // Hälftige Teilung nach § 5a (Heizung PR 18): Stichtage, Grenze beim Biobrennstoff, Zweifamilienhaus und § 43 GModG.
@@ -348,7 +348,7 @@ export const GLOSSARY = {
     needed: `Nur wenn ein Mieter selbst heizt und den Anspruch anzeigt. Stellen Sie sein Mietverhältnis dann in den Stammdaten unter Heizung auf „Mieter heizt selbst“ und erfassen Sie die Anzeige auf der Seite Kosten unter „CO₂-Erstattung“. ` +
       `Ist mit ihm eine Vorauszahlung auf Betriebskosten vereinbart, können Sie den Betrag in der nächsten Abrechnung nach der Anzeige verrechnen; sonst zahlen Sie spätestens ${SELF.refundMonths} Monate nach der Anzeige aus und tragen den Tag der Auszahlung an der Erstattung ein; die Steuerübersicht führt sie dann im Jahr der Auszahlung als Werbungskosten. ` +
       `Nutzt der Mieter den Brennstoff auch gewerblich, besteht der Anspruch nur, wenn der Wärmeverbrauch getrennt gemessen und nachgewiesen ist; im Nichtwohngebäude sind es ${SELF.nonResidentialPermille / 10} % (§ 8 Abs. 2). ` +
-      'Auf den Anspruch müssen Sie den Mieter bei Abschluss des Mietvertrags und beim Einbau einer Heizung nach § 43 GModG in Textform hinweisen, ebenso auf die Pflicht nach § 43 Abs. 1 GModG (§ 6 Abs. 2 Satz 6). ' +
+      `Auf den Anspruch müssen Sie den Mieter bei Abschluss eines Mietvertrags ab dem ${germanDate(halfSplitEnactedOn())} und beim Einbau einer Heizung nach § 43 GModG in Textform hinweisen, ebenso auf die Pflicht nach § 43 Abs. 1 GModG (§ 6 Abs. 2 Satz 6). Im Nichtwohngebäude besteht der Anspruch auch, wenn der Mieter nur sein Warmwasser selbst bereitet (§ 8 Abs. 2: „mit Wärme oder Warmwasser“); das bildet Mietfuchs nicht ab. ` +
       'In Gebäuden, für die § 11 der Heizkostenverordnung gilt, ist das CO2KostAufG nicht anzuwenden, wenn keine Abrechnung der Heizkosten vereinbart ist (§ 2 Abs. 7); Mietfuchs rechnet damit nichts.',
   },
   hotWaterShare: {

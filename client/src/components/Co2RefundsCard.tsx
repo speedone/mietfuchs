@@ -128,7 +128,7 @@ export default function Co2RefundsCard({ propertyId, period, tenancies, units }:
             <small className="muted">Wohnfläche aller Räume, die über den Vertrag des Mieters beheizt werden (§ 5 Abs. 3 CO2KostAufG). Vorbelegt ist die Fläche der Wohnungen, die derselbe Mieter selbst heizt; dass das ein Mieter ist, liest Mietfuchs am Namen ab (Auslegung).</small>
             <label className="field checkline"><input type="checkbox" checked={f.ownAppliances} onChange={(e) => set({ ownAppliances: e.target.checked })} />Der Mieter betreibt mit dem Brennstoff auch ein Gerät zu anderen Zwecken, etwa einen Gasherd, das er selbst angeschafft hat und das ihm gehört (§ 6 Abs. 3 Satz 2; ein mitvermieteter Herd zählt nicht)</label>
             <label className="field checkline"><input type="checkbox" checked={f.commercialUse} onChange={(e) => set({ commercialUse: e.target.checked })} />Der Brennstoff wird auch gewerblich genutzt (§ 6 Abs. 3 Satz 1)</label>
-            {f.commercialUse && <label className="field checkline"><input type="checkbox" checked={f.commercialMetered} onChange={(e) => set({ commercialMetered: e.target.checked })} />Der Wärmeverbrauch wird getrennt gemessen und ist nachgewiesen</label>}
+            {f.commercialUse && <label className="field checkline"><input type="checkbox" checked={f.commercialMetered} onChange={(e) => set({ commercialMetered: e.target.checked })} />Der Verbrauch für die Erzeugung von Wärme wird mit einer Messeinrichtung getrennt erfasst und ist nachgewiesen (tragen Sie dann nur Ausstoß und CO₂-Kosten für Heizung und Warmwasser ein)</label>}
             <label className="field checkline"><input type="checkbox" checked={f.nonResidential} onChange={(e) => set({ nonResidential: e.target.checked })} />Das Gebäude dient überwiegend nicht dem Wohnen (§ 8 Abs. 2)</label>
             <label className="field">
               Beschränkungen (§ 9 CO2KostAufG)
@@ -136,11 +136,11 @@ export default function Co2RefundsCard({ propertyId, period, tenancies, units }:
                 {RESTRICTION_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </label>
-            <label className="field">Hälftige Teilung nach § 5a gilt ab (nur bei einer Heizung nach § 43 GModG)<input type="date" value={f.halfSplitFrom} onChange={(e) => set({ halfSplitFrom: e.target.value })} /></label>
+            <label className="field">Hälftige Teilung nach § 5a gilt ab (nur bei einer Heizung nach § 43 GModG und einem Mietverhältnis über Wohnraum)<input type="date" value={f.halfSplitFrom} onChange={(e) => set({ halfSplitFrom: e.target.value })} /></label>
             <p className="muted">
               Frühestens der 01.01.2028 und frühestens der Tag des Einbaus. Nach einem Notfalleinbau ruht die Teilung zeitweise (§ 5a Abs. 4 CO2KostAufG).
               Im selbst bewohnten Zweifamilienhaus kann sie entfallen (§ 5d Abs. 3), aber nur, wenn beide Wohnungen an derselben Heizung hängen; eine Gastherme je Wohnung ist das nicht.
-              Leer lassen, wenn § 5a nicht gilt, auch wenn Sie sich auf den Härtefall nach § 5d Abs. 1 CO2KostAufG berufen und den Mieter darüber nach § 5d Abs. 4 in Textform informiert haben.
+              Hat der Mieter die Heizung selbst eingebaut, ist ungeklärt, ob § 5a gilt. Leer lassen, wenn § 5a nicht gilt, auch wenn Sie sich auf den Härtefall nach § 5d Abs. 1 CO2KostAufG berufen und den Mieter darüber nach § 5d Abs. 4 in Textform informiert haben.
             </p>
             {f.halfSplitFrom !== '' && (
               <>
