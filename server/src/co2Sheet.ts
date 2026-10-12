@@ -14,10 +14,12 @@
 import { asBilledPlant } from '../../shared/heatDelivery.ts'
 import { plantRules, servesUnit, settledSeparately } from '../../shared/heatingPeriod.ts'
 import { periodContaining, rulesOf } from '../../shared/period.ts'
-import { co2CostsBefore, co2CostsCountedFrom } from '../../shared/law/co2kostaufg.ts'
+import { co2CostsBefore, co2CostsCountedFrom, co2HalfSplit, co2HalfSplitEmergency, co2HalfSplitNewBuildings, halfSplitFirstDay } from '../../shared/law/co2kostaufg.ts'
+import { degreeDayPermille } from '../../shared/degreeDays.ts'
+import { applicableRanges, halfSplitStatus, termsFromPieces, termsWeight } from './halfSplit.ts'
 import { hkvDegreeDays } from '../../shared/law/heizkostenv.ts'
-import { createLawLog, germanDate, valueAt } from '../../shared/law/register.ts'
-import type { BillingPeriod, Co2Sheet, Co2SheetBilling, Co2SheetDelivery, Co2SheetOpening, Co2SheetStock, FuelDelivery, HeatingEnergy, HeatingPlant, HeatingRules, HeatingStatement, LawOverride, Unit } from '../../shared/types.ts'
+import { createLawLog, germanDate, valueAt, versionsIn } from '../../shared/law/register.ts'
+import type { BillingPeriod, Co2Sheet, Co2SheetBilling, Co2SheetHalfSplit, Co2SheetDelivery, Co2SheetOpening, Co2SheetStock, FuelDelivery, HeatingEnergy, HeatingPlant, HeatingRules, HeatingStatement, LawOverride, Unit } from '../../shared/types.ts'
 import { computeSettlement, plantStockOf } from './calc.ts'
 import type { StockResult } from './fuelStock.ts'
 import { heatingSnapshotFor, snapshotFor, wayOf } from './snapshot.ts'
@@ -31,6 +33,8 @@ export type Co2SheetInput = {
   address: string
   landlordName: string
   plant: Pick<HeatingPlant, 'id' | 'name' | 'energy' | 'method' | 'units' | 'nonResidential' | 'restriction' | 'districtEtsNew'> & Partial<Pick<HeatingPlant, 'supply' | 'hotWater' | 'selfSpans' | 'contracting'>> & { fuelEnergy?: HeatingEnergy }
+    // Heizung PR 18: die Merkmale nach § 43 Abs. 1 GModG.
+    & Partial<Pick<HeatingPlant, 'gmodg43InstalledOn' | 'emergencyInstall' | 'emergencyPriorDuty' | 'newBuildingFirstUse' | 'buildingApplicationBefore20260513'>>
   h: { key: string; from: string; to: string }
   units: readonly Pick<Unit, 'id' | 'areaM2' | 'noConnection'>[]
   enteredAreaM2: number | null
@@ -82,6 +86,7 @@ export function co2SheetOf(i: Co2SheetInput): Co2Sheet {
   const exemption = check ? check.exemption : i.rules ? co2ExemptionOf(i.plant, i.rules, i.h.key, { from: i.h.from, to: i.h.to }, createLawLog(i.overrides)) : null
   const checked = check ? check.applies : !etsExempt(i.plant) && exemption === null
   const from = germanDate(co2CostsCountedFrom())
+  const halfSplit = halfSplitOfSheet(i)
   const deliveries: Co2SheetDelivery[] = touching.map((d) => {
     const linked = i.items.filter((c) => c.fuelDeliveryId === d.id)
     const amountCents = d.amountCents ?? (linked.length > 0 ? linked.reduce((a, c) => a + c.amountCents, 0) : null)
@@ -98,6 +103,8 @@ export function co2SheetOf(i: Co2SheetInput): Co2Sheet {
       id: d.id, label: d.label, invoiceDate: d.invoiceDate, from: d.invoiceFrom, to: d.invoiceTo, deliveredAt: d.deliveredAt,
       quantity: d.quantity, quantityUnit: d.quantityUnit, energyKwh: d.energyKwh, gasBasis: d.gasBasis, emissionFactor: d.emissionFactor,
       emissionsKg: d.emissionsKg, co2CostCents: d.co2CostCents, amountCents, estimated: d.estimated, counted, factor, note,
+      // Heizung PR 18: die Angaben der Rechnung für § 5a, nur bei einer Heizung nach § 43 Abs. 1 GModG.
+      ...(halfSplit ? { gridFeeCents: d.gridFeeCents ?? null, bioCostCents: d.bioCostCents ?? null } : {}),
       inPeriod: (() => {
         const line = i.heating?.fuel?.deliveries.find((l) => l.deliveryId === d.id)
         return line ? { emissionsKg: line.emissionsKg, co2Cents: line.co2Cents, sharePermille: line.sharePermille, method: line.method } : null
@@ -187,6 +194,39 @@ export function co2SheetOf(i: Co2SheetInput): Co2Sheet {
     nonResidential: i.plant.nonResidential, restriction: i.plant.restriction, districtEtsNew: i.plant.districtEtsNew,
     stock: i.stock, opening, billing, deliveries,
     totals: { emissionsKg: Math.round(kg * 100) / 100, co2CostCents: Math.round(co2Sum) },
+    ...(halfSplit ? { halfSplit } : {}),
+  }
+}
+
+// § 5a CO2KostAufG auf dem Blatt (Heizung PR 18): ab wann und wo in der Heizperiode geteilt wird, nach denselben
+// Regeln wie die Abrechnung (`halfSplitStatus`, `applicableRanges`; ohne Lieferungen nach Gradtagen), und die
+// Anteile des Vermieters, wo die Abrechnung sie rechnet (eigene Aufteilung). Das Blatt steht außerhalb einer
+// Abrechnung; die Rechtswerte liest es deshalb mit `valueAt` und protokolliert nichts.
+function halfSplitOfSheet(i: Co2SheetInput): Co2SheetHalfSplit | null {
+  const installed = i.plant.gmodg43InstalledOn ?? null
+  if (installed === null || i.h.to < halfSplitFirstDay()) return null
+  const firstUse = i.plant.newBuildingFirstUse ?? null
+  const status = halfSplitStatus({
+    gmodg43InstalledOn: installed, emergencyInstall: i.plant.emergencyInstall ?? null, emergencyPriorDuty: i.plant.emergencyPriorDuty ?? null,
+    newBuildingFirstUse: firstUse, buildingApplicationBefore20260513: i.plant.buildingApplicationBefore20260513 ?? null,
+  }, {
+    newBuildings: firstUse !== null ? valueAt(co2HalfSplitNewBuildings, firstUse) : null,
+    emergency: i.plant.emergencyInstall === true ? valueAt(co2HalfSplitEmergency, installed) : null,
+  })
+  const billed = i.heating?.co2?.halfSplit ?? null
+  const span = { from: i.h.from, to: i.h.to }
+  const table = valueAt(hkvDegreeDays, i.h.from)
+  const share = billed?.twoFamily === 'excepted' ? 0
+    : termsWeight(termsFromPieces(versionsIn(co2HalfSplit, span), applicableRanges(status, span), (r) => degreeDayPermille([r], table), (v) => v.co2Permille)) * 1000
+  return {
+    installedOn: installed,
+    status: status.kind === 'excluded' ? 'excluded' : 'applies',
+    newBuilding: firstUse !== null,
+    excluded: status.kind === 'applies' ? status.excluded : [],
+    sharePermille: share,
+    landlordGridFeeCents: billed?.landlordGridFeeCents ?? null,
+    landlordBioCents: billed?.landlordBioCents ?? null,
+    twoFamily: billed?.twoFamily ?? null,
   }
 }
 
@@ -194,7 +234,7 @@ export function co2SheetOf(i: Co2SheetInput): Co2Sheet {
 // Abrechnung der Heizperiode. `null` ohne Anlage.
 export function co2SheetFor(
   source: Parameters<typeof heatingSnapshotFor>[0] & {
-    heatingPlants?: (Pick<HeatingPlant, 'id' | 'energy' | 'method' | 'units' | 'propertyId'> & Partial<Pick<HeatingPlant, 'name' | 'nonResidential' | 'restriction' | 'districtEtsNew' | 'supply' | 'hotWater' | 'selfSpans' | 'replacesPlantId'>>)[]
+    heatingPlants?: (Pick<HeatingPlant, 'id' | 'energy' | 'method' | 'units' | 'propertyId'> & Partial<Pick<HeatingPlant, 'name' | 'nonResidential' | 'restriction' | 'districtEtsNew' | 'supply' | 'hotWater' | 'selfSpans' | 'replacesPlantId' | 'gmodg43InstalledOn' | 'emergencyInstall' | 'emergencyPriorDuty' | 'newBuildingFirstUse' | 'buildingApplicationBefore20260513'>>)[]
     fuelDeliveries?: FuelDelivery[]
     lawOverrides?: LawOverride[]
   },

@@ -1890,6 +1890,10 @@ export type Co2SheetDelivery = {
   // `kgOnly` nur die kg (§ 11 Abs. 2 Satz 2), `none` nichts (storniert, abgedeckte Schätzung). `note` sagt
   // es in der dritten Person, für den Empfänger des Blatts.
   counted: 'full' | 'partial' | 'kgOnly' | 'none'
+  // Netzentgelte und Kosten des Pflichtanteils an Biobrennstoff laut Rechnung (§ 5a CO2KostAufG, Heizung PR 18);
+  // fehlen in einem Blatt ohne Heizung nach § 43 Abs. 1 GModG.
+  gridFeeCents?: number | null
+  bioCostCents?: number | null
   factor: number
   note: string | null
   // Der Teil dieser Rechnung, den die Abrechnung der Heizperiode zuordnet (`fuel.deliveries`), mit Anteil in
@@ -1968,6 +1972,23 @@ export type Co2Sheet = {
   // Die Ausnahme nach § 11 HeizkostenV, unter der das CO2KostAufG nicht gilt (§ 2 Abs. 7), im Wortlaut der
   // Abrechnung (`co2Check.exemption`); `null` sonst.
   exemption: string | null
+  // Heizung nach § 43 Abs. 1 GModG (Heizung PR 18): was der Messdienst für die hälftige Teilung nach § 5a
+  // braucht. Fehlt ohne Merkmal und für Heizperioden ganz vor dem ersten Tag der Teilung.
+  halfSplit?: Co2SheetHalfSplit
+}
+
+// `sharePermille`: Anteil der Heizperiode nach Gradtagen, in dem die CO₂-Kosten hälftig geteilt werden (0 im
+// Zweifamilienhaus mit Ausnahme oder während der Ruhezeit nach § 5a Abs. 4); `excluded`: diese Ruhezeiten. Die
+// Anteile des Vermieters an Netzentgelten und Biobrennstoff nur, wo die Abrechnung sie rechnet, sonst `null`.
+export type Co2SheetHalfSplit = {
+  installedOn: string
+  status: 'applies' | 'excluded'
+  newBuilding: boolean
+  excluded: { from: string; to: string; rule: 'emergency1' | 'emergency2' | 'emergency3' }[]
+  sharePermille: number
+  landlordGridFeeCents: number | null
+  landlordBioCents: number | null
+  twoFamily: 'excepted' | 'split' | null
 }
 
 // Eine Gradtagzahl des Deutschen Wetterdienstes für den Ort des Objekts und einen Monat ('JJJJ-MM').
