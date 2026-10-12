@@ -133,6 +133,10 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // Heizung PR 16 (#213): Wärmelieferung, Contracting und Angaben zur Umstellung.
   '0043_waermelieferung': 'eeeff16072c8d2a0aae9e91b524eeb9d2eab80bc0f613e56d229f0fb955bdb64',
   '0044_waermelieferung_bedingungen': 'ddf0ba665f5ea0ec4d6d08ae5019aab806ed09e2a6e5cb10b1eca73500878faa',
+  // Heizung PR 22 (#99): monatliche Verbrauchsinformation, eine neue Tabelle samt Bedingungen in einem Schritt
+  // (kein Neubau einer bestehenden Tabelle). Wird vor dem Merge ein anderer PR davor eingereiht, wird der
+  // Schritt neu erzeugt und die Marke hier ersetzt.
+  '0045_verbrauchsinfo': 'dc4a4796c387372915cbc4875a03638231a476d38abc8fc5b48ab3c1883b80ab',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

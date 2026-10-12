@@ -68,6 +68,8 @@ import { betrkvGenerationPower, betrkvTvSignal, bgbDeadlineMonths, bgbHeatDelive
 import { switchFindings, switchText } from './heatDelivery.ts'
 import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvEstimateThreshold, hkvExemptions, hkvGenerationPower, hkvInfoDistrict, hkvMonthlyInfo, hkvHeatPumpCapture, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvRenewableExemption, hkvSettlementInfo, type DegreeDayTable } from '../../shared/law/heizkostenv.ts'
 import { plantDevices, remoteReadingVerdict, servedUnitIds } from './remoteReading.ts'
+import { monthlyInfoMonths, openMonths } from './monthlyInfo.ts'
+import { MONTHLY_INFO_GAP_TEXT, monthRanges } from '../../shared/monthlyInfo.ts'
 import { heatingInfoOf, heatingRulesOf, planByConsumption, type RuleRow } from './heatingInfo.ts'
 import { co2ExemptionOf, co2OffByExemptionOf, exemptionScopeFor, exemptionText as exemptionTextOf } from './co2Exemption.ts'
 import { AGREED_FIXED_SELF_TEXT, INFO_CONTACTS, INFO_CONTACTS_CHECKED } from '../../shared/heatingInfo.ts'
@@ -384,7 +386,7 @@ const noticeKinds = {
   // Heizung PR 14 (#99, Entwurf 8.8, 8.9, 10.1); ersetzt `heating.self-6a-missing` aus der Durchsicht von #239.
   'heating.info-incomplete': { level: 'warning', title: 'Angaben zur Heizkostenabrechnung unvollständig', rule: 'heating-info', terms: ['billingInfo'] },
   'heating.info-open': { level: 'hint', title: 'Angaben zur Heizkostenabrechnung prüfen', rule: 'heating-info', terms: ['billingInfo'] },
-  'heating.monthly-info': { level: 'warning', title: 'Monatliche Verbrauchsinformation', rule: 'heating-info', terms: ['billingInfo'] },
+  'heating.monthly-info': { level: 'warning', title: 'Monatliche Verbrauchsinformation', rule: 'heating-info', terms: ['billingInfo', 'monthlyConsumptionInfo'] },
   'heating.exemption': { level: 'hint', title: 'Ausnahme von der Heizkostenverordnung', rule: 'heating-exemption', terms: ['heatingCostOrdinance'] },
   'heating.key-change': { level: 'hint', title: 'Anteil nach Verbrauch geändert', rule: 'heating-key-change', terms: ['consumptionCosts', 'keyChange'] },
   'heating.change-split-time': { level: 'hint', title: 'Mieterwechsel zeitanteilig statt nach Gradtagen', rule: 'heating-tenant-change', terms: ['interimReading', 'degreeDays'] },
@@ -5769,8 +5771,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     lineGroups.set(k, [...(lineGroups.get(k) ?? []), report])
   }
   // Satz 3 ist ein Kürzungsrecht: Lücken innerhalb des Satzes summieren sich nicht, nur Kürzungsrechte aus
-  // verschiedenen Sätzen des § 12 Abs. 1 (BR-Drs. 643/21, S. 23 f., Durchsicht von #243, R-W4).
-  const ONE_RIGHT = 'Das ist ein Kürzungsrecht, auch wenn mehrere Angaben fehlen und auch wenn die monatliche Verbrauchsinformation fehlt: § 12 Abs. 1 Satz 3 HeizkostenV erfasst alle Informationen nach § 6a, und es summieren sich nur Kürzungsrechte aus verschiedenen Sätzen des § 12 Abs. 1 (BR-Drs. 643/21, S. 23 f.).'
+  // verschiedenen Sätzen des § 12 Abs. 1 (BR-Drs. 643/21, S. 24 f., Durchsicht von #243, R-W4).
+  const ONE_RIGHT = 'Das ist ein Kürzungsrecht, auch wenn mehrere Angaben fehlen und auch wenn die monatliche Verbrauchsinformation fehlt: § 12 Abs. 1 Satz 3 HeizkostenV erfasst alle Informationen nach § 6a, und es summieren sich nur Kürzungsrechte aus verschiedenen Sätzen des § 12 Abs. 1 (BR-Drs. 643/21, S. 24 f.).'
   for (const group of lineGroups.values()) {
     const first = group[0]
     if (!first) continue
@@ -5925,7 +5927,87 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Das Register erst fragen, wenn ein Hinweis den Satz braucht; sonst stünde er im Rechtsstand jeder Abrechnung
     // mit Heizanlage (Entwurf 1.2 Nr. 1).
     const cutNow = () => law(hkvCutInformation, { period: hPeriod }, lawLog)
-    if (monthly && monthly.coverage !== 'none') {
+    // Monatliche Verbrauchsinformation (Heizung PR 22): Bei eigener Abrechnung mit eigenen Zählern kennt Mietfuchs
+    // die Geräte, erstellt die Information und nennt die Monate, die fehlen oder unvollständig sind. Nur, wenn ein
+    // Gerät selbst als fernablesbar eingetragen ist; die Angabe an der Anlage allein sagt nicht, welche Wohnungen,
+    // und bei Werten des Ablesedienstes erstellt dieser die Information (Prüfung M5, S6). Sonst bleibt der Hinweis
+    // von PR 14.
+    const selfMade = plant.method === 'self' && captureOf(plant, key) !== 'serviceValues' && devices.some((m) => m.remoteReadable === true)
+    const lineIds = new Set(plants.filter((p) => lineRoot(p, plants) === lineRoot(plant, plants)).map((p) => p.id))
+    const periodRows = (snapshot.heatingPeriodRows ?? []).filter((r) => lineIds.has(r.plantId) && String(r.period) === key)
+    const months = monthly && monthly.coverage !== 'none' && selfMade
+      ? monthlyInfoMonths({
+          plants: groupPlants,
+          meters: snapshot.meters,
+          units: snapshot.units.map((u) => ({ id: u.id, name: u.name, areaM2: u.areaM2 || 0, noConnection: u.noConnection })),
+          tenancies: snapshot.tenancies,
+          readings: snapshot.readings,
+          rows: (snapshot.monthlyInfoRows ?? []).filter((r) => lineIds.has(r.plantId)),
+          dhwTempC: periodRows.find((r) => r.plantId === plant.id)?.dhwTempC ?? periodRows.find((r) => (r.dhwTempC ?? null) !== null)?.dhwTempC ?? null,
+          h: hPeriod,
+          parts: { heat: scope !== 'heat', water: hotWaterOf(plant, key) !== 'none' },
+          ...(options.asOf !== undefined ? { asOf: options.asOf } : {}),
+        }, lawLog)
+      : null
+    const open = months ? openMonths(months) : []
+    if (monthly && monthly.coverage !== 'none' && months && open.length > 0) {
+      const cut = cutNow()
+      const openSet = new Set(open.map((o) => o.month))
+      const openUsers = months.filter((m) => openSet.has(m.month)).flatMap((m) => m.users)
+      // Ein Kürzungsrecht je Mieter, nicht je Monat (Prüfung M3); nur für die Mieter, die über die Anlage
+      // abgerechnet werden.
+      const affected = billed.filter((id) => open.some((o) => o.tenancyIds.includes(id)))
+      // „um 3 %“ für den, dessen Wohnung ganz fernablesbar ausgestattet ist; die übrigen bei gemischter
+      // Ausstattung mit Einzelfallprüfung (BR-Drs. 643/21, S. 18; Prüfung M8, S7).
+      const remoteIds = affected.filter((id) => openUsers.filter((u) => u.tenancyId === id).every((u) => u.remote))
+      const otherIds = affected.filter((id) => !remoteIds.includes(id))
+      const mixed = months.some((m) => openSet.has(m.month) && m.mixed)
+      const unknown: string[] = []
+      const amountsOf = (ids: readonly string[]): string => {
+        const a = amountsFor(ids.filter((id) => !named.includes(id)), cut)
+        unknown.push(...a.unknown)
+        return a.list.length > 0 ? `, hier: ${andList(a.list)}` : ''
+      }
+      const notSent = open.filter((o) => o.notSent).map((o) => o.month)
+      // Monate mit denselben Lücken zu einer Spanne.
+      const byGaps = new Map<string, { gaps: string[]; months: string[] }>()
+      for (const o of open.filter((x) => x.gaps.length > 0)) {
+        const k = o.gaps.join('|')
+        const group = byGaps.get(k) ?? { gaps: o.gaps.map((g) => MONTHLY_INFO_GAP_TEXT[g]), months: [] }
+        group.months.push(o.month)
+        byGaps.set(k, group)
+      }
+      const incomplete = [...byGaps.values()].map((g) => `${monthRanges(g.months)} (${g.gaps.join('; ')})`)
+      const cutText = (remoteIds.length > 0 || otherIds.length === 0
+        ? `Fehlt die Information oder ist sie unvollständig, darf ${mixed ? 'ein Mieter, dessen Wohnung fernablesbar ausgestattet ist,' : 'jeder betroffene Mieter'} seinen Anteil${waterWord} um ${cut} % kürzen (§ 12 Abs. 1 Satz 3 HeizkostenV)${amountsOf(remoteIds)}. `
+        : '') +
+        (otherIds.length > 0
+          ? `Bei ${andList(otherIds.map(nameOf))} ist die Wohnung nicht oder nur zum Teil fernablesbar ausgestattet; auch dort ist eine Kürzung um ${cut} % möglich${amountsOf(otherIds)}. `
+          : '') +
+        (mixed
+          ? 'Sind im Haus nur einige Geräte fernablesbar, ist nach der Verordnungsbegründung im Einzelfall zu prüfen, ob die monatliche Information möglich und zumutbar ist (BR-Drs. 643/21, S. 18); dass Mietfuchs die Kürzung trotzdem nennt, ist eine Auslegung zu Ihren Lasten. '
+          : '') +
+        `Ob schon ein einzelner fehlender Monat die volle Kürzung erlaubt, ist nicht höchstrichterlich geklärt; Mietfuchs rechnet vorsorglich mit den vollen ${cut} % (Auslegung). `
+      const namedHere = affected.filter((id) => named.includes(id))
+      const namedText = namedHere.length === 0
+        ? ''
+        : namedHere.length === affected.length
+          ? 'Die Beträge je Mieter stehen beim Hinweis zu den Angaben zur Heizkostenabrechnung. '
+          : `Für ${andList(namedHere.map(nameOf))} stehen die Beträge beim Hinweis zu den Angaben zur Heizkostenabrechnung. `
+      const unknownPart = unknownText(unknown)
+      warn('heating.monthly-info',
+        `${where}: Nach Ihren Angaben sind Zähler oder Heizkostenverteiler fernablesbar. Dann steht den Mietern seit dem ${fmtDay(monthly.validFrom ?? '')} jeden Monat eine Verbrauchsinformation zu (§ 6a Abs. 1 und 2 HeizkostenV): der Verbrauch des Monats in Kilowattstunden, der Vergleich mit dem Vormonat und dem entsprechenden Monat des Vorjahres, soweit diese Daten erhoben worden sind, und der Vergleich mit einem Durchschnittsnutzer derselben Nutzerkategorie. ` +
+          'Mietfuchs verlangt sie für jeden Monat, auch außerhalb der Heizperiode: Die Verordnung sagt nur „monatlich“, das Vorblatt der Begründung nennt „während der Heizperiode“ (BR-Drs. 643/21); das ist eine vorsichtige Auslegung zu Ihren Lasten. ' +
+          (notSent.length > 0 ? `Nicht als mitgeteilt vermerkt: ${monthRanges(notSent)}. ` : '') +
+          (incomplete.length > 0 ? `Unvollständig: ${incomplete.join('; ')}. ` : '') +
+          cutText + namedText + (unknownPart ? `${unknownPart.trim()} ` : '') +
+          'Das ist dasselbe Kürzungsrecht wie bei fehlenden Angaben zur Heizkostenabrechnung und kommt nicht hinzu: Satz 3 erfasst alle Informationen nach § 6a, und es summieren sich nur Kürzungsrechte aus verschiedenen Sätzen des § 12 Abs. 1 (BR-Drs. 643/21, S. 24 f.). ' +
+          'Mietfuchs erstellt die Information aus den Zählerständen am Monatsende auf der Seite Heizkosten in der Karte „Monatliche Verbrauchsinformation“; zukommen lassen müssen Sie sie den Mietern selbst, als Brief oder E-Mail, und dort vermerken, wann. ' +
+          'Bekommen Ihre Mieter sie anders, etwa vom Messdienst als Brief oder E-Mail oder in einem Portal mit einer Nachricht jeden Monat, dass sie dort steht, bestätigen Sie das auf der Seite Heizkosten in der Karte „Ausnahmen und Vereinbarungen“. ' +
+          'Ein Portal ohne diese Nachricht genügt nach der Begründung der Verordnung nicht: Mitgeteilt ist die Information erst, wenn sie den Mieter erreicht (BR-Drs. 643/21, S. 18 f.).',
+        subject)
+    }
+    if (monthly && monthly.coverage !== 'none' && !months) {
       const cut = cutNow()
       // Dasselbe Kürzungsrecht wie bei den Angaben zur Abrechnung (R-W4): Die Beträge stehen einmal, beim Hinweis zu
       // den Angaben, wenn er sie für den Mieter nennt.
@@ -5937,8 +6019,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       warn('heating.monthly-info',
         `${where}: Nach Ihren Angaben sind Zähler oder Heizkostenverteiler fernablesbar. Dann stehen den Mietern seit dem ${fmtDay(monthly.validFrom ?? '')} monatliche Verbrauchsinformationen zu: der Verbrauch des letzten Monats in Kilowattstunden, der Vergleich mit dem Vormonat und dem entsprechenden Monat des Vorjahres, soweit diese Daten erhoben worden sind, und der Vergleich mit einem Durchschnittsnutzer (§ 6a Abs. 1 und 2 HeizkostenV). ` +
           `Fehlen sie, darf jeder Mieter seinen Anteil${waterWord} um bis zu ${cut} % kürzen (§ 12 Abs. 1 Satz 3 HeizkostenV)${rest.length === 0 ? '.' : ''}${amounts} ` +
-          'Das ist dasselbe Kürzungsrecht wie bei fehlenden Angaben zur Heizkostenabrechnung und kommt nicht hinzu: Satz 3 erfasst alle Informationen nach § 6a, und es summieren sich nur Kürzungsrechte aus verschiedenen Sätzen des § 12 Abs. 1 (BR-Drs. 643/21, S. 23 f.). ' +
-          'Mietfuchs erstellt diese Informationen nicht. Bekommen Ihre Mieter sie anders, etwa vom Messdienst als Brief oder E-Mail oder in einem Portal mit einer Nachricht jeden Monat, dass sie dort steht, bestätigen Sie das auf der Seite Heizkosten in der Karte „Ausnahmen und Vereinbarungen“. ' +
+          'Das ist dasselbe Kürzungsrecht wie bei fehlenden Angaben zur Heizkostenabrechnung und kommt nicht hinzu: Satz 3 erfasst alle Informationen nach § 6a, und es summieren sich nur Kürzungsrechte aus verschiedenen Sätzen des § 12 Abs. 1 (BR-Drs. 643/21, S. 24 f.). ' +
+          (plant.method !== 'self' ? 'Mietfuchs erstellt diese Informationen nicht. ' : captureOf(plant, key) === 'serviceValues' ? 'Bei Werten des Ablesedienstes erstellt Mietfuchs diese Informationen nicht; meist liefert sie der Ablesedienst. ' : 'Tragen Sie bei den Zählern ein, welche fernablesbar sind; dann erstellt Mietfuchs die Information. ') +
+          'Bekommen Ihre Mieter sie anders, etwa vom Messdienst als Brief oder E-Mail oder in einem Portal mit einer Nachricht jeden Monat, dass sie dort steht, bestätigen Sie das auf der Seite Heizkosten in der Karte „Ausnahmen und Vereinbarungen“. ' +
           'Ein Portal ohne diese Nachricht genügt nach der Begründung der Verordnung nicht: Mitgeteilt ist die Information erst, wenn sie den Mieter erreicht (BR-Drs. 643/21, S. 18 f.).',
         subject)
     }

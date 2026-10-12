@@ -10,7 +10,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { tenancyStamp } from '../../shared/tenancyStamp.ts'
 import type {
-  AssignableHeatingItem, Co2Statement, DegreeDayValue, FuelDelivery, FuelGapQuestion, Notice, HeatingDistribution, HeatingEstimate, HeatingPeriodView, HeatingPlant, InterimGap, LawOverrideSlot, Co2Sheet, CostItem, Meter, Property, Settlement, StockView, Tenancy, Unit,
+  AssignableHeatingItem, Co2Statement, DegreeDayValue, FuelDelivery, FuelGapQuestion, Notice, HeatingDistribution, HeatingEstimate, HeatingPeriodView, HeatingPlant, InterimGap, LawOverrideSlot, MonthlyInfoRow, MonthlyInfoView, Co2Sheet, CostItem, Meter, Property, Settlement, StockView, Tenancy, Unit,
 } from '../../shared/types.ts'
 import { withoutCo2 } from '../testing/co2.ts'
 import {
@@ -883,6 +883,34 @@ test('Wärmelieferung über die Routen: anlegen, Umschalten mit Lieferung gesper
     const zurueck = (await s.api<HeatingPlant[]>('/api/heating-plants')).find((p) => p.id === neu.id)
     assert.deepEqual([zurueck?.contracting, zurueck?.heatDeliverySince, zurueck?.previousSupply], [true, '2025-10-01', 'landlord'])
     assert.equal((await notices()).length, 1)
+  } finally {
+    s.stop()
+  }
+})
+
+// ---------- Monatliche Verbrauchsinformation (Heizung PR 22) ----------
+
+test('Monatliche Verbrauchsinformation: Monate einer Heizperiode lesen, Vergleichswert und Mitteilung speichern', async () => {
+  const s = await startServer()
+  try {
+    const send = (url: string, init: RequestInit) => fetch(`${s.base}${url}`, { ...init, headers: { 'content-type': 'application/json' } })
+    const { plant } = await jsonOf<{ plant: HeatingPlant }>(await send('/api/heating-plants', jsonPost({ energy: 'gas', method: 'manual' })))
+    const view = await s.api<MonthlyInfoView>(`/api/heating-plants/${plant.id}/periods/2025-01/monthly-info`)
+    assert.deepEqual([view.plantId, view.period, view.managed, view.elsewhere, view.months, view.periodReference], [plant.id, '2025-01', false, false, [], null])
+    const row = await s.api<MonthlyInfoRow>(`/api/heating-plants/${plant.id}/monthly-info/2025-11`, { method: 'PUT', body: JSON.stringify({ referenceKwhPerM2: 10, referenceSource: 'Ablesedienst', sentOn: '2025-12-05' }) })
+    assert.deepEqual(row, { plantId: plant.id, month: '2025-11', referenceKwhPerM2: 10, referenceSource: 'Ablesedienst', sentOn: '2025-12-05' })
+    const frueh = await send(`/api/heating-plants/${plant.id}/monthly-info/2025-11`, { method: 'PUT', body: JSON.stringify({ sentOn: '2025-11-02' }) })
+    assert.equal(frueh.status, 400)
+    assert.match(await errorFrom(frueh), /frühestens am 01\.12\.2025/)
+    assert.equal((await send(`/api/heating-plants/${plant.id}/monthly-info/2025-13`, { method: 'PUT', body: '{}' })).status, 400)
+    assert.equal((await send('/api/heating-plants/gibt-es-nicht/monthly-info/2025-11', { method: 'PUT', body: '{}' })).status, 404)
+    assert.equal((await send('/api/heating-plants/gibt-es-nicht/periods/2025-01/monthly-info', { method: 'GET' })).status, 404)
+    assert.equal((await send(`/api/heating-plants/${plant.id}/periods/2025-13/monthly-info`, { method: 'GET' })).status, 400)
+    // Die Warmwassertemperatur hier nur bei eigener Abrechnung mit getrenntem Warmwasser.
+    const temp = await send(`/api/heating-plants/${plant.id}/periods/2025-01/dhw-temperature`, { method: 'PUT', body: JSON.stringify({ dhwTempC: 55 }) })
+    assert.equal(temp.status, 400)
+    assert.match(await errorFrom(temp), /Karte „Warmwasser“/)
+    assert.equal((await send('/api/heating-plants/gibt-es-nicht/periods/2025-01/dhw-temperature', { method: 'PUT', body: '{}' })).status, 404)
   } finally {
     s.stop()
   }

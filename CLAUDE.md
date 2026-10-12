@@ -1469,7 +1469,7 @@ lässt die Wahl nur für künftige Zeiträume zu. Der Anteil gehört zur **Linie
   auch Nr. 5 (`attachedCoversPrev`). Ohne Position mit dem Teil Erfassung druckt Nr. 1 c keine Zahl (`meteringCents`
   `null`, offen). Jede sicher fehlende Angabe ergibt `heating.info-incomplete` mit 3 % für die betroffenen Mieter
   (ein Kürzungsrecht nach Satz 3, auch mit der monatlichen Information: deren Hinweis nennt die Beträge nicht
-  ein zweites Mal; BR-Drs. 643/21, S. 23 f.), nur für Zeiträume ab dem 01.12.2021 (`hkv.settlement-info`). `heating.monthly-info` nur, wenn ein Gerät, das in der
+  ein zweites Mal; BR-Drs. 643/21, S. 24 f.), nur für Zeiträume ab dem 01.12.2021 (`hkv.settlement-info`). `heating.monthly-info` nur, wenn ein Gerät, das in der
   Heizperiode in Betrieb ist (Ablesungen überdecken sie, `coversPeriod`, oder es hat noch keine), als fernablesbar eingetragen ist oder die Anlage es angibt; ohne Angabe schweigt
   es, denn das Anlegen einer Anlage ändert keinen Hinweis (Entwurf 11.2). Kontaktadressen in
   `shared/heatingInfo.ts`, jährlich prüfen. Seite Heizkosten: Karten „Ausnahmen und Vereinbarungen“
@@ -1478,6 +1478,34 @@ lässt die Wahl nur für künftige Zeiträume zu. Der Anteil gehört zur **Linie
   [HeatingInfoBlock.tsx](client/src/components/HeatingInfoBlock.tsx) mit Balken. Migrationen 0034/0035 (`exemption` mit `chp` für § 11 Abs. 1 Nr. 3 Buchst. b); die
   Invarianten haben je eine Variante „Ausnahme je Heizperiode“ ((x): keine Kürzung und keine Angaben im
   ausgenommenen Topf, keine Zeile außer den CO₂-Abzügen hängt an den Angaben).
+
+**Monatliche Verbrauchsinformation** (Heizung PR 22, #99, [server/src/monthlyInfo.ts](server/src/monthlyInfo.ts),
+Monatsnamen und Lückentexte in [shared/monthlyInfo.ts](shared/monthlyInfo.ts)): Mietfuchs erstellt sie nur bei
+eigener Abrechnung einer zentralen Anlage mit eigenen Zählern (nicht mit Werten des Ablesedienstes) und nur, wenn
+ein Gerät einer Wohnung selbst als fernablesbar eingetragen ist; die Angabe an der Anlage allein sagt nicht,
+welche Wohnungen. Sonst bleibt der Hinweis von PR 14 („bis zu 3 %“, mit dem Satz, was Mietfuchs braucht).
+Verbrauch nur aus Ablesungen **genau** an den Monatsgrenzen (bei Ein- und Auszug am Tag vor dem Einzug bzw. am
+Auszugstag), nie interpoliert (§ 6a Abs. 2 Nr. 2 „soweit erhoben“); fehlt einem Gerät einer Größe der Wert, fehlt
+die ganze Größe. Vergleiche nur desselben Mietverhältnisses (Begründung: keine Daten anderer Nutzer). Die Geräte
+sind die der Linie (Kesseltausch), nur in Betrieb: Ein Gerät gilt als ausgebaut, wenn in derselben Wohnung ein
+Nachfolger derselben Größe übernimmt, sonst ist eine fehlende Ablesung eine Lücke. Der Durchschnittsnutzer kommt
+als Vergleichswert je Monat mit Quelle (Tabelle `heating_monthly_info`, Migration 0045, an der Anlage, die am
+Monatsende heizt, gelesen über die Linie), nie aus dem eigenen Haus (BR-Drs. 643/21, S. 19); der Wert der
+Heizperiode (Nr. 4) wird nicht aufgeteilt. Warmwasser in kWh über § 9 Abs. 2 Satz 2 ist eine Auslegung (die
+Gleichung gilt der Anlage und enthält die Verluste der Erzeugung) und steht getrennt von der gemessenen Wärme,
+ohne Summe und ohne die Faktoren des Satzes 6; die Temperatur ist `heating_periods.dhw_temp_c`. Heizkostenverteiler
+ergeben keine kWh. Ist nach § 11 nur die Wärme ausgenommen, zählt nur das Warmwasser. „Mitgeteilt“ je Anlage und
+Monat, frühestens am Tag nach dem Monatsende; fällig ist ein Monat ab dem Folgemonat (`asOf`, ohne ihn alle).
+`heating.monthly-info` nennt die offenen Monate und je betroffenem Mieter **einmal** 3 % (ein Kürzungsrecht nach
+Satz 3, Beträge nicht doppelt neben `heating.info-incomplete`; BR-Drs. 643/21, S. 24 f.), „um 3 %“ für den, dessen
+Wohnung ganz fernablesbar ist, sonst „möglich“, und bei gemischter Ausstattung die Einzelfallprüfung
+(BR-Drs. 643/21, S. 18); beides und der einzelne fehlende Monat sind als Auslegung benannt. Abgezogen wird
+nichts. Karte [MonthlyInfoCard.tsx](client/src/components/MonthlyInfoCard.tsx) auf der Seite Heizkosten, Blatt
+[MonthlyInfoSheet.tsx](client/src/components/MonthlyInfoSheet.tsx) als Portal an `body`, gedruckt mit
+`body.print-monthly-info` ohne `#root`. Die Warmwassertemperatur steht bei verbundenem Warmwasser in der Karte
+„Warmwasser“, bei getrenntem in dieser Karte (`saveDhwTemperature` in db/co2.ts, dieselbe Prüfung und Spalte;
+ohne sie könnte der Vermieter die genannte Kürzung nicht abwenden). Alle Monate statt nur der Heizperiode
+(Vorblatt der BR-Drs. 643/21) und „fällig ab dem 1. des Folgemonats“ stehen als Auslegung bzw. Festlegung im Text.
 
 **Brennstoffvorrat** (Heizung PR 8, #97, #99): Bei Heizöl, Flüssiggas, Pellets, Holz und Kohle
 (`STOCK_ENERGIES` in [shared/fuelStock.ts](shared/fuelStock.ts)) rechnet

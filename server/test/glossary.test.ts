@@ -373,3 +373,23 @@ test('Lexikon Wärmelieferung: Betriebskostenpauschale unter § 556c als Auslegu
   const t = GLOSSARY.heatDelivery.needed
   assert.match(t, /Auch wer eine Betriebskostenpauschale zahlt, trägt die Heizkosten als Betriebskosten, denn § 556 Abs\. 2 BGB lässt sie „als Pauschale oder als Vorauszahlung“ ausweisen \(Auslegung von Mietfuchs\); bei einer Inklusivmiete fehlt die Umlagevereinbarung, und § 556c gilt nicht\./)
 })
+
+test('Lexikon monthlyConsumptionInfo (Heizung PR 22): Mitteilen jeden Monat, kWh, Vergleichswert nicht aus dem Haus, Auslegungen benannt', () => {
+  const t = GLOSSARY.monthlyConsumptionInfo
+  assert.match(t.short, /fernablesbar/)
+  assert.match(t.norm ?? '', /§ 6a Abs\. 1 und 2.*§ 12 Abs\. 1 Satz 3 HeizkostenV/)
+  // Beispiel nachgerechnet: 2,5 m³ bei 55 °C, Q = 2,5 · V · (t − 10) = 281,25 kWh; getrennt von der gemessenen Wärme.
+  assert.match(t.example, /700 kWh für die Heizung \(gemessen\) und 2,5 m³ Warmwasser/)
+  assert.match(t.example, /umgerechnet etwa 281 kWh, angelehnt an § 9 Abs\. 2 Satz 2 HeizkostenV einschließlich der Verluste der Erzeugung/)
+  assert.match(t.example, /10 kWh je m² × 60 m² = 600 kWh/)
+  assert.match(t.needed, /Ja, wenn Zähler oder Heizkostenverteiler fernablesbar sind/)
+  assert.match(t.needed, /im Einzelfall zu prüfen, ob die monatliche Information möglich und zumutbar ist \(BR-Drs\. 643\/21, S\. 18\)/)
+  assert.match(t.needed, /jeden Monat eine Nachricht/)
+  assert.match(t.needed, /nicht von den Nutzern desselben Hauses/)
+  assert.match(t.needed, /um 3 % kürzen/)
+  // Kann-Befund K5: unter einer Ausnahme nur der Wärme nur am Warmwasser.
+  assert.match(t.needed, /an den Heizkosten \(ist nach § 11 HeizkostenV nur die Wärme ausgenommen, am Warmwasser\) um 3 % kürzen/)
+  assert.match(t.needed, /nicht höchstrichterlich geklärt; Mietfuchs rechnet vorsorglich mit den vollen 3 % \(Auslegung\)/)
+  assert.match(t.needed, /jeden Monat, auch außerhalb der Heizperiode.*Auslegung/s)
+  assert.match(t.needed, /ab dem ersten Tag des Folgemonats als fällig.*Festlegung von Mietfuchs/s)
+})
