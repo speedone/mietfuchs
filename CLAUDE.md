@@ -1489,7 +1489,7 @@ Auszugstag), nie interpoliert (§ 6a Abs. 2 Nr. 2 „soweit erhoben“); fehlt e
 die ganze Größe. Vergleiche nur desselben Mietverhältnisses (Begründung: keine Daten anderer Nutzer). Die Geräte
 sind die der Linie (Kesseltausch), nur in Betrieb: Ein Gerät gilt als ausgebaut, wenn in derselben Wohnung ein
 Nachfolger derselben Größe übernimmt, sonst ist eine fehlende Ablesung eine Lücke. Der Durchschnittsnutzer kommt
-als Vergleichswert je Monat mit Quelle (Tabelle `heating_monthly_info`, Migration 0043, an der Anlage, die am
+als Vergleichswert je Monat mit Quelle (Tabelle `heating_monthly_info`, Migration 0045, an der Anlage, die am
 Monatsende heizt, gelesen über die Linie), nie aus dem eigenen Haus (BR-Drs. 643/21, S. 19); der Wert der
 Heizperiode (Nr. 4) wird nicht aufgeteilt. Warmwasser in kWh über § 9 Abs. 2 Satz 2 ist eine Auslegung (die
 Gleichung gilt der Anlage und enthält die Verluste der Erzeugung) und steht getrennt von der gemessenen Wärme,
