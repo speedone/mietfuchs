@@ -56,6 +56,7 @@ import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { aiSummary } from '../aiForm'
 import { useEvaluationQueue } from '../evaluationQueue'
 import AssessmentReview from '../components/AssessmentReview'
+import Co2RefundsCard from '../components/Co2RefundsCard'
 import { usePeriod } from '../period'
 import { PeriodSelect } from '../components/PeriodSelect'
 import { useOpenForm, useProperty, withProperty } from '../property'
@@ -763,6 +764,11 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
           </button>
         </div>
       </div>
+
+      {/* Heizung PR 19 (#97): CO₂-Erstattung an Mieter, die selbst heizen; nur, wenn es einen gibt. */}
+      {tenancies.some((t) => t.heatingModel === 'selfSupply') && (
+        <Co2RefundsCard propertyId={property?.id ?? null} period={{ key: view.key, label: view.label }} tenancies={tenancies} units={units} />
+      )}
 
       {form && (
         <Drawer
