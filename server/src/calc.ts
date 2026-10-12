@@ -511,6 +511,8 @@ const itemSubject = (item: { id: string }): NoticeSubject => ({ kind: 'costItem'
 // eigene Kostenart, denn die Zeile ist keine Heizkostenzeile und darf in keine Grundlage einer Kürzung fallen.
 const CO2_REFUND_CATEGORY = 'CO₂-Erstattung'
 const CO2_REFUND_LABEL = 'CO₂-Erstattung bei eigener Heizung (§ 6 Abs. 2 CO2KostAufG)'
+// Die Zeile der Werbungskosten für ausgezahlte Erstattungen (Durchsicht S-1).
+const CO2_REFUND_TAX_CATEGORY = 'CO₂-Erstattung an Mieter (§ 6 Abs. 2 CO2KostAufG)'
 
 // Was ein Mieter im Zeitraum an wiederkehrenden Kosten trägt: ohne Erstattungen, denn eine Erstattung fällt nicht
 // wieder an (§ 560 Abs. 4 BGB: angemessen sind die voraussichtlichen Kosten).
@@ -1217,6 +1219,19 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
     prev.privateCents += balanceItem.privateCents
     prev.deductibleCents += balanceItem.deductibleCents
     cats.set(balanceItem.category, prev)
+  }
+  // CO₂-Erstattung an Mieter, die selbst heizen (Heizung PR 19, Durchsicht S-1): Eine ausgezahlte Erstattung
+  // (`paidOutOn`) ist Werbungskosten im Jahr der Auszahlung (§ 9 Abs. 1, § 11 Abs. 2 EStG), ganz abziehbar. Eine in der
+  // Betriebskostenabrechnung verrechnete wirkt dort über den Saldo und die Zahlungen und steht hier nicht noch einmal.
+  const paidOutCents = (snapshot.co2Refunds ?? []).filter((r) => r.paidOutOn !== null && r.paidOutOn.slice(0, 4) === String(year)).reduce((a, r) => a + r.amountCents, 0)
+  if (paidOutCents !== 0) {
+    const group = groupOf(CO2_REFUND_TAX_CATEGORY) ?? 'Sonstige Werbungskosten'
+    const cats = byGroup.get(group) ?? new Map<string, TaxExpenseCategory>()
+    byGroup.set(group, cats)
+    const prev = cats.get(CO2_REFUND_TAX_CATEGORY) ?? { category: CO2_REFUND_TAX_CATEGORY, amountCents: 0, labor35aCents: 0, privateCents: 0, deductibleCents: 0 }
+    prev.amountCents += paidOutCents
+    prev.deductibleCents += paidOutCents
+    cats.set(CO2_REFUND_TAX_CATEGORY, prev)
   }
   const groups: TaxExpenseGroup[] = [...byGroup.entries()]
     .map(([group, cats]) => {
@@ -7180,7 +7195,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // Verrechnet in diesem Zeitraum: eine Gutschriftzeile beim Mieter und die Gegenzeile beim Vermieter; die Summe
   // aller Zeilen bleibt die der Positionen. Nicht verrechnet und nicht ausgezahlt: ab der Fälligkeit eine Warnung
   // in jeder Abrechnung. Die Steuer liest nichts davon (Entwurf 6.4 Nr. 3): Verrechnet der Vermieter, steckt die
-  // Erstattung in der kleineren Zahlung; zahlt er aus, erfasst er eine negative Zahlung.
+  // Erstattung in der kleineren Zahlung; zahlt er aus, trägt er den Tag ein, und taxReport führt sie im Jahr der
+  // Auszahlung als Werbungskosten (Durchsicht S-1).
   if (scope === 'all') {
     for (const r of snapshot.co2Refunds ?? []) {
       const t = snapshot.tenancies.find((x) => x.id === r.tenancyId)
@@ -7263,7 +7279,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       if (open && r.claimedAt <= period.to && due <= period.to) {
         warn('co2.refund-due',
           `${t.tenantName} hat am ${fmtDay(r.claimedAt)} eine CO₂-Erstattung von ${fmtCents(r.amountCents)} geltend gemacht. Wird sie nicht verrechnet, war sie spätestens am ${fmtDay(due)} zu erstatten (§ 6 Abs. 2 Satz 5 CO2KostAufG); bei vereinbarter Vorauszahlung wird sie mit Ablauf der Frist der Abrechnung fällig, in der sie zu verrechnen ist (BT-Drs. 20/3172, S. 35). ` +
-            'Verrechnen Sie sie in dieser Abrechnung oder zahlen Sie sie aus, tragen Sie den Tag der Auszahlung ein und erfassen Sie die Auszahlung als negative Zahlung im Mietkonto.' +
+            'Verrechnen Sie sie in dieser Abrechnung oder zahlen Sie sie aus; dann tragen Sie den Tag der Auszahlung an der Erstattung ein; die Steuerübersicht führt sie dann im Jahr der Auszahlung als Werbungskosten. Als Zahlung im Mietkonto erfassen Sie sie nicht, sonst stünde dort ein Rückstand.' +
             (r.nonResidential
               ? ` Ob diese Frist auch im Nichtwohngebäude gilt, ist nach dem Wortlaut nicht sicher: § 8 Abs. 2 verweist auf § 6 Abs. 2 Satz 2 bis 4, und seit dem ${fmtDay(halfSplitEnactedOn())} steht die Frist in Satz 5. Nach der Begründung des Gesetzes sollen dieselben Fristen gelten (BT-Drs. 20/3172, S. 37); Mietfuchs warnt deshalb.`
               : ''),

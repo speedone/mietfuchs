@@ -77,7 +77,7 @@ export default function Co2RefundsCard({ propertyId, period, tenancies, units }:
       <p className="muted">
         Bezieht ein Mieter Brennstoff oder Wärme über einen eigenen Vertrag, etwa für eine Gastherme oder eine zentrale Heizung, kann er den Anteil seiner
         CO₂-Kosten, den nach dem Stufenmodell Sie tragen, von Ihnen verlangen. Erfassen Sie hier seine Anzeige; verrechnet wird in der Abrechnung, die Sie
-        wählen, sonst zahlen Sie aus und tragen die Auszahlung als negative Zahlung im Mietkonto ein.
+        wählen; sonst zahlen Sie aus und tragen hier den Tag der Auszahlung ein. Die Steuerübersicht führt eine ausgezahlte Erstattung im Jahr der Auszahlung als Werbungskosten; im Mietkonto erfassen Sie sie nicht.
       </p>
       {rows.length > 0 && (
         <ul>

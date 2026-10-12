@@ -453,7 +453,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   verrechnet den Betrag als Gutschrift in der Betriebskostenabrechnung, weist auf eine Abweichung von der
   Nachrechnung hin und nennt die Fristen für Anzeige, Verrechnung und Auszahlung; verrechnet wird nur bei
   vereinbarter Vorauszahlung, und eine Erstattung gibt es nur bei „Mieter heizt selbst“. Der Vorschlag für die
-  neue Vorauszahlung rechnet ohne die Erstattung; in der Steuerübersicht zählen nur die Zahlungen.
+  neue Vorauszahlung rechnet ohne die Erstattung. In der Steuerübersicht wirkt eine verrechnete Erstattung über die
+  Zahlungen, eine ausgezahlte steht im Jahr der Auszahlung bei den Werbungskosten.
 ### Geändert
 
 - Neue Warnung „Monatliche Verbrauchsinformation“ bei einer Heizanlage, deren Zähler oder
