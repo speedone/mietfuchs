@@ -142,3 +142,28 @@ test('Nach „Positionen anlegen“ verknüpft „CO₂-Angaben übernehmen“ d
   fireEvent.click(screen.getByText('CO₂-Angaben übernehmen'))
   await waitFor(() => expect(sent.find((s) => s.url.endsWith('/co2'))?.body).toMatchObject({ serviceCostItemId: 'neu' }))
 })
+
+test('Durchsicht S3: scheitert ein späterer Block, legt ein zweiter Klick den angelegten nicht noch einmal an', async () => {
+  const zwei: ServiceStatementExtraction = { ...x, blocks: [...x.blocks, { title: 'Kaltwasser', category: 'Wasser/Abwasser', totalEur: 100, lines: [
+    { label: 'Mustermann, Erika', unitLabel: 'EG links', from: null, to: null, amountEur: 100, vacancy: false },
+  ] }] }
+  let fail = true
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body ?? '{}'))
+    sent.push({ url, method: init?.method ?? 'GET', body })
+    if (init?.method === 'POST' && body.category === 'Wasser/Abwasser' && fail) {
+      fail = false
+      return new Response(JSON.stringify({ error: 'Netz weg' }), { status: 500, headers: { 'content-type': 'application/json' } })
+    }
+    return new Response(JSON.stringify({ id: 'neu' }), { status: 200, headers: { 'content-type': 'application/json' } })
+  })
+  let reloaded = 0
+  render(<ServiceImportReview x={zwei} file="beleg.pdf" ctx={ctx} view={view()} onDone={() => { reloaded++ }} />)
+  fireEvent.change(select('Zuordnung „Herr Unbekannt“'), { target: { value: 'vacancy' } })
+  fireEvent.click(screen.getByText('Positionen anlegen'))
+  expect(await screen.findByText(/Netz weg/)).toBeTruthy()
+  expect(reloaded).toBe(1)
+  fireEvent.click(screen.getByText('Positionen anlegen'))
+  await waitFor(() => expect(sent.filter((s) => s.method === 'POST' && s.body.category === 'Wasser/Abwasser').length).toBe(2))
+  expect(sent.filter((s) => s.method === 'POST' && s.body.category === 'Heizung und Warmwasser').length).toBe(1)
+})
