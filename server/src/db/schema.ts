@@ -24,6 +24,7 @@ import type {
   CaptureMethod,
   CostKey,
   CostModel,
+  HeatingModel,
   DepositStatus,
   DevicesInstalledAfter,
   DevicesRemote,
@@ -85,6 +86,8 @@ const exactly =
 export const COST_KEYS = exactly<CostKey>()(['area', 'persons', 'units', 'direct', 'meter', 'custom', 'external', 'amounts', 'heatingSystem'] as const)
 export const EXTERNAL_MEASURES = exactly<ExternalMeasure>()(['mea', 'area', 'units'] as const)
 export const COST_MODELS = exactly<CostModel>()(['settlement', 'flatRate', 'inclusive'] as const)
+// Für die Heizung zusätzlich „Mieter heizt selbst“ (Heizung PR 19, #97).
+export const HEATING_MODELS = exactly<HeatingModel>()([...COST_MODELS, 'selfSupply'] as const)
 export const METER_TYPES = exactly<MeterType>()(['kaltwasser', 'warmwasser', 'strom', 'waerme', 'hkv', 'sonstig'] as const)
 export const HEATING_PARTS = exactly<HeatingPart>()(['fuel', 'operating', 'metering'] as const)
 // Betriebsstrom der Heizung (Heizung PR 15, #212): an Heizkosten `included`, am Allgemeinstrom `deduction`.
@@ -251,7 +254,8 @@ export const tenancies = sqliteTable(
     notes: text('notes'),
     // Nebenkostenmodell (#93), getrennt für kalte Kosten und Heizung. NULL heißt Abrechnung.
     costModel: text('cost_model', { enum: COST_MODELS }),
-    heatingModel: text('heating_model', { enum: COST_MODELS }),
+    // Heizung PR 19: dazu `selfSupply`, der Mieter bezieht Brennstoff oder Wärme selbst.
+    heatingModel: text('heating_model', { enum: HEATING_MODELS }),
     // Mitteilung nach § 5d Abs. 4 CO2KostAufG in Textform (Heizung PR 18, Abweichung 3 des Plans).
     halfSplitNoticeOn: text('half_split_notice_on'),
   },
@@ -262,7 +266,7 @@ export const tenancies = sqliteTable(
     notNegative('tenancies_deposit_not_negative', 'deposit_cents'),
     oneOf('tenancies_deposit_status_known', 'deposit_status', DEPOSIT_STATUS),
     oneOf('tenancies_cost_model_known', 'cost_model', COST_MODELS),
-    oneOf('tenancies_heating_model_known', 'heating_model', COST_MODELS),
+    oneOf('tenancies_heating_model_known', 'heating_model', HEATING_MODELS),
     // Mitteilung nach § 5d Abs. 4 (Heizung PR 18): ein Datum.
     check('tenancies_half_split_notice_valid', sql.raw(`"half_split_notice_on" IS NULL OR "half_split_notice_on" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`)),
   ],

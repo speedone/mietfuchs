@@ -351,6 +351,13 @@
       "when": 1791769374403,
       "tag": "0049_gmodg_bedingungen",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "6",
+      "when": 1791771029751,
+      "tag": "0050_heizmodell_bedingungen",
+      "breakpoints": true
     }
   ]
 }

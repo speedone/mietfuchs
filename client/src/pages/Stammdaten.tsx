@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { CostModel, DepositStatus, HeatingPlant, InterimGapStatus, Meter, MeterType, Settings, Tenancy, Unit, UnitDependents, UnitUsage } from '../types'
+import type { CostModel, HeatingModel, DepositStatus, HeatingPlant, InterimGapStatus, Meter, MeterType, Settings, Tenancy, Unit, UnitDependents, UnitUsage } from '../types'
 import { servesUnit } from '../../../shared/heatingPeriod.ts'
 import { DEPOSIT_STATUS_LABELS, METER_TYPE_LABELS, UNIT_USAGE_LABELS, usageOf } from '../types'
 import { EMPTY_UNIT_FORM, buildUnitBody, connectionSummary, connectionTypes, setConnected, unitDeleteMessage, unitToForm, type UnitForm } from '../unitForm'
@@ -7,7 +7,7 @@ import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { scheduleOf, separateHeatingFor, separateHeatingPlant } from '../heatingSettlementView'
 import Drawer from '../components/Drawer'
 import PropertyCard from '../components/PropertyCard'
-import { COST_MODEL_LABELS, buildPersonHistory, costModelBadge, costModelBody, defaultTenancyUnitId, overlapQuestion, prepaymentColumn, showsFlatRates } from '../tenancyModel'
+import { COST_MODEL_LABELS, HEATING_MODEL_LABELS, SELF_SUPPLY_TENANCY_HINT, buildPersonHistory, costModelBadge, costModelBody, defaultTenancyUnitId, overlapQuestion, prepaymentColumn, showsFlatRates } from '../tenancyModel'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import { buildTenantChange, defaultStart, EMPTY_NEW_TENANT, endProblem, gapProblem, INTERIM_FEE_HINT, INTERIM_GAP_OPTIONS, meterProblem, parseMeterValue, type NewTenantForm } from '../tenantChange'
 import { gapConsequence } from '../heatingSelfView'
@@ -52,7 +52,7 @@ type TenancyForm = {
   notes: string
   // Nebenkostenmodell (#93)
   costModel: CostModel
-  heatingModel: CostModel
+  heatingModel: HeatingModel
   // Die Marke des Stands, aus dem das Formular gefüllt wurde (Laienprobe B1, shared/tenancyStamp.ts).
   stamp?: string
 }
@@ -62,7 +62,7 @@ const EMPTY_UNIT: UnitForm = EMPTY_UNIT_FORM
 // Leere erweiterte Mieter-Felder — bei „neu“ und (mit Werten) beim Bearbeiten verwendet
 const EMPTY_TENANCY_EXTRA = {
   email: '', phone: '', correspondenceAddress: '', iban: '', contractDate: '', deposit: '', depositStatus: 'offen' as DepositStatus, notes: '',
-  costModel: 'settlement' as CostModel, heatingModel: 'settlement' as CostModel,
+  costModel: 'settlement' as CostModel, heatingModel: 'settlement' as HeatingModel,
   flatRates: [] as { from: string; amount: string }[],
   heatingPrepayments: [] as { from: string; amount: string }[],
 }
@@ -676,11 +676,13 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                 </label>
                 <label className="field grow" title="Für die Kostenart Heizung und Warmwasser; eine Pauschale oder Warmmiete ist nur im selbstbewohnten Zweifamilienhaus zulässig (§ 2 HeizkostenV)">
                   <span>Heizung und Warmwasser (<Term id="heatingCostOrdinance">HeizkostenV</Term>)</span>
-                  <select value={tenForm.heatingModel} onChange={(e) => setTenForm({ ...tenForm, heatingModel: e.target.value as CostModel })}>
-                    {(Object.keys(COST_MODEL_LABELS) as CostModel[]).map((m) => <option key={m} value={m}>{COST_MODEL_LABELS[m]}</option>)}
+                  <select value={tenForm.heatingModel} onChange={(e) => setTenForm({ ...tenForm, heatingModel: (Object.keys(HEATING_MODEL_LABELS) as HeatingModel[]).find((m) => m === e.target.value) ?? 'settlement' })}>
+                    {(Object.keys(HEATING_MODEL_LABELS) as HeatingModel[]).map((m) => <option key={m} value={m}>{HEATING_MODEL_LABELS[m]}</option>)}
                   </select>
                 </label>
               </div>
+              {/* Heizung PR 19 (#97): die Hinweispflicht nach § 6 Abs. 2 Satz 6 CO2KostAufG. */}
+              {tenForm.heatingModel === 'selfSupply' && <div className="muted">{SELF_SUPPLY_TENANCY_HINT} <Term id="co2Refund" /></div>}
               {showsFlatRates(tenForm.costModel, tenForm.heatingModel) && (
                 <div className="field-group">
                   <div className="field-group-label">Pauschale je Monat — Staffel</div>

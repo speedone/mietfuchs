@@ -55,7 +55,7 @@ import {
   readUnits, type StoredClosedSettlement,
 } from './read.ts'
 import {
-  aiSlots, assessmentLines, assessments, baseRents, co2Statements, co2TenantReliefs, heatingPeriods, closedHeatingSettlementHistory, closedHeatingSettlements, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, DEPOSIT_STATUS, EXTERNAL_MEASURES,
+  aiSlots, assessmentLines, assessments, baseRents, co2Statements, co2TenantReliefs, heatingPeriods, closedHeatingSettlementHistory, closedHeatingSettlements, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, HEATING_MODELS, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, DEPOSIT_STATUS, EXTERNAL_MEASURES,
   HCA_SCALES, HEATING_PARTS, OPERATING_POWER, HEATING_ROLES, HEATING_TARGETS, INTERIM_GAP_STATUS, interimReadingGaps, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingSelfSpans, heatingPrepaymentOverrides, heatingPrepayments, heatingSeparateSpans, heatingServiceValues, heatingEstimates,
   flatRates, METER_TYPES, meters, payments, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, PROPERTY_KINDS,
   readings, settings, tenancies, unitNoConnection, units, fuelCarryFrozen, fuelDeliveries,
@@ -325,7 +325,7 @@ function mergeTenancy(current: Tenancy, body: unknown): Tenancy {
     depositStatus: merged(body, 'depositStatus', current.depositStatus, (v) => oneOfOrUndefined(DEPOSIT_STATUS, v)),
     // Nebenkostenmodell (#93): ein unbekannter Wert heißt wie null die Abrechnung.
     costModel: merged(body, 'costModel', current.costModel, (v) => oneOfOrUndefined(COST_MODELS, v)),
-    heatingModel: merged(body, 'heatingModel', current.heatingModel, (v) => oneOfOrUndefined(COST_MODELS, v)),
+    heatingModel: merged(body, 'heatingModel', current.heatingModel, (v) => oneOfOrUndefined(HEATING_MODELS, v)),
     // Mitteilung nach § 5d Abs. 4 CO2KostAufG (Heizung PR 18, Abweichung 3 des Plans).
     halfSplitNoticeOn: merged(body, 'halfSplitNoticeOn', current.halfSplitNoticeOn, (v) => isoDateOrNull(v, 'Der Tag der Mitteilung nach § 5d Abs. 4 CO2KostAufG') ?? undefined),
     notes: merged(body, 'notes', current.notes, asOptionalText),
