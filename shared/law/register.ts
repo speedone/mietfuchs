@@ -19,8 +19,9 @@ export type SourceCheck = 'checked' | 'adopted' | 'unchecked'
 export type Source = { rank: SourceRank; cite: string; url: string; retrieved: string; checked: SourceCheck }
 
 // Nach welchem Zeitpunkt sich die Fassung richtet (Entwurf 3.13). Jeder Parameter hat genau eine
-// Zeitregel (N6 der dritten Fassung); braucht ein Fall zwei, sind es zwei Parameter. `incurred`
-// kommt mit PR 18; die Überladungen von `law()` nehmen sie bis dahin nicht an. `deliveryYear`
+// Zeitregel (N6 der dritten Fassung); braucht ein Fall zwei, sind es zwei Parameter. `incurred` (Heizung
+// PR 18): anteilig nach Anfall; `law()` teilt den Zeitraum an den Fassungen und gewichtet jeden Teil mit
+// dem, was der Aufrufer als angefallen misst (Gradtage, Anteil einer Rechnung). `deliveryYear`
 // (Heizung PR 17): die Fassung am 1. Januar des Lieferjahres (§ 3 Abs. 2 und 3 CO2KostAufG).
 export type Timing = 'periodStart' | 'incurred' | 'overlap' | 'eventDate' | 'deliveryYear'
 
@@ -79,6 +80,31 @@ function shiftDay(iso: string, days: number): string {
 }
 export const dayAfter = (iso: string): string => shiftDay(iso, 1)
 export const dayBefore = (iso: string): string => shiftDay(iso, -1)
+
+// Tage eines Bereichs, beide Grenzen eingeschlossen, in UTC.
+export function daysIn(range: Period): number {
+  const at = (iso: string): number => {
+    const [y, m, d] = iso.split('-').map(Number)
+    return Date.UTC(y ?? 0, (m ?? 1) - 1, d ?? 1)
+  }
+  return Math.round((at(range.to) - at(range.from)) / 86400000) + 1
+}
+
+// Derselbe Tag `months` Monate später (oder früher); fehlt er im Zielmonat, dessen letzter Tag.
+export function shiftMonths(iso: string, months: number): string {
+  const [y, m, d] = iso.split('-').map(Number)
+  const total = (y ?? 0) * 12 + ((m ?? 1) - 1) + months
+  const ty = Math.floor(total / 12)
+  const tm = total - ty * 12 + 1
+  const last = new Date(Date.UTC(ty, tm, 0)).getUTCDate()
+  return `${String(ty).padStart(4, '0')}-${String(tm).padStart(2, '0')}-${String(Math.min(d ?? 1, last)).padStart(2, '0')}`
+}
+
+// Das Ende eines Zeitraums von `months` Monaten ab einem Ereignis (Einbau, Abrechnung, Anzeige): Der Tag
+// des Ereignisses zählt nicht mit (§ 187 Abs. 1 BGB), der Zeitraum endet mit Ablauf des Tages, der ihm
+// durch seine Zahl entspricht (§ 188 Abs. 2 BGB), fehlt er, mit dem Monatsletzten (§ 188 Abs. 3 BGB).
+// § 186 BGB erstreckt das auf Fristen in Gesetzen.
+export const eventPeriodEnd = (eventIso: string, months: number): string => shiftMonths(eventIso, months)
 
 // ---------- Abfrage ----------
 
@@ -143,6 +169,25 @@ function record<T extends LawValue>(log: LawLog, param: LawParam<T>, version: Ve
 
 export type OverlapAnswer<T extends LawValue> = { coverage: Coverage; value: T; validFrom?: string; validTo?: string }
 
+// Ein Teil eines Zeitraums mit der Fassung, die darin gilt, und seinem Gewicht am Ganzen (Summe 1).
+export type IncurredSegment<T extends LawValue> = { from: string; to: string; value: T; weight: number }
+
+// Die Fassungen eines Parameters, auf einen Bereich zugeschnitten, ohne Protokoll. Für Rechnungen, die
+// innerhalb eines Zeitraums nach Teilen fragen (§ 5a je Lieferung); was davon angewandt wird, protokolliert
+// `law()` mit `incurred` für den Zeitraum der Abrechnung. Gibt es am Anfang oder Ende keine Fassung, ist das
+// ein Programmfehler wie bei `versionAt`.
+export function versionsIn<T extends LawValue>(param: LawParam<T>, range: Period): { from: string; to: string; value: T }[] {
+  versionAt(param, range.from)
+  versionAt(param, range.to)
+  return param.versions
+    .filter((v) => (v.validFrom === undefined || v.validFrom <= range.to) && (v.validTo === undefined || v.validTo >= range.from))
+    .map((v) => ({
+      from: v.validFrom !== undefined && v.validFrom > range.from ? v.validFrom : range.from,
+      to: v.validTo !== undefined && v.validTo < range.to ? v.validTo : range.to,
+      value: v.value,
+    }))
+}
+
 // Die Frage, die eine Stelle stellen darf, hängt an der Zeitregel des Parameters; der Übersetzer
 // prüft so, dass niemand einen Wert nach dem Beginn des Zeitraums fragt, der nach einem Ereignis
 // gilt.
@@ -150,19 +195,41 @@ export function law<T extends LawValue>(param: LawParam<T, 'periodStart'>, ctx: 
 export function law<T extends LawValue>(param: LawParam<T, 'eventDate'>, ctx: { date: string }, log: LawLog): T
 export function law<T extends LawValue>(param: LawParam<T, 'deliveryYear'>, ctx: { year: number }, log: LawLog): T
 export function law<T extends LawValue>(param: LawParam<T, 'overlap'>, ctx: { period: Period }, log: LawLog): OverlapAnswer<T>
+export function law<T extends LawValue>(param: LawParam<T, 'incurred'>, ctx: { period: Period; weights: (range: Period) => number }, log: LawLog): IncurredSegment<T>[]
 export function law<T extends LawValue>(
-  param: LawParam<T, 'periodStart' | 'eventDate' | 'deliveryYear' | 'overlap'>,
-  ctx: { period: Period } | { date: string } | { year: number },
+  param: LawParam<T, Timing>,
+  ctx: { period: Period } | { date: string } | { year: number } | { period: Period; weights: (range: Period) => number },
   log: LawLog,
-): T | OverlapAnswer<T> {
+): T | OverlapAnswer<T> | IncurredSegment<T>[] {
   // Ein Wert, den der Vermieter eintragen darf, geht über lawOverridable (Abweichung 1 des Plans zu
   // Heizung PR 17): Hier würde ein `null` sonst still durchgereicht und der Eintrag übersehen.
   if (param.overridable) throw new Error(`Rechtswert „${param.id}“ ist überschreibbar; bitte lawOverridable nehmen`)
+  if (param.timing === 'incurred') {
+    if (!('weights' in ctx)) throw new Error(`Rechtswert „${param.id}“ gilt nach Anfall; bitte mit Gewichten fragen`)
+    return incurred(param, ctx.period, ctx.weights, log)
+  }
   if (param.timing === 'overlap' && 'period' in ctx) return overlap(param, ctx.period, log)
   const date = 'period' in ctx ? ctx.period.from : 'year' in ctx ? yearStart(ctx.year) : ctx.date
   const version = versionAt(param, date)
   record(log, param, version)
   return version.value
+}
+
+// `incurred` (Heizung PR 18, Entwurf 4.2): der Zeitraum, geteilt an den Grenzen der Fassungen, jeder Teil mit
+// seinem Gewicht. Die Gewichte misst der Aufrufer (`weights`) und `law()` normiert sie auf die Summe 1. Misst
+// er nirgends etwas, gelten die Tage, damit kein Teil verschwindet. Protokolliert wird jede Fassung mit
+// Gewicht; eine ohne Gewicht ist im Zeitraum nicht angewandt (wie `none` bei `overlap`).
+function incurred<T extends LawValue>(param: LawParam<T>, period: Period, weights: (range: Period) => number, log: LawLog): IncurredSegment<T>[] {
+  const parts = versionsIn(param, period)
+  const measured = parts.map((p) => Math.max(0, weights({ from: p.from, to: p.to })))
+  const byDays = measured.reduce((a, w) => a + w, 0) <= 0
+  const w = byDays ? parts.map((p) => daysIn(p)) : measured
+  const total = w.reduce((a, x) => a + x, 0)
+  return parts.map((p, i) => {
+    const weight = total > 0 ? (w[i] ?? 0) / total : 0
+    if (weight > 0) record(log, param, versionAt(param, p.from))
+    return { from: p.from, to: p.to, value: p.value, weight }
+  })
 }
 
 // Ein überschreibbarer Wert (Entwurf 4.5): Ist er veröffentlicht, gilt er, auch wenn ein Eintrag
