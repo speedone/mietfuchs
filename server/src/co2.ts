@@ -7,6 +7,7 @@ import { serviceProbe, type ProbeResult } from '../../shared/co2Probe.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import { NO_CO2_FUELS, noCo2Supplier } from '../../shared/heatDelivery.ts'
 import type { Snapshot, SnapshotCostItem, SnapshotHeatingPeriodRow, SnapshotUnit } from './snapshot.ts'
+import { blendedPermille, termsWeight, type HalfSplitTerm } from './halfSplit.ts'
 
 // Brennstoffe mit Standardwert für den Emissionsfaktor nach der EBeV, die das Gesetz erfasst (§ 2
 // Abs. 1 Satz 1 CO2KostAufG, Entwurf 5.3). Die Wärmelieferung erfasst Satz 2 „hinsichtlich der für
@@ -26,6 +27,10 @@ export const co2Required = (pot: { energy: HeatingEnergy; fuelEnergy?: HeatingEn
 
 // Warmwasser ohne Wärmezähler (§ 9 Abs. 2 Satz 2 und 4 HeizkostenV).
 export const FORMULA_METHODS: readonly DhwMethod[] = ['volumeFormula', 'areaFormula']
+
+// Hälftige Teilung (Heizung PR 18, Abweichung 14 des Plans): Der erwartete Anteil ist eine Mischzahl, die ein
+// Messdienst gerundet druckt; die Nachstufung vergleicht dann auf 1 ‰ genau. Nur für den Hinweis, ohne Rechtsfolge.
+export const HALF_SPLIT_TOLERANCE_PERMILLE = 1
 
 // Ein Cent und die Rundung von L (ein halber Cent): so weit darf L neben C · ‰ liegen (Entwurf 9.2,
 // 7.4 „|G − V − L| ≤ 1 ct + Rundung von L“).
@@ -79,8 +84,10 @@ type ServiceValues = Pick<Co2Statement, 'serviceKgPerM2' | 'serviceEmissionsKg' 
 // sein; passt der Anteil laut Messdienst zu einer Stufe darin, ist er stimmig. Dazu muss L zu C · ‰
 // passen. `null` heißt: nicht zu prüfen, weil eine Angabe fehlt.
 // `adjust`: § 8 und § 9 CO2KostAufG nach den Angaben zum Gebäude (Heizung PR 7, Durchsicht von #233); aus
-// dem Anteil der Stufe in Promille der erwartete Anteil.
-export function restage(st: ServiceValues, ranges: readonly Co2StageRange[], decimals: number, adjust: (permille: number) => number = (x) => x): Restage {
+// dem Anteil der Stufe in Promille der erwartete Anteil. Seit Heizung PR 18 mischt der Aufrufer darin auch die
+// hälftige Teilung nach § 5a (`null`: nicht zu erwarten) und gibt eine Toleranz mit, weil ein Messdienst die
+// Mischzahl gerundet druckt (Prüfung M4; Abweichung 14 des Plans). Ohne Teilung bleibt der Vergleich genau.
+export function restage(st: ServiceValues, ranges: readonly Co2StageRange[], decimals: number, adjust: (permille: number) => number | null = (x) => x, tolerance = 0): Restage {
   const area = st.serviceAreaM2 ?? st.areaM2
   const printed = st.serviceKgPerM2 ?? (st.serviceEmissionsKg !== null && area !== null && area > 0 ? st.serviceEmissionsKg / area : null)
   if (printed === null) return { value: null, stage: null, percentOk: null, sumOk: null }
@@ -91,7 +98,10 @@ export function restage(st: ServiceValues, ranges: readonly Co2StageRange[], dec
   const candidates = st.serviceKgPerM2 !== null && Number.isInteger(st.serviceKgPerM2)
     ? ranges.filter((r) => r.from < value + 0.5 && (r.to === null || r.to > value - 0.5))
     : [stage]
-  const percentOk = candidates.some((r) => adjust(r.landlordPercent * 10) === permille)
+  const percentOk = candidates.some((r) => {
+    const expected = adjust(r.landlordPercent * 10)
+    return expected !== null && Math.abs(expected - permille) <= tolerance
+  })
   const sumOk = st.serviceTotalCents === null || st.serviceLandlordCents === null
     ? null
     : Math.abs(st.serviceLandlordCents - (st.serviceTotalCents * permille) / 1000) <= L_TOLERANCE_CENTS
@@ -349,6 +359,10 @@ export type SelfSplitInput = {
   nonResidentialPermille: number | null
   // § 9: der Faktor aus dem Register; `both`, wenn Vorgaben beidem entgegenstehen.
   restriction: { factor: number; bothSplit: boolean; both: boolean } | null
+  // § 5a Abs. 3 Nr. 2 (Heizung PR 18): die Teile der Heizperiode mit hälftiger Teilung; leer oder fehlend:
+  // keine. `twoFamily`: § 5d Abs. 3 hat sie verhindert (nur für den Ausweis).
+  halfSplit?: readonly HalfSplitTerm[]
+  twoFamily?: boolean
 }
 
 export type SelfSplit = { value: number | null; stage: Co2StageRange | null; permille: number | null; landlordRaw: number | null; adjustments: Co2Adjustment[] }
@@ -374,7 +388,20 @@ export function selfSplit(i: SelfSplitInput): SelfSplit {
       adjustments.push('restrictionHalf')
     }
   }
-  return { value, stage, permille, landlordRaw: permille === null ? null : (i.co2Cents * permille) / 1000, adjustments }
+  // § 5a gilt „in Abweichung von § 5 Absatz 2“; § 9 kürzt nach dieser Auslegung nur den Anteil nach § 5, 6, 7
+  // oder 8, also den Teil nach Stufen (Abweichung 5 des Plans, Prüfung M6). Deshalb wird erst hier gemischt. Bei
+  // § 9 Abs. 2 („keine Aufteilung“) ist der Teil nach Stufen 0 ‰, auch wenn die Stufe mangels Fläche fehlt;
+  // `null` hieße für `blendedPermille` „Einstufung fehlt“, und der Teil nach § 5a ginge verloren.
+  const terms = i.halfSplit ?? []
+  const split = termsWeight(terms) > 0
+  if (permille === null && split && i.restriction?.both === true && !i.restriction.bothSplit) {
+    permille = 0
+    adjustments.push('restrictionNone')
+  }
+  const blended = split ? blendedPermille(permille, terms) : permille
+  if (split) adjustments.push('halfSplit')
+  if (i.twoFamily) adjustments.push('twoFamily')
+  return { value, stage, permille: blended, landlordRaw: blended === null ? null : (i.co2Cents * blended) / 1000, adjustments }
 }
 
 // ---------- Mehrere Anlagen und Etagenheizung (Heizung PR 9, Entwurf 9.2, 9.3) ----------
@@ -463,9 +490,18 @@ export function perUnitExceeding(list: readonly PerUnitFuel[]): string[] {
 // die Mietverhältnisse der Wohnung. Was in A_u auf Leerstand, Eigennutzung oder Pauschale fällt, hat
 // kein x_t und bleibt ohne Abzug beim Vermieter, wie bei der zentralen Anlage. Gerundet wird beim
 // Aufrufer als eine Verteilung von R = round(Σ r) mit `distributeCents`.
-export function perUnitReliefs(permille: number, list: readonly PerUnitFuel[]): { tenancyId: string; unitId: string; raw: number }[] {
+// Seit Heizung PR 18 kann der Anteil je Wohnung verschieden sein: Die hälftige Teilung nach § 5a folgt den
+// Rechnungen der Wohnung (§ 5 Abs. 1 Satz 2).
+export function perUnitReliefs(permille: number | ((unitId: string) => number), list: readonly PerUnitFuel[]): { tenancyId: string; unitId: string; raw: number }[] {
   const exceeding = new Set(perUnitExceeding(list))
+  const p = typeof permille === 'number' ? () => permille : permille
   return list
     .filter((u) => u.rented && u.fuelCents > 0 && !exceeding.has(u.unitId))
-    .flatMap((u) => u.shares.map((s) => ({ tenancyId: s.tenancyId, unitId: u.unitId, raw: ((permille / 1000) * u.co2Cents * s.exact) / u.fuelCents })))
+    .flatMap((u) => u.shares.map((s) => ({ tenancyId: s.tenancyId, unitId: u.unitId, raw: ((p(u.unitId) / 1000) * u.co2Cents * s.exact) / u.fuelCents })))
 }
+
+// Die Kennung der Abzugszeilen nach § 7 Abs. 5 CO2KostAufG (Netzentgelte und Biobrennstoff, Heizung PR 18) zu
+// einem Topf: dieselbe Anlage und Heizperiode wie die CO₂-Abzugszeile, `gmodg:` statt `co2:`. Jede Stelle, die
+// Abzugszeilen eines Topfs an ihrer Kennung erkennt, fragt beide (`reliefKeysOf`; Prüfung M5).
+export const gmodgKeyOf = (reliefKey: string): string => reliefKey.replace(/^co2:/, 'gmodg:')
+export const reliefKeysOf = (pot: { reliefKey: string }): string[] => [pot.reliefKey, gmodgKeyOf(pot.reliefKey)]

@@ -20,7 +20,7 @@ test('mehrere Gründe: jeder mit seinem Betrag', () => {
 })
 
 test('jeder Grund hat eine Beschriftung', () => {
-  const reasons = ['notAllocable', 'noBasis', 'selfUse', 'vacancy', 'flatRate', 'inclusive', 'outsideUnit', 'amountsRest', 'customRest', 'mainMeterRest', 'co2Share', 'fuelCarry', 'fuelClosedPeriod', 'fuelEstimateDiff', 'stockRemaining', 'rounding'] as const
+  const reasons = ['notAllocable', 'noBasis', 'selfUse', 'vacancy', 'flatRate', 'inclusive', 'outsideUnit', 'amountsRest', 'customRest', 'mainMeterRest', 'co2Share', 'fuelCarry', 'fuelClosedPeriod', 'fuelEstimateDiff', 'stockRemaining', 'gmodgShare', 'rounding'] as const
   for (const reason of reasons) {
     const text = landlordReasonText(row({ landlordParts: [{ reason, cents: 50000 }] }))
     expect(text).not.toBe('')
@@ -41,4 +41,8 @@ test('Brennstoff anderer Heizperioden (Heizung PR 7)', () => {
   expect(landlordReasonText(row({ landlordParts: [{ reason: 'fuelCarry', cents: 98339 }] }))).toBe('Brennstoff einer anderen Heizperiode (Abgrenzung)')
   expect(landlordReasonText(row({ landlordParts: [{ reason: 'fuelClosedPeriod', cents: 98339 }] }))).toBe('Brennstoff einer abgeschlossenen Heizperiode')
   expect(landlordReasonText(row({ landlordParts: [{ reason: 'fuelEstimateDiff', cents: -6661 }] }))).toBe('Abweichung von der Schätzung')
+})
+
+test('§ 5a: Netzentgelte und Biobrennstoff des Vermieters (Heizung PR 18)', () => {
+  expect(landlordReasonText(row({ landlordParts: [{ reason: 'gmodgShare', cents: 7950 }] }))).toBe('Netzentgelte und Biobrennstoff (§ 5a CO2KostAufG)')
 })
