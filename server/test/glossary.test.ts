@@ -421,6 +421,8 @@ test('Lexikon: hälftige Teilung nach § 5a nennt §§ 5a, 5b, 5d, § 7 Abs. 5 u
   assert.match(t.needed, /die beide über eine gemeinsame Heizung versorgt werden \(§ 5d Abs\. 3 CO2KostAufG\)/)
   assert.match(t.needed, /in keinem Gebiet liegt/)
   assert.match(t.needed, /Teile einer Gemeinde/)
+  // Durchsicht K3: die Mitteilung mit der Abrechnung als Regelfall der Begründung.
+  assert.match(t.needed, /genügt nach der Begründung in der Regel die Mitteilung mit der Abrechnung/)
   assert.match(t.needed, /Auslegung/)
   assert.match(t.needed, /Kündigungssperrfrist/)
   assert.match(t.short, /um 3 % kürzen \(§ 7 Abs\. 5 Satz 3, Abs\. 4 CO2KostAufG\)/)

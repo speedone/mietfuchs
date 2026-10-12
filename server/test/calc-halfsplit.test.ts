@@ -88,6 +88,10 @@ test('§ 5b: Neubau mit Bauantrag vor dem 13.05.2026 → Stufen (Entwurf 12.2)',
   assert.ok(Math.abs((unklar.heating?.[0]?.co2?.landlordPermille ?? 0) - 547) < 1e-9)
   assert.match(textOf(unklar, 'co2.half-split'), /Ob der Bauantrag vor dem 13\.05\.2026 gestellt wurde, ist nicht angegeben/)
   assert.equal(unklar.heating?.[0]?.co2?.halfSplit?.basis, 'newBuilding')
+  // Durchsicht K4: im Neubau zählt die Inbetriebnahme, § 43 Abs. 1 GModG gilt dort nicht unmittelbar.
+  const text = textOf(unklar, 'co2.half-split')
+  assert.match(text, /Die Gas-, Öl- oder Flüssiggasheizung ging am 01\.03\.2027 in Betrieb; im Neubau gilt § 5a entsprechend \(§ 5b CO2KostAufG\)\./)
+  assert.doesNotMatch(text, /nach § 43 Abs\. 1 GModG eingebaut/)
 })
 
 // Heizperiode 01.05.2027–30.04.2028, Heizung nach § 43 seit 01.03.2027, Abrechnungsfrist 30.04.2029.
@@ -123,11 +127,14 @@ test('§ 5d Abs. 3: Zweifamilienhaus mit Eigennutzung → Stufen; angespannter M
   // Vertrag seit 2020, Einbau 2027: Mitteilung mit der Abrechnung genügt (§ 5d Abs. 4 Satz 2, Abweichung 3).
   const mitAbrechnung = zfh(false, '2028-06-15')
   assert.ok(Math.abs((mitAbrechnung.heating?.[0]?.co2?.landlordPermille ?? 0) - 600) < 1e-9)
-  assert.match(textOf(mitAbrechnung, 'co2.half-split-two-family'), /mit dieser Abrechnung \(§ 5d Abs\. 4 Satz 2/)
   // Vertrag erst nach dem Einbau (Satz 1): Eine Mitteilung nach Beginn der Heizperiode zählt nicht (Satz 4).
   const spaet = zfh(false, '2027-06-01', '2027-04-01')
   assert.ok(Math.abs((spaet.heating?.[0]?.co2?.landlordPermille ?? 0) - 547) < 1e-9)
   assert.match(textOf(spaet, 'co2.half-split-two-family'), /§ 5d Abs\. 4 Satz 4/)
+  // Durchsicht K3: Die Mitteilung mit der Abrechnung nennt die Begründung als Regelfall; Satz 4 ist eine Lesart.
+  assert.match(textOf(mitAbrechnung, 'co2.half-split-two-family'), /reicht die Mitteilung bei der ersten Geltendmachung \(§ 5d Abs\. 4 Satz 2 CO2KostAufG\); dafür genügt nach der Begründung in der Regel die Mitteilung mit dieser Abrechnung/)
+  assert.match(textOf(zfh(false, null), 'co2.half-split-two-family'), /genügt nach der Begründung in der Regel die Mitteilung mit dieser Abrechnung/)
+  assert.match(textOf(spaet, 'co2.half-split-two-family'), /vor Beginn der Heizperiode zugehen muss; das ist eine Auslegung/)
   // Verordnung bis 31.03.2027 (vor der Heizperiode): nicht mehr angespannt (Abweichung 4).
   assert.ok(Math.abs((zfh(true, '2027-04-01', undefined, '2027-03-31').heating?.[0]?.co2?.landlordPermille ?? 0) - 600) < 1e-9)
 })

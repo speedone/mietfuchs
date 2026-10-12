@@ -2,7 +2,7 @@
 // costForm.ts; die Komponente rendert nur.
 import type { HeatingEnergy, HeatingPlant, Tenancy } from './types'
 import { gmodgHeating43 } from '../../shared/law/gmodg.ts'
-import { co2HalfSplitNewBuildings, halfSplitBioFirstDay, halfSplitFirstDay } from '../../shared/law/co2kostaufg.ts'
+import { co2HalfSplit, co2HalfSplitNewBuildings, halfSplitBioFirstDay, halfSplitFirstDay } from '../../shared/law/co2kostaufg.ts'
 import { germanDate, LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
 
 export type TriState = 'unknown' | 'yes' | 'no'
@@ -22,6 +22,9 @@ export const FIRST_USE_UNTIL = germanDate(NB.firstUseUntil)
 // Die Jahre der ersten Teilung und des ersten Pflichtanteils, für Überschrift und Erläuterung.
 export const HALF_SPLIT_YEAR = halfSplitFirstDay().slice(0, 4)
 const BIO_YEAR = halfSplitBioFirstDay().slice(0, 4)
+// Was geteilt wird, mit Stichtagen und der Grenze beim Biobrennstoff aus dem Register (Durchsicht K1).
+const BIO_CAP = (valueAt(co2HalfSplit, halfSplitBioFirstDay()).bioCapPermille ?? 0) / 10
+export const HALF_SPLIT_WHAT = `Dann tragen Sie ab dem ${germanDate(halfSplitFirstDay())} die Hälfte der CO₂-Kosten und, nur bei Gas, der Netzentgelte, ab dem ${germanDate(halfSplitBioFirstDay())} auch die Hälfte der Kosten des Pflichtanteils an Biobrennstoff, höchstens für ${BIO_CAP.toLocaleString('de-DE')} % des verbrauchten Brennstoffs (§ 5a Abs. 3 CO2KostAufG).`
 
 // § 5a Abs. 4 Satz 2 und 3 hängen daran, ob für die ausgefallene Heizung beim Ausfall schon eine Pflicht nach
 // § 43 Abs. 1 GModG bestand. Gefragt wird danach, wann und was eingebaut war, nicht nach der Pflicht selbst

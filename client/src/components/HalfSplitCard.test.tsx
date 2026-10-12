@@ -55,3 +55,11 @@ test('Die Mitteilung nach § 5d Abs. 4 geht an das Mietverhältnis (Abweichung 3
   fireEvent.click(screen.getByText('Mitteilung speichern'))
   await waitFor(() => expect(sent.at(-1)).toEqual({ url: '/api/tenancies/ta', method: 'PUT', body: { halfSplitNoticeOn: '2028-03-15' } }))
 })
+
+// Durchsicht K1, K3: Stichtage, Netzentgelte nur bei Gas und die Grenze beim Biobrennstoff aus dem Register; die
+// Mitteilung mit der Abrechnung als Regelfall der Begründung.
+test('Die Karte nennt Stichtage, Netzentgelte nur bei Gas und die Grenze beim Biobrennstoff', () => {
+  render(<HalfSplitCard plant={plant} tenancies={tenancies} onSaved={() => {}} />)
+  expect(screen.getByText(/ab dem 01\.01\.2028 die Hälfte der CO₂-Kosten und, nur bei Gas, der Netzentgelte, ab dem 01\.01\.2029 auch die Hälfte der Kosten des Pflichtanteils an Biobrennstoff, höchstens für 30 % des verbrauchten Brennstoffs/)).toBeTruthy()
+  expect(screen.getByText(/genügt nach der Begründung in der Regel die Mitteilung mit der Abrechnung/)).toBeTruthy()
+})
