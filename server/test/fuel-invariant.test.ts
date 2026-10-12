@@ -474,7 +474,7 @@ function totalsOfDelivery(s: unknown, own: ReadonlySet<string>): number {
 // Runde 2 zu Startwert 515: Nennt eine Abrechnung die Gutschrift je Mieter bei zu hoher Schätzung
 // (`fuel.estimate-overcharged`), ist der genannte Gesamtbetrag eine ausgewiesene negative Abweichung
 // (`fuelEstimateDiff`), und die Beträge je Mieter ergeben zusammen höchstens ihn.
-const OVERCHARGED = { checked: 0, tenants: 0, approximate: 0, secondInvoice: 0, mixedKeys: 0, templateUnknown: 0 }
+const OVERCHARGED = { checked: 0, tenants: 0, approximate: 0, secondInvoice: 0, sharedDays: 0, mixedKeys: 0, templateUnknown: 0 }
 function overchargedChecks(r: ReturnType<typeof computeSettlement>, where: string): void {
   const cents = (x: string) => Math.round(Number(x.replace(/\./g, '').replace(',', '.')) * 100)
   const diffs = r.landlord.rows.flatMap((row) => (row.landlordParts ?? []).filter((p) => p.reason === 'fuelEstimateDiff' && p.cents < 0).map((p) => -p.cents))
@@ -502,13 +502,15 @@ function overchargedChecks(r: ReturnType<typeof computeSettlement>, where: strin
 // - `secondInvoice` (nur gezählt, seit #251, R-3 auch geprüft): Außer der Rechnung deckt eine weitere Lieferung eine
 //   Schätzung von P ab, die fuel.ts als Rechnung zählt (Positionen zusammen > 0; eine stornierte und eine Gutschrift
 //   ohne Rechnung zählen nicht). Dafür gilt das doppelte Kontrafaktum: A ist P offen mit allen Rechnungen, B ist P offen
-//   ohne die Rechnung d. Was d von den Schätzungen ersetzt, ist je Mieter Schätzzeilen in B − Schätzzeilen in A; davon
-//   geht ab, was d in A selbst trägt. Ohne weitere Rechnung ist B der eingefrorene Stand der Schätzung.
+//   ohne die Rechnung d. Was d von einer Schätzung ersetzt, ist ihr Betrag in B − ihr Betrag in A, als Anteil am
+//   eingefrorenen Betrag; je Mieter dieser Anteil seiner eingefrorenen Schätzzeilen (in B fehlt der Schätzung womöglich die
+//   Vorlage ihres Schlüssels, Startwert 258), abzüglich dessen, was d in A selbst trägt.
+// - `sharedDays`: d und eine weitere Rechnung decken dieselben Tage einer Schätzung ab; fuel.ts teilt sie (#251).
 // - `mixedKeys`: Die Positionen der Rechnung haben einen anderen Schlüssel als die Vorlage der Schätzung. Die
 //   echte Rechnung wäre anders verteilt worden; der Hinweis sagt dann, dass er nur nähert (Runde 5, G-K2).
 // - `templateUnknown`: Alle Vorlagepositionen der Schätzung sind gelöscht; ihr Schlüssel ist nicht bekannt. Der
 //   Schlüssel einer gelöschten Position kommt aus `itemKey` (beim Anlegen gemerkt), nicht aus dem Bestand.
-// Je Mieter höchstens 1 Cent daneben (beide Seiten sind auf den Cent gerundet).
+// Je Mieter höchstens 2 Cent daneben (Hinweis, eingefrorene Zeilen und Zeilen von d sind je für sich auf den Cent gerundet).
 type InvStock = Awaited<ReturnType<typeof readStock>>
 function overchargedTenantChecks(r: ReturnType<typeof computeSettlement>, stock: InvStock, closed: readonly { period: string; settlement: unknown }[], where: string, periodOf: (key: string) => NonNullable<ReturnType<typeof periodOfKey>>, itemKey: ReadonlyMap<string, string>): void {
   const cents = (x: string) => Math.round(Number(x.replace(/\./g, '').replace(',', '.')) * 100)
@@ -532,24 +534,41 @@ function overchargedTenantChecks(r: ReturnType<typeof computeSettlement>, stock:
     const templateKeys = new Set(frozenRows.filter((row) => estimates.some((e) => row.id.startsWith(`fuel:${e.id}:${P}:`))).map((row) => keyOf(row.id.split(':').at(-1) ?? '')).filter((k) => k !== undefined))
     const invoiceKeys = new Set(stock.costItems.filter((c) => c.fuelDeliveryId === d && c.amountCents !== 0).map((c) => c.key))
     if (others.length > 0) OVERCHARGED.secondInvoice++
-    const skip = templateKeys.size === 0 ? 'templateUnknown' : templateKeys.size !== 1 || invoiceKeys.size !== 1 || [...templateKeys][0] !== [...invoiceKeys][0] ? 'mixedKeys' : null
+    // Decken d und eine weitere Rechnung dieselben Tage einer Schätzung ab, teilt fuel.ts diese Tage zwischen ihnen
+    // (Startwert 447); das Kontrafaktum ohne d ordnete sie ganz der anderen zu. Nur gezählt.
+    const within = (a: { invoiceFrom: string | null; invoiceTo: string | null }, from: string, to: string) => !!a.invoiceFrom && !!a.invoiceTo && a.invoiceFrom <= to && from <= a.invoiceTo
+    const shared = others.some((x) => estimates.some((e) => {
+      const from = [x.invoiceFrom ?? '', delivery.invoiceFrom ?? '', e.invoiceFrom ?? ''].sort().at(-1) ?? ''
+      const to = [x.invoiceTo ?? '', delivery.invoiceTo ?? '', e.invoiceTo ?? ''].sort()[0] ?? ''
+      return from <= to && within(x, from, to)
+    }))
+    const skip = shared ? 'sharedDays' : templateKeys.size === 0 ? 'templateUnknown' : templateKeys.size !== 1 || invoiceKeys.size !== 1 || [...templateKeys][0] !== [...invoiceKeys][0] ? 'mixedKeys' : null
     if (skip) { OVERCHARGED.approximate++; OVERCHARGED[skip]++; if (skip === 'mixedKeys' && templateIds.every((id) => stock.costItems.some((c) => c.id === id)) && [...invoiceKeys].some((k) => !templateKeys.has(k))) assert.match(n.text, /nur eine Näherung/, `${where}: Schlüssel gemischt, der Hinweis sagt es nicht`); continue }
     const open: InvStock = { ...stock }
     open.closedSettlements = stock.closedSettlements.filter((c): c is InvStock['closedSettlements'][number] => c.period !== P)
     open.fuelCarryFrozen = stock.fuelCarryFrozen.filter((f) => f.period !== P)
     const offen = computeSettlement(snapshotFor(open, 'objekt-1', periodOf(P)), {})
+    // B (P offen ohne d) nur für den Betrag jeder Schätzung: Ohne d fehlt ihr womöglich die Vorlage ihres Schlüssels, und
+    // verteilt würde sie dann gar nicht (Startwert 258). Je Mieter gilt deshalb die Verteilung der eingefrorenen Zeilen.
     const ohneD: InvStock = { ...open, fuelDeliveries: open.fuelDeliveries.filter((x) => x.id !== d), costItems: open.costItems.filter((c): c is InvStock['costItems'][number] => c.fuelDeliveryId !== d) }
     const ohne = computeSettlement(snapshotFor(ohneD, 'objekt-1', periodOf(P)), {})
-    const isEstimate = (id: string) => estimates.some((e) => id.startsWith(`fuel:${e.id}:`))
+    const lineOf = (s: ReturnType<typeof computeSettlement>, id: string) => (s.heating ?? []).flatMap((h) => h.fuel?.deliveries ?? []).find((l) => l.deliveryId === id)?.inPeriodCents ?? 0
     const expected = new Map<string, number>()
     const add = (tenant: string, c: number) => expected.set(tenant, (expected.get(tenant) ?? 0) + c)
-    for (const st of ohne.statements) for (const row of st.rows) if (isEstimate(row.costItemId)) add(`${st.tenantName} (${st.unitName})`, row.shareCents)
-    for (const st of offen.statements) for (const row of st.rows) if (isEstimate(row.costItemId) || row.costItemId.startsWith(`fuel:${d}:`)) add(`${st.tenantName} (${st.unitName})`, -row.shareCents)
+    for (const e of estimates) {
+      const f = stock.fuelCarryFrozen.find((x) => x.deliveryId === e.id && x.period === P)?.cents ?? 0
+      const fraction = f === 0 ? 0 : Math.max(0, Math.min(1, (lineOf(ohne, e.id) - lineOf(offen, e.id)) / f))
+      for (const row of frozenRows) if (row.id.startsWith(`fuel:${e.id}:${P}:`)) add(row.tenant, row.cents * fraction)
+    }
+    // Was P von d selbst eingefroren hat (etwa den Teil einer damaligen Gutschrift ohne Rechnung, Startwert 600), gegen
+    // das, was d in A trägt.
+    for (const row of frozenRows) if (row.id.startsWith(`fuel:${d}:`)) add(row.tenant, row.cents)
+    for (const st of offen.statements) for (const row of st.rows) if (row.costItemId.startsWith(`fuel:${d}:`)) add(`${st.tenantName} (${st.unitName})`, -row.shareCents)
     const list = n.text.match(/, hier: (.*?)\. (Eine Gutschrift|Der Rest)/)?.[1] ?? ''
     const named = new Map([...list.matchAll(/(Mieter [^,(]*?\([^)]*\)) ([\d.]+,\d\d) €/g)].map((m) => [m[1] ?? '', cents(m[2] ?? '')]))
     OVERCHARGED.tenants++
     for (const [tenant, c] of expected) {
-      assert.ok(Math.abs((named.get(tenant) ?? 0) - c) <= 1, `${where}: Gutschrift ${tenant} ${named.get(tenant) ?? 0}, Kontrafaktum ${c}; ${n.text}`)
+      assert.ok(Math.abs((named.get(tenant) ?? 0) - c) <= 2, `${where}: Gutschrift ${tenant} ${named.get(tenant) ?? 0}, Kontrafaktum ${c}; ${n.text}`)
     }
     for (const tenant of named.keys()) assert.ok(expected.has(tenant), `${where}: ${tenant} genannt, im Kontrafaktum nicht beteiligt; ${n.text}`)
   }
@@ -608,9 +627,11 @@ function frozenAboveChecks(r: ReturnType<typeof computeSettlement>, stock: InvSt
     CREDIT_ONLY.frozenAbove++
     if (T < 0 && f > 0) CREDIT_ONLY.signFlip++
     for (const [t, c] of dort) assert.ok(Math.abs((hier.get(t) ?? 0) - c) <= 1, `${where}: (c3) ${t} trägt von ${d} ${hier.get(t) ?? 0}, mit offenem ${q} ${c} (eingefroren ${f}, heute ${calcQ})`)
-    // Mit 0 eingefroren (beim Abschluss ohne Position, Durchsicht I1) steht der Teil schon heute beim Vermieter.
-    if (f === 0) continue
-    const closedPart = (r.landlord.rows.find((y) => y.costItemId === rowId)?.landlordParts ?? []).find((y) => y.reason === 'fuelClosedPeriod')?.cents ?? 0
+    // Mit 0 eingefroren (beim Abschluss ohne Position, Durchsicht I1) steht der Teil schon heute beim Vermieter; mit einer
+    // eingefrorenen Schätzung daneben ist der Unterschied eine Abweichung von der Schätzung (Startwert 600).
+    const landlordParts = r.landlord.rows.find((y) => y.costItemId === rowId)?.landlordParts ?? []
+    if (f === 0 || landlordParts.some((y) => y.reason === 'fuelEstimateDiff')) continue
+    const closedPart = landlordParts.find((y) => y.reason === 'fuelClosedPeriod')?.cents ?? 0
     assert.equal(closedPart, calcQ - f, `${where}: (c3) fuelClosedPeriod ${closedPart}, heute ${calcQ}, eingefroren ${f}`)
   }
 }

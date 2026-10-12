@@ -281,3 +281,23 @@ test('#251 R-3: Eine teilweise abgedeckte, eingefrorene Schätzung wird nicht zw
   const storno = carryOf(plantFuel(input({ deliveries: [VORJAHR, GAS, e], items: [vorjahrItem, gasItem, { ...gasItem, id: 'st', amountCents: -650000 }], closed: new Set(['2024-05']), frozen })))
   assert.equal(storno.cancelled, 126075)
 })
+
+// #251 (c2, Invariante, Startwert 317 „getrenntes Warmwasser“): Nach Storno und gelöschter Gutschrift ergab die Vorlage
+// 38,72 €, ihr fester Bestandteil war höher. Der Vorschlag wäre negativ gewesen; einen Vorschlag gibt es nur über 0 €.
+test('#251 (c2): Kein Schätzvorschlag unter 0 €, auch wenn der feste Bestandteil der Vorlage über ihrer Summe liegt', () => {
+  const r = plantFuel(input({ h: H1, deliveries: [{ ...VORJAHR, fixedCents: 30000 }], items: [{ ...vorjahrItem, amountCents: 3872 }] })) ?? assert.fail('kein Ergebnis')
+  const lücke = r.gaps.find((g) => g.from === '2025-03-15') ?? assert.fail('keine Lücke')
+  assert.equal(lücke.estimate, null)
+})
+
+// #251, R-3 (Invariante, Startwert 447): Decken zwei Rechnungen späterer Heizperioden dieselben Tage einer eingefrorenen
+// Schätzung ab, zählen diese Tage für jede zur Hälfte; zusammen lösen beide die ganze Schätzung ab, nicht nur die Tage,
+// die jede allein abdeckt.
+test('#251 R-3: zwei Rechnungen über dieselben Tage einer Schätzung lösen sie zusammen genau einmal ab', () => {
+  const D3 = delivery({ id: 'd3', label: 'Gas Nachtrag', invoiceFrom: '2025-04-01', invoiceTo: '2025-05-31' })
+  const ueber = { deliveries: [GAS, D3, schaetzung(90774)], items: [gasItem, { id: 'gas3', period: '2025-05', amountCents: 50000, fuelDeliveryId: 'd3' }], closed: new Set(['2024-05']), frozen: [{ deliveryId: 'e', period: '2024-05', cents: 90774, emissionsKg: 0, co2Cents: 0 }] }
+  const r = plantFuel(input(ueber))
+  const summe = (carryOf(r, 'd').estimate?.cents ?? 0) + (carryOf(r, 'd3').estimate?.cents ?? 0)
+  assert.ok(Math.abs(summe - 90774) <= 1, `zusammen ${summe} statt 90774`)
+  assert.ok((carryOf(r, 'd3').estimate?.cents ?? 0) > 0, 'd3 löst keinen Tag ab')
+})
