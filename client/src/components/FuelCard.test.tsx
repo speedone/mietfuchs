@@ -9,6 +9,8 @@ import { periodKey } from '../../../shared/period.ts'
 import type { FuelDelivery, HeatingPeriodView } from '../types'
 import { noInfoView } from '../testing/heatingView'
 
+const assert = { fail: (): never => { throw new Error('nicht gefunden') } }
+
 const view: HeatingPeriodView = {
   plantId: 'hp', period: periodKey('2025-05'), label: '2025/2026', from: '2025-05-01', to: '2026-04-30', short: false, closed: false,
   ...noInfoView(), hotWater: { dhwMethod: null, dhwUnmeasurable: null, dhwHeatKwh: null, totalHeatKwh: null, dhwVolumeM3: null, dhwTempC: null }, hotWaterBasis: { volumeFromMetersM3: null, volumeMissing: null, running: null, suppliedAreaM2: 0 }, co2: null, stock: null,
@@ -144,4 +146,31 @@ test('Contracting mit Wärmepumpe und Gasspitzenkessel: die Lieferung hat die CO
   render(<FuelCard plant={{ id: 'hp', method: 'manual', energy: 'heatPump', contracting: true, heatGeneration: 'single' }} view={view} deliveries={[gas]} onSaved={() => {}} />)
   fireEvent.click(screen.getByText('Lieferung eintragen'))
   expect(screen.queryByLabelText('CO₂-Ausstoß laut Rechnung (kg)')).toBeNull()
+})
+
+// Heizung PR 18 (#215, Prüfung M11): Netzentgelte bei Gas, Biobrennstoff auch beim Vorrat, dort nur 0.
+test('Heizung nach § 43: Gas mit Netzentgelten und Biobrennstoff; ohne Merkmal keine Felder', () => {
+  render(<FuelCard plant={{ id: 'hp', method: 'manual', energy: 'gas', gmodg43InstalledOn: '2027-03-01' }} view={view} deliveries={[gas]} onSaved={() => {}} />)
+  fireEvent.click(screen.getAllByText('Ändern')[0] ?? assert.fail())
+  expect(screen.getByLabelText(/Netzentgelte laut Rechnung/)).toBeTruthy()
+  expect(screen.getByLabelText(/Biobrennstoff, Preisbestandteil nach § 3 Abs\. 1 Nr\. 6/)).toBeTruthy()
+  cleanup()
+  render(<FuelCard plant={{ id: 'hp', method: 'manual', energy: 'gas', gmodg43InstalledOn: null }} view={view} deliveries={[gas]} onSaved={() => {}} />)
+  fireEvent.click(screen.getAllByText('Ändern')[0] ?? assert.fail())
+  expect(screen.queryByLabelText(/Netzentgelte laut Rechnung/)).toBeNull()
+  expect(screen.queryByLabelText(/Biobrennstoff/)).toBeNull()
+})
+
+test('Ölheizung nach § 43: das Feld Biobrennstoff erscheint beim Vorrat und sendet 0 (Prüfung M11)', async () => {
+  const stockView: HeatingPeriodView = { ...view, items: [] }
+  render(<FuelCard plant={{ id: 'oel', method: 'manual', energy: 'oil', gmodg43InstalledOn: '2027-03-01' }} view={stockView} deliveries={[]} onSaved={() => {}} />)
+  fireEvent.click(screen.getByText('Lieferung eintragen'))
+  expect(screen.queryByLabelText(/Netzentgelte laut Rechnung/)).toBeNull()
+  expect(screen.getByText(/Bei Brennstoff aus dem Tank nur 0/)).toBeTruthy()
+  fireEvent.change(screen.getByLabelText('Lieferdatum'), { target: { value: '2029-02-01' } })
+  fireEvent.change(screen.getByLabelText('Menge'), { target: { value: '3000' } })
+  fireEvent.change(screen.getByLabelText('Einheit der Menge'), { target: { value: 'l' } })
+  fireEvent.change(screen.getByLabelText(/Biobrennstoff, Preisbestandteil/), { target: { value: '0' } })
+  fireEvent.click(screen.getByText('Lieferung speichern'))
+  await waitFor(() => expect(sent.at(-1)).toMatchObject({ url: '/api/heating-plants/oel/deliveries', method: 'POST', body: { bioCostCents: 0, quantity: 3000 } }))
 })

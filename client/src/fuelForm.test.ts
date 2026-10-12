@@ -146,3 +146,27 @@ test('CO₂-Angaben bei Contracting nach dem Brennstoff des Lieferanten', () => 
   expect(asksCo2Facts({ energy: 'pellets' })).toBe(false)
   expect(asksCo2Facts({ energy: 'oil' })).toBe(true)
 })
+
+test('Netzentgelte und Biobrennstoff nur bei einer Heizung nach § 43 (Heizung PR 18)', () => {
+  const f = { ...emptyFuelForm(), invoiceFrom: '2028-01-01', invoiceTo: '2028-12-31', gridFee: '300,00', bioCost: '' }
+  const ohne = fuelBody(f, 'manual')
+  if ('error' in ohne) throw new Error(ohne.error)
+  expect('gridFeeCents' in ohne.body || 'bioCostCents' in ohne.body).toBe(false)
+  expect(fuelBody(f, 'manual', { halfSplit: true })).toMatchObject({ body: { gridFeeCents: 30000, bioCostCents: null } })
+  expect(fuelBody({ ...f, gridFee: 'drei' }, 'manual', { halfSplit: true })).toEqual({ error: 'Die Angabe zu den Netzentgelten ist kein Betrag.' })
+  expect(fuelBody({ ...f, bioCost: 'x' }, 'manual', { halfSplit: true })).toEqual({ error: 'Die Angabe zum Biobrennstoff ist kein Betrag.' })
+  // Hin und zurück.
+  const form = fuelToForm({ ...gas, gridFeeCents: 30000, bioCostCents: 0 })
+  expect([form.gridFee, form.bioCost]).toEqual(['300,00', '0,00'])
+})
+
+test('Vorrat bei einer Heizung nach § 43: beim Biobrennstoff nur 0 (Prüfung M11, Abweichung 10)', () => {
+  const form = { ...fuelToForm(oel), bioCost: '0' }
+  expect(stockFuelBody(form, 'manual', { halfSplit: true })).toMatchObject({ body: { bioCostCents: 0 } })
+  expect(stockFuelBody({ ...form, bioCost: '' }, 'manual', { halfSplit: true })).toMatchObject({ body: { bioCostCents: null } })
+  expect(stockFuelBody({ ...form, bioCost: '12,00' }, 'manual', { halfSplit: true })).toEqual({ error: 'Beim Brennstoff aus dem Tank nimmt Mietfuchs beim Biobrennstoff nur 0 an (kein Pflichtanteil in der Lieferung); einen Betrag rechnet Mietfuchs mit einer späteren Version.' })
+  // Ohne Heizung nach § 43 bleibt der Rumpf wie bisher.
+  const r = stockFuelBody(form, 'manual')
+  if ('error' in r) throw new Error(r.error)
+  expect('bioCostCents' in r.body).toBe(false)
+})

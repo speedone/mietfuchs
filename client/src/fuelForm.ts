@@ -46,11 +46,14 @@ export type FuelForm = {
   gasBasis: GasBasis | ''
   heatingValue: string
   grade: FuelGrade | ''
+  // Heizung PR 18 (§ 5a CO2KostAufG): Netzentgelte und Kosten des Pflichtanteils an Biobrennstoff laut Rechnung.
+  gridFee: string
+  bioCost: string
 }
 
 export const emptyFuelForm = (): FuelForm => ({
   label: '', invoiceFrom: '', invoiceTo: '', amount: '', fixed: '', sharePercent: '', emissionsKg: '', co2Cost: '', energyKwh: '', usedByService: true,
-  deliveredAt: '', invoiceDate: '', quantity: '', quantityUnit: '', unitId: '', gasBasis: '', heatingValue: '', grade: '',
+  deliveredAt: '', invoiceDate: '', quantity: '', quantityUnit: '', unitId: '', gasBasis: '', heatingValue: '', grade: '', gridFee: '', bioCost: '',
 })
 
 const centsText = (cents: number | null): string =>
@@ -78,8 +81,18 @@ export function fuelToForm(d: FuelDelivery): FuelForm {
     gasBasis: d.gasBasis ?? '',
     heatingValue: numberText(d.heatingValue),
     grade: d.fuelGrade ?? '',
+    gridFee: centsText(d.gridFeeCents),
+    bioCost: centsText(d.bioCostCents),
   }
 }
+
+// Netzentgelte und Biobrennstoff (Heizung PR 18) gehen nur bei einer Heizung nach § 43 Abs. 1 GModG in den Rumpf;
+// sonst bleibt er, wie er war, und der Server sperrt beide Felder.
+export type HalfSplitOptions = { halfSplit: boolean }
+const NO_HALF_SPLIT: HalfSplitOptions = { halfSplit: false }
+
+// Beim Brennstoff aus dem Tank nimmt der Server beim Biobrennstoff nur 0 an (Abweichung 10 des Plans, Prüfung M11).
+export const STOCK_BIO_ONLY_ZERO = 'Beim Brennstoff aus dem Tank nimmt Mietfuchs beim Biobrennstoff nur 0 an (kein Pflichtanteil in der Lieferung); einen Betrag rechnet Mietfuchs mit einer späteren Version.'
 
 // Die Einheiten einer Lieferung für den Vorrat, mit leerer Vorauswahl.
 export const STOCK_QUANTITY_OPTIONS: readonly { value: StockUnit | ''; label: string }[] = [
@@ -92,7 +105,7 @@ export const STOCK_QUANTITY_OPTIONS: readonly { value: StockUnit | ''; label: st
 // Der Rumpf einer Lieferung von Heizöl, Flüssiggas, Pellets, Holz oder Kohle (Heizung PR 8): Lieferdatum
 // und Menge statt Rechnungszeitraum; abgegrenzt wird über Anfangs- und Endbestand. Den Betrag gibt es
 // nur beim Messdienst (bei freien Schlüsseln steht er in den verknüpften Positionen).
-export function stockFuelBody(form: FuelForm, method: HeatingMethod): { body: Record<string, unknown> } | { error: string } {
+export function stockFuelBody(form: FuelForm, method: HeatingMethod, opts: HalfSplitOptions = NO_HALF_SPLIT): { body: Record<string, unknown> } | { error: string } {
   if (form.deliveredAt === '') return { error: 'Bitte geben Sie das Lieferdatum an. Beim Vorrat zählt eine Lieferung zur Heizperiode, in der sie geliefert wurde.' }
   const quantity = form.quantity.trim() === '' ? null : parseDecimal(form.quantity)
   if (quantity === null || !(quantity > 0)) return { error: 'Bitte geben Sie die gelieferte Menge an, wie auf der Rechnung.' }
@@ -106,6 +119,9 @@ export function stockFuelBody(form: FuelForm, method: HeatingMethod): { body: Re
   if (ambiguousThousands(form.heatingValue)) return { error: `Heizwert laut Rechnung: ${ambiguousText(form.heatingValue)}` }
   const heatingValue = form.heatingValue.trim() === '' ? null : parseDecimal(form.heatingValue)
   if (form.heatingValue.trim() !== '' && (heatingValue === null || !(heatingValue > 0))) return { error: 'Der Heizwert laut Rechnung ist eine Zahl über 0.' }
+  const bio = opts.halfSplit && form.bioCost.trim() !== '' ? parseEuro(form.bioCost) : null
+  if (opts.halfSplit && form.bioCost.trim() !== '' && bio === null) return { error: 'Die Angabe zum Biobrennstoff ist kein Betrag.' }
+  if (bio !== null && bio !== 0) return { error: STOCK_BIO_ONLY_ZERO }
   return {
     body: {
       label: form.label.trim(),
@@ -118,6 +134,7 @@ export function stockFuelBody(form: FuelForm, method: HeatingMethod): { body: Re
       ...(method === 'service' ? { amountCents: amount, usedByService: form.usedByService } : {}),
       emissionsKg: kg,
       co2CostCents: co2,
+      ...(opts.halfSplit ? { bioCostCents: bio } : {}),
     },
   }
 }
@@ -125,7 +142,7 @@ export function stockFuelBody(form: FuelForm, method: HeatingMethod): { body: Re
 // Der Rumpf für POST und PUT. Ein leeres Feld ist `null`, ein unlesbares ein Fehler mit Satz. Den
 // Betrag gibt es nur beim Messdienst (bei freien Schlüsseln steht er in den verknüpften Positionen),
 // ebenso „vom Messdienst angesetzt“.
-export function fuelBody(form: FuelForm, method: HeatingMethod): { body: Record<string, unknown> } | { error: string } {
+export function fuelBody(form: FuelForm, method: HeatingMethod, opts: HalfSplitOptions = NO_HALF_SPLIT): { body: Record<string, unknown> } | { error: string } {
   if (form.invoiceFrom === '' || form.invoiceTo === '') return { error: 'Bitte geben Sie den Rechnungszeitraum an (Beginn und Ende laut Rechnung).' }
   const euro = (text: string, name: string): number | null | { error: string } => {
     if (text.trim() === '') return null
@@ -143,7 +160,9 @@ export function fuelBody(form: FuelForm, method: HeatingMethod): { body: Record<
   const kg = decimal(form.emissionsKg, 'Der CO₂-Ausstoß')
   const kwh = decimal(form.energyKwh, 'Die Energie')
   const share = decimal(form.sharePercent, 'Der eingetragene Anteil')
-  for (const v of [fixed, co2, amount, kg, kwh, share]) if (v !== null && typeof v === 'object') return v
+  const grid = opts.halfSplit ? euro(form.gridFee, 'Die Angabe zu den Netzentgelten') : null
+  const bio = opts.halfSplit ? euro(form.bioCost, 'Die Angabe zum Biobrennstoff') : null
+  for (const v of [fixed, co2, amount, kg, kwh, share, grid, bio]) if (v !== null && typeof v === 'object') return v
   const num = (v: number | null | { error: string }): number | null => (typeof v === 'number' ? v : null)
   const sharePercent = num(share)
   if (sharePercent !== null && sharePercent > 100) return { error: 'Der eingetragene Anteil liegt zwischen 0 und 100 %.' }
@@ -159,6 +178,7 @@ export function fuelBody(form: FuelForm, method: HeatingMethod): { body: Record<
     energyKwh: num(kwh),
     gasBasis: form.gasBasis === '' ? null : form.gasBasis,
     ...(method === 'service' ? { usedByService: form.usedByService } : {}),
+    ...(opts.halfSplit ? { gridFeeCents: num(grid), bioCostCents: num(bio) } : {}),
   }
   return { body }
 }

@@ -20,6 +20,8 @@ import OperatingPowerCard from '../components/OperatingPowerCard'
 import OperatingPowerHandlingCard from '../components/OperatingPowerHandlingCard'
 import { showsHandlingCard } from '../operatingPowerHandling'
 import HotWaterCard from '../components/HotWaterCard'
+import HalfSplitCard from '../components/HalfSplitCard'
+import { halfSplitAvailable } from '../halfSplitForm'
 import StockCard from '../components/StockCard'
 import SelfHeatingCards from '../components/SelfHeatingCards'
 import HeatingInfoCard from '../components/HeatingInfoCard'
@@ -110,6 +112,14 @@ export default function Heizkosten({ units, tenancies }: { units: Unit[]; tenanc
             {/* #266: wie der Betriebsstrom erfasst ist, je Anlage über den Heizperioden. */}
             {showsHandlingCard(plant) && (
               <OperatingPowerHandlingCard key={`ophandling:${plant.operatingPowerHandling ?? ''}`} plant={plant} onSaved={() => void load()} />
+            )}
+            {/* Heizung PR 18 (#215): Heizung nach § 43 GModG, je Anlage über den Heizperioden. Bei Contracting zählt der
+                Brennstoff des Lieferanten (`plant.energy`). */}
+            {halfSplitAvailable(plant.energy) && (
+              <HalfSplitCard
+                key={`half:${plant.id}:${JSON.stringify([plant.gmodg43InstalledOn, plant.emergencyInstall, plant.emergencyPriorDuty, plant.newBuildingFirstUse, plant.buildingApplicationBefore20260513])}:${tenancies.map((t) => t.halfSplitNoticeOn ?? '').join(',')}`}
+                plant={plant} tenancies={tenancies} onSaved={() => void load()}
+              />
             )}
             {(data?.views[plant.id] ?? []).map((v) => (
               <div key={v.period}>
