@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Jahresrechnung Erdgas Stadtwerke Beispielstadt</title>
+<link rel="stylesheet" href="../invoice.css">
+</head>
+<body>
+<!-- Erfundener Beispielbeleg für den KI-Prüflauf (Heizung PR 20). Stolpersteine: Nachzahlung nach Abschlägen
+     statt Rechnungsbetrag, zwei Teilzeiträume (Preisänderung 01.01.2026), Brennwert statt Heizwert, Angaben
+     nach § 3 Abs. 1 CO2KostAufG im Kasten, Menge mit Leerzeichen gruppiert. Eine Angabe nach Nr. 6 fehlt mit
+     Absicht: Die Rechnung stammt von vor dem 29.07.2026 (Prüfung des Plans, S10). Nachgerechnet:
+     2 890 m³ × 0,9563 × 11,320 kWh/m³ = 31.285 kWh; 22.410 × 10,20 ct = 2.285,82 €; 8.875 × 10,80 ct = 958,50 €;
+     Grundpreis 174,00 € netto, nach Tagen 292/365 = 139,20 € und 73/365 = 34,80 €; netto 2.425,02 € und
+     993,30 €, brutto 2.885,77 € und 1.182,03 €, zusammen 4.067,80 €; 22.410 × 0,18139 = 4.065,0 kg,
+     8.875 × 0,18139 = 1.609,8 kg; 4.064,95 kg × 55 €/t × 1,19 = 266,05 €, 1.609,84 kg × 60 €/t × 1,19 = 114,94 €.
+     Namen, Anschriften, Nummern und IBAN sind Muster. -->
+<section class="page">
+  <div class="head">
+    <div>
+      <div class="sender">Stadtwerke Beispielstadt GmbH · Energieweg 1 · 12345 Beispielstadt</div>
+      <div class="address">Frau<br>Erika Vermieterin<br>Musterweg 1<br>12345 Musterstadt</div>
+    </div>
+    <div>
+      <div class="logo">Stadtwerke Beispielstadt<small>Erdgas · Strom · Wasser</small></div>
+      <table class="info" style="margin-top:8mm">
+        <tr><td>Rechnungsnummer</td><td>2026-447711</td></tr>
+        <tr><td>Rechnungsdatum</td><td>20.03.2026</td></tr>
+        <tr><td>Kundennummer</td><td>100 200 300</td></tr>
+        <tr><td>Lieferstelle</td><td>Musterweg 1, Heizung</td></tr>
+      </table>
+    </div>
+  </div>
+  <h1>Jahresrechnung Erdgas</h1>
+  <p>Abrechnungszeitraum 15.03.2025 bis 14.03.2026</p>
+  <table class="items">
+    <tr><th>Zählerstand</th><th class="r">Datum</th><th class="r">Stand</th></tr>
+    <tr><td>Anfangsstand</td><td class="r">15.03.2025</td><td class="r">12 010 m³</td></tr>
+    <tr><td>Endstand</td><td class="r">14.03.2026</td><td class="r">14 900 m³</td></tr>
+    <tr><td>Verbrauch</td><td class="r"></td><td class="r">2 890 m³</td></tr>
+    <tr><td colspan="2">× Zustandszahl 0,9563 × Brennwert 11,320 kWh/m³</td><td class="r">31 285 kWh</td></tr>
+  </table>
+  <table class="items">
+    <tr><th>Gesamtbetrag</th><th class="r"></th></tr>
+    <tr><td>Summe netto</td><td class="r">3.418,32 €</td></tr>
+    <tr><td>Umsatzsteuer 19 %</td><td class="r">649,48 €</td></tr>
+    <tr class="sum"><td>Rechnungsbetrag</td><td class="r">4.067,80 €</td></tr>
+    <tr><td>abzüglich geleistete Abschläge</td><td class="r">−3.960,00 €</td></tr>
+    <tr class="sum"><td>Nachzahlung</td><td class="r">107,80 €</td></tr>
+  </table>
+</section>
+<section class="page">
+  <h1>Abrechnungsdetails</h1>
+  <table class="items">
+    <tr><th>Zeitraum</th><th class="r">Menge</th><th class="r">Arbeitspreis</th><th class="r">Arbeitspreis netto</th><th class="r">Grundpreis netto</th><th class="r">Grundpreis brutto</th><th class="r">Summe netto</th><th class="r">Summe brutto</th></tr>
+    <tr><td>15.03.2025–31.12.2025</td><td class="r">22 410 kWh</td><td class="r">10,20 ct/kWh</td><td class="r">2.285,82 €</td><td class="r">139,20 €</td><td class="r">165,65 €</td><td class="r">2.425,02 €</td><td class="r">2.885,77 €</td></tr>
+    <tr><td>01.01.2026–14.03.2026</td><td class="r">8 875 kWh</td><td class="r">10,80 ct/kWh</td><td class="r">958,50 €</td><td class="r">34,80 €</td><td class="r">41,41 €</td><td class="r">993,30 €</td><td class="r">1.182,03 €</td></tr>
+    <tr class="sum"><td>Summe</td><td class="r">31 285 kWh</td><td class="r"></td><td class="r">3.244,32 €</td><td class="r">174,00 €</td><td class="r">207,06 €</td><td class="r">3.418,32 €</td><td class="r">4.067,80 €</td></tr>
+  </table>
+  <h2>Angaben nach § 3 Abs. 1 Kohlendioxidkostenaufteilungsgesetz</h2>
+  <table class="items">
+    <tr><td>1. Brennstoffemissionen</td><td class="r">5.674,8 kg CO₂ (15.03.–31.12.2025: 4.065,0 kg; 01.01.–14.03.2026: 1.609,8 kg)</td></tr>
+    <tr><td>2. Preisbestandteil der Kohlendioxidkosten, einschließlich Umsatzsteuer</td><td class="r">380,99 € (266,05 € zu 55 €/t; 114,94 € zu 60 €/t)</td></tr>
+    <tr><td>3. Heizwertbezogener Emissionsfaktor</td><td class="r">0,20088 kg CO₂/kWh</td></tr>
+    <tr><td>4. Energiegehalt der gelieferten Menge</td><td class="r">31.285 kWh (Brennwert)</td></tr>
+    <tr><td>5. Hinweis</td><td class="r">Erstattungsansprüche nach § 6 Abs. 2 und § 8 Abs. 2 CO2KostAufG</td></tr>
+  </table>
+  <div class="foot">
+    <div>Stadtwerke Beispielstadt GmbH</div>
+    <div>Beispielbank<br>IBAN DE00 9999 8888 7777 6666 55</div>
+    <div>USt-IdNr. DE000000000</div>
+  </div>
+</section>
+<script src="../invoice.js"></script>
+</body>
+</html>

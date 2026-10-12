@@ -1178,6 +1178,75 @@ export type IntakeResult = { file: string } & (
   | { kind: 'zaehler'; reading: MeterReadingExtraction }
 )
 
+// ---------- KI: Messdienstabrechnung und Lieferantenrechnung (Heizung PR 20, #103) ----------
+//
+// Was der Browser aus der Auswertung bekommt, mit engen Typen. Die rohe Antwort des Modells sieht der
+// Browser nie; die Zusage entsteht in server/src/extractHeating.ts (`toServiceExtraction`,
+// `toFuelExtraction`). Alles ist ein Vorschlag: Ein Mensch prüft und speichert über die bestehenden Routen.
+
+// Eine Nutzerzeile eines Kostenblocks: Name und Lage, wie gedruckt, der Nutzungszeitraum, falls gedruckt,
+// und der Betrag („Ihre Kosten“). `vacancy`: die Abrechnung nennt die Zeile Leerstand.
+export type ServiceUserLine = { label: string; unitLabel: string | null; from: string | null; to: string | null; amountEur?: number; vacancy: boolean }
+
+// Ein Kostenblock der Abrechnung (Heizung und Warmwasser, Kaltwasser, …) mit der Kostenart aus der Liste
+// der Kostenarten (leer, wenn das Modell keine aus der Liste nannte) und der gedruckten Summe des Blocks.
+export type ServiceBlock = { title: string; category: string; totalEur?: number; lines: ServiceUserLine[] }
+
+// Der CO₂-Block (§ 7 Abs. 3 CO2KostAufG), wie der Messdienst ihn druckt. `landlordPercent` in Prozent.
+export type ServiceCo2Extraction = { emissionsKg: number | null; areaM2: number | null; kgPerM2: number | null; landlordPercent: number | null; totalEur: number | null; landlordEur: number | null }
+
+// Die Heiz- und Warmwasserkostenabrechnung eines Messdienstes oder einer Gemeinschaft. `usersTotalEur` ist S,
+// die gedruckte Summe der zu verteilenden Heiz- und Warmwasserkosten (Entwurf 5.5); `deductionEur` der Betrag
+// der Zeile „Abzüglich CO₂-Kosten Vermieter“, positiv, oder null ohne eine solche Zeile. `fuelGrossEur` und
+// `fuelNetEur` sind G und V: die Brennstoffkosten der Kostenaufstellung vor und nach einem Abzug.
+export type ServiceStatementExtraction = {
+  vendor?: string
+  periodStart?: string
+  periodEnd?: string
+  unitsCount: number | null
+  usersTotalEur: number | null
+  deductionEur: number | null
+  fuelGrossEur: number | null
+  fuelNetEur: number | null
+  co2: ServiceCo2Extraction | null
+  dhwMethod: DhwMethod | null
+  blocks: ServiceBlock[]
+}
+
+// Eine Teilmenge laut Rechnung (Entwurf 3.2 Stufe 3): Teilzeitraum mit Energie und Betrag, brutto.
+export type FuelInvoicePartExtraction = { from: string; to: string; energyKwh: number | null; amountEur: number | null; fixedEur: number | null; emissionsKg: number | null; co2CostEur: number | null }
+
+// Die Rechnung eines Brennstoff- oder Wärmelieferanten mit den Angaben nach § 3 Abs. 1 Nr. 1–4 und 6
+// CO2KostAufG. `co2CostNet`: die Rechnung nennt den Preisbestandteil ohne Umsatzsteuer (§ 3 Abs. 3 verlangt
+// ihn mit). `bioCostEur`: der Preisbestandteil für den nach § 43 Abs. 1 GModG anteilig zu nutzenden Brennstoff
+// (§ 3 Abs. 1 Nr. 6). `amountsAdjusted`: Mietfuchs hat Netto-Teilmengen anteilig auf den Rechnungsbetrag
+// hochgerechnet; `amountsNetUnadjusted`: das Modell meldete netto, hochgerechnet wurde aber nicht.
+export type FuelInvoiceExtraction = {
+  vendor?: string
+  invoiceDate?: string
+  deliveredAt?: string
+  periodStart?: string
+  periodEnd?: string
+  totalGrossEur: number | null
+  fixedEur: number | null
+  quantity: number | null
+  quantityUnit: FuelQuantityUnit | null
+  energyKwh: number | null
+  gasBasis: GasBasis | null
+  heatingValue: number | null
+  emissionsKg: number | null
+  co2CostEur: number | null
+  co2CostNet: boolean
+  emissionFactor: number | null
+  bioCostEur: number | null
+  parts: FuelInvoicePartExtraction[]
+  amountsAdjusted?: 'netto'
+  amountsNetUnadjusted: boolean
+}
+
+export type ServiceExtractResult = { file: string; extraction: ServiceStatementExtraction }
+export type FuelExtractResult = { file: string; extraction: FuelInvoiceExtraction }
+
 // Die Ampel einer ausgewerteten Rechnungsposition (Schnellerfassung, Belegbuchung #170): grün
 // heißt sicher, gelb prüfen, rot fehlt etwas. Steht hier, weil Server und Browser sie zeigen.
 export type TrafficLight = 'gruen' | 'gelb' | 'rot'
