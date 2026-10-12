@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { api, errorText } from '../api'
 import { useToast } from './feedback'
 import Term from './Term'
-import { APPLICATION_FROM, FIRST_USE_UNTIL, HALF_SPLIT_YEAR, halfSplitBody, halfSplitToForm, INSTALLED_AFTER, noticeBody, noticeTenancies, PRIOR_DUTY_EXPLAINED, PRIOR_DUTY_QUESTION, TRI_OPTIONS, type HalfSplitBody, type NoticeTenancy, type TriState } from '../halfSplitForm'
+import { APPLICATION_FROM, FIRST_USE_UNTIL, HALF_SPLIT_WHAT, HALF_SPLIT_YEAR, halfSplitBody, halfSplitToForm, INSTALLED_AFTER, noticeBody, noticeTenancies, PRIOR_DUTY_EXPLAINED, PRIOR_DUTY_QUESTION, TRI_OPTIONS, type HalfSplitBody, type NoticeTenancy, type TriState } from '../halfSplitForm'
 import { halfSplitFirstDay } from '../../../shared/law/co2kostaufg.ts'
 import type { HeatingEnergy, HeatingPlant } from '../types'
 
@@ -56,7 +56,7 @@ export default function HalfSplitCard({ plant, tenancies, onSaved }: {
   return (
     <div className="card">
       <h2>Heizung nach <Term id="co2HalfSplit">§ 43 GModG</Term> {`(ab ${HALF_SPLIT_YEAR})`}</h2>
-      <p className="muted">{`Nur für eine Gas-, Öl- oder Flüssiggasheizung, die nach dem ${INSTALLED_AFTER} in ein bestehendes Gebäude eingebaut wurde, oder eine solche Heizung in einem Neubau. Dann teilen Sie Netzentgelte, CO₂-Kosten und Biobrennstoff hälftig mit den Mietern.`}</p>
+      <p className="muted">{`Nur für eine Gas-, Öl- oder Flüssiggasheizung, die nach dem ${INSTALLED_AFTER} in ein bestehendes Gebäude eingebaut wurde, oder eine solche Heizung in einem Neubau. ${HALF_SPLIT_WHAT}`}</p>
       <label className="field">
         Tag des Einbaus
         <input type="date" aria-label="Tag des Einbaus" value={form.installedOn} onChange={(e) => setForm({ ...form, installedOn: e.target.value })} />
@@ -96,7 +96,7 @@ export default function HalfSplitCard({ plant, tenancies, onSaved }: {
               </label>
             </>
           )}
-          <p className="muted">Im Gebäude mit höchstens zwei Wohnungen, von denen Sie eine selbst bewohnen und die beide an dieser Heizung hängen, bleibt es beim Stufenmodell, wenn Sie das jedem Mieter in Textform mitgeteilt haben und das Gebäude in keinem Gebiet liegt, das eine Verordnung zur Mietpreisbremse, Kappungsgrenze oder Kündigungssperrfrist bestimmt (Frage beim Objekt). Mitteilen müssen Sie es bei Abschluss des Mietvertrags; bestand der Vertrag schon, bevor die Voraussetzungen eintraten, genügt die Mitteilung mit der Abrechnung (§ 5d Abs. 3, 4 CO2KostAufG). Dass die Mitteilung auch für diese Ausnahme nötig ist, ist eine Auslegung; Mietfuchs verlangt sie, damit Sie sicher gehen.</p>
+          <p className="muted">Im Gebäude mit höchstens zwei Wohnungen, von denen Sie eine selbst bewohnen und die beide an dieser Heizung hängen, bleibt es beim Stufenmodell, wenn Sie das jedem Mieter in Textform mitgeteilt haben und das Gebäude in keinem Gebiet liegt, das eine Verordnung zur Mietpreisbremse, Kappungsgrenze oder Kündigungssperrfrist bestimmt (Frage beim Objekt). Mitteilen müssen Sie es bei Abschluss des Mietvertrags; bestand der Vertrag schon, bevor die Voraussetzungen eintraten, genügt nach der Begründung in der Regel die Mitteilung mit der Abrechnung (§ 5d Abs. 3, 4 CO2KostAufG; BT-Drs. 21/7009, S. 156). Dass die Mitteilung auch für diese Ausnahme nötig ist, ist eine Auslegung; Mietfuchs verlangt sie, damit Sie sicher gehen.</p>
         </>
       )}
       <div className="row"><button className="btn" onClick={() => void save()}>Angaben speichern</button></div>
