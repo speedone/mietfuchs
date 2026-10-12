@@ -73,7 +73,7 @@ export default function Co2RefundsCard({ propertyId, period, tenancies, units }:
 
   return (
     <div className="card no-print">
-      <h2>CO₂-Erstattung an Mieter, die selbst heizen <Term id="co2Refund" /></h2>
+      <h2><Term id="co2Refund">CO₂-Erstattung</Term> an Mieter, die selbst heizen</h2>
       <p className="muted">
         Bezieht ein Mieter Brennstoff oder Wärme über einen eigenen Vertrag, etwa für eine Gastherme oder eine zentrale Heizung, kann er den Anteil seiner
         CO₂-Kosten, den nach dem Stufenmodell Sie tragen, von Ihnen verlangen. Erfassen Sie hier seine Anzeige; verrechnet wird in der Abrechnung, die Sie
@@ -87,8 +87,8 @@ export default function Co2RefundsCard({ propertyId, period, tenancies, units }:
               {r.proposalCents !== null && r.proposalExcluded === null && r.proposalCents !== r.amountCents && <span className="muted">{` · nach den Angaben gerechnet: ${fmtEuro(r.proposalCents)}`}</span>}
               {(r.settlePeriod === null || r.settlePeriod === period.key) && (
                 <>
-                  {' '}<button className="btn link" onClick={() => { setError(''); setEditing({ id: r.id, form: refundToForm(r, period.key) }) }}>Bearbeiten</button>
-                  {' '}<button className="btn link" onClick={() => void remove(r.id)}>Löschen</button>
+                  {' '}<button className="btn small secondary" onClick={() => { setError(''); setEditing({ id: r.id, form: refundToForm(r, period.key) }) }}>Bearbeiten</button>
+                  {' '}<button className="btn small secondary" onClick={() => void remove(r.id)}>Löschen</button>
                 </>
               )}
             </li>
