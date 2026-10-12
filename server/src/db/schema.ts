@@ -152,6 +152,11 @@ export const properties = sqliteTable(
     // Beginnmonat der Abrechnungszeiträume von Anfang an (#208): 1 heißt Kalenderjahr. Die Zeiträume
     // werden berechnet (shared/period.ts), zusammen mit den Wechseln in `period_changes`.
     periodStartMonth: integer('period_start_month').notNull().default(1),
+    // Angespannter Wohnungsmarkt (§ 5d CO2KostAufG, Heizung PR 18); null heißt unbekannt. Bei „ja“ die
+    // Geltung der Verordnung (Abweichung 4 des Plans). Bedingungen im zweiten Schritt.
+    tightMarket: integer('tight_market', { mode: 'boolean' }),
+    tightMarketFrom: text('tight_market_from'),
+    tightMarketTo: text('tight_market_to'),
   },
   () => [
     oneOf('properties_kind_known', 'kind', PROPERTY_KINDS),
@@ -159,6 +164,12 @@ export const properties = sqliteTable(
     // Abrechnung.
     notNegative('properties_deadline_not_negative', 'payment_deadline_days'),
     check('properties_period_start_month_valid', sql.raw('"period_start_month" BETWEEN 1 AND 12')),
+    // Angespannter Wohnungsmarkt (Heizung PR 18, Abweichung 4 des Plans): Geltung nur bei „ja“, als Datum, geordnet.
+    // `IS 1` statt `= 1`: Bei „unbekannt“ (NULL) ergäbe `=` NULL, und eine Bedingung mit NULL gilt als erfüllt.
+    check('properties_tight_market_dates_valid', sql.raw(`("tight_market_from" IS NULL AND "tight_market_to" IS NULL) OR "tight_market" IS 1`)),
+    check('properties_tight_market_from_valid', sql.raw(`"tight_market_from" IS NULL OR "tight_market_from" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`)),
+    check('properties_tight_market_to_valid', sql.raw(`"tight_market_to" IS NULL OR "tight_market_to" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`)),
+    check('properties_tight_market_order_valid', sql.raw(`"tight_market_from" IS NULL OR "tight_market_to" IS NULL OR "tight_market_from" <= "tight_market_to"`)),
   ],
 )
 
@@ -241,6 +252,8 @@ export const tenancies = sqliteTable(
     // Nebenkostenmodell (#93), getrennt für kalte Kosten und Heizung. NULL heißt Abrechnung.
     costModel: text('cost_model', { enum: COST_MODELS }),
     heatingModel: text('heating_model', { enum: COST_MODELS }),
+    // Mitteilung nach § 5d Abs. 4 CO2KostAufG in Textform (Heizung PR 18, Abweichung 3 des Plans).
+    halfSplitNoticeOn: text('half_split_notice_on'),
   },
   (t) => [
     notNegative('tenancies_persons_not_negative', 'persons'),
@@ -250,6 +263,8 @@ export const tenancies = sqliteTable(
     oneOf('tenancies_deposit_status_known', 'deposit_status', DEPOSIT_STATUS),
     oneOf('tenancies_cost_model_known', 'cost_model', COST_MODELS),
     oneOf('tenancies_heating_model_known', 'heating_model', COST_MODELS),
+    // Mitteilung nach § 5d Abs. 4 (Heizung PR 18): ein Datum.
+    check('tenancies_half_split_notice_valid', sql.raw(`"half_split_notice_on" IS NULL OR "half_split_notice_on" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`)),
   ],
 )
 
@@ -458,6 +473,12 @@ export const heatingPlants = sqliteTable(
     heatDeliverySince: text('heat_delivery_since'),
     previousSupply: text('previous_supply', { enum: PREVIOUS_SUPPLIES }),
     switchAnnouncedOn: text('switch_announced_on'),
+    // §§ 5a, 5b, 5d CO2KostAufG (Heizung PR 18, #215). Die Bedingungen kommen im zweiten Schritt.
+    gmodg43InstalledOn: text('gmodg43_installed_on'),
+    emergencyInstall: integer('emergency_install', { mode: 'boolean' }),
+    emergencyPriorDuty: integer('emergency_prior_duty', { mode: 'boolean' }),
+    newBuildingFirstUse: text('new_building_first_use'),
+    buildingApplicationBefore20260513: integer('building_application_before_2026_05_13', { mode: 'boolean' }),
   },
   () => [
     oneOf('heating_plants_energy_known', 'energy', HEATING_ENERGIES),
@@ -497,6 +518,16 @@ export const heatingPlants = sqliteTable(
     check('heating_plants_announced_valid', sql.raw(`"switch_announced_on" IS NULL OR "switch_announced_on" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`)),
     oneOf('heating_plants_previous_supply_known', 'previous_supply', PREVIOUS_SUPPLIES),
     check('heating_plants_announced_since_valid', sql.raw('"switch_announced_on" IS NULL OR "heat_delivery_since" IS NOT NULL')),
+    // §§ 5a, 5b, 5d CO2KostAufG (Heizung PR 18, #215): nur Gas, Öl, Flüssiggas; die übrigen Merkmale nur mit Tag
+    // des Einbaus; die vorherige Pflicht nur beim Notfalleinbau, der Bauantrag nur beim Neubau. Contracting ist
+    // erlaubt (Abweichung 11 des Plans; `energy` ist dann der Brennstoff des Lieferanten). `IS 1` statt `= 1`, weil
+    // ein Vergleich mit NULL die Bedingung bestehen ließe.
+    check('heating_plants_gmodg_energy_valid', sql.raw(`"gmodg43_installed_on" IS NULL OR "energy" IN ('gas', 'oil', 'lpg')`)),
+    check('heating_plants_gmodg_date_valid', sql.raw(`"gmodg43_installed_on" IS NULL OR "gmodg43_installed_on" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`)),
+    check('heating_plants_first_use_date_valid', sql.raw(`"new_building_first_use" IS NULL OR "new_building_first_use" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`)),
+    check('heating_plants_gmodg_facts_valid', sql.raw(`"gmodg43_installed_on" IS NOT NULL OR ("emergency_install" IS NULL AND "emergency_prior_duty" IS NULL AND "new_building_first_use" IS NULL AND "building_application_before_2026_05_13" IS NULL)`)),
+    check('heating_plants_prior_duty_valid', sql.raw(`"emergency_prior_duty" IS NULL OR "emergency_install" IS 1`)),
+    check('heating_plants_application_valid', sql.raw(`"building_application_before_2026_05_13" IS NULL OR "new_building_first_use" IS NOT NULL`)),
   ],
 )
 

@@ -5,7 +5,7 @@
 // einer Wärmepumpe mit Rechnungszeitraum, und seit Heizung PR 8 eine Lieferung von Heizöl, Flüssiggas,
 // Pellets, Holz oder Kohle mit Lieferdatum und Menge für die Bestandsrechnung (db/fuelStock.ts).
 // Lieferungen je Wohnung gibt es nur bei der Etagenheizung (Heizung PR 9). Netzentgelte und Biobrennstoff
-// § 5a (PR 18) lehnt der Server bis dahin mit einem Satz ab.
+// nach § 5a CO2KostAufG (Heizung PR 18) nur bei einer Heizung nach § 43 Abs. 1 GModG.
 //
 // **Gesperrt** ist eine Lieferung, von der eine abgeschlossene Heizperiode einen Teil eingefroren hat
 // (8.2, G-A4): Mengen, Zeiträume und Beträge, nicht die Bezeichnung.
@@ -17,6 +17,7 @@ import type { BillingPeriod, DegreeDayValue, FuelDelivery, FuelDeliveryPart, Fue
 import { STOCK_ENERGIES } from '../fuel.ts'
 import { billingEnergy } from '../../../shared/heatDelivery.ts'
 import { dayAfter, germanDate } from '../../../shared/law/register.ts'
+import { bioCapFrom } from '../../../shared/law/gmodg.ts'
 import type { Database, Executor } from './client.ts'
 import { dropIfEmpty, ensureHeatingPeriod } from './heatingPeriodContext.ts'
 import { readDegreeDayValues, readFuelDeliveries } from './read.ts'
@@ -26,7 +27,6 @@ import { costItems, degreeDayValues, FUEL_GRADE_VALUES, FUEL_QUANTITY_UNITS, fue
 
 const LATER = {
   other: 'Tragen Sie zuerst bei der Heizanlage den Energieträger ein; Lieferungen gibt es für Gas, Fernwärme und Strom einer Wärmepumpe.',
-  halfSplit: 'Netzentgelte und Biobrennstoff nach § 5a CO2KostAufG kommen mit einer späteren Version.',
 }
 const frozenText = frozenDeliveryText
 const stockClosedText = (h: BillingPeriod) =>
@@ -95,10 +95,11 @@ const emptyDelivery = (id: string, plantId: string): FuelDelivery => ({
 })
 
 // `contracting` (Heizung PR 16): Bei Contracting sind Lieferungen Wärmerechnungen wie bei Fernwärme (`billingEnergy`).
-type PlantFacts = { id: string; energy: HeatingEnergy; method: HeatingMethod; supply: HeatingSupply; name: string; contracting: boolean }
+// `gmodg43InstalledOn` (Heizung PR 18): Netzentgelte und Biobrennstoff nur bei einer Heizung nach § 43 Abs. 1 GModG.
+type PlantFacts = { id: string; energy: HeatingEnergy; method: HeatingMethod; supply: HeatingSupply; name: string; contracting: boolean; gmodg43InstalledOn: string | null }
 
 async function plantOf(db: Executor, plantId: string): Promise<PlantFacts | null> {
-  const [p] = await db.select({ id: heatingPlants.id, energy: heatingPlants.energy, method: heatingPlants.method, supply: heatingPlants.supply, name: heatingPlants.name, contracting: heatingPlants.contracting }).from(heatingPlants).where(eq(heatingPlants.id, plantId))
+  const [p] = await db.select({ id: heatingPlants.id, energy: heatingPlants.energy, method: heatingPlants.method, supply: heatingPlants.supply, name: heatingPlants.name, contracting: heatingPlants.contracting, gmodg43InstalledOn: heatingPlants.gmodg43InstalledOn }).from(heatingPlants).where(eq(heatingPlants.id, plantId))
   return p ?? null
 }
 
@@ -143,7 +144,27 @@ async function guardDelivery(db: Executor, plant: PlantFacts, before: FuelDelive
   } else if (after.unitId) {
     throw new HeatingError(400, 'Eine Rechnung einer zentralen Heizanlage gehört zu keiner einzelnen Wohnung. Lassen Sie die Wohnung leer.')
   }
-  if (after.gridFeeCents !== null || after.bioCostCents !== null) throw new HeatingError(400, LATER.halfSplit)
+  // Netzentgelte und Biobrennstoff (§ 5a Abs. 1 CO2KostAufG, Heizung PR 18; Abweichungen 9, 10, 11 des Plans).
+  // Netzentgelte nach dem Brennstoff (bei Contracting dem des Lieferanten, `plant.energy`), der Vorrat nach der
+  // Energie der Abrechnung: Bei Contracting führt der Lieferant den Brennstoff, und der Biobrennstoff steht auf
+  // seiner Wärmerechnung.
+  if (after.gridFeeCents !== null || after.bioCostCents !== null) {
+    if (plant.gmodg43InstalledOn === null) {
+      throw new HeatingError(400, 'Netzentgelte und Kosten des Biobrennstoffs braucht Mietfuchs nur bei einer Heizung nach § 43 Abs. 1 GModG (§ 5a CO2KostAufG). Tragen Sie dafür zuerst an der Heizanlage den Tag des Einbaus ein.')
+    }
+    if (after.gridFeeCents !== null && plant.energy !== 'gas') {
+      throw new HeatingError(400, 'Netzentgelte nach § 5a Abs. 1 Nr. 1 CO2KostAufG gibt es nur bei der Belieferung mit Gas.')
+    }
+    // Eine 0 ist eine Angabe (kein Pflichtanteil in der Lieferung); nur ein Betrag darüber ist gesperrt.
+    if (after.bioCostCents !== null && after.bioCostCents > 0 && stock) {
+      throw new HeatingError(400, 'Den Biobrennstoff aus einem Vorrat (Tank) rechnet Mietfuchs mit einer späteren Version. Enthält die Lieferung keinen Pflichtanteil, tragen Sie 0 ein; sonst nennt die Abrechnung den Anteil, den Sie selbst ermitteln müssen.')
+    }
+    const capFrom = bioCapFrom()
+    const end = after.invoiceTo ?? after.deliveredAt
+    if (after.bioCostCents !== null && after.bioCostCents > 0 && capFrom !== null && end !== null && end >= capFrom) {
+      throw new HeatingError(400, `Ab dem ${germanDate(capFrom)} übersteigt der Pflichtanteil an Biobrennstoff die Grenze von § 5a Abs. 3 Nr. 3 CO2KostAufG; das rechnet Mietfuchs mit einer späteren Version.`)
+    }
+  }
   // Kesseltausch (Heizung PR 9): Eine Lieferung gehört in die Zeit, in der die Anlage heizt.
   const span = await plantSpanOf(db, plant.id)
   const firstDay = after.deliveredAt ?? after.invoiceFrom

@@ -103,6 +103,13 @@ export const asNullableFilled = (value: unknown): string | null => {
 
 export const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 
+// Ein ISO-Datum oder leer; sonst ein Satz statt eines Datenbankfehlers (Heizung PR 18).
+function isoDateOrNull(v: unknown, what: string): string | null {
+  const text = asNullableFilled(v)
+  if (text !== null && !ISO_DATE.test(text)) throw new HeatingError(400, `${what} ist kein Datum. Bitte wählen Sie ihn im Kalender.`)
+  return text
+}
+
 // Nimmt den Wert aus dem Rumpf, wenn der Schlüssel dasteht, sonst den bisherigen.
 export function merged<T>(body: unknown, key: string, current: T, read: (value: unknown) => T): T {
   return has(body, key) ? read(raw(body, key)) : current
@@ -319,6 +326,8 @@ function mergeTenancy(current: Tenancy, body: unknown): Tenancy {
     // Nebenkostenmodell (#93): ein unbekannter Wert heißt wie null die Abrechnung.
     costModel: merged(body, 'costModel', current.costModel, (v) => oneOfOrUndefined(COST_MODELS, v)),
     heatingModel: merged(body, 'heatingModel', current.heatingModel, (v) => oneOfOrUndefined(COST_MODELS, v)),
+    // Mitteilung nach § 5d Abs. 4 CO2KostAufG (Heizung PR 18, Abweichung 3 des Plans).
+    halfSplitNoticeOn: merged(body, 'halfSplitNoticeOn', current.halfSplitNoticeOn, (v) => isoDateOrNull(v, 'Der Tag der Mitteilung nach § 5d Abs. 4 CO2KostAufG') ?? undefined),
     notes: merged(body, 'notes', current.notes, asOptionalText),
   }
 }
@@ -1679,7 +1688,7 @@ function mergeProperty(current: Property, body: unknown): Property {
   // `null` ist bei den drei abweichenden Angaben ein ausdrücklicher Wert („die Vorgabe gilt“),
   // deshalb dieselbe Lesart wie beim offenen Mietverhältnis.
   const nullableNumber = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
-  return {
+  const next: Property = {
     id: current.id,
     name: merged(body, 'name', current.name, (v) => asText(v, '')),
     kind: merged(body, 'kind', current.kind, (v) => oneOfOrUndefined(PROPERTY_KINDS, v) ?? current.kind),
@@ -1689,7 +1698,21 @@ function mergeProperty(current: Property, body: unknown): Property {
     paymentDeadlineDays: merged(body, 'paymentDeadlineDays', current.paymentDeadlineDays, nullableNumber),
     // `null` heißt unbekannt und ist ein ausdrücklicher Wert (#121).
     cableBuiltBeforeDec2021: merged(body, 'cableBuiltBeforeDec2021', current.cableBuiltBeforeDec2021 ?? null, (v) => (typeof v === 'boolean' ? v : null)),
+    // § 5d CO2KostAufG (Heizung PR 18); `null` heißt unbekannt, ein anderer Wert als true/false ebenso.
+    tightMarket: merged(body, 'tightMarket', current.tightMarket ?? null, (v) => (typeof v === 'boolean' ? v : null)),
+    tightMarketFrom: merged(body, 'tightMarketFrom', current.tightMarketFrom ?? null, (v) => isoDateOrNull(v, 'Der Beginn der Verordnung')),
+    tightMarketTo: merged(body, 'tightMarketTo', current.tightMarketTo ?? null, (v) => isoDateOrNull(v, 'Das Ende der Verordnung')),
   }
+  // Die Geltung gehört nur zu „ja“; „nein“ und „unbekannt“ nehmen sie mit (Bedingung
+  // properties_tight_market_dates_valid).
+  if (next.tightMarket !== true) {
+    next.tightMarketFrom = null
+    next.tightMarketTo = null
+  }
+  if (next.tightMarketFrom && next.tightMarketTo && next.tightMarketFrom > next.tightMarketTo) {
+    throw new HeatingError(400, 'Der Beginn der Verordnung liegt nach dem Ende. Bitte prüfen Sie beide Tage.')
+  }
+  return next
 }
 
 const emptyProperty = (id: string): Property => ({
@@ -1786,6 +1809,7 @@ const tenancyRow = (t: Tenancy) => ({
   iban: orNull(t.iban), contractDate: orNull(t.contractDate), depositCents: orNull(t.depositCents),
   depositStatus: orNull(t.depositStatus), notes: orNull(t.notes),
   costModel: orNull(t.costModel), heatingModel: orNull(t.heatingModel),
+  halfSplitNoticeOn: orNull(t.halfSplitNoticeOn),
 })
 const costItemRow = (c: CostItem) => ({
   id: c.id, propertyId: c.propertyId, period: c.period, category: c.category, description: c.description, vendor: orNull(c.vendor),

@@ -33,6 +33,13 @@ export type Property = {
   // Kabel- oder Antennenanlage vor dem 01.12.2021 errichtet (#121, § 2 Satz 2 BetrKV)? `null` heißt
   // unbekannt. Bei einer späteren Anlage war das TV-Signal nie umlagefähig.
   cableBuiltBeforeDec2021?: boolean | null
+  // Liegt das Gebäude in einem Gebiet, das eine Verordnung nach § 556d Abs. 2 Satz 1, § 558 Abs. 3 Satz 3 oder
+  // § 577a Abs. 2 Satz 2 BGB als angespannten Wohnungsmarkt bestimmt? Für § 5d CO2KostAufG (Heizung PR 18).
+  // `null`: unbekannt. Die Verordnungen sind befristet (Abweichung 4 des Plans): bei `true` ihre Geltung,
+  // `null` heißt ohne bekannten Beginn bzw. ohne bekanntes Ende.
+  tightMarket?: boolean | null
+  tightMarketFrom?: string | null
+  tightMarketTo?: string | null
   // Der Rhythmus der Abrechnungszeiträume (#208). Der Server liefert ihn immer mit; fehlt er, gilt
   // das Kalenderjahr (`rulesOf` in shared/period.ts). Ändern lässt er sich in dieser Version nicht.
   periodRules?: PeriodRules
@@ -114,6 +121,9 @@ export type Tenancy = {
   correspondenceAddress?: string // abweichende Anschrift für Schriftverkehr (z. B. nach Auszug)
   iban?: string // Mieter-IBAN (für Lastschrift/Guthaben-Rückzahlung)
   contractDate?: string // 'YYYY-MM-DD' — Datum des Mietvertrags
+  // Tag, an dem dem Mieter die Umstände nach § 5d CO2KostAufG in Textform mitgeteilt wurden (Heizung PR 18,
+  // Abweichung 3 des Plans). Je Mieter, denn die Information ist „dem Mieter“ geschuldet (§ 5d Abs. 4 Satz 1, 3).
+  halfSplitNoticeOn?: string
   depositCents?: number // vereinbarte Kaution
   depositStatus?: DepositStatus // Stand der Kaution
   notes?: string // freie Notiz zum Mietverhältnis
@@ -1439,6 +1449,20 @@ export type HeatingPlant = {
   heatDeliverySince: string | null
   previousSupply: PreviousSupply | null
   switchAnnouncedOn: string | null
+  // §§ 5a, 5b, 5d CO2KostAufG (Heizung PR 18, #215). `gmodg43InstalledOn`: Tag des Einbaus einer Gas-, Öl-
+  // oder Flüssiggasheizung nach § 43 Abs. 1 GModG (im Neubau: Tag der Inbetriebnahme); gesetzt heißt, die
+  // hälftige Teilung kann greifen. `emergencyInstall`: eingebaut nach irreparablem Ausfall der bisherigen
+  // Heizung; `emergencyPriorDuty`: für die ausgefallene galt beim Ausfall schon eine Pflicht nach § 43 Abs. 1,
+  // gefragt als „war sie eine Gas-, Öl- oder Flüssiggasheizung, nach dem 29.07.2026 in das bestehende Gebäude
+  // eingebaut?“ (§ 5a Abs. 4; Prüfung M8). `newBuildingFirstUse`: Neubau, Tag der ersten Nutzung (§ 5b);
+  // `buildingApplicationBefore20260513`: Bauantrag, Antrag auf Zustimmung oder Bauanzeige vor dem 13.05.2026.
+  // `null` heißt jeweils unbekannt bzw. nicht angegeben. Die Mitteilung nach § 5d Abs. 4 steht am
+  // Mietverhältnis (`Tenancy.halfSplitNoticeOn`).
+  gmodg43InstalledOn: string | null
+  emergencyInstall: boolean | null
+  emergencyPriorDuty: boolean | null
+  newBuildingFirstUse: string | null
+  buildingApplicationBefore20260513: boolean | null
   // Die Zeiträume der eigenen Heizkostenabrechnung (Durchsicht von #239), aufsteigend; `until` NULL beim
   // laufenden.
   selfSpans?: SelfSpanRange[]
