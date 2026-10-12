@@ -408,6 +408,17 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Hilfetext zur Energie riet bisher, Contracting als Fernwärme einzutragen; so eingetragene Anlagen bleiben
   Fernwärme und rechnen weiter richtig, nur ohne bekannten Brennstoff. Ohne Häkchen und ohne Tag der
   Umstellung ändert sich keine Zahl und kein Hinweis.
+- Eichfrist der Zähler: An jedem Zähler außer Heizkostenverteilern lässt sich eintragen, bis zu welchem Jahr
+  er geeicht ist. Aus der Jahreszahl auf dem Zähler („M22“ oder die Jahresangabe der Eichmarke) schlägt
+  Mietfuchs das Jahr vor: bei Kalt- und Warmwasserzählern und Wärmezählern sechs Jahre; bei Warmwasser- und
+  Wärmezählern bis zur Jahreszahl 2015 fünf Jahre, denn deren Frist lief vor der Verlängerung am 03.11.2021
+  ab. Lief die Frist an diesem Tag noch, rechnet Mietfuchs wie die Eichbehörden mit sechs Jahren; die
+  Änderungsverordnung hat dafür keine Übergangsregel, das steht als Auslegung im Vorschlag. Stammt eine
+  Ablesung des Zeitraums aus der Zeit nach Ablauf, warnt die Zähler-Seite und nennt die Beweislast nach dem
+  Bundesgerichtshof und die Verlängerung im Stichprobenverfahren; das Cockpit zeigt dazu eine eigene gelbe
+  Zeile „Eichfrist“, die Ampel „Zählerstände“ bleibt unberührt. Die Werte werden weiter verwendet, keine Zahl
+  einer Abrechnung ändert sich, und wer nichts einträgt, sieht nichts.
+  ([#98](https://github.com/speedone/mietfuchs/issues/98))
 ### Geändert
 
 - Neue Warnung „Monatliche Verbrauchsinformation“ bei einer Heizanlage, deren Zähler oder
