@@ -14,6 +14,7 @@ import type {
   SeparateHeatingRef,
   CostKey,
   CostModel,
+  HeatingModel,
   FuelMethod,
   LegalBasis,
   NotSettled,
@@ -58,14 +59,14 @@ import type {
 // Abrechnungsjahres (siehe snapshot.ts). Welche Sammlung darin nach Jahr eingegrenzt sein darf,
 // entscheidet dort die Ablage und nicht hier.
 import { rulesFor } from '../../shared/law/rules.ts'
-import { co2ApplicableFrom, co2CostsBefore, co2CostsCountedFrom, co2CostsExcludedUntil, co2CutMissing, co2DistrictEtsNew, co2FirstPeriodStart, co2HalfSplit, co2HalfSplitEmergency, co2HalfSplitNewBuildings, co2HalfSplitTwoFamily, co2NonResidential, co2Restriction, co2RoundingDecimals, co2StageTable, halfSplitBioFirstDay, halfSplitFirstDay } from '../../shared/law/co2kostaufg.ts'
+import { co2ApplicableFrom, co2CostsBefore, co2CostsCountedFrom, co2CostsExcludedUntil, co2CutMissing, co2DistrictEtsNew, co2FirstPeriodStart, co2HalfSplit, co2HalfSplitEmergency, co2HalfSplitNewBuildings, co2HalfSplitTwoFamily, co2NonResidential, co2Restriction, co2RoundingDecimals, co2SelfSupply, co2StageTable, halfSplitBioFirstDay, halfSplitEnactedOn, halfSplitFirstDay } from '../../shared/law/co2kostaufg.ts'
 import { gmodgHeating43 } from '../../shared/law/gmodg.ts'
 import { applicableRanges, blendedPermille, halfAmounts, halfSplitStatus, intersect as intersectRange, termsFromDeliveries, termsFromPieces, termsWeight, tightMarketIn, twoFamilyOf, type HalfDelivery, type HalfSplitStatus, type HalfSplitTerm, type Piece, type TwoFamily } from './halfSplit.ts'
 import { CO2_RELIEF_LABEL } from '../../shared/co2Probe.ts'
 import { ausweisGaps, CO2_FUELS, co2Assessment, co2Required, NO_CO2_FUELS, co2DeductionsOf, FORMULA_METHODS, co2PotsOf, itemBasisUnits, L_TOLERANCE_CENTS, perUnitClassification, perUnitExceeding, perUnitReliefs, gmodgKeyOf, HALF_SPLIT_TOLERANCE_PERMILLE, reliefKeysOf, reliefsByShare, spanningPlants, type PerUnitFuel, restage, selfSplit, SERVICE_FUEL_TOLERANCE_CENTS, shownReliefs, stageRanges, tableFactor, tenantLines as co2TenantLines, type Co2Pot, type ReliefShare } from './co2.ts'
 // Zahlen und Daten der Rechtsregeln kommen aus dem Rechtsregister (Heizung PR 1) und stehen hier
 // nicht als Literal; server/test/law-literals.test.ts wacht darüber.
-import { createLawLog, dayAfter, dayBefore, law, LAW_AS_OF, onlyVersion, recordVersionAt, VALUE_CHANGE_LABEL, valueAt, type Period } from '../../shared/law/register.ts'
+import { coversDate, createLawLog, dayAfter, dayBefore, law, LAW_AS_OF, onlyVersion, recordVersionAt, VALUE_CHANGE_LABEL, valueAt, type Period } from '../../shared/law/register.ts'
 import { betrkvGenerationPower, betrkvTvSignal, bgbDeadlineMonths, bgbHeatDeliverySwitch, bgbMaxPeriodMonths } from '../../shared/law/bgb-betrkv.ts'
 import { switchFindings, switchText } from './heatDelivery.ts'
 import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvEstimateThreshold, hkvExemptions, hkvGenerationPower, hkvInfoDistrict, hkvMonthlyInfo, hkvHeatPumpCapture, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvRenewableExemption, hkvSettlementInfo, type DegreeDayTable } from '../../shared/law/heizkostenv.ts'
@@ -88,12 +89,13 @@ import { lineRoot, monthSpanText, plantRules, plantSpan, recommendedDeadline, re
 import { heatingSnapshotFor, selfAt, snapshotFor, wayOf } from './snapshot.ts'
 import { cancelledDeliveries, deliveryShare, plantFuel, rangeOf, type FuelCarry, type FuelResult, type ShareContext } from './fuel.ts'
 import { co2Plausibility, etsExempt as etsExemptPlant, plausibilityText } from './co2Plausibility.ts'
-import { billMissingText, deductionMissingText, generationPowerText, missingOperatingPowerText, missingPowerFindings, operatingPowerBalance, operatingPowerFindings, operatingPowerText, unmarkedPowerCredits, type OperatingPowerBalance } from './operatingPower.ts'
+import { billMissingText, deductionMissingText, generationPowerText, selfSupplyPowerText, missingOperatingPowerText, missingPowerFindings, operatingPowerBalance, operatingPowerFindings, operatingPowerText, unmarkedPowerCredits, type OperatingPowerBalance } from './operatingPower.ts'
 import { GENERAL_POWER_CATEGORY } from '../../shared/operatingPower.ts'
 import { LAW_PARAMS } from '../../shared/law/params.ts'
 import { fuelFromDeliveries, fuelFromStock, looseCentsOf, measuredOffset, problemText, settledByDefault, stockKeysOf, stockOf, stockTemplateOfLine, stockTouched, valueOf as stockValueOf, type FuelFigures, type StockPeriodInput, type StockResult } from './fuelStock.ts'
 import { isStockEnergy, STOCK_FUEL_NAMES, STOCK_UNIT_TEXT } from '../../shared/fuelStock.ts'
 import { degreeDayPermille, type DayRange } from '../../shared/degreeDays.ts'
+import { claimDeadline, nextSettlement, prepaymentAgreed, refundDueDate, refundLawAt, refundProposal, refundSteps, type LawAsk } from './co2Refund.ts'
 import { annualFactors, type AnnualBasis } from './prepaymentSuggestion.ts'
 import {
   boundaryReadingsOf, consumptionSharesOf, estimateDeviceType, estimateKey, estimateProposals, heatPumpVerdict, lineShareRows, OIL_OR_GAS, hotWaterShareOf, measuredBetween, planSelf, sortReadings, targetProblem, usersOf, weightsOf,
@@ -446,6 +448,8 @@ const noticeKinds = {
   // #266: mit Angabe an der Anlage. Fehlt der Abzug trotz Angabe, ist das der Fall aus BGH V ZR 166/15 und VIII ZR 27/07
   // und färbt die Ampel; fehlt nur die Rechnung des eigenen Stromvertrags, trägt der Vermieter eigenes Geld (INFORMATIONAL).
   'heating.operating-power-deduction-missing': { level: 'hint', title: 'Abzug des Betriebsstroms fehlt', terms: ['operatingPower', 'heatingCostOrdinance'] },
+  // Heizung PR 19, Durchsicht S-2: zentrale Heizung mit Brennstoff beim Mieter, ohne Heizanlage.
+  'heating.self-supply-operating-power': { level: 'hint', title: 'Betriebsstrom der Heizung des Mieters im Allgemeinstrom?', terms: ['operatingPower', 'co2Refund'] },
   'heating.operating-power-bill-missing': { level: 'hint', title: 'Rechnung des Heizungsstromzählers fehlt', terms: ['operatingPower'] },
   // Heizung PR 17 (Entwurf 4.5, 10.1): ein Rechtswert, den der Vermieter eingetragen hat.
   'law.value-overridden': { level: 'hint', title: 'Selbst eingetragener Rechtswert', terms: ['legalBasis'] },
@@ -475,6 +479,14 @@ const noticeKinds = {
   'co2.half-split': { level: 'hint', title: 'Hälftige Teilung nach § 5a', rule: 'co2-half-split', terms: ['co2HalfSplit', 'co2Split'] },
   'co2.half-split-two-family': { level: 'hint', title: 'Zweifamilienhaus: Teilung nach § 5d Abs. 3', rule: 'co2-half-split', terms: ['co2HalfSplit'] },
   'co2.half-split-missing': { level: 'warning', title: 'Angaben für die Teilung nach § 5a fehlen', rule: 'co2-half-split', terms: ['co2HalfSplit'] },
+  // Heizung PR 19 (#97): Mieter, die selbst heizen (Prüfung M3).
+  'co2.self-supply-items': { level: 'hint', title: 'Heizkosten bei einem Mieter, der selbst heizt', rule: 'co2-self-supply', terms: ['co2Refund', 'co2Split'] },
+  'co2.self-supply-mixed': { level: 'error', title: 'Mieter heizt selbst und hängt an Ihrer Heizanlage', rule: 'co2-self-supply', terms: ['co2Refund', 'heatingSystem'] },
+  'co2.refund-late': { level: 'hint', title: 'CO₂-Erstattung nach Ablauf der Frist verlangt', rule: 'co2-self-supply', terms: ['co2Refund'] },
+  'co2.refund-not-next': { level: 'hint', title: 'CO₂-Erstattung nicht in der nächsten Abrechnung', rule: 'co2-self-supply', terms: ['co2Refund'] },
+  'co2.refund-due': { level: 'warning', title: 'CO₂-Erstattung fällig', rule: 'co2-self-supply', terms: ['co2Refund'] },
+  'co2.refund-differs': { level: 'hint', title: 'CO₂-Erstattung weicht von der Nachrechnung ab', rule: 'co2-self-supply', terms: ['co2Refund'] },
+  'co2.refund-not-self': { level: 'error', title: 'CO₂-Erstattung bei einem Mieter, der nicht selbst heizt', rule: 'co2-self-supply', terms: ['co2Refund'] },
 } satisfies Record<string, NoticeKind>
 // Was die eigene CO₂-Aufteilung liest (Heizung PR 7 und 8): aus den Lieferungen des Versorgers oder aus
 // der Bestandsrechnung des Vorrats. `stock`: aus dem Vorrat.
@@ -496,6 +508,18 @@ function makeNotice(code: NoticeCode, text: string, subject: NoticeSubject | und
   return { code, level: kind.level, title: kind.title, text, ...(subject ? { subject } : {}), ...(kind.rule ? { rule: kind.rule } : {}), terms: kind.terms }
 }
 const itemSubject = (item: { id: string }): NoticeSubject => ({ kind: 'costItem', id: item.id })
+
+// CO₂-Erstattung an Mieter, die selbst heizen (Heizung PR 19): Kostenart und Beschriftung der Gutschriftzeile. Eine
+// eigene Kostenart, denn die Zeile ist keine Heizkostenzeile und darf in keine Grundlage einer Kürzung fallen.
+const CO2_REFUND_CATEGORY = 'CO₂-Erstattung'
+const CO2_REFUND_LABEL = 'CO₂-Erstattung bei eigener Heizung (§ 6 Abs. 2 CO2KostAufG)'
+// Die Zeile der Werbungskosten für ausgezahlte Erstattungen (Durchsicht S-1).
+const CO2_REFUND_TAX_CATEGORY = 'CO₂-Erstattung an Mieter (§ 6 Abs. 2 CO2KostAufG)'
+
+// Was ein Mieter im Zeitraum an wiederkehrenden Kosten trägt: ohne Erstattungen, denn eine Erstattung fällt nicht
+// wieder an (§ 560 Abs. 4 BGB: angemessen sind die voraussichtlichen Kosten).
+export const recurringShareCents = (st: Pick<Statement, 'rows' | 'totalShareCents'>): number =>
+  st.totalShareCents - st.rows.filter((r) => r.kind === 'co2Refund').reduce((a, r) => a + r.shareCents, 0)
 const meterSubject = (reading: SnapshotReading): NoticeSubject => ({ kind: 'meter', id: reading.meterId })
 // Nennt eine Meldung mehrere Wohnungen oder Mietverhältnisse, führt der Knopf zur ersten; die
 // Seite ist dieselbe.
@@ -1082,7 +1106,7 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
   const models = ledger.rows.map((r) => {
     const t = tenancyById.get(r.tenancyId)
     const cold = t?.costModel ?? 'settlement'
-    return { cold, heat: heatingBilled ? t?.heatingModel ?? 'settlement' : cold }
+    return { cold, heat: heatingBilled ? allocationModel(t?.heatingModel) : cold }
   })
   const costModels = {
     tenancies: models.length,
@@ -1197,6 +1221,19 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
     prev.privateCents += balanceItem.privateCents
     prev.deductibleCents += balanceItem.deductibleCents
     cats.set(balanceItem.category, prev)
+  }
+  // CO₂-Erstattung an Mieter, die selbst heizen (Heizung PR 19, Durchsicht S-1): Eine ausgezahlte Erstattung
+  // (`paidOutOn`) ist Werbungskosten im Jahr der Auszahlung (§ 9 Abs. 1, § 11 Abs. 2 EStG), ganz abziehbar. Eine in der
+  // Betriebskostenabrechnung verrechnete wirkt dort über den Saldo und die Zahlungen und steht hier nicht noch einmal.
+  const paidOutCents = (snapshot.co2Refunds ?? []).filter((r) => r.paidOutOn !== null && r.paidOutOn.slice(0, 4) === String(year)).reduce((a, r) => a + r.amountCents, 0)
+  if (paidOutCents !== 0) {
+    const group = groupOf(CO2_REFUND_TAX_CATEGORY) ?? 'Sonstige Werbungskosten'
+    const cats = byGroup.get(group) ?? new Map<string, TaxExpenseCategory>()
+    byGroup.set(group, cats)
+    const prev = cats.get(CO2_REFUND_TAX_CATEGORY) ?? { category: CO2_REFUND_TAX_CATEGORY, amountCents: 0, labor35aCents: 0, privateCents: 0, deductibleCents: 0 }
+    prev.amountCents += paidOutCents
+    prev.deductibleCents += paidOutCents
+    cats.set(CO2_REFUND_TAX_CATEGORY, prev)
   }
   const groups: TaxExpenseGroup[] = [...byGroup.entries()]
     .map(([group, cats]) => {
@@ -2033,7 +2070,14 @@ function landlordRecipients(
 // Welches Modell für eine Kostenposition gilt: das für Heizung bei der Heizkostenart, sonst das
 // für die kalten Kosten. Ohne Angabe die Abrechnung.
 const modelFor = (t: SnapshotTenancy, item: SnapshotCostItem): CostModel =>
-  (item.category === HEATING_CATEGORY ? t.heatingModel : t.costModel) ?? 'settlement'
+  item.category === HEATING_CATEGORY ? allocationModel(t.heatingModel) : t.costModel ?? 'settlement'
+
+// Wie die Heizkosten eines Mietverhältnisses abgerechnet werden (Heizung PR 19, Prüfung M2). Heizt der Mieter
+// selbst (`selfSupply`), trägt er den Brennstoff über seinen eigenen Vertrag; was dem Vermieter dafür laufend
+// entsteht, etwa Wartung oder Betriebsstrom, legt er um wie sonst (§ 556 Abs. 1 BGB, § 2 Nr. 4 a, d BetrKV).
+// Das ist die Abrechnung und weder Pauschale noch Inklusivmiete; jede Stelle, die nach dem Heizmodell fragt,
+// liest es deshalb über diese Funktion.
+export const allocationModel = (m: HeatingModel | undefined): CostModel => (m === 'selfSupply' || m === undefined ? 'settlement' : m)
 
 // Optionen der Abrechnung. `asOf` (JJJJ-MM-TT) ist der Stichtag für den Hinweis auf einen
 // Rückstand im Mietkonto (#133); die Route setzt ihn auf heute. Die Berechnung selbst fragt nie
@@ -4343,8 +4387,12 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Mieter, die über diese Heizposition abgerechnet werden. Auch eine Direktzuordnung zählt für
     // den Hinweis zur Fernablesbarkeit (#110), etwa ein Ergebnis des Messdienstes, das direkt bei
     // der vermieteten Wohnung eingetragen ist; Kürzungen nach § 12 Abs. 1 Satz 1 rechnet sie nicht.
+    // Heizt der Mieter selbst (Heizung PR 19, Gegenprüfung M3), zählt er nicht: Bei der Etagenheizung gilt die
+    // Verordnung nicht (§ 1 Abs. 1 Nr. 1 HeizkostenV: „zentraler Heizungsanlagen“), und beim einzigen Nutzer einer
+    // zentralen Anlage wird nichts „auf die Nutzer“ verteilt (Auslegung am Wortlaut). Was er für Wartung oder
+    // Betriebsstrom trägt, kann er deshalb nicht nach § 12 kürzen.
     const heatingReceived = item.category === HEATING_CATEGORY && !carry
-      ? targets.flatMap((x, i) => (booked[i] && statements.has(x.t.id) && shareOf(i) > 0 && !outsideHeating(x.t.unit) ? [{ x, share: shareOf(i) }] : []))
+      ? targets.flatMap((x, i) => (booked[i] && statements.has(x.t.id) && shareOf(i) > 0 && !outsideHeating(x.t.unit) && x.t.heatingModel !== 'selfSupply' ? [{ x, share: shareOf(i) }] : []))
       : []
     if (heatingReceived.length > 0) heatingBilledItem ??= item
     if (item.category === HEATING_CATEGORY && item.key !== 'direct' && !carry) {
@@ -4634,8 +4682,12 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   const settledOn = (ids: ReadonlySet<string>): boolean => [...statements.values()].some((x) => x.rows.some((r) => ids.has(r.costItemId)))
   // Die Kürzung je Mieter auf seine gedruckten Zeilen eines Topfs, nach der Abzugszeile, kaufmännisch
   // gerundet (Entwurf 6.5). Mietfuchs zieht nichts ab; erklären muss die Kürzung der Mieter.
+  // Wer selbst heizt (Heizung PR 19), trägt in den Heizkosten des Vermieters keine CO₂-Kosten und kürzt nicht nach
+  // § 7 Abs. 4 CO2KostAufG; an die Stelle tritt die Erstattung nach § 6 Abs. 2 (Gegenprüfung M3).
+  const selfSupplied = new Set(snapshot.tenancies.filter((t) => t.heatingModel === 'selfSupply').map((t) => t.id))
   const cutsOn = (ids: ReadonlySet<string>, pct: number): string => {
     const list = [...statements.values()].flatMap((st) => {
+      if (selfSupplied.has(st.tenancyId)) return []
       const sum = st.rows.filter((r) => ids.has(r.costItemId)).reduce((a, r) => a + r.shareCents, 0)
       return sum > 0 ? [`${st.tenantName} (${st.unitName}) ${fmtCents(Math.round((sum * pct) / 100))}`] : []
     })
@@ -6501,7 +6553,40 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // sagt, was gälte. Im ersten Zeitraum der Aufteilung ein eigener Hinweis. Knopf: „Heizung
   // einrichten →“.
   const inPots = new Set(co2Pots.flatMap((p) => p.items.map((c) => c.id)))
-  const loose = items.filter((c) => c.category === HEATING_CATEGORY && c.amountCents !== 0 && !inPots.has(c.id) && !spanning.has(c.id))
+  // Wer eine Position trägt: die Abrechnungen mit einer Zeile daraus.
+  const bearersOf = (id: string): Statement[] => [...statements.values()].filter((st) => st.rows.some((r) => r.costItemId === id && r.shareCents !== 0))
+  // Heizpositionen, die nur Mieter tragen, die selbst heizen (Heizung PR 19, Prüfung M3): Wartung oder Betriebsstrom
+  // einer Etagenheizung oder einer zentralen Heizung, deren Brennstoff der Mieter selbst bezieht. Darin stecken keine
+  // CO₂-Kosten des Vermieters, also auch keine Kürzung nach § 7 Abs. 4; an die Stelle tritt § 6 Abs. 2.
+  const selfOnly = (c: SnapshotCostItem): boolean => {
+    const bearers = bearersOf(c.id)
+    return bearers.length > 0 && bearers.every((st) => selfSupplied.has(st.tenancyId))
+  }
+  const selfSupplyItems = items.filter((c) => c.category === HEATING_CATEGORY && c.amountCents !== 0 && !inPots.has(c.id) && !spanning.has(c.id) && !c.heatingPlantId && selfOnly(c))
+  if (selfSupplyItems.length > 0 && law(co2ApplicableFrom, { period: lawPeriod }, lawLog)) {
+    const names = andList(selfSupplyItems.map((c) => `„${c.description}“`))
+    const one = selfSupplyItems.length === 1
+    warn('co2.self-supply-items',
+      `${names} ${one ? 'betrifft' : 'betreffen'} eine Heizung, deren Brennstoff der Mieter selbst bezieht. Darin stecken keine CO₂-Kosten, die Sie aufteilen müssten; eine Kürzung nach § 7 Abs. 4 CO2KostAufG kommt dafür nicht in Betracht. ` +
+        'Ihren Anteil an den CO₂-Kosten des Mieters erstatten Sie ihm, wenn er ihn nach § 6 Abs. 2 CO2KostAufG in Textform verlangt; erfassen Sie seine Anzeige auf der Seite Kosten unter „CO₂-Erstattung“.',
+      itemSubject(selfSupplyItems[0] ?? { id: '' }))
+  }
+  // Gemischt (Prüfung M3): Wer selbst heizt, trägt zugleich eine Position einer Heizanlage, deren Brennstoff oder
+  // Wärme der Vermieter bezieht. Das deckt Mietfuchs nicht ab; gerechnet wird wie erfasst.
+  const conflicts = new Map<string, string[]>()
+  for (const c of items) {
+    if (c.category !== HEATING_CATEGORY || !c.heatingPlantId) continue
+    for (const st of bearersOf(c.id)) if (selfSupplied.has(st.tenancyId)) conflicts.set(st.tenancyId, [...(conflicts.get(st.tenancyId) ?? []), c.description])
+  }
+  for (const [tenancyId, descriptions] of conflicts) {
+    const st = statements.get(tenancyId)
+    if (!st) continue
+    warn('co2.self-supply-mixed',
+      `${st.tenantName} (${st.unitName}) ist in den Stammdaten auf „Mieter heizt selbst“ gestellt, trägt aber einen Anteil an ${andList([...new Set(descriptions)].map((d) => `„${d}“`))} einer Heizanlage, deren Brennstoff oder Wärme Sie beziehen. ` +
+        'Beides zugleich deckt Mietfuchs nicht ab; gerechnet wird wie erfasst, ohne CO₂-Kürzung für diesen Mieter. Heizt der Mieter über Ihre Heizanlage, stellen Sie sein Mietverhältnis unter Heizung auf „Abrechnung“; bezieht er den Brennstoff selbst, nehmen Sie seine Wohnung aus der Heizanlage.',
+      { kind: 'tenancy', id: tenancyId })
+  }
+  const loose = items.filter((c) => c.category === HEATING_CATEGORY && c.amountCents !== 0 && !inPots.has(c.id) && !spanning.has(c.id) && !selfSupplyItems.includes(c))
   // Heizung PR 9 (Festlegung 5): Hat das Objekt Anlagen und gehört nur diese Position zu keiner, wäre
   // „Richten Sie die Heizung ein“ falsch; gesagt wird es an der Position.
   const looseWithPlants = loose.filter((c) => !c.heatingPlantId && plants.length > 0)
@@ -6523,7 +6608,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const what =
       `Mietfuchs weiß nicht, womit das Haus geheizt wird. ${co2Duty('Heizen Sie mit Gas, Heizöl, Flüssiggas oder Kohle oder weist Ihr Wärmelieferant CO₂-Kosten aus, sind die CO₂-Kosten')} ` +
       `Fehlt das, darf jeder Mieter seinen Anteil an den Heizkosten um ${cut} % kürzen (§ 7 Abs. 4 CO2KostAufG)${cutsOn(new Set(looseRest.map((c) => c.id)), cut)}. ` +
-      'Richten Sie unter Stammdaten die Heizung ein; dann sagt Mietfuchs, was zu tun ist.'
+      'Richten Sie unter Stammdaten die Heizung ein; dann sagt Mietfuchs, was zu tun ist. ' +
+      // Heizung PR 19: Wer selbst heizt, ist von diesem Hinweis ausgenommen, sobald das Mietverhältnis es sagt.
+      'Bezieht der Mieter Brennstoff oder Wärme über einen eigenen Vertrag, etwa für eine Gastherme in der Wohnung, stellen Sie sein Mietverhältnis unter Heizung auf „Mieter heizt selbst“; dann entfällt die Kürzung.'
     const setUp: NoticeSubject = { kind: 'heatingPlant', id: '' }
     if (lawPeriod.from.slice(0, 4) === first.slice(0, 4)) {
       warn('co2.missing-first-year',
@@ -6905,7 +6992,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   const notSettled: NotSettled[] = []
   for (const t of scope === 'heatingPart' ? [] : partTenancies) {
     const costModel = t.costModel ?? 'settlement'
-    const heatingModel = t.heatingModel ?? 'settlement'
+    const heatingModel = allocationModel(t.heatingModel)
     if (costModel === 'settlement' && heatingModel === 'settlement') continue
     const st = statements.get(t.id)
     const neither = costModel !== 'settlement' && heatingModel !== 'settlement'
@@ -6987,7 +7074,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // Wohnungen, von denen der Vermieter eine selbst bewohnt, darf anderes vereinbart werden. Gemeldet wird nur,
   // wenn es im Jahr eine Heizposition gibt; einen Kürzungsbetrag nennt die Meldung nicht, solange
   // der Rechenweg nach BGH VIII ZR 212/05 nicht geprüft ist (#93).
-  const heatingFlat = partTenancies.filter((t) => (t.heatingModel ?? 'settlement') !== 'settlement' && !outsideHeating(t.unit))
+  const heatingFlat = partTenancies.filter((t) => allocationModel(t.heatingModel) !== 'settlement' && !outsideHeating(t.unit))
   // Die Ausnahme steht in shared/heating.ts, für diese Warnung wie für die Verteilung (#140).
   // Heizung PR 14: nicht für Heizpositionen einer Anlage, die nach § 11 ausgenommen ist.
   if (heatingFlat.length > 0 && !heatingAgreeable && items.some((c) => c.category === HEATING_CATEGORY && !noCutFor(c.heatingPlantId, c.heatingTarget, String(c.period)))) {
@@ -7068,6 +7155,21 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // einer Anlage mit eigener Heizperiode kommen aus `heatingParts`. Das Register wird erst gefragt, wenn der
   // Hinweis sonst käme, damit es nicht im Rechtsstand jeder Abrechnung mit Wärmepumpe steht.
   if (scope === 'all') {
+    // Heizung PR 19, Durchsicht S-2: zentrale Heizung, Brennstoff beim Mieter, ohne Heizanlage. Trägt ein anderer Mieter
+    // den Allgemeinstrom mit und steht dort kein Abzug, kann der Brennerstrom bei ihm landen. Gefärbt wie „Abzug fehlt“.
+    const centralSelf = snapshot.tenancies.filter((t) => t.heatingModel === 'selfSupply' && t.selfSupplyKind === 'central' && statements.has(t.id))
+    if (centralSelf.length > 0) {
+      const generals = items.filter((c) => c.category === GENERAL_POWER_CATEGORY && c.amountCents > 0 && c.operatingPower === undefined)
+      const deducted = items.some((c) => c.operatingPower === 'deduction')
+      const centralIds = new Set(centralSelf.map((t) => t.id))
+      const othersPay = generals.some((g) => [...statements.values()].some((st) => !centralIds.has(st.tenancyId) && st.rows.some((r) => r.costItemId === g.id && r.shareCents > 0)))
+      if (othersPay && !deducted) {
+        for (const t of centralSelf) {
+          const unitName = snapshot.units.find((u) => u.id === t.unitId)?.name ?? ''
+          warn('heating.self-supply-operating-power', selfSupplyPowerText(t.tenantName, unitName, generals), { kind: 'tenancy', id: t.id })
+        }
+      }
+    }
     for (const f of missingPowerFindings({ period, plants, items, heatingParts: snapshot.heatingParts ?? [] })) {
       if (f.kind === 'operating') {
         warn('heating.operating-power-missing', missingOperatingPowerText(f, label), { kind: 'heatingCosts', id: f.plantId })
@@ -7104,6 +7206,103 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   for (const f of switchFindings(plants, items, snapshot.tenancies.filter((t) => statements.has(t.id)), snapshot.units)) {
     const rule = f.since >= switchFrom ? law(bgbHeatDeliverySwitch, { date: f.since }, lawLog) : null
     warn('heating.contracting', switchText(f, rule, fmtDay, switchFrom), { kind: 'heatingPlant', id: f.plantId })
+  }
+
+  // ---------- CO₂-Erstattung an Mieter, die selbst heizen (§ 6 Abs. 2 CO2KostAufG, Heizung PR 19) ----------
+  // Verrechnet in diesem Zeitraum: eine Gutschriftzeile beim Mieter und die Gegenzeile beim Vermieter; die Summe
+  // aller Zeilen bleibt die der Positionen. Nicht verrechnet und nicht ausgezahlt: ab der Fälligkeit eine Warnung
+  // in jeder Abrechnung. Die Steuer liest nichts davon (Entwurf 6.4 Nr. 3): Verrechnet der Vermieter, steckt die
+  // Erstattung in der kleineren Zahlung; zahlt er aus, trägt er den Tag ein, und taxReport führt sie im Jahr der
+  // Auszahlung als Werbungskosten (Durchsicht S-1).
+  if (scope === 'all') {
+    for (const r of snapshot.co2Refunds ?? []) {
+      const t = snapshot.tenancies.find((x) => x.id === r.tenancyId)
+      // Vor 2023 gibt es keine Erstattung (§ 11 Abs. 2); db/co2Refunds.ts lehnt das schon beim Speichern ab.
+      if (!t || !coversDate(co2SelfSupply, r.supplierBilledAt)) continue
+      const tenancySubject: NoticeSubject = { kind: 'tenancy', id: r.tenancyId }
+      const st = statements.get(r.tenancyId)
+      // Prüfung M4: nur, wer sich selbst mit Wärme versorgt; sonst bekäme der Mieter seinen CO₂-Anteil doppelt.
+      if (t.heatingModel !== 'selfSupply') {
+        if (r.settlePeriod === period.key || r.settlePeriod === null) {
+          warn('co2.refund-not-self',
+            `Für ${t.tenantName} ist eine CO₂-Erstattung von ${fmtCents(r.amountCents)} eingetragen, das Mietverhältnis steht unter Heizung aber nicht auf „Mieter heizt selbst“. ` +
+              'Eine Erstattung nach § 6 Abs. 2 CO2KostAufG steht nur einem Mieter zu, der sich selbst mit Wärme versorgt; Mietfuchs verrechnet sie deshalb nicht. Stellen Sie das Mietverhältnis um, wenn das zutrifft, oder löschen Sie die Erstattung.',
+            tenancySubject)
+        }
+        continue
+      }
+      const self = law(co2SelfSupply, { date: r.supplierBilledAt }, lawLog)
+      const due = refundDueDate(r.claimedAt, self.refundMonths)
+      if (r.settlePeriod === period.key && st) {
+        const ask: LawAsk = {
+          applicable: (p) => law(co2ApplicableFrom, { period: p }, lawLog),
+          stageTable: (p) => law(co2StageTable, { period: p }, lawLog),
+          decimals: (p) => law(co2RoundingDecimals, { period: p }, lawLog),
+          restriction: (p) => law(co2Restriction, { period: p }, lawLog),
+          selfSupply: () => self,
+          pieces: (p) => law(co2HalfSplit, { period: p, weights: (x) => degreeDayPermille([x], law(hkvDegreeDays, { period: p }, lawLog)) }, lawLog).map(({ from, to, value }) => ({ from, to, value })),
+          degreeDays: (p) => law(hkvDegreeDays, { period: p }, lawLog),
+        }
+        const rl = refundLawAt(r, ask)
+        const proposal = rl ? refundProposal(r, rl) : null
+        const steps = refundSteps(proposal, r, r.amountCents, {
+          euro: fmtCents, exact: fmtExactEuro, num: fmtNum, applicableFrom: fmtDay(co2FirstPeriodStart()), cutPercent: self.ownAppliancesCutPercent,
+        })
+        st.rows.push({
+          costItemId: `co2refund:${r.id}`, kind: 'co2Refund', category: CO2_REFUND_CATEGORY, description: CO2_REFUND_LABEL, totalCents: -r.amountCents,
+          keyLabel: 'Erstattung', basisText: `Anzeige vom ${fmtDay(r.claimedAt)}`, shareCents: -r.amountCents, labor35aCents: 0, steps,
+        })
+        st.totalShareCents -= r.amountCents
+        landlordRows.push({
+          costItemId: `co2refund:${r.id}`, category: CO2_REFUND_CATEGORY, description: CO2_REFUND_LABEL, totalCents: 0,
+          keyLabel: 'Erstattung', shareCents: r.amountCents, landlordParts: [{ reason: 'co2Refund', cents: r.amountCents }],
+        })
+        // Geschuldet ist der Anteil nach § 6 Abs. 2 Satz 1; gebucht ist der eingetragene Betrag.
+        if (proposal && proposal.excluded !== 'overYear' && proposal.cents !== r.amountCents) {
+          warn('co2.refund-differs',
+            `Die eingetragene CO₂-Erstattung an ${t.tenantName} (${fmtCents(r.amountCents)}) weicht von der Nachrechnung nach den eingetragenen Grundlagen ab (${fmtCents(proposal.cents)}). ` +
+              'Zu erstatten ist der Anteil, den Sie nach § 6 Abs. 2 Satz 1 CO2KostAufG zu tragen haben; gebucht ist der eingetragene Betrag. Prüfen Sie die Anzeige des Mieters und die Grundlagen.',
+            tenancySubject)
+        }
+        const deadline = claimDeadline(r.supplierBilledAt, self.claimMonths)
+        if (r.claimedAt > deadline) {
+          warn('co2.refund-late',
+            `${t.tenantName} hat die CO₂-Erstattung am ${fmtDay(r.claimedAt)} geltend gemacht; die Abrechnung des Lieferanten stammt vom ${fmtDay(r.supplierBilledAt)}. ` +
+              `Die Frist von ${self.claimMonths} Monaten (§ 6 Abs. 2 Satz 3 CO2KostAufG) endete am ${fmtDay(deadline)}. Die Frist ist nach der Begründung des Gesetzes eine Ausschlussfrist (BT-Drs. 20/3172, S. 34, damals noch mit sechs Monaten); den Anspruch müssen Sie dann voraussichtlich nicht erfüllen. Mietfuchs verrechnet ihn, weil Sie ihn eingetragen haben.`,
+            tenancySubject)
+        }
+        const months = law(bgbDeadlineMonths, { period: lawPeriod }, lawLog)
+        const lived = periodsBetween(objectRules, t.start, period.to).filter((p) => t.start <= p.to && (t.end === null || t.end >= p.from))
+        const candidates = lived.map((p) => ({ key: p.key, from: p.from, deadline: settlementDeadline(p, months), sentAt: snapshot.settlementsSent?.find((s) => s.period === p.key)?.sentAt ?? null }))
+        const next = nextSettlement(r.claimedAt, candidates)
+        const nextPeriod = lived.find((p) => p.key === next)
+        // Satz 4 verlangt eine vereinbarte Vorauszahlung: die Staffel und das Nebenkostenmodell, nicht das Gezahlte
+        // (BT-Drs. 20/3172, S. 35: bei Pauschale oder ohne Umlage ist auszuzahlen).
+        if (!prepaymentAgreed(t, period)) {
+          warn('co2.refund-not-next',
+            `Mit ${t.tenantName} ist für diesen Zeitraum keine Vorauszahlung auf Betriebskosten vereinbart (keine Staffel mit Vorauszahlung, oder Pauschale bzw. Inklusivmiete). Verrechnen dürfen Sie die CO₂-Erstattung nach § 6 Abs. 2 Satz 4 CO2KostAufG nur bei vereinbarter Vorauszahlung; ` +
+              `zahlen Sie sie spätestens am ${fmtDay(due)} aus (Satz 5) und tragen Sie die Auszahlung ein.`,
+            tenancySubject)
+        } else if (next !== period.key) {
+          warn('co2.refund-not-next',
+            `${t.tenantName} hat die CO₂-Erstattung am ${fmtDay(r.claimedAt)} geltend gemacht. Verrechnen dürfen Sie sie nach § 6 Abs. 2 Satz 4 CO2KostAufG in der nächsten Betriebskostenabrechnung nach der Anzeige, in der Regel` +
+              (nextPeriod ? ` die für ${periodLabel(nextPeriod)}` : '') +
+              `. Sonst ist sie spätestens am ${fmtDay(due)} auszuzahlen (Satz 5).`,
+            tenancySubject)
+        }
+        continue
+      }
+      const open = r.paidOutOn === null && (r.settlePeriod === null || (r.settlePeriod === period.key && !st))
+      if (open && r.claimedAt <= period.to && due <= period.to) {
+        warn('co2.refund-due',
+          `${t.tenantName} hat am ${fmtDay(r.claimedAt)} eine CO₂-Erstattung von ${fmtCents(r.amountCents)} geltend gemacht. Wird sie nicht verrechnet, war sie spätestens am ${fmtDay(due)} zu erstatten (§ 6 Abs. 2 Satz 5 CO2KostAufG); bei vereinbarter Vorauszahlung wird sie mit Ablauf der Frist der Abrechnung fällig, in der sie zu verrechnen ist (BT-Drs. 20/3172, S. 35). ` +
+            'Verrechnen Sie sie in dieser Abrechnung oder zahlen Sie sie aus; dann tragen Sie den Tag der Auszahlung an der Erstattung ein; die Steuerübersicht führt sie dann im Jahr der Auszahlung als Werbungskosten. Als Zahlung im Mietkonto erfassen Sie sie nicht, sonst stünde dort ein Rückstand.' +
+            (r.nonResidential
+              ? ` Ob diese Frist auch im Nichtwohngebäude gilt, ist nach dem Wortlaut nicht sicher: § 8 Abs. 2 verweist auf § 6 Abs. 2 Satz 2 bis 4, und seit dem ${fmtDay(halfSplitEnactedOn())} steht die Frist in Satz 5. Nach der Begründung des Gesetzes sollen dieselben Fristen gelten (BT-Drs. 20/3172, S. 37); Mietfuchs warnt deshalb.`
+              : ''),
+          tenancySubject)
+      }
+    }
   }
 
   // Die Höchstdauer hat P gebildet (shared/period.ts); eingefroren wird sie hier.
@@ -7274,7 +7473,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       st.suggestedMonthlyCents = Math.max(0, Math.round((annual * diy) / st.days / 12 / 100) * 100)
     } else {
       // Nie negativ: Überwiegen Gutschriften, gibt es keine Vorauszahlung unter 0 (Integrationsdurchsicht).
-      st.suggestedMonthlyCents = Math.max(0, Math.round((st.totalShareCents * diy) / st.days / 12 / 100) * 100)
+      // Ohne CO₂-Erstattung: Sie fällt nicht wieder an (Heizung PR 19, `recurringShareCents`).
+      st.suggestedMonthlyCents = Math.max(0, Math.round((recurringShareCents(st) * diy) / st.days / 12 / 100) * 100)
     }
   }
   return result

@@ -2062,7 +2062,8 @@ die ganze fachliche Komplexität:
   verteilt. Tests in calc-verteilbasis.test.ts samt eigener Invariante.
 - **Nebenkostenmodell am Mietverhältnis** (#93): `costModel` (kalte Kosten) und
   `heatingModel` (Kostenart „Heizung und Warmwasser“, `HEATING_CATEGORY` in calc.ts), jeweils
-  `settlement | flatRate | inclusive`, fehlend `settlement`. Ein Mietverhältnis mit Pauschale
+  `settlement | flatRate | inclusive`, fehlend `settlement`; beim Heizmodell dazu `selfSupply` (siehe
+  „Mieter heizt selbst“ unten), das jede Stelle über `allocationModel` als `settlement` liest. Ein Mietverhältnis mit Pauschale
   oder Inklusivmiete **bleibt in der Verteilbasis**, sein Anteil wird ihm nicht zugebucht und
   fällt dem Vermieter zu, und zwar **nicht als Eigenanteil** (abziehbar). Bleibt seine Abrechnung
   leer und gibt es keine Vorauszahlung, fehlt sie in `statements` und steht in `notSettled`.
@@ -2323,6 +2324,31 @@ die ganze fachliche Komplexität:
   § 560 im Rumpf; Prüfung M5). Fehlen Netzentgelte oder Biobrennstoff an einer Lieferung mit Tagen in der Teilung,
   warnt `co2.half-split-missing` mit 3 % je Mieter; Biobrennstoff aus dem Vorrat rechnet Mietfuchs nicht (Warnung,
   außer an jeder Lieferung ab dem 01.01.2029 (oder ohne Datum) steht 0, Durchsicht S3; ein Betrag über 0 wird abgelehnt, ebenso ab 2040).
+- **Mieter heizt selbst und die CO₂-Erstattung** (#97, Heizung PR 19, [server/src/co2Refund.ts](server/src/co2Refund.ts),
+  [server/src/db/co2Refunds.ts](server/src/db/co2Refunds.ts)): `heatingModel: 'selfSupply'` heißt, der Mieter
+  bezieht Brennstoff oder Wärme über einen eigenen Vertrag, als Etagenheizung oder als zentrale Heizung mit
+  Brennstoffvertrag beim Mieter (§ 2 Abs. 1, § 6 Abs. 2 CO2KostAufG). **Nie wie Pauschale oder Inklusivmiete lesen**:
+  `allocationModel` macht daraus `settlement` für `modelFor`, `notSettled`, `heatingFlat` und `costModels`, denn
+  Wartung und Betriebsstrom, die der Vermieter trägt, bleiben umlegbar. Für eine solche Anlage entsteht **keine
+  Heizanlage** (die Einrichtung fragt bei Gas, Öl, Flüssiggas und Kohle nach dem Liefervertrag und bietet die
+  Umstellung der Mietverhältnisse an; ein Mieter, über dessen Vertrag auch Dritte versorgt werden, ist nicht
+  abgedeckt). Die Art steht in `selfSupplyKind` (`perUnit` Heizung in der Wohnung, `central` zentrale Heizung, Schritte
+  0052/0053): Bei `central` meldet `heating.self-supply-operating-power` (Auskunft, färbt nicht, wie Hinweis A aus #265), wenn andere Mieter den Allgemeinstrom
+  tragen und kein Abzug des Betriebsstroms erfasst ist (V ZR 166/15, Rn. 13); die Art geht beim Mieterwechsel mit.
+  Heizpositionen, die nur Selbstversorger tragen, melden keine Kürzung nach § 7 Abs. 4 CO2KostAufG und
+  keine nach § 12 HeizkostenV (bei der Etagenheizung gilt die Verordnung nicht, beim einzigen Nutzer wird nichts
+  verteilt; Auslegung), sondern `co2.self-supply-items`; wer selbst heizt und zugleich Positionen einer Heizanlage
+  trägt, bekommt `co2.self-supply-mixed` (error). Die Erstattung (`co2_refunds`, Schritte 0050/0051) gibt es nur bei
+  `selfSupply` (Route 400, Abrechnung `co2.refund-not-self` und keine Zeile); verrechnet wird sie als Zeile
+  `co2Refund` (Kostenart `CO₂-Erstattung`, ohne Position) mit Gegenzeile `co2Refund` beim Vermieter, Σ unverändert;
+  nur in einem Zeitraum, in dem der Mieter wohnte, nie in einem abgeschlossenen, und eine dort verrechnete bleibt
+  unveränderlich. Gebucht wird der angezeigte Betrag; die Nachrechnung (`selfSplit` wie bei der eigenen Aufteilung:
+  Stufe, § 8 Abs. 2, § 9 nur auf den Teil nach Stufen, § 5a nach Gradtagen) steht im Rechenweg, eine Abweichung
+  meldet `co2.refund-differs`; über mehr als ein Jahr rechnet sie nicht nach (umzurechnen ist nach § 5 Abs. 1 Satz 5,
+  offen ist nur das Verfahren). **Steuer:** Eine verrechnete Erstattung wirkt über Saldo und Zahlungen; eine
+  ausgezahlte (`paidOutOn`) steht in `taxReport` im Jahr der Auszahlung als Werbungskosten (§ 11 Abs. 2 EStG) und
+  **nie als negative Zahlung im Mietkonto** (die läse `rentLedger` als Rücklastschrift). Der Vorschlag nach § 560 Abs. 4 BGB rechnet mit `recurringShareCents` ohne Erstattungen.
+  Offen ist, ob § 8 Abs. 2 seit der Neufassung von § 6 Abs. 2 noch auf die Auszahlungsfrist verweist; Mietfuchs warnt.
 - **Überschneidende Mietverhältnisse einer Wohnung** (#204): Wann sich zwei überschneiden (ein
   gemeinsamer Tag, inklusive Grenzen), steht einmal in [shared/tenancyOverlap.ts](shared/tenancyOverlap.ts);
   Server und Oberfläche fragen dieselbe Funktion. Gerechnet wird wie erfasst, jedes mit vollem

@@ -305,7 +305,8 @@ test('Ohne Heizanlage: co2.fuel-unknown, im ersten Jahr co2.missing-first-year, 
     'Mietfuchs weiß nicht, womit das Haus geheizt wird. Heizen Sie mit Gas, Heizöl, Flüssiggas oder Kohle oder weist Ihr Wärmelieferant CO₂-Kosten aus, ' +
     'sind die CO₂-Kosten zwischen Ihnen und den Mietern aufzuteilen (§ 5 CO2KostAufG), und die Heizkostenabrechnung muss den Anteil der Mieter, ' +
     'die Einstufung des Gebäudes und die Berechnungsgrundlagen ausweisen (§ 7 Abs. 3 CO2KostAufG). Fehlt das, darf jeder Mieter seinen Anteil ' +
-    'an den Heizkosten um 3 % kürzen (§ 7 Abs. 4 CO2KostAufG), hier: ta (a) 30,00 €. Richten Sie unter Stammdaten die Heizung ein; dann sagt Mietfuchs, was zu tun ist.')
+    'an den Heizkosten um 3 % kürzen (§ 7 Abs. 4 CO2KostAufG), hier: ta (a) 30,00 €. Richten Sie unter Stammdaten die Heizung ein; dann sagt Mietfuchs, was zu tun ist. ' +
+    'Bezieht der Mieter Brennstoff oder Wärme über einen eigenen Vertrag, etwa für eine Gastherme in der Wohnung, stellen Sie sein Mietverhältnis unter Heizung auf „Mieter heizt selbst“; dann entfällt die Kürzung.')
   assert.match(textOf(ohne(2023), 'co2.missing-first-year'), /^Für Abrechnungszeiträume, die am oder nach dem 01\.01\.2023 beginnen, sind die CO₂-Kosten der Heizung aufzuteilen \(§ 11 Abs\. 2 Satz 1 CO2KostAufG\); dieser Zeitraum ist der erste\. Mietfuchs weiß nicht/)
   assert.ok(!codes(ohne(2022)).some((c) => c.startsWith('co2.')))
   assert.ok(!codes(ohne(2025, { costModel: 'inclusive', heatingModel: 'inclusive' })).some((c) => c.startsWith('co2.')))

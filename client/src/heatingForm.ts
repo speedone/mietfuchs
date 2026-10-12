@@ -12,6 +12,7 @@ import { billingEnergy, CONTRACTING_ENERGIES, isHeatDelivery } from '../../share
 import { parseEuro } from './api'
 import { hkvConsumptionShare, hkvCutNotByConsumption, hkvHeatPumpCapture, hkvRemoteReadingNewDevices, hkvRenewableExemption } from '../../shared/law/heizkostenv.ts'
 import { dayAfter, germanDate, LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
+import { co2SelfSupply, halfSplitEnactedOn } from '../../shared/law/co2kostaufg.ts'
 import { lineRoot, sameLine } from '../../shared/heatingPeriod.ts'
 import { parseMeterValue } from './tenantChange'
 import { ambiguousText, ambiguousThousands, parseNumberDe } from './numbers'
@@ -26,12 +27,18 @@ export const NEWER_THAN = germanDate(HEAT_PUMP_CAPTURED_BY)
 
 export type EnergyAnswer = HeatingEnergy | 'perUnit'
 export type PerUnitContract = '' | 'tenant' | 'landlord'
+// Wer den Brennstoff einer zentralen Heizung bezieht (Heizung PR 19, #97): der Vermieter, ein Mieter, der alle
+// angeschlossenen Wohnungen gemietet hat, oder ein Mieter, über dessen Vertrag auch andere Wohnungen versorgt werden.
+export type FuelContract = 'landlord' | 'tenantAll' | 'tenantOthers'
 export type WhoSettles = '' | 'service' | 'homeowners' | 'self' | 'manual'
 export type CaptureAnswer = 'unknown' | 'yes' | 'no' | 'newer'
 
 export type HeatingForm = {
   energy: EnergyAnswer | ''
   contract: PerUnitContract
+  // Heizung PR 19: nur bei einer neuen zentralen Anlage mit Gas, Öl, Flüssiggas oder Kohle gefragt (`asksFuelContract`);
+  // Voreinstellung „Ich“, wie bisher.
+  fuelContract: FuelContract
   who: WhoSettles
   unitIds: string[]
   remote: DevicesRemote
@@ -74,9 +81,11 @@ export type HeatingPlantBody = Pick<
 > & Partial<Pick<HeatingPlant, 'heatPumpInstalledOn' | 'heatGeneration' | 'heatPumpMajority'>> & { takesOverStock?: boolean }
 // Name und Wohnungen einer bisherigen Anlage, die mit dem Anlegen geändert werden (Heizung PR 9).
 export type AdjustRow = { id: string; name: string; units: HeatingPlantUnit[] }
-// `none`: Es entsteht bewusst keine Anlage, und der Satz sagt warum.
+// `none`: Es entsteht bewusst keine Anlage, und der Satz sagt warum. Heizt der Mieter selbst (Heizung PR 19), stehen
+// dabei die Wohnungen, deren Mietverhältnisse die Karte auf „Mieter heizt selbst“ stellen kann (`selfSupplyOffer`), und
+// ob es eine zentrale Heizung ist (dann muss es ein einziger Mieter sein).
 // `setUpSelf`: „Ich selbst“ gewählt; nach dem Speichern folgt Schritt 7 (Heizung PR 10).
-export type HeatingResult = { body: HeatingPlantBody; adjust: AdjustRow[]; setUpSelf?: boolean } | { error: string } | { none: string }
+export type HeatingResult = { body: HeatingPlantBody; adjust: AdjustRow[]; setUpSelf?: boolean } | { error: string } | { none: string; selfSupplyUnitIds: string[]; central: boolean }
 
 type UnitInfo = Pick<Unit, 'id' | 'noConnection'>
 
@@ -98,6 +107,21 @@ export const CONTRACT_OPTIONS: { value: Exclude<PerUnitContract, ''>; label: str
   { value: 'tenant', label: 'Der Mieter hat den Vertrag, etwa für die Gastherme' },
   { value: 'landlord', label: 'Ich habe den Vertrag und lege die Kosten um' },
 ]
+
+// Heizung PR 19 (#97, Prüfung M1): die Frage nach dem Liefervertrag einer zentralen Heizung. Wer den Brennstoff
+// über einen eigenen Vertrag bezieht, versorgt sich selbst mit Wärme, auch bei einer zentralen Anlage (§ 2 Abs. 1,
+// § 6 Abs. 2 CO2KostAufG; BT-Drs. 20/3172, S. 29, 34).
+export const FUEL_CONTRACT_QUESTION = 'Wer hat den Liefervertrag für den Brennstoff?'
+export const FUEL_CONTRACT_OPTIONS: { value: FuelContract; label: string }[] = [
+  { value: 'landlord', label: 'Ich, und ich lege die Kosten um' },
+  { value: 'tenantAll', label: 'Der Mieter, der alle angeschlossenen Wohnungen gemietet hat' },
+  { value: 'tenantOthers', label: 'Ein Mieter, und über seinen Vertrag werden auch Wohnungen anderer versorgt' },
+]
+// Gefragt nur bei einer neuen zentralen Anlage mit einem Brennstoff, den ein Mieter selbst kaufen kann und für den
+// das CO2KostAufG gilt; beim Ändern einer Anlage steht schon fest, dass Sie den Brennstoff beziehen.
+const SELF_SUPPLY_FUELS: readonly HeatingEnergy[] = ['gas', 'oil', 'lpg', 'coal']
+export const asksFuelContract = (form: Pick<HeatingForm, 'energy' | 'contracting'>, editingId: string | null): boolean =>
+  editingId === null && form.energy !== '' && form.energy !== 'perUnit' && SELF_SUPPLY_FUELS.includes(billingEnergy({ energy: form.energy, contracting: form.contracting }))
 
 // Womit Etagenheizungen auf Vertrag des Vermieters heizen können (Heizung PR 9). Ohne Vorratsenergien:
 // Der Vorrat wird je Heizanlage geführt, nicht je Wohnung.
@@ -183,7 +207,43 @@ export const CAPTURE_OPTIONS: { value: CaptureAnswer; label: string }[] = [
 ]
 
 const SELF_HINT = 'Sie lesen Wärmezähler und Warmwasserzähler jeder Wohnung ab, und Mietfuchs verteilt nach der Heizkostenverordnung. Nach dem Anlegen fragt Mietfuchs nach Warmwasser, Erfassung und dem Anteil nach Verbrauch; bis dahin ändert sich an keiner Zahl etwas.'
-const SELF_SUPPLY = 'Hat jeder Mieter einen eigenen Vertrag für seine Heizung, gibt es keine Heizkostenabrechnung des Hauses, und Mietfuchs legt keine Heizanlage an. Was Mieter für CO₂-Kosten vom Vermieter verlangen können, erklärt Mietfuchs mit einer späteren Version.'
+// Heizt der Mieter selbst (Heizung PR 19, Entwurf 11.2 Schritt 1, Prüfung S1): der Anspruch nach § 6 Abs. 2
+// CO2KostAufG mit den Fristen aus dem Register, Verrechnen nur bei vereinbarter Vorauszahlung (Satz 4) und die
+// Hinweispflicht (Satz 6).
+const SELF = valueAt(co2SelfSupply, LAW_AS_OF)
+const REFUND_TEXT =
+  `Der Mieter kann den Anteil seiner CO₂-Kosten, den nach dem Stufenmodell Sie tragen, binnen ${SELF.claimMonths} Monaten nach der Abrechnung seines Lieferanten in Textform von Ihnen verlangen (§ 6 Abs. 2 CO2KostAufG). ` +
+  'Erfassen Sie seine Anzeige auf der Seite Kosten unter „CO₂-Erstattung“. Ist eine Vorauszahlung auf Betriebskosten vereinbart, können Sie den Betrag in der nächsten Betriebskostenabrechnung nach der Anzeige verrechnen; ' +
+  `sonst zahlen Sie ihn spätestens ${SELF.refundMonths} Monate nach der Anzeige aus. ` +
+  `Bei Abschluss eines Mietvertrags ab dem ${germanDate(halfSplitEnactedOn())} und beim Einbau einer Heizung nach § 43 GModG müssen Sie den Mieter in Textform auf den Erstattungsanspruch und auf die Pflicht nach § 43 Abs. 1 GModG hinweisen (§ 6 Abs. 2 Satz 6).`
+const SELF_SUPPLY = `Hat jeder Mieter einen eigenen Vertrag für seine Heizung, gibt es keine Heizkostenabrechnung des Hauses, und Mietfuchs legt keine Heizanlage an. ${REFUND_TEXT}`
+// Zentrale Heizung, Brennstoffvertrag beim Mieter (Prüfung M1, S7): keine Anlage, denn der Vermieter bezieht weder
+// Brennstoff noch Wärme. Was ihm für die Anlage selbst entsteht, legt er um wie vereinbart (§ 2 Nr. 4 a BetrKV).
+const CENTRAL_SELF_SUPPLY =
+  'Bezieht der Mieter den Brennstoff der zentralen Heizung über einen eigenen Vertrag, versorgt er sich selbst mit Wärme: Es gibt keine Heizkostenabrechnung des Hauses, und Mietfuchs legt keine Heizanlage an. ' +
+  'Was Ihnen für die Heizung selbst entsteht, etwa Wartung, Messungen nach dem Immissionsschutzrecht oder Betriebsstrom über Ihren Zähler, erfassen Sie auf der Seite Kosten unter „Heizung und Warmwasser“ und legen es wie vereinbart um (§ 2 Nr. 4 a BetrKV). ' +
+  `Läuft der Betriebsstrom über Ihren Allgemeinstrom, gehört sein Anteil zur Heizung und nicht zum Allgemeinstrom. ${REFUND_TEXT}`
+// Gegenprüfung M1 (abgeschwächt): Liefert ein Mieter über seinen Vertrag auch an Dritte, rechnet Mietfuchs nicht.
+const NOT_COVERED = 'Liefert ein Mieter über seinen Vertrag auch Wärme an andere Wohnungen, regeln Heizkostenverordnung und CO2KostAufG die Verteilung nicht ausdrücklich für diesen Fall. Mietfuchs rechnet das nicht; bitte klären Sie die Abrechnung gesondert.'
+
+// Die Mietverhältnisse, die die Karte nach „Der Mieter hat den Vertrag“ auf „Mieter heizt selbst“ stellen kann: die am
+// Tag `today` laufenden der angehakten Wohnungen, die es noch nicht sind. Bei der zentralen Heizung muss es ein
+// einziger Mieter sein (gleicher Name, Auslegung zu § 5 Abs. 3 CO2KostAufG, Prüfung S5); sonst nicht abgedeckt.
+export function selfSupplyOffer(
+  unitIds: readonly string[],
+  tenancies: readonly { id: string; unitId: string; tenantName: string; start: string; end: string | null; heatingModel?: string }[],
+  today: string,
+  central: boolean,
+): { tenancyIds: string[]; names: string[] } | { error: string } {
+  const running = tenancies.filter((t) => unitIds.includes(t.unitId) && t.start <= today && (t.end === null || t.end >= today))
+  const names = [...new Set(running.map((t) => t.tenantName.trim()))]
+  if (central && names.length > 1) return { error: NOT_COVERED }
+  // Durchsicht S-4: Bei der zentralen Heizung ist jede angehakte Einheit ohne laufendes Mietverhältnis Wärme an Dritte:
+  // die selbstgenutzte des Vermieters ebenso wie eine leere, die über den Vertrag des Mieters mitbeheizt wird.
+  if (central && unitIds.some((id) => !running.some((t) => t.unitId === id))) return { error: NOT_COVERED }
+  const open = running.filter((t) => t.heatingModel !== 'selfSupply')
+  return { tenancyIds: open.map((t) => t.id), names: [...new Set(open.map((t) => t.tenantName.trim()))] }
+}
 
 // Der Satz unter der zweiten Frage.
 // „Woran erkenne ich das?“ je Frage der Einrichtung (Entwurf 11.2, Laienprobe B9).
@@ -195,6 +255,8 @@ export const HOW_TO_TELL = {
   units: 'Woran erkenne ich das? Angeschlossen ist jede Wohnung, die von dieser Heizung warm wird. Eine Garage oder eine Wohnung mit eigener Gastherme gehört nicht dazu.',
   // Recht I5 der Durchsicht von #238: bei der Etagenheizung ein eigener Satz.
   unitsPerUnit: 'Haken Sie jede Wohnung an, deren Therme über Ihren Gasvertrag läuft. Wohnungen, deren Mieter einen eigenen Vertrag haben, gehören nicht dazu.',
+  // Heizung PR 19: Mieter mit eigenem Vertrag.
+  unitsSelfSupply: 'Haken Sie jede Wohnung an, deren Mieter den Vertrag selbst hat. Nach „Speichern“ bietet Mietfuchs an, die laufenden Mietverhältnisse dieser Wohnungen auf „Mieter heizt selbst“ zu stellen.',
   after: 'Den Zeitraum der Heizung stellen Sie nach dem Anlegen in dieser Karte mit „Zeitraum der Heizung ändern“ ein, wenn Ihr Messdienst nicht im Abrechnungszeitraum des Objekts abrechnet. Haupt- und Wärmezähler ordnen Sie auf der Seite Zähler der Heizung zu.',
 } as const
 
@@ -227,7 +289,7 @@ export function emptyHeatingForm(units: readonly UnitInfo[], others: readonly He
   // Ab der zweiten Anlage beginnt die Liste mit den Wohnungen, die an keiner hängen (Heizung PR 9).
   const taken = new Set(others.flatMap((p) => servedIds(p, units)))
   return {
-    energy: '', contract: '', who: '', unitIds: defaultUnitIds(units).filter((id) => !taken.has(id)), remote: 'unknown', installedAfter: 'unknown',
+    energy: '', contract: '', fuelContract: 'landlord', who: '', unitIds: defaultUnitIds(units).filter((id) => !taken.has(id)), remote: 'unknown', installedAfter: 'unknown',
     captured: 'unknown', captureInstalledOn: '', heatPumpInstalledOn: '', warmRentAverage: '', newInstall: '',
     name: '', perUnitEnergy: '', building: '', ownMeters: false, takesOverStock: '', generation: '', majority: '',
     contracting: false, deliverySince: '', previousSupply: '', announcedOn: '', otherNames: Object.fromEntries(others.filter((p) => p.name.trim() === '' || p.units === null).map((p) => [p.id, p.name])),
@@ -241,6 +303,7 @@ export function heatingToForm(plant: HeatingPlant, units: readonly UnitInfo[]): 
   return {
     energy: perUnit ? 'perUnit' : plant.energy,
     contract: perUnit ? 'landlord' : '',
+    fuelContract: 'landlord',
     who: plant.source === 'homeowners' ? 'homeowners' : plant.method,
     unitIds: servedIds(plant, units),
     remote: plant.devicesRemote,
@@ -327,7 +390,7 @@ export function heatingPlantBody(form: HeatingForm, units: readonly UnitInfo[], 
   const unitList = allServed ? null : form.unitIds.map((unitId) => ({ unitId, heatedAreaM2: null }))
   if (form.energy === 'perUnit') {
     if (form.contract === '') return { error: 'Wer hat den Vertrag für die Heizung in der Wohnung?' }
-    if (form.contract === 'tenant') return { none: SELF_SUPPLY }
+    if (form.contract === 'tenant') return { none: SELF_SUPPLY, selfSupplyUnitIds: form.unitIds, central: false }
     // Etagenheizung auf Vertrag des Vermieters (Heizung PR 9, § 5 Abs. 1 Satz 2 CO2KostAufG): Die
     // Rechnung jeder Wohnung wird ihr direkt zugeordnet.
     if (form.perUnitEnergy === '') return { error: 'Womit heizen die Etagenheizungen?' }
@@ -345,6 +408,12 @@ export function heatingPlantBody(form: HeatingForm, units: readonly UnitInfo[], 
     }
   }
   const energy: HeatingEnergy = form.energy
+  // Heizung PR 19: Bezieht ein Mieter den Brennstoff, entsteht keine Anlage.
+  if (asksFuelContract(form, editingId) && form.fuelContract !== 'landlord') {
+    if (form.fuelContract === 'tenantOthers') return { error: NOT_COVERED }
+    if (form.unitIds.length === 0) return { error: 'Bitte haken Sie mindestens eine Wohnung an, die an dieser Heizung hängt.' }
+    return { none: CENTRAL_SELF_SUPPLY, selfSupplyUnitIds: form.unitIds, central: true }
+  }
   // Heizung PR 16: Contracting und die Angaben zur Umstellung, nur wo gefragt; sonst leer, damit kein früherer Wert
   // stehen bleibt (der Server ergänzt nur, was im Rumpf steht).
   const contracting = form.contracting && asksContracting(form.energy)

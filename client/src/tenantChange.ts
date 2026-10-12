@@ -8,7 +8,7 @@
 import { parseQuantity } from './costForm'
 import { parseEuro } from './api'
 import { PERSONS_HINT, parsePersons } from './tenancyModel'
-import type { InterimGapStatus, Meter, Tenancy } from './types'
+import type { InterimGapStatus, Meter, SelfSupplyKind, Tenancy } from './types'
 
 // `heatingPrepayment` nur bei getrennter Heizkostenabrechnung (Heizung PR 5): dann ist `prepayment`
 // die übrige Vorauszahlung.
@@ -31,6 +31,8 @@ export type TenantChangeBody = {
     prepayments: { from: string; monthlyCents: number }[]
     prepaymentOverrides: Record<string, number>
     heatingPrepayments?: { from: string; monthlyCents: number }[]
+    heatingModel?: 'selfSupply'
+    selfSupplyKind?: SelfSupplyKind
   } | null
 }
 
@@ -90,7 +92,8 @@ export function gapProblem(heatIds: readonly string[], meterValues: Record<strin
 
 // Schritt 3: der ganze Wechsel als ein Rumpf, oder die Meldung, warum nicht.
 export function buildTenantChange(input: {
-  tenancy: Pick<Tenancy, 'start'>
+  // Heizung PR 19 (Durchsicht S-3): Heizt der Vormieter selbst, tut es der Nachmieter auch, mit derselben Art.
+  tenancy: Pick<Tenancy, 'start'> & Partial<Pick<Tenancy, 'heatingModel' | 'selfSupplyKind'>>
   endDate: string
   meters: Pick<Meter, 'id' | 'name'>[]
   meterValues: Record<string, string>
@@ -157,6 +160,7 @@ export function buildTenantChange(input: {
         prepayments: prepayment !== null ? [{ from: month, monthlyCents: prepayment }] : [],
         prepaymentOverrides: {},
         ...(input.askHeating && heating !== null ? { heatingPrepayments: [{ from: month, monthlyCents: heating }] } : {}),
+        ...(tenancy.heatingModel === 'selfSupply' ? { heatingModel: 'selfSupply' as const, ...(tenancy.selfSupplyKind ? { selfSupplyKind: tenancy.selfSupplyKind } : {}) } : {}),
       },
     },
   }

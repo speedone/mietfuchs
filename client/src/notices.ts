@@ -52,7 +52,13 @@ const INFORMATIONAL = new Set(['basis.unit-zero', 'basis.tenancy-zero', 'basis.v
   'heating.operating-power-bill-missing',
   // Heizung PR 16 (Prüfung C-S8): Die Umstellung auf Wärmelieferung nennt jedes Jahr die Rechtslage für die Mieter von
   // vor der Umstellung; beheben lässt sie sich nicht, und sie färbt deshalb nicht.
-  'heating.contracting'])
+  'heating.contracting',
+  // Heizung PR 19 (Durchsicht S-5): Auskunft, nichts zu beheben. Sie steht bei jeder richtig eingerichteten Heizung,
+  // deren Brennstoff der Mieter bezieht; die Hinweise zur CO₂-Erstattung (`co2.refund-*`) färben weiter.
+  'co2.self-supply-items',
+  // Durchsicht S-2: Ohne Angabe, wie der Betriebsstrom erfasst ist, ist der Hinweis Auskunft wie `heating.operating-power-missing`
+  // (#265); ein eigener Stromvertrag der Heizung führt so nicht zu einer dauerhaft gelben Ampel.
+  'heating.self-supply-operating-power'])
 export function noticesNeedAttention(settlement: Pick<Settlement, 'notices' | 'warnings'>): boolean {
   return noticesOf(settlement).some((n) => !INFORMATIONAL.has(n.code))
 }

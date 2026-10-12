@@ -19,13 +19,15 @@ import { dayBefore as dayBeforeIso, germanDate, LAW_AS_OF, onlyVersion, valueAt 
 import { practiceEvaporatorWindow } from './law/practice.ts'
 import { messevCalibrationYears } from './law/messev.ts'
 import { OPERATING_POWER_HANDLING_LABELS, OPERATING_POWER_HANDLING_QUESTION } from './operatingPower.ts'
-import { co2CutMissing, co2DistrictEtsNew, co2EbevFactors, co2FirstPeriodStart, co2HalfSplit, co2HalfSplitTwoFamily, co2NonResidential, co2Restriction, co2RoundingDecimals, co2StageTable, halfSplitBioFirstDay, halfSplitFirstDay } from './law/co2kostaufg.ts'
+import { co2CutMissing, co2DistrictEtsNew, co2EbevFactors, co2FirstPeriodStart, co2HalfSplit, co2HalfSplitTwoFamily, co2NonResidential, co2Restriction, co2RoundingDecimals, co2SelfSupply, co2StageTable, halfSplitBioFirstDay, halfSplitEnactedOn, halfSplitFirstDay } from './law/co2kostaufg.ts'
 import { bioCapFrom, gmodgHeating43 } from './law/gmodg.ts'
 
 // Hälftige Teilung nach § 5a (Heizung PR 18): Stichtage, Grenze beim Biobrennstoff, Zweifamilienhaus und § 43 GModG.
 const HALF = valueAt(co2HalfSplit, halfSplitBioFirstDay())
 const TWO = valueAt(co2HalfSplitTwoFamily, LAW_AS_OF)
 const HEATING43 = valueAt(gmodgHeating43, LAW_AS_OF)
+// Erstattung an Mieter, die selbst heizen (Heizung PR 19).
+const SELF = valueAt(co2SelfSupply, LAW_AS_OF)
 
 const SHARE = valueAt(hkvConsumptionShare, LAW_AS_OF)
 const CUT = valueAt(hkvCutNotByConsumption, LAW_AS_OF)
@@ -335,6 +337,19 @@ export const GLOSSARY = {
       'und das Gebäude in keinem Gebiet liegt, das eine Verordnung zur Mietpreisbremse (§ 556d BGB), zur Kappungsgrenze (§ 558 Abs. 3 BGB) oder zur Kündigungssperrfrist (§ 577a Abs. 2 BGB) bestimmt; manche Verordnungen nennen nur Teile einer Gemeinde. ' +
       'Einen Härtefall nach § 5d Abs. 1 rechnet Mietfuchs nicht. ' +
       `Biobrennstoff aus einem Vorrat (Heizöl, Flüssiggas im Tank) und die Grenze von ${(HALF.bioCapPermille ?? 0) / 10} % ab ${(bioCapFrom() ?? '').slice(0, 4)} rechnet Mietfuchs noch nicht (#227); die Abrechnung sagt dann, was Sie selbst ermitteln müssen.`,
+  },
+  // Heizung PR 19 (#97). Wortlaut § 2 Abs. 7, § 5 Abs. 3, § 6 Abs. 2, 3, § 8 Abs. 2, § 9 CO2KostAufG am 12.10.2026
+  // gelesen; Prüfung S2 und K3, Gegenprüfung M1 (auch die zentrale Heizung mit Brennstoffvertrag beim Mieter).
+  co2Refund: {
+    title: 'CO₂-Erstattung, wenn der Mieter selbst heizt',
+    short: `Hat der Mieter einen eigenen Vertrag für Gas oder Öl, etwa für eine Gastherme in der Wohnung oder eine zentrale Heizung, deren Brennstoff er selbst bezieht, trägt er die CO₂-Kosten zunächst selbst. Den Anteil, den nach dem Stufenmodell der Vermieter trüge, kann er binnen ${SELF.claimMonths} Monaten nach der Abrechnung seines Lieferanten in Textform von Ihnen verlangen; bei einer Heizung nach § 43 GModG ab ${halfSplitFirstDay().slice(0, 4)} die Hälfte der CO₂-Kosten und der Gasnetzentgelte.`,
+    example: 'Gasrechnung 2025 des Mieters: 2.400 kg CO₂, Wohnung 80 m², also 30,0 kg je m² und Jahr; das ist die Stufe, in der der Vermieter 40 % trägt. CO₂-Kosten 600 €: Sie erstatten 240,00 €. Kocht der Mieter auch auf einem eigenen Gasherd, den er selbst angeschafft hat, sind es 228,00 €; ein mitvermieteter Herd kürzt nichts.',
+    norm: '§ 2 Abs. 7, § 5 Abs. 3, § 6 Abs. 2, § 6 Abs. 3, § 8 Abs. 2, § 9 CO2KostAufG',
+    needed: `Nur wenn ein Mieter selbst heizt und den Anspruch anzeigt. Stellen Sie sein Mietverhältnis dann in den Stammdaten unter Heizung auf „Mieter heizt selbst“ und erfassen Sie die Anzeige auf der Seite Kosten unter „CO₂-Erstattung“. ` +
+      `Ist mit ihm eine Vorauszahlung auf Betriebskosten vereinbart, können Sie den Betrag in der nächsten Abrechnung nach der Anzeige verrechnen; sonst zahlen Sie spätestens ${SELF.refundMonths} Monate nach der Anzeige aus und tragen den Tag der Auszahlung an der Erstattung ein; die Steuerübersicht führt sie dann im Jahr der Auszahlung als Werbungskosten. ` +
+      `Nutzt der Mieter den Brennstoff auch gewerblich, besteht der Anspruch nur, wenn der Wärmeverbrauch getrennt gemessen und nachgewiesen ist; im Nichtwohngebäude sind es ${SELF.nonResidentialPermille / 10} % (§ 8 Abs. 2). ` +
+      `Auf den Anspruch müssen Sie den Mieter bei Abschluss eines Mietvertrags ab dem ${germanDate(halfSplitEnactedOn())} und beim Einbau einer Heizung nach § 43 GModG in Textform hinweisen, ebenso auf die Pflicht nach § 43 Abs. 1 GModG (§ 6 Abs. 2 Satz 6). Im Nichtwohngebäude besteht der Anspruch auch, wenn der Mieter nur sein Warmwasser selbst bereitet (§ 8 Abs. 2: „mit Wärme oder Warmwasser“); das bildet Mietfuchs nicht ab. ` +
+      'In Gebäuden, für die § 11 der Heizkostenverordnung gilt, ist das CO2KostAufG nicht anzuwenden, wenn keine Abrechnung der Heizkosten vereinbart ist (§ 2 Abs. 7); Mietfuchs rechnet damit nichts.',
   },
   hotWaterShare: {
     title: 'Warmwasseranteil',

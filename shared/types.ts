@@ -89,12 +89,24 @@ export type PersonEntry = {
 // Betriebskostenpauschale (§ 556 Abs. 2 BGB) oder Inklusivmiete.
 export type CostModel = 'settlement' | 'flatRate' | 'inclusive'
 
+// Für Heizung und Warmwasser zusätzlich `selfSupply` (Heizung PR 19, #97): Der Mieter versorgt sich selbst mit
+// Wärme, er bezieht den Brennstoff oder die Wärme über einen eigenen Vertrag (Etagenheizung oder zentrale
+// Heizung mit Brennstoffvertrag beim Mieter; § 5 Abs. 3, § 6 Abs. 2 CO2KostAufG). Was der Vermieter dafür
+// selbst trägt, etwa Wartung und Betriebsstrom, wird abgerechnet wie bei `settlement` (`allocationModel` in
+// calc.ts); gegen die CO₂-Kosten des Mieters steht die Erstattung nach § 6 Abs. 2.
+export type HeatingModel = CostModel | 'selfSupply'
+// Welche Heizung der Mieter selbst betreibt (Durchsicht S-2): eine Heizung in der Wohnung (`perUnit`, etwa eine
+// Gastherme; ihr Strom läuft in der Regel über den Zähler der Wohnung) oder eine zentrale Heizung im Haus, deren
+// Brennstoff er bezieht (`central`; ihr Betriebsstrom kann über den Zähler des Hauses laufen). Nur bei `selfSupply`.
+export type SelfSupplyKind = 'perUnit' | 'central'
+
 export type Tenancy = {
   id: string
   unitId: string
   // Getrennt für kalte Kosten und für Heizung und Warmwasser (#93); fehlend heißt `settlement`.
   costModel?: CostModel
-  heatingModel?: CostModel
+  heatingModel?: HeatingModel
+  selfSupplyKind?: SelfSupplyKind
   // Die Pauschale je Monat (#93), eine eigene Staffel und nicht die der Vorauszahlung: Das
   // Mietkonto führt sie im Soll, die Abrechnung rechnet sie nie an. Stünde sie in der Staffel
   // der Vorauszahlung, würde sie bei einem gemischten Modell gegen die abgerechneten Kosten
@@ -687,8 +699,10 @@ export type SettlementRow = {
   // (Heizung PR 7): der Teil einer Brennstoffrechnung aus einer anderen Heizperiode, verteilt mit
   // dem Schlüssel ihrer Position; `costItemId` ist `fuel:<Lieferung>:<Heizperiode>:<andere Heizperiode>:<Position>`.
   // `gmodgRelief` (Heizung PR 18): der Anteil des Vermieters an Netzentgelten und Biobrennstoff nach § 5a
-  // CO2KostAufG, ohne Kostenposition; `costItemId` ist `gmodg:<Anlage>:<Heizperiode>`. Spätere PRs ergänzen `co2Refund`.
-  kind?: 'co2Relief' | 'fuelCarry' | 'gmodgRelief'
+  // CO2KostAufG, ohne Kostenposition; `costItemId` ist `gmodg:<Anlage>:<Heizperiode>`. `co2Refund` (Heizung PR 19): die
+  // Erstattung an einen Mieter, der selbst heizt (§ 6 Abs. 2 CO2KostAufG), mit der Abrechnung verrechnet, ohne
+  // Kostenposition; `costItemId` ist `co2refund:<Erstattung>`.
+  kind?: 'co2Relief' | 'fuelCarry' | 'gmodgRelief' | 'co2Refund'
 }
 
 // Die Gründe, aus denen ein Teil einer Position beim Vermieter bleibt (#142):
@@ -713,11 +727,13 @@ export type SettlementRow = {
 //                      gehört dem Vermieter, die Mieter tragen nur den verbrauchten Brennstoff
 //   `gmodgShare`    Anteil des Vermieters an Netzentgelten und Biobrennstoff (§ 5a Abs. 3, § 7 Abs. 5
 //                   CO2KostAufG, Heizung PR 18): die Summe der Abzugszeilen `gmodgRelief`
+//   `co2Refund`     Erstattung an einen Mieter, der selbst heizt (§ 6 Abs. 2 CO2KostAufG, Heizung PR 19), mit
+//                   der Abrechnung verrechnet: die Gegenzeile zur Gutschrift beim Mieter, ohne Kostenposition
 //   `rounding`      Rundungsrest (nur in Abrechnungen, die vor #202 abgeschlossen wurden)
 export type LandlordReason =
   | 'notAllocable' | 'noBasis' | 'selfUse' | 'vacancy' | 'flatRate' | 'inclusive'
   | 'outsideUnit' | 'amountsRest' | 'customRest' | 'mainMeterRest' | 'co2Share'
-  | 'fuelCarry' | 'fuelClosedPeriod' | 'fuelEstimateDiff' | 'stockRemaining' | 'gmodgShare' | 'rounding'
+  | 'fuelCarry' | 'fuelClosedPeriod' | 'fuelEstimateDiff' | 'stockRemaining' | 'gmodgShare' | 'co2Refund' | 'rounding'
 export type LandlordPart = { reason: LandlordReason; cents: number }
 
 // Ein Schritt des Rechenwegs: Beschriftung, Wert als fertiger Text, auf Wunsch mit dem Begriff
@@ -763,6 +779,7 @@ export type NotSettled = {
   tenantName: string
   unitName: string
   costModel: CostModel
+  // Wie abgerechnet wird; `selfSupply` erscheint hier nie, es wird abgerechnet wie `settlement` (Heizung PR 19).
   heatingModel: CostModel
 }
 
@@ -1648,6 +1665,38 @@ export type Co2Method = 'serviceDeducted' | 'serviceShown' | 'selfAfterService' 
 
 // Ein Betrag „vom Vermieter übernommen“ laut Messdienst, je Mietverhältnis.
 export type Co2TenantRelief = { tenancyId: string; cents: number }
+
+// Ein Erstattungsanspruch eines Mieters, der selbst heizt (Heizung PR 19, #97; § 5 Abs. 3, § 6 Abs. 2, 3, § 8
+// Abs. 2 CO2KostAufG). `amountCents`: der angezeigte Betrag; `settlePeriod`: der Abrechnungszeitraum des Objekts,
+// in dem er verrechnet wird; `paidOutOn`: ausgezahlt am (nicht im Mietkonto; die Steuerübersicht
+// führt die Auszahlung im Jahr als Werbungskosten). Die übrigen Felder sind die Grundlagen aus der Rechnung des Lieferanten für die Nachrechnung:
+// `billedFrom`/`billedTo` der Zeitraum, für den der Lieferant abgerechnet hat (bei Öl oder Flüssiggas der Zeitraum,
+// für den die Lieferung reicht); `ownAppliances` ein Gerät zu anderen Zwecken, das der Mieter selbst angeschafft
+// hat und das ihm gehört (§ 6 Abs. 3 Satz 2); `commercialUse`/`commercialMetered` gewerbliche Nutzung und ob der
+// Wärmeverbrauch getrennt gemessen und nachgewiesen ist (Satz 1); `halfSplitFrom` der Tag, ab dem § 5a für die
+// Heizung des Mieters gilt, mit Netzentgelten und Biobrennstoff laut Rechnung.
+export type Co2Refund = {
+  id: string
+  tenancyId: string
+  supplierBilledAt: string
+  claimedAt: string
+  amountCents: number
+  settlePeriod: PeriodKey | null
+  paidOutOn: string | null
+  billedFrom: string | null
+  billedTo: string | null
+  emissionsKg: number | null
+  co2CostCents: number | null
+  areaM2: number | null
+  ownAppliances: boolean
+  commercialUse: boolean
+  commercialMetered: boolean
+  nonResidential: boolean
+  restriction: Co2Restriction
+  halfSplitFrom: string | null
+  gridFeeCents: number | null
+  bioCostCents: number | null
+}
 
 // Die CO₂-Angaben einer Heizperiode. Die Felder `service*` stehen so in der Abrechnung des
 // Messdienstes oder der Gemeinschaft. S (`serviceUsersTotalCents`) ist die gedruckte Zeile der zu

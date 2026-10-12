@@ -55,7 +55,7 @@ import {
   readUnits, type StoredClosedSettlement,
 } from './read.ts'
 import {
-  aiSlots, assessmentLines, assessments, baseRents, co2Statements, co2TenantReliefs, heatingPeriods, closedHeatingSettlementHistory, closedHeatingSettlements, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, DEPOSIT_STATUS, EXTERNAL_MEASURES,
+  aiSlots, assessmentLines, assessments, baseRents, co2Refunds, co2Statements, co2TenantReliefs, heatingPeriods, closedHeatingSettlementHistory, closedHeatingSettlements, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, HEATING_MODELS, SELF_SUPPLY_KINDS, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, DEPOSIT_STATUS, EXTERNAL_MEASURES,
   HCA_SCALES, HEATING_PARTS, OPERATING_POWER, HEATING_ROLES, HEATING_TARGETS, INTERIM_GAP_STATUS, interimReadingGaps, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingSelfSpans, heatingPrepaymentOverrides, heatingPrepayments, heatingSeparateSpans, heatingServiceValues, heatingEstimates,
   flatRates, METER_TYPES, meters, payments, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, PROPERTY_KINDS,
   readings, settings, tenancies, unitNoConnection, units, fuelCarryFrozen, fuelDeliveries,
@@ -325,7 +325,9 @@ function mergeTenancy(current: Tenancy, body: unknown): Tenancy {
     depositStatus: merged(body, 'depositStatus', current.depositStatus, (v) => oneOfOrUndefined(DEPOSIT_STATUS, v)),
     // Nebenkostenmodell (#93): ein unbekannter Wert heißt wie null die Abrechnung.
     costModel: merged(body, 'costModel', current.costModel, (v) => oneOfOrUndefined(COST_MODELS, v)),
-    heatingModel: merged(body, 'heatingModel', current.heatingModel, (v) => oneOfOrUndefined(COST_MODELS, v)),
+    heatingModel: merged(body, 'heatingModel', current.heatingModel, (v) => oneOfOrUndefined(HEATING_MODELS, v)),
+    // Durchsicht S-2: die Art der Selbstversorgung; gespeichert nur bei `selfSupply` (`tenancyRow`).
+    selfSupplyKind: merged(body, 'selfSupplyKind', current.selfSupplyKind, (v) => oneOfOrUndefined(SELF_SUPPLY_KINDS, v)),
     // Mitteilung nach § 5d Abs. 4 CO2KostAufG (Heizung PR 18, Abweichung 3 des Plans).
     halfSplitNoticeOn: merged(body, 'halfSplitNoticeOn', current.halfSplitNoticeOn, (v) => isoDateOrNull(v, 'Der Tag der Mitteilung nach § 5d Abs. 4 CO2KostAufG') ?? undefined),
     notes: merged(body, 'notes', current.notes, asOptionalText),
@@ -1679,6 +1681,13 @@ export async function orphanPeriodKeys(db: Database): Promise<string[]> {
   for (const c of await db.select({ plantId: closedHeatingSettlementHistory.plantId, period: closedHeatingSettlementHistory.period }).from(closedHeatingSettlementHistory)) {
     pruefeHeizung(c.plantId, null, c.period, 'Ein früherer Abschluss einer Heizkostenabrechnung')
   }
+  // Heizung PR 19: der Verrechnungszeitraum einer CO₂-Erstattung gehört zum Objekt des Mietverhältnisses.
+  const erstattungen = await db
+    .select({ propertyId: units.propertyId, period: co2Refunds.settlePeriod, tenantName: tenancies.tenantName })
+    .from(co2Refunds)
+    .innerJoin(tenancies, eq(co2Refunds.tenancyId, tenancies.id))
+    .innerJoin(units, eq(tenancies.unitId, units.id))
+  for (const e of erstattungen) if (e.period !== null) pruefe(e.propertyId, e.period, `Die CO₂-Erstattung von „${e.tenantName}“`)
   return befunde
 }
 
@@ -1809,6 +1818,7 @@ const tenancyRow = (t: Tenancy) => ({
   iban: orNull(t.iban), contractDate: orNull(t.contractDate), depositCents: orNull(t.depositCents),
   depositStatus: orNull(t.depositStatus), notes: orNull(t.notes),
   costModel: orNull(t.costModel), heatingModel: orNull(t.heatingModel),
+  selfSupplyKind: t.heatingModel === 'selfSupply' ? orNull(t.selfSupplyKind) : null,
   halfSplitNoticeOn: orNull(t.halfSplitNoticeOn),
 })
 const costItemRow = (c: CostItem) => ({

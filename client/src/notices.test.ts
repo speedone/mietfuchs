@@ -226,3 +226,17 @@ test('Rechtsstand: ein eingetragener Wert nennt die Quelle des Vermieters (Heizu
   const amtlich = legalBasisLines({ asOf: '2026-10-05', rules: [], values: [{ id: 'co2.price', title: 'CO₂-Preis je Tonne (Plausibilität)', norm: '§ 4', cite: '§ 4 Abs. 1 Nr. 1 CO2KostAufG', value: 55, text: '55,00 €/t', validFrom: '2025-01-01', validTo: '2025-12-31' }] })
   expect(amtlich.values).toEqual(['CO₂-Preis je Tonne (Plausibilität): 55,00 €/t (§ 4 Abs. 1 Nr. 1 CO2KostAufG), gilt ab 01.01.2025 bis 31.12.2025'])
 })
+
+test('Heizung PR 19 (Durchsicht S-5): „Heizkosten bei einem Mieter, der selbst heizt“ färbt nicht, die Hinweise zur Erstattung schon', () => {
+  const info = { warnings: ['…'], notices: [n({ code: 'co2.self-supply-items', level: 'hint', title: 'Heizkosten bei einem Mieter, der selbst heizt', text: '…' })] }
+  expect(noticesNeedAttention(info)).toBe(false)
+  expect(attentionLevel(info)).toBe('gruen')
+  const due = { warnings: ['…'], notices: [n({ code: 'co2.refund-due', level: 'warning', title: 'CO₂-Erstattung fällig', text: '…' })] }
+  expect(attentionLevel(due)).toBe('gelb')
+})
+
+test('Heizung PR 19 (Durchsicht S-2): der Hinweis zum Betriebsstrom der Heizung des Mieters ist Auskunft wie Hinweis A und färbt nicht', () => {
+  const s = { warnings: ['…'], notices: [n({ code: 'heating.self-supply-operating-power', level: 'hint', title: 'Betriebsstrom der Heizung des Mieters im Allgemeinstrom?', text: '…' })] }
+  expect(noticesNeedAttention(s)).toBe(false)
+  expect(attentionLevel(s)).toBe('gruen')
+})
