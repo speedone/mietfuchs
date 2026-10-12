@@ -4,9 +4,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  coverageOf, deliveryShare, localDegreeDaySum, meterQuantity, plantFuel, variableShare,
+  coverageOf, deliveryShare, estimateFactors, localDegreeDaySum, meterQuantity, notInvoiceDeliveries, plantFuel, variableShare,
   type FuelDeliveryInput, type FuelPlantInput, type ShareContext,
 } from '../src/fuel.ts'
+import { degreeDayPermille } from '../../shared/degreeDays.ts'
 import { hkvDegreeDays } from '../../shared/law/heizkostenv.ts'
 import { onlyVersion } from '../../shared/law/register.ts'
 import { CALENDAR_RULES, periodKey, periodOfKey } from '../../shared/period.ts'
@@ -208,4 +209,54 @@ test('Heizung PR 10: der Schätzvorschlag trägt die kWh im Verhältnis des verb
   if (gap) assert.equal(typeof gap.energyKwh, 'number')
   const line = plantFuel(input({ deliveries: [{ ...GAS, energyKwh: 60000 }] }))?.lines[0] ?? assert.fail('keine Zeile')
   assert.ok(line.energyKwh !== null && Math.abs(line.energyKwh - 60000 * (line.sharePermille / 1000)) < 1e-6)
+})
+
+// ---------- Gutschrift ohne Rechnung (#251): eine Lieferung, deren Positionen zusammen weniger als 0 € ergeben ----------
+// Aufbau aus dem Invariantenlauf „Abschluss mit Schätzung“, Startwert 384: d1 hatte p7 = 6.176,03 € und den Storno
+// p16 = −6.176,03 €; danach wurde p7 auf 0 und p16 auf −304,51 € gesetzt. d1 ergibt −304,51 € und belegt keinen
+// Verbrauch.
+const H26 = period(MAI, '2026-05')
+const D0 = delivery({ id: 'd0', label: 'Rechnung d0', invoiceFrom: '2024-05-01', invoiceTo: '2025-07-13' })
+const D1 = delivery({ id: 'd1', label: 'Rechnung d1', invoiceFrom: '2025-07-14', invoiceTo: '2026-09-25' })
+const D2 = delivery({ id: 'd2', label: 'Rechnung d2', invoiceFrom: '2026-09-26', invoiceTo: '2028-07-12' })
+const E18 = delivery({ id: 'e18', label: 'Schätzung 2026/2027', invoiceFrom: '2026-05-01', invoiceTo: '2027-04-30', amountCents: 370727, estimated: true })
+const GUTSCHRIFT_ITEMS = [
+  { id: 'p0', period: '2025-05', amountCents: 617603, fuelDeliveryId: 'd0' },
+  { id: 'p7', period: '2026-05', amountCents: 0, fuelDeliveryId: 'd1' },
+  { id: 'p16', period: '2026-05', amountCents: -30451, fuelDeliveryId: 'd1' },
+  { id: 'p2', period: '2028-05', amountCents: 521480, fuelDeliveryId: 'd2' },
+]
+const gutschrift = (deliveries: FuelDeliveryInput[], over: Partial<FuelPlantInput> = {}) =>
+  plantFuel(input({ h: H26, deliveries, items: GUTSCHRIFT_ITEMS, ...over })) ?? assert.fail('kein Ergebnis')
+// Gradtage nach der Tabelle (‰): 01.05.–25.09. eines Jahres = Mai 40 + Juni bis August je 13,33 + 25/30 von 30.
+const DD_MAI_BIS_25_SEPT = degreeDayPermille([{ from: '2026-05-01', to: '2026-09-25' }], table)
+
+test('#251 1a: Eine Gutschrift ohne Rechnung deckt keine Tage ab; mit d2 nur die Gradtage ab dem 26.09.2026', () => {
+  assert.equal(gutschrift([D1]).coveragePermille, 0)
+  near(gutschrift([D1, D2]).coveragePermille, 1000 - DD_MAI_BIS_25_SEPT, 'Abdeckung mit d2', 1e-6)
+})
+
+test('#251 1b: Eine Gutschrift ohne Rechnung verdrängt keine Schätzung; e18 zählt für 01.05.–25.09.2026 mit 389,26 €', () => {
+  const factors = estimateFactors([D1, D2, E18], notInvoiceDeliveries('manual', [D1, D2, E18], GUTSCHRIFT_ITEMS), table)
+  near(factors.get('e18') ?? -1, DD_MAI_BIS_25_SEPT / 1000, 'Faktor der Schätzung')
+  const line = gutschrift([D1, D2, E18]).lines.find((l) => l.deliveryId === 'e18') ?? assert.fail('keine Zeile der Schätzung')
+  assert.ok(Math.abs((line.inPeriodCents ?? 0) - 38926) <= 1, `Schätzung ${line.inPeriodCents} statt 38926`)
+})
+
+test('#251 1c: Eine Gutschrift ohne Rechnung ist keine Vorlage für den Schätzvorschlag', () => {
+  const mitVorlage = gutschrift([D0, D1]).gaps[0]?.estimate ?? assert.fail('kein Vorschlag')
+  assert.equal(mitVorlage.basedOn, 'Rechnung d0')
+  assert.ok(mitVorlage.amountCents > 0, `Vorschlag ${mitVorlage.amountCents}`)
+  assert.deepEqual(gutschrift([D0, D1]).gaps.map((g) => [g.from, g.to]), [['2026-05-01', '2027-04-30']])
+  assert.equal(gutschrift([D1]).gaps[0]?.estimate ?? null, null)
+})
+
+test('#251 1d: Eine Gutschrift ohne Rechnung steht nicht in der Bewertung und zählt keinen CO₂-Ausstoß', () => {
+  const mit = gutschrift([{ ...D1, emissionsKg: 500, co2CostCents: 2000 }, { ...D2, emissionsKg: 1000, co2CostCents: 4000 }])
+  const ohne = gutschrift([{ ...D2, emissionsKg: 1000, co2CostCents: 4000 }])
+  assert.deepEqual(mit.lines.map((l) => l.deliveryId), ['d2'])
+  assert.equal(mit.emissionsKg, ohne.emissionsKg)
+  assert.equal(mit.co2Cents, ohne.co2Cents)
+  assert.deepEqual(mit.creditOnly, [{ deliveryId: 'd1', label: 'Rechnung d1', cents: -30451, confirmed: false }])
+  assert.deepEqual(mit.zeroInvoices, [])
 })

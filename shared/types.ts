@@ -2167,7 +2167,9 @@ export type FuelEstimateProposal = {
 }
 
 // `zeroInvoices`: Rechnungen im Zeitraum der Lücke, deren Positionen zusammen 0 € ergeben (als storniert behandelt).
-export type FuelGap = { from: string; to: string; days: number; permille: number; estimate: FuelEstimateProposal | null; zeroInvoices?: string[] }
+// `creditOnly` (#251): Lieferungen im Zeitraum der Lücke, deren Positionen zusammen weniger als 0 € ergeben
+// (Gutschrift ohne Rechnung); sie decken keine Tage ab.
+export type FuelGap = { from: string; to: string; days: number; permille: number; estimate: FuelEstimateProposal | null; zeroInvoices?: string[]; creditOnly?: string[] }
 
 export type FuelAssessment = {
   coveragePermille: number

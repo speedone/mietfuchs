@@ -33,7 +33,7 @@ export type ShareContext = { table: DegreeDayTable; local: ReadonlyMap<string, n
 export type FuelDeliveryInput = Pick<
   FuelDelivery,
   'id' | 'label' | 'invoiceFrom' | 'invoiceTo' | 'deliveredAt' | 'amountCents' | 'fixedCents' | 'sharePermille' | 'emissionsKg' | 'co2CostCents' | 'estimated' | 'usedByService' | 'parts'
-> & Partial<Pick<FuelDelivery, 'energyKwh'>>
+> & Partial<Pick<FuelDelivery, 'energyKwh'>> & { creditNoteKind?: 'standalone' | null }
 // `energyKwh` seit Heizung PR 10 (Warmwasseranteil der eigenen Heizkostenabrechnung); optional, damit ein
 // von Hand gebauter Schnappschuss sie nicht nennen muss.
 
@@ -260,6 +260,9 @@ export type FuelResult = {
   // Rechnungen, deren Positionen zusammen 0 € ergeben und die die Heizperiode berühren: Mietfuchs
   // behandelt sie als storniert (Nachprüfung von 5bee89f, M-b).
   zeroInvoices: { deliveryId: string; label: string }[]
+  // Gutschriften ohne Rechnung (#251), die die Heizperiode berühren: Positionen zusammen `cents` < 0. `confirmed`: Der
+  // Vermieter hat angegeben, dass die Rechnung dazu nicht in Mietfuchs steht (`creditNoteKind`).
+  creditOnly: { deliveryId: string; label: string; cents: number; confirmed: boolean }[]
   // Schätzungen, die keine Rechnung mit Positionen als Vorlage für ihren Schlüssel haben und deshalb
   // nicht verteilt werden (Nachprüfung von 5bee89f, G-a).
   estimatesWithoutTemplate: { deliveryId: string; cents: number }[]
@@ -270,16 +273,36 @@ export type FuelResult = {
 // der Bewertung; ihre Überträge bleiben, damit eine abgeschlossene Heizperiode ihre Gegenbuchung bekommt.
 // Eigene Funktion seit Heizung PR 17: Das Blatt für den Messdienst und die Plausibilität fragen dieselbe
 // Auswahl wie die Bewertung.
-export function cancelledDeliveries(method: HeatingMethod, deliveries: readonly Pick<FuelDeliveryInput, 'id' | 'estimated'>[], items: readonly FuelItem[]): Set<string> {
+//
+// **Gutschrift ohne Rechnung** (#251): Ergeben die Positionen zusammen weniger als 0 €, belegt die Lieferung keinen
+// Verbrauch; Kosten verbrauchten Brennstoffs (§ 7 Abs. 2 HeizkostenV) sind nie negativ. Für Tage, Schätzungen,
+// Vorlage und CO₂ zählt sie wie ein Storno; ihr Geld geht nach dem Verbrauchsprinzip an die Heizperioden ihres
+// Zeitraums wie das einer Rechnung (Auslegung am Verbrauchsprinzip, BGH VIII ZR 156/11). Eine Einordnung an einer
+// Stelle: `invoice` (Summe > 0), `cancelled` (= 0), `creditOnly` (< 0); nur bei freien Schlüsseln und der eigenen
+// Abrechnung, nur für echte Lieferungen mit Positionen.
+export type InvoiceStatus = 'invoice' | 'cancelled' | 'creditOnly'
+export function invoiceStatusOf(method: HeatingMethod, deliveries: readonly Pick<FuelDeliveryInput, 'id' | 'estimated'>[], items: readonly FuelItem[]): Map<string, InvoiceStatus> {
   const withItems = method === 'manual' || method === 'self'
-  const out = new Set<string>()
+  const out = new Map<string, InvoiceStatus>()
   if (!withItems) return out
   for (const d of deliveries) {
     if (d.estimated) continue
     const mine = items.filter((c) => c.fuelDeliveryId === d.id)
-    if (mine.length > 0 && mine.reduce((a, c) => a + c.amountCents, 0) === 0) out.add(d.id)
+    if (mine.length === 0) continue
+    const total = mine.reduce((a, c) => a + c.amountCents, 0)
+    out.set(d.id, total > 0 ? 'invoice' : total === 0 ? 'cancelled' : 'creditOnly')
   }
   return out
+}
+const withStatus = (status: ReadonlyMap<string, InvoiceStatus>, wanted: readonly InvoiceStatus[]): Set<string> =>
+  new Set([...status].filter(([, s]) => wanted.includes(s)).map(([id]) => id))
+export function cancelledDeliveries(method: HeatingMethod, deliveries: readonly Pick<FuelDeliveryInput, 'id' | 'estimated'>[], items: readonly FuelItem[]): Set<string> {
+  return withStatus(invoiceStatusOf(method, deliveries, items), ['cancelled'])
+}
+// Storno und Gutschrift ohne Rechnung: Beide decken keine Tage ab, verdrängen keine Schätzung und zählen nicht in der
+// Bewertung, im Blatt für den Messdienst und in der Plausibilität.
+export function notInvoiceDeliveries(method: HeatingMethod, deliveries: readonly Pick<FuelDeliveryInput, 'id' | 'estimated'>[], items: readonly FuelItem[]): Set<string> {
+  return withStatus(invoiceStatusOf(method, deliveries, items), ['cancelled', 'creditOnly'])
 }
 
 // Eine Schätzung zählt nur für die Tage, die keine echte Rechnung abdeckt (8.2, Wiederöffnen;
@@ -308,12 +331,15 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
   const withItems = input.method === 'manual' || input.method === 'self'
   const ranged = input.deliveries.filter((d) => rangeOf(d) !== null)
   const itemsOf = (id: string): FuelItem[] => input.items.filter((c) => c.fuelDeliveryId === id)
-  const cancelledIds = cancelledDeliveries(input.method, ranged, input.items)
-  const cancelled = (d: FuelDeliveryInput): boolean => cancelledIds.has(d.id)
-  const estimateFactor = estimateFactors(ranged, cancelledIds, ctx.table)
-  const real = ranged.filter((d) => !d.estimated && !cancelled(d))
+  const status = invoiceStatusOf(input.method, ranged, input.items)
+  // Storno (Summe 0) und Gutschrift ohne Rechnung (Summe < 0, #251): keine Tage, keine Verdrängung, keine Bewertung.
+  const notInvoiceIds = withStatus(status, ['cancelled', 'creditOnly'])
+  const cancelled = (d: FuelDeliveryInput): boolean => status.get(d.id) === 'cancelled'
+  const notInvoice = (d: FuelDeliveryInput): boolean => notInvoiceIds.has(d.id)
+  const estimateFactor = estimateFactors(ranged, notInvoiceIds, ctx.table)
+  const real = ranged.filter((d) => !d.estimated && !notInvoice(d))
   const effective = ranged.filter((d) => !d.estimated || (estimateFactor.get(d.id) ?? 0) > 0)
-  const counted = effective.filter((d) => !cancelled(d))
+  const counted = effective.filter((d) => !notInvoice(d))
   const totalOf = (d: FuelDeliveryInput): number =>
     d.estimated
       ? roundHalf((d.amountCents ?? 0) * (estimateFactor.get(d.id) ?? 1))
@@ -389,7 +415,8 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
   // Die Rechnung, aus der eine Schätzung verteilt wird oder die eine Lücke schätzt: die letzte echte
   // mit Positionen, die vorher endet, sonst die letzte überhaupt. Eine Regel für beides.
   const templateFor = (from: string): FuelDeliveryInput | null => {
-    const candidates = real.filter((d) => itemsOf(d.id).length > 0 && totalOf(d) !== 0).sort((a, b) => (rangeFor(a).to < rangeFor(b).to ? -1 : 1))
+    // Nur eine Rechnung über mehr als 0 €: Eine Gutschrift ohne Rechnung ergäbe einen negativen Vorschlag (#251).
+    const candidates = real.filter((d) => itemsOf(d.id).length > 0 && totalOf(d) > 0).sort((a, b) => (rangeFor(a).to < rangeFor(b).to ? -1 : 1))
     return candidates.filter((d) => rangeFor(d).to < from).at(-1) ?? candidates.at(-1) ?? null
   }
 
@@ -562,6 +589,8 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
   // (8.2 Nr. 2): verbrauchsabhängiger Teil nach dem eigenen Zählerstand, sonst nach Gradtagen; fester
   // Teil nach Tagen; kg und CO₂-Kosten im Verhältnis des verbrauchsabhängigen Teils.
   const zeroInvoices = ranged.filter((d) => cancelled(d) && touchesH(d)).map((d) => ({ deliveryId: d.id, label: labelOf(d), range: rangeFor(d) }))
+  const creditOnly = ranged.filter((d) => status.get(d.id) === 'creditOnly' && touchesH(d))
+    .map((d) => ({ deliveryId: d.id, label: labelOf(d), cents: totalOf(d), confirmed: d.creditNoteKind === 'standalone', range: rangeFor(d) }))
   const gaps: FuelGap[] = billCoverage.gaps.map((g) => {
     const permille = degreeDayPermille([g], ctx.table)
     let estimate: FuelGap['estimate'] = null
@@ -586,7 +615,8 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
       }
     }
     const zero = zeroInvoices.filter((z) => intersect(z.range, g) !== null).map((z) => z.label)
-    return { from: g.from, to: g.to, days: daysOf(g), permille, estimate, ...(zero.length > 0 ? { zeroInvoices: zero } : {}) }
+    const credit = creditOnly.filter((z) => intersect(z.range, g) !== null).map((z) => z.label)
+    return { from: g.from, to: g.to, days: daysOf(g), permille, estimate, ...(zero.length > 0 ? { zeroInvoices: zero } : {}), ...(credit.length > 0 ? { creditOnly: credit } : {}) }
   })
 
   return {
@@ -595,6 +625,7 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
     looseWithoutRange: looseWithoutRange && gaps.length > 0,
     ownerClosedUnlinked,
     zeroInvoices: zeroInvoices.map(({ deliveryId, label }) => ({ deliveryId, label })),
+    creditOnly: creditOnly.map(({ deliveryId, label, cents, confirmed }) => ({ deliveryId, label, cents, confirmed })),
     estimatesWithoutTemplate,
   }
 }
