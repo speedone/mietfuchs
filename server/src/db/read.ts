@@ -131,6 +131,10 @@ export async function readProperties(db: Executor): Promise<Property[]> {
     iban: p.iban,
     paymentDeadlineDays: p.paymentDeadlineDays,
     cableBuiltBeforeDec2021: p.cableBuiltBeforeDec2021,
+    // Angespannter Wohnungsmarkt (§ 5d CO2KostAufG, Heizung PR 18); `null` heißt unbekannt.
+    tightMarket: p.tightMarket,
+    tightMarketFrom: p.tightMarketFrom,
+    tightMarketTo: p.tightMarketTo,
     // Der Rhythmus (#208). Immer mitgeliefert, damit niemand ihn erraten muss.
     periodRules: { startMonth: p.periodStartMonth, changes: changes.get(p.id) ?? [] },
   }))
@@ -208,6 +212,8 @@ export async function readTenancies(db: Executor): Promise<Tenancy[]> {
     correspondenceAddress: orUndefined(t.correspondenceAddress),
     iban: orUndefined(t.iban),
     contractDate: orUndefined(t.contractDate),
+    // Mitteilung nach § 5d Abs. 4 CO2KostAufG (Heizung PR 18); nur mit Wert, die db.json kennt das Feld nicht.
+    ...(t.halfSplitNoticeOn === null ? {} : { halfSplitNoticeOn: t.halfSplitNoticeOn }),
     depositCents: orUndefined(t.depositCents),
     depositStatus: orUndefined(t.depositStatus),
     // Nur mit Wert, wie die Angaben aus #94: Ein Mietverhältnis aus einer db.json hat sie nicht.
@@ -353,6 +359,12 @@ export async function readHeatingPlants(db: Executor): Promise<HeatingPlant[]> {
     heatDeliverySince: p.heatDeliverySince,
     previousSupply: p.previousSupply,
     switchAnnouncedOn: p.switchAnnouncedOn,
+    // §§ 5a, 5b, 5d CO2KostAufG (Heizung PR 18).
+    gmodg43InstalledOn: p.gmodg43InstalledOn,
+    emergencyInstall: p.emergencyInstall,
+    emergencyPriorDuty: p.emergencyPriorDuty,
+    newBuildingFirstUse: p.newBuildingFirstUse,
+    buildingApplicationBefore20260513: p.buildingApplicationBefore20260513,
     selfSpans: eigene.get(p.id) ?? [],
   }))
 }

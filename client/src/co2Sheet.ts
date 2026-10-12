@@ -5,7 +5,7 @@
 import { fmtDate, fmtEuro } from './api'
 import { energyLabelOf } from './heatingForm'
 import { STOCK_UNIT_TEXT } from '../../shared/fuelStock.ts'
-import { co2DistrictEtsNew } from '../../shared/law/co2kostaufg.ts'
+import { co2DistrictEtsNew, halfSplitBioFirstDay, halfSplitFirstDay } from '../../shared/law/co2kostaufg.ts'
 import { germanDate, onlyVersion } from '../../shared/law/register.ts'
 import type { Co2Sheet, Co2SheetDelivery, FuelDelivery, FuelQuantityUnit } from './types'
 import { FUEL_METHOD_LABELS } from './fuelView'
@@ -145,6 +145,28 @@ export function sheetFacts(s: Co2Sheet): string[] {
   if (s.exemption) {
     facts.push(`Ausnahme von der Heizkostenverordnung für Wärme und Warmwasser: ${s.exemption}. Eine Abrechnung der Heiz- und Warmwasserkosten mit den Mietern ist nicht vereinbart; ` +
       'nach § 2 Abs. 7 CO2KostAufG werden die CO₂-Kosten deshalb nicht aufgeteilt, die Angaben nicht geprüft.')
+  }
+  // § 5a CO2KostAufG (Heizung PR 18): Einbau, ab wann und in welchem Teil der Heizperiode geteilt wird, Ruhezeiten,
+  // Zweifamilienhaus und je Rechnung Netzentgelte und Biobrennstoff; was der Messdienst für § 7 Abs. 5 braucht.
+  const hs = s.halfSplit
+  if (hs) {
+    if (hs.status === 'excluded') {
+      facts.push(`Heizung nach § 43 Abs. 1 GModG, eingebaut am ${fmtDate(hs.installedOn)}, in einem Neubau mit Bauantrag, Antrag auf Zustimmung oder Bauanzeige vor dem Stichtag des § 5b Satz 2 CO2KostAufG: keine hälftige Teilung.`)
+    } else {
+      const euro = (c: number | null): string => (c === null ? 'nicht berechnet' : fmtEuro(c))
+      const landlord = hs.landlordGridFeeCents !== null || hs.landlordBioCents !== null
+        ? ` Den Anteil des Vermieters an Netzentgelten und Biobrennstoff zieht er vor der Verteilung ab (§ 7 Abs. 5 CO2KostAufG): Netzentgelte ${euro(hs.landlordGridFeeCents)}, Biobrennstoff ${euro(hs.landlordBioCents)}.`
+        : ' Den Anteil des Vermieters an Netzentgelten und Biobrennstoff zieht er vor der Verteilung ab (§ 7 Abs. 5 CO2KostAufG).'
+      facts.push(`Heizung nach § 43 Abs. 1 GModG, eingebaut am ${fmtDate(hs.installedOn)}${hs.newBuilding ? ' (Neubau, § 5b CO2KostAufG)' : ''}: Netzentgelte und CO₂-Kosten werden ab dem ${germanDate(halfSplitFirstDay())} hälftig geteilt, Biobrennstoff ab dem ${germanDate(halfSplitBioFirstDay())} (§ 5a CO2KostAufG); ` +
+        `in dieser Heizperiode fallen nach Gradtagen ${num(hs.sharePermille / 10, 1)} % der CO₂-Kosten in die Teilung.${landlord}`)
+      for (const x of hs.excluded) facts.push(`Nach § 5a Abs. 4 CO2KostAufG keine Teilung bis ${fmtDate(x.to)} (Einbau nach irreparablem Ausfall der bisherigen Heizung).`)
+      if (hs.twoFamily === 'excepted') facts.push('Selbst bewohntes Gebäude mit höchstens zwei Wohnungen an einer gemeinsamen Heizung, außerhalb eines angespannten Wohnungsmarkts: keine hälftige Teilung, die CO₂-Kosten nach dem Stufenmodell (§ 5d Abs. 3 CO2KostAufG).')
+    }
+    const withAmounts = s.deliveries.filter((d) => d.gridFeeCents !== undefined || d.bioCostCents !== undefined)
+    if (withAmounts.length > 0) {
+      const amount = (c: number | null | undefined): string => (c === null || c === undefined ? 'nicht angegeben' : fmtEuro(c))
+      facts.push(`Netzentgelte und Biobrennstoff laut Rechnung: ${withAmounts.map((d) => `${d.label}: Netzentgelte ${amount(d.gridFeeCents)}, Biobrennstoff ${amount(d.bioCostCents)}`).join('; ')}`)
+    }
   }
   if (s.stock) {
     const unit = s.stock.stockUnit ? ` ${STOCK_UNIT_TEXT[s.stock.stockUnit]}` : ''

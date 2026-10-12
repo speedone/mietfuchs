@@ -21,6 +21,7 @@ const LABELS: Record<LandlordReason, string> = {
   fuelClosedPeriod: 'Brennstoff einer abgeschlossenen Heizperiode',
   fuelEstimateDiff: 'Abweichung von der Schätzung',
   stockRemaining: 'Restbestand im Vorrat nach einem Kesseltausch (gehört Ihnen)',
+  gmodgShare: 'Netzentgelte und Biobrennstoff (§ 5a CO2KostAufG)',
   rounding: 'Rundungsrest',
 }
 

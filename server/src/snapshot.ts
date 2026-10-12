@@ -51,8 +51,10 @@ export type SnapshotTenancy = Pick<
   | 'costModel'
   | 'heatingModel'
   | 'flatRates'
-  // Datum des Mietvertrags, für den Hinweis zur Umstellung auf Wärmelieferung (Heizung PR 16, § 556c BGB).
+  // Datum des Mietvertrags, für den Hinweis zur Umstellung auf Wärmelieferung (Heizung PR 16, § 556c BGB) und für
+  // § 5d Abs. 4 CO2KostAufG (Heizung PR 18), dazu der Tag der Mitteilung nach § 5d Abs. 4.
   | 'contractDate'
+  | 'halfSplitNoticeOn'
   // Heizstaffel und Heizkorrekturen (Heizung PR 5)
   | 'heatingPrepayments'
   | 'heatingPrepaymentOverrides'
@@ -141,6 +143,9 @@ export type SnapshotHeatingPlant = Pick<HeatingPlant, 'id' | 'energy' | 'method'
   // `snapshotFor` und `heatingSnapshotFor`). Fehlen die Felder, ist es keine Wärmelieferung durch einen Dritten.
   & Partial<Pick<HeatingPlant, 'contracting' | 'heatDeliverySince' | 'previousSupply' | 'switchAnnouncedOn'>>
   & { fuelEnergy?: HeatingEnergy }
+  // §§ 5a, 5b, 5d CO2KostAufG (Heizung PR 18): Heizung nach § 43 Abs. 1 GModG, Notfalleinbau, Neubau. Fehlen die
+  // Felder, ist es keine solche Heizung, und keine Zahl ändert sich.
+  & Partial<Pick<HeatingPlant, 'gmodg43InstalledOn' | 'emergencyInstall' | 'emergencyPriorDuty' | 'newBuildingFirstUse' | 'buildingApplicationBefore20260513'>>
 // Seit Heizung PR 9 die Versorgung (`supply`); fehlt sie, ist die Anlage zentral.
 // Die Angaben je Heizperiode, die die Berechnung liest: Warmwasser laut Messdienst (Heizung PR 6, #211)
 // und der Vorrat (Heizung PR 8). Die Felder des Vorrats sind optional, damit ein von Hand gebauter
@@ -512,6 +517,8 @@ export type SnapshotFuelDelivery = Pick<
   FuelDelivery,
   'id' | 'plantId' | 'label' | 'invoiceFrom' | 'invoiceTo' | 'deliveredAt' | 'amountCents' | 'fixedCents' | 'sharePermille' | 'emissionsKg' | 'co2CostCents' | 'estimated' | 'usedByService' | 'parts'
 > & Partial<Pick<FuelDelivery, 'invoiceDate' | 'quantity' | 'quantityUnit' | 'unitId' | 'energyKwh'>>
+  // Netzentgelte und Biobrennstoff nach § 5a CO2KostAufG (Heizung PR 18); fehlen sie, gibt es keine Angabe.
+  & Partial<Pick<FuelDelivery, 'gridFeeCents' | 'bioCostCents'>>
   // Was der Warmwasseranteil liest (Heizung PR 11): Abrechnung nach Brennwert oder Heizwert, Heizwert laut
   // Rechnung und die Zeile der Heizwerttabelle.
   & Partial<Pick<FuelDelivery, 'gasBasis' | 'heatingValue' | 'fuelGrade'>>
@@ -585,7 +592,9 @@ function fuelSnapshotOf(
   }
 }
 
-export type SnapshotProperty = Pick<Property, 'kind' | 'cableBuiltBeforeDec2021'>
+// Seit Heizung PR 18 der angespannte Wohnungsmarkt mit seiner Geltung (§ 5d Abs. 3 Satz 2 CO2KostAufG); fehlt er,
+// ist er unbekannt.
+export type SnapshotProperty = Pick<Property, 'kind' | 'cableBuiltBeforeDec2021'> & Partial<Pick<Property, 'tightMarket' | 'tightMarketFrom' | 'tightMarketTo'>>
 
 // Die Sammlungen, aus denen ein Schnappschuss entsteht, ohne die Frage, woher sie kommen. Die
 // JSON-Datei füllt sie über `snapshotFromDb` unten, die Datenbank über `snapshotFromStock` in
@@ -1002,7 +1011,7 @@ export function snapshotFor(
   return {
     ...snapshotOfPeriod(general, period, previousPeriod(objectRules, period)),
     propertyId,
-    property: found ? { kind: found.kind, cableBuiltBeforeDec2021: found.cableBuiltBeforeDec2021 ?? null } : null,
+    property: found ? { kind: found.kind, cableBuiltBeforeDec2021: found.cableBuiltBeforeDec2021 ?? null, tightMarket: found.tightMarket ?? null, tightMarketFrom: found.tightMarketFrom ?? null, tightMarketTo: found.tightMarketTo ?? null } : null,
     // Die Anlagen tragen ihr Objekt wie die Wurzeln in `narrowToProperty`; eingegrenzt wird hier.
     heatingPlants: plants,
     co2Statements: (source.co2Statements ?? []).filter((c) => plants.some((p) => p.id === c.plantId)),
@@ -1047,7 +1056,7 @@ export function heatingSnapshotFor(source: Parameters<typeof snapshotFor>[0], pr
   return {
     ...snapshotOfPeriod({ ...narrowed, costItems: mine, closedSettlements: [] }, h, previousPeriod(rules, h)),
     propertyId,
-    property: found ? { kind: found.kind, cableBuiltBeforeDec2021: found.cableBuiltBeforeDec2021 ?? null } : null,
+    property: found ? { kind: found.kind, cableBuiltBeforeDec2021: found.cableBuiltBeforeDec2021 ?? null, tightMarket: found.tightMarket ?? null, tightMarketFrom: found.tightMarketFrom ?? null, tightMarketTo: found.tightMarketTo ?? null } : null,
     heatingPlants: plants,
     co2Statements: (source.co2Statements ?? []).filter((c) => c.plantId === plantId),
     heatingPeriodRows: (source.heatingPeriodRows ?? []).filter((r) => r.plantId === plantId || line.has(r.plantId)),

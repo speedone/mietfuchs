@@ -33,6 +33,13 @@ export type Property = {
   // Kabel- oder Antennenanlage vor dem 01.12.2021 errichtet (#121, § 2 Satz 2 BetrKV)? `null` heißt
   // unbekannt. Bei einer späteren Anlage war das TV-Signal nie umlagefähig.
   cableBuiltBeforeDec2021?: boolean | null
+  // Liegt das Gebäude in einem Gebiet, das eine Verordnung nach § 556d Abs. 2 Satz 1, § 558 Abs. 3 Satz 3 oder
+  // § 577a Abs. 2 Satz 2 BGB als angespannten Wohnungsmarkt bestimmt? Für § 5d CO2KostAufG (Heizung PR 18).
+  // `null`: unbekannt. Die Verordnungen sind befristet (Abweichung 4 des Plans): bei `true` ihre Geltung,
+  // `null` heißt ohne bekannten Beginn bzw. ohne bekanntes Ende.
+  tightMarket?: boolean | null
+  tightMarketFrom?: string | null
+  tightMarketTo?: string | null
   // Der Rhythmus der Abrechnungszeiträume (#208). Der Server liefert ihn immer mit; fehlt er, gilt
   // das Kalenderjahr (`rulesOf` in shared/period.ts). Ändern lässt er sich in dieser Version nicht.
   periodRules?: PeriodRules
@@ -114,6 +121,9 @@ export type Tenancy = {
   correspondenceAddress?: string // abweichende Anschrift für Schriftverkehr (z. B. nach Auszug)
   iban?: string // Mieter-IBAN (für Lastschrift/Guthaben-Rückzahlung)
   contractDate?: string // 'YYYY-MM-DD' — Datum des Mietvertrags
+  // Tag, an dem dem Mieter die Umstände nach § 5d CO2KostAufG in Textform mitgeteilt wurden (Heizung PR 18,
+  // Abweichung 3 des Plans). Je Mieter, denn die Information ist „dem Mieter“ geschuldet (§ 5d Abs. 4 Satz 1, 3).
+  halfSplitNoticeOn?: string
   depositCents?: number // vereinbarte Kaution
   depositStatus?: DepositStatus // Stand der Kaution
   notes?: string // freie Notiz zum Mietverhältnis
@@ -676,8 +686,9 @@ export type SettlementRow = {
   // Kennung des Topfs (`co2:<Anlage>:<Heizperiode>`), die keiner Position gehört. `fuelCarry`
   // (Heizung PR 7): der Teil einer Brennstoffrechnung aus einer anderen Heizperiode, verteilt mit
   // dem Schlüssel ihrer Position; `costItemId` ist `fuel:<Lieferung>:<Heizperiode>:<andere Heizperiode>:<Position>`.
-  // Spätere PRs ergänzen `co2Refund`.
-  kind?: 'co2Relief' | 'fuelCarry'
+  // `gmodgRelief` (Heizung PR 18): der Anteil des Vermieters an Netzentgelten und Biobrennstoff nach § 5a
+  // CO2KostAufG, ohne Kostenposition; `costItemId` ist `gmodg:<Anlage>:<Heizperiode>`. Spätere PRs ergänzen `co2Refund`.
+  kind?: 'co2Relief' | 'fuelCarry' | 'gmodgRelief'
 }
 
 // Die Gründe, aus denen ein Teil einer Position beim Vermieter bleibt (#142):
@@ -700,11 +711,13 @@ export type SettlementRow = {
 //   `fuelEstimateDiff` tatsächlicher Teil minus Schätzung einer abgeschlossenen Heizperiode, mit Vorzeichen
 //   `stockRemaining`   Restbestand im Vorrat einer stillgelegten Heizanlage (Kesseltausch, Heizung PR 9): Er
 //                      gehört dem Vermieter, die Mieter tragen nur den verbrauchten Brennstoff
+//   `gmodgShare`    Anteil des Vermieters an Netzentgelten und Biobrennstoff (§ 5a Abs. 3, § 7 Abs. 5
+//                   CO2KostAufG, Heizung PR 18): die Summe der Abzugszeilen `gmodgRelief`
 //   `rounding`      Rundungsrest (nur in Abrechnungen, die vor #202 abgeschlossen wurden)
 export type LandlordReason =
   | 'notAllocable' | 'noBasis' | 'selfUse' | 'vacancy' | 'flatRate' | 'inclusive'
   | 'outsideUnit' | 'amountsRest' | 'customRest' | 'mainMeterRest' | 'co2Share'
-  | 'fuelCarry' | 'fuelClosedPeriod' | 'fuelEstimateDiff' | 'stockRemaining' | 'rounding'
+  | 'fuelCarry' | 'fuelClosedPeriod' | 'fuelEstimateDiff' | 'stockRemaining' | 'gmodgShare' | 'rounding'
 export type LandlordPart = { reason: LandlordReason; cents: number }
 
 // Ein Schritt des Rechenwegs: Beschriftung, Wert als fertiger Text, auf Wunsch mit dem Begriff
@@ -1439,6 +1452,20 @@ export type HeatingPlant = {
   heatDeliverySince: string | null
   previousSupply: PreviousSupply | null
   switchAnnouncedOn: string | null
+  // §§ 5a, 5b, 5d CO2KostAufG (Heizung PR 18, #215). `gmodg43InstalledOn`: Tag des Einbaus einer Gas-, Öl-
+  // oder Flüssiggasheizung nach § 43 Abs. 1 GModG (im Neubau: Tag der Inbetriebnahme); gesetzt heißt, die
+  // hälftige Teilung kann greifen. `emergencyInstall`: eingebaut nach irreparablem Ausfall der bisherigen
+  // Heizung; `emergencyPriorDuty`: für die ausgefallene galt beim Ausfall schon eine Pflicht nach § 43 Abs. 1,
+  // gefragt als „war sie eine Gas-, Öl- oder Flüssiggasheizung, nach dem 29.07.2026 in das bestehende Gebäude
+  // eingebaut?“ (§ 5a Abs. 4; Prüfung M8). `newBuildingFirstUse`: Neubau, Tag der ersten Nutzung (§ 5b);
+  // `buildingApplicationBefore20260513`: Bauantrag, Antrag auf Zustimmung oder Bauanzeige vor dem 13.05.2026.
+  // `null` heißt jeweils unbekannt bzw. nicht angegeben. Die Mitteilung nach § 5d Abs. 4 steht am
+  // Mietverhältnis (`Tenancy.halfSplitNoticeOn`).
+  gmodg43InstalledOn: string | null
+  emergencyInstall: boolean | null
+  emergencyPriorDuty: boolean | null
+  newBuildingFirstUse: string | null
+  buildingApplicationBefore20260513: boolean | null
   // Die Zeiträume der eigenen Heizkostenabrechnung (Durchsicht von #239), aufsteigend; `until` NULL beim
   // laufenden.
   selfSpans?: SelfSpanRange[]
@@ -1666,8 +1693,14 @@ export type Co2StageRange = { from: number; to: number | null; landlordPercent: 
 // abgezogen. `stage` ist die Stufe, in die Mietfuchs den Wert laut Messdienst einordnet, `table`
 // die Tabelle (bei kurzer Heizperiode mit gekürzten Grenzen, `shortened`).
 // Was die Einstufung bei der eigenen Aufteilung verändert hat (Heizung PR 7): § 8 (Nichtwohngebäude,
-// 500 ‰ statt der Stufe), § 9 Abs. 1 (halber Anteil) und § 9 Abs. 2 (keine Aufteilung).
-export type Co2Adjustment = 'nonResidential' | 'restrictionHalf' | 'restrictionNone'
+// 500 ‰ statt der Stufe), § 9 Abs. 1 (halber Anteil) und § 9 Abs. 2 (keine Aufteilung); seit Heizung PR 18
+// § 5a (hälftige Teilung nach Anfall) und § 5d Abs. 3 (Zweifamilienhaus, nur Stufen).
+export type Co2Adjustment = 'nonResidential' | 'restrictionHalf' | 'restrictionNone' | 'halfSplit' | 'twoFamily'
+
+// § 5a CO2KostAufG im Ausweis (Heizung PR 18, Entwurf 9.5 „§ 5a anteilig“): der Anteil der CO₂-Kosten, der
+// in die hälftige Teilung fällt (‰ der Heizperiode nach Anfall), die Anteile des Vermieters an Netzentgelten
+// und Biobrennstoff (`null`, wenn eine Angabe fehlt) und ob § 5d Abs. 3 (Zweifamilienhaus) griff.
+export type Co2HalfSplit = { co2SharePermille: number; landlordGridFeeCents: number | null; landlordBioCents: number | null; basis: 'existing' | 'newBuilding'; twoFamily: 'excepted' | 'split' | null }
 
 export type Co2Assessment = {
   method: Co2Method
@@ -1701,6 +1734,8 @@ export type Co2Assessment = {
   // `building`: die gemeinsame Fläche mehrerer Anlagen eines Gebäudes (§ 5 Abs. 1 Satz 2 CO2KostAufG);
   // `plant`: die der Anlage. Fehlt in einer vorher abgeschlossenen Abrechnung.
   areaScope?: 'plant' | 'building'
+  // Hälftige Teilung nach § 5a CO2KostAufG (Heizung PR 18); fehlt ohne Heizung nach § 43 Abs. 1 GModG.
+  halfSplit?: Co2HalfSplit
 }
 
 // Eine Heizanlage in einer Abrechnung, mit der Heizperiode, die darin abgerechnet wird.
@@ -1734,6 +1769,9 @@ export type HeatingStatement = {
   // § 2 Abs. 7), die Ausnahme im Wortlaut der Abrechnung (`exemption`) und die Befunde je Rechnung. Anzeige und
   // Blatt für den Messdienst lesen sie von hier. Fehlt in älteren Abrechnungen.
   co2Check?: { applies: boolean; exemption: string | null; findings: { deliveryId: string; texts: string[] }[] }
+  // Zweifamilienhaus nach § 5d Abs. 3 CO2KostAufG (Heizung PR 18, Durchsicht M2), gleich wer verteilt: `excepted`
+  // ohne hälftige Teilung, `split` mit ihr trotz Zweifamilienhaus. Fehlt, wenn die Ausnahme nicht in Frage kommt.
+  halfSplitTwoFamily?: 'excepted' | 'split'
 }
 
 // Was die Seite Heizkosten zu einer Heizperiode lädt (Heizung PR 6): die Angabe zum Warmwasser, die
@@ -1855,6 +1893,10 @@ export type Co2SheetDelivery = {
   // `kgOnly` nur die kg (§ 11 Abs. 2 Satz 2), `none` nichts (storniert, abgedeckte Schätzung). `note` sagt
   // es in der dritten Person, für den Empfänger des Blatts.
   counted: 'full' | 'partial' | 'kgOnly' | 'none'
+  // Netzentgelte und Kosten des Pflichtanteils an Biobrennstoff laut Rechnung (§ 5a CO2KostAufG, Heizung PR 18);
+  // fehlen in einem Blatt ohne Heizung nach § 43 Abs. 1 GModG.
+  gridFeeCents?: number | null
+  bioCostCents?: number | null
   factor: number
   note: string | null
   // Der Teil dieser Rechnung, den die Abrechnung der Heizperiode zuordnet (`fuel.deliveries`), mit Anteil in
@@ -1933,6 +1975,23 @@ export type Co2Sheet = {
   // Die Ausnahme nach § 11 HeizkostenV, unter der das CO2KostAufG nicht gilt (§ 2 Abs. 7), im Wortlaut der
   // Abrechnung (`co2Check.exemption`); `null` sonst.
   exemption: string | null
+  // Heizung nach § 43 Abs. 1 GModG (Heizung PR 18): was der Messdienst für die hälftige Teilung nach § 5a
+  // braucht. Fehlt ohne Merkmal und für Heizperioden ganz vor dem ersten Tag der Teilung.
+  halfSplit?: Co2SheetHalfSplit
+}
+
+// `sharePermille`: Anteil der Heizperiode nach Gradtagen, in dem die CO₂-Kosten hälftig geteilt werden (0 im
+// Zweifamilienhaus mit Ausnahme oder während der Ruhezeit nach § 5a Abs. 4); `excluded`: diese Ruhezeiten. Die
+// Anteile des Vermieters an Netzentgelten und Biobrennstoff nur, wo die Abrechnung sie rechnet, sonst `null`.
+export type Co2SheetHalfSplit = {
+  installedOn: string
+  status: 'applies' | 'excluded'
+  newBuilding: boolean
+  excluded: { from: string; to: string; rule: 'emergency1' | 'emergency2' | 'emergency3' }[]
+  sharePermille: number
+  landlordGridFeeCents: number | null
+  landlordBioCents: number | null
+  twoFamily: 'excepted' | 'split' | null
 }
 
 // Eine Gradtagzahl des Deutschen Wetterdienstes für den Ort des Objekts und einen Monat ('JJJJ-MM').
