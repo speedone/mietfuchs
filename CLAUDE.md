@@ -2110,6 +2110,31 @@ die ganze fachliche Komplexität:
   erscheinen sie nicht, denn `computeSettlement` ruft `consumptionInPeriod` auf und wirft sie
   weg. Das war vorher schon so, und es soll so bleiben: Die Abrechnung ist das Dokument, das der
   Mieter bekommt, und ein Hinweis auf einen Datenfehler des Vermieters gehört nicht darauf.
+  **Die Eichfrist** (#98, Heizung PR 21) ist eine Warnung und keine Sperre: `meters.calibrated_until`
+  (Jahr, mit dessen Ende die Frist endet, § 34 Abs. 2 MessEV; Migrationen 0046/0047, Bedingungen
+  `meters_calibrated_until_valid` mit `typeof`, weil die INTEGER-Affinität eine Kommazahl als REAL behält,
+  und `meters_calibrated_until_hca_valid`) ergibt `meter.calibration-overdue` in `consumptionOverview`
+  (Zähler-Seite, dort als `warn` und nicht als Fehler), nie auf der Abrechnung. Geprüft wird die jüngste
+  Ablesung, die der Zeitraum benutzt (`readingsUsedFor` in server/src/calibration.ts: die im Zeitraum ab dem
+  Vortag des Beginns, die davor und die erste danach nur, wenn interpoliert wird; ohne Gegenstück zählen sie
+  nicht); eine Ablesung vom 31.12. des Eichjahres zählt noch. Liegt der letzte Zählerwechsel am letzten Tag
+  des Zeitraums oder danach, misst das heutige Gerät im Zeitraum nichts, und es gibt keinen Hinweis. Die
+  Regel `meter-calibration` hat `scope: 'meters'`: `rulesFor` lässt sie aus dem Rechtsstand jeder Abrechnung,
+  denn die Abrechnung prüft nicht nach ihr. Das Cockpit zeigt eine eigene gelbe Zeile „Eichfrist“
+  (`overdueMeters`, `calibrationDetail` in client/src/meterCheck.ts); die Ampel „Zählerstände“ zählt diesen
+  Hinweis nicht (`readingProblems`). Heizkostenverteiler haben kein Eichjahr: Beim Umstellen der Sparte auf
+  HKV fällt es weg, ausdrücklich gesendet gibt es 400. Die Fristen stehen im Register
+  (`messev.calibration-years`, Zeitregel `eventDate`): ab 01.01.2015 Kaltwasser 6, Warmwasser und Wärme 5
+  Jahre (amtlich aus BR-Drs. 599/21, Begründung zu Art. 1 Nr. 11 a), ab 03.11.2021 je 6 (Dritte
+  Änderungsverordnung, BGBl. 2021 I S. 4742). **Die Verordnung hat keine Übergangsregel** (Art. 2 nur
+  Inkrafttreten, § 58 Abs. 7 MessEV betrifft § 25, am Wortlaut gelesen am 12.10.2026). Mietfuchs rechnet eine
+  am Inkrafttreten noch laufende Frist mit der neuen Zahl und lässt eine abgelaufene nicht wieder aufleben
+  (`calibrationEnd` in shared/calibration.ts, Auslegung wie Eichbehörden und Messdienste; Jahreszahl 2016 bis
+  2021 ergibt J + 6, bis 2015 J + 5). Der Vorschlag im Zählerformular sagt das als Auslegung; gefragt wird
+  nach der Jahreszahl auf dem Zähler (Eichmarke: Jahr des Fristbeginns, Anlage 8; „M22“: Jahr der
+  Kennzeichnung, vermutet als Inverkehrbringen). Hinweis, Regel und Lexikon zitieren BGH VIII ZR 112/10 nur
+  mit dem Wortlaut von Leitsatz c. Gas- und Stromzähler haben das Feld, aber keinen Vorschlag (Frist nach
+  Bauart, Anlage 7 Nr. 5.6, 6). Die Vierte Änderungsverordnung (2024) berührt diese Nummern nicht.
 - **Leerstand beim Personenschlüssel** (#177): Jede Wohnung der Verteilbasis, die vermietet
   wird (`participates`, nicht selbstgenutzt, unter den Teilnehmern der Position), zählt für jeden Tag ohne Mietverhältnis mit `VACANCY_PERSONS` Personen (heute 1),
   auch zwischen zwei Mietern. Diese Personentage bekommt niemand zugebucht, ihr Anteil bleibt als
