@@ -344,6 +344,29 @@ function readFormulaInputs(body: unknown): { dhwVolumeM3?: number | null; dhwTem
   return out
 }
 
+// Die mittlere Warmwassertemperatur bei getrenntem Warmwasser einer eigenen Heizkostenabrechnung (Heizung PR 22):
+// Die monatliche Verbrauchsinformation rechnet damit die m³ in kWh um. Bei verbundenem Warmwasser steht sie in der
+// Karte „Warmwasser“ (`saveHotWater`), weil sie dort auch den Warmwasseranteil bestimmt; dort gehört sie hin, und
+// eine zweite Stelle dafür gäbe es nicht. Dieselbe Prüfung und dieselbe Spalte (`heating_periods.dhw_temp_c`). Bei
+// getrenntem Warmwasser geht sie in keine Zahl der Abrechnung ein; eine abgeschlossene Heizperiode sperrt sie
+// deshalb nicht. Null ohne Anlage.
+export async function saveDhwTemperature(db: Database, plantId: string, period: string, body: unknown): Promise<{ dhwTempC: number | null } | null> {
+  const ctx = await plantContext(db, plantId)
+  if (!ctx) return null
+  const h = heatingPeriodOf(ctx, period)
+  if (ctx.plant.method !== 'self' || hotWaterOf(ctx.plant, String(h.key)) !== 'separate') {
+    throw new HeatingError(400, 'Die mittlere Warmwassertemperatur tragen Sie in der Karte „Warmwasser“ dieser Heizperiode ein. Hier gibt es sie nur bei eigener Heizkostenabrechnung mit getrennt bereitetem Warmwasser.')
+  }
+  const { dhwTempC } = readFormulaInputs({ dhwTempC: raw(body, 'dhwTempC') ?? null })
+  const value = dhwTempC ?? null
+  await db.transaction(async (tx) => {
+    const heatingPeriodId = await ensureHeatingPeriod(tx, plantId, h.key)
+    await tx.update(heatingPeriods).set({ dhwTempC: value }).where(eq(heatingPeriods.id, heatingPeriodId))
+    await dropIfEmpty(tx, heatingPeriodId)
+  })
+  return { dhwTempC: value }
+}
+
 // Wie die Wärme für das Warmwasser ermittelt wurde, und bei einer Formel, ob das Messen nur mit
 // unzumutbar hohem Aufwand möglich wäre (§ 9 Abs. 2 Satz 2 HeizkostenV). Die Bestätigung gibt es nur zu
 // einer Formel. Beim Messdienst steht das Ergebnis in seiner Abrechnung; bei eigener Abrechnung (Heizung

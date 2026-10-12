@@ -79,14 +79,14 @@ test('Durchsicht von #243: Regeln und Lexikon zu Ablesung, Kürzungsrecht, CO₂
   assert.doesNotMatch(reading.summary, /zwingend ist ein Grund erst/i)
   assert.match(reading.summary, /Auch ein Ablesefehler ist ein solcher Grund, wenn sich der Wert nicht mehr ermitteln lässt/)
   const info = RULES.find((r) => r.code === 'heating-info') ?? assert.fail('Regel fehlt')
-  assert.match(info.summary, /ein Kürzungsrecht, auch wenn mehrere Informationen fehlen; es summieren sich nur Kürzungsrechte aus verschiedenen Sätzen.*BR-Drs\. 643\/21, S\. 23 f\./s)
+  assert.match(info.summary, /ein Kürzungsrecht, auch wenn mehrere Informationen fehlen; es summieren sich nur Kürzungsrechte aus verschiedenen Sätzen.*BR-Drs\. 643\/21, S\. 24 f\./s)
   const ex = RULES.find((r) => r.code === 'heating-exemption') ?? assert.fail('Regel fehlt')
   assert.match(ex.summary, /„in denen keine Heizkostenabrechnung durchgeführt wird“.*nur die Wärme ausgenommen.*teilt Mietfuchs die CO₂-Kosten deshalb weiter auf \(Auslegung von Mietfuchs\)/s)
   assert.match(ex.summary, /Solaranlagen versorgt werden; für Räume in Gebäuden, die überwiegend mit Wärme aus Kraft-Wärme-Kopplung oder Abwärme versorgt werden, sofern/)
   assert.match(ex.summary, /das Anbringen der Ausstattung zur Verbrauchserfassung.*nicht oder nur mit unverhältnismäßig hohen Kosten/s)
   const { GLOSSARY } = await import('../../shared/glossary.ts')
   assert.doesNotMatch(`${GLOSSARY.billingInfo.short} ${GLOSSARY.climateFactor.needed}`, /Vorjahr/)
-  assert.match(GLOSSARY.billingInfo.example, /BR-Drs\. 643\/21, S\. 23 f\./)
+  assert.match(GLOSSARY.billingInfo.example, /BR-Drs\. 643\/21, S\. 24 f\./)
 })
 
 test('Durchsicht Runde 2: Lexikon und Anleitung zu § 9a (R2-N-W2) und zum Verbrauchervertrag (R2-N-K3)', async () => {

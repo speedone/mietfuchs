@@ -16,7 +16,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { AiSettings, AiSlot, Co2Statement, DegreeDayValue, FrozenFuelCarry, FuelDelivery, FuelDeliveryPart, Co2TenantRelief, CostItem, HeatingEstimate, HeatingPeriodData, HeatingPlant, HeatingPlantUnit, HeatingPrepaymentOverride, InterimGap, SelfSpanRange, SeparateSpan, PeriodKey, PeriodRules, Meter, Payment, PersonEntry, PrepaymentEntry, Reading, RentEntry, Settings, Tenancy, Unit, ExternalBasis, UploadInfo, StoredAssessment, StoredAssessmentLine } from '../../shared/types.ts'
+import type { AiSettings, AiSlot, Co2Statement, DegreeDayValue, FrozenFuelCarry, FuelDelivery, FuelDeliveryPart, Co2TenantRelief, CostItem, HeatingEstimate, HeatingPeriodData, HeatingPlant, HeatingPlantUnit, HeatingPrepaymentOverride, InterimGap, MonthlyInfoRow, SelfSpanRange, SeparateSpan, PeriodKey, PeriodRules, Meter, Payment, PersonEntry, PrepaymentEntry, Reading, RentEntry, Settings, Tenancy, Unit, ExternalBasis, UploadInfo, StoredAssessment, StoredAssessmentLine } from '../../shared/types.ts'
 import type { ClosedSettlement } from '../src/store.ts'
 import { applyMigrations, connect, loadMigrations } from '../src/db/client.ts'
 import * as schema from '../src/db/schema.ts'
@@ -220,6 +220,8 @@ type _PeriodChangeMonth = Assert<Equals<PeriodChangeRow['fromMonth'], PeriodRule
 
 // --- Schätzung nach § 9a (Heizung PR 13) ---
 type _Estimates = Assert<Matches<typeof schema.heatingEstimates.$inferSelect, Omit<HeatingEstimate, 'plantId' | 'period'> & { heatingPeriodId: string }>>
+// Monatliche Verbrauchsinformation (Heizung PR 22): Zeile und Datenmodell sind dieselben.
+type _MonthlyInfo = Assert<Matches<typeof schema.heatingMonthlyInfo.$inferSelect, MonthlyInfoRow>>
 
 // ---------- Ebene 2: die Zusicherungen an einer echten Datenbank ----------
 
@@ -280,6 +282,7 @@ test('Migration lässt sich anwenden und legt alle Tabellen an', async () => {
       'fuel_deliveries',
       'fuel_delivery_parts',
       'heating_estimates',
+      'heating_monthly_info',
       'heating_period_changes',
       'heating_periods',
       'heating_plant_units',

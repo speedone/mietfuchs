@@ -425,7 +425,7 @@ export const hkvInfoDistrict: LawParam<DistrictEmissions, 'periodStart'> = {
 
 // § 6a Abs. 1 Satz 1 Nr. 2, Abs. 2: Bei fernablesbaren Geräten monatliche Abrechnungs- oder
 // Verbrauchsinformationen ab dem 01.01.2022. `overlap`: Ein Zeitraum, der diese Zeit berührt, ist
-// betroffen. Die Information selbst erzeugt Mietfuchs noch nicht (Heizung PR 22).
+// betroffen. Bei eigener Abrechnung erstellt Mietfuchs die Information (Heizung PR 22, server/src/monthlyInfo.ts).
 export const hkvMonthlyInfo: LawParam<{ readonly interval: string }, 'overlap'> = {
   id: 'hkv.monthly-info',
   title: 'Monatliche Verbrauchsinformation',

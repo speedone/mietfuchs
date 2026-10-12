@@ -1688,3 +1688,27 @@ export const lawOverrides = sqliteTable(
     check('law_overrides_value_is_json', sql.raw('json_valid("value_json")')),
   ],
 )
+
+// ---------- Monatliche Verbrauchsinformation (Heizung PR 22, § 6a Abs. 1 Nr. 2, Abs. 2 HeizkostenV) ----------
+
+// Je Anlage und Monat: der Vergleichswert eines Durchschnittsnutzers (kWh je m² Wohnfläche im Monat) mit
+// seiner Quelle und der Tag, an dem die Information den Mietern mitgeteilt wurde. Gespeichert an der Anlage,
+// die am Monatsende heizt; fällt mit ihr. Der Vergleichswert ohne Quelle ist keiner: Ein Durchschnitt des
+// eigenen Hauses ist nach der Begründung kein zulässiger Vergleich (BR-Drs. 643/21, S. 19).
+export const heatingMonthlyInfo = sqliteTable(
+  'heating_monthly_info',
+  {
+    plantId: text('plant_id').notNull().references(() => heatingPlants.id, { onDelete: 'cascade' }),
+    month: text('month').notNull(),
+    referenceKwhPerM2: real('reference_kwh_per_m2'),
+    referenceSource: text('reference_source'),
+    sentOn: text('sent_on'),
+  },
+  (t) => [
+    primaryKey({ columns: [t.plantId, t.month] }),
+    check('heating_monthly_info_month_valid', sql.raw(`"month" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]' AND CAST(substr("month", 6, 2) AS INTEGER) BETWEEN 1 AND 12`)),
+    check('heating_monthly_info_reference_positive', sql.raw('"reference_kwh_per_m2" IS NULL OR "reference_kwh_per_m2" > 0')),
+    check('heating_monthly_info_reference_source_complete', sql.raw(`"reference_kwh_per_m2" IS NULL OR length(trim(coalesce("reference_source", ''))) > 0`)),
+    check('heating_monthly_info_sent_on_valid', sql.raw(`"sent_on" IS NULL OR "sent_on" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`)),
+  ],
+)
