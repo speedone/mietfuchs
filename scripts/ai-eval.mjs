@@ -27,6 +27,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { score, scoreFuel, scoreService } from './ai-eval/score.mjs'
 
 const argv = process.argv.slice(2)
 const opt = (name, fallback) => {
@@ -138,34 +139,8 @@ async function extract(baseUrl, { route = '/api/extract', file, mimeType, fileNa
 
 // ---------- Bewertung ----------
 
-const near = (actual, expected, tolerance = 0.011) => typeof actual === 'number' && Math.abs(actual - expected) <= tolerance
-
-// Jede Prüfung zählt gleich. Zusätzliche Positionen (etwa Abschläge oder Nettobeträge als eigene
-// Zeile) zählen als Fehler, Positionen über 0,00 € (gebührenfreie Tonne) nicht.
-export function score(expected, extraction) {
-  const checks = []
-  const add = (name, ok) => checks.push({ name, ok: Boolean(ok) })
-  add('Summe', near(extraction?.totalGrossEur, expected.total))
-  add('Aussteller', String(extraction?.vendor ?? '').toLowerCase().includes(expected.vendor.toLowerCase()))
-  const positions = (Array.isArray(extraction?.positions) ? extraction.positions : []).filter((p) => Math.abs(Number(p?.amountEur) || 0) > 0.001)
-  if (expected.positions) {
-    const unused = [...positions]
-    for (const e of expected.positions) {
-      const i = unused.findIndex((p) => near(p.amountEur, e.amount))
-      const found = i >= 0 ? unused.splice(i, 1)[0] : null
-      add(`Betrag ${e.amount}`, found)
-      add(`Kostenart ${e.category}`, found?.category === e.category)
-    }
-    for (const p of unused) add(`zusätzliche Position ${p.amountEur}`, false)
-  }
-  if (expected.allCategory) add(`Kostenart ${expected.allCategory}`, positions.length > 0 && positions.every((p) => p.category === expected.allCategory))
-  if (expected.labor35a != null) {
-    const labor = positions.reduce((sum, p) => sum + (Number(p.labor35aEur) || 0), 0)
-    add('Lohnanteil § 35a', near(labor, expected.labor35a, 0.021))
-  }
-  const passed = checks.filter((c) => c.ok).length
-  return { points: checks.length ? passed / checks.length : 0, passed, total: checks.length, failed: checks.filter((c) => !c.ok).map((c) => c.name) }
-}
+// Die Bewertung steht in ai-eval/score.mjs (Heizung PR 20), damit ein Test sie ohne Modell prüfen kann.
+export { score }
 
 // ---------- Ausgabe ----------
 
@@ -176,7 +151,7 @@ const mean = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : nu
 
 function modelTable(result) {
   const rows = result.runs.map((r) => {
-    const stat = r.stats?.find((s) => s.step === 'extraction')
+    const stat = r.stats?.find((s) => ['extraction', 'serviceStatement', 'fuelInvoice'].includes(s.step))
     const detail = r.error ? `Fehler: ${r.error.slice(0, 120)}` : r.score.failed.length ? `falsch: ${r.score.failed.join(', ')}` : 'alles richtig'
     return `| ${r.label} | ${VARIANT_LABELS[r.variant]} | ${r.error ? '0 %' : pct(r.score.points)} | ${secs(r.seconds)} | ${stat?.promptTokens ?? '–'} | ${detail} |`
   })
@@ -244,6 +219,20 @@ async function ollamaInfo(ollamaUrl, model) {
   }
 }
 
+// Die Belege der Heizung (Heizung PR 20) laufen über die Routen einer Heizanlage. Ein frischer Datenordner hat
+// keine; der Prüflauf legt eine mit Messdienst an (sie nimmt auch Lieferantenrechnungen).
+async function ensurePlant(baseUrl) {
+  /** @type {any} */
+  const list = await (await fetch(`${baseUrl}/api/heating-plants`)).json()
+  const found = Array.isArray(list) ? list.find((p) => p?.method === 'service') : null
+  if (found) return found.id
+  const res = await fetch(`${baseUrl}/api/heating-plants`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ energy: 'gas', method: 'service' }) })
+  /** @type {any} */
+  const body = await res.json()
+  if (!res.ok || !body?.plant?.id) throw new Error(`Die Heizanlage für den Prüflauf ließ sich nicht anlegen: ${body?.error ?? res.status}`)
+  return body.plant.id
+}
+
 async function evaluate() {
   const baseUrl = opt('url', 'http://127.0.0.1:3001').replace(/\/+$/, '')
   const ollamaUrl = opt('ollama')?.replace(/\/+$/, '')
@@ -254,6 +243,9 @@ async function evaluate() {
   if (!Number.isFinite(pageEdge) || pageEdge < 200 || pageEdge > 4000) throw new Error(`--page-edge braucht 200 bis 4000 Bildpunkte, nicht „${opt('page-edge')}“`)
   const { cases } = JSON.parse(fs.readFileSync(path.join(evalDir, 'cases.json'), 'utf8'))
   const selected = cases.filter((c) => !only || only.includes(c.name))
+  const plantId = selected.some((c) => c.kind === 'service' || c.kind === 'fuel') ? await ensurePlant(baseUrl) : null
+  const routeOf = (c) => (c.kind === 'service' ? `/api/heating-plants/${plantId}/service-statement` : c.kind === 'fuel' ? `/api/heating-plants/${plantId}/fuel-invoice` : '/api/extract')
+  const scorerOf = (c) => (c.kind === 'service' ? scoreService : c.kind === 'fuel' ? scoreFuel : score)
   const binary = findChrome()
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-ai-eval-'))
   console.log(`KI-Prüflauf mit ${model} gegen ${baseUrl} (Chrome: ${binary}, Seitenbilder ${pageEdge} px)`)
@@ -272,8 +264,8 @@ async function evaluate() {
   const runs = []
   for (const { testCase, files, text } of prepared) {
     const inputs = {
-      text: { file: files.pdf, mimeType: 'application/pdf', fileName: `${testCase.name}.pdf`, text },
-      scan: { file: files.pdf, mimeType: 'application/pdf', fileName: `${testCase.name}-scan.pdf`, text: '', pages: files.pages },
+      text: { route: routeOf(testCase), file: files.pdf, mimeType: 'application/pdf', fileName: `${testCase.name}.pdf`, text },
+      scan: { route: routeOf(testCase), file: files.pdf, mimeType: 'application/pdf', fileName: `${testCase.name}-scan.pdf`, text: '', pages: files.pages },
       photo: files.photo && { route: '/api/intake', file: files.photo, mimeType: 'image/png', fileName: `${testCase.name}-foto.png` },
     }
     for (const variant of variants) {
@@ -283,7 +275,7 @@ async function evaluate() {
       if (answer.error) run.error = answer.error
       else {
         // Die Schnellerfassung muss das Foto zuerst als Rechnung erkennen
-        run.score = answer.kind === 'zaehler' ? { points: 0, passed: 0, total: 1, failed: ['als Zählerfoto erkannt'] } : score(testCase.expected, answer.extraction)
+        run.score = answer.kind === 'zaehler' ? { points: 0, passed: 0, total: 1, failed: ['als Zählerfoto erkannt'] } : scorerOf(testCase)(testCase.expected, answer.extraction)
         run.extraction = answer.extraction
       }
       runs.push(run)

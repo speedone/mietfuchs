@@ -34,5 +34,5 @@
     "types": ["node"]
   },
   // Die beiden Deklarationen braucht server/src/db/client.ts, das ein Skript importiert.
-  "include": ["*.mjs", "../server/scripts/*.mjs", "../server/src/globals.d.ts", "../server/src/db/bun-sqlite.d.ts"]
+  "include": ["*.mjs", "ai-eval/*.mjs", "../server/scripts/*.mjs", "../server/src/globals.d.ts", "../server/src/db/bun-sqlite.d.ts"]
 }
