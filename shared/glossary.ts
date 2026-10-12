@@ -20,7 +20,7 @@ import { practiceEvaporatorWindow } from './law/practice.ts'
 import { messevCalibrationYears } from './law/messev.ts'
 import { OPERATING_POWER_HANDLING_LABELS, OPERATING_POWER_HANDLING_QUESTION } from './operatingPower.ts'
 import { co2CutMissing, co2DistrictEtsNew, co2EbevFactors, co2FirstPeriodStart, co2HalfSplit, co2HalfSplitTwoFamily, co2NonResidential, co2Restriction, co2RoundingDecimals, co2StageTable, halfSplitBioFirstDay, halfSplitFirstDay } from './law/co2kostaufg.ts'
-import { gmodgHeating43 } from './law/gmodg.ts'
+import { bioCapFrom, gmodgHeating43 } from './law/gmodg.ts'
 
 // Hälftige Teilung nach § 5a (Heizung PR 18): Stichtage, Grenze beim Biobrennstoff, Zweifamilienhaus und § 43 GModG.
 const HALF = valueAt(co2HalfSplit, halfSplitBioFirstDay())
@@ -333,7 +333,8 @@ export const GLOSSARY = {
       `In einem Gebäude mit höchstens ${TWO.maxDwellings} Wohnungen, von denen Sie eine selbst bewohnen und die beide über eine gemeinsame Heizung versorgt werden (§ 5d Abs. 3 CO2KostAufG), gilt weiter das Stufenmodell, ` +
       'wenn Sie das dem Mieter in Textform mitgeteilt haben (bei Abschluss des Mietvertrags; bestand der Vertrag schon, bevor die Voraussetzungen eintraten, genügt die Mitteilung mit der Abrechnung; dass die Mitteilung auch für diese Ausnahme nötig ist, ist eine Auslegung, Mietfuchs verlangt sie, damit Sie sicher gehen) ' +
       'und das Gebäude in keinem Gebiet liegt, das eine Verordnung zur Mietpreisbremse (§ 556d BGB), zur Kappungsgrenze (§ 558 Abs. 3 BGB) oder zur Kündigungssperrfrist (§ 577a Abs. 2 BGB) bestimmt; manche Verordnungen nennen nur Teile einer Gemeinde. ' +
-      'Einen Härtefall nach § 5d Abs. 1 rechnet Mietfuchs nicht.',
+      'Einen Härtefall nach § 5d Abs. 1 rechnet Mietfuchs nicht. ' +
+      `Biobrennstoff aus einem Vorrat (Heizöl, Flüssiggas im Tank) und die Grenze von ${(HALF.bioCapPermille ?? 0) / 10} % ab ${(bioCapFrom() ?? '').slice(0, 4)} rechnet Mietfuchs noch nicht (#227); die Abrechnung sagt dann, was Sie selbst ermitteln müssen.`,
   },
   hotWaterShare: {
     title: 'Warmwasseranteil',

@@ -435,8 +435,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Stufen, nicht die Hälfte nach § 5a; das ist eine Auslegung zu Ihren Lasten. Neu dafür an der Heizanlage die
   Karte „Heizung nach § 43 GModG“, am Objekt die Frage, ob das Gebäude in einem Gebiet mit angespanntem
   Wohnungsmarkt liegt (mit Geltung der Verordnung), am Mietverhältnis der Tag der Mitteilung nach § 5d Abs. 4
-  und an der Lieferung Netzentgelte und Biobrennstoff. Biobrennstoff aus einem Vorrat rechnet Mietfuchs noch
-  nicht; die Abrechnung sagt das, außer an jeder Lieferung ist 0 eingetragen. Ohne Tag des Einbaus ändert sich
+  und an der Lieferung Netzentgelte und Biobrennstoff. Biobrennstoff aus einem Vorrat und die Grenze von 30 % ab
+  2040 rechnet Mietfuchs noch nicht ([#227](https://github.com/speedone/mietfuchs/issues/227)); die Abrechnung
+  sagt das, außer an jeder Lieferung ist 0 eingetragen. Das Blatt „CO₂-Angaben für den Messdienst“ nennt die
+  Teilung nach § 5a und die Netzentgelte und Biobrennstoffkosten der Rechnungen. Ohne Tag des Einbaus ändert sich
   keine Zahl und kein Hinweis.
 ### Geändert
 
@@ -560,6 +562,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
+- **Vorschlag für die Vorauszahlung im Rumpfzeitraum ohne CO₂-Abzug** ([#215](https://github.com/speedone/mietfuchs/issues/215)):
+  Teilte Mietfuchs die CO₂-Kosten bei freien Schlüsseln selbst auf, ging die Abzugszeile „CO₂-Anteil des
+  Vermieters“ in einem Zeitraum unter einem Jahr nicht in den Vorschlag nach § 560 BGB ein; der Vorschlag war um
+  den hochgerechneten Abzug zu hoch. Jetzt wird sie mit dem Faktor ihrer Heizpositionen hochgerechnet, wie beim
+  Messdienst. Keine Zahl einer Abrechnung ändert sich, nur der Vorschlag.
 - **Messdienst-Abrechnung mit Vorwegabzug: der CO₂-Anteil des Vermieters fehlte in der
   Steuerübersicht.** Die Anleitung „Fertige Abrechnung eines Messdienstes übernehmen“ ließ als
   Betrag den Gesamtbetrag der Abrechnung eintragen. Techem und ista ziehen den CO₂-Anteil, den der

@@ -425,4 +425,6 @@ test('Lexikon: hälftige Teilung nach § 5a nennt §§ 5a, 5b, 5d, § 7 Abs. 5 u
   assert.match(t.needed, /Kündigungssperrfrist/)
   assert.match(t.short, /um 3 % kürzen \(§ 7 Abs\. 5 Satz 3, Abs\. 4 CO2KostAufG\)/)
   assert.match(t.short, /höchstens für 30 % des Brennstoffs/)
+  // Grenze dieses Stands mit Verweis (Entscheidung des Koordinators): Vorrat und 30 % ab 2040 in #227.
+  assert.match(t.needed, /Vorrat .* Grenze von 30 % ab 2040 rechnet Mietfuchs noch nicht \(#227\)/)
 })
