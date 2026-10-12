@@ -18,7 +18,7 @@
 // die Abfrage bedient, kann es anders kommen.
 
 import { eq, sql } from 'drizzle-orm'
-import type { AiConsent, AiSettings, AiSlot, Co2Statement, CostItem, DegreeDayValue, FrozenFuelCarry, FuelDelivery, HeatingEstimate, HeatingPeriodData, HeatingPlant, HeatingServiceValue, InterimGap, LawOverride, Meter, MonthlyInfoRow, Payment, PeriodKey, Property, Reading, Settings, Tenancy, Unit } from '../../../shared/types.ts'
+import type { AiConsent, AiSettings, AiSlot, Co2Refund, Co2Statement, CostItem, DegreeDayValue, FrozenFuelCarry, FuelDelivery, HeatingEstimate, HeatingPeriodData, HeatingPlant, HeatingServiceValue, InterimGap, LawOverride, Meter, MonthlyInfoRow, Payment, PeriodKey, Property, Reading, Settings, Tenancy, Unit } from '../../../shared/types.ts'
 import { readLawOverrides } from './lawOverrides.ts'
 import { periodKey } from '../../../shared/period.ts'
 import { migrateAi, type MigratedSettings } from '../ai/settings.ts'
@@ -26,7 +26,7 @@ import { DEFAULT_SETTINGS } from '../defaults.ts'
 import { frozenSettlementOf, type FrozenItemSelfUse, type SnapshotSource } from '../snapshot.ts'
 import type { Executor } from './client.ts'
 import {
-  aiSlots, baseRents, closedHeatingSettlements, co2Statements, co2TenantReliefs, degreeDayValues, fuelCarryFrozen, fuelDeliveries, fuelDeliveryParts, heatingPeriods, closedSettlements, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, unitNoConnection, meters, payments,
+  aiSlots, baseRents, closedHeatingSettlements, co2Refunds, co2Statements, co2TenantReliefs, degreeDayValues, fuelCarryFrozen, fuelDeliveries, fuelDeliveryParts, heatingPeriods, closedSettlements, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, unitNoConnection, meters, payments,
   flatRates, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingPrepaymentOverrides, heatingPrepayments, heatingSelfSpans, heatingSeparateSpans, heatingServiceValues, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, readings, settings, tenancies, units,
   interimReadingGaps, heatingEstimates, heatingMonthlyInfo,
 } from './schema.ts'
@@ -63,6 +63,8 @@ export type Stock = SnapshotSource & {
   heatingPlants: HeatingPlant[]
   // CO₂-Angaben und Zeilen der Heizperioden (Heizung PR 6)
   co2Statements: Co2Statement[]
+  // CO₂-Erstattungen an Mieter, die selbst heizen (Heizung PR 19)
+  co2Refunds: Co2Refund[]
   heatingPeriodRows: HeatingPeriodData[]
   // Antworten zu fehlenden Zwischenablesungen (Heizung PR 10)
   interimGaps: InterimGap[]
@@ -413,6 +415,18 @@ export async function readCo2Statements(db: Executor): Promise<Co2Statement[]> {
   }))
 }
 
+// Die CO₂-Erstattungen an Mieter, die selbst heizen (Heizung PR 19), in der Reihenfolge der Anlage.
+export async function readCo2Refunds(db: Executor): Promise<Co2Refund[]> {
+  const rows = await db.select().from(co2Refunds).orderBy(INSERTION_ORDER)
+  return rows.map((r) => ({
+    id: r.id, tenancyId: r.tenancyId, supplierBilledAt: r.supplierBilledAt, claimedAt: r.claimedAt, amountCents: r.amountCents,
+    settlePeriod: r.settlePeriod === null ? null : periodKey(String(r.settlePeriod)), paidOutOn: r.paidOutOn, billedFrom: r.billedFrom, billedTo: r.billedTo,
+    emissionsKg: r.emissionsKg, co2CostCents: r.co2CostCents, areaM2: r.areaM2,
+    ownAppliances: r.ownAppliances, commercialUse: r.commercialUse, commercialMetered: r.commercialMetered, nonResidential: r.nonResidential,
+    restriction: r.restriction, halfSplitFrom: r.halfSplitFrom, gridFeeCents: r.gridFeeCents, bioCostCents: r.bioCostCents,
+  }))
+}
+
 // Die Zeilen der Heizperioden (PR 4), für die Angaben zum Warmwasser im Schnappschuss.
 export async function readHeatingPeriodRows(db: Executor): Promise<HeatingPeriodData[]> {
   return await db.select().from(heatingPeriods).orderBy(INSERTION_ORDER)
@@ -529,6 +543,7 @@ export async function readStock(db: Executor): Promise<Stock> {
     meters: await readMeters(db),
     heatingPlants: await readHeatingPlants(db),
     co2Statements: await readCo2Statements(db),
+    co2Refunds: await readCo2Refunds(db),
     heatingPeriodRows: await readHeatingPeriodRows(db),
     interimGaps: await readInterimGaps(db),
     heatingServiceValues: await readHeatingServiceValues(db),

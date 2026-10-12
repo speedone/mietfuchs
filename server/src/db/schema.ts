@@ -1708,6 +1708,60 @@ export const co2TenantReliefs = sqliteTable(
   (t) => [primaryKey({ columns: [t.statementId, t.tenancyId] }), notNegative('co2_tenant_reliefs_cents_not_negative', 'cents')],
 )
 
+// ---------- CO₂-Erstattung an Mieter, die selbst heizen (Heizung PR 19, #97) ----------
+
+// Ein Erstattungsanspruch nach § 6 Abs. 2 CO2KostAufG. Hängt am Mietverhältnis und fällt mit ihm. Verrechnet
+// (`settle_period`) und ausgezahlt (`paid_out_on`) schließen sich aus. Ob das Mietverhältnis selbst heizt und ob
+// der Zeitraum zum Objekt gehört, prüft db/co2Refunds.ts vor dem Schreiben; die Bedingungen sind das Netz darunter.
+const isoDateOrNull = (name: string, column: string) =>
+  check(name, sql.raw(`"${column}" IS NULL OR "${column}" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`))
+export const co2Refunds = sqliteTable(
+  'co2_refunds',
+  {
+    id: text('id').primaryKey().notNull(),
+    tenancyId: text('tenancy_id').notNull().references(() => tenancies.id, { onDelete: 'cascade' }),
+    supplierBilledAt: text('supplier_billed_at').notNull(),
+    claimedAt: text('claimed_at').notNull(),
+    amountCents: integer('amount_cents').notNull(),
+    settlePeriod: text('settle_period').$type<PeriodKey>(),
+    paidOutOn: text('paid_out_on'),
+    billedFrom: text('billed_from'),
+    billedTo: text('billed_to'),
+    emissionsKg: real('emissions_kg'),
+    co2CostCents: integer('co2_cost_cents'),
+    areaM2: real('area_m2'),
+    ownAppliances: integer('own_appliances', { mode: 'boolean' }).notNull().default(false),
+    commercialUse: integer('commercial_use', { mode: 'boolean' }).notNull().default(false),
+    commercialMetered: integer('commercial_metered', { mode: 'boolean' }).notNull().default(false),
+    nonResidential: integer('non_residential', { mode: 'boolean' }).notNull().default(false),
+    restriction: text('restriction', { enum: CO2_RESTRICTIONS }).notNull().default('none'),
+    halfSplitFrom: text('half_split_from'),
+    gridFeeCents: integer('grid_fee_cents'),
+    bioCostCents: integer('bio_cost_cents'),
+  },
+  (t) => [
+    index('co2_refunds_tenancy_idx').on(t.tenancyId),
+    notNegative('co2_refunds_amount_not_negative', 'amount_cents'),
+    notNegative('co2_refunds_co2_cost_not_negative', 'co2_cost_cents'),
+    notNegative('co2_refunds_emissions_not_negative', 'emissions_kg'),
+    notNegative('co2_refunds_grid_fee_not_negative', 'grid_fee_cents'),
+    notNegative('co2_refunds_bio_cost_not_negative', 'bio_cost_cents'),
+    check('co2_refunds_area_positive', sql.raw('"area_m2" IS NULL OR "area_m2" > 0')),
+    periodKeyCheck('co2_refunds_settle_period_valid', 'settle_period'),
+    check('co2_refunds_settled_or_paid_valid', sql.raw('"settle_period" IS NULL OR "paid_out_on" IS NULL')),
+    check('co2_refunds_billed_complete', sql.raw('("billed_from" IS NULL) = ("billed_to" IS NULL)')),
+    check('co2_refunds_billed_order_valid', sql.raw('"billed_from" IS NULL OR "billed_to" IS NULL OR "billed_from" <= "billed_to"')),
+    check('co2_refunds_metered_valid', sql.raw('"commercial_metered" = 0 OR "commercial_use" = 1')),
+    oneOf('co2_refunds_restriction_known', 'restriction', CO2_RESTRICTIONS),
+    check('co2_refunds_billed_at_valid', sql.raw(`"supplier_billed_at" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`)),
+    check('co2_refunds_claimed_at_valid', sql.raw(`"claimed_at" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`)),
+    isoDateOrNull('co2_refunds_paid_out_valid', 'paid_out_on'),
+    isoDateOrNull('co2_refunds_billed_from_valid', 'billed_from'),
+    isoDateOrNull('co2_refunds_billed_to_valid', 'billed_to'),
+    isoDateOrNull('co2_refunds_half_split_valid', 'half_split_from'),
+  ],
+)
+
 // ---------- Rechtswerte des Vermieters (Heizung PR 17, Entwurf 4.5, 5.9) ----------
 
 // Ein vom Vermieter eingetragener Wert für einen überschreibbaren Parameter des Rechtsregisters, je
