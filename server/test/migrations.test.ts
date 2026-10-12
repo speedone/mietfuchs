@@ -152,6 +152,10 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // Durchsicht S-2: die Art der Selbstversorgung, Spalte und Bedingungen in zwei Schritten.
   '0052_selbstversorgung_art': '6ec38b08901f1041b7004cf22fb4cb7e55b5a86258f11d1f9f2923e866ae3986',
   '0053_selbstversorgung_art_bedingungen': '158eb57b89c3fdc9719abfe68029e1dbc088200b2b2b22af52c129e431d85258',
+  // #251: Gutschrift ohne Rechnung, Spalte und Bedingung in zwei Schritten (nach PR 18, 19, 21 als 0054/0055 neu
+  // erzeugt). Wird vor dem Merge ein anderer PR davor eingereiht, werden beide Schritte neu erzeugt und die Marken ersetzt.
+  '0054_gutschrift_ohne_rechnung': '8633158cbfbdb4c92b7d28b86ad9a04bdba89cd44ea446794c8f5b74e0b2f5a5',
+  '0055_gutschrift_ohne_rechnung_bedingungen': '1fc0eeeaf991d182b605ecf06f57b9d7ad8dde0cdd4a1eec7eac786c9ce4e476',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

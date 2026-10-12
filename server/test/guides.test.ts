@@ -412,7 +412,7 @@ const checks: Record<GuideId, () => void | Promise<void>> = {
       fuelDeliveries: [{
         id: 'd', plantId: 'hp', label: 'Gas', invoiceDate: null, deliveredAt: null, invoiceFrom: '2025-03-15', invoiceTo: '2026-03-14', unitId: null, amountCents: null,
         quantity: null, quantityUnit: null, energyKwh: null, gasBasis: null, heatingValue: null, emissionsKg: null, co2CostCents: null, emissionFactor: null,
-        gridFeeCents: null, bioCostCents: null, sharePermille: null, fixedCents: null, estimated: false, usedByService: true, parts: [],
+        gridFeeCents: null, bioCostCents: null, sharePermille: null, fixedCents: null, estimated: false, usedByService: true, parts: [], creditNoteKind: null,
       }],
     }
     const at = (key: string) => computeSettlement(snapshotFor(quelle, 'o', periodOfKey(mai, periodKey(key)) ?? assert.fail(`kein Zeitraum ${key}`)))
@@ -430,7 +430,7 @@ const checks: Record<GuideId, () => void | Promise<void>> = {
     const lieferung = (id: string, deliveredAt: string, quantity: number, emissionsKg: number, co2CostCents: number) => ({
       id, plantId: 'hp', label: '', invoiceDate: deliveredAt, deliveredAt, invoiceFrom: null, invoiceTo: null, unitId: null, amountCents: null,
       quantity, quantityUnit: 'l' as const, energyKwh: null, gasBasis: null, heatingValue: null, emissionsKg, co2CostCents, emissionFactor: null,
-      gridFeeCents: null, bioCostCents: null, sharePermille: null, fixedCents: null, estimated: false, usedByService: true, parts: [],
+      gridFeeCents: null, bioCostCents: null, sharePermille: null, fixedCents: null, estimated: false, usedByService: true, parts: [], creditNoteKind: null,
     })
     const quelle = {
       properties: [{ id: 'o', kind: 'mfh' as const, cableBuiltBeforeDec2021: null }],
@@ -463,7 +463,7 @@ const checks: Record<GuideId, () => void | Promise<void>> = {
     const lieferung = (over: Record<string, unknown> & { id: string; plantId: string }) => ({
       label: '', invoiceDate: null, deliveredAt: null, invoiceFrom: null, invoiceTo: null, unitId: null, amountCents: null, quantity: null, quantityUnit: null,
       energyKwh: null, gasBasis: null, heatingValue: null, emissionsKg: null, co2CostCents: null, emissionFactor: null, gridFeeCents: null, bioCostCents: null,
-      sharePermille: null, fixedCents: null, estimated: false, usedByService: true, parts: [], ...over,
+      sharePermille: null, fixedCents: null, estimated: false, usedByService: true, parts: [], creditNoteKind: null, ...over,
     })
     const quelle = {
       properties: [{ id: 'o', kind: 'mfh' as const, cableBuiltBeforeDec2021: null }],

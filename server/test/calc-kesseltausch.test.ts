@@ -25,7 +25,7 @@ const anlage = (over: Partial<SnapshotHeatingPlant> & { id: string }): SnapshotH
 const lieferung = (over: Partial<FuelDelivery> & { id: string; plantId: string }): FuelDelivery => ({
   label: over.id, invoiceDate: null, deliveredAt: null, invoiceFrom: null, invoiceTo: null, unitId: null, amountCents: null, quantity: null, quantityUnit: null,
   energyKwh: null, gasBasis: null, heatingValue: null, fuelGrade: null, emissionsKg: null, co2CostCents: null, emissionFactor: null, gridFeeCents: null, bioCostCents: null,
-  sharePermille: null, fixedCents: null, estimated: false, usedByService: true, parts: [], ...over,
+  sharePermille: null, fixedCents: null, estimated: false, usedByService: true, parts: [], creditNoteKind: null, ...over,
 })
 const position = (over: Partial<SnapshotCostItem> & { id: string }): SnapshotCostItem & { propertyId: string } => ({
   propertyId: 'objekt-1', period: P.key, category: HEATING_CATEGORY, description: over.id, amountCents: 0, key: 'area', heatingPart: 'fuel', ...over,

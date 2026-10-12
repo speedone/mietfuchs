@@ -19,7 +19,7 @@ export const plant = (over: Partial<SnapshotHeatingPlant> = {}): SnapshotHeating
 export const delivery = (over: Partial<FuelDelivery> = {}): FuelDelivery => ({
   id: 'd', plantId: 'hp', label: 'Gas 2027/2028', invoiceDate: null, deliveredAt: null, invoiceFrom: '2027-05-01', invoiceTo: '2028-04-30', unitId: null,
   amountCents: null, quantity: null, quantityUnit: null, energyKwh: null, gasBasis: null, heatingValue: null, fuelGrade: null, emissionsKg: 24105.6, co2CostCents: 77379,
-  emissionFactor: null, gridFeeCents: null, bioCostCents: null, sharePermille: null, fixedCents: null, estimated: false, usedByService: true, parts: [], ...over,
+  emissionFactor: null, gridFeeCents: null, bioCostCents: null, sharePermille: null, fixedCents: null, estimated: false, usedByService: true, parts: [], creditNoteKind: null, ...over,
 })
 export const item = (over: Partial<SnapshotCostItem> & { id: string }): SnapshotCostItem & { propertyId: string } => ({
   propertyId: 'objekt-1', period: periodKey('2027-05'), category: HEATING_CATEGORY, description: 'Gas', amountCents: 900000, key: 'area',

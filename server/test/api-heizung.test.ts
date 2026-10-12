@@ -371,6 +371,35 @@ test('Lieferungen über die Routen: anlegen, lesen, ändern, Sperre, entfernen; 
   }
 })
 
+test('#251 5d: Gutschrift ohne Rechnung über die Route zuordnen und als eigenständig bestätigen', async () => {
+  const s = await startServer()
+  try {
+    const send = (url: string, init: RequestInit) => fetch(`${s.base}${url}`, { ...init, headers: { 'content-type': 'application/json' } })
+    await s.api<Unit>('/api/units', jsonPost({ name: 'EG', areaM2: 80, participates: true }))
+    const { plant } = await jsonOf<{ plant: HeatingPlant }>(await send('/api/heating-plants', jsonPost({ energy: 'gas', method: 'manual' })))
+    const d0 = await jsonOf<FuelDelivery>(await send(`/api/heating-plants/${plant.id}/deliveries`, jsonPost({ label: 'Gas 2025', invoiceFrom: '2025-01-01', invoiceTo: '2025-12-31' })))
+    const d1 = await jsonOf<FuelDelivery>(await send(`/api/heating-plants/${plant.id}/deliveries`, jsonPost({ label: 'Gutschrift', invoiceFrom: '2025-06-01', invoiceTo: '2026-03-31' })))
+    const position = (period: string, fuelDeliveryId: string, amountCents: number) =>
+      s.api<CostItem>('/api/costItems', jsonPost({ period, category: 'Heizung und Warmwasser', description: 'Gas', amountCents, key: 'area', heatingPlantId: plant.id, fuelDeliveryId }))
+    await position('2025-01', d0.id, 617603)
+    const gut = await position('2026-01', d1.id, -30451)
+    const bestaetigt = await send(`/api/fuel-deliveries/${d1.id}`, { method: 'PUT', body: JSON.stringify({ creditNoteKind: 'standalone' }) })
+    assert.equal((await jsonOf<FuelDelivery>(bestaetigt)).creditNoteKind, 'standalone')
+    const ohneZiel = await send(`/api/fuel-deliveries/${d1.id}/reassign-credit`, jsonPost({}))
+    assert.equal(ohneZiel.status, 400)
+    assert.match(await errorFrom(ohneZiel), /Bitte wählen Sie die Lieferung, die die Gutschrift „Gutschrift“ berichtigt/)
+    assert.equal((await send('/api/fuel-deliveries/gibt-es-nicht/reassign-credit', jsonPost({ targetId: d0.id }))).status, 404)
+    const r = await send(`/api/fuel-deliveries/${d1.id}/reassign-credit`, jsonPost({ targetId: d0.id }))
+    assert.equal(r.status, 200)
+    const body = await jsonOf<{ target: FuelDelivery; sourceEmpty: boolean; moved: string[] }>(r)
+    assert.deepEqual([body.target.id, body.sourceEmpty, body.moved], [d0.id, true, [gut.id]])
+    const items = await s.api<CostItem[]>('/api/costItems')
+    assert.deepEqual(items.filter((c) => c.id === gut.id).map((c) => [c.fuelDeliveryId, c.period]), [[d0.id, '2025-01']])
+  } finally {
+    s.stop()
+  }
+})
+
 // Review Runde 3 (N1): Der Testgriff NKA_TEST_TODAY nur mit einem echten Kalenderdatum; sonst bricht
 // der Start ab. Ist er gesetzt, sagt es die Konsole.
 test('Start: NKA_TEST_TODAY mit ungültigem Datum bricht ab; ein gültiges nennt die Konsole', async () => {

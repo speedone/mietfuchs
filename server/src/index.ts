@@ -58,7 +58,7 @@ import { co2SheetFor } from './co2Sheet.ts'
 import { heatingPeriodOf, plantContext } from './db/heatingPeriodContext.ts'
 import { LawOverrideError, lawOverrideSlots, readLawOverrides, removeLawOverride, saveLawOverride } from './db/lawOverrides.ts'
 import { removeStock, saveStock } from './db/fuelStock.ts'
-import { createDelivery, createEstimates, freezeFuelCarries, fuelGapQuestions, listDegreeDays, listDeliveries, removeDelivery, saveDegreeDays, unfreezeFuelCarries, updateDelivery } from './db/fuel.ts'
+import { createDelivery, createEstimates, freezeFuelCarries, fuelGapQuestions, listDegreeDays, listDeliveries, reassignCredit, removeDelivery, saveDegreeDays, unfreezeFuelCarries, updateDelivery } from './db/fuel.ts'
 import { assignableHeatingItems, createHeatingPlant, listHeatingPlants, removeHeatingPlant, replaceHeatingPlant, updateHeatingPlant } from './db/heating.ts'
 import { bookOperatingPower, OperatingPowerQuestion } from './db/operatingPower.ts'
 import { applyHeatingPeriodChange, previewHeatingPeriodChange } from './db/heatingPeriodChange.ts'
@@ -767,6 +767,13 @@ app.put('/api/fuel-deliveries/:id', async (req, res) => {
   const saved = await writeData((db) => updateDelivery(db, req.params.id, bodyObject(req)))
   if (!saved) return res.status(404).json({ error: NO_DELIVERY })
   res.json(saved)
+})
+// #251: Eine Gutschrift ohne Rechnung der Lieferung zuordnen, die sie berichtigt (Antwort „Sie berichtigt eine andere
+// Lieferung“); 409, solange eine der beiden Heizperioden abgeschlossen ist.
+app.post('/api/fuel-deliveries/:id/reassign-credit', async (req, res) => {
+  const result = await writeData((db) => reassignCredit(db, req.params.id, bodyObject(req)))
+  if (!result) return res.status(404).json({ error: NO_DELIVERY })
+  res.json(result)
 })
 app.delete('/api/fuel-deliveries/:id', async (req, res) => {
   const removed = await writeData((db) => removeDelivery(db, req.params.id))

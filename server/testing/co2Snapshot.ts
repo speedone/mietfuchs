@@ -14,7 +14,7 @@ export function co2Source(year: number, delivery: Partial<FuelDelivery>, overrid
     id: 'd', plantId: 'hp', label: 'Gasrechnung', invoiceDate: `${year + 1}-01-20`, deliveredAt: null, invoiceFrom: `${year}-01-01`, invoiceTo: `${year}-12-31`,
     unitId: null, amountCents: null, quantity: null, quantityUnit: null, energyKwh: null, gasBasis: null, heatingValue: null, fuelGrade: null,
     emissionsKg: 10000, co2CostCents: null, emissionFactor: null, gridFeeCents: null, bioCostCents: null, sharePermille: null, fixedCents: null,
-    estimated: false, usedByService: true, parts: [], ...delivery,
+    estimated: false, usedByService: true, parts: [], creditNoteKind: null, ...delivery,
   }
   return {
     properties: [{ id: 'objekt-1', kind: 'mfh', cableBuiltBeforeDec2021: null, periodRules: CALENDAR_RULES }],
