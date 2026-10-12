@@ -126,6 +126,10 @@ test('Lieferant: Netto-Teilmengen werden anteilig auf den Rechnungsbetrag hochge
   // Ist ein Betrag einer Teilmenge nicht gelesen, wird ebenfalls nicht hochgerechnet.
   const ungelesen = toFuelExtraction({ ...netto, parts: [netto.parts[0], { ...netto.parts[1], amountEur: 'siehe oben' }] }, '2026-03-20')
   assert.deepEqual([ungelesen.amountsAdjusted, ungelesen.amountsNetUnadjusted], [undefined, true])
+  // Ein dritter Teilzeitraum ohne lesbaren Betrag: Auch wenn die Umsatzsteuer den Abstand der übrigen erklärt,
+  // bekämen sie sonst seinen Anteil mit dazu.
+  const dritte = toFuelExtraction({ ...netto, parts: [...netto.parts, { from: '2026-03-15', to: '2026-03-31', amountEur: 'unleserlich' }] }, '2026-03-20')
+  assert.deepEqual([dritte.amountsAdjusted, dritte.amountsNetUnadjusted, dritte.parts[0]?.amountEur], [undefined, true, 2425.02])
   // Steht der Rechnungsbetrag schon in den Teilmengen (Abstand nur Rundung), gibt es nichts zu rechnen.
   const brutto = toFuelExtraction({ ...gas, amountsAreNet: true }, '2026-03-20')
   assert.deepEqual([brutto.amountsAdjusted, brutto.amountsNetUnadjusted, brutto.parts[0]?.amountEur], [undefined, false, 2885.77])
