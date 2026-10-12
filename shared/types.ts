@@ -686,8 +686,9 @@ export type SettlementRow = {
   // Kennung des Topfs (`co2:<Anlage>:<Heizperiode>`), die keiner Position gehört. `fuelCarry`
   // (Heizung PR 7): der Teil einer Brennstoffrechnung aus einer anderen Heizperiode, verteilt mit
   // dem Schlüssel ihrer Position; `costItemId` ist `fuel:<Lieferung>:<Heizperiode>:<andere Heizperiode>:<Position>`.
-  // Spätere PRs ergänzen `co2Refund`.
-  kind?: 'co2Relief' | 'fuelCarry'
+  // `gmodgRelief` (Heizung PR 18): der Anteil des Vermieters an Netzentgelten und Biobrennstoff nach § 5a
+  // CO2KostAufG, ohne Kostenposition; `costItemId` ist `gmodg:<Anlage>:<Heizperiode>`. Spätere PRs ergänzen `co2Refund`.
+  kind?: 'co2Relief' | 'fuelCarry' | 'gmodgRelief'
 }
 
 // Die Gründe, aus denen ein Teil einer Position beim Vermieter bleibt (#142):
@@ -710,11 +711,13 @@ export type SettlementRow = {
 //   `fuelEstimateDiff` tatsächlicher Teil minus Schätzung einer abgeschlossenen Heizperiode, mit Vorzeichen
 //   `stockRemaining`   Restbestand im Vorrat einer stillgelegten Heizanlage (Kesseltausch, Heizung PR 9): Er
 //                      gehört dem Vermieter, die Mieter tragen nur den verbrauchten Brennstoff
+//   `gmodgShare`    Anteil des Vermieters an Netzentgelten und Biobrennstoff (§ 5a Abs. 3, § 7 Abs. 5
+//                   CO2KostAufG, Heizung PR 18): die Summe der Abzugszeilen `gmodgRelief`
 //   `rounding`      Rundungsrest (nur in Abrechnungen, die vor #202 abgeschlossen wurden)
 export type LandlordReason =
   | 'notAllocable' | 'noBasis' | 'selfUse' | 'vacancy' | 'flatRate' | 'inclusive'
   | 'outsideUnit' | 'amountsRest' | 'customRest' | 'mainMeterRest' | 'co2Share'
-  | 'fuelCarry' | 'fuelClosedPeriod' | 'fuelEstimateDiff' | 'stockRemaining' | 'rounding'
+  | 'fuelCarry' | 'fuelClosedPeriod' | 'fuelEstimateDiff' | 'stockRemaining' | 'gmodgShare' | 'rounding'
 export type LandlordPart = { reason: LandlordReason; cents: number }
 
 // Ein Schritt des Rechenwegs: Beschriftung, Wert als fertiger Text, auf Wunsch mit dem Begriff
@@ -1690,8 +1693,14 @@ export type Co2StageRange = { from: number; to: number | null; landlordPercent: 
 // abgezogen. `stage` ist die Stufe, in die Mietfuchs den Wert laut Messdienst einordnet, `table`
 // die Tabelle (bei kurzer Heizperiode mit gekürzten Grenzen, `shortened`).
 // Was die Einstufung bei der eigenen Aufteilung verändert hat (Heizung PR 7): § 8 (Nichtwohngebäude,
-// 500 ‰ statt der Stufe), § 9 Abs. 1 (halber Anteil) und § 9 Abs. 2 (keine Aufteilung).
-export type Co2Adjustment = 'nonResidential' | 'restrictionHalf' | 'restrictionNone'
+// 500 ‰ statt der Stufe), § 9 Abs. 1 (halber Anteil) und § 9 Abs. 2 (keine Aufteilung); seit Heizung PR 18
+// § 5a (hälftige Teilung nach Anfall) und § 5d Abs. 3 (Zweifamilienhaus, nur Stufen).
+export type Co2Adjustment = 'nonResidential' | 'restrictionHalf' | 'restrictionNone' | 'halfSplit' | 'twoFamily'
+
+// § 5a CO2KostAufG im Ausweis (Heizung PR 18, Entwurf 9.5 „§ 5a anteilig“): der Anteil der CO₂-Kosten, der
+// in die hälftige Teilung fällt (‰ der Heizperiode nach Anfall), die Anteile des Vermieters an Netzentgelten
+// und Biobrennstoff (`null`, wenn eine Angabe fehlt) und ob § 5d Abs. 3 (Zweifamilienhaus) griff.
+export type Co2HalfSplit = { co2SharePermille: number; landlordGridFeeCents: number | null; landlordBioCents: number | null; basis: 'existing' | 'newBuilding'; twoFamily: 'excepted' | 'split' | null }
 
 export type Co2Assessment = {
   method: Co2Method
@@ -1725,6 +1734,8 @@ export type Co2Assessment = {
   // `building`: die gemeinsame Fläche mehrerer Anlagen eines Gebäudes (§ 5 Abs. 1 Satz 2 CO2KostAufG);
   // `plant`: die der Anlage. Fehlt in einer vorher abgeschlossenen Abrechnung.
   areaScope?: 'plant' | 'building'
+  // Hälftige Teilung nach § 5a CO2KostAufG (Heizung PR 18); fehlt ohne Heizung nach § 43 Abs. 1 GModG.
+  halfSplit?: Co2HalfSplit
 }
 
 // Eine Heizanlage in einer Abrechnung, mit der Heizperiode, die darin abgerechnet wird.

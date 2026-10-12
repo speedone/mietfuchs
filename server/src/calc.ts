@@ -58,9 +58,11 @@ import type {
 // Abrechnungsjahres (siehe snapshot.ts). Welche Sammlung darin nach Jahr eingegrenzt sein darf,
 // entscheidet dort die Ablage und nicht hier.
 import { rulesFor } from '../../shared/law/rules.ts'
-import { co2ApplicableFrom, co2CostsBefore, co2CostsCountedFrom, co2CostsExcludedUntil, co2CutMissing, co2DistrictEtsNew, co2FirstPeriodStart, co2NonResidential, co2Restriction, co2RoundingDecimals, co2StageTable } from '../../shared/law/co2kostaufg.ts'
+import { co2ApplicableFrom, co2CostsBefore, co2CostsCountedFrom, co2CostsExcludedUntil, co2CutMissing, co2DistrictEtsNew, co2FirstPeriodStart, co2HalfSplit, co2HalfSplitEmergency, co2HalfSplitNewBuildings, co2HalfSplitTwoFamily, co2NonResidential, co2Restriction, co2RoundingDecimals, co2StageTable, halfSplitBioFirstDay, halfSplitFirstDay } from '../../shared/law/co2kostaufg.ts'
+import { gmodgHeating43 } from '../../shared/law/gmodg.ts'
+import { applicableRanges, blendedPermille, halfAmounts, halfSplitStatus, intersect as intersectRange, termsFromDeliveries, termsFromPieces, termsWeight, tightMarketIn, twoFamilyOf, type HalfDelivery, type HalfSplitStatus, type HalfSplitTerm, type Piece, type TwoFamily } from './halfSplit.ts'
 import { CO2_RELIEF_LABEL } from '../../shared/co2Probe.ts'
-import { ausweisGaps, CO2_FUELS, co2Assessment, co2Required, NO_CO2_FUELS, co2DeductionsOf, FORMULA_METHODS, co2PotsOf, itemBasisUnits, L_TOLERANCE_CENTS, perUnitClassification, perUnitExceeding, perUnitReliefs, reliefsByShare, spanningPlants, type PerUnitFuel, restage, selfSplit, SERVICE_FUEL_TOLERANCE_CENTS, shownReliefs, stageRanges, tableFactor, tenantLines as co2TenantLines, type Co2Pot, type ReliefShare } from './co2.ts'
+import { ausweisGaps, CO2_FUELS, co2Assessment, co2Required, NO_CO2_FUELS, co2DeductionsOf, FORMULA_METHODS, co2PotsOf, itemBasisUnits, L_TOLERANCE_CENTS, perUnitClassification, perUnitExceeding, perUnitReliefs, gmodgKeyOf, HALF_SPLIT_TOLERANCE_PERMILLE, reliefKeysOf, reliefsByShare, spanningPlants, type PerUnitFuel, restage, selfSplit, SERVICE_FUEL_TOLERANCE_CENTS, shownReliefs, stageRanges, tableFactor, tenantLines as co2TenantLines, type Co2Pot, type ReliefShare } from './co2.ts'
 // Zahlen und Daten der Rechtsregeln kommen aus dem Rechtsregister (Heizung PR 1) und stehen hier
 // nicht als Literal; server/test/law-literals.test.ts wacht darüber.
 import { createLawLog, dayAfter, dayBefore, law, LAW_AS_OF, onlyVersion, recordVersionAt, VALUE_CHANGE_LABEL, valueAt, type Period } from '../../shared/law/register.ts'
@@ -84,14 +86,14 @@ import { CALENDAR_RULES, calendarYearPeriod, contextOf, formatDayRange, isCalend
 import { generatorEnergy, noCo2Supplier } from '../../shared/heatDelivery.ts'
 import { lineRoot, monthSpanText, plantRules, plantSpan, recommendedDeadline, requestMonth, sameBuilding, sameFuelLine, sameLine, sameSpan, separateOwner, servesUnit, settledSeparately } from '../../shared/heatingPeriod.ts'
 import { heatingSnapshotFor, selfAt, snapshotFor, wayOf } from './snapshot.ts'
-import { cancelledDeliveries, plantFuel, rangeOf, type FuelCarry, type FuelResult } from './fuel.ts'
+import { cancelledDeliveries, deliveryShare, plantFuel, rangeOf, type FuelCarry, type FuelResult, type ShareContext } from './fuel.ts'
 import { co2Plausibility, etsExempt as etsExemptPlant, plausibilityText } from './co2Plausibility.ts'
 import { billMissingText, deductionMissingText, generationPowerText, missingOperatingPowerText, missingPowerFindings, operatingPowerBalance, operatingPowerFindings, operatingPowerText, unmarkedPowerCredits, type OperatingPowerBalance } from './operatingPower.ts'
 import { GENERAL_POWER_CATEGORY } from '../../shared/operatingPower.ts'
 import { LAW_PARAMS } from '../../shared/law/params.ts'
 import { fuelFromDeliveries, fuelFromStock, looseCentsOf, measuredOffset, problemText, settledByDefault, stockKeysOf, stockOf, stockTemplateOfLine, stockTouched, valueOf as stockValueOf, type FuelFigures, type StockPeriodInput, type StockResult } from './fuelStock.ts'
 import { isStockEnergy, STOCK_FUEL_NAMES, STOCK_UNIT_TEXT } from '../../shared/fuelStock.ts'
-import { degreeDayPermille } from '../../shared/degreeDays.ts'
+import { degreeDayPermille, type DayRange } from '../../shared/degreeDays.ts'
 import { annualFactors, type AnnualBasis } from './prepaymentSuggestion.ts'
 import {
   boundaryReadingsOf, consumptionSharesOf, estimateDeviceType, estimateKey, estimateProposals, heatPumpVerdict, lineShareRows, OIL_OR_GAS, hotWaterShareOf, measuredBetween, planSelf, sortReadings, targetProblem, usersOf, weightsOf,
@@ -469,6 +471,10 @@ const noticeKinds = {
   'prepayment.heating-share-missing': { level: 'hint', title: 'Heizvorauszahlung nicht aufgeteilt', terms: ['heatingPeriod', 'prepayment'] },
   'prepayment.heating-share-unchanged': { level: 'hint', title: 'Heizvorauszahlung unverändert', terms: ['prepayment'] },
   'prepayment.heating-override-pending': { level: 'warning', title: 'Heizkorrektur vorläufig', terms: ['heatingPeriod', 'prepayment'] },
+  // Heizung PR 18 (#215): §§ 5a, 5b, 5d CO2KostAufG (Entwurf 10.1; `co2.half-split-missing` nach Abweichung 9 des Plans).
+  'co2.half-split': { level: 'hint', title: 'Hälftige Teilung nach § 5a', rule: 'co2-half-split', terms: ['co2HalfSplit', 'co2Split'] },
+  'co2.half-split-two-family': { level: 'hint', title: 'Zweifamilienhaus: Teilung nach § 5d Abs. 3', rule: 'co2-half-split', terms: ['co2HalfSplit'] },
+  'co2.half-split-missing': { level: 'warning', title: 'Angaben für die Teilung nach § 5a fehlen', rule: 'co2-half-split', terms: ['co2HalfSplit'] },
 } satisfies Record<string, NoticeKind>
 // Was die eigene CO₂-Aufteilung liest (Heizung PR 7 und 8): aus den Lieferungen des Versorgers oder aus
 // der Bestandsrechnung des Vorrats. `stock`: aus dem Vorrat.
@@ -1872,6 +1878,14 @@ function fmtCents(cents: number): string {
   return `${(cents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`
 }
 
+// Die Abzugszeile nach § 7 Abs. 5 CO2KostAufG (Heizung PR 18).
+const GMODG_RELIEF_LABEL = 'Netzentgelte und Biobrennstoff: Anteil des Vermieters (§ 5a CO2KostAufG)'
+// Wann beim Biobrennstoff eine 0 richtig ist und wann nicht (Prüfung M7 im Wortlaut der Gegenprüfung; Entscheidung
+// R18-3): nur, wenn die Lieferung keinen Pflichtanteil enthält; sonst muss der Lieferant den Preisbestandteil
+// ausweisen.
+const BIO_ZERO_TEXT = 'Enthält die Lieferung keinen Pflichtanteil an Biobrennstoff, etwa weil die Pflicht ganz anders erfüllt ist (§ 43 Abs. 3 bis 5, § 45 Abs. 2 GModG) oder noch nicht gilt (§ 43 Abs. 1 und 7 GModG), tragen Sie 0 ein. ' +
+  'Wurde Biobrennstoff geliefert und fehlt der Preisbestandteil auf der Rechnung, fordern Sie ihn beim Lieferanten an; er muss ihn ausweisen (§ 3 Abs. 1 Nr. 6 CO2KostAufG).'
+
 // Die Maßstäbe einer Gemeinschaft, wie sie im Rechenweg heißen (#94).
 const MEASURE_LABELS: Record<ExternalMeasure, string> = { mea: 'MEA', area: 'm²', units: 'Einheiten' }
 
@@ -2528,7 +2542,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   const fuelPlants: SnapshotHeatingPlant[] = (scope === 'all'
     ? plants.filter((p) => (p.periodStartMonth ?? null) === null)
     : snapshot.scope ? [snapshot.scope.plant] : []).filter((p) => activeIn(p) || linkedHere(p))
-  const fuelResults = new Map<string, { plant: SnapshotHeatingPlant; result: FuelResult }>()
+  // `ctx` seit Heizung PR 18: Die Teilung nach § 5a misst den Anfall einer Rechnung mit denselben Stufen 1–5.
+  const fuelResults = new Map<string, { plant: SnapshotHeatingPlant; result: FuelResult; ctx: ShareContext }>()
   const fuelSynthetic: SnapshotCostItem[] = []
   const fuelCarryOf = new Map<string, { carry: FuelCarry | null; step: CalcStep; itemId: string }>()
   const fuelCounterRows: SettlementRow[] = []
@@ -2546,6 +2561,11 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       const deliveryIds = new Set(deliveries.map((d) => d.id))
       const supply = snapshot.meters.filter((m) => m.heatingPlantId === plant.id && m.heatingRole === 'supply')
       const supplyMeter = supply.length === 1 ? supply[0] : undefined
+      const ctx: ShareContext = {
+        table: law(hkvDegreeDays, { period: lawPeriod }, lawLog),
+        local: new Map(fuel.degreeDays.map((v) => [v.month, v.value])),
+        readings: supplyMeter ? snapshot.readings.filter((r) => r.meterId === supplyMeter.id) : null,
+      }
       const result = plantFuel({
         method: plant.method,
         h: (() => {
@@ -2561,11 +2581,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         closed: new Set(fuel.closed.filter((c) => c.plantId === plant.id).map((c) => c.period)),
         closedCarries: fuel.closed.filter((c) => c.plantId === plant.id).flatMap((c) => (c.carries ?? []).map((x) => ({ period: c.period, ...x }))),
         closedCancelled: fuel.closed.filter((c) => c.plantId === plant.id).flatMap((c) => (c.cancelled ?? []).map((deliveryId) => ({ period: c.period, deliveryId }))),
-        ctx: {
-          table: law(hkvDegreeDays, { period: lawPeriod }, lawLog),
-          local: new Map(fuel.degreeDays.map((v) => [v.month, v.value])),
-          readings: supplyMeter ? snapshot.readings.filter((r) => r.meterId === supplyMeter.id) : null,
-        },
+        ctx,
         // Heizpositionen der Anlage ohne Lieferung decken mit ihrem Leistungszeitraum ab (Durchsicht I4).
         loose: items
           .filter((c) => c.category === HEATING_CATEGORY && !c.fuelDeliveryId && c.amountCents !== 0 && (c.heatingPlantId === plant.id || !c.heatingPlantId))
@@ -2574,7 +2590,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           .map((c) => (c.heatingPlantId || plants.length === 1 ? { from: c.serviceFrom ?? null, to: c.serviceTo ?? null } : { from: null, to: null })),
       })
       if (!result) continue
-      fuelResults.set(plant.id, { plant, result })
+      fuelResults.set(plant.id, { plant, result, ctx })
       for (const carry of result.carries) {
         const d = deliveries.find((x) => x.id === carry.deliveryId)
         const r = d ? rangeOf(d) : null
@@ -3413,7 +3429,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // insgesamt. Beim Ziel „beides“ teilt α.
   const potCo2Of = (sp: SelfPlantPlan, potItems: readonly SnapshotCostItem[], reliefKey: string | null, tenancyId: string | null, w: SelfWeights | undefined): Record<SelfPot, number> => {
     const st = tenancyId ? statements.get(tenancyId) : undefined
-    const relief = st && reliefKey ? -st.rows.filter((r) => r.costItemId === reliefKey).reduce((a, r) => a + r.shareCents, 0) : 0
+    // Seit Heizung PR 18 auch die Abzugszeilen nach § 7 Abs. 5 CO2KostAufG (Netzentgelte und Biobrennstoff, Prüfung M5).
+    const keys = reliefKey ? new Set([reliefKey, gmodgKeyOf(reliefKey)]) : null
+    const relief = st && keys ? -st.rows.filter((r) => keys.has(r.costItemId)).reduce((a, r) => a + r.shareCents, 0) : 0
     if (!w || relief === 0) return { heating: 0, water: 0 }
     const fuel = potItems.filter((c) => c.key === 'heatingSystem' && c.heatingPart === 'fuel')
     const inPot = (p: SelfPot) => fuel.reduce((a, c) => a + c.amountCents * partOf(sp, c, p) * w[p], 0)
@@ -4680,13 +4698,18 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // R = round(Σ r) als eine Verteilung gerundet, je Mieter eine Zeile −r, beim Vermieter `co2Share` R.
   // L − R entfällt auf Eigennutzung, Leerstand, Pauschale und Wohnungen außerhalb, deren Anteil der
   // Vermieter ohnehin trägt. Gibt R zurück.
+  // Wie eine Abzugszeile heißt und unter welchem Grund sie beim Vermieter steht (Heizung PR 18): CO₂ nach
+  // § 7 Abs. 1 oder Netzentgelte und Biobrennstoff nach § 7 Abs. 5 CO2KostAufG.
+  type ReliefAs = { kind: 'co2Relief' | 'gmodgRelief'; key: string; label: string; keyLabel: string; reason: 'co2Share' | 'gmodgShare' }
   const bookReliefs = (
     pot: Co2Pot,
     raws: readonly { tenancyId: string; raw: number; approximated: boolean }[],
     shares: readonly ReliefShare[],
     printed: Map<string, { cents: number; approximated: boolean }>,
     text: { basis: (x: { approximated: boolean }) => string; steps: (x: { tenancyId: string; raw: number; approximated: boolean }, cents: number, share: number) => CalcStep[] },
+    as?: ReliefAs,
   ): number => {
+    const art: ReliefAs = as ?? { kind: 'co2Relief', key: pot.reliefKey, label: CO2_RELIEF_LABEL, keyLabel: 'CO₂-Kostenaufteilung', reason: 'co2Share' }
     const total = Math.round(raws.reduce((a, x) => a + x.raw, 0))
     const cents = distributeCents(total, raws.map((x) => ({ key: x.tenancyId, landlord: false, raw: x.raw })))
     raws.forEach((x, k) => {
@@ -4695,12 +4718,12 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       if (c === 0 || !target) return
       const share = shares.find((y) => y.tenancyId === x.tenancyId)?.cents ?? 0
       target.rows.push({
-        costItemId: pot.reliefKey,
-        kind: 'co2Relief',
+        costItemId: art.key,
+        kind: art.kind,
         category: HEATING_CATEGORY,
-        description: CO2_RELIEF_LABEL,
+        description: art.label,
         totalCents: -total,
-        keyLabel: 'CO₂-Kostenaufteilung',
+        keyLabel: art.keyLabel,
         basisText: text.basis(x),
         shareCents: -c,
         labor35aCents: 0,
@@ -4711,8 +4734,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     })
     if (total !== 0) {
       landlordRows.push({
-        costItemId: pot.reliefKey, category: HEATING_CATEGORY, description: CO2_RELIEF_LABEL, totalCents: total,
-        keyLabel: 'CO₂-Kostenaufteilung', shareCents: total, landlordParts: [{ reason: 'co2Share', cents: total }],
+        costItemId: art.key, category: HEATING_CATEGORY, description: art.label, totalCents: total,
+        keyLabel: art.keyLabel, shareCents: total, landlordParts: [{ reason: art.reason, cents: total }],
       })
     }
     return total
@@ -4837,6 +4860,182 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       return line || sameBuilding(mine, plant, plants) ? [{ pot: other, line }] : []
     })
   }
+  // ---------- §§ 5a, 5b, 5d CO2KostAufG (Heizung PR 18, #215) ----------
+  // Je Topf: ob und wo in der Heizperiode § 5a greift, mit den Teilen aus dem Register (`incurred`), den
+  // Lieferungen der Anlage und ihren Anteilen nach den Stufen 1–5 (Abweichung 2 des Plans). Vor dem ersten Tag
+  // der Teilung wird nichts gefragt; sonst stünde § 5a im Rechtsstand jeder Abrechnung 2027.
+  type PotHalf = {
+    status: HalfSplitStatus
+    two: TwoFamily
+    applicable: DayRange[]
+    piecesOf: (r: DayRange) => readonly Piece[]
+    weigh: (r: DayRange) => number
+    share: (id: string, r: DayRange) => number
+    deliveries: (afterService: boolean, ownLines: readonly { deliveryId: string; sharePermille: number }[]) => HalfDelivery[]
+    rules: { emergencyMonths: number | null; emergencyBefore: string | null; applicationFrom: string | null; maxDwellings: number | null }
+    // Belieferung mit Gas (§ 5a Abs. 1 Nr. 1): nach dem Brennstoff, bei Contracting dem des Lieferanten
+    // (`generatorEnergy`, Heizung PR 16), nicht nach der Energie der Abrechnung.
+    gas: boolean
+  }
+  const NO_HALF: PotHalf = {
+    status: { kind: 'none' }, two: { kind: 'notApplicable' }, applicable: [], piecesOf: () => [], weigh: () => 0, share: () => 0,
+    deliveries: () => [], rules: { emergencyMonths: null, emergencyBefore: null, applicationFrom: null, maxDwellings: null }, gas: false,
+  }
+  const halfSplitOf = (plant: SnapshotHeatingPlant | undefined, h: DayRange): PotHalf => {
+    const installed = plant?.gmodg43InstalledOn ?? null
+    if (!plant || installed === null || h.to < halfSplitFirstDay()) return NO_HALF
+    law(gmodgHeating43, { date: installed }, lawLog)
+    const firstUse = plant.newBuildingFirstUse ?? null
+    const newBuildings = firstUse !== null ? law(co2HalfSplitNewBuildings, { date: firstUse }, lawLog) : null
+    const emergency = plant.emergencyInstall === true ? law(co2HalfSplitEmergency, { date: installed }, lawLog) : null
+    const status = halfSplitStatus({
+      gmodg43InstalledOn: installed, emergencyInstall: plant.emergencyInstall ?? null, emergencyPriorDuty: plant.emergencyPriorDuty ?? null,
+      newBuildingFirstUse: firstUse, buildingApplicationBefore20260513: plant.buildingApplicationBefore20260513 ?? null,
+    }, { newBuildings, emergency })
+    // § 5d Abs. 3 (Abweichung 15): höchstens zwei Wohnungen, eine selbst bewohnt, beide an dieser zentralen
+    // Anlage („gemeinsame Wärmeversorgung“). § 5d Abs. 4 je Mietverhältnis mit Tagen in H (Abweichung 3); der
+    // angespannte Markt nach seiner Geltung (Abweichung 4).
+    const dwellings = snapshot.units.filter(isDwelling)
+    const selfUsed = dwellings.some((u) => u.selfUsed === true && !u.participates)
+    let two: TwoFamily = { kind: 'notApplicable' }
+    let maxDwellings: number | null = null
+    if (selfUsed && (plant.supply ?? 'central') === 'central' && status.kind === 'applies') {
+      const prop = snapshot.property
+      // Die Voraussetzungen lagen vor ab dem Einbau nach § 43 und, wenn eine Verordnung vor H endete, ab dem
+      // Tag danach. Den Beginn der Eigennutzung kennt Mietfuchs nicht (Abweichung 3).
+      const ended = prop?.tightMarket === true && prop.tightMarketTo != null && prop.tightMarketTo < h.from ? dayAfter(prop.tightMarketTo) : null
+      const conditionsFrom = ended !== null && ended > installed ? ended : installed
+      const dwellingIds = new Set(dwellings.map((u) => u.id))
+      const tenancies = snapshot.tenancies
+        .filter((t) => dwellingIds.has(t.unitId) && t.start <= h.to && (t.end === null || t.end >= h.from))
+        .map((t) => ({ tenantName: t.tenantName, contractFrom: t.contractDate ?? t.start, noticeOn: t.halfSplitNoticeOn ?? null }))
+      maxDwellings = law(co2HalfSplitTwoFamily, { period: h }, lawLog).maxDwellings
+      two = twoFamilyOf({
+        dwellings: dwellings.length, selfUsed, central: true, servesAll: dwellings.every((u) => servesUnit(plant, u)),
+        tightMarket: tightMarketIn(prop, h), tenancies, conditionsFrom,
+        deadline: settlementDeadline(h, law(bgbDeadlineMonths, { period: h }, lawLog)),
+      }, maxDwellings, h.from)
+    }
+    const table = law(hkvDegreeDays, { period: lawPeriod }, lawLog)
+    const weigh = (r: DayRange): number => degreeDayPermille([r], table)
+    const piecesOf = (r: DayRange): readonly Piece[] =>
+      law(co2HalfSplit, { period: r, weights: weigh }, lawLog).map(({ from, to, value }) => ({ from, to, value }))
+    const entry = fuelResults.get(plant.id)
+    const byId = new Map((snapshot.fuel?.deliveries ?? []).filter((d) => d.plantId === plant.id).map((d) => [d.id, d]))
+    const share = (id: string, r: DayRange): number => {
+      const d = byId.get(id)
+      return d && entry ? deliveryShare(d, 0, r, entry.ctx, null).kgShare : 0
+    }
+    const deliveries = (afterService: boolean, ownLines: readonly { deliveryId: string; sharePermille: number }[]): HalfDelivery[] =>
+      [...byId.values()].flatMap((d) => {
+        if (afterService && !d.usedByService) return []
+        const range = rangeOf(d)
+        const base = range ? (afterService ? range : intersectRange(range, h)) : null
+        const portion = afterService ? 1 : (ownLines.find((l) => l.deliveryId === d.id)?.sharePermille ?? 0) / 1000
+        if (!base || portion <= 0) return []
+        return [{ id: d.id, label: d.label, base, portion, co2Cents: d.co2CostCents, gridFeeCents: d.gridFeeCents ?? null, bioCostCents: d.bioCostCents ?? null }]
+      })
+    return {
+      status, two,
+      applicable: two.kind === 'excepted' ? [] : applicableRanges(status, h),
+      piecesOf, weigh, share, deliveries,
+      rules: { emergencyMonths: emergency?.windowMonths ?? null, emergencyBefore: emergency?.before ?? null, applicationFrom: newBuildings?.applicationFrom ?? null, maxDwellings },
+      gas: generatorEnergy(plant) === 'gas',
+    }
+  }
+  // Die Hinweise zu §§ 5a, 5b, 5d je Topf (Heizung PR 18, Entwurf 10.1): was gilt, ab wann und warum nicht.
+  const halfSplitNotices = (pot: Co2Pot, half: PotHalf, byDays: readonly HalfSplitTerm[], where: string, plantSubject: NoticeSubject, ids: ReadonlySet<string>, hPeriod: DayRange, potPlant: SnapshotHeatingPlant | undefined): void => {
+    if (half.status.kind === 'excluded') {
+      warn('co2.half-split',
+        `${where}: Für dieses Gebäude wurde der Bauantrag, der Antrag auf Zustimmung oder die Bauanzeige vor dem ${fmtDay(half.rules.applicationFrom ?? '')} gestellt. Dann gilt § 5b nicht, und es bleibt beim Stufenmodell (§ 5b Satz 2 CO2KostAufG).`,
+        plantSubject)
+      return
+    }
+    if (half.status.kind !== 'applies') return
+    const s = half.status
+    const cap = valueAt(co2HalfSplit, halfSplitBioFirstDay()).bioCapPermille ?? 0
+    const parts: string[] = [
+      `${where}: Die Heizung wurde am ${fmtDay(s.from)} nach § 43 Abs. 1 GModG eingebaut${s.basis === 'newBuilding' ? ', in einem Neubau (§ 5b CO2KostAufG)' : ''}. ` +
+        `Ab dem ${fmtDay(halfSplitFirstDay())} tragen Sie die Hälfte der Gasnetzentgelte und der CO₂-Kosten, ab dem ${fmtDay(halfSplitBioFirstDay())} auch die Hälfte der Kosten des Pflichtanteils an Biobrennstoff, höchstens für ${fmtNum(cap / 10)} % des verbrauchten Brennstoffs (§ 5a Abs. 3 CO2KostAufG).`,
+    ]
+    if (byDays.length > 0) {
+      // Prüfung S11: die Lesart nach Anfall mit der Gegenstimme der Begründung.
+      parts.push(`In dieser Heizperiode fallen nach Gradtagen ${fmtNum(termsWeight(byDays) * 100)} % der CO₂-Kosten in die Teilung. ` +
+        '§ 5a Abs. 3 Nr. 2 nennt für die CO₂-Kosten nur den Stichtag. Mietfuchs teilt sie wie die Netzentgelte nach § 5a Abs. 1 nach Anfall. ' +
+        'Das ist eine Auslegung: Die Gesetzesbegründung spricht von Abrechnungszeiträumen „ab dem 01. Januar 2028“ (BT-Drs. 21/6278, S. 124), was auch so verstanden werden kann, dass erst ein Zeitraum zählt, der an oder nach diesem Tag beginnt.')
+    }
+    for (const x of s.excluded) {
+      const months = half.rules.emergencyMonths ?? 0
+      parts.push(x.rule === 'emergency1'
+        ? `Nach dem Einbau wegen eines irreparablen Ausfalls ruht die Teilung ${months} Monate, bis ${fmtDay(x.to)} (§ 5a Abs. 4 Satz 1 CO2KostAufG).`
+        : x.rule === 'emergency2'
+          ? `Weil für die ausgefallene Heizung beim Ausfall keine Pflicht nach § 43 Abs. 1 GModG bestand, ruht die Teilung während der Übergangszeit des § 43 Abs. 7 Satz 1 GModG, ${months} Monate ab dem Einbau, bis ${fmtDay(x.to)} (§ 5a Abs. 4 Satz 2 CO2KostAufG; so die Begründung, BT-Drs. 21/7009, S. 154; das ist eine Auslegung, der Wortlaut ist nicht eindeutig).`
+          : `Weil für die ausgefallene Heizung beim Ausfall keine Pflicht nach § 43 Abs. 1 GModG bestand, ruht die Teilung ${months} Monate ab dem Einbau, bis ${fmtDay(x.to)} (§ 5a Abs. 4 Satz 3 CO2KostAufG).`)
+    }
+    if (s.emergencyBoundary) {
+      // Prüfung S14 (Entwurf 15.1 Nr. 26).
+      const months = half.rules.emergencyMonths ?? 0
+      const before = fmtDay(half.rules.emergencyBefore ?? '')
+      parts.push(`Die Heizung wurde genau ${months === 12 ? 'zwölf' : months} Monate vor dem ${before} eingebaut. § 5a Abs. 4 Satz 1 erfasst nach dem Wortlaut nur einen Einbau „weniger als zwölf Monate“ davor, die Gesetzesbegründung spricht von einer „Havarie im Verlauf des Jahres 2027“ (BT-Drs. 21/7009, S. 154). Mietfuchs teilt deshalb ab dem ${before} hälftig; das ist eine Auslegung.`)
+    }
+    if (s.assumed.includes('application')) {
+      parts.push(`Ob der Bauantrag vor dem ${fmtDay(half.rules.applicationFrom ?? '')} gestellt wurde, ist nicht angegeben; dann gälte § 5b nicht. Bis zur Angabe teilt Mietfuchs hälftig.`)
+    }
+    if (s.assumed.includes('priorDuty')) {
+      parts.push('Ob die ausgefallene Heizung eine Gas-, Öl- oder Flüssiggasheizung war, die nach dem Inkrafttreten des GModG in das bestehende Gebäude eingebaut wurde (dann galt für sie schon die Pflicht nach § 43 Abs. 1 GModG), ist nicht angegeben; davon hängt § 5a Abs. 4 ab. Bis zur Angabe teilt Mietfuchs hälftig.')
+    }
+    if (pot.method === 'service' || potPlant?.source === 'homeowners') {
+      // Prüfung S10: Verpflichtet ist der Vermieter (§ 7 Abs. 5 Satz 1), nicht der Messdienst.
+      const cut = law(co2CutMissing, { period: hPeriod }, lawLog)
+      parts.push(`Die Hälfte der Netzentgelte und der Kosten des Biobrennstoffs müssen Sie von den Heizkosten abziehen, bevor verteilt wird (§ 7 Abs. 5 CO2KostAufG); rechnet ein Messdienst für Sie ab, prüfen Sie das in seiner Abrechnung. Fehlt es, darf jeder Mieter seinen Anteil an den Heizkosten um ${cut} % kürzen (§ 7 Abs. 5 Satz 3, Abs. 4 CO2KostAufG)${cutsOn(ids, cut)}.`)
+    }
+    if (potPlant?.contracting) {
+      parts.push('Die Anlage betreibt ein Contractor; § 5a gilt auch dann (Begründung, BT-Drs. 21/6278, S. 124). Netzentgelte und Biobrennstoff müssen auf seiner Rechnung stehen; fehlen sie, fordern Sie sie bei ihm an.')
+    }
+    // Abweichung 12 des Plans; Prüfung M10 im Wortlaut der Gegenprüfung.
+    parts.push('Für Mietverhältnisse über Räume, die keine Wohnräume sind, gilt die Teilung nicht (§ 5a Abs. 1: Wohnraummietverhältnisse); Mietfuchs behandelt alle Mietverhältnisse als Wohnraum. ' +
+      'Bei einer Hybridheizung mit Gas-, Öl- oder Flüssiggaskessel gilt die Pflicht nach § 43 Abs. 1 GModG durch die Wärmepumpe oder die feste Biomasse als erfüllt (§ 43 Abs. 5, § 45 Abs. 2 GModG). Weil die Anlage trotzdem mit Gas, Öl oder Flüssiggas beschickt wird, wendet Mietfuchs § 5a CO2KostAufG an. Das ist eine Auslegung; ausdrücklich regeln Gesetz und Begründung diesen Fall nicht. ' +
+      'Einen Härtefall nach § 5d Abs. 1 CO2KostAufG rechnet Mietfuchs nicht.')
+    warn('co2.half-split', parts.join(' '), plantSubject)
+    // Biobrennstoff aus dem Vorrat (Abweichung 10): rechnet dieser Stand nicht; der Vermieter muss es selbst tun.
+    // Steht an jeder Lieferung der Anlage eine 0, ist im Tank kein Pflichtanteil, und es gibt nichts zu teilen
+    // (Abweichung 9).
+    const plantDeliveries = (snapshot.fuel?.deliveries ?? []).filter((d) => d.plantId === pot.plantId)
+    const noBioInStock = plantDeliveries.length > 0 && plantDeliveries.every((d) => d.bioCostCents === 0)
+    if (isStockEnergy(pot.energy) && !noBioInStock && half.applicable.some((a) => a.to >= halfSplitBioFirstDay())) {
+      const cut = law(co2CutMissing, { period: hPeriod }, lawLog)
+      warn('co2.half-split-missing',
+        `${where}: Ab dem ${fmtDay(halfSplitBioFirstDay())} tragen Sie die Hälfte der Kosten des Pflichtanteils an Biobrennstoff, höchstens für ${fmtNum(cap / 10)} % des verbrauchten Brennstoffs (§ 5a Abs. 1 Nr. 2, Abs. 3 Nr. 3 CO2KostAufG). Für Brennstoff aus dem Vorrat rechnet Mietfuchs diesen Anteil mit einer späteren Version. ` +
+          `Ermitteln Sie ihn bis dahin selbst und ziehen Sie ihn in der Abrechnung ab; sonst darf jeder Mieter seinen Anteil an den Heizkosten um ${cut} % kürzen (§ 7 Abs. 5 Satz 3, Abs. 4 CO2KostAufG)${cutsOn(ids, cut)}. ` +
+          `${BIO_ZERO_TEXT} Tragen Sie die 0 dann an jeder Lieferung beim Biobrennstoff ein.`,
+        plantSubject)
+    }
+    const two = half.two
+    if (two.kind === 'notApplicable') return
+    const intro = `${where}: Sie bewohnen das Gebäude selbst, es hat höchstens ${two.kind === 'excepted' || two.kind === 'split' ? (half.rules.maxDwellings === 2 ? 'zwei' : String(half.rules.maxDwellings ?? '')) : ''} Wohnungen, und beide hängen an dieser Heizung.`
+    const withSettlement = two.kind === 'excepted' ? two.notices.filter((n) => n.withSettlement).map((n) => n.tenantName) : []
+    const text = two.kind === 'excepted'
+      ? `${intro} Das Gebäude liegt nach Ihrer Angabe in dieser Heizperiode in keinem Gebiet, das eine Verordnung nach § 556d Abs. 2 Satz 1, § 558 Abs. 3 Satz 3 oder § 577a Abs. 2 Satz 2 BGB als angespannten Wohnungsmarkt bestimmt, und Sie haben das ${andList(two.notices.map((n) => `${n.tenantName} am ${fmtDay(n.noticeOn)}`))} in Textform mitgeteilt (dass die Mitteilung auch für Abs. 3 nötig ist, ist eine Auslegung; Mietfuchs verlangt sie, damit Sie sicher gehen). ` +
+        (withSettlement.length > 0
+          ? `Bei ${andList(withSettlement)} bestand der Mietvertrag schon, bevor die Voraussetzungen eintraten; dann genügt die Mitteilung bei der ersten Geltendmachung, in der Regel mit dieser Abrechnung (§ 5d Abs. 4 Satz 2 CO2KostAufG; BT-Drs. 21/7009, S. 156). Ist sie noch nicht zugegangen, legen Sie sie der Abrechnung in Textform bei. `
+          : '') +
+        'Dann tragen Sie nur die CO₂-Kosten nach dem Stufenmodell und keine Netzentgelte und keinen Biobrennstoff (§ 5d Abs. 3, 4 CO2KostAufG). Jeder neue Mieter muss die Mitteilung bei Abschluss seines Mietvertrags bekommen (§ 5d Abs. 4 Satz 1).'
+      : two.reason === 'tightMarket'
+        ? `${intro} Das Gebäude liegt nach Ihrer Angabe in dieser Heizperiode in einem Gebiet mit angespanntem Wohnungsmarkt; die Ausnahme des § 5d Abs. 3 gilt dann nicht (Satz 2), und es wird hälftig geteilt. Gilt die Verordnung nur für einen Teil der Heizperiode, teilt Mietfuchs trotzdem für die ganze hälftig (Festlegung).`
+        : two.reason === 'tightMarketUnknown'
+          ? `${intro} Ob das Gebäude in einem Gebiet liegt, das eine Verordnung zur Mietpreisbremse (§ 556d BGB), zur Kappungsgrenze (§ 558 Abs. 3 BGB) oder zur Kündigungssperrfrist (§ 577a Abs. 2 BGB) bestimmt, ist nicht angegeben; manche Verordnungen nennen nur Teile einer Gemeinde. Bis dahin teilt Mietfuchs hälftig; tragen Sie die Antwort beim Objekt ein, bei „ja“ mit der Geltung der Verordnung.`
+          : [
+            intro,
+            two.missing.length > 0
+              ? `Für ${andList(two.missing)} ist keine Mitteilung in Textform eingetragen; die Ausnahme setzt sie voraus (§ 5d Abs. 4; dass das auch für Abs. 3 gilt, ist eine Auslegung). Bestand der Mietvertrag schon, bevor die Voraussetzungen eintraten, genügt die Mitteilung mit dieser Abrechnung (Satz 2); tragen Sie dann am Mietverhältnis den Tag ein, an dem sie zugeht.`
+              : '',
+            two.late.length > 0
+              ? `Die Mitteilung an ${andList(two.late.map((n) => `${n.tenantName} vom ${fmtDay(n.noticeOn)}`))} kam zu spät für diese Heizperiode; später mitgeteilte Umstände werden im jeweiligen Abrechnungszeitraum nicht berücksichtigt (§ 5d Abs. 4 Satz 4 CO2KostAufG). In dieser Heizperiode wird hälftig geteilt, ab der nächsten nicht mehr.`
+              : '',
+            'Mietfuchs wendet die Ausnahme nur an, wenn für jeden Mieter der Heizperiode eine rechtzeitige Mitteilung eingetragen ist (Festlegung).',
+          ].filter((x) => x !== '').join(' ')
+    warn('co2.half-split-two-family', text, plantSubject)
+  }
   for (const pot of co2Pots) {
     // Ohne Positionen kein Topf, außer die Anlage hat Lieferungen (Heizung PR 7): Dann gehört ihre
     // Bewertung samt Lücken in die Abrechnung.
@@ -4844,7 +5043,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const st = pot.statement
     const hPeriod = { from: pot.period.from, to: pot.period.to }
     const where = `${pot.plantName ? `Heizanlage „${pot.plantName}“` : 'Heizanlage'}, Heizperiode ${periodLabel(pot.period)}`
-    const ids = new Set<string>([...pot.items.map((c) => c.id), pot.reliefKey])
+    // Die Abzugszeilen nach § 7 Abs. 1 und Abs. 5 gehören zum Topf (Heizung PR 18, Prüfung M5): „nach Abzug“ (6.5)
+    // meint beide.
+    const ids = new Set<string>([...pot.items.map((c) => c.id), ...reliefKeysOf(pot)])
     const plantSubject: NoticeSubject = { kind: 'heatingCosts', id: pot.plantId }
     // Wärmelieferung (Heizung PR 16): Contracting und der Brennstoff des Lieferanten, für die Beschriftung.
     const billed = plants.find((x) => x.id === pot.plantId)
@@ -4954,6 +5155,11 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Heizung PR 14: unter einer Ausnahme nach § 11 für Wärme und Warmwasser nicht, außer eine Abrechnung ist
     // vereinbart (§ 2 Abs. 7 CO2KostAufG).
     const applicable = !etsExempt && !co2OffByExemption(pot.plantId, String(pot.period.key)) && (st !== null || settledHere) && law(co2ApplicableFrom, { period: hPeriod }, lawLog)
+    // Hälftige Teilung nach § 5a (Heizung PR 18): nur, wo das CO2KostAufG überhaupt gilt. Der Anteil der CO₂-Kosten
+    // nach Gradtagen (ohne Lieferungen) dient der Nachstufung des Messdienstes, dem Hinweis und dem Vorrat
+    // (Abweichung 2 des Plans).
+    const half = applicable ? halfSplitOf(potPlant, hPeriod) : NO_HALF
+    const co2TermsByDays = termsFromPieces(half.piecesOf(hPeriod), half.applicable, half.weigh, (v) => v.co2Permille)
     if (co2OffByExemption(pot.plantId, String(pot.period.key)) && co2Deductions.has(pot.carrierId ?? '') && settledHere) {
       warn('co2.exempt-deducted',
         `${where}: Sie haben eine Ausnahme nach § 11 HeizkostenV für Wärme und Warmwasser angegeben und keine Abrechnung der Heiz- und Warmwasserkosten mit den Mietern vereinbart; dann ist das CO2KostAufG nicht anzuwenden (§ 2 Abs. 7 CO2KostAufG). ` +
@@ -5011,7 +5217,11 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         if (!factsCut) return base
         return factsRestriction === 'both' ? (factsCut.bothSplit ? base * factsCut.factor : 0) : base * factsCut.factor
       }
-      const re = restage(st, ranges, law(co2RoundingDecimals, { period: hPeriod }, lawLog), adjust)
+      // Hälftige Teilung (Heizung PR 18, Prüfung M4): Der Messdienst muss den Anteil nach Stufen (mit § 8, § 9) und die
+      // Hälfte nach Anfall mischen; verglichen wird mit Toleranz, weil er die Mischzahl gerundet druckt.
+      const halfByDays = co2TermsByDays.length > 0
+      const expectedOf = (permille: number): number | null => (halfByDays ? blendedPermille(adjust(permille), co2TermsByDays) : adjust(permille))
+      const re = restage(st, ranges, law(co2RoundingDecimals, { period: hPeriod }, lawLog), expectedOf, halfByDays ? HALF_SPLIT_TOLERANCE_PERMILLE : 0)
       const S = st.serviceUsersTotalCents ?? 0
       const L = st.serviceLandlordCents ?? 0
       let booked = false
@@ -5140,8 +5350,12 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
             (facts.length > 0 ? ` Nach Ihren Angaben zum Gebäude (${andList(facts)} CO2KostAufG) gehören dazu ${fmtNum(adjust(re.stage.landlordPercent * 10) / 10)} %.` : '')
           : ''
         const summe = re.sumOk === false && st.serviceTotalCents !== null ? ` ${fmtCents(L)} sind nicht ${laut} % von ${fmtCents(st.serviceTotalCents)}.` : ''
+        // Heizung PR 18 (Review Focus 5): Bei hälftiger Teilung nennt der Hinweis den erwarteten Mischanteil.
+        const halfText = halfByDays && re.percentOk === false
+          ? ` Ab dem ${fmtDay(halfSplitFirstDay())} wird bei dieser Heizung hälftig geteilt (§ 5a CO2KostAufG), für ${fmtNum(termsWeight(co2TermsByDays) * 100)} % der Heizperiode nach Gradtagen; erwartet ist deshalb ein Anteil des Vermieters von ${fmtNum((expectedOf(re.stage.landlordPercent * 10) ?? 0) / 10)} %.`
+          : ''
         warn('co2.stage-mismatch',
-          `${where}: Laut Abrechnung liegt der Ausstoß bei ${fmtNum(re.value)} kg CO₂ je m² und der Anteil des Vermieters bei ${laut} %.${stufe}${summe} ` +
+          `${where}: Laut Abrechnung liegt der Ausstoß bei ${fmtNum(re.value)} kg CO₂ je m² und der Anteil des Vermieters bei ${laut} %.${stufe}${summe}${halfText} ` +
             'Eine Abweichung kann berechtigt sein, etwa bei einem Gebäude, das überwiegend nicht zum Wohnen dient (§ 8 CO2KostAufG), oder bei Einschränkungen nach § 9 CO2KostAufG; auf diese kann sich der Vermieter nur berufen, wenn er dem Mieter die Umstände nachweist (§ 9 Abs. 3 CO2KostAufG). Bitte prüfen Sie die Angaben.',
           plantSubject)
       }
@@ -5221,6 +5435,13 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       const entered = enteredAreaOf(pot)
       const area = building.length > 0 ? (buildingArea > 0 ? buildingArea : null) : entered ?? (jointArea > 0 ? jointArea : null)
       const restriction = potPlant?.restriction ?? 'none'
+      // § 5a Abs. 3 Nr. 2 (Heizung PR 18): die Teile mit hälftiger Teilung, nach den Lieferungen gewogen, ohne
+      // CO₂-Kosten an den Lieferungen nach Gradtagen (Abweichung 2 des Plans). Bei der Etagenheizung mischt jede
+      // Wohnung nach ihren eigenen Rechnungen (unten), `selfSplit` liefert dort den Anteil nach Stufen.
+      const halfList = half.deliveries(afterService, fuelOf?.lines ?? [])
+      const co2Terms: readonly HalfSplitTerm[] = halfList.some((d) => (d.co2Cents ?? 0) > 0)
+        ? termsFromDeliveries(halfList, half.piecesOf, half.applicable, half.share, (v) => v.co2Permille)
+        : co2TermsByDays
       const split = selfSplit({
         emissionsKg,
         co2Cents: C,
@@ -5229,6 +5450,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         decimals: law(co2RoundingDecimals, { period: hPeriod }, lawLog),
         nonResidentialPermille: potPlant?.nonResidential ? law(co2NonResidential, { period: hPeriod }, lawLog) : null,
         restriction: restriction === 'none' ? null : { ...law(co2Restriction, { period: hPeriod }, lawLog), both: restriction === 'both' },
+        halfSplit: perUnit ? [] : co2Terms,
+        twoFamily: half.two.kind === 'excepted',
       })
       // x_t (9.4): bei freien Schlüsseln der Anteil an den Positionen mit Lieferung oder als Brennstoff
       // gekennzeichnet, samt den Übertragszeilen (Task 7); fehlt beides, der ganze Topf. Beim Messdienst
@@ -5255,6 +5478,41 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       let booked = false
       // Etagenheizung (Geld M4 der Durchsicht von #238): Der Ausweis nennt, was wirklich abgezogen ist.
       let perUnitBooked: number | null = null
+      // Netzentgelte und Biobrennstoff (§ 5a Abs. 1, 3, § 7 Abs. 5 CO2KostAufG, Heizung PR 18): Der Anteil des
+      // Vermieters wird abgezogen und nach der Vereinbarung über die Heizkosten verteilt (§ 7 Abs. 5 Satz 2), also
+      // wie die CO₂-Kosten nach dem Anteil am Brennstoff. Im Zweifamilienhaus mit Ausnahme nichts (§ 5d Abs. 3: „nur
+      // die Kohlendioxidkosten“; `half.applicable` ist dann leer). Unabhängig davon, ob die CO₂-Aufteilung gebucht
+      // ist: Auch ohne CO₂-Angaben bleiben die Netzentgelte zu teilen.
+      const amounts = halfAmounts(halfList, half.piecesOf, half.applicable, half.share, half.gas)
+      const halfRaw = amounts.gridFeeRaw + amounts.bioRaw
+      let halfBooked = false
+      const bookHalf = (perUnitList: readonly PerUnitFuel[] | null): void => {
+        if (halfBooked || !(halfRaw > 0) || !(F > 0)) return
+        halfBooked = true
+        const deliveryUnit = new Map((snapshot.fuel?.deliveries ?? []).map((d) => [d.id, d.unitId ?? null]))
+        const raws = perUnitList
+          ? perUnitList.filter((u) => u.rented && u.fuelCents > 0).flatMap((u) => {
+            const own = halfAmounts(halfList.filter((d) => deliveryUnit.get(d.id) === u.unitId), half.piecesOf, half.applicable, half.share, half.gas)
+            const amount = own.gridFeeRaw + own.bioRaw
+            return u.shares.map((s) => ({ tenancyId: s.tenancyId, raw: (amount * s.exact) / u.fuelCents, approximated: false }))
+          })
+          : reliefsByShare(halfRaw, shares, F).map((x) => ({ ...x, approximated: approx }))
+        const gmodgShares = perUnitList
+          ? perUnitList.flatMap((u) => u.shares.map((s) => ({ tenancyId: s.tenancyId, cents: Math.round(s.exact) })))
+          : shares
+        bookReliefs(pot, raws, gmodgShares, new Map(), {
+          basis: () => (perUnitList ? 'nach Ihrem Anteil an den Heizkosten Ihrer Wohnung' : approx ? 'nach Ihrem Anteil an den Heizkosten' : 'nach Ihrem Anteil an den Brennstoffkosten'),
+          steps: (x, c, share) => [
+            { label: 'Anteil des Vermieters nach § 5a', value: `Netzentgelte ${fmtExactEuro(amounts.gridFeeRaw)} + Biobrennstoff ${fmtExactEuro(amounts.bioRaw)} = ${fmtExactEuro(halfRaw)}`, term: 'co2HalfSplit' },
+            perUnitList
+              ? { label: 'Ihr Teil davon', value: `${fmtExactEuro(x.raw)} nach den Rechnungen Ihrer Wohnung` }
+              : { label: 'Ihr Teil davon', value: `${fmtExactEuro(halfRaw)} × ${fmtCents(share)} ÷ ${fmtCents(F)} = ${fmtExactEuro(x.raw)}` },
+            { label: 'Ergebnis, auf Cent gerundet', value: fmtCents(-c) },
+          ],
+        }, { kind: 'gmodgRelief', key: gmodgKeyOf(pot.reliefKey), label: GMODG_RELIEF_LABEL, keyLabel: 'Kostenaufteilung nach § 5a', reason: 'gmodgShare' })
+      }
+      // Vor den Hinweisen mit Kürzungsbeträgen, denn die rechnen auf die Heizkosten nach beiden Abzügen (6.5).
+      if (!perUnit) bookHalf(null)
       if (gaps.length > 0) {
         warn('co2.incomplete',
           `${where}: Für die Aufteilung der CO₂-Kosten fehlen ${andList(gaps)}. Die Heizkostenabrechnung muss den Anteil der Mieter, die Einstufung des Gebäudes und die Berechnungsgrundlagen ausweisen (§ 7 Abs. 3 CO2KostAufG); ` +
@@ -5272,7 +5530,13 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
               `Für diese Wohnung zieht Mietfuchs deshalb nichts ab; ohne Aufteilung darf ihr Mieter seinen Anteil an den Heizkosten um ${cut} % kürzen (§ 7 Abs. 4 CO2KostAufG). Prüfen Sie die Rechnungen und die Positionen der Wohnung.`,
             plantSubject)
         }
-        const raws = perUnitReliefs(permille, perUnit)
+        // Je Wohnung nach ihren eigenen Rechnungen (§ 5 Abs. 1 Satz 2; Heizung PR 18).
+        const deliveryUnit = new Map((snapshot.fuel?.deliveries ?? []).map((d) => [d.id, d.unitId ?? null]))
+        const permilleOf = (unitId: string): number => {
+          const own = halfList.filter((d) => deliveryUnit.get(d.id) === unitId)
+          return blendedPermille(permille, termsFromDeliveries(own, half.piecesOf, half.applicable, half.share, (v) => v.co2Permille)) ?? permille
+        }
+        const raws = perUnitReliefs(permilleOf, perUnit)
         const unitOf = new Map(raws.map((r) => [r.tenancyId, perUnit.find((x) => x.unitId === r.unitId)]))
         const perUnitShares: ReliefShare[] = raws.map((r) => ({ tenancyId: r.tenancyId, cents: Math.round(unitOf.get(r.tenancyId)?.shares.find((x) => x.tenancyId === r.tenancyId)?.exact ?? 0) }))
         perUnitBooked = 0
@@ -5282,9 +5546,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
             steps: (x, c) => {
               const u = unitOf.get(x.tenancyId)
               const exact = u?.shares.find((y) => y.tenancyId === x.tenancyId)?.exact ?? 0
-              const lu = ((u?.co2Cents ?? 0) * permille) / 1000
+              const pu = u ? permilleOf(u.unitId) : permille
+              const lu = ((u?.co2Cents ?? 0) * pu) / 1000
               return [
-                { label: 'CO₂-Anteil des Vermieters für Ihre Wohnung', value: `${fmtCents(u?.co2Cents ?? 0)} × ${fmtNum(permille / 10)} % = ${fmtExactEuro(lu)}`, term: 'co2Split' },
+                { label: 'CO₂-Anteil des Vermieters für Ihre Wohnung', value: `${fmtCents(u?.co2Cents ?? 0)} × ${fmtNum(pu / 10)} % = ${fmtExactEuro(lu)}`, term: 'co2Split' },
                 { label: 'Ihr Teil davon', value: `${fmtExactEuro(lu)} × ${fmtExactEuro(exact)} ÷ ${fmtCents(u?.fuelCents ?? 0)} = ${fmtExactEuro(x.raw)}` },
                 { label: 'Ergebnis, auf Cent gerundet', value: fmtCents(-c) },
               ]
@@ -5292,6 +5557,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           })
         }
         shares.splice(0, shares.length, ...perUnitShares)
+        bookHalf(perUnit)
       } else if (C > 0 && (F <= 0 || C > F)) {
         warn('co2.exceeds-heating',
           `${where}: Die CO₂-Kosten der Lieferungen (${fmtCents(C)}) sind höher als die Brennstoffkosten, die verteilt werden (${fmtCents(F)}). Das passt nicht zusammen; Mietfuchs bucht keine CO₂-Aufteilung. ` +
@@ -5343,6 +5609,20 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           }
         }
       }
+      const cut5a = law(co2CutMissing, { period: hPeriod }, lawLog)
+      if (amounts.missingGrid.length > 0) {
+        warn('co2.half-split-missing',
+          `${where}: Für ${andList(amounts.missingGrid.map((l) => `„${l}“`))} fehlen die Netzentgelte. Ab dem ${fmtDay(halfSplitFirstDay())} tragen Sie bei dieser Heizung die Hälfte davon (§ 5a Abs. 1 Nr. 1, Abs. 3 CO2KostAufG). ` +
+            `Ohne die Angabe lässt sich Ihr Anteil nicht abziehen, und jeder Mieter darf seinen Anteil an den Heizkosten um ${cut5a} % kürzen (§ 7 Abs. 5 Satz 3, Abs. 4 CO2KostAufG)${cutsOn(ids, cut5a)}. Tragen Sie die Netzentgelte laut Gasrechnung bei der Lieferung ein.`,
+          plantSubject)
+      }
+      if (amounts.missingBio.length > 0) {
+        const cap = valueAt(co2HalfSplit, halfSplitBioFirstDay()).bioCapPermille ?? 0
+        warn('co2.half-split-missing',
+          `${where}: Für ${andList(amounts.missingBio.map((l) => `„${l}“`))} fehlen die Kosten des Pflichtanteils an Biobrennstoff (Preisbestandteil nach § 3 Abs. 1 Nr. 6 CO2KostAufG). Ab dem ${fmtDay(halfSplitBioFirstDay())} tragen Sie die Hälfte davon, höchstens für ${fmtNum(cap / 10)} % des verbrauchten Brennstoffs (§ 5a Abs. 1 Nr. 2, Abs. 3 Nr. 3 CO2KostAufG). ` +
+            `Ohne die Angabe darf jeder Mieter seinen Anteil an den Heizkosten um ${cut5a} % kürzen (§ 7 Abs. 5 Satz 3, Abs. 4 CO2KostAufG)${cutsOn(ids, cut5a)}. ${BIO_ZERO_TEXT}`,
+          plantSubject)
+      }
       if (split.adjustments.includes('nonResidential')) {
         warn('co2.non-residential',
           `${where}: Das Gebäude dient nach Ihrer Angabe überwiegend nicht dem Wohnen. Dann tragen Sie mindestens ${fmtNum(law(co2NonResidential, { period: hPeriod }, lawLog) / 10)} % der CO₂-Kosten (§ 8 Abs. 1 CO2KostAufG); Mietfuchs rechnet mit diesem Anteil statt mit der Stufentabelle.`,
@@ -5356,7 +5636,11 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           : `Ihr Anteil an den CO₂-Kosten wird deshalb um ${fmtNum((1 - r.factor) * 100)} % gekürzt (§ 9 Abs. 1 CO2KostAufG).`
         warn('co2.restriction',
           `${where}: Nach Ihrer Angabe stehen öffentlich-rechtliche Vorgaben einer wesentlichen energetischen Verbesserung ${what} entgegen. ${effect} ` +
-            'Darauf können Sie sich nur berufen, wenn Sie den Mietern die Umstände nachweisen (§ 9 Abs. 3 CO2KostAufG); legen Sie den Nachweis der Abrechnung bei.',
+            'Darauf können Sie sich nur berufen, wenn Sie den Mietern die Umstände nachweisen (§ 9 Abs. 3 CO2KostAufG); legen Sie den Nachweis der Abrechnung bei.' +
+            // Heizung PR 18 (Abweichung 5 des Plans, Prüfung M6 im Wortlaut der Gegenprüfung).
+            (split.adjustments.includes('halfSplit')
+              ? ' Bei einer Heizung nach § 43 GModG kürzt Mietfuchs nur den Anteil nach Stufen, nicht die Hälfte nach § 5a, weil § 9 Abs. 1 CO2KostAufG den Anteil ‚nach § 5, 6, 7 oder 8‘ nennt und § 5a nicht. Das ist eine Auslegung zu Ihren Lasten. Ebenso vertretbar ist, dass § 9 auch diese Hälfte kürzt: Sie gilt ‚in Abweichung von § 5 Absatz 2‘ (§ 5a Abs. 3 Nr. 2), und § 6 Abs. 1 Satz 2 und Abs. 2 Satz 1 beziehen die Kosten nach § 5a Abs. 3 ausdrücklich ein.'
+              : ''),
           plantSubject)
       }
       if (pot.period.short) {
@@ -5401,8 +5685,20 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         // Ob die Fläche die gemeinsame mehrerer Anlagen eines Gebäudes ist (Nachprüfung von #246): das Blatt
         // für den Messdienst liest es, statt es aus einer Abweichung zu schließen. Kein Betrag hängt daran.
         areaScope: building.length > 0 ? 'building' : 'plant',
+        // § 5a im Ausweis (Heizung PR 18, Entwurf 9.5); `null` beim Betrag, wenn eine Angabe fehlt.
+        ...(half.status.kind === 'applies' ? {
+          halfSplit: {
+            co2SharePermille: termsWeight(co2Terms) * 1000,
+            landlordGridFeeCents: amounts.missingGrid.length > 0 ? null : Math.round(amounts.gridFeeRaw),
+            landlordBioCents: amounts.missingBio.length > 0 ? null : Math.round(amounts.bioRaw),
+            basis: half.status.basis,
+            twoFamily: half.two.kind === 'excepted' ? 'excepted' as const : half.two.kind === 'split' ? 'split' as const : null,
+          },
+        } : {}),
       }
     }
+    // §§ 5a, 5b, 5d CO2KostAufG (Heizung PR 18): was gilt, ab wann und warum nicht.
+    if (settledHere) halfSplitNotices(pot, half, co2TermsByDays, where, plantSubject, ids, hPeriod, potPlant)
     // Warmwasser beim Messdienst (#211, Entwurf 7.7): Laut Abrechnung nach einer Formel bestimmt, ohne
     // bestätigten unzumutbaren Aufwand. 15 % auf den ganzen Anteil an Heiz- und Warmwasserkosten im
     // Topf (§ 9 Abs. 2 Satz 1, § 12 Abs. 1 Satz 1 HeizkostenV; BGH VIII ZR 151/20; R-A6, G-B9). Die
@@ -5614,7 +5910,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const where = `${plant.name ? `Heizanlage „${plant.name}“` : 'Heizanlage'}, Heizperiode ${label}`
     const subject: NoticeSubject = { kind: 'heatingCosts', id: plant.id }
     const pot = co2Pots.find((x) => x.plantId === plant.id)
-    const ids = new Set<string>([...(pot?.items ?? []).map((c) => c.id), ...(pot ? [pot.reliefKey] : [])])
+    // Mit den Abzugszeilen nach § 7 Abs. 1 und 5 CO2KostAufG (Heizung PR 18, Prüfung M5).
+    const ids = new Set<string>([...(pot?.items ?? []).map((c) => c.id), ...(pot ? reliefKeysOf(pot) : [])])
     // § 12 Abs. 3 (PR 10) oder § 11 Abs. 1 Nr. 3 Buchst. a a. F. (Heizung PR 11): keine Kürzungsbeträge.
     const notYet = sp.verdict?.kind === 'notYet' || sp.oldHeatPumpExemption
     // Heizung PR 14: auch nicht unter einer Vereinbarung nach § 2 und nicht für einen Topf, den eine Ausnahme nach
@@ -5805,7 +6102,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const hPeriod = { from: host.from, to: host.to }
     const pots = group.flatMap((r) => co2Pots.filter((x) => x.plantId === r.plantId))
     const potItems = pots.flatMap((x) => x.items)
-    const ids = new Set<string>([...potItems.map((c) => c.id), ...pots.map((x) => x.reliefKey)])
+    const ids = new Set<string>([...potItems.map((c) => c.id), ...pots.flatMap((x) => reliefKeysOf(x))])
     if (!settledOn(ids)) continue
     const where = `${plant.name ? `Heizanlage „${plant.name}“` : 'Heizanlage'}, Heizperiode ${pots[0] ? periodLabel(pots[0].period) : label}`
     const subject: NoticeSubject = { kind: 'heatingCosts', id: plant.id }
@@ -6282,7 +6579,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Mietfuchs zieht nichts ab; erklären muss die Kürzung der Mieter.
     // Nur Mieter in Wohnungen an der Anlage (Durchsicht von #230).
     const served = servedUnitIds(snapshot.heatingPlants ?? [], snapshot.units)
-    const heatOnlyItems = new Set(co2Pots.filter((x) => heatOnlyPlants.has(x.plantId)).flatMap((x) => [...x.items.map((c) => c.id), x.reliefKey]))
+    const heatOnlyItems = new Set(co2Pots.filter((x) => heatOnlyPlants.has(x.plantId)).flatMap((x) => [...x.items.map((c) => c.id), ...reliefKeysOf(x)]))
     let remoteUnknown = false
     const cuts = [...statements.values()].filter((st) => served.has(st.unitId)).flatMap((st) => {
       const heat = st.rows.filter((r) => r.category === HEATING_CATEGORY && !heatOnlyItems.has(r.costItemId)).reduce((a, r) => a + r.shareCents, 0)
@@ -6893,11 +7190,19 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // hochgerechnet, gewichtet nach den Zeilen des Mieters (Durchsicht M-4: ohne Faktor fiel sie aus
   // dem Vorschlag, und der war zu hoch).
   const itemById = new Map(allItems.map((c) => [c.id, c]))
+  // Heizung PR 18 (Prüfung M5): Die Abzugszeile nach § 7 Abs. 5 (`gmodg:`) gehört zu den Heizpositionen ihres Topfs;
+  // ohne Messdienstpositionen (eigene Aufteilung bei freien Schlüsseln) zu allen. Die CO₂-Abzugszeile bleibt, wie sie
+  // war: Bei der eigenen Aufteilung findet sie keine Messdienstposition und geht mit 0 ein (vor Heizung PR 18 so
+  // gerechnet; im Bericht zu PR 18 als Befund genannt, die Zahlen vor 2028 ändern sich hier nicht).
   const reliefFactor = (rows: readonly SettlementRow[], key: string, factors: ReadonlyMap<string, number>): number => {
-    const own = rows.filter((r) => {
+    const half = key.startsWith('gmodg:')
+    const potKey = half ? key.replace(/^gmodg:/, 'co2:') : key
+    const inPot = rows.filter((r) => {
       const c = itemById.get(r.costItemId)
-      return c !== undefined && c.key === 'amounts' && `co2:${c.heatingPlantId ?? ''}:${c.period}` === key
+      return c !== undefined && c.category === HEATING_CATEGORY && `co2:${c.heatingPlantId ?? ''}:${c.period}` === potKey
     })
+    const service = inPot.filter((r) => itemById.get(r.costItemId)?.key === 'amounts')
+    const own = half && service.length === 0 ? inPot : service
     const sum = own.reduce((a, r) => a + r.shareCents, 0)
     return sum === 0 ? 0 : own.reduce((a, r) => a + r.shareCents * (factors.get(r.costItemId) ?? 0), 0) / sum
   }
@@ -6926,7 +7231,11 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     } else if (shortBasis !== null) {
       // Im Rumpf: jede Zeile mit ihrem Faktor auf zwölf Monate, dann wie im vollen Zeitraum auf die
       // Tage des Mieters bezogen (#134) und auf volle Euro gerundet.
-      const factorOf = (row: SettlementRow): number => (row.kind === 'co2Relief' ? reliefFactor(st.rows, row.costItemId, shortBasis.factors) : (shortBasis.factors.get(row.costItemId) ?? 0))
+      // Die Abzugszeilen nach § 7 Abs. 5 (Heizung PR 18, Prüfung M5) gehören zu denselben Heizkosten wie die
+      // CO₂-Abzugszeile ihres Topfs.
+      const factorOf = (row: SettlementRow): number => (row.kind === 'co2Relief' || row.kind === 'gmodgRelief'
+        ? reliefFactor(st.rows, row.costItemId, shortBasis.factors)
+        : (shortBasis.factors.get(row.costItemId) ?? 0))
       const annual = st.rows.reduce((a, row) => a + row.shareCents * factorOf(row), 0)
       st.suggestedMonthlyCents = Math.max(0, Math.round((annual * diy) / st.days / 12 / 100) * 100)
     } else {
