@@ -7190,19 +7190,18 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // hochgerechnet, gewichtet nach den Zeilen des Mieters (Durchsicht M-4: ohne Faktor fiel sie aus
   // dem Vorschlag, und der war zu hoch).
   const itemById = new Map(allItems.map((c) => [c.id, c]))
-  // Heizung PR 18 (Prüfung M5): Die Abzugszeile nach § 7 Abs. 5 (`gmodg:`) gehört zu den Heizpositionen ihres Topfs;
-  // ohne Messdienstpositionen (eigene Aufteilung bei freien Schlüsseln) zu allen. Die CO₂-Abzugszeile bleibt, wie sie
-  // war: Bei der eigenen Aufteilung findet sie keine Messdienstposition und geht mit 0 ein (vor Heizung PR 18 so
-  // gerechnet; im Bericht zu PR 18 als Befund genannt, die Zahlen vor 2028 ändern sich hier nicht).
+  // Die Abzugszeilen nach § 7 Abs. 1 und Abs. 5 (`co2:`, `gmodg:`, Heizung PR 18, Prüfung M5) gehören zu den
+  // Messdienstpositionen ihres Topfs, ohne solche (eigene Aufteilung bei freien Schlüsseln) zu allen Heizpositionen
+  // des Topfs. Vorher ging die CO₂-Abzugszeile der eigenen Aufteilung mit 0 ein, und der Vorschlag war zu hoch
+  // (Behebung mit Heizung PR 18; nur der Vorschlag, keine Zahl der Abrechnung).
   const reliefFactor = (rows: readonly SettlementRow[], key: string, factors: ReadonlyMap<string, number>): number => {
-    const half = key.startsWith('gmodg:')
-    const potKey = half ? key.replace(/^gmodg:/, 'co2:') : key
+    const potKey = key.replace(/^gmodg:/, 'co2:')
     const inPot = rows.filter((r) => {
       const c = itemById.get(r.costItemId)
       return c !== undefined && c.category === HEATING_CATEGORY && `co2:${c.heatingPlantId ?? ''}:${c.period}` === potKey
     })
     const service = inPot.filter((r) => itemById.get(r.costItemId)?.key === 'amounts')
-    const own = half && service.length === 0 ? inPot : service
+    const own = service.length === 0 ? inPot : service
     const sum = own.reduce((a, r) => a + r.shareCents, 0)
     return sum === 0 ? 0 : own.reduce((a, r) => a + r.shareCents * (factors.get(r.costItemId) ?? 0), 0) / sum
   }

@@ -129,3 +129,31 @@ test('Ausnahme nur für die Wärme: die Kürzung wegen fehlender Fernablesbarkei
   const euro = `${(cut / 100).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`
   assert.ok(n.text.includes(`Mieter A (A) ${euro}`), `${euro}: ${n.text}`)
 })
+
+test('Rumpf vor 2028: die CO₂-Abzugszeile der eigenen Aufteilung geht mit dem Faktor ihres Brennstoffs in den Vorschlag (Behebung)', () => {
+  // Rumpf 01.01.–30.04.2027, keine Heizung nach § 43. Gas 3.000 € nach Fläche (50/30/20 %), CO₂ 600 € bei
+  // 24.105,6 kg auf 600 m²: 40,2 kg je m² liegt über der auf 120/365 gekürzten Tabelle in der Stufe 95 %. Der
+  // Vermieter trägt 570 €, A 285 €, B 171 €, C 114 €.
+  const R27: PeriodRules = { startMonth: 1, changes: ['2027-05'] }
+  const p = periodOfKey(R27, periodKey('2027-01')) ?? assert.fail('kein Rumpf')
+  const q = (amountCents: number, co2: boolean) => three({
+    properties: [{ id: 'objekt-1', kind: 'mfh', cableBuiltBeforeDec2021: null, tightMarket: null, periodRules: R27 }],
+    heatingPlants: [plant({ gmodg43InstalledOn: null })],
+    costItems: [item({ id: 'gas', period: periodKey('2027-01'), amountCents, serviceFrom: '2027-01-01', serviceTo: '2027-04-30' })],
+    fuelDeliveries: [delivery({ invoiceFrom: '2027-01-01', invoiceTo: '2027-04-30', label: 'Gas Jan–Apr 2027', emissionsKg: co2 ? 24105.6 : null, co2CostCents: co2 ? 60000 : null })],
+    tenancies: ['a', 'b', 'c'].map((u) => ({
+      id: `t${u}`, unitId: u, tenantName: `Mieter ${u.toUpperCase()}`, persons: 1, personHistory: [], start: '2020-01-01', end: null,
+      prepayments: [{ from: '2020-01', monthlyCents: 10000 }], prepaymentOverrides: {}, baseRents: [],
+    })),
+  })
+  const mit = computeSettlement(snapshotFor(q(300000, true), 'objekt-1', p))
+  const netto = computeSettlement(snapshotFor(q(243000, false), 'objekt-1', p))
+  const reliefs = mit.statements.map((s) => [s.tenancyId, s.rows.filter((r) => r.kind === 'co2Relief').reduce((a, r) => a + r.shareCents, 0)])
+  assert.deepEqual(reliefs, [['ta', -28500], ['tb', -17100], ['tc', -11400]])
+  const vorschlag = (r: typeof mit) => r.statements.map((s) => [s.tenancyId, s.suggestedMonthlyCents])
+  // Derselbe Vorschlag wie mit 570 € weniger Brennstoff; vorher fehlte der Abzug im Vorschlag.
+  assert.deepEqual(vorschlag(mit), vorschlag(netto))
+  // A: 1.215,00 € in 120 Tagen mit 530 ‰ der Gradtage, hochgerechnet 2.292,45 €, je Monat 191 €.
+  assert.deepEqual(vorschlag(mit), [['ta', 19100], ['tb', 11500], ['tc', 7600]])
+  assert.ok(vorschlag(netto).every(([, c]) => Number(c) > 0))
+})
