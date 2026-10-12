@@ -380,8 +380,10 @@ export const co2HalfSplitTwoFamily: LawParam<{ readonly maxDwellings: number }, 
 // § 8 Abs. 2: im Nichtwohngebäude „50 Prozent der Kohlendioxidkosten zu erstatten“. Derselbe Wert wie
 // `co2NonResidential` (§ 8 Abs. 1), aber eine andere Norm: Abs. 1 begrenzt eine Vereinbarung, Abs. 2 bestimmt die
 // Erstattung; deshalb steht er hier eigens (Prüfung K1). `eventDate`: die Abrechnung des Lieferanten gegenüber
-// dem Mieter. Die Zahlen gelten seit dem 01.01.2023 unverändert; das Gesetz vom 23.07.2026 hat in § 6 Abs. 2 nur
-// Satz 1 ersetzt (Verweis auf § 5a, § 5b) und Satz 6 (Hinweispflicht) angefügt.
+// dem Mieter. Die Zahlen gelten seit dem 01.01.2023 unverändert. Das Gesetz vom 23.07.2026 (Art. 5 Nr. 6 Buchst. c,
+// BT-Drs. 21/6278, S. 64) hat in § 6 Abs. 2 Satz 1 durch zwei Sätze ersetzt: den neuen Satz 1 (Verweis auf § 5a, § 5b)
+// und Satz 2 (Umrechnung nach § 5 Abs. 1 Satz 5). Dadurch wurden die Sätze 2 bis 4 a. F. zu den Sätzen 3 bis 5 n. F.;
+// angefügt wurde Satz 6 (Hinweispflicht). Deshalb steht die Auszahlungsfrist seit dem 29.07.2026 in Satz 5.
 export type SelfSupply = { readonly claimMonths: number; readonly refundMonths: number; readonly ownAppliancesCutPercent: number; readonly nonResidentialPermille: number }
 const checked6 = (cite: string, page: string): Source => ({ rank: 'law', cite, url: `${BASE}${page}`, retrieved: '2026-10-12', checked: 'checked' })
 export const co2SelfSupply: LawParam<SelfSupply, 'eventDate'> = {
