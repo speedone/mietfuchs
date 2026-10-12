@@ -285,3 +285,22 @@ test('Rechnung mit KI auslesen gibt es nur, solange nichts bearbeitet wird und d
   render(<FuelCard plant={{ id: 'hp', method: 'manual' }} view={{ ...view, closed: true }} deliveries={[]} onSaved={() => {}} />)
   expect(screen.queryByLabelText('Rechnung mit KI auslesen')).toBeNull()
 })
+
+test('Durchsicht S1: bei Wärmepumpe und Contracting ohne CO₂-Brennstoff geht keine gelesene CO₂-Angabe in den Rumpf', async () => {
+  for (const plant of [
+    { id: 'hp', method: 'service' as const, energy: 'heatPump' as const },
+    { id: 'hp', method: 'service' as const, energy: 'heatPump' as const, contracting: true, heatGeneration: 'single' as const },
+  ]) {
+    sent = []
+    withExtraction(extraction)
+    render(<FuelCard plant={plant} view={view} deliveries={[]} onSaved={() => {}} />)
+    choose()
+    expect(await screen.findByText(/fragt Mietfuchs sie nicht ab und hat sie nicht übernommen/)).toBeTruthy()
+    fireEvent.click(screen.getByText('Lieferung speichern'))
+    await waitFor(() => expect(sent.some((x) => x.method === 'POST')).toBe(true))
+    const body = sent.find((x) => x.method === 'POST')?.body ?? assert.fail()
+    expect([body.co2CostCents, body.emissionsKg, body.emissionFactor, body.gasBasis]).toEqual([null, null, null, null])
+    expect((body.parts as { co2CostCents: unknown; emissionsKg: unknown }[]).map((p) => [p.co2CostCents, p.emissionsKg])).toEqual([[null, null], [null, null]])
+    cleanup()
+  }
+})

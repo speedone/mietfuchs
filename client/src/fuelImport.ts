@@ -12,8 +12,10 @@ import type { FuelInvoiceExtraction, FuelQuantityUnit, HeatingMethod } from './t
 
 // Wo die Rechnung landet: wer abrechnet, ob Brennstoff aus einem Vorrat (Lieferdatum und Menge statt
 // Zeitraum, PR 8) und ob die Anlage eine Heizung nach § 43 Abs. 1 GModG ist (Netzentgelte und
-// Biobrennstoff, PR 18).
-export type FuelImportPlace = { method: HeatingMethod; stock: boolean; halfSplit: boolean }
+// Biobrennstoff, PR 18). `co2` und `gas`: ob die Karte CO₂-Angaben (`asksCo2Facts`) und den Bezug der kWh
+// (nur Gas) zeigt. Vorbelegt wird nur, was die Karte zeigt (Durchsicht S1): Ein gelesener Wert ohne Feld
+// ginge ungesehen in den Rumpf, und CO₂-Kosten an einer Anlage ohne CO₂-Brennstoff lösten eine Aufteilung aus.
+export type FuelImportPlace = { method: HeatingMethod; stock: boolean; halfSplit: boolean; co2: boolean; gas: boolean }
 
 const euroText = (eur: number | null): string => (eur === null ? '' : eur.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
 const numberText = (n: number | null): string => (n === null ? '' : n.toLocaleString('de-DE', { maximumFractionDigits: 6, useGrouping: false }))
@@ -52,16 +54,16 @@ export function fuelFormFromExtraction(x: FuelInvoiceExtraction, base: FuelForm,
     quantity: x.quantity !== null && x.quantityUnit !== null && units.includes(x.quantityUnit) ? numberText(x.quantity) : base.quantity,
     quantityUnit: x.quantityUnit !== null && units.includes(x.quantityUnit) ? x.quantityUnit : base.quantityUnit,
     energyKwh: x.energyKwh !== null ? numberText(x.energyKwh) : base.energyKwh,
-    gasBasis: x.gasBasis ?? base.gasBasis,
+    gasBasis: place.gas ? x.gasBasis ?? base.gasBasis : base.gasBasis,
     heatingValue: x.heatingValue !== null ? numberText(x.heatingValue) : base.heatingValue,
-    emissionsKg: x.emissionsKg !== null ? numberText(x.emissionsKg) : base.emissionsKg,
-    co2Cost: x.co2CostEur !== null ? euroText(x.co2CostEur) : base.co2Cost,
-    emissionFactor: x.emissionFactor !== null ? numberText(x.emissionFactor) : base.emissionFactor,
+    emissionsKg: place.co2 && x.emissionsKg !== null ? numberText(x.emissionsKg) : base.emissionsKg,
+    co2Cost: place.co2 && x.co2CostEur !== null ? euroText(x.co2CostEur) : base.co2Cost,
+    emissionFactor: place.co2 && x.emissionFactor !== null ? numberText(x.emissionFactor) : base.emissionFactor,
     // Nur, wo der Server es annimmt; sonst bleibt das Feld, wie es war, und fuelChecks nennt den Betrag.
     bioCost: bio && x.bioCostEur !== null ? euroText(x.bioCostEur) : base.bioCost,
     parts: place.stock ? base.parts : x.parts.map((p) => ({
       from: p.from, to: p.to, energyKwh: numberText(p.energyKwh), amount: euroText(p.amountEur), fixed: euroText(p.fixedEur),
-      emissionsKg: numberText(p.emissionsKg), co2Cost: euroText(p.co2CostEur),
+      emissionsKg: place.co2 ? numberText(p.emissionsKg) : '', co2Cost: place.co2 ? euroText(p.co2CostEur) : '',
     })),
   }
 }
@@ -107,7 +109,14 @@ export function fuelChecks(x: FuelInvoiceExtraction, place: FuelImportPlace): st
       out.push(`Die Teilmengen ergeben ${kwh.toLocaleString('de-DE')} kWh, die Rechnung nennt ${x.energyKwh.toLocaleString('de-DE')} kWh.`)
     }
   }
-  if (x.co2CostNet) {
+  if (!place.co2) {
+    const kg = x.emissionsKg ?? (x.parts.some((p) => p.emissionsKg !== null) ? x.parts.reduce((a, p) => a + (p.emissionsKg ?? 0), 0) : null)
+    const co2 = x.co2CostEur ?? (x.parts.some((p) => p.co2CostEur !== null) ? x.parts.reduce((a, p) => a + (p.co2CostEur ?? 0), 0) : null)
+    const read = [kg !== null ? `${kg.toLocaleString('de-DE', { maximumFractionDigits: 2 })} kg CO₂` : '', co2 !== null ? `CO₂-Kosten ${fmtEuro(cents(co2))}` : '', kg === null && co2 === null && x.emissionFactor !== null ? `Emissionsfaktor ${numberText(x.emissionFactor)} kg CO₂ je kWh` : '']
+      .filter((t) => t !== '')
+    if (read.length > 0) out.push(`Die Rechnung nennt CO₂-Angaben (${read.join(', ')}). Bei dieser Heizanlage fragt Mietfuchs sie nicht ab und hat sie nicht übernommen.`)
+  }
+  if (place.co2 && x.co2CostNet) {
     out.push('Die Rechnung nennt die CO₂-Kosten ohne Umsatzsteuer. Auszuweisen sind sie einschließlich Umsatzsteuer (§ 3 Abs. 1 Nr. 2, Abs. 3 CO2KostAufG); das ist Sache des Lieferanten. Sie können bei ihm eine berichtigte Rechnung anfordern. Mietfuchs rechnet den Betrag nicht um. Kennen Sie den Betrag mit Umsatzsteuer, tragen Sie ihn selbst ein.')
   }
   if (x.amountsAdjusted === 'netto') {
