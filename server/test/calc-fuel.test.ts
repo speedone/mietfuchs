@@ -946,6 +946,25 @@ test('#251 R-2: Rechnung nach dem Abschluss gemindert, bleibt aber positiv: die 
   assert.match(textOf(r, 'fuel.reduced-after-close'), /Die Rechnung „Rechnung d1“ ergibt heute 2\.695,49 €\. Die abgeschlossene Abrechnung 2025\/2026 enthält dafür 5\.556,25 €; heute entfielen auf sie 2\.42\d,\d\d €\. Ihre Mieter haben damit 3\.13\d,\d\d € zu viel getragen\./)
 })
 
+test('#251 Schritt 4: Hinweis „Gutschrift ohne Rechnung“ mit Betrag und Name; die Lücke daneben nennt die Gutschrift', () => {
+  const r = settle('2026-05', wechsel251(0))
+  const n = r.notices.find((x) => x.code === 'fuel.credit-only') ?? assert.fail(codes(r).join(', '))
+  assert.equal(n.level, 'warning')
+  assert.match(n.text, /^Heizanlage „Gas“, Heizperiode 2026\/2027: Die Positionen der Lieferung „Rechnung d1“ \(14\.07\.2025–25\.09\.2026\) ergeben zusammen -304,51 €\. Brennstoff kann nicht weniger als nichts kosten;/)
+  assert.match(n.text, /Mietfuchs rechnet ihren Zeitraum deshalb als nicht abgedeckt, nimmt sie nicht als Vorlage für Schätzungen und zählt keinen CO₂-Ausstoß für sie\./)
+  assert.match(n.text, /ordnen Sie sie auf der Seite Heizkosten dort zu; steht dort der Zahlbetrag nach Abzug der Abschläge, tragen Sie stattdessen die Kosten des Abrechnungszeitraums ein\./)
+  assert.match(textOf(r, 'fuel.uncovered'), /liegt nur die Gutschrift „Rechnung d1“ ohne Rechnung vor; diesen Teil verteilt Mietfuchs nicht\./)
+  assert.ok(!codes(r).includes('fuel.zero-invoice'))
+})
+
+test('#251 Schritt 4: Teil einer Gutschrift für eine ohne sie abgeschlossene Heizperiode: „gutschreiben“, keine Nachforderung und keine Frist', () => {
+  const r = settle('2026-05', { ...wechsel251(0), fuelCarryFrozen: [] })
+  assert.deepEqual(teileVon(r, 'fuel:d1:2026-05:2025-05'), [{ reason: 'fuelClosedPeriod', cents: -27395 }])
+  const t = textOf(r, 'fuel.closed-period-part')
+  assert.match(t, /Der Teil der Gutschrift „Rechnung d1“ für 2025\/2026 \(273,95 €\) gehört den Mietern der abgeschlossenen Abrechnung 2025\/2026\. Bis Sie ihn dort gutschreiben, steht er bei Ihnen\. Eine Berichtigung zugunsten der Mieter ist jederzeit zulässig \(Umkehrschluss aus § 556 Abs\. 3 Satz 3 BGB\)\./)
+  assert.doesNotMatch(t, /nachfordern|Frist|VIII ZR 264\/12|VIII ZR 220\/05/)
+})
+
 test('#251 R-3: teilweise abgedeckte Schätzung: Gutschrift 277,36 € (A 166,42 €, B 110,94 €) statt einer Nachforderung über 453,56 €', () => {
   const vorjahr = lieferung({ id: 'd0', label: 'Gas 2024/2025', invoiceFrom: '2024-03-15', invoiceTo: '2025-03-14' })
   const e = lieferung({ id: 'e', label: 'Schätzung', invoiceFrom: '2025-02-01', invoiceTo: '2025-04-30', amountCents: 300000, estimated: true })
