@@ -1011,6 +1011,8 @@ test('#251 R-2 mit Schätzung: eingefrorener Teil und eingefrorene Schätzung zu
   assert.deepEqual(teileVon(h, 'fuel:d:2025-05:2024-05'), [{ reason: 'fuelCarry', cents: 190000 }, { reason: 'fuelEstimateDiff', cents: -91661 }])
   assert.ok(!codes(h).includes('fuel.closed-period-part'), textOf(h, 'fuel.estimate-overcharged'))
   assert.match(textOf(h, 'fuel.estimate-overcharged'), /916,61 €/)
+  // Durchsicht #277, S2: Der Satz geht auf (2.000,00 − 100,00 − 983,39 = 916,61).
+  assert.match(textOf(h, 'fuel.estimate-overcharged'), /Für 2024\/2025 waren 2\.000,00 € geschätzt und aus der Lieferung „Gas 2025\/2026“ -100,00 € verteilt, zusammen 1\.900,00 €; tatsächlich entfallen nur 983,39 €\. Die Mieter dieser Heizperiode haben 916,61 € zu viel getragen/)
 })
 
 // Durchsicht #277, M1: War d schon beim Abschluss von 2024/2025 eine Rechnung, deckte sie ihre Tage der Schätzung damals

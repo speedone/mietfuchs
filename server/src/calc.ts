@@ -4669,13 +4669,19 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       const diff = carry.landlord.find((p) => p.reason === 'fuelEstimateDiff')?.cents ?? 0
       if (!carry.estimate || diff === 0) continue
       const E = carry.estimate.cents
+      // Durchsicht #277, S2: Hat jene Heizperiode daneben einen (negativen) Teil der Lieferung verteilt, nennt der Satz ihn,
+      // sonst ginge die Rechnung nicht auf.
+      const part = carry.estimateFrozenPart
+      const schaetzung = part === undefined
+        ? `war ${fmtCents(E)} geschätzt;`
+        : `waren ${fmtCents(E)} geschätzt und aus der Lieferung ${name} ${fmtCents(part)} verteilt, zusammen ${fmtCents(E + part)};`
       if (diff > 0) {
         // § 556 Abs. 3 Satz 2 und 3 BGB: Vor Fristablauf ist eine Berichtigung möglich (Umkehrschluss
         // aus BGH VIII ZR 115/04); danach nur ohne Vertretenmüssen (BGH VIII ZR 264/12) und alsbald
         // (BGH VIII ZR 220/05). Ohne Stichtag (`asOf`) gilt die Frist als offen.
         const past = options.asOf !== undefined && options.asOf > other.deadline
         warn('fuel.estimate-settled',
-          `${where}: Die Rechnung ${name} ist da. Für ${periodLabel(carry.other)} war ${fmtCents(E)} geschätzt; tatsächlich entfallen ${fmtCents(X)}. Die Differenz von ${fmtCents(diff)} steht bei Ihnen. ` +
+          `${where}: Die Rechnung ${name} ist da. Für ${periodLabel(carry.other)} ${schaetzung} tatsächlich entfallen ${fmtCents(X)}. Die Differenz von ${fmtCents(diff)} steht bei Ihnen. ` +
             (past
               ? `Die Frist der Abrechnung ${other.label} ist am ${fmtDay(other.deadline)} abgelaufen. Nachfordern dürfen Sie nur, wenn Sie die Verspätung nicht zu vertreten haben (§ 556 Abs. 3 Satz 3 BGB, BGH VIII ZR 264/12), und dann alsbald, in der Regel binnen drei Monaten nach Wegfall des Hindernisses (BGH VIII ZR 220/05). Lag die Rechnung schon vor Ablauf der Frist vor, ist die Verspätung in der Regel zu vertreten.`
               : `Nachfordern können Sie mit einer berichtigten Abrechnung ${other.label}; sie muss den Mietern bis ${fmtDay(other.deadline)} zugehen (§ 556 Abs. 3 Satz 2 und 3 BGB). Öffnen Sie die Abrechnung dafür wieder.`),
@@ -4718,7 +4724,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         const mixed = list.length > 0 && templateKeys.size > 0 && invoiceKeys.size > 0 && [...invoiceKeys].some((k) => !templateKeys.has(k) || templateKeys.size > 1)
         const naeherung = mixed ? 'Die Rechnung ist nach einem anderen Umlageschlüssel verteilt als die Schätzung; die Beträge je Mieter sind nach dem Schlüssel der Schätzung aufgeteilt und nur eine Näherung. Bitte prüfen Sie sie. ' : ''
         warn('fuel.estimate-overcharged',
-          `${where}: Für ${periodLabel(carry.other)} war ${fmtCents(E)} geschätzt; tatsächlich entfallen nur ${fmtCents(X)}. ` +
+          `${where}: Für ${periodLabel(carry.other)} ${schaetzung} tatsächlich entfallen nur ${fmtCents(X)}. ` +
             (credit === -diff
               ? `Die Mieter dieser Heizperiode haben ${fmtCents(-diff)} zu viel getragen${hier}. `
               : `Die Abweichung beträgt ${fmtCents(-diff)}; davon haben die Mieter dieser Heizperiode ${fmtCents(credit)} zu viel getragen${hier}. Der Rest lag bei Ihnen. `) +
