@@ -4,7 +4,8 @@
 // minutenlange Auswertung nicht nach fünf Minuten ab, und die Oberfläche kann zeigen, dass das
 // Modell arbeitet. Geprüft in client/src/aiRequest.test.ts.
 
-export type AiStep = 'extraction' | 'classification' | 'docType' | 'meterReading'
+// 'serviceStatement' und 'fuelInvoice': Messdienstabrechnung und Lieferantenrechnung (Heizung PR 20)
+export type AiStep = 'extraction' | 'classification' | 'docType' | 'meterReading' | 'serviceStatement' | 'fuelInvoice'
 // 'thinking': ein Reasoning-Modell denkt vor der Antwort nach (nur OpenAI-kompatible Dienste)
 export type AiProgress = { step: AiStep; phase: 'waiting' | 'thinking' | 'writing'; chars?: number }
 
@@ -134,10 +135,12 @@ export function progressText(progress: AiProgress | null): string {
       return 'Kostenarten werden zugeordnet …'
     case 'meterReading':
       return 'Zählerstand wird gelesen …'
+    case 'serviceStatement':
+    case 'fuelInvoice':
     case 'extraction':
       if (progress.phase === 'writing' && progress.chars) return `Modell schreibt die Auswertung (${progress.chars.toLocaleString('de-DE')} Zeichen) …`
       if (progress.phase === 'thinking' && progress.chars) return `Modell denkt nach (${progress.chars.toLocaleString('de-DE')} Zeichen) …`
-      return 'Modell liest den Beleg …'
+      return progress.step === 'serviceStatement' ? 'Modell liest die Abrechnung …' : progress.step === 'fuelInvoice' ? 'Modell liest die Rechnung …' : 'Modell liest den Beleg …'
   }
 }
 
