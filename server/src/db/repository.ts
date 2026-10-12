@@ -397,6 +397,7 @@ function mergeCostItem(current: CostItem, body: unknown): CostItem {
 
 function mergeMeter(current: Meter, body: unknown): Meter {
   const heatingPlantId = merged(body, 'heatingPlantId', current.heatingPlantId ?? null, asNullableFilled)
+  const type = merged(body, 'type', current.type, (v) => oneOfOrUndefined(METER_TYPES, v) ?? current.type)
   return {
     id: current.id,
     propertyId: mergedProperty(body, current.propertyId),
@@ -404,7 +405,7 @@ function mergeMeter(current: Meter, body: unknown): Meter {
     // `null` heißt Hauptzähler für das ganze Haus; eine leere Kennung liest die Abrechnung
     // schon heute genauso (`m.unitId && …`).
     unitId: merged(body, 'unitId', current.unitId, (v) => (asNullableText(v) === '' ? null : asNullableText(v))),
-    type: merged(body, 'type', current.type, (v) => oneOfOrUndefined(METER_TYPES, v) ?? current.type),
+    type,
     meterNumber: merged(body, 'meterNumber', current.meterNumber, asOptionalText),
     unit: merged(body, 'unit', current.unit, (v) => asText(v, '')),
     // Zähler der Heizanlage selbst (Heizung PR 4). Ohne Anlage keine Rolle.
@@ -418,6 +419,14 @@ function mergeMeter(current: Meter, body: unknown): Meter {
     // (`guardMeter`), denn mit ihm steht ein Betrag in der Abrechnung.
     hcaScale: merged(body, 'hcaScale', current.hcaScale ?? null, (v) => oneOfOrUndefined(HCA_SCALES, v) ?? null),
     ratingFactor: merged(body, 'ratingFactor', current.ratingFactor ?? null, (v) => (v === null || v === undefined ? null : typeof v === 'number' && Number.isFinite(v) ? v : Number.NaN)),
+    // Eichjahr (Heizung PR 21). Ein Heizkostenverteiler hat keins: Beim Umstellen der Sparte fällt es weg, statt
+    // dass die Prüfbedingung ohne Satz ablehnt (Review Focus 4); ausdrücklich gesendet lehnt `guardMeter` mit
+    // einem Satz ab. Anders als Skala und Faktor beim Wechsel weg vom HKV (400): Dort hinge eine Zahl der
+    // Abrechnung am Feld, hier nur ein Hinweis, und das Jahr gilt für ein Gerät, das es so nicht mehr gibt.
+    // Was keine Zahl ist, wird nicht still geleert, sondern als NaN von `guardMeter` abgelehnt, wie der Faktor.
+    calibratedUntil: type === 'hkv' && !has(body, 'calibratedUntil')
+      ? null
+      : merged(body, 'calibratedUntil', current.calibratedUntil ?? null, (v) => (v === null || v === undefined ? null : typeof v === 'number' && Number.isFinite(v) ? v : Number.NaN)),
   }
 }
 
@@ -1088,6 +1097,14 @@ async function guardMeter(db: Executor, before: Meter | null, after: Meter): Pro
   }
   if (after.installedOn && !ISO_DATE.test(after.installedOn)) {
     throw new HeatingError(400, 'Das Einbaudatum ist kein Datum. Bitte wählen Sie es im Kalender oder lassen Sie das Feld leer.')
+  }
+  // Eichjahr (Heizung PR 21); sonst lehnten die Prüfbedingungen ohne Satz ab.
+  const until = after.calibratedUntil ?? null
+  if (until !== null && (!Number.isInteger(until) || until < 1000 || until > 9999)) {
+    throw new HeatingError(400, 'Das Eichjahr ist keine Jahreszahl. Bitte tragen Sie das Jahr vierstellig ein, so wie es der Messdienst oder der Eichschein nennt, oder lassen Sie das Feld leer.')
+  }
+  if (until !== null && after.type === 'hkv') {
+    throw new HeatingError(400, 'Heizkostenverteiler sind keine eichpflichtigen Messgeräte; ein Eichjahr gibt es für sie nicht. Bitte lassen Sie das Feld leer.')
   }
   // Skala und Faktor nur am Heizkostenverteiler (Heizung PR 12); sonst lehnte die Prüfbedingung ohne Satz ab.
   if (after.type !== 'hkv' && ((after.hcaScale ?? null) !== null || (after.ratingFactor ?? null) !== null)) {
@@ -1787,7 +1804,7 @@ const costItemRow = (c: CostItem) => ({
 const meterRow = (m: Meter) => ({
   id: m.id, propertyId: m.propertyId, name: m.name, unitId: m.unitId, type: m.type, meterNumber: orNull(m.meterNumber), unit: m.unit,
   heatingPlantId: m.heatingPlantId ?? null, heatingRole: m.heatingRole ?? null, remoteReadable: m.remoteReadable ?? null, installedOn: m.installedOn ?? null,
-  hcaScale: m.hcaScale ?? null, ratingFactor: m.ratingFactor ?? null,
+  hcaScale: m.hcaScale ?? null, ratingFactor: m.ratingFactor ?? null, calibratedUntil: m.calibratedUntil ?? null,
 })
 const readingRow = (r: Reading) => ({
   id: r.id, meterId: r.meterId, date: r.date, value: r.value,

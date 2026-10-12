@@ -201,6 +201,10 @@ export type Meter = {
   // Nur beim Heizkostenverteiler (Heizung PR 12): Skala und Bewertungsfaktor des Heizkörpers.
   hcaScale?: HcaScale | null
   ratingFactor?: number | null
+  // Bis zu welchem Jahr der Zähler geeicht ist (Heizung PR 21, #98): Die Eichfrist endet mit dem Ende
+  // dieses Jahres (§ 34 Abs. 2 MessEV). Fehlt die Angabe, ist sie nicht eingetragen. Nie bei `hkv`, denn
+  // Heizkostenverteiler sind nicht eichpflichtig (Entwurf 3.12, Z-B10).
+  calibratedUntil?: number | null
 }
 
 export type Reading = {

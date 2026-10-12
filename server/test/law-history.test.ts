@@ -92,6 +92,9 @@ const SHIPPED: readonly string[] = [
   'hkv.generation-power|2024-10-01||{"since":"2024-10-01"}',
   // 0.11.0 (Heizung PR 16, #213)
   'bgb.heat-delivery-switch|2013-07-01||{"noticeMonths":3,"efficiencyPercent":80}',
+  // 0.11.0 (Heizung PR 21, #98)
+  'messev.calibration-years|2015-01-01|2021-11-02|{"kaltwasser":6,"warmwasser":5,"waerme":5}',
+  'messev.calibration-years|2021-11-03||{"kaltwasser":6,"warmwasser":6,"waerme":6}',
 ]
 
 const current = (): string[] =>

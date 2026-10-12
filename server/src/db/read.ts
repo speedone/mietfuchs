@@ -296,6 +296,8 @@ export async function readMeters(db: Executor): Promise<Meter[]> {
     // Skala und Bewertungsfaktor eines Heizkostenverteilers (Heizung PR 12).
     ...(m.hcaScale !== null ? { hcaScale: m.hcaScale } : {}),
     ...(m.ratingFactor !== null ? { ratingFactor: m.ratingFactor } : {}),
+    // Eichjahr (Heizung PR 21).
+    ...(m.calibratedUntil !== null ? { calibratedUntil: m.calibratedUntil } : {}),
   }))
 }
 

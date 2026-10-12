@@ -130,6 +130,9 @@ const OWN_CHECK_MESSAGES: Readonly<Record<string, string>> = {
   meters_heating_role_plant_valid:
     'Ein Zähler der Heizanlage braucht seine Rolle (Versorgung, Warmwasserspeicher oder Gesamtwärme), und nur ein Zähler der Anlage hat eine. Bitte wählen Sie beides oder keines.',
   meters_heating_plant_unit_valid: 'Ein Zähler der Heizanlage hängt an keiner Wohnung. Bitte wählen Sie entweder die Anlage oder eine Wohnung.',
+  // Eichfrist (Heizung PR 21); repository.ts prüft vorher, die Bedingungen sind das Netz darunter.
+  meters_calibrated_until_valid: 'Das Eichjahr ist keine Jahreszahl. Bitte tragen Sie das Jahr vierstellig ein oder lassen Sie das Feld leer.',
+  meters_calibrated_until_hca_valid: 'Heizkostenverteiler sind keine eichpflichtigen Messgeräte; ein Eichjahr gibt es für sie nicht.',
   // Eigene Heizperiode und getrennte Heizkostenabrechnung (Heizung PR 5)
   heating_separate_spans_order_valid:
     'Die getrennte Heizkostenabrechnung endet vor ihrem Beginn. Bitte laden Sie die Seite neu; gespeichert wurde nichts.',

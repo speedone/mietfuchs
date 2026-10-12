@@ -19,6 +19,7 @@
 import { betrkvTvSignal } from './bgb-betrkv.ts'
 import { co2CutMissing, co2FirstPeriodStart } from './co2kostaufg.ts'
 import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvEstimateThreshold, hkvExemptions, hkvRemoteReadingRetrofit } from './heizkostenv.ts'
+import { messevCalibrationYears } from './messev.ts'
 import { dayBefore, germanDate, LAW_AS_OF, onlyVersion, valueAt } from './register.ts'
 
 // Die Fassungen, aus denen die Regeln ihre Grenzen nehmen. Bekommt einer der beiden Parameter eine
@@ -39,6 +40,11 @@ const infoCut = valueAt(hkvCutInformation, LAW_AS_OF)
 const exemptions = valueAt(hkvExemptions, LAW_AS_OF)
 const CO2_FROM = co2FirstPeriodStart()
 const co2Cut = valueAt(co2CutMissing, LAW_AS_OF)
+// Eichfrist (Heizung PR 21): die Fassung von heute, wie im Lexikon.
+const calibration = valueAt(messevCalibrationYears, LAW_AS_OF)
+const calibrationYears = calibration.kaltwasser === calibration.warmwasser && calibration.warmwasser === calibration.waerme
+  ? `je ${calibration.kaltwasser} Jahre`
+  : messevCalibrationYears.describe(calibration)
 
 export type Rule = {
   code: string
@@ -50,6 +56,10 @@ export type Rule = {
   // ISO-Daten, inklusive; fehlt eine Grenze, gilt die Regel in diese Richtung unbegrenzt
   validFrom?: string
   validTo?: string
+  // `meters`: eine Regel, die Mietfuchs auf der Zähler-Seite anwendet und nicht in der Abrechnung (Heizung
+  // PR 21). Ein Hinweis braucht seine Regel, aber in den Rechtsstand einer Abrechnung gehört sie nicht, denn
+  // die Abrechnung prüft nicht nach ihr (Prüfung des Plans, S13); `rulesFor` lässt sie aus.
+  scope?: 'meters'
 }
 
 export const RULES: readonly Rule[] = [
@@ -238,6 +248,21 @@ export const RULES: readonly Rule[] = [
       'In den Fällen des § 11 ist das CO2KostAufG nicht anzuwenden, außer die Vertragsparteien haben eine Abrechnung der Heiz- und Warmwasserkosten vereinbart; nach der Begründung betrifft das Mietverhältnisse oder Räume, „in denen keine Heizkostenabrechnung durchgeführt wird“. ' +
       'Ist nur die Wärme ausgenommen und wird das Warmwasser weiter nach der Verordnung abgerechnet, teilt Mietfuchs die CO₂-Kosten deshalb weiter auf (Auslegung von Mietfuchs).',
   },
+  {
+    // Heizung PR 21 (#98). Wortlaut § 34, § 35, Anlage 7 MessEV und §§ 31, 33, 37 MessEG gelesen am
+    // 12.10.2026; das Urteil mit dem Wortlaut seines Leitsatzes c. Entschieden zu einem Wasserzähler nach
+    // dem Eichgesetz; die Leitsätze sprechen allgemein vom Messgerät, und die Begründung (§ 286 ZPO) hängt
+    // nicht am Eichgesetz (Auslegung, dass sie unter dem MessEG fortgilt).
+    code: 'meter-calibration',
+    title: 'Eichfrist der Zähler',
+    norm: '§ 31 Abs. 2 Nr. 3, § 33 Abs. 1, § 37 Abs. 1 MessEG; § 34, § 35, Anlage 7 MessEV; BGH, Urteil vom 17.11.2010, VIII ZR 112/10',
+    summary:
+      `Kalt- und Warmwasserzähler und Wärmezähler, nach denen abgerechnet wird, müssen geeicht sein. Die Eichfrist beträgt ${calibrationYears} und endet erst mit dem Ende des Jahres, in dem sie rechnerisch abläuft. ` +
+      'Danach darf der Zähler nicht ungeeicht verwendet werden, und seine Werte dürfen nicht in die Abrechnung. Für ein Los gleichartiger Zähler verlängert die Eichbehörde die Frist auf Antrag, wenn eine Stichprobe besteht. ' +
+      '„Den von einem nicht (mehr) geeichten Messgerät abgelesenen Verbrauchswerten kommt die Vermutung ihrer Richtigkeit nicht zu. In diesem Fall muss der Vermieter im Prozess die Richtigkeit der abgelesenen Werte zur Überzeugung des Tatrichters nachweisen.“ (BGH, Leitsatz c) ' +
+      'Heizkostenverteiler sind nicht eichpflichtig.',
+    scope: 'meters',
+  },
 ]
 
 function ruleByCode(code: string): Rule {
@@ -248,9 +273,10 @@ function ruleByCode(code: string): Rule {
   return rule
 }
 
-// Regeln, deren Gültigkeit den Zeitraum [from, to] berührt, in der Reihenfolge des Verzeichnisses.
+// Regeln, deren Gültigkeit den Zeitraum [from, to] berührt, in der Reihenfolge des Verzeichnisses; ohne
+// die Regeln der Zähler-Seite (`scope`), denn die Liste ist der Rechtsstand einer Abrechnung.
 export function rulesFor(from: string, to: string): Rule[] {
-  return RULES.filter((r) => (!r.validFrom || r.validFrom <= to) && (!r.validTo || r.validTo >= from))
+  return RULES.filter((r) => r.scope === undefined && (!r.validFrom || r.validFrom <= to) && (!r.validTo || r.validTo >= from))
 }
 
 // Gilt die Regel im ganzen Zeitraum, in einem Teil davon oder gar nicht?

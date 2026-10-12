@@ -100,6 +100,7 @@ import {
 import { DHW_PLAUSIBLE, dhwProblemText, fmtShare } from './dhw.ts'
 import { CAPTURE_TEXT, captureOf, coversPeriod, estimateFits, hotWaterOf, lineServiceRows, potUnitFor, serviceUnitsMixed, deviceCutoffs, isServiceMeter, deviceCutoffText, deviceLines, meterFactor, missingRatings, missingRatingsText, mixedCapture, mixedCaptureText, serviceMeters, withoutEstimatedSwitches } from './hca.ts'
 import { FUEL_GRADE_LABELS, HEATING_VALUE_UNIT_TEXT } from '../../shared/fuelGrades.ts'
+import { calibrationOverdue } from './calibration.ts'
 import type { FrozenItemSelfUse, Snapshot, SnapshotCostItem, SnapshotHeatingPart, SnapshotHeatingPlant, SnapshotMeter, SnapshotReading, SnapshotTenancy, SnapshotUnit } from './snapshot.ts'
 
 export const KEY_LABELS: Record<CostKey, string> = {
@@ -237,6 +238,9 @@ const noticeKinds = {
   'meter.replacement-without-end': { level: 'warning', title: 'Zählerwechsel ohne Endstand', terms: ['meterReading'] },
   'meter.negative': { level: 'warning', title: 'Negativer Verbrauch', terms: ['meterReading'] },
   'meter.same-day': { level: 'warning', title: 'Mehrere Ablesungen am selben Tag', terms: ['meterReading'] },
+  // Heizung PR 21 (#98): eine Warnung, keine Sperre; die Werte werden verwendet (Entwurf 3.12, #91). Nur auf der
+  // Zähler-Seite und im Cockpit, nie auf der Abrechnung (wie die übrigen Zählerhinweise).
+  'meter.calibration-overdue': { level: 'warning', title: 'Eichfrist abgelaufen', rule: 'meter-calibration', terms: ['meterCalibration', 'meterReading'] },
   'basis.self-no-persons': { level: 'warning', title: 'Personenzahl der eigenen Wohnung fehlt', terms: ['ownShare', 'personDays'] },
   'basis.self-no-area': { level: 'warning', title: 'Wohnfläche der eigenen Wohnung fehlt', terms: ['ownShare', 'distributionBasis'] },
   'basis.unit-no-area': { level: 'warning', title: 'Wohnfläche fehlt', terms: ['distributionBasis'] },
@@ -708,6 +712,20 @@ export function consumptionOverview(snapshot: Snapshot): ConsumptionOverviewRow[
   return snapshot.meters.map((m) => {
     const readings = snapshot.readings.filter((r) => r.meterId === m.id)
     const { notices, warnings } = meterSegments(readings)
+    // Eichfrist (Heizung PR 21): hier und nicht auf der Abrechnung, wie die übrigen Zählerhinweise; das
+    // Cockpit liest sie für eine eigene Zeile. Der Leitsatz wird wörtlich zitiert (Vorgabe R21-3).
+    const until = m.calibratedUntil ?? null
+    const overdue = calibrationOverdue(until, readings, { from, to })
+    if (overdue && until !== null) {
+      const n = makeNotice('meter.calibration-overdue',
+        `Zähler „${m.name ?? m.id}“: laut Ihrer Angabe nur bis Ende ${until} geeicht; die Ablesung vom ${fmtDay(overdue.lastDate)} stammt aus der Zeit danach. ` +
+          'Nach Ablauf der Eichfrist darf der Zähler nicht ungeeicht verwendet werden, und seine Werte dürfen nicht in einer Abrechnung verwendet werden (§ 37 Abs. 1, § 33 Abs. 1 MessEG); das kann als Ordnungswidrigkeit geahndet werden. Mietfuchs rechnet mit den Werten trotzdem. ' +
+          'Bestreitet ein Mieter sie, gilt: „Den von einem nicht (mehr) geeichten Messgerät abgelesenen Verbrauchswerten kommt die Vermutung ihrer Richtigkeit nicht zu. In diesem Fall muss der Vermieter im Prozess die Richtigkeit der abgelesenen Werte zur Überzeugung des Tatrichters nachweisen.“ (BGH VIII ZR 112/10, Leitsatz c). ' +
+          'Lassen Sie den Zähler eichen oder tauschen. Hat der Messdienst oder Versorger die Eichfrist im Stichprobenverfahren verlängern lassen (§ 35 MessEV), tragen Sie das Jahr ein, bis zu dem sie verlängert ist; auf dem Zähler ist das nicht zu sehen.',
+        { kind: 'meter', id: m.id })
+      notices.push(n)
+      warnings.push(n.text)
+    }
     return {
       meterId: m.id,
       consumption: Math.round(consumptionInPeriod(readings, from, to) * 100) / 100,
