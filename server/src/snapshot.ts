@@ -119,6 +119,8 @@ export type SnapshotCostItem = Pick<
 export type SnapshotMeter = Pick<Meter, 'id' | 'unitId' | 'type' | 'heatingPlantId' | 'heatingRole' | 'remoteReadable' | 'installedOn'> & Partial<Pick<Meter, 'name'>>
   // Skala und Bewertungsfaktor eines Heizkostenverteilers (Heizung PR 12).
   & Partial<Pick<Meter, 'hcaScale' | 'ratingFactor'>>
+  // Eichjahr (Heizung PR 21): nur für den Hinweis auf der Zähler-Seite, keine Zahl hängt daran.
+  & Partial<Pick<Meter, 'calibratedUntil'>>
 
 // Die Heizanlagen des Objekts (Heizung PR 4), eingedampft auf das, was die Berechnung liest. Seit
 // Heizung PR 5 dazu Name, eigene Heizperiode und die Spannen nach Weg d; fehlen sie (ein von Hand
