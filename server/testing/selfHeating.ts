@@ -54,6 +54,7 @@ const plantOf = (year: number): HeatingPlant => ({
   nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null,
   hotWater: 'combined', capture: 'heatMeter', areaBasisHeat: 'area', heatPumpInstalledOn: null, heatGeneration: null, heatPumpMajority: null, hcaModel: null, operatingPowerHandling: null,
   contracting: false, heatDeliverySince: null, previousSupply: null, switchAnnouncedOn: null,
+  gmodg43InstalledOn: null, emergencyInstall: null, emergencyPriorDuty: null, newBuildingFirstUse: null, buildingApplicationBefore20260513: null,
   selfSpans: [{ from: periodKey(`${year}-01`), until: null }],
 })
 

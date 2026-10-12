@@ -34,7 +34,9 @@ import { readHeatingPlants, readMeters, readProperties, readUnits } from './read
 import { openSelfSpan } from '../heating.ts'
 import { SELF_VIA_SETUP, SelfItemsError, selfItemsOf } from './heatingSelf.ts'
 import { hkvCutNotByConsumption } from '../../../shared/law/heizkostenv.ts'
-import { dayAfter, LAW_AS_OF, valueAt } from '../../../shared/law/register.ts'
+import { dayAfter, germanDate, LAW_AS_OF, valueAt } from '../../../shared/law/register.ts'
+import { gmodgHeating43 } from '../../../shared/law/gmodg.ts'
+import { co2HalfSplitNewBuildings } from '../../../shared/law/co2kostaufg.ts'
 import { asNullableFilled, asNullableText, asText, guardServedChange, has, heatingPeriodAt, heatingRulesOf, HeatingError, insertEntityIn, ISO_DATE, itemPeriodClosed, merged, oneOfOrUndefined, raw, sameProperty } from './repository.ts'
 import { buildingCycle, lineRoot, sameLine, servesUnit } from '../../../shared/heatingPeriod.ts'
 import {
@@ -84,7 +86,7 @@ function answerOf<T extends string>(values: readonly T[], v: unknown, what: stri
 }
 
 function mergeHeatingPlant(current: HeatingPlant, body: unknown): HeatingPlant {
-  return {
+  const next: HeatingPlant = {
     id: current.id,
     // Eine Anlage wechselt das Objekt nicht; wer umzieht, legt sie im anderen neu an.
     propertyId: current.propertyId,
@@ -138,9 +140,27 @@ function mergeHeatingPlant(current: HeatingPlant, body: unknown): HeatingPlant {
     heatDeliverySince: merged(body, 'heatDeliverySince', current.heatDeliverySince, asNullableFilled),
     previousSupply: merged(body, 'previousSupply', current.previousSupply, (v) => answerOf(PREVIOUS_SUPPLIES, v, 'Wer vorher versorgte')),
     switchAnnouncedOn: merged(body, 'switchAnnouncedOn', current.switchAnnouncedOn, asNullableFilled),
+    // §§ 5a, 5b, 5d CO2KostAufG (Heizung PR 18, #215). Leer heißt keine Angabe; das Datum prüft guardHeatingPlant.
+    gmodg43InstalledOn: merged(body, 'gmodg43InstalledOn', current.gmodg43InstalledOn ?? null, asNullableFilled),
+    emergencyInstall: merged(body, 'emergencyInstall', current.emergencyInstall ?? null, nullableBoolean),
+    emergencyPriorDuty: merged(body, 'emergencyPriorDuty', current.emergencyPriorDuty ?? null, nullableBoolean),
+    newBuildingFirstUse: merged(body, 'newBuildingFirstUse', current.newBuildingFirstUse ?? null, asNullableFilled),
+    buildingApplicationBefore20260513: merged(body, 'buildingApplicationBefore20260513', current.buildingApplicationBefore20260513 ?? null, nullableBoolean),
     // Setzt nur die Einrichtung der eigenen Abrechnung; das Zurückschalten löscht ihn (updateHeatingPlant).
     selfSpans: current.selfSpans ?? [],
   }
+  // Ohne Tag des Einbaus gibt es keine Heizung nach § 43 Abs. 1 GModG; die übrigen Merkmale fallen mit
+  // (Heizung PR 18), sonst lehnte die Bedingung heating_plants_gmodg_facts_valid ab und das Leeren ginge nur
+  // Feld für Feld. Ebenso die vorherige Pflicht ohne Notfalleinbau und der Bauantrag ohne Neubau.
+  if (next.gmodg43InstalledOn === null) {
+    next.emergencyInstall = null
+    next.emergencyPriorDuty = null
+    next.newBuildingFirstUse = null
+    next.buildingApplicationBefore20260513 = null
+  }
+  if (next.emergencyInstall !== true) next.emergencyPriorDuty = null
+  if (next.newBuildingFirstUse === null) next.buildingApplicationBefore20260513 = null
+  return next
 }
 
 // Der Energieträger hat keine Vorgabe; ohne ihn entsteht keine Anlage (createHeatingPlant).
@@ -152,6 +172,7 @@ const emptyHeatingPlant = (id: string, propertyId: string): HeatingPlant => ({
   nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null,
   hotWater: 'combined', capture: null, areaBasisHeat: 'area', heatPumpInstalledOn: null, heatGeneration: null, heatPumpMajority: null, hcaModel: null, operatingPowerHandling: null, selfSpans: [],
   contracting: false, heatDeliverySince: null, previousSupply: null, switchAnnouncedOn: null,
+  gmodg43InstalledOn: null, emergencyInstall: null, emergencyPriorDuty: null, newBuildingFirstUse: null, buildingApplicationBefore20260513: null,
 })
 
 export async function guardHeatingPlant(db: Executor, before: HeatingPlant | null, after: HeatingPlant): Promise<void> {
@@ -172,6 +193,29 @@ export async function guardHeatingPlant(db: Executor, before: HeatingPlant | nul
   }
   if (after.switchAnnouncedOn !== null && after.heatDeliverySince === null) {
     throw new HeatingError(400, 'Eine Ankündigung ohne Tag der Umstellung lässt sich nicht prüfen. Bitte tragen Sie den Tag der Umstellung ein oder leeren Sie beide.')
+  }
+  // §§ 5a, 5b CO2KostAufG und § 43 Abs. 1 GModG (Heizung PR 18; Abweichungen 1, 11 des Plans). Contracting ist
+  // erlaubt: § 5a gilt auch für Anlagen, die Dritte betreiben (BT-Drs. 21/6278, S. 124); `energy` ist dann der
+  // Brennstoff des Lieferanten.
+  for (const [value, what] of [[after.gmodg43InstalledOn, 'Der Tag des Einbaus'], [after.newBuildingFirstUse, 'Der Tag der ersten Nutzung']] as const) {
+    if (value !== null && !ISO_DATE.test(value)) throw new HeatingError(400, `${what} ist kein Datum. Bitte wählen Sie ihn im Kalender.`)
+  }
+  if (after.gmodg43InstalledOn !== null) {
+    const h43 = valueAt(gmodgHeating43, after.gmodg43InstalledOn)
+    if (!h43.energies.includes(after.energy)) {
+      throw new HeatingError(400, '§ 43 Abs. 1 GModG betrifft nur eine Gas-, Öl- oder Flüssiggasheizung. Bei anderen Heizungen lassen Sie den Tag des Einbaus leer.')
+    }
+    // Im Neubau (§ 5b) gilt § 5a „entsprechend“; dass der Tag des Einbaus dort vor dem Stichtag liegen darf, ist
+    // eine Festlegung ohne Primärquelle (Prüfung S13): § 43 Abs. 1 GModG selbst gilt nur für bestehende Gebäude.
+    if (after.newBuildingFirstUse === null && after.gmodg43InstalledOn <= h43.installedAfter) {
+      throw new HeatingError(400, `Eine Heizung nach § 43 Abs. 1 GModG wurde nach dem ${germanDate(h43.installedAfter)} in ein bestehendes Gebäude eingebaut. Für eine früher eingebaute gilt die hälftige Teilung nicht; lassen Sie den Tag des Einbaus leer.`)
+    }
+    if (after.newBuildingFirstUse !== null) {
+      const nb = valueAt(co2HalfSplitNewBuildings, after.newBuildingFirstUse)
+      if (after.newBuildingFirstUse > nb.firstUseUntil) {
+        throw new HeatingError(400, `§ 5b CO2KostAufG gilt für Gebäude, die bis zum ${germanDate(nb.firstUseUntil)} errichtet und erstmals genutzt werden. Für spätere Neubauten bleibt es beim Grundsatz, dass die Mieter die Betriebskosten tragen (Begründung, BT-Drs. 21/6278, S. 125); lassen Sie den Tag des Einbaus leer.`)
+      }
+    }
   }
   // Etagenheizung auf Vertrag des Vermieters (Heizung PR 9, Entwurf 9.3, 11.2): Die Rechnung jeder
   // Wohnung gehört direkt zu ihr, also freie Schlüssel mit Direktzuordnung. Vorratsenergien rechnet
@@ -382,6 +426,8 @@ export const plantRow = (p: HeatingPlant) => ({
   heatGeneration: p.heatGeneration, heatPumpMajority: p.heatPumpMajority, hcaModel: p.hcaModel ?? null,
   operatingPowerHandling: p.operatingPowerHandling ?? null,
   contracting: p.contracting, heatDeliverySince: p.heatDeliverySince, previousSupply: p.previousSupply, switchAnnouncedOn: p.switchAnnouncedOn,
+  gmodg43InstalledOn: p.gmodg43InstalledOn ?? null, emergencyInstall: p.emergencyInstall ?? null, emergencyPriorDuty: p.emergencyPriorDuty ?? null,
+  newBuildingFirstUse: p.newBuildingFirstUse ?? null, buildingApplicationBefore20260513: p.buildingApplicationBefore20260513 ?? null,
 })
 
 // Heizung PR 12: Ein Zeitraum ohne eigene Erfassung (von vor PR 12) bekommt beim nächsten Schreiben die
