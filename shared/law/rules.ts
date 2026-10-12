@@ -259,7 +259,7 @@ export const RULES: readonly Rule[] = [
     summary:
       `Kalt- und Warmwasserzähler und Wärmezähler, nach denen abgerechnet wird, müssen geeicht sein. Die Eichfrist beträgt ${calibrationYears} und endet erst mit dem Ende des Jahres, in dem sie rechnerisch abläuft. ` +
       'Danach darf der Zähler nicht ungeeicht verwendet werden, und seine Werte dürfen nicht in die Abrechnung. Für ein Los gleichartiger Zähler verlängert die Eichbehörde die Frist auf Antrag, wenn eine Stichprobe besteht. ' +
-      '„Den von einem nicht (mehr) geeichten Messgerät abgelesenen Werten kommt die Vermutung ihrer Richtigkeit nicht zu. In diesem Fall muss der Vermieter im Prozess die Richtigkeit der abgelesenen Werte zur Überzeugung des Tatrichters nachweisen.“ (BGH, Leitsatz c) ' +
+      '„Den von einem nicht (mehr) geeichten Messgerät abgelesenen Verbrauchswerten kommt die Vermutung ihrer Richtigkeit nicht zu. In diesem Fall muss der Vermieter im Prozess die Richtigkeit der abgelesenen Werte zur Überzeugung des Tatrichters nachweisen.“ (BGH, Leitsatz c) ' +
       'Heizkostenverteiler sind nicht eichpflichtig.',
     scope: 'meters',
   },

@@ -13,8 +13,10 @@
 // abgelaufene Frist lebt nicht wieder auf. Die Dritte Änderungsverordnung zur MessEV (BGBl. 2021 I S. 4742)
 // enthält dazu keine Übergangsregel (Art. 2 regelt nur das Inkrafttreten, § 58 Abs. 7 MessEV betrifft § 25);
 // ohne eine solche gilt die neue Fassung ab ihrem Inkrafttreten auch für eine laufende Frist, denn das
-// Verbot des § 37 Abs. 1 MessEG knüpft an die „bestimmte Eichfrist“ an. So rechnen auch die Eichbehörden und
-// Messdienste. Das ist eine Auslegung von Mietfuchs und steht im Vorschlag als solche da.
+// Verbot des § 37 Abs. 1 MessEG knüpft an die „bestimmte Eichfrist“ an. Der Vorschlag sagt es so:
+// Die Änderungsverordnung vom 26.10.2021 enthält keine Übergangsregel. Mietfuchs wendet die Frist von 6 Jahren
+// auch auf Fristen an, die am 03.11.2021 noch liefen; eine schon abgelaufene Frist lebt nicht wieder auf. Das
+// ist eine Auslegung.
 import type { MeterType } from './types.ts'
 import { CALIBRATED_METER_TYPES, messevCalibrationYears, type CalibrationYears } from './law/messev.ts'
 import { coversDate, versionAt, yearStart, type LawParam } from './law/register.ts'

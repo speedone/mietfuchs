@@ -467,7 +467,7 @@ export const GLOSSARY = {
     norm: '§ 33, § 37 Abs. 1 MessEG; § 34, § 35 und Anlage 7 MessEV',
     needed:
       'Ja, wenn Sie nach Zählern abrechnen. Nach Ablauf darf ein Zähler nicht ungeeicht verwendet werden, und seine Werte dürfen nicht in die Abrechnung (§ 33, § 37 MessEG). ' +
-      'Bestreitet ein Mieter dann die Werte, gilt nach dem Bundesgerichtshof: „Den von einem nicht (mehr) geeichten Messgerät abgelesenen Werten kommt die Vermutung ihrer Richtigkeit nicht zu. In diesem Fall muss der Vermieter im Prozess die Richtigkeit der abgelesenen Werte zur Überzeugung des Tatrichters nachweisen.“ (Urteil vom 17.11.2010, VIII ZR 112/10, Leitsatz c). Im entschiedenen Fall gelang das mit der Prüfung durch eine staatlich anerkannte Prüfstelle. ' +
+      'Bestreitet ein Mieter dann die Werte, gilt nach dem Bundesgerichtshof: „Den von einem nicht (mehr) geeichten Messgerät abgelesenen Verbrauchswerten kommt die Vermutung ihrer Richtigkeit nicht zu. In diesem Fall muss der Vermieter im Prozess die Richtigkeit der abgelesenen Werte zur Überzeugung des Tatrichters nachweisen.“ (Urteil vom 17.11.2010, VIII ZR 112/10, Leitsatz c). Im entschiedenen Fall gelang das mit der Prüfung durch eine staatlich anerkannte Prüfstelle. ' +
       'Hat der Messdienst oder Versorger die Eichfrist im Stichprobenverfahren verlängern lassen (§ 35 MessEV), gilt das verlängerte Jahr; am Zähler ist das nicht zu sehen.',
   },
   directAssignment: {

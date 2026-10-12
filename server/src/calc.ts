@@ -720,7 +720,7 @@ export function consumptionOverview(snapshot: Snapshot): ConsumptionOverviewRow[
       const n = makeNotice('meter.calibration-overdue',
         `Zähler „${m.name ?? m.id}“: laut Ihrer Angabe nur bis Ende ${until} geeicht; die Ablesung vom ${fmtDay(overdue.lastDate)} stammt aus der Zeit danach. ` +
           'Nach Ablauf der Eichfrist darf der Zähler nicht ungeeicht verwendet werden, und seine Werte dürfen nicht in einer Abrechnung verwendet werden (§ 37 Abs. 1, § 33 Abs. 1 MessEG); das kann als Ordnungswidrigkeit geahndet werden. Mietfuchs rechnet mit den Werten trotzdem. ' +
-          'Bestreitet ein Mieter sie, gilt: „Den von einem nicht (mehr) geeichten Messgerät abgelesenen Werten kommt die Vermutung ihrer Richtigkeit nicht zu. In diesem Fall muss der Vermieter im Prozess die Richtigkeit der abgelesenen Werte zur Überzeugung des Tatrichters nachweisen.“ (BGH VIII ZR 112/10, Leitsatz c). ' +
+          'Bestreitet ein Mieter sie, gilt: „Den von einem nicht (mehr) geeichten Messgerät abgelesenen Verbrauchswerten kommt die Vermutung ihrer Richtigkeit nicht zu. In diesem Fall muss der Vermieter im Prozess die Richtigkeit der abgelesenen Werte zur Überzeugung des Tatrichters nachweisen.“ (BGH VIII ZR 112/10, Leitsatz c). ' +
           'Lassen Sie den Zähler eichen oder tauschen. Hat der Messdienst oder Versorger die Eichfrist im Stichprobenverfahren verlängern lassen (§ 35 MessEV), tragen Sie das Jahr ein, bis zu dem sie verlängert ist; auf dem Zähler ist das nicht zu sehen.',
         { kind: 'meter', id: m.id })
       notices.push(n)

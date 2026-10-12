@@ -11,6 +11,11 @@ import type { CalibrationYears } from '../../shared/law/messev.ts'
 import type { LawParam } from '../../shared/law/register.ts'
 import { computeSettlement, consumptionOverview } from '../src/calc.ts'
 import { snapshotOf, type SnapshotReading, type SnapshotSource } from '../src/snapshot.ts'
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { GLOSSARY } from '../../shared/glossary.ts'
+import { RULES } from '../../shared/law/rules.ts'
 
 const r = (date: string, value: number, extra: Partial<SnapshotReading> = {}): SnapshotReading => ({ meterId: 'm1', date, value, ...extra })
 const year2025 = { from: '2025-01-01', to: '2025-12-31' }
@@ -104,7 +109,7 @@ test('Zähler-Seite: Warnung mit Jahr, Datum, MessEG, Beweislast mit dem Leitsat
   assert.match(n.text, /§ 37 Abs\. 1, § 33 Abs\. 1 MessEG/)
   assert.match(n.text, /Ordnungswidrigkeit/)
   assert.match(n.text, /rechnet mit den Werten trotzdem/)
-  assert.match(n.text, /„Den von einem nicht \(mehr\) geeichten Messgerät abgelesenen Werten kommt die Vermutung ihrer Richtigkeit nicht zu\. In diesem Fall muss der Vermieter im Prozess die Richtigkeit der abgelesenen Werte zur Überzeugung des Tatrichters nachweisen\.“ \(BGH VIII ZR 112\/10, Leitsatz c\)/)
+  assert.match(n.text, /„Den von einem nicht \(mehr\) geeichten Messgerät abgelesenen Verbrauchswerten kommt die Vermutung ihrer Richtigkeit nicht zu\. In diesem Fall muss der Vermieter im Prozess die Richtigkeit der abgelesenen Werte zur Überzeugung des Tatrichters nachweisen\.“ \(BGH VIII ZR 112\/10, Leitsatz c\)/)
   assert.match(n.text, /§ 35 MessEV/)
   assert.match(n.text, /auf dem Zähler ist das nicht zu sehen/)
   assert.ok(zeile.warnings.includes(n.text), 'die Textliste führt den Hinweis wie die übrigen')
@@ -171,4 +176,27 @@ test('Übergang an der Grenze: Eine neue Zahl am 31.12. des Endjahres gilt noch,
   // Jahreszahl 2016, fünf Jahre: Ende 31.12.2021.
   assert.deepEqual(calibrationEnd('warmwasser', 2016, fassungen('2021-12-31')), { kind: 'end', year: 2022, years: 6, change: { from: '2021-12-31', before: 5, after: 6 } })
   assert.deepEqual(calibrationEnd('warmwasser', 2016, fassungen('2022-01-01')), { kind: 'end', year: 2021, years: 5, change: null })
+})
+
+// Durchsicht von PR 21, M1: Leitsatz c von BGH VIII ZR 112/10 wörtlich, an jeder Stelle, die ihn zitiert.
+const LEITSATZ_C = '„Den von einem nicht (mehr) geeichten Messgerät abgelesenen Verbrauchswerten kommt die Vermutung ihrer Richtigkeit nicht zu. In diesem Fall muss der Vermieter im Prozess die Richtigkeit der abgelesenen Werte zur Überzeugung des Tatrichters nachweisen.“'
+
+test('Durchsicht M1: Hinweis, Regel und Lexikon zitieren Leitsatz c wörtlich', () => {
+  const hinweis = consumptionOverview(snapshotOf(zaehler(2024), 2025))[0]?.notices.find((n) => n.code === 'meter.calibration-overdue') ?? assert.fail('kein Hinweis')
+  const regel = RULES.find((r) => r.code === 'meter-calibration') ?? assert.fail('Regel fehlt')
+  for (const [wo, text] of [['Hinweis', hinweis.text], ['Regel', regel.summary], ['Lexikon', GLOSSARY.meterCalibration.needed]] as const) {
+    assert.ok(text.includes(LEITSATZ_C), `${wo}: Leitsatz c nicht wörtlich`)
+  }
+})
+
+// Durchsicht von PR 21, S1: Die Lesart des Übergangs ist eine Auslegung von Mietfuchs und wird niemandem
+// zugeschrieben; für eine Praxis von Behörden oder Messdiensten gibt es keine Quelle.
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
+test('Durchsicht S1: Übergang als eigene Auslegung, ohne Zuschreibung an Eichbehörden oder Messdienste', () => {
+  const satz = 'Die Änderungsverordnung vom 26.10.2021 enthält keine Übergangsregel. Mietfuchs wendet die Frist von 6 Jahren auch auf Fristen an, die am 03.11.2021 noch liefen; eine schon abgelaufene Frist lebt nicht wieder auf. Das ist eine Auslegung.'
+  for (const file of ['shared/calibration.ts', 'shared/law/messev.ts', 'client/src/meterForm.ts', 'CHANGELOG.md', 'CLAUDE.md']) {
+    const text = fs.readFileSync(path.join(ROOT, file), 'utf8')
+    assert.doesNotMatch(text, /(wie|ebenso|auch) die Eichbehörden|Auslegung wie Eichbehörden|Eichbehörden und (die )?Messdienste/, file)
+    if (file.endsWith('.md') || file.startsWith('shared/')) assert.ok(text.replace(/\s*\n\s*(\/\/ )?/g, ' ').includes(satz), `${file}: der Satz zum Übergang fehlt`)
+  }
 })
