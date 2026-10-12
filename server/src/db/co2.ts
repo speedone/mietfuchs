@@ -383,10 +383,17 @@ export async function saveHotWater(db: Database, plantId: string, period: string
   if (dhwMethod === undefined) throw new HeatingError(400, 'Dieses Verfahren für das Warmwasser kennt Mietfuchs nicht. Bitte wählen Sie aus der Liste.')
   const formula = dhwMethod === 'volumeFormula' || dhwMethod === 'areaFormula'
   const answer = raw(body, 'dhwUnmeasurable')
-  const dhwUnmeasurable = formula && has(body, 'dhwUnmeasurable') && typeof answer === 'boolean' ? answer : null
+  const sent = has(body, 'dhwUnmeasurable')
   const formulaInputs = ctx.plant.method === 'self' ? readFormulaInputs(body) : {}
   await db.transaction(async (tx) => {
     if (await heatingPeriodClosed(tx, ctx, h)) throw new HeatingError(409, closedText(h))
+    // Fehlt das Feld im Rumpf, bleibt die Bestätigung derselben Formel stehen (Heizung PR 20, Durchsicht S2):
+    // „Ermittlung übernehmen“ schickt nur das Verfahren, und eine still geleerte Bestätigung brächte die Kürzung
+    // nach § 12 Abs. 1 Satz 1 HeizkostenV zurück. Zusammengeführt wird nach Anwesenheit wie in repository.ts.
+    const [current] = sent ? [] : await tx.select({ dhwMethod: heatingPeriods.dhwMethod, dhwUnmeasurable: heatingPeriods.dhwUnmeasurable }).from(heatingPeriods)
+      .where(and(eq(heatingPeriods.plantId, plantId), eq(heatingPeriods.period, h.key)))
+    const kept = current && current.dhwMethod === dhwMethod ? current.dhwUnmeasurable ?? null : null
+    const dhwUnmeasurable = !formula ? null : sent ? (typeof answer === 'boolean' ? answer : null) : kept
     const heatingPeriodId = await ensureHeatingPeriod(tx, plantId, h.key)
     await tx.update(heatingPeriods).set({ dhwMethod, dhwUnmeasurable, ...formulaInputs }).where(eq(heatingPeriods.id, heatingPeriodId))
     await dropIfEmpty(tx, heatingPeriodId)
