@@ -349,6 +349,8 @@ const NOT_IN_DB_JSON = new Set(['period', 'propertyId', 'mea', 'externalMeasure'
   'heatingPlantId', 'heatingRole', 'remoteReadable', 'installedOn',
   // Skala und Faktor des Heizkostenverteilers (Heizung PR 12) ebenso.
   'hcaScale', 'ratingFactor',
+  // Das Eichjahr (Heizung PR 21) ebenso; seine Rundreise prüfen db-repository.test.ts und db-eichfrist.test.ts.
+  'calibratedUntil',
   // Ebenso die Lieferung einer Position (Heizung PR 7); ihre Rundreise prüft db-fuel.test.ts.
   'fuelDeliveryId',
   // Betriebsstrom (Heizung PR 15) kennt die db.json nicht; seine Rundreise prüft db-repository.test.ts.
