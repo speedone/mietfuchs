@@ -2542,15 +2542,15 @@ Hier gibt es Quellen, aber keine Entscheidung. Mietfuchs wählt die vorsichtige 
 | 20 | Gilt die Mitteilungspflicht des § 5d Abs. 4 auch für Abs. 3? | Abs. 4 spricht von den „Voraussetzungen des Härtefalls“, die Überschrift des § 5d von Härtefällen | ja, als Auslegung: ohne Mitteilung hälftig (zulasten des Vermieters, also vorsichtig gegenüber dem Mieter) | `co2.half-split-two-family` |
 | 21 | Getrennte Heizkostenabrechnung (Weg d) | § 556 Abs. 3 S. 1, 4 BGB; VIII ZR 240/07 Rn. 17–22 (Teilabrechnungen erlaubt, Leitsatz a nur bei einheitlicher Vorauszahlung) – Umkehrschluss; ob eine im Vertrag getrennt ausgewiesene Vorauszahlung eine getrennte Abrechnung verlangt, ist Vertragsauslegung | Weg d nur bei getrennter Abrechnung und H ≠ P; Zustimmungsvorbehalt, wenn der Vertrag den Zeitraum festlegt | Einrichtung Schritt 3 |
 | 22 | 15 % bei Wärmepumpe ohne Erfassung nach dem 30.09.2025 | § 12 Abs. 3 S. 2: Verordnung erst ab dem Zeitraum nach der Installation; ohne Installation wörtlich nie; BT-Drs. 20/7619 schweigt zur Kürzung | Die Pflicht aus S. 1 ist verletzt, also gilt § 12 Abs. 1 S. 1 (15 %) | `heating.no-consumption` mit Vermerk „Auslegung“ |
-| 23 | § 9 CO2KostAufG und der Anteil nach § 5a | **Für** eine Kürzung nach § 9: § 6 Abs. 2 S. 1 umfasst seit 29.07.2026 § 5a Abs. 3, die CO₂-Kosten nach § 5a Abs. 3 Nr. 2 werden nach § 7 Abs. 1 abgerechnet, § 9 Abs. 1 nennt §§ 5–8. **Dagegen:** § 9 Abs. 1 meint den Anteil „nach § 5, 6, 7 oder 8“, die Teilung folgt aus § 5a „in Abweichung von § 5 Abs. 2“. Die Begründungen (BT-Drs. 21/6278, 21/7009) schweigen. | Auslegung zulasten des Vermieters: § 9 kürzt den Teil nach § 5a nicht; bei § 9 Abs. 2 ist der Teil nach Stufen 0 ‰ | `co2.restriction` |
+| 23 | § 9 CO2KostAufG und der Anteil nach § 5a | **Für** eine Kürzung nach § 9: § 6 Abs. 1 S. 2 („entsprechend anwendbar auf Kosten nach § 5a Absatz 3 und § 5b“) und Abs. 2 S. 1 beziehen § 5a ausdrücklich ein; die Hälfte gilt „in Abweichung von § 5 Absatz 2“ (§ 5a Abs. 3 Nr. 2), tritt also an die Stelle des Anteils nach § 5, auf den § 9 verweist. **Dagegen:** § 9 Abs. 1 nennt den Anteil „nach § 5, 6, 7 oder 8“ und § 5a nicht; die Kosten nach § 5a ermittelt § 7 Abs. 5, nicht Abs. 1. Die Begründungen (BT-Drs. 21/6278, 21/7009) schweigen. (Berichtigt mit Heizung PR 18 nach der Prüfung M6 und der Gegenprüfung vom 12.10.2026: „§§ 5–8“ und „§ 7 Abs. 1“ waren falsch zitiert.) | Auslegung zulasten des Vermieters: § 9 kürzt den Teil nach § 5a nicht; bei § 9 Abs. 2 ist der Teil nach Stufen 0 ‰ | `co2.restriction` |
 | 24 | § 5a Abs. 4 S. 2: „in § 43 Abs. 7 S. 1 genannter Zeitraum“ | Wortlaut lässt Kalenderjahr 2028 oder Übergangszeit zu; BT-Drs. 21/7009, S. 154: „erst nach einer Übergangszeit von 12 Monaten ab dem Einbau“ | Auslegung nach der Begründung: zwölf Monate ab dem Einbau | `co2.half-split` |
 | 25 | § 8 Abs. 2 CO2KostAufG verweist seit 29.07.2026 auf § 6 Abs. 2 S. 2 bis 4; die Auszahlungsfrist steht jetzt in S. 5 | wahrscheinlich Redaktionsversehen, keine Quelle | Auslegung: Mietfuchs warnt trotzdem und nennt die Frage | `co2.refund-due` |
-| 26 | Einbau am 01.01.2027 und § 5a Abs. 4 S. 1 („weniger als zwölf Monate vor dem 1. Januar 2028“) | §§ 187, 188 BGB treffen ihn nicht genau; die Begründung spricht von einer „Havarie im Verlauf des Jahres 2027“ (BT-Drs. 21/7009, S. 154) | nach dem Wortlaut nicht eingeschlossen | Hinweis bei Einbau 01.01.2027 |
+| 26 | Einbau am 01.01.2027 und § 5a Abs. 4 S. 1 („weniger als zwölf Monate vor dem 1. Januar 2028“) | §§ 187, 188 BGB treffen ihn nicht genau; die Begründung spricht von einer „Havarie im Verlauf des Jahres 2027“ (BT-Drs. 21/7009, S. 154) | nach dem Wortlaut nicht eingeschlossen | `co2.half-split` nennt es als Auslegung (Heizung PR 18, Prüfung S14) |
 | 27 | Treffen § 7 Abs. 4 (CO₂) und § 7 Abs. 5 S. 3 (Netzentgelte, Bio) zusammen: 3 % oder 6 %? | Wortlaut schweigt | nicht summieren, jede Kürzung einzeln (wie 6.5) | `co2.half-split-missing` |
 
 ### 15.2 Verbleibende Festlegungen ohne Primärquelle
 
-Für jede Festlegung stehen hier der Rechercheweg, die konservativste oder verbreitetste Lösung und der Hinweis, den der Vermieter sieht. **Die Liste umfasst sieben Punkte.**
+Für jede Festlegung stehen hier der Rechercheweg, die konservativste oder verbreitetste Lösung und der Hinweis, den der Vermieter sieht. **Die Liste umfasst zehn Punkte** (F8 bis F10 mit Heizung PR 18).
 
 **F1: Gradtage als rechnerische Abgrenzung einer Versorgerrechnung** (Stufen 4 und 5 in 3.2)
 
@@ -2610,6 +2610,26 @@ Für jede Festlegung stehen hier der Rechercheweg, die konservativste oder verbr
 - *Nicht belegt:* eine Regel eines Messdienstes oder der VDI 2077 für den Rumpf (Suche ohne Treffer, VDI 2077 Bl. 3.1 nicht eingesehen).
 - *Lösung:* 32 · A · Tage der Heizperiode / Tage des Jahres ab ihrem Beginn, nach Tagen und nicht nach Gradtagen, mit der Begründung aus § 9b Abs. 2. Dasselbe bei einem Kesseltausch mitten in der Heizperiode mit den Tagen der Laufzeit der Anlage (Umsetzung PR 11). Die Volumenformel braucht das nicht, denn V ist das gemessene Volumen des Zeitraums (beim Kesseltausch das der Laufzeit, an der Anlage eingetragen). ⟨Norm offen: VDI 2077⟩
 - *Hinweis:* kein eigener Code; der Rechenweg im Ausweis nennt Tage und § 9b Abs. 2.
+
+**F8: Hybridheizung und § 5a CO2KostAufG** (Heizung PR 18, Prüfung M10, Wortlaut der Gegenprüfung)
+
+- *Belegt ist:* Nach § 43 Abs. 5 und § 45 Abs. 2 GModG gilt die Pflicht nach Abs. 1 durch Wärmepumpe oder feste Biomasse „als erfüllt“; § 5a Abs. 1 knüpft an „Einbau und Betrieb einer Heizungsanlage nach § 43 Absatz 1“ an.
+- *Nicht belegt:* ob § 5a für eine Hybridheizung gilt; Gesetz und Begründung (BT-Drs. 21/6278, 21/7009) äußern sich nicht.
+- *Lösung:* Mietfuchs wendet § 5a an, weil die Anlage mit Gas, Öl oder Flüssiggas beschickt wird.
+- *Hinweis:* `co2.half-split` („Das ist eine Auslegung; ausdrücklich regeln Gesetz und Begründung diesen Fall nicht.“).
+
+**F9: Tag des Einbaus im Neubau** (Heizung PR 18, Prüfung S13)
+
+- *Belegt ist:* § 5b ordnet § 5a „entsprechend“ an; § 43 Abs. 1 GModG gilt nur für bestehende Gebäude (§ 42 Abs. 1 GModG).
+- *Nicht belegt:* welcher Tag im Neubau als Einbau gilt; die Begründung (BT-Drs. 21/6278, S. 125) spricht von Neubauten, „auf die § 43 Absatz 1 … zur Anwendung kommt“.
+- *Lösung:* der Tag der Inbetriebnahme der Gas-, Öl- oder Flüssiggasheizung; ein Tag vor dem 30.07.2026 ist im Neubau erlaubt.
+- *Hinweis:* Text der Karte „Heizung nach § 43 GModG“.
+
+**F10: Netzentgelte ohne Entgelte des Messstellenbetreibers** (Heizung PR 18, Prüfung K3)
+
+- *Belegt ist:* § 40 Abs. 3 Nr. 4 EnWG nennt „jeweils gesondert die Netzentgelte und, soweit sie Gegenstand des Liefervertrages sind, die Entgelte des Messstellenbetreibers“; § 5a Abs. 1 Nr. 1 nennt nur die „Netzentgelte nach § 40 Absatz 3 Nummer 4“.
+- *Lösung:* nach dem Wortlaut ohne die Entgelte des Messstellenbetreibers; das ist eine Auslegung.
+- *Hinweis:* Beschriftung des Felds an der Lieferung.
 
 **Gegenüber der ersten Fassung belegt und gestrichen:**
 
