@@ -117,3 +117,44 @@ test('ein Zähler der Anlage zeigt seine gespeicherte Rolle', async () => {
     plants = []
   }
 })
+
+// Heizung PR 21 (#98): Eichjahr mit Vorschlag aus der Jahreszahl auf dem Zähler; beim Heizkostenverteiler kein Feld.
+test('Eichfrist: Vorschlag übernehmen und speichern; beim Heizkostenverteiler kein Feld', async () => {
+  renderPage()
+  fireEvent.click(await screen.findByRole('button', { name: /Zähler hinzufügen/ }, { timeout: 5000 }))
+  fireEvent.change(screen.getByLabelText(/^Name/), { target: { value: 'Kaltwasser Haus' } })
+  fireEvent.change(screen.getByLabelText(/^Jahreszahl auf dem Zähler/), { target: { value: '2022' } })
+  expect(screen.getByText(/Vorschlag: geeicht bis Ende 2028/)).toBeTruthy()
+  expect(screen.getByText(/Jahreszahl auf der Eichmarke nennt das Jahr, in dem die Eichfrist beginnt/)).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Übernehmen' }))
+  expect((screen.getByLabelText(/^Geeicht bis Ende/) as HTMLInputElement).value).toBe('2028')
+  fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/ }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0]).toMatchObject({ type: 'kaltwasser', calibratedUntil: 2028 })
+  cleanup()
+  renderPage()
+  fireEvent.click(await screen.findByRole('button', { name: /Zähler hinzufügen/ }, { timeout: 5000 }))
+  fireEvent.change(screen.getByLabelText(/^Sparte/), { target: { value: 'hkv' } })
+  expect(screen.queryByLabelText(/^Geeicht bis Ende/)).toBeNull()
+  expect(screen.queryByLabelText(/^Jahreszahl auf dem Zähler/)).toBeNull()
+})
+
+test('Eichfrist: das Jahr steht in der Liste, die abgelaufene Frist als Warnung und nicht als Fehler', async () => {
+  METERS = [{ id: 'm1', propertyId: 'objekt-1', name: 'Wasser EG', unitId: 'u1', type: 'kaltwasser', unit: 'm³', calibratedUntil: 2024 }]
+  const notice = { code: 'meter.calibration-overdue', level: 'warning', title: 'Eichfrist abgelaufen', text: 'Zähler „Wasser EG“: abgelaufen', subject: { kind: 'meter', id: 'm1' } }
+  vi.stubGlobal('fetch', async (url: string) => {
+    const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
+    const path = url.split('?')[0] ?? ''
+    if (path === '/api/properties') return json([{ id: 'objekt-1', name: 'A', kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null }])
+    if (path === '/api/meters') return json(METERS)
+    if (path.startsWith('/api/consumption')) return json([{ meterId: 'm1', consumption: 80, readingCount: 2, warnings: [notice.text], notices: [notice] }])
+    return json([])
+  })
+  try {
+    renderPage()
+    expect(await screen.findByText('geeicht bis Ende 2024', undefined, { timeout: 5000 })).toBeTruthy()
+    expect((await screen.findByText(notice.text)).className).toBe('warn')
+  } finally {
+    METERS = [{ id: 'm1', propertyId: 'objekt-1', name: 'Wasser EG', unitId: 'u1', type: 'kaltwasser', unit: 'm³' }]
+  }
+})

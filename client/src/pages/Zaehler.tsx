@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { HeatingPlant, HeatingRole, Meter, MeterType, Reading, Unit } from '../types'
+import type { HeatingPlant, HeatingRole, Meter, MeterType, Notice, Reading, Unit } from '../types'
 import { METER_TYPE_LABELS } from '../types'
 import { buildReadingBody, EMPTY_READING, type ReadingForm } from '../readingForm'
-import { asksRemote, emptyMeterForm, HEATING_ROLE_HELP, heatingRoleLabel, heatingRoleOptions, meterBody, meterPlantId, meterToForm, oldEndText, REMOTE_RULE_TEXT, withMeterType, type MeterForm, type RemoteAnswer } from '../meterForm'
+import { asksCalibration, asksRemote, CALIBRATION_MARK_HELP, calibrationSuggestion, emptyMeterForm, HEATING_ROLE_HELP, heatingRoleLabel, heatingRoleOptions, meterBody, meterPlantId, meterToForm, oldEndText, REMOTE_RULE_TEXT, withMeterType, type MeterForm, type RemoteAnswer } from '../meterForm'
 import { plantOptions } from '../heatingForm'
 import { api, errorText, fmtDate } from '../api'
 import { usePeriod } from '../period'
@@ -20,7 +20,7 @@ import { useFocusTarget, useScrollToFocus, type FocusProps } from '../focus'
 
 type Props = { units: Unit[] } & FocusProps
 
-type Consumption = { meterId: string; consumption: number; readingCount: number; warnings: string[] }
+type Consumption = { meterId: string; consumption: number; readingCount: number; warnings: string[]; notices?: Notice[] }
 
 export default function Zaehler({ units, focus, onFocusDone }: Props) {
   const { param, label, calendar } = usePeriod()
@@ -33,6 +33,8 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
   const [readings, setReadings] = useState<Reading[]>([])
   const [consumption, setConsumption] = useState<Consumption[]>([])
   const [meterForm, setMeterForm] = useState<MeterForm | null>(null)
+  // Heizung PR 21: die Jahreszahl auf dem Zähler, nur für den Vorschlag; gespeichert wird „geeicht bis“.
+  const [markedYear, setMarkedYear] = useState('')
   const [openMeterId, setOpenMeterId] = useState<string | null>(null)
   const [readingForm, setReadingForm] = useState<ReadingForm>({ ...EMPTY_READING })
   const [error, setError] = useState('')
@@ -195,7 +197,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
                     readings={mReadings}
                     unitName={unitName(m.unitId)}
                     onToggle={() => { setError(''); setOpenMeterId(openMeterId === m.id ? null : m.id); setReadingForm({ ...EMPTY_READING }) }}
-                    onEdit={() => { setError(''); setMeterForm(meterToForm(m)) }}
+                    onEdit={() => { setError(''); setMarkedYear(''); setMeterForm(meterToForm(m)) }}
                     onDelete={() => deleteMeter(m)}
                     readingForm={readingForm}
                     setReadingForm={setReadingForm}
@@ -210,7 +212,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
         )}
 
         <div className="row">
-          <button className="btn secondary" onClick={() => { setError(''); setMeterForm(emptyMeterForm()) }}>
+          <button className="btn secondary" onClick={() => { setError(''); setMarkedYear(''); setMeterForm(emptyMeterForm()) }}>
             + Zähler hinzufügen
           </button>
         </div>
@@ -301,6 +303,34 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
                 </label>
               </>
             )}
+            {asksCalibration(meterForm) && (
+              <>
+                <label className="field grow">
+                  Geeicht bis Ende (Jahr)
+                  <input inputMode="numeric" value={meterForm.calibratedUntil} onChange={(e) => setMeterForm({ ...meterForm, calibratedUntil: e.target.value })} placeholder="optional" />
+                  <small className="muted">
+                    Die <Term id="meterCalibration">Eichfrist</Term> endet mit dem Ende dieses Jahres. Hat der Messdienst sie im Stichprobenverfahren verlängern lassen (§ 35 MessEV), tragen Sie das verlängerte Jahr ein.
+                  </small>
+                </label>
+                <label className="field grow">
+                  Jahreszahl auf dem Zähler (etwa „M22“ oder die Jahresangabe der Eichmarke)
+                  <input inputMode="numeric" value={markedYear} onChange={(e) => setMarkedYear(e.target.value)} placeholder="für einen Vorschlag" />
+                  {markedYear.trim() !== '' && (() => {
+                    const s = calibrationSuggestion(meterForm.type, markedYear)
+                    return 'reason' in s
+                      ? <small className="muted">{s.reason}</small>
+                      : (
+                        <small>
+                          {s.text}{' '}
+                          <button type="button" className="btn secondary" onClick={() => setMeterForm({ ...meterForm, calibratedUntil: String(s.year) })}>Übernehmen</button>
+                          <br />
+                          <span className="muted">{CALIBRATION_MARK_HELP}</span>
+                        </small>
+                      )
+                  })()}
+                </label>
+              </>
+            )}
           </div>
         </Drawer>
       )}
@@ -332,7 +362,9 @@ function FragmentRow(props: {
           {m.name}
           {m.meterNumber && <div className="muted">Nr. {m.meterNumber}</div>}
           {hcaSummary(m) && <div className="muted">{hcaSummary(m)}</div>}
-          {cons?.warnings.map((w, i) => <div key={i} className="error">{w}</div>)}
+          {m.calibratedUntil != null && <div className="muted">geeicht bis Ende {m.calibratedUntil}</div>}
+          {/* Die abgelaufene Eichfrist ist eine Warnung und kein Fehler der Stände (Heizung PR 21). */}
+          {cons?.warnings.map((w, i) => <div key={i} className={cons.notices?.[i]?.code === 'meter.calibration-overdue' ? 'warn' : 'error'}>{w}</div>)}
         </td>
         <td>{unitName}</td>
         <td>{METER_TYPE_LABELS[m.type] ?? m.type}</td>
