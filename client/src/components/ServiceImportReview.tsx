@@ -4,6 +4,7 @@
 import { useState } from 'react'
 import { api, errorText } from '../api'
 import { useConfirm, useToast } from './feedback'
+import Table from './Table'
 import Term from './Term'
 import { CO2_ANSWER_OPTIONS, CO2_EXAMPLE, CO2_QUESTION, co2Body, co2ToForm, probeLine, type Co2Answer } from '../co2Form'
 import {
@@ -144,7 +145,7 @@ export default function ServiceImportReview({ x, file, ctx, view, co2 = true, on
                 </label>
               )}
             </div>
-            <table className="table">
+            <Table>
               <thead><tr><th>Nutzer laut Abrechnung</th><th className="num">Betrag</th><th>Gehört zu</th></tr></thead>
               <tbody>
                 {b.lines.map((l, k) => (
@@ -159,7 +160,7 @@ export default function ServiceImportReview({ x, file, ctx, view, co2 = true, on
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </Table>
           </fieldset>
         )
       })}
