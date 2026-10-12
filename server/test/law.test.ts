@@ -6,7 +6,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { coversDate, createLawLog, dayAfter, dayBefore, germanDate, law, LAW_AS_OF, lawOverridable, onlyVersion, recordVersionAt, valueAt, versionAt, yearStart, type LawParam } from '../../shared/law/register.ts'
+import { coversDate, createLawLog, dayAfter, dayBefore, daysIn, eventPeriodEnd, germanDate, law, LAW_AS_OF, lawOverridable, onlyVersion, recordVersionAt, shiftMonths, valueAt, versionAt, versionsIn, yearStart, type LawParam } from '../../shared/law/register.ts'
 import { LAW_PARAMS } from '../../shared/law/params.ts'
 import * as rulesModule from '../../shared/law/rules.ts'
 import { betrkvGenerationPower, betrkvTvSignal, bgbDeadlineMonths, bgbHeatDeliverySwitch, bgbMaxPeriodMonths } from '../../shared/law/bgb-betrkv.ts'
@@ -588,4 +588,62 @@ test('Regel meter-calibration: nennt Frist aus dem Register, MessEG, § 35 MessE
   // Angewendet wird sie auf der Zähler-Seite, nicht in der Abrechnung (Prüfung des Plans, S13).
   assert.equal(rule.scope, 'meters')
   for (const y of [2015, 2022, 2026]) assert.ok(!rulesFor(`${y}-01-01`, `${y}-12-31`).some((r) => r.code === 'meter-calibration'), String(y))
+})
+
+// ---------- Zeitregel incurred (Heizung PR 18, Entwurf 3.13, 4.2) ----------
+
+const teilung: LawParam<number, 'incurred'> = {
+  id: 'test.teilung', title: 'Teilung', norm: '§ 5a', timing: 'incurred',
+  versions: [
+    { validTo: '2027-12-31', value: 0, source, enacted: 'a' },
+    { validFrom: '2028-01-01', value: 500, source, enacted: 'b' },
+  ],
+  describe: (v) => `${v} ‰`,
+}
+const nachTagen = (r: { from: string; to: string }): number => daysIn(r)
+
+test('Register: incurred teilt den Zeitraum an den Fassungen und gewichtet je Teil (01.05.2027–30.04.2028)', () => {
+  const log = createLawLog()
+  const teile = law(teilung, { period: { from: '2027-05-01', to: '2028-04-30' }, weights: nachTagen }, log)
+  assert.deepEqual(teile.map((t) => [t.from, t.to, t.value]), [['2027-05-01', '2027-12-31', 0], ['2028-01-01', '2028-04-30', 500]])
+  // 245 und 121 Tage von 366 (2028 ist ein Schaltjahr).
+  assert.ok(Math.abs((teile[0]?.weight ?? 0) - 245 / 366) < 1e-12)
+  assert.ok(Math.abs((teile[1]?.weight ?? 0) - 121 / 366) < 1e-12)
+  assert.deepEqual(log.values.map((v) => v.validFrom ?? ''), ['', '2028-01-01'])
+})
+
+test('Register: incurred in einer einzigen Fassung ist ein Teil mit Gewicht 1', () => {
+  const teile = law(teilung, { period: { from: '2028-01-01', to: '2028-12-31' }, weights: nachTagen }, createLawLog())
+  assert.deepEqual(teile, [{ from: '2028-01-01', to: '2028-12-31', value: 500, weight: 1 }])
+})
+
+test('Register: incurred protokolliert keine Fassung ohne Gewicht; ohne jedes Gewicht gelten die Tage', () => {
+  const log = createLawLog()
+  const teile = law(teilung, { period: { from: '2027-05-01', to: '2028-04-30' }, weights: (r) => (r.from >= '2028-01-01' ? 1 : 0) }, log)
+  assert.deepEqual(teile.map((t) => t.weight), [0, 1])
+  assert.deepEqual(log.values.map((v) => v.validFrom), ['2028-01-01'])
+  const ohne = law(teilung, { period: { from: '2027-05-01', to: '2028-04-30' }, weights: () => 0 }, createLawLog())
+  assert.ok(Math.abs((ohne[1]?.weight ?? 0) - 121 / 366) < 1e-12)
+})
+
+test('Register: incurred ohne Fassung am Anfang oder Ende ist ein Programmfehler', () => {
+  const spaet: LawParam<number, 'incurred'> = { ...teilung, id: 'test.spaet', versions: [{ validFrom: '2028-01-01', value: 500, source, enacted: 'b' }] }
+  assert.throws(() => law(spaet, { period: { from: '2027-05-01', to: '2028-04-30' }, weights: nachTagen }, createLawLog()), /Kein Rechtswert/)
+})
+
+test('Register: versionsIn schneidet die Fassungen auf einen Bereich zu und protokolliert nichts', () => {
+  assert.deepEqual(versionsIn(teilung, { from: '2027-10-15', to: '2028-10-14' }), [
+    { from: '2027-10-15', to: '2027-12-31', value: 0 },
+    { from: '2028-01-01', to: '2028-10-14', value: 500 },
+  ])
+  assert.deepEqual(versionsIn(teilung, { from: '2026-01-01', to: '2026-12-31' }), [{ from: '2026-01-01', to: '2026-12-31', value: 0 }])
+})
+
+test('Fristende ab einem Ereignis nach §§ 187 Abs. 1, 188 Abs. 2, 3 BGB', () => {
+  assert.equal(eventPeriodEnd('2027-06-15', 12), '2028-06-15')
+  assert.equal(eventPeriodEnd('2027-01-31', 1), '2027-02-28')
+  assert.equal(eventPeriodEnd('2028-02-29', 12), '2029-02-28')
+  assert.equal(shiftMonths('2028-01-01', -12), '2027-01-01')
+  assert.equal(shiftMonths('2028-03-31', -1), '2028-02-29')
+  assert.equal(daysIn({ from: '2028-01-01', to: '2028-04-30' }), 121)
 })
