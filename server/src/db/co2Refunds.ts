@@ -73,12 +73,13 @@ const emptyRefund = (id: string): Co2Refund => ({
 })
 const nullableNumber = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
 const nullableInt = (v: unknown): number | null => (typeof v === 'number' && Number.isInteger(v) ? v : null)
-// Ein ungültiger Zeitraumschlüssel bleibt als Text stehen, damit die Prüfung unten ihn mit einem Satz ablehnt,
-// statt ihn still zu verwerfen.
+// Ein ungültiger Zeitraumschlüssel wird mit einem Satz abgelehnt, statt still verworfen.
 const periodOrText = (v: unknown): PeriodKey | null => {
   const text = asNullableFilled(v)
   if (text === null) return null
-  return parsePeriodKey(text) ?? (text as PeriodKey)
+  const key = parsePeriodKey(text)
+  if (key === null) throw new PeriodError(`Den Zeitraum ${text} gibt es für dieses Objekt nicht. Bitte wählen Sie einen Abrechnungszeitraum des Objekts.`)
+  return key
 }
 
 function mergeRefund(current: Co2Refund, body: unknown): Co2Refund {
