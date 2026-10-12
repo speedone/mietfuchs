@@ -20,7 +20,9 @@ export type RefundBasis = Pick<Co2Refund, 'billedFrom' | 'billedTo' | 'emissions
 // `applicable`: § 11 Abs. 2 für den Zeitraum des Lieferanten; `ranges`: Stufentabelle, bei einem Zeitraum unter
 // einem Jahr gekürzt (§ 5 Abs. 3 Satz 4 i. V. m. Abs. 1 Satz 4); `restriction`: § 9 aus dem Register, `null` ohne
 // Vorgabe; `pieces`: die Fassungen von `co2.half-split` über den Zeitraum des Lieferanten; `weigh`: Gradtage.
-// `overYear`: Der Zeitraum ist länger als ein Jahr (Prüfung S6); dann rechnet Mietfuchs nicht nach.
+// `overYear`: Der Zeitraum ist länger als ein Jahr (Prüfung S6); dann rechnet Mietfuchs nicht nach. Umzurechnen ist nach
+// § 6 Abs. 2 Satz 2, § 5 Abs. 3 Satz 4 i. V. m. § 5 Abs. 1 Satz 5; offen ist nur das Verfahren bei einer Tankfüllung
+// (nach Zeit, Gradtagen oder Füllstand; Durchsicht S-6).
 export type RefundLaw = {
   applicable: boolean
   ranges: readonly Co2StageRange[]
@@ -86,7 +88,8 @@ export function refundProposal(b: RefundBasis, l: RefundLaw): RefundProposal | n
   if (b.billedFrom === null || b.billedTo === null || b.co2CostCents === null) return null
   const none = (excluded: RefundExclusion): RefundProposal =>
     ({ cents: 0, raw: 0, excluded, value: null, stagePercent: null, permille: null, co2Raw: 0, gridFeeRaw: 0, bioRaw: 0, cutRaw: 0 })
-  // Prüfung S6: Wie eine Lieferung über mehr als ein Jahr einzustufen ist, sagt das Gesetz nicht.
+  // Prüfung S6, Durchsicht S-6: Umzurechnen ist auf den Abrechnungszeitraum; wie bei einer Lieferung über mehr als ein
+  // Jahr, sagt das Gesetz nicht.
   if (l.overYear) return none('overYear')
   if (!l.applicable) return none('notApplicable')
   // § 6 Abs. 3 Satz 1: bei gewerblicher Nutzung nur mit getrennter Messung und Nachweis.
@@ -150,7 +153,7 @@ export type RefundStepText = { euro: (cents: number) => string; exact: (cents: n
 export function refundSteps(p: RefundProposal | null, b: RefundBasis, amountCents: number, t: RefundStepText): { label: string; value: string }[] {
   const shown = { label: 'Betrag laut Anzeige', value: t.euro(amountCents) }
   if (!p) return [shown]
-  if (p.excluded === 'overYear') return [{ label: 'Nachgerechnet', value: 'nicht nachgerechnet: Wie eine Lieferung über mehr als ein Jahr einzustufen ist, regelt das CO2KostAufG nicht' }, shown]
+  if (p.excluded === 'overYear') return [{ label: 'Nachgerechnet', value: 'nicht nachgerechnet: Das Gesetz verlangt, den Ausstoß auf den vereinbarten Abrechnungszeitraum umzurechnen (§ 6 Abs. 2 Satz 2, § 5 Abs. 3 Satz 4 i. V. m. § 5 Abs. 1 Satz 5 CO2KostAufG); wie das bei einer Lieferung über mehr als ein Jahr geschieht, sagt es nicht, und Mietfuchs rechnet es deshalb nicht nach.' }, shown]
   if (p.excluded === 'notApplicable') return [{ label: 'Nachgerechnet', value: `kein Anspruch: Der Zeitraum des Lieferanten beginnt vor dem ${t.applicableFrom} (§ 11 Abs. 2 CO2KostAufG)` }, shown]
   if (p.excluded === 'commercialUnmetered') return [{ label: 'Nachgerechnet', value: 'kein Anspruch ohne getrennte Messung des Wärmeverbrauchs bei gewerblicher Nutzung (§ 6 Abs. 3 Satz 1 CO2KostAufG)' }, shown]
   const steps: { label: string; value: string }[] = []

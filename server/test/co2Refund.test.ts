@@ -70,7 +70,8 @@ test('Prüfung S6: über ein Jahr (etwa eine Tankfüllung) rechnet Mietfuchs nic
   const l = refundLawAt({ ...b, supplierBilledAt: '2026-07-15' }, plainAsk) ?? assert.fail('kein Recht')
   assert.deepEqual([refundProposal(b, l)?.cents, refundProposal(b, l)?.excluded], [0, 'overYear'])
   const t = { euro: (c: number) => `${(c / 100).toFixed(2).replace('.', ',')} €`, exact: (c: number) => `${(c / 100).toFixed(3).replace('.', ',')} €`, num: (n: number) => String(n).replace('.', ','), applicableFrom: '01.01.2023', cutPercent: 5 }
-  assert.match(refundSteps(refundProposal(b, l), b, 1000, t)[0]?.value ?? '', /über mehr als ein Jahr/)
+  assert.match(refundSteps(refundProposal(b, l), b, 1000, t)[0]?.value ?? '', /^nicht nachgerechnet: Das Gesetz verlangt, den Ausstoß auf den vereinbarten Abrechnungszeitraum umzurechnen \(§ 6 Abs\. 2 Satz 2, § 5 Abs\. 3 Satz 4 i\. V\. m\. § 5 Abs\. 1 Satz 5 CO2KostAufG\); wie das bei einer Lieferung über mehr als ein Jahr geschieht, sagt es nicht, und Mietfuchs rechnet es deshalb nicht nach\.$/)
+  // Durchsicht S-6: Das Gesetz regelt die Umrechnung; offen ist nur das Verfahren bei einer Tankfüllung.
 })
 
 test('§ 11 Abs. 2: ein Zeitraum des Lieferanten, der vor 2023 beginnt, ergibt keinen Anspruch', () => {
