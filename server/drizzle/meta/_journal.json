@@ -337,6 +337,20 @@
       "when": 1791766080332,
       "tag": "0047_eichfrist_bedingungen",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "6",
+      "when": 1791769365939,
+      "tag": "0048_gmodg",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "6",
+      "when": 1791769374403,
+      "tag": "0049_gmodg_bedingungen",
+      "breakpoints": true
     }
   ]
 }

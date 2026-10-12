@@ -2301,7 +2301,7 @@ die ganze fachliche Komplexität:
   Flüssiggas, nach dem 29.07.2026 außer im Neubau), `emergency_install`, `emergency_prior_duty` (gefragt als „war die
   ausgefallene eine solche Heizung, nach dem 29.07.2026 eingebaut?“, Prüfung M8), `new_building_first_use`,
   `building_application_before_2026_05_13`; `tenancies.half_split_notice_on` (§ 5d Abs. 4 je Mieter);
-  `properties.tight_market` mit `tight_market_from`/`_to` (Geltung der Verordnung); Schritte 0045/0046, die
+  `properties.tight_market` mit `tight_market_from`/`_to` (Geltung der Verordnung); Schritte 0048/0049, die
   Bedingungen an NULL-fähigen Merkmalen vergleichen mit `IS 1`, weil `= 1` bei NULL die Bedingung bestehen ließe.
   **Die Zeitregel ist `incurred`**: `law()` teilt den Zeitraum an den Fassungen von `co2.half-split` und gewichtet
   nach Anfall; je Lieferung nach den Stufen 1–5 (`deliveryShare` mit dem `ctx` aus `fuelResults`), ohne Lieferungen
@@ -2322,7 +2322,7 @@ die ganze fachliche Komplexität:
   `reliefKey` erkennt, fragt `reliefKeysOf`** (Kürzungsbeträge, Ausweis der eigenen Abrechnung, Vorschlag nach
   § 560 im Rumpf; Prüfung M5). Fehlen Netzentgelte oder Biobrennstoff an einer Lieferung mit Tagen in der Teilung,
   warnt `co2.half-split-missing` mit 3 % je Mieter; Biobrennstoff aus dem Vorrat rechnet Mietfuchs nicht (Warnung,
-  außer an jeder Lieferung steht 0; ein Betrag über 0 wird abgelehnt, ebenso ab 2040).
+  außer an jeder Lieferung ab dem 01.01.2029 (oder ohne Datum) steht 0, Durchsicht S3; ein Betrag über 0 wird abgelehnt, ebenso ab 2040).
 - **Überschneidende Mietverhältnisse einer Wohnung** (#204): Wann sich zwei überschneiden (ein
   gemeinsamer Tag, inklusive Grenzen), steht einmal in [shared/tenancyOverlap.ts](shared/tenancyOverlap.ts);
   Server und Oberfläche fragen dieselbe Funktion. Gerechnet wird wie erfasst, jedes mit vollem
