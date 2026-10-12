@@ -55,7 +55,7 @@ import {
   readUnits, type StoredClosedSettlement,
 } from './read.ts'
 import {
-  aiSlots, assessmentLines, assessments, baseRents, co2Statements, co2TenantReliefs, heatingPeriods, closedHeatingSettlementHistory, closedHeatingSettlements, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, HEATING_MODELS, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, DEPOSIT_STATUS, EXTERNAL_MEASURES,
+  aiSlots, assessmentLines, assessments, baseRents, co2Refunds, co2Statements, co2TenantReliefs, heatingPeriods, closedHeatingSettlementHistory, closedHeatingSettlements, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, HEATING_MODELS, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, DEPOSIT_STATUS, EXTERNAL_MEASURES,
   HCA_SCALES, HEATING_PARTS, OPERATING_POWER, HEATING_ROLES, HEATING_TARGETS, INTERIM_GAP_STATUS, interimReadingGaps, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingSelfSpans, heatingPrepaymentOverrides, heatingPrepayments, heatingSeparateSpans, heatingServiceValues, heatingEstimates,
   flatRates, METER_TYPES, meters, payments, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, PROPERTY_KINDS,
   readings, settings, tenancies, unitNoConnection, units, fuelCarryFrozen, fuelDeliveries,
@@ -1679,6 +1679,13 @@ export async function orphanPeriodKeys(db: Database): Promise<string[]> {
   for (const c of await db.select({ plantId: closedHeatingSettlementHistory.plantId, period: closedHeatingSettlementHistory.period }).from(closedHeatingSettlementHistory)) {
     pruefeHeizung(c.plantId, null, c.period, 'Ein früherer Abschluss einer Heizkostenabrechnung')
   }
+  // Heizung PR 19: der Verrechnungszeitraum einer CO₂-Erstattung gehört zum Objekt des Mietverhältnisses.
+  const erstattungen = await db
+    .select({ propertyId: units.propertyId, period: co2Refunds.settlePeriod, tenantName: tenancies.tenantName })
+    .from(co2Refunds)
+    .innerJoin(tenancies, eq(co2Refunds.tenancyId, tenancies.id))
+    .innerJoin(units, eq(tenancies.unitId, units.id))
+  for (const e of erstattungen) if (e.period !== null) pruefe(e.propertyId, e.period, `Die CO₂-Erstattung von „${e.tenantName}“`)
   return befunde
 }
 

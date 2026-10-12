@@ -148,6 +148,7 @@ const VEROEFFENTLICHT: Record<string, string> = {
   '0049_gmodg_bedingungen': 'cd6436edeb5048ad3e74fcac65330714d91c947dfeb8ae603ae0ead5570bb127',
   // Heizung PR 19 (#97): „Mieter heizt selbst“ an der Bedingung des Heizmodells. Entsteht #251 vorher, wird neu nummeriert.
   '0050_heizmodell_bedingungen': '979c6a51940cb3e849ecf5c40bd31e557eeeb021be61c7fe47d298c3ee7326f6',
+  '0051_co2_erstattung': 'e86c45142ebab514818eb66f24e697e079d7bbcfcddf8740c06670a53f139ba8',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {
