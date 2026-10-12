@@ -4,7 +4,8 @@
 // Mietfuchs nach (Entwurf 9.2).
 import { fmtDate, fmtEuro } from './api'
 import { energyLabelOf } from './heatingForm'
-import type { HeatingStatement } from './types'
+import { halfSplitFirstDay } from '../../shared/law/co2kostaufg.ts'
+import type { Co2Adjustment, HeatingStatement } from './types'
 
 export type Co2BlockView = { title: string; lines: { label: string; value: string }[]; table: { range: string; percent: string; marked: boolean }[]; notes: string[] }
 
@@ -41,6 +42,13 @@ export function co2Block(h: HeatingStatement, tenancyId: string): Co2BlockView |
   if (c.landlordPermille !== null) lines.push({ label: own ? 'Anteil des Vermieters' : 'Anteil des Vermieters laut Abrechnung', value: `${num(c.landlordPermille / 10)} %` })
   if (c.totalCents !== null) lines.push({ label: 'CO₂-Kosten insgesamt', value: fmtEuro(c.totalCents) })
   if (c.landlordCents !== null) lines.push({ label: 'davon trägt der Vermieter', value: fmtEuro(c.landlordCents) })
+  // § 5a anteilig im Ausweis (Heizung PR 18, Entwurf 9.5).
+  const hs = c.halfSplit
+  if (hs) {
+    if (hs.co2SharePermille > 0) lines.push({ label: 'Hälftige Teilung nach § 5a CO2KostAufG', value: `${num(hs.co2SharePermille / 10)} % der CO₂-Kosten nach Anfall` })
+    if (hs.landlordGridFeeCents !== null && hs.landlordGridFeeCents > 0) lines.push({ label: 'Netzentgelte: Anteil des Vermieters', value: fmtEuro(hs.landlordGridFeeCents) })
+    if (hs.landlordBioCents !== null && hs.landlordBioCents > 0) lines.push({ label: 'Biobrennstoff: Anteil des Vermieters', value: fmtEuro(hs.landlordBioCents) })
+  }
   // Laienprobe B23: Beim Messdienst eine Näherung, die der Mieter neben dessen Einzelabrechnung liest.
   const approx = own
     ? ' (nach Ihrem Anteil an den Heizkosten)'
@@ -77,14 +85,19 @@ export function co2Block(h: HeatingStatement, tenancyId: string): Co2BlockView |
     notes.push(`Der Anteil des Vermieters laut Abrechnung (${num(c.landlordPermille / 10)} %) weicht von der markierten Stufe ab (${c.stage.landlordPercent} %). Den Grund nennt die Abrechnung des Messdienstes, etwa eine Kürzung nach § 9 CO2KostAufG.`)
   }
   if (c.shortened) notes.push('Die Heizperiode ist kürzer als ein Jahr; die Grenzen der Stufentabelle sind anteilig gekürzt (§ 5 Abs. 1 Satz 4 CO2KostAufG).')
-  for (const a of c.adjustments ?? []) {
-    notes.push(
-      a === 'nonResidential'
-        ? 'Das Gebäude dient überwiegend nicht dem Wohnen; der Anteil des Vermieters richtet sich nach § 8 Abs. 1 CO2KostAufG statt nach der Stufe.'
-        : a === 'restrictionHalf'
-          ? 'Der Anteil des Vermieters ist wegen öffentlich-rechtlicher Vorgaben um die Hälfte gekürzt (§ 9 Abs. 1 CO2KostAufG).'
-          : 'Wegen öffentlich-rechtlicher Vorgaben werden die CO₂-Kosten nicht aufgeteilt (§ 9 Abs. 2 CO2KostAufG).',
-    )
+  // Jede Angabe mit ihrem eigenen Satz: Seit Heizung PR 18 gibt es § 5a und § 5d Abs. 3, und ein Rückfall auf § 9
+  // Abs. 2 nennte dann eine Beschränkung, die es nicht gibt.
+  const ADJUSTMENT_NOTES: Record<Co2Adjustment, string> = {
+    nonResidential: 'Das Gebäude dient überwiegend nicht dem Wohnen; der Anteil des Vermieters richtet sich nach § 8 Abs. 1 CO2KostAufG statt nach der Stufe.',
+    restrictionHalf: 'Der Anteil des Vermieters ist wegen öffentlich-rechtlicher Vorgaben um die Hälfte gekürzt (§ 9 Abs. 1 CO2KostAufG).',
+    restrictionNone: 'Wegen öffentlich-rechtlicher Vorgaben werden die CO₂-Kosten nicht aufgeteilt (§ 9 Abs. 2 CO2KostAufG).',
+    halfSplit: `Bei einer Heizung nach § 43 Abs. 1 GModG tragen Vermieter und Mieter die CO₂-Kosten ab ${halfSplitFirstDay().slice(0, 4)} je zur Hälfte (§ 5a Abs. 3 CO2KostAufG); der Anteil des Vermieters mischt die Stufe und die Hälfte nach dem Anfall in der Heizperiode.`,
+    twoFamily: 'Zweifamilienhaus mit Eigennutzung: keine hälftige Teilung (§ 5d Abs. 3 CO2KostAufG).',
   }
+  for (const a of c.adjustments ?? []) {
+    // Unbekannte Angaben (aus einer späteren Fassung) bleiben ohne Satz, statt einen falschen zu drucken.
+    if (Object.hasOwn(ADJUSTMENT_NOTES, a)) notes.push(ADJUSTMENT_NOTES[a])
+  }
+  if (hs?.basis === 'newBuilding') notes.push('Neubau: hälftige Teilung nach § 5b CO2KostAufG.')
   return { title: 'CO₂-Kostenaufteilung', lines, table, notes }
 }

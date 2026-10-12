@@ -38,7 +38,7 @@ const ENGINE_FILES = ['server/src/calc.ts', 'server/src/snapshot.ts', 'shared/he
 // nicht.
 // Die Oberfläche der Heizung nennt Stichtage und Jahre aus dem Register (Durchsicht von #230, M5):
 // Datumsangaben und Jahreszahlen der Rechtslage stehen dort nicht als Text.
-const CLIENT_LAW_FILES = ['client/src/components/HeatingCard.tsx', 'client/src/pages/Zaehler.tsx', 'client/src/heatingForm.ts', 'client/src/meterForm.ts']
+const CLIENT_LAW_FILES = ['client/src/components/HeatingCard.tsx', 'client/src/pages/Zaehler.tsx', 'client/src/heatingForm.ts', 'client/src/meterForm.ts', 'client/src/halfSplitForm.ts', 'client/src/components/HalfSplitCard.tsx', 'client/src/components/TightMarketField.tsx', 'client/src/co2View.ts']
 const CLIENT_LAW_PATTERNS = [...DATE_PATTERNS, /(?<![\w.])20[12]\d(?!\w|\.\d)/g]
 const CODE_FILES = [...ENGINE_FILES, 'server/src/invoiceAmounts.ts']
 // 25: `hkv.estimate-threshold` (§ 9a Abs. 2 HeizkostenV, Heizung PR 13).
