@@ -235,7 +235,8 @@ test('Heizung PR 19 (Durchsicht S-5): „Heizkosten bei einem Mieter, der selbst
   expect(attentionLevel(due)).toBe('gelb')
 })
 
-test('Heizung PR 19 (Durchsicht S-2): der Hinweis zum Betriebsstrom der Heizung des Mieters färbt wie „Abzug fehlt“', () => {
+test('Heizung PR 19 (Durchsicht S-2): der Hinweis zum Betriebsstrom der Heizung des Mieters ist Auskunft wie Hinweis A und färbt nicht', () => {
   const s = { warnings: ['…'], notices: [n({ code: 'heating.self-supply-operating-power', level: 'hint', title: 'Betriebsstrom der Heizung des Mieters im Allgemeinstrom?', text: '…' })] }
-  expect(attentionLevel(s)).toBe('gelb')
+  expect(noticesNeedAttention(s)).toBe(false)
+  expect(attentionLevel(s)).toBe('gruen')
 })

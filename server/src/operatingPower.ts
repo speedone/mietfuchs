@@ -329,7 +329,7 @@ export function selfSupplyPowerText(tenantName: string, unitName: string, genera
     `wählen Sie dort bei „${OPERATING_POWER_INCLUDED_QUESTION}“ die Antwort „${OPERATING_POWER_INCLUDED_YES}“ und erfassen Sie beim Allgemeinstrom einen Abzug in derselben Höhe, verknüpft mit dieser Position. ` +
     `Ohne Zwischenzähler dürfen Sie ihn schätzen; bestreitet ein Mieter den Betrag, müssen Sie die Grundlagen darlegen (${ESTIMATE_LAW}). ` +
     `Wollen Sie ihn nicht umlegen, ziehen Sie ihn trotzdem beim Allgemeinstrom ab; dann tragen Sie ihn selbst. ${KEPT_SENTENCE} ` +
-    'Hat die Heizung einen eigenen Stromvertrag oder läuft ihr Strom über den Zähler des Mieters, ist nichts falsch; der Hinweis bleibt dann stehen.'
+    'Hat die Heizung einen eigenen Stromvertrag mit eigenem Zähler und eigener Rechnung, oder läuft ihr Strom über den Zähler des Mieters, ist nichts falsch. Ist der Abzug beim Allgemeinstrom erfasst, entfällt dieser Hinweis.'
 }
 
 // #266: Text des Hinweises `heating.operating-power-bill-missing` (M-2, S-1, S-2): „schadet den Mietern nicht“ nur unter

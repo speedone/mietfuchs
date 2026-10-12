@@ -144,6 +144,8 @@ test('S-2: zentrale Heizung beim Mieter, Allgemeinstrom auch bei anderen Mietern
   assert.match(n.text, /^Die Wohnung a von ta wird über eine zentrale Heizung versorgt, deren Brennstoff der Mieter selbst bezieht\. Läuft ihr Betriebsstrom/)
   assert.match(n.text, /„Hausstrom“/)
   assert.match(n.text, /BGH, Urteil vom 03\.06\.2016, V ZR 166\/15, Rn\. 13/)
+  // Der rechtmäßige Fall steht ausdrücklich da, wie beim Hinweis „Betriebsstrom fehlt“.
+  assert.match(n.text, /Hat die Heizung einen eigenen Stromvertrag mit eigenem Zähler und eigener Rechnung, oder läuft ihr Strom über den Zähler des Mieters, ist nichts falsch\. Ist der Abzug beim Allgemeinstrom erfasst, entfällt dieser Hinweis\.$/)
   // Etagenheizung oder ohne Angabe: Strom über den Zähler der Wohnung, kein Hinweis.
   assert.ok(!codes(zentral('perUnit')).includes('heating.self-supply-operating-power'))
   assert.ok(!codes(zentral(undefined)).includes('heating.self-supply-operating-power'))
