@@ -9,6 +9,7 @@ import { asksCo2Facts, STOCK_BIO_ONLY_ZERO, GAS_BASIS_LABEL, GAS_BASIS_MISSING, 
 import { aiRequest, progressText, type AiProgress } from '../aiRequest'
 import { heatingUpload } from '../aiUpload'
 import { fuelChecks, fuelFormFromExtraction } from '../fuelImport'
+import { CREDIT_ANSWERS, CREDIT_QUESTION, creditAction, creditOnlyOf, creditTargetOptions, emptyReassignForm, PAYMENT_GUIDE, reassignBody, RETURNED_HINT, RETURNED_QUESTION, STANDALONE_DONE, type CreditAnswer, type ReassignForm } from '../fuelCredit'
 import { isStockEnergy } from '../../../shared/fuelStock.ts'
 import { billingEnergy } from '../../../shared/heatDelivery.ts'
 import { startYearOf } from '../../../shared/period.ts'
@@ -23,10 +24,14 @@ const PART_FIELDS: readonly { key: keyof FuelPartForm; label: string }[] = [
 ]
 const EMPTY_PART: FuelPartForm = { from: '', to: '', energyKwh: '', amount: '', fixed: '', emissionsKg: '', co2Cost: '' }
 
-export default function FuelCard({ plant, view, deliveries, units = [], findings = {}, onSaved }: {
+export default function FuelCard({ plant, view, deliveries, allDeliveries, allItems, units = [], findings = {}, onSaved }: {
   plant: { id: string; method: HeatingMethod; energy?: HeatingEnergy } & Partial<Pick<HeatingPlant, 'supply' | 'units' | 'contracting' | 'heatGeneration' | 'gmodg43InstalledOn' | 'propertyId'>>
   view: HeatingPeriodView
   deliveries: FuelDelivery[]
+  // #251: Alle Lieferungen der Anlage und alle Positionen mit Lieferung, für die Gutschrift ohne Rechnung (ihre Summe und
+  // die Lieferung, die sie berichtigt, kann in einer anderen Heizperiode stehen). Fehlen sie, gelten die dieser.
+  allDeliveries?: readonly FuelDelivery[]
+  allItems?: readonly { fuelDeliveryId?: string | null; amountCents: number }[]
   // Die Wohnungen des Objekts, für die Rechnung einer Etagenheizung (Heizung PR 9).
   units?: readonly Pick<Unit, 'id' | 'name'>[]
   // Die Befunde der CO₂-Prüfung je Lieferung (Heizung PR 17, Durchsicht von #246, R-K7), aus dem Blatt für
@@ -40,6 +45,9 @@ export default function FuelCard({ plant, view, deliveries, units = [], findings
   // Heizung PR 20: die Prüfungen einer mit der KI gelesenen Rechnung und der Fortschritt beim Lesen.
   const [checks, setChecks] = useState<string[]>([])
   const [reading, setReading] = useState<AiProgress | null | 'start'>(null)
+  // #251: die offene Frage zu einer Gutschrift ohne Rechnung.
+  const [credit, setCredit] = useState<{ id: string; answer: CreditAnswer } | null>(null)
+  const [reassign, setReassign] = useState<ReassignForm>(emptyReassignForm)
   const toast = useToast()
   const confirm = useConfirm()
   const service = plant.method === 'service'
@@ -140,6 +148,95 @@ export default function FuelCard({ plant, view, deliveries, units = [], findings
     }
   }
 
+  const itemsForCredit = allItems ?? view.items
+  const credits = new Map(creditOnlyOf(deliveries, itemsForCredit).map((c) => [c.delivery.id, c.cents]))
+
+  async function answer(d: FuelDelivery, value: CreditAnswer) {
+    setCredit({ id: d.id, answer: value })
+    setReassign(emptyReassignForm())
+    setError('')
+    const action = creditAction(value, d)
+    if (action.kind !== 'save') return
+    try {
+      await api(action.url, { method: 'PUT', body: JSON.stringify(action.body) })
+      toast('Angabe gespeichert.')
+      setCredit(null)
+      onSaved()
+    } catch (e) {
+      setError(errorText(e))
+    }
+  }
+
+  async function assign(d: FuelDelivery) {
+    const r = reassignBody(reassign)
+    if ('error' in r) {
+      setError(r.error)
+      return
+    }
+    try {
+      const result = await api<{ sourceEmpty: boolean }>(`/api/fuel-deliveries/${d.id}/reassign-credit`, { method: 'POST', body: JSON.stringify(r.body) })
+      setCredit(null)
+      setError('')
+      toast('Gutschrift zugeordnet.')
+      if (result?.sourceEmpty) {
+        const ok = await confirm({
+          title: 'Leere Lieferung entfernen?',
+          message: `An der Lieferung „${d.label || 'Lieferung'}“ hängt keine Position mehr.`,
+          confirmLabel: 'Entfernen',
+          defaultChoice: 'cancel',
+        })
+        if (ok) await api(`/api/fuel-deliveries/${d.id}`, { method: 'DELETE' })
+      }
+      onSaved()
+    } catch (e) {
+      setError(errorText(e))
+    }
+  }
+
+  const creditBlock = (d: FuelDelivery, cents: number) => {
+    const name = `„${d.label || 'Lieferung'}“`
+    const open = credit?.id === d.id ? credit.answer : null
+    const targets = creditTargetOptions(d, allDeliveries ?? deliveries, itemsForCredit)
+    return (
+      <div className="field-group">
+        <div className="field-group-label">
+          Die Positionen ergeben zusammen {fmtEuro(cents)}: eine <Term id="fuelDelivery">Gutschrift ohne Rechnung</Term>. <strong>{CREDIT_QUESTION}</strong>
+        </div>
+        {d.creditNoteKind === 'standalone' && <p className="muted">{STANDALONE_DONE}</p>}
+        <span className="row">
+          {CREDIT_ANSWERS.map((a) => (
+            <button key={a.value} className={open === a.value ? 'btn' : 'btn secondary'} onClick={() => void answer(d, a.value)}>{a.label}</button>
+          ))}
+        </span>
+        {open === 'payment' && <p className="hint">{PAYMENT_GUIDE}</p>}
+        {open === 'reassign' && (<>
+          <label className="field grow">
+            Lieferung, die die Gutschrift berichtigt
+            <select aria-label={`Lieferung, die die Gutschrift ${name} berichtigt`} value={reassign.targetId} onChange={(e) => setReassign((f) => ({ ...f, targetId: targets.find((o) => o.value === e.target.value)?.value ?? '' }))}>
+              {targets.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </label>
+          <label className="checkline">
+            <input type="checkbox" checked={reassign.returned} onChange={(e) => setReassign((f) => ({ ...f, returned: e.target.checked }))} />
+            {RETURNED_QUESTION}
+          </label>
+          <small className="muted">{RETURNED_HINT}</small>
+          {reassign.returned && (
+            <div className="row">
+              <label className="field">Menge der Rechnung, berichtigt<input aria-label="Menge der Rechnung, berichtigt" inputMode="decimal" value={reassign.quantity} onChange={(e) => setReassign((f) => ({ ...f, quantity: e.target.value }))} /></label>
+              <label className="field">CO₂-Ausstoß, berichtigt (kg)<input aria-label="CO₂-Ausstoß, berichtigt (kg)" inputMode="decimal" value={reassign.emissionsKg} onChange={(e) => setReassign((f) => ({ ...f, emissionsKg: e.target.value }))} /></label>
+              <label className="field">CO₂-Kosten, berichtigt<input aria-label="CO₂-Kosten, berichtigt" inputMode="decimal" value={reassign.co2Cost} onChange={(e) => setReassign((f) => ({ ...f, co2Cost: e.target.value }))} /></label>
+            </div>
+          )}
+          <div className="row">
+            <button className="btn" onClick={() => void assign(d)}>Zuordnen</button>
+            <button className="btn secondary" onClick={() => setCredit(null)}>Abbrechen</button>
+          </div>
+        </>)}
+      </div>
+    )
+  }
+
   const text = (key: TextKey, label: string, mode: 'decimal' | 'text' = 'decimal') => (
     <label className="field">
       {label}
@@ -176,6 +273,7 @@ export default function FuelCard({ plant, view, deliveries, units = [], findings
             <strong>{d.label || 'Lieferung'}</strong> {deliveryLine(d)}
             {stock && !service && <span className="muted"> · {linkedText(d.id)}</span>}
             {(findings[d.id] ?? []).map((f) => <p key={f} className="hint">{f}</p>)}
+            {!view.closed && !service && credits.has(d.id) && creditBlock(d, credits.get(d.id) ?? 0)}
             {!view.closed && (
               <span className="row">
                 <button className="btn secondary" onClick={() => open(d)}>Ändern</button>
