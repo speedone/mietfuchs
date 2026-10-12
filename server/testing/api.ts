@@ -429,6 +429,16 @@ export const OFF_SCHEMA = {
 // antworten, die den Schlüssel enthält (Befund aus der Codeprüfung: readJson gab ihn ungeprüft
 // weiter).
 // Ein Modell, wie der nachgebaute Dienst es kennt (Ollamas /api/tags und /api/show).
+// Heizung PR 20 (#103): Antworten des nachgebauten Dienstes für Messdienst- und Lieferantenrechnung,
+// erkannt am Schema (`blocks` bzw. `parts`). Die Abzugszeile steht wie gedruckt mit Minus und als Text,
+// dazu ein erfundenes Feld, das den Browser nicht erreichen darf.
+export const FAKE_SERVICE = {
+  vendor: 'Wärmedienst Beispiel GmbH', periodStart: '2025-01-01', periodEnd: '2025-12-31', unitsCount: 4, geheim: 'x',
+  usersTotalEur: 3944.5, deductionEur: '-87,50', co2: { landlordPercent: 30, totalEur: 291.67, landlordEur: 87.5 }, dhwMethod: 'volumeFormula',
+  blocks: [{ title: 'Heizung und Warmwasser', category: 'Heizung und Warmwasser', totalEur: 3944.5, lines: [{ label: 'Mustermann, Erika', amountEur: 1180.25, vacancy: false }] }],
+}
+export const FAKE_FUEL = { vendor: 'Stadtwerke Beispielstadt', totalGrossEur: 4067.8, quantityUnit: 'm³', parts: [] }
+
 export type FakeModel = { name: string, size?: number, capabilities?: string[], remote_host?: string }
 // Eine erfundene Rechnung für die Belegbuchung (#170). Das nachgebaute Ollama wählt sie, wenn ihr
 // Kennwort im Text der Anfrage steht, und beantwortet den Durchgang der Kostenarten mit ihren.
@@ -524,7 +534,11 @@ export async function fakeOllama({ models = [{ name: 'test:latest', capabilities
       const chosen = invoices ? Object.entries(invoices).find(([marker]) => JSON.stringify(json.messages ?? []).includes(marker))?.[1] : undefined
       if (chosen) state.lastInvoice = chosen
       const content = JSON.stringify(
-        json.format?.properties?.docType
+        json.format?.properties?.blocks
+          ? FAKE_SERVICE
+          : json.format?.properties?.parts
+            ? FAKE_FUEL
+        : json.format?.properties?.docType
           ? { docType: chat === 'meter' ? 'zaehlerstand' : 'rechnung' }
           : json.format?.properties?.meterNumber
             ? { meterNumber: '4711', value: 123.4, dateOnImage: null }
