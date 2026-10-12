@@ -84,6 +84,9 @@ test('§ 5d Abs. 3 und 4: Zweifamilienhaus mit Eigennutzung (Review Focus 2, Abw
   const neu = { ...mieter, contractFrom: '2027-06-01', noticeOn: '2028-03-15' }
   assert.deepEqual(twoFamilyOf({ ...zfh, tenancies: [neu] }, 2, '2028-01-01'), { kind: 'split', reason: 'notice', missing: [], late: [{ tenantName: 'Mieter A', noticeOn: '2028-03-15' }] })
   assert.deepEqual(twoFamilyOf({ ...zfh, tenancies: [neu] }, 2, '2029-01-01'), { kind: 'excepted', notices: [{ tenantName: 'Mieter A', noticeOn: '2028-03-15', withSettlement: false }] })
+  // Mitteilung am ersten Tag der Heizperiode: nicht „vor“ ihr (Satz 4, Festlegung); bei Satz 1 zu spät.
+  assert.equal(noticeCounts({ ...mieter, contractFrom: '2027-06-01', noticeOn: '2028-01-01' }, '2027-03-01', '2028-01-01', '2029-12-31'), null)
+  assert.equal(noticeCounts({ ...mieter, contractFrom: '2027-06-01', noticeOn: '2027-12-31' }, '2027-03-01', '2028-01-01', '2029-12-31'), 'before')
   // Vertrag am Tag des Einbaus: Die Voraussetzungen lagen schon bei Vertragsschluss vor (Satz 1).
   assert.equal(noticeCounts({ ...mieter, contractFrom: '2027-03-01', noticeOn: '2028-03-15' }, '2027-03-01', '2028-01-01', '2029-12-31'), null)
   assert.equal(noticeCounts({ ...mieter, contractFrom: '2027-02-28', noticeOn: '2028-03-15' }, '2027-03-01', '2028-01-01', '2029-12-31'), 'withSettlement')

@@ -280,3 +280,71 @@ test('Netzentgelte auch ohne CO₂-Aufteilung: fehlen die CO₂-Angaben, wird tr
   assert.ok(codesOf(r).includes('co2.incomplete'))
   assert.deepEqual(partsOf(r, 'gmodg:hp:2027-05'), [{ reason: 'gmodgShare', cents: 7950 }])
 })
+
+// ---------- Gegenmutationen (Heizung PR 18): Fälle, die eine Mutation überlebt hätten ----------
+
+test('Vorrat: Steht nur an einer von zwei Lieferungen eine 0, bleibt die Warnung (Abweichung 9, 10)', () => {
+  const r = settle('2028-05', {
+    heatingPlants: [plant({ energy: 'oil' })],
+    costItems: [item({ id: 'oel', period: periodKey('2028-05'), description: 'Heizöl', fuelDeliveryId: null })],
+    fuelDeliveries: [
+      delivery({ id: 'oel1', label: 'Heizöl Sept.', invoiceFrom: null, invoiceTo: null, deliveredAt: '2028-09-01', quantity: 3000, quantityUnit: 'l', bioCostCents: 0 }),
+      delivery({ id: 'oel2', label: 'Heizöl Jan.', invoiceFrom: null, invoiceTo: null, deliveredAt: '2029-01-15', quantity: 2000, quantityUnit: 'l', bioCostCents: null }),
+    ],
+  })
+  assert.match(textOf(r, 'co2.half-split-missing'), /Vorrat/)
+})
+
+test('CO₂ nach den Lieferungen, nicht nach Gradtagen: Die Zwischenrechnung 2027 zählt mit ihren CO₂-Kosten (Abweichung 2)', () => {
+  const r = settle('2027-05', {
+    costItems: [
+      item({ id: 'gasA', amountCents: 200000, fuelDeliveryId: 'A' }),
+      item({ id: 'gasB', amountCents: 700000, fuelDeliveryId: 'B', period: periodKey('2028-05') }),
+    ],
+    fuelDeliveries: [
+      delivery({ id: 'A', label: 'Gas bis 31.12.2027', invoiceFrom: '2027-10-15', invoiceTo: '2027-12-31', emissionsKg: 3000, co2CostCents: 10000, gridFeeCents: 5000 }),
+      delivery({ id: 'B', label: 'Gas 2028', invoiceFrom: '2028-01-01', invoiceTo: '2028-10-14', emissionsKg: 12000, co2CostCents: 40000, gridFeeCents: 20000 }),
+    ],
+  })
+  const table = valueAt(hkvDegreeDays, '2027-05-01')
+  const anteilB = degreeDayPermille([{ from: '2028-01-01', to: '2028-04-30' }], table) / degreeDayPermille([{ from: '2028-01-01', to: '2028-10-14' }], table)
+  const w = (40000 * anteilB) / (10000 + 40000 * anteilB)
+  const co2 = r.heating?.[0]?.co2 ?? assert.fail('keine Bewertung')
+  const stufe = (co2.stage?.landlordPercent ?? 0) * 10
+  assert.ok(Math.abs((co2.landlordPermille ?? 0) - (stufe * (1 - w) + 500 * w)) < 1e-9, `${co2.landlordPermille}`)
+  assert.ok(Math.abs((co2.halfSplit?.co2SharePermille ?? 0) - w * 1000) < 1e-9)
+})
+
+const messdienst = (permille: number) => settle('2027-05', {
+  heatingPlants: [plant({ method: 'service' })],
+  costItems: [item({ id: 'hz', description: 'Heizung laut Messdienst', key: 'amounts', tenancyAmounts: { ta: 450000, tb: 270000, tc: 180000 }, fuelDeliveryId: null, heatingPart: undefined })],
+  fuelDeliveries: [],
+  co2Statements: [{
+    heatingPeriodId: 'h', plantId: 'hp', period: periodKey('2027-05'), method: 'serviceShown', areaM2: null, serviceEmissionsKg: null, serviceAreaM2: null, serviceKgPerM2: 40.2,
+    serviceLandlordPermille: permille, serviceTotalCents: null, serviceLandlordCents: null, serviceUsersTotalCents: null, serviceUsersTotalApprox: false,
+    serviceUnitsCount: null, serviceCostItemId: null, serviceSelfLandlordCents: null, serviceFuelGrossCents: null, serviceFuelNetCents: null, reliefs: [],
+  }],
+})
+
+test('Review Focus 5 in der Abrechnung: 50 % für die ganze Heizperiode passt nicht, 54,7 % gedruckt als 54,7 oder 54,8 passt', () => {
+  const falsch = messdienst(500)
+  const t = textOf(falsch, 'co2.stage-mismatch')
+  assert.match(t, /für 53 % der Heizperiode nach Gradtagen; erwartet ist deshalb ein Anteil des Vermieters von 54,7 %/)
+  assert.ok(!codesOf(messdienst(547)).includes('co2.stage-mismatch'))
+  assert.ok(!codesOf(messdienst(548)).includes('co2.stage-mismatch'), 'gerundet gedruckt, innerhalb von 1 ‰')
+  assert.ok(codesOf(messdienst(600)).includes('co2.stage-mismatch'), 'die Stufe allein passt nicht mehr')
+})
+
+test('Ausnahme nach § 11 ohne vereinbarte Abrechnung (§ 2 Abs. 7 CO2KostAufG): auch keine Teilung nach § 5a', () => {
+  const r = settle('2027-05', { heatingPeriodRows: [{ plantId: 'hp', period: periodKey('2027-05'), dhwMethod: null, dhwUnmeasurable: null, exemption: 'lowDemand', exemptionScope: 'both' }] })
+  assert.ok(!codesOf(r).some((c) => c.startsWith('co2.half-split')), codesOf(r).join(', '))
+  assert.ok(!(r.legalBasis.values ?? []).some((v) => v.id.startsWith('co2.half-split')))
+})
+
+test('§ 5d Abs. 4: Endete die Verordnung vor der Heizperiode, traten die Voraussetzungen erst danach ein (Abweichung 3)', () => {
+  // Einbau 01.03.2027, Verordnung bis 31.03.2027, Vertrag am 15.03.2027: Bei Vertragsschluss lagen die
+  // Voraussetzungen noch nicht vor (Satz 2), die Mitteilung mit der Abrechnung genügt.
+  const r = zfh(true, '2028-06-15', '2027-03-15', '2027-03-31')
+  assert.ok(Math.abs((r.heating?.[0]?.co2?.landlordPermille ?? 0) - 600) < 1e-9)
+  assert.match(textOf(r, 'co2.half-split-two-family'), /Satz 2/)
+})
