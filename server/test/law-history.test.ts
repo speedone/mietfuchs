@@ -95,6 +95,14 @@ const SHIPPED: readonly string[] = [
   // 0.11.0 (Heizung PR 21, #98)
   'messev.calibration-years|2015-01-01|2021-11-02|{"kaltwasser":6,"warmwasser":5,"waerme":5}',
   'messev.calibration-years|2021-11-03||{"kaltwasser":6,"warmwasser":6,"waerme":6}',
+  // 0.11.0 (Heizung PR 18, #215)
+  'co2.half-split||2027-12-31|{"gridFeePermille":null,"co2Permille":null,"bioPermille":null,"bioCapPermille":null}',
+  'co2.half-split|2028-01-01|2028-12-31|{"gridFeePermille":500,"co2Permille":500,"bioPermille":null,"bioCapPermille":null}',
+  'co2.half-split|2029-01-01||{"gridFeePermille":500,"co2Permille":500,"bioPermille":500,"bioCapPermille":300}',
+  'co2.half-split.emergency|||{"windowMonths":12,"before":"2028-01-01","installedFrom":"2028-01-01","installedTo":"2028-12-31","laterFrom":"2029-01-01"}',
+  'co2.half-split.new-buildings|||{"firstUseUntil":"2029-12-31","applicationFrom":"2026-05-13"}',
+  'co2.half-split.two-family|||{"maxDwellings":2}',
+  'gmodg.heating-43|||{"installedAfter":"2026-07-29","energies":["gas","oil","lpg"],"mandatory":[{"from":"2029-01-01","permille":100},{"from":"2030-01-01","permille":150},{"from":"2035-01-01","permille":300},{"from":"2040-01-01","permille":600}]}',
 ]
 
 const current = (): string[] =>
