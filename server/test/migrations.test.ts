@@ -137,6 +137,10 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // (kein Neubau einer bestehenden Tabelle). Wird vor dem Merge ein anderer PR davor eingereiht, wird der
   // Schritt neu erzeugt und die Marke hier ersetzt.
   '0045_verbrauchsinfo': 'dc4a4796c387372915cbc4875a03638231a476d38abc8fc5b48ab3c1883b80ab',
+  // Heizung PR 21 (#98): eine Spalte an `meters`, danach ihre Bedingungen im Neubau. Wird vor dem Merge ein
+  // anderer PR davor eingereiht (PR 18, PR 19), werden beide Schritte neu erzeugt und die Marken hier ersetzt.
+  '0046_eichfrist': '63919a2e200380422b92dbd2a3f4a213a4d28a7bb96beee94e94c099b79dff69',
+  '0047_eichfrist_bedingungen': '49516eb29851052b6872639d50790b3c7909e52f8796d5ab0eb92afc9e9b5113',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

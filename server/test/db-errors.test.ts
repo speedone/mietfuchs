@@ -304,6 +304,18 @@ test('Heizanlage: jede Bedingung, deren Endung allein den falschen Satz ergäbe,
   })
 })
 
+test('Eichfrist: beide Bedingungen haben ihren eigenen Satz, keinen über „JJJJ-MM“ (Heizung PR 21)', async () => {
+  // repository.ts prüft vorher; die Bedingungen sind das Netz darunter.
+  await withDatabase(async (opened) => {
+    const run = (statement: string) => messageOfFailure(opened, () => opened.write((db) => db.run(sql.raw(statement))))
+    const jahr = await run("INSERT INTO meters (id, property_id, name, type, unit, calibrated_until) VALUES ('m1', 'objekt-1', 'K', 'kaltwasser', 'm³', 27)")
+    assert.match(jahr, /Eichjahr ist keine Jahreszahl/, jahr)
+    assert.doesNotMatch(jahr, /JJJJ-MM/, jahr)
+    const hkv = await run("INSERT INTO meters (id, property_id, name, unit_id, type, unit, calibrated_until) VALUES ('m2', 'objekt-1', 'H', 'u1', 'hkv', 'Einheiten', 2027)")
+    assert.match(hkv, /Heizkostenverteiler sind keine eichpflichtigen Messgeräte/, hkv)
+  })
+})
+
 test('CO₂-Angaben: jede Bedingung, deren Endung allein den falschen Satz ergäbe, hat ihren eigenen (Heizung PR 6)', async () => {
   // Die Schreibprüfung in db/co2.ts fängt das vorher ab; die Bedingungen sind das Netz darunter.
   // „Gemeinschaftsabrechnung“ oder „JJJJ-MM“ wären hier falsch.
