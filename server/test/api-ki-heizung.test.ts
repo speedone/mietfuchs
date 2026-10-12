@@ -56,6 +56,25 @@ test('KI: Lieferantenrechnung; Messdienstabrechnung bei freien Schlüsseln 400; 
   })
 })
 
+test('Warmwasser: „Ermittlung übernehmen“ ({ dhwMethod } allein) lässt eine bestätigte Unmessbarkeit derselben Formel stehen (Durchsicht S2)', async () => {
+  const s = await startServer()
+  try {
+    const plant = await newPlant(s, { energy: 'gas', method: 'service' })
+    const url = `/api/heating-plants/${plant.id}/periods/2025-01/hot-water`
+    const put = async (body: unknown) => jsonOf<{ dhwMethod: string | null; dhwUnmeasurable: boolean | null }>(await send(s, url, { method: 'PUT', body: JSON.stringify(body) }))
+    assert.equal((await put({ dhwMethod: 'volumeFormula', dhwUnmeasurable: true })).dhwUnmeasurable, true)
+    // Dieselbe Formel ohne das Feld: Die Bestätigung bleibt, sonst nennte die Abrechnung wieder die Kürzung.
+    assert.deepEqual(await put({ dhwMethod: 'volumeFormula' }), { ...(await put({ dhwMethod: 'volumeFormula' })), dhwMethod: 'volumeFormula', dhwUnmeasurable: true })
+    // Eine andere Formel braucht ihre eigene Bestätigung; ausdrücklich gesendet gilt der gesendete Wert.
+    assert.equal((await put({ dhwMethod: 'areaFormula' })).dhwUnmeasurable, null)
+    assert.equal((await put({ dhwMethod: 'areaFormula', dhwUnmeasurable: true })).dhwUnmeasurable, true)
+    assert.equal((await put({ dhwMethod: 'areaFormula', dhwUnmeasurable: false })).dhwUnmeasurable, false)
+    assert.equal((await put({ dhwMethod: 'heatMeter' })).dhwUnmeasurable, null)
+  } finally {
+    s.stop()
+  }
+})
+
 test('KI: eine Heizposition aus der Messdienstabrechnung über zwei Kalenderjahre braucht das Jahr der Zahlung (Prüfung M2)', async () => {
   // Der Rumpf hat die Gestalt aus client/src/serviceImport.ts (`itemBodies`); hier wird er wirklich
   // gespeichert, nicht wie im Komponententest an einem nachgebauten fetch vorbei.
