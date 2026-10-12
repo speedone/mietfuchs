@@ -1013,6 +1013,22 @@ test('#251 R-2 mit Schätzung: eingefrorener Teil und eingefrorene Schätzung zu
   assert.match(textOf(h, 'fuel.estimate-overcharged'), /916,61 €/)
 })
 
+// Durchsicht #277, M1: War d schon beim Abschluss von 2024/2025 eine Rechnung, deckte sie ihre Tage der Schätzung damals
+// schon ab; eingefroren ist die Schätzung nur für die übrigen Tage (1.739,25 € für 01.02.–14.03.2025). Unverändert heißt
+// dann: keine Abweichung, kein Hinweis.
+test('#277 M1: unveränderte Rechnung neben einer teilweise abgedeckten, eingefrorenen Schätzung: keine Abweichung', () => {
+  const e = lieferung({ id: 'e', label: 'Schätzung', invoiceFrom: '2025-02-01', invoiceTo: '2025-04-30', amountCents: 300000, estimated: true })
+  const ueber = {
+    fuelDeliveries: [lieferung(), e],
+    fuelCarryFrozen: [eingefroren('d', '2024-05', 98339), eingefroren('e', '2024-05', 173925)],
+    closedSettlements: [abgeschlossen('2024-05', { fuelCarryRows: zeilenDerSchaetzung(104355, 69570) })],
+  }
+  const h = settle('2025-05', ueber, '2026-03-20')
+  assert.equal(mieterSumme(h), 551661)
+  assert.deepEqual(teileVon(h, 'fuel:d:2025-05:2024-05'), [{ reason: 'fuelCarry', cents: 98339 }])
+  assert.ok(!codes(h).includes('fuel.estimate-overcharged'), 'Gutschrifthinweis ohne Abweichung')
+})
+
 test('#251 R-2: Rechnung nach dem Abschluss gestiegen: die offene Heizperiode trägt nur ihren Teil, die Differenz steht beim Vermieter (Nachforderung)', () => {
   // Wie Fall c mit eingefrorenem Teil: 2024/2025 hat 900,00 € eingefroren, heute entfallen 983,39 € auf sie.
   const h = settle('2025-05', { fuelCarryFrozen: [eingefroren('d', '2024-05', 90000)], closedSettlements: [abgeschlossen('2024-05')] })
