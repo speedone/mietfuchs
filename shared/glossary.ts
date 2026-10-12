@@ -17,6 +17,7 @@ import { bgbHeatDeliverySwitch } from './law/bgb-betrkv.ts'
 import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvEstimateThreshold, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit } from './law/heizkostenv.ts'
 import { dayBefore as dayBeforeIso, germanDate, LAW_AS_OF, onlyVersion, valueAt } from './law/register.ts'
 import { practiceEvaporatorWindow } from './law/practice.ts'
+import { messevCalibrationYears } from './law/messev.ts'
 import { OPERATING_POWER_HANDLING_LABELS, OPERATING_POWER_HANDLING_QUESTION } from './operatingPower.ts'
 import { co2CutMissing, co2DistrictEtsNew, co2EbevFactors, co2FirstPeriodStart, co2NonResidential, co2Restriction, co2RoundingDecimals, co2StageTable } from './law/co2kostaufg.ts'
 
@@ -36,6 +37,9 @@ const DHW_EXAMPLE = { areaM2: 200, volumeM3: 120, tempC: 60, gasKwh: 60000, meas
 const DHW_Q_VOLUME = DHW_VOLUME.effort * DHW_EXAMPLE.volumeM3 * (DHW_EXAMPLE.tempC - DHW_VOLUME.coldWaterC)
 const DHW_Q_AREA = DHW_AREA.kwhPerM2 * DHW_EXAMPLE.areaM2
 const REMOTE_CUT = valueAt(hkvCutRemoteReading, LAW_AS_OF)
+// Eichfrist (Heizung PR 21): die Fassung von heute; das Beispiel rechnet mit einem Zähler aus 2022.
+const CALIBRATION = valueAt(messevCalibrationYears, LAW_AS_OF).kaltwasser
+const CALIBRATION_EXAMPLE_YEAR = 2022
 const ESTIMATE_THRESHOLD = valueAt(hkvEstimateThreshold, LAW_AS_OF)
 const INFO_CUT = valueAt(hkvCutInformation, LAW_AS_OF)
 // Monatliche Verbrauchsinformation (Heizung PR 22): Beispielzahlen eines Haushalts; die Umrechnung des
@@ -453,6 +457,18 @@ export const GLOSSARY = {
     short: 'Der Verbrauch ist der Unterschied zweier Ablesungen; wird ein Zähler getauscht, gehören der Endstand des alten und der Anfangsstand des neuen Geräts dazu.',
     example: 'Stand am 31.12.2024: 120 m³, am 31.12.2025: 165 m³, Verbrauch 45 m³. Beim Tausch im Juni: alter Zähler endet bei 140, neuer beginnt bei 0 und steht am Jahresende bei 25; zusammen ebenfalls 45 m³.',
     needed: 'Wenn Sie nach Verbrauch abrechnen. Ablesen am besten immer zum 31.12.',
+  },
+  // Heizung PR 21 (#98): Eichfrist. Wortlaut § 34, Anlage 7 und 8 MessEV, §§ 33, 37 MessEG und der Leitsatz c
+  // von BGH VIII ZR 112/10 gelesen am 12.10.2026.
+  meterCalibration: {
+    title: 'Eichfrist',
+    short: `Die Eichfrist von Kalt- und Warmwasserzählern und Wärmezählern beträgt ${CALIBRATION} Jahre. Sie beginnt mit dem Inverkehrbringen, vermutet im Jahr der Kennzeichnung (etwa „M22“), oder mit der Eichung (Jahreszahl der Eichmarke), und endet mit dem Ende des Jahres, in dem sie abläuft. Heizkostenverteiler sind nicht eichpflichtig.`,
+    example: `Ein Kaltwasserzähler mit der Kennzeichnung „M${String(CALIBRATION_EXAMPLE_YEAR).slice(2)}“ ist bis Ende ${CALIBRATION_EXAMPLE_YEAR + CALIBRATION} geeicht. Die Ablesung vom 31.12.${CALIBRATION_EXAMPLE_YEAR + CALIBRATION} zählt noch als geeicht, die vom 01.01.${CALIBRATION_EXAMPLE_YEAR + CALIBRATION + 1} nicht mehr.`,
+    norm: '§ 33, § 37 Abs. 1 MessEG; § 34, § 35 und Anlage 7 MessEV',
+    needed:
+      'Ja, wenn Sie nach Zählern abrechnen. Nach Ablauf darf ein Zähler nicht ungeeicht verwendet werden, und seine Werte dürfen nicht in die Abrechnung (§ 33, § 37 MessEG). ' +
+      'Bestreitet ein Mieter dann die Werte, gilt nach dem Bundesgerichtshof: „Den von einem nicht (mehr) geeichten Messgerät abgelesenen Werten kommt die Vermutung ihrer Richtigkeit nicht zu. In diesem Fall muss der Vermieter im Prozess die Richtigkeit der abgelesenen Werte zur Überzeugung des Tatrichters nachweisen.“ (Urteil vom 17.11.2010, VIII ZR 112/10, Leitsatz c). Im entschiedenen Fall gelang das mit der Prüfung durch eine staatlich anerkannte Prüfstelle. ' +
+      'Hat der Messdienst oder Versorger die Eichfrist im Stichprobenverfahren verlängern lassen (§ 35 MessEV), gilt das verlängerte Jahr; am Zähler ist das nicht zu sehen.',
   },
   directAssignment: {
     title: 'Direktzuordnung',
