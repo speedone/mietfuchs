@@ -55,7 +55,8 @@ export function fuelFormFromExtraction(x: FuelInvoiceExtraction, base: FuelForm,
     quantityUnit: x.quantityUnit !== null && units.includes(x.quantityUnit) ? x.quantityUnit : base.quantityUnit,
     energyKwh: x.energyKwh !== null ? numberText(x.energyKwh) : base.energyKwh,
     gasBasis: place.gas ? x.gasBasis ?? base.gasBasis : base.gasBasis,
-    heatingValue: x.heatingValue !== null ? numberText(x.heatingValue) : base.heatingValue,
+    // Den Heizwert laut Rechnung zeigt die Karte nur beim Vorrat (Kann K2 der Durchsicht).
+    heatingValue: place.stock && x.heatingValue !== null ? numberText(x.heatingValue) : base.heatingValue,
     emissionsKg: place.co2 && x.emissionsKg !== null ? numberText(x.emissionsKg) : base.emissionsKg,
     co2Cost: place.co2 && x.co2CostEur !== null ? euroText(x.co2CostEur) : base.co2Cost,
     emissionFactor: place.co2 && x.emissionFactor !== null ? numberText(x.emissionFactor) : base.emissionFactor,
@@ -124,6 +125,18 @@ export function fuelChecks(x: FuelInvoiceExtraction, place: FuelImportPlace): st
   }
   if (x.amountsNetUnadjusted) {
     out.push('Die Rechnung nennt die Teilmengen netto, und der Abstand zum Rechnungsbetrag lässt sich nicht allein mit der Umsatzsteuer erklären. Bitte tragen Sie die Bruttobeträge von Hand ein.')
+  }
+  // Durchsicht S5: Beim Vorrat rechnet Mietfuchs mit verbrauchter Menge × Heizwert (§ 9 Abs. 3 HeizkostenV, aus
+  // Anfangs- und Endbestand); den Energiegehalt der Lieferung übernimmt das Formular nicht, sagt es aber.
+  if (place.stock && x.energyKwh !== null) {
+    out.push(`Die Rechnung nennt einen Energiegehalt von ${x.energyKwh.toLocaleString('de-DE')} kWh (§ 3 Abs. 1 Nr. 4 CO2KostAufG). Beim Brennstoff aus dem Vorrat übernimmt Mietfuchs ihn nicht: Mietfuchs rechnet mit der verbrauchten Menge × Heizwert (§ 9 Abs. 3 HeizkostenV). Steht auf der Rechnung ein Heizwert, prüfen Sie das Feld „Heizwert laut Rechnung“; sonst wählen Sie die Zeile der Tabelle.`)
+    if (x.quantity !== null && x.heatingValue !== null) {
+      const product = x.quantity * x.heatingValue
+      // Mehr als 1 % Abstand ist keine Rundung mehr, sondern meist ein Tippfehler bei Menge oder Heizwert.
+      if (Math.abs(product - x.energyKwh) > x.energyKwh / 100) {
+        out.push(`Menge × Heizwert laut Rechnung ergibt ${Math.round(product).toLocaleString('de-DE')} kWh, die Rechnung nennt ${x.energyKwh.toLocaleString('de-DE')} kWh. Bitte prüfen Sie Menge und Heizwert.`)
+      }
+    }
   }
   const bio = bioText(x, place)
   if (bio) out.push(bio)

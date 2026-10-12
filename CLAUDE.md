@@ -2613,8 +2613,14 @@ fertigen Abrechnung steht, client/src/types.ts eine eigene für die Eingabe-Ober
   Preisbestandteil nach § 3 Abs. 1 Nr. 6 CO2KostAufG nur, wo der Server ihn annimmt (`bioAccepted`: Heizung
   nach § 43 Abs. 1 GModG, nicht aus dem Vorrat, nicht ab der Grenze von § 5a Abs. 3 Nr. 3), und nennt sonst den
   Grund; beim Vorrat bleiben Rechnungszeitraum und Teilmengen leer. Bei freien Schlüsseln nimmt eine Lieferung
-  keinen Betrag an, dann nennt die Karte ihn als Satz. Den Energiegehalt einer Lieferung aus dem Vorrat
-  speichert das Formular weiterhin nicht, denn dhw.ts nähme ihn vor Menge und Heizwert.
+  keinen Betrag an, dann nennt die Karte ihn als Satz. Vorbelegt wird nur, was die Karte zeigt (CO₂-Angaben
+  nach `asksCo2Facts`, Bezug der kWh nur bei Gas, Heizwert nur beim Vorrat); was gelesen, aber nicht
+  übernommen wird, nennt `fuelChecks` als Satz, sonst ginge ein ungesehener CO₂-Betrag in den Rumpf und
+  löste eine Aufteilung aus. Den Energiegehalt einer Lieferung aus dem Vorrat übernimmt das Formular nicht,
+  denn dort rechnet Mietfuchs mit verbrauchter Menge × Heizwert (§ 9 Abs. 3 HeizkostenV); der Satz dazu
+  prüft Menge × Heizwert gegen den Energiegehalt (mehr als 1 % Abstand). Erneut ausgelesene Abrechnungen:
+  Heizblock und kalte Blöcke mit vorhandenen Einzelbeträgen sind nicht vorgehakt, und Anlegen fragt nach.
+  `PUT …/hot-water` ohne `dhwUnmeasurable` lässt die Bestätigung derselben Formel stehen.
 
 **Rohe Antwort und Zusage: zwei Beschreibungen, eine Grenze** (#63). Die Auswertung eines Belegs
 durchläuft zwei Stadien, und jedes hat seinen eigenen Typ. `RawExtraction` und `RawPosition` in

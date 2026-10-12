@@ -169,10 +169,11 @@ export function stockFuelBody(form: FuelForm, method: HeatingMethod, opts: HalfS
 // ebenso „vom Messdienst angesetzt“.
 export function fuelBody(form: FuelForm, method: HeatingMethod, opts: HalfSplitOptions = NO_HALF_SPLIT): { body: Record<string, unknown> } | { error: string } {
   if (form.invoiceFrom === '' || form.invoiceTo === '') return { error: 'Bitte geben Sie den Rechnungszeitraum an (Beginn und Ende laut Rechnung).' }
-  const euro = (text: string, name: string): number | null | { error: string } => {
+  // `plural`: „Die CO₂-Kosten sind kein Betrag.“ (Durchsicht, Kann K6).
+  const euro = (text: string, name: string, plural = false): number | null | { error: string } => {
     if (text.trim() === '') return null
     const c = parseEuro(text)
-    return c === null ? { error: `${name} ist kein Betrag.` } : c
+    return c === null ? { error: `${name} ${plural ? 'sind' : 'ist'} kein Betrag.` } : c
   }
   const decimal = (text: string, name: string): number | null | { error: string } => {
     if (text.trim() === '') return null
@@ -180,7 +181,7 @@ export function fuelBody(form: FuelForm, method: HeatingMethod, opts: HalfSplitO
     return n === null || n < 0 ? { error: `${name} ist eine Zahl ab 0.` } : n
   }
   const fixed = euro(form.fixed, 'Der feste Preisbestandteil')
-  const co2 = euro(form.co2Cost, 'Die CO₂-Kosten')
+  const co2 = euro(form.co2Cost, 'Die CO₂-Kosten', true)
   const amount = method === 'service' ? euro(form.amount, 'Der Rechnungsbetrag') : null
   const kg = decimal(form.emissionsKg, 'Der CO₂-Ausstoß')
   const kwh = decimal(form.energyKwh, 'Die Energie')
@@ -199,7 +200,7 @@ export function fuelBody(form: FuelForm, method: HeatingMethod, opts: HalfSplitO
     const partAmount = euro(p.amount, `${label}: Der Betrag`)
     if (partAmount === null) return { error: `${label}: Jede Teilmenge braucht ihren Betrag laut Rechnung.` }
     const partFixed = euro(p.fixed, `${label}: Der feste Preisbestandteil`)
-    const partCo2 = euro(p.co2Cost, `${label}: Die CO₂-Kosten`)
+    const partCo2 = euro(p.co2Cost, `${label}: Die CO₂-Kosten`, true)
     const partKwh = decimal(p.energyKwh, `${label}: Die Energie`)
     const partKg = decimal(p.emissionsKg, `${label}: Der CO₂-Ausstoß`)
     for (const v of [partAmount, partFixed, partCo2, partKwh, partKg]) if (v !== null && typeof v === 'object') return v

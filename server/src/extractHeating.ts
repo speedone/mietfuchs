@@ -254,8 +254,8 @@ const toCents = (eur: number | null): number | null => (eur === null ? null : Ma
 // Netto-Teilmengen anteilig auf den Rechnungsbetrag, nach derselben Regel wie normalizeAmounts (#34): nur,
 // wenn das Modell sie als netto meldet, jede Teilmenge einen gelesenen Betrag hat, der Abstand größer ist
 // als die Rundung und die Umsatzsteuer ihn erklärt. Sonst bleiben die Beträge, wie sie dastehen, und
-// `amountsNetUnadjusted` sagt der Oberfläche, dass sie netto sind. Der Grundpreis je Teilmenge und der der
-// Rechnung bekommen denselben Faktor.
+// `amountsNetUnadjusted` sagt der Oberfläche, dass sie netto sind. Der Grundpreis je Teilmenge bekommt denselben
+// Faktor; der der ganzen Rechnung nicht, denn Schema und Prompt verlangen ihn brutto (Durchsicht, Kann K1).
 function grossUp(x: FuelInvoiceExtraction, net: boolean, today: string): FuelInvoiceExtraction {
   if (!net) return x
   const total = toCents(x.totalGrossEur) ?? 0
@@ -271,7 +271,6 @@ function grossUp(x: FuelInvoiceExtraction, net: boolean, today: string): FuelInv
   const scale = (eur: number | null): number | null => (eur === null ? null : Math.round(eur * 100 * factor) / 100)
   return {
     ...x,
-    fixedEur: scale(x.fixedEur),
     parts: x.parts.map((p, i) => ({ ...p, amountEur: (gross[i] ?? 0) / 100, fixedEur: scale(p.fixedEur) })),
     amountsAdjusted: 'netto',
   }
