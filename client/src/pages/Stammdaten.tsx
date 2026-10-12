@@ -682,7 +682,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                 </label>
               </div>
               {/* Heizung PR 19 (#97): die Hinweispflicht nach § 6 Abs. 2 Satz 6 CO2KostAufG. */}
-              {tenForm.heatingModel === 'selfSupply' && <div className="muted">{SELF_SUPPLY_TENANCY_HINT} <Term id="co2Refund" /></div>}
+              {tenForm.heatingModel === 'selfSupply' && <div className="muted">{SELF_SUPPLY_TENANCY_HINT} <Term id="co2Refund">Mehr zur CO₂-Erstattung</Term></div>}
               {showsFlatRates(tenForm.costModel, tenForm.heatingModel) && (
                 <div className="field-group">
                   <div className="field-group-label">Pauschale je Monat — Staffel</div>
