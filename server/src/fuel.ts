@@ -567,8 +567,10 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
           // Heizperiode (BGH VIII ZR 156/11).
           // Hat jene Heizperiode daneben eine Schätzung für Tage eingefroren, die die Lieferung damals nicht abdeckte (sie
           // war beim Abschluss eine Gutschrift ohne Rechnung; Invariante, Startwert 600), haben ihre Mieter beides
-          // getragen; verglichen wird dann die Summe mit dem heutigen Teil, als Abweichung von der Schätzung.
-          const est = f && input.closed.has(other.key) ? estimatesIn(other, r, d.id) : null
+          // getragen; verglichen wird dann die Summe mit dem heutigen Teil, als Abweichung von der Schätzung. Nur bei
+          // negativem eingefrorenem Teil: War die Lieferung damals eine Rechnung, deckte sie ihre Tage schon ab, und die
+          // Schätzung gilt nur für die übrigen (Durchsicht #277, M1).
+          const est = f && f.cents < 0 && input.closed.has(other.key) ? estimatesIn(other, r, d.id) : null
           if (f && (f.cents !== calc || (est?.cents ?? 0) !== 0)) {
             const withEstimate = est !== null && est.ids.length > 0 && est.cents !== 0
             const booked = f.cents + (withEstimate ? est.cents : 0)
