@@ -64,7 +64,7 @@ export type RawExtraction = {
 const toCents = (eur: unknown): number | null => (typeof eur === 'number' && Number.isFinite(eur) ? Math.round(eur * 100) : null)
 const toEur = (cents: number): number => Math.round(cents) / 100
 // Wie in der Schnellerfassung: kleine Abweichungen sind Rundung, keine fehlende Umsatzsteuer
-const tolerance = (totalCents: number): number => Math.max(50, Math.round(totalCents * 0.02))
+export const tolerance = (totalCents: number): number => Math.max(50, Math.round(totalCents * 0.02))
 
 // Der Regelsatz der Umsatzsteuer kommt aus dem Rechtsregister (`ustg.standard-rate`, Heizung
 // PR 1), dazu eine halbe Prozentstelle für Rundung. Mehr als den Regelsatz gibt es in Deutschland
@@ -79,7 +79,7 @@ const VAT_ROUNDING_PERCENT = 0.5
 // (§ 27 Abs. 1 UStG); das Rechnungsdatum ist für diese Plausibilitätsprüfung nur eine Näherung,
 // siehe shared/law/ustg.ts.
 const FIRST_RATE_DAY = ustgStandardRate.versions[0]?.validFrom ?? ''
-const rateDate = (invoiceDate: unknown, today: string): string =>
+export const rateDate = (invoiceDate: unknown, today: string): string =>
   typeof invoiceDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(invoiceDate) && invoiceDate >= FIRST_RATE_DAY ? invoiceDate : today
 
 // Lässt sich der Abstand zwischen Positionssumme und Rechnungsbetrag durch Umsatzsteuer
@@ -95,7 +95,9 @@ const rateDate = (invoiceDate: unknown, today: string): string =>
 // Ein Rechnungsbetrag unter der Positionssumme ist dagegen kein Zeichen für eine fehlende
 // Position, sondern für eine Abschlagszahlung, und ein gar nicht bekannter Rechnungsbetrag ist
 // überhaupt kein Zeichen. Beides blockt deshalb nicht.
-const vatExplainsGap = (positionCents: number, totalCents: number, vatPercent: number): boolean =>
+//
+// Auch extractHeating.ts prüft damit Netto-Teilmengen einer Lieferantenrechnung (Heizung PR 20).
+export const vatExplainsGap = (positionCents: number, totalCents: number, vatPercent: number): boolean =>
   positionCents > 0 && totalCents <= positionCents * (1 + (vatPercent + VAT_ROUNDING_PERCENT) / 100)
 
 // `today` als JJJJ-MM-TT, hineingereicht, damit der Test nicht vom Kalender abhängt.
