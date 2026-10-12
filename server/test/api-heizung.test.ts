@@ -915,3 +915,31 @@ test('Monatliche Verbrauchsinformation: Monate einer Heizperiode lesen, Vergleic
     s.stop()
   }
 })
+
+// ---------- Eichfrist (Heizung PR 21, #98) ----------
+
+test('Eichfrist über die Routen: gespeichert, Hinweis auf der Zähler-Seite, nicht in der Abrechnung; HKV mit Jahr 400', async () => {
+  const s = await startServer()
+  try {
+    const unit = await s.api<Unit>('/api/units', jsonPost({ name: 'EG', areaM2: 80, participates: true }))
+    const meter = await s.api<Meter>('/api/meters', jsonPost({ name: 'Kaltwasser EG', unitId: unit.id, type: 'kaltwasser', unit: 'm³', calibratedUntil: 2024 }))
+    assert.equal(meter.calibratedUntil, 2024)
+    await s.api('/api/readings', jsonPost({ meterId: meter.id, date: '2024-12-31', value: 100 }))
+    await s.api('/api/readings', jsonPost({ meterId: meter.id, date: '2025-12-31', value: 180 }))
+    const zeilen = await s.api<{ meterId: string; consumption: number; notices: Notice[]; warnings: string[] }[]>('/api/consumption/2025')
+    const zeile = zeilen.find((z) => z.meterId === meter.id) ?? assert.fail('Zähler fehlt')
+    assert.deepEqual(zeile.notices.map((n) => [n.code, n.level]), [['meter.calibration-overdue', 'warning']])
+    assert.equal(zeile.consumption, 80)
+    const abrechnung = await s.api<Settlement>('/api/settlement/2025')
+    assert.ok(!abrechnung.notices?.some((n) => n.code === 'meter.calibration-overdue'))
+    assert.ok(!abrechnung.legalBasis?.rules.some((r) => r.code === 'meter-calibration'))
+    const hkv = await fetch(`${s.base}/api/meters`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'HKV', unitId: unit.id, type: 'hkv', unit: 'Einheiten', calibratedUntil: 2030 }),
+    })
+    assert.equal(hkv.status, 400)
+    assert.match(await errorFrom(hkv), /Heizkostenverteiler sind keine eichpflichtigen Messgeräte/)
+  } finally {
+    s.stop()
+  }
+})
