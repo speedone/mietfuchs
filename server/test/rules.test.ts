@@ -43,3 +43,15 @@ test('§ 5a: die Regel co2-half-split gilt ab 2028, nicht 2027 (Heizung PR 18)',
   assert.match(r.summary, /beide an derselben Heizung hängen/)
   assert.match(r.summary, /höchstens für 30 % des verbrauchten Brennstoffs/)
 })
+
+test('§ 6 Abs. 2: die Regel co2-self-supply gilt ab 2023 (Heizung PR 19)', () => {
+  assert.equal(ruleCoverage('co2-self-supply', '2022-01-01', '2022-12-31'), 'none')
+  assert.equal(ruleCoverage('co2-self-supply', '2023-01-01', '2023-12-31'), 'full')
+  const r = RULES.find((x) => x.code === 'co2-self-supply') ?? assert.fail('keine Regel')
+  // Prüfung S3: § 5a erst ab 2028, Biobrennstoff ab 2029, Ausnahmen; Verrechnen nur bei vereinbarter Vorauszahlung.
+  assert.match(r.summary, /ab dem 01\.01\.2028 die Hälfte der CO₂-Kosten und der Gasnetzentgelte, ab dem 01\.01\.2029 auch die Hälfte der Kosten für den Pflichtanteil an Biobrennstoff/)
+  assert.match(r.summary, /außer in den Fällen von § 5a Abs\. 4 und § 5d/)
+  assert.match(r.summary, /binnen 12 Monaten nach der Abrechnung seines Lieferanten in Textform/)
+  assert.match(r.summary, /Ist eine Vorauszahlung vereinbart, kann der Vermieter ihn in der nächsten Betriebskostenabrechnung verrechnen; sonst zahlt er spätestens 12 Monate nach der Anzeige/)
+  assert.match(r.summary, /zentrale Heizung, deren Brennstoff er selbst bezieht/)
+})

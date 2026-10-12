@@ -17,7 +17,7 @@
 // `LAW_AS_OF` aus register.ts. Wer eine Regel ändert oder ergänzt, prüft die Parameter, aus denen sie
 // liest, setzt deren `retrieved` und `LAW_AS_OF` auf den Tag der Durchsicht (#110).
 import { betrkvTvSignal } from './bgb-betrkv.ts'
-import { co2CutMissing, co2FirstPeriodStart, co2HalfSplit, co2HalfSplitTwoFamily, halfSplitBioFirstDay, halfSplitFirstDay } from './co2kostaufg.ts'
+import { co2CutMissing, co2FirstPeriodStart, co2HalfSplit, co2HalfSplitTwoFamily, co2SelfSupply, halfSplitBioFirstDay, halfSplitFirstDay } from './co2kostaufg.ts'
 import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvEstimateThreshold, hkvExemptions, hkvRemoteReadingRetrofit } from './heizkostenv.ts'
 import { messevCalibrationYears } from './messev.ts'
 import { dayBefore, germanDate, LAW_AS_OF, onlyVersion, valueAt } from './register.ts'
@@ -50,6 +50,8 @@ const HALF_FROM = halfSplitFirstDay()
 const HALF_BIO_FROM = halfSplitBioFirstDay()
 const halfLater = valueAt(co2HalfSplit, HALF_BIO_FROM)
 const twoFamily = valueAt(co2HalfSplitTwoFamily, LAW_AS_OF)
+// Erstattung an Mieter, die selbst heizen (Heizung PR 19).
+const selfSupply = valueAt(co2SelfSupply, LAW_AS_OF)
 
 export type Rule = {
   code: string
@@ -177,6 +179,22 @@ export const RULES: readonly Rule[] = [
       `höchstens für ${(halfLater.bioCapPermille ?? 0) / 10} % des verbrauchten Brennstoffs; in Neubauten entsprechend (§ 5b). ` +
       `Im selbst bewohnten Gebäude mit höchstens ${twoFamily.maxDwellings === 2 ? 'zwei' : twoFamily.maxDwellings} Wohnungen, die beide an derselben Heizung hängen, gilt außerhalb angespannter Wohnungsmärkte weiter das Stufenmodell (§ 5d Abs. 3).`,
     validFrom: HALF_FROM,
+  },
+  {
+    // Heizung PR 19 (#97): § 5 Abs. 3, § 6 Abs. 2, 3, § 8 Abs. 2 CO2KostAufG im Wortlaut am 12.10.2026 gelesen
+    // (Fassung Art. 5 G v. 23.07.2026). Wortlaut nach Prüfung S3: § 5a erst ab 2028, Verrechnen nur bei
+    // vereinbarter Vorauszahlung.
+    code: 'co2-self-supply',
+    title: 'CO₂-Erstattung an Mieter, die selbst heizen',
+    norm: '§ 5 Abs. 3, § 6 Abs. 2, 3, § 8 Abs. 2 CO2KostAufG',
+    summary:
+      'Heizt ein Mieter selbst mit eigenem Liefervertrag, etwa mit einer Gastherme in der Wohnung oder über eine zentrale Heizung, deren Brennstoff er selbst bezieht, ' +
+      'erstattet ihm der Vermieter den Anteil der CO₂-Kosten, den er nach dem Stufenmodell zu tragen hätte; ' +
+      `bei einer Heizung nach § 43 GModG ab dem ${germanDate(HALF_FROM)} die Hälfte der CO₂-Kosten und der Gasnetzentgelte, ab dem ${germanDate(HALF_BIO_FROM)} auch die Hälfte der Kosten für den Pflichtanteil an Biobrennstoff, außer in den Fällen von § 5a Abs. 4 und § 5d. ` +
+      `Der Mieter muss den Anspruch binnen ${selfSupply.claimMonths} Monaten nach der Abrechnung seines Lieferanten in Textform geltend machen. ` +
+      `Ist eine Vorauszahlung vereinbart, kann der Vermieter ihn in der nächsten Betriebskostenabrechnung verrechnen; sonst zahlt er spätestens ${selfSupply.refundMonths} Monate nach der Anzeige. ` +
+      `Betreibt der Mieter mit dem Brennstoff auch eigene Geräte zu anderen Zwecken, etwa einen Gasherd, den er selbst angeschafft hat und der ihm gehört, sinkt der Anspruch um ${selfSupply.ownAppliancesCutPercent} %.`,
+    validFrom: CO2_FROM,
   },
   {
     // Heizung PR 7 (#97): § 7 Abs. 2 HeizkostenV im Wortlaut, BGH VIII ZR 156/11 Rn. 14 geprüft am

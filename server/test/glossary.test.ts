@@ -430,3 +430,21 @@ test('Lexikon: hälftige Teilung nach § 5a nennt §§ 5a, 5b, 5d, § 7 Abs. 5 u
   // Grenze dieses Stands mit Verweis (Entscheidung des Koordinators): Vorrat und 30 % ab 2040 in #227.
   assert.match(t.needed, /Vorrat .* Grenze von 30 % ab 2040 rechnet Mietfuchs noch nicht \(#227\)/)
 })
+
+test('Lexikon: CO₂-Erstattung an Mieter, die selbst heizen, Beispiel nachgerechnet (Heizung PR 19)', () => {
+  const t = GLOSSARY.co2Refund
+  for (const n of [/§ 6 Abs\. 2/, /§ 6 Abs\. 3/, /§ 8 Abs\. 2/, /§ 5 Abs\. 3/]) assert.match(t.norm ?? '', n)
+  // 2.400 kg auf 80 m² = 30,0 kg/m² → Stufe 27 bis < 32, Vermieter 40 %; 600 € × 40 % = 240,00 €; mit eigenem Gasherd − 5 % = 228,00 €.
+  assert.equal(2400 / 80, 30)
+  assert.equal(Math.round(60000 * 0.4), 24000)
+  assert.equal(Math.round(24000 * 0.95), 22800)
+  assert.match(t.example, /240,00 €.*228,00 €/s)
+  // Gekürzt wird nur bei einem Gerät im Eigentum des Mieters (BT-Drs. 20/3172, S. 35).
+  assert.match(t.example, /eigenen Gasherd, den er selbst angeschafft hat/)
+  assert.match(t.example, /mitvermieteter Herd kürzt nichts/)
+  // Prüfung S2: „vereinbart“ statt „zahlt“; Gegenprüfung M1: auch die zentrale Heizung.
+  assert.match(t.needed, /Ist mit ihm eine Vorauszahlung auf Betriebskosten vereinbart, können Sie den Betrag in der nächsten Abrechnung nach der Anzeige verrechnen; sonst zahlen Sie spätestens 12 Monate nach der Anzeige aus/)
+  assert.match(t.short, /zentrale Heizung, deren Brennstoff er selbst bezieht/)
+  // Prüfung K3: § 2 Abs. 7 CO2KostAufG.
+  assert.match(t.needed, /§ 2 Abs\. 7/)
+})
