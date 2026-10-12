@@ -2148,7 +2148,9 @@ export type FuelDeliveryLine = {
 // `landlordBorne`: Der hinausgebuchte Teil steht beim Vermieter (`fuelClosedPeriod`), weil die andere Heizperiode
 // beim Abschluss schon ohne ihn abgeschlossen war; sie hat ihn also nie hereingebucht, und eine Gegenbuchung
 // dort gäbe es zweimal (Invariante, Startwert 509).
-export type FuelCarryLine = { deliveryId: string; period: PeriodKey; cents: number; totalCents?: number; landlordBorne?: true }
+// `bookedCents` (#251, R-2): Die andere Heizperiode war schon mit einem anderen Teil abgeschlossen und hat diesen
+// hereingebucht; hinausgebucht ist der heutige (`cents`), der Unterschied steht beim Vermieter.
+export type FuelCarryLine = { deliveryId: string; period: PeriodKey; cents: number; totalCents?: number; landlordBorne?: true; bookedCents?: number }
 
 // Der Vorschlag einer geschätzten Lieferung für eine Lücke (8.2 Nr. 2), aus der letzten Rechnung.
 export type FuelEstimateProposal = {

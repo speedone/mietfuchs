@@ -328,6 +328,8 @@ const noticeKinds = {
   'fuel.estimate-overcharged': { level: 'warning', title: 'Schätzung war zu hoch', rule: 'heating-consumed-fuel', terms: ['accrualPrinciple', 'settlementDeadline'] },
   'fuel.loose-item': { level: 'hint', title: 'Heizposition ohne Lieferung neben einer Lücke', rule: 'heating-consumed-fuel', terms: ['accrualPrinciple', 'fuelDelivery'] },
   'fuel.cancelled-after-close': { level: 'warning', title: 'Rechnung nach dem Abschluss storniert', rule: 'heating-consumed-fuel', terms: ['fuelDelivery', 'settlementDeadline'] },
+  // #251 (R-4): Der heutige Teil einer abgeschlossenen Heizperiode liegt unter dem eingefrorenen, bis unter 0 €.
+  'fuel.reduced-after-close': { level: 'warning', title: 'Rechnung nach dem Abschluss gemindert', rule: 'heating-consumed-fuel', terms: ['fuelDelivery', 'settlementDeadline'] },
   'fuel.owner-closed-unlinked': { level: 'hint', title: 'Rechnung nach dem Abschluss verknüpft', rule: 'heating-consumed-fuel', terms: ['fuelDelivery', 'accrualPrinciple'] },
   'co2.district-ets-exempt': { level: 'hint', title: 'CO₂-Kosten nicht aufzuteilen (Emissionshandel)', rule: 'co2-split', terms: ['districtEts', 'co2Split'] },
   // Heizung PR 7: eigene CO₂-Aufteilung (Entwurf 7.6, 9, 10.1).
@@ -4591,6 +4593,26 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       }
       const X = -carry.cents
       const name = `„${nameOf(carry.deliveryId)}“`
+      const nachfordern = `Solange die Frist dieser Abrechnung läuft (Zugang bis ${fmtDay(other.deadline)}), können Sie sie wieder öffnen und berichtigen. Danach dürfen Sie nur nachfordern, wenn Sie die Verspätung nicht zu vertreten haben (§ 556 Abs. 3 Satz 3 BGB, BGH VIII ZR 264/12), und dann alsbald, in der Regel binnen drei Monaten nach Wegfall des Hindernisses (BGH VIII ZR 220/05); lag die Rechnung schon vor Ablauf der Frist vor, ist die Verspätung in der Regel zu vertreten.`
+      if (carry.frozenPart) {
+        // #251, R-2 und R-4: Der eingefrorene Teil weicht vom heutigen ab. Liegt er darüber, haben die Mieter jener
+        // Abrechnung zu viel getragen (eine Berichtigung zu ihren Gunsten ist nach § 556 Abs. 3 Satz 3 BGB im
+        // Umkehrschluss jederzeit zulässig); liegt er darunter, kann der Vermieter den Rest nur dort nachfordern.
+        const { frozen, today } = carry.frozenPart
+        if (frozen > today) {
+          warn('fuel.reduced-after-close',
+            `${where}: Die Rechnung ${name} ergibt heute ${fmtCents(carry.totalCents)}. Die abgeschlossene Abrechnung ${other.label} enthält dafür ${fmtCents(frozen)}; heute entfielen auf sie ${fmtCents(today)}. ` +
+              `Ihre Mieter haben damit ${fmtCents(frozen - today)} zu viel getragen. Öffnen Sie die Abrechnung ${other.label} wieder und schließen Sie sie neu ab. ` +
+              '§ 556 Abs. 3 Satz 3 BGB schließt nach Ablauf der Abrechnungsfrist nur Nachforderungen des Vermieters aus; eine Berichtigung zugunsten der Mieter verbietet er nicht (Umkehrschluss). Bis dahin steht der Betrag bei Ihnen.',
+            subject)
+        } else {
+          warn('fuel.closed-period-part',
+            `${where}: Der Teil der Rechnung ${name} für ${periodLabel(carry.other)} beträgt heute ${fmtCents(today)}; die abgeschlossene Abrechnung ${other.label} enthält dafür ${fmtCents(frozen)}. ` +
+              `Die Differenz von ${fmtCents(today - frozen)} gehört in jene Abrechnung; bis Sie sie nachfordern, steht sie bei Ihnen. ${nachfordern}`,
+            subject)
+        }
+        continue
+      }
       if (carry.landlord.some((p) => p.reason === 'fuelClosedPeriod')) {
         // Zwei Lagen (Nachprüfung, M-b): ohne Schätzung abgeschlossen, oder abgeschlossen, als die
         // Lieferung noch keine Position hatte (mit 0 eingefroren).
@@ -4599,10 +4621,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           : carry.zeroFrozen
           ? `Als die Abrechnung ${other.label} abgeschlossen wurde, war die Rechnung ${name} noch mit keiner Position verknüpft. Ihr Teil für ${periodLabel(carry.other)} (${fmtCents(X)}) ist dort deshalb nicht verteilt; bis Sie ihn nachfordern, steht er bei Ihnen. `
           : `Der Teil der Rechnung ${name} für ${periodLabel(carry.other)} (${fmtCents(X)}) gehört in die Abrechnung ${other.label}, die ohne Schätzung abgeschlossen wurde; bis Sie ihn nachfordern, steht er bei Ihnen. `
-        warn('fuel.closed-period-part',
-          `${where}: ${lead}` +
-            `Solange die Frist dieser Abrechnung läuft (Zugang bis ${fmtDay(other.deadline)}), können Sie sie wieder öffnen und berichtigen. Danach dürfen Sie nur nachfordern, wenn Sie die Verspätung nicht zu vertreten haben (§ 556 Abs. 3 Satz 3 BGB, BGH VIII ZR 264/12), und dann alsbald, in der Regel binnen drei Monaten nach Wegfall des Hindernisses (BGH VIII ZR 220/05); lag die Rechnung schon vor Ablauf der Frist vor, ist die Verspätung in der Regel zu vertreten.`,
-          subject)
+        warn('fuel.closed-period-part', `${where}: ${lead}${nachfordern}`, subject)
         continue
       }
       const diff = carry.landlord.find((p) => p.reason === 'fuelEstimateDiff')?.cents ?? 0
@@ -5141,7 +5160,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         carries: fuelOf.carries.map((c) => ({
           deliveryId: c.deliveryId, period: c.other.key, cents: c.cents,
           ...(c.kind === 'out' && c.cancelled === undefined ? { totalCents: c.totalCents } : {}),
-          ...(c.kind === 'out' && c.cancelled === undefined && c.landlord.some((p) => p.reason === 'fuelClosedPeriod') ? { landlordBorne: true as const } : {}),
+          ...(c.kind === 'out' && c.cancelled === undefined && !c.frozenPart && c.landlord.some((p) => p.reason === 'fuelClosedPeriod') ? { landlordBorne: true as const } : {}),
+          ...(c.kind === 'out' && c.frozenPart ? { bookedCents: c.frozenPart.frozen } : {}),
         })), gaps: fuelOf.gaps,
         ...(fuelOf.zeroInvoices.length > 0 ? { zeroInvoiceIds: fuelOf.zeroInvoices.map((z) => z.deliveryId) } : {}),
       }

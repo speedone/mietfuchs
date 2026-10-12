@@ -209,7 +209,7 @@ export type FuelPlantInput = {
   // `landlordBorne`: Der Teil steht dort beim Vermieter, die andere Heizperiode hat ihn nie hereingebucht.
   // Was abgeschlossene Heizperioden als storniert behandelt haben (Positionen zusammen 0 €), je Lieferung.
   closedCancelled?: readonly { period: string; deliveryId: string }[]
-  closedCarries?: readonly { period: string; deliveryId: string; other: string; cents: number; totalCents?: number; landlordBorne?: true }[]
+  closedCarries?: readonly { period: string; deliveryId: string; other: string; cents: number; totalCents?: number; landlordBorne?: true; bookedCents?: number }[]
 }
 
 // Ein Übertrag der Mieterseite dieser Heizperiode: `out` hinaus in die frühere (die Positionen stehen
@@ -233,6 +233,9 @@ export type FuelCarry = {
   cancelled?: number
   // Beim Gegenstück: der Teil, den die abgeschlossene Heizperiode der Positionen hierher hinausgebucht hat.
   cancelledOut?: number
+  // #251, R-2: Die abgeschlossene Heizperiode `other` hat `frozen` eingefroren, heute entfallen `today` auf sie.
+  // Hinausgebucht wird `today`; der Unterschied steht beim Vermieter.
+  frozenPart?: { frozen: number; today: number }
   landlord: { reason: 'fuelCarry' | 'fuelClosedPeriod' | 'fuelEstimateDiff'; cents: number }[]
   templates: { itemId: string; raw: number }[]
   // `ratios[k]`: der Anteil der eingefrorenen Schätzung `ids[k]`, den die Rechnung abdeckt (nach Gradtagen); nur
@@ -427,11 +430,18 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
   if (withItems) {
     // Die Schätzungen einer abgeschlossenen Heizperiode, die eine echte Rechnung ersetzt, mit ihrem
     // eingefrorenen Betrag im Verhältnis der Gradtage, die die Rechnung von ihnen abdeckt.
-    const estimatesIn = (other: BillingPeriod, r: DayRange): NonNullable<FuelCarry['estimate']> => {
+    //
+    // #251, R-3: Der eingefrorene Betrag ist schon um die Tage gekürzt, die beim Abschluss eine andere Rechnung abdeckte
+    // (Betrag × Faktor, `estimateFactors`). Ersetzt ist deshalb nicht der eingefrorene Betrag im Verhältnis der Gradtage
+    // des Schnitts zur ganzen Schätzung (das kürzte ein zweites Mal), sondern der Betrag der Schätzung für die Tage des
+    // Schnitts, die keine andere echte Rechnung abdeckt; höchstens der eingefrorene Betrag. `ratios[k]` ist der Anteil
+    // des eingefrorenen Betrags, den die Rechnung `id` ersetzt.
+    const estimatesIn = (other: BillingPeriod, r: DayRange, id: string): NonNullable<FuelCarry['estimate']> => {
       let cents = 0
       const ids: string[] = []
       const ratios: number[] = []
       const frozenCents: number[] = []
+      const othersUnion = unionOf(real.filter((x) => x.id !== id).map(rangeOf).filter(isRange))
       for (const e of input.deliveries.filter((x) => x.estimated)) {
         const er = rangeOf(e)
         const f = frozenOf(e.id, other.key)
@@ -439,7 +449,10 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
         const cut = intersect(er, r)
         if (!cut) continue
         const all = degreeDayPermille([er], ctx.table)
-        const ratio = all > 0 ? degreeDayPermille([cut], ctx.table) / all : daysOf(cut) / daysOf(er)
+        const rest = subtractRanges(cut, othersUnion)
+        const part = all > 0 ? degreeDayPermille(rest, ctx.table) / all : rest.reduce((a, x) => a + daysOf(x), 0) / daysOf(er)
+        const replaced = (e.amountCents ?? f.cents) * part
+        const ratio = f.cents === 0 ? 0 : Math.max(0, Math.min(1, replaced / f.cents))
         cents += f.cents * ratio
         ids.push(e.id)
         ratios.push(ratio)
@@ -497,7 +510,9 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
             carries.push({
               deliveryId: d.id, kind: 'in', other: owner, cents: 0, totalCents: 0, ratio: 0, method: 'inside', frozen: true, zeroFrozen: false,
               cancelled: frozenOut?.totalCents !== undefined ? frozenOut.totalCents + out : -out, cancelledOut: -out,
-              landlord: frozenOut?.landlordBorne ? [] : [{ reason: 'fuelCarry', cents: out }, { reason: 'fuelClosedPeriod', cents: -out }], templates: [], estimate: null,
+              // `bookedCents` (#251): Diese Heizperiode hatte damals einen anderen Teil hereingebucht als hinausgebucht wurde;
+              // gegengebucht wird, was sie hereingebucht hatte.
+              landlord: frozenOut?.landlordBorne ? [] : [{ reason: 'fuelCarry', cents: -(frozenOut?.bookedCents ?? -out) }, { reason: 'fuelClosedPeriod', cents: frozenOut?.bookedCents ?? -out }], templates: [], estimate: null,
             })
           }
           continue
@@ -508,7 +523,7 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
           if (!f || f.cents === 0) {
             // Mit Schätzung abgeschlossen (Nachprüfung von 47f2373, M2): Die Mieter jener Heizperiode haben
             // die Schätzung getragen; die Abweichung ist die ganze Schätzung, wie X − Schätzung bei X = 0.
-            const est = f ? { cents: 0, ids: [], ratios: [], frozen: [] } : input.closed.has(other.key) ? estimatesIn(other, r) : { cents: 0, ids: [], ratios: [], frozen: [] }
+            const est = f ? { cents: 0, ids: [], ratios: [], frozen: [] } : input.closed.has(other.key) ? estimatesIn(other, r, d.id) : { cents: 0, ids: [], ratios: [], frozen: [] }
             if (est.cents === 0) continue
             carries.push({
               deliveryId: d.id, kind: 'out', other, cents: 0, totalCents: 0, ratio: 0, method: 'inside', frozen: true, zeroFrozen: false, cancelled: est.cents,
@@ -533,12 +548,26 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
           // Lieferung beim Abschluss noch keine Position (Durchsicht von #233, I1). Dann hat diese
           // Heizperiode nichts hereingebucht; ihr Teil geht an den Vermieter wie im Fall c.
           const f = found !== null && found.cents === 0 && calc !== 0 ? null : found
+          // #251, R-2: Weicht der eingefrorene Teil vom heutigen ab (Rechnung nach dem Abschluss gemindert, bis unter 0,
+          // oder gestiegen), trägt diese Heizperiode nur ihren heutigen Teil; was jene eingefroren hat, bleibt ihr, und
+          // der Unterschied steht beim Vermieter (`fuelClosedPeriod`): Er schuldet ihn den Mietern jener Abrechnung
+          // (f > calc) oder kann ihn dort nur nachfordern (f < calc). So trägt nie ein Mieter Brennstoff einer anderen
+          // Heizperiode (BGH VIII ZR 156/11).
+          if (f && f.cents !== calc) {
+            carries.push({
+              deliveryId: d.id, kind: 'out', other, cents: -calc, totalCents: T, ratio: s.ratio, method: s.method, frozen: true, zeroFrozen: false,
+              frozenPart: { frozen: f.cents, today: calc },
+              landlord: [{ reason: 'fuelCarry', cents: f.cents }, { reason: 'fuelClosedPeriod', cents: calc - f.cents }],
+              templates: items.map((c) => ({ itemId: c.id, raw: (-calc * c.amountCents) / T })), estimate: null,
+            })
+            continue
+          }
           const X = f ? f.cents : calc
           if (X === 0) continue
           let landlord: FuelCarry['landlord'] = [{ reason: 'fuelCarry', cents: X }]
           let estimate: FuelCarry['estimate'] = null
           if (!f && input.closed.has(other.key)) {
-            const est = estimatesIn(other, r)
+            const est = estimatesIn(other, r, d.id)
             if (est.ids.length > 0) {
               estimate = est
               landlord = [{ reason: 'fuelCarry', cents: est.cents }, ...(X - est.cents !== 0 ? [{ reason: 'fuelEstimateDiff' as const, cents: X - est.cents }] : [])]
