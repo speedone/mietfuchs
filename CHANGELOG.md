@@ -604,6 +604,13 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Vermieters“ in einem Zeitraum unter einem Jahr nicht in den Vorschlag nach § 560 BGB ein; der Vorschlag war um
   den hochgerechneten Abzug zu hoch. Jetzt wird sie mit dem Faktor ihrer Heizpositionen hochgerechnet, wie beim
   Messdienst. Keine Zahl einer Abrechnung ändert sich, nur der Vorschlag.
+- **Heizkosten: Schätzvorschlag aus einer zu kurzen Rechnung.** Den Vorschlag für eine fehlende
+  Rechnung rechnet Mietfuchs aus der letzten Rechnung hoch. War das eine Rechnung über wenige
+  Sommertage, ergab das beliebig hohe Beträge (gemessen: 50,00 € über zwei Julitage ergaben 54.400,00 €
+  für den Rest der Heizperiode), und ein Klick beim Abschließen verteilte sie. Vorlage ist jetzt nur
+  eine Rechnung, die mindestens 100 ‰ der Gradtage der Lücke abdeckt, sonst die nächstältere; gibt es
+  keine, schlägt Mietfuchs nichts vor und sagt im Hinweis zur Lücke, warum
+  ([#251](https://github.com/speedone/mietfuchs/issues/251)).
 - **Heizkosten: Lieferung mit negativer Summe (Gutschrift ohne Rechnung).** Ergaben die Positionen
   einer Lieferung zusammen weniger als 0 €, rechnete Mietfuchs sie wie eine Rechnung: Sie deckte Tage
   ab, verdrängte dort eine Schätzung, diente als Vorlage für einen negativen Schätzvorschlag und

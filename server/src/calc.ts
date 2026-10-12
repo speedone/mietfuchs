@@ -4535,6 +4535,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           : 'liegt keine Rechnung vor'
       warn('fuel.uncovered',
         `${where}: Für ${formatDayRange(g.from, g.to)} (${g.days} ${g.days === 1 ? 'Tag' : 'Tage'}, ${fmtNum(Math.round(g.permille * 10) / 10)} ‰ der Gradtage) ${vorliegend}; diesen Teil verteilt Mietfuchs nicht. ` +
+          // Durchsicht #277, S1: Die einzige mögliche Vorlage ist zu kurz für eine Hochrechnung.
+          (g.shortTemplate ? `Einen Schätzvorschlag gibt es nicht: Die Rechnung „${g.shortTemplate}“ deckt weniger als 100 ‰ der Gradtage dieses Zeitraums ab, hochgerechnet ergäbe sie keinen belastbaren Betrag. ` : '') +
           'Tragen Sie die Folgerechnung auf der Seite Heizkosten als Lieferung ein, sobald sie da ist. ' +
           `Ein Zählerstand allein schließt die Lücke nicht, er macht die Aufteilung der Folgerechnung genauer: Lesen Sie ${zaehler} zum ${fmtDay(g.to)} ab und tragen Sie den Stand auf der Seite Zähler ein; nach Zählerstand teilt Mietfuchs, wenn auch Stände am Tag vor Beginn und am letzten Tag der Rechnung eingetragen sind.`,
         subject)

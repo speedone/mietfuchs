@@ -2174,8 +2174,9 @@ export type FuelEstimateProposal = {
 
 // `zeroInvoices`: Rechnungen im Zeitraum der Lücke, deren Positionen zusammen 0 € ergeben (als storniert behandelt).
 // `creditOnly` (#251): Lieferungen im Zeitraum der Lücke, deren Positionen zusammen weniger als 0 € ergeben
-// (Gutschrift ohne Rechnung); sie decken keine Tage ab.
-export type FuelGap = { from: string; to: string; days: number; permille: number; estimate: FuelEstimateProposal | null; zeroInvoices?: string[]; creditOnly?: string[] }
+// (Gutschrift ohne Rechnung); sie decken keine Tage ab. `shortTemplate` (Durchsicht #277, S1): Es gibt eine Rechnung als
+// Vorlage, aber keine deckt mindestens 100 ‰ der Gradtage der Lücke ab; geschätzt wird nicht.
+export type FuelGap = { from: string; to: string; days: number; permille: number; estimate: FuelEstimateProposal | null; zeroInvoices?: string[]; creditOnly?: string[]; shortTemplate?: string }
 
 export type FuelAssessment = {
   coveragePermille: number

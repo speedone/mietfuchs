@@ -1029,6 +1029,15 @@ test('#277 M1: unveränderte Rechnung neben einer teilweise abgedeckten, eingefr
   assert.ok(!codes(h).includes('fuel.estimate-overcharged'), 'Gutschrifthinweis ohne Abweichung')
 })
 
+test('#277 S1: Lücke neben einer zu kurzen Vorlage: kein Vorschlag, und der Hinweis sagt warum', () => {
+  const h = settle('2025-05', {
+    fuelDeliveries: [lieferung({ id: 'n', label: 'Nachlieferung', invoiceFrom: '2025-07-01', invoiceTo: '2025-07-02' })],
+    costItems: [position({ id: 'pn', amountCents: 5000, fuelDeliveryId: 'n' })],
+  })
+  assert.deepEqual(fuelGapQuestions(h), [])
+  assert.match(textOf(h, 'fuel.uncovered'), /Einen Schätzvorschlag gibt es nicht: Die Rechnung „Nachlieferung“ deckt weniger als 100 ‰ der Gradtage dieses Zeitraums ab, hochgerechnet ergäbe sie keinen belastbaren Betrag\./)
+})
+
 test('#251 R-2: Rechnung nach dem Abschluss gestiegen: die offene Heizperiode trägt nur ihren Teil, die Differenz steht beim Vermieter (Nachforderung)', () => {
   // Wie Fall c mit eingefrorenem Teil: 2024/2025 hat 900,00 € eingefroren, heute entfallen 983,39 € auf sie.
   const h = settle('2025-05', { fuelCarryFrozen: [eingefroren('d', '2024-05', 90000)], closedSettlements: [abgeschlossen('2024-05')] })
