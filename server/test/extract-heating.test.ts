@@ -118,7 +118,8 @@ test('Lieferant: Netto-Teilmengen werden anteilig auf den Rechnungsbetrag hochge
   assert.equal(x.amountsAdjusted, 'netto')
   assert.deepEqual(x.parts.map((p) => p.amountEur), [2885.77, 1182.03])
   assert.deepEqual(x.parts.map((p) => p.fixedEur), [165.65, 41.41])
-  assert.equal(x.fixedEur, 207.06)
+  // Der Grundpreis der ganzen Rechnung ist laut Schema brutto; hochgerechnet werden nur die Teilmengen (Kann K1).
+  assert.equal(x.fixedEur, 174)
   assert.equal(x.amountsNetUnadjusted, false)
   // Fehlt eine Teilmenge, erklärt die Umsatzsteuer den Abstand nicht: nichts wird hochgerechnet.
   const luecke = toFuelExtraction({ ...netto, parts: [netto.parts[0]] }, '2026-03-20')

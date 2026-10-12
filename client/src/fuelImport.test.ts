@@ -106,7 +106,7 @@ test('Prüfung M6: Biobrennstoff nicht übernommen, je nach Grund ein eigener Sa
   expect(fuelChecks(mitBio, service)).toEqual([
     `Die Rechnung weist ${fmtEuro(1250)} als Preisbestandteil für den nach § 43 Abs. 1 GModG anteilig zu nutzenden Brennstoff aus (§ 3 Abs. 1 Nr. 6 CO2KostAufG). Mietfuchs hat ihn nicht übernommen, weil an dieser Heizanlage kein Einbau nach § 43 Abs. 1 GModG eingetragen ist. Diese Pflicht gilt nur für eine Gas-, Öl- oder Flüssiggasheizung, die nach dem 29.07.2026 in ein bestehendes Gebäude eingebaut wurde. Trifft das zu, tragen Sie den Tag des Einbaus an der Heizanlage ein und lesen Sie die Rechnung erneut aus.`,
   ])
-  expect(fuelChecks({ ...oel, deliveredAt: '2030-01-31', bioCostEur: 12.5 }, { method: 'service', stock: true, halfSplit: true, co2: true, gas: false })).toEqual([
+  expect(fuelChecks({ ...oel, energyKwh: null, deliveredAt: '2030-01-31', bioCostEur: 12.5 }, { method: 'service', stock: true, halfSplit: true, co2: true, gas: false })).toEqual([
     `Die Rechnung weist ${fmtEuro(1250)} als Preisbestandteil für den nach § 43 Abs. 1 GModG anteilig zu nutzenden Brennstoff aus (§ 3 Abs. 1 Nr. 6 CO2KostAufG). Mietfuchs hat ihn nicht übernommen, weil Mietfuchs diesen Preisbestandteil bei Brennstoff aus einem Vorrat noch nicht rechnet. Bitte bewahren Sie die Rechnung auf.`,
   ])
   expect(fuelChecks({ ...mitBio, periodEnd: '2040-01-31' }, { ...service, halfSplit: true })).toEqual([
@@ -133,4 +133,16 @@ test('Durchsicht S1: nur vorbelegen, was die Karte zeigt; CO₂-Angaben ohne Fel
   // Eine Heizanlage ohne Gas bekommt keinen Bezug der kWh, die mit Gas schon.
   expect(fuelFormFromExtraction(gas, emptyFuelForm(), { ...ohne, co2: true }).gasBasis).toBe('')
   expect(fuelFormFromExtraction(gas, emptyFuelForm(), { ...ohne, co2: true, gas: true }).gasBasis).toBe('hs')
+})
+
+test('Durchsicht S5: beim Vorrat nennt ein Satz den Energiegehalt, den Mietfuchs nicht übernimmt; Menge × Heizwert wird gegengeprüft', () => {
+  const vorrat: FuelImportPlace = { method: 'service', stock: true, halfSplit: false, co2: true, gas: false }
+  const satz = 'Die Rechnung nennt einen Energiegehalt von 30.150 kWh (§ 3 Abs. 1 Nr. 4 CO2KostAufG). Beim Brennstoff aus dem Vorrat übernimmt Mietfuchs ihn nicht: Mietfuchs rechnet mit der verbrauchten Menge × Heizwert (§ 9 Abs. 3 HeizkostenV). Steht auf der Rechnung ein Heizwert, prüfen Sie das Feld „Heizwert laut Rechnung“; sonst wählen Sie die Zeile der Tabelle.'
+  expect(fuelChecks(oel, vorrat)).toEqual([satz])
+  // 3.000 l × 11,05 kWh/l = 33.150 kWh, die Rechnung nennt 30.150 kWh: mehr als 1 % Abstand.
+  expect(fuelChecks({ ...oel, heatingValue: 11.05 }, vorrat)).toEqual([satz, 'Menge × Heizwert laut Rechnung ergibt 33.150 kWh, die Rechnung nennt 30.150 kWh. Bitte prüfen Sie Menge und Heizwert.'])
+  expect(fuelChecks({ ...oel, energyKwh: null }, vorrat)).toEqual([])
+  // Bei Gas, Fernwärme und Strom wird der Energiegehalt übernommen; ein Heizwert hat dort kein Feld (Kann K2).
+  expect(fuelChecks(gas, service)).toEqual([])
+  expect(fuelFormFromExtraction({ ...gas, heatingValue: 11.3 }, emptyFuelForm(), service).heatingValue).toBe('')
 })
