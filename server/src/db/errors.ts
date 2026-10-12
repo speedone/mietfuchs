@@ -208,6 +208,7 @@ const OWN_CHECK_MESSAGES: Readonly<Record<string, string>> = {
   heating_monthly_info_reference_source_complete: 'Bitte nennen Sie die Quelle des Vergleichswerts, etwa die Vergleichsdaten Ihres Ablesedienstes. Ein Durchschnitt aus Ihrem eigenen Haus ist kein zulässiger Vergleich.',
   heating_monthly_info_sent_on_valid: 'Der Tag der Mitteilung ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie ihn im Kalender.',
   // CO₂-Erstattung an Mieter, die selbst heizen (Heizung PR 19); db/co2Refunds.ts prüft vorher.
+  tenancies_self_supply_kind_valid: 'Welche Heizung der Mieter selbst betreibt, gibt es nur bei „Mieter heizt selbst“. Bitte laden Sie die Seite neu.',
   co2_refunds_settled_or_paid_valid: 'Eine CO₂-Erstattung wird entweder in einer Abrechnung verrechnet oder ausgezahlt, nicht beides.',
   co2_refunds_billed_complete: 'Zum Zeitraum des Lieferanten gehören Beginn und Ende. Bitte tragen Sie beide ein oder lassen Sie beide leer.',
   co2_refunds_billed_order_valid: 'Der Zeitraum des Lieferanten endet vor seinem Beginn. Bitte prüfen Sie die beiden Daten.',

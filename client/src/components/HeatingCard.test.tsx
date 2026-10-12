@@ -282,8 +282,8 @@ test('Zentrale Heizung, Brennstoffvertrag beim Mieter: keine Anlage, nach Rückf
   fireEvent.click(within(dialog).getByRole('button', { name: 'Umstellen' }))
   await waitFor(() => expect(sent).toHaveLength(2))
   expect(sent.map((s) => [s.method, s.url, s.body])).toEqual([
-    ['PUT', '/api/tenancies/ta', { heatingModel: 'selfSupply' }],
-    ['PUT', '/api/tenancies/tb', { heatingModel: 'selfSupply' }],
+    ['PUT', '/api/tenancies/ta', { heatingModel: 'selfSupply', selfSupplyKind: 'central' }],
+    ['PUT', '/api/tenancies/tb', { heatingModel: 'selfSupply', selfSupplyKind: 'central' }],
   ])
   expect(sent.some((s) => s.url.startsWith('/api/heating-plants'))).toBe(false)
 })

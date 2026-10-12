@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { CostModel, HeatingModel, DepositStatus, HeatingPlant, InterimGapStatus, Meter, MeterType, Settings, Tenancy, Unit, UnitDependents, UnitUsage } from '../types'
+import type { CostModel, HeatingModel, SelfSupplyKind, DepositStatus, HeatingPlant, InterimGapStatus, Meter, MeterType, Settings, Tenancy, Unit, UnitDependents, UnitUsage } from '../types'
 import { servesUnit } from '../../../shared/heatingPeriod.ts'
 import { DEPOSIT_STATUS_LABELS, METER_TYPE_LABELS, UNIT_USAGE_LABELS, usageOf } from '../types'
 import { EMPTY_UNIT_FORM, buildUnitBody, connectionSummary, connectionTypes, setConnected, unitDeleteMessage, unitToForm, type UnitForm } from '../unitForm'
@@ -7,7 +7,7 @@ import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { scheduleOf, separateHeatingFor, separateHeatingPlant } from '../heatingSettlementView'
 import Drawer from '../components/Drawer'
 import PropertyCard from '../components/PropertyCard'
-import { COST_MODEL_LABELS, HEATING_MODEL_LABELS, SELF_SUPPLY_TENANCY_HINT, buildPersonHistory, costModelBadge, costModelBody, defaultTenancyUnitId, overlapQuestion, prepaymentColumn, showsFlatRates } from '../tenancyModel'
+import { COST_MODEL_LABELS, HEATING_MODEL_LABELS, SELF_SUPPLY_KIND_OPTIONS, SELF_SUPPLY_TENANCY_HINT, buildPersonHistory, costModelBadge, costModelBody, defaultTenancyUnitId, overlapQuestion, prepaymentColumn, showsFlatRates } from '../tenancyModel'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import { buildTenantChange, defaultStart, EMPTY_NEW_TENANT, endProblem, gapProblem, INTERIM_FEE_HINT, INTERIM_GAP_OPTIONS, meterProblem, parseMeterValue, type NewTenantForm } from '../tenantChange'
 import { gapConsequence } from '../heatingSelfView'
@@ -53,6 +53,8 @@ type TenancyForm = {
   // Nebenkostenmodell (#93)
   costModel: CostModel
   heatingModel: HeatingModel
+  // Durchsicht S-2: welche Heizung der Mieter selbst betreibt; '' keine Angabe.
+  selfSupplyKind: SelfSupplyKind | ''
   // Die Marke des Stands, aus dem das Formular gefüllt wurde (Laienprobe B1, shared/tenancyStamp.ts).
   stamp?: string
 }
@@ -62,7 +64,7 @@ const EMPTY_UNIT: UnitForm = EMPTY_UNIT_FORM
 // Leere erweiterte Mieter-Felder — bei „neu“ und (mit Werten) beim Bearbeiten verwendet
 const EMPTY_TENANCY_EXTRA = {
   email: '', phone: '', correspondenceAddress: '', iban: '', contractDate: '', deposit: '', depositStatus: 'offen' as DepositStatus, notes: '',
-  costModel: 'settlement' as CostModel, heatingModel: 'settlement' as HeatingModel,
+  costModel: 'settlement' as CostModel, heatingModel: 'settlement' as HeatingModel, selfSupplyKind: '' as SelfSupplyKind | '',
   flatRates: [] as { from: string; amount: string }[],
   heatingPrepayments: [] as { from: string; amount: string }[],
 }
@@ -103,6 +105,7 @@ function tenancyToForm(t: Tenancy): TenancyForm {
     notes: t.notes ?? '',
     costModel: t.costModel ?? 'settlement',
     heatingModel: t.heatingModel ?? 'settlement',
+    selfSupplyKind: t.selfSupplyKind ?? '',
     flatRates: (t.flatRates ?? []).map((p) => ({
       from: p.from,
       amount: (p.monthlyCents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 }),
@@ -287,6 +290,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
       depositStatus: depositCents !== null ? tenForm.depositStatus : null,
       notes: tenForm.notes.trim() || null,
       ...costModelBody(tenForm.costModel, tenForm.heatingModel),
+      selfSupplyKind: tenForm.heatingModel === 'selfSupply' && tenForm.selfSupplyKind !== '' ? tenForm.selfSupplyKind : null,
       flatRates,
       heatingPrepayments: heating,
       // Laienprobe B1: Hat sich der Stand inzwischen geändert, lehnt der Server ab, statt ihn zu ersetzen.
@@ -682,7 +686,17 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                 </label>
               </div>
               {/* Heizung PR 19 (#97): die Hinweispflicht nach § 6 Abs. 2 Satz 6 CO2KostAufG. */}
-              {tenForm.heatingModel === 'selfSupply' && <div className="muted">{SELF_SUPPLY_TENANCY_HINT} <Term id="co2Refund">Mehr zur CO₂-Erstattung</Term></div>}
+              {tenForm.heatingModel === 'selfSupply' && (
+                <>
+                  <label className="field grow">
+                    <span>Welche Heizung betreibt der Mieter selbst?</span>
+                    <select value={tenForm.selfSupplyKind} onChange={(e) => setTenForm({ ...tenForm, selfSupplyKind: SELF_SUPPLY_KIND_OPTIONS.find((o) => o.value === e.target.value)?.value ?? '' })}>
+                      {SELF_SUPPLY_KIND_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                  </label>
+                  <div className="muted">{SELF_SUPPLY_TENANCY_HINT} <Term id="co2Refund">Mehr zur CO₂-Erstattung</Term></div>
+                </>
+              )}
               {showsFlatRates(tenForm.costModel, tenForm.heatingModel) && (
                 <div className="field-group">
                   <div className="field-group-label">Pauschale je Monat — Staffel</div>

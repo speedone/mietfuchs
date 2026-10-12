@@ -112,7 +112,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
         confirmLabel: 'Umstellen',
       })
       if (!ok) return
-      for (const id of offer.tenancyIds) await api(`/api/tenancies/${id}`, { method: 'PUT', body: JSON.stringify({ heatingModel: 'selfSupply' }) })
+      for (const id of offer.tenancyIds) await api(`/api/tenancies/${id}`, { method: 'PUT', body: JSON.stringify({ heatingModel: 'selfSupply', selfSupplyKind: central ? 'central' : 'perUnit' }) })
       toast('Umgestellt.')
       await onChanged?.()
     } catch (e) {

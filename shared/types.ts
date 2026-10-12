@@ -95,6 +95,10 @@ export type CostModel = 'settlement' | 'flatRate' | 'inclusive'
 // selbst trägt, etwa Wartung und Betriebsstrom, wird abgerechnet wie bei `settlement` (`allocationModel` in
 // calc.ts); gegen die CO₂-Kosten des Mieters steht die Erstattung nach § 6 Abs. 2.
 export type HeatingModel = CostModel | 'selfSupply'
+// Welche Heizung der Mieter selbst betreibt (Durchsicht S-2): eine Heizung in der Wohnung (`perUnit`, etwa eine
+// Gastherme; ihr Strom läuft in der Regel über den Zähler der Wohnung) oder eine zentrale Heizung im Haus, deren
+// Brennstoff er bezieht (`central`; ihr Betriebsstrom kann über den Zähler des Hauses laufen). Nur bei `selfSupply`.
+export type SelfSupplyKind = 'perUnit' | 'central'
 
 export type Tenancy = {
   id: string
@@ -102,6 +106,7 @@ export type Tenancy = {
   // Getrennt für kalte Kosten und für Heizung und Warmwasser (#93); fehlend heißt `settlement`.
   costModel?: CostModel
   heatingModel?: HeatingModel
+  selfSupplyKind?: SelfSupplyKind
   // Die Pauschale je Monat (#93), eine eigene Staffel und nicht die der Vorauszahlung: Das
   // Mietkonto führt sie im Soll, die Abrechnung rechnet sie nie an. Stünde sie in der Staffel
   // der Vorauszahlung, würde sie bei einem gemischten Modell gegen die abgerechneten Kosten

@@ -1,4 +1,4 @@
-import type { CostModel, HeatingModel, NotSettled, Tenancy, Unit } from './types'
+import type { CostModel, HeatingModel, NotSettled, SelfSupplyKind, Tenancy, Unit } from './types'
 import { fmtDate, fmtEuro } from './api'
 import { overlapsOf } from '../../shared/tenancyOverlap.ts'
 import { andList } from '../../shared/wording.ts'
@@ -21,6 +21,14 @@ export const HEATING_MODEL_LABELS: Record<HeatingModel, string> = {
   ...COST_MODEL_LABELS,
   selfSupply: 'Mieter heizt selbst (eigener Vertrag für Brennstoff oder Wärme)',
 }
+
+// Welche Heizung der Mieter selbst betreibt (Durchsicht S-2). Bei der zentralen Heizung prüft die Abrechnung, ob ihr
+// Betriebsstrom im Allgemeinstrom steckt; bei der Heizung in der Wohnung läuft er über den Zähler des Mieters.
+export const SELF_SUPPLY_KIND_OPTIONS: { value: SelfSupplyKind | ''; label: string }[] = [
+  { value: '', label: 'Keine Angabe' },
+  { value: 'perUnit', label: 'Eine Heizung in der Wohnung, etwa eine Gastherme' },
+  { value: 'central', label: 'Eine zentrale Heizung im Haus, deren Brennstoff der Mieter bezieht' },
+]
 
 // Der Satz unter der Auswahl, wenn der Mieter selbst heizt (Prüfung M1, S1; § 6 Abs. 2 Satz 3, 6 CO2KostAufG).
 const SELF = valueAt(co2SelfSupply, LAW_AS_OF)
