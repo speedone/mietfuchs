@@ -163,8 +163,11 @@ function taxYearOf(span: { from: string; to: string }, text: string, name: strin
   return { taxYear: year }
 }
 
-export function itemBodies(x: ServiceStatementExtraction, drafts: readonly BlockDraft[], ctx: ImportContext, file: string): { bodies: Record<string, unknown>[] } | { error: string } {
+// `blocks`: zu jedem Rumpf der Index seines Blocks, damit die Prüfansicht nach jedem Erfolg genau dessen Haken
+// entfernen kann (Durchsicht S3).
+export function itemBodies(x: ServiceStatementExtraction, drafts: readonly BlockDraft[], ctx: ImportContext, file: string): { bodies: Record<string, unknown>[]; blocks: number[] } | { error: string } {
   const bodies: Record<string, unknown>[] = []
+  const blocks: number[] = []
   for (const [i, b] of x.blocks.entries()) {
     const d = drafts[i]
     if (!d || !d.include) continue
@@ -203,8 +206,9 @@ export function itemBodies(x: ServiceStatementExtraction, drafts: readonly Block
       ...(heating ? { heatingPlantId: ctx.plantId } : {}),
       ...tax,
     })
+    blocks.push(i)
   }
-  return { bodies }
+  return { bodies, blocks }
 }
 
 // Das CO₂-Formular (PR 6, seit PR 17 mit Ausstoß, Fläche, G und V) aus der Auswertung vorbelegt. Was die

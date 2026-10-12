@@ -47,18 +47,24 @@ export default function ServiceImportReview({ x, file, ctx, view, co2 = true, on
       return
     }
     setBusy(true)
+    let created = 0
     try {
-      for (const body of r.bodies) {
-        const created = await api<{ id: string }>('/api/costItems', { method: 'POST', body: JSON.stringify(body) })
-        if (body.category === HEATING_CATEGORY) setHeatingItemId(created.id)
+      for (const [k, body] of r.bodies.entries()) {
+        const item = await api<{ id: string }>('/api/costItems', { method: 'POST', body: JSON.stringify(body) })
+        if (body.category === HEATING_CATEGORY) setHeatingItemId(item.id)
+        // Angelegt ist angelegt (Durchsicht S3): Der Haken dieses Blocks geht sofort weg, damit ein zweiter Klick
+        // nach einem Fehler bei einem späteren Block ihn nicht noch einmal anlegt.
+        const index = r.blocks[k]
+        setDrafts((all) => all.map((d, j) => (j === index ? { ...d, include: false } : d)))
+        created++
       }
-      // Angelegt ist angelegt: Ein zweiter Klick legte alles doppelt an.
-      setDrafts((all) => all.map((d) => ({ ...d, include: false })))
       setError('')
-      toast(`${r.bodies.length} Position${r.bodies.length === 1 ? '' : 'en'} angelegt.`)
+      toast(`${created} Position${created === 1 ? '' : 'en'} angelegt.`)
       onDone()
     } catch (e) {
       setError(errorText(e))
+      // Was schon angelegt ist, soll die Seite zeigen (Einzelbeträge der Heizperiode, Probe).
+      if (created > 0) onDone()
     } finally {
       setBusy(false)
     }
