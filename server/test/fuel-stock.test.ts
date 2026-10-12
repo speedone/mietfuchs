@@ -189,3 +189,21 @@ test('Folgeperiode abgeschlossen (G-A4): ihr eingefrorener Anfangsbestand ist hi
   assert.ok(!zuViel.ok)
   assert.match(problemText(zuViel.problem), /den die abgeschlossene Folgeperiode übernommen hat/)
 })
+
+test('#251: Eine Lieferung mit negativem Betrag ist keine Schicht im Vorrat; nach Rücknahme 2.700,00 €, nach Preisnachlass 2.705,00 €', () => {
+  const ohneCo2: StockOptions = { ...OPTS, needCo2: false }
+  const anfang = { quantity: 1000, costCents: 90000, emissionsKg: 0, co2Cents: 0, invoicedBefore2023: false }
+  const lieferung2000 = lieferung({ id: 'l', label: 'Heizöl März', date: '2025-03-15', quantity: 2000, costCents: 200000 })
+  const gutschrift = lieferung({ id: 'g', label: 'Gutschrift Oktober', date: '2025-10-10', quantity: 100, costCents: -10000 })
+  const mit = (deliveries: StockDeliveryInput[]) => stockOf([periode({ ownOpening: anfang, deliveries, closingQuantity: 100 })], ohneCo2)
+  // Als jüngste Schicht bewertete die Gutschrift den Endbestand mit −100,00 €: 900 + 2.000 − 100 − (−100) = 2.900,00 €.
+  const r = mit([lieferung2000, gutschrift])
+  assert.ok(!r.ok, `die Gutschrift ging als Schicht durch: ${r.ok ? r.statement.consumed.costCents : ''}`)
+  assert.match(problemText(r.problem), /die Lieferung „Gutschrift Oktober“ ergibt zusammen -100,00 €; eine Gutschrift gehört zu der Lieferung, die sie berichtigt: Ordnen Sie sie auf der Seite Heizkosten zu und berichtigen Sie dort, falls Brennstoff zurückgenommen wurde, auch die Menge/)
+  // Richtig zugeordnet, je nach Lesart (§ 3 Abs. 3 CO2KostAufG: nur eine Rücknahme ändert die Menge):
+  // Rücknahme von 100 l zu 1 €/l: 1.900 l zu 1.900 €, Endbestand 100 € → 900 + 1.900 − 100 = 2.700,00 €.
+  assert.equal(ok(mit([{ ...lieferung2000, quantity: 1900, costCents: 190000 }])).consumed.costCents, 270000)
+  // Preisnachlass: 2.000 l zu 1.900 € (0,95 €/l), Endbestand 95 € → 900 + 1.900 − 95 = 2.705,00 € (der Prüfbericht
+  // nannte 2.805 €; das wären 900 + 2.000 − 95, also ohne den Nachlass).
+  assert.equal(ok(mit([{ ...lieferung2000, costCents: 190000 }])).consumed.costCents, 270500)
+})
