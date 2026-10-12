@@ -37,7 +37,7 @@ const day = (v: unknown): string | undefined => {
 }
 // Eine Zahl, auch als Text in deutscher oder technischer Schreibweise (numberFromModel). Das typografische
 // Minus „−“ (U+2212) liest ein Modell aus gedruckten Abrechnungen mit; es wird zum Bindestrich.
-const num = (v: unknown): number | null => numberFromModel(typeof v === 'string' ? v.replace(/−/g, '-') : v)
+const num = (v: unknown): number | null => numberFromModel(typeof v === 'string' ? v.replace(/\u2212/g, '-') : v)
 const positive = (v: unknown): number | null => {
   const n = num(v)
   return n !== null && n > 0 ? n : null
