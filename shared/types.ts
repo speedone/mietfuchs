@@ -1663,8 +1663,8 @@ export type Co2TenantRelief = { tenancyId: string; cents: number }
 
 // Ein Erstattungsanspruch eines Mieters, der selbst heizt (Heizung PR 19, #97; § 5 Abs. 3, § 6 Abs. 2, 3, § 8
 // Abs. 2 CO2KostAufG). `amountCents`: der angezeigte Betrag; `settlePeriod`: der Abrechnungszeitraum des Objekts,
-// in dem er verrechnet wird; `paidOutOn`: ausgezahlt am (die Auszahlung selbst steht als negative Zahlung im
-// Mietkonto). Die übrigen Felder sind die Grundlagen aus der Rechnung des Lieferanten für die Nachrechnung:
+// in dem er verrechnet wird; `paidOutOn`: ausgezahlt am (nicht im Mietkonto; die Steuerübersicht
+// führt die Auszahlung im Jahr als Werbungskosten). Die übrigen Felder sind die Grundlagen aus der Rechnung des Lieferanten für die Nachrechnung:
 // `billedFrom`/`billedTo` der Zeitraum, für den der Lieferant abgerechnet hat (bei Öl oder Flüssiggas der Zeitraum,
 // für den die Lieferung reicht); `ownAppliances` ein Gerät zu anderen Zwecken, das der Mieter selbst angeschafft
 // hat und das ihm gehört (§ 6 Abs. 3 Satz 2); `commercialUse`/`commercialMetered` gewerbliche Nutzung und ob der

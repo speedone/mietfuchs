@@ -1,7 +1,8 @@
 // CO₂-Erstattung an Mieter, die selbst heizen, in der Abrechnung (Heizung PR 19, #97; Entwurf 6.4 Nr. 3, 10.1).
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { computeSettlement, recurringShareCents, taxReport, type ComputedSettlement } from '../src/calc.ts'
+import { computeSettlement, recurringShareCents, rentLedger, taxReport, type ComputedSettlement } from '../src/calc.ts'
+import { GLOSSARY } from '../../shared/glossary.ts'
 import { snapshotFor, snapshotOf, type Snapshot, type SnapshotSource, type SnapshotTenancy } from '../src/snapshot.ts'
 import { CALENDAR_RULES, calendarPeriod, periodKey, periodOfKey } from '../../shared/period.ts'
 import type { Co2Refund } from '../../shared/types.ts'
@@ -126,4 +127,29 @@ test('Wer nichts einstellt, merkt nichts: ohne Erstattung kein Wert co2.self-sup
   assert.ok(!('co2Refunds' in snapshotFor(scoped, 'objekt-1', P)))
   const mit = snapshotFor({ ...scoped, co2Refunds: [refund(), refund({ id: 'fremd', tenancyId: 'anderes' })] }, 'objekt-1', P)
   assert.deepEqual(mit.co2Refunds?.map((x) => x.id), ['e1'])
+})
+
+test('Durchsicht S-1: ausgezahlt heißt Werbungskosten im Jahr der Auszahlung, ohne negative Zahlung und ohne Rückstand im Mietkonto', () => {
+  // Alle zwölf Mieten voll gezahlt; die Erstattung von 50 € am 01.06.2025 ausgezahlt, nicht verrechnet.
+  const voll = { payments: Array.from({ length: 12 }, (_, i) => ({ id: `p${i}`, tenancyId: 't', date: `2025-${String(i + 1).padStart(2, '0')}-01`, amountCents: 100000 })) }
+  const ausgezahlt = refund({ settlePeriod: null, paidOutOn: '2025-06-01' })
+  const mit = taxReport(snap([ausgezahlt], [], voll))
+  const ohne = taxReport(snap([], [], voll))
+  assert.equal(mit.expenses.deductibleCents - ohne.expenses.deductibleCents, 5000)
+  assert.equal(mit.expenses.totalCents - ohne.expenses.totalCents, 5000)
+  const zeile = mit.expenses.groups.flatMap((g) => g.categories).find((c) => c.category === 'CO₂-Erstattung an Mieter (§ 6 Abs. 2 CO2KostAufG)') ?? assert.fail('keine Zeile')
+  assert.deepEqual([zeile.amountCents, zeile.privateCents, zeile.deductibleCents], [5000, 0, 5000])
+  assert.equal(mit.income.paidCents, 12 * 100000, 'die Einnahmen bleiben die Mieten')
+  // Mietkonto: kein Rückstand, kein Saldo.
+  const konto = rentLedger(snap([ausgezahlt], [], voll))
+  const row = konto.rows.find((r) => r.tenancyId === 't') ?? assert.fail('keine Zeile')
+  assert.deepEqual([row.arrearsCents, row.balanceCents], [0, 0])
+  // Im Folgejahr ausgezahlt: nicht in 2025. Verrechnet: nicht doppelt, sie wirkt über die Abrechnung.
+  assert.equal(taxReport(snap([refund({ settlePeriod: null, paidOutOn: '2026-01-10' })], [], voll)).expenses.deductibleCents, ohne.expenses.deductibleCents)
+  assert.equal(taxReport(snap([refund()], VERSANDT_2024, voll)).expenses.deductibleCents, ohne.expenses.deductibleCents)
+  // Die Texte raten nicht mehr zur negativen Zahlung.
+  const due = computeSettlement(snap([refund({ claimedAt: '2024-02-10', supplierBilledAt: '2024-01-15', settlePeriod: null })]))
+  assert.ok(!/negative Zahlung/.test(textOf(due, 'co2.refund-due')), textOf(due, 'co2.refund-due'))
+  assert.match(textOf(due, 'co2.refund-due'), /tragen Sie den Tag der Auszahlung an der Erstattung ein; die Steuerübersicht führt sie dann im Jahr der Auszahlung als Werbungskosten/)
+  assert.ok(!/negative Zahlung/.test(GLOSSARY.co2Refund.needed))
 })

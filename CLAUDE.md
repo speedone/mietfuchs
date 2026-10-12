@@ -2341,8 +2341,10 @@ die ganze fachliche Komplexität:
   nur in einem Zeitraum, in dem der Mieter wohnte, nie in einem abgeschlossenen, und eine dort verrechnete bleibt
   unveränderlich. Gebucht wird der angezeigte Betrag; die Nachrechnung (`selfSplit` wie bei der eigenen Aufteilung:
   Stufe, § 8 Abs. 2, § 9 nur auf den Teil nach Stufen, § 5a nach Gradtagen) steht im Rechenweg, eine Abweichung
-  meldet `co2.refund-differs`; über mehr als ein Jahr rechnet sie nicht nach (offen, Prüfung S6). **Die Steuer liest
-  nur die Zahlungen**, und der Vorschlag nach § 560 Abs. 4 BGB rechnet mit `recurringShareCents` ohne Erstattungen.
+  meldet `co2.refund-differs`; über mehr als ein Jahr rechnet sie nicht nach (umzurechnen ist nach § 5 Abs. 1 Satz 5,
+  offen ist nur das Verfahren). **Steuer:** Eine verrechnete Erstattung wirkt über Saldo und Zahlungen; eine
+  ausgezahlte (`paidOutOn`) steht in `taxReport` im Jahr der Auszahlung als Werbungskosten (§ 11 Abs. 2 EStG) und
+  **nie als negative Zahlung im Mietkonto** (die läse `rentLedger` als Rücklastschrift). Der Vorschlag nach § 560 Abs. 4 BGB rechnet mit `recurringShareCents` ohne Erstattungen.
   Offen ist, ob § 8 Abs. 2 seit der Neufassung von § 6 Abs. 2 noch auf die Auszahlungsfrist verweist; Mietfuchs warnt.
 - **Überschneidende Mietverhältnisse einer Wohnung** (#204): Wann sich zwei überschneiden (ein
   gemeinsamer Tag, inklusive Grenzen), steht einmal in [shared/tenancyOverlap.ts](shared/tenancyOverlap.ts);
