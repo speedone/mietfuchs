@@ -212,8 +212,8 @@ export async function readTenancies(db: Executor): Promise<Tenancy[]> {
     correspondenceAddress: orUndefined(t.correspondenceAddress),
     iban: orUndefined(t.iban),
     contractDate: orUndefined(t.contractDate),
-    // Mitteilung nach § 5d Abs. 4 CO2KostAufG (Heizung PR 18).
-    halfSplitNoticeOn: orUndefined(t.halfSplitNoticeOn),
+    // Mitteilung nach § 5d Abs. 4 CO2KostAufG (Heizung PR 18); nur mit Wert, die db.json kennt das Feld nicht.
+    ...(t.halfSplitNoticeOn === null ? {} : { halfSplitNoticeOn: t.halfSplitNoticeOn }),
     depositCents: orUndefined(t.depositCents),
     depositStatus: orUndefined(t.depositStatus),
     // Nur mit Wert, wie die Angaben aus #94: Ein Mietverhältnis aus einer db.json hat sie nicht.
