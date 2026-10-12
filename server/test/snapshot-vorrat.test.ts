@@ -19,7 +19,7 @@ const zeile = (period: string, over: Partial<SnapshotHeatingPeriodRow> = {}): Sn
 const lieferung = (id: string, deliveredAt: string, over: Partial<FuelDelivery> = {}): FuelDelivery => ({
   id, plantId: 'hp', amountCents: null, label: '', invoiceDate: deliveredAt, deliveredAt, invoiceFrom: null, invoiceTo: null, unitId: null,
   quantity: 1000, quantityUnit: 'l', energyKwh: null, gasBasis: null, heatingValue: null, fuelGrade: null, emissionsKg: 2676.3, co2CostCents: 17500,
-  emissionFactor: null, gridFeeCents: null, bioCostCents: null, sharePermille: null, fixedCents: null, estimated: false, usedByService: true, parts: [], ...over,
+  emissionFactor: null, gridFeeCents: null, bioCostCents: null, sharePermille: null, fixedCents: null, estimated: false, usedByService: true, parts: [], creditNoteKind: null, ...over,
 })
 const position = (id: string, period: string, amountCents: number, fuelDeliveryId: string): SnapshotCostItem => ({
   id, period: periodKey(period), category: HEATING_CATEGORY, description: id, amountCents, key: 'area', heatingPlantId: 'hp', heatingPart: 'fuel', fuelDeliveryId,

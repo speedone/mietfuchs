@@ -4,9 +4,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  coverageOf, deliveryShare, localDegreeDaySum, meterQuantity, plantFuel, variableShare,
+  coverageOf, deliveryShare, estimateFactors, localDegreeDaySum, meterQuantity, notInvoiceDeliveries, plantFuel, variableShare,
   type FuelDeliveryInput, type FuelPlantInput, type ShareContext,
 } from '../src/fuel.ts'
+import { degreeDayPermille } from '../../shared/degreeDays.ts'
 import { hkvDegreeDays } from '../../shared/law/heizkostenv.ts'
 import { onlyVersion } from '../../shared/law/register.ts'
 import { CALENDAR_RULES, periodKey, periodOfKey } from '../../shared/period.ts'
@@ -155,12 +156,17 @@ test('Fall c: H−1 ohne Schätzung abgeschlossen; 983,39 € beim Vermieter', (
   assert.deepEqual(aus.landlord, [{ reason: 'fuelClosedPeriod', cents: 98339 }])
 })
 
-test('Fall d: eingefrorener Wert geht vor, auch wenn ein später erfasster Zählerstand 200 ‰ ergäbe', () => {
+// #251, R-2: Bis dahin trugen die Mieter von H den Unterschied (6.500 € − 983,39 € statt 6.500 € − 1.300 €, also
+// 316,61 € Brennstoff, der in H−1 verbraucht wurde). Das verletzt das Verbrauchsprinzip (BGH VIII ZR 156/11): Die
+// Mieter von H tragen nur den heutigen Teil von H, H−1 behält, was sie eingefroren hat, und der Unterschied steht beim
+// Vermieter (`fuelClosedPeriod`), der ihn nur mit einer berichtigten Abrechnung von H−1 nachfordern kann.
+test('Fall d: Was H−1 eingefroren hat, bleibt; ergäbe ein später erfasster Zählerstand 200 ‰, trägt H nur ihren heutigen Teil, die 316,61 € stehen beim Vermieter', () => {
   const readings = [{ date: '2025-03-14', value: 0 }, { date: '2025-04-30', value: 200 }, { date: '2026-03-14', value: 1000 }]
   const offen = carryOf(plantFuel(input({ ctx: { ...ctx, readings } })))
   assert.equal(offen.cents, -130000)
   const zu = carryOf(plantFuel(input({ ctx: { ...ctx, readings }, closed: new Set(['2024-05']), frozen: [{ deliveryId: 'd', period: '2024-05', cents: 98339, emissionsKg: 0, co2Cents: 0 }] })))
-  assert.deepEqual([zu.cents, zu.frozen, zu.landlord], [-98339, true, [{ reason: 'fuelCarry', cents: 98339 }]])
+  assert.deepEqual([zu.cents, zu.frozen, zu.landlord], [-130000, true, [{ reason: 'fuelCarry', cents: 98339 }, { reason: 'fuelClosedPeriod', cents: 31661 }]])
+  assert.deepEqual(zu.frozenPart, { frozen: 98339, today: 130000 })
 })
 
 test('Fall e: Schätzung 1.050,00 € zu hoch; Differenz −66,61 €', () => {
@@ -208,4 +214,105 @@ test('Heizung PR 10: der Schätzvorschlag trägt die kWh im Verhältnis des verb
   if (gap) assert.equal(typeof gap.energyKwh, 'number')
   const line = plantFuel(input({ deliveries: [{ ...GAS, energyKwh: 60000 }] }))?.lines[0] ?? assert.fail('keine Zeile')
   assert.ok(line.energyKwh !== null && Math.abs(line.energyKwh - 60000 * (line.sharePermille / 1000)) < 1e-6)
+})
+
+// ---------- Gutschrift ohne Rechnung (#251): eine Lieferung, deren Positionen zusammen weniger als 0 € ergeben ----------
+// Aufbau aus dem Invariantenlauf „Abschluss mit Schätzung“, Startwert 384: d1 hatte p7 = 6.176,03 € und den Storno
+// p16 = −6.176,03 €; danach wurde p7 auf 0 und p16 auf −304,51 € gesetzt. d1 ergibt −304,51 € und belegt keinen
+// Verbrauch.
+const H26 = period(MAI, '2026-05')
+const D0 = delivery({ id: 'd0', label: 'Rechnung d0', invoiceFrom: '2024-05-01', invoiceTo: '2025-07-13' })
+const D1 = delivery({ id: 'd1', label: 'Rechnung d1', invoiceFrom: '2025-07-14', invoiceTo: '2026-09-25' })
+const D2 = delivery({ id: 'd2', label: 'Rechnung d2', invoiceFrom: '2026-09-26', invoiceTo: '2028-07-12' })
+const E18 = delivery({ id: 'e18', label: 'Schätzung 2026/2027', invoiceFrom: '2026-05-01', invoiceTo: '2027-04-30', amountCents: 370727, estimated: true })
+const GUTSCHRIFT_ITEMS = [
+  { id: 'p0', period: '2025-05', amountCents: 617603, fuelDeliveryId: 'd0' },
+  { id: 'p7', period: '2026-05', amountCents: 0, fuelDeliveryId: 'd1' },
+  { id: 'p16', period: '2026-05', amountCents: -30451, fuelDeliveryId: 'd1' },
+  { id: 'p2', period: '2028-05', amountCents: 521480, fuelDeliveryId: 'd2' },
+]
+const gutschrift = (deliveries: FuelDeliveryInput[], over: Partial<FuelPlantInput> = {}) =>
+  plantFuel(input({ h: H26, deliveries, items: GUTSCHRIFT_ITEMS, ...over })) ?? assert.fail('kein Ergebnis')
+// Gradtage nach der Tabelle (‰): 01.05.–25.09. eines Jahres = Mai 40 + Juni bis August je 13,33 + 25/30 von 30.
+const DD_MAI_BIS_25_SEPT = degreeDayPermille([{ from: '2026-05-01', to: '2026-09-25' }], table)
+
+test('#251 1a: Eine Gutschrift ohne Rechnung deckt keine Tage ab; mit d2 nur die Gradtage ab dem 26.09.2026', () => {
+  assert.equal(gutschrift([D1]).coveragePermille, 0)
+  near(gutschrift([D1, D2]).coveragePermille, 1000 - DD_MAI_BIS_25_SEPT, 'Abdeckung mit d2', 1e-6)
+})
+
+test('#251 1b: Eine Gutschrift ohne Rechnung verdrängt keine Schätzung; e18 zählt für 01.05.–25.09.2026 mit 389,26 €', () => {
+  const factors = estimateFactors([D1, D2, E18], notInvoiceDeliveries('manual', [D1, D2, E18], GUTSCHRIFT_ITEMS), table)
+  near(factors.get('e18') ?? -1, DD_MAI_BIS_25_SEPT / 1000, 'Faktor der Schätzung')
+  const line = gutschrift([D1, D2, E18]).lines.find((l) => l.deliveryId === 'e18') ?? assert.fail('keine Zeile der Schätzung')
+  assert.ok(Math.abs((line.inPeriodCents ?? 0) - 38926) <= 1, `Schätzung ${line.inPeriodCents} statt 38926`)
+})
+
+test('#251 1c: Eine Gutschrift ohne Rechnung ist keine Vorlage für den Schätzvorschlag', () => {
+  const mitVorlage = gutschrift([D0, D1]).gaps[0]?.estimate ?? assert.fail('kein Vorschlag')
+  assert.equal(mitVorlage.basedOn, 'Rechnung d0')
+  assert.ok(mitVorlage.amountCents > 0, `Vorschlag ${mitVorlage.amountCents}`)
+  assert.deepEqual(gutschrift([D0, D1]).gaps.map((g) => [g.from, g.to]), [['2026-05-01', '2027-04-30']])
+  assert.equal(gutschrift([D1]).gaps[0]?.estimate ?? null, null)
+})
+
+test('#251 1d: Eine Gutschrift ohne Rechnung steht nicht in der Bewertung und zählt keinen CO₂-Ausstoß', () => {
+  const mit = gutschrift([{ ...D1, emissionsKg: 500, co2CostCents: 2000 }, { ...D2, emissionsKg: 1000, co2CostCents: 4000 }])
+  const ohne = gutschrift([{ ...D2, emissionsKg: 1000, co2CostCents: 4000 }])
+  assert.deepEqual(mit.lines.map((l) => l.deliveryId), ['d2'])
+  assert.equal(mit.emissionsKg, ohne.emissionsKg)
+  assert.equal(mit.co2Cents, ohne.co2Cents)
+  assert.deepEqual(mit.creditOnly, [{ deliveryId: 'd1', label: 'Rechnung d1', cents: -30451, confirmed: false }])
+  assert.deepEqual(mit.zeroInvoices, [])
+})
+
+// #251, R-3 (Prüfbericht M2, Verdacht V1): Schätzung 3.000,00 € vom 01.02. bis 30.04.2025; beim Abschluss von 2024/2025
+// deckte d0 (bis 14.03.2025) den Teil davor ab, eingefroren sind 42,03 % = 1.260,75 €. Die Rechnung d deckt genau die
+// übrigen Tage ab und ersetzt damit die ganzen 1.260,75 €, nicht 529,83 € (der Faktor 0,4203 zweimal).
+test('#251 R-3: Eine teilweise abgedeckte, eingefrorene Schätzung wird nicht zweimal gekürzt: 1.260,75 € ersetzt, Abweichung −277,36 €', () => {
+  const e = delivery({ id: 'e', label: 'Schätzung', invoiceFrom: '2025-02-01', invoiceTo: '2025-04-30', amountCents: 300000, estimated: true })
+  const frozen = [{ deliveryId: 'e', period: '2024-05', cents: 126075, emissionsKg: 0, co2Cents: 0 }]
+  const r = plantFuel(input({ deliveries: [VORJAHR, GAS, e], items: [vorjahrItem, gasItem], closed: new Set(['2024-05']), frozen }))
+  const c = carryOf(r)
+  assert.equal(c.cents, -98339)
+  assert.deepEqual(c.estimate, { cents: 126075, ids: ['e'], ratios: [1], frozen: [126075] })
+  assert.deepEqual(c.landlord, [{ reason: 'fuelCarry', cents: 126075 }, { reason: 'fuelEstimateDiff', cents: -27736 }])
+  // Storniert: Die Mieter von 2024/2025 haben die ganzen 1.260,75 € zu viel getragen.
+  const storno = carryOf(plantFuel(input({ deliveries: [VORJAHR, GAS, e], items: [vorjahrItem, gasItem, { ...gasItem, id: 'st', amountCents: -650000 }], closed: new Set(['2024-05']), frozen })))
+  assert.equal(storno.cancelled, 126075)
+})
+
+// #251 (c2, Invariante, Startwert 317 „getrenntes Warmwasser“): Nach Storno und gelöschter Gutschrift ergab die Vorlage
+// 38,72 €, ihr fester Bestandteil war höher. Der Vorschlag wäre negativ gewesen; einen Vorschlag gibt es nur über 0 €.
+test('#251 (c2): Kein Schätzvorschlag unter 0 €, auch wenn der feste Bestandteil der Vorlage über ihrer Summe liegt', () => {
+  const r = plantFuel(input({ h: H1, deliveries: [{ ...VORJAHR, fixedCents: 30000 }], items: [{ ...vorjahrItem, amountCents: 3872 }] })) ?? assert.fail('kein Ergebnis')
+  const lücke = r.gaps.find((g) => g.from === '2025-03-15') ?? assert.fail('keine Lücke')
+  assert.equal(lücke.estimate, null)
+})
+
+// #251, R-3 (Invariante, Startwert 447): Decken zwei Rechnungen späterer Heizperioden dieselben Tage einer eingefrorenen
+// Schätzung ab, zählen diese Tage für jede zur Hälfte; zusammen lösen beide die ganze Schätzung ab, nicht nur die Tage,
+// die jede allein abdeckt.
+test('#251 R-3: zwei Rechnungen über dieselben Tage einer Schätzung lösen sie zusammen genau einmal ab', () => {
+  const D3 = delivery({ id: 'd3', label: 'Gas Nachtrag', invoiceFrom: '2025-04-01', invoiceTo: '2025-05-31' })
+  const ueber = { deliveries: [GAS, D3, schaetzung(90774)], items: [gasItem, { id: 'gas3', period: '2025-05', amountCents: 50000, fuelDeliveryId: 'd3' }], closed: new Set(['2024-05']), frozen: [{ deliveryId: 'e', period: '2024-05', cents: 90774, emissionsKg: 0, co2Cents: 0 }] }
+  const r = plantFuel(input(ueber))
+  const summe = (carryOf(r, 'd').estimate?.cents ?? 0) + (carryOf(r, 'd3').estimate?.cents ?? 0)
+  assert.ok(Math.abs(summe - 90774) <= 1, `zusammen ${summe} statt 90774`)
+  assert.ok((carryOf(r, 'd3').estimate?.cents ?? 0) > 0, 'd3 löst keinen Tag ab')
+})
+
+// Durchsicht #277, S1 (Invariante, Startwert 447): Eine Vorlage mit fast keinen Gradtagen ergab beliebig hohe Vorschläge
+// (50,00 € über zwei Julitage → 3.050,00 € für Mai/Juni, 54.400,00 € für den Rest der Heizperiode). Vorlage ist nur eine
+// Rechnung, die mindestens 100 ‰ der Gradtage der zu schätzenden Spanne abdeckt; sonst die nächstältere, sonst keine.
+test('#277 S1: Keine Vorlage für den Schätzvorschlag, die weniger als 100 ‰ der Gradtage der Lücke abdeckt', () => {
+  const N = delivery({ id: 'n', label: 'Nachlieferung', invoiceFrom: '2025-07-01', invoiceTo: '2025-07-02' })
+  const nItem = { id: 'pn', period: '2025-05', amountCents: 5000, fuelDeliveryId: 'n' }
+  const allein = plantFuel(input({ deliveries: [N], items: [nItem] })) ?? assert.fail('kein Ergebnis')
+  assert.deepEqual(allein.gaps.map((g) => [g.from, g.to, g.estimate?.amountCents ?? null, g.shortTemplate ?? null]), [
+    ['2025-05-01', '2025-06-30', null, 'Nachlieferung'],
+    ['2025-07-03', '2026-04-30', null, 'Nachlieferung'],
+  ])
+  const mitAlter = plantFuel(input({ deliveries: [VORJAHR, N], items: [vorjahrItem, nItem] })) ?? assert.fail('kein Ergebnis')
+  assert.deepEqual(mitAlter.gaps.map((g) => [g.from, g.estimate?.basedOn ?? null]), [['2025-05-01', 'Gas 2024/2025'], ['2025-07-03', 'Gas 2024/2025']])
 })

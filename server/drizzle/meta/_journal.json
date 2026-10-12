@@ -379,6 +379,20 @@
       "when": 1791774352608,
       "tag": "0053_selbstversorgung_art_bedingungen",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "6",
+      "when": 1791776331505,
+      "tag": "0054_gutschrift_ohne_rechnung",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "6",
+      "when": 1791776336571,
+      "tag": "0055_gutschrift_ohne_rechnung_bedingungen",
+      "breakpoints": true
     }
   ]
 }

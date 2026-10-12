@@ -632,7 +632,7 @@ export const GLOSSARY = {
 
   fuelDelivery: {
     title: 'Lieferung (Rechnung des Versorgers)',
-    short: 'Eine Rechnung über Brennstoff oder Energie, auf der Seite Heizkosten eingetragen: bei Gas, Fernwärme und Strom mit ihrem Rechnungszeitraum, bei Heizöl, Flüssiggas, Pellets, Holz und Kohle mit Lieferdatum und Menge. Reicht eine Gasrechnung über die Heizperiode hinaus, teilt Mietfuchs sie auf die Heizperioden auf; bei Brennstoff mit Vorrat ergibt die Bestandsrechnung den Verbrauch. Bei freien Schlüsseln verknüpfen Sie die Kostenposition mit ihr.',
+    short: 'Eine Rechnung über Brennstoff oder Energie, auf der Seite Heizkosten eingetragen: bei Gas, Fernwärme und Strom mit ihrem Rechnungszeitraum, bei Heizöl, Flüssiggas, Pellets, Holz und Kohle mit Lieferdatum und Menge. Reicht eine Gasrechnung über die Heizperiode hinaus, teilt Mietfuchs sie auf die Heizperioden auf; bei Brennstoff mit Vorrat ergibt die Bestandsrechnung den Verbrauch. Bei freien Schlüsseln verknüpfen Sie die Kostenposition mit ihr. Ergeben die Positionen einer Lieferung zusammen weniger als 0 €, ist sie eine Gutschrift ohne Rechnung: Sie belegt keinen Verbrauch, deckt also keine Tage ab und zählt keinen CO₂-Ausstoß; ihr Betrag mindert die Heizkosten der Heizperioden ihres Zeitraums.',
     example: 'Gasrechnung 15.03.2025–14.03.2026 über 6.500,00 €, Heizperiode Mai bis April: Nach Gradtagen gehören 848,71 ‰ in 2025/2026 (5.516,61 €), der Rest von 983,39 € in 2024/2025.',
     norm: '§ 7 Abs. 2 HeizkostenV',
     needed: 'Wenn eine Rechnung über die Heizperiode hinausreicht oder Mietfuchs die CO₂-Kosten selbst aufteilen soll. Ohne Verknüpfung verteilt Mietfuchs die Position ganz in ihrem Zeitraum und grenzt nichts ab.',
