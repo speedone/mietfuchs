@@ -425,14 +425,13 @@ describe('Wer hat den Liefervertrag für den Brennstoff? (Heizung PR 19)', () =>
 
 test('Durchsicht S-4: bei der zentralen Heizung ist jede weitere angehakte Einheit Wärme an Dritte, auch selbstgenutzt oder leer', () => {
   const t = (id: string, unitId: string, tenantName: string) => ({ id, unitId, tenantName, start: '2020-01-01', end: null })
-  const units = [{ id: 'eg' }, { id: 'og' }, { id: 'dg', selfUsed: true, participates: false }]
   const NOT = /^Liefert ein Mieter über seinen Vertrag auch Wärme an andere Wohnungen/
   // Leer: eine angehakte Wohnung ohne laufendes Mietverhältnis.
-  expect(selfSupplyOffer(['eg', 'og'], [t('a', 'eg', 'Mieter A')], '2026-10-12', true, units)).toEqual({ error: expect.stringMatching(NOT) })
+  expect(selfSupplyOffer(['eg', 'og'], [t('a', 'eg', 'Mieter A')], '2026-10-12', true)).toEqual({ error: expect.stringMatching(NOT) })
   // Selbstgenutzt.
-  expect(selfSupplyOffer(['eg', 'dg'], [t('a', 'eg', 'Mieter A')], '2026-10-12', true, units)).toEqual({ error: expect.stringMatching(NOT) })
+  expect(selfSupplyOffer(['eg', 'dg'], [t('a', 'eg', 'Mieter A')], '2026-10-12', true)).toEqual({ error: expect.stringMatching(NOT) })
   // Alle angehakten Wohnungen an denselben Mieter: Angebot.
-  expect(selfSupplyOffer(['eg', 'og'], [t('a', 'eg', 'Mieter A'), t('b', 'og', 'Mieter A')], '2026-10-12', true, units)).toEqual({ tenancyIds: ['a', 'b'], names: ['Mieter A'] })
+  expect(selfSupplyOffer(['eg', 'og'], [t('a', 'eg', 'Mieter A'), t('b', 'og', 'Mieter A')], '2026-10-12', true)).toEqual({ tenancyIds: ['a', 'b'], names: ['Mieter A'] })
   // Etagenheizung: eine leere Wohnung ist kein Dritter.
-  expect(selfSupplyOffer(['eg', 'og'], [t('a', 'eg', 'Mieter A')], '2026-10-12', false, units)).toEqual({ tenancyIds: ['a'], names: ['Mieter A'] })
+  expect(selfSupplyOffer(['eg', 'og'], [t('a', 'eg', 'Mieter A')], '2026-10-12', false)).toEqual({ tenancyIds: ['a'], names: ['Mieter A'] })
 })
