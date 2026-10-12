@@ -9,7 +9,9 @@ import { applyMigrations, connect, loadMigrations, type Connection } from '../sr
 import { readStock } from '../src/db/read.ts'
 import { databaseProblem } from '../src/db/errors.ts'
 import { co2Refunds } from '../src/db/schema.ts'
-import { createEntity, orphanPeriodKeys } from '../src/db/repository.ts'
+import { closeSettlement, createEntity, HeatingError, orphanPeriodKeys, PeriodError } from '../src/db/repository.ts'
+import { createRefund, listRefunds, removeRefund, updateRefund } from '../src/db/co2Refunds.ts'
+import type { OpenedDatabase } from '../src/db/open.ts'
 import { periodKey } from '../../shared/period.ts'
 import { openFreshDatabase } from '../testing/freshDatabase.ts'
 
@@ -116,4 +118,85 @@ test('Wiederherstellen: ein Verrechnungszeitraum, den es für das Objekt nicht g
   } finally {
     fs.rmSync(dir, { recursive: true, force: true })
   }
+})
+
+// ---------- Lesen und Schreiben mit Prüfungen (Task 4) ----------
+
+async function withDatabase(work: (opened: OpenedDatabase) => Promise<void>): Promise<void> {
+  const dataDir = tempDir()
+  const opened = await openFreshDatabase(dataDir)
+  try {
+    await work(opened)
+  } finally {
+    opened.close()
+    fs.rmSync(dataDir, { recursive: true, force: true })
+  }
+}
+const rejectsWith = (status: number, text: RegExp) => (e: unknown) =>
+  (e instanceof HeatingError || e instanceof PeriodError) && e.status === status && text.test(e.message)
+const anzeige = { tenancyId: 't', supplierBilledAt: '2025-01-20', claimedAt: '2025-03-01', amountCents: 24000, billedFrom: '2025-01-01', billedTo: '2025-12-31', emissionsKg: 2400, co2CostCents: 60000, areaM2: 80 }
+
+async function seed(opened: OpenedDatabase, heatingModel: string | null = 'selfSupply'): Promise<void> {
+  await opened.write(async (db) => {
+    await createEntity(db, 'units', 'w', { propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true })
+    await createEntity(db, 'tenancies', 't', { unitId: 'w', tenantName: 'Mieter', persons: 1, start: '2020-01-01', end: '2025-06-30', heatingModel, prepayments: [{ from: '2020-01', monthlyCents: 10000 }] })
+  })
+}
+
+test('Anlegen, Lesen mit Nachrechnung und Fristen, Ändern, Löschen', async () => {
+  await withDatabase(async (opened) => {
+    await seed(opened)
+    const r = await opened.write((db) => createRefund(db, 'e1', { ...anzeige, settlePeriod: '2025-01' }))
+    assert.deepEqual([r.amountCents, r.settlePeriod, r.restriction, r.ownAppliances], [24000, '2025-01', 'none', false])
+    const [v] = await opened.read((db) => listRefunds(db, 'objekt-1'))
+    assert.deepEqual([v?.tenantName, v?.unitName, v?.settleLabel, v?.claimDeadline, v?.refundDue, v?.proposalCents], ['Mieter', 'EG', '2025', '2026-01-20', '2026-03-01', 24000])
+    const neu = await opened.write((db) => updateRefund(db, 'e1', { ownAppliances: true, amountCents: 22800 }))
+    assert.deepEqual([neu?.ownAppliances, neu?.amountCents, neu?.settlePeriod], [true, 22800, '2025-01'])
+    assert.equal(await opened.write((db) => updateRefund(db, 'gibt-es-nicht', { amountCents: 1 })), null)
+    assert.equal(await opened.write((db) => removeRefund(db, 'e1')), true)
+    assert.equal(await opened.write((db) => removeRefund(db, 'e1')), false)
+    assert.deepEqual(await opened.read((db) => listRefunds(db, 'objekt-2')), [])
+  })
+})
+
+test('Prüfung M4: eine Erstattung nur an einem Mietverhältnis, dessen Mieter selbst heizt', async () => {
+  await withDatabase(async (opened) => {
+    await seed(opened, null)
+    await assert.rejects(opened.write((db) => createRefund(db, 'x', anzeige)),
+      rejectsWith(400, /^Eine CO₂-Erstattung nach § 6 Abs\. 2 CO2KostAufG steht nur einem Mieter zu, der sich selbst mit Wärme versorgt, also den Brennstoff oder die Wärme über einen eigenen Vertrag bezieht\. Stellen Sie in den Stammdaten bei Mieter die Heizung auf „Mieter heizt selbst“, wenn das zutrifft\.$/))
+  })
+})
+
+test('Review Focus 2: kein Verrechnen in einem Zeitraum ohne Mietzeit oder in einem abgeschlossenen; Prüfung S9: keine Änderung dort', async () => {
+  await withDatabase(async (opened) => {
+    await seed(opened)
+    await assert.rejects(opened.write((db) => createRefund(db, 'x', { ...anzeige, settlePeriod: '2026-01' })), rejectsWith(400, /wohnte im Zeitraum 2026 nicht/))
+    await assert.rejects(opened.write((db) => createRefund(db, 'x', { ...anzeige, settlePeriod: '2025-05' })), rejectsWith(400, /Zeitraum 2025-05 gibt es für dieses Objekt nicht/))
+    const r = await opened.write((db) => createRefund(db, 'y', { ...anzeige, settlePeriod: '2025-01' }))
+    await opened.write((db) => closeSettlement(db, { id: 'c', propertyId: 'objekt-1', period: periodKey('2025-01'), closedAt: '2026-02-01', sentAt: null, settlement: {} }))
+    await assert.rejects(opened.write((db) => createRefund(db, 'z', { ...anzeige, settlePeriod: '2025-01' })), rejectsWith(409, /abgeschlossen/))
+    // S9: auch Betrag oder Grundlagen einer dort verrechneten Erstattung bleiben, und löschen geht nicht.
+    await assert.rejects(opened.write((db) => updateRefund(db, r.id, { amountCents: 1 })), rejectsWith(409, /abgeschlossenen Abrechnung verrechnet/))
+    await assert.rejects(opened.write((db) => removeRefund(db, r.id)), rejectsWith(409, /abgeschlossenen Abrechnung verrechnet/))
+    const offen = await opened.write((db) => createRefund(db, 'o', anzeige))
+    assert.equal(offen.settlePeriod, null)
+  })
+})
+
+test('Prüfungen: Anzeige vor der Abrechnung des Lieferanten, verrechnet und ausgezahlt, § 5a vor 2028, Zeitraum halb', async () => {
+  await withDatabase(async (opened) => {
+    await seed(opened)
+    await assert.rejects(opened.write((db) => createRefund(db, 'a', { ...anzeige, claimedAt: '2025-01-10' })), rejectsWith(400, /vor der Abrechnung des Lieferanten/))
+    await assert.rejects(opened.write((db) => createRefund(db, 'b', { ...anzeige, settlePeriod: '2025-01', paidOutOn: '2025-04-01' })), rejectsWith(400, /verrechnet oder ausgezahlt/))
+    await assert.rejects(opened.write((db) => createRefund(db, 'c', { ...anzeige, halfSplitFrom: '2027-06-01' })), rejectsWith(400, /01\.01\.2028/))
+    await assert.rejects(opened.write((db) => createRefund(db, 'd', { ...anzeige, gridFeeCents: 100 })), rejectsWith(400, /§ 5a/))
+    await assert.rejects(opened.write((db) => createRefund(db, 'e', { ...anzeige, tenancyId: 'gibt-es-nicht' })), rejectsWith(400, /Mietverhältnis/))
+    await assert.rejects(opened.write((db) => createRefund(db, 'f', { ...anzeige, billedTo: null })), rejectsWith(400, /Beginn und Ende/))
+    await assert.rejects(opened.write((db) => createRefund(db, 'g', { ...anzeige, claimedAt: '01.03.2025' })), rejectsWith(400, /kein Datum/))
+    await assert.rejects(opened.write((db) => createRefund(db, 'h', { ...anzeige, amountCents: -5 })), rejectsWith(400, /Betrag/))
+    // § 11 Abs. 2: Vor 2023 gibt es keine CO₂-Kosten, also auch keine Erstattung.
+    await assert.rejects(opened.write((db) => createRefund(db, 'j', { ...anzeige, supplierBilledAt: '2022-12-20', billedFrom: '2022-01-01', billedTo: '2022-12-31' })), rejectsWith(400, /ab dem 01\.01\.2023/))
+    const m = await opened.write((db) => createRefund(db, 'i', { ...anzeige, commercialMetered: true }))
+    assert.equal(m.commercialMetered, false, 'ohne gewerbliche Nutzung keine getrennte Messung')
+  })
 })
