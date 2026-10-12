@@ -33,9 +33,9 @@ export type ShareContext = { table: DegreeDayTable; local: ReadonlyMap<string, n
 export type FuelDeliveryInput = Pick<
   FuelDelivery,
   'id' | 'label' | 'invoiceFrom' | 'invoiceTo' | 'deliveredAt' | 'amountCents' | 'fixedCents' | 'sharePermille' | 'emissionsKg' | 'co2CostCents' | 'estimated' | 'usedByService' | 'parts'
-> & Partial<Pick<FuelDelivery, 'energyKwh'>>
-// `energyKwh` seit Heizung PR 10 (Warmwasseranteil der eigenen Heizkostenabrechnung); optional, damit ein
-// von Hand gebauter Schnappschuss sie nicht nennen muss.
+> & Partial<Pick<FuelDelivery, 'energyKwh' | 'creditNoteKind'>>
+// `energyKwh` seit Heizung PR 10 (Warmwasseranteil der eigenen Heizkostenabrechnung), `creditNoteKind` seit #251;
+// optional, damit ein von Hand gebauter Schnappschuss sie nicht nennen muss.
 
 // Die Energie einer Lieferung in kWh, wie abgerechnet: an der Lieferung, sonst die Summe der Teilmengen,
 // wenn jede eine nennt (Heizung PR 10).
@@ -209,7 +209,7 @@ export type FuelPlantInput = {
   // `landlordBorne`: Der Teil steht dort beim Vermieter, die andere Heizperiode hat ihn nie hereingebucht.
   // Was abgeschlossene Heizperioden als storniert behandelt haben (Positionen zusammen 0 €), je Lieferung.
   closedCancelled?: readonly { period: string; deliveryId: string }[]
-  closedCarries?: readonly { period: string; deliveryId: string; other: string; cents: number; totalCents?: number; landlordBorne?: true }[]
+  closedCarries?: readonly { period: string; deliveryId: string; other: string; cents: number; totalCents?: number; landlordBorne?: true; bookedCents?: number }[]
 }
 
 // Ein Übertrag der Mieterseite dieser Heizperiode: `out` hinaus in die frühere (die Positionen stehen
@@ -233,6 +233,12 @@ export type FuelCarry = {
   cancelled?: number
   // Beim Gegenstück: der Teil, den die abgeschlossene Heizperiode der Positionen hierher hinausgebucht hat.
   cancelledOut?: number
+  // #251, R-2: Die abgeschlossene Heizperiode `other` hat `frozen` eingefroren, heute entfallen `today` auf sie.
+  // Hinausgebucht wird `today`; der Unterschied steht beim Vermieter.
+  frozenPart?: { frozen: number; today: number }
+  // Daneben eine eingefrorene Schätzung (die Lieferung war beim Abschluss eine Gutschrift ohne Rechnung): der eingefrorene
+  // Teil der Lieferung, den der Hinweis neben der Schätzung nennt (Durchsicht #277, S2).
+  estimateFrozenPart?: number
   landlord: { reason: 'fuelCarry' | 'fuelClosedPeriod' | 'fuelEstimateDiff'; cents: number }[]
   templates: { itemId: string; raw: number }[]
   // `ratios[k]`: der Anteil der eingefrorenen Schätzung `ids[k]`, den die Rechnung abdeckt (nach Gradtagen); nur
@@ -240,6 +246,9 @@ export type FuelCarry = {
   // eingefrorener Betrag.
   estimate: { cents: number; ids: string[]; ratios: number[]; frozen: number[] } | null
 }
+
+// Durchsicht #277, S1: Eine Vorlage für einen Schätzvorschlag deckt mindestens 100 ‰ der Gradtage der Lücke ab.
+const MAX_TEMPLATE_FACTOR = 10
 
 export type FuelResult = {
   lines: FuelDeliveryLine[]
@@ -260,6 +269,9 @@ export type FuelResult = {
   // Rechnungen, deren Positionen zusammen 0 € ergeben und die die Heizperiode berühren: Mietfuchs
   // behandelt sie als storniert (Nachprüfung von 5bee89f, M-b).
   zeroInvoices: { deliveryId: string; label: string }[]
+  // Gutschriften ohne Rechnung (#251), die die Heizperiode berühren: Positionen zusammen `cents` < 0. `confirmed`: Der
+  // Vermieter hat angegeben, dass die Rechnung dazu nicht in Mietfuchs steht (`creditNoteKind`).
+  creditOnly: { deliveryId: string; label: string; cents: number; confirmed: boolean }[]
   // Schätzungen, die keine Rechnung mit Positionen als Vorlage für ihren Schlüssel haben und deshalb
   // nicht verteilt werden (Nachprüfung von 5bee89f, G-a).
   estimatesWithoutTemplate: { deliveryId: string; cents: number }[]
@@ -270,16 +282,33 @@ export type FuelResult = {
 // der Bewertung; ihre Überträge bleiben, damit eine abgeschlossene Heizperiode ihre Gegenbuchung bekommt.
 // Eigene Funktion seit Heizung PR 17: Das Blatt für den Messdienst und die Plausibilität fragen dieselbe
 // Auswahl wie die Bewertung.
-export function cancelledDeliveries(method: HeatingMethod, deliveries: readonly Pick<FuelDeliveryInput, 'id' | 'estimated'>[], items: readonly FuelItem[]): Set<string> {
+//
+// **Gutschrift ohne Rechnung** (#251): Ergeben die Positionen zusammen weniger als 0 €, belegt die Lieferung keinen
+// Verbrauch; Kosten verbrauchten Brennstoffs (§ 7 Abs. 2 HeizkostenV) sind nie negativ. Für Tage, Schätzungen,
+// Vorlage und CO₂ zählt sie wie ein Storno; ihr Geld geht nach dem Verbrauchsprinzip an die Heizperioden ihres
+// Zeitraums wie das einer Rechnung (Auslegung am Verbrauchsprinzip, BGH VIII ZR 156/11). Eine Einordnung an einer
+// Stelle: `invoice` (Summe > 0), `cancelled` (= 0), `creditOnly` (< 0); nur bei freien Schlüsseln und der eigenen
+// Abrechnung, nur für echte Lieferungen mit Positionen.
+export type InvoiceStatus = 'invoice' | 'cancelled' | 'creditOnly'
+export function invoiceStatusOf(method: HeatingMethod, deliveries: readonly Pick<FuelDeliveryInput, 'id' | 'estimated'>[], items: readonly FuelItem[]): Map<string, InvoiceStatus> {
   const withItems = method === 'manual' || method === 'self'
-  const out = new Set<string>()
+  const out = new Map<string, InvoiceStatus>()
   if (!withItems) return out
   for (const d of deliveries) {
     if (d.estimated) continue
     const mine = items.filter((c) => c.fuelDeliveryId === d.id)
-    if (mine.length > 0 && mine.reduce((a, c) => a + c.amountCents, 0) === 0) out.add(d.id)
+    if (mine.length === 0) continue
+    const total = mine.reduce((a, c) => a + c.amountCents, 0)
+    out.set(d.id, total > 0 ? 'invoice' : total === 0 ? 'cancelled' : 'creditOnly')
   }
   return out
+}
+const withStatus = (status: ReadonlyMap<string, InvoiceStatus>, wanted: readonly InvoiceStatus[]): Set<string> =>
+  new Set([...status].filter(([, s]) => wanted.includes(s)).map(([id]) => id))
+// Storno und Gutschrift ohne Rechnung: Beide decken keine Tage ab, verdrängen keine Schätzung und zählen nicht in der
+// Bewertung, im Blatt für den Messdienst und in der Plausibilität.
+export function notInvoiceDeliveries(method: HeatingMethod, deliveries: readonly Pick<FuelDeliveryInput, 'id' | 'estimated'>[], items: readonly FuelItem[]): Set<string> {
+  return withStatus(invoiceStatusOf(method, deliveries, items), ['cancelled', 'creditOnly'])
 }
 
 // Eine Schätzung zählt nur für die Tage, die keine echte Rechnung abdeckt (8.2, Wiederöffnen;
@@ -308,12 +337,15 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
   const withItems = input.method === 'manual' || input.method === 'self'
   const ranged = input.deliveries.filter((d) => rangeOf(d) !== null)
   const itemsOf = (id: string): FuelItem[] => input.items.filter((c) => c.fuelDeliveryId === id)
-  const cancelledIds = cancelledDeliveries(input.method, ranged, input.items)
-  const cancelled = (d: FuelDeliveryInput): boolean => cancelledIds.has(d.id)
-  const estimateFactor = estimateFactors(ranged, cancelledIds, ctx.table)
-  const real = ranged.filter((d) => !d.estimated && !cancelled(d))
+  const status = invoiceStatusOf(input.method, ranged, input.items)
+  // Storno (Summe 0) und Gutschrift ohne Rechnung (Summe < 0, #251): keine Tage, keine Verdrängung, keine Bewertung.
+  const notInvoiceIds = withStatus(status, ['cancelled', 'creditOnly'])
+  const cancelled = (d: FuelDeliveryInput): boolean => status.get(d.id) === 'cancelled'
+  const notInvoice = (d: FuelDeliveryInput): boolean => notInvoiceIds.has(d.id)
+  const estimateFactor = estimateFactors(ranged, notInvoiceIds, ctx.table)
+  const real = ranged.filter((d) => !d.estimated && !notInvoice(d))
   const effective = ranged.filter((d) => !d.estimated || (estimateFactor.get(d.id) ?? 0) > 0)
-  const counted = effective.filter((d) => !cancelled(d))
+  const counted = effective.filter((d) => !notInvoice(d))
   const totalOf = (d: FuelDeliveryInput): number =>
     d.estimated
       ? roundHalf((d.amountCents ?? 0) * (estimateFactor.get(d.id) ?? 1))
@@ -389,7 +421,8 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
   // Die Rechnung, aus der eine Schätzung verteilt wird oder die eine Lücke schätzt: die letzte echte
   // mit Positionen, die vorher endet, sonst die letzte überhaupt. Eine Regel für beides.
   const templateFor = (from: string): FuelDeliveryInput | null => {
-    const candidates = real.filter((d) => itemsOf(d.id).length > 0 && totalOf(d) !== 0).sort((a, b) => (rangeFor(a).to < rangeFor(b).to ? -1 : 1))
+    // Nur eine Rechnung über mehr als 0 €: Eine Gutschrift ohne Rechnung ergäbe einen negativen Vorschlag (#251).
+    const candidates = real.filter((d) => itemsOf(d.id).length > 0 && totalOf(d) > 0).sort((a, b) => (rangeFor(a).to < rangeFor(b).to ? -1 : 1))
     return candidates.filter((d) => rangeFor(d).to < from).at(-1) ?? candidates.at(-1) ?? null
   }
 
@@ -400,7 +433,18 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
   if (withItems) {
     // Die Schätzungen einer abgeschlossenen Heizperiode, die eine echte Rechnung ersetzt, mit ihrem
     // eingefrorenen Betrag im Verhältnis der Gradtage, die die Rechnung von ihnen abdeckt.
-    const estimatesIn = (other: BillingPeriod, r: DayRange): NonNullable<FuelCarry['estimate']> => {
+    //
+    // #251, R-3: Der eingefrorene Betrag ist schon um die Tage gekürzt, die beim Abschluss eine andere Rechnung abdeckte
+    // (Betrag × Faktor, `estimateFactors`). Ersetzt ist deshalb nicht der eingefrorene Betrag im Verhältnis der Gradtage
+    // des Schnitts zur ganzen Schätzung (das kürzte ein zweites Mal), sondern der Betrag der Schätzung für die Tage, die
+    // die Rechnung abdeckt. Decken mehrere Rechnungen anderer Heizperioden denselben Tag ab, zählt er für jede zu ihrem
+    // Teil (Invariante, Startwert 447: sonst ersetzte ihn keine), und alle zusammen ersetzen höchstens den eingefrorenen
+    // Betrag. `ratios[k]` ist der Anteil des eingefrorenen Betrags, den die Rechnung `id` ersetzt.
+    const ownerKeyOf = (x: FuelDeliveryInput): string => {
+      const key = parsePeriodKey(itemsOf(x.id)[0]?.period)
+      return ((key && periodOfKey(rules, key)) ?? periodContaining(rules, rangeFor(x).to)).key
+    }
+    const estimatesIn = (other: BillingPeriod, r: DayRange, id: string): NonNullable<FuelCarry['estimate']> => {
       let cents = 0
       const ids: string[] = []
       const ratios: number[] = []
@@ -409,10 +453,24 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
         const er = rangeOf(e)
         const f = frozenOf(e.id, other.key)
         if (!er || !f || er.from < other.from || er.to > other.to) continue
-        const cut = intersect(er, r)
-        if (!cut) continue
+        if (!intersect(er, r)) continue
+        // Die Rechnungen, die diese Schätzung von einer anderen Heizperiode aus ablösen, dazu diese.
+        const covering = ranged.filter((x) => !x.estimated && (x.id === id || (!notInvoice(x) && ownerKeyOf(x) !== other.key)) && intersect(rangeFor(x), er) !== null)
         const all = degreeDayPermille([er], ctx.table)
-        const ratio = all > 0 ? degreeDayPermille([cut], ctx.table) / all : daysOf(cut) / daysOf(er)
+        const weight = (day: string) => (all > 0 ? degreeDayPermille([{ from: day, to: day }], ctx.table) / all : 1 / daysOf(er))
+        const raw = new Map<string, number>()
+        for (let t = toUTC(er.from); t <= toUTC(er.to); t += MS_DAY) {
+          const day = isoOf(t)
+          const here = covering.filter((x) => rangeFor(x).from <= day && day <= rangeFor(x).to)
+          for (const x of here) raw.set(x.id, (raw.get(x.id) ?? 0) + weight(day) / here.length)
+        }
+        const amount = e.amountCents ?? f.cents
+        const sum = [...raw.values()].reduce((a, v) => a + v, 0) * amount
+        const scale = f.cents > 0 && sum > f.cents ? f.cents / sum : 1
+        const replaced = (raw.get(id) ?? 0) * amount * scale
+        // Gerundet gegen das Rauschen der Summe über die Tage: ganz abgedeckt heißt 1.
+        const exact = f.cents === 0 ? 0 : Math.max(0, Math.min(1, replaced / f.cents))
+        const ratio = Math.abs(exact - 1) < 1e-9 ? 1 : exact
         cents += f.cents * ratio
         ids.push(e.id)
         ratios.push(ratio)
@@ -470,7 +528,9 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
             carries.push({
               deliveryId: d.id, kind: 'in', other: owner, cents: 0, totalCents: 0, ratio: 0, method: 'inside', frozen: true, zeroFrozen: false,
               cancelled: frozenOut?.totalCents !== undefined ? frozenOut.totalCents + out : -out, cancelledOut: -out,
-              landlord: frozenOut?.landlordBorne ? [] : [{ reason: 'fuelCarry', cents: out }, { reason: 'fuelClosedPeriod', cents: -out }], templates: [], estimate: null,
+              // `bookedCents` (#251): Diese Heizperiode hatte damals einen anderen Teil hereingebucht als hinausgebucht wurde;
+              // gegengebucht wird, was sie hereingebucht hatte.
+              landlord: frozenOut?.landlordBorne ? [] : [{ reason: 'fuelCarry', cents: -(frozenOut?.bookedCents ?? -out) }, { reason: 'fuelClosedPeriod', cents: frozenOut?.bookedCents ?? -out }], templates: [], estimate: null,
             })
           }
           continue
@@ -481,7 +541,7 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
           if (!f || f.cents === 0) {
             // Mit Schätzung abgeschlossen (Nachprüfung von 47f2373, M2): Die Mieter jener Heizperiode haben
             // die Schätzung getragen; die Abweichung ist die ganze Schätzung, wie X − Schätzung bei X = 0.
-            const est = f ? { cents: 0, ids: [], ratios: [], frozen: [] } : input.closed.has(other.key) ? estimatesIn(other, r) : { cents: 0, ids: [], ratios: [], frozen: [] }
+            const est = f ? { cents: 0, ids: [], ratios: [], frozen: [] } : input.closed.has(other.key) ? estimatesIn(other, r, d.id) : { cents: 0, ids: [], ratios: [], frozen: [] }
             if (est.cents === 0) continue
             carries.push({
               deliveryId: d.id, kind: 'out', other, cents: 0, totalCents: 0, ratio: 0, method: 'inside', frozen: true, zeroFrozen: false, cancelled: est.cents,
@@ -506,12 +566,36 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
           // Lieferung beim Abschluss noch keine Position (Durchsicht von #233, I1). Dann hat diese
           // Heizperiode nichts hereingebucht; ihr Teil geht an den Vermieter wie im Fall c.
           const f = found !== null && found.cents === 0 && calc !== 0 ? null : found
+          // #251, R-2: Weicht der eingefrorene Teil vom heutigen ab (Rechnung nach dem Abschluss gemindert, bis unter 0,
+          // oder gestiegen), trägt diese Heizperiode nur ihren heutigen Teil; was jene eingefroren hat, bleibt ihr, und
+          // der Unterschied steht beim Vermieter (`fuelClosedPeriod`): Er schuldet ihn den Mietern jener Abrechnung
+          // (f > calc) oder kann ihn dort nur nachfordern (f < calc). So trägt nie ein Mieter Brennstoff einer anderen
+          // Heizperiode (BGH VIII ZR 156/11).
+          // Hat jene Heizperiode daneben eine Schätzung für Tage eingefroren, die die Lieferung damals nicht abdeckte (sie
+          // war beim Abschluss eine Gutschrift ohne Rechnung; Invariante, Startwert 600), haben ihre Mieter beides
+          // getragen; verglichen wird dann die Summe mit dem heutigen Teil, als Abweichung von der Schätzung. Nur bei
+          // negativem eingefrorenem Teil: War die Lieferung damals eine Rechnung, deckte sie ihre Tage schon ab, und die
+          // Schätzung gilt nur für die übrigen (Durchsicht #277, M1).
+          const est = f && f.cents < 0 && input.closed.has(other.key) ? estimatesIn(other, r, d.id) : null
+          if (f && (f.cents !== calc || (est?.cents ?? 0) !== 0)) {
+            const withEstimate = est !== null && est.ids.length > 0 && est.cents !== 0
+            const booked = f.cents + (withEstimate ? est.cents : 0)
+            carries.push({
+              deliveryId: d.id, kind: 'out', other, cents: -calc, totalCents: T, ratio: s.ratio, method: s.method, frozen: true, zeroFrozen: false,
+              ...(withEstimate ? { estimateFrozenPart: f.cents } : { frozenPart: { frozen: f.cents, today: calc } }),
+              landlord: withEstimate
+                ? [{ reason: 'fuelCarry', cents: booked }, ...(calc - booked !== 0 ? [{ reason: 'fuelEstimateDiff' as const, cents: calc - booked }] : [])]
+                : [{ reason: 'fuelCarry', cents: f.cents }, { reason: 'fuelClosedPeriod', cents: calc - f.cents }],
+              templates: items.map((c) => ({ itemId: c.id, raw: (-calc * c.amountCents) / T })), estimate: withEstimate ? est : null,
+            })
+            continue
+          }
           const X = f ? f.cents : calc
           if (X === 0) continue
           let landlord: FuelCarry['landlord'] = [{ reason: 'fuelCarry', cents: X }]
           let estimate: FuelCarry['estimate'] = null
           if (!f && input.closed.has(other.key)) {
-            const est = estimatesIn(other, r)
+            const est = estimatesIn(other, r, d.id)
             if (est.ids.length > 0) {
               estimate = est
               landlord = [{ reason: 'fuelCarry', cents: est.cents }, ...(X - est.cents !== 0 ? [{ reason: 'fuelEstimateDiff' as const, cents: X - est.cents }] : [])]
@@ -562,22 +646,40 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
   // (8.2 Nr. 2): verbrauchsabhängiger Teil nach dem eigenen Zählerstand, sonst nach Gradtagen; fester
   // Teil nach Tagen; kg und CO₂-Kosten im Verhältnis des verbrauchsabhängigen Teils.
   const zeroInvoices = ranged.filter((d) => cancelled(d) && touchesH(d)).map((d) => ({ deliveryId: d.id, label: labelOf(d), range: rangeFor(d) }))
+  const creditOnly = ranged.filter((d) => status.get(d.id) === 'creditOnly' && touchesH(d))
+    .map((d) => ({ deliveryId: d.id, label: labelOf(d), cents: totalOf(d), confirmed: d.creditNoteKind === 'standalone', range: rangeFor(d) }))
   const gaps: FuelGap[] = billCoverage.gaps.map((g) => {
     const permille = degreeDayPermille([g], ctx.table)
     let estimate: FuelGap['estimate'] = null
-    const t = withItems && !looseWithoutRange ? templateFor(g.from) : null
-    if (t) {
+    // Die Vorlage (8.2 Nr. 2), wie `templateFor`, aber nur eine Rechnung, die mindestens 100 ‰ der Gradtage der Lücke
+    // abdeckt (Faktor höchstens 10; nach Zählerstand dieselbe Grenze an der Menge). Eine Vorlage mit fast keinen Gradtagen
+    // ergäbe sonst einen beliebig hohen Vorschlag (Durchsicht #277, S1: 50,00 € über zwei Julitage → 54.400,00 €). Sonst die
+    // nächstältere; trägt keine, gibt es keinen Vorschlag, und die Lücke nennt die zu kurze (`shortTemplate`).
+    const scaled = (t: FuelDeliveryInput) => {
       const tr = rangeFor(t)
-      const T = totalOf(t)
-      const fixed = t.fixedCents ?? 0
       const qGap = ctx.readings ? meterQuantity(ctx.readings, g) : null
       const qT = ctx.readings ? meterQuantity(ctx.readings, tr) : null
       const byMeter = qGap !== null && qT !== null && qT > 0
       const tPermille = degreeDayPermille([tr], ctx.table)
       const factor = byMeter ? (qGap ?? 0) / (qT ?? 1) : tPermille > 0 ? permille / tPermille : daysOf(g) / daysOf(tr)
-      estimate = {
+      return { t, tr, byMeter, factor }
+    }
+    const candidates = withItems && !looseWithoutRange
+      ? real.filter((d) => itemsOf(d.id).length > 0 && totalOf(d) > 0).sort((a, b) => (rangeFor(a).to < rangeFor(b).to ? 1 : -1))
+      : []
+    const ordered = [...candidates.filter((d) => rangeFor(d).to < g.from), ...candidates.filter((d) => rangeFor(d).to >= g.from)].map(scaled)
+    const chosen = ordered.find((c) => c.factor <= MAX_TEMPLATE_FACTOR) ?? null
+    const shortTemplate = chosen === null && ordered[0] ? labelOf(ordered[0].t) : null
+    if (chosen) {
+      const { t, tr, byMeter, factor } = chosen
+      const T = totalOf(t)
+      const fixed = t.fixedCents ?? 0
+      const amountCents = roundHalf((T - fixed) * factor + (fixed * daysOf(g)) / daysOf(tr))
+      // #251 (c2): Liegt der feste Bestandteil der Vorlage über ihrer Summe (etwa nach Storno und Gutschrift), ergäbe der
+      // Vorschlag 0 € oder weniger; geschätzt wird dann nicht, die Lücke bleibt mit ihrem Hinweis stehen.
+      estimate = amountCents <= 0 ? null : {
         from: g.from, to: g.to,
-        amountCents: roundHalf((T - fixed) * factor + (fixed * daysOf(g)) / daysOf(tr)),
+        amountCents,
         emissionsKg: t.emissionsKg === null ? null : Math.round(t.emissionsKg * factor * 10) / 10,
         co2CostCents: t.co2CostCents === null ? null : roundHalf(t.co2CostCents * factor),
         // Die kWh im selben Verhältnis wie kg und CO₂-Kosten (Heizung PR 10, Abweichung 11, Festlegung ohne Quelle).
@@ -586,7 +688,8 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
       }
     }
     const zero = zeroInvoices.filter((z) => intersect(z.range, g) !== null).map((z) => z.label)
-    return { from: g.from, to: g.to, days: daysOf(g), permille, estimate, ...(zero.length > 0 ? { zeroInvoices: zero } : {}) }
+    const credit = creditOnly.filter((z) => intersect(z.range, g) !== null).map((z) => z.label)
+    return { from: g.from, to: g.to, days: daysOf(g), permille, estimate, ...(zero.length > 0 ? { zeroInvoices: zero } : {}), ...(credit.length > 0 ? { creditOnly: credit } : {}), ...(shortTemplate ? { shortTemplate } : {}) }
   })
 
   return {
@@ -595,6 +698,7 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
     looseWithoutRange: looseWithoutRange && gaps.length > 0,
     ownerClosedUnlinked,
     zeroInvoices: zeroInvoices.map(({ deliveryId, label }) => ({ deliveryId, label })),
+    creditOnly: creditOnly.map(({ deliveryId, label, cents, confirmed }) => ({ deliveryId, label, cents, confirmed })),
     estimatesWithoutTemplate,
   }
 }

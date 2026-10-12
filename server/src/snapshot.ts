@@ -336,7 +336,9 @@ export function frozenFuelRowsOf(settlement: unknown): FrozenFuelRow[] {
 // Was ein eingefrorener Stand je Anlage, Heizperiode und Lieferung in eine andere Heizperiode übertragen
 // hat (`heating[].fuel.carries`; Heizung PR 7, Nachprüfung der Durchsicht von #233). Die Heizperiode, in
 // die übertragen wurde, nimmt genau diesen Betrag, auch wenn sich die Positionen danach ändern.
-export type FrozenFuelCarryOut = { plantId: string; period: string; deliveryId: string; other: string; cents: number; totalCents?: number; landlordBorne?: true }
+// `bookedCents` (#251): Die andere Heizperiode war beim Abschluss schon mit einem anderen Teil abgeschlossen; sie hat
+// diesen hereingebucht, der Unterschied stand beim Vermieter.
+export type FrozenFuelCarryOut = { plantId: string; period: string; deliveryId: string; other: string; cents: number; totalCents?: number; landlordBorne?: true; bookedCents?: number }
 
 export function frozenFuelCarriesOf(settlement: unknown): FrozenFuelCarryOut[] {
   if (settlement === null || typeof settlement !== 'object') return []
@@ -357,8 +359,12 @@ export function frozenFuelCarriesOf(settlement: unknown): FrozenFuelCarryOut[] {
       const cents: unknown = Reflect.get(c, 'cents')
       const totalCents: unknown = Reflect.get(c, 'totalCents')
       const landlordBorne: unknown = Reflect.get(c, 'landlordBorne')
+      const bookedCents: unknown = Reflect.get(c, 'bookedCents')
       if (typeof deliveryId === 'string' && typeof other === 'string' && typeof cents === 'number') {
-        out.push({ plantId, period, deliveryId, other, cents, ...(typeof totalCents === 'number' ? { totalCents } : {}), ...(landlordBorne === true ? { landlordBorne } : {}) })
+        out.push({
+          plantId, period, deliveryId, other, cents, ...(typeof totalCents === 'number' ? { totalCents } : {}), ...(landlordBorne === true ? { landlordBorne } : {}),
+          ...(typeof bookedCents === 'number' ? { bookedCents } : {}),
+        })
       }
     }
   }
@@ -535,7 +541,7 @@ export type SnapshotFuelDelivery = Pick<
 // Eine abgeschlossene Heizperiode einer Anlage, mit der Bezeichnung und der Frist der Abrechnung, die
 // sie abgeschlossen hat, und deren Übertragszeilen.
 // `carries`: was diese Heizperiode beim Abschluss je Lieferung in andere übertragen hat.
-export type SnapshotClosedHeating = { plantId: string; period: PeriodKey; label: string; deadline: string; fuelRows: FrozenFuelRow[]; carries?: { deliveryId: string; other: string; cents: number; totalCents?: number; landlordBorne?: true }[]; cancelled?: string[] }
+export type SnapshotClosedHeating = { plantId: string; period: PeriodKey; label: string; deadline: string; fuelRows: FrozenFuelRow[]; carries?: { deliveryId: string; other: string; cents: number; totalCents?: number; landlordBorne?: true; bookedCents?: number }[]; cancelled?: string[] }
 export type SnapshotFuel = {
   deliveries: SnapshotFuelDelivery[]
   items: SnapshotCostItem[]
@@ -557,7 +563,7 @@ type FuelSource = {
 // Weg d mit ihrer Heizkostenabrechnung (W1, B3). Ohne Lieferung `undefined`: Dann bleibt der
 // Schnappschuss, wie er war, und keine Abrechnung ändert sich.
 const carriesOf = (list: FrozenFuelCarryOut[] | undefined, plantId: string, period: string) =>
-  (list ?? []).filter((x) => x.plantId === plantId && x.period === period).map(({ deliveryId, other, cents, totalCents, landlordBorne }) => ({ deliveryId, other, cents, ...(totalCents !== undefined ? { totalCents } : {}), ...(landlordBorne ? { landlordBorne } : {}) }))
+  (list ?? []).filter((x) => x.plantId === plantId && x.period === period).map(({ deliveryId, other, cents, totalCents, landlordBorne, bookedCents }) => ({ deliveryId, other, cents, ...(totalCents !== undefined ? { totalCents } : {}), ...(landlordBorne ? { landlordBorne } : {}), ...(bookedCents !== undefined ? { bookedCents } : {}) }))
 
 const cancelledOf = (list: FrozenFuelCancelled[] | undefined, plantId: string, period: string): { cancelled?: string[] } => {
   const ids = (list ?? []).filter((x) => x.plantId === plantId && x.period === period).map((x) => x.deliveryId)

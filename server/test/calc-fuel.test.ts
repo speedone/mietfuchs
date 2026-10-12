@@ -31,7 +31,7 @@ const anlage = (over: Partial<SnapshotHeatingPlant> = {}): SnapshotHeatingPlant 
 const lieferung = (over: Partial<FuelDelivery> = {}): FuelDelivery => ({
   id: 'd', plantId: 'hp', label: 'Gas 2025/2026', invoiceDate: null, deliveredAt: null, invoiceFrom: '2025-03-15', invoiceTo: '2026-03-14', unitId: null,
   amountCents: null, quantity: null, quantityUnit: null, energyKwh: null, gasBasis: null, heatingValue: null, fuelGrade: null, emissionsKg: null, co2CostCents: null,
-  emissionFactor: null, gridFeeCents: null, bioCostCents: null, sharePermille: null, fixedCents: null, estimated: false, usedByService: true, parts: [], ...over,
+  emissionFactor: null, gridFeeCents: null, bioCostCents: null, sharePermille: null, fixedCents: null, estimated: false, usedByService: true, parts: [], creditNoteKind: null, ...over,
 })
 const position = (over: Partial<SnapshotCostItem> & { id: string }): SnapshotCostItem & { propertyId: string } => ({
   propertyId: 'objekt-1', period: periodKey('2025-05'), category: HEATING_CATEGORY, description: 'Gas', amountCents: 650000, key: 'area',
@@ -643,14 +643,19 @@ test('Durchsicht Recht Minor: Gradtage-Hinweis ohne unbelegte Aussage über die 
 
 // ---------- Nachprüfung von 7551434 (Korrekturrunde 2) ----------
 
-test('Nachprüfung I-b: Gutschrift −500 € an einer Lieferung mit eingefrorenem Teil: Mieter in H 5.016,61 €, über beide Zeiträume 6.000,00 €', () => {
+// #251, R-2: Bis dahin trugen die Mieter von H 5.016,61 € (6.000 € − 983,39 €), also auch den Teil der Gutschrift, der
+// auf H−1 entfällt (75,65 €). Jetzt tragen sie nur den heutigen Teil von H (6.000 € − 907,74 €); den Mietern von H−1,
+// die 983,39 € statt 907,74 € getragen haben, schuldet der Vermieter 75,65 € (`fuelClosedPeriod`, mit Hinweis).
+test('Nachprüfung I-b: Gutschrift −500 € an einer Lieferung mit eingefrorenem Teil: Mieter in H 5.092,26 €, 75,65 € für die Mieter von H−1 beim Vermieter', () => {
   const h1 = settle('2024-05')
   const Y = (h1.heating?.[0]?.fuel?.carries ?? []).reduce((a, c) => a + c.cents, 0)
   const zu = { fuelCarryFrozen: [eingefroren('d', '2024-05', Y)], closedSettlements: [abgeschlossen('2024-05', { fuelCarryRows: frozenFuelRowsOf(h1) })] }
   const mit = settle('2025-05', { ...zu, costItems: [position({ id: 'gas' }), position({ id: 'gs', description: 'Gutschrift', amountCents: -50000 })] })
-  assert.equal(mieterSumme(mit), 501661)
-  assert.equal(mieterSumme(h1) + mieterSumme(mit), 600000)
+  assert.equal(mieterSumme(mit), 509226)
+  assert.deepEqual(teileVon(mit, 'fuel:d:2025-05:2024-05'), [{ reason: 'fuelCarry', cents: 98339 }, { reason: 'fuelClosedPeriod', cents: -7565 }])
+  assert.equal(mieterSumme(h1) + mieterSumme(mit) - 7565, 600000)
   assert.equal(summe(mit), 600000)
+  assert.match(textOf(mit, 'fuel.reduced-after-close'), /Ihre Mieter haben damit 75,65 € zu viel getragen/)
 })
 
 test('Nachprüfung M-a: Heizposition ohne Anlage bei genau einer Anlage zählt als Position ohne Lieferung', () => {
@@ -891,4 +896,156 @@ test('Durchsicht #247 G-K4: Abschluss mit stornierter Rechnung über die Datenba
     opened.close()
     fs.rmSync(dataDir, { recursive: true, force: true })
   }
+})
+
+// ---------- #251: Gutschrift ohne Rechnung und eingefrorener Teil über dem heutigen ----------
+// Aufbau aus dem Invariantenlauf „Abschluss mit Schätzung“, Startwert 384, mit Mieterwechsel am 01.05.2026: B1 bis
+// 30.04.2026, B2 ab 01.05.2026. Die Rechnung d1 (14.07.2025–25.09.2026) stand beim Abschluss von 2025/2026 mit
+// 6.176,03 €; die Abrechnung 2025/2026 hat 5.556,25 € als ihren Teil eingefroren. Heute ergibt d1 −304,51 €, davon
+// entfallen nach Gradtagen −273,95 € auf 2025/2026 und −30,56 € auf 2026/2027 (100,35 ‰).
+const D1_251 = lieferung({ id: 'd1', label: 'Rechnung d1', invoiceFrom: '2025-07-14', invoiceTo: '2026-09-25' })
+const wechsel251 = (p7: number) => ({
+  tenancies: [mieter('ta', 'a'), { ...mieter('tb', 'b'), tenantName: 'Mieter B1', end: '2026-04-30' }, { ...mieter('tb2', 'b'), tenantName: 'Mieter B2', start: '2026-05-01' }],
+  fuelDeliveries: [D1_251],
+  costItems: [
+    position({ id: 'p7', period: periodKey('2026-05'), description: 'Gas', amountCents: p7, fuelDeliveryId: 'd1' }),
+    position({ id: 'p16', period: periodKey('2026-05'), description: 'Gutschrift', amountCents: -30451, fuelDeliveryId: 'd1' }),
+  ],
+  fuelCarryFrozen: [eingefroren('d1', '2025-05', 555625)],
+  closedSettlements: [abgeschlossen('2025-05')],
+})
+const vonD1 = (r: ComputedSettlement, tenancyId: string) => anteilVon(r, tenancyId, 'p') + anteilVon(r, tenancyId, 'fuel:d1:')
+const near1 = (actual: number, expected: number, what: string) => assert.ok(Math.abs(actual - expected) <= 1, `${what}: ${actual} statt ${expected}`)
+
+test('#251 Schritt 3: Gutschrift ohne Rechnung nach dem Abschluss: B2 bekommt −12,22 € statt −2.344,30 €, die 5.830,20 € stehen beim Vermieter', () => {
+  const r = settle('2026-05', wechsel251(0))
+  near1(vonD1(r, 'ta'), -1834, 'A')
+  near1(vonD1(r, 'tb2'), -1222, 'B2')
+  assert.deepEqual(teileVon(r, 'fuel:d1:2026-05:2025-05'), [{ reason: 'fuelCarry', cents: 555625 }, { reason: 'fuelClosedPeriod', cents: -583020 }])
+  assert.equal(summe(r), -30451)
+  const n = r.notices.find((x) => x.code === 'fuel.reduced-after-close') ?? assert.fail(codes(r).join(', '))
+  assert.equal(n.level, 'warning')
+  assert.equal(n.text,
+    'Heizanlage „Gas“, Heizperiode 2026/2027: Die Rechnung „Rechnung d1“ ergibt heute -304,51 €. Die abgeschlossene Abrechnung 2025/2026 enthält dafür 5.556,25 €; heute entfielen auf sie -273,95 €. ' +
+    'Ihre Mieter haben damit 5.830,20 € zu viel getragen. Öffnen Sie die Abrechnung 2025/2026 wieder und schließen Sie sie neu ab. ' +
+    '§ 556 Abs. 3 Satz 3 BGB schließt nach Ablauf der Abrechnungsfrist nur Nachforderungen des Vermieters aus; eine Berichtigung zugunsten der Mieter verbietet er nicht (Umkehrschluss). Bis dahin steht der Betrag bei Ihnen.')
+  assert.ok(!codes(r).includes('fuel.cancelled-after-close'), 'die Rechnung ist nicht storniert')
+})
+
+test('#251 R-2: Rechnung nach dem Abschluss gemindert, bleibt aber positiv: die Mieter von 2026/2027 tragen +270,50 € statt −2.860,76 €', () => {
+  const r = settle('2026-05', wechsel251(300000))
+  near1(vonD1(r, 'ta'), 16230, 'A')
+  near1(vonD1(r, 'tb2'), 10820, 'B2')
+  near1(vonD1(r, 'ta') + vonD1(r, 'tb2'), 27050, 'zusammen')
+  const teile = teileVon(r, 'fuel:d1:2026-05:2025-05')
+  assert.deepEqual(teile[0], { reason: 'fuelCarry', cents: 555625 })
+  assert.equal(teile[1]?.reason, 'fuelClosedPeriod')
+  // Der heutige Teil von 2025/2026 ist 2.695,49 € − 270,50 €; die Differenz zum eingefrorenen Teil schuldet der Vermieter.
+  near1(-(teile[1]?.cents ?? 0), 555625 - (269549 - 27050), 'beim Vermieter')
+  assert.equal(summe(r), 269549)
+  assert.match(textOf(r, 'fuel.reduced-after-close'), /Die Rechnung „Rechnung d1“ ergibt heute 2\.695,49 €\. Die abgeschlossene Abrechnung 2025\/2026 enthält dafür 5\.556,25 €; heute entfielen auf sie 2\.42\d,\d\d €\. Ihre Mieter haben damit 3\.13\d,\d\d € zu viel getragen\./)
+})
+
+test('#251 Schritt 4: Hinweis „Gutschrift ohne Rechnung“ mit Betrag und Name; die Lücke daneben nennt die Gutschrift', () => {
+  const r = settle('2026-05', wechsel251(0))
+  const n = r.notices.find((x) => x.code === 'fuel.credit-only') ?? assert.fail(codes(r).join(', '))
+  assert.equal(n.level, 'warning')
+  assert.match(n.text, /^Heizanlage „Gas“, Heizperiode 2026\/2027: Die Positionen der Lieferung „Rechnung d1“ \(14\.07\.2025–25\.09\.2026\) ergeben zusammen -304,51 €\. Brennstoff kann nicht weniger als nichts kosten;/)
+  assert.match(n.text, /Mietfuchs rechnet ihren Zeitraum deshalb als nicht abgedeckt, nimmt sie nicht als Vorlage für Schätzungen und zählt keinen CO₂-Ausstoß für sie\./)
+  assert.match(n.text, /ordnen Sie sie auf der Seite Heizkosten dort zu; steht dort der Zahlbetrag nach Abzug der Abschläge, tragen Sie stattdessen die Kosten des Abrechnungszeitraums ein\./)
+  assert.match(textOf(r, 'fuel.uncovered'), /liegt nur die Gutschrift „Rechnung d1“ ohne Rechnung vor; diesen Teil verteilt Mietfuchs nicht\./)
+  assert.ok(!codes(r).includes('fuel.zero-invoice'))
+})
+
+test('#251 Schritt 4: Teil einer Gutschrift für eine ohne sie abgeschlossene Heizperiode: „gutschreiben“, keine Nachforderung und keine Frist', () => {
+  const r = settle('2026-05', { ...wechsel251(0), fuelCarryFrozen: [] })
+  assert.deepEqual(teileVon(r, 'fuel:d1:2026-05:2025-05'), [{ reason: 'fuelClosedPeriod', cents: -27395 }])
+  const t = textOf(r, 'fuel.closed-period-part')
+  assert.match(t, /Der Teil der Gutschrift „Rechnung d1“ für 2025\/2026 \(273,95 €\) gehört den Mietern der abgeschlossenen Abrechnung 2025\/2026\. Bis Sie ihn dort gutschreiben, steht er bei Ihnen\. Eine Berichtigung zugunsten der Mieter ist jederzeit zulässig \(Umkehrschluss aus § 556 Abs\. 3 Satz 3 BGB\)\./)
+  assert.doesNotMatch(t, /nachfordern|Frist|VIII ZR 264\/12|VIII ZR 220\/05/)
+})
+
+test('#251 R-3: teilweise abgedeckte Schätzung: Gutschrift 277,36 € (A 166,42 €, B 110,94 €) statt einer Nachforderung über 453,56 €', () => {
+  const vorjahr = lieferung({ id: 'd0', label: 'Gas 2024/2025', invoiceFrom: '2024-03-15', invoiceTo: '2025-03-14' })
+  const e = lieferung({ id: 'e', label: 'Schätzung', invoiceFrom: '2025-02-01', invoiceTo: '2025-04-30', amountCents: 300000, estimated: true })
+  const ueber = {
+    fuelDeliveries: [vorjahr, lieferung(), e],
+    costItems: [position({ id: 'gas0', period: periodKey('2024-05'), amountCents: 600000, fuelDeliveryId: 'd0' }), position({ id: 'gas' })],
+    fuelCarryFrozen: [eingefroren('e', '2024-05', 126075), eingefroren('d0', '2024-05', 0)],
+    closedSettlements: [abgeschlossen('2024-05', { fuelCarryRows: zeilenDerSchaetzung(75645, 50430) })],
+  }
+  const r = settle('2025-05', ueber, '2026-03-20')
+  assert.ok(!codes(r).includes('fuel.estimate-settled'), 'Nachforderung statt Gutschrift')
+  assert.match(textOf(r, 'fuel.estimate-overcharged'), /war 1\.260,75 € geschätzt; tatsächlich entfallen nur 983,39 €\. Die Mieter dieser Heizperiode haben 277,36 € zu viel getragen, hier: Mieter A \(A\) 166,42 € und Mieter B \(B\) 110,94 €\./)
+  assert.deepEqual(teileVon(r, 'fuel:d:2025-05:2024-05'), [{ reason: 'fuelCarry', cents: 126075 }, { reason: 'fuelEstimateDiff', cents: -27736 }])
+})
+
+test('#251 R-2, Gegenstück: Die Heizperiode der Positionen ist mit dem heutigen Teil abgeschlossen, die andere wieder offen und die Rechnung storniert: gegengebucht wird, was jene hereingebucht hatte', () => {
+  // 2024/2025 war mit 900,00 € abgeschlossen; 2025/2026 bucht heute 983,39 € hinaus und weist 83,39 € beim Vermieter aus.
+  const vorher = { fuelCarryFrozen: [eingefroren('d', '2024-05', 90000)], closedSettlements: [abgeschlossen('2024-05')] }
+  const h = settle('2025-05', vorher)
+  assert.deepEqual(frozenFuelCarriesOf(h).map((c) => [c.cents, c.bookedCents, c.landlordBorne]), [[-98339, 90000, undefined]])
+  // 2025/2026 wird abgeschlossen, 2024/2025 wieder geöffnet, danach die Rechnung storniert.
+  const zu = {
+    fuelCarryFrozen: [eingefroren('d', '2025-05', -98339)],
+    closedSettlements: [abgeschlossen('2025-05', { fuelCarryRows: frozenFuelRowsOf(h), fuelCarries: frozenFuelCarriesOf(h) })],
+    costItems: [position({ id: 'gas' }), position({ id: 'gs', description: 'Storno', amountCents: -650000 })],
+  }
+  const h1 = settle('2024-05', zu)
+  assert.equal(mieterSumme(h1), 0)
+  assert.deepEqual(teileVon(h1, 'fuel:d:2024-05:2025-05'), [{ reason: 'fuelCarry', cents: -90000 }, { reason: 'fuelClosedPeriod', cents: 90000 }])
+})
+
+// Invariante, Startwert 600 („Abschluss mit Schätzung“): Beim Abschluss von 2024/2025 war d eine Gutschrift ohne Rechnung;
+// 2024/2025 hat ihren negativen Teil (−100,00 €) eingefroren und, weil d keine Tage abdeckte, eine Schätzung über
+// 2.000,00 € für die Lücke. Heute ist d eine Rechnung, auf 2024/2025 entfallen 983,39 €. Die Mieter von 2024/2025 haben
+// −100,00 € + 2.000,00 € = 1.900,00 € getragen, also 916,61 € zu viel; das ist keine Nachforderung über 1.083,39 €.
+test('#251 R-2 mit Schätzung: eingefrorener Teil und eingefrorene Schätzung zusammen gegen den heutigen Teil', () => {
+  const ueber = {
+    fuelDeliveries: [lieferung(), schaetzung(200000)],
+    fuelCarryFrozen: [eingefroren('d', '2024-05', -10000), eingefroren('e', '2024-05', 200000)],
+    closedSettlements: [abgeschlossen('2024-05', { fuelCarryRows: zeilenDerSchaetzung(120000, 80000) })],
+  }
+  const h = settle('2025-05', ueber, '2026-03-20')
+  assert.equal(mieterSumme(h), 650000 - 98339)
+  assert.deepEqual(teileVon(h, 'fuel:d:2025-05:2024-05'), [{ reason: 'fuelCarry', cents: 190000 }, { reason: 'fuelEstimateDiff', cents: -91661 }])
+  assert.ok(!codes(h).includes('fuel.closed-period-part'), textOf(h, 'fuel.estimate-overcharged'))
+  assert.match(textOf(h, 'fuel.estimate-overcharged'), /916,61 €/)
+  // Durchsicht #277, S2: Der Satz geht auf (2.000,00 − 100,00 − 983,39 = 916,61).
+  assert.match(textOf(h, 'fuel.estimate-overcharged'), /Für 2024\/2025 waren 2\.000,00 € geschätzt und aus der Lieferung „Gas 2025\/2026“ -100,00 € verteilt, zusammen 1\.900,00 €; tatsächlich entfallen nur 983,39 €\. Die Mieter dieser Heizperiode haben 916,61 € zu viel getragen/)
+})
+
+// Durchsicht #277, M1: War d schon beim Abschluss von 2024/2025 eine Rechnung, deckte sie ihre Tage der Schätzung damals
+// schon ab; eingefroren ist die Schätzung nur für die übrigen Tage (1.739,25 € für 01.02.–14.03.2025). Unverändert heißt
+// dann: keine Abweichung, kein Hinweis.
+test('#277 M1: unveränderte Rechnung neben einer teilweise abgedeckten, eingefrorenen Schätzung: keine Abweichung', () => {
+  const e = lieferung({ id: 'e', label: 'Schätzung', invoiceFrom: '2025-02-01', invoiceTo: '2025-04-30', amountCents: 300000, estimated: true })
+  const ueber = {
+    fuelDeliveries: [lieferung(), e],
+    fuelCarryFrozen: [eingefroren('d', '2024-05', 98339), eingefroren('e', '2024-05', 173925)],
+    closedSettlements: [abgeschlossen('2024-05', { fuelCarryRows: zeilenDerSchaetzung(104355, 69570) })],
+  }
+  const h = settle('2025-05', ueber, '2026-03-20')
+  assert.equal(mieterSumme(h), 551661)
+  assert.deepEqual(teileVon(h, 'fuel:d:2025-05:2024-05'), [{ reason: 'fuelCarry', cents: 98339 }])
+  assert.ok(!codes(h).includes('fuel.estimate-overcharged'), 'Gutschrifthinweis ohne Abweichung')
+})
+
+test('#277 S1: Lücke neben einer zu kurzen Vorlage: kein Vorschlag, und der Hinweis sagt warum', () => {
+  const h = settle('2025-05', {
+    fuelDeliveries: [lieferung({ id: 'n', label: 'Nachlieferung', invoiceFrom: '2025-07-01', invoiceTo: '2025-07-02' })],
+    costItems: [position({ id: 'pn', amountCents: 5000, fuelDeliveryId: 'n' })],
+  })
+  assert.deepEqual(fuelGapQuestions(h), [])
+  assert.match(textOf(h, 'fuel.uncovered'), /Einen Schätzvorschlag gibt es nicht: Die Rechnung „Nachlieferung“ deckt weniger als 100 ‰ der Gradtage dieses Zeitraums ab, hochgerechnet ergäbe sie keinen belastbaren Betrag\./)
+})
+
+test('#251 R-2: Rechnung nach dem Abschluss gestiegen: die offene Heizperiode trägt nur ihren Teil, die Differenz steht beim Vermieter (Nachforderung)', () => {
+  // Wie Fall c mit eingefrorenem Teil: 2024/2025 hat 900,00 € eingefroren, heute entfallen 983,39 € auf sie.
+  const h = settle('2025-05', { fuelCarryFrozen: [eingefroren('d', '2024-05', 90000)], closedSettlements: [abgeschlossen('2024-05')] })
+  assert.equal(mieterSumme(h), 650000 - 98339)
+  assert.deepEqual(teileVon(h, 'fuel:d:2025-05:2024-05'), [{ reason: 'fuelCarry', cents: 90000 }, { reason: 'fuelClosedPeriod', cents: 8339 }])
+  const t = textOf(h, 'fuel.closed-period-part')
+  assert.match(t, /Der Teil der Rechnung „Gas 2025\/2026“ für 2024\/2025 beträgt heute 983,39 €; die abgeschlossene Abrechnung 2024\/2025 enthält dafür 900,00 €\. Die Differenz von 83,39 € gehört in jene Abrechnung; bis Sie sie nachfordern, steht sie bei Ihnen\./)
+  assert.match(t, /Solange die Frist dieser Abrechnung läuft/)
 })

@@ -87,7 +87,7 @@ import { CALENDAR_RULES, calendarYearPeriod, contextOf, formatDayRange, isCalend
 import { generatorEnergy, noCo2Supplier } from '../../shared/heatDelivery.ts'
 import { lineRoot, monthSpanText, plantRules, plantSpan, recommendedDeadline, requestMonth, sameBuilding, sameFuelLine, sameLine, sameSpan, separateOwner, servesUnit, settledSeparately } from '../../shared/heatingPeriod.ts'
 import { heatingSnapshotFor, selfAt, snapshotFor, wayOf } from './snapshot.ts'
-import { cancelledDeliveries, deliveryShare, plantFuel, rangeOf, type FuelCarry, type FuelResult, type ShareContext } from './fuel.ts'
+import { deliveryShare, notInvoiceDeliveries, plantFuel, rangeOf, type FuelCarry, type FuelResult, type ShareContext } from './fuel.ts'
 import { co2Plausibility, etsExempt as etsExemptPlant, plausibilityText } from './co2Plausibility.ts'
 import { billMissingText, deductionMissingText, generationPowerText, selfSupplyPowerText, missingOperatingPowerText, missingPowerFindings, operatingPowerBalance, operatingPowerFindings, operatingPowerText, unmarkedPowerCredits, type OperatingPowerBalance } from './operatingPower.ts'
 import { GENERAL_POWER_CATEGORY } from '../../shared/operatingPower.ts'
@@ -322,12 +322,17 @@ const noticeKinds = {
   'fuel.manual-beyond-period': { level: 'warning', title: 'Heizrechnung reicht über die Heizperiode', rule: 'heating-consumed-fuel', terms: ['accrualPrinciple', 'heatingSystem'] },
   'fuel.closed-period-part': { level: 'hint', title: 'Teil einer abgeschlossenen Heizperiode beim Vermieter', rule: 'heating-consumed-fuel', terms: ['accrualPrinciple', 'settlementDeadline'] },
   'fuel.zero-invoice': { level: 'hint', title: 'Rechnung ergibt 0 €', rule: 'heating-consumed-fuel', terms: ['fuelDelivery', 'accrualPrinciple'] },
+  // #251: Gutschrift ohne Rechnung; bestätigt (`creditNoteKind`), dass die Rechnung dazu nicht in Mietfuchs steht, nur ein Hinweis.
+  'fuel.credit-only': { level: 'warning', title: 'Gutschrift ohne Rechnung', rule: 'heating-consumed-fuel', terms: ['fuelDelivery', 'accrualPrinciple'] },
+  'fuel.credit-only-confirmed': { level: 'hint', title: 'Gutschrift ohne Rechnung', rule: 'heating-consumed-fuel', terms: ['fuelDelivery', 'accrualPrinciple'] },
   'fuel.estimate-undistributed': { level: 'warning', title: 'Schätzung wird nicht verteilt', rule: 'heating-consumed-fuel', terms: ['fuelDelivery', 'accrualPrinciple'] },
   'fuel.estimated': { level: 'hint', title: 'Brennstoffkosten geschätzt', rule: 'heating-consumed-fuel', terms: ['accrualPrinciple', 'degreeDays'] },
   'fuel.estimate-settled': { level: 'warning', title: 'Schätzung durch die Rechnung ersetzt', rule: 'heating-consumed-fuel', terms: ['accrualPrinciple', 'settlementDeadline'] },
   'fuel.estimate-overcharged': { level: 'warning', title: 'Schätzung war zu hoch', rule: 'heating-consumed-fuel', terms: ['accrualPrinciple', 'settlementDeadline'] },
   'fuel.loose-item': { level: 'hint', title: 'Heizposition ohne Lieferung neben einer Lücke', rule: 'heating-consumed-fuel', terms: ['accrualPrinciple', 'fuelDelivery'] },
   'fuel.cancelled-after-close': { level: 'warning', title: 'Rechnung nach dem Abschluss storniert', rule: 'heating-consumed-fuel', terms: ['fuelDelivery', 'settlementDeadline'] },
+  // #251 (R-4): Der heutige Teil einer abgeschlossenen Heizperiode liegt unter dem eingefrorenen, bis unter 0 €.
+  'fuel.reduced-after-close': { level: 'warning', title: 'Rechnung nach dem Abschluss gemindert', rule: 'heating-consumed-fuel', terms: ['fuelDelivery', 'settlementDeadline'] },
   'fuel.owner-closed-unlinked': { level: 'hint', title: 'Rechnung nach dem Abschluss verknüpft', rule: 'heating-consumed-fuel', terms: ['fuelDelivery', 'accrualPrinciple'] },
   'co2.district-ets-exempt': { level: 'hint', title: 'CO₂-Kosten nicht aufzuteilen (Emissionshandel)', rule: 'co2-split', terms: ['districtEts', 'co2Split'] },
   // Heizung PR 7: eigene CO₂-Aufteilung (Entwurf 7.6, 9, 10.1).
@@ -4522,11 +4527,16 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       // Folgerechnung genauer (Stufe 1 braucht Stände am Tag vor ihrem Beginn, an ihrem Ende und am
       // Stichtag).
       const zero = g.zeroInvoices ?? []
+      const credit = g.creditOnly ?? []
       const vorliegend = zero.length > 0
         ? `liegt nur ${zero.length === 1 ? 'die Rechnung' : 'die Rechnungen'} ${zero.map((z) => `„${z}“`).join(', ')} vor, deren Positionen zusammen 0 € ergeben; Mietfuchs behandelt ${zero.length === 1 ? 'sie' : 'sie'} als storniert`
-        : 'liegt keine Rechnung vor'
+        : credit.length > 0
+          ? `liegt nur ${credit.length === 1 ? 'die Gutschrift' : 'die Gutschriften'} ${credit.map((z) => `„${z}“`).join(', ')} ohne Rechnung vor`
+          : 'liegt keine Rechnung vor'
       warn('fuel.uncovered',
         `${where}: Für ${formatDayRange(g.from, g.to)} (${g.days} ${g.days === 1 ? 'Tag' : 'Tage'}, ${fmtNum(Math.round(g.permille * 10) / 10)} ‰ der Gradtage) ${vorliegend}; diesen Teil verteilt Mietfuchs nicht. ` +
+          // Durchsicht #277, S1: Die einzige mögliche Vorlage ist zu kurz für eine Hochrechnung.
+          (g.shortTemplate ? `Einen Schätzvorschlag gibt es nicht: Die Rechnung „${g.shortTemplate}“ deckt weniger als 100 ‰ der Gradtage dieses Zeitraums ab, hochgerechnet ergäbe sie keinen belastbaren Betrag. ` : '') +
           'Tragen Sie die Folgerechnung auf der Seite Heizkosten als Lieferung ein, sobald sie da ist. ' +
           `Ein Zählerstand allein schließt die Lücke nicht, er macht die Aufteilung der Folgerechnung genauer: Lesen Sie ${zaehler} zum ${fmtDay(g.to)} ab und tragen Sie den Stand auf der Seite Zähler ein; nach Zählerstand teilt Mietfuchs, wenn auch Stände am Tag vor Beginn und am letzten Tag der Rechnung eingetragen sind.`,
         subject)
@@ -4544,9 +4554,34 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           'Ist sie storniert, tragen Sie die neue Rechnung als Lieferung ein, sobald sie da ist.',
         subject)
     }
+    for (const c of result.creditOnly) {
+      // #251: Eine Lieferung mit negativer Summe belegt keinen Verbrauch (§ 7 Abs. 2 HeizkostenV: Kosten der verbrauchten
+      // Brennstoffe). Die Zuordnung des Geldes zu den Heizperioden ihres Zeitraums ist Auslegung am Verbrauchsprinzip.
+      const range = fuel?.deliveries.find((x) => x.id === c.deliveryId)
+      const r = range ? rangeOf(range) : null
+      const span = r ? ` (${formatDayRange(r.from, r.to)})` : ''
+      const lead = `${where}: Die Positionen der Lieferung „${c.label}“${span} ergeben zusammen ${fmtCents(c.cents)}. `
+      // Ohne Zeitraum gilt der Tag der Gutschrift, ein Notbehelf (R-6).
+      const behelf = r && r.from === r.to
+        ? 'Die Gutschrift nennt nur einen Tag; Mietfuchs ordnet sie behelfsweise der Heizperiode dieses Tages zu. Gehört sie zu den Kosten eines anderen Zeitraums, tragen Sie diesen als Rechnungszeitraum ein. '
+        : ''
+      if (c.confirmed) {
+        warn('fuel.credit-only-confirmed',
+          `${lead}Sie haben angegeben, dass die Rechnung dazu nicht in Mietfuchs steht. Mietfuchs verteilt die Gutschrift nach dem Verbrauch und rechnet ihren Zeitraum als nicht abgedeckt. ${behelf}`.trimEnd(),
+          subject)
+        continue
+      }
+      warn('fuel.credit-only',
+        `${lead}Brennstoff kann nicht weniger als nichts kosten; eine solche Lieferung ist eine Gutschrift oder Stornorechnung ohne die Rechnung, die sie berichtigt. ` +
+          'Mietfuchs rechnet ihren Zeitraum deshalb als nicht abgedeckt, nimmt sie nicht als Vorlage für Schätzungen und zählt keinen CO₂-Ausstoß für sie. ' +
+          'Den Betrag verteilt Mietfuchs nach dem Verbrauch auf die Heizperioden ihres Zeitraums, damit die Gutschrift bei den Mietern ankommt (Auslegung nach dem Verbrauchsprinzip, § 7 Abs. 2 HeizkostenV). ' +
+          behelf +
+          'Gehört die Gutschrift zu einer anderen Lieferung, ordnen Sie sie auf der Seite Heizkosten dort zu; steht dort der Zahlbetrag nach Abzug der Abschläge, tragen Sie stattdessen die Kosten des Abrechnungszeitraums ein.',
+        subject)
+    }
     for (const u of result.estimatesWithoutTemplate) {
       warn('fuel.estimate-undistributed',
-        `${where}: Die Schätzung „${nameOf(u.deliveryId)}“ (${fmtCents(u.cents)}) verteilt Mietfuchs nicht: Es gibt keine Rechnung mit Positionen über mehr oder weniger als 0 €, deren Umlageschlüssel sie übernehmen könnte. ` +
+        `${where}: Die Schätzung „${nameOf(u.deliveryId)}“ (${fmtCents(u.cents)}) verteilt Mietfuchs nicht: Es gibt keine Rechnung mit Positionen über mehr als 0 €, deren Umlageschlüssel sie übernehmen könnte. ` +
           'Verknüpfen Sie eine Rechnung dieser Heizanlage mit ihrer Position oder entfernen Sie die Schätzung auf der Seite Heizkosten.',
         subject)
     }
@@ -4591,6 +4626,35 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       }
       const X = -carry.cents
       const name = `„${nameOf(carry.deliveryId)}“`
+      const nachfordern = `Solange die Frist dieser Abrechnung läuft (Zugang bis ${fmtDay(other.deadline)}), können Sie sie wieder öffnen und berichtigen. Danach dürfen Sie nur nachfordern, wenn Sie die Verspätung nicht zu vertreten haben (§ 556 Abs. 3 Satz 3 BGB, BGH VIII ZR 264/12), und dann alsbald, in der Regel binnen drei Monaten nach Wegfall des Hindernisses (BGH VIII ZR 220/05); lag die Rechnung schon vor Ablauf der Frist vor, ist die Verspätung in der Regel zu vertreten.`
+      if (carry.frozenPart) {
+        // #251, R-2 und R-4: Der eingefrorene Teil weicht vom heutigen ab. Liegt er darüber, haben die Mieter jener
+        // Abrechnung zu viel getragen (eine Berichtigung zu ihren Gunsten ist nach § 556 Abs. 3 Satz 3 BGB im
+        // Umkehrschluss jederzeit zulässig); liegt er darunter, kann der Vermieter den Rest nur dort nachfordern.
+        const { frozen, today } = carry.frozenPart
+        if (frozen > today) {
+          warn('fuel.reduced-after-close',
+            `${where}: Die Rechnung ${name} ergibt heute ${fmtCents(carry.totalCents)}. Die abgeschlossene Abrechnung ${other.label} enthält dafür ${fmtCents(frozen)}; heute entfielen auf sie ${fmtCents(today)}. ` +
+              `Ihre Mieter haben damit ${fmtCents(frozen - today)} zu viel getragen. Öffnen Sie die Abrechnung ${other.label} wieder und schließen Sie sie neu ab. ` +
+              '§ 556 Abs. 3 Satz 3 BGB schließt nach Ablauf der Abrechnungsfrist nur Nachforderungen des Vermieters aus; eine Berichtigung zugunsten der Mieter verbietet er nicht (Umkehrschluss). Bis dahin steht der Betrag bei Ihnen.',
+            subject)
+        } else {
+          warn('fuel.closed-period-part',
+            `${where}: Der Teil der Rechnung ${name} für ${periodLabel(carry.other)} beträgt heute ${fmtCents(today)}; die abgeschlossene Abrechnung ${other.label} enthält dafür ${fmtCents(frozen)}. ` +
+              `Die Differenz von ${fmtCents(today - frozen)} gehört in jene Abrechnung; bis Sie sie nachfordern, steht sie bei Ihnen. ${nachfordern}`,
+            subject)
+        }
+        continue
+      }
+      if (carry.landlord.some((p) => p.reason === 'fuelClosedPeriod') && X < 0) {
+        // #251: Der Teil einer Gutschrift gehört den Mietern der abgeschlossenen Abrechnung; nachzufordern ist nichts,
+        // und die Frist des § 556 Abs. 3 BGB betrifft nur Nachforderungen (Umkehrschluss aus Satz 3).
+        warn('fuel.closed-period-part',
+          `${where}: Der Teil der Gutschrift ${name} für ${periodLabel(carry.other)} (${fmtCents(-X)}) gehört den Mietern der abgeschlossenen Abrechnung ${other.label}. Bis Sie ihn dort gutschreiben, steht er bei Ihnen. ` +
+            'Eine Berichtigung zugunsten der Mieter ist jederzeit zulässig (Umkehrschluss aus § 556 Abs. 3 Satz 3 BGB).',
+          subject)
+        continue
+      }
       if (carry.landlord.some((p) => p.reason === 'fuelClosedPeriod')) {
         // Zwei Lagen (Nachprüfung, M-b): ohne Schätzung abgeschlossen, oder abgeschlossen, als die
         // Lieferung noch keine Position hatte (mit 0 eingefroren).
@@ -4599,22 +4663,25 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           : carry.zeroFrozen
           ? `Als die Abrechnung ${other.label} abgeschlossen wurde, war die Rechnung ${name} noch mit keiner Position verknüpft. Ihr Teil für ${periodLabel(carry.other)} (${fmtCents(X)}) ist dort deshalb nicht verteilt; bis Sie ihn nachfordern, steht er bei Ihnen. `
           : `Der Teil der Rechnung ${name} für ${periodLabel(carry.other)} (${fmtCents(X)}) gehört in die Abrechnung ${other.label}, die ohne Schätzung abgeschlossen wurde; bis Sie ihn nachfordern, steht er bei Ihnen. `
-        warn('fuel.closed-period-part',
-          `${where}: ${lead}` +
-            `Solange die Frist dieser Abrechnung läuft (Zugang bis ${fmtDay(other.deadline)}), können Sie sie wieder öffnen und berichtigen. Danach dürfen Sie nur nachfordern, wenn Sie die Verspätung nicht zu vertreten haben (§ 556 Abs. 3 Satz 3 BGB, BGH VIII ZR 264/12), und dann alsbald, in der Regel binnen drei Monaten nach Wegfall des Hindernisses (BGH VIII ZR 220/05); lag die Rechnung schon vor Ablauf der Frist vor, ist die Verspätung in der Regel zu vertreten.`,
-          subject)
+        warn('fuel.closed-period-part', `${where}: ${lead}${nachfordern}`, subject)
         continue
       }
       const diff = carry.landlord.find((p) => p.reason === 'fuelEstimateDiff')?.cents ?? 0
       if (!carry.estimate || diff === 0) continue
       const E = carry.estimate.cents
+      // Durchsicht #277, S2: Hat jene Heizperiode daneben einen (negativen) Teil der Lieferung verteilt, nennt der Satz ihn,
+      // sonst ginge die Rechnung nicht auf.
+      const part = carry.estimateFrozenPart
+      const schaetzung = part === undefined
+        ? `war ${fmtCents(E)} geschätzt;`
+        : `waren ${fmtCents(E)} geschätzt und aus der Lieferung ${name} ${fmtCents(part)} verteilt, zusammen ${fmtCents(E + part)};`
       if (diff > 0) {
         // § 556 Abs. 3 Satz 2 und 3 BGB: Vor Fristablauf ist eine Berichtigung möglich (Umkehrschluss
         // aus BGH VIII ZR 115/04); danach nur ohne Vertretenmüssen (BGH VIII ZR 264/12) und alsbald
         // (BGH VIII ZR 220/05). Ohne Stichtag (`asOf`) gilt die Frist als offen.
         const past = options.asOf !== undefined && options.asOf > other.deadline
         warn('fuel.estimate-settled',
-          `${where}: Die Rechnung ${name} ist da. Für ${periodLabel(carry.other)} war ${fmtCents(E)} geschätzt; tatsächlich entfallen ${fmtCents(X)}. Die Differenz von ${fmtCents(diff)} steht bei Ihnen. ` +
+          `${where}: Die Rechnung ${name} ist da. Für ${periodLabel(carry.other)} ${schaetzung} tatsächlich entfallen ${fmtCents(X)}. Die Differenz von ${fmtCents(diff)} steht bei Ihnen. ` +
             (past
               ? `Die Frist der Abrechnung ${other.label} ist am ${fmtDay(other.deadline)} abgelaufen. Nachfordern dürfen Sie nur, wenn Sie die Verspätung nicht zu vertreten haben (§ 556 Abs. 3 Satz 3 BGB, BGH VIII ZR 264/12), und dann alsbald, in der Regel binnen drei Monaten nach Wegfall des Hindernisses (BGH VIII ZR 220/05). Lag die Rechnung schon vor Ablauf der Frist vor, ist die Verspätung in der Regel zu vertreten.`
               : `Nachfordern können Sie mit einer berichtigten Abrechnung ${other.label}; sie muss den Mietern bis ${fmtDay(other.deadline)} zugehen (§ 556 Abs. 3 Satz 2 und 3 BGB). Öffnen Sie die Abrechnung dafür wieder.`),
@@ -4657,7 +4724,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         const mixed = list.length > 0 && templateKeys.size > 0 && invoiceKeys.size > 0 && [...invoiceKeys].some((k) => !templateKeys.has(k) || templateKeys.size > 1)
         const naeherung = mixed ? 'Die Rechnung ist nach einem anderen Umlageschlüssel verteilt als die Schätzung; die Beträge je Mieter sind nach dem Schlüssel der Schätzung aufgeteilt und nur eine Näherung. Bitte prüfen Sie sie. ' : ''
         warn('fuel.estimate-overcharged',
-          `${where}: Für ${periodLabel(carry.other)} war ${fmtCents(E)} geschätzt; tatsächlich entfallen nur ${fmtCents(X)}. ` +
+          `${where}: Für ${periodLabel(carry.other)} ${schaetzung} tatsächlich entfallen nur ${fmtCents(X)}. ` +
             (credit === -diff
               ? `Die Mieter dieser Heizperiode haben ${fmtCents(-diff)} zu viel getragen${hier}. `
               : `Die Abweichung beträgt ${fmtCents(-diff)}; davon haben die Mieter dieser Heizperiode ${fmtCents(credit)} zu viel getragen${hier}. Der Rest lag bei Ihnen. `) +
@@ -5141,7 +5208,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         carries: fuelOf.carries.map((c) => ({
           deliveryId: c.deliveryId, period: c.other.key, cents: c.cents,
           ...(c.kind === 'out' && c.cancelled === undefined ? { totalCents: c.totalCents } : {}),
-          ...(c.kind === 'out' && c.cancelled === undefined && c.landlord.some((p) => p.reason === 'fuelClosedPeriod') ? { landlordBorne: true as const } : {}),
+          ...(c.kind === 'out' && c.cancelled === undefined && !c.frozenPart && c.landlord.some((p) => p.reason === 'fuelClosedPeriod') ? { landlordBorne: true as const } : {}),
+          ...(c.kind === 'out' && c.frozenPart ? { bookedCents: c.frozenPart.frozen } : {}),
         })), gaps: fuelOf.gaps,
         ...(fuelOf.zeroInvoices.length > 0 ? { zeroInvoiceIds: fuelOf.zeroInvoices.map((z) => z.deliveryId) } : {}),
       }
@@ -5213,10 +5281,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const co2Check: NonNullable<HeatingStatement['co2Check']> = { applies: !etsExempt && !noCo2Fuel && !co2OffByExemption(pot.plantId, String(pot.period.key)), exemption: null, findings: [] }
     report.co2Check = co2Check
     if (co2Check.applies) {
-      // Eine stornierte Rechnung zählt nicht und wird nicht geprüft (Durchsicht von #246, G-K1); dieselbe
-      // Auswahl wie die Bewertung (fuel.ts).
+      // Eine stornierte Rechnung und eine Gutschrift ohne Rechnung (#251) zählen nicht und werden nicht geprüft
+      // (Durchsicht von #246, G-K1); dieselbe Auswahl wie die Bewertung (fuel.ts).
       const ownDeliveries = (snapshot.fuel?.deliveries ?? []).filter((d) => d.plantId === pot.plantId)
-      const cancelled = cancelledDeliveries(potPlant?.method ?? 'manual', ownDeliveries, snapshot.fuel?.items ?? [])
+      const cancelled = notInvoiceDeliveries(potPlant?.method ?? 'manual', ownDeliveries, snapshot.fuel?.items ?? [])
       for (const d of ownDeliveries) {
         if (cancelled.has(d.id)) continue
         const r = rangeOf(d)

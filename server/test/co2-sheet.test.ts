@@ -12,7 +12,7 @@ const plant: Co2SheetInput['plant'] = { id: 'hp', name: 'Kessel', energy: 'oil',
 const lieferung = (over: Partial<FuelDelivery>): FuelDelivery => ({
   id: 'd', plantId: 'hp', label: 'Heizöl', invoiceDate: '2025-03-15', deliveredAt: '2025-03-15', invoiceFrom: null, invoiceTo: null, unitId: null,
   amountCents: 315000, quantity: 3000, quantityUnit: 'l', energyKwh: null, gasBasis: null, heatingValue: null, fuelGrade: null, emissionsKg: 8028.9, co2CostCents: 52549,
-  emissionFactor: 0.2664, gridFeeCents: null, bioCostCents: null, sharePermille: null, fixedCents: null, estimated: false, usedByService: true, parts: [], ...over,
+  emissionFactor: 0.2664, gridFeeCents: null, bioCostCents: null, sharePermille: null, fixedCents: null, estimated: false, usedByService: true, parts: [], creditNoteKind: null, ...over,
 })
 const unit = (id: string, areaM2: number, over: Partial<Co2SheetInput['units'][number]> = {}): Co2SheetInput['units'][number] => ({ id, areaM2, ...over })
 const input = (over: Partial<Co2SheetInput> = {}): Co2SheetInput => ({
@@ -107,6 +107,20 @@ test('G-W1: stornierte Rechnung und abgedeckte Schätzung zählen nicht; Summe 6
   assert.match(s.deliveries[0]?.note ?? '', /Storniert/)
   assert.match(s.deliveries[2]?.note ?? '', /Schätzung.*abgedeckt/)
   assert.deepEqual(s.deliveries.map((d) => d.amountCents), [0, 300000, 300000])
+})
+
+test('#251: Gutschrift ohne Rechnung zählt nicht; Zeile mit Hinweis, Summe ohne ihre 500 kg', () => {
+  const gas: Co2SheetInput['plant'] = { ...plant, energy: 'gas', method: 'manual' }
+  const jahr = { deliveredAt: null, invoiceDate: '2026-01-20', invoiceFrom: '2025-01-01', invoiceTo: '2025-12-31', quantity: null, quantityUnit: null, emissionsKg: 10000, co2CostCents: 65450, amountCents: null }
+  const s = co2SheetOf(input({
+    plant: gas,
+    deliveries: [lieferung({ ...jahr, id: 'rech', label: 'Gas 2025' }), lieferung({ ...jahr, id: 'gut', label: 'Gutschrift', emissionsKg: 500, co2CostCents: 3000 })],
+    items: [{ id: 'p1', period: '2025-01', amountCents: 300000, fuelDeliveryId: 'rech' }, { id: 'p2', period: '2025-01', amountCents: -30451, fuelDeliveryId: 'gut' }],
+  }))
+  assert.deepEqual(s.totals, { emissionsKg: 10000, co2CostCents: 65450 })
+  assert.deepEqual(s.deliveries.map((d) => [d.id, d.counted]), [['rech', 'full'], ['gut', 'none']])
+  assert.equal(s.deliveries[1]?.note, 'Gutschrift ohne Rechnung: Die Kostenpositionen dieser Lieferung ergeben zusammen weniger als 0 €; sie belegt keinen Verbrauch und zählt nicht.')
+  assert.deepEqual(s.deliveries[1]?.findings, [])
 })
 
 test('R-W1: Fernwärme aus dem Emissionshandel mit Anschluss nach dem Stichtag: nicht geprüft, mit Grund', () => {

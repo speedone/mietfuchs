@@ -204,6 +204,11 @@ function balance(p: StockPeriodInput, unit: StockUnit, closingQuantity: number, 
     if (d.quantityUnit !== unit) reasons.push(`die Lieferung ${name} ist in ${unitWord(d.quantityUnit)} erfasst, der Vorrat in ${STOCK_UNIT_TEXT[unit]}`)
     if (d.quantity === null || !(d.quantity > 0)) reasons.push(`die Lieferung ${name} hat keine Menge`)
     if (opts.needCost && d.costCents === null) reasons.push(`die Lieferung ${name} hat keinen Betrag; verknüpfen Sie die Kostenposition ihrer Rechnung mit der Lieferung`)
+    // Gutschrift ohne Rechnung (#251): Eine Schicht mit negativem Preis verfälschte die Reihenfolge und bewertete den
+    // Endbestand mit einem negativen Wert. Sie gehört zu der Lieferung, die sie berichtigt.
+    if (d.costCents !== null && d.costCents < 0) {
+      reasons.push(`die Lieferung ${name} ergibt zusammen ${(d.costCents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €; eine Gutschrift gehört zu der Lieferung, die sie berichtigt: Ordnen Sie sie auf der Seite Heizkosten zu und berichtigen Sie dort, falls Brennstoff zurückgenommen wurde, auch die Menge`)
+    }
     if (opts.needCo2 && (d.emissionsKg === null || d.co2Cents === null)) reasons.push(`bei der Lieferung ${name} fehlen der CO₂-Ausstoß in kg oder die CO₂-Kosten laut Rechnung`)
   }
   const total = opening.quantity + sorted.reduce((a, d) => a + (d.quantity ?? 0), 0)

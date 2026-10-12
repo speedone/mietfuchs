@@ -1984,7 +1984,11 @@ export type FuelDelivery = {
   estimated: boolean
   usedByService: boolean
   parts: FuelDeliveryPart[]
+  // #251: Ergeben die Positionen zusammen weniger als 0 € (Gutschrift ohne Rechnung), hat der Vermieter angegeben,
+  // dass die Rechnung dazu nicht in Mietfuchs steht (`standalone`); `null` heißt nicht beantwortet.
+  creditNoteKind: CreditNoteKind | null
 }
+export type CreditNoteKind = 'standalone'
 
 // Das Blatt „CO₂-Angaben für den Messdienst“ (Heizung PR 17, #210): je Rechnung, die die Heizperiode
 // berührt, die Angaben des § 3 Abs. 1 Nr. 1–4 CO2KostAufG samt Menge, Zeitraum, Rechnungsdatum und Betrag,
@@ -2148,7 +2152,9 @@ export type FuelDeliveryLine = {
 // `landlordBorne`: Der hinausgebuchte Teil steht beim Vermieter (`fuelClosedPeriod`), weil die andere Heizperiode
 // beim Abschluss schon ohne ihn abgeschlossen war; sie hat ihn also nie hereingebucht, und eine Gegenbuchung
 // dort gäbe es zweimal (Invariante, Startwert 509).
-export type FuelCarryLine = { deliveryId: string; period: PeriodKey; cents: number; totalCents?: number; landlordBorne?: true }
+// `bookedCents` (#251, R-2): Die andere Heizperiode war schon mit einem anderen Teil abgeschlossen und hat diesen
+// hereingebucht; hinausgebucht ist der heutige (`cents`), der Unterschied steht beim Vermieter.
+export type FuelCarryLine = { deliveryId: string; period: PeriodKey; cents: number; totalCents?: number; landlordBorne?: true; bookedCents?: number }
 
 // Der Vorschlag einer geschätzten Lieferung für eine Lücke (8.2 Nr. 2), aus der letzten Rechnung.
 export type FuelEstimateProposal = {
@@ -2167,7 +2173,10 @@ export type FuelEstimateProposal = {
 }
 
 // `zeroInvoices`: Rechnungen im Zeitraum der Lücke, deren Positionen zusammen 0 € ergeben (als storniert behandelt).
-export type FuelGap = { from: string; to: string; days: number; permille: number; estimate: FuelEstimateProposal | null; zeroInvoices?: string[] }
+// `creditOnly` (#251): Lieferungen im Zeitraum der Lücke, deren Positionen zusammen weniger als 0 € ergeben
+// (Gutschrift ohne Rechnung); sie decken keine Tage ab. `shortTemplate` (Durchsicht #277, S1): Es gibt eine Rechnung als
+// Vorlage, aber keine deckt mindestens 100 ‰ der Gradtage der Lücke ab; geschätzt wird nicht.
+export type FuelGap = { from: string; to: string; days: number; permille: number; estimate: FuelEstimateProposal | null; zeroInvoices?: string[]; creditOnly?: string[]; shortTemplate?: string }
 
 export type FuelAssessment = {
   coveragePermille: number

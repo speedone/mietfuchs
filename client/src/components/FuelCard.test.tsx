@@ -22,7 +22,7 @@ const view: HeatingPeriodView = {
 const gas: FuelDelivery = {
   id: 'd', plantId: 'hp', label: 'Gas 2025/2026', invoiceDate: null, deliveredAt: null, invoiceFrom: '2025-03-15', invoiceTo: '2026-03-14', unitId: null,
   amountCents: null, quantity: null, quantityUnit: null, energyKwh: null, gasBasis: null, heatingValue: null, fuelGrade: null, emissionsKg: null, co2CostCents: null,
-  emissionFactor: null, gridFeeCents: null, bioCostCents: null, sharePermille: null, fixedCents: null, estimated: false, usedByService: true, parts: [],
+  emissionFactor: null, gridFeeCents: null, bioCostCents: null, sharePermille: null, fixedCents: null, estimated: false, usedByService: true, parts: [], creditNoteKind: null,
 }
 
 let sent: { url: string; method: string; body: Record<string, unknown> }[]
@@ -303,4 +303,33 @@ test('Durchsicht S1: bei Wärmepumpe und Contracting ohne CO₂-Brennstoff geht 
     expect((body.parts as { co2CostCents: unknown; emissionsKg: unknown }[]).map((p) => [p.co2CostCents, p.emissionsKg])).toEqual([[null, null], [null, null]])
     cleanup()
   }
+})
+
+// #251: Gutschrift ohne Rechnung. Die Auswahl der Lieferung, die sie berichtigt, zeigt die gewählte (CLAUDE.md: der
+// angezeigte Wert eines Auswahlfelds entspricht dem gespeicherten); „Zuordnen“ schickt sie an die Route.
+const d0: FuelDelivery = { ...gas, id: 'd0', label: 'Rechnung d0', invoiceFrom: '2024-05-01', invoiceTo: '2025-07-13' }
+const d1: FuelDelivery = { ...gas, id: 'd1', label: 'Rechnung d1', invoiceFrom: '2025-07-14', invoiceTo: '2026-04-20' }
+const mitGutschrift: HeatingPeriodView = { ...view, items: [{ id: 'p16', description: 'Gutschrift', amountCents: -30451, key: 'area', fuelDeliveryId: 'd1' }] }
+const alle = [{ fuelDeliveryId: 'd0', amountCents: 617603 }, { fuelDeliveryId: 'd1', amountCents: -30451 }]
+
+test('#251: Gutschrift ohne Rechnung: Frage mit drei Antworten; die Auswahl zeigt die gewählte Lieferung, „Zuordnen“ schickt sie', async () => {
+  render(<FuelCard plant={{ id: 'hp', method: 'manual', energy: 'gas' }} view={mitGutschrift} deliveries={[d1]} allDeliveries={[d0, d1]} allItems={alle} onSaved={() => {}} />)
+  expect(screen.getByText('Was ist diese Gutschrift?')).toBeTruthy()
+  fireEvent.click(screen.getByText('Sie ist der Zahlbetrag nach Abzug der Abschläge'))
+  expect(screen.getByText(/Abschläge sind Zahlungen, keine Kosten\./)).toBeTruthy()
+  expect(sent).toEqual([])
+  fireEvent.click(screen.getByText('Sie berichtigt eine andere Lieferung'))
+  const ziel = auswahl('Lieferung, die die Gutschrift „Rechnung d1“ berichtigt')
+  expect(ziel.value).toBe('')
+  fireEvent.change(ziel, { target: { value: 'd0' } })
+  expect(auswahl('Lieferung, die die Gutschrift „Rechnung d1“ berichtigt').value).toBe('d0')
+  expect(screen.getByText('Hat der Lieferant Brennstoff zurückgenommen?')).toBeTruthy()
+  fireEvent.click(screen.getByText('Zuordnen'))
+  await waitFor(() => expect(sent.at(-1)).toEqual({ url: '/api/fuel-deliveries/d1/reassign-credit', method: 'POST', body: { targetId: 'd0' } }))
+})
+
+test('#251: Antwort „Rechnung nicht in Mietfuchs“ speichert die Angabe an der Lieferung', async () => {
+  render(<FuelCard plant={{ id: 'hp', method: 'manual', energy: 'gas' }} view={mitGutschrift} deliveries={[d1]} allDeliveries={[d0, d1]} allItems={alle} onSaved={() => {}} />)
+  fireEvent.click(screen.getByText('Sie ist eine Gutschrift, deren Rechnung nicht in Mietfuchs steht'))
+  await waitFor(() => expect(sent.at(-1)).toEqual({ url: '/api/fuel-deliveries/d1', method: 'PUT', body: { creditNoteKind: 'standalone' } }))
 })
