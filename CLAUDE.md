@@ -2333,7 +2333,7 @@ die ganze fachliche Komplexität:
   Heizanlage** (die Einrichtung fragt bei Gas, Öl, Flüssiggas und Kohle nach dem Liefervertrag und bietet die
   Umstellung der Mietverhältnisse an; ein Mieter, über dessen Vertrag auch Dritte versorgt werden, ist nicht
   abgedeckt). Die Art steht in `selfSupplyKind` (`perUnit` Heizung in der Wohnung, `central` zentrale Heizung, Schritte
-  0052/0053): Bei `central` meldet `heating.self-supply-operating-power` (färbend), wenn andere Mieter den Allgemeinstrom
+  0052/0053): Bei `central` meldet `heating.self-supply-operating-power` (Auskunft, färbt nicht, wie Hinweis A aus #265), wenn andere Mieter den Allgemeinstrom
   tragen und kein Abzug des Betriebsstroms erfasst ist (V ZR 166/15, Rn. 13); die Art geht beim Mieterwechsel mit.
   Heizpositionen, die nur Selbstversorger tragen, melden keine Kürzung nach § 7 Abs. 4 CO2KostAufG und
   keine nach § 12 HeizkostenV (bei der Etagenheizung gilt die Verordnung nicht, beim einzigen Nutzer wird nichts
