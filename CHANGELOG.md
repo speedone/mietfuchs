@@ -440,6 +440,20 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   sagt das, außer an jeder Lieferung ab dem 01.01.2029 ist 0 eingetragen (früher gelieferter Brennstoff enthält keinen Pflichtanteil). Das Blatt „CO₂-Angaben für den Messdienst“ nennt die
   Teilung nach § 5a und die Netzentgelte und Biobrennstoffkosten der Rechnungen. Ohne Tag des Einbaus ändert sich
   keine Zahl und kein Hinweis.
+- **Mieter heizt selbst, und die CO₂-Erstattung dafür** ([#97](https://github.com/speedone/mietfuchs/issues/97)):
+  Am Mietverhältnis lässt sich unter Heizung „Mieter heizt selbst“ wählen, wenn der Mieter Brennstoff oder Wärme
+  über einen eigenen Vertrag bezieht, etwa für eine Gastherme oder für eine zentrale Heizung, deren Brennstoff er
+  selbst kauft. Wartung und Betriebsstrom, die Sie tragen, rechnet Mietfuchs weiter ab. Die Einrichtung der Heizung
+  fragt bei Gas, Öl, Flüssiggas und Kohle, wer den Liefervertrag hat; hat ihn der Mieter, legt sie keine Heizanlage an
+  und bietet an, die Mietverhältnisse umzustellen. Versorgt ein Mieter über seinen Vertrag auch Wohnungen anderer,
+  rechnet Mietfuchs das nicht. Auf der Seite Kosten erfassen Sie die Anzeige des Mieters nach § 6 Abs. 2
+  CO2KostAufG. Mietfuchs rechnet nach (Stufe, gekürzte Tabelle bei kürzerem Zeitraum des Lieferanten,
+  Nichtwohngebäude, Beschränkungen nach § 9, 5 % weniger bei Geräten im Eigentum des Mieters wie einem eigenen
+  Gasherd, kein Anspruch bei gewerblicher Nutzung ohne getrennte Messung, ab 2028 die hälftige Teilung nach § 5a),
+  verrechnet den Betrag als Gutschrift in der Betriebskostenabrechnung, weist auf eine Abweichung von der
+  Nachrechnung hin und nennt die Fristen für Anzeige, Verrechnung und Auszahlung; verrechnet wird nur bei
+  vereinbarter Vorauszahlung, und eine Erstattung gibt es nur bei „Mieter heizt selbst“. Der Vorschlag für die
+  neue Vorauszahlung rechnet ohne die Erstattung; in der Steuerübersicht zählen nur die Zahlungen.
 ### Geändert
 
 - Neue Warnung „Monatliche Verbrauchsinformation“ bei einer Heizanlage, deren Zähler oder
@@ -562,6 +576,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
+- **Kein Hinweis auf eine CO₂-Kürzung, wenn der Mieter selbst heizt** ([#97](https://github.com/speedone/mietfuchs/issues/97)):
+  Erfassten Sie Wartung oder Betriebsstrom einer Gastherme, deren Gasvertrag der Mieter hat, als „Heizung und
+  Warmwasser“, nannte die Abrechnung eine Kürzung um 3 % nach § 7 Abs. 4 CO2KostAufG und eine nach § 12
+  HeizkostenV. Darin stecken aber keine CO₂-Kosten des Vermieters, und für eine Gastherme in der Wohnung gilt die
+  Heizkostenverordnung nicht. Steht das Mietverhältnis auf „Mieter heizt selbst“, entfallen beide Hinweise; der
+  Hinweis ohne Heizanlage nennt diesen Weg. Keine Zahl ändert sich.
 - **Vorschlag für die Vorauszahlung im Rumpfzeitraum ohne CO₂-Abzug** ([#215](https://github.com/speedone/mietfuchs/issues/215)):
   Teilte Mietfuchs die CO₂-Kosten bei freien Schlüsseln selbst auf, ging die Abzugszeile „CO₂-Anteil des
   Vermieters“ in einem Zeitraum unter einem Jahr nicht in den Vorschlag nach § 560 BGB ein; der Vorschlag war um
