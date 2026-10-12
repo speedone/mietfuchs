@@ -50,6 +50,8 @@ export type SnapshotTenancy = Pick<
   | 'baseRents'
   | 'costModel'
   | 'heatingModel'
+  // Durchsicht S-2: welche Heizung der Mieter selbst betreibt (Hinweis zum Betriebsstrom).
+  | 'selfSupplyKind'
   | 'flatRates'
   // Datum des Mietvertrags, für den Hinweis zur Umstellung auf Wärmelieferung (Heizung PR 16, § 556c BGB) und für
   // § 5d Abs. 4 CO2KostAufG (Heizung PR 18), dazu der Tag der Mitteilung nach § 5d Abs. 4.

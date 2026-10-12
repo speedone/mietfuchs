@@ -234,3 +234,8 @@ test('Heizung PR 19 (Durchsicht S-5): „Heizkosten bei einem Mieter, der selbst
   const due = { warnings: ['…'], notices: [n({ code: 'co2.refund-due', level: 'warning', title: 'CO₂-Erstattung fällig', text: '…' })] }
   expect(attentionLevel(due)).toBe('gelb')
 })
+
+test('Heizung PR 19 (Durchsicht S-2): der Hinweis zum Betriebsstrom der Heizung des Mieters färbt wie „Abzug fehlt“', () => {
+  const s = { warnings: ['…'], notices: [n({ code: 'heating.self-supply-operating-power', level: 'hint', title: 'Betriebsstrom der Heizung des Mieters im Allgemeinstrom?', text: '…' })] }
+  expect(attentionLevel(s)).toBe('gelb')
+})

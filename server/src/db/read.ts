@@ -221,6 +221,7 @@ export async function readTenancies(db: Executor): Promise<Tenancy[]> {
     // Nur mit Wert, wie die Angaben aus #94: Ein Mietverhältnis aus einer db.json hat sie nicht.
     ...(t.costModel === null ? {} : { costModel: t.costModel }),
     ...(t.heatingModel === null ? {} : { heatingModel: t.heatingModel }),
+    ...(t.selfSupplyKind === null ? {} : { selfSupplyKind: t.selfSupplyKind }),
     notes: orUndefined(t.notes),
   }))
 }

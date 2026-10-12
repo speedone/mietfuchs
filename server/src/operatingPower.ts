@@ -317,6 +317,21 @@ export function deductionMissingText(f: MissingPowerFinding, label: string): str
     `Hat die Heizung einen eigenen Stromvertrag mit eigener Rechnung (nicht nur einen Zwischenzähler), ändern Sie die Angabe auf der Seite Heizkosten. ${FLAT_TENANTS}`
 }
 
+// Heizung PR 19, Durchsicht S-2: Text des Hinweises `heating.self-supply-operating-power`. Eine zentrale Heizung, deren
+// Brennstoff der Mieter bezieht, hat in Mietfuchs keine Heizanlage; ihr Betriebsstrom kann trotzdem über den Zähler des
+// Hauses laufen und steht dann im Allgemeinstrom, den auch andere Mieter tragen. Wortlaut nach dem Hinweis „Abzug fehlt“.
+export function selfSupplyPowerText(tenantName: string, unitName: string, generals: readonly { description: string }[]): string {
+  const first = generals[0]
+  const where = first === undefined ? 'im Allgemeinstrom' : `in „${first.description}“${generals.length > 1 ? ' und weiteren' : ''}`
+  return `Die Wohnung ${unitName} von ${tenantName} wird über eine zentrale Heizung versorgt, deren Brennstoff der Mieter selbst bezieht. ` +
+    `Läuft ihr Betriebsstrom (Brenner, Umwälzpumpen, Regelung) über den Stromzähler des Hauses, steckt er ${where} und wird mit dessen Schlüssel auch auf andere Mieter verteilt; dort darf er nicht stehen (BGH, Urteil vom 03.06.2016, V ZR 166/15, Rn. 13). ` +
+    'Er gehört zu den Kosten der Heizung (§ 2 Nr. 4 Buchst. a BetrKV). Ziehen Sie ihn beim Allgemeinstrom ab: Erfassen Sie ihn als Position „Heizung und Warmwasser“ mit dem Teil „Betrieb“ für die Wohnung dieses Mieters, ' +
+    `wählen Sie dort bei „${OPERATING_POWER_INCLUDED_QUESTION}“ die Antwort „${OPERATING_POWER_INCLUDED_YES}“ und erfassen Sie beim Allgemeinstrom einen Abzug in derselben Höhe, verknüpft mit dieser Position. ` +
+    `Ohne Zwischenzähler dürfen Sie ihn schätzen; bestreitet ein Mieter den Betrag, müssen Sie die Grundlagen darlegen (${ESTIMATE_LAW}). ` +
+    `Wollen Sie ihn nicht umlegen, ziehen Sie ihn trotzdem beim Allgemeinstrom ab; dann tragen Sie ihn selbst. ${KEPT_SENTENCE} ` +
+    'Hat die Heizung einen eigenen Stromvertrag oder läuft ihr Strom über den Zähler des Mieters, ist nichts falsch; der Hinweis bleibt dann stehen.'
+}
+
 // #266: Text des Hinweises `heating.operating-power-bill-missing` (M-2, S-1, S-2): „schadet den Mietern nicht“ nur unter
 // der Bedingung, dass die Rechnung auch nicht im Allgemeinstrom steht (V ZR 166/15, Rn. 15).
 export function billMissingText(f: MissingPowerFinding, label: string): string {

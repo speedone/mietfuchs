@@ -299,7 +299,7 @@ test('Heizvorauszahlung: ohne getrennte Abrechnung und ohne Eintrag keine Gruppe
 // Heizung PR 19 (Prüfung M1): „Mieter heizt selbst“ gibt es nur bei der Heizung. Die Auswahl zeigt den
 // gespeicherten Wert, darunter steht die Hinweispflicht, und Speichern schickt den Wert zurück.
 test('Mieter heizt selbst: Auswahl zeigt den gespeicherten Wert, Hinweis nach § 6 Abs. 2 Satz 6, Speichern schickt selfSupply', async () => {
-  page([tenancy('t1', 'Selbst', { heatingModel: 'selfSupply' })])
+  page([tenancy('t1', 'Selbst', { heatingModel: 'selfSupply', selfSupplyKind: 'central' })])
   expect((await screen.findByText('Heizung selbst', undefined, SLOW))).toBeTruthy()
   fireEvent.click(await screen.findByRole('button', { name: 'Mietverhältnis bearbeiten' }, SLOW))
   const dialog = await screen.findByRole('dialog', undefined, SLOW)
@@ -311,7 +311,11 @@ test('Mieter heizt selbst: Auswahl zeigt den gespeicherten Wert, Hinweis nach §
   if (!(cold instanceof HTMLSelectElement)) throw new Error('keine Auswahl')
   expect([...cold.options].map((o) => o.value)).not.toContain('selfSupply')
   expect(within(dialog).getByText(/§ 6 Abs\. 2 Satz 6 CO2KostAufG/)).toBeTruthy()
+  // Durchsicht S-2: welche Heizung, angezeigt wie gespeichert.
+  const kind = within(dialog).getByRole('combobox', { name: /Welche Heizung betreibt der Mieter selbst/ })
+  if (!(kind instanceof HTMLSelectElement)) throw new Error('keine Auswahl')
+  expect(kind.value).toBe('central')
   fireEvent.click(within(dialog).getByRole('button', { name: /^Übernehmen$/ }))
   await vi.waitFor(() => expect(sent).toHaveLength(1))
-  expect(sent[0]?.body).toMatchObject({ heatingModel: 'selfSupply', costModel: null })
+  expect(sent[0]?.body).toMatchObject({ heatingModel: 'selfSupply', selfSupplyKind: 'central', costModel: null })
 })

@@ -1,0 +1,1 @@
+ALTER TABLE `tenancies` ADD `self_supply_kind` text;

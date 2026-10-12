@@ -446,7 +446,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   selbst kauft. Wartung und Betriebsstrom, die Sie tragen, rechnet Mietfuchs weiter ab. Die Einrichtung der Heizung
   fragt bei Gas, Öl, Flüssiggas und Kohle, wer den Liefervertrag hat; hat ihn der Mieter, legt sie keine Heizanlage an
   und bietet an, die Mietverhältnisse umzustellen. Versorgt ein Mieter über seinen Vertrag auch Wohnungen anderer,
-  rechnet Mietfuchs das nicht. Auf der Seite Kosten erfassen Sie die Anzeige des Mieters nach § 6 Abs. 2
+  rechnet Mietfuchs das nicht. Bei einer zentralen Heizung erinnert die Abrechnung daran, ihren Betriebsstrom beim
+  Allgemeinstrom abzuziehen, wenn andere Mieter diesen mittragen. Auf der Seite Kosten erfassen Sie die Anzeige des Mieters nach § 6 Abs. 2
   CO2KostAufG. Mietfuchs rechnet nach (Stufe, gekürzte Tabelle bei kürzerem Zeitraum des Lieferanten,
   Nichtwohngebäude, Beschränkungen nach § 9, 5 % weniger bei Geräten im Eigentum des Mieters wie einem eigenen
   Gasherd, kein Anspruch bei gewerblicher Nutzung ohne getrennte Messung, ab 2028 die hälftige Teilung nach § 5a),

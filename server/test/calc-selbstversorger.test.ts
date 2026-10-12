@@ -125,3 +125,32 @@ test('Gemischt mit Heizanlage: wer selbst heizt und Brennstoff der Anlage trägt
   // Ohne selfSupply kein solcher Fehler.
   assert.ok(!codes(computeSettlement(snapshotFor(s, 'objekt-1', P))).includes('co2.self-supply-mixed'))
 })
+
+// Durchsicht S-2: Zentrale Heizung, Brennstoff beim Mieter. Ihr Betriebsstrom darf nicht im Allgemeinstrom stehen, den
+// auch andere Mieter tragen (BGH, Urteil vom 03.06.2016, V ZR 166/15, Rn. 13).
+test('S-2: zentrale Heizung beim Mieter, Allgemeinstrom auch bei anderen Mietern: Hinweis zum Betriebsstrom, färbend', () => {
+  const strom: SnapshotCostItem = { id: 'strom', period: calendarPeriod(2025), category: 'Beleuchtung/Allgemeinstrom', description: 'Hausstrom', amountCents: 100000, key: 'units' }
+  const wartung = item(2025, { key: 'direct', directUnitId: 'a' })
+  const zentral = (kind: 'central' | 'perUnit' | undefined, over: Partial<SnapshotSource> = {}) => settle({
+    units: ZWEI,
+    tenancies: [tenancy('ta', 'a', { heatingModel: 'selfSupply', ...(kind ? { selfSupplyKind: kind } : {}) }), tenancy('tb', 'b')],
+    costItems: [wartung, strom],
+    ...over,
+  })
+  const r = zentral('central')
+  const n = r.notices.find((x) => x.code === 'heating.self-supply-operating-power') ?? assert.fail(codes(r).join(', '))
+  assert.equal(n.level, 'hint')
+  assert.deepEqual(n.subject, { kind: 'tenancy', id: 'ta' })
+  assert.match(n.text, /^Die Wohnung a von ta wird über eine zentrale Heizung versorgt, deren Brennstoff der Mieter selbst bezieht\. Läuft ihr Betriebsstrom/)
+  assert.match(n.text, /„Hausstrom“/)
+  assert.match(n.text, /BGH, Urteil vom 03\.06\.2016, V ZR 166\/15, Rn\. 13/)
+  // Etagenheizung oder ohne Angabe: Strom über den Zähler der Wohnung, kein Hinweis.
+  assert.ok(!codes(zentral('perUnit')).includes('heating.self-supply-operating-power'))
+  assert.ok(!codes(zentral(undefined)).includes('heating.self-supply-operating-power'))
+  // Ein Abzug beim Allgemeinstrom ist die Antwort.
+  const abzug: SnapshotCostItem = { id: 'abzug', period: calendarPeriod(2025), category: 'Beleuchtung/Allgemeinstrom', description: 'Abzug Betriebsstrom', amountCents: -8000, key: 'units', operatingPower: 'deduction' }
+  assert.ok(!codes(zentral('central', { costItems: [wartung, strom, abzug] })).includes('heating.self-supply-operating-power'))
+  // Trägt nur der Selbstversorger den Allgemeinstrom (er hat das ganze Haus), zahlt niemand sonst mit.
+  const allein = settle({ units: [unit('a')], tenancies: [tenancy('ta', 'a', { heatingModel: 'selfSupply', selfSupplyKind: 'central' })], costItems: [wartung, strom] })
+  assert.ok(!codes(allein).includes('heating.self-supply-operating-power'))
+})

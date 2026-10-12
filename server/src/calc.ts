@@ -89,7 +89,7 @@ import { lineRoot, monthSpanText, plantRules, plantSpan, recommendedDeadline, re
 import { heatingSnapshotFor, selfAt, snapshotFor, wayOf } from './snapshot.ts'
 import { cancelledDeliveries, deliveryShare, plantFuel, rangeOf, type FuelCarry, type FuelResult, type ShareContext } from './fuel.ts'
 import { co2Plausibility, etsExempt as etsExemptPlant, plausibilityText } from './co2Plausibility.ts'
-import { billMissingText, deductionMissingText, generationPowerText, missingOperatingPowerText, missingPowerFindings, operatingPowerBalance, operatingPowerFindings, operatingPowerText, unmarkedPowerCredits, type OperatingPowerBalance } from './operatingPower.ts'
+import { billMissingText, deductionMissingText, generationPowerText, selfSupplyPowerText, missingOperatingPowerText, missingPowerFindings, operatingPowerBalance, operatingPowerFindings, operatingPowerText, unmarkedPowerCredits, type OperatingPowerBalance } from './operatingPower.ts'
 import { GENERAL_POWER_CATEGORY } from '../../shared/operatingPower.ts'
 import { LAW_PARAMS } from '../../shared/law/params.ts'
 import { fuelFromDeliveries, fuelFromStock, looseCentsOf, measuredOffset, problemText, settledByDefault, stockKeysOf, stockOf, stockTemplateOfLine, stockTouched, valueOf as stockValueOf, type FuelFigures, type StockPeriodInput, type StockResult } from './fuelStock.ts'
@@ -448,6 +448,8 @@ const noticeKinds = {
   // #266: mit Angabe an der Anlage. Fehlt der Abzug trotz Angabe, ist das der Fall aus BGH V ZR 166/15 und VIII ZR 27/07
   // und färbt die Ampel; fehlt nur die Rechnung des eigenen Stromvertrags, trägt der Vermieter eigenes Geld (INFORMATIONAL).
   'heating.operating-power-deduction-missing': { level: 'hint', title: 'Abzug des Betriebsstroms fehlt', terms: ['operatingPower', 'heatingCostOrdinance'] },
+  // Heizung PR 19, Durchsicht S-2: zentrale Heizung mit Brennstoff beim Mieter, ohne Heizanlage.
+  'heating.self-supply-operating-power': { level: 'hint', title: 'Betriebsstrom der Heizung des Mieters im Allgemeinstrom?', terms: ['operatingPower', 'co2Refund'] },
   'heating.operating-power-bill-missing': { level: 'hint', title: 'Rechnung des Heizungsstromzählers fehlt', terms: ['operatingPower'] },
   // Heizung PR 17 (Entwurf 4.5, 10.1): ein Rechtswert, den der Vermieter eingetragen hat.
   'law.value-overridden': { level: 'hint', title: 'Selbst eingetragener Rechtswert', terms: ['legalBasis'] },
@@ -7153,6 +7155,21 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // einer Anlage mit eigener Heizperiode kommen aus `heatingParts`. Das Register wird erst gefragt, wenn der
   // Hinweis sonst käme, damit es nicht im Rechtsstand jeder Abrechnung mit Wärmepumpe steht.
   if (scope === 'all') {
+    // Heizung PR 19, Durchsicht S-2: zentrale Heizung, Brennstoff beim Mieter, ohne Heizanlage. Trägt ein anderer Mieter
+    // den Allgemeinstrom mit und steht dort kein Abzug, kann der Brennerstrom bei ihm landen. Gefärbt wie „Abzug fehlt“.
+    const centralSelf = snapshot.tenancies.filter((t) => t.heatingModel === 'selfSupply' && t.selfSupplyKind === 'central' && statements.has(t.id))
+    if (centralSelf.length > 0) {
+      const generals = items.filter((c) => c.category === GENERAL_POWER_CATEGORY && c.amountCents > 0 && c.operatingPower === undefined)
+      const deducted = items.some((c) => c.operatingPower === 'deduction')
+      const centralIds = new Set(centralSelf.map((t) => t.id))
+      const othersPay = generals.some((g) => [...statements.values()].some((st) => !centralIds.has(st.tenancyId) && st.rows.some((r) => r.costItemId === g.id && r.shareCents > 0)))
+      if (othersPay && !deducted) {
+        for (const t of centralSelf) {
+          const unitName = snapshot.units.find((u) => u.id === t.unitId)?.name ?? ''
+          warn('heating.self-supply-operating-power', selfSupplyPowerText(t.tenantName, unitName, generals), { kind: 'tenancy', id: t.id })
+        }
+      }
+    }
     for (const f of missingPowerFindings({ period, plants, items, heatingParts: snapshot.heatingParts ?? [] })) {
       if (f.kind === 'operating') {
         warn('heating.operating-power-missing', missingOperatingPowerText(f, label), { kind: 'heatingCosts', id: f.plantId })

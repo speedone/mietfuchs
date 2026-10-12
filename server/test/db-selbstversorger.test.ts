@@ -67,3 +67,31 @@ test('Speichern: selfSupply kommt an, kommt zurück und lässt sich zurücksetze
     assert.equal(zurueck?.heatingModel, undefined)
   })
 })
+
+// Durchsicht S-2: die Art der Selbstversorgung (Heizung in der Wohnung oder zentrale Heizung im Haus).
+test('Art der Selbstversorgung: gespeichert nur bei selfSupply, Bedingungen an der Tabelle', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => createEntity(db, 'units', 'u1', { propertyId: 'objekt-1', name: 'EG', areaM2: 50, participates: true }))
+    await opened.write((db) => createEntity(db, 'tenancies', 't1', { unitId: 'u1', tenantName: 'A', start: '2024-01-01', heatingModel: 'selfSupply', selfSupplyKind: 'central' }))
+    const kind = async () => (await opened.read((db) => readStock(db))).tenancies.find((x) => x.id === 't1')?.selfSupplyKind
+    assert.equal(await kind(), 'central')
+    await opened.write((db) => updateEntity(db, 'tenancies', 't1', { selfSupplyKind: 'irgendwas' }))
+    assert.equal(await kind(), undefined, 'ein unbekannter Wert wird nicht gespeichert')
+    await opened.write((db) => updateEntity(db, 'tenancies', 't1', { selfSupplyKind: 'perUnit' }))
+    assert.equal(await kind(), 'perUnit')
+    await opened.write((db) => updateEntity(db, 'tenancies', 't1', { heatingModel: null }))
+    assert.equal(await kind(), undefined, 'ohne selfSupply keine Art')
+  })
+  const dir = tempDir()
+  try {
+    const c = await connect(path.join(dir, 'db.sqlite'))
+    applyMigrations(c, await loadMigrations())
+    c.exec(`INSERT INTO units (id, property_id, name, area_m2, participates) VALUES ('u', 'objekt-1', 'Oben', 80, 1)`)
+    assert.match(rejects(c, `INSERT INTO tenancies (id, unit_id, tenant_name, persons, start, heating_model, self_supply_kind) VALUES ('a', 'u', 'A', 1, '2020-01-01', 'selfSupply', 'irgendwo')`) ?? '', /tenancies_self_supply_kind_known/)
+    assert.match(rejects(c, `INSERT INTO tenancies (id, unit_id, tenant_name, persons, start, self_supply_kind) VALUES ('b', 'u', 'A', 1, '2020-01-01', 'central')`) ?? '', /tenancies_self_supply_kind_valid/)
+    assert.equal(rejects(c, `INSERT INTO tenancies (id, unit_id, tenant_name, persons, start, heating_model, self_supply_kind) VALUES ('c', 'u', 'A', 1, '2020-01-01', 'selfSupply', 'central')`), null)
+    c.close()
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
