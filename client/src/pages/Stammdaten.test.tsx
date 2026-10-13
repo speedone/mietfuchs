@@ -206,3 +206,25 @@ test('Mietverhältnisse: die Tabelle darf umbrechen, die Symbole bleiben beisamm
   expect(icons?.contains(rowOf('Staffel').getByLabelText('Mietverhältnis löschen'))).toBe(true)
   expect(rowOf('Staffel').getByText('0171 1234567').classList.contains('nowrap')).toBe(true)
 })
+
+// Safari auf dem Mac und Firefox kennen <input type="month"> nicht; in die Staffeln ließ sich dort
+// nichts Brauchbares eingeben. Die Felder sind Textfelder für „MM.JJJJ“.
+test('Staffeln: der Monat steht als MM.JJJJ im Feld und wird so auch gespeichert', async () => {
+  page([tenancy('t1', 'Müller', { baseRents: [{ from: '2025-01', monthlyCents: 80000 }], prepayments: [{ from: '2025-01', monthlyCents: 15000 }] })])
+  const [edit] = await screen.findAllByRole('button', { name: /Mietverhältnis bearbeiten/i }, SLOW)
+  if (!edit) throw new Error('kein Bearbeiten-Knopf')
+  fireEvent.click(edit)
+  const dialog = await screen.findByRole('dialog', undefined, SLOW)
+  const months = within(dialog).getAllByPlaceholderText('MM.JJJJ (leer = Einzug)') as HTMLInputElement[]
+  expect(months.map((m) => m.value)).toEqual(['01.2025', '01.2025'])
+  expect(months.every((m) => m.type === 'text')).toBe(true)
+  const [rent, prepayment] = months
+  if (!rent || !prepayment) throw new Error('Staffelfelder fehlen')
+  fireEvent.change(rent, { target: { value: '01.03.2025' } })
+  fireEvent.change(prepayment, { target: { value: '4.2025' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Übernehmen' }))
+  await vi.waitFor(() => expect(sent.some((s) => s.url.startsWith('/api/tenancies'))).toBe(true))
+  const body = sent.find((s) => s.url.startsWith('/api/tenancies'))?.body
+  expect(body?.baseRents).toEqual([{ from: '2025-03', monthlyCents: 80000 }])
+  expect(body?.prepayments).toEqual([{ from: '2025-04', monthlyCents: 15000 }])
+})

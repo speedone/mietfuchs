@@ -1,6 +1,6 @@
 // Nebenkostenmodell am Mietverhältnis (#93), die Seite der Oberfläche.
 import { expect, test } from 'vitest'
-import { COST_MODEL_LABELS, buildPersonHistory, costModelBadge, costModelBody, defaultTenancyUnitId, notSettledText, overlapQuestion, parsePersons, showsFlatRates } from './tenancyModel'
+import { COST_MODEL_LABELS, buildPersonHistory, costModelBadge, costModelBody, defaultTenancyUnitId, notSettledText, overlapQuestion, parsePersons, parseScheduleMonth, scheduleMonthText, showsFlatRates } from './tenancyModel'
 import type { Tenancy, Unit } from './types'
 
 test('die Staffel der Pauschale erscheint nur bei einer Pauschale', () => {
@@ -103,4 +103,33 @@ test('Rückfrage bei Überschneidung: nennt Mieter und Zeitraum deutsch, gesiezt
   expect(overlapQuestion({ id: 'x', unitId: 'A', start: '2023-01-01', end: '2025-12-31' }, bestand)).toBeNull()
   // ohne Einzug (Formular unvollständig) keine Rückfrage, das meldet die Prüfung davor
   expect(overlapQuestion({ unitId: 'A', start: '', end: null }, bestand)).toBeNull()
+})
+
+test('Monat einer Staffel: auch in deutscher Schreibweise, wie sie Safari und Firefox ohne Monatsauswahl bekommen', () => {
+  // Chrome liefert aus der Monatsauswahl immer JJJJ-MM
+  expect(parseScheduleMonth('2026-01')).toBe('2026-01')
+  // Safari auf dem Mac und Firefox zeigen ein Textfeld; dort tippt man, was man kennt
+  expect(parseScheduleMonth('01.2026')).toBe('2026-01')
+  expect(parseScheduleMonth('1.2026')).toBe('2026-01')
+  expect(parseScheduleMonth('10/2026')).toBe('2026-10')
+  expect(parseScheduleMonth(' 01.01.2026 ')).toBe('2026-01')
+  expect(parseScheduleMonth('1.10.2026')).toBe('2026-10')
+  expect(parseScheduleMonth('2026-10-01')).toBe('2026-10')
+})
+
+test('Monat einer Staffel: ein Tag mitten im Monat und Unsinn werden nicht gedeutet', () => {
+  // Eine Staffel gilt ab Monatsanfang; „15.10.2026“ still als Oktober zu lesen, hieße raten
+  expect(parseScheduleMonth('15.10.2026')).toBeNull()
+  expect(parseScheduleMonth('2026-10-15')).toBeNull()
+  expect(parseScheduleMonth('13.2026')).toBeNull()
+  expect(parseScheduleMonth('00.2026')).toBeNull()
+  expect(parseScheduleMonth('Januar 2026')).toBeNull()
+  expect(parseScheduleMonth('26-01')).toBeNull()
+  expect(parseScheduleMonth('')).toBeNull()
+})
+
+test('Monat einer Staffel zur Anzeige: JJJJ-MM wird MM.JJJJ und lässt sich wieder lesen', () => {
+  expect(scheduleMonthText('2026-01')).toBe('01.2026')
+  expect(parseScheduleMonth(scheduleMonthText('2026-10'))).toBe('2026-10')
+  expect(scheduleMonthText('')).toBe('')
 })

@@ -5,7 +5,7 @@ import { EMPTY_UNIT_FORM, buildUnitBody, connectionSummary, connectionTypes, set
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import Drawer from '../components/Drawer'
 import PropertyCard from '../components/PropertyCard'
-import { COST_MODEL_LABELS, buildPersonHistory, costModelBadge, costModelBody, defaultTenancyUnitId, overlapQuestion, showsFlatRates } from '../tenancyModel'
+import { COST_MODEL_LABELS, buildPersonHistory, costModelBadge, costModelBody, defaultTenancyUnitId, overlapQuestion, parseScheduleMonth, SCHEDULE_MONTH_HINT, scheduleMonthText, showsFlatRates } from '../tenancyModel'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import { buildTenantChange, defaultStart, EMPTY_NEW_TENANT, endProblem, meterProblem, parseMeterValue, type NewTenantForm } from '../tenantChange'
 import PageHeader from '../components/PageHeader'
@@ -75,11 +75,11 @@ function tenancyToForm(t: Tenancy): TenancyForm {
     start: t.start,
     end: t.end ?? '',
     baseRents: (t.baseRents ?? []).map((p) => ({
-      from: p.from,
+      from: scheduleMonthText(p.from),
       amount: (p.monthlyCents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 }),
     })),
     prepayments: t.prepayments.map((p) => ({
-      from: p.from,
+      from: scheduleMonthText(p.from),
       amount: (p.monthlyCents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 }),
     })),
     email: t.email ?? '',
@@ -93,7 +93,7 @@ function tenancyToForm(t: Tenancy): TenancyForm {
     costModel: t.costModel ?? 'settlement',
     heatingModel: t.heatingModel ?? 'settlement',
     flatRates: (t.flatRates ?? []).map((p) => ({
-      from: p.from,
+      from: scheduleMonthText(p.from),
       amount: (p.monthlyCents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 }),
     })),
   }
@@ -182,9 +182,9 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
     for (const row of tenForm.baseRents) {
       if (!row.from && !row.amount.trim()) continue // leere Zeile überspringen
       const cents = parseEuro(row.amount)
-      const from = row.from || tenForm.start.slice(0, 7)
-      if (cents === null || !/^\d{4}-\d{2}$/.test(from)) {
-        setError('Bitte Kaltmiete-Staffel prüfen (Monat und Betrag).')
+      const from = row.from.trim() ? parseScheduleMonth(row.from) : tenForm.start.slice(0, 7)
+      if (cents === null || from === null) {
+        setError(`Bitte Kaltmiete-Staffel prüfen (Monat und Betrag). ${SCHEDULE_MONTH_HINT}`)
         return
       }
       baseRents.push({ from, monthlyCents: cents })
@@ -194,9 +194,9 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
     for (const row of tenForm.prepayments) {
       if (!row.from && !row.amount.trim()) continue // leere Zeile überspringen
       const cents = parseEuro(row.amount)
-      const from = row.from || tenForm.start.slice(0, 7)
-      if (cents === null || !/^\d{4}-\d{2}$/.test(from)) {
-        setError('Bitte Vorauszahlungs-Staffel prüfen (Monat und Betrag).')
+      const from = row.from.trim() ? parseScheduleMonth(row.from) : tenForm.start.slice(0, 7)
+      if (cents === null || from === null) {
+        setError(`Bitte Vorauszahlungs-Staffel prüfen (Monat und Betrag). ${SCHEDULE_MONTH_HINT}`)
         return
       }
       prepayments.push({ from, monthlyCents: cents })
@@ -206,9 +206,9 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
       for (const row of tenForm.flatRates) {
         if (!row.from && !row.amount.trim()) continue
         const cents = parseEuro(row.amount)
-        const from = row.from || tenForm.start.slice(0, 7)
-        if (cents === null || !/^\d{4}-\d{2}$/.test(from)) {
-          setError('Bitte die Staffel der Pauschale prüfen (Monat und Betrag).')
+        const from = row.from.trim() ? parseScheduleMonth(row.from) : tenForm.start.slice(0, 7)
+        if (cents === null || from === null) {
+          setError(`Bitte die Staffel der Pauschale prüfen (Monat und Betrag). ${SCHEDULE_MONTH_HINT}`)
           return
         }
         flatRates.push({ from, monthlyCents: cents })
@@ -543,7 +543,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                 <div className="staffel-row" key={i}>
                   <label className="field">
                     gültig ab
-                    <input type="month" value={p.from} placeholder="Einzugsmonat" onChange={(e) => setTenForm({ ...tenForm, baseRents: tenForm.baseRents.map((x, k) => (k === i ? { ...x, from: e.target.value } : x)) })} />
+                    <input inputMode="numeric" value={p.from} placeholder="MM.JJJJ (leer = Einzug)" onChange={(e) => setTenForm({ ...tenForm, baseRents: tenForm.baseRents.map((x, k) => (k === i ? { ...x, from: e.target.value } : x)) })} />
                   </label>
                   <label className="field">
                     Betrag €/Monat
@@ -563,7 +563,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                 <div className="staffel-row" key={i}>
                   <label className="field">
                     gültig ab
-                    <input type="month" value={p.from} placeholder="Einzugsmonat" onChange={(e) => setTenForm({ ...tenForm, prepayments: tenForm.prepayments.map((x, k) => (k === i ? { ...x, from: e.target.value } : x)) })} />
+                    <input inputMode="numeric" value={p.from} placeholder="MM.JJJJ (leer = Einzug)" onChange={(e) => setTenForm({ ...tenForm, prepayments: tenForm.prepayments.map((x, k) => (k === i ? { ...x, from: e.target.value } : x)) })} />
                   </label>
                   <label className="field">
                     Betrag €/Monat
@@ -604,7 +604,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                     <div className="staffel-row" key={i}>
                       <label className="field">
                         gültig ab
-                        <input type="month" value={p.from} placeholder="Einzugsmonat" onChange={(e) => setTenForm({ ...tenForm, flatRates: alle.map((x, k) => (k === i ? { ...x, from: e.target.value } : x)) })} />
+                        <input inputMode="numeric" value={p.from} placeholder="MM.JJJJ (leer = Einzug)" onChange={(e) => setTenForm({ ...tenForm, flatRates: alle.map((x, k) => (k === i ? { ...x, from: e.target.value } : x)) })} />
                       </label>
                       <label className="field">
                         Betrag €/Monat

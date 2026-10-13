@@ -76,6 +76,34 @@ export function buildPersonHistory(
   return { personHistory }
 }
 
+// Monat einer Staffel (Kaltmiete, Vorauszahlung, Pauschale) aus dem Formular, als 'JJJJ-MM'.
+// Das Feld war ein `<input type="month">`. Safari auf dem Mac und Firefox haben keine
+// Monatsauswahl: Je nach Fassung zeigen sie ein Textfeld, in dem nur „2026-01“ durch die Prüfung
+// kam, oder ein Feld, in das sich gar nichts eingeben ließ. Es ist deshalb ein Textfeld für
+// „MM.JJJJ“, in jedem Browser gleich. Angenommen wird auch, was ein Mensch sonst tippt: „1.2026“,
+// „01/2026“, „01.01.2026“ und „2026-01“. Ein Tag nur als Erster: Eine Staffel gilt ab
+// Monatsanfang, und „15.10.2026“ still als Oktober zu lesen, hieße raten. `null`: nicht lesbar.
+export function parseScheduleMonth(text: string): string | null {
+  const t = text.trim()
+  const month = (y: string, m: string) => {
+    const n = Number(m)
+    return n >= 1 && n <= 12 ? `${y}-${String(n).padStart(2, '0')}` : null
+  }
+  let m = /^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?$/.exec(t)
+  if (m) return m[3] === undefined || Number(m[3]) === 1 ? month(m[1], m[2]) : null
+  m = /^(?:(\d{1,2})\.)?(\d{1,2})[./](\d{4})$/.exec(t)
+  if (m) return m[1] === undefined || Number(m[1]) === 1 ? month(m[3], m[2]) : null
+  return null
+}
+
+export const SCHEDULE_MONTH_HINT = 'Monat als MM.JJJJ, etwa 01.2026; leer heißt ab Einzug.'
+
+// Gespeichertes 'JJJJ-MM' fürs Formular als 'MM.JJJJ'.
+export function scheduleMonthText(from: string): string {
+  const m = /^(\d{4})-(\d{2})$/.exec(from)
+  return m ? `${m[2]}.${m[1]}` : from
+}
+
 // Die Wohnung, die der Dialog für ein neues Mietverhältnis vorwählt (#142). Vorher die erste
 // überhaupt, oft die selbstgenutzte. Jetzt die erste vermietbare ohne laufendes Mietverhältnis,
 // sonst die erste vermietbare, und nur wenn es keine gibt, die erste Wohnung.
