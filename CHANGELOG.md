@@ -6,6 +6,18 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+### Hinzugefügt
+
+- **Grundlage für das Einlesen von Kontoauszügen.** Mietfuchs kann Kontoauszüge im Format camt
+  lesen (camt.053, dazu camt.052 und camt.054, die Fassungen 001.02 bis 001.08) und im älteren
+  Format MT940, wie es Sparkassen und Programme wie StarMoney als `.sta` ausgeben, auch mehrere
+  in einem ZIP, noch ohne Oberfläche. Das Format wird am Inhalt erkannt. Nennt ein Auszug Anfangs-
+  und Endsaldo, lässt sich prüfen, dass kein Umsatz fehlt. Beträge werden centgenau gelesen, eine Sammelbuchung wird in
+  ihre Posten zerlegt, und jede Buchung trägt einen Fingerabdruck, an dem der spätere Import
+  einen doppelt eingelesenen Auszug erkennt. Was sich nicht sicher lesen lässt (fremde Währung,
+  Bruchteile eines Cents, ein abgeschnittener Download, eine beschädigte Datei im ZIP), wird
+  gemeldet statt geraten ([#188](https://github.com/speedone/mietfuchs/issues/188)).
+
 ### Behoben
 
 - **Ein zweiter Start fasst die Daten nicht mehr an, solange Mietfuchs schon läuft.** Startete
