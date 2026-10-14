@@ -23,9 +23,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Einstellungen, die abweichende IBAN eines Objekts und die IBAN des Mieters nahmen jeden Text
   an; eine vertippte IBAN fiel erst auf, wenn eine Nachzahlung nicht ankam. Jetzt prüft Mietfuchs
   Länderkennung, Länge und Prüfziffer nach ISO 13616, und zwar beim Verlassen des Feldes und vor
-  dem Speichern; die Meldung steht am Feld und sagt, was nicht stimmt. Leerzeichen und
-  Kleinbuchstaben sind erlaubt, gespeichert wird ohne Leerzeichen und in Großbuchstaben,
-  angezeigt in Vierergruppen. Ein leeres Feld bleibt erlaubt. Auch der Server lehnt eine neue
+  dem Speichern; die Meldung steht am Feld und sagt, was nicht stimmt. Leerzeichen, Bindestriche
+  und Kleinbuchstaben sind erlaubt, gespeichert wird ohne Trennzeichen und in Großbuchstaben,
+  angezeigt in Vierergruppen, auch auf der gedruckten Abrechnung. Ein leeres Feld bleibt erlaubt. Auch der Server lehnt eine neue
   oder geänderte ungültige IBAN ab. Eine schon gespeicherte ungültige IBAN wird nicht still
   geändert: Das Formular nennt sie als Hinweis, und andere Angaben lassen sich weiter speichern.
   Backup, Wiederherstellen und der Umstieg übernehmen IBANs unverändert und ohne Prüfung

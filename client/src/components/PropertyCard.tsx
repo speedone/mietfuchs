@@ -179,7 +179,7 @@ export default function PropertyCard() {
               Vermieter
               <input value={form.landlordName} onChange={(e) => setForm({ ...form, landlordName: e.target.value })} />
             </label>
-            <IbanInput label="IBAN" value={form.iban} stored={property.iban} onChange={(iban) => setForm({ ...form, iban })} />
+            <IbanInput key={property.id} label="IBAN" value={form.iban} stored={property.iban} onChange={(iban) => setForm({ ...form, iban })} />
             <label className="field">
               Zahlungsfrist (Tage)
               <input inputMode="numeric" value={form.paymentDeadlineDays} onChange={(e) => setForm({ ...form, paymentDeadlineDays: e.target.value })} />

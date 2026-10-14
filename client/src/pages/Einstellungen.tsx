@@ -8,6 +8,7 @@ import { AiSettings } from '../components/AiSettings'
 import { useOpenForm, useProperty } from '../property'
 import IbanInput from '../components/IbanInput'
 import { ibanChanged, ibanForSave, ibanToInput } from '../ibanField'
+import { IBAN_LABELS } from '../../../shared/iban.ts'
 
 type Props = { settings: Settings; reload: () => Promise<void>; update: UpdateState }
 
@@ -65,7 +66,7 @@ export default function Einstellungen({ settings, reload, update }: Props) {
   async function save() {
     // Eine neue ungültige IBAN wird nicht gespeichert (#279); eine gespeicherte ungültige geht
     // unverändert mit, damit die übrigen Angaben trotzdem gespeichert werden.
-    const iban = ibanForSave(form.iban, settings.iban, 'Die IBAN')
+    const iban = ibanForSave(form.iban, settings.iban, IBAN_LABELS.settings)
     if ('error' in iban) {
       setSaveError(iban.error)
       return

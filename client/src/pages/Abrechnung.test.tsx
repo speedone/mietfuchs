@@ -3,7 +3,7 @@
 // und was beim Arbeiten verwirrt.
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import type { Settlement, Statement, Tenancy } from '../types'
+import type { Settings, Settlement, Statement, Tenancy } from '../types'
 import { YearProvider } from '../year'
 import { PropertyProvider } from '../property'
 import { UIProvider } from '../components/feedback'
@@ -112,4 +112,19 @@ test('Kopfzeile ohne Adresse endet nicht mit einem Trenner', async () => {
   await screen.findByText(/manuell angepasst/, {}, SLOW)
   const kopf = document.querySelector('.card.statement > .muted')
   expect(kopf?.textContent?.trim()).toBe('A')
+})
+
+test('IBAN (#279): auf der Abrechnung in Vierergruppen, eine ungültige, wie sie gespeichert ist', async () => {
+  const mit = (iban: string) => render(
+    <YearProvider>
+      <PropertyProvider>
+        <UIProvider><Abrechnung settings={{ landlordName: 'Erika', iban, paymentDeadlineDays: 30 } as Settings} units={[]} tenancies={TENANCIES} reload={async () => {}} /></UIProvider>
+      </PropertyProvider>
+    </YearProvider>,
+  )
+  mit('DE89370400440532013000')
+  expect(await screen.findByText('DE89 3704 0044 0532 0130 00', undefined, SLOW)).toBeTruthy()
+  cleanup()
+  mit('de00 1111')
+  expect(await screen.findByText('de00 1111', undefined, SLOW)).toBeTruthy()
 })

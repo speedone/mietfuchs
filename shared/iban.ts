@@ -26,10 +26,12 @@ export const IBAN_LENGTHS: Readonly<Record<string, number>> = {
 
 export type IbanCheck = { ok: true, iban: string } | { ok: false, iban: string, problem: string }
 
-// Ohne Leerraum und in Großbuchstaben, so wie sie gespeichert wird. Leerraum heißt dabei auch
-// das geschützte Leerzeichen, das beim Kopieren aus einem PDF oder einer Banking-Seite mitkommt.
+// Ohne Leerraum und in Großbuchstaben, so wie sie gespeichert wird. Entfernt wird, was beim
+// Kopieren aus einem PDF oder einer Banking-Seite mitkommt und auf Papier keine Stelle ist:
+// Leerraum samt geschütztem Leerzeichen, Bindestriche (auch die typografischen U+2010/U+2011)
+// und unsichtbare Zeichen (Null-Breiten-Leerzeichen und -Verbinder U+200B–U+200D, BOM U+FEFF).
 export function normalizeIban(input: string): string {
-  return input.replace(/\s+/g, '').toUpperCase()
+  return input.replace(/[\s\-\u2010\u2011\u200b-\u200d\ufeff]+/g, '').toUpperCase()
 }
 
 // In Vierergruppen, wie sie auf Papier steht. Eine ungültige Eingabe bleibt, wie sie ist: Wer sie
@@ -74,6 +76,17 @@ export function checkIban(input: string): IbanCheck {
   }
   return { ok: true, iban }
 }
+
+// Der Satz, mit dem Formular und Server eine ungültige IBAN ablehnen, für beide derselbe.
+// `label` beginnt ihn: „Die IBAN des Vermieters“, „Die abweichende IBAN des Objekts“, „Die IBAN
+// des Mieters“.
+export const IBAN_LABELS = {
+  settings: 'Die IBAN des Vermieters',
+  property: 'Die abweichende IBAN des Objekts',
+  tenancy: 'Die IBAN des Mieters',
+} as const
+export const ibanRefusalText = (label: string, problem: string): string =>
+  `${label} ist nicht gültig. ${problem} Bitte prüfen Sie die Angabe.`
 
 export const isValidIban = (input: string): boolean => checkIban(input).ok
 

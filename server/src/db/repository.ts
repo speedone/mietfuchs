@@ -36,6 +36,7 @@ import { and, count, desc, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm'
 import type { CostItem, ExternalBasis, Meter, MeterType, Payment, PersonEntry, PrepaymentEntry, Property, Reading, RentEntry, Tenancy, Unit, UnitDependents } from '../../../shared/types.ts'
 import type { MigratedSettings } from '../ai/settings.ts'
 import { acceptIban } from '../iban.ts'
+import { IBAN_LABELS } from '../../../shared/iban.ts'
 import { lastPerFrom, straightenPersonHistory } from '../schedule.ts'
 import type { Database, Executor } from './client.ts'
 import {
@@ -250,7 +251,7 @@ function mergeTenancy(current: Tenancy, body: unknown): Tenancy {
     phone: merged(body, 'phone', current.phone, asOptionalText),
     correspondenceAddress: merged(body, 'correspondenceAddress', current.correspondenceAddress, asOptionalText),
     // Geprüft nur, wenn sie neu gesetzt oder geändert wird (#279, siehe iban.ts).
-    iban: merged(body, 'iban', current.iban, (v) => acceptIban(v, current.iban, 'Die IBAN des Mieters') ?? undefined),
+    iban: merged(body, 'iban', current.iban, (v) => acceptIban(v, current.iban, IBAN_LABELS.tenancy) ?? undefined),
     contractDate: merged(body, 'contractDate', current.contractDate, asOptionalText),
     depositCents: merged(body, 'depositCents', current.depositCents, asOptionalNumber),
     depositStatus: merged(body, 'depositStatus', current.depositStatus, (v) => oneOfOrUndefined(DEPOSIT_STATUS, v)),
@@ -510,7 +511,7 @@ function mergeProperty(current: Property, body: unknown): Property {
     kind: merged(body, 'kind', current.kind, (v) => oneOfOrUndefined(PROPERTY_KINDS, v) ?? current.kind),
     address: merged(body, 'address', current.address, (v) => asText(v, '')),
     landlordName: merged(body, 'landlordName', current.landlordName, asNullableText),
-    iban: merged(body, 'iban', current.iban, (v) => acceptIban(v, current.iban, 'Die abweichende IBAN des Objekts')),
+    iban: merged(body, 'iban', current.iban, (v) => acceptIban(v, current.iban, IBAN_LABELS.property)),
     paymentDeadlineDays: merged(body, 'paymentDeadlineDays', current.paymentDeadlineDays, nullableNumber),
     // `null` heißt unbekannt und ist ein ausdrücklicher Wert (#121).
     cableBuiltBeforeDec2021: merged(body, 'cableBuiltBeforeDec2021', current.cableBuiltBeforeDec2021 ?? null, (v) => (typeof v === 'boolean' ? v : null)),

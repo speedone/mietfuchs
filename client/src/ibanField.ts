@@ -1,4 +1,4 @@
-import { checkIban, formatIban, normalizeIban, sameIban } from '../../shared/iban.ts'
+import { checkIban, formatIban, ibanRefusalText, normalizeIban, sameIban } from '../../shared/iban.ts'
 
 // Ein IBAN-Feld im Formular (#279): Einstellungen, abweichende Bankverbindung eines Objekts und
 // IBAN des Mieters. Die Prüfung steht in shared/iban.ts und ist dieselbe wie auf dem Server;
@@ -37,7 +37,7 @@ export function ibanFieldState(input: string, stored: string | null | undefined)
 
 // Was gespeichert wird: `''` für keine IBAN, eine gültige normiert, eine unveränderte ungültige
 // so, wie sie gespeichert ist. Eine neue ungültige ergibt den Satz für die Meldung; `label`
-// beginnt ihn („Die IBAN des Mieters“), wie in der Meldung des Servers.
+// beginnt ihn (`IBAN_LABELS`), und der Satz kommt aus `ibanRefusalText`, derselbe wie beim Server.
 export function ibanForSave(input: string, stored: string | null | undefined, label: string): { value: string } | { error: string } {
   if (input.trim() === '') return { value: '' }
   if (unchanged(input, stored)) {
@@ -45,7 +45,7 @@ export function ibanForSave(input: string, stored: string | null | undefined, la
     return { value: checkIban(gespeichert).ok ? normalizeIban(gespeichert) : gespeichert }
   }
   const check = checkIban(input)
-  return check.ok ? { value: check.iban } : { error: `${label} ist nicht gültig. ${check.problem}` }
+  return check.ok ? { value: check.iban } : { error: ibanRefusalText(label, check.problem) }
 }
 
 // Hat sich das Feld gegenüber dem gespeicherten Wert geändert? Für die Frage nach ungespeicherten

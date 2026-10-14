@@ -7,6 +7,7 @@ import Drawer from '../components/Drawer'
 import PropertyCard from '../components/PropertyCard'
 import IbanInput from '../components/IbanInput'
 import { ibanForSave, ibanToInput, storedIbanInvalid } from '../ibanField'
+import { IBAN_LABELS } from '../../../shared/iban.ts'
 import { COST_MODEL_LABELS, buildPersonHistory, costModelBadge, costModelBody, defaultTenancyUnitId, overlapQuestion, showsFlatRates } from '../tenancyModel'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import { buildTenantChange, defaultStart, EMPTY_NEW_TENANT, endProblem, meterProblem, parseMeterValue, type NewTenantForm } from '../tenantChange'
@@ -231,7 +232,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
     // Eine neue ungültige IBAN wird nicht gespeichert (#279); eine gespeicherte ungültige geht
     // unverändert mit, damit die übrigen Angaben trotzdem gespeichert werden.
     const storedIban = tenancies.find((t) => t.id === tenForm.id)?.iban
-    const iban = ibanForSave(tenForm.iban, storedIban, 'Die IBAN des Mieters')
+    const iban = ibanForSave(tenForm.iban, storedIban, IBAN_LABELS.tenancy)
     if ('error' in iban) {
       setError(iban.error)
       return
@@ -642,7 +643,11 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                   Abweichende Anschrift (Schriftverkehr)
                   <input value={tenForm.correspondenceAddress} onChange={(e) => setTenForm({ ...tenForm, correspondenceAddress: e.target.value })} placeholder="z. B. neue Adresse nach Auszug" />
                 </label>
+                {/* Je Mietverhältnis neu (Durchsicht zu #279): Der Dialog bleibt offen, wenn „Hier beheben →“
+                    oder ein Klick in der Liste ein anderes öffnet, und das Feld wüsste sonst noch,
+                    dass es schon verlassen wurde. */}
                 <IbanInput
+                  key={tenForm.id ?? 'neu'}
                   label="Mieter-IBAN (für Lastschrift / Guthaben-Rückzahlung)"
                   value={tenForm.iban}
                   stored={tenancies.find((t) => t.id === tenForm.id)?.iban}

@@ -77,8 +77,15 @@ test('Unbekannte Länderkennung und fehlende Länderkennung', () => {
   assert.match(problemOf('1289370400440532013000'), /Länderkennung aus zwei Buchstaben/)
 })
 
+test('Bindestriche und unsichtbare Zeichen werden wie Leerzeichen entfernt', () => {
+  assert.deepEqual(checkIban('DE89-3704-0044-0532-0130-00'), { ok: true, iban: 'DE89370400440532013000' })
+  // Null-Breiten-Leerzeichen und -Verbinder, Wortverbinder und BOM, wie sie beim Kopieren mitkommen
+  assert.deepEqual(checkIban('\ufeffDE89\u200b3704\u200c0044\u200d0532 0130 00'), { ok: true, iban: 'DE89370400440532013000' })
+  assert.equal(normalizeIban('de89\u20113704'), 'DE893704')
+})
+
 test('Unzulässige Zeichen werden benannt', () => {
-  assert.match(problemOf('DE89-3704-0044-0532-0130-00'), /unzulässige Zeichen/)
+  assert.match(problemOf('DE89.3704.0044.0532.0130.00'), /unzulässige Zeichen/)
   assert.match(problemOf('DE89370400440532Ö13000'), /unzulässige Zeichen/)
 })
 
@@ -86,6 +93,13 @@ test('Falsche Prüfziffer, auch die nie vergebenen 00, 01 und 99', () => {
   assert.match(problemOf('DE00370400440532013000'), /Prüfziffer stimmt nicht/)
   assert.match(problemOf('DE88370400440532013000'), /Prüfziffer stimmt nicht/)
   for (const p of ['00', '01', '99']) assert.match(problemOf(`DE${p}370400440532013000`), /Prüfziffer/)
+  // Die drei nie vergebenen Prüfziffern, und zwar so gebaut, dass Modulo 97 trotzdem 1 ergibt:
+  // Nur die eigene Regel lehnt sie ab. 00 ist rechnerisch 97, 01 ist 98, 99 ist 02.
+  assert.equal(isValidIban('DE97370400440000000060'), true)
+  assert.equal(isValidIban('DE98370400440000000042'), true)
+  for (const iban of ['DE00370400440000000060', 'DE01370400440000000042', 'DE99120300000000202051']) {
+    assert.match(problemOf(iban), /Prüfziffer/, iban)
+  }
   // Buchstaben an der Stelle der Prüfziffer
   assert.match(problemOf('DEAB370400440532013000'), /Prüfziffer/)
 })

@@ -271,9 +271,36 @@ test('Objekt: eine neue ungültige IBAN wird nicht gespeichert, eine gültige no
   fireEvent.blur(feld)
   expect(screen.getByRole('alert').textContent).toMatch(/Prüfziffer/)
   fireEvent.click(screen.getByText('Speichern'))
-  expect(await screen.findByText(/^Die abweichende IBAN ist nicht gültig\./)).toBeTruthy()
+  expect(await screen.findByText(/^Die abweichende IBAN des Objekts ist nicht gültig\./)).toBeTruthy()
   expect(sent).toEqual([])
   fireEvent.change(feld, { target: { value: 'gb82 west 1234 5698 7654 32' } })
   fireEvent.click(screen.getByText('Speichern'))
   await vi.waitFor(() => expect(sent.find((s) => s.method === 'PUT')?.body.iban).toBe('GB82WEST12345698765432'))
+})
+
+test('IBAN: wechselt der Dialog zu einem anderen Mietverhältnis, beginnt das Feld von vorn', async () => {
+  page([tenancy('t1', 'Müller'), tenancy('t2', 'Schmidt', { unitId: 'u2' })])
+  await openTenancy('Müller')
+  fireEvent.change(ibanField(), { target: { value: 'DE00 1' } })
+  fireEvent.blur(ibanField())
+  expect(screen.getByRole('alert')).toBeTruthy()
+  // Ohne den Dialog zu schließen ein anderes Mietverhältnis öffnen, wie es „Hier beheben →“ tut
+  fireEvent.click(rowOf('Schmidt').getByLabelText('Mietverhältnis bearbeiten'))
+  await screen.findByDisplayValue('Schmidt', undefined, SLOW)
+  fireEvent.change(ibanField(), { target: { value: 'DE00 2' } })
+  expect(screen.queryByRole('alert')).toBeNull()
+})
+
+test('IBAN: ist die gespeicherte ungültig, sind die „Weiteren Angaben“ aufgeklappt, sonst nicht', async () => {
+  page([tenancy('t1', 'Müller', { iban: 'de00 1111' }), tenancy('t2', 'Schmidt', { unitId: 'u2', iban: 'DE89370400440532013000' })])
+  const details = () => {
+    const el = screen.getByText(/^Weitere Angaben — Nebenkosten-Modell/).closest('details')
+    if (!el) throw new Error('kein details')
+    return el
+  }
+  await openTenancy('Müller')
+  expect(details().open).toBe(true)
+  fireEvent.click(screen.getByText('Abbrechen'))
+  await openTenancy('Schmidt')
+  expect(details().open).toBe(false)
 })

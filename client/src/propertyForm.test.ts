@@ -34,7 +34,7 @@ test('Kabelanlage (#121): ja, nein und unbekannt gehen als true, false und null 
 
 test('IBAN (#279): eine neue ungültige wird abgelehnt, eine gültige normiert, eine gespeicherte ungültige geht unverändert mit', () => {
   expect(propertyBody(form({ own: true, iban: 'DE00 3704 0044 0532 0130 00' })))
-    .toEqual({ error: expect.stringMatching(/^Die abweichende IBAN ist nicht gültig\. Die Prüfziffer stimmt nicht/) })
+    .toEqual({ error: expect.stringMatching(/^Die abweichende IBAN des Objekts ist nicht gültig\. Die Prüfziffer stimmt nicht.* Bitte prüfen Sie die Angabe\.$/) })
   expect(propertyBody(form({ own: true, iban: 'de02120300000000202051' }))).toMatchObject({ iban: 'DE02120300000000202051' })
   // Gespeichert ungültig, unverändert (auch anders geschrieben): kein Fehler, nicht umgeschrieben
   expect(propertyBody(form({ own: true, iban: 'DE00 3333', address: 'Weg 9' }), 'de003333')).toMatchObject({ iban: 'de003333', address: 'Weg 9' })

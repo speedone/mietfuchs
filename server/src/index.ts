@@ -49,6 +49,7 @@ import { createUpdateChecker, UPDATE_URL } from './update.ts'
 import { APP_VERSION, RUNTIME, STANDALONE } from './version.ts'
 import { describeFile, describeFolder, hashFile, mimeTypeOf, uploadedAtOf } from './uploads.ts'
 import { acceptIban, IbanRefusal } from './iban.ts'
+import { IBAN_LABELS } from '../../shared/iban.ts'
 import { planTaxArchive } from './taxReceipts.ts'
 import { forgetUpload, placeUpload, recordIfMissing, recordUpload, rowOf, uploadRows, type Placement, type UploadRow } from './db/uploads.ts'
 
@@ -235,7 +236,7 @@ app.put('/api/settings', async (req, res) => {
   try {
     applyAiChanges(next, body, AI_ENV)
     // Die IBAN des Vermieters nur, wenn sie neu gesetzt oder geändert wird (#279, siehe iban.ts).
-    if (Object.hasOwn(changes, 'iban')) changes.iban = acceptIban(changes.iban, storedSettings.iban, 'Die IBAN des Vermieters') ?? ''
+    if (Object.hasOwn(changes, 'iban')) changes.iban = acceptIban(changes.iban, storedSettings.iban, IBAN_LABELS.settings) ?? ''
   } catch (err) {
     return res.status(statusOf(err)).json({ error: messageOf(err) })
   }

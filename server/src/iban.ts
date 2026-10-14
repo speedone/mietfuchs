@@ -14,19 +14,19 @@
 // ergibt `null`, ein leerer Text bleibt ein leerer Text. Am Objekt ist das ein Unterschied:
 // `null` heißt „die Vorgabe gilt“, `''` „bewusst keine“.
 
-import { checkIban, normalizeIban, sameIban } from '../../shared/iban.ts'
+import { checkIban, ibanRefusalText, normalizeIban, sameIban } from '../../shared/iban.ts'
 
 export class IbanRefusal extends Error {
   status = 400
 }
 
 // Was für das Feld gespeichert wird: `null` oder `''` für „keine IBAN“, sonst die normierte Form
-// oder, unverändert, die gespeicherte. `label` beginnt den Satz der Meldung („Die IBAN des Mieters“).
+// oder, unverändert, die gespeicherte. `label` beginnt den Satz der Meldung (`IBAN_LABELS` in shared/iban.ts).
 export function acceptIban(value: unknown, stored: string | null | undefined, label: string): string | null {
   if (typeof value !== 'string') return null
   if (value.trim() === '') return ''
   if (stored && sameIban(value, stored)) return checkIban(stored).ok ? normalizeIban(stored) : stored
   const check = checkIban(value)
-  if (!check.ok) throw new IbanRefusal(`${label} ist nicht gültig. ${check.problem} Bitte prüfen Sie die Angabe.`)
+  if (!check.ok) throw new IbanRefusal(ibanRefusalText(label, check.problem))
   return check.iban
 }

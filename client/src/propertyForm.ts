@@ -1,5 +1,6 @@
 import type { Property, PropertyKind } from './types'
 import { ibanForSave, ibanToInput } from './ibanField'
+import { IBAN_LABELS } from '../../shared/iban.ts'
 
 // Die Entscheidungslogik der Karte „Objekt“ (#92), ohne DOM prüfbar wie costForm.ts und
 // unitForm.ts; die Komponente rendert nur.
@@ -47,7 +48,7 @@ export const propertyToForm = (p: Property): PropertyForm => ({
 // (`storedIban`) geht unverändert mit, damit die übrigen Angaben trotzdem gespeichert werden.
 export function propertyBody(form: PropertyForm, storedIban: string | null = null): PropertyBody | { error: string } {
   const override = (value: string): string | null => (form.own && value.trim() !== '' ? value.trim() : null)
-  const iban = ibanForSave(override(form.iban) ?? '', storedIban, 'Die abweichende IBAN')
+  const iban = ibanForSave(override(form.iban) ?? '', storedIban, IBAN_LABELS.property)
   if ('error' in iban) return { error: iban.error }
   const deadlineText = override(form.paymentDeadlineDays)
   const deadline = deadlineText === null ? null : Number(deadlineText)

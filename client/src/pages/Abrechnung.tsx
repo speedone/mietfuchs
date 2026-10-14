@@ -19,6 +19,7 @@ import { suggestionBasis, totalColumnLabel, totalNote } from '../calcSteps'
 import { useToast, useConfirm } from '../components/feedback'
 import Table from '../components/Table'
 import { countOf } from '../../../shared/wording.ts'
+import { formatIban } from '../../../shared/iban.ts'
 
 type Props = {
   settings: Settings | null
@@ -522,7 +523,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
                         Es ergibt sich eine <strong>Nachzahlung von {fmtEuro(-st.balanceCents)}</strong>.
                         Bitte überweisen Sie den Betrag innerhalb von {landlord?.paymentDeadlineDays || 30} Tagen
                         nach Zugang dieser Abrechnung
-                        {landlord?.iban ? <> auf das Konto <strong>{landlord.iban}</strong>{landlord.landlordName ? ` (${landlord.landlordName})` : ''}</> : null}.
+                        {landlord?.iban ? <> auf das Konto <strong>{formatIban(landlord.iban)}</strong>{landlord.landlordName ? ` (${landlord.landlordName})` : ''}</> : null}.
                       </>
                     ) : (
                       <>
