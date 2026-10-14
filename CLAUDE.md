@@ -997,7 +997,8 @@ umgeschrieben; das Formular nennt sie als Hinweis. Backup, Wiederherstellen, Ums
 Validator prüfen bewusst nicht: Eine falsche IBAN ändert keine Zahl, sie ist krumm und nicht
 kaputt. Leer ist immer erlaubt. Was dennoch ungültig im Bestand steht, nennt das Cockpit als
 ruhigen Hinweis ohne Ampel ([client/src/ibanCheck.ts](client/src/ibanCheck.ts)), mit Sprung zur
-Stelle.
+Stelle, und nur, was das gewählte Objekt betrifft: die Vorgabe der Einstellungen nur ohne eigene
+IBAN am Objekt, Mietverhältnisse nur, wenn sie im Vorjahr oder später noch liefen.
 
 **Begriffslexikon** (#113): [shared/glossary.ts](shared/glossary.ts) hält jeden Fachbegriff mit
 Erklärung, Beispiel mit Zahlen, Rechtsgrundlage und „Brauche ich das?“. Es war der **erste

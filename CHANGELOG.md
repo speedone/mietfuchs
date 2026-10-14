@@ -10,8 +10,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 - **Das Cockpit weist auf vermutlich falsch eingetragene IBANs hin.** Seit der Prüfung beim
   Speichern kommt keine neue ungültige IBAN hinzu, eine schon gespeicherte bleibt aber stehen.
-  Steht in den Einstellungen, am gewählten Objekt oder an einem seiner Mietverhältnisse eine
-  IBAN, deren Prüfziffer, Länge oder Länderkennung nicht passt, nennt das Cockpit sie mit Ort
+  Steht am gewählten Objekt, in den Einstellungen (wenn das Objekt keine eigene Bankverbindung
+  hat) oder an einem seiner Mietverhältnisse, das im Vorjahr oder später noch lief, eine IBAN,
+  deren Prüfziffer, Länge oder Länderkennung nicht passt, nennt das Cockpit sie mit Ort
   und Grund, etwa „2 IBANs sind vermutlich falsch eingetragen“, und führt mit „Hier beheben →“
   zur Stelle. Der Hinweis ist ein ruhiger Kasten am Ende des Cockpits: Er zählt nicht zur
   Fertigstellung und färbt keine Ampel, denn eine falsche IBAN ändert keine Zahl der

@@ -254,7 +254,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
       : <span className="badge gray">Entwurf</span>
 
   // Vermutlich falsch eingetragene IBANs (#279): ein ruhiger Hinweis, keine Ampel (ibanCheck.ts).
-  const ibanFindings = useMemo(() => invalidIbans(settings, property, tenancies), [settings, property, tenancies])
+  const ibanFindings = useMemo(() => invalidIbans(settings, property, tenancies, year), [settings, property, tenancies, year])
 
   const distributed = settlement ? settlement.totalCostsCents - settlement.landlord.totalCents : 0
   const fresh = settlement && settlement.statements.length === 0 && yearItems.length === 0
