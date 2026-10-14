@@ -984,6 +984,18 @@ Jede Abrechnung trägt ihren **Rechtsstand** (`legalBasis`: `RULES_AS_OF` und di
 Jahres); weil die abgeschlossene Abrechnung wortgleich eingefroren wird, friert er mit ein. Wer
 eine Regel ändert, setzt `RULES_AS_OF` auf den Tag der Durchsicht (#110).
 
+**IBAN** (#279): Die Prüfung nach ISO 13616 (Länderkennung, Länge je Land, Prüfziffer) steht
+einmal in [shared/iban.ts](shared/iban.ts), für Formular und Server dieselbe. Geprüft wird nur
+beim Speichern über die Routen (`acceptIban` in [server/src/iban.ts](server/src/iban.ts), aus
+den Verschmelzungen in repository.ts und aus `PUT /api/settings`) und im Formular
+([client/src/ibanField.ts](client/src/ibanField.ts), Feld
+[IbanInput.tsx](client/src/components/IbanInput.tsx)), und **nur eine neu gesetzte oder
+geänderte**: Eine gespeicherte ungültige, die eine Seite unverändert mitschickt (normiert
+verglichen), hindert das Speichern einer anderen Angabe nicht und wird nicht still
+umgeschrieben; das Formular nennt sie als Hinweis. Backup, Wiederherstellen, Umstieg und
+Validator prüfen bewusst nicht: Eine falsche IBAN ändert keine Zahl, sie ist krumm und nicht
+kaputt. Leer ist immer erlaubt.
+
 **Begriffslexikon** (#113): [shared/glossary.ts](shared/glossary.ts) hält jeden Fachbegriff mit
 Erklärung, Beispiel mit Zahlen, Rechtsgrundlage und „Brauche ich das?“. Es war der **erste
 Laufzeitanteil in `shared/`**; der Client bündelt ihn (dafür `allowImportingTsExtensions` in

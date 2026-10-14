@@ -233,6 +233,12 @@ tr.group-head td { font-weight: 600; background: var(--accent-soft); color: var(
 tr.group-head td a { color: inherit; font-weight: 400; margin-left: 8px; }
 .muted { color: var(--muted); font-size: 13px; }
 
+/* Meldung unter einem einzelnen Feld, etwa einer ungültigen IBAN (#279) */
+label.field .field-message { font-weight: 400; font-size: 12.5px; }
+label.field .field-message.is-error { color: var(--red); }
+label.field .field-message.is-notice { color: var(--amber); }
+label.field input[aria-invalid="true"] { border-color: var(--red); }
+
 label.field.checkline { justify-content: flex-end; padding-bottom: 8px; }
 label.field.checkline span { display: flex; align-items: center; gap: 6px; font-weight: 400; color: var(--text); font-size: 14px; }
 

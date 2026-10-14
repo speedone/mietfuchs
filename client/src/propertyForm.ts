@@ -1,4 +1,5 @@
 import type { Property, PropertyKind } from './types'
+import { ibanForSave, ibanToInput } from './ibanField'
 
 // Die Entscheidungslogik der Karte „Objekt“ (#92), ohne DOM prüfbar wie costForm.ts und
 // unitForm.ts; die Komponente rendert nur.
@@ -31,7 +32,7 @@ export const propertyToForm = (p: Property): PropertyForm => ({
   kind: p.kind,
   own: p.landlordName !== null || p.iban !== null || p.paymentDeadlineDays !== null,
   landlordName: p.landlordName ?? '',
-  iban: p.iban ?? '',
+  iban: ibanToInput(p.iban),
   paymentDeadlineDays: p.paymentDeadlineDays === null ? '' : String(p.paymentDeadlineDays),
   cable: p.cableBuiltBeforeDec2021 === true ? 'vor' : p.cableBuiltBeforeDec2021 === false ? 'nach' : 'unbekannt',
 })
@@ -41,8 +42,13 @@ export const propertyToForm = (p: Property): PropertyForm => ({
 // der Name auf der gedruckten Abrechnung, still und auf einem Dokument für den Mieter. Die
 // Unterscheidung von `null` und `''` bleibt im Datenmodell erhalten, nur diese Karte bietet
 // „bewusst keine“ nicht an.
-export function propertyBody(form: PropertyForm): PropertyBody | { error: string } {
+//
+// Die IBAN wird geprüft (#279), aber nur eine neue oder geänderte: Eine gespeicherte ungültige
+// (`storedIban`) geht unverändert mit, damit die übrigen Angaben trotzdem gespeichert werden.
+export function propertyBody(form: PropertyForm, storedIban: string | null = null): PropertyBody | { error: string } {
   const override = (value: string): string | null => (form.own && value.trim() !== '' ? value.trim() : null)
+  const iban = ibanForSave(override(form.iban) ?? '', storedIban, 'Die abweichende IBAN')
+  if ('error' in iban) return { error: iban.error }
   const deadlineText = override(form.paymentDeadlineDays)
   const deadline = deadlineText === null ? null : Number(deadlineText)
   if (deadline !== null && (!Number.isInteger(deadline) || deadline < 0)) {
@@ -53,7 +59,7 @@ export function propertyBody(form: PropertyForm): PropertyBody | { error: string
     address: form.address,
     kind: form.kind,
     landlordName: override(form.landlordName),
-    iban: override(form.iban),
+    iban: iban.value === '' ? null : iban.value,
     paymentDeadlineDays: deadline,
     cableBuiltBeforeDec2021: form.cable === 'vor' ? true : form.cable === 'nach' ? false : null,
   }

@@ -5,6 +5,8 @@ import { EMPTY_UNIT_FORM, buildUnitBody, connectionSummary, connectionTypes, set
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import Drawer from '../components/Drawer'
 import PropertyCard from '../components/PropertyCard'
+import IbanInput from '../components/IbanInput'
+import { ibanForSave, ibanToInput, storedIbanInvalid } from '../ibanField'
 import { COST_MODEL_LABELS, buildPersonHistory, costModelBadge, costModelBody, defaultTenancyUnitId, overlapQuestion, showsFlatRates } from '../tenancyModel'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import { buildTenantChange, defaultStart, EMPTY_NEW_TENANT, endProblem, meterProblem, parseMeterValue, type NewTenantForm } from '../tenantChange'
@@ -85,7 +87,7 @@ function tenancyToForm(t: Tenancy): TenancyForm {
     email: t.email ?? '',
     phone: t.phone ?? '',
     correspondenceAddress: t.correspondenceAddress ?? '',
-    iban: t.iban ?? '',
+    iban: ibanToInput(t.iban),
     contractDate: t.contractDate ?? '',
     deposit: t.depositCents != null ? (t.depositCents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 }) : '',
     depositStatus: t.depositStatus ?? 'offen',
@@ -226,6 +228,14 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
       setError('Vertragsdatum bitte als gültiges Datum angeben.')
       return
     }
+    // Eine neue ungültige IBAN wird nicht gespeichert (#279); eine gespeicherte ungültige geht
+    // unverändert mit, damit die übrigen Angaben trotzdem gespeichert werden.
+    const storedIban = tenancies.find((t) => t.id === tenForm.id)?.iban
+    const iban = ibanForSave(tenForm.iban, storedIban, 'Die IBAN des Mieters')
+    if ('error' in iban) {
+      setError(iban.error)
+      return
+    }
     setError('')
     // null statt undefined, damit geleerte Felder über die generische PUT-Route zurückgesetzt werden
     const body = JSON.stringify({
@@ -240,7 +250,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
       email: tenForm.email.trim() || null,
       phone: tenForm.phone.trim() || null,
       correspondenceAddress: tenForm.correspondenceAddress.trim() || null,
-      iban: tenForm.iban.trim() || null,
+      iban: iban.value || null,
       contractDate: tenForm.contractDate || null,
       depositCents,
       depositStatus: depositCents !== null ? tenForm.depositStatus : null,
@@ -577,7 +587,8 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
               <button className="btn small secondary field-add" onClick={() => setTenForm({ ...tenForm, prepayments: [...tenForm.prepayments, { from: '', amount: '' }] })}>+ Erhöhung ab Monat …</button>
             </div>
 
-            <details className="extra-details" style={{ width: '100%' }}>
+            {/* Aufgeklappt, wenn die gespeicherte IBAN vermutlich falsch ist (#279): Der Hinweis steht darin. */}
+            <details className="extra-details" style={{ width: '100%' }} open={storedIbanInvalid(tenancies.find((t) => t.id === tenForm.id)?.iban) || undefined}>
               <summary>Weitere Angaben — Nebenkosten-Modell, Kontakt, Kaution, Vertrag (optional)</summary>
               <div className="row" style={{ marginTop: 10 }}>
                 <label className="field grow" title="Pauschale nach § 556 Abs. 2 BGB oder Inklusivmiete: dann gibt es keine Nebenkostenabrechnung">
@@ -631,10 +642,13 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                   Abweichende Anschrift (Schriftverkehr)
                   <input value={tenForm.correspondenceAddress} onChange={(e) => setTenForm({ ...tenForm, correspondenceAddress: e.target.value })} placeholder="z. B. neue Adresse nach Auszug" />
                 </label>
-                <label className="field grow">
-                  Mieter-IBAN (für Lastschrift / Guthaben-Rückzahlung)
-                  <input value={tenForm.iban} onChange={(e) => setTenForm({ ...tenForm, iban: e.target.value })} placeholder="DE.." />
-                </label>
+                <IbanInput
+                  label="Mieter-IBAN (für Lastschrift / Guthaben-Rückzahlung)"
+                  value={tenForm.iban}
+                  stored={tenancies.find((t) => t.id === tenForm.id)?.iban}
+                  onChange={(iban) => setTenForm({ ...tenForm, iban })}
+                  placeholder="DE.."
+                />
                 <label className="field grow">
                   Vertragsdatum
                   <input type="date" value={tenForm.contractDate} onChange={(e) => setTenForm({ ...tenForm, contractDate: e.target.value })} />

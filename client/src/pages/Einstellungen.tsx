@@ -6,6 +6,8 @@ import { useToast, useConfirm } from '../components/feedback'
 import { UpdateSettings, type UpdateState } from '../components/Update'
 import { AiSettings } from '../components/AiSettings'
 import { useOpenForm, useProperty } from '../property'
+import IbanInput from '../components/IbanInput'
+import { ibanChanged, ibanForSave, ibanToInput } from '../ibanField'
 
 type Props = { settings: Settings; reload: () => Promise<void>; update: UpdateState }
 
@@ -15,14 +17,14 @@ export default function Einstellungen({ settings, reload, update }: Props) {
   const confirm = useConfirm()
   const [form, setForm] = useState({
     landlordName: settings.landlordName ?? '',
-    iban: settings.iban ?? '',
+    iban: ibanToInput(settings.iban),
     paymentDeadlineDays: String(settings.paymentDeadlineDays ?? 30),
   })
   // Ungespeicherte Vermieterdaten: Ein Objektwechsel stellt die Seiten neu auf und fragt deshalb
   // vorher (#145).
   useOpenForm(
     form.landlordName !== (settings.landlordName ?? '') ||
-      form.iban !== (settings.iban ?? '') ||
+      ibanChanged(form.iban, settings.iban) ||
       form.paymentDeadlineDays !== String(settings.paymentDeadlineDays ?? 30),
   )
   const [restoring, setRestoring] = useState(false)
@@ -61,12 +63,20 @@ export default function Einstellungen({ settings, reload, update }: Props) {
   }
 
   async function save() {
+    // Eine neue ungültige IBAN wird nicht gespeichert (#279); eine gespeicherte ungültige geht
+    // unverändert mit, damit die übrigen Angaben trotzdem gespeichert werden.
+    const iban = ibanForSave(form.iban, settings.iban, 'Die IBAN')
+    if ('error' in iban) {
+      setSaveError(iban.error)
+      return
+    }
     // Lehnt der Server ab (#146), steht sein Satz unter den Feldern.
     try {
       await api('/api/settings', {
         method: 'PUT',
         body: JSON.stringify({
           ...form,
+          iban: iban.value,
           paymentDeadlineDays: Math.max(1, Number(form.paymentDeadlineDays) || 30),
         }),
       })
@@ -94,10 +104,7 @@ export default function Einstellungen({ settings, reload, update }: Props) {
             Name des Vermieters
             <input value={form.landlordName} onChange={(e) => setForm({ ...form, landlordName: e.target.value })} placeholder="Vor- und Nachname" />
           </label>
-          <label className="field grow">
-            IBAN für Nachzahlungen
-            <input value={form.iban} onChange={(e) => setForm({ ...form, iban: e.target.value })} placeholder="DE.." />
-          </label>
+          <IbanInput label="IBAN für Nachzahlungen" value={form.iban} stored={settings.iban} onChange={(iban) => setForm({ ...form, iban })} placeholder="DE.." />
           <label className="field">
             Zahlungsfrist (Tage)
             <input value={form.paymentDeadlineDays} onChange={(e) => setForm({ ...form, paymentDeadlineDays: e.target.value })} style={{ width: 90 }} />
