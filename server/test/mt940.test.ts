@@ -39,6 +39,7 @@ test('MT940: Auszug im Stil einer Sparkasse', () => {
     bankReference: '2025030300001',
     endToEndId: null,
     reversal: false,
+    bookingDateEstimated: false,
     batch: null,
     fingerprint: '',
   })
@@ -174,4 +175,20 @@ test('Fingerabdruck: zwei gleiche Überweisungen am selben Tag haben denselben, 
   assert.equal(a.fingerprint, b.fingerprint)
   assert.notEqual(a.bankReference, b.bankReference)
   assert.notEqual(a.endToEndId, b.endToEndId)
+})
+
+test('Fingerabdruck: „März“ aus camt und „Maerz“ aus MT940 sind dieselbe Buchung', () => {
+  const mt = readMt940(statement(':60F:C250303EUR0,00', ':61:2503030303C850,00NTRFNONREF', ':86:166?20SVWZ+Miete Maerz?31DE00500105170000000001', ':62F:C250303EUR850,00')).statements[0].entries[0]
+  const camt = readCamt(`<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.02"><BkToCstmrStmt><Stmt><Id>1</Id>
+    <Acct><Id><IBAN>DE00123456789012345678</IBAN></Id></Acct>
+    <Ntry><Amt Ccy="EUR">850.00</Amt><CdtDbtInd>CRDT</CdtDbtInd><Sts>BOOK</Sts><BookgDt><Dt>2025-03-03</Dt></BookgDt>
+    <NtryDtls><TxDtls><RltdPties><DbtrAcct><Id><IBAN>DE00500105170000000001</IBAN></Id></DbtrAcct></RltdPties>
+    <RmtInf><Ustrd>Miete März</Ustrd></RmtInf></TxDtls></NtryDtls></Ntry></Stmt></BkToCstmrStmt></Document>`).statements[0].entries[0]
+  assert.equal(mt?.fingerprint, camt?.fingerprint)
+})
+
+test('MT940: ohne Buchungstag in :61: gilt die Wertstellung, gekennzeichnet als geschätzt', () => {
+  const e = readMt940(statement(':60F:C250301EUR0,00', ':61:250301C1,00NTRFNONREF', ':62F:C250301EUR1,00')).statements[0].entries[0]
+  assert.equal(e?.bookingDate, '2025-03-01')
+  assert.equal(e?.bookingDateEstimated, true)
 })

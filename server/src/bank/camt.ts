@@ -240,6 +240,7 @@ function readEntry(ntry: unknown, ctx: EntryContext): BankEntry[] | null {
       bankReference,
       endToEndId: reference(at(tx, 'Refs', 'EndToEndId')),
       reversal,
+      bookingDateEstimated: false,
       batch,
       fingerprint: fingerprintOf(base),
     }
@@ -268,7 +269,9 @@ function readEntry(ntry: unknown, ctx: EntryContext): BankEntry[] | null {
       message: `Sammelbuchung mit ${txs.length} Posten, die sich nicht zum Umsatz addieren; sie wird als ein Umsatz übernommen.`,
     })
   }
-  return [one(txs[0], cents * sign, sign, entryRef ?? reference(at(txs[0], 'Refs', 'AcctSvcrRef')), null)]
+  // Eine nicht zerlegte Sammelbuchung ist ein Umsatz ohne einzelne Gegenseite: Name, IBAN und Zweck
+  // des ersten Postens zu nehmen, ließe den Fingerabdruck an der Reihenfolge der Posten hängen.
+  return [one(txs.length > 1 ? undefined : txs[0], cents * sign, sign, entryRef ?? reference(at(txs[0], 'Refs', 'AcctSvcrRef')), null)]
 }
 
 // Saldo eines Auszugs nach Art: OPBD (Anfangssaldo), PRCD (Endsaldo des Vortags, gilt als

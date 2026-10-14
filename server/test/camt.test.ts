@@ -110,6 +110,7 @@ test('camt.053.001.02: Eingänge, Ausgang und vorgemerkter Umsatz', () => {
     bankReference: '2025030300001',
     endToEndId: null, // „NOTPROVIDED“ ist keine Referenz
     reversal: false,
+    bookingDateEstimated: false,
     batch: null,
     fingerprint: '',
   })
@@ -153,6 +154,8 @@ test('camt: eine Sammelbuchung, deren Posten nicht aufgehen, bleibt ein Umsatz u
     </NtryDtls></Ntry>`
   const r = readCamt(camt053([batch]))
   assert.equal(onlyEntry(r).amountCents, 100000, 'der Betrag des Umsatzes gilt, nicht die Summe der Posten')
+  assert.equal(onlyEntry(r).counterpartyIban, null, 'keine Gegenseite aus einem einzelnen Posten')
+  assert.equal(onlyEntry(r).purpose, 'SAMMLER 2 POSTEN')
   assert.equal(onlyEntry(r).batch, null)
   assert.equal(r.problems.length, 1)
   assert.match(r.problems[0].message, /Sammelbuchung/)

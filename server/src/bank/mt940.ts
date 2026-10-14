@@ -309,6 +309,7 @@ function readLine61(value: string, info: string | undefined, where: string, prob
     bankReference: bankRef,
     endToEndId: d.endToEndId,
     reversal,
+    bookingDateEstimated: !m[2],
     batch: null,
     fingerprint: fingerprintOf(base),
   }

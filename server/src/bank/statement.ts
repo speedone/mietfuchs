@@ -22,6 +22,10 @@ export type BankEntry = {
   bankReference: string | null // Kennung der Bank, nicht zwingend eindeutig
   endToEndId: string | null // vom Zahler vergeben, oft „NOTPROVIDED“ oder je Monat gleich
   reversal: boolean // Storno bzw. Rücklastschrift
+  // Der Buchungstag fehlte in der Datei (MT940 ohne MMTT in :61:) und ist die Wertstellung. Am
+  // Wochenende und bei Gutschriften mit Valuta kann er vom echten Buchungstag abweichen; der Import
+  // gleicht solche Umsätze deshalb nur mit Rückfrage ab.
+  bookingDateEstimated: boolean
   batch: BankBatch | null // gesetzt, wenn der Umsatz ein Posten einer zerlegten Sammelbuchung ist
   // Fingerabdruck aus Buchungstag, Betrag, IBAN der Gegenseite und Verwendungszweck. Hängt nur an
   // der Buchung selbst, nicht an der Datei, dem Konto oder anderen Buchungen. Ob ein Umsatz schon
@@ -72,8 +76,17 @@ export type BankReadResult = {
 // zu 14 Unterfeldern zu 27 Zeichen voll, und MT940 setzt die Unterfelder ohne Leerzeichen zusammen. Der volle Zweck ergäbe für dieselbe Buchung zwei Fingerabdrücke.
 const PURPOSE_KEY_LENGTH = 100
 
+// Umlaute werden umgeschrieben (ä → ae, ß → ss) und Akzente entfernt, bevor gefiltert wird: MT940
+// im SWIFT-Zeichensatz schreibt „Maerz“ oder lässt die Zeichen weg, camt schreibt „März“.
+// Die Normierung gehört zum gespeicherten Fingerabdruck; wer sie ändert, entwertet alle
+// gespeicherten. Deshalb trägt sie eine Fassung (FINGERPRINT_VERSION), die der Import mitspeichert.
+export const FINGERPRINT_VERSION = 1
+
 export function purposeKey(purpose: string): string {
-  return purpose.toLowerCase().replace(/[^a-z0-9äöüß]/g, '').slice(0, PURPOSE_KEY_LENGTH)
+  return purpose.toLowerCase()
+    .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss')
+    .normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]/g, '').slice(0, PURPOSE_KEY_LENGTH)
 }
 
 export function fingerprintOf(e: Pick<BankEntry, 'bookingDate' | 'amountCents' | 'counterpartyIban' | 'purpose'>): string {
