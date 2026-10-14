@@ -995,7 +995,9 @@ geänderte**: Eine gespeicherte ungültige, die eine Seite unverändert mitschic
 verglichen), hindert das Speichern einer anderen Angabe nicht und wird nicht still
 umgeschrieben; das Formular nennt sie als Hinweis. Backup, Wiederherstellen, Umstieg und
 Validator prüfen bewusst nicht: Eine falsche IBAN ändert keine Zahl, sie ist krumm und nicht
-kaputt. Leer ist immer erlaubt.
+kaputt. Leer ist immer erlaubt. Was dennoch ungültig im Bestand steht, nennt das Cockpit als
+ruhigen Hinweis ohne Ampel ([client/src/ibanCheck.ts](client/src/ibanCheck.ts)), mit Sprung zur
+Stelle.
 
 **Begriffslexikon** (#113): [shared/glossary.ts](shared/glossary.ts) hält jeden Fachbegriff mit
 Erklärung, Beispiel mit Zahlen, Rechtsgrundlage und „Brauche ich das?“. Es war der **erste

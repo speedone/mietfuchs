@@ -238,6 +238,10 @@ label.field .field-message { font-weight: 400; font-size: 12.5px; }
 label.field .field-message.is-error { color: var(--red); }
 label.field .field-message.is-notice { color: var(--amber); }
 label.field input[aria-invalid="true"] { border-color: var(--red); }
+/* Hinweis im Cockpit auf vermutlich falsche IBANs (#279) */
+.iban-hint-list { margin: 6px 0 0 18px; padding: 0; }
+.iban-hint-list li { margin: 4px 0; }
+.iban-hint-list .notice-action { margin: 0 0 0 6px; }
 
 label.field.checkline { justify-content: flex-end; padding-bottom: 8px; }
 label.field.checkline span { display: flex; align-items: center; gap: 6px; font-weight: 400; color: var(--text); font-size: 14px; }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { CostItem, Meter, Settings, Settlement, Tenancy, Unit, UploadEntry } from '../types'
+import type { CostItem, Meter, NoticeSubject, Settings, Settlement, Tenancy, Unit, UploadEntry } from '../types'
 import { isNotAllocable, usageOf } from '../types'
 import { cockpitSubtitle, itemsDetail, meterTypesInUse, tenanciesDetail, usesUnitBasis } from '../cockpitChecks'
 import { coverageCheck, filesByItem } from '../receipts'
@@ -12,6 +12,7 @@ import { heatingWithoutConsumption, meterReadiness } from '../meterCheck'
 import { attentionDetail, attentionLevel } from '../notices'
 import { missingAreaCheck, zeroAreaUnits } from '../unitForm'
 import { UpdateConsent } from '../components/Update'
+import { ibanHintTitle, invalidIbans } from '../ibanCheck'
 
 type Props = {
   units: Unit[]
@@ -19,7 +20,8 @@ type Props = {
   tenancies: Tenancy[]
   settings: Settings | null
   reload: () => Promise<void>
-  onNavigate: (tab: string) => void
+  // `focus` öffnet auf der Zielseite den betroffenen Eintrag (#142), etwa ein Mietverhältnis.
+  onNavigate: (tab: string, focus?: NoticeSubject) => void
 }
 
 // Verbrauchsangaben des Servers (gleiche Form wie auf der Zähler-Seite)
@@ -251,6 +253,9 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
       ? <span className="badge green">abgeschlossen</span>
       : <span className="badge gray">Entwurf</span>
 
+  // Vermutlich falsch eingetragene IBANs (#279): ein ruhiger Hinweis, keine Ampel (ibanCheck.ts).
+  const ibanFindings = useMemo(() => invalidIbans(settings, property, tenancies), [settings, property, tenancies])
+
   const distributed = settlement ? settlement.totalCostsCents - settlement.landlord.totalCents : 0
   const fresh = settlement && settlement.statements.length === 0 && yearItems.length === 0
 
@@ -380,6 +385,21 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
             </div>
           )}
         </>
+      )}
+
+      {ibanFindings.length > 0 && (
+        <div className="hint notice-item iban-hint">
+          <div className="notice-head"><strong>{ibanHintTitle(ibanFindings.length)}</strong></div>
+          <div>Prüfziffer, Länge oder Länderkennung passen nicht. Bitte vergleichen Sie sie mit dem Kontoauszug oder dem Mietvertrag; geändert wird nichts, bis Sie es tun.</div>
+          <ul className="iban-hint-list">
+            {ibanFindings.map((f) => (
+              <li key={f.focus?.id ?? f.where}>
+                {f.where}: {f.problem}{' '}
+                <button type="button" className="btn secondary notice-action" onClick={() => onNavigate(f.tab, f.focus ?? undefined)}>{f.label}</button>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </>
   )
