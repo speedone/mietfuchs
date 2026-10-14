@@ -80,14 +80,18 @@ export function buildPersonHistory(
 // Das Feld war ein `<input type="month">`. Safari auf dem Mac und Firefox haben keine
 // Monatsauswahl: Je nach Fassung zeigen sie ein Textfeld, in dem nur „2026-01“ durch die Prüfung
 // kam, oder ein Feld, in das sich gar nichts eingeben ließ. Es ist deshalb ein Textfeld für
-// „MM.JJJJ“, in jedem Browser gleich. Angenommen wird auch, was ein Mensch sonst tippt: „1.2026“,
+// „MM.JJJJ“, in jedem Browser gleich, und zwar ohne `inputMode="numeric"`: Die Zifferntastatur von
+// iPhone und iPad hat keinen Punkt. Angenommen wird auch, was ein Mensch sonst tippt: „1.2026“,
 // „01/2026“, „01.01.2026“ und „2026-01“. Ein Tag nur als Erster: Eine Staffel gilt ab
 // Monatsanfang, und „15.10.2026“ still als Oktober zu lesen, hieße raten. `null`: nicht lesbar.
 export function parseScheduleMonth(text: string): string | null {
   const t = text.trim()
+  // Ein Jahr außerhalb von 1900 bis 2100 ist ein Tippfehler („01.0026“): Als frühester Eintrag
+  // gälte die Staffel sonst still ab Einzug, als späterer nie.
   const month = (y: string, m: string) => {
     const n = Number(m)
-    return n >= 1 && n <= 12 ? `${y}-${String(n).padStart(2, '0')}` : null
+    const year = Number(y)
+    return n >= 1 && n <= 12 && year >= 1900 && year <= 2100 ? `${y}-${String(n).padStart(2, '0')}` : null
   }
   let m = /^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?$/.exec(t)
   if (m) return m[3] === undefined || Number(m[3]) === 1 ? month(m[1], m[2]) : null

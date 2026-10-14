@@ -126,6 +126,10 @@ test('Monat einer Staffel: ein Tag mitten im Monat und Unsinn werden nicht gedeu
   expect(parseScheduleMonth('Januar 2026')).toBeNull()
   expect(parseScheduleMonth('26-01')).toBeNull()
   expect(parseScheduleMonth('')).toBeNull()
+  // ein Jahr außerhalb von 1900 bis 2100 ist ein Tippfehler
+  expect(parseScheduleMonth('01.0026')).toBeNull()
+  expect(parseScheduleMonth('01.2206')).toBeNull()
+  expect(parseScheduleMonth('01.2100')).toBe('2100-01')
 })
 
 test('Monat einer Staffel zur Anzeige: JJJJ-MM wird MM.JJJJ und lässt sich wieder lesen', () => {

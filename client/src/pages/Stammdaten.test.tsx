@@ -228,3 +228,24 @@ test('Staffeln: der Monat steht als MM.JJJJ im Feld und wird so auch gespeichert
   expect(body?.baseRents).toEqual([{ from: '2025-03', monthlyCents: 80000 }])
   expect(body?.prepayments).toEqual([{ from: '2025-04', monthlyCents: 15000 }])
 })
+
+test('Staffeln: ein leerer Monat gilt ab Einzug, ein Tag mitten im Monat wird mit Hinweis abgelehnt', async () => {
+  page([tenancy('t1', 'Müller', { start: '2025-02-01', baseRents: [{ from: '2025-02', monthlyCents: 80000 }] })])
+  const [edit] = await screen.findAllByRole('button', { name: /Mietverhältnis bearbeiten/i }, SLOW)
+  if (!edit) throw new Error('kein Bearbeiten-Knopf')
+  fireEvent.click(edit)
+  const dialog = await screen.findByRole('dialog', undefined, SLOW)
+  const [rent] = within(dialog).getAllByPlaceholderText('MM.JJJJ (leer = Einzug)') as HTMLInputElement[]
+  if (!rent) throw new Error('Staffelfeld fehlt')
+  expect(rent.getAttribute('inputmode')).toBeNull() // iPhone: die Zifferntastatur hat keinen Punkt
+
+  fireEvent.change(rent, { target: { value: '15.03.2025' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Übernehmen' }))
+  expect(await within(dialog).findByText(/Monat als MM\.JJJJ/, undefined, SLOW)).toBeTruthy()
+  expect(sent.some((s) => s.url.startsWith('/api/tenancies'))).toBe(false)
+
+  fireEvent.change(rent, { target: { value: '' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Übernehmen' }))
+  await vi.waitFor(() => expect(sent.some((s) => s.url.startsWith('/api/tenancies'))).toBe(true))
+  expect(sent.find((s) => s.url.startsWith('/api/tenancies'))?.body.baseRents).toEqual([{ from: '2025-02', monthlyCents: 80000 }])
+})

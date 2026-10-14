@@ -180,7 +180,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
     const { personHistory } = persons
     const baseRents: { from: string; monthlyCents: number }[] = []
     for (const row of tenForm.baseRents) {
-      if (!row.from && !row.amount.trim()) continue // leere Zeile überspringen
+      if (!row.from.trim() && !row.amount.trim()) continue // leere Zeile überspringen
       const cents = parseEuro(row.amount)
       const from = row.from.trim() ? parseScheduleMonth(row.from) : tenForm.start.slice(0, 7)
       if (cents === null || from === null) {
@@ -192,7 +192,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
     baseRents.sort((a, b) => a.from.localeCompare(b.from))
     const prepayments: { from: string; monthlyCents: number }[] = []
     for (const row of tenForm.prepayments) {
-      if (!row.from && !row.amount.trim()) continue // leere Zeile überspringen
+      if (!row.from.trim() && !row.amount.trim()) continue // leere Zeile überspringen
       const cents = parseEuro(row.amount)
       const from = row.from.trim() ? parseScheduleMonth(row.from) : tenForm.start.slice(0, 7)
       if (cents === null || from === null) {
@@ -204,7 +204,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
     const flatRates: { from: string; monthlyCents: number }[] = []
     if (showsFlatRates(tenForm.costModel, tenForm.heatingModel)) {
       for (const row of tenForm.flatRates) {
-        if (!row.from && !row.amount.trim()) continue
+        if (!row.from.trim() && !row.amount.trim()) continue
         const cents = parseEuro(row.amount)
         const from = row.from.trim() ? parseScheduleMonth(row.from) : tenForm.start.slice(0, 7)
         if (cents === null || from === null) {
@@ -543,7 +543,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                 <div className="staffel-row" key={i}>
                   <label className="field">
                     gültig ab
-                    <input inputMode="numeric" value={p.from} placeholder="MM.JJJJ (leer = Einzug)" onChange={(e) => setTenForm({ ...tenForm, baseRents: tenForm.baseRents.map((x, k) => (k === i ? { ...x, from: e.target.value } : x)) })} />
+                    <input value={p.from} placeholder="MM.JJJJ (leer = Einzug)" onChange={(e) => setTenForm({ ...tenForm, baseRents: tenForm.baseRents.map((x, k) => (k === i ? { ...x, from: e.target.value } : x)) })} />
                   </label>
                   <label className="field">
                     Betrag €/Monat
@@ -563,7 +563,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                 <div className="staffel-row" key={i}>
                   <label className="field">
                     gültig ab
-                    <input inputMode="numeric" value={p.from} placeholder="MM.JJJJ (leer = Einzug)" onChange={(e) => setTenForm({ ...tenForm, prepayments: tenForm.prepayments.map((x, k) => (k === i ? { ...x, from: e.target.value } : x)) })} />
+                    <input value={p.from} placeholder="MM.JJJJ (leer = Einzug)" onChange={(e) => setTenForm({ ...tenForm, prepayments: tenForm.prepayments.map((x, k) => (k === i ? { ...x, from: e.target.value } : x)) })} />
                   </label>
                   <label className="field">
                     Betrag €/Monat
@@ -604,7 +604,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                     <div className="staffel-row" key={i}>
                       <label className="field">
                         gültig ab
-                        <input inputMode="numeric" value={p.from} placeholder="MM.JJJJ (leer = Einzug)" onChange={(e) => setTenForm({ ...tenForm, flatRates: alle.map((x, k) => (k === i ? { ...x, from: e.target.value } : x)) })} />
+                        <input value={p.from} placeholder="MM.JJJJ (leer = Einzug)" onChange={(e) => setTenForm({ ...tenForm, flatRates: alle.map((x, k) => (k === i ? { ...x, from: e.target.value } : x)) })} />
                       </label>
                       <label className="field">
                         Betrag €/Monat
