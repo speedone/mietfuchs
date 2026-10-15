@@ -123,3 +123,34 @@ export function checkBalance(statement: BankStatement, where: string, problems: 
     problems.push({ where, message: `Anfangssaldo und Umsätze ergeben nicht den Endsaldo (Abweichung ${((opening + sum - closing) / 100).toFixed(2)} €); ein Umsatz fehlt oder ist nicht lesbar.` })
   }
 }
+
+// Höchstlängen der Textfelder, angelehnt an camt: ein Name hat dort höchstens 140 Zeichen, eine
+// Referenz und eine Kontokennung 35 bzw. 34, eine IBAN 34. Der Verwendungszweck darf aus mehreren
+// Zeilen zu 140 Zeichen bestehen (MT940: 14 Unterfelder zu 27); 1.000 Zeichen fassen jeden echten.
+// Was darüber liegt, steht nicht in einem Kontoauszug, sondern in einer Datei, die Speicher,
+// Datenbank und Oberfläche mit Text füllen soll. Gekürzt wird erst nach dem Fingerabdruck, der
+// deshalb immer die ungekürzte Buchung beschreibt (er nimmt vom Zweck ohnehin nur den Anfang).
+export const TEXT_LIMITS = { purpose: 1000, name: 140, reference: 35, iban: 34 } as const
+
+// Kürzt auf höchstens `max` UTF-16-Einheiten, ohne ein Zeichen außerhalb der BMP zu zerteilen.
+export function clip(s: string, max: number): string {
+  if (s.length <= max) return s
+  const cut = s.slice(0, max)
+  return /[\uD800-\uDBFF]$/.test(cut) ? cut.slice(0, -1) : cut
+}
+
+export const clipOrNull = (s: string | null, max: number): string | null => (s === null ? null : clip(s, max))
+
+// Ein Umsatz mit gekürzten Textfeldern. Der Fingerabdruck bleibt, wie er ist.
+export function clipEntry(e: BankEntry): BankEntry {
+  return {
+    ...e,
+    purpose: clip(e.purpose, TEXT_LIMITS.purpose),
+    counterpartyName: clipOrNull(e.counterpartyName, TEXT_LIMITS.name),
+    counterpartyIban: clipOrNull(e.counterpartyIban, TEXT_LIMITS.iban),
+    ultimatePartyName: clipOrNull(e.ultimatePartyName, TEXT_LIMITS.name),
+    bankReference: clipOrNull(e.bankReference, TEXT_LIMITS.reference),
+    endToEndId: clipOrNull(e.endToEndId, TEXT_LIMITS.reference),
+    batch: e.batch && { ...e.batch, reference: clipOrNull(e.batch.reference, TEXT_LIMITS.reference) },
+  }
+}

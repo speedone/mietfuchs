@@ -26,7 +26,7 @@
 
 import { XMLParser, XMLValidator } from 'fast-xml-parser'
 import {
-  checkBalance, decimalToCents, fingerprintOf, normalizeIban, problemOnly, squash,
+  checkBalance, clip, clipEntry, clipOrNull, decimalToCents, fingerprintOf, normalizeIban, problemOnly, squash, TEXT_LIMITS,
   type BankBatch, type BankEntry, type BankProblem, type BankReadResult, type BankStatement,
 } from './statement.ts'
 
@@ -211,12 +211,12 @@ function readEntry(ntry: unknown, ctx: EntryContext): BankEntry[] | null {
     return null
   }
   if (currency !== 'EUR') {
-    ctx.problems.push({ where: ctx.where, message: `Der Umsatz ist in ${currency ?? 'unbekannter Währung'}; Mietfuchs führt nur Euro.` })
+    ctx.problems.push({ where: ctx.where, message: `Der Umsatz ist in ${currency === null ? 'unbekannter Währung' : clip(currency, 10)}; Mietfuchs führt nur Euro.` })
     return null
   }
   const cents = amountToCents(raw)
   if (cents === null) {
-    ctx.problems.push({ where: ctx.where, message: `Der Betrag „${raw}“ lässt sich nicht centgenau lesen.` })
+    ctx.problems.push({ where: ctx.where, message: `Der Betrag „${clip(raw, 40)}“ lässt sich nicht centgenau lesen.` })
     return null
   }
   if (!bookingDate) {
@@ -238,7 +238,7 @@ function readEntry(ntry: unknown, ctx: EntryContext): BankEntry[] | null {
       counterpartyIban: party.iban,
       purpose: purposeOf(tx, ntry),
     }
-    return {
+    return clipEntry({
       ...base,
       valueDate,
       counterpartyName: party.name,
@@ -249,7 +249,7 @@ function readEntry(ntry: unknown, ctx: EntryContext): BankEntry[] | null {
       bookingDateEstimated: false,
       batch,
       fingerprint: fingerprintOf(base),
-    }
+    })
   }
 
   // Eine Sammelbuchung (mehrere Posten unter einem Umsatz) wird zerlegt, aber nur, wenn jeder
@@ -357,14 +357,14 @@ export function readCamt(xml: string, name = 'Datei'): BankReadResult {
     result.problems.push({ where: name, message: 'Die Datei enthält keinen Auszug.' })
   }
   items.forEach((item, si) => {
-    const statementId = text(at(item, 'Id'))
+    const statementId = clipOrNull(text(at(item, 'Id')), TEXT_LIMITS.reference)
     const label = `${name}, Auszug ${statementId ?? si + 1}`
     const statement: BankStatement = {
       format: found.kind,
       statementId,
-      accountIban: iban(at(item, 'Acct', 'Id', 'IBAN')),
-      accountOtherId: text(at(item, 'Acct', 'Id', 'Othr', 'Id')),
-      createdAt: text(at(item, 'CreDtTm')),
+      accountIban: clipOrNull(iban(at(item, 'Acct', 'Id', 'IBAN')), TEXT_LIMITS.iban),
+      accountOtherId: clipOrNull(text(at(item, 'Acct', 'Id', 'Othr', 'Id')), TEXT_LIMITS.reference),
+      createdAt: clipOrNull(text(at(item, 'CreDtTm')), TEXT_LIMITS.reference),
       // Ohne Zeitraum (FrToDt ist freiwillig) nennen ihn die Salden: ihr Datum.
       fromDate: civilDate({ DtTm: at(item, 'FrToDt', 'FrDtTm') }) ?? balanceDate(item, ['OPBD', 'PRCD']),
       toDate: civilDate({ DtTm: at(item, 'FrToDt', 'ToDtTm') }) ?? balanceDate(item, ['CLBD']),
