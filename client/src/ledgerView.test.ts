@@ -12,7 +12,7 @@ const row = (dezember: RentMonth): RentLedgerRow => ({
   tenancyId: 't1', tenantName: 'Müller', unitName: 'OG',
   months: [...Array.from({ length: 11 }, (_, i) => month(i + 1, 100000, 'paid')), dezember],
   sollYearCents: 1200000, baseRentYearCents: 1200000, prepaymentYearCents: 0, flatRateYearCents: 0,
-  paidYearCents: 1100000, balanceCents: -100000, dueSollCents: 1200000, arrearsCents: 100000, openMonths: 1,
+  paidYearCents: 1100000, settlementYearCents: 0, balanceCents: -100000, dueSollCents: 1200000, arrearsCents: 100000, openMonths: 1,
 })
 
 const heute = new Date('2026-09-22T00:00:00Z')

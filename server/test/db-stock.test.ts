@@ -26,9 +26,9 @@ import os from 'node:os'
 import path from 'node:path'
 import { getTableColumns } from 'drizzle-orm'
 import type { SQLiteTable } from 'drizzle-orm/sqlite-core'
-import type { Payment, Reading, Settings, Tenancy } from '../../shared/types.ts'
+import type { Reading, Settings, Tenancy } from '../../shared/types.ts'
 // Die Tests bauen eine db.json; deren Wohnungen, Zähler und Kosten tragen kein Objekt (#92).
-import type { LegacyCostItem as CostItem, LegacyMeter as Meter, LegacyUnit as Unit } from '../src/store.ts'
+import type { LegacyCostItem as CostItem, LegacyMeter as Meter, LegacyPayment as Payment, LegacyUnit as Unit } from '../src/store.ts'
 import { computeSettlement, consumptionOverview, rentLedger, taxReport } from '../src/calc.ts'
 import { straightenForDatabase } from '../src/legacy/migrate.ts'
 import { overridesByPeriod, snapshotFromDb, snapshotOf } from '../src/snapshot.ts'
@@ -356,7 +356,10 @@ const NOT_IN_DB_JSON = new Set(['period', 'propertyId', 'mea', 'externalMeasure'
   // Ebenso die Lieferung einer Position (Heizung PR 7); ihre Rundreise prüft db-fuel.test.ts.
   'fuelDeliveryId',
   // Betriebsstrom (Heizung PR 15) kennt die db.json nicht; seine Rundreise prüft db-repository.test.ts.
-  'operatingPower', 'operatingPowerItemId', 'operatingPowerBasis', 'operatingPowerGeneralId'])
+  'operatingPower', 'operatingPowerItemId', 'operatingPowerBasis', 'operatingPowerGeneralId',
+  // Die Art einer Zahlung (#280) kennt die db.json nicht; die Kette gibt jeder „rent“ (unten), ihre Rundreise
+  // prüft db-repository.test.ts.
+  'kind'])
 
 test('Rundreise: die Probe belegt jede Spalte des Schemas', () => {
   // Der Wächter über dem Wächter. Der Test darunter kann nur finden, was in der Probe steht;
@@ -389,7 +392,8 @@ test('Rundreise: jedes Feld des Datenmodells kommt zurück', async () => {
     assert.deepStrictEqual(stock.costItems, inObjekt1(gerade.costItems).map(({ year, ...c }) => ({ ...c, period: calendarPeriod(year) })), 'Kostenpositionen')
     assert.deepStrictEqual(stock.meters, inObjekt1(gerade.meters), 'Zähler')
     assert.deepStrictEqual(stock.readings, gerade.readings, 'Ablesungen')
-    assert.deepStrictEqual(stock.payments, gerade.payments, 'Zahlungen')
+    // Die Art (#280) kennt die db.json nicht; die Vorgabe der Spalte macht jede zur Miete.
+    assert.deepStrictEqual(stock.payments, gerade.payments.map((p) => ({ ...p, kind: 'rent' })), 'Zahlungen')
   })
 })
 

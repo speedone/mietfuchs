@@ -1968,7 +1968,7 @@ function randomDb(rnd: Rng): Db {
   for (const t of tenancies) {
     const n = Math.floor(rnd() * 4)
     for (let k = 0; k < n; k++) {
-      payments.push({ id: `p${payments.length}`, tenancyId: t.id, date: `2025-${String(1 + Math.floor(rnd() * 12)).padStart(2, '0')}-0${1 + Math.floor(rnd() * 9)}`, amountCents: Math.floor(rnd() * 200000) - 10000 })
+      payments.push({ id: `p${payments.length}`, tenancyId: t.id, date: `2025-${String(1 + Math.floor(rnd() * 12)).padStart(2, '0')}-0${1 + Math.floor(rnd() * 9)}`, amountCents: Math.floor(rnd() * 200000) - 10000, kind: 'rent' })
     }
   }
   const costItems: CostItem[] = []

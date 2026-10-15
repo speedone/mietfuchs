@@ -137,6 +137,14 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Neu
 
+- Zahlungen im Mietkonto haben eine Art: „Miete“ (Voreinstellung) oder „Nachzahlung oder Guthaben
+  aus der Abrechnung“, ein ausgezahltes Guthaben mit Minus. Das Mietkonto verteilt nur die Miete auf
+  die Monate und führt Nachzahlungen und Guthaben gesondert, auch für Mieter, die schon ausgezogen
+  sind; vorher ließ ein im Juni erstattetes Guthaben den Dezember offen stehen, und eine Nachzahlung
+  erschien als Überzahlung. Die Steuerübersicht zählt beide Arten weiter als Zufluss und nennt
+  Nachzahlungen und Erstattungen aus der Nebenkostenabrechnung zusätzlich gesondert. Bisher erfasste
+  Zahlungen bleiben Miete, keine Zahl ändert sich
+  ([#280](https://github.com/speedone/mietfuchs/issues/280)).
 - Abrechnungszeitraum wählbar: In den Stammdaten stellen Sie unter „Abrechnungszeitraum“ ein, ob ein
   Objekt im Kalenderjahr oder etwa von Mai bis April abrechnet. Ein Wechsel zeigt vorher, was
   geschieht: den Rumpfzeitraum davor, welche Rechnungen nach Tagen aufgeteilt werden, und er fragt

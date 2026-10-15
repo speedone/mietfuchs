@@ -2519,6 +2519,16 @@ die ganze fachliche Komplexität:
   Einzugsmonat das ganze Soll, und im Auszugsmonat meldete `prepayment.arrears` einen Rückstand,
   den es nicht gab. #281 (Übertrag, Tilgung nach § 366 BGB) baut auf dieser Funktion auf; die
   Verteilung der Zahlungen bleibt dort.
+  **Nur die Miete** (#280): Jede Zahlung hat eine Art (`payments.kind`, `rent` oder `settlement`,
+  Vorgabe `rent`; fehlt sie im Schnappschuss, gilt Miete, `isRentPayment` in calc.ts). Nachzahlung
+  und Guthaben aus der Abrechnung (Guthaben negativ) verteilt das Mietkonto nicht, sondern führt sie
+  in `settlementYearCents` je Zeile und in `settlementOnly` für Mietverhältnisse ohne Tag im Jahr
+  (meist nach dem Auszug; eigene Liste, weil eine Zeile ohne Soll in `costModels` mitzählte). Auch
+  „wird das Mietkonto geführt“ (`prepayment.arrears`) und „ohne Zahlung“ (`tenanciesWithoutPayment`)
+  fragen nur Mietzahlungen. Die Steuerübersicht zählt beide Arten im Ist (§ 11 Abs. 1 EStG) und
+  nennt `settlementBackPaymentsCents` und `settlementRefundsCents` daneben, ohne Zeilennummer der
+  Anlage V. Die Kaution gehört nicht dazu (#228). Spalte und Bedingung in zwei Schritten
+  (0056/0057); der eingefrorene Eingang kennt die Spalte nicht, die Vorgabe gibt sie.
 - **Steuer/Anlage V** (`taxReport`): aggregiert Einnahmen (das Soll aus `rentLedger`, das Ist
   unmittelbar aus den Zahlungen) und
   Werbungskosten (Kostenpositionen nach `ANLAGE_V_GROUP`-Mapping), liefert §35a-Summe,

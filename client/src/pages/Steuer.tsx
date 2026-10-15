@@ -171,6 +171,22 @@ export default function Steuer({ settings }: Props) {
                   <td>Tatsächlich eingegangen {year} (Zufluss)</td>
                   <td className="num">{fmtEuro(data.income.paidCents)}</td>
                 </tr>
+                {/* #280: Nachzahlungen und Erstattungen aus der Nebenkostenabrechnung sind Einnahmen
+                    nach dem Zuflussprinzip und stecken im Zufluss; gesondert genannt, weil die
+                    Anlage V sie bei den Umlagen abfragt. Eine Zeilennummer nennt die Seite nicht, solange sie
+                    nicht im amtlichen Vordruck nachgesehen ist. */}
+                {data.income.settlementBackPaymentsCents !== 0 && (
+                  <tr>
+                    <td className="muted">davon Nachzahlungen aus der Nebenkostenabrechnung</td>
+                    <td className="num muted">{fmtEuro(data.income.settlementBackPaymentsCents)}</td>
+                  </tr>
+                )}
+                {data.income.settlementRefundsCents !== 0 && (
+                  <tr>
+                    <td className="muted">davon abgezogen: erstattete Guthaben aus der Nebenkostenabrechnung</td>
+                    <td className="num muted">−{fmtEuro(data.income.settlementRefundsCents)}</td>
+                  </tr>
+                )}
               </tbody>
               <tfoot>
                 <tr>
@@ -179,6 +195,16 @@ export default function Steuer({ settings }: Props) {
                 </tr>
               </tfoot>
             </Table>
+
+            {(data.income.settlementBackPaymentsCents !== 0 || data.income.settlementRefundsCents !== 0) && (
+              <p className="muted fine">
+                Nachzahlungen und erstattete Guthaben aus der Nebenkostenabrechnung sind im Zufluss
+                enthalten (§ 11 Abs. 1 EStG), im vereinbarten Soll nicht. Zusammen ergeben sie{' '}
+                {fmtEuro(data.income.settlementBackPaymentsCents - data.income.settlementRefundsCents)}.
+                Die Anlage V fragt sie bei den Umlagen ab; die Zeile sehen Sie bitte im Vordruck
+                für {year} nach.
+              </p>
+            )}
 
             {hints.includes('paymentsMissing') && (
               <div className="notice">

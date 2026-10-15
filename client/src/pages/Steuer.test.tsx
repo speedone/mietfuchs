@@ -41,6 +41,8 @@ const REPORT = (over: Partial<TaxReport> = {}, income: Partial<TaxReport['income
     prepaymentOverridden: false,
     sollCents: 1200000,
     paidCents: 1200000,
+    settlementBackPaymentsCents: 0,
+    settlementRefundsCents: 0,
     tenanciesWithSoll: 1,
     tenanciesWithoutPayment: 0,
     ...income,
@@ -393,4 +395,20 @@ test('„Nicht umlagefähig“ mit Zuordnung: Position, Einheit, Wirkung und der
 test('„Nicht umlagefähig“ ohne Zuordnung: kein Hinweis', async () => {
   await zeige(MIXED([POS({ taxUnits: null })]))
   expect(screen.queryByText(/bestimmten Einheiten zugeordnet/)).toBeNull()
+})
+
+// ---------- Zahlungen aus der Abrechnung (#280) ----------
+
+test('Nachzahlungen und Erstattungen aus der Nebenkostenabrechnung stehen gesondert, ohne Zeilennummer', async () => {
+  await zeige(REPORT({}, { paidCents: 1200000 + 15000 - 20000, settlementBackPaymentsCents: 15000, settlementRefundsCents: 20000 }))
+  expect(screen.getByText('davon Nachzahlungen aus der Nebenkostenabrechnung')).toBeTruthy()
+  expect(screen.getByText('davon abgezogen: erstattete Guthaben aus der Nebenkostenabrechnung')).toBeTruthy()
+  const satz = screen.getByText(/Die Anlage V fragt sie bei den Umlagen ab/)
+  expect(satz.textContent).toMatch(/[−-]50,00\s€/)
+  expect(satz.textContent).not.toMatch(/Zeile \d/)
+})
+
+test('Ohne Zahlungen aus der Abrechnung erscheint davon nichts', async () => {
+  await zeige(REPORT())
+  expect(screen.queryByText(/aus der Nebenkostenabrechnung/)).toBeNull()
 })

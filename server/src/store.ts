@@ -132,6 +132,9 @@ export type LegacyMeterType = Exclude<MeterType, 'warmwasser' | 'hkv'>
 export type LegacyMeter = Omit<Meter, 'propertyId' | 'type' | 'heatingPlantId' | 'heatingRole' | 'remoteReadable' | 'installedOn'> & { type: LegacyMeterType }
 // Die db.json kennt Jahre, keine Zeiträume (#208): Ihre Kostenpositionen tragen `year`, und erst der
 // Eingang macht daraus den Kalenderzeitraum.
+// Ebenso kennt sie keine Art der Zahlung (#280): Jede Zahlung war Miete, und die Migration gibt ihr
+// diese Art als Vorgabe der Spalte.
+export type LegacyPayment = Omit<Payment, 'kind'>
 export type LegacyCostItem = Omit<CostItem, 'period' | 'propertyId' | 'key' | 'meterType' | 'participantUnitIds' | 'externalBasis' | 'tenancyAmounts' | 'selfAmounts' | 'heatingPlantId'> & {
   key: LegacyCostKey
   meterType?: LegacyMeterType | null
@@ -146,7 +149,7 @@ export type Db = {
   meters: LegacyMeter[]
   readings: Reading[]
   // Gebuchte Mietzahlungen (Geldeingänge) fürs Mietkonto
-  payments: Payment[]
+  payments: LegacyPayment[]
   // Abgeschlossene Abrechnungen: eingefrorener Berechnungsstand je Jahr
   closedSettlements: ClosedSettlement[]
 }

@@ -17,6 +17,8 @@ const report = (income: Partial<TaxReport['income']>, rest: Partial<TaxReport> =
     prepaymentOverridden: false,
     sollCents: 1200000,
     paidCents: 1200000,
+    settlementBackPaymentsCents: 0,
+    settlementRefundsCents: 0,
     tenanciesWithSoll: 1,
     tenanciesWithoutPayment: 0,
     ...income,

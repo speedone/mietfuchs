@@ -16,9 +16,9 @@ import { eq } from 'drizzle-orm'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { Payment, Reading, Settings, Tenancy } from '../../shared/types.ts'
+import type { Reading, Settings, Tenancy } from '../../shared/types.ts'
 // Die Tests bauen eine db.json; deren Wohnungen, Zähler und Kosten tragen kein Objekt (#92).
-import type { LegacyCostItem as CostItem, LegacyMeter as Meter, LegacyUnit as Unit } from '../src/store.ts'
+import type { LegacyCostItem as CostItem, LegacyMeter as Meter, LegacyPayment as Payment, LegacyUnit as Unit } from '../src/store.ts'
 import { rentLedger } from '../src/calc.ts'
 import { snapshotOf } from '../src/snapshot.ts'
 import type { Db } from '../src/store.ts'
@@ -880,6 +880,25 @@ test('Nach dem Umstieg gibt es die Tabelle der Belege, und sie ist leer (#170)',
       if (!database) return assert.fail('nach dem Umstieg keine Datenbank')
       assert.equal((await database.read(uploadRows)).size, 0)
     })
+  } finally {
+    removeDir(dataDir)
+  }
+})
+
+// ---------- Die Art einer Zahlung (#280) ----------
+
+test('Umstieg: jede Zahlung der db.json bekommt die Art „Miete“, und die Regression bleibt centgenau', async () => {
+  // Die db.json kennt keine Art, der eingefrorene Eingang schreibt ohne die Spalte (Stand 0000), und
+  // erst die Kette gibt ihr die Vorgabe. Die Regression vergleicht davor und danach, sie schlüge an,
+  // wenn eine Zahlung im Mietkonto anders verteilt würde.
+  const dataDir = tempDir()
+  try {
+    writeFile(dataDir, fullDb())
+    await changeoverIn(dataDir, async (result) => {
+      assert.equal(result.state, 'done', result.message)
+    })
+    const stock = await stockOf(dataDir)
+    assert.deepEqual(stock.payments.map((p) => [p.tenancyId, p.kind]), [['t1', 'rent'], ['t2', 'rent']])
   } finally {
     removeDir(dataDir)
   }
