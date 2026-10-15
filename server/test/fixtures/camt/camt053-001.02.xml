@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Erfundener Tagesauszug (camt.053.001.02). Namen, Adressen und IBANs sind ausgedacht; die
+     IBANs haben absichtlich falsche Prüfziffern. -->
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.02">
+  <BkToCstmrStmt>
+    <GrpHdr><MsgId>MSG-2025-03-03</MsgId><CreDtTm>2025-03-03T18:00:00+01:00</CreDtTm></GrpHdr>
+    <Stmt>
+      <Id>2025-03-03-001</Id>
+      <CreDtTm>2025-03-03T18:00:00+01:00</CreDtTm>
+      <FrToDt><FrDtTm>2025-03-03T00:00:00+01:00</FrDtTm><ToDtTm>2025-03-03T23:59:59+01:00</ToDtTm></FrToDt>
+      <Acct><Id><IBAN>DE00 1234 5678 9012 3456 78</IBAN></Id><Ccy>EUR</Ccy></Acct>
+      <Ntry>
+        <Amt Ccy="EUR">850.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2025-03-03</Dt></BookgDt>
+        <ValDt><Dt>2025-03-03</Dt></ValDt>
+        <AcctSvcrRef>2025030300001</AcctSvcrRef>
+        <NtryDtls><TxDtls>
+          <Refs><EndToEndId>NOTPROVIDED</EndToEndId></Refs>
+          <RltdPties>
+            <Dbtr><Nm>Erika   Beispiel</Nm></Dbtr>
+            <DbtrAcct><Id><IBAN>DE00500105170000000001</IBAN></Id></DbtrAcct>
+          </RltdPties>
+          <RmtInf><Ustrd>Miete Maerz 2025</Ustrd><Ustrd>Whg 1 Lindenweg 12</Ustrd></RmtInf>
+        </TxDtls></NtryDtls>
+      </Ntry>
+      <Ntry>
+        <Amt Ccy="EUR">720</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><DtTm>2025-03-03T00:10:00+01:00</DtTm></BookgDt>
+        <ValDt><Dt>2025-03-03</Dt></ValDt>
+        <NtryDtls><TxDtls>
+          <Refs><EndToEndId>MIETE-W2</EndToEndId></Refs>
+          <RltdPties>
+            <Dbtr><Nm>Max Mustermann</Nm></Dbtr>
+            <DbtrAcct><Id><IBAN>de00 5001 0517 0000 0000 02</IBAN></Id></DbtrAcct>
+          </RltdPties>
+          <RmtInf><Ustrd>Miete Wohnung 2</Ustrd></RmtInf>
+        </TxDtls></NtryDtls>
+      </Ntry>
+      <Ntry>
+        <Amt Ccy="EUR">312.40</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2025-03-03</Dt></BookgDt>
+        <ValDt><Dt>2025-03-03</Dt></ValDt>
+        <AcctSvcrRef>2025030300003</AcctSvcrRef>
+        <NtryDtls><TxDtls>
+          <RltdPties>
+            <Cdtr><Nm>Stadtkasse Musterstadt</Nm></Cdtr>
+            <CdtrAcct><Id><IBAN>DE00700500000000000099</IBAN></Id></CdtrAcct>
+          </RltdPties>
+          <RmtInf><Ustrd>Grundsteuer 1. Quartal 2025</Ustrd></RmtInf>
+        </TxDtls></NtryDtls>
+      </Ntry>
+      <Ntry>
+        <Amt Ccy="EUR">55.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Sts>PDNG</Sts>
+        <BookgDt><Dt>2025-03-04</Dt></BookgDt>
+      </Ntry>
+    </Stmt>
+  </BkToCstmrStmt>
+</Document>

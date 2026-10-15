@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Erfundener Tagesauszug (camt.053.001.08) mit Sammelbuchung und Rücklastschrift. Namen und
+     IBANs sind ausgedacht; die IBANs haben absichtlich falsche Prüfziffern. -->
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.08">
+  <BkToCstmrStmt>
+    <GrpHdr><MsgId>MSG-2025-04-01</MsgId><CreDtTm>2025-04-01T20:00:00+02:00</CreDtTm></GrpHdr>
+    <Stmt>
+      <Id>2025-04-01-001</Id>
+      <Acct><Id><IBAN>DE00123456789012345678</IBAN></Id></Acct>
+      <Ntry>
+        <Amt Ccy="EUR">1570.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Sts><Cd>BOOK</Cd></Sts>
+        <BookgDt><Dt>2025-04-01</Dt></BookgDt>
+        <ValDt><Dt>2025-04-01</Dt></ValDt>
+        <AcctSvcrRef>SAMMEL-0401</AcctSvcrRef>
+        <NtryDtls>
+          <Btch><NbOfTxs>2</NbOfTxs></Btch>
+          <TxDtls>
+            <Amt Ccy="EUR">850.00</Amt>
+            <CdtDbtInd>CRDT</CdtDbtInd>
+            <RltdPties>
+              <Dbtr><Pty><Nm>Erika Beispiel</Nm></Pty></Dbtr>
+              <DbtrAcct><Id><IBAN>DE00500105170000000001</IBAN></Id></DbtrAcct>
+            </RltdPties>
+            <RmtInf><Ustrd>Miete April</Ustrd></RmtInf>
+          </TxDtls>
+          <TxDtls>
+            <Amt Ccy="EUR">720.00</Amt>
+            <CdtDbtInd>CRDT</CdtDbtInd>
+            <RltdPties>
+              <Dbtr><Pty><Nm>Max Mustermann</Nm></Pty></Dbtr>
+              <DbtrAcct><Id><IBAN>DE00500105170000000002</IBAN></Id></DbtrAcct>
+            </RltdPties>
+            <RmtInf><Ustrd>Miete April Whg 2</Ustrd></RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+      <Ntry>
+        <Amt Ccy="EUR">720.00</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <RvslInd>true</RvslInd>
+        <Sts><Cd>BOOK</Cd></Sts>
+        <BookgDt><Dt>2025-04-08</Dt></BookgDt>
+        <AcctSvcrRef>RUECK-0408</AcctSvcrRef>
+        <NtryDtls><TxDtls>
+          <!-- Eine Rücklastschrift behält die Rollen der ursprünglichen Lastschrift: Der Mieter
+               bleibt Dbtr, der Vermieter Cdtr, obwohl das Geld jetzt vom Vermieter abfließt. -->
+          <RltdPties>
+            <Dbtr><Pty><Nm>Max Mustermann</Nm></Pty></Dbtr>
+            <DbtrAcct><Id><IBAN>DE00500105170000000002</IBAN></Id></DbtrAcct>
+            <Cdtr><Pty><Nm>Vermieter Beispiel</Nm></Pty></Cdtr>
+            <CdtrAcct><Id><IBAN>DE00123456789012345678</IBAN></Id></CdtrAcct>
+          </RltdPties>
+          <RmtInf><Ustrd>Ruecklastschrift Miete April Whg 2</Ustrd></RmtInf>
+        </TxDtls></NtryDtls>
+      </Ntry>
+    </Stmt>
+  </BkToCstmrStmt>
+</Document>
