@@ -17,6 +17,7 @@
     "adm-zip": "^0.6.1",
     "drizzle-orm": "^0.45.3",
     "express": "^5.2.1",
+    "fast-xml-parser": "^5.11.2",
     "multer": "^2.4.0"
   },
   "devDependencies": {
