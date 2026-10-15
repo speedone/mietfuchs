@@ -20,6 +20,9 @@ export type PropertyKind = 'mfh' | 'etw' | 'efh' | 'zfh' | 'sonstiges'
 // Ein Objekt ist zugleich die Abrechnungseinheit. Wohnungen, Zähler, Kostenpositionen und
 // abgeschlossene Abrechnungen gehören zu genau einem; Mietverhältnisse, Zahlungen und
 // Ablesungen erben es.
+// Die 16 Länder mit ihren üblichen Kürzeln (Namen und Feiertage in shared/holidays.ts).
+export type FederalState = 'BW' | 'BY' | 'BE' | 'BB' | 'HB' | 'HH' | 'HE' | 'MV' | 'NI' | 'NW' | 'RP' | 'SL' | 'SN' | 'ST' | 'SH' | 'TH'
+
 export type Property = {
   id: string
   name: string
