@@ -79,11 +79,11 @@ export function buildPersonHistory(
 // Monat einer Staffel (Kaltmiete, Vorauszahlung, Pauschale) aus dem Formular, als 'JJJJ-MM'.
 // Das Feld war ein `<input type="month">`. Safari auf dem Mac und Firefox haben keine
 // Monatsauswahl: Je nach Fassung zeigen sie ein Textfeld, in dem nur „2026-01“ durch die Prüfung
-// kam, oder ein Feld, in das sich gar nichts eingeben ließ. Es ist deshalb ein Textfeld für
-// „MM.JJJJ“, in jedem Browser gleich, und zwar ohne `inputMode="numeric"`: Die Zifferntastatur von
-// iPhone und iPad hat keinen Punkt. Angenommen wird auch, was ein Mensch sonst tippt: „1.2026“,
-// „01/2026“, „01.01.2026“ und „2026-01“. Ein Tag nur als Erster: Eine Staffel gilt ab
-// Monatsanfang, und „15.10.2026“ still als Oktober zu lesen, hieße raten. `null`: nicht lesbar.
+// kam, oder ein Feld, in das sich gar nichts eingeben ließ. Heute wählt man Monat und Jahr aus
+// zwei Listen (MonthPicker), deren Wert 'MM.JJJJ' ist. Gelesen wird trotzdem großzügig („1.2026“,
+// „01/2026“, „01.01.2026“, „2026-01“), denn die Funktion ist die eine Stelle, die einen Monat einer
+// Staffel prüft. Ein Tag nur als Erster: Eine Staffel gilt ab Monatsanfang, und „15.10.2026“ still
+// als Oktober zu lesen, hieße raten. `null`: nicht lesbar.
 export function parseScheduleMonth(text: string): string | null {
   const t = text.trim()
   // Ein Jahr außerhalb von 1900 bis 2100 ist ein Tippfehler („01.0026“): Als frühester Eintrag
@@ -100,7 +100,36 @@ export function parseScheduleMonth(text: string): string | null {
   return null
 }
 
-export const SCHEDULE_MONTH_HINT = 'Monat als MM.JJJJ, etwa 01.2026; leer heißt ab Einzug.'
+export const SCHEDULE_MONTH_HINT = 'Bitte Monat und Jahr wählen; beides leer heißt ab Einzug.'
+
+// Monatsauswahl der Staffeln (MonthPicker): zwei Auswahllisten statt Freitext, damit jeder Browser
+// gleich aussieht und sich kein Tippfehler einschleicht (Safari kennt `type="month"` nicht). Der
+// Wert im Formular bleibt der Text 'MM.JJJJ', den parseScheduleMonth liest; ist nur eine der beiden
+// Listen gewählt, entsteht ein unvollständiger Text ('03.' bzw. '.2026'), und das Speichern meldet
+// es, statt still „ab Einzug“ anzunehmen.
+export function monthPickerParts(text: string): { month: string; year: string } {
+  const parsed = parseScheduleMonth(text)
+  if (parsed) return { month: parsed.slice(5, 7), year: parsed.slice(0, 4) }
+  const m = /^(\d{2})?\.(\d{4})?$/.exec(text.trim())
+  return m ? { month: m[1] ?? '', year: m[2] ?? '' } : { month: '', year: '' }
+}
+
+export function monthPickerText(month: string, year: string): string {
+  return month === '' && year === '' ? '' : `${month}.${year}`
+}
+
+// Jahre zur Auswahl: ab dem Einzugsjahr (ohne Einzug zehn Jahre zurück) bis zwei Jahre nach heute,
+// dazu das Jahr eines schon gespeicherten Werts. Ein Wert außerhalb der Liste zeigte der Browser
+// sonst als ersten Eintrag an, ohne dass sich etwas ändert.
+export function monthPickerYears(start: string, value: string, today: string): string[] {
+  const now = Number(today.slice(0, 4))
+  const from = /^\d{4}/.test(start) ? Math.min(Number(start.slice(0, 4)), now) : now - 10
+  const years = new Set<number>()
+  for (let y = from; y <= now + 2; y++) years.add(y)
+  const own = monthPickerParts(value).year
+  if (own) years.add(Number(own))
+  return [...years].sort((a, b) => a - b).map(String)
+}
 
 // Gespeichertes 'JJJJ-MM' fürs Formular als 'MM.JJJJ'.
 export function scheduleMonthText(from: string): string {

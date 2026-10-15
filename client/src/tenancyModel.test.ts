@@ -1,6 +1,6 @@
 // Nebenkostenmodell am Mietverhältnis (#93), die Seite der Oberfläche.
 import { expect, test } from 'vitest'
-import { COST_MODEL_LABELS, buildPersonHistory, costModelBadge, costModelBody, defaultTenancyUnitId, notSettledText, overlapQuestion, parsePersons, parseScheduleMonth, scheduleMonthText, showsFlatRates } from './tenancyModel'
+import { COST_MODEL_LABELS, buildPersonHistory, costModelBadge, costModelBody, defaultTenancyUnitId, notSettledText, overlapQuestion, parsePersons, parseScheduleMonth, scheduleMonthText, showsFlatRates, monthPickerParts, monthPickerText, monthPickerYears } from './tenancyModel'
 import type { Tenancy, Unit } from './types'
 
 test('die Staffel der Pauschale erscheint nur bei einer Pauschale', () => {
@@ -136,4 +136,23 @@ test('Monat einer Staffel zur Anzeige: JJJJ-MM wird MM.JJJJ und lässt sich wied
   expect(scheduleMonthText('2026-01')).toBe('01.2026')
   expect(parseScheduleMonth(scheduleMonthText('2026-10'))).toBe('2026-10')
   expect(scheduleMonthText('')).toBe('')
+})
+
+test('Monatsauswahl: Teile aus dem Formularwert und zurück, auch unvollständig', () => {
+  expect(monthPickerParts('03.2025')).toEqual({ month: '03', year: '2025' })
+  expect(monthPickerParts('')).toEqual({ month: '', year: '' })
+  expect(monthPickerParts('03.')).toEqual({ month: '03', year: '' })
+  expect(monthPickerParts('.2025')).toEqual({ month: '', year: '2025' })
+  expect(monthPickerText('03', '2025')).toBe('03.2025')
+  expect(monthPickerText('', '')).toBe('')
+  // Nur eine Hälfte gewählt: unvollständig, damit das Speichern es meldet statt „ab Einzug“ zu nehmen
+  expect(parseScheduleMonth(monthPickerText('03', ''))).toBeNull()
+  expect(monthPickerText('03', '')).not.toBe('')
+})
+
+test('Monatsauswahl: Jahre ab Einzug bis zwei Jahre nach heute, dazu das Jahr eines gespeicherten Werts', () => {
+  expect(monthPickerYears('2023-05-01', '', '2025-10-15')).toEqual(['2023', '2024', '2025', '2026', '2027'])
+  expect(monthPickerYears('', '', '2025-10-15')[0]).toBe('2015')
+  expect(monthPickerYears('2023-05-01', '01.2019', '2025-10-15')[0]).toBe('2019')
+  expect(monthPickerYears('2030-01-01', '', '2025-10-15')).toEqual(['2025', '2026', '2027'])
 })
