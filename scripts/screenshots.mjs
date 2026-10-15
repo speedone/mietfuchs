@@ -153,8 +153,9 @@ const RECIPIENT = ['Herrn', 'Klaus Wegener', 'Lindenweg 12', '12345 Musterstadt'
 async function seed(api, pdf) {
   await api.put('/api/settings', {
     landlordName: 'Klaus Wegener',
-    // Erfunden und absichtlich ungültig (Prüfziffer 00), damit sie niemand für echt hält
-    iban: 'DE00 1234 5678 9012 3456 78',
+    // Eine gültige IBAN, denn seit #279 lehnt der Server eine ungültige ab. Es ist die veröffentlichte
+    // Beispiel-IBAN aus Spezifikationen und Bankunterlagen, kein Konto einer Person aus dem Bestand.
+    iban: 'DE02 1203 0000 0000 2020 51',
     paymentDeadlineDays: 30,
     updateCheck: 'off',
   })

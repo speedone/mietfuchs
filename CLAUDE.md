@@ -37,8 +37,9 @@ Angaben jedes Prüfstarts (siehe unten) und das nachgebaute Ollama aus
 fotografiert mit Playwright bei 1440 × 900 im hellen Design. **Der Bestand ist erfunden**: ein
 Mehrfamilienhaus „Lindenweg 12, 12345 Musterstadt“ mit selbstgenutzter Dachwohnung, Garage,
 Mieterwechsel mit Leerstand, Zählern, Zahlungen und Belegen (vom selben Browser als PDF gedruckt),
-dazu eine vermietete Eigentumswohnung mit Kosten laut Hausgeldabrechnung; die IBAN ist absichtlich
-ungültig. Echte Namen, Adressen oder Belege gehören nie hinein. Das Abrechnungsjahr ist das
+dazu eine vermietete Eigentumswohnung mit Kosten laut Hausgeldabrechnung; die IBAN ist die
+veröffentlichte Beispiel-IBAN `DE02 1203 0000 0000 2020 51` (gültig, denn seit #279 lehnt der Server
+eine ungültige ab). Echte Namen, Adressen oder Belege gehören nie hinein. Das Abrechnungsjahr ist das
 Vorjahr, wie es die Oberfläche voreinstellt. Playwright ist devDependency im Wurzelpaket, den
 Browser lädt einmalig `npx playwright install chromium`. Meldet die Oberfläche einen Fehler oder
 steht eine Fehlermeldung im Bild, bricht das Skript ab; die Bilder trotzdem vor dem Commit
