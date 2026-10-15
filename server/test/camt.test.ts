@@ -404,3 +404,58 @@ test('camt: ein ZIP ohne XML, ein kaputtes ZIP und eine beschädigte Datei darin
   assert.equal(entriesOf(r).length, 0)
   assert.ok(r.problems.length > 0)
 })
+
+// ---------- Befunde der Durchsicht in #282 ----------
+
+test('camt: eine Sammelbuchung mit nur einem genannten Posten wird nicht dessen Zahler zugeschrieben', () => {
+  // 2.400 € gesammelt, angekündigt drei Posten, genannt nur Erikas 800 €: sonst stünde ein Umsatz
+  // über 2.400 € von Erika da, und die Zuordnung schlüge ihr eine dreifache Miete vor.
+  const announced = `<Ntry><Amt Ccy="EUR">2400.00</Amt><CdtDbtInd>CRDT</CdtDbtInd><Sts>BOOK</Sts>
+    <BookgDt><Dt>2025-03-03</Dt></BookgDt><AcctSvcrRef>SAMMEL-1</AcctSvcrRef>
+    <NtryDtls><Btch><NbOfTxs>3</NbOfTxs></Btch>
+      <TxDtls><Amt Ccy="EUR">800.00</Amt><RltdPties><Dbtr><Nm>Erika Beispiel</Nm></Dbtr>
+        <DbtrAcct><Id><IBAN>DE00500105170000000001</IBAN></Id></DbtrAcct></RltdPties>
+        <RmtInf><Ustrd>Miete</Ustrd></RmtInf></TxDtls>
+    </NtryDtls></Ntry>`
+  const r = readCamt(camt053([announced]))
+  const e = onlyEntry(r)
+  assert.equal(e.amountCents, 240000)
+  assert.equal(e.counterpartyName, null)
+  assert.equal(e.counterpartyIban, null)
+  assert.equal(r.problems.length, 1)
+  assert.match(r.problems[0].message, /Sammelbuchung/)
+  // Ohne NbOfTxs, aber mit abweichendem Betrag des Postens: ebenso
+  const r2 = readCamt(camt053([announced.replace('<Btch><NbOfTxs>3</NbOfTxs></Btch>', '')]))
+  assert.equal(onlyEntry(r2).counterpartyIban, null)
+  assert.equal(r2.problems.length, 1)
+  // Ein einzelner Posten mit gleichem Betrag bleibt der Umsatz mit Gegenseite
+  const whole = onlyEntry(readCamt(camt053([announced.replace('<Btch><NbOfTxs>3</NbOfTxs></Btch>', '').replace('2400.00', '800.00')])))
+  assert.equal(whole.counterpartyName, 'Erika Beispiel')
+})
+
+test('camt: ein unlesbarer Saldo wird gemeldet, statt die Saldenprobe still entfallen zu lassen', () => {
+  const xml = camt053([ntry()]).replace('<Acct>', `<Bal><Tp><CdOrPrtry><Cd>OPBD</Cd></CdOrPrtry></Tp><Amt Ccy="EUR">1.000,00</Amt><CdtDbtInd>CRDT</CdtDbtInd><Dt><Dt>2025-03-03</Dt></Dt></Bal>
+    <Bal><Tp><CdOrPrtry><Cd>CLBD</Cd></CdOrPrtry></Tp><Amt Ccy="EUR">1850.00</Amt><Dt><Dt>2025-03-03</Dt></Dt></Bal><Acct>`)
+  const r = readCamt(xml)
+  const messages = r.problems.map((p) => p.message)
+  assert.ok(messages.some((m) => /Anfangssaldo lässt sich nicht lesen/.test(m)), messages.join(' | '))
+  assert.ok(messages.some((m) => /Endsaldo lässt sich nicht lesen/.test(m)), messages.join(' | '))
+})
+
+test('camt: RvslInd als XML-Boolean, also auch „1“', () => {
+  const xml = (v: string) => camt053([ntry({ ind: 'DBIT' }).replace('<Sts>', `<RvslInd>${v}</RvslInd><Sts>`)])
+  assert.equal(onlyEntry(readCamt(xml('1'))).reversal, true)
+  assert.equal(onlyEntry(readCamt(xml('true'))).reversal, true)
+  assert.equal(onlyEntry(readCamt(xml('0'))).reversal, false)
+})
+
+test('camt: nennen beide Seiten nur das eigene Konto, gibt es keine Gegenseite', () => {
+  const xml = camt053([`<Ntry><Amt Ccy="EUR">50.00</Amt><CdtDbtInd>CRDT</CdtDbtInd><Sts>BOOK</Sts>
+    <BookgDt><Dt>2025-03-03</Dt></BookgDt>
+    <NtryDtls><TxDtls><RltdPties>
+      <Dbtr><Nm>Vermieter</Nm></Dbtr><DbtrAcct><Id><IBAN>${ACCOUNT}</IBAN></Id></DbtrAcct>
+    </RltdPties></TxDtls></NtryDtls></Ntry>`])
+  const e = onlyEntry(readCamt(xml))
+  assert.equal(e.counterpartyIban, null)
+  assert.equal(e.counterpartyName, null)
+})

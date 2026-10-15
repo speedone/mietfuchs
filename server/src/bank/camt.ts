@@ -22,7 +22,7 @@
 //   Referenz), camt.052 trägt sie oft nicht, wo camt.053 sie trägt (gleiche Buchung, verschiedene
 //   Angaben), und ein Bericht über die neuen Umsätze seit dem letzten Abruf kann eine zweite
 //   gleiche Zahlung enthalten, die kein Doppel ist. Entscheiden kann das nur der Import gegen den
-//   Bestand, und wo es offen bleibt, der Vermieter (Invariante 84).
+//   Bestand, und wo es offen bleibt, der Vermieter: Ein Umsatz wird nie still als Doppel verworfen.
 
 import { XMLParser, XMLValidator } from 'fast-xml-parser'
 import {
@@ -184,6 +184,10 @@ function counterpartyOf(tx: unknown, sign: 1 | -1, reversal: boolean, accountIba
   if (accountIban && chosen.iban === accountIban) {
     const other = read(primary === 'Dbtr' ? 'Cdtr' : 'Dbtr')
     if (other.iban && other.iban !== accountIban) return other
+    // Nennen beide Seiten nur das eigene Konto (oder die andere gar keins), gibt es keine
+    // erkennbare Gegenseite. Das eigene Konto als Gegenseite ließe den Vermieter als seinen
+    // eigenen Zahler dastehen.
+    return { name: null, iban: null, ultimate: chosen.ultimate }
   }
   return chosen
 }
@@ -220,7 +224,9 @@ function readEntry(ntry: unknown, ctx: EntryContext): BankEntry[] | null {
     return null
   }
   const valueDate = civilDate(at(ntry, 'ValDt'))
-  const reversal = text(at(ntry, 'RvslInd')) === 'true'
+  // `RvslInd` ist ein XML-Boolean: `true` oder `1`.
+  const reversalText = text(at(ntry, 'RvslInd'))
+  const reversal = reversalText === 'true' || reversalText === '1'
   const entryRef = reference(at(ntry, 'AcctSvcrRef'))
   const txs = all(ntry, 'NtryDtls', 'TxDtls')
 
@@ -269,6 +275,24 @@ function readEntry(ntry: unknown, ctx: EntryContext): BankEntry[] | null {
       message: `Sammelbuchung mit ${txs.length} Posten, die sich nicht zum Umsatz addieren; sie wird als ein Umsatz übernommen.`,
     })
   }
+  // Ein einzelner Posten ist nur dann der ganze Umsatz, wenn die Bank keine größere Sammelbuchung
+  // ankündigt (`Btch/NbOfTxs`) und sein Betrag, falls er einen nennt, dem Umsatz entspricht. Sonst
+  // ist es ein Ausschnitt einer Sammelbuchung: 2.400 € mit einem Posten über 800 € von einem Mieter
+  // wären ein Umsatz über 2.400 € von ihm, und die Zuordnung schlüge ihm eine dreifache Miete vor.
+  if (txs.length === 1) {
+    const announced = Number(text(at(ntry, 'NtryDtls', 'Btch', 'NbOfTxs')) ?? '1')
+    const a = txAmountOf(txs[0])
+    const partCents = a && a.currency === 'EUR' ? amountToCents(a.raw) : null
+    const partSign = signOf(at(txs[0], 'CdtDbtInd')) ?? sign
+    const mismatch = (a !== null && (partCents === null || partCents * partSign !== cents * sign)) || (Number.isFinite(announced) && announced > 1)
+    if (mismatch) {
+      ctx.problems.push({
+        where: ctx.where,
+        message: 'Sammelbuchung, von der die Datei nur einen Teil der Posten nennt; sie wird als ein Umsatz ohne einzelne Gegenseite übernommen.',
+      })
+      return [one(undefined, cents * sign, sign, entryRef, null)]
+    }
+  }
   // Eine nicht zerlegte Sammelbuchung ist ein Umsatz ohne einzelne Gegenseite: Name, IBAN und Zweck
   // des ersten Postens zu nehmen, ließe den Fingerabdruck an der Reihenfolge der Posten hängen.
   return [one(txs.length > 1 ? undefined : txs[0], cents * sign, sign, entryRef ?? reference(at(txs[0], 'Refs', 'AcctSvcrRef')), null)]
@@ -286,6 +310,13 @@ function balanceOf(item: unknown, codes: string[]): number | null {
     return cents === null || sign === null ? null : cents * sign
   }
   return null
+}
+
+// Steht ein Saldo der gesuchten Art im Auszug, lässt sich aber nicht lesen? Dann entfiele die
+// Saldenprobe still; MT940 meldet denselben Fall.
+function unreadableBalance(item: unknown, codes: string[]): boolean {
+  const present = all(item, 'Bal').some((b) => codes.includes(text(at(b, 'Tp', 'CdOrPrtry', 'Cd')) ?? text(at(b, 'Tp', 'CdOrPrtry', 'Prtry')) ?? ''))
+  return present && balanceOf(item, codes) === null
 }
 
 function balanceDate(item: unknown, codes: string[]): string | null {
@@ -341,6 +372,8 @@ export function readCamt(xml: string, name = 'Datei'): BankReadResult {
       closingBalanceCents: balanceOf(item, ['CLBD']),
       entries: [],
     }
+    if (unreadableBalance(item, ['OPBD', 'PRCD'])) result.problems.push({ where: label, message: 'Der Anfangssaldo lässt sich nicht lesen.' })
+    if (unreadableBalance(item, ['CLBD'])) result.problems.push({ where: label, message: 'Der Endsaldo lässt sich nicht lesen.' })
     if (!statement.accountIban) {
       result.problems.push({
         where: label,

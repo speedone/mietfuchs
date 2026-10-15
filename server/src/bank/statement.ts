@@ -1,6 +1,6 @@
 // Gemeinsame Gestalt eingelesener Kontoauszüge (#188), gleich aus welchem Format: camt (XML,
 // camt.ts) oder MT940 (Text, mt940.ts). Was hier steht, ist nur, was auf dem Konto steht; ein
-// Umsatz ist keine Zahlung (Invariante 5).
+// Umsatz ist keine Zahlung: Zur Zahlung im Mietkonto wird er erst durch eine bestätigte Zuordnung.
 
 import crypto from 'node:crypto'
 
