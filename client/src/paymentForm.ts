@@ -19,10 +19,54 @@ export const PAYMENT_KIND_LABELS: Record<PaymentKind, string> = {
   settlement: 'Abrechnung',
 }
 
-// Der Satz unter dem Betrag: Ein ausgezahltes Guthaben ist ein Abgang und steht mit Minus da.
+// Der Satz unter dem Betrag: Ein ausgezahltes Guthaben ist ein Abgang und steht mit Minus da. Ist das
+// Guthaben mit der Miete verrechnet, ging weniger ein, als die Miete beträgt; gebucht wird trotzdem die
+// volle Miete als Miete und das Guthaben mit Minus als Abrechnung (Durchsicht M1). Wer nur den
+// Eingang als Miete bucht und das Guthaben dazu, hat den Monat offen und in der Steuer das Guthaben
+// zweimal abgezogen: 600 € Eingang, gebucht 600 € Miete und −200 € Abrechnung, ergäbe 400 € Zufluss.
 export const SETTLEMENT_AMOUNT_HINT =
-  'Eine Nachzahlung des Mieters tragen Sie als positiven Betrag ein, ein ausgezahltes oder verrechnetes Guthaben mit Minus (z. B. -200,00). ' +
+  'Eine Nachzahlung des Mieters tragen Sie als positiven Betrag ein, ein ausgezahltes Guthaben mit Minus (z. B. -200,00). ' +
   'Das Mietkonto führt sie gesondert und verteilt sie nicht auf die Monate.'
+
+export const SETTLEMENT_OFFSET_HINT =
+  'Hat der Mieter das Guthaben mit der Miete verrechnet, tragen Sie die Miete in voller Höhe als „Miete“ ein und das Guthaben mit Minus als „Abrechnung“, ' +
+  'auch wenn weniger eingegangen ist. Zusammen ergeben beide den tatsächlichen Eingang.'
+
+// Die Hinweise unter dem Formular. Bei „Abrechnung“ der Satz zum Vorzeichen; bei einem Guthaben
+// (Betrag mit Minus) dazu der Satz zur Verrechnung mit der Miete.
+export function paymentFormHints(form: Pick<PaymentForm, 'kind' | 'amount'>): string[] {
+  if (form.kind !== 'settlement') return []
+  const cents = parseEuro(form.amount)
+  return cents !== null && cents < 0 ? [SETTLEMENT_AMOUNT_HINT, SETTLEMENT_OFFSET_HINT] : [SETTLEMENT_AMOUNT_HINT]
+}
+
+// Hat im Jahr kein Mietverhältnis Tage, gibt es keine Miete zu buchen (Durchsicht M2b): Das Formular
+// beginnt dann mit „Abrechnung“ und sagt warum.
+export const noRentYearText = (year: number): string =>
+  `In ${year} besteht kein Mietverhältnis; hier lassen sich nur Nachzahlungen oder Guthaben aus der Abrechnung erfassen.`
+
+export function newPaymentForm(ledger: { rows: readonly Pick<RentLedgerRow, 'tenancyId'>[] } | null, date: string): PaymentForm {
+  const first = ledger?.rows[0]?.tenancyId
+  return first === undefined ? { ...emptyPaymentForm('', date), kind: 'settlement' } : emptyPaymentForm(first, date)
+}
+
+// Eine Miete für ein Mietverhältnis ohne Zeile im Mietkonto des Jahres (Durchsicht M2b): Das geht,
+// etwa wenn nach Wahl eines ausgezogenen Mieters unter „Abrechnung“ zurück auf „Miete“ gestellt wurde
+// oder die Dezembermiete nach dem Auszug im Januar einging. Im Mietkonto erschiene sie nicht, in der
+// Steuer schon. Gespeichert wird deshalb erst nach Rückfrage.
+export function rentWithoutRow(form: Pick<PaymentForm, 'kind' | 'tenancyId'>, ledger: { rows: readonly Pick<RentLedgerRow, 'tenancyId'>[] } | null): boolean {
+  return form.kind === 'rent' && form.tenancyId !== '' && !(ledger?.rows ?? []).some((r) => r.tenancyId === form.tenancyId)
+}
+
+export const rentWithoutRowQuestion = (year: number, tenantName: string): string =>
+  `Das Mietverhältnis von ${tenantName} besteht in ${year} nicht. Als Miete erscheint die Zahlung im Mietkonto ${year} nicht, ` +
+  'in der Steuerübersicht zählt sie als Zufluss. Ist es eine Nachzahlung oder ein Guthaben aus der Abrechnung, wählen Sie als Art „Abrechnung“.'
+
+// Gibt es im Jahr Zahlungen aus der Abrechnung (Durchsicht N1)? Gefragt wird nach den Zahlungen und
+// nicht nach der Summe: +150 € und −150 € heben sich auf und sind trotzdem gebucht.
+export function hasSettlementPayments(payments: readonly Pick<Payment, 'kind' | 'tenancyId' | 'date'>[], year: number, tenancyId?: string): boolean {
+  return payments.some((p) => p.kind === 'settlement' && p.date.startsWith(`${year}-`) && (tenancyId === undefined || p.tenancyId === tenancyId))
+}
 
 export function emptyPaymentForm(tenancyId: string, date: string): PaymentForm {
   return { tenancyId, date, amount: '', note: '', kind: 'rent' }

@@ -20,7 +20,7 @@
 import { afterEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { Property, PropertyKind, TaxExpenseItem, TaxReport } from '../types'
-import { TAX_HINTS, type Basis, type TaxHint } from '../taxView'
+import { settlementLine, TAX_HINTS, type Basis, type TaxHint } from '../taxView'
 import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
 import Steuer from './Steuer'
@@ -399,13 +399,21 @@ test('„Nicht umlagefähig“ ohne Zuordnung: kein Hinweis', async () => {
 
 // ---------- Zahlungen aus der Abrechnung (#280) ----------
 
-test('Nachzahlungen und Erstattungen aus der Nebenkostenabrechnung stehen gesondert, ohne Zeilennummer', async () => {
+test('Nachzahlungen und Erstattungen aus der Nebenkostenabrechnung: gesondert, mit Saldo und Zeile nur, wo nachgesehen (N3)', async () => {
   await zeige(REPORT({}, { paidCents: 1200000 + 15000 - 20000, settlementBackPaymentsCents: 15000, settlementRefundsCents: 20000 }))
   expect(screen.getByText('davon Nachzahlungen aus der Nebenkostenabrechnung')).toBeTruthy()
   expect(screen.getByText('davon abgezogen: erstattete Guthaben aus der Nebenkostenabrechnung')).toBeTruthy()
-  const satz = screen.getByText(/Die Anlage V fragt sie bei den Umlagen ab/)
+  const satz = screen.getByText(/sind im Zufluss\s+enthalten/)
   expect(satz.textContent).toMatch(/[−-]50,00\s€/)
-  expect(satz.textContent).not.toMatch(/Zeile \d/)
+  // Das Jahr der Seite ist das Vorjahr; welche Zeile gilt, entscheidet dieselbe Tabelle wie auf der Seite.
+  const line = settlementLine(JAHR)
+  if (line) {
+    expect(satz.textContent).toMatch(/Anlage V, Zeile 21 \(Kennzahl 11\)/)
+    expect(satz.textContent).toMatch(/Vermietung an Angehörige gilt stattdessen Zeile 23 \(Kennzahl 12\)/)
+  } else {
+    expect(satz.textContent).not.toMatch(/Zeile \d/)
+    expect(satz.textContent).toMatch(/im Vordruck für \d{4} nach/)
+  }
 })
 
 test('Ohne Zahlungen aus der Abrechnung erscheint davon nichts', async () => {

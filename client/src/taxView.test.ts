@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, test } from 'vitest'
 import type { TaxExpenseItem, TaxReport } from './types'
-import { allocationLabel, assignedUnitItems, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, operatingPowerBalanceText, prepaymentNote, settlementSourcesText, showsSplit, stockCarryNote, surplusCentsFor, taxHints } from './taxView'
+import { allocationLabel, assignedUnitItems, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, operatingPowerBalanceText, prepaymentNote, settlementBalanceCents, settlementLine, settlementSourcesText, showsSplit, stockCarryNote, surplusCentsFor, taxHints } from './taxView'
 import { fmtEuro } from './api'
 import { periodKey } from '../../shared/period.ts'
 
@@ -365,4 +365,18 @@ describe('Betriebsstrom der Heizung (#268)', () => {
     expect(taxHints(tax({}), 'ist')).not.toContain('operatingPowerAmbiguous')
     expect(taxHints(tax({}), 'ist')).not.toContain('unmarkedPowerCredits')
   })
+})
+
+// ---------- Anlage V, Zeile der Nachzahlungen und Erstattungen (#280, Durchsicht N3) ----------
+
+test('Zeile 21 (Kennzahl 11) nur für die nachgesehenen Jahre 2023 bis 2025, Angehörige Zeile 23', () => {
+  for (const year of [2023, 2024, 2025]) {
+    expect(settlementLine(year)).toEqual({ line: 21, code: 11, relativesLine: 23, relativesCode: 12 })
+  }
+  for (const year of [2021, 2022, 2026, 2027]) expect(settlementLine(year)).toBeNull()
+})
+
+test('der Betrag der Zeile ist der Saldo: Nachzahlungen minus Erstattungen', () => {
+  expect(settlementBalanceCents(report({ settlementBackPaymentsCents: 15000, settlementRefundsCents: 20000 }))).toBe(-5000)
+  expect(settlementBalanceCents(report({ settlementBackPaymentsCents: 15000, settlementRefundsCents: 0 }))).toBe(15000)
 })

@@ -354,3 +354,32 @@ export function stockCarryNote(report: TaxReport): string | null {
     ? `Der Eigenanteil der Abrechnung ist um ${fmtEuro(c)} höher als der private Teil hier: Brennstoff aus dem Vorrat, steuerlich bereits ${report.year - 1} oder früher abgeflossen. ${tail}`
     : `Der Eigenanteil der Abrechnung ist um ${fmtEuro(-c)} niedriger als der private Teil hier: Brennstoff, der im Vorrat bleibt, steuerlich ${report.year} abgeflossen und erst später verbraucht. ${tail}`
 }
+
+// ---------- Nachzahlungen und Erstattungen aus der Nebenkostenabrechnung (#280) ----------
+
+// Wo die Anlage V sie abfragt, nur für Jahre, in denen es nachgesehen ist. Belegt: amtlicher
+// Vordruck 2025 der Finanzverwaltung NRW („2025AnlV101 – September 2025 –“,
+// https://www.finanzamt.nrw.de/dokumente/anlage-v-einkuenfte-aus-vermietungverpachtung-bebauter-grundstuecke-2025),
+// Seite 1, Zeile 21, Kennzahl 11: „auf die Zeilen 15 und 18 entfallende und im Jahr 2025 erhaltene
+// Nachzahlungen / geleistete Erstattungen (negativen Betrag mit vorangestelltem Minuszeichen
+// eintragen)“, also eine saldierte Zeile (Zeile 20, Kennzahl 04, sind die laufenden Umlagen). Zeile 23
+// (Kennzahl 12) ist dasselbe für Zeile 19, die an Angehörige vermieteten Wohnungen. Für 2023 und 2024
+// nennen die amtlichen Anleitungen ebenfalls Zeile 21, mit dem Beispiel eines Guthabens von 200 € mit
+// Minuszeichen. Für andere Jahre nennt die Seite keine
+// Zeile; eine erfundene wäre schlimmer als keine.
+export type SettlementLine = { line: number; code: number; relativesLine: number; relativesCode: number }
+
+const SETTLEMENT_LINES: Readonly<Record<number, SettlementLine>> = {
+  2023: { line: 21, code: 11, relativesLine: 23, relativesCode: 12 },
+  2024: { line: 21, code: 11, relativesLine: 23, relativesCode: 12 },
+  2025: { line: 21, code: 11, relativesLine: 23, relativesCode: 12 },
+}
+
+export function settlementLine(year: number): SettlementLine | null {
+  return SETTLEMENT_LINES[year] ?? null
+}
+
+// Der Betrag für diese Zeile: Nachzahlungen minus Erstattungen, eine Zahl mit Vorzeichen.
+export function settlementBalanceCents(report: Pick<TaxReport, 'income'>): number {
+  return report.income.settlementBackPaymentsCents - report.income.settlementRefundsCents
+}

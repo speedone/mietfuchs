@@ -142,8 +142,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   die Monate und führt Nachzahlungen und Guthaben gesondert, auch für Mieter, die schon ausgezogen
   sind; vorher ließ ein im Juni erstattetes Guthaben den Dezember offen stehen, und eine Nachzahlung
   erschien als Überzahlung. Die Steuerübersicht zählt beide Arten weiter als Zufluss und nennt
-  Nachzahlungen und Erstattungen aus der Nebenkostenabrechnung zusätzlich gesondert. Bisher erfasste
-  Zahlungen bleiben Miete, keine Zahl ändert sich
+  Nachzahlungen und Erstattungen aus der Nebenkostenabrechnung zusätzlich gesondert, für 2023 bis
+  2025 mit dem Saldo für Zeile 21 der Anlage V. Bisher erfasste Zahlungen bleiben Miete, keine Zahl
+  ändert sich; ein früher als Miete erfasstes Guthaben oder eine Nachzahlung stellen Sie in der Liste
+  der Zahlungseingänge unter „Art“ auf „Abrechnung“ um. Ein mit der Miete verrechnetes Guthaben
+  tragen Sie als volle Miete und das Guthaben mit Minus als Abrechnung ein
   ([#280](https://github.com/speedone/mietfuchs/issues/280)).
 - Abrechnungszeitraum wählbar: In den Stammdaten stellen Sie unter „Abrechnungszeitraum“ ein, ob ein
   Objekt im Kalenderjahr oder etwa von Mai bis April abrechnet. Ein Wechsel zeigt vorher, was

@@ -8,7 +8,7 @@ import { useProperty, withProperty } from '../property'
 import { effectiveLandlord, letterhead } from '../landlord'
 import PageHeader from '../components/PageHeader'
 import Table from '../components/Table'
-import { allocationLabel, assignedUnitItems, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, operatingPowerBalanceText, prepaymentNote, settlementSourcesText, showsSplit, stockCarryNote, surplusCentsFor, taxHints, type Basis } from '../taxView'
+import { allocationLabel, assignedUnitItems, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, operatingPowerBalanceText, prepaymentNote, settlementBalanceCents, settlementLine, settlementSourcesText, showsSplit, stockCarryNote, surplusCentsFor, taxHints, type Basis } from '../taxView'
 import { StepList } from '../components/CalcSteps'
 import Term from '../components/Term'
 import { andList } from '../../../shared/wording.ts'
@@ -173,8 +173,8 @@ export default function Steuer({ settings }: Props) {
                 </tr>
                 {/* #280: Nachzahlungen und Erstattungen aus der Nebenkostenabrechnung sind Einnahmen
                     nach dem Zuflussprinzip und stecken im Zufluss; gesondert genannt, weil die
-                    Anlage V sie bei den Umlagen abfragt. Eine Zeilennummer nennt die Seite nicht, solange sie
-                    nicht im amtlichen Vordruck nachgesehen ist. */}
+                    Anlage V sie bei den Umlagen abfragt. Die Zeile nennt die Seite nur für Jahre, in denen
+                    sie im amtlichen Vordruck nachgesehen ist (`settlementLine` in taxView.ts). */}
                 {data.income.settlementBackPaymentsCents !== 0 && (
                   <tr>
                     <td className="muted">davon Nachzahlungen aus der Nebenkostenabrechnung</td>
@@ -196,15 +196,23 @@ export default function Steuer({ settings }: Props) {
               </tfoot>
             </Table>
 
-            {(data.income.settlementBackPaymentsCents !== 0 || data.income.settlementRefundsCents !== 0) && (
-              <p className="muted fine">
-                Nachzahlungen und erstattete Guthaben aus der Nebenkostenabrechnung sind im Zufluss
-                enthalten (§ 11 Abs. 1 EStG), im vereinbarten Soll nicht. Zusammen ergeben sie{' '}
-                {fmtEuro(data.income.settlementBackPaymentsCents - data.income.settlementRefundsCents)}.
-                Die Anlage V fragt sie bei den Umlagen ab; die Zeile sehen Sie bitte im Vordruck
-                für {year} nach.
-              </p>
-            )}
+            {(data.income.settlementBackPaymentsCents !== 0 || data.income.settlementRefundsCents !== 0) && (() => {
+              const line = settlementLine(year)
+              const balance = fmtEuro(settlementBalanceCents(data))
+              return (
+                <p className="muted fine">
+                  Nachzahlungen und erstattete Guthaben aus der Nebenkostenabrechnung sind im Zufluss
+                  enthalten (§ 11 Abs. 1 EStG), im vereinbarten Soll nicht.{' '}
+                  {line
+                    ? <>
+                        In die <strong>Anlage V, Zeile {line.line} (Kennzahl {line.code})</strong> gehört der Saldo:{' '}
+                        <strong>{balance}</strong> (Nachzahlungen minus Erstattungen, ein negativer Betrag mit Minuszeichen).
+                        Bei Vermietung an Angehörige gilt stattdessen Zeile {line.relativesLine} (Kennzahl {line.relativesCode}).
+                      </>
+                    : <>Zusammen ergeben sie {balance}. Die Anlage V fragt sie bei den Umlagen ab; die Zeile sehen Sie bitte im Vordruck für {year} nach.</>}
+                </p>
+              )
+            })()}
 
             {hints.includes('paymentsMissing') && (
               <div className="notice">

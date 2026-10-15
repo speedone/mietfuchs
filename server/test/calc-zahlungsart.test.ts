@@ -118,9 +118,19 @@ function makeRng(seed: number): () => number {
 
 test('Invariante: Zahlungen aus der Abrechnung verschieben im Mietkonto nichts und in der Steuer nur den Zufluss', () => {
   const rnd = makeRng(280)
+  let formerSeen = 0
   for (let run = 0; run < 200; run++) {
-    const tenancies: SnapshotTenancy[] = Array.from({ length: 1 + Math.floor(rnd() * 3) }, (_, i) => {
+    const tenancies: SnapshotTenancy[] = Array.from({ length: 1 + Math.floor(rnd() * 4) }, (_, i) => {
       const startMonth = 1 + Math.floor(rnd() * 12)
+      // Durchsicht N4: auch Mietverhältnisse, die im Vorjahr enden; ihre Zahlungen aus der Abrechnung
+      // laufen über `settlementOnly`.
+      if (rnd() < 0.3) {
+        return tenancy({
+          id: `t${i}`, unitId: 'a', tenantName: `M${i}`, start: '2023-01-01',
+          end: `2024-${String(startMonth).padStart(2, '0')}-28`,
+          baseRents: [{ from: '2023-01', monthlyCents: 30000 + Math.floor(rnd() * 70000) }],
+        })
+      }
       const ends = rnd() < 0.4
       return tenancy({
         id: `t${i}`, unitId: 'a', tenantName: `M${i}`,
@@ -143,8 +153,13 @@ test('Invariante: Zahlungen aus der Abrechnung verschieben im Mietkonto nichts u
     const strip = (r: RentLedgerRow) => ({ ...r, settlementYearCents: 0 })
     assert.deepEqual(b.rows.map(strip), a.rows.map(strip), `Lauf ${run}: Monate verschoben`)
     const sum = settlement.reduce((x, p) => x + p.amountCents, 0)
+    // Die Summe aller Zahlungen aus der Abrechnung im Jahr, über Zeilen und `settlementOnly` zusammen.
     assert.equal(b.totals.settlementYearCents, sum, `Lauf ${run}`)
+    assert.equal(b.rows.reduce((x, r) => x + r.settlementYearCents, 0) + b.settlementOnly.reduce((x, r) => x + r.settlementYearCents, 0), sum, `Lauf ${run}`)
+    assert.deepEqual(a.settlementOnly, [], `Lauf ${run}`)
+    for (const r of b.settlementOnly) assert.ok(!b.rows.some((x) => x.tenancyId === r.tenancyId), `Lauf ${run}: ${r.tenancyId} doppelt`)
     assert.deepEqual({ ...b.totals, settlementYearCents: 0 }, { ...a.totals, settlementYearCents: 0 }, `Lauf ${run}`)
+    if (b.settlementOnly.length > 0) formerSeen++
     const ta = taxReport(without)
     const tb = taxReport(withIt)
     assert.equal(tb.income.paidCents - ta.income.paidCents, sum, `Lauf ${run}`)
@@ -154,4 +169,6 @@ test('Invariante: Zahlungen aus der Abrechnung verschieben im Mietkonto nichts u
       { ...ta.income, paidCents: 0, settlementBackPaymentsCents: 0, settlementRefundsCents: 0 }, `Lauf ${run}`)
     assert.deepEqual(tb.expenses, ta.expenses, `Lauf ${run}`)
   }
+  // Der Pfad über `settlementOnly` muss wirklich vorkommen, sonst prüfte die Invariante ihn nicht.
+  assert.ok(formerSeen > 20, `nur ${formerSeen} Läufe mit früheren Mietverhältnissen`)
 })
