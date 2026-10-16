@@ -6698,7 +6698,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const names = andList(selfSupplyItems.map((c) => `„${c.description}“`))
     const one = selfSupplyItems.length === 1
     warn('co2.self-supply-items',
-      `${names} ${one ? 'betrifft' : 'betreffen'} eine Heizung, deren Brennstoff der Mieter selbst bezieht. Darin stecken keine CO₂-Kosten, die Sie aufteilen müssten; eine Kürzung nach § 7 Abs. 4 CO2KostAufG kommt dafür nicht in Betracht. ` +
+      `${names} ${one ? 'betrifft' : 'betreffen'} eine Heizung, deren Brennstoff oder Wärme der Mieter selbst bezieht. Darin stecken keine CO₂-Kosten, die Sie aufteilen müssten; eine Kürzung nach § 7 Abs. 4 CO2KostAufG kommt dafür nicht in Betracht. ` +
         'Ihren Anteil an den CO₂-Kosten des Mieters erstatten Sie ihm, wenn er ihn nach § 6 Abs. 2 CO2KostAufG in Textform verlangt; erfassen Sie seine Anzeige auf der Seite Kosten unter „CO₂-Erstattung“.',
       itemSubject(selfSupplyItems[0] ?? { id: '' }))
   }

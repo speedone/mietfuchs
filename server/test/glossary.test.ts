@@ -482,3 +482,11 @@ test('Nutzerwechselgebühr (#223): BGH VIII ZR 19/07 mit Datum, Verwaltungskoste
   assert.match(t.example, /30,00 €.*drei Wohnungen.*10,00 €/s)
   assert.equal(3000 / 3, 1000)
 })
+
+test('Wärmelieferung (#225): unmittelbare Abrechnung des Lieferanten mit § 1 Abs. 3 und § 11 Abs. 1 Nr. 4 und der Antwort der Einrichtung', () => {
+  const t = GLOSSARY.heatDelivery
+  assert.match(t.norm, /§ 1 Abs\. 1 Nr\. 2 und Abs\. 3/)
+  assert.match(t.norm, /§ 11 Abs\. 1 Nr\. 4/)
+  assert.match(t.needed, /Rechnet der Lieferant unmittelbar mit den Mietern ab, gelten die Pflichten des Gebäudeeigentümers aus der Heizkostenverordnung für ihn/)
+  assert.match(t.needed, /„Der Wärmelieferant rechnet unmittelbar mit den Mietern ab“/)
+})

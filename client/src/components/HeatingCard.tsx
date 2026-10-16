@@ -96,11 +96,11 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
   // Heizung PR 19 (Prüfung M1): Heizt der Mieter selbst, stellt die Karte nach Rückfrage die laufenden
   // Mietverhältnisse der angehakten Wohnungen auf „Mieter heizt selbst“. Bei der zentralen Heizung nur, wenn es ein
   // einziger Mieter ist; sonst sagt sie, dass Mietfuchs das nicht abdeckt.
-  async function offerSelfSupply(unitIds: string[], central: boolean) {
+  async function offerSelfSupply(unitIds: string[], central: boolean, singleTenant: boolean = central) {
     if (unitIds.length === 0) return
     try {
       const tenancies = await api<Tenancy[]>(withProperty('/api/tenancies', propertyId))
-      const offer = selfSupplyOffer(unitIds, tenancies, localToday(), central)
+      const offer = selfSupplyOffer(unitIds, tenancies, localToday(), central, singleTenant)
       if ('error' in offer) {
         setError(offer.error)
         return
@@ -140,7 +140,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
     if ('none' in result) {
       close()
       toast(result.none)
-      await offerSelfSupply(result.selfSupplyUnitIds, result.central)
+      await offerSelfSupply(result.selfSupplyUnitIds, result.central, result.singleTenant ?? result.central)
       return
     }
     const back = editingId !== null && takesOverBack(plants.find((p) => p.id === editingId), form)
@@ -444,9 +444,9 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
               {editFuelContractNote(form, editingId) && <small className="muted">{editFuelContractNote(form, editingId)}</small>}
               <label className="field grow">
                 Wer erstellt Ihre Heizkostenabrechnung?
-                <select value={form.who} onChange={(e) => setForm({ ...form, who: e.target.value as WhoSettles })}>
+                <select value={whoOptions(kind, form, editingId).some((o) => o.value === form.who) ? form.who : ''} onChange={(e) => setForm({ ...form, who: e.target.value as WhoSettles })}>
                   <option value="">— bitte wählen —</option>
-                  {whoOptions(kind).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  {whoOptions(kind, form, editingId).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </label>
               <small className="muted">{HOW_TO_TELL.who}</small>
