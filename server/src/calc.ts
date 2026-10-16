@@ -5469,20 +5469,26 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         // sichtbarer Fehler ist besser als ein Anteil, der still zweimal privat steht.
         // Laienprobe B20: ohne Formelbuchstaben, mit den Namen der Positionen und der Rechnung in Worten.
         const approxText = st.serviceUsersTotalApprox ? ' Die Summe der Kosten aller Nutzer ist geschätzt als Summe der Einzelbeträge aller Nutzeinheiten; dafür gilt der Rundungsspielraum auch für den Betrag.' : ''
+        // Abdeckung V14: Bei einer Eigentumswohnung rechnet die Gemeinschaft ab, und gemeint ist der eigene Anteil laut
+        // Einzelabrechnung der Wohnung, nicht die Summe des Hauses.
+        const homeowners = potPlant?.source === 'homeowners'
+        const usersName = homeowners ? 'die Heizkosten Ihrer Wohnung laut Einzelabrechnung' : 'die Summe der Kosten aller Nutzer'
+        const landlordName = homeowners ? 'den CO₂-Anteil des Vermieters für Ihre Wohnung' : 'den CO₂-Anteil des Vermieters'
         if (!pot.probe.ok && settledHere) {
           const names = andList(pot.serviceItems.map((c) => `„${c.description}“`))
           const lines = `${pot.serviceItems.length === 1 ? 'Ihre Position' : 'Ihre Positionen'} ${names} ${pot.serviceItems.length === 1 ? 'hat' : 'haben zusammen'} ${fmtCents(pot.probe.itemsCents)}. ` +
-            `Mit Abzugszeile muss der Betrag die Summe der Kosten aller Nutzer (${fmtCents(S)}) plus den CO₂-Anteil des Vermieters (${fmtCents(L)}) sein, also ${fmtCents(S + L)}; ohne Abzugszeile genau die Summe der Kosten aller Nutzer, ${fmtCents(S)}.`
+            `Mit Abzugszeile muss der Betrag ${usersName} (${fmtCents(S)}) plus ${landlordName} (${fmtCents(L)}) sein, also ${fmtCents(S + L)}; ohne Abzugszeile genau ${usersName}, ${fmtCents(S)}.` +
+            (homeowners ? ' Gemeint ist der Anteil Ihrer Wohnung aus der Hausgeldabrechnung, nicht die Summe des ganzen Hauses.' : '')
           const entered = pot.probe.enteredOk
             ? ''
-            : ` Die eingetragenen Einzel- und Eigenbeträge ergeben zusammen ${fmtCents(pot.probe.enteredCents)}, mehr als die Summe der Kosten aller Nutzer und der Rundungsspielraum von ${fmtCents(pot.probe.toleranceCents)}; steht der CO₂-Anteil Ihrer Wohnung schon im Eigenbetrag, tragen Sie dort nur den Betrag der Abrechnung ein.`
+            : ` Die eingetragenen Einzel- und Eigenbeträge ergeben zusammen ${fmtCents(pot.probe.enteredCents)}, mehr als ${usersName} und der Rundungsspielraum von ${fmtCents(pot.probe.toleranceCents)}; steht der CO₂-Anteil Ihrer Wohnung schon im Eigenbetrag, tragen Sie dort nur den Betrag der Abrechnung ein.`
           const cut = law(co2CutMissing, { period: hPeriod }, lawLog)
           warn('co2.sum-check',
             `${where}: Die Probe der CO₂-Angaben geht nicht auf.${approxText} ${lines}${entered} Bis das geklärt ist, bucht Mietfuchs keine CO₂-Aufteilung, und die Mieter tragen ihre Einzelbeträge wie eingetragen. ` +
               (st.method === 'serviceShown'
                 ? `Stimmt Ihre Antwort, dass die Abrechnung die CO₂-Kosten nur ausweist, tragen die Mieter auch den CO₂-Anteil des Vermieters von ${fmtCents(L)} mit; den dürfen Sie nicht auf sie umlegen, eine Vereinbarung, nach der der Mieter mehr als seinen Anteil trägt, ist unwirksam (§ 5 Abs. 2, § 6 Abs. 1 CO2KostAufG). `
                 : '') +
-              `Fehlt die Aufteilung auch in der Abrechnung des Messdienstes, die die Mieter bekommen, darf jeder Mieter seinen Anteil an den Heizkosten um ${cut} % kürzen (§ 7 Abs. 4 CO2KostAufG)${cutsOn(ids, cut)}. ` +
+              `Fehlt die Aufteilung auch in der Abrechnung ${homeowners ? 'der Gemeinschaft' : 'des Messdienstes'}, die die Mieter bekommen, darf jeder Mieter seinen Anteil an den Heizkosten um ${cut} % kürzen (§ 7 Abs. 4 CO2KostAufG)${cutsOn(ids, cut)}. ` +
               'Prüfen Sie den Betrag der Position (bezahlt, also vor „Abzüglich CO₂-Kosten Vermieter“) und Ihre Antwort auf die Frage nach der Abzugszeile.',
             plantSubject)
         } else if (pot.probe.ok && st.serviceUsersTotalApprox) {

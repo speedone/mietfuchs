@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 import { fmtEuro } from './api'
-import { CO2_ANSWER_OPTIONS, CO2_NOT_A_SIGN, CO2_QUESTION, co2Body, co2ToForm, parseDecimal, probeLine, usersTotalOf, type Co2Context } from './co2Form'
+import { CO2_ANSWER_OPTIONS, CO2_NOT_A_SIGN, CO2_QUESTION, co2Body, co2Labels, co2ToForm, parseDecimal, probeLine, usersTotalOf, type Co2Context } from './co2Form'
 import { periodKey } from '../../shared/period.ts'
 import type { Co2Statement } from './types'
 
@@ -91,4 +91,29 @@ test('Die Frage fragt nur nach der Zeile in der Kostenaufstellung; „vom Vermie
   expect(CO2_QUESTION).toContain('vor der Verteilung')
   expect(CO2_NOT_A_SIGN).toContain('vom Vermieter übernommen')
   expect(CO2_NOT_A_SIGN).toContain('kein Zeichen')
+})
+
+test('Abdeckung V14, Eigentumswohnung: die Karte fragt nach dem eigenen Anteil laut Hausgeldabrechnung, nicht nach dem ganzen Haus', () => {
+  // Position „Heizkosten laut Hausgeldabrechnung“ 1.210,00 € (bezahlt), Einzelbetrag des Mieters 1.150,00 €, CO₂-Anteil
+  // des Vermieters für die Wohnung 60,00 €. Wer wie bisher „Summe der Kosten aller Nutzer“ wörtlich nahm, trug die Summe
+  // des Hauses ein (18.400,00 €), und die Probe scheiterte.
+  const etw: Co2Context = { unitsCount: 6, homeowners: true, items: [{ id: 'hz', description: 'Heizkosten laut Hausgeldabrechnung', amountCents: 121000, key: 'amounts', tenancyAmounts: { t1: 115000 } }] }
+  const labels = co2Labels(true)
+  expect(labels.usersTotal).toBe('Heizkosten Ihrer Wohnung laut Einzelabrechnung (€)')
+  expect(labels.landlordCo2).toBe('davon Vermieter für Ihre Wohnung (€)')
+  expect(`${labels.usersTotal} ${labels.usersTotalHelp} ${labels.unitsHelp}`).not.toMatch(/Messdienst|aller Nutzer/)
+  expect(co2Labels(false).usersTotal).toBe('Summe der Kosten aller Nutzer (€)')
+  // Die Abrechnung der Gemeinschaft betrifft nur die eigene Wohnung: eine Nutzeinheit.
+  const f = { ...co2ToForm(null, etw), answer: 'deducted' as const, usersTotal: '1.150,00', landlordCo2: '60,00' }
+  expect(f.unitsCount).toBe('1')
+  expect(probeLine(f, etw)).toEqual({ text: `Ihre Positionen: ${fmtEuro(121000)} · erwartet: ${fmtEuro(121000)} ✓`, ok: true })
+  const r = co2Body(f, etw)
+  if (!('body' in r)) throw new Error(r.error)
+  expect(r.body).toMatchObject({ method: 'serviceDeducted', serviceUsersTotalCents: 115000, serviceLandlordCents: 6000, serviceUnitsCount: 1 })
+  // Die Summe des Hauses eingetragen: die Probe sagt, was gemeint ist, ohne vom Messdienst zu sprechen.
+  const haus = probeLine({ ...f, usersTotal: '18.400,00' }, etw)
+  expect(haus?.ok).toBe(false)
+  expect(haus?.text).toContain(`mit Abzugszeile erwartet: Heizkosten Ihrer Wohnung ${fmtEuro(1840000)} + Anteil Vermieter ${fmtEuro(6000)} = ${fmtEuro(1846000)}; ohne Abzugszeile: ${fmtEuro(1840000)}.`)
+  expect(haus?.text).toContain('Nicht gemeint ist die Summe des ganzen Hauses.')
+  expect(co2Body({ ...f, usersTotal: '' }, etw)).toEqual({ error: 'Bitte tragen Sie die Heizkosten Ihrer Wohnung laut Einzelabrechnung der Gemeinschaft ein, oder kreuzen Sie „Ich finde diese Zeile nicht“ an.' })
 })
