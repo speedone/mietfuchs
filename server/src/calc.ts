@@ -404,6 +404,7 @@ const noticeKinds = {
   'heating.key-change': { level: 'hint', title: 'Anteil nach Verbrauch geändert', rule: 'heating-key-change', terms: ['consumptionCosts', 'keyChange'] },
   'heating.change-split-time': { level: 'hint', title: 'Mieterwechsel zeitanteilig statt nach Gradtagen', rule: 'heating-tenant-change', terms: ['interimReading', 'degreeDays'] },
   'heating.change-fee': { level: 'hint', title: 'Kosten der Zwischenablesung', rule: 'heating-tenant-change', terms: ['interimReading'] },
+  'meter.change-fee': { level: 'hint', title: 'Kosten der Zwischenablesung', terms: ['changeFee', 'meterReading'] },
   'heating.heat-pump-capture': { level: 'hint', title: 'Wärmepumpe: Heizkostenverordnung gilt noch nicht', rule: 'heating-own-settlement', terms: ['heatingSystem', 'heatMeter'] },
   // Warmwasseranteil auf der Schätzung beim Abschluss (Abweichung 11).
   'heating.dhw-share-estimated': { level: 'hint', title: 'Warmwasseranteil aus geschätzter Energie', rule: 'heating-own-settlement', terms: ['hotWaterShare'] },
@@ -419,6 +420,8 @@ const noticeKinds = {
   // sperrt `heating.self-incomplete`.
   'heating.device-cutoff': { level: 'hint', title: 'Stichtag eines Heizkostenverteilers mitten in der Heizperiode', rule: 'heating-own-settlement', terms: ['heatCostAllocator'] },
   'heating.mixed-capture': { level: 'error', title: 'Verschiedene Geräte in einer Heizanlage', rule: 'heating-own-settlement', terms: ['heatCostAllocator'] },
+  'heating.pipe-heat': { level: 'hint', title: 'Rohrwärme', rule: 'heating-own-settlement', terms: ['pipeHeat', 'heatCostAllocator'] },
+  'heating.pre-capture': { level: 'hint', title: 'Vorerfassung nach Nutzergruppen möglich', rule: 'heating-own-settlement', terms: ['preCapture'] },
   'heating.hca-factor-missing': { level: 'error', title: 'Skala oder Bewertungsfaktor fehlt', rule: 'heating-own-settlement', terms: ['heatCostAllocator'] },
   // Heizung PR 13 (#99, Entwurf 8.7, 10.1): Schätzung nach § 9a.
   'heating.estimate-unconfirmed': { level: 'warning', title: 'Schätzung nicht bestätigt', rule: 'heating-estimate', terms: ['heatingEstimate'] },
@@ -3376,6 +3379,24 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const unrated = missingRatings(capture, [...servedIds], snapshot.meters, snapshot.readings, hPeriod)
     if (unrated.length > 0) blocked.push({ code: 'heating.hca-factor-missing', text: missingRatingsText(unrated, unitNameOf) })
     const where = `${plant.name ? `Heizanlage „${plant.name}“` : 'Heizanlage'}, Heizperiode ${label}`
+    // #219: Nur die Auskunft nach § 7 Abs. 1 Satz 3 und 4 HeizkostenV; die Bestimmung des Verbrauchs nach der Technik rechnet
+    // Mietfuchs nicht. Ob die Leitungen frei liegen und ungedämmt sind, kennt das Modell nicht, deshalb immer bei
+    // Heizkostenverteilern und ohne Farbe (client/src/notices.ts, INFORMATIONAL).
+    if (capture === 'hca') {
+      warn('heating.pipe-heat',
+        `${where}: Sind in Ihrem Haus die freiliegenden Leitungen der Wärmeverteilung überwiegend ungedämmt und erfassen die Heizkostenverteiler deswegen einen wesentlichen Anteil des Wärmeverbrauchs nicht, kann der Verbrauch der Nutzer nach anerkannten Regeln der Technik bestimmt werden (§ 7 Abs. 1 Satz 3 HeizkostenV); ein Verfahren beschreibt die Richtlinie VDI 2077 Blatt 3.5. ` +
+          'Freiliegend sind nur Leitungen, die sichtbar auf der Wand verlaufen; für Leitungen unter Putz oder im Estrich gilt die Regel nicht (BGH VIII ZR 5/16). ' +
+          'Diese Bestimmung rechnet Mietfuchs nicht; verteilt wird nach den erfassten Einheiten. Lassen Sie den Verbrauch von einem Messdienst bestimmen, tragen Sie dessen Werte als „Werte eines Ablesedienstes“ ein; sie gelten dann als erfasster Verbrauch.')
+    }
+    // #218: § 5 Abs. 7 Satz 2 HeizkostenV. Pflicht (Satz 1) meldet `heating.mixed-capture`; die freie Vorerfassung bei
+    // unterschiedlicher Nutzungsart ist erkennbar, wenn das Gebäude überwiegend nicht dem Wohnen dient (Merkmal der
+    // CO₂-Aufteilung, § 8 CO2KostAufG) und Mietfuchs die Anlage selbst verteilt. Nur Auskunft.
+    if (plant.nonResidential && !mixed) {
+      warn('heating.pre-capture',
+        `${where}: Sie haben angegeben, dass das Gebäude überwiegend nicht dem Wohnen dient. Nutzen die Einheiten an dieser Anlage die Wärme verschieden, etwa ein Laden neben Wohnungen, kann der Gebäudeeigentümer bei unterschiedlichen Nutzungs- oder Gebäudearten oder aus anderen sachgerechten Gründen eine Vorerfassung nach Nutzergruppen durchführen (§ 5 Abs. 7 Satz 2 HeizkostenV). ` +
+          'Vorgeschrieben ist sie, wenn der Verbrauch nicht mit gleichen Ausstattungen erfasst wird (Satz 1). Eine Vorerfassung rechnet Mietfuchs nicht; verteilt wird über alle Einheiten der Anlage zusammen. ' +
+          'Soll vorerfasst werden, lassen Sie diese Heizkosten vom Messdienst abrechnen und übernehmen Sie dessen Beträge als Einzelbeträge.')
+    }
     // Nicht unter einer Ausnahme nach § 11 für die Wärme oder einer Vereinbarung nach § 2 (Heizung PR 14): Dann
     // schreibt die Verordnung den Anteil nicht vor.
     if (shares !== null && shares.insulation !== 'applies' && shares.insulation !== 'notApplies' && OIL_OR_GAS.includes(plant.energy) && !exemptPot(plant.id, 'heating', String(period.key)) && agreedFor(plant.id, String(period.key)) === null) {
@@ -3897,6 +3918,15 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         `„${item.description}“: Kosten der Verbrauchserfassung, die wegen des Auszugs eines Mieters vor Ablauf des Abrechnungszeitraums entstehen, sind keine umlagefähigen Betriebskosten; sie trägt der Vermieter, soweit im Mietvertrag nichts anderes vereinbart ist (BGH VIII ZR 19/07). ` +
           'Ob eine Klausel im Formularmietvertrag genügt, hat der BGH nicht entschieden; ein Amtsgericht hält sie für unwirksam (AG Berlin-Hohenschönhausen; das Aktenzeichen steht im Lexikon unter „Zwischenablesung“). Eine wirksame Vereinbarung gibt einen Anspruch gegen den ausziehenden Mieter, keine Position für alle. ' +
           'Gehört die Position dazu, erfassen Sie sie unter „Nicht umlagefähig“.',
+        itemSubject(item))
+    }
+    // #223: dieselbe Regel bei Wasser und anderen Positionen nach Zählern; der Leitsatz gilt für die Kosten der
+    // Verbrauchserfassung allgemein, nicht nur für die Heizung.
+    if (item.category !== HEATING_CATEGORY && !isNotAllocable(item.category) && (item.category === 'Wasser/Abwasser' || item.key === 'meter') &&
+      !item.id.startsWith('fuel:') && !item.id.startsWith('stock:') && /zwischenablesung|nutzerwechsel/i.test(item.description)) {
+      warn('meter.change-fee',
+        `„${item.description}“: Kosten der Verbrauchserfassung und Abrechnung, die wegen des Auszugs eines Mieters vor Ablauf des Abrechnungszeitraums entstehen, etwa für die Zwischenablesung der Wasserzähler, sind keine umlagefähigen Betriebskosten, sondern Verwaltungskosten; sie trägt der Vermieter, soweit im Mietvertrag nichts anderes vereinbart ist (BGH VIII ZR 19/07). ` +
+          'Eine wirksame Vereinbarung gibt einen Anspruch gegen den ausziehenden Mieter, keine Position für alle. Gehört die Position dazu, erfassen Sie sie unter „Nicht umlagefähig“.',
         itemSubject(item))
     }
     // Rohanteile (float, in Cent) pro Mietverhältnis bestimmen.
@@ -6668,23 +6698,35 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const names = andList(selfSupplyItems.map((c) => `„${c.description}“`))
     const one = selfSupplyItems.length === 1
     warn('co2.self-supply-items',
-      `${names} ${one ? 'betrifft' : 'betreffen'} eine Heizung, deren Brennstoff der Mieter selbst bezieht. Darin stecken keine CO₂-Kosten, die Sie aufteilen müssten; eine Kürzung nach § 7 Abs. 4 CO2KostAufG kommt dafür nicht in Betracht. ` +
+      `${names} ${one ? 'betrifft' : 'betreffen'} eine Heizung, deren Brennstoff oder Wärme der Mieter selbst bezieht. Darin stecken keine CO₂-Kosten, die Sie aufteilen müssten; eine Kürzung nach § 7 Abs. 4 CO2KostAufG kommt dafür nicht in Betracht. ` +
         'Ihren Anteil an den CO₂-Kosten des Mieters erstatten Sie ihm, wenn er ihn nach § 6 Abs. 2 CO2KostAufG in Textform verlangt; erfassen Sie seine Anzeige auf der Seite Kosten unter „CO₂-Erstattung“.',
       itemSubject(selfSupplyItems[0] ?? { id: '' }))
   }
   // Gemischt (Prüfung M3): Wer selbst heizt, trägt zugleich eine Position einer Heizanlage, deren Brennstoff oder
   // Wärme der Vermieter bezieht. Das deckt Mietfuchs nicht ab; gerechnet wird wie erfasst.
   const conflicts = new Map<string, string[]>()
+  // Abdeckung V27: Hängt der Mieter an einer zentralen Anlage, bezieht er bei eigenem Vertrag den Brennstoff des ganzen
+  // Hauses; dafür legt die Einrichtung keine Anlage an (client/src/heatingForm.ts, CENTRAL_SELF_SUPPLY).
+  const viaCentral = new Set<string>()
   for (const c of items) {
     if (c.category !== HEATING_CATEGORY || !c.heatingPlantId) continue
-    for (const st of bearersOf(c.id)) if (selfSupplied.has(st.tenancyId)) conflicts.set(st.tenancyId, [...(conflicts.get(st.tenancyId) ?? []), c.description])
+    const central = plants.find((p) => p.id === c.heatingPlantId)?.supply !== 'perUnit'
+    for (const st of bearersOf(c.id)) {
+      if (!selfSupplied.has(st.tenancyId)) continue
+      conflicts.set(st.tenancyId, [...(conflicts.get(st.tenancyId) ?? []), c.description])
+      if (central) viaCentral.add(st.tenancyId)
+    }
   }
   for (const [tenancyId, descriptions] of conflicts) {
     const st = statements.get(tenancyId)
     if (!st) continue
+    const selfWay = viaCentral.has(tenancyId)
+      ? 'Bezieht er den Brennstoff dieser zentralen Heizung über einen eigenen Vertrag, legen Sie dafür keine Heizanlage an: Entfernen Sie die Heizanlage in den Stammdaten in der Karte „Heizung“ mit „Entfernen“ (die Heizpositionen bleiben, nur ohne Anlage), ' +
+        'klicken Sie dann auf „Heizung einrichten“ und wählen Sie bei „Wer hat den Liefervertrag für den Brennstoff?“ „Der Mieter, der alle angeschlossenen Wohnungen gemietet hat“.'
+      : 'Bezieht er den Brennstoff selbst, nehmen Sie seine Wohnung aus der Heizanlage.'
     warn('co2.self-supply-mixed',
       `${st.tenantName} (${st.unitName}) ist in den Stammdaten auf „Mieter heizt selbst“ gestellt, trägt aber einen Anteil an ${andList([...new Set(descriptions)].map((d) => `„${d}“`))} einer Heizanlage, deren Brennstoff oder Wärme Sie beziehen. ` +
-        'Beides zugleich deckt Mietfuchs nicht ab; gerechnet wird wie erfasst, ohne CO₂-Kürzung für diesen Mieter. Heizt der Mieter über Ihre Heizanlage, stellen Sie sein Mietverhältnis unter Heizung auf „Abrechnung“; bezieht er den Brennstoff selbst, nehmen Sie seine Wohnung aus der Heizanlage.',
+        `Beides zugleich deckt Mietfuchs nicht ab; gerechnet wird wie erfasst, ohne CO₂-Kürzung für diesen Mieter. Heizt der Mieter über Ihre Heizanlage, stellen Sie sein Mietverhältnis unter Heizung auf „Abrechnung“. ${selfWay}`,
       { kind: 'tenancy', id: tenancyId })
   }
   const loose = items.filter((c) => c.category === HEATING_CATEGORY && c.amountCents !== 0 && !inPots.has(c.id) && !spanning.has(c.id) && !selfSupplyItems.includes(c))

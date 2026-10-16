@@ -83,7 +83,7 @@ test('M3 Etagenheizung: Wartung bei selfSupply ohne Heizanlage, 2025: kein Hinwe
   assert.ok(!codes(r).includes('co2.fuel-unknown'), codes(r).join(', '))
   const n = r.notices.find((x) => x.code === 'co2.self-supply-items') ?? assert.fail(codes(r).join(', '))
   assert.equal(n.level, 'hint')
-  assert.match(n.text, /„Wartung der Heizung“ betrifft eine Heizung, deren Brennstoff der Mieter selbst bezieht\. Darin stecken keine CO₂-Kosten, die Sie aufteilen müssten; eine Kürzung nach § 7 Abs\. 4 CO2KostAufG kommt dafür nicht in Betracht\./)
+  assert.match(n.text, /„Wartung der Heizung“ betrifft eine Heizung, deren Brennstoff oder Wärme der Mieter selbst bezieht\. Darin stecken keine CO₂-Kosten, die Sie aufteilen müssten; eine Kürzung nach § 7 Abs\. 4 CO2KostAufG kommt dafür nicht in Betracht\./)
   assert.match(n.text, /nach § 6 Abs\. 2 CO2KostAufG in Textform verlangt; erfassen Sie seine Anzeige auf der Seite Kosten unter „CO₂-Erstattung“\./)
   assert.equal(n.rule, 'co2-self-supply')
 })
@@ -126,6 +126,23 @@ test('Gemischt mit Heizanlage: wer selbst heizt und Brennstoff der Anlage trägt
   assert.ok(!codes(computeSettlement(snapshotFor(s, 'objekt-1', P))).includes('co2.self-supply-mixed'))
 })
 
+test('Abdeckung V27: zentrale Heizung als Anlage angelegt, Brennstoff beim Mieter: der Fehler sagt, dass dafür keine Anlage angelegt wird und wie man umstellt', () => {
+  const s = co2Source(2025, { co2CostCents: 50000 })
+  const tenancies = s.tenancies.map((t) => (t.id === 'ta' ? { ...t, heatingModel: 'selfSupply' as const } : t))
+  const P = periodOfKey(CALENDAR_RULES, periodKey('2025-01')) ?? assert.fail('kein Zeitraum')
+  const zentral = computeSettlement(snapshotFor({ ...s, tenancies }, 'objekt-1', P))
+  const n = zentral.notices.find((x) => x.code === 'co2.self-supply-mixed') ?? assert.fail(codes(zentral).join(', '))
+  assert.match(n.text, /Bezieht er den Brennstoff dieser zentralen Heizung über einen eigenen Vertrag, legen Sie dafür keine Heizanlage an:/)
+  assert.match(n.text, /„Entfernen“/)
+  assert.match(n.text, /„Wer hat den Liefervertrag für den Brennstoff\?“ „Der Mieter, der alle angeschlossenen Wohnungen gemietet hat“/)
+  assert.doesNotMatch(n.text, /nehmen Sie seine Wohnung aus der Heizanlage/)
+  // Etagenheizung auf Vertrag des Vermieters: Dort bleibt der Weg, die Wohnung aus der Anlage zu nehmen.
+  const plants = (s.heatingPlants ?? []).map((p) => ({ ...p, supply: 'perUnit' as const }))
+  const etage = computeSettlement(snapshotFor({ ...s, tenancies, heatingPlants: plants }, 'objekt-1', P))
+  const e = etage.notices.find((x) => x.code === 'co2.self-supply-mixed') ?? assert.fail(codes(etage).join(', '))
+  assert.match(e.text, /nehmen Sie seine Wohnung aus der Heizanlage/)
+})
+
 // Durchsicht S-2: Zentrale Heizung, Brennstoff beim Mieter. Ihr Betriebsstrom darf nicht im Allgemeinstrom stehen, den
 // auch andere Mieter tragen (BGH, Urteil vom 03.06.2016, V ZR 166/15, Rn. 13).
 test('S-2: zentrale Heizung beim Mieter, Allgemeinstrom auch bei anderen Mietern: Hinweis zum Betriebsstrom, färbt die Ampel nicht', () => {
@@ -141,7 +158,7 @@ test('S-2: zentrale Heizung beim Mieter, Allgemeinstrom auch bei anderen Mietern
   const n = r.notices.find((x) => x.code === 'heating.self-supply-operating-power') ?? assert.fail(codes(r).join(', '))
   assert.equal(n.level, 'hint')
   assert.deepEqual(n.subject, { kind: 'tenancy', id: 'ta' })
-  assert.match(n.text, /^Die Wohnung a von ta wird über eine zentrale Heizung versorgt, deren Brennstoff der Mieter selbst bezieht\. Läuft ihr Betriebsstrom/)
+  assert.match(n.text, /^Die Wohnung a von ta wird über eine zentrale Heizung versorgt, deren Brennstoff oder Wärme der Mieter selbst bezieht\. Läuft ihr Betriebsstrom/)
   assert.match(n.text, /„Hausstrom“/)
   assert.match(n.text, /BGH, Urteil vom 03\.06\.2016, V ZR 166\/15, Rn\. 13/)
   // Der rechtmäßige Fall steht ausdrücklich da, wie beim Hinweis „Betriebsstrom fehlt“.
@@ -182,4 +199,12 @@ test('N-1: Abzug für eine andere Heizung schaltet den Hinweis nicht ab; verknü
   assert.equal(mit([betrieb('eigen', { key: 'area', participantUnitIds: ['a', 'b'] }), abzug('ab-eigen', 'eigen')]), false)
   // Ohne Verweis: beantwortet, wie bisher.
   assert.equal(mit([abzug('ab-frei')]), false)
+})
+
+test('#225: Wärmelieferant rechnet unmittelbar ab (keine Anlage, Mieter heizt selbst): die Kosten der Hausanlage tragen keinen Hinweis auf 15 % oder CO₂-Aufteilung', () => {
+  const selbst = { heatingModel: 'selfSupply' as const, selfSupplyKind: 'central' as const }
+  const r = settle({ units: ZWEI, tenancies: [tenancy('ta', 'a', selbst), tenancy('tb', 'b', selbst)], costItems: [item(2025, { id: 'station', description: 'Wartung Übergabestation' })] })
+  assert.deepEqual(codes(r), ['co2.self-supply-items'])
+  const n = r.notices[0] ?? assert.fail('kein Hinweis')
+  assert.match(n.text, /deren Brennstoff oder Wärme der Mieter selbst bezieht/)
 })

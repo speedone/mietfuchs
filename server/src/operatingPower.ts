@@ -323,7 +323,7 @@ export function deductionMissingText(f: MissingPowerFinding, label: string): str
 export function selfSupplyPowerText(tenantName: string, unitName: string, generals: readonly { description: string }[]): string {
   const first = generals[0]
   const where = first === undefined ? 'im Allgemeinstrom' : `in „${first.description}“${generals.length > 1 ? ' und weiteren' : ''}`
-  return `Die Wohnung ${unitName} von ${tenantName} wird über eine zentrale Heizung versorgt, deren Brennstoff der Mieter selbst bezieht. ` +
+  return `Die Wohnung ${unitName} von ${tenantName} wird über eine zentrale Heizung versorgt, deren Brennstoff oder Wärme der Mieter selbst bezieht. ` +
     `Läuft ihr Betriebsstrom (Brenner, Umwälzpumpen, Regelung) über den Stromzähler des Hauses, steckt er ${where} und wird mit dessen Schlüssel auch auf andere Mieter verteilt; dort darf er nicht stehen (BGH, Urteil vom 03.06.2016, V ZR 166/15, Rn. 13). ` +
     'Er gehört zu den Kosten der Heizung (§ 2 Nr. 4 Buchst. a BetrKV). Ziehen Sie ihn beim Allgemeinstrom ab: Erfassen Sie ihn als Position „Heizung und Warmwasser“ mit dem Teil „Betrieb“ für die Wohnung dieses Mieters, ' +
     `wählen Sie dort bei „${OPERATING_POWER_INCLUDED_QUESTION}“ die Antwort „${OPERATING_POWER_INCLUDED_YES}“ und erfassen Sie beim Allgemeinstrom einen Abzug in derselben Höhe, verknüpft mit dieser Position. ` +

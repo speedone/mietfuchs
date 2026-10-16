@@ -715,3 +715,9 @@ test('Anleitungen: Mehrfamilienhaus nennt die Angabe zum Betriebsstrom und den Z
   assert.match(c.text, /Läuft er über den Stromzähler des Hauses, schätzen Sie ihn oder lesen Sie den Zwischenzähler ab und ziehen ihn beim Allgemeinstrom ab;/)
   assert.ok(c.text.endsWith('Geben Sie auf der Seite Heizkosten an, wie der Betriebsstrom erfasst ist; dann weist Mietfuchs gezielt darauf hin, wenn der Abzug fehlt.'), c.text)
 })
+
+test('Integrationsdurchsicht S3: „Heizkosten selbst abrechnen“ nennt die monatliche Verbrauchsinformation nicht mehr als Lücke, sondern die Karte, die sie erstellt', () => {
+  const g = GUIDES.heatingSelf
+  assert.ok(g.gaps.every((x) => !/Verbrauchsinformation/.test(x.text) || /Heizkostenverteiler/.test(x.text)), 'überholte Lücke zur Verbrauchsinformation')
+  assert.ok(g.steps.some((s) => s.page === 'heizkosten' && s.text.includes('„Monatliche Verbrauchsinformation“')))
+})

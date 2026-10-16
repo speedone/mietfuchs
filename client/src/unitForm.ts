@@ -154,6 +154,18 @@ export function unitDeleteMessage(deps: UnitDependents | null): string {
   return `${head}${direct} ${IRREVERSIBLE}`
 }
 
+// Rechnungen einer Etagenheizung sperren das Löschen der Wohnung (Integrationsdurchsicht S1, Regel in
+// server/src/db/repository.ts). Die Oberfläche sagt es, bevor sie fragt, statt erst „Löschen“ anzubieten.
+export function unitDeleteBlocked(deps: UnitDependents | null): string | null {
+  const n = deps?.fuelDeliveries ?? 0
+  if (n === 0) return null
+  return n === 1
+    ? 'An der Wohnung hängt 1 Rechnung der Etagenheizung. Sie belegt Brennstoffkosten und CO₂-Aufteilung und bleibt deshalb; ' +
+      'die Wohnung lässt sich erst löschen, wenn Sie die Rechnung auf der Seite Heizkosten unter „Lieferungen“ gelöscht haben.'
+    : `An der Wohnung hängen ${n} Rechnungen der Etagenheizung. Sie belegen Brennstoffkosten und CO₂-Aufteilung und bleiben deshalb; ` +
+      'die Wohnung lässt sich erst löschen, wenn Sie die Rechnungen auf der Seite Heizkosten unter „Lieferungen“ gelöscht haben.'
+}
+
 // Anschlüsse einer Einheit (#142). Gefragt wird positiv: angehakt heißt angeschlossen, und das ist
 // der Normalfall. Gespeichert wird unverändert nur die Ausnahme (`noConnection`, #117), damit
 // bestehende Daten ohne Umbau gelten.

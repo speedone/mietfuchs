@@ -478,6 +478,37 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   zu nutzenden Brennstoff übernimmt sie nur, wo Mietfuchs ihn rechnet, und sagt sonst, warum nicht. Gespeichert wird in
   beiden Karten erst, wenn Sie übernehmen. Lieferungen von Gas, Fernwärme und Strom tragen jetzt auch Menge, Teilmengen
   und Emissionsfaktor, Lieferungen aus dem Vorrat den Emissionsfaktor.
+- Rohrwärme: Rechnen Sie die Heizkosten selbst mit Heizkostenverteilern ab, nennt die Abrechnung als Hinweis, dass
+  bei überwiegend ungedämmten, frei auf der Wand verlaufenden Leitungen der Verbrauch nach anerkannten Regeln der
+  Technik bestimmt werden kann (§ 7 Abs. 1 Satz 3 HeizkostenV, Verfahren in VDI 2077 Blatt 3.5), für Leitungen unter
+  Putz oder im Estrich aber nicht (BGH, Urteil vom 15.03.2017, VIII ZR 5/16). Das Lexikon erklärt den Begriff.
+  Die Bestimmung selbst rechnet Mietfuchs nicht; der Hinweis färbt die Ampel nicht, und keine Zahl ändert sich
+  ([#219](https://github.com/speedone/mietfuchs/issues/219)).
+
+- Vorerfassung nach Nutzergruppen: Rechnen Sie die Heizkosten eines Gebäudes selbst ab, das überwiegend nicht dem
+  Wohnen dient, nennt die Abrechnung als Hinweis, dass bei unterschiedlichen Nutzungsarten eine Vorerfassung nach
+  Nutzergruppen möglich ist (§ 5 Abs. 7 Satz 2 HeizkostenV) und wann sie vorgeschrieben ist; das Lexikon erklärt den
+  Begriff. Die Vorerfassung selbst rechnet Mietfuchs nicht; verschiedene Geräte an einer Anlage bleiben ein Fehler
+  mit Verweis auf den Messdienst. Der Hinweis färbt die Ampel nicht, und keine Zahl ändert sich
+  ([#218](https://github.com/speedone/mietfuchs/issues/218)).
+
+- Nutzerwechselgebühr auch bei Wasser: Heißt eine Position „Wasser/Abwasser“ oder eine Position nach Zählern etwa
+  „Zwischenablesung“ oder „Nutzerwechselgebühr“, weist die Abrechnung wie bei der Heizung darauf hin, dass diese
+  Kosten keine umlagefähigen Betriebskosten sind (BGH, Urteil vom 14.11.2007, VIII ZR 19/07), und nennt den Weg über
+  „Nicht umlagefähig“. Neu im Lexikon: „Nutzerwechselgebühr“. Keine Zahl ändert sich
+  ([#223](https://github.com/speedone/mietfuchs/issues/223)).
+
+- Wärmelieferung mit unmittelbarer Abrechnung durch den Lieferanten: Bei Fernwärme oder Contracting bietet die
+  Einrichtung der Heizung die Antwort „Der Wärmelieferant rechnet unmittelbar mit den Mietern ab“. Mietfuchs legt
+  dann keine Heizanlage an, fragt nicht nach Geräten und Umstellung und stellt die Mietverhältnisse auf „Mieter heizt
+  selbst“. Legt der Lieferant die Anteile am Gesamtverbrauch zugrunde, gelten die Pflichten der Heizkostenverordnung
+  für ihn (§ 1 Abs. 3 HeizkostenV), und die Kosten der Hausanlagen, die Sie gesondert abrechnen, sind von der
+  Verteilung nach Verbrauch ausgenommen (§ 11 Abs. 1 Nr. 4 HeizkostenV); misst er jede Wohnung selbst, gilt die
+  Verordnung für diese Verteilung nicht. Die Erklärung steht vor dem Speichern unter der Frage. Vorher blieb nur
+  eine Antwort, nach der die Abrechnung eine Kürzung um 15 % und einen Hinweis zu den CO₂-Kosten nannte, die in diesem Fall
+  nicht zutreffen. Die Hinweise zu einer Heizung, deren Brennstoff der Mieter selbst bezieht, sagen jetzt
+  „Brennstoff oder Wärme“. Keine Zahl ändert sich ([#225](https://github.com/speedone/mietfuchs/issues/225)).
+
 ### Geändert
 
 - Neue Warnung „Monatliche Verbrauchsinformation“ bei einer Heizanlage, deren Zähler oder
@@ -537,7 +568,7 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   später ab, sagt es der Vergleich mit der heutigen Berechnung. Abgeschlossene Abrechnungen
   bleiben unverändert; bei einer Abrechnung von vor dieser Version steht „Rechtswerte nicht
   gespeichert“. Keine Zahl und kein Hinweistext einer Abrechnung ändert sich; neu gesetzt ist nur
-  der angezeigte Rechtsstand, jetzt das Datum des Rechtsregisters (05.10.2026 statt 02.10.2026).
+  der angezeigte Rechtsstand, jetzt das Datum des Rechtsregisters (12.10.2026 statt 02.10.2026).
   ([#97](https://github.com/speedone/mietfuchs/issues/97), [#110](https://github.com/speedone/mietfuchs/issues/110))
 - **KI-Belegauswertung:** Ob der Abstand zwischen Positionen und Rechnungsbetrag Umsatzsteuer
   ist, misst Mietfuchs jetzt am Satz des Rechnungsdatums, für das zweite Halbjahr 2020 also an
@@ -549,8 +580,6 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   selbst gehören (etwa ein Wärmezähler am Speicher), gelten nicht als Hauptzähler des Hauses. Beides
   betrifft nur Bestände mit diesen neuen Zählern, keine bisherige Abrechnung
   ([#99](https://github.com/speedone/mietfuchs/issues/99)).
-- Ein Kostenschlüssel „nach Verbrauch“ mit Heizkostenverteilern wird abgelehnt, bis Mietfuchs deren
-  Bewertungsfaktoren kennt; übernehmen Sie die Abrechnung des Messdienstes als Einzelbeträge.
 
 - **Angekündigt: Hinweis zu den CO₂-Kosten bei Heizpositionen ab 2023.** Für Abrechnungszeiträume, die
   am oder nach dem 01.01.2023 beginnen, sagt die Abrechnung bei Positionen „Heizung und Warmwasser“,
@@ -607,8 +636,19 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Bruchteile eines Cents, ein abgeschnittener Download, eine beschädigte Datei im ZIP), wird
   gemeldet statt geraten ([#188](https://github.com/speedone/mietfuchs/issues/188)).
 
+- Der Fehler „Mieter heizt selbst und hängt an Ihrer Heizanlage“ sagt bei einer zentralen Heizung, dass für einen
+  Brennstoffvertrag beim Mieter keine Heizanlage angelegt wird, und nennt den Weg dorthin: Anlage entfernen, die
+  Heizung neu einrichten und beim Liefervertrag den Mieter wählen. Dasselbe steht beim Ändern einer Gas-, Öl-,
+  Flüssiggas- oder Kohleheizung in der Karte „Heizung“. Keine Zahl ändert sich
+  ([#97](https://github.com/speedone/mietfuchs/issues/97)).
+
 ### Behoben
 
+- **Wohnung mit Etagenheizung löschen.** Hingen an einer Wohnung Rechnungen ihrer Etagenheizung, scheiterte das
+  Löschen mit einer Meldung über einen fehlenden Eintrag, oder die Rechnung verschwand samt kg CO₂ und CO₂-Kosten
+  ohne Nachfrage mit der Wohnung. Jetzt sagt Mietfuchs vorher, welche Rechnungen an der Wohnung hängen, und
+  löscht die Wohnung erst, wenn Sie die Rechnungen auf der Seite Heizkosten selbst gelöscht haben. Keine Zahl
+  ändert sich.
 - **Kein Hinweis auf eine CO₂-Kürzung, wenn der Mieter selbst heizt** ([#97](https://github.com/speedone/mietfuchs/issues/97)):
   Erfassten Sie Wartung oder Betriebsstrom einer Gastherme, deren Gasvertrag der Mieter hat, als „Heizung und
   Warmwasser“, nannte die Abrechnung eine Kürzung um 3 % nach § 7 Abs. 4 CO2KostAufG und eine nach § 12

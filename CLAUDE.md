@@ -613,6 +613,11 @@ Start hinein (siehe Umstieg unten), und **die Routen lesen und schreiben sie**
   (`flat_rates`), Teilnehmer, Einzel- und Eigenbeträge (`cost_item_participants`,
   `cost_item_amounts`, `cost_item_self_amounts`) und `unit_no_connection`; auf das Objekt verweisen
   Wohnungen, Zähler, Kosten, Abschlüsse und frühere Abschlüsse mit `RESTRICT`.
+  Ausnahme an der Route: Die Rechnungen einer Etagenheizung (`fuel_deliveries.unit_id`) stehen zwar auf
+  `CASCADE`, eine Wohnung mit Rechnungen löscht `DELETE /api/units/:id` aber nicht (409, `dependents` zählt sie
+  als `fuelDeliveries`): Die Rechnung ist Beleg der CO₂-Aufteilung, und hing eine Position daran, scheiterte das
+  Löschen vorher an deren `RESTRICT` mit einer irreführenden Meldung. Gesperrt statt `SET NULL`, weil eine
+  Rechnung einer Etagenheizung ohne Wohnung keiner Wohnung mehr zuzuordnen wäre.
 - **Prüfbedingungen je Feld entschieden.** Ohne Bedingung bleiben bewusst
   `cost_items.amount_cents` (eine Gutschrift ist negativ), `labor_35a_cents` (calc.ts meldet
   einen ungültigen Lohnanteil als Warnung und rechnet weiter; eine Bedingung nähme dem Nutzer

@@ -240,3 +240,10 @@ test('Heizung PR 19 (Durchsicht S-2): der Hinweis zum Betriebsstrom der Heizung 
   expect(noticesNeedAttention(s)).toBe(false)
   expect(attentionLevel(s)).toBe('gruen')
 })
+
+// Vor 0.11.0: Hinweise, die nur Auskunft sind und sich nicht beheben lassen, färben die Ampel nicht.
+test.each(['heating.pipe-heat', 'heating.pre-capture'])('%s ist Auskunft und färbt nicht', (code) => {
+  const s = { warnings: ['…'], notices: [n({ code, level: 'hint', title: '…', text: '…' })] }
+  expect(noticesNeedAttention(s)).toBe(false)
+  expect(attentionLevel(s)).toBe('gruen')
+})

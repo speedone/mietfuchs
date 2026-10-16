@@ -1,6 +1,6 @@
 // Die Einrichtung „Heizung“ (Heizung PR 4, Entwurf 11.2), ohne DOM.
 import { describe, expect, test } from 'vitest'
-import { asksContracting, asksFuelContract, FUEL_CONTRACT_OPTIONS, selfSupplyOffer, asksSwitch, contractingSwap, energyLabelOf, HOW_TO_TELL, PREVIOUS_SUPPLY_OPTIONS, asksGeneration, asksNewInstall, asksTakeOver, buildingOptions, canSwap, connectionNote, emptyHeatingForm, emptySwapForm, formulaFormOf, HEAT_GENERATION_OPTIONS, HOT_WATER_OPTIONS, hotWaterBody, isFormula, parseDecimal, SELF_HOT_WATER_OPTIONS, selfFormulaBody, PER_UNIT_ENERGY_OPTIONS, plantOptions, swapBody, swapMetersOf, unmeasurableLabel, heatingPlantBody, heatingSummary, heatingToForm, whoHint, whoOptions, type HeatingForm } from './heatingForm'
+import { asksRemote, asksContracting, asksFuelContract, editFuelContractNote, FUEL_CONTRACT_OPTIONS, selfSupplyOffer, asksSwitch, contractingSwap, energyLabelOf, HOW_TO_TELL, PREVIOUS_SUPPLY_OPTIONS, asksGeneration, asksNewInstall, asksTakeOver, buildingOptions, canSwap, connectionNote, emptyHeatingForm, emptySwapForm, formulaFormOf, HEAT_GENERATION_OPTIONS, HOT_WATER_OPTIONS, hotWaterBody, isFormula, parseDecimal, SELF_HOT_WATER_OPTIONS, selfFormulaBody, PER_UNIT_ENERGY_OPTIONS, plantOptions, swapBody, swapMetersOf, unmeasurableLabel, heatingPlantBody, heatingSummary, heatingToForm, whoHint, whoOptions, type HeatingForm } from './heatingForm'
 import type { HeatingPlant, Unit } from './types'
 
 const UNITS: Pick<Unit, 'id' | 'name' | 'noConnection'>[] = [{ id: 'eg', name: 'EG' }, { id: 'og', name: 'OG' }, { id: 'garage', name: 'Garage', noConnection: ['waerme'] }]
@@ -393,6 +393,19 @@ describe('Wer hat den Liefervertrag für den Brennstoff? (Heizung PR 19)', () =>
     expect(FUEL_CONTRACT_OPTIONS.map((o) => o.value)).toEqual(['landlord', 'tenantAll', 'tenantOthers'])
   })
 
+  test('Abdeckung V27: beim Ändern einer zentralen Anlage mit Gas, Öl, Flüssiggas oder Kohle sagt die Karte, dass bei Brennstoff des Mieters keine Anlage hierher gehört', () => {
+    for (const energy of ['gas', 'oil', 'lpg', 'coal'] as const) {
+      expect(editFuelContractNote(ausgefuellt({ energy }), 'hp1')).toBe(
+        'Hat ein Mieter den Liefervertrag für den Brennstoff dieser Heizung, legen Sie dafür keine Heizanlage an: Klicken Sie unter der Anlage auf ' +
+          '„Entfernen“ (die Heizpositionen bleiben, nur ohne Anlage), dann auf „Heizung einrichten“, und wählen Sie bei „Wer hat den Liefervertrag für den Brennstoff?“ ' +
+          '„Der Mieter, der alle angeschlossenen Wohnungen gemietet hat“.',
+      )
+    }
+    expect(editFuelContractNote(ausgefuellt({ energy: 'gas' }), null)).toBeNull()
+    expect(editFuelContractNote(ausgefuellt({ energy: 'gas', contracting: true }), 'hp1')).toBeNull()
+    for (const energy of ['heatPump', 'districtHeating', 'pellets', 'perUnit'] as const) expect(editFuelContractNote(ausgefuellt({ energy }), 'hp1')).toBeNull()
+  })
+
   test('„Der Mieter, der alle angeschlossenen Wohnungen gemietet hat“: keine Anlage, die Erklärung und die Wohnungen für das Angebot', () => {
     const r = heatingPlantBody(ausgefuellt({ energy: 'oil', fuelContract: 'tenantAll', who: '' }), UNITS)
     if (!('none' in r)) throw new Error(JSON.stringify(r))
@@ -447,4 +460,53 @@ test('Durchsicht S-4: bei der zentralen Heizung ist jede weitere angehakte Einhe
   expect(selfSupplyOffer(['eg', 'og'], [t('a', 'eg', 'Mieter A'), t('b', 'og', 'Mieter A')], '2026-10-12', true)).toEqual({ tenancyIds: ['a', 'b'], names: ['Mieter A'], kindTenancyIds: [] })
   // Etagenheizung: eine leere Wohnung ist kein Dritter.
   expect(selfSupplyOffer(['eg', 'og'], [t('a', 'eg', 'Mieter A')], '2026-10-12', false)).toEqual({ tenancyIds: ['a'], names: ['Mieter A'], kindTenancyIds: [] })
+})
+
+// #225: Rechnet der Wärmelieferant unmittelbar mit den Mietern ab, gilt die Verordnung für ihn (§ 1 Abs. 3 HeizkostenV);
+// die Kosten der Hausanlagen, die der Vermieter gesondert abrechnet, sind von §§ 3 bis 7 ausgenommen (§ 11 Abs. 1 Nr. 4).
+describe('Wärmelieferant rechnet unmittelbar mit den Mietern ab (#225)', () => {
+  const SUPPLIER = { value: 'supplier', label: 'Der Wärmelieferant rechnet unmittelbar mit den Mietern ab' }
+
+  test('die Antwort gibt es nur bei einer neuen Anlage mit Wärmelieferung (Fernwärme oder Contracting)', () => {
+    expect(whoOptions('mfh', { energy: 'districtHeating', contracting: false }, null)).toContainEqual(SUPPLIER)
+    expect(whoOptions('mfh', { energy: 'gas', contracting: true }, null)).toContainEqual(SUPPLIER)
+    expect(whoOptions('mfh', { energy: 'gas', contracting: false }, null)).not.toContainEqual(SUPPLIER)
+    expect(whoOptions('mfh', { energy: 'districtHeating', contracting: false }, 'hp1')).not.toContainEqual(SUPPLIER)
+    expect(whoOptions('mfh')).not.toContainEqual(SUPPLIER)
+  })
+
+  test('keine Anlage; die Erklärung nennt § 1 Abs. 3 und § 11 Abs. 1 Nr. 4, und jeder Mieter hat seinen eigenen Vertrag', () => {
+    const r = heatingPlantBody(ausgefuellt({ energy: 'districtHeating', who: 'supplier' }), UNITS)
+    if (!('none' in r)) throw new Error(JSON.stringify(r))
+    // Durchsicht PR #296, S1: § 1 Abs. 3 nur mit seiner zweiten Voraussetzung; misst der Lieferant je Wohnung, gilt die Verordnung nicht.
+    expect(r.none).toMatch(/^Rechnet der Wärmelieferant unmittelbar mit den Mietern ab, legt Mietfuchs keine Heizanlage an\./)
+    expect(r.none).toMatch(/Legt er dabei die Anteile der Mieter am Gesamtverbrauch zugrunde und nicht den für jede Wohnung gemessenen Verbrauch, gelten nach § 1 Abs\. 3 HeizkostenV die Pflichten des Gebäudeeigentümers aus der Verordnung für ihn\./)
+    expect(r.none).toMatch(/Misst er den Verbrauch jeder Wohnung selbst und rechnet danach ab, gilt die Verordnung für diese Verteilung nicht\./)
+    expect(r.none).toMatch(/legt Mietfuchs keine Heizanlage an/)
+    expect(r.none).toMatch(/§ 11 Abs\. 1 Nr\. 4 HeizkostenV/)
+    expect(r.none).toMatch(/„Heizung und Warmwasser“/)
+    expect(r.selfSupplyUnitIds).toEqual(['eg', 'og'])
+    expect(r.central).toBe(true)
+    expect(r.singleTenant).toBe(false)
+  })
+
+  // Durchsicht PR #296, S2: Mit „Lieferant“ entfallen die Fragen nach Geräten und Umstellung, und die Erklärung steht vorher da.
+  test('„Lieferant“: keine Fragen nach Fernablesbarkeit, Einbau und Umstellung, deren Prüfung greift nicht, und die Erklärung steht als Satz unter der Frage', () => {
+    expect(asksRemote('supplier')).toBe(false)
+    expect(asksSwitch({ energy: 'districtHeating', contracting: false, who: 'supplier' })).toBe(false)
+    expect(asksSwitch({ energy: 'districtHeating', contracting: false, who: 'manual' })).toBe(true)
+    const r = heatingPlantBody(ausgefuellt({ energy: 'districtHeating', who: 'supplier', announcedOn: '2025-01-01', deliverySince: '' }), UNITS)
+    if (!('none' in r)) throw new Error(JSON.stringify(r))
+    expect(whoHint('supplier', 'mfh')).toBe(r.none)
+  })
+
+  test('das Angebot nimmt mehrere Mieter an, auch an der zentralen Anlage', () => {
+    const t = (id: string, unitId: string, tenantName: string) => ({ id, unitId, tenantName, start: '2020-01-01', end: null })
+    expect(selfSupplyOffer(['eg', 'og'], [t('a', 'eg', 'Mieter A'), t('b', 'og', 'Mieter B')], '2026-10-12', true, false))
+      .toEqual({ tenancyIds: ['a', 'b'], names: ['Mieter A', 'Mieter B'], kindTenancyIds: [] })
+  })
+})
+
+test('#225: wird die Energie danach auf eine eigene Heizung gestellt, gilt die Antwort „Lieferant“ nicht mehr (das Auswahlfeld zeigt sie dann auch nicht)', () => {
+  expect(heatingPlantBody(ausgefuellt({ energy: 'gas', who: 'supplier' }), UNITS)).toEqual({ error: 'Bitte wählen Sie, wer die Heizkostenabrechnung erstellt.' })
 })

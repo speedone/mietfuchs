@@ -1771,6 +1771,7 @@ export async function unitDependents(db: Executor, unitId: string): Promise<Unit
     payments: await n(db.select({ n: count() }).from(payments).where(inArray(payments.tenancyId, ihreMietverhaeltnisse))),
     costItemLinks: verweise,
     directCostItems: await n(db.select({ n: count() }).from(costItems).where(eq(costItems.directUnitId, unitId))),
+    fuelDeliveries: await n(db.select({ n: count() }).from(fuelDeliveries).where(eq(fuelDeliveries.unitId, unitId))),
   }
 }
 
@@ -1951,7 +1952,19 @@ const unitCollection: Collection<Unit> = {
     await db.update(units).set(unitRow(u)).where(eq(units.id, u.id))
     await writeUnitChildren(db, u)
   },
-  remove: async (db, id) => { await db.delete(units).where(eq(units.id, id)) },
+  // Die Rechnungen einer Etagenheizung hängen an der Wohnung (`fuel_deliveries.unit_id`, CASCADE). Mit ihr
+  // verschwänden Betrag, kg CO₂ und CO₂-Kosten einer bezahlten Rechnung still, und hängt eine Position daran,
+  // scheiterte das Löschen an deren Fremdschlüssel mit einer Meldung, die das Gegenteil sagt (Integrationsdurchsicht
+  // S1). Gesperrt wie das Löschen einer Lieferung mit Position und eines Objekts mit Heizanlage: Die Rechnung ist
+  // Beleg der CO₂-Aufteilung, und wer sie wirklich nicht mehr braucht, löscht sie auf der Seite Heizkosten.
+  remove: async (db, id) => {
+    const rechnungen = await db.select({ label: fuelDeliveries.label }).from(fuelDeliveries).where(eq(fuelDeliveries.unitId, id))
+    if (rechnungen.length > 0) {
+      const namen = andList(rechnungen.map((r) => `„${r.label || 'Rechnung'}“`))
+      throw new HeatingError(409, `An der Wohnung ${rechnungen.length === 1 ? 'hängt die Rechnung' : `hängen die ${rechnungen.length} Rechnungen`} ${namen} der Etagenheizung. Sie ${rechnungen.length === 1 ? 'belegt' : 'belegen'} Brennstoffkosten und CO₂-Aufteilung und würden mit der Wohnung gelöscht. Löschen Sie die ${rechnungen.length === 1 ? 'Rechnung' : 'Rechnungen'} zuerst auf der Seite Heizkosten unter „Lieferungen“, wenn Sie sie nicht mehr brauchen.`)
+    }
+    await db.delete(units).where(eq(units.id, id))
+  },
 }
 
 const tenancyCollection: Collection<Tenancy> = {
