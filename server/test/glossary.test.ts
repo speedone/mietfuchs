@@ -473,3 +473,12 @@ test('Vorerfassung (#218): Pflicht nach Satz 1, Möglichkeit nach Satz 2, nachge
   assert.match(t.example, /6\.000 kWh von 20\.000 kWh.*30 %.*70 %/s)
   assert.equal(6000 / 20000, 0.3)
 })
+
+test('Nutzerwechselgebühr (#223): BGH VIII ZR 19/07 mit Datum, Verwaltungskosten, Beispiel nachgerechnet', () => {
+  const t = GLOSSARY.changeFee
+  assert.equal(t.norm, 'BGH, Urteil vom 14.11.2007, VIII ZR 19/07')
+  assert.match(t.short, /keine Betriebskosten, sondern Verwaltungskosten/)
+  assert.match(t.needed, /„Nicht umlagefähig“/)
+  assert.match(t.example, /30,00 €.*drei Wohnungen.*10,00 €/s)
+  assert.equal(3000 / 3, 1000)
+})

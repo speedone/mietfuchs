@@ -132,3 +132,26 @@ test('Einzelbetrag fehlt bei einem Mieter mit Pauschale: kein Hinweis, denn er t
   })
   assert.ok(!s.notices.some((n) => n.code === 'amounts.missing'), s.warnings.join(' | '))
 })
+
+test('#223 Nutzerwechselgebühr auch bei Wasser und anderen Zählerpositionen: Hinweis (hint) mit BGH VIII ZR 19/07; nicht bei „Nicht umlagefähig“ und nicht doppelt bei der Heizung', () => {
+  const s = settle({
+    units: [unit('a')],
+    tenancies: [tenancy('t-a', 'a')],
+    costItems: [
+      item('wasser', { category: 'Wasser/Abwasser', description: 'Nutzerwechselgebühr Wasserzähler', key: 'persons' }),
+      item('strom', { category: 'Sonstige Betriebskosten', description: 'Zwischenablesung Stromzähler', key: 'meter', meterType: 'strom' }),
+      item('frei', { category: 'Nicht umlagefähig', description: 'Nutzerwechselgebühr Wasser' }),
+      item('heiz', { category: 'Heizung und Warmwasser', description: 'Nutzerwechselgebühr Heizung' }),
+      item('normal', { category: 'Wasser/Abwasser', description: 'Wasserrechnung 2025', key: 'persons' }),
+    ],
+  })
+  const hits = s.notices.filter((n) => n.code === 'meter.change-fee')
+  assert.deepEqual(hits.map((n) => n.subject?.id).sort(), ['strom', 'wasser'])
+  for (const n of hits) {
+    assert.equal(n.level, 'hint')
+    assert.match(n.text, /keine umlagefähigen Betriebskosten/)
+    assert.match(n.text, /BGH, Urteil vom 14\.11\.2007, VIII ZR 19\/07/)
+    assert.match(n.text, /unter „Nicht umlagefähig“/)
+  }
+  assert.equal(s.notices.filter((n) => n.code === 'heating.change-fee').length, 1)
+})

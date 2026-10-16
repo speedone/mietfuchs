@@ -492,6 +492,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   mit Verweis auf den Messdienst. Der Hinweis färbt die Ampel nicht, und keine Zahl ändert sich
   ([#218](https://github.com/speedone/mietfuchs/issues/218)).
 
+- Nutzerwechselgebühr auch bei Wasser: Heißt eine Position „Wasser/Abwasser“ oder eine Position nach Zählern etwa
+  „Zwischenablesung“ oder „Nutzerwechselgebühr“, weist die Abrechnung wie bei der Heizung darauf hin, dass diese
+  Kosten keine umlagefähigen Betriebskosten sind (BGH, Urteil vom 14.11.2007, VIII ZR 19/07), und nennt den Weg über
+  „Nicht umlagefähig“. Neu im Lexikon: „Nutzerwechselgebühr“. Keine Zahl ändert sich
+  ([#223](https://github.com/speedone/mietfuchs/issues/223)).
+
 ### Geändert
 
 - Neue Warnung „Monatliche Verbrauchsinformation“ bei einer Heizanlage, deren Zähler oder

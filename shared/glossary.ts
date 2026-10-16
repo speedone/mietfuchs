@@ -405,6 +405,18 @@ export const GLOSSARY = {
     norm: '§ 7 Abs. 1 Satz 2, § 10 HeizkostenV',
     needed: 'Nur bei einer Öl- oder Gasheizung (Flüssiggas zählt nach Auslegung von Mietfuchs dazu, siehe Verbrauchskosten). Wissen Sie nicht, ob die Voraussetzungen vorliegen, liegen Sie mit dem Pflichtanteil in jedem Fall richtig, denn er liegt auch innerhalb der freien Wahl. Mehr geht nur mit einer Vereinbarung (§ 10 HeizkostenV). Den Pflichtanteil nachzutragen ist keine Änderung nach § 6 Abs. 4 und geht auch in einer begonnenen Heizperiode.',
   },
+  // #223: die Kosten der Zwischenablesung bei Wasser und anderen Zählern; bei der Heizung steht dasselbe unter
+  // „Zwischenablesung“.
+  changeFee: {
+    title: 'Nutzerwechselgebühr',
+    short:
+      'Was der Messdienst berechnet, wenn er wegen eines Auszugs mitten im Abrechnungszeitraum die Zähler zwischendurch abliest und abrechnet. ' +
+      'Diese Kosten sind keine Betriebskosten, sondern Verwaltungskosten, und trägt der Vermieter, soweit im Mietvertrag nichts anderes vereinbart ist.',
+    example: 'Der Messdienst berechnet für die Zwischenablesung der Wasserzähler beim Auszug 30,00 €. Gehen sie nach Personen über drei Wohnungen, trüge jede rund 10,00 €; tatsächlich gehören die 30,00 € zu Ihrem Anteil.',
+    norm: 'BGH, Urteil vom 14.11.2007, VIII ZR 19/07',
+    needed:
+      'Bei jedem Mieterwechsel mit Zählern. Erfassen Sie die Gebühr unter „Nicht umlagefähig“. Haben Sie mit dem ausziehenden Mieter wirksam etwas anderes vereinbart, fordern Sie sie von ihm; ob eine Klausel im Formularmietvertrag genügt, hat der BGH nicht entschieden.',
+  },
   // #218: nur Erklärung und Hinweis; die Verteilung über Nutzergruppen rechnet Mietfuchs nicht.
   preCapture: {
     title: 'Vorerfassung nach Nutzergruppen',
