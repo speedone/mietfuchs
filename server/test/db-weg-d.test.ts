@@ -407,3 +407,25 @@ test('Abdeckung V26: Kesseltausch bei getrennter Heizkostenabrechnung; gesperrt 
     assert.deepEqual(p2027.heatingPeriods?.map((h) => [h.plantId, h.period.key]).sort(), [['hp1', '2026-05'], ['hp2', '2026-05']])
   })
 })
+
+test('Durchsicht #297 S-A: Kesseltausch am ersten Tag der Heizperiode nach der getrennten; die alte Anlage endet am letzten Tag der getrennten', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => haus(db, {}))
+    await ein(opened, '2025-05', { '2025-05': 12300 })
+    await schliessen(opened, '2025-01')
+    const aus = await apply(opened, { separate: false, answers: {} })
+    assert.ok(aus && 'plant' in aus)
+    // Getrennt bleibt 2025/2026 (bis 30.04.2026). Tausch zum 01.05.2026 fällt in 2026/2027; vorher abgelehnt mit einem
+    // Weg, der hier nicht gangbar ist (2025/2026 hat Monate in der abgeschlossenen Abrechnung 2025).
+    const r = await opened.write((db) => replaceHeatingPlant(db, 'hp1', 'hp2', { date: '2026-05-01', energy: 'heatPump' })) ?? assert.fail('keine Anlage')
+    assert.deepEqual([r.previous.endsOn, r.plant.separateSpans], ['2026-04-30', []])
+    assert.equal(mieter(await heizkosten(opened, '2025-05')).prepaymentCents, 12 * 12300)
+  })
+  // Gegenprobe: Ist 2026/2027 noch getrennt, sperrt auch der erste Tag.
+  await withDatabase(async (opened) => {
+    await opened.write((db) => haus(db, {}))
+    await ein(opened, '2025-05', { '2025-05': 12300 })
+    await assert.rejects(opened.write((db) => replaceHeatingPlant(db, 'hp1', 'hp2', { date: '2026-05-01', energy: 'heatPump' })),
+      (e: unknown) => e instanceof HeatingError && /^Die Heizperiode 2026\/2027, in die der Tausch fällt, wird getrennt abgerechnet/.test(e.message))
+  })
+})
