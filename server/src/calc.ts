@@ -404,6 +404,7 @@ const noticeKinds = {
   'heating.key-change': { level: 'hint', title: 'Anteil nach Verbrauch geändert', rule: 'heating-key-change', terms: ['consumptionCosts', 'keyChange'] },
   'heating.change-split-time': { level: 'hint', title: 'Mieterwechsel zeitanteilig statt nach Gradtagen', rule: 'heating-tenant-change', terms: ['interimReading', 'degreeDays'] },
   'heating.change-fee': { level: 'hint', title: 'Kosten der Zwischenablesung', rule: 'heating-tenant-change', terms: ['interimReading'] },
+  'meter.change-fee': { level: 'hint', title: 'Kosten der Zwischenablesung', terms: ['changeFee', 'meterReading'] },
   'heating.heat-pump-capture': { level: 'hint', title: 'Wärmepumpe: Heizkostenverordnung gilt noch nicht', rule: 'heating-own-settlement', terms: ['heatingSystem', 'heatMeter'] },
   // Warmwasseranteil auf der Schätzung beim Abschluss (Abweichung 11).
   'heating.dhw-share-estimated': { level: 'hint', title: 'Warmwasseranteil aus geschätzter Energie', rule: 'heating-own-settlement', terms: ['hotWaterShare'] },
@@ -3917,6 +3918,15 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         `„${item.description}“: Kosten der Verbrauchserfassung, die wegen des Auszugs eines Mieters vor Ablauf des Abrechnungszeitraums entstehen, sind keine umlagefähigen Betriebskosten; sie trägt der Vermieter, soweit im Mietvertrag nichts anderes vereinbart ist (BGH VIII ZR 19/07). ` +
           'Ob eine Klausel im Formularmietvertrag genügt, hat der BGH nicht entschieden; ein Amtsgericht hält sie für unwirksam (AG Berlin-Hohenschönhausen; das Aktenzeichen steht im Lexikon unter „Zwischenablesung“). Eine wirksame Vereinbarung gibt einen Anspruch gegen den ausziehenden Mieter, keine Position für alle. ' +
           'Gehört die Position dazu, erfassen Sie sie unter „Nicht umlagefähig“.',
+        itemSubject(item))
+    }
+    // #223: dieselbe Regel bei Wasser und anderen Positionen nach Zählern; der Leitsatz gilt für die Kosten der
+    // Verbrauchserfassung allgemein, nicht nur für die Heizung.
+    if (item.category !== HEATING_CATEGORY && !isNotAllocable(item.category) && (item.category === 'Wasser/Abwasser' || item.key === 'meter') &&
+      !item.id.startsWith('fuel:') && !item.id.startsWith('stock:') && /zwischenablesung|nutzerwechsel/i.test(item.description)) {
+      warn('meter.change-fee',
+        `„${item.description}“: Kosten der Verbrauchserfassung und Abrechnung, die wegen des Auszugs eines Mieters vor Ablauf des Abrechnungszeitraums entstehen, etwa für die Zwischenablesung der Wasserzähler, sind keine umlagefähigen Betriebskosten, sondern Verwaltungskosten; sie trägt der Vermieter, soweit im Mietvertrag nichts anderes vereinbart ist (BGH, Urteil vom 14.11.2007, VIII ZR 19/07). ` +
+          'Eine wirksame Vereinbarung gibt einen Anspruch gegen den ausziehenden Mieter, keine Position für alle. Gehört die Position dazu, erfassen Sie sie unter „Nicht umlagefähig“.',
         itemSubject(item))
     }
     // Rohanteile (float, in Cent) pro Mietverhältnis bestimmen.
