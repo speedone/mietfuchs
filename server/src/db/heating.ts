@@ -739,7 +739,9 @@ export async function replaceHeatingPlant(db: Database, oldId: string, newId: st
   // ist. Der gangbare Weg steht in der Meldung.
   const swapRules = await heatingRulesOf(db, oldId)
   if (swapRules && old.separateSpans.length > 0) {
-    const h = periodContaining(swapRules.rules, endsOn)
+    // Durchsicht #297 S-A: Endet die alte Anlage am letzten Tag einer Heizperiode, fällt der Tausch in die folgende.
+    const atEnd = periodContaining(swapRules.rules, endsOn)
+    const h = atEnd.to === endsOn ? periodContaining(swapRules.rules, date) : atEnd
     const ahead = old.separateSpans.filter((sp) => sp.until === null || sp.until > h.key)
     if (ahead.length > 0) {
       const covered = ahead.some((sp) => h.to.slice(0, 7) >= sp.from)
