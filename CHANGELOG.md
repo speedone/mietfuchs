@@ -726,6 +726,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Erstattung weder verrechnet noch gemeldet (gemessen: 120,00 €, in keinem Jahr ein Hinweis). Jetzt lehnt das
   Speichern das mit einem Satz ab und verweist auf die Auszahlung (§ 6 Abs. 2 Satz 5 CO2KostAufG); ein schon
   vorhandener Eintrag bekommt in diesem Zeitraum einen Hinweis.
+- **Kürzung nach § 12 HeizkostenV bei Rechnungen über das Kalenderjahr und Zeitraum Mai bis April** ([#208](https://github.com/speedone/mietfuchs/issues/208)):
+  Den Anteil einer Gasrechnung, der über einen Übertrag in den vorigen Zeitraum gehört, sah der Hinweis nicht. Dort
+  fehlte er ganz (auch der zur Fernablesung), im Zeitraum der Rechnung nannte er 15 % des ganzen Anteils (gemessen:
+  270,00 € statt 126,90 €). Jetzt nennt jede Abrechnung 15 % dessen, was der Mieter in ihr trägt (im Beispiel
+  143,10 € und 126,90 €). Keine Zahl der Abrechnung ändert sich, Mietfuchs zieht die Kürzung nicht selbst ab.
 
 ## [0.10.1] – 2026-10-04
 

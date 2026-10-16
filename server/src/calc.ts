@@ -3884,6 +3884,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // Die erste Heizposition, über die ein Mieter abgerechnet wird; an ihr hängt der Hinweis zur
   // Fernablesbarkeit (heating-remote-reading), einmal je Abrechnung.
   let heatingBilledItem: SnapshotCostItem | undefined
+  const fuelOwnCarries: SnapshotCostItem[] = []
   // Eine Einheit ohne Wärmeanschluss (#117) oder eine Garage-artige (0 m², niemand wohnt dort) ist
   // bei Heizung und Warmwasser keine beteiligte Wohnung: keine Warnung zur Warmmiete, kein
   // Kürzungsbetrag (zweite Browserabnahme). Verteilt wird weiter wie erfasst.
@@ -4469,11 +4470,17 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Verordnung nicht (§ 1 Abs. 1 Nr. 1 HeizkostenV: „zentraler Heizungsanlagen“), und beim einzigen Nutzer einer
     // zentralen Anlage wird nichts „auf die Nutzer“ verteilt (Auslegung am Wortlaut). Was er für Wartung oder
     // Betriebsstrom trägt, kann er deshalb nicht nach § 12 kürzen.
-    const heatingReceived = item.category === HEATING_CATEGORY && !carry
+    // Integrationsdurchsicht S2: Ein Übertrag `fuel:`, dessen Rechnung in einem anderen Zeitraum steht, ist in diesem
+    // Zeitraum der einzige Teil dieser Heizkosten. Für § 12 HeizkostenV, die Deckung nach Verbrauch und den Hinweis zur
+    // Fernablesung zählt er deshalb wie eine Position; der Übertrag aus einer Rechnung dieses Zeitraums (Anteil für einen
+    // anderen) gehört dagegen zu ihr (unten).
+    const ownCarry = !!carry && item.id.startsWith('fuel:') && !items.some((c) => c.id === carry.itemId)
+    if (ownCarry) fuelOwnCarries.push(item)
+    const heatingReceived = item.category === HEATING_CATEGORY && (!carry || ownCarry)
       ? targets.flatMap((x, i) => (booked[i] && statements.has(x.t.id) && shareOf(i) > 0 && !outsideHeating(x.t.unit) && x.t.heatingModel !== 'selfSupply' ? [{ x, share: shareOf(i) }] : []))
       : []
     if (heatingReceived.length > 0) heatingBilledItem ??= item
-    if (item.category === HEATING_CATEGORY && item.key !== 'direct' && !carry) {
+    if (item.category === HEATING_CATEGORY && item.key !== 'direct' && (!carry || ownCarry)) {
       const received = heatingReceived
       if (heatingByConsumption(item.key)) {
         // Gedeckt nur durch eine Position mit positivem Betrag, die wirklich nach Verbrauch verteilt
@@ -4503,7 +4510,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Die Überträge aus dem Vorrat (Heizung PR 8) gehören zu den Heizkosten, die der Mieter trägt: Die
     // Kürzung nach § 12 Abs. 1 HeizkostenV wird auf seinen Anteil samt Übertrag gerechnet (Durchsicht von
     // #237, M3); sie stehen bei der Position, deren Schlüssel sie folgen.
-    if (carry && item.id.startsWith('stock:') && item.category === HEATING_CATEGORY) {
+    // Ebenso der Übertrag `fuel:` aus einer Rechnung dieses Zeitraums für einen anderen (Integrationsdurchsicht S2): Er
+    // mindert den Anteil, den der Mieter hier trägt, und damit die Kürzung.
+    if (carry && (item.id.startsWith('stock:') || (item.id.startsWith('fuel:') && !ownCarry)) && item.category === HEATING_CATEGORY) {
       const cutOf = heatingCuts.find((c) => c.item.id === carry.itemId)
       if (cutOf) {
         targets.forEach((x, i) => {
@@ -6904,7 +6913,11 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // Die Grenzen 50 und 70 % (`hkv.consumption-share`) fragt heatingFindings nur ab, wenn es eine
   // Wohnung mit Verbrauchs- und Grundkostenposition gibt.
   const consumptionShare = () => law(hkvConsumptionShare, { period: lawPeriod }, lawLog)
-  const heating = heatingFindings(items, snapshot.units.filter((u) => !outsideHeating(u)), heatingCovered, consumptionShare)
+  const heatingUnits = snapshot.units.filter((u) => !outsideHeating(u))
+  const heating = heatingFindings(items, heatingUnits, heatingCovered, consumptionShare)
+  // Die Überträge aus Rechnungen anderer Zeiträume (S2) nur für die Frage, wer nicht nach Verbrauch gedeckt ist; der
+  // Rahmen von 50 bis 70 % bleibt bei den Positionen, wie bisher.
+  for (const [id, units] of heatingFindings(fuelOwnCarries, heatingUnits, heatingCovered, () => ({ min: 0, max: 100 })).withoutConsumption) heating.withoutConsumption.set(id, units)
   for (const { item, rows } of heatingCuts) {
     // Heizung PR 14: keine Kürzung nach § 12 Abs. 1 Satz 1 bei Ausnahme nach § 11 oder Vereinbarung nach § 2.
     if (noCutFor(item.heatingPlantId, item.heatingTarget, String(item.period))) continue
