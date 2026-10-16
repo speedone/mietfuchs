@@ -72,6 +72,10 @@ test('ungültige Eingaben werfen', () => {
   assert.throws(() => rentDueDate('2026-1', 'BY'), /kein Monat/)
   assert.throws(() => rentDueDate('1994-12', 'BY'), /ab 1995/)
   assert.throws(() => deadlineOnWorkday('2026-02-29', 'BY'), /kein Datum/)
+  // Vor 1995 rechnet Mietfuchs nicht, auch nicht an einem Samstag: Der 31.12.1994 ergab vorher den
+  // 02.01.1995, der Freitag davor warf.
+  assert.throws(() => deadlineOnWorkday('1994-12-30', 'BY'), /ab 1995/)
+  assert.throws(() => deadlineOnWorkday('1994-12-31', 'BY'), /ab 1995/)
 })
 
 // Unabhängiger Abgleich: dieselbe Zählung mit den Feiertagen der Vergleichsliste statt der aus dem

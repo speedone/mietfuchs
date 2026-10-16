@@ -10,7 +10,7 @@
 // Frist genau sein muss, und jeder Einsatz ist eine eigene Entscheidung mit eigenem Test. Rechnet eine
 // Abrechnung einmal damit, fragt sie das Register mit `law()` und Protokoll statt mit `valueAt`.
 import type { FederalState } from './types.ts'
-import { addDays, isHoliday, isWorkday, parseIsoDate, weekdayOf } from './holidays.ts'
+import { addDays, isHoliday, isWorkday, weekdayOf } from './holidays.ts'
 import { valueAt } from './law/register.ts'
 import { bgbDeadlineOnWorkday, bgbRentDueSaturday, bgbRentDueWorkday } from './law/bgb-betrkv.ts'
 
@@ -46,7 +46,8 @@ export function rentDueDate(month: string, state: FederalState | null): string {
 // Ein Werktag bleibt, wie er ist. Als Ort nimmt Mietfuchs das Land des Objekts. Ob § 193 BGB auf eine
 // bestimmte Frist überhaupt anzuwenden ist, entscheidet der Aufrufer, nicht diese Funktion.
 export function deadlineOnWorkday(date: string, state: FederalState | null): string {
-  parseIsoDate(date)
+  // Prüft Datum und Jahr vorab, auch für einen Samstag, an dem sonst kein Feiertag gefragt würde.
+  isHoliday(date, state)
   const shift = valueAt(bgbDeadlineOnWorkday, date)
   const moves = (d: string): boolean => {
     const wd = weekdayOf(d)
