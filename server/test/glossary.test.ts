@@ -463,3 +463,13 @@ test('Rohrwärme (#219, Gesamtentwurf 14.1): eigener Begriff mit Wortlaut der Vo
   assert.match(t.example, /10\.000 kWh.*3\.000 kWh.*7\.000 kWh/s)
   assert.equal(10000 - 3000, 7000)
 })
+
+test('Vorerfassung (#218): Pflicht nach Satz 1, Möglichkeit nach Satz 2, nachgerechnetes Beispiel', () => {
+  const t = GLOSSARY.preCapture
+  assert.equal(t.norm, '§ 5 Abs. 7 HeizkostenV')
+  assert.match(t.short, /nicht mit gleichen Ausstattungen erfasst/)
+  assert.match(t.short, /unterschiedlichen Nutzungs- oder Gebäudearten oder aus anderen sachgerechten Gründen/)
+  assert.match(t.needed, /rechnet Mietfuchs nicht/)
+  assert.match(t.example, /6\.000 kWh von 20\.000 kWh.*30 %.*70 %/s)
+  assert.equal(6000 / 20000, 0.3)
+})

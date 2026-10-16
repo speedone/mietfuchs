@@ -420,6 +420,7 @@ const noticeKinds = {
   'heating.device-cutoff': { level: 'hint', title: 'Stichtag eines Heizkostenverteilers mitten in der Heizperiode', rule: 'heating-own-settlement', terms: ['heatCostAllocator'] },
   'heating.mixed-capture': { level: 'error', title: 'Verschiedene Geräte in einer Heizanlage', rule: 'heating-own-settlement', terms: ['heatCostAllocator'] },
   'heating.pipe-heat': { level: 'hint', title: 'Rohrwärme', rule: 'heating-own-settlement', terms: ['pipeHeat', 'heatCostAllocator'] },
+  'heating.pre-capture': { level: 'hint', title: 'Vorerfassung nach Nutzergruppen möglich', rule: 'heating-own-settlement', terms: ['preCapture'] },
   'heating.hca-factor-missing': { level: 'error', title: 'Skala oder Bewertungsfaktor fehlt', rule: 'heating-own-settlement', terms: ['heatCostAllocator'] },
   // Heizung PR 13 (#99, Entwurf 8.7, 10.1): Schätzung nach § 9a.
   'heating.estimate-unconfirmed': { level: 'warning', title: 'Schätzung nicht bestätigt', rule: 'heating-estimate', terms: ['heatingEstimate'] },
@@ -3385,6 +3386,15 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         `${where}: Sind in Ihrem Haus die freiliegenden Leitungen der Wärmeverteilung überwiegend ungedämmt und erfassen die Heizkostenverteiler deswegen einen wesentlichen Anteil des Wärmeverbrauchs nicht, kann der Verbrauch der Nutzer nach anerkannten Regeln der Technik bestimmt werden (§ 7 Abs. 1 Satz 3 HeizkostenV); ein Verfahren beschreibt die Richtlinie VDI 2077 Blatt 3.5. ` +
           'Freiliegend sind nur Leitungen, die sichtbar auf der Wand verlaufen; für Leitungen unter Putz oder im Estrich gilt die Regel nicht (BGH, Urteil vom 15.03.2017, VIII ZR 5/16). ' +
           'Diese Bestimmung rechnet Mietfuchs nicht; verteilt wird nach den erfassten Einheiten. Lassen Sie den Verbrauch von einem Messdienst bestimmen, tragen Sie dessen Werte als „Werte eines Ablesedienstes“ ein; sie gelten dann als erfasster Verbrauch.')
+    }
+    // #218: § 5 Abs. 7 Satz 2 HeizkostenV. Pflicht (Satz 1) meldet `heating.mixed-capture`; die freie Vorerfassung bei
+    // unterschiedlicher Nutzungsart ist erkennbar, wenn das Gebäude überwiegend nicht dem Wohnen dient (Merkmal der
+    // CO₂-Aufteilung, § 8 CO2KostAufG) und Mietfuchs die Anlage selbst verteilt. Nur Auskunft.
+    if (plant.nonResidential && !mixed) {
+      warn('heating.pre-capture',
+        `${where}: Sie haben angegeben, dass das Gebäude überwiegend nicht dem Wohnen dient. Nutzen die Einheiten an dieser Anlage die Wärme verschieden, etwa ein Laden neben Wohnungen, kann der Gebäudeeigentümer bei unterschiedlichen Nutzungs- oder Gebäudearten oder aus anderen sachgerechten Gründen eine Vorerfassung nach Nutzergruppen durchführen (§ 5 Abs. 7 Satz 2 HeizkostenV). ` +
+          'Vorgeschrieben ist sie, wenn der Verbrauch nicht mit gleichen Ausstattungen erfasst wird (Satz 1). Eine Vorerfassung rechnet Mietfuchs nicht; verteilt wird über alle Einheiten der Anlage zusammen. ' +
+          'Soll vorerfasst werden, lassen Sie diese Heizkosten vom Messdienst abrechnen und übernehmen Sie dessen Beträge als Einzelbeträge.')
     }
     // Nicht unter einer Ausnahme nach § 11 für die Wärme oder einer Vereinbarung nach § 2 (Heizung PR 14): Dann
     // schreibt die Verordnung den Anteil nicht vor.

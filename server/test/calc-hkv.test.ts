@@ -315,3 +315,17 @@ test('#219 Rohrwärme: Mit Heizkostenverteilern steht ein Hinweis (hint) auf § 
   assert.ok(!codes(computeSettlement(selfSnapshot())).includes('heating.pipe-heat'))
   assert.ok(!codes(computeSettlement(asService())).includes('heating.pipe-heat'))
 })
+
+test('#218 Vorerfassung: In einem Gebäude, das überwiegend nicht dem Wohnen dient, nennt die eigene Abrechnung § 5 Abs. 7 Satz 2 als Möglichkeit (hint); sonst nicht, und die Beträge bleiben', () => {
+  const base = selfSnapshot()
+  const mixedUse: Snapshot = { ...base, heatingPlants: (base.heatingPlants ?? []).map((p) => (p.id === 'hp' ? { ...p, nonResidential: true } : p)) }
+  const r = computeSettlement(mixedUse)
+  const n = r.notices.find((x) => x.code === 'heating.pre-capture') ?? assert.fail(codes(r).join(', '))
+  assert.equal(n.level, 'hint')
+  assert.match(n.text, /bei unterschiedlichen Nutzungs- oder Gebäudearten oder aus anderen sachgerechten Gründen eine Vorerfassung nach Nutzergruppen durchführen \(§ 5 Abs\. 7 Satz 2 HeizkostenV\)/)
+  assert.match(n.text, /Vorgeschrieben ist sie, wenn der Verbrauch nicht mit gleichen Ausstattungen erfasst wird \(Satz 1\)/)
+  assert.match(n.text, /rechnet Mietfuchs nicht/)
+  assert.ok(!codes(computeSettlement(base)).includes('heating.pre-capture'))
+  const ohneCo2 = (s: ComputedSettlement) => s.statements.map((st) => [st.tenancyId, st.rows.filter((x) => !x.costItemId.startsWith('co2')).map((x) => [x.costItemId, x.shareCents])])
+  assert.deepEqual(ohneCo2(r), ohneCo2(computeSettlement(base)))
+})

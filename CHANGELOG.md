@@ -485,6 +485,13 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Die Bestimmung selbst rechnet Mietfuchs nicht; der Hinweis färbt die Ampel nicht, und keine Zahl ändert sich
   ([#219](https://github.com/speedone/mietfuchs/issues/219)).
 
+- Vorerfassung nach Nutzergruppen: Rechnen Sie die Heizkosten eines Gebäudes selbst ab, das überwiegend nicht dem
+  Wohnen dient, nennt die Abrechnung als Hinweis, dass bei unterschiedlichen Nutzungsarten eine Vorerfassung nach
+  Nutzergruppen möglich ist (§ 5 Abs. 7 Satz 2 HeizkostenV) und wann sie vorgeschrieben ist; das Lexikon erklärt den
+  Begriff. Die Vorerfassung selbst rechnet Mietfuchs nicht; verschiedene Geräte an einer Anlage bleiben ein Fehler
+  mit Verweis auf den Messdienst. Der Hinweis färbt die Ampel nicht, und keine Zahl ändert sich
+  ([#218](https://github.com/speedone/mietfuchs/issues/218)).
+
 ### Geändert
 
 - Neue Warnung „Monatliche Verbrauchsinformation“ bei einer Heizanlage, deren Zähler oder

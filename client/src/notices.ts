@@ -60,7 +60,9 @@ const INFORMATIONAL = new Set(['basis.unit-zero', 'basis.tenancy-zero', 'basis.v
   // (#265); ein eigener Stromvertrag der Heizung führt so nicht zu einer dauerhaft gelben Ampel.
   'heating.self-supply-operating-power',
   // #219: Auskunft zur Rohrwärme bei Heizkostenverteilern; ob sie zutrifft, kennt Mietfuchs nicht.
-  'heating.pipe-heat'])
+  'heating.pipe-heat',
+  // #218: Auskunft, dass eine Vorerfassung nach § 5 Abs. 7 Satz 2 möglich ist; sie ist dort keine Pflicht.
+  'heating.pre-capture'])
 export function noticesNeedAttention(settlement: Pick<Settlement, 'notices' | 'warnings'>): boolean {
   return noticesOf(settlement).some((n) => !INFORMATIONAL.has(n.code))
 }
