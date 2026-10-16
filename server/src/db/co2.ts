@@ -245,7 +245,10 @@ async function guardCo2(db: Executor, ctx: PlantContext, h: BillingPeriod, st: C
   }
   if (st.method === 'serviceDeducted' || st.method === 'serviceShown') {
     if (st.serviceUsersTotalCents === null || st.serviceUsersTotalCents < 0) {
-      throw new HeatingError(400, 'Bitte tragen Sie die Summe der Kosten aller Nutzer für Heizung und Warmwasser ein, so wie sie in der Kostenaufstellung steht, oder kreuzen Sie „Ich finde diese Zeile nicht“ an.')
+      // Abdeckung V14: Bei der Eigentumswohnung ist der eigene Anteil laut Einzelabrechnung gemeint.
+      throw new HeatingError(400, ctx.plant.source === 'homeowners'
+        ? 'Bitte tragen Sie die Heizkosten Ihrer Wohnung für Heizung und Warmwasser ein, so wie sie die Einzelabrechnung der Gemeinschaft nennt, oder kreuzen Sie „Ich finde diese Zeile nicht“ an.'
+        : 'Bitte tragen Sie die Summe der Kosten aller Nutzer für Heizung und Warmwasser ein, so wie sie in der Kostenaufstellung steht, oder kreuzen Sie „Ich finde diese Zeile nicht“ an.')
     }
     if (st.serviceLandlordCents === null || st.serviceLandlordCents < 0) {
       throw new HeatingError(400, 'Bitte tragen Sie den CO₂-Anteil des Vermieters in Euro ein, wie ihn die Abrechnung nennt.')

@@ -737,6 +737,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Heizung)“ rechnete sie mit (gemessen: 105,00 € statt 18,00 €), obwohl die Heizkosten künftig über die
   Heizvorauszahlung laufen. Jetzt bleiben die Heizkosten einer Anlage, die danach getrennt abgerechnet wird,
   außen vor. Keine Zahl der Abrechnung ändert sich, nur der Vorschlag.
+- **Eigentumswohnung: CO₂-Karte fragte nach der Summe des ganzen Hauses** ([#97](https://github.com/speedone/mietfuchs/issues/97)):
+  Rechnet die Gemeinschaft ab, steht in der Position der eigene Anteil laut Hausgeldabrechnung. Die Karte „CO₂-Kosten“
+  fragte aber nach der „Summe der Kosten aller Nutzer“; wer die Summe des Hauses eintrug, bekam eine Probe, die
+  nicht aufging, und der CO₂-Anteil wurde nicht gebucht. Jetzt fragt sie nach den Heizkosten Ihrer Wohnung laut
+  Einzelabrechnung und dem CO₂-Anteil des Vermieters für Ihre Wohnung, setzt eine Nutzeinheit voraus, und Probe
+  und Hinweise sprechen von der Abrechnung der Gemeinschaft statt vom Messdienst.
 
 ## [0.10.1] – 2026-10-04
 
