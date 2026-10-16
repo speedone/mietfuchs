@@ -4501,9 +4501,12 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           for (const { x } of received) heatingCovered.add(x.t.unitId)
         }
       } else {
+        // Mit Vorzeichen (Integrationsdurchsicht S2): Ein Übertrag kann den Anteil einer Gutschrift ins Positive drehen und
+        // umgekehrt; gekürzt wird nur, was netto positiv bleibt (unten).
         heatingCuts.push({
           item,
-          rows: received.map(({ x, share }) => ({ unitId: x.t.unitId, label: `${x.t.tenantName} (${x.t.unit.name})`, share })),
+          rows: targets.flatMap((x, i) => (booked[i] && statements.has(x.t.id) && shareOf(i) !== 0 && !outsideHeating(x.t.unit) && x.t.heatingModel !== 'selfSupply'
+            ? [{ unitId: x.t.unitId, label: `${x.t.tenantName} (${x.t.unit.name})`, share: shareOf(i) }] : [])),
         })
       }
     }
@@ -6928,7 +6931,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Heizung PR 14: keine Kürzung nach § 12 Abs. 1 Satz 1 bei Ausnahme nach § 11 oder Vereinbarung nach § 2.
     if (noCutFor(item.heatingPlantId, item.heatingTarget, String(item.period))) continue
     const affected = heating.withoutConsumption.get(item.id)
-    const hit = rows.filter((r) => affected?.has(r.unitId))
+    const hit = rows.filter((r) => affected?.has(r.unitId) && r.share > 0)
     if (hit.length === 0) continue
     const share = consumptionShare()
     const cut = law(hkvCutNotByConsumption, { period: lawPeriod }, lawLog)
