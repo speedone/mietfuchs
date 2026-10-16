@@ -1692,7 +1692,7 @@ function operatingPowerBalanceItem(
   const areaOk = selfUnits.length === 0 || (missing.length === 0 && totalArea > 0)
 
   // Eigenanteil an den Heizkosten einer Anlage in einem Teil, wie diese Übersicht die Heizpositionen aufteilt.
-  const heatQuota = (part: number, plant: string | null): { privateCents: number; amountCents: number } | null => {
+  const heatQuota = (part: number, plant: string | null): { privateCents: number; amountCents: number } | 'unusable' | null => {
     const p = used[part]
     const s = splits[part]
     if (!p || !s) return null
@@ -1705,7 +1705,11 @@ function operatingPowerBalanceItem(
       privateCents += x.privateCents
       amountCents += x.amountCents
     }
-    return amountCents > 0 ? { privateCents, amountCents } : null
+    if (!(amountCents > 0)) return null
+    // Integrationsdurchsicht M1: Eine Gutschrift mit eigenem Schlüssel oder eigenen Teilnehmern kann den Nenner fast
+    // aufzehren; dann liegt die Quote außerhalb 0…1 (gemessen 875 %), und der private Teil stünde über dem Betrag, auch
+    // mit falschem Vorzeichen. Eine solche Quote ist kein Heizanteil; es gilt dann die Fläche wie beim Abzug ohne Verweis.
+    return privateCents >= 0 && privateCents <= amountCents ? { privateCents, amountCents } : 'unusable'
   }
 
   const steps: CalcStep[] = []
@@ -1748,11 +1752,14 @@ function operatingPowerBalanceItem(
   // Der private Teil, Beitrag für Beitrag.
   let raw = 0
   let byArea = false
+  let quotaUnusable = false
   let unsplittable = false
   const quotaSteps: CalcStep[] = []
   const seen = new Set<string>()
   for (const s of balance.sources) {
-    const q = s.plant !== undefined ? heatQuota(s.part, s.plant) : null
+    const quota = s.plant !== undefined ? heatQuota(s.part, s.plant) : null
+    if (quota === 'unusable') quotaUnusable = true
+    const q = quota === 'unusable' ? null : quota
     if (q) {
       raw += (s.cents * q.privateCents) / q.amountCents
       const key = `${s.part}|${s.plant}`
@@ -1774,7 +1781,10 @@ function operatingPowerBalanceItem(
       steps.push(...quotaSteps)
     }
     if (byArea) {
-      steps.push({ label: 'Zuordnung', value: 'nach Wohn- und Nutzfläche des ganzen Gebäudes wie bei Kosten des ganzen Gebäudes, denn ein Abzug ohne Verweis gehört zu keiner bestimmten Anlage; das ist eine Auslegung von Mietfuchs', term: 'mixedUse' })
+      const why = quotaUnusable
+        ? 'denn der Heizanteil der Anlage taugt hier nicht als Maßstab: Eine Gutschrift mit anderem Schlüssel oder anderen Beteiligten als die Rechnung lässt ihn außerhalb von 0 bis 100 % liegen'
+        : 'denn ein Abzug ohne Verweis gehört zu keiner bestimmten Anlage'
+      steps.push({ label: 'Zuordnung', value: `nach Wohn- und Nutzfläche des ganzen Gebäudes wie bei Kosten des ganzen Gebäudes, ${why}; das ist eine Auslegung von Mietfuchs`, term: 'mixedUse' })
       steps.push({ label: 'Betroffene Fläche', value: `${fmtNum(totalArea)} m² (ganzes Gebäude), davon selbstgenutzt ${fmtNum(selfArea)} m²` })
     }
     if (unsplittable) {

@@ -713,6 +713,13 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   beim Start noch die Datenbank vorbereitet, antwortet `/healthz` mit 503 und
   `"status": "starting"`; alle anderen Anfragen warten, bis der Start fertig ist
   ([#244](https://github.com/speedone/mietfuchs/issues/244)).
+- **Steuer: privater Teil beim Ausgleich des Betriebsstroms über dem Betrag** ([#268](https://github.com/speedone/mietfuchs/issues/268)):
+  Stand bei einer Heizanlage neben der Rechnung eine Gutschrift mit anderem Schlüssel oder anderen Beteiligten,
+  konnte der Eigenanteil an deren Heizkosten weit über 100 % liegen. Die Zeile „Betriebsstrom der Heizung,
+  Ausgleich“ bekam dann einen privaten Teil über ihrem Betrag, auch mit falschem Vorzeichen (gemessen: Ausgleich
+  −30,00 €, privat −262,50 €, abziehbar +232,50 €). Liegt der Eigenanteil außerhalb von 0 bis 100 %, gilt jetzt die
+  Wohn- und Nutzfläche des Gebäudes (im Beispiel privat −15,00 €), und der Rechenweg sagt das. Die Abrechnung an die
+  Mieter ändert sich nicht.
 
 ## [0.10.1] – 2026-10-04
 
