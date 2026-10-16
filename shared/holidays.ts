@@ -1,14 +1,14 @@
-// Gesetzliche Feiertage je Bundesland, als eigene kleine Tabelle mit Osterformel und ohne Abhängigkeit.
-// Grundlage für Fristen nach Werktagen (shared/deadlines.ts). Server und Oberfläche rechnen mit derselben
-// Datei, deshalb liegt sie in shared/.
+// Gesetzliche Feiertage je Bundesland, gerechnet aus dem Rechtsregister (shared/law/feiertagsgesetze.ts)
+// mit Osterformel und ohne Abhängigkeit. Grundlage für Fristen nach Werktagen (shared/deadlines.ts).
+// Server und Oberfläche rechnen mit derselben Datei, deshalb liegt sie in shared/.
 //
 // **Warum keine Bibliothek.** Geprüft wurden feiertagejs 1.5.1 und date-holidays 3.37.0 gegen dieselbe
-// Vergleichsliste wie diese Tabelle (server/test/fixtures/holidays/). feiertagejs führt den
+// Vergleichsliste wie das Register (server/test/fixtures/holidays/). feiertagejs führt den
 // Reformationstag in Bremen, Hamburg, Niedersachsen und Schleswig-Holstein schon vor 2018, kennt die
 // einmaligen Berliner Feiertage nicht und zählt Mariä Himmelfahrt in ganz Bayern. date-holidays stimmt
 // überein, seine Feiertagsdaten stehen aber unter CC BY-SA 3.0 und kämen mit rund 40 MB Abhängigkeiten
-// (moment-timezone, astronomia) in die Programmdatei. Die Tabelle hier ist kurz und jede Zeile nennt
-// ihre Rechtsgrundlage.
+// (moment-timezone, astronomia) in die Programmdatei. Im Register hat dagegen jede Fassung ihre
+// Fundstelle und ihren Prüfstand.
 //
 // **Was gilt.** Ein Tag zählt, wenn er im ganzen Land gesetzlicher Feiertag ist. Feiertage, die nur in
 // einzelnen Gemeinden gelten (Mariä Himmelfahrt in Teilen Bayerns, das Augsburger Friedensfest,
@@ -18,100 +18,30 @@
 // der Reformationstag 2017.
 //
 // **Was bewusst fehlt.** Sonntage als solche (Hessen erklärt alle Sonntage zu Feiertagen, § 1
-// Abs. 1 HFeiertagsG; für Werktage ist das ohne Folge, ein Sonntag ist nie Werktag) und kirchliche Feiertage
-// ohne Arbeitsruhe. Einmalige Feiertage, die ein Land künftig beschließt, kennt die Tabelle erst, wenn
-// sie hier eingetragen werden; die Jahre davor bleiben richtig.
+// Abs. 1 HFeiertagsG; für Werktage ist das ohne Folge, ein Sonntag ist nie Werktag) und kirchliche
+// Feiertage ohne Arbeitsruhe. Einmalige Feiertage, die ein Land künftig beschließt, kennt Mietfuchs erst,
+// wenn sie als Fassung im Register stehen; die Jahre davor bleiben richtig.
+//
+// Gefragt wird das Register ohne Protokoll (`versionAt`), denn bisher rechnet keine Abrechnung damit.
+// Rechnet calc.ts einmal mit einer Frist, fragt es mit `law(param, { date }, log)`, damit die benutzte
+// Fassung im Rechtsstand der Abrechnung steht.
 //
 // Daten sind ISO-Zeichenketten 'JJJJ-MM-TT' und werden in UTC gerechnet wie im übrigen Projekt; die
 // Zeitzone des Rechners spielt keine Rolle.
 import type { FederalState } from './types.ts'
+import { STATE_CODES } from './states.ts'
+import { versionAt } from './law/register.ts'
+import { HOLIDAY_PARAMS } from './law/feiertagsgesetze.ts'
 
-export const STATES: readonly { readonly code: FederalState; readonly name: string }[] = [
-  { code: 'BW', name: 'Baden-Württemberg' },
-  { code: 'BY', name: 'Bayern' },
-  { code: 'BE', name: 'Berlin' },
-  { code: 'BB', name: 'Brandenburg' },
-  { code: 'HB', name: 'Bremen' },
-  { code: 'HH', name: 'Hamburg' },
-  { code: 'HE', name: 'Hessen' },
-  { code: 'MV', name: 'Mecklenburg-Vorpommern' },
-  { code: 'NI', name: 'Niedersachsen' },
-  { code: 'NW', name: 'Nordrhein-Westfalen' },
-  { code: 'RP', name: 'Rheinland-Pfalz' },
-  { code: 'SL', name: 'Saarland' },
-  { code: 'SN', name: 'Sachsen' },
-  { code: 'ST', name: 'Sachsen-Anhalt' },
-  { code: 'SH', name: 'Schleswig-Holstein' },
-  { code: 'TH', name: 'Thüringen' },
-]
+export { STATES, STATE_CODES, isFederalState, stateName } from './states.ts'
 
-export const STATE_CODES: readonly FederalState[] = STATES.map((s) => s.code)
-
-export function isFederalState(v: unknown): v is FederalState {
-  return typeof v === 'string' && STATE_CODES.some((c) => c === v)
-}
-
-export function stateName(state: FederalState): string {
-  return STATES.find((s) => s.code === state)?.name ?? state
-}
-
-// Die Tabelle beginnt mit 1995, dem ersten Jahr der Vergleichsliste. Für frühere Jahre ist sie nicht
-// geprüft, und eine Frist, die mit einer ungeprüften Liste rechnet, wäre eine Behauptung.
+// Gerechnet wird ab 1995, dem ersten Jahr der Vergleichsliste. Für frühere Jahre sind die Fassungen des
+// Registers nicht geprüft, und eine Frist, die mit einer ungeprüften Liste rechnet, wäre eine Behauptung.
 export const FIRST_YEAR = 1995
 
 export type Holiday = { date: string; name: string }
 // Ein Feiertag, der nur in einzelnen Gemeinden des Landes gilt, mit dem Ort in Worten.
 export type LocalHoliday = Holiday & { where: string }
-
-type Rule = { kind: 'fixed'; month: number; day: number } | { kind: 'easter'; offset: number } | { kind: 'repentanceDay' }
-type Entry = {
-  name: string
-  rule: Rule
-  states: readonly FederalState[]
-  // Geltung in Jahren, je einschließlich; `only` für einmalige Feiertage.
-  from?: number
-  only?: readonly number[]
-  // Gesetzt, wenn der Tag nur in einzelnen Gemeinden gilt: wo, in Worten.
-  local?: string
-  norm: string
-}
-
-const fixed = (month: number, day: number): Rule => ({ kind: 'fixed', month, day })
-const easter = (offset: number): Rule => ({ kind: 'easter', offset })
-const ALL = STATE_CODES
-
-// Die Tabelle. Die Fundstellen sind die Feiertagsgesetze der Länder; was bundesweit gilt, steht in
-// jedem davon.
-const ENTRIES: readonly Entry[] = [
-  { name: 'Neujahr', rule: fixed(1, 1), states: ALL, norm: 'Feiertagsgesetze aller Länder' },
-  { name: 'Heilige Drei Könige', rule: fixed(1, 6), states: ['BW', 'BY', 'ST'], norm: '§ 1 FTG BW; Art. 1 Abs. 1 Nr. 1 FTG BY; § 2 Nr. 2 FeiertG LSA' },
-  { name: 'Internationaler Frauentag', rule: fixed(3, 8), states: ['BE'], from: 2019, norm: '§ 1 Abs. 1 Nr. 2 FeiertG Berlin (G v. 30.01.2019)' },
-  { name: 'Internationaler Frauentag', rule: fixed(3, 8), states: ['MV'], from: 2023, norm: '§ 2 Abs. 1 Nr. 2 FTG M-V (G v. 07.07.2022)' },
-  { name: 'Karfreitag', rule: easter(-2), states: ALL, norm: 'Feiertagsgesetze aller Länder' },
-  { name: 'Ostersonntag', rule: easter(0), states: ['BB'], norm: '§ 2 Abs. 1 Nr. 3 FTG Brandenburg' },
-  { name: 'Ostermontag', rule: easter(1), states: ALL, norm: 'Feiertagsgesetze aller Länder' },
-  { name: 'Tag der Arbeit', rule: fixed(5, 1), states: ALL, norm: 'Feiertagsgesetze aller Länder' },
-  { name: 'Tag der Befreiung', rule: fixed(5, 8), states: ['BE'], only: [2020, 2025], norm: '§ 1 Abs. 1 Nr. 11 FeiertG Berlin, je einmalig (G v. 30.01.2019 und 10.07.2024)' },
-  { name: 'Christi Himmelfahrt', rule: easter(39), states: ALL, norm: 'Feiertagsgesetze aller Länder' },
-  { name: 'Pfingstsonntag', rule: easter(49), states: ['BB'], norm: '§ 2 Abs. 1 Nr. 7 FTG Brandenburg' },
-  { name: 'Pfingstmontag', rule: easter(50), states: ALL, norm: 'Feiertagsgesetze aller Länder' },
-  { name: 'Fronleichnam', rule: easter(60), states: ['BW', 'BY', 'HE', 'NW', 'RP', 'SL'], norm: 'Feiertagsgesetze dieser Länder' },
-  { name: 'Fronleichnam', rule: easter(60), states: ['SN'], local: 'nur in einzelnen Gemeinden und Gemeindeteilen um Bautzen, Hoyerswerda und Kamenz', norm: '§ 1 Abs. 1 SächsSFG mit Fronleichnamsverordnung vom 04.05.1993' },
-  { name: 'Fronleichnam', rule: easter(60), states: ['TH'], local: 'nur in Gemeinden, in denen er 1994 gesetzlicher Feiertag war, etwa im Eichsfeld', norm: '§ 10 Abs. 1 ThürFtG' },
-  { name: '75. Jahrestag des Volksaufstands vom 17. Juni 1953', rule: fixed(6, 17), states: ['BE'], only: [2028], norm: '§ 1 Abs. 1 Nr. 12 FeiertG Berlin, einmalig (G v. 10.07.2024)' },
-  { name: 'Augsburger Friedensfest', rule: fixed(8, 8), states: ['BY'], local: 'nur im Stadtgebiet Augsburg', norm: 'Art. 1 Abs. 2 FTG BY' },
-  { name: 'Mariä Himmelfahrt', rule: fixed(8, 15), states: ['SL'], norm: '§ 2 Abs. 1 Nr. 8 SFG Saarland' },
-  { name: 'Mariä Himmelfahrt', rule: fixed(8, 15), states: ['BY'], local: 'nur in Gemeinden mit mehr katholischen als evangelischen Einwohnern, wie sie das Landesamt für Statistik feststellt', norm: 'Art. 1 Abs. 1 Nr. 2 und Abs. 3 FTG BY' },
-  { name: 'Weltkindertag', rule: fixed(9, 20), states: ['TH'], from: 2019, norm: '§ 2 Abs. 1 ThürFtG' },
-  { name: 'Tag der Deutschen Einheit', rule: fixed(10, 3), states: ALL, norm: 'Art. 2 Abs. 2 Einigungsvertrag' },
-  { name: 'Reformationstag', rule: fixed(10, 31), states: ['BB', 'MV', 'SN', 'ST', 'TH'], norm: 'Feiertagsgesetze dieser Länder' },
-  { name: 'Reformationstag', rule: fixed(10, 31), states: ['HB', 'HH', 'NI', 'SH'], from: 2018, norm: '§ 2 Abs. 1 FeiertG BR; § 1 Nr. 8 FeiertagsG HH; § 2 NFeiertagsG; § 2 Abs. 1 SFTG, je geändert 2018' },
-  { name: 'Reformationstag (500. Jahrestag)', rule: fixed(10, 31), states: ALL, only: [2017], norm: 'einmalige Regelung in jedem Land, etwa Art. 1 Abs. 2a FTG BY a. F.' },
-  { name: 'Allerheiligen', rule: fixed(11, 1), states: ['BW', 'BY', 'NW', 'RP', 'SL'], norm: 'Feiertagsgesetze dieser Länder' },
-  { name: 'Buß- und Bettag', rule: { kind: 'repentanceDay' }, states: ['SN'], norm: '§ 1 Abs. 1 SächsSFG' },
-  { name: '1. Weihnachtstag', rule: fixed(12, 25), states: ALL, norm: 'Feiertagsgesetze aller Länder' },
-  { name: '2. Weihnachtstag', rule: fixed(12, 26), states: ALL, norm: 'Feiertagsgesetze aller Länder' },
-]
 
 // ---------- Datum ----------
 
@@ -162,10 +92,22 @@ function repentanceDay(year: number): string {
   return isoOf(nov22 - back * MS_DAY)
 }
 
-function dateOf(rule: Rule, year: number): string {
-  if (rule.kind === 'fixed') return isoOf(utcOf(year, rule.month, rule.day))
-  if (rule.kind === 'easter') return addDays(easterSunday(year), rule.offset)
-  return repentanceDay(year)
+// Der Tag eines Feiertags im Jahr, nach der Schreibweise des Registers ('MM-TT', 'O±n', 'repentance').
+function dateOf(day: string, year: number): string {
+  if (day === 'repentance') return repentanceDay(year)
+  if (day.startsWith('O')) return addDays(easterSunday(year), Number(day.slice(1)))
+  return isoOf(utcOf(year, Number(day.slice(0, 2)), Number(day.slice(3, 5))))
+}
+
+// Jeder Feiertag des Jahres mit der Fassung, die an seinem Tag gilt.
+function occurrences(year: number): { date: string; name: string; states: readonly FederalState[]; local: { readonly [state: string]: string } }[] {
+  return HOLIDAY_PARAMS.flatMap((p) => {
+    const first = p.versions[0]
+    if (!first) return []
+    const date = dateOf(first.value.day, year)
+    const v = versionAt(p, date).value
+    return [{ date, name: p.title, states: v.states, local: v.local }]
+  })
 }
 
 function checkYear(year: number): void {
@@ -174,13 +116,10 @@ function checkYear(year: number): void {
   }
 }
 
-const applies = (e: Entry, year: number, state: FederalState): boolean =>
-  e.states.includes(state) && (e.from === undefined || year >= e.from) && (e.only === undefined || e.only.includes(year))
-
 const byDate = (a: Holiday, b: Holiday): number => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)
 
 // Ein Tag, zwei Anlässe (2008 fielen Christi Himmelfahrt und der 1. Mai zusammen): einmal, mit dem
-// ersten Namen der Tabelle.
+// ersten Namen des Registers.
 function unique(list: Holiday[]): Holiday[] {
   const seen = new Set<string>()
   return list.filter((h) => !seen.has(h.date) && seen.add(h.date)).sort(byDate)
@@ -192,7 +131,7 @@ function stateHolidays(year: number, state: FederalState): Holiday[] {
   const key = `${year}/${state}`
   let list = cache.get(key)
   if (!list) {
-    list = unique(ENTRIES.filter((e) => !e.local && applies(e, year, state)).map((e) => ({ date: dateOf(e.rule, year), name: e.name })))
+    list = unique(occurrences(year).filter((o) => o.states.includes(state)).map((o) => ({ date: o.date, name: o.name })))
     cache.set(key, list)
   }
   return list
@@ -224,9 +163,10 @@ export function holidaysOf(year: number, state: FederalState | null): Holiday[] 
 export function localHolidaysOf(year: number, state: FederalState | null): LocalHoliday[] {
   checkYear(year)
   if (state === null) return []
-  return ENTRIES.filter((e) => e.local !== undefined && applies(e, year, state))
-    .map((e) => ({ date: dateOf(e.rule, year), name: e.name, where: e.local ?? '' }))
-    .sort(byDate)
+  return occurrences(year).flatMap((o) => {
+    const where = o.local[state]
+    return where === undefined ? [] : [{ date: o.date, name: o.name, where }]
+  }).sort(byDate)
 }
 
 export function isHoliday(date: string, state: FederalState | null): boolean {

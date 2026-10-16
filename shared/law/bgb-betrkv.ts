@@ -88,3 +88,60 @@ export const bgbHeatDeliverySwitch: LawParam<{ readonly noticeMonths: number; re
   }],
   describe: (v) => `Ankündigung spätestens ${v.noticeMonths} Monate vor der Umstellung; ab ${v.efficiencyPercent} % Jahresnutzungsgrad genügt eine verbesserte Betriebsführung`,
 }
+
+// ---------- Fristen nach Werktagen (shared/deadlines.ts) ----------
+// `eventDate`: gefragt wird am ersten Tag des Monats, dessen Miete fällig wird, bzw. am letzten Tag der Frist.
+
+// § 556b Abs. 1 BGB, am 15.10.2026 im Wortlaut gelesen: „Die Miete ist zu Beginn, spätestens bis zum dritten
+// Werktag der einzelnen Zeitabschnitte zu entrichten, nach denen sie bemessen ist.“
+export const bgbRentDueWorkday: LawParam<number, 'eventDate'> = {
+  id: 'bgb.rent-due-workday',
+  title: 'Fälligkeit der Miete',
+  norm: '§ 556b Abs. 1 BGB',
+  timing: 'eventDate',
+  versions: [{
+    value: 3,
+    source: { rank: 'law', cite: '§ 556b Abs. 1 BGB', url: 'https://www.gesetze-im-internet.de/bgb/__556b.html', retrieved: '2026-10-15', checked: 'checked' },
+    enacted: '§ 556b Abs. 1 BGB, geltende Fassung',
+  }],
+  describe: (v) => `spätestens bis zum ${v}. Werktag des Monats`,
+}
+
+// Ob der Samstag bei dieser Frist als Werktag zählt: nein (BGH, Urteil vom 13.07.2010, VIII ZR 129/09, ebenso
+// VIII ZR 291/09). Die drei Tage sollen dem Mieter ungeschmälert zur Verfügung stehen, und Bankgeschäftstage
+// sind Montag bis Freitag; das gilt für Verträge vor und nach dem 01.09.2001. Gelesen in der Pressemitteilung
+// des BGH Nr. 144/2010 am 15.10.2026. Nicht dafür einschlägig ist VIII ZR 222/15 (05.10.2016): Es entscheidet,
+// dass die Überweisung bis zum dritten Werktag beauftragt sein muss, nicht eingegangen (Leitsatz gelesen).
+export const bgbRentDueSaturday: LawParam<boolean, 'eventDate'> = {
+  id: 'bgb.rent-due-saturday',
+  title: 'Samstag bei der Fälligkeit der Miete',
+  norm: 'BGH, Urteil vom 13.07.2010, VIII ZR 129/09',
+  timing: 'eventDate',
+  versions: [{
+    value: false,
+    source: { rank: 'court', cite: 'BGH, Urteil vom 13.07.2010, VIII ZR 129/09 (Pressemitteilung Nr. 144/2010)', url: 'https://www.bundesgerichtshof.de/SharedDocs/Pressemitteilungen/DE/2010/2010144.html', retrieved: '2026-10-15', checked: 'checked' },
+    enacted: 'Rechtsprechung des VIII. Zivilsenats seit 13.07.2010',
+  }],
+  describe: (v) => (v ? 'der Samstag zählt als Werktag' : 'der Samstag zählt nicht als Werktag'),
+}
+
+// § 193 BGB, am 15.10.2026 im Wortlaut gelesen: „Ist an einem bestimmten Tage oder innerhalb einer Frist eine
+// Willenserklärung abzugeben oder eine Leistung zu bewirken und fällt der bestimmte Tag oder der letzte Tag
+// der Frist auf einen Sonntag, einen am Erklärungs- oder Leistungsort staatlich anerkannten allgemeinen
+// Feiertag oder einen Sonnabend, so tritt an die Stelle eines solchen Tages der nächste Werktag.“
+export type DeadlineShift = { readonly saturday: boolean; readonly sunday: boolean; readonly holiday: boolean }
+export const bgbDeadlineOnWorkday: LawParam<DeadlineShift, 'eventDate'> = {
+  id: 'bgb.deadline-on-workday',
+  title: 'Fristende am Wochenende oder Feiertag',
+  norm: '§ 193 BGB',
+  timing: 'eventDate',
+  versions: [{
+    value: { saturday: true, sunday: true, holiday: true },
+    source: { rank: 'law', cite: '§ 193 BGB', url: 'https://www.gesetze-im-internet.de/bgb/__193.html', retrieved: '2026-10-15', checked: 'checked' },
+    enacted: '§ 193 BGB, geltende Fassung',
+  }],
+  describe: (v) => {
+    const days = [v.saturday && 'Sonnabend', v.sunday && 'Sonntag', v.holiday && 'Feiertag am Erklärungs- oder Leistungsort'].filter((d): d is string => typeof d === 'string')
+    return `fällt das Fristende auf ${days.join(', ')}, tritt der nächste Werktag an seine Stelle`
+  },
+}
