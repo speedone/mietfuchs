@@ -747,6 +747,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Wechselte der Abrechnungszeitraum mitten im Jahr, schlug die Vorschau für eine mit einer Brennstoffrechnung
   verknüpfte Heizposition den Rumpf vor, obwohl sie in die Heizperiode gehört, in der die Rechnung endet; das
   Übernehmen lehnte genau diesen Vorschlag ab. Jetzt bietet die Vorschau nur diese Heizperiode an.
+- **Kesseltausch bei getrennter Heizkostenabrechnung: Sperre mit Weg statt „kommt mit einer späteren Version“** ([#217](https://github.com/speedone/mietfuchs/issues/217)):
+  Wurden die Heizkosten getrennt abgerechnet, lehnte Mietfuchs jeden Kesseltausch ab, auch wenn die getrennte
+  Abrechnung schon vorher geendet hatte. Jetzt sperrt nur noch ein Tausch in einer getrennt abgerechneten
+  Heizperiode oder davor, und die Meldung nennt den Weg: die getrennte Heizkostenabrechnung ab dieser Heizperiode
+  ausschalten, dann den Tausch erfassen; die Heizkosten rechnet danach die Betriebskostenabrechnung ab. Eine
+  getrennte Heizkostenabrechnung nach einem Kesseltausch kann Mietfuchs noch nicht.
 
 ## [0.10.1] – 2026-10-04
 

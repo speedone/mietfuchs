@@ -719,9 +719,6 @@ export async function replaceHeatingPlant(db: Database, oldId: string, newId: st
   if (old.supply === 'perUnit') {
     throw new HeatingError(400, 'Bei einer Etagenheizung erfasst Mietfuchs keinen Kesseltausch. Wechselt eine Therme den Energieträger, ändern Sie ihn an der Anlage; die Rechnungen gehören ohnehin je zu einer Wohnung.')
   }
-  if (old.separateSpans.length > 0) {
-    throw new HeatingError(400, 'Werden die Heizkosten getrennt abgerechnet, erfasst Mietfuchs einen Kesseltausch noch nicht; das kommt mit einer späteren Version. Schalten Sie bis dahin die getrennte Heizkostenabrechnung aus.')
-  }
   const newEnergy = oneOfOrUndefined(HEATING_ENERGIES, raw(body, 'energy'))
   if (newEnergy === undefined) {
     throw new HeatingError(400, 'Womit heizt die neue Anlage? Bitte wählen Sie ihren Energieträger.')
@@ -736,6 +733,24 @@ export async function replaceHeatingPlant(db: Database, oldId: string, newId: st
     throw new HeatingError(409, 'Bleibt der Energieträger gleich und läuft er über denselben Zähler, brauchen Sie keinen Tausch; ändern Sie nur die Angaben der Anlage.')
   }
   const endsOn = isoDayBefore(date)
+  // Abdeckung V26: Getrennt abgerechnete Heizperioden (Weg d) rechnet Mietfuchs je Anlage ab; ein Tausch darin ergäbe zwei
+  // Heizkostenabrechnungen für eine Heizperiode mit einer Heizvorauszahlung. Gesperrt ist deshalb nur ein Tausch, wenn die
+  // Heizperiode des Tauschs oder eine spätere getrennt abgerechnet wird; eine Spanne, die vorher endete, bleibt, wie sie
+  // ist. Der gangbare Weg steht in der Meldung.
+  const swapRules = await heatingRulesOf(db, oldId)
+  if (swapRules && old.separateSpans.length > 0) {
+    const h = periodContaining(swapRules.rules, endsOn)
+    const ahead = old.separateSpans.filter((sp) => sp.until === null || sp.until > h.key)
+    if (ahead.length > 0) {
+      const covered = ahead.some((sp) => h.to.slice(0, 7) >= sp.from)
+      throw new HeatingError(400, covered
+        ? `Die Heizperiode ${periodLabel(h)}, in die der Tausch fällt, wird getrennt abgerechnet; einen Kesseltausch darin rechnet Mietfuchs noch nicht ab. ` +
+          'So geht es: Schalten Sie unter Stammdaten bei der Heizanlage die getrennte Heizkostenabrechnung ab dieser Heizperiode aus und erfassen Sie dann den Tausch. ' +
+          'Die Heizkosten beider Anlagen rechnet dann die Betriebskostenabrechnung ab, jede Heizperiode in der Abrechnung, in der sie endet; die getrennt abgerechneten Heizperioden davor bleiben, wie sie sind. ' +
+          'Eine getrennte Heizkostenabrechnung nach einem Kesseltausch kann Mietfuchs noch nicht.'
+        : 'Für die Zeit nach dem Tausch ist bei der bisherigen Anlage eine getrennte Heizkostenabrechnung eingetragen. Schalten Sie sie unter Stammdaten bei der Heizanlage aus und erfassen Sie dann den Tausch; eine getrennte Heizkostenabrechnung nach einem Kesseltausch kann Mietfuchs noch nicht.')
+    }
+  }
   // Lieferungen der alten Anlage nach dem Tausch gehörten zur neuen.
   for (const d of await db.select().from(fuelDeliveries).where(eq(fuelDeliveries.plantId, oldId))) {
     const last = d.deliveredAt ?? d.invoiceTo ?? d.invoiceFrom
