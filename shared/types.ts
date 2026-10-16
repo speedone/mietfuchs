@@ -1142,6 +1142,8 @@ export type UnitDependents = {
   payments: number
   costItemLinks: number
   directCostItems: number
+  // Rechnungen einer Etagenheizung an der Wohnung; solange es welche gibt, lehnt das Löschen ab (S1).
+  fuelDeliveries: number
 }
 
 // Was die Oberfläche aus einer KI-Belegauswertung bekommt: das Ergebnis, nicht die rohe Antwort

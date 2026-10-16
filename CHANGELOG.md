@@ -609,6 +609,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
+- **Wohnung mit Etagenheizung löschen.** Hingen an einer Wohnung Rechnungen ihrer Etagenheizung, scheiterte das
+  Löschen mit einer Meldung über einen fehlenden Eintrag, oder die Rechnung verschwand samt kg CO₂ und CO₂-Kosten
+  ohne Nachfrage mit der Wohnung. Jetzt sagt Mietfuchs vorher, welche Rechnungen an der Wohnung hängen, und
+  löscht die Wohnung erst, wenn Sie die Rechnungen auf der Seite Heizkosten selbst gelöscht haben. Keine Zahl
+  ändert sich.
 - **Kein Hinweis auf eine CO₂-Kürzung, wenn der Mieter selbst heizt** ([#97](https://github.com/speedone/mietfuchs/issues/97)):
   Erfassten Sie Wartung oder Betriebsstrom einer Gastherme, deren Gasvertrag der Mieter hat, als „Heizung und
   Warmwasser“, nannte die Abrechnung eine Kürzung um 3 % nach § 7 Abs. 4 CO2KostAufG und eine nach § 12

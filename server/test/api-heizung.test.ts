@@ -531,6 +531,43 @@ test('Etagenheizung über die Routen: Lieferung nur mit Wohnung der Anlage, zent
   }
 })
 
+test('Etagenheizung: Eine Wohnung mit Rechnungen lässt sich nicht löschen, die Löschfrage nennt sie, und die Rechnung bleibt (Integrationsdurchsicht S1)', async () => {
+  const s = await startServer()
+  try {
+    const send = (url: string, init: RequestInit) => fetch(`${s.base}${url}`, { ...init, headers: { 'content-type': 'application/json' } })
+    const eg = await s.api<Unit>('/api/units', jsonPost({ name: 'EG', areaM2: 60, participates: true }))
+    const og = await s.api<Unit>('/api/units', jsonPost({ name: 'OG', areaM2: 40, participates: true }))
+    const { plant } = await jsonOf<{ plant: HeatingPlant }>(await send('/api/heating-plants', jsonPost({ name: 'Gasthermen', energy: 'gas', supply: 'perUnit', method: 'manual' })))
+    const rechnung = async (unitId: string, label: string) => jsonOf<{ id: string }>(await send(`/api/heating-plants/${plant.id}/deliveries`, jsonPost({
+      label, invoiceFrom: '2025-01-01', invoiceTo: '2025-12-31', invoiceDate: '2026-01-15', energyKwh: 15000, emissionsKg: 3013, co2CostCents: 16500, unitId,
+    })))
+    const egRechnung = await rechnung(eg.id, 'Gas EG 2025')
+    await s.api('/api/costItems', jsonPost({ period: '2025-01', category: 'Heizung und Warmwasser', description: 'Gas EG', amountCents: 150000, key: 'direct', directUnitId: eg.id, heatingPlantId: plant.id, fuelDeliveryId: egRechnung.id }))
+    const ogRechnung = await rechnung(og.id, 'Gas OG 2025')
+
+    // Mit verknüpfter Position: ein Satz statt der Meldung des Fremdschlüssels.
+    assert.equal((await s.api<{ fuelDeliveries: number }>(`/api/units/${eg.id}/dependents`)).fuelDeliveries, 1)
+    const mitPosition = await send(`/api/units/${eg.id}`, { method: 'DELETE' })
+    assert.equal(mitPosition.status, 409)
+    const satz = await errorFrom(mitPosition)
+    assert.match(satz, /„Gas EG 2025“/)
+    assert.doesNotMatch(satz, /FOREIGN KEY|gehört zu etwas/)
+    // Ohne Position: Die Rechnung samt CO₂-Angaben verschwände still; deshalb ebenso gesperrt.
+    const ohnePosition = await send(`/api/units/${og.id}`, { method: 'DELETE' })
+    assert.equal(ohnePosition.status, 409)
+    assert.match(await errorFrom(ohnePosition), /„Gas OG 2025“/)
+    const noch = await s.api<FuelDelivery[]>(`/api/heating-plants/${plant.id}/deliveries`)
+    assert.deepEqual(noch.map((d) => d.id).sort(), [egRechnung.id, ogRechnung.id].sort())
+    assert.equal((await s.api<Unit[]>('/api/units')).length, 2)
+    // Ist die Rechnung gelöscht, geht auch die Wohnung.
+    assert.equal((await send(`/api/fuel-deliveries/${ogRechnung.id}`, { method: 'DELETE' })).status, 200)
+    assert.equal((await s.api<{ fuelDeliveries: number }>(`/api/units/${og.id}/dependents`)).fuelDeliveries, 0)
+    assert.equal((await send(`/api/units/${og.id}`, { method: 'DELETE' })).status, 200)
+  } finally {
+    s.stop()
+  }
+})
+
 // ---------- Kesseltausch (Heizung PR 9) ----------
 
 test('Kesseltausch über die Route: Öl endet, Gas beginnt; der Restbestand steht in der Abrechnung beim Vermieter', async () => {
