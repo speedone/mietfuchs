@@ -461,3 +461,39 @@ test('Durchsicht S-4: bei der zentralen Heizung ist jede weitere angehakte Einhe
   // Etagenheizung: eine leere Wohnung ist kein Dritter.
   expect(selfSupplyOffer(['eg', 'og'], [t('a', 'eg', 'Mieter A')], '2026-10-12', false)).toEqual({ tenancyIds: ['a'], names: ['Mieter A'], kindTenancyIds: [] })
 })
+
+// #225: Rechnet der Wärmelieferant unmittelbar mit den Mietern ab, gilt die Verordnung für ihn (§ 1 Abs. 3 HeizkostenV);
+// die Kosten der Hausanlagen, die der Vermieter gesondert abrechnet, sind von §§ 3 bis 7 ausgenommen (§ 11 Abs. 1 Nr. 4).
+describe('Wärmelieferant rechnet unmittelbar mit den Mietern ab (#225)', () => {
+  const SUPPLIER = { value: 'supplier', label: 'Der Wärmelieferant rechnet unmittelbar mit den Mietern ab' }
+
+  test('die Antwort gibt es nur bei einer neuen Anlage mit Wärmelieferung (Fernwärme oder Contracting)', () => {
+    expect(whoOptions('mfh', { energy: 'districtHeating', contracting: false }, null)).toContainEqual(SUPPLIER)
+    expect(whoOptions('mfh', { energy: 'gas', contracting: true }, null)).toContainEqual(SUPPLIER)
+    expect(whoOptions('mfh', { energy: 'gas', contracting: false }, null)).not.toContainEqual(SUPPLIER)
+    expect(whoOptions('mfh', { energy: 'districtHeating', contracting: false }, 'hp1')).not.toContainEqual(SUPPLIER)
+    expect(whoOptions('mfh')).not.toContainEqual(SUPPLIER)
+  })
+
+  test('keine Anlage; die Erklärung nennt § 1 Abs. 3 und § 11 Abs. 1 Nr. 4, und jeder Mieter hat seinen eigenen Vertrag', () => {
+    const r = heatingPlantBody(ausgefuellt({ energy: 'districtHeating', who: 'supplier' }), UNITS)
+    if (!('none' in r)) throw new Error(JSON.stringify(r))
+    expect(r.none).toMatch(/gelten nach § 1 Abs\. 3 HeizkostenV die Pflichten des Gebäudeeigentümers aus der Verordnung für den Lieferanten/)
+    expect(r.none).toMatch(/Mietfuchs legt keine Heizanlage an/)
+    expect(r.none).toMatch(/§ 11 Abs\. 1 Nr\. 4 HeizkostenV/)
+    expect(r.none).toMatch(/„Heizung und Warmwasser“/)
+    expect(r.selfSupplyUnitIds).toEqual(['eg', 'og'])
+    expect(r.central).toBe(true)
+    expect(r.singleTenant).toBe(false)
+  })
+
+  test('das Angebot nimmt mehrere Mieter an, auch an der zentralen Anlage', () => {
+    const t = (id: string, unitId: string, tenantName: string) => ({ id, unitId, tenantName, start: '2020-01-01', end: null })
+    expect(selfSupplyOffer(['eg', 'og'], [t('a', 'eg', 'Mieter A'), t('b', 'og', 'Mieter B')], '2026-10-12', true, false))
+      .toEqual({ tenancyIds: ['a', 'b'], names: ['Mieter A', 'Mieter B'], kindTenancyIds: [] })
+  })
+})
+
+test('#225: wird die Energie danach auf eine eigene Heizung gestellt, gilt die Antwort „Lieferant“ nicht mehr (das Auswahlfeld zeigt sie dann auch nicht)', () => {
+  expect(heatingPlantBody(ausgefuellt({ energy: 'gas', who: 'supplier' }), UNITS)).toEqual({ error: 'Bitte wählen Sie, wer die Heizkostenabrechnung erstellt.' })
+})
