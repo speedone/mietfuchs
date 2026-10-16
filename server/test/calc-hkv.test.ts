@@ -300,3 +300,18 @@ test('Durchsicht #241 N1: Wechsel Wärmezähler → Heizkostenverteiler am 30.06
   assert.match(d.notices.find((n) => n.code === 'heating.mixed-capture')?.text ?? assert.fail('nicht gemischt'), /Bei A wechselt das Gerät/)
   assert.match(d.notices.find((n) => n.code === 'heating.self-incomplete')?.text ?? assert.fail('kein fehlender Stand'), /„WZ a“ \(A\) fehlt ein Stand zum 31\.12\.2025.*außerdem der Heizkostenverteiler „HKV a“/s)
 })
+
+test('#219 Rohrwärme: Mit Heizkostenverteilern steht ein Hinweis (hint) auf § 7 Abs. 1 Satz 3, mit Wärmezählern und Ablesedienst nicht; keine Zahl ändert sich', () => {
+  const hca = computeSettlement(asHca(selfSnapshot()))
+  const n = hca.notices.find((x) => x.code === 'heating.pipe-heat') ?? assert.fail(codes(hca).join(', '))
+  assert.equal(n.level, 'hint')
+  assert.match(n.text, /freiliegenden Leitungen der Wärmeverteilung überwiegend ungedämmt/)
+  assert.match(n.text, /§ 7 Abs\. 1 Satz 3 HeizkostenV/)
+  assert.match(n.text, /VDI 2077 Blatt 3\.5/)
+  assert.match(n.text, /BGH, Urteil vom 15\.03\.2017, VIII ZR 5\/16/)
+  assert.match(n.text, /rechnet Mietfuchs nicht/)
+  assert.doesNotMatch(n.text, /müssen Sie|ist verpflichtet|Pflicht/)
+  assert.equal(hca.notices.filter((x) => x.code === 'heating.pipe-heat').length, 1)
+  assert.ok(!codes(computeSettlement(selfSnapshot())).includes('heating.pipe-heat'))
+  assert.ok(!codes(computeSettlement(asService())).includes('heating.pipe-heat'))
+})

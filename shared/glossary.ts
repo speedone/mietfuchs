@@ -405,6 +405,21 @@ export const GLOSSARY = {
     norm: '§ 7 Abs. 1 Satz 2, § 10 HeizkostenV',
     needed: 'Nur bei einer Öl- oder Gasheizung (Flüssiggas zählt nach Auslegung von Mietfuchs dazu, siehe Verbrauchskosten). Wissen Sie nicht, ob die Voraussetzungen vorliegen, liegen Sie mit dem Pflichtanteil in jedem Fall richtig, denn er liegt auch innerhalb der freien Wahl. Mehr geht nur mit einer Vereinbarung (§ 10 HeizkostenV). Den Pflichtanteil nachzutragen ist keine Änderung nach § 6 Abs. 4 und geht auch in einer begonnenen Heizperiode.',
   },
+  // #219, Gesamtentwurf 14.1: nur der Lexikonhinweis; die Bestimmung des Verbrauchs rechnet Mietfuchs nicht.
+  pipeHeat: {
+    title: 'Rohrwärme',
+    short:
+      'Wärme, die die Rohre der Heizung an die Räume abgeben, ohne dass ein Heizkostenverteiler sie erfasst. In Gebäuden, in denen die freiliegenden Leitungen der Wärmeverteilung überwiegend ungedämmt sind und deswegen ein wesentlicher Anteil des Wärmeverbrauchs nicht erfasst wird, ' +
+      'kann der Wärmeverbrauch der Nutzer nach anerkannten Regeln der Technik bestimmt werden; der so bestimmte Verbrauch gilt als erfasster Verbrauch.',
+    example:
+      'Die Heizung gibt 10.000 kWh an die Wohnungen ab, davon 3.000 kWh über ungedämmte Steigleitungen an der Wand. Die Heizkostenverteiler sehen nur die 7.000 kWh der Heizkörper. ' +
+      'Eine Wohnung, deren Räume vor allem die Rohre wärmen, erscheint dann mit wenig Verbrauch, und die übrigen Wohnungen zahlen ihren Anteil mit.',
+    norm: '§ 7 Abs. 1 Satz 3 und 4 HeizkostenV; BGH, Urteil vom 15.03.2017, VIII ZR 5/16',
+    needed:
+      'Nur bei Heizkostenverteilern und nur, wenn die Rohre frei auf der Wand verlaufen. Für Leitungen unter Putz oder im Estrich gilt die Regel nicht, auch nicht entsprechend (BGH, Urteil vom 15.03.2017, VIII ZR 5/16). ' +
+      'Die Verordnung erlaubt die Bestimmung, sie schreibt sie nicht vor. Ein Verfahren dazu beschreibt die Richtlinie VDI 2077 Blatt 3.5 (Ausgabe 2018-05; sie ersetzt das Beiblatt „Rohrwärme“, auf das die Begründung der Verordnung verweist). ' +
+      'Diese Bestimmung rechnet Mietfuchs nicht; es verteilt nach den erfassten Einheiten. Lassen Sie den Verbrauch von einem Messdienst bestimmen, tragen Sie dessen Werte als „Werte eines Ablesedienstes“ ein.',
+  },
   interimReading: {
     title: 'Zwischenablesung',
     short: 'Die Ablesung der Wärme- und Warmwasserzähler, wenn ein Mieter mitten im Abrechnungszeitraum aus- oder einzieht. Nach ihr werden die Verbrauchskosten aufgeteilt; die übrigen Heizkosten nach Gradtagszahlen oder zeitanteilig, die übrigen Warmwasserkosten zeitanteilig.',

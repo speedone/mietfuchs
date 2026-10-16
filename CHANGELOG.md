@@ -478,6 +478,13 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   zu nutzenden Brennstoff übernimmt sie nur, wo Mietfuchs ihn rechnet, und sagt sonst, warum nicht. Gespeichert wird in
   beiden Karten erst, wenn Sie übernehmen. Lieferungen von Gas, Fernwärme und Strom tragen jetzt auch Menge, Teilmengen
   und Emissionsfaktor, Lieferungen aus dem Vorrat den Emissionsfaktor.
+- Rohrwärme: Rechnen Sie die Heizkosten selbst mit Heizkostenverteilern ab, nennt die Abrechnung als Hinweis, dass
+  bei überwiegend ungedämmten, frei auf der Wand verlaufenden Leitungen der Verbrauch nach anerkannten Regeln der
+  Technik bestimmt werden kann (§ 7 Abs. 1 Satz 3 HeizkostenV, Verfahren in VDI 2077 Blatt 3.5), für Leitungen unter
+  Putz oder im Estrich aber nicht (BGH, Urteil vom 15.03.2017, VIII ZR 5/16). Das Lexikon erklärt den Begriff.
+  Die Bestimmung selbst rechnet Mietfuchs nicht; der Hinweis färbt die Ampel nicht, und keine Zahl ändert sich
+  ([#219](https://github.com/speedone/mietfuchs/issues/219)).
+
 ### Geändert
 
 - Neue Warnung „Monatliche Verbrauchsinformation“ bei einer Heizanlage, deren Zähler oder

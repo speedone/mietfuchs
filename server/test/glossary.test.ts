@@ -448,3 +448,18 @@ test('Lexikon: CO₂-Erstattung an Mieter, die selbst heizen, Beispiel nachgerec
   // Prüfung K3: § 2 Abs. 7 CO2KostAufG.
   assert.match(t.needed, /§ 2 Abs\. 7/)
 })
+
+test('Rohrwärme (#219, Gesamtentwurf 14.1): eigener Begriff mit Wortlaut der Voraussetzungen, dem BGH zu „freiliegend“ und ohne erfundenes Verfahren', () => {
+  const t = GLOSSARY.pipeHeat
+  assert.equal(t.title, 'Rohrwärme')
+  assert.match(t.norm, /§ 7 Abs\. 1 Satz 3 und 4 HeizkostenV/)
+  assert.match(t.norm, /VIII ZR 5\/16/)
+  assert.match(t.short, /freiliegenden Leitungen der Wärmeverteilung überwiegend ungedämmt/)
+  assert.match(t.short, /nach anerkannten Regeln der Technik bestimmt werden/)
+  assert.match(t.needed, /VDI 2077 Blatt 3\.5/)
+  assert.match(t.needed, /unter Putz oder im Estrich/)
+  assert.match(t.needed, /rechnet Mietfuchs nicht/)
+  // Beispiel nachgerechnet: 10.000 kWh abgegeben, 3.000 kWh über die Rohre, erfasst 7.000 kWh.
+  assert.match(t.example, /10\.000 kWh.*3\.000 kWh.*7\.000 kWh/s)
+  assert.equal(10000 - 3000, 7000)
+})

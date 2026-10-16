@@ -419,6 +419,7 @@ const noticeKinds = {
   // sperrt `heating.self-incomplete`.
   'heating.device-cutoff': { level: 'hint', title: 'Stichtag eines Heizkostenverteilers mitten in der Heizperiode', rule: 'heating-own-settlement', terms: ['heatCostAllocator'] },
   'heating.mixed-capture': { level: 'error', title: 'Verschiedene Geräte in einer Heizanlage', rule: 'heating-own-settlement', terms: ['heatCostAllocator'] },
+  'heating.pipe-heat': { level: 'hint', title: 'Rohrwärme', rule: 'heating-own-settlement', terms: ['pipeHeat', 'heatCostAllocator'] },
   'heating.hca-factor-missing': { level: 'error', title: 'Skala oder Bewertungsfaktor fehlt', rule: 'heating-own-settlement', terms: ['heatCostAllocator'] },
   // Heizung PR 13 (#99, Entwurf 8.7, 10.1): Schätzung nach § 9a.
   'heating.estimate-unconfirmed': { level: 'warning', title: 'Schätzung nicht bestätigt', rule: 'heating-estimate', terms: ['heatingEstimate'] },
@@ -3376,6 +3377,15 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const unrated = missingRatings(capture, [...servedIds], snapshot.meters, snapshot.readings, hPeriod)
     if (unrated.length > 0) blocked.push({ code: 'heating.hca-factor-missing', text: missingRatingsText(unrated, unitNameOf) })
     const where = `${plant.name ? `Heizanlage „${plant.name}“` : 'Heizanlage'}, Heizperiode ${label}`
+    // #219: Nur die Auskunft nach § 7 Abs. 1 Satz 3 und 4 HeizkostenV; die Bestimmung des Verbrauchs nach der Technik rechnet
+    // Mietfuchs nicht. Ob die Leitungen frei liegen und ungedämmt sind, kennt das Modell nicht, deshalb immer bei
+    // Heizkostenverteilern und ohne Farbe (client/src/notices.ts, INFORMATIONAL).
+    if (capture === 'hca') {
+      warn('heating.pipe-heat',
+        `${where}: Sind in Ihrem Haus die freiliegenden Leitungen der Wärmeverteilung überwiegend ungedämmt und erfassen die Heizkostenverteiler deswegen einen wesentlichen Anteil des Wärmeverbrauchs nicht, kann der Verbrauch der Nutzer nach anerkannten Regeln der Technik bestimmt werden (§ 7 Abs. 1 Satz 3 HeizkostenV); ein Verfahren beschreibt die Richtlinie VDI 2077 Blatt 3.5. ` +
+          'Freiliegend sind nur Leitungen, die sichtbar auf der Wand verlaufen; für Leitungen unter Putz oder im Estrich gilt die Regel nicht (BGH, Urteil vom 15.03.2017, VIII ZR 5/16). ' +
+          'Diese Bestimmung rechnet Mietfuchs nicht; verteilt wird nach den erfassten Einheiten. Lassen Sie den Verbrauch von einem Messdienst bestimmen, tragen Sie dessen Werte als „Werte eines Ablesedienstes“ ein; sie gelten dann als erfasster Verbrauch.')
+    }
     // Nicht unter einer Ausnahme nach § 11 für die Wärme oder einer Vereinbarung nach § 2 (Heizung PR 14): Dann
     // schreibt die Verordnung den Anteil nicht vor.
     if (shares !== null && shares.insulation !== 'applies' && shares.insulation !== 'notApplies' && OIL_OR_GAS.includes(plant.energy) && !exemptPot(plant.id, 'heating', String(period.key)) && agreedFor(plant.id, String(period.key)) === null) {
