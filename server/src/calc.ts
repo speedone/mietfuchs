@@ -6675,16 +6675,28 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // Gemischt (Prüfung M3): Wer selbst heizt, trägt zugleich eine Position einer Heizanlage, deren Brennstoff oder
   // Wärme der Vermieter bezieht. Das deckt Mietfuchs nicht ab; gerechnet wird wie erfasst.
   const conflicts = new Map<string, string[]>()
+  // Abdeckung V27: Hängt der Mieter an einer zentralen Anlage, bezieht er bei eigenem Vertrag den Brennstoff des ganzen
+  // Hauses; dafür legt die Einrichtung keine Anlage an (client/src/heatingForm.ts, CENTRAL_SELF_SUPPLY).
+  const viaCentral = new Set<string>()
   for (const c of items) {
     if (c.category !== HEATING_CATEGORY || !c.heatingPlantId) continue
-    for (const st of bearersOf(c.id)) if (selfSupplied.has(st.tenancyId)) conflicts.set(st.tenancyId, [...(conflicts.get(st.tenancyId) ?? []), c.description])
+    const central = plants.find((p) => p.id === c.heatingPlantId)?.supply !== 'perUnit'
+    for (const st of bearersOf(c.id)) {
+      if (!selfSupplied.has(st.tenancyId)) continue
+      conflicts.set(st.tenancyId, [...(conflicts.get(st.tenancyId) ?? []), c.description])
+      if (central) viaCentral.add(st.tenancyId)
+    }
   }
   for (const [tenancyId, descriptions] of conflicts) {
     const st = statements.get(tenancyId)
     if (!st) continue
+    const selfWay = viaCentral.has(tenancyId)
+      ? 'Bezieht er den Brennstoff dieser zentralen Heizung über einen eigenen Vertrag, legen Sie dafür keine Heizanlage an: Entfernen Sie die Heizanlage in den Stammdaten in der Karte „Heizung“ mit „Entfernen“ (die Heizpositionen bleiben, nur ohne Anlage), ' +
+        'klicken Sie dann auf „Heizung einrichten“ und wählen Sie bei „Wer hat den Liefervertrag für den Brennstoff?“ „Der Mieter, der alle angeschlossenen Wohnungen gemietet hat“.'
+      : 'Bezieht er den Brennstoff selbst, nehmen Sie seine Wohnung aus der Heizanlage.'
     warn('co2.self-supply-mixed',
       `${st.tenantName} (${st.unitName}) ist in den Stammdaten auf „Mieter heizt selbst“ gestellt, trägt aber einen Anteil an ${andList([...new Set(descriptions)].map((d) => `„${d}“`))} einer Heizanlage, deren Brennstoff oder Wärme Sie beziehen. ` +
-        'Beides zugleich deckt Mietfuchs nicht ab; gerechnet wird wie erfasst, ohne CO₂-Kürzung für diesen Mieter. Heizt der Mieter über Ihre Heizanlage, stellen Sie sein Mietverhältnis unter Heizung auf „Abrechnung“; bezieht er den Brennstoff selbst, nehmen Sie seine Wohnung aus der Heizanlage.',
+        `Beides zugleich deckt Mietfuchs nicht ab; gerechnet wird wie erfasst, ohne CO₂-Kürzung für diesen Mieter. Heizt der Mieter über Ihre Heizanlage, stellen Sie sein Mietverhältnis unter Heizung auf „Abrechnung“. ${selfWay}`,
       { kind: 'tenancy', id: tenancyId })
   }
   const loose = items.filter((c) => c.category === HEATING_CATEGORY && c.amountCents !== 0 && !inPots.has(c.id) && !spanning.has(c.id) && !selfSupplyItems.includes(c))

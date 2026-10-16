@@ -19,7 +19,7 @@ import {
   CAPTURE_OPTIONS, CONTRACT_OPTIONS, ENERGY_OPTIONS, HOW_TO_TELL, asksRemote, INSTALLED_OPTIONS, NEW_DEVICES_AFTER, NEW_INSTALL_OPTIONS, NEW_INSTALL_QUESTION, PER_UNIT_ENERGY_OPTIONS, REMOTE_OPTIONS, TAKES_OVER_BACK, TAKES_OVER_HINT, takesOverBack, TAKES_OVER_OPTIONS, TAKES_OVER_QUESTION, asksNewInstall, asksTakeOver, buildingOptions, canSwap, emptyHeatingForm, emptySwapForm, heatingPlantBody,
   connectionNote, heatingSummary, heatingToForm, NEWER_THAN, swapBody, swapMetersOf, whoHint, whoOptions, type CaptureAnswer, type EnergyAnswer, type HeatingForm, type PerUnitContract, type SwapForm, type WhoSettles,
   asksContracting, asksSwitch, CONTRACTING_LABEL, contractingSwap,
-  asksFuelContract, FUEL_CONTRACT_OPTIONS, FUEL_CONTRACT_QUESTION, selfSupplyOffer,
+  asksFuelContract, editFuelContractNote, FUEL_CONTRACT_OPTIONS, FUEL_CONTRACT_QUESTION, selfSupplyOffer,
   asksGeneration, GENERATION_QUESTION, HEAT_GENERATION_OPTIONS, MAJORITY_EXPLAINED, MAJORITY_OPTIONS, MAJORITY_QUESTION,
 } from '../heatingForm'
 
@@ -441,6 +441,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
                   </select>
                 </label>
               )}
+              {editFuelContractNote(form, editingId) && <small className="muted">{editFuelContractNote(form, editingId)}</small>}
               <label className="field grow">
                 Wer erstellt Ihre Heizkostenabrechnung?
                 <select value={form.who} onChange={(e) => setForm({ ...form, who: e.target.value as WhoSettles })}>

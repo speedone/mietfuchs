@@ -1,6 +1,6 @@
 // Die Einrichtung „Heizung“ (Heizung PR 4, Entwurf 11.2), ohne DOM.
 import { describe, expect, test } from 'vitest'
-import { asksContracting, asksFuelContract, FUEL_CONTRACT_OPTIONS, selfSupplyOffer, asksSwitch, contractingSwap, energyLabelOf, HOW_TO_TELL, PREVIOUS_SUPPLY_OPTIONS, asksGeneration, asksNewInstall, asksTakeOver, buildingOptions, canSwap, connectionNote, emptyHeatingForm, emptySwapForm, formulaFormOf, HEAT_GENERATION_OPTIONS, HOT_WATER_OPTIONS, hotWaterBody, isFormula, parseDecimal, SELF_HOT_WATER_OPTIONS, selfFormulaBody, PER_UNIT_ENERGY_OPTIONS, plantOptions, swapBody, swapMetersOf, unmeasurableLabel, heatingPlantBody, heatingSummary, heatingToForm, whoHint, whoOptions, type HeatingForm } from './heatingForm'
+import { asksContracting, asksFuelContract, editFuelContractNote, FUEL_CONTRACT_OPTIONS, selfSupplyOffer, asksSwitch, contractingSwap, energyLabelOf, HOW_TO_TELL, PREVIOUS_SUPPLY_OPTIONS, asksGeneration, asksNewInstall, asksTakeOver, buildingOptions, canSwap, connectionNote, emptyHeatingForm, emptySwapForm, formulaFormOf, HEAT_GENERATION_OPTIONS, HOT_WATER_OPTIONS, hotWaterBody, isFormula, parseDecimal, SELF_HOT_WATER_OPTIONS, selfFormulaBody, PER_UNIT_ENERGY_OPTIONS, plantOptions, swapBody, swapMetersOf, unmeasurableLabel, heatingPlantBody, heatingSummary, heatingToForm, whoHint, whoOptions, type HeatingForm } from './heatingForm'
 import type { HeatingPlant, Unit } from './types'
 
 const UNITS: Pick<Unit, 'id' | 'name' | 'noConnection'>[] = [{ id: 'eg', name: 'EG' }, { id: 'og', name: 'OG' }, { id: 'garage', name: 'Garage', noConnection: ['waerme'] }]
@@ -391,6 +391,19 @@ describe('Wer hat den Liefervertrag für den Brennstoff? (Heizung PR 19)', () =>
     // Voreinstellung „Ich“: Wer nichts ändert, merkt nichts.
     expect(emptyHeatingForm(UNITS).fuelContract).toBe('landlord')
     expect(FUEL_CONTRACT_OPTIONS.map((o) => o.value)).toEqual(['landlord', 'tenantAll', 'tenantOthers'])
+  })
+
+  test('Abdeckung V27: beim Ändern einer zentralen Anlage mit Gas, Öl, Flüssiggas oder Kohle sagt die Karte, dass bei Brennstoff des Mieters keine Anlage hierher gehört', () => {
+    for (const energy of ['gas', 'oil', 'lpg', 'coal'] as const) {
+      expect(editFuelContractNote(ausgefuellt({ energy }), 'hp1')).toBe(
+        'Hat ein Mieter den Liefervertrag für den Brennstoff dieser Heizung, legen Sie dafür keine Heizanlage an: Klicken Sie unter der Anlage auf ' +
+          '„Entfernen“ (die Heizpositionen bleiben, nur ohne Anlage), dann auf „Heizung einrichten“, und wählen Sie bei „Wer hat den Liefervertrag für den Brennstoff?“ ' +
+          '„Der Mieter, der alle angeschlossenen Wohnungen gemietet hat“.',
+      )
+    }
+    expect(editFuelContractNote(ausgefuellt({ energy: 'gas' }), null)).toBeNull()
+    expect(editFuelContractNote(ausgefuellt({ energy: 'gas', contracting: true }), 'hp1')).toBeNull()
+    for (const energy of ['heatPump', 'districtHeating', 'pellets', 'perUnit'] as const) expect(editFuelContractNote(ausgefuellt({ energy }), 'hp1')).toBeNull()
   })
 
   test('„Der Mieter, der alle angeschlossenen Wohnungen gemietet hat“: keine Anlage, die Erklärung und die Wohnungen für das Angebot', () => {
