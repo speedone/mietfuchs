@@ -202,10 +202,8 @@ test('N-1: Abzug für eine andere Heizung schaltet den Hinweis nicht ab; verknü
 })
 
 test('#225: Wärmelieferant rechnet unmittelbar ab (keine Anlage, Mieter heizt selbst): die Kosten der Hausanlage tragen keinen Hinweis auf 15 % oder CO₂-Aufteilung', () => {
-  const s = co2Source(2025, { co2CostCents: 50000 })
-  const items: SnapshotCostItem[] = [item(2025, { id: 'station', description: 'Wartung Übergabestation' })]
-  const tenancies = s.tenancies.map((t) => ({ ...t, heatingModel: 'selfSupply' as const, selfSupplyKind: 'central' as const }))
-  const r = computeSettlement(snapshotOf({ ...s, heatingPlants: [], costItems: items, tenancies }, 2025))
+  const selbst = { heatingModel: 'selfSupply' as const, selfSupplyKind: 'central' as const }
+  const r = settle({ units: ZWEI, tenancies: [tenancy('ta', 'a', selbst), tenancy('tb', 'b', selbst)], costItems: [item(2025, { id: 'station', description: 'Wartung Übergabestation' })] })
   assert.deepEqual(codes(r), ['co2.self-supply-items'])
   const n = r.notices[0] ?? assert.fail('kein Hinweis')
   assert.match(n.text, /deren Brennstoff oder Wärme der Mieter selbst bezieht/)
