@@ -537,7 +537,7 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   später ab, sagt es der Vergleich mit der heutigen Berechnung. Abgeschlossene Abrechnungen
   bleiben unverändert; bei einer Abrechnung von vor dieser Version steht „Rechtswerte nicht
   gespeichert“. Keine Zahl und kein Hinweistext einer Abrechnung ändert sich; neu gesetzt ist nur
-  der angezeigte Rechtsstand, jetzt das Datum des Rechtsregisters (05.10.2026 statt 02.10.2026).
+  der angezeigte Rechtsstand, jetzt das Datum des Rechtsregisters (12.10.2026 statt 02.10.2026).
   ([#97](https://github.com/speedone/mietfuchs/issues/97), [#110](https://github.com/speedone/mietfuchs/issues/110))
 - **KI-Belegauswertung:** Ob der Abstand zwischen Positionen und Rechnungsbetrag Umsatzsteuer
   ist, misst Mietfuchs jetzt am Satz des Rechnungsdatums, für das zweite Halbjahr 2020 also an
@@ -549,8 +549,6 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   selbst gehören (etwa ein Wärmezähler am Speicher), gelten nicht als Hauptzähler des Hauses. Beides
   betrifft nur Bestände mit diesen neuen Zählern, keine bisherige Abrechnung
   ([#99](https://github.com/speedone/mietfuchs/issues/99)).
-- Ein Kostenschlüssel „nach Verbrauch“ mit Heizkostenverteilern wird abgelehnt, bis Mietfuchs deren
-  Bewertungsfaktoren kennt; übernehmen Sie die Abrechnung des Messdienstes als Einzelbeträge.
 
 - **Angekündigt: Hinweis zu den CO₂-Kosten bei Heizpositionen ab 2023.** Für Abrechnungszeiträume, die
   am oder nach dem 01.01.2023 beginnen, sagt die Abrechnung bei Positionen „Heizung und Warmwasser“,
