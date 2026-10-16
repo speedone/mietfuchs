@@ -3,6 +3,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import zlib from 'node:zlib'
 import AdmZip from 'adm-zip'
 import { readCamt } from '../src/bank/camt.ts'
 import { readMt940 } from '../src/bank/mt940.ts'
@@ -141,6 +142,46 @@ test('Kontoauszug: ein ZIP, dessen Verzeichnis über das Archiv hinausreicht, er
   assert.match(r.problems[0].message, /lässt sich nicht öffnen/)
 })
 
+// Ein gespeicherter Eintrag (ohne Kompression) ist beim Entpacken so groß wie seine Daten im
+// Archiv, gleich welche Größe das Verzeichnis nennt; adm-zip deckelt nur das Entpacken komprimierter
+// Einträge auf die genannte Größe. Mehrere Einträge können auf dieselben Daten zeigen. Drei
+// Einträge, die je 1 Byte angeben und auf denselben Auszug von 8 MB zeigen, ergaben vorher 24 MB
+// gelesenes XML, über der Grenze von 20 MB.
+test('Kontoauszug: gespeicherte ZIP-Einträge zählen mit ihrer wirklichen Größe, nicht der angegebenen', () => {
+  const content = Buffer.from(camt053([ntry()]).replace('</Document>', `${' '.repeat(8 * 1024 * 1024)}</Document>`))
+  const crc = zlib.crc32(content)
+  const local = Buffer.alloc(30)
+  local.writeUInt32LE(0x04034b50, 0)
+  local.writeUInt16LE(10, 4)
+  local.writeUInt32LE(crc, 14)
+  local.writeUInt32LE(content.length, 18)
+  local.writeUInt32LE(1, 22)
+  local.writeUInt16LE(5, 26)
+  const head = Buffer.concat([local, Buffer.from('a.xml'), content])
+  const centrals = ['a.xml', 'b.xml', 'c.xml'].map((name) => {
+    const central = Buffer.alloc(46)
+    central.writeUInt32LE(0x02014b50, 0)
+    central.writeUInt16LE(20, 4)
+    central.writeUInt16LE(10, 6)
+    central.writeUInt32LE(crc, 16)
+    central.writeUInt32LE(content.length, 20) // komprimiert: die wirklichen Daten
+    central.writeUInt32LE(1, 24) // entpackt: angeblich 1 Byte
+    central.writeUInt16LE(name.length, 28)
+    central.writeUInt32LE(0, 42) // alle drei zeigen auf dieselben Daten
+    return Buffer.concat([central, Buffer.from(name)])
+  })
+  const directory = Buffer.concat(centrals)
+  const end = Buffer.alloc(22)
+  end.writeUInt32LE(0x06054b50, 0)
+  end.writeUInt16LE(3, 8)
+  end.writeUInt16LE(3, 10)
+  end.writeUInt32LE(directory.length, 12)
+  end.writeUInt32LE(head.length, 16)
+  const r = readBankFile(Buffer.concat([head, directory, end]), 'gespeichert.zip')
+  assert.equal(r.statements.length, 0)
+  assert.match(r.problems[0].message, /zu groß/)
+})
+
 test('Kontoauszug: ein gewöhnliches ZIP mit Ordnern und Auszügen bleibt lesbar', () => {
   const zip = new AdmZip()
   zip.addFile('2025/', Buffer.alloc(0))
@@ -190,6 +231,19 @@ test('camt: überlange Textfelder werden gekürzt, der Fingerabdruck bleibt der 
   const base = { bookingDate: e.bookingDate, amountCents: e.amountCents, counterpartyIban: e.counterpartyIban }
   assert.equal(fingerprintOf({ ...base, purpose: full }), e.fingerprint)
   assert.equal(fingerprintOf({ ...base, purpose: e.purpose }), e.fingerprint)
+})
+
+// Gekürzt sähe eine überlange IBAN aus wie eine IBAN, und der spätere Abgleich mit dem Konto eines
+// Mieters ginge nach ihr. Länger als 34 Zeichen ist keine IBAN; sie fehlt dann.
+test('camt: eine überlange IBAN wird nicht gekürzt, sondern fehlt', () => {
+  const long = `DE${'1'.repeat(60)}`
+  const xml = camt053([ntry()]).replace('DE00500105170000000001', long).replace(`<IBAN>${ACCOUNT}</IBAN>`, `<IBAN>${long}</IBAN>`)
+  const r = readCamt(xml)
+  const e = onlyEntry(r)
+  assert.equal(e.counterpartyIban, null)
+  assert.equal(r.statements[0].accountIban, null)
+  // Der Fingerabdruck beschreibt weiter die Buchung, wie sie in der Datei steht.
+  assert.equal(e.fingerprint, fingerprintOf({ bookingDate: e.bookingDate, amountCents: e.amountCents, counterpartyIban: long, purpose: e.purpose }))
 })
 
 test('camt: ein Zweck, dessen Buchstaben erst hinter der Kürzung beginnen, behält seinen Fingerabdruck', () => {

@@ -16,7 +16,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   ihre Posten zerlegt, und jede Buchung trägt einen Fingerabdruck, an dem der spätere Import
   einen doppelt eingelesenen Auszug erkennt. Was sich nicht sicher lesen lässt (fremde Währung,
   Bruchteile eines Cents, ein abgeschnittener Download, eine beschädigte Datei im ZIP), wird
-  gemeldet statt geraten ([#188](https://github.com/speedone/mietfuchs/issues/188)).
+  gemeldet statt geraten. Ein ZIP-Archiv wird geprüft, bevor etwas entpackt wird (höchstens
+  1.000 Einträge und 20 MB entpackt, eine Datei höchstens 10 MB), und überlange Textfelder werden
+  gekürzt; eine IBAN wird nie gekürzt, eine überlange gilt als fehlend
+  ([#188](https://github.com/speedone/mietfuchs/issues/188)).
 
 ### Behoben
 

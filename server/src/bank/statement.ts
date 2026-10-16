@@ -141,13 +141,17 @@ export function clip(s: string, max: number): string {
 
 export const clipOrNull = (s: string | null, max: number): string | null => (s === null ? null : clip(s, max))
 
+// Eine IBAN wird nie gekürzt: Ihre ersten 34 Zeichen sähen aus wie eine IBAN und wären doch keine.
+// Länger als 34 Zeichen ist keine, sie fehlt dann.
+export const ibanOrNull = (s: string | null): string | null => (s !== null && s.length > TEXT_LIMITS.iban ? null : s)
+
 // Ein Umsatz mit gekürzten Textfeldern. Der Fingerabdruck bleibt, wie er ist.
 export function clipEntry(e: BankEntry): BankEntry {
   return {
     ...e,
     purpose: clip(e.purpose, TEXT_LIMITS.purpose),
     counterpartyName: clipOrNull(e.counterpartyName, TEXT_LIMITS.name),
-    counterpartyIban: clipOrNull(e.counterpartyIban, TEXT_LIMITS.iban),
+    counterpartyIban: ibanOrNull(e.counterpartyIban),
     ultimatePartyName: clipOrNull(e.ultimatePartyName, TEXT_LIMITS.name),
     bankReference: clipOrNull(e.bankReference, TEXT_LIMITS.reference),
     endToEndId: clipOrNull(e.endToEndId, TEXT_LIMITS.reference),

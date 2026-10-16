@@ -90,7 +90,9 @@ function zipDirectory(data: Buffer): ZipDirectory | null {
   let longName = false
   for (let n = 0; n < entries; n++) {
     if (at + 46 > data.length || data.readUInt32LE(at) !== 0x02014b50) return null
-    totalBytes += data.readUInt32LE(at + 24)
+    // Entpackt wird höchstens die angegebene Größe, ein gespeicherter Eintrag (ohne Kompression)
+    // ergibt aber seine Daten im Archiv, gleich was dasteht; es zählt die größere der beiden.
+    totalBytes += Math.max(data.readUInt32LE(at + 20), data.readUInt32LE(at + 24))
     const nameLength = data.readUInt16LE(at + 28)
     if (nameLength > MAX_ZIP_NAME_BYTES) longName = true
     at += 46 + nameLength + data.readUInt16LE(at + 30) + data.readUInt16LE(at + 32)

@@ -26,7 +26,7 @@
 
 import { XMLParser, XMLValidator } from 'fast-xml-parser'
 import {
-  checkBalance, clip, clipEntry, clipOrNull, decimalToCents, fingerprintOf, normalizeIban, problemOnly, squash, TEXT_LIMITS,
+  checkBalance, clip, clipEntry, clipOrNull, decimalToCents, fingerprintOf, ibanOrNull, normalizeIban, problemOnly, squash, TEXT_LIMITS,
   type BankBatch, type BankEntry, type BankProblem, type BankReadResult, type BankStatement,
 } from './statement.ts'
 
@@ -362,7 +362,7 @@ export function readCamt(xml: string, name = 'Datei'): BankReadResult {
     const statement: BankStatement = {
       format: found.kind,
       statementId,
-      accountIban: clipOrNull(iban(at(item, 'Acct', 'Id', 'IBAN')), TEXT_LIMITS.iban),
+      accountIban: ibanOrNull(iban(at(item, 'Acct', 'Id', 'IBAN'))),
       accountOtherId: clipOrNull(text(at(item, 'Acct', 'Id', 'Othr', 'Id')), TEXT_LIMITS.reference),
       createdAt: clipOrNull(text(at(item, 'CreDtTm')), TEXT_LIMITS.reference),
       // Ohne Zeitraum (FrToDt ist freiwillig) nennen ihn die Salden: ihr Datum.
