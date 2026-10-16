@@ -308,7 +308,7 @@ test('#219 Rohrwärme: Mit Heizkostenverteilern steht ein Hinweis (hint) auf § 
   assert.match(n.text, /freiliegenden Leitungen der Wärmeverteilung überwiegend ungedämmt/)
   assert.match(n.text, /§ 7 Abs\. 1 Satz 3 HeizkostenV/)
   assert.match(n.text, /VDI 2077 Blatt 3\.5/)
-  assert.match(n.text, /BGH, Urteil vom 15\.03\.2017, VIII ZR 5\/16/)
+  assert.match(n.text, /BGH VIII ZR 5\/16/)
   assert.match(n.text, /rechnet Mietfuchs nicht/)
   assert.doesNotMatch(n.text, /müssen Sie|ist verpflichtet|Pflicht/)
   assert.equal(hca.notices.filter((x) => x.code === 'heating.pipe-heat').length, 1)

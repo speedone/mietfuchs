@@ -150,7 +150,7 @@ test('#223 Nutzerwechselgebühr auch bei Wasser und anderen Zählerpositionen: H
   for (const n of hits) {
     assert.equal(n.level, 'hint')
     assert.match(n.text, /keine umlagefähigen Betriebskosten/)
-    assert.match(n.text, /BGH, Urteil vom 14\.11\.2007, VIII ZR 19\/07/)
+    assert.match(n.text, /BGH VIII ZR 19\/07/)
     assert.match(n.text, /unter „Nicht umlagefähig“/)
   }
   assert.equal(s.notices.filter((n) => n.code === 'heating.change-fee').length, 1)

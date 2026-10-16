@@ -3385,7 +3385,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     if (capture === 'hca') {
       warn('heating.pipe-heat',
         `${where}: Sind in Ihrem Haus die freiliegenden Leitungen der Wärmeverteilung überwiegend ungedämmt und erfassen die Heizkostenverteiler deswegen einen wesentlichen Anteil des Wärmeverbrauchs nicht, kann der Verbrauch der Nutzer nach anerkannten Regeln der Technik bestimmt werden (§ 7 Abs. 1 Satz 3 HeizkostenV); ein Verfahren beschreibt die Richtlinie VDI 2077 Blatt 3.5. ` +
-          'Freiliegend sind nur Leitungen, die sichtbar auf der Wand verlaufen; für Leitungen unter Putz oder im Estrich gilt die Regel nicht (BGH, Urteil vom 15.03.2017, VIII ZR 5/16). ' +
+          'Freiliegend sind nur Leitungen, die sichtbar auf der Wand verlaufen; für Leitungen unter Putz oder im Estrich gilt die Regel nicht (BGH VIII ZR 5/16). ' +
           'Diese Bestimmung rechnet Mietfuchs nicht; verteilt wird nach den erfassten Einheiten. Lassen Sie den Verbrauch von einem Messdienst bestimmen, tragen Sie dessen Werte als „Werte eines Ablesedienstes“ ein; sie gelten dann als erfasster Verbrauch.')
     }
     // #218: § 5 Abs. 7 Satz 2 HeizkostenV. Pflicht (Satz 1) meldet `heating.mixed-capture`; die freie Vorerfassung bei
@@ -3925,7 +3925,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     if (item.category !== HEATING_CATEGORY && !isNotAllocable(item.category) && (item.category === 'Wasser/Abwasser' || item.key === 'meter') &&
       !item.id.startsWith('fuel:') && !item.id.startsWith('stock:') && /zwischenablesung|nutzerwechsel/i.test(item.description)) {
       warn('meter.change-fee',
-        `„${item.description}“: Kosten der Verbrauchserfassung und Abrechnung, die wegen des Auszugs eines Mieters vor Ablauf des Abrechnungszeitraums entstehen, etwa für die Zwischenablesung der Wasserzähler, sind keine umlagefähigen Betriebskosten, sondern Verwaltungskosten; sie trägt der Vermieter, soweit im Mietvertrag nichts anderes vereinbart ist (BGH, Urteil vom 14.11.2007, VIII ZR 19/07). ` +
+        `„${item.description}“: Kosten der Verbrauchserfassung und Abrechnung, die wegen des Auszugs eines Mieters vor Ablauf des Abrechnungszeitraums entstehen, etwa für die Zwischenablesung der Wasserzähler, sind keine umlagefähigen Betriebskosten, sondern Verwaltungskosten; sie trägt der Vermieter, soweit im Mietvertrag nichts anderes vereinbart ist (BGH VIII ZR 19/07). ` +
           'Eine wirksame Vereinbarung gibt einen Anspruch gegen den ausziehenden Mieter, keine Position für alle. Gehört die Position dazu, erfassen Sie sie unter „Nicht umlagefähig“.',
         itemSubject(item))
     }
