@@ -2,12 +2,13 @@
 // mit Osterformel und ohne Abhängigkeit. Grundlage für Fristen nach Werktagen (shared/deadlines.ts).
 // Server und Oberfläche rechnen mit derselben Datei, deshalb liegt sie in shared/.
 //
-// **Warum keine Bibliothek.** Geprüft wurden feiertagejs 1.5.1 und date-holidays 3.37.0 gegen dieselbe
-// Vergleichsliste wie das Register (server/test/fixtures/holidays/). feiertagejs führt den
+// **Warum keine Bibliothek zur Laufzeit.** Geprüft wurden feiertagejs 1.5.1 und date-holidays 3.37.0 gegen
+// dieselbe Vergleichsliste wie das Register (server/test/fixtures/holidays/). feiertagejs führt den
 // Reformationstag in Bremen, Hamburg, Niedersachsen und Schleswig-Holstein schon vor 2018, kennt die
 // einmaligen Berliner Feiertage nicht und zählt Mariä Himmelfahrt in ganz Bayern. date-holidays stimmt
 // überein, seine Feiertagsdaten stehen aber unter CC BY-SA 3.0 und kämen mit rund 40 MB Abhängigkeiten
-// (moment-timezone, astronomia) in die Programmdatei. Im Register hat dagegen jede Fassung ihre
+// (moment-timezone, astronomia) in die Programmdatei. Es dient deshalb nur im Test als zweite
+// Vergleichsquelle (server/test/holidays-date-holidays.test.ts). Im Register hat jede Fassung ihre
 // Fundstelle und ihren Prüfstand.
 //
 // **Was gilt.** Ein Tag zählt, wenn er im ganzen Land gesetzlicher Feiertag ist. Feiertage, die nur in
