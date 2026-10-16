@@ -316,3 +316,24 @@ test('#277 S1: Keine Vorlage für den Schätzvorschlag, die weniger als 100 ‰ 
   const mitAlter = plantFuel(input({ deliveries: [VORJAHR, N], items: [vorjahrItem, nItem] })) ?? assert.fail('kein Ergebnis')
   assert.deepEqual(mitAlter.gaps.map((g) => [g.from, g.estimate?.basedOn ?? null]), [['2025-05-01', 'Gas 2024/2025'], ['2025-07-03', 'Gas 2024/2025']])
 })
+
+// Nachprüfung #251 (A2): Hat die Vorlage keine Gradtage (eine Tabelle mit 0 im Sommer), rechnet der Vorschlag nach
+// Tagen. Dieselbe Grenze gilt dann an den Tagen: Die Vorlage deckt mindestens 10 % der Tage der zu schätzenden Spanne.
+test('#251 A2: Vorlage ohne Gradtage rechnet nach Tagen und nur, wenn sie mindestens 10 % der Tage der Lücke abdeckt', () => {
+  const sommerNull: ShareContext = { ...ctx, table: { ...table, summer: 0 } }
+  const N = (to: string) => delivery({ id: 'n', label: 'Sommerlieferung', invoiceFrom: '2025-07-01', invoiceTo: to })
+  const nItem = { id: 'pn', period: '2025-05', amountCents: 5000, fuelDeliveryId: 'n' }
+  const gaps = (to: string) => (plantFuel(input({ deliveries: [N(to)], items: [nItem], ctx: sommerNull })) ?? assert.fail('kein Ergebnis'))
+    .gaps.map((g) => [g.from, g.to, g.days, g.estimate?.amountCents ?? null, g.estimate?.byMeter ?? null, g.shortTemplate ?? null])
+  // Zehn Tage Vorlage: Mai/Juni (61 Tage, 6,1-fach) nach Tagen geschätzt, 5.000 × 61 / 10; der Rest der Heizperiode
+  // (294 Tage, 29,4-fach) nicht.
+  assert.deepEqual(gaps('2025-07-10'), [
+    ['2025-05-01', '2025-06-30', 61, 30500, false, null],
+    ['2025-07-11', '2026-04-30', 294, null, null, 'Sommerlieferung'],
+  ])
+  // Dreißig Tage Vorlage: auch der Rest der Heizperiode (274 Tage, 9,13-fach) liegt innerhalb der Grenze.
+  const dreissig = gaps('2025-07-30')
+  assert.deepEqual(dreissig.map((g) => [g[0], g[2], g[3]]), [['2025-05-01', 61, 10167], ['2025-07-31', 274, 45667]])
+  // Zwei Tage: beide Lücken über dem Zehnfachen, kein Vorschlag.
+  assert.deepEqual(gaps('2025-07-02').map((g) => [g[0], g[3], g[5]]), [['2025-05-01', null, 'Sommerlieferung'], ['2025-07-03', null, 'Sommerlieferung']])
+})
