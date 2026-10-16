@@ -172,7 +172,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Himmelfahrt in Teilen Bayerns, das Augsburger Friedensfest, Fronleichnam in Teilen Sachsens und
   Thüringens), nennt die Karte, zählt sie aber nicht mit. Das Mietkonto sagt im laufenden Jahr, bis
   wann die Miete des Monats zu zahlen ist: am dritten Werktag, ohne Samstag (§ 556b Abs. 1 BGB, BGH
-  VIII ZR 129/09). Die Berechnung des Rückstands ändert sich dadurch nicht. Darunter liegen zwei
+  VIII ZR 129/09); verschiebt ein Feiertag einzelner Gemeinden die Frist, steht das dabei. Die
+  Berechnung des Rückstands ändert sich dadurch nicht. Darunter liegen zwei
   geprüfte Bausteine für künftige Fristen: die gesetzlichen Feiertage der 16 Länder ab 1995 und das
   Fristende am nächsten Werktag nach § 193 BGB. Regeln und Feiertage stehen im Rechtsregister, jede
   Fassung mit Fundstelle; der Rechtsstand ist jetzt der 15.10.2026.

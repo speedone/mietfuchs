@@ -7,7 +7,7 @@
 
 import type { FederalState, RentLedgerRow, RentMonth } from './types'
 import { rentDueDate, rentDueRuleText } from '../../shared/deadlines.ts'
-import { stateName, weekdayOf } from '../../shared/holidays.ts'
+import { isHoliday, localHolidaysOf, stateName, weekdayOf } from '../../shared/holidays.ts'
 
 // **Der überraschende Dezember.** Eine Zahlung zählt zu dem Jahr, in dem sie eingegangen ist.
 // Geht die Dezembermiete erst im Januar ein, bleibt der Dezember im Mietkonto offen, obwohl der
@@ -80,7 +80,8 @@ export function shareText(mo: Pick<RentMonth, 'share'>): string | null {
 // Die Rechnung des Mietkontos bleibt, wie sie ist: Als Rückstand zählt der laufende Monat erst ab dem
 // nächsten (#133), auch nach diesem Tag. Der Satz sagt das, sonst widerspräche er den gestrichelten
 // Monaten. Nur im laufenden Jahr, örtlich wie showDecemberNote; ohne Bundesland mit dem Hinweis, dass
-// dann nur die Feiertage aller Länder zählen, die Frist also einen Tag früher erscheinen kann.
+// dann nur die Feiertage aller Länder zählen, die Frist also einen Tag früher erscheinen kann, und mit
+// Bundesland mit einem Hinweis auf jeden Feiertag einzelner Gemeinden, der die Frist dort verschiebt.
 const MONTH_NAMES = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember']
 const WEEKDAYS = ['So.', 'Mo.', 'Di.', 'Mi.', 'Do.', 'Fr.', 'Sa.']
 
@@ -92,6 +93,13 @@ export function rentDueNote(year: number, today: Date, state: FederalState | nul
   const [, m, d] = due.split('-')
   const passed = iso(today.getDate()) > due
   const where = state ? `nach den Feiertagen in ${stateName(state)}` : 'nur nach den bundesweiten Feiertagen, weil beim Objekt kein Bundesland eingetragen ist'
+  // Feiertage einzelner Gemeinden zählt rentDueDate nicht mit (shared/holidays.ts). Fällt einer auf einen
+  // Werktag bis zum Fälligkeitstag, ist es dort ein Werktag später; das steht dabei, sonst hielte der
+  // Vermieter in diesen Gemeinden eine pünktliche Zahlung für verspätet.
+  const local = state
+    ? localHolidaysOf(year, state).filter((h) => h.date >= iso(1) && h.date <= due && weekdayOf(h.date) !== 0 && weekdayOf(h.date) !== 6 && !isHoliday(h.date, state))
+    : []
+  const localText = local.map((h) => ` In Gemeinden, in denen am ${h.date.slice(8, 10)}.${h.date.slice(5, 7)}. ${h.name} gilt, ist es ein Werktag später.`).join('')
   return `Die Miete für ${MONTH_NAMES[month - 1]} ${passed ? 'war' : 'ist'} fällig bis ${WEEKDAYS[weekdayOf(due)]}, ${d}.${m}.${year} ` +
-    `(${rentDueRuleText(due)}; ${where}). Als Rückstand zählt das Mietkonto den laufenden Monat erst ab dem nächsten.`
+    `(${rentDueRuleText(due)}; ${where}).${localText} Als Rückstand zählt das Mietkonto den laufenden Monat erst ab dem nächsten.`
 }
