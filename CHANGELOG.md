@@ -753,6 +753,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Heizperiode oder davor, und die Meldung nennt den Weg: die getrennte Heizkostenabrechnung ab dieser Heizperiode
   ausschalten, dann den Tausch erfassen; die Heizkosten rechnet danach die Betriebskostenabrechnung ab. Eine
   getrennte Heizkostenabrechnung nach einem Kesseltausch kann Mietfuchs noch nicht.
+- **„Vorauszahlung für die übrigen Nebenkosten (ohne Heizung)“ auch nach dem Ausschalten der getrennten Heizkostenabrechnung** ([#217](https://github.com/speedone/mietfuchs/issues/217)):
+  Hatte ein Objekt je eine getrennte Heizkostenabrechnung, nannte jede spätere Betriebskostenabrechnung den Vorschlag
+  nach § 560 Abs. 4 BGB „ohne Heizung“, auch wenn er die Heizkosten wieder enthielt (gemessen: 100,00 € aus 1.200,00 €
+  Heizkosten). Jetzt hängt die Beschriftung daran, ob der Vorschlag dieser Abrechnung die Heizkosten auslässt.
 
 ## [0.10.1] – 2026-10-04
 

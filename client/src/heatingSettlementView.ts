@@ -50,6 +50,14 @@ export function prepaymentSplit(st: Pick<Statement, 'scope' | 'prepaymentCents' 
 // während die Betriebskostenabrechnung desselben Zeitraums eine andere „Nebenkostenvorauszahlung“
 // nannte. Jede Abrechnung benennt jetzt, was sie abrechnet.
 export const totalLabel = (st: Pick<Statement, 'scope'>): string => (st.scope === 'heating' ? 'Summe Ihrer Heizkosten' : 'Summe Ihrer Betriebskosten')
+// Durchsicht #297 S-C: „ohne Heizung“ gilt, wenn der Vorschlag dieser Abrechnung die Heizkosten auslässt (der Server
+// sagt es), nicht schon, weil das Objekt irgendwann getrennte Heizkostenabrechnungen hatte. Eine vorher abgeschlossene
+// Abrechnung kennt das Feld nicht; dann zählt, ob in ihrem Zeitraum eine getrennte Heizkostenabrechnung endet.
+export function suggestionWithoutHeating(data: Pick<Settlement, 'suggestionWithoutHeating' | 'separateHeating'>, target: { plantId: string; period: PeriodKey } | null, choicesInPeriod: number): boolean {
+  if (target !== null) return false
+  return data.suggestionWithoutHeating ?? choicesInPeriod > 0
+}
+
 export const adjustedPrepaymentLabel = (st: Pick<Statement, 'scope'>, separate: boolean): string =>
   st.scope === 'heating' ? 'monatliche Heizkostenvorauszahlung' : separate ? 'monatliche Vorauszahlung für die übrigen Nebenkosten (ohne Heizung)' : 'monatliche Nebenkostenvorauszahlung'
 

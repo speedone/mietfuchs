@@ -7638,6 +7638,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   const nextMonth = dayAfter(period.to).slice(0, 7)
   const separateLater = new Set(scope === 'all' ? plants.filter((p) => separateOwner(wayOf(p), objectRules, nextMonth) !== null).map((p) => p.id) : [])
   const syntheticById = new Map(fuelSynthetic.map((c) => [c.id, c]))
+  if (scope === 'all') result.suggestionWithoutHeating = separateLater.size > 0
   const laterSeparate = (row: SettlementRow): boolean => {
     if (separateLater.size === 0) return false
     const relief = /^(?:co2|gmodg):([^:]*):/.exec(row.costItemId)
