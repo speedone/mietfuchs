@@ -743,6 +743,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   nicht aufging, und der CO₂-Anteil wurde nicht gebucht. Jetzt fragt sie nach den Heizkosten Ihrer Wohnung laut
   Einzelabrechnung und dem CO₂-Anteil des Vermieters für Ihre Wohnung, setzt eine Nutzeinheit voraus, und Probe
   und Hinweise sprechen von der Abrechnung der Gemeinschaft statt vom Messdienst.
+- **Wechsel in einen Rumpfzeitraum: Vorschlag für die Gasrechnung, den das Übernehmen ablehnte** ([#208](https://github.com/speedone/mietfuchs/issues/208)):
+  Wechselte der Abrechnungszeitraum mitten im Jahr, schlug die Vorschau für eine mit einer Brennstoffrechnung
+  verknüpfte Heizposition den Rumpf vor, obwohl sie in die Heizperiode gehört, in der die Rechnung endet; das
+  Übernehmen lehnte genau diesen Vorschlag ab. Jetzt bietet die Vorschau nur diese Heizperiode an.
 
 ## [0.10.1] – 2026-10-04
 
