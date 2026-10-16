@@ -499,10 +499,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   ([#223](https://github.com/speedone/mietfuchs/issues/223)).
 
 - Wärmelieferung mit unmittelbarer Abrechnung durch den Lieferanten: Bei Fernwärme oder Contracting bietet die
-  Einrichtung der Heizung die Antwort „Der Wärmelieferant rechnet unmittelbar mit den Mietern ab“. Dann gelten die
-  Pflichten der Heizkostenverordnung für den Lieferanten (§ 1 Abs. 3 HeizkostenV), Mietfuchs legt keine Heizanlage an
-  und stellt die Mietverhältnisse auf „Mieter heizt selbst“; die Kosten der Hausanlagen, die Sie gesondert
-  abrechnen, sind von der Verteilung nach Verbrauch ausgenommen (§ 11 Abs. 1 Nr. 4 HeizkostenV). Vorher blieb nur
+  Einrichtung der Heizung die Antwort „Der Wärmelieferant rechnet unmittelbar mit den Mietern ab“. Mietfuchs legt
+  dann keine Heizanlage an, fragt nicht nach Geräten und Umstellung und stellt die Mietverhältnisse auf „Mieter heizt
+  selbst“. Legt der Lieferant die Anteile am Gesamtverbrauch zugrunde, gelten die Pflichten der Heizkostenverordnung
+  für ihn (§ 1 Abs. 3 HeizkostenV), und die Kosten der Hausanlagen, die Sie gesondert abrechnen, sind von der
+  Verteilung nach Verbrauch ausgenommen (§ 11 Abs. 1 Nr. 4 HeizkostenV); misst er jede Wohnung selbst, gilt die
+  Verordnung für diese Verteilung nicht. Die Erklärung steht vor dem Speichern unter der Frage. Vorher blieb nur
   eine Antwort, nach der die Abrechnung eine Kürzung um 15 % und einen Hinweis zu den CO₂-Kosten nannte, die in diesem Fall
   nicht zutreffen. Die Hinweise zu einer Heizung, deren Brennstoff der Mieter selbst bezieht, sagen jetzt
   „Brennstoff oder Wärme“. Keine Zahl ändert sich ([#225](https://github.com/speedone/mietfuchs/issues/225)).

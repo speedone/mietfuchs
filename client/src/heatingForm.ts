@@ -244,9 +244,11 @@ const CENTRAL_SELF_SUPPLY =
 // #225: § 1 Abs. 3 und § 11 Abs. 1 Nr. 4 HeizkostenV; der Mieter bezieht die Wärme über einen eigenen Vertrag und versorgt
 // sich damit selbst (§ 6 Abs. 2 Satz 3 CO2KostAufG nennt den Wärmelieferanten ausdrücklich).
 const SUPPLIER_BILLS =
-  'Rechnet der Wärmelieferant unmittelbar mit den Mietern ab, gelten nach § 1 Abs. 3 HeizkostenV die Pflichten des Gebäudeeigentümers aus der Verordnung für den Lieferanten: Er verteilt die Wärmekosten, und Mietfuchs legt keine Heizanlage an. ' +
-  'Die Kosten der Hausanlagen, die nicht in den Kosten der Wärmelieferung enthalten sind und die Sie gesondert abrechnen, etwa Wartung oder Betriebsstrom der Heizung im Haus, sind von der Verteilung nach Verbrauch ausgenommen (§ 11 Abs. 1 Nr. 4 HeizkostenV). ' +
-  `Erfassen Sie sie auf der Seite Kosten unter „Heizung und Warmwasser“ und legen Sie sie wie vereinbart um. ${REFUND_TEXT}`
+  'Rechnet der Wärmelieferant unmittelbar mit den Mietern ab, legt Mietfuchs keine Heizanlage an. ' +
+  'Legt er dabei die Anteile der Mieter am Gesamtverbrauch zugrunde und nicht den für jede Wohnung gemessenen Verbrauch, gelten nach § 1 Abs. 3 HeizkostenV die Pflichten des Gebäudeeigentümers aus der Verordnung für ihn. ' +
+  'Misst er den Verbrauch jeder Wohnung selbst und rechnet danach ab, gilt die Verordnung für diese Verteilung nicht. ' +
+  'Im ersten Fall sind die Kosten der Hausanlagen, die nicht in den Kosten der Wärmelieferung enthalten sind und die Sie gesondert abrechnen, etwa Wartung oder Betriebsstrom der Heizung im Haus, von der Verteilung nach Verbrauch ausgenommen (§ 11 Abs. 1 Nr. 4 HeizkostenV). ' +
+  `Erfassen Sie diese Kosten auf der Seite Kosten unter „Heizung und Warmwasser“ und legen Sie sie wie vereinbart um. ${REFUND_TEXT}`
 const NOT_COVERED = 'Liefert ein Mieter über seinen Vertrag auch Wärme an andere Wohnungen, regeln Heizkostenverordnung und CO2KostAufG die Verteilung nicht ausdrücklich für diesen Fall. Mietfuchs rechnet das nicht; bitte klären Sie die Abrechnung gesondert.'
 
 // Die Mietverhältnisse, die die Karte nach „Der Mieter hat den Vertrag“ auf „Mieter heizt selbst“ stellen kann: die am
@@ -290,9 +292,11 @@ export const HOW_TO_TELL = {
 
 // Laienprobe B8: Ohne Messdienst und eigene Ablesung gibt es keine Geräte, die aus der Ferne
 // abzulesen wären; die beiden Fragen dazu entfallen dann, und die Zusammenfassung nennt sie nicht.
-export const asksRemote = (who: WhoSettles | HeatingPlant['method']): boolean => who !== 'manual'
+// #225 (Durchsicht PR #296, S2): Rechnet der Wärmelieferant ab, fragt die Karte nicht nach den Geräten.
+export const asksRemote = (who: WhoSettles | HeatingPlant['method']): boolean => who !== 'manual' && who !== 'supplier'
 
 export function whoHint(who: WhoSettles, kind: PropertyKind): string {
+  if (who === 'supplier') return SUPPLIER_BILLS
   if (who === 'self') return SELF_HINT
   if (who === 'service') return 'Die Abrechnung des Messdienstes übernehmen Sie wie bisher als Position „Heizung und Warmwasser“ mit dem Schlüssel „Einzelbeträge“.'
   if (who === 'homeowners') return 'Die Abrechnung der Gemeinschaft übernehmen Sie wie die eines Messdienstes: als Position „Heizung und Warmwasser“ mit dem Schlüssel „Einzelbeträge“, mit den Beträgen der Hausgeldabrechnung.'
@@ -371,8 +375,9 @@ export const SWITCH_HINT = 'Nur ausfüllen, wenn Sie umgestellt haben, während 
 // Contracting bei jeder zentralen Anlage außer Fernwärme, auch bei der Wärmepumpe (Prüfung R-M4).
 export const asksContracting = (energy: HeatingForm['energy']): boolean => energy !== '' && energy !== 'perUnit' && CONTRACTING_ENERGIES.includes(energy)
 // Die Angaben zur Umstellung bei Fernwärme oder Contracting.
-export const asksSwitch = (form: Pick<HeatingForm, 'energy' | 'contracting'>): boolean =>
-  form.energy === 'districtHeating' || (form.contracting && asksContracting(form.energy))
+// Bei „Lieferant rechnet ab“ (#225) entsteht keine Anlage; die Umstellung wird dann nicht gefragt.
+export const asksSwitch = (form: Pick<HeatingForm, 'energy' | 'contracting'> & { who?: WhoSettles }): boolean =>
+  form.who !== 'supplier' && (form.energy === 'districtHeating' || (form.contracting && asksContracting(form.energy)))
 
 // Die Beschriftung des Energieträgers im Ausweis und in der Karte: bei Contracting mit dem Brennstoff des Lieferanten.
 export function energyLabelOf(h: Pick<HeatingStatement, 'energy' | 'contracting' | 'fuelEnergy'>): string {
@@ -442,6 +447,14 @@ export function heatingPlantBody(form: HeatingForm, units: readonly UnitInfo[], 
     if (form.unitIds.length === 0) return { error: 'Bitte haken Sie mindestens eine Wohnung an, die an dieser Heizung hängt.' }
     return { none: CENTRAL_SELF_SUPPLY, selfSupplyUnitIds: form.unitIds, central: true }
   }
+  // #225: Jeder Mieter hat seinen Vertrag mit dem Lieferanten; die Anlage im Haus ist trotzdem zentral. Vor den Prüfungen
+  // der Umstellung, denn die fragt die Karte dann nicht (Durchsicht PR #296, S2). Steht noch „Lieferant“ da, obwohl die
+  // Energie keine Wärmelieferung mehr ist, gilt keine Antwort (das Auswahlfeld zeigt sie dann auch nicht).
+  if (form.who === 'supplier' && whoOptions('mfh', form, editingId).some((o) => o.value === 'supplier')) {
+    if (form.unitIds.length === 0) return { error: 'Bitte haken Sie mindestens eine Wohnung an, die an dieser Heizung hängt.' }
+    return { none: SUPPLIER_BILLS, selfSupplyUnitIds: form.unitIds, central: true, singleTenant: false }
+  }
+  if (form.who === 'supplier' && editingId !== null) return { error: 'Rechnet der Wärmelieferant unmittelbar mit den Mietern ab, gehört dafür keine Heizanlage hierher. Entfernen Sie die Heizanlage und richten Sie die Heizung neu ein.' }
   // Heizung PR 16: Contracting und die Angaben zur Umstellung, nur wo gefragt; sonst leer, damit kein früherer Wert
   // stehen bleibt (der Server ergänzt nur, was im Rumpf steht).
   const contracting = form.contracting && asksContracting(form.energy)
@@ -449,16 +462,10 @@ export function heatingPlantBody(form: HeatingForm, units: readonly UnitInfo[], 
   if (sw && form.announcedOn !== '' && form.deliverySince === '') {
     return { error: 'Eine Ankündigung ohne Tag der Umstellung lässt sich nicht prüfen. Bitte tragen Sie den Tag der Umstellung ein oder leeren Sie beide.' }
   }
-  // Steht noch „Lieferant“ da, obwohl die Energie keine Wärmelieferung mehr ist, gilt keine Antwort (das Auswahlfeld zeigt
-  // sie dann auch nicht, siehe HeatingCard.tsx).
-  const who = form.who === 'supplier' && !whoOptions('mfh', form, editingId).some((o) => o.value === 'supplier') ? '' : form.who
+  // Hier ist „Lieferant“ schon behandelt oder gilt nicht mehr (siehe oben).
+  const who = form.who === 'supplier' ? '' : form.who
   if (who === '') return { error: 'Bitte wählen Sie, wer die Heizkostenabrechnung erstellt.' }
   if (form.unitIds.length === 0) return { error: 'Bitte haken Sie mindestens eine Wohnung an, die an dieser Heizung hängt.' }
-  // #225: Jeder Mieter hat seinen Vertrag mit dem Lieferanten; die Anlage im Haus ist trotzdem zentral.
-  if (who === 'supplier') {
-    if (editingId !== null) return { error: 'Rechnet der Wärmelieferant unmittelbar mit den Mietern ab, gehört dafür keine Heizanlage hierher. Entfernen Sie die Heizanlage und richten Sie die Heizung neu ein.' }
-    return { none: SUPPLIER_BILLS, selfSupplyUnitIds: form.unitIds, central: true, singleTenant: false }
-  }
   const heatPump = energy === 'heatPump'
   const averageText = heatPump ? form.warmRentAverage.trim() : ''
   const average = averageText === '' ? null : parseEuro(averageText)

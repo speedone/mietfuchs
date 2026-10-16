@@ -487,6 +487,6 @@ test('Wärmelieferung (#225): unmittelbare Abrechnung des Lieferanten mit § 1 A
   const t = GLOSSARY.heatDelivery
   assert.match(t.norm, /§ 1 Abs\. 1 Nr\. 2 und Abs\. 3/)
   assert.match(t.norm, /§ 11 Abs\. 1 Nr\. 4/)
-  assert.match(t.needed, /Rechnet der Lieferant unmittelbar mit den Mietern ab, gelten die Pflichten des Gebäudeeigentümers aus der Heizkostenverordnung für ihn/)
+  assert.match(t.needed, /Rechnet der Lieferant unmittelbar mit den Mietern ab und legt dabei die Anteile der Mieter am Gesamtverbrauch zugrunde, gelten die Pflichten des Gebäudeeigentümers aus der Heizkostenverordnung für ihn \(§ 1 Abs\. 3 HeizkostenV\); misst er den Verbrauch jeder Wohnung selbst, gilt die Verordnung für diese Verteilung nicht\./)
   assert.match(t.needed, /„Der Wärmelieferant rechnet unmittelbar mit den Mietern ab“/)
 })
