@@ -7451,7 +7451,19 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         }
         continue
       }
-      const open = r.paidOutOn === null && (r.settlePeriod === null || (r.settlePeriod === period.key && !st))
+      // Integrationsdurchsicht S1: Zum Verrechnen in diesem Zeitraum eingetragen, aber der Mieter bekommt hier keine
+      // Abrechnung (Inklusivmiete oder Pauschale ohne Vorauszahlung, Wohnung außerhalb der Abrechnungseinheit). Das
+      // Speichern lehnt das inzwischen ab; ein vorhandener Eintrag bekommt hier einen Hinweis, unabhängig von der
+      // Fälligkeit, denn in späteren Zeiträumen ist er nicht mehr „offen“ und bliebe sonst still liegen.
+      if (r.paidOutOn === null && r.settlePeriod === period.key && !st) {
+        // Schon fällig: Warnung wie bei einer offenen Erstattung; sonst ein Hinweis.
+        warn(due <= period.to ? 'co2.refund-due' : 'co2.refund-not-next',
+          `${t.tenantName} bekommt für ${label} keine Abrechnung; die dort zum Verrechnen eingetragene CO₂-Erstattung von ${fmtCents(r.amountCents)} verrechnet Mietfuchs deshalb nicht. ` +
+            `Zahlen Sie sie spätestens am ${fmtDay(due)} aus (§ 6 Abs. 2 Satz 5 CO2KostAufG) und tragen Sie die Auszahlung ein.`,
+          tenancySubject)
+        continue
+      }
+      const open = r.paidOutOn === null && r.settlePeriod === null
       if (open && r.claimedAt <= period.to && due <= period.to) {
         warn('co2.refund-due',
           `${t.tenantName} hat am ${fmtDay(r.claimedAt)} eine CO₂-Erstattung von ${fmtCents(r.amountCents)} geltend gemacht. Wird sie nicht verrechnet, war sie spätestens am ${fmtDay(due)} zu erstatten (§ 6 Abs. 2 Satz 5 CO2KostAufG); bei vereinbarter Vorauszahlung wird sie mit Ablauf der Frist der Abrechnung fällig, in der sie zu verrechnen ist (BT-Drs. 20/3172, S. 35). ` +

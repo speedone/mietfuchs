@@ -720,6 +720,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   −30,00 €, privat −262,50 €, abziehbar +232,50 €). Liegt der Eigenanteil außerhalb von 0 bis 100 %, gilt jetzt die
   Wohn- und Nutzfläche des Gebäudes (im Beispiel privat −15,00 €), und der Rechenweg sagt das. Die Abrechnung an die
   Mieter ändert sich nicht.
+- **CO₂-Erstattung zum Verrechnen bei einem Mieter ohne Abrechnung verschwand still** ([#97](https://github.com/speedone/mietfuchs/issues/97)):
+  Bekam ein Mieter, der selbst heizt, für den gewählten Zeitraum keine Abrechnung (Inklusivmiete oder Pauschale
+  ohne Vorauszahlung, Wohnung außerhalb der Abrechnungseinheit), wurde eine dort zum Verrechnen eingetragene
+  Erstattung weder verrechnet noch gemeldet (gemessen: 120,00 €, in keinem Jahr ein Hinweis). Jetzt lehnt das
+  Speichern das mit einem Satz ab und verweist auf die Auszahlung (§ 6 Abs. 2 Satz 5 CO2KostAufG); ein schon
+  vorhandener Eintrag bekommt in diesem Zeitraum einen Hinweis.
 
 ## [0.10.1] – 2026-10-04
 
