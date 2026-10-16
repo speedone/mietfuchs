@@ -479,3 +479,35 @@ test('N3: Abzug mit Verweis auf eine Position, die nicht als Betriebsstrom geken
   const paar = tax(haus([gas(), hausstrom(), abzug('ab', 20000, 'bs'), gas(500000, '2026-01'), betrieb('bs', 20000, {}, '2026-01')]))
   assert.equal(paar.operatingPowerBalanceKind, 'otherYear')
 })
+
+// ---------- Heizanteil außerhalb 0…1 (Integrationsdurchsicht vor 0.11.0, M1) ----------
+
+test('M1: Gutschrift mit eigenem Schlüssel macht den Heizanteil unbrauchbar (875 %); dann gilt die Fläche, privat −15,00 statt −262,50', () => {
+  // A 50 m² vermietet (t1), B 50 m² selbstgenutzt. Gas 1.000 nach Fläche (B 500), Gutschrift Gas −990 nach Einheiten nur
+  // für A (B 0), Betriebsstrom 50 „steckt auch in der Stromrechnung“ (B 25), Hausstrom 400, Abzug 20 verknüpft.
+  // C = 20 − 50 = −30. Heizanteil (500 + 25) / (1.000 − 990 + 50) = 525 / 60 = 875 %: privat −262,50, abziehbar
+  // +232,50. Erwartet: privat zwischen −30 und 0; die Quote taugt nicht, also wie beim Abzug ohne Verweis nach der
+  // Fläche des Gebäudes, 50 / 100: privat −15,00, abziehbar −15,00.
+  const units = [
+    { id: 'u1', propertyId: 'objekt-1', name: 'A', areaM2: 50, participates: true },
+    { id: 'u2', propertyId: 'objekt-1', name: 'B', areaM2: 50, participates: false, selfUsed: true, selfPersons: 1 },
+  ]
+  const src = haus([
+    gas(100000), heizung('gut', -99000, { description: 'Gutschrift Gas', heatingPart: 'fuel', key: 'units', participantUnitIds: ['u1'] }),
+    betrieb('bs', 5000, { key: 'area' }), hausstrom(40000, '2025-01', { key: 'area' }), abzug('ab', 2000, 'bs', { key: 'area' }),
+  ], [anlage()], { units, tenancies: [mieter('t1', 'u1')] } as Partial<Source>)
+  const r = tax(src)
+  const z = line(r) ?? assert.fail('keine Zeile')
+  assert.deepEqual([z.amountCents, z.privateCents, z.deductibleCents, z.allocation], [-3000, -1500, -1500, 'area'])
+  const t = texts(r)
+  assert.doesNotMatch(t, /875/, t)
+  assert.match(t, /Heizanteil/, t)
+  // Gesamt bleibt in sich stimmig.
+  assert.equal(r.expenses.privateCents + r.expenses.deductibleCents, r.expenses.totalCents)
+  // Durchsicht #297 K3: Gutschrift über der Rechnung (netto ≤ 0): ebenfalls Fläche, und die Begründung nennt den Heizanteil,
+  // nicht einen Abzug ohne Verweis.
+  const ueber = { ...src, costItems: src.costItems.map((c) => (c.id === 'gut' ? { ...c, amountCents: -110000 } : c)) }
+  const t2 = texts(tax(ueber))
+  assert.match(t2, /Heizanteil der Anlage taugt hier nicht/, t2)
+  assert.doesNotMatch(t2, /denn ein Abzug ohne Verweis/, t2)
+})

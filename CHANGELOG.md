@@ -713,6 +713,50 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   beim Start noch die Datenbank vorbereitet, antwortet `/healthz` mit 503 und
   `"status": "starting"`; alle anderen Anfragen warten, bis der Start fertig ist
   ([#244](https://github.com/speedone/mietfuchs/issues/244)).
+- **Steuer: privater Teil beim Ausgleich des Betriebsstroms über dem Betrag** ([#268](https://github.com/speedone/mietfuchs/issues/268)):
+  Stand bei einer Heizanlage neben der Rechnung eine Gutschrift mit anderem Schlüssel oder anderen Beteiligten,
+  konnte der Eigenanteil an deren Heizkosten weit über 100 % liegen. Die Zeile „Betriebsstrom der Heizung,
+  Ausgleich“ bekam dann einen privaten Teil über ihrem Betrag, auch mit falschem Vorzeichen (gemessen: Ausgleich
+  −30,00 €, privat −262,50 €, abziehbar +232,50 €). Liegt der Eigenanteil außerhalb von 0 bis 100 %, gilt jetzt die
+  Wohn- und Nutzfläche des Gebäudes (im Beispiel privat −15,00 €), und der Rechenweg sagt das. Die Abrechnung an die
+  Mieter ändert sich nicht.
+- **CO₂-Erstattung zum Verrechnen bei einem Mieter ohne Abrechnung verschwand still** ([#97](https://github.com/speedone/mietfuchs/issues/97)):
+  Bekam ein Mieter, der selbst heizt, für den gewählten Zeitraum keine Abrechnung (Inklusivmiete oder Pauschale
+  ohne Vorauszahlung, Wohnung außerhalb der Abrechnungseinheit), wurde eine dort zum Verrechnen eingetragene
+  Erstattung weder verrechnet noch gemeldet (gemessen: 120,00 €, in keinem Jahr ein Hinweis). Jetzt lehnt das
+  Speichern das mit einem Satz ab und verweist auf die Auszahlung (§ 6 Abs. 2 Satz 5 CO2KostAufG); ein schon
+  vorhandener Eintrag bekommt in diesem Zeitraum einen Hinweis.
+- **Kürzung nach § 12 HeizkostenV bei Rechnungen über das Kalenderjahr und Zeitraum Mai bis April** ([#208](https://github.com/speedone/mietfuchs/issues/208)):
+  Den Anteil einer Gasrechnung, der über einen Übertrag in den vorigen Zeitraum gehört, sah der Hinweis nicht. Dort
+  fehlte er ganz (auch der zur Fernablesung), im Zeitraum der Rechnung nannte er 15 % des ganzen Anteils (gemessen:
+  270,00 € statt 126,90 €). Jetzt nennt jede Abrechnung 15 % dessen, was der Mieter in ihr trägt (im Beispiel
+  143,10 € und 126,90 €). Keine Zahl der Abrechnung ändert sich, Mietfuchs zieht die Kürzung nicht selbst ab.
+- **Vorschlag für die Vorauszahlung im Übergangsjahr zur getrennten Heizkostenabrechnung enthielt die Heizkosten** ([#217](https://github.com/speedone/mietfuchs/issues/217)):
+  Die Betriebskostenabrechnung des Jahres, in dem die getrennte Heizkostenabrechnung beginnt, enthält noch die
+  letzte Heizperiode davor. Der Vorschlag nach § 560 Abs. 4 BGB „Vorauszahlung für die übrigen Nebenkosten (ohne
+  Heizung)“ rechnete sie mit (gemessen: 105,00 € statt 18,00 €), obwohl die Heizkosten künftig über die
+  Heizvorauszahlung laufen. Jetzt bleiben die Heizkosten einer Anlage, die danach getrennt abgerechnet wird,
+  außen vor. Keine Zahl der Abrechnung ändert sich, nur der Vorschlag.
+- **Eigentumswohnung: CO₂-Karte fragte nach der Summe des ganzen Hauses** ([#97](https://github.com/speedone/mietfuchs/issues/97)):
+  Rechnet die Gemeinschaft ab, steht in der Position der eigene Anteil laut Hausgeldabrechnung. Die Karte „CO₂-Kosten“
+  fragte aber nach der „Summe der Kosten aller Nutzer“; wer die Summe des Hauses eintrug, bekam eine Probe, die
+  nicht aufging, und der CO₂-Anteil wurde nicht gebucht. Jetzt fragt sie nach den Heizkosten Ihrer Wohnung laut
+  Einzelabrechnung und dem CO₂-Anteil des Vermieters für Ihre Wohnung, setzt eine Nutzeinheit voraus, und Probe
+  und Hinweise sprechen von der Abrechnung der Gemeinschaft statt vom Messdienst.
+- **Wechsel in einen Rumpfzeitraum: Vorschlag für die Gasrechnung, den das Übernehmen ablehnte** ([#208](https://github.com/speedone/mietfuchs/issues/208)):
+  Wechselte der Abrechnungszeitraum mitten im Jahr, schlug die Vorschau für eine mit einer Brennstoffrechnung
+  verknüpfte Heizposition den Rumpf vor, obwohl sie in die Heizperiode gehört, in der die Rechnung endet; das
+  Übernehmen lehnte genau diesen Vorschlag ab. Jetzt bietet die Vorschau nur diese Heizperiode an.
+- **Kesseltausch bei getrennter Heizkostenabrechnung: Sperre mit Weg statt „kommt mit einer späteren Version“** ([#217](https://github.com/speedone/mietfuchs/issues/217)):
+  Wurden die Heizkosten getrennt abgerechnet, lehnte Mietfuchs jeden Kesseltausch ab, auch wenn die getrennte
+  Abrechnung schon vorher geendet hatte. Jetzt sperrt nur noch ein Tausch in einer getrennt abgerechneten
+  Heizperiode oder davor, und die Meldung nennt den Weg: die getrennte Heizkostenabrechnung ab dieser Heizperiode
+  ausschalten, dann den Tausch erfassen; die Heizkosten rechnet danach die Betriebskostenabrechnung ab. Eine
+  getrennte Heizkostenabrechnung nach einem Kesseltausch kann Mietfuchs noch nicht.
+- **„Vorauszahlung für die übrigen Nebenkosten (ohne Heizung)“ auch nach dem Ausschalten der getrennten Heizkostenabrechnung** ([#217](https://github.com/speedone/mietfuchs/issues/217)):
+  Hatte ein Objekt je eine getrennte Heizkostenabrechnung, nannte jede spätere Betriebskostenabrechnung den Vorschlag
+  nach § 560 Abs. 4 BGB „ohne Heizung“, auch wenn er die Heizkosten wieder enthielt (gemessen: 100,00 € aus 1.200,00 €
+  Heizkosten). Jetzt hängt die Beschriftung daran, ob der Vorschlag dieser Abrechnung die Heizkosten auslässt.
 
 ## [0.10.1] – 2026-10-04
 

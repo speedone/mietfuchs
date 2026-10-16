@@ -183,6 +183,33 @@ test('Review Focus 2: kein Verrechnen in einem Zeitraum ohne Mietzeit oder in ei
   })
 })
 
+test('Integrationsdurchsicht S1: kein Verrechnen bei einem Mieter, der für den Zeitraum keine Abrechnung bekommt (Inklusivmiete, Wohnung außerhalb)', async () => {
+  // Mieter B heizt selbst und zahlt Inklusivmiete ohne Vorauszahlung: Er bekommt für 2025 keine Abrechnung, eine dort zum
+  // Verrechnen eingetragene Erstattung von 120,00 € verschwand still. Jetzt lehnt das Speichern ab und verweist auf die
+  // Auszahlung; auszahlen und offen lassen geht weiter.
+  const satz = (why: string) => new RegExp(`^Mieter B bekommt für 2025 keine Abrechnung \\(${why}\\)\\. Verrechnen lässt sich die CO₂-Erstattung deshalb nicht; zahlen Sie sie aus und tragen Sie den Tag der Auszahlung ein \\(§ 6 Abs\\. 2 Satz 5 CO2KostAufG\\)\\.$`)
+  const b = { tenancyId: 'tb', supplierBilledAt: '2025-10-01', claimedAt: '2025-11-01', amountCents: 12000 }
+  for (const [name, unit, tenancy] of [
+    ['Inklusivmiete ohne Vorauszahlung', { participates: true }, { costModel: 'inclusive' }],
+    ['die Wohnung gehört nicht zur Abrechnungseinheit', { participates: false }, { prepayments: [{ from: '2020-01', monthlyCents: 10000 }] }],
+  ] as const) {
+    await withDatabase(async (opened) => {
+      await opened.write(async (db) => {
+        await createEntity(db, 'units', 'a', { propertyId: 'objekt-1', name: 'A', areaM2: 60, participates: true })
+        await createEntity(db, 'units', 'b', { propertyId: 'objekt-1', name: 'B', areaM2: 40, ...unit })
+        await createEntity(db, 'tenancies', 'ta', { unitId: 'a', tenantName: 'Mieter A', persons: 1, start: '2020-01-01', prepayments: [{ from: '2020-01', monthlyCents: 10000 }] })
+        await createEntity(db, 'tenancies', 'tb', { unitId: 'b', tenantName: 'Mieter B', persons: 1, start: '2020-01-01', heatingModel: 'selfSupply', ...tenancy })
+        await createEntity(db, 'costItems', 'gs', { propertyId: 'objekt-1', period: '2025-01', category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 50000, key: 'area' })
+      })
+      await assert.rejects(opened.write((db) => createRefund(db, 'x', { ...b, settlePeriod: '2025-01' })), rejectsWith(400, satz(name)), name)
+      const offen = await opened.write((db) => createRefund(db, 'o', b))
+      await assert.rejects(opened.write((db) => updateRefund(db, offen.id, { settlePeriod: '2025-01' })), rejectsWith(400, satz(name)), name)
+      const aus = await opened.write((db) => updateRefund(db, offen.id, { paidOutOn: '2025-12-01' }))
+      assert.equal(aus?.paidOutOn, '2025-12-01', name)
+    })
+  }
+})
+
 test('Prüfungen: Anzeige vor der Abrechnung des Lieferanten, verrechnet und ausgezahlt, § 5a vor 2028, Zeitraum halb', async () => {
   await withDatabase(async (opened) => {
     await seed(opened)

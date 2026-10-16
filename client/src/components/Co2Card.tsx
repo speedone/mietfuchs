@@ -4,15 +4,17 @@ import { useState, type ReactNode } from 'react'
 import { api, errorText } from '../api'
 import { useConfirm, useToast } from './feedback'
 import Term from './Term'
-import { CO2_ANSWER_OPTIONS, CO2_EXAMPLE, CO2_NOT_A_SIGN, CO2_QUESTION, co2Body, co2ToForm, probeLine, type Co2Form } from '../co2Form'
+import { CO2_ANSWER_OPTIONS, CO2_EXAMPLE, CO2_NOT_A_SIGN, CO2_QUESTION, co2Body, co2Labels, co2ToForm, probeLine, type Co2Form } from '../co2Form'
 import type { HeatingPeriodView, Tenancy } from '../types'
 
 type TextKey = 'usersTotal' | 'vacancyTotal' | 'kgPerM2' | 'emissionsKg' | 'serviceArea' | 'landlordPercent' | 'totalCo2' | 'landlordCo2' | 'selfLandlord' | 'unitsCount' | 'fuelGross' | 'fuelNet'
 
 // `hasSelfUsed` (Laienprobe B22): Nur wenn eine Wohnung des Objekts selbst bewohnt ist, gibt es das
 // Feld für ihren CO₂-Anteil; im ganz vermieteten Haus hielt man es sonst für den eigenen Anteil.
-export default function Co2Card({ view, tenancies, unitsCount, hasSelfUsed = false, onSaved }: { view: HeatingPeriodView; tenancies: Tenancy[]; unitsCount: number; hasSelfUsed?: boolean; onSaved: () => void }) {
-  const ctx = { items: view.items, unitsCount }
+// `homeowners` (Abdeckung V14): Bei einer Eigentumswohnung rechnet die Gemeinschaft ab; gefragt ist der eigene Anteil.
+export default function Co2Card({ view, tenancies, unitsCount, hasSelfUsed = false, homeowners = false, onSaved }: { view: HeatingPeriodView; tenancies: Tenancy[]; unitsCount: number; hasSelfUsed?: boolean; homeowners?: boolean; onSaved: () => void }) {
+  const ctx = { items: view.items, unitsCount, homeowners }
+  const labels = co2Labels(homeowners)
   const [form, setForm] = useState<Co2Form>(() => co2ToForm(view.co2, ctx))
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -90,19 +92,19 @@ export default function Co2Card({ view, tenancies, unitsCount, hasSelfUsed = fal
           disabled={view.closed}
           onChange={(e) => set('answer', CO2_ANSWER_OPTIONS.find((o) => o.value === e.target.value)?.value ?? '')}
         >
-          {CO2_ANSWER_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          {CO2_ANSWER_OPTIONS.map((o) => <option key={o.value} value={o.value}>{homeowners && o.value === 'unsplit' ? 'Die Abrechnung der Gemeinschaft teilt die CO₂-Kosten gar nicht auf' : o.label}</option>)}
         </select>
       </label>
       <p className="muted">{CO2_EXAMPLE} · <Term id="co2Deducted">Was ist die Abzugszeile?</Term></p>
       <p className="muted">{CO2_NOT_A_SIGN}</p>
       {form.answer === 'unsplit' && (
-        <p className="notice">Ohne Aufteilung darf jeder Mieter seinen Anteil an den Heizkosten kürzen; die Abrechnung nennt die Beträge. Bitten Sie den Messdienst um eine Abrechnung mit CO₂-Aufteilung.</p>
+        <p className="notice">Ohne Aufteilung darf jeder Mieter seinen Anteil an den Heizkosten kürzen; die Abrechnung nennt die Beträge. Bitten Sie {homeowners ? 'die Verwaltung der Gemeinschaft' : 'den Messdienst'} um eine Abrechnung mit CO₂-Aufteilung.</p>
       )}
       {service && (
         <>
           {/* Sichtprüfung E38: der Hilfetext unmittelbar unter seinem Feld, das Kästchen neben seiner Beschriftung */}
           <div className="row">
-            {form.usersTotalApprox ? text('vacancyTotal', 'Beträge leerer oder nicht eingetragener Einheiten (€)') : text('usersTotal', 'Summe der Kosten aller Nutzer (€)')}
+            {form.usersTotalApprox ? text('vacancyTotal', 'Beträge leerer oder nicht eingetragener Einheiten (€)') : text('usersTotal', labels.usersTotal)}
             <label className="field checkline">
               <span>
                 <input type="checkbox" checked={form.usersTotalApprox} disabled={view.closed} onChange={(e) => set('usersTotalApprox', e.target.checked)} />
@@ -111,16 +113,13 @@ export default function Co2Card({ view, tenancies, unitsCount, hasSelfUsed = fal
             </label>
           </div>
           {!form.usersTotalApprox && (
-            <small className="muted">
-              Die gedruckte Summe für Heizung und Warmwasser aller Nutzer, bei einer Abzugszeile nach dem Abzug. Bei Techem heißt die Zeile
-              „Summe der Nutzerkosten Heizungsanlage“; bei anderen Messdiensten steht sie in der Kostenaufstellung unter der Verteilung.
-            </small>
+            <small className="muted">{labels.usersTotalHelp}</small>
           )}
           <div className="row">
-            {text('unitsCount', 'Nutzeinheiten laut Abrechnung')}
+            {text('unitsCount', labels.unitsCount)}
           </div>
           <small className="muted">
-            {!view.co2 && 'Vorbelegt mit der Zahl der Wohnungen an dieser Heizung; maßgeblich ist die Zahl auf der Abrechnung des Messdienstes. '}
+            {(homeowners || !view.co2) && labels.unitsHelp}
             <Term id="serviceUnits">Was ist eine Nutzeinheit?</Term>
           </small>
           <div className="row">
@@ -129,7 +128,7 @@ export default function Co2Card({ view, tenancies, unitsCount, hasSelfUsed = fal
             {text('serviceArea', <><Term id="co2Area">Wohnfläche</Term> laut Abrechnung (m²)</>)}
             {text('landlordPercent', 'Anteil des Vermieters (%)')}
             {text('totalCo2', 'CO₂-Kosten insgesamt (€)')}
-            {text('landlordCo2', 'davon Vermieter (€)')}
+            {text('landlordCo2', labels.landlordCo2)}
             {form.answer === 'deducted' && (hasSelfUsed || form.selfLandlord.trim() !== '') && text('selfLandlord', 'davon für Ihre selbst bewohnte Wohnung')}
           </div>
           {/* Laienprobe B21: die Berechnungsgrundlagen der Einstufung (§ 7 Abs. 3 CO2KostAufG). */}
@@ -138,7 +137,7 @@ export default function Co2Card({ view, tenancies, unitsCount, hasSelfUsed = fal
               Für den Ausweis in der Abrechnung mindestens nötig: der CO₂-Ausstoß insgesamt (kg) und die Wohnfläche aus der CO₂-Seite der Abrechnung.
               Aus ihnen ist der Wert je m² berechnet; die Abrechnung muss neben der Einstufung auch ihre Berechnungsgrundlagen nennen,
               sonst darf jeder Mieter seinen Anteil an den Heizkosten kürzen (§ 7 Abs. 3 und 4 CO2KostAufG). Ob ein Gericht weitere Angaben
-              verlangt, ist nicht entschieden; legen Sie deshalb die Abrechnung des Messdienstes bei.
+              verlangt, ist nicht entschieden; legen Sie deshalb {homeowners ? 'die Einzelabrechnung (Heizung) Ihrer Wohnung' : 'die Abrechnung des Messdienstes'} bei.
             </p>
           )}
           {serviceItems.length > 1 && (
@@ -157,7 +156,7 @@ export default function Co2Card({ view, tenancies, unitsCount, hasSelfUsed = fal
               <p className="muted">
                 Nennt die Einzelabrechnung eines Mieters einen Betrag „vom Vermieter übernommen“, tragen Sie ihn hier ein. Ohne Angabe
                 rechnet Mietfuchs ihn näherungsweise nach dem Anteil an den Heizkosten, und der Ausdruck verweist auf die Einzelabrechnung
-                des Messdienstes; deren Betrag ist maßgeblich.
+                {homeowners ? ' (Heizung) Ihrer Wohnung' : ' des Messdienstes'}; deren Betrag ist maßgeblich.
               </p>
               {billed.map((t) => (
                 <label className="field" key={t.id}>

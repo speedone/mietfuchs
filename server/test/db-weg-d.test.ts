@@ -13,7 +13,7 @@ import type { Database } from '../src/db/client.ts'
 import { applySeparate, previewSeparate } from '../src/db/separateSettlement.ts'
 import { closeSettlement, createEntity, findEntity, HeatingError, StaleTenancyError, updateEntity } from '../src/db/repository.ts'
 import { tenancyStamp } from '../../shared/tenancyStamp.ts'
-import { createHeatingPlant, listHeatingPlants, updateHeatingPlant } from '../src/db/heating.ts'
+import { createHeatingPlant, listHeatingPlants, replaceHeatingPlant, updateHeatingPlant } from '../src/db/heating.ts'
 import { previewHeatingPeriodChange } from '../src/db/heatingPeriodChange.ts'
 import { readStock } from '../src/db/read.ts'
 import { closedHeatingSettlements, heatingPlants } from '../src/db/schema.ts'
@@ -381,5 +381,61 @@ test('Review Runde 3: verkürzte Heizperiode nach Weg d, verglichen mit dem bish
     const e = v.effects.find((x) => x.label === 'Heizkosten 01.05.2025–28.02.2026') ?? assert.fail(JSON.stringify(v.effects.map((x) => x.label)))
     assert.deepEqual(e.tenants, [{ tenantName: 'Müller', beforeCents: 12 * 12300 - 150000, afterCents: 10 * 12300 - 150000 }])
     assert.equal(e.lostClaimsCents, 2 * 12300)
+  })
+})
+
+test('Abdeckung V26: Kesseltausch bei getrennter Heizkostenabrechnung; gesperrt nur, solange die Heizperiode des Tauschs getrennt abgerechnet wird, mit gangbarem Weg', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => haus(db, {}))
+    await ein(opened, '2025-05', { '2025-05': 12300 })
+    await schliessen(opened, '2025-01')
+    // Tausch mitten in 2025/2026, die getrennt abgerechnet wird: abgelehnt, mit dem Weg in Worten.
+    const sperre = /^Die Heizperiode 2025\/2026, in die der Tausch fällt, wird getrennt abgerechnet; einen Kesseltausch darin rechnet Mietfuchs noch nicht ab\. So geht es: Schalten Sie unter Stammdaten bei der Heizanlage die getrennte Heizkostenabrechnung ab dieser Heizperiode aus und erfassen Sie dann den Tausch\. Die Heizkosten beider Anlagen rechnet dann die Betriebskostenabrechnung ab, .* Eine getrennte Heizkostenabrechnung nach einem Kesseltausch kann Mietfuchs noch nicht\.$/
+    await assert.rejects(opened.write((db) => replaceHeatingPlant(db, 'hp1', 'hp2', { date: '2026-01-01', energy: 'heatPump' })),
+      (e: unknown) => e instanceof HeatingError && e.status === 400 && sperre.test(e.message))
+    // Ausgeschaltet ab 2026/2027 (2025/2026 bleibt getrennt, sie hat Monate in der abgeschlossenen Abrechnung 2025).
+    const aus = await apply(opened, { separate: false, answers: {} })
+    assert.ok(aus && 'plant' in aus)
+    assert.deepEqual(aus.plant.separateSpans, [{ from: '2025-05', until: '2026-05' }])
+    // Ein Tausch in 2026/2027 geht jetzt; vorher sperrte jede getrennte Spanne, auch eine vergangene.
+    const r = await opened.write((db) => replaceHeatingPlant(db, 'hp1', 'hp2', { date: '2026-10-01', energy: 'heatPump' })) ?? assert.fail('keine Anlage')
+    assert.deepEqual([r.previous.endsOn, r.previous.separateSpans, r.plant.separateSpans, r.plant.periodStartMonth], ['2026-09-30', [{ from: '2025-05', until: '2026-05' }], [], 5])
+    // Die getrennte Heizkostenabrechnung 2025/2026 der alten Anlage bleibt, wie sie war.
+    assert.equal(mieter(await heizkosten(opened, '2025-05')).prepaymentCents, 12 * 12300)
+    // Die Abrechnung 2026 rechnet die Heizperiode 2026/2027 nicht, sie endet erst 2027; 2027 enthält beide Anlagen.
+    const p2027 = await abrechnung(opened, '2027-01')
+    assert.deepEqual(p2027.heatingPeriods?.map((h) => [h.plantId, h.period.key]).sort(), [['hp1', '2026-05'], ['hp2', '2026-05']])
+    // Durchsicht #297 S-C: Heizkosten beider Anlagen 2026/2027 (500 + 700 €). Der Vorschlag nach § 560 enthält sie
+    // (1.200 / 12 = 100 €) und heißt deshalb nicht „ohne Heizung“; 2025 lief die Heizung getrennt.
+    await opened.write(async (db) => {
+      await createEntity(db, 'costItems', 'alt', { propertyId: 'objekt-1', period: '2026-05', category: HEATING_CATEGORY, description: 'Messdienst alt', amountCents: 50000, key: 'area', heatingPlantId: 'hp1', taxYear: 2027 })
+      await createEntity(db, 'costItems', 'neu', { propertyId: 'objekt-1', period: '2026-05', category: HEATING_CATEGORY, description: 'Messdienst neu', amountCents: 70000, key: 'area', heatingPlantId: 'hp2', taxYear: 2027 })
+    })
+    const b2027 = await abrechnung(opened, '2027-01')
+    const m2027 = b2027.statements.find((st) => st.tenancyId === 't1') ?? assert.fail('kein Mieter')
+    assert.deepEqual([m2027.suggestedMonthlyCents, b2027.suggestionWithoutHeating], [10000, false])
+    assert.equal((await abrechnung(opened, '2025-01')).suggestionWithoutHeating, true)
+  })
+})
+
+test('Durchsicht #297 S-A: Kesseltausch am ersten Tag der Heizperiode nach der getrennten; die alte Anlage endet am letzten Tag der getrennten', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => haus(db, {}))
+    await ein(opened, '2025-05', { '2025-05': 12300 })
+    await schliessen(opened, '2025-01')
+    const aus = await apply(opened, { separate: false, answers: {} })
+    assert.ok(aus && 'plant' in aus)
+    // Getrennt bleibt 2025/2026 (bis 30.04.2026). Tausch zum 01.05.2026 fällt in 2026/2027; vorher abgelehnt mit einem
+    // Weg, der hier nicht gangbar ist (2025/2026 hat Monate in der abgeschlossenen Abrechnung 2025).
+    const r = await opened.write((db) => replaceHeatingPlant(db, 'hp1', 'hp2', { date: '2026-05-01', energy: 'heatPump' })) ?? assert.fail('keine Anlage')
+    assert.deepEqual([r.previous.endsOn, r.plant.separateSpans], ['2026-04-30', []])
+    assert.equal(mieter(await heizkosten(opened, '2025-05')).prepaymentCents, 12 * 12300)
+  })
+  // Gegenprobe: Ist 2026/2027 noch getrennt, sperrt auch der erste Tag.
+  await withDatabase(async (opened) => {
+    await opened.write((db) => haus(db, {}))
+    await ein(opened, '2025-05', { '2025-05': 12300 })
+    await assert.rejects(opened.write((db) => replaceHeatingPlant(db, 'hp1', 'hp2', { date: '2026-05-01', energy: 'heatPump' })),
+      (e: unknown) => e instanceof HeatingError && /^Die Heizperiode 2026\/2027, in die der Tausch fällt, wird getrennt abgerechnet/.test(e.message))
   })
 })

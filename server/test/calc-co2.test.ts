@@ -184,6 +184,23 @@ test('Eigentumswohnung (F2/F3): Gemeinschaft mit Vorwegabzug, Betrag S + L, co2S
   assert.deepEqual([tax.privateCents, tax.deductibleCents], [0, 123000])
 })
 
+test('Abdeckung V14: Eigentumswohnung mit der Summe des ganzen Hauses: die Probe erklärt den eigenen Anteil und spricht nicht vom Messdienst', () => {
+  // Position 1.210,00 € (Einzelbetrag 1.150,00 € + CO₂-Anteil 60,00 €). Eingetragen ist die Summe des Hauses, 18.400,00 €.
+  const s = { units: [unit('w')], tenancies: [tenancy('tw', 'w')], costItems: [messdienst(121000, { tw: 115000 }, { description: 'Heizkosten laut Hausgeldabrechnung' })] }
+  const gemeinschaft = [plant({ source: 'homeowners' })]
+  const text = textOf(settle(s, [co2({ serviceUsersTotalCents: 1840000, serviceLandlordCents: 6000, serviceUnitsCount: 1 })], gemeinschaft), 'co2.sum-check')
+  assert.doesNotMatch(text, /Messdienst|aller Nutzer/, text)
+  assert.match(text, /Mit Abzugszeile muss der Betrag die Heizkosten Ihrer Wohnung laut Einzelabrechnung \(18\.400,00 €\) plus den CO₂-Anteil des Vermieters für Ihre Wohnung \(60,00 €\) sein, also 18\.460,00 €/, text)
+  assert.match(text, /nicht die Summe des ganzen Hauses/, text)
+  // Durchsicht #297 S-B: Die Mieter bekommen nicht die Hausgeldabrechnung, allenfalls die Einzelabrechnung Heizung der Wohnung.
+  assert.match(text, /Fehlt die Aufteilung auch in der Einzelabrechnung \(Heizung\) Ihrer Wohnung, darf jeder Mieter/, text)
+  assert.doesNotMatch(text, /die die Mieter bekommen|Abrechnung der Gemeinschaft/, text)
+  // Mit dem eigenen Anteil bucht Mietfuchs den CO₂-Anteil.
+  const r = settle(s, [co2({ serviceUsersTotalCents: 115000, serviceLandlordCents: 6000, serviceUnitsCount: 1 })], gemeinschaft)
+  assert.deepEqual(partsOf(r), [{ reason: 'co2Share', cents: 6000 }])
+  assert.ok(!codes(r).includes('co2.sum-check'))
+})
+
 test('Vor 2023 gibt es keine Aufteilung, auch nicht mit Datensatz (§ 11 Abs. 2 Satz 1 CO2KostAufG)', () => {
   const alt = calendarPeriod(2022)
   const r = computeSettlement({

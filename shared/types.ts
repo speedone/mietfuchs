@@ -868,6 +868,10 @@ export type Settlement = {
   // abgerechnet werden (Weg d), mit ihrer Frist. `scope`: gesetzt in der Heizkostenabrechnung.
   heatingPeriods?: HeatingPeriodRef[]
   separateHeating?: SeparateHeatingRef[]
+  // Durchsicht #297 S-C: Lässt der Vorschlag nach § 560 Abs. 4 BGB die Heizkosten aus, weil die Heizung nach diesem
+  // Zeitraum getrennt abgerechnet wird? Dann heißt er „für die übrigen Nebenkosten (ohne Heizung)“. Fehlt bei einer
+  // vorher abgeschlossenen Abrechnung und in der Heizkostenabrechnung.
+  suggestionWithoutHeating?: boolean
   scope?: HeatingScopeRef
   statements: Statement[]
   landlord: { rows: SettlementRow[]; totalCents: number }

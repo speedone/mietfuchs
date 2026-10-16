@@ -167,3 +167,21 @@ test('N-4: ausgezahlte Erstattung als Zeile der Aufstellung, direkt vermietet, g
   assert.ok(!taxReport(snap([refund()], VERSANDT_2024)).expenses.items.some((i) => i.co2RefundPaidOut))
   assert.ok(!taxReport(snap([refund({ settlePeriod: null, paidOutOn: '2026-01-10' })])).expenses.items.some((i) => i.co2RefundPaidOut))
 })
+
+test('Integrationsdurchsicht S1: zum Verrechnen eingetragen, aber ohne Abrechnung des Mieters: Hinweis statt still verschwinden', () => {
+  // Inklusivmiete ohne Vorauszahlung, Anzeige 01.11.2025, 120,00 €, „verrechnen 2025“. Fällig wäre sie erst 2026, also
+  // kam bisher in keinem Zeitraum ein Hinweis, und verrechnet wurde nichts. Das Speichern lehnt das heute ab; ein
+  // vorhandener Eintrag bekommt in dem Zeitraum, in dem er verrechnet werden sollte, einen Hinweis.
+  const e = refund({ supplierBilledAt: '2025-10-01', claimedAt: '2025-11-01', amountCents: 12000 })
+  for (const over of [{ tenancies: [mieter({ costModel: 'inclusive', prepayments: [] })] }, { units: [{ id: 'w', name: 'EG', areaM2: 80, participates: false }] }]) {
+    const r = computeSettlement(snap([e], VERSANDT_2024, over))
+    assert.equal(r.statements.find((s) => s.tenancyId === 't'), undefined)
+    assert.ok(!r.landlord.rows.some((row) => row.costItemId === 'co2refund:e1'))
+    assert.ok(!codes(r).includes('co2.refund-due'), codes(r).join())
+    assert.match(textOf(r, 'co2.refund-not-next'), /^Mieter bekommt für 2025 keine Abrechnung; die dort zum Verrechnen eingetragene CO₂-Erstattung von 120,00 € verrechnet Mietfuchs deshalb nicht\. Zahlen Sie sie spätestens am \d\d\.\d\d\.\d{4} aus \(§ 6 Abs\. 2 Satz 5 CO2KostAufG\) und tragen Sie die Auszahlung ein\.$/)
+  }
+  // Schon im Zeitraum fällig (Anzeige im Juni 2024, fällig im Juni 2025): dieselbe Aussage als Warnung.
+  const frueh = computeSettlement(snap([refund({ supplierBilledAt: '2024-05-01', claimedAt: '2024-06-01', amountCents: 12000 })], VERSANDT_2024, { tenancies: [mieter({ costModel: 'inclusive', prepayments: [] })] }))
+  assert.match(textOf(frueh, 'co2.refund-due'), /^Mieter bekommt für 2025 keine Abrechnung; .* 120,00 € /)
+  assert.ok(!codes(frueh).includes('co2.refund-not-next'), codes(frueh).join())
+})

@@ -6,7 +6,9 @@ import { eq } from 'drizzle-orm'
 import type { Database } from './client.ts'
 import { co2Refunds, tenancies, units, CO2_RESTRICTIONS } from './schema.ts'
 import { asNullableFilled, findClosedSettlement, HeatingError, ISO_DATE, merged, oneOfOrUndefined, PeriodError, rulesForProperty } from './repository.ts'
-import { readCo2Refunds } from './read.ts'
+import { readCo2Refunds, readStock } from './read.ts'
+import { computeSettlement } from '../calc.ts'
+import { snapshotFor } from '../snapshot.ts'
 import { parsePeriodKey, periodLabel, periodOfKey } from '../../../shared/period.ts'
 import type { Co2Refund, PeriodKey } from '../../../shared/types.ts'
 import { claimDeadline, refundDueDate, refundLawAt, refundProposal, type LawAsk, type RefundExclusion } from '../co2Refund.ts'
@@ -37,7 +39,7 @@ const plainAsk: LawAsk = {
 
 async function tenancyInfo(db: Database, tenancyId: string) {
   const [row] = await db
-    .select({ tenantName: tenancies.tenantName, start: tenancies.start, end: tenancies.end, heatingModel: tenancies.heatingModel, unitName: units.name, propertyId: units.propertyId })
+    .select({ tenantName: tenancies.tenantName, start: tenancies.start, end: tenancies.end, heatingModel: tenancies.heatingModel, unitName: units.name, propertyId: units.propertyId, participates: units.participates, selfUsed: units.selfUsed })
     .from(tenancies).innerJoin(units, eq(tenancies.unitId, units.id)).where(eq(tenancies.id, tenancyId))
   return row
 }
@@ -161,6 +163,18 @@ async function guardRefund(db: Database, after: Co2Refund): Promise<void> {
     }
     if ((await findClosedSettlement(db, t.propertyId, p.key)) !== undefined) {
       throw new HeatingError(409, `Die Abrechnung ${periodLabel(p)} ist abgeschlossen. Öffnen Sie sie wieder, wenn Sie die Erstattung dort verrechnen wollen.`)
+    }
+    // Integrationsdurchsicht S1: Bekommt der Mieter für den Zeitraum keine Abrechnung (Inklusivmiete oder Pauschale ohne
+    // Vorauszahlung, Wohnung außerhalb der Abrechnungseinheit), gibt es nichts, worin verrechnet würde; die Erstattung
+    // verschwände still. Ohne vereinbarte Vorauszahlung ist ohnehin auszuzahlen (§ 6 Abs. 2 Satz 4 und 5 CO2KostAufG).
+    const settled = computeSettlement(snapshotFor(await readStock(db), t.propertyId, p))
+    if (!settled.statements.some((st) => st.tenancyId === after.tenancyId)) {
+      const unit = settled.notSettled.find((n) => n.tenancyId === after.tenancyId)
+      const why = !t.participates && !t.selfUsed ? 'die Wohnung gehört nicht zur Abrechnungseinheit'
+        : unit?.costModel === 'inclusive' ? 'Inklusivmiete ohne Vorauszahlung'
+          : unit?.costModel === 'flatRate' ? 'Pauschale ohne Vorauszahlung'
+            : 'keine abzurechnenden Kosten und keine Vorauszahlung'
+      throw new HeatingError(400, `${t.tenantName} bekommt für ${periodLabel(p)} keine Abrechnung (${why}). Verrechnen lässt sich die CO₂-Erstattung deshalb nicht; zahlen Sie sie aus und tragen Sie den Tag der Auszahlung ein (§ 6 Abs. 2 Satz 5 CO2KostAufG).`)
     }
   }
 }

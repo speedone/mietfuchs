@@ -10,6 +10,8 @@ import path from 'node:path'
 import type { OpenedDatabase } from '../src/db/open.ts'
 import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { applyPeriodChange, monthsText, previewPeriodChange } from '../src/db/periodChange.ts'
+import { createDelivery } from '../src/db/fuel.ts'
+import { createHeatingPlant } from '../src/db/heating.ts'
 import { lostClaims, shownEffects } from '../src/db/dryRun.ts'
 import { closeSettlement, createEntity, listCollection, listProperties, PeriodError, saveCostItemSplit, updateEntity } from '../src/db/repository.ts'
 import { eq } from 'drizzle-orm'
@@ -374,4 +376,28 @@ test('Review Runde 3: shownEffects behält Fristen ohne Zahlen', () => {
   const alle = [e([]), e([{ tenantName: 'A', beforeCents: 1, afterCents: 1 }]), e([{ tenantName: 'B', beforeCents: 1, afterCents: 2 }])]
   assert.deepEqual(shownEffects(alle, true).map((x) => x.tenants[0]?.tenantName), ['B'], 'gerechnet: nur, was sich ändert')
   assert.equal(shownEffects(alle, false).length, 3, 'Probelauf gescheitert: jede Frist bleibt')
+})
+
+test('Abdeckung V20: Wechsel in einen Rumpf; die Vorschau schlägt für eine verknüpfte Gasrechnung nur die Heizperiode vor, die das Übernehmen annimmt', async () => {
+  // Gasrechnung 01.01.–31.12.2025, verknüpft mit der Position „Gas 2025“. Ab 05/2025 Mai–April: Die Rechnung endet in
+  // 2025/2026. Vorher schlug die Vorschau den Rumpf 01.01.–30.04.2025 vor, und das Übernehmen lehnte genau das mit 409 ab.
+  await withDatabase(async (opened) => {
+    await opened.write(async (db) => {
+      await createEntity(db, 'units', 'eg', { propertyId: 'objekt-1', name: 'EG', areaM2: 60, participates: true })
+      await createEntity(db, 'tenancies', 't-a', { unitId: 'eg', tenantName: 'Albers', persons: 1, start: '2020-01-01', prepayments: [{ from: '2020-01', monthlyCents: 20000 }] })
+      await createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'gas', method: 'manual' })
+      await createDelivery(db, 'd', 'hp', { label: 'Gas 2025', invoiceFrom: '2025-01-01', invoiceTo: '2025-12-31', emissionsKg: 5000, co2CostCents: 30000 })
+      await createEntity(db, 'costItems', 'gas', { propertyId: 'objekt-1', period: '2025-01', category: 'Heizung und Warmwasser', description: 'Gas 2025', amountCents: 300000, key: 'area', heatingPlantId: 'hp', heatingPart: 'fuel', fuelDeliveryId: 'd' })
+      await createEntity(db, 'costItems', 'mu', { propertyId: 'objekt-1', period: '2025-01', category: 'Müllabfuhr', description: 'Müll', amountCents: 36000, key: 'area' })
+    })
+    const v = await preview(opened, MAI_AB_2025)
+    const heizung = v.groups.find((g) => g.heating) ?? assert.fail(JSON.stringify(v.groups))
+    assert.deepEqual([heizung.suggested, heizung.options.map((o) => o.key)], ['2025-05', ['2025-05']])
+    // Die Vorgabe der Oberfläche (initialAnswers) übernimmt `suggested`; damit geht der Wechsel durch.
+    const ok = await opened.write(async (db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, { understood: true,
+      groups: Object.fromEntries(v.groups.map((g) => [g.id, g.suggested])), taxYears: {}, token: v.token,
+    }, ids, TODAY))
+    assert.ok(ok && 'property' in ok, JSON.stringify(ok).slice(0, 600))
+    assert.equal((await items(opened)).find((c) => c.id === 'gas')?.period, '2025-05')
+  })
 })
