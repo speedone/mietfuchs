@@ -45,9 +45,9 @@ test('Wohnung löschen: die Antwort zählt, was mitgelöscht wird, und die Zahle
     await post('/api/costItems', { year: 2025, category: 'Hauswart', description: 'Direkt', amountCents: 10000, key: 'direct', directUnitId: eg.id })
 
     const deps = await s.api<UnitDependents>(`/api/units/${eg.id}/dependents`)
-    assert.deepEqual(deps, { tenancies: 2, meters: 1, readings: 2, payments: 3, costItemLinks: 3, directCostItems: 1 })
+    assert.deepEqual(deps, { tenancies: 2, meters: 1, readings: 2, payments: 3, costItemLinks: 3, directCostItems: 1, fuelDeliveries: 0 })
     // Die andere Wohnung hat nur ihr Eigenes.
-    assert.deepEqual(await s.api<UnitDependents>(`/api/units/${og.id}/dependents`), { tenancies: 1, meters: 0, readings: 0, payments: 1, costItemLinks: 2, directCostItems: 0 })
+    assert.deepEqual(await s.api<UnitDependents>(`/api/units/${og.id}/dependents`), { tenancies: 1, meters: 0, readings: 0, payments: 1, costItemLinks: 2, directCostItems: 0, fuelDeliveries: 0 })
     assert.equal((await fetch(`${s.base}/api/units/gibt-es-nicht/dependents`)).status, 404)
 
     // Die Zählung ist kein Versprechen ins Blaue: Nach dem Löschen fehlt genau das Gezählte.

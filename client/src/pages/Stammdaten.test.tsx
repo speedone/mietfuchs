@@ -20,7 +20,7 @@ const tenancy = (id: string, tenantName: string, patch: Partial<Tenancy> = {}): 
   id, unitId: 'u1', tenantName, persons: 1, personHistory: [{ from: '2025-01-01', persons: 1 }], start: '2025-01-01', end: null,
   prepayments: [], prepaymentOverrides: {}, baseRents: [], ...patch,
 })
-const DEPS: UnitDependents = { tenancies: 2, meters: 1, readings: 4, payments: 12, costItemLinks: 0, directCostItems: 0 }
+const DEPS: UnitDependents = { tenancies: 2, meters: 1, readings: 4, payments: 12, costItemLinks: 0, directCostItems: 0, fuelDeliveries: 0 }
 
 let kind: PropertyKind = 'mfh'
 let meters: Meter[] = []
