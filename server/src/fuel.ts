@@ -652,7 +652,9 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
     const permille = degreeDayPermille([g], ctx.table)
     let estimate: FuelGap['estimate'] = null
     // Die Vorlage (8.2 Nr. 2), wie `templateFor`, aber nur eine Rechnung, die mindestens 100 ‰ der Gradtage der Lücke
-    // abdeckt (Faktor höchstens 10; nach Zählerstand dieselbe Grenze an der Menge). Eine Vorlage mit fast keinen Gradtagen
+    // abdeckt (Faktor höchstens 10; nach Zählerstand dieselbe Grenze an der Menge; hat die Vorlage keine Gradtage und
+    // rechnet der Vorschlag nach Tagen, dieselbe Grenze an den Tagen, also mindestens 10 % der Tage der Lücke,
+    // Nachprüfung #251 A2). Eine Vorlage mit fast keinen Gradtagen
     // ergäbe sonst einen beliebig hohen Vorschlag (Durchsicht #277, S1: 50,00 € über zwei Julitage → 54.400,00 €). Sonst die
     // nächstältere; trägt keine, gibt es keinen Vorschlag, und die Lücke nennt die zu kurze (`shortTemplate`).
     const scaled = (t: FuelDeliveryInput) => {

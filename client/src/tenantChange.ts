@@ -7,7 +7,7 @@
 // legte die Ablesungen doppelt an.
 import { parseQuantity } from './costForm'
 import { parseEuro } from './api'
-import { PERSONS_HINT, parsePersons } from './tenancyModel'
+import { PERSONS_HINT, parsePersons, SELF_SUPPLY_KIND_OPTIONS } from './tenancyModel'
 import type { InterimGapStatus, Meter, SelfSupplyKind, Tenancy } from './types'
 
 // `heatingPrepayment` nur bei getrennter Heizkostenabrechnung (Heizung PR 5): dann ist `prepayment`
@@ -164,4 +164,12 @@ export function buildTenantChange(input: {
       },
     },
   }
+}
+
+// Nachprüfung N-3 zu PR 19: Heizt der Vormieter selbst, übernimmt der Nachmieter das samt Art (`buildTenantChange`).
+// Die Wechselmaske sagt es, statt es still zu tun. Null, wenn nichts übernommen wird.
+export function successorHeatingNote(tenancy: Partial<Pick<Tenancy, 'heatingModel' | 'selfSupplyKind'>>): string | null {
+  if (tenancy.heatingModel !== 'selfSupply') return null
+  const kind = tenancy.selfSupplyKind ? SELF_SUPPLY_KIND_OPTIONS.find((o) => o.value === tenancy.selfSupplyKind)?.label : undefined
+  return `Der neue Mieter heizt ebenfalls selbst („Mieter heizt selbst“${kind ? `: ${kind}` : ''}). Ändern lässt sich das danach in den Stammdaten.`
 }

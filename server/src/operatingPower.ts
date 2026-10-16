@@ -395,17 +395,22 @@ export type BalanceSource = {
   linkedDescription: string | null
   // Durchsicht S1: Woher der Beitrag kommt, für Zeilenname und Texte. `kept`: Abzug ohne Verweis (selbst getragen).
   // `otherYear`: das Gegenstück (Heizposition bzw. Abzug) steht in einem anderen Steuerjahr. `sameYear`: Paar im selben
-  // Steuerjahr oder Heizposition ganz ohne Abzug.
-  situation: 'kept' | 'otherYear' | 'sameYear'
+  // Steuerjahr oder Heizposition ganz ohne Abzug. `brokenLink` (Nachprüfung N3): der Abzug zeigt auf eine Position, die
+  // nicht als Betriebsstrom in den Heizkosten gekennzeichnet ist oder die es im Objekt nicht gibt; ein Verweisfehler,
+  // kein anderes Steuerjahr.
+  situation: 'kept' | 'otherYear' | 'sameYear' | 'brokenLink'
 }
 // Die Lage der ganzen Zeile: `kept` nur Abzüge ohne Verweis; `otherYear` nur Paare über zwei Steuerjahre; `mixed`
-// beides; `mismatch`: Abzug und Betriebsstrom sind im selben Steuerjahr verschieden hoch, oder eine Heizposition hat
-// gar keinen Abzug. Nur dann ist etwas zu prüfen.
+// beides; `mismatch`: Abzug und Betriebsstrom sind im selben Steuerjahr verschieden hoch, eine Heizposition hat gar
+// keinen Abzug, oder ein Abzug zeigt ins Leere (`brokenLink`). Nur dann ist etwas zu prüfen.
 export type BalanceKind = 'kept' | 'otherYear' | 'mixed' | 'mismatch'
 export type BalanceNote = { costItemId: string; description: string; amountCents: number }
 export type OperatingPowerBalance = {
   cents: number
   kind: BalanceKind
+  // Nachprüfung N2: Summe der Abzüge ohne Verweis (selbst getragen). Bei `mismatch` sagt der Text, dass dieser Teil
+  // richtig erfasst ist und sich „prüfen“ nur auf die verknüpften Abzüge bezieht.
+  keptCents: number
   sources: BalanceSource[]
   // Abzüge ohne Verweis bei Messdienst: zählen nicht (gemeldet).
   reported: BalanceNote[]
@@ -448,7 +453,9 @@ export function operatingPowerBalance(parts: readonly BalancePart[], linkable: r
       }
       const linked = c.operatingPowerItemId ? lookup(c.operatingPowerItemId) : undefined
       const situation = !c.operatingPowerItemId ? 'kept'
-        : linked && yearIds.has(linked.id) && linked.operatingPower === 'included' ? 'sameYear' : 'otherYear'
+        : !linked || linked.operatingPower !== 'included' ? 'brokenLink'
+          : yearIds.has(linked.id) ? 'sameYear' : 'otherYear'
+      if (situation === 'brokenLink') mismatch = true
       sources.push({
         part, kind: 'deduction', costItemId: c.id, description: c.description, cents: -c.amountCents,
         plant: linked ? linked.heatingPlantId ?? null : undefined, linkedDescription: linked?.description ?? null, situation,
@@ -458,7 +465,8 @@ export function operatingPowerBalance(parts: readonly BalancePart[], linkable: r
   const kept = sources.some((s) => s.situation === 'kept')
   const otherYear = sources.some((s) => s.situation === 'otherYear')
   const kind: BalanceKind = mismatch ? 'mismatch' : kept && otherYear ? 'mixed' : kept ? 'kept' : otherYear ? 'otherYear' : 'mismatch'
-  return { cents: sources.reduce((a, s) => a + s.cents, 0), kind, sources, reported, ambiguous }
+  const keptCents = sources.filter((s) => s.situation === 'kept').reduce((a, s) => a + s.cents, 0)
+  return { cents: sources.reduce((a, s) => a + s.cents, 0), kind, keptCents, sources, reported, ambiguous }
 }
 
 // Negativer Allgemeinstrom ohne Kennzeichnung, wo im Zeitraum eine zentrale Anlage des Hauses ohne Messdienst heizt

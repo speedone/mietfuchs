@@ -11,7 +11,7 @@ import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { databaseProblem } from '../src/db/errors.ts'
 import { readStock } from '../src/db/read.ts'
 import { createEntity, updateEntity } from '../src/db/repository.ts'
-import { createHeatingPlant, replaceHeatingPlant } from '../src/db/heating.ts'
+import { createHeatingPlant, replaceHeatingPlant, updateHeatingPlant } from '../src/db/heating.ts'
 import { setUpSelf } from '../src/db/heatingSelf.ts'
 import { saveHeatingRules } from '../src/db/heatingInfo.ts'
 import { monthlyInfoView, saveMonthlyInfoRow } from '../src/db/monthlyInfo.ts'
@@ -186,5 +186,48 @@ test('Verbundenes Warmwasser: die Temperatur gehört in die Karte „Warmwasser�
     await haus(opened)
     assert.deepEqual((await opened.read((db) => monthlyInfoView(db, 'hp', '2025-01', '2025-12-10')))?.dhwTemp, { tempC: null, here: false })
     await assert.rejects(opened.write((db) => saveDhwTemperature(db, 'hp', '2025-01', { dhwTempC: 55 })), status(400, /Karte „Warmwasser“/))
+  })
+})
+
+// Prüfung K2 zu Heizung PR 22: Die Karte fordert keine Monate ein, für die die Abrechnung keine Information nach § 6a
+// verlangt. Gilt die Verordnung für die Wärmepumpe nach § 12 Abs. 3 HeizkostenV noch nicht, oder galt die Ausnahme des
+// § 11 Abs. 1 Nr. 3 Buchst. a a. F. (überwiegend Wärme aus der Wärmepumpe), erstellt Mietfuchs keine Monate; dieselbe
+// Regel wie calc.ts (`heatPumpWithoutMonthlyInfo`).
+async function waermepumpe(opened: OpenedDatabase, period: string, plant: Record<string, unknown>): Promise<boolean> {
+  await opened.write(async (db) => {
+    for (const [u, area] of [['a', 60], ['b', 40]] as const) {
+      await createEntity(db, 'units', u, { propertyId: 'objekt-1', name: u.toUpperCase(), areaM2: area, participates: true })
+      await createEntity(db, 'tenancies', `t${u}`, { unitId: u, tenantName: `Mieter ${u.toUpperCase()}`, persons: 1, start: '2020-01-01' })
+    }
+    await createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'heatPump', method: 'manual' })
+    await updateHeatingPlant(db, 'hp', plant)
+  })
+  const setup = await opened.write((db) => setUpSelf(db, 'hp', { period, heatConsumptionPct: 70, waterConsumptionPct: 70, insulationRule: 'notApplies', hotWater: 'combined', capture: 'heatMeter', dhwHeatMeter: true, totalHeatMeter: false }, `${period.slice(0, 4)}-12-10`, newId))
+  const meter = (setup?.created ?? []).find((m) => m.unitId === 'a' && m.type === 'waerme') ?? assert.fail('kein Wärmezähler A')
+  await opened.write((db) => updateEntity(db, 'meters', meter.id, { remoteReadable: true }))
+  const view = await opened.read((db) => monthlyInfoView(db, 'hp', period, `${period.slice(0, 4)}-12-10`)) ?? assert.fail('keine Anlage')
+  return view.managed
+}
+
+test('Prüfung K2: Wärmepumpe, deren Verbrauch noch nicht erfasst werden muss (§ 12 Abs. 3): keine Monate', async () => {
+  await withDatabase(async (opened) => {
+    assert.equal(await waermepumpe(opened, '2025-01', { capturedOnOct2024: false }), false)
+  })
+  await withDatabase(async (opened) => {
+    // Gegenprobe: am 01.10.2024 schon erfasst, die Verordnung gilt.
+    assert.equal(await waermepumpe(opened, '2025-01', { capturedOnOct2024: true }), true)
+  })
+})
+
+test('Prüfung K2: alte Ausnahme der Wärmepumpe (§ 11 Abs. 1 Nr. 3 Buchst. a a. F.): keine Monate, offen gefragt aber schon', async () => {
+  await withDatabase(async (opened) => {
+    assert.equal(await waermepumpe(opened, '2024-01', { capturedOnOct2024: true, heatPumpMajority: 'yes' }), false)
+  })
+  await withDatabase(async (opened) => {
+    // Ohne Antwort rechnet die Abrechnung mit der Information (`majorityOpen`); die Karte ebenso.
+    assert.equal(await waermepumpe(opened, '2024-01', { capturedOnOct2024: true }), true)
+  })
+  await withDatabase(async (opened) => {
+    assert.equal(await waermepumpe(opened, '2024-01', { capturedOnOct2024: true, heatPumpMajority: 'no' }), true)
   })
 })
