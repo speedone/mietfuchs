@@ -345,8 +345,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   auch das ZIP „Belege für die Steuer“ führt sie. Im Kostenformular heißt der Abzug ohne Verweis ohne
   Messdienst „Ja, ich lege ihn nicht um und trage ihn selbst“. Stehen Abzug und Betriebsstrom in verschiedenen
   Steuerjahren, verschiebt sich in der Anlage V nichts mehr; jedes Jahr zeigt die in ihm bezahlten Rechnungen. Der
-  Hinweis dazu und der Satz in der Vorschau beim Wechsel des Abrechnungszeitraums entfallen deshalb. Die Abrechnung an
-  die Mieter ändert sich nicht.
+  Hinweis dazu und der Satz in der Vorschau beim Wechsel des Abrechnungszeitraums entfallen deshalb. Zeigt ein Abzug
+  auf eine Position, die nicht als Betriebsstrom in den Heizkosten gekennzeichnet ist, nennt der Rechenweg den Verweis
+  zum Prüfen; steht neben einem abweichenden verknüpften Abzug einer ohne Verweis, sagt der Hinweis, dass dieser Teil
+  richtig erfasst ist. Die Abrechnung an die Mieter ändert sich nicht.
 - **Hinweis, wenn der Betriebsstrom der Heizung fehlt** ([#224](https://github.com/speedone/mietfuchs/issues/224)):
   Hat eine Zentralheizung mit Brenner im Abrechnungszeitraum weder einen Betriebsstrom noch einen Abzug beim
   Allgemeinstrom, sagt die Abrechnung das, mit dem Weg über die Karte „Betriebsstrom“ (§ 7 Abs. 2, § 8 Abs. 2

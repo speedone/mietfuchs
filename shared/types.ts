@@ -1081,6 +1081,9 @@ export type TaxReport = {
   // getragen), `otherYear` Abzug und Betriebsstrom in verschiedenen Steuerjahren, `mixed` beides, `mismatch` im selben
   // Steuerjahr verschieden hoch. Nur zusammen mit `operatingPowerBalanceCents`.
   operatingPowerBalanceKind?: 'kept' | 'otherYear' | 'mixed' | 'mismatch'
+  // Davon Abzüge ohne Verweis, selbst getragen (Nachprüfung N2 zu #268). Nur zusammen mit `operatingPowerBalanceCents`
+  // und nur ≠ 0; bei `mismatch` sagt der Text, dass dieser Teil richtig erfasst ist.
+  operatingPowerKeptCents?: number
   // Abzüge ohne Verweis, die als dem Messdienst gemeldet gelten, obwohl im Zeitraum zugleich eine Anlage ohne
   // Messdienst heizt (R-6 zu #268). Nur, wenn es welche gibt.
   operatingPowerAmbiguous?: { costItemId: string; description: string; amountCents: number }[]
