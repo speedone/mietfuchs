@@ -605,6 +605,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Bruchteile eines Cents, ein abgeschnittener Download, eine beschädigte Datei im ZIP), wird
   gemeldet statt geraten ([#188](https://github.com/speedone/mietfuchs/issues/188)).
 
+- Der Fehler „Mieter heizt selbst und hängt an Ihrer Heizanlage“ sagt bei einer zentralen Heizung, dass für einen
+  Brennstoffvertrag beim Mieter keine Heizanlage angelegt wird, und nennt den Weg dorthin: Anlage entfernen, die
+  Heizung neu einrichten und beim Liefervertrag den Mieter wählen. Dasselbe steht beim Ändern einer Gas-, Öl-,
+  Flüssiggas- oder Kohleheizung in der Karte „Heizung“. Keine Zahl ändert sich
+  ([#97](https://github.com/speedone/mietfuchs/issues/97)).
+
 ### Behoben
 
 - **Wohnung mit Etagenheizung löschen.** Hingen an einer Wohnung Rechnungen ihrer Etagenheizung, scheiterte das

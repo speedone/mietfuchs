@@ -126,6 +126,23 @@ test('Gemischt mit Heizanlage: wer selbst heizt und Brennstoff der Anlage trägt
   assert.ok(!codes(computeSettlement(snapshotFor(s, 'objekt-1', P))).includes('co2.self-supply-mixed'))
 })
 
+test('Abdeckung V27: zentrale Heizung als Anlage angelegt, Brennstoff beim Mieter: der Fehler sagt, dass dafür keine Anlage angelegt wird und wie man umstellt', () => {
+  const s = co2Source(2025, { co2CostCents: 50000 })
+  const tenancies = s.tenancies.map((t) => (t.id === 'ta' ? { ...t, heatingModel: 'selfSupply' as const } : t))
+  const P = periodOfKey(CALENDAR_RULES, periodKey('2025-01')) ?? assert.fail('kein Zeitraum')
+  const zentral = computeSettlement(snapshotFor({ ...s, tenancies }, 'objekt-1', P))
+  const n = zentral.notices.find((x) => x.code === 'co2.self-supply-mixed') ?? assert.fail(codes(zentral).join(', '))
+  assert.match(n.text, /Bezieht er den Brennstoff dieser zentralen Heizung über einen eigenen Vertrag, legen Sie dafür keine Heizanlage an:/)
+  assert.match(n.text, /„Entfernen“/)
+  assert.match(n.text, /„Wer hat den Liefervertrag für den Brennstoff\?“ „Der Mieter, der alle angeschlossenen Wohnungen gemietet hat“/)
+  assert.doesNotMatch(n.text, /nehmen Sie seine Wohnung aus der Heizanlage/)
+  // Etagenheizung auf Vertrag des Vermieters: Dort bleibt der Weg, die Wohnung aus der Anlage zu nehmen.
+  const plants = (s.heatingPlants ?? []).map((p) => ({ ...p, supply: 'perUnit' as const }))
+  const etage = computeSettlement(snapshotFor({ ...s, tenancies, heatingPlants: plants }, 'objekt-1', P))
+  const e = etage.notices.find((x) => x.code === 'co2.self-supply-mixed') ?? assert.fail(codes(etage).join(', '))
+  assert.match(e.text, /nehmen Sie seine Wohnung aus der Heizanlage/)
+})
+
 // Durchsicht S-2: Zentrale Heizung, Brennstoff beim Mieter. Ihr Betriebsstrom darf nicht im Allgemeinstrom stehen, den
 // auch andere Mieter tragen (BGH, Urteil vom 03.06.2016, V ZR 166/15, Rn. 13).
 test('S-2: zentrale Heizung beim Mieter, Allgemeinstrom auch bei anderen Mietern: Hinweis zum Betriebsstrom, färbt die Ampel nicht', () => {

@@ -122,6 +122,15 @@ export const FUEL_CONTRACT_OPTIONS: { value: FuelContract; label: string }[] = [
 const SELF_SUPPLY_FUELS: readonly HeatingEnergy[] = ['gas', 'oil', 'lpg', 'coal']
 export const asksFuelContract = (form: Pick<HeatingForm, 'energy' | 'contracting'>, editingId: string | null): boolean =>
   editingId === null && form.energy !== '' && form.energy !== 'perUnit' && SELF_SUPPLY_FUELS.includes(billingEnergy({ energy: form.energy, contracting: form.contracting }))
+// Abdeckung V27: Beim Ändern fragt die Karte nicht mehr nach dem Liefervertrag. Wer eine zentrale Heizung als Anlage
+// angelegt hat, deren Brennstoff ein Mieter bezieht, bekommt sonst nur den Fehler `co2.self-supply-mixed`; die Karte
+// sagt den Weg schon hier.
+export const editFuelContractNote = (form: Pick<HeatingForm, 'energy' | 'contracting'>, editingId: string | null): string | null =>
+  editingId !== null && form.energy !== '' && form.energy !== 'perUnit' && SELF_SUPPLY_FUELS.includes(billingEnergy({ energy: form.energy, contracting: form.contracting }))
+    ? 'Hat ein Mieter den Liefervertrag für den Brennstoff dieser Heizung, legen Sie dafür keine Heizanlage an: Klicken Sie unter der Anlage auf ' +
+      '„Entfernen“ (die Heizpositionen bleiben, nur ohne Anlage), dann auf „Heizung einrichten“, und wählen Sie bei „Wer hat den Liefervertrag für den Brennstoff?“ ' +
+      '„Der Mieter, der alle angeschlossenen Wohnungen gemietet hat“.'
+    : null
 
 // Womit Etagenheizungen auf Vertrag des Vermieters heizen können (Heizung PR 9). Ohne Vorratsenergien:
 // Der Vorrat wird je Heizanlage geführt, nicht je Wohnung.
