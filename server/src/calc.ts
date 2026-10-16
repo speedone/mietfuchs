@@ -1782,7 +1782,7 @@ function operatingPowerBalanceItem(
     }
     if (byArea) {
       const why = quotaUnusable
-        ? 'denn der Heizanteil der Anlage taugt hier nicht als Maßstab: Eine Gutschrift mit anderem Schlüssel oder anderen Beteiligten als die Rechnung lässt ihn außerhalb von 0 bis 100 % liegen'
+        ? 'denn der Heizanteil der Anlage taugt hier nicht als Maßstab: Eine Gutschrift mit anderem Schlüssel oder anderen Beteiligten als die Rechnung lässt ihn unter null oder über den ganzen Betrag steigen'
         : 'denn ein Abzug ohne Verweis gehört zu keiner bestimmten Anlage'
       steps.push({ label: 'Zuordnung', value: `nach Wohn- und Nutzfläche des ganzen Gebäudes wie bei Kosten des ganzen Gebäudes, ${why}; das ist eine Auslegung von Mietfuchs`, term: 'mixedUse' })
       steps.push({ label: 'Betroffene Fläche', value: `${fmtNum(totalArea)} m² (ganzes Gebäude), davon selbstgenutzt ${fmtNum(selfArea)} m²` })
