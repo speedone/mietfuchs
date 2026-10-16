@@ -120,3 +120,19 @@ describe('Fälligkeit des laufenden Monats als Auskunft', () => {
     expect(rentDueNote(2027, new Date(2026, 9, 6), 'BY')).toBeNull()
   })
 })
+
+describe('Fälligkeit: Feiertage einzelner Gemeinden', () => {
+  // Fronleichnam am 03.06.2021 gilt in Sachsen nur in einzelnen Gemeinden. Landesweit ist der dritte
+  // Werktag der 03.06., dort aber der 04.06.; ohne Hinweis nennte die Auskunft für diese Gemeinden einen Tag
+  // zu früh, und ein Vermieter hielte eine pünktliche Zahlung für verspätet.
+  it('nennt einen gemeindeweisen Feiertag, der die Frist dort verschiebt', () => {
+    const note = rentDueNote(2021, new Date(2021, 5, 1), 'SN')
+    expect(note).toMatch(/fällig bis Do\., 03\.06\.2021 /)
+    expect(note).toMatch(/In Gemeinden, in denen am 03\.06\. Fronleichnam gilt, ist es ein Werktag später\./)
+  })
+
+  it('schweigt, wenn kein gemeindeweiser Feiertag in die Frist fällt', () => {
+    expect(rentDueNote(2026, new Date(2026, 9, 6), 'BY')).not.toMatch(/Gemeinden/)
+    expect(rentDueNote(2021, new Date(2021, 5, 1), 'BE')).not.toMatch(/Gemeinden/)
+  })
+})

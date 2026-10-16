@@ -937,7 +937,8 @@ Maßgeblich ist das Land des Objekts (`properties.state`, eine der 16 Kennungen 
   Abrechnung damit rechnet; rechnet calc.ts einmal mit einer Frist, dann mit `law()` und Protokoll.
 - **Gemeindeweise Feiertage werden nicht geraten** (Mariä Himmelfahrt in Bayern, Augsburger
   Friedensfest, Fronleichnam in Teilen Sachsens und Thüringens): `localHolidaysOf` nennt sie, gezählt
-  werden sie nie. **Ohne Land** zählen nur die Tage, die in allen 16 Ländern Feiertag sind; eine Frist
+  werden sie nie. Fällt einer bis zum Fälligkeitstag auf einen Werktag (Fronleichnam am 03.06.2021 in
+  Sachsen), sagt die Auskunft im Mietkonto, dass es dort ein Werktag später ist. **Ohne Land** zählen nur die Tage, die in allen 16 Ländern Feiertag sind; eine Frist
   kann dann einen Tag früher erscheinen als am Ort, und die Oberfläche sagt das.
 - `isWorkday` verlangt die Angabe, ob der Samstag zählt; es gibt keine Voreinstellung.
   `rentDueDate` ist der dritte Werktag ohne Samstag, `deadlineOnWorkday` das Fristende nach § 193 BGB.
