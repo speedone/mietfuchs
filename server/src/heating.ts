@@ -26,14 +26,15 @@
 //
 // Die Gradtagstabelle und die Warngrenze kommen als Argument herein (Register, `law()` in calc.ts).
 import { degreeDayPermille } from '../../shared/degreeDays.ts'
-import type { DegreeDayTable, HeatPumpCapture } from '../../shared/law/heizkostenv.ts'
+import { hkvHeatPumpCapture, hkvRenewableExemption, type DegreeDayTable, type HeatPumpCapture } from '../../shared/law/heizkostenv.ts'
+import { generatorEnergy } from '../../shared/heatDelivery.ts'
 import type { ReadingOffWarning } from '../../shared/law/practice.ts'
-import { dayAfter, dayBefore, shiftMonths, type LawLog } from '../../shared/law/register.ts'
+import { dayAfter, dayBefore, law, shiftMonths, type LawLog, type Period } from '../../shared/law/register.ts'
 import { dhwInputOf, dhwShareOf, type DhwContext, type DhwProblem } from './dhw.ts'
 import { lineRoot } from '../../shared/heatingPeriod.ts'
 import type {
   SelfSpanRange,
-  AreaBasisHeat, CaptureMethod, ChangeSplit, ComparableUnit, EstimatePart, EstimateProposal, DhwMethod, DhwStatement, HeatingEnergy, HeatingPart, HeatingTarget, HotWater, InsulationRule, InterimGap, InterimGapStatus, MeterType, SelfPot, SelfReadingView, SelfRole,
+  AreaBasisHeat, CaptureMethod, ChangeSplit, ComparableUnit, EstimatePart, EstimateProposal, DhwMethod, DhwStatement, HeatingEnergy, HeatingPart, HeatPumpMajority, HeatingTarget, HotWater, InsulationRule, InterimGap, InterimGapStatus, MeterType, SelfPot, SelfReadingView, SelfRole,
 } from '../../shared/types.ts'
 
 export type SelfUnit = { id: string; name: string; areaM2: number; heatedAreaM2: number | null; role: 'rented' | 'self' | 'outside' }
@@ -825,3 +826,38 @@ export function heatPumpVerdict(
   }
   return { kind: 'applies' }
 }
+
+// Die Lage einer Wärmepumpe in einer Heizperiode, für Abrechnung und Ansicht dieselbe (Prüfung K2 zu Heizung PR 22).
+// `verdict`: § 12 Abs. 3 HeizkostenV (siehe `heatPumpVerdict`). `oldExemption`: § 11 Abs. 1 Nr. 3 Buchst. a a. F.
+// (überwiegend Wärme aus Wärmepumpen), außer die Anlage verneint es; `majorityOpen`: ohne Antwort oder „weiß nicht“.
+// Beides hängt am Wärmeerzeuger (`generatorEnergy`, Durchsicht von #272, M1). Die Rechtswerte werden in dieser
+// Reihenfolge ins Protokoll eingetragen: erst die Ausnahme, dann die Erfassung.
+export type HeatPumpStatus = { verdict: HeatPumpVerdict | null; renewable: { readonly heatPump: boolean } | null; oldExemption: boolean; majorityOpen: boolean }
+export function heatPumpStatus(
+  plant: {
+    energy: HeatingEnergy; fuelEnergy?: HeatingEnergy; capturedOnOct2024?: boolean | null; captureInstalledOn?: string | null
+    heatPumpInstalledOn?: string | null; heatPumpMajority?: HeatPumpMajority | null
+  },
+  period: Period,
+  log: LawLog,
+): HeatPumpStatus {
+  const generator = generatorEnergy(plant)
+  const renewable = generator === 'heatPump' ? law(hkvRenewableExemption, { period }, log) : null
+  const majority = plant.heatPumpMajority ?? null
+  const oldExemption = renewable?.heatPump === true && majority !== 'no'
+  const majorityOpen = oldExemption && majority !== 'yes'
+  const verdict = generator === 'heatPump'
+    ? heatPumpVerdict(
+      { energy: generator, capturedOnOct2024: plant.capturedOnOct2024 ?? null, captureInstalledOn: plant.captureInstalledOn ?? null, heatPumpInstalledOn: plant.heatPumpInstalledOn ?? null },
+      period.from, law(hkvHeatPumpCapture, { date: period.from }, log),
+    )
+    : null
+  return { verdict, renewable, oldExemption, majorityOpen }
+}
+
+// Gibt es nach dieser Lage keine Informationen nach § 6a? Gilt die Verordnung für die Wärmepumpe noch nicht (§ 12
+// Abs. 3) oder galt die Ausnahme des § 11 Abs. 1 Nr. 3 Buchst. a a. F. (mit „Ja“ beantwortet), nicht. Bei offener
+// Antwort rechnet Mietfuchs mit der Information. Abrechnung (`heating.monthly-info`) und Karte der monatlichen
+// Verbrauchsinformation fragen dieselbe Funktion.
+export const heatPumpWithoutMonthlyInfo = (s: Pick<HeatPumpStatus, 'verdict' | 'oldExemption' | 'majorityOpen'>): boolean =>
+  s.verdict?.kind === 'notYet' || (s.oldExemption && !s.majorityOpen)
