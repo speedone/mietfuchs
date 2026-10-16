@@ -34,7 +34,7 @@ import { dayAfter } from '../../../shared/law/register.ts'
 import type { BillingPeriod, CostItem, PeriodChangePreview, PeriodEffect, PeriodKey, PeriodRules, Property, Tenancy } from '../../../shared/types.ts'
 import { baseDescription, splitByService, splitDeductionsAlike, type ServicePart } from '../serviceSplit.ts'
 import type { Database, Transaction } from './client.ts'
-import { readClosedSettlements, readCostItems, readHeatingPlants, readProperties, readStock, readTenancies, readUnits } from './read.ts'
+import { readClosedSettlements, readCostItems, readFuelDeliveries, readHeatingPlants, readProperties, readStock, readTenancies, readUnits } from './read.ts'
 import { dryRun, earliestTenancyStart, lostClaims, outcomeOf } from './dryRun.ts'
 import { HeatingError, PeriodConflict, PeriodError, rewriteCostItemFamily, settleOperatingPowerLinks, writeCostItemParts } from './repository.ts'
 import { assessmentLines, assessments, closedSettlementHistory, periodChanges, prepaymentOverrides, properties } from './schema.ts'
@@ -111,7 +111,7 @@ const overlapDays = (a: BillingPeriod, b: BillingPeriod): number => {
 // Der neue Zeitraum für Daten eines bisherigen: derselbe Schlüssel, wenn es ihn noch gibt, sonst
 // der mit der größten Überschneidung, bei Gleichstand der frühere.
 function bestFor(a: Affected, options: readonly BillingPeriod[]): BillingPeriod {
-  if (a.now !== null) return a.now
+  if (a.now !== null && options.some((p) => p.key === a.now?.key)) return a.now
   let best = options[0] ?? a.old
   for (const p of options) if (overlapDays(p, a.old) > overlapDays(best, a.old)) best = p
   return best
@@ -209,6 +209,13 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
   // steht, ergibt sich danach von selbst (Entwurf 3.0).
   const plants = (await readHeatingPlants(db)).filter((p) => p.propertyId === propertyId)
   const ownPlantIds = new Set(plants.filter((p) => p.periodStartMonth !== null).map((p) => p.id))
+  // Abdeckung V20: das Rechnungsende je Brennstoffrechnung, wie es die Prüfung beim Speichern liest (repository.ts).
+  const deliveryEnd = new Map((await readFuelDeliveries(db)).map((d) => [d.id, d.invoiceTo ?? d.deliveredAt]))
+  const requiredPeriodOf = (item: CostItem): PeriodKey | null => {
+    if (!item.fuelDeliveryId || !item.heatingPlantId || ownPlantIds.has(item.heatingPlantId)) return null
+    const end = deliveryEnd.get(item.fuelDeliveryId)
+    return end ? periodContaining(next, end).key : null
+  }
   const closed = (await readClosedSettlements(db)).filter((c) => c.propertyId === propertyId)
   const history = await db.select({ period: closedSettlementHistory.period }).from(closedSettlementHistory).where(eq(closedSettlementHistory.propertyId, propertyId))
   const assessmentRows = await db.select({ id: assessments.id, file: assessments.file, period: assessments.requestedPeriod }).from(assessments).where(eq(assessments.propertyId, propertyId))
@@ -359,8 +366,12 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
     // Jahresrechnung gegen wenige Monate Vorauszahlung; deshalb wird das Aufteilen nach Tagen über den
     // bisherigen Zeitraum angeboten und vorbelegt. Heizkosten nie (VIII ZR 156/11, Entwurf 3.4).
     const heating = item.category === HEATING_CATEGORY
-    const id = heating ? `${a.key}|heizung` : a.key
-    const g = groups.get(id) ?? { from: a.key, old: a.old, heating, items: [], options: optionsFor(a), split: heating ? null : new Map<string, ServicePart[]>() }
+    // Abdeckung V20: Eine Position, die mit einer Brennstoffrechnung verknüpft ist, gehört in die Heizperiode, in der die
+    // Rechnung endet; das Speichern lehnt jeden anderen Zeitraum ab. Die Vorschau bietet deshalb nur diesen an.
+    const required = heating ? requiredPeriodOf(item) : null
+    const id = heating ? (required ? `${a.key}|heizung|${required}` : `${a.key}|heizung`) : a.key
+    const allowed = optionsFor(a).filter((p) => required === null || p.key === required)
+    const g = groups.get(id) ?? { from: a.key, old: a.old, heating, items: [], options: allowed.length > 0 ? allowed : optionsFor(a), split: heating ? null : new Map<string, ServicePart[]>() }
     g.items.push(item)
     if (g.split !== null) {
       const parts = splitByService(next, { ...item, serviceFrom: a.old.from, serviceTo: a.old.to })

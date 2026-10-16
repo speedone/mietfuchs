@@ -14,6 +14,10 @@
 //   I4 Ist der Strom nach Fläche über alle Einheiten verteilt und gibt es keine Heizposition „steckt auch in der
 //      Stromrechnung“, ist die Steuer mit selbst getragenem Abzug (ohne Verweis, ohne Messdienst) dieselbe wie ohne
 //      Abzug: gleicher Betrag, privat auf höchstens einen Cent gleich (zwei Rundungen).
+//   I5 (Integrationsdurchsicht M1) Mit Gutschriften in den Heizkosten (negative Heizposition mit eigenem Schlüssel
+//      oder eigenen Teilnehmern, bis fast zur Höhe der Rechnung): Je Zeile hat der private Teil das Vorzeichen des
+//      Betrags und liegt betragsmäßig nicht über ihm; an der Zeile zum Ausgleich liegt er zwischen ihren beiden
+//      Richtungen (Abzüge und Betriebsstrom in den Heizkosten des Steuerjahres).
 // Mehr Startwerte mit INV_FROM/INV_TO.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -41,7 +45,7 @@ const YEARS = [2025, 2026]
 
 type Stock = { source: Source; service: boolean; selfUsed: boolean }
 
-function randomStock(rnd: Rng, opts: { generalKey?: CostKey; noIncluded?: boolean; deductions?: 'none' | 'unlinked' | 'random'; method?: 'manual' | 'service' } = {}): Stock {
+function randomStock(rnd: Rng, opts: { generalKey?: CostKey; noIncluded?: boolean; deductions?: 'none' | 'unlinked' | 'random'; method?: 'manual' | 'service'; credits?: boolean } = {}): Stock {
   const pick = <T>(arr: readonly T[]): T => arr[Math.floor(rnd() * arr.length)] as T
   const cents = (min: number, max: number) => Math.round((min + rnd() * (max - min)) * 100)
   const unitCount = 1 + Math.floor(rnd() * 3)
@@ -94,6 +98,18 @@ function randomStock(rnd: Rng, opts: { generalKey?: CostKey; noIncluded?: boolea
           ...(link ? { operatingPowerItemId: link } : {}),
         })
       }
+    }
+  }
+  // I5: Gutschriften in den Heizkosten, zuletzt gezogen, damit die Bestände ohne sie gleich bleiben.
+  if (opts.credits) {
+    for (const year of YEARS) {
+      if (rnd() < 0.4) continue
+      const period = periodKey(`${year}-01`)
+      const gas = items.find((c) => c.id === `gas${year}`)?.amountCents ?? 0
+      items.push({
+        id: `gut${year}`, propertyId: 'objekt-1', period, category: HEATING_CATEGORY, description: `Gutschrift ${year}`,
+        amountCents: -Math.max(1, Math.round(gas * (0.05 + rnd() * 0.94))), key: pick(heatKeys), heatingPlantId: 'hp1', heatingPart: 'fuel', ...subset(),
+      })
     }
   }
   const source = {
@@ -154,4 +170,36 @@ test('#268 Invariante I4: Strom nach Fläche, Abzug ohne Verweis und ohne Messdi
     }
   }
   assert.ok(compared > 0)
+})
+
+test('#268 Invariante I5 (M1): mit Gutschriften in den Heizkosten privat mit dem Vorzeichen des Betrags und nie darüber', () => {
+  let credits = 0
+  let balanceLines = 0
+  for (const seed of SEEDS) {
+    const { source } = randomStock(makeRng(seed), { credits: true })
+    credits += source.costItems.filter((c) => c.id.startsWith('gut')).length
+    for (const year of YEARS) {
+      const r = taxReportFor(source, 'objekt-1', year)
+      const at = `Startwert ${seed}, ${year}`
+      const own = yearItems(source, year)
+      for (const i of r.expenses.items) {
+        assert.equal(i.privateCents + i.deductibleCents, i.amountCents, `${at}: ${i.costItemId} Summe`)
+        if (i.operatingPowerBalance) {
+          // Die Zeile zum Ausgleich verrechnet zwei Richtungen, Abzüge (+) und Betriebsstrom in den Heizkosten (−), jede mit
+          // ihrem eigenen Maßstab (Fläche beim Abzug ohne Verweis, Heizanteil sonst). Ihr privater Teil liegt deshalb
+          // zwischen den beiden Richtungen und nicht zwingend im Saldo; außerhalb davon war die Quote kein Anteil.
+          balanceLines++
+          const up = own.filter((c) => c.operatingPower === 'deduction').reduce((a, c) => a - c.amountCents, 0)
+          const down = own.filter((c) => c.operatingPower === 'included').reduce((a, c) => a + c.amountCents, 0)
+          assert.ok(i.privateCents >= -down && i.privateCents <= up, `${at}: Ausgleich privat ${i.privateCents} außerhalb −${down} … +${up}`)
+          if (up === 0 || down === 0) assert.ok(Math.abs(i.privateCents) <= Math.abs(i.amountCents), `${at}: Ausgleich privat ${i.privateCents} über dem Betrag ${i.amountCents}`)
+          continue
+        }
+        assert.ok(Math.abs(i.privateCents) <= Math.abs(i.amountCents), `${at}: ${i.costItemId} privat ${i.privateCents} über dem Betrag ${i.amountCents}`)
+        assert.ok(i.privateCents === 0 || Math.sign(i.privateCents) === Math.sign(i.amountCents), `${at}: ${i.costItemId} privat ${i.privateCents} gegen Betrag ${i.amountCents}`)
+      }
+      assert.equal(r.expenses.privateCents + r.expenses.deductibleCents, r.expenses.totalCents, `${at}: Summe`)
+    }
+  }
+  assert.ok(credits > 0 && balanceLines > 0, `Gutschriften ${credits}, Ausgleichszeilen ${balanceLines}`)
 })

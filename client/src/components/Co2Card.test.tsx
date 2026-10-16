@@ -6,7 +6,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import Co2Card from './Co2Card'
 import { UIProvider } from './feedback'
-import { CO2_QUESTION } from '../co2Form'
+import { CO2_NOT_A_SIGN, CO2_QUESTION } from '../co2Form'
 import { periodKey } from '../../../shared/period.ts'
 import type { Co2Statement, HeatingPeriodView, Tenancy } from '../types'
 import { noInfoView } from '../testing/heatingView'
@@ -99,4 +99,17 @@ test('B22: Das Feld für die eigene Wohnung gibt es nur mit selbst bewohnter Woh
   cleanup()
   render(<Co2Card view={view(deducted)} tenancies={TENANCIES} unitsCount={1} hasSelfUsed onSaved={() => {}} />)
   expect(screen.getByLabelText(/davon für Ihre selbst bewohnte Wohnung/)).toBeTruthy()
+})
+
+test('Abdeckung V14: Eigentumswohnung fragt nach den Heizkosten der eigenen Wohnung und spricht nicht vom Messdienst', () => {
+  render(<Co2Card view={view(shown)} tenancies={TENANCIES} unitsCount={6} homeowners onSaved={() => {}} />)
+  expect(screen.getByLabelText('Heizkosten Ihrer Wohnung laut Einzelabrechnung (€)')).toBeTruthy()
+  expect(screen.getByLabelText('davon Vermieter für Ihre Wohnung (€)')).toBeTruthy()
+  expect(screen.queryByLabelText('Summe der Kosten aller Nutzer (€)')).toBeNull()
+  expect(screen.getByText(/Nicht gemeint ist die Summe des ganzen Hauses/)).toBeTruthy()
+  // Allgemein über Messdienste spricht nur der Satz, dass „vom Vermieter übernommen“ kein Zeichen ist.
+  expect((document.body.textContent ?? '').replace(CO2_NOT_A_SIGN, '')).not.toMatch(/Messdienst/)
+  // Durchsicht #297 S-B: beizulegen ist die Einzelabrechnung Heizung der Wohnung, nicht die Hausgeldabrechnung.
+  expect(document.body.textContent ?? '').toMatch(/legen Sie deshalb die Einzelabrechnung \(Heizung\) Ihrer Wohnung bei\./)
+  expect(document.body.textContent ?? '').not.toMatch(/Abrechnung der Gemeinschaft bei/)
 })

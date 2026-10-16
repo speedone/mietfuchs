@@ -1692,7 +1692,7 @@ function operatingPowerBalanceItem(
   const areaOk = selfUnits.length === 0 || (missing.length === 0 && totalArea > 0)
 
   // Eigenanteil an den Heizkosten einer Anlage in einem Teil, wie diese Übersicht die Heizpositionen aufteilt.
-  const heatQuota = (part: number, plant: string | null): { privateCents: number; amountCents: number } | null => {
+  const heatQuota = (part: number, plant: string | null): { privateCents: number; amountCents: number } | 'unusable' | null => {
     const p = used[part]
     const s = splits[part]
     if (!p || !s) return null
@@ -1705,7 +1705,14 @@ function operatingPowerBalanceItem(
       privateCents += x.privateCents
       amountCents += x.amountCents
     }
-    return amountCents > 0 ? { privateCents, amountCents } : null
+    // Durchsicht #297 K3: Heizkosten der Anlage netto ≤ 0 (Gutschrift über der Rechnung) sind ebenso kein Maßstab; ganz
+    // ohne Heizposition bleibt es beim Rückfall wie beim Abzug ohne Verweis.
+    if (amountCents === 0 && privateCents === 0) return null
+    if (!(amountCents > 0)) return 'unusable'
+    // Integrationsdurchsicht M1: Eine Gutschrift mit eigenem Schlüssel oder eigenen Teilnehmern kann den Nenner fast
+    // aufzehren; dann liegt die Quote außerhalb 0…1 (gemessen 875 %), und der private Teil stünde über dem Betrag, auch
+    // mit falschem Vorzeichen. Eine solche Quote ist kein Heizanteil; es gilt dann die Fläche wie beim Abzug ohne Verweis.
+    return privateCents >= 0 && privateCents <= amountCents ? { privateCents, amountCents } : 'unusable'
   }
 
   const steps: CalcStep[] = []
@@ -1748,11 +1755,14 @@ function operatingPowerBalanceItem(
   // Der private Teil, Beitrag für Beitrag.
   let raw = 0
   let byArea = false
+  let quotaUnusable = false
   let unsplittable = false
   const quotaSteps: CalcStep[] = []
   const seen = new Set<string>()
   for (const s of balance.sources) {
-    const q = s.plant !== undefined ? heatQuota(s.part, s.plant) : null
+    const quota = s.plant !== undefined ? heatQuota(s.part, s.plant) : null
+    if (quota === 'unusable') quotaUnusable = true
+    const q = quota === 'unusable' ? null : quota
     if (q) {
       raw += (s.cents * q.privateCents) / q.amountCents
       const key = `${s.part}|${s.plant}`
@@ -1774,7 +1784,10 @@ function operatingPowerBalanceItem(
       steps.push(...quotaSteps)
     }
     if (byArea) {
-      steps.push({ label: 'Zuordnung', value: 'nach Wohn- und Nutzfläche des ganzen Gebäudes wie bei Kosten des ganzen Gebäudes, denn ein Abzug ohne Verweis gehört zu keiner bestimmten Anlage; das ist eine Auslegung von Mietfuchs', term: 'mixedUse' })
+      const why = quotaUnusable
+        ? 'denn der Heizanteil der Anlage taugt hier nicht als Maßstab: Eine Gutschrift mit anderem Schlüssel oder anderen Beteiligten als die Rechnung lässt ihn unter null oder über den ganzen Betrag steigen'
+        : 'denn ein Abzug ohne Verweis gehört zu keiner bestimmten Anlage'
+      steps.push({ label: 'Zuordnung', value: `nach Wohn- und Nutzfläche des ganzen Gebäudes wie bei Kosten des ganzen Gebäudes, ${why}; das ist eine Auslegung von Mietfuchs`, term: 'mixedUse' })
       steps.push({ label: 'Betroffene Fläche', value: `${fmtNum(totalArea)} m² (ganzes Gebäude), davon selbstgenutzt ${fmtNum(selfArea)} m²` })
     }
     if (unsplittable) {
@@ -3874,6 +3887,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // Die erste Heizposition, über die ein Mieter abgerechnet wird; an ihr hängt der Hinweis zur
   // Fernablesbarkeit (heating-remote-reading), einmal je Abrechnung.
   let heatingBilledItem: SnapshotCostItem | undefined
+  const fuelOwnCarries: SnapshotCostItem[] = []
   // Eine Einheit ohne Wärmeanschluss (#117) oder eine Garage-artige (0 m², niemand wohnt dort) ist
   // bei Heizung und Warmwasser keine beteiligte Wohnung: keine Warnung zur Warmmiete, kein
   // Kürzungsbetrag (zweite Browserabnahme). Verteilt wird weiter wie erfasst.
@@ -4459,11 +4473,17 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Verordnung nicht (§ 1 Abs. 1 Nr. 1 HeizkostenV: „zentraler Heizungsanlagen“), und beim einzigen Nutzer einer
     // zentralen Anlage wird nichts „auf die Nutzer“ verteilt (Auslegung am Wortlaut). Was er für Wartung oder
     // Betriebsstrom trägt, kann er deshalb nicht nach § 12 kürzen.
-    const heatingReceived = item.category === HEATING_CATEGORY && !carry
+    // Integrationsdurchsicht S2: Ein Übertrag `fuel:`, dessen Rechnung in einem anderen Zeitraum steht, ist in diesem
+    // Zeitraum der einzige Teil dieser Heizkosten. Für § 12 HeizkostenV, die Deckung nach Verbrauch und den Hinweis zur
+    // Fernablesung zählt er deshalb wie eine Position; der Übertrag aus einer Rechnung dieses Zeitraums (Anteil für einen
+    // anderen) gehört dagegen zu ihr (unten).
+    const ownCarry = !!carry && item.id.startsWith('fuel:') && !items.some((c) => c.id === carry.itemId)
+    if (ownCarry) fuelOwnCarries.push(item)
+    const heatingReceived = item.category === HEATING_CATEGORY && (!carry || ownCarry)
       ? targets.flatMap((x, i) => (booked[i] && statements.has(x.t.id) && shareOf(i) > 0 && !outsideHeating(x.t.unit) && x.t.heatingModel !== 'selfSupply' ? [{ x, share: shareOf(i) }] : []))
       : []
     if (heatingReceived.length > 0) heatingBilledItem ??= item
-    if (item.category === HEATING_CATEGORY && item.key !== 'direct' && !carry) {
+    if (item.category === HEATING_CATEGORY && item.key !== 'direct' && (!carry || ownCarry)) {
       const received = heatingReceived
       if (heatingByConsumption(item.key)) {
         // Gedeckt nur durch eine Position mit positivem Betrag, die wirklich nach Verbrauch verteilt
@@ -4484,16 +4504,21 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           for (const { x } of received) heatingCovered.add(x.t.unitId)
         }
       } else {
+        // Mit Vorzeichen (Integrationsdurchsicht S2): Ein Übertrag kann den Anteil einer Gutschrift ins Positive drehen und
+        // umgekehrt; gekürzt wird nur, was netto positiv bleibt (unten).
         heatingCuts.push({
           item,
-          rows: received.map(({ x, share }) => ({ unitId: x.t.unitId, label: `${x.t.tenantName} (${x.t.unit.name})`, share })),
+          rows: targets.flatMap((x, i) => (booked[i] && statements.has(x.t.id) && shareOf(i) !== 0 && !outsideHeating(x.t.unit) && x.t.heatingModel !== 'selfSupply'
+            ? [{ unitId: x.t.unitId, label: `${x.t.tenantName} (${x.t.unit.name})`, share: shareOf(i) }] : [])),
         })
       }
     }
     // Die Überträge aus dem Vorrat (Heizung PR 8) gehören zu den Heizkosten, die der Mieter trägt: Die
     // Kürzung nach § 12 Abs. 1 HeizkostenV wird auf seinen Anteil samt Übertrag gerechnet (Durchsicht von
     // #237, M3); sie stehen bei der Position, deren Schlüssel sie folgen.
-    if (carry && item.id.startsWith('stock:') && item.category === HEATING_CATEGORY) {
+    // Ebenso der Übertrag `fuel:` aus einer Rechnung dieses Zeitraums für einen anderen (Integrationsdurchsicht S2): Er
+    // mindert den Anteil, den der Mieter hier trägt, und damit die Kürzung.
+    if (carry && (item.id.startsWith('stock:') || (item.id.startsWith('fuel:') && !ownCarry)) && item.category === HEATING_CATEGORY) {
       const cutOf = heatingCuts.find((c) => c.item.id === carry.itemId)
       if (cutOf) {
         targets.forEach((x, i) => {
@@ -5450,20 +5475,26 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         // sichtbarer Fehler ist besser als ein Anteil, der still zweimal privat steht.
         // Laienprobe B20: ohne Formelbuchstaben, mit den Namen der Positionen und der Rechnung in Worten.
         const approxText = st.serviceUsersTotalApprox ? ' Die Summe der Kosten aller Nutzer ist geschätzt als Summe der Einzelbeträge aller Nutzeinheiten; dafür gilt der Rundungsspielraum auch für den Betrag.' : ''
+        // Abdeckung V14: Bei einer Eigentumswohnung rechnet die Gemeinschaft ab, und gemeint ist der eigene Anteil laut
+        // Einzelabrechnung der Wohnung, nicht die Summe des Hauses.
+        const homeowners = potPlant?.source === 'homeowners'
+        const usersName = homeowners ? 'die Heizkosten Ihrer Wohnung laut Einzelabrechnung' : 'die Summe der Kosten aller Nutzer'
+        const landlordName = homeowners ? 'den CO₂-Anteil des Vermieters für Ihre Wohnung' : 'den CO₂-Anteil des Vermieters'
         if (!pot.probe.ok && settledHere) {
           const names = andList(pot.serviceItems.map((c) => `„${c.description}“`))
           const lines = `${pot.serviceItems.length === 1 ? 'Ihre Position' : 'Ihre Positionen'} ${names} ${pot.serviceItems.length === 1 ? 'hat' : 'haben zusammen'} ${fmtCents(pot.probe.itemsCents)}. ` +
-            `Mit Abzugszeile muss der Betrag die Summe der Kosten aller Nutzer (${fmtCents(S)}) plus den CO₂-Anteil des Vermieters (${fmtCents(L)}) sein, also ${fmtCents(S + L)}; ohne Abzugszeile genau die Summe der Kosten aller Nutzer, ${fmtCents(S)}.`
+            `Mit Abzugszeile muss der Betrag ${usersName} (${fmtCents(S)}) plus ${landlordName} (${fmtCents(L)}) sein, also ${fmtCents(S + L)}; ohne Abzugszeile genau ${usersName}, ${fmtCents(S)}.` +
+            (homeowners ? ' Gemeint ist der Anteil Ihrer Wohnung aus der Hausgeldabrechnung, nicht die Summe des ganzen Hauses.' : '')
           const entered = pot.probe.enteredOk
             ? ''
-            : ` Die eingetragenen Einzel- und Eigenbeträge ergeben zusammen ${fmtCents(pot.probe.enteredCents)}, mehr als die Summe der Kosten aller Nutzer und der Rundungsspielraum von ${fmtCents(pot.probe.toleranceCents)}; steht der CO₂-Anteil Ihrer Wohnung schon im Eigenbetrag, tragen Sie dort nur den Betrag der Abrechnung ein.`
+            : ` Die eingetragenen Einzel- und Eigenbeträge ergeben zusammen ${fmtCents(pot.probe.enteredCents)}, mehr als ${usersName} und der Rundungsspielraum von ${fmtCents(pot.probe.toleranceCents)}; steht der CO₂-Anteil Ihrer Wohnung schon im Eigenbetrag, tragen Sie dort nur den Betrag der Abrechnung ein.`
           const cut = law(co2CutMissing, { period: hPeriod }, lawLog)
           warn('co2.sum-check',
             `${where}: Die Probe der CO₂-Angaben geht nicht auf.${approxText} ${lines}${entered} Bis das geklärt ist, bucht Mietfuchs keine CO₂-Aufteilung, und die Mieter tragen ihre Einzelbeträge wie eingetragen. ` +
               (st.method === 'serviceShown'
                 ? `Stimmt Ihre Antwort, dass die Abrechnung die CO₂-Kosten nur ausweist, tragen die Mieter auch den CO₂-Anteil des Vermieters von ${fmtCents(L)} mit; den dürfen Sie nicht auf sie umlegen, eine Vereinbarung, nach der der Mieter mehr als seinen Anteil trägt, ist unwirksam (§ 5 Abs. 2, § 6 Abs. 1 CO2KostAufG). `
                 : '') +
-              `Fehlt die Aufteilung auch in der Abrechnung des Messdienstes, die die Mieter bekommen, darf jeder Mieter seinen Anteil an den Heizkosten um ${cut} % kürzen (§ 7 Abs. 4 CO2KostAufG)${cutsOn(ids, cut)}. ` +
+              `Fehlt die Aufteilung auch in ${homeowners ? 'der Einzelabrechnung (Heizung) Ihrer Wohnung,' : 'der Abrechnung des Messdienstes, die die Mieter bekommen,'} darf jeder Mieter seinen Anteil an den Heizkosten um ${cut} % kürzen (§ 7 Abs. 4 CO2KostAufG)${cutsOn(ids, cut)}. ` +
               'Prüfen Sie den Betrag der Position (bezahlt, also vor „Abzüglich CO₂-Kosten Vermieter“) und Ihre Antwort auf die Frage nach der Abzugszeile.',
             plantSubject)
         } else if (pot.probe.ok && st.serviceUsersTotalApprox) {
@@ -6894,12 +6925,16 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // Die Grenzen 50 und 70 % (`hkv.consumption-share`) fragt heatingFindings nur ab, wenn es eine
   // Wohnung mit Verbrauchs- und Grundkostenposition gibt.
   const consumptionShare = () => law(hkvConsumptionShare, { period: lawPeriod }, lawLog)
-  const heating = heatingFindings(items, snapshot.units.filter((u) => !outsideHeating(u)), heatingCovered, consumptionShare)
+  const heatingUnits = snapshot.units.filter((u) => !outsideHeating(u))
+  const heating = heatingFindings(items, heatingUnits, heatingCovered, consumptionShare)
+  // Die Überträge aus Rechnungen anderer Zeiträume (S2) nur für die Frage, wer nicht nach Verbrauch gedeckt ist; der
+  // Rahmen von 50 bis 70 % bleibt bei den Positionen, wie bisher.
+  for (const [id, units] of heatingFindings(fuelOwnCarries, heatingUnits, heatingCovered, () => ({ min: 0, max: 100 })).withoutConsumption) heating.withoutConsumption.set(id, units)
   for (const { item, rows } of heatingCuts) {
     // Heizung PR 14: keine Kürzung nach § 12 Abs. 1 Satz 1 bei Ausnahme nach § 11 oder Vereinbarung nach § 2.
     if (noCutFor(item.heatingPlantId, item.heatingTarget, String(item.period))) continue
     const affected = heating.withoutConsumption.get(item.id)
-    const hit = rows.filter((r) => affected?.has(r.unitId))
+    const hit = rows.filter((r) => affected?.has(r.unitId) && r.share > 0)
     if (hit.length === 0) continue
     const share = consumptionShare()
     const cut = law(hkvCutNotByConsumption, { period: lawPeriod }, lawLog)
@@ -7441,7 +7476,19 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         }
         continue
       }
-      const open = r.paidOutOn === null && (r.settlePeriod === null || (r.settlePeriod === period.key && !st))
+      // Integrationsdurchsicht S1: Zum Verrechnen in diesem Zeitraum eingetragen, aber der Mieter bekommt hier keine
+      // Abrechnung (Inklusivmiete oder Pauschale ohne Vorauszahlung, Wohnung außerhalb der Abrechnungseinheit). Das
+      // Speichern lehnt das inzwischen ab; ein vorhandener Eintrag bekommt hier einen Hinweis, unabhängig von der
+      // Fälligkeit, denn in späteren Zeiträumen ist er nicht mehr „offen“ und bliebe sonst still liegen.
+      if (r.paidOutOn === null && r.settlePeriod === period.key && !st) {
+        // Schon fällig: Warnung wie bei einer offenen Erstattung; sonst ein Hinweis.
+        warn(due <= period.to ? 'co2.refund-due' : 'co2.refund-not-next',
+          `${t.tenantName} bekommt für ${label} keine Abrechnung; die dort zum Verrechnen eingetragene CO₂-Erstattung von ${fmtCents(r.amountCents)} verrechnet Mietfuchs deshalb nicht. ` +
+            `Zahlen Sie sie spätestens am ${fmtDay(due)} aus (§ 6 Abs. 2 Satz 5 CO2KostAufG) und tragen Sie die Auszahlung ein.`,
+          tenancySubject)
+        continue
+      }
+      const open = r.paidOutOn === null && r.settlePeriod === null
       if (open && r.claimedAt <= period.to && due <= period.to) {
         warn('co2.refund-due',
           `${t.tenantName} hat am ${fmtDay(r.claimedAt)} eine CO₂-Erstattung von ${fmtCents(r.amountCents)} geltend gemacht. Wird sie nicht verrechnet, war sie spätestens am ${fmtDay(due)} zu erstatten (§ 6 Abs. 2 Satz 5 CO2KostAufG); bei vereinbarter Vorauszahlung wird sie mit Ablauf der Frist der Abrechnung fällig, in der sie zu verrechnen ist (BT-Drs. 20/3172, S. 35). ` +
@@ -7588,6 +7635,20 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const sum = own.reduce((a, r) => a + r.shareCents, 0)
     return sum === 0 ? 0 : own.reduce((a, r) => a + r.shareCents * (factors.get(r.costItemId) ?? 0), 0) / sum
   }
+  // Abdeckung V21: Wird eine Anlage nach dem Ende dieses Zeitraums getrennt abgerechnet (Weg d), laufen ihre Heizkosten
+  // künftig über die Heizvorauszahlung. Der Vorschlag heißt dann „Vorauszahlung für die übrigen Nebenkosten (ohne
+  // Heizung)“ und lässt ihre Zeilen aus, auch im Übergangsjahr, das ihre letzte Heizperiode davor noch enthält.
+  const nextMonth = dayAfter(period.to).slice(0, 7)
+  const separateLater = new Set(scope === 'all' ? plants.filter((p) => separateOwner(wayOf(p), objectRules, nextMonth) !== null).map((p) => p.id) : [])
+  const syntheticById = new Map(fuelSynthetic.map((c) => [c.id, c]))
+  if (scope === 'all') result.suggestionWithoutHeating = separateLater.size > 0
+  const laterSeparate = (row: SettlementRow): boolean => {
+    if (separateLater.size === 0) return false
+    const relief = /^(?:co2|gmodg):([^:]*):/.exec(row.costItemId)
+    if ((row.kind === 'co2Relief' || row.kind === 'gmodgRelief') && relief) return separateLater.has(relief[1] ?? '')
+    const c = itemById.get(row.costItemId) ?? syntheticById.get(row.costItemId)
+    return c !== undefined && c.category === HEATING_CATEGORY && separateLater.has(c.heatingPlantId ?? '')
+  }
   for (const st of result.statements) {
     st.balanceCents = st.prepaymentCents - st.totalShareCents // >0 Guthaben, <0 Nachzahlung
     // Eine Abrechnung nur mit Heizkosten hat keine künftige Vorauszahlung (3.7: „heatingOnly ergibt
@@ -7618,12 +7679,13 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       const factorOf = (row: SettlementRow): number => (row.kind === 'co2Relief' || row.kind === 'gmodgRelief'
         ? reliefFactor(st.rows, row.costItemId, shortBasis.factors)
         : (shortBasis.factors.get(row.costItemId) ?? 0))
-      const annual = st.rows.reduce((a, row) => a + row.shareCents * factorOf(row), 0)
+      const annual = st.rows.reduce((a, row) => a + (laterSeparate(row) ? 0 : row.shareCents * factorOf(row)), 0)
       st.suggestedMonthlyCents = Math.max(0, Math.round((annual * diy) / st.days / 12 / 100) * 100)
     } else {
       // Nie negativ: Überwiegen Gutschriften, gibt es keine Vorauszahlung unter 0 (Integrationsdurchsicht).
       // Ohne CO₂-Erstattung: Sie fällt nicht wieder an (Heizung PR 19, `recurringShareCents`).
-      st.suggestedMonthlyCents = Math.max(0, Math.round((recurringShareCents(st) * diy) / st.days / 12 / 100) * 100)
+      const later = st.rows.reduce((a, row) => a + (laterSeparate(row) ? row.shareCents : 0), 0)
+      st.suggestedMonthlyCents = Math.max(0, Math.round(((recurringShareCents(st) - later) * diy) / st.days / 12 / 100) * 100)
     }
   }
   return result
