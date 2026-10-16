@@ -1,6 +1,6 @@
 // Nebenkostenmodell am Mietverhältnis (#93), die Seite der Oberfläche.
 import { expect, test } from 'vitest'
-import { COST_MODEL_LABELS, buildPersonHistory, costModelBadge, costModelBody, defaultTenancyUnitId, notSettledText, overlapQuestion, parsePersons, parseScheduleMonth, scheduleMonthText, showsFlatRates, monthPickerParts, monthPickerText, monthPickerYears } from './tenancyModel'
+import { COST_MODEL_LABELS, buildPersonHistory, costModelBadge, costModelBody, defaultTenancyUnitId, notSettledText, overlapQuestion, parsePersons, parseScheduleMonth, scheduleMonthText, showsFlatRates, monthPickerParts, monthPickerText, monthPickerYears, scheduleMonthProblem } from './tenancyModel'
 import type { Tenancy, Unit } from './types'
 
 test('die Staffel der Pauschale erscheint nur bei einer Pauschale', () => {
@@ -150,9 +150,35 @@ test('Monatsauswahl: Teile aus dem Formularwert und zurück, auch unvollständig
   expect(monthPickerText('03', '')).not.toBe('')
 })
 
-test('Monatsauswahl: Jahre ab Einzug bis zwei Jahre nach heute, dazu das Jahr eines gespeicherten Werts', () => {
-  expect(monthPickerYears('2023-05-01', '', '2025-10-15')).toEqual(['2023', '2024', '2025', '2026', '2027'])
+test('Monatsauswahl: Jahre ab Einzug bis zehn Jahre voraus (Staffelmiete), dazu das Jahr eines gespeicherten Werts', () => {
+  const years = monthPickerYears('2023-05-01', '', '2025-10-15')
+  expect(years[0]).toBe('2023')
+  expect(years.at(-1)).toBe('2035')
   expect(monthPickerYears('', '', '2025-10-15')[0]).toBe('2015')
   expect(monthPickerYears('2023-05-01', '01.2019', '2025-10-15')[0]).toBe('2019')
-  expect(monthPickerYears('2030-01-01', '', '2025-10-15')).toEqual(['2025', '2026', '2027'])
+  // Einzug in der Zukunft: sein Jahr steht zur Auswahl, und von dort zehn Jahre weiter
+  const future = monthPickerYears('2030-01-01', '', '2025-10-15')
+  expect(future[0]).toBe('2025')
+  expect(future).toContain('2030')
+  expect(future.at(-1)).toBe('2040')
+  // Tippfehler im Einzug („0202“) bläht die Liste nicht auf
+  const typo = monthPickerYears('0202-03-01', '', '2025-10-15')
+  expect(typo[0]).toBe('2015')
+  expect(typo.length).toBe(21)
+})
+
+test('Monatsauswahl: ungültige ältere Werte zeigen keine Auswahl, die nicht dem Wert entspricht', () => {
+  expect(monthPickerParts(scheduleMonthText('2024-13'))).toEqual({ month: '', year: '2024' })
+  expect(monthPickerParts(scheduleMonthText('0024-01'))).toEqual({ month: '01', year: '' })
+  expect(monthPickerParts(scheduleMonthText('2206-01'))).toEqual({ month: '01', year: '' })
+  for (const parts of [monthPickerParts('13.2024'), monthPickerParts('01.0024')]) {
+    if (parts.year) expect(monthPickerYears('2020-01-01', '', '2025-10-15')).toContain(parts.year)
+  }
+})
+
+test('Meldung beim Speichern nennt, was am Monat fehlt', () => {
+  expect(scheduleMonthProblem('03.')).toMatch(/das Jahr/)
+  expect(scheduleMonthProblem('.2025')).toMatch(/den Monat/)
+  expect(scheduleMonthProblem('13.2024')).toMatch(/den Monat/)
+  expect(scheduleMonthProblem('irgendwann')).toMatch(/„irgendwann“ ist ungültig/)
 })

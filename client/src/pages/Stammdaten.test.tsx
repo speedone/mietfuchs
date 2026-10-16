@@ -246,7 +246,7 @@ test('Staffeln: beides leer gilt ab Einzug, nur Monat ohne Jahr wird mit Hinweis
 
   fireEvent.change(year, { target: { value: '' } })
   fireEvent.click(screen.getByRole('button', { name: 'Übernehmen' }))
-  expect(await within(dialog).findByText(/Monat und Jahr wählen/, undefined, SLOW)).toBeTruthy()
+  expect(await within(dialog).findByText(/Bitte noch das Jahr wählen/, undefined, SLOW)).toBeTruthy()
   expect(sent.some((s) => s.url.startsWith('/api/tenancies'))).toBe(false)
 
   fireEvent.change(month, { target: { value: '' } })

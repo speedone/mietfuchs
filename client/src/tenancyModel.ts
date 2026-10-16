@@ -84,6 +84,9 @@ export function buildPersonHistory(
 // „01/2026“, „01.01.2026“, „2026-01“), denn die Funktion ist die eine Stelle, die einen Monat einer
 // Staffel prüft. Ein Tag nur als Erster: Eine Staffel gilt ab Monatsanfang, und „15.10.2026“ still
 // als Oktober zu lesen, hieße raten. `null`: nicht lesbar.
+const YEAR_MIN = 1900
+const YEAR_MAX = 2100
+
 export function parseScheduleMonth(text: string): string | null {
   const t = text.trim()
   // Ein Jahr außerhalb von 1900 bis 2100 ist ein Tippfehler („01.0026“): Als frühester Eintrag
@@ -91,7 +94,7 @@ export function parseScheduleMonth(text: string): string | null {
   const month = (y: string, m: string) => {
     const n = Number(m)
     const year = Number(y)
-    return n >= 1 && n <= 12 && year >= 1900 && year <= 2100 ? `${y}-${String(n).padStart(2, '0')}` : null
+    return n >= 1 && n <= 12 && year >= YEAR_MIN && year <= YEAR_MAX ? `${y}-${String(n).padStart(2, '0')}` : null
   }
   let m = /^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?$/.exec(t)
   if (m) return m[3] === undefined || Number(m[3]) === 1 ? month(m[1], m[2]) : null
@@ -100,7 +103,13 @@ export function parseScheduleMonth(text: string): string | null {
   return null
 }
 
-export const SCHEDULE_MONTH_HINT = 'Bitte Monat und Jahr wählen; beides leer heißt ab Einzug.'
+// Was an einem nicht lesbaren „gültig ab“ fehlt, als Satz für die Meldung beim Speichern
+export function scheduleMonthProblem(text: string): string {
+  const { month, year } = monthPickerParts(text)
+  if (month && !year) return 'Bitte noch das Jahr wählen (beides leer heißt ab Einzug).'
+  if (year && !month) return 'Bitte noch den Monat wählen (beides leer heißt ab Einzug).'
+  return `Der gespeicherte Monat „${text.trim()}“ ist ungültig. Bitte Monat und Jahr neu wählen.`
+}
 
 // Monatsauswahl der Staffeln (MonthPicker): zwei Auswahllisten statt Freitext, damit jeder Browser
 // gleich aussieht und sich kein Tippfehler einschleicht (Safari kennt `type="month"` nicht). Der
@@ -110,22 +119,32 @@ export const SCHEDULE_MONTH_HINT = 'Bitte Monat und Jahr wählen; beides leer he
 export function monthPickerParts(text: string): { month: string; year: string } {
   const parsed = parseScheduleMonth(text)
   if (parsed) return { month: parsed.slice(5, 7), year: parsed.slice(0, 4) }
+  // Nur Teile, die es als Auswahl gibt: Ein älterer Wert wie '2024-13' oder '0024-01' (das frühere
+  // Textfeld in Safari ließ ihn durch) zeigte sonst eine Auswahl, die nicht dem Wert entspricht
   const m = /^(\d{2})?\.(\d{4})?$/.exec(text.trim())
-  return m ? { month: m[1] ?? '', year: m[2] ?? '' } : { month: '', year: '' }
+  if (!m) return { month: '', year: '' }
+  const month = m[1] !== undefined && Number(m[1]) >= 1 && Number(m[1]) <= 12 ? m[1] : ''
+  const year = m[2] !== undefined && Number(m[2]) >= YEAR_MIN && Number(m[2]) <= YEAR_MAX ? m[2] : ''
+  return { month, year }
 }
 
 export function monthPickerText(month: string, year: string): string {
   return month === '' && year === '' ? '' : `${month}.${year}`
 }
 
-// Jahre zur Auswahl: ab dem Einzugsjahr (ohne Einzug zehn Jahre zurück) bis zwei Jahre nach heute,
-// dazu das Jahr eines schon gespeicherten Werts. Ein Wert außerhalb der Liste zeigte der Browser
-// sonst als ersten Eintrag an, ohne dass sich etwas ändert.
+// Jahre zur Auswahl: ab dem Einzugsjahr (ohne Einzug zehn Jahre zurück) bis zehn Jahre nach dem
+// späteren von Einzug und heute, damit ein Staffelmietvertrag (§ 557a BGB) seine Stufen über Jahre
+// im Voraus eintragen kann; dazu das Jahr eines schon gespeicherten Werts. Ein Wert außerhalb der
+// Liste zeigte der Browser sonst als ersten Eintrag an, ohne dass sich etwas ändert. Begrenzt auf
+// die Jahre, die parseScheduleMonth annimmt, damit ein Tippfehler im Einzug die Liste nicht aufbläht.
 export function monthPickerYears(start: string, value: string, today: string): string[] {
   const now = Number(today.slice(0, 4))
-  const from = /^\d{4}/.test(start) ? Math.min(Number(start.slice(0, 4)), now) : now - 10
+  const startYear = /^\d{4}/.test(start) ? Number(start.slice(0, 4)) : null
+  const valid = startYear !== null && startYear >= YEAR_MIN && startYear <= YEAR_MAX
+  const from = valid ? Math.min(startYear, now) : now - 10
+  const to = Math.min((valid ? Math.max(startYear, now) : now) + 10, YEAR_MAX)
   const years = new Set<number>()
-  for (let y = from; y <= now + 2; y++) years.add(y)
+  for (let y = Math.max(from, YEAR_MIN); y <= to; y++) years.add(y)
   const own = monthPickerParts(value).year
   if (own) years.add(Number(own))
   return [...years].sort((a, b) => a - b).map(String)

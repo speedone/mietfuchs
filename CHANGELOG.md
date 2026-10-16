@@ -20,12 +20,14 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
-- **Kaltmiete, Vorauszahlung und Pauschale lassen sich in Safari und Firefox wieder erfassen.**
+- **Kaltmiete, Vorauszahlung und Pauschale lassen sich jetzt auch in Safari und Firefox erfassen.**
   Das Feld „gültig ab“ der Staffeln war eine Monatsauswahl, die Safari auf dem Mac und Firefox
   nicht kennen: Je nach Fassung ließ sich dort gar nichts eingeben, oder nur „2026-01“ kam durch,
   und „01.2026“ oder „01.01.2026“ endete in der Meldung „Bitte Kaltmiete-Staffel prüfen“. Monat
   und Jahr werden jetzt in jedem Browser aus zwei Listen gewählt, Tippfehler gibt es keine mehr.
   Beides leer heißt wie bisher „ab Einzug“; ist nur eines gewählt, sagt die Meldung, was fehlt.
+  Die Jahre reichen bis zehn Jahre voraus, sodass sich auch eine Staffelmiete eintragen lässt.
+  ([#287](https://github.com/speedone/mietfuchs/issues/287))
 
 - **Ein zweiter Start fasst die Daten nicht mehr an, solange Mietfuchs schon läuft.** Startete
   man Mietfuchs ein zweites Mal, etwa über das Startmenü, während es unsichtbar im Hintergrund

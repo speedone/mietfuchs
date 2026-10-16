@@ -175,7 +175,7 @@ tr.focus-target > td { background: var(--accent-soft); }
 .grow { flex: 1; }
 
 /* ---------- Formulare ---------- */
-label.field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); font-weight: 600; }
+label.field, div.field[role="group"] { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); font-weight: 600; }
 input, select, textarea {
   font: inherit;
   padding: 8px 10px;

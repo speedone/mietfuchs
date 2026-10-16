@@ -5,7 +5,7 @@ import { EMPTY_UNIT_FORM, buildUnitBody, connectionSummary, connectionTypes, set
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import Drawer from '../components/Drawer'
 import PropertyCard from '../components/PropertyCard'
-import { COST_MODEL_LABELS, buildPersonHistory, costModelBadge, costModelBody, defaultTenancyUnitId, overlapQuestion, parseScheduleMonth, SCHEDULE_MONTH_HINT, scheduleMonthText, showsFlatRates } from '../tenancyModel'
+import { COST_MODEL_LABELS, buildPersonHistory, costModelBadge, costModelBody, defaultTenancyUnitId, overlapQuestion, parseScheduleMonth, scheduleMonthProblem, scheduleMonthText, showsFlatRates } from '../tenancyModel'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import { buildTenantChange, defaultStart, EMPTY_NEW_TENANT, endProblem, meterProblem, parseMeterValue, type NewTenantForm } from '../tenantChange'
 import PageHeader from '../components/PageHeader'
@@ -184,10 +184,8 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
       if (!row.from.trim() && !row.amount.trim()) continue // leere Zeile überspringen
       const cents = parseEuro(row.amount)
       const from = row.from.trim() ? parseScheduleMonth(row.from) : tenForm.start.slice(0, 7)
-      if (cents === null || from === null) {
-        setError(`Bitte Kaltmiete-Staffel prüfen (Monat und Betrag). ${SCHEDULE_MONTH_HINT}`)
-        return
-      }
+      if (from === null) return setError(`Kaltmiete-Staffel: ${scheduleMonthProblem(row.from)}`)
+      if (cents === null) return setError('Bitte den Betrag der Kaltmiete-Staffel prüfen.')
       baseRents.push({ from, monthlyCents: cents })
     }
     baseRents.sort((a, b) => a.from.localeCompare(b.from))
@@ -196,10 +194,8 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
       if (!row.from.trim() && !row.amount.trim()) continue // leere Zeile überspringen
       const cents = parseEuro(row.amount)
       const from = row.from.trim() ? parseScheduleMonth(row.from) : tenForm.start.slice(0, 7)
-      if (cents === null || from === null) {
-        setError(`Bitte Vorauszahlungs-Staffel prüfen (Monat und Betrag). ${SCHEDULE_MONTH_HINT}`)
-        return
-      }
+      if (from === null) return setError(`Vorauszahlungs-Staffel: ${scheduleMonthProblem(row.from)}`)
+      if (cents === null) return setError('Bitte den Betrag der Vorauszahlungs-Staffel prüfen.')
       prepayments.push({ from, monthlyCents: cents })
     }
     const flatRates: { from: string; monthlyCents: number }[] = []
@@ -208,10 +204,8 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
         if (!row.from.trim() && !row.amount.trim()) continue
         const cents = parseEuro(row.amount)
         const from = row.from.trim() ? parseScheduleMonth(row.from) : tenForm.start.slice(0, 7)
-        if (cents === null || from === null) {
-          setError(`Bitte die Staffel der Pauschale prüfen (Monat und Betrag). ${SCHEDULE_MONTH_HINT}`)
-          return
-        }
+        if (from === null) return setError(`Staffel der Pauschale: ${scheduleMonthProblem(row.from)}`)
+        if (cents === null) return setError('Bitte den Betrag in der Staffel der Pauschale prüfen.')
         flatRates.push({ from, monthlyCents: cents })
       }
     }

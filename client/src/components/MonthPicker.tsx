@@ -27,7 +27,7 @@ export default function MonthPicker({ label, value, start, today, onChange }: Pr
           })}
         </select>
         <select aria-label={`${label}: Jahr`} value={year} onChange={(e) => onChange(monthPickerText(month, e.target.value))}>
-          <option value="">{month ? '– Jahr –' : ''}</option>
+          <option value="">{month ? '– Jahr –' : '–'}</option>
           {years.map((y) => <option key={y} value={y}>{y}</option>)}
         </select>
       </div>
