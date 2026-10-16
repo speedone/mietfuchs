@@ -1,4 +1,5 @@
-import { Fragment, useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
+import { startPrint, type PrintJob } from '../printJob'
 import type { Settings, TaxExpenseItem, TaxReport } from '../types'
 import { api, fmtArea, fmtEuro } from '../api'
 import { useYear, YEAR_OPTIONS } from '../year'
@@ -35,12 +36,13 @@ export default function Steuer({ settings }: Props) {
 
   useEffect(() => { void load() }, [load])
 
+  // Der Seitentitel wird zum Dateinamen beim „Als PDF speichern“; zurückgesetzt wird er erst bei der
+  // nächsten Bedienung (Safari, siehe printJob.ts).
+  const printJob = useRef<PrintJob | null>(null)
+  useEffect(() => () => printJob.current?.cancel(), [])
   function print() {
-    const prevTitle = document.title
-    document.title = `Steuerübersicht Anlage V ${year}`.replace(/[\\/:*?"<>|]/g, '-')
-    const restore = () => { document.title = prevTitle; window.removeEventListener('afterprint', restore) }
-    window.addEventListener('afterprint', restore)
-    setTimeout(() => window.print(), 60)
+    printJob.current?.cancel()
+    printJob.current = startPrint({ title: `Steuerübersicht Anlage V ${year}`, delayMs: 60 })
   }
 
   const incomeCents = data ? incomeCentsFor(data, basis) : 0
