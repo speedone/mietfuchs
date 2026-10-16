@@ -250,3 +250,21 @@ test('Schlüssel wie im Vorjahr: Heizposition gegen die Heizposition des vorigen
   const gleich = haus({ costItems: [position('h24', '2024-01', 400000, { category: HEATING_CATEGORY }), heizung('h25', '2024-05', 480000)] })
   assert.equal(geaendert(settle(gleich, '2025-01')).length, 0)
 })
+
+test('Abdeckung V21: § 560-Vorschlag im Übergangsjahr zu Weg d ohne die Heizkosten, die künftig getrennt abgerechnet werden', () => {
+  // Heizperiode Mai–April, getrennte Heizkostenabrechnung ab 2025/2026. Die Betriebskostenabrechnung 2025 enthält noch
+  // die Heizperiode 2024/2025 (1.050,00 €) und die Grundsteuer (210,00 €). Der Vorschlag heißt „Vorauszahlung für die
+  // übrigen Nebenkosten (ohne Heizung)“; die Heizkosten laufen künftig über die Heizvorauszahlung. Vorher 105,00 €
+  // (1.260 / 12), richtig 210 / 12 = 17,50 €, auf volle Euro 18,00 €.
+  const src = haus({
+    heatingPlants: [anlage({ separateSettlement: true, separateSpans: [{ from: '2025-05', until: null }] })],
+    tenancies: [mieter('A', '2024-01-01', null, [{ from: '2024-01', monthlyCents: 30000 }, { from: '2025-05', monthlyCents: 12000 }], { heatingPrepayments: [{ from: '2025-05', monthlyCents: 18000 }] })],
+    costItems: [heizung('h2024', '2024-05', 105000, { taxYear: 2025 }), position('grundsteuer', '2025-01', 21000)],
+  })
+  const a = st(settle(src, '2025-01'), 'A')
+  assert.deepEqual(a.rows.map((r) => [r.costItemId, r.shareCents]), [['grundsteuer', 21000], ['h2024', 105000]])
+  assert.equal(a.suggestedMonthlyCents, 1800)
+  // Gegenprobe ohne getrennte Heizkostenabrechnung: die Heizung gehört weiter dazu.
+  const ohne = haus({ ...src, heatingPlants: [anlage()] })
+  assert.equal(st(settle(ohne, '2025-01'), 'A').suggestedMonthlyCents, 10500)
+})

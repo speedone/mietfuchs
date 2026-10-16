@@ -7623,6 +7623,19 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const sum = own.reduce((a, r) => a + r.shareCents, 0)
     return sum === 0 ? 0 : own.reduce((a, r) => a + r.shareCents * (factors.get(r.costItemId) ?? 0), 0) / sum
   }
+  // Abdeckung V21: Wird eine Anlage nach dem Ende dieses Zeitraums getrennt abgerechnet (Weg d), laufen ihre Heizkosten
+  // künftig über die Heizvorauszahlung. Der Vorschlag heißt dann „Vorauszahlung für die übrigen Nebenkosten (ohne
+  // Heizung)“ und lässt ihre Zeilen aus, auch im Übergangsjahr, das ihre letzte Heizperiode davor noch enthält.
+  const nextMonth = dayAfter(period.to).slice(0, 7)
+  const separateLater = new Set(scope === 'all' ? plants.filter((p) => separateOwner(wayOf(p), objectRules, nextMonth) !== null).map((p) => p.id) : [])
+  const syntheticById = new Map(fuelSynthetic.map((c) => [c.id, c]))
+  const laterSeparate = (row: SettlementRow): boolean => {
+    if (separateLater.size === 0) return false
+    const relief = /^(?:co2|gmodg):([^:]*):/.exec(row.costItemId)
+    if ((row.kind === 'co2Relief' || row.kind === 'gmodgRelief') && relief) return separateLater.has(relief[1] ?? '')
+    const c = itemById.get(row.costItemId) ?? syntheticById.get(row.costItemId)
+    return c !== undefined && c.category === HEATING_CATEGORY && separateLater.has(c.heatingPlantId ?? '')
+  }
   for (const st of result.statements) {
     st.balanceCents = st.prepaymentCents - st.totalShareCents // >0 Guthaben, <0 Nachzahlung
     // Eine Abrechnung nur mit Heizkosten hat keine künftige Vorauszahlung (3.7: „heatingOnly ergibt
@@ -7653,12 +7666,13 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       const factorOf = (row: SettlementRow): number => (row.kind === 'co2Relief' || row.kind === 'gmodgRelief'
         ? reliefFactor(st.rows, row.costItemId, shortBasis.factors)
         : (shortBasis.factors.get(row.costItemId) ?? 0))
-      const annual = st.rows.reduce((a, row) => a + row.shareCents * factorOf(row), 0)
+      const annual = st.rows.reduce((a, row) => a + (laterSeparate(row) ? 0 : row.shareCents * factorOf(row)), 0)
       st.suggestedMonthlyCents = Math.max(0, Math.round((annual * diy) / st.days / 12 / 100) * 100)
     } else {
       // Nie negativ: Überwiegen Gutschriften, gibt es keine Vorauszahlung unter 0 (Integrationsdurchsicht).
       // Ohne CO₂-Erstattung: Sie fällt nicht wieder an (Heizung PR 19, `recurringShareCents`).
-      st.suggestedMonthlyCents = Math.max(0, Math.round((recurringShareCents(st) * diy) / st.days / 12 / 100) * 100)
+      const later = st.rows.reduce((a, row) => a + (laterSeparate(row) ? row.shareCents : 0), 0)
+      st.suggestedMonthlyCents = Math.max(0, Math.round(((recurringShareCents(st) - later) * diy) / st.days / 12 / 100) * 100)
     }
   }
   return result

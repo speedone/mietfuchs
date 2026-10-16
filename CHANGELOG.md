@@ -731,6 +731,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   fehlte er ganz (auch der zur Fernablesung), im Zeitraum der Rechnung nannte er 15 % des ganzen Anteils (gemessen:
   270,00 € statt 126,90 €). Jetzt nennt jede Abrechnung 15 % dessen, was der Mieter in ihr trägt (im Beispiel
   143,10 € und 126,90 €). Keine Zahl der Abrechnung ändert sich, Mietfuchs zieht die Kürzung nicht selbst ab.
+- **Vorschlag für die Vorauszahlung im Übergangsjahr zur getrennten Heizkostenabrechnung enthielt die Heizkosten** ([#217](https://github.com/speedone/mietfuchs/issues/217)):
+  Die Betriebskostenabrechnung des Jahres, in dem die getrennte Heizkostenabrechnung beginnt, enthält noch die
+  letzte Heizperiode davor. Der Vorschlag nach § 560 Abs. 4 BGB „Vorauszahlung für die übrigen Nebenkosten (ohne
+  Heizung)“ rechnete sie mit (gemessen: 105,00 € statt 18,00 €), obwohl die Heizkosten künftig über die
+  Heizvorauszahlung laufen. Jetzt bleiben die Heizkosten einer Anlage, die danach getrennt abgerechnet wird,
+  außen vor. Keine Zahl der Abrechnung ändert sich, nur der Vorschlag.
 
 ## [0.10.1] – 2026-10-04
 
