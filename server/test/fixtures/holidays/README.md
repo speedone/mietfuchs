@@ -2,8 +2,9 @@
 
 `python-holidays.json` enthält die gesetzlichen Feiertage aller 16 Länder und ihrer regionalen
 Varianten von 1995 bis 2100, erzeugt mit der Python-Bibliothek
-[holidays](https://github.com/vacanza/holidays) 0.104. Sie ist unabhängig von der Tabelle in
-[shared/holidays.ts](../../../../shared/holidays.ts), mit der Mietfuchs rechnet;
+[holidays](https://github.com/vacanza/holidays) 0.104. Sie ist unabhängig von den Feiertagen im Rechtsregister
+([shared/law/feiertagsgesetze.ts](../../../../shared/law/feiertagsgesetze.ts)), mit denen
+[shared/holidays.ts](../../../../shared/holidays.ts) rechnet;
 [holidays.test.ts](../../holidays.test.ts) vergleicht beide für jedes Jahr und jede Variante.
 
 Python wird nur zum Erzeugen dieser Datei gebraucht, weder für die Tests noch zur Laufzeit.
@@ -50,11 +51,11 @@ venv/bin/python server/test/fixtures/holidays/generate.py
 
 Mit diesen Fassungen entsteht die Datei byteweise gleich. Eine neue Version von `holidays` kann
 Abweichungen zeigen. Dann wird nicht geraten: Maßgeblich ist das Feiertagsgesetz des Landes, und
-die Entscheidung steht mit Fundstelle in der Tabelle und im Test.
+die Entscheidung steht als Fassung mit Fundstelle im Register und im Test.
 
 ## Ergebnis des Vergleichs
 
-Für alle 16 Länder und alle Jahre von 1995 bis 2100 stimmt die Tabelle mit der Liste überein,
+Für alle 16 Länder und alle Jahre von 1995 bis 2100 stimmt das Register mit der Liste überein,
 einschließlich der einmaligen Feiertage (Reformationstag 2017 in allen Ländern, in Berlin der
 8. Mai 2020 und 2025 und der 17. Juni 2028). Die vier regionalen Varianten ergeben sich genau aus
 Land plus Hinweisen.

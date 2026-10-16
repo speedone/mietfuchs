@@ -1,7 +1,7 @@
 """Erzeugt python-holidays.json, die Referenz für server/test/holidays.test.ts.
 
-Quelle ist die Python-Bibliothek `holidays`, unabhängig von der Tabelle in shared/holidays.ts,
-mit der Mietfuchs rechnet. Python wird nur hier gebraucht, nie zur Laufzeit und nicht für die
+Quelle ist die Python-Bibliothek `holidays`, unabhängig von den Feiertagen im Rechtsregister
+(shared/law/feiertagsgesetze.ts), mit denen Mietfuchs rechnet. Python wird nur hier gebraucht, nie zur Laufzeit und nicht für die
 Tests. Aufruf und Format stehen in README.md.
 """
 

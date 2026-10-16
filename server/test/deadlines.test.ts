@@ -1,6 +1,6 @@
 // Fristen nach Werktagen (shared/deadlines.ts): Zahlungsfrist der Miete (§ 556b Abs. 1 BGB, Samstag
 // kein Werktag nach BGH VIII ZR 129/09) und Fristende am nächsten Werktag (§ 193 BGB). Die Beispiele
-// sind von Hand nachgezählt; dazu ein Abgleich, der die Feiertage nicht aus der eigenen Tabelle nimmt,
+// sind von Hand nachgezählt; dazu ein Abgleich, der die Feiertage nicht aus dem Rechtsregister nimmt,
 // sondern aus der Vergleichsliste (fixtures/holidays/).
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -74,8 +74,8 @@ test('ungültige Eingaben werfen', () => {
   assert.throws(() => deadlineOnWorkday('2026-02-29', 'BY'), /kein Datum/)
 })
 
-// Unabhängiger Abgleich: dieselbe Zählung mit den Feiertagen der Vergleichsliste statt der eigenen
-// Tabelle, für alle Länder und alle Monate von 2015 bis 2035.
+// Unabhängiger Abgleich: dieselbe Zählung mit den Feiertagen der Vergleichsliste statt der aus dem
+// Register, für alle Länder und alle Monate von 2015 bis 2035.
 test('Abgleich mit der Vergleichsliste 2015 bis 2035, alle Länder', () => {
   const here = path.dirname(fileURLToPath(import.meta.url))
   const fixture: { jahre: [number, number]; ostern: string[]; varianten: Record<string, string[]> } =
