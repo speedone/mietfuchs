@@ -330,6 +330,19 @@ describe('Betriebsstrom der Heizung (#268)', () => {
     expect(text).not.toMatch(/selbst/)
     expect(operatingPowerBalanceText(tax({}))).toBeNull()
   })
+  // Nachprüfung N1: Fehlt die Lage (ältere Antwort), gilt ein neutraler Text ohne „prüfen“.
+  it('ohne Lage: neutral, ohne „prüfen“ und ohne „selbst“', () => {
+    const text = operatingPowerBalanceText(tax({ operatingPowerBalanceCents: 20000 })) ?? ''
+    expect(text).toContain(`(Ausgleich ${fmtEuro(20000)})`)
+    expect(text).toContain('„Betriebsstrom der Heizung, Ausgleich“')
+    expect(text).not.toMatch(/Prüfen Sie|selbst/)
+  })
+  // Nachprüfung N2: Neben einem Abzug ohne Verweis gilt „prüfen“ nur dem verknüpften Abzug.
+  it('verschieden hoch neben einem Abzug ohne Verweis: der freie Teil ist richtig erfasst', () => {
+    const text = operatingPowerBalanceText(tax({ operatingPowerBalanceCents: 15000, operatingPowerBalanceKind: 'mismatch', operatingPowerKeptCents: 5000 })) ?? ''
+    expect(text).toContain(`Davon tragen Sie ${fmtEuro(5000)} selbst (Abzug ohne Verweis); dieser Teil ist richtig erfasst.`)
+    expect(text).toContain('Prüfen Sie in der Abrechnung, ob der verknüpfte Abzug beim Allgemeinstrom zum Betriebsstrom passt.')
+  })
   it('gemischt (mixed): beides benannt, ohne „prüfen“', () => {
     const text = operatingPowerBalanceText(tax({ operatingPowerBalanceCents: 25000, operatingPowerBalanceKind: 'mixed' })) ?? ''
     expect(text).toContain('Abzug ohne Verweis')

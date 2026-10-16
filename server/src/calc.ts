@@ -1356,6 +1356,7 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
     excludedExists,
     costModels,
     ...(balance.cents !== 0 ? { operatingPowerBalanceCents: balance.cents, operatingPowerBalanceKind: balance.kind } : {}),
+    ...(balance.cents !== 0 && balance.keptCents !== 0 ? { operatingPowerKeptCents: balance.keptCents } : {}),
     ...(ambiguous.length > 0 ? { operatingPowerAmbiguous: ambiguous } : {}),
     ...(unmarked.length > 0 ? { unmarkedPowerCredits: unmarked } : {}),
     selfUsedShareCents,
@@ -1682,8 +1683,12 @@ function operatingPowerBalanceItem(
   // Durchsicht S1: Die Texte folgen der Lage. „Selbst getragen“ nur beim Abzug ohne Verweis, „prüfen“ nur, wenn Abzug
   // und Betriebsstrom im selben Steuerjahr verschieden hoch sind; ein Paar über zwei Steuerjahre ist richtig erfasst.
   for (const s of deductions) {
+    // Nachprüfung N3: Ein Verweis auf eine Position, die kein Betriebsstrom in den Heizkosten ist, heißt so.
     const how = s.situation === 'kept' ? 'ohne Verweis auf eine Heizposition und ohne Messdienst'
-      : `verknüpft mit der Heizposition „${s.linkedDescription ?? ''}“${s.situation === 'otherYear' ? ' in einem anderen Steuerjahr' : ''}`
+      : s.situation === 'brokenLink'
+        ? (s.linkedDescription === null ? 'verknüpft mit einer Position, die Mietfuchs nicht findet; prüfen Sie den Verweis'
+          : `verknüpft mit „${s.linkedDescription}“, die nicht als Betriebsstrom in den Heizkosten gekennzeichnet ist; prüfen Sie den Verweis`)
+        : `verknüpft mit der Heizposition „${s.linkedDescription ?? ''}“${s.situation === 'otherYear' ? ' in einem anderen Steuerjahr' : ''}`
     steps.push({ label: 'Abzug beim Allgemeinstrom', value: `„${s.description}“ ${fmtCents(s.cents)}, ${how}`, term: 'operatingPower' })
   }
   for (const s of included) {
@@ -1701,7 +1706,11 @@ function operatingPowerBalanceItem(
     kept: 'Beim Allgemeinstrom ist Betriebsstrom abgezogen, ohne dass er in den Heizkosten steht. Diesen Teil legen Sie nicht um und tragen ihn selbst. Bezahlt haben Sie ihn mit der Stromrechnung; er gehört deshalb zu den Werbungskosten (§ 9 Abs. 1 Satz 1, § 11 Abs. 2 Satz 1 EStG). Der Abzug mindert nur die Abrechnung an die Mieter.',
     otherYear: `Abzug beim Allgemeinstrom und Betriebsstrom in den Heizkosten stehen in verschiedenen Steuerjahren. Der Ausgleich hebt in jedem Jahr auf, was zum anderen gehört, sodass jedes Jahr die in ihm bezahlte Stromrechnung zählt. ${once}`,
     mixed: `Ein Teil ist Betriebsstrom, den Sie nicht umlegen und selbst tragen (Abzug ohne Verweis); ein Teil gehört zu Abzug und Betriebsstrom in verschiedenen Steuerjahren. ${once}`,
-    mismatch: `Abzug beim Allgemeinstrom und Betriebsstrom in den Heizkosten sind in diesem Steuerjahr verschieden hoch. ${once} Prüfen Sie in der Abrechnung, ob der Abzug beim Allgemeinstrom zum Betriebsstrom passt.`,
+    // Nachprüfung N2: Steht daneben ein Abzug ohne Verweis, ist dieser Teil richtig erfasst; „prüfen“ gilt dann nur den
+    // verknüpften Abzügen.
+    mismatch: balance.keptCents !== 0
+      ? `Abzug beim Allgemeinstrom und Betriebsstrom in den Heizkosten sind in diesem Steuerjahr verschieden hoch. Davon tragen Sie ${fmtCents(balance.keptCents)} selbst (Abzug ohne Verweis); dieser Teil ist richtig erfasst. ${once} Prüfen Sie in der Abrechnung, ob der verknüpfte Abzug beim Allgemeinstrom zum Betriebsstrom passt.`
+      : `Abzug beim Allgemeinstrom und Betriebsstrom in den Heizkosten sind in diesem Steuerjahr verschieden hoch. ${once} Prüfen Sie in der Abrechnung, ob der Abzug beim Allgemeinstrom zum Betriebsstrom passt.`,
   }
   steps.push({ label: 'Hinweis', value: hint[balance.kind] })
 

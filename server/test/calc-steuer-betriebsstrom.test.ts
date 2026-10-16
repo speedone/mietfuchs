@@ -445,3 +445,37 @@ test('S1: freier Abzug neben einem Paar über zwei Steuerjahre: gemischt, ohne �
   assert.equal(line(r)?.description, 'Betriebsstrom der Heizung, Ausgleich')
   assert.doesNotMatch(texts(r), /Prüfen Sie/)
 })
+
+// ---------- Nachprüfung zu #268, N2 und N3 ----------
+
+test('N2: verschieden hoch neben einem Abzug ohne Verweis: „prüfen“ gilt dem Paar, der freie Teil heißt selbst getragen', () => {
+  // C = 200 + 50 − 100 = 150; davon 50 ohne Verweis, selbst getragen.
+  const r = tax(haus([gas(), betrieb('bs', 10000), hausstrom(), abzug('ab', 20000, 'bs'), abzug('frei', 5000)]))
+  assert.equal(r.operatingPowerBalanceKind, 'mismatch')
+  assert.equal(r.operatingPowerKeptCents, 5000)
+  assert.equal(line(r)?.amountCents, 15000)
+  const t = texts(r)
+  assert.match(t, /Davon tragen Sie 50,00 € selbst \(Abzug ohne Verweis\); dieser Teil ist richtig erfasst\./, t)
+  assert.match(t, /Prüfen Sie in der Abrechnung, ob der verknüpfte Abzug beim Allgemeinstrom zum Betriebsstrom passt\./, t)
+  // Ohne freien Abzug kein solcher Satz, und das Feld fehlt.
+  const ohne = tax(haus([gas(), betrieb('bs', 10000), hausstrom(), abzug('ab', 20000, 'bs')]))
+  assert.equal(ohne.operatingPowerKeptCents, undefined)
+  assert.doesNotMatch(texts(ohne), /Davon tragen Sie/)
+})
+
+test('N3: Abzug mit Verweis auf eine Position, die nicht als Betriebsstrom gekennzeichnet ist, ist ein Verweisfehler und kein anderes Steuerjahr', () => {
+  // Der Abzug zeigt auf das Gas (Brennstoff, nicht `included`). Die Zahl bleibt: C = 200.
+  const r = tax(haus([gas(), hausstrom(), abzug('ab', 20000, 'gas2025')]))
+  assert.equal(line(r)?.amountCents, 20000)
+  assert.equal(r.operatingPowerBalanceKind, 'mismatch')
+  const t = texts(r)
+  assert.doesNotMatch(t, /anderen Steuerjahr|verschiedenen Steuerjahren/, t)
+  assert.match(t, /„Abzug ab“ 200,00 €, verknüpft mit „Gas“, die nicht als Betriebsstrom in den Heizkosten gekennzeichnet ist/, t)
+  // Verweis auf eine Position, die es im Objekt nicht gibt.
+  const weg = tax(haus([gas(), hausstrom(), abzug('ab', 20000, 'gibt-es-nicht')]))
+  assert.equal(weg.operatingPowerBalanceKind, 'mismatch')
+  assert.match(texts(weg), /„Abzug ab“ 200,00 €, verknüpft mit einer Position, die Mietfuchs nicht findet/)
+  // Die Heizposition `included` in einem anderen Jahr bleibt ein Paar über zwei Steuerjahre.
+  const paar = tax(haus([gas(), hausstrom(), abzug('ab', 20000, 'bs'), gas(500000, '2026-01'), betrieb('bs', 20000, {}, '2026-01')]))
+  assert.equal(paar.operatingPowerBalanceKind, 'otherYear')
+})

@@ -324,9 +324,18 @@ export function operatingPowerBalanceText(report: TaxReport): string | null {
         `Jedes Jahr zählt die in ihm bezahlte Stromrechnung; die Zeile ${line} hebt auf, was zum anderen Jahr gehört. Zu tun ist nichts.${own}`
     case 'mixed':
       return `Ein Teil des Ausgleichs (${fmtEuro(c)}) ist Betriebsstrom, den Sie nicht umlegen und selbst tragen (Abzug ohne Verweis); ein Teil gehört zu Abzug und Betriebsstrom in verschiedenen Steuerjahren. ${once}${own}`
+    case 'mismatch': {
+      // Nachprüfung N2: Ein Abzug ohne Verweis daneben ist richtig erfasst; „prüfen“ gilt dann dem verknüpften Abzug.
+      const kept = report.operatingPowerKeptCents ?? 0
+      return `Abzug beim Allgemeinstrom und Betriebsstrom in den Heizkosten sind in diesem Steuerjahr verschieden hoch (Ausgleich ${fmtEuro(c)}). ` +
+        (kept !== 0
+          ? `Davon tragen Sie ${fmtEuro(kept)} selbst (Abzug ohne Verweis); dieser Teil ist richtig erfasst. ${once} Prüfen Sie in der Abrechnung, ob der verknüpfte Abzug beim Allgemeinstrom zum Betriebsstrom passt.`
+          : `${once} Prüfen Sie in der Abrechnung, ob der Abzug beim Allgemeinstrom zum Betriebsstrom passt.`) +
+        own
+    }
     default:
-      return `Abzug beim Allgemeinstrom und Betriebsstrom in den Heizkosten sind in diesem Steuerjahr verschieden hoch (Ausgleich ${fmtEuro(c)}). ${once} ` +
-        `Prüfen Sie in der Abrechnung, ob der Abzug beim Allgemeinstrom zum Betriebsstrom passt.${own}`
+      // Nachprüfung N1: ohne Lage (ältere Antwort) der neutrale Text.
+      return `Beim Betriebsstrom der Heizung gleicht Mietfuchs Abzug beim Allgemeinstrom und Heizkosten aus (Ausgleich ${fmtEuro(c)}). ${once}${own}`
   }
 }
 
