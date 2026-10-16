@@ -153,3 +153,17 @@ test('Durchsicht S-1: ausgezahlt heißt Werbungskosten im Jahr der Auszahlung, o
   assert.match(textOf(due, 'co2.refund-due'), /tragen Sie den Tag der Auszahlung an der Erstattung ein; die Steuerübersicht führt sie dann im Jahr der Auszahlung als Werbungskosten/)
   assert.ok(!/negative Zahlung/.test(GLOSSARY.co2Refund.needed))
 })
+
+// Nachprüfung N-4 zu PR 19: Die ausgezahlte Erstattung ist eine Zeile der Aufstellung je Position (`expenses.items`),
+// damit deren Summe die Werbungskosten ergibt, auf der Seite wie in der Übersicht der „Belege für die Steuer“.
+test('N-4: ausgezahlte Erstattung als Zeile der Aufstellung, direkt vermietet, ganz abziehbar; Summe der Zeilen = Werbungskosten', () => {
+  const r = taxReport(snap([refund({ settlePeriod: null, paidOutOn: '2025-06-01' })]))
+  const z = r.expenses.items.find((i) => i.costItemId === 'co2refund-paid:e1') ?? assert.fail(r.expenses.items.map((i) => i.costItemId).join(', '))
+  assert.deepEqual([z.category, z.amountCents, z.privateCents, z.deductibleCents, z.allocation, z.co2RefundPaidOut], ['CO₂-Erstattung an Mieter (§ 6 Abs. 2 CO2KostAufG)', 5000, 0, 5000, 'direct-rented', true])
+  assert.equal(z.description, 'CO₂-Erstattung an Mieter, ausgezahlt am 01.06.2025')
+  assert.equal(r.expenses.items.reduce((a, i) => a + i.amountCents, 0), r.expenses.totalCents)
+  assert.equal(r.expenses.items.reduce((a, i) => a + i.deductibleCents, 0), r.expenses.deductibleCents)
+  // Verrechnet oder in einem anderen Jahr ausgezahlt: keine Zeile.
+  assert.ok(!taxReport(snap([refund()], VERSANDT_2024)).expenses.items.some((i) => i.co2RefundPaidOut))
+  assert.ok(!taxReport(snap([refund({ settlePeriod: null, paidOutOn: '2026-01-10' })])).expenses.items.some((i) => i.co2RefundPaidOut))
+})

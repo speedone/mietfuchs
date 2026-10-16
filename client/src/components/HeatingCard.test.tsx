@@ -287,3 +287,32 @@ test('Zentrale Heizung, Brennstoffvertrag beim Mieter: keine Anlage, nach Rückf
   ])
   expect(sent.some((s) => s.url.startsWith('/api/heating-plants'))).toBe(false)
 })
+
+// Nachprüfung N-3 zu PR 19: Steht ein Mietverhältnis schon ohne Art auf „Mieter heizt selbst“, trägt die Einrichtung
+// die Art nach, ohne Rückfrage, denn am Modell ändert sich nichts.
+test('N-3: schon „Mieter heizt selbst“ ohne Art: die Einrichtung trägt „zentrale Heizung“ nach', async () => {
+  const mieter = (id: string, unitId: string) => ({ id, unitId, tenantName: 'Mieter A', persons: 1, personHistory: [], start: '2020-01-01', end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [], heatingModel: 'selfSupply' })
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    const method = init?.method ?? 'GET'
+    const path = url.split('?')[0]
+    if (method !== 'GET') {
+      sent.push({ method, url, body: JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown> })
+      return json({ ok: true })
+    }
+    if (path === '/api/properties') return json([{ id: 'objekt-1', name: 'Haus', kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null }])
+    if (path === '/api/tenancies') return json([mieter('ta', 'eg'), mieter('tb', 'og')])
+    return json([])
+  })
+  render(<PropertyProvider><UIProvider><HeatingCard units={UNITS} /></UIProvider></PropertyProvider>)
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Heizung einrichten' })).toBeTruthy())
+  fireEvent.click(screen.getByRole('button', { name: 'Heizung einrichten' }))
+  fireEvent.change(await screen.findByLabelText(/Womit wird geheizt/), { target: { value: 'oil' } })
+  fireEvent.change(screen.getByLabelText(/Wer hat den Liefervertrag für den Brennstoff/), { target: { value: 'tenantAll' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }))
+  await waitFor(() => expect(sent).toHaveLength(2))
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(sent.map((s) => [s.method, s.url, s.body])).toEqual([
+    ['PUT', '/api/tenancies/ta', { selfSupplyKind: 'central' }],
+    ['PUT', '/api/tenancies/tb', { selfSupplyKind: 'central' }],
+  ])
+})

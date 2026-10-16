@@ -9,7 +9,7 @@ import Drawer from '../components/Drawer'
 import PropertyCard from '../components/PropertyCard'
 import { COST_MODEL_LABELS, HEATING_MODEL_LABELS, SELF_SUPPLY_KIND_OPTIONS, SELF_SUPPLY_TENANCY_HINT, buildPersonHistory, costModelBadge, costModelBody, defaultTenancyUnitId, overlapQuestion, prepaymentColumn, showsFlatRates } from '../tenancyModel'
 import { useOpenForm, useProperty, withProperty } from '../property'
-import { buildTenantChange, defaultStart, EMPTY_NEW_TENANT, endProblem, gapProblem, INTERIM_FEE_HINT, INTERIM_GAP_OPTIONS, meterProblem, parseMeterValue, type NewTenantForm } from '../tenantChange'
+import { buildTenantChange, defaultStart, EMPTY_NEW_TENANT, endProblem, gapProblem, INTERIM_FEE_HINT, INTERIM_GAP_OPTIONS, meterProblem, parseMeterValue, successorHeatingNote, type NewTenantForm } from '../tenantChange'
 import { gapConsequence } from '../heatingSelfView'
 import PeriodCard from '../components/PeriodCard'
 import PageHeader from '../components/PageHeader'
@@ -1109,6 +1109,7 @@ function TenantChangeWizard({ tenancy, unit, plants, onClose, onDone }: {
             {vacancy
               ? ' · die Wohnung bleibt ohne Mieter (Leerstandskosten trägt der Vermieter).'
               : newTenant.name.trim() ? <> · neues Mietverhältnis „{newTenant.name}“ ab {newTenant.start ? fmtDate(newTenant.start) : '—'}.</> : ' · neues Mietverhältnis wird angelegt.'}
+            {!vacancy && successorHeatingNote(tenancy) && <> {successorHeatingNote(tenancy)}</>}
           </div>
           <div className="row">
             <button className="btn" disabled={busy} onClick={() => void commit()}>

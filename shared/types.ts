@@ -987,6 +987,9 @@ export type TaxExpenseItem = {
   // Abzügen beim Allgemeinstrom und Heizpositionen, die auch in der Stromrechnung stecken. `costItemId` ist dann
   // `operating-power-balance:<Jahr>`.
   operatingPowerBalance?: true
+  // Eine ausgezahlte CO₂-Erstattung an einen Mieter, der selbst heizt (Heizung PR 19, Nachprüfung N-4): keine
+  // Kostenposition, aber eine Zeile der Werbungskosten. `costItemId` ist dann `co2refund-paid:<Erstattung>`.
+  co2RefundPaidOut?: true
 }
 
 export type TaxReport = {
@@ -1081,6 +1084,9 @@ export type TaxReport = {
   // getragen), `otherYear` Abzug und Betriebsstrom in verschiedenen Steuerjahren, `mixed` beides, `mismatch` im selben
   // Steuerjahr verschieden hoch. Nur zusammen mit `operatingPowerBalanceCents`.
   operatingPowerBalanceKind?: 'kept' | 'otherYear' | 'mixed' | 'mismatch'
+  // Davon Abzüge ohne Verweis, selbst getragen (Nachprüfung N2 zu #268). Nur zusammen mit `operatingPowerBalanceCents`
+  // und nur ≠ 0; bei `mismatch` sagt der Text, dass dieser Teil richtig erfasst ist.
+  operatingPowerKeptCents?: number
   // Abzüge ohne Verweis, die als dem Messdienst gemeldet gelten, obwohl im Zeitraum zugleich eine Anlage ohne
   // Messdienst heizt (R-6 zu #268). Nur, wenn es welche gibt.
   operatingPowerAmbiguous?: { costItemId: string; description: string; amountCents: number }[]

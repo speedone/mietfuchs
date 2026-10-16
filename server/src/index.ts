@@ -73,7 +73,7 @@ import { findingsText, validateDb } from './legacy/validate.ts'
 import { createUpdateChecker, UPDATE_URL } from './update.ts'
 import { APP_VERSION, RUNTIME, STANDALONE } from './version.ts'
 import { describeFile, describeFolder, hashFile, mimeTypeOf, uploadedAtOf } from './uploads.ts'
-import { planTaxArchive } from './taxReceipts.ts'
+import { derivedTaxLines, planTaxArchive } from './taxReceipts.ts'
 import { forgetUpload, placeUpload, recordIfMissing, recordUpload, rowOf, uploadRows, type Placement, type UploadRow } from './db/uploads.ts'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -1753,8 +1753,9 @@ app.get('/api/receipts/tax/:year', async (req, res) => {
     const ids = new Set(parts === null
       ? stock.costItems.filter((c) => c.period === calendarPeriod(year)).map((c) => c.id)
       : parts.flatMap((p) => p.items.map((c) => c.id)))
-    // #268: der Ausgleich beim Betriebsstrom, eine Zeile der Übersicht ohne Position.
-    const derived = report.expenses.items.filter((i) => i.operatingPowerBalance)
+    // #268 und Heizung PR 19 (N-4): Zeilen der Übersicht ohne Position (Ausgleich beim Betriebsstrom, ausgezahlte
+    // CO₂-Erstattung).
+    const derived = derivedTaxLines(report)
     return { items: stock.costItems.filter((c) => ids.has(c.id)), property, rows: await uploadRows(db), links: await uploadLinks(db), split, derived }
   })
   const booked = new Map<string, string[]>()

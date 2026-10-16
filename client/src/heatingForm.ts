@@ -229,12 +229,14 @@ const NOT_COVERED = 'Liefert ein Mieter über seinen Vertrag auch Wärme an ande
 // Die Mietverhältnisse, die die Karte nach „Der Mieter hat den Vertrag“ auf „Mieter heizt selbst“ stellen kann: die am
 // Tag `today` laufenden der angehakten Wohnungen, die es noch nicht sind. Bei der zentralen Heizung muss es ein
 // einziger Mieter sein (gleicher Name, Auslegung zu § 5 Abs. 3 CO2KostAufG, Prüfung S5); sonst nicht abgedeckt.
+// Nachprüfung N-3: `kindTenancyIds` sind die laufenden, die schon „Mieter heizt selbst“ sind, aber ohne Art; bei ihnen
+// trägt die Karte die Art nach (ohne Rückfrage, am Modell ändert sich nichts). Eine andere Art bleibt stehen.
 export function selfSupplyOffer(
   unitIds: readonly string[],
-  tenancies: readonly { id: string; unitId: string; tenantName: string; start: string; end: string | null; heatingModel?: string }[],
+  tenancies: readonly { id: string; unitId: string; tenantName: string; start: string; end: string | null; heatingModel?: string; selfSupplyKind?: string | null }[],
   today: string,
   central: boolean,
-): { tenancyIds: string[]; names: string[] } | { error: string } {
+): { tenancyIds: string[]; names: string[]; kindTenancyIds: string[] } | { error: string } {
   const running = tenancies.filter((t) => unitIds.includes(t.unitId) && t.start <= today && (t.end === null || t.end >= today))
   const names = [...new Set(running.map((t) => t.tenantName.trim()))]
   if (central && names.length > 1) return { error: NOT_COVERED }
@@ -242,7 +244,8 @@ export function selfSupplyOffer(
   // die selbstgenutzte des Vermieters ebenso wie eine leere, die über den Vertrag des Mieters mitbeheizt wird.
   if (central && unitIds.some((id) => !running.some((t) => t.unitId === id))) return { error: NOT_COVERED }
   const open = running.filter((t) => t.heatingModel !== 'selfSupply')
-  return { tenancyIds: open.map((t) => t.id), names: [...new Set(open.map((t) => t.tenantName.trim()))] }
+  const kindless = running.filter((t) => t.heatingModel === 'selfSupply' && !t.selfSupplyKind)
+  return { tenancyIds: open.map((t) => t.id), names: [...new Set(open.map((t) => t.tenantName.trim()))], kindTenancyIds: kindless.map((t) => t.id) }
 }
 
 // Der Satz unter der zweiten Frage.
