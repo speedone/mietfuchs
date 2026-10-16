@@ -987,6 +987,9 @@ export type TaxExpenseItem = {
   // Abzügen beim Allgemeinstrom und Heizpositionen, die auch in der Stromrechnung stecken. `costItemId` ist dann
   // `operating-power-balance:<Jahr>`.
   operatingPowerBalance?: true
+  // Eine ausgezahlte CO₂-Erstattung an einen Mieter, der selbst heizt (Heizung PR 19, Nachprüfung N-4): keine
+  // Kostenposition, aber eine Zeile der Werbungskosten. `costItemId` ist dann `co2refund-paid:<Erstattung>`.
+  co2RefundPaidOut?: true
 }
 
 export type TaxReport = {

@@ -1230,7 +1230,35 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
   // CO₂-Erstattung an Mieter, die selbst heizen (Heizung PR 19, Durchsicht S-1): Eine ausgezahlte Erstattung
   // (`paidOutOn`) ist Werbungskosten im Jahr der Auszahlung (§ 9 Abs. 1, § 11 Abs. 2 EStG), ganz abziehbar. Eine in der
   // Betriebskostenabrechnung verrechnete wirkt dort über den Saldo und die Zahlungen und steht hier nicht noch einmal.
-  const paidOutCents = (snapshot.co2Refunds ?? []).filter((r) => r.paidOutOn !== null && r.paidOutOn.slice(0, 4) === String(year)).reduce((a, r) => a + r.amountCents, 0)
+  const paidOut = (snapshot.co2Refunds ?? []).filter((r) => r.paidOutOn !== null && r.paidOutOn.slice(0, 4) === String(year))
+  const paidOutCents = paidOut.reduce((a, r) => a + r.amountCents, 0)
+  // Nachprüfung N-4: Jede ausgezahlte Erstattung ist auch eine Zeile der Aufstellung je Position, damit deren Summe die
+  // Werbungskosten ergibt (Seite und Übersicht der „Belege für die Steuer“). Direkt einem vermieteten Mietverhältnis
+  // zugeordnet, ganz abziehbar.
+  for (const r of paidOut) {
+    if (r.amountCents === 0 || r.paidOutOn === null) continue
+    const tenantName = snapshot.tenancies.find((t) => t.id === r.tenancyId)?.tenantName ?? ''
+    split.items.set(`co2refund-paid:${r.id}`, {
+      costItemId: `co2refund-paid:${r.id}`,
+      category: CO2_REFUND_TAX_CATEGORY,
+      group: groupOf(CO2_REFUND_TAX_CATEGORY) ?? 'Sonstige Werbungskosten',
+      description: `CO₂-Erstattung an Mieter, ausgezahlt am ${fmtDay(r.paidOutOn)}`,
+      amountCents: r.amountCents,
+      privateCents: 0,
+      deductibleCents: r.amountCents,
+      labor35aCents: 0,
+      allocation: 'direct-rented',
+      deductiblePercent: null,
+      areaPrivateCents: null,
+      settlementPrivateCents: null,
+      steps: [
+        { label: 'Erstattung', value: `${fmtCents(r.amountCents)} an ${tenantName || 'den Mieter'}, ausgezahlt am ${fmtDay(r.paidOutOn)}`, term: 'co2Refund' },
+        { label: 'Zuordnung', value: 'ganz abziehbar: Werbungskosten im Jahr der Auszahlung (§ 9 Abs. 1 Satz 1, § 11 Abs. 2 Satz 1 EStG), an den Mieter einer vermieteten Wohnung, also ohne privaten Teil' },
+      ],
+      taxUnits: null,
+      co2RefundPaidOut: true,
+    })
+  }
   if (paidOutCents !== 0) {
     const group = groupOf(CO2_REFUND_TAX_CATEGORY) ?? 'Sonstige Werbungskosten'
     const cats = byGroup.get(group) ?? new Map<string, TaxExpenseCategory>()
@@ -7229,15 +7257,21 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // Hinweis sonst käme, damit es nicht im Rechtsstand jeder Abrechnung mit Wärmepumpe steht.
   if (scope === 'all') {
     // Heizung PR 19, Durchsicht S-2: zentrale Heizung, Brennstoff beim Mieter, ohne Heizanlage. Trägt ein anderer Mieter
-    // den Allgemeinstrom mit und steht dort kein Abzug, kann der Brennerstrom bei ihm landen. Gefärbt wie „Abzug fehlt“.
+    // den Allgemeinstrom mit und steht dort kein Abzug, kann der Brennerstrom bei ihm landen. Ein Hinweis, der die Ampel
+    // nicht färbt (INFORMATIONAL in client/src/notices.ts, Entscheidung zur Durchsicht S-2).
+    // Nachprüfung N-1: Beantwortet wird er nur von einem Abzug, der dieser Heizung zuzuordnen ist: ohne Verweis, oder
+    // verknüpft mit einer Heizposition, die der Selbstversorger trägt (eine Zeile seiner Abrechnung, direkt oder über
+    // seine Teilnahme). Der Abzug für eine andere Heizanlage des Vermieters zählt nicht.
     const centralSelf = snapshot.tenancies.filter((t) => t.heatingModel === 'selfSupply' && t.selfSupplyKind === 'central' && statements.has(t.id))
     if (centralSelf.length > 0) {
       const generals = items.filter((c) => c.category === GENERAL_POWER_CATEGORY && c.amountCents > 0 && c.operatingPower === undefined)
-      const deducted = items.some((c) => c.operatingPower === 'deduction')
+      const deductedFor = (tenancyId: string): boolean => items.some((c) => c.operatingPower === 'deduction' &&
+        (!c.operatingPowerItemId || (statements.get(tenancyId)?.rows.some((r) => r.costItemId === c.operatingPowerItemId) ?? false)))
       const centralIds = new Set(centralSelf.map((t) => t.id))
       const othersPay = generals.some((g) => [...statements.values()].some((st) => !centralIds.has(st.tenancyId) && st.rows.some((r) => r.costItemId === g.id && r.shareCents > 0)))
-      if (othersPay && !deducted) {
+      if (othersPay) {
         for (const t of centralSelf) {
+          if (deductedFor(t.id)) continue
           const unitName = snapshot.units.find((u) => u.id === t.unitId)?.name ?? ''
           warn('heating.self-supply-operating-power', selfSupplyPowerText(t.tenantName, unitName, generals), { kind: 'tenancy', id: t.id })
         }

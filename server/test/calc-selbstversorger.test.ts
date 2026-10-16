@@ -128,7 +128,7 @@ test('Gemischt mit Heizanlage: wer selbst heizt und Brennstoff der Anlage trägt
 
 // Durchsicht S-2: Zentrale Heizung, Brennstoff beim Mieter. Ihr Betriebsstrom darf nicht im Allgemeinstrom stehen, den
 // auch andere Mieter tragen (BGH, Urteil vom 03.06.2016, V ZR 166/15, Rn. 13).
-test('S-2: zentrale Heizung beim Mieter, Allgemeinstrom auch bei anderen Mietern: Hinweis zum Betriebsstrom, färbend', () => {
+test('S-2: zentrale Heizung beim Mieter, Allgemeinstrom auch bei anderen Mietern: Hinweis zum Betriebsstrom, färbt die Ampel nicht', () => {
   const strom: SnapshotCostItem = { id: 'strom', period: calendarPeriod(2025), category: 'Beleuchtung/Allgemeinstrom', description: 'Hausstrom', amountCents: 100000, key: 'units' }
   const wartung = item(2025, { key: 'direct', directUnitId: 'a' })
   const zentral = (kind: 'central' | 'perUnit' | undefined, over: Partial<SnapshotSource> = {}) => settle({
@@ -155,4 +155,31 @@ test('S-2: zentrale Heizung beim Mieter, Allgemeinstrom auch bei anderen Mietern
   // Trägt nur der Selbstversorger den Allgemeinstrom (er hat das ganze Haus), zahlt niemand sonst mit.
   const allein = settle({ units: [unit('a')], tenancies: [tenancy('ta', 'a', { heatingModel: 'selfSupply', selfSupplyKind: 'central' })], costItems: [wartung, strom] })
   assert.ok(!codes(allein).includes('heating.self-supply-operating-power'))
+})
+
+// Nachprüfung N-1 zu PR 19: Nur ein Abzug, der dieser Lage zuzuordnen ist, beantwortet den Hinweis. Der Abzug für die
+// Heizanlage des Vermieters an einer anderen Wohnung (verknüpft mit einer Heizposition, die der Selbstversorger nicht
+// trägt) lässt den Brennerstrom seiner Heizung weiter im Allgemeinstrom.
+test('N-1: Abzug für eine andere Heizung schaltet den Hinweis nicht ab; verknüpft mit seiner Heizposition oder ohne Verweis schon', () => {
+  const strom: SnapshotCostItem = { id: 'strom', period: calendarPeriod(2025), category: 'Beleuchtung/Allgemeinstrom', description: 'Hausstrom', amountCents: 100000, key: 'units' }
+  const wartung = item(2025, { key: 'direct', directUnitId: 'a' })
+  const betrieb = (id: string, over: Partial<SnapshotCostItem>): SnapshotCostItem =>
+    item(2025, { id, description: `Betriebsstrom ${id}`, amountCents: 8000, heatingPart: 'operating', operatingPower: 'included', ...over })
+  const abzug = (id: string, linked?: string): SnapshotCostItem => ({
+    id, period: calendarPeriod(2025), category: 'Beleuchtung/Allgemeinstrom', description: `Abzug ${id}`, amountCents: -8000, key: 'units',
+    operatingPower: 'deduction', operatingPowerGeneralId: 'strom', ...(linked ? { operatingPowerItemId: linked } : {}),
+  })
+  const mit = (extra: SnapshotCostItem[]) => codes(settle({
+    units: ZWEI,
+    tenancies: [tenancy('ta', 'a', { heatingModel: 'selfSupply', selfSupplyKind: 'central' }), tenancy('tb', 'b')],
+    costItems: [wartung, strom, ...extra],
+  })).includes('heating.self-supply-operating-power')
+  // Heizung des Vermieters für Wohnung b: ihr Abzug gehört nicht zur Heizung des Selbstversorgers.
+  assert.equal(mit([betrieb('fremd', { key: 'direct', directUnitId: 'b' }), abzug('ab-fremd', 'fremd')]), true)
+  assert.equal(mit([betrieb('fremd', { key: 'area', participantUnitIds: ['b'] }), abzug('ab-fremd', 'fremd')]), true)
+  // Mit der Heizposition des Selbstversorgers verknüpft (direkt oder über seine Teilnahme): beantwortet.
+  assert.equal(mit([betrieb('eigen', { key: 'direct', directUnitId: 'a' }), abzug('ab-eigen', 'eigen')]), false)
+  assert.equal(mit([betrieb('eigen', { key: 'area', participantUnitIds: ['a', 'b'] }), abzug('ab-eigen', 'eigen')]), false)
+  // Ohne Verweis: beantwortet, wie bisher.
+  assert.equal(mit([abzug('ab-frei')]), false)
 })

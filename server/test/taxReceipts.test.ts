@@ -5,7 +5,7 @@ import { taxReportFor } from '../src/calc.ts'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import type { CostItem } from '../../shared/types.ts'
-import { planTaxArchive } from '../src/taxReceipts.ts'
+import { derivedTaxLines, planTaxArchive } from '../src/taxReceipts.ts'
 
 const item = (id: string, extra: Partial<CostItem> = {}): CostItem => ({
   id, propertyId: 'p1', period: calendarPeriod(2025), category: 'Grundsteuer', description: `Position ${id}`, amountCents: 10000, key: 'area', ...extra,
@@ -143,5 +143,46 @@ test('Steuer-Belege (#268): der Ausgleich beim Betriebsstrom steht als Zeile ohn
   const strom = rows.filter((r) => r[1] === 'Beleuchtung/Allgemeinstrom').reduce((a, r) => a + cents(r[4]), 0)
   assert.equal(strom, 100000, 'Allgemeinstrom 1.000 − 200 + 200: die bezahlte Stromrechnung')
   assert.equal(rows.reduce((a, r) => a + cents(r[4]), 0), report.expenses.totalCents)
+  assert.equal(rows.reduce((a, r) => a + cents(r[6]), 0), report.expenses.deductibleCents)
+})
+
+// Nachprüfung N-4 zu PR 19: Die Übersicht führt jede Zeile der Steuerübersicht, auch die an Selbstversorger ausgezahlte
+// CO₂-Erstattung neben dem Ausgleich beim Betriebsstrom (#268). Summe der CSV = Werbungskosten der Steuerübersicht.
+test('Steuer-Belege (N-4): CO₂-Erstattung und Betriebsstrom-Ausgleich als Zeilen ohne eigenen Beleg; Summen wie in der Übersicht', () => {
+  const plant = {
+    id: 'hp1', propertyId: 'p1', name: 'Kessel', method: 'manual' as const, source: 'building' as const, supply: 'central' as const, energy: 'gas' as const,
+    devicesRemote: 'unknown' as const, devicesInstalledAfter2021: 'unknown' as const, newDevicesInstall: null, units: [{ unitId: 'u2', heatedAreaM2: null }],
+    periodStartMonth: null, periodChanges: [], separateSpans: [], separateSettlement: false, endsOn: null, replacesPlantId: null,
+  }
+  const items = [
+    item('gas', { category: 'Heizung und Warmwasser', description: 'Gas', amountCents: 500000, heatingPlantId: 'hp1', heatingPart: 'fuel' }),
+    item('hs', { category: 'Beleuchtung/Allgemeinstrom', description: 'Hausstrom', amountCents: 100000, key: 'units' }),
+    item('ab', { category: 'Beleuchtung/Allgemeinstrom', description: 'Abzug Betriebsstrom', amountCents: -20000, key: 'units', operatingPower: 'deduction', operatingPowerGeneralId: 'hs' }),
+  ]
+  const mieter = (id: string, unitId: string, over: Record<string, unknown> = {}) => ({
+    id, unitId, tenantName: id, persons: 1, personHistory: [{ from: '2020-01-01', persons: 1 }], start: '2020-01-01', end: null,
+    prepayments: [], prepaymentOverrides: {}, baseRents: [], ...over,
+  })
+  const source = {
+    properties: [{ id: 'p1', kind: 'mfh' as const, cableBuiltBeforeDec2021: null, periodRules: CALENDAR_RULES }],
+    units: [{ id: 'u1', propertyId: 'p1', name: 'EG', areaM2: 60, participates: true }, { id: 'u2', propertyId: 'p1', name: 'OG', areaM2: 40, participates: true }],
+    tenancies: [mieter('t1', 'u1', { heatingModel: 'selfSupply' as const }), mieter('t2', 'u2')],
+    costItems: items, meters: [], readings: [], payments: [], closedSettlements: [], heatingPlants: [plant],
+    co2Refunds: [{
+      id: 'e1', tenancyId: 't1', supplierBilledAt: '2025-01-20', claimedAt: '2025-03-01', amountCents: 5000, settlePeriod: null, paidOutOn: '2025-06-01',
+      billedFrom: '2024-01-01', billedTo: '2024-12-31', emissionsKg: null, co2CostCents: null, areaM2: null, ownAppliances: false, commercialUse: false,
+      commercialMetered: false, nonResidential: false, restriction: 'none' as const, halfSplitFrom: null, gridFeeCents: null, bioCostCents: null,
+    }],
+  }
+  const report = taxReportFor(source, 'p1', 2025)
+  const split = new Map(report.expenses.items.map((i) => [i.costItemId, i]))
+  const plan = planTaxArchive(items, names, new Map(), split, derivedTaxLines(report))
+  const zeilen = plan.overviewCsv.replace(/^\uFEFF/, '').trim().split('\r\n')
+  assert.ok(zeilen.includes('Sonstige Werbungskosten;CO₂-Erstattung an Mieter (§ 6 Abs. 2 CO2KostAufG);CO₂-Erstattung an Mieter, ausgezahlt am 01.06.2025;;50,00;0,00;50,00;;kein eigener Beleg (Auszahlung an den Mieter, Nachweis über den Kontoauszug)'), zeilen.join('\n'))
+  assert.ok(zeilen.some((z) => z.includes('Betriebsstrom der Heizung, selbst getragen;;200,00')), zeilen.join('\n'))
+  const cents = (s: string | undefined) => Math.round(Number((s ?? '').replace(',', '.')) * 100)
+  const rows = zeilen.slice(1).map((z) => z.split(';'))
+  assert.equal(rows.reduce((a, r) => a + cents(r[4]), 0), report.expenses.totalCents)
+  assert.equal(rows.reduce((a, r) => a + cents(r[5]), 0), report.expenses.privateCents)
   assert.equal(rows.reduce((a, r) => a + cents(r[6]), 0), report.expenses.deductibleCents)
 })
