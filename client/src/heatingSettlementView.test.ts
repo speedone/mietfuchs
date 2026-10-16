@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import {
-  adjustedPrepaymentLabel, cockpitHeatingRows, heatingChoices, heatingItemPeriods, heatingOnlyNote, heatingOverridesWith, itemsOfPeriod, prepaymentLabel, prepaymentSplit, totalLabel,
+  adjustedPrepaymentLabel, cockpitHeatingRows, suggestionWithoutHeating, heatingChoices, heatingItemPeriods, heatingOnlyNote, heatingOverridesWith, itemsOfPeriod, prepaymentLabel, prepaymentSplit, totalLabel,
   heatingTaxYear, recommendedDeadlineText, scheduleOf, separateHeatingFor, settlementPaths, settlementTitle,
 } from './heatingSettlementView'
 import { CALENDAR_RULES, calendarYearPeriod, periodKey as k, settlementPeriod } from '../../shared/period.ts'
@@ -126,4 +126,15 @@ describe('Jahr der Zahlung einer Heizposition (Durchsicht von #231, Important 3)
   test('Heizperiode in einem Kalenderjahr: kein Feld, kein Wert', () => {
     expect(heatingTaxYear({ startYear: 2026, endYear: 2026 }, '2027')).toEqual({ show: false, years: [], fallback: '', valid: true })
   })
+})
+
+test('Durchsicht #297 S-C: „ohne Heizung“ hängt an der Abrechnung, nicht an früheren getrennten Heizkostenabrechnungen des Objekts', () => {
+  // Nach dem Ausschalten der getrennten Abrechnung enthält der Vorschlag die Heizkosten wieder.
+  expect(suggestionWithoutHeating({ suggestionWithoutHeating: false, separateHeating: undefined }, null, 3)).toBe(false)
+  expect(suggestionWithoutHeating({ suggestionWithoutHeating: true }, null, 0)).toBe(true)
+  // Eine Heizkostenabrechnung ist gewählt: dort gibt es kein „ohne Heizung“.
+  expect(suggestionWithoutHeating({ suggestionWithoutHeating: true }, { plantId: 'hp', period: k('2025-05') }, 1)).toBe(false)
+  // Eine vorher abgeschlossene Abrechnung kennt das Feld nicht: dann wie bisher, wenn in diesem Zeitraum eine getrennte endet.
+  expect(suggestionWithoutHeating({}, null, 1)).toBe(true)
+  expect(suggestionWithoutHeating({}, null, 0)).toBe(false)
 })

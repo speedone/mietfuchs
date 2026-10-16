@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import type { CostItem, HeatingSettlementInfo, NoticeSubject, PeriodKey, Settings, Settlement, SettlementRow, Tenancy, Unit } from '../types'
 import {
-  adjustedPrepaymentLabel, heatingChoices, heatingOnlyNote, heatingOverridesWith, prepaymentLabel, prepaymentSplit, recommendedDeadlineText, settlementPaths, settlementTitle, totalLabel,
+  adjustedPrepaymentLabel, heatingChoices, suggestionWithoutHeating, heatingOnlyNote, heatingOverridesWith, prepaymentLabel, prepaymentSplit, recommendedDeadlineText, settlementPaths, settlementTitle, totalLabel,
 } from '../heatingSettlementView'
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { invoiceLabel, renderInvoicePages } from '../pdfPreview'
@@ -79,7 +79,8 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
   const choices = heatingChoices(heatingList, period)
   // Laienprobe B17, B18: Die Betriebskostenabrechnung eines Zeitraums, dessen Heizkosten eigene
   // Heizkostenabrechnungen haben, rechnet die Heizvorauszahlung nicht an und schlägt nur die übrige vor.
-  const separateHeating = target === null && heatingList.length > 0
+  // Durchsicht #297 S-C: an diese Abrechnung gebunden, nicht an alle Heizkostenabrechnungen des Objekts.
+  const separateHeating = data ? suggestionWithoutHeating(data, target, choices.length) : false
   // Ein anderer Zeitraum oder ein anderes Objekt: wieder die Betriebskostenabrechnung.
   useEffect(() => { setTarget(null) }, [param, propertyId])
   // Das Ziel aus dem Cockpit, sobald die Liste da ist und es darin steht (E45).

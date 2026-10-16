@@ -405,6 +405,16 @@ test('Abdeckung V26: Kesseltausch bei getrennter Heizkostenabrechnung; gesperrt 
     // Die Abrechnung 2026 rechnet die Heizperiode 2026/2027 nicht, sie endet erst 2027; 2027 enthält beide Anlagen.
     const p2027 = await abrechnung(opened, '2027-01')
     assert.deepEqual(p2027.heatingPeriods?.map((h) => [h.plantId, h.period.key]).sort(), [['hp1', '2026-05'], ['hp2', '2026-05']])
+    // Durchsicht #297 S-C: Heizkosten beider Anlagen 2026/2027 (500 + 700 €). Der Vorschlag nach § 560 enthält sie
+    // (1.200 / 12 = 100 €) und heißt deshalb nicht „ohne Heizung“; 2025 lief die Heizung getrennt.
+    await opened.write(async (db) => {
+      await createEntity(db, 'costItems', 'alt', { propertyId: 'objekt-1', period: '2026-05', category: HEATING_CATEGORY, description: 'Messdienst alt', amountCents: 50000, key: 'area', heatingPlantId: 'hp1', taxYear: 2027 })
+      await createEntity(db, 'costItems', 'neu', { propertyId: 'objekt-1', period: '2026-05', category: HEATING_CATEGORY, description: 'Messdienst neu', amountCents: 70000, key: 'area', heatingPlantId: 'hp2', taxYear: 2027 })
+    })
+    const b2027 = await abrechnung(opened, '2027-01')
+    const m2027 = b2027.statements.find((st) => st.tenancyId === 't1') ?? assert.fail('kein Mieter')
+    assert.deepEqual([m2027.suggestedMonthlyCents, b2027.suggestionWithoutHeating], [10000, false])
+    assert.equal((await abrechnung(opened, '2025-01')).suggestionWithoutHeating, true)
   })
 })
 
