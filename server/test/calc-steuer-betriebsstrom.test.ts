@@ -504,4 +504,10 @@ test('M1: Gutschrift mit eigenem Schlüssel macht den Heizanteil unbrauchbar (87
   assert.match(t, /Heizanteil/, t)
   // Gesamt bleibt in sich stimmig.
   assert.equal(r.expenses.privateCents + r.expenses.deductibleCents, r.expenses.totalCents)
+  // Durchsicht #297 K3: Gutschrift über der Rechnung (netto ≤ 0): ebenfalls Fläche, und die Begründung nennt den Heizanteil,
+  // nicht einen Abzug ohne Verweis.
+  const ueber = { ...src, costItems: src.costItems.map((c) => (c.id === 'gut' ? { ...c, amountCents: -110000 } : c)) }
+  const t2 = texts(tax(ueber))
+  assert.match(t2, /Heizanteil der Anlage taugt hier nicht/, t2)
+  assert.doesNotMatch(t2, /denn ein Abzug ohne Verweis/, t2)
 })

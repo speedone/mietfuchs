@@ -1705,7 +1705,10 @@ function operatingPowerBalanceItem(
       privateCents += x.privateCents
       amountCents += x.amountCents
     }
-    if (!(amountCents > 0)) return null
+    // Durchsicht #297 K3: Heizkosten der Anlage netto ≤ 0 (Gutschrift über der Rechnung) sind ebenso kein Maßstab; ganz
+    // ohne Heizposition bleibt es beim Rückfall wie beim Abzug ohne Verweis.
+    if (amountCents === 0 && privateCents === 0) return null
+    if (!(amountCents > 0)) return 'unusable'
     // Integrationsdurchsicht M1: Eine Gutschrift mit eigenem Schlüssel oder eigenen Teilnehmern kann den Nenner fast
     // aufzehren; dann liegt die Quote außerhalb 0…1 (gemessen 875 %), und der private Teil stünde über dem Betrag, auch
     // mit falschem Vorzeichen. Eine solche Quote ist kein Heizanteil; es gilt dann die Fläche wie beim Abzug ohne Verweis.
