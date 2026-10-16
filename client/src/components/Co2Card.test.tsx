@@ -109,5 +109,7 @@ test('Abdeckung V14: Eigentumswohnung fragt nach den Heizkosten der eigenen Wohn
   expect(screen.getByText(/Nicht gemeint ist die Summe des ganzen Hauses/)).toBeTruthy()
   // Allgemein über Messdienste spricht nur der Satz, dass „vom Vermieter übernommen“ kein Zeichen ist.
   expect((document.body.textContent ?? '').replace(CO2_NOT_A_SIGN, '')).not.toMatch(/Messdienst/)
-  expect(document.body.textContent ?? '').toMatch(/Einzelabrechnung der Gemeinschaft/)
+  // Durchsicht #297 S-B: beizulegen ist die Einzelabrechnung Heizung der Wohnung, nicht die Hausgeldabrechnung.
+  expect(document.body.textContent ?? '').toMatch(/legen Sie deshalb die Einzelabrechnung \(Heizung\) Ihrer Wohnung bei\./)
+  expect(document.body.textContent ?? '').not.toMatch(/Abrechnung der Gemeinschaft bei/)
 })

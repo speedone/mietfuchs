@@ -137,7 +137,7 @@ export default function Co2Card({ view, tenancies, unitsCount, hasSelfUsed = fal
               Für den Ausweis in der Abrechnung mindestens nötig: der CO₂-Ausstoß insgesamt (kg) und die Wohnfläche aus der CO₂-Seite der Abrechnung.
               Aus ihnen ist der Wert je m² berechnet; die Abrechnung muss neben der Einstufung auch ihre Berechnungsgrundlagen nennen,
               sonst darf jeder Mieter seinen Anteil an den Heizkosten kürzen (§ 7 Abs. 3 und 4 CO2KostAufG). Ob ein Gericht weitere Angaben
-              verlangt, ist nicht entschieden; legen Sie deshalb die Abrechnung {homeowners ? 'der Gemeinschaft' : 'des Messdienstes'} bei.
+              verlangt, ist nicht entschieden; legen Sie deshalb {homeowners ? 'die Einzelabrechnung (Heizung) Ihrer Wohnung' : 'die Abrechnung des Messdienstes'} bei.
             </p>
           )}
           {serviceItems.length > 1 && (
@@ -156,7 +156,7 @@ export default function Co2Card({ view, tenancies, unitsCount, hasSelfUsed = fal
               <p className="muted">
                 Nennt die Einzelabrechnung eines Mieters einen Betrag „vom Vermieter übernommen“, tragen Sie ihn hier ein. Ohne Angabe
                 rechnet Mietfuchs ihn näherungsweise nach dem Anteil an den Heizkosten, und der Ausdruck verweist auf die Einzelabrechnung
-                {homeowners ? ' der Gemeinschaft' : ' des Messdienstes'}; deren Betrag ist maßgeblich.
+                {homeowners ? ' (Heizung) Ihrer Wohnung' : ' des Messdienstes'}; deren Betrag ist maßgeblich.
               </p>
               {billed.map((t) => (
                 <label className="field" key={t.id}>
