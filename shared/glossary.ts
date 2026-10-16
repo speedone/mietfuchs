@@ -405,6 +405,48 @@ export const GLOSSARY = {
     norm: '§ 7 Abs. 1 Satz 2, § 10 HeizkostenV',
     needed: 'Nur bei einer Öl- oder Gasheizung (Flüssiggas zählt nach Auslegung von Mietfuchs dazu, siehe Verbrauchskosten). Wissen Sie nicht, ob die Voraussetzungen vorliegen, liegen Sie mit dem Pflichtanteil in jedem Fall richtig, denn er liegt auch innerhalb der freien Wahl. Mehr geht nur mit einer Vereinbarung (§ 10 HeizkostenV). Den Pflichtanteil nachzutragen ist keine Änderung nach § 6 Abs. 4 und geht auch in einer begonnenen Heizperiode.',
   },
+  // #223: die Kosten der Zwischenablesung bei Wasser und anderen Zählern; bei der Heizung steht dasselbe unter
+  // „Zwischenablesung“.
+  changeFee: {
+    title: 'Nutzerwechselgebühr',
+    short:
+      'Was der Messdienst berechnet, wenn er wegen eines Auszugs mitten im Abrechnungszeitraum die Zähler zwischendurch abliest und abrechnet. ' +
+      'Diese Kosten sind keine Betriebskosten, sondern Verwaltungskosten, und trägt der Vermieter, soweit im Mietvertrag nichts anderes vereinbart ist.',
+    example: 'Der Messdienst berechnet für die Zwischenablesung der Wasserzähler beim Auszug 30,00 €. Gehen sie nach Personen über drei Wohnungen, trüge jede rund 10,00 €; tatsächlich gehören die 30,00 € zu Ihrem Anteil.',
+    norm: 'BGH, Urteil vom 14.11.2007, VIII ZR 19/07',
+    needed:
+      'Bei jedem Mieterwechsel mit Zählern. Erfassen Sie die Gebühr unter „Nicht umlagefähig“. Haben Sie mit dem ausziehenden Mieter wirksam etwas anderes vereinbart, fordern Sie sie von ihm; ob eine Klausel im Formularmietvertrag genügt, hat der BGH nicht entschieden.',
+  },
+  // #218: nur Erklärung und Hinweis; die Verteilung über Nutzergruppen rechnet Mietfuchs nicht.
+  preCapture: {
+    title: 'Vorerfassung nach Nutzergruppen',
+    short:
+      'Die Kosten einer Heizanlage gehen zuerst auf Gruppen von Nutzern und erst danach innerhalb jeder Gruppe auf die einzelnen Nutzer. Den Anteil jeder Gruppe misst ein eigener Zähler. ' +
+      'Vorgeschrieben ist das, wenn der Verbrauch der Nutzer einer Anlage nicht mit gleichen Ausstattungen erfasst wird, etwa Wärmezähler in einem Teil des Hauses und Heizkostenverteiler im anderen. ' +
+      'Bei unterschiedlichen Nutzungs- oder Gebäudearten oder aus anderen sachgerechten Gründen darf der Gebäudeeigentümer sie auch sonst durchführen.',
+    example:
+      'An einer Heizung hängen ein Laden und vier Wohnungen. Ein Wärmezähler misst für den Laden 6.000 kWh von 20.000 kWh des Hauses: 30 % der Heizkosten gehen an die Gruppe Laden, 70 % an die Gruppe Wohnungen, ' +
+      'und innerhalb der Wohnungen wird nach deren Heizkostenverteilern verteilt.',
+    norm: '§ 5 Abs. 7 HeizkostenV',
+    needed:
+      'Pflicht nur bei verschiedenen Geräten an einer Anlage; Mietfuchs meldet das als Fehler und verteilt die Anlage dann nicht. In den übrigen Fällen entscheiden Sie. ' +
+      'Die Vorerfassung rechnet Mietfuchs nicht; erstellt ein Messdienst die Abrechnung damit, übernehmen Sie seine Beträge als Einzelbeträge.',
+  },
+  // #219, Gesamtentwurf 14.1: nur der Lexikonhinweis; die Bestimmung des Verbrauchs rechnet Mietfuchs nicht.
+  pipeHeat: {
+    title: 'Rohrwärme',
+    short:
+      'Wärme, die die Rohre der Heizung an die Räume abgeben, ohne dass ein Heizkostenverteiler sie erfasst. In Gebäuden, in denen die freiliegenden Leitungen der Wärmeverteilung überwiegend ungedämmt sind und deswegen ein wesentlicher Anteil des Wärmeverbrauchs nicht erfasst wird, ' +
+      'kann der Wärmeverbrauch der Nutzer nach anerkannten Regeln der Technik bestimmt werden; der so bestimmte Verbrauch gilt als erfasster Verbrauch.',
+    example:
+      'Die Heizung gibt 10.000 kWh an die Wohnungen ab, davon 3.000 kWh über ungedämmte Steigleitungen an der Wand. Die Heizkostenverteiler sehen nur die 7.000 kWh der Heizkörper. ' +
+      'Eine Wohnung, deren Räume vor allem die Rohre wärmen, erscheint dann mit wenig Verbrauch, und die übrigen Wohnungen zahlen ihren Anteil mit.',
+    norm: '§ 7 Abs. 1 Satz 3 und 4 HeizkostenV; BGH, Urteil vom 15.03.2017, VIII ZR 5/16',
+    needed:
+      'Nur bei Heizkostenverteilern und nur, wenn die Rohre frei auf der Wand verlaufen. Für Leitungen unter Putz oder im Estrich gilt die Regel nicht, auch nicht entsprechend (BGH, Urteil vom 15.03.2017, VIII ZR 5/16). ' +
+      'Die Verordnung erlaubt die Bestimmung, sie schreibt sie nicht vor. Ein Verfahren dazu beschreibt die Richtlinie VDI 2077 Blatt 3.5 (Ausgabe 2018-05; sie ersetzt das Beiblatt „Rohrwärme“, auf das die Begründung der Verordnung verweist). ' +
+      'Diese Bestimmung rechnet Mietfuchs nicht; es verteilt nach den erfassten Einheiten. Lassen Sie den Verbrauch von einem Messdienst bestimmen, tragen Sie dessen Werte als „Werte eines Ablesedienstes“ ein.',
+  },
   interimReading: {
     title: 'Zwischenablesung',
     short: 'Die Ablesung der Wärme- und Warmwasserzähler, wenn ein Mieter mitten im Abrechnungszeitraum aus- oder einzieht. Nach ihr werden die Verbrauchskosten aufgeteilt; die übrigen Heizkosten nach Gradtagszahlen oder zeitanteilig, die übrigen Warmwasserkosten zeitanteilig.',
@@ -712,8 +754,8 @@ export const GLOSSARY = {
     title: 'Wärmelieferung (Contracting, Fernwärme)',
     short: `Liefert ein Dritter die Wärme, aus einem Wärmenetz (Fernwärme) oder aus einer Anlage im Haus, die er betreibt (Contracting), sind die Heizkosten das Entgelt für die Wärmelieferung und die Kosten des Betriebs der Hausanlagen. Verteilt werden sie nach der Heizkostenverordnung zu ${SHARE.min} bis ${SHARE.max} Prozent nach Verbrauch; nicht der Pflichtanteil von ${FORCED} % für ältere, nicht nach der Wärmeschutzverordnung 1994 gedämmte Gebäude mit Öl- oder Gasheizung und überwiegend gedämmten Leitungen, denn der gilt nur für die eigene Heizung (§ 7 Abs. 3 HeizkostenV verweist nicht auf Abs. 1 Satz 2).`,
     example: `Ein Contractor betreibt den Gaskessel im Keller und stellt 6.000 € Arbeitspreis und 1.200 € Grundpreis in Rechnung; dazu kommen 150 € Strom für die Pumpen der Hausanlage. Die Heizkosten sind 7.350 €. Wird der Warmwasseranteil mit einer Formel bestimmt, ist ihr Wert durch ${dhwDe(DHW_FACTORS.heatSupplyDivisor, 2)} zu teilen (÷ ${dhwDe(DHW_FACTORS.heatSupplyDivisor, 2)}), nicht wie bei eigenem Erdgas nach Brennwert mit ${dhwDe(DHW_FACTORS.gasCalorific, 2)} zu malnehmen. Die CO₂-Kosten teilt Mietfuchs wie bei Fernwärme auf: heizt er mit Gas, Öl oder Kohle, muss der Lieferant die CO₂-Angaben ausweisen.`,
-    norm: '§ 556c BGB; §§ 1, 5, 8 bis 11 WärmeLV; § 1 Abs. 1 Nr. 2, § 7 Abs. 3 und 4, § 9 Abs. 2 Satz 6 Nr. 2 HeizkostenV; § 2 Nr. 4 Buchst. c BetrKV; § 2 Abs. 1 Satz 2, § 3 Abs. 4 CO2KostAufG',
-    needed: `Wenn Ihr Haus mit Fernwärme oder von einem Contractor versorgt wird. Umlegen dürfen Sie die Kosten der Wärmelieferung, wenn der Mietvertrag es vorsieht (§ 2 Nr. 4 Buchst. c BetrKV). Haben Sie während laufender Mietverhältnisse von der eigenen Heizung umgestellt, gelten für diese Mieter die Voraussetzungen des § 556c BGB: bessere Effizienz und keine höheren Kosten als vorher. Außerdem ist die Umstellung spätestens ${SWITCH.noticeMonths} Monate vorher in Textform anzukündigen; fehlt die Ankündigung, beginnt die Frist für Einwendungen gegen die Abrechnung erst später (§ 11 Abs. 3 WärmeLV). Auch wer eine Betriebskostenpauschale zahlt, trägt die Heizkosten als Betriebskosten, denn § 556 Abs. 2 BGB lässt sie „als Pauschale oder als Vorauszahlung“ ausweisen (Auslegung von Mietfuchs); bei einer Inklusivmiete fehlt die Umlagevereinbarung, und § 556c gilt nicht. Hat der Mieter vorher selbst geheizt, etwa mit Einzelöfen, gilt § 556c nicht; ob und wie weit er die Kosten trägt, hängt dann von einer Vereinbarung ab, die auch stillschweigend entstehen kann. Der Bundesgerichtshof hat eine solche Vereinbarung im entschiedenen Fall jedenfalls über die Kosten angenommen, die bei eigener zentraler Versorgung nach § 7 Abs. 2 und § 8 Abs. 2 HeizkostenV angefallen wären (BGH, Urteil vom 20.05.2026, VIII ZR 46/25). Mietfuchs nennt das in der Abrechnung, wenn Sie an der Heizanlage den Tag der Umstellung eintragen. Betreibt ein Contractor den Kessel im Haus, wählen Sie bei der Heizanlage den Brennstoff des Kessels und setzen das Häkchen „Contracting“.`,
+    norm: '§ 556c BGB; §§ 1, 5, 8 bis 11 WärmeLV; § 1 Abs. 1 Nr. 2 und Abs. 3, § 7 Abs. 3 und 4, § 9 Abs. 2 Satz 6 Nr. 2, § 11 Abs. 1 Nr. 4 HeizkostenV; § 2 Nr. 4 Buchst. c BetrKV; § 2 Abs. 1 Satz 2, § 3 Abs. 4 CO2KostAufG',
+    needed: `Wenn Ihr Haus mit Fernwärme oder von einem Contractor versorgt wird. Umlegen dürfen Sie die Kosten der Wärmelieferung, wenn der Mietvertrag es vorsieht (§ 2 Nr. 4 Buchst. c BetrKV). Haben Sie während laufender Mietverhältnisse von der eigenen Heizung umgestellt, gelten für diese Mieter die Voraussetzungen des § 556c BGB: bessere Effizienz und keine höheren Kosten als vorher. Außerdem ist die Umstellung spätestens ${SWITCH.noticeMonths} Monate vorher in Textform anzukündigen; fehlt die Ankündigung, beginnt die Frist für Einwendungen gegen die Abrechnung erst später (§ 11 Abs. 3 WärmeLV). Auch wer eine Betriebskostenpauschale zahlt, trägt die Heizkosten als Betriebskosten, denn § 556 Abs. 2 BGB lässt sie „als Pauschale oder als Vorauszahlung“ ausweisen (Auslegung von Mietfuchs); bei einer Inklusivmiete fehlt die Umlagevereinbarung, und § 556c gilt nicht. Hat der Mieter vorher selbst geheizt, etwa mit Einzelöfen, gilt § 556c nicht; ob und wie weit er die Kosten trägt, hängt dann von einer Vereinbarung ab, die auch stillschweigend entstehen kann. Der Bundesgerichtshof hat eine solche Vereinbarung im entschiedenen Fall jedenfalls über die Kosten angenommen, die bei eigener zentraler Versorgung nach § 7 Abs. 2 und § 8 Abs. 2 HeizkostenV angefallen wären (BGH, Urteil vom 20.05.2026, VIII ZR 46/25). Mietfuchs nennt das in der Abrechnung, wenn Sie an der Heizanlage den Tag der Umstellung eintragen. Betreibt ein Contractor den Kessel im Haus, wählen Sie bei der Heizanlage den Brennstoff des Kessels und setzen das Häkchen „Contracting“. Rechnet der Lieferant unmittelbar mit den Mietern ab und legt dabei die Anteile der Mieter am Gesamtverbrauch zugrunde, gelten die Pflichten des Gebäudeeigentümers aus der Heizkostenverordnung für ihn (§ 1 Abs. 3 HeizkostenV); misst er den Verbrauch jeder Wohnung selbst, gilt die Verordnung für diese Verteilung nicht. Wählen Sie dann bei „Wer erstellt Ihre Heizkostenabrechnung?“ die Antwort „Der Wärmelieferant rechnet unmittelbar mit den Mietern ab“; Mietfuchs legt in beiden Fällen keine Heizanlage an. Im ersten Fall sind die Kosten der Hausanlagen, die nicht in den Kosten der Wärmelieferung enthalten sind und die Sie gesondert abrechnen, von der Verteilung nach Verbrauch ausgenommen (§ 11 Abs. 1 Nr. 4 HeizkostenV).`,
   },
   legalBasis: {
     title: 'Rechtsstand',

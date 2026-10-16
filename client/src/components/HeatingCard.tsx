@@ -19,7 +19,7 @@ import {
   CAPTURE_OPTIONS, CONTRACT_OPTIONS, ENERGY_OPTIONS, HOW_TO_TELL, asksRemote, INSTALLED_OPTIONS, NEW_DEVICES_AFTER, NEW_INSTALL_OPTIONS, NEW_INSTALL_QUESTION, PER_UNIT_ENERGY_OPTIONS, REMOTE_OPTIONS, TAKES_OVER_BACK, TAKES_OVER_HINT, takesOverBack, TAKES_OVER_OPTIONS, TAKES_OVER_QUESTION, asksNewInstall, asksTakeOver, buildingOptions, canSwap, emptyHeatingForm, emptySwapForm, heatingPlantBody,
   connectionNote, heatingSummary, heatingToForm, NEWER_THAN, swapBody, swapMetersOf, whoHint, whoOptions, type CaptureAnswer, type EnergyAnswer, type HeatingForm, type PerUnitContract, type SwapForm, type WhoSettles,
   asksContracting, asksSwitch, CONTRACTING_LABEL, contractingSwap,
-  asksFuelContract, FUEL_CONTRACT_OPTIONS, FUEL_CONTRACT_QUESTION, selfSupplyOffer,
+  asksFuelContract, editFuelContractNote, FUEL_CONTRACT_OPTIONS, FUEL_CONTRACT_QUESTION, selfSupplyOffer,
   asksGeneration, GENERATION_QUESTION, HEAT_GENERATION_OPTIONS, MAJORITY_EXPLAINED, MAJORITY_OPTIONS, MAJORITY_QUESTION,
 } from '../heatingForm'
 
@@ -96,11 +96,11 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
   // Heizung PR 19 (Prüfung M1): Heizt der Mieter selbst, stellt die Karte nach Rückfrage die laufenden
   // Mietverhältnisse der angehakten Wohnungen auf „Mieter heizt selbst“. Bei der zentralen Heizung nur, wenn es ein
   // einziger Mieter ist; sonst sagt sie, dass Mietfuchs das nicht abdeckt.
-  async function offerSelfSupply(unitIds: string[], central: boolean) {
+  async function offerSelfSupply(unitIds: string[], central: boolean, singleTenant: boolean = central) {
     if (unitIds.length === 0) return
     try {
       const tenancies = await api<Tenancy[]>(withProperty('/api/tenancies', propertyId))
-      const offer = selfSupplyOffer(unitIds, tenancies, localToday(), central)
+      const offer = selfSupplyOffer(unitIds, tenancies, localToday(), central, singleTenant)
       if ('error' in offer) {
         setError(offer.error)
         return
@@ -140,7 +140,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
     if ('none' in result) {
       close()
       toast(result.none)
-      await offerSelfSupply(result.selfSupplyUnitIds, result.central)
+      await offerSelfSupply(result.selfSupplyUnitIds, result.central, result.singleTenant ?? result.central)
       return
     }
     const back = editingId !== null && takesOverBack(plants.find((p) => p.id === editingId), form)
@@ -251,6 +251,8 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
   // Welche Wohnungen an der Anlage hängen, bei zentraler Heizung wie bei der Etagenheizung (Heizung PR 9).
   // Heizung PR 19: Der Mieter hat den Vertrag (Etagenheizung oder zentrale Heizung).
   const fuelByTenant = form !== null && asksFuelContract(form, editingId) && form.fuelContract !== 'landlord'
+  // Angezeigt = gespeichert: Gibt es die gewählte Antwort nicht mehr (etwa „Lieferant“ nach einem Wechsel der Energie), steht nichts da.
+  const shownWho: WhoSettles = form !== null && whoOptions(kind, form, editingId).some((o) => o.value === form.who) ? form.who : ''
   const selfSupplyForm = form !== null && ((form.energy === 'perUnit' && form.contract === 'tenant') || fuelByTenant)
   const unitChoice = form && (
     <fieldset className="field grow no-connection">
@@ -441,15 +443,16 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
                   </select>
                 </label>
               )}
+              {editFuelContractNote(form, editingId) && <small className="muted">{editFuelContractNote(form, editingId)}</small>}
               <label className="field grow">
                 Wer erstellt Ihre Heizkostenabrechnung?
-                <select value={form.who} onChange={(e) => setForm({ ...form, who: e.target.value as WhoSettles })}>
+                <select value={shownWho} onChange={(e) => setForm({ ...form, who: e.target.value as WhoSettles })}>
                   <option value="">— bitte wählen —</option>
-                  {whoOptions(kind).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  {whoOptions(kind, form, editingId).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </label>
               <small className="muted">{HOW_TO_TELL.who}</small>
-              {whoHint(form.who, kind) && <p className="muted">{whoHint(form.who, kind)}</p>}
+              {whoHint(shownWho, kind) && <p className="muted">{whoHint(shownWho, kind)}</p>}
               {unitChoice}
               {asksRemote(form.who) && (<>
               <label className="field grow">

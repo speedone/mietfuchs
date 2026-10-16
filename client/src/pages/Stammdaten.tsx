@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { CostModel, HeatingModel, SelfSupplyKind, DepositStatus, HeatingPlant, InterimGapStatus, Meter, MeterType, Settings, Tenancy, Unit, UnitDependents, UnitUsage } from '../types'
 import { servesUnit } from '../../../shared/heatingPeriod.ts'
 import { DEPOSIT_STATUS_LABELS, METER_TYPE_LABELS, UNIT_USAGE_LABELS, usageOf } from '../types'
-import { EMPTY_UNIT_FORM, buildUnitBody, connectionSummary, connectionTypes, setConnected, unitDeleteMessage, unitToForm, type UnitForm } from '../unitForm'
+import { EMPTY_UNIT_FORM, buildUnitBody, connectionSummary, connectionTypes, setConnected, unitDeleteBlocked, unitDeleteMessage, unitToForm, type UnitForm } from '../unitForm'
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { scheduleOf, separateHeatingFor, separateHeatingPlant } from '../heatingSettlementView'
 import Drawer from '../components/Drawer'
@@ -186,6 +186,11 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
   async function deleteUnit(u: Unit) {
     // Was mitgelöscht wird, mit Anzahl (#142); ohne Antwort die vollständige Liste ohne Zahlen.
     const deps = await api<UnitDependents>(`/api/units/${u.id}/dependents`).catch(() => null)
+    const blocked = unitDeleteBlocked(deps)
+    if (blocked) {
+      setError(blocked)
+      return
+    }
     const ok = await confirm({
       title: `Wohnung „${u.name}“ löschen?`,
       message: unitDeleteMessage(deps),

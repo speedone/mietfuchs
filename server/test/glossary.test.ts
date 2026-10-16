@@ -448,3 +448,45 @@ test('Lexikon: CO₂-Erstattung an Mieter, die selbst heizen, Beispiel nachgerec
   // Prüfung K3: § 2 Abs. 7 CO2KostAufG.
   assert.match(t.needed, /§ 2 Abs\. 7/)
 })
+
+test('Rohrwärme (#219, Gesamtentwurf 14.1): eigener Begriff mit Wortlaut der Voraussetzungen, dem BGH zu „freiliegend“ und ohne erfundenes Verfahren', () => {
+  const t = GLOSSARY.pipeHeat
+  assert.equal(t.title, 'Rohrwärme')
+  assert.match(t.norm, /§ 7 Abs\. 1 Satz 3 und 4 HeizkostenV/)
+  assert.match(t.norm, /VIII ZR 5\/16/)
+  assert.match(t.short, /freiliegenden Leitungen der Wärmeverteilung überwiegend ungedämmt/)
+  assert.match(t.short, /nach anerkannten Regeln der Technik bestimmt werden/)
+  assert.match(t.needed, /VDI 2077 Blatt 3\.5/)
+  assert.match(t.needed, /unter Putz oder im Estrich/)
+  assert.match(t.needed, /rechnet Mietfuchs nicht/)
+  // Beispiel nachgerechnet: 10.000 kWh abgegeben, 3.000 kWh über die Rohre, erfasst 7.000 kWh.
+  assert.match(t.example, /10\.000 kWh.*3\.000 kWh.*7\.000 kWh/s)
+  assert.equal(10000 - 3000, 7000)
+})
+
+test('Vorerfassung (#218): Pflicht nach Satz 1, Möglichkeit nach Satz 2, nachgerechnetes Beispiel', () => {
+  const t = GLOSSARY.preCapture
+  assert.equal(t.norm, '§ 5 Abs. 7 HeizkostenV')
+  assert.match(t.short, /nicht mit gleichen Ausstattungen erfasst/)
+  assert.match(t.short, /unterschiedlichen Nutzungs- oder Gebäudearten oder aus anderen sachgerechten Gründen/)
+  assert.match(t.needed, /rechnet Mietfuchs nicht/)
+  assert.match(t.example, /6\.000 kWh von 20\.000 kWh.*30 %.*70 %/s)
+  assert.equal(6000 / 20000, 0.3)
+})
+
+test('Nutzerwechselgebühr (#223): BGH VIII ZR 19/07 mit Datum, Verwaltungskosten, Beispiel nachgerechnet', () => {
+  const t = GLOSSARY.changeFee
+  assert.equal(t.norm, 'BGH, Urteil vom 14.11.2007, VIII ZR 19/07')
+  assert.match(t.short, /keine Betriebskosten, sondern Verwaltungskosten/)
+  assert.match(t.needed, /„Nicht umlagefähig“/)
+  assert.match(t.example, /30,00 €.*drei Wohnungen.*10,00 €/s)
+  assert.equal(3000 / 3, 1000)
+})
+
+test('Wärmelieferung (#225): unmittelbare Abrechnung des Lieferanten mit § 1 Abs. 3 und § 11 Abs. 1 Nr. 4 und der Antwort der Einrichtung', () => {
+  const t = GLOSSARY.heatDelivery
+  assert.match(t.norm, /§ 1 Abs\. 1 Nr\. 2 und Abs\. 3/)
+  assert.match(t.norm, /§ 11 Abs\. 1 Nr\. 4/)
+  assert.match(t.needed, /Rechnet der Lieferant unmittelbar mit den Mietern ab und legt dabei die Anteile der Mieter am Gesamtverbrauch zugrunde, gelten die Pflichten des Gebäudeeigentümers aus der Heizkostenverordnung für ihn \(§ 1 Abs\. 3 HeizkostenV\); misst er den Verbrauch jeder Wohnung selbst, gilt die Verordnung für diese Verteilung nicht\./)
+  assert.match(t.needed, /„Der Wärmelieferant rechnet unmittelbar mit den Mietern ab“/)
+})
