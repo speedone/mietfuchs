@@ -16,8 +16,10 @@
 // **Prüfstand.** `checked` nur, wo der Wortlaut an einer amtlichen Fundstelle gelesen ist (Gesetz- und
 // Verordnungsblatt, amtliches Portal). `adopted`, wo ein Wert für mehrere Länder gilt und nicht jedes
 // Landesgesetz gelesen ist, oder wo nur eine nichtamtliche Sammlung erreichbar war; die Fundstelle sagt
-// dann, was gelesen ist, und der Wert deckt sich mit der unabhängigen Vergleichsliste
-// (server/test/fixtures/holidays/, Python-Bibliothek holidays 0.104). Gelesen am 15.10.2026.
+// dann, was gelesen ist, und der Wert deckt sich mit zwei unabhängigen Quellen: der festen Vergleichsliste
+// der Python-Bibliothek holidays 0.104 (server/test/fixtures/holidays/, holidays.test.ts) und der
+// npm-Bibliothek date-holidays (holidays-date-holidays.test.ts, nur im Test, monatlich von Dependabot
+// gehoben). „nach den Vergleichslisten“ in einer Fundstelle meint beide. Gelesen am 15.10.2026.
 import type { LawParam, Source } from './register.ts'
 import type { FederalState } from '../types.ts'
 import { isFederalState, STATE_CODES, stateName } from '../states.ts'
@@ -35,7 +37,11 @@ const NORTH_BEFORE: readonly FederalState[] = ['BB', 'MV', 'SN', 'ST', 'TH']
 const NORTH_AFTER: readonly FederalState[] = ['BB', 'HB', 'HH', 'MV', 'NI', 'SN', 'ST', 'SH', 'TH']
 
 const checked = (cite: string, url: string): Source => ({ rank: 'law', cite, url, retrieved: RETRIEVED, checked: 'checked' })
-const adopted = (cite: string, url: string): Source => ({ rank: 'law', cite, url, retrieved: RETRIEVED, checked: 'adopted' })
+// Jede übernommene Fassung nennt den Abgleich mit beiden Vergleichslisten.
+const CROSS_CHECK = 'abgeglichen mit den Vergleichslisten (python-holidays und date-holidays)'
+const adopted = (cite: string, url: string): Source => ({
+  rank: 'law', cite: cite.includes('Vergleichslisten') ? cite : `${cite}; ${CROSS_CHECK}`, url, retrieved: RETRIEVED, checked: 'adopted',
+})
 
 const URL_SN = 'https://www.revosax.sachsen.de/vorschrift/3997'
 const URL_BY = 'https://www.gesetze-bayern.de/Content/Document/BayFTG-1'
@@ -44,9 +50,9 @@ const URL_BE_2024 = 'https://pardok.parlament-berlin.de/starweb/adis/citat/VT/19
 const URL_MV_2022 = 'https://www.dokumentation.landtag-mv.de/parldok/dokument/53736/gesetz_und_verordnungsblatt_31_2022.pdf'
 const URL_HB = 'https://www.transparenz.bremen.de/sixcms/detail.php?gsid=bremen2014_tp.c.118553.de&template=00_html_to_pdf_d'
 
-// Für die Tage, die in allen Ländern gelten: gelesen in Sachsen und Bayern, die übrigen nach der
-// Vergleichsliste.
-const EVERYWHERE = adopted('Feiertagsgesetze aller Länder; im Wortlaut gelesen § 1 Abs. 1 SächsSFG und Art. 1 Abs. 1 BayFTG, die übrigen deckungsgleich mit der Vergleichsliste', URL_SN)
+// Für die Tage, die in allen Ländern gelten: gelesen in Sachsen und Bayern, die übrigen nach den
+// Vergleichslisten.
+const EVERYWHERE = adopted('Feiertagsgesetze aller Länder; im Wortlaut gelesen § 1 Abs. 1 SächsSFG und Art. 1 Abs. 1 BayFTG, die übrigen deckungsgleich mit den Vergleichslisten (python-holidays und date-holidays)', URL_SN)
 const EVERYWHERE_ENACTED = 'Feiertagsgesetze der Länder, geltende Fassungen'
 
 function dayText(day: string): string {
@@ -125,7 +131,7 @@ export const holidayCorpusChristi: LawParam<HolidayValue, 'eventDate'> = {
       SN: 'nur in einzelnen Gemeinden und Gemeindeteilen um Bautzen, Hoyerswerda und Kamenz',
       TH: 'nur in Gemeinden, in denen er 1994 gesetzlicher Feiertag war, etwa im Eichsfeld',
     }),
-    source: adopted('Sachsen: Fronleichnamsverordnung vom 04.05.1993 (revosax) und Thüringen: § 10 Abs. 1 ThürFtG (GVBl. 1994 S. 1221) im Wortlaut gelesen; Bayern Art. 1 Abs. 1 BayFTG; HE, SL, BW nur über nichtamtliche Sammlungen, NW und RP nach der Vergleichsliste', 'https://www.revosax.sachsen.de/vorschrift/4142'),
+    source: adopted('Sachsen: Fronleichnamsverordnung vom 04.05.1993 (revosax) und Thüringen: § 10 Abs. 1 ThürFtG (GVBl. 1994 S. 1221) im Wortlaut gelesen; Bayern Art. 1 Abs. 1 BayFTG; HE, SL, BW nur über nichtamtliche Sammlungen, NW und RP nach den Vergleichslisten (python-holidays und date-holidays)', 'https://www.revosax.sachsen.de/vorschrift/4142'),
     enacted: 'Feiertagsgesetze der Länder, geltende Fassungen',
   }],
 }
@@ -176,8 +182,8 @@ export const holidayUnityDay: LawParam<HolidayValue, 'eventDate'> = {
 export const holidayReformation: LawParam<HolidayValue, 'eventDate'> = {
   id: 'holiday.reformation', title: 'Reformationstag', norm: 'Feiertagsgesetze von BB, MV, SN, ST, TH; § 2 Abs. 1 Buchst. j FeiertG BR; § 1 Nr. 8 FeiertagsG HH; § 2 NFeiertagsG; § 2 Abs. 1 SFTG', timing: 'eventDate', describe: describeHoliday,
   versions: [
-    { validTo: '2017-10-30', value: value('10-31', NORTH_BEFORE), source: adopted('§ 1 Abs. 1 SächsSFG im Wortlaut gelesen; § 2 Nr. 9 FeiertG LSA über die Sammlung der Landeskirche EKM; BB, MV, TH nach der Vergleichsliste', URL_SN), enacted: 'Feiertagsgesetze der Länder' },
-    { validFrom: '2017-10-31', validTo: '2017-10-31', value: value('10-31', ALL), source: adopted('einmalige Regelung in jedem Land; gelesen Art. 1 Abs. 2a BayFTG a. F. (GVBl. 2016 S. 50), G v. 25.06.2015 (GV. NRW. S. 495) und § 2 Abs. 1 Buchst. j FeiertG BR i. d. F. vom 21.11.2017, die übrigen nach der Vergleichsliste', 'https://www.verkuendung-bayern.de/gvbl/2016-50/'), enacted: 'je eigene Regelung der Länder für den 31.10.2017' },
+    { validTo: '2017-10-30', value: value('10-31', NORTH_BEFORE), source: adopted('§ 1 Abs. 1 SächsSFG im Wortlaut gelesen; § 2 Nr. 9 FeiertG LSA über die Sammlung der Landeskirche EKM; BB, MV, TH nach den Vergleichslisten (python-holidays und date-holidays)', URL_SN), enacted: 'Feiertagsgesetze der Länder' },
+    { validFrom: '2017-10-31', validTo: '2017-10-31', value: value('10-31', ALL), source: adopted('einmalige Regelung in jedem Land; gelesen Art. 1 Abs. 2a BayFTG a. F. (GVBl. 2016 S. 50), G v. 25.06.2015 (GV. NRW. S. 495) und § 2 Abs. 1 Buchst. j FeiertG BR i. d. F. vom 21.11.2017, die übrigen nach den Vergleichslisten (python-holidays und date-holidays)', 'https://www.verkuendung-bayern.de/gvbl/2016-50/'), enacted: 'je eigene Regelung der Länder für den 31.10.2017' },
     { validFrom: '2017-11-01', validTo: '2018-06-28', value: value('10-31', NORTH_BEFORE), source: adopted('die Regelungen für 2017 traten am 01.11.2017 außer Kraft (Art. 1 Abs. 2a BayFTG a. F.)', 'https://www.verkuendung-bayern.de/gvbl/2016-50/'), enacted: 'Feiertagsgesetze der Länder' },
     { validFrom: '2018-06-29', value: value('10-31', NORTH_AFTER), source: adopted('§ 2 Abs. 1 Buchst. j FeiertG BR (Fassung ab 29.06.2018) und § 1 Nr. 8 FeiertagsG HH (HmbGVBl. 2018 S. 63) im Wortlaut gelesen; Niedersachsen (G v. 22.06.2018) über das Innenministerium, Schleswig-Holstein (GVOBl. 2018 S. 69) über den Landtag', URL_HB), enacted: 'Änderungsgesetze von Bremen, Hamburg, Niedersachsen und Schleswig-Holstein aus 2018' },
   ],
@@ -185,7 +191,7 @@ export const holidayReformation: LawParam<HolidayValue, 'eventDate'> = {
 
 export const holidayAllSaints: LawParam<HolidayValue, 'eventDate'> = {
   id: 'holiday.all-saints', title: 'Allerheiligen', norm: 'Feiertagsgesetze von BW, BY, NW, RP, SL', timing: 'eventDate', describe: describeHoliday,
-  versions: [{ value: value('11-01', ['BW', 'BY', 'NW', 'RP', 'SL']), source: adopted('Art. 1 Abs. 1 BayFTG im Wortlaut gelesen; BW und SL über nichtamtliche Sammlungen, NW und RP nach der Vergleichsliste', URL_BY), enacted: 'Feiertagsgesetze der Länder, geltende Fassungen' }],
+  versions: [{ value: value('11-01', ['BW', 'BY', 'NW', 'RP', 'SL']), source: adopted('Art. 1 Abs. 1 BayFTG im Wortlaut gelesen; BW und SL über nichtamtliche Sammlungen, NW und RP nach den Vergleichslisten (python-holidays und date-holidays)', URL_BY), enacted: 'Feiertagsgesetze der Länder, geltende Fassungen' }],
 }
 
 export const holidayRepentance: LawParam<HolidayValue, 'eventDate'> = {

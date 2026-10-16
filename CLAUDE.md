@@ -920,11 +920,19 @@ Maßgeblich ist das Land des Objekts (`properties.state`, eine der 16 Kennungen 
   Im Register und nicht in einer eigenen Tabelle, weil es Rechtswerte mit Gültigkeit sind und dort
   Fassungsgeschichte, Prüfstand und Release-Sperre schon gelten. `checked` nur, wo der Wortlaut amtlich
   gelesen ist; Werte für mehrere Länder, deren Gesetze nicht alle gelesen sind, `adopted` mit Angabe, was
-  gelesen ist. holidays.ts rechnet daraus mit Osterformel, ohne Bibliothek: feiertagejs wich von der
-  Vergleichsliste ab, date-holidays stimmte, bringt aber Feiertagsdaten unter CC BY-SA 3.0 und rund 40 MB
-  Abhängigkeiten in die Programmdatei. Geprüft wird gegen eine unabhängig erzeugte Liste der
-  Python-Bibliothek holidays ([server/test/fixtures/holidays/](server/test/fixtures/holidays/README.md)),
-  alle 16 Länder von 1995 bis 2100; vor 1995 wird nicht gerechnet. Einmalige Feiertage, die ein Land
+  gelesen ist, und dem Abgleich mit beiden Vergleichslisten. holidays.ts rechnet daraus mit Osterformel,
+  ohne Laufzeitbibliothek: feiertagejs wich von der Vergleichsliste ab, und date-holidays stimmt zwar,
+  seine Feiertagsdaten stehen aber unter CC BY-SA 3.0 (Mietfuchs: MIT) und kämen mit rund 40 MB
+  Abhängigkeiten in Programmdatei und Image. Geprüft wird gegen **zwei unabhängige Quellen**: eine feste
+  Liste der Python-Bibliothek holidays
+  ([server/test/fixtures/holidays/](server/test/fixtures/holidays/README.md), 1995 bis 2100) und
+  **date-holidays als devDependency der Wurzel** (`holidays-date-holidays.test.ts`, 1995 bis laufendes
+  Jahr + 10). Die Wurzel, weil deren node_modules weder das Docker-Image (es übernimmt nur server/,
+  client/dist und shared/) noch Bun noch Vite erreichen; ein Test verlangt, dass nichts außer Tests das
+  Paket importiert. Dependabot hebt es monatlich: Trägt seine Pflege eine Gesetzesänderung nach, wird
+  der Test rot, und das Register bekommt eine neue Fassung mit amtlicher Fundstelle. Die gemeindeweisen
+  Regionen (BY KATH/A, SN BZ, TH EIC) sind in beiden Abgleichen genau Land plus Hinweis. Vor 1995 wird
+  nicht gerechnet. Einmalige Feiertage, die ein Land
   künftig beschließt, kommen als neue Fassung ins Register. Gefragt wird mit `valueAt`, weil noch keine
   Abrechnung damit rechnet; rechnet calc.ts einmal mit einer Frist, dann mit `law()` und Protokoll.
 - **Gemeindeweise Feiertage werden nicht geraten** (Mariä Himmelfahrt in Bayern, Augsburger

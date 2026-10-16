@@ -7,7 +7,9 @@ Varianten von 1995 bis 2100, erzeugt mit der Python-Bibliothek
 [shared/holidays.ts](../../../../shared/holidays.ts) rechnet;
 [holidays.test.ts](../../holidays.test.ts) vergleicht beide für jedes Jahr und jede Variante.
 
-Python wird nur zum Erzeugen dieser Datei gebraucht, weder für die Tests noch zur Laufzeit.
+Python wird nur zum Erzeugen dieser Datei gebraucht, weder für die Tests noch zur Laufzeit. Die zweite,
+laufend gepflegte Vergleichsquelle ist date-holidays (nur als devDependency, siehe
+[holidays-date-holidays.test.ts](../../holidays-date-holidays.test.ts)).
 
 ## Varianten
 
