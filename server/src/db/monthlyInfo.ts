@@ -8,6 +8,7 @@ import { captureOf, hotWaterOf, lineRoot } from '../../../shared/heatingPeriod.t
 import { monthBounds, monthName } from '../../../shared/monthlyInfo.ts'
 import { effectiveRules, heatingRulesOf } from '../heatingInfo.ts'
 import { heatingPlantAt, monthlyInfoMonths } from '../monthlyInfo.ts'
+import { heatPumpStatus, heatPumpWithoutMonthlyInfo } from '../heating.ts'
 import { narrowToProperty } from '../snapshot.ts'
 import type { Database, Executor } from './client.ts'
 import { heatingPeriodOf, plantContext } from './heatingPeriodContext.ts'
@@ -88,7 +89,12 @@ export async function monthlyInfoView(db: Database, plantId: string, periodText:
   const rowsOfPeriod = stock.heatingPeriodRows.filter((r) => lineIds.has(r.plantId) && String(r.period) === key)
   const ownRow = rowsOfPeriod.find((r) => r.plantId === plant.id)
   const dhwTempC = ownRow?.dhwTempC ?? rowsOfPeriod.find((r) => r.dhwTempC !== null)?.dhwTempC ?? null
-  const selfMade = plant.method === 'self' && (plant.supply ?? 'central') === 'central' && captureOf(plant, key) !== 'serviceValues' && rules.exemptionScope !== 'both'
+  // Prüfung K2 zu Heizung PR 22: Gilt die Verordnung für die Wärmepumpe noch nicht (§ 12 Abs. 3) oder galt die Ausnahme
+  // des § 11 Abs. 1 Nr. 3 Buchst. a a. F., verlangt die Abrechnung keine Information nach § 6a; die Karte auch nicht.
+  // Gefragt wird die Anlage, die am Ende der Heizperiode heizt, wie in calc.ts.
+  const host = group.find((p) => !p.endsOn || p.endsOn >= h.to) ?? group[group.length - 1] ?? plant
+  const heatPumpExempt = heatPumpWithoutMonthlyInfo(heatPumpStatus(host, { from: h.from, to: h.to }, createLawLog()))
+  const selfMade = plant.method === 'self' && (plant.supply ?? 'central') === 'central' && captureOf(plant, key) !== 'serviceValues' && rules.exemptionScope !== 'both' && !heatPumpExempt
   const { units, tenancies, meters, readings } = narrowToProperty(stock, plant.propertyId)
   const months = selfMade
     ? monthlyInfoMonths({

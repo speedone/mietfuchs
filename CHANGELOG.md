@@ -289,6 +289,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   abgezogen wird nichts. Heizkostenverteiler ergeben keine kWh, dann erstellt der Ablesedienst die Information.
   Bei getrennt bereitetem Warmwasser tragen Sie die mittlere Warmwassertemperatur für die Umrechnung in derselben
   Karte ein. Mietfuchs verlangt die Information für jeden Monat, auch außerhalb der Heizperiode (Auslegung).
+  Gilt die Verordnung für eine Wärmepumpe noch nicht (§ 12 Abs. 3 HeizkostenV) oder galt die frühere Ausnahme für
+  Gebäude mit überwiegend Wärme aus der Wärmepumpe, fordert die Karte wie die Abrechnung keine Monate ein.
   ([#99](https://github.com/speedone/mietfuchs/issues/99))
 - Mehr als 70 % nach Verbrauch, wenn es mit den Mietern vereinbart ist (§ 10 HeizkostenV), in der
   Einrichtung und auf der Seite Heizkosten; nie mehr als 100 %.

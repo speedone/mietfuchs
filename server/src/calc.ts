@@ -98,7 +98,7 @@ import { degreeDayPermille, type DayRange } from '../../shared/degreeDays.ts'
 import { claimDeadline, nextSettlement, prepaymentAgreed, refundDueDate, refundLawAt, refundProposal, refundSteps, type LawAsk } from './co2Refund.ts'
 import { annualFactors, type AnnualBasis } from './prepaymentSuggestion.ts'
 import {
-  boundaryReadingsOf, consumptionSharesOf, estimateDeviceType, estimateKey, estimateProposals, heatPumpVerdict, lineShareRows, OIL_OR_GAS, hotWaterShareOf, measuredBetween, planSelf, sortReadings, targetProblem, usersOf, weightsOf,
+  boundaryReadingsOf, consumptionSharesOf, estimateDeviceType, estimateKey, estimateProposals, heatPumpStatus, heatPumpWithoutMonthlyInfo, lineShareRows, OIL_OR_GAS, hotWaterShareOf, measuredBetween, planSelf, sortReadings, targetProblem, usersOf, weightsOf,
   type Alpha, type ConsumptionShares, type HeatPumpVerdict, type SelfInput, type SelfPlan, type SelfProblem, type SelfReading, type SelfTenancy, type SelfUnit, type SelfUserPlan, type SelfWeights,
 } from './heating.ts'
 import { DHW_PLAUSIBLE, dhwProblemText, fmtShare } from './dhw.ts'
@@ -3264,20 +3264,16 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Durchsicht von #272, M1: § 11 Abs. 1 Nr. 3 Buchst. a a. F. und § 12 Abs. 3 hängen am Wärmeerzeuger, nicht am
     // Betreiber (§ 1 Abs. 1 Nr. 2: Wärmelieferung „auch aus Anlagen nach Nummer 1“); bei Contracting zählt deshalb der
     // Erzeuger des Lieferanten (`generatorEnergy`, Auslegung am Wortlaut, nicht entschieden).
-    const generator = generatorEnergy(plant)
-    const renewable = generator === 'heatPump' ? law(hkvRenewableExemption, { period: lawPeriod }, lawLog) : null
-    const majority = plant.heatPumpMajority ?? null
-    const oldHeatPumpExemption = renewable?.heatPump === true && majority !== 'no'
-    const majorityOpen = oldHeatPumpExemption && majority !== 'yes'
+    // Prüfung K2 zu Heizung PR 22: Ausnahme, Antwort und § 12 Abs. 3 kommen aus `heatPumpStatus`, den auch die Karte
+    // der monatlichen Verbrauchsinformation fragt.
+    const heatPump = heatPumpStatus(plant, lawPeriod, lawLog)
+    const renewable = heatPump.renewable
+    const oldHeatPumpExemption = heatPump.oldExemption
+    const majorityOpen = heatPump.majorityOpen
     // Unter dieser Ausnahme bindet § 9 nicht: Ohne bestimmbares α gehen „Heizung und Warmwasser“ ganz in
     // den Topf Heizung (Festlegung, Abweichung 9), und es gibt keinen Fehler.
     const alpha = alphaResult.ok ? alphaResult.alpha : null
-    const verdict = generator === 'heatPump'
-      ? heatPumpVerdict(
-        { energy: generator, capturedOnOct2024: plant.capturedOnOct2024 ?? null, captureInstalledOn: plant.captureInstalledOn ?? null, heatPumpInstalledOn: plant.heatPumpInstalledOn ?? null },
-        period.from, law(hkvHeatPumpCapture, { date: period.from }, lawLog),
-      )
-      : null
+    const verdict = heatPump.verdict
     const blocked: SelfBlock[] = []
     // Heizkostenverteiler und Ablesedienst (Heizung PR 12, Entwurf 8.1): gemischte Geräte (§ 5 Abs. 7).
     const unitNameOf = (id: string) => snapshot.units.find((u) => u.id === id)?.name ?? id
@@ -6288,7 +6284,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Gilt die Verordnung in diesem Zeitraum für die Wärmepumpe noch nicht (§ 12 Abs. 3) oder galt die Ausnahme des
     // § 11 Abs. 1 Nr. 3 Buchst. a a. F. (Heizung PR 10, PR 11), gibt es auch keine Informationen nach § 6a.
     const hostSp = selfPlans.get(host.plantId)
-    if (hostSp && (hostSp.verdict?.kind === 'notYet' || (hostSp.oldHeatPumpExemption && !hostSp.majorityOpen))) continue
+    if (hostSp && heatPumpWithoutMonthlyInfo({ verdict: hostSp.verdict, oldExemption: hostSp.oldHeatPumpExemption, majorityOpen: hostSp.majorityOpen })) continue
     const groupPlants = group.flatMap((r) => plants.filter((p) => p.id === r.plantId))
     const groupIds = groupPlants.map((p) => p.id)
     // Die Mieter, die über diese Anlage abgerechnet werden, und je Mieter die Grundlage einer Kürzung nach Satz 3:
