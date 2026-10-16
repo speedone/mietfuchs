@@ -13,7 +13,7 @@
 // (`taxReport(...).expenses.items`) und nicht hier ein zweites Mal gerechnet: Die Summen der
 // beiden Spalten sind deshalb genau die der Übersicht. Die Zuführung zur Rücklage steht dort nicht
 // in den Werbungskosten und hat hier leere Felder.
-import type { CostItem, TaxExpenseItem } from '../../shared/types.ts'
+import type { CostItem, TaxExpenseItem, TaxReport } from '../../shared/types.ts'
 import { ANLAGE_V_GROUP, ANLAGE_V_GROUP_ORDER, validLabor35aCents } from './calc.ts'
 
 const RESERVE_GROUP = 'Erhaltungsrücklage (gesondert)'
@@ -53,8 +53,15 @@ export type TaxArchivePlan = {
 //
 // `split`: je Position privat und abziehbar aus der Steuerübersicht (#163).
 export type TaxSplitOfItem = Pick<TaxExpenseItem, 'privateCents' | 'deductibleCents'>
-// `derived`: Zeilen der Steuerübersicht, die keine Position sind (#268, Ausgleich beim Betriebsstrom). Sie stehen in
-// der Übersicht mit ihrem Betrag und ihrer Aufteilung, aber ohne Beleg, denn ihr Beleg ist die Stromrechnung.
+// `derived`: Zeilen der Steuerübersicht, die keine Position sind: der Ausgleich beim Betriebsstrom (#268), dessen Beleg
+// die Stromrechnung ist, und die an einen Selbstversorger ausgezahlte CO₂-Erstattung (Heizung PR 19, Nachprüfung N-4),
+// belegt durch die Auszahlung. Sie stehen in der Übersicht mit ihrem Betrag und ihrer Aufteilung, aber ohne Beleg.
+// Damit ergibt die Übersicht in jeder Spalte die Summe der Steuerübersicht.
+export const derivedTaxLines = (report: Pick<TaxReport, 'expenses'>): TaxExpenseItem[] =>
+  report.expenses.items.filter((i) => i.operatingPowerBalance || i.co2RefundPaidOut)
+const derivedNote = (d: TaxExpenseItem | undefined): string =>
+  d?.co2RefundPaidOut ? 'kein eigener Beleg (Auszahlung an den Mieter, Nachweis über den Kontoauszug)' : 'kein eigener Beleg (Teil der Stromrechnung)'
+
 export function planTaxArchive(
   items: CostItem[], names: Map<string, string>, booked: ReadonlyMap<string, readonly string[]> = new Map(),
   split: ReadonlyMap<string, TaxSplitOfItem> = new Map(), derived: readonly TaxExpenseItem[] = [],
@@ -82,7 +89,7 @@ export function planTaxArchive(
       rows.push([
         textField(group), textField(c.category), textField(c.description), '', csvField(euro(c.amountCents)),
         part ? csvField(euro(part.privateCents)) : '', part ? csvField(euro(part.deductibleCents)) : '', '',
-        textField('kein eigener Beleg (Teil der Stromrechnung)'),
+        textField(derivedNote(part)),
       ].join(';'))
       continue
     }

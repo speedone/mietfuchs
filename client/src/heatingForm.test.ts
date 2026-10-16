@@ -411,15 +411,28 @@ describe('Wer hat den Liefervertrag für den Brennstoff? (Heizung PR 19)', () =>
   })
 
   test('Das Angebot: laufende Mietverhältnisse der Wohnungen; bei der zentralen Heizung nur ein Mieter, sonst nicht abgedeckt', () => {
-    const t = (id: string, unitId: string, tenantName: string, over: { end?: string | null; heatingModel?: 'selfSupply' } = {}) =>
+    const t = (id: string, unitId: string, tenantName: string, over: { end?: string | null; heatingModel?: 'selfSupply'; selfSupplyKind?: 'central' | 'perUnit' } = {}) =>
       ({ id, unitId, tenantName, start: '2020-01-01', end: null, ...over })
     const list = [t('a', 'eg', 'Mieter A'), t('b', 'og', 'Mieter A'), t('c', 'og', 'Früher', { end: '2023-12-31' }), t('d', 'garage', 'Mieter G')]
-    expect(selfSupplyOffer(['eg', 'og'], list, '2026-10-12', true)).toEqual({ tenancyIds: ['a', 'b'], names: ['Mieter A'] })
+    expect(selfSupplyOffer(['eg', 'og'], list, '2026-10-12', true)).toEqual({ tenancyIds: ['a', 'b'], names: ['Mieter A'], kindTenancyIds: [] })
     expect(selfSupplyOffer(['eg', 'og'], [...list, t('e', 'og', 'Mieter B')], '2026-10-12', true)).toEqual({ error: expect.stringMatching(/^Liefert ein Mieter über seinen Vertrag auch Wärme an andere Wohnungen/) })
     // Etagenheizung: jeder Mieter hat seinen eigenen Vertrag.
-    expect(selfSupplyOffer(['eg', 'og'], [...list, t('e', 'og', 'Mieter B')], '2026-10-12', false)).toEqual({ tenancyIds: ['a', 'b', 'e'], names: ['Mieter A', 'Mieter B'] })
+    expect(selfSupplyOffer(['eg', 'og'], [...list, t('e', 'og', 'Mieter B')], '2026-10-12', false)).toEqual({ tenancyIds: ['a', 'b', 'e'], names: ['Mieter A', 'Mieter B'], kindTenancyIds: [] })
     // Schon umgestellt: kein Angebot.
-    expect(selfSupplyOffer(['eg'], [t('a', 'eg', 'Mieter A', { heatingModel: 'selfSupply' })], '2026-10-12', true)).toEqual({ tenancyIds: [], names: [] })
+    expect(selfSupplyOffer(['eg'], [t('a', 'eg', 'Mieter A', { heatingModel: 'selfSupply', selfSupplyKind: 'central' })], '2026-10-12', true)).toEqual({ tenancyIds: [], names: [], kindTenancyIds: [] })
+  })
+
+  // Nachprüfung N-3 zu PR 19: Wer schon in den Stammdaten ohne Art auf „Mieter heizt selbst“ stand, bekommt die Art bei
+  // der Einrichtung nachgetragen; sonst käme bei der zentralen Heizung nie der Hinweis zum Betriebsstrom.
+  test('N-3: schon „Mieter heizt selbst“ ohne Art: die Art wird nachgetragen, mit anderer Art nicht', () => {
+    const t = (id: string, unitId: string, over: { heatingModel?: 'selfSupply'; selfSupplyKind?: 'central' | 'perUnit' } = {}) =>
+      ({ id, unitId, tenantName: 'Mieter A', start: '2020-01-01', end: null, ...over })
+    expect(selfSupplyOffer(['eg', 'og'], [t('a', 'eg', { heatingModel: 'selfSupply' }), t('b', 'og')], '2026-10-12', true))
+      .toEqual({ tenancyIds: ['b'], names: ['Mieter A'], kindTenancyIds: ['a'] })
+    expect(selfSupplyOffer(['eg'], [t('a', 'eg', { heatingModel: 'selfSupply', selfSupplyKind: 'perUnit' })], '2026-10-12', true))
+      .toEqual({ tenancyIds: [], names: [], kindTenancyIds: [] })
+    expect(selfSupplyOffer(['eg'], [t('a', 'eg', { heatingModel: 'selfSupply' })], '2026-10-12', false))
+      .toEqual({ tenancyIds: [], names: [], kindTenancyIds: ['a'] })
   })
 })
 
@@ -431,7 +444,7 @@ test('Durchsicht S-4: bei der zentralen Heizung ist jede weitere angehakte Einhe
   // Selbstgenutzt.
   expect(selfSupplyOffer(['eg', 'dg'], [t('a', 'eg', 'Mieter A')], '2026-10-12', true)).toEqual({ error: expect.stringMatching(NOT) })
   // Alle angehakten Wohnungen an denselben Mieter: Angebot.
-  expect(selfSupplyOffer(['eg', 'og'], [t('a', 'eg', 'Mieter A'), t('b', 'og', 'Mieter A')], '2026-10-12', true)).toEqual({ tenancyIds: ['a', 'b'], names: ['Mieter A'] })
+  expect(selfSupplyOffer(['eg', 'og'], [t('a', 'eg', 'Mieter A'), t('b', 'og', 'Mieter A')], '2026-10-12', true)).toEqual({ tenancyIds: ['a', 'b'], names: ['Mieter A'], kindTenancyIds: [] })
   // Etagenheizung: eine leere Wohnung ist kein Dritter.
-  expect(selfSupplyOffer(['eg', 'og'], [t('a', 'eg', 'Mieter A')], '2026-10-12', false)).toEqual({ tenancyIds: ['a'], names: ['Mieter A'] })
+  expect(selfSupplyOffer(['eg', 'og'], [t('a', 'eg', 'Mieter A')], '2026-10-12', false)).toEqual({ tenancyIds: ['a'], names: ['Mieter A'], kindTenancyIds: [] })
 })

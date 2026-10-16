@@ -451,7 +451,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   fragt bei Gas, Öl, Flüssiggas und Kohle, wer den Liefervertrag hat; hat ihn der Mieter, legt sie keine Heizanlage an
   und bietet an, die Mietverhältnisse umzustellen. Versorgt ein Mieter über seinen Vertrag auch Wohnungen anderer,
   rechnet Mietfuchs das nicht. Bei einer zentralen Heizung erinnert die Abrechnung daran, ihren Betriebsstrom beim
-  Allgemeinstrom abzuziehen, wenn andere Mieter diesen mittragen. Auf der Seite Kosten erfassen Sie die Anzeige des Mieters nach § 6 Abs. 2
+  Allgemeinstrom abzuziehen, wenn andere Mieter diesen mittragen; der Abzug für eine andere Heizanlage zählt dabei
+  nicht. Steht ein Mietverhältnis schon ohne Angabe der Art auf „Mieter heizt selbst“, trägt die Einrichtung die Art
+  nach, und beim Mieterwechsel sagt die Maske, dass der Nachmieter „Mieter heizt selbst“ übernimmt. Auf der Seite Kosten erfassen Sie die Anzeige des Mieters nach § 6 Abs. 2
   CO2KostAufG. Mietfuchs rechnet nach (Stufe, gekürzte Tabelle bei kürzerem Zeitraum des Lieferanten,
   Nichtwohngebäude, Beschränkungen nach § 9, 5 % weniger bei Geräten im Eigentum des Mieters wie einem eigenen
   Gasherd, kein Anspruch bei gewerblicher Nutzung ohne getrennte Messung, ab 2028 die hälftige Teilung nach § 5a),
@@ -459,7 +461,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Nachrechnung hin und nennt die Fristen für Anzeige, Verrechnung und Auszahlung; verrechnet wird nur bei
   vereinbarter Vorauszahlung, und eine Erstattung gibt es nur bei „Mieter heizt selbst“. Der Vorschlag für die
   neue Vorauszahlung rechnet ohne die Erstattung. In der Steuerübersicht wirkt eine verrechnete Erstattung über die
-  Zahlungen, eine ausgezahlte steht im Jahr der Auszahlung bei den Werbungskosten.
+  Zahlungen, eine ausgezahlte steht im Jahr der Auszahlung bei den Werbungskosten, als eigene Zeile der Aufstellung
+  je Position und in der Übersicht des ZIP „Belege für die Steuer“, deren Summe damit den Werbungskosten gleicht.
 - **Die KI liest Messdienstabrechnung und Lieferantenrechnung**
   ([#103](https://github.com/speedone/mietfuchs/issues/103)): Auf der Seite Heizkosten liest die Karte
   „Messdienstabrechnung auslesen“ die Heiz- und Warmwasserkostenabrechnung eines Messdienstes: Nutzerbeträge je

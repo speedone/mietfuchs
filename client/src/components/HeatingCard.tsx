@@ -105,14 +105,23 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
         setError(offer.error)
         return
       }
-      if (offer.tenancyIds.length === 0) return
+      const kind = central ? 'central' : 'perUnit'
+      // Nachprüfung N-3: die Art bei denen nachtragen, die schon „Mieter heizt selbst“ sind.
+      for (const id of offer.kindTenancyIds) await api(`/api/tenancies/${id}`, { method: 'PUT', body: JSON.stringify({ selfSupplyKind: kind }) })
+      if (offer.tenancyIds.length === 0) {
+        if (offer.kindTenancyIds.length > 0) {
+          toast('Art der Heizung bei „Mieter heizt selbst“ nachgetragen.')
+          await onChanged?.()
+        }
+        return
+      }
       const ok = await confirm({
         title: 'Auf „Mieter heizt selbst“ stellen?',
         message: `Die laufenden Mietverhältnisse von ${offer.names.join(', ')} werden unter Heizung auf „Mieter heizt selbst“ gestellt. Wartung und Betriebsstrom, die Sie tragen, rechnet Mietfuchs weiter ab; Hinweise auf eine CO₂-Kürzung entfallen dafür.`,
         confirmLabel: 'Umstellen',
       })
       if (!ok) return
-      for (const id of offer.tenancyIds) await api(`/api/tenancies/${id}`, { method: 'PUT', body: JSON.stringify({ heatingModel: 'selfSupply', selfSupplyKind: central ? 'central' : 'perUnit' }) })
+      for (const id of offer.tenancyIds) await api(`/api/tenancies/${id}`, { method: 'PUT', body: JSON.stringify({ heatingModel: 'selfSupply', selfSupplyKind: kind }) })
       toast('Umgestellt.')
       await onChanged?.()
     } catch (e) {

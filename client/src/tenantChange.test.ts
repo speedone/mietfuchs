@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { buildTenantChange, defaultStart, EMPTY_NEW_TENANT, endProblem, gapProblem, INTERIM_FEE_HINT, meterProblem, parseMeterValue, type NewTenantForm } from './tenantChange'
+import { buildTenantChange, defaultStart, EMPTY_NEW_TENANT, endProblem, gapProblem, INTERIM_FEE_HINT, meterProblem, parseMeterValue, successorHeatingNote, type NewTenantForm } from './tenantChange'
 
 const meters = [{ id: 'm1', name: 'KW EG' }, { id: 'm2', name: 'Haupt' }]
 const input = (patch: Partial<Parameters<typeof buildTenantChange>[0]> = {}, tenant: Partial<NewTenantForm> = {}) => ({
@@ -126,4 +126,15 @@ test('Mieterwechsel: der Nachmieter heizt ebenfalls selbst, mit derselben Art; s
   const normal = buildTenantChange(input({ tenancy: { start: '2024-01-01', heatingModel: 'flatRate' } }))
   if (!('body' in normal)) throw new Error(JSON.stringify(normal))
   expect(normal.body.newTenancy).not.toHaveProperty('heatingModel')
+})
+
+// Nachprüfung N-3 zu PR 19: Die Wechselmaske sagt, dass der Nachmieter „Mieter heizt selbst“ übernimmt, statt es still
+// zu tun (buildTenantChange gibt es mit, Durchsicht S-3).
+describe('Nachmieter heizt ebenfalls selbst', () => {
+  test('nennt die Übernahme samt Art; ohne selfSupply nichts', () => {
+    expect(successorHeatingNote({ heatingModel: 'selfSupply', selfSupplyKind: 'central' })).toBe('Der neue Mieter heizt ebenfalls selbst („Mieter heizt selbst“: Eine zentrale Heizung im Haus, deren Brennstoff der Mieter bezieht). Ändern lässt sich das danach in den Stammdaten.')
+    expect(successorHeatingNote({ heatingModel: 'selfSupply' })).toBe('Der neue Mieter heizt ebenfalls selbst („Mieter heizt selbst“). Ändern lässt sich das danach in den Stammdaten.')
+    expect(successorHeatingNote({ heatingModel: 'settlement' })).toBeNull()
+    expect(successorHeatingNote({})).toBeNull()
+  })
 })
