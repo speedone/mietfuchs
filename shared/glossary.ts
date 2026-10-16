@@ -405,6 +405,21 @@ export const GLOSSARY = {
     norm: '§ 7 Abs. 1 Satz 2, § 10 HeizkostenV',
     needed: 'Nur bei einer Öl- oder Gasheizung (Flüssiggas zählt nach Auslegung von Mietfuchs dazu, siehe Verbrauchskosten). Wissen Sie nicht, ob die Voraussetzungen vorliegen, liegen Sie mit dem Pflichtanteil in jedem Fall richtig, denn er liegt auch innerhalb der freien Wahl. Mehr geht nur mit einer Vereinbarung (§ 10 HeizkostenV). Den Pflichtanteil nachzutragen ist keine Änderung nach § 6 Abs. 4 und geht auch in einer begonnenen Heizperiode.',
   },
+  // #218: nur Erklärung und Hinweis; die Verteilung über Nutzergruppen rechnet Mietfuchs nicht.
+  preCapture: {
+    title: 'Vorerfassung nach Nutzergruppen',
+    short:
+      'Die Kosten einer Heizanlage gehen zuerst auf Gruppen von Nutzern und erst danach innerhalb jeder Gruppe auf die einzelnen Nutzer. Den Anteil jeder Gruppe misst ein eigener Zähler. ' +
+      'Vorgeschrieben ist das, wenn der Verbrauch der Nutzer einer Anlage nicht mit gleichen Ausstattungen erfasst wird, etwa Wärmezähler in einem Teil des Hauses und Heizkostenverteiler im anderen. ' +
+      'Bei unterschiedlichen Nutzungs- oder Gebäudearten oder aus anderen sachgerechten Gründen darf der Gebäudeeigentümer sie auch sonst durchführen.',
+    example:
+      'An einer Heizung hängen ein Laden und vier Wohnungen. Ein Wärmezähler misst für den Laden 6.000 kWh von 20.000 kWh des Hauses: 30 % der Heizkosten gehen an die Gruppe Laden, 70 % an die Gruppe Wohnungen, ' +
+      'und innerhalb der Wohnungen wird nach deren Heizkostenverteilern verteilt.',
+    norm: '§ 5 Abs. 7 HeizkostenV',
+    needed:
+      'Pflicht nur bei verschiedenen Geräten an einer Anlage; Mietfuchs meldet das als Fehler und verteilt die Anlage dann nicht. In den übrigen Fällen entscheiden Sie. ' +
+      'Die Vorerfassung rechnet Mietfuchs nicht; erstellt ein Messdienst die Abrechnung damit, übernehmen Sie seine Beträge als Einzelbeträge.',
+  },
   // #219, Gesamtentwurf 14.1: nur der Lexikonhinweis; die Bestimmung des Verbrauchs rechnet Mietfuchs nicht.
   pipeHeat: {
     title: 'Rohrwärme',
