@@ -1,6 +1,6 @@
 // Die Einrichtung „Heizung“ (Heizung PR 4, Entwurf 11.2), ohne DOM.
 import { describe, expect, test } from 'vitest'
-import { asksContracting, asksFuelContract, editFuelContractNote, FUEL_CONTRACT_OPTIONS, selfSupplyOffer, asksSwitch, contractingSwap, energyLabelOf, HOW_TO_TELL, PREVIOUS_SUPPLY_OPTIONS, asksGeneration, asksNewInstall, asksTakeOver, buildingOptions, canSwap, connectionNote, emptyHeatingForm, emptySwapForm, formulaFormOf, HEAT_GENERATION_OPTIONS, HOT_WATER_OPTIONS, hotWaterBody, isFormula, parseDecimal, SELF_HOT_WATER_OPTIONS, selfFormulaBody, PER_UNIT_ENERGY_OPTIONS, plantOptions, swapBody, swapMetersOf, unmeasurableLabel, heatingPlantBody, heatingSummary, heatingToForm, whoHint, whoOptions, type HeatingForm } from './heatingForm'
+import { asksRemote, asksContracting, asksFuelContract, editFuelContractNote, FUEL_CONTRACT_OPTIONS, selfSupplyOffer, asksSwitch, contractingSwap, energyLabelOf, HOW_TO_TELL, PREVIOUS_SUPPLY_OPTIONS, asksGeneration, asksNewInstall, asksTakeOver, buildingOptions, canSwap, connectionNote, emptyHeatingForm, emptySwapForm, formulaFormOf, HEAT_GENERATION_OPTIONS, HOT_WATER_OPTIONS, hotWaterBody, isFormula, parseDecimal, SELF_HOT_WATER_OPTIONS, selfFormulaBody, PER_UNIT_ENERGY_OPTIONS, plantOptions, swapBody, swapMetersOf, unmeasurableLabel, heatingPlantBody, heatingSummary, heatingToForm, whoHint, whoOptions, type HeatingForm } from './heatingForm'
 import type { HeatingPlant, Unit } from './types'
 
 const UNITS: Pick<Unit, 'id' | 'name' | 'noConnection'>[] = [{ id: 'eg', name: 'EG' }, { id: 'og', name: 'OG' }, { id: 'garage', name: 'Garage', noConnection: ['waerme'] }]
@@ -478,13 +478,26 @@ describe('Wärmelieferant rechnet unmittelbar mit den Mietern ab (#225)', () => 
   test('keine Anlage; die Erklärung nennt § 1 Abs. 3 und § 11 Abs. 1 Nr. 4, und jeder Mieter hat seinen eigenen Vertrag', () => {
     const r = heatingPlantBody(ausgefuellt({ energy: 'districtHeating', who: 'supplier' }), UNITS)
     if (!('none' in r)) throw new Error(JSON.stringify(r))
-    expect(r.none).toMatch(/gelten nach § 1 Abs\. 3 HeizkostenV die Pflichten des Gebäudeeigentümers aus der Verordnung für den Lieferanten/)
-    expect(r.none).toMatch(/Mietfuchs legt keine Heizanlage an/)
+    // Durchsicht PR #296, S1: § 1 Abs. 3 nur mit seiner zweiten Voraussetzung; misst der Lieferant je Wohnung, gilt die Verordnung nicht.
+    expect(r.none).toMatch(/^Rechnet der Wärmelieferant unmittelbar mit den Mietern ab, legt Mietfuchs keine Heizanlage an\./)
+    expect(r.none).toMatch(/Legt er dabei die Anteile der Mieter am Gesamtverbrauch zugrunde und nicht den für jede Wohnung gemessenen Verbrauch, gelten nach § 1 Abs\. 3 HeizkostenV die Pflichten des Gebäudeeigentümers aus der Verordnung für ihn\./)
+    expect(r.none).toMatch(/Misst er den Verbrauch jeder Wohnung selbst und rechnet danach ab, gilt die Verordnung für diese Verteilung nicht\./)
+    expect(r.none).toMatch(/legt Mietfuchs keine Heizanlage an/)
     expect(r.none).toMatch(/§ 11 Abs\. 1 Nr\. 4 HeizkostenV/)
     expect(r.none).toMatch(/„Heizung und Warmwasser“/)
     expect(r.selfSupplyUnitIds).toEqual(['eg', 'og'])
     expect(r.central).toBe(true)
     expect(r.singleTenant).toBe(false)
+  })
+
+  // Durchsicht PR #296, S2: Mit „Lieferant“ entfallen die Fragen nach Geräten und Umstellung, und die Erklärung steht vorher da.
+  test('„Lieferant“: keine Fragen nach Fernablesbarkeit, Einbau und Umstellung, deren Prüfung greift nicht, und die Erklärung steht als Satz unter der Frage', () => {
+    expect(asksRemote('supplier')).toBe(false)
+    expect(asksSwitch({ energy: 'districtHeating', contracting: false, who: 'supplier' })).toBe(false)
+    expect(asksSwitch({ energy: 'districtHeating', contracting: false, who: 'manual' })).toBe(true)
+    const r = heatingPlantBody(ausgefuellt({ energy: 'districtHeating', who: 'supplier', announcedOn: '2025-01-01', deliverySince: '' }), UNITS)
+    if (!('none' in r)) throw new Error(JSON.stringify(r))
+    expect(whoHint('supplier', 'mfh')).toBe(r.none)
   })
 
   test('das Angebot nimmt mehrere Mieter an, auch an der zentralen Anlage', () => {

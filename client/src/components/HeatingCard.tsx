@@ -251,6 +251,8 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
   // Welche Wohnungen an der Anlage hängen, bei zentraler Heizung wie bei der Etagenheizung (Heizung PR 9).
   // Heizung PR 19: Der Mieter hat den Vertrag (Etagenheizung oder zentrale Heizung).
   const fuelByTenant = form !== null && asksFuelContract(form, editingId) && form.fuelContract !== 'landlord'
+  // Angezeigt = gespeichert: Gibt es die gewählte Antwort nicht mehr (etwa „Lieferant“ nach einem Wechsel der Energie), steht nichts da.
+  const shownWho: WhoSettles = form !== null && whoOptions(kind, form, editingId).some((o) => o.value === form.who) ? form.who : ''
   const selfSupplyForm = form !== null && ((form.energy === 'perUnit' && form.contract === 'tenant') || fuelByTenant)
   const unitChoice = form && (
     <fieldset className="field grow no-connection">
@@ -444,13 +446,13 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
               {editFuelContractNote(form, editingId) && <small className="muted">{editFuelContractNote(form, editingId)}</small>}
               <label className="field grow">
                 Wer erstellt Ihre Heizkostenabrechnung?
-                <select value={whoOptions(kind, form, editingId).some((o) => o.value === form.who) ? form.who : ''} onChange={(e) => setForm({ ...form, who: e.target.value as WhoSettles })}>
+                <select value={shownWho} onChange={(e) => setForm({ ...form, who: e.target.value as WhoSettles })}>
                   <option value="">— bitte wählen —</option>
                   {whoOptions(kind, form, editingId).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </label>
               <small className="muted">{HOW_TO_TELL.who}</small>
-              {whoHint(form.who, kind) && <p className="muted">{whoHint(form.who, kind)}</p>}
+              {whoHint(shownWho, kind) && <p className="muted">{whoHint(shownWho, kind)}</p>}
               {unitChoice}
               {asksRemote(form.who) && (<>
               <label className="field grow">
