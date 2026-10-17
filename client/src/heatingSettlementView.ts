@@ -2,7 +2,7 @@
 // 3.11, 11.4): Überschrift und Druckkopf, die Abrechnung nur mit Heizkosten, die Auswahl der
 // Heizkostenabrechnungen, ihre Fristen im Cockpit, die Heizkorrektur, die Heizperioden im
 // Kostenformular und die Heizstaffel im Mietverhältnis. Ohne DOM prüfbar.
-import { fmtDate, parseEuro } from './api'
+import { fmtDate } from './api'
 import { hasOwnRhythm, heatingPeriodsEndingIn, plantRules, servesUnit } from '../../shared/heatingPeriod.ts'
 import { formatDayRange, paymentYear, periodLabel } from '../../shared/period.ts'
 import type { BillingPeriod, HeatingPlant, HeatingPrepaymentOverride, HeatingSettlementInfo, PeriodKey, PeriodRules, Settlement, Statement, Tenancy, Unit } from './types'
@@ -115,20 +115,6 @@ export function heatingItemPeriods(plants: readonly HeatingPlant[], objectRules:
 // Heizperioden, die darin enden.
 export function itemsOfPeriod<T extends { period: string; heatingPlantId?: string | null }>(items: readonly T[], key: string, heatingKeys: readonly { plantId: string; key: string }[]): T[] {
   return items.filter((c) => (c.heatingPlantId ? heatingKeys.some((h) => h.plantId === c.heatingPlantId && h.key === c.period) : false) || (c.period === key && !heatingKeys.some((h) => h.plantId === c.heatingPlantId)))
-}
-
-// Die Heizstaffel aus den Zeilen des Formulars; leere Zeilen fallen weg.
-// Ein leerer Monat ist `defaultFrom`, der Einzugsmonat, wie bei Vorauszahlung und Pauschale.
-export function scheduleOf(rows: readonly { from: string; amount: string }[], defaultFrom = ''): { from: string; monthlyCents: number }[] | { error: string } {
-  const result: { from: string; monthlyCents: number }[] = []
-  for (const row of rows) {
-    if (row.from === '' && row.amount.trim() === '') continue
-    const cents = parseEuro(row.amount)
-    const from = row.from || defaultFrom
-    if (!/^\d{4}-\d{2}$/.test(from) || cents === null || cents < 0) return { error: 'Bitte die Staffel der Heizvorauszahlung prüfen (Monat und Betrag).' }
-    result.push({ from, monthlyCents: cents })
-  }
-  return result
 }
 
 // Rechnet die Anlage, die die Wohnung versorgt, die Heizkosten getrennt ab (offene Spanne nach Weg d

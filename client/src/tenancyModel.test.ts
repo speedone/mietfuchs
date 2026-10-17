@@ -1,6 +1,6 @@
 // Nebenkostenmodell am Mietverhältnis (#93), die Seite der Oberfläche.
 import { expect, test } from 'vitest'
-import { COST_MODEL_LABELS, HEATING_MODEL_LABELS, SELF_SUPPLY_TENANCY_HINT, buildPersonHistory, costModelBadge, costModelBody, defaultTenancyUnitId, notSettledText, overlapQuestion, parsePersons, prepaymentColumn, showsFlatRates } from './tenancyModel'
+import { COST_MODEL_LABELS, HEATING_MODEL_LABELS, SELF_SUPPLY_TENANCY_HINT, buildPersonHistory, buildSchedule, costModelBadge, costModelBody, defaultTenancyUnitId, monthPickerEmptyLabel, monthPickerIso, monthPickerParts, monthPickerText, monthPickerYears, notSettledText, overlapQuestion, parsePersons, parseScheduleMonth, prepaymentColumn, scheduleMonthProblem, scheduleMonthText, showsFlatRates, startsSchedule } from './tenancyModel'
 import type { Tenancy, Unit } from './types'
 
 test('die Staffel der Pauschale erscheint nur bei einer Pauschale', () => {
@@ -133,4 +133,168 @@ test('Mieter heizt selbst (Heizung PR 19): nur bei der Heizung wählbar, gespeic
   expect(SELF_SUPPLY_TENANCY_HINT).toMatch(/Wartung und Betriebsstrom, die Sie tragen, rechnet Mietfuchs weiter ab/)
   expect(SELF_SUPPLY_TENANCY_HINT).toMatch(/in Textform auf den Erstattungsanspruch und auf die Pflicht nach § 43 Abs\. 1 GModG hinweisen \(§ 6 Abs\. 2 Satz 6 CO2KostAufG\)/)
   expect(SELF_SUPPLY_TENANCY_HINT).toMatch(/12 Monaten/)
+})
+
+test('Monat einer Staffel: auch in deutscher Schreibweise, wie sie Safari und Firefox ohne Monatsauswahl bekommen', () => {
+  // Chrome liefert aus der Monatsauswahl immer JJJJ-MM
+  expect(parseScheduleMonth('2026-01')).toBe('2026-01')
+  // Safari auf dem Mac und Firefox zeigen ein Textfeld; dort tippt man, was man kennt
+  expect(parseScheduleMonth('01.2026')).toBe('2026-01')
+  expect(parseScheduleMonth('1.2026')).toBe('2026-01')
+  expect(parseScheduleMonth('10/2026')).toBe('2026-10')
+  expect(parseScheduleMonth(' 01.01.2026 ')).toBe('2026-01')
+  expect(parseScheduleMonth('1.10.2026')).toBe('2026-10')
+  expect(parseScheduleMonth('2026-10-01')).toBe('2026-10')
+})
+
+test('Monat einer Staffel: ein Tag mitten im Monat und Unsinn werden nicht gedeutet', () => {
+  // Eine Staffel gilt ab Monatsanfang; „15.10.2026“ still als Oktober zu lesen, hieße raten
+  expect(parseScheduleMonth('15.10.2026')).toBeNull()
+  expect(parseScheduleMonth('2026-10-15')).toBeNull()
+  expect(parseScheduleMonth('13.2026')).toBeNull()
+  expect(parseScheduleMonth('00.2026')).toBeNull()
+  expect(parseScheduleMonth('Januar 2026')).toBeNull()
+  expect(parseScheduleMonth('26-01')).toBeNull()
+  expect(parseScheduleMonth('')).toBeNull()
+  // ein Jahr außerhalb von 1900 bis 2100 ist ein Tippfehler
+  expect(parseScheduleMonth('01.0026')).toBeNull()
+  expect(parseScheduleMonth('01.2206')).toBeNull()
+  expect(parseScheduleMonth('01.2100')).toBe('2100-01')
+})
+
+test('Monat einer Staffel zur Anzeige: JJJJ-MM wird MM.JJJJ und lässt sich wieder lesen', () => {
+  expect(scheduleMonthText('2026-01')).toBe('01.2026')
+  expect(parseScheduleMonth(scheduleMonthText('2026-10'))).toBe('2026-10')
+  expect(scheduleMonthText('')).toBe('')
+})
+
+test('Monatsauswahl: Teile aus dem Formularwert und zurück, auch unvollständig', () => {
+  expect(monthPickerParts('03.2025')).toEqual({ month: '03', year: '2025' })
+  expect(monthPickerParts('')).toEqual({ month: '', year: '' })
+  expect(monthPickerParts('03.')).toEqual({ month: '03', year: '' })
+  expect(monthPickerParts('.2025')).toEqual({ month: '', year: '2025' })
+  expect(monthPickerText('03', '2025')).toBe('03.2025')
+  expect(monthPickerText('', '')).toBe('')
+  // Nur eine Hälfte gewählt: unvollständig, damit das Speichern es meldet statt „ab Einzug“ zu nehmen
+  expect(parseScheduleMonth(monthPickerText('03', ''))).toBeNull()
+  expect(monthPickerText('03', '')).not.toBe('')
+})
+
+test('Monatsauswahl: Jahre ab Einzug bis zehn Jahre voraus (Staffelmiete), dazu das Jahr eines gespeicherten Werts', () => {
+  const years = monthPickerYears('2023-05-01', '', '2025-10-15')
+  expect(years[0]).toBe('2023')
+  expect(years.at(-1)).toBe('2035')
+  expect(monthPickerYears('', '', '2025-10-15')[0]).toBe('2015')
+  expect(monthPickerYears('2023-05-01', '01.2019', '2025-10-15')[0]).toBe('2019')
+  // Einzug in der Zukunft: sein Jahr steht zur Auswahl, und von dort zehn Jahre weiter
+  const future = monthPickerYears('2030-01-01', '', '2025-10-15')
+  expect(future[0]).toBe('2025')
+  expect(future).toContain('2030')
+  expect(future.at(-1)).toBe('2040')
+  // Tippfehler im Einzug („0202“) bläht die Liste nicht auf
+  const typo = monthPickerYears('0202-03-01', '', '2025-10-15')
+  expect(typo[0]).toBe('2015')
+  expect(typo.length).toBe(21)
+})
+
+test('Monatsauswahl: ungültige ältere Werte zeigen keine Auswahl, die nicht dem Wert entspricht', () => {
+  expect(monthPickerParts(scheduleMonthText('2024-13'))).toEqual({ month: '', year: '2024' })
+  expect(monthPickerParts(scheduleMonthText('0024-01'))).toEqual({ month: '01', year: '' })
+  expect(monthPickerParts(scheduleMonthText('2206-01'))).toEqual({ month: '01', year: '' })
+  for (const parts of [monthPickerParts('13.2024'), monthPickerParts('01.0024')]) {
+    if (parts.year) expect(monthPickerYears('2020-01-01', '', '2025-10-15')).toContain(parts.year)
+  }
+})
+
+test('Meldung beim Speichern nennt, was am Monat fehlt', () => {
+  expect(scheduleMonthProblem('03.')).toMatch(/das Jahr/)
+  expect(scheduleMonthProblem('.2025')).toMatch(/den Monat/)
+  expect(scheduleMonthProblem('13.2024')).toMatch(/den Monat/)
+  expect(scheduleMonthProblem('irgendwann')).toMatch(/„irgendwann“ ist ungültig/)
+})
+
+// Durchsicht von #287: „+ Mieterhöhung ab Monat …“, 900 € eingetragen, den Monat stehen lassen.
+// Die neue Zeile galt dann „ab Einzug“, gesendet wurden zwei Einträge zum Einzugsmonat, und nach
+// „es gilt der letzte Eintrag“ galten 900 € rückwirkend ab Einzug. „Ab Einzug“ gibt es deshalb nur
+// in der ersten Zeile einer Staffel; in jeder weiteren ist ein fehlender Monat ein Fehler.
+test('Staffel aus dem Formular: nur die erste Zeile darf ohne Monat ab Einzug gelten', () => {
+  expect(buildSchedule([{ from: '', amount: '800,00' }], '2025-02-01', 'baseRent')).toEqual({ schedule: [{ from: '2025-02', monthlyCents: 80000 }] })
+  expect(buildSchedule([{ from: '02.2025', amount: '800,00' }, { from: '', amount: '900,00' }], '2025-02-01', 'baseRent'))
+    .toEqual({ error: 'Kaltmiete-Staffel: Bitte wählen Sie für die Mieterhöhung den Monat, ab dem sie gilt.' })
+  expect(buildSchedule([{ from: '', amount: '150,00' }, { from: '', amount: '170,00' }], '2025-02-01', 'prepayment'))
+    .toEqual({ error: 'Vorauszahlungs-Staffel: Bitte wählen Sie für die Änderung der Vorauszahlung den Monat, ab dem sie gilt.' })
+  expect(buildSchedule([{ from: '01.2025', amount: '90,00' }, { from: '', amount: '95,00' }], '2025-01-01', 'flatRate'))
+    .toEqual({ error: 'Staffel der Pauschale: Bitte wählen Sie für die Änderung der Pauschale den Monat, ab dem sie gilt.' })
+  expect(buildSchedule([{ from: '05.2025', amount: '120,00' }, { from: '', amount: '130,00' }], '2025-01-01', 'heatingPrepayment'))
+    .toEqual({ error: 'Staffel der Heizvorauszahlung: Bitte wählen Sie für die Änderung der Heizvorauszahlung den Monat, ab dem sie gilt.' })
+  // mit Monat: gilt ab diesem Monat
+  expect(buildSchedule([{ from: '02.2025', amount: '800,00' }, { from: '01.2026', amount: '900,00' }], '2025-02-01', 'baseRent'))
+    .toEqual({ schedule: [{ from: '2025-02', monthlyCents: 80000 }, { from: '2026-01', monthlyCents: 90000 }] })
+  // ganz leere Zeilen fallen weg, wo sie auch stehen
+  expect(buildSchedule([{ from: '', amount: '' }, { from: '', amount: ' ' }], '2025-02-01', 'baseRent')).toEqual({ schedule: [] })
+})
+
+test('Staffel aus dem Formular: zwei Zeilen zum selben Monat werden nicht still zusammengelegt', () => {
+  // Die erste ohne Monat gilt ab Einzug; eine zweite mit dem Einzugsmonat überschriebe sie rückwirkend.
+  expect(buildSchedule([{ from: '', amount: '800,00' }, { from: '02.2025', amount: '900,00' }], '2025-02-01', 'baseRent'))
+    .toEqual({ error: 'Kaltmiete-Staffel: Zwei Zeilen gelten ab 02.2025. Bitte wählen Sie für jede Zeile einen eigenen Monat.' })
+})
+
+test('Staffel aus dem Formular: Monat und Betrag werden geprüft', () => {
+  expect(buildSchedule([{ from: '03.', amount: '800,00' }], '2025-02-01', 'baseRent'))
+    .toEqual({ error: 'Kaltmiete-Staffel: Bitte noch das Jahr wählen (beides leer heißt ab Einzug).' })
+  // in einer weiteren Zeile gibt es kein „ab Einzug“, also auch keinen Hinweis darauf
+  expect(buildSchedule([{ from: '02.2025', amount: '800,00' }, { from: '.2026', amount: '900,00' }], '2025-02-01', 'baseRent'))
+    .toEqual({ error: 'Kaltmiete-Staffel: Bitte noch den Monat wählen.' })
+  expect(buildSchedule([{ from: '02.2025', amount: 'viel' }], '2025-02-01', 'baseRent')).toEqual({ error: 'Bitte den Betrag der Kaltmiete-Staffel prüfen.' })
+  expect(buildSchedule([{ from: '02.2025', amount: '-5,00' }], '2025-02-01', 'heatingPrepayment')).toEqual({ error: 'Bitte den Betrag der Staffel der Heizvorauszahlung prüfen.' })
+})
+
+// Durchsicht von #287: Ein gespeicherter Altwert vor 1900 (oder nach 2100) zeigte in der Auswahl kein
+// Jahr, und das Speichern meldete „Bitte noch das Jahr wählen“, als sei keines gespeichert.
+test('Meldung beim Speichern: ein gespeichertes Jahr außerhalb der Auswahl heißt so', () => {
+  expect(scheduleMonthProblem(scheduleMonthText('1899-05'))).toBe('Das gespeicherte Jahr 1899 liegt außerhalb von 1900 bis 2100. Bitte wählen Sie das Jahr neu.')
+  expect(scheduleMonthProblem(scheduleMonthText('2206-01'))).toBe('Das gespeicherte Jahr 2206 liegt außerhalb von 1900 bis 2100. Bitte wählen Sie das Jahr neu.')
+  // aus der Auswahl selbst entsteht nur ein fehlendes Jahr
+  expect(scheduleMonthProblem('03.')).toBe('Bitte noch das Jahr wählen (beides leer heißt ab Einzug).')
+})
+
+test('Personen-Staffel: auch dort gilt nur die erste Zeile ohne Datum ab Einzug', () => {
+  expect(buildPersonHistory([{ from: '', persons: '2' }, { from: '', persons: '3' }], '2025-02-01')).toEqual({ error: 'Bitte Personen-Staffel prüfen: Jede weitere Zeile braucht ein Datum.' })
+})
+
+test('Monatsauswahl für Felder mit JJJJ-MM: vollständig als JJJJ-MM, sonst unvollständig', () => {
+  expect(monthPickerIso('05', '2026')).toBe('2026-05')
+  expect(monthPickerIso('', '')).toBe('')
+  expect(monthPickerIso('05', '')).toBe('05.')
+  expect(monthPickerParts(monthPickerIso('05', ''))).toEqual({ month: '05', year: '' })
+  expect(monthPickerParts('2026-05')).toEqual({ month: '05', year: '2026' })
+})
+
+// Durchsicht von fix/monatsauswahl, Kann 1: Eine weitere Stufe mit einem Monat vor dem Einzug galt
+// still nie (vertipptes Jahr bei einer Mieterhöhung).
+test('Staffel aus dem Formular: eine weitere Stufe vor dem Einzug wird gemeldet', () => {
+  expect(buildSchedule([{ from: '02.2025', amount: '800,00' }, { from: '03.2015', amount: '900,00' }], '2025-02-01', 'baseRent'))
+    .toEqual({ error: 'Kaltmiete-Staffel: Die Zeile ab 03.2015 liegt vor dem Einzug (02.2025) und gälte deshalb nie. Bitte prüfen Sie Monat und Jahr.' })
+  // die erste Stufe vor dem Einzug gilt ab Einzug, wie bisher
+  expect(buildSchedule([{ from: '01.2024', amount: '800,00' }], '2025-02-01', 'baseRent')).toEqual({ schedule: [{ from: '2024-01', monthlyCents: 80000 }] })
+})
+
+// Kann 2: „erste Zeile“ ist die erste Stufe, nicht die erste Position im Formular.
+test('Staffel aus dem Formular: leere Zeilen davor zählen nicht, die erste Zeile mit Betrag ist die erste Stufe', () => {
+  expect(buildSchedule([{ from: '', amount: '' }, { from: '', amount: '800,00' }], '2025-02-01', 'baseRent')).toEqual({ schedule: [{ from: '2025-02', monthlyCents: 80000 }] })
+  expect(startsSchedule([{ from: '', amount: '' }, { from: '', amount: '800,00' }], 1)).toBe(true)
+  expect(startsSchedule([{ from: '02.2025', amount: '800,00' }, { from: '', amount: '' }], 1)).toBe(false)
+  expect(startsSchedule([{ from: '', amount: '' }], 0)).toBe(true)
+})
+
+// Kann 3: Ein gespeicherter Wert mit Tag ('2024-02-15') ist kein Monat der Staffel. Die Berechnung
+// vergleicht Text ('2024-02-15' > '2024-02'), er gälte dort erst ab März; ihn hier als Februar zu
+// lesen, verschöbe beim nächsten Speichern still die Staffel. Er wird angezeigt, nicht gedeutet.
+test('Monatsauswahl: ein gespeicherter Wert, der kein Monat ist, wird benannt statt „ab Einzug“', () => {
+  expect(monthPickerEmptyLabel('2024-02-15', 'ab Einzug')).toBe('gespeichert: 2024-02-15')
+  expect(monthPickerEmptyLabel('', 'ab Einzug')).toBe('ab Einzug')
+  expect(monthPickerEmptyLabel('.2026', 'ab Einzug')).toBe('– Monat –')
+  expect(monthPickerEmptyLabel('', undefined)).toBe('– Monat –')
+  expect(scheduleMonthProblem(scheduleMonthText('2024-02-15'))).toBe('Der gespeicherte Monat „2024-02-15“ ist ungültig. Bitte Monat und Jahr neu wählen.')
 })

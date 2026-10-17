@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import {
   adjustedPrepaymentLabel, cockpitHeatingRows, suggestionWithoutHeating, heatingChoices, heatingItemPeriods, heatingOnlyNote, heatingOverridesWith, itemsOfPeriod, prepaymentLabel, prepaymentSplit, totalLabel,
-  heatingTaxYear, recommendedDeadlineText, scheduleOf, separateHeatingFor, settlementPaths, settlementTitle,
+  heatingTaxYear, recommendedDeadlineText, separateHeatingFor, settlementPaths, settlementTitle,
 } from './heatingSettlementView'
 import { CALENDAR_RULES, calendarYearPeriod, periodKey as k, settlementPeriod } from '../../shared/period.ts'
 import type { HeatingPlant, HeatingSettlementInfo, Statement, Tenancy } from './types'
@@ -93,12 +93,6 @@ describe('Kostenformular und Mietverhältnis', () => {
       { id: 'c', period: k('2025-05'), heatingPlantId: undefined },
     ]
     expect(itemsOfPeriod(items, k('2026-01'), [{ plantId: 'hp1', key: '2025-05' }]).map((c) => c.id)).toEqual(['a', 'b'])
-  })
-  test('Staffel aus dem Formular', () => {
-    expect(scheduleOf([{ from: '2025-05', amount: '123,00' }, { from: '', amount: '' }])).toEqual([{ from: '2025-05', monthlyCents: 12300 }])
-    expect(scheduleOf([{ from: '2025-05', amount: 'viel' }])).toEqual({ error: 'Bitte die Staffel der Heizvorauszahlung prüfen (Monat und Betrag).' })
-    // Ein leerer Monat ist der Einzugsmonat, wie bei den übrigen Staffeln (Durchsicht von #231, Minor 3).
-    expect(scheduleOf([{ from: '', amount: '123,00' }], '2025-08')).toEqual([{ from: '2025-08', monthlyCents: 12300 }])
   })
 })
 

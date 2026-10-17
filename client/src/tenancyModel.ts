@@ -1,5 +1,5 @@
 import type { CostModel, HeatingModel, NotSettled, SelfSupplyKind, Tenancy, Unit } from './types'
-import { fmtDate, fmtEuro } from './api'
+import { fmtDate, fmtEuro, parseEuro } from './api'
 import { overlapsOf } from '../../shared/tenancyOverlap.ts'
 import { andList } from '../../shared/wording.ts'
 import { co2SelfSupply, halfSplitEnactedOn } from '../../shared/law/co2kostaufg.ts'
@@ -102,6 +102,174 @@ export function buildPersonHistory(
   }
   personHistory.sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0))
   return { personHistory }
+}
+
+// Monat einer Staffel (Kaltmiete, Vorauszahlung, Pauschale) aus dem Formular, als 'JJJJ-MM'.
+// Das Feld war ein `<input type="month">`. Safari auf dem Mac und Firefox haben keine
+// Monatsauswahl: Je nach Fassung zeigen sie ein Textfeld, in dem nur „2026-01“ durch die Prüfung
+// kam, oder ein Feld, in das sich gar nichts eingeben ließ. Heute wählt man Monat und Jahr aus
+// zwei Listen (MonthPicker), deren Wert 'MM.JJJJ' ist. Gelesen wird trotzdem großzügig („1.2026“,
+// „01/2026“, „01.01.2026“, „2026-01“), denn die Funktion ist die eine Stelle, die einen Monat einer
+// Staffel prüft. Ein Tag nur als Erster: Eine Staffel gilt ab Monatsanfang, und „15.10.2026“ still
+// als Oktober zu lesen, hieße raten. `null`: nicht lesbar.
+const YEAR_MIN = 1900
+const YEAR_MAX = 2100
+
+export function parseScheduleMonth(text: string): string | null {
+  const t = text.trim()
+  // Ein Jahr außerhalb von 1900 bis 2100 ist ein Tippfehler („01.0026“): Als frühester Eintrag
+  // gälte die Staffel sonst still ab Einzug, als späterer nie.
+  const month = (y: string, m: string) => {
+    const n = Number(m)
+    const year = Number(y)
+    return n >= 1 && n <= 12 && year >= YEAR_MIN && year <= YEAR_MAX ? `${y}-${String(n).padStart(2, '0')}` : null
+  }
+  let m = /^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?$/.exec(t)
+  if (m) return m[3] === undefined || Number(m[3]) === 1 ? month(m[1], m[2]) : null
+  m = /^(?:(\d{1,2})\.)?(\d{1,2})[./](\d{4})$/.exec(t)
+  if (m) return m[1] === undefined || Number(m[1]) === 1 ? month(m[3], m[2]) : null
+  return null
+}
+
+// Was an einem nicht lesbaren „gültig ab“ fehlt, als Satz für die Meldung beim Speichern. `first`:
+// die erste Zeile einer Staffel, nur dort heißt „beides leer“ ab Einzug.
+export function scheduleMonthProblem(text: string, first = true): string {
+  // Ein gespeicherter Teil, den die Auswahl nicht anbietet (ein Jahr vor 1900, ein Monat 13), steht
+  // dort leer. „Bitte noch das Jahr wählen“ klänge dann, als sei keines gespeichert (Durchsicht von #287).
+  const raw = /^(\d{2})?\.(\d{4})?$/.exec(text.trim())
+  if (raw?.[2] !== undefined && (Number(raw[2]) < YEAR_MIN || Number(raw[2]) > YEAR_MAX)) {
+    return `Das gespeicherte Jahr ${raw[2]} liegt außerhalb von ${YEAR_MIN} bis ${YEAR_MAX}. Bitte wählen Sie das Jahr neu.`
+  }
+  if (raw?.[1] !== undefined && (Number(raw[1]) < 1 || Number(raw[1]) > 12)) {
+    return `Den gespeicherten Monat ${raw[1]} gibt es nicht. Bitte wählen Sie den Monat neu.`
+  }
+  const both = first ? ' (beides leer heißt ab Einzug).' : '.'
+  const { month, year } = monthPickerParts(text)
+  if (month && !year) return `Bitte noch das Jahr wählen${both}`
+  if (year && !month) return `Bitte noch den Monat wählen${both}`
+  return `Der gespeicherte Monat „${text.trim()}“ ist ungültig. Bitte Monat und Jahr neu wählen.`
+}
+
+// Die Staffeln am Mietverhältnis, die nach Monat gelten. Name für Meldungen, die Änderung für den
+// fehlenden Monat und die Beschriftung des Felds, je Staffel eindeutig (Screenreader, Tests).
+export type ScheduleKind = 'baseRent' | 'prepayment' | 'flatRate' | 'heatingPrepayment'
+const SCHEDULES: Record<ScheduleKind, { name: string; change: string; label: string }> = {
+  baseRent: { name: 'Kaltmiete-Staffel', change: 'die Mieterhöhung', label: 'Kaltmiete gültig ab' },
+  prepayment: { name: 'Vorauszahlungs-Staffel', change: 'die Änderung der Vorauszahlung', label: 'Vorauszahlung gültig ab' },
+  flatRate: { name: 'Staffel der Pauschale', change: 'die Änderung der Pauschale', label: 'Pauschale gültig ab' },
+  heatingPrepayment: { name: 'Staffel der Heizvorauszahlung', change: 'die Änderung der Heizvorauszahlung', label: 'Heizvorauszahlung gültig ab' },
+}
+export const scheduleLabel = (kind: ScheduleKind): string => SCHEDULES[kind].label
+
+// Eine Staffel aus den Zeilen des Formulars ('MM.JJJJ' aus dem MonthPicker), als 'JJJJ-MM'. Ganz
+// leere Zeilen fallen weg. Ohne Monat gilt nur die erste Zeile ab Einzug; in jeder weiteren ist ein
+// fehlender Monat ein Fehler. Vorher galt `row.from || start` für jede Zeile: Eine Mieterhöhung,
+// deren Monat stehen blieb, ergab einen zweiten Eintrag zum Einzugsmonat, und nach „es gilt der
+// letzte“ (schedule.ts) galt der neue Betrag rückwirkend ab Einzug (Durchsicht von #287). Aus
+// demselben Grund werden zwei Zeilen zum selben Monat abgelehnt statt still zusammengelegt.
+export function buildSchedule(
+  rows: readonly { from: string; amount: string }[],
+  start: string,
+  kind: ScheduleKind,
+): { schedule: { from: string; monthlyCents: number }[] } | { error: string } {
+  const { name, change } = SCHEDULES[kind]
+  const schedule: { from: string; monthlyCents: number }[] = []
+  for (const [i, row] of rows.entries()) {
+    if (isBlankRow(row)) continue
+    // Die erste Stufe ist die erste Zeile mit Inhalt, nicht die erste im Formular (Durchsicht, Kann 2).
+    const first = startsSchedule(rows, i)
+    let from: string | null
+    if (row.from.trim()) {
+      from = parseScheduleMonth(row.from)
+      if (from === null) return { error: `${name}: ${scheduleMonthProblem(row.from, first)}` }
+    } else if (first) {
+      from = start.slice(0, 7)
+    } else {
+      return { error: `${name}: Bitte wählen Sie für ${change} den Monat, ab dem sie gilt.` }
+    }
+    const cents = parseEuro(row.amount)
+    if (cents === null || cents < 0) return { error: `Bitte den Betrag der ${name} prüfen.` }
+    // Eine weitere Stufe vor dem Einzug gälte nie: Die erste gilt ab Einzug, und diese läge davor
+    // (etwa ein vertipptes Jahr bei einer Mieterhöhung; Durchsicht, Kann 1).
+    if (!first && from < start.slice(0, 7)) {
+      return { error: `${name}: Die Zeile ab ${scheduleMonthText(from)} liegt vor dem Einzug (${scheduleMonthText(start.slice(0, 7))}) und gälte deshalb nie. Bitte prüfen Sie Monat und Jahr.` }
+    }
+    if (schedule.some((e) => e.from === from)) {
+      return { error: `${name}: Zwei Zeilen gelten ab ${scheduleMonthText(from)}. Bitte wählen Sie für jede Zeile einen eigenen Monat.` }
+    }
+    schedule.push({ from, monthlyCents: cents })
+  }
+  return { schedule }
+}
+
+const isBlankRow = (row: { from: string; amount: string }): boolean => !row.from.trim() && !row.amount.trim()
+
+// Beginnt Zeile i die Staffel, steht also davor keine Zeile mit Inhalt? Nur dort heißt ein leerer
+// Monat „ab Einzug“, beim Speichern wie in der Auswahl.
+export function startsSchedule(rows: readonly { from: string; amount: string }[], i: number): boolean {
+  return rows.slice(0, i).every(isBlankRow)
+}
+
+// Monatsauswahl der Staffeln (MonthPicker): zwei Auswahllisten statt Freitext, damit jeder Browser
+// gleich aussieht und sich kein Tippfehler einschleicht (Safari kennt `type="month"` nicht). Der
+// Wert im Formular bleibt der Text 'MM.JJJJ', den parseScheduleMonth liest; ist nur eine der beiden
+// Listen gewählt, entsteht ein unvollständiger Text ('03.' bzw. '.2026'), und das Speichern meldet
+// es, statt still „ab Einzug“ anzunehmen.
+export function monthPickerParts(text: string): { month: string; year: string } {
+  const parsed = parseScheduleMonth(text)
+  if (parsed) return { month: parsed.slice(5, 7), year: parsed.slice(0, 4) }
+  // Nur Teile, die es als Auswahl gibt: Ein älterer Wert wie '2024-13' oder '0024-01' (das frühere
+  // Textfeld in Safari ließ ihn durch) zeigte sonst eine Auswahl, die nicht dem Wert entspricht
+  const m = /^(\d{2})?\.(\d{4})?$/.exec(text.trim())
+  if (!m) return { month: '', year: '' }
+  const month = m[1] !== undefined && Number(m[1]) >= 1 && Number(m[1]) <= 12 ? m[1] : ''
+  const year = m[2] !== undefined && Number(m[2]) >= YEAR_MIN && Number(m[2]) <= YEAR_MAX ? m[2] : ''
+  return { month, year }
+}
+
+// Der Text des leeren Monats. Ein gespeicherter Wert, den die Auswahl nicht lesen kann (etwa
+// '2024-02-15' aus einem Aufruf an der Oberfläche vorbei), wird benannt statt „ab Einzug“ zu zeigen:
+// Die Berechnung vergleicht Text, '2024-02-15' gälte dort erst ab März, und ihn als Februar zu lesen,
+// verschöbe beim Speichern still die Staffel (Durchsicht, Kann 3). Das Speichern meldet ihn.
+export function monthPickerEmptyLabel(value: string, emptyLabel: string | undefined): string {
+  const { month, year } = monthPickerParts(value)
+  if (value.trim() && !month && !year) return `gespeichert: ${value.trim()}`
+  return !year && emptyLabel ? emptyLabel : '– Monat –'
+}
+
+export function monthPickerText(month: string, year: string): string {
+  return month === '' && year === '' ? '' : `${month}.${year}`
+}
+
+// Dieselbe Auswahl für Felder, deren Wert 'JJJJ-MM' bleibt (Zeitraumwechsel, Heizperiode): vollständig
+// als 'JJJJ-MM', unvollständig wie oben, sodass deren Prüfung (etwa parsePeriodKey) es ablehnt und die
+// Auswahl die gewählte Hälfte weiter zeigt.
+export function monthPickerIso(month: string, year: string): string {
+  return month !== '' && year !== '' ? `${year}-${month}` : monthPickerText(month, year)
+}
+
+// Jahre zur Auswahl: ab dem Einzugsjahr (ohne Einzug zehn Jahre zurück) bis zehn Jahre nach dem
+// späteren von Einzug und heute, damit ein Staffelmietvertrag (§ 557a BGB) seine Stufen über Jahre
+// im Voraus eintragen kann; dazu das Jahr eines schon gespeicherten Werts. Ein Wert außerhalb der
+// Liste zeigte der Browser sonst als ersten Eintrag an, ohne dass sich etwas ändert. Begrenzt auf
+// die Jahre, die parseScheduleMonth annimmt, damit ein Tippfehler im Einzug die Liste nicht aufbläht.
+export function monthPickerYears(start: string, value: string, today: string): string[] {
+  const now = Number(today.slice(0, 4))
+  const startYear = /^\d{4}/.test(start) ? Number(start.slice(0, 4)) : null
+  const valid = startYear !== null && startYear >= YEAR_MIN && startYear <= YEAR_MAX
+  const from = valid ? Math.min(startYear, now) : now - 10
+  const to = Math.min((valid ? Math.max(startYear, now) : now) + 10, YEAR_MAX)
+  const years = new Set<number>()
+  for (let y = Math.max(from, YEAR_MIN); y <= to; y++) years.add(y)
+  const own = monthPickerParts(value).year
+  if (own) years.add(Number(own))
+  return [...years].sort((a, b) => a - b).map(String)
+}
+
+// Gespeichertes 'JJJJ-MM' fürs Formular als 'MM.JJJJ'.
+export function scheduleMonthText(from: string): string {
+  const m = /^(\d{4})-(\d{2})$/.exec(from)
+  return m ? `${m[2]}.${m[1]}` : from
 }
 
 // Die Wohnung, die der Dialog für ein neues Mietverhältnis vorwählt (#142). Vorher die erste

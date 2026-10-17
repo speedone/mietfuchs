@@ -8,6 +8,20 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
+- **Monatsfelder lassen sich jetzt auch in Safari und Firefox bedienen.** Die Felder „gültig ab“
+  der Staffeln für Kaltmiete, Vorauszahlung, Pauschale und Heizvorauszahlung waren eine
+  Monatsauswahl, die Safari auf dem Mac und Firefox nicht kennen: Je nach Fassung ließ sich dort
+  gar nichts eingeben, oder nur „2026-01“ kam durch, und „01.2026“ oder „01.01.2026“ endete in der
+  Meldung „Bitte Kaltmiete-Staffel prüfen“. Dasselbe galt für „Neuer Zeitraum beginnt ab“ beim
+  Wechsel des Abrechnungszeitraums und für die Monatsfelder der Heizung. Monat und Jahr werden
+  jetzt in jedem Browser aus zwei Listen gewählt, Tippfehler gibt es keine mehr; ist nur eines
+  gewählt, sagt die Meldung, was fehlt. Die Jahre reichen bis zehn Jahre voraus, sodass sich auch
+  eine Staffelmiete eintragen lässt. Dabei behoben: Eine weitere Zeile einer Staffel ohne Monat,
+  etwa eine Mieterhöhung, deren Monat stehen blieb, galt still „ab Einzug“ und damit rückwirkend
+  für die ganze Mietzeit. „Ab Einzug“ gibt es jetzt nur noch in der ersten Zeile; in jeder
+  weiteren fragt Mietfuchs nach dem Monat, und zwei Zeilen zum selben Monat werden nicht mehr
+  still zusammengelegt.
+  ([#287](https://github.com/speedone/mietfuchs/issues/287))
 - Kontoauszüge lesen: Ein ZIP-Archiv wird geprüft, bevor etwas entpackt wird (höchstens 3.000
   Einträge samt Ordnern, 8 Ordnerebenen und 20 MB entpackt, eine Datei höchstens 10 MB), und überlange Textfelder werden
   gekürzt; eine IBAN wird nie gekürzt, eine überlange gilt als fehlend. Ein Archiv mit Kommentar
