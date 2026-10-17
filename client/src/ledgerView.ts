@@ -103,7 +103,7 @@ export function rentDueNote(year: number, today: Date, state: FederalState | nul
   const localText = local.map((h) => ` In Gemeinden, in denen am ${h.date.slice(8, 10)}.${h.date.slice(5, 7)}. ${h.name} gilt, ist es ein Werktag später.`).join('')
   return {
     text: `Miete ${MONTH_NAMES[month - 1]} fällig am ${WEEKDAYS[weekdayOf(due)]}, ${d}.${m}.${year}` + (state ? '' : ' (ohne Bundesland: nur bundesweite Feiertage)'),
-    details: `${rentDueRuleText(due)}; ${where}.${localText} Das gilt, wenn der Mietvertrag nichts anderes bestimmt. ` +
+    details: `${rentDueRuleText(due)}; ${where}.${localText} Das gilt, wenn der Mietvertrag nichts anderes bestimmt; bei einem sehr alten Mietverhältnis ohne vereinbarte Vorauszahlung kann die Miete erst nach Ablauf des Monats fällig sein (Art. 229 § 3 Abs. 1 Nr. 7 EGBGB). ` +
       'Rechtzeitig ist eine Überweisung, die bis zu diesem Tag in Auftrag gegeben ist; die Gutschrift kann später kommen.',
   }
 }

@@ -8,7 +8,7 @@
 // nicht: Maßgeblich bleibt das Feiertagsgesetz des Landes.
 //
 // **Warum nur im Test.** Die Feiertagsdaten von date-holidays stehen unter CC BY-SA 3.0 (sie beruhen auf
-// Wikipedia), der Code unter ISC; Mietfuchs steht unter MIT. In Programmdatei, Docker-Image oder
+// Wikipedia), der Code unter ISC; Mietfuchs steht unter AGPL-3.0, mit der CC BY-SA 3.0 nicht verträglich ist. In Programmdatei, Docker-Image oder
 // Oberfläche würden die Daten mit ausgeliefert. Deshalb steht das Paket in der Wurzel-package.json, deren
 // node_modules weder das Image (es übernimmt nur server/, client/dist, shared/) noch Bun beim Kompilieren
 // (es bündelt nur, was server/src importiert) noch Vite erreichen. Nichts unter server/src, shared/ oder
@@ -28,7 +28,9 @@ import { holidaysOf, localHolidaysOf, STATE_CODES } from '../../shared/holidays.
 import type { FederalState } from '../../shared/types.ts'
 
 const FROM = 1995
-const TO = new Date().getUTCFullYear() + 10
+// Ein festes Ende statt „heute plus zehn“: Sonst würde die CI am 1. Januar ohne Codeänderung rot, wenn
+// date-holidays schon eine spätere Regel führt, und hielte das gebündelte Dependabot-Update auf.
+const TO = 2036
 
 type Day = { date: string; name: string }
 

@@ -12,6 +12,7 @@ import {
   addDays, easterSunday, FIRST_YEAR, holidaysOf, isFederalState, isHoliday, isWorkday, localHolidaysOf, STATE_CODES, STATES,
 } from '../../shared/holidays.ts'
 import type { FederalState } from '../../shared/types.ts'
+import { LAW_PARAMS } from '../../shared/law/params.ts'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 type Fixture = { jahre: [number, number]; ostern: string[]; varianten: Record<string, string[]> }
@@ -166,4 +167,18 @@ test('die Zeitzone des Rechners ändert nichts', () => {
   const results = ['Europe/Berlin', 'America/Los_Angeles', 'Pacific/Kiritimati'].map((tz) =>
     execFileSync(process.execPath, ['--input-type=module', '-e', script], { cwd: root, env: { ...process.env, TZ: tz }, encoding: 'utf8' }).trim())
   assert.equal(new Set(results).size, 1, results.join('\n'))
+})
+
+// Auflage aus #290: Die Feiertage dürfen nur so lange `adopted` sein, wie sie lediglich eine Auskunft in
+// der Oberfläche ergeben. Rechnet der Server mit ihnen (Rückstand, Fristen, #334), muss vorher jedes
+// Landesgesetz amtlich gelesen und der Eintrag auf `checked` gehoben sein. Geprüft wird der Quelltext,
+// denn ein Verhalten gibt es erst, wenn jemand die Bausteine einbindet.
+test('Feiertage: der Server rechnet erst mit ihnen, wenn alle Fassungen amtlich gelesen sind', () => {
+  const root = path.join(here, '..', 'src')
+  const files = (fs.readdirSync(root, { recursive: true }) as string[]).filter((f) => f.endsWith('.ts'))
+  const users = files.filter((f) => /shared\/(holidays|deadlines)\.ts['"]/.test(fs.readFileSync(path.join(root, f), 'utf8')))
+  if (users.length === 0) return
+  const open = LAW_PARAMS.filter((p) => p.id.startsWith('holiday.'))
+    .flatMap((p) => p.versions.filter((v) => v.source.checked !== 'checked').map((v) => `${p.id} ab ${v.validFrom ?? '…'}`))
+  assert.deepEqual(open, [], `${users.join(', ')} nutzt die Feiertage; vorher amtlich lesen und auf checked heben:\n${open.join('\n')}`)
 })
