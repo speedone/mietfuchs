@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // Die Auswahlfelder der Karte „Abrechnungszeitraum“ zeigen den gewählten Wert (CLAUDE.md, Tests Ebene 3).
 import { afterEach, describe, expect, test } from 'vitest'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { EffectsList, PreviewAnswers, RhythmFields } from './PeriodCard'
 import { answersOf, initialAnswers } from '../periodForm'
 import { periodKey } from '../../../shared/period.ts'
@@ -20,8 +20,20 @@ describe('Karte „Abrechnungszeitraum“ (#208)', () => {
   })
   test('Wechsel: der Monat des Beginns, kein Beginnmonat', () => {
     render(<RhythmFields form={{ mode: 'change', month: 1, from: '2025-05' }} onChange={() => {}} />)
-    expect((screen.getByLabelText(/Neuer Zeitraum beginnt ab \(Monat\/Jahr\)/) as HTMLInputElement).value).toBe('2025-05')
+    // Monat und Jahr als Auswahl statt `type="month"`, das Safari und Firefox nicht kennen (#287)
+    const monat = screen.getByRole('combobox', { name: 'Neuer Zeitraum beginnt ab (Monat/Jahr): Monat' }) as HTMLSelectElement
+    const jahr = screen.getByRole('combobox', { name: 'Neuer Zeitraum beginnt ab (Monat/Jahr): Jahr' }) as HTMLSelectElement
+    expect([monat.value, monat.selectedOptions[0]?.textContent, jahr.value, jahr.selectedOptions[0]?.textContent]).toEqual(['05', 'Mai', '2025', '2025'])
     expect(screen.queryByRole('combobox', { name: 'Abrechnungszeitraum beginnt im' })).toBeNull()
+  })
+  test('Wechsel: Monat und Jahr ergeben JJJJ-MM, auch in der Zukunft', () => {
+    const next: string[] = []
+    render(<RhythmFields form={{ mode: 'change', month: 1, from: '2025-05' }} onChange={(f) => next.push(f.from)} />)
+    const jahr = screen.getByRole('combobox', { name: 'Neuer Zeitraum beginnt ab (Monat/Jahr): Jahr' }) as HTMLSelectElement
+    const future = String(new Date().getFullYear() + 2)
+    expect([...jahr.options].map((o) => o.value)).toContain(future)
+    fireEvent.change(jahr, { target: { value: future } })
+    expect(next).toEqual([`${future}-05`])
   })
   test('Zuordnung einer Gruppe: der vorgeschlagene Zeitraum steht im Feld', () => {
     const preview: PeriodChangePreview = {

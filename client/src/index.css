@@ -188,7 +188,7 @@ tr.focus-target > td { background: var(--accent-soft); }
 .grow-2 { flex: 2; }
 
 /* ---------- Formulare ---------- */
-label.field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); font-weight: 600; }
+label.field, div.field[role="group"] { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); font-weight: 600; }
 input, select, textarea {
   font: inherit;
   padding: 8px 10px;
@@ -574,6 +574,9 @@ button.btn.calc-toggle:hover { text-decoration: underline; filter: none; }
 /* Eine Staffel-Zeile: „gültig ab" + Betrag + Entfernen, bleibt 2-spaltig auch im Drawer. */
 .staffel-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; align-items: end; margin-bottom: 8px; }
 .staffel-row > label.field { flex: none; }
+.staffel-row > div.field { flex: none; }
+.month-picker { display: flex; gap: 6px; }
+.month-picker select { flex: 1; min-width: 0; }
 .staffel-row > .icon-btn { margin-bottom: 4px; }
 .field-group .field-add { margin-top: 10px; }
 

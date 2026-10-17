@@ -4,6 +4,7 @@ import { ApiError, api, errorText, fmtDate, fmtEuro } from '../api'
 import { earliestOpenChange, localToday, MONTH_OPTIONS } from '../periodForm'
 import { EffectsList } from './PeriodCard'
 import Term from './Term'
+import MonthPicker from './MonthPicker'
 import { hasOwnRhythm } from '../../../shared/heatingPeriod.ts'
 import {
   PERIOD_CHOICE_OPTIONS, SEPARATE_OPTIONS, heatingPeriodAnswersOf, heatingPeriodForm, heatingPeriodSummary, heatingRulesBody, initialHeatingPeriodAnswers,
@@ -108,6 +109,11 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
   }
 
   async function loadSeparatePreview(switchOn = false) {
+    // Aus der Monatsauswahl kommt bei nur einer gewählten Hälfte ein unvollständiger Wert (#287).
+    if (month !== '' && !/^\d{4}-\d{2}$/.test(month)) {
+      setError(month.startsWith('.') ? 'Bitte wählen Sie zum Jahr auch den Monat.' : 'Bitte wählen Sie zum Monat auch das Jahr.')
+      return
+    }
     const body = separateOn && !switchOn ? { separate: false, ...(month ? { until: month } : {}) } : { separate: true, ...(month ? { month } : {}) }
     try {
       const p = await api<SeparatePreview>(`/api/heating-plants/${plant.id}/separate/preview`, { method: 'POST', body: JSON.stringify(body) })
@@ -214,10 +220,8 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
                   </select>
                 </label>
               ) : (
-                <label className="field">
-                  Neue Heizperiode beginnt ab (Monat/Jahr)
-                  <input type="month" placeholder="JJJJ-MM" value={form.from} onChange={(e) => setForm({ ...form, from: e.target.value })} />
-                </label>
+                // Monat und Jahr als Auswahl: `type="month"` kennen Safari und Firefox nicht (#287).
+                <MonthPicker iso label="Neue Heizperiode beginnt ab (Monat/Jahr)" value={form.from} today={localToday()} onChange={(from) => setForm({ ...form, from })} />
               )}
               <label className="field grow">
                 <span>Rechnen Sie die Heizkosten <Term id="separateHeatingSettlement">getrennt ab</Term>, mit eigener Heizkostenvorauszahlung?</span>
@@ -297,10 +301,7 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
         <div className="panel">
           <h3>{intro.title}</h3>
           <p className="muted">{intro.text}</p>
-          <label className="field">
-            {intro.monthLabel}
-            <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
-          </label>
+          <MonthPicker iso label={intro.monthLabel} value={month} today={localToday()} onChange={setMonth} />
           <div className="row">
             <button className="btn secondary" onClick={() => void loadSeparatePreview()}>Vorschau</button>
             <button className="btn ghost" onClick={close}>Abbrechen</button>

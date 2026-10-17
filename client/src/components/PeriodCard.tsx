@@ -4,6 +4,7 @@ import { api, errorText, fmtDate, fmtEuro } from '../api'
 import { useOpenForm, useProperty } from '../property'
 import { useToast } from './feedback'
 import Term from './Term'
+import MonthPicker from './MonthPicker'
 import {
   answersAfterConflict, answersOf, changeLabel, conflictPreview, earliestOpenChange, initialAnswers, localToday, MONTH_OPTIONS, nextRules, periodChangedText, rhythmText, withoutChange,
   type AnswerForm, type RhythmForm,
@@ -33,11 +34,11 @@ export function RhythmFields({ form, onChange }: { form: RhythmForm; onChange: (
           </select>
         </label>
       ) : (
-        <label className="field">
-          Neuer Zeitraum beginnt ab (Monat/Jahr)
-          <input type="month" placeholder="JJJJ-MM" value={form.from} onChange={(e) => onChange({ ...form, from: e.target.value })} />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {/* Monat und Jahr als Auswahl: `type="month"` kennen Safari und Firefox nicht (#287). */}
+          <MonthPicker iso label="Neuer Zeitraum beginnt ab (Monat/Jahr)" value={form.from} today={localToday()} onChange={(from) => onChange({ ...form, from })} />
           <span className="muted">Danach läuft jeder Zeitraum von diesem Monat bis zum Vormonat im Folgejahr; davor entsteht ein kürzerer Rumpfzeitraum.</span>
-        </label>
+        </div>
       )}
     </div>
     {/* Laienprobe B4: „von Anfang an“ deutet die Vergangenheit um, auch schon verschickte Abrechnungen. */}
