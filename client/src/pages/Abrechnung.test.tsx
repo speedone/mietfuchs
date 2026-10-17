@@ -4,7 +4,7 @@
 import { afterEach, assert, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { PeriodProvider } from '../period'
-import type { NoticeSubject, Settings, Settlement, Statement, Tenancy } from '../types'
+import type { Notice, NoticeSubject, Settings, Settlement, Statement, Tenancy } from '../types'
 import type { NoticeTab } from '../notices'
 import { PropertyProvider } from '../property'
 import { UIProvider } from '../components/feedback'
@@ -93,6 +93,34 @@ test('„✎ anpassen“ schließt mit Abbrechen und mit Esc', async () => {
   const feld = screen.getByLabelText(/Gezahlte Vorauszahlung/)
   fireEvent.keyDown(feld, { key: 'Escape' })
   await waitFor(() => expect(screen.queryByLabelText(/Gezahlte Vorauszahlung/)).toBeNull(), SLOW)
+})
+
+// UI-Durchsicht H4: Eine ungültige Eingabe wurde stumm verworfen, es geschah einfach nichts.
+test('„✎ anpassen“ mit ungültigem Betrag: Meldung am Feld, nichts gespeichert', async () => {
+  const inner = globalThis.fetch
+  const writes: string[] = []
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if ((init?.method ?? 'GET') !== 'GET') writes.push(`${init?.method} ${url}`)
+    return inner(url, init)
+  })
+  show()
+  fireEvent.click(await screen.findByRole('button', { name: /anpassen/ }, SLOW))
+  const feld = screen.getByLabelText(/Gezahlte Vorauszahlung/)
+  fireEvent.change(feld, { target: { value: 'abc' } })
+  fireEvent.click(screen.getByRole('button', { name: /^OK$/ }))
+  const alert = await screen.findByRole('alert', {}, SLOW)
+  expect(alert.textContent).toMatch(/Betrag/)
+  expect(feld.getAttribute('aria-invalid')).toBe('true')
+  expect(feld.getAttribute('aria-describedby')).toBe(alert.id)
+  fireEvent.keyDown(feld, { key: 'Enter' })
+  fireEvent.change(feld, { target: { value: '-5' } })
+  fireEvent.keyDown(feld, { key: 'Enter' })
+  expect(screen.getByRole('alert')).toBeTruthy()
+  expect(writes).toEqual([])
+  // Wer weitertippt, sieht die Meldung erst beim nächsten Versuch wieder.
+  fireEvent.change(feld, { target: { value: '450' } })
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(feld.getAttribute('aria-invalid')).toBeNull()
 })
 
 test('nach dem Wiederöffnen bleibt der frühere Versand sichtbar, die Frist läuft nicht scheinbar neu', async () => {
@@ -192,8 +220,8 @@ test('IBAN (#279): auf der Abrechnung in Vierergruppen, eine ungültige, wie sie
 
 // #319: Meldet der Server beim Abschließen Fehler, nennt der Dialog sie mit Titel und „Hier beheben →“,
 // und erst „Trotzdem abschließen“ sendet die Bestätigung.
-const FEHLER2 = { code: 'tenancy.overlap', level: 'error', title: 'Zweite Überschneidung', text: 'OG: zugleich.', subject: { kind: 'tenancy', id: 't2' } }
-const FEHLER = { code: 'tenancy.overlap', level: 'error', title: 'Mietverhältnisse überschneiden sich', text: 'EG: Meier und Müller wohnen zugleich.', subject: { kind: 'tenancy', id: 't1' } }
+const FEHLER2: Notice = { code: 'tenancy.overlap', level: 'error', title: 'Zweite Überschneidung', text: 'OG: zugleich.', subject: { kind: 'tenancy', id: 't2' } }
+const FEHLER: Notice = { code: 'tenancy.overlap', level: 'error', title: 'Mietverhältnisse überschneiden sich', text: 'EG: Meier und Müller wohnen zugleich.', subject: { kind: 'tenancy', id: 't1' } }
 function stubClose(bodies: unknown[]) {
   const before = globalThis.fetch
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
@@ -333,4 +361,107 @@ test('Versanddatum: nach „Wieder öffnen“ bleibt kein unsichtbarer Entwurf z
   await waitFor(() => expect((screen.getByLabelText('Abrechnungsjahr') as HTMLSelectElement).value).toBe(String(YEAR - 1)), SLOW)
   expect(screen.queryByText('Offene Eingaben verwerfen?')).toBeNull()
   expect(puts).toEqual([])
+})
+
+// UI-Durchsicht H6: Drucken und das Versanddatum gingen ohne Hinweis, obwohl die Abrechnung Fehler
+// enthielt (etwa „Heizkostenabrechnung unvollständig“: die Heizkosten fehlten in jeder Mieterabrechnung).
+// Jetzt fragt die Seite nach, nach dem Muster der Rückfrage zum Abschließen (#319).
+const HEAT_ERROR = { code: 'heating.self-incomplete', level: 'error' as const, title: 'Heizkostenabrechnung unvollständig', text: 'Die Heizkosten fehlen in jeder Mieterabrechnung.', subject: { kind: 'tenancy' as const, id: 't1' } }
+const INFO_ERROR = { code: 'period.short', level: 'error' as const, title: 'Nur Auskunft', text: 'Färbt nicht.' }
+const printing = () => document.body.classList.contains('print-one')
+
+test('Drucken mit Fehlern: Rückfrage, Vorgabe „Nicht drucken“, „Trotzdem drucken“ druckt', async () => {
+  settlement.notices = [HEAT_ERROR]
+  showWithNav(() => {})
+  fireEvent.click(await screen.findByRole('button', { name: /Drucken \/ PDF/ }, SLOW))
+  const dialog = await screen.findByRole('dialog', { name: /Fehler/ }, SLOW)
+  expect(dialog.textContent).toContain('Heizkostenabrechnung unvollständig')
+  expect(document.activeElement?.textContent).toBe('Nicht drucken')
+  fireEvent.click(screen.getByRole('button', { name: 'Nicht drucken' }))
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull(), SLOW)
+  expect(printing()).toBe(false)
+  fireEvent.click(screen.getByRole('button', { name: /Drucken \/ PDF/ }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Trotzdem drucken' }, SLOW))
+  await waitFor(() => expect(printing()).toBe(true), SLOW)
+})
+
+test('Drucken mit Fehlern: „Hier beheben →“ druckt nicht und führt zum Eintrag', async () => {
+  settlement.notices = [HEAT_ERROR]
+  const nav = vi.fn()
+  showWithNav(nav)
+  fireEvent.click(await screen.findByRole('button', { name: /Drucken \/ PDF/ }, SLOW))
+  const dialog = await screen.findByRole('dialog', { name: /Fehler/ }, SLOW)
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Hier beheben → Stammdaten' }))
+  await waitFor(() => expect(nav).toHaveBeenCalledWith('stammdaten', { kind: 'tenancy', id: 't1' }), SLOW)
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(printing()).toBe(false)
+})
+
+test('Drucken: eine Auskunft aus INFORMATIONAL und Warnungen fragen nicht nach', async () => {
+  settlement.notices = [INFO_ERROR, { code: 'w', level: 'warning', title: 'Warnung', text: 'W' }]
+  show()
+  fireEvent.click(await screen.findByRole('button', { name: /Drucken \/ PDF/ }, SLOW))
+  await waitFor(() => expect(printing()).toBe(true), SLOW)
+  expect(screen.queryByRole('dialog')).toBeNull()
+})
+
+// Durchsicht S6 (#341): Eine abgeschlossene Abrechnung fragt weder beim Versanddatum noch beim Drucken nach,
+// denn beim Abschluss wurde trotz der Fehler bestätigt (#319). Auch der Vermerk „Entwurf, nicht versenden“ fehlt:
+// Er gehört nur in den Entwurf, sonst ließe sich eine bewusst trotz Fehlern abgeschlossene Abrechnung nie ohne
+// ihn drucken (Nachprüfung N1).
+test('abgeschlossen mit Fehlern: Versanddatum und Druck fragen nicht nach, ohne Druckvermerk', async () => {
+  const puts: unknown[] = []
+  stubSentAt(puts)
+  settlement.notices = [HEAT_ERROR]
+  show()
+  const feld = await sentAtField()
+  fireEvent.change(feld, { target: { value: `${YEAR + 1}-01-15` } })
+  fireEvent.click(screen.getByRole('button', { name: 'Versanddatum speichern' }))
+  await waitFor(() => expect(puts).toEqual([{ sentAt: `${YEAR + 1}-01-15` }]), SLOW)
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(screen.queryByText(/Entwurf, nicht versenden/)).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: /Drucken \/ PDF/ }))
+  await waitFor(() => expect(printing()).toBe(true), SLOW)
+  expect(screen.queryByRole('dialog')).toBeNull()
+})
+
+// Durchsicht S2 (#341): Der gedruckte Vermerk deckt auch Strg+P und das Browsermenü ab, die die Seite nicht abfängt.
+test('Druckvermerk „Entwurf, nicht versenden“ nur bei Fehlern, und nur im Druck', async () => {
+  settlement.notices = [HEAT_ERROR]
+  const first = show()
+  const mark = await screen.findByText(/Entwurf, nicht versenden/, {}, SLOW)
+  expect(mark.closest('.print-only')).not.toBeNull()
+  expect(mark.closest('.statement')).not.toBeNull()
+  first.unmount()
+  settlement.notices = [INFO_ERROR, { code: 'w', level: 'warning', title: 'Warnung', text: 'W' }]
+  show()
+  await screen.findByRole('button', { name: /Drucken \/ PDF/ }, SLOW)
+  expect(screen.queryByText(/Entwurf, nicht versenden/)).toBeNull()
+})
+
+// Durchsicht S2 (#341): Die erste Rückfrage zum Abschluss nennt die Fehler; bestätigt der Vermieter dort, fragt
+// die Antwort des Servers zu denselben Fehlern nicht noch einmal.
+test('Abschließen mit Fehlern auf der Seite: eine Rückfrage nennt sie, „Trotzdem abschließen“ sendet die Bestätigung', async () => {
+  const bodies: unknown[] = []
+  stubClose(bodies)
+  settlement.notices = [FEHLER, FEHLER2]
+  showWithNav(() => {})
+  fireEvent.click(await screen.findByRole('button', { name: `🔒 Abrechnung ${YEAR} abschließen` }, SLOW))
+  const dialog = await screen.findByRole('dialog', {}, SLOW)
+  expect(dialog.textContent).toContain('Mietverhältnisse überschneiden sich')
+  expect(document.activeElement?.textContent).toBe('Nicht abschließen')
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Trotzdem abschließen' }))
+  await waitFor(() => expect(bodies).toEqual([{}, { despiteErrors: 'marke-1' }]), SLOW)
+  expect(screen.queryByRole('dialog')).toBeNull()
+})
+
+test('Abschließen mit Fehlern auf der Seite: „Nicht abschließen“ sendet nichts', async () => {
+  const bodies: unknown[] = []
+  stubClose(bodies)
+  settlement.notices = [FEHLER]
+  showWithNav(() => {})
+  fireEvent.click(await screen.findByRole('button', { name: `🔒 Abrechnung ${YEAR} abschließen` }, SLOW))
+  fireEvent.click(await screen.findByRole('button', { name: 'Nicht abschließen' }, SLOW))
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull(), SLOW)
+  expect(bodies).toEqual([])
 })

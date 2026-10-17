@@ -58,7 +58,10 @@ test('Abschlussdialog: bei mehreren Objekten mit Objekt, bei einem wie bisher', 
 test('die Seite Abrechnung fragt mit diesem Titel', () => {
   // Die Abrechnung bräuchte für den Knopf einen vollständigen Rechenstand; geprüft wird deshalb
   // am Quelltext, dass der Abschlussdialog den Titel von hier nimmt.
-  expect(abrechnungSource).toMatch(/title: closeSettlementTitle\(label, properties, property, docLabel\)/)
+  // Seit #341 nimmt auch die Rückfrage mit den Fehlern diesen Titel (closeErrorsQuestion).
+  expect(abrechnungSource).toMatch(/const title = closeSettlementTitle\(label, properties, property, docLabel\)/)
+  expect(abrechnungSource).toMatch(/closeErrorsQuestion\(title, /)
+  expect(abrechnungSource).toMatch(/await confirm\(\{\n\s+title,\n/)
 })
 
 test('leere Wohnungsliste: bei einer Eigentumswohnung nur die eigene Wohnung anlegen', () => {

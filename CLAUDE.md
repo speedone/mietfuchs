@@ -1876,6 +1876,14 @@ eingefrorene Abrechnungen lesen sie, und eine vor #112 abgeschlossene Abrechnung
 Marke des Stands trägt, der eingefroren würde (nach einer Schätzung;
 [server/src/closeQuestion.ts](server/src/closeQuestion.ts)). Ausgenommen sind die Auskünfte aus
 `INFORMATIONAL`, die dafür in [shared/notices.ts](shared/notices.ts) stehen (`blockingErrors`).
+**Die Oberfläche fragt bei denselben Fehlern auch vor dem Drucken** (#341,
+[client/src/despiteErrors.ts](client/src/despiteErrors.ts)), denn der Druck ist Browser-Druck: nur bei
+einer offenen Abrechnung, eine abgeschlossene wurde beim Abschluss schon bestätigt, und das
+Versanddatum gibt es nur dort. Zeigt die Seite schon Fehler, nennt sie die erste Rückfrage zum
+Abschließen, und die Rückfrage des Servers zu denselben Fehlern gilt damit als beantwortet
+(`sameErrors`). Solange eine offene Abrechnung Fehler hat, trägt jede Mieterabrechnung im Druck den
+Vermerk „Entwurf, nicht versenden“ (`print-only`), auch bei Strg+P; eine abgeschlossene nie, denn nach
+„Trotzdem abschließen“ muss sie sich ohne ihn drucken lassen.
 
 **Rechtsregister** (Heizung PR 1, Entwurf `2026-10-05-heizung-gesamt-design.md` Abschnitt 4):
 Jede Rechtszahl steht nur in [shared/law/](shared/law/), mit Gültigkeit, Fundstelle, Prüfstand und
@@ -3098,6 +3106,21 @@ schlägt fehl, wenn jemand auf die moderne Fassung zurückwechselt.
   Quelltext, denn auf einem einzelnen Rechner sagen beide Ordnungen dasselbe. Wer eine weitere
   Stelle anfasst, die eine Staffel oder Ablesungen sortiert, nimmt `compareText` von hier und
   schreibt den Vergleich nicht noch einmal hin.
+- **Eine Meldung steht beim Knopf, der sie auslöst** (#341). Baustein `useFormError()` mit
+  `<FormError error id>` ([client/src/components/FormError.tsx](client/src/components/FormError.tsx)):
+  `role="alert"`, rollt mit `scrollIntoView({ block: 'nearest' })` ins Bild, auch beim selben Text
+  ein zweites Mal (`seq`). Nennt `show(text, field)` ein Feld, markiert `invalidProps` es mit
+  `aria-invalid` und `aria-describedby`, `useFocusOnError` setzt den Fokus darauf, und `clearField`
+  nimmt die Meldung beim Ändern des Felds weg. Eingesetzt ist er bisher an der Ablesung auf der
+  Zähler-Seite; die übrigen Stellen aus #341 folgen. Die Meldung oben auf der Seite bleibt für
+  Ladefehler.
+- **Rückfragen** (`useConfirm`, [client/src/components/feedback.tsx](client/src/components/feedback.tsx),
+  #341): Enter wirkt auf den Knopf mit dem Fokus und nicht immer auf die Bestätigung; auf einem
+  anderen Element (etwa einem Begriff) erreicht es dieses. Bei `danger` steht der Startfokus auf
+  „Abbrechen“, `defaultChoice: 'confirm'` überstimmt das, `cancel` setzt ihn auch sonst dorthin. Tab
+  bleibt im Dialog (Fokusfalle), Esc bricht ab, und beim Schließen geht der Fokus an den Auslöser
+  zurück. Safari fokussiert einen Knopf beim Mausklick nicht; dort greift die Rückgabe nur über die
+  Tastatur.
 - **Auswahlfelder und Häkchen speichern nicht beim Anklicken** (#309). Sofort gespeichert wird nur,
   was keine Daten ändert: der Wechsel von Zeitraum, Objekt oder Design und die Antwort auf die
   Frage nach der Update-Prüfung im Cockpit. Alles andere ist zuerst ein Entwurf: `useDraft(saved,
