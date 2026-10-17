@@ -74,6 +74,20 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
+- Zähler mit verschiedenen Einheiten werden umgerechnet: Stand ein Wärmezähler in MWh neben solchen
+  in kWh oder ein Wasserzähler in Litern neben solchen in m³, zählte Mietfuchs die Werte zusammen,
+  als hätten alle dieselbe Einheit. Beim Verbrauchsschlüssel zahlte so ein Mieter mit einem Zähler
+  in Litern 998,00 € statt 333,33 € von 1.000 €, in der eigenen Heizkostenabrechnung ein Mieter mit
+  einem Zähler in MWh 932,38 € statt 2.358,00 € Gas. Jetzt rechnet Mietfuchs Wärme in kWh, MWh und
+  GJ, Wasser in m³ und Litern und Strom in kWh und MWh ineinander um, auch beim Hauptzähler, beim
+  Warmwasseranteil, beim Vorschlag des Warmwasservolumens und in der monatlichen
+  Verbrauchsinformation. Auf der Seite Zähler ist die Einheit bei diesen Sparten eine Auswahl; bei
+  „Sonstiges“, also auch beim Gaszähler, bleibt sie frei, denn m³ und kWh Gas rechnet Mietfuchs
+  nicht ineinander um. Stehen Zähler, die gemeinsam verteilt werden, in Einheiten, die Mietfuchs
+  nicht umrechnen kann, verteilt es nach ihnen nicht, der Betrag steht beim Vermieter, und ein
+  Hinweis nennt die Einheiten. Haben alle Zähler dieselbe Einheit, ändert sich keine Zahl;
+  abgeschlossene Abrechnungen bleiben, wie sie zugestellt wurden
+  ([#342](https://github.com/speedone/mietfuchs/issues/342)).
 - Steuerübersicht bei teilweiser Eigennutzung, wenn der Betriebsstrom der Heizung aus der
   Stromrechnung des Hauses herausgerechnet ist: Der Abzug beim Allgemeinstrom stand bisher im Jahr
   der Heizposition, die Stromrechnung im Jahr ihrer Zahlung. Lagen beide Jahre auseinander, etwa bei

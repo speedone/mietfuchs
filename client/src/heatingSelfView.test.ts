@@ -135,6 +135,22 @@ describe('Heizung PR 12: bei Heizkostenverteilern und Ablesedienst Einheiten sta
   })
 })
 
+describe('#342: das Ableseergebnis nennt die Einheit des Zählers', () => {
+  it('ein Wärmezähler in MWh und ein Warmwasserzähler in Litern', () => {
+    const unit: SelfUnitView = {
+      unitId: 'b', unitName: 'B', areaM2: 80, heatAreaM2: 80, boundaries: [], users: [],
+      readings: [
+        { meterId: 'wz-b', meterName: 'Wärme B', pot: 'heating', boundary: '2025-12-31', date: '2025-12-31', value: 16.125, meterUnit: 'MWh' },
+        { meterId: 'xw-b', meterName: 'Warmwasser B', pot: 'water', boundary: '2025-12-31', date: '2025-12-31', value: 40000, meterUnit: 'l', oldEndValue: 38000 },
+      ],
+    }
+    expect(readingResult(unit, '2025-12-31')).toEqual([
+      'Wärme B: 16,125 MWh am 31.12.2025',
+      'Warmwasser B: 38.000 l am 31.12.2025 (Endstand des alten Zählers; der neue beginnt mit 40.000)',
+    ])
+  })
+})
+
 describe('Durchsicht #241 Recht-I2: Ableseergebnis am Stichtag nennt den Stichtagswert, nicht die 0', () => {
   it('Stichtag beim Heizkostenverteiler, Wechsel beim Wärmezähler', () => {
     const unit: SelfUnitView = {

@@ -12,6 +12,8 @@ export const MONTHLY_INFO_GAP_TEXT: Readonly<Record<MonthlyInfoGap, string>> = {
   hca: 'Heizkostenverteiler zeigen keine Kilowattstunden, lassen Sie die Information vom Ablesedienst erstellen',
   dhwTemp: 'mittlere Warmwassertemperatur für die Umrechnung in kWh fehlt, eine geschätzte genügt',
   reference: 'Vergleich mit einem Durchschnittsnutzer fehlt',
+  // #342: Zähler einer Wohnung in Einheiten, die Mietfuchs nicht in kWh bzw. m³ umrechnen kann.
+  unit: 'die Zähler der Wohnung stehen in verschiedenen Einheiten, wählen Sie auf der Seite Zähler die Einheit, die jeder zeigt',
 }
 
 const MONTH_NAMES =['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember']

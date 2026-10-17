@@ -8,7 +8,8 @@ import path from 'node:path'
 import { createHeatingPlant, replaceHeatingPlant, updateHeatingPlant } from '../src/db/heating.ts'
 import { saveStock } from '../src/db/fuelStock.ts'
 import { ensureHeatingPeriod } from '../src/db/heatingPeriodContext.ts'
-import { fuelCarryFrozen } from '../src/db/schema.ts'
+import { fuelCarryFrozen, meters as meterTable } from '../src/db/schema.ts'
+import { eq } from 'drizzle-orm'
 import { computeSettlement } from '../src/calc.ts'
 import { snapshotFor } from '../src/snapshot.ts'
 import { CALENDAR_RULES, periodKey, periodOfKey } from '../../shared/period.ts'
@@ -119,6 +120,24 @@ test('Warmwasser bei eigener Abrechnung: Formel mit Volumen und Temperatur; erg�
     // Zähler der Wohnung A: 132,5 − 100 = 32,5 m³; Fläche nur A (B hat kein Warmwasser).
     assert.deepEqual(view?.hotWaterBasis, { volumeFromMetersM3: 32.5, volumeMissing: null, running: null, suppliedAreaM2: 80 })
     assert.equal(view?.hotWater.dhwVolumeM3, 32.5)
+  })
+})
+
+test('#342: der Vorschlag des Volumens rechnet einen Zähler in Litern in m³ um; ohne gemeinsame Einheit gibt es keinen', async () => {
+  await withDatabase(async (opened) => {
+    await eigeneAnlage(opened)
+    await opened.write(async (db) => {
+      await createEntity(db, 'meters', 'ww-a2', { propertyId: 'objekt-1', unitId: 'a', name: 'WW A Küche', type: 'warmwasser', unit: 'l' })
+      await createEntity(db, 'readings', 'r3', { meterId: 'ww-a2', date: '2024-12-31', value: 1000 })
+      await createEntity(db, 'readings', 'r4', { meterId: 'ww-a2', date: '2025-12-31', value: 6500 })
+    })
+    const [view] = await opened.read((db) => heatingPeriodViews(db, 'hp', '2025')) ?? assert.fail('keine Anlage')
+    // 32,5 m³ und 5.500 l = 5,5 m³.
+    assert.equal(view?.hotWaterBasis.volumeFromMetersM3, 38)
+    await opened.write((db) => db.update(meterTable).set({ unit: 'Eimer' }).where(eq(meterTable.id, 'ww-a2')))
+    const [gemischt] = await opened.read((db) => heatingPeriodViews(db, 'hp', '2025')) ?? assert.fail('keine Anlage')
+    assert.equal(gemischt?.hotWaterBasis.volumeFromMetersM3, null)
+    assert.match(gemischt?.hotWaterBasis.volumeMissing ?? '', /fehlt eine gemeinsame Einheit: Die Zähler stehen in m³ und Eimer/)
   })
 })
 
