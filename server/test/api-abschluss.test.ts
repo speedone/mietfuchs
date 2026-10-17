@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
 import type { CostItem, FuelDelivery, FuelGapQuestion, HeatingPlant, Notice, Settlement, Unit } from '../../shared/types.ts'
 import { type Server, jsonOf, startServer } from '../testing/api.ts'
 
-type Question = { error: string; errorNotices?: Notice[]; fuelGaps?: FuelGapQuestion[] }
+type Question = { error: string; errorNotices?: Notice[]; errorToken?: string; fuelGaps?: FuelGapQuestion[] }
 
 const sender = (s: Server) => (url: string, method: string, body?: unknown) =>
   fetch(`${s.base}${url}`, { method, headers: { 'content-type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) })
@@ -41,8 +41,20 @@ test('Abschließen (#319): Fehler fragen nach, Bestätigung schließt ab, ein Ta
     assert.ok((body.errorNotices ?? []).every((n) => n.level === 'error'))
     assert.equal((await s.api<Settlement>('/api/settlement/2025')).closed, null, 'nichts eingefroren')
 
-    assert.equal((await send('/api/settlement/2025/close', 'POST', { despiteErrors: 'ja' })).status, 400)
-    assert.equal((await send('/api/settlement/2025/close', 'POST', { despiteErrors: true })).status, 201)
+    assert.equal((await send('/api/settlement/2025/close', 'POST', { despiteErrors: 'ja' })).status, 409, 'eine fremde Marke bestätigt nichts')
+    assert.equal((await send('/api/settlement/2025/close', 'POST', { despiteErrors: true })).status, 400, 'eine Bestätigung ohne Marke gibt es nicht')
+    const markeA = body.errorToken ?? assert.fail('keine Prüfmarke')
+
+    // S1: Kommt zwischen Rückfrage und Bestätigung ein Fehler dazu, gilt die Bestätigung nicht.
+    await s.api('/api/costItems', { method: 'POST', body: JSON.stringify({ period: '2025-01', category: 'Gartenpflege', description: 'Garten', amountCents: 10000, key: 'custom', customShares: { [unit.id]: 150 } }) })
+    const neu = await send('/api/settlement/2025/close', 'POST', { despiteErrors: markeA })
+    assert.equal(neu.status, 409)
+    const neuBody = await jsonOf<Question>(neu)
+    assert.ok(neuBody.errorNotices?.some((n) => n.code === 'custom.over-100'), 'die neue Liste nennt den neuen Fehler')
+    assert.notEqual(neuBody.errorToken, markeA)
+    assert.equal((await s.api<Settlement>('/api/settlement/2025')).closed, null)
+
+    assert.equal((await send('/api/settlement/2025/close', 'POST', { despiteErrors: neuBody.errorToken })).status, 201)
     assert.notEqual((await s.api<Settlement>('/api/settlement/2025')).closed, null)
   } finally {
     s.stop()
@@ -95,7 +107,7 @@ test('Abschließen der Heizkostenabrechnung (#319): Fehler fragen nach, Bestäti
     assert.ok((body.errorNotices ?? []).length > 0)
     assert.ok((body.errorNotices ?? []).every((n) => n.level === 'error'))
     assert.equal((await s.api<Settlement>(url)).closed, null)
-    assert.equal((await send(`${url}/close`, 'POST', { despiteErrors: true })).status, 201)
+    assert.equal((await send(`${url}/close`, 'POST', { despiteErrors: body.errorToken })).status, 201)
     assert.notEqual((await s.api<Settlement>(url)).closed, null)
   } finally {
     s.stop()
@@ -130,7 +142,7 @@ test('Abschließen (#319): Lücke und Fehler in einer Rückfrage; eine Schätzun
     assert.ok(!(await s.api<FuelDelivery[]>(`/api/heating-plants/${plant.id}/deliveries`)).some((x) => x.estimated), 'keine Schätzung ohne Abschluss')
     assert.equal((await s.api<Settlement>('/api/settlement/2025')).closed, null)
 
-    assert.equal((await send('/api/settlement/2025/close', 'POST', { fuelEstimates: 'estimate', despiteErrors: true })).status, 201)
+    assert.equal((await send('/api/settlement/2025/close', 'POST', { fuelEstimates: 'estimate', despiteErrors: zweite.errorToken })).status, 201)
     assert.ok((await s.api<FuelDelivery[]>(`/api/heating-plants/${plant.id}/deliveries`)).some((x) => x.estimated))
   } finally {
     s.stop()

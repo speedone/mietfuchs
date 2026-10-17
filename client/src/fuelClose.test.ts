@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 import { ApiError, fmtEuro } from './api'
-import { closeQuestion, closeWithQuestions, errorNoticesOf, fuelGapsOf, fuelQuestion, type CloseAnswer, type FuelAnswer } from './fuelClose'
+import { closeQuestion, closeWithQuestions, errorNoticesOf, fuelGapsOf, fuelQuestion, type CloseAnswer, type CloseQuestion, type FuelAnswer } from './fuelClose'
 import { periodKey } from '../../shared/period.ts'
 import type { FuelGapQuestion, Notice } from './types'
 
@@ -57,6 +57,8 @@ test('#319: Fehler aus der Antwort 409 lesen; ohne Liste keine Rückfrage', () =
   expect(errorNoticesOf(new ApiError('x', 409, { errorNotices: [fehler, { code: 1 }] }))).toEqual([fehler])
   expect(errorNoticesOf(abgelehnt)).toBeNull()
   expect(errorNoticesOf(new ApiError('x', 400, { errorNotices: [fehler] }))).toBeNull()
+  // K3: Bleibt nach dem Prüfen nichts übrig, gibt es keine Rückfrage zu „0 Fehlern“.
+  expect(errorNoticesOf(new ApiError('x', 409, { errorNotices: [{ code: 1 }], errorToken: 'm' }))).toBeNull()
 })
 
 test('#319: Dialog zu Fehlern allein, zur Lücke allein und zu beidem in einem', () => {
@@ -68,9 +70,12 @@ test('#319: Dialog zu Fehlern allein, zur Lücke allein und zu beidem in einem',
   expect(beides.message).toContain('einen Fehler')
   expect(beides.message).toContain(fuelQuestion([luecke]).message)
   expect(beides.message).not.toContain('—')
+  // K2: allgemein für jeden Code der Stufe `error`, nicht nur für „nicht oder doppelt verteilt“.
+  expect(closeQuestion(null, [fehler]).message).toContain('Geld wird nicht so verteilt, wie es soll')
+  expect(closeQuestion(null, [fehler]).message).not.toContain('doppelt')
 })
 
-test('#319: Ablauf mit Fehlern: „Trotzdem“ sendet die Bestätigung, mit Lücke samt Antwort', async () => {
+test('#319: Ablauf mit Fehlern: „Trotzdem“ sendet die Prüfmarke, mit Lücke samt Antwort', async () => {
   const lauf = async (antwort: CloseAnswer, data: Record<string, unknown>) => {
     const bodies: Record<string, unknown>[] = []
     const post = async (body: Record<string, unknown>) => {
@@ -79,8 +84,42 @@ test('#319: Ablauf mit Fehlern: „Trotzdem“ sendet die Bestätigung, mit Lüc
     }
     return { ok: await closeWithQuestions(post, async () => antwort), bodies }
   }
-  expect(await lauf('despite', { errorNotices: [fehler] })).toEqual({ ok: true, bodies: [{}, { despiteErrors: true }] })
-  expect(await lauf('wait', { errorNotices: [fehler] })).toEqual({ ok: false, bodies: [{}] })
-  expect(await lauf('none', { errorNotices: [fehler], fuelGaps: [luecke] })).toEqual({ ok: true, bodies: [{}, { despiteErrors: true, fuelEstimates: 'none' }] })
-  expect(await lauf('estimate', { errorNotices: [fehler], fuelGaps: [luecke] })).toEqual({ ok: true, bodies: [{}, { despiteErrors: true, fuelEstimates: 'estimate' }] })
+  expect(await lauf('despite', { errorNotices: [fehler], errorToken: 'm1' })).toEqual({ ok: true, bodies: [{}, { despiteErrors: 'm1' }] })
+  expect(await lauf('wait', { errorNotices: [fehler], errorToken: 'm1' })).toEqual({ ok: false, bodies: [{}] })
+  expect(await lauf('none', { errorNotices: [fehler], errorToken: 'm1', fuelGaps: [luecke] })).toEqual({ ok: true, bodies: [{}, { despiteErrors: 'm1', fuelEstimates: 'none' }] })
+  expect(await lauf('estimate', { errorNotices: [fehler], errorToken: 'm1', fuelGaps: [luecke] })).toEqual({ ok: true, bodies: [{}, { despiteErrors: 'm1', fuelEstimates: 'estimate' }] })
+  // Ohne Marke lässt sich nichts bestätigen: Die Ablehnung geht als Meldung an die Seite.
+  await expect(lauf('despite', { errorNotices: [fehler] })).rejects.toThrow('x')
+})
+
+test('#319 S2: Entsteht ein Fehler erst mit der Schätzung, fragt der Ablauf noch einmal und schließt mit Schätzung und Marke ab', async () => {
+  const bodies: Record<string, unknown>[] = []
+  const antworten: ApiError[] = [
+    new ApiError('Lücke', 409, { fuelGaps: [luecke] }),
+    new ApiError('Fehler', 409, { errorNotices: [fehler], errorToken: 'nach-schaetzung' }),
+  ]
+  const post = async (body: Record<string, unknown>) => {
+    bodies.push(body)
+    const a = antworten.shift()
+    if (a) throw a
+  }
+  const fragen: CloseQuestion[] = []
+  const ok = await closeWithQuestions(post, async (q) => {
+    fragen.push(q)
+    return q.fuel ? 'estimate' : 'despite'
+  })
+  expect(ok).toBe(true)
+  expect(bodies).toEqual([{}, { fuelEstimates: 'estimate' }, { fuelEstimates: 'estimate', despiteErrors: 'nach-schaetzung' }])
+  expect(fragen.map((q) => [q.fuel, q.errors.length])).toEqual([[true, 0], [false, 1]])
+  expect(fragen[1]?.message).toContain('mit der Schätzung')
+})
+
+test('#319: Der Ablauf fragt nicht endlos; nach drei Rückfragen geht die Ablehnung an die Seite', async () => {
+  let n = 0
+  const post = async () => {
+    n++
+    throw new ApiError('immer neu', 409, { errorNotices: [fehler], errorToken: `m${n}` })
+  }
+  await expect(closeWithQuestions(post, async () => 'despite')).rejects.toThrow('immer neu')
+  expect(n).toBe(4)
 })

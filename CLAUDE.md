@@ -1816,10 +1816,11 @@ als vermutlich gewollt oder eine Rechtsregel ist verletzt, `hint`, prüfen ohne 
 eingefrorene Abrechnungen lesen sie, und eine vor #112 abgeschlossene Abrechnung kennt nur sie
 (die Oberfläche zeigt sie dann als Warnungen ohne Titel, `noticesOf` in
 [client/src/notices.ts](client/src/notices.ts)).
-**Ein `error` sichert das Abschließen ab** (#319): Beide Close-Routen antworten ohne
-`despiteErrors: true` mit 409 und `errorNotices`, in derselben Rückfrage wie `fuelGaps`;
-ausgenommen sind die Auskünfte aus `INFORMATIONAL`, die dafür in
-[shared/notices.ts](shared/notices.ts) stehen (`blockingErrors`).
+**Ein `error` sichert das Abschließen ab** (#319): Beide Close-Routen antworten mit 409,
+`errorNotices` und `errorToken`, in derselben Rückfrage wie `fuelGaps`, bis `despiteErrors` die
+Marke des Stands trägt, der eingefroren würde (nach einer Schätzung;
+[server/src/closeQuestion.ts](server/src/closeQuestion.ts)). Ausgenommen sind die Auskünfte aus
+`INFORMATIONAL`, die dafür in [shared/notices.ts](shared/notices.ts) stehen (`blockingErrors`).
 
 **Rechtsregister** (Heizung PR 1, Entwurf `2026-10-05-heizung-gesamt-design.md` Abschnitt 4):
 Jede Rechtszahl steht nur in [shared/law/](shared/law/), mit Gültigkeit, Fundstelle, Prüfstand und

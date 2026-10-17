@@ -20,8 +20,8 @@ import { compareWithFrozen } from './settlementDiff.ts'
 import { computeSettlement, consumptionOverview, rentLedger, taxPartsFor, taxReportFor, type ComputedSettlement } from './calc.ts'
 import { heatingSnapshotFor, narrowToProperty, snapshotFor } from './snapshot.ts'
 import { calendarYearPeriod, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodOfKey, resolvePeriodParam, rulesOf, settlementDeadline, settlementPeriod, startYearOf } from '../../shared/period.ts'
-import type { BillingPeriod, FuelGapQuestion, HeatingPlant, Notice, Unit } from '../../shared/types.ts'
-import { blockingErrors } from '../../shared/notices.ts'
+import type { BillingPeriod, FuelGapQuestion, HeatingPlant, Unit } from '../../shared/types.ts'
+import { closeWithQuestions, type CloseQuestion, type FuelAnswer } from './closeQuestion.ts'
 import { plantRules, settledSeparately } from '../../shared/heatingPeriod.ts'
 import { extractFromFile, classifyDocType, extractMeterReading, type AskProgressEvent, type AskStats } from './extract.ts'
 import { extractFuelInvoice, extractServiceStatement } from './extractHeating.ts'
@@ -883,7 +883,7 @@ app.post('/api/heating-settlement/:plant/:period/close', async (req, res) => {
   const answer = fuelAnswerOf(req)
   if (answer === false) return res.status(400).json({ error: FUEL_ANSWER_INVALID })
   const despiteErrors = despiteErrorsOf(req)
-  if (despiteErrors === null) return res.status(400).json({ error: DESPITE_ERRORS_INVALID })
+  if (despiteErrors === false) return res.status(400).json({ error: DESPITE_ERRORS_INVALID })
   // Rechnen und Einfrieren im selben Vorgang, wie bei der Abrechnung des Objekts.
   const ergebnis = await writeData(async (db) => {
     const target = await heatingTargetOf(db, req)
@@ -1003,25 +1003,17 @@ const sentAtOf = (req: Request): string | null | false => {
 // Die Antwort auf die Rückfrage zur Schätzung (Heizung PR 7, Entwurf 8.2, N1, A5): `estimate` legt je
 // Lücke eine geschätzte Lieferung mit Vorbehalt an, `none` schließt ohne ab. `null`: keine Antwort,
 // `false`: ein anderer Wert (400).
-type FuelAnswer = 'estimate' | 'none'
 const FUEL_ANSWER_INVALID = 'Die Antwort auf die Rückfrage zur Schätzung ist „estimate“ oder „none“.'
 const FUEL_GAPS_TEXT =
   'Für einen Teil der Heizperiode fehlt eine Rechnung. Sie können abwarten, bis sie da ist, die Kosten mit Vorbehalt schätzen lassen oder ohne Schätzung abschließen; ohne Schätzung steht dieser Teil zunächst bei Ihnen.'
-// Die Bestätigung, trotz Fehlern abzuschließen (#319): `true` aus der Rückfrage „Trotzdem abschließen“.
-// Fehlt sie, wie bei einem Tab von vor dem Update, fragt der Server nach; ein anderer Wert ist 400.
-const DESPITE_ERRORS_INVALID = 'Die Bestätigung „Trotzdem abschließen“ ist true oder fehlt.'
-const despiteErrorsOf = (req: Request): boolean | null => {
+// Die Bestätigung, trotz Fehlern abzuschließen (#319): die Prüfmarke aus der Rückfrage (closeQuestion.ts).
+// Fehlt sie, wie bei einem Tab von vor dem Update, fragt der Server nach; eine Marke, die nicht zum Stand
+// passt, ebenso. Etwas anderes als eine Zeichenkette ist 400, auch `true`: Eine Bestätigung ohne Stand gibt es nicht.
+const DESPITE_ERRORS_INVALID = 'Die Bestätigung „Trotzdem abschließen“ ist die Prüfmarke aus der Rückfrage oder fehlt.'
+const despiteErrorsOf = (req: Request): string | null | false => {
   const value: unknown = bodyObject(req).despiteErrors
-  if (value === undefined || value === null || value === false) return false
-  return value === true ? true : null
-}
-type CloseQuestion = { fuelGaps?: FuelGapQuestion[]; errorNotices?: Notice[] }
-class CloseQuestionError extends Error {
-  readonly question: CloseQuestion
-  constructor(question: CloseQuestion) {
-    super('Rückfrage beim Abschließen')
-    this.question = question
-  }
+  if (value === undefined || value === null) return null
+  return typeof value === 'string' ? value : false
 }
 const fuelAnswerOf = (req: Request): FuelAnswer | null | false => {
   const value: unknown = bodyObject(req).fuelEstimates
@@ -1029,43 +1021,26 @@ const fuelAnswerOf = (req: Request): FuelAnswer | null | false => {
   return value === 'estimate' || value === 'none' ? value : false
 }
 
-// Abschließen samt Lieferungen (Heizung PR 7): rechnen, bei Lücken ohne Antwort nachfragen, auf Wunsch
-// Schätzungen anlegen und neu rechnen, dann abschließen und einfrieren, alles in **einer**
-// Transaktion (Entwurf 8.2, N1): Die Berechnung liest den Bestand auf der Transaktion (`readStock`
-// nimmt ein `Executor`), die neu angelegten Schätzungen sind darin also schon sichtbar; scheitert ein
-// Schritt, fällt alles zurück, und keine Schätzung bleibt ohne Abschluss stehen. Ohne Antwort und mit
-// Lücken wird nichts geschrieben, ebenso bei Hinweisen der Stufe `error` ohne Bestätigung (#319).
-async function closeWithFuel(
+// Abschließen samt Lieferungen (Heizung PR 7) und mit Rückfrage bei Fehlern (#319); der Ablauf und
+// die Prüfmarke stehen in closeQuestion.ts. Die Berechnung liest den Bestand auf der Transaktion
+// (`readStock` nimmt ein `Executor`), neu angelegte Schätzungen sind darin also schon sichtbar.
+function closeWithFuel(
   db: Database,
   answer: FuelAnswer | null,
-  despiteErrors: boolean,
+  despiteErrors: string | null,
   compute: (tx: Executor) => Promise<ComputedSettlement>,
   close: (tx: Executor, settlement: ComputedSettlement) => Promise<void>,
 ): Promise<CloseQuestion | null> {
-  try {
-    return await db.transaction(async (tx) => {
-      let settlement = await compute(tx)
-      const gaps = fuelGapQuestions(settlement)
-      const errors = despiteErrors ? [] : blockingErrors(settlement.notices)
-      // Lücke und Fehler in einer Rückfrage (#319), damit die Oberfläche einen Dialog zeigt und nicht zwei.
-      const askGaps = gaps.length > 0 && answer === null
-      if (askGaps || errors.length > 0) return { ...(askGaps ? { fuelGaps: gaps } : {}), ...(errors.length > 0 ? { errorNotices: errors } : {}) }
-      if (gaps.length > 0 && answer === 'estimate') {
-        await createEstimates(tx, settlement, newId)
-        settlement = await compute(tx)
-        // Bringt erst die Schätzung einen Fehler hervor, fragt Mietfuchs auch danach; geworfen, damit die
-        // eben angelegten Schätzungen mit zurückfallen.
-        const after = despiteErrors ? [] : blockingErrors(settlement.notices)
-        if (after.length > 0) throw new CloseQuestionError({ errorNotices: after })
-      }
-      await close(tx, settlement)
-      await freezeFuelCarries(tx, settlement)
-      return null
-    })
-  } catch (e) {
-    if (e instanceof CloseQuestionError) return e.question
-    throw e
-  }
+  return closeWithQuestions((fn) => db.transaction(fn), answer, despiteErrors, {
+    compute,
+    gapsOf: fuelGapQuestions,
+    noticesOf: (s) => s.notices,
+    estimate: async (tx, s) => { await createEstimates(tx, s, newId) },
+    close: async (tx, s) => {
+      await close(tx, s)
+      await freezeFuelCarries(tx, s)
+    },
+  })
 }
 
 // Die Rückfrage beim Abschließen als Antwort (409): `fuelGaps` nur bei einer Lücke ohne Antwort, sonst
@@ -1091,7 +1066,7 @@ app.post('/api/settlement/:period/close', async (req, res) => {
   const answer = fuelAnswerOf(req)
   if (answer === false) return res.status(400).json({ error: FUEL_ANSWER_INVALID })
   const despiteErrors = despiteErrorsOf(req)
-  if (despiteErrors === null) return res.status(400).json({ error: DESPITE_ERRORS_INVALID })
+  if (despiteErrors === false) return res.status(400).json({ error: DESPITE_ERRORS_INVALID })
   // Rechnen und Einfrieren im selben Vorgang: Käme dazwischen eine Änderung an einer
   // Kostenposition durch, fröre Mietfuchs einen Stand ein, den es so nie gegeben hat.
   const ergebnis = await writeData(async (db) => {

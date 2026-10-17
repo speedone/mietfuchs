@@ -191,10 +191,11 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
                   const target = noticeTarget(n.subject)
                   return (
                     <li key={i}>
-                      <strong>{n.title || n.text}</strong>
+                      {/* Mehrere Fehler können zum selben Ziel führen; der Titel unterscheidet die Knöpfe (#319, K1). */}
+                      <strong id={`close-error-${i}`}>{n.title || n.text}</strong>
                       {n.title && <div>{n.text}</div>}
                       {target && onNavigate && (
-                        <div><button type="button" className="btn secondary notice-action" onClick={() => { fix = target; dismiss() }}>{target.label}</button></div>
+                        <div><button type="button" className="btn secondary notice-action" aria-describedby={`close-error-${i}`} onClick={() => { fix = target; dismiss() }}>{target.label}</button></div>
                       )}
                     </li>
                   )

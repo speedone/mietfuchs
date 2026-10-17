@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // Kleinigkeiten der Abrechnungsseite aus der Abnahme (#142): was beim Mieter auf dem Papier steht
 // und was beim Arbeiten verwirrt.
-import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import { afterEach, assert, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { PeriodProvider } from '../period'
 import type { NoticeSubject, Settings, Settlement, Statement, Tenancy } from '../types'
@@ -188,6 +188,7 @@ test('IBAN (#279): auf der Abrechnung in Vierergruppen, eine ungültige, wie sie
 
 // #319: Meldet der Server beim Abschließen Fehler, nennt der Dialog sie mit Titel und „Hier beheben →“,
 // und erst „Trotzdem abschließen“ sendet die Bestätigung.
+const FEHLER2 = { code: 'tenancy.overlap', level: 'error', title: 'Zweite Überschneidung', text: 'OG: zugleich.', subject: { kind: 'tenancy', id: 't2' } }
 const FEHLER = { code: 'tenancy.overlap', level: 'error', title: 'Mietverhältnisse überschneiden sich', text: 'EG: Meier und Müller wohnen zugleich.', subject: { kind: 'tenancy', id: 't1' } }
 function stubClose(bodies: unknown[]) {
   const before = globalThis.fetch
@@ -196,9 +197,9 @@ function stubClose(bodies: unknown[]) {
     if (path === `/api/settlement/${YEAR}/close` && init?.method === 'POST') {
       const body: unknown = JSON.parse(String(init.body))
       bodies.push(body)
-      const confirmed = typeof body === 'object' && body !== null && 'despiteErrors' in body && body.despiteErrors === true
+      const confirmed = typeof body === 'object' && body !== null && 'despiteErrors' in body && body.despiteErrors === 'marke-1'
       if (confirmed) return new Response(JSON.stringify({ ok: true }), { status: 201, headers: { 'content-type': 'application/json' } })
-      return new Response(JSON.stringify({ error: 'Die Abrechnung enthält einen Fehler.', errorNotices: [FEHLER] }), { status: 409, headers: { 'content-type': 'application/json' } })
+      return new Response(JSON.stringify({ error: 'Die Abrechnung enthält einen Fehler.', errorNotices: [FEHLER, FEHLER2], errorToken: 'marke-1' }), { status: 409, headers: { 'content-type': 'application/json' } })
     }
     return before(url, init)
   })
@@ -220,9 +221,11 @@ test('Abschließen mit Fehlern (#319): der Dialog nennt sie, „Trotzdem abschli
   const dialog = await screen.findByRole('dialog', { name: /Fehler/ }, SLOW)
   expect(dialog.textContent).toContain('Mietverhältnisse überschneiden sich')
   expect(dialog.textContent).toContain('EG: Meier und Müller wohnen zugleich.')
-  expect(screen.getByRole('button', { name: 'Hier beheben → Stammdaten' })).toBeTruthy()
+  // K1: Gleich benannte Knöpfe unterscheidet die Beschreibung mit dem Titel des Fehlers.
+  const knoepfe = screen.getAllByRole('button', { name: 'Hier beheben → Stammdaten' })
+  expect(knoepfe.map((k) => document.getElementById(k.getAttribute('aria-describedby') ?? '')?.textContent)).toEqual(['Mietverhältnisse überschneiden sich', 'Zweite Überschneidung'])
   fireEvent.click(screen.getByRole('button', { name: 'Trotzdem abschließen' }))
-  await waitFor(() => expect(bodies).toEqual([{}, { despiteErrors: true }]), SLOW)
+  await waitFor(() => expect(bodies).toEqual([{}, { despiteErrors: 'marke-1' }]), SLOW)
 })
 
 test('Abschließen mit Fehlern (#319): „Hier beheben →“ schließt nicht ab und führt zum Eintrag', async () => {
@@ -232,7 +235,7 @@ test('Abschließen mit Fehlern (#319): „Hier beheben →“ schließt nicht ab
   showWithNav(nav)
   fireEvent.click(await screen.findByRole('button', { name: `🔒 Abrechnung ${YEAR} abschließen` }, SLOW))
   fireEvent.click(await screen.findByRole('button', { name: 'Abschließen' }))
-  fireEvent.click(await screen.findByRole('button', { name: 'Hier beheben → Stammdaten' }, SLOW))
+  fireEvent.click((await screen.findAllByRole('button', { name: 'Hier beheben → Stammdaten' }, SLOW))[0] ?? assert.fail('kein Knopf'))
   await waitFor(() => expect(nav).toHaveBeenCalledWith('stammdaten', { kind: 'tenancy', id: 't1' }), SLOW)
   expect(screen.queryByRole('dialog')).toBeNull()
   expect(bodies).toEqual([{}])
