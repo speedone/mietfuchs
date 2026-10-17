@@ -54,7 +54,8 @@ export type TaxHint = (typeof TAX_HINTS)[number]
 //   `sollIsNotTaxBasis`  Es ist das Soll angesetzt, und das ist keine steuerliche Grundlage.
 //
 //   `paymentsMissing`    Auf Ist-Basis, und für mindestens ein Mietverhältnis mit Soll ist im
-//                        Jahr **überhaupt keine** Zahlung erfasst. Die angesetzte Einnahme ist
+//                        Jahr **überhaupt keine** Mietzahlung erfasst (eine Nachzahlung aus der
+//                        Abrechnung zählt dafür nicht, #280). Die angesetzte Einnahme ist
 //                        dann zu niedrig, und das sieht man ihr nicht an.
 //
 //                        **Ein Hinweis für beide Stärken des Falls, und das ist eine

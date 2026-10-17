@@ -2529,10 +2529,13 @@ die ganze fachliche Komplexität:
   nennt `settlementBackPaymentsCents` und `settlementRefundsCents` daneben, mit dem Saldo für Zeile
   21 nur in den belegten Jahren (siehe unten). Die Oberfläche (client/src/paymentForm.ts) zeigt die
   Abrechnung nach dem Vorhandensein solcher Zahlungen, nicht nach ihrer Summe, lässt die Art einer
-  erfassten Zahlung umstellen, beginnt ohne Mietverhältnis im Jahr mit „Abrechnung“ und fragt nach,
-  bevor eine Miete ohne Zeile im Mietkonto gespeichert wird. Ein mit der Miete verrechnetes Guthaben
-  ist volle Miete plus negative Abrechnung, sonst stünde der Monat offen und der Zufluss zu niedrig. Die Kaution gehört nicht dazu (#228). Spalte und Bedingung in zwei Schritten
-  (0056/0057); der eingefrorene Eingang kennt die Spalte nicht, die Vorgabe gibt sie.
+  erfassten Zahlung umstellen (erst nach Rückfrage, `kindChangeQuestion`: Mit den Pfeiltasten
+  wechselt ein Auswahlfeld seinen Wert schon beim Durchgehen der Tabelle), beginnt ohne
+  Mietverhältnis im Jahr mit „Abrechnung“ und fragt nach, bevor eine Miete ohne Zeile im Mietkonto
+  gespeichert wird. Ein mit der Miete verrechnetes Guthaben ist volle Miete plus negative
+  Abrechnung, sonst stünde der Monat offen und der Zufluss zu niedrig. Die Kaution gehört nicht
+  dazu (#228). Spalte und Bedingung in zwei Schritten (0056/0057); der eingefrorene Eingang kennt
+  die Spalte nicht, die Vorgabe gibt sie.
 - **Steuer/Anlage V** (`taxReport`): aggregiert Einnahmen (das Soll aus `rentLedger`, das Ist
   unmittelbar aus den Zahlungen) und
   Werbungskosten (Kostenpositionen nach `ANLAGE_V_GROUP`-Mapping), liefert §35a-Summe,

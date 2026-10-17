@@ -106,13 +106,28 @@ test('Mietkonto: Abrechnung gesondert in der Zeile, in den Kennzahlen, bei früh
   expect(screen.getAllByText('Miete eingegangen').length).toBeGreaterThan(0)
 })
 
-test('Mietkonto: die Art einer erfassten Zahlung lässt sich umstellen, gesendet wird nur die Art (Durchsicht M2)', async () => {
+test('Mietkonto: die Art einer erfassten Zahlung lässt sich umstellen, erst nach Rückfrage, gesendet wird nur die Art (Durchsicht M2)', async () => {
   payments = [...PAYMENTS, { id: 'p3', tenancyId: 't1', date: `${YEAR}-03-20`, amountCents: 15000, kind: 'rent' }]
   shell()
-  const art = await waitFor(() => select(new RegExp(`Art der Zahlung vom 20\\.03\\.${YEAR}`)))
-  expect(art.value).toBe('rent')
-  expect(art.options[art.selectedIndex]?.textContent).toBe('Miete')
-  fireEvent.change(art, { target: { value: 'settlement' } })
+  const art = () => select(new RegExp(`Art der Zahlung vom 20\\.03\\.${YEAR}`))
+  await waitFor(() => art())
+  expect(art().value).toBe('rent')
+  expect(shownText(art())).toBe('Miete')
+  // Die Auswahl allein speichert nichts (Durchsicht der Umstellung auf main): Mit den Pfeiltasten
+  // wechselt ein Auswahlfeld seinen Wert schon beim Durchgehen der Tabelle, und jede Umstellung
+  // verschiebt Geld zwischen Mietkonto und „gesondert“. Bis zur Bestätigung zeigt die Auswahl das
+  // Gespeicherte.
+  fireEvent.change(art(), { target: { value: 'settlement' } })
+  const frage = (await screen.findByText(/Das Mietkonto verteilt sie dann nicht mehr auf die Monate/)).closest('.dialog')
+  if (!(frage instanceof HTMLElement)) return expect.fail('keine Rückfrage')
+  expect(sent).toHaveLength(0)
+  expect(art().value).toBe('rent')
+  fireEvent.click(within(frage).getByRole('button', { name: /^Abbrechen$/i }))
+  await waitFor(() => expect(screen.queryByText(/Das Mietkonto verteilt sie dann nicht mehr/)).toBeNull())
+  expect(sent).toHaveLength(0)
+  expect(art().value).toBe('rent')
+  fireEvent.change(art(), { target: { value: 'settlement' } })
+  fireEvent.click(await screen.findByRole('button', { name: /^Art umstellen$/ }))
   await waitFor(() => expect(sent).toHaveLength(1))
   expect(sent[0]).toEqual({ url: '/api/payments/p3', method: 'PUT', body: { kind: 'settlement' } })
 })

@@ -128,7 +128,7 @@ const LAGEN: Record<TaxHint, Lage> = {
   },
   paymentsMissing: {
     report: REPORT({}, { paidCents: 0, tenanciesWithSoll: 2, tenanciesWithoutPayment: 2 }),
-    text: /keine einzige Zahlung erfasst/i,
+    text: /keine einzige Mietzahlung erfasst/i,
   },
   // Genau dieser Block war schon einmal weg.
   turnOfYear: {
@@ -419,4 +419,10 @@ test('Nachzahlungen und Erstattungen aus der Nebenkostenabrechnung: gesondert, m
 test('Ohne Zahlungen aus der Abrechnung erscheint davon nichts', async () => {
   await zeige(REPORT())
   expect(screen.queryByText(/aus der Nebenkostenabrechnung/)).toBeNull()
+})
+
+test('Nur eine Nachzahlung aus der Abrechnung erfasst: der Hinweis sagt „keine Mietzahlung“, nicht „keine Zahlung“ (#280, Durchsicht)', async () => {
+  await zeige(REPORT({}, { paidCents: 15000, settlementBackPaymentsCents: 15000, tenanciesWithSoll: 1, tenanciesWithoutPayment: 1 }))
+  expect(screen.getByText(/keine einzige Mietzahlung erfasst/)).toBeTruthy()
+  expect(screen.queryByText(/keine einzige Zahlung erfasst/)).toBeNull()
 })

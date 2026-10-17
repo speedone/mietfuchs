@@ -68,6 +68,23 @@ export function hasSettlementPayments(payments: readonly Pick<Payment, 'kind' | 
   return payments.some((p) => p.kind === 'settlement' && p.date.startsWith(`${year}-`) && (tenancyId === undefined || p.tenancyId === tenancyId))
 }
 
+// Die Rückfrage vor dem Umstellen der Art einer erfassten Zahlung (Durchsicht der Umstellung auf
+// main). Die Auswahl in der Liste speichert nicht von selbst: Mit den Pfeiltasten wechselt ein
+// Auswahlfeld seinen Wert schon beim Durchgehen der Tabelle, und jede Umstellung verschiebt den
+// Betrag zwischen der Miete der Monate und „gesondert“. Der Satz sagt, was sich ändert.
+export function kindChangeQuestion(p: Pick<Payment, 'date' | 'amountCents'>, kind: PaymentKind, dateText: string): { title: string; message: string } {
+  const what = `Die Zahlung vom ${dateText} über ${fmtEuro(p.amountCents)}`
+  return kind === 'settlement'
+    ? {
+        title: 'Als Abrechnung führen?',
+        message: `${what} gilt dann als Nachzahlung oder Guthaben aus der Abrechnung. Das Mietkonto verteilt sie dann nicht mehr auf die Monate, sondern führt sie gesondert.`,
+      }
+    : {
+        title: 'Als Miete führen?',
+        message: `${what} gilt dann als Miete. Das Mietkonto verteilt sie dann von Januar an auf die Monate.`,
+      }
+}
+
 export function emptyPaymentForm(tenancyId: string, date: string): PaymentForm {
   return { tenancyId, date, amount: '', note: '', kind: 'rent' }
 }

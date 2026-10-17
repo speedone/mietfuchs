@@ -6,7 +6,7 @@ import { periodSpanText } from '../periodForm'
 import { CalendarYearSelect } from '../components/PeriodSelect'
 import { useProperty, withProperty } from '../property'
 import { bookingDate, newPaymentDate, rowStanding, shareText, showDecemberNote } from '../ledgerView'
-import { emptyPaymentForm, hasSettlementPayments, newPaymentForm, noRentYearText, PAYMENT_KIND_LABELS, PAYMENT_KIND_OPTIONS, paymentBody, paymentFormHints, paymentTenancyOptions, rentWithoutRow, rentWithoutRowQuestion, savedText, type PaymentForm } from '../paymentForm'
+import { emptyPaymentForm, hasSettlementPayments, kindChangeQuestion, newPaymentForm, noRentYearText, PAYMENT_KIND_LABELS, PAYMENT_KIND_OPTIONS, paymentBody, paymentFormHints, paymentTenancyOptions, rentWithoutRow, rentWithoutRowQuestion, savedText, type PaymentForm } from '../paymentForm'
 import Drawer from '../components/Drawer'
 import PageHeader from '../components/PageHeader'
 import { useToast, useConfirm } from '../components/feedback'
@@ -78,9 +78,12 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
   }
 
   // Die Art einer erfassten Zahlung umstellen (Durchsicht M2): etwa ein früher als Miete erfasstes
-  // Guthaben. Gesendet wird nur die Art, der Rest bleibt (Zusammenführen nach Anwesenheit).
+  // Guthaben. Erst nach Rückfrage, bis dahin zeigt die Auswahl das Gespeicherte (kindChangeQuestion).
+  // Gesendet wird nur die Art, der Rest bleibt (Zusammenführen nach Anwesenheit).
   async function changeKind(p: Payment, kind: PaymentKind) {
     if (kind === p.kind) return
+    const ok = await confirm({ ...kindChangeQuestion(p, kind, fmtDate(p.date)), confirmLabel: 'Art umstellen' })
+    if (!ok) return
     try {
       await api(`/api/payments/${p.id}`, { method: 'PUT', body: JSON.stringify({ kind }) })
     } catch (e) {
@@ -387,7 +390,9 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
                   <td>{tenancyName(p.tenancyId)}</td>
                   <td>
                     {/* Der Wert ist der gespeicherte; ein unbekannter stünde sonst als erster Eintrag da. */}
+                    <span className="print-only">{PAYMENT_KIND_LABELS[p.kind]}</span>
                     <select
+                      className="no-print"
                       aria-label={`Art der Zahlung vom ${fmtDate(p.date)}`}
                       value={p.kind}
                       onChange={(e) => {
