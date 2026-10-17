@@ -702,6 +702,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   wenn Sie selbst im Haus wohnen, den Betrag Ihrer Wohnung um deren Teil davon; die Beträge der
   Mieter bleiben
   ([#209](https://github.com/speedone/mietfuchs/issues/209)).
+- **„Als PDF sichern“ in Safari scheitert nicht mehr.** Beim Drucken einer einzelnen
+  Abrechnung oder der Steuerübersicht meldete Safari, die Datei existiere nicht. Safari meldet
+  das Ende des Drucks schon, bevor das PDF fertig ist, und Mietfuchs setzte Dateinamen und
+  Druckauswahl zu früh zurück. Aufgeräumt wird jetzt erst beim nächsten Klick oder Tastendruck.
+  ([#286](https://github.com/speedone/mietfuchs/issues/286)).
 - **Ein zweiter Start fasst die Daten nicht mehr an, solange Mietfuchs schon läuft.** Startete
   man Mietfuchs ein zweites Mal, etwa über das Startmenü, während es unsichtbar im Hintergrund
   lief, öffnete der zweite Start erst die Datenbank und bemerkte den belegten Port danach. Nach
