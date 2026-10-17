@@ -262,7 +262,14 @@ label.field input[aria-invalid="true"] { border-color: var(--red); }
 .iban-hint-list .notice-action { margin: 0 0 0 6px; }
 
 label.field.checkline { justify-content: flex-end; padding-bottom: 8px; }
-label.field.checkline span { display: flex; align-items: center; gap: 6px; font-weight: 400; color: var(--text); font-size: 14px; }
+label.field.checkline span { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-weight: 400; color: var(--text); font-size: 14px; }
+/* Ein Begriff (Term.tsx) in einem Häkchen-Label (mit und ohne .field): Die Regel darüber machte auch den Erklärungskasten und
+   seine Zeilen zu Flex-Zeilen, und der Kasten nahm nur die Breite des einen Worts an; er stand als
+   schmale, hohe Säule da. Ohne eigenen Rahmen bricht er auf eine eigene Zeile in voller Breite um. */
+label.checkline span.term-wrap { display: contents; }
+label.checkline span.term { display: inline; }
+label.checkline span.term-pop, label.checkline span.term-pop span.term-line { display: block; }
+label.checkline:has(.term-pop) { flex-wrap: wrap; }
 
 /* ---------- Badges & Hinweise ---------- */
 .badge { display: inline-block; padding: 3px 10px; border-radius: 99px; font-size: 12.5px; font-weight: 600; }
