@@ -11,6 +11,8 @@ import { useFocusTarget } from '../focus'
 import { settledInvoiceFiles, type PlantPeriods } from '../costPeriods'
 import { PeriodSelect } from '../components/PeriodSelect'
 import { useOpenForm, useProperty, withProperty } from '../property'
+import { useDraft } from '../useDraft'
+import DraftActions from '../components/DraftActions'
 import { effectiveLandlord, letterhead } from '../landlord'
 import { landlordReasonText } from '../landlordReasons'
 import { notSettledText } from '../tenancyModel'
@@ -228,8 +230,14 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
     await load()
     toast(`${docLabel} wieder geöffnet.`)
   }
-  async function saveSentAt(sentAt: string) {
-    if (!(await attempt(() => api(withProperty(paths.close, propertyId), { method: 'PUT', body: JSON.stringify({ sentAt: sentAt || null }) })))) return
+  // Das Versanddatum ist ein Entwurf, bis „Speichern“ es schickt (#309): Es setzt die Frist des § 556
+  // Abs. 3 BGB, und ein verklicktes Datum im Kalender stand vorher sofort fest. Ein Fehler bleibt am
+  // Feld stehen, der Entwurf mit ihm. Er gehört zu diesem Abschluss der gewählten Abrechnung: Eine
+  // andere Abrechnung oder „Wieder öffnen“ verwirft ihn, sonst zählte er unsichtbar als offenes
+  // Formular weiter und tauchte beim nächsten Abschluss wieder auf.
+  const sentAt = useDraft(data?.closed?.sentAt ?? '', { scope: `${propertyId ?? ''}|${paths.close}|${data?.closed?.closedAt ?? ''}` })
+  async function saveSentAt(value: string) {
+    await api(withProperty(paths.close, propertyId), { method: 'PUT', body: JSON.stringify({ sentAt: value || null }) })
     await load()
   }
   const isClosed = !!data?.closed
@@ -349,10 +357,12 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
                   versendet am
                   <input
                     type="date"
-                    value={data.closed!.sentAt ?? ''}
-                    onChange={(e) => void saveSentAt(e.target.value)}
+                    value={sentAt.value}
+                    disabled={sentAt.saving}
+                    onChange={(e) => sentAt.set(e.target.value)}
                   />
                 </label>
+                <DraftActions draft={sentAt} onSave={saveSentAt} what="Versanddatum" />
                 <button className="btn ghost" onClick={() => void reopenSettlement()}>Wieder öffnen</button>
               </>
             ) : (
