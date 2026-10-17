@@ -106,6 +106,41 @@ test('Abrechnung: Zahlungen nur aus der Abrechnung führen kein Mietkonto, also 
   assert.equal(rent.notices.filter((n) => n.code === 'prepayment.arrears').length, 1)
 })
 
+test('Zusammenspiel mit #311: Einzug am 15.03., anteiliges Soll im März, Nachzahlung als Abrechnung', () => {
+  // 800 € im Monat (650 € kalt, 150 € Vorauszahlung); der März zählt mit 17/31 Tagen.
+  const t = tenancy({ start: '2025-03-15' })
+  const march = { tenancyId: 't', date: '2025-03-20', amountCents: 35645 + 8226, kind: 'rent' as const }
+  const later: SnapshotPayment[] = Array.from({ length: 9 }, (_, i) => ({
+    tenancyId: 't', date: `2025-${String(i + 4).padStart(2, '0')}-03`, amountCents: 80000, kind: 'rent' as const,
+  }))
+  const backPayment: SnapshotPayment = { tenancyId: 't', date: '2025-11-10', amountCents: 15000, kind: 'settlement' }
+  const snap = snapshotOf(source({ tenancies: [t], payments: [march, ...later, backPayment] }), 2025)
+  const r = rowOf(rentLedger(snap).rows)
+  const m = r.months[2] ?? assert.fail('kein März')
+  assert.deepEqual(m.share, { days: 17, of: 31 })
+  assert.equal(m.sollCents, 35645 + 8226)
+  assert.equal(r.sollYearCents, 35645 + 8226 + 9 * 80000)
+  // Die Nachzahlung füllt keinen Monat auf und ist keine Überzahlung.
+  assert.equal(r.paidYearCents, r.sollYearCents)
+  assert.equal(r.balanceCents, 0)
+  assert.equal(r.arrearsCents, 0)
+  assert.equal(r.settlementYearCents, 15000)
+  assert.ok(r.months.every((mo) => mo.status === 'paid'))
+  // Die Abrechnung setzt dieselbe anteilige Vorauszahlung an und meldet keinen Rückstand.
+  const s = computeSettlement(snap)
+  const st = s.statements.find((x) => x.tenancyId === 't') ?? assert.fail('keine Abrechnung')
+  assert.equal(st.prepaymentCents, 8226 + 9 * 15000)
+  assert.equal(s.notices.filter((n) => n.code === 'prepayment.arrears').length, 0)
+  // Steuer: Zufluss beider Arten, Soll anteilig.
+  const tax = taxReport(snap)
+  assert.equal(tax.income.paidCents, r.sollYearCents + 15000)
+  assert.equal(tax.income.sollCents, r.sollYearCents)
+  assert.equal(tax.income.settlementBackPaymentsCents, 15000)
+  // Gegenprobe: als Miete gebucht wäre sie eine Überzahlung.
+  const asRent = rowOf(rentLedger(snapshotOf(source({ tenancies: [t], payments: [march, ...later, { ...backPayment, kind: 'rent' }] }), 2025)).rows)
+  assert.equal(asRent.balanceCents, 15000)
+})
+
 // Invariante: Zahlungen aus der Abrechnung ändern am Mietkonto nichts außer ihrer eigenen Summe, und
 // an der Steuer nur den Zufluss um genau ihre Summe. Zufällige Bestände mit festem Startwert.
 function makeRng(seed: number): () => number {
@@ -134,7 +169,9 @@ test('Invariante: Zahlungen aus der Abrechnung verschieben im Mietkonto nichts u
       const ends = rnd() < 0.4
       return tenancy({
         id: `t${i}`, unitId: 'a', tenantName: `M${i}`,
-        start: `2025-${String(startMonth).padStart(2, '0')}-01`,
+        // Auch zur Monatsmitte (#311): Das anteilige Soll im Ein- und Auszugsmonat darf am Befund
+        // nichts ändern.
+        start: `2025-${String(startMonth).padStart(2, '0')}-${String(rnd() < 0.5 ? 1 : 2 + Math.floor(rnd() * 27)).padStart(2, '0')}`,
         end: ends ? `2025-${String(Math.max(startMonth, 1 + Math.floor(rnd() * 12))).padStart(2, '0')}-28` : null,
         baseRents: [{ from: '2025-01', monthlyCents: 30000 + Math.floor(rnd() * 70000) }],
       })
