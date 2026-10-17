@@ -96,11 +96,13 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - Abrechnung: Ein ungültiger Betrag bei „✎ anpassen“ wird nicht mehr stumm verworfen, sondern am
   Feld gemeldet ([#341](https://github.com/speedone/mietfuchs/issues/341)).
 - Ableseergebnis für den Mieter: Es nennt die Einheit des Zählers und seine Nachkommastellen, ein
-  Wärmezähler in MWh steht dort also nicht mehr als gerundete kWh. Die Verteilung rechnet Zähler
-  verschiedener Einheiten noch nicht um ([#342](https://github.com/speedone/mietfuchs/issues/342)) ([#341](https://github.com/speedone/mietfuchs/issues/341)).
+  Wärmezähler in MWh steht dort also nicht mehr als gerundete kWh ([#341](https://github.com/speedone/mietfuchs/issues/341)).
+  Die Verteilung rechnet Zähler verschiedener Einheiten noch nicht um, das folgt mit
+  [#342](https://github.com/speedone/mietfuchs/issues/342).
 - Abrechnung: Enthält eine offene Abrechnung Fehler, fragt Mietfuchs vor dem Drucken nach, und schon
   die erste Rückfrage zum Abschließen nennt sie, je mit „Hier beheben →“. Solange Fehler offen sind,
-  trägt der Ausdruck den Vermerk „Entwurf, nicht versenden“, auch beim Druck über das Browsermenü ([#341](https://github.com/speedone/mietfuchs/issues/341)).
+  trägt der Ausdruck einer offenen Abrechnung den Vermerk „Entwurf, nicht versenden“, auch beim Druck
+  über das Browsermenü ([#341](https://github.com/speedone/mietfuchs/issues/341)).
 - „Angespannter Wohnungsmarkt“ am Objekt erklärt jetzt sich selbst und nicht die hälftige Teilung
   der CO₂-Kosten ([#341](https://github.com/speedone/mietfuchs/issues/341)).
 

@@ -566,7 +566,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
             return (
             <div key={st.tenancyId} className={`card statement ${printId === st.tenancyId ? 'print-target' : ''}`}>
               {/* Nur im Druck, solange Fehler offen sind; deckt auch Strg+P ab (Durchsicht S2 zu #341). */}
-              {data && showsDraftMark(noticesOf(data)) && <div className="print-only draft-mark">{DRAFT_MARK}</div>}
+              {data && showsDraftMark(noticesOf(data), !!data.closed) && <div className="print-only draft-mark">{DRAFT_MARK}</div>}
               <div className="muted">
                 {letterhead(landlord?.landlordName, property)}
               </div>

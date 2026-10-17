@@ -7,8 +7,10 @@
 // - Drucken fragt nur bei einer offenen Abrechnung: Bei einer abgeschlossenen wurde beim Abschluss trotz
 //   der Fehler bestätigt, und eine Änderung der Angaben änderte den eingefrorenen Ausdruck ohnehin nicht
 //   (Durchsicht S6). Das Versanddatum gibt es nur an einer abgeschlossenen und fragt deshalb nie.
-// - Der Vermerk „Entwurf, nicht versenden“ steht im Druck, solange Fehler da sind, offen wie abgeschlossen;
-//   er deckt auch Strg+P und das Browsermenü ab, die die Seite nicht abfängt (Durchsicht S2).
+// - Der Vermerk „Entwurf, nicht versenden“ steht im Druck einer offenen Abrechnung, solange Fehler da sind;
+//   er deckt auch Strg+P und das Browsermenü ab, die die Seite nicht abfängt (Durchsicht S2). Eine
+//   abgeschlossene trägt ihn nie, sonst ließe sie sich nach „Trotzdem abschließen“ (#319) nie ohne ihn
+//   drucken (Nachprüfung N1).
 // - Die erste Rückfrage zum Abschließen nennt die Fehler; bestätigt der Vermieter dort, wird die Rückfrage des
 //   Servers zu denselben Fehlern ohne zweiten Dialog beantwortet (`sameErrors`).
 import { blockingErrors } from '../../shared/notices.ts'
@@ -24,8 +26,8 @@ const INTRO = 'Mindestens eine Angabe widerspricht sich (siehe unten).'
 
 export const DRAFT_MARK = 'Entwurf, nicht versenden: Diese Abrechnung enthält Angaben, die sich widersprechen.'
 
-export function showsDraftMark(notices: readonly Notice[]): boolean {
-  return blockingErrors(notices).length > 0
+export function showsDraftMark(notices: readonly Notice[], closed: boolean): boolean {
+  return !closed && blockingErrors(notices).length > 0
 }
 
 export function printQuestion(notices: readonly Notice[], closed: boolean): ErrorsQuestion | null {

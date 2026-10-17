@@ -1881,8 +1881,9 @@ Marke des Stands trägt, der eingefroren würde (nach einer Schätzung;
 einer offenen Abrechnung, eine abgeschlossene wurde beim Abschluss schon bestätigt, und das
 Versanddatum gibt es nur dort. Zeigt die Seite schon Fehler, nennt sie die erste Rückfrage zum
 Abschließen, und die Rückfrage des Servers zu denselben Fehlern gilt damit als beantwortet
-(`sameErrors`). Solange Fehler da sind, trägt jede Mieterabrechnung im Druck den Vermerk „Entwurf,
-nicht versenden“ (`print-only`), auch bei Strg+P und abgeschlossen.
+(`sameErrors`). Solange eine offene Abrechnung Fehler hat, trägt jede Mieterabrechnung im Druck den
+Vermerk „Entwurf, nicht versenden“ (`print-only`), auch bei Strg+P; eine abgeschlossene nie, denn nach
+„Trotzdem abschließen“ muss sie sich ohne ihn drucken lassen.
 
 **Rechtsregister** (Heizung PR 1, Entwurf `2026-10-05-heizung-gesamt-design.md` Abschnitt 4):
 Jede Rechtszahl steht nur in [shared/law/](shared/law/), mit Gültigkeit, Fundstelle, Prüfstand und
