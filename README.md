@@ -1,6 +1,6 @@
 # 🦊 Mietfuchs
 
-**Die Nebenkostenabrechnung für private Vermieter — komplett auf dem eigenen Rechner.
+**Die Nebenkostenabrechnung für private Vermieter, komplett auf dem eigenen Rechner.
 Keine Cloud, kein Konto, keine Abogebühren.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
@@ -10,7 +10,7 @@ Keine Cloud, kein Konto, keine Abogebühren.**
 ![Docker ready](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)
 
 Mietfuchs nimmt dir die jährliche Betriebskostenabrechnung ab: Kosten und Belege erfassen
-(optional per lokaler KI-Auswertung), Zählerstände pflegen — und am Jahresende eine fertige,
+(optional per lokaler KI-Auswertung), Zählerstände pflegen, und am Jahresende eine fertige,
 centgenau verteilte Abrechnung je Mieter ausdrucken, inklusive Mietkonto und Steuer-Übersicht
 für die Anlage V. Ob ein Mehrfamilienhaus, mehrere Häuser, eine vermietete Eigentumswohnung oder
 das eigene Haus mit Einliegerwohnung: Alle Daten bleiben in einer lokalen Datenbank auf deinem
@@ -18,28 +18,30 @@ Rechner.
 
 ### Highlights
 
-- 🔒 **100 % lokal** — keine Cloud, kein Tracking, kein externer Dienst (außer der Update-Prüfung, wenn du sie erlaubst); Backup = Ordner kopieren
-- 🏘️ **Mehrere Objekte** in einer Installation — Häuser und Eigentumswohnungen, jedes rechnet für sich
+- 🔒 **100 % lokal:** keine Cloud, kein Tracking, kein externer Dienst (außer der Update-Prüfung, wenn du sie erlaubst); Backup = Ordner kopieren
+- 🏘️ **Mehrere Objekte** in einer Installation: Häuser und Eigentumswohnungen, jedes rechnet für sich
 - 🧮 **Centgenaue Verteilung** nach Wohnfläche, Personenzahl, Wohneinheiten, Verbrauch, direkt, vereinbarten Anteilen, laut Hausgeldabrechnung oder mit Einzelbeträgen
-- 📄 **Fertige Abrechnung** je Mieter mit Saldo, §35a-Bescheinigung und Fristen-Hinweis (§556/§560 BGB) — der Rechenweg jeder Zeile lässt sich aufklappen
-- 💡 **Hinweise statt Rätselraten** — Mietfuchs erklärt, was auffällt (z. B. Rückstand, fehlender Endstand beim Zählerwechsel, Heizkostenverordnung), wo es eine gibt mit Rechtsgrundlage, und mit einem Lexikon der Fachbegriffe
-- 💶 **Mietkonto** — Soll/Ist je Monat, fällige Rückstände auf einen Blick
-- 🧾 **Steuer-Übersicht (Anlage V)** — Einnahmen nach Zufluss, Werbungskosten und Überschuss aufs Jahr; wohnst du selbst im Haus, ist jede Position in abziehbar und privat aufgeteilt
-- 📁 **Belegordner** — je Objekt, Jahr und Kostenart, mit Posteingang für neue Belege, Belegabdeckung („85 % der Kosten belegt“), einer Belegmappe für Mieter als PDF und allen Belegen für die Steuer als ZIP
-- 🔁 **Kosten aus dem Vorjahr übernehmen** — Positionen samt Umlageschlüssel übernehmen und nur den neuen Betrag eintragen; den Schlüssel merkt sich Mietfuchs je Kostenart
-- 🧷 **Eine Rechnung landet genau einmal in den Kosten** — jede Zeile eines ausgewerteten Belegs wird neu angelegt, mit einer vorhandenen Position verknüpft oder verworfen, und die Vorschau zeigt vor dem Buchen, was geschieht
+- 🔥 **Heizung und Warmwasser:** eigene Heizkostenabrechnung nach der Heizkostenverordnung mit Wärme- und Warmwasserzählern oder Heizkostenverteilern, die fertige Abrechnung eines Messdienstes übernehmen, CO₂-Kosten nach dem CO2KostAufG zwischen Mieter und Vermieter aufteilen; dazu Brennstoffvorrat, mehrere Heizanlagen, Etagenheizungen, Kesseltausch und eine eigene Heizperiode
+- 📅 **Abrechnungszeitraum wählbar:** Kalenderjahr oder etwa Mai bis April, mit Vorschau beim Wechsel
+- 📄 **Fertige Abrechnung** je Mieter mit Saldo, §35a-Bescheinigung und Fristen-Hinweis (§556/§560 BGB); der Rechenweg jeder Zeile lässt sich aufklappen
+- 💡 **Hinweise statt Rätselraten:** Mietfuchs erklärt, was auffällt (z. B. Rückstand, fehlender Endstand beim Zählerwechsel, Heizkostenverordnung), wo es eine gibt mit Rechtsgrundlage, und mit einem Lexikon der Fachbegriffe
+- 💶 **Mietkonto:** Soll/Ist je Monat, fällige Rückstände auf einen Blick
+- 🧾 **Steuer-Übersicht (Anlage V):** Einnahmen nach Zufluss, Werbungskosten und Überschuss aufs Jahr; wohnst du selbst im Haus, ist jede Position in abziehbar und privat aufgeteilt
+- 📁 **Belegordner:** je Objekt, Jahr und Kostenart, mit Posteingang für neue Belege, Belegabdeckung („85 % der Kosten belegt“), einer Belegmappe für Mieter als PDF und allen Belegen für die Steuer als ZIP
+- 🔁 **Kosten aus dem Vorjahr übernehmen:** Positionen samt Umlageschlüssel übernehmen und nur den neuen Betrag eintragen; den Schlüssel merkt sich Mietfuchs je Kostenart
+- 🧷 **Eine Rechnung landet genau einmal in den Kosten:** jede Zeile eines ausgewerteten Belegs wird neu angelegt, mit einer vorhandenen Position verknüpft oder verworfen, und die Vorschau zeigt vor dem Buchen, was geschieht
 - 🤖 **Optionale KI-Belegauswertung** mit [Ollama](https://ollama.com) auf dem eigenen Rechner oder einem Dienst deiner Wahl
-- 🧭 **Anleitungen je Vermietungsart** — vom Haus mit Einliegerwohnung über die vermietete Eigentumswohnung bis zum Mieterwechsel mit Leerstand, je mit Schritten, Beispiel und Rechtslage
-- 🐳 **In Minuten startklar** — `npm run dev` oder `docker compose up`
+- 🧭 **Anleitungen je Vermietungsart:** vom Haus mit Einliegerwohnung über die vermietete Eigentumswohnung bis zum Mieterwechsel mit Leerstand, je mit Schritten, Beispiel und Rechtslage
+- 🐳 **In Minuten startklar:** `npm run dev` oder `docker compose up`
 
 ## Screenshots
 
 > Alle Abbildungen zeigen frei erfundene Beispieldaten (ein Mehrfamilienhaus „Lindenweg 12,
 > 12345 Musterstadt“ mit selbstgenutzter Dachwohnung und Garage, dazu eine vermietete
-> Eigentumswohnung) — keine echten Personen, Adressen oder Kontodaten. Die Bilder entstehen mit
+> Eigentumswohnung), ohne echte Personen, Adressen oder Kontodaten. Die Bilder entstehen mit
 > `npm run screenshots` neu.
 
-![Cockpit — der Stand der Abrechnung auf einen Blick](docs/screenshots/cockpit.png)
+![Cockpit: der Stand der Abrechnung auf einen Blick](docs/screenshots/cockpit.png)
 
 | Abrechnung je Mieter, mit Rechenweg | Mietkonto (Soll/Ist je Monat) |
 | --- | --- |
@@ -87,21 +89,21 @@ testweise auf ihrem System und Linux zusätzlich auf Debian, Ubuntu, Fedora, Alm
 openSUSE, Arch und CentOS 7. Für Alpine und andere musl-Systeme gibt es das Docker-Image.
 
 Archiv entpacken (unter macOS genügt ein Doppelklick), dann die Programmdatei per
-**Doppelklick** starten — es öffnet sich automatisch dein Browser mit Mietfuchs.
+**Doppelklick** starten; es öffnet sich automatisch dein Browser mit Mietfuchs.
 Das Programmfenster (die schwarze Konsole) offen lassen, solange du arbeitest; zum Beenden
 einfach schließen.
 
 Beim ersten Start meldet sich das Betriebssystem, weil die Datei nicht kostenpflichtig
 signiert ist:
 
-- **Windows** — „Der Computer wurde durch Windows geschützt" → *Weitere Informationen* →
+- **Windows:** „Der Computer wurde durch Windows geschützt" → *Weitere Informationen* →
   *Trotzdem ausführen*.
-- **macOS** — der erste Start wird blockiert: Dialog schließen, dann in
+- **macOS:** der erste Start wird blockiert: Dialog schließen, dann in
   *Systemeinstellungen → Datenschutz & Sicherheit* unten bei der Mietfuchs-Meldung auf
   *Dennoch öffnen* klicken und den Start wiederholen. Bis macOS 14 geht stattdessen
   Rechtsklick auf die Datei → *Öffnen* → im Dialog nochmals *Öffnen*. Wer das Terminal mag,
   nimmt den Einzeiler `xattr -d com.apple.quarantine mietfuchs-macos-*`.
-- **Linux** — im Terminal: `tar -xzf mietfuchs-linux.tar.gz && ./mietfuchs-linux`
+- **Linux:** im Terminal: `tar -xzf mietfuchs-linux.tar.gz && ./mietfuchs-linux`
   (das Archiv erhält die Ausführungsrechte, `chmod` ist nicht nötig).
 
 Deine Daten liegen im Ordner **`data/` direkt neben der Programmdatei** (`mietfuchs.sqlite` +
@@ -109,7 +111,7 @@ Belege). Backup = diesen Ordner kopieren. Kommst du von einer älteren Version u
 ein Backup-Archiv oder eine lose `db.json`, steht der Weg dafür in
 [MIGRATION.md](MIGRATION.md). Die optionale [KI-Belegauswertung](#ki-belegauswertung)
 braucht zusätzlich ein separat installiertes [Ollama](https://ollama.com) oder den Zugang zu
-einem KI-Dienst — ohne beides funktioniert die Abrechnung trotzdem vollständig.
+einem KI-Dienst. Ohne beides funktioniert die Abrechnung trotzdem vollständig.
 
 ### Linux: Installationspaket mit Startmenü-Eintrag
 
@@ -175,15 +177,19 @@ legt die Dateien für alle Plattformen in `dist-bin/` ab.
 ## Funktionsweise
 
 1. **Stammdaten**: Objekte (ab dem zweiten erscheint ein Umschalter), je Objekt alle
-   Wohnungen — auch die selbstgenutzte, sie zählt in die Verteilbasis und ihr Anteil bleibt beim
-   Vermieter — und die Mietverhältnisse. Eine Garage oder ein Stellplatz bekommt 0 m² und wird an
+   Wohnungen (auch die selbstgenutzte; sie zählt in die Verteilbasis und ihr Anteil bleibt beim
+   Vermieter) und die Mietverhältnisse. Eine Garage oder ein Stellplatz bekommt 0 m² und wird an
    0 Personen vermietet. Personenzahl, Vorauszahlung, Kaltmiete und Pauschale werden als
-   **Staffel** geführt („ab X gilt Y") — Geburt, Auszug einzelner Personen oder
+   **Staffel** geführt („ab X gilt Y“): Geburt, Auszug einzelner Personen oder
    Vorauszahlungs-Erhöhungen brauchen kein neues Mietverhältnis. Je Mietverhältnis lässt sich das
    **Nebenkostenmodell** wählen: Abrechnung, Pauschale oder Inklusivmiete, getrennt für kalte
    Betriebskosten und Heizung. Am Objekt steht auch das Baujahr der Kabel- oder Antennenanlage,
-   denn davon hängt ab, ob ihre Kosten nach 2024 noch umlagefähig sind.
-2. **Kosten**: Rechnungen pro Abrechnungsjahr erfassen — manuell oder per
+   denn davon hängt ab, ob ihre Kosten nach 2024 noch umlagefähig sind, und der
+   **Abrechnungszeitraum** (Kalenderjahr oder etwa Mai bis April). Unter **Heizung** gibst du an,
+   womit geheizt wird, wer den Vertrag hat und wer abrechnet: ein Messdienst, du selbst oder
+   niemand, weil jede Wohnung ihre eigene Heizung hat. Daraus richtet Mietfuchs die Seite
+   **Heizkosten** ein.
+2. **Kosten**: Rechnungen pro Abrechnungsjahr erfassen, manuell oder per
    KI-Belegauswertung. Eine Rechnung kann in mehrere Positionen mit unterschiedlichen
    Umlageschlüsseln zerlegt werden (z. B. Wasserrechnung: Grundgebühr + Verbrauch).
    Optional pro Position: **Lohnanteil nach §35a EStG** (wird dem Mieter bescheinigt). Eine
@@ -203,23 +209,33 @@ legt die Dateien für alle Plattformen in `dist-bin/` ab.
    Mieter** (eine PDF mit Deckblatt „Position → Beleg, Seite“ für die Belegeinsicht nach § 556
    Abs. 4 BGB; Belege mit Daten anderer Mieter nur auf ausdrückliche Wahl) und die **Belege für die
    Steuer** (ein ZIP nach den Gruppen der Anlage V, mit einer Übersicht als CSV).
-4. **Zähler**: Zähler (Haupt- und Wohnungszähler) mit Ablesungen — Jahresablesung,
-   Zwischenablesung beim Mieterwechsel (exakte Aufteilung), Zählerwechsel (Endstand alt +
-   Startstand neu) mit Plausibilitätswarnung bei negativem Verbrauch.
-5. **Abrechnung**: Pro Mieter die fertige Abrechnung mit Kostenaufstellung, Umlageschlüssel,
+4. **Zähler**: Zähler (Haupt- und Wohnungszähler, auch Wärme- und Warmwasserzähler und
+   Heizkostenverteiler) mit Ablesungen: Jahresablesung, Zwischenablesung beim Mieterwechsel
+   (exakte Aufteilung), Zählerwechsel (Endstand alt + Startstand neu) mit Plausibilitätswarnung
+   bei negativem Verbrauch. Mietfuchs warnt vor abgelaufener Eichfrist und nennt bei Geräten, die
+   aus der Ferne ablesbar sein müssen, die Kürzung nach der Heizkostenverordnung.
+5. **Heizkosten** (sobald eine Heizanlage angelegt ist): Rechnungen des Versorgers als Lieferungen,
+   bei Öl, Flüssiggas, Pellets, Holz und Kohle mit Vorrat; die eigene Heizkostenabrechnung nach
+   §§ 7 bis 9 HeizkostenV (Grund- und Verbrauchskosten, Warmwasseranteil gemessen oder nach
+   Formel, Mieterwechsel nach Gradtagen, Schätzung nach § 9a) oder die Übernahme der fertigen
+   Abrechnung eines Messdienstes, auf Wunsch per KI ausgelesen; die **CO₂-Kosten** nach dem
+   Stufenmodell des CO2KostAufG, entweder laut Messdienst oder selbst aus den Lieferungen
+   berechnet, samt Ausdruck der Angaben für den Messdienst und Erstattung an Mieter, die selbst
+   heizen. Der Betriebsstrom der Heizung lässt sich aus dem Allgemeinstrom herausrechnen.
+6. **Abrechnung**: Pro Mieter die fertige Abrechnung mit Kostenaufstellung, Umlageschlüssel,
    Vorauszahlungen, Saldo, Zahlungsaufforderung (Vermieter, IBAN und Frist aus den Einstellungen
    oder abweichend am Objekt),
    §35a-Bescheinigung und Vorschlag zur Vorauszahlungsanpassung (§560 BGB). Dazu eine
    Erinnerung an die 12-Monats-Abrechnungsfrist (§556 BGB). Über „Drucken / PDF" speichern.
    Eine versendete Abrechnung wird **abgeschlossen** und damit eingefroren; ändert sich danach
    etwas, zeigt Mietfuchs die Abweichung je Mieter, und frühere Abschlüsse bleiben im Verlauf.
-6. **Mietkonto**: Welche Monate sind bezahlt? Die Kaltmiete wird (wie die Vorauszahlung) als
+7. **Mietkonto**: Welche Monate sind bezahlt? Die Kaltmiete wird (wie die Vorauszahlung) als
    Staffel geführt; **Soll = Bruttomiete = Kaltmiete + NK-Vorauszahlung**. Erfasste
-   Zahlungseingänge füllen die Monate der Reihe nach — ein Monatsraster zeigt *bezahlt /
+   Zahlungseingänge füllen die Monate der Reihe nach, ein Monatsraster zeigt *bezahlt /
    teilweise / offen*, im laufenden Jahr *noch nicht fällig* für den laufenden und die kommenden Monate, dazu
    Brutto/Netto-Aufschlüsselung und fällige Rückstände je Mieter. Zeigt das Mietkonto einen
    Rückstand, weist die Abrechnung darauf hin, denn angerechnet wird, was tatsächlich gezahlt wurde.
-7. **Steuer (Anlage V)**: Jahresübersicht der Einkünfte aus Vermietung je Objekt — Einnahmen
+8. **Steuer (Anlage V)**: Jahresübersicht der Einkünfte aus Vermietung je Objekt: Einnahmen
    nach dem Zuflussprinzip (das vereinbarte Soll lässt sich zum Abgleich einblenden),
    Werbungskosten nach Anlage-V-Gruppen sowie der Überschuss. Wohnst du selbst im Haus, ist die
    Hauptzahl die abziehbaren Werbungskosten, und jede Position steht mit Gesamtbetrag, privatem
@@ -234,7 +250,9 @@ legt die Dateien für alle Plattformen in `dist-bin/` ab.
 Wie du deine Lage anlegst, steht in Mietfuchs unter **Hilfe & Begriffe**: Anleitungen für das Haus
 mit Einliegerwohnung, das Mehrfamilienhaus, die vermietete Eigentumswohnung mit
 Hausgeldabrechnung, mehrere Objekte, Garage oder Stellplatz, Pauschale oder Inklusivmiete, die
-fertige Abrechnung eines Messdienstes und den Mieterwechsel mit Leerstand. Jede nennt, ob sie auf
+fertige Abrechnung eines Messdienstes, CO₂-Kosten aufteilen, Heizkosten selbst abrechnen,
+Brennstoff mit Tank oder Lager, Kesseltausch und mehrere Heizungen, den Abrechnungszeitraum Mai
+bis April und den Mieterwechsel mit Leerstand. Jede nennt, ob sie auf
 dich zutrifft, die Schritte mit einem Knopf zur passenden Seite, ein nachgerechnetes Beispiel, die
 Rechtslage und was Mietfuchs noch nicht kann. Dazu kommt ein Lexikon der Fachbegriffe.
 
@@ -243,14 +261,14 @@ Rechtslage und was Mietfuchs noch nicht kann. Dazu kommt ein Lexikon der Fachbeg
 - **Wohnfläche** (gesetzlicher Standard nach §556a BGB)
 - **Personenzahl** (personentagesgenau, inkl. Personen-Staffel)
 - **Wohneinheiten**
-- **Verbrauch (Zähler)** — Anteil = Verbrauch der Wohnung ÷ Summe aller Wohnungszähler;
+- **Verbrauch (Zähler):** Anteil = Verbrauch der Wohnung ÷ Summe aller Wohnungszähler;
   nur wählbar, wenn Wohnungszähler existieren. Fehlt einer Wohnung der Zähler (etwa der
   selbstgenutzten neben einer Einliegerwohnung mit Zwischenzähler), wird der Hauptzähler zur
   Basis; den Rest einer vermieteten Wohnung ohne Zähler trägt dann der Vermieter, mit Warnung.
   Eine Einheit ohne Anschluss (etwa die Garage ohne Wasser) gilt nicht als Wohnung ohne Zähler.
 - **Direktzuordnung** an eine Wohnung
 - **Vereinbarte Anteile** in Prozent je Wohnung
-- **Laut Gemeinschaftsabrechnung** — bei der Eigentumswohnung den eigenen Anteil aus der
+- **Laut Gemeinschaftsabrechnung:** bei der Eigentumswohnung den eigenen Anteil aus der
   Hausgeldabrechnung übernehmen, nach Miteigentumsanteilen, Fläche oder je Einheit
 - **Einzelbeträge** je Mietverhältnis, etwa aus der fertigen Abrechnung eines Messdienstes
 
@@ -262,10 +280,15 @@ Zeiträume ohne Mieter (Leerstand), der Anteil selbstgenutzter Wohnungen und von
 mit Pauschale oder Inklusivmiete sowie Positionen „Nicht umlagefähig" trägt der Vermieter. Alle
 Beträge werden intern in Cent gerechnet und centgenau verteilt (Hare-Verfahren).
 
-Eine Kostenposition gehört zu dem Abrechnungsjahr, dem sie beim Erfassen zugeordnet wird. Eine
-eigene Heizkostenabrechnung nach der Heizkostenverordnung erstellt Mietfuchs noch nicht; die
-fertige Abrechnung eines Messdienstes lässt sich über Einzelbeträge übernehmen, und verteilst du
-Heizkosten ohne Verbrauchsanteil, nennt ein Hinweis das Kürzungsrecht des Mieters.
+Eine Kostenposition gehört zu dem Abrechnungszeitraum, dem sie beim Erfassen zugeordnet wird;
+eine Rechnung über zwei Zeiträume teilt Mietfuchs nach Tagen auf (Heizkosten ausgenommen). Für
+Heizung und Warmwasser gibt es eigene Wege (siehe **Heizkosten** oben): die eigene
+Heizkostenabrechnung nach der Heizkostenverordnung, die Übernahme einer fertigen
+Messdienstabrechnung als Einzelbeträge und die Aufteilung der CO₂-Kosten. Werden Heizkosten ohne
+Verbrauchsanteil verteilt, nennt ein Hinweis das Kürzungsrecht des Mieters nach § 12
+HeizkostenV. Was Mietfuchs bei der Heizung nicht rechnet, sagt es an Ort und Stelle, etwa die
+Vorerfassung nach Nutzergruppen oder eine getrennte Heizkostenabrechnung nach einem
+Kesseltausch.
 
 ## KI-Belegauswertung
 
@@ -507,7 +530,7 @@ docker run -d -p 3001:3001 -v mietfuchs-data:/app/server/data \
 # App: http://localhost:3001
 ```
 
-Als Compose-Datei — reicht allein, das Repo braucht man dafür nicht:
+Als Compose-Datei; sie reicht allein, das Repo braucht man dafür nicht:
 
 ```yaml
 services:
@@ -534,7 +557,7 @@ Mit **Docker Compose** (Konfiguration in [`docker-compose.yml`](docker-compose.y
 ```bash
 docker compose up -d        # Image bauen + Container starten (im Hintergrund)
 # App: http://localhost:3001
-docker compose down         # stoppen — das Volume mit den Daten bleibt erhalten
+docker compose down         # stoppen, das Volume mit den Daten bleibt erhalten
 ```
 
 Aktualisieren: `git pull && docker compose up -d --build`.
