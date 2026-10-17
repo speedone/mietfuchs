@@ -4,8 +4,11 @@ import path from 'node:path'
 import fs from 'node:fs'
 import http from 'node:http'
 import { spawn } from 'node:child_process'
+import { pipeline } from 'node:stream/promises'
 import { fileURLToPath } from 'node:url'
-import AdmZip from 'adm-zip'
+import yazl from 'yazl'
+import { openZip, ZipRefusal, type ZipItem, type ZipLimits, type ZipReader } from './zipRead.ts'
+import { cleanRestoreLeftovers, diskFullMessage, freeBytes, moveIntoPlace, restoreSpaceNeeded } from './restoreFiles.ts'
 import type { AiSettings, AiSlotName, AiStatus, AssessmentView, Extraction, Settings, UploadEntry, UploadLinks } from '../../shared/types.ts'
 import { detectedYear, linesFromExtraction } from './assessment.ts'
 import { bookingResponse, parseDecisions } from './bookingPlan.ts'
@@ -1767,14 +1770,97 @@ app.get('/api/receipts/tax/:year', async (req, res) => {
   const names = new Map<string, string>()
   for (const u of describeFolder(UPLOAD_DIR, rows)) names.set(u.file, u.originalName)
   const plan = planTaxArchive(items, names, booked, split, derived)
-  const zip = new AdmZip()
-  for (const { zipPath, file } of plan.files) zip.addFile(zipPath, fs.readFileSync(path.join(UPLOAD_DIR, file)))
-  zip.addFile('Übersicht.csv', Buffer.from(plan.overviewCsv, 'utf8'))
+  const out = createZip()
+  for (const { zipPath, file } of plan.files) out.addBufferFile(path.join(UPLOAD_DIR, file), zipPath)
+  out.zip.addBuffer(Buffer.from(plan.overviewCsv, 'utf8'), 'Übersicht.csv')
   const label = (property?.name || 'objekt').normalize('NFC').replace(/[^\w\-äöüÄÖÜß]+/g, '-').replace(/^-+|-+$/g, '') || 'objekt'
-  res.set('Content-Type', 'application/zip')
   res.set('Content-Disposition', `attachment; filename="belege-steuer-${year}-${label.replace(/[^\x20-\x7e]/g, '_')}.zip"; filename*=UTF-8''${encodeURIComponent(`belege-steuer-${year}-${label}.zip`)}`)
-  res.send(zip.toBuffer())
+  await sendZip(res, out)
 })
+
+// Ein ZIP, das als Strom an den Browser geht (`createZip`, `sendZip`), ohne es vorher im Speicher
+// zusammenzusetzen: Ein Backup mit Jahren an Belegen ist schnell Gigabytes groß, und vorher hielt
+// der Server es zweimal im Speicher (gemessen: 400 MB Belege, 1,45 GB Arbeitsspeicher). yazl
+// schreibt jeden Namen als UTF-8 mit dem Kennzeichen dafür, wie adm-zip vorher, sodass auch
+// ältere Versionen das Archiv lesen.
+//
+// **Der Fehler-Horcher hängt vom ersten Augenblick an.** yazl fragt jede Datei schon in
+// `addFile` ab und meldet einen Fehler als Ereignis, auch während das Backup noch auf den
+// Schnappschuss der Datenbank wartet; ohne Horcher beendete das den ganzen Server. Kommt der
+// Fehler vor dem Senden, gibt es eine Meldung; kommt er mittendrin, sind die Kopfzeilen schon
+// gesendet, die Verbindung bricht ab, und der Browser meldet den Download als gescheitert, statt
+// eine halbe Datei als fertig abzulegen.
+//
+// **Datendeskriptor (Bit 3) und Packen.** yazl schreibt eine Datei von der Platte (`addFile`)
+// immer mit Datendeskriptor: Größe und Prüfsumme stehen erst hinter den Daten. Leser, die das
+// Archiv als Strom lesen, finden das Ende eines **gespeicherten** Eintrags dann nicht (funzip, Java
+// ZipInputStream; nachgemessen mit funzip), das eines gepackten schon, denn der Strom endet von
+// selbst. Einige (busybox unzip aus einer Pipe) kennen gar keinen Datendeskriptor. Ohne ihn
+// schreibt yazl nur aus dem Speicher (`addBuffer`). Daraus:
+// - **Backup**: gepackt von der Platte (`addFile`), der Speicher bleibt flach, gleich wie groß der
+//   Belegordner ist. Gelesen wird es von Mietfuchs und von Programmen, die das Verzeichnis am Ende
+//   lesen (unzip, Python, Explorer, Archivprogramm). Schon Gepacktes (PDF, Fotos, ZIP) mit Stufe 1:
+//   Es schrumpft ohnehin kaum. Nur speichern wäre achtmal schneller (gemessen 0,5 s gegen 4 s je
+//   100 MB Zufallsdaten), ginge aber nur mit Datendeskriptor.
+// - **Steuer-ZIP** (`addBufferFile`): aus dem Speicher und damit ohne Datendeskriptor, schon
+//   Gepacktes nur gespeichert. Ein Steuerberater öffnet es mit beliebigen Werkzeugen, und es
+//   umfasst nur die Belege eines Objekts und Jahres, also selten mehr als einige zehn MB; so war es
+//   mit adm-zip auch.
+const ALREADY_PACKED = /\.(pdf|jpe?g|png|webp|heic|heif|zip)$/i
+type OutgoingZip = { zip: yazl.ZipFile, addFile: (realPath: string, name: string) => void, addBufferFile: (realPath: string, name: string) => void, failure: () => Error | null, startSending: () => void }
+
+function createZip(): OutgoingZip {
+  const zip = new yazl.ZipFile()
+  let failure: Error | null = null
+  let sending = false
+  zip.on('error', (err: Error) => {
+    failure ??= err
+    if (sending) zip.outputStream.emit('error', err)
+  })
+  return {
+    zip,
+    // Erst selbst abfragen: Was sich schon jetzt nicht lesen lässt, ergibt so verlässlich eine
+    // Meldung vor dem Senden statt eines abgebrochenen Downloads.
+    addFile: (realPath, name) => {
+      try {
+        fs.statSync(realPath)
+      } catch (err) {
+        failure ??= err instanceof Error ? err : new Error(String(err))
+        return
+      }
+      zip.addFile(realPath, name, ALREADY_PACKED.test(name) ? { compressionLevel: 1 } : {})
+    },
+    addBufferFile: (realPath, name) => {
+      let data: Buffer
+      let mtime: Date
+      try {
+        data = fs.readFileSync(realPath)
+        mtime = fs.statSync(realPath).mtime
+      } catch (err) {
+        failure ??= err instanceof Error ? err : new Error(String(err))
+        return
+      }
+      zip.addBuffer(data, name, { mtime, compress: !ALREADY_PACKED.test(name) })
+    },
+    failure: () => failure,
+    startSending: () => { sending = true },
+  }
+}
+
+async function sendZip(res: Response, out: OutgoingZip): Promise<void> {
+  const early = out.failure()
+  if (early) {
+    res.status(500).json({ error: `Das Archiv ließ sich nicht erstellen, weil ein Beleg nicht lesbar ist: ${messageOf(early)}` })
+    return
+  }
+  res.set('Content-Type', 'application/zip')
+  out.startSending()
+  out.zip.end()
+  await pipeline(out.zip.outputStream, res).catch((err: unknown) => {
+    console.error(`Ein ZIP ließ sich nicht vollständig senden: ${messageOf(err)}`)
+    res.destroy()
+  })
+}
 
 // ---------- Backup & Wiederherstellen ----------
 app.get('/api/backup', async (req, res) => {
@@ -1783,7 +1869,7 @@ app.get('/api/backup', async (req, res) => {
   // ihn ebenfalls anlegt. Beides sind Nebenwirkungen an anderer Stelle, und ein Backup ist der
   // schlechteste Zeitpunkt für einen Fehler.
   fs.mkdirSync(UPLOAD_DIR, { recursive: true })
-  const zip = new AdmZip()
+  const out = createZip()
   // **Genau eine der beiden Ablagen kommt ins Archiv, nämlich die, die den Bestand trägt.**
   //
   // Solange die Datenbank ihn trägt, ist sie es, und eine danebenliegende db.json bleibt
@@ -1815,13 +1901,16 @@ app.get('/api/backup', async (req, res) => {
     })
   }
 
-  if (!traegtDenBestand) zip.addLocalFile(jsonFile)
-  for (const name of fs.readdirSync(UPLOAD_DIR)) {
-    zip.addLocalFile(path.join(UPLOAD_DIR, name), 'uploads')
+  if (!traegtDenBestand) out.addFile(jsonFile, 'db.json')
+  // Nur Dateien: Einen Unterordner liest der Belegordner nicht (uploads.ts) und das
+  // Wiederherstellen lehnt ihn ab; adm-zip brach hier an ihm mit einem Serverfehler ab.
+  for (const entry of fs.readdirSync(UPLOAD_DIR, { withFileTypes: true })) {
+    if (entry.isFile()) out.addFile(path.join(UPLOAD_DIR, entry.name), `uploads/${entry.name}`)
   }
 
   // Die Datenbank kommt als **Schnappschuss** mit und nicht als Kopie der laufenden Datei
   // (db/backup.ts).
+  let snapshotFile: string | null = null
   if (traegtDenBestand && database) {
     // **Ein eigener Name je Anfrage.** Zwei gleichzeitige Backups teilten sich sonst die
     // Zwischendatei, und die zweite löschte, was die erste gerade packen will; heraus käme ein
@@ -1834,32 +1923,75 @@ app.get('/api/backup', async (req, res) => {
     // Datei liegen; weggeräumt wird sie dann bewusst **nicht** von der nächsten Anfrage, denn
     // eine Suche nach fremden Resten träfe genau die Zwischendatei eines gleichzeitig laufenden
     // Backups und brächte die Verdrängung zurück, die dieser Name gerade verhindert.
+    //
+    // Der Schnappschuss entsteht, **bevor** die erste Zeile des Archivs gesendet wird: Scheitert
+    // er, gibt es noch eine Fehlermeldung statt eines abgebrochenen Downloads. Weggeräumt wird
+    // die Zwischendatei erst, wenn das Archiv gesendet ist, denn yazl liest sie erst dann.
     const temp = path.join(DATA_DIR, `${ARCHIVE_DB_NAME}.${newId()}.backup`)
     try {
       await writeDatabaseSnapshot(database, temp)
-      zip.addFile(ARCHIVE_DB_NAME, fs.readFileSync(temp))
     } catch (err) {
+      fs.rmSync(temp, { force: true })
       // Hier wird abgebrochen und nicht stillschweigend ohne Datenbank gepackt: Ein Archiv, das
       // sich vollständig anfühlt und es nicht ist, fällt erst im Ernstfall auf.
       return res.status(500).json({ error: `Die Datenbank ließ sich nicht sichern: ${messageOf(err)}` })
-    } finally {
-      fs.rmSync(temp, { force: true })
     }
+    out.addFile(temp, ARCHIVE_DB_NAME)
+    snapshotFile = temp
   }
-  zip.addFile(ARCHIVE_INFO_NAME, Buffer.from(archiveInfoText(new Date()), 'utf8'))
+  out.zip.addBuffer(Buffer.from(archiveInfoText(new Date()), 'utf8'), ARCHIVE_INFO_NAME)
 
   const stamp = new Date().toISOString().slice(0, 10)
-  res.set('Content-Type', 'application/zip')
   res.set('Content-Disposition', `attachment; filename="mietfuchs-backup-${stamp}.zip"`)
-  res.send(zip.toBuffer())
+  try {
+    await sendZip(res, out)
+  } finally {
+    if (snapshotFile) fs.rmSync(snapshotFile, { force: true })
+  }
 })
 
-const RESTORE_MAX_BYTES = 500 * 1024 * 1024
-// Ausgepackt darf ein Backup höchstens so groß werden. Gegen „ZIP-Bomben“, die wenige Kilobyte
-// groß sind und ausgepackt den Arbeitsspeicher füllen. NKA_RESTORE_MAX_BYTES setzt die Grenze
-// für Tests herab.
-const RESTORE_UNPACKED_MAX_BYTES = Number(process.env.NKA_RESTORE_MAX_BYTES) || 1024 * 1024 * 1024
-const restoreUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: RESTORE_MAX_BYTES } })
+// **Grenzen beim Wiederherstellen** (geprüft in zipRead.ts, bevor ein Eintrag ausgepackt wird).
+// Bemessen am größten Bestand, der bei einem privaten Vermieter vorkommt, mit reichlich Luft:
+// fünf Objekte, zwanzig Jahre, je Objekt und Jahr 200 Belege sind 20.000 Dateien; ein Beleg ist
+// höchstens 25 MB groß (UPLOAD_MAX_BYTES), im Mittel eher 0,5 bis 2 MB.
+// - 50.000 Einträge: das Zweieinhalbfache davon. Ein Archiv mit 65.535 leeren Einträgen kostete
+//   adm-zip 4,9 s und 880 MB, bevor überhaupt geprüft war; gezählt wird jetzt am Ende des
+//   Archivs, bevor ein Eintrag gelesen ist.
+// - 2 GB je Eintrag: Das ist die Datenbank, ein Beleg kommt nie in die Nähe.
+// - 20 GB ausgepackt und hochgeladen: 20.000 Belege zu 1 MB passen gerade hinein (rund 19,5 GB),
+//   beim Mittel von 2 MB nicht mehr; ein so großer Bestand ist aber selten, und darüber hinaus
+//   bleibt das Kopieren des Datenordners. Zusätzlich muss so viel auf dem Datenträger frei sein,
+//   samt Reserve für die Sicherungen danach (restoreFiles.ts); das hochgeladene Archiv liegt
+//   dort schon.
+// - Packdichte höchstens hundertfach, sobald ein Eintrag oder alle zusammen über 64 MB hätten:
+//   Belege (PDF, JPEG) sind schon gepackt und schrumpfen kaum, die Datenbank und eine db.json etwa
+//   auf ein Fünftel bis ein Zehntel. Nullbytes schrumpfen auf ein Tausendstel; 896 kB davon,
+//   ehrlich als 900 MB angegeben, kamen vorher unter der Grenze von 1 GB durch und brauchten 2 GB
+//   Arbeitsspeicher.
+// - Die db.json wird im Speicher gelesen und geprüft, deshalb höchstens 512 MB; eine echte hat
+//   wenige MB.
+// NKA_RESTORE_MAX_BYTES setzt die Grenze für das Ausgepackte für Tests herab.
+const RESTORE_MAX_BYTES = 20 * 1024 ** 3
+const RESTORE_UNPACKED_MAX_BYTES = Number(process.env.NKA_RESTORE_MAX_BYTES) || 20 * 1024 ** 3
+const RESTORE_LIMITS: ZipLimits = {
+  maxEntries: 50_000,
+  maxEntryBytes: 2 * 1024 ** 3,
+  maxTotalBytes: RESTORE_UNPACKED_MAX_BYTES,
+  maxRatio: 100,
+  ratioAbove: 64 * 1024 ** 2,
+  maxNameBytes: 1024,
+}
+const RESTORE_JSON_MAX_BYTES = 512 * 1024 ** 2
+const RESTORE_INFO_MAX_BYTES = 1024 * 1024
+// **Das Archiv kommt auf die Platte und nicht in den Speicher**, in den Datenordner, damit es auf
+// demselben Datenträger liegt wie das, was daraus wird. Der Name beginnt wie die Zwischenablage
+// mit `restore-`; die Route räumt beides in jedem Fall weg.
+const restoreUpload = multer({
+  storage: multer.diskStorage({ destination: DATA_DIR, filename: (_req, _file, cb) => cb(null, `restore-upload-${newId()}.zip`) }),
+  limits: { fileSize: RESTORE_MAX_BYTES },
+})
+
+const NOTHING_CHANGED = 'Es wurde nichts davon übernommen; Ihre bisherigen Daten sind unverändert.'
 
 // Liest ein Backup vollständig und prüft es, bevor irgendetwas ersetzt wird. Wirft einen Fehler
 // mit einer Meldung für die Oberfläche; dann bleibt der bisherige Datenstand unangetastet.
@@ -1867,31 +1999,48 @@ type ReadBackup = {
   // `null`, wenn das Archiv keine db.json führt: Auf einem Rechner, der nie eine hatte,
   // entsteht sie seit dem Umstieg der Routen gar nicht mehr.
   dbText: string | null
-  files: { fileName: string, content: Buffer, time: Date }[]
-  // Die Datenbank aus dem Archiv, oder `null` bei einem Archiv aus einer Version vor ihr. Das
-  // ist kein Randfall: Genau solche Archive liegen bei den heutigen Nutzern.
-  database: Buffer | null
+  // Die Belege, schon ausgepackt in der Zwischenablage und mit ihrer Zeit aus dem Archiv (#142):
+  // Ohne sie trüge jeder Beleg danach das Datum der Wiederherstellung, und im Belegordner sähe
+  // eine alte Rechnung aus wie eben hochgeladen.
+  files: { fileName: string, staged: string }[]
+  // Die Datenbank aus dem Archiv, ausgepackt in der Zwischenablage, oder `null` bei einem Archiv
+  // aus einer Version vor ihr. Das ist kein Randfall: Genau solche Archive liegen bei den
+  // heutigen Nutzern.
+  database: string | null
   // Woher das Archiv stammt, in Worten für eine Meldung.
   origin: string
 }
 
-function readBackup(buffer: Buffer): ReadBackup {
-  let zip: AdmZip
+// `archive` ist das hochgeladene Archiv auf der Platte, `staging` ein leerer Ordner im
+// Datenordner, in den ausgepackt wird. Weggeräumt wird beides vom Aufrufer.
+async function readBackup(archive: string, staging: string): Promise<ReadBackup> {
+  let zip: ZipReader
   try {
-    zip = new AdmZip(buffer)
-    zip.getEntries() // adm-zip 0.6 liest das Verzeichnis erst hier
-  } catch {
-    throw new Error('Datei ist kein gültiges ZIP-Archiv.')
+    zip = await openZip(archive, RESTORE_LIMITS)
+  } catch (err) {
+    if (err instanceof ZipRefusal) throw new Error(err.kind === 'not-zip' ? 'Datei ist kein gültiges ZIP-Archiv.' : `${err.message} ${NOTHING_CHANGED}`)
+    throw err
   }
-  const entries = zip.getEntries()
-  const dbEntry = entries.find((e) => e.entryName === 'db.json')
+  try {
+    return await readBackupEntries(zip, staging)
+  } catch (err) {
+    if (err instanceof ZipRefusal) throw new Error(`${err.message} ${NOTHING_CHANGED}`)
+    const full = diskFullMessage(err)
+    if (full) throw new Error(full)
+    throw err
+  } finally {
+    zip.close()
+  }
+}
 
-  // Ausdrücklich typisiert: Was hier hineinläuft, kommt aus einem hochgeladenen Archiv und wird
-  // gerade erst geprüft. Der Typ soll nicht davon abhängen, was weiter unten hineingeschoben wird.
+async function readBackupEntries(zip: ZipReader, staging: string): Promise<ReadBackup> {
+  const entries = zip.items
+  const dbEntry = entries.find((e) => e.name === 'db.json')
+
   // Die Datenbank und die Herkunftsangabe. Beide fehlen in jedem Archiv, das vor Aufgabe 7a
   // entstanden ist, und beides ist in Ordnung: Die db.json ist dann der ganze Bestand.
-  const databaseEntry = entries.find((e) => e.entryName === ARCHIVE_DB_NAME)
-  const infoEntry = entries.find((e) => e.entryName === ARCHIVE_INFO_NAME)
+  const databaseEntry = entries.find((e) => e.name === ARCHIVE_DB_NAME)
+  const infoEntry = entries.find((e) => e.name === ARCHIVE_INFO_NAME)
   // **Eines von beiden muss da sein.** Ein Archiv von vor dem Umstieg führt nur die db.json,
   // eines von einem frischen Rechner nur die Datenbank, und eines dazwischen beide. Fehlt
   // jedoch beides, ist es kein Mietfuchs-Backup.
@@ -1899,10 +2048,9 @@ function readBackup(buffer: Buffer): ReadBackup {
     throw new Error('Im Archiv fehlen sowohl die Datenbank als auch die db.json. Ist das wirklich ein Mietfuchs-Backup?')
   }
 
-  const files: { fileName: string, e: AdmZip.IZipEntry }[] = []
-  let totalSize = (dbEntry?.header.size ?? 0) + (databaseEntry?.header.size ?? 0) + (infoEntry?.header.size ?? 0)
+  const files: { fileName: string, e: ZipItem }[] = []
   for (const e of entries) {
-    const name = e.entryName
+    const name = e.name
     if (name === 'db.json' || !name.startsWith('uploads/')) continue // anderes bleibt unbeachtet
     if (e.isDirectory && name === 'uploads/') continue
     // Ein Backup enthält Belege nur direkt in uploads/. Alles andere ist verdächtig.
@@ -1910,11 +2058,29 @@ function readBackup(buffer: Buffer): ReadBackup {
     if (e.isDirectory || !fileName || fileName === '.' || fileName === '..' || /[\\/]/.test(fileName)) {
       throw new Error(`Das Archiv enthält einen ungültigen Eintrag („${name}“) und wird nicht übernommen.`)
     }
-    totalSize += e.header.size
     files.push({ fileName, e })
   }
-  if (totalSize > RESTORE_UNPACKED_MAX_BYTES) {
-    throw new Error(`Das Archiv wäre ausgepackt zu groß (über ${Math.round(RESTORE_UNPACKED_MAX_BYTES / 1024 / 1024)} MB).`)
+  // **Führt das Archiv eine db.json, wird die mitgebrachte Datenbank gar nicht erst ausgepackt**:
+  // Sie würde ohnehin verworfen (die Regel und ihre Begründung stehen in runRestore).
+  const unpackDatabase = databaseEntry && !dbEntry ? databaseEntry : null
+  // Die Gesamtgröße hat zipRead.ts schon begrenzt; hier zählt, ob sie auf diesen Datenträger
+  // passt, samt dem, was nach den Belegen noch entsteht (restoreFiles.ts).
+  let currentDatabase = 0
+  try {
+    currentDatabase = fs.statSync(databaseFile(DATA_DIR)).size
+  } catch { /* keine Datenbank, etwa auf einem frischen Rechner */ }
+  const needed = restoreSpaceNeeded({
+    files: files.reduce((sum, f) => sum + f.e.size, 0),
+    database: unpackDatabase?.size ?? 0,
+    currentDatabase,
+    dbJson: dbEntry?.size ?? 0,
+  })
+  const free = freeBytes(staging)
+  if (free !== null && needed > free) {
+    throw new Error(
+      `Auf dem Datenträger ist nicht genug Platz: Das Backup braucht ausgepackt samt Sicherungen ${Math.ceil(needed / 1024 ** 2)} MB, ` +
+        `frei sind ${Math.floor(free / 1024 ** 2)} MB. ${NOTHING_CHANGED}`,
+    )
   }
 
   // Die db.json nur, wenn das Archiv eine führt. Ist sie da, wird sie geprüft wie bisher: Was
@@ -1922,8 +2088,9 @@ function readBackup(buffer: Buffer): ReadBackup {
   let dbText: string | null = null
   let parsed: unknown = null
   if (dbEntry) {
+    const data = await zip.read(dbEntry, RESTORE_JSON_MAX_BYTES)
     try {
-      dbText = zip.readAsText(dbEntry)
+      dbText = data.toString('utf8')
       parsed = JSON.parse(dbText)
     } catch {
       throw new Error('Die db.json im Archiv ist beschädigt (kein gültiges JSON).')
@@ -1946,22 +2113,31 @@ function readBackup(buffer: Buffer): ReadBackup {
   let info: unknown = null
   if (infoEntry) {
     try {
-      info = JSON.parse(zip.readAsText(infoEntry))
+      info = JSON.parse((await zip.read(infoEntry, RESTORE_INFO_MAX_BYTES)).toString('utf8'))
     } catch {
       info = null
     }
   }
 
-  // Alles in den Speicher lesen, bevor geschrieben wird: Scheitert ein Eintrag, ist noch nichts ersetzt
-  return {
-    dbText,
-    // Die Zeit des Eintrags kommt mit (#142): Ohne sie trüge jeder Beleg danach das Datum der
-    // Wiederherstellung, und im Belegordner sähe eine alte Rechnung aus wie eben hochgeladen.
-    files: files.map(({ fileName, e }) => ({ fileName, content: e.getData(), time: e.header.time })),
-    database: databaseEntry ? databaseEntry.getData() : null,
-    origin: originText(info),
+  // Alles auspacken, bevor geschrieben wird: Scheitert ein Eintrag, ist noch nichts ersetzt.
+  // Ausgepackt wird als Strom in die Zwischenablage, nicht in den Speicher; die Zeit des
+  // Eintrags setzt zipRead.ts dabei gleich mit.
+  const staged: { fileName: string, staged: string }[] = []
+  for (const [i, { fileName, e }] of files.entries()) {
+    // Durchnummeriert statt unter dem Namen: Zwei Einträge gleichen Namens überschrieben sich
+    // sonst schon hier, und der Name ist erst beim Verschieben in den Belegordner wieder gefragt.
+    const target = path.join(staging, `beleg-${i}`)
+    await zip.extract(e, target)
+    staged.push({ fileName, staged: target })
   }
+  let database: string | null = null
+  if (unpackDatabase) {
+    database = path.join(staging, ARCHIVE_DB_NAME)
+    await zip.extract(unpackDatabase, database)
+  }
+  return { dbText, files: staged, database, origin: originText(info) }
 }
+
 
 // Die Datenbank nach dem Wiederherstellen (#55, Aufgabe 7a). Gibt zurück, was der Nutzer
 // darüber hinaus wissen muss; die Liste ist im Regelfall leer.
@@ -2066,24 +2242,57 @@ async function restoreDatabase(staged: string | null): Promise<string[]> {
 // nacheinander, sondern eine. Die zweite Anfrage bekommt deshalb eine Absage und keine Warteschlange.
 let restoreRunning = false
 
-app.post('/api/restore', restoreUpload.single('file'), async (req, res) => {
+// **Vor dem Hochladen**: Läuft schon eine Wiederherstellung, oder ist die Anfrage größer als der
+// freie Platz, wird abgelehnt, bevor multer bis zu 20 GB auf die Platte schreibt. Der Rumpf wird
+// dabei verworfen, nicht gelesen.
+function restoreGate(req: Request, res: Response, next: NextFunction): void {
+  const refuse = (status: number, error: string) => {
+    req.resume()
+    res.set('Connection', 'close')
+    res.status(status).json({ error })
+  }
+  if (restoreRunning) return refuse(409, 'Es läuft gerade eine Wiederherstellung. Bitte warten Sie, bis sie fertig ist.')
+  const length = Number(req.headers['content-length'])
+  const free = freeBytes(DATA_DIR)
+  if (free !== null && Number.isFinite(length) && length > free) {
+    return refuse(400, `Auf dem Datenträger ist nicht genug Platz für dieses Backup: Es ist ${Math.ceil(length / 1024 ** 2)} MB groß, ` +
+      `frei sind ${Math.floor(free / 1024 ** 2)} MB. ${NOTHING_CHANGED}`)
+  }
+  next()
+}
+
+app.post('/api/restore', restoreGate, restoreUpload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Keine Datei' })
-  if (restoreRunning) {
-    return res.status(409).json({
-      error: 'Es läuft gerade eine Wiederherstellung. Bitte warten Sie, bis sie fertig ist.',
-    })
-  }
-  let backup: ReadBackup
+  const archive = req.file.path
+  // Das hochgeladene Archiv und die Zwischenablage gehen in jedem Fall wieder weg, auch nach
+  // einer Ablehnung: Liegen bliebe sonst ein Archiv, das niemand mehr braucht, oder ein halb
+  // ausgepacktes Backup.
+  const staging = path.join(DATA_DIR, `restore-${newId()}`)
   try {
-    backup = readBackup(req.file.buffer)
-  } catch (err) {
-    return res.status(400).json({ error: messageOf(err) })
-  }
-  restoreRunning = true
-  try {
-    await runRestore(backup, res)
+    if (restoreRunning) {
+      return res.status(409).json({
+        error: 'Es läuft gerade eine Wiederherstellung. Bitte warten Sie, bis sie fertig ist.',
+      })
+    }
+    // Die Marke steht schon vor dem Lesen, denn das Lesen ist jetzt ein Vorgang mit Pausen
+    // (ausgepackt wird als Strom), und eine zweite Anfrage dazwischen packte sonst in dieselbe
+    // Zeit ein zweites Archiv aus.
+    restoreRunning = true
+    try {
+      let backup: ReadBackup
+      try {
+        fs.mkdirSync(staging)
+        backup = await readBackup(archive, staging)
+      } catch (err) {
+        return res.status(400).json({ error: messageOf(err) })
+      }
+      await runRestore(backup, res)
+    } finally {
+      restoreRunning = false
+    }
   } finally {
-    restoreRunning = false
+    fs.rmSync(archive, { force: true })
+    fs.rmSync(staging, { recursive: true, force: true })
   }
 })
 
@@ -2134,7 +2343,7 @@ async function runRestore(backup: ReadBackup, res: Response): Promise<void> {
   if (staged && archiveDatabase) {
     try {
       fs.rmSync(staged, { force: true })
-      fs.writeFileSync(staged, archiveDatabase)
+      fs.renameSync(archiveDatabase, staged)
     } catch (err) {
       res.status(500).json({ error: `Die Datenbank aus dem Archiv ließ sich nicht ablegen: ${messageOf(err)}` })
       return
@@ -2154,20 +2363,17 @@ async function runRestore(backup: ReadBackup, res: Response): Promise<void> {
   // Serverfehler zu sehen, wo ihm gerade geholfen werden sollte. Eine leere Sicherheitskopie
   // anzulegen wäre die falsche Abhilfe: Die Oberfläche verspricht dort den vorherigen Stand,
   // und den gab es nicht.
+  //
+  // **Die Belege zuerst.** Ausgepackt und mit Datum versehen sind sie schon (readBackup), hier
+  // wandern sie nur an ihren Platz. Stünden sie hinter der db.json, hinterließe ein Fehler beim
+  // Verschieben eine schon ersetzte db.json neben halb verschobenen Belegen.
+  for (const { fileName, staged } of backup.files) await moveIntoPlace(staged, path.join(UPLOAD_DIR, fileName))
   const current = path.join(DATA_DIR, 'db.json')
   if (fs.existsSync(current)) fs.copyFileSync(current, path.join(DATA_DIR, 'db.json.vor-restore'))
   // Führt das Archiv keine db.json, wird auch keine angelegt. Eine leere wäre schlimmer als
   // keine: Der Umstieg beim nächsten Start hielte sie für einen zu übernehmenden Bestand.
   if (backup.dbText !== null) fs.writeFileSync(current, backup.dbText, 'utf8')
   else fs.rmSync(current, { force: true })
-  for (const { fileName, content, time } of backup.files) {
-    const target = path.join(UPLOAD_DIR, fileName)
-    fs.writeFileSync(target, content)
-    // Das Datum ist eine Auskunft: Scheitert es (etwa auf einem Netzlaufwerk), bleibt der Beleg.
-    try {
-      if (!Number.isNaN(time.getTime())) fs.utimesSync(target, time, time)
-    } catch { /* Datum bleibt das von heute */ }
-  }
 
   let notes: string[]
   try {
@@ -2381,10 +2587,13 @@ app.post('/api/quit', (req, res) => {
 // Fehler an der API immer als lesbare JSON-Meldung, nie als HTML-Fehlerseite von Express
 app.use('/api', (err: unknown, req: Request, res: Response, next: NextFunction) => {
   if (res.headersSent) return next(err)
+  // Volle Platte beim Hochladen oder Schreiben: ein Satz statt der Meldung von Node.
+  const full = diskFullMessage(err)
+  if (full) return res.status(507).json({ error: full })
   if (err instanceof multer.MulterError) {
     const limit = req.path === '/restore' ? RESTORE_MAX_BYTES : UPLOAD_MAX_BYTES
     const message =
-      err.code === 'LIMIT_FILE_SIZE' ? `Die Datei ist größer als ${limit / 1024 / 1024} MB.`
+      err.code === 'LIMIT_FILE_SIZE' ? `Die Datei ist größer als ${limit >= 1024 ** 3 ? `${limit / 1024 ** 3} GB` : `${limit / 1024 / 1024} MB`}.`
         : err.code === 'LIMIT_UNEXPECTED_FILE' && err.field === 'pages' ? `Höchstens ${MAX_PAGES} Seitenbilder je Beleg.`
           : err.code === 'LIMIT_FIELD_VALUE' ? 'Ein Textfeld ist zu lang.'
             : `Hochladen fehlgeschlagen: ${err.message}`
@@ -2656,6 +2865,11 @@ const listenProblem = await new Promise<NodeJS.ErrnoException | null>((resolve) 
 if (listenProblem) await refuseStart(listenProblem)
 // Ein späterer Fehler des Servers endet wie bisher.
 server.on('error', (err: NodeJS.ErrnoException) => void refuseStart(err))
+
+// Reste eines Wiederherstellens, das ein Absturz unterbrochen hat. Erst hier, nach dem Binden:
+// Läuft schon ein Mietfuchs auf diesem Port, ist dieser Start oben ausgestiegen und räumt nichts
+// weg, was jener gerade auspackt.
+cleanRestoreLeftovers(DATA_DIR)
 
 // Testgriff: hält den Start nach dem Binden und vor dem Öffnen der Datenbank fest, damit ein
 // Test das Rennen zweier gleichzeitiger Starts nachstellen kann. Ein Nutzer setzt ihn nie.
