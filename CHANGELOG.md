@@ -508,6 +508,16 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   eine Antwort, nach der die Abrechnung eine Kürzung um 15 % und einen Hinweis zu den CO₂-Kosten nannte, die in diesem Fall
   nicht zutreffen. Die Hinweise zu einer Heizung, deren Brennstoff der Mieter selbst bezieht, sagen jetzt
   „Brennstoff oder Wärme“. Keine Zahl ändert sich ([#225](https://github.com/speedone/mietfuchs/issues/225)).
+- **Das Cockpit weist auf vermutlich falsch eingetragene IBANs hin.** Seit der Prüfung beim
+  Speichern kommt keine neue ungültige IBAN hinzu, eine schon gespeicherte bleibt aber stehen.
+  Steht am gewählten Objekt, in den Einstellungen (wenn das Objekt keine eigene Bankverbindung
+  hat) oder an einem seiner Mietverhältnisse, das im Vorjahr oder später noch lief, eine IBAN,
+  deren Prüfziffer, Länge oder Länderkennung nicht passt, nennt das Cockpit sie mit Ort
+  und Grund, etwa „2 IBANs sind vermutlich falsch eingetragen“, und führt mit „Hier beheben →“
+  zur Stelle. Der Hinweis ist ein ruhiger Kasten am Ende des Cockpits: Er zählt nicht zur
+  Fertigstellung und färbt keine Ampel, denn eine falsche IBAN ändert keine Zahl der
+  Abrechnung. Sind alle IBANs gültig oder leer, erscheint nichts
+  ([#279](https://github.com/speedone/mietfuchs/issues/279)).
 
 ### Geändert
 
