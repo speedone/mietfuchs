@@ -27,6 +27,7 @@ import type {
   HeatingModel,
   SelfSupplyKind,
   DepositStatus,
+  PaymentKind,
   DevicesInstalledAfter,
   DevicesRemote,
   DhwMethod,
@@ -99,6 +100,8 @@ export const OPERATING_POWER = exactly<OperatingPower>()(['included', 'deduction
 export const OPERATING_POWER_HANDLINGS = exactly<OperatingPowerHandling>()(['ownMeter', 'deducted', 'landlordPays'] as const)
 // Wer vor der Umstellung auf Wärmelieferung versorgte (Heizung PR 16, #213).
 export const PREVIOUS_SUPPLIES = exactly<PreviousSupply>()(['landlord', 'tenant'] as const)
+// Die Art einer Zahlung (#280): Miete oder Nachzahlung/Guthaben aus der Abrechnung.
+export const PAYMENT_KINDS = exactly<PaymentKind>()(['rent', 'settlement'] as const)
 export const DEPOSIT_STATUS = exactly<DepositStatus>()(['offen', 'erhalten', 'teilweise', 'zurückgezahlt'] as const)
 const AI_PROVIDERS = exactly<AiProviderKind>()(['ollama', 'openai'] as const)
 const AI_JSON_MODES = exactly<AiJsonMode>()(['auto', 'schema', 'object', 'prompt'] as const)
@@ -1374,7 +1377,15 @@ export const payments = sqliteTable('payments', {
   // auch nicht.
   amountCents: integer('amount_cents').notNull(),
   note: text('note'),
-})
+  // Die Art der Zahlung (#280): `rent` ist Miete, die das Mietkonto auf die Monate verteilt,
+  // `settlement` eine Nachzahlung oder ein Guthaben aus der Abrechnung (Guthaben negativ), die es
+  // gesondert führt. Die Vorgabe `rent` gibt jeder vorhandenen Zahlung die Art, die sie bisher
+  // stillschweigend hatte, und keine Zahl ändert sich. Auch der eingefrorene Eingang schreibt ohne
+  // die Spalte (Stand 0000) und bekommt sie so.
+  kind: text('kind', { enum: PAYMENT_KINDS }).notNull().default('rent'),
+}, () => [
+  oneOf('payments_kind_known', 'kind', PAYMENT_KINDS),
+])
 
 // ---------- Abgeschlossene Abrechnungen ----------
 

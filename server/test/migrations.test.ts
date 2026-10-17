@@ -156,6 +156,10 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // erzeugt). Wird vor dem Merge ein anderer PR davor eingereiht, werden beide Schritte neu erzeugt und die Marken ersetzt.
   '0054_gutschrift_ohne_rechnung': '8633158cbfbdb4c92b7d28b86ad9a04bdba89cd44ea446794c8f5b74e0b2f5a5',
   '0055_gutschrift_ohne_rechnung_bedingungen': '1fc0eeeaf991d182b605ecf06f57b9d7ad8dde0cdd4a1eec7eac786c9ce4e476',
+  // #280: die Art einer Zahlung, Spalte mit Vorgabe „rent“ und Bedingung in zwei Schritten (nach #330 als 0058/0059 neu
+  // erzeugt). Wird vor dem Merge ein anderer PR davor eingereiht, werden beide Schritte neu erzeugt und die Marken ersetzt.
+  '0058_zahlungsart': '8a8d8cb03e0b6097acf8ef304d1187492d5e8ee57b20877a53a3d4f68ed40581',
+  '0059_zahlungsart_bedingungen': '401935f55d38ffafdcd67f0e3b86a682c33ac9f965a9151031f790ec8dc0a0c9',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

@@ -197,10 +197,12 @@ export type SnapshotScope = { kind: 'heating' | 'heatingPart'; plant: SnapshotHe
 // Seit Heizung PR 10 die Grenze einer Ablesung aus dem Mieterwechsel (`interimFor`), optional.
 export type SnapshotReading = Pick<Reading, 'meterId' | 'date' | 'value' | 'replacement' | 'oldEndValue'> & Partial<Pick<Reading, 'interimFor'>>
 
-// Gelesen werden Mietverhältnis, Datum und Betrag. Kennung und Notiz braucht das Mietkonto
+// Gelesen werden Mietverhältnis, Datum, Betrag und Art. Kennung und Notiz braucht das Mietkonto
 // nicht: Es zählt die Zahlungen des Jahres zusammen und verteilt sie von Januar an auf die
-// Monate, ohne die einzelne Zahlung auszuweisen.
-export type SnapshotPayment = Pick<Payment, 'tenancyId' | 'date' | 'amountCents'>
+// Monate, ohne die einzelne Zahlung auszuweisen. Die Art (#280) ist optional, fehlend heißt Miete
+// (`isRentPayment` in calc.ts): Die db.json und der eingefrorene Eingang (Stand 0000) kennen sie
+// nicht.
+export type SnapshotPayment = Pick<Payment, 'tenancyId' | 'date' | 'amountCents'> & Partial<Pick<Payment, 'kind'>>
 
 // Die abgeschlossene (eingefrorene) Abrechnung des Jahres, eingedampft auf das, was die
 // Berechnung daraus liest: den Eigenanteil selbstgenutzter Wohnungen (als Summe und je Position,

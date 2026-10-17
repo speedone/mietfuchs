@@ -491,6 +491,7 @@ export async function readPayments(db: Executor): Promise<Payment[]> {
     date: p.date,
     amountCents: p.amountCents,
     note: orUndefined(p.note),
+    kind: p.kind,
   }))
 }
 

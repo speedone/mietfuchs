@@ -449,7 +449,7 @@ test('Die Verschmelzung erreicht jede Spalte des Schemas', async () => {
     },
     {
       coll: 'payments', table: payments,
-      body: { tenancyId: 't1', date: '2024-01-05', amountCents: 1000, note: 'Dauerauftrag' },
+      body: { tenancyId: 't1', date: '2024-01-05', amountCents: 1000, note: 'Dauerauftrag', kind: 'settlement' },
     },
   ]
 

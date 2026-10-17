@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, test } from 'vitest'
 import type { TaxExpenseItem, TaxReport } from './types'
-import { allocationLabel, assignedUnitItems, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, operatingPowerBalanceText, prepaymentNote, settlementSourcesText, showsSplit, stockCarryNote, surplusCentsFor, taxHints } from './taxView'
+import { allocationLabel, assignedUnitItems, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, operatingPowerBalanceText, paidWithoutSettlementCents, prepaymentNote, settlementBalanceCents, settlementLine, settlementSourcesText, showsSplit, stockCarryNote, surplusCentsFor, taxHints } from './taxView'
 import { fmtEuro } from './api'
 import { periodKey } from '../../shared/period.ts'
 
@@ -17,6 +17,8 @@ const report = (income: Partial<TaxReport['income']>, rest: Partial<TaxReport> =
     prepaymentOverridden: false,
     sollCents: 1200000,
     paidCents: 1200000,
+    settlementBackPaymentsCents: 0,
+    settlementRefundsCents: 0,
     tenanciesWithSoll: 1,
     tenanciesWithoutPayment: 0,
     ...income,
@@ -363,4 +365,28 @@ describe('Betriebsstrom der Heizung (#268)', () => {
     expect(taxHints(tax({}), 'ist')).not.toContain('operatingPowerAmbiguous')
     expect(taxHints(tax({}), 'ist')).not.toContain('unmarkedPowerCredits')
   })
+})
+
+// ---------- Anlage V, Zeile der Nachzahlungen und Erstattungen (#280, Durchsicht N3) ----------
+
+test('Zeile 21 (Kennzahl 11) nur für die nachgesehenen Jahre 2023 bis 2025, Angehörige Zeile 23', () => {
+  for (const year of [2023, 2024, 2025]) {
+    expect(settlementLine(year)).toEqual({
+      line: 21, code: 11, relativesLine: 23, relativesCode: 12, rentLines: [15, 18], prepaymentLine: 20, relativesRentLine: 19, relativesPrepaymentLine: 22,
+    })
+  }
+  for (const year of [2021, 2022, 2026, 2027]) expect(settlementLine(year)).toBeNull()
+})
+
+test('der Betrag der Zeile ist der Saldo: Nachzahlungen minus Erstattungen', () => {
+  expect(settlementBalanceCents(report({ settlementBackPaymentsCents: 15000, settlementRefundsCents: 20000 }))).toBe(-5000)
+  expect(settlementBalanceCents(report({ settlementBackPaymentsCents: 15000, settlementRefundsCents: 0 }))).toBe(15000)
+})
+
+test('Zufluss ohne Abrechnung plus Saldo ergibt den Zufluss (Durchsicht zu #328)', () => {
+  // 12 × 800 € Miete, 200 € Guthaben erstattet: Zufluss 9.400 €, ohne Abrechnung 9.600 €, Saldo −200 €.
+  const r = report({ paidCents: 940000, settlementBackPaymentsCents: 0, settlementRefundsCents: 20000 })
+  expect(paidWithoutSettlementCents(r)).toBe(960000)
+  expect(settlementBalanceCents(r)).toBe(-20000)
+  expect(paidWithoutSettlementCents(r) + settlementBalanceCents(r)).toBe(r.income.paidCents)
 })

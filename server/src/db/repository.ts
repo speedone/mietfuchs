@@ -59,7 +59,7 @@ import {
   readUnits, type StoredClosedSettlement,
 } from './read.ts'
 import {
-  aiSlots, assessmentLines, assessments, baseRents, co2Refunds, co2Statements, co2TenantReliefs, heatingPeriods, closedHeatingSettlementHistory, closedHeatingSettlements, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, HEATING_MODELS, SELF_SUPPLY_KINDS, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, DEPOSIT_STATUS, EXTERNAL_MEASURES,
+  aiSlots, assessmentLines, assessments, baseRents, co2Refunds, co2Statements, co2TenantReliefs, heatingPeriods, closedHeatingSettlementHistory, closedHeatingSettlements, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, HEATING_MODELS, SELF_SUPPLY_KINDS, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, DEPOSIT_STATUS, PAYMENT_KINDS, EXTERNAL_MEASURES,
   HCA_SCALES, HEATING_PARTS, OPERATING_POWER, HEATING_ROLES, HEATING_TARGETS, INTERIM_GAP_STATUS, interimReadingGaps, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingSelfSpans, heatingPrepaymentOverrides, heatingPrepayments, heatingSeparateSpans, heatingServiceValues, heatingEstimates,
   flatRates, METER_TYPES, meters, payments, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, PROPERTY_KINDS,
   readings, settings, tenancies, unitNoConnection, units, fuelCarryFrozen, fuelDeliveries,
@@ -480,7 +480,21 @@ function mergePayment(current: Payment, body: unknown): Payment {
     date: merged(body, 'date', current.date, (v) => asText(v, '')),
     amountCents: merged(body, 'amountCents', current.amountCents, (v) => asNumber(v, 0)),
     note: merged(body, 'note', current.note, asOptionalText),
+    // Die Art (#280): ein fehlender Schlüssel lässt sie stehen, beim Anlegen also Miete. Ein
+    // unbekannter Wert wird abgelehnt und nicht still zu Miete: Gemeint war dann etwas anderes, und
+    // als Miete verteilt rückte die Zahlung im Mietkonto einen anderen Monat auf „bezahlt“.
+    kind: merged(body, 'kind', current.kind, (v) => {
+      const kind = PAYMENT_KINDS.find((k) => k === v)
+      if (kind === undefined) throw new PaymentError('Unbekannte Art der Zahlung. Erlaubt sind Miete (rent) und Nachzahlung oder Guthaben aus der Abrechnung (settlement).')
+      return kind
+    }),
   }
+}
+
+// Eine Zahlung mit einer Angabe, die es nicht gibt (#280). Die Meldung ist für den Nutzer
+// geschrieben; die Route gibt sie mit 400 weiter wie `CrossPropertyError`.
+export class PaymentError extends Error {
+  status = 400
 }
 
 // Ein frisch angelegter Datensatz ist ein leerer, in den derselbe Rumpf verschmolzen wird. Damit
@@ -499,7 +513,7 @@ const emptyCostItem = (id: string): CostItem => ({
 })
 const emptyMeter = (id: string): Meter => ({ id, propertyId: '', name: '', unitId: null, type: 'sonstig', unit: '' })
 const emptyReading = (id: string): Reading => ({ id, meterId: '', date: '', value: 0 })
-const emptyPayment = (id: string): Payment => ({ id, tenancyId: '', date: '', amountCents: 0 })
+const emptyPayment = (id: string): Payment => ({ id, tenancyId: '', date: '', amountCents: 0, kind: 'rent' })
 
 // ---------- Die Grenze zwischen den Objekten (#92) ----------
 //
@@ -1903,7 +1917,7 @@ const readingRow = (r: Reading) => ({
   interimFor: orNull(r.interimFor),
 })
 const paymentRow = (p: Payment) => ({
-  id: p.id, tenancyId: p.tenancyId, date: p.date, amountCents: p.amountCents, note: orNull(p.note),
+  id: p.id, tenancyId: p.tenancyId, date: p.date, amountCents: p.amountCents, note: orNull(p.note), kind: p.kind,
 })
 
 // Die Untertabellen eines Mietverhältnisses, ganz ersetzt. Siehe die Begründung am Kopf.

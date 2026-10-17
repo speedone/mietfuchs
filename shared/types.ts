@@ -143,13 +143,20 @@ export type Tenancy = {
 
 export type DepositStatus = 'offen' | 'erhalten' | 'teilweise' | 'zurückgezahlt'
 
-// Eine gebuchte Mietzahlung (Geldeingang). Pro Mietverhältnis, datiert.
+// Die Art einer Zahlung (#280). `rent`: Miete (Kaltmiete, Vorauszahlungen, Pauschale), die das
+// Mietkonto von Januar an auf das Monats-Soll verteilt. `settlement`: Nachzahlung oder Guthaben aus
+// der Nebenkostenabrechnung, ein Guthaben negativ; das Mietkonto führt sie gesondert. Die Kaution
+// gehört nicht dazu, sie steht am Mietverhältnis (`depositCents`, `depositStatus`).
+export type PaymentKind = 'rent' | 'settlement'
+
+// Eine gebuchte Zahlung (Geldeingang). Pro Mietverhältnis, datiert.
 export type Payment = {
   id: string
   tenancyId: string
   date: string // 'YYYY-MM-DD'
   amountCents: number
   note?: string
+  kind: PaymentKind
 }
 
 // ---------- Mietkonto / Zahlungs-Tracking ----------
@@ -181,7 +188,10 @@ export type RentLedgerRow = {
   prepaymentYearCents: number // davon NK-Vorauszahlung
   flatRateYearCents: number // davon Pauschale (#93)
   heatingPrepaymentYearCents?: number // davon Heizvorauszahlung (Heizung PR 5), nur mit Heizstaffel
-  paidYearCents: number
+  paidYearCents: number // Mietzahlungen (`rent`) des Jahres, verteilt auf die Monate
+  // Nachzahlungen (positiv) und ausgezahlte Guthaben (negativ) aus der Abrechnung im Jahr (#280),
+  // gesondert und nicht im Soll-Ist-Vergleich der Monate.
+  settlementYearCents: number
   balanceCents: number // paid − soll des ganzen Jahres: >0 Guthaben/Überzahlung
   // Soll der fälligen Monate und was davon offen ist (#133): im laufenden Jahr nur die Monate vor
   // dem aktuellen, sonst das ganze Jahr.
@@ -193,9 +203,13 @@ export type RentLedgerRow = {
 export type RentLedger = {
   year: number
   rows: RentLedgerRow[]
+  // Mietverhältnisse ohne Tag im Jahr, für die eine Zahlung aus der Abrechnung im Jahr erfasst ist
+  // (#280): Nachzahlung und Guthaben kommen oft erst nach dem Auszug.
+  settlementOnly: { tenancyId: string; tenantName: string; unitName: string; settlementYearCents: number }[]
   totals: {
     sollYearCents: number
     paidYearCents: number
+    settlementYearCents: number // Zahlungen aus der Abrechnung (#280)
     openCents: number // Summe der offenen Rückstände (nur negative Salden)
   }
 }
@@ -1038,6 +1052,11 @@ export type TaxReport = {
     // Tatsächlich zugeflossen (§ 11 Abs. 1 Satz 1 EStG): alle Zahlungen mit Datum im Jahr,
     // unabhängig davon, ob das Mietkonto für sie eine Zeile führt. Siehe calc.ts.
     paidCents: number
+    // Davon Zahlungen aus der Nebenkostenabrechnung (#280), nach Richtung getrennt und je als Betrag
+    // über null: vereinnahmte Nachzahlungen und ausgezahlte Erstattungen (Guthaben). In `paidCents`
+    // stecken sie schon (Nachzahlung plus, Erstattung minus).
+    settlementBackPaymentsCents: number
+    settlementRefundsCents: number
     // Mietverhältnisse des Jahres mit einem Soll über null, und wie viele davon keine einzige
     // Zahlung haben. Nicht für eine Rechnung, sondern für den Hinweis: Eine unvollständige
     // Erfassung ergibt eine zu niedrige Einnahme, und die fällt sonst niemandem auf.

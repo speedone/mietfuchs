@@ -107,7 +107,7 @@ import { DHW_PLAUSIBLE, dhwProblemText, fmtShare } from './dhw.ts'
 import { CAPTURE_TEXT, captureOf, coversPeriod, estimateFits, hotWaterOf, lineServiceRows, potUnitFor, serviceUnitsMixed, deviceCutoffs, isServiceMeter, deviceCutoffText, deviceLines, meterFactor, missingRatings, missingRatingsText, mixedCapture, mixedCaptureText, serviceMeters, withoutEstimatedSwitches } from './hca.ts'
 import { FUEL_GRADE_LABELS, HEATING_VALUE_UNIT_TEXT } from '../../shared/fuelGrades.ts'
 import { calibrationOverdue } from './calibration.ts'
-import type { FrozenItemSelfUse, Snapshot, SnapshotCostItem, SnapshotHeatingPart, SnapshotHeatingPlant, SnapshotMeter, SnapshotReading, SnapshotTenancy, SnapshotUnit } from './snapshot.ts'
+import type { FrozenItemSelfUse, Snapshot, SnapshotCostItem, SnapshotHeatingPart, SnapshotHeatingPlant, SnapshotMeter, SnapshotPayment, SnapshotReading, SnapshotTenancy, SnapshotUnit } from './snapshot.ts'
 
 export const KEY_LABELS: Record<CostKey, string> = {
   area: 'Wohnfläche',
@@ -962,6 +962,10 @@ function rateAtMonth(schedule: readonly MonthlySchedule[], firstMonth: string): 
   return rate
 }
 
+// Eine Mietzahlung (#280)? Fehlt die Art, ist es eine: Die db.json und der eingefrorene Eingang
+// (Stand 0000) kennen sie nicht, und vor #280 war jede Zahlung Miete.
+export const isRentPayment = (p: Pick<SnapshotPayment, 'kind'>): boolean => (p.kind ?? 'rent') === 'rent'
+
 // Die Monatsrechnung für Abrechnung und Mietkonto (#208): je Mietverhältnis das Soll je Monat
 // (Bruttomiete = Kaltmiete + Vorauszahlung + Pauschale) und die Zahlungen der Spanne, von vorn auf die
 // Monate verteilt; so spiegelt der Status („bezahlt / teilweise / offen“) wider, bis zu welchem Monat
@@ -1015,10 +1019,13 @@ export function ledgerRows(
           status: 'open',
         }
       })
-      // Zahlungseingänge der Spanne der Reihe nach auf die Monate verteilen
-      const paidYearCents = source.payments
-        .filter((p) => p.tenancyId === t.id && p.date >= span.from && p.date <= span.to)
-        .reduce((a, p) => a + p.amountCents, 0)
+      // Zahlungseingänge der Spanne der Reihe nach auf die Monate verteilen, und zwar nur die Miete
+      // (#280). Eine Nachzahlung aus der Abrechnung deckt kein Monats-Soll, und ein ausgezahltes
+      // Guthaben ist keine Rücklastschrift; verteilt rissen beide eine Lücke in den Dezember oder
+      // erfänden eine Überzahlung. Sie stehen gesondert in `settlementYearCents`.
+      const inSpan = source.payments.filter((p) => p.tenancyId === t.id && p.date >= span.from && p.date <= span.to)
+      const paidYearCents = inSpan.filter(isRentPayment).reduce((a, p) => a + p.amountCents, 0)
+      const settlementYearCents = inSpan.filter((p) => !isRentPayment(p)).reduce((a, p) => a + p.amountCents, 0)
       let remaining = paidYearCents
       for (const [k, mo] of rowMonths.entries()) {
         if (mo.sollCents <= 0) {
@@ -1044,6 +1051,7 @@ export function ledgerRows(
         flatRateYearCents: rowMonths.reduce((a, mo) => a + mo.flatRateCents, 0),
         ...(withHeating ? { heatingPrepaymentYearCents: rowMonths.reduce((a, mo) => a + (mo.heatingPrepaymentCents ?? 0), 0) } : {}),
         paidYearCents,
+        settlementYearCents,
         balanceCents: paidYearCents - sollYearCents,
         dueSollCents,
         arrearsCents: Math.max(0, dueSollCents - paidYearCents),
@@ -1059,13 +1067,36 @@ export function ledgerRows(
 // Monate ab dem des Stichtags sind „noch nicht fällig“ und kein Rückstand (zweite Browserabnahme).
 // Das Soll bleibt dasselbe, die Steuerübersicht hängt nicht daran.
 export function rentLedger(snapshot: Snapshot, options: { asOf?: string } = {}): RentLedger {
-  const rows = ledgerRows(snapshot, calendarYearPeriod(snapshot.year), options)
+  const span = calendarYearPeriod(snapshot.year)
+  const rows = ledgerRows(snapshot, span, options)
+  // Nachzahlung und Guthaben kommen meist im Folgejahr, oft nach dem Auszug (#280). Ein
+  // Mietverhältnis ohne Tag im Jahr hat keine Zeile; seine Zahlungen aus der Abrechnung stehen
+  // dann hier, sonst fehlten sie im Mietkonto ganz. Eigene Liste statt Zeile: Eine Zeile ohne Soll
+  // zählte in der Steuerübersicht als Mietverhältnis des Jahres (`costModels`).
+  const withRow = new Set(rows.map((r) => r.tenancyId))
+  const unitById = new Map(snapshot.units.map((u) => [u.id, u]))
+  const settlementPayments = snapshot.payments.filter((p) => !isRentPayment(p) && p.date >= span.from && p.date <= span.to)
+  const settlementOnly: RentLedger['settlementOnly'] = snapshot.tenancies
+    .filter((t) => !withRow.has(t.id))
+    .flatMap((t) => {
+      const own = settlementPayments.filter((p) => p.tenancyId === t.id)
+      if (own.length === 0) return []
+      return [{
+        tenancyId: t.id,
+        tenantName: t.tenantName,
+        unitName: unitById.get(t.unitId)?.name ?? '—',
+        settlementYearCents: own.reduce((a, p) => a + p.amountCents, 0),
+      }]
+    })
+    .sort((a, b) => compareName(a.unitName, b.unitName) || compareName(a.tenantName, b.tenantName))
   return {
     year: snapshot.year,
     rows,
+    settlementOnly,
     totals: {
       sollYearCents: rows.reduce((a, r) => a + r.sollYearCents, 0),
       paidYearCents: rows.reduce((a, r) => a + r.paidYearCents, 0),
+      settlementYearCents: rows.reduce((a, r) => a + r.settlementYearCents, 0) + settlementOnly.reduce((a, r) => a + r.settlementYearCents, 0),
       openCents: rows.reduce((a, r) => a + r.arrearsCents, 0),
     },
   }
@@ -1208,9 +1239,16 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
   // Für das Mietkonto ist seine Zeilenbindung richtig: Es beantwortet, bis zu welchem Monat ein
   // laufendes Mietverhältnis gedeckt ist, und dafür ist eine Zahlung ohne Zeile kein Beitrag.
   // Für die Steuerübersicht ist sie falsch, seit das Zugeflossene die maßgebliche Zahl ist.
-  const paidCents = snapshot.payments
-    .filter((p) => p.date >= `${year}-01-01` && p.date <= `${year}-12-31`)
-    .reduce((a, p) => a + p.amountCents, 0)
+  const paidInYear = snapshot.payments.filter((p) => p.date >= `${year}-01-01` && p.date <= `${year}-12-31`)
+  const paidCents = paidInYear.reduce((a, p) => a + p.amountCents, 0)
+  // Nachzahlungen und Erstattungen aus der Abrechnung (#280) bleiben Einnahmen nach dem
+  // Zuflussprinzip und stecken in `paidCents`; die Übersicht nennt sie zusätzlich gesondert, denn die
+  // Anlage V fragt sie bei den Umlagen ab. Getrennt nach Richtung, weil sich eine Nachzahlung
+  // des einen und ein Guthaben des anderen Mieters nicht zu einer Zahl verrechnen sollen.
+  const settlementInYear = paidInYear.filter((p) => !isRentPayment(p))
+  const settlementBackPaymentsCents = settlementInYear.filter((p) => p.amountCents > 0).reduce((a, p) => a + p.amountCents, 0)
+  // Als Betrag ohne Vorzeichen; summiert über −p, damit ohne Erstattungen 0 und nicht −0 dasteht.
+  const settlementRefundsCents = settlementInYear.filter((p) => p.amountCents < 0).reduce((a, p) => a - p.amountCents, 0)
 
   // Mietverhältnisse des Jahres mit Soll, und wie viele davon ohne jede Zahlung dastehen. Nicht
   // für eine Rechnung, sondern für den Hinweis: Sind für einen Mieter Zahlungen erfasst und für
@@ -1221,9 +1259,9 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
   // wessen Summe null ergibt. Heben sich im Jahr ein Eingang und eine Rücklastschrift auf, ist
   // die Summe null, erfasst ist aber sehr wohl etwas, und der Satz „keine Zahlung erfasst“ wäre
   // dann schlicht falsch.
-  const paidTenancies = new Set(
-    snapshot.payments.filter((p) => p.date >= `${year}-01-01` && p.date <= `${year}-12-31`).map((p) => p.tenancyId),
-  )
+  // Nur Mietzahlungen (#280): Wer für einen Mieter nur die Nachzahlung aus der Abrechnung erfasst
+  // hat, hat seine Miete nicht erfasst, und genau darauf soll der Hinweis stoßen.
+  const paidTenancies = new Set(paidInYear.filter(isRentPayment).map((p) => p.tenancyId))
   const withSoll = ledger.rows.filter((r) => r.sollYearCents > 0)
   const tenanciesWithSoll = withSoll.length
   // Für die Kopfzeilen der Anlage V (#96): Zeile 24 fragt, ob Nebenkosten nicht gesondert
@@ -1514,6 +1552,8 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
       ...(same !== undefined && frozen ? { prepaymentSettlementClosed: true as const } : {}),
       sollCents,
       paidCents,
+      settlementBackPaymentsCents,
+      settlementRefundsCents,
       tenanciesWithSoll,
       tenanciesWithoutPayment,
     },
@@ -7503,7 +7543,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // bestimmten Tag mitzuzählen, hinge an Wochenenden und Feiertagen; einfacher und ohne Fehlalarm
   // ist, ihn gar nicht mitzuzählen. Ein Rückstand des laufenden Monats erscheint dann im nächsten.
   // Liegt der Stichtag nach dem Zeitraum, ist alles fällig, liegt er davor, nichts.
-  const ledgerInUse = snapshot.payments.some((p) => p.date >= yFrom && p.date <= yTo)
+  // Nur Mietzahlungen (#280): Wer allein Nachzahlungen und Guthaben aus der Abrechnung bucht, führt
+  // das Mietkonto nicht, und dann stünde für jedes Mietverhältnis die ganze Miete als Rückstand da.
+  const ledgerInUse = snapshot.payments.some((p) => isRentPayment(p) && p.date >= yFrom && p.date <= yTo)
   // Fällig ist ein Monat des Zeitraums vor dem Monat des Stichtags; ohne Stichtag alle (#133).
   const asOfMonth = options.asOf?.slice(0, 7)
   const anyDue = asOfMonth === undefined || periodMonths(period).some((m) => m < asOfMonth)

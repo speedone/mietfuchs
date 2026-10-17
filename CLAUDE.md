@@ -2519,6 +2519,23 @@ die ganze fachliche Komplexität:
   Einzugsmonat das ganze Soll, und im Auszugsmonat meldete `prepayment.arrears` einen Rückstand,
   den es nicht gab. #281 (Übertrag, Tilgung nach § 366 BGB) baut auf dieser Funktion auf; die
   Verteilung der Zahlungen bleibt dort.
+  **Nur die Miete** (#280): Jede Zahlung hat eine Art (`payments.kind`, `rent` oder `settlement`,
+  Vorgabe `rent`; fehlt sie im Schnappschuss, gilt Miete, `isRentPayment` in calc.ts). Nachzahlung
+  und Guthaben aus der Abrechnung (Guthaben negativ) verteilt das Mietkonto nicht, sondern führt sie
+  in `settlementYearCents` je Zeile und in `settlementOnly` für Mietverhältnisse ohne Tag im Jahr
+  (meist nach dem Auszug; eigene Liste, weil eine Zeile ohne Soll in `costModels` mitzählte). Auch
+  „wird das Mietkonto geführt“ (`prepayment.arrears`) und „ohne Zahlung“ (`tenanciesWithoutPayment`)
+  fragen nur Mietzahlungen. Die Steuerübersicht zählt beide Arten im Ist (§ 11 Abs. 1 EStG) und
+  nennt `settlementBackPaymentsCents` und `settlementRefundsCents` daneben, mit dem Saldo für Zeile
+  21 nur in den belegten Jahren (siehe unten). Die Oberfläche (client/src/paymentForm.ts) zeigt die
+  Abrechnung nach dem Vorhandensein solcher Zahlungen, nicht nach ihrer Summe, lässt die Art einer
+  erfassten Zahlung umstellen (erst nach Rückfrage, `kindChangeQuestion`: Mit den Pfeiltasten
+  wechselt ein Auswahlfeld seinen Wert schon beim Durchgehen der Tabelle), beginnt ohne
+  Mietverhältnis im Jahr mit „Abrechnung“ und fragt nach, bevor eine Miete ohne Zeile im Mietkonto
+  gespeichert wird. Ein mit der Miete verrechnetes Guthaben ist volle Miete plus negative
+  Abrechnung, sonst stünde der Monat offen und der Zufluss zu niedrig. Die Kaution gehört nicht
+  dazu (#228). Spalte und Bedingung in zwei Schritten (0058/0059); der eingefrorene Eingang kennt
+  die Spalte nicht, die Vorgabe gibt sie.
 - **Steuer/Anlage V** (`taxReport`): aggregiert Einnahmen (das Soll aus `rentLedger`, das Ist
   unmittelbar aus den Zahlungen) und
   Werbungskosten (Kostenpositionen nach `ANLAGE_V_GROUP`-Mapping), liefert §35a-Summe,
@@ -2559,7 +2576,17 @@ die ganze fachliche Komplexität:
   (`participantUnitIds`); die Abrechnung liest das nicht.
   AfA, Schuldzinsen, § 82b EStDV, verbilligte Vermietung und ein Nutzungswechsel im Jahr werden
   nicht gerechnet, nur genannt. Zeilennummern der Anlage V nennt die Seite nur, wo der Vordruck 2025
-  sie belegt (11, 12, 33/34, 87/88); eine Anleitung 2025 war nicht auffindbar.
+  sie belegt (11, 12, 33/34, 87/88); eine Anleitung 2025 war nicht auffindbar. Dazu Zeile 21
+  (Kennzahl 11, Nachzahlungen und Erstattungen aus der Nebenkostenabrechnung, saldiert; Zeile 23 bei
+  Angehörigen, Zeile 19) für 2023 bis 2025, je im amtlichen Vordruck des Jahres nachgesehen: 2023
+  und 2024 im Formular-Management-System der Bundesfinanzverwaltung („2023AnlV101NET – September
+  2023 –“, „2024AnlV101NET – September 2024 –“), 2025 bei der Finanzverwaltung NRW („2025AnlV101 –
+  September 2025 –“), jeweils Seite 1; Fundstellen an `settlementLine` in client/src/taxView.ts
+  (#280). Für andere Jahre nennt die Seite keine Zeile. **Die Seite zeigt den Zufluss in zwei Teilen,
+  die zusammen den Zufluss ergeben** (`paidWithoutSettlementCents` und `settlementBalanceCents`): ohne
+  Abrechnung für die Zeilen der Mieten und Umlagen, den Saldo für Zeile 21. Stünde nur der Saldo
+  neben dem ganzen Zufluss, trüge mancher beides ein und zählte den Saldo doppelt (Durchsicht zu
+  #328). Den Hinweis dazu gibt es nur auf der Ist-Grundlage.
   **Maßgeblich ist das Ist** (#70): § 11 Abs. 1 Satz 1 EStG setzt Einnahmen im Jahr des Zuflusses
   an, ein vereinbartes, nicht gezahltes Soll ist keine Einnahme. Das Soll bleibt umschaltbar, denn
   zum Abgleich taugt es, ist aber nicht mehr die Vorgabe; die Entscheidungslogik samt Hinweisen
