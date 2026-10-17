@@ -3098,6 +3098,22 @@ schlägt fehl, wenn jemand auf die moderne Fassung zurückwechselt.
   Quelltext, denn auf einem einzelnen Rechner sagen beide Ordnungen dasselbe. Wer eine weitere
   Stelle anfasst, die eine Staffel oder Ablesungen sortiert, nimmt `compareText` von hier und
   schreibt den Vergleich nicht noch einmal hin.
+- **Auswahlfelder und Häkchen speichern nicht beim Anklicken** (#309). Sofort gespeichert wird nur,
+  was keine Daten ändert: der Wechsel von Zeitraum, Objekt oder Design und die Antwort auf die
+  Frage nach der Update-Prüfung im Cockpit. Alles andere ist zuerst ein Entwurf: `useDraft(saved,
+  { scope })` ([client/src/useDraft.ts](client/src/useDraft.ts), Logik ohne React in
+  [client/src/draft.ts](client/src/draft.ts)) hält angezeigten Wert, `set`, `dirty`, `discard` und
+  `save(fn)` (Doppelklick-Sperre, ein Fehler lässt den Entwurf stehen), übernimmt einen neuen
+  gespeicherten Wert nur ohne offenen Entwurf und meldet sich, solange etwas geändert ist, bei
+  `useOpenForm` an, damit ein Wechsel von Objekt oder Zeitraum nachfragt. `<DraftActions>`
+  ([DraftActions.tsx](client/src/components/DraftActions.tsx)) zeigt „Speichern“ und „Verwerfen“
+  nur bei einer Änderung, hinter dem Feld. Der Wächter
+  [saveOnChange.test.ts](client/src/saveOnChange.test.ts) liest den Quelltext: Ein `<select>` oder
+  ein `<input>` vom Typ checkbox, radio oder date, dessen `onChange` speichert (`api(`, eine
+  Methode PUT/POST/PATCH/DELETE, ein Name mit save/persist/submit, auch über Funktionen derselben
+  Datei und relativ importierte Helfer), ist verboten. Was heute noch so speichert, steht dort in
+  der Ausnahmeliste mit Grund und Anzahl; jede Umstellung (je Seite ein PR) streicht ihren Eintrag.
+  Rückrufe aus den Props mit anderem Namen sieht er nicht.
 - **Wer nach Plattform unterscheidet, bekommt sie hineingereicht**, wie `systemLocation` und
   `chooseDataDir` in paths.ts und store.ts und `networkLocation` in db/open.ts. Dazu gehört, mit
   `path.win32` beziehungsweise `path.posix` zu rechnen statt mit der Voreinstellung, und ebenso

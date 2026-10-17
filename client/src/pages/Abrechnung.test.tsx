@@ -2,7 +2,7 @@
 // Kleinigkeiten der Abrechnungsseite aus der Abnahme (#142): was beim Mieter auf dem Papier steht
 // und was beim Arbeiten verwirrt.
 import { afterEach, assert, beforeEach, expect, test, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { PeriodProvider } from '../period'
 import type { NoticeSubject, Settings, Settlement, Statement, Tenancy } from '../types'
 import type { NoticeTab } from '../notices'
@@ -45,6 +45,10 @@ beforeEach(() => {
     if (path === '/api/properties') return json([{ id: 'objekt-1', name: 'A', kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null }])
     if (path === `/api/settlement/${YEAR}`) return json(settlement)
     if (path === `/api/settlement/${YEAR}/history`) return json(history)
+    // Ein anderes Jahr (Test mit Jahreswechsel) bekommt eine leere offene Abrechnung, keine Liste.
+    const other = /^\/api\/settlement\/(\d{4})$/.exec(path)
+    if (other) return json({ ...settlement, year: Number(other[1]), statements: [], closed: null })
+    if (/^\/api\/settlement\/\d{4}\/history$/.test(path)) return json([])
     return json([])
   })
 })
@@ -239,4 +243,94 @@ test('Abschließen mit Fehlern (#319): „Hier beheben →“ schließt nicht ab
   await waitFor(() => expect(nav).toHaveBeenCalledWith('stammdaten', { kind: 'tenancy', id: 't1' }), SLOW)
   expect(screen.queryByRole('dialog')).toBeNull()
   expect(bodies).toEqual([{}])
+})
+
+// #309: Das Versanddatum setzt die Frist des § 556 Abs. 3 BGB. Ein verklicktes Datum im Kalender
+// stand vorher sofort fest; jetzt ist es ein Entwurf, bis „Speichern“ es schickt.
+function stubSentAt(puts: unknown[]) {
+  settlement.closed = { closedAt: `${YEAR + 1}-01-08T09:00:00.000Z`, sentAt: `${YEAR + 1}-01-10` }
+  const before = globalThis.fetch
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    const path = url.split('?')[0] ?? url
+    if (path === `/api/settlement/${YEAR}/close` && init?.method === 'PUT') {
+      const body = JSON.parse(String(init.body)) as { sentAt: string | null }
+      puts.push(body)
+      settlement = { ...settlement, closed: { closedAt: settlement.closed?.closedAt ?? '', sentAt: body.sentAt } }
+      return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } })
+    }
+    return before(url, init)
+  })
+}
+const sentAtField = async () => (await screen.findByLabelText(/versendet am/, {}, SLOW)) as HTMLInputElement
+
+test('Versanddatum: Ändern sendet nichts, „Speichern“ sendet genau einmal (#309)', async () => {
+  const puts: unknown[] = []
+  stubSentAt(puts)
+  show()
+  const feld = await sentAtField()
+  expect(feld.value).toBe(`${YEAR + 1}-01-10`)
+  expect(screen.queryByRole('button', { name: 'Versanddatum speichern' })).toBeNull()
+  fireEvent.change(feld, { target: { value: `${YEAR + 1}-01-15` } })
+  expect(puts).toEqual([])
+  const speichern = screen.getByRole('button', { name: 'Versanddatum speichern' })
+  fireEvent.click(speichern)
+  fireEvent.click(speichern)
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Versanddatum speichern' })).toBeNull(), SLOW)
+  expect(puts).toEqual([{ sentAt: `${YEAR + 1}-01-15` }])
+  expect((await sentAtField()).value).toBe(`${YEAR + 1}-01-15`)
+})
+
+test('Versanddatum: „Verwerfen“ stellt das gespeicherte Datum her, ohne zu senden (#309)', async () => {
+  const puts: unknown[] = []
+  stubSentAt(puts)
+  show()
+  const feld = await sentAtField()
+  fireEvent.change(feld, { target: { value: '' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Versanddatum verwerfen' }))
+  expect(feld.value).toBe(`${YEAR + 1}-01-10`)
+  expect(screen.queryByRole('button', { name: 'Versanddatum speichern' })).toBeNull()
+  expect(puts).toEqual([])
+})
+
+test('Versanddatum: ein ungespeichertes Datum fragt beim Wechsel des Jahres nach (#309)', async () => {
+  const puts: unknown[] = []
+  stubSentAt(puts)
+  show()
+  const feld = await sentAtField()
+  fireEvent.change(feld, { target: { value: `${YEAR + 1}-01-15` } })
+  fireEvent.change(screen.getByLabelText('Abrechnungsjahr'), { target: { value: String(YEAR - 1) } })
+  expect(await screen.findByText('Offene Eingaben verwerfen?', {}, SLOW)).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }))
+  await waitFor(() => expect(screen.queryByText('Offene Eingaben verwerfen?')).toBeNull(), SLOW)
+  // Wer abbricht, bleibt im Jahr und behält seine Eingabe.
+  expect((screen.getByLabelText('Abrechnungsjahr') as HTMLSelectElement).value).toBe(String(YEAR))
+  expect((await sentAtField()).value).toBe(`${YEAR + 1}-01-15`)
+  expect(puts).toEqual([])
+})
+
+// Durchsicht zu #309: Wer mit einem ungespeicherten Datum „Wieder öffnen“ wählt, verschwindet das
+// Feld. Der Entwurf darf danach nicht unsichtbar als offenes Formular weiterzählen und beim nächsten
+// Abschluss wieder auftauchen.
+test('Versanddatum: nach „Wieder öffnen“ bleibt kein unsichtbarer Entwurf zurück (#309)', async () => {
+  const puts: unknown[] = []
+  stubSentAt(puts)
+  const before = globalThis.fetch
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    const path = url.split('?')[0] ?? url
+    if (path === `/api/settlement/${YEAR}/close` && init?.method === 'DELETE') {
+      settlement = { ...settlement, closed: null }
+      return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } })
+    }
+    return before(url, init)
+  })
+  show()
+  fireEvent.change(await sentAtField(), { target: { value: `${YEAR + 1}-01-15` } })
+  fireEvent.click(screen.getByRole('button', { name: 'Wieder öffnen' }))
+  const dialog = await screen.findByRole('dialog', {}, SLOW)
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Wieder öffnen' }))
+  await waitFor(() => expect(screen.queryByLabelText(/versendet am/)).toBeNull(), SLOW)
+  fireEvent.change(screen.getByLabelText('Abrechnungsjahr'), { target: { value: String(YEAR - 1) } })
+  await waitFor(() => expect((screen.getByLabelText('Abrechnungsjahr') as HTMLSelectElement).value).toBe(String(YEAR - 1)), SLOW)
+  expect(screen.queryByText('Offene Eingaben verwerfen?')).toBeNull()
+  expect(puts).toEqual([])
 })
