@@ -3,6 +3,7 @@
 
 import { fmtDate } from './api'
 import type { LegalBasis, Notice, NoticeLevel, NoticeSubject, Settlement } from './types'
+import { INFORMATIONAL } from '../../shared/notices.ts'
 
 export const NOTICE_LEVEL_LABELS: Record<NoticeLevel, string> = {
   error: 'Fehler',
@@ -38,31 +39,9 @@ export function noticesOf(settlement: Pick<Settlement, 'notices' | 'warnings'>):
 // Mietfuchs nicht, im Programm lässt sich also nichts beheben; sonst stünde die Ampel in jedem Haus
 // mit Heizabrechnung dauerhaft auf Gelb.
 // Ebenso die eigene Heizperiode (Heizung PR 5): zulässig und nur eine Auskunft.
-const INFORMATIONAL = new Set(['basis.unit-zero', 'basis.tenancy-zero', 'basis.vacancy-persons', 'basis.vacancy-no-area', 'heating.remote-reading', 'period.short', 'period.heating-differs',
-  // Heizung PR 10: Hinweise der eigenen Heizkostenabrechnung ohne Handlungsbedarf.
-  'heating.interim-reading-off', 'heating.reading-dates-differ', 'heating.change-split-time', 'heating.heat-pump-capture',
-  // Heizung PR 13 (Entwurf 10.1: „hint (färbt nicht)“): eine bestätigte Schätzung nach § 9a, auch neben
-  // vollständiger Ablesung, die der Vermieter damit als unbrauchbar markiert (Durchsicht von #242, R-I7).
-  'heating.estimated', 'heating.estimate-complete',
-  // Folge-PR zu #252 (#224, Entscheidung F6): Der Hinweis trifft auch den rechtmäßigen Fall „eigener Zähler,
-  // Vermieter trägt den Strom selbst“ und lässt sich ohne Buchung nicht beheben; er färbt deshalb nicht.
-  'heating.operating-power-missing',
-  // #266: Fehlt nur die Rechnung des eigenen Stromvertrags, trägt der Vermieter eigenes Geld; den Mietern schadet das
-  // nicht. „Abzug des Betriebsstroms fehlt“ steht bewusst nicht hier: Er ist der Fall des BGH mit ausdrücklicher Angabe.
-  'heating.operating-power-bill-missing',
-  // Heizung PR 16 (Prüfung C-S8): Die Umstellung auf Wärmelieferung nennt jedes Jahr die Rechtslage für die Mieter von
-  // vor der Umstellung; beheben lässt sie sich nicht, und sie färbt deshalb nicht.
-  'heating.contracting',
-  // Heizung PR 19 (Durchsicht S-5): Auskunft, nichts zu beheben. Sie steht bei jeder richtig eingerichteten Heizung,
-  // deren Brennstoff der Mieter bezieht; die Hinweise zur CO₂-Erstattung (`co2.refund-*`) färben weiter.
-  'co2.self-supply-items',
-  // Durchsicht S-2: Ohne Angabe, wie der Betriebsstrom erfasst ist, ist der Hinweis Auskunft wie `heating.operating-power-missing`
-  // (#265); ein eigener Stromvertrag der Heizung führt so nicht zu einer dauerhaft gelben Ampel.
-  'heating.self-supply-operating-power',
-  // #219: Auskunft zur Rohrwärme bei Heizkostenverteilern; ob sie zutrifft, kennt Mietfuchs nicht.
-  'heating.pipe-heat',
-  // #218: Auskunft, dass eine Vorerfassung nach § 5 Abs. 7 Satz 2 möglich ist; sie ist dort keine Pflicht.
-  'heating.pre-capture'])
+// Die Liste selbst steht in shared/notices.ts, weil der Server dieselbe Ausnahme beim Abschließen
+// braucht (#319).
+
 export function noticesNeedAttention(settlement: Pick<Settlement, 'notices' | 'warnings'>): boolean {
   return noticesOf(settlement).some((n) => !INFORMATIONAL.has(n.code))
 }
