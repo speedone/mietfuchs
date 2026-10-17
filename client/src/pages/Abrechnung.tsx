@@ -1,4 +1,5 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { startPrint } from '../printJob'
 import type { CostItem, HeatingSettlementInfo, NoticeSubject, PeriodKey, Settings, Settlement, SettlementRow, Tenancy, Unit } from '../types'
 import {
   adjustedPrepaymentLabel, heatingChoices, suggestionWithoutHeating, heatingOnlyNote, heatingOverridesWith, prepaymentLabel, prepaymentSplit, recommendedDeadlineText, settlementPaths, settlementTitle, totalLabel,
@@ -227,27 +228,29 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
     toast(cents === null ? 'Vorauszahlung zurückgesetzt.' : 'Gezahlte Vorauszahlung übernommen.')
   }
 
+  // Daten und Jahr über eine Referenz: Der Druck hängt nur an printId, sonst öffnete ein Neuladen
+  // der Daten, während auf die nächste Bedienung gewartet wird, den Druckdialog ein zweites Mal
+  const printSource = useRef({ data, label })
+  printSource.current = { data, label }
   useEffect(() => {
     if (!printId) return
     document.body.classList.add('print-one')
-    // Browser verwenden document.title als Dateinamen beim „Als PDF speichern“
-    const prevTitle = document.title
+    // Der Seitentitel wird zum Dateinamen beim „Als PDF speichern“. Aufgeräumt wird erst bei der
+    // nächsten Bedienung, nicht schon bei `afterprint` (Safari, siehe printJob.ts).
+    const { data, label } = printSource.current
     const st = data?.statements.find((s) => s.tenancyId === printId)
-    if (st) document.title = `${data ? settlementTitle(data) : `Nebenkostenabrechnung ${label}`} ${st.unitName} ${st.tenantName}`.replace(/[\\/:*?"<>|]/g, '-')
-    const done = () => {
-      document.body.classList.remove('print-one')
-      document.title = prevTitle
-      setPrintId(null)
-    }
-    window.addEventListener('afterprint', done)
-    const t = setTimeout(() => window.print(), 80)
+    const job = startPrint({
+      title: st ? `${data ? settlementTitle(data) : `Nebenkostenabrechnung ${label}`} ${st.unitName} ${st.tenantName}` : document.title,
+      onDone: () => {
+        document.body.classList.remove('print-one')
+        setPrintId(null)
+      },
+    })
     return () => {
-      clearTimeout(t)
-      window.removeEventListener('afterprint', done)
+      job.cancel()
       document.body.classList.remove('print-one')
-      document.title = prevTitle
     }
-  }, [printId, data, label])
+  }, [printId])
 
   const distributed = data ? data.totalCostsCents - data.landlord.totalCents : 0
 
