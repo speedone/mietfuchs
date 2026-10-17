@@ -1,6 +1,6 @@
 // Nebenkostenmodell am Mietverhältnis (#93), die Seite der Oberfläche.
 import { expect, test } from 'vitest'
-import { COST_MODEL_LABELS, HEATING_MODEL_LABELS, SELF_SUPPLY_TENANCY_HINT, buildPersonHistory, buildSchedule, costModelBadge, costModelBody, defaultTenancyUnitId, monthPickerIso, monthPickerParts, monthPickerText, monthPickerYears, notSettledText, overlapQuestion, parsePersons, parseScheduleMonth, prepaymentColumn, scheduleMonthProblem, scheduleMonthText, showsFlatRates } from './tenancyModel'
+import { COST_MODEL_LABELS, HEATING_MODEL_LABELS, SELF_SUPPLY_TENANCY_HINT, buildPersonHistory, buildSchedule, costModelBadge, costModelBody, defaultTenancyUnitId, monthPickerEmptyLabel, monthPickerIso, monthPickerParts, monthPickerText, monthPickerYears, notSettledText, overlapQuestion, parsePersons, parseScheduleMonth, prepaymentColumn, scheduleMonthProblem, scheduleMonthText, showsFlatRates, startsSchedule } from './tenancyModel'
 import type { Tenancy, Unit } from './types'
 
 test('die Staffel der Pauschale erscheint nur bei einer Pauschale', () => {
@@ -269,4 +269,32 @@ test('Monatsauswahl für Felder mit JJJJ-MM: vollständig als JJJJ-MM, sonst unv
   expect(monthPickerIso('05', '')).toBe('05.')
   expect(monthPickerParts(monthPickerIso('05', ''))).toEqual({ month: '05', year: '' })
   expect(monthPickerParts('2026-05')).toEqual({ month: '05', year: '2026' })
+})
+
+// Durchsicht von fix/monatsauswahl, Kann 1: Eine weitere Stufe mit einem Monat vor dem Einzug galt
+// still nie (vertipptes Jahr bei einer Mieterhöhung).
+test('Staffel aus dem Formular: eine weitere Stufe vor dem Einzug wird gemeldet', () => {
+  expect(buildSchedule([{ from: '02.2025', amount: '800,00' }, { from: '03.2015', amount: '900,00' }], '2025-02-01', 'baseRent'))
+    .toEqual({ error: 'Kaltmiete-Staffel: Die Zeile ab 03.2015 liegt vor dem Einzug (02.2025) und gälte deshalb nie. Bitte prüfen Sie Monat und Jahr.' })
+  // die erste Stufe vor dem Einzug gilt ab Einzug, wie bisher
+  expect(buildSchedule([{ from: '01.2024', amount: '800,00' }], '2025-02-01', 'baseRent')).toEqual({ schedule: [{ from: '2024-01', monthlyCents: 80000 }] })
+})
+
+// Kann 2: „erste Zeile“ ist die erste Stufe, nicht die erste Position im Formular.
+test('Staffel aus dem Formular: leere Zeilen davor zählen nicht, die erste Zeile mit Betrag ist die erste Stufe', () => {
+  expect(buildSchedule([{ from: '', amount: '' }, { from: '', amount: '800,00' }], '2025-02-01', 'baseRent')).toEqual({ schedule: [{ from: '2025-02', monthlyCents: 80000 }] })
+  expect(startsSchedule([{ from: '', amount: '' }, { from: '', amount: '800,00' }], 1)).toBe(true)
+  expect(startsSchedule([{ from: '02.2025', amount: '800,00' }, { from: '', amount: '' }], 1)).toBe(false)
+  expect(startsSchedule([{ from: '', amount: '' }], 0)).toBe(true)
+})
+
+// Kann 3: Ein gespeicherter Wert mit Tag ('2024-02-15') ist kein Monat der Staffel. Die Berechnung
+// vergleicht Text ('2024-02-15' > '2024-02'), er gälte dort erst ab März; ihn hier als Februar zu
+// lesen, verschöbe beim nächsten Speichern still die Staffel. Er wird angezeigt, nicht gedeutet.
+test('Monatsauswahl: ein gespeicherter Wert, der kein Monat ist, wird benannt statt „ab Einzug“', () => {
+  expect(monthPickerEmptyLabel('2024-02-15', 'ab Einzug')).toBe('gespeichert: 2024-02-15')
+  expect(monthPickerEmptyLabel('', 'ab Einzug')).toBe('ab Einzug')
+  expect(monthPickerEmptyLabel('.2026', 'ab Einzug')).toBe('– Monat –')
+  expect(monthPickerEmptyLabel('', undefined)).toBe('– Monat –')
+  expect(scheduleMonthProblem(scheduleMonthText('2024-02-15'))).toBe('Der gespeicherte Monat „2024-02-15“ ist ungültig. Bitte Monat und Jahr neu wählen.')
 })

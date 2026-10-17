@@ -511,3 +511,14 @@ test('Personen-Staffel: die Beschriftung nennt die Staffel', async () => {
   await openTenancy('Müller')
   expect((screen.getByLabelText('Personenzahl gültig ab') as HTMLInputElement).value).toBe('2025-01-01')
 })
+
+// Durchsicht von fix/monatsauswahl, Kann 3: Ein gespeicherter Wert mit Tag zeigte „ab Einzug“.
+test('Staffeln: ein gespeicherter Wert, der kein Monat ist, steht benannt in der Auswahl und wird nicht still gespeichert', async () => {
+  page([tenancy('t1', 'Müller', { baseRents: [{ from: '2024-02-15', monthlyCents: 80000 }] })])
+  await openTenancy('Müller')
+  const monat = screen.getByRole('combobox', { name: 'Kaltmiete gültig ab: Monat' }) as HTMLSelectElement
+  expect(monat.selectedOptions[0]?.textContent).toBe('gespeichert: 2024-02-15')
+  fireEvent.click(screen.getByRole('button', { name: 'Übernehmen' }))
+  expect(await screen.findByText(/Der gespeicherte Monat „2024-02-15“ ist ungültig/, undefined, SLOW)).toBeTruthy()
+  expect(sent.some((s) => s.url.startsWith('/api/tenancies'))).toBe(false)
+})

@@ -2,7 +2,7 @@
 // das Safari auf dem Mac und Firefox nicht kennen (#287). Der Wert ist 'MM.JJJJ' (Staffeln) oder mit
 // `iso` 'JJJJ-MM'; gelesen wird beides. `emptyLabel`: was „kein Monat“ heißt, solange auch kein Jahr
 // gewählt ist (in der ersten Zeile einer Staffel „ab Einzug“, sonst nichts).
-import { monthPickerIso, monthPickerParts, monthPickerText, monthPickerYears } from '../tenancyModel'
+import { monthPickerEmptyLabel, monthPickerIso, monthPickerParts, monthPickerText, monthPickerYears } from '../tenancyModel'
 
 const MONTHS = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember']
 
@@ -25,7 +25,7 @@ export default function MonthPicker({ label, value, start = '', today, emptyLabe
       {label}
       <div className="month-picker">
         <select aria-label={`${label}: Monat`} value={month} onChange={(e) => emit(e.target.value, year)}>
-          <option value="">{!year && emptyLabel ? emptyLabel : '– Monat –'}</option>
+          <option value="">{monthPickerEmptyLabel(value, emptyLabel)}</option>
           {MONTHS.map((name, i) => {
             const mm = String(i + 1).padStart(2, '0')
             return <option key={mm} value={mm}>{name}</option>

@@ -175,8 +175,9 @@ export function buildSchedule(
   const { name, change } = SCHEDULES[kind]
   const schedule: { from: string; monthlyCents: number }[] = []
   for (const [i, row] of rows.entries()) {
-    if (!row.from.trim() && !row.amount.trim()) continue
-    const first = i === 0
+    if (isBlankRow(row)) continue
+    // Die erste Stufe ist die erste Zeile mit Inhalt, nicht die erste im Formular (Durchsicht, Kann 2).
+    const first = startsSchedule(rows, i)
     let from: string | null
     if (row.from.trim()) {
       from = parseScheduleMonth(row.from)
@@ -188,12 +189,25 @@ export function buildSchedule(
     }
     const cents = parseEuro(row.amount)
     if (cents === null || cents < 0) return { error: `Bitte den Betrag der ${name} prüfen.` }
+    // Eine weitere Stufe vor dem Einzug gälte nie: Die erste gilt ab Einzug, und diese läge davor
+    // (etwa ein vertipptes Jahr bei einer Mieterhöhung; Durchsicht, Kann 1).
+    if (!first && from < start.slice(0, 7)) {
+      return { error: `${name}: Die Zeile ab ${scheduleMonthText(from)} liegt vor dem Einzug (${scheduleMonthText(start.slice(0, 7))}) und gälte deshalb nie. Bitte prüfen Sie Monat und Jahr.` }
+    }
     if (schedule.some((e) => e.from === from)) {
       return { error: `${name}: Zwei Zeilen gelten ab ${scheduleMonthText(from)}. Bitte wählen Sie für jede Zeile einen eigenen Monat.` }
     }
     schedule.push({ from, monthlyCents: cents })
   }
   return { schedule }
+}
+
+const isBlankRow = (row: { from: string; amount: string }): boolean => !row.from.trim() && !row.amount.trim()
+
+// Beginnt Zeile i die Staffel, steht also davor keine Zeile mit Inhalt? Nur dort heißt ein leerer
+// Monat „ab Einzug“, beim Speichern wie in der Auswahl.
+export function startsSchedule(rows: readonly { from: string; amount: string }[], i: number): boolean {
+  return rows.slice(0, i).every(isBlankRow)
 }
 
 // Monatsauswahl der Staffeln (MonthPicker): zwei Auswahllisten statt Freitext, damit jeder Browser
@@ -211,6 +225,16 @@ export function monthPickerParts(text: string): { month: string; year: string } 
   const month = m[1] !== undefined && Number(m[1]) >= 1 && Number(m[1]) <= 12 ? m[1] : ''
   const year = m[2] !== undefined && Number(m[2]) >= YEAR_MIN && Number(m[2]) <= YEAR_MAX ? m[2] : ''
   return { month, year }
+}
+
+// Der Text des leeren Monats. Ein gespeicherter Wert, den die Auswahl nicht lesen kann (etwa
+// '2024-02-15' aus einem Aufruf an der Oberfläche vorbei), wird benannt statt „ab Einzug“ zu zeigen:
+// Die Berechnung vergleicht Text, '2024-02-15' gälte dort erst ab März, und ihn als Februar zu lesen,
+// verschöbe beim Speichern still die Staffel (Durchsicht, Kann 3). Das Speichern meldet ihn.
+export function monthPickerEmptyLabel(value: string, emptyLabel: string | undefined): string {
+  const { month, year } = monthPickerParts(value)
+  if (value.trim() && !month && !year) return `gespeichert: ${value.trim()}`
+  return !year && emptyLabel ? emptyLabel : '– Monat –'
 }
 
 export function monthPickerText(month: string, year: string): string {
