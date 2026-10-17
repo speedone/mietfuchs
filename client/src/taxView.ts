@@ -189,6 +189,9 @@ export type PrepaymentNote = {
   // Setzt die Abrechnung eine Jahreskorrektur an? Dann ist das einen eigenen Satz wert, denn es
   // ist die Ursache, die der Vermieter selbst eingetragen hat und wiedererkennt.
   jahreskorrektur: boolean
+  // Ist die Abrechnung abgeschlossen? Ihr Ansatz ist dann eingefroren, das Soll rechnet heute neu;
+  // auch das ist ein Abstand, den die Seite nennt, ohne ihm eine Ursache zuzuschreiben (K3).
+  closed: boolean
 }
 
 export function prepaymentNote(report: TaxReport): PrepaymentNote | null {
@@ -199,6 +202,7 @@ export function prepaymentNote(report: TaxReport): PrepaymentNote | null {
     settlementCents: prepaymentSettlementCents,
     sollCents: prepaymentSollCents,
     jahreskorrektur: prepaymentOverridden,
+    closed: report.income.prepaymentSettlementClosed === true,
   }
 }
 

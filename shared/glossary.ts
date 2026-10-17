@@ -204,10 +204,19 @@ export const GLOSSARY = {
   },
   prepayment: {
     title: 'Vorauszahlung',
-    short: 'Ein monatlicher Betrag auf die Nebenkosten, über den einmal im Jahr abgerechnet wird; danach gibt es eine Nachzahlung oder ein Guthaben.',
+    short: 'Ein monatlicher Betrag auf die Nebenkosten, über den einmal im Jahr abgerechnet wird; danach gibt es eine Nachzahlung oder ein Guthaben. Abgezogen werden die Vorauszahlungen, die der Mieter für den Abrechnungszeitraum tatsächlich geleistet hat.',
     example: '150 € im Monat sind 1.800 € im Jahr. Betragen die Kosten 2.000 €, zahlt der Mieter 200 € nach.',
-    norm: '§ 556 Abs. 2, § 560 Abs. 4 BGB',
-    needed: 'Ja, wenn der Mietvertrag Vorauszahlungen vorsieht, der Normalfall. Nach der Abrechnung dürfen Sie sie angemessen anpassen.',
+    norm: '§ 556 Abs. 2 und 3, § 560 Abs. 4 BGB; BGH, Urteil vom 18.05.2011, VIII ZR 240/10',
+    needed: 'Ja, wenn der Mietvertrag Vorauszahlungen vorsieht, der Normalfall. Mietfuchs setzt die vereinbarte Staffel an, im Ein- und Auszugsmonat anteilig nach Kalendertagen. Hat der Mieter anders gezahlt, tragen Sie die gezahlte Summe in der Abrechnung mit „✎ anpassen“ ein. Nach der Abrechnung dürfen Sie die Vorauszahlung angemessen anpassen.',
+  },
+  // #311: Der Hinweis „Vorauszahlung im angebrochenen Monat“ verweist hierher. Die Monatsregel ist eine
+  // Auslegung von Mietfuchs (Entscheidung R-1); die Alternative 1/30 steht ausdrücklich daneben.
+  partialMonth: {
+    title: 'Angebrochener Monat',
+    short: 'Beginnt oder endet das Mietverhältnis im Lauf eines Monats, setzt Mietfuchs Miete, Vorauszahlung und Pauschale dieses Monats nach Kalendertagen an.',
+    example: 'Einzug am 15.03., 150 € Vorauszahlung im Monat: 17 von 31 Tagen sind 150 € × 17/31 = 82,26 €. Auszug am 15.06.: 15 von 30 Tagen sind 75,00 €.',
+    norm: 'Weder ein Gesetz noch eine Entscheidung des BGH regelt die Methode. Anteilig nach Kalendertagen ist eine Auslegung von Mietfuchs, gewählt, weil Mietfuchs auch die Kosten nach Kalendertagen verteilt. Ebenso vertretbar ist ein Tagessatz von 1/30 der Monatsrate nach der Wertung des § 191 BGB; er ergibt im Beispiel 85,00 € statt 82,26 €, bei Einzug am 15.02.2025 70,00 € statt 75,00 €.',
+    needed: 'Nur bei Ein- oder Auszug im Lauf eines Monats. Regelt Ihr Mietvertrag es anders, oder hat der Mieter anders gezahlt, tragen Sie die gezahlte Summe in der Abrechnung bei „abzüglich geleisteter Vorauszahlungen“ mit „✎ anpassen“ ein. Maßgeblich ist, was der Mieter tatsächlich gezahlt hat.',
   },
   flatRate: {
     title: 'Betriebskostenpauschale',
