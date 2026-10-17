@@ -5,7 +5,7 @@ import { usePeriod } from '../period'
 import { periodSpanText } from '../periodForm'
 import { CalendarYearSelect } from '../components/PeriodSelect'
 import { useProperty, withProperty } from '../property'
-import { bookingDate, newPaymentDate, rowStanding, showDecemberNote } from '../ledgerView'
+import { bookingDate, newPaymentDate, rowStanding, shareText, showDecemberNote } from '../ledgerView'
 import Drawer from '../components/Drawer'
 import PageHeader from '../components/PageHeader'
 import { useToast, useConfirm } from '../components/feedback'
@@ -233,15 +233,17 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
                 <div className="rent-grid">
                   {r.months.map((mo) => {
                     const cls = mo.sollCents === 0 ? 'none' : mo.status
+                    const partial = shareText(mo)
                     return (
                       <div
                         key={mo.month}
                         className={`rent-month ${cls}`}
-                        title={mo.sollCents === 0 ? 'kein Mietverhältnis' : `Soll ${fmtEuro(mo.sollCents)} · gezahlt ${fmtEuro(mo.paidCents)}${mo.status === 'notDue' ? ' · noch nicht fällig' : ''}`}
+                        title={mo.sollCents === 0 ? 'kein Mietverhältnis' : `Soll ${fmtEuro(mo.sollCents)}${partial ? ` (${partial})` : ''} · gezahlt ${fmtEuro(mo.paidCents)}${mo.status === 'notDue' ? ' · noch nicht fällig' : ''}`}
                         onClick={() => bookMonth(r.tenancyId, mo)}
                       >
                         <div className="m">{MONTHS[mo.month - 1]}</div>
                         <div className="a">{mo.sollCents === 0 ? '—' : fmtEuro(mo.sollCents)}</div>
+                        {partial && mo.sollCents !== 0 && <div className="m">{partial}</div>}
                       </div>
                     )
                   })}

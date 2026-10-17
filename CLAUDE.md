@@ -2161,9 +2161,31 @@ die ganze fachliche Komplexität:
   § 2 HeizkostenV außerhalb des selbstbewohnten Zweifamilienhauses. Die drei Listen der
   Kostenarten (Oberfläche, KI-Schema, Anlage V) hält categories.test.ts zusammen.
 - **Staffeln statt Neuanlage**: Personenzahl (`personHistory`) und Vorauszahlung
-  (`prepayments`, `from: YYYY-MM`) werden als „ab Datum gilt Wert" geführt. Tatsächlich
-  gezahlte Vorauszahlungen pro Jahr können via `prepaymentOverrides` überschrieben werden
-  (haben Vorrang — rechtlich zählt das tatsächlich Gezahlte).
+  (`prepayments`, `from: YYYY-MM`) werden als „ab Datum gilt Wert" geführt. Die tatsächlich
+  gezahlten Vorauszahlungen je Abrechnungszeitraum lassen sich via `prepaymentOverrides`
+  eintragen und haben Vorrang, denn anzusetzen ist, was der Mieter für den Abrechnungszeitraum
+  tatsächlich geleistet hat (BGH VIII ZR 240/10 vom 18.05.2011, Rn. 16). Mietfuchs rechnet ohne
+  Eintrag mit der Staffel, also dem Soll; auf das Ist kommt es durch die Jahreskorrektur, und
+  `prepayment.arrears` und `prepayment.partial-month` weisen darauf hin.
+  **Die Monatsregel steht an einer Stelle** (#311, `monthShare` und `rateInMonth` in calc.ts) und
+  gilt für die Abrechnung (Vorauszahlung, Heizstaffel) wie für das Mietkonto (Kaltmiete,
+  Vorauszahlung, Heizstaffel, Pauschale). Ein Monat zählt, sobald das Mietverhältnis an einem
+  seiner Tage besteht; im angebrochenen Ein- und Auszugsmonat gilt die Rate nach Kalendertagen,
+  `round(Rate × Tage / Tage des Monats)` je Monat in Cent, ein voller Monat ohne Rundung. Vorher
+  zählte ein Monat nur, wenn das Mietverhältnis am Monatsersten bestand, falsch in beide
+  Richtungen (Einzug am 15.03. bei 150 €: 82,26 € zu wenig angerechnet; Auszug am 15.06.: 75,00 €
+  zu viel). **Das ist eine Auslegung**, wie `VACANCY_PERSONS`: Ein Gesetz oder eine
+  BGH-Entscheidung zur Methode gibt es nicht. Kalendertage, weil die Kostenseite derselben
+  Abrechnung nach Kalendertagen verteilt; 1/30 je Tag nach der Wertung des § 191 BGB ist ebenso
+  vertretbar und weicht um Euro-Beträge ab (bei 150 € und Einzug am 15.: 2,74 € im März, 5,00 € im
+  Februar). § 556b Abs. 1 BGB regelt nur die Fälligkeit und trägt die Regel nicht. Bei
+  getrennter Heizstaffel wird je Staffel gerundet (32,90 € + 49,35 € = 82,25 €), weil die Beträge
+  bei Weg d zwei Abrechnungen gehören. Der Hinweis `prepayment.partial-month` (Stufe `hint`,
+  `INFORMATIONAL`) nennt den angesetzten Betrag und Beispielsummen mit und ohne vollen Monat,
+  ausdrücklich als Beispiel, das volle Zahlung der übrigen Monate voraussetzt; `prepaymentNote`
+  nennt dem Mieter den Anteil. Abgeschlossene Abrechnungen bleiben eingefroren, `deviation`
+  zeigt den Unterschied. Eine Invariante in calc.test.ts hält Abrechnung und Mietkonto je
+  Mietverhältnis gleich.
 - **Zeiträume** sind ISO-Strings mit inklusiven Grenzen, in UTC gerechnet; Tagesanteile zählen
   für Teiljahre. `end: null` = offenes Mietverhältnis.
 - **Zähler**: Ablesungen → Verbrauchssegmente (`meterSegments`), tagesanteilig interpoliert
@@ -2482,7 +2504,12 @@ die ganze fachliche Komplexität:
   Verteilung bereits abgerechneter Jahre verändern würde.
 - **Mietkonto** (`rentLedger`): Kaltmiete-Staffel (`baseRents`) + Vorauszahlung ergeben das
   monatliche Soll (Bruttomiete); Zahlungseingänge (`payments`) werden Jan→Dez FIFO auf die
-  Monate verteilt (Status bezahlt/teilweise/offen).
+  Monate verteilt (Status bezahlt/teilweise/offen). Im angebrochenen Ein- und Auszugsmonat ist
+  das Soll anteilig nach Kalendertagen, mit derselben Funktion wie die Abrechnung (`rateInMonth`,
+  #311); der Monat trägt dann `share` und die Seite zeigt „anteilig 17/31 Tage“. Vorher fehlte im
+  Einzugsmonat das ganze Soll, und im Auszugsmonat meldete `prepayment.arrears` einen Rückstand,
+  den es nicht gab. #281 (Übertrag, Tilgung nach § 366 BGB) baut auf dieser Funktion auf; die
+  Verteilung der Zahlungen bleibt dort.
 - **Steuer/Anlage V** (`taxReport`): aggregiert Einnahmen (das Soll aus `rentLedger`, das Ist
   unmittelbar aus den Zahlungen) und
   Werbungskosten (Kostenpositionen nach `ANLAGE_V_GROUP`-Mapping), liefert §35a-Summe,
@@ -2533,9 +2560,17 @@ die ganze fachliche Komplexität:
   Soll-Summe ist unsichtbar falsch und wandert in die Steuererklärung. Dieselbe Abwägung wie beim
   `?? []` an der Schnappschuss-Grenze.
   **Drei Sichten, drei Zahlen, und nur die Steuerübersicht war falsch.** Die Abrechnung setzt die
-  tatsächlich geleisteten Vorauszahlungen an (`prepaymentOverrides` hat Vorrang), weil sie es
-  muss: Nach ständiger Rechtsprechung des BGH ist eine Abrechnung auf Soll-Basis materiell falsch
-  und trägt nach Ablauf der Frist des § 556 Abs. 3 BGB keinen Nachforderungsanspruch mehr. Das
+  Staffel an und die Jahreskorrektur, wenn sie erfasst ist (`prepaymentOverrides` hat Vorrang);
+  maßgeblich ist das tatsächlich Geleistete. Anzusetzen sind die Vorauszahlungen, die der Mieter
+  für den Abrechnungszeitraum tatsächlich geleistet hat (BGH VIII ZR 240/10 vom 18.05.2011, Rn. 16;
+  VIII ZA 2/08); Soll statt Ist ist, wenn beide abweichen, ein inhaltlicher und kein formeller
+  Fehler. Nach Ablauf der Frist des § 556 Abs. 3 BGB ist nach Satz 3 die Nachforderung über das
+  Ergebnis einer rechtzeitig erteilten Abrechnung hinaus ausgeschlossen, ohne rechtzeitige
+  Abrechnung die Nachforderung über die vereinbarten Vorauszahlungen hinaus (VIII ZR 190/06;
+  VIII ZR 261/06); eine erteilte
+  Abrechnung lässt sich danach grundsätzlich nicht mehr zulasten des Mieters korrigieren, auch
+  nicht bei zu hoch angesetzten Vorauszahlungen (VIII ZR 133/10, Rn. 12 f.; Ausnahme bei einem auf
+  den ersten Blick erkennbaren, kurz nach Fristablauf berichtigten Fehler, Rn. 15). Das
   Mietkonto führt das monatliche Soll, denn eine Jahreszahl auf zwölf Monate zu verteilen wäre
   erfunden. `taxReport` führt beide nebeneinander (`prepaymentSollCents` und
   `prepaymentSettlementCents` samt `prepaymentOverridden`) und **entnimmt die zweite der

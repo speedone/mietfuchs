@@ -159,6 +159,9 @@ export type RentMonthStatus = 'paid' | 'partial' | 'open' | 'notDue'
 
 export type RentMonth = {
   month: number // 1..12
+  // Nur im angebrochenen Ein- oder Auszugsmonat (#311): Tage des Mietverhältnisses im Monat und Tage
+  // des Monats. Kaltmiete, Vorauszahlung und Pauschale sind dann nach Kalendertagen angesetzt.
+  share?: { days: number, of: number }
   baseRentCents: number
   prepaymentCents: number
   flatRateCents: number // Pauschale (#93)
@@ -1007,8 +1010,8 @@ export type TaxReport = {
     flatRateSollCents: number // Betriebskostenpauschalen, vereinbart (#93)
     // Was die Abrechnung desselben Jahres bei den Vorauszahlungen ansetzt, bei abgeschlossener
     // Abrechnung ihr eingefrorener Stand. Das ist nicht dasselbe wie `prepaymentSollCents`, und
-    // der Unterschied ist gewollt: Die Abrechnung muss die tatsächlich geleisteten
-    // Vorauszahlungen einstellen (§ 556 BGB, ständige Rechtsprechung des BGH), und sie verteilt
+    // der Unterschied ist gewollt: Die Abrechnung nimmt die Jahreskorrektur, wenn sie erfasst ist,
+    // denn maßgeblich ist das tatsächlich Geleistete (BGH VIII ZR 240/10, Rn. 16), und sie verteilt
     // nur über Wohnungen, die zur Abrechnungseinheit gehören. Die Übersicht führt beide, damit
     // der Unterschied dasteht, statt dass jeder Nutzer ihn selbst herleitet (#70). `null`, wenn
     // kein Abrechnungszeitraum dem Kalenderjahr gleicht (#208, Entwurf 3.10): Eine Zahl aus zwei
@@ -1018,6 +1021,10 @@ export type TaxReport = {
     // Korrektur auf einem Mietverhältnis außerhalb der Abrechnungseinheit ist erfasst, geht aber
     // in keine Abrechnung ein. Gelesen wird deshalb dieselbe Quelle wie bei der Zahl darüber.
     prepaymentOverridden: boolean
+    // Stammt `prepaymentSettlementCents` aus einer abgeschlossenen Abrechnung? Dann steht ihr Ansatz,
+    // wie er beim Abschluss gerechnet wurde, während das Soll heute neu gerechnet wird (Durchsicht
+    // #311, K3). Fehlt das Feld, ist es die heutige Rechnung.
+    prepaymentSettlementClosed?: true
     sollCents: number // Summe Soll (brutto)
     // Tatsächlich zugeflossen (§ 11 Abs. 1 Satz 1 EStG): alle Zahlungen mit Datum im Jahr,
     // unabhängig davon, ob das Mietkonto für sie eine Zeile führt. Siehe calc.ts.

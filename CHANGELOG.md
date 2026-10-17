@@ -17,6 +17,28 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   entsteht einer erst mit der Schätzung, fragt Mietfuchs erneut. Warnungen und Hinweise fragen nicht nach. Die Prüfung macht der Server,
   ein Fenster von vor dem Update schließt deshalb nicht mehr still ab, sondern meldet die Fehler.
 
+### Behoben
+
+- **Vorauszahlung und Miete im Einzugs- und Auszugsmonat** ([#311](https://github.com/speedone/mietfuchs/issues/311)):
+  Beginnt oder endet ein Mietverhältnis im Lauf eines Monats, setzt Mietfuchs Vorauszahlung,
+  Heizvorauszahlung, Kaltmiete und Pauschale dieses Monats jetzt anteilig nach Kalendertagen an,
+  in der Abrechnung wie im Mietkonto. Vorher zählte ein Monat nur, wenn das Mietverhältnis am
+  Monatsersten bestand: Bei 150 € Vorauszahlung und Einzug am 15.03. fehlten dem Mieter 82,26 €,
+  bei Auszug am 15.06. wurden ihm 75,00 € zu viel gutgeschrieben. Das Mietkonto führte im
+  Einzugsmonat kein Soll und im Auszugsmonat das volle, und die Abrechnung meldete dann einen
+  Rückstand, den es nicht gab. Anteilig nach Kalendertagen ist eine Auslegung von Mietfuchs; ein
+  neuer Hinweis „Vorauszahlung im angebrochenen Monat“ nennt den angesetzten Betrag, und die
+  Abrechnung nennt ihn dem Mieter. Was ändert sich an bestehenden Daten: Offene Abrechnungen mit
+  Ein- oder Auszug außerhalb des Monatsersten bzw. -letzten ändern sich; prüfen Sie sie. Abgeschlossene
+  Abrechnungen bleiben, wie sie versendet wurden; die Abweichung zeigt Mietfuchs je Mieter an.
+  Hat der Mieter im angebrochenen Monat anders gezahlt, tragen Sie die gezahlte Summe in der
+  Abrechnung bei „abzüglich geleisteter Vorauszahlungen“ mit „✎ anpassen“ ein.
+- Erklärungen zur Vorauszahlung berichtigt ([#313](https://github.com/speedone/mietfuchs/issues/313)):
+  Die Steuerübersicht schrieb, die Abrechnung stelle die tatsächlich geleisteten Vorauszahlungen
+  ein; sie setzt die vereinbarten an, oder den mit „✎ anpassen“ erfassten Betrag. Lexikon und
+  Anleitung „Mieterwechsel und Leerstand im Jahr“ nennen jetzt, dass gegen das tatsächlich
+  Gezahlte abgerechnet wird.
+
 ## [0.11.2] – 2026-10-17
 
 ### Geändert

@@ -37,6 +37,7 @@ import type { Database, Executor, Transaction } from './client.ts'
 import { dryRun, lostClaims, outcomeOf, shownEffects, type Outcome } from './dryRun.ts'
 import { monthsText, passedDeadlineText } from './periodChange.ts'
 import { readClosedSettlements, readCostItems, readHeatingPlants, readProperties, readStock, readTenancies, readUnits } from './read.ts'
+import { tenancyMonths } from '../calc.ts'
 import { PeriodError } from './repository.ts'
 import { closedHeatingSettlements, heatingPlants, heatingPrepaymentOverrides, heatingPrepayments, heatingSeparateSpans, prepaymentOverrides, prepayments } from './schema.ts'
 
@@ -81,8 +82,6 @@ const rate = (schedule: readonly PrepaymentEntry[], month: string): number => {
   for (const e of [...schedule].sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0))) if (e.from <= month) r = e.monthlyCents
   return r
 }
-const activeMonths = (t: Pick<Tenancy, 'start' | 'end'>, p: Pick<BillingPeriod, 'from' | 'to'>): string[] =>
-  periodMonths(p).filter((m) => t.start <= `${m}-01` && !(t.end !== null && t.end < `${m}-01`))
 const euro = (cents: number): string => `${(cents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`
 const objectOr = (value: unknown): Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value) ? Object.fromEntries(Object.entries(value)) : {}
@@ -182,10 +181,10 @@ function planOn(c: Ctx, rawMonth: unknown): Plan {
     const key = parsePeriodKey(schluessel)
     const p = key === null ? null : periodOfKey(c.objectRules, key)
     if (p === null || c.closedP.some((q) => q.key === p.key)) return []
-    const after = activeMonths(t, p).filter((m) => m >= x)
+    const after = tenancyMonths(t, p).filter((m) => m >= x)
     const first = after[0]
     if (first === undefined) return []
-    const asks: Ask[] = [{ kind: 'total', period: p, months: activeMonths(t, p) }]
+    const asks: Ask[] = [{ kind: 'total', period: p, months: tenancyMonths(t, p) }]
     const open: { period: BillingPeriod; months: string[] }[] = []
     for (const h of periodsBetween(c.rules, `${first}-01`, p.to)) {
       const months = after.filter((m) => separateOwner(next, c.objectRules, m)?.key === h.key)
@@ -270,7 +269,7 @@ function planOff(c: Ctx, rawUntil: unknown, rawMonth: unknown): Plan {
     const deleted = (t.heatingPrepaymentOverrides ?? []).filter((o) => o.plantId === c.plant.id && o.period >= until.key)
     return periodsBetween(c.objectRules, until.from, horizon).flatMap((p): OverrideEntry[] => {
       if (c.closedP.some((q) => q.key === p.key)) return []
-      const months = activeMonths(t, p)
+      const months = tenancyMonths(t, p)
       if (!months.some(ownerChanges)) return []
       const had = t.prepaymentOverrides[p.key]
       const touched = deleted.some((o) => {

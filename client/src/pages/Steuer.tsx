@@ -205,10 +205,15 @@ export default function Steuer({ settings }: Props) {
                 Die Abrechnung {year} setzt bei den Vorauszahlungen{' '}
                 <strong>{fmtEuro(note.settlementCents)}</strong> an, hier steht das vereinbarte Soll
                 von {fmtEuro(note.sollCents)}. Beide Zahlen sind richtig und beantworten verschiedene
-                Fragen: Die Abrechnung stellt die tatsächlich geleisteten Vorauszahlungen ein und
-                verteilt nur über Wohnungen, die zur Abrechnungseinheit gehören.
+                Fragen: Die Abrechnung setzt die vereinbarten Vorauszahlungen an, oder den tatsächlich
+                gezahlten Betrag, wenn Sie ihn dort mit „✎ anpassen“ erfasst haben, und verteilt nur über
+                Wohnungen, die zur Abrechnungseinheit gehören.
                 {note.jahreskorrektur && <> Für {year} ist dazu eine <strong>Jahreskorrektur der
                 Vorauszahlungen</strong> erfasst.</>}
+                {note.closed && <> Die Abrechnung {year} ist abgeschlossen: Ihr Ansatz steht so da, wie
+                er beim Abschluss gerechnet wurde, das Soll rechnet Mietfuchs heute. Rechnet Mietfuchs
+                inzwischen anders, zum Beispiel im angebrochenen Ein- oder Auszugsmonat, zeigt die Seite
+                Abrechnung den Unterschied.</>}
               </p>
             )}
 

@@ -29,6 +29,7 @@ import type { Database, Transaction } from './client.ts'
 import { dryRun, earliestTenancyStart, lostClaims, outcomeOf, shownEffects, type Outcome } from './dryRun.ts'
 import { checkRules, monthsText, passedDeadlineText } from './periodChange.ts'
 import { readClosedSettlements, readCostItems, readHeatingPlants, readProperties, readStock, readTenancies, readUnits } from './read.ts'
+import { tenancyMonths } from '../calc.ts'
 import { patchCostItemIn, PeriodError } from './repository.ts'
 import {
   closedHeatingSettlementHistory, closedHeatingSettlements, costItems, heatingPeriodChanges, heatingPeriods, heatingPlants, heatingPrepaymentOverrides, prepaymentOverrides,
@@ -48,8 +49,6 @@ function affectedOf(before: PeriodRules, next: PeriodRules, key: PeriodKey): Aff
 }
 
 const sameRules = (a: PeriodRules, b: PeriodRules): boolean => a.startMonth === b.startMonth && a.changes.join() === b.changes.join()
-const activeMonths = (t: Pick<Tenancy, 'start' | 'end'>, p: BillingPeriod): string[] =>
-  periodMonths(p).filter((m) => t.start <= `${m}-01` && !(t.end !== null && t.end < `${m}-01`))
 const overlapDays = (a: BillingPeriod, b: BillingPeriod): number => {
   const from = a.from > b.from ? a.from : b.from
   const to = a.to < b.to ? a.to : b.to
@@ -181,7 +180,7 @@ async function planHeatingPeriodChange(db: Database, plantId: string, rawRules: 
   const askTotal = (t: Tenancy, p: BillingPeriod): void => {
     if (closedKeys.has(p.key)) return
     const e = entryOf(t)
-    e.ask.set(`total:${p.key}`, { kind: 'total', period: p, months: activeMonths(t, p) })
+    e.ask.set(`total:${p.key}`, { kind: 'total', period: p, months: tenancyMonths(t, p) })
     e.dropTotals.add(p.key)
     const cents = t.prepaymentOverrides[p.key]
     if (cents !== undefined && !e.from.some((f) => f.kind === 'total' && f.key === p.key)) e.from.push({ kind: 'total', key: p.key, label: periodLabel(p), cents })
@@ -192,9 +191,9 @@ async function planHeatingPeriodChange(db: Database, plantId: string, rawRules: 
       if (o.plantId !== plantId) continue
       const a = changed(o.period)
       if (a === null) continue
-      const withMonths = periodsBetween(next, a.old.from, a.old.to).map((p) => ({ period: p, months: activeMonths(t, p) })).filter((x) => x.months.length > 0)
+      const withMonths = periodsBetween(next, a.old.from, a.old.to).map((p) => ({ period: p, months: tenancyMonths(t, p) })).filter((x) => x.months.length > 0)
       const one = withMonths.length === 1 ? withMonths[0] : undefined
-      if (one && separateNow(one.period) && one.months.join() === activeMonths(t, a.old).join()) {
+      if (one && separateNow(one.period) && one.months.join() === tenancyMonths(t, a.old).join()) {
         if (one.period.key !== o.period) overrideRekeys.push({ tenancyId: t.id, from: o.period, to: one.period.key })
         continue
       }
@@ -217,7 +216,7 @@ async function planHeatingPeriodChange(db: Database, plantId: string, rawRules: 
     for (const schluessel of Object.keys(t.prepaymentOverrides)) {
       const key = parsePeriodKey(schluessel)
       const p = key === null ? null : periodOfKey(objectRules, key)
-      if (p !== null && activeMonths(t, p).some(ownerChanges)) askTotal(t, p)
+      if (p !== null && tenancyMonths(t, p).some(ownerChanges)) askTotal(t, p)
     }
   }
 

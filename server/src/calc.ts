@@ -464,6 +464,9 @@ const noticeKinds = {
   'law.value-overridden': { level: 'hint', title: 'Selbst eingetragener Rechtswert', terms: ['legalBasis'] },
   'model.prepayment-unsettled': { level: 'warning', title: 'Vorauszahlung ohne Abrechnung', terms: ['prepayment', 'flatRate'] },
   'prepayment.arrears': { level: 'warning', title: 'Rückstand im Mietkonto', terms: ['prepayment'] },
+  // #311: ein Hinweis, denn nichts ist falsch erfasst; die Monatsregel ist eine Auslegung und der
+  // Vermieter prüft sie am tatsächlich Gezahlten (INFORMATIONAL, färbt die Ampel nicht).
+  'prepayment.partial-month': { level: 'hint', title: 'Vorauszahlung im angebrochenen Monat', terms: ['prepayment', 'partialMonth'] },
   // #141: ein Hinweis und kein Fehler, denn eine vereinbarte Änderung ist zulässig.
   'key.changed-from-previous-year': { level: 'hint', title: 'Umlageschlüssel anders als im Vorjahr', terms: ['keyChange', 'allocationKey'] },
   // Dieselbe Rechnung zweimal erfasst? (Zusammenspiel #141 und #170, shared/duplicates.ts) Ein
@@ -777,35 +780,97 @@ export function consumptionOverview(snapshot: Snapshot): ConsumptionOverviewRow[
 
 // ---------- Vorauszahlungen ----------
 
-// Vorauszahlungen eines Abrechnungszeitraums (#208): pro Monat des Zeitraums zählt der
-// Staffelbetrag, der am Monatsersten gilt — sofern das Mietverhältnis am Monatsersten besteht. Eine
-// Korrektur für den Zeitraum (tatsächlich gezahlter Betrag) hat immer Vorrang, denn rechtlich sind
-// die tatsächlich geleisteten Vorauszahlungen anzusetzen.
-function basePrepaymentCents(tenancy: SnapshotTenancy, period: Pick<BillingPeriod, 'key' | 'from' | 'to'>): { cents: number, overridden: boolean } {
+// **Die Monatsregel (#311), eine Stelle für Abrechnung und Mietkonto.** Ein Monat zählt, wenn das
+// Mietverhältnis an mindestens einem seiner Tage besteht (`days > 0`, inklusive Grenzen wie überall,
+// §§ 187 Abs. 2, 188 BGB: Mietbeginn am 15. zählt den 15. mit, Mietende am 15. heißt Ablauf dieses
+// Tages). Im angebrochenen Ein- und Auszugsmonat gilt die Staffelrate nach Kalendertagen:
+// round(Rate × Tage im Mietverhältnis / Tage des Kalendermonats), je Monat in Cent; ein voller Monat
+// ergibt die Rate ohne Rundung. Vorher zählte ein Monat nur, wenn das Mietverhältnis am Monatsersten
+// bestand: Im Einzugsmonat fehlte die ganze Rate, im Auszugsmonat stand sie voll da.
+//
+// **Das ist eine Auslegung von Mietfuchs** (wie `VACANCY_PERSONS`, #177). Ein Gesetz oder eine
+// BGH-Entscheidung zur Teilmonatsmiete gibt es nicht. Getragen ist sie davon, dass die Miete Entgelt
+// für die Gebrauchsüberlassung ist (§ 535 BGB) und außerhalb der Mietzeit keine geschuldet ist, mangels
+// Abrede also anteilig (so für ein nach Monaten bemessenes Entgelt AG Hamburg, 29.04.2022, 48 C 305/21,
+// eine Kleingartenpacht, nur als Beispiel aus der Instanz). Der Teiler sind die Kalendertage, weil die
+// Kostenseite derselben Abrechnung tagesgenau nach Kalendertagen verteilt; 1/30 je Tag nach der Wertung
+// des § 191 BGB (BAG 5 AZR 251/11 im Arbeitsrecht) ist ebenso vertretbar und weicht um Euro-Beträge ab
+// (bei 150 € und Einzug am 15. sind es 2,74 € im März 2025 und 5,00 € im Februar 2025). Maßgeblich bleibt, was der Mieter für den Zeitraum
+// tatsächlich geleistet hat (BGH VIII ZR 240/10 vom 18.05.2011, Rn. 16); dafür ist die Jahreskorrektur
+// da, und `prepayment.partial-month` weist darauf hin.
+export function monthShare(t: { start: string, end: string | null }, month: string): { days: number, of: number } {
+  const of = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).getUTCDate()
+  return { days: rangeOverlapDays(t.start, t.end, `${month}-01`, `${month}-${String(of).padStart(2, '0')}`), of }
+}
+
+// Die Monate eines Zeitraums, die nach der Monatsregel zum Mietverhältnis gehören (`days > 0`), auch
+// der angebrochene Ein- und Auszugsmonat. Die Rückfragen beim Wechsel des Zeitraums, der Heizperiode
+// und der getrennten Heizkostenabrechnung zählen mit dieser Funktion, damit sie dieselben Monate
+// abfragen, die die Abrechnung anrechnet (Durchsicht #311, M1/S1).
+export const tenancyMonths = (t: { start: string, end: string | null }, p: Pick<BillingPeriod, 'from' | 'to'>): string[] =>
+  periodMonths(p).filter((m) => monthShare(t, m).days > 0)
+
+// Die Staffelrate eines Monats nach der Monatsregel: 0 ohne Tag im Mietverhältnis, die Rate im vollen
+// Monat, sonst tagesanteilig auf Cent gerundet. Wer zählt, ob ein Monat dazugehört, fragt
+// `monthShare(…).days > 0`; wer rechnet, nimmt diese Funktion. Gerundet wird je Monat und
+// Mietverhältnis (R-1). Beim Mieterwechsel im Monat ergeben die beiden Anteile deshalb nicht immer
+// genau eine Rate: Meist passt es (100 € und 10/31 + 21/31 sind 32,26 € + 67,74 €), aber fallen beide
+// Anteile genau auf einen halben Cent, runden beide auf, bei 150,01 € und 15/30 + 15/30 also je
+// 75,01 €, zusammen 1 Cent mehr als die Rate. Mit gleicher Rate bei beiden Mietern kann so höchstens
+// 1 Cent zu viel entstehen, bei verschiedenen Raten ist die Summe ohnehin keine Rate. Das ist gewollt
+// und kein Fehler: Jeder Mieter schuldet seinen eigenen Anteil, einen gemeinsamen Restcent wie bei
+// `distributeCents` gibt es zwischen zwei Mietverhältnissen nicht.
+export function rateInMonth(schedule: readonly MonthlySchedule[], t: { start: string, end: string | null }, month: string): number {
+  const { days, of } = monthShare(t, month)
+  if (days === 0) return 0
+  const rate = rateAtMonth(schedule, month)
+  if (days >= of) return rate
+  return Math.sign(rate) * Math.round(Math.abs(rate) * days / of)
+}
+
+// Ein angebrochener Monat, in dem eine Abrechnung Vorauszahlung anteilig anrechnet (#311): `cents` ist
+// der angesetzte Betrag, `fullCents` die volle Rate desselben Monats, beides für das, was diese
+// Abrechnung anrechnet. `heatingCents`/`heatingFullCents` sind der Heizanteil daran (je Staffel
+// gerundet, Entscheidung R-6), `elsewhereHeating…` die Heizvorauszahlung des Monats, die eine
+// getrennte Heizkostenabrechnung anrechnet (Weg d).
+export type PartialMonth = {
+  month: string
+  days: number
+  of: number
+  cents: number
+  fullCents: number
+  heatingCents?: number
+  heatingFullCents?: number
+  elsewhereHeatingCents?: number
+  elsewhereHeatingFullCents?: number
+}
+
+// Vorauszahlungen eines Abrechnungszeitraums (#208): je Monat des Zeitraums die Staffelrate nach der
+// Monatsregel (`rateInMonth`, #311). Eine Korrektur für den Zeitraum (tatsächlich gezahlter Betrag)
+// hat immer Vorrang, denn anzusetzen ist, was der Mieter für den Abrechnungszeitraum tatsächlich
+// geleistet hat (BGH VIII ZR 240/10 vom 18.05.2011, Rn. 16).
+function basePrepaymentCents(tenancy: SnapshotTenancy, period: Pick<BillingPeriod, 'key' | 'from' | 'to'>): { cents: number, overridden: boolean, partial?: PartialMonth[] } {
   const override = tenancy.prepaymentOverrides?.[period.key]
   if (override != null) return { cents: override, overridden: true }
   // `prepaymentMonthlyCents` gibt es im heutigen Tenancy-Typ nicht mehr (Altformat, siehe
   // Migration in store.ts). Diese Funktion wird aber auch mit ungewanderten Altbeständen
   // aufgerufen (siehe calc.test.ts), deshalb führt `SnapshotTenancy` das Feld weiterhin.
-  const schedule = (
-    tenancy.prepayments?.length
-      ? tenancy.prepayments
-      : tenancy.prepaymentMonthlyCents != null // Altformat: ein fester Monatsbetrag
-        ? [{ from: tenancy.start.slice(0, 7), monthlyCents: tenancy.prepaymentMonthlyCents }]
-        : []
-  )
-    .slice()
-    .sort((a, b) => compareText(a.from, b.from))
+  const schedule: MonthlySchedule[] = tenancy.prepayments?.length
+    ? tenancy.prepayments
+    : tenancy.prepaymentMonthlyCents != null // Altformat: ein fester Monatsbetrag
+      ? [{ from: tenancy.start.slice(0, 7), monthlyCents: tenancy.prepaymentMonthlyCents }]
+      : []
   let cents = 0
+  const partial: PartialMonth[] = []
   for (const month of periodMonths(period)) {
-    const firstDay = `${month}-01`
-    if (tenancy.start > firstDay) continue
-    if (tenancy.end && tenancy.end < firstDay) continue
-    let rate = 0
-    for (const e of schedule) if (e.from <= month) rate = e.monthlyCents
-    cents += rate
+    const { days, of } = monthShare(tenancy, month)
+    if (days === 0) continue
+    const part = rateInMonth(schedule, tenancy, month)
+    cents += part
+    const full = rateAtMonth(schedule, month)
+    if (days < of && full !== 0) partial.push({ month, days, of, cents: part, fullCents: full })
   }
-  return { cents, overridden: false }
+  return { cents, overridden: false, ...(partial.length > 0 ? { partial } : {}) }
 }
 
 // Die Heizvorauszahlung in einer Abrechnung P (Heizung PR 5, Entwurf 6.1 Nr. 5). `ownerOf` nennt die
@@ -822,13 +887,31 @@ export function computePrepaymentCents(
   tenancy: SnapshotTenancy,
   period: Pick<BillingPeriod, 'key' | 'from' | 'to'>,
   heating?: HeatingCredit,
-): { cents: number, overridden: boolean, heatingCents?: number } {
+): { cents: number, overridden: boolean, heatingCents?: number, partial?: PartialMonth[] } {
   const base = basePrepaymentCents(tenancy, period)
   const schedule: MonthlySchedule[] = Array.isArray(tenancy.heatingPrepayments) ? tenancy.heatingPrepayments : []
   if (schedule.length === 0 || base.overridden) return base
-  const months = periodMonths(period).filter((m) => tenancy.start <= `${m}-01` && !(tenancy.end && tenancy.end < `${m}-01`))
-  const heatingCents = months.filter((m) => (heating?.ownerOf(m) ?? null) === null).reduce((a, m) => a + rateAtMonth(schedule, m), 0)
-  return { cents: base.cents + heatingCents, overridden: false, heatingCents }
+  // Je Staffel einzeln gerundet (R-6): Bei Weg d gehören die beiden Beträge zwei Abrechnungen.
+  const byMonth = new Map((base.partial ?? []).map((p) => [p.month, { ...p }]))
+  let heatingCents = 0
+  for (const m of periodMonths(period)) {
+    const { days, of } = monthShare(tenancy, m)
+    if (days === 0) continue
+    const part = rateInMonth(schedule, tenancy, m)
+    const full = rateAtMonth(schedule, m)
+    const here = (heating?.ownerOf(m) ?? null) === null
+    if (here) heatingCents += part
+    if (days >= of || full === 0) continue
+    const entry = byMonth.get(m)
+    if (here) {
+      const e = entry ?? { month: m, days, of, cents: 0, fullCents: 0 }
+      byMonth.set(m, { ...e, cents: e.cents + part, fullCents: e.fullCents + full, heatingCents: part, heatingFullCents: full })
+    } else if (entry) {
+      byMonth.set(m, { ...entry, elsewhereHeatingCents: part, elsewhereHeatingFullCents: full })
+    }
+  }
+  const partial = [...byMonth.values()].sort((x, y) => compareText(x.month, y.month))
+  return { cents: base.cents + heatingCents, overridden: false, heatingCents, ...(partial.length > 0 ? { partial } : {}) }
 }
 
 // Die Heizvorauszahlung in der Heizkostenabrechnung einer Heizperiode (Weg d, Entwurf 3.1, D2 der
@@ -841,12 +924,12 @@ export function heatingPrepaymentCents(
   plantId: string,
   h: Pick<BillingPeriod, 'key' | 'from' | 'to'>,
   owns: (month: string) => boolean = () => true,
-): { cents: number, overridden: boolean, provisional: HeatingPrepaymentOverride | null, elsewhere: string[] } {
+): { cents: number, overridden: boolean, provisional: HeatingPrepaymentOverride | null, elsewhere: string[], partial?: PartialMonth[] } {
   const schedule: MonthlySchedule[] = Array.isArray(tenancy.heatingPrepayments) ? tenancy.heatingPrepayments : []
-  const months = periodMonths(h).filter((m) => tenancy.start <= `${m}-01` && !(tenancy.end && tenancy.end < `${m}-01`))
+  const months = tenancyMonths(tenancy, h)
   const mine = months.filter(owns)
   const elsewhere = months.filter((m) => !owns(m))
-  const staffel = (list: readonly string[]): number => list.reduce((a, m) => a + rateAtMonth(schedule, m), 0)
+  const staffel = (list: readonly string[]): number => list.reduce((a, m) => a + rateInMonth(schedule, tenancy, m), 0)
   const override = (tenancy.heatingPrepaymentOverrides ?? []).find((o) => o.plantId === plantId && o.period === h.key)
   if (override && !override.provisional) return { cents: override.cents, overridden: true, provisional: null, elsewhere }
   if (override && override.fromMonth !== null && override.toMonth !== null) {
@@ -854,7 +937,14 @@ export function heatingPrepaymentCents(
     const to = override.toMonth
     return { cents: override.cents + staffel(mine.filter((m) => m < from || m > to)), overridden: true, provisional: override, elsewhere }
   }
-  return { cents: staffel(mine), overridden: false, provisional: null, elsewhere }
+  const partial = mine.flatMap((m): PartialMonth[] => {
+    const { days, of } = monthShare(tenancy, m)
+    const full = rateAtMonth(schedule, m)
+    if (days >= of || full === 0) return []
+    const part = rateInMonth(schedule, tenancy, m)
+    return [{ month: m, days, of, cents: part, fullCents: full, heatingCents: part, heatingFullCents: full }]
+  })
+  return { cents: staffel(mine), overridden: false, provisional: null, elsewhere, ...(partial.length > 0 ? { partial } : {}) }
 }
 
 // ---------- Mietkonto / Zahlungs-Tracking ----------
@@ -863,7 +953,7 @@ type MonthlySchedule = { from: string, monthlyCents: number }
 
 // Staffelbetrag, der am Monatsersten gilt (für Kaltmiete oder Vorauszahlung).
 // `schedule`: Array aus { from: 'YYYY-MM', monthlyCents }. firstMonth: 'YYYY-MM'.
-function rateAtMonth(schedule: MonthlySchedule[], firstMonth: string): number {
+function rateAtMonth(schedule: readonly MonthlySchedule[], firstMonth: string): number {
   let rate = 0
   for (const e of schedule.slice().sort((a, b) => compareText(a.from, b.from))) {
     if (e.from <= firstMonth) rate = e.monthlyCents
@@ -906,14 +996,15 @@ export function ledgerRows(
       const heatingSchedule: MonthlySchedule[] = Array.isArray(t.heatingPrepayments) ? t.heatingPrepayments : []
       const withHeating = heatingSchedule.length > 0
       const rowMonths = months.map((mm): RentMonth => {
-        const firstDay = `${mm}-01`
-        const active = t.start <= firstDay && !(t.end && t.end < firstDay)
-        const baseRentCents = active ? rateAtMonth(baseSchedule, mm) : 0
-        const prepaymentCents = active ? rateAtMonth(ppSchedule, mm) : 0
-        const flatRateCents = active ? rateAtMonth(flatSchedule, mm) : 0
-        const heatingPrepaymentCents = active && withHeating ? rateAtMonth(heatingSchedule, mm) : 0
+        // Dieselbe Monatsregel wie die Abrechnung (#311): im angebrochenen Monat anteilig.
+        const share = monthShare(t, mm)
+        const baseRentCents = rateInMonth(baseSchedule, t, mm)
+        const prepaymentCents = rateInMonth(ppSchedule, t, mm)
+        const flatRateCents = rateInMonth(flatSchedule, t, mm)
+        const heatingPrepaymentCents = withHeating ? rateInMonth(heatingSchedule, t, mm) : 0
         return {
           month: Number(mm.slice(5, 7)),
+          ...(share.days > 0 && share.days < share.of ? { share } : {}),
           baseRentCents,
           prepaymentCents,
           ...(withHeating ? { heatingPrepaymentCents } : {}),
@@ -1191,8 +1282,15 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
   // auf keinem zugestellten Papier steht — genau der Widerspruch, gegen den #70 antritt.
   //
   // Dass sie von `prepaymentSollCents` abweicht, ist gewollt und hat zwei Gründe. Die Abrechnung
-  // muss die tatsächlich geleisteten Vorauszahlungen einstellen, sonst ist sie materiell falsch
-  // und trägt nach Ablauf der Frist des § 556 Abs. 3 BGB keinen Nachforderungsanspruch mehr. Und
+  // nimmt die Jahreskorrektur, wenn sie erfasst ist: Anzusetzen sind die Vorauszahlungen, die der
+  // Mieter für den Abrechnungszeitraum tatsächlich geleistet hat (BGH VIII ZR 240/10 vom 18.05.2011,
+  // Rn. 16; VIII ZA 2/08), und Soll statt Ist ist, wenn beide abweichen, ein inhaltlicher Fehler.
+  // Nach Fristablauf ist nach § 556 Abs. 3 Satz 3 BGB die Nachforderung über das Ergebnis einer
+  // rechtzeitig erteilten Abrechnung hinaus ausgeschlossen, ohne rechtzeitige Abrechnung die über
+  // die vereinbarten Vorauszahlungen hinaus (VIII ZR 190/06; VIII ZR 261/06), und eine erteilte
+  // Abrechnung lässt sich grundsätzlich nicht mehr zulasten des Mieters korrigieren (VIII ZR 133/10,
+  // Rn. 12 f.). Ohne Korrektur rechnen Abrechnung und Mietkonto dieselbe Staffel, auch im
+  // angebrochenen Monat (`rateInMonth`, #311). Und
   // sie verteilt nur über Wohnungen, die zur Abrechnungseinheit gehören, während das Mietkonto
   // jedes Mietverhältnis führt. Das Mietkonto wiederum darf die Jahreskorrektur nicht übernehmen,
   // denn eine Jahreszahl auf zwölf Monate zu verteilen wäre erfunden. Alle drei Zahlen sind
@@ -1406,6 +1504,7 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
       flatRateSollCents,
       prepaymentSettlementCents,
       prepaymentOverridden,
+      ...(same !== undefined && frozen ? { prepaymentSettlementClosed: true as const } : {}),
       sollCents,
       paidCents,
       tenanciesWithSoll,
@@ -2041,6 +2140,56 @@ const MEASURE_LABELS: Record<ExternalMeasure, string> = { mea: 'MEA', area: 'm²
 // herausgefiltert sind.
 type TenancyWithUnit = SnapshotTenancy & { days: number, unit: SnapshotUnit }
 
+// Die Texte zum angebrochenen Monat (#311). Beträge je Monat „82,26 € statt 150,00 €“; der Heizanteil
+// steht dabei, wenn ihn dieselbe Abrechnung anrechnet, sonst als eigener Satz (Weg d).
+const monthWord = (month: string): string => monthSpanText([month])
+function partialMonthNote(partial: readonly PartialMonth[], heating: boolean): string {
+  const what = heating ? 'Heizvorauszahlung' : 'Vorauszahlung'
+  const months = andList(partial.map((x) => monthWord(x.month)))
+  const [only] = partial
+  const detail = partial.length === 1 && only
+    ? `${only.days} von ${only.of} Tagen, ${fmtCents(only.cents)}`
+    : partial.map((x) => `${monthWord(x.month)}: ${x.days} von ${x.of} Tagen, ${fmtCents(x.cents)}`).join('; ')
+  return `Für ${months} ist die ${what} anteilig angesetzt (${detail}).`
+}
+function partialMonthHint(t: TenancyWithUnit, partial: readonly PartialMonth[], totalCents: number, heating: boolean): string {
+  const what = heating ? 'Heizvorauszahlung' : 'Vorauszahlung'
+  const months = new Set(partial.map((x) => x.month))
+  const events = [
+    ...(months.has(t.start.slice(0, 7)) ? [`Einzug am ${fmtDay(t.start)}`] : []),
+    ...(t.end && months.has(t.end.slice(0, 7)) ? [`Auszug am ${fmtDay(t.end)}`] : []),
+  ]
+  const amount = (x: PartialMonth): string => `${fmtCents(x.cents)} statt ${fmtCents(x.fullCents)}` +
+    (!heating && x.heatingCents !== undefined && x.heatingCents !== x.cents ? ` (davon Heizvorauszahlung ${fmtCents(x.heatingCents)})` : '')
+  const [only] = partial
+  const list = andList(partial.map((x) => monthWord(x.month)))
+  const credited = partial.length === 1 && only
+    ? `Für ${list} setzt Mietfuchs die ${what} anteilig nach Kalendertagen an, ${only.days} von ${only.of} Tagen: ${amount(only)}.`
+    : `Für ${list} setzt Mietfuchs die ${what} anteilig nach Kalendertagen an: ${partial.map((x) => `${monthWord(x.month)} ${x.days} von ${x.of} Tagen, ${amount(x)}`).join('; ')}.`
+  const elsewhere = partial.flatMap((x) => x.elsewhereHeatingCents !== undefined && x.elsewhereHeatingFullCents !== undefined
+    ? [`Die anteilige Heizvorauszahlung für ${monthWord(x.month)} (${fmtCents(x.elsewhereHeatingCents)} statt ${fmtCents(x.elsewhereHeatingFullCents)}) rechnet die Heizkostenabrechnung an.`]
+    : [])
+  const partCents = partial.reduce((a, x) => a + x.cents, 0)
+  const fullCents = partial.reduce((a, x) => a + x.fullCents, 0)
+  const withFull = fmtCents(totalCents - partCents + fullCents)
+  const without = fmtCents(totalCents - partCents)
+  // Die Beispielsummen setzen voraus, dass alle übrigen Monate voll gezahlt sind (R-4); maßgeblich
+  // bleibt das tatsächlich Gezahlte. Gibt es keine übrigen Monate (Ein- und Auszug im selben Monat),
+  // nennt das Beispiel nur den vollen Monat; „ohne Mai 2025 0,00 €“ wäre ein leerer Satz (Durchsicht K1).
+  const onlyPartial = totalCents === partCents
+  const fullText = partial.length === 1 && only ? `mit vollem ${monthWord(only.month)} ${withFull}` : `mit vollen Monaten ${withFull}`
+  const withoutText = partial.length === 1 && only ? `ohne ${monthWord(only.month)} ${without}` : `ohne diese Monate ${without}`
+  const example = onlyPartial ? `Zum Beispiel: ${fullText}.` : `Zum Beispiel, wenn alle übrigen Monate voll gezahlt sind: ${fullText}, ${withoutText}.`
+  return [
+    `${t.tenantName} (${t.unit.name}):${events.length > 0 ? ` ${events.join(', ')}.` : ''}`,
+    credited,
+    ...elsewhere,
+    'Das ist eine Auslegung: Ihr Mietvertrag kann anderes vorsehen, und maßgeblich ist, was der Mieter für den Zeitraum tatsächlich gezahlt hat.',
+    `Weicht das ab, tragen Sie die gezahlte Summe bei „abzüglich geleisteter ${what}en“ mit „✎ anpassen“ ein.`,
+    example,
+  ].join(' ')
+}
+
 // Ziel einer Kostenverteilung: das Mietverhältnis, sein (float) Rohanteil in Cent und der Text,
 // der die Berechnungsgrundlage auf der Abrechnung beschreibt.
 // `community`: bei der Gemeinschaftsabrechnung die Schritte davor (#114, #144). Erst der Anteil an
@@ -2497,7 +2646,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // Weg d (Heizung PR 5): die Heizvorauszahlungen der Monate dieser Heizperiode. Eine vorläufige
   // Korrektur meldet die Abrechnung, bis die Heizperiode abgeschlossen ist (D2 der achten Fassung);
   // danach steht die Warnung im eingefrorenen Stand, und eine neue Abrechnung gibt es nicht.
-  const heatingScopePrepayment = (t: TenancyWithUnit): { cents: number, overridden: boolean, heatingCents: number, note?: string } => {
+  const heatingScopePrepayment = (t: TenancyWithUnit): { cents: number, overridden: boolean, heatingCents: number, note?: string, partial?: PartialMonth[] } => {
     const plant = snapshot.scope?.plant
     // Nur, wen die Anlage versorgt (Durchsicht von #231): Die Heizstaffel einer Wohnung ohne Anschluss
     // an diese Anlage rechnet P an (`prepaymentOf`), sonst stünde sie in beiden Abrechnungen.
@@ -2521,13 +2670,13 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           `Erfassen Sie beim Abrechnen die tatsächlich gezahlten Heizvorauszahlungen für die ganze Heizperiode ${label} („✎ anpassen“); bis dahin bleibt diese Warnung.`,
         { kind: 'tenancy', id: t.id })
     }
-    return { cents: r.cents, overridden: r.overridden, heatingCents: r.cents, ...(note ? { note } : {}) }
+    return { cents: r.cents, overridden: r.overridden, heatingCents: r.cents, ...(note ? { note } : {}), ...(r.partial ? { partial: r.partial } : {}) }
   }
   // Die Vorauszahlungen eines Mietverhältnisses (#208, Heizung PR 5): in einer Teilabrechnung nach
   // Weg b keine (die rechnet P an); sonst die übrigen und die Heizstaffel der Monate, die keiner
   // getrennt abgerechneten Heizperiode gehören (6.1 Nr. 5). Welche Anlage die Wohnung versorgt, sagt
   // `servesUnit`; ohne Anlage zählt die ganze Heizstaffel.
-  const prepaymentOf = (t: TenancyWithUnit): { cents: number, overridden: boolean, heatingCents?: number, note?: string } => {
+  const prepaymentOf = (t: TenancyWithUnit): { cents: number, overridden: boolean, heatingCents?: number, note?: string, partial?: PartialMonth[] } => {
     if (scope === 'heatingPart') return { cents: 0, overridden: false }
     if (scope === 'heating') return heatingScopePrepayment(t)
     // Die Anlage, die die Wohnung versorgt, ausdrücklich (vorbereitend auf mehrere Anlagen, PR 9):
@@ -2545,7 +2694,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Staffel etwas verlangt oder eine Heizkorrektur der Heizperiode ihn abdeckt (Durchsicht N1).
     const overrides = (t.heatingPrepaymentOverrides ?? []).filter((o) => o.plantId === plant.id)
     for (const m of periodMonths(period)) {
-      if (t.start > `${m}-01` || (t.end && t.end < `${m}-01`)) continue
+      if (monthShare(t, m).days === 0) continue
       const owner = separateOwner(way, objectRules, m)
       if (owner === null) continue
       const override = overrides.find((o) => o.period === owner.key)
@@ -2559,10 +2708,18 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     return note ? { ...pp, note } : pp
   }
   const statements = new Map<string, Statement>()
+  // Angebrochene Monate je Mietverhältnis (#311): der Hinweis an den Vermieter entsteht erst, wenn
+  // feststeht, welche Abrechnungen bleiben (unten, nach „Ohne Abrechnung“).
+  const partialMonths = new Map<string, { t: TenancyWithUnit, partial: PartialMonth[] }>()
   for (const t of partTenancies) {
     const from = new Date(Math.max(toUTC(t.start), toUTC(yFrom)))
     const to = t.end ? new Date(Math.min(toUTC(t.end), toUTC(yTo))) : new Date(toUTC(yTo))
-    const pp = prepaymentOf(t)
+    const prepayment = prepaymentOf(t)
+    const partial = prepayment.overridden ? [] : (prepayment.partial ?? []).filter((x) => x.fullCents > 0)
+    if (partial.length > 0) partialMonths.set(t.id, { t, partial })
+    // Für den Mieter ein Satz, damit er den Ansatz an seinen Unterlagen prüfen kann (VIII ZR 240/10, Rn. 16).
+    const partialNote = partial.length > 0 ? partialMonthNote(partial, scope === 'heating') : ''
+    const pp = { ...prepayment, note: [prepayment.note, partialNote].filter((x) => x).join(' ') }
     statements.set(t.id, {
       tenancyId: t.id,
       tenantName: t.tenantName,
@@ -7190,7 +7347,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       const korrigiert = (m: string, key: PeriodKey): boolean => (t.heatingPrepaymentOverrides ?? []).some((o) => o.plantId === plant.id && o.period === key &&
         (!o.provisional || (o.fromMonth !== null && o.toMonth !== null && o.fromMonth <= m && m <= o.toMonth)))
       const ohne = periodMonths(period).filter((m) => {
-        if (t.start > `${m}-31` || (t.end && t.end < `${m}-01`)) return false
+        if (monthShare(t, m).days === 0) return false
         const owner = separateOwner(way, objectRules, m)
         return owner !== null && !korrigiert(m, owner.key) && rateAtMonth(heizRate, m) === 0 && rateAtMonth(t.prepayments, m) > 0
       })
@@ -7248,12 +7405,21 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     for (const [id, own] of statements) if (own.rows.length === 0 && own.prepaymentCents === 0) statements.delete(id)
   }
 
+  // Vorauszahlung im angebrochenen Monat (#311): je Mietverhältnis ein Hinweis mit dem angesetzten
+  // Betrag, nur ohne Jahreskorrektur und nur, wo diese Abrechnung im Monat etwas anrechnet.
+  for (const [id, { t, partial }] of partialMonths) {
+    const own = statements.get(id)
+    if (!own) continue
+    warn('prepayment.partial-month', partialMonthHint(t, partial, own.prepaymentCents, scope === 'heating'), { kind: 'tenancy', id })
+  }
+
   // Rückstand im Mietkonto (#133): Angerechnet wird die Vorauszahlung laut Staffel, solange keine
   // Jahreskorrektur gesetzt ist. Maßgeblich ist aber das tatsächlich Gezahlte (siehe
   // computePrepaymentCents); zeigt das Mietkonto einen Rückstand, ging womöglich ein Guthaben
   // hinaus, das es nicht gibt. Umgerechnet wird nicht: Ob eine Teilzahlung die Kaltmiete oder die
   // Vorauszahlung betraf, weiß nur der Vermieter. Der Rückstand kommt aus `rentLedger` selbst,
-  // damit Abrechnung und Mietkonto nie Verschiedenes sagen.
+  // damit Abrechnung und Mietkonto nie Verschiedenes sagen; im angebrochenen Monat rechnen beide
+  // anteilig (`rateInMonth`, #311), und was dort angesetzt ist, nennt `prepayment.partial-month`.
   // **Ohne eine einzige Zahlung des Objekts im Jahr bleibt der Hinweis aus.** Wer keine Zahlungen
   // erfasst, führt das Mietkonto nicht, und dann stünde dort für jedes Mietverhältnis die ganze
   // Jahresmiete als Rückstand; der Hinweis erschiene bei jedem dieser Nutzer an jeder Abrechnung

@@ -131,6 +131,27 @@ test('B2: Die Heizperiode wechselt auf Januar; die Heizkorrektur wird für den R
   })
 })
 
+// Durchsicht #311, S1: wie B2, aber mit Einzug am 15.05.2025. Die Rückfrage nannte nach der alten
+// Monatserster-Regel erst 06–12/2025, obwohl die Heizkostenabrechnung den Mai anteilig anrechnet.
+test('B2 bei Einzug am 15.05.: der angebrochene Mai steht in der Rückfrage (#311)', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write(async (db) => {
+      await haus(db)
+      await createHeatingPlant(db, 'hp1', 'objekt-1', { energy: 'gas', method: 'service' })
+      await eigeneHeizperiode(db, 5)
+      await db.insert(heatingSeparateSpans).values({ plantId: 'hp1', from: '2025-05', until: null })
+      await updateEntity(db, 'tenancies', 't1', {
+        start: '2025-05-15',
+        prepayments: [{ from: '2025-05', monthlyCents: 17700 }],
+        heatingPrepayments: [{ from: '2025-05', monthlyCents: 12300 }],
+        heatingPrepaymentOverrides: [{ plantId: 'hp1', period: '2025-05', cents: 140000, provisional: false, fromMonth: null, toMonth: null }],
+      })
+    })
+    const v = await preview(opened, { startMonth: 5, changes: ['2026-01'] })
+    assert.deepEqual(v.overrides.map((o) => o.ask.map((a) => [a.kind, a.period, a.months])), [[['heating', '2025-05', '05–12/2025'], ['total', '2026-01', '01–12/2026']]])
+  })
+})
+
 test('Zurück zum Zeitraum des Objekts: die Heizposition kommt in den Zeitraum, in dem ihre Heizperiode endet', async () => {
   await withDatabase(async (opened) => {
     await opened.write(async (db) => {

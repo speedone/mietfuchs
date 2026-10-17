@@ -777,6 +777,29 @@ test('Abgeschlossenes Jahr: weicht die heutige Berechnung ab, sagt die Antwort e
   }
 })
 
+// #311: Eine abgeschlossene Abrechnung mit Einzug zur Monatsmitte bleibt, wie sie versendet wurde.
+// Der alte Stand (März ohne Vorauszahlung) ist mit einer Staffel ab April nachgestellt; danach wird
+// die Staffel auf März gesetzt, und die heutige Rechnung setzt den März anteilig an.
+test('Abgeschlossenes Jahr mit Einzug am 15.03.: eingefroren bleibt 1.350 €, die Abweichung nennt 82,26 € zugunsten des Mieters (#311)', async () => {
+  const u = await srv.api<Unit>('/api/units', { method: 'POST', body: JSON.stringify({ name: 'Teilmonat', areaM2: 50, participates: true }) })
+  const t = await srv.api<Tenancy>('/api/tenancies', { method: 'POST', body: JSON.stringify({
+    unitId: u.id, tenantName: 'Einzug Mitte März', persons: 1, personHistory: [], start: '2046-03-15', end: '2046-12-31',
+    prepayments: [{ from: '2046-04', monthlyCents: 15000 }], prepaymentOverrides: {}, baseRents: [],
+  }) })
+  await srv.api('/api/costItems', { method: 'POST', body: JSON.stringify({ year: 2046, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 50000, key: 'direct', directUnitId: u.id }) })
+  await srv.api('/api/settlement/2046/close', { method: 'POST', body: JSON.stringify({}) })
+  try {
+    await srv.api(`/api/tenancies/${t.id}`, { method: 'PUT', body: JSON.stringify({ prepayments: [{ from: '2046-03', monthlyCents: 15000 }] }) })
+    const s = await srv.api<Settlement>('/api/settlement/2046')
+    const eingefroren = s.statements.find((st) => st.tenancyId === t.id)
+    assert.equal(eingefroren?.prepaymentCents, 135000, 'der eingefrorene Stand bleibt, wie er war')
+    const d = s.deviation?.deviations.find((x) => x.tenancyId === t.id)
+    assert.deepEqual([d?.differenceCents, d?.direction], [8226, 'tenant'])
+  } finally {
+    await srv.api('/api/settlement/2046/close', { method: 'DELETE' })
+  }
+})
+
 test('Wiederöffnen behält den verschickten Stand im Verlauf, erneutes Abschließen legt einen weiteren daneben (#56)', async () => {
   const u = await srv.api<Unit>('/api/units', { method: 'POST', body: JSON.stringify({ name: 'Verlauf', areaM2: 50, participates: true }) })
   await srv.api<Tenancy>('/api/tenancies', { method: 'POST', body: JSON.stringify({

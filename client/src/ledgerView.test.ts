@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { RentLedgerRow, RentMonth, RentMonthStatus } from './types'
-import { bookingDate, newPaymentDate, rowStanding, showDecemberNote } from './ledgerView'
+import { bookingDate, newPaymentDate, rowStanding, shareText, showDecemberNote } from './ledgerView'
 
 const month = (m: number, sollCents: number, status: RentMonthStatus): RentMonth => ({
   month: m, baseRentCents: sollCents, prepaymentCents: 0, flatRateCents: 0, sollCents, paidCents: status === 'paid' ? sollCents : 0, status,
@@ -86,5 +86,12 @@ describe('Datum einer neuen Zahlung (#142)', () => {
   it('örtlich gelesen, nicht in UTC: kurz nach Mitternacht am 1. Januar ist schon das neue Jahr', () => {
     const neujahr = new Date(2026, 0, 1, 0, 30)
     expect(newPaymentDate(2026, neujahr)).toBe('2026-01-01')
+  })
+})
+
+describe('Mietkonto: der angebrochene Monat (#311)', () => {
+  it('nennt den Anteil am Monat, ein voller Monat bleibt ohne Zusatz', () => {
+    expect(shareText({ share: { days: 17, of: 31 } })).toBe('anteilig 17/31 Tage')
+    expect(shareText({})).toBeNull()
   })
 })
