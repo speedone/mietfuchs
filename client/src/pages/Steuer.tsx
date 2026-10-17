@@ -223,12 +223,12 @@ export default function Steuer({ settings }: Props) {
                         <strong>{balance}</strong> (Nachzahlungen minus Erstattungen, ein negativer Betrag mit Minuszeichen).
                         Bei Vermietung an Angehörige gilt stattdessen Zeile {line.relativesLine} (Kennzahl {line.relativesCode}),
                         die Miete und laufenden Umlagen dort in den Zeilen {line.relativesRentLine} und {line.relativesPrepaymentLine}.
-                        Den Zufluss von {paid} tragen Sie nicht zusätzlich ein, er ist die Summe beider Teile.
+                        Tragen Sie den Zufluss ({paid}) nicht zusätzlich ein, er ist die Summe beider Teile.
                       </>
                     : <>
                         Zusammen ergeben sie {balance}. Die Anlage V fragt sie bei den Umlagen gesondert ab; die
                         Zeile sehen Sie bitte im Vordruck für {year} nach. Bei den Mieten und laufenden Umlagen
-                        steht dann der Zufluss ohne Abrechnung ({without}); den Zufluss von {paid} tragen Sie
+                        steht dann der Zufluss ohne Abrechnung ({without}). Tragen Sie den Zufluss ({paid})
                         nicht zusätzlich ein, er ist die Summe beider Teile.
                       </>}
                 </p>
