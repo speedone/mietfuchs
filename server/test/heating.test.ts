@@ -715,3 +715,15 @@ test('§ 10 (Heizung PR 14): mehr als 70 % nach Vereinbarung erbt mit dem Anteil
   const ohne = consumptionSharesOf([{ period: '2025-01', heatConsumptionPct: 85, waterConsumptionPct: 70, insulationRule: 'applies' as const, above70Agreed: false }], '2025-01', 'oil', seventy) ?? assert.fail('kein Anteil')
   assert.equal(ohne.heating, 70)
 })
+
+// UI-Durchsicht H5: Das Ableseergebnis für den Mieter nennt die Einheit des Zählers; ein Wärmezähler in
+// MWh erschien sonst als kWh. Ohne Einheit am Zähler bleibt das Feld weg (eingefrorene Stände von vorher).
+test('Ableseergebnis: die Einheit des Zählers geht in die Ansicht der Wohnung', () => {
+  const meters = METERS.map((m) => (m.id === 'wa' ? { ...m, unit: 'MWh' } : m))
+  const plan = planSelf(input({ meters }))
+  const views = plan.units.find((u) => u.unit.id === 'a')?.readings ?? assert.fail('keine Wohnung A')
+  const heat = views.find((v) => v.meterId === 'wa' && v.boundary === '2025-12-31') ?? assert.fail('kein Stand')
+  assert.equal(heat.meterUnit, 'MWh')
+  const water = views.find((v) => v.meterId === 'xa') ?? assert.fail('kein Warmwasser')
+  assert.equal('meterUnit' in water, false)
+})

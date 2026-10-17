@@ -41,7 +41,8 @@ export type SelfUnit = { id: string; name: string; areaM2: number; heatedAreaM2:
 export type SelfTenancy = { id: string; unitId: string; tenantName: string; start: string; end: string | null }
 // `factor` (Heizung PR 12): Die Differenz zweier Ablesungen zählt mal diesem Faktor; beim
 // Heizkostenverteiler mit Einheitsskala der Bewertungsfaktor, sonst 1 (hca.ts `meterFactor`). Fehlt: 1.
-export type SelfMeter = { id: string; name: string; unitId: string; type: MeterType; factor?: number }
+// `unit`: die Einheit des Zählers, nur für das Ableseergebnis (UI-Durchsicht H5); gerechnet wird damit nicht.
+export type SelfMeter = { id: string; name: string; unitId: string; type: MeterType; factor?: number; unit?: string }
 // `boundFor`: Grenze einer Ablesung aus dem Mieterwechsel (`readings.interim_for`, Abweichung 9, 23).
 export type SelfReading = { meterId: string; date: string; value: number; replacement?: boolean; oldEndValue?: number | null; boundFor?: string | null }
 export type SelfInput = {
@@ -540,7 +541,7 @@ export function planSelf(input: SelfInput): SelfPlan {
     const readings: SelfReadingView[] = pots.flatMap((p) => metersOf(unit.id, p).flatMap((m) => bounds.map((bd) => {
       const r = readingAt.get(m.id)?.get(bd.date) ?? null
       const oldEnd = r?.replacement && r.oldEndValue !== null && r.oldEndValue !== undefined ? { oldEndValue: r.oldEndValue } : {}
-      return { meterId: m.id, meterName: m.name, pot: p, boundary: bd.date, date: r?.date ?? null, value: r?.value ?? null, ...oldEnd }
+      return { meterId: m.id, meterName: m.name, ...(m.unit ? { meterUnit: m.unit } : {}), pot: p, boundary: bd.date, date: r?.date ?? null, value: r?.value ?? null, ...oldEnd }
     })))
     const estimatedPots = { heating: estimateOf(unit.id, 'heating') !== undefined, water: estimateOf(unit.id, 'water') !== undefined }
     const captured = Object.fromEntries((['heating', 'water'] as const).map((p) => [p,

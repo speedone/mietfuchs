@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // Die Frage zum angespannten Wohnungsmarkt am Objekt (Heizung PR 18): Die Auswahl zeigt den gespeicherten Wert.
 import { afterEach, expect, test } from 'vitest'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import TightMarketField from './TightMarketField'
 
 afterEach(cleanup)
@@ -15,6 +15,15 @@ test('Die Auswahl zeigt den gespeicherten Wert; Geltung nur bei „ja“', () =>
     expect(screen.queryByLabelText('Verordnung gilt seit') !== null).toBe(value === 'ja')
     cleanup()
   }
+})
+
+// UI-Durchsicht M2: Der Begriff öffnete die Erklärung „Hälftige Teilung ab 2028“ statt einer eigenen.
+test('der Begriff erklärt den angespannten Wohnungsmarkt, nicht die hälftige Teilung', () => {
+  render(<TightMarketField value="unbekannt" from="" to="" onChange={() => {}} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Angespannter Wohnungsmarkt' }))
+  const note = screen.getByRole('note')
+  expect(note.textContent).toContain('Kündigungssperrfrist (§ 577a Abs. 2 BGB)')
+  expect(note.textContent).not.toContain('Hälftige Teilung ab')
 })
 
 test('Prüfung S9, K4: gefragt wird nach dem Gebiet, nicht nach der Gemeinde, und nach der Kündigungssperrfrist', () => {

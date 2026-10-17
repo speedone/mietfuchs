@@ -62,3 +62,23 @@ test('Vorgabe Abbrechen: Fokus auf Abwarten, Enter bestätigt nicht', async () =
   await act(async () => {})
   expect(answers).toEqual([false])
 })
+
+// Durchsicht K1 (#341): Enter auf einem anderen bedienbaren Element im Dialog (etwa einem Begriff,
+// span mit role="button") geht an dieses Element und schließt die Rückfrage nicht.
+function MitBegriff({ onKey }: { onKey: () => void }) {
+  const confirm = useConfirm()
+  const message = <span role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter') onKey() }}>Begriff</span>
+  return <button onClick={() => void confirm({ title: 'Mit Begriff', message })}>Fragen</button>
+}
+
+test('Enter auf einem Begriff in der Rückfrage erreicht den Begriff', async () => {
+  const pressed: string[] = []
+  render(<UIProvider><MitBegriff onKey={() => pressed.push('Begriff')} /></UIProvider>)
+  fireEvent.click(screen.getByRole('button', { name: 'Fragen' }))
+  const term = await screen.findByRole('button', { name: 'Begriff' })
+  term.focus()
+  fireEvent.keyDown(term, { key: 'Enter' })
+  await act(async () => {})
+  expect(pressed).toEqual(['Begriff'])
+  expect(screen.getByRole('dialog')).toBeTruthy()
+})
