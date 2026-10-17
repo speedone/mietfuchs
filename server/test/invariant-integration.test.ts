@@ -27,7 +27,7 @@ import { frozenSettlementOf, snapshotFor } from '../src/snapshot.ts'
 import { derivedTaxLines, planTaxArchive } from '../src/taxReceipts.ts'
 import { compareWithFrozen } from '../src/settlementDiff.ts'
 import { assertLandlordParts } from '../testing/landlordParts.ts'
-import { CALENDAR_RULES, calendarPeriod, periodKey, periodOfKey } from '../../shared/period.ts'
+import { CALENDAR_RULES, periodKey, periodOfKey } from '../../shared/period.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import type { BillingPeriod, Co2Refund, CostItem, CostKey, FuelDelivery, HeatingEnergy, PeriodRules } from '../../shared/types.ts'
 
@@ -349,7 +349,7 @@ function checkTax(g: Gen, year: number, where: string, fails: string[]): void {
   const r = taxReportFor(g.source, 'objekt-1', year)
   const e = r.expenses
   const parts = taxPartsFor(g.source, 'objekt-1', year)
-  const inYear = parts === null ? g.source.costItems.filter((c) => c.period === calendarPeriod(year)) : parts.flatMap((p) => p.items)
+  const inYear = parts.flatMap((p) => p.items)
   for (const i of e.items) {
     if (i.privateCents + i.deductibleCents !== i.amountCents) say(`T1 ${i.costItemId}: ${i.privateCents} + ${i.deductibleCents} ≠ ${i.amountCents}`)
     if (i.operatingPowerBalance) {

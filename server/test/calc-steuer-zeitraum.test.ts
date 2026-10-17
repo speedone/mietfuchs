@@ -4,7 +4,8 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { taxReport, taxReportFor, taxYearOf } from '../src/calc.ts'
+import { taxReport, taxReportFor } from '../src/calc.ts'
+import { soleOutflowYear } from '../src/outflow.ts'
 import { snapshotOf, type SnapshotCostItem } from '../src/snapshot.ts'
 import { CALENDAR_RULES, periodKey } from '../../shared/period.ts'
 import type { PeriodRules } from '../../shared/types.ts'
@@ -27,8 +28,8 @@ const pos = (id: string, key: string, amountCents: number, taxYear?: number): Sn
   ({ id, period: periodKey(key), category: 'Gebäudeversicherung', description: id, amountCents, key: 'area', ...(taxYear !== undefined ? { taxYear } : {}) })
 
 test('Jahr der Zahlung: angegeben, sonst das Kalenderjahr des Zeitraums', () => {
-  assert.equal(taxYearOf({ taxYear: 2026 }, { from: '2025-05-01' }), 2026)
-  assert.equal(taxYearOf({}, { from: '2025-01-01' }), 2025)
+  assert.equal(soleOutflowYear({ id: 'a', taxYear: 2026, amountCents: 1 }, { from: '2025-05-01' }), 2026)
+  assert.equal(soleOutflowYear({ id: 'a', amountCents: 1 }, { from: '2025-01-01' }), 2025)
 })
 
 test('Mai bis April: Werbungskosten nach Jahr der Zahlung aus zwei Abrechnungen, privat je aus ihrer', () => {
