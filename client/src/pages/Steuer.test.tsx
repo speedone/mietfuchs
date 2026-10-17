@@ -20,7 +20,7 @@
 import { afterEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { Property, PropertyKind, TaxExpenseItem, TaxReport } from '../types'
-import { TAX_HINTS, type Basis, type TaxHint } from '../taxView'
+import { settlementLine, TAX_HINTS, type Basis, type TaxHint } from '../taxView'
 import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
 import Steuer from './Steuer'
@@ -41,6 +41,8 @@ const REPORT = (over: Partial<TaxReport> = {}, income: Partial<TaxReport['income
     prepaymentOverridden: false,
     sollCents: 1200000,
     paidCents: 1200000,
+    settlementBackPaymentsCents: 0,
+    settlementRefundsCents: 0,
     tenanciesWithSoll: 1,
     tenanciesWithoutPayment: 0,
     ...income,
@@ -126,7 +128,7 @@ const LAGEN: Record<TaxHint, Lage> = {
   },
   paymentsMissing: {
     report: REPORT({}, { paidCents: 0, tenanciesWithSoll: 2, tenanciesWithoutPayment: 2 }),
-    text: /keine einzige Zahlung erfasst/i,
+    text: /keine einzige Mietzahlung erfasst/i,
   },
   // Genau dieser Block war schon einmal weg.
   turnOfYear: {
@@ -393,4 +395,57 @@ test('„Nicht umlagefähig“ mit Zuordnung: Position, Einheit, Wirkung und der
 test('„Nicht umlagefähig“ ohne Zuordnung: kein Hinweis', async () => {
   await zeige(MIXED([POS({ taxUnits: null })]))
   expect(screen.queryByText(/bestimmten Einheiten zugeordnet/)).toBeNull()
+})
+
+// ---------- Zahlungen aus der Abrechnung (#280) ----------
+
+test('Nachzahlungen und Erstattungen aus der Nebenkostenabrechnung: Saldo gesondert, mit Zeile nur, wo nachgesehen (N3)', async () => {
+  await zeige(REPORT({}, { paidCents: 1200000 + 15000 - 20000, settlementBackPaymentsCents: 15000, settlementRefundsCents: 20000 }))
+  const saldo = screen.getByText(/davon Saldo der Nebenkostenabrechnung/).closest('tr')
+  expect(saldo?.textContent).toMatch(/Nachzahlungen 150,00\s€ minus erstattete Guthaben 200,00\s€/)
+  expect(saldo?.textContent).toMatch(/[−-]50,00\s€/)
+  const satz = screen.getByText(/sind im Zufluss\s+enthalten/)
+  expect(satz.textContent).toMatch(/[−-]50,00\s€/)
+  // Das Jahr der Seite ist das Vorjahr; welche Zeile gilt, entscheidet dieselbe Tabelle wie auf der Seite.
+  const line = settlementLine(JAHR)
+  if (line) {
+    expect(satz.textContent).toMatch(/Anlage V, Zeile 21 \(Kennzahl 11\)/)
+    expect(satz.textContent).toMatch(/Vermietung an Angehörige gilt stattdessen Zeile 23 \(Kennzahl 12\)/)
+  } else {
+    expect(satz.textContent).not.toMatch(/Zeile \d/)
+    expect(satz.textContent).toMatch(/im Vordruck für \d{4} nach/)
+  }
+})
+
+// Durchsicht speedone zu #328: Wer den Zufluss in die Zeilen der Mieten und Umlagen und den Saldo
+// zusätzlich in Zeile 21 einträgt, zählt den Saldo doppelt. Die Seite nennt deshalb den Zufluss ohne
+// Abrechnung als eigene Zahl, und beide Teile ergeben zusammen den Zufluss.
+test('Zufluss ohne Abrechnung und Saldo getrennt: 12 × 800 € Miete, 200 € Guthaben erstattet', async () => {
+  await zeige(REPORT({}, { paidCents: 940000, settlementBackPaymentsCents: 0, settlementRefundsCents: 20000 }))
+  expect(screen.getByText(/Tatsächlich eingegangen/).closest('tr')?.textContent).toMatch(/9\.400,00\s€/)
+  const ohne = screen.getByText(/davon Mieten und laufende Umlagen ohne Abrechnung/).closest('tr')
+  expect(ohne?.textContent).toMatch(/9\.600,00\s€/)
+  const saldo = screen.getByText(/davon Saldo der Nebenkostenabrechnung/).closest('tr')
+  expect(saldo?.textContent).toMatch(/[−-]200,00\s€/)
+  const satz = screen.getByText(/sind im Zufluss\s+enthalten/)
+  expect(satz.textContent).toMatch(/9\.600,00\s€/)
+  expect(satz.textContent).toMatch(/nicht zusätzlich/)
+  if (settlementLine(JAHR)) expect(satz.textContent).toMatch(/Zeilen 15 und 18 sowie Zeile 20/)
+})
+
+test('Auf Soll-Basis erscheint der Hinweis zu Zeile 21 nicht (Durchsicht zu #328)', async () => {
+  await zeige(REPORT({}, { paidCents: 940000, settlementRefundsCents: 20000 }), 'soll')
+  expect(screen.queryByText(/sind im Zufluss\s+enthalten/)).toBeNull()
+  expect(screen.queryByText(/Zeile 21/)).toBeNull()
+})
+
+test('Ohne Zahlungen aus der Abrechnung erscheint davon nichts', async () => {
+  await zeige(REPORT())
+  expect(screen.queryByText(/aus der Nebenkostenabrechnung/)).toBeNull()
+})
+
+test('Nur eine Nachzahlung aus der Abrechnung erfasst: der Hinweis sagt „keine Mietzahlung“, nicht „keine Zahlung“ (#280, Durchsicht)', async () => {
+  await zeige(REPORT({}, { paidCents: 15000, settlementBackPaymentsCents: 15000, tenanciesWithSoll: 1, tenanciesWithoutPayment: 1 }))
+  expect(screen.getByText(/keine einzige Mietzahlung erfasst/)).toBeTruthy()
+  expect(screen.queryByText(/keine einzige Zahlung erfasst/)).toBeNull()
 })

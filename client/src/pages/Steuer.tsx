@@ -8,7 +8,7 @@ import { useProperty, withProperty } from '../property'
 import { effectiveLandlord, letterhead } from '../landlord'
 import PageHeader from '../components/PageHeader'
 import Table from '../components/Table'
-import { allocationLabel, assignedUnitItems, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, operatingPowerBalanceText, prepaymentNote, settlementSourcesText, showsSplit, stockCarryNote, surplusCentsFor, taxHints, type Basis } from '../taxView'
+import { allocationLabel, assignedUnitItems, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, operatingPowerBalanceText, paidWithoutSettlementCents, prepaymentNote, settlementBalanceCents, settlementLine, settlementSourcesText, showsSplit, stockCarryNote, surplusCentsFor, taxHints, type Basis } from '../taxView'
 import { StepList } from '../components/CalcSteps'
 import Term from '../components/Term'
 import { andList } from '../../../shared/wording.ts'
@@ -171,6 +171,29 @@ export default function Steuer({ settings }: Props) {
                   <td>Tatsächlich eingegangen {year} (Zufluss)</td>
                   <td className="num">{fmtEuro(data.income.paidCents)}</td>
                 </tr>
+                {/* #280: Nachzahlungen und Erstattungen aus der Nebenkostenabrechnung sind Einnahmen
+                    nach dem Zuflussprinzip und stecken im Zufluss; gesondert genannt, weil die
+                    Anlage V sie bei den Umlagen als Saldo abfragt. **Beide Teile stehen als eigene
+                    Zahl da und ergeben zusammen den Zufluss** (Durchsicht zu #328): Stünde nur der
+                    Saldo daneben, trüge mancher den ganzen Zufluss in die Zeilen der Mieten und den
+                    Saldo zusätzlich in Zeile 21 ein und zählte ihn doppelt. Die Zeile nennt die Seite
+                    nur für Jahre, in denen sie im amtlichen Vordruck nachgesehen ist
+                    (`settlementLine` in taxView.ts). */}
+                {(data.income.settlementBackPaymentsCents !== 0 || data.income.settlementRefundsCents !== 0) && (
+                  <>
+                    <tr>
+                      <td className="muted">davon Mieten und laufende Umlagen ohne Abrechnung</td>
+                      <td className="num muted">{fmtEuro(paidWithoutSettlementCents(data))}</td>
+                    </tr>
+                    <tr>
+                      <td className="muted">
+                        davon Saldo der Nebenkostenabrechnung (Nachzahlungen {fmtEuro(data.income.settlementBackPaymentsCents)}{' '}
+                        minus erstattete Guthaben {fmtEuro(data.income.settlementRefundsCents)})
+                      </td>
+                      <td className="num muted">{fmtEuro(settlementBalanceCents(data))}</td>
+                    </tr>
+                  </>
+                )}
               </tbody>
               <tfoot>
                 <tr>
@@ -180,12 +203,44 @@ export default function Steuer({ settings }: Props) {
               </tfoot>
             </Table>
 
+            {/* Nur auf der Ist-Grundlage: Das Soll enthält weder Nachzahlungen noch Guthaben, ein
+                Hinweis auf Zeile 21 neben ihm führte in die Irre (Durchsicht zu #328). */}
+            {basis === 'ist' && (data.income.settlementBackPaymentsCents !== 0 || data.income.settlementRefundsCents !== 0) && (() => {
+              const line = settlementLine(year)
+              const balance = fmtEuro(settlementBalanceCents(data))
+              const without = fmtEuro(paidWithoutSettlementCents(data))
+              const paid = fmtEuro(data.income.paidCents)
+              return (
+                <p className="muted fine">
+                  Nachzahlungen und erstattete Guthaben aus der Nebenkostenabrechnung sind im Zufluss
+                  enthalten (§ 11 Abs. 1 EStG), im vereinbarten Soll nicht.{' '}
+                  {line
+                    ? <>
+                        In die Anlage V gehören beide Teile getrennt: <strong>{without}</strong> in die Zeilen der
+                        Mieten und laufenden Umlagen (Zeilen {line.rentLines[0]} und {line.rentLines[1]} sowie
+                        Zeile {line.prepaymentLine}) und der Saldo in die{' '}
+                        <strong>Anlage V, Zeile {line.line} (Kennzahl {line.code})</strong>:{' '}
+                        <strong>{balance}</strong> (Nachzahlungen minus Erstattungen, ein negativer Betrag mit Minuszeichen).
+                        Bei Vermietung an Angehörige gilt stattdessen Zeile {line.relativesLine} (Kennzahl {line.relativesCode}),
+                        die Miete und laufenden Umlagen dort in den Zeilen {line.relativesRentLine} und {line.relativesPrepaymentLine}.
+                        Tragen Sie den Zufluss ({paid}) nicht zusätzlich ein, er ist die Summe beider Teile.
+                      </>
+                    : <>
+                        Zusammen ergeben sie {balance}. Die Anlage V fragt sie bei den Umlagen gesondert ab; die
+                        Zeile sehen Sie bitte im Vordruck für {year} nach. Bei den Mieten und laufenden Umlagen
+                        steht dann der Zufluss ohne Abrechnung ({without}). Tragen Sie den Zufluss ({paid})
+                        nicht zusätzlich ein, er ist die Summe beider Teile.
+                      </>}
+                </p>
+              )
+            })()}
+
             {hints.includes('paymentsMissing') && (
               <div className="notice">
                 <strong>
                   {data.income.tenanciesWithoutPayment === data.income.tenanciesWithSoll
-                    ? `Für ${year} ist keine einzige Zahlung erfasst.`
-                    : `Für ${data.income.tenanciesWithoutPayment} von ${data.income.tenanciesWithSoll} Mietverhältnissen ist ${year} keine einzige Zahlung erfasst.`}
+                    ? `Für ${year} ist keine einzige Mietzahlung erfasst.`
+                    : `Für ${data.income.tenanciesWithoutPayment} von ${data.income.tenanciesWithSoll} Mietverhältnissen ist ${year} keine einzige Mietzahlung erfasst.`}
                 </strong>{' '}
                 Die angesetzten Einnahmen sind dann zu niedrig, und das sieht man der Summe nicht an.
                 Bitte im <em>Mietkonto</em> nachtragen, bevor diese Zahl in die Anlage V geht.

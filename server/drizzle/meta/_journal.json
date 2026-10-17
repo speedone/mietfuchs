@@ -407,6 +407,20 @@
       "when": 1792239259409,
       "tag": "0057_zahlungsdatum_bedingungen",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "6",
+      "when": 1792244725940,
+      "tag": "0058_zahlungsart",
+      "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "6",
+      "when": 1792244727838,
+      "tag": "0059_zahlungsart_bedingungen",
+      "breakpoints": true
     }
   ]
 }

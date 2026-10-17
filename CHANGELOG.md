@@ -22,6 +22,19 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Datum ändert sich keine Zahl, und die Abrechnung an die Mieter liest das Datum nie
   ([#255](https://github.com/speedone/mietfuchs/issues/255)).
 
+- Zahlungen im Mietkonto haben eine Art: „Miete“ (Voreinstellung) oder „Nachzahlung oder Guthaben
+  aus der Abrechnung“, ein ausgezahltes Guthaben mit Minus. Das Mietkonto verteilt nur die Miete auf
+  die Monate und führt Nachzahlungen und Guthaben gesondert, auch für Mieter, die schon ausgezogen
+  sind; vorher ließ ein im Juni erstattetes Guthaben den Dezember offen stehen, und eine Nachzahlung
+  erschien als Überzahlung. Die Steuerübersicht zählt beide Arten weiter als Zufluss und nennt
+  Nachzahlungen und Erstattungen aus der Nebenkostenabrechnung zusätzlich gesondert: den Zufluss
+  ohne Abrechnung für die Zeilen der Mieten und Umlagen und den Saldo, für 2023 bis 2025 mit Zeile 21
+  der Anlage V; beide ergeben zusammen den Zufluss. Bisher erfasste Zahlungen bleiben Miete, keine Zahl
+  ändert sich; ein früher als Miete erfasstes Guthaben oder eine Nachzahlung stellen Sie in der Liste
+  der Zahlungseingänge unter „Art“ auf „Abrechnung“ um. Ein mit der Miete verrechnetes Guthaben
+  tragen Sie als volle Miete und das Guthaben mit Minus als Abrechnung ein
+  ([#280](https://github.com/speedone/mietfuchs/issues/280)).
+
 ### Geändert
 
 - Mietfuchs steht ab dieser Version unter der GNU Affero General Public License, Version 3

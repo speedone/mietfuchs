@@ -46,12 +46,20 @@ export function deductionsOffBillYear(source: TaxSource): number {
   }).length
 }
 
+// Die Einnahmen ohne die Felder, die nach dem Erzeugen der Prüfsummen hinzukamen, solange sie 0 sind: Nachzahlungen
+// und Erstattungen aus der Abrechnung (#280). Der Generator kennt keine Art der Zahlung, jede ist Miete, beide sind dort
+// immer 0; stünde eine Zahl darin, ginge sie wie jede andere in die Prüfsumme ein.
+function incomeFingerprint(income: TaxReport['income']): unknown {
+  const { settlementBackPaymentsCents, settlementRefundsCents, ...rest } = income
+  return settlementBackPaymentsCents === 0 && settlementRefundsCents === 0 ? rest : income
+}
+
 // Die Zahlen der Steuerübersicht, ohne Texte, Rechenwege und Felder, die nur Auskunft sind: Ein neues Feld oder ein
 // anderer Wortlaut soll die Prüfsumme nicht ändern, eine andere Zahl schon.
 export function taxFingerprint(r: TaxReport): unknown {
   const e = r.expenses
   return {
-    income: r.income,
+    income: incomeFingerprint(r.income),
     expenses: [e.totalCents, e.privateCents, e.deductibleCents, e.labor35aCents, e.stockCarrySelfCents ?? null],
     groups: e.groups.map((g) => [g.group, g.amountCents, g.labor35aCents, g.privateCents, g.deductibleCents,
       g.categories.map((c) => [c.category, c.amountCents, c.labor35aCents, c.privateCents, c.deductibleCents])]),
@@ -78,7 +86,7 @@ export function pairAcrossParts(source: TaxSource, propertyId: string, year: num
 export function taxAmounts(r: TaxReport): unknown {
   const e = r.expenses
   return {
-    income: r.income,
+    income: incomeFingerprint(r.income),
     expenses: [e.totalCents, e.labor35aCents],
     groups: e.groups.map((g) => [g.group, g.amountCents, g.labor35aCents, g.categories.map((c) => [c.category, c.amountCents, c.labor35aCents])]),
     items: e.items.map((i) => [i.costItemId, i.category, i.group, i.amountCents, i.labor35aCents]),

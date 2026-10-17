@@ -31,9 +31,9 @@
 // beim Import bewegt dagegen genau eine Seite und fällt weiterhin auf.
 
 import { sql } from 'drizzle-orm'
-import type { AiConsent, AiSettings, AiSlot, Payment, PeriodKey, Reading, Settings, Tenancy } from '../../../shared/types.ts'
+import type { AiConsent, AiSettings, AiSlot, PeriodKey, Reading, Settings, Tenancy } from '../../../shared/types.ts'
 import { calendarPeriod } from '../../../shared/period.ts'
-import type { LegacyCostItem as CostItem, LegacyMeter as Meter, LegacyUnit as Unit } from '../store.ts'
+import type { LegacyCostItem as CostItem, LegacyMeter as Meter, LegacyPayment, LegacyUnit as Unit } from '../store.ts'
 import { migrateAi, type MigratedSettings } from '../ai/settings.ts'
 import { DEFAULT_SETTINGS } from '../defaults.ts'
 import { frozenSettlementOf, overridesByPeriod, type FrozenItemSelfUse, type SnapshotSource } from '../snapshot.ts'
@@ -76,7 +76,7 @@ export type Stock = SnapshotSource & {
   costItems: (CostItem & { period: PeriodKey })[]
   meters: Meter[]
   readings: Reading[]
-  payments: Payment[]
+  payments: LegacyPayment[]
   closedSettlements: StoredClosedSettlement[]
   settings: MigratedSettings
 }
@@ -217,7 +217,7 @@ export async function readReadings(db: Database): Promise<Reading[]> {
   }))
 }
 
-export async function readPayments(db: Database): Promise<Payment[]> {
+export async function readPayments(db: Database): Promise<LegacyPayment[]> {
   const rows = await db.select().from(payments).orderBy(INSERTION_ORDER)
   return rows.map((p) => ({
     id: p.id,

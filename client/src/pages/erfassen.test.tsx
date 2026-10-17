@@ -31,8 +31,9 @@ const METERS: Meter[] = [
 const month = (m: number) => ({ month: m, baseRentCents: 50000, prepaymentCents: 0, flatRateCents: 0, sollCents: 50000, paidCents: 0, status: 'open' as const })
 const LEDGER: RentLedger = {
   year: YEAR,
-  rows: [{ tenancyId: 't1', tenantName: 'Meier', unitName: 'OG', months: Array.from({ length: 12 }, (_, i) => month(i + 1)), sollYearCents: 600000, baseRentYearCents: 600000, prepaymentYearCents: 0, flatRateYearCents: 0, paidYearCents: 0, balanceCents: -600000, dueSollCents: 600000, arrearsCents: 600000, openMonths: 12 }],
-  totals: { sollYearCents: 600000, paidYearCents: 0, openCents: 600000 },
+  rows: [{ tenancyId: 't1', tenantName: 'Meier', unitName: 'OG', months: Array.from({ length: 12 }, (_, i) => month(i + 1)), sollYearCents: 600000, baseRentYearCents: 600000, prepaymentYearCents: 0, flatRateYearCents: 0, paidYearCents: 0, settlementYearCents: 0, balanceCents: -600000, dueSollCents: 600000, arrearsCents: 600000, openMonths: 12 }],
+  settlementOnly: [],
+  totals: { sollYearCents: 600000, paidYearCents: 0, settlementYearCents: 0, openCents: 600000 },
 }
 
 let closed: { closedAt: string, sentAt: string | null } | null

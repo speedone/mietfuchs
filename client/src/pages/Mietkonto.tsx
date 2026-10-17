@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { Payment, RentLedger, RentMonth, Tenancy } from '../types'
-import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
+import type { Payment, PaymentKind, RentLedger, RentMonth, Tenancy, Unit } from '../types'
+import { api, errorText, fmtDate, fmtEuro } from '../api'
 import { usePeriod } from '../period'
 import { periodSpanText } from '../periodForm'
 import { CalendarYearSelect } from '../components/PeriodSelect'
 import { useProperty, withProperty } from '../property'
 import { bookingDate, newPaymentDate, rowStanding, shareText, showDecemberNote } from '../ledgerView'
+import { emptyPaymentForm, hasSettlementPayments, kindChangeQuestion, newPaymentForm, noRentYearText, PAYMENT_KIND_LABELS, PAYMENT_KIND_OPTIONS, paymentBody, paymentFormHints, paymentTenancyOptions, rentWithoutRow, rentWithoutRowQuestion, savedText, type PaymentForm } from '../paymentForm'
 import Drawer from '../components/Drawer'
 import PageHeader from '../components/PageHeader'
 import { useToast, useConfirm } from '../components/feedback'
@@ -13,8 +14,6 @@ import Table from '../components/Table'
 import { useFocusTarget, useScrollToFocus, type FocusProps } from '../focus'
 
 const MONTHS = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez']
-
-type PaymentForm = { tenancyId: string; date: string; amount: string; note: string }
 
 export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
   // Das Mietkonto rechnet im Kalenderjahr (#208, Entwurf 3.11).
@@ -25,6 +24,7 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
   const confirm = useConfirm()
   const [ledger, setLedger] = useState<RentLedger | null>(null)
   const [tenancies, setTenancies] = useState<Tenancy[]>([])
+  const [units, setUnits] = useState<Unit[]>([])
   const [payments, setPayments] = useState<Payment[]>([])
   const [form, setForm] = useState<PaymentForm | null>(null)
   const [error, setError] = useState('')
@@ -38,8 +38,9 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
       api<RentLedger>(withProperty(`/api/rentledger/${year}`, propertyId)),
       api<Tenancy[]>(withProperty('/api/tenancies', propertyId)),
       api<Payment[]>(withProperty('/api/payments', propertyId)),
+      api<Unit[]>(withProperty('/api/units', propertyId)),
     ])
-      .then(([l, t, p]) => { setLedger(l); setTenancies(t); setPayments(p); setError('') })
+      .then(([l, t, p, u]) => { setLedger(l); setTenancies(t); setPayments(p); setUnits(u); setError('') })
       .catch((e) => setError(String((e as Error).message)))
   }, [year, propertyId])
 
@@ -47,17 +48,25 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
 
   async function savePayment() {
     if (!form) return
-    const cents = parseEuro(form.amount)
-    if (!form.tenancyId || !/^\d{4}-\d{2}-\d{2}$/.test(form.date) || cents === null || cents === 0) {
-      setError('Bitte Mietverhältnis, Datum und einen Betrag angeben.')
+    const built = paymentBody(form)
+    if ('error' in built) {
+      setError(built.error)
       return
     }
     setError('')
+    if (rentWithoutRow(form, ledger)) {
+      const ok = await confirm({
+        title: 'Miete ohne Mietverhältnis im Jahr?',
+        message: rentWithoutRowQuestion(year, tenancyName(form.tenancyId)),
+        confirmLabel: 'Trotzdem als Miete speichern',
+      })
+      if (!ok) return
+    }
     // Lehnt der Server ab (#146), bleibt der Dialog offen und zeigt seinen Satz.
     try {
       await api('/api/payments', {
         method: 'POST',
-        body: JSON.stringify({ tenancyId: form.tenancyId, date: form.date, amountCents: cents, note: form.note.trim() || undefined }),
+        body: JSON.stringify(built.body),
       })
     } catch (e) {
       setError(errorText(e))
@@ -65,7 +74,25 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
     }
     setForm(null)
     await load()
-    toast(`Zahlung über ${fmtEuro(cents)} erfasst.`)
+    toast(savedText(built.body))
+  }
+
+  // Die Art einer erfassten Zahlung umstellen (Durchsicht M2): etwa ein früher als Miete erfasstes
+  // Guthaben. Erst nach Rückfrage, bis dahin zeigt die Auswahl das Gespeicherte (kindChangeQuestion).
+  // Gesendet wird nur die Art, der Rest bleibt (Zusammenführen nach Anwesenheit).
+  async function changeKind(p: Payment, kind: PaymentKind) {
+    if (kind === p.kind) return
+    const ok = await confirm({ ...kindChangeQuestion(p, kind, fmtDate(p.date)), confirmLabel: 'Art umstellen' })
+    if (!ok) return
+    try {
+      await api(`/api/payments/${p.id}`, { method: 'PUT', body: JSON.stringify({ kind }) })
+    } catch (e) {
+      setError(errorText(e))
+      return
+    }
+    setError('')
+    await load()
+    toast(`Zahlung vom ${fmtDate(p.date)} ist jetzt „${PAYMENT_KIND_OPTIONS.find((o) => o.value === kind)?.label ?? kind}“.`)
   }
 
   async function deletePayment(p: Payment) {
@@ -93,10 +120,8 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
     if (open <= 0) return
     setError('')
     setForm({
-      tenancyId,
-      date: bookingDate(year, mo, new Date()),
+      ...emptyPaymentForm(tenancyId, bookingDate(year, mo, new Date())),
       amount: (open / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 }),
-      note: '',
     })
   }
 
@@ -118,8 +143,8 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
         actions={
           <button
             className="btn"
-            onClick={() => { setError(''); setForm({ tenancyId: ledger?.rows[0]?.tenancyId ?? '', date: newPaymentDate(year, new Date()), amount: '', note: '' }) }}
-            disabled={(ledger?.rows.length ?? 0) === 0}
+            onClick={() => { setError(''); setForm(newPaymentForm(ledger, newPaymentDate(year, new Date()))) }}
+            disabled={tenancies.length === 0}
           >
             + Zahlung erfassen
           </button>
@@ -142,8 +167,14 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
           </div>
           <div className="kpi">
             <div className="v">{fmtEuro(ledger.totals.paidYearCents)}</div>
-            <div className="l">eingegangen</div>
+            <div className="l">Miete eingegangen</div>
           </div>
+          {hasSettlementPayments(payments, year) && (
+            <div className="kpi">
+              <div className="v">{fmtEuro(ledger.totals.settlementYearCents)}</div>
+              <div className="l">aus der Abrechnung (gesondert)</div>
+            </div>
+          )}
           <div className="kpi">
             <div className="v" style={{ color: ledger.totals.openCents > 0 ? 'var(--red)' : 'var(--green)' }}>
               {fmtEuro(ledger.totals.openCents)}
@@ -169,13 +200,23 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
           }
         >
           {error && <div className="error">{error}</div>}
+          {(ledger?.rows.length ?? 0) === 0 && <div className="info">{noRentYearText(year)}</div>}
           <div className="row">
+            <label className="field grow">
+              Art
+              <select value={form.kind} onChange={(e) => {
+                const kind = PAYMENT_KIND_OPTIONS.find((o) => o.value === e.target.value)?.value
+                if (kind) setForm({ ...form, kind })
+              }}>
+                {PAYMENT_KIND_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </label>
             <label className="field grow">
               Mietverhältnis
               <select value={form.tenancyId} onChange={(e) => setForm({ ...form, tenancyId: e.target.value })}>
                 <option value="">— wählen —</option>
-                {(ledger?.rows ?? []).map((r) => (
-                  <option key={r.tenancyId} value={r.tenancyId}>{r.tenantName} · {r.unitName}</option>
+                {paymentTenancyOptions(form.kind, ledger, tenancies, (id) => units.find((u) => u.id === id)?.name ?? '—', form.tenancyId).map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
               </select>
             </label>
@@ -189,9 +230,10 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
             </label>
             <label className="field grow">
               Notiz (optional)
-              <input value={form.note} placeholder="z. B. Überweisung, Nachzahlung" onChange={(e) => setForm({ ...form, note: e.target.value })} />
+              <input value={form.note} placeholder="z. B. Überweisung, Abrechnung 2025" onChange={(e) => setForm({ ...form, note: e.target.value })} />
             </label>
           </div>
+          {paymentFormHints(form).map((h) => <p className="hint" key={h}>{h}</p>)}
         </Drawer>
       )}
 
@@ -285,9 +327,15 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
                       <td className="num"><strong>{fmtEuro(r.sollYearCents)}</strong></td>
                     </tr>
                     <tr>
-                      <td>eingegangen</td>
+                      <td>Miete eingegangen</td>
                       <td className="num">{fmtEuro(r.paidYearCents)}</td>
                     </tr>
+                    {hasSettlementPayments(payments, year, r.tenancyId) && (
+                      <tr>
+                        <td>Abrechnung (Nachzahlung/Guthaben), gesondert</td>
+                        <td className="num">{fmtEuro(r.settlementYearCents)}</td>
+                      </tr>
+                    )}
                     <tr>
                       <td>{standing.kind === 'arrears' ? 'offener Rückstand (fällig)' : standing.kind === 'paidSoFar' ? 'noch nicht fällig' : 'Guthaben/Überzahlung'}</td>
                       <td className="num" style={{ color: standing.kind === 'arrears' ? 'var(--red)' : standing.kind === 'paidSoFar' ? 'var(--muted)' : 'var(--green)' }}>
@@ -302,6 +350,23 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
         )
       })}
 
+      {ledger && (ledger.settlementOnly?.length ?? 0) > 0 && (
+        <div className="card">
+          <h2>Abrechnung früherer Mietverhältnisse</h2>
+          <p className="muted">Nachzahlungen und Guthaben aus der Abrechnung, gezahlt im Jahr {year}, für Mietverhältnisse, die in diesem Jahr nicht mehr bestanden.</p>
+          <Table>
+            <tbody>
+              {ledger.settlementOnly.map((r) => (
+                <tr key={r.tenancyId}>
+                  <td>{r.tenantName} <span className="muted">· {r.unitName}</span></td>
+                  <td className="num">{fmtEuro(r.settlementYearCents)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        </div>
+      )}
+
       <div className="card">
         <h2>Zahlungseingänge {year}</h2>
         {yearPayments.length === 0 ? (
@@ -312,6 +377,7 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
               <tr>
                 <th>Datum</th>
                 <th>Mietverhältnis</th>
+                <th>Art</th>
                 <th>Notiz</th>
                 <th className="num">Betrag</th>
                 <th className="no-print"></th>
@@ -322,6 +388,21 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
                 <tr key={p.id}>
                   <td>{fmtDate(p.date)}</td>
                   <td>{tenancyName(p.tenancyId)}</td>
+                  <td>
+                    {/* Der Wert ist der gespeicherte; ein unbekannter stünde sonst als erster Eintrag da. */}
+                    <span className="print-only">{PAYMENT_KIND_LABELS[p.kind]}</span>
+                    <select
+                      className="no-print"
+                      aria-label={`Art der Zahlung vom ${fmtDate(p.date)}`}
+                      value={p.kind}
+                      onChange={(e) => {
+                        const kind = PAYMENT_KIND_OPTIONS.find((o) => o.value === e.target.value)?.value
+                        if (kind) void changeKind(p, kind)
+                      }}
+                    >
+                      {PAYMENT_KIND_OPTIONS.map((o) => <option key={o.value} value={o.value}>{PAYMENT_KIND_LABELS[o.value]}</option>)}
+                    </select>
+                  </td>
                   <td className="muted">{p.note ?? ''}</td>
                   <td className="num">{fmtEuro(p.amountCents)}</td>
                   <td className="actions no-print">

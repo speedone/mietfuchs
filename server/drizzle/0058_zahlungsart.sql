@@ -1,0 +1,1 @@
+ALTER TABLE `payments` ADD `kind` text DEFAULT 'rent' NOT NULL;
