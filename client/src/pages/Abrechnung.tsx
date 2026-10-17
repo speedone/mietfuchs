@@ -1,6 +1,6 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useId, useRef, useState } from 'react'
 import { startPrint } from '../printJob'
-import type { CostItem, HeatingSettlementInfo, NoticeSubject, PeriodKey, Settings, Settlement, SettlementRow, Tenancy, Unit } from '../types'
+import type { CostItem, HeatingSettlementInfo, Notice, NoticeSubject, PeriodKey, Settings, Settlement, SettlementRow, Tenancy, Unit } from '../types'
 import {
   adjustedPrepaymentLabel, heatingChoices, suggestionWithoutHeating, heatingOnlyNote, heatingOverridesWith, prepaymentLabel, prepaymentSplit, recommendedDeadlineText, settlementPaths, settlementTitle, totalLabel,
 } from '../heatingSettlementView'
@@ -35,6 +35,7 @@ import { showsStock, stockBlock } from '../stockView'
 import FuelBlock from '../components/FuelBlock'
 import { fuelBlock } from '../fuelView'
 import { closeWithQuestions } from '../fuelClose'
+import { despiteErrorsQuestion, SENT_AT_DECLINED, type DespiteErrorsKind } from '../despiteErrors'
 import { co2Block } from '../co2View'
 import { countOf } from '../../../shared/wording.ts'
 import { calendarPeriod } from '../../../shared/period.ts'
@@ -63,7 +64,9 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
   const [data, setData] = useState<Settlement | null>(null)
   const [error, setError] = useState('')
   const [printId, setPrintId] = useState<string | null>(null)
-  const [ppEdit, setPpEdit] = useState<{ tenancyId: string; value: string } | null>(null)
+  // `error` ist die Meldung am Feld (UI-Durchsicht H4): Eine ungültige Eingabe wurde vorher stumm verworfen.
+  const [ppEdit, setPpEdit] = useState<{ tenancyId: string; value: string; error?: string } | null>(null)
+  const ppErrorId = useId()
   // Die Korrektur der gezahlten Vorauszahlung hängt an einem Mietverhältnis dieses Objekts (#145).
   useOpenForm(ppEdit !== null)
   const [costItems, setCostItems] = useState<CostItem[]>([])
@@ -166,6 +169,48 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
   // „Abrechnung <Jahr>“ (Sichtprüfung E45).
   const docLabel = target !== null && data?.scope?.kind === 'heating' ? `Heizkostenabrechnung ${data.period.label}` : `Abrechnung ${label}`
 
+  // Die Fehler einer Rückfrage mit „Hier beheben →“ (#319); `onFix` bekommt das Ziel und schließt die Rückfrage.
+  const errorList = (errors: readonly Notice[], onFix: (target: { tab: NoticeTab, focus: NoticeSubject }) => void) => (
+    <ul className="close-errors">
+      {errors.map((n, i) => {
+        const target = noticeTarget(n.subject)
+        return (
+          <li key={i}>
+            {/* Mehrere Fehler können zum selben Ziel führen; der Titel unterscheidet die Knöpfe (#319, K1). */}
+            <strong id={`close-error-${i}`}>{n.title || n.text}</strong>
+            {n.title && <div>{n.text}</div>}
+            {target && onNavigate && (
+              <div><button type="button" className="btn secondary notice-action" aria-describedby={`close-error-${i}`} onClick={() => onFix(target)}>{target.label}</button></div>
+            )}
+          </li>
+        )
+      })}
+    </ul>
+  )
+
+  // Vor dem Drucken und vor dem Versanddatum (UI-Durchsicht H6): Enthält die Abrechnung Fehler, wird
+  // nachgefragt wie beim Abschließen (#319). `true` heißt weitermachen; Vorgabe ist, es zu lassen.
+  async function goOnDespiteErrors(kind: DespiteErrorsKind): Promise<boolean> {
+    const q = data ? despiteErrorsQuestion(kind, noticesOf(data)) : null
+    if (!q) return true
+    // Ein Behälter statt `let`: Der Übersetzer sähe die Zuweisung im Knopf nicht und hielte das Ziel für null.
+    const picked: { target: { tab: NoticeTab, focus: NoticeSubject } | null } = { target: null }
+    const ok = await confirm({
+      title: q.title,
+      message: (dismiss) => (
+        <>
+          <p>{q.message}</p>
+          {errorList(q.errors, (target) => { picked.target = target; dismiss() })}
+        </>
+      ),
+      cancelLabel: q.cancelLabel,
+      confirmLabel: q.confirmLabel,
+      defaultChoice: 'cancel',
+    })
+    if (picked.target && onNavigate) onNavigate(picked.target.tab, picked.target.focus)
+    return ok
+  }
+
   // Abrechnung abschließen / wieder öffnen / Versanddatum festhalten
   async function closeSettlement() {
     const ok = await confirm({
@@ -188,21 +233,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
           const message = q.errors.length === 0 ? q.message : (dismiss: () => void) => (
             <>
               <p>{q.message}</p>
-              <ul className="close-errors">
-                {q.errors.map((n, i) => {
-                  const target = noticeTarget(n.subject)
-                  return (
-                    <li key={i}>
-                      {/* Mehrere Fehler können zum selben Ziel führen; der Titel unterscheidet die Knöpfe (#319, K1). */}
-                      <strong id={`close-error-${i}`}>{n.title || n.text}</strong>
-                      {n.title && <div>{n.text}</div>}
-                      {target && onNavigate && (
-                        <div><button type="button" className="btn secondary notice-action" aria-describedby={`close-error-${i}`} onClick={() => { fix = target; dismiss() }}>{target.label}</button></div>
-                      )}
-                    </li>
-                  )
-                })}
-              </ul>
+              {errorList(q.errors, (target) => { fix = target; dismiss() })}
             </>
           )
           void confirm({
@@ -237,10 +268,23 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
   // Formular weiter und tauchte beim nächsten Abschluss wieder auf.
   const sentAt = useDraft(data?.closed?.sentAt ?? '', { scope: `${propertyId ?? ''}|${paths.close}|${data?.closed?.closedAt ?? ''}` })
   async function saveSentAt(value: string) {
+    // Abgebrochen bleibt der Entwurf mit dem Grund am Feld stehen (UI-Durchsicht H6).
+    if (value && !(await goOnDespiteErrors('sent'))) throw new Error(SENT_AT_DECLINED)
     await api(withProperty(paths.close, propertyId), { method: 'PUT', body: JSON.stringify({ sentAt: value || null }) })
     await load()
   }
   const isClosed = !!data?.closed
+
+  // Die Eingabe aus „✎ anpassen“: gültig gespeichert, ungültig mit Meldung am Feld und ohne Speichern.
+  function submitPpEdit(tenancyId: string) {
+    if (!ppEdit) return
+    const cents = parseEuro(ppEdit.value)
+    if (cents === null || cents < 0) {
+      setPpEdit({ ...ppEdit, error: 'Bitte einen Betrag in Euro eintragen, etwa 1.200,00 (nicht negativ).' })
+      return
+    }
+    void savePpOverride(tenancyId, cents)
+  }
 
   // Tatsächlich gezahlte Vorauszahlungen für ein Jahr festhalten (Korrektur) bzw. zurücksetzen
   async function savePpOverride(tenancyId: string, cents: number | null) {
@@ -532,7 +576,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
                   className="btn secondary no-print"
                   disabled={printAttachments && !attachmentsReady}
                   title={printAttachments && !attachmentsReady ? 'Belegkopien werden noch vorbereitet …' : undefined}
-                  onClick={() => setPrintId(st.tenancyId)}
+                  onClick={() => { void goOnDespiteErrors('print').then((ok) => { if (ok) setPrintId(st.tenancyId) }) }}
                 >
                   🖨 Drucken / PDF
                 </button>
@@ -605,15 +649,18 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
                                 aria-label="Gezahlte Vorauszahlung €"
                                 value={ppEdit.value}
                                 onChange={(e) => setPpEdit({ tenancyId: st.tenancyId, value: e.target.value })}
+                                aria-invalid={ppEdit.error ? true : undefined}
+                                aria-describedby={ppEdit.error ? ppErrorId : undefined}
                                 onKeyDown={(e) => {
                                   if (e.key === 'Escape') { e.preventDefault(); setPpEdit(null) }
-                                  else if (e.key === 'Enter') { e.preventDefault(); const c = parseEuro(ppEdit.value); if (c !== null) void savePpOverride(st.tenancyId, c) }
+                                  else if (e.key === 'Enter') { e.preventDefault(); submitPpEdit(st.tenancyId) }
                                 }}
                                 style={{ width: 100, textAlign: 'right', padding: '3px 6px' }}
                                 autoFocus
                               />{' '}
-                              <button className="btn small" onClick={() => { const c = parseEuro(ppEdit.value); if (c !== null) void savePpOverride(st.tenancyId, c) }}>OK</button>{' '}
+                              <button className="btn small" onClick={() => submitPpEdit(st.tenancyId)}>OK</button>{' '}
                               <button className="btn small ghost" onClick={() => setPpEdit(null)}>Abbrechen</button>
+                              {ppEdit.error && <span id={ppErrorId} className="field-message is-error inline-message" role="alert">{ppEdit.error}</span>}
                             </>
                           ) : (
                             <>

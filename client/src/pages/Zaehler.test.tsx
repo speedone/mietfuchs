@@ -66,6 +66,28 @@ test('leerer Zählerstand: Meldung statt einer gespeicherten 0', async () => {
   expect(sent).toEqual([])
 })
 
+// UI-Durchsicht H3: Die Meldung stand oben auf der Seite, beim Klick 407 px über dem sichtbaren
+// Bereich; es wirkte, als passiere nichts. Jetzt steht sie beim Knopf, als Alarm und ins Bild gerollt.
+test('Ablesung ohne Datum: die Meldung steht beim Knopf, mit role="alert", und rollt ins Bild', async () => {
+  const scrolled: unknown[] = []
+  const original = Element.prototype.scrollIntoView
+  Element.prototype.scrollIntoView = function (this: Element, arg?: boolean | ScrollIntoViewOptions) { scrolled.push([this.textContent, arg]) }
+  try {
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: /Ablesungen \(0\)/ }, { timeout: 5000 }))
+    fireEvent.change(screen.getByLabelText(/Zählerstand/), { target: { value: '5' } })
+    const button = screen.getByRole('button', { name: /Ablesung speichern/ })
+    fireEvent.click(button)
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toMatch(/Datum/)
+    expect(alert.closest('.reading-panel')).toBe(button.closest('.reading-panel'))
+    expect(scrolled).toEqual([[alert.textContent, { block: 'nearest' }]])
+    expect(sent).toEqual([])
+  } finally {
+    Element.prototype.scrollIntoView = original
+  }
+})
+
 const renderPage = () => render(
   <PeriodProvider>
     <PropertyProvider>

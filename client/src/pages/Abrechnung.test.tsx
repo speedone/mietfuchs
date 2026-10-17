@@ -95,6 +95,34 @@ test('„✎ anpassen“ schließt mit Abbrechen und mit Esc', async () => {
   await waitFor(() => expect(screen.queryByLabelText(/Gezahlte Vorauszahlung/)).toBeNull(), SLOW)
 })
 
+// UI-Durchsicht H4: Eine ungültige Eingabe wurde stumm verworfen, es geschah einfach nichts.
+test('„✎ anpassen“ mit ungültigem Betrag: Meldung am Feld, nichts gespeichert', async () => {
+  const inner = globalThis.fetch
+  const writes: string[] = []
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if ((init?.method ?? 'GET') !== 'GET') writes.push(`${init?.method} ${url}`)
+    return inner(url, init)
+  })
+  show()
+  fireEvent.click(await screen.findByRole('button', { name: /anpassen/ }, SLOW))
+  const feld = screen.getByLabelText(/Gezahlte Vorauszahlung/)
+  fireEvent.change(feld, { target: { value: 'abc' } })
+  fireEvent.click(screen.getByRole('button', { name: /^OK$/ }))
+  const alert = await screen.findByRole('alert', {}, SLOW)
+  expect(alert.textContent).toMatch(/Betrag/)
+  expect(feld.getAttribute('aria-invalid')).toBe('true')
+  expect(feld.getAttribute('aria-describedby')).toBe(alert.id)
+  fireEvent.keyDown(feld, { key: 'Enter' })
+  fireEvent.change(feld, { target: { value: '-5' } })
+  fireEvent.keyDown(feld, { key: 'Enter' })
+  expect(screen.getByRole('alert')).toBeTruthy()
+  expect(writes).toEqual([])
+  // Wer weitertippt, sieht die Meldung erst beim nächsten Versuch wieder.
+  fireEvent.change(feld, { target: { value: '450' } })
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(feld.getAttribute('aria-invalid')).toBeNull()
+})
+
 test('nach dem Wiederöffnen bleibt der frühere Versand sichtbar, die Frist läuft nicht scheinbar neu', async () => {
   history = [{ id: 'h1', closedAt: `${YEAR + 1}-01-10T09:00:00.000Z`, sentAt: `${YEAR + 1}-01-12`, reopenedAt: `${YEAR + 1}-03-01T10:00:00.000Z`, settlement: {} }]
   show()
@@ -333,4 +361,64 @@ test('Versanddatum: nach „Wieder öffnen“ bleibt kein unsichtbarer Entwurf z
   await waitFor(() => expect((screen.getByLabelText('Abrechnungsjahr') as HTMLSelectElement).value).toBe(String(YEAR - 1)), SLOW)
   expect(screen.queryByText('Offene Eingaben verwerfen?')).toBeNull()
   expect(puts).toEqual([])
+})
+
+// UI-Durchsicht H6: Drucken und das Versanddatum gingen ohne Hinweis, obwohl die Abrechnung Fehler
+// enthielt (etwa „Heizkostenabrechnung unvollständig“: die Heizkosten fehlten in jeder Mieterabrechnung).
+// Jetzt fragt die Seite nach, nach dem Muster der Rückfrage zum Abschließen (#319).
+const HEAT_ERROR = { code: 'heating.self-incomplete', level: 'error' as const, title: 'Heizkostenabrechnung unvollständig', text: 'Die Heizkosten fehlen in jeder Mieterabrechnung.', subject: { kind: 'tenancy' as const, id: 't1' } }
+const INFO_ERROR = { code: 'period.short', level: 'error' as const, title: 'Nur Auskunft', text: 'Färbt nicht.' }
+const printing = () => document.body.classList.contains('print-one')
+
+test('Drucken mit Fehlern: Rückfrage, Vorgabe „Nicht drucken“, „Trotzdem drucken“ druckt', async () => {
+  settlement.notices = [HEAT_ERROR]
+  showWithNav(() => {})
+  fireEvent.click(await screen.findByRole('button', { name: /Drucken \/ PDF/ }, SLOW))
+  const dialog = await screen.findByRole('dialog', { name: /Fehler/ }, SLOW)
+  expect(dialog.textContent).toContain('Heizkostenabrechnung unvollständig')
+  expect(document.activeElement?.textContent).toBe('Nicht drucken')
+  fireEvent.click(screen.getByRole('button', { name: 'Nicht drucken' }))
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull(), SLOW)
+  expect(printing()).toBe(false)
+  fireEvent.click(screen.getByRole('button', { name: /Drucken \/ PDF/ }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Trotzdem drucken' }, SLOW))
+  await waitFor(() => expect(printing()).toBe(true), SLOW)
+})
+
+test('Drucken mit Fehlern: „Hier beheben →“ druckt nicht und führt zum Eintrag', async () => {
+  settlement.notices = [HEAT_ERROR]
+  const nav = vi.fn()
+  showWithNav(nav)
+  fireEvent.click(await screen.findByRole('button', { name: /Drucken \/ PDF/ }, SLOW))
+  const dialog = await screen.findByRole('dialog', { name: /Fehler/ }, SLOW)
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Hier beheben → Stammdaten' }))
+  await waitFor(() => expect(nav).toHaveBeenCalledWith('stammdaten', { kind: 'tenancy', id: 't1' }), SLOW)
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(printing()).toBe(false)
+})
+
+test('Drucken: eine Auskunft aus INFORMATIONAL und Warnungen fragen nicht nach', async () => {
+  settlement.notices = [INFO_ERROR, { code: 'w', level: 'warning', title: 'Warnung', text: 'W' }]
+  show()
+  fireEvent.click(await screen.findByRole('button', { name: /Drucken \/ PDF/ }, SLOW))
+  await waitFor(() => expect(printing()).toBe(true), SLOW)
+  expect(screen.queryByRole('dialog')).toBeNull()
+})
+
+test('Versanddatum mit Fehlern: Rückfrage; „Nicht festhalten“ sendet nichts, „Trotzdem festhalten“ sendet', async () => {
+  const puts: unknown[] = []
+  stubSentAt(puts)
+  settlement.notices = [HEAT_ERROR]
+  show()
+  const feld = await sentAtField()
+  fireEvent.change(feld, { target: { value: `${YEAR + 1}-01-15` } })
+  fireEvent.click(screen.getByRole('button', { name: 'Versanddatum speichern' }))
+  await screen.findByRole('dialog', { name: /Fehler/ }, SLOW)
+  fireEvent.click(screen.getByRole('button', { name: 'Nicht festhalten' }))
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull(), SLOW)
+  expect(puts).toEqual([])
+  expect((await sentAtField()).value).toBe(`${YEAR + 1}-01-15`)
+  fireEvent.click(screen.getByRole('button', { name: 'Versanddatum speichern' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Trotzdem festhalten' }, SLOW))
+  await waitFor(() => expect(puts).toEqual([{ sentAt: `${YEAR + 1}-01-15` }]), SLOW)
 })

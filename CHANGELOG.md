@@ -88,6 +88,19 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Abrechnungszeitraums speichern, den Mietfuchs bisher ablehnte, weil kein Jahr zu Betriebsstrom und
   Abzug zugleich passte. Die Abrechnung an die Mieter ändert sich nicht
   ([#267](https://github.com/speedone/mietfuchs/issues/267)).
+- Rückfragen: Enter wählt den Knopf mit dem Fokus und bestätigt nicht mehr immer; vor dem Löschen
+  steht der Fokus auf „Abbrechen“, Tab bleibt im Dialog, und danach steht der Fokus wieder auf dem
+  Knopf, der die Rückfrage geöffnet hat.
+- Zähler: Eine Meldung zu „Ablesung speichern“ steht jetzt beim Knopf statt oben auf der Seite, wo
+  sie beim Klick nicht zu sehen war.
+- Abrechnung: Ein ungültiger Betrag bei „✎ anpassen“ wird nicht mehr stumm verworfen, sondern am
+  Feld gemeldet.
+- Ableseergebnis für den Mieter: Ein Zählerstand steht mit der Einheit des Zählers und seinen
+  Nachkommastellen da, ein Wärmezähler in MWh also nicht mehr als gerundete kWh.
+- Abrechnung: Enthält sie Fehler, fragt Mietfuchs vor dem Drucken und vor dem Festhalten des
+  Versanddatums nach, wie beim Abschließen, mit „Hier beheben →“ je Fehler.
+- „Angespannter Wohnungsmarkt“ am Objekt erklärt jetzt sich selbst und nicht die hälftige Teilung
+  der CO₂-Kosten.
 
 ## [0.11.3] – 2026-10-17
 

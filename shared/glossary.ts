@@ -347,6 +347,14 @@ export const GLOSSARY = {
       'Einen Härtefall nach § 5d Abs. 1 rechnet Mietfuchs nicht. ' +
       `Biobrennstoff aus einem Vorrat (Heizöl, Flüssiggas im Tank) und die Grenze von ${(HALF.bioCapPermille ?? 0) / 10} % ab ${(bioCapFrom() ?? '').slice(0, 4)} rechnet Mietfuchs noch nicht (#227); die Abrechnung sagt dann, was Sie selbst ermitteln müssen.`,
   },
+  // UI-Durchsicht M2: Die Frage am Objekt öffnete vorher die lange Erklärung zur hälftigen Teilung.
+  tightMarket: {
+    title: 'Angespannter Wohnungsmarkt',
+    short: 'Ein Gebiet, das eine Verordnung der Landesregierung bestimmt, etwa zur Mietpreisbremse (§ 556d BGB), zur Kappungsgrenze (§ 558 Abs. 3 BGB) oder zur Kündigungssperrfrist (§ 577a Abs. 2 BGB). Manche Verordnungen nennen nur Teile einer Gemeinde, und sie gelten befristet.',
+    example: `Zweifamilienhaus, eine Wohnung bewohnen Sie selbst, Gasheizung nach § 43 GModG, CO₂-Kosten eines Jahres ab ${halfSplitFirstDay().slice(0, 4)} von 600 €, Stufe 40 %. Liegt das Haus in keinem solchen Gebiet und haben Sie es dem Mieter mitgeteilt, tragen Sie nach Stufen 600 € × 40 % = 240,00 €. Liegt es in einem solchen Gebiet, gilt die hälftige Teilung: 600 € × 50 % = 300,00 €.`,
+    norm: '§ 556d Abs. 2, § 558 Abs. 3, § 577a Abs. 2 BGB; § 5d Abs. 3 CO2KostAufG; § 43 GModG',
+    needed: `Nur bei einer Heizung nach § 43 GModG in einem Haus mit höchstens ${TWO.maxDwellings} Wohnungen, von denen Sie eine selbst bewohnen. Dort entscheidet die Antwort, ob für die CO₂-Kosten die hälftige Teilung gilt oder weiter das Stufenmodell. Sonst braucht Mietfuchs die Angabe nicht.`,
+  },
   // Heizung PR 19 (#97). Wortlaut § 2 Abs. 7, § 5 Abs. 3, § 6 Abs. 2, 3, § 8 Abs. 2, § 9 CO2KostAufG am 12.10.2026
   // gelesen; Prüfung S2 und K3, Gegenprüfung M1 (auch die zentrale Heizung mit Brennstoffvertrag beim Mieter).
   co2Refund: {

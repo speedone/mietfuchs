@@ -2420,7 +2420,9 @@ export type SelfPotView = {
 // Eine Ablesung an einer Grenze: `date` null heißt, es gibt keine.
 // `oldEndValue` (Durchsicht von #241, Recht-I2): bei einem Wechsel oder Stichtag an der Grenze der Stand davor; beim
 // Heizkostenverteiler der Stichtagswert.
-export type SelfReadingView = { meterId: string; meterName: string; pot: SelfPot; boundary: string; date: string | null; value: number | null; oldEndValue?: number }
+// `meterUnit` ist die Einheit des Zählers (UI-Durchsicht H5): Ein Wärmezähler in MWh erschien sonst als kWh.
+// Ältere eingefrorene Stände haben sie nicht; dann gilt die Einheit des Topfes.
+export type SelfReadingView = { meterId: string; meterName: string; meterUnit?: string; pot: SelfPot; boundary: string; date: string | null; value: number | null; oldEndValue?: number }
 // Eine Grenze einer Wohnung für die Ampel der Seite Heizkosten.
 export type SelfBoundaryView = {
   date: string
