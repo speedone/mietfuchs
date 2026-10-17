@@ -417,3 +417,51 @@ test('IBAN: ist die gespeicherte ungültig, sind die „Weiteren Angaben“ aufg
   await openTenancy('Schmidt')
   expect(details().open).toBe(false)
 })
+
+// Safari auf dem Mac und Firefox kennen <input type="month"> nicht; in die Staffeln ließ sich dort
+// nichts Brauchbares eingeben. Monat und Jahr sind deshalb zwei Auswahllisten.
+const pickers = (dialog: HTMLElement) => ({
+  months: within(dialog).getAllByLabelText('gültig ab: Monat') as HTMLSelectElement[],
+  years: within(dialog).getAllByLabelText('gültig ab: Jahr') as HTMLSelectElement[],
+})
+
+test('Staffeln: Monat und Jahr als Auswahl, der gespeicherte Monat ist gewählt und wird so gespeichert', async () => {
+  page([tenancy('t1', 'Müller', { baseRents: [{ from: '2025-01', monthlyCents: 80000 }], prepayments: [{ from: '2025-01', monthlyCents: 15000 }] })])
+  const [edit] = await screen.findAllByRole('button', { name: /Mietverhältnis bearbeiten/i }, SLOW)
+  if (!edit) throw new Error('kein Bearbeiten-Knopf')
+  fireEvent.click(edit)
+  const dialog = await screen.findByRole('dialog', undefined, SLOW)
+  const { months, years } = pickers(dialog)
+  expect(months.map((m) => m.value)).toEqual(['01', '01'])
+  expect(years.map((y) => y.value)).toEqual(['2025', '2025'])
+  expect(months.every((m) => m.tagName === 'SELECT')).toBe(true)
+  fireEvent.change(months[0] as HTMLSelectElement, { target: { value: '03' } })
+  fireEvent.change(months[1] as HTMLSelectElement, { target: { value: '04' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Übernehmen' }))
+  await vi.waitFor(() => expect(sent.some((s) => s.url.startsWith('/api/tenancies'))).toBe(true))
+  const body = sent.find((s) => s.url.startsWith('/api/tenancies'))?.body
+  expect(body?.baseRents).toEqual([{ from: '2025-03', monthlyCents: 80000 }])
+  expect(body?.prepayments).toEqual([{ from: '2025-04', monthlyCents: 15000 }])
+})
+
+test('Staffeln: beides leer gilt ab Einzug, nur Monat ohne Jahr wird mit Hinweis abgelehnt', async () => {
+  page([tenancy('t1', 'Müller', { start: '2025-02-01', baseRents: [{ from: '2025-02', monthlyCents: 80000 }] })])
+  const [edit] = await screen.findAllByRole('button', { name: /Mietverhältnis bearbeiten/i }, SLOW)
+  if (!edit) throw new Error('kein Bearbeiten-Knopf')
+  fireEvent.click(edit)
+  const dialog = await screen.findByRole('dialog', undefined, SLOW)
+  const { months, years } = pickers(dialog)
+  const [month] = months
+  const [year] = years
+  if (!month || !year) throw new Error('Monatsauswahl fehlt')
+
+  fireEvent.change(year, { target: { value: '' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Übernehmen' }))
+  expect(await within(dialog).findByText(/Bitte noch das Jahr wählen/, undefined, SLOW)).toBeTruthy()
+  expect(sent.some((s) => s.url.startsWith('/api/tenancies'))).toBe(false)
+
+  fireEvent.change(month, { target: { value: '' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Übernehmen' }))
+  await vi.waitFor(() => expect(sent.some((s) => s.url.startsWith('/api/tenancies'))).toBe(true))
+  expect(sent.find((s) => s.url.startsWith('/api/tenancies'))?.body.baseRents).toEqual([{ from: '2025-02', monthlyCents: 80000 }])
+})

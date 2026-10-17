@@ -1,6 +1,6 @@
 // Nebenkostenmodell am Mietverhältnis (#93), die Seite der Oberfläche.
 import { expect, test } from 'vitest'
-import { COST_MODEL_LABELS, HEATING_MODEL_LABELS, SELF_SUPPLY_TENANCY_HINT, buildPersonHistory, costModelBadge, costModelBody, defaultTenancyUnitId, notSettledText, overlapQuestion, parsePersons, prepaymentColumn, showsFlatRates } from './tenancyModel'
+import { COST_MODEL_LABELS, HEATING_MODEL_LABELS, SELF_SUPPLY_TENANCY_HINT, buildPersonHistory, costModelBadge, costModelBody, defaultTenancyUnitId, monthPickerParts, monthPickerText, monthPickerYears, notSettledText, overlapQuestion, parsePersons, parseScheduleMonth, prepaymentColumn, scheduleMonthProblem, scheduleMonthText, showsFlatRates } from './tenancyModel'
 import type { Tenancy, Unit } from './types'
 
 test('die Staffel der Pauschale erscheint nur bei einer Pauschale', () => {
@@ -133,4 +133,82 @@ test('Mieter heizt selbst (Heizung PR 19): nur bei der Heizung wählbar, gespeic
   expect(SELF_SUPPLY_TENANCY_HINT).toMatch(/Wartung und Betriebsstrom, die Sie tragen, rechnet Mietfuchs weiter ab/)
   expect(SELF_SUPPLY_TENANCY_HINT).toMatch(/in Textform auf den Erstattungsanspruch und auf die Pflicht nach § 43 Abs\. 1 GModG hinweisen \(§ 6 Abs\. 2 Satz 6 CO2KostAufG\)/)
   expect(SELF_SUPPLY_TENANCY_HINT).toMatch(/12 Monaten/)
+})
+
+test('Monat einer Staffel: auch in deutscher Schreibweise, wie sie Safari und Firefox ohne Monatsauswahl bekommen', () => {
+  // Chrome liefert aus der Monatsauswahl immer JJJJ-MM
+  expect(parseScheduleMonth('2026-01')).toBe('2026-01')
+  // Safari auf dem Mac und Firefox zeigen ein Textfeld; dort tippt man, was man kennt
+  expect(parseScheduleMonth('01.2026')).toBe('2026-01')
+  expect(parseScheduleMonth('1.2026')).toBe('2026-01')
+  expect(parseScheduleMonth('10/2026')).toBe('2026-10')
+  expect(parseScheduleMonth(' 01.01.2026 ')).toBe('2026-01')
+  expect(parseScheduleMonth('1.10.2026')).toBe('2026-10')
+  expect(parseScheduleMonth('2026-10-01')).toBe('2026-10')
+})
+
+test('Monat einer Staffel: ein Tag mitten im Monat und Unsinn werden nicht gedeutet', () => {
+  // Eine Staffel gilt ab Monatsanfang; „15.10.2026“ still als Oktober zu lesen, hieße raten
+  expect(parseScheduleMonth('15.10.2026')).toBeNull()
+  expect(parseScheduleMonth('2026-10-15')).toBeNull()
+  expect(parseScheduleMonth('13.2026')).toBeNull()
+  expect(parseScheduleMonth('00.2026')).toBeNull()
+  expect(parseScheduleMonth('Januar 2026')).toBeNull()
+  expect(parseScheduleMonth('26-01')).toBeNull()
+  expect(parseScheduleMonth('')).toBeNull()
+  // ein Jahr außerhalb von 1900 bis 2100 ist ein Tippfehler
+  expect(parseScheduleMonth('01.0026')).toBeNull()
+  expect(parseScheduleMonth('01.2206')).toBeNull()
+  expect(parseScheduleMonth('01.2100')).toBe('2100-01')
+})
+
+test('Monat einer Staffel zur Anzeige: JJJJ-MM wird MM.JJJJ und lässt sich wieder lesen', () => {
+  expect(scheduleMonthText('2026-01')).toBe('01.2026')
+  expect(parseScheduleMonth(scheduleMonthText('2026-10'))).toBe('2026-10')
+  expect(scheduleMonthText('')).toBe('')
+})
+
+test('Monatsauswahl: Teile aus dem Formularwert und zurück, auch unvollständig', () => {
+  expect(monthPickerParts('03.2025')).toEqual({ month: '03', year: '2025' })
+  expect(monthPickerParts('')).toEqual({ month: '', year: '' })
+  expect(monthPickerParts('03.')).toEqual({ month: '03', year: '' })
+  expect(monthPickerParts('.2025')).toEqual({ month: '', year: '2025' })
+  expect(monthPickerText('03', '2025')).toBe('03.2025')
+  expect(monthPickerText('', '')).toBe('')
+  // Nur eine Hälfte gewählt: unvollständig, damit das Speichern es meldet statt „ab Einzug“ zu nehmen
+  expect(parseScheduleMonth(monthPickerText('03', ''))).toBeNull()
+  expect(monthPickerText('03', '')).not.toBe('')
+})
+
+test('Monatsauswahl: Jahre ab Einzug bis zehn Jahre voraus (Staffelmiete), dazu das Jahr eines gespeicherten Werts', () => {
+  const years = monthPickerYears('2023-05-01', '', '2025-10-15')
+  expect(years[0]).toBe('2023')
+  expect(years.at(-1)).toBe('2035')
+  expect(monthPickerYears('', '', '2025-10-15')[0]).toBe('2015')
+  expect(monthPickerYears('2023-05-01', '01.2019', '2025-10-15')[0]).toBe('2019')
+  // Einzug in der Zukunft: sein Jahr steht zur Auswahl, und von dort zehn Jahre weiter
+  const future = monthPickerYears('2030-01-01', '', '2025-10-15')
+  expect(future[0]).toBe('2025')
+  expect(future).toContain('2030')
+  expect(future.at(-1)).toBe('2040')
+  // Tippfehler im Einzug („0202“) bläht die Liste nicht auf
+  const typo = monthPickerYears('0202-03-01', '', '2025-10-15')
+  expect(typo[0]).toBe('2015')
+  expect(typo.length).toBe(21)
+})
+
+test('Monatsauswahl: ungültige ältere Werte zeigen keine Auswahl, die nicht dem Wert entspricht', () => {
+  expect(monthPickerParts(scheduleMonthText('2024-13'))).toEqual({ month: '', year: '2024' })
+  expect(monthPickerParts(scheduleMonthText('0024-01'))).toEqual({ month: '01', year: '' })
+  expect(monthPickerParts(scheduleMonthText('2206-01'))).toEqual({ month: '01', year: '' })
+  for (const parts of [monthPickerParts('13.2024'), monthPickerParts('01.0024')]) {
+    if (parts.year) expect(monthPickerYears('2020-01-01', '', '2025-10-15')).toContain(parts.year)
+  }
+})
+
+test('Meldung beim Speichern nennt, was am Monat fehlt', () => {
+  expect(scheduleMonthProblem('03.')).toMatch(/das Jahr/)
+  expect(scheduleMonthProblem('.2025')).toMatch(/den Monat/)
+  expect(scheduleMonthProblem('13.2024')).toMatch(/den Monat/)
+  expect(scheduleMonthProblem('irgendwann')).toMatch(/„irgendwann“ ist ungültig/)
 })

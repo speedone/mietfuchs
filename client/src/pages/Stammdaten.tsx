@@ -10,7 +10,7 @@ import PropertyCard from '../components/PropertyCard'
 import IbanInput from '../components/IbanInput'
 import { ibanForSave, ibanToInput, storedIbanInvalid } from '../ibanField'
 import { IBAN_LABELS } from '../../../shared/iban.ts'
-import { COST_MODEL_LABELS, HEATING_MODEL_LABELS, SELF_SUPPLY_KIND_OPTIONS, SELF_SUPPLY_TENANCY_HINT, buildPersonHistory, costModelBadge, costModelBody, defaultTenancyUnitId, overlapQuestion, prepaymentColumn, showsFlatRates } from '../tenancyModel'
+import { COST_MODEL_LABELS, HEATING_MODEL_LABELS, SELF_SUPPLY_KIND_OPTIONS, SELF_SUPPLY_TENANCY_HINT, buildPersonHistory, costModelBadge, costModelBody, defaultTenancyUnitId, overlapQuestion, parseScheduleMonth, prepaymentColumn, scheduleMonthProblem, scheduleMonthText, showsFlatRates } from '../tenancyModel'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import { buildTenantChange, defaultStart, EMPTY_NEW_TENANT, endProblem, gapProblem, INTERIM_FEE_HINT, INTERIM_GAP_OPTIONS, meterProblem, parseMeterValue, successorHeatingNote, type NewTenantForm } from '../tenantChange'
 import { gapConsequence } from '../heatingSelfView'
@@ -19,6 +19,7 @@ import PageHeader from '../components/PageHeader'
 import { emptyUnitsText } from '../propertyView'
 import Term from '../components/Term'
 import { useToast, useConfirm } from '../components/feedback'
+import MonthPicker from '../components/MonthPicker'
 import Table from '../components/Table'
 import HeatingCard from '../components/HeatingCard'
 import { useFocusTarget, type FocusProps } from '../focus'
@@ -91,11 +92,11 @@ function tenancyToForm(t: Tenancy): TenancyForm {
     start: t.start,
     end: t.end ?? '',
     baseRents: (t.baseRents ?? []).map((p) => ({
-      from: p.from,
+      from: scheduleMonthText(p.from),
       amount: (p.monthlyCents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 }),
     })),
     prepayments: t.prepayments.map((p) => ({
-      from: p.from,
+      from: scheduleMonthText(p.from),
       amount: (p.monthlyCents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 }),
     })),
     email: t.email ?? '',
@@ -110,7 +111,7 @@ function tenancyToForm(t: Tenancy): TenancyForm {
     heatingModel: t.heatingModel ?? 'settlement',
     selfSupplyKind: t.selfSupplyKind ?? '',
     flatRates: (t.flatRates ?? []).map((p) => ({
-      from: p.from,
+      from: scheduleMonthText(p.from),
       amount: (p.monthlyCents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 }),
     })),
     heatingPrepayments: (t.heatingPrepayments ?? []).map((p) => ({
@@ -226,37 +227,31 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
     const { personHistory } = persons
     const baseRents: { from: string; monthlyCents: number }[] = []
     for (const row of tenForm.baseRents) {
-      if (!row.from && !row.amount.trim()) continue // leere Zeile überspringen
+      if (!row.from.trim() && !row.amount.trim()) continue // leere Zeile überspringen
       const cents = parseEuro(row.amount)
-      const from = row.from || tenForm.start.slice(0, 7)
-      if (cents === null || !/^\d{4}-\d{2}$/.test(from)) {
-        setError('Bitte Kaltmiete-Staffel prüfen (Monat und Betrag).')
-        return
-      }
+      const from = row.from.trim() ? parseScheduleMonth(row.from) : tenForm.start.slice(0, 7)
+      if (from === null) return setError(`Kaltmiete-Staffel: ${scheduleMonthProblem(row.from)}`)
+      if (cents === null) return setError('Bitte den Betrag der Kaltmiete-Staffel prüfen.')
       baseRents.push({ from, monthlyCents: cents })
     }
     baseRents.sort((a, b) => a.from.localeCompare(b.from))
     const prepayments: { from: string; monthlyCents: number }[] = []
     for (const row of tenForm.prepayments) {
-      if (!row.from && !row.amount.trim()) continue // leere Zeile überspringen
+      if (!row.from.trim() && !row.amount.trim()) continue // leere Zeile überspringen
       const cents = parseEuro(row.amount)
-      const from = row.from || tenForm.start.slice(0, 7)
-      if (cents === null || !/^\d{4}-\d{2}$/.test(from)) {
-        setError('Bitte Vorauszahlungs-Staffel prüfen (Monat und Betrag).')
-        return
-      }
+      const from = row.from.trim() ? parseScheduleMonth(row.from) : tenForm.start.slice(0, 7)
+      if (from === null) return setError(`Vorauszahlungs-Staffel: ${scheduleMonthProblem(row.from)}`)
+      if (cents === null) return setError('Bitte den Betrag der Vorauszahlungs-Staffel prüfen.')
       prepayments.push({ from, monthlyCents: cents })
     }
     const flatRates: { from: string; monthlyCents: number }[] = []
     if (showsFlatRates(tenForm.costModel, tenForm.heatingModel)) {
       for (const row of tenForm.flatRates) {
-        if (!row.from && !row.amount.trim()) continue
+        if (!row.from.trim() && !row.amount.trim()) continue
         const cents = parseEuro(row.amount)
-        const from = row.from || tenForm.start.slice(0, 7)
-        if (cents === null || !/^\d{4}-\d{2}$/.test(from)) {
-          setError('Bitte die Staffel der Pauschale prüfen (Monat und Betrag).')
-          return
-        }
+        const from = row.from.trim() ? parseScheduleMonth(row.from) : tenForm.start.slice(0, 7)
+        if (from === null) return setError(`Staffel der Pauschale: ${scheduleMonthProblem(row.from)}`)
+        if (cents === null) return setError('Bitte den Betrag in der Staffel der Pauschale prüfen.')
         flatRates.push({ from, monthlyCents: cents })
       }
     }
@@ -614,10 +609,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
               <div className="field-group-label">Kaltmiete je Monat — Staffel (leer = nur NK)</div>
               {tenForm.baseRents.map((p, i) => (
                 <div className="staffel-row" key={i}>
-                  <label className="field">
-                    gültig ab
-                    <input type="month" value={p.from} placeholder="Einzugsmonat" onChange={(e) => setTenForm({ ...tenForm, baseRents: tenForm.baseRents.map((x, k) => (k === i ? { ...x, from: e.target.value } : x)) })} />
-                  </label>
+                  <MonthPicker label="gültig ab" value={p.from} start={tenForm.start} today={localToday()} onChange={(from) => setTenForm({ ...tenForm, baseRents: tenForm.baseRents.map((x, k) => (k === i ? { ...x, from } : x)) })} />
                   <label className="field">
                     Betrag €/Monat
                     <input value={p.amount} placeholder="z. B. 800,00" onChange={(e) => setTenForm({ ...tenForm, baseRents: tenForm.baseRents.map((x, k) => (k === i ? { ...x, amount: e.target.value } : x)) })} />
@@ -634,10 +626,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
               <div className="field-group-label">NK-<Term id="prepayment">Vorauszahlung</Term> je Monat — Staffel</div>
               {tenForm.prepayments.map((p, i) => (
                 <div className="staffel-row" key={i}>
-                  <label className="field">
-                    gültig ab
-                    <input type="month" value={p.from} placeholder="Einzugsmonat" onChange={(e) => setTenForm({ ...tenForm, prepayments: tenForm.prepayments.map((x, k) => (k === i ? { ...x, from: e.target.value } : x)) })} />
-                  </label>
+                  <MonthPicker label="gültig ab" value={p.from} start={tenForm.start} today={localToday()} onChange={(from) => setTenForm({ ...tenForm, prepayments: tenForm.prepayments.map((x, k) => (k === i ? { ...x, from } : x)) })} />
                   <label className="field">
                     Betrag €/Monat
                     <input value={p.amount} placeholder="z. B. 150,00" onChange={(e) => setTenForm({ ...tenForm, prepayments: tenForm.prepayments.map((x, k) => (k === i ? { ...x, amount: e.target.value } : x)) })} />
@@ -723,10 +712,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                   </div>
                   {(tenForm.flatRates.length > 0 ? tenForm.flatRates : [{ from: '', amount: '' }]).map((p, i, alle) => (
                     <div className="staffel-row" key={i}>
-                      <label className="field">
-                        gültig ab
-                        <input type="month" value={p.from} placeholder="Einzugsmonat" onChange={(e) => setTenForm({ ...tenForm, flatRates: alle.map((x, k) => (k === i ? { ...x, from: e.target.value } : x)) })} />
-                      </label>
+                      <MonthPicker label="gültig ab" value={p.from} start={tenForm.start} today={localToday()} onChange={(from) => setTenForm({ ...tenForm, flatRates: alle.map((x, k) => (k === i ? { ...x, from } : x)) })} />
                       <label className="field">
                         Betrag €/Monat
                         <input value={p.amount} placeholder="z. B. 90,00" onChange={(e) => setTenForm({ ...tenForm, flatRates: alle.map((x, k) => (k === i ? { ...x, amount: e.target.value } : x)) })} />
