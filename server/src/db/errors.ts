@@ -68,6 +68,7 @@ const FIELD_NAMES: Record<string, string> = {
   key: 'Umlageschlüssel',
   type: 'Zählertyp',
   deposit_status: 'Stand der Kaution',
+  state: 'Bundesland',
 }
 
 const fieldName = (column: string): string => FIELD_NAMES[column] ?? `„${column}“`

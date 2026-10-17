@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { RentLedgerRow, RentMonth, RentMonthStatus } from './types'
-import { bookingDate, newPaymentDate, rowStanding, shareText, showDecemberNote } from './ledgerView'
+import { bookingDate, newPaymentDate, rentDueNote, rowStanding, shareText, showDecemberNote } from './ledgerView'
 
 const month = (m: number, sollCents: number, status: RentMonthStatus): RentMonth => ({
   month: m, baseRentCents: sollCents, prepaymentCents: 0, flatRateCents: 0, sollCents, paidCents: status === 'paid' ? sollCents : 0, status,
@@ -93,5 +93,30 @@ describe('Mietkonto: der angebrochene Monat (#311)', () => {
   it('nennt den Anteil am Monat, ein voller Monat bleibt ohne Zusatz', () => {
     expect(shareText({ share: { days: 17, of: 31 } })).toBe('anteilig 17/31 Tage')
     expect(shareText({})).toBeNull()
+  })
+})
+
+describe('Fälligkeit des laufenden Monats als Auskunft', () => {
+  it('nennt den dritten Werktag nach den Feiertagen am Ort, ohne Samstag', () => {
+    expect(rentDueNote(2027, new Date(2027, 0, 2), 'BW')).toBe(
+      'Die Miete für Januar ist fällig bis Do., 07.01.2027 (3. Werktag, Samstag nicht mitgezählt; nach den Feiertagen in Baden-Württemberg). ' +
+      'Als Rückstand zählt das Mietkonto den laufenden Monat erst ab dem nächsten.',
+    )
+    expect(rentDueNote(2026, new Date(2026, 7, 1), 'BE')).toMatch(/^Die Miete für August ist fällig bis Mi\., 05\.08\.2026 /)
+  })
+
+  it('ohne Bundesland zählen nur die bundesweiten Feiertage, und das steht dabei', () => {
+    expect(rentDueNote(2027, new Date(2027, 0, 2), null)).toMatch(/fällig bis Mi\., 06\.01\.2027 \(3\. Werktag, Samstag nicht mitgezählt; nur nach den bundesweiten Feiertagen, weil beim Objekt kein Bundesland eingetragen ist\)/)
+    expect(rentDueNote(2027, new Date(2027, 0, 2), undefined)).toBe(rentDueNote(2027, new Date(2027, 0, 2), null))
+  })
+
+  it('nach dem Tag „war fällig“, am Tag selbst noch „ist“', () => {
+    expect(rentDueNote(2026, new Date(2026, 9, 5), 'BY')).toMatch(/^Die Miete für Oktober ist fällig bis Mo\., 05\.10\.2026/)
+    expect(rentDueNote(2026, new Date(2026, 9, 6), 'BY')).toMatch(/^Die Miete für Oktober war fällig bis Mo\., 05\.10\.2026/)
+  })
+
+  it('nur im laufenden Jahr', () => {
+    expect(rentDueNote(2025, new Date(2026, 9, 6), 'BY')).toBeNull()
+    expect(rentDueNote(2027, new Date(2026, 9, 6), 'BY')).toBeNull()
   })
 })

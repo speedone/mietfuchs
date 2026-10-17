@@ -5,7 +5,9 @@
 // gefunden, die nicht stimmten. Eine ungeprüfte Bedingung in einer Komponente ist keine
 // Formalie, sondern die Stelle, an der so etwas sitzt.
 
-import type { RentLedgerRow, RentMonth } from './types'
+import type { FederalState, RentLedgerRow, RentMonth } from './types'
+import { rentDueDate, rentDueRuleText } from '../../shared/deadlines.ts'
+import { stateName, weekdayOf } from '../../shared/holidays.ts'
 
 // **Der überraschende Dezember.** Eine Zahlung zählt zu dem Jahr, in dem sie eingegangen ist.
 // Geht die Dezembermiete erst im Januar ein, bleibt der Dezember im Mietkonto offen, obwohl der
@@ -71,4 +73,25 @@ export function newPaymentDate(year: number, today: Date): string {
 // angesetzt, dieselbe Regel wie in der Abrechnung. Ein voller Monat hat keinen Zusatz.
 export function shareText(mo: Pick<RentMonth, 'share'>): string | null {
   return mo.share ? `anteilig ${mo.share.days}/${mo.share.of} Tage` : null
+}
+
+// Bis wann die Miete des laufenden Monats zu zahlen ist, als **Auskunft** über den Karten: nach der Regel
+// im Rechtsregister und den Feiertagen am Ort des Objekts (rentDueDate in shared/deadlines.ts).
+// Die Rechnung des Mietkontos bleibt, wie sie ist: Als Rückstand zählt der laufende Monat erst ab dem
+// nächsten (#133), auch nach diesem Tag. Der Satz sagt das, sonst widerspräche er den gestrichelten
+// Monaten. Nur im laufenden Jahr, örtlich wie showDecemberNote; ohne Bundesland mit dem Hinweis, dass
+// dann nur die Feiertage aller Länder zählen, die Frist also einen Tag früher erscheinen kann.
+const MONTH_NAMES = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember']
+const WEEKDAYS = ['So.', 'Mo.', 'Di.', 'Mi.', 'Do.', 'Fr.', 'Sa.']
+
+export function rentDueNote(year: number, today: Date, state: FederalState | null | undefined): string | null {
+  if (year !== today.getFullYear()) return null
+  const month = today.getMonth() + 1
+  const iso = (d: number) => `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+  const due = rentDueDate(iso(1).slice(0, 7), state ?? null)
+  const [, m, d] = due.split('-')
+  const passed = iso(today.getDate()) > due
+  const where = state ? `nach den Feiertagen in ${stateName(state)}` : 'nur nach den bundesweiten Feiertagen, weil beim Objekt kein Bundesland eingetragen ist'
+  return `Die Miete für ${MONTH_NAMES[month - 1]} ${passed ? 'war' : 'ist'} fällig bis ${WEEKDAYS[weekdayOf(due)]}, ${d}.${m}.${year} ` +
+    `(${rentDueRuleText(due)}; ${where}). Als Rückstand zählt das Mietkonto den laufenden Monat erst ab dem nächsten.`
 }

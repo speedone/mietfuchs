@@ -43,6 +43,10 @@ export type Property = {
   tightMarket?: boolean | null
   tightMarketFrom?: string | null
   tightMarketTo?: string | null
+  // Das Bundesland, in dem das Objekt liegt, für Fristen nach Werktagen und die gesetzlichen Feiertage am Ort
+  // (shared/holidays.ts, shared/deadlines.ts). `null` oder fehlend heißt unbekannt; dann gelten nur die
+  // Feiertage, die in allen Ländern gelten.
+  state?: FederalState | null
   // Der Rhythmus der Abrechnungszeiträume (#208). Der Server liefert ihn immer mit; fehlt er, gilt
   // das Kalenderjahr (`rulesOf` in shared/period.ts). Ändern lässt er sich in dieser Version nicht.
   periodRules?: PeriodRules

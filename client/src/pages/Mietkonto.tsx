@@ -5,7 +5,7 @@ import { usePeriod } from '../period'
 import { periodSpanText } from '../periodForm'
 import { CalendarYearSelect } from '../components/PeriodSelect'
 import { useProperty, withProperty } from '../property'
-import { bookingDate, newPaymentDate, rowStanding, shareText, showDecemberNote } from '../ledgerView'
+import { bookingDate, newPaymentDate, rentDueNote, rowStanding, shareText, showDecemberNote } from '../ledgerView'
 import { emptyPaymentForm, hasSettlementPayments, kindChangeQuestion, newPaymentForm, noRentYearText, PAYMENT_KIND_LABELS, PAYMENT_KIND_OPTIONS, paymentBody, paymentFormHints, paymentTenancyOptions, rentWithoutRow, rentWithoutRowQuestion, savedText, type PaymentForm } from '../paymentForm'
 import Drawer from '../components/Drawer'
 import PageHeader from '../components/PageHeader'
@@ -134,6 +134,7 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
   const yearPayments = payments
     .filter((p) => p.date >= `${year}-01-01` && p.date <= `${year}-12-31`)
     .sort((a, b) => b.date.localeCompare(a.date))
+  const dueNote = rentDueNote(year, new Date(), property?.state)
 
   return (
     <>
@@ -245,6 +246,8 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
       {ledger && ledger.rows.some((r) => r.sollYearCents > 0) && (
         <p className="muted">Klick auf einen roten oder gelben Monat bucht den offenen Restbetrag vor; gestrichelte Monate sind noch nicht fällig.</p>
       )}
+      {/* Nur eine Auskunft: Die Rechnung des Mietkontos ändert sie nicht (#133). */}
+      {dueNote && ledger && ledger.rows.some((r) => r.sollYearCents > 0) && <p className="muted no-print">{dueNote}</p>}
       {ledger?.rows.map((r) => {
         const noRent = r.sollYearCents === 0
         const standing = rowStanding(r)
