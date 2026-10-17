@@ -1,7 +1,7 @@
 // Die eigene Heizkostenabrechnung auf der Seite Heizkosten und im Druck (Heizung PR 10, Entwurf 3.5,
 // 8.8), ohne DOM prüfbar (heatingSelfView.test.ts). Die Zahlen rechnet der Server; hier stehen nur
 // Sätze und die Ampel.
-import type { HeatingDistribution, HeatingEnergy, InsulationRule, SelfBoundaryView, SelfEstimateView, SelfHeatingStatement, SelfPotView, SelfUnitView, SelfUserView } from './types'
+import type { HeatingDistribution, HeatingEnergy, InsulationRule, SelfBoundaryView, SelfEstimateView, SelfHeatingStatement, SelfPotView, SelfReadingView, SelfUnitView, SelfUserView } from './types'
 import { fmtDate, fmtEuro } from './api'
 import { CAUSE_TEXT } from './estimateForm'
 import { shareBounds } from './heatingSelfForm'
@@ -167,14 +167,18 @@ export function estimateLines(
 // Warmwasserzähler eingebaut ist (§ 6 Abs. 1 Satz 4 HeizkostenV).
 export const READING_RESULT_HINT = 'Bei Zählern, die nicht aus der Ferne ablesbar sind, teilen Sie jedem Mieter das Ergebnis der Ablesung seiner Wohnung in der Regel innerhalb eines Monats mit (§ 6 Abs. 1 Satz 2 HeizkostenV). Wählen Sie die Wohnung und drucken Sie ihr Ergebnis. Nicht nötig ist das, wenn das Ergebnis über einen längeren Zeitraum im Gerät in der Wohnung gespeichert ist und der Mieter es selbst abrufen kann, etwa am Stichtagsspeicher eines elektronischen Heizkostenverteilers (§ 6 Abs. 1 Satz 3). Den Warmwasserverbrauch müssen Sie nicht gesondert mitteilen, wenn in der Wohnung ein Warmwasserzähler eingebaut ist (§ 6 Abs. 1 Satz 4).'
 
-// Das Ableseergebnis einer Wohnung zu einer Grenze (§ 6 Abs. 1 Satz 2 HeizkostenV).
+// Das Ableseergebnis einer Wohnung zu einer Grenze (§ 6 Abs. 1 Satz 2 HeizkostenV). Einheit und Stand stehen
+// wie am Zähler (UI-Durchsicht H5): ein Wärmezähler in MWh mit 88,4 nicht als „88 kWh“. Ohne Einheit am
+// Zähler (eingefrorene Stände von vorher) gilt die des Topfes.
+const reading = (n: number) => n.toLocaleString('de-DE', { maximumFractionDigits: 3 })
 export function readingResult(unit: SelfUnitView, boundary: string, heatUnit: 'kWh' | 'Einheiten' = 'kWh'): string[] {
+  const unitOf = (r: SelfReadingView) => r.meterUnit?.trim() || (r.pot === 'heating' ? heatUnit : 'm³')
   return unit.readings.filter((r) => r.boundary === boundary).map((r) => (r.date === null || r.value === null
     ? `${r.meterName}: nicht abgelesen`
     : r.oldEndValue !== undefined
       // Durchsicht von #241, Recht-I2: Am Stichtag zeigt das Gerät danach 0; mitgeteilt wird der Stichtagswert.
       ? (r.pot === 'heating' && heatUnit === 'Einheiten' && r.value === 0
-        ? `${r.meterName}: Stichtagswert ${num(r.oldEndValue)} Einheiten am ${fmtDate(r.date)} (Gerät danach auf 0)`
-        : `${r.meterName}: ${num(r.oldEndValue)} ${r.pot === 'heating' ? heatUnit : 'm³'} am ${fmtDate(r.date)} (Endstand des alten Zählers; der neue beginnt mit ${num(r.value)})`)
-      : `${r.meterName}: ${num(r.value)} ${r.pot === 'heating' ? heatUnit : 'm³'} am ${fmtDate(r.date)}`))
+        ? `${r.meterName}: Stichtagswert ${reading(r.oldEndValue)} ${unitOf(r)} am ${fmtDate(r.date)} (Gerät danach auf 0)`
+        : `${r.meterName}: ${reading(r.oldEndValue)} ${unitOf(r)} am ${fmtDate(r.date)} (Endstand des alten Zählers; der neue beginnt mit ${reading(r.value)})`)
+      : `${r.meterName}: ${reading(r.value)} ${unitOf(r)} am ${fmtDate(r.date)}`))
 }

@@ -490,3 +490,17 @@ test('Wärmelieferung (#225): unmittelbare Abrechnung des Lieferanten mit § 1 A
   assert.match(t.needed, /Rechnet der Lieferant unmittelbar mit den Mietern ab und legt dabei die Anteile der Mieter am Gesamtverbrauch zugrunde, gelten die Pflichten des Gebäudeeigentümers aus der Heizkostenverordnung für ihn \(§ 1 Abs\. 3 HeizkostenV\); misst er den Verbrauch jeder Wohnung selbst, gilt die Verordnung für diese Verteilung nicht\./)
   assert.match(t.needed, /„Der Wärmelieferant rechnet unmittelbar mit den Mietern ab“/)
 })
+
+// UI-Durchsicht M2: „Angespannter Wohnungsmarkt“ öffnete die Erklärung „Hälftige Teilung ab 2028“, rund
+// zwanzig Zeilen lang. Jetzt ein eigener, kurzer Begriff mit den Verordnungen und der Bedeutung in Mietfuchs.
+test('Lexikon: angespannter Wohnungsmarkt mit den drei Verordnungen und nachgerechnetem Beispiel', () => {
+  const t = GLOSSARY.tightMarket
+  for (const n of [/§ 556d/, /§ 558 Abs\. 3/, /§ 577a Abs\. 2/, /§ 5d Abs\. 3 CO2KostAufG/, /§ 43 GModG/]) assert.match(t.norm ?? '', n)
+  assert.match(t.short, /Teile einer Gemeinde/)
+  assert.match(t.example, /600 € × 40 % = 240,00 €/)
+  assert.equal(60000 * 0.4, 24000)
+  assert.match(t.example, /600 € × 50 % = 300,00 €/)
+  assert.equal(60000 * 0.5, 30000)
+  assert.match(t.needed, /höchstens 2 Wohnungen/)
+  assert.ok(t.short.length + t.needed.length < 700, 'kurz halten')
+})

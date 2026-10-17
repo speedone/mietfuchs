@@ -11,7 +11,7 @@ export default function TightMarketField({ value, from, to, onChange }: { value:
   return (
     <div className="field-group">
       <label className="field">
-        <span><Term id="co2HalfSplit">Angespannter Wohnungsmarkt</Term></span>
+        <span><Term id="tightMarket">Angespannter Wohnungsmarkt</Term></span>
         <select aria-label="Angespannter Wohnungsmarkt" value={value} onChange={(e) => onChange({ tightMarket: keys.find((k) => k === e.target.value) ?? 'unbekannt' })}>
           {keys.map((k) => <option key={k} value={k}>{TIGHT_MARKET_LABELS[k]}</option>)}
         </select>

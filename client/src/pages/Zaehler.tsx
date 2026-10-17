@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { FormError, useFormError, type FormErrorState } from '../components/FormError'
 import type { HeatingPlant, HeatingRole, Meter, MeterType, Notice, Reading, Unit } from '../types'
 import { METER_TYPE_LABELS } from '../types'
 import { buildReadingBody, EMPTY_READING, type ReadingForm } from '../readingForm'
@@ -38,6 +39,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
   const [openMeterId, setOpenMeterId] = useState<string | null>(null)
   const [readingForm, setReadingForm] = useState<ReadingForm>({ ...EMPTY_READING })
   const [error, setError] = useState('')
+  const readingError = useFormError()
   // „Hier beheben →“ aus der Abrechnung (#142): die Ablesungen des betroffenen Zählers aufklappen,
   // denn dort liegt, was ein Hinweis zu einem Zähler meint.
   const [focusedId, setFocusedId] = useState<string | null>(null)
@@ -112,17 +114,19 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
     toast(`Zähler „${m.name}“ gelöscht.`)
   }
 
+  // Die Meldung zur Ablesung steht beim Knopf „Ablesung speichern“ (UI-Durchsicht H3), nicht oben.
   async function saveReading(meterId: string) {
     const built = buildReadingBody(readingForm, meterId)
     if ('error' in built) {
-      setError(built.error)
+      readingError.show(built.error)
       return
     }
+    readingError.clear()
     setError('')
     try {
       await api('/api/readings', { method: 'POST', body: JSON.stringify(built.body) })
     } catch (e) {
-      setError(errorText(e))
+      readingError.show(errorText(e))
       return
     }
     setReadingForm({ ...EMPTY_READING })
@@ -196,12 +200,13 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
                     focused={focusedId === m.id}
                     readings={mReadings}
                     unitName={unitName(m.unitId)}
-                    onToggle={() => { setError(''); setOpenMeterId(openMeterId === m.id ? null : m.id); setReadingForm({ ...EMPTY_READING }) }}
+                    onToggle={() => { setError(''); readingError.clear(); setOpenMeterId(openMeterId === m.id ? null : m.id); setReadingForm({ ...EMPTY_READING }) }}
                     onEdit={() => { setError(''); setMarkedYear(''); setMeterForm(meterToForm(m)) }}
                     onDelete={() => deleteMeter(m)}
                     readingForm={readingForm}
                     setReadingForm={setReadingForm}
                     onSaveReading={() => saveReading(m.id)}
+                    readingError={readingError.error}
                     onDeleteReading={deleteReading}
                     onSaved={() => { void load(); toast('Stichtagswert gespeichert.') }}
                   />
@@ -351,10 +356,11 @@ function FragmentRow(props: {
   readingForm: ReadingForm
   setReadingForm: (f: ReadingForm) => void
   onSaveReading: () => void
+  readingError: FormErrorState
   onDeleteReading: (r: Reading) => void
   onSaved: () => void
 }) {
-  const { meter: m, focused, cons, open, readings, unitName, onToggle, onEdit, onDelete, readingForm, setReadingForm, onSaveReading, onDeleteReading, onSaved } = props
+  const { meter: m, focused, cons, open, readings, unitName, onToggle, onEdit, onDelete, readingForm, setReadingForm, onSaveReading, readingError, onDeleteReading, onSaved } = props
   return (
     <>
       <tr className={focused ? 'focus-target' : undefined}>
@@ -438,6 +444,7 @@ function FragmentRow(props: {
               </label>
               <button className="btn" onClick={onSaveReading}>Ablesung speichern</button>
             </div>
+            <FormError error={readingError} />
             <p className="muted">
               Tipp: Beim Mieterwechsel am Auszugstag eine Zwischenablesung erfassen — dann wird der
               Verbrauch exakt statt tagesanteilig geschätzt aufgeteilt.

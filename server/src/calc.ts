@@ -3688,7 +3688,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       meters: [
         ...unitMeters
           .filter((m) => servedIds.has(m.unitId) && !(svcHeat && m.type === 'waerme') && !(svcWater && m.type === 'warmwasser'))
-          .map((m) => ({ id: m.id, name: m.name ?? m.id, unitId: m.unitId, type: m.type, factor: meterFactor(m) })),
+          .map((m) => ({ id: m.id, name: m.name ?? m.id, unitId: m.unitId, type: m.type, factor: meterFactor(m), unit: m.unit })),
         ...(svcHeat?.meters ?? []),
         ...(svcWater?.meters ?? []),
       ],

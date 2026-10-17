@@ -78,6 +78,22 @@ describe('Ausweis und Ableseergebnis (Entwurf 8.8, § 6 Abs. 1 Satz 2)', () => {
   it('Ableseergebnis je Wohnung: Zähler, Datum, Stand; fehlend als solcher benannt', () => {
     expect(readingResult(unitC, '2025-09-30')).toEqual(['Wärme C: 7.700 kWh am 30.09.2025', 'Warmwasser C: nicht abgelesen'])
   })
+  // UI-Durchsicht H5: Ein Wärmezähler in MWh mit Stand 88,4 erschien als „88 kWh“, falsche Einheit und gerundet.
+  it('Ableseergebnis: die Einheit kommt vom Zähler, Nachkommastellen bleiben', () => {
+    const unit: SelfUnitView = {
+      unitId: 'c', unitName: 'EG links', areaM2: 60, heatAreaM2: 60, boundaries: [], users: [],
+      readings: [
+        { meterId: 'w', meterName: 'Wärme EG links', meterUnit: 'MWh', pot: 'heating', boundary: '2025-12-31', date: '2025-12-31', value: 88.4 },
+        { meterId: 'ww', meterName: 'Warmwasser EG links', meterUnit: 'm³', pot: 'water', boundary: '2025-12-31', date: '2025-12-31', value: 12.375 },
+        { meterId: 'x', meterName: 'Wärme alt', meterUnit: 'MWh', pot: 'heating', boundary: '2025-12-31', date: '2025-12-31', value: 0.5, oldEndValue: 91.25 },
+      ],
+    }
+    expect(readingResult(unit, '2025-12-31')).toEqual([
+      'Wärme EG links: 88,4 MWh am 31.12.2025',
+      'Warmwasser EG links: 12,375 m³ am 31.12.2025',
+      'Wärme alt: 91,25 MWh am 31.12.2025 (Endstand des alten Zählers; der neue beginnt mit 0,5)',
+    ])
+  })
 })
 
 describe('Durchsicht von #239', () => {
