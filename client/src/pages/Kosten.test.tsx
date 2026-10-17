@@ -4,7 +4,7 @@
 // übereinstimmen. Genau diese Lücke war Issue #6 — das Feld zeigte „Sonstig", gespeichert
 // wurde „Kaltwasser".
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { Meter, Unit } from '../types'
 import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
@@ -411,4 +411,118 @@ test('CO₂-Erstattung: Karte nur bei einem Mieter, der selbst heizt', async () 
   render(<PeriodProvider><PropertyProvider><Kosten units={UNITS} settings={null} tenancies={mieter('selfSupply')} /></PropertyProvider></PeriodProvider>)
   expect(await screen.findByText(/an Mieter, die selbst heizen/)).toBeTruthy()
   expect(screen.getByRole('button', { name: 'Erstattung erfassen' })).toBeTruthy()
+})
+
+// #255 PR 3 (R-2): Ein Zahlungsdatum, das das Steuerjahr ändert, zeigt das Formular an und speichert es erst nach der
+// Rückfrage, mit `confirmPaidOn` im Rumpf; ohne Bestätigung geht nichts hinaus.
+test('Bezahlt am: Rückfrage bei anderem Steuerjahr, gespeichert mit Bestätigung', async () => {
+  const { UIProvider } = await import('../components/feedback')
+  const year = new Date().getFullYear() - 1
+  render(
+    <UIProvider>
+      <PeriodProvider>
+        <PropertyProvider>
+          <Kosten units={UNITS} settings={null} />
+        </PropertyProvider>
+      </PeriodProvider>
+    </UIProvider>,
+  )
+  await waitFor(() => expect(screen.getByRole('button', { name: /Kostenposition manuell erfassen/i })).toBeTruthy())
+  fireEvent.click(screen.getByRole('button', { name: /Kostenposition manuell erfassen/i }))
+  fireEvent.change(screen.getByLabelText(/Beschreibung/i), { target: { value: 'Versicherung' } })
+  fireEvent.change(screen.getByLabelText(/Betrag/i), { target: { value: '600,00' } })
+  const paid = screen.getByLabelText('Bezahlt am (für die Steuer)') as HTMLInputElement
+  fireEvent.change(paid, { target: { value: `${year + 1}-02-10` } })
+  expect(paid.value).toBe(`${year + 1}-02-10`)
+  expect(screen.getByRole('status').textContent).toContain(`zu ${year + 1} statt zu ${year}`)
+  fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/i }))
+  fireEvent.click(within(await screen.findByRole('dialog', { name: 'Steuerjahr ändert sich' })).getByRole('button', { name: 'Abbrechen' }))
+  await new Promise((r) => setTimeout(r, 20))
+  expect(sent).toHaveLength(0)
+  fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/i }))
+  fireEvent.click(within(await screen.findByRole('dialog', { name: 'Steuerjahr ändert sich' })).getByRole('button', { name: 'So speichern' }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0].body).toMatchObject({ paidOn: `${year + 1}-02-10`, confirmPaidOn: true })
+})
+
+// Durchsicht von #255 PR 3, M1: Beim Aufteilen prüft der Server jeden Teil. Eine Jahresversicherung 07/Jahr bis
+// 06/Folgejahr, bezahlt am 01.07., ändert das Steuerjahr des zweiten Teils, obwohl das Datum im Jahr des Formulars liegt.
+// Das Formular fragt deshalb nach der Vorschau mit deren Teilen und derselben Regel wie der Server
+// (`splitPaidOnQuestions` in shared/paidOn.ts) und schickt die Teile einmal, mit `confirmPaidOn`.
+const splitFetch = (year: number, question: string, confirmedOnly: 'split' | 'plain') => async (url: string, init?: RequestInit) => {
+  const method = init?.method ?? 'GET'
+  const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } })
+  if (method !== 'GET') {
+    const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+    sent.push({ url, method, body })
+    if (url.includes('/split/preview')) {
+      return json({ parts: [
+        { period: `${year}-01`, label: String(year), days: 184, amountCents: 30247, labor35aCents: null, description: 'Gebäudeversicherung', needsTaxYear: false, closed: false, startYear: year, endYear: year },
+        { period: `${year + 1}-01`, label: String(year + 1), days: 181, amountCents: 29753, labor35aCents: null, description: 'Gebäudeversicherung', needsTaxYear: false, closed: false, startYear: year + 1, endYear: year + 1 },
+      ] })
+    }
+    const guarded = confirmedOnly === 'split' ? url.includes('/split') : !url.includes('/split')
+    if (guarded && body.confirmPaidOn !== true) return json({ error: question, question: 'paidOn' }, 409)
+    return json([])
+  }
+  const responses: Record<string, unknown> = {
+    '/api/properties': [{ id: 'objekt-1', name: 'Haus', kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null }],
+    '/api/meters': METERS,
+  }
+  return json(responses[url.split('?')[0] ?? url] ?? [])
+}
+
+const renderKosten = async () => {
+  const { UIProvider } = await import('../components/feedback')
+  render(
+    <UIProvider>
+      <PeriodProvider>
+        <PropertyProvider>
+          <Kosten units={UNITS} settings={null} />
+        </PropertyProvider>
+      </PeriodProvider>
+    </UIProvider>,
+  )
+  await waitFor(() => expect(screen.getByRole('button', { name: /Kostenposition manuell erfassen/i })).toBeTruthy())
+  fireEvent.click(screen.getByRole('button', { name: /Kostenposition manuell erfassen/i }))
+}
+
+test('Bezahlt am beim Aufteilen: das Formular fragt mit den Teilen der Vorschau, wie der Server', async () => {
+  const year = new Date().getFullYear() - 1
+  const question = `Mit dem Datum 01.07.${year} zählt die Position für die Steuer zu ${year} statt zu ${year + 1}.`
+  vi.stubGlobal('fetch', splitFetch(year, question, 'split'))
+  await renderKosten()
+  fireEvent.change(screen.getByLabelText(/Beschreibung/i), { target: { value: 'Gebäudeversicherung' } })
+  fireEvent.change(screen.getByLabelText(/Betrag/i), { target: { value: '600,00' } })
+  fireEvent.change(screen.getByLabelText(/Leistungszeitraum/), { target: { value: `${year}-07-01` } })
+  fireEvent.change(screen.getByLabelText(/^bis$/), { target: { value: `${year + 1}-06-30` } })
+  fireEvent.change(screen.getByLabelText('Bezahlt am (für die Steuer)'), { target: { value: `${year}-07-01` } })
+  fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/i }))
+  fireEvent.click(within(await screen.findByRole('dialog', { name: 'Rechnung aufteilen?' })).getByRole('button', { name: 'Aufteilen und speichern' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Steuerjahr ändert sich' })
+  expect(dialog.textContent).toContain(question)
+  const splits = () => sent.filter((r) => r.url.includes('/split') && !r.url.includes('preview'))
+  expect(splits()).toHaveLength(0)
+  fireEvent.click(within(dialog).getByRole('button', { name: 'So speichern' }))
+  await waitFor(() => expect(splits()).toHaveLength(1))
+  expect(splits()[0]?.body).toMatchObject({ paidOn: `${year}-07-01`, confirmPaidOn: true })
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+})
+
+// Antwortet der Server trotzdem mit seiner Rückfrage (409 `question: 'paidOn'`), etwa weil sich der Bestand inzwischen
+// geändert hat, zeigt die Seite sie als Rückfrage und wiederholt mit Bestätigung, statt nur eine Meldung stehen zu lassen.
+test('Bezahlt am: eine Rückfrage des Servers wird zur Rückfrage der Seite', async () => {
+  const year = new Date().getFullYear() - 1
+  const question = `Das Datum 01.07.${year} liegt außerhalb der üblichen Spanne.`
+  vi.stubGlobal('fetch', splitFetch(year, question, 'plain'))
+  await renderKosten()
+  fireEvent.change(screen.getByLabelText(/Beschreibung/i), { target: { value: 'Versicherung' } })
+  fireEvent.change(screen.getByLabelText(/Betrag/i), { target: { value: '600,00' } })
+  fireEvent.change(screen.getByLabelText('Bezahlt am (für die Steuer)'), { target: { value: `${year}-07-01` } })
+  fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/i }))
+  const dialog = await screen.findByRole('dialog', { name: 'Steuerjahr ändert sich' })
+  expect(dialog.textContent).toContain(question)
+  fireEvent.click(within(dialog).getByRole('button', { name: 'So speichern' }))
+  await waitFor(() => expect(sent).toHaveLength(2))
+  expect(sent[1]?.body).toMatchObject({ paidOn: `${year}-07-01`, confirmPaidOn: true })
 })

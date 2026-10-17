@@ -1088,6 +1088,10 @@ export const costItems = sqliteTable(
     // Zeitraums, wenn er in einem liegt. Pflicht bei einem Zeitraum über zwei Jahre prüft
     // repository.ts, denn die Datenbank kennt die Zeiträume nicht.
     taxYear: integer('tax_year'),
+    // Das Zahlungsdatum für die Steuer (#255, PR 3), 'JJJJ-MM-TT', NULL heißt keine Angabe. Geht dem Jahr der Zahlung
+    // vor (outflow.ts); ob es zur Position passt (nicht bei „laut Gemeinschaftsabrechnung“, Rückfrage bei geändertem
+    // Jahr), prüft repository.ts.
+    paidOn: text('paid_on'),
     // Teil der Heizkosten (#208, Entwurf 5.3, A1), nur bei „Heizung und Warmwasser“.
     heatingPart: text('heating_part', { enum: HEATING_PARTS }),
     // Die Heizanlage der Position (Heizung PR 4). `RESTRICT`: Eine Anlage mit Positionen wird nicht
@@ -1129,6 +1133,8 @@ export const costItems = sqliteTable(
     check('cost_items_service_order_valid', sql.raw('"service_from" IS NULL OR "service_from" <= "service_to"')),
     // Ein Jahr der Zahlung, das es geben kann; die genaue Spanne je Zeitraum prüft repository.ts.
     check('cost_items_tax_year_valid', sql.raw('"tax_year" IS NULL OR "tax_year" BETWEEN 1900 AND 2200')),
+    // Das Zahlungsdatum (#255, PR 3) als Datum; den Kalendertag prüft repository.ts.
+    check('cost_items_paid_on_valid', sql.raw(`"paid_on" IS NULL OR "paid_on" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`)),
     oneOf('cost_items_heating_part_known', 'heating_part', HEATING_PARTS),
     // Ein Brennstoffmerkmal an Müllabfuhr hätte keine Bedeutung und verwirrte den Vorschlag nach § 560.
     check('cost_items_heating_part_category_valid', sql.raw(`"heating_part" IS NULL OR "category" = 'Heizung und Warmwasser'`)),

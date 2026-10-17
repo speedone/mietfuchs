@@ -5,18 +5,19 @@
 // taxReceipts.ts) fragen diese Stelle. Vorher stand dieselbe Regel als `taxYearOf` in calc.ts und noch einmal
 // ausgeschrieben in snapshot.ts. Seit PR 2 lesen auch der Wechsel des Abrechnungszeitraums (`effectiveTaxYear`,
 // `taxEntry` in db/periodChange.ts) und die Schätzhilfe beim Betriebsstrom (db/operatingPower.ts) das bisherige Jahr
-// hier (`storedOutflowYear`).
-// **Noch nicht hier, sondern selbst lesen `taxYear ?? Beginn`** die Wege, die beim Schreiben vorbelegen oder klemmen:
-// `taxYearIn` in db/heatingPeriodChange.ts und `defaultHeatingPlant` in db/repository.ts. Sie zieht PR 3 von #255
-// nach (`taxYearSpan`); bis dahin sagen sie dasselbe, weil die Regel dieselbe ist, aber es ist eine zweite Fassung.
+// hier (`storedOutflowYear`). Seit PR 3 auch der Wechsel der Heizperiode (`taxYearIn` in db/heatingPeriodChange.ts) und
+// die Heizposition aus der Belegbuchung (`defaultHeatingPlant` in db/repository.ts, über `statedOutflowYear` aus
+// shared/paidOn.ts). **Keine andere Stelle liest `taxYear` oder `paidOn`, um ein Steuerjahr zu bestimmen**; die
+// übrigen Stellen im Repository tragen die Felder nur durch oder prüfen ihre Form.
 //
 // **Die Form ist eine Liste von Anteilen** `{ year, cents, source }`, weil sie die Naht zu den Abbuchungen aus dem
 // Kontoauszug ist (#292): Eine Zahlung in zwei Raten über den Jahreswechsel ergäbe zwei Anteile. Bis dahin gibt es
 // genau einen Anteil über den ganzen Betrag, und zwar nach dieser Rangfolge (Entscheidung R-1 zu #255):
 //   0. ein Abzug beim Betriebsstrom (`operatingPower: 'deduction'`) nimmt das Jahr seiner Stromrechnung
 //      (`operatingPowerGeneralId`, Quelle `bill`; #267, Plan E5),
-//   1. das angegebene Jahr der Zahlung (`taxYear`, Quelle `stated`),
-//   2. sonst das Kalenderjahr, in dem der Zeitraum der Position beginnt (Quelle `period`). Bei einer Heizposition
+//   1. das Zahlungsdatum (`paidOn`, Quelle `paid`, #255 PR 3, R-2): Es gilt für die ganze Position,
+//   2. das angegebene Jahr der Zahlung (`taxYear`, Quelle `stated`),
+//   3. sonst das Kalenderjahr, in dem der Zeitraum der Position beginnt (Quelle `period`). Bei einer Heizposition
 //      unter eigener Heizperiode ist das deren Zeitraum, nicht der Abrechnungszeitraum, in dem sie steht.
 // Ein Zeitraum ohne Angabe liegt in einem Kalenderjahr; repository.ts (`requireTaxYear`) sichert das zu.
 //
@@ -31,15 +32,21 @@
 // und ein gespeichertes Jahr am Abzug wird auch dann nicht gelesen (Durchsicht von PR 2, K1). Die Heizposition „steckt auch in der Stromrechnung“ (`included`) behält ihr Jahr:
 // Sie und ihr Beitrag zum Ausgleich heben sich im selben Jahr auf, im Betrag wie im privaten Teil.
 //
-// Ein Zahlungsdatum gibt es hier noch nicht (kommt mit PR 3 von #255 vor dem angegebenen Jahr), und kein Anteil
-// entsteht aus einer Abbuchung, solange #292 nicht entschieden hat, wie verknüpfte Abbuchungen zählen (R-1).
+// Kein Anteil entsteht aus einer Abbuchung, solange #292 nicht entschieden hat, wie verknüpfte Abbuchungen zählen
+// (R-1): Eine verknüpfte Abbuchung ist ein Nachweis und keine zusätzliche Zahlung, und weicht sie vom Datum ab, wird
+// nichts still umgestellt. #292 erweitert genau diese Funktion.
 import type { BillingPeriod, CostItem, PeriodKey } from '../../shared/types.ts'
 import { startYearOf } from '../../shared/period.ts'
+import { statedOutflowYear } from '../../shared/paidOn.ts'
 
-export type OutflowSource = 'stated' | 'period' | 'bill'
+// Das angegebene Steuerjahr ohne Rückfall auf den Zeitraum, für die Schreibwege, die selbst vorbelegen (Heizposition
+// aus der Belegbuchung in db/repository.ts). Dieselbe Rangfolge wie unten.
+export { statedOutflowYear }
+
+export type OutflowSource = 'paid' | 'stated' | 'period' | 'bill'
 export type OutflowShare = { year: number; cents: number; source: OutflowSource }
 
-type OutflowItem = Pick<CostItem, 'taxYear' | 'amountCents'> & Partial<Pick<CostItem, 'id' | 'operatingPower' | 'operatingPowerGeneralId'>>
+type OutflowItem = Pick<CostItem, 'taxYear' | 'amountCents'> & Partial<Pick<CostItem, 'paidOn'>> & Partial<Pick<CostItem, 'id' | 'operatingPower' | 'operatingPowerGeneralId'>>
 
 // `period`: der Zeitraum, in dem die Position steht (bei einer Heizposition unter eigener Heizperiode deren
 // Heizperiode). Gelesen wird nur sein Beginn. `items`: die Positionen desselben Zeitraums, unter denen die Stromrechnung
@@ -59,8 +66,9 @@ export function outflowShares(item: OutflowItem, period: Pick<BillingPeriod, 'fr
   }
   if (item.operatingPower === 'deduction') return [{ year: Number(period.from.slice(0, 4)), cents: item.amountCents, source: 'period' }]
   // `!= null` und nicht `!== undefined` (Durchsicht K1): Ein `null`, das an einer Grenze durchrutscht, hieße sonst ein
-  // Jahr „null“, und die Position fiele still aus jeder Steuerübersicht. Vorher stand hier `taxYear ?? Beginn`.
-  if (item.taxYear != null) return [{ year: item.taxYear, cents: item.amountCents, source: 'stated' }]
+  // Jahr „null“, und die Position fiele still aus jeder Steuerübersicht. Die Rangfolge steht in `statedOutflowYear`.
+  const stated = statedOutflowYear(item)
+  if (stated !== null) return [{ year: stated, cents: item.amountCents, source: item.paidOn != null ? 'paid' : 'stated' }]
   return [{ year: Number(period.from.slice(0, 4)), cents: item.amountCents, source: 'period' }]
 }
 

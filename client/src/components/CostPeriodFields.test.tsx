@@ -61,3 +61,28 @@ describe('Leistungszeitraum und Jahr der Zahlung (#208)', () => {
     expect(screen.getByText(/Jahr der Zahlung \(Steuer\): wie die Stromrechnung \(2026\)\./)).toBeTruthy()
   })
 })
+
+describe('Bezahlt am (für die Steuer, #255 PR 3)', () => {
+  test('das Feld zeigt den gespeicherten Tag und meldet eine Änderung', () => {
+    const seen: string[] = []
+    render(<CostPeriodFields form={{ ...EMPTY_ITEM_FORM, paidOn: '2027-02-10' }} onChange={(f) => seen.push(f.paidOn)} showTaxYear={false} years={[]} paidOnChanges={['Mit dem Datum 10.02.2027 zählt die Position für die Steuer zu 2027 statt zu 2026.']} />)
+    const input = screen.getByLabelText('Bezahlt am (für die Steuer)') as HTMLInputElement
+    expect(input.value).toBe('2027-02-10')
+    expect(screen.getByRole('status').textContent).toContain('zu 2027 statt zu 2026')
+    fireEvent.change(input, { target: { value: '2027-03-01' } })
+    expect(seen).toEqual(['2027-03-01'])
+    expect(screen.getByText(/nicht das Rechnungsdatum/)).toBeTruthy()
+    expect(screen.getByText(/Abschlägen gezahlt/)).toBeTruthy()
+  })
+  test('Zehn-Tage-Hinweis um den Jahreswechsel, nicht bei der Grundsteuer', () => {
+    const { rerender } = render(<CostPeriodFields form={{ ...EMPTY_ITEM_FORM, category: 'Müllabfuhr', paidOn: '2025-12-28' }} onChange={() => {}} showTaxYear={false} years={[]} />)
+    expect(screen.queryByText(/Zahlung um den Jahreswechsel/)).toBeTruthy()
+    rerender(<CostPeriodFields form={{ ...EMPTY_ITEM_FORM, category: 'Grundsteuer', paidOn: '2025-12-28' }} onChange={() => {}} showTaxYear={false} years={[]} />)
+    expect(screen.queryByText(/Zahlung um den Jahreswechsel/)).toBeNull()
+  })
+  test('bei Hausgeld laut Gemeinschaftsabrechnung kein Feld, sondern der Hinweis (R-6)', () => {
+    render(<CostPeriodFields form={{ ...EMPTY_ITEM_FORM, key: 'external' }} onChange={() => {}} showTaxYear={false} years={[]} />)
+    expect(screen.queryByLabelText('Bezahlt am (für die Steuer)')).toBeNull()
+    expect(screen.getByText(/IX R 19\/24/)).toBeTruthy()
+  })
+})

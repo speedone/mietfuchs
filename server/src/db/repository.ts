@@ -51,6 +51,8 @@ import { IBAN_LABELS } from '../../../shared/iban.ts'
 import { lastPerFrom, straightenPersonHistory } from '../schedule.ts'
 import { isSplitPart, splitByService } from '../serviceSplit.ts'
 import { tenancyStamp } from '../../../shared/tenancyStamp.ts'
+import { allowsPaidOn, isPaidOnDate, paidOnQuestions, splitPaidOnQuestions, type YearSpan } from '../../../shared/paidOn.ts'
+import { statedOutflowYear } from '../outflow.ts'
 import type { Database, Executor } from './client.ts'
 import {
   readClosedSettlements, readCostItems, readHeatingPlants, readMeters, readPayments, readProperties, readReadings, readTenancies,
@@ -110,6 +112,13 @@ function isoDateOrNull(v: unknown, what: string): string | null {
   const text = asNullableFilled(v)
   if (text !== null && !ISO_DATE.test(text)) throw new HeatingError(400, `${what} ist kein Datum. Bitte wählen Sie ihn im Kalender.`)
   return text
+}
+
+// Das Zahlungsdatum einer Kostenposition (#255 PR 3): ein Kalendertag oder keine Angabe.
+function readPaidOn(v: unknown): string | undefined {
+  if (v === null || v === undefined || v === '') return undefined
+  if (!isPaidOnDate(v)) throw new PeriodError('Das Zahlungsdatum ist kein gültiges Datum. Bitte wählen Sie es im Kalender.')
+  return v
 }
 
 // Nimmt den Wert aus dem Rumpf, wenn der Schlüssel dasteht, sonst den bisherigen.
@@ -388,6 +397,9 @@ function mergeCostItem(current: CostItem, body: unknown): CostItem {
     // Ein Abzug beim Betriebsstrom hat kein eigenes Jahr der Zahlung (#267): Er steht im Jahr seiner Stromrechnung,
     // abgeleitet in outflow.ts. Ein Wert, auch aus der Zeit davor, wird beim Speichern geleert.
     taxYear: operatingPower === 'deduction' ? undefined : merged(body, 'taxYear', current.taxYear, asOptionalNumber),
+    // Das Zahlungsdatum (#255 PR 3): wie das Jahr nie am Abzug, der mit seiner Stromrechnung abfließt. `null` oder leer
+    // leert; was kein Kalendertag ist, wird abgelehnt statt still verworfen.
+    paidOn: operatingPower === 'deduction' ? undefined : merged(body, 'paidOn', current.paidOn, readPaidOn),
     heatingPart: merged(body, 'heatingPart', current.heatingPart, (v) => oneOfOrUndefined(HEATING_PARTS, v)),
     // Ziel bei Heizkosten (Heizung PR 10).
     heatingTarget: merged(body, 'heatingTarget', current.heatingTarget, (v) => oneOfOrUndefined(HEATING_TARGETS, v)),
@@ -508,6 +520,14 @@ export class CrossPropertyError extends Error {
 // sie mit 400 weiter wie `CrossPropertyError`.
 export class PeriodError extends Error {
   status = 400
+}
+
+// Die Rückfrage zum Zahlungsdatum (#255 PR 3, R-2, R-4): Ein Datum, das das Steuerjahr der Position ändert, einem
+// angegebenen Jahr der Zahlung widerspricht oder außerhalb der üblichen Spanne liegt, wird erst mit `confirmPaidOn: true`
+// im Rumpf gespeichert. Eigens erkennbar, damit die Oberfläche nur hier „Trotzdem speichern“ anbietet; die Route gibt
+// sie als 409 mit `question: 'paidOn'` weiter. Die Sätze kommen aus shared/paidOn.ts, dieselben wie im Formular.
+export class PaidOnQuestion extends Error {
+  status = 409
 }
 
 // Eine Ablehnung rund um die Heizanlage (Heizung PR 4): 400, wenn eine Angabe nicht passt oder eine
@@ -799,7 +819,9 @@ async function defaultHeatingPlant(db: Executor, c: CostItem, invoiceDate?: stri
   // Eine Regel mit Formular und Belegbuchung (`paymentYear`, Durchsicht von #231): Aus der Buchung
   // (mit `invoiceDate`) das Rechnungsdatum, geklemmt in die Heizperiode; sonst ein angegebenes Jahr,
   // ohne Angabe das Jahr des Endes der Heizperiode.
-  const year = invoiceDate !== undefined ? paymentYear(h, invoiceDate, c.taxYear).year : c.taxYear ?? paymentYear(h, null).year
+  // Das angegebene Jahr (Zahlungsdatum vor Jahr der Zahlung) aus outflow.ts, wie überall (#255 PR 3).
+  const stated = statedOutflowYear(c) ?? undefined
+  const year = invoiceDate !== undefined ? paymentYear(h, invoiceDate, stated).year : stated ?? paymentYear(h, null).year
   const neu = { heatingPlantId: plantId, period: h.key, taxYear: spansTwoYears(h) ? year : undefined }
   return (await itemPeriodClosed(db, { ...c, ...neu })) ? none : neu
 }
@@ -1036,6 +1058,29 @@ const splitPartMessage = (c: CostItem): string =>
   'Leistungszeitraum und Abrechnungszeitraum ändern Sie nicht an einem einzelnen Teil, sonst passten die Anteile nicht mehr zusammen. ' +
   'Betrag, Rechnungssteller und Beleg lassen sich berichtigen; für einen anderen Leistungszeitraum löschen Sie alle Teile und erfassen die Rechnung neu mit „Aufteilen und speichern“.'
 
+// Das Zahlungsdatum (#255 PR 3). Bei „laut Gemeinschaftsabrechnung“ gibt es keines (R-6): Die Position trägt den
+// Anteil eines Jahres laut Hausgeldabrechnung, weder eine einzelne Zahlung noch die Summe der Zahlungen im Jahr. Ändert
+// das Datum das Steuerjahr, widerspricht es dem angegebenen Jahr der Zahlung oder liegt es außerhalb der üblichen
+// Spanne, braucht es die Bestätigung (`paidOnQuestions`). Nicht gefragt wird beim Aufteilen und beim Wechsel des
+// Zeitraums (`splitPart`, `periodChange`): Dort ändert sich das Datum nicht, oder `saveCostItemSplit` hat für die
+// ganze Rechnung schon gefragt.
+async function requirePaidOn(db: Executor, before: CostItem | null, after: CostItem, body: unknown, options: CostItemGuardOptions): Promise<void> {
+  if (after.paidOn === undefined && before?.paidOn === undefined) return
+  if (after.paidOn !== undefined && !allowsPaidOn(after)) {
+    throw new PeriodError(`„${after.description}“ ist laut Gemeinschaftsabrechnung verteilt; ein Zahlungsdatum gibt es dort nicht. Für die Steuer zählen die Vorschüsse im Jahr ihrer Zahlung, eine Nachzahlung oder ein Guthaben im Jahr der Zahlung bzw. Gutschrift. Bitte lassen Sie das Feld leer.`)
+  }
+  if (options.splitPart || options.periodChange || raw(body, 'confirmPaidOn') === true) return
+  const questions = paidOnQuestions(before, after, await yearSpanOf(db, after))
+  if (questions.length > 0) throw new PaidOnQuestion(questions.join(' '))
+}
+
+// Die Jahre des Zeitraums, in dem eine Position steht, bei einer Heizposition unter eigener Heizperiode deren Jahre.
+async function yearSpanOf(db: Executor, c: CostItem): Promise<YearSpan> {
+  const p = periodOfKey(await itemRules(db, c), c.period)
+  const startYear = p === null ? startYearOf(c.period) : Number(p.from.slice(0, 4))
+  return { startYear, endYear: p === null ? startYear : Number(p.to.slice(0, 4)) }
+}
+
 // Das Jahr der Zahlung (Entwurf 3.10): Liegt der Zeitraum in einem Kalenderjahr, ist es dieses und
 // darf nur leer oder genau dieses sein. Reicht er über zwei, ist es Pflicht und liegt zwischen dem
 // Jahr des Beginns und dem Jahr nach dem Ende (eine Messdienstabrechnung kommt oft erst danach).
@@ -1050,8 +1095,10 @@ function requireTaxYear(period: BillingPeriod, after: CostItem, what: string): v
     }
     return
   }
+  // Ein Zahlungsdatum (#255 PR 3) beantwortet die Frage ebenso: Es geht dem Jahr vor (outflow.ts).
   if (after.taxYear === undefined) {
-    throw new PeriodError(`Der Abrechnungszeitraum ${periodLabel(period)} reicht über zwei Kalenderjahre. Bitte geben Sie bei ${what} das Jahr der Zahlung an (für die Steuer, § 11 Abs. 2 EStG).`)
+    if (after.paidOn !== undefined) return
+    throw new PeriodError(`Der Abrechnungszeitraum ${periodLabel(period)} reicht über zwei Kalenderjahre. Bitte geben Sie bei ${what} das Jahr der Zahlung oder das Zahlungsdatum an (für die Steuer, § 11 Abs. 2 EStG).`)
   }
   if (after.taxYear < startYear || after.taxYear > endYear + 1) {
     throw new PeriodError(`Das Jahr der Zahlung von ${what} muss zwischen ${startYear} und ${endYear + 1} liegen.`)
@@ -1174,6 +1221,7 @@ async function guardCostItem(db: Executor, before: CostItem | null, after: CostI
   if (heating?.own) requireHeatingPeriod(heating.rules, after)
   else await requirePeriods(db, after.propertyId, [after.period], has(body, 'year') && !has(body, 'period'), 'Die Kostenposition')
   await requireServiceAndTax(db, before, after, options)
+  await requirePaidOn(db, before, after, body, options)
   // Die Wohnungen der Einzelbeträge über ihr Mietverhältnis (#94).
   const mietverhaeltnisse = Object.keys(after.tenancyAmounts ?? {})
   const ihreWohnungen = mietverhaeltnisse.length === 0
@@ -1837,7 +1885,7 @@ const costItemRow = (c: CostItem) => ({
   externalMeasure: c.externalBasis?.measure ?? null, externalTotal: c.externalBasis?.total ?? null,
   externalTotalCents: c.externalBasis?.totalCents ?? null,
   participantsLimited: Array.isArray(c.participantUnitIds),
-  serviceFrom: orNull(c.serviceFrom), serviceTo: orNull(c.serviceTo), taxYear: orNull(c.taxYear), heatingPart: orNull(c.heatingPart),
+  serviceFrom: orNull(c.serviceFrom), serviceTo: orNull(c.serviceTo), taxYear: orNull(c.taxYear), paidOn: orNull(c.paidOn), heatingPart: orNull(c.heatingPart),
   heatingTarget: orNull(c.heatingTarget),
   heatingPlantId: c.heatingPlantId ?? null,
   fuelDeliveryId: c.fuelDeliveryId ?? null,
@@ -2278,6 +2326,8 @@ export async function previewCostItemSplit(db: Database, propertyId: string | nu
     description: p.description,
     needsTaxYear: spansTwoYears(p.period),
     closed: closed.has(p.period.key),
+    startYear: Number(p.period.from.slice(0, 4)),
+    endYear: Number(p.period.to.slice(0, 4)),
   }))
 }
 
@@ -2293,6 +2343,14 @@ export async function saveCostItemSplit(db: Database, propertyId: string | null,
   const zu = parts.find((p) => p.closed)
   if (zu) throw new PeriodConflict(`Die Abrechnung ${zu.label} ist abgeschlossen und bleibt, wie sie verschickt wurde. Öffnen Sie sie wieder, wenn die Rechnung anteilig hinein soll.`)
   const { base } = await splitBase(db, propertyId, body, currentId)
+  // Das Zahlungsdatum gilt für die ganze Rechnung, also für jeden Teil (#255 PR 3); gefragt wird einmal, mit den Sätzen
+  // aller Teile, bevor etwas geschrieben ist, und mit derselben Regel wie das Formular (`splitPaidOnQuestions`). Der
+  // Wächter der Teile fragt danach nicht mehr (`splitPart`).
+  const current = currentId === null ? null : (await readCostItems(db)).find((c) => c.id === currentId) ?? null
+  if (raw(body, 'confirmPaidOn') !== true) {
+    const questions = splitPaidOnQuestions(current, base, parts)
+    if (questions.length > 0) throw new PaidOnQuestion(questions.join(' '))
+  }
   const ids = await db.transaction((tx) => writeCostItemParts(tx, base, parts.map((p) => ({
     period: p.period, amountCents: p.amountCents, labor35aCents: p.labor35aCents, description: p.description,
     taxYear: p.needsTaxYear ? base.taxYear ?? null : null,

@@ -285,3 +285,11 @@ test('Betriebsstrom: Übernahme behält die Kennzeichnung, nicht die Grundlage u
   if ('error' in abzug) throw new Error(abzug.error)
   expect([abzug.body.operatingPower, abzug.body.operatingPowerItemId, abzug.body.operatingPowerBasis]).toEqual([null, null, null])
 })
+
+test('Die Übernahme aus dem Vorjahr nimmt kein Zahlungsdatum mit (#255 PR 3, T12)', () => {
+  const [row] = carryOverRows([item({ period: calendarPeriod(2024), category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 48000, key: 'area', paidOn: '2025-02-15' })], 2025)
+  if (!row) return expect.unreachable('keine Zeile')
+  const built = carryOverBody(withCarryAmount(row, '480,00'), UNITS, 2025)
+  if ('error' in built) return expect.unreachable(built.error)
+  expect(built.body.paidOn).toBeNull()
+})

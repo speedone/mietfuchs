@@ -41,6 +41,8 @@ import {
   splitDecision,
   showsTaxYear,
   deductionTaxYear,
+  paidOnChange,
+  showsPaidOn,
   taxYearOptions,
   type ItemForm,
   type KeyContext,
@@ -52,8 +54,9 @@ import TaxYearSelect from '../components/TaxYearSelect'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 import { hotWaterOf } from '../../../shared/heatingPeriod.ts'
 import { serviceReceivesOperatingPower } from '../../../shared/operatingPower.ts'
+import { splitPaidOnQuestions } from '../../../shared/paidOn.ts'
 import { alreadyCarried, carryKeyDetails, carryOverBody, carryOverForm, carryOverRows, withCarryAmount, type CarryRow } from '../carryOver'
-import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
+import { api, ApiError, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { aiSummary } from '../aiForm'
 import { useEvaluationQueue } from '../evaluationQueue'
 import AssessmentReview from '../components/AssessmentReview'
@@ -168,6 +171,20 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   useEffect(() => {
     if (form && heatTax?.show && !heatTax.valid && form.taxYear !== heatTax.fallback) setForm({ ...form, taxYear: heatTax.fallback })
   }, [form, heatTax?.show, heatTax?.valid, heatTax?.fallback])
+
+  // Die Jahre des Zeitraums der Position für die übliche Spanne des Zahlungsdatums (#255 PR 3, R-4): bei einer
+  // Heizposition unter eigener Heizperiode deren Jahre, sonst die des Abrechnungszeitraums.
+  const paidOnSpanOfForm = heatingOption
+    ? { startYear: heatingOption.startYear, endYear: heatingOption.endYear }
+    : { startYear: Number(period.from.slice(0, 4)), endYear: Number(period.to.slice(0, 4)) }
+  // Was das eingetragene Datum ändert, schon beim Eintragen unter dem Feld (R-2).
+  const livePaidOnChanges = form && showsPaidOn(form)
+    ? paidOnChange(form.id ? items.find((i) => i.id === form.id) ?? null : null, {
+      paidOn: form.paidOn === '' ? null : form.paidOn,
+      taxYear: heatTax ? (heatTax.show && form.taxYear !== '' ? Number(form.taxYear) : null) : form.taxYear !== '' && form.operatingPower !== 'deduction' ? Number(form.taxYear) : null,
+      period: heatingOption?.value ?? key,
+    }, paidOnSpanOfForm).filter((q) => !q.startsWith('Haben Sie die Steuererklärung'))
+    : []
 
   // „Aus dem Vorjahr übernehmen“ (#141): die Vorlagen, solange die Liste offen ist. Eingetragene
   // Beträge gehen beim Verlassen verloren, deshalb zählt die Liste als offenes Formular.
@@ -366,8 +383,34 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
       : form.category === HEATING_CATEGORY && plantChoices.length > 0 && heatingPlantId !== ''
         ? { heatingPlantId }
         : {}
-    const body = JSON.stringify({ ...built.body, ...heating })
     const editing = !!form.id
+    // Das Zahlungsdatum (#255 PR 3, R-2, R-4): Ändert es das Steuerjahr, widerspricht es dem Jahr der Zahlung oder liegt
+    // es außerhalb der üblichen Spanne, fragt das Formular nach; der Server verlangt dieselbe Bestätigung.
+    const paidOnQuestions = paidOnChange(editing ? items.find((i) => i.id === form.id) ?? null : null,
+      { ...built.body, ...('period' in heating ? { period: heating.period } : {}), taxYear: 'taxYear' in heating ? heating.taxYear ?? null : built.body.taxYear }, paidOnSpanOfForm)
+    let confirmPaidOn = false
+    if (paidOnQuestions.length > 0) {
+      const ok = await confirm({ title: 'Steuerjahr ändert sich', message: paidOnQuestions.join(' '), confirmLabel: 'So speichern', cancelLabel: 'Abbrechen' })
+      if (!ok) return
+      confirmPaidOn = true
+    }
+    const bodyOf = (): string => JSON.stringify({ ...built.body, ...heating, ...(confirmPaidOn ? { confirmPaidOn: true } : {}) })
+    const body = bodyOf()
+    // Antwortet der Server dennoch mit seiner Rückfrage (409, `question: 'paidOn'`), weil sich der Bestand seit dem
+    // Laden geändert hat, wird sie zur Rückfrage der Seite, mit seinen Sätzen; bestätigt geht derselbe Rumpf mit
+    // `confirmPaidOn` noch einmal hinaus (Durchsicht von #255 PR 3, M1).
+    const sendConfirmed = async (send: (b: string) => Promise<unknown>, body: string): Promise<boolean> => {
+      try {
+        await send(body)
+        return true
+      } catch (e) {
+        if (!(e instanceof ApiError && e.status === 409 && e.data.question === 'paidOn') || confirmPaidOn) throw e
+        const ok = await confirm({ title: 'Steuerjahr ändert sich', message: e.message, confirmLabel: 'So speichern', cancelLabel: 'Abbrechen' })
+        if (!ok) return false
+        await send(JSON.stringify({ ...JSON.parse(body), confirmPaidOn: true }))
+        return true
+      }
+    }
     // Eine kalte Rechnung über zwei Abrechnungszeiträume (#208, Entwurf 3.4): erst die Vorschau,
     // dann nach Rückfrage alle Teile auf einmal.
     if (needsSplitCheck(built.body, editing ? items.find((i) => i.id === form.id) : null)) {
@@ -382,7 +425,8 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
         return
       }
       if (parts.length > 1) {
-        const decision = splitDecision(parts, form.taxYear, form.operatingPower === 'deduction')
+        // Ein Zahlungsdatum beantwortet die Frage nach dem Jahr der Zahlung ebenso (#255 PR 3).
+        const decision = splitDecision(parts, form.taxYear !== '' ? form.taxYear : showsPaidOn(form) ? form.paidOn.slice(0, 4) : '', form.operatingPower === 'deduction')
         if ('error' in decision) {
           setNeedsTaxYear(decision.needsTaxYear)
           setError(decision.error)
@@ -390,8 +434,19 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
         }
         const ok = await confirm({ title: 'Rechnung aufteilen?', message: decision.message, confirmLabel: 'Aufteilen und speichern', cancelLabel: 'Abbrechen' })
         if (!ok) return
+        // Das Datum gilt für jeden Teil, und jeder Teil zählt mit seinem eigenen Zeitraum (Durchsicht M1): gefragt wird
+        // mit den Teilen der Vorschau und derselben Regel wie der Server (`splitPaidOnQuestions`).
+        if (!confirmPaidOn) {
+          const asked = splitPaidOnQuestions(editing ? items.find((i) => i.id === form.id) ?? null : null, built.body, parts)
+          if (asked.length > 0) {
+            const sure = await confirm({ title: 'Steuerjahr ändert sich', message: asked.join(' '), confirmLabel: 'So speichern', cancelLabel: 'Abbrechen' })
+            if (!sure) return
+            confirmPaidOn = true
+          }
+        }
         try {
-          await api(editing ? `/api/costItems/${form.id}/split` : withProperty('/api/costItems/split', propertyId), { method: editing ? 'PUT' : 'POST', body })
+          const done = await sendConfirmed((b) => api(editing ? `/api/costItems/${form.id}/split` : withProperty('/api/costItems/split', propertyId), { method: editing ? 'PUT' : 'POST', body: b }), bodyOf())
+          if (!done) return
         } catch (e) {
           setError(errorText(e))
           return
@@ -424,8 +479,10 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     }
     // Lehnt der Server ab (#146), bleibt der Dialog offen und zeigt seinen Satz.
     try {
-      if (editing) await api(`/api/costItems/${form.id}`, { method: 'PUT', body })
-      else await api(withProperty('/api/costItems', propertyId), { method: 'POST', body })
+      const done = await sendConfirmed((b) => editing
+        ? api(`/api/costItems/${form.id}`, { method: 'PUT', body: b })
+        : api(withProperty('/api/costItems', propertyId), { method: 'POST', body: b }), body)
+      if (!done) return
     } catch (e) {
       setError(errorText(e))
       return
@@ -722,6 +779,8 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                   <td className="num">
                     {fmtEuro(i.amountCents)}
                     {!!i.labor35aCents && <div className="muted">§35a: {fmtEuro(i.labor35aCents)}</div>}
+                    {/* #255 PR 3: das Zahlungsdatum für die Steuer, wenn eines eingetragen ist. */}
+                    {i.paidOn && <div className="muted">bezahlt am {fmtDate(i.paidOn)}</div>}
                   </td>
                   <td className="actions no-print">
                     <button
@@ -846,9 +905,9 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             </label>
             {/* Betriebsstrom (Heizung PR 15): sichtbar ohne Aufklappen, wer ihn braucht. */}
             <OperatingPowerFields form={form} items={items} periodKey={key} plantEnergy={plantOfForm ? billingEnergy(plantOfForm) : undefined} service={serviceReceivesOperatingPower(plants, period)} onChange={setForm} />
-            <details className="extra-details" open={!!(selfPlant || form.serviceFrom || form.serviceTo || form.taxYear || form.heatingPart !== '' || (heatTax ? heatTax.show : showsTaxYear(period, needsTaxYear)))}>
-              <summary>Weitere Angaben — Leistungszeitraum{(heatTax ? heatTax.show : showsTaxYear(period, needsTaxYear)) ? ', Jahr der Zahlung' : ''}{form.category === HEATING_CATEGORY ? ', Brennstoff/Energie' : ''} (optional)</summary>
-              <CostPeriodFields form={form} onChange={setForm} showTaxYear={heatTax ? heatTax.show : showsTaxYear(period, needsTaxYear)} years={heatTax?.show ? heatTax.years : taxYearOptions(year)} billTaxYear={deductionTaxYear(form, items)} />
+            <details className="extra-details" open={!!(selfPlant || form.serviceFrom || form.serviceTo || form.taxYear || form.paidOn || form.heatingPart !== '' || (heatTax ? heatTax.show : showsTaxYear(period, needsTaxYear)))}>
+              <summary>Weitere Angaben — Leistungszeitraum{(heatTax ? heatTax.show : showsTaxYear(period, needsTaxYear)) ? ', Jahr der Zahlung' : ''}{showsPaidOn(form) ? ', Bezahlt am' : ''}{form.category === HEATING_CATEGORY ? ', Brennstoff/Energie' : ''} (optional)</summary>
+              <CostPeriodFields form={form} onChange={setForm} showTaxYear={heatTax ? heatTax.show : showsTaxYear(period, needsTaxYear)} years={heatTax?.show ? heatTax.years : taxYearOptions(year)} billTaxYear={deductionTaxYear(form, items)} paidOnChanges={livePaidOnChanges} />
             </details>
             {/* Nicht umlagefähig (#142): nichts zu verteilen, also keine Auswahl, die etwas anderes verspräche. */}
             {!showsKeyFields(form.category) && (

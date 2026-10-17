@@ -24,6 +24,7 @@ import crypto from 'node:crypto'
 import { and, eq, inArray } from 'drizzle-orm'
 import { heatingPeriodsEndingIn, plantRules, separateOwner, servesUnit, settledSeparately, type PlantWay } from '../../../shared/heatingPeriod.ts'
 import { formatDayRange, parsePeriodKey, periodContaining, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, settlementDeadline, spansTwoYears, startYearOf } from '../../../shared/period.ts'
+import { statedOutflowYear } from '../outflow.ts'
 import type { BillingPeriod, CostItem, HeatingPeriodChangePreview, HeatingPlant, PeriodEffect, PeriodKey, PeriodRules, Tenancy } from '../../../shared/types.ts'
 import type { Database, Transaction } from './client.ts'
 import { dryRun, earliestTenancyStart, lostClaims, outcomeOf, shownEffects, type Outcome } from './dryRun.ts'
@@ -58,11 +59,14 @@ const overlapDays = (a: BillingPeriod, b: BillingPeriod): number => {
 // (`taxEntry` in periodChange.ts): das bisherige, in die erlaubte Spanne vom Jahr des Beginns bis ein
 // Jahr nach dem Ende geklemmt (Review der Laienprobe, Runde 1). Ohne Klemme lehnte die Schreibprüfung
 // ab oder, vorher am Wächter vorbei geschrieben, verschwände die Position aus jeder Steuerübersicht.
-export const taxYearIn = (target: Pick<BillingPeriod, 'from' | 'to'>, item: Pick<CostItem, 'taxYear' | 'period'>): number | null => {
+// Das bisherige Jahr nach der Rangfolge aus outflow.ts (`statedOutflowYear`, #255 PR 3: Zahlungsdatum vor Jahr der
+// Zahlung, sonst der Beginn); eine Heizposition ist nie ein Abzug beim Betriebsstrom. Das Datum selbst bleibt an der
+// Position stehen und gilt weiter.
+export const taxYearIn = (target: Pick<BillingPeriod, 'from' | 'to'>, item: Pick<CostItem, 'taxYear' | 'paidOn' | 'period'>): number | null => {
   if (!spansTwoYears(target)) return null
   const start = Number(target.from.slice(0, 4))
   const end = Number(target.to.slice(0, 4)) + 1
-  return Math.min(Math.max(item.taxYear ?? startYearOf(item.period), start), end)
+  return Math.min(Math.max(statedOutflowYear(item) ?? startYearOf(item.period), start), end)
 }
 
 type Ask = { kind: 'heating' | 'total'; period: BillingPeriod; months: string[] }

@@ -47,7 +47,7 @@ import {
   closeHeatingSettlement, findClosedHeatingSettlement, heatingSettlementHistory, reopenHeatingSettlement, separateHeatingSettlements, setHeatingSentAt,
 } from './db/heatingSettlements.ts'
 import {
-  changeTenant, closeSettlement, createEntity, createProperty, CrossPropertyError, findClosedSettlement, HeatingError, PeriodConflict, PeriodError, StaleTenancyError, invoiceFilesInUse, previewCostItemSplit, saveCostItemSplit,
+  changeTenant, closeSettlement, createEntity, createProperty, CrossPropertyError, findClosedSettlement, HeatingError, PaidOnQuestion, PeriodConflict, PeriodError, StaleTenancyError, invoiceFilesInUse, previewCostItemSplit, saveCostItemSplit,
   listProperties, removeEntity, removeProperty, reopenSettlement, setSentAt, settlementHistory, updateEntity, updateProperty,
   TenantChangeError, unitDependents, writeSettings, type CollectionName,
 } from './db/repository.ts'
@@ -2637,6 +2637,8 @@ app.use('/api', (err: unknown, req: Request, res: Response, next: NextFunction) 
   }
   // Eigene Heizkostenabrechnung (Heizung PR 10): die Liste der Positionen, die umzustellen sind.
   if (err instanceof SelfItemsError) return res.status(409).json({ error: err.message, items: err.items })
+  // Das Zahlungsdatum (#255 PR 3): die Rückfrage mit eigenem Kennzeichen, wie beim Betriebsstrom.
+  if (err instanceof PaidOnQuestion) return res.status(409).json({ error: err.message, question: 'paidOn' })
   // Ablehnungen, deren Meldung schon für den Nutzer geschrieben ist (#92).
   if (err instanceof RouteProblem || err instanceof CrossPropertyError || err instanceof PeriodError || err instanceof PeriodConflict || err instanceof TenantChangeError || err instanceof BookingRefusal || err instanceof HeatingError || err instanceof StaleTenancyError || err instanceof LawOverrideError || err instanceof IbanRefusal) {
     return res.status(err.status).json({ error: err.message })
