@@ -2283,6 +2283,21 @@ die ganze fachliche Komplexität:
   erscheinen sie nicht, denn `computeSettlement` ruft `consumptionInPeriod` auf und wirft sie
   weg. Das war vorher schon so, und es soll so bleiben: Die Abrechnung ist das Dokument, das der
   Mieter bekommt, und ein Hinweis auf einen Datenfehler des Vermieters gehört nicht darauf.
+  **Die Einheit** (#342, [shared/meterUnits.ts](shared/meterUnits.ts)) bleibt ein Text am Zähler, wird aber
+  gelesen: Wärme kWh, MWh, GJ (2.500/9 kWh), Wasser m³, l, Strom kWh, MWh, als exakte Brüche auf kWh bzw. m³;
+  Heizkostenverteiler und „Sonstiges“ (auch der Gaszähler, m³ und kWh Gas sind verschiedene Größen) ohne
+  Umrechnung. Normiert wird beim Lesen (`unitKey`: „m3“, „cbm“, „KWh“ …), eine Migration gibt es nicht.
+  Wer Verbräuche mehrerer Zähler zusammenzählt, fragt `unitScale`: `relative` (Verbrauchsschlüssel samt
+  Hauptzähler und Teilnehmern in calc.ts) lässt eine einheitliche Einheit, auch eine unbekannte, unberührt,
+  damit sich bei einheitlichem Bestand keine Zahl ändert; `base` (eigene Heizkostenabrechnung über
+  `SelfMeter.scale`, Wärme am Speicher für α, Volumen in db/co2.ts, monatliche Information) rechnet bekannte
+  Einheiten immer in kWh bzw. m³, weil Sätze, Schätzungen und § 6a dort in dieser Einheit stehen. Ohne
+  gemeinsame Einheit `meter.units-mixed` (error): beim Verbrauchsschlüssel geht die Position an den
+  Vermieter (`noBasis`), bei `self` ist die Anlage gesperrt. Das Ableseergebnis nennt die Einheit des
+  Zählers (`SelfReadingView.meterUnit`). Auf der Seite Zähler ist die Einheit bei bekannten Sparten eine
+  Auswahl (`meterUnitOptions`, eine gespeicherte unbekannte steht dabei); der Server prüft nur eine neue
+  oder geänderte (`acceptMeterUnit` in repository.ts, Muster der IBAN) und speichert die bekannte
+  Schreibweise. Ein Zähler ohne `unit` im Schnappschuss (nur Tests) rechnet nicht um.
   **Die Eichfrist** (#98, Heizung PR 21) ist eine Warnung und keine Sperre: `meters.calibrated_until`
   (Jahr, mit dessen Ende die Frist endet, § 34 Abs. 2 MessEV; Migrationen 0046/0047, Bedingungen
   `meters_calibrated_until_valid` mit `typeof`, weil die INTEGER-Affinität eine Kommazahl als REAL behält,

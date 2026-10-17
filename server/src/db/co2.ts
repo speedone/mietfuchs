@@ -19,6 +19,7 @@ import { selfActive, selfFromOf } from '../heating.ts'
 import { captureOf, hotWaterOf, lineServiceRows } from '../hca.ts'
 import { and, eq, inArray } from 'drizzle-orm'
 import { consumptionInPeriod } from '../calc.ts'
+import { unitScale } from '../../../shared/meterUnits.ts'
 import { suppliedAreaOf } from '../dhw.ts'
 import { lineRoot, servesUnit } from '../../../shared/heatingPeriod.ts'
 import { andList } from '../../../shared/wording.ts'
@@ -86,6 +87,8 @@ export async function heatingPeriodViews(db: Database, plantId: string, periodPa
   const servedIds = new Set(served.filter((u) => !(u.noConnection ?? []).includes('warmwasser')).map((u) => u.id))
   const waterMeters = (await readMeters(db)).filter((m) => m.type === 'warmwasser' && m.unitId !== null && servedIds.has(m.unitId))
   const readings = waterMeters.length > 0 ? await readReadings(db) : []
+  // In m³ (#342): ein Zähler in Litern wird umgerechnet; ohne gemeinsame Einheit gibt es keinen Vorschlag.
+  const waterScale = unitScale(waterMeters, 'base')
   // Kesseltausch (Durchsicht von #240, Geld-I1): Die Anlage heizt nur in ihrer Laufzeit; Vorschlag und
   // Beschriftung gelten für sie. Verfahren, Temperatur und Bestätigung gelten für die Linie (der Speicher
   // bleibt), das Volumen ist das der Anlage selbst (wie calc.ts).
@@ -115,8 +118,8 @@ export async function heatingPeriodViews(db: Database, plantId: string, periodPa
       ]
       return gaps.length > 0 ? [`„${m.name}“ ${gaps.join(' und ')}`] : []
     })
-    const volume = waterMeters.length === 0 || missing.length > 0 ? null
-      : Math.round(waterMeters.reduce((a, m) => a + consumptionInPeriod(readings.filter((r) => r.meterId === m.id), from, to), 0) * 1000) / 1000
+    const volume = waterMeters.length === 0 || missing.length > 0 || !waterScale.ok ? null
+      : Math.round(waterMeters.reduce((a, m) => a + consumptionInPeriod(readings.filter((r) => r.meterId === m.id), from, to) * waterScale.factorOf(m.id), 0) * 1000) / 1000
     views.push({
       plantId,
       period: h.key,
@@ -134,7 +137,9 @@ export async function heatingPeriodViews(db: Database, plantId: string, periodPa
       // gerundet, und die mit Warmwasser versorgte Fläche (§ 9 Abs. 2 Satz 5 Nr. 2 HeizkostenV).
       hotWaterBasis: {
         volumeFromMetersM3: volume,
-        volumeMissing: missing.length > 0 ? `Für den Vorschlag aus den Warmwasserzählern fehlt ein Stand: ${andList(missing)}.` : null,
+        volumeMissing: !waterScale.ok
+          ? `Für den Vorschlag aus den Warmwasserzählern fehlt eine gemeinsame Einheit: Die Zähler stehen in ${andList(waterScale.units)}. Wählen Sie auf der Seite Zähler für jeden die Einheit, die er wirklich zeigt.`
+          : missing.length > 0 ? `Für den Vorschlag aus den Warmwasserzählern fehlt ein Stand: ${andList(missing)}.` : null,
         running,
         suppliedAreaM2: suppliedAreaOf(served),
       },

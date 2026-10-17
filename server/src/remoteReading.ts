@@ -23,7 +23,7 @@ export type RemoteLevel = 'required' | 'possible' | 'unknown' | 'fine'
 const RANK: Record<RemoteLevel, number> = { fine: 0, unknown: 1, possible: 2, required: 3 }
 
 export type RemotePlant = Pick<HeatingPlant, 'id' | 'devicesRemote' | 'devicesInstalledAfter2021' | 'newDevicesInstall' | 'units'>
-export type RemoteMeter = Pick<Meter, 'id' | 'unitId' | 'type' | 'heatingPlantId' | 'heatingRole' | 'remoteReadable' | 'installedOn'>
+export type RemoteMeter = Pick<Meter, 'id' | 'unitId' | 'type' | 'heatingPlantId' | 'heatingRole' | 'remoteReadable' | 'installedOn'> & Partial<Pick<Meter, 'unit'>>
 export type RemoteUnit = Pick<Unit, 'id' | 'noConnection'>
 // `meterIds`: die Zähler, die zu dieser Stufe geführt haben; `byAnswer`: auch die Angabe an der Anlage;
 // `askInstall`: „möglich“ hängt an der unbeantworteten Frage, ob einzeln ersetzt oder als Ganzes neu.

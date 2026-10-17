@@ -2714,7 +2714,7 @@ export type MonthlyInfoRow = { plantId: string; month: string; referenceKwhPerM2
 // Warum eine Information unvollständig ist: keine Ablesung genau an den Monatsgrenzen (auch bei einem
 // ausgefallenen Gerät), negativer Verbrauch, Heizkostenverteiler (keine kWh), Warmwasser ohne
 // Temperatur für die Umrechnung, kein Vergleichswert.
-export type MonthlyInfoGap = 'noReading' | 'negative' | 'hca' | 'dhwTemp' | 'reference'
+export type MonthlyInfoGap = 'noReading' | 'negative' | 'hca' | 'dhwTemp' | 'reference' | 'unit'
 
 // Was in einem Monat gemessen bzw. gerechnet ist, je Größe für sich: Wärme in kWh (gemessen), Warmwasser
 // in m³ (gemessen) und in kWh (umgerechnet, angelehnt an § 9 Abs. 2 Satz 2 HeizkostenV; Auslegung). Keine

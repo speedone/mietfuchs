@@ -41,8 +41,9 @@ export type SelfUnit = { id: string; name: string; areaM2: number; heatedAreaM2:
 export type SelfTenancy = { id: string; unitId: string; tenantName: string; start: string; end: string | null }
 // `factor` (Heizung PR 12): Die Differenz zweier Ablesungen zählt mal diesem Faktor; beim
 // Heizkostenverteiler mit Einheitsskala der Bewertungsfaktor, sonst 1 (hca.ts `meterFactor`). Fehlt: 1.
-// `unit`: die Einheit des Zählers, nur für das Ableseergebnis (UI-Durchsicht H5); gerechnet wird damit nicht.
-export type SelfMeter = { id: string; name: string; unitId: string; type: MeterType; factor?: number; unit?: string }
+// `unit`: die Einheit des Zählers, nur für das Ableseergebnis (UI-Durchsicht H5). `scale` (#342): Umrechnung
+// der Einheit des Zählers in die gemeinsame Einheit des Topfs (shared/meterUnits.ts). Fehlt: 1.
+export type SelfMeter = { id: string; name: string; unitId: string; type: MeterType; factor?: number; scale?: number; unit?: string }
 // `boundFor`: Grenze einer Ablesung aus dem Mieterwechsel (`readings.interim_for`, Abweichung 9, 23).
 export type SelfReading = { meterId: string; date: string; value: number; replacement?: boolean; oldEndValue?: number | null; boundFor?: string | null }
 export type SelfInput = {
@@ -460,7 +461,8 @@ export function planSelf(input: SelfInput): SelfPlan {
             continue
           }
           // Heizung PR 12: jede Differenz mit dem Faktor ihres Geräts.
-          v += result.value * (m.factor ?? 1)
+          // #342: und mit der Umrechnung seiner Einheit, damit alle Zähler eines Topfs in derselben stehen.
+          v += result.value * (m.factor ?? 1) * (m.scale ?? 1)
           raws.push([m.id, result.value])
         }
         return ok ? { v, raws } : null

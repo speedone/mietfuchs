@@ -91,7 +91,7 @@ export const selfTenancy = (id: string, unitId: string, start: string, end: stri
   prepayments: [], prepaymentOverrides: {}, baseRents: [], costModel: 'settlement', heatingModel: 'settlement',
 })
 export const selfMeter = (id: string, unitId: string | null, name: string, type: MeterType, over: Partial<Meter> = {}): Meter =>
-  ({ id, propertyId: P, name, unitId, type, unit: type === 'warmwasser' ? 'm³' : 'kWh', ...over })
+  ({ id, propertyId: P, name, unitId, type, unit: type === 'warmwasser' || type === 'kaltwasser' ? 'm³' : type === 'hkv' ? 'Einheiten' : 'kWh', ...over })
 export const selfReading = (meterId: string, date: string, value: number): Reading => ({ id: `${meterId}@${date}`, meterId, date, value })
 
 // Die Zähler und Ablesungen von Beispiel A (Heizung PR 13 herausgezogen, damit Tests einzelne ergänzen oder

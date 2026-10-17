@@ -17,6 +17,7 @@ import type { HeatingPlant, MonthlyInfoAmounts, MonthlyInfoGap, MonthlyInfoMonth
 import { hkvDhwVolumeFormula, hkvMonthlyInfo } from '../../shared/law/heizkostenv.ts'
 import { dayAfter, dayBefore, law, type LawLog } from '../../shared/law/register.ts'
 import { addMonths, monthBounds, monthsBetween } from '../../shared/monthlyInfo.ts'
+import { unitScale } from '../../shared/meterUnits.ts'
 import { plantDevices, type RemoteMeter, type RemotePlant, type RemoteUnit } from './remoteReading.ts'
 import type { SnapshotReading } from './snapshot.ts'
 
@@ -107,11 +108,17 @@ function measure(unitDevices: readonly RemoteMeter[], readings: readonly Snapsho
       gaps.add(g)
       ok = false
     }
-    const add = (v: number | null): void => {
+    // In kWh bzw. m³ (#342): ein Zähler in MWh oder Litern wird umgerechnet; ohne gemeinsame Einheit fehlt die Größe.
+    const scale = unitScale(list, 'base')
+    if (!scale.ok) {
+      fail('unit')
+      return null
+    }
+    const add = (v: number | null, id: string): void => {
       measured++
       if (v === null) fail('noReading')
       else if (v < 0) fail('negative')
-      else sum += v
+      else sum += v * scale.factorOf(id)
     }
     const parts: { id: string; first: string; last: string }[] = []
     for (const d of list) {
@@ -123,7 +130,7 @@ function measure(unitDevices: readonly RemoteMeter[], readings: readonly Snapsho
         continue
       }
       const own = readings.filter((x) => x.meterId === d.id)
-      if (first === startDay && last === endDay) add(exactConsumption(own, startDay, endDay))
+      if (first === startDay && last === endDay) add(exactConsumption(own, startDay, endDay), d.id)
       // Neu und erst am Ende abgelesen: misst in diesem Fenster nichts. Hat es schon vorher Stände, fehlt der am Anfang.
       else if (first === endDay && !own.some((x) => x.date < endDay)) continue
       else if (last === startDay && !inUseAt(d, unitDevices, readings, endDay)) continue
@@ -139,7 +146,7 @@ function measure(unitDevices: readonly RemoteMeter[], readings: readonly Snapsho
       }
       let [p] = open.splice(begin, 1)
       while (ok && p) {
-        add(exactConsumption(readings.filter((x) => x.meterId === p?.id), p.first, p.last))
+        add(exactConsumption(readings.filter((x) => x.meterId === p?.id), p.first, p.last), p.id)
         if (p.last === endDay) break
         const prev = p
         const next = open.findIndex((q) => q.first === prev.last || q.first === dayAfter(prev.last))
@@ -152,7 +159,8 @@ function measure(unitDevices: readonly RemoteMeter[], readings: readonly Snapsho
     }
     // Hat kein Gerät etwas gemessen, ist nichts erhoben, auch nicht 0.
     if (ok && measured === 0) fail('noReading')
-    return ok ? sum : null
+    // Umgerechnet auf drei Stellen (Wh bzw. Liter), sonst stünde 699,9999… kWh auf dem Blatt; ohne Umrechnung wie bisher.
+    return ok ? (scale.converted ? Math.round(sum * 1000) / 1000 : sum) : null
   }
   const hca = devices.filter((d) => d.type === 'hkv')
   if (hca.length > 0) gaps.add('hca')

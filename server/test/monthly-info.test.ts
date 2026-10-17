@@ -85,6 +85,26 @@ test('November: Wärme 700 kWh, Warmwasser 2,5 m³ = 281,25 kWh umgerechnet, get
   assert.ok(monthlyInfoMonths(basis({ asOf: undefined }), createLawLog()).every((m) => m.due))
 })
 
+test('#342: Zähler in MWh und Litern ergeben dieselben kWh und m³; ohne gemeinsame Einheit fehlt die Größe', () => {
+  const novOfBasis = (i: MonthlyInfoInput) => monthlyInfoMonths(i, createLawLog()).find((m) => m.month === '2025-11')?.users[0] ?? assert.fail('November fehlt')
+  const b = basis()
+  const umgestellt = basis({
+    meters: b.meters.map((m) => ({ ...m, unit: m.type === 'waerme' ? 'MWh' : 'l' })),
+    readings: b.readings.map((x) => ({ ...x, value: x.meterId === 'wa' ? x.value / 1000 : x.value * 1000 })),
+  })
+  const nov = novOfBasis(umgestellt)
+  assert.deepEqual([nov.heatKwh, nov.dhwM3, nov.dhwKwh, nov.previousMonth?.heatKwh], [700, 2.5, 281.25, 400])
+  // Zwei Wärmezähler derselben Wohnung, einer mit einer Einheit, die Mietfuchs nicht umrechnen kann.
+  const gemischt = basis({
+    meters: [...b.meters.map((m) => ({ ...m, unit: m.type === 'waerme' ? 'kWh' : 'm³' })), { id: 'wb', unitId: 'a', type: 'waerme', heatingPlantId: null, heatingRole: null, remoteReadable: true, installedOn: '2023-05-01', unit: 'Grad' }],
+    readings: [...b.readings, r('wb', '2025-10-31', 10), r('wb', '2025-11-30', 20)],
+  })
+  const g = novOfBasis(gemischt)
+  assert.equal(g.heatKwh, null)
+  assert.ok(g.gaps.includes('unit'))
+  assert.equal(g.dhwM3, 2.5)
+})
+
 test('Formel erst fragen, wenn Warmwasser gemessen ist (Rechtsstand)', () => {
   const log = createLawLog()
   monthlyInfoMonths(basis({ meters: basis().meters.filter((m) => m.type === 'waerme') }), log)
