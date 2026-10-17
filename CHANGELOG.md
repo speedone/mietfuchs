@@ -6,6 +6,22 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+### Hinzugefügt
+
+- „Bezahlt am (für die Steuer)“ an der Kostenposition: Wer eine Rechnung in einem anderen Jahr
+  bezahlt hat als im Jahr ihrer Abrechnung, etwa eine Nachzahlung im Folgejahr oder eine
+  Versicherung, die schon im Dezember für das nächste Jahr gezahlt wurde, trägt das Datum unter
+  „Weitere Angaben“ ein. Die Steuerübersicht und die Belege für die Steuer stellen die Position dann
+  in das Jahr der Zahlung (§ 11 Abs. 2 EStG), auch über Abrechnungsjahre hinweg; der private Teil
+  kommt weiter aus der Abrechnung ihres Zeitraums. Das Datum steht für die ganze Position und geht
+  einem angegebenen Jahr der Zahlung vor. Ändert es das Steuerjahr, widerspricht es dem Jahr der
+  Zahlung oder liegt es weit außerhalb des Zeitraums, fragt Mietfuchs vor dem Speichern nach. Bei
+  Hausgeld laut Gemeinschaftsabrechnung gibt es kein Datum, sondern einen Hinweis; bei Abschlägen
+  bleibt das Feld leer. Um den Jahreswechsel weist Mietfuchs auf die Zehn-Tage-Regel hin, bei der
+  Grundsteuer nicht. Die Belegbuchung trägt das Rechnungsdatum nicht als Zahlungsdatum ein. Ohne
+  Datum ändert sich keine Zahl, und die Abrechnung an die Mieter liest das Datum nie
+  ([#255](https://github.com/speedone/mietfuchs/issues/255)).
+
 ### Behoben
 
 - Steuerübersicht bei teilweiser Eigennutzung, wenn der Betriebsstrom der Heizung aus der

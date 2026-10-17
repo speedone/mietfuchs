@@ -4,8 +4,8 @@
 // dieselbe Auswahl für das Steuer-ZIP wie der alte, tiefengleich. Der alte Weg steht unten als Referenz eingefroren,
 // genau wie er vor #255 in calc.ts und index.ts stand (`taxPartsFor` mit `null` beim Kalenderobjekt, `taxYearOf`).
 //
-// Dazu die beiden Fälle des Mitwirkenden aus #255 (R-9) als Beschreibung des heutigen Verhaltens: Ohne Zahlungsdatum
-// steht eine Position im Jahr ihrer Abrechnung bzw. im angegebenen Jahr. PR 3 stellt sie auf das Zahlungsdatum um.
+// Dazu die beiden Fälle des Mitwirkenden aus #255 (R-9) ohne Zahlungsdatum: Dann steht eine Position im Jahr ihrer
+// Abrechnung bzw. im angegebenen Jahr. Mit Zahlungsdatum (PR 3) stehen dieselben Fälle in calc-steuer-zahlungsdatum.test.ts.
 // Mehr Startwerte mit INV_FROM/INV_TO.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -233,7 +233,7 @@ test('Invariante: ohne Zahlungsdatum je Steuerjahr dieselbe Steuerübersicht und
   assert.ok(compared > 0)
 })
 
-// ---------- R-9: die Fälle des Mitwirkenden, heutiges Verhalten ----------
+// ---------- R-9: die Fälle des Mitwirkenden ohne Zahlungsdatum ----------
 
 const MAI: PeriodRules = { startMonth: 5, changes: [] }
 const haus = (rules: PeriodRules, costItems: Omit<TaxSource['costItems'][number], 'propertyId' | 'key' | 'category'>[]): TaxSource => ({
@@ -250,8 +250,8 @@ const inYear = (source: TaxSource, year: number): string[] => taxReportFor(sourc
 const inZip = (source: TaxSource, year: number): string[] =>
   taxArchiveItems(narrowToProperty(source, TAX_STOCK_PROPERTY).costItems, taxPartsFor(source, TAX_STOCK_PROPERTY, year)).map((c) => c.id)
 
-test('R-9, Fall 1 (heute): Position der Abrechnung 2026, bezahlt 2027, steht ohne Zahlungsdatum in 2026', () => {
-  // PR 3 von #255: Mit „Bezahlt am“ im Jahr 2027 steht sie in 2027 und fehlt in 2026.
+test('R-9, Fall 1 (ohne Zahlungsdatum): Position der Abrechnung 2026, bezahlt 2027, steht ohne Zahlungsdatum in 2026', () => {
+  // Mit „Bezahlt am“ im Jahr 2027 steht sie in 2027 und fehlt in 2026 (calc-steuer-zahlungsdatum.test.ts).
   const src = haus(CALENDAR_RULES, [{ id: 'vers', period: periodKey('2026-01'), description: 'Versicherung 2026', amountCents: 60000 }])
   assert.deepEqual(inYear(src, 2026), ['vers'])
   assert.deepEqual(inYear(src, 2027), [])
@@ -261,14 +261,14 @@ test('R-9, Fall 1 (heute): Position der Abrechnung 2026, bezahlt 2027, steht ohn
   assert.deepEqual([item.amountCents, item.privateCents, item.deductibleCents], [60000, 30000, 30000], 'privat nach der Abrechnung 2026')
 })
 
-test('R-9, Fall 2 (heute): Position, bezahlt vor Beginn ihres Zeitraums, steht ohne Zahlungsdatum im Jahr ihres Beginns', () => {
-  // Versicherung 2026, bezahlt am 01.12.2025. PR 3: mit „Bezahlt am“ 01.12.2025 steht sie in 2025.
+test('R-9, Fall 2 (ohne Zahlungsdatum): Position, bezahlt vor Beginn ihres Zeitraums, steht ohne Zahlungsdatum im Jahr ihres Beginns', () => {
+  // Versicherung 2026, bezahlt am 01.12.2025: mit „Bezahlt am“ 01.12.2025 steht sie in 2025 (calc-steuer-zahlungsdatum.test.ts).
   const src = haus(CALENDAR_RULES, [{ id: 'vers', period: periodKey('2026-01'), description: 'Versicherung 2026', amountCents: 60000 }])
   assert.deepEqual(inYear(src, 2025), [])
   assert.deepEqual(inYear(src, 2026), ['vers'])
 })
 
-test('R-9, Fall 3 (heute): Die Steuerübersicht findet eine Position über Abrechnungsjahre hinweg über ihr Jahr der Zahlung', () => {
+test('R-9, Fall 3 (ohne Zahlungsdatum): Die Steuerübersicht findet eine Position über Abrechnungsjahre hinweg über ihr Jahr der Zahlung', () => {
   // Mai bis April: die Position des Zeitraums 2026/2027 mit Jahr der Zahlung 2027 steht in 2027, nicht in 2026, und
   // das Steuer-ZIP folgt ihr. PR 3 lässt das auch beim Kalenderobjekt zu und mit dem Zahlungsdatum statt des Jahres.
   const src = haus(MAI, [

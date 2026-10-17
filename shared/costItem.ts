@@ -10,6 +10,7 @@ import type { CostKey, ExternalBasis, ExternalMeasure, HeatingPart, HeatingTarge
 import { HEATING_CATEGORY } from './heating.ts'
 import { PARTICIPANT_KEYS } from './allocation.ts'
 import { isNotAllocable } from './categories.ts'
+import { allowsPaidOn, isPaidOnDate } from './paidOn.ts'
 
 // Ein Betrag wie in der Oberfläche (client/src/api.ts, fmtEuro): „612,40 €“.
 export const euro = (cents: number): string => (cents / 100).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })
@@ -77,6 +78,9 @@ export type CostItemDraft = {
   heatingPart: HeatingPart | null
   // Ziel bei Heizkosten (Heizung PR 10): Heizung und Warmwasser, nur Heizung oder nur Warmwasser.
   heatingTarget: HeatingTarget | null
+  // Bezahlt am (für die Steuer, #255 PR 3), 'JJJJ-MM-TT'; `null` heißt keine Angabe. Fehlt das Feld (ältere
+  // Aufrufer), gilt keine Angabe.
+  paidOn?: string | null
 }
 
 // Der Rumpf, der an die Datenbank geht. Felder, die zum Schlüssel nicht gehören, stehen
@@ -104,6 +108,9 @@ export type CostItemBody = {
   taxYear: number | null
   heatingPart: HeatingPart | null
   heatingTarget: HeatingTarget | null
+  // Das Zahlungsdatum (#255 PR 3). Immer im Rumpf, damit `null` ein altes Datum leert; bei „laut
+  // Gemeinschaftsabrechnung“ nie eines (R-6, shared/paidOn.ts).
+  paidOn: string | null
   // Betriebsstrom der Heizung (Heizung PR 15): nur das Kostenformular setzt sie (client/src/costForm.ts,
   // `withOperatingPower`); fehlen sie, lässt der Server die Angabe stehen.
   operatingPower?: 'included' | 'deduction' | null
@@ -154,6 +161,9 @@ export function costItemBody(d: CostItemDraft, units: readonly Unit[], period: P
   if (d.serviceFrom !== null && d.serviceTo !== null && d.serviceFrom > d.serviceTo) {
     return { error: `Der Leistungszeitraum von „${d.description.trim()}“ endet vor seinem Beginn.` }
   }
+  if (d.paidOn != null && !isPaidOnDate(d.paidOn)) {
+    return { error: `Das Zahlungsdatum von „${d.description.trim()}“ ist kein gültiges Datum.` }
+  }
   // Nach Heizkostenverordnung (Heizung PR 10): Teil und Ziel sind Pflicht (dieselbe Regel wie `targetProblem` im Server).
   if (d.key === 'heatingSystem' && d.category === HEATING_CATEGORY && (d.heatingPart === null || d.heatingTarget === null)) {
     return { error: `Für „${d.description.trim()}“ fehlt ${d.heatingPart === null ? 'der Teil der Heizkosten (Brennstoff/Energie, Betrieb oder Messdienst)' : 'das Ziel (Heizung und Warmwasser, nur Heizung oder nur Warmwasser)'}.` }
@@ -169,6 +179,7 @@ export function costItemBody(d: CostItemDraft, units: readonly Unit[], period: P
     serviceFrom: d.serviceFrom,
     serviceTo: d.serviceTo,
     taxYear: d.taxYear,
+    paidOn: allowsPaidOn({ key: d.key, category: d.category }) ? (d.paidOn ?? null) : null,
     // Das Merkmal gibt es nur bei Heizkosten (A1); bei anderer Kostenart fällt es weg, wie eine
     // Zuordnung, die zum Schlüssel nicht gehört.
     heatingPart: d.category === HEATING_CATEGORY ? d.heatingPart : null,

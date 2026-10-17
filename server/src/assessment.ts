@@ -188,6 +188,10 @@ export function lineDraft(fields: LineFields, extra: { vendor: string; invoiceFi
     // Die Belegbuchung kennt keinen Leistungszeitraum je Zeile (#208); das Jahr der Zahlung kommt
     // aus `bookingTaxYear` (Rechnungsdatum), nur bei einem Zeitraum über zwei Kalenderjahre.
     serviceFrom: null, serviceTo: null, taxYear: extra.taxYear ?? null, heatingPart: null, heatingTarget: null,
+    // Kein Zahlungsdatum (#255 PR 3): Das Rechnungsdatum ist keines, eine Dezember-Rechnung wird oft im Januar bezahlt,
+    // und ein „wird am … abgebucht“ auf dem Beleg ist nur eine Ankündigung (BFH VIII B 58/15). Wer bezahlt hat, trägt
+    // das Datum an der Position nach; mit #292 belegt es die verknüpfte Abbuchung.
+    paidOn: null,
   }
 }
 

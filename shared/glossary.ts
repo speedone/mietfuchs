@@ -671,6 +671,15 @@ export const GLOSSARY = {
     norm: 'BGH, Urteil vom 20.02.2008, VIII ZR 49/07; BGH, Urteil vom 01.02.2012, VIII ZR 156/11',
     needed: 'Nur wenn eine Rechnung einen anderen Zeitraum hat als Ihre Abrechnung. Tragen Sie dann unter „Weitere Angaben“ den Leistungszeitraum ein.',
   },
+  // #255 PR 3: das Zahlungsdatum einer Kostenposition für die Steuer (Abflussprinzip). Quellen aus der Rechtsprüfung
+  // zu #255 (H 11 EStH 2024, BFH VIII B 58/15, IX R 13/93, X R 2/21, § 28 GrStG).
+  paymentDate: {
+    title: 'Zahlungsdatum (Abflussprinzip)',
+    short: 'Für die Steuer zählen Werbungskosten in dem Kalenderjahr, in dem Sie sie bezahlt haben, nicht im Jahr der Abrechnung und nicht am Rechnungsdatum. Bei einer Überweisung ist das der Tag, an dem Ihr Auftrag bei Ihrer Bank einging (Konto gedeckt), bei einer Lastschrift der Tag des Einzugs, bar der Tag der Übergabe. Eine Erstattung zählt im Jahr, in dem sie Ihnen zufließt; Mietfuchs mindert damit vereinfachend die Kosten derselben Art, am Überschuss ändert das nichts. Ohne Datum gilt ein angegebenes Jahr der Zahlung, sonst stellt Mietfuchs eine Position in das Jahr ihrer Abrechnung.',
+    example: 'Grundsteuer 2025 über 600,00 €, bezahlt am 20.02.2026 nach einem späten Bescheid: Mit diesem Datum steht sie in der Steuerübersicht 2026 und fehlt in 2025. Die Abrechnung 2025 für die Mieter bleibt, wie sie ist.',
+    norm: '§ 11 Abs. 2 Satz 1 EStG; H 11 EStH 2024 („Überweisung“); BFH, Beschluss vom 08.03.2016, VIII B 58/15 (Lastschrift); BFH, Urteil vom 22.09.1994, IX R 13/93 (Erstattung); Zehn-Tage-Regel: § 11 Abs. 2 Satz 2 EStG, BFH, Urteil vom 16.02.2022, X R 2/21',
+    needed: 'Nur wenn Sie eine Rechnung in einem anderen Jahr bezahlt haben als im Jahr ihrer Abrechnung, etwa eine Nachzahlung im Folgejahr oder eine Versicherung, die Sie schon im Dezember für das nächste Jahr gezahlt haben. Tragen Sie es an der Kostenposition unter „Weitere Angaben“ ein. Bei Abschlägen lassen Sie es leer, das Datum steht immer für die ganze Position. Um den Jahreswechsel kann eine regelmäßig wiederkehrende Zahlung zum Vorjahr oder Folgejahr gehören (Zehn-Tage-Regel); Mietfuchs weist darauf hin, rechnet es aber nicht. Bei der Grundsteuer greift die Regel nicht, denn ihre Fälligkeiten (§ 28 GrStG) liegen nie in dieser Zeit.',
+  },
   // #208: Gradtage, für den Vorschlag nach § 560 BGB im Rumpf. Werte aus dem Register
   // (`hkv.degree-days`), Herkunft dort.
   degreeDays: {

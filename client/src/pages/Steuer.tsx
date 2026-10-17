@@ -116,8 +116,8 @@ export default function Steuer({ settings }: Props) {
             <h2>Steuerübersicht {year} — Einkünfte aus Vermietung und Verpachtung</h2>
             <div className="muted">
               Einnahmen angesetzt als {basis === 'soll' ? 'vereinbartes Soll' : 'tatsächlich gezahlt (Zuflussprinzip)'}.
-              Werbungskosten mit dem Jahr, unter dem die Kostenposition erfasst ist — für die Anlage V
-              zählt dort das Jahr der Zahlung (§ 11 Abs. 2 EStG).
+              Werbungskosten im Jahr der Zahlung (§ 11 Abs. 2 EStG), wenn an der Kostenposition „Bezahlt am“
+              eingetragen ist; ohne Datum im Jahr ihrer Abrechnung.
             </div>
 
             {/* Auch im Druck sichtbar: Ein ausgedrucktes Blatt auf Soll-Basis ginge sonst ohne

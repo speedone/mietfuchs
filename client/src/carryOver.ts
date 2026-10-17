@@ -8,6 +8,7 @@
 // Rechnung kennen müsste (siehe docs/superpowers/specs/2026-10-02-schluessel-merken-design.md).
 // Gespeichert wird nur, was durch `buildCostItemBody` geht, also dieselbe Prüfung wie im Formular.
 import type { BillingPeriod, CostItem, PeriodKey, PeriodRules, Tenancy, Unit } from './types'
+import { statedOutflowYear } from '../../shared/paidOn.ts'
 import { buildCostItemBody, fmtPct, itemToForm, type BuildResult, type ItemForm } from './costForm'
 import { replaceYear } from '../../shared/allocation.ts'
 import { normalizedText, sameCostCandidates } from '../../shared/duplicates.ts'
@@ -107,12 +108,15 @@ export function carryOverRows(items: readonly CostItem[], at: number | PeriodCon
     const name = plantOf(source)?.name
     return name ? ` „${name}“` : ''
   }
+  // Das Jahr, in dem die Vorlage bezahlt wurde, nach der Rangfolge aus shared/paidOn.ts (Zahlungsdatum vor Jahr der
+  // Zahlung, #255 PR 3); das Datum selbst kommt nicht mit (`carryOverForm`).
   const taxYearOf = (source: CostItem): string => {
-    if (target === undefined) return source.taxYear !== undefined ? String(source.taxYear + ctx.year - ctx.previousYear) : ''
+    const paid = statedOutflowYear(source)
+    if (target === undefined) return paid !== null ? String(paid + ctx.year - ctx.previousYear) : ''
     if (!spansTwoYears(target)) return ''
     const start = Number(target.from.slice(0, 4))
     const end = Number(target.to.slice(0, 4)) + 1
-    const wanted = source.taxYear !== undefined ? source.taxYear + ctx.year - ctx.previousYear : start
+    const wanted = paid !== null ? paid + ctx.year - ctx.previousYear : start
     return String(Math.min(Math.max(wanted, start), end))
   }
   return items.filter((i) => keyOf(i) === ctx.previous).map((source) => {
@@ -150,10 +154,11 @@ export function carryOverRows(items: readonly CostItem[], at: number | PeriodCon
   // Jahr der Vorlage um ein Jahr verschoben, geklemmt; ohne Angabe `null`.
   function taxYearIn(h: { from: string; to: string }, source: CostItem): string | null {
     if (!spansTwoYears(h)) return ''
-    if (source.taxYear === undefined) return null
+    const paid = statedOutflowYear(source)
+    if (paid === null) return null
     const start = Number(h.from.slice(0, 4))
     const end = Number(h.to.slice(0, 4)) + 1
-    return String(Math.min(Math.max(source.taxYear + 1, start), end))
+    return String(Math.min(Math.max(paid + 1, start), end))
   }
 }
 
@@ -200,6 +205,8 @@ export function carryOverForm(row: CarryRow): ItemForm {
     // Ein Leistungszeitraum oder ein Jahr der Zahlung des Vorzeitraums gilt nicht für den neuen (#208).
     // Das Jahr der Zahlung kommt verschoben aus der Zeile (carryOverRows).
     serviceFrom: '', serviceTo: '', taxYear: row.taxYear ?? '',
+    // Das Zahlungsdatum gilt nur für die eine Zahlung (#255 PR 3, T12); jedes Jahr wird anders gezahlt.
+    paidOn: '',
     heatingPart: row.source.heatingPart ?? '',
     heatingTarget: row.source.heatingTarget ?? '',
     invoiceFile: undefined,

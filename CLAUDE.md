@@ -117,7 +117,8 @@ läuft die App ohne Clone des Repos. Bei PRs, die Dockerfile, Abhängigkeiten od
 ändern, baut er nur zur Probe (ohne Login und Push). Die Laufzeit-Stufe übernimmt `server`,
 `client/dist` **und `shared`**. Der Server lädt aus dem Ordner seit #140 auch einen Helfer für die
 Laufzeit (`shared/heating.ts`, seit #141 auch `shared/allocation.ts` und `shared/duplicates.ts`,
-seit #170 `shared/costItem.ts`, `shared/assessment.ts` und `shared/categories.ts`); ohne den
+seit #170 `shared/costItem.ts`, `shared/assessment.ts` und `shared/categories.ts`, seit #255
+`shared/paidOn.ts`); ohne den
 Ordner startete das Image nicht mehr, und die Prüfläufe
 gegen den Start aus dem Quellcode bemerkten es nicht, nur die Prüfung des Images selbst.
 
@@ -2605,11 +2606,38 @@ die ganze fachliche Komplexität:
   kalt), teilweise inklusiv und mit Pauschale. Daraus entscheidet `taxView.ts` die Hinweise zu
   Zeile 24 und Zeile 20; die Zuordnung der Pauschale zu Zeile 20 ist eine Auslegung und steht als
   solche da.
-  **Nicht dem Abflussprinzip folgen die Werbungskosten**, und die Seite behauptet es auch nicht
-  mehr. `CostItem` trägt nur `year`, also das Abrechnungsjahr, und kein Zahlungsdatum; die
-  Grundsteuer 2025, im Februar 2026 gezahlt, steht damit in der Anlage V 2025, obwohl sie nach
-  § 11 Abs. 2 EStG in 2026 abfließt. Solange die Einnahmenseite ebenfalls auf Soll stand, war das
-  symmetrisch schief. Das Datenmodell dafür zu erweitern ist eine eigene Entscheidung.
+  **Dem Abflussprinzip folgen die Werbungskosten nur mit Zahlungsdatum** (#255, PR 3). Die
+  Kostenposition trägt optional `paidOn` (Spalte `paid_on`, „Bezahlt am (für die Steuer)“), das
+  Datum der ganzen Zahlung. Das Steuerjahr bestimmt allein `outflowShares` in
+  [server/src/outflow.ts](server/src/outflow.ts), Rangfolge Zahlungsdatum, dann `taxYear`, dann das
+  Jahr des Beginns des Zeitraums; die Rangfolge selbst steht als `statedOutflowYear` in
+  [shared/paidOn.ts](shared/paidOn.ts), damit Formular und Schreibwege (Wechsel des Zeitraums und
+  der Heizperiode, Heizposition aus der Belegbuchung, Übernahme aus dem Vorjahr) dasselbe meinen.
+  Keine andere Stelle leitet ein Steuerjahr aus `taxYear` oder `paidOn` ab; nur zur Auswahl lesen
+  `taxPartsFor` (Suchfenster) und die Rückfrage „Jahr der Zahlung“ beim Aufteilen in Kosten.tsx das
+  Jahr des Datums. `taxPartsFor` sucht
+  zusätzlich in den Zeiträumen jeder Position, die im Steuerjahr bezahlt ist, auch nach dem Jahr
+  (vorab bezahlt) und Jahre davor (späte Nachzahlung); der private Teil kommt aus der Abrechnung
+  ihres Zeitraums. Ein Datum, das das wirksame Jahr ändert, einem gesetzten `taxYear` widerspricht
+  oder außerhalb von Beginn − 1 bis Ende + 3 liegt, wird nur mit `confirmPaidOn: true` gespeichert
+  (`PaidOnQuestion`, 409 mit `question: 'paidOn'`; dieselben Sätze zeigt das Formular). Beim Aufteilen
+  zählt jeder Teil mit seinem eigenen Zeitraum (eine Jahresversicherung 07/2025 bis 06/2026, bezahlt
+  am 01.07.2025, ändert das Jahr des Teils 2026): Server und Formular fragen dafür mit denselben
+  Teilen der Vorschau (`splitPaidOnQuestions`, die Vorschau nennt je Teil `startYear`/`endYear`).
+  Kommt trotzdem eine 409 mit `question: 'paidOn'`, zeigt das Formular sie als Rückfrage und
+  wiederholt mit Bestätigung. Beim Wechsel des
+  Abrechnungszeitraums behält eine datierte Position ihr Steuerjahr (`keepsTaxYear` in
+  periodChange.ts): keine Frage nach dem Jahr, keine angekündigte Verschiebung. Kein Datum
+  bei `external` (Hausgeld, abgelehnt mit Hinweis) und am Abzug beim Betriebsstrom (geleert, er
+  folgt seiner Rechnung, auch deren Datum). Die Belegbuchung belegt es nie vor: Das Rechnungsdatum
+  ist kein Zahlungsdatum. Teilzahlungen bildet das Datum nicht ab, die kommen mit #292 über
+  dieselbe Funktion, und eine verknüpfte Abbuchung ist dort ein Nachweis, keine zusätzliche
+  Zahlung. Die Zehn-Tage-Regel ist nur ein Hinweis im Formular (Datum zwischen 22.12. und 10.01.,
+  nie bei der Grundsteuer). **Ohne Datum gilt weiter das Abrechnungsjahr**: Die Grundsteuer 2025,
+  im Februar 2026 gezahlt, steht dann in der Anlage V 2025, obwohl sie nach § 11 Abs. 2 EStG in
+  2026 abfließt; die Gleichheitsinvariante und die Prüfsummen in outflow.test.ts halten fest, dass
+  ohne Datum keine Zahl wandert. Die db.json kennt das Feld nicht, Umstieg und alte Backups
+  ergeben `NULL`.
   **Betriebsstrom: die Stromrechnung zählt genau einmal** (#268). Eine Heizposition `included`
   („steckt auch in der Stromrechnung“) und ein Abzug beim Allgemeinstrom (`operatingPower:
   'deduction'`) sind beide nur Ausschnitte derselben bezahlten Stromrechnung, keine eigene Zahlung.

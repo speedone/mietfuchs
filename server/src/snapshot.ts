@@ -84,6 +84,8 @@ export type SnapshotCostItem = Pick<
   | 'serviceFrom'
   | 'serviceTo'
   | 'taxYear'
+  // Das Zahlungsdatum für die Steuer (#255, PR 3); die Abrechnung liest es nicht.
+  | 'paidOn'
   | 'heatingPart'
   // Ziel bei der eigenen Heizkostenabrechnung und „nur Heizung“ bei freien Schlüsseln (Heizung PR 10).
   | 'heatingTarget'
