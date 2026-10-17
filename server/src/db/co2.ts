@@ -19,6 +19,7 @@ import { selfActive, selfFromOf } from '../heating.ts'
 import { captureOf, hotWaterOf, lineServiceRows } from '../hca.ts'
 import { and, eq, inArray } from 'drizzle-orm'
 import { consumptionInPeriod } from '../calc.ts'
+import { unitScale } from '../../../shared/meterUnits.ts'
 import { suppliedAreaOf } from '../dhw.ts'
 import { lineRoot, servesUnit } from '../../../shared/heatingPeriod.ts'
 import { andList } from '../../../shared/wording.ts'
@@ -115,8 +116,13 @@ export async function heatingPeriodViews(db: Database, plantId: string, periodPa
       ]
       return gaps.length > 0 ? [`„${m.name}“ ${gaps.join(' und ')}`] : []
     })
+    // In m³ (#342, Durchsicht E3): ein Zähler in Litern wird umgerechnet. Eine unbekannte Einheit rechnet mit Faktor 1;
+    // die Abrechnung warnt (`meter.unit-unknown`). Ein Filter auf Zähler mit Verbrauch im Zeitraum entfällt hier
+    // (Nachprüfung): Einen Vorschlag gibt es nur, wenn `missing` leer ist, also jeder Zähler am Tag vor dem Beginn oder
+    // früher und am Ende oder später abgelesen ist, und ein solcher überdeckt den Zeitraum immer.
+    const waterScale = unitScale(waterMeters, 'base')
     const volume = waterMeters.length === 0 || missing.length > 0 ? null
-      : Math.round(waterMeters.reduce((a, m) => a + consumptionInPeriod(readings.filter((r) => r.meterId === m.id), from, to), 0) * 1000) / 1000
+      : Math.round(waterMeters.reduce((a, m) => a + consumptionInPeriod(readings.filter((r) => r.meterId === m.id), from, to) * waterScale.factorOf(m.id), 0) * 1000) / 1000
     views.push({
       plantId,
       period: h.key,

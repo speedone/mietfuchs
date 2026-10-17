@@ -5,6 +5,11 @@ import { hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit } from '../../shar
 import { dayBefore, germanDate, LAW_AS_OF, onlyVersion, valueAt } from '../../shared/law/register.ts'
 import { calibrationEnd } from '../../shared/calibration.ts'
 import { CALIBRATION_AMENDED_ON } from '../../shared/law/messev.ts'
+import { hasKnownUnits, knownUnit, meterUnitOptions, unitKey, unitLabel, unitProblem } from '../../shared/meterUnits.ts'
+import { METER_TYPE_LABELS } from '../../shared/wording.ts'
+
+// Die Auswahl der Einheit (#342): bekannte Einheiten der Sparte und eine gespeicherte unbekannte.
+export { hasKnownUnits, meterUnitOptions }
 
 // Fernablesbar? Leer heißt „weiß ich nicht“.
 export type RemoteAnswer = '' | 'yes' | 'no'
@@ -16,6 +21,13 @@ export type MeterForm = {
   type: MeterType
   meterNumber: string
   unit: string
+  // Die gespeicherte Einheit (#342): Eine unbekannte, die unverändert bleibt, hindert das Speichern nicht.
+  keptUnit: string
+  // Die Einheit, die ein Spartenwechsel geleert hat, weil die neue Sparte sie nicht kennt (Durchsicht von #342, S6);
+  // für den Hinweis am Feld. Leer, wenn nichts geleert wurde.
+  unitDropped: string
+  // Die gespeicherte Sparte (Durchsicht S-N1): Nach einem Wechsel lässt sich ein Zähler ohne Einheit nicht leer speichern.
+  keptType: MeterType | ''
   // Heizung PR 4: Rolle an der Heizanlage (nur ohne Wohnung), Fernablesbarkeit und Einbau.
   heatingRole: HeatingRole | ''
   // Die gespeicherte Rolle (Durchsicht M1): Sie bleibt wählbar, auch wenn die Sparte sie nicht mehr
@@ -46,14 +58,25 @@ export function withMeterType(form: MeterForm, type: MeterType): MeterForm {
     const roles = rolesForType(type)
     form = { ...form, keptRole: '', heatingRole: form.heatingRole !== '' && roles.includes(form.heatingRole) ? form.heatingRole : '' }
   }
-  if (form.id) return { ...form, type }
   const unit = form.unit.trim()
-  const followsDefault = unit === '' || unit === defaultMeterUnit(form.type)
-  return { ...form, type, unit: followsDefault ? defaultMeterUnit(type) : form.unit }
+  // Durchsicht von #342, S6: Eine Einheit, die die neue Sparte nicht kennt (l bei Wärme), bleibt nicht still stehen und
+  // wird auch nicht still eine Vorgabe. Die Auswahl steht auf „Bitte wählen“, und ein Hinweis nennt die geleerte Einheit.
+  const impossible = unit !== '' && hasKnownUnits(type) && knownUnit(type, unit) === null
+  if (form.id) return impossible ? { ...form, type, unit: '', unitDropped: unit } : { ...form, type, unitDropped: '' }
+  // Bei einem neuen Zähler wandert die Vorgabe der bisherigen Sparte (oder nichts) mit (#142).
+  if (unit === '' || unit === defaultMeterUnit(form.type)) return { ...form, type, unit: defaultMeterUnit(type), unitDropped: '' }
+  return impossible ? { ...form, type, unit: '', unitDropped: unit } : { ...form, type, unitDropped: '' }
+}
+
+// Der Hinweis am Feld Einheit (Durchsicht von #342, S2 und S6), oder null.
+export function meterUnitHint(form: Pick<MeterForm, 'id' | 'type' | 'unit' | 'unitDropped'>): string | null {
+  if (!hasKnownUnits(form.type) || form.unit.trim() !== '') return null
+  if (form.unitDropped) return `„${form.unitDropped}“ ist für ${METER_TYPE_LABELS[form.type]} keine Einheit. Bitte wählen Sie die Einheit, die der Zähler zeigt.`
+  return form.id ? 'Für diesen Zähler ist keine Einheit gespeichert. Bitte wählen Sie die Einheit, die er zeigt.' : 'Bitte wählen Sie die Einheit, die der Zähler zeigt.'
 }
 
 export const emptyMeterForm = (): MeterForm => ({
-  name: '', unitId: '', type: 'kaltwasser', meterNumber: '', unit: defaultMeterUnit('kaltwasser'), heatingRole: '', keptRole: '', remote: '', installedOn: '', heatingPlantId: '', hca: EMPTY_HCA_FIELDS, calibratedUntil: '',
+  name: '', unitId: '', type: 'kaltwasser', meterNumber: '', unit: defaultMeterUnit('kaltwasser'), keptUnit: '', unitDropped: '', keptType: '', heatingRole: '', keptRole: '', remote: '', installedOn: '', heatingPlantId: '', hca: EMPTY_HCA_FIELDS, calibratedUntil: '',
 })
 
 export const meterToForm = (m: Meter): MeterForm => ({
@@ -62,7 +85,12 @@ export const meterToForm = (m: Meter): MeterForm => ({
   unitId: m.unitId ?? '',
   type: m.type,
   meterNumber: m.meterNumber ?? '',
-  unit: m.unit,
+  // In der bekannten Schreibweise (#342), damit der Wert in der Auswahl steht („m3“ wird „m³“). Leer gespeichert
+  // bleibt leer (Durchsicht S2): Die Auswahl zeigt „Bitte wählen“, und still „kWh“ einzusetzen hieße raten.
+  unit: unitLabel(m.type, m.unit),
+  keptUnit: m.unit,
+  unitDropped: '',
+  keptType: m.type,
   heatingRole: m.heatingRole ?? '',
   keptRole: m.unitId === null && m.heatingRole ? m.heatingRole : '',
   remote: m.remoteReadable === true ? 'yes' : m.remoteReadable === false ? 'no' : '',
@@ -155,6 +183,17 @@ export function meterBody(form: MeterForm, plantId: string | null): { body: Mete
   const number = form.meterNumber.trim()
   const hca = hcaFieldsBody(form.type, form.hca)
   if ('error' in hca) return { error: hca.error }
+  // #342: Eine neue oder geänderte Einheit muss die Sparte kennen; eine gespeicherte, die unverändert bleibt, nicht.
+  const entered = form.unit.trim()
+  // Bei Sparten mit Auswahl wird nur gespeichert, was gewählt ist (Durchsicht S2, S6). Ohne Wahl darf nur ein schon
+  // leer gespeicherter Zähler bleiben, wie er ist; ohne Auswahl gilt wie bisher die Vorgabe der Sparte.
+  if (entered === '' && hasKnownUnits(form.type) && (!form.id || form.keptUnit.trim() !== '' || form.unitDropped !== '' || form.type !== form.keptType)) {
+    return { error: 'Bitte wählen Sie die Einheit, die der Zähler zeigt.' }
+  }
+  const unitText = entered || (hasKnownUnits(form.type) ? '' : defaultMeterUnit(form.type))
+  const unitKept = form.keptUnit !== '' && unitKey(form.type, unitText) === unitKey(form.type, form.keptUnit)
+  const unitRefused = unitKept || unitText === '' ? null : unitProblem(form.type, unitText)
+  if (unitRefused !== null) return { error: unitRefused }
   const until = form.calibratedUntil.trim()
   if (asksCalibration(form) && until !== '' && !/^[1-9]\d{3}$/.test(until)) {
     return { error: 'Bitte tragen Sie das Eichjahr vierstellig ein, so wie es der Messdienst oder der Eichschein nennt, oder lassen Sie das Feld leer.' }
@@ -166,7 +205,7 @@ export function meterBody(form: MeterForm, plantId: string | null): { body: Mete
       type: form.type,
       ...(number ? { meterNumber: number } : {}),
       // Ohne Angabe die Vorgabe der Sparte (#142), nicht für jede Sparte „m³“.
-      unit: form.unit.trim() || defaultMeterUnit(form.type),
+      unit: unitText,
       heatingPlantId: role === null ? null : plantId,
       heatingRole: role,
       // Heizkostenverteiler sind nicht eichpflichtig (Entwurf 3.12): nie ein Eichjahr.

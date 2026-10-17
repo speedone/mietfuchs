@@ -105,8 +105,12 @@ export function potLines(p: SelfPotView): string[] {
 }
 
 // Heizkostenverteiler und Ablesedienst zählen Einheiten, keine Kilowattstunden (Heizung PR 12, Abweichung 9).
-export const heatUnitOf = (self: Pick<SelfHeatingStatement, 'pots'>): 'kWh' | 'Einheiten' =>
-  self.pots.find((p) => p.pot === 'heating')?.consumptionUnit === 'Einheiten' ? 'Einheiten' : 'kWh'
+// Steht der Topf einheitlich in MWh, ist es MWh (#342, Durchsicht E2).
+export const heatUnitOf = (self: Pick<SelfHeatingStatement, 'pots'>): string =>
+  self.pots.find((p) => p.pot === 'heating')?.consumptionUnit ?? 'kWh'
+// Die Einheit des Topfs Warmwasser: m³, bei einheitlich Litern l.
+const waterUnitOf = (self: Pick<SelfHeatingStatement, 'pots'>): string =>
+  self.pots.find((p) => p.pot === 'water')?.consumptionUnit ?? 'm³'
 
 export function userLine(u: SelfUserView, self: Pick<SelfHeatingStatement, 'pots'>): string {
   const heatUnit = heatUnitOf(self)
@@ -122,7 +126,7 @@ export function userLine(u: SelfUserView, self: Pick<SelfHeatingStatement, 'pots
   }
   const parts = [`Heizung ${u.heatingConsumption === null ? 'nicht erfasst' : `${num(u.heatingConsumption)} ${heatUnit}${note(u.heatingEstimated, u.heatingGroup, over('heating'))}`}, ${net(u.heatingCents, u.heatingCo2Cents)}`]
   if (self.pots.some((p) => p.pot === 'water')) {
-    parts.push(`Warmwasser ${u.waterConsumption === null ? 'nicht erfasst' : `${num(u.waterConsumption)} m³${note(u.waterEstimated, u.waterGroup, over('water'))}`}, ${net(u.waterCents, u.waterCo2Cents)}`)
+    parts.push(`Warmwasser ${u.waterConsumption === null ? 'nicht erfasst' : `${num(u.waterConsumption)} ${waterUnitOf(self)}${note(u.waterEstimated, u.waterGroup, over('water'))}`}, ${net(u.waterCents, u.waterCo2Cents)}`)
   }
   return `${u.label}, ${time}: ${parts.join('; ')}`
 }
@@ -145,7 +149,7 @@ export function estimateLines(
   u: Pick<SelfUserView, 'heatingEstimated' | 'waterEstimated'> & Partial<Pick<SelfUserView, 'heatingConsumption' | 'waterConsumption'>>,
 ): string[] {
   return (self.estimates ?? []).filter((e) => !e.stale && e.unitId === unitId && (e.part === 'heat' ? u.heatingEstimated : u.waterEstimated)).map((e) => {
-    const unit = e.part === 'heat' ? heatUnitOf(self) : 'm³'
+    const unit = e.part === 'heat' ? heatUnitOf(self) : waterUnitOf(self)
     const pot = self.pots.find((p) => p.pot === (e.part === 'heat' ? 'heating' : 'water'))
     const mine = e.part === 'heat' ? u.heatingConsumption : u.waterConsumption
     const what = `${CAUSE_TEXT[e.cause] ?? 'nicht ordnungsgemäß erfasst'}; Begründung: „${e.reason}“`
@@ -171,7 +175,7 @@ export const READING_RESULT_HINT = 'Bei Zählern, die nicht aus der Ferne ablesb
 // wie am Zähler (UI-Durchsicht H5): ein Wärmezähler in MWh mit 88,4 nicht als „88 kWh“. Ohne Einheit am
 // Zähler (eingefrorene Stände von vorher) gilt die des Topfes.
 const reading = (n: number) => n.toLocaleString('de-DE', { maximumFractionDigits: 3 })
-export function readingResult(unit: SelfUnitView, boundary: string, heatUnit: 'kWh' | 'Einheiten' = 'kWh'): string[] {
+export function readingResult(unit: SelfUnitView, boundary: string, heatUnit: string = 'kWh'): string[] {
   const unitOf = (r: SelfReadingView) => r.meterUnit?.trim() || (r.pot === 'heating' ? heatUnit : 'm³')
   return unit.readings.filter((r) => r.boundary === boundary).map((r) => (r.date === null || r.value === null
     ? `${r.meterName}: nicht abgelesen`

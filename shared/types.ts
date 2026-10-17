@@ -2405,8 +2405,9 @@ export type SelfPotView = {
   byAreaOnly: boolean
   areaM2: number
   consumption: number
-  // Heizkostenverteiler und Ablesedienste zählen Einheiten, keine Kilowattstunden (Heizung PR 12).
-  consumptionUnit: 'kWh' | 'm³' | 'Einheiten'
+  // Heizkostenverteiler und Ablesedienste zählen Einheiten, keine Kilowattstunden (Heizung PR 12). Stehen alle Zähler
+  // einheitlich in MWh oder Litern, ist es diese Einheit (#342, Durchsicht E2), sonst kWh bzw. m³.
+  consumptionUnit: string
   baseCentsPerM2: number
   consumptionCentsPerUnit: number | null
   // Schätzung (Heizung PR 13): geschätzte Fläche des Topfs und ob sie die Grenze des § 9a Abs. 2
