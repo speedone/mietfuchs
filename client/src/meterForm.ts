@@ -26,6 +26,8 @@ export type MeterForm = {
   // Die Einheit, die ein Spartenwechsel geleert hat, weil die neue Sparte sie nicht kennt (Durchsicht von #342, S6);
   // für den Hinweis am Feld. Leer, wenn nichts geleert wurde.
   unitDropped: string
+  // Die gespeicherte Sparte (Durchsicht S-N1): Nach einem Wechsel lässt sich ein Zähler ohne Einheit nicht leer speichern.
+  keptType: MeterType | ''
   // Heizung PR 4: Rolle an der Heizanlage (nur ohne Wohnung), Fernablesbarkeit und Einbau.
   heatingRole: HeatingRole | ''
   // Die gespeicherte Rolle (Durchsicht M1): Sie bleibt wählbar, auch wenn die Sparte sie nicht mehr
@@ -74,7 +76,7 @@ export function meterUnitHint(form: Pick<MeterForm, 'id' | 'type' | 'unit' | 'un
 }
 
 export const emptyMeterForm = (): MeterForm => ({
-  name: '', unitId: '', type: 'kaltwasser', meterNumber: '', unit: defaultMeterUnit('kaltwasser'), keptUnit: '', unitDropped: '', heatingRole: '', keptRole: '', remote: '', installedOn: '', heatingPlantId: '', hca: EMPTY_HCA_FIELDS, calibratedUntil: '',
+  name: '', unitId: '', type: 'kaltwasser', meterNumber: '', unit: defaultMeterUnit('kaltwasser'), keptUnit: '', unitDropped: '', keptType: '', heatingRole: '', keptRole: '', remote: '', installedOn: '', heatingPlantId: '', hca: EMPTY_HCA_FIELDS, calibratedUntil: '',
 })
 
 export const meterToForm = (m: Meter): MeterForm => ({
@@ -88,6 +90,7 @@ export const meterToForm = (m: Meter): MeterForm => ({
   unit: unitLabel(m.type, m.unit),
   keptUnit: m.unit,
   unitDropped: '',
+  keptType: m.type,
   heatingRole: m.heatingRole ?? '',
   keptRole: m.unitId === null && m.heatingRole ? m.heatingRole : '',
   remote: m.remoteReadable === true ? 'yes' : m.remoteReadable === false ? 'no' : '',
@@ -184,7 +187,7 @@ export function meterBody(form: MeterForm, plantId: string | null): { body: Mete
   const entered = form.unit.trim()
   // Bei Sparten mit Auswahl wird nur gespeichert, was gewählt ist (Durchsicht S2, S6). Ohne Wahl darf nur ein schon
   // leer gespeicherter Zähler bleiben, wie er ist; ohne Auswahl gilt wie bisher die Vorgabe der Sparte.
-  if (entered === '' && hasKnownUnits(form.type) && (!form.id || form.keptUnit.trim() !== '' || form.unitDropped !== '')) {
+  if (entered === '' && hasKnownUnits(form.type) && (!form.id || form.keptUnit.trim() !== '' || form.unitDropped !== '' || form.type !== form.keptType)) {
     return { error: 'Bitte wählen Sie die Einheit, die der Zähler zeigt.' }
   }
   const unitText = entered || (hasKnownUnits(form.type) ? '' : defaultMeterUnit(form.type))
