@@ -93,7 +93,7 @@ const CALLED = /(?:^|[^\w$.])([A-Za-z_$][\w$]*)\s*\(/g
 // übersprungen, denn ein Typ wie `changes: { year?: number }` hat selbst geschweifte Klammern.
 function definitionOf(source: string, name: string): string | null {
   // Ein Name darf `$` enthalten, das in einem regulären Ausdruck etwas anderes heißt.
-  name = name.replace(/\$/g, '\\$')
+  name = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const declared = new RegExp(`(?:^|[^\\w$])function\\s+${name}\\s*\\(`).exec(source)
   const assigned = declared ? null : new RegExp(`(?:^|[^\\w$])(?:const|let)\\s+${name}\\s*=`).exec(source)
   const m = declared ?? assigned

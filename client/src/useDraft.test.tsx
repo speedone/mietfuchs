@@ -102,3 +102,14 @@ test('ein offener Entwurf meldet sich als offenes Formular an, gespeichert oder 
   await waitFor(() => expect(screen.queryByRole('button', { name: 'Speichern' })).toBeNull())
   expect(await frage()).toBe('offen? false')
 })
+
+test('ein gescheitertes Speichern steht nicht neben dem Wert eines anderen scope', async () => {
+  const onSave = vi.fn(async () => { throw new Error('Server sagt nein') })
+  const { rerender } = render(<Feld saved="2025-01-12" onSave={onSave} scope="a" />)
+  fireEvent.change(screen.getByLabelText('Datum'), { target: { value: '2025-01-15' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+  await screen.findByRole('alert')
+  rerender(<Feld saved="2026-02-01" onSave={onSave} scope="b" />)
+  expect((screen.getByLabelText('Datum') as HTMLInputElement).value).toBe('2026-02-01')
+  expect(screen.queryByRole('alert')).toBeNull()
+})
