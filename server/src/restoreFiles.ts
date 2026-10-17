@@ -45,6 +45,17 @@ export async function moveIntoPlace(from: string, to: string, ops: MoveOps = {})
   } catch { /* bleibt in der Zwischenablage liegen, die die Route wegräumt */ }
 }
 
+// Der Name, den die Route einem hochgeladenen Archiv gibt (`newId`: 16 Hexziffern).
+const RESTORE_UPLOAD_NAME = /^restore-upload-[0-9a-f]{16}\.zip$/
+
+// Der Pfad des hochgeladenen Archivs, gebaut aus dem Datenordner und dem Namen, den der
+// multer-Speicher vergeben hat; `null`, wenn der Name nicht dieser Gestalt ist. Die Route
+// übernimmt `req.file.path` nicht ungeprüft, denn die Datei wird danach in jedem Fall gelöscht.
+export function restoreUploadPath(dataDir: string, name: string | undefined): string | null {
+  if (!name || !RESTORE_UPLOAD_NAME.test(name)) return null
+  return path.join(dataDir, name)
+}
+
 // Was ein abgebrochenes Wiederherstellen im Datenordner hinterlässt: das hochgeladene Archiv
 // (`restore-upload-<id>.zip`) und die Zwischenablage (`restore-<id>/`). Zusammen bis zur doppelten
 // Größe eines Backups, und ohne Aufräumen blieben sie für immer liegen. Beim Start läuft keine
@@ -62,7 +73,7 @@ export function cleanRestoreLeftovers(dataDir: string): void {
   for (const e of entries) {
     // Nur genau die Namen, die die Route vergibt (`newId`: 16 Hexziffern). Ein Ordner, den der
     // Nutzer „restore-alt“ genannt hat, ist seiner und bleibt.
-    const upload = e.isFile() && /^restore-upload-[0-9a-f]{16}\.zip$/.test(e.name)
+    const upload = e.isFile() && RESTORE_UPLOAD_NAME.test(e.name)
     const staging = e.isDirectory() && /^restore-[0-9a-f]{16}$/.test(e.name)
     if (!upload && !staging) continue
     try {

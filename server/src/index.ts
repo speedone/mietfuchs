@@ -8,7 +8,7 @@ import { pipeline } from 'node:stream/promises'
 import { fileURLToPath } from 'node:url'
 import yazl from 'yazl'
 import { openZip, ZipRefusal, type ZipItem, type ZipLimits, type ZipReader } from './zipRead.ts'
-import { cleanRestoreLeftovers, diskFullMessage, freeBytes, moveIntoPlace, restoreSpaceNeeded } from './restoreFiles.ts'
+import { cleanRestoreLeftovers, diskFullMessage, freeBytes, moveIntoPlace, restoreSpaceNeeded, restoreUploadPath } from './restoreFiles.ts'
 import type { AiSettings, AiSlotName, AiStatus, AssessmentView, Extraction, Settings, UploadEntry, UploadLinks } from '../../shared/types.ts'
 import { detectedYear, linesFromExtraction } from './assessment.ts'
 import { bookingResponse, parseDecisions } from './bookingPlan.ts'
@@ -2263,7 +2263,10 @@ function restoreGate(req: Request, res: Response, next: NextFunction): void {
 
 app.post('/api/restore', restoreGate, restoreUpload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Keine Datei' })
-  const archive = req.file.path
+  // Der Pfad entsteht aus dem Datenordner und dem Namen, den restoreUpload vergeben hat, nicht
+  // aus `req.file.path`; die Datei wird unten in jedem Fall gelöscht.
+  const archive = restoreUploadPath(DATA_DIR, req.file.filename)
+  if (!archive) return res.status(500).json({ error: 'Das hochgeladene Backup hat einen unerwarteten Namen. Bitte versuchen Sie es erneut.' })
   // Das hochgeladene Archiv und die Zwischenablage gehen in jedem Fall wieder weg, auch nach
   // einer Ablehnung: Liegen bliebe sonst ein Archiv, das niemand mehr braucht, oder ein halb
   // ausgepacktes Backup.

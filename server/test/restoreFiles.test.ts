@@ -6,7 +6,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { cleanRestoreLeftovers, diskFullMessage, moveIntoPlace, restoreSpaceNeeded } from '../src/restoreFiles.ts'
+import { cleanRestoreLeftovers, diskFullMessage, moveIntoPlace, restoreSpaceNeeded, restoreUploadPath } from '../src/restoreFiles.ts'
 
 function tempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-restorefiles-'))
@@ -94,4 +94,15 @@ test('Volle Platte: eine deutsche Meldung mit Ausweg statt der von Node', () => 
     assert.doesNotMatch(message, new RegExp(code))
   }
   assert.equal(diskFullMessage(new Error('anders')), null)
+})
+
+test('Hochgeladenes Archiv: der Pfad entsteht aus dem Datenordner und einem eigenen Namen, nie aus der Anfrage', () => {
+  // Den Namen vergibt der multer-Speicher der Route. Die Route übernimmt ihn trotzdem nicht
+  // ungeprüft als Pfad, denn gelöscht wird die Datei danach in jedem Fall.
+  const dir = path.join(os.tmpdir(), 'daten')
+  assert.equal(restoreUploadPath(dir, 'restore-upload-0123456789abcdef.zip'), path.join(dir, 'restore-upload-0123456789abcdef.zip'))
+  for (const name of ['../mietfuchs.sqlite', 'restore-upload-0123456789abcdef.zip/..', 'mietfuchs.sqlite',
+    'restore-upload-alt.zip', `..${path.sep}restore-upload-0123456789abcdef.zip`, '', undefined]) {
+    assert.equal(restoreUploadPath(dir, name), null, String(name))
+  }
 })
