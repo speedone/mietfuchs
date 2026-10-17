@@ -23,7 +23,7 @@ import { hasOwnRhythm, heatingPeriodsEndingIn, lineRoot, plantRules, sameFuelLin
 import { isStockEnergy } from '../../shared/fuelStock.ts'
 import { asBilledPlant } from '../../shared/heatDelivery.ts'
 import { dayAfter, germanDate } from '../../shared/law/register.ts'
-import { isStockFuelItem, readFrozenStock, settledByDefault, stockKeysOf, stockTemplateOfLine, type PreviousFuel, type StockPeriodInput } from './fuelStock.ts'
+import { isFuelMarked, isStockFuelItem, readFrozenStock, settledByDefault, stockKeysOf, stockTemplateOfLine, type PreviousFuel, type StockPeriodInput } from './fuelStock.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import { selfActive } from './heating.ts'
 import type { Db } from './store.ts'
@@ -757,7 +757,7 @@ export function stockChainsOf(source: StockChainSource, plant: SnapshotHeatingPl
   const previousFuelOf = (p: BillingPeriod): PreviousFuel | null => {
     const fuel = itemsIn(p.key).filter((c) => c.category === HEATING_CATEGORY && c.amountCents !== 0 && (c.heatingPlantId === plant.id || !c.heatingPlantId) && (c.heatingPart ?? 'fuel') === 'fuel')
     if (fuel.length === 0) return null
-    const explicit = fuel.filter((c) => c.heatingPart === 'fuel' || (c.fuelDeliveryId ?? null) !== null)
+    const explicit = fuel.filter(isFuelMarked)
     // Gutschriften ohne Kennzeichen zählen nicht gegen die Schwelle (Nachprüfung von 819398e).
     const loose = fuel.filter((c) => !explicit.includes(c) && c.amountCents > 0)
     return {
