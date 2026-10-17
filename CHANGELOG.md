@@ -6,6 +6,13 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+### Behoben
+
+- Kontoauszüge lesen: Ein ZIP-Archiv wird geprüft, bevor etwas entpackt wird (höchstens 1.000
+  Einträge und 20 MB entpackt, eine Datei höchstens 10 MB), und überlange Textfelder werden
+  gekürzt; eine IBAN wird nie gekürzt, eine überlange gilt als fehlend
+  ([#188](https://github.com/speedone/mietfuchs/issues/188)).
+
 ## [0.11.0] – 2026-10-17
 
 ### Neu
