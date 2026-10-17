@@ -1985,9 +1985,18 @@ const RESTORE_JSON_MAX_BYTES = 512 * 1024 ** 2
 const RESTORE_INFO_MAX_BYTES = 1024 * 1024
 // **Das Archiv kommt auf die Platte und nicht in den Speicher**, in den Datenordner, damit es auf
 // demselben Datenträger liegt wie das, was daraus wird. Der Name beginnt wie die Zwischenablage
-// mit `restore-`; die Route räumt beides in jedem Fall weg.
+// mit `restore-`; die Route räumt beides in jedem Fall weg. Den vergebenen Namen merkt sich der
+// Speicher je Anfrage, und die Route nimmt ihn von dort statt aus `req.file`.
+const restoreUploadNames = new WeakMap<Request, string>()
 const restoreUpload = multer({
-  storage: multer.diskStorage({ destination: DATA_DIR, filename: (_req, _file, cb) => cb(null, `restore-upload-${newId()}.zip`) }),
+  storage: multer.diskStorage({
+    destination: DATA_DIR,
+    filename: (req, _file, cb) => {
+      const name = `restore-upload-${newId()}.zip`
+      restoreUploadNames.set(req, name)
+      cb(null, name)
+    },
+  }),
   limits: { fileSize: RESTORE_MAX_BYTES },
 })
 
@@ -2265,7 +2274,7 @@ app.post('/api/restore', restoreGate, restoreUpload.single('file'), async (req, 
   if (!req.file) return res.status(400).json({ error: 'Keine Datei' })
   // Der Pfad entsteht aus dem Datenordner und dem Namen, den restoreUpload vergeben hat, nicht
   // aus `req.file.path`; die Datei wird unten in jedem Fall gelöscht.
-  const archive = restoreUploadPath(DATA_DIR, req.file.filename)
+  const archive = restoreUploadPath(DATA_DIR, restoreUploadNames.get(req))
   if (!archive) return res.status(500).json({ error: 'Das hochgeladene Backup hat einen unerwarteten Namen. Bitte versuchen Sie es erneut.' })
   // Das hochgeladene Archiv und die Zwischenablage gehen in jedem Fall wieder weg, auch nach
   // einer Ablehnung: Liegen bliebe sonst ein Archiv, das niemand mehr braucht, oder ein halb
