@@ -123,7 +123,7 @@ test('Warmwasser bei eigener Abrechnung: Formel mit Volumen und Temperatur; erg�
   })
 })
 
-test('#342: der Vorschlag des Volumens rechnet einen Zähler in Litern in m³ um; ohne gemeinsame Einheit gibt es keinen', async () => {
+test('#342: der Vorschlag des Volumens rechnet einen Zähler in Litern in m³ um; eine unbekannte Einheit rechnet wie bisher (Durchsicht E3)', async () => {
   await withDatabase(async (opened) => {
     await eigeneAnlage(opened)
     await opened.write(async (db) => {
@@ -136,8 +136,9 @@ test('#342: der Vorschlag des Volumens rechnet einen Zähler in Litern in m³ um
     assert.equal(view?.hotWaterBasis.volumeFromMetersM3, 38)
     await opened.write((db) => db.update(meterTable).set({ unit: 'Eimer' }).where(eq(meterTable.id, 'ww-a2')))
     const [gemischt] = await opened.read((db) => heatingPeriodViews(db, 'hp', '2025')) ?? assert.fail('keine Anlage')
-    assert.equal(gemischt?.hotWaterBasis.volumeFromMetersM3, null)
-    assert.match(gemischt?.hotWaterBasis.volumeMissing ?? '', /fehlt eine gemeinsame Einheit: Die Zähler stehen in m³ und Eimer/)
+    // Faktor 1 wie vor #342: 32,5 + 5.500; die Abrechnung warnt dazu (meter.unit-unknown).
+    assert.equal(gemischt?.hotWaterBasis.volumeFromMetersM3, 5532.5)
+    assert.equal(gemischt?.hotWaterBasis.volumeMissing, null)
   })
 })
 

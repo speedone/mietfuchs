@@ -3,7 +3,7 @@ import { FormError, invalidProps, useFocusOnError, useFormError, type FormErrorS
 import type { HeatingPlant, HeatingRole, Meter, MeterType, Notice, Reading, Unit } from '../types'
 import { METER_TYPE_LABELS } from '../types'
 import { buildReadingBody, EMPTY_READING, type ReadingField, type ReadingForm } from '../readingForm'
-import { asksCalibration, asksRemote, CALIBRATION_MARK_HELP, calibrationSuggestion, emptyMeterForm, hasKnownUnits, HEATING_ROLE_HELP, heatingRoleLabel, heatingRoleOptions, meterBody, meterPlantId, meterToForm, meterUnitOptions, oldEndText, REMOTE_RULE_TEXT, withMeterType, type MeterForm, type RemoteAnswer } from '../meterForm'
+import { asksCalibration, asksRemote, CALIBRATION_MARK_HELP, calibrationSuggestion, emptyMeterForm, hasKnownUnits, HEATING_ROLE_HELP, heatingRoleLabel, heatingRoleOptions, meterBody, meterPlantId, meterToForm, meterUnitHint, meterUnitOptions, oldEndText, REMOTE_RULE_TEXT, withMeterType, type MeterForm, type RemoteAnswer } from '../meterForm'
 import { plantOptions } from '../heatingForm'
 import { api, errorText, fmtDate } from '../api'
 import { usePeriod } from '../period'
@@ -272,11 +272,14 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
               <Term id="meterUnit">Einheit</Term>
               {hasKnownUnits(meterForm.type)
                 ? (
-                  <select value={meterForm.unit} onChange={(e) => setMeterForm({ ...meterForm, unit: e.target.value })}>
+                  <select value={meterForm.unit} onChange={(e) => setMeterForm({ ...meterForm, unit: e.target.value, unitDropped: '' })}>
+                    {/* Durchsicht von #342, S2 und S6: ohne Einheit „Bitte wählen“ statt einer still eingesetzten Vorgabe. */}
+                    {meterForm.unit === '' && <option value="">Bitte wählen</option>}
                     {meterUnitOptions(meterForm.type, meterForm.unit).map((u) => <option key={u} value={u}>{u}</option>)}
                   </select>
                 )
                 : <input value={meterForm.unit} onChange={(e) => setMeterForm({ ...meterForm, unit: e.target.value })} />}
+              {meterUnitHint(meterForm) && <small className="muted">{meterUnitHint(meterForm)}</small>}
             </label>
             {/* Heizung PR 12: Skala und Bewertungsfaktor des Heizkostenverteilers. */}
             {meterForm.type === 'hkv' && <HcaFields form={meterForm.hca} onChange={(hca) => setMeterForm({ ...meterForm, hca })} />}

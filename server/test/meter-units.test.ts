@@ -11,7 +11,7 @@ import { meters as meterTable } from '../src/db/schema.ts'
 import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { computeSettlement } from '../src/calc.ts'
 import { selfMeter, selfMeters, selfReading, selfReadings, selfSnapshot } from '../testing/selfHeating.ts'
-import { knownUnit, meterUnitOptions, unitKey, unitProblem, unitScale } from '../../shared/meterUnits.ts'
+import { knownUnit, metersByUnitText, meterUnitOptions, unitKey, unitProblem, unitScale } from '../../shared/meterUnits.ts'
 import { periodKey } from '../../shared/period.ts'
 import type { CostItem, HeatingPlant, Meter, Reading } from '../../shared/types.ts'
 
@@ -51,46 +51,54 @@ test('Einheiten: Schreibweisen werden erkannt, je Sparte', () => {
 
 test('Einheiten: die Faktoren sind exakt (1 MWh = 1.000 kWh, 1 l = 1/1.000 m³, 9 GJ = 2.500 kWh)', () => {
   const heat = unitScale([{ id: 'a', type: 'waerme', unit: 'kWh' }, { id: 'b', type: 'waerme', unit: 'MWh' }, { id: 'c', type: 'waerme', unit: 'GJ' }], 'relative')
-  assert.ok(heat.ok)
+  assert.equal(heat.problem, null)
   assert.equal(heat.unit, 'kWh')
   assert.equal(heat.factorOf('a'), 1)
   assert.equal(heat.factorOf('b'), 1000)
   assert.equal(9 * heat.factorOf('c'), 2500)
   const water = unitScale([{ id: 'a', type: 'kaltwasser', unit: 'm³' }, { id: 'b', type: 'warmwasser', unit: 'l' }], 'relative')
-  assert.ok(water.ok)
+  assert.equal(water.problem, null)
   assert.equal(water.unit, 'm³')
   assert.equal(2500 * water.factorOf('b'), 2.5)
 })
 
-test('Einheiten: gleiche Einheit heißt keine Umrechnung, auch eine unbekannte', () => {
+test('Einheiten: gleiche Einheit heißt keine Umrechnung (relative), auch bei MWh und einer unbekannten', () => {
   const mwh = unitScale([{ id: 'a', type: 'waerme', unit: 'MWh' }, { id: 'b', type: 'waerme', unit: 'mwh' }], 'relative')
-  assert.ok(mwh.ok && !mwh.converted && mwh.factorOf('a') === 1 && mwh.unit === 'MWh')
+  assert.ok(mwh.problem === null && !mwh.converted && mwh.factorOf('a') === 1 && mwh.unit === 'MWh')
   const odd = unitScale([{ id: 'a', type: 'waerme', unit: 'm³' }, { id: 'b', type: 'waerme', unit: 'm³' }], 'base')
-  assert.ok(odd.ok && !odd.converted && odd.factorOf('b') === 1)
-  // In der eigenen Heizkostenabrechnung zählt die Grundeinheit: MWh wird kWh.
-  const base = unitScale([{ id: 'a', type: 'waerme', unit: 'MWh' }, { id: 'b', type: 'waerme', unit: 'MWh' }], 'base')
-  assert.ok(base.ok && base.converted && base.unit === 'kWh' && base.factorOf('a') === 1000)
+  assert.ok(odd.problem === null && !odd.converted && odd.factorOf('b') === 1)
+  // Gegen eine absolute Größe (base): MWh wird kWh, auch der Zähler ohne Einheit daneben (wie die übrigen).
+  const base = unitScale([{ id: 'a', type: 'waerme', unit: 'MWh' }, { id: 'b', type: 'waerme', unit: '' }], 'base')
+  assert.ok(base.problem === null && base.converted && base.unit === 'kWh' && base.factorOf('a') === 1000 && base.factorOf('b') === 1000)
 })
 
-test('Einheiten: ein Zähler ohne Einheit gilt als wie die übrigen; neben verschiedenen gibt es keine gemeinsame', () => {
+test('Einheiten: ein Zähler ohne Einheit gilt wie die übrigen; neben verschiedenen ist er unbekannt', () => {
   // Aus einer alten db.json oder vom Validator geradegerückt (validate.test.ts): keine Zahl darf sich ändern.
   const same = unitScale([{ id: 'a', type: 'kaltwasser', unit: '' }, { id: 'b', type: 'kaltwasser', unit: 'm³' }], 'relative')
-  assert.ok(same.ok && !same.converted && same.factorOf('a') === 1 && same.factorOf('b') === 1)
-  assert.ok(unitScale([{ id: 'a', type: 'waerme', unit: '' }, { id: 'b', type: 'waerme', unit: 'kWh' }], 'base').ok)
-  assert.ok(unitScale([{ id: 'a', type: 'waerme' }, { id: 'b', type: 'waerme' }], 'base').ok)
-  const mixed = unitScale([{ id: 'a', type: 'waerme', unit: ' ' }, { id: 'b', type: 'waerme', unit: 'kWh' }, { id: 'c', type: 'waerme', unit: 'MWh' }], 'relative')
-  assert.equal(mixed.ok, false)
-  if (!mixed.ok) assert.deepEqual(mixed.units, ['(ohne Einheit)', 'kWh', 'MWh'])
-  // In der Grundeinheit: alle in MWh und einer ohne Einheit lässt sich nicht umrechnen.
-  assert.equal(unitScale([{ id: 'a', type: 'waerme', unit: '' }, { id: 'b', type: 'waerme', unit: 'MWh' }], 'base').ok, false)
+  assert.ok(same.problem === null && !same.converted && same.factorOf('a') === 1 && same.factorOf('b') === 1)
+  // Durchsicht M4: alle MWh, einer ohne Einheit, relative: Faktor 1.
+  const m4 = unitScale([{ id: 'a', type: 'waerme', unit: 'MWh' }, { id: 'b', type: 'waerme', unit: '' }], 'relative')
+  assert.ok(m4.problem === null && m4.factorOf('a') === 1 && m4.factorOf('b') === 1)
+  assert.equal(unitScale([{ id: 'a', type: 'waerme' }, { id: 'b', type: 'waerme' }], 'base').problem, null)
+  const mixed = unitScale([{ id: 'a', type: 'waerme', unit: ' ', name: 'A' }, { id: 'b', type: 'waerme', unit: 'kWh', name: 'B' }, { id: 'c', type: 'waerme', unit: 'MWh', name: 'C' }], 'relative')
+  assert.equal(mixed.problem?.kind, 'unknown')
+  // Umgerechnet wird nur, wo alle Einheiten bekannt sind: hier Faktor 1.
+  assert.equal(mixed.factorOf('c'), 1)
+  assert.equal(metersByUnitText(mixed.problem?.meters ?? []), '„A“ ohne Einheit, „B“ in kWh, „C“ in MWh')
 })
 
-test('Einheiten: ohne gemeinsame Einheit kein Ergebnis', () => {
-  const r = unitScale([{ id: 'a', type: 'waerme', unit: 'kWh' }, { id: 'b', type: 'waerme', unit: 'm³' }], 'relative')
-  assert.equal(r.ok, false)
-  if (!r.ok) assert.deepEqual(r.units, ['kWh', 'm³'])
-  // Gas über „Sonstiges“: m³ und kWh sind verschiedene Größen.
-  assert.equal(unitScale([{ id: 'a', type: 'sonstig', unit: 'm³' }, { id: 'b', type: 'sonstig', unit: 'kWh' }], 'relative').ok, false)
+test('Einheiten: eine für die Sparte unbekannte Einheit sperrt nicht, sie rechnet mit Faktor 1 (Durchsicht M1)', () => {
+  const r = unitScale([{ id: 'a', type: 'waerme', unit: 'kWh', name: 'Wärme C' }, { id: 'b', type: 'waerme', unit: 'm³', name: 'Wärme A' }], 'relative')
+  assert.equal(r.problem?.kind, 'unknown')
+  assert.equal(r.factorOf('a'), 1)
+  assert.equal(r.factorOf('b'), 1)
+  // Gas über „Sonstiges“: m³ und kWh sind verschiedene Größen; das rechnete schon vorher falsch.
+  assert.equal(unitScale([{ id: 'a', type: 'sonstig', unit: 'm³' }, { id: 'b', type: 'sonstig', unit: 'kWh' }], 'relative').problem?.kind, 'mixed')
+  // Freitext bei Sonstiges: nicht zuzuordnen, also Warnung statt Sperre.
+  assert.equal(unitScale([{ id: 'a', type: 'sonstig', unit: 'm³' }, { id: 'b', type: 'sonstig', unit: 'Stück' }], 'relative').problem?.kind, 'unknown')
+  // S1: Schreibweisen gelten auch bei Sonstiges als gleich.
+  const gas = unitScale([{ id: 'a', type: 'sonstig', unit: 'm³' }, { id: 'b', type: 'sonstig', unit: 'cbm' }, { id: 'c', type: 'sonstig', unit: 'Kubikmeter' }], 'relative')
+  assert.ok(gas.problem === null && !gas.converted && gas.factorOf('b') === 1)
 })
 
 test('Einheiten: Auswahl im Formular und Prüfung beim Speichern', () => {
@@ -117,17 +125,20 @@ test('Eigene Heizkostenabrechnung: ein Wärmezähler in MWh verteilt wie in kWh 
   assert.equal(s.notices.some((n) => n.code === 'meter.units-mixed'), false)
 })
 
-test('Eigene Heizkostenabrechnung: alle Wärmezähler in MWh verteilen wie in kWh, und der Verbrauch steht in kWh', () => {
+test('Eigene Heizkostenabrechnung: alle Wärmezähler in MWh verteilen wie in kWh, Verbrauch und Ausweis in MWh (Durchsicht M2)', () => {
   const kwh = computeSettlement(selfSnapshot())
   let meters = selfMeters()
   let readings = selfReadings()
   for (const id of ['wz-a', 'wz-b', 'wz-c']) ({ meters, readings } = rescale(meters, readings, id, 'MWh', 1 / 1000))
   const s = computeSettlement(selfSnapshot({ meters, readings }))
   assert.deepEqual(shares(s), shares(kwh))
-  // Der Verbrauch je Nutzer steht in kWh, wie bei Zählern in kWh.
+  // Einheitlich heißt Faktor 1: Der Verbrauch je Nutzer steht in MWh, und der Ausweis sagt MWh.
   const users = (x: Settlement) => (x.heating ?? []).flatMap((h) => h.self?.units.flatMap((u) => u.users.map((v) => v.heatingConsumption)) ?? [])
   assert.ok(users(kwh).length > 0)
-  assert.deepEqual(users(s), users(kwh))
+  assert.deepEqual(users(s).map((v) => (v === null ? null : Math.round(v * 1e6) / 1e3)), users(kwh).map((v) => (v === null ? null : Math.round(v * 1e3) / 1e3)))
+  const unitOf = (x: Settlement) => x.heating?.[0]?.self?.pots.find((p) => p.pot === 'heating')?.consumptionUnit
+  assert.equal(unitOf(kwh), 'kWh')
+  assert.equal(unitOf(s), 'MWh')
 })
 
 test('Eigene Heizkostenabrechnung: Warmwasserzähler in Litern und Speicherzähler in MWh verteilen wie in m³ und kWh', () => {
@@ -137,16 +148,18 @@ test('Eigene Heizkostenabrechnung: Warmwasserzähler in Litern und Speicherzähl
   assert.deepEqual(shares(computeSettlement(selfSnapshot({ meters, readings }))), base)
 })
 
-test('Eigene Heizkostenabrechnung: unbekannte gemischte Einheiten verteilen nicht und sagen es (#342)', () => {
+test('Eigene Heizkostenabrechnung: eine unbekannte Einheit neben kWh verteilt wie bisher und warnt (Durchsicht M1)', () => {
+  const base = shares(computeSettlement(selfSnapshot()))
   const meters = selfMeters().map((m) => (m.id === 'wz-b' ? { ...m, unit: 'Grad' } : m))
   const s = computeSettlement(selfSnapshot({ meters }))
-  const n = s.notices.find((x) => x.code === 'meter.units-mixed')
+  assert.deepEqual(shares(s), base)
+  assert.equal(s.notices.some((x) => x.code === 'meter.units-mixed'), false)
+  const n = s.notices.find((x) => x.code === 'meter.unit-unknown')
   assert.ok(n, 'Hinweis fehlt')
-  assert.equal(n.level, 'error')
-  assert.match(n.text, /kWh/)
-  assert.match(n.text, /Grad/)
-  // Die Heizkosten der Anlage stehen beim Vermieter.
-  assert.equal(s.statements.every((st) => st.rows.every((r) => !['gas', 'strom', 'wz'].includes(String(r.costItemId)) || r.shareCents === 0)), true)
+  assert.equal(n.level, 'warning')
+  assert.equal(n.subject?.kind, 'meter')
+  assert.match(n.text, /„Wärme B“ in Grad/)
+  assert.match(n.text, /„Wärme A“ und „Wärme C“ in kWh/)
 })
 
 // ---------- Messfall 2: Verbrauchsschlüssel, ein Zähler in Litern ----------
@@ -174,14 +187,30 @@ test('Verbrauchsschlüssel: gleiche, aber unbekannte Einheit verteilt wie bisher
   assert.equal(s.notices.some((n) => n.code === 'meter.units-mixed'), false)
 })
 
-test('Verbrauchsschlüssel: unbekannte gemischte Einheiten verteilen nicht, der Betrag geht an den Vermieter', () => {
+test('Verbrauchsschlüssel: eine unbekannte Einheit neben m³ verteilt wie bisher und warnt (Durchsicht M1)', () => {
+  const m3 = shares(computeSettlement(selfSnapshot({ costItems: [waterItem()], plant: manual })))
   const meters = selfMeters().map((m) => (m.id === 'xw-b' ? { ...m, unit: 'kWh' } : m))
   const s = computeSettlement(selfSnapshot({ meters, costItems: [waterItem()], plant: manual }))
+  assert.deepEqual(shares(s), m3)
+  const n = s.notices.find((x) => x.code === 'meter.unit-unknown')
+  assert.ok(n, 'Hinweis fehlt')
+  assert.equal(n.level, 'warning')
+  assert.deepEqual(n.subject, { kind: 'meter', id: 'xw-b' })
+  assert.match(n.text, /„Warmwasser B“ in kWh/)
+  assert.match(n.text, /Seite Zähler/)
+})
+
+test('Verbrauchsschlüssel: Gas in m³ neben kWh (Sonstiges) verteilt nicht und nennt die Zähler', () => {
+  const item: CostItem = { ...waterItem(), id: 'gas2', meterType: 'sonstig', description: 'Gas' }
+  const gm = [selfMeter('g-a', 'a', 'Gas A', 'sonstig', { unit: 'm³' }), selfMeter('g-b', 'b', 'Gas B', 'sonstig', { unit: 'kWh' })]
+  const gr = [selfReading('g-a', '2024-12-31', 0), selfReading('g-a', '2025-12-31', 100), selfReading('g-b', '2024-12-31', 0), selfReading('g-b', '2025-12-31', 1000)]
+  const s = computeSettlement(selfSnapshot({ meters: [...selfMeters(), ...gm], readings: [...selfReadings(), ...gr], costItems: [item], plant: manual }))
   const n = s.notices.find((x) => x.code === 'meter.units-mixed')
   assert.ok(n, 'Hinweis fehlt')
   assert.equal(n.level, 'error')
-  assert.deepEqual(n.subject, { kind: 'costItem', id: 'wasser' })
-  assert.equal(s.statements.flatMap((st) => st.rows).filter((r) => r.costItemId === 'wasser').reduce((a, r) => a + r.shareCents, 0), 0)
+  assert.equal(n.subject?.kind, 'meter')
+  assert.match(n.text, /„Gas A“ in m³, „Gas B“ in kWh/)
+  assert.equal(s.statements.flatMap((st) => st.rows).filter((r) => r.costItemId === 'gas2').reduce((a, r) => a + r.shareCents, 0), 0)
 })
 
 // ---------- Messfall 3: Hauptzähler mit gemischten Einheiten ----------
@@ -217,6 +246,12 @@ test('Server: eine neue oder geänderte Einheit muss die Sparte kennen; eine ges
     assert.equal(unitOf(await opened.write((db) => updateEntity(db, 'meters', 'alt', { name: 'Wärme alt', unit: 'm³' }))), 'm³')
     assert.equal(unitOf(await opened.write((db) => updateEntity(db, 'meters', 'alt', { unit: ' m³ ' }))), 'm³')
     assert.equal(unitOf(await opened.write((db) => updateEntity(db, 'meters', 'alt', { unit: 'kWh' }))), 'kWh')
+    // K1: Bei Sparten mit Auswahl keine neue leere Einheit; eine gespeicherte leere darf unverändert mitkommen.
+    await assert.rejects(opened.write((db) => createEntity(db, 'meters', 'm4', { ...z, unit: '' })), (err: unknown) => err instanceof HeatingError && err.status === 400 && /Bitte wählen Sie die Einheit/.test(err.message))
+    await assert.rejects(opened.write((db) => updateEntity(db, 'meters', 'm1', { unit: ' ' })), HeatingError)
+    await opened.write((db) => db.insert(meterTable).values({ id: 'leer', propertyId: 'objekt-1', name: 'Leer', type: 'waerme', unit: '' }))
+    assert.equal(unitOf(await opened.write((db) => updateEntity(db, 'meters', 'leer', { name: 'Wärme leer', unit: '' }))), '')
+    assert.equal(unitOf(await opened.write((db) => createEntity(db, 'meters', 'm5', { ...z, type: 'sonstig', unit: '' }))), '')
   } finally {
     opened.close()
     fs.rmSync(dataDir, { recursive: true, force: true })

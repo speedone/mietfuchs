@@ -2286,18 +2286,34 @@ die ganze fachliche Komplexität:
   **Die Einheit** (#342, [shared/meterUnits.ts](shared/meterUnits.ts)) bleibt ein Text am Zähler, wird aber
   gelesen: Wärme kWh, MWh, GJ (2.500/9 kWh), Wasser m³, l, Strom kWh, MWh, als exakte Brüche auf kWh bzw. m³;
   Heizkostenverteiler und „Sonstiges“ (auch der Gaszähler, m³ und kWh Gas sind verschiedene Größen) ohne
-  Umrechnung. Normiert wird beim Lesen (`unitKey`: „m3“, „cbm“, „KWh“ …), eine Migration gibt es nicht.
-  Wer Verbräuche mehrerer Zähler zusammenzählt, fragt `unitScale`: `relative` (Verbrauchsschlüssel samt
-  Hauptzähler und Teilnehmern in calc.ts) lässt eine einheitliche Einheit, auch eine unbekannte, unberührt,
-  damit sich bei einheitlichem Bestand keine Zahl ändert; `base` (eigene Heizkostenabrechnung über
-  `SelfMeter.scale`, Wärme am Speicher für α, Volumen in db/co2.ts, monatliche Information) rechnet bekannte
-  Einheiten immer in kWh bzw. m³, weil Sätze, Schätzungen und § 6a dort in dieser Einheit stehen. Ohne
-  gemeinsame Einheit `meter.units-mixed` (error): beim Verbrauchsschlüssel geht die Position an den
-  Vermieter (`noBasis`), bei `self` ist die Anlage gesperrt. Das Ableseergebnis nennt die Einheit des
-  Zählers (`SelfReadingView.meterUnit`). Auf der Seite Zähler ist die Einheit bei bekannten Sparten eine
-  Auswahl (`meterUnitOptions`, eine gespeicherte unbekannte steht dabei); der Server prüft nur eine neue
-  oder geänderte (`acceptMeterUnit` in repository.ts, Muster der IBAN) und speichert die bekannte
-  Schreibweise. Ein Zähler ohne `unit` im Schnappschuss (nur Tests) rechnet nicht um.
+  Umrechnung. Normiert wird beim Lesen (`unitKey`: „m3“, „cbm“, „KWh“ …, die Schreibweisen bei jeder Sparte),
+  eine Migration gibt es nicht. **Leitsatz der Durchsicht: Ein Bestand, der vor #342 richtig rechnete, ändert
+  sich nicht.** Wer Verbräuche mehrerer Zähler zusammenzählt, fragt `unitScale`, und zwar **nur mit den Zählern,
+  die im Zeitraum Verbrauch beitragen** (`coveredDays` beim Verbrauchsschlüssel, sonst `coversPeriod`): Ein
+  stillgelegter Zähler mit alter Einheit änderte sonst eine Abrechnung, in der er nichts misst. `relative`
+  (Verbrauchsschlüssel samt Hauptzähler, Teilnehmern, Überschneidung und Zerlegung des Vermieteranteils; die
+  Verteilung der eigenen Heizkostenabrechnung über `SelfMeter.scale`): Einheitlich heißt Faktor 1, auch bei MWh,
+  Litern oder einer unbekannten Einheit, so bleiben gespeicherte Schätzungen nach § 9a und die Vorschläge in ihren
+  Zahlen; nur gemischt bekannte Einheiten werden in die Grundeinheit umgerechnet. Der Ausweis nennt dann die Einheit
+  der Zähler (`potUnits`, `potShownUnit`, `SelfPotView.consumptionUnit` ist ein Text); `estimateFits` und die
+  gespeicherte `valueUnit` bleiben bei `potUnitFor`. Wird umgerechnet und gibt es eine Schätzung im Topf, sagt
+  `heating.estimate-base-unit` (hint), dass ihre Zahl in kWh bzw. m³ gilt. `base` (absolute Vergleiche: Wärme am
+  Speicher für α gegen die kWh der Brennstoffrechnung, Volumenvorschlag in db/co2.ts, monatliche Information)
+  rechnet bekannte Einheiten immer in die Grundeinheit; das behebt α bei einem Speicherzähler in MWh. **Ein Zähler
+  ohne Einheit gilt wie die übrigen.** Eine für die Sparte unbekannte Einheit neben anderen (etwa „m³“ an Wärme, die
+  Vorgabe vor #142) sperrt nicht: Faktor 1 wie vor #342 und `meter.unit-unknown` (warning). Umgerechnet wird nur,
+  wo alle Einheiten bekannt sind. `meter.units-mixed` (error, nicht verteilt) bleibt für verschiedene bekannte
+  Größen ohne Umrechnung, also Gas über „Sonstiges“ in m³ neben kWh; das rechnete schon vorher falsch. Beide Hinweise
+  nennen die Zähler mit Name und Einheit (`metersByUnitText`) und führen zur Seite Zähler (Subjekt `meter`, der
+  erste Zähler mit unpassender Einheit). Das Ableseergebnis nennt die Einheit des Zählers
+  (`SelfReadingView.meterUnit`). Auf der Seite Zähler ist die Einheit bei bekannten Sparten eine Auswahl
+  (`meterUnitOptions`, eine gespeicherte unbekannte steht dabei); ein Zähler ohne Einheit bekommt keine Vorgabe,
+  sondern „Bitte wählen“, und ein Spartenwechsel auf eine Sparte, die die Einheit nicht kennt, leert sie mit Hinweis
+  (`unitDropped`, `meterUnitHint`); gespeichert wird bei Sparten mit Auswahl nur eine gewählte Einheit, eine schon
+  leer gespeicherte darf leer bleiben. Der Server prüft nur eine neue oder geänderte Einheit (`acceptMeterUnit` in
+  repository.ts, Muster der IBAN), nimmt bei Sparten mit Auswahl keine neue leere an und speichert die bekannte
+  Schreibweise. Offen: Die Angaben nach § 6a vergleichen den Verbrauch eines einheitlich in MWh geführten Topfs
+  weiter wie vor #342 mit kWh je m².
   **Die Eichfrist** (#98, Heizung PR 21) ist eine Warnung und keine Sperre: `meters.calibrated_until`
   (Jahr, mit dessen Ende die Frist endet, § 34 Abs. 2 MessEV; Migrationen 0046/0047, Bedingungen
   `meters_calibrated_until_valid` mit `typeof`, weil die INTEGER-Affinität eine Kommazahl als REAL behält,

@@ -108,12 +108,9 @@ function measure(unitDevices: readonly RemoteMeter[], readings: readonly Snapsho
       gaps.add(g)
       ok = false
     }
-    // In kWh bzw. m³ (#342): ein Zähler in MWh oder Litern wird umgerechnet; ohne gemeinsame Einheit fehlt die Größe.
+    // In kWh bzw. m³ (#342, Durchsicht E3): ein Zähler in MWh oder Litern wird umgerechnet. Die Geräte sind schon die
+    // dieses Fensters. Eine unbekannte Einheit rechnet mit Faktor 1 wie bisher; die Abrechnung warnt (`meter.unit-unknown`).
     const scale = unitScale(list, 'base')
-    if (!scale.ok) {
-      fail('unit')
-      return null
-    }
     const add = (v: number | null, id: string): void => {
       measured++
       if (v === null) fail('noReading')
@@ -159,8 +156,8 @@ function measure(unitDevices: readonly RemoteMeter[], readings: readonly Snapsho
     }
     // Hat kein Gerät etwas gemessen, ist nichts erhoben, auch nicht 0.
     if (ok && measured === 0) fail('noReading')
-    // Umgerechnet auf drei Stellen (Wh bzw. Liter), sonst stünde 699,9999… kWh auf dem Blatt; ohne Umrechnung wie bisher.
-    return ok ? (scale.converted ? Math.round(sum * 1000) / 1000 : sum) : null
+    // Auf drei Stellen (Wh bzw. Liter), sonst stünde 699,9999… kWh auf dem Blatt; immer gleich gerundet (Durchsicht K3).
+    return ok ? Math.round(sum * 1000) / 1000 : null
   }
   const hca = devices.filter((d) => d.type === 'hkv')
   if (hca.length > 0) gaps.add('hca')

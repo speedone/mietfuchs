@@ -85,7 +85,7 @@ import type { TermId } from '../../shared/glossary.ts'
 import { allocationOf, comparablePrevious, sameAllocation, sameUnits } from '../../shared/allocation.ts'
 import { possibleDuplicates } from '../../shared/duplicates.ts'
 import { commonPeriod, tenancyOverlaps } from '../../shared/tenancyOverlap.ts'
-import { unitLabel, unitScale, type UnitScale } from '../../shared/meterUnits.ts'
+import { knownUnit, metersByUnitText, unitLabel, unitScale, type UnitScale } from '../../shared/meterUnits.ts'
 import { CALENDAR_RULES, calendarYearPeriod, contextOf, formatDayRange, periodContaining, periodDays, periodLabel, periodMonths, periodOfKey, periodsBetween, previousPeriod, rulesOf, settlementDeadline, settlementPeriod, spansTwoYears, startYearOf, type PeriodContext } from '../../shared/period.ts'
 import { allowsPaidOn, paidOnSpan, paidOnYear } from '../../shared/paidOn.ts'
 import { generatorEnergy, noCo2Supplier } from '../../shared/heatDelivery.ts'
@@ -250,6 +250,12 @@ const noticeKinds = {
   // #342: error, denn nach dem Zählertyp wird nicht verteilt (Verbrauchsschlüssel) bzw. die Anlage nicht (eigene
   // Heizkostenabrechnung); der Betrag steht beim Vermieter.
   'meter.units-mixed': { level: 'error', title: 'Zähler in verschiedenen Einheiten', terms: ['meterUnit', 'consumptionKey'] },
+  // Durchsicht von #342 (E1): Eine unbekannte Einheit neben anderen rechnet wie vor #342 mit Faktor 1; ob das stimmt,
+  // weiß nur der Vermieter. warning, weil ein Mieter zu viel zahlen kann, aber nichts gesperrt ist.
+  'meter.unit-unknown': { level: 'warning', title: 'Einheit eines Zählers unbekannt', terms: ['meterUnit', 'consumptionKey'] },
+  // E2: Bei gemischt bekannten Einheiten rechnet ein Topf der eigenen Abrechnung in der Grundeinheit, und eine
+  // Schätzung nach § 9a gilt dann in ihr. Ein Hinweis, weil die Zahl womöglich in der Einheit der Zähler gemeint war.
+  'heating.estimate-base-unit': { level: 'hint', title: 'Schätzung in der Grundeinheit', terms: ['meterUnit', 'heatingEstimate'] },
   // Heizung PR 21 (#98): eine Warnung, keine Sperre; die Werte werden verwendet (Entwurf 3.12, #91). Nur auf der
   // Zähler-Seite und im Cockpit, nie auf der Abrechnung (wie die übrigen Zählerhinweise).
   'meter.calibration-overdue': { level: 'warning', title: 'Eichfrist abgelaufen', rule: 'meter-calibration', terms: ['meterCalibration', 'meterReading'] },
@@ -556,6 +562,25 @@ type MeterSegment = { from: string, to: string, delta: number, days: number }
 // Zählerstände haben mehr Nachkommastellen als Geld: Ein Wasserzähler zeigt drei. Mit `fmtNum`
 // (zwei Stellen) meldete die Warnung unten bei 150,001 gegen 150,004 einen „Unterschied von 0“
 // und widerspräche sich damit selbst.
+// Die Sätze zu den Einheiten der Zähler (#342, Durchsicht E1, S3): Sie nennen die Zähler mit Name und Einheit und
+// führen zur Seite Zähler.
+type UnitMeterRef = { id: string, type: MeterType, unit?: string | null, name?: string | null }
+function unitUnknownText(where: string, meters: readonly UnitMeterRef[]): string {
+  return `${where}: Die Zähler stehen in verschiedenen Einheiten, und nicht jede kennt Mietfuchs für diese Sparte: ${metersByUnitText(meters)}. ` +
+    'Mietfuchs rechnet die Stände, als zeigten alle Zähler dieselbe Einheit, wie vor dieser Version. Stimmt das nicht, zahlen die Mieter falsch. ' +
+    'Wählen Sie auf der Seite Zähler für jeden Zähler die Einheit, die er wirklich zeigt; bekannte Einheiten rechnet Mietfuchs ineinander um.'
+}
+function unitsMixedText(where: string, meters: readonly UnitMeterRef[], consequence: string): string {
+  return `${where}: Die Zähler stehen in Einheiten verschiedener Größen: ${metersByUnitText(meters)}. Mietfuchs rechnet sie nicht ineinander um${consequence ? `. ${consequence}` : '.'} ` +
+    'Prüfen Sie auf der Seite Zähler, welche Einheit jeder Zähler wirklich zeigt; Zähler, nach denen gemeinsam verteilt wird, brauchen dieselbe.'
+}
+// Zum ersten Zähler, dessen Einheit nicht passt, sonst zum ersten.
+function unitProblemSubject(meters: readonly UnitMeterRef[]): NoticeSubject | undefined {
+  const odd = meters.find((m) => typeof m.unit !== 'string' || m.unit.trim() === '' || (knownUnit(m.type, m.unit) === null && hasFamily(m.type))) ?? meters[0]
+  return odd ? { kind: 'meter', id: odd.id } : undefined
+}
+const hasFamily = (t: MeterType): boolean => t !== 'sonstig' && t !== 'hkv'
+
 function fmtMeter(n: number): string {
   return n.toLocaleString('de-DE', { maximumFractionDigits: 3 })
 }
@@ -2531,9 +2556,9 @@ type ConsumptionByTypeEntry = {
   // Bewohnte Einheiten, deren Zähler nur einen Teil ihrer Zeit abdecken (Befund der Durchsicht).
   partial: { unit: SnapshotUnit, covered: number, needed: number }[]
   // Die gemeinsame Einheit der Zähler samt Hauptzähler (#342): womit der Verbrauch eines Zählers malzunehmen
-  // ist. `unitsMixed`: Es gibt keine, dann wird nach diesem Typ nicht verteilt (`meter.units-mixed`).
+  // ist. `unitProblem`: eine unbekannte Einheit (Warnung, Faktor 1) oder verschiedene Größen (nicht verteilt).
   scaleOf: (meterId: string) => number
-  unitsMixed: string[] | null
+  unitProblem: UnitScale['problem']
 }
 
 // Das tatsächliche Ergebnis von computeSettlement: wie Settlement aus shared/types.ts, aber ohne
@@ -2876,10 +2901,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       const meters = unitMeters.filter((m) => measures(type, m)) as (SnapshotMeter & { unitId: string })[]
       const mainOfType = mainMeters.filter((m) => m.type === type)
       // **Eine gemeinsame Einheit (#342).** Haben alle Zähler samt Hauptzähler dieselbe, bleibt es bei ihr und
-      // keine Zahl ändert sich; sonst wird in die Grundeinheit der Sparte umgerechnet (MWh in kWh, l in m³).
-      // Gibt es keine gemeinsame, rechnet Mietfuchs mit Faktor 1 weiter, verteilt nach diesem Typ aber nicht.
-      const scale = unitScale([...meters, ...mainOfType], 'relative')
-      const scaleOf = scale.ok ? scale.factorOf : () => 1
+      // keine Zahl ändert sich; sonst wird in die Grundeinheit der Sparte umgerechnet (MWh in kWh, l in m³), wenn
+      // jede Einheit bekannt ist. Gefragt werden nur Zähler, die im Jahr Verbrauch beitragen (Durchsicht M1b).
+      const scale = unitScale([...meters, ...mainOfType].filter((m) => coveredDays(readingsOf(m.id), yFrom, yTo) > 0), 'relative')
+      const scaleOf = scale.factorOf
       const use = (m: SnapshotMeter, from: string, to: string): number => consumptionInPeriod(readingsOf(m.id), from, to) * scaleOf(m.id)
       // Verbrauch je Wohnung, für den Eigenanteil; beim Kaltwasser samt Warmwasser.
       const usage = new Map<string, number>()
@@ -2950,7 +2975,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       byType[type] = {
         meters, basis, perUnit, selfConsumption, unmetered, limited: only !== null,
         hasMain: mainOfType.length > 0, main: mainBasis, mainPartial, mainBelowUnits, mainGap, partial,
-        scaleOf, unitsMixed: scale.ok ? null : scale.units,
+        scaleOf, unitProblem: scale.problem,
       }
     }
     return byType
@@ -3617,11 +3642,16 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     prevSameLength: boolean
     // Die Heizperiode davor (Heizung PR 14): ob ein Mieter dort schon wohnte und wo ihr Klimafaktor steht.
     prevPeriod: { key: string; from: string; to: string }
+    // Die Einheit des Ausweises je Topf, wenn alle Zähler einheitlich in einer anderen bekannten als der Grundeinheit
+    // stehen (alle MWh, alle Liter; Durchsicht von #342, E2). Fehlt: die der Erfassung.
+    potUnits: Partial<Record<SelfPot, string>>
   }
   const POT_NAME: Record<SelfPot, string> = { heating: 'Heizung', water: 'Warmwasser' }
   // Die Einheit des Verbrauchs eines Topfs (Heizung PR 12, Abweichung 9): Heizkostenverteiler und Ablesedienst
   // zählen Einheiten, keine Kilowattstunden.
   const potUnitOf = (sp: Pick<SelfPlantPlan, 'capture' | 'serviceValues'>, p: SelfPot): 'kWh' | 'm³' | 'Einheiten' => potUnitFor(sp.capture, p, sp.serviceValues)
+  // Die Einheit, in der der Verbrauch eines Topfs dasteht (Durchsicht von #342, E2): bei einheitlich MWh oder Litern diese.
+  const potShownUnit = (sp: Pick<SelfPlantPlan, 'capture' | 'serviceValues' | 'potUnits'>, p: SelfPot): string => sp.potUnits[p] ?? potUnitOf(sp, p)
   const selfProblemText = (p: SelfProblem, areaBasisHeat: string, capture: CaptureMethod = 'heatMeter'): string => {
     if (p.kind === 'farInterim') {
       return `Beim Wechsel in ${p.unitName} zum ${fmtDay(p.boundary)} wurde erst am ${fmtDay(p.readingDate)} abgelesen, ${p.days} Tage daneben und über einen Wintermonat. Lässt die Ablesung wegen des Zeitpunkts keine hinreichend genaue Ermittlung zu, wird nach Gradtagen bzw. Tagen geteilt (§ 9b Abs. 3 HeizkostenV). Ob das so ist, entscheiden Sie: Wählen Sie auf der Seite Heizkosten „Ablesung verwenden“ oder „Nach § 9b Abs. 3“.`
@@ -3692,14 +3722,19 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // sind, rechnen; die übrigen ergeben einen Fehler, und die Wohnung gilt als nicht erfasst.
     const estimates = lineEstimates.filter((e) => estimateFits(e, capture, serviceRows))
     const staleEstimates = lineEstimates.filter((e) => !estimateFits(e, capture, serviceRows))
-    // **Die Einheit je Topf (#342).** Der Verbrauch eines Topfs steht in kWh bzw. m³ (Sätze, Schätzungen, § 6a),
-    // also rechnet Mietfuchs jeden Zähler mit bekannter Einheit in diese um. Gibt es keine gemeinsame Einheit,
-    // wird die Anlage nicht verteilt (`meter.units-mixed` unten). Heizkostenverteiler zählen Einheiten.
+    // **Die Einheit je Topf (#342, Durchsicht E2).** Für die Verteilung gilt dieselbe Regel wie beim
+    // Verbrauchsschlüssel (`relative`): Einheitlich heißt Faktor 1, auch bei MWh oder Litern, so bleiben gespeicherte
+    // Schätzungen und die Vorschläge in ihren Zahlen, und der Ausweis nennt die Einheit der Zähler. Nur gemischt
+    // bekannte Einheiten werden in kWh bzw. m³ umgerechnet. Gefragt werden nur Geräte, deren Ablesungen die
+    // Heizperiode überdecken (`coversPeriod`, Durchsicht M1b). Heizkostenverteiler zählen Einheiten.
     const potMeters = unitMeters.filter((m) => servedIds.has(m.unitId) && !(svcHeat && m.type === 'waerme') && !(svcWater && m.type === 'warmwasser'))
-    const potScales = new Map<MeterType, UnitScale>(potTypes.filter((t) => t !== 'hkv').map((t) => [t, unitScale(potMeters.filter((m) => m.type === t), 'base')]))
-    const potScaleOf = (m: SnapshotMeter): number => {
-      const sc = potScales.get(m.type)
-      return sc?.ok ? sc.factorOf(m.id) : 1
+    const potScales = new Map<MeterType, UnitScale>(potTypes.filter((t) => t !== 'hkv').map((t) => [t, unitScale(potMeters.filter((m) => m.type === t && coversPeriod(m.id, snapshot.readings, period)), 'relative')]))
+    const potScaleOf = (m: SnapshotMeter): number => potScales.get(m.type)?.factorOf(m.id) ?? 1
+    // Die Einheit des Ausweises: einheitlich in einer bekannten Einheit außer der Grundeinheit (alle MWh) diese.
+    const potUnits: Partial<Record<SelfPot, string>> = {}
+    for (const [t, sc] of potScales) {
+      const pot: SelfPot = t === 'warmwasser' ? 'water' : 'heating'
+      if (!sc.converted && sc.problem === null && sc.unit !== '' && knownUnit(t, sc.unit) !== null) potUnits[pot] = sc.unit
     }
     const input: SelfInput = {
       h: { from: period.from, to: period.to },
@@ -3782,15 +3817,14 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     let swapMissing: string | null = null
     // Gemessene Wärme am Zähler der Anlage mit dieser Rolle über die Heizperiode (Abweichung 12).
     // In kWh (#342): ein Zähler in MWh oder GJ wird umgerechnet; ohne gemeinsame Einheit gibt es keinen Wert.
-    let plantUnitsMixed: string[] | null = null
+    // E3: Q wird gegen die kWh der Brennstoffrechnung gestellt, also absolut (`base`); gefragt werden nur Zähler, deren
+    // Ablesungen die Heizperiode überdecken. Eine unbekannte Einheit rechnet mit Faktor 1 und warnt.
+    const plantUnitProblems: NonNullable<UnitScale['problem']>[] = []
     const plantMeterKwh = (role: 'dhwHeat' | 'totalHeat'): number | null => {
       const ms = snapshot.meters.filter((m) => m.heatingPlantId !== null && m.heatingPlantId !== undefined && lineIds.has(m.heatingPlantId) && m.heatingRole === role)
       if (ms.length === 0) return null
-      const sc = unitScale(ms, 'base')
-      if (!sc.ok) {
-        plantUnitsMixed = sc.units
-        return null
-      }
+      const sc = unitScale(ms.filter((m) => coversPeriod(m.id, snapshot.readings, period)), 'base')
+      if (sc.problem) plantUnitProblems.push(sc.problem)
       let sum = 0
       for (const m of ms) {
         const sorted = sortReadings(snapshot.readings.filter((r) => r.meterId === m.id))
@@ -3919,11 +3953,6 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         code: 'heating.self-incomplete',
         text: `Die Anlage lief in dieser Heizperiode nur ${swapEnd !== null ? `bis zum ${fmtDay(swapEnd)}` : `ab dem ${fmtDay(startsOn ?? period.from)}`} (Kesseltausch). Für den Warmwasseranteil braucht es die Wärme am Warmwasserspeicher in dieser Zeit, also den Stand des Wärmezählers am Speicher am ${fmtDay(swapMissing)}. Tragen Sie ihn auf der Seite Zähler ein.`,
       })
-    } else if (!alphaResult.ok && !oldHeatPumpExemption && !agreedArea && plantUnitsMixed !== null) {
-      blocked.push({
-        code: 'meter.units-mixed',
-        text: `Die Wärmezähler der Heizanlage stehen in verschiedenen Einheiten (${andList(plantUnitsMixed)}), die Mietfuchs nicht in kWh umrechnen kann; ohne die gemessene Wärme lässt sich der Warmwasseranteil nicht bestimmen. Wählen Sie auf der Seite Zähler für jeden Zähler die Einheit, die er wirklich zeigt.`,
-      })
     } else if (!alphaResult.ok && !oldHeatPumpExemption && !agreedArea) {
       blocked.push({ code: alphaResult.problem === 'heatPumpBasis' ? 'heating.heat-pump-dhw-basis' : 'heating.dhw-share-invalid', text: dhwProblemText(alphaResult) })
     }
@@ -3940,14 +3969,6 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     }
     // Gemischte Geräte (§ 5 Abs. 7) und fehlende Skala oder Faktor verhindern die Verteilung.
     if (mixed) blocked.push({ code: 'heating.mixed-capture', text: mixedCaptureText(capture, mixed, unitNameOf) })
-    for (const [t, sc] of potScales) {
-      if (!sc.ok) {
-        blocked.push({
-          code: 'meter.units-mixed',
-          text: `Die ${t === 'waerme' ? 'Wärmezähler' : 'Warmwasserzähler'} der Wohnungen stehen in verschiedenen Einheiten (${andList(sc.units)}), die Mietfuchs nicht in ${t === 'waerme' ? 'kWh' : 'm³'} umrechnen kann. Wählen Sie auf der Seite Zähler für jeden Zähler die Einheit, die er wirklich zeigt.`,
-        })
-      }
-    }
     const unrated = missingRatings(capture, [...servedIds], snapshot.meters, snapshot.readings, hPeriod)
     if (unrated.length > 0) blocked.push({ code: 'heating.hca-factor-missing', text: missingRatingsText(unrated, unitNameOf) })
     const where = `${plant.name ? `Heizanlage „${plant.name}“` : 'Heizanlage'}, Heizperiode ${label}`
@@ -3980,6 +4001,22 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       }
     }
     for (const b of blocked) warn(b.code, `${where}: ${b.text} Bis dahin verteilt Mietfuchs die Heizkosten dieser Anlage nicht; sie stehen beim Vermieter.`, { kind: 'heatingCosts', id: plant.id })
+    // Einheiten (#342, Durchsicht E1, E2): unbekannte warnen, gerechnet wird mit Faktor 1; bei Umrechnung neben einer
+    // Schätzung nach § 9a sagt ein Hinweis, in welcher Einheit ihre Zahl gilt.
+    for (const pr of [...[...potScales.values()].flatMap((sc) => (sc.problem ? [sc.problem] : [])), ...plantUnitProblems]) {
+      if (pr.kind === 'unknown') warn('meter.unit-unknown', unitUnknownText(where, pr.meters), unitProblemSubject(pr.meters))
+    }
+    for (const [t, sc] of potScales) {
+      if (!sc.converted) continue
+      const pot: SelfPot = t === 'warmwasser' ? 'water' : 'heating'
+      const affected = estimates.filter((e) => POT_OF_PART[e.part] === pot)
+      if (affected.length === 0) continue
+      const metersOfType = potMeters.filter((m) => m.type === t && coversPeriod(m.id, snapshot.readings, period)).map((m) => ({ ...m, name: m.name ?? m.id }))
+      warn('heating.estimate-base-unit',
+        `${where}: Die ${t === 'warmwasser' ? 'Warmwasserzähler' : 'Wärmezähler'} stehen in verschiedenen Einheiten (${metersByUnitText(metersOfType)}); Mietfuchs rechnet sie in ${sc.unit} um. ` +
+          `Die Schätzung nach § 9a für ${andList(affected.map((e) => unitNameOf(e.unitId)))} gilt deshalb in ${sc.unit}: ${andList(affected.map((e) => `${fmtNum(e.value)} ${sc.unit}`))}. Haben Sie die Zahl in der Einheit eines Zählers eingetragen (etwa MWh), berichtigen Sie sie auf der Seite Heizkosten unter „Schätzung (§ 9a)“.`,
+        { kind: 'heatingCosts', id: plant.id })
+    }
     for (const c of deviceCutoffs(capture, snapshot.meters, snapshot.readings, [...servedIds], { from: period.from, to: period.to })) {
       warn('heating.device-cutoff', deviceCutoffText(where, c, { from: period.from, to: period.to }, unitNameOf), { kind: 'meter', id: c.meterId })
     }
@@ -4020,6 +4057,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       ? weightsOf(plan, { heating: shares.heating, water: shares.water ?? 0 }, alpha?.value ?? null)
       : null
     selfPlans.set(plant.id, {
+      potUnits,
       plant, plan, shares, alpha, weights, blocked, verdict, hotWater, input, oldHeatPumpExemption, majorityOpen, agreedArea,
       dhwUnmeasurable: own?.dhwUnmeasurable ?? lineOwn?.dhwUnmeasurable ?? null,
       capture,
@@ -4070,7 +4108,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         steps.push(total.measured && v !== null
           ? {
             label: `Verbrauchskosten ${POT_NAME[p]}`,
-            value: `${fmtNum(Math.round(v * 1000) / 1000)} von ${fmtNum(Math.round(total.consumption * 1000) / 1000)} ${potUnitOf(sp, p)}` +
+            value: `${fmtNum(Math.round(v * 1000) / 1000)} von ${fmtNum(Math.round(total.consumption * 1000) / 1000)} ${potShownUnit(sp, p)}` +
               `${estimatedHere ? ' (geschätzt nach § 9a HeizkostenV)' : ''}` +
               `${u.pots[p].group ? (estimatedHere ? ', auf die Nutzer der Wohnung wie nach § 9b Abs. 3 HeizkostenV geteilt' : ' (ohne Zwischenablesung nach § 9b Abs. 3 HeizkostenV geteilt)') : ''}`,
             term: estimatedHere ? 'heatingEstimate' : 'consumptionCosts',
@@ -4154,7 +4192,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         const pct = t.measured && !t.overThreshold && sp.shares ? (sp.shares[p] ?? 0) : 0
         return {
           pot: p, costCents: Math.round(cost[p]), consumptionPct: pct, byAreaOnly: !t.measured, areaM2: t.area, consumption: t.consumption,
-          consumptionUnit: potUnitOf(sp, p),
+          consumptionUnit: potShownUnit(sp, p),
           baseCentsPerM2: t.area > 0 ? (cost[p] * (1 - pct / 100)) / t.area : 0,
           consumptionCentsPerUnit: t.measured && !t.overThreshold && t.consumption > 0 ? (cost[p] * pct / 100) / t.consumption : null,
           overThreshold: t.overThreshold,
@@ -4735,11 +4773,11 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       // verhält sich für null/undefined wie für einen unbekannten Zählertyp (kein Treffer,
       // `data` bleibt undefined), deshalb hier nur eine Typ-Zusicherung, keine neue Prüfung.
       const data = b.consumptionByType[item.meterType as MeterType]
-      if (data?.unitsMixed) {
-        // Ohne gemeinsame Einheit wird nicht verteilt (#342): Welche Einheit ein Zähler wirklich zeigt, weiß nur
-        // der Vermieter, und ohne Umrechnung zahlte ein Mieter still das Tausendfache oder fast nichts.
+      if (data?.unitProblem?.kind === 'unknown') warn('meter.unit-unknown', unitUnknownText(`„${item.description}“`, data.unitProblem.meters), unitProblemSubject(data.unitProblem.meters))
+      if (data?.unitProblem?.kind === 'mixed') {
+        // Verschiedene Größen (Gas in m³ neben kWh) rechnete schon vor #342 falsch; verteilt wird nicht.
         forced = 'noBasis'
-        warn('meter.units-mixed', `„${item.description}“: Die Zähler „${meterTypeLabel(item.meterType)}“ stehen in verschiedenen Einheiten (${andList(data.unitsMixed)}), die Mietfuchs nicht ineinander umrechnen kann. Der Betrag geht an den Vermieter. Wählen Sie auf der Seite Zähler für jeden Zähler die Einheit, die er wirklich zeigt.`, itemSubject(item))
+        warn('meter.units-mixed', unitsMixedText(`„${item.description}“`, data.unitProblem.meters, 'Der Betrag geht an den Vermieter.'), unitProblemSubject(data.unitProblem.meters))
       } else if (!data || data.basis <= 0) {
         forced = 'noBasis'
         warn('meter.no-consumption', `„${item.description}“: kein Verbrauch für Zählertyp „${meterTypeLabel(item.meterType)}“ erfasst — Betrag geht an den Vermieter.`, itemSubject(item))
@@ -6616,7 +6654,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       if (!unit) continue
       // Je Schätzung, nicht je Wohnung (Durchsicht Runde 2, N-M2): Stehen in der Linie zwei, hat jede ihre Hinweise.
       const line = (code: string) => firstInLine(`${root}|${code}|${e.plantId}|${e.unitId}|${e.part}`)
-      const unitOfPot = potUnitOf(sp, pot)
+      const unitOfPot = potShownUnit(sp, pot)
       const name = unit.unit.name
       const why = `${CAUSE_TEXT[e.cause]}; Begründung: „${e.reason}“`
       const headOf = (withWhy: boolean) => `${where}: Der Verbrauch ${potWord(pot)} von ${name} ist nach § 9a HeizkostenV geschätzt: ${amount(e.value, unitOfPot)} für die ganze Heizperiode nach ${METHOD_TEXT[e.method]}${withWhy ? ` (${why})` : ''}.`
@@ -7026,7 +7064,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         prev: byKeys && sp ? sp.prev : null,
         prevPeriod: sp?.prevPeriod ? { from: sp.prevPeriod.from, to: sp.prevPeriod.to } : null,
         tenancies: snapshot.tenancies.map((t) => ({ id: t.id, start: t.start, end: t.end })),
-        units: { heating: sp ? potUnitOf(sp, 'heating') : 'kWh', water: sp ? potUnitOf(sp, 'water') : 'm³' },
+        units: { heating: sp ? potShownUnit(sp, 'heating') : 'kWh', water: sp ? potShownUnit(sp, 'water') : 'm³' },
         periodDays: rangeOverlapDays(host.from, host.to, host.from, host.to),
         pots: potsUnder,
         ...(costShares ? { costShares } : {}),
