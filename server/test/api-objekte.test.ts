@@ -1,4 +1,4 @@
-// Integrationstests gegen den echten Server: Wohnungen löschen, Objekte und Mieterwechsel.
+// Integrationstests gegen den echten Server: Wohnungen löschen, Objekte, Mieterwechsel und IBAN-Prüfung.
 //
 // Jeder Test startet den Server als eigenen Prozess mit NKA_DATA_DIR auf einem Wegwerf-Ordner;
 // die gemeinsamen Helfer stehen in testing/api.ts. Bis #263 stand dieser Teil mit allen anderen
@@ -15,7 +15,7 @@ import type {
   CostItem, Meter, Payment, Property, Reading, Settlement, Tenancy, Unit, UnitDependents,
 } from '../../shared/types.ts'
 import {
-  type Server, databaseOfV080, errorFrom, jsonOf, restore, startServer, wechsel, withProperties,
+  type ClientSettings, type Server, archive, databaseOfV080, errorFrom, jsonOf, restore, startServer, wechsel, withProperties,
 } from '../testing/api.ts'
 
 // ---------- Was mit einer Wohnung gelöscht wird (#142) ----------
@@ -137,8 +137,8 @@ test('Objekt: gelöscht wird nur ein leeres, und nie das letzte', async () => {
 
 test('Objekt: ändern, und ein Verweis über die Objektgrenze wird mit 400 abgelehnt', async () => {
   await withProperties(async (s, b) => {
-    const geaendert = await s.api<Property>(`/api/properties/${b.id}`, { method: 'PUT', body: JSON.stringify({ iban: 'DE99', address: 'Weg 3' }) })
-    assert.equal(geaendert.iban, 'DE99')
+    const geaendert = await s.api<Property>(`/api/properties/${b.id}`, { method: 'PUT', body: JSON.stringify({ iban: 'DE02120300000000202051', address: 'Weg 3' }) })
+    assert.equal(geaendert.iban, 'DE02120300000000202051')
     assert.equal(geaendert.name, 'Gartenweg 3')
     const a = await s.api<Unit>('/api/units?property=objekt-1', { method: 'POST', body: JSON.stringify({ name: 'A-EG', areaM2: 50, participates: true }) })
     const res = await fetch(`${s.base}/api/meters?property=${b.id}`, {
@@ -461,3 +461,158 @@ test('Mieterwechsel (#150): über die Grenze eines Objekts wird mit 400 abgelehn
     assert.deepEqual(await s.api<Reading[]>(`/api/readings?property=${b.id}`), [])
   })
 })
+
+// ---------- IBAN (#279) ----------
+// Geprüft wird beim Speichern über die Routen, mit derselben Funktion wie im Formular
+// (shared/iban.ts). Abgelehnt wird nur eine IBAN, die neu gesetzt oder geändert wird; eine
+// gespeicherte ungültige, die eine Seite unverändert mitschickt, hindert das Speichern einer
+// anderen Angabe nicht. Backup, Wiederherstellen und Umstieg prüfen bewusst nicht.
+
+const IBAN_OK = 'DE89370400440532013000'
+const IBAN_OK_2 = 'DE02120300000000202051'
+const IBAN_FALSCH = 'DE00370400440532013000'
+
+const sendJson = (s: Server, url: string, body: unknown, method = 'PUT') =>
+  fetch(`${s.base}${url}`, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+
+test('IBAN (#279): eine neue ungültige IBAN lehnt jede Route mit 400 ab, eine gültige wird normiert', async () => {
+  const s = await startServer()
+  try {
+    // Einstellungen
+    const abgelehnt = await sendJson(s, '/api/settings', { landlordName: 'Erika', iban: IBAN_FALSCH })
+    assert.equal(abgelehnt.status, 400)
+    assert.match(await errorFrom(abgelehnt), /IBAN des Vermieters ist nicht gültig\. Die Prüfziffer stimmt nicht/)
+    assert.equal((await s.api<ClientSettings>('/api/settings')).landlordName, '', 'nichts gespeichert, auch nicht der Name')
+    const laenge = await sendJson(s, '/api/settings', { iban: 'DE8937040044' })
+    assert.match(await errorFrom(laenge), /DE hat 22 Zeichen, eingetragen sind 12/)
+    await s.api('/api/settings', { method: 'PUT', body: JSON.stringify({ iban: 'de89 3704 0044 0532 0130 00' }) })
+    assert.equal((await s.api<ClientSettings>('/api/settings')).iban, IBAN_OK, 'normiert gespeichert')
+    // Leeren ist immer erlaubt, auch mit null
+    await s.api('/api/settings', { method: 'PUT', body: JSON.stringify({ iban: null }) })
+    assert.equal((await s.api<ClientSettings>('/api/settings')).iban, '')
+
+    // Mietverhältnis: anlegen, ändern, Nachmieter beim Wechsel
+    const { tenancy } = await changeStock(s)
+    const neu = await sendJson(s, '/api/tenancies?property=objekt-1', { ...newTenancyBody(10000), unitId: tenancy.unitId, iban: IBAN_FALSCH }, 'POST')
+    assert.equal(neu.status, 400)
+    assert.match(await errorFrom(neu), /IBAN des Mieters ist nicht gültig/)
+    assert.equal((await s.api<Tenancy[]>('/api/tenancies')).length, 1, 'kein Mietverhältnis angelegt')
+    const geaendert = await sendJson(s, `/api/tenancies/${tenancy.id}`, { iban: IBAN_FALSCH, phone: '0123' })
+    assert.equal(geaendert.status, 400)
+    const gespeichert = (await s.api<Tenancy[]>('/api/tenancies'))[0]
+    assert.equal(gespeichert?.phone, undefined, 'nichts gespeichert')
+    await s.api(`/api/tenancies/${tenancy.id}`, { method: 'PUT', body: JSON.stringify({ iban: 'gb82 west 1234 5698 7654 32' }) })
+    assert.equal((await s.api<Tenancy[]>('/api/tenancies'))[0]?.iban, 'GB82WEST12345698765432')
+    const wechsel = await postChange(s, tenancy.id, { end: '2025-06-30', readings: [], newTenancy: { ...newTenancyBody(10000), iban: IBAN_FALSCH } })
+    assert.equal(wechsel.status, 400)
+    assert.equal((await s.api<Tenancy[]>('/api/tenancies'))[0]?.end, null, 'der Wechsel ist ganz unterblieben')
+    const gelungen = await postChange(s, tenancy.id, { end: '2025-06-30', readings: [], newTenancy: { ...newTenancyBody(10000), iban: `${IBAN_OK_2.toLowerCase()} ` } })
+    assert.equal(gelungen.status, 200)
+    assert.equal((await jsonOf<TenantChangeAnswer>(gelungen)).newTenancy?.iban, IBAN_OK_2)
+
+    // Objekt: ändern und anlegen
+    const objekt = await sendJson(s, '/api/properties/objekt-1', { iban: IBAN_FALSCH, address: 'Weg 9' })
+    assert.equal(objekt.status, 400)
+    assert.match(await errorFrom(objekt), /abweichende IBAN des Objekts ist nicht gültig/)
+    assert.equal((await s.api<Property[]>('/api/properties'))[0]?.address, '', 'nichts gespeichert')
+    const anlegen = await sendJson(s, '/api/properties', { name: 'Gartenweg 3', iban: 'XX00' }, 'POST')
+    assert.equal(anlegen.status, 400)
+    assert.match(await errorFrom(anlegen), /„XX“ gehört zu keinem Land/)
+    assert.equal((await s.api<Property[]>('/api/properties')).length, 1, 'kein Objekt angelegt')
+    const b = await s.api<Property>('/api/properties', { method: 'POST', body: JSON.stringify({ name: 'Gartenweg 3', iban: 'de02 1203 0000 0000 2020 51' }) })
+    assert.equal(b.iban, IBAN_OK_2)
+    // Leeren bleibt erlaubt, und die Lesart bleibt: '' heißt bewusst keine, null die Vorgabe
+    const leer = await s.api<Property>(`/api/properties/${b.id}?property=${b.id}`, { method: 'PUT', body: JSON.stringify({ iban: '' }) })
+    assert.equal(leer.iban, '')
+    const vorgabe = await s.api<Property>(`/api/properties/${b.id}?property=${b.id}`, { method: 'PUT', body: JSON.stringify({ iban: null }) })
+    assert.equal(vorgabe.iban, null)
+  } finally {
+    s.stop()
+  }
+})
+
+test('IBAN (#279): eine gespeicherte ungültige IBAN hindert das Speichern anderer Angaben nicht und bleibt, wie sie ist', async () => {
+  const s = await startServer()
+  try {
+    const { tenancy } = await changeStock(s)
+    await s.api('/api/settings', { method: 'PUT', body: JSON.stringify({ landlordName: 'Erika' }) })
+    // Die ungültigen IBANs kommen über ein Backup herein, das sie nicht prüft; geschrieben werden
+    // sie von Hand in die Datenbank des Archivs, wie sie eine Version vor der Prüfung gespeichert hätte.
+    const zip = new AdmZip(Buffer.from(await (await fetch(`${s.base}/api/backup`)).arrayBuffer()))
+    const ordner = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-'))
+    const datei = path.join(ordner, 'mietfuchs.sqlite')
+    fs.writeFileSync(datei, entryData(zip, 'mietfuchs.sqlite'))
+    const connection = await connect(datei)
+    connection.exec(`UPDATE settings SET iban = 'de00 1111 2222'`)
+    connection.exec(`UPDATE properties SET iban = 'DE00 3333', landlord_name = 'Erben'`)
+    connection.exec(`UPDATE tenancies SET iban = 'de00-4444'`)
+    connection.close()
+    zip.updateFile('mietfuchs.sqlite', fs.readFileSync(datei))
+    fs.rmSync(ordner, { recursive: true, force: true })
+    assert.equal((await restore(s, zip.toBuffer())).status, 200)
+
+    // Einstellungen: unverändert mitgeschickt, auch anders geschrieben, ist kein Grund zur Ablehnung,
+    // und umgeschrieben wird sie auch nicht.
+    await s.api('/api/settings', { method: 'PUT', body: JSON.stringify({ landlordName: 'Erika Muster', iban: 'de00 1111 2222' }) })
+    await s.api('/api/settings', { method: 'PUT', body: JSON.stringify({ paymentDeadlineDays: 21, iban: 'DE0011112222' }) })
+    const einstellungen = await s.api<ClientSettings>('/api/settings')
+    assert.equal(einstellungen.landlordName, 'Erika Muster')
+    assert.equal(einstellungen.paymentDeadlineDays, 21)
+    assert.equal(einstellungen.iban, 'de00 1111 2222', 'nicht still umgeschrieben')
+    // Eine andere ungültige ist eine Änderung und wird abgelehnt
+    assert.equal((await sendJson(s, '/api/settings', { iban: 'DE00 1111 2223' })).status, 400)
+
+    // Objekt
+    const objekt = await s.api<Property>('/api/properties/objekt-1', { method: 'PUT', body: JSON.stringify({ address: 'Weg 9', iban: 'DE00 3333', landlordName: 'Erben' }) })
+    assert.equal(objekt.address, 'Weg 9')
+    assert.equal(objekt.iban, 'DE00 3333')
+    assert.equal((await sendJson(s, '/api/properties/objekt-1', { iban: 'DE00 3334' })).status, 400)
+
+    // Mietverhältnis: mit und ohne IBAN im Rumpf, und der Mieterwechsel des alten
+    await s.api(`/api/tenancies/${tenancy.id}`, { method: 'PUT', body: JSON.stringify({ phone: '0123', iban: 'de00-4444' }) })
+    await s.api(`/api/tenancies/${tenancy.id}`, { method: 'PUT', body: JSON.stringify({ notes: 'Teilrumpf' }) })
+    const [mv] = await s.api<Tenancy[]>('/api/tenancies')
+    assert.equal(mv?.phone, '0123')
+    assert.equal(mv?.notes, 'Teilrumpf')
+    assert.equal(mv?.iban, 'de00-4444')
+    assert.equal((await sendJson(s, `/api/tenancies/${tenancy.id}`, { iban: 'DE00-4445' })).status, 400)
+    const wechsel = await postChange(s, tenancy.id, { end: '2025-06-30', readings: [], newTenancy: null })
+    assert.equal(wechsel.status, 200)
+    assert.equal((await jsonOf<TenantChangeAnswer>(wechsel)).ended.iban, 'de00-4444')
+
+    // Leeren ist immer erlaubt
+    await s.api(`/api/tenancies/${tenancy.id}`, { method: 'PUT', body: JSON.stringify({ iban: null }) })
+    assert.equal((await s.api<Tenancy[]>('/api/tenancies'))[0]?.iban, undefined)
+    await s.api('/api/settings', { method: 'PUT', body: JSON.stringify({ iban: '' }) })
+    assert.equal((await s.api<ClientSettings>('/api/settings')).iban, '')
+  } finally {
+    s.stop()
+  }
+})
+
+test('IBAN (#279): Wiederherstellen aus einer db.json übernimmt ungültige IBANs unverändert', async () => {
+  const s = await startServer()
+  try {
+    const stand = {
+      settings: { houseName: 'Haus', address: '', landlordName: 'Erika', iban: 'DE00 9999', paymentDeadlineDays: 30 },
+      units: [{ id: 'u1', name: 'EG', areaM2: 60, participates: true }],
+      tenancies: [{
+        id: 't1', unitId: 'u1', tenantName: 'Alt', persons: 1, personHistory: [{ from: '2024-01-01', persons: 1 }],
+        start: '2024-01-01', end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [], iban: 'de00 abc',
+      }],
+      costItems: [], meters: [], readings: [], payments: [], closedSettlements: [],
+    }
+    const r = await restore(s, archive({}, stand))
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    assert.equal((await s.api<ClientSettings>('/api/settings')).iban, 'DE00 9999')
+    assert.equal((await s.api<Tenancy[]>('/api/tenancies'))[0]?.iban, 'de00 abc')
+  } finally {
+    s.stop()
+  }
+})
+
+function entryData(zip: AdmZip, name: string): Buffer {
+  const entry = zip.getEntry(name)
+  if (!entry) return assert.fail(`im Archiv fehlt der Eintrag ${name}`)
+  return entry.getData()
+}

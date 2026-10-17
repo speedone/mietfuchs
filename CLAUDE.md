@@ -37,8 +37,9 @@ Angaben jedes Prüfstarts (siehe unten) und das nachgebaute Ollama aus
 fotografiert mit Playwright bei 1440 × 900 im hellen Design. **Der Bestand ist erfunden**: ein
 Mehrfamilienhaus „Lindenweg 12, 12345 Musterstadt“ mit selbstgenutzter Dachwohnung, Garage,
 Mieterwechsel mit Leerstand, Zählern, Zahlungen und Belegen (vom selben Browser als PDF gedruckt),
-dazu eine vermietete Eigentumswohnung mit Kosten laut Hausgeldabrechnung; die IBAN ist absichtlich
-ungültig. Echte Namen, Adressen oder Belege gehören nie hinein. Das Abrechnungsjahr ist das
+dazu eine vermietete Eigentumswohnung mit Kosten laut Hausgeldabrechnung; die IBAN ist die
+veröffentlichte Beispiel-IBAN `DE02 1203 0000 0000 2020 51` (gültig, denn seit #279 lehnt der Server
+eine ungültige ab). Echte Namen, Adressen oder Belege gehören nie hinein. Das Abrechnungsjahr ist das
 Vorjahr, wie es die Oberfläche voreinstellt. Playwright ist devDependency im Wurzelpaket, den
 Browser lädt einmalig `npx playwright install chromium`. Meldet die Oberfläche einen Fehler oder
 steht eine Fehlermeldung im Bild, bricht das Skript ab; die Bilder trotzdem vor dem Commit
@@ -1851,6 +1852,18 @@ die Ausnahme nach § 11 für Wärme und Warmwasser ohne vereinbarte Abrechnung (
 [server/src/co2Exemption.ts](server/src/co2Exemption.ts) (`co2OffByExemptionOf`, `exemptionText`); steht eine Heizperiode in
 keiner Abrechnung, fragt das Blatt sie mit den Periodendaten (`heatingRulesOf`) selbst. Werte, die nur geprüft werden, tragen
 `checkOnly` (shared/law); die Abweichung einer abgeschlossenen Abrechnung sagt dann „Prüfwert geändert“.
+
+**IBAN** (#279): Die Prüfung nach ISO 13616 (Länderkennung, Länge je Land, Prüfziffer) steht
+einmal in [shared/iban.ts](shared/iban.ts), für Formular und Server dieselbe. Geprüft wird nur
+beim Speichern über die Routen (`acceptIban` in [server/src/iban.ts](server/src/iban.ts), aus
+den Verschmelzungen in repository.ts und aus `PUT /api/settings`) und im Formular
+([client/src/ibanField.ts](client/src/ibanField.ts), Feld
+[IbanInput.tsx](client/src/components/IbanInput.tsx)), und **nur eine neu gesetzte oder
+geänderte**: Eine gespeicherte ungültige, die eine Seite unverändert mitschickt (normiert
+verglichen), hindert das Speichern einer anderen Angabe nicht und wird nicht still
+umgeschrieben; das Formular nennt sie als Hinweis. Backup, Wiederherstellen, Umstieg und
+Validator prüfen bewusst nicht: Eine falsche IBAN ändert keine Zahl, sie ist krumm und nicht
+kaputt. Leer ist immer erlaubt.
 
 **Begriffslexikon** (#113): [shared/glossary.ts](shared/glossary.ts) hält jeden Fachbegriff mit
 Erklärung, Beispiel mit Zahlen, Rechtsgrundlage und „Brauche ich das?“. Es war der **erste

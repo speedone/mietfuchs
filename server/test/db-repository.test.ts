@@ -393,7 +393,7 @@ test('Die Verschmelzung erreicht jede Spalte des Schemas', async () => {
       coll: 'tenancies', table: tenancies,
       body: {
         unitId: 'u1', tenantName: 'Müller', persons: 2, start: '2024-01-01', end: '2024-12-31',
-        email: 'a@b.de', phone: '0123', correspondenceAddress: 'Weg 1', iban: 'DE01',
+        email: 'a@b.de', phone: '0123', correspondenceAddress: 'Weg 1', iban: 'DE89370400440532013000',
         contractDate: '2023-12-01', depositCents: 1000, depositStatus: 'erhalten', notes: 'Notiz',
         costModel: 'flatRate', heatingModel: 'selfSupply', selfSupplyKind: 'central', halfSplitNoticeOn: '2023-12-01',
       },
@@ -580,7 +580,7 @@ test('Objekt: anlegen, auflisten, ändern', async () => {
     assert.deepEqual((await opened.read(listProperties)).map((p) => p.id), ['objekt-1', 'objekt-2'])
 
     // Nach Anwesenheit verschmolzen: null heißt „Vorgabe“, '' heißt „bewusst keine“.
-    await opened.write((db) => updateProperty(db, 'objekt-2', { iban: 'DE99', landlordName: '' }))
+    await opened.write((db) => updateProperty(db, 'objekt-2', { iban: 'DE02120300000000202051', landlordName: '' }))
     const geaendert = await opened.write((db) => updateProperty(db, 'objekt-2', { iban: null }))
     assert.equal(geaendert?.iban, null)
     assert.equal(geaendert?.landlordName, '')

@@ -11,7 +11,7 @@
 // fake-ollama.mjs, damit „Auswertung prüfen“ gezeigt werden kann; nichts geht ins Internet.
 //
 // **Alle Daten sind erfunden**: Objekte, Namen, Adressen, Beträge und Belege. Die Bankverbindung ist
-// absichtlich keine gültige IBAN (Prüfziffer 00). Das Abrechnungsjahr ist das Vorjahr, wie es die
+// die veröffentlichte Beispiel-IBAN (siehe unten), kein Konto einer Person. Das Abrechnungsjahr ist das Vorjahr, wie es die
 // Oberfläche voreinstellt; zu einem späteren Release entstehen dieselben Bilder ein Jahr weiter.
 import { spawn, execSync } from 'node:child_process'
 import fs from 'node:fs'
@@ -153,8 +153,9 @@ const RECIPIENT = ['Herrn', 'Klaus Wegener', 'Lindenweg 12', '12345 Musterstadt'
 async function seed(api, pdf) {
   await api.put('/api/settings', {
     landlordName: 'Klaus Wegener',
-    // Erfunden und absichtlich ungültig (Prüfziffer 00), damit sie niemand für echt hält
-    iban: 'DE00 1234 5678 9012 3456 78',
+    // Eine gültige IBAN, denn seit #279 lehnt der Server eine ungültige ab. Es ist die veröffentlichte
+    // Beispiel-IBAN aus Spezifikationen und Bankunterlagen, kein Konto einer Person aus dem Bestand.
+    iban: 'DE02 1203 0000 0000 2020 51',
     paymentDeadlineDays: 30,
     updateCheck: 'off',
   })

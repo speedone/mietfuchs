@@ -35,6 +35,7 @@ import { closeWithFuelQuestion } from '../fuelClose'
 import { co2Block } from '../co2View'
 import { countOf } from '../../../shared/wording.ts'
 import { calendarPeriod } from '../../../shared/period.ts'
+import { formatIban } from '../../../shared/iban.ts'
 
 type Props = {
   settings: Settings | null
@@ -628,7 +629,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
                         Es ergibt sich eine <strong>Nachzahlung von {fmtEuro(-st.balanceCents)}</strong>.
                         Bitte überweisen Sie den Betrag innerhalb von {landlord?.paymentDeadlineDays || 30} Tagen
                         nach Zugang dieser Abrechnung
-                        {landlord?.iban ? <> auf das Konto <strong>{landlord.iban}</strong>{landlord.landlordName ? ` (${landlord.landlordName})` : ''}</> : null}.
+                        {landlord?.iban ? <> auf das Konto <strong>{formatIban(landlord.iban)}</strong>{landlord.landlordName ? ` (${landlord.landlordName})` : ''}</> : null}.
                       </>
                     ) : (
                       <>
