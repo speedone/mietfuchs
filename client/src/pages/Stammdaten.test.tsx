@@ -23,6 +23,7 @@ const tenancy = (id: string, tenantName: string, patch: Partial<Tenancy> = {}): 
 const DEPS: UnitDependents = { tenancies: 2, meters: 1, readings: 4, payments: 12, costItemLinks: 0, directCostItems: 0, fuelDeliveries: 0 }
 
 let kind: PropertyKind = 'mfh'
+let propertyIban: string | null = null
 let meters: Meter[] = []
 let sent: { url: string; method: string; body: Record<string, unknown> }[] = []
 let plants: unknown[] = []
@@ -31,6 +32,7 @@ let answers: Record<string, unknown> = {}
 
 beforeEach(() => {
   kind = 'mfh'
+  propertyIban = null
   meters = []
   sent = []
   plants = []
@@ -44,7 +46,7 @@ beforeEach(() => {
     }
     if (path === '/api/meters') return json(meters)
     if (path === '/api/heating-plants') return json(plants)
-    if (path === '/api/properties') return json([{ id: 'objekt-1', name: 'A', kind, address: '', landlordName: null, iban: null, paymentDeadlineDays: null }])
+    if (path === '/api/properties') return json([{ id: 'objekt-1', name: 'A', kind, address: '', landlordName: null, iban: propertyIban, paymentDeadlineDays: null }])
     if (path === '/api/units/u1/dependents') return json(DEPS)
     return json([])
   })
@@ -318,4 +320,100 @@ test('Mieter heizt selbst: Auswahl zeigt den gespeicherten Wert, Hinweis nach §
   fireEvent.click(within(dialog).getByRole('button', { name: /^Übernehmen$/ }))
   await vi.waitFor(() => expect(sent).toHaveLength(1))
   expect(sent[0]?.body).toMatchObject({ heatingModel: 'selfSupply', selfSupplyKind: 'central', costModel: null })
+})
+
+// ---------- IBAN des Mieters (#279) ----------
+
+const ibanField = () => screen.getByLabelText<HTMLInputElement>(/Mieter-IBAN/)
+const openTenancy = async (name: string) => {
+  await screen.findByText(name, undefined, SLOW)
+  fireEvent.click(rowOf(name).getByLabelText('Mietverhältnis bearbeiten'))
+  await screen.findByText('Mietverhältnis bearbeiten', undefined, SLOW)
+}
+
+test('IBAN: eine neue ungültige steht nach dem Verlassen am Feld und wird nicht gespeichert', async () => {
+  page([tenancy('t1', 'Müller')])
+  await openTenancy('Müller')
+  fireEvent.change(ibanField(), { target: { value: 'DE00 3704 0044 0532 0130 00' } })
+  expect(screen.queryByRole('alert')).toBeNull()
+  fireEvent.blur(ibanField())
+  expect(screen.getByRole('alert').textContent).toMatch(/Prüfziffer stimmt nicht/)
+  expect(ibanField().getAttribute('aria-invalid')).toBe('true')
+  fireEvent.click(screen.getByText('Übernehmen'))
+  expect(await screen.findByText(/^Die IBAN des Mieters ist nicht gültig\./)).toBeTruthy()
+  expect(sent.filter((s) => s.method === 'PUT')).toEqual([])
+})
+
+test('IBAN: eine gültige wird in Vierergruppen angezeigt und normiert gespeichert', async () => {
+  page([tenancy('t1', 'Müller')])
+  await openTenancy('Müller')
+  fireEvent.change(ibanField(), { target: { value: 'de89370400440532013000' } })
+  fireEvent.blur(ibanField())
+  expect(ibanField().value).toBe('DE89 3704 0044 0532 0130 00')
+  fireEvent.click(screen.getByText('Übernehmen'))
+  await vi.waitFor(() => expect(sent.find((s) => s.method === 'PUT')?.body.iban).toBe('DE89370400440532013000'))
+})
+
+test('IBAN: eine gespeicherte ungültige steht als Hinweis da und blockiert das Speichern nicht', async () => {
+  page([tenancy('t1', 'Müller', { iban: 'de00 1111' })])
+  await openTenancy('Müller')
+  expect(ibanField().value).toBe('de00 1111')
+  expect(screen.getByText(/^Die gespeicherte IBAN ist vermutlich falsch eingetragen\./)).toBeTruthy()
+  fireEvent.blur(ibanField())
+  expect(screen.queryByRole('alert')).toBeNull()
+  fireEvent.click(screen.getByText('Übernehmen'))
+  await vi.waitFor(() => expect(sent.find((s) => s.method === 'PUT')?.body.iban).toBe('de00 1111'))
+})
+
+// ---------- Abweichende IBAN des Objekts (#279) ----------
+
+test('Objekt: eine gespeicherte ungültige IBAN steht als Hinweis da und blockiert das Speichern nicht', async () => {
+  propertyIban = 'DE00 3333'
+  page()
+  expect((await screen.findByText(/^Die gespeicherte IBAN ist vermutlich falsch eingetragen\./, undefined, SLOW))).toBeTruthy()
+  fireEvent.change(screen.getByLabelText('Adresse'), { target: { value: 'Weg 9' } })
+  fireEvent.click(screen.getByText('Speichern'))
+  await vi.waitFor(() => expect(sent.find((s) => s.method === 'PUT')?.body).toMatchObject({ iban: 'DE00 3333', address: 'Weg 9' }))
+})
+
+test('Objekt: eine neue ungültige IBAN wird nicht gespeichert, eine gültige normiert', async () => {
+  propertyIban = 'DE89370400440532013000'
+  page()
+  const feld = await screen.findByDisplayValue('DE89 3704 0044 0532 0130 00', undefined, SLOW)
+  fireEvent.change(feld, { target: { value: 'DE89 3704 0044 0532 0130 01' } })
+  fireEvent.blur(feld)
+  expect(screen.getByRole('alert').textContent).toMatch(/Prüfziffer/)
+  fireEvent.click(screen.getByText('Speichern'))
+  expect(await screen.findByText(/^Die abweichende IBAN des Objekts ist nicht gültig\./)).toBeTruthy()
+  expect(sent).toEqual([])
+  fireEvent.change(feld, { target: { value: 'gb82 west 1234 5698 7654 32' } })
+  fireEvent.click(screen.getByText('Speichern'))
+  await vi.waitFor(() => expect(sent.find((s) => s.method === 'PUT')?.body.iban).toBe('GB82WEST12345698765432'))
+})
+
+test('IBAN: wechselt der Dialog zu einem anderen Mietverhältnis, beginnt das Feld von vorn', async () => {
+  page([tenancy('t1', 'Müller'), tenancy('t2', 'Schmidt', { unitId: 'u2' })])
+  await openTenancy('Müller')
+  fireEvent.change(ibanField(), { target: { value: 'DE00 1' } })
+  fireEvent.blur(ibanField())
+  expect(screen.getByRole('alert')).toBeTruthy()
+  // Ohne den Dialog zu schließen ein anderes Mietverhältnis öffnen, wie es „Hier beheben →“ tut
+  fireEvent.click(rowOf('Schmidt').getByLabelText('Mietverhältnis bearbeiten'))
+  await screen.findByDisplayValue('Schmidt', undefined, SLOW)
+  fireEvent.change(ibanField(), { target: { value: 'DE00 2' } })
+  expect(screen.queryByRole('alert')).toBeNull()
+})
+
+test('IBAN: ist die gespeicherte ungültig, sind die „Weiteren Angaben“ aufgeklappt, sonst nicht', async () => {
+  page([tenancy('t1', 'Müller', { iban: 'de00 1111' }), tenancy('t2', 'Schmidt', { unitId: 'u2', iban: 'DE89370400440532013000' })])
+  const details = () => {
+    const el = screen.getByText(/^Weitere Angaben — Nebenkosten-Modell/).closest('details')
+    if (!el) throw new Error('kein details')
+    return el
+  }
+  await openTenancy('Müller')
+  expect(details().open).toBe(true)
+  fireEvent.click(screen.getByText('Abbrechen'))
+  await openTenancy('Schmidt')
+  expect(details().open).toBe(false)
 })

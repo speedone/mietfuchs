@@ -9,6 +9,7 @@ import { api, errorText } from '../api'
 import { useOpenForm, useProperty, useSwitchProperty } from '../property'
 import { useConfirm, useToast } from './feedback'
 import Drawer from './Drawer'
+import IbanInput from './IbanInput'
 import { createButtonLabel, EMPTY_NEW_PROPERTY, newPropertyBody, type NewPropertyForm } from '../propertyView'
 
 // Die Karte „Objekt“ in den Stammdaten (#92): Name, Adresse und Art des gewählten Objekts,
@@ -52,7 +53,7 @@ export default function PropertyCard() {
 
   async function save() {
     if (!property || !form) return
-    const body = propertyBody(form)
+    const body = propertyBody(form, property.iban)
     if ('error' in body) {
       setError(body.error)
       return
@@ -179,10 +180,7 @@ export default function PropertyCard() {
               Vermieter
               <input value={form.landlordName} onChange={(e) => setForm({ ...form, landlordName: e.target.value })} />
             </label>
-            <label className="field grow">
-              IBAN
-              <input value={form.iban} onChange={(e) => setForm({ ...form, iban: e.target.value })} />
-            </label>
+            <IbanInput key={property.id} label="IBAN" value={form.iban} stored={property.iban} onChange={(iban) => setForm({ ...form, iban })} />
             <label className="field">
               Zahlungsfrist (Tage)
               <input inputMode="numeric" value={form.paymentDeadlineDays} onChange={(e) => setForm({ ...form, paymentDeadlineDays: e.target.value })} />

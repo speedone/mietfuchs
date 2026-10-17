@@ -406,25 +406,25 @@ test('Wiederherstellen: die Einstellungen aus dem Archiv gelten sofort und über
   await withFilledDatabase(async (s) => {
     await s.api('/api/settings', {
       method: 'PUT',
-      body: JSON.stringify({ landlordName: 'Vermieter im Backup', iban: 'DE11' }),
+      body: JSON.stringify({ landlordName: 'Vermieter im Backup', iban: 'DE89370400440532013000' }),
     })
     const zip = Buffer.from(await (await fetch(`${s.base}/api/backup`)).arrayBuffer())
     await s.api('/api/settings', {
       method: 'PUT',
-      body: JSON.stringify({ landlordName: 'Vermieter danach', iban: 'DE99' }),
+      body: JSON.stringify({ landlordName: 'Vermieter danach', iban: 'DE02120300000000202051' }),
     })
 
     assert.equal((await restore(s, zip)).status, 200)
     const sofort = await s.api<ClientSettings>('/api/settings')
     assert.equal(sofort.landlordName, 'Vermieter im Backup', 'ohne Neustart gilt noch der alte Stand')
-    assert.equal(sofort.iban, 'DE11', 'die IBAN steht im Kopf der gedruckten Abrechnung')
+    assert.equal(sofort.iban, 'DE89370400440532013000', 'die IBAN steht im Kopf der gedruckten Abrechnung')
 
     // Eine beliebige andere Einstellung ändern, wie es ein Nutzer täte.
     await s.api('/api/settings', { method: 'PUT', body: JSON.stringify({ paymentDeadlineDays: 45 }) })
     const danach = await s.api<ClientSettings>('/api/settings')
     assert.equal(danach.paymentDeadlineDays, 45)
     assert.equal(danach.landlordName, 'Vermieter im Backup', 'der Stand von vor dem Wiederherstellen ist zurückgekehrt')
-    assert.equal(danach.iban, 'DE11', 'die alte IBAN ist zurückgekehrt')
+    assert.equal(danach.iban, 'DE89370400440532013000', 'die alte IBAN ist zurückgekehrt')
   })
 })
 
