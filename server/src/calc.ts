@@ -1161,7 +1161,7 @@ export function carryShareCents(snapshot: Snapshot, carryCents: number, year: nu
   const add = (c: SnapshotCostItem, period: Pick<BillingPeriod, 'from'>): void => {
     if (seen.has(c.id) || !isFuelMarked(c)) return
     seen.add(c.id)
-    for (const share of outflowShares(c, period)) weights.set(share.year, (weights.get(share.year) ?? 0) + share.cents)
+    for (const share of outflowShares(c, period, snapshot.costItems)) weights.set(share.year, (weights.get(share.year) ?? 0) + share.cents)
   }
   for (const x of snapshot.heatingParts ?? []) if (!x.separate) for (const c of x.items) add(c, x.period)
   for (const c of snapshot.costItems) if (c.period === snapshot.period.key) add(c, snapshot.period)
@@ -1557,8 +1557,10 @@ export function taxPartsFor(source: Parameters<typeof snapshotFor>[0], propertyI
   const parts: TaxPart[] = periodsBetween(rules, vorjahr.from, bis).flatMap((p) => {
     const snap = snapshotFor(source, propertyId, p)
     const items = [
-      ...(p.from > jahr.to ? [] : snap.costItems.filter((c) => paidWhollyIn(c, p, year))),
-      ...(snap.heatingParts ?? []).filter((x) => !x.separate).flatMap((x) => x.items.filter((c) => paidWhollyIn(c, x.period, year))),
+      // `snap.costItems`: Ein Abzug beim Betriebsstrom steht im Jahr seiner Stromrechnung (#267), und die steht im selben
+      // Zeitraum (outflow.ts).
+      ...(p.from > jahr.to ? [] : snap.costItems.filter((c) => paidWhollyIn(c, p, year, snap.costItems))),
+      ...(snap.heatingParts ?? []).filter((x) => !x.separate).flatMap((x) => x.items.filter((c) => paidWhollyIn(c, x.period, year, x.items))),
     ]
     const touches = p.from <= jahr.to && p.to >= jahr.from
     return items.length > 0 || touches ? [{ snapshot: snap, items }] : []
@@ -1569,7 +1571,7 @@ export function taxPartsFor(source: Parameters<typeof snapshotFor>[0], propertyI
       if (!settledSeparately(way, rules, h)) return []
       const snap = heatingSnapshotFor(source, propertyId, plant.id, h)
       if (!snap) return []
-      const items = snap.costItems.filter((c) => paidWhollyIn(c, h, year))
+      const items = snap.costItems.filter((c) => paidWhollyIn(c, h, year, snap.costItems))
       if (items.length > 0) return [{ snapshot: snap, items }]
       // Ohne Positionen in diesem Jahr nur im Jahr ihres Beginns, für den Übertrag aus dem Vorrat (`carryShareCents`).
       return Number(h.from.slice(0, 4)) === year ? [{ snapshot: snap, items: [], carryOnly: true as const }] : []
@@ -1578,9 +1580,10 @@ export function taxPartsFor(source: Parameters<typeof snapshotFor>[0], propertyI
   return [...parts, ...separate]
 }
 
-export function taxReportFor(source: Parameters<typeof snapshotFor>[0], propertyId: string, year: number): TaxReport {
+// `parts`: die Teile aus `taxPartsFor`, wenn der Aufrufer sie ohnehin braucht (das Steuer-ZIP wählt mit denselben
+// Teilen aus, Durchsicht von #255 PR 1, K5); sonst rechnet sie die Funktion selbst.
+export function taxReportFor(source: Parameters<typeof snapshotFor>[0], propertyId: string, year: number, parts: readonly TaxPart[] = taxPartsFor(source, propertyId, year)): TaxReport {
   const calendar = snapshotFor(source, propertyId, calendarYearPeriod(year))
-  const parts = taxPartsFor(source, propertyId, year)
   // Durchsicht M1 zu #268: Ein Abzug kann auf eine Heizposition in einem anderen Steuerjahr zeigen; der Schnappschuss
   // kennt nur die Positionen seines Zeitraums. Deshalb bekommt die Übersicht alle Positionen des Objekts für Verweise.
   const all = source.costItems.filter((c) => c.propertyId === propertyId)

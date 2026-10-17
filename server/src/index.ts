@@ -1779,9 +1779,11 @@ app.get('/api/receipts/tax/:year', async (req, res) => {
     const property = (await listProperties(db)).find((p) => p.id === propertyId)
     // Privat und abziehbar je Position aus derselben Rechnung wie die Steuerübersicht (#163), und
     // dieselbe Auswahl der Positionen: das Jahr der Zahlung (#208, seit #255 für jedes Objekt über die Teile).
-    const report = taxReportFor(whole, propertyId, year)
+    // Die Teile einmal, für Übersicht und Auswahl (Durchsicht von #255 PR 1, K5).
+    const parts = taxPartsFor(whole, propertyId, year)
+    const report = taxReportFor(whole, propertyId, year, parts)
     const split = new Map(report.expenses.items.map((i) => [i.costItemId, i]))
-    const items = taxArchiveItems(stock.costItems, taxPartsFor(whole, propertyId, year))
+    const items = taxArchiveItems(stock.costItems, parts)
     // #268 und Heizung PR 19 (N-4): Zeilen der Übersicht ohne Position (Ausgleich beim Betriebsstrom, ausgezahlte
     // CO₂-Erstattung).
     const derived = derivedTaxLines(report)

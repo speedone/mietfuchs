@@ -5,12 +5,16 @@ import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 // Leistungszeitraum, Jahr der Zahlung und „Brennstoff/Energie“ einer Kostenposition (#208).
 // Steht unter „Weitere Angaben“, denn wer im Kalenderjahr abrechnet und Rechnungen für das
 // Kalenderjahr hat, braucht nichts davon (Entwurf 11.1).
-export default function CostPeriodFields({ form, onChange, showTaxYear, years }: {
+// `billTaxYear`: beim Abzug für Betriebsstrom das Steuerjahr seiner Stromrechnung (`deductionTaxYear` in costForm.ts);
+// dann gibt es kein Feld, der Abzug hat kein eigenes Jahr (#267).
+export default function CostPeriodFields({ form, onChange, showTaxYear, years, billTaxYear = null }: {
   form: ItemForm
   onChange: (next: ItemForm) => void
   showTaxYear: boolean
   years: number[]
+  billTaxYear?: number | null
 }) {
+  const deduction = form.operatingPower === 'deduction'
   return (
     <>
       <div className="row">
@@ -40,7 +44,14 @@ export default function CostPeriodFields({ form, onChange, showTaxYear, years }:
           </small>
         </label>
       )}
-      {showTaxYear && (
+      {/* #267: Der Abzug ist ein Ausschnitt der bezahlten Stromrechnung und zählt in deren Jahr. */}
+      {showTaxYear && deduction && (
+        <p className="muted">
+          Jahr der Zahlung (Steuer): wie die Stromrechnung{billTaxYear !== null ? ` (${billTaxYear})` : ''}. Der Abzug teilt die Stromrechnung nur auf und
+          wird nicht eigens bezahlt; für die Steuer zählt er deshalb im Jahr, in dem Sie die Stromrechnung bezahlt haben.
+        </p>
+      )}
+      {showTaxYear && !deduction && (
         <label className="field">
           Jahr der Zahlung (Steuer)
           <select value={form.taxYear} onChange={(e) => onChange({ ...form, taxYear: e.target.value })}>
@@ -48,12 +59,12 @@ export default function CostPeriodFields({ form, onChange, showTaxYear, years }:
             {years.map((y) => <option key={y} value={String(y)}>{y}</option>)}
           </select>
           <small className="muted">Maßgeblich ist, wann Sie gezahlt haben (§ 11 Abs. 2 EStG).</small>
-          {/* Recht-H-1 und K-4 (Folge-PR zu #252): Strom der Heizung über den Zähler des Hauses und sein Abzug. */}
-          {(form.operatingPower === 'included' || form.operatingPower === 'deduction') && (
+          {/* Recht-H-1 und K-4 (Folge-PR zu #252), seit #267 umgedreht: Der Abzug folgt der Stromrechnung. */}
+          {form.operatingPower === 'included' && (
             <small className="muted">
-              Läuft Strom der Heizung über den Zähler des Hauses, gilt für die Heizposition und ihren Abzug beim Allgemeinstrom dasselbe Jahr, nämlich
-              das der Heizposition: Beide teilen die Stromrechnung nur auf und ändern zusammen die Summe Ihrer Kosten nicht; die Stromrechnung selbst
-              bleibt im Jahr ihrer Zahlung.
+              Läuft Strom der Heizung über den Zähler des Hauses, steht sein Abzug beim Allgemeinstrom immer im Jahr der Stromrechnung, denn beide
+              teilen die Stromrechnung nur auf. Die Heizposition steht in dem Jahr, das Sie hier wählen; ist es ein anderes, gleicht Mietfuchs das in
+              der Steuerübersicht je Jahr aus, und die Stromrechnung zählt einmal, im Jahr ihrer Zahlung.
             </small>
           )}
           {/* Laienprobe B15, Review Runde 1: Eine Position hat ein Jahr; Abschläge über zwei Jahre gehören in zwei. */}

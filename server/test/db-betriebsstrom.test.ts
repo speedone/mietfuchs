@@ -12,6 +12,7 @@ import { createHeatingPlant } from '../src/db/heating.ts'
 import { bookOperatingPower } from '../src/db/operatingPower.ts'
 import { readCostItems, readStock } from '../src/db/read.ts'
 import { taxReportFor } from '../src/calc.ts'
+import { storedOutflowYear } from '../src/outflow.ts'
 import { costItems, heatingPlants, properties } from '../src/db/schema.ts'
 import { periodKey } from '../../shared/period.ts'
 import type { OpenedDatabase } from '../src/db/open.ts'
@@ -541,6 +542,12 @@ test('G-K1: Anlage Mai–April, eigene Abrechnung: Betriebsstrom bekommt das Ste
   })
 })
 
+// #267: Der Abzug trägt kein eigenes Jahr; er steht im Steuerjahr seiner Stromrechnung (`storedOutflowYear`, outflow.ts).
+const abzugsjahr = async (opened: OpenedDatabase, id: string): Promise<number> => {
+  const all = await opened.read((db) => readCostItems(db))
+  return storedOutflowYear(all.find((c) => c.id === id) ?? assert.fail(`${id} fehlt`), all)
+}
+
 test('G-K1: Objekt Mai–April, eigene Abrechnung: beide Positionen im Steuerjahr der Stromrechnung (2026)', async () => {
   await withDatabase(async (opened) => {
     await maiApril.objekt(opened, 'manual')
@@ -548,7 +555,8 @@ test('G-K1: Objekt Mai–April, eigene Abrechnung: beide Positionen im Steuerjah
     await opened.write((db) => createEntity(db, 'costItems', 'strom', { ...strom, period: '2025-05', taxYear: 2026 }))
     const b = await opened.write((db) => bookOperatingPower(db, 'hp', { ...eigen, generalItemId: 'strom' }, ids))
     const h = b?.heatingItem ?? assert.fail('kein Betriebsstrom')
-    assert.deepEqual([h.taxYear, b?.deduction.taxYear], [2026, 2026])
+    assert.deepEqual([h.taxYear, b?.deduction.taxYear], [2026, undefined])
+    assert.equal(await abzugsjahr(opened, b?.deduction.id ?? ''), 2026)
   })
 })
 
@@ -566,7 +574,8 @@ test('G-K1: Objekt Mai–April mit Messdienst: der Abzug bekommt das Steuerjahr 
     await maiApril.objekt(opened, 'service')
     await opened.write((db) => createEntity(db, 'costItems', 'strom', { ...strom, period: '2025-05', taxYear: 2026 }))
     const b = await opened.write((db) => bookOperatingPower(db, 'hp', { ...eigen, generalItemId: 'strom' }, ids))
-    assert.deepEqual([b?.deduction.period, b?.deduction.taxYear], ['2025-05', 2026])
+    assert.deepEqual([b?.deduction.period, b?.deduction.taxYear], ['2025-05', undefined])
+    assert.equal(await abzugsjahr(opened, b?.deduction.id ?? ''), 2026)
   })
 })
 
@@ -634,7 +643,9 @@ test('R-W2: der Abzug darf auf die Strom-Position (Teil „Brennstoff“) einer 
 // Objekt Mai–April, Anlage im Kalenderjahr: Der Betriebsstrom der Heizperiode 2025 zählt zu 2025 und lässt
 // sich nicht anders stellen; der Abzug aus der Stromrechnung 2025/2026 bekommt deshalb dasselbe Jahr. Die
 // Anlage V beider Jahre bleibt, wie sie ohne Betriebsstrom wäre (Umbuchung, Δ 0).
-test('G2-N-W2: Objekt Mai–April mit Anlage im Kalenderjahr: Abzug im Steuerjahr des Betriebsstroms, Anlage V beider Jahre unverändert', async () => {
+// #267: Bis dahin bekam der Abzug hier das Steuerjahr des Betriebsstroms (2025), die Stromrechnung stand in 2026, und mit
+// Eigennutzung blieb in beiden Jahren ein privater Rest (Beispiel B2 im Plan zu #255). Jetzt steht er mit ihr in 2026.
+test('G2-N-W2/#267: Objekt Mai–April mit Anlage im Kalenderjahr: Abzug im Steuerjahr der Stromrechnung, Anlage V beider Jahre unverändert', async () => {
   await withDatabase(async (opened) => {
     await opened.write((db) => db.update(properties).set({ periodStartMonth: 5 }).where(eq(properties.id, 'objekt-1')))
     await opened.write((db) => createEntity(db, 'units', 'u1', { propertyId: 'objekt-1', name: 'A', areaM2: 80, participates: true }))
@@ -646,8 +657,30 @@ test('G2-N-W2: Objekt Mai–April mit Anlage im Kalenderjahr: Abzug im Steuerjah
     const vorher = [await steuer(2025), await steuer(2026)]
     const b = await opened.write((db) => bookOperatingPower(db, 'hp', { period: '2025-01', generalItemId: 'strom', ownCents: 10000, basis: 'Bruchteil' }, ids))
     const h = b?.heatingItem ?? assert.fail('kein Betriebsstrom')
-    assert.deepEqual([h.period, h.taxYear, b?.deduction.period, b?.deduction.taxYear], ['2025-01', undefined, '2025-05', 2025])
+    assert.deepEqual([h.period, h.taxYear, b?.deduction.period, b?.deduction.taxYear], ['2025-01', undefined, '2025-05', undefined])
+    assert.equal(await abzugsjahr(opened, b?.deduction.id ?? ''), 2026)
     assert.deepEqual([await steuer(2025), await steuer(2026)], vorher)
+  })
+})
+
+// #267: Am Abzug wird kein Jahr der Zahlung verlangt und keines gespeichert, auch nicht über zwei Kalenderjahre (vorher
+// Pflicht); ein mitgeschicktes oder älteres wird beim Speichern geleert.
+test('#267: Abzug ohne eigenes Jahr der Zahlung, auch im Zeitraum über zwei Kalenderjahre; ein mitgeschicktes wird geleert', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => db.update(properties).set({ periodStartMonth: 5 }).where(eq(properties.id, 'objekt-1')))
+    await opened.write((db) => createEntity(db, 'costItems', 'strom', { ...strom, period: '2025-05', taxYear: 2026 }))
+    const abzug = { propertyId: 'objekt-1', period: '2025-05', category: 'Beleuchtung/Allgemeinstrom', description: 'Abzug', amountCents: -10000, key: 'area', operatingPower: 'deduction', operatingPowerGeneralId: 'strom' }
+    await opened.write((db) => createEntity(db, 'costItems', 'ohne', abzug))
+    await opened.write((db) => createEntity(db, 'costItems', 'mit', { ...abzug, taxYear: 2025 }))
+    await opened.write((db) => updateEntity(db, 'costItems', 'ohne', { taxYear: 2027 }))
+    const all = await opened.read((db) => readCostItems(db))
+    assert.deepEqual(['ohne', 'mit'].map((id) => all.find((c) => c.id === id)?.taxYear), [undefined, undefined])
+    assert.deepEqual([await abzugsjahr(opened, 'ohne'), await abzugsjahr(opened, 'mit')], [2026, 2026])
+    // Ein Wert aus der Zeit vor #267 steht noch in der Datei; gelesen wird er nicht, beim nächsten Speichern ist er weg.
+    await opened.write((db) => db.update(costItems).set({ taxYear: 2025 }).where(eq(costItems.id, 'mit')))
+    assert.equal(await abzugsjahr(opened, 'mit'), 2026)
+    await opened.write((db) => updateEntity(db, 'costItems', 'mit', { description: 'Abzug, berichtigt' }))
+    assert.equal((await opened.read((db) => readCostItems(db))).find((c) => c.id === 'mit')?.taxYear, undefined)
   })
 })
 

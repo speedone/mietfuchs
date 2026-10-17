@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import { OPERATING_POWER_KEPT } from '../../shared/operatingPower.ts'
-import { generalChoices, withGeneralChoice, deductionChoiceOf, deductionChoices, itemToForm as itemToFormOf, OPERATING_POWER_OPTIONS, showsDeductionLink, showsOperatingPower, withDeductionChoice, withOperatingPower, buildCostItemBody as buildBody } from './costForm'
+import { deductionTaxYear, generalChoices, withGeneralChoice, deductionChoiceOf, deductionChoices, itemToForm as itemToFormOf, OPERATING_POWER_OPTIONS, showsDeductionLink, showsOperatingPower, withDeductionChoice, withOperatingPower, buildCostItemBody as buildBody } from './costForm'
 import type { CostItem as CostItemOf } from './types'
 import { calendarPeriod, periodKey } from '../../shared/period.ts'
 import { euro } from '../../shared/costItem.ts'
@@ -774,6 +774,21 @@ test('Betriebsstrom: Abzug wählt seine Stromrechnung desselben Zeitraums und ü
   expect([mit.operatingPowerGeneralId, mit.key, mit.participants]).toEqual(['strom', 'units', ['u1', 'u2']])
   expect(withOperatingPower({}, mit)).toMatchObject({ operatingPower: 'deduction', operatingPowerGeneralId: 'strom' })
   expect(withGeneralChoice(mit, '', [strom]).operatingPowerGeneralId).toBe('')
+})
+
+// #267: Ein Abzug beim Betriebsstrom hat kein eigenes Jahr der Zahlung; das Formular nennt das seiner Stromrechnung und
+// schickt keines, auch wenn eines eingelesen wurde (aus der Zeit vor #267).
+test('Betriebsstrom: Abzug im Steuerjahr seiner Stromrechnung, kein eigenes Jahr im Rumpf', () => {
+  const strom: CostItemOf = { id: 'strom', propertyId: 'o', period: periodKey('2025-05'), category: 'Beleuchtung/Allgemeinstrom', description: 'Hausstrom 2025/26', amountCents: 100000, key: 'units', taxYear: 2026 }
+  const ab: CostItemOf = { id: 'ab', propertyId: 'o', period: periodKey('2025-05'), category: 'Beleuchtung/Allgemeinstrom', description: 'Abzug', amountCents: -10000, key: 'units', taxYear: 2025, operatingPower: 'deduction', operatingPowerGeneralId: 'strom' }
+  const form = itemToFormOf(ab)
+  expect(deductionTaxYear(form, [strom, ab])).toBe(2026)
+  expect(deductionTaxYear(form, [{ ...strom, taxYear: undefined }])).toBe(2025)
+  expect(deductionTaxYear({ ...form, operatingPowerGeneralId: '' }, [strom])).toBeNull()
+  expect(deductionTaxYear({ ...form, operatingPower: '' }, [strom])).toBeNull()
+  const built = buildBody(form, [], 2025)
+  if ('error' in built) throw new Error(built.error)
+  expect(built.body.taxYear).toBeNull()
 })
 
 // Durchsicht von #252, R-W2: Bei Wärmepumpe und Stromheizung fragt das Formular auch an der Strom-Position
