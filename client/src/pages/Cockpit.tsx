@@ -427,7 +427,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
       )}
 
       {ibanFindings.length > 0 && (
-        <div className="hint notice-item iban-hint">
+        <div className="hint notice-item">
           <div className="notice-head"><strong>{ibanHintTitle(ibanFindings.length)}</strong></div>
           <div>Prüfziffer, Länge oder Länderkennung passen nicht. Bitte vergleichen Sie sie mit dem Kontoauszug oder dem Mietvertrag; geändert wird nichts, bis Sie es tun.</div>
           <ul className="iban-hint-list">
