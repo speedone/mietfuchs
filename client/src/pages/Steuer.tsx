@@ -8,7 +8,7 @@ import { useProperty, withProperty } from '../property'
 import { effectiveLandlord, letterhead } from '../landlord'
 import PageHeader from '../components/PageHeader'
 import Table from '../components/Table'
-import { allocationLabel, assignedUnitItems, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, operatingPowerBalanceText, paidWithoutSettlementCents, prepaymentNote, settlementBalanceCents, settlementLine, settlementSourcesText, showsSplit, stockCarryNote, surplusCentsFor, taxHints, type Basis } from '../taxView'
+import { allocationLabel, assignedUnitItems, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, operatingPowerBalanceText, paidWithoutSettlementCents, prepaymentNote, settlementBalanceCents, settlementLine, settlementSourcesText, showsSplit, stockCarryNote, surplusCentsFor, taxHints, type Basis, movedInLines, movedInText, movedOutLabels, movedOutLines, unstatedText, type ShiftLine } from '../taxView'
 import { StepList } from '../components/CalcSteps'
 import Term from '../components/Term'
 import { andList } from '../../../shared/wording.ts'
@@ -360,6 +360,29 @@ export default function Steuer({ settings }: Props) {
               </div>
             )}
 
+            {/* #255, PR 4: was zwischen den Jahren verschoben ist. Nur Auskunft, die Summe oben ist die der Positionen,
+                die in diesem Jahr bezahlt sind. Auch im Druck, denn genau diese Positionen fragt der Steuerberater nach. */}
+            {hints.includes('movedIn') && (
+              <div className="notice">
+                <strong>In {year} bezahlt, aus einer anderen Abrechnung.</strong> Diese Positionen stehen in den
+                Werbungskosten {year}, denn Ausgaben sind für das Kalenderjahr abzusetzen, in dem sie geleistet worden
+                sind (§ 11 Abs. 2 Satz 1 EStG).
+                {/* Durchsicht von PR 4, K2: „Nicht umlagefähig“ wird nach Zuordnung oder Fläche geteilt, nicht nach der Abrechnung. */}
+                {data.selfOccupiedExists && ' Den privaten Teil rechnet Mietfuchs wie im Zeitraum, zu dem sie gehören: umlagefähige Kosten nach dessen Abrechnung, die übrigen nach Zuordnung oder Fläche.'}{' '}
+                <Term id="paymentDate">Was heißt das?</Term>
+                <ShiftList lines={movedInLines(data)} />
+              </div>
+            )}
+            {hints.includes('movedOut') && (
+              <div className="notice">
+                <strong>In der Abrechnung {andList(movedOutLabels(data))}, aber in einem anderen Jahr bezahlt.</strong> Diese
+                Positionen zählen nicht zu den Werbungskosten {year}, sondern zu denen des Jahres, in dem sie bezahlt
+                sind. Die Abrechnung an die Mieter enthält sie unverändert.
+                <ShiftList lines={movedOutLines(data)} />
+              </div>
+            )}
+            {hints.includes('unstated') && <p className="muted fine">{unstatedText(data)}</p>}
+
             <h3>Ergebnis</h3>
             <Table>
               <tbody>
@@ -679,6 +702,7 @@ function SplitRow({ item }: { item: TaxExpenseItem }) {
       <tr>
         <td>
           <span className="muted">{item.group} · {item.category} · </span><span>{item.description}</span>
+          {movedInText(item) && <div className="muted fine">{movedInText(item)}</div>}
         </td>
         <td className="num">{fmtEuro(item.amountCents)}</td>
         <td className="num">{fmtEuro(item.privateCents)}</td>
@@ -696,5 +720,20 @@ function SplitRow({ item }: { item: TaxExpenseItem }) {
         </tr>
       )}
     </>
+  )
+}
+
+// Die verschobenen Positionen (#255, PR 4). Ein Datum außerhalb der üblichen Spanne (R-4) fragt beim Eintragen nach,
+// ein späterer Wechsel des Zeitraums aber nicht (Durchsicht von PR 3, K8); deshalb steht der Satz hier.
+function ShiftList({ lines }: { lines: ShiftLine[] }) {
+  return (
+    <ul>
+      {lines.map((l) => (
+        <li key={l.costItemId}>
+          {l.text}.
+          {l.outsideSpan && ' Das Datum liegt außerhalb der üblichen Spanne (ein Jahr vor Beginn bis drei Jahre nach Ende des Abrechnungszeitraums); bitte prüfen Sie es.'}
+        </li>
+      ))}
+    </ul>
   )
 }

@@ -18,9 +18,9 @@
 // der Seite, etwa der Kasten zur gemischten Nutzung: Dort entscheidet der Server mit
 // `selfOccupiedExists`, die Seite zeigt ihn nur an.
 
-import type { PropertyKind, TaxExpenseItem, TaxReport } from './types'
+import type { PropertyKind, TaxExpenseItem, TaxMovedOut, TaxOutflow, TaxReport } from './types'
 import { andList } from '../../shared/wording.ts'
-import { fmtEuro } from './api'
+import { fmtDate, fmtEuro } from './api'
 
 export type Basis = 'soll' | 'ist'
 
@@ -45,6 +45,7 @@ export const TAX_HINTS = [
   'mixedUseClosedChanged', 'mixedUseLabor35a', 'mixedUseNotCalculated', 'mixedUseExcludedArea', 'mixedUseClosedItemsChanged',
   'mixedUseAssignedUnits',
   'operatingPowerBalance', 'operatingPowerAmbiguous', 'unmarkedPowerCredits',
+  'movedIn', 'movedOut', 'unstated',
 ] as const
 
 export type TaxHint = (typeof TAX_HINTS)[number]
@@ -132,6 +133,16 @@ export type TaxHint = (typeof TAX_HINTS)[number]
 //                        Zeitraum auch eine Anlage ohne Messdienst heizt (R-6 zu #268).
 //   `unmarkedPowerCredits` Negativer Allgemeinstrom ohne Kennzeichnung neben einer zentralen Anlage
 //                        ohne Messdienst (#268): ein Abzug aus der Zeit vor der Kennzeichnung?
+//
+// Zwischen den Jahren verschoben (#255, PR 4), auf beiden Grundlagen, denn es betrifft die Ausgaben:
+//
+//   `movedIn`            Positionen aus einer Abrechnung, deren Zeitraum dieses Jahr nicht berührt, die
+//                        aber in diesem Jahr abgeflossen sind (§ 11 Abs. 2 Satz 1 EStG). Die Seite nennt
+//                        Herkunft und Grund (Zahlungsdatum, angegebenes Jahr, Stromrechnung).
+//   `movedOut`           Umgekehrt Positionen der Abrechnung dieses Jahres, die in einem anderen Jahr
+//                        stehen. Nur Auskunft, sie zählen hier nicht.
+//   `unstated`           Positionen ohne Angabe, wann sie bezahlt wurden; sie stehen im Jahr ihrer
+//                        Abrechnung. Ruhig, kein Fehler: Meist stimmt das, und es behauptet keine Ursache.
 
 export function taxHints(report: TaxReport, basis: Basis, propertyKind?: PropertyKind): TaxHint[] {
   const hints: TaxHint[] = []
@@ -141,6 +152,9 @@ export function taxHints(report: TaxReport, basis: Basis, propertyKind?: Propert
   if ((report.operatingPowerAmbiguous ?? []).length > 0) hints.push('operatingPowerAmbiguous')
   if ((report.unmarkedPowerCredits ?? []).length > 0) hints.push('unmarkedPowerCredits')
   if (propertyKind === 'etw') hints.push('etwHousingMoney')
+  if (movedInLines(report).length > 0) hints.push('movedIn')
+  if (report.movedOut.length > 0) hints.push('movedOut')
+  if (report.expenses.unstatedCount > 0) hints.push('unstated')
   const { tenancies, inclusive, partlyInclusive, flatRate } = report.costModels
   if (tenancies > 0 && inclusive === tenancies) hints.push('inclusiveLine24')
   else if (inclusive > 0 || partlyInclusive > 0) hints.push('inclusiveLine24Mixed')
@@ -408,4 +422,58 @@ export function settlementBalanceCents(report: Pick<TaxReport, 'income'>): numbe
 // wer stattdessen den ganzen Zufluss dort einträgt und den Saldo zusätzlich in Zeile 21, zählt ihn doppelt.
 export function paidWithoutSettlementCents(report: Pick<TaxReport, 'income'>): number {
   return report.income.paidCents - settlementBalanceCents(report)
+}
+
+// ---------- Zwischen den Jahren verschoben (#255, PR 4) ----------
+//
+// Die Sätze nennen nur, was in den Daten steht: das eingetragene Datum, das angegebene Jahr oder dass ein Abzug beim
+// Betriebsstrom mit seiner Stromrechnung abfließt (#267). Eine Ursache für die späte oder frühe Zahlung behaupten sie
+// nicht. Welche Position wo steht, entscheidet der Server (`outflowShares`); hier wird es nur in Worte gefasst.
+function outflowReason(o: TaxOutflow): string {
+  switch (o.source) {
+    case 'paid': return o.paidOn !== undefined ? `bezahlt am ${fmtDate(o.paidOn)}` : `bezahlt ${o.year}`
+    case 'stated': return `als Jahr der Zahlung ${o.year} angegeben`
+    // Ein Abzug wird nicht bezahlt, er ist ein Ausschnitt der Stromrechnung und fließt mit ihr ab (Durchsicht PR 4, K4).
+    case 'bill': return `fließt mit seiner Stromrechnung ${o.year} ab`
+    case 'period': return `im Jahr der Abrechnung ${o.year}`
+  }
+}
+
+// Die kurze Angabe an der Zeile der Aufstellung, nur bei einer Position aus einer anderen Abrechnung.
+export function movedInText(item: TaxExpenseItem): string | null {
+  if (!item.settlementPeriod || !item.outflow) return null
+  return `aus Abrechnung ${item.settlementPeriod.label}, ${outflowReason(item.outflow)}`
+}
+
+export type ShiftLine = { costItemId: string; text: string; outsideSpan: boolean }
+const quoted = (description: string, amountCents: number): string => `„${description || 'ohne Beschreibung'}“ (${fmtEuro(amountCents)})`
+
+export function movedInLines(report: TaxReport): ShiftLine[] {
+  return report.expenses.items.flatMap((x) => {
+    const text = movedInText(x)
+    return text === null ? [] : [{ costItemId: x.costItemId, text: `${quoted(x.description, x.amountCents)}, ${text}`, outsideSpan: x.outsideSpan === true }]
+  })
+}
+
+export function movedOutLines(report: TaxReport): ShiftLine[] {
+  return report.movedOut.map((m: TaxMovedOut) => ({
+    costItemId: m.costItemId,
+    text: `${quoted(m.description, m.amountCents)}, Abrechnung ${m.settlementPeriod.label}, ${outflowReason(m.outflow)}: steht in der Steuerübersicht ${m.outflow.year}`,
+    outsideSpan: m.outsideSpan === true,
+  }))
+}
+
+// Die Abrechnungen, aus denen die verschobenen Positionen stammen, für die Überschrift.
+export function movedOutLabels(report: TaxReport): string[] {
+  return [...new Set(report.movedOut.map((m) => m.settlementPeriod.label))]
+}
+
+// Ruhig und ohne Ursache: Ohne Angabe gilt das Jahr der Abrechnung, und meist stimmt das.
+export function unstatedText(report: TaxReport): string | null {
+  const n = report.expenses.unstatedCount
+  if (n <= 0) return null
+  const head = n === 1
+    ? 'Bei einer Position dieses Jahres ist nicht angegeben, wann sie bezahlt wurde; sie steht im Jahr ihrer Abrechnung.'
+    : `Bei ${n} Positionen dieses Jahres ist nicht angegeben, wann sie bezahlt wurden; sie stehen im Jahr ihrer Abrechnung.`
+  return `${head} Haben Sie eine davon in einem anderen Jahr bezahlt, etwa als Nachzahlung im Folgejahr oder schon im Vorjahr, tragen Sie unter Kosten bei der Position „Bezahlt am (für die Steuer)“ ein.`
 }

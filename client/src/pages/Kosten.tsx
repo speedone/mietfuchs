@@ -54,7 +54,7 @@ import TaxYearSelect from '../components/TaxYearSelect'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 import { hotWaterOf } from '../../../shared/heatingPeriod.ts'
 import { serviceReceivesOperatingPower } from '../../../shared/operatingPower.ts'
-import { splitPaidOnQuestions } from '../../../shared/paidOn.ts'
+import { paidOnYear, splitPaidOnQuestions } from '../../../shared/paidOn.ts'
 import { alreadyCarried, carryKeyDetails, carryOverBody, carryOverForm, carryOverRows, withCarryAmount, type CarryRow } from '../carryOver'
 import { api, ApiError, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { aiSummary } from '../aiForm'
@@ -426,7 +426,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
       }
       if (parts.length > 1) {
         // Ein Zahlungsdatum beantwortet die Frage nach dem Jahr der Zahlung ebenso (#255 PR 3).
-        const decision = splitDecision(parts, form.taxYear !== '' ? form.taxYear : showsPaidOn(form) ? form.paidOn.slice(0, 4) : '', form.operatingPower === 'deduction')
+        const decision = splitDecision(parts, form.taxYear !== '' ? form.taxYear : showsPaidOn(form) && form.paidOn !== '' ? String(paidOnYear(form.paidOn)) : '', form.operatingPower === 'deduction')
         if ('error' in decision) {
           setNeedsTaxYear(decision.needsTaxYear)
           setError(decision.error)
