@@ -8,6 +8,18 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Hinzugefügt
 
+- Bundesland am Objekt, für Fristen und Feiertage: In den Stammdaten tragen Sie unter „Bundesland (für
+  Fristen und Feiertage)“ ein, in welchem Land das Objekt liegt. Ohne Angabe gelten nur die
+  Feiertage, die in allen Ländern gelten. Feiertage, die nur in einzelnen Gemeinden gelten (Mariä
+  Himmelfahrt in Teilen Bayerns, das Augsburger Friedensfest, Fronleichnam in Teilen Sachsens und
+  Thüringens), nennt die Karte, zählt sie aber nicht mit. Das Mietkonto sagt im laufenden Jahr, bis
+  wann die Miete des Monats zu zahlen ist: am dritten Werktag, ohne Samstag (§ 556b Abs. 1 BGB, BGH
+  VIII ZR 129/09); verschiebt ein Feiertag einzelner Gemeinden die Frist, steht das dabei. Die
+  Berechnung des Rückstands ändert sich dadurch nicht. Darunter liegen zwei
+  geprüfte Bausteine für künftige Fristen: die gesetzlichen Feiertage der 16 Länder ab 1995 und das
+  Fristende am nächsten Werktag nach § 193 BGB. Regeln und Feiertage stehen im Rechtsregister, jede
+  Fassung mit Fundstelle; der Rechtsstand ist jetzt der 15.10.2026
+  ([#290](https://github.com/speedone/mietfuchs/issues/290)).
 - „Bezahlt am (für die Steuer)“ an der Kostenposition: Wer eine Rechnung in einem anderen Jahr
   bezahlt hat als im Jahr ihrer Abrechnung, etwa eine Nachzahlung im Folgejahr oder eine
   Versicherung, die schon im Dezember für das nächste Jahr gezahlt wurde, trägt das Datum unter
@@ -166,17 +178,6 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Neu
 
-- Bundesland am Objekt, für Fristen und Feiertage: In den Stammdaten tragen Sie unter „Bundesland (für
-  Fristen und Feiertage)“ ein, in welchem Land das Objekt liegt. Ohne Angabe gelten nur die
-  Feiertage, die in allen Ländern gelten. Feiertage, die nur in einzelnen Gemeinden gelten (Mariä
-  Himmelfahrt in Teilen Bayerns, das Augsburger Friedensfest, Fronleichnam in Teilen Sachsens und
-  Thüringens), nennt die Karte, zählt sie aber nicht mit. Das Mietkonto sagt im laufenden Jahr, bis
-  wann die Miete des Monats zu zahlen ist: am dritten Werktag, ohne Samstag (§ 556b Abs. 1 BGB, BGH
-  VIII ZR 129/09); verschiebt ein Feiertag einzelner Gemeinden die Frist, steht das dabei. Die
-  Berechnung des Rückstands ändert sich dadurch nicht. Darunter liegen zwei
-  geprüfte Bausteine für künftige Fristen: die gesetzlichen Feiertage der 16 Länder ab 1995 und das
-  Fristende am nächsten Werktag nach § 193 BGB. Regeln und Feiertage stehen im Rechtsregister, jede
-  Fassung mit Fundstelle; der Rechtsstand ist jetzt der 15.10.2026.
 - Abrechnungszeitraum wählbar: In den Stammdaten stellen Sie unter „Abrechnungszeitraum“ ein, ob ein
   Objekt im Kalenderjahr oder etwa von Mai bis April abrechnet. Ein Wechsel zeigt vorher, was
   geschieht: den Rumpfzeitraum davor, welche Rechnungen nach Tagen aufgeteilt werden, und er fragt
