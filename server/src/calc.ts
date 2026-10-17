@@ -83,10 +83,11 @@ import type { TermId } from '../../shared/glossary.ts'
 import { allocationOf, comparablePrevious, sameAllocation, sameUnits } from '../../shared/allocation.ts'
 import { possibleDuplicates } from '../../shared/duplicates.ts'
 import { commonPeriod, tenancyOverlaps } from '../../shared/tenancyOverlap.ts'
-import { CALENDAR_RULES, calendarYearPeriod, contextOf, formatDayRange, isCalendarRules, periodContaining, periodDays, periodLabel, periodMonths, periodOfKey, periodsBetween, previousPeriod, rulesOf, settlementDeadline, settlementPeriod, type PeriodContext } from '../../shared/period.ts'
+import { CALENDAR_RULES, calendarYearPeriod, contextOf, formatDayRange, periodContaining, periodDays, periodLabel, periodMonths, periodOfKey, periodsBetween, previousPeriod, rulesOf, settlementDeadline, settlementPeriod, type PeriodContext } from '../../shared/period.ts'
 import { generatorEnergy, noCo2Supplier } from '../../shared/heatDelivery.ts'
 import { lineRoot, monthSpanText, plantRules, plantSpan, recommendedDeadline, requestMonth, sameBuilding, sameFuelLine, sameLine, sameSpan, separateOwner, servesUnit, settledSeparately } from '../../shared/heatingPeriod.ts'
 import { heatingSnapshotFor, selfAt, snapshotFor, wayOf } from './snapshot.ts'
+import { outflowShares, paidWhollyIn } from './outflow.ts'
 import { deliveryShare, notInvoiceDeliveries, plantFuel, rangeOf, type FuelCarry, type FuelResult, type ShareContext } from './fuel.ts'
 import { co2Plausibility, etsExempt as etsExemptPlant, plausibilityText } from './co2Plausibility.ts'
 import { billMissingText, deductionMissingText, generationPowerText, selfSupplyPowerText, missingOperatingPowerText, missingPowerFindings, operatingPowerBalance, operatingPowerFindings, operatingPowerText, unmarkedPowerCredits, type OperatingPowerBalance } from './operatingPower.ts'
@@ -1032,13 +1033,11 @@ export const ANLAGE_V_GROUP_ORDER = [
 // tatsächlich Zugeflossene unmittelbar aus den Zahlungen,
 // Werbungskosten aus den Kostenpositionen nach Anlage-V-Gruppen, §35a-Lohnanteile sowie
 // der Flächenanteil der vermieteten Einheiten (für gemischt genutzte Gebäude). Die
-// Werbungskosten folgen dem Abflussprinzip (im Jahr gebuchte Kosten), die Einnahmen
-// werden sowohl als Soll (vereinbart) als auch als Ist (tatsächlich gezahlt) geliefert.
-// Das Jahr der Zahlung einer Position (#208, Entwurf 3.10): angegeben, sonst das Kalenderjahr, in
-// dem ihr Zeitraum beginnt (ein Zeitraum ohne Angabe liegt in einem Kalenderjahr, repository.ts
-// sichert das zu).
-export const taxYearOf = (item: Pick<SnapshotCostItem, 'taxYear'>, period: Pick<BillingPeriod, 'from'>): number =>
-  item.taxYear ?? Number(period.from.slice(0, 4))
+// Einnahmen werden sowohl als Soll (vereinbart) als auch als Ist (tatsächlich gezahlt) geliefert.
+// **Die Werbungskosten folgen dem Abflussprinzip noch nicht** (Durchsicht K6): Eine Position steht
+// im angegebenen Jahr der Zahlung, sonst im Jahr, in dem ihr Zeitraum beginnt, also im Jahr ihrer
+// Abrechnung und nicht zwingend in dem, in dem sie bezahlt wurde. Ein Zahlungsdatum je Position
+// bringt #255 mit PR 3. Für die Steuer bestimmt das Jahr `outflowShares` in outflow.ts.
 
 // Ein Teil der Steuerübersicht: der Schnappschuss eines Abrechnungszeitraums und seine Positionen,
 // die im Kalenderjahr gezahlt wurden. Der Eigenanteil kommt aus der Abrechnung dieses Zeitraums.
@@ -1071,8 +1070,7 @@ export function carryShareCents(snapshot: Snapshot, carryCents: number, year: nu
   const add = (c: SnapshotCostItem, period: Pick<BillingPeriod, 'from'>): void => {
     if (seen.has(c.id) || !isFuelMarked(c)) return
     seen.add(c.id)
-    const y = taxYearOf(c, period)
-    weights.set(y, (weights.get(y) ?? 0) + c.amountCents)
+    for (const share of outflowShares(c, period)) weights.set(share.year, (weights.get(share.year) ?? 0) + share.cents)
   }
   for (const x of snapshot.heatingParts ?? []) if (!x.separate) for (const c of x.items) add(c, x.period)
   for (const c of snapshot.costItems) if (c.period === snapshot.period.key) add(c, snapshot.period)
@@ -1211,7 +1209,8 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
   // bewusst doppelt: `snapshotFromDb` grenzt bereits ein. Er bleibt, weil er das Einzige ist,
   // was eine falsch eingegrenzte Ablage noch auffängt, und der Schaden wäre eine Steuerübersicht
   // mit den Werbungskosten mehrerer Jahre. Nicht als toten Code entfernen.
-  // Seit #208 steht der Filter in `used` (Kalenderobjekt) bzw. in `taxPartsFor` (Jahr der Zahlung).
+  // Seit #208 steht der Filter in `taxPartsFor` (Jahr der Zahlung, seit #255 aus `outflowShares` für jedes Objekt);
+  // ohne Teile, also nur bei unmittelbarem Aufruf mit dem Schnappschuss eines Kalenderjahres, in `used`.
   const items = used.flatMap((p) => p.items)
   // Die Aufteilung bei teilweiser Eigennutzung (#163), je Position aus der Abrechnung ihres
   // Zeitraums. Die Rücklage fehlt darin.
@@ -1436,16 +1435,20 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
   }
 }
 
-// Die Teile der Steuerübersicht eines Objekts mit eigenem Rhythmus oder eigener Heizperiode (#208,
-// Heizung PR 5, Entwurf 3.10): jeder Abrechnungszeitraum, der das Jahr oder das Vorjahr berührt, mit
-// seinen Positionen, deren Jahr der Zahlung dieses Jahr ist, dazu die Heizpositionen der
-// Heizperioden, die er nach Weg b aufnimmt (ihr Jahr der Zahlung richtet sich nach ihrer
-// Heizperiode). Jede Heizkostenabrechnung nach Weg d ist ein eigener Teil; den Eigenanteil liefert
-// dann sie. `null` beim Kalenderobjekt ohne eigene Heizperiode: Dort rechnet `taxReport` wie bisher.
-export function taxPartsFor(source: Parameters<typeof snapshotFor>[0], propertyId: string, year: number): TaxPart[] | null {
+// Die Teile der Steuerübersicht eines Objekts (#208, Heizung PR 5, Entwurf 3.10, #255): jeder
+// Abrechnungszeitraum, der das Jahr oder das Vorjahr berührt, mit seinen Positionen, deren Jahr der
+// Zahlung dieses Jahr ist (`paidWhollyIn`), dazu die Heizpositionen der Heizperioden, die er nach
+// Weg b aufnimmt (ihr Jahr der Zahlung richtet sich nach ihrer Heizperiode). Jede
+// Heizkostenabrechnung nach Weg d ist ein eigener Teil; den Eigenanteil liefert dann sie.
+// **Für jedes Objekt, auch das Kalenderobjekt** (#255, E3): Vorher gab es dort `null`, und
+// `taxReport` wie das Steuer-ZIP wählten mit einer zweiten Regel aus (`period` gleich dem
+// Kalenderjahr). Für das Kalenderobjekt ergibt das denselben einen Teil: Ohne Angabe liegt jede
+// Position im Jahr ihres Zeitraums, und eine Angabe ist dort nur das Jahr des Beginns
+// (`requireTaxYear` in db/repository.ts); das Vorjahr hat dann keine Position und berührt das Jahr
+// nicht. Die Invariante in outflow.test.ts hält alt gegen neu fest.
+export function taxPartsFor(source: Parameters<typeof snapshotFor>[0], propertyId: string, year: number): TaxPart[] {
   const rules = rulesOf(source.properties?.find((p) => p.id === propertyId))
   const ownPlants = (source.heatingPlants ?? []).filter((p) => p.propertyId === propertyId && (p.periodStartMonth ?? null) !== null)
-  if (isCalendarRules(rules) && ownPlants.length === 0) return null
   const jahr = calendarYearPeriod(year)
   const vorjahr = calendarYearPeriod(year - 1)
   // Eine Heizperiode, die in diesem Jahr beginnt, kann in der Abrechnung des Folgejahres stehen (Weg b)
@@ -1455,8 +1458,8 @@ export function taxPartsFor(source: Parameters<typeof snapshotFor>[0], propertyI
   const parts: TaxPart[] = periodsBetween(rules, vorjahr.from, bis).flatMap((p) => {
     const snap = snapshotFor(source, propertyId, p)
     const items = [
-      ...(p.from > jahr.to ? [] : snap.costItems.filter((c) => taxYearOf(c, p) === year)),
-      ...(snap.heatingParts ?? []).filter((x) => !x.separate).flatMap((x) => x.items.filter((c) => taxYearOf(c, x.period) === year)),
+      ...(p.from > jahr.to ? [] : snap.costItems.filter((c) => paidWhollyIn(c, p, year))),
+      ...(snap.heatingParts ?? []).filter((x) => !x.separate).flatMap((x) => x.items.filter((c) => paidWhollyIn(c, x.period, year))),
     ]
     const touches = p.from <= jahr.to && p.to >= jahr.from
     return items.length > 0 || touches ? [{ snapshot: snap, items }] : []
@@ -1467,7 +1470,7 @@ export function taxPartsFor(source: Parameters<typeof snapshotFor>[0], propertyI
       if (!settledSeparately(way, rules, h)) return []
       const snap = heatingSnapshotFor(source, propertyId, plant.id, h)
       if (!snap) return []
-      const items = snap.costItems.filter((c) => taxYearOf(c, h) === year)
+      const items = snap.costItems.filter((c) => paidWhollyIn(c, h, year))
       if (items.length > 0) return [{ snapshot: snap, items }]
       // Ohne Positionen in diesem Jahr nur im Jahr ihres Beginns, für den Übertrag aus dem Vorrat (`carryShareCents`).
       return Number(h.from.slice(0, 4)) === year ? [{ snapshot: snap, items: [], carryOnly: true as const }] : []
@@ -1482,7 +1485,7 @@ export function taxReportFor(source: Parameters<typeof snapshotFor>[0], property
   // Durchsicht M1 zu #268: Ein Abzug kann auf eine Heizposition in einem anderen Steuerjahr zeigen; der Schnappschuss
   // kennt nur die Positionen seines Zeitraums. Deshalb bekommt die Übersicht alle Positionen des Objekts für Verweise.
   const all = source.costItems.filter((c) => c.propertyId === propertyId)
-  return taxReport(calendar, parts ?? undefined, { linkable: all })
+  return taxReport(calendar, parts, { linkable: all })
 }
 
 // Die Anlage-V-Gruppe einer Kostenart, `null` für die Rücklage (#143). Bewusst nach

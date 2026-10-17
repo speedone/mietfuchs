@@ -14,7 +14,7 @@
 // beiden Spalten sind deshalb genau die der Übersicht. Die Zuführung zur Rücklage steht dort nicht
 // in den Werbungskosten und hat hier leere Felder.
 import type { CostItem, TaxExpenseItem, TaxReport } from '../../shared/types.ts'
-import { ANLAGE_V_GROUP, ANLAGE_V_GROUP_ORDER, validLabor35aCents } from './calc.ts'
+import { ANLAGE_V_GROUP, ANLAGE_V_GROUP_ORDER, validLabor35aCents, type TaxPart } from './calc.ts'
 
 const RESERVE_GROUP = 'Erhaltungsrücklage (gesondert)'
 const FALLBACK_GROUP = 'Sonstige Werbungskosten'
@@ -38,6 +38,15 @@ const csvField = (value: string): string => (/[;"\r\n]/.test(value) ? `"${value.
 // stammen, deshalb wird entschärft: ein Apostroph davor, wie es die OWASP-Empfehlung zur
 // CSV-Einschleusung vorsieht. Beträge sind keine Textfelder; eine Gutschrift bleibt „-5,00“.
 const textField = (value: string): string => csvField(/^[=+\-@\t\r]/.test(value) ? `'${value}` : value)
+
+// Welche Positionen ins Archiv eines Steuerjahres gehören: **genau die der Steuerübersicht**, also die Positionen der
+// Teile aus `taxPartsFor` (das Jahr der Zahlung aus `outflowShares`, outflow.ts, #255), in der Reihenfolge des
+// Bestands. Keine eigene Auswahl daneben: Vorher wählte das Archiv beim Kalenderobjekt nach dem Zeitraum aus, die
+// Übersicht über die Teile, und ein Jahr der Zahlung außerhalb des Zeitraums hätte beide getrennt.
+export function taxArchiveItems<C extends Pick<CostItem, 'id'>>(costItems: readonly C[], parts: readonly Pick<TaxPart, 'items'>[]): C[] {
+  const ids = new Set(parts.flatMap((p) => p.items.map((c) => c.id)))
+  return costItems.filter((c) => ids.has(c.id))
+}
 
 export type TaxArchivePlan = {
   files: { zipPath: string, file: string }[]
