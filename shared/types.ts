@@ -1020,6 +1020,30 @@ export type TaxExpenseItem = {
   // Eine ausgezahlte CO₂-Erstattung an einen Mieter, der selbst heizt (Heizung PR 19, Nachprüfung N-4): keine
   // Kostenposition, aber eine Zeile der Werbungskosten. `costItemId` ist dann `co2refund-paid:<Erstattung>`.
   co2RefundPaidOut?: true
+  // Das Jahr der Zahlung und woher es kommt (#255, PR 4), aus `outflowShares` (server/src/outflow.ts), also genau das,
+  // nach dem die Position in diesem Steuerjahr steht: `paid` Zahlungsdatum, `stated` angegebenes Jahr der Zahlung,
+  // `period` ohne Angabe das Jahr der Abrechnung, `bill` ein Abzug beim Betriebsstrom mit seiner Stromrechnung. Nur
+  // Auskunft; fehlt bei den abgeleiteten Zeilen.
+  outflow?: TaxOutflow
+  // Nur bei einer Position aus einem Abrechnungszeitraum, der dieses Steuerjahr nicht berührt („aus Abrechnung 2025,
+  // bezahlt 2026“): dieser Zeitraum.
+  settlementPeriod?: { key: PeriodKey; label: string }
+  // Das Zahlungsdatum liegt außerhalb von Beginn − 1 bis Ende + 3 des Zeitraums (R-4). Beim Eintragen fragt Mietfuchs
+  // nach, ein späterer Wechsel des Zeitraums aber nicht (Durchsicht von #255 PR 3, K8); die Übersicht nennt es deshalb.
+  outsideSpan?: true
+}
+export type TaxOutflowSource = 'paid' | 'stated' | 'period' | 'bill'
+export type TaxOutflow = { year: number; source: TaxOutflowSource; paidOn?: string }
+// Eine Position einer Abrechnung, die in diesem Jahr beginnt, die aber in einem anderen Steuerjahr abgeflossen ist
+// (#255, PR 4). Nur Auskunft, sie zählt nicht in den Werbungskosten dieses Jahres.
+export type TaxMovedOut = {
+  costItemId: string
+  category: string
+  description: string
+  amountCents: number
+  settlementPeriod: { key: PeriodKey; label: string }
+  outflow: TaxOutflow
+  outsideSpan?: true
 }
 
 export type TaxReport = {
@@ -1076,7 +1100,13 @@ export type TaxReport = {
     stockCarrySelfCents?: number
     // Jede Position mit ihrer Aufteilung, in der Reihenfolge der Erfassung (#163)
     items: TaxExpenseItem[]
+    // Positionen dieses Jahres ohne Zahlungsdatum und ohne angegebenes Jahr der Zahlung (#255, PR 4), die deshalb im
+    // Jahr ihrer Abrechnung stehen. Nicht gezählt: wo es kein Datum gibt (Hausgeld laut Gemeinschaftsabrechnung, Abzug
+    // beim Betriebsstrom). Für einen ruhigen Hinweis, kein Fehler.
+    unstatedCount: number
   }
+  // Positionen der Abrechnungen, die in diesem Jahr beginnen, aber in einem anderen Steuerjahr stehen (#255, PR 4)
+  movedOut: TaxMovedOut[]
   // Die Abrechnungen, aus denen die Eigenanteile stammen (#208): bei einem Kalenderobjekt die des
   // Jahres, bei Mai bis April die beiden, die das Jahr berühren.
   settlementPeriods: { key: PeriodKey; label: string }[]

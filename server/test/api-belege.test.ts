@@ -212,10 +212,10 @@ test('Belege für die Steuer (#170): ein ZIP je Objekt und Jahr nach Gruppen der
 // Vor dem Wechsel von adm-zip zu yazl auf demselben Bestand abgelesen: die Übersicht wortgleich,
 // samt Byte-Order-Mark. Ein Steuerberater öffnet sie in Excel, und ohne BOM stünden dort statt
 // der Umlaute Zeichensalat.
-const TAX_OVERVIEW_BEFORE_YAZL = '\uFEFFGruppe;Kostenart;Beschreibung;Rechnungssteller;Betrag (EUR);privat (EUR);abziehbar (EUR);Lohnanteil § 35a (EUR);Beleg\r\n'
-  + 'Grundsteuer & öffentliche Abgaben;Grundsteuer;Grundsteuer B;;612,40;0,00;612,40;;1 Grundsteuer & öffentliche Abgaben/Grundsteuer - Grundsteuerbescheid_Müll.pdf\r\n'
-  + 'Verwaltung & Instandhaltung;Nicht umlagefähig;Dachrinne;;450,00;0,00;450,00;200,00;4 Verwaltung & Instandhaltung/Nicht umlagefähig - Dachrinne_Übertrag.pdf\r\n'
-  + 'Sonstige Werbungskosten;Versicherung;Ohne Beleg;;300,00;0,00;300,00;;kein Beleg\r\n'
+const TAX_OVERVIEW_BEFORE_YAZL = '\uFEFFGruppe;Kostenart;Beschreibung;Rechnungssteller;Betrag (EUR);privat (EUR);abziehbar (EUR);Lohnanteil § 35a (EUR);Beleg;Jahr der Zahlung\r\n'
+  + 'Grundsteuer & öffentliche Abgaben;Grundsteuer;Grundsteuer B;;612,40;0,00;612,40;;1 Grundsteuer & öffentliche Abgaben/Grundsteuer - Grundsteuerbescheid_Müll.pdf;2025, Jahr der Abrechnung (ohne Angabe)\r\n'
+  + 'Verwaltung & Instandhaltung;Nicht umlagefähig;Dachrinne;;450,00;0,00;450,00;200,00;4 Verwaltung & Instandhaltung/Nicht umlagefähig - Dachrinne_Übertrag.pdf;2025, Jahr der Abrechnung (ohne Angabe)\r\n'
+  + 'Sonstige Werbungskosten;Versicherung;Ohne Beleg;;300,00;0,00;300,00;;kein Beleg;2025, Jahr der Abrechnung (ohne Angabe)\r\n'
 
 test('Belege für die Steuer: Inhalt, Namen und Übersicht sind mit yazl dieselben wie vorher mit adm-zip', async () => {
   await withProperties(async (s) => {
