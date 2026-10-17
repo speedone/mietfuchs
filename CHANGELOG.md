@@ -6,6 +6,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+## [0.11.2] – 2026-10-17
+
 ### Geändert
 
 - **Große Backups brauchen deutlich weniger Arbeitsspeicher.** Backup und „Belege für die
@@ -2218,7 +2220,8 @@ Verteilung nach Wohnfläche, Personenzahl, Wohneinheiten, Verbrauch oder Direktz
 druckfertige Abrechnung je Mieter, Mietkonto, Steuerübersicht für die Anlage V, optionale
 KI-Belegauswertung gegen eine lokale Ollama-Instanz, Backup und Wiederherstellung.
 
-[Unveröffentlicht]: https://github.com/speedone/mietfuchs/compare/v0.11.1...HEAD
+[Unveröffentlicht]: https://github.com/speedone/mietfuchs/compare/v0.11.2...HEAD
+[0.11.2]: https://github.com/speedone/mietfuchs/compare/v0.11.1...v0.11.2
 [0.11.1]: https://github.com/speedone/mietfuchs/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/speedone/mietfuchs/compare/v0.10.1...v0.11.0
 [0.10.1]: https://github.com/speedone/mietfuchs/compare/v0.10.0...v0.10.1
