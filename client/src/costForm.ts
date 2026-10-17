@@ -693,7 +693,7 @@ export const taxYearOptions = (startYear: number): number[] => [startYear, start
 // bei „laut Gemeinschaftsabrechnung“ (R-6, dort steht ein Hinweis) und bei der Zuführung zur Erhaltungsrücklage, die
 // erst bei Verwendung durch die Gemeinschaft zählt (BFH IX R 19/24). Dieselbe Regel wie der Server (`allowsPaidOn`).
 export const showsPaidOn = (form: Pick<ItemForm, 'key' | 'operatingPower' | 'category'>): boolean =>
-  allowsPaidOn({ key: form.key, operatingPower: form.operatingPower === '' ? undefined : form.operatingPower }) && form.category !== 'Zuführung Erhaltungsrücklage'
+  allowsPaidOn({ key: form.key, category: form.category, operatingPower: form.operatingPower === '' ? undefined : form.operatingPower }) && form.category !== 'Zuführung Erhaltungsrücklage'
 
 // Was ein Datum für die Steuer ändert, als Sätze für die Rückfrage vor dem Speichern (R-2, R-4); leer heißt nichts
 // zu bestätigen. Dieselben Sätze, mit denen der Server ohne Bestätigung ablehnt (shared/paidOn.ts).

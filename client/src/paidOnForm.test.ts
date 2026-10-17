@@ -3,6 +3,7 @@
 import { describe, expect, test } from 'vitest'
 import { buildCostItemBody, EMPTY_ITEM_FORM, itemToForm, paidOnChange, paidOnTenDayHint, showsPaidOn, deductionTaxYear } from './costForm'
 import { calendarYearPeriod, periodKey } from '../../shared/period.ts'
+import { splitPaidOnQuestions } from '../../shared/paidOn.ts'
 import type { CostItem, Unit } from './types'
 
 const UNITS: Unit[] = [{ id: 'a', propertyId: 'p', name: 'A', areaM2: 80, participates: true }]
@@ -24,6 +25,12 @@ describe('Bezahlt am (für die Steuer)', () => {
     expect(showsPaidOn({ ...form, operatingPower: 'deduction' })).toBe(false)
     expect(showsPaidOn({ ...form, category: 'Zuführung Erhaltungsrücklage' })).toBe(false)
     expect(showsPaidOn(form)).toBe(true)
+    // Durchsicht K1: Bei „Nicht umlagefähig“ speichert costItemBody einen neutralen Schlüssel, ein stehengebliebenes
+    // `external` im Formular verbirgt das Feld deshalb nicht (eine Regel mit shared/costItem.ts).
+    expect(showsPaidOn({ ...form, key: 'external', category: 'Nicht umlagefähig' })).toBe(true)
+    const na = buildCostItemBody({ ...form, key: 'external', category: 'Nicht umlagefähig', paidOn: '2026-05-01' }, UNITS, 2026)
+    if ('error' in na) return expect.unreachable(na.error)
+    expect(na.body.paidOn).toBe('2026-05-01')
     const ext = buildCostItemBody({ ...form, key: 'external', externalTotal: '1000', externalTotalAmount: '6000,00', paidOn: '2026-05-01' }, UNITS, 2026)
     if ('error' in ext) return expect.unreachable(ext.error)
     expect(ext.body.paidOn).toBeNull()
@@ -41,6 +48,26 @@ describe('Bezahlt am (für die Steuer)', () => {
     // Gegen ein gesetztes Jahr der Zahlung.
     expect(paidOnChange({ taxYear: 2026, period: periodKey('2026-05') }, { paidOn: '2027-01-12', taxYear: 2026, period: '2026-05' }, { startYear: 2026, endYear: 2027 })[0])
       .toBe('Als Jahr der Zahlung ist 2026 angegeben; mit dem Datum 12.01.2027 zählt die Position für die Steuer zu 2027.')
+  })
+  // Durchsicht M1: Beim Aufteilen zählt jeder Teil mit seinem eigenen Zeitraum, nicht der des Formulars. Dieselbe Regel
+  // fragt der Server in `saveCostItemSplit`.
+  test('Aufteilen: gefragt wird je Teil, auch wenn das Datum im Jahr des Formulars liegt', () => {
+    const parts = [
+      { period: '2025-01', needsTaxYear: false, startYear: 2025, endYear: 2025 },
+      { period: '2026-01', needsTaxYear: false, startYear: 2026, endYear: 2026 },
+    ]
+    const neu = { paidOn: '2025-07-01', taxYear: null, period: '2025-01' }
+    expect(paidOnChange(null, neu, { startYear: 2025, endYear: 2025 })).toEqual([])
+    const q = splitPaidOnQuestions(null, neu, parts)
+    expect(q[0]).toBe('Mit dem Datum 01.07.2025 zählt die Position für die Steuer zu 2025 statt zu 2026.')
+    expect(q.filter((x) => x.startsWith('Haben Sie'))).toHaveLength(1)
+    // Unverändertes Datum an einer gespeicherten Position: nichts zu bestätigen.
+    expect(splitPaidOnQuestions({ paidOn: '2025-07-01', period: periodKey('2025-01') }, neu, parts)).toEqual([])
+    // Ein Teil über zwei Kalenderjahre trägt das Jahr der Zahlung des Rumpfes, einer in einem Kalenderjahr keines.
+    expect(splitPaidOnQuestions(null, { paidOn: '2026-03-01', taxYear: 2025, period: '2025-01' }, [
+      { period: '2025-01', needsTaxYear: false, startYear: 2025, endYear: 2025 },
+      { period: '2025-05', needsTaxYear: true, startYear: 2025, endYear: 2026 },
+    ]).some((x) => x.startsWith('Als Jahr der Zahlung ist 2025 angegeben'))).toBe(true)
   })
   test('außerhalb der Spanne Beginn − 1 bis Ende + 3 eine Rückfrage statt einer Ablehnung (R-4)', () => {
     expect(paidOnChange(null, { paidOn: '2030-01-15', taxYear: null, period: '2026-01' }, span).some((q) => q.includes('außerhalb der üblichen Spanne von 2025 bis 2029'))).toBe(true)

@@ -117,7 +117,8 @@ läuft die App ohne Clone des Repos. Bei PRs, die Dockerfile, Abhängigkeiten od
 ändern, baut er nur zur Probe (ohne Login und Push). Die Laufzeit-Stufe übernimmt `server`,
 `client/dist` **und `shared`**. Der Server lädt aus dem Ordner seit #140 auch einen Helfer für die
 Laufzeit (`shared/heating.ts`, seit #141 auch `shared/allocation.ts` und `shared/duplicates.ts`,
-seit #170 `shared/costItem.ts`, `shared/assessment.ts` und `shared/categories.ts`); ohne den
+seit #170 `shared/costItem.ts`, `shared/assessment.ts` und `shared/categories.ts`, seit #255
+`shared/paidOn.ts`); ohne den
 Ordner startete das Image nicht mehr, und die Prüfläufe
 gegen den Start aus dem Quellcode bemerkten es nicht, nur die Prüfung des Images selbst.
 
@@ -2612,12 +2613,21 @@ die ganze fachliche Komplexität:
   Jahr des Beginns des Zeitraums; die Rangfolge selbst steht als `statedOutflowYear` in
   [shared/paidOn.ts](shared/paidOn.ts), damit Formular und Schreibwege (Wechsel des Zeitraums und
   der Heizperiode, Heizposition aus der Belegbuchung, Übernahme aus dem Vorjahr) dasselbe meinen.
-  Keine andere Stelle leitet ein Steuerjahr aus `taxYear` oder `paidOn` ab. `taxPartsFor` sucht
+  Keine andere Stelle leitet ein Steuerjahr aus `taxYear` oder `paidOn` ab; nur zur Auswahl lesen
+  `taxPartsFor` (Suchfenster) und die Rückfrage „Jahr der Zahlung“ beim Aufteilen in Kosten.tsx das
+  Jahr des Datums. `taxPartsFor` sucht
   zusätzlich in den Zeiträumen jeder Position, die im Steuerjahr bezahlt ist, auch nach dem Jahr
   (vorab bezahlt) und Jahre davor (späte Nachzahlung); der private Teil kommt aus der Abrechnung
   ihres Zeitraums. Ein Datum, das das wirksame Jahr ändert, einem gesetzten `taxYear` widerspricht
   oder außerhalb von Beginn − 1 bis Ende + 3 liegt, wird nur mit `confirmPaidOn: true` gespeichert
-  (`PaidOnQuestion`, 409 mit `question: 'paidOn'`; dieselben Sätze zeigt das Formular). Kein Datum
+  (`PaidOnQuestion`, 409 mit `question: 'paidOn'`; dieselben Sätze zeigt das Formular). Beim Aufteilen
+  zählt jeder Teil mit seinem eigenen Zeitraum (eine Jahresversicherung 07/2025 bis 06/2026, bezahlt
+  am 01.07.2025, ändert das Jahr des Teils 2026): Server und Formular fragen dafür mit denselben
+  Teilen der Vorschau (`splitPaidOnQuestions`, die Vorschau nennt je Teil `startYear`/`endYear`).
+  Kommt trotzdem eine 409 mit `question: 'paidOn'`, zeigt das Formular sie als Rückfrage und
+  wiederholt mit Bestätigung. Beim Wechsel des
+  Abrechnungszeitraums behält eine datierte Position ihr Steuerjahr (`keepsTaxYear` in
+  periodChange.ts): keine Frage nach dem Jahr, keine angekündigte Verschiebung. Kein Datum
   bei `external` (Hausgeld, abgelehnt mit Hinweis) und am Abzug beim Betriebsstrom (geleert, er
   folgt seiner Rechnung, auch deren Datum). Die Belegbuchung belegt es nie vor: Das Rechnungsdatum
   ist kein Zahlungsdatum. Teilzahlungen bildet das Datum nicht ab, die kommen mit #292 über

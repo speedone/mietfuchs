@@ -636,8 +636,8 @@ describe('Leistungszeitraum, Jahr der Zahlung, Brennstoff (#208)', () => {
 
   test('Die Rückfrage nennt die Beträge je Zeitraum; ohne Jahr der Zahlung oder bei Abschluss eine Meldung', () => {
     const parts: SplitPreviewPart[] = [
-      { period: periodKey('2025-01'), label: '01.01.–30.04.2025', days: 120, amountCents: 15781, labor35aCents: null, description: 'G', needsTaxYear: false, closed: false },
-      { period: periodKey('2025-05'), label: '2025/2026', days: 245, amountCents: 32219, labor35aCents: null, description: 'G', needsTaxYear: true, closed: false },
+      { period: periodKey('2025-01'), label: '01.01.–30.04.2025', days: 120, amountCents: 15781, labor35aCents: null, description: 'G', needsTaxYear: false, closed: false, startYear: 2025, endYear: 2025 },
+      { period: periodKey('2025-05'), label: '2025/2026', days: 245, amountCents: 32219, labor35aCents: null, description: 'G', needsTaxYear: true, closed: false, startYear: 2025, endYear: 2026 },
     ]
     // `euro` setzt vor das Eurozeichen ein geschütztes Leerzeichen; die Erwartung nimmt es deshalb von dort.
     expect(splitDecision(parts, '2025')).toEqual({ message: `Die Rechnung betrifft 2 Abrechnungszeiträume. Mietfuchs legt je Zeitraum eine Position an: 01.01.–30.04.2025: ${euro(15781)}, 2025/2026: ${euro(32219)}.` })
@@ -652,8 +652,8 @@ describe('Leistungszeitraum, Jahr der Zahlung, Brennstoff (#208)', () => {
   // immer im Zeitraum seiner Stromrechnung; die Rückfrage verlangt deshalb kein Jahr, sondern sagt, warum es nicht geht.
   test('Abzug beim Betriebsstrom über zwei Zeiträume: kein Jahr verlangt, sondern der Grund', () => {
     const parts: SplitPreviewPart[] = [
-      { period: periodKey('2025-01'), label: '01.01.–30.04.2025', days: 120, amountCents: -1578, labor35aCents: null, description: 'A', needsTaxYear: false, closed: false },
-      { period: periodKey('2025-05'), label: '2025/2026', days: 245, amountCents: -3222, labor35aCents: null, description: 'A', needsTaxYear: true, closed: false },
+      { period: periodKey('2025-01'), label: '01.01.–30.04.2025', days: 120, amountCents: -1578, labor35aCents: null, description: 'A', needsTaxYear: false, closed: false, startYear: 2025, endYear: 2025 },
+      { period: periodKey('2025-05'), label: '2025/2026', days: 245, amountCents: -3222, labor35aCents: null, description: 'A', needsTaxYear: true, closed: false, startYear: 2025, endYear: 2026 },
     ]
     for (const taxYear of ['', '2025']) {
       const d = splitDecision(parts, taxYear, true)

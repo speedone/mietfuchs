@@ -51,7 +51,7 @@ import { IBAN_LABELS } from '../../../shared/iban.ts'
 import { lastPerFrom, straightenPersonHistory } from '../schedule.ts'
 import { isSplitPart, splitByService } from '../serviceSplit.ts'
 import { tenancyStamp } from '../../../shared/tenancyStamp.ts'
-import { allowsPaidOn, isPaidOnDate, paidOnQuestions, type YearSpan } from '../../../shared/paidOn.ts'
+import { allowsPaidOn, isPaidOnDate, paidOnQuestions, splitPaidOnQuestions, type YearSpan } from '../../../shared/paidOn.ts'
 import { statedOutflowYear } from '../outflow.ts'
 import type { Database, Executor } from './client.ts'
 import {
@@ -2326,6 +2326,8 @@ export async function previewCostItemSplit(db: Database, propertyId: string | nu
     description: p.description,
     needsTaxYear: spansTwoYears(p.period),
     closed: closed.has(p.period.key),
+    startYear: Number(p.period.from.slice(0, 4)),
+    endYear: Number(p.period.to.slice(0, 4)),
   }))
 }
 
@@ -2342,16 +2344,11 @@ export async function saveCostItemSplit(db: Database, propertyId: string | null,
   if (zu) throw new PeriodConflict(`Die Abrechnung ${zu.label} ist abgeschlossen und bleibt, wie sie verschickt wurde. Öffnen Sie sie wieder, wenn die Rechnung anteilig hinein soll.`)
   const { base } = await splitBase(db, propertyId, body, currentId)
   // Das Zahlungsdatum gilt für die ganze Rechnung, also für jeden Teil (#255 PR 3); gefragt wird einmal, mit den Sätzen
-  // aller Teile, bevor etwas geschrieben ist. Der Wächter der Teile fragt danach nicht mehr (`splitPart`).
+  // aller Teile, bevor etwas geschrieben ist, und mit derselben Regel wie das Formular (`splitPaidOnQuestions`). Der
+  // Wächter der Teile fragt danach nicht mehr (`splitPart`).
   const current = currentId === null ? null : (await readCostItems(db)).find((c) => c.id === currentId) ?? null
-  if (raw(body, 'confirmPaidOn') !== true && (current === null || current.paidOn !== base.paidOn)) {
-    const questions: string[] = []
-    for (const p of parts) {
-      const part = { ...base, period: p.period, taxYear: p.needsTaxYear ? base.taxYear : undefined }
-      for (const q of paidOnQuestions(current !== null && current.period === p.period ? current : null, part, await yearSpanOf(db, part))) {
-        if (!questions.includes(q)) questions.push(q)
-      }
-    }
+  if (raw(body, 'confirmPaidOn') !== true) {
+    const questions = splitPaidOnQuestions(current, base, parts)
     if (questions.length > 0) throw new PaidOnQuestion(questions.join(' '))
   }
   const ids = await db.transaction((tx) => writeCostItemParts(tx, base, parts.map((p) => ({

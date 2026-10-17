@@ -13,6 +13,7 @@
 //   Überweisung der Eingang des gedeckten Auftrags bei der Bank (H 11 EStH 2024 „Überweisung“), bei der Lastschrift der
 //   Einzug (BFH VIII B 58/15). Deshalb belegt die Belegbuchung das Feld nie vor.
 import type { CostItem } from './types.ts'
+import { isNotAllocable } from './categories.ts'
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/
 
@@ -32,9 +33,11 @@ export function statedOutflowYear(item: { paidOn?: string | null; taxYear?: numb
 }
 
 // Wo es kein Zahlungsdatum gibt (R-6, Abzug #267): Hausgeld laut Gemeinschaftsabrechnung trägt den Anteil eines Jahres
-// laut Abrechnung, keine einzelne Zahlung; der Abzug beim Betriebsstrom fließt mit seiner Stromrechnung ab.
-export const allowsPaidOn = (item: Pick<CostItem, 'key'> & { operatingPower?: CostItem['operatingPower'] | null }): boolean =>
-  item.key !== 'external' && item.operatingPower !== 'deduction'
+// laut Abrechnung, keine einzelne Zahlung; der Abzug beim Betriebsstrom fließt mit seiner Stromrechnung ab. Bei einer
+// nicht umlagefähigen Kostenart zählt der Schlüssel nicht (`costItemBody` speichert einen neutralen), ein
+// stehengebliebenes `external` also auch nicht (Durchsicht K1).
+export const allowsPaidOn = (item: Pick<CostItem, 'key'> & { category?: string; operatingPower?: CostItem['operatingPower'] | null }): boolean =>
+  (item.key !== 'external' || (item.category !== undefined && isNotAllocable(item.category))) && item.operatingPower !== 'deduction'
 
 // Die übliche Spanne (R-4): vom Jahr vor dem Beginn (Vorauszahlung im Dezember) bis drei Jahre nach dem Ende (späte
 // Nachzahlung, etwa nach einem Grundsteuerbescheid, § 30 Abs. 1 GrStG). Außerhalb fragt Mietfuchs nach, statt
@@ -51,6 +54,13 @@ const fmt = (iso: string): string => iso.split('-').reverse().join('.')
 // die Jahre des Zeitraums, in dem `after` steht (bei einer Heizposition unter eigener Heizperiode deren Jahre).
 // Gefragt wird nur, wenn sich das Datum ändert: Wer nur den Betrag berichtigt, bestätigt nichts erneut.
 export function paidOnQuestions(before: Dated | null, after: Dated, span: YearSpan): string[] {
+  return withAdvice(paidOnFindings(before, after, span))
+}
+
+const ADVICE = 'Haben Sie die Steuererklärung eines betroffenen Jahres schon abgegeben, besprechen Sie die Änderung mit Ihrem Steuerberater oder Finanzamt.'
+const withAdvice = (findings: string[]): string[] => (findings.length > 0 ? [...findings, ADVICE] : [])
+
+function paidOnFindings(before: Dated | null, after: Dated, span: YearSpan): string[] {
   const was = before?.paidOn ?? null
   const now = after.paidOn ?? null
   if (was === now) return []
@@ -71,10 +81,28 @@ export function paidOnQuestions(before: Dated | null, after: Dated, span: YearSp
       out.push(`Das Datum ${fmt(now)} liegt außerhalb der üblichen Spanne von ${s.from} bis ${s.to} für diesen Abrechnungszeitraum. Bitte prüfen Sie das Jahr.`)
     }
   }
-  if (out.length > 0) {
-    out.push('Haben Sie die Steuererklärung eines betroffenen Jahres schon abgegeben, besprechen Sie die Änderung mit Ihrem Steuerberater oder Finanzamt.')
-  }
   return out
+}
+
+// Dieselbe Frage beim Aufteilen einer Rechnung über mehrere Abrechnungszeiträume (#208, Durchsicht von PR 3, M1): Das
+// Datum gilt für die ganze Rechnung, also für jeden Teil, und jeder Teil zählt mit seinem eigenen Zeitraum. Ein Teil in
+// einem anderen Kalenderjahr hätte ohne Datum sein eigenes Jahr; das Datum kann also das Steuerjahr eines Teils ändern,
+// auch wenn es im Jahr des Formulars liegt. Server (`saveCostItemSplit`) und Formular (Kosten.tsx, nach der Vorschau)
+// fragen beide hier, mit den Teilen der Vorschau (`SplitPreviewPart` trägt die Jahre ihres Zeitraums). Ein Teil über
+// zwei Kalenderjahre trägt das Jahr der Zahlung des Rumpfes, einer in einem Kalenderjahr keines. Gefragt wird nur, wenn
+// sich das Datum gegenüber der gespeicherten Position ändert; verglichen wird ein Teil mit ihr, wenn er in ihrem Zeitraum
+// liegt, sonst wie neu angelegt.
+export type SplitPartSpan = YearSpan & { period: string; needsTaxYear: boolean }
+export function splitPaidOnQuestions(current: Dated | null, base: Dated, parts: readonly SplitPartSpan[]): string[] {
+  if (current !== null && (current.paidOn ?? null) === (base.paidOn ?? null)) return []
+  const out: string[] = []
+  for (const p of parts) {
+    const part = { ...base, period: p.period, taxYear: p.needsTaxYear ? base.taxYear ?? null : null }
+    for (const q of paidOnFindings(current !== null && current.period === p.period ? current : null, part, p)) {
+      if (!out.includes(q)) out.push(q)
+    }
+  }
+  return withAdvice(out)
 }
 
 // Der Hinweis zur Zehn-Tage-Regel (R-8, § 11 Abs. 2 Satz 2 in Verbindung mit Abs. 1 Satz 2 EStG): nur ein Hinweis,

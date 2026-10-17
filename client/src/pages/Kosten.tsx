@@ -54,8 +54,9 @@ import TaxYearSelect from '../components/TaxYearSelect'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 import { hotWaterOf } from '../../../shared/heatingPeriod.ts'
 import { serviceReceivesOperatingPower } from '../../../shared/operatingPower.ts'
+import { splitPaidOnQuestions } from '../../../shared/paidOn.ts'
 import { alreadyCarried, carryKeyDetails, carryOverBody, carryOverForm, carryOverRows, withCarryAmount, type CarryRow } from '../carryOver'
-import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
+import { api, ApiError, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { aiSummary } from '../aiForm'
 import { useEvaluationQueue } from '../evaluationQueue'
 import AssessmentReview from '../components/AssessmentReview'
@@ -393,7 +394,23 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
       if (!ok) return
       confirmPaidOn = true
     }
-    const body = JSON.stringify({ ...built.body, ...heating, ...(confirmPaidOn ? { confirmPaidOn: true } : {}) })
+    const bodyOf = (): string => JSON.stringify({ ...built.body, ...heating, ...(confirmPaidOn ? { confirmPaidOn: true } : {}) })
+    const body = bodyOf()
+    // Antwortet der Server dennoch mit seiner Rückfrage (409, `question: 'paidOn'`), weil sich der Bestand seit dem
+    // Laden geändert hat, wird sie zur Rückfrage der Seite, mit seinen Sätzen; bestätigt geht derselbe Rumpf mit
+    // `confirmPaidOn` noch einmal hinaus (Durchsicht von #255 PR 3, M1).
+    const sendConfirmed = async (send: (b: string) => Promise<unknown>, body: string): Promise<boolean> => {
+      try {
+        await send(body)
+        return true
+      } catch (e) {
+        if (!(e instanceof ApiError && e.status === 409 && e.data.question === 'paidOn') || confirmPaidOn) throw e
+        const ok = await confirm({ title: 'Steuerjahr ändert sich', message: e.message, confirmLabel: 'So speichern', cancelLabel: 'Abbrechen' })
+        if (!ok) return false
+        await send(JSON.stringify({ ...JSON.parse(body), confirmPaidOn: true }))
+        return true
+      }
+    }
     // Eine kalte Rechnung über zwei Abrechnungszeiträume (#208, Entwurf 3.4): erst die Vorschau,
     // dann nach Rückfrage alle Teile auf einmal.
     if (needsSplitCheck(built.body, editing ? items.find((i) => i.id === form.id) : null)) {
@@ -409,7 +426,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
       }
       if (parts.length > 1) {
         // Ein Zahlungsdatum beantwortet die Frage nach dem Jahr der Zahlung ebenso (#255 PR 3).
-        const decision = splitDecision(parts, form.taxYear !== '' ? form.taxYear : form.paidOn.slice(0, 4), form.operatingPower === 'deduction')
+        const decision = splitDecision(parts, form.taxYear !== '' ? form.taxYear : showsPaidOn(form) ? form.paidOn.slice(0, 4) : '', form.operatingPower === 'deduction')
         if ('error' in decision) {
           setNeedsTaxYear(decision.needsTaxYear)
           setError(decision.error)
@@ -417,8 +434,19 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
         }
         const ok = await confirm({ title: 'Rechnung aufteilen?', message: decision.message, confirmLabel: 'Aufteilen und speichern', cancelLabel: 'Abbrechen' })
         if (!ok) return
+        // Das Datum gilt für jeden Teil, und jeder Teil zählt mit seinem eigenen Zeitraum (Durchsicht M1): gefragt wird
+        // mit den Teilen der Vorschau und derselben Regel wie der Server (`splitPaidOnQuestions`).
+        if (!confirmPaidOn) {
+          const asked = splitPaidOnQuestions(editing ? items.find((i) => i.id === form.id) ?? null : null, built.body, parts)
+          if (asked.length > 0) {
+            const sure = await confirm({ title: 'Steuerjahr ändert sich', message: asked.join(' '), confirmLabel: 'So speichern', cancelLabel: 'Abbrechen' })
+            if (!sure) return
+            confirmPaidOn = true
+          }
+        }
         try {
-          await api(editing ? `/api/costItems/${form.id}/split` : withProperty('/api/costItems/split', propertyId), { method: editing ? 'PUT' : 'POST', body })
+          const done = await sendConfirmed((b) => api(editing ? `/api/costItems/${form.id}/split` : withProperty('/api/costItems/split', propertyId), { method: editing ? 'PUT' : 'POST', body: b }), bodyOf())
+          if (!done) return
         } catch (e) {
           setError(errorText(e))
           return
@@ -451,8 +479,10 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     }
     // Lehnt der Server ab (#146), bleibt der Dialog offen und zeigt seinen Satz.
     try {
-      if (editing) await api(`/api/costItems/${form.id}`, { method: 'PUT', body })
-      else await api(withProperty('/api/costItems', propertyId), { method: 'POST', body })
+      const done = await sendConfirmed((b) => editing
+        ? api(`/api/costItems/${form.id}`, { method: 'PUT', body: b })
+        : api(withProperty('/api/costItems', propertyId), { method: 'POST', body: b }), body)
+      if (!done) return
     } catch (e) {
       setError(errorText(e))
       return

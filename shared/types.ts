@@ -276,8 +276,8 @@ export type CostItem = {
   serviceFrom?: string
   serviceTo?: string
   // Das Jahr der Zahlung für die Steuer (#208, Entwurf 3.10). Fehlt es, liegt der Zeitraum der
-  // Position in einem Kalenderjahr, und es ist dieses. Eine Vereinfachung, siehe CLAUDE.md
-  // („Nicht dem Abflussprinzip folgen die Werbungskosten“).
+  // Position in einem Kalenderjahr, und es ist dieses. Ein Zahlungsdatum (`paidOn`) geht vor, siehe CLAUDE.md
+  // („Dem Abflussprinzip folgen die Werbungskosten nur mit Zahlungsdatum“).
   taxYear?: number
   // Das Zahlungsdatum für die Steuer (#255, PR 3), 'JJJJ-MM-TT': der Tag, an dem die ganze Position bezahlt (bei
   // einer Gutschrift: erstattet) wurde, § 11 Abs. 2 EStG. Geht dem Jahr der Zahlung und dem Abrechnungsjahr vor
@@ -346,6 +346,10 @@ export type SplitPreviewPart = {
   description: string
   needsTaxYear: boolean
   closed: boolean
+  // Die Kalenderjahre von Beginn und Ende des Zeitraums dieses Teils (#255 PR 3, Durchsicht M1): Mit ihnen fragt das
+  // Formular nach dem Zahlungsdatum wie der Server (`splitPaidOnQuestions` in shared/paidOn.ts).
+  startYear: number
+  endYear: number
 }
 
 // Die Vorschau eines Wechsels des Abrechnungszeitraums (#208, Entwurf 3.6). `blocked`: Gründe, aus

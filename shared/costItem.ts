@@ -10,7 +10,7 @@ import type { CostKey, ExternalBasis, ExternalMeasure, HeatingPart, HeatingTarge
 import { HEATING_CATEGORY } from './heating.ts'
 import { PARTICIPANT_KEYS } from './allocation.ts'
 import { isNotAllocable } from './categories.ts'
-import { isPaidOnDate } from './paidOn.ts'
+import { allowsPaidOn, isPaidOnDate } from './paidOn.ts'
 
 // Ein Betrag wie in der Oberfläche (client/src/api.ts, fmtEuro): „612,40 €“.
 export const euro = (cents: number): string => (cents / 100).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })
@@ -179,7 +179,7 @@ export function costItemBody(d: CostItemDraft, units: readonly Unit[], period: P
     serviceFrom: d.serviceFrom,
     serviceTo: d.serviceTo,
     taxYear: d.taxYear,
-    paidOn: d.key === 'external' && !isNotAllocable(d.category) ? null : (d.paidOn ?? null),
+    paidOn: allowsPaidOn({ key: d.key, category: d.category }) ? (d.paidOn ?? null) : null,
     // Das Merkmal gibt es nur bei Heizkosten (A1); bei anderer Kostenart fällt es weg, wie eine
     // Zuordnung, die zum Schlüssel nicht gehört.
     heatingPart: d.category === HEATING_CATEGORY ? d.heatingPart : null,

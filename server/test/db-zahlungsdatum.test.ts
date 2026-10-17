@@ -190,3 +190,24 @@ test('Belegbuchung: das Rechnungsdatum ist kein Zahlungsdatum, eine gebuchte Pos
   if (!('body' in built)) assert.fail(built.error)
   assert.equal(built.body.paidOn, null)
 })
+
+// Durchsicht S1: Beim Wechsel des Abrechnungszeitraums bleibt das Datum stehen und geht vor; das Steuerjahr einer
+// datierten Position verschiebt sich also nie. Die Vorschau kündigt deshalb nichts an, fragt kein Jahr der Zahlung und
+// wählt die Vorgabe nicht aus einer Verschiebung, die es nicht gibt. Beide Fälle aus R-9.
+test('Wechsel des Zeitraums: mit Datum keine angekündigte Verschiebung des Steuerjahres (R-9, beide Fälle)', async () => {
+  for (const paidOn of ['2026-02-10', '2024-12-01']) {
+    await withDatabase(async (opened) => {
+      await wohnung(opened)
+      await opened.write((db) => createEntity(db, 'costItems', 'v', { ...base, period: '2025-01', paidOn, confirmPaidOn: true }))
+      const rules: PeriodRules = { startMonth: 1, changes: ['2025-05'] }
+      const preview = (await opened.read((db) => previewPeriodChange(db, 'objekt-1', rules, '2026-10-05'))) ?? assert.fail('kein Objekt')
+      assert.ok(preview.groups.length > 0, 'eine Gruppe')
+      for (const g of preview.groups) {
+        assert.deepEqual(g.taxShifts, [], `${paidOn}: ${JSON.stringify(g.taxShifts)}`)
+        assert.ok(!(g.split?.notes ?? []).some((n) => n.includes('für die Steuer')), `${paidOn}: ${JSON.stringify(g.split?.notes)}`)
+        if (g.split !== null) assert.equal(g.suggested, 'split', paidOn)
+      }
+      assert.deepEqual(preview.taxYears.filter((t) => t.costItemId === 'v'), [], `${paidOn}: kein Jahr der Zahlung gefragt`)
+    })
+  }
+})

@@ -1,5 +1,6 @@
 import { HEATING_PART_OPTIONS, paidOnTenDayHint, showsPaidOn, type ItemForm } from '../costForm'
 import Term from './Term'
+import { isNotAllocable } from '../types'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 
 // Leistungszeitraum, Jahr der Zahlung und „Brennstoff/Energie“ einer Kostenposition (#208).
@@ -99,20 +100,20 @@ export default function CostPeriodFields({ form, onChange, showTaxYear, years, b
           </small>
           {paidOnTenDayHint(form) && (
             <small className="muted">
-              Zahlung um den Jahreswechsel: Eine regelmäßig wiederkehrende Zahlung, etwa ein Versicherungsbeitrag oder ein Abschlag, die bis zehn Tage
+              Zahlung um den Jahreswechsel: Eine regelmäßig wiederkehrende Zahlung, etwa ein Abschlag oder, nach herrschender Auslegung, auch ein jährlicher Versicherungsbeitrag, die bis zehn Tage
               vor oder nach dem Jahreswechsel fällig ist und in dieser Zeit gezahlt wurde, zählt zu dem Jahr, zu dem sie gehört (§ 11 Abs. 2 Satz 2 in
               Verbindung mit Abs. 1 Satz 2 EStG). Mietfuchs rechnet das nicht, denn es kennt die Fälligkeit nicht. Trifft es zu, tragen Sie die Zahlung in
-              Ihrer Steuererklärung in diesem Jahr ein.
+              Ihrer Steuererklärung in dem Jahr ein, zu dem sie gehört, nicht im Jahr des Datums.
             </small>
           )}
           {paidOnChanges.length > 0 && <small className="notice" role="status">{paidOnChanges.join(' ')} Vor dem Speichern fragt Mietfuchs nach.</small>}
         </label>
       )}
-      {form.key === 'external' && form.operatingPower !== 'deduction' && (
+      {form.key === 'external' && !isNotAllocable(form.category) && form.operatingPower !== 'deduction' && (
         <p className="muted">
           Bezahlt am (für die Steuer): Bei Hausgeld laut Gemeinschaftsabrechnung gibt es kein Datum, denn die Position ist Ihr Anteil laut
           Hausgeldabrechnung und keine einzelne Zahlung. Für die Steuer zählen die Vorschüsse im Jahr ihrer Zahlung, eine Nachzahlung oder ein
-          Guthaben aus der Abrechnung in dem Jahr, in dem Sie zahlen bzw. die Gutschrift erhalten; das folgt aus § 11 EStG, ein Urteil eigens dazu gibt es nicht. Die Zuführung zur Erhaltungsrücklage zählt erst, wenn die Gemeinschaft sie
+          Guthaben aus der Abrechnung in dem Jahr, in dem Sie zahlen bzw. die Gutschrift erhalten; das folgt aus § 11 EStG, ein Urteil des BFH eigens dazu ist nicht bekannt. Die Zuführung zur Erhaltungsrücklage zählt erst, wenn die Gemeinschaft sie
           für Erhaltung ausgibt (BFH, Urteil vom 14.01.2025, IX R 19/24). Mietfuchs setzt den Anteil laut Hausgeldabrechnung an; weicht das ab, berichtigen
           Sie es in der Steuererklärung.
         </p>
