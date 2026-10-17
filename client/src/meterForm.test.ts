@@ -48,6 +48,8 @@ test('#342 S2: ein gespeicherter Zähler ohne Einheit bekommt keine Vorgabe; ges
   // Umbenennen ohne Wahl: die Einheit bleibt leer, sie wird nicht still „kWh“.
   expect(meterBody({ ...leer, name: 'Wärme Keller' }, null)).toMatchObject({ body: { name: 'Wärme Keller', unit: '' } })
   expect(meterBody({ ...leer, unit: 'MWh' }, null)).toMatchObject({ body: { unit: 'MWh' } })
+  // S-N1: nach einem Spartenwechsel nur mit gewählter Einheit.
+  expect(meterBody(withMeterType(leer, 'strom'), null)).toEqual({ error: 'Bitte wählen Sie die Einheit, die der Zähler zeigt.' })
   // Ein neuer Zähler bekommt weiter die Vorgabe der Sparte, und ohne Einheit lässt er sich nicht speichern.
   expect(emptyMeterForm().unit).toBe('m³')
   expect(meterBody({ ...emptyMeterForm(), name: 'Neu', unitId: 'eg', type: 'waerme', unit: '' }, null)).toEqual({ error: 'Bitte wählen Sie die Einheit, die der Zähler zeigt.' })
@@ -127,7 +129,7 @@ test('Bearbeiten: was gespeichert ist, steht wieder im Formular', () => {
   expect(meterToForm({
     id: 'm1', propertyId: 'objekt-1', name: 'Speicher', unitId: null, type: 'waerme', unit: 'kWh',
     heatingPlantId: 'hp1', heatingRole: 'dhwHeat', remoteReadable: false, installedOn: '2022-03-01',
-  })).toEqual({ id: 'm1', name: 'Speicher', unitId: '', type: 'waerme', meterNumber: '', unit: 'kWh', keptUnit: 'kWh', unitDropped: '', heatingRole: 'dhwHeat', keptRole: 'dhwHeat', remote: 'no', installedOn: '2022-03-01', heatingPlantId: 'hp1', hca: { scale: '', factor: '' }, calibratedUntil: '' })
+  })).toEqual({ id: 'm1', name: 'Speicher', unitId: '', type: 'waerme', meterNumber: '', unit: 'kWh', keptUnit: 'kWh', unitDropped: '', keptType: 'waerme', heatingRole: 'dhwHeat', keptRole: 'dhwHeat', remote: 'no', installedOn: '2022-03-01', heatingPlantId: 'hp1', hca: { scale: '', factor: '' }, calibratedUntil: '' })
 })
 
 // Sichtprüfung E19: „Gehört zur Heizanlage?“ stand auch bei Kaltwasser. Ein Wasserzähler ist weder

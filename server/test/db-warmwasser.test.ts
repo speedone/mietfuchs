@@ -139,6 +139,16 @@ test('#342: der Vorschlag des Volumens rechnet einen Zähler in Litern in m³ um
     // Faktor 1 wie vor #342: 32,5 + 5.500; die Abrechnung warnt dazu (meter.unit-unknown).
     assert.equal(gemischt?.hotWaterBasis.volumeFromMetersM3, 5532.5)
     assert.equal(gemischt?.hotWaterBasis.volumeMissing, null)
+    // Ein stillgelegter Zähler in einer anderen Einheit: Er verhindert den Vorschlag über den fehlenden Stand, nicht
+    // über die Einheit, und rechnet nicht mit.
+    await opened.write(async (db) => {
+      await createEntity(db, 'meters', 'ww-alt', { propertyId: 'objekt-1', unitId: 'a', name: 'WW A alt', type: 'warmwasser', unit: 'm³' })
+      await createEntity(db, 'readings', 'r5', { meterId: 'ww-alt', date: '2019-12-31', value: 0 })
+      await createEntity(db, 'readings', 'r6', { meterId: 'ww-alt', date: '2020-12-31', value: 9 })
+    })
+    const [alt] = await opened.read((db) => heatingPeriodViews(db, 'hp', '2025')) ?? assert.fail('keine Anlage')
+    assert.equal(alt?.hotWaterBasis.volumeFromMetersM3, null)
+    assert.match(alt?.hotWaterBasis.volumeMissing ?? '', /fehlt ein Stand: „WW A alt“ zum 31\.12\.2025\./)
   })
 })
 
