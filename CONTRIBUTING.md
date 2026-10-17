@@ -67,8 +67,5 @@ Beispielwerte ersetzen — ein Issue ist öffentlich und dauerhaft sichtbar.
 
 ## Lizenz
 
-Mietfuchs steht unter der [AGPL-3.0](LICENSE) und wird daneben unter einer kommerziellen
-Lizenz angeboten. Damit das möglich bleibt, braucht jeder Beitrag die Zustimmung zur
-[Beitragsvereinbarung](CLA.md). Du behältst die Rechte an deinem Beitrag; du räumst nur ein
-einfaches Nutzungsrecht ein, das auch die kommerzielle Lizenz umfasst. Zugestimmt wird mit
-dem Haken in der Vorlage des Pull Requests.
+Beiträge stehen wie das Projekt unter der [AGPL-3.0](LICENSE). Was bis Version 0.11.3 unter
+der MIT-Lizenz beigetragen wurde, steht zusätzlich weiter unter ihr ([LICENSE-MIT](LICENSE-MIT)).

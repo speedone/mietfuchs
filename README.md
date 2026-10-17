@@ -585,10 +585,9 @@ Online-Dienst anbietet, muss ihren vollständigen Quellcode unter derselben Lize
 Für dich als Vermieter, der Mietfuchs auf dem eigenen Rechner benutzt, ergibt sich daraus keine
 Pflicht.
 
-Wer Mietfuchs in ein eigenes Produkt einbauen oder anbieten will, ohne den Quellcode
-offenzulegen, bekommt dafür eine **kommerzielle Lizenz**; Anfrage über
-[GitHub](https://github.com/speedone). Bis Version 0.11.3 stand Mietfuchs unter der MIT-Lizenz,
-und für diese Versionen gilt sie weiter.
+Bis Version 0.11.3 stand Mietfuchs unter der MIT-Lizenz, und für diese Versionen gilt sie
+weiter. Code, der bis dahin unter der MIT-Lizenz beigetragen wurde, steht zusätzlich weiter
+unter ihr; ihr Text liegt in [LICENSE-MIT](LICENSE-MIT).
 
 Das Tool unterstützt bei der Erstellung der Abrechnung, ist aber
 **keine Rechts- oder Steuerberatung**; die fachliche und rechtliche Prüfung der Ergebnisse

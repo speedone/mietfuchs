@@ -25,11 +25,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 ### Geändert
 
 - Mietfuchs steht ab dieser Version unter der GNU Affero General Public License, Version 3
-  (AGPL-3.0), statt unter der MIT-Lizenz, und wird daneben unter einer kommerziellen Lizenz
-  angeboten. Für Vermieter, die Mietfuchs auf dem eigenen Rechner nutzen, ändert sich nichts.
-  Wer eine veränderte Fassung weitergibt oder als Online-Dienst anbietet, muss ihren Quellcode
-  offenlegen. Versionen bis 0.11.3 bleiben unter der MIT-Lizenz. Beiträge brauchen die
-  Zustimmung zur neuen [Beitragsvereinbarung](CLA.md).
+  (AGPL-3.0), statt unter der MIT-Lizenz. Für Vermieter, die Mietfuchs auf dem eigenen Rechner
+  nutzen, ändert sich nichts. Wer eine veränderte Fassung weitergibt oder als Online-Dienst
+  anbietet, muss ihren Quellcode unter derselben Lizenz offenlegen. Versionen bis 0.11.3 bleiben
+  unter der MIT-Lizenz.
 
 ### Behoben
 
