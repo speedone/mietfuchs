@@ -76,33 +76,36 @@ export function shareText(mo: Pick<RentMonth, 'share'>): string | null {
 }
 
 // Bis wann die Miete des laufenden Monats zu zahlen ist, als **Auskunft** über den Karten: nach der Regel
-// im Rechtsregister und den Feiertagen am Ort des Objekts (rentDueDate in shared/deadlines.ts).
-// Die Rechnung des Mietkontos bleibt, wie sie ist: Als Rückstand zählt der laufende Monat erst ab dem
-// nächsten (#133), auch nach diesem Tag. Der Satz sagt das, sonst widerspräche er den gestrichelten
-// Monaten. Nur im laufenden Jahr, örtlich wie showDecemberNote; ohne Bundesland mit dem Hinweis, dass
-// dann nur die Feiertage aller Länder zählen, die Frist also einen Tag früher erscheinen kann, und mit
-// Bundesland mit einem Hinweis auf jeden Feiertag einzelner Gemeinden, der die Frist dort verschiebt.
+// im Rechtsregister und den Feiertagen am Ort des Objekts (rentDueDate in shared/deadlines.ts). Kurz
+// eine Zeile (`text`), die Einzelheiten zum Aufklappen (`details`): Regel, Feiertage am Ort bzw. nur
+// bundesweit ohne Bundesland, ein Feiertag einzelner Gemeinden, der die Frist dort verschiebt, und die
+// beiden Einschränkungen (Vertrag, Überweisungsauftrag). Über den Rückstand sagt die Auskunft nichts:
+// Das Mietkonto zählt den laufenden Monat noch pauschal erst ab dem nächsten (#133); den Fälligkeitstag
+// dort einzusetzen ist ein eigener Schritt. Nur im laufenden Jahr, örtlich wie showDecemberNote.
 const MONTH_NAMES = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember']
 const WEEKDAYS = ['So.', 'Mo.', 'Di.', 'Mi.', 'Do.', 'Fr.', 'Sa.']
 
-export function rentDueNote(year: number, today: Date, state: FederalState | null | undefined): string | null {
+export type RentDueNote = { text: string; details: string }
+
+export function rentDueNote(year: number, today: Date, state: FederalState | null | undefined): RentDueNote | null {
   if (year !== today.getFullYear()) return null
   const month = today.getMonth() + 1
   const iso = (d: number) => `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`
   const due = rentDueDate(iso(1).slice(0, 7), state ?? null)
   const [, m, d] = due.split('-')
-  const passed = iso(today.getDate()) > due
   const where = state ? `nach den Feiertagen in ${stateName(state)}` : 'nur nach den bundesweiten Feiertagen, weil beim Objekt kein Bundesland eingetragen ist'
   // Feiertage einzelner Gemeinden zählt rentDueDate nicht mit (shared/holidays.ts). Fällt einer auf einen
-  // Werktag bis zum Fälligkeitstag, ist es dort ein Werktag später; das steht dabei, sonst hielte der
-  // Vermieter in diesen Gemeinden eine pünktliche Zahlung für verspätet.
+  // Werktag bis zum Fälligkeitstag, ist es dort ein Werktag später; das steht in den Einzelheiten, sonst
+  // hielte der Vermieter in diesen Gemeinden eine pünktliche Zahlung für verspätet.
   const local = state
     ? localHolidaysOf(year, state).filter((h) => h.date >= iso(1) && h.date <= due && weekdayOf(h.date) !== 0 && weekdayOf(h.date) !== 6 && !isHoliday(h.date, state))
     : []
   const localText = local.map((h) => ` In Gemeinden, in denen am ${h.date.slice(8, 10)}.${h.date.slice(5, 7)}. ${h.name} gilt, ist es ein Werktag später.`).join('')
-  return `Die Miete für ${MONTH_NAMES[month - 1]} ${passed ? 'war' : 'ist'} fällig bis ${WEEKDAYS[weekdayOf(due)]}, ${d}.${m}.${year} ` +
-    `(${rentDueRuleText(due)}; ${where}).${localText} Das gilt, wenn der Mietvertrag nichts anderes bestimmt; rechtzeitig ist ` +
-    'eine Überweisung, die bis dahin in Auftrag gegeben ist. Als Rückstand zählt das Mietkonto den laufenden Monat erst ab dem nächsten.'
+  return {
+    text: `Miete ${MONTH_NAMES[month - 1]} fällig am ${WEEKDAYS[weekdayOf(due)]}, ${d}.${m}.${year}` + (state ? '' : ' (ohne Bundesland: nur bundesweite Feiertage)'),
+    details: `${rentDueRuleText(due)}; ${where}.${localText} Das gilt, wenn der Mietvertrag nichts anderes bestimmt. ` +
+      'Rechtzeitig ist eine Überweisung, die bis zu diesem Tag in Auftrag gegeben ist; die Gutschrift kann später kommen.',
+  }
 }
 
 // Ob die Auskunft überhaupt etwas zu sagen hat: nur wenn im laufenden Monat eine **volle** Monatsmiete
