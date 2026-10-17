@@ -358,22 +358,40 @@ export function stockCarryNote(report: TaxReport): string | null {
 
 // ---------- Nachzahlungen und Erstattungen aus der Nebenkostenabrechnung (#280) ----------
 
-// Wo die Anlage V sie abfragt, nur für Jahre, in denen es nachgesehen ist. Belegt: amtlicher
-// Vordruck 2025 der Finanzverwaltung NRW („2025AnlV101 – September 2025 –“,
-// https://www.finanzamt.nrw.de/dokumente/anlage-v-einkuenfte-aus-vermietungverpachtung-bebauter-grundstuecke-2025),
-// Seite 1, Zeile 21, Kennzahl 11: „auf die Zeilen 15 und 18 entfallende und im Jahr 2025 erhaltene
-// Nachzahlungen / geleistete Erstattungen (negativen Betrag mit vorangestelltem Minuszeichen
-// eintragen)“, also eine saldierte Zeile (Zeile 20, Kennzahl 04, sind die laufenden Umlagen). Zeile 23
-// (Kennzahl 12) ist dasselbe für Zeile 19, die an Angehörige vermieteten Wohnungen. Für 2023 und 2024
-// nennen die amtlichen Anleitungen ebenfalls Zeile 21, mit dem Beispiel eines Guthabens von 200 € mit
-// Minuszeichen. Für andere Jahre nennt die Seite keine
-// Zeile; eine erfundene wäre schlimmer als keine.
-export type SettlementLine = { line: number; code: number; relativesLine: number; relativesCode: number }
+// Wo die Anlage V sie abfragt, nur für Jahre, in denen es im amtlichen Vordruck selbst nachgesehen
+// ist. In allen drei Jahren Seite 1, Zeile 21, Kennzahl 11: „auf die Zeilen 15 und 18 entfallende und
+// im Jahr … erhaltene Nachzahlungen / geleistete Erstattungen (negativen Betrag mit vorangestelltem
+// Minuszeichen eintragen)“, also eine saldierte Zeile; Zeile 23 (Kennzahl 12) ist dasselbe für Zeile 19,
+// die an Angehörige vermieteten Wohnungen. Die laufenden Mieten stehen in den Summenzeilen 15
+// (Kennzahl 01) und 18 (Kennzahl 02), an Angehörige Zeile 19 (Kennzahl 03), die laufenden Umlagen in
+// Zeile 20 (Kennzahl 04), an Angehörige Zeile 22 (Kennzahl 05). Quellen:
+// - 2023: Formular-Management-System der Bundesfinanzverwaltung, „080 – Anlage V (2023)“, Vordruck
+//   „2023AnlV101NET – September 2023 –“, https://www.formulare-bfinv.de/ffw/action/invoke.do?id=034032_23, Seite 1.
+// - 2024: ebenda, „080 – Anlage V (2024)“, Vordruck „2024AnlV101NET – September 2024 –“,
+//   https://www.formulare-bfinv.de/ffw/action/invoke.do?id=034032_24, Seite 1.
+// - 2025: Finanzverwaltung NRW, Vordruck „2025AnlV101 – September 2025 –“,
+//   https://www.finanzamt.nrw.de/dokumente/anlage-v-einkuenfte-aus-vermietungverpachtung-bebauter-grundstuecke-2025, Seite 1.
+// Für andere Jahre nennt die Seite keine Zeile; eine erfundene wäre schlimmer als keine.
+export type SettlementLine = {
+  line: number
+  code: number
+  relativesLine: number
+  relativesCode: number
+  // Wohin der Zufluss ohne Abrechnung gehört: Summen der Mieten und die laufenden Umlagen.
+  rentLines: readonly [number, number]
+  prepaymentLine: number
+  relativesRentLine: number
+  relativesPrepaymentLine: number
+}
+
+const LINES_2023_TO_2025: SettlementLine = {
+  line: 21, code: 11, relativesLine: 23, relativesCode: 12, rentLines: [15, 18], prepaymentLine: 20, relativesRentLine: 19, relativesPrepaymentLine: 22,
+}
 
 const SETTLEMENT_LINES: Readonly<Record<number, SettlementLine>> = {
-  2023: { line: 21, code: 11, relativesLine: 23, relativesCode: 12 },
-  2024: { line: 21, code: 11, relativesLine: 23, relativesCode: 12 },
-  2025: { line: 21, code: 11, relativesLine: 23, relativesCode: 12 },
+  2023: LINES_2023_TO_2025,
+  2024: LINES_2023_TO_2025,
+  2025: LINES_2023_TO_2025,
 }
 
 export function settlementLine(year: number): SettlementLine | null {
@@ -383,4 +401,11 @@ export function settlementLine(year: number): SettlementLine | null {
 // Der Betrag für diese Zeile: Nachzahlungen minus Erstattungen, eine Zahl mit Vorzeichen.
 export function settlementBalanceCents(report: Pick<TaxReport, 'income'>): number {
   return report.income.settlementBackPaymentsCents - report.income.settlementRefundsCents
+}
+
+// Der Zufluss ohne Nachzahlungen und Guthaben aus der Abrechnung: das, was in die Zeilen der Mieten
+// und laufenden Umlagen gehört (Durchsicht zu #328). Zusammen mit dem Saldo ergibt es den Zufluss;
+// wer stattdessen den ganzen Zufluss dort einträgt und den Saldo zusätzlich in Zeile 21, zählt ihn doppelt.
+export function paidWithoutSettlementCents(report: Pick<TaxReport, 'income'>): number {
+  return report.income.paidCents - settlementBalanceCents(report)
 }

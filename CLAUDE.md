@@ -2534,7 +2534,7 @@ die ganze fachliche Komplexität:
   Mietverhältnis im Jahr mit „Abrechnung“ und fragt nach, bevor eine Miete ohne Zeile im Mietkonto
   gespeichert wird. Ein mit der Miete verrechnetes Guthaben ist volle Miete plus negative
   Abrechnung, sonst stünde der Monat offen und der Zufluss zu niedrig. Die Kaution gehört nicht
-  dazu (#228). Spalte und Bedingung in zwei Schritten (0056/0057); der eingefrorene Eingang kennt
+  dazu (#228). Spalte und Bedingung in zwei Schritten (0058/0059); der eingefrorene Eingang kennt
   die Spalte nicht, die Vorgabe gibt sie.
 - **Steuer/Anlage V** (`taxReport`): aggregiert Einnahmen (das Soll aus `rentLedger`, das Ist
   unmittelbar aus den Zahlungen) und
@@ -2578,9 +2578,15 @@ die ganze fachliche Komplexität:
   nicht gerechnet, nur genannt. Zeilennummern der Anlage V nennt die Seite nur, wo der Vordruck 2025
   sie belegt (11, 12, 33/34, 87/88); eine Anleitung 2025 war nicht auffindbar. Dazu Zeile 21
   (Kennzahl 11, Nachzahlungen und Erstattungen aus der Nebenkostenabrechnung, saldiert; Zeile 23 bei
-  Angehörigen, Zeile 19) für 2023 bis 2025, belegt im amtlichen Vordruck 2025 der Finanzverwaltung
-  NRW („2025AnlV101 – September 2025 –“, finanzamt.nrw.de, Seite 1) und für 2023/2024 in den
-  amtlichen Anleitungen (`settlementLine` in client/src/taxView.ts, #280); für andere Jahre nennt die Seite keine Zeile.
+  Angehörigen, Zeile 19) für 2023 bis 2025, je im amtlichen Vordruck des Jahres nachgesehen: 2023
+  und 2024 im Formular-Management-System der Bundesfinanzverwaltung („2023AnlV101NET – September
+  2023 –“, „2024AnlV101NET – September 2024 –“), 2025 bei der Finanzverwaltung NRW („2025AnlV101 –
+  September 2025 –“), jeweils Seite 1; Fundstellen an `settlementLine` in client/src/taxView.ts
+  (#280). Für andere Jahre nennt die Seite keine Zeile. **Die Seite zeigt den Zufluss in zwei Teilen,
+  die zusammen den Zufluss ergeben** (`paidWithoutSettlementCents` und `settlementBalanceCents`): ohne
+  Abrechnung für die Zeilen der Mieten und Umlagen, den Saldo für Zeile 21. Stünde nur der Saldo
+  neben dem ganzen Zufluss, trüge mancher beides ein und zählte den Saldo doppelt (Durchsicht zu
+  #328). Den Hinweis dazu gibt es nur auf der Ist-Grundlage.
   **Maßgeblich ist das Ist** (#70): § 11 Abs. 1 Satz 1 EStG setzt Einnahmen im Jahr des Zuflusses
   an, ein vereinbartes, nicht gezahltes Soll ist keine Einnahme. Das Soll bleibt umschaltbar, denn
   zum Abgleich taugt es, ist aber nicht mehr die Vorgabe; die Entscheidungslogik samt Hinweisen

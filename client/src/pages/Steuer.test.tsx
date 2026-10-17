@@ -399,10 +399,11 @@ test('„Nicht umlagefähig“ ohne Zuordnung: kein Hinweis', async () => {
 
 // ---------- Zahlungen aus der Abrechnung (#280) ----------
 
-test('Nachzahlungen und Erstattungen aus der Nebenkostenabrechnung: gesondert, mit Saldo und Zeile nur, wo nachgesehen (N3)', async () => {
+test('Nachzahlungen und Erstattungen aus der Nebenkostenabrechnung: Saldo gesondert, mit Zeile nur, wo nachgesehen (N3)', async () => {
   await zeige(REPORT({}, { paidCents: 1200000 + 15000 - 20000, settlementBackPaymentsCents: 15000, settlementRefundsCents: 20000 }))
-  expect(screen.getByText('davon Nachzahlungen aus der Nebenkostenabrechnung')).toBeTruthy()
-  expect(screen.getByText('davon abgezogen: erstattete Guthaben aus der Nebenkostenabrechnung')).toBeTruthy()
+  const saldo = screen.getByText(/davon Saldo der Nebenkostenabrechnung/).closest('tr')
+  expect(saldo?.textContent).toMatch(/Nachzahlungen 150,00\s€ minus erstattete Guthaben 200,00\s€/)
+  expect(saldo?.textContent).toMatch(/[−-]50,00\s€/)
   const satz = screen.getByText(/sind im Zufluss\s+enthalten/)
   expect(satz.textContent).toMatch(/[−-]50,00\s€/)
   // Das Jahr der Seite ist das Vorjahr; welche Zeile gilt, entscheidet dieselbe Tabelle wie auf der Seite.
@@ -414,6 +415,28 @@ test('Nachzahlungen und Erstattungen aus der Nebenkostenabrechnung: gesondert, m
     expect(satz.textContent).not.toMatch(/Zeile \d/)
     expect(satz.textContent).toMatch(/im Vordruck für \d{4} nach/)
   }
+})
+
+// Durchsicht speedone zu #328: Wer den Zufluss in die Zeilen der Mieten und Umlagen und den Saldo
+// zusätzlich in Zeile 21 einträgt, zählt den Saldo doppelt. Die Seite nennt deshalb den Zufluss ohne
+// Abrechnung als eigene Zahl, und beide Teile ergeben zusammen den Zufluss.
+test('Zufluss ohne Abrechnung und Saldo getrennt: 12 × 800 € Miete, 200 € Guthaben erstattet', async () => {
+  await zeige(REPORT({}, { paidCents: 940000, settlementBackPaymentsCents: 0, settlementRefundsCents: 20000 }))
+  expect(screen.getByText(/Tatsächlich eingegangen/).closest('tr')?.textContent).toMatch(/9\.400,00\s€/)
+  const ohne = screen.getByText(/davon Mieten und laufende Umlagen ohne Abrechnung/).closest('tr')
+  expect(ohne?.textContent).toMatch(/9\.600,00\s€/)
+  const saldo = screen.getByText(/davon Saldo der Nebenkostenabrechnung/).closest('tr')
+  expect(saldo?.textContent).toMatch(/[−-]200,00\s€/)
+  const satz = screen.getByText(/sind im Zufluss\s+enthalten/)
+  expect(satz.textContent).toMatch(/9\.600,00\s€/)
+  expect(satz.textContent).toMatch(/nicht zusätzlich/)
+  if (settlementLine(JAHR)) expect(satz.textContent).toMatch(/Zeilen 15 und 18 sowie Zeile 20/)
+})
+
+test('Auf Soll-Basis erscheint der Hinweis zu Zeile 21 nicht (Durchsicht zu #328)', async () => {
+  await zeige(REPORT({}, { paidCents: 940000, settlementRefundsCents: 20000 }), 'soll')
+  expect(screen.queryByText(/sind im Zufluss\s+enthalten/)).toBeNull()
+  expect(screen.queryByText(/Zeile 21/)).toBeNull()
 })
 
 test('Ohne Zahlungen aus der Abrechnung erscheint davon nichts', async () => {
