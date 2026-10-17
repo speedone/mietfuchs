@@ -128,8 +128,9 @@ export type SnapshotMeter = Pick<Meter, 'id' | 'unitId' | 'type' | 'heatingPlant
   & Partial<Pick<Meter, 'hcaScale' | 'ratingFactor'>>
   // Eichjahr (Heizung PR 21): nur für den Hinweis auf der Zähler-Seite, keine Zahl hängt daran.
   & Partial<Pick<Meter, 'calibratedUntil'>>
-  // Maßeinheit (UI-Durchsicht H5): nur für das Ableseergebnis der eigenen Heizkostenabrechnung, das der
-  // Mieter bekommt; ein Wärmezähler in MWh stand dort sonst als kWh. Keine Zahl hängt daran.
+  // Maßeinheit: für das Ableseergebnis der eigenen Heizkostenabrechnung (UI-Durchsicht H5) und seit #342 für die
+  // gemeinsame Einheit, in der Verbräuche verschiedener Zähler zusammengezählt werden (shared/meterUnits.ts).
+  // Optional nur für von Hand gebaute Schnappschüsse der Tests; dann rechnet nichts um.
   & Partial<Pick<Meter, 'unit'>>
 
 // Die Heizanlagen des Objekts (Heizung PR 4), eingedampft auf das, was die Berechnung liest. Seit

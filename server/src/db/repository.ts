@@ -38,6 +38,7 @@ import { captureOf, coversPeriod, hotWaterOf } from '../hca.ts'
 import { and, count, desc, eq, inArray, isNotNull, ne, or, sql } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/sqlite-core'
 import type { BillingPeriod, CostItem, ExternalBasis, FederalState, HeatingPlant, HeatingPrepaymentOverride, InterimGapStatus, Meter, MeterType, Payment, PeriodKey, PeriodRules, PersonEntry, PrepaymentEntry, Property, Reading, RentEntry, SplitPreviewPart, Tenancy, Unit, UnitDependents } from '../../../shared/types.ts'
+import { hasKnownUnits, unitKey, unitLabel, unitProblem } from '../../../shared/meterUnits.ts'
 import { CALENDAR_RULES, calendarPeriod, paymentYear, formatDayRange, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, spansTwoYears, startYearOf } from '../../../shared/period.ts'
 import { heatingPeriodsEndingIn, isObjectPeriod, plantRules, plantSpan, servesUnit, spanOf } from '../../../shared/heatingPeriod.ts'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
@@ -433,6 +434,26 @@ function mergeCostItem(current: CostItem, body: unknown): CostItem {
   }
 }
 
+// Die Einheit eines Zählers beim Speichern (#342), nach dem Muster der IBAN (#279, iban.ts). **Abgelehnt wird nur
+// eine neue oder geänderte Einheit**, die die Sparte nicht kennt (kWh, MWh, GJ bei Wärme; m³, l bei Wasser; kWh,
+// MWh bei Strom; shared/meterUnits.ts). Eine gespeicherte, die eine Seite unverändert mitschickt (normiert
+// verglichen), bleibt, wie sie ist, auch wenn sie unbekannt ist: Sie kam vor der Prüfung, über ein Backup oder den
+// Umstieg herein, und die Abrechnung warnt, wo sie neben anderen Einheiten steht (`meter.unit-unknown`). Eine
+// bekannte wird in ihrer Schreibweise gespeichert („mwh“ wird „MWh“). **Leer** (Durchsicht K1): Bei Sparten mit
+// Auswahl nimmt der Server keine neue leere Einheit an; eine gespeicherte leere darf unverändert mitkommen.
+function acceptMeterUnit(type: MeterType, value: string, stored: string, isNew: boolean): string {
+  if (value.trim() === '') {
+    if (hasKnownUnits(type) && (isNew || stored.trim() !== '')) {
+      throw new HeatingError(400, 'Bitte wählen Sie die Einheit, die der Zähler zeigt; ohne Einheit lässt sich sein Verbrauch nicht mit dem anderer Zähler verrechnen.')
+    }
+    return value
+  }
+  if (unitKey(type, value) === unitKey(type, stored) && stored !== '') return stored
+  const problem = unitProblem(type, value)
+  if (problem !== null) throw new HeatingError(400, problem)
+  return unitLabel(type, value)
+}
+
 function mergeMeter(current: Meter, body: unknown): Meter {
   const heatingPlantId = merged(body, 'heatingPlantId', current.heatingPlantId ?? null, asNullableFilled)
   const type = merged(body, 'type', current.type, (v) => oneOfOrUndefined(METER_TYPES, v) ?? current.type)
@@ -445,7 +466,7 @@ function mergeMeter(current: Meter, body: unknown): Meter {
     unitId: merged(body, 'unitId', current.unitId, (v) => (asNullableText(v) === '' ? null : asNullableText(v))),
     type,
     meterNumber: merged(body, 'meterNumber', current.meterNumber, asOptionalText),
-    unit: merged(body, 'unit', current.unit, (v) => asText(v, '')),
+    unit: merged(body, 'unit', current.unit, (v) => acceptMeterUnit(type, asText(v, ''), current.unit, current.propertyId === '')),
     // Zähler der Heizanlage selbst (Heizung PR 4). Ohne Anlage keine Rolle.
     heatingPlantId,
     heatingRole: heatingPlantId === null ? null : merged(body, 'heatingRole', current.heatingRole ?? null, (v) => oneOfOrUndefined(HEATING_ROLES, v) ?? null),
