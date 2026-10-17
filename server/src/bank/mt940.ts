@@ -17,7 +17,7 @@
 // SEPA-Zahlungen Kennungen wie EREF+, SVWZ+ und ABWA+.
 
 import {
-  checkBalance, decimalToCents, fingerprintOf, normalizeIban, squash,
+  checkBalance, clip, clipEntry, clipOrNull, decimalToCents, fingerprintOf, normalizeIban, squash, TEXT_LIMITS,
   type BankEntry, type BankProblem, type BankReadResult, type BankStatement,
 } from './statement.ts'
 
@@ -205,9 +205,9 @@ export function readMt940(text: string, name = 'Datei'): BankReadResult {
   const reportedAccounts = new Set<string>()
   groups.forEach((group, gi) => {
     const get = (tag: string) => group.find((f) => f.tag === tag)?.value.trim()
-    const statementId = get('28C') ?? get('28') ?? get('20') ?? null
+    const statementId = clipOrNull(get('28C') ?? get('28') ?? get('20') ?? null, TEXT_LIMITS.reference)
     const label = `${name}, Auszug ${statementId ?? gi + 1}`
-    const account = (get('25') ?? '').replace(/[A-Z]{3}$/, '').replace(/\s+/g, '')
+    const account = clip((get('25') ?? '').replace(/[A-Z]{3}$/, '').replace(/\s+/g, ''), TEXT_LIMITS.reference)
     const accountIban = IBAN.test(normalizeIban(account)) ? normalizeIban(account) : null
     const opening = group.find((f) => f.tag === '60F' || f.tag === '60M')
     const closing = [...group].reverse().find((f) => f.tag === '62F' || f.tag === '62M')
@@ -301,7 +301,7 @@ function readLine61(value: string, info: string | undefined, where: string, prob
     counterpartyIban: d.counterpartyIban,
     purpose: d.purpose || d.bookingText || '',
   }
-  return {
+  return clipEntry({
     ...base,
     valueDate,
     counterpartyName: d.counterpartyName,
@@ -312,5 +312,5 @@ function readLine61(value: string, info: string | undefined, where: string, prob
     bookingDateEstimated: !m[2],
     batch: null,
     fingerprint: fingerprintOf(base),
-  }
+  })
 }
