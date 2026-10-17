@@ -1,6 +1,7 @@
-import type { Property, PropertyKind } from './types'
+import type { FederalState, Property, PropertyKind } from './types'
 import { ibanForSave, ibanToInput } from './ibanField'
 import { IBAN_LABELS } from '../../shared/iban.ts'
+import { isFederalState, localHolidaysOf, STATES, stateName } from '../../shared/holidays.ts'
 
 // Die Entscheidungslogik der Karte „Objekt“ (#92), ohne DOM prüfbar wie costForm.ts und
 // unitForm.ts; die Komponente rendert nur.
@@ -20,6 +21,8 @@ export type PropertyForm = {
   tightMarket: TightMarketAnswer
   tightMarketFrom: string
   tightMarketTo: string
+  // Bundesland für Fristen und Feiertage; '' heißt unbekannt.
+  state: FederalState | ''
 }
 
 export type CableAnswer = 'vor' | 'nach' | 'unbekannt'
@@ -38,7 +41,28 @@ export const TIGHT_MARKET_LABELS: Record<TightMarketAnswer, string> = {
   nein: 'nein',
 }
 
-export type PropertyBody = Pick<Property, 'name' | 'address' | 'kind' | 'landlordName' | 'iban' | 'paymentDeadlineDays' | 'cableBuiltBeforeDec2021' | 'tightMarket' | 'tightMarketFrom' | 'tightMarketTo'>
+// Das Bundesland (shared/holidays.ts). Leer steht vorn und sagt, was dann gilt; die Länder folgen in der
+// Reihenfolge der Liste, die Kürzel sind die Werte, damit Auswahl und gespeicherter Wert dieselben sind.
+export const STATE_UNKNOWN_LABEL = 'unbekannt – es gelten nur bundesweite Feiertage'
+export const STATE_OPTIONS: readonly { value: FederalState | ''; label: string }[] = [
+  { value: '', label: STATE_UNKNOWN_LABEL },
+  ...STATES.map((s) => ({ value: s.code, label: s.name })),
+]
+
+// Ein Wert der Auswahl, wie sie ihn meldet: alles außer einem der 16 Kürzel heißt unbekannt.
+export const stateFromSelect = (v: string): FederalState | '' => (isFederalState(v) ? v : '')
+
+// Was zum gewählten Land unter der Auswahl steht: die Feiertage, die dort nur in einzelnen Gemeinden
+// gelten und die Mietfuchs deshalb nicht mitzählt. `null`, wenn es keine gibt.
+export function stateNote(state: FederalState | '', year: number): string | null {
+  if (state === '') return null
+  const local = localHolidaysOf(year, state)
+  if (local.length === 0) return null
+  const names = local.map((h) => `${h.name} (${h.where})`).join('; ')
+  return `In ${stateName(state)} gelten einige Feiertage nur in einzelnen Gemeinden: ${names}. Mietfuchs zählt sie bei Fristen nicht mit.`
+}
+
+export type PropertyBody = Pick<Property, 'name' | 'address' | 'kind' | 'landlordName' | 'iban' | 'paymentDeadlineDays' | 'cableBuiltBeforeDec2021' | 'tightMarket' | 'tightMarketFrom' | 'tightMarketTo' | 'state'>
 
 export const propertyToForm = (p: Property): PropertyForm => ({
   name: p.name,
@@ -52,6 +76,7 @@ export const propertyToForm = (p: Property): PropertyForm => ({
   tightMarket: p.tightMarket === true ? 'ja' : p.tightMarket === false ? 'nein' : 'unbekannt',
   tightMarketFrom: p.tightMarketFrom ?? '',
   tightMarketTo: p.tightMarketTo ?? '',
+  state: p.state ?? '',
 })
 
 // **Ein leeres Feld heißt „Vorgabe“, auch mit Haken.** Wer den Haken setzt, um nur eine andere
@@ -87,5 +112,6 @@ export function propertyBody(form: PropertyForm, storedIban: string | null = nul
     tightMarket: yes ? true : form.tightMarket === 'nein' ? false : null,
     tightMarketFrom: tightFrom,
     tightMarketTo: tightTo,
+    state: form.state === '' ? null : form.state,
   }
 }

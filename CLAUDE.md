@@ -907,6 +907,40 @@ Wiederherstellen ab. Ein schon aufgeteilter Teil wird bei einem weiteren Wechsel
 seines Leistungszeitraums neu geteilt, der in seinem bisherigen Zeitraum liegt, und beim Berichtigen
 seines Betrags nicht noch einmal (`needsSplitCheck` mit der gespeicherten Position).
 
+**Fristen und Feiertage** ([shared/holidays.ts](shared/holidays.ts),
+[shared/deadlines.ts](shared/deadlines.ts)): reine Funktionen in UTC, ohne Uhr und ohne Datenzugriff.
+Maßgeblich ist das Land des Objekts (`properties.state`, eine der 16 Kennungen oder `null`, Schritte
+0060/0061, ein fremdes Kürzel ist eine 400 und wird nicht still zu „unbekannt“).
+
+- **Regeln und Feiertage stehen im Rechtsregister**: `bgb.rent-due-workday` (3, § 556b Abs. 1 BGB),
+  `bgb.rent-due-saturday` (Samstag zählt nicht, BGH VIII ZR 129/09; VIII ZR 222/15 betrifft nur die
+  Rechtzeitigkeit der Überweisung), `bgb.deadline-on-workday` (§ 193 BGB) in shared/law/bgb-betrkv.ts, und
+  je Feiertag ein Parameter `holiday.*` in [shared/law/feiertagsgesetze.ts](shared/law/feiertagsgesetze.ts)
+  (Tag im Jahr, Länder, gemeindeweise Länder; einmalige Feiertage als Fassung eines Tages, `eventDate`).
+  Im Register und nicht in einer eigenen Tabelle, weil es Rechtswerte mit Gültigkeit sind und dort
+  Fassungsgeschichte, Prüfstand und Release-Sperre schon gelten. `checked` nur, wo der Wortlaut amtlich
+  gelesen ist; Werte für mehrere Länder, deren Gesetze nicht alle gelesen sind, `adopted` mit Angabe, was
+  gelesen ist. holidays.ts rechnet daraus mit Osterformel, ohne Bibliothek: feiertagejs wich von der
+  Vergleichsliste ab, date-holidays stimmte, bringt aber Feiertagsdaten unter CC BY-SA 3.0 und rund 40 MB
+  Abhängigkeiten in die Programmdatei. Geprüft wird gegen eine unabhängig erzeugte Liste der
+  Python-Bibliothek holidays ([server/test/fixtures/holidays/](server/test/fixtures/holidays/README.md)),
+  alle 16 Länder von 1995 bis 2100; vor 1995 wird nicht gerechnet. Einmalige Feiertage, die ein Land
+  künftig beschließt, kommen als neue Fassung ins Register. Gefragt wird mit `valueAt`, weil noch keine
+  Abrechnung damit rechnet; rechnet calc.ts einmal mit einer Frist, dann mit `law()` und Protokoll.
+- **Gemeindeweise Feiertage werden nicht geraten** (Mariä Himmelfahrt in Bayern, Augsburger
+  Friedensfest, Fronleichnam in Teilen Sachsens und Thüringens): `localHolidaysOf` nennt sie, gezählt
+  werden sie nie. **Ohne Land** zählen nur die Tage, die in allen 16 Ländern Feiertag sind; eine Frist
+  kann dann einen Tag früher erscheinen als am Ort, und die Oberfläche sagt das.
+- `isWorkday` verlangt die Angabe, ob der Samstag zählt; es gibt keine Voreinstellung.
+  `rentDueDate` ist der dritte Werktag ohne Samstag, `deadlineOnWorkday` das Fristende nach § 193 BGB.
+- **Nichts wird still ersetzt.** `ledgerRows` und die Regel aus #133 (der laufende Monat ist nie
+  fällig) bleiben; calc.ts nutzt die Bausteine nicht. Einziger Einsatz ist eine Auskunft im Mietkonto
+  (`rentDueNote` in client/src/ledgerView.ts), die ausdrücklich sagt, dass der Rückstand weiter erst
+  ab dem nächsten Monat zählt. Jeder weitere Einsatz ist eine eigene Entscheidung mit eigenem Test.
+- Bewusst nicht: ein Vorschlag des Landes aus der Postleitzahl (Postleitzahlgebiete folgen nicht
+  überall den Landesgrenzen, und eine Tabelle dafür wäre eine weitere Datenquelle), die Sonntage als Feiertage in Hessen (für Werktage ohne Folge) und die Frage, ob
+  § 193 BGB auf eine bestimmte Frist überhaupt anzuwenden ist; das entscheidet der Aufrufer.
+
 **Belegordner** (#170, [client/src/pages/Belege.tsx](client/src/pages/Belege.tsx), Logik in
 [client/src/receipts.ts](client/src/receipts.ts)): Objekt → Jahr → Kostenart als Register, Suche,
 Belegabdeckung, Posteingang und zwei Mappen. Entscheidungen und Quellen in
