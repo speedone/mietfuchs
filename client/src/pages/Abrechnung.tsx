@@ -32,7 +32,7 @@ import StockBlock from '../components/StockBlock'
 import { showsStock, stockBlock } from '../stockView'
 import FuelBlock from '../components/FuelBlock'
 import { fuelBlock } from '../fuelView'
-import { closeWithFuelQuestion } from '../fuelClose'
+import { closeWithQuestions } from '../fuelClose'
 import { co2Block } from '../co2View'
 import { countOf } from '../../../shared/wording.ts'
 import { calendarPeriod } from '../../../shared/period.ts'
@@ -173,17 +173,42 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
       confirmLabel: 'Abschließen',
     })
     if (!ok) return
-    // Bei einer Lücke ohne Rechnung fragt der Server nach (Heizung PR 7, Entwurf 8.2); Vorgabe ist die
-    // Schätzung mit Vorbehalt.
+    // Bei einer Lücke ohne Rechnung fragt der Server nach (Heizung PR 7, Entwurf 8.2), ebenso bei Fehlern
+    // der Abrechnung (#319); beides steht dann in einem Dialog. Vorgabe ist, nicht abzuschließen.
     let closed = false
     if (!(await attempt(async () => {
-      closed = await closeWithFuelQuestion(
+      closed = await closeWithQuestions(
         (body) => api(withProperty(paths.close, propertyId), { method: 'POST', body: JSON.stringify(body) }),
-        // Drei Wege; Abwarten ist die Vorgabe (Enter, Fokus), „Ohne Schätzung“ die dritte Wahl.
+        // Bis zu drei Wege; Abwarten bzw. Nicht abschließen ist die Vorgabe (Enter, Fokus).
         (q) => new Promise((resolve) => {
           let without = false
-          void confirm({ ...q, defaultChoice: 'cancel', onAlternative: () => { without = true } })
-            .then((ok) => resolve(ok ? 'estimate' : without ? 'none' : 'wait'))
+          let fix: { tab: NoticeTab, focus: NoticeSubject } | null = null
+          const message = q.errors.length === 0 ? q.message : (dismiss: () => void) => (
+            <>
+              <p>{q.message}</p>
+              <ul className="close-errors">
+                {q.errors.map((n, i) => {
+                  const target = noticeTarget(n.subject)
+                  return (
+                    <li key={i}>
+                      <strong>{n.title || n.text}</strong>
+                      {n.title && <div>{n.text}</div>}
+                      {target && onNavigate && (
+                        <div><button type="button" className="btn secondary notice-action" onClick={() => { fix = target; dismiss() }}>{target.label}</button></div>
+                      )}
+                    </li>
+                  )
+                })}
+              </ul>
+            </>
+          )
+          void confirm({
+            title: q.title, message, confirmLabel: q.confirmLabel, cancelLabel: q.cancelLabel, defaultChoice: 'cancel',
+            ...(q.alternativeLabel ? { alternativeLabel: q.alternativeLabel, onAlternative: () => { without = true } } : {}),
+          }).then((ok) => {
+            if (fix && onNavigate) onNavigate(fix.tab, fix.focus)
+            resolve(ok ? (q.fuel ? 'estimate' : 'despite') : without ? 'none' : 'wait')
+          })
         }),
       )
     }))) return

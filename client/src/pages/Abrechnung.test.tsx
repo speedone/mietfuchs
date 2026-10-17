@@ -4,7 +4,8 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { PeriodProvider } from '../period'
-import type { Settings, Settlement, Statement, Tenancy } from '../types'
+import type { NoticeSubject, Settings, Settlement, Statement, Tenancy } from '../types'
+import type { NoticeTab } from '../notices'
 import { PropertyProvider } from '../property'
 import { UIProvider } from '../components/feedback'
 import Abrechnung from './Abrechnung'
@@ -183,4 +184,56 @@ test('IBAN (#279): auf der Abrechnung in Vierergruppen, eine ungültige, wie sie
   cleanup()
   mit('de00 1111')
   expect(await screen.findByText('de00 1111', undefined, SLOW)).toBeTruthy()
+})
+
+// #319: Meldet der Server beim Abschließen Fehler, nennt der Dialog sie mit Titel und „Hier beheben →“,
+// und erst „Trotzdem abschließen“ sendet die Bestätigung.
+const FEHLER = { code: 'tenancy.overlap', level: 'error', title: 'Mietverhältnisse überschneiden sich', text: 'EG: Meier und Müller wohnen zugleich.', subject: { kind: 'tenancy', id: 't1' } }
+function stubClose(bodies: unknown[]) {
+  const before = globalThis.fetch
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    const path = url.split('?')[0] ?? url
+    if (path === `/api/settlement/${YEAR}/close` && init?.method === 'POST') {
+      const body: unknown = JSON.parse(String(init.body))
+      bodies.push(body)
+      const confirmed = typeof body === 'object' && body !== null && 'despiteErrors' in body && body.despiteErrors === true
+      if (confirmed) return new Response(JSON.stringify({ ok: true }), { status: 201, headers: { 'content-type': 'application/json' } })
+      return new Response(JSON.stringify({ error: 'Die Abrechnung enthält einen Fehler.', errorNotices: [FEHLER] }), { status: 409, headers: { 'content-type': 'application/json' } })
+    }
+    return before(url, init)
+  })
+}
+const showWithNav = (onNavigate: (tab: NoticeTab, focus?: NoticeSubject) => void) => render(
+  <PeriodProvider>
+    <PropertyProvider>
+      <UIProvider><Abrechnung settings={null} units={[]} tenancies={TENANCIES} reload={async () => {}} onNavigate={onNavigate} /></UIProvider>
+    </PropertyProvider>
+  </PeriodProvider>,
+)
+
+test('Abschließen mit Fehlern (#319): der Dialog nennt sie, „Trotzdem abschließen“ sendet die Bestätigung', async () => {
+  const bodies: unknown[] = []
+  stubClose(bodies)
+  showWithNav(() => {})
+  fireEvent.click(await screen.findByRole('button', { name: `🔒 Abrechnung ${YEAR} abschließen` }, SLOW))
+  fireEvent.click(await screen.findByRole('button', { name: 'Abschließen' }))
+  const dialog = await screen.findByRole('dialog', { name: /Fehler/ }, SLOW)
+  expect(dialog.textContent).toContain('Mietverhältnisse überschneiden sich')
+  expect(dialog.textContent).toContain('EG: Meier und Müller wohnen zugleich.')
+  expect(screen.getByRole('button', { name: 'Hier beheben → Stammdaten' })).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Trotzdem abschließen' }))
+  await waitFor(() => expect(bodies).toEqual([{}, { despiteErrors: true }]), SLOW)
+})
+
+test('Abschließen mit Fehlern (#319): „Hier beheben →“ schließt nicht ab und führt zum Eintrag', async () => {
+  const bodies: unknown[] = []
+  stubClose(bodies)
+  const nav = vi.fn()
+  showWithNav(nav)
+  fireEvent.click(await screen.findByRole('button', { name: `🔒 Abrechnung ${YEAR} abschließen` }, SLOW))
+  fireEvent.click(await screen.findByRole('button', { name: 'Abschließen' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Hier beheben → Stammdaten' }, SLOW))
+  await waitFor(() => expect(nav).toHaveBeenCalledWith('stammdaten', { kind: 'tenancy', id: 't1' }), SLOW)
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(bodies).toEqual([{}])
 })

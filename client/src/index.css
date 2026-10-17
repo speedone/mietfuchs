@@ -636,6 +636,10 @@ button.btn.calc-toggle:hover { text-decoration: underline; filter: none; }
 .dialog h2 { font-size: 17px; margin-bottom: 8px; }
 .dialog-msg { color: var(--muted); font-size: 14px; line-height: 1.55; white-space: pre-line; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+/* Die Fehler beim Abschließen (#319): neben der Rückfrage zur Lücke kann die Liste lang werden. */
+.close-errors { margin: 10px 0 0 18px; padding: 0; max-height: 40vh; overflow-y: auto; white-space: normal; }
+.close-errors li { margin-bottom: 8px; }
+.close-errors strong { color: var(--text); }
 
 /* ---------- Tabellen: Hover & Aktionsspalte ---------- */
 tbody tr.clickable-row { cursor: pointer; }
