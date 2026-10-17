@@ -1090,3 +1090,7 @@ fieldset.no-connection { border: 0; padding: 0; margin-inline: 0; min-width: 0; 
   body.print-monthly-info .monthly-info-print { display: block; }
   .monthly-info-page + .monthly-info-page { break-before: page; page-break-before: always; }
 }
+
+/* Fälligkeit des laufenden Monats im Mietkonto (#290): eine Zeile, Einzelheiten zum Aufklappen */
+.rent-due summary { cursor: pointer; }
+.rent-due p { margin: 4px 0 0; }
