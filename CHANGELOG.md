@@ -35,6 +35,14 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   tragen Sie als volle Miete und das Guthaben mit Minus als Abrechnung ein
   ([#280](https://github.com/speedone/mietfuchs/issues/280)).
 
+### Geändert
+
+- Mietfuchs steht ab dieser Version unter der GNU Affero General Public License, Version 3
+  (AGPL-3.0), statt unter der MIT-Lizenz. Für Vermieter, die Mietfuchs auf dem eigenen Rechner
+  nutzen, ändert sich nichts. Wer eine veränderte Fassung weitergibt oder als Online-Dienst
+  anbietet, muss ihren Quellcode unter derselben Lizenz offenlegen. Versionen bis 0.11.3 bleiben
+  unter der MIT-Lizenz.
+
 ### Behoben
 
 - Steuerübersicht bei teilweiser Eigennutzung, wenn der Betriebsstrom der Heizung aus der
