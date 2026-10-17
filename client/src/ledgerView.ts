@@ -101,5 +101,16 @@ export function rentDueNote(year: number, today: Date, state: FederalState | nul
     : []
   const localText = local.map((h) => ` In Gemeinden, in denen am ${h.date.slice(8, 10)}.${h.date.slice(5, 7)}. ${h.name} gilt, ist es ein Werktag später.`).join('')
   return `Die Miete für ${MONTH_NAMES[month - 1]} ${passed ? 'war' : 'ist'} fällig bis ${WEEKDAYS[weekdayOf(due)]}, ${d}.${m}.${year} ` +
-    `(${rentDueRuleText(due)}; ${where}).${localText} Als Rückstand zählt das Mietkonto den laufenden Monat erst ab dem nächsten.`
+    `(${rentDueRuleText(due)}; ${where}).${localText} Das gilt, wenn der Mietvertrag nichts anderes bestimmt; rechtzeitig ist ` +
+    'eine Überweisung, die bis dahin in Auftrag gegeben ist. Als Rückstand zählt das Mietkonto den laufenden Monat erst ab dem nächsten.'
+}
+
+// Ob die Auskunft überhaupt etwas zu sagen hat: nur wenn im laufenden Monat eine **volle** Monatsmiete
+// geschuldet ist. Ein angebrochener Monat (#311) beginnt oder endet mitten im Monat; zieht der Mieter am
+// 15. ein, ist der dritte Werktag des Monats kein Termin für ihn. Ohne Soll im Monat (das letzte
+// Mietverhältnis endete im Vormonat) gibt es nichts zu zahlen. Nur im laufenden Jahr, wie rentDueNote.
+export function rentDueApplies(rows: readonly RentLedgerRow[], year: number, today: Date): boolean {
+  if (year !== today.getFullYear()) return false
+  const month = today.getMonth() + 1
+  return rows.some((r) => r.months.some((mo) => mo.month === month && mo.sollCents > 0 && !mo.share))
 }

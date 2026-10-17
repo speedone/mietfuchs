@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { RentLedgerRow, RentMonth, RentMonthStatus } from './types'
-import { bookingDate, newPaymentDate, rentDueNote, rowStanding, shareText, showDecemberNote } from './ledgerView'
+import { bookingDate, newPaymentDate, rentDueApplies, rentDueNote, rowStanding, shareText, showDecemberNote } from './ledgerView'
 
 const month = (m: number, sollCents: number, status: RentMonthStatus): RentMonth => ({
   month: m, baseRentCents: sollCents, prepaymentCents: 0, flatRateCents: 0, sollCents, paidCents: status === 'paid' ? sollCents : 0, status,
@@ -100,6 +100,7 @@ describe('Fälligkeit des laufenden Monats als Auskunft', () => {
   it('nennt den dritten Werktag nach den Feiertagen am Ort, ohne Samstag', () => {
     expect(rentDueNote(2027, new Date(2027, 0, 2), 'BW')).toBe(
       'Die Miete für Januar ist fällig bis Do., 07.01.2027 (3. Werktag, Samstag nicht mitgezählt; nach den Feiertagen in Baden-Württemberg). ' +
+      'Das gilt, wenn der Mietvertrag nichts anderes bestimmt; rechtzeitig ist eine Überweisung, die bis dahin in Auftrag gegeben ist. ' +
       'Als Rückstand zählt das Mietkonto den laufenden Monat erst ab dem nächsten.',
     )
     expect(rentDueNote(2026, new Date(2026, 7, 1), 'BE')).toMatch(/^Die Miete für August ist fällig bis Mi\., 05\.08\.2026 /)
@@ -134,5 +135,45 @@ describe('Fälligkeit: Feiertage einzelner Gemeinden', () => {
   it('schweigt, wenn kein gemeindeweiser Feiertag in die Frist fällt', () => {
     expect(rentDueNote(2026, new Date(2026, 9, 6), 'BY')).not.toMatch(/Gemeinden/)
     expect(rentDueNote(2021, new Date(2021, 5, 1), 'BE')).not.toMatch(/Gemeinden/)
+  })
+})
+
+// Durchsicht: Die Auskunft galt für das ganze Objekt, sobald irgendeine Zeile im Jahr Soll hatte. Beginnt das
+// Mietverhältnis erst im laufenden Monat (anteilig, #311) oder endete das letzte im Vormonat, nannte sie
+// einen Fälligkeitstag für eine Miete, die es so nicht gibt.
+describe('Fälligkeit: nur wenn im laufenden Monat eine volle Monatsmiete geschuldet ist', () => {
+  const zeile = (oktober: RentMonth): RentLedgerRow => ({ ...row(month(12, 100000, 'notDue')), months: Array.from({ length: 12 }, (_, i) => (i === 9 ? oktober : month(i + 1, 100000, 'notDue'))) })
+  const okt = new Date(2026, 9, 6)
+
+  it('ein voller Monat mit Soll: ja', () => {
+    expect(rentDueApplies([zeile(month(10, 100000, 'notDue'))], 2026, okt)).toBe(true)
+  })
+
+  it('nur ein angebrochener Monat oder gar kein Soll im Monat: nein', () => {
+    expect(rentDueApplies([zeile({ ...month(10, 54839, 'notDue'), share: { days: 17, of: 31 } })], 2026, okt)).toBe(false)
+    expect(rentDueApplies([zeile(month(10, 0, 'notDue'))], 2026, okt)).toBe(false)
+    expect(rentDueApplies([], 2026, okt)).toBe(false)
+  })
+
+  it('reicht eine Zeile mit vollem Monat neben einer anteiligen', () => {
+    expect(rentDueApplies([zeile({ ...month(10, 54839, 'notDue'), share: { days: 17, of: 31 } }), zeile(month(10, 100000, 'notDue'))], 2026, okt)).toBe(true)
+  })
+
+  it('nur im laufenden Jahr', () => {
+    expect(rentDueApplies([zeile(month(10, 100000, 'paid'))], 2025, okt)).toBe(false)
+  })
+})
+
+// Durchsicht: Über der Auskunft „war fällig bis …“ stand „gestrichelte Monate sind noch nicht fällig“ und im
+// Tooltip des laufenden Monats „noch nicht fällig“. Fällig ist er nach dem dritten Werktag; er zählt nur
+// noch nicht als Rückstand (#133). Geprüft wird der Quelltext der Seite, wie in printCss.test.ts.
+describe('Mietkonto: gestrichelte Monate heißen nicht „noch nicht fällig“', () => {
+  it('weder im Hinweis über den Karten noch im Tooltip', async () => {
+    const fsModule = 'node:fs'
+    const fs = (await import(/* @vite-ignore */ fsModule)) as { readFileSync: (path: URL, encoding: 'utf8') => string }
+    const page = fs.readFileSync(new URL('./pages/Mietkonto.tsx', import.meta.url), 'utf8')
+    expect(page).not.toContain('gestrichelte Monate sind noch nicht fällig')
+    expect(page).not.toContain("' · noch nicht fällig'")
+    expect(page).toContain('gestrichelte Monate zählen noch nicht als Rückstand')
   })
 })
