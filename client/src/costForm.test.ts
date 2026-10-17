@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import { OPERATING_POWER_KEPT } from '../../shared/operatingPower.ts'
-import { generalChoices, withGeneralChoice, deductionChoiceOf, deductionChoices, itemToForm as itemToFormOf, OPERATING_POWER_OPTIONS, showsDeductionLink, showsOperatingPower, withDeductionChoice, withOperatingPower, buildCostItemBody as buildBody } from './costForm'
+import { deductionTaxYear, generalChoices, withGeneralChoice, deductionChoiceOf, deductionChoices, itemToForm as itemToFormOf, OPERATING_POWER_OPTIONS, showsDeductionLink, showsOperatingPower, withDeductionChoice, withOperatingPower, buildCostItemBody as buildBody } from './costForm'
 import type { CostItem as CostItemOf } from './types'
 import { calendarPeriod, periodKey } from '../../shared/period.ts'
 import { euro } from '../../shared/costItem.ts'
@@ -648,6 +648,21 @@ describe('Leistungszeitraum, Jahr der Zahlung, Brennstoff (#208)', () => {
     expect(splitDecision([{ ...rumpf, closed: true }, voll], '2025')).toEqual({ error: 'Die Abrechnung 01.01.–30.04.2025 ist abgeschlossen. Öffnen Sie sie wieder, wenn die Rechnung anteilig hinein soll.', needsTaxYear: false })
   })
 
+  // Durchsicht von #255 PR 2, K2: Ein Abzug beim Betriebsstrom hat kein Feld für das Jahr der Zahlung (#267) und steht
+  // immer im Zeitraum seiner Stromrechnung; die Rückfrage verlangt deshalb kein Jahr, sondern sagt, warum es nicht geht.
+  test('Abzug beim Betriebsstrom über zwei Zeiträume: kein Jahr verlangt, sondern der Grund', () => {
+    const parts: SplitPreviewPart[] = [
+      { period: periodKey('2025-01'), label: '01.01.–30.04.2025', days: 120, amountCents: -1578, labor35aCents: null, description: 'A', needsTaxYear: false, closed: false },
+      { period: periodKey('2025-05'), label: '2025/2026', days: 245, amountCents: -3222, labor35aCents: null, description: 'A', needsTaxYear: true, closed: false },
+    ]
+    for (const taxYear of ['', '2025']) {
+      const d = splitDecision(parts, taxYear, true)
+      if (!('error' in d)) return expect.unreachable('angenommen')
+      expect(d.needsTaxYear).toBe(false)
+      expect(d.error).toBe('Ein Abzug beim Betriebsstrom lässt sich nicht auf mehrere Abrechnungszeiträume aufteilen: Er steht immer im Zeitraum seiner Stromrechnung. Wählen Sie den Leistungszeitraum innerhalb dieses Zeitraums oder lassen Sie ihn leer.')
+    }
+  })
+
   test('Jahr der Zahlung: nur bei zwei Kalenderjahren, Auswahl vom Beginn bis ein Jahr nach dem Ende', () => {
     expect(showsTaxYear({ from: '2025-05-01', to: '2026-04-30' }, false)).toBe(true)
     expect(showsTaxYear({ from: '2025-01-01', to: '2025-12-31' }, false)).toBe(false)
@@ -774,6 +789,21 @@ test('Betriebsstrom: Abzug wählt seine Stromrechnung desselben Zeitraums und ü
   expect([mit.operatingPowerGeneralId, mit.key, mit.participants]).toEqual(['strom', 'units', ['u1', 'u2']])
   expect(withOperatingPower({}, mit)).toMatchObject({ operatingPower: 'deduction', operatingPowerGeneralId: 'strom' })
   expect(withGeneralChoice(mit, '', [strom]).operatingPowerGeneralId).toBe('')
+})
+
+// #267: Ein Abzug beim Betriebsstrom hat kein eigenes Jahr der Zahlung; das Formular nennt das seiner Stromrechnung und
+// schickt keines, auch wenn eines eingelesen wurde (aus der Zeit vor #267).
+test('Betriebsstrom: Abzug im Steuerjahr seiner Stromrechnung, kein eigenes Jahr im Rumpf', () => {
+  const strom: CostItemOf = { id: 'strom', propertyId: 'o', period: periodKey('2025-05'), category: 'Beleuchtung/Allgemeinstrom', description: 'Hausstrom 2025/26', amountCents: 100000, key: 'units', taxYear: 2026 }
+  const ab: CostItemOf = { id: 'ab', propertyId: 'o', period: periodKey('2025-05'), category: 'Beleuchtung/Allgemeinstrom', description: 'Abzug', amountCents: -10000, key: 'units', taxYear: 2025, operatingPower: 'deduction', operatingPowerGeneralId: 'strom' }
+  const form = itemToFormOf(ab)
+  expect(deductionTaxYear(form, [strom, ab])).toBe(2026)
+  expect(deductionTaxYear(form, [{ ...strom, taxYear: undefined }])).toBe(2025)
+  expect(deductionTaxYear({ ...form, operatingPowerGeneralId: '' }, [strom])).toBeNull()
+  expect(deductionTaxYear({ ...form, operatingPower: '' }, [strom])).toBeNull()
+  const built = buildBody(form, [], 2025)
+  if ('error' in built) throw new Error(built.error)
+  expect(built.body.taxYear).toBeNull()
 })
 
 // Durchsicht von #252, R-W2: Bei Wärmepumpe und Stromheizung fragt das Formular auch an der Strom-Position

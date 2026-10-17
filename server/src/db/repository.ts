@@ -359,6 +359,7 @@ function mergeCostItem(current: CostItem, body: unknown): CostItem {
   const amounts = merged(body, 'tenancyAmounts', current.tenancyAmounts, (v) => (v === null ? null : readAmounts(v)))
   const selfAmounts = merged(body, 'selfAmounts', current.selfAmounts, (v) => (v === null ? null : readAmounts(v)))
   const category = merged(body, 'category', current.category, (v) => asText(v, ''))
+  const operatingPower = merged(body, 'operatingPower', current.operatingPower, (v) => oneOfOrUndefined(OPERATING_POWER, v))
   return {
     id: current.id,
     propertyId: mergedProperty(body, current.propertyId),
@@ -384,7 +385,9 @@ function mergeCostItem(current: CostItem, body: unknown): CostItem {
     // `null` leert, wie bei den übrigen optionalen Feldern (#208).
     serviceFrom: merged(body, 'serviceFrom', current.serviceFrom, asOptionalText),
     serviceTo: merged(body, 'serviceTo', current.serviceTo, asOptionalText),
-    taxYear: merged(body, 'taxYear', current.taxYear, asOptionalNumber),
+    // Ein Abzug beim Betriebsstrom hat kein eigenes Jahr der Zahlung (#267): Er steht im Jahr seiner Stromrechnung,
+    // abgeleitet in outflow.ts. Ein Wert, auch aus der Zeit davor, wird beim Speichern geleert.
+    taxYear: operatingPower === 'deduction' ? undefined : merged(body, 'taxYear', current.taxYear, asOptionalNumber),
     heatingPart: merged(body, 'heatingPart', current.heatingPart, (v) => oneOfOrUndefined(HEATING_PARTS, v)),
     // Ziel bei Heizkosten (Heizung PR 10).
     heatingTarget: merged(body, 'heatingTarget', current.heatingTarget, (v) => oneOfOrUndefined(HEATING_TARGETS, v)),
@@ -402,7 +405,7 @@ function mergeCostItem(current: CostItem, body: unknown): CostItem {
     fuelDeliveryId: merged(body, 'fuelDeliveryId', current.fuelDeliveryId, asNullableFilled),
     // Betriebsstrom (Heizung PR 15). `null` leert; fehlt das Feld, bleibt die Angabe (Review Focus 3,
     // ein alter Tab). Eine leere Grundlage gilt als keine.
-    operatingPower: merged(body, 'operatingPower', current.operatingPower, (v) => oneOfOrUndefined(OPERATING_POWER, v)),
+    operatingPower,
     operatingPowerItemId: merged(body, 'operatingPowerItemId', current.operatingPowerItemId, (v) => (typeof v === 'string' && v !== '' ? v : undefined)),
     operatingPowerBasis: merged(body, 'operatingPowerBasis', current.operatingPowerBasis, (v) => (typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined)),
     operatingPowerGeneralId: merged(body, 'operatingPowerGeneralId', current.operatingPowerGeneralId, (v) => (typeof v === 'string' && v !== '' ? v : undefined)),
@@ -1037,6 +1040,8 @@ const splitPartMessage = (c: CostItem): string =>
 // darf nur leer oder genau dieses sein. Reicht er über zwei, ist es Pflicht und liegt zwischen dem
 // Jahr des Beginns und dem Jahr nach dem Ende (eine Messdienstabrechnung kommt oft erst danach).
 function requireTaxYear(period: BillingPeriod, after: CostItem, what: string): void {
+  // Ein Abzug beim Betriebsstrom steht im Jahr seiner Stromrechnung (#267, outflow.ts); `mergeCostItem` leert sein Jahr.
+  if (after.operatingPower === 'deduction') return
   const startYear = Number(period.from.slice(0, 4))
   const endYear = Number(period.to.slice(0, 4))
   if (!spansTwoYears(period)) {

@@ -28,7 +28,7 @@ import { and, eq, inArray } from 'drizzle-orm'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 import { plantRules, settledSeparately } from '../../../shared/heatingPeriod.ts'
 import {
-  formatDayRange, parsePeriodKey, periodContaining, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, settlementDeadline, spansTwoYears, startYearOf,
+  formatDayRange, parsePeriodKey, periodContaining, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, settlementDeadline, spansTwoYears,
 } from '../../../shared/period.ts'
 import { dayAfter } from '../../../shared/law/register.ts'
 import type { BillingPeriod, CostItem, PeriodChangePreview, PeriodEffect, PeriodKey, PeriodRules, Property, Tenancy } from '../../../shared/types.ts'
@@ -41,6 +41,7 @@ import { HeatingError, PeriodConflict, PeriodError, rewriteCostItemFamily, settl
 import { assessmentLines, assessments, closedSettlementHistory, periodChanges, prepaymentOverrides, properties } from './schema.ts'
 import { GENERAL_POWER_CATEGORY } from '../../../shared/operatingPower.ts'
 import { euro } from '../../../shared/costItem.ts'
+import { storedOutflowYear } from '../outflow.ts'
 
 const MONTH_NAMES = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember']
 const monthName = (key: string): string => `${MONTH_NAMES[Number(key.slice(5, 7)) - 1] ?? key.slice(5, 7)} ${key.slice(0, 4)}`
@@ -116,9 +117,16 @@ function bestFor(a: Affected, options: readonly BillingPeriod[]): BillingPeriod 
 
 type Group = { from: PeriodKey; old: BillingPeriod; heating: boolean; items: CostItem[]; options: BillingPeriod[]; split: Map<string, ServicePart[]> | null }
 
-// Das Jahr der Zahlung, das eine Position heute für die Steuer hat (Entwurf 3.10): das gespeicherte,
-// sonst das Kalenderjahr ihres Zeitraums.
-const effectiveTaxYear = (item: Pick<CostItem, 'taxYear' | 'period'>): number => item.taxYear ?? startYearOf(item.period)
+// Das Jahr der Zahlung, das eine Position heute für die Steuer hat (Entwurf 3.10), aus derselben Stelle wie die
+// Steuerübersicht (`storedOutflowYear` in outflow.ts, #255): das gespeicherte, sonst das Kalenderjahr ihres Zeitraums.
+// Gefragt wird es nur für Positionen, die kein Abzug beim Betriebsstrom sind (`followsBill`).
+const effectiveTaxYear = (item: CostItem): number => storedOutflowYear(item)
+
+// Ein Abzug beim Betriebsstrom hat kein eigenes Jahr der Zahlung (#267): Er steht im Jahr seiner Stromrechnung
+// (outflow.ts) und folgt ihr beim Wechsel ohnehin in jeden Zeitraum. Die Vorschau fragt deshalb kein Jahr für ihn, und
+// in den Sätzen zur Verschiebung zählt er nicht: Wechselt die Rechnung das Jahr, wechselt er mit, und der Ausgleich beim
+// Betriebsstrom (#268) hält die Werbungskosten jedes Jahres bei der bezahlten Rechnung.
+const followsBill = (item: Pick<CostItem, 'operatingPower'>): boolean => item.operatingPower === 'deduction'
 
 type OverrideAsk = { tenancy: Tenancy; drop: Set<PeriodKey>; from: { key: PeriodKey; label: string; cents: number }[]; ask: Map<PeriodKey, { period: BillingPeriod; months: string[] }> }
 
@@ -137,10 +145,6 @@ type Plan = {
   // Abzüge des Betriebsstroms, deren Stromrechnung einen Leistungszeitraum hat (Folge-PR zu #252, Geld-K1): Sie
   // folgen dem Endzustand ihrer Rechnung, gemeinsam geteilt (`splitDeductionsAlike`), und stehen in keiner Gruppe.
   follows: { item: CostItem; parts: ServicePart[] }[]
-  byId: ReadonlyMap<string, CostItem>
-  // G-H4: Das Jahr der Zahlung dieser Teile eines Abzugs wird nicht gefragt, sondern ist das seiner
-  // Betriebsstrom-Position (`powerItemId`) nach dem Wechsel (Entscheidung G2-N-W2).
-  derivedYears: Map<string, { powerItemId: string; entry: PeriodChangePreview['taxYears'][number] }>
   taxEntries: Map<string, PeriodChangePreview['taxYears'][number]>
   next: PeriodRules
   before: PeriodRules
@@ -155,7 +159,7 @@ const taxKey = (item: Pick<CostItem, 'id'>, p: Pick<BillingPeriod, 'key'>): stri
 function taxEntry(item: CostItem, p: BillingPeriod): PeriodChangePreview['taxYears'][number] {
   const start = Number(p.from.slice(0, 4))
   const end = Number(p.to.slice(0, 4)) + 1
-  const was = item.taxYear ?? startYearOf(item.period)
+  const was = effectiveTaxYear(item)
   return {
     key: taxKey(item, p), costItemId: item.id, description: item.description, period: p.key, label: periodLabel(p),
     suggested: Math.min(Math.max(was, start), end), options: Array.from({ length: end - start + 1 }, (_, i) => start + i),
@@ -166,22 +170,6 @@ function taxEntry(item: CostItem, p: BillingPeriod): PeriodChangePreview['taxYea
 // hängt am heutigen Tag und gehört nicht dazu.
 function tokenOf(p: Omit<PeriodChangePreview, 'token' | 'periods'>): string {
   return crypto.createHash('sha256').update(JSON.stringify([p.rules, p.newShort, p.blocked, p.moves, p.groups, p.overrides, p.assessments, p.taxYears])).digest('hex')
-}
-
-// Jahre in Worten: „2025“ bzw. „2025 bis 2027“ (Recht H-2 der zweiten Nachprüfung von #265).
-const yearsText = (years: readonly number[]): string => {
-  const first = years[0]
-  const last = years[years.length - 1]
-  return first === last ? String(first) : `${first} bis ${last}`
-}
-
-// Geld H1 (Nachprüfung fc20455): Ein Ziel der Heizgruppe, an dem das Jahr des Betriebsstroms in keine Spanne seines
-// Abzugsteils passt. `years`: die Jahre, die der Betriebsstrom dort haben kann (eines, wenn der Zeitraum in einem
-// Kalenderjahr liegt).
-export function noYearText(i: { target: string; power: string; years: readonly number[]; deduction: string; deductionLabel: string; span: readonly number[] }): string {
-  const where = i.years.length === 1 ? `im Jahr der Zahlung ${i.years[0]}` : `in einem der Jahre ${yearsText(i.years)}`
-  return `Ganz nach ${i.target} verschoben, stünde „${i.power}“ ${where}; sein Abzug „${i.deduction}“ in ${i.deductionLabel} folgt ihm, dort ist aber nur ${yearsText(i.span)} möglich. ` +
-    'So lässt sich der Wechsel nicht speichern; wählen Sie für die Heizkosten einen anderen Zeitraum.'
 }
 
 // Eine Stromrechnung mit Leistungszeitraum, die der Wechsel nicht teilt, bleibt ganz in ihrem Zeitraum (K1).
@@ -475,7 +463,7 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
       const advisable = g.split !== null && notes.length === 0
       // Ganz verschoben: vorbelegt ist ein Zeitraum, in dem jede Position ihr Jahr der Zahlung behält,
       // sonst der mit der größten Überschneidung (Review der Laienprobe, Runde 1).
-      const shiftOf = (p: BillingPeriod): number => g.items.reduce((sum, i) => sum + (yearIn(i, p) !== effectiveTaxYear(i) ? i.amountCents : 0), 0)
+      const shiftOf = (p: BillingPeriod): number => g.items.reduce((sum, i) => sum + (!followsBill(i) && yearIn(i, p) !== effectiveTaxYear(i) ? i.amountCents : 0), 0)
       const keeping = g.options.filter((p) => shiftOf(p) === 0)
       // Verschöbe das Teilen das Jahr der Zahlung, gibt es keine Vorgabe: Ganz in einen Zeitraum
       // gelegt, verschöbe sich entweder ebenfalls das Steuerjahr oder die Abrechnung; entscheiden muss
@@ -500,7 +488,7 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
           const cents = shiftOf(p)
           if (cents === 0) return []
           // Je Position mit ihrem eigenen Jahr (Review Runde 2): Positionen einer Gruppe können verschiedene haben.
-          const moved = g.items.filter((i) => yearIn(i, p) !== effectiveTaxYear(i))
+          const moved = g.items.filter((i) => !followsBill(i) && yearIn(i, p) !== effectiveTaxYear(i))
             .map((i) => `„${i.description}“ ${euro(i.amountCents)} von ${effectiveTaxYear(i)} nach ${yearIn(i, p)}`)
           return [{ key: p.key, text: `Ganz nach ${periodLabel(p)} verschoben, wechselten für die Steuer ${moved.length === 1 ? 'das Jahr der Zahlung' : `zusammen ${euro(cents)} das Jahr der Zahlung`}: ${moved.join('; ')}, obwohl sich an der Zahlung nichts ändert.` }]
         }),
@@ -519,73 +507,26 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
     token: '',
   }
   const taxEntries: Plan['taxEntries'] = new Map()
-  const derivedYears: Plan['derivedYears'] = new Map()
-  // G-H4 (Folge-PR zu #252): Ein Abzug nimmt das Jahr seiner Betriebsstrom-Position, solange es in der Spanne des
-  // Zeitraums liegt (gemessen am heutigen Jahr des Betriebsstroms); dann fragt die Vorschau nicht. Sonst wie bisher.
+  // #267: Ein Abzug beim Betriebsstrom wird nicht gefragt (`followsBill`). Vorher nahm er das Jahr seiner
+  // Betriebsstrom-Position (G-H4), und die Vorschau bot für den Betriebsstrom nur Jahre im Schnitt der Spannen seiner
+  // Abzugsteile an; ging ein Ziel gar nicht, sperrte sie es (Geld H1, `noYearText`). Seit der Abzug seiner Stromrechnung
+  // folgt, liegt er immer in deren Zeitraum und hat damit deren Spanne, und beides entfällt (Durchsicht von #268, K4).
   const ask = (item: CostItem, p: BillingPeriod) => {
-    if (!spansTwoYears(p)) return
+    if (!spansTwoYears(p) || followsBill(item)) return
     const entry = taxEntry(item, p)
-    const power = item.operatingPower === 'deduction' && item.operatingPowerItemId !== undefined ? byId.get(item.operatingPowerItemId) : undefined
-    if (power !== undefined && entry.options.includes(effectiveTaxYear(power))) {
-      derivedYears.set(entry.key, { powerItemId: power.id, entry })
-      return
-    }
     taxEntries.set(entry.key, entry)
   }
   for (const { item, parts } of splits) for (const part of parts) ask(item, part.period)
   for (const { item, parts } of follows) for (const part of parts) ask(item, part.period)
   for (const g of groups.values()) for (const o of g.options) for (const item of g.items) ask(item, o)
   for (const { item, target } of regrows) ask(item, target)
-  // Geld H1 (Nachprüfung fc20455): Die Teile eines Abzugs nehmen das Jahr ihrer Betriebsstrom-Position. Die
-  // Vorschau bietet für den Betriebsstrom deshalb nur Jahre an, die in jeder Spanne seiner abgeleiteten Abzugsteile
-  // liegen; geht ein Ziel gar nicht (kein gemeinsames Jahr, oder das feste Jahr eines Zeitraums in einem
-  // Kalenderjahr passt nicht), sagt sie es an diesem Ziel vorher. Der 409 beim Schreiben bleibt als Netz.
-  const conflicts = new Map<string, string[]>()
-  const conflict = (powerId: string, target: BillingPeriod, text: string) => {
-    for (const g of preview.groups) {
-      if (!g.items.some((i) => i.costItemId === powerId) || !g.options.some((o) => o.key === target.key)) continue
-      conflicts.set(`${g.id}|${target.key}`, [...(conflicts.get(`${g.id}|${target.key}`) ?? []), text])
-    }
-  }
-  for (const d of derivedYears.values()) {
-    const power = byId.get(d.powerItemId)
-    if (power === undefined) continue
-    const span = d.entry.options
-    const tell = (target: BillingPeriod, years: readonly number[]) => conflict(power.id, target,
-      noYearText({ target: periodLabel(target), power: power.description, years, deduction: d.entry.description, deductionLabel: d.entry.label, span }))
-    for (const e of taxEntries.values()) {
-      if (e.costItemId !== power.id) continue
-      const options = e.options.filter((y) => span.includes(y))
-      const target = periodOfKey(next, e.period)
-      if (options.length === 0) {
-        if (target) tell(target, e.options)
-        continue
-      }
-      e.options = options
-      e.suggested = Math.min(Math.max(e.suggested, options[0] ?? e.suggested), options[options.length - 1] ?? e.suggested)
-    }
-    for (const g of groups.values()) {
-      if (!g.items.some((i) => i.id === power.id)) continue
-      for (const o of g.options) if (!spansTwoYears(o) && !span.includes(startYearOf(o.key))) tell(o, [startYearOf(o.key)])
-    }
-  }
   // Geld H2, Variante (b) (Nachtrag nach Fixrunde 82d8a7a): Hier sagte die Vorschau, dass sich ein Teil eines folgenden
   // Abzugs mit festem Steuerjahr in der Anlage V verschiebt, wenn der Betriebsstrom in ein anderes Jahr geht. Seit #268
   // gleicht die Steuerübersicht je Steuerjahr aus (Σ Abzüge − Σ Heizpositionen `included`): Jedes Jahr zeigt die in ihm
   // bezahlten Rechnungen, es verschiebt sich nichts, und der Satz entfällt.
-  for (const g of preview.groups) {
-    for (const o of g.options) {
-      const texts = conflicts.get(`${g.id}|${o.key}`)
-      if (!texts) continue
-      const text = [...new Set(texts)].join(' ')
-      const shift = g.taxShifts.find((t) => t.key === o.key)
-      if (shift) shift.text = `${shift.text} ${text}`
-      else g.taxShifts.push({ key: o.key, text })
-    }
-  }
   preview.taxYears = [...taxEntries.values()]
   preview.token = tokenOf(preview)
-  return { preview, splits, groups, overrideRekeys, overrideAsks: [...asks.values()], assessmentMoves, regrows, follows, byId, derivedYears, taxEntries, next, before }
+  return { preview, splits, groups, overrideRekeys, overrideAsks: [...asks.values()], assessmentMoves, regrows, follows, taxEntries, next, before }
 }
 
 // Warum das Aufteilen einer Gruppe nicht vorbelegt wird (Review der Laienprobe, Runde 1): Eine
@@ -601,6 +542,7 @@ function splitNotes(g: Group, bookedIds: ReadonlySet<string>, partYear: (item: C
   }
   const shifts = new Map<string, number>()
   for (const item of g.items) {
+    if (followsBill(item)) continue
     const was = effectiveTaxYear(item)
     for (const part of g.split?.get(item.id) ?? []) {
       const year = partYear(item, part.period)
@@ -799,30 +741,9 @@ async function writeChangeIn(
   // der Zahlung (Durchsicht von #226, I1).
   // Nachprüfung von #252, G2-N-W1: Stromrechnung und Abzüge wandern nacheinander; geprüft wird der Endstand
   // (`settleOperatingPowerLinks`), und dafür merkt sich der Wechsel die Teile jeder Position.
-  // G-H4: Für die Teile eines Abzugs, deren Jahr nicht gefragt wurde, gilt das Jahr seiner Betriebsstrom-Position
-  // nach dem Wechsel: deren Antwort im neuen Zeitraum, sonst ihr heutiges Jahr.
-  const askedYearIn = rawTaxYearIn
-  const powerYear = (power: CostItem): number => {
-    const regrow = plan.regrows.find((r) => r.item.id === power.id)
-    if (regrow) return askedYearIn(regrow.target, power) ?? startYearOf(regrow.target.key)
-    for (const [id, g] of plan.groups) {
-      if (!g.items.some((i) => i.id === power.id)) continue
-      const target = g.options.find((p) => p.key === answers.groups[id])
-      if (target) return askedYearIn(target, power) ?? startYearOf(target.key)
-    }
-    return effectiveTaxYear(power)
-  }
-  const taxYearIn = (target: BillingPeriod, item: CostItem): number | null => {
-    const derived = plan.derivedYears.get(taxKey(item, target))
-    if (derived === undefined) return askedYearIn(target, item)
-    const power = plan.byId.get(derived.powerItemId)
-    if (power === undefined) return derived.entry.suggested
-    const year = powerYear(power)
-    if (!derived.entry.options.includes(year)) {
-      throw new PeriodError(`Das Jahr der Zahlung des Abzugs „${item.description}“ folgt dem Betriebsstrom „${power.description}“ (${year}); in ${derived.entry.label} ist nur ${derived.entry.options[0]} bis ${derived.entry.options[derived.entry.options.length - 1]} möglich. Stellen Sie beim Betriebsstrom ein Jahr in dieser Spanne ein.`)
-    }
-    return year
-  }
+  // #267: Ein Abzug beim Betriebsstrom wird nicht gefragt und bekommt kein Jahr (`taxYearIn` ergibt für ihn `null`);
+  // `mergeCostItem` leert es ohnehin.
+  const taxYearIn = rawTaxYearIn
   const guard = { splitPart: true, periodChange: true }
   const written = new Map<string, { id: string; period: PeriodKey }[]>()
   const remember = (item: CostItem, periods: readonly PeriodKey[], ids: readonly string[]) =>

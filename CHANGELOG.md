@@ -6,6 +6,23 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+### Behoben
+
+- Steuerübersicht bei teilweiser Eigennutzung, wenn der Betriebsstrom der Heizung aus der
+  Stromrechnung des Hauses herausgerechnet ist: Der Abzug beim Allgemeinstrom stand bisher im Jahr
+  der Heizposition, die Stromrechnung im Jahr ihrer Zahlung. Lagen beide Jahre auseinander, etwa bei
+  einem Abrechnungszeitraum von Mai bis April oder einer eigenen Heizperiode, blieb in einem Jahr ein
+  privater Rest von einigen Euro übrig, auch in einem Jahr ohne Zahlung, und im anderen fehlte er.
+  Jetzt steht der Abzug immer im Jahr, in dem die Stromrechnung bezahlt ist, und sein privater Teil
+  richtet sich nach dem Heizanteil des Zeitraums, in dem der Betriebsstrom bei den Heizkosten steht,
+  auch wenn das ein anderes Jahr ist. Steht der Betriebsstrom in einer eigenen Heizperiode, kann
+  sich der private Teil deshalb auch innerhalb desselben Steuerjahres ändern. Die Summe beider Jahre
+  bleibt gleich, im Betrag wie im privaten Teil. Ein Jahr der Zahlung am Abzug gibt es nicht mehr, ein früher gespeichertes zählt
+  nicht und wird beim nächsten Speichern geleert. Dadurch lässt sich auch ein Wechsel des
+  Abrechnungszeitraums speichern, den Mietfuchs bisher ablehnte, weil kein Jahr zu Betriebsstrom und
+  Abzug zugleich passte. Die Abrechnung an die Mieter ändert sich nicht
+  ([#267](https://github.com/speedone/mietfuchs/issues/267)).
+
 ## [0.11.3] – 2026-10-17
 
 ### Geändert
