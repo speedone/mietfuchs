@@ -455,6 +455,32 @@ test('#267, B2 mit Heizkosten in 2025: kein privater Rest im Jahr ohne Stromzahl
   assert.deepEqual([r2026.expenses.totalCents, r2026.expenses.privateCents, r2026.expenses.deductibleCents], [700000, 222667, 477333])
 })
 
+// Durchsicht von PR 2, M1: Abrechnung Mai bis April, eigene Heizperiode Januar bis Dezember. Gas 3.000 € und
+// Betriebsstrom 200 € in 2025 (nach Einheiten, eigen 1/3), Hausstrom 1.000 € (2025/26, bezahlt 2026, nach Fläche, eigen
+// 20 %), Abzug −200 €. Der Abzug steht mit der Rechnung in 2026, der Betriebsstrom in 2025. In 2026 hat die Anlage keine
+// Heizkosten; der Ausgleich +200 nahm dort die Fläche (40 €) statt des Heizanteils des Betriebsstroms (66,67 €), und
+// über beide Jahre fehlten 26,67 € privat. Richtig: 2025 privat 1.000,00 €, 2026 160,00 + 66,67 = 226,67 €, zusammen
+// 1.226,67 €, wie wenn alles in einem Jahr stünde (Gas 1.000 + Betriebsstrom 66,67 + Strom 200 − Abzug 40).
+const m1 = (over: Partial<Item> = {}) => eigen([
+  gas(300000, '2025-01', { key: 'units' }), betrieb('bs', 20000, { key: 'units' }, '2025-01'),
+  hausstrom(100000, '2025-05', { key: 'area', taxYear: 2026 }), abzug('ab', 20000, 'bs', { key: 'area', ...over }, '2025-05'),
+], {
+  properties: [{ id: 'objekt-1', kind: 'mfh', cableBuiltBeforeDec2021: null, periodRules: { startMonth: 5, changes: [] } }],
+  heatingPlants: [anlage({ periodStartMonth: 1 })],
+} as Partial<Source>)
+
+test('#267, Durchsicht M1: Betriebsstrom und Abzug in verschiedenen Steuerjahren, im Jahr des Abzugs keine Heizkosten: privat über beide Jahre wie in einem', () => {
+  const r2025 = tax(m1(), 2025)
+  const r2026 = tax(m1(), 2026)
+  assert.equal(r2025.expenses.privateCents, 100000, '2025: Gas 1.000, Betriebsstrom und sein Ausgleich heben sich auf')
+  assert.equal(r2026.expenses.privateCents, 22667, '2026: Strom 200 − Abzug 40 + Ausgleich 66,67')
+  assert.equal(r2025.expenses.totalCents + r2026.expenses.totalCents, 400000)
+  assert.equal(r2025.expenses.privateCents + r2026.expenses.privateCents, 122667)
+  // Der Ausgleich in 2026 nimmt den Heizanteil des Betriebsstroms, zu dem der Abzug gehört.
+  assert.deepEqual([line(r2026, 2026)?.amountCents, line(r2026, 2026)?.privateCents, line(r2026, 2026)?.allocation], [20000, 6667, 'settlement'])
+  assert.deepEqual([line(r2025, 2025)?.amountCents, line(r2025, 2025)?.privateCents], [-20000, -6667])
+})
+
 test('#267: Ein gespeichertes Jahr am Abzug, das von seiner Stromrechnung abweicht, zählt nicht (Mai bis April)', () => {
   // Stromrechnung 2025/26 bezahlt 2026, der Abzug trägt (aus der Zeit vor #267) 2025. Er steht trotzdem in 2026.
   const MAI: PeriodRules = { startMonth: 5, changes: [] }

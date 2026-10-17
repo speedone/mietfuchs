@@ -26,8 +26,9 @@
 // Betriebsstrom (#268) nach dem Heizanteil. Das Jahr wird **abgeleitet und nicht gespeichert**: repository.ts leert
 // `taxYear` am Abzug beim Speichern, und ein Wert aus der Zeit davor wird hier nicht gelesen. Die Rechnung steht immer
 // im selben Zeitraum wie ihr Abzug (`guardDeductionSource` und `settleOperatingPowerLinks` in db/repository.ts), und
-// `items` sind die Positionen, unter denen sie zu suchen ist. Fehlt sie dort, was die Datenbank ausschließt, gilt für
-// den Abzug die Regel jeder Position. Die Heizposition „steckt auch in der Stromrechnung“ (`included`) behält ihr Jahr:
+// `items` sind die Positionen, unter denen sie zu suchen ist. Fehlt sie dort, was die Datenbank ausschließt (CHECK
+// `cost_items_operating_power_source_complete`, `guardDeductionSource`), gilt für den Abzug der Beginn seines Zeitraums,
+// und ein gespeichertes Jahr am Abzug wird auch dann nicht gelesen (Durchsicht von PR 2, K1). Die Heizposition „steckt auch in der Stromrechnung“ (`included`) behält ihr Jahr:
 // Sie und ihr Beitrag zum Ausgleich heben sich im selben Jahr auf, im Betrag wie im privaten Teil.
 //
 // Ein Zahlungsdatum gibt es hier noch nicht (kommt mit PR 3 von #255 vor dem angegebenen Jahr), und kein Anteil
@@ -56,6 +57,7 @@ export function outflowShares(item: OutflowItem, period: Pick<BillingPeriod, 'fr
       return [{ year: only.year, cents: item.amountCents, source: 'bill' }]
     }
   }
+  if (item.operatingPower === 'deduction') return [{ year: Number(period.from.slice(0, 4)), cents: item.amountCents, source: 'period' }]
   // `!= null` und nicht `!== undefined` (Durchsicht K1): Ein `null`, das an einer Grenze durchrutscht, hieße sonst ein
   // Jahr „null“, und die Position fiele still aus jeder Steuerübersicht. Vorher stand hier `taxYear ?? Beginn`.
   if (item.taxYear != null) return [{ year: item.taxYear, cents: item.amountCents, source: 'stated' }]

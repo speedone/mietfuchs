@@ -304,3 +304,48 @@ test('#267 Invariante: ein eigenes Jahr am Abzug ändert an der Steuerübersicht
   }
   if (SEEDS.length >= 30) assert.ok(differs > 0, 'kein Bestand mit abweichendem Jahr am Abzug')
 })
+
+// Durchsicht von #255 PR 2, S1 (zu M1): Über alle Steuerjahre zusammen ist der private Teil derselbe, gleich in welchen
+// Jahren Stromrechnung, Abzug und Heizposition stehen. Jede Heizposition „steckt auch in der Stromrechnung“ hat genau
+// einen Abzug gleicher Höhe, im Zeitraum eines zufälligen Jahres; die Stromrechnungen sind zufällig im Folgejahr bezahlt,
+// und in einem Jahr fehlen zuweilen die übrigen Heizkosten. Dann gleicht sich jedes Paar aus: Die Zeilen zum Ausgleich
+// ergeben über die Jahre zusammen 0 €, im Betrag genau und privat bis auf die Rundung je Zeile. Vorher nahm der Abzug
+// den Heizanteil des Teils, in dem er stand (ohne Heizkosten dort: die Fläche), die Heizposition den ihres Teils.
+test('#267 Invariante (S1): Betriebsstrom und Abzug in beliebigen Steuerjahren, über alle Jahre heben sie sich auch privat auf', () => {
+  let crossing = 0
+  let withoutHeat = 0
+  for (const seed of SEEDS) {
+    const rnd = makeRng(seed * 7 + 1)
+    const { source } = randomStock(rnd, { deductions: 'none', method: 'manual', billYears: true })
+    const heatKeys: CostKey[] = ['area', 'units', 'persons']
+    const pick = <T>(arr: readonly T[]): T => arr[Math.floor(rnd() * arr.length)] as T
+    for (const h of source.costItems.filter((c) => c.operatingPower === 'included')) {
+      const year = pick(YEARS)
+      source.costItems.push({
+        id: `ab-${h.id}`, propertyId: 'objekt-1', period: periodKey(`${year}-01`), category: 'Beleuchtung/Allgemeinstrom', description: `Abzug ${h.id}`,
+        amountCents: -h.amountCents, key: pick(heatKeys), operatingPower: 'deduction', operatingPowerGeneralId: `hs${year}`, operatingPowerItemId: h.id,
+      })
+    }
+    // Zuweilen hat ein Jahr außer dem Betriebsstrom keine Heizkosten (der Fall aus M1).
+    if (rnd() < 0.3) {
+      const year = pick(YEARS)
+      source.costItems = source.costItems.filter((c) => c.id !== `gas${year}`)
+      withoutHeat++
+    }
+    let amount = 0
+    let privat = 0
+    let lines = 0
+    for (const year of BILL_YEARS) {
+      const r = taxReportFor(source, 'objekt-1', year)
+      const z = r.expenses.items.find((i) => i.operatingPowerBalance)
+      if (z === undefined) continue
+      lines++
+      amount += z.amountCents
+      privat += z.privateCents
+    }
+    if (lines > 0) crossing++
+    assert.equal(amount, 0, `Startwert ${seed}: Ausgleich über alle Jahre`)
+    assert.ok(Math.abs(privat) <= lines, `Startwert ${seed}: privat über alle Jahre ${privat} Cent bei ${lines} Zeilen`)
+  }
+  if (SEEDS.length >= 30) assert.ok(crossing > 0 && withoutHeat > 0, `Paare über Jahre ${crossing}, Jahre ohne Heizkosten ${withoutHeat}`)
+})

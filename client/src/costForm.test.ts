@@ -648,6 +648,21 @@ describe('Leistungszeitraum, Jahr der Zahlung, Brennstoff (#208)', () => {
     expect(splitDecision([{ ...rumpf, closed: true }, voll], '2025')).toEqual({ error: 'Die Abrechnung 01.01.–30.04.2025 ist abgeschlossen. Öffnen Sie sie wieder, wenn die Rechnung anteilig hinein soll.', needsTaxYear: false })
   })
 
+  // Durchsicht von #255 PR 2, K2: Ein Abzug beim Betriebsstrom hat kein Feld für das Jahr der Zahlung (#267) und steht
+  // immer im Zeitraum seiner Stromrechnung; die Rückfrage verlangt deshalb kein Jahr, sondern sagt, warum es nicht geht.
+  test('Abzug beim Betriebsstrom über zwei Zeiträume: kein Jahr verlangt, sondern der Grund', () => {
+    const parts: SplitPreviewPart[] = [
+      { period: periodKey('2025-01'), label: '01.01.–30.04.2025', days: 120, amountCents: -1578, labor35aCents: null, description: 'A', needsTaxYear: false, closed: false },
+      { period: periodKey('2025-05'), label: '2025/2026', days: 245, amountCents: -3222, labor35aCents: null, description: 'A', needsTaxYear: true, closed: false },
+    ]
+    for (const taxYear of ['', '2025']) {
+      const d = splitDecision(parts, taxYear, true)
+      if (!('error' in d)) return expect.unreachable('angenommen')
+      expect(d.needsTaxYear).toBe(false)
+      expect(d.error).toBe('Ein Abzug beim Betriebsstrom lässt sich nicht auf mehrere Abrechnungszeiträume aufteilen: Er steht immer im Zeitraum seiner Stromrechnung. Wählen Sie den Leistungszeitraum innerhalb dieses Zeitraums oder lassen Sie ihn leer.')
+    }
+  })
+
   test('Jahr der Zahlung: nur bei zwei Kalenderjahren, Auswahl vom Beginn bis ein Jahr nach dem Ende', () => {
     expect(showsTaxYear({ from: '2025-05-01', to: '2026-04-30' }, false)).toBe(true)
     expect(showsTaxYear({ from: '2025-01-01', to: '2025-12-31' }, false)).toBe(false)

@@ -382,7 +382,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
         return
       }
       if (parts.length > 1) {
-        const decision = splitDecision(parts, form.taxYear)
+        const decision = splitDecision(parts, form.taxYear, form.operatingPower === 'deduction')
         if ('error' in decision) {
           setNeedsTaxYear(decision.needsTaxYear)
           setError(decision.error)

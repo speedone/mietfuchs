@@ -13,8 +13,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   der Heizposition, die Stromrechnung im Jahr ihrer Zahlung. Lagen beide Jahre auseinander, etwa bei
   einem Abrechnungszeitraum von Mai bis April oder einer eigenen Heizperiode, blieb in einem Jahr ein
   privater Rest von einigen Euro übrig, auch in einem Jahr ohne Zahlung, und im anderen fehlte er.
-  Jetzt steht der Abzug immer im Jahr, in dem die Stromrechnung bezahlt ist; die Summe beider Jahre
-  bleibt gleich. Ein Jahr der Zahlung am Abzug gibt es nicht mehr, ein früher gespeichertes zählt
+  Jetzt steht der Abzug immer im Jahr, in dem die Stromrechnung bezahlt ist, und sein privater Teil
+  richtet sich nach dem Heizanteil des Zeitraums, in dem der Betriebsstrom bei den Heizkosten steht,
+  auch wenn das ein anderes Jahr ist. Die Summe beider Jahre bleibt gleich, im Betrag wie im privaten
+  Teil. Ein Jahr der Zahlung am Abzug gibt es nicht mehr, ein früher gespeichertes zählt
   nicht und wird beim nächsten Speichern geleert. Dadurch lässt sich auch ein Wechsel des
   Abrechnungszeitraums speichern, den Mietfuchs bisher ablehnte, weil kein Jahr zu Betriebsstrom und
   Abzug zugleich passte. Die Abrechnung an die Mieter ändert sich nicht

@@ -657,9 +657,15 @@ export function needsSplitCheck(body: CostItemBody, before?: Pick<CostItem, 'ser
 }
 
 // Die Rückfrage vor dem Aufteilen, oder warum nicht aufgeteilt werden kann.
-export function splitDecision(parts: readonly SplitPreviewPart[], taxYear: string): { message: string } | { error: string; needsTaxYear: boolean } {
+// `deduction`: das Formular ist ein Abzug beim Betriebsstrom. Er hat kein Jahr der Zahlung (#267) und steht immer im
+// Zeitraum seiner Stromrechnung (der Server lehnt das Aufteilen ab); gefragt wird deshalb nicht nach einem Feld, das es
+// beim Abzug nicht gibt, sondern gesagt, warum es nicht geht (Durchsicht von #255 PR 2, K2).
+export function splitDecision(parts: readonly SplitPreviewPart[], taxYear: string, deduction = false): { message: string } | { error: string; needsTaxYear: boolean } {
   const closed = parts.find((p) => p.closed)
   if (closed) return { error: `Die Abrechnung ${closed.label} ist abgeschlossen. Öffnen Sie sie wieder, wenn die Rechnung anteilig hinein soll.`, needsTaxYear: false }
+  if (deduction) {
+    return { error: 'Ein Abzug beim Betriebsstrom lässt sich nicht auf mehrere Abrechnungszeiträume aufteilen: Er steht immer im Zeitraum seiner Stromrechnung. Wählen Sie den Leistungszeitraum innerhalb dieses Zeitraums oder lassen Sie ihn leer.', needsTaxYear: false }
+  }
   const twoYears = parts.find((p) => p.needsTaxYear)
   if (twoYears && taxYear === '') {
     return { error: `Bitte wählen Sie das Jahr der Zahlung (für die Steuer): Ein Teil der Rechnung gehört in den Zeitraum ${twoYears.label}, der über zwei Kalenderjahre reicht.`, needsTaxYear: true }

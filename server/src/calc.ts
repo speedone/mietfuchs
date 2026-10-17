@@ -87,7 +87,7 @@ import { CALENDAR_RULES, calendarYearPeriod, contextOf, formatDayRange, periodCo
 import { generatorEnergy, noCo2Supplier } from '../../shared/heatDelivery.ts'
 import { lineRoot, monthSpanText, plantRules, plantSpan, recommendedDeadline, requestMonth, sameBuilding, sameFuelLine, sameLine, sameSpan, separateOwner, servesUnit, settledSeparately } from '../../shared/heatingPeriod.ts'
 import { heatingSnapshotFor, selfAt, snapshotFor, wayOf } from './snapshot.ts'
-import { outflowShares, paidWhollyIn } from './outflow.ts'
+import { outflowShares, paidWhollyIn, storedOutflowYear } from './outflow.ts'
 import { deliveryShare, notInvoiceDeliveries, plantFuel, rangeOf, type FuelCarry, type FuelResult, type ShareContext } from './fuel.ts'
 import { co2Plausibility, etsExempt as etsExemptPlant, plausibilityText } from './co2Plausibility.ts'
 import { billMissingText, deductionMissingText, generationPowerText, selfSupplyPowerText, missingOperatingPowerText, missingPowerFindings, operatingPowerBalance, operatingPowerFindings, operatingPowerText, unmarkedPowerCredits, type OperatingPowerBalance } from './operatingPower.ts'
@@ -1176,7 +1176,7 @@ export function carryShareCents(snapshot: Snapshot, carryCents: number, year: nu
 
 // `linkable`: Positionen, auf die ein Abzug zeigen kann, auch aus anderen Jahren (#268, Durchsicht M1); nur für die
 // Anlage und die Beschreibung eines Verweises, nie für Beträge.
-export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], options: { linkable?: readonly SnapshotCostItem[] } = {}): TaxReport {
+export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], options: { linkable?: readonly SnapshotCostItem[]; foreignQuota?: ForeignHeatQuota } = {}): TaxReport {
   const year = snapshot.year
   // Die Steuerübersicht rechnet im Kalenderjahr (§ 11 EStG, #208). Ohne Teile: der Schnappschuss
   // eines Kalenderjahres. Mit Teilen: die Abrechnungen, die das Jahr berühren; `snapshot` liefert
@@ -1329,7 +1329,7 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
   }
   const balanceParts = used.map((p) => ({ items: p.items, plants: p.snapshot.heatingPlants ?? [], period: p.snapshot.period }))
   const balance = operatingPowerBalance(balanceParts, [...lookup.values()])
-  const balanceItem = balance.cents !== 0 ? operatingPowerBalanceItem(balance, used, splits, snapshot.units, year) : null
+  const balanceItem = balance.cents !== 0 ? operatingPowerBalanceItem(balance, used, splits, snapshot.units, year, options.foreignQuota) : null
   if (balanceItem) split.items.set(balanceItem.costItemId, balanceItem)
   const ambiguous = balance.ambiguous
   const unmarked = unmarkedPowerCredits(balanceParts)
@@ -1587,7 +1587,33 @@ export function taxReportFor(source: Parameters<typeof snapshotFor>[0], property
   // Durchsicht M1 zu #268: Ein Abzug kann auf eine Heizposition in einem anderen Steuerjahr zeigen; der Schnappschuss
   // kennt nur die Positionen seines Zeitraums. Deshalb bekommt die Übersicht alle Positionen des Objekts für Verweise.
   const all = source.costItems.filter((c) => c.propertyId === propertyId)
-  return taxReport(calendar, parts, { linkable: all })
+  return taxReport(calendar, parts, { linkable: all, foreignQuota: foreignHeatQuota(source, propertyId, year, all) })
+}
+
+// Durchsicht von #255 PR 2, M1: der Heizanteil der Anlage in dem Teil, in dem eine Heizposition steht, wenn sie in einem
+// anderen Steuerjahr steht als der Abzug, der auf sie zeigt. Gesucht wird zuerst im Jahr, das `outflowShares` ihr gibt,
+// dann in den Jahren daneben; gerechnet wird wie in der Steuerübersicht jenes Jahres (Teile, Abrechnung, Aufteilung).
+function foreignHeatQuota(source: Parameters<typeof snapshotFor>[0], propertyId: string, year: number, all: Parameters<typeof snapshotFor>[0]['costItems']): ForeignHeatQuota {
+  const partsOf = new Map<number, readonly TaxPart[]>()
+  const splitOf = new Map<string, TaxSplit>()
+  return (id, plant) => {
+    const item = all.find((c) => c.id === id)
+    if (item === undefined) return undefined
+    const own = storedOutflowYear(item, all)
+    const years = [own, ...[-1, 1, -2, 2, -3, 3].map((d) => own + d)].filter((y) => y !== year)
+    for (const y of years) {
+      const parts = partsOf.get(y) ?? taxPartsFor(source, propertyId, y).filter((p) => !p.carryOnly)
+      partsOf.set(y, parts)
+      const at = parts.findIndex((p) => p.items.some((c) => c.id === id))
+      const part = parts[at]
+      if (part === undefined) continue
+      const key = `${y}|${at}`
+      const split = splitOf.get(key) ?? splitForTax(part.snapshot, part.items.filter((c) => groupOf(c.category) !== null), computeSettlement(part.snapshot), calendarYearPeriod(y))
+      splitOf.set(key, split)
+      return plantHeatQuota(part, split, plant)
+    }
+    return undefined
+  }
 }
 
 // Die Anlage-V-Gruppe einer Kostenart, `null` für die Rücklage (#143). Bewusst nach
@@ -1831,8 +1857,36 @@ function splitForTax(snapshot: Snapshot, items: SnapshotCostItem[], settlement: 
 // ganze Zeile; mit Vorzeichen, denn ein negativer Ausgleich hat einen negativen privaten Teil.
 const balanceLineId = (year: number): string => `operating-power-balance:${year}`
 
+// Eigenanteil an den Heizkosten einer Anlage in einem Teil, wie die Steuerübersicht die Heizpositionen aufteilt (#268).
+// `null`: keine Heizposition der Anlage im Teil; `'unusable'`: kein Maßstab (Gutschrift über der Rechnung).
+type HeatQuota = { privateCents: number; amountCents: number } | 'unusable' | null
+function plantHeatQuota(p: TaxPart, s: TaxSplit, plant: string | null): HeatQuota {
+  let privateCents = 0
+  let amountCents = 0
+  for (const c of p.items) {
+    if (c.category !== HEATING_CATEGORY || (c.heatingPlantId ?? null) !== plant) continue
+    const x = s.items.get(c.id)
+    if (!x) continue
+    privateCents += x.privateCents
+    amountCents += x.amountCents
+  }
+  // Durchsicht #297 K3: Heizkosten der Anlage netto ≤ 0 (Gutschrift über der Rechnung) sind ebenso kein Maßstab; ganz
+  // ohne Heizposition bleibt es beim Rückfall wie beim Abzug ohne Verweis.
+  if (amountCents === 0 && privateCents === 0) return null
+  if (!(amountCents > 0)) return 'unusable'
+  // Integrationsdurchsicht M1: Eine Gutschrift mit eigenem Schlüssel oder eigenen Teilnehmern kann den Nenner fast
+  // aufzehren; dann liegt die Quote außerhalb 0…1 (gemessen 875 %), und der private Teil stünde über dem Betrag, auch
+  // mit falschem Vorzeichen. Eine solche Quote ist kein Heizanteil; es gilt dann die Fläche wie beim Abzug ohne Verweis.
+  return privateCents >= 0 && privateCents <= amountCents ? { privateCents, amountCents } : 'unusable'
+}
+
+// Der Heizanteil einer Heizposition in einem anderen Steuerjahr (Durchsicht von #255 PR 2, M1): der der Anlage in dem
+// Teil, in dem die Heizposition dort steht. `undefined`: in keinem Steuerjahr gefunden.
+export type ForeignHeatQuota = (heatingItemId: string, plant: string | null) => HeatQuota | undefined
+
 function operatingPowerBalanceItem(
   balance: OperatingPowerBalance, used: readonly TaxPart[], splits: readonly TaxSplit[], units: readonly SnapshotUnit[], year: number,
+  foreignQuota?: ForeignHeatQuota,
 ): TaxExpenseItem {
   const cents = balance.cents
   const isSelf = (u: SnapshotUnit) => !!u.selfUsed && !u.participates
@@ -1844,27 +1898,10 @@ function operatingPowerBalanceItem(
   const areaOk = selfUnits.length === 0 || (missing.length === 0 && totalArea > 0)
 
   // Eigenanteil an den Heizkosten einer Anlage in einem Teil, wie diese Übersicht die Heizpositionen aufteilt.
-  const heatQuota = (part: number, plant: string | null): { privateCents: number; amountCents: number } | 'unusable' | null => {
+  const heatQuota = (part: number, plant: string | null): HeatQuota => {
     const p = used[part]
     const s = splits[part]
-    if (!p || !s) return null
-    let privateCents = 0
-    let amountCents = 0
-    for (const c of p.items) {
-      if (c.category !== HEATING_CATEGORY || (c.heatingPlantId ?? null) !== plant) continue
-      const x = s.items.get(c.id)
-      if (!x) continue
-      privateCents += x.privateCents
-      amountCents += x.amountCents
-    }
-    // Durchsicht #297 K3: Heizkosten der Anlage netto ≤ 0 (Gutschrift über der Rechnung) sind ebenso kein Maßstab; ganz
-    // ohne Heizposition bleibt es beim Rückfall wie beim Abzug ohne Verweis.
-    if (amountCents === 0 && privateCents === 0) return null
-    if (!(amountCents > 0)) return 'unusable'
-    // Integrationsdurchsicht M1: Eine Gutschrift mit eigenem Schlüssel oder eigenen Teilnehmern kann den Nenner fast
-    // aufzehren; dann liegt die Quote außerhalb 0…1 (gemessen 875 %), und der private Teil stünde über dem Betrag, auch
-    // mit falschem Vorzeichen. Eine solche Quote ist kein Heizanteil; es gilt dann die Fläche wie beim Abzug ohne Verweis.
-    return privateCents >= 0 && privateCents <= amountCents ? { privateCents, amountCents } : 'unusable'
+    return p && s ? plantHeatQuota(p, s, plant) : null
   }
 
   const steps: CalcStep[] = []
@@ -1911,16 +1948,32 @@ function operatingPowerBalanceItem(
   let unsplittable = false
   const quotaSteps: CalcStep[] = []
   const seen = new Set<string>()
+  // Durchsicht von #255 PR 2, M1: Ein verknüpfter Abzug nimmt den Heizanteil aus dem Teil, in dem seine Heizposition
+  // steht, und nicht aus dem Teil, in dem er selbst steht. Seit #267 steht er im Steuerjahr seiner Stromrechnung, die
+  // Heizposition oft in einem anderen; hat die Anlage im Jahr des Abzugs keine Heizkosten, galt dort die Fläche, und über
+  // beide Jahre fehlte privat der Unterschied. So heben sich Abzug und Heizposition auch über zwei Steuerjahre im
+  // privaten Teil auf. Stehen beide im selben Teil, ist es derselbe Heizanteil wie bisher.
+  const quotaOf = (s: OperatingPowerBalance['sources'][number]): { quota: HeatQuota; where: string } => {
+    if (s.plant === undefined) return { quota: null, where: '' }
+    if (s.kind === 'deduction' && s.linkedId !== undefined) {
+      const id = s.linkedId
+      const at = used.findIndex((p) => p.items.some((c) => c.id === id))
+      if (at >= 0) return { quota: heatQuota(at, s.plant), where: String(at) }
+      const foreign = foreignQuota?.(id, s.plant)
+      if (foreign !== undefined) return { quota: foreign, where: `bei ${id}` }
+    }
+    return { quota: heatQuota(s.part, s.plant), where: String(s.part) }
+  }
   for (const s of balance.sources) {
-    const quota = s.plant !== undefined ? heatQuota(s.part, s.plant) : null
+    const { quota, where } = quotaOf(s)
     if (quota === 'unusable') quotaUnusable = true
     const q = quota === 'unusable' ? null : quota
     if (q) {
       raw += (s.cents * q.privateCents) / q.amountCents
-      const key = `${s.part}|${s.plant}`
+      const key = `${where}|${s.plant}`
       if (!seen.has(key)) {
         seen.add(key)
-        quotaSteps.push({ label: 'Eigenanteil an den Heizkosten der Anlage', value: `${fmtCents(q.privateCents)} von ${fmtCents(q.amountCents)} (${fmtNum(Math.round((q.privateCents / q.amountCents) * 10000) / 100)} %)`, term: 'ownShare' })
+        quotaSteps.push({ label: where.startsWith('bei ') ? `Eigenanteil an den Heizkosten der Anlage im Zeitraum von „${s.linkedDescription ?? ''}“` : 'Eigenanteil an den Heizkosten der Anlage', value: `${fmtCents(q.privateCents)} von ${fmtCents(q.amountCents)} (${fmtNum(Math.round((q.privateCents / q.amountCents) * 10000) / 100)} %)`, term: 'ownShare' })
       }
     } else if (!areaOk) {
       unsplittable = true

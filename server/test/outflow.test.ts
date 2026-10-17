@@ -15,11 +15,11 @@ import { frozenSettlementOf, heatingSnapshotFor, narrowToProperty, snapshotFor, 
 import { computeSettlement } from '../src/calc.ts'
 import { derivedTaxLines, planTaxArchive, taxArchiveItems } from '../src/taxReceipts.ts'
 import { makeRng, randomTaxStock, TAX_STOCK_PROPERTY, TAX_STOCK_SECOND, TAX_STOCK_YEARS, withSecondProperty, type TaxSource } from '../testing/taxStock.ts'
-import { deductionsOffBillYear, sha256, taxFingerprint, withDeductionsInBillYear } from '../testing/taxGolden.ts'
+import { deductionsOffBillYear, pairAcrossParts, sha256, taxAmounts, taxFingerprint, withDeductionsInBillYear } from '../testing/taxGolden.ts'
 import fs from 'node:fs'
 import { CALENDAR_RULES, calendarPeriod, calendarYearPeriod, isCalendarRules, periodKey, periodsBetween, rulesOf } from '../../shared/period.ts'
 import { plantRules, settledSeparately } from '../../shared/heatingPeriod.ts'
-import type { BillingPeriod, CostItem, PeriodRules } from '../../shared/types.ts'
+import type { BillingPeriod, CostItem, PeriodRules, TaxReport } from '../../shared/types.ts'
 
 const SEEDS: number[] = process.env.INV_FROM !== undefined || process.env.INV_TO !== undefined
   ? Array.from({ length: Math.max(0, Number(process.env.INV_TO ?? 10) - Number(process.env.INV_FROM ?? 1) + 1) }, (_, k) => Number(process.env.INV_FROM ?? 1) + k)
@@ -105,8 +105,9 @@ test('outflowShares (#267): ein Abzug beim Betriebsstrom nimmt das Jahr seiner S
   assert.equal(paidWhollyIn(deduction, { from: '2025-05-01' }, 2025, [bill]), false)
   assert.equal(paidWhollyIn(deduction, { from: '2025-05-01' }, 2026, [bill]), true)
   assert.equal(soleOutflowYear(deduction, { from: '2025-05-01' }, [bill]), 2026)
-  // Fehlt die Rechnung unter den Positionen (die Datenbank schließt das aus), gilt die Regel jeder Position.
-  assert.deepEqual(outflowShares(deduction, { from: '2025-05-01' }, []), [{ year: 2025, cents: -20000, source: 'stated' }])
+  // Fehlt die Rechnung unter den Positionen (die Datenbank schließt das aus), gilt der Beginn des Zeitraums; das
+  // gespeicherte Jahr am Abzug zählt auch dann nicht (Durchsicht von PR 2, K1).
+  assert.deepEqual(outflowShares({ ...deduction, taxYear: 2027 }, { from: '2025-05-01' }, []), [{ year: 2025, cents: -20000, source: 'period' }])
   // Die Heizposition „steckt auch in der Stromrechnung“ behält ihr Jahr.
   assert.deepEqual(outflowShares({ id: 'bs', amountCents: 20000, taxYear: 2025, operatingPower: 'included' }, { from: '2025-05-01' }, [bill]), [{ year: 2025, cents: 20000, source: 'stated' }])
 })
@@ -139,6 +140,7 @@ test('Invariante: ohne Zahlungsdatum je Steuerjahr dieselbe Steuerübersicht und
   let twoProperties = 0
   let offBillYear = 0
   let goldenChecked = 0
+  let acrossParts = 0
   for (const seed of SEEDS) {
     // Jeder zweite Bestand mit einem zweiten Objekt daneben (Durchsicht K4); geprüft werden dann beide.
     const single = randomTaxStock(makeRng(seed))
@@ -169,12 +171,18 @@ test('Invariante: ohne Zahlungsdatum je Steuerjahr dieselbe Steuerübersicht und
           const before = outcome(() => oldTaxReportFor(expected, pid, year))
           const after = outcome(() => taxReportFor(source, pid, year))
           compared++
+          // Durchsicht von PR 2, M1: Steht ein Abzug nicht im Teil seiner Heizposition, zählen hier nur die Beträge
+          // (taxGolden.ts); den privaten Teil prüft die Invariante S1 über alle Jahre.
+          const across = pairAcrossParts(expected, pid, year)
+          if (across) acrossParts++
+          const print = (r: TaxReport) => (across ? taxAmounts(r) : taxFingerprint(r))
           // Für die Prüfsumme: erzeugt auf dem Bestand mit dem Abzug im Jahr seiner Rechnung (siehe taxGolden.ts).
           const printed = GOLDEN_WRITE ? outcome(() => taxReportFor(expected, pid, year)) : after
           const zipFor = (s: TaxSource) => outcome(() => taxArchiveItems(narrowToProperty(s, pid).costItems, taxPartsFor(s, pid, year)).map((c) => c.id))
-          prints.push([label, pid, year, printed.ok ? taxFingerprint(printed.value) : printed.error, zipFor(GOLDEN_WRITE ? expected : source)])
+          prints.push([label, pid, year, printed.ok ? print(printed.value) : printed.error, zipFor(GOLDEN_WRITE ? expected : source)])
           try {
-            assert.deepEqual(after, before)
+            if (across && after.ok && before.ok) assert.deepEqual(taxAmounts(after.value), taxAmounts(before.value))
+            else assert.deepEqual(after, before)
           } catch {
             fails.push(`${at}: Steuerübersicht weicht ab`)
             continue
@@ -219,6 +227,8 @@ test('Invariante: ohne Zahlungsdatum je Steuerjahr dieselbe Steuerübersicht und
     assert.ok(twoProperties > 0, 'kein Bestand mit zwei Objekten')
     assert.ok(offBillYear > 0, 'kein Bestand mit einem Abzug in einem anderen Jahr als seine Stromrechnung (#267)')
     assert.ok(goldenChecked >= 30, `nur ${goldenChecked} Startwerte gegen die Prüfsummen geprüft`)
+    // Die Ausnahme für den privaten Teil (M1) darf nicht zur Regel werden.
+    assert.ok(acrossParts > 0 && acrossParts * 5 < compared, `Jahre mit Abzug außerhalb des Teils seiner Heizposition: ${acrossParts} von ${compared}`)
   }
   assert.ok(compared > 0)
 })

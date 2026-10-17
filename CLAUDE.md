@@ -885,7 +885,9 @@ Der Zeitraumwechsel (periodChange.ts) und die Schätzhilfe (db/operatingPower.ts
 `storedOutflowYear`; heatingPeriodChange.ts und `defaultHeatingPlant` in repository.ts lesen `taxYear ?? Beginn`
 noch selbst, das zieht PR 3 von #255 nach. Gegen eine vom Code unabhängige Referenz prüft
 [outflow.test.ts](server/test/outflow.test.ts): Prüfsummen der Steuerübersicht je Startwert in
-`server/test/fixtures/tax-golden.json` (server/testing/taxGolden.ts). **Der Vorschlag nach § 560 im
+`server/test/fixtures/tax-golden.json` (server/testing/taxGolden.ts), erzeugt mit dem Code von `main` auf dem Bestand
+mit dem Abzug im Jahr seiner Rechnung; für ein Jahr mit einem Abzug außerhalb des Teils seiner Heizposition nur die
+Beträge, den privaten Teil prüft dort die Invariante S1. **Der Vorschlag nach § 560 im
 Rumpf** rechnet je Position einen Jahresfaktor ([server/src/prepaymentSuggestion.ts](server/src/prepaymentSuggestion.ts)):
 kalt nach den Tagen ihres Leistungszeitraums im Rumpf, gleichartige über die Vereinigung, ohne
 Leistungszeitraum als Jahresbetrag mit Hinweis `prepayment.annual-assumed`; Brennstoff (`heating_part = 'fuel'`) nach Gradtagen aus `hkv.degree-days` über die
@@ -2623,10 +2625,15 @@ die ganze fachliche Komplexität:
   steht der Abzug im Steuerjahr seiner Stromrechnung**: Stand er in einem anderen, blieb dort ein privater Rest, weil
   sein privater Teil dem Schlüssel der Rechnung folgt und der von C dem Heizanteil (Beispiel B2 im Plan zu #255, Test in
   calc-steuer-betriebsstrom.test.ts). Auseinander liegen können nur noch Abzug und Heizposition; die Heizposition und
-  ihr Beitrag zu C heben sich in ihrem Jahr auf, im Betrag wie im privaten Teil. Mit
-  Eigennutzung ergibt ein verknüpftes Paar über zwei Steuerjahre je Jahr dieselben Zahlen wie das Paar im selben Jahr,
-  sofern die Anlage im Jahr des Abzugs Heizkosten hat (sonst gilt dort die Fläche); dafür löst `taxReportFor` den
-  Verweis über alle Positionen des Objekts auf (`linkable`), denn der Schnappschuss kennt nur sein Jahr (Durchsicht M1).
+  ihr Beitrag zu C heben sich in ihrem Jahr auf, im Betrag wie im privaten Teil. **Ein verknüpfter Abzug nimmt den
+  Heizanteil aus dem Teil, in dem seine Heizposition steht**, nicht aus dem Teil, in dem er selbst steht (Durchsicht
+  von #255 PR 2, M1): Steht sie in einem anderen Steuerjahr, rechnet `foreignHeatQuota` in calc.ts deren Teil und
+  Aufteilung wie die Steuerübersicht jenes Jahres. Vorher galt im Jahr des Abzugs der Heizanteil dort und ohne
+  Heizkosten dort die Fläche; über beide Jahre fehlte dann privat der Unterschied (gemessen 26,67 €). So ist der
+  private Teil über alle Steuerjahre zusammen derselbe, gleich wo Rechnung, Abzug und Heizposition stehen (Invariante
+  S1 in invariant-betriebsstrom-steuer.test.ts); stehen Abzug und Heizposition im selben Teil, ändert sich nichts.
+  Dafür löst `taxReportFor` den Verweis über alle Positionen des Objekts auf (`linkable`), denn der Schnappschuss
+  kennt nur sein Jahr (Durchsicht M1 zu #268).
   Zeilenname und Texte folgen der Lage (`operatingPowerBalanceKind`): „selbst getragen“ nur beim Abzug ohne Verweis,
   „prüfen“ nur, wenn Abzug und Betriebsstrom im selben Steuerjahr verschieden hoch sind;
   eine Sonderregel für
