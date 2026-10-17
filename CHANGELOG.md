@@ -90,17 +90,19 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   ([#267](https://github.com/speedone/mietfuchs/issues/267)).
 - Rückfragen: Enter wählt den Knopf mit dem Fokus und bestätigt nicht mehr immer; vor dem Löschen
   steht der Fokus auf „Abbrechen“, Tab bleibt im Dialog, und danach steht der Fokus wieder auf dem
-  Knopf, der die Rückfrage geöffnet hat.
+  Knopf, der die Rückfrage geöffnet hat ([#341](https://github.com/speedone/mietfuchs/issues/341)).
 - Zähler: Eine Meldung zu „Ablesung speichern“ steht jetzt beim Knopf statt oben auf der Seite, wo
-  sie beim Klick nicht zu sehen war.
+  sie beim Klick nicht zu sehen war, und der Fokus geht auf das betroffene Feld ([#341](https://github.com/speedone/mietfuchs/issues/341)).
 - Abrechnung: Ein ungültiger Betrag bei „✎ anpassen“ wird nicht mehr stumm verworfen, sondern am
-  Feld gemeldet.
-- Ableseergebnis für den Mieter: Ein Zählerstand steht mit der Einheit des Zählers und seinen
-  Nachkommastellen da, ein Wärmezähler in MWh also nicht mehr als gerundete kWh.
-- Abrechnung: Enthält sie Fehler, fragt Mietfuchs vor dem Drucken und vor dem Festhalten des
-  Versanddatums nach, wie beim Abschließen, mit „Hier beheben →“ je Fehler.
+  Feld gemeldet ([#341](https://github.com/speedone/mietfuchs/issues/341)).
+- Ableseergebnis für den Mieter: Es nennt die Einheit des Zählers und seine Nachkommastellen, ein
+  Wärmezähler in MWh steht dort also nicht mehr als gerundete kWh. Die Verteilung rechnet Zähler
+  verschiedener Einheiten noch nicht um ([#342](https://github.com/speedone/mietfuchs/issues/342)) ([#341](https://github.com/speedone/mietfuchs/issues/341)).
+- Abrechnung: Enthält eine offene Abrechnung Fehler, fragt Mietfuchs vor dem Drucken nach, und schon
+  die erste Rückfrage zum Abschließen nennt sie, je mit „Hier beheben →“. Solange Fehler offen sind,
+  trägt der Ausdruck den Vermerk „Entwurf, nicht versenden“, auch beim Druck über das Browsermenü ([#341](https://github.com/speedone/mietfuchs/issues/341)).
 - „Angespannter Wohnungsmarkt“ am Objekt erklärt jetzt sich selbst und nicht die hälftige Teilung
-  der CO₂-Kosten.
+  der CO₂-Kosten ([#341](https://github.com/speedone/mietfuchs/issues/341)).
 
 ## [0.11.3] – 2026-10-17
 

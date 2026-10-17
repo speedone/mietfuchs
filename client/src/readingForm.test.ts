@@ -10,8 +10,8 @@ const bodyOf = (f: ReadingForm) => {
 
 describe('Ablesung (#149)', () => {
   test('ein leerer Zählerstand wird nicht als 0 gespeichert, sondern gemeldet', () => {
-    expect(buildReadingBody(form({ value: '' }), 'm1')).toEqual({ error: 'Bitte den Zählerstand eintragen.' })
-    expect(buildReadingBody(form({ value: '   ' }), 'm1')).toEqual({ error: 'Bitte den Zählerstand eintragen.' })
+    expect(buildReadingBody(form({ value: '' }), 'm1')).toEqual({ error: 'Bitte den Zählerstand eintragen.', field: 'value' })
+    expect(buildReadingBody(form({ value: '   ' }), 'm1')).toEqual({ error: 'Bitte den Zählerstand eintragen.', field: 'value' })
   })
 
   test('ein leerer Endstand beim Zählerwechsel ist kein Endstand von 0, sondern keiner', () => {
@@ -30,7 +30,7 @@ describe('Ablesung (#149)', () => {
   test('Unlesbares und fehlendes Datum werden gemeldet', () => {
     expect(buildReadingBody(form({ value: 'viel' }), 'm1')).toHaveProperty('error')
     expect(buildReadingBody(form({ replacement: true, oldEndValue: 'x' }), 'm1')).toHaveProperty('error')
-    expect(buildReadingBody(form({ date: '' }), 'm1')).toHaveProperty('error')
+    expect(buildReadingBody(form({ date: '' }), 'm1')).toHaveProperty('field', 'date')
   })
 
   test('ohne Zählerwechsel kein Endstand im Rumpf', () => {

@@ -261,6 +261,8 @@ label.field input[aria-invalid="true"] { border-color: var(--red); }
 input[aria-invalid="true"] { border-color: var(--red); }
 /* Die Meldung beim auslösenden Knopf (FormError, UI-Durchsicht H3). */
 .error.form-error { margin: 8px 0 0; }
+/* Vermerk im Druck einer Abrechnung mit offenen Fehlern (Durchsicht S2 zu #341). */
+.draft-mark { border: 2px solid #000; padding: 6px 10px; margin-bottom: 10px; font-weight: 700; }
 /* Hinweis im Cockpit auf vermutlich falsche IBANs (#279) */
 .iban-hint-list { margin: 6px 0 0 18px; padding: 0; }
 .iban-hint-list li { margin: 4px 0; }
