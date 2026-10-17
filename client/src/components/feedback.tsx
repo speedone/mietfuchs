@@ -89,9 +89,10 @@ export function UIProvider({ children }: { children: ReactNode }) {
       const box = dialogRef.current
       if (e.key === 'Escape') { e.stopPropagation(); close(false) }
       else if (e.key === 'Enter') {
-        e.stopPropagation()
+        // Nur ein Knopf der Rückfrage wird hier ausgelöst; ein anderes Element (etwa ein Begriff,
+        // `span role="button"`) bekommt Enter selbst (Durchsicht K1 zu #341).
         const active = document.activeElement
-        if (active instanceof HTMLButtonElement && box?.contains(active)) { e.preventDefault(); active.click() }
+        if (active instanceof HTMLButtonElement && box?.contains(active)) { e.stopPropagation(); e.preventDefault(); active.click() }
       } else if (e.key === 'Tab' && box) {
         e.stopPropagation()
         e.preventDefault()

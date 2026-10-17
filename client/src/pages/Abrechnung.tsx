@@ -35,7 +35,7 @@ import { showsStock, stockBlock } from '../stockView'
 import FuelBlock from '../components/FuelBlock'
 import { fuelBlock } from '../fuelView'
 import { closeWithQuestions } from '../fuelClose'
-import { despiteErrorsQuestion, SENT_AT_DECLINED, type DespiteErrorsKind } from '../despiteErrors'
+import { closeErrorsQuestion, DRAFT_MARK, printQuestion, sameErrors, showsDraftMark, type ErrorsQuestion } from '../despiteErrors'
 import { co2Block } from '../co2View'
 import { countOf } from '../../../shared/wording.ts'
 import { calendarPeriod } from '../../../shared/period.ts'
@@ -188,11 +188,9 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
     </ul>
   )
 
-  // Vor dem Drucken und vor dem Versanddatum (UI-Durchsicht H6): Enthält die Abrechnung Fehler, wird
-  // nachgefragt wie beim Abschließen (#319). `true` heißt weitermachen; Vorgabe ist, es zu lassen.
-  async function goOnDespiteErrors(kind: DespiteErrorsKind): Promise<boolean> {
-    const q = data ? despiteErrorsQuestion(kind, noticesOf(data)) : null
-    if (!q) return true
+  // Eine Rückfrage mit der Liste der Fehler und „Hier beheben →“ (UI-Durchsicht H6, #341). `true` heißt
+  // weitermachen; Vorgabe ist, es zu lassen.
+  async function askDespiteErrors(q: ErrorsQuestion): Promise<boolean> {
     // Ein Behälter statt `let`: Der Übersetzer sähe die Zuweisung im Knopf nicht und hielte das Ziel für null.
     const picked: { target: { tab: NoticeTab, focus: NoticeSubject } | null } = { target: null }
     const ok = await confirm({
@@ -210,16 +208,26 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
     if (picked.target && onNavigate) onNavigate(picked.target.tab, picked.target.focus)
     return ok
   }
+  // Vor dem Drucken einer offenen Abrechnung mit Fehlern; eine abgeschlossene fragt nicht (Durchsicht S6).
+  async function goOnPrinting(): Promise<boolean> {
+    const q = data ? printQuestion(noticesOf(data), !!data.closed) : null
+    return q ? askDespiteErrors(q) : true
+  }
 
   // Abrechnung abschließen / wieder öffnen / Versanddatum festhalten
   async function closeSettlement() {
-    const ok = await confirm({
-      // Bei mehreren Objekten mit Objekt (#157): Eingefroren wird nur die Abrechnung dieses Objekts.
-      title: closeSettlementTitle(label, properties, property, docLabel),
+    // Bei mehreren Objekten mit Objekt (#157): Eingefroren wird nur die Abrechnung dieses Objekts.
+    const title = closeSettlementTitle(label, properties, property, docLabel)
+    // Zeigt die Seite schon Fehler, nennt die erste Rückfrage sie (Durchsicht S2 zu #341); die Rückfrage des
+    // Servers zu denselben Fehlern ist dann schon beantwortet.
+    const withErrors = data ? closeErrorsQuestion(title, noticesOf(data)) : null
+    const ok = withErrors ? await askDespiteErrors(withErrors) : await confirm({
+      title,
       message: 'Der aktuelle Berechnungsstand wird eingefroren — spätere Änderungen an Kosten oder Stammdaten ändern diese Abrechnung nicht mehr. Sie lässt sich jederzeit wieder öffnen.',
       confirmLabel: 'Abschließen',
     })
     if (!ok) return
+    const confirmed = withErrors?.errors ?? []
     // Bei einer Lücke ohne Rechnung fragt der Server nach (Heizung PR 7, Entwurf 8.2), ebenso bei Fehlern
     // der Abrechnung (#319); beides steht dann in einem Dialog. Vorgabe ist, nicht abzuschließen.
     let closed = false
@@ -228,6 +236,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
         (body) => api(withProperty(paths.close, propertyId), { method: 'POST', body: JSON.stringify(body) }),
         // Bis zu drei Wege; Abwarten bzw. Nicht abschließen ist die Vorgabe (Enter, Fokus).
         (q) => new Promise((resolve) => {
+          if (!q.fuel && sameErrors(confirmed, q.errors)) { resolve('despite'); return }
           let without = false
           let fix: { tab: NoticeTab, focus: NoticeSubject } | null = null
           const message = q.errors.length === 0 ? q.message : (dismiss: () => void) => (
@@ -268,8 +277,6 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
   // Formular weiter und tauchte beim nächsten Abschluss wieder auf.
   const sentAt = useDraft(data?.closed?.sentAt ?? '', { scope: `${propertyId ?? ''}|${paths.close}|${data?.closed?.closedAt ?? ''}` })
   async function saveSentAt(value: string) {
-    // Abgebrochen bleibt der Entwurf mit dem Grund am Feld stehen (UI-Durchsicht H6).
-    if (value && !(await goOnDespiteErrors('sent'))) throw new Error(SENT_AT_DECLINED)
     await api(withProperty(paths.close, propertyId), { method: 'PUT', body: JSON.stringify({ sentAt: value || null }) })
     await load()
   }
@@ -558,6 +565,8 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
             }
             return (
             <div key={st.tenancyId} className={`card statement ${printId === st.tenancyId ? 'print-target' : ''}`}>
+              {/* Nur im Druck, solange Fehler offen sind; deckt auch Strg+P ab (Durchsicht S2 zu #341). */}
+              {data && showsDraftMark(noticesOf(data)) && <div className="print-only draft-mark">{DRAFT_MARK}</div>}
               <div className="muted">
                 {letterhead(landlord?.landlordName, property)}
               </div>
@@ -576,7 +585,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
                   className="btn secondary no-print"
                   disabled={printAttachments && !attachmentsReady}
                   title={printAttachments && !attachmentsReady ? 'Belegkopien werden noch vorbereitet …' : undefined}
-                  onClick={() => { void goOnDespiteErrors('print').then((ok) => { if (ok) setPrintId(st.tenancyId) }) }}
+                  onClick={() => { void goOnPrinting().then((ok) => { if (ok) setPrintId(st.tenancyId) }) }}
                 >
                   🖨 Drucken / PDF
                 </button>

@@ -83,6 +83,15 @@ test('Ablesung ohne Datum: die Meldung steht beim Knopf, mit role="alert", und r
     expect(alert.closest('.reading-panel')).toBe(button.closest('.reading-panel'))
     expect(scrolled).toEqual([[alert.textContent, { block: 'nearest' }]])
     expect(sent).toEqual([])
+    // Durchsicht S1 (#341): Der Fokus geht auf das Feld „Datum“, das als ungültig markiert ist.
+    const date = screen.getByLabelText(/^Datum/)
+    expect(document.activeElement).toBe(date)
+    expect(date.getAttribute('aria-invalid')).toBe('true')
+    expect(date.getAttribute('aria-describedby')).toBe(alert.id)
+    expect(screen.getByLabelText(/Zählerstand/).getAttribute('aria-invalid')).toBeNull()
+    // Mit Datum ist die Markierung weg.
+    fireEvent.change(date, { target: { value: '2025-06-30' } })
+    expect(date.getAttribute('aria-invalid')).toBeNull()
   } finally {
     Element.prototype.scrollIntoView = original
   }

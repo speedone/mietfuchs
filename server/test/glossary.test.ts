@@ -6,6 +6,8 @@ import assert from 'node:assert/strict'
 import { GLOSSARY } from '../../shared/glossary.ts'
 import { OPERATING_POWER_HANDLING_LABELS, OPERATING_POWER_HANDLING_QUESTION } from '../../shared/operatingPower.ts'
 import { NOTICE_KINDS } from '../src/calc.ts'
+import { co2HalfSplit, halfSplitFirstDay } from '../../shared/law/co2kostaufg.ts'
+import { valueAt } from '../../shared/law/register.ts'
 
 test('Lexikon: jeder Eintrag ist vollständig, und jedes Beispiel rechnet mit Zahlen', () => {
   const entries = Object.entries(GLOSSARY)
@@ -497,10 +499,18 @@ test('Lexikon: angespannter Wohnungsmarkt mit den drei Verordnungen und nachgere
   const t = GLOSSARY.tightMarket
   for (const n of [/§ 556d/, /§ 558 Abs\. 3/, /§ 577a Abs\. 2/, /§ 5d Abs\. 3 CO2KostAufG/, /§ 43 GModG/]) assert.match(t.norm ?? '', n)
   assert.match(t.short, /Teile einer Gemeinde/)
-  assert.match(t.example, /600 € × 40 % = 240,00 €/)
-  assert.equal(60000 * 0.4, 24000)
-  assert.match(t.example, /600 € × 50 % = 300,00 €/)
-  assert.equal(60000 * 0.5, 30000)
+  // Durchsicht K4 (#341): die Zahlen aus dem Text nachrechnen, den hälftigen Anteil aus dem Register.
+  const lines = [...t.example.matchAll(/(\d+) € × (\d+) % = ([\d.]+),(\d{2}) €/g)]
+  assert.equal(lines.length, 2, 'zwei Rechnungen im Beispiel')
+  for (const [, cost, pct, euro, cent] of lines) {
+    assert.equal(Number(cost) * Number(pct), Number(euro.replace('.', '')) * 100 + Number(cent), `${cost} € × ${pct} %`)
+  }
+  assert.equal(Number(lines[0]?.[2]), 40)
+  const half = valueAt(co2HalfSplit, halfSplitFirstDay()).co2Permille ?? assert.fail('kein hälftiger Anteil im Register')
+  assert.equal(Number(lines[1]?.[2]) * 10, half)
+  // Durchsicht K3: die gemeinsame Heizung und die Mitteilung in Textform.
+  assert.match(t.needed, /gemeinsame Heizung/)
+  assert.match(t.example, /in Textform mitgeteilt/)
   assert.match(t.needed, /höchstens 2 Wohnungen/)
   assert.ok(t.short.length + t.needed.length < 700, 'kurz halten')
 })

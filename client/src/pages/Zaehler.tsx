@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState } from 'react'
-import { FormError, useFormError, type FormErrorState } from '../components/FormError'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { FormError, invalidProps, useFocusOnError, useFormError, type FormErrorState } from '../components/FormError'
 import type { HeatingPlant, HeatingRole, Meter, MeterType, Notice, Reading, Unit } from '../types'
 import { METER_TYPE_LABELS } from '../types'
-import { buildReadingBody, EMPTY_READING, type ReadingForm } from '../readingForm'
+import { buildReadingBody, EMPTY_READING, type ReadingField, type ReadingForm } from '../readingForm'
 import { asksCalibration, asksRemote, CALIBRATION_MARK_HELP, calibrationSuggestion, emptyMeterForm, HEATING_ROLE_HELP, heatingRoleLabel, heatingRoleOptions, meterBody, meterPlantId, meterToForm, oldEndText, REMOTE_RULE_TEXT, withMeterType, type MeterForm, type RemoteAnswer } from '../meterForm'
 import { plantOptions } from '../heatingForm'
 import { api, errorText, fmtDate } from '../api'
@@ -39,7 +39,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
   const [openMeterId, setOpenMeterId] = useState<string | null>(null)
   const [readingForm, setReadingForm] = useState<ReadingForm>({ ...EMPTY_READING })
   const [error, setError] = useState('')
-  const readingError = useFormError()
+  const readingError = useFormError<ReadingField>()
   // „Hier beheben →“ aus der Abrechnung (#142): die Ablesungen des betroffenen Zählers aufklappen,
   // denn dort liegt, was ein Hinweis zu einem Zähler meint.
   const [focusedId, setFocusedId] = useState<string | null>(null)
@@ -118,7 +118,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
   async function saveReading(meterId: string) {
     const built = buildReadingBody(readingForm, meterId)
     if ('error' in built) {
-      readingError.show(built.error)
+      readingError.show(built.error, built.field)
       return
     }
     readingError.clear()
@@ -207,6 +207,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
                     setReadingForm={setReadingForm}
                     onSaveReading={() => saveReading(m.id)}
                     readingError={readingError.error}
+                    onReadingFieldChange={readingError.clearField}
                     onDeleteReading={deleteReading}
                     onSaved={() => { void load(); toast('Stichtagswert gespeichert.') }}
                   />
@@ -356,11 +357,19 @@ function FragmentRow(props: {
   readingForm: ReadingForm
   setReadingForm: (f: ReadingForm) => void
   onSaveReading: () => void
-  readingError: FormErrorState
+  readingError: FormErrorState<ReadingField>
+  onReadingFieldChange: (field: ReadingField) => void
   onDeleteReading: (r: Reading) => void
   onSaved: () => void
 }) {
-  const { meter: m, focused, cons, open, readings, unitName, onToggle, onEdit, onDelete, readingForm, setReadingForm, onSaveReading, readingError, onDeleteReading, onSaved } = props
+  const { meter: m, focused, cons, open, readings, unitName, onToggle, onEdit, onDelete, readingForm, setReadingForm, onSaveReading, readingError, onReadingFieldChange, onDeleteReading, onSaved } = props
+  // Fehler zur Ablesung: das Feld markieren und fokussieren (Durchsicht S1 zu #341).
+  const readingErrorId = useId()
+  const dateRef = useRef<HTMLInputElement>(null)
+  const valueRef = useRef<HTMLInputElement>(null)
+  const oldEndRef = useRef<HTMLInputElement>(null)
+  useFocusOnError(readingError, { date: dateRef, value: valueRef, oldEndValue: oldEndRef })
+  const edit = (field: ReadingField, next: ReadingForm) => { onReadingFieldChange(field); setReadingForm(next) }
   return (
     <>
       <tr className={focused ? 'focus-target' : undefined}>
@@ -420,11 +429,11 @@ function FragmentRow(props: {
             <div className="row">
               <label className="field">
                 Datum
-                <input type="date" value={readingForm.date} onChange={(e) => setReadingForm({ ...readingForm, date: e.target.value })} />
+                <input ref={dateRef} type="date" value={readingForm.date} {...invalidProps(readingError, 'date', readingErrorId)} onChange={(e) => edit('date', { ...readingForm, date: e.target.value })} />
               </label>
               <label className="field">
                 {readingForm.replacement ? 'Startstand neuer Zähler' : 'Zählerstand'}
-                <input value={readingForm.value} onChange={(e) => setReadingForm({ ...readingForm, value: e.target.value })} className="input-num" />
+                <input ref={valueRef} value={readingForm.value} {...invalidProps(readingError, 'value', readingErrorId)} onChange={(e) => edit('value', { ...readingForm, value: e.target.value })} className="input-num" />
               </label>
               <label className="field checkline">
                 <span>
@@ -435,7 +444,7 @@ function FragmentRow(props: {
               {readingForm.replacement && (
                 <label className="field">
                   Endstand alter Zähler
-                  <input value={readingForm.oldEndValue} onChange={(e) => setReadingForm({ ...readingForm, oldEndValue: e.target.value })} className="input-num" />
+                  <input ref={oldEndRef} value={readingForm.oldEndValue} {...invalidProps(readingError, 'oldEndValue', readingErrorId)} onChange={(e) => edit('oldEndValue', { ...readingForm, oldEndValue: e.target.value })} className="input-num" />
                 </label>
               )}
               <label className="field grow">
@@ -444,7 +453,7 @@ function FragmentRow(props: {
               </label>
               <button className="btn" onClick={onSaveReading}>Ablesung speichern</button>
             </div>
-            <FormError error={readingError} />
+            <FormError error={readingError} id={readingErrorId} />
             <p className="muted">
               Tipp: Beim Mieterwechsel am Auszugstag eine Zwischenablesung erfassen — dann wird der
               Verbrauch exakt statt tagesanteilig geschätzt aufgeteilt.

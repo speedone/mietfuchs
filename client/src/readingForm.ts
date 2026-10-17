@@ -20,18 +20,20 @@ export type ReadingBody = {
 // fehlt“ aus #83 entfiel, und ein falsches Segment verschob beim Verbrauchsschlüssel Geld zwischen
 // Mietern. Deshalb: leerer Endstand heißt `null` (die Berechnung meldet es), leerer gewöhnlicher
 // Stand ist eine Meldung. Gelesen wird wie jede Menge (#105): „1.234“ ist 1234 und nicht 1,234.
-export function buildReadingBody(form: ReadingForm, meterId: string): { error: string } | { body: ReadingBody } {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(form.date)) return { error: 'Bitte das Datum der Ablesung angeben.' }
-  if (!form.value.trim()) return { error: 'Bitte den Zählerstand eintragen.' }
+// `field` nennt das Feld, das die Meldung betrifft (Durchsicht S1 zu #341): Die Seite markiert es und setzt den Fokus.
+export type ReadingField = 'date' | 'value' | 'oldEndValue'
+export function buildReadingBody(form: ReadingForm, meterId: string): { error: string; field: ReadingField } | { body: ReadingBody } {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(form.date)) return { error: 'Bitte das Datum der Ablesung angeben.', field: 'date' }
+  if (!form.value.trim()) return { error: 'Bitte den Zählerstand eintragen.', field: 'value' }
   const value = parseQuantity(form.value)
-  if (value === null || value < 0) return { error: 'Den Zählerstand bitte als Zahl angeben, z. B. 1.234,5.' }
+  if (value === null || value < 0) return { error: 'Den Zählerstand bitte als Zahl angeben, z. B. 1.234,5.', field: 'value' }
   let oldEndValue: number | null | undefined
   if (form.replacement) {
     if (!form.oldEndValue.trim()) oldEndValue = null
     else {
       oldEndValue = parseQuantity(form.oldEndValue)
       if (oldEndValue === null || oldEndValue < 0) {
-        return { error: 'Den Endstand des alten Zählers bitte als Zahl angeben oder leer lassen, wenn er fehlt.' }
+        return { error: 'Den Endstand des alten Zählers bitte als Zahl angeben oder leer lassen, wenn er fehlt.', field: 'oldEndValue' }
       }
     }
   }
