@@ -37,11 +37,11 @@ test('Steuer-Belege: Ordner je Gruppe der Anlage V in deren Reihenfolge, nicht u
     ['6 Erhaltungsrücklage (gesondert)/Zuführung Erhaltungsrücklage - Rücklage.pdf', '4_ruecklage.pdf'],
   ])
   const zeilen = plan.overviewCsv.replace(/^﻿/, '').trim().split('\r\n')
-  assert.equal(zeilen[0], 'Gruppe;Kostenart;Beschreibung;Rechnungssteller;Betrag (EUR);privat (EUR);abziehbar (EUR);Lohnanteil § 35a (EUR);Beleg')
+  assert.equal(zeilen[0], 'Gruppe;Kostenart;Beschreibung;Rechnungssteller;Betrag (EUR);privat (EUR);abziehbar (EUR);Lohnanteil § 35a (EUR);Beleg;Jahr der Zahlung')
   assert.equal(zeilen.length, 8)
-  assert.ok(zeilen.includes('Laufende Betriebskosten;Gartenpflege;Position ohne;;50,00;;;;kein Beleg'))
-  assert.ok(zeilen.includes('Laufende Betriebskosten;Müllabfuhr;Position weg;;100,00;;;;Datei fehlt'))
-  assert.ok(zeilen.includes('Laufende Betriebskosten;Wasser/Abwasser;Abwasser;;100,00;;;;2 Laufende Betriebskosten/Wasser-Abwasser - Wasser.pdf'))
+  assert.ok(zeilen.includes('Laufende Betriebskosten;Gartenpflege;Position ohne;;50,00;;;;kein Beleg;'))
+  assert.ok(zeilen.includes('Laufende Betriebskosten;Müllabfuhr;Position weg;;100,00;;;;Datei fehlt;'))
+  assert.ok(zeilen.includes('Laufende Betriebskosten;Wasser/Abwasser;Abwasser;;100,00;;;;2 Laufende Betriebskosten/Wasser-Abwasser - Wasser.pdf;'))
   assert.ok(plan.overviewCsv.startsWith('﻿'), 'mit BOM, damit Excel die Umlaute richtig liest')
 })
 
@@ -96,8 +96,8 @@ test('Steuer-Belege: privat und abziehbar je Position aus der Steuerübersicht, 
     item('r', { category: 'Zuführung Erhaltungsrücklage', amountCents: 30000 }),
   ], names, new Map(), new Map([['gs', { privateCents: 30000, deductibleCents: 20000 }]]))
   const zeilen = plan.overviewCsv.replace(/^\uFEFF/, '').trim().split('\r\n')
-  assert.ok(zeilen.includes('Grundsteuer & öffentliche Abgaben;Grundsteuer;Position gs;;500,00;300,00;200,00;;kein Beleg'), zeilen.join('\n'))
-  assert.ok(zeilen.includes('Erhaltungsrücklage (gesondert);Zuführung Erhaltungsrücklage;Position r;;300,00;;;;kein Beleg'), zeilen.join('\n'))
+  assert.ok(zeilen.includes('Grundsteuer & öffentliche Abgaben;Grundsteuer;Position gs;;500,00;300,00;200,00;;kein Beleg;'), zeilen.join('\n'))
+  assert.ok(zeilen.includes('Erhaltungsrücklage (gesondert);Zuführung Erhaltungsrücklage;Position r;;300,00;;;;kein Beleg;2025, Jahr der Abrechnung (ohne Angabe)'), zeilen.join('\n'))
 })
 
 // Integrationsdurchsicht vor 0.10 (N2): Die Steuerübersicht setzt einen ungültigen Lohnanteil
@@ -110,9 +110,9 @@ test('Steuer-Belege: ein ungültiger §35a-Lohnanteil steht wie in der Steuerüb
     item('gut', { category: 'Gebäudereinigung', amountCents: 1000, labor35aCents: 600 }),
   ], names)
   const zeilen = plan.overviewCsv.replace(/^﻿/, '').trim().split('\r\n')
-  assert.ok(zeilen.includes('Laufende Betriebskosten;Gartenpflege;Position zuviel;;10,00;;;;kein Beleg'), zeilen.join('\n'))
-  assert.ok(zeilen.includes('Laufende Betriebskosten;Hauswart;Position negativ;;10,00;;;;kein Beleg'), zeilen.join('\n'))
-  assert.ok(zeilen.includes('Laufende Betriebskosten;Gebäudereinigung;Position gut;;10,00;;;6,00;kein Beleg'), zeilen.join('\n'))
+  assert.ok(zeilen.includes('Laufende Betriebskosten;Gartenpflege;Position zuviel;;10,00;;;;kein Beleg;'), zeilen.join('\n'))
+  assert.ok(zeilen.includes('Laufende Betriebskosten;Hauswart;Position negativ;;10,00;;;;kein Beleg;'), zeilen.join('\n'))
+  assert.ok(zeilen.includes('Laufende Betriebskosten;Gebäudereinigung;Position gut;;10,00;;;6,00;kein Beleg;'), zeilen.join('\n'))
 })
 
 // #268: Der Ausgleich beim Betriebsstrom ist keine Position, gehört aber zu den Werbungskosten der Übersicht. Im ZIP
@@ -137,7 +137,7 @@ test('Steuer-Belege (#268): der Ausgleich beim Betriebsstrom steht als Zeile ohn
   const split = new Map(report.expenses.items.map((i) => [i.costItemId, i]))
   const plan = planTaxArchive(items, names, new Map(), split, report.expenses.items.filter((i) => i.operatingPowerBalance))
   const zeilen = plan.overviewCsv.replace(/^﻿/, '').trim().split('\r\n')
-  assert.ok(zeilen.includes('Laufende Betriebskosten;Beleuchtung/Allgemeinstrom;Betriebsstrom der Heizung, selbst getragen;;200,00;0,00;200,00;;kein eigener Beleg (Teil der Stromrechnung)'), zeilen.join('\n'))
+  assert.ok(zeilen.includes('Laufende Betriebskosten;Beleuchtung/Allgemeinstrom;Betriebsstrom der Heizung, selbst getragen;;200,00;0,00;200,00;;kein eigener Beleg (Teil der Stromrechnung);'), zeilen.join('\n'))
   const cents = (s: string | undefined) => Math.round(Number((s ?? '').replace(',', '.')) * 100)
   const rows = zeilen.slice(1).map((z) => z.split(';'))
   const strom = rows.filter((r) => r[1] === 'Beleuchtung/Allgemeinstrom').reduce((a, r) => a + cents(r[4]), 0)
@@ -178,11 +178,50 @@ test('Steuer-Belege (N-4): CO₂-Erstattung und Betriebsstrom-Ausgleich als Zeil
   const split = new Map(report.expenses.items.map((i) => [i.costItemId, i]))
   const plan = planTaxArchive(items, names, new Map(), split, derivedTaxLines(report))
   const zeilen = plan.overviewCsv.replace(/^\uFEFF/, '').trim().split('\r\n')
-  assert.ok(zeilen.includes('Sonstige Werbungskosten;CO₂-Erstattung an Mieter (§ 6 Abs. 2 CO2KostAufG);CO₂-Erstattung an Mieter, ausgezahlt am 01.06.2025;;50,00;0,00;50,00;;kein eigener Beleg (Auszahlung an den Mieter, Nachweis über den Kontoauszug)'), zeilen.join('\n'))
+  assert.ok(zeilen.includes('Sonstige Werbungskosten;CO₂-Erstattung an Mieter (§ 6 Abs. 2 CO2KostAufG);CO₂-Erstattung an Mieter, ausgezahlt am 01.06.2025;;50,00;0,00;50,00;;kein eigener Beleg (Auszahlung an den Mieter, Nachweis über den Kontoauszug);'), zeilen.join('\n'))
   assert.ok(zeilen.some((z) => z.includes('Betriebsstrom der Heizung, selbst getragen;;200,00')), zeilen.join('\n'))
   const cents = (s: string | undefined) => Math.round(Number((s ?? '').replace(',', '.')) * 100)
   const rows = zeilen.slice(1).map((z) => z.split(';'))
   assert.equal(rows.reduce((a, r) => a + cents(r[4]), 0), report.expenses.totalCents)
   assert.equal(rows.reduce((a, r) => a + cents(r[5]), 0), report.expenses.privateCents)
   assert.equal(rows.reduce((a, r) => a + cents(r[6]), 0), report.expenses.deductibleCents)
+})
+
+// #255, PR 4 (T14): Die Übersicht nennt je Position das Jahr der Zahlung und woher es kommt, aus der Steuerübersicht.
+test('Steuer-Belege (#255): die Spalte „Jahr der Zahlung“ nennt die Quelle, bei Verschiebung die Abrechnung', () => {
+  const plan = planTaxArchive([
+    item('gs', { description: 'Grundsteuer 2025', amountCents: 60000, paidOn: '2026-02-20' }),
+    item('vers', { category: 'Sach- und Haftpflichtversicherung', description: 'Versicherung 2026', amountCents: 125000 }),
+    item('jahr', { category: 'Wasser/Abwasser', description: 'Wasser', amountCents: 1000, taxYear: 2026 }),
+    item('ab', { category: 'Beleuchtung/Allgemeinstrom', description: 'Abzug', amountCents: -1000 }),
+  ], names, new Map(), new Map([
+    ['gs', { privateCents: 0, deductibleCents: 60000, outflow: { year: 2026, source: 'paid' as const, paidOn: '2026-02-20' }, settlementPeriod: { key: calendarPeriod(2025), label: '2025' } }],
+    ['vers', { privateCents: 0, deductibleCents: 125000, outflow: { year: 2026, source: 'period' as const } }],
+    ['jahr', { privateCents: 0, deductibleCents: 1000, outflow: { year: 2026, source: 'stated' as const } }],
+    ['ab', { privateCents: 0, deductibleCents: -1000, outflow: { year: 2026, source: 'bill' as const } }],
+  ]))
+  const zeilen = plan.overviewCsv.replace(/^﻿/, '').trim().split('\r\n')
+  assert.ok(zeilen[0]?.endsWith(';Beleg;Jahr der Zahlung'), zeilen[0])
+  const last = (desc: string) => (zeilen.find((z) => z.split(';')[2] === desc) ?? assert.fail(desc)).split(';').at(-1)
+  assert.equal(last('Grundsteuer 2025'), '2026, bezahlt am 20.02.2026, aus Abrechnung 2025')
+  assert.equal(last('Versicherung 2026'), '2026, Jahr der Abrechnung (ohne Angabe)')
+  assert.equal(last('Wasser'), '2026, als Jahr der Zahlung angegeben')
+  assert.equal(last('Abzug'), '2026, wie die Stromrechnung')
+})
+
+// Durchsicht von PR 4, K3: Die Rücklage steht wegen ihres Jahres der Zahlung im Archiv, also nennt die Spalte es auch;
+// ein Datum außerhalb der üblichen Spanne bekommt den Hinweis zum Prüfen.
+test('Steuer-Belege (#255): „Jahr der Zahlung“ auch bei der Rücklage, und der Hinweis zur Spanne', () => {
+  const plan = planTaxArchive([
+    item('r', { category: 'Zuführung Erhaltungsrücklage', description: 'Rücklage', amountCents: 30000, paidOn: '2026-01-20' }),
+    item('r2', { category: 'Zuführung Erhaltungsrücklage', description: 'Rücklage ohne', amountCents: 30000 }),
+    item('gs', { description: 'Grundsteuer spät', amountCents: 1000, paidOn: '2030-03-01' }),
+  ], names, new Map(), new Map([
+    ['gs', { privateCents: 0, deductibleCents: 1000, outflow: { year: 2030, source: 'paid' as const, paidOn: '2030-03-01' }, settlementPeriod: { key: calendarPeriod(2025), label: '2025' }, outsideSpan: true as const }],
+  ]))
+  const zeilen = plan.overviewCsv.replace(/^\uFEFF/, '').trim().split('\r\n')
+  const last = (desc: string) => (zeilen.find((z) => z.split(';')[2] === desc) ?? assert.fail(desc)).split(';').at(-1)
+  assert.equal(last('Rücklage'), '2026, bezahlt am 20.01.2026')
+  assert.equal(last('Rücklage ohne'), '2025, Jahr der Abrechnung (ohne Angabe)')
+  assert.equal(last('Grundsteuer spät'), '2030, bezahlt am 01.03.2030, aus Abrechnung 2025, außerhalb der üblichen Spanne, bitte prüfen')
 })

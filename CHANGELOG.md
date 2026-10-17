@@ -21,6 +21,14 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Grundsteuer nicht. Die Belegbuchung trägt das Rechnungsdatum nicht als Zahlungsdatum ein. Ohne
   Datum ändert sich keine Zahl, und die Abrechnung an die Mieter liest das Datum nie
   ([#255](https://github.com/speedone/mietfuchs/issues/255)).
+- Die Steuerübersicht zeigt, was zwischen den Jahren verschoben ist: Positionen aus der Abrechnung
+  eines anderen Jahres, die in diesem Jahr bezahlt sind, mit Herkunft und Grund (Zahlungsdatum,
+  angegebenes Jahr der Zahlung oder Stromrechnung), und umgekehrt die Positionen der Abrechnung
+  dieses Jahres, die in einem anderen Steuerjahr stehen. Liegt ein Zahlungsdatum weit außerhalb des
+  Abrechnungszeitraums, etwa nach einem Wechsel des Zeitraums, bittet sie um Prüfung. Ein ruhiger
+  Satz nennt, wie viele Positionen ohne Angabe im Jahr ihrer Abrechnung stehen. Die Übersicht in den
+  Belegen für die Steuer hat dazu die Spalte „Jahr der Zahlung“. Keine Zahl ändert sich
+  ([#255](https://github.com/speedone/mietfuchs/issues/255)).
 
 - Zahlungen im Mietkonto haben eine Art: „Miete“ (Voreinstellung) oder „Nachzahlung oder Guthaben
   aus der Abrechnung“, ein ausgezahltes Guthaben mit Minus. Das Mietkonto verteilt nur die Miete auf

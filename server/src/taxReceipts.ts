@@ -15,6 +15,8 @@
 // in den Werbungskosten und hat hier leere Felder.
 import type { CostItem, TaxExpenseItem, TaxReport } from '../../shared/types.ts'
 import { ANLAGE_V_GROUP, ANLAGE_V_GROUP_ORDER, validLabor35aCents, type TaxPart } from './calc.ts'
+import { outflowShares } from './outflow.ts'
+import { startYearOf } from '../../shared/period.ts'
 
 const RESERVE_GROUP = 'Erhaltungsrücklage (gesondert)'
 const FALLBACK_GROUP = 'Sonstige Werbungskosten'
@@ -61,7 +63,24 @@ export type TaxArchivePlan = {
 // der Übersicht, mit allen ihren Belegen in einer Zelle.
 //
 // `split`: je Position privat und abziehbar aus der Steuerübersicht (#163).
-export type TaxSplitOfItem = Pick<TaxExpenseItem, 'privateCents' | 'deductibleCents'>
+// Dazu das Jahr der Zahlung samt Quelle und bei einer verschobenen Position ihre Abrechnung (#255, PR 4), ebenfalls aus
+// der Steuerübersicht; die Spalte „Jahr der Zahlung“ sagt dem Steuerberater, warum eine Position in diesem Jahr steht.
+export type TaxSplitOfItem = Pick<TaxExpenseItem, 'privateCents' | 'deductibleCents'> & Partial<Pick<TaxExpenseItem, 'outflow' | 'settlementPeriod' | 'outsideSpan'>>
+const fmtDay = (iso: string): string => iso.split('-').reverse().join('.')
+function reserveOutflow(c: Pick<CostItem, 'period' | 'amountCents' | 'taxYear' | 'paidOn'>): Pick<TaxSplitOfItem, 'outflow'> {
+  const share = outflowShares(c, { from: `${startYearOf(c.period)}-01-01` })[0]
+  return share === undefined ? {} : { outflow: { year: share.year, source: share.source, ...(share.source === 'paid' && c.paidOn != null ? { paidOn: c.paidOn } : {}) } }
+}
+export function outflowText(part: Partial<TaxSplitOfItem> | undefined): string {
+  const o = part?.outflow
+  if (o === undefined) return ''
+  const why = o.source === 'paid' && o.paidOn !== undefined ? `bezahlt am ${fmtDay(o.paidOn)}`
+    : o.source === 'stated' ? 'als Jahr der Zahlung angegeben'
+      : o.source === 'bill' ? 'wie die Stromrechnung'
+        : 'Jahr der Abrechnung (ohne Angabe)'
+  return [String(o.year), why, ...(part?.settlementPeriod ? [`aus Abrechnung ${part.settlementPeriod.label}`] : []),
+    ...(part?.outsideSpan ? ['außerhalb der üblichen Spanne, bitte prüfen'] : [])].join(', ')
+}
 // `derived`: Zeilen der Steuerübersicht, die keine Position sind: der Ausgleich beim Betriebsstrom (#268), dessen Beleg
 // die Stromrechnung ist, und die an einen Selbstversorger ausgezahlte CO₂-Erstattung (Heizung PR 19, Nachprüfung N-4),
 // belegt durch die Auszahlung. Sie stehen in der Übersicht mit ihrem Betrag und ihrer Aufteilung, aber ohne Beleg.
@@ -98,7 +117,7 @@ export function planTaxArchive(
       rows.push([
         textField(group), textField(c.category), textField(c.description), '', csvField(euro(c.amountCents)),
         part ? csvField(euro(part.privateCents)) : '', part ? csvField(euro(part.deductibleCents)) : '', '',
-        textField(derivedNote(part)),
+        textField(derivedNote(part)), '',
       ].join(';'))
       continue
     }
@@ -125,16 +144,20 @@ export function planTaxArchive(
       parts.push(zipPath)
     }
     const beleg = parts.length > 0 ? parts.join(' | ') : 'kein Beleg'
+    // Die Zuführung zur Rücklage steht nicht in der Steuerübersicht, wohl aber wegen ihres Jahres der Zahlung im Archiv
+    // (Durchsicht von PR 4, K3): Jahr und Quelle dann aus `outflowShares`, derselben Stelle wie überall.
     const part = split.get(c.id)
+    const stored = group === RESERVE_GROUP ? items.find((x) => x.id === c.id) : undefined
+    const outflowPart = part ?? (stored ? reserveOutflow(stored) : undefined)
     // Derselbe Lohnanteil wie in der Steuerübersicht: ein ungültiger (über dem Betrag oder negativ)
     // zählt dort nicht, und hier steht er dann ebenso wenig (Integrationsdurchsicht vor 0.10).
     const labor = validLabor35aCents(c) ?? 0
     rows.push([
       textField(group), textField(c.category), textField(c.description), textField(c.vendor ?? ''), csvField(euro(c.amountCents)),
       part ? csvField(euro(part.privateCents)) : '', part ? csvField(euro(part.deductibleCents)) : '',
-      csvField(labor ? euro(labor) : ''), textField(beleg),
+      csvField(labor ? euro(labor) : ''), textField(beleg), textField(outflowText(outflowPart)),
     ].join(';'))
   }
-  const header = 'Gruppe;Kostenart;Beschreibung;Rechnungssteller;Betrag (EUR);privat (EUR);abziehbar (EUR);Lohnanteil § 35a (EUR);Beleg'
+  const header = 'Gruppe;Kostenart;Beschreibung;Rechnungssteller;Betrag (EUR);privat (EUR);abziehbar (EUR);Lohnanteil § 35a (EUR);Beleg;Jahr der Zahlung'
   return { files, overviewCsv: `﻿${[header, ...rows].join('\r\n')}\r\n` }
 }

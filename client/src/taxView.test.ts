@@ -1,6 +1,6 @@
 import { describe, expect, it, test } from 'vitest'
 import type { TaxExpenseItem, TaxReport } from './types'
-import { allocationLabel, assignedUnitItems, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, operatingPowerBalanceText, paidWithoutSettlementCents, prepaymentNote, settlementBalanceCents, settlementLine, settlementSourcesText, showsSplit, stockCarryNote, surplusCentsFor, taxHints } from './taxView'
+import { allocationLabel, assignedUnitItems, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, operatingPowerBalanceText, paidWithoutSettlementCents, prepaymentNote, settlementBalanceCents, settlementLine, settlementSourcesText, showsSplit, stockCarryNote, surplusCentsFor, taxHints, movedInLines, movedInText, movedOutLines, unstatedText } from './taxView'
 import { fmtEuro } from './api'
 import { periodKey } from '../../shared/period.ts'
 
@@ -23,7 +23,8 @@ const report = (income: Partial<TaxReport['income']>, rest: Partial<TaxReport> =
     tenanciesWithoutPayment: 0,
     ...income,
   },
-  expenses: { groups: [], totalCents: 0, privateCents: 0, deductibleCents: 0, labor35aCents: 0, items: [] },
+  expenses: { groups: [], totalCents: 0, privateCents: 0, deductibleCents: 0, labor35aCents: 0, items: [], unstatedCount: 0 },
+  movedOut: [],
   selfUseChangedInYear: false,
   closedSelfUseDiffers: false,
   closedItemsChanged: 0,
@@ -189,7 +190,7 @@ describe('Teilweise Eigennutzung (#163)', () => {
   const mixed = (items: TaxExpenseItem[], rest: Partial<TaxReport> = {}) => report({}, {
     selfOccupiedExists: true, selfUsedAreaM2: 50,
     expenses: {
-      groups: [], items, totalCents: items.reduce((a, x) => a + x.amountCents, 0),
+      groups: [], items, unstatedCount: 0, totalCents: items.reduce((a, x) => a + x.amountCents, 0),
       privateCents: items.reduce((a, x) => a + x.privateCents, 0),
       deductibleCents: items.reduce((a, x) => a + x.deductibleCents, 0), labor35aCents: 0,
     },
@@ -273,7 +274,7 @@ describe('Teilweise Eigennutzung (#163)', () => {
     ])
     // Ohne Zuordnung kein Hinweis, und ohne selbstgenutzte Einheit wirkt sie nicht.
     expect(taxHints(mixed([na({ taxUnits: null })]), 'ist')).not.toContain('mixedUseAssignedUnits')
-    const ohneEigene = report({}, { expenses: { groups: [], items: [na({ allocation: 'direct-rented', taxUnits: [{ unitId: 'OG', unitName: 'OG' }] })], totalCents: 100000, privateCents: 0, deductibleCents: 100000, labor35aCents: 0 } })
+    const ohneEigene = report({}, { expenses: { groups: [], items: [na({ allocation: 'direct-rented', taxUnits: [{ unitId: 'OG', unitName: 'OG' }] })], totalCents: 100000, privateCents: 0, deductibleCents: 100000, labor35aCents: 0, unstatedCount: 0 } })
     expect(taxHints(ohneEigene, 'ist')).not.toContain('mixedUseAssignedUnits')
   })
 
@@ -389,4 +390,68 @@ test('Zufluss ohne Abrechnung plus Saldo ergibt den Zufluss (Durchsicht zu #328)
   expect(paidWithoutSettlementCents(r)).toBe(960000)
   expect(settlementBalanceCents(r)).toBe(-20000)
   expect(paidWithoutSettlementCents(r) + settlementBalanceCents(r)).toBe(r.income.paidCents)
+})
+
+// ---------- #255, PR 4: was zwischen den Jahren verschoben ist ----------
+
+// Beispiel B1 aus dem Plan: Grundsteuer 2025 (600,00 €), bezahlt am 20.02.2026, und Versicherung 2026 (1.250,00 €),
+// bezahlt am 01.12.2025. Die Felder stehen so da, wie die Steuerübersicht sie liefert.
+const shifted = (over: Partial<TaxExpenseItem>): TaxExpenseItem => ({
+  costItemId: 'gs25', category: 'Grundsteuer', group: 'Grundsteuer & öffentliche Abgaben', description: 'Grundsteuer 2025',
+  amountCents: 60000, privateCents: 0, deductibleCents: 60000, labor35aCents: 0, allocation: 'settlement',
+  deductiblePercent: null, areaPrivateCents: null, settlementPrivateCents: null, steps: [], taxUnits: null,
+  ...over,
+})
+const withItems = (items: TaxExpenseItem[], unstatedCount = 0): TaxReport['expenses'] => {
+  const total = items.reduce((a, x) => a + x.amountCents, 0)
+  return { groups: [], totalCents: total, privateCents: 0, deductibleCents: total, labor35aCents: 0, items, unstatedCount }
+}
+
+describe('Steuerübersicht: Verschiebung zwischen den Jahren (#255)', () => {
+  it('Fall 1: Abrechnung 2025, bezahlt 2026. Die Übersicht 2026 nennt Herkunft und Grund', () => {
+    const gs = shifted({ outflow: { year: 2026, source: 'paid', paidOn: '2026-02-20' }, settlementPeriod: { key: periodKey('2025-01'), label: '2025' } })
+    const vers = shifted({ costItemId: 'v26', description: 'Versicherung 2026', category: 'Sach- und Haftpflichtversicherung', amountCents: 125000, outflow: { year: 2026, source: 'period' } })
+    const r = report({}, { year: 2026, expenses: withItems([gs, vers], 1) })
+    expect(movedInLines(r)).toEqual([{ costItemId: 'gs25', text: `„Grundsteuer 2025“ (${fmtEuro(60000)}), aus Abrechnung 2025, bezahlt am 20.02.2026`, outsideSpan: false }])
+    expect(movedInText(gs)).toBe('aus Abrechnung 2025, bezahlt am 20.02.2026')
+    expect(movedInText(vers)).toBeNull()
+    expect(taxHints(r, 'ist')).toEqual(expect.arrayContaining(['movedIn', 'unstated']))
+    expect(taxHints(r, 'ist')).not.toContain('movedOut')
+  })
+
+  it('Fall 1, Gegenseite: die Übersicht 2025 nennt, dass die Grundsteuer 2026 steht', () => {
+    const r = report({}, { year: 2025, movedOut: [{ costItemId: 'gs25', category: 'Grundsteuer', description: 'Grundsteuer 2025', amountCents: 60000, settlementPeriod: { key: periodKey('2025-01'), label: '2025' }, outflow: { year: 2026, source: 'paid', paidOn: '2026-02-20' } }] })
+    expect(movedOutLines(r)).toEqual([{ costItemId: 'gs25', text: `„Grundsteuer 2025“ (${fmtEuro(60000)}), Abrechnung 2025, bezahlt am 20.02.2026: steht in der Steuerübersicht 2026`, outsideSpan: false }])
+    expect(taxHints(r, 'ist')).toContain('movedOut')
+    expect(taxHints(r, 'ist')).not.toContain('movedIn')
+  })
+
+  it('Fall 2: vor Beginn bezahlt. Die Versicherung 2026 steht 2025, die Übersicht 2026 nennt das', () => {
+    const v = shifted({ costItemId: 'v26', description: 'Versicherung 2026', amountCents: 125000, outflow: { year: 2025, source: 'paid', paidOn: '2025-12-01' }, settlementPeriod: { key: periodKey('2026-01'), label: '2026' } })
+    expect(movedInLines(report({}, { year: 2025, expenses: withItems([v]) })).map((l) => l.text)).toEqual([`„Versicherung 2026“ (${fmtEuro(125000)}), aus Abrechnung 2026, bezahlt am 01.12.2025`])
+    const r26 = report({}, { year: 2026, movedOut: [{ costItemId: 'v26', category: 'Sach- und Haftpflichtversicherung', description: 'Versicherung 2026', amountCents: 125000, settlementPeriod: { key: periodKey('2026-01'), label: '2026' }, outflow: { year: 2025, source: 'paid', paidOn: '2025-12-01' } }] })
+    expect(movedOutLines(r26).map((l) => l.text)).toEqual([`„Versicherung 2026“ (${fmtEuro(125000)}), Abrechnung 2026, bezahlt am 01.12.2025: steht in der Steuerübersicht 2025`])
+  })
+
+  it('nennt den Grund auch ohne Datum: angegebenes Jahr der Zahlung und Abzug beim Betriebsstrom', () => {
+    const stated = shifted({ description: 'Wasser 2025/2026', outflow: { year: 2027, source: 'stated' }, settlementPeriod: { key: periodKey('2025-05'), label: '2025/2026' } })
+    const bill = shifted({ costItemId: 'ab', description: 'Abzug Betriebsstrom', amountCents: -3000, outflow: { year: 2027, source: 'bill' }, settlementPeriod: { key: periodKey('2025-05'), label: '2025/2026' } })
+    expect(movedInText(stated)).toBe('aus Abrechnung 2025/2026, als Jahr der Zahlung 2027 angegeben')
+    expect(movedInText(bill)).toBe('aus Abrechnung 2025/2026, fließt mit seiner Stromrechnung 2027 ab')
+  })
+
+  it('Durchsicht PR 3, K8: ein Datum außerhalb der üblichen Spanne ist markiert', () => {
+    const gs = shifted({ outflow: { year: 2030, source: 'paid', paidOn: '2030-03-01' }, settlementPeriod: { key: periodKey('2025-01'), label: '2025' }, outsideSpan: true })
+    expect(movedInLines(report({}, { year: 2030, expenses: withItems([gs]) }))[0]?.outsideSpan).toBe(true)
+  })
+
+  it('ohne Angabe ein ruhiger Satz, gezählt vom Server, Einzahl und Mehrzahl, auf beiden Grundlagen', () => {
+    expect(unstatedText(report({}))).toBeNull()
+    expect(unstatedText(report({}, { expenses: withItems([], 1) }))).toMatch(/^Bei einer Position dieses Jahres ist nicht angegeben, wann sie bezahlt wurde; sie steht im Jahr ihrer Abrechnung\./)
+    const drei = report({}, { expenses: withItems([], 3) })
+    expect(unstatedText(drei)).toMatch(/^Bei 3 Positionen dieses Jahres ist nicht angegeben, wann sie bezahlt wurden; sie stehen im Jahr ihrer Abrechnung\./)
+    expect(unstatedText(drei)).toMatch(/„Bezahlt am \(für die Steuer\)“/)
+    expect(taxHints(drei, 'soll')).toContain('unstated')
+    expect(taxHints(drei, 'ist')).toContain('unstated')
+  })
 })

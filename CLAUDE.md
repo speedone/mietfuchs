@@ -2665,6 +2665,32 @@ die ganze fachliche Komplexität:
   2026 abfließt; die Gleichheitsinvariante und die Prüfsummen in outflow.test.ts halten fest, dass
   ohne Datum keine Zahl wandert. Die db.json kennt das Feld nicht, Umstieg und alte Backups
   ergeben `NULL`.
+  **Die Steuerübersicht zeigt die Verschiebung** (#255, PR 4), nur als Auskunft: `shiftNotes` in
+  calc.ts liest dieselbe Antwort von `outflowShares` noch einmal und rechnet nichts. Verschoben
+  heißt, das Jahr der Zahlung liegt außerhalb der Kalenderjahre, die der Zeitraum der Position
+  berührt (bei Mai bis April ist 2026 für 2025/2026 keine Verschiebung, 2027 schon). Jede Position
+  trägt `outflow` (Jahr und Quelle `paid`, `stated`, `period`, `bill`), eine verschobene dazu
+  `settlementPeriod` („aus Abrechnung 2025, bezahlt am …“); umgekehrt nennt `movedOut` die
+  Positionen der Zeiträume, die im Jahr beginnen und anderswo stehen. Jede Verschiebung steht so
+  auf jeder Seite genau einmal (Invariante in calc-steuer-verschiebung.test.ts). `unstatedCount`
+  zählt die Positionen ohne Angabe, aber nur, wo das Formular ein Datum anbietet (`allowsPaidOn`),
+  und ergibt einen ruhigen Satz. Ein Datum außerhalb von Beginn − 1 bis Ende + 3 trägt
+  `outsideSpan`: Ein späterer Wechsel des Zeitraums fragt nicht neu (Durchsicht von PR 3, K8), die
+  Übersicht nennt es stattdessen. Die Texte stehen in taxView.ts (`movedInLines`, `movedOutLines`,
+  `unstatedText`); die Übersicht.csv im Steuer-ZIP hat dafür die letzte Spalte „Jahr der Zahlung“.
+  Die Prüfsummen (`taxFingerprint`) lesen die neuen Felder nicht. Eine Heizposition unter eigener
+  Heizperiode nimmt ihren Zeitraum aus der Heizperiode (`plantRules`), nie nach dem Schlüssel: Ein
+  Rumpf am Wechsel des Rhythmus kann denselben Schlüssel tragen. Über alle Steuerjahre ändert ein
+  Datum weder den Gesamtbetrag noch den privaten Teil
+  ([invariant-steuer-summe-zahlungsdatum.test.ts](server/test/invariant-steuer-summe-zahlungsdatum.test.ts)),
+  auch nicht den der Ausgleichszeilen beim Betriebsstrom (bis auf einen Cent Rundung je Zeile): Ihr
+  Heizanteil (`plantHeatQuota`) kommt aus den Heizpositionen des Teils, die ohne Zahlungsdatum im
+  selben Steuerjahr stünden wie der Betriebsstrom (`heatPool`, `yearWithoutDate`), nicht aus denen,
+  die per Datum im Steuerjahr stehen. Vorher wichen über alle Jahre bis 55,78 € ab. Trägt eine
+  Position eines Zeitraums über zwei Kalenderjahre nur ein Datum, gilt dafür das Jahr des Datums,
+  geklemmt auf Beginn bis Ende + 1 wie ein `taxYear` (`asStatedYear`): Jahr der Zahlung t und Datum
+  im Jahr t ergeben dieselbe Übersicht. Offen bleibt die Regel „alle Heizpositionen der Anlage im
+  Zeitraum, unabhängig von Datum und Jahr“; sie änderte veröffentlichte Zahlen bei Mai bis April.
   **Betriebsstrom: die Stromrechnung zählt genau einmal** (#268). Eine Heizposition `included`
   („steckt auch in der Stromrechnung“) und ein Abzug beim Allgemeinstrom (`operatingPower:
   'deduction'`) sind beide nur Ausschnitte derselben bezahlten Stromrechnung, keine eigene Zahlung.

@@ -36,6 +36,8 @@ import type {
   TaxExpenseCategory,
   TaxExpenseGroup,
   TaxExpenseItem,
+  TaxMovedOut,
+  TaxOutflow,
   TaxReport,
   FuelDeliveryLine,
   HeatingTarget,
@@ -83,8 +85,8 @@ import type { TermId } from '../../shared/glossary.ts'
 import { allocationOf, comparablePrevious, sameAllocation, sameUnits } from '../../shared/allocation.ts'
 import { possibleDuplicates } from '../../shared/duplicates.ts'
 import { commonPeriod, tenancyOverlaps } from '../../shared/tenancyOverlap.ts'
-import { CALENDAR_RULES, calendarYearPeriod, contextOf, formatDayRange, periodContaining, periodDays, periodLabel, periodMonths, periodOfKey, periodsBetween, previousPeriod, rulesOf, settlementDeadline, settlementPeriod, startYearOf, type PeriodContext } from '../../shared/period.ts'
-import { paidOnYear } from '../../shared/paidOn.ts'
+import { CALENDAR_RULES, calendarYearPeriod, contextOf, formatDayRange, periodContaining, periodDays, periodLabel, periodMonths, periodOfKey, periodsBetween, previousPeriod, rulesOf, settlementDeadline, settlementPeriod, spansTwoYears, startYearOf, type PeriodContext } from '../../shared/period.ts'
+import { allowsPaidOn, paidOnSpan, paidOnYear } from '../../shared/paidOn.ts'
 import { generatorEnergy, noCo2Supplier } from '../../shared/heatDelivery.ts'
 import { lineRoot, monthSpanText, plantRules, plantSpan, recommendedDeadline, requestMonth, sameBuilding, sameFuelLine, sameLine, sameSpan, separateOwner, servesUnit, settledSeparately } from '../../shared/heatingPeriod.ts'
 import { heatingSnapshotFor, selfAt, snapshotFor, wayOf } from './snapshot.ts'
@@ -1157,10 +1159,10 @@ export const ANLAGE_V_GROUP_ORDER = [
 // Werbungskosten aus den Kostenpositionen nach Anlage-V-Gruppen, §35a-Lohnanteile sowie
 // der Flächenanteil der vermieteten Einheiten (für gemischt genutzte Gebäude). Die
 // Einnahmen werden sowohl als Soll (vereinbart) als auch als Ist (tatsächlich gezahlt) geliefert.
-// **Die Werbungskosten folgen dem Abflussprinzip noch nicht** (Durchsicht K6): Eine Position steht
-// im angegebenen Jahr der Zahlung, sonst im Jahr, in dem ihr Zeitraum beginnt, also im Jahr ihrer
-// Abrechnung und nicht zwingend in dem, in dem sie bezahlt wurde. Ein Zahlungsdatum je Position
-// bringt #255 mit PR 3. Für die Steuer bestimmt das Jahr `outflowShares` in outflow.ts.
+// **Die Werbungskosten folgen dem Abflussprinzip nur mit Angabe** (#255): Eine Position steht im Jahr
+// ihres Zahlungsdatums, sonst im angegebenen Jahr der Zahlung, sonst im Jahr, in dem ihr Zeitraum
+// beginnt. Für die Steuer bestimmt das Jahr `outflowShares` in outflow.ts; was dabei zwischen den
+// Jahren verschoben ist, nennt `shiftNotes` (PR 4).
 
 // Ein Teil der Steuerübersicht: der Schnappschuss eines Abrechnungszeitraums und seine Positionen,
 // die im Kalenderjahr gezahlt wurden. Der Eigenanteil kommt aus der Abrechnung dieses Zeitraums.
@@ -1368,7 +1370,10 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
   }
   const balanceParts = used.map((p) => ({ items: p.items, plants: p.snapshot.heatingPlants ?? [], period: p.snapshot.period }))
   const balance = operatingPowerBalance(balanceParts, [...lookup.values()])
-  const balanceItem = balance.cents !== 0 ? operatingPowerBalanceItem(balance, used, splits, snapshot.units, year, options.foreignQuota) : null
+  const balanceItem = balance.cents !== 0 ? operatingPowerBalanceItem(balance, used, splits, snapshot.units, year, options.foreignQuota, (i) => {
+    const part = settled[i]
+    return part === undefined ? undefined : splitForTax(part.part.snapshot, heatPool(part.part).map((x) => x.c).filter((c) => c.category === HEATING_CATEGORY), part.settlement, calendar)
+  }) : null
   if (balanceItem) split.items.set(balanceItem.costItemId, balanceItem)
   const ambiguous = balance.ambiguous
   const unmarked = unmarkedPowerCredits(balanceParts)
@@ -1534,6 +1539,12 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
   // ist; sonst zählte deren Eigenanteil hier mit, obwohl die Position in der Übersicht eines anderen Jahres steht.
   // Ebenso, wenn ein anderer Teil eine Position mit Zahlungsdatum beiträgt: deren Eigenanteil steht nicht in dieser
   // Abrechnung. Ohne Datum bleibt es bei der Regel von vorher.
+  // #255 PR 4: was zwischen den Jahren verschoben ist, nur Auskunft (`shiftNotes`).
+  const shifts = shiftNotes(given, items, options.linkable, year, snapshot)
+  for (const [id, note] of shifts.items) {
+    const entry = split.items.get(id)
+    if (entry) split.items.set(id, { ...entry, ...note })
+  }
   const sameWhole = same !== undefined && same.part.snapshot.costItems.every((c) => same.part.items.includes(c)) &&
     !used.some((p) => p !== same.part && p.items.some((c) => c.paidOn != null))
   const selfUsedShareCents = same !== undefined && sameWhole
@@ -1557,7 +1568,8 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
       tenanciesWithSoll,
       tenanciesWithoutPayment,
     },
-    expenses: { groups, totalCents, privateCents, deductibleCents, labor35aCents, ...(stockCarrySelf !== 0 ? { stockCarrySelfCents: stockCarrySelf } : {}), items: [...split.items.values()] },
+    expenses: { groups, totalCents, privateCents, deductibleCents, labor35aCents, ...(stockCarrySelf !== 0 ? { stockCarrySelfCents: stockCarrySelf } : {}), items: [...split.items.values()], unstatedCount: shifts.unstatedCount },
+    movedOut: shifts.movedOut,
     settlementPeriods: used.map((p) => ({ key: p.snapshot.period.key, label: p.snapshot.scope?.kind === 'heating' ? `Heizkosten ${periodLabel(p.snapshot.period)}` : periodLabel(p.snapshot.period) })),
     selfUseChangedInYear: split.selfUseChangedInYear,
     closedSelfUseDiffers: split.closedSelfUseDiffers,
@@ -1579,6 +1591,128 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
     surplusSollCents: sollCents - deductibleCents,
     surplusPaidCents: paidCents - deductibleCents,
   }
+}
+
+// ---------- Was zwischen den Jahren verschoben ist (#255, PR 4) ----------
+//
+// Nur Auskunft, **keine Zahl hängt daran**: Welche Position in welchem Steuerjahr steht, hat `taxPartsFor` über
+// `paidWhollyIn` schon entschieden; hier wird dieselbe Antwort von `outflowShares` nur noch einmal gelesen, um sie zu
+// nennen. Die Gleichheitsinvariante in outflow.test.ts und die Prüfsummen (taxGolden.ts) lesen die neuen Felder nicht.
+//
+// **Verschoben heißt: das Jahr der Zahlung liegt außerhalb der Kalenderjahre, die der Zeitraum der Position berührt.**
+// Bei Mai bis April ist eine Zahlung 2026 für 2025/2026 gewöhnlich und keine Verschiebung; eine Zahlung 2027 schon.
+// Beim Kalenderzeitraum ist jede Zahlung in einem anderen Jahr eine. Eine verschobene Position steht
+//   - in der Übersicht ihres Jahres der Zahlung mit ihrem Zeitraum (`settlementPeriod`),
+//   - in der Übersicht des Jahres, in dem ihr Zeitraum beginnt, unter `movedOut`,
+// also auf jeder Seite genau einmal, auch bei einem Zeitraum über zwei Kalenderjahre (Invariante in
+// calc-steuer-verschiebung.test.ts). Die Zuführung zur Erhaltungsrücklage gehört nicht zu den Werbungskosten und steht
+// in keiner der beiden Listen.
+//
+// `unstatedCount`: Positionen des Jahres ohne Datum und ohne Jahr der Zahlung (Quelle `period`). Nicht gezählt wird, wo
+// es gar kein Datum gibt (`allowsPaidOn`: Hausgeld laut Gemeinschaftsabrechnung, Abzug beim Betriebsstrom), sonst riete
+// der Hinweis zu einer Angabe, die das Formular nicht anbietet.
+//
+// `outsideSpan` (Durchsicht von PR 3, K8): Ein Datum außerhalb von Beginn − 1 bis Ende + 3 (R-4) fragt beim Eintragen
+// nach. Ein späterer Wechsel des Zeitraums fragt nicht neu, denn das Datum ändert sich dabei nicht und gerechnet wird
+// richtig; die Übersicht nennt es stattdessen, wo die Position auftaucht.
+type ShiftNotes = {
+  items: Map<string, Pick<TaxExpenseItem, 'outflow' | 'settlementPeriod' | 'outsideSpan'>>
+  movedOut: TaxMovedOut[]
+  unstatedCount: number
+}
+function shiftNotes(given: readonly TaxPart[], counted: readonly SnapshotCostItem[], linkable: readonly SnapshotCostItem[] | undefined, year: number, calendar: Pick<Snapshot, 'heatingPlants' | 'objectRules'>): ShiftNotes {
+  // Der eigene Zeitraum jeder Position (bei einer Heizposition unter eigener Heizperiode deren Heizperiode, wie in
+  // `taxPartsFor`) und die Positionen daneben, unter denen ein Abzug seine Stromrechnung findet.
+  type Own = { period: BillingPeriod; label: string; items: readonly SnapshotCostItem[] }
+  const ownOf = new Map<string, Own>()
+  const periodOf = new Map<string, Own>()
+  for (const p of given) {
+    const heating = p.snapshot.scope?.kind === 'heating'
+    for (const x of p.snapshot.heatingParts ?? []) {
+      if (x.separate) continue
+      const own = { period: x.period, label: `Heizkosten ${periodLabel(x.period)}`, items: x.items }
+      if (!periodOf.has(x.period.key)) periodOf.set(x.period.key, own)
+      for (const c of x.items) if (!ownOf.has(c.id)) ownOf.set(c.id, own)
+    }
+    const own = { period: p.snapshot.period, label: heating ? `Heizkosten ${periodLabel(p.snapshot.period)}` : periodLabel(p.snapshot.period), items: p.snapshot.costItems }
+    if (!periodOf.has(p.snapshot.period.key)) periodOf.set(p.snapshot.period.key, own)
+    for (const c of p.snapshot.costItems) if (!ownOf.has(c.id)) ownOf.set(c.id, own)
+  }
+  const touched = (period: Pick<BillingPeriod, 'from' | 'to'>, y: number): boolean => Number(period.from.slice(0, 4)) <= y && y <= Number(period.to.slice(0, 4))
+  const outsideSpan = (c: SnapshotCostItem, period: Pick<BillingPeriod, 'from' | 'to'>): boolean => {
+    if (c.paidOn == null) return false
+    const span = paidOnSpan({ startYear: Number(period.from.slice(0, 4)), endYear: Number(period.to.slice(0, 4)) })
+    const y = paidOnYear(c.paidOn)
+    return y < span.from || y > span.to
+  }
+  const outflowOf = (c: SnapshotCostItem, own: Pick<Own, 'period' | 'items'>): TaxOutflow | null => {
+    const shares = outflowShares(c, own.period, own.items)
+    const share = shares[0]
+    // Wie `paidWhollyIn`: mehrere Anteile (#292) nennt die Übersicht noch nicht, und still den ersten zu nehmen hieße,
+    // von der einen Stelle abzuweichen, die jede Auswertung fragt (Durchsicht von PR 4, K1).
+    if (shares.length > 1) throw new Error(`Die Position ${c.id} ist in mehreren Jahren abgeflossen; das zeigt die Steuerübersicht noch nicht.`)
+    if (share === undefined) return null
+    return { year: share.year, source: share.source, ...(share.source === 'paid' && c.paidOn != null ? { paidOn: c.paidOn } : {}) }
+  }
+
+  const items: ShiftNotes['items'] = new Map()
+  let unstatedCount = 0
+  for (const c of counted) {
+    if (groupOf(c.category) === null) continue
+    const own = ownOf.get(c.id)
+    if (own === undefined) continue
+    const outflow = outflowOf(c, own)
+    if (outflow === null) continue
+    const shifted = !touched(own.period, outflow.year)
+    items.set(c.id, {
+      outflow,
+      ...(shifted ? { settlementPeriod: { key: own.period.key, label: own.label } } : {}),
+      ...(shifted && outsideSpan(c, own.period) ? { outsideSpan: true as const } : {}),
+    })
+    if (outflow.source === 'period' && allowsPaidOn(c)) unstatedCount++
+  }
+
+  // Umgekehrt: Positionen der Zeiträume, die in diesem Jahr beginnen. Gesucht wird unter allen Positionen des Objekts,
+  // wo der Aufrufer sie mitgibt (`taxReportFor`), sonst unter denen der Teile. Ein Zeitraum, der in diesem Jahr beginnt,
+  // berührt es und ist deshalb stets ein Teil; eine Heizperiode, die in einer späteren Abrechnung steht, womöglich nicht.
+  // Für sie gilt: zwölf Monate, also über den Jahreswechsel, wenn sie nicht im Januar beginnt.
+  // Durchsicht von PR 4, M1: Eine Heizposition unter eigener Heizperiode hat deren Zeitraum, auch wenn die Abrechnung, in
+  // der die Heizperiode steht, kein Teil dieses Jahres ist. Nach dem Schlüssel allein träfe sie sonst einen
+  // Abrechnungszeitraum des Objekts, der zufällig im selben Monat beginnt (Rumpf am Wechsel des Rhythmus), und die
+  // Übersicht meldete eine Verschiebung, die es nicht gibt. Die Regel ist dieselbe wie in `taxPartsFor`.
+  const objectRules = calendar.objectRules ?? CALENDAR_RULES
+  const heatingPeriodOf = (c: SnapshotCostItem): Own | undefined => {
+    const plant = c.heatingPlantId ? (calendar.heatingPlants ?? []).find((p) => p.id === c.heatingPlantId) : undefined
+    if (plant === undefined || (plant.periodStartMonth ?? null) === null) return undefined
+    const period = periodOfKey(plantRules(wayOf(plant), objectRules), c.period)
+    if (period === null) return undefined
+    return { period, label: `Heizkosten ${periodLabel(period)}`, items: pool.filter((x) => x.period === c.period && x.heatingPlantId === c.heatingPlantId) }
+  }
+  const countedIds = new Set(counted.map((c) => c.id))
+  const pool = linkable ?? given.flatMap((p) => [...p.snapshot.costItems, ...(p.snapshot.heatingParts ?? []).flatMap((x) => x.items)])
+  const seen = new Set<string>()
+  const movedOut: TaxMovedOut[] = []
+  for (const c of pool) {
+    if (seen.has(c.id) || countedIds.has(c.id) || startYearOf(c.period) !== year || groupOf(c.category) === null) continue
+    seen.add(c.id)
+    // Zuerst der Zeitraum, unter dessen Positionen sie steht; eine Heizperiode kann denselben Schlüssel tragen wie ein
+    // Abrechnungszeitraum.
+    const known = ownOf.get(c.id) ?? heatingPeriodOf(c) ?? periodOf.get(c.period)
+    // Ohne bekannten Zeitraum zählen nur die Jahre seiner Grenzen (`touched`, `paidOnSpan`, `periodLabel`).
+    const fallback = (): Own => {
+      const period: BillingPeriod = { key: c.period, from: `${c.period}-01`, to: `${c.period.endsWith('-01') ? year : year + 1}-12-31`, short: false }
+      return { period, label: periodLabel(period), items: pool.filter((x) => x.period === c.period) }
+    }
+    const own = known ?? fallback()
+    const outflow = outflowOf(c, own)
+    if (outflow === null || outflow.year === year || touched(own.period, outflow.year)) continue
+    movedOut.push({
+      costItemId: c.id, category: c.category, description: c.description, amountCents: c.amountCents,
+      settlementPeriod: { key: own.period.key, label: own.label }, outflow,
+      ...(outsideSpan(c, own.period) ? { outsideSpan: true as const } : {}),
+    })
+  }
+  return { items, movedOut, unstatedCount }
 }
 
 // Die Teile der Steuerübersicht eines Objekts (#208, Heizung PR 5, Entwurf 3.10, #255): jeder
@@ -1651,18 +1785,30 @@ function foreignHeatQuota(source: Parameters<typeof snapshotFor>[0], propertyId:
   return (id, plant) => {
     const item = all.find((c) => c.id === id)
     if (item === undefined) return undefined
-    const own = storedOutflowYear(item, all)
+    // Das Jahr, in dem die Heizposition ohne Zahlungsdatum stünde, und ihr Teil darin (Durchsicht von PR 4, S1); gesucht
+    // unter den Positionen des Teils, nicht nur unter den in diesem Jahr bezahlten.
+    const own = storedOutflowYear(withoutDate(item), all.map(withoutDate))
     const years = [own, ...[-1, 1, -2, 2, -3, 3].map((d) => own + d)].filter((y) => y !== year)
     for (const y of years) {
       const parts = partsOf.get(y) ?? taxPartsFor(source, propertyId, y).filter((p) => !p.carryOnly)
       partsOf.set(y, parts)
-      const at = parts.findIndex((p) => p.items.some((c) => c.id === id))
+      const at = parts.findIndex((p) => heatPool(p).some((x) => x.c.id === id))
       const part = parts[at]
       if (part === undefined) continue
+      // Das Jahr ohne Datum aus der Position in ihrem Teil, mit dem Zeitraum (N1); `own` war nur der Ausgangspunkt der Suche.
+      const entry = heatPool(part).find((x) => x.c.id === id)
+      const y0 = entry ? yearWithoutDate(entry.c, entry.period, []) ?? own : own
       const key = `${y}|${at}`
-      const split = splitOf.get(key) ?? splitForTax(part.snapshot, part.items.filter((c) => groupOf(c.category) !== null), computeSettlement(part.snapshot), calendarYearPeriod(y))
+      const settlement = () => computeSettlement(part.snapshot)
+      const split = splitOf.get(key) ?? splitForTax(part.snapshot, part.items.filter((c) => groupOf(c.category) !== null), settlement(), calendarYearPeriod(y))
       splitOf.set(key, split)
-      return plantHeatQuota(part, split, plant)
+      const extra = () => {
+        const k = `${key}|alle`
+        const done = splitOf.get(k) ?? splitForTax(part.snapshot, heatPool(part).map((x) => x.c).filter((c) => c.category === HEATING_CATEGORY), settlement(), calendarYearPeriod(y))
+        splitOf.set(k, done)
+        return done
+      }
+      return plantHeatQuota(part, split, plant, y0, extra)
     }
     return undefined
   }
@@ -1912,12 +2058,45 @@ const balanceLineId = (year: number): string => `operating-power-balance:${year}
 // Eigenanteil an den Heizkosten einer Anlage in einem Teil, wie die Steuerübersicht die Heizpositionen aufteilt (#268).
 // `null`: keine Heizposition der Anlage im Teil; `'unusable'`: kein Maßstab (Gutschrift über der Rechnung).
 type HeatQuota = { privateCents: number; amountCents: number } | 'unusable' | null
-function plantHeatQuota(p: TaxPart, s: TaxSplit, plant: string | null): HeatQuota {
+// #255, Durchsicht von PR 4 (S1): **Der Heizanteil gehört zum Zeitraum, nicht zum Zahlungsdatum.** Gerechnet wird aus
+// den Heizpositionen der Anlage im Teil (`heatPool`), die ohne Zahlungsdatum im Steuerjahr `y0` stünden
+// (`yearWithoutDate`), und `y0` ist das Jahr, in dem der Betriebsstrom selbst ohne Datum stünde. Vorher zählten die
+// Heizpositionen, die im Steuerjahr stehen: Wanderte eine per Zahlungsdatum in ein anderes Jahr, änderte sich der
+// Heizanteil und mit ihm der private Teil des Ausgleichs, über alle Jahre zusammen bis 55,78 €. Dieselbe Regel wie in
+// Teil 2 für den verknüpften Abzug (Heizanteil aus dem Teil der Heizposition). Ohne Datum sind es genau die Heizpositionen
+// des Jahres, und keine Zahl ändert sich (Prüfsummen, Gleichheitsinvariante). `extra`: die Aufteilung der Heizpositionen,
+// die nicht in diesem Jahr stehen, erst bei Bedarf gerechnet.
+type PoolItem = { c: SnapshotCostItem; period: BillingPeriod }
+function heatPool(p: TaxPart): PoolItem[] {
+  return [
+    ...p.snapshot.costItems.map((c) => ({ c, period: p.snapshot.period })),
+    ...(p.snapshot.heatingParts ?? []).filter((x) => !x.separate).flatMap((x) => x.items.map((c) => ({ c, period: x.period }))),
+  ]
+}
+const withoutDate = <C extends { paidOn?: string | null }>(c: C): C => (c.paidOn != null ? { ...c, paidOn: undefined } : c)
+// Nachprüfung von PR 4, N1: **Dieselbe Zahlung in beiden Eingabeformen gleich.** Bei einem Zeitraum über zwei
+// Kalenderjahre darf eine Position statt des Jahres der Zahlung nur ein Datum tragen (`requireTaxYear`). Für die Klammer
+// gilt dann das Jahr des Datums, geklemmt auf die Spanne eines Jahres der Zahlung (Beginn bis Ende + 1), wie ein
+// eingetragenes `taxYear`; sonst fiele sie auf das Beginnjahr zurück, das es für sie nie gab. Bei einem Kalenderzeitraum
+// ist das Jahr der Zahlung stets das Beginnjahr. Offen ist die saubere Regel „alle Heizpositionen der Anlage im
+// Zeitraum, unabhängig von Datum und Jahr“: Sie änderte veröffentlichte Zahlen bei Mai bis April mit `taxYear`.
+function asStatedYear<C extends { paidOn?: string | null; taxYear?: number }>(c: C, period: Pick<BillingPeriod, 'from' | 'to'>): C {
+  if (c.paidOn == null) return c
+  if (c.taxYear != null || !spansTwoYears(period)) return withoutDate(c)
+  const start = Number(period.from.slice(0, 4))
+  const end = Number(period.to.slice(0, 4))
+  return { ...withoutDate(c), taxYear: Math.min(Math.max(paidOnYear(c.paidOn), start), end + 1) }
+}
+function yearWithoutDate(c: SnapshotCostItem, period: Pick<BillingPeriod, 'from' | 'to'>, items: readonly SnapshotCostItem[]): number | null {
+  return outflowShares(asStatedYear(c, period), period, items.map((x) => asStatedYear(x, period)))[0]?.year ?? null
+}
+function plantHeatQuota(p: TaxPart, s: TaxSplit, plant: string | null, y0: number, extra: () => TaxSplit): HeatQuota {
   let privateCents = 0
   let amountCents = 0
-  for (const c of p.items) {
+  for (const { c, period } of heatPool(p)) {
     if (c.category !== HEATING_CATEGORY || (c.heatingPlantId ?? null) !== plant) continue
-    const x = s.items.get(c.id)
+    if (yearWithoutDate(c, period, []) !== y0) continue
+    const x = s.items.get(c.id) ?? extra().items.get(c.id)
     if (!x) continue
     privateCents += x.privateCents
     amountCents += x.amountCents
@@ -1939,6 +2118,7 @@ export type ForeignHeatQuota = (heatingItemId: string, plant: string | null) => 
 function operatingPowerBalanceItem(
   balance: OperatingPowerBalance, used: readonly TaxPart[], splits: readonly TaxSplit[], units: readonly SnapshotUnit[], year: number,
   foreignQuota?: ForeignHeatQuota,
+  allHeatSplit: (part: number) => TaxSplit | undefined = () => undefined,
 ): TaxExpenseItem {
   const cents = balance.cents
   const isSelf = (u: SnapshotUnit) => !!u.selfUsed && !u.participates
@@ -1950,10 +2130,25 @@ function operatingPowerBalanceItem(
   const areaOk = selfUnits.length === 0 || (missing.length === 0 && totalArea > 0)
 
   // Eigenanteil an den Heizkosten einer Anlage in einem Teil, wie diese Übersicht die Heizpositionen aufteilt.
-  const heatQuota = (part: number, plant: string | null): HeatQuota => {
+  const extraSplits = new Map<number, TaxSplit>()
+  const empty: TaxSplit = { items: new Map(), selfUseChangedInYear: false, closedSelfUseDiffers: false, closedItemsChanged: 0 }
+  const heatQuota = (part: number, plant: string | null, y0: number): HeatQuota => {
     const p = used[part]
     const s = splits[part]
-    return p && s ? plantHeatQuota(p, s, plant) : null
+    const extra = () => {
+      const done = extraSplits.get(part) ?? allHeatSplit(part) ?? empty
+      extraSplits.set(part, done)
+      return done
+    }
+    return p && s ? plantHeatQuota(p, s, plant, y0, extra) : null
+  }
+  // Das Jahr, in dem eine Position des Teils ohne Zahlungsdatum stünde (Durchsicht von PR 4, S1). Ein Abzug folgt dabei
+  // seiner Stromrechnung, auch ohne deren Datum.
+  const yearOf = (part: number, id: string): number => {
+    const p = used[part]
+    const at = p ? heatPool(p).find((x) => x.c.id === id) : undefined
+    if (!p || !at) return year
+    return yearWithoutDate(at.c, at.period, p.snapshot.costItems) ?? year
   }
 
   const steps: CalcStep[] = []
@@ -2010,11 +2205,11 @@ function operatingPowerBalanceItem(
     if (s.kind === 'deduction' && s.linkedId !== undefined) {
       const id = s.linkedId
       const at = used.findIndex((p) => p.items.some((c) => c.id === id))
-      if (at >= 0) return { quota: heatQuota(at, s.plant), where: String(at) }
+      if (at >= 0) return { quota: heatQuota(at, s.plant, yearOf(at, id)), where: String(at) }
       const foreign = foreignQuota?.(id, s.plant)
       if (foreign !== undefined) return { quota: foreign, where: `bei ${id}` }
     }
-    return { quota: heatQuota(s.part, s.plant), where: String(s.part) }
+    return { quota: heatQuota(s.part, s.plant, yearOf(s.part, s.costItemId)), where: String(s.part) }
   }
   for (const s of balance.sources) {
     const { quota, where } = quotaOf(s)

@@ -24,6 +24,8 @@ import { settlementLine, TAX_HINTS, type Basis, type TaxHint } from '../taxView'
 import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
 import Steuer from './Steuer'
+import { periodKey } from '../../../shared/period.ts'
+import { fmtEuro } from '../api'
 
 // Dasselbe Jahr, das der PeriodProvider von sich aus wählt. Eine feste Jahreszahl wäre eine
 // Zeitbombe: Der erste Entwurf prüfte auf „Die Abrechnung 2025", und das wäre am 1. Januar 2027
@@ -47,7 +49,8 @@ const REPORT = (over: Partial<TaxReport> = {}, income: Partial<TaxReport['income
     tenanciesWithoutPayment: 0,
     ...income,
   },
-  expenses: { groups: [], totalCents: 0, privateCents: 0, deductibleCents: 0, labor35aCents: 0, items: [] },
+  expenses: { groups: [], totalCents: 0, privateCents: 0, deductibleCents: 0, labor35aCents: 0, items: [], unstatedCount: 0 },
+  movedOut: [],
   selfUseChangedInYear: false,
   closedSelfUseDiffers: false,
   closedItemsChanged: 0,
@@ -79,11 +82,23 @@ const MIXED = (items: TaxExpenseItem[] = [POS()], over: Partial<TaxReport> = {})
     selfOccupiedExists: true, selfUsedAreaM2: 120, totalAreaM2: 165,
     expenses: {
       groups: [{ group: 'Verwaltung & Instandhaltung', amountCents: sum((x) => x.amountCents), labor35aCents: 0, privateCents: sum((x) => x.privateCents), deductibleCents: sum((x) => x.deductibleCents), categories: [] }],
-      items, totalCents: sum((x) => x.amountCents), privateCents: sum((x) => x.privateCents), deductibleCents: sum((x) => x.deductibleCents), labor35aCents: 0,
+      items, totalCents: sum((x) => x.amountCents), privateCents: sum((x) => x.privateCents), deductibleCents: sum((x) => x.deductibleCents), labor35aCents: 0, unstatedCount: 0,
     },
     surplusPaidCents: 1200000 - sum((x) => x.deductibleCents),
     ...over,
   })
+}
+
+// #255, PR 4: die beiden Fälle des Mitwirkenden (R-9). Grundsteuer der Abrechnung des Vorjahres, in diesem Jahr bezahlt;
+// und eine Position dieses Jahres, schon vor Beginn bezahlt.
+const GS_IN = POS({
+  costItemId: 'gs', category: 'Grundsteuer', group: 'Grundsteuer & öffentliche Abgaben', description: `Grundsteuer ${JAHR - 1}`,
+  amountCents: 60000, privateCents: 24000, deductibleCents: 36000, allocation: 'settlement', deductiblePercent: 60,
+  outflow: { year: JAHR, source: 'paid', paidOn: `${JAHR}-02-20` }, settlementPeriod: { key: periodKey(`${JAHR - 1}-01`), label: String(JAHR - 1) },
+})
+const GS_OUT: TaxReport['movedOut'][number] = {
+  costItemId: 'vers', category: 'Sach- und Haftpflichtversicherung', description: `Versicherung ${JAHR}`, amountCents: 125000,
+  settlementPeriod: { key: periodKey(`${JAHR}-01`), label: String(JAHR) }, outflow: { year: JAHR - 1, source: 'paid', paidOn: `${JAHR - 1}-12-01` },
 }
 
 const zeige = async (report: TaxReport, basis: Basis = 'ist', kind?: PropertyKind) => {
@@ -193,6 +208,10 @@ const LAGEN: Record<TaxHint, Lage> = {
     report: REPORT({ unmarkedPowerCredits: [{ costItemId: 'gut', description: 'Abzug alt', amountCents: -20000 }] }),
     text: /ein negativer Betrag ohne Kennzeichnung/,
   },
+  // #255, PR 4: was zwischen den Jahren verschoben ist.
+  movedIn: { report: MIXED([GS_IN]), text: new RegExp(`In ${JAHR} bezahlt, aus einer anderen Abrechnung`) },
+  movedOut: { report: REPORT({ movedOut: [GS_OUT] }), text: new RegExp(`In der Abrechnung ${JAHR}, aber in einem anderen Jahr bezahlt`) },
+  unstated: { report: REPORT({ expenses: { groups: [], totalCents: 0, privateCents: 0, deductibleCents: 0, labor35aCents: 0, items: [], unstatedCount: 2 } }), text: /Bei 2 Positionen dieses Jahres ist nicht angegeben, wann sie bezahlt wurden/ },
 }
 
 for (const hint of TAX_HINTS) {
@@ -326,7 +345,7 @@ test('Mit eigener Wohnung: Hauptzahl abziehbar, „davon privat“ daneben, Übe
 test('Ohne eigene Wohnung: keine Spalte „privat“ und kein „davon privat“ (#163)', async () => {
   await zeige(REPORT({
     expenses: {
-      groups: [{ group: 'Laufende Betriebskosten', amountCents: 50000, labor35aCents: 0, privateCents: 0, deductibleCents: 50000, categories: [{ category: 'Müllabfuhr', amountCents: 50000, labor35aCents: 0, privateCents: 0, deductibleCents: 50000 }] }],
+      unstatedCount: 0, groups: [{ group: 'Laufende Betriebskosten', amountCents: 50000, labor35aCents: 0, privateCents: 0, deductibleCents: 50000, categories: [{ category: 'Müllabfuhr', amountCents: 50000, labor35aCents: 0, privateCents: 0, deductibleCents: 50000 }] }],
       items: [POS({ category: 'Müllabfuhr', description: 'Müll', amountCents: 50000, privateCents: 0, deductibleCents: 50000, allocation: 'settlement', deductiblePercent: 100 })],
       totalCents: 50000, privateCents: 0, deductibleCents: 50000, labor35aCents: 0,
     },
@@ -448,4 +467,31 @@ test('Nur eine Nachzahlung aus der Abrechnung erfasst: der Hinweis sagt „keine
   await zeige(REPORT({}, { paidCents: 15000, settlementBackPaymentsCents: 15000, tenanciesWithSoll: 1, tenanciesWithoutPayment: 1 }))
   expect(screen.getByText(/keine einzige Mietzahlung erfasst/)).toBeTruthy()
   expect(screen.queryByText(/keine einzige Zahlung erfasst/)).toBeNull()
+})
+
+// ---------- #255, PR 4: was zwischen den Jahren verschoben ist ----------
+
+test('Fall 1: Abrechnung des Vorjahres, in diesem Jahr bezahlt. Block und Zeile nennen Herkunft und Datum', async () => {
+  await zeige(MIXED([GS_IN]))
+  const block = screen.getByText(new RegExp(`In ${JAHR} bezahlt, aus einer anderen Abrechnung`)).closest('div')
+  expect(block?.textContent).toContain(`„Grundsteuer ${JAHR - 1}“ (${fmtEuro(60000)}), aus Abrechnung ${JAHR - 1}, bezahlt am 20.02.${JAHR}`)
+  expect(block?.textContent).toContain('§ 11 Abs. 2 Satz 1 EStG')
+  // Durchsicht von PR 4, K2: „Nicht umlagefähig“ teilt nach Fläche und nicht nach der Abrechnung.
+  expect(block?.textContent).toContain('umlagefähige Kosten nach dessen Abrechnung, die übrigen nach Zuordnung oder Fläche')
+  // In der Aufstellung je Position steht die Herkunft an der Zeile.
+  expect(screen.getByText(`aus Abrechnung ${JAHR - 1}, bezahlt am 20.02.${JAHR}`)).toBeTruthy()
+  expect(screen.queryByText(/aber in einem anderen Jahr bezahlt/)).toBeNull()
+})
+
+test('Fall 2: vor Beginn bezahlt. Die Übersicht dieses Jahres nennt die Position, zählt sie aber nicht', async () => {
+  await zeige(REPORT({ movedOut: [GS_OUT] }))
+  const block = screen.getByText(new RegExp(`In der Abrechnung ${JAHR}, aber in einem anderen Jahr bezahlt`)).closest('div')
+  expect(block?.textContent).toContain(`„Versicherung ${JAHR}“ (${fmtEuro(125000)}), Abrechnung ${JAHR}, bezahlt am 01.12.${JAHR - 1}: steht in der Steuerübersicht ${JAHR - 1}`)
+  expect(block?.textContent).toMatch(new RegExp(`zählen nicht zu den Werbungskosten ${JAHR}`))
+  expect(screen.queryByText(/aus einer anderen Abrechnung/)).toBeNull()
+})
+
+test('Ein Datum außerhalb der üblichen Spanne bekommt einen Satz zum Prüfen (Durchsicht PR 3, K8)', async () => {
+  await zeige(REPORT({ movedOut: [{ ...GS_OUT, outsideSpan: true }] }))
+  expect(screen.getByText(/außerhalb der üblichen Spanne/)).toBeTruthy()
 })
