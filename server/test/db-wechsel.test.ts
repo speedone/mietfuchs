@@ -81,6 +81,26 @@ test('Vorschau G-A1/N4: Rumpf, Aufteilen, Zuordnen und Neuerfassen der Jahreskor
   })
 })
 
+// Durchsicht #311, M1: Der Wechsel zählte die Monate eines Mietverhältnisses nach der alten
+// Monatserster-Regel. Einzug am 15.03.2025, Jahreskorrektur 2025, Wechsel ab 04/2025: Nach der alten
+// Regel lag im Rumpf 01–03/2025 kein Monat, die Korrektur wanderte ohne Rückfrage nach 2025/2026, und
+// die Abrechnung des Rumpfs setzte den März anteilig aus der Staffel dazu, der März zählte doppelt.
+// Jetzt gehört der angebrochene März zum Rumpf, und der Wechsel fragt nach.
+test('Wechsel bei Einzug am 15.03.: der angebrochene März steht in der Rückfrage, die Korrektur wandert nicht still (#311)', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write(async (db) => {
+      await createEntity(db, 'units', 'u1', { propertyId: 'objekt-1', name: 'EG', areaM2: 60, participates: true })
+      await createEntity(db, 'tenancies', 't-m', { unitId: 'u1', tenantName: 'M', persons: 1, start: '2025-03-15', end: '2025-12-31', prepayments: [{ from: '2025-03', monthlyCents: 15000 }], prepaymentOverrides: { '2025-01': 150000 } })
+    })
+    const v = await preview(opened, { startMonth: 1, changes: ['2025-04'] })
+    assert.deepEqual(v.overrides, [{
+      tenancyId: 't-m', tenantName: 'M',
+      from: [{ key: '2025-01', label: '2025', cents: 150000 }],
+      ask: [{ period: '2025-01', label: '01.01.–31.03.2025', months: '03/2025' }, { period: '2025-04', label: '2025/2026', months: '04–12/2025' }],
+    }])
+  })
+})
+
 test('Ohne Antworten wird nicht gespeichert, mit Antworten alles in einem Schritt (N4)', async () => {
   await withDatabase(async (opened) => {
     await bestand(opened)

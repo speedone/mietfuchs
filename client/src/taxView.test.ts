@@ -124,13 +124,20 @@ describe('Steuerübersicht: der Unterschied zur Abrechnung (#70)', () => {
     // beteiligten Wohnungen. Eine vermietete Wohnung außerhalb der Abrechnungseinheit ergibt
     // damit zwei verschiedene Zahlen und bisher kein Wort dazu.
     const note = prepaymentNote(report({ prepaymentSollCents: 480000, prepaymentSettlementCents: 240000 }))
-    expect(note).toEqual({ settlementCents: 240000, sollCents: 480000, jahreskorrektur: false })
+    expect(note).toEqual({ settlementCents: 240000, sollCents: 480000, jahreskorrektur: false, closed: false })
   })
 
   it('schweigt, wenn eine Jahreskorrektur zufällig dem Soll entspricht', () => {
     // Die Gegenrichtung desselben Fehlers: Ein Hinweis, der einen Unterschied erklärt, den es
     // nicht gibt, ist schlimmer als keiner.
     expect(prepaymentNote(report({ prepaymentOverridden: true }))).toBeNull()
+  })
+
+  it('nennt den eingefrorenen Stand einer abgeschlossenen Abrechnung (Durchsicht #311, K3)', () => {
+    // Vor #311 abgeschlossen: Die Abrechnung setzt eingefroren 1.350 € an, das Soll rechnet heute den
+    // angebrochenen März anteilig mit (1.432,26 €). Ohne den Satz suchte der Vermieter eine Korrektur.
+    const note = prepaymentNote(report({ prepaymentSollCents: 143226, prepaymentSettlementCents: 135000, prepaymentSettlementClosed: true }))
+    expect(note).toEqual({ settlementCents: 135000, sollCents: 143226, jahreskorrektur: false, closed: true })
   })
 
   it('nennt die Jahreskorrektur, wenn die Abrechnung eine ansetzt', () => {

@@ -35,6 +35,7 @@ import type { BillingPeriod, CostItem, PeriodChangePreview, PeriodEffect, Period
 import { baseDescription, splitByService, splitDeductionsAlike, type ServicePart } from '../serviceSplit.ts'
 import type { Database, Transaction } from './client.ts'
 import { readClosedSettlements, readCostItems, readFuelDeliveries, readHeatingPlants, readProperties, readStock, readTenancies, readUnits } from './read.ts'
+import { tenancyMonths } from '../calc.ts'
 import { dryRun, earliestTenancyStart, lostClaims, outcomeOf } from './dryRun.ts'
 import { HeatingError, PeriodConflict, PeriodError, rewriteCostItemFamily, settleOperatingPowerLinks, writeCostItemParts } from './repository.ts'
 import { assessmentLines, assessments, closedSettlementHistory, periodChanges, prepaymentOverrides, properties } from './schema.ts'
@@ -96,10 +97,6 @@ function affectedOf(before: PeriodRules, next: PeriodRules, key: PeriodKey): Aff
   return { key, old, now, status }
 }
 
-// Die Monate eines Zeitraums, in denen das Mietverhältnis am Monatsersten besteht: dieselbe Regel
-// wie `computePrepaymentCents` in calc.ts.
-const activeMonths = (t: Pick<Tenancy, 'start' | 'end'>, p: BillingPeriod): string[] =>
-  periodMonths(p).filter((m) => t.start <= `${m}-01` && !(t.end !== null && t.end < `${m}-01`))
 
 const MS_DAY = 86400000
 const overlapDays = (a: BillingPeriod, b: BillingPeriod): number => {
@@ -423,8 +420,8 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
       const key = parsePeriodKey(schluessel)
       const a = key === null ? null : changed(key)
       if (key === null || a === null) continue
-      const oldMonths = activeMonths(t, a.old)
-      const withMonths = optionsFor(a).map((p) => ({ period: p, months: activeMonths(t, p) })).filter((x) => x.months.length > 0)
+      const oldMonths = tenancyMonths(t, a.old)
+      const withMonths = optionsFor(a).map((p) => ({ period: p, months: tenancyMonths(t, p) })).filter((x) => x.months.length > 0)
       const only = withMonths.length === 1 ? withMonths[0] : undefined
       if (only && only.months.join() === oldMonths.join()) {
         if (only.period.key !== key) overrideRekeys.push({ tenancyId: t.id, from: key, to: only.period.key })

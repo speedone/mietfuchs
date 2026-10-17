@@ -126,6 +126,20 @@ test('C2/D2: Jahreskorrektur 2026 über 3.300 € neu erfasst; 876 € vorläufi
   })
 })
 
+// Durchsicht #311, S1: Die Rückfragen zählten die Monate nach der alten Monatserster-Regel. Bei
+// Einzug am 15.01.2026 fehlte der angebrochene Januar in der Rückfrage, die Abrechnung rechnete ihn
+// aber anteilig aus der Staffel an. Jetzt gilt dieselbe Monatsregel wie in calc.ts.
+test('C2 bei Einzug am 15.01.: der angebrochene Januar steht in den Rückfragen (#311)', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => haus(db, { start: '2026-01-15', prepayments: [{ from: '2026-01', monthlyCents: 30000 }], prepaymentOverrides: { '2026-01': 330000 } }))
+    const v = await preview(opened, { separate: true, month: '2026-01' })
+    assert.deepEqual(v.overrides.map((o) => [o.asks.map((a) => [a.kind, a.period, a.months]), o.remainder?.months]), [[
+      [['total', '2026-01', '01–12/2026'], ['heating', '2025-05', '01–04/2026']],
+      '05–12/2026',
+    ]])
+  })
+})
+
 test('C2: Beträge über der Jahreskorrektur werden abgelehnt', async () => {
   await withDatabase(async (opened) => {
     await opened.write((db) => haus(db, { prepaymentOverrides: { '2026-01': 330000 } }))

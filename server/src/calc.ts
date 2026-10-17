@@ -803,9 +803,23 @@ export function monthShare(t: { start: string, end: string | null }, month: stri
   return { days: rangeOverlapDays(t.start, t.end, `${month}-01`, `${month}-${String(of).padStart(2, '0')}`), of }
 }
 
+// Die Monate eines Zeitraums, die nach der Monatsregel zum Mietverhältnis gehören (`days > 0`), auch
+// der angebrochene Ein- und Auszugsmonat. Die Rückfragen beim Wechsel des Zeitraums, der Heizperiode
+// und der getrennten Heizkostenabrechnung zählen mit dieser Funktion, damit sie dieselben Monate
+// abfragen, die die Abrechnung anrechnet (Durchsicht #311, M1/S1).
+export const tenancyMonths = (t: { start: string, end: string | null }, p: Pick<BillingPeriod, 'from' | 'to'>): string[] =>
+  periodMonths(p).filter((m) => monthShare(t, m).days > 0)
+
 // Die Staffelrate eines Monats nach der Monatsregel: 0 ohne Tag im Mietverhältnis, die Rate im vollen
 // Monat, sonst tagesanteilig auf Cent gerundet. Wer zählt, ob ein Monat dazugehört, fragt
-// `monthShare(…).days > 0`; wer rechnet, nimmt diese Funktion.
+// `monthShare(…).days > 0`; wer rechnet, nimmt diese Funktion. Gerundet wird je Monat und
+// Mietverhältnis (R-1). Beim Mieterwechsel im Monat ergeben die beiden Anteile deshalb nicht immer
+// genau eine Rate: Meist passt es (100 € und 10/31 + 21/31 sind 32,26 € + 67,74 €), aber fallen beide
+// Anteile genau auf einen halben Cent, runden beide auf, bei 150,01 € und 15/30 + 15/30 also je
+// 75,01 €, zusammen 1 Cent mehr als die Rate. Mit gleicher Rate bei beiden Mietern kann so höchstens
+// 1 Cent zu viel entstehen, bei verschiedenen Raten ist die Summe ohnehin keine Rate. Das ist gewollt
+// und kein Fehler: Jeder Mieter schuldet seinen eigenen Anteil, einen gemeinsamen Restcent wie bei
+// `distributeCents` gibt es zwischen zwei Mietverhältnissen nicht.
 export function rateInMonth(schedule: readonly MonthlySchedule[], t: { start: string, end: string | null }, month: string): number {
   const { days, of } = monthShare(t, month)
   if (days === 0) return 0
@@ -912,7 +926,7 @@ export function heatingPrepaymentCents(
   owns: (month: string) => boolean = () => true,
 ): { cents: number, overridden: boolean, provisional: HeatingPrepaymentOverride | null, elsewhere: string[], partial?: PartialMonth[] } {
   const schedule: MonthlySchedule[] = Array.isArray(tenancy.heatingPrepayments) ? tenancy.heatingPrepayments : []
-  const months = periodMonths(h).filter((m) => monthShare(tenancy, m).days > 0)
+  const months = tenancyMonths(tenancy, h)
   const mine = months.filter(owns)
   const elsewhere = months.filter((m) => !owns(m))
   const staffel = (list: readonly string[]): number => list.reduce((a, m) => a + rateInMonth(schedule, tenancy, m), 0)
@@ -1490,6 +1504,7 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
       flatRateSollCents,
       prepaymentSettlementCents,
       prepaymentOverridden,
+      ...(same !== undefined && frozen ? { prepaymentSettlementClosed: true as const } : {}),
       sollCents,
       paidCents,
       tenanciesWithSoll,
@@ -2159,17 +2174,19 @@ function partialMonthHint(t: TenancyWithUnit, partial: readonly PartialMonth[], 
   const withFull = fmtCents(totalCents - partCents + fullCents)
   const without = fmtCents(totalCents - partCents)
   // Die Beispielsummen setzen voraus, dass alle übrigen Monate voll gezahlt sind (R-4); maßgeblich
-  // bleibt das tatsächlich Gezahlte.
-  const example = partial.length === 1 && only
-    ? `mit vollem ${monthWord(only.month)} ${withFull}, ohne ${monthWord(only.month)} ${without}`
-    : `mit vollen Monaten ${withFull}, ohne diese Monate ${without}`
+  // bleibt das tatsächlich Gezahlte. Gibt es keine übrigen Monate (Ein- und Auszug im selben Monat),
+  // nennt das Beispiel nur den vollen Monat; „ohne Mai 2025 0,00 €“ wäre ein leerer Satz (Durchsicht K1).
+  const onlyPartial = totalCents === partCents
+  const fullText = partial.length === 1 && only ? `mit vollem ${monthWord(only.month)} ${withFull}` : `mit vollen Monaten ${withFull}`
+  const withoutText = partial.length === 1 && only ? `ohne ${monthWord(only.month)} ${without}` : `ohne diese Monate ${without}`
+  const example = onlyPartial ? `Zum Beispiel: ${fullText}.` : `Zum Beispiel, wenn alle übrigen Monate voll gezahlt sind: ${fullText}, ${withoutText}.`
   return [
     `${t.tenantName} (${t.unit.name}):${events.length > 0 ? ` ${events.join(', ')}.` : ''}`,
     credited,
     ...elsewhere,
     'Das ist eine Auslegung: Ihr Mietvertrag kann anderes vorsehen, und maßgeblich ist, was der Mieter für den Zeitraum tatsächlich gezahlt hat.',
     `Weicht das ab, tragen Sie die gezahlte Summe bei „abzüglich geleisteter ${what}en“ mit „✎ anpassen“ ein.`,
-    `Zum Beispiel, wenn alle übrigen Monate voll gezahlt sind: ${example}.`,
+    example,
   ].join(' ')
 }
 

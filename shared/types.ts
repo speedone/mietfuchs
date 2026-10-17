@@ -1021,6 +1021,10 @@ export type TaxReport = {
     // Korrektur auf einem Mietverhältnis außerhalb der Abrechnungseinheit ist erfasst, geht aber
     // in keine Abrechnung ein. Gelesen wird deshalb dieselbe Quelle wie bei der Zahl darüber.
     prepaymentOverridden: boolean
+    // Stammt `prepaymentSettlementCents` aus einer abgeschlossenen Abrechnung? Dann steht ihr Ansatz,
+    // wie er beim Abschluss gerechnet wurde, während das Soll heute neu gerechnet wird (Durchsicht
+    // #311, K3). Fehlt das Feld, ist es die heutige Rechnung.
+    prepaymentSettlementClosed?: true
     sollCents: number // Summe Soll (brutto)
     // Tatsächlich zugeflossen (§ 11 Abs. 1 Satz 1 EStG): alle Zahlungen mit Datum im Jahr,
     // unabhängig davon, ob das Mietkonto für sie eine Zeile führt. Siehe calc.ts.

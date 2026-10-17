@@ -109,6 +109,16 @@ test('Hinweis bei Ein- und Auszug im selben Zeitraum: beide Monate in einem Hinw
     'Für März 2025 und Juni 2025 ist die Vorauszahlung anteilig angesetzt (März 2025: 17 von 31 Tagen, 82,26 €; Juni 2025: 15 von 30 Tagen, 75,00 €).')
 })
 
+// Durchsicht #311, K1: Ohne weitere Monate lautete das Beispiel „ohne Mai 2025 0,00 €“. Es nennt dann
+// nur den vollen Monat und setzt keine übrigen Monate voraus, die es nicht gibt.
+test('Hinweis bei Ein- und Auszug im selben Monat: Beispiel nur mit vollem Monat', () => {
+  const s = settle([tenancy({ start: '2025-05-10', end: '2025-05-20' })])
+  assert.equal(st(s).prepaymentCents, 5323)
+  const [n] = partial(s)
+  assert.ok(n?.text.endsWith('mit „✎ anpassen“ ein. Zum Beispiel: mit vollem Mai 2025 150,00 €.'), n?.text)
+  assert.doesNotMatch(n?.text ?? '', / 0,00 €|übrigen Monate/)
+})
+
 test('Jahreskorrektur gesetzt: sie gilt, kein Hinweis, kein Satz für den Mieter', () => {
   const s = settle([tenancy({ start: '2025-03-15', prepaymentOverrides: { '2025-01': 150000 } })])
   assert.equal(st(s).prepaymentCents, 150000)
@@ -204,6 +214,17 @@ test('Steuer: Soll der Vorauszahlungen im Mietkonto und Ansatz der Abrechnung st
   assert.equal(r.income.prepaymentSollCents, 143226 + 180000)
   assert.equal(r.income.prepaymentSettlementCents, 143226 + 180000)
   assert.equal(r.income.baseRentSollCents, 9 * 50000 + 27419 + 12 * 50000)
+})
+
+// Durchsicht #311, K3: Vor #311 abgeschlossen, bleibt der Ansatz eingefroren, das Soll ist heute
+// anteilig. Die Steuerübersicht sagt deshalb, dass der Ansatz aus einer abgeschlossenen Abrechnung stammt.
+test('Steuer bei abgeschlossener Abrechnung: Ansatz eingefroren, Soll anteilig, und das Kennzeichen dafür', () => {
+  const closed = { period: periodKey('2025-01'), selfUsedShareCents: 0, prepaymentCents: 135000 + 180000, prepaymentOverridden: false }
+  const r = taxReport(snapshotOf(source([einzug], { closedSettlements: [closed] }), 2025))
+  assert.equal(r.income.prepaymentSettlementCents, 135000 + 180000)
+  assert.equal(r.income.prepaymentSollCents, 143226 + 180000)
+  assert.equal(r.income.prepaymentSettlementClosed, true)
+  assert.equal(taxReport(snapshotOf(source([einzug]), 2025)).income.prepaymentSettlementClosed, undefined)
 })
 
 // ---------- Getrennte Heizkostenabrechnung (Weg d) und Heizstaffel ----------

@@ -210,6 +210,10 @@ export default function Steuer({ settings }: Props) {
                 Wohnungen, die zur Abrechnungseinheit gehören.
                 {note.jahreskorrektur && <> Für {year} ist dazu eine <strong>Jahreskorrektur der
                 Vorauszahlungen</strong> erfasst.</>}
+                {note.closed && <> Die Abrechnung {year} ist abgeschlossen: Ihr Ansatz steht so da, wie
+                er beim Abschluss gerechnet wurde, das Soll rechnet Mietfuchs heute. Rechnet Mietfuchs
+                inzwischen anders, zum Beispiel im angebrochenen Ein- oder Auszugsmonat, zeigt die Seite
+                Abrechnung den Unterschied.</>}
               </p>
             )}
 
