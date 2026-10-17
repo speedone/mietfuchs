@@ -65,6 +65,13 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   anbietet, muss ihren Quellcode unter derselben Lizenz offenlegen. Versionen bis 0.11.3 bleiben
   unter der MIT-Lizenz.
 
+- Das Versanddatum einer abgeschlossenen Abrechnung wird erst mit „Speichern“ übernommen; vorher
+  stand schon ein verklicktes Datum im Kalender fest, und an ihm hängt die Frist nach § 556 Abs. 3
+  BGB. „Verwerfen“ stellt das gespeicherte Datum wieder her, und wer mit einem ungespeicherten
+  Datum Jahr oder Objekt wechselt, wird vorher gefragt. Weitere Auswahlfelder und Häkchen, die
+  noch beim Anklicken speichern, folgen nach demselben Muster
+  ([#309](https://github.com/speedone/mietfuchs/issues/309)).
+
 ### Behoben
 
 - Steuerübersicht bei teilweiser Eigennutzung, wenn der Betriebsstrom der Heizung aus der

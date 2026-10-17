@@ -273,6 +273,10 @@ label.field.checkline span { display: flex; align-items: center; gap: 6px; font-
 .notice { background: var(--amber-soft); color: var(--amber); border: 1px solid var(--notice-border); border-radius: 8px; padding: 10px 14px; font-size: 13.5px; margin-bottom: 16px; }
 .error { background: var(--red-soft); color: var(--red); border: 1px solid var(--error-border); border-radius: 8px; padding: 10px 14px; font-size: 13.5px; margin: 10px 0; }
 .ok { background: var(--green-soft); color: var(--green); border: 1px solid var(--ok-border); border-radius: 8px; padding: 10px 14px; font-size: 13.5px; margin: 10px 0; }
+/* Speichern und Verwerfen eines Entwurfs (#309, DraftActions.tsx): in einer Zeile hinter dem Feld, die
+   Fehlermeldung daneben ohne den Abstand eines Kastens. */
+.draft-actions { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.draft-actions .error { margin: 0; padding: 4px 10px; }
 /* Fließtext in normaler Schrift (S6): Indigo auf Indigo las sich im Dunkelmodus mit 3:1. Der Akzent
    bleibt Rahmen und Titel. */
 .hint, .info { background: var(--accent-soft); color: var(--text); border: 1px solid var(--accent); border-left-width: 4px; border-radius: 8px; padding: 10px 14px; font-size: 13.5px; margin: 10px 0; }
