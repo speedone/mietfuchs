@@ -37,7 +37,32 @@ export function noticesOf(settlement: Pick<Settlement, 'notices' | 'warnings'>):
 // Und die Erinnerung an fernablesbare Geräte ab 2027 (#110): Welche Geräte eingebaut sind, erfasst
 // Mietfuchs nicht, im Programm lässt sich also nichts beheben; sonst stünde die Ampel in jedem Haus
 // mit Heizabrechnung dauerhaft auf Gelb.
-const INFORMATIONAL = new Set(['basis.unit-zero', 'basis.tenancy-zero', 'basis.vacancy-persons', 'basis.vacancy-no-area', 'heating.remote-reading'])
+// Ebenso die eigene Heizperiode (Heizung PR 5): zulässig und nur eine Auskunft.
+const INFORMATIONAL = new Set(['basis.unit-zero', 'basis.tenancy-zero', 'basis.vacancy-persons', 'basis.vacancy-no-area', 'heating.remote-reading', 'period.short', 'period.heating-differs',
+  // Heizung PR 10: Hinweise der eigenen Heizkostenabrechnung ohne Handlungsbedarf.
+  'heating.interim-reading-off', 'heating.reading-dates-differ', 'heating.change-split-time', 'heating.heat-pump-capture',
+  // Heizung PR 13 (Entwurf 10.1: „hint (färbt nicht)“): eine bestätigte Schätzung nach § 9a, auch neben
+  // vollständiger Ablesung, die der Vermieter damit als unbrauchbar markiert (Durchsicht von #242, R-I7).
+  'heating.estimated', 'heating.estimate-complete',
+  // Folge-PR zu #252 (#224, Entscheidung F6): Der Hinweis trifft auch den rechtmäßigen Fall „eigener Zähler,
+  // Vermieter trägt den Strom selbst“ und lässt sich ohne Buchung nicht beheben; er färbt deshalb nicht.
+  'heating.operating-power-missing',
+  // #266: Fehlt nur die Rechnung des eigenen Stromvertrags, trägt der Vermieter eigenes Geld; den Mietern schadet das
+  // nicht. „Abzug des Betriebsstroms fehlt“ steht bewusst nicht hier: Er ist der Fall des BGH mit ausdrücklicher Angabe.
+  'heating.operating-power-bill-missing',
+  // Heizung PR 16 (Prüfung C-S8): Die Umstellung auf Wärmelieferung nennt jedes Jahr die Rechtslage für die Mieter von
+  // vor der Umstellung; beheben lässt sie sich nicht, und sie färbt deshalb nicht.
+  'heating.contracting',
+  // Heizung PR 19 (Durchsicht S-5): Auskunft, nichts zu beheben. Sie steht bei jeder richtig eingerichteten Heizung,
+  // deren Brennstoff der Mieter bezieht; die Hinweise zur CO₂-Erstattung (`co2.refund-*`) färben weiter.
+  'co2.self-supply-items',
+  // Durchsicht S-2: Ohne Angabe, wie der Betriebsstrom erfasst ist, ist der Hinweis Auskunft wie `heating.operating-power-missing`
+  // (#265); ein eigener Stromvertrag der Heizung führt so nicht zu einer dauerhaft gelben Ampel.
+  'heating.self-supply-operating-power',
+  // #219: Auskunft zur Rohrwärme bei Heizkostenverteilern; ob sie zutrifft, kennt Mietfuchs nicht.
+  'heating.pipe-heat',
+  // #218: Auskunft, dass eine Vorerfassung nach § 5 Abs. 7 Satz 2 möglich ist; sie ist dort keine Pflicht.
+  'heating.pre-capture'])
 export function noticesNeedAttention(settlement: Pick<Settlement, 'notices' | 'warnings'>): boolean {
   return noticesOf(settlement).some((n) => !INFORMATIONAL.has(n.code))
 }
@@ -59,25 +84,49 @@ export function attentionDetail(settlement: Pick<Settlement, 'notices' | 'warnin
   return texts.length > 0 ? texts.join(' · ') : 'Nur Auskünfte, nichts zu beheben. Sie stehen auf der Seite Abrechnung.'
 }
 
+// Sichtprüfung S12/E54: Im Cockpit eine Zeile je Hinweis, der etwas verlangt, statt aller Texte
+// in einem Absatz. Steht ein Titel da, genügt er (der Text steht auf der Seite Abrechnung);
+// gleiche Titel werden zusammengefasst. Ohne Titel (abgeschlossen vor #112) der Text wie bisher.
+export function attentionLines(settlement: Pick<Settlement, 'notices' | 'warnings'>): string[] {
+  const open = noticesOf(settlement).filter((n) => !INFORMATIONAL.has(n.code))
+  const counts = new Map<string, number>()
+  for (const n of open) {
+    const line = n.title || n.text
+    counts.set(line, (counts.get(line) ?? 0) + 1)
+  }
+  return [...counts].map(([line, k]) => (k > 1 ? `${line} (${k}×)` : line))
+}
+
 // Die CSS-Klasse je Stufe. Hinweis und Info teilen sich eine ruhige Farbe: Beides verlangt
 // nichts, und eine eigene Farbe für „reine Auskunft“ wäre eine mehr, die man lernen muss.
 export function noticeClass(level: NoticeLevel): 'error' | 'notice' | 'hint' {
   return level === 'error' ? 'error' : level === 'warning' ? 'notice' : 'hint'
 }
 
-export type NoticeTab = 'kosten' | 'stammdaten' | 'zaehler' | 'mietkonto'
+export type NoticeTab = 'kosten' | 'stammdaten' | 'zaehler' | 'mietkonto' | 'heizkosten' | 'abrechnung'
 const TARGETS: Record<NoticeSubject['kind'], { tab: NoticeTab, page: string }> = {
   costItem: { tab: 'kosten', page: 'Kosten' },
   unit: { tab: 'stammdaten', page: 'Stammdaten' },
   tenancy: { tab: 'stammdaten', page: 'Stammdaten' },
   meter: { tab: 'zaehler', page: 'Zähler' },
   rentLedger: { tab: 'mietkonto', page: 'Mietkonto' },
+  heatingPlant: { tab: 'stammdaten', page: 'Stammdaten' },
+  // Heizung PR 6: die CO₂-Angaben und das Warmwasser stehen auf der Seite Heizkosten.
+  heatingCosts: { tab: 'heizkosten', page: 'Heizkosten' },
+  // Sichtprüfung E45: eine Heizkostenabrechnung nach Weg d, „Anlage|Heizperiode“. Kein Hinweis der
+  // Berechnung trägt sie; das Cockpit führt damit zu ihrem Reiter.
+  heatingSettlement: { tab: 'abrechnung', page: 'Abrechnung' },
 }
 
 // Wohin „Hier beheben →“ führt: zur Seite und dort zum Eintrag (#142). `focus` reicht die App an
 // die Zielseite weiter; die öffnet den Eintrag, sobald er geladen ist (useFocusTarget in focus.ts).
 export function noticeTarget(subject: NoticeSubject | undefined): { tab: NoticeTab, label: string, focus: NoticeSubject } | null {
   if (!subject) return null
+  // Noch keine Heizanlage (Heizung PR 6, Entwurf 11.1): Der Knopf führt zur Einrichtung in den
+  // Stammdaten und heißt so.
+  if (subject.kind === 'heatingPlant' && subject.id === '') {
+    return { tab: 'stammdaten', label: 'Heizung einrichten →', focus: { kind: subject.kind, id: subject.id } }
+  }
   // Eine Art, die diese Fassung nicht kennt (eingefrorene oder neuere Abrechnung), ergibt keinen
   // Knopf statt eines Absturzes.
   const target: { tab: NoticeTab, page: string } | undefined = Object.hasOwn(TARGETS, subject.kind) ? TARGETS[subject.kind] : undefined
@@ -85,16 +134,26 @@ export function noticeTarget(subject: NoticeSubject | undefined): { tab: NoticeT
   return { tab: target.tab, label: `Hier beheben → ${target.page}`, focus: { kind: subject.kind, id: subject.id } }
 }
 
-// Der Rechtsstand als Kopfzeile und eine Zeile je Regel. Fehlt er, wurde die Abrechnung
-// abgeschlossen, bevor Mietfuchs ihn festhielt; das steht dann ausdrücklich da, statt dass
+// Der Rechtsstand als Kopfzeile, eine Zeile je Regel und eine je Rechtswert, mit dem gerechnet
+// wurde (Heizung PR 1). Fehlt der Rechtsstand, wurde die Abrechnung abgeschlossen, bevor Mietfuchs
+// ihn festhielt; fehlen nur die Werte, vor 0.11.0. Beides steht dann ausdrücklich da, statt dass
 // die Zeile verschwindet.
-export function legalBasisLines(legalBasis: LegalBasis | undefined): { head: string, rules: string[] } {
-  if (!legalBasis) return { head: 'Rechtsstand nicht erfasst: Diese Abrechnung wurde abgeschlossen, bevor Mietfuchs ihn festhielt.', rules: [] }
+export function legalBasisLines(legalBasis: LegalBasis | undefined): { head: string, rules: string[], values: string[], valuesNote: string | null } {
+  if (!legalBasis) return { head: 'Rechtsstand nicht erfasst: Diese Abrechnung wurde abgeschlossen, bevor Mietfuchs ihn festhielt.', rules: [], values: [], valuesNote: null }
   return {
     head: `Rechtsstand ${fmtDate(legalBasis.asOf)}`,
     rules: legalBasis.rules.map((r) => {
       const range = [r.validFrom && `ab ${fmtDate(r.validFrom)}`, r.validTo && `bis ${fmtDate(r.validTo)}`].filter(Boolean).join(' ')
       return `${r.title} (${r.norm})${range ? `, gilt ${range}` : ''}`
     }),
+    // Mit Gültigkeit, wo es eine gibt: Ein Wert, der im Jahr nur zum Teil oder nicht mehr gilt (die
+    // Kabelregel 2025), läse sich sonst wie geltendes Recht des Jahres (Durchsicht von #221, I1).
+    values: (legalBasis.values ?? []).map((v) => {
+      const range = [v.validFrom && `ab ${fmtDate(v.validFrom)}`, v.validTo && `bis ${fmtDate(v.validTo)}`].filter(Boolean).join(' ')
+      // Vom Vermieter eingetragen (Heizung PR 17): seine Quelle statt einer Fundstelle des Registers.
+      const origin = v.overridden ? `, von Ihnen eingetragen (Quelle: ${v.overridden.source})` : ` (${v.cite})`
+      return `${v.title}: ${v.text}${origin}${range ? `, gilt ${range}` : ''}`
+    }),
+    valuesNote: legalBasis.values ? null : 'Rechtswerte nicht gespeichert (vor 0.11.0)',
   }
 }

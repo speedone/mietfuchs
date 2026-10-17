@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Heizkostenabrechnung Wärmedienst Beispiel 2025</title>
+<link rel="stylesheet" href="../invoice.css">
+</head>
+<body>
+<!-- Erfundener Beispielbeleg für den KI-Prüflauf (Heizung PR 20). Stolpersteine: Abzugszeile mit Minus,
+     S nach dem Abzug, Leerstand als Nutzer, Eigentümer als Nutzer, ein zweiter Kostenblock (Kaltwasser),
+     Warmwasser nach Volumenformel. Abrechnungszeitraum ist das Kalenderjahr 2025, damit der CO₂-Preis von
+     55 €/t (§ 4 Abs. 1 CO2KostAufG) für den ganzen Zeitraum gilt. Nachgerechnet:
+     3.452,50 + 120,00 + 180,00 + 40,00 + 152,00 = 3.944,50; 1.180,25 + 702,10 + 1.065,40 + 996,75 = 3.944,50;
+     4.456,4 kg / 194,6 m² = 22,90 → 22,9 kg/m² (Stufe 22 bis unter 27, 30 %);
+     4.456,4 kg × 55 €/t × 1,19 = 291,67 €; × 30 % = 87,50 €; 291,67 − 87,50 = 204,17;
+     Heizung 1.004,15 + 640,30 + 887,92 + 820,45 = 3.352,82; Warmwasser 176,10 + 61,80 + 177,48 + 176,30 = 591,68;
+     402 + 85 + 377 + 372 = 1.236,00. Namen, Anschriften, Nummern und IBAN sind Muster. -->
+<section class="page">
+  <div class="head">
+    <div>
+      <div class="sender">Wärmedienst Beispiel GmbH · Zählerweg 3 · 12345 Musterstadt</div>
+      <div class="address">Frau<br>Erika Vermieterin<br>Musterweg 1<br>12345 Musterstadt</div>
+    </div>
+    <div>
+      <div class="logo">Wärmedienst Beispiel GmbH<small>Heiz- und Wasserkostenabrechnung</small></div>
+      <table class="info" style="margin-top:8mm">
+        <tr><td>Liegenschaft</td><td>Musterweg 1, 12345 Musterstadt</td></tr>
+        <tr><td>Liegenschaftsnummer</td><td>4711-0815</td></tr>
+        <tr><td>Abrechnungszeitraum</td><td>01.01.2025 – 31.12.2025</td></tr>
+        <tr><td>Anzahl Nutzeinheiten</td><td>4</td></tr>
+      </table>
+    </div>
+  </div>
+  <h1>Gesamtabrechnung Heizung und Warmwasser</h1>
+  <table class="items">
+    <tr><th>Kostenart</th><th class="r">Betrag</th></tr>
+    <tr><td>Brennstoffkosten Erdgas laut Rechnungen</td><td class="r">3.540,00 €</td></tr>
+    <tr><td>Abzüglich CO₂-Kosten Vermieter</td><td class="r">−87,50 €</td></tr>
+    <tr><td>Brennstoffkosten nach Abzug</td><td class="r">3.452,50 €</td></tr>
+    <tr><td>Betriebsstrom</td><td class="r">120,00 €</td></tr>
+    <tr><td>Wartung der Heizungsanlage</td><td class="r">180,00 €</td></tr>
+    <tr><td>Immissionsmessung</td><td class="r">40,00 €</td></tr>
+    <tr><td>Gerätemiete und Verbrauchsabrechnung</td><td class="r">152,00 €</td></tr>
+    <tr class="sum"><td>Summe der Nutzerkosten Heizungsanlage</td><td class="r">3.944,50 €</td></tr>
+  </table>
+  <p>Davon Warmwasser 15,0 % = 591,68 €, Heizung 3.352,82 €. Verteilung je 30 % nach Wohnfläche und 70 % nach Verbrauch.</p>
+  <p><strong>Ermittlung des Warmwasseranteils:</strong> Die Wärmemenge für die Warmwasserbereitung wurde nach § 9 Abs. 2
+    Satz 2 HeizkostenV aus dem gemessenen Warmwasservolumen (118,4 m³) und der mittleren Warmwassertemperatur (55 °C)
+    errechnet.</p>
+</section>
+<section class="page">
+  <h1>CO₂-Kostenaufteilung nach dem CO2KostAufG</h1>
+  <table class="items">
+    <tr><td>Brennstoffemissionen der Liegenschaft</td><td class="r">4.456,4 kg CO₂</td></tr>
+    <tr><td>Wohnfläche für die Einstufung</td><td class="r">194,6 m²</td></tr>
+    <tr><td>CO₂-Ausstoß je m² Wohnfläche und Jahr</td><td class="r">22,9 kg</td></tr>
+    <tr><td>Einstufung: 22 bis unter 27 kg CO₂/m²/a, Anteil Vermieter</td><td class="r">30 %</td></tr>
+    <tr><td>CO₂-Kosten gesamt</td><td class="r">291,67 €</td></tr>
+    <tr><td>davon Anteil Vermieter</td><td class="r">87,50 €</td></tr>
+    <tr><td>davon Anteil Mieter</td><td class="r">204,17 €</td></tr>
+  </table>
+  <h2>Ihre Kosten Heizung und Warmwasser je Nutzeinheit</h2>
+  <table class="items">
+    <tr><th>NE</th><th>Lage</th><th>Nutzer</th><th>Zeitraum</th><th class="r">Heizung</th><th class="r">Warmwasser</th><th class="r">Ihre Kosten</th></tr>
+    <tr><td>1</td><td>EG links</td><td>Mustermann, Erika</td><td>01.01.2025–31.12.2025</td><td class="r">1.004,15 €</td><td class="r">176,10 €</td><td class="r">1.180,25 €</td></tr>
+    <tr><td>2</td><td>EG rechts</td><td>Leerstand</td><td>01.01.2025–31.12.2025</td><td class="r">640,30 €</td><td class="r">61,80 €</td><td class="r">702,10 €</td></tr>
+    <tr><td>3</td><td>OG links</td><td>Beispiel, Max</td><td>01.01.2025–31.12.2025</td><td class="r">887,92 €</td><td class="r">177,48 €</td><td class="r">1.065,40 €</td></tr>
+    <tr><td>4</td><td>OG rechts</td><td>Eigentümer (Eigennutzung)</td><td>01.01.2025–31.12.2025</td><td class="r">820,45 €</td><td class="r">176,30 €</td><td class="r">996,75 €</td></tr>
+    <tr class="sum"><td colspan="4">Summe</td><td class="r">3.352,82 €</td><td class="r">591,68 €</td><td class="r">3.944,50 €</td></tr>
+  </table>
+</section>
+<section class="page">
+  <h1>Kaltwasser und Abwasser</h1>
+  <p>Kosten laut Gebührenbescheid, verteilt nach den Wasserzählern der Nutzeinheiten.</p>
+  <table class="items">
+    <tr><th>NE</th><th>Lage</th><th>Nutzer</th><th class="r">Ihre Kosten</th></tr>
+    <tr><td>1</td><td>EG links</td><td>Mustermann, Erika</td><td class="r">402,00 €</td></tr>
+    <tr><td>2</td><td>EG rechts</td><td>Leerstand</td><td class="r">85,00 €</td></tr>
+    <tr><td>3</td><td>OG links</td><td>Beispiel, Max</td><td class="r">377,00 €</td></tr>
+    <tr><td>4</td><td>OG rechts</td><td>Eigentümer (Eigennutzung)</td><td class="r">372,00 €</td></tr>
+    <tr class="sum"><td colspan="3">Summe der Nutzerkosten Kaltwasser und Abwasser</td><td class="r">1.236,00 €</td></tr>
+  </table>
+  <div class="foot">
+    <div>Wärmedienst Beispiel GmbH<br>Geschäftsführung: M. Beispiel</div>
+    <div>Beispielbank<br>IBAN DE00 1111 2222 3333 4444 55</div>
+    <div>Amtsgericht Musterstadt HRB 12345</div>
+  </div>
+</section>
+<script src="../invoice.js"></script>
+</body>
+</html>

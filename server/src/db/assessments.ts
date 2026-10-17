@@ -2,13 +2,33 @@
 // und `assessment_lines` in schema.ts. Hier steht nur der Zugriff; was eine Buchung bedeutet,
 // steht in bookingPlan.ts, und db/booking.ts verbindet beides.
 import { and, asc, eq, isNotNull, isNull, sql } from 'drizzle-orm'
-import type { StoredAssessment, StoredAssessmentLine, UploadLinks } from '../../../shared/types.ts'
+import type { PeriodKey, StoredAssessment, StoredAssessmentLine, UploadLinks } from '../../../shared/types.ts'
 import { withoutBooked, type BookedLine, type LineChange, type NewLine } from '../assessment.ts'
 import type { Database, Executor } from './client.ts'
 import { assessmentLines, assessments } from './schema.ts'
+import { parsePeriodKey, periodOfKey, rulesOf } from '../../../shared/period.ts'
+import { periodForYear } from '../../../shared/assessment.ts'
+import { readProperties } from './read.ts'
 
 export type AssessmentRecord = { assessment: StoredAssessment; lines: StoredAssessmentLine[] }
-export type NewAssessment = Omit<StoredAssessment, 'id' | 'createdAt' | 'nextIdx'> & { lines: NewLine[] }
+// Der gewählte Zeitraum entsteht hier aus dem gewählten Jahr und dem Objekt. Der Aufrufer darf einen
+// Zeitraum mitschicken (die Seite, von der aus ausgewertet wurde, #208); er gilt nur, wenn es ihn für
+// das Objekt gibt.
+export type NewAssessment = Omit<StoredAssessment, 'id' | 'createdAt' | 'nextIdx' | 'requestedPeriod'> & { lines: NewLine[]; requestedPeriod?: PeriodKey | null }
+
+// Der gewählte Zeitraum (#208): aus dem gewählten Kalenderjahr nach den Regeln des Objekts
+// (`periodForYear`, beim Kalenderobjekt der Kalenderzeitraum), sobald es ein Objekt gibt (G-B7).
+// Ohne Objekt keiner; das Jahr bleibt dann stehen und ergibt beim Zuordnen den Zeitraum
+// (Durchsicht von #222, I1). Ein fester 'JJJJ-01' wäre bei einem anderen Rhythmus ein verwaister
+// Schlüssel, und jedes spätere Backup lehnte das Wiederherstellen ab (Nachprüfung von #222).
+// `sent`: ein mitgeschickter Zeitraum, nur wenn es ihn für das Objekt gibt.
+async function requestedPeriodOf(db: Database, propertyId: string | null, requestedYear: number | null, sent: unknown = null): Promise<PeriodKey | null> {
+  if (propertyId === null) return null
+  const rules = rulesOf((await readProperties(db)).find((p) => p.id === propertyId))
+  const key = parsePeriodKey(sent)
+  if (key !== null && periodOfKey(rules, key) !== null) return key
+  return requestedYear === null ? null : periodForYear(rules, requestedYear).key
+}
 
 async function linesOf(db: Executor, assessmentId: string): Promise<StoredAssessmentLine[]> {
   return db.select().from(assessmentLines).where(eq(assessmentLines.assessmentId, assessmentId)).orderBy(asc(assessmentLines.idx))
@@ -45,7 +65,8 @@ async function insertLines(db: Executor, assessmentId: string, lines: readonly N
 // noch nie gab, damit eine offene Vorschau in einem anderen Tab nicht still eine andere Zeile
 // meint. Objekt und Jahr folgen der neuen Auswertung nur, solange nichts gebucht ist.
 export async function saveAssessment(db: Database, input: NewAssessment, ids: { id: string; now: string }): Promise<AssessmentRecord> {
-  const { lines, ...head } = input
+  const { lines, requestedPeriod: sent, ...fields } = input
+  const head = { ...fields, requestedPeriod: await requestedPeriodOf(db, fields.propertyId, fields.requestedYear, sent) }
   const current = await readAssessmentOfFile(db, input.file)
   await db.transaction(async (tx) => {
     if (!current) {
@@ -64,7 +85,7 @@ export async function saveAssessment(db: Database, input: NewAssessment, ids: { 
     // Zeilen einer erneuten Auswertung neben gebuchten gekennzeichnet (Integrationsdurchsicht, H1).
     const added = withoutBooked(lines, booked)
     await insertLines(tx, id, added, next, booked.length > 0)
-    const placement = booked.length > 0 ? {} : { propertyId: head.propertyId, year: head.year, requestedYear: head.requestedYear }
+    const placement = booked.length > 0 ? {} : { propertyId: head.propertyId, year: head.year, requestedYear: head.requestedYear, requestedPeriod: head.requestedPeriod }
     await tx.update(assessments).set({
       detectedYear: head.detectedYear, vendor: head.vendor, invoiceDate: head.invoiceDate, totalGrossCents: head.totalGrossCents,
       amountsAdjusted: head.amountsAdjusted, laborFromTotal: head.laborFromTotal, createdAt: ids.now, nextIdx: next + added.length, ...placement,
@@ -105,7 +126,11 @@ export async function placeAssessment(db: Database, id: string, change: { year?:
     (change.year !== undefined && change.year !== current.assessment.year)
   if (moves && current.lines.some((l) => l.costItemId !== null)) return 'booked'
   if (change.year === undefined && change.propertyId === undefined) return 'ok'
-  await db.update(assessments).set(change.year !== undefined ? { ...change, requestedYear: change.year } : change).where(eq(assessments.id, id))
+  const propertyId = change.propertyId !== undefined ? change.propertyId : current.assessment.propertyId
+  // Ein von Hand gesetztes Jahr ist zugleich das gewählte, mit oder ohne Objekt. Der gewählte
+  // Zeitraum folgt aus Jahr und Objekt (#208).
+  const requestedYear = change.year !== undefined ? change.year : current.assessment.requestedYear
+  await db.update(assessments).set({ ...change, requestedYear, requestedPeriod: await requestedPeriodOf(db, propertyId, requestedYear) }).where(eq(assessments.id, id))
   return 'ok'
 }
 

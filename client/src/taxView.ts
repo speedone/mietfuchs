@@ -19,6 +19,8 @@
 // `selfOccupiedExists`, die Seite zeigt ihn nur an.
 
 import type { PropertyKind, TaxExpenseItem, TaxReport } from './types'
+import { andList } from '../../shared/wording.ts'
+import { fmtEuro } from './api'
 
 export type Basis = 'soll' | 'ist'
 
@@ -42,6 +44,7 @@ export const TAX_HINTS = [
   'mixedUseSplit', 'mixedUseKeyNotArea', 'mixedUseAreaMissing', 'mixedUseDirectOutside', 'mixedUseChangedInYear',
   'mixedUseClosedChanged', 'mixedUseLabor35a', 'mixedUseNotCalculated', 'mixedUseExcludedArea', 'mixedUseClosedItemsChanged',
   'mixedUseAssignedUnits',
+  'operatingPowerBalance', 'operatingPowerAmbiguous', 'unmarkedPowerCredits',
 ] as const
 
 export type TaxHint = (typeof TAX_HINTS)[number]
@@ -121,11 +124,21 @@ export type TaxHint = (typeof TAX_HINTS)[number]
 //                        offen. Ohne selbstgenutzte Einheit wirkt die Zuordnung nicht.
 //   `mixedUseNotCalculated` Was Mietfuchs nicht rechnet: AfA, Schuldzinsen, § 82b EStDV,
 //                        verbilligte Vermietung.
+//   `operatingPowerBalance` Abzüge beim Allgemeinstrom und Heizpositionen, die auch in der
+//                        Stromrechnung stecken, gleichen sich im Jahr nicht aus (#268); die Übersicht
+//                        rechnet die Zeile „Betriebsstrom der Heizung“ hinzu oder ab und sagt warum.
+//   `operatingPowerAmbiguous` Ein Abzug ohne Verweis zählt als dem Messdienst gemeldet, obwohl im
+//                        Zeitraum auch eine Anlage ohne Messdienst heizt (R-6 zu #268).
+//   `unmarkedPowerCredits` Negativer Allgemeinstrom ohne Kennzeichnung neben einer zentralen Anlage
+//                        ohne Messdienst (#268): ein Abzug aus der Zeit vor der Kennzeichnung?
 
 export function taxHints(report: TaxReport, basis: Basis, propertyKind?: PropertyKind): TaxHint[] {
   const hints: TaxHint[] = []
   if (report.reserveContributionCents !== 0) hints.push('reserveContribution')
   if (report.reserveSuspects.length > 0) hints.push('reserveSuspected')
+  if ((report.operatingPowerBalanceCents ?? 0) !== 0) hints.push('operatingPowerBalance')
+  if ((report.operatingPowerAmbiguous ?? []).length > 0) hints.push('operatingPowerAmbiguous')
+  if ((report.unmarkedPowerCredits ?? []).length > 0) hints.push('unmarkedPowerCredits')
   if (propertyKind === 'etw') hints.push('etwHousingMoney')
   const { tenancies, inclusive, partlyInclusive, flatRate } = report.costModels
   if (tenancies > 0 && inclusive === tenancies) hints.push('inclusiveLine24')
@@ -180,12 +193,25 @@ export type PrepaymentNote = {
 
 export function prepaymentNote(report: TaxReport): PrepaymentNote | null {
   const { prepaymentSettlementCents, prepaymentSollCents, prepaymentOverridden } = report.income
-  if (prepaymentSettlementCents === prepaymentSollCents) return null
+  // Ohne Zeitraum gleich dem Kalenderjahr gibt es keine Abrechnung zum Vergleich (#208).
+  if (prepaymentSettlementCents === null || prepaymentSettlementCents === prepaymentSollCents) return null
   return {
     settlementCents: prepaymentSettlementCents,
     sollCents: prepaymentSollCents,
     jahreskorrektur: prepaymentOverridden,
   }
+}
+
+// Aus welchen Abrechnungen die Eigenanteile stammen (#208). Nur bei einem Objekt mit eigenem
+// Rhythmus ein Satz; im Kalenderjahr ist es die eine Abrechnung des Jahres, und das sagt die Seite
+// schon.
+export function settlementSourcesText(report: TaxReport): string | null {
+  const labels = report.settlementPeriods.map((p) => p.label)
+  if (report.income.prepaymentSettlementCents !== null && labels.length <= 1) return null
+  const sources = `Die Eigenanteile stammen aus den Abrechnungen ${andList(labels)}.`
+  return report.income.prepaymentSettlementCents === null
+    ? `${sources} Weil kein Abrechnungszeitraum dem Kalenderjahr entspricht, steht hier kein Vergleich der Vorauszahlungen mit einer Abrechnung.`
+    : sources
 }
 
 // Die angesetzten Einnahmen und die Einkünfte, je nach Grundlage. Beides steht hier, damit die
@@ -269,4 +295,58 @@ export function assignedUnitItems(report: TaxReport): AssignedUnitItem[] {
           : 'area'
     return [{ costItemId: x.costItemId, description: x.description, amountCents: x.amountCents, units: x.taxUnits.map((u) => u.unitName), effect }]
   })
+}
+
+// ---------- Betriebsstrom der Heizung (#268) ----------
+//
+// Der Text zum Ausgleich beim Betriebsstrom. Fundstellen: Werbungskosten sind die Aufwendungen
+// (§ 9 Abs. 1 Satz 1 EStG), abgesetzt im Jahr der Zahlung (§ 11 Abs. 2 Satz 1 EStG); die Stromrechnung ist eine
+// Zahlung, ein Abzug und eine Heizposition „steckt auch in der Stromrechnung“ sind Ausschnitte davon. Mit Eigennutzung
+// ein Satz zum Maßstab des privaten Teils, denn der ist eine Auslegung (Entscheidung R-4).
+// Durchsicht S1: Der Text folgt der Lage (`operatingPowerBalanceKind`). „Selbst getragen“ nur beim Abzug ohne Verweis;
+// „prüfen“ nur, wenn Abzug und Betriebsstrom im selben Steuerjahr verschieden hoch sind. Ein Paar über zwei
+// Steuerjahre ist richtig erfasst, dort ist nichts zu tun. Fehlt die Lage (ältere Antwort), gilt der neutrale Text.
+export function operatingPowerBalanceText(report: TaxReport): string | null {
+  const c = report.operatingPowerBalanceCents ?? 0
+  if (c === 0) return null
+  const own = report.selfOccupiedExists
+    ? ' Den privaten Teil teilt Mietfuchs nach Ihrem Eigenanteil an den Heizkosten der Anlage, bei einem Abzug ohne Verweis nach der Wohnfläche des ganzen Gebäudes; beides ist eine Auslegung.'
+    : ''
+  const line = '„Betriebsstrom der Heizung, Ausgleich“'
+  const once = `Bezahlt haben Sie die Stromrechnung einmal; damit sie genau einmal in den Werbungskosten steht (§ 9 Abs. 1 Satz 1 EStG), gleicht Mietfuchs das in der Zeile ${line} aus.`
+  switch (report.operatingPowerBalanceKind) {
+    case 'kept':
+      return `Beim Allgemeinstrom ist Betriebsstrom der Heizung abgezogen, ohne dass er in den Heizkosten steht (${fmtEuro(c)}). Diesen Teil legen Sie nicht um und tragen ihn selbst. ` +
+        'Die Abrechnung an die Mieter mindert das, Ihre Werbungskosten nicht: Bezahlt haben Sie die ganze Stromrechnung (§ 9 Abs. 1 Satz 1, § 11 Abs. 2 Satz 1 EStG). ' +
+        `Mietfuchs rechnet den Betrag deshalb in der Zeile „Betriebsstrom der Heizung, selbst getragen“ wieder hinzu.${own}`
+    case 'otherYear':
+      return `Abzug beim Allgemeinstrom und Betriebsstrom in den Heizkosten stehen in verschiedenen Steuerjahren (Ausgleich in diesem Jahr ${fmtEuro(c)}). ` +
+        `Jedes Jahr zählt die in ihm bezahlte Stromrechnung; die Zeile ${line} hebt auf, was zum anderen Jahr gehört. Zu tun ist nichts.${own}`
+    case 'mixed':
+      return `Ein Teil des Ausgleichs (${fmtEuro(c)}) ist Betriebsstrom, den Sie nicht umlegen und selbst tragen (Abzug ohne Verweis); ein Teil gehört zu Abzug und Betriebsstrom in verschiedenen Steuerjahren. ${once}${own}`
+    case 'mismatch': {
+      // Nachprüfung N2: Ein Abzug ohne Verweis daneben ist richtig erfasst; „prüfen“ gilt dann dem verknüpften Abzug.
+      const kept = report.operatingPowerKeptCents ?? 0
+      return `Abzug beim Allgemeinstrom und Betriebsstrom in den Heizkosten sind in diesem Steuerjahr verschieden hoch (Ausgleich ${fmtEuro(c)}). ` +
+        (kept !== 0
+          ? `Davon tragen Sie ${fmtEuro(kept)} selbst (Abzug ohne Verweis); dieser Teil ist richtig erfasst. ${once} Prüfen Sie in der Abrechnung, ob der verknüpfte Abzug beim Allgemeinstrom zum Betriebsstrom passt.`
+          : `${once} Prüfen Sie in der Abrechnung, ob der Abzug beim Allgemeinstrom zum Betriebsstrom passt.`) +
+        own
+    }
+    default:
+      // Nachprüfung N1: ohne Lage (ältere Antwort) der neutrale Text.
+      return `Beim Betriebsstrom der Heizung gleicht Mietfuchs Abzug beim Allgemeinstrom und Heizkosten aus (Ausgleich ${fmtEuro(c)}). ${once}${own}`
+  }
+}
+
+// Heizung PR 8 (N8): Die Abrechnung rechnet den Brennstoff nach Verbrauch, die Steuerübersicht nach
+// Bezahltem. Beim Eigenanteil liegen beide genau um den Eigenanteil am Übertrag aus dem Vorrat
+// auseinander; der Satz erklärt die Richtung.
+export function stockCarryNote(report: TaxReport): string | null {
+  const c = report.expenses.stockCarrySelfCents ?? 0
+  if (c === 0) return null
+  const tail = 'Die Abrechnung rechnet nach Verbrauch, die Steuerübersicht nach Bezahltem.'
+  return c > 0
+    ? `Der Eigenanteil der Abrechnung ist um ${fmtEuro(c)} höher als der private Teil hier: Brennstoff aus dem Vorrat, steuerlich bereits ${report.year - 1} oder früher abgeflossen. ${tail}`
+    : `Der Eigenanteil der Abrechnung ist um ${fmtEuro(-c)} niedriger als der private Teil hier: Brennstoff, der im Vorrat bleibt, steuerlich ${report.year} abgeflossen und erst später verbraucht. ${tail}`
 }

@@ -5,7 +5,7 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { Meter, MeterReadingExtraction, Unit } from '../types'
-import { YearProvider } from '../year'
+import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
 import Schnellerfassung from './Schnellerfassung'
 
@@ -40,11 +40,11 @@ afterEach(() => {
 
 async function evaluate() {
   const { container } = render(
-    <YearProvider>
+    <PeriodProvider>
       <PropertyProvider>
         <Schnellerfassung units={UNITS} settings={null} onNavigate={() => {}} />
       </PropertyProvider>
-    </YearProvider>,
+    </PeriodProvider>,
   )
   const input = await waitFor(() => {
     const found = container.querySelector('input[type="file"][multiple]')

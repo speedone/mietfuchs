@@ -14,9 +14,13 @@ import { BookingRefusal, bookAssessment, previewBooking, viewAssessment, viewAss
 import { newId, UPLOAD_DIR, DATA_DIR } from './store.ts'
 import { DEFAULT_SETTINGS } from './defaults.ts'
 import { compareWithFrozen } from './settlementDiff.ts'
-import { computeSettlement, consumptionOverview, rentLedger, taxReport } from './calc.ts'
-import { narrowToProperty, snapshotFor } from './snapshot.ts'
+import { computeSettlement, consumptionOverview, rentLedger, taxPartsFor, taxReportFor, type ComputedSettlement } from './calc.ts'
+import { heatingSnapshotFor, narrowToProperty, snapshotFor } from './snapshot.ts'
+import { calendarPeriod, calendarYearPeriod, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodOfKey, resolvePeriodParam, rulesOf, settlementDeadline, settlementPeriod, startYearOf } from '../../shared/period.ts'
+import type { BillingPeriod, FuelGapQuestion, HeatingPlant, Unit } from '../../shared/types.ts'
+import { plantRules, settledSeparately } from '../../shared/heatingPeriod.ts'
 import { extractFromFile, classifyDocType, extractMeterReading, type AskProgressEvent, type AskStats } from './extract.ts'
+import { extractFuelInvoice, extractServiceStatement } from './extractHeating.ts'
 import { listOllamaModels, findOllama, defaultCandidates, pullOllamaModel } from './ai/ollama.ts'
 import { createRecommendations } from './ai/recommendations.ts'
 import { listOpenAiModels } from './ai/openai.ts'
@@ -32,14 +36,35 @@ import { databaseUnavailable, healthReport, NO_DATABASE, type DatabaseState } fr
 import { databaseFile, openDatabase, type OpenedDatabase } from './db/open.ts'
 import { changeoverWithoutDatabase, replaceFile, runChangeover, type ChangeoverResult } from './db/changeover.ts'
 import { acknowledgeNotice, clearNotice, NOTICE_NAME, noticeKey, readNotice, recordNotice, type MigrationNotice } from './db/migrationNotice.ts'
-import type { Database } from './db/client.ts'
+import type { Database, Executor } from './db/client.ts'
 import { databaseProblem } from './db/errors.ts'
-import { readProperties, readSettings, readStock } from './db/read.ts'
+import { readHeatingPlants, readProperties, readSettings, readStock, type Stock } from './db/read.ts'
 import {
-  changeTenant, closeSettlement, createEntity, createProperty, CrossPropertyError, findClosedSettlement, invoiceFilesInUse,
+  closeHeatingSettlement, findClosedHeatingSettlement, heatingSettlementHistory, reopenHeatingSettlement, separateHeatingSettlements, setHeatingSentAt,
+} from './db/heatingSettlements.ts'
+import {
+  changeTenant, closeSettlement, createEntity, createProperty, CrossPropertyError, findClosedSettlement, HeatingError, PeriodConflict, PeriodError, StaleTenancyError, invoiceFilesInUse, previewCostItemSplit, saveCostItemSplit,
   listProperties, removeEntity, removeProperty, reopenSettlement, setSentAt, settlementHistory, updateEntity, updateProperty,
   TenantChangeError, unitDependents, writeSettings, type CollectionName,
 } from './db/repository.ts'
+import { removeInterimGap, saveDistribution, saveInterimGap, SelfItemsError, setUpSelf } from './db/heatingSelf.ts'
+import { saveHeatingInfo, saveHeatingRules } from './db/heatingInfo.ts'
+import { monthlyInfoView, saveMonthlyInfoRow } from './db/monthlyInfo.ts'
+import { createRefund, listRefunds, removeRefund, updateRefund } from './db/co2Refunds.ts'
+import { heatingPeriodViews, removeCo2Statement, saveCo2Statement, saveDhwTemperature, saveHotWater } from './db/co2.ts'
+import { saveServiceValues } from './db/serviceValues.ts'
+import { removeEstimate, saveEstimate } from './db/heatingEstimates.ts'
+import { co2SheetFor } from './co2Sheet.ts'
+import { heatingPeriodOf, plantContext } from './db/heatingPeriodContext.ts'
+import { LawOverrideError, lawOverrideSlots, readLawOverrides, removeLawOverride, saveLawOverride } from './db/lawOverrides.ts'
+import { removeStock, saveStock } from './db/fuelStock.ts'
+import { createDelivery, createEstimates, freezeFuelCarries, fuelGapQuestions, listDegreeDays, listDeliveries, reassignCredit, removeDelivery, saveDegreeDays, unfreezeFuelCarries, updateDelivery } from './db/fuel.ts'
+import { assignableHeatingItems, createHeatingPlant, listHeatingPlants, removeHeatingPlant, replaceHeatingPlant, updateHeatingPlant } from './db/heating.ts'
+import { bookOperatingPower, OperatingPowerQuestion } from './db/operatingPower.ts'
+import { applyHeatingPeriodChange, previewHeatingPeriodChange } from './db/heatingPeriodChange.ts'
+import { testTodayOf } from './testToday.ts'
+import { applySeparate, previewSeparate } from './db/separateSettlement.ts'
+import { applyPeriodChange, previewPeriodChange } from './db/periodChange.ts'
 import {
   ARCHIVE_DB_NAME, ARCHIVE_INFO_NAME, DB_BEFORE_RESTORE,
   archiveDatabaseProblem, archiveInfoText, originText, writeDatabaseSnapshot,
@@ -48,7 +73,7 @@ import { findingsText, validateDb } from './legacy/validate.ts'
 import { createUpdateChecker, UPDATE_URL } from './update.ts'
 import { APP_VERSION, RUNTIME, STANDALONE } from './version.ts'
 import { describeFile, describeFolder, hashFile, mimeTypeOf, uploadedAtOf } from './uploads.ts'
-import { planTaxArchive } from './taxReceipts.ts'
+import { derivedTaxLines, planTaxArchive } from './taxReceipts.ts'
 import { forgetUpload, placeUpload, recordIfMissing, recordUpload, rowOf, uploadRows, type Placement, type UploadRow } from './db/uploads.ts'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -373,11 +398,54 @@ async function propertyOf(db: Database, req: Request, fromBody = false): Promise
   throw new RouteProblem(400, 'Welches Objekt ist gemeint? Seit es mehrere Objekte gibt, braucht diese Anfrage die Angabe property.')
 }
 
+// Der Zeitraum einer Anfrage (#208): der Monat des Beginns als `JJJJ-MM`, bei einem reinen
+// Kalenderobjekt auch die nackte Jahreszahl (G-C6). Gibt es ihn für das Objekt nicht, nennt die
+// Antwort, was gemeint sein könnte; ein Tab von vor einem Wechsel bekommt so nie still den Rumpf.
+async function periodOf(db: Database, req: Request, propertyId: string): Promise<BillingPeriod> {
+  const property = (await listProperties(db)).find((p) => p.id === propertyId)
+  const resolved = resolvePeriodParam(rulesOf(property), String(req.params.period ?? ''))
+  if ('error' in resolved) throw new RouteProblem(resolved.status, resolved.error)
+  return resolved.period
+}
+
+// Eine kalte Rechnung über zwei Abrechnungszeiträume (#208, Entwurf 3.4): erst die Vorschau mit
+// den Beträgen je Zeitraum, dann das Speichern aller Teile in einer Transaktion. Begründung in
+// serviceSplit.ts und db/repository.ts.
+app.post('/api/costItems/split/preview', async (req, res) => {
+  res.json(await readData(async (db) => ({ parts: await previewCostItemSplit(db, await propertyOf(db, req, true), bodyObject(req), null) })))
+})
+app.post('/api/costItems/split', async (req, res) => {
+  res.status(201).json(await writeData(async (db) => saveCostItemSplit(db, await propertyOf(db, req, true), bodyObject(req), null, newId)))
+})
+app.post('/api/costItems/:id/split/preview', async (req, res) => {
+  res.json(await readData(async (db) => ({ parts: await previewCostItemSplit(db, null, bodyObject(req), req.params.id) })))
+})
+app.put('/api/costItems/:id/split', async (req, res) => {
+  res.json(await writeData((db) => saveCostItemSplit(db, null, bodyObject(req), req.params.id, newId)))
+})
+
 for (const coll of COLLECTIONS) {
   // Aufgelistet wird über `narrowToProperty`, dieselbe Regel wie beim Rechnen; eine zweite
   // Fassung für die Listen liefe irgendwann anders als die der Abrechnung.
   app.get(`/api/${coll}`, async (req, res) => {
-    res.json(await readData(async (db) => narrowToProperty(await readStock(db), await propertyOf(db, req))[coll]))
+    res.json(await readData(async (db) => {
+      const propertyId = await propertyOf(db, req)
+      const stock = await readStock(db)
+      const scoped = narrowToProperty(stock, propertyId)
+      if (coll !== 'costItems' && coll !== 'tenancies') return scoped[coll]
+      // Ein Tab von vor dem Update filtert die Kostenpositionen nach `year` (#208). Bei einem reinen
+      // Kalenderobjekt bekommt er es weiter; sonst sähe er eine leere Liste und erfasste alles noch
+      // einmal. Bei einem anderen Rhythmus gibt es kein Jahr, das stimmte; dort lehnt das Schreiben ab.
+      const calendar = isCalendarRules(rulesOf(stock.properties.find((p) => p.id === propertyId)))
+      if (coll === 'costItems') return calendar ? scoped.costItems.map((c) => ({ ...c, year: startYearOf(c.period) })) : scoped.costItems
+      // Ebenso die Jahreskorrektur (Durchsicht von #222, M1): Ein alter Tab setzt sie zurück, indem er
+      // den Schlüssel des Jahres löscht und den Rest schickt. Nennt er Jahreszahlen, gilt sein Stand
+      // vollständig (repository.ts, `readOverrides`). Die Oberfläche dieser Version liest beides und
+      // schickt Zeiträume (Abrechnung.tsx, `savePpOverride`); die Jahreszahlen bleiben für alte Tabs.
+      return calendar
+        ? scoped.tenancies.map((t) => ({ ...t, prepaymentOverrides: Object.fromEntries(Object.entries(t.prepaymentOverrides).map(([key, cents]) => [key.slice(0, 4), cents])) }))
+        : scoped.tenancies
+    }))
   })
   app.post(`/api/${coll}`, async (req, res) => {
     const body = bodyObject(req)
@@ -426,6 +494,26 @@ app.put('/api/properties/:id', async (req, res) => {
   if (!property) return res.status(404).json({ error: 'Dieses Objekt gibt es nicht (mehr).' })
   res.json(property)
 })
+// Der Stichtag der Abrechnung (#133): heute, als JJJJ-MM-TT in UTC wie überall in calc.ts. Er
+// begrenzt nur den Hinweis auf einen Rückstand auf die schon fälligen Monate. Der Wechsel des
+// Zeitraums (#208) braucht ihn für die Liste der Zeiträume in der Vorschau.
+// Testgriff `NKA_TEST_TODAY` (testToday.ts): ein fester Tag nur für Tests. Ohne ihn der wirkliche Tag.
+const TEST_TODAY = testTodayOf(process.env.NKA_TEST_TODAY)
+const today = (): string => TEST_TODAY.value ?? new Date().toISOString().slice(0, 10)
+
+// Rechtswerte, die eine Behörde später veröffentlicht (Heizung PR 17, Entwurf 4.5): je Parameter und
+// Jahr ein Eintrag des Vermieters mit Quelle. Installationsweit, deshalb ohne `?property=`.
+app.get('/api/law-overrides', async (_req, res) => {
+  res.json(lawOverrideSlots(await readData(readLawOverrides), today()))
+})
+app.put('/api/law-overrides/:paramId/:year', async (req, res) => {
+  res.json(await writeData((db) => saveLawOverride(db, req.params.paramId, Number(req.params.year), bodyObject(req), today())))
+})
+app.delete('/api/law-overrides/:paramId/:year', async (req, res) => {
+  const removed = await writeData((db) => removeLawOverride(db, req.params.paramId, Number(req.params.year)))
+  res.json({ ok: true, removed })
+})
+
 app.delete('/api/properties/:id', async (req, res) => {
   const result = await writeData((db) => removeProperty(db, req.params.id))
   if (result.removed) return res.json({ ok: true })
@@ -440,19 +528,430 @@ app.delete('/api/properties/:id', async (req, res) => {
   })
 })
 
+// ---------- Heizanlage (Heizung PR 4) ----------
+// Was eine Anlage ist und was sie in dieser Version tut, steht in db/heating.ts. Das Objekt kommt
+// wie bei den übrigen Datenrouten aus `?property=` (beim Anlegen auch aus dem Rumpf); bei genau
+// einem Objekt gilt dieses.
+
+app.get('/api/heating-plants', async (req, res) => {
+  res.json(await readData(async (db) => listHeatingPlants(db, await propertyOf(db, req))))
+})
+// Die Vorschau der Einrichtung: welche Heizpositionen beim Anlegen zur Anlage kommen.
+app.get('/api/heating-plants/assignable', async (req, res) => {
+  res.json(await readData(async (db) => assignableHeatingItems(db, await propertyOf(db, req))))
+})
+app.post('/api/heating-plants', async (req, res) => {
+  res.status(201).json(await writeData(async (db) => createHeatingPlant(db, newId(), await propertyOf(db, req, true), bodyObject(req))))
+})
+// Kesseltausch (Heizung PR 9): Die Anlage endet am Tag vor `date`, eine neue beginnt mit denselben
+// Wohnungen (db/heating.ts, `replaceHeatingPlant`).
+app.post('/api/heating-plants/:id/replace', async (req, res) => {
+  const result = await writeData((db) => replaceHeatingPlant(db, req.params.id, newId(), bodyObject(req)))
+  if (!result) return res.status(404).json({ error: 'Diese Heizanlage gibt es nicht (mehr). Bitte laden Sie die Seite neu.' })
+  res.status(201).json(result)
+})
+// Betriebsstrom und Abzug beim Allgemeinstrom gemeinsam anlegen (Heizung PR 15, #212).
+app.post('/api/heating-plants/:id/operating-power', async (req, res) => {
+  let booked: Awaited<ReturnType<typeof bookOperatingPower>>
+  try {
+    booked = await writeData((db) => bookOperatingPower(db, req.params.id, bodyObject(req), newId))
+  } catch (err) {
+    // Nachprüfung von #252, G2-H1: die Rückfrage mit eigenem Kennzeichen.
+    if (err instanceof OperatingPowerQuestion) return res.status(409).json({ error: err.message, question: 'despiteExisting' })
+    throw err
+  }
+  if (!booked) return res.status(404).json({ error: 'Diese Heizanlage gibt es nicht (mehr). Bitte laden Sie die Seite neu.' })
+  res.status(201).json(booked)
+})
+app.put('/api/heating-plants/:id', async (req, res) => {
+  const plant = await writeData((db) => updateHeatingPlant(db, req.params.id, bodyObject(req)))
+  if (!plant) return res.status(404).json({ error: 'Diese Heizanlage gibt es nicht (mehr). Bitte laden Sie die Seite neu.' })
+  res.json(plant)
+})
+app.delete('/api/heating-plants/:id', async (req, res) => {
+  const result = await writeData((db) => removeHeatingPlant(db, req.params.id))
+  if (result.removed) return res.json({ ok: true, released: result.released, notice: result.notice })
+  if (result.reason === 'missing') return res.status(404).json({ error: 'Diese Heizanlage gibt es nicht (mehr). Bitte laden Sie die Seite neu.' })
+  if (result.reason === 'co2') {
+    return res.status(409).json({
+      error: `Zu dieser Heizanlage sind CO₂-Angaben erfasst (Heizperiode ${result.periods.join(', ')}). Entfernen Sie sie auf der Seite Heizkosten, ` +
+        'wenn die Anlage wirklich entfallen soll; sonst gingen sie mit ihr verloren.',
+    })
+  }
+  if (result.reason === 'deliveries') {
+    return res.status(409).json({
+      error: `An dieser Heizanlage stehen ${result.count === 1 ? 'eine Lieferung' : `${result.count} Lieferungen`}. Entfernen Sie sie auf der Seite Heizkosten, wenn die Anlage wirklich entfallen soll.`,
+    })
+  }
+  if (result.reason === 'separate') {
+    return res.status(409).json({
+      error: 'Die Heizkosten dieser Anlage werden getrennt abgerechnet, oder es gibt abgeschlossene Heizkostenabrechnungen oder Korrekturen der ' +
+        'Heizvorauszahlung. Schalten Sie zuerst die getrennte Heizkostenabrechnung aus. Abgeschlossene Heizkostenabrechnungen bleiben als Archiv; ' +
+        'solange es sie gibt, bleibt die Anlage bestehen.',
+    })
+  }
+  res.status(409).json({
+    error: `An der Heizanlage hängen noch Zähler (${result.meters.map((n) => `„${n}“`).join(', ')}). Ordnen Sie sie auf der Seite ` +
+      'Zähler neu zu oder löschen Sie sie; dann lässt sich die Anlage entfernen.',
+  })
+})
+
+// ---------- Heizperioden: CO₂ und Warmwasser (Heizung PR 6) ----------
+// Was gespeichert wird und was nicht, steht in db/co2.ts. `:period` ist der Schlüssel der
+// Heizperiode (JJJJ-MM), `?period=` beim Lesen der Zeitraum des Objekts wie bei den übrigen Routen.
+const NO_PLANT = 'Diese Heizanlage gibt es nicht (mehr). Bitte laden Sie die Seite neu.'
+app.get('/api/heating-plants/:id/periods', async (req, res) => {
+  const period = typeof req.query.period === 'string' ? req.query.period : ''
+  const views = await readData((db) => heatingPeriodViews(db, req.params.id, period, today()))
+  if (!views) return res.status(404).json({ error: NO_PLANT })
+  res.json(views)
+})
+app.put('/api/heating-plants/:id/periods/:period/co2', async (req, res) => {
+  const saved = await writeData((db) => saveCo2Statement(db, req.params.id, req.params.period, bodyObject(req)))
+  if (!saved) return res.status(404).json({ error: NO_PLANT })
+  res.json(saved)
+})
+app.delete('/api/heating-plants/:id/periods/:period/co2', async (req, res) => {
+  const removed = await writeData((db) => removeCo2Statement(db, req.params.id, req.params.period))
+  if (removed === null) return res.status(404).json({ error: NO_PLANT })
+  res.json({ ok: true, removed })
+})
+app.put('/api/heating-plants/:id/periods/:period/hot-water', async (req, res) => {
+  const saved = await writeData((db) => saveHotWater(db, req.params.id, req.params.period, bodyObject(req)))
+  if (!saved) return res.status(404).json({ error: NO_PLANT })
+  res.json(saved)
+})
+// Werte eines Ablesedienstes je Wohnung und Nutzungszeitraum (Heizung PR 12): die ganze Liste der
+// Heizperiode, in einer Transaktion ersetzt (db/serviceValues.ts).
+app.put('/api/heating-plants/:id/periods/:period/service-values', async (req, res) => {
+  const saved = await writeData((db) => saveServiceValues(db, req.params.id, req.params.period, bodyObject(req)))
+  if (saved === null) return res.status(404).json({ error: NO_PLANT })
+  res.json(saved)
+})
+// Schätzung nach § 9a (Heizung PR 13): je Heizperiode, Wohnung und Topf (`heat`, `water`), db/heatingEstimates.ts.
+app.put('/api/heating-plants/:id/periods/:period/estimates/:unitId/:part', async (req, res) => {
+  const saved = await writeData((db) => saveEstimate(db, req.params.id, req.params.period, req.params.unitId, req.params.part, bodyObject(req)))
+  if (saved === null) return res.status(404).json({ error: NO_PLANT })
+  res.json(saved)
+})
+app.delete('/api/heating-plants/:id/periods/:period/estimates/:unitId/:part', async (req, res) => {
+  const removed = await writeData((db) => removeEstimate(db, req.params.id, req.params.period, req.params.unitId, req.params.part))
+  if (removed === null) return res.status(404).json({ error: NO_PLANT })
+  res.json({ ok: true, removed })
+})
+
+// Vorrat je Heizperiode (Heizung PR 8): Was gespeichert wird, steht in db/fuelStock.ts.
+app.put('/api/heating-plants/:id/periods/:period/stock', async (req, res) => {
+  const saved = await writeData((db) => saveStock(db, req.params.id, req.params.period, bodyObject(req)))
+  if (!saved) return res.status(404).json({ error: NO_PLANT })
+  res.json(saved)
+})
+app.delete('/api/heating-plants/:id/periods/:period/stock', async (req, res) => {
+  const removed = await writeData((db) => removeStock(db, req.params.id, req.params.period))
+  if (removed === null) return res.status(404).json({ error: NO_PLANT })
+  res.json({ ok: true, removed })
+})
+
+// ---------- Eigene Heizkostenabrechnung (Heizung PR 10) ----------
+
+// Einrichtung Schritt 7 (Entwurf 11.2): Umstellung auf die eigene Abrechnung in einer Transaktion,
+// samt Anteil, Zählern und Positionen (db/heatingSelf.ts). 409 mit der Liste offener Positionen, die
+// Teil und Ziel brauchen.
+app.put('/api/heating-plants/:id/self', async (req, res) => {
+  const result = await writeData((db) => setUpSelf(db, req.params.id, bodyObject(req), today(), newId))
+  if (!result) return res.status(404).json({ error: NO_PLANT })
+  res.json(result)
+})
+
+// Anteil nach Verbrauch einer Heizperiode (§ 6 Abs. 4, § 7 Abs. 1 Satz 2).
+app.put('/api/heating-plants/:id/periods/:period/distribution', async (req, res) => {
+  const result = await writeData((db) => saveDistribution(db, req.params.id, req.params.period, bodyObject(req), today()))
+  if (!result) return res.status(404).json({ error: NO_PLANT })
+  res.json(result)
+})
+
+// Angaben nach § 6a HeizkostenV je Heizperiode, und Ausnahme nach § 11, Vereinbarung nach § 2, monatliche
+// Information und Verbrauchervertrag ab einer Heizperiode (Heizung PR 14).
+app.put('/api/heating-plants/:id/periods/:period/info', async (req, res) => {
+  const result = await writeData((db) => saveHeatingInfo(db, req.params.id, req.params.period, bodyObject(req)))
+  if (!result) return res.status(404).json({ error: NO_PLANT })
+  res.json(result)
+})
+app.put('/api/heating-plants/:id/periods/:period/rules', async (req, res) => {
+  const result = await writeData((db) => saveHeatingRules(db, req.params.id, req.params.period, bodyObject(req)))
+  if (!result) return res.status(404).json({ error: NO_PLANT })
+  res.json(result)
+})
+
+// Monatliche Verbrauchsinformation (Heizung PR 22, § 6a Abs. 1 Nr. 2, Abs. 2 HeizkostenV): die Monate einer
+// Heizperiode je Mieter, und je Anlage und Monat Vergleichswert und Tag der Mitteilung (db/monthlyInfo.ts).
+app.get('/api/heating-plants/:id/periods/:period/monthly-info', async (req, res) => {
+  const view = await readData((db) => monthlyInfoView(db, req.params.id, req.params.period, today()))
+  if (!view) return res.status(404).json({ error: NO_PLANT })
+  res.json(view)
+})
+// Die mittlere Warmwassertemperatur bei getrenntem Warmwasser, für die Umrechnung in der Verbrauchsinformation.
+app.put('/api/heating-plants/:id/periods/:period/dhw-temperature', async (req, res) => {
+  const saved = await writeData((db) => saveDhwTemperature(db, req.params.id, req.params.period, bodyObject(req)))
+  if (!saved) return res.status(404).json({ error: NO_PLANT })
+  res.json(saved)
+})
+app.put('/api/heating-plants/:id/monthly-info/:month', async (req, res) => {
+  const saved = await writeData((db) => saveMonthlyInfoRow(db, req.params.id, req.params.month, bodyObject(req), today()))
+  if (!saved) return res.status(404).json({ error: NO_PLANT })
+  res.json(saved)
+})
+
+// Keine Zwischenablesung an einer Grenze: nicht möglich oder nicht durchgeführt (Entwurf 3.5).
+app.put('/api/units/:id/interim-gaps/:date', async (req, res) => {
+  const result = await writeData((db) => saveInterimGap(db, req.params.id, req.params.date, bodyObject(req)))
+  if (!result) return res.status(404).json({ error: 'Diese Wohnung gibt es nicht (mehr). Bitte laden Sie die Seite neu.' })
+  res.json(result)
+})
+app.delete('/api/units/:id/interim-gaps/:date', async (req, res) => {
+  res.json({ ok: true, removed: await writeData((db) => removeInterimGap(db, req.params.id, req.params.date)) })
+})
+
+// ---------- CO₂-Erstattung an Mieter, die selbst heizen (Heizung PR 19, #97) ----------
+// Das Objekt ergibt sich beim Schreiben aus dem Mietverhältnis; gelistet wird je Objekt. Die Prüfungen stehen in
+// db/co2Refunds.ts; HeatingError und PeriodError gibt die Fehlerbehandlung mit ihrem Status weiter.
+const NO_REFUND = 'Diese Erstattung gibt es nicht (mehr). Bitte laden Sie die Seite neu.'
+app.get('/api/co2-refunds', async (req, res) => {
+  res.json(await readData(async (db) => listRefunds(db, await propertyOf(db, req))))
+})
+app.post('/api/co2-refunds', async (req, res) => {
+  res.status(201).json(await writeData((db) => createRefund(db, newId(), bodyObject(req))))
+})
+app.put('/api/co2-refunds/:id', async (req, res) => {
+  const r = await writeData((db) => updateRefund(db, req.params.id, bodyObject(req)))
+  if (!r) return res.status(404).json({ error: NO_REFUND })
+  res.json(r)
+})
+app.delete('/api/co2-refunds/:id', async (req, res) => {
+  const removed = await writeData((db) => removeRefund(db, req.params.id))
+  if (!removed) return res.status(404).json({ error: NO_REFUND })
+  res.json({ ok: true })
+})
+
+// ---------- Brennstofflieferungen (Heizung PR 7) ----------
+// Was gespeichert wird und was nicht, steht in db/fuel.ts; gerechnet wird in fuel.ts und calc.ts.
+const NO_DELIVERY = 'Diese Lieferung gibt es nicht (mehr). Bitte laden Sie die Seite neu.'
+// Das Blatt „CO₂-Angaben für den Messdienst“ einer Heizperiode (Heizung PR 17, #210): die Rechnungen, die
+// sie berühren, mit den Angaben nach § 3 Abs. 1 CO2KostAufG und den Hinweisen der Prüfung.
+app.get('/api/heating-plants/:id/periods/:period/co2-sheet', async (req, res) => {
+  const sheet = await readData(async (db) => {
+    const ctx = await plantContext(db, req.params.id)
+    if (!ctx) return null
+    const h = heatingPeriodOf(ctx, req.params.period)
+    const stock = await readStock(db)
+    const property = stock.properties.find((p) => p.id === ctx.plant.propertyId)
+    // Dieselben Daten und dieselbe Bestandsrechnung wie die Abrechnung (Nachprüfung von #246, O2a/O2b).
+    return co2SheetFor(stock, ctx.plant.propertyId, ctx.plant.id, h, today(), {
+      propertyName: property?.name ?? '', address: property?.address ?? '', landlordName: property?.landlordName ?? stock.settings.landlordName,
+    })
+  })
+  if (!sheet) return res.status(404).json({ error: NO_PLANT })
+  res.json(sheet)
+})
+app.get('/api/heating-plants/:id/deliveries', async (req, res) => {
+  const list = await readData((db) => listDeliveries(db, req.params.id))
+  if (!list) return res.status(404).json({ error: NO_PLANT })
+  res.json(list)
+})
+app.post('/api/heating-plants/:id/deliveries', async (req, res) => {
+  const created = await writeData((db) => createDelivery(db, newId(), req.params.id, bodyObject(req)))
+  if (!created) return res.status(404).json({ error: NO_PLANT })
+  res.status(201).json(created)
+})
+app.put('/api/fuel-deliveries/:id', async (req, res) => {
+  const saved = await writeData((db) => updateDelivery(db, req.params.id, bodyObject(req)))
+  if (!saved) return res.status(404).json({ error: NO_DELIVERY })
+  res.json(saved)
+})
+// #251: Eine Gutschrift ohne Rechnung der Lieferung zuordnen, die sie berichtigt (Antwort „Sie berichtigt eine andere
+// Lieferung“); 409, solange eine der beiden Heizperioden abgeschlossen ist.
+app.post('/api/fuel-deliveries/:id/reassign-credit', async (req, res) => {
+  const result = await writeData((db) => reassignCredit(db, req.params.id, bodyObject(req)))
+  if (!result) return res.status(404).json({ error: NO_DELIVERY })
+  res.json(result)
+})
+app.delete('/api/fuel-deliveries/:id', async (req, res) => {
+  const removed = await writeData((db) => removeDelivery(db, req.params.id))
+  if (!removed) return res.status(404).json({ error: NO_DELIVERY })
+  res.json({ ok: true })
+})
+// Die Gradtagzahlen des Orts (Stufe 4 in 3.2), je Objekt.
+const NO_PROPERTY = 'Dieses Objekt gibt es nicht (mehr). Bitte laden Sie die Seite neu.'
+app.get('/api/properties/:id/degree-days', async (req, res) => {
+  const values = await readData((db) => listDegreeDays(db, req.params.id))
+  if (!values) return res.status(404).json({ error: NO_PROPERTY })
+  res.json(values)
+})
+app.put('/api/properties/:id/degree-days', async (req, res) => {
+  const values = await writeData((db) => saveDegreeDays(db, req.params.id, bodyObject(req)))
+  if (!values) return res.status(404).json({ error: NO_PROPERTY })
+  res.json(values)
+})
+
+// Zeitraum der Heizung (Heizung PR 5, Entwurf 3.0, 3.6): erst die Vorschau, dann der Wechsel mit den
+// Antworten, in einer Transaktion. `rules: null` heißt „wie das Objekt“. Fehlt eine Antwort oder
+// träfe der Wechsel Abgeschlossenes, antwortet der Server mit 409 und der neuen Vorschau.
+const PLANT_GONE_TEXT = 'Diese Heizanlage gibt es nicht (mehr). Bitte laden Sie die Seite neu.'
+app.post('/api/heating-plants/:id/period/preview', async (req, res) => {
+  const preview = await writeData((db) => previewHeatingPeriodChange(db, req.params.id, bodyObject(req).rules, today()))
+  if (!preview) return res.status(404).json({ error: PLANT_GONE_TEXT })
+  res.json(preview)
+})
+app.put('/api/heating-plants/:id/period', async (req, res) => {
+  const body = bodyObject(req)
+  const result = await writeData((db) => applyHeatingPeriodChange(db, req.params.id, body.rules, body.answers, today()))
+  if (!result) return res.status(404).json({ error: PLANT_GONE_TEXT })
+  if ('error' in result) return res.status(409).json(result)
+  res.json(result.plant)
+})
+// Getrennte Heizkostenabrechnung ein- und ausschalten (Heizung PR 5, Entwurf 3.1): Vorschau, dann
+// Speichern mit den Antworten in einer Transaktion. Begründung in db/separateSettlement.ts.
+app.post('/api/heating-plants/:id/separate/preview', async (req, res) => {
+  const preview = await writeData((db) => previewSeparate(db, req.params.id, bodyObject(req), today()))
+  if (!preview) return res.status(404).json({ error: PLANT_GONE_TEXT })
+  res.json(preview)
+})
+app.put('/api/heating-plants/:id/separate', async (req, res) => {
+  const result = await writeData((db) => applySeparate(db, req.params.id, bodyObject(req), today()))
+  if (!result) return res.status(404).json({ error: PLANT_GONE_TEXT })
+  if ('error' in result) return res.status(409).json(result)
+  res.json(result.plant)
+})
+
+// ---------- Heizkostenabrechnung nach Weg d (Heizung PR 5, Entwurf 3.1, 6.1 Nr. 7, B3) ----------
+// Je Anlage und getrennt abgerechneter Heizperiode eine eigene Abrechnung mit eigener Frist und
+// eigenem Abschluss. Eine Heizperiode, die in der Betriebskostenabrechnung steht, hat keine; die
+// Antwort sagt dann, wo ihre Heizkosten stehen.
+async function heatingTargetOf(db: Database, req: Request): Promise<{ plant: HeatingPlant, period: BillingPeriod }> {
+  const plant = (await readHeatingPlants(db)).find((p) => p.id === req.params.plant)
+  if (!plant) throw new RouteProblem(404, PLANT_GONE_TEXT)
+  const objectRules = rulesOf((await listProperties(db)).find((p) => p.id === plant.propertyId))
+  const key = parsePeriodKey(String(req.params.period ?? ''))
+  const period = key === null ? null : periodOfKey(plantRules(plant, objectRules), key)
+  if (period === null) throw new RouteProblem(404, 'Diese Heizperiode gibt es für die Heizanlage nicht.')
+  if (!settledSeparately(plant, objectRules, period)) {
+    throw new RouteProblem(404,
+      `Die Heizkosten ${periodLabel(period)} stehen in der Betriebskostenabrechnung ${periodLabel(periodContaining(objectRules, period.to))}; eine eigene Heizkostenabrechnung gibt es dafür nicht.`)
+  }
+  return { plant, period }
+}
+
+function computeHeating(stock: Stock, plant: HeatingPlant, period: BillingPeriod): ComputedSettlement {
+  const snapshot = heatingSnapshotFor(stock, plant.propertyId, plant.id, period)
+  if (!snapshot) throw new RouteProblem(404, PLANT_GONE_TEXT)
+  return computeSettlement(snapshot, { asOf: today() })
+}
+
+app.get('/api/heating-settlements', async (req, res) => {
+  res.json(await readData(async (db) => separateHeatingSettlements(db, await propertyOf(db, req), today())))
+})
+
+app.get('/api/heating-settlement/:plant/:period', async (req, res) => {
+  const { target, closed, stock } = await readData(async (db) => {
+    const target = await heatingTargetOf(db, req)
+    return { target, closed: await findClosedHeatingSettlement(db, target.plant.id, target.period.key), stock: await readStock(db) }
+  })
+  const frame = {
+    period: settlementPeriod(target.period),
+    deadline: settlementDeadline(target.period),
+    scope: { kind: 'heating' as const, plantId: target.plant.id, plantName: target.plant.name },
+  }
+  if (closed) {
+    const stand = closed.settlement !== null && typeof closed.settlement === 'object' ? closed.settlement : {}
+    const deviation = compareWithFrozen(closed.settlement, () => computeHeating(stock, target.plant, target.period), frame.deadline, today())
+    return res.json({ selfUsedShareCents: 0, ...stand, ...frame, closed: { closedAt: closed.closedAt, sentAt: closed.sentAt }, deviation })
+  }
+  res.json({ ...computeHeating(stock, target.plant, target.period), closed: null })
+})
+
+app.post('/api/heating-settlement/:plant/:period/close', async (req, res) => {
+  const sentAt = sentAtOf(req)
+  if (sentAt === false) return res.status(400).json({ error: SENT_AT_INVALID })
+  const answer = fuelAnswerOf(req)
+  if (answer === false) return res.status(400).json({ error: FUEL_ANSWER_INVALID })
+  // Rechnen und Einfrieren im selben Vorgang, wie bei der Abrechnung des Objekts.
+  const ergebnis = await writeData(async (db) => {
+    const target = await heatingTargetOf(db, req)
+    const label = periodLabel(target.period)
+    if (await findClosedHeatingSettlement(db, target.plant.id, target.period.key)) return { schonDa: true, label, gaps: null }
+    const gaps = await closeWithFuel(
+      db,
+      answer,
+      async (tx) => computeHeating(await readStock(tx), target.plant, target.period),
+      (tx, settlement) => closeHeatingSettlement(tx, {
+        id: newId(), plantId: target.plant.id, period: target.period.key, closedAt: new Date().toISOString(), sentAt, settlement,
+      }),
+    )
+    return { schonDa: false, label, gaps }
+  })
+  if (ergebnis.schonDa) return res.status(409).json({ error: `Die Heizkostenabrechnung ${ergebnis.label} ist bereits abgeschlossen.` })
+  if (ergebnis.gaps) return res.status(409).json({ error: FUEL_GAPS_TEXT, fuelGaps: ergebnis.gaps })
+  res.status(201).json({ ok: true })
+})
+
+app.put('/api/heating-settlement/:plant/:period/close', async (req, res) => {
+  const sentAt = sentAtOf(req)
+  if (sentAt === false) return res.status(400).json({ error: SENT_AT_INVALID })
+  const gefunden = await writeData(async (db) => {
+    const target = await heatingTargetOf(db, req)
+    return setHeatingSentAt(db, target.plant.id, target.period.key, sentAt)
+  })
+  if (!gefunden) return res.status(404).json({ error: 'Die Heizkostenabrechnung ist nicht abgeschlossen.' })
+  res.json({ ok: true })
+})
+
+app.get('/api/heating-settlement/:plant/:period/history', async (req, res) => {
+  res.json(await readData(async (db) => {
+    const target = await heatingTargetOf(db, req)
+    return heatingSettlementHistory(db, target.plant.id, target.period.key)
+  }))
+})
+
+app.delete('/api/heating-settlement/:plant/:period/close', async (req, res) => {
+  const gefunden = await writeData(async (db) => {
+    const target = await heatingTargetOf(db, req)
+    return reopenHeatingSettlement(db, target.plant.id, target.period.key, newId(), unfreezeFuelCarries)
+  })
+  if (!gefunden) return res.status(404).json({ error: 'Die Heizkostenabrechnung ist nicht abgeschlossen.' })
+  res.json({ ok: true })
+})
+
+// Wechsel des Abrechnungszeitraums (#208, Entwurf 3.6): erst die Vorschau, dann der Wechsel mit
+// den Antworten, in einer Transaktion. Fehlt eine Antwort oder träfe der Wechsel eine
+// abgeschlossene Abrechnung, antwortet der Server mit 409 und der neuen Vorschau, gespeichert ist
+// nichts. Begründung in db/periodChange.ts.
+// Die Vorschau läuft durch die Schreibschlange: Sie rechnet Fristen und Ergebnisse in einem
+// Probelauf, der in einer Transaktion schreibt und zurückrollt (db/dryRun.ts, Laienprobe B3).
+app.post('/api/properties/:id/period/preview', async (req, res) => {
+  const preview = await writeData((db) => previewPeriodChange(db, req.params.id, bodyObject(req).rules, today()))
+  if (!preview) return res.status(404).json({ error: 'Dieses Objekt gibt es nicht (mehr).' })
+  res.json(preview)
+})
+app.put('/api/properties/:id/period', async (req, res) => {
+  const body = bodyObject(req)
+  const result = await writeData((db) => applyPeriodChange(db, req.params.id, body.rules, body.answers, newId, today()))
+  if (!result) return res.status(404).json({ error: 'Dieses Objekt gibt es nicht (mehr).' })
+  if ('error' in result) return res.status(409).json(result)
+  res.json(result.property)
+})
+
 // ---------- Abrechnung ----------
-// Der Stichtag der Abrechnung (#133): heute, als JJJJ-MM-TT in UTC wie überall in calc.ts. Er
-// begrenzt nur den Hinweis auf einen Rückstand auf die schon fälligen Monate.
-const today = (): string => new Date().toISOString().slice(0, 10)
 
 // Liefert die abgeschlossene (eingefrorene) Abrechnung, falls vorhanden — sonst live berechnet.
-app.get('/api/settlement/:year', async (req, res) => {
-  const year = Number(req.params.year)
-  if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
-  const { closed, stock, property } = await readData(async (db) => {
+app.get('/api/settlement/:period', async (req, res) => {
+  const { closed, stock, property, period } = await readData(async (db) => {
     const property = await propertyOf(db, req)
-    return { property, closed: await findClosedSettlement(db, property, year), stock: await readStock(db) }
+    const period = await periodOf(db, req, property)
+    return { property, period, closed: await findClosedSettlement(db, property, period.key), stock: await readStock(db) }
   })
+  // Zeitraum und Frist (#208) stehen in jeder Antwort, auch bei einer vorher abgeschlossenen
+  // Abrechnung, die sie noch nicht kennt: Die Oberfläche rechnet die Frist nicht mehr selbst.
+  const frame = { period: settlementPeriod(period), deadline: settlementDeadline(period) }
   // Vor dieser Version eingefrorene Snapshots kennen selfUsedShareCents noch nicht — mit 0
   // vorbelegen, damit die Antwort immer der Form in types.ts entspricht. Genau deshalb ist das
   // Feld in StoredSettlement (store.ts) optional.
@@ -463,10 +962,10 @@ app.get('/api/settlement/:year', async (req, res) => {
     const stand = closed.settlement !== null && typeof closed.settlement === 'object' ? closed.settlement : {}
     // Daneben die heutige Berechnung, nur zum Vergleich (#56): Der eingefrorene Stand bleibt das
     // Dokument, das der Mieter hat; weicht die heutige Rechnung ab, erfährt es der Vermieter.
-    const deviation = compareWithFrozen(closed.settlement, () => computeSettlement(snapshotFor(stock, property, year), { asOf: today() }), year, today())
-    return res.json({ selfUsedShareCents: 0, ...stand, closed: { closedAt: closed.closedAt, sentAt: closed.sentAt }, deviation })
+    const deviation = compareWithFrozen(closed.settlement, () => computeSettlement(snapshotFor(stock, property, period), { asOf: today() }), frame.deadline, today())
+    return res.json({ selfUsedShareCents: 0, ...stand, ...frame, closed: { closedAt: closed.closedAt, sentAt: closed.sentAt }, deviation })
   }
-  res.json({ ...computeSettlement(snapshotFor(stock, property, year), { asOf: today() }), closed: null })
+  res.json({ ...computeSettlement(snapshotFor(stock, property, period), { asOf: today() }), closed: null })
 })
 
 // Ein Datum als JJJJ-MM-TT, wie es <input type="date"> liefert. Der Vergleich mit dem
@@ -490,77 +989,128 @@ const sentAtOf = (req: Request): string | null | false => {
   return isDateOnly(value) ? value : false
 }
 
+// Die Antwort auf die Rückfrage zur Schätzung (Heizung PR 7, Entwurf 8.2, N1, A5): `estimate` legt je
+// Lücke eine geschätzte Lieferung mit Vorbehalt an, `none` schließt ohne ab. `null`: keine Antwort,
+// `false`: ein anderer Wert (400).
+type FuelAnswer = 'estimate' | 'none'
+const FUEL_ANSWER_INVALID = 'Die Antwort auf die Rückfrage zur Schätzung ist „estimate“ oder „none“.'
+const FUEL_GAPS_TEXT =
+  'Für einen Teil der Heizperiode fehlt eine Rechnung. Sie können abwarten, bis sie da ist, die Kosten mit Vorbehalt schätzen lassen oder ohne Schätzung abschließen; ohne Schätzung steht dieser Teil zunächst bei Ihnen.'
+const fuelAnswerOf = (req: Request): FuelAnswer | null | false => {
+  const value: unknown = bodyObject(req).fuelEstimates
+  if (value === undefined || value === null) return null
+  return value === 'estimate' || value === 'none' ? value : false
+}
+
+// Abschließen samt Lieferungen (Heizung PR 7): rechnen, bei Lücken ohne Antwort nachfragen, auf Wunsch
+// Schätzungen anlegen und neu rechnen, dann abschließen und einfrieren, alles in **einer**
+// Transaktion (Entwurf 8.2, N1): Die Berechnung liest den Bestand auf der Transaktion (`readStock`
+// nimmt ein `Executor`), die neu angelegten Schätzungen sind darin also schon sichtbar; scheitert ein
+// Schritt, fällt alles zurück, und keine Schätzung bleibt ohne Abschluss stehen. Ohne Antwort und mit
+// Lücken wird nichts geschrieben.
+async function closeWithFuel(
+  db: Database,
+  answer: FuelAnswer | null,
+  compute: (tx: Executor) => Promise<ComputedSettlement>,
+  close: (tx: Executor, settlement: ComputedSettlement) => Promise<void>,
+): Promise<FuelGapQuestion[] | null> {
+  return db.transaction(async (tx) => {
+    let settlement = await compute(tx)
+    const gaps = fuelGapQuestions(settlement)
+    if (gaps.length > 0 && answer === null) return gaps
+    if (gaps.length > 0 && answer === 'estimate') {
+      await createEstimates(tx, settlement, newId)
+      settlement = await compute(tx)
+    }
+    await close(tx, settlement)
+    await freezeFuelCarries(tx, settlement)
+    return null
+  })
+}
+
 // Abrechnung abschließen: aktuellen Berechnungsstand einfrieren. Spätere Änderungen an
 // Kosten/Stammdaten verändern eine bereits verschickte Abrechnung dann nicht mehr still.
-app.post('/api/settlement/:year/close', async (req, res) => {
-  const year = Number(req.params.year)
-  if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
+// Mit Lieferungen fragt Mietfuchs bei einer Lücke nach (Heizung PR 7) und friert die Überträge mit ein.
+app.post('/api/settlement/:period/close', async (req, res) => {
   const sentAt = sentAtOf(req)
   if (sentAt === false) return res.status(400).json({ error: SENT_AT_INVALID })
+  const answer = fuelAnswerOf(req)
+  if (answer === false) return res.status(400).json({ error: FUEL_ANSWER_INVALID })
   // Rechnen und Einfrieren im selben Vorgang: Käme dazwischen eine Änderung an einer
   // Kostenposition durch, fröre Mietfuchs einen Stand ein, den es so nie gegeben hat.
-  const schonDa = await writeData(async (db) => {
+  const ergebnis = await writeData(async (db) => {
     const property = await propertyOf(db, req)
-    if (await findClosedSettlement(db, property, year)) return true
-    await closeSettlement(db, {
-      id: newId(),
-      propertyId: property,
-      year,
-      closedAt: new Date().toISOString(),
-      sentAt,
-      settlement: computeSettlement(snapshotFor(await readStock(db), property, year), { asOf: today() }),
-    })
-    return false
+    const period = await periodOf(db, req, property)
+    const label = periodLabel(period)
+    if (await findClosedSettlement(db, property, period.key)) return { schonDa: true, label, gaps: null }
+    const gaps = await closeWithFuel(
+      db,
+      answer,
+      async (tx) => computeSettlement(snapshotFor(await readStock(tx), property, period), { asOf: today() }),
+      (tx, settlement) => closeSettlement(tx, { id: newId(), propertyId: property, period: period.key, closedAt: new Date().toISOString(), sentAt, settlement }),
+    )
+    return { schonDa: false, label, gaps }
   })
-  if (schonDa) return res.status(409).json({ error: `Abrechnung ${year} ist bereits abgeschlossen.` })
+  if (ergebnis.schonDa) return res.status(409).json({ error: `Abrechnung ${ergebnis.label} ist bereits abgeschlossen.` })
+  if (ergebnis.gaps) return res.status(409).json({ error: FUEL_GAPS_TEXT, fuelGaps: ergebnis.gaps })
   res.status(201).json({ ok: true })
 })
 
 // Versanddatum nachtragen (für die §556-Frist)
-app.put('/api/settlement/:year/close', async (req, res) => {
-  const year = Number(req.params.year)
+app.put('/api/settlement/:period/close', async (req, res) => {
   const sentAt = sentAtOf(req)
   if (sentAt === false) return res.status(400).json({ error: SENT_AT_INVALID })
-  const gefunden = await writeData(async (db) => setSentAt(db, await propertyOf(db, req), year, sentAt))
+  const gefunden = await writeData(async (db) => {
+    const property = await propertyOf(db, req)
+    return setSentAt(db, property, (await periodOf(db, req, property)).key, sentAt)
+  })
   if (!gefunden) return res.status(404).json({ error: 'Abrechnung ist nicht abgeschlossen.' })
   res.json({ ok: true })
 })
 
-// Frühere Abschlüsse eines Jahres (#56, Teil 2): was beim Wiederöffnen beiseitegelegt wurde,
+// Frühere Abschlüsse eines Zeitraums (#56, Teil 2): was beim Wiederöffnen beiseitegelegt wurde,
 // der zuletzt wiedergeöffnete zuerst. Der gültige Stand steht nicht darin, den liefert
-// GET /api/settlement/:year.
-app.get('/api/settlement/:year/history', async (req, res) => {
-  const year = Number(req.params.year)
-  if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
-  res.json(await readData(async (db) => settlementHistory(db, await propertyOf(db, req), year)))
+// GET /api/settlement/:period.
+app.get('/api/settlement/:period/history', async (req, res) => {
+  res.json(await readData(async (db) => {
+    const property = await propertyOf(db, req)
+    return settlementHistory(db, property, (await periodOf(db, req, property)).key)
+  }))
 })
 
 // Wieder öffnen: Der Stand wandert in den Verlauf, es gilt wieder die laufende Berechnung (#56).
-app.delete('/api/settlement/:year/close', async (req, res) => {
-  const year = Number(req.params.year)
-  const gefunden = await writeData(async (db) => reopenSettlement(db, await propertyOf(db, req), year, newId()))
+app.delete('/api/settlement/:period/close', async (req, res) => {
+  const gefunden = await writeData(async (db) => {
+    const property = await propertyOf(db, req)
+    return reopenSettlement(db, property, (await periodOf(db, req, property)).key, newId(), unfreezeFuelCarries)
+  })
   if (!gefunden) return res.status(404).json({ error: 'Abrechnung ist nicht abgeschlossen.' })
   res.json({ ok: true })
 })
 
-app.get('/api/consumption/:year', async (req, res) => {
-  const year = Number(req.params.year)
-  if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
-  res.json(await readData(async (db) => consumptionOverview(snapshotFor(await readStock(db), await propertyOf(db, req), year))))
+// Verbrauch über den Zeitraum der Abrechnung (#208): Die Zähler-Seite zeigt denselben Zeitraum.
+app.get('/api/consumption/:period', async (req, res) => {
+  res.json(await readData(async (db) => {
+    const property = await propertyOf(db, req)
+    return consumptionOverview(snapshotFor(await readStock(db), property, await periodOf(db, req, property)))
+  }))
 })
 
-// Mietkonto: Soll/Ist je Monat und Mietverhältnis für das Jahr
+// Mietkonto: Soll/Ist je Monat und Mietverhältnis im **Kalenderjahr** (#208, Entwurf 3.11), auch bei
+// einem Objekt mit anderem Rhythmus. Es liest keine Kostenposition, der Zeitraum dient nur dem Jahr.
 app.get('/api/rentledger/:year', async (req, res) => {
   const year = Number(req.params.year)
   if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
-  res.json(await readData(async (db) => rentLedger(snapshotFor(await readStock(db), await propertyOf(db, req), year), { asOf: today() })))
+  res.json(await readData(async (db) => rentLedger(snapshotFor(await readStock(db), await propertyOf(db, req), calendarYearPeriod(year)), { asOf: today() })))
 })
 
-// Steuer-Übersicht (Hilfe für die Anlage V): Einnahmen, Werbungskosten, Überschuss
+// Steuer-Übersicht (Hilfe für die Anlage V) im Kalenderjahr: Einnahmen, Werbungskosten, Überschuss.
+// Bei einem Objekt mit eigenem Rhythmus aus den Abrechnungen, die das Jahr berühren (#208);
+// Begründung in calc.ts (`taxPartsFor`).
 app.get('/api/taxreport/:year', async (req, res) => {
   const year = Number(req.params.year)
   if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
-  res.json(await readData(async (db) => taxReport(snapshotFor(await readStock(db), await propertyOf(db, req), year))))
+  res.json(await readData(async (db) => taxReportFor(await readStock(db), await propertyOf(db, req), year)))
 })
 
 // ---------- Belege & KI-Auswertung ----------
@@ -854,15 +1404,21 @@ async function rememberAssessment(req: Request, file: DocumentSource, extraction
       const chosen = previous
         ? previous.assessment.requestedYear ?? (sent || null)
         : row?.year ?? (sent || null)
+      const propertyId = row?.propertyId ?? asked ?? (only && more.length === 0 ? only.id : null)
       if (signal.aborted) return null
       const record = await saveAssessment(db, {
         file: file.filename,
-        propertyId: row?.propertyId ?? asked ?? (only && more.length === 0 ? only.id : null),
+        propertyId,
         year: detected ?? chosen ?? new Date().getUTCFullYear(),
         detectedYear: detected,
-        // Das gewählte Jahr bleibt gespeichert: Weicht das Jahr aus dem Beleg davon ab, ist die Ampel
-        // gelb, und „Alle grünen übernehmen“ bucht die Zeile nicht ungesehen in ein anderes Jahr.
+        // Das gewählte Jahr bleibt gespeichert, auch ohne Objekt (#208): Weicht das Jahr aus dem
+        // Beleg davon ab, ist die Ampel gelb, und „Alle grünen übernehmen“ bucht die Zeile nicht
+        // ungesehen in ein anderes Jahr. Den Zeitraum bildet saveAssessment.
         requestedYear: chosen,
+        // Der gewählte Zeitraum (#208): der einer früheren Auswertung, sonst der mitgeschickte (die
+        // Seite, von der aus ausgewertet wurde), solange der Beleg kein eigenes Jahr trägt. Er gilt
+        // nur, wenn es ihn für das Objekt gibt; sonst bildet saveAssessment ihn aus dem Jahr.
+        requestedPeriod: previous ? previous.assessment.requestedPeriod : row?.year == null ? parsePeriodKey(body.period) : null,
         vendor: extraction.vendor ?? null,
         invoiceDate: isDateOnly(extraction.invoiceDate) ? extraction.invoiceDate : null,
         totalGrossCents: typeof extraction.totalGrossEur === 'number' ? Math.round(extraction.totalGrossEur * 100) : null,
@@ -921,6 +1477,66 @@ app.post('/api/intake', fileWithPages, async (req: Request, res: Response) => {
       const assessment = await rememberAssessment(req, file, extraction, signal)
       answer.done({ file: file.filename, kind: 'rechnung', extraction, assessment, stats })
     }
+  } catch (err) {
+    answer.fail({ file: file.filename, error: messageOf(err), stats })
+  }
+})
+
+// ---------- KI: Messdienstabrechnung und Lieferantenrechnung (Heizung PR 20, #103) ----------
+//
+// Beide Routen antworten wie /api/extract (Strom mit Fortschritt, Abbruch über die Kennung) und speichern
+// nichts außer dem Beleg im Belegarchiv: Was die KI liest, ist ein Vorschlag, den die Seite Heizkosten zeigt;
+// übernommen wird über die bestehenden Routen, wenn der Vermieter es will. Der Beleg liegt mit Objekt und
+// Jahr aus dem Formular im Posteingang, bis er an eine Position kommt (die Messdienstabrechnung mit
+// „Positionen anlegen“); eine Lieferung hat keinen Beleg. Eine Auswertung für die Belegbuchung (#170)
+// entsteht hier nicht: Ihre Zeilen sind Rechnungspositionen, keine Nutzerzeilen oder Lieferungen.
+//
+// Lehnt die Route ab, bevor ausgewertet wird, verschwindet der Beleg wieder, den multer schon abgelegt hat.
+const discardUpload = (req: Request): void => {
+  const f = uploadedFile(req)
+  if (f) fs.rmSync(f.path, { force: true })
+}
+async function plantForAi(req: Request, res: Response): Promise<HeatingPlant | null> {
+  const id = req.params.id
+  const plant = await readData(async (db) => (await readHeatingPlants(db)).find((p) => p.id === id) ?? null)
+  if (!plant) {
+    discardUpload(req)
+    res.status(404).json({ error: NO_PLANT })
+  }
+  return plant
+}
+const SERVICE_ONLY = 'Eine Messdienstabrechnung lässt sich nur bei einer Heizanlage, die ein Messdienst oder die Gemeinschaft abrechnet, übernehmen. Stellen Sie das unter Stammdaten bei der Heizung ein.'
+
+app.post('/api/heating-plants/:id/service-statement', fileWithPages, async (req: Request, res: Response) => {
+  const plant = await plantForAi(req, res)
+  if (!plant) return
+  if (plant.method !== 'service') {
+    discardUpload(req)
+    return res.status(400).json({ error: SERVICE_ONLY })
+  }
+  const file = await documentOf(req, res)
+  if (!file) return
+  const answer = aiResponse(req, res)
+  const { signal, stats, onProgress } = answer
+  try {
+    const extraction = await extractServiceStatement(file.path, file.mimetype, effectiveSettings(), { ...aiInput(req), signal, stats, onProgress })
+    answer.done({ file: file.filename, extraction, stats })
+  } catch (err) {
+    answer.fail({ file: file.filename, error: messageOf(err), stats })
+  }
+})
+
+app.post('/api/heating-plants/:id/fuel-invoice', fileWithPages, async (req: Request, res: Response) => {
+  const plant = await plantForAi(req, res)
+  if (!plant) return
+  const file = await documentOf(req, res)
+  if (!file) return
+  const answer = aiResponse(req, res)
+  const { signal, stats, onProgress } = answer
+  try {
+    const extraction = await extractFuelInvoice(file.path, file.mimetype, effectiveSettings(), { ...aiInput(req), signal, stats, onProgress })
+    await rememberInvoiceDate(file.filename, extraction.invoiceDate)
+    answer.done({ file: file.filename, extraction, stats })
   } catch (err) {
     answer.fail({ file: file.filename, error: messageOf(err), stats })
   }
@@ -1124,20 +1740,29 @@ app.delete('/api/uploads/:file', async (req, res) => {
 app.get('/api/receipts/tax/:year', async (req, res) => {
   const year = Number(req.params.year)
   if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
-  const { items, property, rows, links, split } = await readData(async (db) => {
+  const { items, property, rows, links, split, derived } = await readData(async (db) => {
     const propertyId = await propertyOf(db, req)
     const whole = await readStock(db)
     const stock = narrowToProperty(whole, propertyId)
     const property = (await listProperties(db)).find((p) => p.id === propertyId)
-    // Privat und abziehbar je Position aus derselben Rechnung wie die Steuerübersicht (#163)
-    const split = new Map(taxReport(snapshotFor(whole, propertyId, year)).expenses.items.map((i) => [i.costItemId, i]))
-    return { items: stock.costItems.filter((c) => c.year === year), property, rows: await uploadRows(db), links: await uploadLinks(db), split }
+    // Privat und abziehbar je Position aus derselben Rechnung wie die Steuerübersicht (#163), und
+    // dieselbe Auswahl der Positionen: das Jahr der Zahlung (#208).
+    const report = taxReportFor(whole, propertyId, year)
+    const split = new Map(report.expenses.items.map((i) => [i.costItemId, i]))
+    const parts = taxPartsFor(whole, propertyId, year)
+    const ids = new Set(parts === null
+      ? stock.costItems.filter((c) => c.period === calendarPeriod(year)).map((c) => c.id)
+      : parts.flatMap((p) => p.items.map((c) => c.id)))
+    // #268 und Heizung PR 19 (N-4): Zeilen der Übersicht ohne Position (Ausgleich beim Betriebsstrom, ausgezahlte
+    // CO₂-Erstattung).
+    const derived = derivedTaxLines(report)
+    return { items: stock.costItems.filter((c) => ids.has(c.id)), property, rows: await uploadRows(db), links: await uploadLinks(db), split, derived }
   })
   const booked = new Map<string, string[]>()
   for (const [file, l] of links) for (const id of l.bookedItemIds) booked.set(id, [...(booked.get(id) ?? []), file])
   const names = new Map<string, string>()
   for (const u of describeFolder(UPLOAD_DIR, rows)) names.set(u.file, u.originalName)
-  const plan = planTaxArchive(items, names, booked, split)
+  const plan = planTaxArchive(items, names, booked, split, derived)
   const zip = new AdmZip()
   for (const { zipPath, file } of plan.files) zip.addFile(zipPath, fs.readFileSync(path.join(UPLOAD_DIR, file)))
   zip.addFile('Übersicht.csv', Buffer.from(plan.overviewCsv, 'utf8'))
@@ -1761,8 +2386,10 @@ app.use('/api', (err: unknown, req: Request, res: Response, next: NextFunction) 
             : `Hochladen fehlgeschlagen: ${err.message}`
     return res.status(400).json({ error: message })
   }
+  // Eigene Heizkostenabrechnung (Heizung PR 10): die Liste der Positionen, die umzustellen sind.
+  if (err instanceof SelfItemsError) return res.status(409).json({ error: err.message, items: err.items })
   // Ablehnungen, deren Meldung schon für den Nutzer geschrieben ist (#92).
-  if (err instanceof RouteProblem || err instanceof CrossPropertyError || err instanceof TenantChangeError || err instanceof BookingRefusal) {
+  if (err instanceof RouteProblem || err instanceof CrossPropertyError || err instanceof PeriodError || err instanceof PeriodConflict || err instanceof TenantChangeError || err instanceof BookingRefusal || err instanceof HeatingError || err instanceof StaleTenancyError || err instanceof LawOverrideError) {
     return res.status(err.status).json({ error: err.message })
   }
   // **Fehler der Datenbank bekommen ihre eigene Meldung** (db/errors.ts). Ohne diese Zeile käme
@@ -1844,7 +2471,7 @@ const portProblem = Number.isInteger(PORT) && PORT >= 0 && PORT <= 65535
 
 // Eine falsch gesetzte Variable für den KI-Anbieter oder den Schlüssel (siehe ai/settings.ts und
 // secrets.ts) fiele sonst erst bei der ersten Auswertung auf
-const startProblem = AI_ENV.error ?? checkKeyEnvironment() ?? portProblem
+const startProblem = AI_ENV.error ?? checkKeyEnvironment() ?? portProblem ?? TEST_TODAY.error
 if (startProblem) {
   console.error(startProblem)
   process.exit(1)
@@ -2107,6 +2734,7 @@ function databaseState(): DatabaseState {
   const address = server.address()
   const url = `http://127.0.0.1:${typeof address === 'object' && address ? address.port : PORT}`
   console.log(`Mietfuchs-Server läuft auf ${url}`)
+  if (TEST_TODAY.value !== null) console.log(`Testgriff NKA_TEST_TODAY aktiv: Der Server rechnet mit dem ${TEST_TODAY.value} als heute.`)
   // Wo die Daten liegen, hängt an der Betriebsart (siehe chooseDataDir in store.ts): neben der
   // Programmdatei oder, aus einem Paket installiert, im Benutzerordner. Wer den Ordner sichern
   // oder umziehen will, soll ihn nicht suchen müssen.

@@ -75,7 +75,9 @@ export function emptyUnitsText(kind: PropertyKind): string {
 
 // ---------- Der Abschlussdialog der Abrechnung ----------
 
-export function closeSettlementTitle(year: number, properties: Property[], property: Property | null): string {
+// `docName`: was abgeschlossen wird, wenn es nicht die Abrechnung des Zeitraums ist (Sichtprüfung
+// E45: die Heizkostenabrechnung einer Heizperiode).
+export function closeSettlementTitle(label: string | number, properties: Property[], property: Property | null, docName = `Abrechnung ${label}`): string {
   const name = propertyHeading(properties, property)
-  return name ? `Abrechnung ${year} für „${name}“ abschließen?` : `Abrechnung ${year} abschließen?`
+  return name ? `${docName} für „${name}“ abschließen?` : `${docName} abschließen?`
 }

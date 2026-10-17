@@ -21,7 +21,8 @@ import fs from 'node:fs'
 import { sql } from 'drizzle-orm'
 import { APP_VERSION } from '../version.ts'
 import { applyMigrations, connect, loadMigrations } from './client.ts'
-import { crossPropertyViolations } from './repository.ts'
+import { crossPropertyViolations, orphanPeriodKeys } from './repository.ts'
+import { heatingPlantViolations, straightenHeatingPlants } from './heating.ts'
 import { germanDate, integrityProblem, messageOf, unknownSteps, type OpenedDatabase } from './open.ts'
 
 // Die Namen im Archiv. Die Datenbank heißt darin wie im Datenordner, damit jemand, der das ZIP
@@ -132,6 +133,32 @@ export async function archiveDatabaseProblem(file: string): Promise<string | nul
         `Die Datenbank in diesem Archiv enthält Verweise zwischen verschiedenen Objekten, die in ` +
         `keiner Abrechnung aufgingen, deshalb wurde nichts davon übernommen. Ihre bisherigen Daten ` +
         `sind unverändert. ${kreuz.slice(0, 3).join(' ')}`
+      )
+    }
+    // Ein Zeitraumschlüssel, den es für sein Objekt nicht gibt (#208): Was darunter steht, erschiene
+    // in keiner Abrechnung. Über die Oberfläche entsteht das nicht; in einem Archiv kann es stehen.
+    const waisen = await orphanPeriodKeys(connection.db)
+    if (waisen.length > 0) {
+      return (
+        `Die Datenbank in diesem Archiv enthält Angaben unter Abrechnungszeiträumen, die es für ihr ` +
+        `Objekt nicht gibt, deshalb wurde nichts davon übernommen. Ihre bisherigen Daten sind ` +
+        `unverändert. ${waisen.slice(0, 3).join(' ')}`
+      )
+    }
+    // Die Heizanlagen (Heizung PR 4): Verweise über Objektgrenzen, überlappende Anlagen und
+    // Heizperioden ohne Zeitraum. Dieselbe Haltung wie bei den Verweisen darüber.
+    // Ein Verweis auf eine ersetzte Anlage, die es nicht mehr gibt, wird geradegerückt (Durchsicht von
+    // #238, C2); die Nachfolgerin gilt dann als Anlage ohne Vorgängerin.
+    const geradegerueckt = await straightenHeatingPlants(connection.db)
+    if (geradegerueckt.length > 0) {
+      console.warn(`Wiederherstellen: ${geradegerueckt.map((n) => `„${n}“`).join(', ')} verwies auf eine Heizanlage, die es im Archiv nicht mehr gibt (Vorgängerin oder Gebäude); der Verweis wurde entfernt.`)
+    }
+    const heizung = await heatingPlantViolations(connection.db)
+    if (heizung.length > 0) {
+      return (
+        `Die Datenbank in diesem Archiv enthält Angaben zur Heizanlage, die in keiner Abrechnung ` +
+        `aufgingen, deshalb wurde nichts davon übernommen. Ihre bisherigen Daten sind unverändert. ` +
+        `${heizung.slice(0, 3).join(' ')}`
       )
     }
     return null

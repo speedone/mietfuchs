@@ -23,8 +23,10 @@ export function countOf(count: number, one: string, many: string): string {
 // Berechnung ihre Hinweise; vorher stand dort der gespeicherte Wert („kaltwasser“).
 export const METER_TYPE_LABELS: Record<MeterType, string> = {
   kaltwasser: 'Kaltwasser',
+  warmwasser: 'Warmwasser',
   strom: 'Strom (Allgemein)',
   waerme: 'Wärme',
+  hkv: 'Heizkostenverteiler',
   sonstig: 'Sonstiges',
 }
 

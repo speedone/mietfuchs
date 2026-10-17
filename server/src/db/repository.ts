@@ -32,19 +32,33 @@
 // der seine Erwartung aus den Spalten des Schemas ableitet: Eine Liste von Hand vergisst der
 // nächste, der eine Spalte hinzufügt.
 
-import { and, count, desc, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm'
-import type { CostItem, ExternalBasis, Meter, MeterType, Payment, PersonEntry, PrepaymentEntry, Property, Reading, RentEntry, Tenancy, Unit, UnitDependents } from '../../../shared/types.ts'
+import { beforeBeginText } from './selfLine.ts'
+import { selfActive, selfFromOf } from '../heating.ts'
+import { captureOf, coversPeriod, hotWaterOf } from '../hca.ts'
+import { and, count, desc, eq, inArray, isNotNull, ne, or, sql } from 'drizzle-orm'
+import { alias } from 'drizzle-orm/sqlite-core'
+import type { BillingPeriod, CostItem, ExternalBasis, HeatingPlant, HeatingPrepaymentOverride, InterimGapStatus, Meter, MeterType, Payment, PeriodKey, PeriodRules, PersonEntry, PrepaymentEntry, Property, Reading, RentEntry, SplitPreviewPart, Tenancy, Unit, UnitDependents } from '../../../shared/types.ts'
+import { CALENDAR_RULES, calendarPeriod, paymentYear, formatDayRange, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, spansTwoYears, startYearOf } from '../../../shared/period.ts'
+import { heatingPeriodsEndingIn, isObjectPeriod, plantRules, plantSpan, servesUnit, spanOf } from '../../../shared/heatingPeriod.ts'
+import { HEATING_CATEGORY } from '../../../shared/heating.ts'
+import { euro as operatingPowerEuro, GENERAL_POWER_CATEGORY, POWER_GENERATED } from '../../../shared/operatingPower.ts'
+import { billingEnergy } from '../../../shared/heatDelivery.ts'
+import { targetProblem } from '../heating.ts'
+import { andList } from '../../../shared/wording.ts'
 import type { MigratedSettings } from '../ai/settings.ts'
 import { lastPerFrom, straightenPersonHistory } from '../schedule.ts'
+import { isSplitPart, splitByService } from '../serviceSplit.ts'
+import { tenancyStamp } from '../../../shared/tenancyStamp.ts'
 import type { Database, Executor } from './client.ts'
 import {
-  readClosedSettlements, readCostItems, readMeters, readPayments, readProperties, readReadings, readTenancies,
+  readClosedSettlements, readCostItems, readHeatingPlants, readMeters, readPayments, readProperties, readReadings, readTenancies,
   readUnits, type StoredClosedSettlement,
 } from './read.ts'
 import {
-  aiSlots, assessmentLines, assessments, baseRents, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, DEPOSIT_STATUS, EXTERNAL_MEASURES,
-  flatRates, METER_TYPES, meters, payments, personHistory, prepaymentOverrides, prepayments, properties, PROPERTY_KINDS,
-  readings, settings, tenancies, unitNoConnection, units,
+  aiSlots, assessmentLines, assessments, baseRents, co2Refunds, co2Statements, co2TenantReliefs, heatingPeriods, closedHeatingSettlementHistory, closedHeatingSettlements, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, HEATING_MODELS, SELF_SUPPLY_KINDS, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, DEPOSIT_STATUS, EXTERNAL_MEASURES,
+  HCA_SCALES, HEATING_PARTS, OPERATING_POWER, HEATING_ROLES, HEATING_TARGETS, INTERIM_GAP_STATUS, interimReadingGaps, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingSelfSpans, heatingPrepaymentOverrides, heatingPrepayments, heatingSeparateSpans, heatingServiceValues, heatingEstimates,
+  flatRates, METER_TYPES, meters, payments, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, PROPERTY_KINDS,
+  readings, settings, tenancies, unitNoConnection, units, fuelCarryFrozen, fuelDeliveries,
 } from './schema.ts'
 import { aiSlotRows, settingsRow } from './write.ts'
 
@@ -57,11 +71,13 @@ export type CollectionEntity = Unit | Tenancy | CostItem | Meter | Reading | Pay
 // `typeof` und `Reflect.get`, wie im Validator: Ein angeschriebenes Typprädikat wäre nur eine
 // Behauptung, deren Rumpf niemand nachrechnet.
 
+// Die Helfer hier lesen auch den Rumpf einer Heizanlage (db/heating.ts) und sind deshalb
+// exportiert; heating.ts importiert von hier, nie umgekehrt.
 const isObject = (body: unknown): boolean => body !== null && typeof body === 'object'
-const has = (body: unknown, key: string): boolean => isObject(body) && Object.hasOwn(Object(body), key)
-const raw = (body: unknown, key: string): unknown => (isObject(body) ? Reflect.get(Object(body), key) : undefined)
+export const has = (body: unknown, key: string): boolean => isObject(body) && Object.hasOwn(Object(body), key)
+export const raw = (body: unknown, key: string): unknown => (isObject(body) ? Reflect.get(Object(body), key) : undefined)
 
-const asText = (value: unknown, fallback: string): string => (typeof value === 'string' ? value : fallback)
+export const asText = (value: unknown, fallback: string): string => (typeof value === 'string' ? value : fallback)
 // `Number.isFinite` schließt NaN und Unendlich aus; beides ergäbe in einer Spalte einen Wert,
 // mit dem niemand rechnen kann.
 const asNumber = (value: unknown, fallback: number): number =>
@@ -77,10 +93,25 @@ const asOptionalBoolean = (value: unknown): boolean | undefined => (typeof value
 
 // Das offene Mietverhältnis und der Hauptzähler ohne Wohnung: Dort ist `null` ein ausdrücklicher
 // Wert und kein fehlendes Feld, deshalb eine eigene Lesart.
-const asNullableText = (value: unknown): string | null => (typeof value === 'string' ? value : null)
+export const asNullableText = (value: unknown): string | null => (typeof value === 'string' ? value : null)
+
+// Wie `asNullableText`, aber ein leeres Feld ist keine Angabe (Kennungen, Daten aus einem Formular).
+export const asNullableFilled = (value: unknown): string | null => {
+  const text = asNullableText(value)
+  return text === '' ? null : text
+}
+
+export const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
+
+// Ein ISO-Datum oder leer; sonst ein Satz statt eines Datenbankfehlers (Heizung PR 18).
+function isoDateOrNull(v: unknown, what: string): string | null {
+  const text = asNullableFilled(v)
+  if (text !== null && !ISO_DATE.test(text)) throw new HeatingError(400, `${what} ist kein Datum. Bitte wählen Sie ihn im Kalender.`)
+  return text
+}
 
 // Nimmt den Wert aus dem Rumpf, wenn der Schlüssel dasteht, sonst den bisherigen.
-function merged<T>(body: unknown, key: string, current: T, read: (value: unknown) => T): T {
+export function merged<T>(body: unknown, key: string, current: T, read: (value: unknown) => T): T {
   return has(body, key) ? read(raw(body, key)) : current
 }
 
@@ -127,25 +158,62 @@ const moneyEntry = (row: unknown): PrepaymentEntry | null => {
   return from === undefined ? null : { from, monthlyCents: asNumber(raw(row, 'monthlyCents'), 0) }
 }
 
-// Jahr zu Betrag. In der Datei steht der Schlüssel als Text („2024“), in der Spalte als Zahl.
+// Jahreskorrektur: Zeitraumschlüssel ('JJJJ-MM') auf Betrag (#208). Ein Tab von vor dem Update
+// schickt noch die nackte Jahreszahl („2024“); sie ist der Kalenderzeitraum 'JJJJ-01' und geht
+// einem gleichzeitig mitgeschickten 'JJJJ-01' vor, denn nur ein alter Tab schreibt sie, und dann
+// ist sie seine Eingabe. Ob das Objekt diesen Zeitraum hat, prüft `guardTenancy`.
 //
-// **Verlangt wird genau eine vierstellige Jahreszahl**, dieselbe Grenze, die der Validator beim
-// Umstieg zieht. `Number.isInteger(Number(…))` genügte nicht und war zweifach undicht: `Number('')`
+// **Verlangt wird genau eine dieser beiden Formen**; für die Jahreszahl gilt dieselbe Grenze, die
+// der Validator beim Umstieg zieht. `Number.isInteger(Number(…))` genügte nicht und war zweifach undicht: `Number('')`
 // und `Number(' ')` sind 0, ein leerer Schlüssel ergäbe also eine Jahreskorrektur für das Jahr 0.
 // Und zwei verschiedene Schlüssel können auf dieselbe Zahl führen („2024“ und „2024.0“), womit
 // der zusammengesetzte Primärschlüssel den ganzen Vorgang scheitern ließe: Das Mietverhältnis
 // wäre dann überhaupt nicht zu speichern.
 const YEAR_KEY = /^\d{4}$/
 
-function readAmountsByYear(value: unknown): Record<string, number> {
+function readOverrides(value: unknown): Record<string, number> {
   if (!isObject(value)) return {}
   const rows: Record<string, number> = {}
+  const legacy: Record<string, number> = {}
   for (const [schluessel, betrag] of Object.entries(Object(value))) {
-    if (!YEAR_KEY.test(schluessel)) continue
     const zahl = asOptionalNumber(betrag)
-    if (zahl !== undefined) rows[schluessel] = zahl
+    if (zahl === undefined) continue
+    if (YEAR_KEY.test(schluessel)) {
+      legacy[calendarPeriod(Number(schluessel))] = zahl
+      continue
+    }
+    const key = parsePeriodKey(schluessel)
+    if (key !== null) rows[key] = zahl
   }
-  return rows
+  // Schickt der Tab Jahreszahlen, gilt sein Stand vollständig für die Kalenderzeiträume (Durchsicht
+  // von #222, M1): Ein 'JJJJ-01' daneben hat er so vom Server bekommen und nicht gemeint, und ein
+  // Kalenderzeitraum ohne Jahreszahl ist gelöscht. Sonst bliebe eine zurückgesetzte Korrektur stehen,
+  // und die Oberfläche meldete trotzdem „zurückgesetzt“.
+  if (Object.keys(legacy).length === 0) return rows
+  const others = Object.fromEntries(Object.entries(rows).filter(([key]) => !key.endsWith('-01')))
+  return { ...others, ...legacy }
+}
+
+// Die Korrekturen der Heizvorauszahlung (Heizung PR 5, D2): je Anlage und Heizperiode eine, die
+// letzte gilt. Eine vorläufige trägt ihre Monate; ob sie zur Heizperiode passen, prüft
+// `guardHeatingOverrides`. Ein Eintrag ohne Anlage, Schlüssel oder Betrag fällt weg.
+function readHeatingOverrides(value: unknown): HeatingPrepaymentOverride[] | undefined {
+  if (value === null) return undefined
+  if (!Array.isArray(value)) return []
+  const byKey = new Map<string, HeatingPrepaymentOverride>()
+  for (const row of value) {
+    const plantId = asNullableFilled(raw(row, 'plantId'))
+    const period = parsePeriodKey(raw(row, 'period'))
+    const cents = asOptionalNumber(raw(row, 'cents'))
+    if (plantId === null || period === null || cents === undefined) continue
+    const provisional = raw(row, 'provisional') === true
+    byKey.set(`${plantId}|${period}`, {
+      plantId, period, cents, provisional,
+      fromMonth: provisional ? parsePeriodKey(raw(row, 'fromMonth')) : null,
+      toMonth: provisional ? parsePeriodKey(raw(row, 'toMonth')) : null,
+    })
+  }
+  return [...byKey.values()]
 }
 
 // Wohnungs-Kennung zu Prozentanteil. Ein Anteil, der keine Zahl ist, fällt weg.
@@ -197,7 +265,7 @@ function readExternalBasis(value: unknown): ExternalBasis | null {
 // Ein unbekannter Wert wird zu „nichts eingetragen“ statt zu einem Fehler: Die Spalte ließe ihn
 // ohnehin nicht zu, und die Prüfbedingung meldete ihn dann als technischen Befund, wo ein leeres
 // Feld die ehrlichere Antwort ist.
-const oneOfOrUndefined = <T extends string>(known: readonly T[], value: unknown): T | undefined => {
+export const oneOfOrUndefined = <T extends string>(known: readonly T[], value: unknown): T | undefined => {
   const text = asOptionalText(value)
   return known.find((eintrag) => eintrag === text)
 }
@@ -243,7 +311,10 @@ function mergeTenancy(current: Tenancy, body: unknown): Tenancy {
     end: merged(body, 'end', current.end, asNullableText),
     prepayments: merged(body, 'prepayments', current.prepayments, (v) => readSchedule<PrepaymentEntry>(v, moneyEntry)),
     flatRates: merged(body, 'flatRates', current.flatRates, (v) => (v === null ? undefined : readSchedule<PrepaymentEntry>(v, moneyEntry))),
-    prepaymentOverrides: merged(body, 'prepaymentOverrides', current.prepaymentOverrides, readAmountsByYear),
+    // Heizstaffel und Heizkorrekturen (Heizung PR 5): wie die Pauschale ganz ersetzt.
+    heatingPrepayments: merged(body, 'heatingPrepayments', current.heatingPrepayments, (v) => (v === null ? undefined : readSchedule<PrepaymentEntry>(v, moneyEntry))),
+    heatingPrepaymentOverrides: merged(body, 'heatingPrepaymentOverrides', current.heatingPrepaymentOverrides, readHeatingOverrides),
+    prepaymentOverrides: merged(body, 'prepaymentOverrides', current.prepaymentOverrides, readOverrides),
     baseRents: merged(body, 'baseRents', current.baseRents, (v) => readSchedule<RentEntry>(v, moneyEntry)),
     email: merged(body, 'email', current.email, asOptionalText),
     phone: merged(body, 'phone', current.phone, asOptionalText),
@@ -254,22 +325,42 @@ function mergeTenancy(current: Tenancy, body: unknown): Tenancy {
     depositStatus: merged(body, 'depositStatus', current.depositStatus, (v) => oneOfOrUndefined(DEPOSIT_STATUS, v)),
     // Nebenkostenmodell (#93): ein unbekannter Wert heißt wie null die Abrechnung.
     costModel: merged(body, 'costModel', current.costModel, (v) => oneOfOrUndefined(COST_MODELS, v)),
-    heatingModel: merged(body, 'heatingModel', current.heatingModel, (v) => oneOfOrUndefined(COST_MODELS, v)),
+    heatingModel: merged(body, 'heatingModel', current.heatingModel, (v) => oneOfOrUndefined(HEATING_MODELS, v)),
+    // Durchsicht S-2: die Art der Selbstversorgung; gespeichert nur bei `selfSupply` (`tenancyRow`).
+    selfSupplyKind: merged(body, 'selfSupplyKind', current.selfSupplyKind, (v) => oneOfOrUndefined(SELF_SUPPLY_KINDS, v)),
+    // Mitteilung nach § 5d Abs. 4 CO2KostAufG (Heizung PR 18, Abweichung 3 des Plans).
+    halfSplitNoticeOn: merged(body, 'halfSplitNoticeOn', current.halfSplitNoticeOn, (v) => isoDateOrNull(v, 'Der Tag der Mitteilung nach § 5d Abs. 4 CO2KostAufG') ?? undefined),
     notes: merged(body, 'notes', current.notes, asOptionalText),
   }
 }
 
+// Der Zeitraum einer Kostenposition (#208). `period` geht vor; ein Tab von vor dem Update schickt
+// stattdessen `year`, und das ist der Kalenderzeitraum dieses Jahres. Ob das Objekt den Zeitraum
+// hat, prüft `guardCostItem`. Ein ungültiger Zeitraum wird abgelehnt und nicht still durch den
+// bisherigen ersetzt (Durchsicht von #222, M3): Gespeichert wäre dann etwas anderes als geschickt.
+function mergedPeriod(body: unknown, current: PeriodKey): PeriodKey {
+  if (has(body, 'period')) {
+    const key = parsePeriodKey(raw(body, 'period'))
+    if (key === null) throw new PeriodError('Ungültiger Zeitraum: erwartet wird der Monat des Beginns als JJJJ-MM, etwa 2025-05.')
+    return key
+  }
+  const year = raw(body, 'year')
+  return typeof year === 'number' && Number.isInteger(year) && year > 0 && year < 10000 ? calendarPeriod(year) : current
+}
+
 function mergeCostItem(current: CostItem, body: unknown): CostItem {
+  const period = mergedPeriod(body, current.period)
   const shares = merged(body, 'customShares', current.customShares, (v) => (v === null ? null : readShares(v)))
   const participants = merged(body, 'participantUnitIds', current.participantUnitIds, (v) => (v === null ? null : readParticipants(v)))
   const external = merged(body, 'externalBasis', current.externalBasis, readExternalBasis)
   const amounts = merged(body, 'tenancyAmounts', current.tenancyAmounts, (v) => (v === null ? null : readAmounts(v)))
   const selfAmounts = merged(body, 'selfAmounts', current.selfAmounts, (v) => (v === null ? null : readAmounts(v)))
+  const category = merged(body, 'category', current.category, (v) => asText(v, ''))
   return {
     id: current.id,
     propertyId: mergedProperty(body, current.propertyId),
-    year: merged(body, 'year', current.year, (v) => asNumber(v, current.year)),
-    category: merged(body, 'category', current.category, (v) => asText(v, '')),
+    period,
+    category,
     description: merged(body, 'description', current.description, (v) => asText(v, '')),
     vendor: merged(body, 'vendor', current.vendor, asOptionalText),
     amountCents: merged(body, 'amountCents', current.amountCents, (v) => asNumber(v, 0)),
@@ -287,10 +378,37 @@ function mergeCostItem(current: CostItem, body: unknown): CostItem {
     ...(selfAmounts === undefined ? {} : { selfAmounts }),
     labor35aCents: merged(body, 'labor35aCents', current.labor35aCents, asOptionalNumber),
     invoiceFile: merged(body, 'invoiceFile', current.invoiceFile, asOptionalText),
+    // `null` leert, wie bei den übrigen optionalen Feldern (#208).
+    serviceFrom: merged(body, 'serviceFrom', current.serviceFrom, asOptionalText),
+    serviceTo: merged(body, 'serviceTo', current.serviceTo, asOptionalText),
+    taxYear: merged(body, 'taxYear', current.taxYear, asOptionalNumber),
+    heatingPart: merged(body, 'heatingPart', current.heatingPart, (v) => oneOfOrUndefined(HEATING_PARTS, v)),
+    // Ziel bei Heizkosten (Heizung PR 10).
+    heatingTarget: merged(body, 'heatingTarget', current.heatingTarget, (v) => oneOfOrUndefined(HEATING_TARGETS, v)),
+    // Die Heizanlage der Position (Heizung PR 4). Nur die Kostenart Heizung und Warmwasser gehört zu
+    // einer Anlage; wechselt die Kostenart, fällt die Anlage weg. `undefined` heißt „nicht
+    // angegeben“: bei einer neuen Position und bei einer, die gerade zur Heizposition wird
+    // (Durchsicht von #230). Dann setzen `insert` und `replace` die Anlage des Objekts
+    // (`defaultHeatingPlant`); eine Heizposition, die schon eine Kostenart Heizung hatte, behält ihre.
+    heatingPlantId: category !== HEATING_CATEGORY
+      ? null
+      : has(body, 'heatingPlantId')
+        ? asNullableFilled(raw(body, 'heatingPlantId'))
+        : current.category === HEATING_CATEGORY ? (current.heatingPlantId ?? null) : undefined,
+    // Die Lieferung (Heizung PR 7); `null` löst die Verknüpfung.
+    fuelDeliveryId: merged(body, 'fuelDeliveryId', current.fuelDeliveryId, asNullableFilled),
+    // Betriebsstrom (Heizung PR 15). `null` leert; fehlt das Feld, bleibt die Angabe (Review Focus 3,
+    // ein alter Tab). Eine leere Grundlage gilt als keine.
+    operatingPower: merged(body, 'operatingPower', current.operatingPower, (v) => oneOfOrUndefined(OPERATING_POWER, v)),
+    operatingPowerItemId: merged(body, 'operatingPowerItemId', current.operatingPowerItemId, (v) => (typeof v === 'string' && v !== '' ? v : undefined)),
+    operatingPowerBasis: merged(body, 'operatingPowerBasis', current.operatingPowerBasis, (v) => (typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined)),
+    operatingPowerGeneralId: merged(body, 'operatingPowerGeneralId', current.operatingPowerGeneralId, (v) => (typeof v === 'string' && v !== '' ? v : undefined)),
   }
 }
 
 function mergeMeter(current: Meter, body: unknown): Meter {
+  const heatingPlantId = merged(body, 'heatingPlantId', current.heatingPlantId ?? null, asNullableFilled)
+  const type = merged(body, 'type', current.type, (v) => oneOfOrUndefined(METER_TYPES, v) ?? current.type)
   return {
     id: current.id,
     propertyId: mergedProperty(body, current.propertyId),
@@ -298,9 +416,28 @@ function mergeMeter(current: Meter, body: unknown): Meter {
     // `null` heißt Hauptzähler für das ganze Haus; eine leere Kennung liest die Abrechnung
     // schon heute genauso (`m.unitId && …`).
     unitId: merged(body, 'unitId', current.unitId, (v) => (asNullableText(v) === '' ? null : asNullableText(v))),
-    type: merged(body, 'type', current.type, (v) => oneOfOrUndefined(METER_TYPES, v) ?? current.type),
+    type,
     meterNumber: merged(body, 'meterNumber', current.meterNumber, asOptionalText),
     unit: merged(body, 'unit', current.unit, (v) => asText(v, '')),
+    // Zähler der Heizanlage selbst (Heizung PR 4). Ohne Anlage keine Rolle.
+    heatingPlantId,
+    heatingRole: heatingPlantId === null ? null : merged(body, 'heatingRole', current.heatingRole ?? null, (v) => oneOfOrUndefined(HEATING_ROLES, v) ?? null),
+    // Fernablesbar und eingebaut am (§ 5 Abs. 2, 3 HeizkostenV); `null` heißt unbekannt.
+    remoteReadable: merged(body, 'remoteReadable', current.remoteReadable ?? null, (v) => (typeof v === 'boolean' ? v : null)),
+    installedOn: merged(body, 'installedOn', current.installedOn ?? null, asNullableFilled),
+    // Skala und Bewertungsfaktor eines Heizkostenverteilers (Heizung PR 12, Entwurf 8.1). Eine unbekannte
+    // Skala ist keine Angabe; ein Faktor, der keine Zahl ist, wird nicht still geleert, sondern abgelehnt
+    // (`guardMeter`), denn mit ihm steht ein Betrag in der Abrechnung.
+    hcaScale: merged(body, 'hcaScale', current.hcaScale ?? null, (v) => oneOfOrUndefined(HCA_SCALES, v) ?? null),
+    ratingFactor: merged(body, 'ratingFactor', current.ratingFactor ?? null, (v) => (v === null || v === undefined ? null : typeof v === 'number' && Number.isFinite(v) ? v : Number.NaN)),
+    // Eichjahr (Heizung PR 21). Ein Heizkostenverteiler hat keins: Beim Umstellen der Sparte fällt es weg, statt
+    // dass die Prüfbedingung ohne Satz ablehnt (Review Focus 4); ausdrücklich gesendet lehnt `guardMeter` mit
+    // einem Satz ab. Anders als Skala und Faktor beim Wechsel weg vom HKV (400): Dort hinge eine Zahl der
+    // Abrechnung am Feld, hier nur ein Hinweis, und das Jahr gilt für ein Gerät, das es so nicht mehr gibt.
+    // Was keine Zahl ist, wird nicht still geleert, sondern als NaN von `guardMeter` abgelehnt, wie der Faktor.
+    calibratedUntil: type === 'hkv' && !has(body, 'calibratedUntil')
+      ? null
+      : merged(body, 'calibratedUntil', current.calibratedUntil ?? null, (v) => (v === null || v === undefined ? null : typeof v === 'number' && Number.isFinite(v) ? v : Number.NaN)),
   }
 }
 
@@ -313,6 +450,8 @@ function mergeReading(current: Reading, body: unknown): Reading {
     replacement: merged(body, 'replacement', current.replacement, asOptionalBoolean),
     oldEndValue: merged(body, 'oldEndValue', current.oldEndValue, asOptionalNumber),
     note: merged(body, 'note', current.note, asOptionalText),
+    // Grenze einer Ablesung aus dem Mieterwechsel (Heizung PR 10): der letzte Tag des bisherigen Nutzers.
+    interimFor: merged(body, 'interimFor', current.interimFor, (v) => (typeof v === 'string' && ISO_DATE.test(v) ? v : undefined)),
   }
 }
 
@@ -337,7 +476,7 @@ const emptyTenancy = (id: string): Tenancy => ({
   prepayments: [], prepaymentOverrides: {}, baseRents: [],
 })
 const emptyCostItem = (id: string): CostItem => ({
-  id, propertyId: '', year: new Date().getUTCFullYear(), category: '', description: '', amountCents: 0, key: 'area',
+  id, propertyId: '', period: calendarPeriod(new Date().getUTCFullYear()), category: '', description: '', amountCents: 0, key: 'area',
   directUnitId: null, meterType: null,
 })
 const emptyMeter = (id: string): Meter => ({ id, propertyId: '', name: '', unitId: null, type: 'sonstig', unit: '' })
@@ -358,6 +497,559 @@ export class CrossPropertyError extends Error {
   status = 400
 }
 
+// Ein Zeitraum, den es für das Objekt nicht gibt, oder die Jahreszahl eines alten Tabs bei einem
+// Objekt mit eigenem Rhythmus (#208). Die Meldung ist für den Nutzer geschrieben; die Route gibt
+// sie mit 400 weiter wie `CrossPropertyError`.
+export class PeriodError extends Error {
+  status = 400
+}
+
+// Eine Ablehnung rund um die Heizanlage (Heizung PR 4): 400, wenn eine Angabe nicht passt oder eine
+// Funktion erst mit einer späteren Version kommt; 409, wenn sich der Bestand inzwischen geändert hat
+// oder ein abgeschlossener Zeitraum betroffen ist. Die Meldung ist für den Nutzer geschrieben; die
+// Route gibt sie weiter wie `CrossPropertyError`.
+export class HeatingError extends Error {
+  status: 400 | 409
+  constructor(status: 400 | 409, message: string) {
+    super(message)
+    this.status = status
+  }
+}
+
+const PLANT_GONE = 'Diese Heizanlage gibt es nicht (mehr). Bitte laden Sie die Seite neu; gespeichert wurde nichts.'
+
+// Nach Heizkostenverteilern verteilt Mietfuchs nur in der eigenen Heizkostenabrechnung, denn dort stehen
+// Skala und Bewertungsfaktor jedes Geräts (Heizung PR 12, Abweichung 4). Ein Schlüssel „nach Verbrauch“
+// hätte sie nicht; rohe Einheiten verschiedener Heizkörper sind nicht vergleichbar.
+const HKV_KEY =
+  'Nach Heizkostenverteilern verteilt Mietfuchs in der eigenen Heizkostenabrechnung, denn dort stehen Skala und Bewertungsfaktor jedes Geräts. ' +
+  'Richten Sie dafür unter Stammdaten bei der Heizung „Selbst abrechnen“ mit der Erfassung „Heizkostenverteiler“ ein, oder übernehmen Sie die Abrechnung des Messdienstes als Einzelbeträge (Schlüssel „Einzelbeträge“).'
+
+async function plantOf(db: Executor, plantId: string): Promise<{ propertyId: string; supply: HeatingPlant['supply']; name: string } | undefined> {
+  return (await db.select({ propertyId: heatingPlants.propertyId, supply: heatingPlants.supply, name: heatingPlants.name }).from(heatingPlants).where(eq(heatingPlants.id, plantId)))[0]
+}
+
+// Hängt die Wohnung an der Anlage (Heizung PR 9)? Mit Liste, wenn sie darin steht; ohne Liste jede
+// Wohnung des Objekts ohne „kein Anschluss: Wärme“ (#117), wie `servesUnit` in shared/heatingPeriod.ts.
+export async function plantServesUnit(db: Executor, plantId: string, unitId: string): Promise<boolean> {
+  const [p] = await db.select({ propertyId: heatingPlants.propertyId, limited: heatingPlants.unitsLimited }).from(heatingPlants).where(eq(heatingPlants.id, plantId))
+  if (!p) return false
+  const [u] = await db.select({ propertyId: units.propertyId }).from(units).where(eq(units.id, unitId))
+  if (!u || u.propertyId !== p.propertyId) return false
+  return plantServes(db, plantId, p.limited, unitId)
+}
+
+// Die Tage, an denen eine Anlage heizt, aus den Tabellen (für die Prüfung der Lieferungen, db/fuel.ts).
+export async function plantSpanOf(db: Executor, plantId: string): Promise<{ from: string | null; to: string | null; name: string }> {
+  const [p] = await db.select({ id: heatingPlants.id, name: heatingPlants.name, endsOn: heatingPlants.endsOn, replacesPlantId: heatingPlants.replacesPlantId }).from(heatingPlants).where(eq(heatingPlants.id, plantId))
+  if (!p) return { from: null, to: null, name: '' }
+  const before = p.replacesPlantId === null
+    ? []
+    : await db.select({ id: heatingPlants.id, endsOn: heatingPlants.endsOn, replacesPlantId: heatingPlants.replacesPlantId }).from(heatingPlants).where(eq(heatingPlants.id, p.replacesPlantId))
+  return { ...plantSpan(p, before), name: p.name }
+}
+
+const PER_UNIT_DIRECT = 'Die Kosten einer Etagenheizung gehören zu genau einer Wohnung. Bitte wählen Sie den Schlüssel „Direktzuordnung“ und die Wohnung, deren Heizung die Rechnung betrifft.'
+
+async function isPeriodClosed(db: Executor, propertyId: string, period: CostItem['period']): Promise<boolean> {
+  const rows = await db.select({ id: closedSettlements.id }).from(closedSettlements)
+    .where(and(eq(closedSettlements.propertyId, propertyId), eq(closedSettlements.period, period)))
+  return rows.length > 0
+}
+
+// Ist der Zeitraum einer Position abgeschlossen? Bei einer Heizposition mit eigener Heizperiode
+// (Heizung PR 5): ihre Heizkostenabrechnung (Weg d) oder die Abrechnung, in der ihre Heizperiode endet.
+export async function itemPeriodClosed(db: Executor, c: Pick<CostItem, 'heatingPlantId' | 'propertyId' | 'period'>): Promise<boolean> {
+  const heating = c.heatingPlantId ? await heatingRulesOf(db, c.heatingPlantId) : null
+  if (!heating?.own || !c.heatingPlantId) return isPeriodClosed(db, c.propertyId, c.period)
+  const h = periodOfKey(heating.rules, c.period)
+  if (h === null) return false
+  const zu = await db.select({ id: closedHeatingSettlements.id }).from(closedHeatingSettlements)
+    .where(and(eq(closedHeatingSettlements.plantId, c.heatingPlantId), eq(closedHeatingSettlements.period, c.period)))
+  if (zu.length > 0) return true
+  return isPeriodClosed(db, c.propertyId, periodContaining(await rulesForProperty(db, c.propertyId), h.to).key)
+}
+
+// Die Heizperiode einer Anlage an einem Tag und ob sie abgeschlossen ist (Heizung PR 7): mit ihrer
+// Heizkostenabrechnung nach Weg d oder mit der Abrechnung des Objektzeitraums, in dem sie endet (W1,
+// B3), dieselbe Regel wie `itemPeriodClosed`. Gefragt wird in der laufenden Transaktion, deshalb
+// unmittelbar an den Tabellen.
+export async function heatingPeriodAt(db: Executor, plantId: string, date: string): Promise<{ period: BillingPeriod; closed: boolean } | null> {
+  const heating = await heatingRulesOf(db, plantId)
+  if (!heating) return null
+  const h = periodContaining(heating.rules, date)
+  if (!heating.own) return { period: h, closed: await isPeriodClosed(db, heating.propertyId, h.key) }
+  const zu = await db.select({ id: closedHeatingSettlements.id }).from(closedHeatingSettlements)
+    .where(and(eq(closedHeatingSettlements.plantId, plantId), eq(closedHeatingSettlements.period, h.key)))
+  if (zu.length > 0) return { period: h, closed: true }
+  return { period: h, closed: await isPeriodClosed(db, heating.propertyId, periodContaining(await rulesForProperty(db, heating.propertyId), h.to).key) }
+}
+
+// Hat die Heizperiode nach der, in die `date` fällt, beim Abschluss ihren Anfangsbestand aus dieser
+// übernommen (Heizung PR 8, Durchsicht von #237, C2)? Dann gibt diese Heizperiode genau den
+// eingefrorenen Bestand weiter, und Menge, Einheit, Lieferdatum und Verknüpfungen ihrer Lieferungen
+// bleiben; Beträge dürfen sich ändern. Gibt die Bezeichnung der Folgeperiode zurück, sonst `null`.
+export async function stockTakenOverBy(db: Executor, plantId: string, date: string): Promise<{ label: string } | null> {
+  const heating = await heatingRulesOf(db, plantId)
+  if (!heating) return null
+  const h = periodContaining(heating.rules, date)
+  const next = periodContaining(heating.rules, dayAfterIso(h.to))
+  const [zu] = await db.select({ settlement: closedHeatingSettlements.settlement }).from(closedHeatingSettlements)
+    .where(and(eq(closedHeatingSettlements.plantId, plantId), eq(closedHeatingSettlements.period, next.key)))
+  let settlement: unknown = zu?.settlement
+  if (settlement === undefined) {
+    const p = periodContaining(await rulesForProperty(db, heating.propertyId), next.to)
+    const [gesamt] = await db.select({ settlement: closedSettlements.settlement }).from(closedSettlements)
+      .where(and(eq(closedSettlements.propertyId, heating.propertyId), eq(closedSettlements.period, p.key)))
+    settlement = gesamt?.settlement
+  }
+  const list: unknown = settlement !== null && typeof settlement === 'object' ? Reflect.get(settlement, 'heating') : undefined
+  if (!Array.isArray(list)) return null
+  const took = list.some((x: unknown) => {
+    if (x === null || typeof x !== 'object' || Reflect.get(x, 'plantId') !== plantId || Reflect.get(x, 'period') !== next.key) return false
+    const stock: unknown = Reflect.get(x, 'stock')
+    return stock !== null && typeof stock === 'object' && Reflect.get(stock, 'openingSource') !== 'own'
+  })
+  return took ? { label: periodLabel(next) } : null
+}
+const dayAfterIso = (iso: string): string => new Date(Date.parse(`${iso}T00:00:00Z`) + 86400000).toISOString().slice(0, 10)
+export const stockTakenOverText = (label: string, what: string): string =>
+  `Die abgeschlossene Heizperiode ${label} hat den Endbestand dieser Heizperiode als Anfangsbestand übernommen; ${what} lassen sich deshalb nicht mehr ändern, Beträge schon. Öffnen Sie die Abrechnung ${label} wieder, um etwas zu ändern.`
+
+// Ablesungen des Versorgungszählers einer Heizanlage mit Datum in einer abgeschlossenen Heizperiode
+// sind gesperrt (Heizung PR 7, A10): Die Abgrenzung der Lieferungen dieser Heizperiode ist
+// eingefroren, und ein später erfasster Stand änderte nur noch die Rechnung danach (8.2 Fall d).
+async function guardSupplyReading(db: Executor, reading: Pick<Reading, 'meterId' | 'date'>): Promise<void> {
+  const [m] = await db.select({ plantId: meters.heatingPlantId, role: meters.heatingRole }).from(meters).where(eq(meters.id, reading.meterId))
+  if (!m || m.plantId === null || m.role !== 'supply') return
+  const at = await heatingPeriodAt(db, m.plantId, reading.date)
+  if (at?.closed) {
+    throw new HeatingError(409,
+      `Die Heizperiode ${periodLabel(at.period)} ist abgeschlossen; Ablesungen des Versorgungszählers mit einem Datum darin lassen sich nicht mehr ändern, denn die Aufteilung der Rechnungen ist eingefroren. Öffnen Sie die Abrechnung wieder, um etwas zu ändern.`)
+  }
+}
+
+async function guardReading(db: Executor, before: Reading | null, after: Reading): Promise<void> {
+  if (before) await guardSupplyReading(db, before)
+  await guardSupplyReading(db, after)
+}
+
+// Die Lieferung einer Position (Heizung PR 7, Entwurf 5.4): nur bei der Kostenart Heizung, nur eine
+// echte Lieferung der eigenen Anlage mit freien Schlüsseln, und die Position steht in der
+// Heizperiode, die das Ende der Rechnung enthält. Sonst stünde die Rechnung in einer Heizperiode, in
+// die sie nicht gehört, und ihr Teil liefe in die falsche Richtung (N1).
+// Der Satz, wenn ein Teil einer Lieferung in einer abgeschlossenen Heizperiode eingefroren ist (db/fuel.ts
+// nimmt ihn von hier, denn repository.ts kennt db/fuel.ts nicht).
+export const frozenDeliveryText = (label: string): string =>
+  `Ein Teil der Lieferung „${label}“ ist in einer abgeschlossenen Heizperiode eingefroren; Mengen, Zeiträume und Beträge lassen sich deshalb nicht mehr ändern, und ihre Positionen bleiben mit ihr verknüpft. Öffnen Sie die Abrechnung dieser Heizperiode wieder, um etwas zu ändern.`
+
+// Hat eine abgeschlossene Heizperiode einen Teil der Lieferung herein- oder hinausgebucht (nicht 0)?
+// Dann hängt an ihren Positionen Geld, das schon verteilt ist (Durchsicht von #233, I2). Eine 0 heißt:
+// Beim Abschluss hatte die Lieferung noch keine Position; dann ist Verknüpfen ungefährlich, die
+// Abrechnung trägt den Teil dieser Heizperiode beim Vermieter (I1).
+async function frozenDeliveryLabel(db: Executor, deliveryId: string): Promise<string | null> {
+  const rows = await db.select({ cents: fuelCarryFrozen.cents }).from(fuelCarryFrozen).where(eq(fuelCarryFrozen.deliveryId, deliveryId))
+  if (!rows.some((r) => r.cents !== 0)) return null
+  const [d] = await db.select({ label: fuelDeliveries.label }).from(fuelDeliveries).where(eq(fuelDeliveries.id, deliveryId))
+  return d?.label || 'Lieferung'
+}
+
+// Lösen, Umhängen, Verschieben in eine andere Heizperiode und Löschen einer Position, deren Lieferung
+// einen eingefrorenen Teil hat, verteilte dieselbe Rechnung doppelt (Durchsicht I2: 9.210,22 € für
+// 6.500,00 €); ebenso eine weitere Position an einer solchen Lieferung.
+// Nachprüfung (I-b): Gesperrt ist nur, was die letzte Position der Lieferung wegnähme; eine weitere
+// Position (Abschlag, Gutschrift, Schlussrechnung) ist erlaubt, und solange eine bleibt, darf eine
+// andere gelöst oder gelöscht werden. Die Heizperiode, die den Teil abgeschlossen hat, bleibt bei
+// ihrem eingefrorenen Wert, und die verbleibenden Positionen buchen ihn weiter hinaus.
+async function guardFrozenLink(db: Executor, before: Pick<CostItem, 'id' | 'fuelDeliveryId' | 'period'> | null, after: Pick<CostItem, 'fuelDeliveryId' | 'period'> | null): Promise<void> {
+  const was = before?.fuelDeliveryId ?? null
+  if (!before || !was) return
+  if (after !== null && after.fuelDeliveryId === was && after.period === before.period) return
+  const label = await frozenDeliveryLabel(db, was)
+  if (!label) return
+  const [others] = await db.select({ n: count() }).from(costItems).where(and(eq(costItems.fuelDeliveryId, was), ne(costItems.id, before.id)))
+  if ((others?.n ?? 0) > 0) return
+  throw new HeatingError(409,
+    `Ein Teil der Lieferung „${label}“ ist in einer abgeschlossenen Heizperiode eingefroren, und dies ist ihre letzte Position. Ohne sie stünde dieser Teil doppelt in den Abrechnungen; die Position bleibt deshalb mit der Lieferung verknüpft. ` +
+      'Öffnen Sie die Abrechnung der abgeschlossenen Heizperiode wieder, um etwas zu ändern.')
+}
+
+async function guardFuelLink(db: Executor, before: CostItem | null, after: CostItem): Promise<void> {
+  await guardFrozenLink(db, before, after)
+  // Vorrat (C2): Lösen oder Umhängen einer Position, deren Lieferung die abgeschlossene Folgeperiode
+  // übernommen hat, änderte den weitergegebenen Bestand.
+  // Eine neue Position an der Lieferung ändert nur den Betrag und bleibt erlaubt.
+  for (const id of [before?.fuelDeliveryId ?? null]) {
+    if (!id || id === (after.fuelDeliveryId ?? null)) continue
+    const [d] = await db.select({ plantId: fuelDeliveries.plantId, deliveredAt: fuelDeliveries.deliveredAt, invoiceTo: fuelDeliveries.invoiceTo }).from(fuelDeliveries).where(eq(fuelDeliveries.id, id))
+    if (!d || d.invoiceTo !== null || d.deliveredAt === null) continue
+    const took = await stockTakenOverBy(db, d.plantId, d.deliveredAt)
+    if (took) throw new HeatingError(409, stockTakenOverText(took.label, 'die Verknüpfungen ihrer Lieferungen'))
+  }
+  if (!after.fuelDeliveryId) return
+  if (after.category !== HEATING_CATEGORY) {
+    throw new HeatingError(400, `Eine Lieferung gehört nur zu einer Position der Kostenart „${HEATING_CATEGORY}“.`)
+  }
+  // Der Teil einer anderen Heizperiode folgt dem Schlüssel der Position; Einzelbeträge gelten für die
+  // ganze Position und kommen vom Messdienst, nicht aus der Rechnung des Versorgers.
+  if (after.key === 'amounts') {
+    throw new HeatingError(400, 'Eine Rechnung des Versorgers verteilen Sie nach einem Schlüssel, nicht als Einzelbeträge; Einzelbeträge kommen vom Messdienst.')
+  }
+  const [d] = await db
+    .select({ plantId: fuelDeliveries.plantId, from: fuelDeliveries.invoiceFrom, to: fuelDeliveries.invoiceTo, deliveredAt: fuelDeliveries.deliveredAt, estimated: fuelDeliveries.estimated, label: fuelDeliveries.label })
+    .from(fuelDeliveries).where(eq(fuelDeliveries.id, after.fuelDeliveryId))
+  if (!d) throw new HeatingError(400, 'Die gewählte Lieferung gibt es nicht (mehr). Bitte laden Sie die Seite neu.')
+  if (d.estimated) throw new HeatingError(400, 'Eine geschätzte Lieferung hat keine Kostenposition. Verknüpfen Sie die echte Rechnung, wenn sie da ist.')
+  if (after.heatingPlantId != null && after.heatingPlantId !== d.plantId) {
+    throw new HeatingError(400, 'Die Lieferung gehört zu einer anderen Heizanlage als die Position.')
+  }
+  const [plant] = await db.select({ method: heatingPlants.method, propertyId: heatingPlants.propertyId }).from(heatingPlants).where(eq(heatingPlants.id, d.plantId))
+  // Objektgrenze (Durchsicht I5): Sonst ließe sich auch das eigene Backup nicht mehr einspielen.
+  if (plant && plant.propertyId !== after.propertyId) {
+    throw new CrossPropertyError(
+      `Die Kostenposition gehört zu Objekt ${await propertyName(db, after.propertyId)}, die Lieferung aber zur Heizanlage von Objekt ${await propertyName(db, plant.propertyId)}. ` +
+        'Eine Position zeigt nur auf eine Lieferung einer Heizanlage desselben Objekts.')
+  }
+  // Heizung PR 10 (N2): verknüpft wird bei freien Schlüsseln und bei der eigenen Heizkostenabrechnung.
+  if (plant?.method === 'service') {
+    throw new HeatingError(400,
+      'Rechnet ein Messdienst oder die Gemeinschaft ab, steckt der Brennstoff in deren Einzelbeträgen; eine Lieferung wird dort mit keiner Position verknüpft. Tragen Sie die Rechnung nur als Lieferung ein.')
+  }
+  const end = d.to ?? d.deliveredAt
+  const heating = await heatingRulesOf(db, d.plantId)
+  if (end === null || heating === null) return
+  const h = periodContaining(heating.rules, end)
+  if (after.period !== h.key) {
+    throw new HeatingError(400,
+      `Die Rechnung „${d.label || formatDayRange(d.from ?? end, end)}“ endet am ${formatDayRange(end, end)} und gehört deshalb in die Heizperiode ${periodLabel(h)}. ` +
+        'Bitte wählen Sie für die Position diesen Zeitraum; den Teil der Heizperiode davor bucht Mietfuchs selbst hinüber.')
+  }
+}
+
+// Die Wohnungen, die eine Position selbst nennt (Heizung PR 9): bei Direktzuordnung ihre Wohnung, mit
+// Teilnehmern diese, bei Einzelbeträgen die Wohnungen der Mietverhältnisse und die eigenen Wohnungen
+// mit Betrag. Ohne solche Angabe verteilt die Position über das ganze Haus und nennt keine.
+async function namedUnitsOf(db: Executor, c: CostItem): Promise<string[]> {
+  if (c.key === 'direct') return c.directUnitId ? [c.directUnitId] : []
+  if (c.participantUnitIds) return [...new Set(c.participantUnitIds)]
+  if (c.key === 'amounts') {
+    const ids = Object.keys(c.tenancyAmounts ?? {})
+    const rows = ids.length > 0 ? await db.select({ unitId: tenancies.unitId }).from(tenancies).where(inArray(tenancies.id, ids)) : []
+    return [...new Set([...rows.map((r) => r.unitId), ...Object.keys(c.selfAmounts ?? {})])]
+  }
+  return []
+}
+
+// Die Anlage einer neuen Heizposition ohne Angabe (Heizung PR 9, Festlegung 4): die einzige des
+// Objekts; bei mehreren die, an der alle von der Position genannten Wohnungen hängen. Nennt sie keine
+// oder liegen sie an verschiedenen Anlagen, keine, und der Vermieter ordnet zu. Ab zwei Anlagen hat
+// jede ihre Liste (heating.ts, `guardPlantsOfProperty`).
+export async function plantForNewItem(db: Executor, c: CostItem): Promise<string | null> {
+  // Mit verknüpfter Lieferung deren Anlage (Recht I7 der Durchsicht von #238); eine abweichende Angabe
+  // lehnt `guardFuelLink` ab.
+  if (c.fuelDeliveryId) {
+    const [d] = await db.select({ plantId: fuelDeliveries.plantId }).from(fuelDeliveries).where(eq(fuelDeliveries.id, c.fuelDeliveryId))
+    if (d) return d.plantId
+  }
+  const plants = await db.select({ id: heatingPlants.id, endsOn: heatingPlants.endsOn, replacesPlantId: heatingPlants.replacesPlantId }).from(heatingPlants).where(eq(heatingPlants.propertyId, c.propertyId))
+  if (plants.length === 0) return null
+  const named = await namedUnitsOf(db, c)
+  const rows = await db.select({ plantId: heatingPlantUnits.plantId, unitId: heatingPlantUnits.unitId }).from(heatingPlantUnits)
+    .where(inArray(heatingPlantUnits.plantId, plants.map((p) => p.id)))
+  const fits = named.length === 0 || plants.length === 1 ? plants : plants.filter((p) => named.every((u) => rows.some((r) => r.plantId === p.id && r.unitId === u)))
+  // Kesseltausch: nur die Anlage, die zu Beginn des Leistungszeitraums heizt (ohne Leistungszeitraum zu
+  // Beginn des Zeitraums der Position). Eine stillgelegte Anlage bekommt nie eine Position für die Zeit
+  // danach (Durchsicht von #238, I1).
+  const day = c.serviceFrom ?? periodOfKey(await rulesForProperty(db, c.propertyId), c.period)?.from
+  if (day === undefined) return null
+  const active = fits.filter((p) => {
+    const span = plantSpan(p, plants)
+    return (span.from === null || span.from <= day) && (span.to === null || span.to >= day)
+  })
+  return active.length === 1 && active[0] ? active[0].id : null
+}
+
+// Die Anlage, die eine neue Heizposition ohne Angabe bekommt (Heizung PR 4, PR 5, PR 9): die aus
+// `plantForNewItem`, außer ihr Zeitraum ist abgeschlossen (Entwurf 3.0). Rechnet die Anlage in eigenen
+// Heizperioden ab (PR 5), kommt die Position in die Heizperiode, die in ihrem Objektzeitraum endet,
+// mit dem Jahr der Zahlung des Objektzeitraums, wenn die Heizperiode über zwei Kalenderjahre reicht; so
+// legt ein Tab von vor dem Update oder die Belegbuchung keine Position unter einem Schlüssel an, den es
+// für die Anlage nicht gibt. Endet dort keine oder mehr als eine Heizperiode, bleibt sie ohne Anlage,
+// und der Vermieter ordnet sie zu.
+// `invoiceDate` (Belegbuchung): Das Jahr der Zahlung einer Heizperiode über zwei Kalenderjahre ist das
+// Jahr des Rechnungsdatums, geklemmt in ihre Spanne (Entwurf 3.10, `paymentYear`).
+async function defaultHeatingPlant(db: Executor, c: CostItem, invoiceDate?: string | null): Promise<Pick<CostItem, 'heatingPlantId' | 'period' | 'taxYear'>> {
+  const none = { heatingPlantId: null, period: c.period, taxYear: c.taxYear }
+  if (c.category !== HEATING_CATEGORY) return none
+  const plantId = await plantForNewItem(db, c)
+  if (plantId === null) return none
+  if (await isPeriodClosed(db, c.propertyId, c.period)) return none
+  const heating = await heatingRulesOf(db, plantId)
+  if (!heating?.own) return { ...none, heatingPlantId: plantId }
+  const p = periodOfKey(await rulesForProperty(db, c.propertyId), c.period)
+  const enden = p === null ? [] : heatingPeriodsEndingIn(heating.rules, p)
+  const h = enden.length === 1 ? enden[0] : undefined
+  if (h === undefined) return none
+  // Eine Regel mit Formular und Belegbuchung (`paymentYear`, Durchsicht von #231): Aus der Buchung
+  // (mit `invoiceDate`) das Rechnungsdatum, geklemmt in die Heizperiode; sonst ein angegebenes Jahr,
+  // ohne Angabe das Jahr des Endes der Heizperiode.
+  const year = invoiceDate !== undefined ? paymentYear(h, invoiceDate, c.taxYear).year : c.taxYear ?? paymentYear(h, null).year
+  const neu = { heatingPlantId: plantId, period: h.key, taxYear: spansTwoYears(h) ? year : undefined }
+  return (await itemPeriodClosed(db, { ...c, ...neu })) ? none : neu
+}
+
+// Eine Heizposition an der Anlage (Heizung PR 4): dieselbe Objektgrenze wie bei den Wohnungen, und in
+// einem abgeschlossenen Zeitraum keine neue Zuordnung.
+async function guardCostItemHeating(db: Executor, before: CostItem | null, after: CostItem): Promise<void> {
+  if (after.key === 'meter' && after.meterType === 'hkv') throw new HeatingError(400, HKV_KEY)
+  await guardHeatingSystem(db, after)
+  const plantId = after.heatingPlantId
+  if (!plantId) return
+  const plant = await plantOf(db, plantId)
+  if (!plant) throw new HeatingError(400, PLANT_GONE)
+  if (plant.propertyId !== after.propertyId) {
+    throw new CrossPropertyError(
+      `Die Kostenposition gehört zu Objekt ${await propertyName(db, after.propertyId)}, die Heizanlage aber zu ` +
+        `${await propertyName(db, plant.propertyId)}. Eine Heizposition gehört zur Heizanlage ihres eigenen Objekts.`,
+    )
+  }
+  // Etagenheizung (Heizung PR 9, Entwurf 11.2): jede Heizposition direkt bei einer Wohnung der Anlage;
+  // eine verknüpfte Rechnung gehört zu derselben Wohnung, sonst stammten C_u und A_u aus zwei Wohnungen.
+  if (plant.supply === 'perUnit') {
+    if (after.key !== 'direct' || !after.directUnitId) throw new HeatingError(400, PER_UNIT_DIRECT)
+    if (!(await plantServesUnit(db, plantId, after.directUnitId))) {
+      throw new HeatingError(400, `Die Wohnung dieser Position hängt nicht an der Etagenheizung „${plant.name}“. Bitte wählen Sie eine Wohnung der Anlage oder ordnen Sie die Position einer anderen Heizanlage zu.`)
+    }
+    if (after.fuelDeliveryId) {
+      const [d] = await db.select({ unitId: fuelDeliveries.unitId }).from(fuelDeliveries).where(eq(fuelDeliveries.id, after.fuelDeliveryId))
+      if (d && d.unitId !== after.directUnitId) {
+        throw new HeatingError(400, 'Die verknüpfte Rechnung gehört zu einer anderen Wohnung als die Position. Bitte verknüpfen Sie die Rechnung der Wohnung, der die Position zugeordnet ist.')
+      }
+    }
+  }
+  if ((before?.heatingPlantId ?? null) !== plantId && (await itemPeriodClosed(db, after))) {
+    throw new HeatingError(409,
+      'Die Abrechnung dieses Zeitraums ist abgeschlossen; ihre Positionen bekommen keine Heizanlage mehr, denn der eingefrorene Stand bleibt maßgeblich. ' +
+        'Öffnen Sie die Abrechnung wieder, wenn Sie die Position zuordnen wollen.')
+  }
+}
+
+// Eigene Heizkostenabrechnung (Heizung PR 10, Entwurf 5.3, Abweichung 18): Nach Heizkostenverordnung
+// verteilt nur eine Position einer Anlage mit `method = 'self'`, mit Teil und Ziel, und deren
+// Positionen verteilen nur so. Das Ziel passt zur Warmwasserbereitung (heating.ts, `targetProblem`).
+// „Nur Heizung“ bei freien Schlüsseln bleibt erlaubt (A2, B7).
+export async function guardHeatingSystem(db: Executor, after: CostItem): Promise<void> {
+  const target = after.heatingTarget ?? null
+  if (target !== null && after.category !== HEATING_CATEGORY) {
+    throw new HeatingError(400, 'Ein Ziel (Heizung, Warmwasser) gibt es nur bei der Kostenart „Heizung und Warmwasser“.')
+  }
+  // Ohne Angabe bekommt eine neue Heizposition die Anlage erst beim Schreiben (`defaultHeatingPlant`);
+  // geprüft wird gegen dieselbe, die sie dann bekommt.
+  const plantId = after.heatingPlantId === undefined && after.category === HEATING_CATEGORY ? await plantForNewItem(db, after) : (after.heatingPlantId ?? null)
+  const [row] = plantId === null ? [] : await db.select({ method: heatingPlants.method, hotWater: heatingPlants.hotWater }).from(heatingPlants).where(eq(heatingPlants.id, plantId))
+  const plant = row && plantId !== null
+    ? { ...row, selfSpans: await db.select({ from: heatingSelfSpans.from, until: heatingSelfSpans.until, hotWater: heatingSelfSpans.hotWater }).from(heatingSelfSpans).where(eq(heatingSelfSpans.plantId, plantId)) }
+    : undefined
+  if (after.key === 'heatingSystem') {
+    // Durchsicht von #239: nur in Heizperioden der eigenen Abrechnung (`selfActive`), also ab ihrem Beginn
+    // und, nach dem Zurückschalten, bis vor ihr Ende.
+    const begin = plant ? selfFromOf(plant) : null
+    if (begin !== null && String(after.period) < begin && !selfActive(plant ?? { method: 'manual' }, String(after.period))) {
+      throw new HeatingError(400, beforeBeginText(begin))
+    }
+    if (after.category !== HEATING_CATEGORY || !plant || !selfActive(plant, String(after.period))) {
+      throw new HeatingError(400,
+        'Nach der Heizkostenverordnung verteilt Mietfuchs nur Positionen einer Heizanlage mit eigener Heizkostenabrechnung. Richten Sie sie in den Stammdaten unter „Heizung“ ein oder wählen Sie einen anderen Schlüssel.')
+    }
+    // Die Warmwasserbereitung der Heizperiode der Position (Durchsicht von #241, I2).
+    const problem = targetProblem(hotWaterOf(plant, String(after.period)), after.heatingPart ?? null, target)
+    if (problem !== null) throw new HeatingError(400, `${problem}.`)
+    return
+  }
+  if (plant && selfActive(plant, String(after.period)) && after.category === HEATING_CATEGORY) {
+    throw new HeatingError(400,
+      'Diese Heizanlage rechnet die Heizkosten selbst nach der Heizkostenverordnung ab. Wählen Sie den Schlüssel „nach Heizkostenverordnung“ mit Teil und Ziel.')
+  }
+}
+
+// Für die Einrichtung der eigenen Heizkostenabrechnung (Heizung PR 10): innerhalb einer fremden
+// Transaktion anlegen, durch dieselbe Verschmelzung und denselben Wächter wie die Routen (wie
+// `insertCostItemIn` für die Belegbuchung).
+export async function insertEntityIn(tx: Executor, coll: CollectionName, id: string, body: unknown): Promise<void> {
+  await withCollection<Promise<void>>(coll, async (c) => {
+    const entity = c.merge(c.empty(id), body)
+    await c.guard(tx, null, entity, body)
+    await c.insert(tx, entity)
+  })
+}
+
+// Das Formular eines Mietverhältnisses kennt einen älteren Stand als den gespeicherten
+// (Laienprobe B1, shared/tenancyStamp.ts). Gespeichert wird dann nichts: Das Formular schickt alle
+// Staffeln, und ein Ersetzen mit dem alten Stand löschte, was ein anderer Weg inzwischen geschrieben
+// hat, etwa die Heizvorauszahlung nach dem Aufteilen.
+export class StaleTenancyError extends Error {
+  status = 409
+}
+
+// Ein Vorgang, der eine abgeschlossene Abrechnung träfe (#208). Wie bei `findClosedSettlement`
+// bleibt der eingefrorene Stand maßgeblich; wer ändern will, öffnet sie wieder (#56).
+export class PeriodConflict extends Error {
+  status = 409
+}
+
+const OLD_TAB =
+  'Diese Seite ist älter als das Programm und kennt die Abrechnungszeiträume dieses Objekts noch nicht. ' +
+  'Bitte laden Sie die Seite neu; gespeichert wurde nichts.'
+
+const YEAR_ONLY = /^\d{4}$/
+
+export async function rulesForProperty(db: Executor, propertyId: string): Promise<PeriodRules> {
+  const [row] = await db.select({ startMonth: properties.periodStartMonth }).from(properties).where(eq(properties.id, propertyId))
+  const changes = await db.select({ fromMonth: periodChanges.fromMonth }).from(periodChanges)
+    .where(eq(periodChanges.propertyId, propertyId)).orderBy(periodChanges.fromMonth)
+  return { startMonth: row?.startMonth ?? 1, changes: changes.map((c) => c.fromMonth) }
+}
+
+// Die Regeln, nach denen die Heizperioden einer Anlage gezählt werden (Heizung PR 5): die eigenen
+// oder die des Objekts. `own` false heißt: Jede Heizperiode ist ein Abrechnungszeitraum des Objekts,
+// und die Positionen tragen dessen Schlüssel wie bisher.
+export async function heatingRulesOf(db: Executor, plantId: string): Promise<{ propertyId: string; own: boolean; rules: PeriodRules } | null> {
+  const [plant] = await db.select({ propertyId: heatingPlants.propertyId, startMonth: heatingPlants.periodStartMonth }).from(heatingPlants).where(eq(heatingPlants.id, plantId))
+  if (!plant) return null
+  const objectRules = await rulesForProperty(db, plant.propertyId)
+  if (plant.startMonth === null) return { propertyId: plant.propertyId, own: false, rules: objectRules }
+  const changes = await db.select({ fromMonth: heatingPeriodChanges.fromMonth }).from(heatingPeriodChanges)
+    .where(eq(heatingPeriodChanges.plantId, plantId)).orderBy(heatingPeriodChanges.fromMonth)
+  return { propertyId: plant.propertyId, own: true, rules: plantRules({ periodStartMonth: plant.startMonth, periodChanges: changes.map((c) => c.fromMonth) }, objectRules) }
+}
+
+// Die Regeln des Schlüssels einer Kostenposition: bei einer Heizposition einer Anlage mit eigener
+// Heizperiode deren, sonst die des Objekts.
+async function itemRules(db: Executor, c: CostItem): Promise<PeriodRules> {
+  const heating = c.heatingPlantId ? await heatingRulesOf(db, c.heatingPlantId) : null
+  return heating?.own ? heating.rules : rulesForProperty(db, c.propertyId)
+}
+
+// G-A2: Eine Heizposition einer Anlage mit eigener Heizperiode steht unter einer Heizperiode der
+// Anlage. Ein Objektzeitraum wäre dort ein Schlüssel ohne Abrechnung.
+function requireHeatingPeriod(rules: PeriodRules, after: CostItem): void {
+  if (periodOfKey(rules, after.period) !== null) return
+  const nah = periodContaining(rules, `${after.period}-01`)
+  throw new PeriodError(
+    `Die Heizposition „${after.description}“ steht unter ${after.period}; die Heizanlage rechnet aber in eigenen Heizperioden ab. ` +
+      `Bitte wählen Sie die Heizperiode; meinen Sie ${periodLabel(nah)}?`,
+  )
+}
+
+// Wirft, wenn ein Schlüssel keinen Zeitraum des Objekts bezeichnet. `legacyYear` heißt: Der Rumpf
+// kam mit einer nackten Jahreszahl, also von einem Tab von vor dem Update. Sie gilt nur bei einem
+// reinen Kalenderobjekt; sonst fiele die Eingabe still in einen Zeitraum, der zufällig im Januar
+// beginnt (bei einem Wechsel ab Mai der Rumpf).
+async function requirePeriods(db: Executor, propertyId: string, keys: readonly string[], legacyYear: boolean, what: string): Promise<void> {
+  if (keys.length === 0 && !legacyYear) return
+  const rules = await rulesForProperty(db, propertyId)
+  if (legacyYear && !isCalendarRules(rules)) throw new PeriodError(OLD_TAB)
+  for (const key of keys) {
+    const period = parsePeriodKey(key)
+    if (period === null || periodOfKey(rules, period) === null) {
+      throw new PeriodError(
+        `${what} steht unter dem Zeitraum ${key}, den es für Objekt ${await propertyName(db, propertyId)} nicht gibt. ` +
+          'Bitte wählen Sie einen Abrechnungszeitraum des Objekts.',
+      )
+    }
+  }
+}
+
+// Was eine Kostenposition mit Leistungszeitraum und Zeitraum über zwei Kalenderjahre braucht
+// (#208, Entwurf 3.4, 3.10). Die Datenbank prüft Form und Reihenfolge (0017), nicht aber, was an
+// den Zeiträumen des Objekts hängt.
+//
+// **Eine kalte Rechnung über zwei Zeiträume wird nicht als eine Position angenommen.** Nach dem
+// Leistungsprinzip gehört sie anteilig in jeden (VIII ZR 49/07 lässt beides zu, Mietfuchs wählt
+// das Leistungsprinzip, Entwurf 3.4); als eine Position stünde sie ganz in einem und fehlte im
+// anderen. Aufgeteilt wird sie mit `saveCostItemSplit` (Task 3), dessen Teile `splitPart` tragen.
+// Ein Teil, dessen Leistungszeitraum und Zeitraum unverändert bleiben (der Betrag wird berichtigt),
+// ist weiter erlaubt. **Heizkosten werden nie nach Tagen geteilt** (G-C1, VIII ZR 156/11); sie
+// nimmt die Prüfung an, und die Abrechnung warnt (`period.heating-mismatch`).
+// `periodChange` (Nachprüfung von #252, G2-N-W1): Beim Wechsel des Abrechnungszeitraums wandern Stromrechnung
+// und Abzüge nacheinander; die Prüfungen auf denselben Zeitraum und die Summe gelten dann für den
+// Endstand (`settleOperatingPowerLinks`), nicht für jeden Zwischenschritt.
+export type CostItemGuardOptions = { splitPart?: boolean; periodChange?: boolean }
+
+async function requireServiceAndTax(db: Executor, before: CostItem | null, after: CostItem, options: CostItemGuardOptions): Promise<void> {
+  const what = `„${after.description}“`
+  const from = after.serviceFrom
+  const to = after.serviceTo
+  if ((from === undefined) !== (to === undefined)) {
+    throw new PeriodError(`Für ${what} fehlt ein Ende des Leistungszeitraums. Bitte tragen Sie Beginn und Ende ein oder lassen Sie beide leer.`)
+  }
+  if (from !== undefined && to !== undefined) {
+    if (!isIsoDate(from) || !isIsoDate(to)) throw new PeriodError(`Der Leistungszeitraum von ${what} ist kein gültiges Datum.`)
+    if (from > to) throw new PeriodError(`Der Leistungszeitraum von ${what} endet vor seinem Beginn.`)
+  }
+  if (after.heatingPart !== undefined && after.category !== HEATING_CATEGORY) {
+    throw new PeriodError(`„Teil der Heizkosten“ gibt es nur bei der Kostenart „${HEATING_CATEGORY}“.`)
+  }
+  // Heizung PR 5: das Jahr der Zahlung einer Heizposition richtet sich nach ihrer Heizperiode.
+  const rules = await itemRules(db, after)
+  const period = periodOfKey(rules, after.period)
+  // Einen Zeitraum, den es nicht gibt, hat `requirePeriods` schon abgelehnt.
+  if (period === null) return
+  requireTaxYear(period, after, what)
+  // Ein Teil einer aufgeteilten Rechnung wird nur berichtigt (Durchsicht von #226, C1): Mit einem
+  // anderen Leistungszeitraum oder Zeitraum stimmte sein Anteil nicht mehr zum Schnitt nach Tagen,
+  // und die Geschwisterteile blieben stehen. Den Wechsel des Rhythmus (`splitPart`) betrifft das nicht.
+  // Auch nicht zur Heizposition (Nachprüfung von #226): Heizkosten werden nie nach Tagen geteilt.
+  if (before !== null && !options.splitPart && isSplitPart(rules, before) &&
+    (before.serviceFrom !== from || before.serviceTo !== to || before.period !== after.period || after.category === HEATING_CATEGORY)) {
+    throw new PeriodError(splitPartMessage(before))
+  }
+  if (from === undefined || to === undefined || after.category === HEATING_CATEGORY || options.splitPart) return
+  // Wird aus einer Heizposition eine kalte, ist das keine unveränderte Position (Nachprüfung von
+  // #226): Die Heizposition durfte über zwei Zeiträume reichen, die kalte muss aufgeteilt werden.
+  const unchanged = before !== null && before.serviceFrom === from && before.serviceTo === to && before.period === after.period &&
+    before.category !== HEATING_CATEGORY
+  if (unchanged) return
+  const touched = periodsBetween(rules, from, to)
+  if (touched.length > 1) {
+    throw new PeriodError(
+      `Die Rechnung ${what} betrifft die Abrechnungszeiträume ${andList(touched.map(periodLabel))} (Leistungszeitraum ${formatDayRange(from, to)}). ` +
+        'Kalte Betriebskosten gehören anteilig in jeden dieser Zeiträume; speichern Sie die Rechnung mit „Aufteilen und speichern“.',
+    )
+  }
+}
+
+// Ein Teil einer aufgeteilten Rechnung (#208): eine kalte Position, deren Leistungszeitraum mehr
+// als einen Zeitraum des Objekts berührt. Anders entsteht so eine Position nicht, denn das
+// gewöhnliche Speichern lehnt sie ab (oben); sie kommt aus `saveCostItemSplit` oder dem Wechsel des
+// Rhythmus, und jeder Teil trägt den ganzen Leistungszeitraum der Rechnung.
+export { isSplitPart }
+
+const splitPartMessage = (c: CostItem): string =>
+  `„${c.description}“ ist ein Teil einer aufgeteilten Rechnung (Leistungszeitraum ${formatDayRange(c.serviceFrom ?? '', c.serviceTo ?? '')}). ` +
+  'Leistungszeitraum und Abrechnungszeitraum ändern Sie nicht an einem einzelnen Teil, sonst passten die Anteile nicht mehr zusammen. ' +
+  'Betrag, Rechnungssteller und Beleg lassen sich berichtigen; für einen anderen Leistungszeitraum löschen Sie alle Teile und erfassen die Rechnung neu mit „Aufteilen und speichern“.'
+
+// Das Jahr der Zahlung (Entwurf 3.10): Liegt der Zeitraum in einem Kalenderjahr, ist es dieses und
+// darf nur leer oder genau dieses sein. Reicht er über zwei, ist es Pflicht und liegt zwischen dem
+// Jahr des Beginns und dem Jahr nach dem Ende (eine Messdienstabrechnung kommt oft erst danach).
+function requireTaxYear(period: BillingPeriod, after: CostItem, what: string): void {
+  const startYear = Number(period.from.slice(0, 4))
+  const endYear = Number(period.to.slice(0, 4))
+  if (!spansTwoYears(period)) {
+    if (after.taxYear !== undefined && after.taxYear !== startYear) {
+      throw new PeriodError(`Der Abrechnungszeitraum ${periodLabel(period)} liegt im Kalenderjahr ${startYear}; für die Steuer zählt ${what} deshalb zu ${startYear}.`)
+    }
+    return
+  }
+  if (after.taxYear === undefined) {
+    throw new PeriodError(`Der Abrechnungszeitraum ${periodLabel(period)} reicht über zwei Kalenderjahre. Bitte geben Sie bei ${what} das Jahr der Zahlung an (für die Steuer, § 11 Abs. 2 EStG).`)
+  }
+  if (after.taxYear < startYear || after.taxYear > endYear + 1) {
+    throw new PeriodError(`Das Jahr der Zahlung von ${what} muss zwischen ${startYear} und ${endYear + 1} liegen.`)
+  }
+}
+
 async function propertyName(db: Executor, propertyId: string): Promise<string> {
   const rows = await db.select({ name: properties.name }).from(properties).where(eq(properties.id, propertyId))
   const name = rows[0]?.name
@@ -366,7 +1058,7 @@ async function propertyName(db: Executor, propertyId: string): Promise<string> {
 
 // Wirft, wenn eine der Wohnungen zu einem anderen Objekt gehört. `what` beschreibt den
 // Datensatz, der verweist, für die Meldung.
-async function sameProperty(db: Executor, propertyId: string, unitIds: string[], what: string): Promise<void> {
+export async function sameProperty(db: Executor, propertyId: string, unitIds: string[], what: string): Promise<void> {
   if (unitIds.length === 0) return
   const fremd = await db
     .select({ name: units.name, propertyId: units.propertyId })
@@ -383,11 +1075,97 @@ async function sameProperty(db: Executor, propertyId: string, unitIds: string[],
 
 const noGuard = async (): Promise<void> => {}
 
-async function guardMeter(db: Executor, _before: Meter | null, after: Meter): Promise<void> {
-  await sameProperty(db, after.propertyId, after.unitId ? [after.unitId] : [], 'Der Zähler')
+// Die erste abgeschlossene Heizperiode, in der eine Ablesung des Heizkostenverteilers mit dieser Erfassung
+// zählt (Heizung PR 12), als Bezeichnung; sonst `null`.
+async function closedHcaPeriodOf(db: Executor, m: Meter): Promise<string | null> {
+  if (!m.unitId) return null
+  const unit = (await db.select({ id: units.id, propertyId: units.propertyId }).from(units).where(eq(units.id, m.unitId)))[0]
+  if (!unit) return null
+  const plants = (await readHeatingPlants(db)).filter((p) => p.propertyId === unit.propertyId && servesUnit(p, unit))
+  const own = (await db.select({ meterId: readings.meterId, date: readings.date }).from(readings).where(eq(readings.meterId, m.id)))
+  const dates = own.map((r) => r.date).sort()
+  const first = dates[0]
+  const last = dates[dates.length - 1]
+  if (first === undefined || last === undefined) return null
+  // Jede Heizperiode, die die Ablesungen überdecken (Durchsicht von #241, M1), nicht nur die, in die ein
+  // Ablesedatum fällt: Mit Ablesungen am 31.12.2024 und 04.01.2026 zählt das Gerät in 2025.
+  for (const plant of plants) {
+    for (let day = first; day <= last;) {
+      const at = await heatingPeriodAt(db, plant.id, day)
+      if (!at) break
+      const key = String(at.period.key)
+      if (at.closed && coversPeriod(m.id, own, at.period) && selfActive(plant, key) && captureOf(plant, key) === 'hca') return periodLabel(at.period)
+      day = dayAfterIso(at.period.to)
+    }
+  }
+  return null
 }
 
-async function guardCostItem(db: Executor, _before: CostItem | null, after: CostItem): Promise<void> {
+async function guardMeter(db: Executor, before: Meter | null, after: Meter): Promise<void> {
+  await sameProperty(db, after.propertyId, after.unitId ? [after.unitId] : [], 'Der Zähler')
+  if (after.type === 'hkv' && !after.unitId) {
+    throw new HeatingError(400, 'Ein Heizkostenverteiler sitzt an einem Heizkörper einer Wohnung. Bitte wählen Sie bei der Zuordnung die Wohnung.')
+  }
+  if (after.installedOn && !ISO_DATE.test(after.installedOn)) {
+    throw new HeatingError(400, 'Das Einbaudatum ist kein Datum. Bitte wählen Sie es im Kalender oder lassen Sie das Feld leer.')
+  }
+  // Eichjahr (Heizung PR 21); sonst lehnten die Prüfbedingungen ohne Satz ab.
+  const until = after.calibratedUntil ?? null
+  if (until !== null && (!Number.isInteger(until) || until < 1000 || until > 9999)) {
+    throw new HeatingError(400, 'Das Eichjahr ist keine Jahreszahl. Bitte tragen Sie das Jahr vierstellig ein, so wie es der Messdienst oder der Eichschein nennt, oder lassen Sie das Feld leer.')
+  }
+  if (until !== null && after.type === 'hkv') {
+    throw new HeatingError(400, 'Heizkostenverteiler sind keine eichpflichtigen Messgeräte; ein Eichjahr gibt es für sie nicht. Bitte lassen Sie das Feld leer.')
+  }
+  // Skala und Faktor nur am Heizkostenverteiler (Heizung PR 12); sonst lehnte die Prüfbedingung ohne Satz ab.
+  if (after.type !== 'hkv' && ((after.hcaScale ?? null) !== null || (after.ratingFactor ?? null) !== null)) {
+    throw new HeatingError(400, 'Skala und Bewertungsfaktor gibt es nur bei einem Heizkostenverteiler. Lassen Sie beide Felder leer oder wählen Sie die Sparte „Heizkostenverteiler“.')
+  }
+  if (after.ratingFactor !== undefined && after.ratingFactor !== null && !(after.ratingFactor > 0)) {
+    throw new HeatingError(400, 'Der Bewertungsfaktor ist eine Zahl über 0, etwa 0,8 oder 1,25. Er steht in der Geräteliste des Messdienstes oder in den Unterlagen des Herstellers.')
+  }
+  // Skala oder Faktor eines Geräts, dessen Ablesungen in einer abgeschlossenen Heizperiode mit
+  // Heizkostenverteilern zählen (Review Focus 1): Mit anderem Faktor rechnete sie anders, als sie zugestellt
+  // wurde, und jede offene Heizperiode danach still mit. Ein Gerät mit anderem Faktor ist ein neuer Zähler.
+  if (before && before.type === 'hkv' && ((before.hcaScale ?? null) !== (after.hcaScale ?? null) || (before.ratingFactor ?? null) !== (after.ratingFactor ?? null))) {
+    const closed = await closedHcaPeriodOf(db, before)
+    if (closed !== null) {
+      throw new HeatingError(409,
+        `Die Ablesungen von „${before.name}“ zählen in der abgeschlossenen Heizperiode ${closed}; mit anderer Skala oder anderem Faktor rechnete sie anders, als sie zugestellt wurde. ` +
+          'Hat das Gerät einen anderen Faktor bekommen, etwa nach einem Tausch, legen Sie es als neuen Zähler an. War der Faktor falsch eingetragen, öffnen Sie die Abrechnung wieder und berichtigen ihn dann.')
+    }
+  }
+  const plantId = after.heatingPlantId
+  if (!plantId) return
+  // Ein Zähler der Anlage hängt an keiner Wohnung; sonst lehnte die Prüfbedingung ab, ohne Satz.
+  if (after.unitId) {
+    throw new HeatingError(400,
+      'Ein Zähler an einer Wohnung gehört nicht zur Heizanlage selbst. Zur Anlage gehören nur Zähler ohne Wohnung, etwa der Gaszähler oder ein Wärmezähler am Warmwasserspeicher. ' +
+        'Wählen Sie „Haus (Hauptzähler)“ oder nehmen Sie den Zähler aus der Anlage.')
+  }
+  const plant = await plantOf(db, plantId)
+  if (!plant) throw new HeatingError(400, PLANT_GONE)
+  if (plant.propertyId !== after.propertyId) {
+    throw new CrossPropertyError(
+      `Der Zähler gehört zu Objekt ${await propertyName(db, after.propertyId)}, die Heizanlage aber zu ` +
+        `${await propertyName(db, plant.propertyId)}. Ein Zähler gehört zur Heizanlage seines eigenen Objekts.`,
+    )
+  }
+  if (!after.heatingRole) {
+    throw new HeatingError(400, 'Was misst der Zähler an der Heizanlage? Bitte wählen Sie Versorgungszähler, Wärmezähler Warmwasser oder Gesamtwärmezähler.')
+  }
+  if (after.heatingRole !== 'supply' && after.type !== 'waerme') {
+    throw new HeatingError(400, 'Ein Wärmezähler an der Heizanlage hat die Sparte „Wärme“.')
+  }
+}
+
+async function guardCostItem(db: Executor, before: CostItem | null, after: CostItem, body: unknown, options: CostItemGuardOptions = {}): Promise<void> {
+  // Der Zeitraum (#208) muss zum Objekt gehören, bei einer Heizposition mit eigener Heizperiode zur
+  // Anlage (Heizung PR 5). `year` ohne `period` schickt nur ein alter Tab.
+  const heating = after.heatingPlantId ? await heatingRulesOf(db, after.heatingPlantId) : null
+  if (heating?.own) requireHeatingPeriod(heating.rules, after)
+  else await requirePeriods(db, after.propertyId, [after.period], has(body, 'year') && !has(body, 'period'), 'Die Kostenposition')
+  await requireServiceAndTax(db, before, after, options)
   // Die Wohnungen der Einzelbeträge über ihr Mietverhältnis (#94).
   const mietverhaeltnisse = Object.keys(after.tenancyAmounts ?? {})
   const ihreWohnungen = mietverhaeltnisse.length === 0
@@ -401,13 +1179,197 @@ async function guardCostItem(db: Executor, _before: CostItem | null, after: Cost
     ...Object.keys(after.selfAmounts ?? {}),
   ]
   await sameProperty(db, after.propertyId, ziele, 'Die Kostenposition')
+  await guardCostItemHeating(db, before, after)
+  await guardFuelLink(db, before, after)
+  await guardOperatingPower(db, before, after, options)
+}
+
+// Betriebsstrom und Abzug (Heizung PR 15, #212). Ein Abzug gehört zu genau einer Betriebsstrom-Position
+// desselben Objekts; ohne Verweis gehört er zu einer Anlage mit Messdienst. Die Datenbank prüft Kostenart
+// und Vorzeichen (Bedingungen), hier steht, was an einer anderen Zeile hängt. Die Energie der Anlage
+// prüft diese Funktion bewusst nicht (R2-W1): Auch bei einer Wärmepumpe ist der Strom von Umwälzpumpen
+// und Regelung Betriebsstrom; abgelehnt wird dort nur die Schätzhilfe (db/operatingPower.ts).
+async function guardOperatingPower(db: Executor, before: CostItem | null, after: CostItem, options: CostItemGuardOptions = {}): Promise<void> {
+  // Durchsicht von #252, G-W2: Zeigt ein Abzug auf diese Position (als Betriebsstrom oder als
+  // Stromrechnung), bleibt sie in ihrem Objekt; sonst minderte der Abzug den Allgemeinstrom des einen
+  // Hauses für den Betriebsstrom des anderen. Den Abzug selbst prüfen die Verweise weiter unten.
+  if (before && before.propertyId !== after.propertyId) {
+    const abzuege = await db.select({ description: costItems.description }).from(costItems)
+      .where(or(eq(costItems.operatingPowerItemId, after.id), eq(costItems.operatingPowerGeneralId, after.id)))
+    if (abzuege.length > 0) {
+      throw new CrossPropertyError(`Zu „${after.description}“ gehört der Abzug ${abzuege.map((a) => `„${a.description}“`).join(', ')} beim Allgemeinstrom; er zeigte dann auf eine Position in einem anderen Objekt. Löschen Sie zuerst den Abzug.`)
+    }
+  }
+  if (after.operatingPower === 'included') {
+    if (after.category !== HEATING_CATEGORY) {
+      throw new HeatingError(400, `Betriebsstrom gibt es nur bei der Kostenart „${HEATING_CATEGORY}“.`)
+    }
+    // Durchsicht von #252, G-K4: Eine Gutschrift ist kein Strom, der im Allgemeinstrom steckt.
+    if (!(after.amountCents > 0)) {
+      throw new HeatingError(400, `„${after.description}“ ist als Betriebsstrom gekennzeichnet, der auch im Allgemeinstrom steckt, und braucht deshalb einen positiven Betrag.`)
+    }
+    if (after.heatingPart === 'fuel') {
+      // R-W2 (Durchsicht von #252): Strom zur Wärmeerzeugung über den Hauszähler gibt es nur bei einer
+      // Anlage, die mit Strom heizt.
+      // Heizung PR 16: bei Contracting nach der Energie der Abrechnung; den Strom zur Wärmeerzeugung bezahlt dann der Lieferant.
+      const [p] = after.heatingPlantId ? await db.select({ energy: heatingPlants.energy, contracting: heatingPlants.contracting }).from(heatingPlants).where(eq(heatingPlants.id, after.heatingPlantId)) : []
+      if (!p || !POWER_GENERATED.includes(billingEnergy(p))) {
+        throw new HeatingError(400, `„${after.description}“ ist Brennstoff/Energie einer Anlage, die nicht mit Strom heizt; „steckt auch im Allgemeinstrom“ gibt es beim Teil „Brennstoff/Energie“ nur für den Strom einer Wärmepumpe oder Stromheizung.`)
+      }
+    } else if (after.heatingPart !== undefined && after.heatingPart !== 'operating') {
+      throw new HeatingError(400, `„${after.description}“ ist als Teil der Heizkosten nicht „Betrieb“; Betriebsstrom gibt es nur beim Teil „Betrieb“ oder ohne Teil.`)
+    }
+  }
+  if (after.operatingPower === 'deduction') {
+    if (after.category !== GENERAL_POWER_CATEGORY) {
+      throw new HeatingError(400, `Ein Abzug des Betriebsstroms gehört zur Kostenart „${GENERAL_POWER_CATEGORY}“.`)
+    }
+    if (!(after.amountCents < 0)) {
+      throw new HeatingError(400, `„${after.description}“ ist ein Abzug und braucht einen negativen Betrag.`)
+    }
+  }
+  if (after.operatingPowerItemId !== undefined) {
+    if (after.operatingPower !== 'deduction') {
+      throw new HeatingError(400, 'Nur ein Abzug beim Allgemeinstrom zeigt auf eine Betriebsstrom-Position.')
+    }
+    const [target] = await db
+      .select({ propertyId: costItems.propertyId, operatingPower: costItems.operatingPower, description: costItems.description })
+      .from(costItems).where(eq(costItems.id, after.operatingPowerItemId))
+    if (!target) throw new HeatingError(400, 'Die Betriebsstrom-Position, zu der dieser Abzug gehört, gibt es nicht (mehr).')
+    if (target.propertyId !== after.propertyId) {
+      throw new CrossPropertyError(`Der Abzug „${after.description}“ gehört zu einem anderen Objekt als der Betriebsstrom „${target.description}“.`)
+    }
+    if (target.operatingPower !== 'included') {
+      throw new HeatingError(400, `„${target.description}“ ist nicht als Betriebsstrom gekennzeichnet, der auch im Allgemeinstrom steckt; ein Abzug kann nicht zu ihr gehören.`)
+    }
+  }
+  if (before?.operatingPower === 'included' && after.operatingPower !== 'included') {
+    const abzuege = await db.select({ description: costItems.description }).from(costItems).where(eq(costItems.operatingPowerItemId, after.id))
+    if (abzuege.length > 0) {
+      throw new HeatingError(400, `Zu „${after.description}“ gehört der Abzug ${abzuege.map((a) => `„${a.description}“`).join(', ')} beim Allgemeinstrom. Löschen Sie zuerst den Abzug, sonst stünde er ohne Betriebsstrom da.`)
+    }
+  }
+  // P-W1: Die Grundlage der Schätzung gehört zu Betriebsstrom oder Abzug.
+  if (after.operatingPowerBasis !== undefined && after.operatingPower === undefined) {
+    throw new HeatingError(400, 'Eine Grundlage der Schätzung gibt es nur bei Betriebsstrom oder seinem Abzug beim Allgemeinstrom.')
+  }
+  await guardDeductionSource(db, after, options)
+  await guardGeneralWithDeductions(db, before, after, options)
+}
+
+// Durchsicht von #252, G-K3: Ein Abzug zeigt auf die Stromrechnung, aus der er gerechnet wurde, im selben
+// Objekt und Zeitraum. Ohne diesen Verweis bliebe ein Abzug nach dem Löschen oder Umstellen der Rechnung
+// still stehen, und der Allgemeinstrom wäre netto negativ oder anders verteilt als die Rechnung.
+async function guardDeductionSource(db: Executor, after: CostItem, options: CostItemGuardOptions = {}): Promise<void> {
+  if (after.operatingPowerGeneralId !== undefined && after.operatingPower !== 'deduction') {
+    throw new HeatingError(400, 'Nur ein Abzug des Betriebsstroms zeigt auf eine Stromrechnung.')
+  }
+  if (after.operatingPower !== 'deduction') return
+  if (after.operatingPowerGeneralId === undefined) {
+    throw new HeatingError(400, `Bitte wählen Sie zu „${after.description}“ die Stromrechnung des Allgemeinstroms, aus der der Abzug gerechnet wurde.`)
+  }
+  const [g] = await db
+    .select({ propertyId: costItems.propertyId, period: costItems.period, category: costItems.category, amountCents: costItems.amountCents, operatingPower: costItems.operatingPower, description: costItems.description })
+    .from(costItems).where(eq(costItems.id, after.operatingPowerGeneralId))
+  if (!g) throw new HeatingError(400, 'Die Stromrechnung, aus der dieser Abzug gerechnet wurde, gibt es nicht (mehr).')
+  if (g.propertyId !== after.propertyId) {
+    throw new CrossPropertyError(`Der Abzug „${after.description}“ gehört zu einem anderen Objekt als die Stromrechnung „${g.description}“.`)
+  }
+  if (g.category !== GENERAL_POWER_CATEGORY || !(g.amountCents > 0) || g.operatingPower !== null) {
+    throw new HeatingError(400, `„${g.description}“ ist keine Stromrechnung des Allgemeinstroms mit positivem Betrag; ein Abzug kann nicht aus ihr gerechnet sein.`)
+  }
+  if (g.period !== after.period && !options.periodChange) {
+    throw new HeatingError(400, `Ein Abzug steht im selben Zeitraum wie seine Stromrechnung „${g.description}“.`)
+  }
+  // Nachprüfung von #252, G2-K1: dieselbe Summenregel wie in der Schätzhilfe. Beim Zeitraumwechsel gilt sie
+  // für den Endstand (`settleOperatingPowerLinks`).
+  if (!options.periodChange) {
+    const others = await db.select({ amountCents: costItems.amountCents }).from(costItems)
+      .where(and(eq(costItems.operatingPowerGeneralId, after.operatingPowerGeneralId), ne(costItems.id, after.id)))
+    const deducted = -others.reduce((a, c) => a + c.amountCents, 0) - after.amountCents
+    if (deducted > g.amountCents) {
+      throw new HeatingError(400, `Aus der Stromrechnung „${g.description}“ (${operatingPowerEuro(g.amountCents)}) wären damit ${operatingPowerEuro(deducted)} abgezogen, mehr als die Rechnung. Prüfen Sie die Abzüge.`)
+    }
+  }
+}
+
+// Die Abzüge, die aus einer Stromrechnung gerechnet wurden (G-K3).
+async function deductionsFrom(db: Executor, generalId: string): Promise<string[]> {
+  return (await db.select({ description: costItems.description }).from(costItems).where(eq(costItems.operatingPowerGeneralId, generalId))).map((a) => `„${a.description}“`)
+}
+
+// Eine Stromrechnung mit Abzügen bleibt Stromrechnung: Kostenart, positiver Betrag, keine Kennzeichnung,
+// derselbe Zeitraum (G-K3).
+async function guardGeneralWithDeductions(db: Executor, before: CostItem | null, after: CostItem, options: CostItemGuardOptions = {}): Promise<void> {
+  if (!before || before.category !== GENERAL_POWER_CATEGORY || before.operatingPower !== undefined) return
+  const stillGeneral = after.category === GENERAL_POWER_CATEGORY && after.amountCents > 0 && after.operatingPower === undefined && (after.period === before.period || options.periodChange === true)
+  if (stillGeneral) {
+    // G2-K1: Die Rechnung wird nicht kleiner als die Abzüge aus ihr (beim Zeitraumwechsel: Endstand).
+    if (options.periodChange || after.amountCents >= before.amountCents) return
+    const abgezogen = -(await db.select({ amountCents: costItems.amountCents }).from(costItems).where(eq(costItems.operatingPowerGeneralId, after.id)))
+      .reduce((a, c) => a + c.amountCents, 0)
+    if (abgezogen > after.amountCents) {
+      throw new HeatingError(400, `Aus „${before.description}“ sind ${operatingPowerEuro(abgezogen)} abgezogen; die Rechnung kann nicht kleiner sein. Ändern Sie zuerst die Abzüge.`)
+    }
+    return
+  }
+  const abzuege = await deductionsFrom(db, after.id)
+  if (abzuege.length > 0) {
+    throw new HeatingError(400, `Aus „${before.description}“ ist der Abzug ${abzuege.join(', ')} gerechnet. Kostenart, Zeitraum und positiver Betrag der Stromrechnung bleiben, solange er besteht; löschen oder ändern Sie zuerst den Abzug.`)
+  }
 }
 
 // Eine Wohnung darf das Objekt wechseln, solange nichts Objektgebundenes an ihr hängt. Ihr
 // Mietverhältnis nimmt sie mit, denn es erbt das Objekt über sie; ein Zähler, eine
 // Direktzuordnung oder ein vereinbarter Anteil gehören dagegen zum alten Objekt.
+// Welche Wohnungen eine Anlage mit getrennter Heizkostenabrechnung versorgt, entscheidet, welche
+// Abrechnung eine Heizvorauszahlung anrechnet (`separateOwner` nur für versorgte Wohnungen, sonst P).
+// Wechselte das still, stünde eine schon angerechnete Heizvorauszahlung in einer anderen Abrechnung
+// als bisher, auch in einer abgeschlossenen (Durchsicht von #231, Critical 1). Deshalb abgelehnt, solange
+// eine betroffene Wohnung ein Mietverhältnis mit Heizvorauszahlung hat und die Anlage Spannen nach
+// Weg d führt. Eine Vorschau, die die Staffeln zusammenführt, verschöbe dieselben Monate ebenso; die
+// Ablehnung mit Satz ist die ehrlichere Antwort.
+export async function guardServedChange(db: Executor, plantId: string, unitIds: readonly string[]): Promise<void> {
+  if (unitIds.length === 0) return
+  const spans = await db.select({ from: heatingSeparateSpans.from }).from(heatingSeparateSpans).where(eq(heatingSeparateSpans.plantId, plantId))
+  if (spans.length === 0) return
+  const rows = await db
+    .select({ name: tenancies.tenantName })
+    .from(heatingPrepayments)
+    .innerJoin(tenancies, eq(heatingPrepayments.tenancyId, tenancies.id))
+    .where(and(inArray(tenancies.unitId, [...unitIds]), sql`${heatingPrepayments.monthlyCents} > 0`))
+  const names = [...new Set(rows.map((r) => r.name))]
+  if (names.length === 0) return
+  throw new HeatingError(409,
+    `Für ${andList(names.map((n) => `„${n}“`))} ist eine Heizvorauszahlung erfasst, und die Heizkosten werden getrennt abgerechnet. ` +
+      'Ob die Heizanlage diese Wohnung versorgt, entscheidet, welche Abrechnung die Heizvorauszahlung anrechnet; nach der Änderung stünde sie in einer anderen als bisher, auch in einer schon abgeschlossenen. ' +
+      'Das lässt Mietfuchs deshalb nicht zu, solange es diese Heizvorauszahlung gibt. Stimmt die Zuordnung nicht, tragen Sie bei diesen Mietverhältnissen die Heizvorauszahlung als übrige Vorauszahlung ein (Stammdaten → Mietverhältnis) und prüfen dabei die abgeschlossenen Abrechnungen. Gespeichert wurde nichts.')
+}
+
 async function guardUnit(db: Executor, before: Unit | null, after: Unit): Promise<void> {
+  // „Kein Anschluss: Wärme“ ändert, welche Anlage ohne Liste die Wohnung versorgt (#117, Heizung PR 5).
+  if (before && before.propertyId === after.propertyId) {
+    const plants = await db.select({ id: heatingPlants.id }).from(heatingPlants)
+      .where(and(eq(heatingPlants.propertyId, after.propertyId), eq(heatingPlants.unitsLimited, false)))
+    for (const plant of plants) {
+      if (servesUnit({ units: null }, before) !== servesUnit({ units: null }, after)) await guardServedChange(db, plant.id, [after.id])
+    }
+  }
   if (!before || before.propertyId === after.propertyId) return
+  // An einer Heizanlage (Heizung PR 4, Durchsicht von #230): Die Anlage gehört zum bisherigen
+  // Objekt; wechselte die Wohnung mit, versorgte sie eine Anlage über die Objektgrenze, und das
+  // eigene Backup würde beim Einspielen abgelehnt.
+  const anlagen = await db
+    .select({ name: heatingPlants.name })
+    .from(heatingPlantUnits)
+    .innerJoin(heatingPlants, eq(heatingPlantUnits.plantId, heatingPlants.id))
+    .where(eq(heatingPlantUnits.unitId, after.id))
+  if (anlagen.length > 0) {
+    throw new CrossPropertyError(
+      `Die Wohnung „${after.name}“ hängt an der Heizanlage des bisherigen Objekts und kann deshalb nicht in ein anderes Objekt wechseln. ` +
+        'Nehmen Sie sie zuerst in den Stammdaten unter „Heizung“ aus der Liste der angeschlossenen Wohnungen.',
+    )
+  }
   const haengt: string[] = []
   const zaehler = await db.select({ n: count() }).from(meters).where(eq(meters.unitId, after.id))
   if ((zaehler[0]?.n ?? 0) > 0) haengt.push('Zähler')
@@ -427,6 +1389,13 @@ async function guardUnit(db: Executor, before: Unit | null, after: Unit): Promis
     .innerJoin(tenancies, eq(costItemAmounts.tenancyId, tenancies.id))
     .where(eq(tenancies.unitId, after.id))
   if ((betraege[0]?.n ?? 0) > 0) haengt.push('Einzelbeträge ihrer Mietverhältnisse')
+  // Schätzungen nach § 9a und Werte eines Ablesedienstes gehören zur Heizanlage des bisherigen Objekts
+  // (Durchsicht von #242, G-I3); ohne Zähler griff keine der Prüfungen darüber, und das eigene Backup wurde
+  // danach beim Wiederherstellen abgelehnt.
+  const schaetzungen = await db.select({ n: count() }).from(heatingEstimates).where(eq(heatingEstimates.unitId, after.id))
+  if ((schaetzungen[0]?.n ?? 0) > 0) haengt.push('Schätzungen nach § 9a HeizkostenV')
+  const ablesedienst = await db.select({ n: count() }).from(heatingServiceValues).where(eq(heatingServiceValues.unitId, after.id))
+  if ((ablesedienst[0]?.n ?? 0) > 0) haengt.push('Werte des Ablesedienstes')
   if (haengt.length === 0) return
   throw new CrossPropertyError(
     `Die Wohnung „${after.name}“ kann nicht in ein anderes Objekt wechseln, weil noch ${haengt.join(', ')} ` +
@@ -434,19 +1403,115 @@ async function guardUnit(db: Executor, before: Unit | null, after: Unit): Promis
   )
 }
 
+async function guardTenancy(db: Executor, before: Tenancy | null, after: Tenancy, body: unknown): Promise<void> {
+  // Laienprobe B1: Schickt das Formular die Marke des Stands, den es geladen hat, muss sie noch
+  // stimmen. Ein Rumpf ohne Marke (Mieterwechsel, Jahreskorrektur aus der Abrechnung, ein alter Tab)
+  // ändert nur, was er nennt, und braucht sie nicht.
+  const expected = raw(body, 'ifUnchanged')
+  if (before && typeof expected === 'string' && expected !== tenancyStamp(before)) {
+    throw new StaleTenancyError(
+      `Das Mietverhältnis „${before.tenantName}“ wurde inzwischen an anderer Stelle geändert, etwa beim Aufteilen der Vorauszahlung ` +
+        'für die Heizung oder beim Wechsel des Abrechnungszeitraums. Gespeichert wurde nichts, damit diese Änderung nicht verloren geht. ' +
+        'Bitte schließen Sie das Formular, öffnen Sie das Mietverhältnis erneut und tragen Sie Ihre Änderung noch einmal ein.',
+    )
+  }
+  // Die Jahreskorrektur (#208): jeder Schlüssel ein Zeitraum des Objekts der Wohnung. Eine
+  // vierstellige Jahreszahl im Rumpf schickt nur ein alter Tab.
+  const sent = raw(body, 'prepaymentOverrides')
+  const legacyYear = isObject(sent) && Object.keys(Object(sent)).some((k) => YEAR_ONLY.test(k))
+  const [unit] = await db.select({ propertyId: units.propertyId }).from(units).where(eq(units.id, after.unitId))
+  if (unit) await requirePeriods(db, unit.propertyId, Object.keys(after.prepaymentOverrides), legacyYear, `Die Jahreskorrektur von „${after.tenantName}“`)
+  await guardHeatingOverrides(db, after)
+  await guardTenancyMove(db, before, after)
+}
+
 // Ein Mietverhältnis erbt sein Objekt über die Wohnung. Wechselt es in eine Wohnung eines anderen
 // Objekts, bleiben seine Einzelbeträge (#94) beim alten zurück; dann lieber ablehnen.
-async function guardTenancy(db: Executor, before: Tenancy | null, after: Tenancy): Promise<void> {
+async function guardTenancyMove(db: Executor, before: Tenancy | null, after: Tenancy): Promise<void> {
   if (!before || before.unitId === after.unitId) return
+  await guardHeatingMove(db, before, after)
   const objektVon = async (unitId: string) =>
     (await db.select({ propertyId: units.propertyId }).from(units).where(eq(units.id, unitId)))[0]?.propertyId
   if ((await objektVon(before.unitId)) === (await objektVon(after.unitId))) return
   const betraege = await db.select({ n: count() }).from(costItemAmounts).where(eq(costItemAmounts.tenancyId, after.id))
-  if ((betraege[0]?.n ?? 0) === 0) return
+  // CO₂-Beträge „vom Vermieter übernommen“ (Heizung PR 6) gehören ebenso zur Heizanlage des alten Objekts.
+  const co2 = await db.select({ n: count() }).from(co2TenantReliefs).where(eq(co2TenantReliefs.tenancyId, after.id))
+  if ((betraege[0]?.n ?? 0) === 0 && (co2[0]?.n ?? 0) === 0) return
   throw new CrossPropertyError(
     `Das Mietverhältnis „${after.tenantName}“ kann nicht in eine Wohnung eines anderen Objekts wechseln, weil noch ` +
-      'Einzelbeträge von Kostenpositionen des bisherigen Objekts an ihm hängen. Bitte lösen Sie diese Verweise zuerst.',
+      'Einzelbeträge von Kostenpositionen oder CO₂-Angaben des bisherigen Objekts an ihm hängen. Bitte lösen Sie diese Verweise zuerst.',
   )
+}
+
+// Die Korrekturen der Heizvorauszahlung (Heizung PR 5): Anlage desselben Objekts, Schlüssel einer
+// getrennt abgerechneten Heizperiode der Anlage, eine vorläufige nur mit Monaten dieser
+// Heizperiode (D2).
+async function guardHeatingOverrides(db: Executor, after: Tenancy): Promise<void> {
+  const overrides = after.heatingPrepaymentOverrides ?? []
+  if (overrides.length === 0) return
+  const [unit] = await db.select({ propertyId: units.propertyId }).from(units).where(eq(units.id, after.unitId))
+  for (const o of overrides) {
+    const heating = await heatingRulesOf(db, o.plantId)
+    if (!heating) throw new HeatingError(400, 'Diese Heizanlage gibt es nicht (mehr). Bitte laden Sie die Seite neu; gespeichert wurde nichts.')
+    if (unit && heating.propertyId !== unit.propertyId) {
+      throw new CrossPropertyError(
+        `Die Heizvorauszahlung von „${after.tenantName}“ gehört zu Objekt ${await propertyName(db, unit.propertyId)}, die Heizanlage aber zu ` +
+          `${await propertyName(db, heating.propertyId)}. Eine Korrektur gehört zur Heizanlage des eigenen Objekts.`,
+      )
+    }
+    const h = periodOfKey(heating.rules, o.period)
+    if (h === null) {
+      throw new PeriodError(`Die Korrektur der Heizvorauszahlung von „${after.tenantName}“ steht unter ${o.period}, einer Heizperiode, die es für die Heizanlage nicht gibt.`)
+    }
+    // Eine Heizkorrektur gibt es nur für eine getrennt abgerechnete Heizperiode (Weg d). Sonst
+    // rechnet die Abrechnung des Objekts die Heizstaffel an, und ihre Jahreskorrektur gilt für alles,
+    // was sie anrechnet (3.7).
+    const spans = await db.select({ from: heatingSeparateSpans.from, until: heatingSeparateSpans.until }).from(heatingSeparateSpans).where(eq(heatingSeparateSpans.plantId, o.plantId))
+    if (!heating.own || isObjectPeriod(await rulesForProperty(db, heating.propertyId), h) || spanOf(spans, h) === undefined) {
+      throw new PeriodError(
+        `Die Korrektur der Heizvorauszahlung von „${after.tenantName}“ für ${periodLabel(h)}: Eine solche Korrektur gibt es nur für eine getrennt abgerechnete Heizperiode. ` +
+          'Tragen Sie den tatsächlich gezahlten Betrag als Jahreskorrektur der Abrechnung ein.',
+      )
+    }
+    if (!o.provisional) continue
+    const months = periodMonths(h)
+    if (o.fromMonth === null || o.toMonth === null || !months.includes(o.fromMonth) || !months.includes(o.toMonth) || o.toMonth < o.fromMonth) {
+      throw new PeriodError(`Die vorläufige Korrektur der Heizvorauszahlung von „${after.tenantName}“ nennt Monate außerhalb der Heizperiode ${periodLabel(h)}.`)
+    }
+  }
+}
+
+// Versorgt eine Anlage die Wohnung? Ohne Liste jede ohne „kein Anschluss: Wärme“, mit Liste genau
+// die genannten (`servesUnit`, hier aus den Tabellen gelesen).
+async function plantServes(db: Executor, plantId: string, unitsLimited: boolean, unitId: string): Promise<boolean> {
+  if (unitsLimited) {
+    return (await db.select({ unitId: heatingPlantUnits.unitId }).from(heatingPlantUnits)
+      .where(and(eq(heatingPlantUnits.plantId, plantId), eq(heatingPlantUnits.unitId, unitId)))).length > 0
+  }
+  return (await db.select({ unitId: unitNoConnection.unitId }).from(unitNoConnection)
+    .where(and(eq(unitNoConnection.unitId, unitId), eq(unitNoConnection.meterType, 'waerme')))).length === 0
+}
+
+// Ein Mietverhältnis mit Heizvorauszahlung wechselt in eine Wohnung, die eine Anlage mit Spannen nach
+// Weg d anders versorgt als die bisherige (Durchsicht von #231, Minor 5): wie `guardServedChange`,
+// denn auch dann stünde eine angerechnete Heizvorauszahlung danach in einer anderen Abrechnung.
+// Bei H = P (Anlage ohne eigene Heizperiode, getrennte Vorauszahlung nur ausgewiesen) gibt es keine
+// Spannen und damit keinen Monat, den eine eigene Heizkostenabrechnung anrechnet (`separateOwner` ist
+// dort immer `null`): Jede Heizvorauszahlung rechnet die Abrechnung P an, gleich welche Wohnung die
+// Anlage versorgt. Ein Wohnungswechsel verschiebt dann nichts; geprüft wird nur bei Spannen.
+async function guardHeatingMove(db: Executor, before: Tenancy, after: Tenancy): Promise<void> {
+  if (!(after.heatingPrepayments ?? before.heatingPrepayments ?? []).some((e) => e.monthlyCents > 0)) return
+  const propertyIds = (await db.select({ propertyId: units.propertyId }).from(units).where(inArray(units.id, [before.unitId, after.unitId]))).map((u) => u.propertyId)
+  if (propertyIds.length === 0) return
+  const plants = await db.select({ id: heatingPlants.id, unitsLimited: heatingPlants.unitsLimited }).from(heatingPlants).where(inArray(heatingPlants.propertyId, propertyIds))
+  for (const plant of plants) {
+    const spans = await db.select({ from: heatingSeparateSpans.from }).from(heatingSeparateSpans).where(eq(heatingSeparateSpans.plantId, plant.id))
+    if (spans.length === 0) continue
+    if ((await plantServes(db, plant.id, plant.unitsLimited, before.unitId)) === (await plantServes(db, plant.id, plant.unitsLimited, after.unitId))) continue
+    throw new HeatingError(409,
+      `Für „${after.tenantName}“ ist eine Heizvorauszahlung erfasst, und die Heizkosten werden getrennt abgerechnet. Die neue Wohnung versorgt die Heizanlage anders als die bisherige; ` +
+        'die Heizvorauszahlung stünde danach in einer anderen Abrechnung als bisher, auch in einer schon abgeschlossenen. Legen Sie für die neue Wohnung ein neues Mietverhältnis an (Mieterwechsel). Gespeichert wurde nichts.')
+  }
 }
 
 // Verweise über Objektgrenzen im ganzen Bestand, als lesbare Sätze. Leer heißt in Ordnung.
@@ -493,6 +1558,136 @@ export async function crossPropertyViolations(db: Database): Promise<string[]> {
     .innerJoin(units, eq(costItemSelfAmounts.unitId, units.id))
     .where(ne(costItems.propertyId, units.propertyId))
   for (const c of eigen) befunde.push(`Die Kostenposition „${c.description}“ hat einen Eigenbetrag für eine Wohnung eines anderen Objekts.`)
+  // Heizung PR 5: eine Heizkorrektur auf die Anlage eines anderen Objekts.
+  const anlagen = new Map((await db.select({ id: heatingPlants.id, propertyId: heatingPlants.propertyId }).from(heatingPlants)).map((p) => [p.id, p.propertyId]))
+  const heiz = await db
+    .select({ plantId: heatingPrepaymentOverrides.plantId, tenantName: tenancies.tenantName, propertyId: units.propertyId })
+    .from(heatingPrepaymentOverrides)
+    .innerJoin(tenancies, eq(heatingPrepaymentOverrides.tenancyId, tenancies.id))
+    .innerJoin(units, eq(tenancies.unitId, units.id))
+  for (const h of heiz) {
+    if (anlagen.get(h.plantId) !== h.propertyId) befunde.push(`Die Korrektur der Heizvorauszahlung von „${h.tenantName}“ zeigt auf die Heizanlage eines anderen Objekts.`)
+  }
+  // CO₂-Angaben (Heizung PR 6): Beträge für Mietverhältnisse und die Position mit L gehören zum
+  // Objekt der Heizanlage.
+  const co2 = await db
+    .select({ tenantName: tenancies.tenantName })
+    .from(co2TenantReliefs)
+    .innerJoin(co2Statements, eq(co2TenantReliefs.statementId, co2Statements.heatingPeriodId))
+    .innerJoin(heatingPeriods, eq(co2Statements.heatingPeriodId, heatingPeriods.id))
+    .innerJoin(heatingPlants, eq(heatingPeriods.plantId, heatingPlants.id))
+    .innerJoin(tenancies, eq(co2TenantReliefs.tenancyId, tenancies.id))
+    .innerJoin(units, eq(tenancies.unitId, units.id))
+    .where(ne(heatingPlants.propertyId, units.propertyId))
+  for (const c of co2) befunde.push(`Ein CO₂-Betrag „vom Vermieter übernommen“ für ${c.tenantName} gehört zu einer Heizanlage eines anderen Objekts.`)
+  const co2Position = await db
+    .select({ description: costItems.description })
+    .from(co2Statements)
+    .innerJoin(heatingPeriods, eq(co2Statements.heatingPeriodId, heatingPeriods.id))
+    .innerJoin(heatingPlants, eq(heatingPeriods.plantId, heatingPlants.id))
+    .innerJoin(costItems, eq(co2Statements.serviceCostItemId, costItems.id))
+    .where(ne(costItems.propertyId, heatingPlants.propertyId))
+  for (const c of co2Position) befunde.push(`Die CO₂-Angaben einer Heizanlage verweisen auf die Kostenposition „${c.description}“ eines anderen Objekts.`)
+  // Lieferungen (Heizung PR 7): Eine Position zeigt nur auf eine Lieferung einer Anlage ihres Objekts.
+  const lieferungen = await db
+    .select({ description: costItems.description })
+    .from(costItems)
+    .innerJoin(fuelDeliveries, eq(costItems.fuelDeliveryId, fuelDeliveries.id))
+    .innerJoin(heatingPlants, eq(fuelDeliveries.plantId, heatingPlants.id))
+    .where(ne(heatingPlants.propertyId, costItems.propertyId))
+  for (const c of lieferungen) befunde.push(`Die Kostenposition „${c.description}“ zeigt auf eine Lieferung einer Heizanlage eines anderen Objekts.`)
+  // Werte eines Ablesedienstes gehören zu einer Wohnung im Objekt ihrer Heizanlage (Heizung PR 12).
+  const ablesedienst = await db
+    .select({ unitName: units.name })
+    .from(heatingServiceValues)
+    .innerJoin(heatingPeriods, eq(heatingServiceValues.heatingPeriodId, heatingPeriods.id))
+    .innerJoin(heatingPlants, eq(heatingPeriods.plantId, heatingPlants.id))
+    .innerJoin(units, eq(heatingServiceValues.unitId, units.id))
+    .where(ne(heatingPlants.propertyId, units.propertyId))
+  for (const v of ablesedienst) befunde.push(`Ein Wert des Ablesedienstes gehört zur Wohnung „${v.unitName}“ eines anderen Objekts als seine Heizanlage.`)
+  // Schätzungen nach § 9a gehören zu einer Wohnung im Objekt ihrer Heizanlage (Heizung PR 13).
+  const schaetzungen = await db
+    .select({ unitName: units.name })
+    .from(heatingEstimates)
+    .innerJoin(heatingPeriods, eq(heatingEstimates.heatingPeriodId, heatingPeriods.id))
+    .innerJoin(heatingPlants, eq(heatingPeriods.plantId, heatingPlants.id))
+    .innerJoin(units, eq(heatingEstimates.unitId, units.id))
+    .where(ne(heatingPlants.propertyId, units.propertyId))
+  for (const s of schaetzungen) befunde.push(`Eine Schätzung nach § 9a gehört zur Wohnung „${s.unitName}“ eines anderen Objekts als ihre Heizanlage.`)
+  // Betriebsstrom (Durchsicht von #252, G-W2): Ein Abzug zeigt nur auf Betriebsstrom und Stromrechnung
+  // seines Objekts.
+  const ziel = alias(costItems, 'ziel')
+  for (const [spalte, was] of [[costItems.operatingPowerItemId, 'den Betriebsstrom'], [costItems.operatingPowerGeneralId, 'die Stromrechnung']] as const) {
+    const quer = await db
+      .select({ description: costItems.description, target: ziel.description })
+      .from(costItems)
+      .innerJoin(ziel, eq(spalte, ziel.id))
+      .where(ne(costItems.propertyId, ziel.propertyId))
+    for (const c of quer) befunde.push(`Der Abzug „${c.description}“ zeigt auf ${was} „${c.target}“ eines anderen Objekts.`)
+  }
+  return befunde
+}
+
+// Zeitraumschlüssel, die für ihr Objekt keinen Zeitraum bezeichnen (#208), als lesbare Sätze. Über
+// die Routen entsteht keiner (die Schreibprüfungen oben); in einem Archiv kann einer stehen, etwa von
+// Hand bearbeitet. Was darunter steht, erschiene in keiner Abrechnung.
+export async function orphanPeriodKeys(db: Database): Promise<string[]> {
+  const rulesById = new Map((await readProperties(db)).map((p) => [p.id, rulesOf(p)]))
+  const befunde: string[] = []
+  const pruefe = (propertyId: string | null, key: string, was: string): void => {
+    const rules = propertyId === null ? undefined : rulesById.get(propertyId)
+    if (!rules) return
+    const period = parsePeriodKey(key)
+    if (period === null || periodOfKey(rules, period) === null) befunde.push(`${was} steht unter dem Zeitraum ${key}, den es für das Objekt nicht gibt.`)
+  }
+  // Heizpositionen und Heizkorrekturen einer Anlage mit eigener Heizperiode tragen deren Schlüssel
+  // (Heizung PR 5); ohne eigene die des Objekts.
+  const plantRulesById = new Map((await readHeatingPlants(db)).map((p) => [p.id, {
+    propertyId: p.propertyId,
+    rules: p.periodStartMonth === null ? null : plantRules(p, rulesById.get(p.propertyId) ?? CALENDAR_RULES),
+  }]))
+  const pruefeHeizung = (plantId: string | null, propertyId: string | null, key: string, was: string): void => {
+    const plant = plantId === null ? undefined : plantRulesById.get(plantId)
+    if (!plant?.rules) return pruefe(plant?.propertyId ?? propertyId, key, was)
+    const period = parsePeriodKey(key)
+    if (period === null || periodOfKey(plant.rules, period) === null) befunde.push(`${was} steht unter der Heizperiode ${key}, die es für die Heizanlage nicht gibt.`)
+  }
+  for (const c of await db.select({ propertyId: costItems.propertyId, period: costItems.period, description: costItems.description, plantId: costItems.heatingPlantId }).from(costItems)) {
+    pruefeHeizung(c.plantId, c.propertyId, c.period, `Die Kostenposition „${c.description}“`)
+  }
+  for (const c of await db.select({ propertyId: closedSettlements.propertyId, period: closedSettlements.period }).from(closedSettlements)) {
+    pruefe(c.propertyId, c.period, 'Eine abgeschlossene Abrechnung')
+  }
+  for (const c of await db.select({ propertyId: closedSettlementHistory.propertyId, period: closedSettlementHistory.period }).from(closedSettlementHistory)) {
+    pruefe(c.propertyId, c.period, 'Ein früherer Abschluss')
+  }
+  const korrekturen = await db
+    .select({ propertyId: units.propertyId, period: prepaymentOverrides.period, tenantName: tenancies.tenantName })
+    .from(prepaymentOverrides)
+    .innerJoin(tenancies, eq(prepaymentOverrides.tenancyId, tenancies.id))
+    .innerJoin(units, eq(tenancies.unitId, units.id))
+  for (const k of korrekturen) pruefe(k.propertyId, k.period, `Die Jahreskorrektur von „${k.tenantName}“`)
+  for (const a of await db.select({ propertyId: assessments.propertyId, period: assessments.requestedPeriod, file: assessments.file }).from(assessments)) {
+    if (a.period !== null) pruefe(a.propertyId, a.period, `Die Auswertung des Belegs „${a.file}“`)
+  }
+  const heizkorrekturen = await db
+    .select({ plantId: heatingPrepaymentOverrides.plantId, period: heatingPrepaymentOverrides.period, tenantName: tenancies.tenantName })
+    .from(heatingPrepaymentOverrides)
+    .innerJoin(tenancies, eq(heatingPrepaymentOverrides.tenancyId, tenancies.id))
+  for (const k of heizkorrekturen) pruefeHeizung(k.plantId, null, k.period, `Die Korrektur der Heizvorauszahlung von „${k.tenantName}“`)
+  for (const c of await db.select({ plantId: closedHeatingSettlements.plantId, period: closedHeatingSettlements.period }).from(closedHeatingSettlements)) {
+    pruefeHeizung(c.plantId, null, c.period, 'Eine abgeschlossene Heizkostenabrechnung')
+  }
+  for (const c of await db.select({ plantId: closedHeatingSettlementHistory.plantId, period: closedHeatingSettlementHistory.period }).from(closedHeatingSettlementHistory)) {
+    pruefeHeizung(c.plantId, null, c.period, 'Ein früherer Abschluss einer Heizkostenabrechnung')
+  }
+  // Heizung PR 19: der Verrechnungszeitraum einer CO₂-Erstattung gehört zum Objekt des Mietverhältnisses.
+  const erstattungen = await db
+    .select({ propertyId: units.propertyId, period: co2Refunds.settlePeriod, tenantName: tenancies.tenantName })
+    .from(co2Refunds)
+    .innerJoin(tenancies, eq(co2Refunds.tenancyId, tenancies.id))
+    .innerJoin(units, eq(tenancies.unitId, units.id))
+  for (const e of erstattungen) if (e.period !== null) pruefe(e.propertyId, e.period, `Die CO₂-Erstattung von „${e.tenantName}“`)
   return befunde
 }
 
@@ -502,7 +1697,7 @@ function mergeProperty(current: Property, body: unknown): Property {
   // `null` ist bei den drei abweichenden Angaben ein ausdrücklicher Wert („die Vorgabe gilt“),
   // deshalb dieselbe Lesart wie beim offenen Mietverhältnis.
   const nullableNumber = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
-  return {
+  const next: Property = {
     id: current.id,
     name: merged(body, 'name', current.name, (v) => asText(v, '')),
     kind: merged(body, 'kind', current.kind, (v) => oneOfOrUndefined(PROPERTY_KINDS, v) ?? current.kind),
@@ -512,7 +1707,21 @@ function mergeProperty(current: Property, body: unknown): Property {
     paymentDeadlineDays: merged(body, 'paymentDeadlineDays', current.paymentDeadlineDays, nullableNumber),
     // `null` heißt unbekannt und ist ein ausdrücklicher Wert (#121).
     cableBuiltBeforeDec2021: merged(body, 'cableBuiltBeforeDec2021', current.cableBuiltBeforeDec2021 ?? null, (v) => (typeof v === 'boolean' ? v : null)),
+    // § 5d CO2KostAufG (Heizung PR 18); `null` heißt unbekannt, ein anderer Wert als true/false ebenso.
+    tightMarket: merged(body, 'tightMarket', current.tightMarket ?? null, (v) => (typeof v === 'boolean' ? v : null)),
+    tightMarketFrom: merged(body, 'tightMarketFrom', current.tightMarketFrom ?? null, (v) => isoDateOrNull(v, 'Der Beginn der Verordnung')),
+    tightMarketTo: merged(body, 'tightMarketTo', current.tightMarketTo ?? null, (v) => isoDateOrNull(v, 'Das Ende der Verordnung')),
   }
+  // Die Geltung gehört nur zu „ja“; „nein“ und „unbekannt“ nehmen sie mit (Bedingung
+  // properties_tight_market_dates_valid).
+  if (next.tightMarket !== true) {
+    next.tightMarketFrom = null
+    next.tightMarketTo = null
+  }
+  if (next.tightMarketFrom && next.tightMarketTo && next.tightMarketFrom > next.tightMarketTo) {
+    throw new HeatingError(400, 'Der Beginn der Verordnung liegt nach dem Ende. Bitte prüfen Sie beide Tage.')
+  }
+  return next
 }
 
 const emptyProperty = (id: string): Property => ({
@@ -562,6 +1771,7 @@ export async function unitDependents(db: Executor, unitId: string): Promise<Unit
     payments: await n(db.select({ n: count() }).from(payments).where(inArray(payments.tenancyId, ihreMietverhaeltnisse))),
     costItemLinks: verweise,
     directCostItems: await n(db.select({ n: count() }).from(costItems).where(eq(costItems.directUnitId, unitId))),
+    fuelDeliveries: await n(db.select({ n: count() }).from(fuelDeliveries).where(eq(fuelDeliveries.unitId, unitId))),
   }
 }
 
@@ -573,18 +1783,24 @@ export async function removeProperty(db: Database, id: string): Promise<Property
   const alle = await readProperties(db)
   if (!alle.some((p) => p.id === id)) return { removed: false, reason: 'missing' }
   if (alle.length === 1) return { removed: false, reason: 'last' }
-  const zahl = async (table: typeof units | typeof meters | typeof costItems | typeof closedSettlements | typeof closedSettlementHistory) =>
+  const zahl = async (table: typeof units | typeof meters | typeof costItems | typeof closedSettlements | typeof closedSettlementHistory | typeof heatingPlants) =>
     (await db.select({ n: count() }).from(table).where(eq(table.propertyId, id)))[0]?.n ?? 0
   const teile = [
     [await zahl(units), 'Wohnung', 'Wohnungen'],
     [await zahl(meters), 'Zähler', 'Zähler'],
     [await zahl(costItems), 'Kostenposition', 'Kostenpositionen'],
+    [await zahl(heatingPlants), 'Heizanlage', 'Heizanlagen'],
     [await zahl(closedSettlements), 'abgeschlossene Abrechnung', 'abgeschlossene Abrechnungen'],
     [await zahl(closedSettlementHistory), 'früherer Abschluss', 'frühere Abschlüsse'],
   ] as const
   const inUse = teile.filter(([n]) => n > 0).map(([n, eins, viele]) => `${n} ${n === 1 ? eins : viele}`)
   if (inUse.length > 0) return { removed: false, reason: 'inUse', inUse: inUse.join(', ') }
-  await db.delete(properties).where(eq(properties.id, id))
+  // Eine Auswertung verliert mit ihrem Objekt auch den gewählten Zeitraum (#208): Der Fremdschlüssel
+  // setzt `property_id` auf NULL, und ein Zeitraum ohne Objekt verletzte die Prüfbedingung.
+  await db.transaction(async (tx) => {
+    await tx.update(assessments).set({ requestedPeriod: null }).where(eq(assessments.propertyId, id))
+    await tx.delete(properties).where(eq(properties.id, id))
+  })
   return { removed: true }
 }
 
@@ -603,21 +1819,32 @@ const tenancyRow = (t: Tenancy) => ({
   iban: orNull(t.iban), contractDate: orNull(t.contractDate), depositCents: orNull(t.depositCents),
   depositStatus: orNull(t.depositStatus), notes: orNull(t.notes),
   costModel: orNull(t.costModel), heatingModel: orNull(t.heatingModel),
+  selfSupplyKind: t.heatingModel === 'selfSupply' ? orNull(t.selfSupplyKind) : null,
+  halfSplitNoticeOn: orNull(t.halfSplitNoticeOn),
 })
 const costItemRow = (c: CostItem) => ({
-  id: c.id, propertyId: c.propertyId, year: c.year, category: c.category, description: c.description, vendor: orNull(c.vendor),
+  id: c.id, propertyId: c.propertyId, period: c.period, category: c.category, description: c.description, vendor: orNull(c.vendor),
   amountCents: c.amountCents, key: c.key, directUnitId: c.directUnitId ?? null,
   meterType: c.meterType ?? null, labor35aCents: orNull(c.labor35aCents), invoiceFile: orNull(c.invoiceFile),
   externalMeasure: c.externalBasis?.measure ?? null, externalTotal: c.externalBasis?.total ?? null,
   externalTotalCents: c.externalBasis?.totalCents ?? null,
   participantsLimited: Array.isArray(c.participantUnitIds),
+  serviceFrom: orNull(c.serviceFrom), serviceTo: orNull(c.serviceTo), taxYear: orNull(c.taxYear), heatingPart: orNull(c.heatingPart),
+  heatingTarget: orNull(c.heatingTarget),
+  heatingPlantId: c.heatingPlantId ?? null,
+  fuelDeliveryId: c.fuelDeliveryId ?? null,
+  operatingPower: orNull(c.operatingPower), operatingPowerItemId: orNull(c.operatingPowerItemId),
+  operatingPowerBasis: orNull(c.operatingPowerBasis), operatingPowerGeneralId: orNull(c.operatingPowerGeneralId),
 })
 const meterRow = (m: Meter) => ({
   id: m.id, propertyId: m.propertyId, name: m.name, unitId: m.unitId, type: m.type, meterNumber: orNull(m.meterNumber), unit: m.unit,
+  heatingPlantId: m.heatingPlantId ?? null, heatingRole: m.heatingRole ?? null, remoteReadable: m.remoteReadable ?? null, installedOn: m.installedOn ?? null,
+  hcaScale: m.hcaScale ?? null, ratingFactor: m.ratingFactor ?? null, calibratedUntil: m.calibratedUntil ?? null,
 })
 const readingRow = (r: Reading) => ({
   id: r.id, meterId: r.meterId, date: r.date, value: r.value,
   replacement: orNull(r.replacement), oldEndValue: orNull(r.oldEndValue), note: orNull(r.note),
+  interimFor: orNull(r.interimFor),
 })
 const paymentRow = (p: Payment) => ({
   id: p.id, tenancyId: p.tenancyId, date: p.date, amountCents: p.amountCents, note: orNull(p.note),
@@ -634,6 +1861,14 @@ async function writeTenancyChildren(db: Executor, t: Tenancy): Promise<void> {
   }
   await db.delete(baseRents).where(eq(baseRents.tenancyId, t.id))
   await db.delete(prepaymentOverrides).where(eq(prepaymentOverrides.tenancyId, t.id))
+  await db.delete(heatingPrepayments).where(eq(heatingPrepayments.tenancyId, t.id))
+  const heizstaffel = t.heatingPrepayments ?? []
+  if (heizstaffel.length > 0) {
+    await db.insert(heatingPrepayments).values(heizstaffel.map((e) => ({ tenancyId: t.id, from: e.from, monthlyCents: e.monthlyCents })))
+  }
+  await db.delete(heatingPrepaymentOverrides).where(eq(heatingPrepaymentOverrides.tenancyId, t.id))
+  const heizkorrekturen = t.heatingPrepaymentOverrides ?? []
+  if (heizkorrekturen.length > 0) await db.insert(heatingPrepaymentOverrides).values(heizkorrekturen.map((o) => ({ tenancyId: t.id, ...o })))
   if (t.personHistory.length > 0) {
     await db.insert(personHistory).values(t.personHistory.map((e) => ({ tenancyId: t.id, from: e.from, persons: e.persons })))
   }
@@ -643,10 +1878,11 @@ async function writeTenancyChildren(db: Executor, t: Tenancy): Promise<void> {
   if (t.baseRents.length > 0) {
     await db.insert(baseRents).values(t.baseRents.map((e) => ({ tenancyId: t.id, from: e.from, monthlyCents: e.monthlyCents })))
   }
-  const jahre = Object.entries(t.prepaymentOverrides)
-  if (jahre.length > 0) {
-    await db.insert(prepaymentOverrides).values(jahre.map(([jahr, betrag]) => ({ tenancyId: t.id, year: Number(jahr), amountCents: betrag })))
-  }
+  const korrekturen = Object.entries(t.prepaymentOverrides).flatMap(([schluessel, betrag]) => {
+    const period = parsePeriodKey(schluessel)
+    return period === null ? [] : [{ tenancyId: t.id, period, amountCents: betrag }]
+  })
+  if (korrekturen.length > 0) await db.insert(prepaymentOverrides).values(korrekturen)
 }
 
 // Die Untertabellen einer Kostenposition, ganz ersetzt: vereinbarte Anteile, Teilnehmer (#94)
@@ -689,7 +1925,7 @@ type Collection<T extends CollectionEntity> = {
   read: (db: Database) => Promise<T[]>
   // Hält die Grenze zwischen den Objekten (#92), vor dem Schreiben. `before` ist beim Anlegen
   // `null`. Eigens und nicht in `merge`, weil die Prüfung die Datenbank fragen muss.
-  guard: (db: Executor, before: T | null, after: T) => Promise<void>
+  guard: (db: Executor, before: T | null, after: T, body: unknown) => Promise<void>
   empty: (id: string) => T
   merge: (current: T, body: unknown) => T
   insert: (db: Executor, entity: T) => Promise<void>
@@ -716,7 +1952,19 @@ const unitCollection: Collection<Unit> = {
     await db.update(units).set(unitRow(u)).where(eq(units.id, u.id))
     await writeUnitChildren(db, u)
   },
-  remove: async (db, id) => { await db.delete(units).where(eq(units.id, id)) },
+  // Die Rechnungen einer Etagenheizung hängen an der Wohnung (`fuel_deliveries.unit_id`, CASCADE). Mit ihr
+  // verschwänden Betrag, kg CO₂ und CO₂-Kosten einer bezahlten Rechnung still, und hängt eine Position daran,
+  // scheiterte das Löschen an deren Fremdschlüssel mit einer Meldung, die das Gegenteil sagt (Integrationsdurchsicht
+  // S1). Gesperrt wie das Löschen einer Lieferung mit Position und eines Objekts mit Heizanlage: Die Rechnung ist
+  // Beleg der CO₂-Aufteilung, und wer sie wirklich nicht mehr braucht, löscht sie auf der Seite Heizkosten.
+  remove: async (db, id) => {
+    const rechnungen = await db.select({ label: fuelDeliveries.label }).from(fuelDeliveries).where(eq(fuelDeliveries.unitId, id))
+    if (rechnungen.length > 0) {
+      const namen = andList(rechnungen.map((r) => `„${r.label || 'Rechnung'}“`))
+      throw new HeatingError(409, `An der Wohnung ${rechnungen.length === 1 ? 'hängt die Rechnung' : `hängen die ${rechnungen.length} Rechnungen`} ${namen} der Etagenheizung. Sie ${rechnungen.length === 1 ? 'belegt' : 'belegen'} Brennstoffkosten und CO₂-Aufteilung und würden mit der Wohnung gelöscht. Löschen Sie die ${rechnungen.length === 1 ? 'Rechnung' : 'Rechnungen'} zuerst auf der Seite Heizkosten unter „Lieferungen“, wenn Sie sie nicht mehr brauchen.`)
+    }
+    await db.delete(units).where(eq(units.id, id))
+  },
 }
 
 const tenancyCollection: Collection<Tenancy> = {
@@ -741,14 +1989,30 @@ const costItemCollection: Collection<CostItem> = {
   empty: emptyCostItem,
   merge: mergeCostItem,
   insert: async (db, c) => {
-    await db.insert(costItems).values(costItemRow(c))
-    await writeCostItemShares(db, c)
+    // Eine neue Heizposition ohne Angabe gehört zur Anlage ihres Objekts (Heizung PR 4). `undefined`
+    // heißt „nicht angegeben“, `null` „ausdrücklich ohne“; nur das Erste wird ergänzt.
+    const entity = c.heatingPlantId === undefined ? { ...c, ...(await defaultHeatingPlant(db, c)) } : c
+    await db.insert(costItems).values(costItemRow(entity))
+    await writeCostItemShares(db, entity)
   },
   replace: async (db, c) => {
-    await db.update(costItems).set(costItemRow(c)).where(eq(costItems.id, c.id))
-    await writeCostItemShares(db, c)
+    // Wird eine Position zur Heizposition, bekommt sie die Anlage wie beim Anlegen (Durchsicht von #230).
+    const entity = c.heatingPlantId === undefined ? { ...c, ...(await defaultHeatingPlant(db, c)) } : c
+    await db.update(costItems).set(costItemRow(entity)).where(eq(costItems.id, entity.id))
+    await writeCostItemShares(db, entity)
   },
-  remove: async (db, id) => { await db.delete(costItems).where(eq(costItems.id, id)) },
+  remove: async (db, id) => {
+    // Heizung PR 15: ein Satz statt des Fremdschlüssels (Review Focus 2), für den Betriebsstrom wie für die
+    // Stromrechnung, aus der ein Abzug gerechnet wurde (Durchsicht von #252, G-K3).
+    const abzuege = await db.select({ description: costItems.description }).from(costItems)
+      .where(or(eq(costItems.operatingPowerItemId, id), eq(costItems.operatingPowerGeneralId, id)))
+    if (abzuege.length > 0) {
+      throw new HeatingError(400, `Zu dieser Position gehört ${abzuege.length === 1 ? 'der Abzug' : 'die Abzüge'} ${abzuege.map((a) => `„${a.description}“`).join(', ')} beim Allgemeinstrom. Löschen Sie zuerst den Abzug, damit der Allgemeinstrom nicht still gemindert bleibt.`)
+    }
+    const [c] = await db.select({ fuelDeliveryId: costItems.fuelDeliveryId, period: costItems.period }).from(costItems).where(eq(costItems.id, id))
+    if (c) await guardFrozenLink(db, { id, fuelDeliveryId: c.fuelDeliveryId, period: c.period }, null)
+    await db.delete(costItems).where(eq(costItems.id, id))
+  },
 }
 
 const meterCollection: Collection<Meter> = {
@@ -758,17 +2022,31 @@ const meterCollection: Collection<Meter> = {
   merge: mergeMeter,
   insert: async (db, m) => { await db.insert(meters).values(meterRow(m)) },
   replace: async (db, m) => { await db.update(meters).set(meterRow(m)).where(eq(meters.id, m.id)) },
-  remove: async (db, id) => { await db.delete(meters).where(eq(meters.id, id)) },
+  // Heizung PR 12 (Durchsicht von #241, M1): Ein Heizkostenverteiler, der in einer abgeschlossenen
+  // Heizperiode zählt, bleibt; mit ihm fielen seine Ablesungen (CASCADE).
+  remove: async (db, id) => {
+    const m = (await readMeters(db)).find((x) => x.id === id)
+    const closed = m && m.type === 'hkv' ? await closedHcaPeriodOf(db, m) : null
+    if (m && closed !== null) {
+      throw new HeatingError(409, `Die Ablesungen von „${m.name}“ zählen in der abgeschlossenen Heizperiode ${closed}; mit dem Gerät fielen sie weg. Ein ausgebautes Gerät lassen Sie stehen; es zählt in späteren Heizperioden nicht mehr mit.`)
+    }
+    await db.delete(meters).where(eq(meters.id, id))
+  },
 }
 
 const readingCollection: Collection<Reading> = {
-  guard: noGuard,
+  guard: guardReading,
   read: readReadings,
   empty: emptyReading,
   merge: mergeReading,
   insert: async (db, r) => { await db.insert(readings).values(readingRow(r)) },
   replace: async (db, r) => { await db.update(readings).set(readingRow(r)).where(eq(readings.id, r.id)) },
-  remove: async (db, id) => { await db.delete(readings).where(eq(readings.id, id)) },
+  // Eine Ablesung des Versorgungszählers in einer abgeschlossenen Heizperiode bleibt (Heizung PR 7).
+  remove: async (db, id) => {
+    const [r] = await db.select({ meterId: readings.meterId, date: readings.date }).from(readings).where(eq(readings.id, id))
+    if (r) await guardSupplyReading(db, r)
+    await db.delete(readings).where(eq(readings.id, id))
+  },
 }
 
 const paymentCollection: Collection<Payment> = {
@@ -823,7 +2101,7 @@ export async function createEntity(db: Database, coll: CollectionName, id: strin
   await withCollection<Promise<void>>(coll, async (c) => {
     const entity = c.merge(c.empty(id), body)
     await db.transaction(async (tx) => {
-      await c.guard(tx, null, entity)
+      await c.guard(tx, null, entity, body)
       await c.insert(tx, entity)
     })
   })
@@ -839,7 +2117,7 @@ export async function updateEntity(db: Database, coll: CollectionName, id: strin
     if (!current) return false
     const entity = c.merge(current, body)
     await db.transaction(async (tx) => {
-      await c.guard(tx, current, entity)
+      await c.guard(tx, current, entity, body)
       await c.replace(tx, entity)
     })
     return true
@@ -874,16 +2152,145 @@ export async function removeEntity(db: Database, coll: CollectionName, id: strin
 // (db/booking.ts). `createEntity` und `updateEntity` öffnen jeweils eine eigene; SQLite kennt
 // keine geschachtelte. Deshalb hier dieselbe Verschmelzung, derselbe Wächter und dasselbe Schreiben,
 // nur ohne Transaktion: Ein Weg mit eigenen Regeln wäre ein zweiter, der auseinanderläuft.
-export async function insertCostItemIn(tx: Executor, id: string, body: unknown): Promise<void> {
-  const entity = mergeCostItem(emptyCostItem(id), body)
-  await guardCostItem(tx, null, entity)
+export async function insertCostItemIn(tx: Executor, id: string, body: unknown, hints: { invoiceDate?: string | null } = {}): Promise<void> {
+  const merged = mergeCostItem(emptyCostItem(id), body)
+  // Mit Rechnungsdatum (Belegbuchung) schon hier die Anlage und ihre Heizperiode, damit das Jahr der
+  // Zahlung aus dem Beleg kommt; die Schreibprüfung sieht dann die Heizperiode.
+  const entity = hints.invoiceDate !== undefined && merged.heatingPlantId === undefined ? { ...merged, ...(await defaultHeatingPlant(tx, merged, hints.invoiceDate)) } : merged
+  await guardCostItem(tx, null, entity, body)
   await costItemCollection.insert(tx, entity)
 }
 
 export async function patchCostItemIn(tx: Executor, current: CostItem, body: unknown): Promise<void> {
   const entity = mergeCostItem(current, body)
-  await guardCostItem(tx, current, entity)
+  await guardCostItem(tx, current, entity, body)
   await costItemCollection.replace(tx, entity)
+}
+
+// ---------- Eine Rechnung aufteilen (#208, Entwurf 3.4) ----------
+
+export type PartWrite = { period: PeriodKey; amountCents: number; labor35aCents: number | null; description: string; taxYear: number | null }
+
+// Schreibt die Teile einer Rechnung durch dieselbe Verschmelzung, denselben Wächter und dasselbe
+// Schreiben wie das gewöhnliche Anlegen; `base` gibt alles Übrige (Schlüssel, Anteile, Beleg).
+// `keepId`: Die Kennung bleibt am Teil dieses Zeitraums, sonst am ersten. Ohne Transaktion, denn
+// beide Aufrufer (Aufteilen, Wechsel des Rhythmus) laufen schon in einer.
+export async function writeCostItemParts(tx: Executor, base: CostItem, parts: readonly PartWrite[], newId: () => string, keepId: string | null, guardOptions: CostItemGuardOptions = { splitPart: true }): Promise<string[]> {
+  const keepAt = Math.max(0, parts.findIndex((p) => p.period === base.period))
+  const written: string[] = []
+  for (const [i, part] of parts.entries()) {
+    const id = keepId !== null && i === keepAt ? keepId : newId()
+    const entity = mergeCostItem(keepId !== null && i === keepAt ? base : { ...base, id }, {
+      period: part.period, amountCents: part.amountCents, labor35aCents: part.labor35aCents, description: part.description, taxYear: part.taxYear,
+    })
+    await guardCostItem(tx, keepId !== null && i === keepAt ? base : null, entity, {}, guardOptions)
+    if (keepId !== null && i === keepAt) await costItemCollection.replace(tx, entity)
+    else await costItemCollection.insert(tx, entity)
+    written.push(id)
+  }
+  return written
+}
+
+// Schreibt eine aufgeteilte Rechnung neu (Nachprüfung von #226, 2): `members` sind ihre bisherigen
+// Teile, `parts` die neuen. Ein Teil behält die Kennung des bisherigen Teils desselben Zeitraums,
+// sonst die eines übrigen; was übrig bleibt, wird gelöscht. Vorher wandern die gebuchten Zeilen
+// einer Belegauswertung und der Beleg auf einen verbleibenden Teil derselben Rechnung: Mit
+// `SET NULL` stünde die schon gebuchte Rechnung sonst wieder offen im Posteingang und ließe sich ein
+// zweites Mal buchen (#184). Ohne Transaktion, der Aufrufer läuft in einer.
+export async function rewriteCostItemFamily(tx: Executor, members: readonly CostItem[], parts: readonly PartWrite[], newId: () => string, guardOptions: CostItemGuardOptions = { splitPart: true }): Promise<string[]> {
+  const first = members[0]
+  if (first === undefined) return []
+  const unused = [...members]
+  const take = (m: CostItem | undefined): CostItem | undefined => {
+    if (m !== undefined) unused.splice(unused.indexOf(m), 1)
+    return m
+  }
+  const exact = parts.map((p) => take(unused.find((m) => m.period === p.period)))
+  const chosen = exact.map((m) => m ?? take(unused[0]))
+  const written: string[] = []
+  for (const [i, part] of parts.entries()) {
+    const fields = { period: part.period, amountCents: part.amountCents, labor35aCents: part.labor35aCents, description: part.description, taxYear: part.taxYear }
+    const member = chosen[i]
+    if (member !== undefined) {
+      const entity = mergeCostItem(member, fields)
+      await guardCostItem(tx, member, entity, {}, guardOptions)
+      await costItemCollection.replace(tx, entity)
+      written.push(member.id)
+    } else {
+      const id = newId()
+      const entity = mergeCostItem({ ...first, id }, fields)
+      await guardCostItem(tx, null, entity, {}, guardOptions)
+      await costItemCollection.insert(tx, entity)
+      written.push(id)
+    }
+  }
+  const keep = chosen.find((m) => m !== undefined)
+  for (const m of unused) {
+    const booked = await tx.select({ idx: assessmentLines.idx }).from(assessmentLines).where(eq(assessmentLines.costItemId, m.id))
+    if (keep === undefined && (booked.length > 0 || m.invoiceFile !== undefined)) {
+      throw new PeriodConflict(`An „${m.description}“ hängen ein Beleg oder gebuchte Zeilen einer Belegauswertung, und nach dem Wechsel bliebe kein Teil dieser Rechnung, der sie übernehmen könnte. Gespeichert wurde nichts.`)
+    }
+    if (keep !== undefined) {
+      await tx.update(assessmentLines).set({ costItemId: keep.id }).where(eq(assessmentLines.costItemId, m.id))
+      if (m.invoiceFile !== undefined && keep.invoiceFile === undefined) await tx.update(costItems).set({ invoiceFile: m.invoiceFile }).where(eq(costItems.id, keep.id))
+    }
+    await costItemCollection.remove(tx, m.id)
+  }
+  return written
+}
+
+// Die Rechnung, wie sie aufgeteilt würde: aus der gespeicherten Position (`currentId`) und dem
+// Rumpf, sonst aus dem Rumpf allein. Das Objekt kommt bei einer vorhandenen Position von ihr.
+async function splitBase(db: Database, propertyId: string | null, body: unknown, currentId: string | null): Promise<{ base: CostItem; from: string; to: string }> {
+  const current = currentId === null ? undefined : (await readCostItems(db)).find((c) => c.id === currentId)
+  if (currentId !== null && !current) throw new PeriodError('Diese Kostenposition gibt es nicht (mehr). Bitte laden Sie die Seite neu.')
+  // Ein schon aufgeteilter Teil ist nicht die ganze Rechnung (Durchsicht von #226, C1): Ihn noch
+  // einmal aufzuteilen, verteilte seinen Anteil ein zweites Mal über beide Zeiträume.
+  if (current && isSplitPart(await rulesForProperty(db, current.propertyId), current)) throw new PeriodError(splitPartMessage(current))
+  const base = mergeCostItem(current ?? emptyCostItem(currentId ?? 'vorschau'), current ? body : { ...Object(body), propertyId })
+  if (base.category === HEATING_CATEGORY) {
+    throw new PeriodError('Heizkosten teilt Mietfuchs nicht nach Tagen auf: Sie müssen den Verbrauch im Abrechnungszeitraum abbilden (BGH VIII ZR 156/11).')
+  }
+  if (base.serviceFrom === undefined || base.serviceTo === undefined || !isIsoDate(base.serviceFrom) || !isIsoDate(base.serviceTo) || base.serviceFrom > base.serviceTo) {
+    throw new PeriodError(`Zum Aufteilen braucht „${base.description}“ einen Leistungszeitraum mit Beginn und Ende.`)
+  }
+  return { base, from: base.serviceFrom, to: base.serviceTo }
+}
+
+export async function previewCostItemSplit(db: Database, propertyId: string | null, body: unknown, currentId: string | null): Promise<SplitPreviewPart[]> {
+  const { base, from, to } = await splitBase(db, propertyId, body, currentId)
+  const rules = await rulesForProperty(db, base.propertyId)
+  const closed = new Set((await readClosedSettlements(db)).filter((c) => c.propertyId === base.propertyId).map((c) => c.period))
+  return splitByService(rules, { ...base, serviceFrom: from, serviceTo: to }).map((p) => ({
+    period: p.period.key,
+    label: periodLabel(p.period),
+    days: p.days,
+    amountCents: p.amountCents,
+    labor35aCents: p.labor35aCents,
+    description: p.description,
+    needsTaxYear: spansTwoYears(p.period),
+    closed: closed.has(p.period.key),
+  }))
+}
+
+// Speichert eine Rechnung als ihre Teile, in einer Transaktion: alle oder keiner. Ein Teil in
+// einem abgeschlossenen Zeitraum lehnt ab (409), bevor etwas geschrieben ist. Das Jahr der Zahlung
+// des Rumpfes gilt für jeden Teil über zwei Kalenderjahre; ein Teil in einem Kalenderjahr hat
+// keines (Entwurf 3.10). Gelesen wird vor der Transaktion: Die Lesefunktionen aus read.ts nehmen
+// die Verbindung und keine Transaktion, und die Schlange in open.ts lässt zwischen Lesen und
+// Schreiben keine andere Anfrage herein.
+export async function saveCostItemSplit(db: Database, propertyId: string | null, body: unknown, currentId: string | null, newId: () => string): Promise<CostItem[]> {
+  const parts = await previewCostItemSplit(db, propertyId, body, currentId)
+  if (parts.length < 2) throw new PeriodError('Diese Rechnung liegt in einem einzigen Abrechnungszeitraum; speichern Sie sie bitte gewöhnlich.')
+  const zu = parts.find((p) => p.closed)
+  if (zu) throw new PeriodConflict(`Die Abrechnung ${zu.label} ist abgeschlossen und bleibt, wie sie verschickt wurde. Öffnen Sie sie wieder, wenn die Rechnung anteilig hinein soll.`)
+  const { base } = await splitBase(db, propertyId, body, currentId)
+  const ids = await db.transaction((tx) => writeCostItemParts(tx, base, parts.map((p) => ({
+    period: p.period, amountCents: p.amountCents, labor35aCents: p.labor35aCents, description: p.description,
+    taxYear: p.needsTaxYear ? base.taxYear ?? null : null,
+  })), newId, currentId))
+  const all = await readCostItems(db)
+  return ids.map((id) => all.find((c) => c.id === id)).filter((c): c is CostItem => c !== undefined)
 }
 
 // ---------- Der Mieterwechsel (#150) ----------
@@ -916,13 +2323,16 @@ export class TenantChangeError extends Error {
 
 export type TenantChange = { ended: Tenancy, newTenancy: Tenancy | null, readings: Reading[] }
 
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 // „2025-06-30“ als „30.06.2025“, für Meldungen an den Nutzer.
 const isoToGerman = (iso: string): string => iso.split('-').reverse().join('.')
 const isIsoDate = (value: unknown): value is string =>
   typeof value === 'string' && ISO_DATE.test(value) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value
 
 // `null`, wenn es das Mietverhältnis nicht gibt; die Route macht daraus ihre 404.
+// **Heizung PR 10 (Entwurf 3.5, 11.4):** Eine Ablesung darf ein eigenes Datum tragen, wenn sie neben
+// dem Auszug liegt (Brunata erfasst Wechsel- und Ablesedatum getrennt); gerechnet wird mit dem Wert,
+// wie er ist. Gibt es keine Zwischenablesung, sagt `interimGap`, ob sie nicht möglich war oder nicht
+// durchgeführt wurde (§ 9b Abs. 3); gespeichert für die Grenze am Auszugstag.
 export async function changeTenant(
   db: Database, propertyId: string, tenancyId: string, body: unknown, nextId: () => string,
 ): Promise<TenantChange | null> {
@@ -963,9 +2373,24 @@ export async function changeTenant(
     if (value === undefined) throw new TenantChangeError(400, `Der Zählerstand für „${meter.name}“ ist keine gültige Zahl.`)
     if (gesehen.has(meter.id)) throw new TenantChangeError(400, `Für den Zähler „${meter.name}“ stehen zwei Stände da.`)
     gesehen.add(meter.id)
+    const datum = raw(angabe, 'date')
+    if (datum !== undefined && datum !== null && !isIsoDate(datum)) {
+      throw new TenantChangeError(400, `Das Ablesedatum für „${meter.name}“ ist kein Datum. Bitte wählen Sie es im Kalender.`)
+    }
     ablesungen.push(mergeReading(emptyReading(nextId()), {
-      meterId: meter.id, date: end, value, note: `Zwischenablesung Mieterwechsel ${current.tenantName}`,
+      meterId: meter.id, date: typeof datum === 'string' ? datum : end, value, note: `Zwischenablesung Mieterwechsel ${current.tenantName}`, interimFor: end,
     }))
+  }
+  // Keine Zwischenablesung: nicht möglich oder nicht durchgeführt (Heizung PR 10, Abweichung 8).
+  const lueckeRumpf = raw(body, 'interimGap')
+  let luecke: { status: InterimGapStatus; reason: string } | null = null
+  if (lueckeRumpf !== null && lueckeRumpf !== undefined) {
+    const s = oneOfOrUndefined(INTERIM_GAP_STATUS, raw(lueckeRumpf, 'status'))
+    if (s === undefined) throw new TenantChangeError(400, 'Bitte wählen Sie, ob die Zwischenablesung nicht möglich war oder nicht durchgeführt wurde.')
+    const grund = raw(lueckeRumpf, 'reason')
+    luecke = { status: s, reason: typeof grund === 'string' ? grund.trim() : '' }
+    // Durchsicht von #239, I3: „nicht möglich“ nur mit Grund.
+    if (s === 'impossible' && luecke.reason === '') throw new TenantChangeError(400, 'Bitte nennen Sie den Grund für die Teilung nach § 9b Abs. 3 HeizkostenV, also warum die Zwischenablesung nicht möglich war; er steht in der Abrechnung.')
   }
 
   // Der Nachmieter, oder Leerstand.
@@ -984,11 +2409,15 @@ export async function changeTenant(
 
   const beendet = mergeTenancy(current, { end })
   await db.transaction(async (tx) => {
-    await guardTenancy(tx, current, beendet)
+    await guardTenancy(tx, current, beendet, { end })
     await tenancyCollection.replace(tx, beendet)
     for (const ablesung of ablesungen) await readingCollection.insert(tx, ablesung)
+    if (luecke) {
+      await tx.delete(interimReadingGaps).where(and(eq(interimReadingGaps.unitId, current.unitId), eq(interimReadingGaps.date, end)))
+      await tx.insert(interimReadingGaps).values({ unitId: current.unitId, date: end, status: luecke.status, reason: luecke.reason })
+    }
     if (nachmieter) {
-      await guardTenancy(tx, null, nachmieter)
+      await guardTenancy(tx, null, nachmieter, nachmieterRumpf)
       await tenancyCollection.insert(tx, nachmieter)
     }
   })
@@ -1032,54 +2461,63 @@ export async function writeSettings(db: Database, settingsToStore: MigratedSetti
 // Schema: Er ist ein Archivstück, das wortgleich erhalten bleiben soll, auch wenn spätere
 // Versionen anders rechnen.
 
-// Immer je Objekt und Jahr (#92): Vorher genügte das Jahr, und mit einem zweiten Objekt hätten
-// Versanddatum und Wiederöffnen die Abrechnung des falschen Hauses getroffen.
-export async function findClosedSettlement(db: Database, propertyId: string, year: number): Promise<StoredClosedSettlement | undefined> {
-  return (await readClosedSettlements(db)).find((eintrag) => eintrag.propertyId === propertyId && eintrag.year === year)
+// Immer je Objekt und Zeitraum (#92, #208): Vorher genügte das Jahr, und mit einem zweiten Objekt
+// hätten Versanddatum und Wiederöffnen die Abrechnung des falschen Hauses getroffen.
+export async function findClosedSettlement(db: Database, propertyId: string, period: PeriodKey): Promise<StoredClosedSettlement | undefined> {
+  return (await readClosedSettlements(db)).find((eintrag) => eintrag.propertyId === propertyId && eintrag.period === period)
 }
 
-const closedOf = (propertyId: string, year: number) =>
-  and(eq(closedSettlements.propertyId, propertyId), eq(closedSettlements.year, year))
+const closedOf = (propertyId: string, period: PeriodKey) =>
+  and(eq(closedSettlements.propertyId, propertyId), eq(closedSettlements.period, period))
 
 export async function closeSettlement(
-  db: Database,
-  entry: { id: string, propertyId: string, year: number, closedAt: string, sentAt: string | null, settlement: unknown },
+  db: Executor,
+  entry: { id: string, propertyId: string, period: PeriodKey, closedAt: string, sentAt: string | null, settlement: unknown },
 ): Promise<void> {
   await db.insert(closedSettlements).values(entry)
 }
 
-// `false`, wenn es für das Jahr keine abgeschlossene Abrechnung gibt; die Route macht daraus
+// `false`, wenn es für den Zeitraum keine abgeschlossene Abrechnung gibt; die Route macht daraus
 // ihre 404.
-export async function setSentAt(db: Database, propertyId: string, year: number, sentAt: string | null): Promise<boolean> {
-  if (!(await findClosedSettlement(db, propertyId, year))) return false
-  await db.update(closedSettlements).set({ sentAt }).where(closedOf(propertyId, year))
+export async function setSentAt(db: Database, propertyId: string, period: PeriodKey, sentAt: string | null): Promise<boolean> {
+  if (!(await findClosedSettlement(db, propertyId, period))) return false
+  await db.update(closedSettlements).set({ sentAt }).where(closedOf(propertyId, period))
   return true
 }
 
 // Wiederöffnen verschiebt den Stand in den Verlauf (#56, Teil 2), statt ihn zu löschen, und zwar
-// in einer Transaktion: Scheiterte das Löschen nach dem Einfügen, stünde das Jahr sonst zugleich
-// als abgeschlossen und im Verlauf da (Befund der Durchsicht).
-export async function reopenSettlement(db: Database, propertyId: string, year: number, historyId: string): Promise<boolean> {
-  const eintrag = await findClosedSettlement(db, propertyId, year)
+// in einer Transaktion: Scheiterte das Löschen nach dem Einfügen, stünde der Zeitraum sonst zugleich
+// als abgeschlossen und im Verlauf da (Befund der Durchsicht). `alsoInTransaction` läuft im selben
+// Vorgang mit dem eingefrorenen Stand (Heizung PR 7: die eingefrorenen Lieferungsteile freigeben);
+// repository.ts kennt db/fuel.ts nicht, deshalb reicht die Route es herein.
+export async function reopenSettlement(
+  db: Database,
+  propertyId: string,
+  period: PeriodKey,
+  historyId: string,
+  alsoInTransaction: (tx: Executor, settlement: unknown) => Promise<void> = async () => {},
+): Promise<boolean> {
+  const eintrag = await findClosedSettlement(db, propertyId, period)
   if (!eintrag) return false
   await db.transaction(async (tx) => {
     await tx.insert(closedSettlementHistory).values({
-      id: historyId, propertyId, year, closedAt: eintrag.closedAt, sentAt: eintrag.sentAt,
+      id: historyId, propertyId, period, closedAt: eintrag.closedAt, sentAt: eintrag.sentAt,
       reopenedAt: new Date().toISOString(), settlement: eintrag.settlement,
     })
-    await tx.delete(closedSettlements).where(closedOf(propertyId, year))
+    await tx.delete(closedSettlements).where(closedOf(propertyId, period))
+    await alsoInTransaction(tx, eintrag.settlement)
   })
   return true
 }
 
 export type SettlementHistoryEntry = { id: string, closedAt: string, sentAt: string | null, reopenedAt: string, settlement: unknown }
 
-// Frühere Abschlüsse eines Jahres, der zuletzt wiedergeöffnete zuerst.
-export async function settlementHistory(db: Database, propertyId: string, year: number): Promise<SettlementHistoryEntry[]> {
+// Frühere Abschlüsse eines Zeitraums, der zuletzt wiedergeöffnete zuerst.
+export async function settlementHistory(db: Database, propertyId: string, period: PeriodKey): Promise<SettlementHistoryEntry[]> {
   const rows = await db
     .select()
     .from(closedSettlementHistory)
-    .where(and(eq(closedSettlementHistory.propertyId, propertyId), eq(closedSettlementHistory.year, year)))
+    .where(and(eq(closedSettlementHistory.propertyId, propertyId), eq(closedSettlementHistory.period, period)))
     .orderBy(desc(closedSettlementHistory.reopenedAt), desc(sql`rowid`))
   return rows.map((r) => ({ id: r.id, closedAt: r.closedAt, sentAt: r.sentAt, reopenedAt: r.reopenedAt, settlement: r.settlement }))
 }
@@ -1104,4 +2542,38 @@ export async function invoiceFilesInUse(db: Database, files: string[]): Promise<
 export async function sharesForUnit(db: Database, unitId: string): Promise<number> {
   const rows = await db.select({ unitId: costItemShares.unitId }).from(costItemShares).where(eq(costItemShares.unitId, unitId))
   return rows.length
+}
+
+// Nachprüfung von #252, G2-N-W1: Nach dem Wechsel des Abrechnungszeitraums zeigt jeder Abzug auf den Teil
+// seiner Stromrechnung im selben Zeitraum (`parts`: je ursprünglicher Position die geschriebenen Teile),
+// und die Prüfungen des Betriebsstroms gelten für den Endstand. Scheitert eine, wirft die Funktion einen
+// `PeriodError`; der Wechsel antwortet dann mit 409 und Vorschau, die Transaktion schreibt nichts.
+export async function settleOperatingPowerLinks(tx: Executor, propertyId: string, parts: ReadonlyMap<string, readonly { id: string; period: PeriodKey }[]>): Promise<void> {
+  const all = (await readCostItems(tx)).filter((c) => c.propertyId === propertyId)
+  const byId = new Map(all.map((c) => [c.id, c]))
+  const familyOf = (id: string) => [...parts.values()].find((list) => list.some((p) => p.id === id)) ?? []
+  for (const d of all) {
+    if (d.operatingPower !== 'deduction' || d.operatingPowerGeneralId === undefined) continue
+    const g = byId.get(d.operatingPowerGeneralId)
+    if (g && g.period === d.period) continue
+    const same = familyOf(d.operatingPowerGeneralId).find((p) => p.period === d.period)
+    if (same) {
+      await tx.update(costItems).set({ operatingPowerGeneralId: same.id }).where(eq(costItems.id, d.id))
+      byId.set(d.id, { ...d, operatingPowerGeneralId: same.id })
+    }
+  }
+  const deductions = [...byId.values()].filter((c) => c.operatingPower === 'deduction')
+  for (const d of deductions) {
+    const g = d.operatingPowerGeneralId === undefined ? undefined : byId.get(d.operatingPowerGeneralId)
+    if (!g || g.period !== d.period || g.category !== GENERAL_POWER_CATEGORY || !(g.amountCents > 0)) {
+      throw new PeriodError(`Nach dem Wechsel stünde der Abzug „${d.description}“ ohne seine Stromrechnung im selben Zeitraum. Löschen Sie den Abzug vor dem Wechsel und legen Sie ihn danach neu an.`)
+    }
+  }
+  for (const g of byId.values()) {
+    if (g.operatingPower !== undefined) continue
+    const deducted = -deductions.filter((d) => d.operatingPowerGeneralId === g.id).reduce((a, d) => a + d.amountCents, 0)
+    if (deducted > g.amountCents) {
+      throw new PeriodError(`Nach dem Wechsel wäre aus „${g.description}“ mehr abgezogen, als die Rechnung beträgt. Löschen Sie die Abzüge vor dem Wechsel und legen Sie sie danach neu an.`)
+    }
+  }
 }

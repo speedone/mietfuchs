@@ -6,7 +6,7 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { Meter, Unit } from '../types'
-import { YearProvider } from '../year'
+import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
 import Kosten from './Kosten'
 
@@ -21,10 +21,14 @@ const METERS: Meter[] = [{ id: 'm1', propertyId: 'objekt-1', name: 'Zähler EG',
 
 let sent: { url: string; method: string; body: Record<string, unknown> }[]
 let gets: string[]
+let plants: unknown[] = []
+let costItems: unknown[] = []
 
 beforeEach(() => {
   sent = []
   gets = []
+  plants = []
+  costItems = []
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
     const method = init?.method ?? 'GET'
     if (method !== 'GET') {
@@ -34,9 +38,10 @@ beforeEach(() => {
     gets.push(url)
     const responses: Record<string, unknown> = {
       '/api/properties': [{ id: 'objekt-1', name: 'Haus', kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null }],
-      '/api/costItems': [],
+      '/api/costItems': costItems,
       '/api/meters': METERS,
       '/api/uploads': [],
+      '/api/heating-plants': plants,
     }
     return new Response(JSON.stringify(responses[url.split('?')[0] ?? url] ?? []), { status: 200, headers: { 'content-type': 'application/json' } })
   })
@@ -49,11 +54,11 @@ afterEach(() => {
 
 const openForm = async () => {
   render(
-    <YearProvider>
+    <PeriodProvider>
       <PropertyProvider>
         <Kosten units={UNITS} settings={null} />
       </PropertyProvider>
-    </YearProvider>,
+    </PeriodProvider>,
   )
   // Auf die geladenen Zähler warten, sonst fehlt der Verbrauchsschlüssel in der Auswahl
   await waitFor(() => expect(screen.getByRole('button', { name: /Kostenposition manuell erfassen/i })).toBeTruthy())
@@ -206,11 +211,11 @@ test('Objekt: mit zwei Objekten lädt die Seite erst, wenn das Objekt feststeht 
     return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
   })
   render(
-    <YearProvider>
+    <PeriodProvider>
       <PropertyProvider>
         <Kosten units={UNITS} settings={null} />
       </PropertyProvider>
-    </YearProvider>,
+    </PeriodProvider>,
   )
   await waitFor(() => expect(gets).toContain('/api/costItems?property=objekt-1'))
   expect(gets.filter((u) => u === '/api/costItems' || u === '/api/meters')).toEqual([])
@@ -221,11 +226,11 @@ test('Einzelbeträge (#94): je Mieter ein Feld, gespeichert wird genau das Einge
     { id: 't1', unitId: 'u2', tenantName: 'Meier', persons: 1, personHistory: [], start: '2020-01-01', end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [] },
   ]
   render(
-    <YearProvider>
+    <PeriodProvider>
       <PropertyProvider>
         <Kosten units={UNITS} settings={null} tenancies={mieter} />
       </PropertyProvider>
-    </YearProvider>,
+    </PeriodProvider>,
   )
   await waitFor(() => expect(screen.getByRole('button', { name: /Kostenposition manuell erfassen/i })).toBeTruthy())
   fireEvent.click(screen.getByRole('button', { name: /Kostenposition manuell erfassen/i }))
@@ -247,4 +252,163 @@ test('Gutschrift (#139): der Hinweis am Betragsfeld steht da, und „−54,00“
   fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/i }))
   await waitFor(() => expect(sent).toHaveLength(1))
   expect(sent[0].body).toMatchObject({ amountCents: -5400 })
+})
+
+test('Heizposition mit eigener Heizperiode (Durchsicht von #231, Laienprobe B15): Heizperiode, Jahr der Zahlung sichtbar, ohne Beleg nicht vorbelegt und Pflicht', async () => {
+  plants = [{
+  id: 'hp1', propertyId: 'objekt-1', name: '', energy: 'gas', supply: 'central', method: 'service', separateSettlement: null,
+  devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null, capturedOnOct2024: null,
+  warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: 5, periodChanges: [], separateSpans: [], units: null, newDevicesInstall: null,
+}]
+  await openForm()
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Heizung und Warmwasser' } })
+  const heizperiode = await waitFor(() => select(/^Heizperiode$/))
+  const option = heizperiode.selectedOptions[0]?.textContent ?? ''
+  const [, beginn, ende] = /(\d{4})\/(\d{4})/.exec(option) ?? []
+  if (!beginn || !ende) throw new Error(`keine Heizperiode über zwei Jahre: ${option}`)
+  const jahr = await waitFor(() => select(/Jahr der Zahlung/i))
+  expect(jahr.value).toBe('')
+  expect([...jahr.options].map((o) => o.value).filter(Boolean)).toEqual([beginn, ende, String(Number(ende) + 1)])
+  expect(screen.getByText(/in Abschlägen über zwei Kalenderjahre bezahlt/)).toBeTruthy()
+  expect(screen.getByText(/der um den\s+Jahreswechsel \(bis zehn Tage davor oder danach\) fällig ist und in dieser Zeit gezahlt wird, zählt zu dem Jahr, zu dem er gehört/)).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/i }))
+  expect(await screen.findByText(/Bitte geben Sie das Jahr der Zahlung an/)).toBeTruthy()
+  expect(sent).toHaveLength(0)
+  fireEvent.change(jahr, { target: { value: ende } })
+  fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/i }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0].body).toMatchObject({ period: heizperiode.value, heatingPlantId: 'hp1', taxYear: Number(ende) })
+})
+
+// Laienprobe B19: Der Betrag der Messdienstposition ist der vor dem Abzug; das Formular sagt es dort.
+test('Laienprobe B19: Heizung mit Einzelbeträgen bei Messdienst-Anlage nennt den Betrag vor dem CO₂-Abzug', async () => {
+  plants = [{
+    id: 'hp1', propertyId: 'objekt-1', name: '', energy: 'gas', supply: 'central', method: 'service', separateSettlement: null,
+    devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null, capturedOnOct2024: null,
+    warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null, periodChanges: [], separateSpans: [], units: null, newDevicesInstall: null,
+  }]
+  await openForm()
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Heizung und Warmwasser' } })
+  expect(screen.queryByText(/Kosten vor „Abzüglich CO₂-Kosten Vermieter“/)).toBeNull()
+  await waitFor(() => expect([...select(/Umlageschlüssel/i).options].some((o) => o.value === 'amounts')).toBe(true))
+  fireEvent.change(select(/Umlageschlüssel/i), { target: { value: 'amounts' } })
+  expect(await screen.findByText(/Tragen Sie die Kosten vor „Abzüglich CO₂-Kosten Vermieter“ ein/)).toBeTruthy()
+})
+
+test('Zwei Heizanlagen (Heizung PR 9): die Heizposition wählt ihre Anlage; ohne Wahl ordnet der Server nach den Wohnungen', async () => {
+  const anlage = (id: string, name: string, endsOn: string | null, unitIds: string[] = []) => ({
+    id, propertyId: 'objekt-1', name, energy: 'gas', supply: 'central', method: 'manual', separateSettlement: null,
+    devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null, capturedOnOct2024: null,
+    warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null, periodChanges: [], separateSpans: [], units: unitIds.map((unitId) => ({ unitId, heatedAreaM2: null })), newDevicesInstall: null,
+    nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn, replacesPlantId: null,
+  })
+  plants = [anlage('hp1', 'Ölkessel', '2025-06-30', ['u2', 'u3']), anlage('hp2', 'Gastherme', null, ['u2', 'u3'])]
+  await openForm()
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Heizung und Warmwasser' } })
+  const wahl = await waitFor(() => select(/^Heizanlage(?!n)/))
+  expect([...wahl.options].map((o) => o.textContent)).toEqual(['automatisch (nach den beteiligten Wohnungen)', 'Ölkessel (bis 30.06.2025)', 'Gastherme'])
+  fireEvent.change(wahl, { target: { value: 'hp2' } })
+  expect(select(/^Heizanlage(?!n)/).value).toBe('hp2')
+  fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/i }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  // Recht I2 der Durchsicht von #238: Die Wahl der Anlage beteiligt deren Wohnungen.
+  expect(sent[0].body).toMatchObject({ category: 'Heizung und Warmwasser', heatingPlantId: 'hp2', participantUnitIds: ['u2', 'u3'] })
+})
+
+test('Heizung PR 10: bei eigener Heizkostenabrechnung nur der Schlüssel nach Heizkostenverordnung; Teil und Ziel angezeigt wie gespeichert', async () => {
+  plants = [{
+    id: 'hp1', propertyId: 'objekt-1', name: '', energy: 'gas', supply: 'central', method: 'self', separateSettlement: null,
+    devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null, capturedOnOct2024: null,
+    warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null, periodChanges: [], separateSpans: [], units: null, newDevicesInstall: null,
+    nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null,
+    hotWater: 'combined', capture: 'heatMeter', areaBasisHeat: 'area', heatPumpInstalledOn: null,
+  }]
+  await openForm()
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Heizung und Warmwasser' } })
+  await waitFor(() => expect(select(/Umlageschlüssel/i).value).toBe('heatingSystem'))
+  expect([...select(/Umlageschlüssel/i).options].map((o) => o.value)).toEqual(['heatingSystem'])
+  // Ohne Teil: Ziel wählbar, nichts vorbelegt.
+  expect(select(/^Ziel$/).value).toBe('')
+  fireEvent.change(select(/^Teil der Heizkosten$/), { target: { value: 'fuel' } })
+  // Brennstoff bei verbundener Bereitung: nur „Heizung und Warmwasser“, und genau das steht im Zustand.
+  await waitFor(() => expect(select(/^Ziel$/).value).toBe('both'))
+  expect([...select(/^Ziel$/).options].map((o) => o.value)).toEqual(['both'])
+  fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/i }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0].body).toMatchObject({ key: 'heatingSystem', heatingPart: 'fuel', heatingTarget: 'both' })
+})
+
+test('Heizung PR 10: bei freien Schlüsseln „nur Heizung“ wählbar, ohne Wahl „Heizung und Warmwasser“', async () => {
+  plants = [{
+    id: 'hp1', propertyId: 'objekt-1', name: '', energy: 'gas', supply: 'central', method: 'manual', separateSettlement: null,
+    devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null, capturedOnOct2024: null,
+    warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null, periodChanges: [], separateSpans: [], units: null, newDevicesInstall: null,
+    nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null,
+    hotWater: 'combined', capture: null, areaBasisHeat: 'area', heatPumpInstalledOn: null,
+  }]
+  await openForm()
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Heizung und Warmwasser' } })
+  await waitFor(() => expect([...select(/^Ziel$/).options].map((o) => o.value)).toEqual(['', 'heating']))
+  expect(select(/^Ziel$/).value).toBe('')
+  expect([...select(/Umlageschlüssel/i).options].map((o) => o.value)).not.toContain('heatingSystem')
+  fireEvent.change(select(/^Ziel$/), { target: { value: 'heating' } })
+  expect(select(/^Ziel$/).value).toBe('heating')
+  fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/i }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0].body).toMatchObject({ key: 'area', heatingTarget: 'heating' })
+})
+
+test('Durchsicht #241 Runde 2, H1: Eine Position 2025 behält ihr Ziel, auch wenn die Anlage seit 2026 kein Warmwasser bereitet; ein unpassendes Ziel wird nie still ersetzt', async () => {
+  const anlage = (selfSpans: unknown[]) => ({
+    id: 'hp1', propertyId: 'objekt-1', name: '', energy: 'gas', supply: 'central', method: 'self', separateSettlement: null,
+    devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null, capturedOnOct2024: null,
+    warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null, periodChanges: [], separateSpans: [], units: null, newDevicesInstall: null,
+    nonResidential: false, restriction: 'none', districtEtsNew: false, endsOn: null, replacesPlantId: null, buildingWith: null, takesOverStock: null,
+    hotWater: 'none', capture: 'heatMeter', areaBasisHeat: 'area', heatPumpInstalledOn: null, selfSpans,
+  })
+  const wartung = {
+    id: 'c1', propertyId: 'objekt-1', period: '2025-01', year: 2025, category: 'Heizung und Warmwasser', description: 'Wartung Kessel', amountCents: 30000,
+    key: 'heatingSystem', meterType: null, directUnitId: null, customShares: null, participantUnitIds: null, heatingPart: 'operating', heatingTarget: 'both', heatingPlantId: 'hp1',
+  }
+  costItems = [wartung]
+  // 2025 mit Warmwasser eingerichtet, seit 2026 ohne.
+  plants = [anlage([{ from: '2025-01', until: '2026-01', capture: 'heatMeter', hotWater: 'combined' }, { from: '2026-01', until: null, capture: 'heatMeter', hotWater: 'none' }])]
+  render(<PeriodProvider><PropertyProvider><Kosten units={UNITS} settings={null} /></PropertyProvider></PeriodProvider>)
+  fireEvent.click(await screen.findByRole('button', { name: 'Kostenposition bearbeiten' }))
+  await waitFor(() => expect(select(/^Ziel$/).value).toBe('both'))
+  expect([...select(/^Ziel$/).options].map((o) => o.value)).toEqual(['', 'both', 'heating', 'water'])
+  fireEvent.click(screen.getByRole('button', { name: /^Übernehmen$/ }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0]?.body).toMatchObject({ heatingTarget: 'both' })
+  cleanup()
+  // Bereitete die Anlage auch 2025 kein Warmwasser, passt „Heizung und Warmwasser“ nicht: Fehler am Feld,
+  // das gespeicherte Ziel bleibt im Zustand, und gespeichert wird nicht.
+  sent = []
+  plants = [anlage([{ from: '2025-01', until: null, capture: 'heatMeter', hotWater: 'none' }])]
+  render(<PeriodProvider><PropertyProvider><Kosten units={UNITS} settings={null} /></PropertyProvider></PeriodProvider>)
+  fireEvent.click(await screen.findByRole('button', { name: 'Kostenposition bearbeiten' }))
+  await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/gespeicherte Ziel passt nicht/))
+  expect(select(/^Ziel$/).value).toBe('')
+  expect([...select(/^Ziel$/).options].map((o) => o.value)).toEqual(['', 'heating'])
+  fireEvent.click(screen.getByRole('button', { name: /^Übernehmen$/ }))
+  await new Promise((r) => setTimeout(r, 50))
+  expect(sent).toEqual([])
+  fireEvent.change(select(/^Ziel$/), { target: { value: 'heating' } })
+  fireEvent.click(screen.getByRole('button', { name: /^Übernehmen$/ }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0]?.body).toMatchObject({ heatingTarget: 'heating' })
+})
+
+// Heizung PR 19 (#97): Die Karte „CO₂-Erstattung“ steht nur da, wenn ein Mieter selbst heizt.
+test('CO₂-Erstattung: Karte nur bei einem Mieter, der selbst heizt', async () => {
+  const mieter = (heatingModel?: 'selfSupply') => [
+    { id: 't1', unitId: 'u2', tenantName: 'Meier', persons: 1, personHistory: [], start: '2020-01-01', end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [], ...(heatingModel ? { heatingModel } : {}) },
+  ]
+  const { unmount } = render(<PeriodProvider><PropertyProvider><Kosten units={UNITS} settings={null} tenancies={mieter()} /></PropertyProvider></PeriodProvider>)
+  await waitFor(() => expect(screen.getByRole('button', { name: /Kostenposition manuell erfassen/i })).toBeTruthy())
+  expect(screen.queryByText(/an Mieter, die selbst heizen/)).toBeNull()
+  unmount()
+  render(<PeriodProvider><PropertyProvider><Kosten units={UNITS} settings={null} tenancies={mieter('selfSupply')} /></PropertyProvider></PeriodProvider>)
+  expect(await screen.findByText(/an Mieter, die selbst heizen/)).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Erstattung erfassen' })).toBeTruthy()
 })

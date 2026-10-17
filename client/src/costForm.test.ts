@@ -1,12 +1,22 @@
 import { describe, expect, test } from 'vitest'
-import type { CostKey, Meter, MeterType, Unit } from './types'
+import { OPERATING_POWER_KEPT } from '../../shared/operatingPower.ts'
+import { generalChoices, withGeneralChoice, deductionChoiceOf, deductionChoices, itemToForm as itemToFormOf, OPERATING_POWER_OPTIONS, showsDeductionLink, showsOperatingPower, withDeductionChoice, withOperatingPower, buildCostItemBody as buildBody } from './costForm'
+import type { CostItem as CostItemOf } from './types'
+import { calendarPeriod, periodKey } from '../../shared/period.ts'
+import { euro } from '../../shared/costItem.ts'
+import type { CostKey, Meter, MeterType, SplitPreviewPart, Unit } from './types'
 import { KEY_LABELS, matchCategory } from './types'
 import {
   EMPTY_ITEM_FORM,
+  needsSplitCheck,
+  splitDecision,
+  showsTaxYear,
+  taxYearOptions,
   sameCostOf,
   amountProblem,
   buildCostItemBody,
   costKeyOptions,
+  heatingTargetOptions,
   customSharesSumText,
   itemToForm,
   meterTypeOptions,
@@ -28,6 +38,7 @@ import {
   withKey,
   withCategory,
   type ItemForm,
+  costMeterTypes,
 } from './costForm'
 
 const unit = (id: string, extra: Partial<Unit> = {}): Unit => ({ propertyId: 'objekt-1',
@@ -71,6 +82,11 @@ describe('Auswahllisten enthalten immer den gewählten Wert', () => {
   test('Ein leeres Formular hat keinen vorbelegten Zählertyp', () => {
     // Genau diese Vorbelegung war der Fehler: „kaltwasser" ohne passenden Zähler.
     expect(EMPTY_ITEM_FORM.meterType).toBe('')
+  })
+
+  test('Heizkostenverteiler stehen als Zählertyp nicht zur Wahl, Warmwasser schon (Heizung PR 4)', () => {
+    expect(costMeterTypes([{ type: 'hkv', unitId: 'u1' }, { type: 'warmwasser', unitId: 'u1' }, { type: 'kaltwasser', unitId: null }])).toEqual(['warmwasser'])
+    expect(costMeterTypes([{ type: 'hkv', unitId: 'u1' }])).toEqual([])
   })
 })
 
@@ -211,7 +227,7 @@ describe('Felder eines nicht gewählten Schlüssels werden zurückgesetzt', () =
 describe('Bearbeiten einer gespeicherten Position', () => {
   test('Zählertyp und Anteile werden ins Formular übernommen', () => {
     const f = itemToForm({
-      id: 'c1', propertyId: 'objekt-1', year: 2025, category: 'Wasser/Abwasser', description: 'Wasser',
+      id: 'c1', propertyId: 'objekt-1', period: calendarPeriod(2025), category: 'Wasser/Abwasser', description: 'Wasser',
       amountCents: 123456, key: 'meter', meterType: 'sonstig', labor35aCents: 1000,
       customShares: { u1: 33.33 },
     })
@@ -222,14 +238,14 @@ describe('Bearbeiten einer gespeicherten Position', () => {
   })
 
   test('eine Position ohne Zählertyp füllt das Feld nicht mit einem geratenen Wert', () => {
-    const f = itemToForm({ id: 'c1', propertyId: 'objekt-1', year: 2025, category: 'Grundsteuer', description: 'G', amountCents: 100, key: 'area' })
+    const f = itemToForm({ id: 'c1', propertyId: 'objekt-1', period: calendarPeriod(2025), category: 'Grundsteuer', description: 'G', amountCents: 100, key: 'area' })
     expect(f.meterType).toBe('')
   })
 
   test('der Rundlauf Formular → Rumpf verändert die Anteile nicht', () => {
     const original = { u1: 12.5, u2: 87.5 }
     const f = itemToForm({
-      id: 'c1', propertyId: 'objekt-1', year: 2025, category: 'Sonstige Betriebskosten', description: 'X',
+      id: 'c1', propertyId: 'objekt-1', period: calendarPeriod(2025), category: 'Sonstige Betriebskosten', description: 'X',
       amountCents: 50000, key: 'custom', customShares: original,
     })
     const r = buildCostItemBody(f, UNITS, 2025)
@@ -295,14 +311,14 @@ describe('Teilnehmer, Gemeinschaftsabrechnung und Einzelbeträge (#94)', () => {
 
   test('eine gespeicherte Position füllt die neuen Felder', () => {
     const f = itemToForm({
-      id: 'c', propertyId: 'objekt-1', year: 2025, category: 'Heizung', description: 'H', amountCents: 80000, key: 'amounts',
+      id: 'c', propertyId: 'objekt-1', period: calendarPeriod(2025), category: 'Heizung', description: 'H', amountCents: 80000, key: 'amounts',
       participantUnitIds: ['u1'], tenancyAmounts: { t1: 30000 },
       externalBasis: { measure: 'area', total: 1240, totalCents: 100000 },
     })
     expect(f.participants).toEqual(['u1'])
     expect(f.tenancyAmounts).toEqual({ t1: '300,00' })
     expect([f.externalMeasure, f.externalTotal, f.externalTotalAmount]).toEqual(['area', '1.240', '1.000,00'])
-    expect(itemToForm({ id: 'c', propertyId: 'objekt-1', year: 2025, category: 'X', description: 'X', amountCents: 1, key: 'area' }).participants).toBeNull()
+    expect(itemToForm({ id: 'c', propertyId: 'objekt-1', period: calendarPeriod(2025), category: 'X', description: 'X', amountCents: 1, key: 'area' }).participants).toBeNull()
   })
 })
 
@@ -344,7 +360,7 @@ describe('Eigenbeträge (#104)', () => {
     expect(buildCostItemBody(f, EIGEN, 2025)).toMatchObject({ body: { tenancyAmounts: { t1: 124000 }, selfAmounts: { u1: 160000 } } })
     expect(amountsSumText(f, EIGEN)).toMatch(/2\.840,00.*160,00/)
     expect(buildCostItemBody(form({ key: 'amounts', amount: '1.000,00', tenancyAmounts: { t1: '600,00' }, selfAmounts: { u1: '500,00' } }), EIGEN, 2025)).toHaveProperty('error')
-    expect(itemToForm({ id: 'c', propertyId: 'objekt-1', year: 2025, category: 'X', description: 'X', amountCents: 1, key: 'amounts', selfAmounts: { u1: 160000 } }).selfAmounts).toEqual({ u1: '1.600,00' })
+    expect(itemToForm({ id: 'c', propertyId: 'objekt-1', period: calendarPeriod(2025), category: 'X', description: 'X', amountCents: 1, key: 'amounts', selfAmounts: { u1: 160000 } }).selfAmounts).toEqual({ u1: '1.600,00' })
     expect(buildCostItemBody(form({ key: 'area', amount: '100,00', selfAmounts: { u1: '1,00' } }), EIGEN, 2025)).toMatchObject({ body: { selfAmounts: null } })
   })
 
@@ -381,7 +397,7 @@ describe('Kleinigkeiten (#105)', () => {
   })
 
   test('die Summe der Anlage behält beim erneuten Speichern ihre Nachkommastellen', () => {
-    const f = itemToForm({ id: 'c', propertyId: 'objekt-1', year: 2025, category: 'X', description: 'X', amountCents: 1, key: 'external', externalBasis: { measure: 'mea', total: 1000.125, totalCents: 1 } })
+    const f = itemToForm({ id: 'c', propertyId: 'objekt-1', period: calendarPeriod(2025), category: 'X', description: 'X', amountCents: 1, key: 'external', externalBasis: { measure: 'mea', total: 1000.125, totalCents: 1 } })
     expect(f.externalTotal).toBe('1.000,125')
   })
 })
@@ -458,6 +474,10 @@ describe('Kleinigkeiten aus der Browser-Abnahme (#142)', () => {
       .toBe('Summe 700,00 € — den Rest von 100,00 € trägt der Vermieter (etwa für Leerstand)')
     expect(amountsSumText(form({ key: 'amounts', amount: '700,00', tenancyAmounts: { t1: '300,00', t2: '400,00' } }), UNITS))
       .toBe('Summe 700,00 € — der Rechnungsbetrag ist vollständig verteilt')
+    // Laienprobe B24: leer heißt nicht „vollständig verteilt“.
+    expect(amountsSumText(form({ key: 'amounts', amount: '', tenancyAmounts: {} }), UNITS)).toBe('Noch keine Beträge eingetragen.')
+    expect(amountsSumText(form({ key: 'amounts', amount: '500,00', tenancyAmounts: {} }), UNITS)).toBe('Noch keine Beträge eingetragen.')
+    expect(amountsSumText(form({ key: 'amounts', amount: '', tenancyAmounts: { t1: '300,00' } }), UNITS)).toBe('Summe 300,00 € — bitte oben den Rechnungsbetrag eintragen')
   })
 
   test('Nicht umlagefähig: kein Schlüssel im Formular, in der Liste „trägt der Vermieter“', () => {
@@ -518,7 +538,7 @@ describe('Kleinigkeiten aus der Browser-Abnahme (#142)', () => {
     expect(withTaxUnit(hinterhaus, '')).toMatchObject({ key: 'area', participants: null })
     expect(withTaxUnit(hinterhaus, 'u1')).toMatchObject({ key: 'direct', directUnitId: 'u1', participants: null })
     // Gespeicherte Teilnehmer kommen als „bestimmte Einheiten“ zurück, und die Liste nennt sie.
-    const stored = { id: 'c', propertyId: 'p', year: 2025, description: 'Dach', amountCents: 300000, category: 'Nicht umlagefähig', key: 'area', participantUnitIds: ['u2'] } as const
+    const stored = { id: 'c', propertyId: 'p', period: calendarPeriod(2025), description: 'Dach', amountCents: 300000, category: 'Nicht umlagefähig', key: 'area', participantUnitIds: ['u2'] } as const
     expect(taxScopeOf(itemToForm({ ...stored, participantUnitIds: ['u2'] }))).toBe(TAX_SCOPE_SOME)
     expect(keyListText({ ...stored, participantUnitIds: ['u2'] }, UNITS)).toBe('— trägt der Vermieter · betrifft U2')
     // Wer von einer umlagefähigen Kostenart wechselt, nimmt keine alten Teilnehmer mit.
@@ -560,12 +580,213 @@ describe('Kostenart wechseln (Durchsicht zu #142)', () => {
 // dieselbe Rechnung wie eine Rechnung derselben Kostenart. Die Rückfrage riet sonst, statt der
 // Gutschrift die vorhandene Rechnung zu bearbeiten.
 describe('Rückfrage nach derselben Rechnung', () => {
-  const rechnung = { id: 'r', propertyId: 'p', year: 2026, category: 'Wasser', description: 'Wasser 2026', amountCents: 84000 }
-  const gutschrift = { id: 'g', propertyId: 'p', year: 2026, category: 'Wasser', description: 'Gutschrift Wasser', amountCents: -5745 }
+  const rechnung = { id: 'r', propertyId: 'p', period: calendarPeriod(2026), category: 'Wasser', description: 'Wasser 2026', amountCents: 84000 }
+  const gutschrift = { id: 'g', propertyId: 'p', period: calendarPeriod(2026), category: 'Wasser', description: 'Gutschrift Wasser', amountCents: -5745 }
   const body = (amountCents: number | null) => ({ category: 'Wasser', description: 'Wasser', vendor: '', amountCents })
   test('eine Gutschrift fragt nur nach Gutschriften, eine Rechnung nur nach Rechnungen (rc.1)', () => {
     expect(sameCostOf([rechnung, gutschrift], body(-5745), 'p', 2026).map((i) => i.id)).toEqual(['g'])
     expect(sameCostOf([rechnung], body(-5745), 'p', 2026)).toEqual([])
     expect(sameCostOf([rechnung, gutschrift], body(84000), 'p', 2026).map((i) => i.id)).toEqual(['r'])
   })
+})
+
+describe('Leistungszeitraum, Jahr der Zahlung, Brennstoff (#208)', () => {
+  const units = [{ id: 'u1', propertyId: 'objekt-1', name: 'EG', areaM2: 60, participates: true }]
+  const form = (over: Partial<ItemForm>): ItemForm => ({ ...EMPTY_ITEM_FORM, category: 'Grundsteuer', description: 'Grundsteuer 2025', amount: '480,00', ...over })
+
+  test('der Rumpf trägt Leistungszeitraum, Jahr der Zahlung und Brennstoffmerkmal', () => {
+    const built = buildCostItemBody(form({ serviceFrom: '2025-01-01', serviceTo: '2025-12-31', taxYear: '2025' }), units, 2025)
+    if ('error' in built) return expect.unreachable(built.error)
+    expect([built.body.serviceFrom, built.body.serviceTo, built.body.taxYear, built.body.heatingPart]).toEqual(['2025-01-01', '2025-12-31', 2025, null])
+    const leer = buildCostItemBody(form({}), units, 2025)
+    if ('error' in leer) return expect.unreachable(leer.error)
+    expect([leer.body.serviceFrom, leer.body.serviceTo, leer.body.taxYear]).toEqual([null, null, null])
+  })
+
+  test('Leistungszeitraum: beide oder keines, Beginn nicht nach dem Ende', () => {
+    expect(buildCostItemBody(form({ serviceFrom: '2025-01-01' }), units, 2025)).toEqual({ error: 'Für „Grundsteuer 2025“ fehlt ein Ende des Leistungszeitraums. Bitte tragen Sie Beginn und Ende ein oder lassen Sie beide leer.' })
+    expect(buildCostItemBody(form({ serviceFrom: '2025-12-31', serviceTo: '2025-01-01' }), units, 2025)).toEqual({ error: 'Der Leistungszeitraum von „Grundsteuer 2025“ endet vor seinem Beginn.' })
+  })
+
+  test('Brennstoff/Energie nur bei Heizkosten; bei anderer Kostenart fällt es weg', () => {
+    const heiz = buildCostItemBody(form({ category: 'Heizung und Warmwasser', description: 'Gas', key: 'area', heatingPart: 'fuel' }), units, 2025)
+    if ('error' in heiz) return expect.unreachable(heiz.error)
+    expect(heiz.body.heatingPart).toBe('fuel')
+    const kalt = buildCostItemBody(form({ heatingPart: 'fuel' }), units, 2025)
+    if ('error' in kalt) return expect.unreachable(kalt.error)
+    expect(kalt.body.heatingPart).toBeNull()
+    // Nachprüfung von #237: Betrieb und Messdienst lassen sich ausdrücklich angeben, ohne Angabe bleibt null.
+    for (const part of ['operating', 'metering'] as const) {
+      const b = buildCostItemBody(form({ category: 'Heizung und Warmwasser', description: 'Wartung', key: 'area', heatingPart: part }), units, 2025)
+      if ('error' in b) return expect.unreachable(b.error)
+      expect(b.body.heatingPart).toBe(part)
+    }
+    const ohne = buildCostItemBody(form({ category: 'Heizung und Warmwasser', description: 'Wartung', key: 'area', heatingPart: '' }), units, 2025)
+    if ('error' in ohne) return expect.unreachable(ohne.error)
+    expect(ohne.body.heatingPart).toBeNull()
+  })
+
+  test('Aufteilen nur bei kalten Kosten mit Leistungszeitraum', () => {
+    const built = buildCostItemBody(form({ serviceFrom: '2025-01-01', serviceTo: '2025-12-31' }), units, 2025)
+    if ('error' in built) return expect.unreachable(built.error)
+    expect(needsSplitCheck(built.body)).toBe(true)
+    expect(needsSplitCheck({ ...built.body, category: 'Heizung und Warmwasser' })).toBe(false)
+    expect(needsSplitCheck({ ...built.body, serviceFrom: null, serviceTo: null })).toBe(false)
+  })
+
+  test('Die Rückfrage nennt die Beträge je Zeitraum; ohne Jahr der Zahlung oder bei Abschluss eine Meldung', () => {
+    const parts: SplitPreviewPart[] = [
+      { period: periodKey('2025-01'), label: '01.01.–30.04.2025', days: 120, amountCents: 15781, labor35aCents: null, description: 'G', needsTaxYear: false, closed: false },
+      { period: periodKey('2025-05'), label: '2025/2026', days: 245, amountCents: 32219, labor35aCents: null, description: 'G', needsTaxYear: true, closed: false },
+    ]
+    // `euro` setzt vor das Eurozeichen ein geschütztes Leerzeichen; die Erwartung nimmt es deshalb von dort.
+    expect(splitDecision(parts, '2025')).toEqual({ message: `Die Rechnung betrifft 2 Abrechnungszeiträume. Mietfuchs legt je Zeitraum eine Position an: 01.01.–30.04.2025: ${euro(15781)}, 2025/2026: ${euro(32219)}.` })
+    expect(euro(15781).replace('\u00a0', ' ')).toBe('157,81 €')
+    expect(splitDecision(parts, '')).toEqual({ error: 'Bitte wählen Sie das Jahr der Zahlung (für die Steuer): Ein Teil der Rechnung gehört in den Zeitraum 2025/2026, der über zwei Kalenderjahre reicht.', needsTaxYear: true })
+    const [rumpf, voll] = parts
+    if (!rumpf || !voll) return expect.unreachable('zwei Teile gebaut')
+    expect(splitDecision([{ ...rumpf, closed: true }, voll], '2025')).toEqual({ error: 'Die Abrechnung 01.01.–30.04.2025 ist abgeschlossen. Öffnen Sie sie wieder, wenn die Rechnung anteilig hinein soll.', needsTaxYear: false })
+  })
+
+  test('Jahr der Zahlung: nur bei zwei Kalenderjahren, Auswahl vom Beginn bis ein Jahr nach dem Ende', () => {
+    expect(showsTaxYear({ from: '2025-05-01', to: '2026-04-30' }, false)).toBe(true)
+    expect(showsTaxYear({ from: '2025-01-01', to: '2025-12-31' }, false)).toBe(false)
+    expect(showsTaxYear({ from: '2025-01-01', to: '2025-12-31' }, true)).toBe(true)
+    expect(taxYearOptions(2025)).toEqual([2025, 2026, 2027])
+  })
+})
+
+test('Ein schon aufgeteilter Teil, dessen Leistungszeitraum und Zeitraum bleiben, wird nicht erneut aufgeteilt (#208)', () => {
+  // Jeder Teil trägt den ganzen Leistungszeitraum der Rechnung. Wer nur den Betrag berichtigt, soll
+  // nicht ein zweites Mal gefragt werden; der Server nimmt die unveränderte Position ohnehin an.
+  const units: Unit[] = [{ id: 'u1', propertyId: 'objekt-1', name: 'EG', areaM2: 60, participates: true }]
+  const built = buildCostItemBody({ ...EMPTY_ITEM_FORM, category: 'Grundsteuer', description: 'Grundsteuer 2025 (anteilig 01.01.–30.04.2025)', amount: '157,81', serviceFrom: '2025-01-01', serviceTo: '2025-12-31' }, units, 2025)
+  if ('error' in built) return expect.unreachable(built.error)
+  const before = { serviceFrom: '2025-01-01', serviceTo: '2025-12-31', period: calendarPeriod(2025), category: 'Grundsteuer' }
+  expect(needsSplitCheck(built.body, before)).toBe(false)
+  expect(needsSplitCheck(built.body, { ...before, serviceTo: '2025-06-30' })).toBe(true)
+  expect(needsSplitCheck(built.body, { ...before, period: periodKey('2024-01') })).toBe(true)
+})
+
+test('Eine Heizposition, die zur kalten wird, geht durch die Rückfrage zum Aufteilen (Nachprüfung von #226)', () => {
+  const units: Unit[] = [{ id: 'u1', propertyId: 'objekt-1', name: 'EG', areaM2: 60, participates: true }]
+  const built = buildCostItemBody({ ...EMPTY_ITEM_FORM, category: 'Grundsteuer', description: 'Wartung', amount: '1000,00', serviceFrom: '2025-01-01', serviceTo: '2025-12-31' }, units, 2025)
+  if ('error' in built) return expect.unreachable(built.error)
+  const before = { serviceFrom: '2025-01-01', serviceTo: '2025-12-31', period: calendarPeriod(2025), category: 'Heizung und Warmwasser' }
+  expect(needsSplitCheck(built.body, before)).toBe(true)
+  expect(needsSplitCheck(built.body, { ...before, category: 'Grundsteuer' })).toBe(false)
+})
+
+test('Der Schlüssel „nach Heizkostenverordnung“ steht nur bei einer Position, die ihn schon hat (Heizung PR 10, bis Task 12)', () => {
+  expect(costKeyOptions([], 'area')).not.toContain('heatingSystem')
+  expect(costKeyOptions([], 'heatingSystem')).toContain('heatingSystem')
+})
+
+describe('Eigene Heizkostenabrechnung im Kostenformular (Heizung PR 10)', () => {
+  test('bei einer Anlage mit eigener Abrechnung gibt es nur den Schlüssel nach Heizkostenverordnung', () => {
+    expect(costKeyOptions([], 'area', true)).toEqual(['heatingSystem'])
+    expect(costKeyOptions([], 'area', false)).not.toContain('heatingSystem')
+    expect(costKeyOptions(['waerme'], 'heatingSystem', false)).toContain('heatingSystem')
+  })
+  test('Ziel: bei eigener Abrechnung nach der Warmwasserbereitung, bei freien Schlüsseln „beides“ oder „nur Heizung“', () => {
+    expect(heatingTargetOptions(true, 'combined', 'fuel').map((o) => o.value)).toEqual(['both'])
+    expect(heatingTargetOptions(true, 'separate', 'metering').map((o) => o.value)).toEqual(['heating', 'water'])
+    expect(heatingTargetOptions(false, 'combined', '').map((o) => o.value)).toEqual(['', 'heating'])
+  })
+  test('Teil und Ziel gehen in den Rumpf, nur bei Heizkosten; nach Heizkostenverordnung sind beide Pflicht', () => {
+    const heiz = { ...EMPTY_ITEM_FORM, category: 'Heizung und Warmwasser', description: 'Wartung', amount: '240,00', key: 'heatingSystem' as const, heatingPart: 'operating' as const, heatingTarget: 'both' as const }
+    const r = buildCostItemBody(heiz, [], 2025)
+    expect('body' in r && [r.body.key, r.body.heatingPart, r.body.heatingTarget]).toEqual(['heatingSystem', 'operating', 'both'])
+    const kalt = buildCostItemBody({ ...heiz, category: 'Müllabfuhr', key: 'area' }, [], 2025)
+    expect('body' in kalt && [kalt.body.heatingPart, kalt.body.heatingTarget]).toEqual([null, null])
+    expect(buildCostItemBody({ ...heiz, heatingTarget: '' }, [], 2025)).toEqual({ error: expect.stringMatching(/Ziel/) })
+    expect(buildCostItemBody({ ...heiz, heatingPart: '' }, [], 2025)).toEqual({ error: expect.stringMatching(/Teil der Heizkosten/) })
+  })
+  test('itemToForm liest das Ziel zurück', () => {
+    const f = itemToForm({ id: 'c', propertyId: 'p', period: periodKey('2025-01'), category: 'Heizung und Warmwasser', description: 'Gas', amountCents: 1, key: 'heatingSystem', heatingPart: 'fuel', heatingTarget: 'both' })
+    expect([f.heatingPart, f.heatingTarget]).toEqual(['fuel', 'both'])
+  })
+})
+
+// ---------- Betriebsstrom (Heizung PR 15, #212) ----------
+
+test('Betriebsstrom: Frage nur bei Heizkosten mit Teil Betrieb oder ohne Teil; der Rumpf trägt Kennzeichnung und Grundlage', () => {
+  const heiz = { ...EMPTY_ITEM_FORM, category: 'Heizung und Warmwasser', operatingPower: 'included' as const, operatingPowerBasis: 'Pumpe 45 W' }
+  expect(showsOperatingPower(heiz)).toBe(true)
+  expect(showsOperatingPower({ ...heiz, heatingPart: 'operating' })).toBe(true)
+  expect(showsOperatingPower({ ...heiz, heatingPart: 'fuel' })).toBe(false)
+  expect(withOperatingPower({ a: 1 }, heiz)).toEqual({ a: 1, operatingPower: 'included', operatingPowerItemId: null, operatingPowerGeneralId: null, operatingPowerBasis: 'Pumpe 45 W' })
+  // Teil „Brennstoff“: keine Kennzeichnung, auch wenn das Formular sie noch hält.
+  expect(withOperatingPower({ a: 1 }, { ...heiz, heatingPart: 'fuel' })).toEqual({ a: 1, operatingPower: null, operatingPowerItemId: null, operatingPowerGeneralId: null, operatingPowerBasis: null })
+  // Ohne Kennzeichnung fällt auch die Grundlage weg (Bedingung …_basis_valid).
+  expect(withOperatingPower({ a: 1 }, { ...heiz, operatingPower: '' })).toEqual({ a: 1, operatingPower: null, operatingPowerItemId: null, operatingPowerGeneralId: null, operatingPowerBasis: null })
+  expect(withOperatingPower({ a: 1 }, { ...EMPTY_ITEM_FORM, category: 'Grundsteuer' })).toEqual({ a: 1 })
+  expect(OPERATING_POWER_OPTIONS.map((o) => o.value)).toEqual(['', 'included'])
+})
+
+// Review Focus 3 und P-W2: Das Formular liest Kennzeichnung, Verweis und Grundlage eines Abzugs ein und
+// schickt sie unverändert zurück; ein von Hand erfasster Abzug lässt sich verknüpfen.
+test('Betriebsstrom: Abzug am Allgemeinstrom bleibt beim Bearbeiten erhalten und lässt sich verknüpfen', () => {
+  const bs: CostItemOf = { id: 'bs', propertyId: 'o', period: periodKey('2025-01'), category: 'Heizung und Warmwasser', description: 'Betriebsstrom Heizung (geschätzt)', amountCents: 14784, key: 'area', operatingPower: 'included' }
+  const ab: CostItemOf = { id: 'ab', propertyId: 'o', period: periodKey('2026-01'), category: 'Beleuchtung/Allgemeinstrom', description: 'Abzug', amountCents: -14784, key: 'area', operatingPower: 'deduction', operatingPowerItemId: 'bs', operatingPowerGeneralId: 'strom', operatingPowerBasis: 'Grundlage' }
+  const form = itemToFormOf(ab)
+  expect([form.operatingPower, form.operatingPowerItemId, form.operatingPowerGeneralId, form.operatingPowerBasis]).toEqual(['deduction', 'bs', 'strom', 'Grundlage'])
+  expect(withOperatingPower({ a: 1 }, form)).toEqual({ a: 1, operatingPower: 'deduction', operatingPowerItemId: 'bs', operatingPowerGeneralId: 'strom', operatingPowerBasis: 'Grundlage' })
+  // Über buildCostItemBody: der Rumpf, den das Formular wirklich schickt.
+  const built = buildBody(form, [], 2026)
+  if ('error' in built) throw new Error(built.error)
+  expect([built.body.operatingPower, built.body.operatingPowerItemId, built.body.operatingPowerGeneralId, built.body.operatingPowerBasis]).toEqual(['deduction', 'bs', 'strom', 'Grundlage'])
+  // Die Auswahl bei einem Abzug (negativer Betrag am Allgemeinstrom): kein Abzug, Messdienst, jeder Betriebsstrom.
+  expect(showsDeductionLink(form)).toBe(true)
+  expect(showsDeductionLink({ ...form, amount: '10,00' })).toBe(false)
+  expect(deductionChoices([bs, ab], { service: true })).toEqual([
+    { value: '', label: 'Nein, kein Abzug des Betriebsstroms' },
+    { value: 'service', label: 'Ja, der Betrag ist dem Messdienst als Betriebsstrom gemeldet' },
+    { value: 'bs', label: 'Ja, zu „Betriebsstrom Heizung (geschätzt)“ (2025, 147,84\u00a0€)' },
+  ])
+  expect(deductionChoiceOf(form)).toBe('bs')
+  // #268: Ohne Messdienst im Zeitraum heißt der Abzug ohne Verweis „selbst getragen“; gespeichert wird dasselbe.
+  expect(deductionChoices([bs], { service: false })).toEqual([
+    { value: '', label: 'Nein, kein Abzug des Betriebsstroms' },
+    { value: 'service', label: OPERATING_POWER_KEPT },
+    { value: 'bs', label: 'Ja, zu „Betriebsstrom Heizung (geschätzt)“ (2025, 147,84 €)' },
+  ])
+  expect(OPERATING_POWER_KEPT).toBe('Ja, ich lege ihn nicht um und trage ihn selbst')
+  const hand ={ ...EMPTY_ITEM_FORM, category: 'Beleuchtung/Allgemeinstrom', amount: '-147,84' }
+  expect(deductionChoiceOf(hand)).toBe('')
+  const verknuepft = withDeductionChoice(hand, 'bs')
+  expect(withOperatingPower({}, verknuepft)).toEqual({ operatingPower: 'deduction', operatingPowerItemId: 'bs', operatingPowerGeneralId: null, operatingPowerBasis: null })
+  expect(withOperatingPower({}, withDeductionChoice(hand, 'service'))).toEqual({ operatingPower: 'deduction', operatingPowerItemId: null, operatingPowerGeneralId: null, operatingPowerBasis: null })
+  expect(withOperatingPower({}, withDeductionChoice({ ...verknuepft, operatingPowerGeneralId: 'strom' }, ''))).toEqual({ operatingPower: null, operatingPowerItemId: null, operatingPowerGeneralId: null, operatingPowerBasis: null })
+})
+
+// Durchsicht von #252, G-K3: Ein Abzug nennt seine Stromrechnung, und das Formular übernimmt deren Verteilung.
+test('Betriebsstrom: Abzug wählt seine Stromrechnung desselben Zeitraums und übernimmt ihre Verteilung', () => {
+  const strom: CostItemOf = { id: 'strom', propertyId: 'o', period: periodKey('2025-01'), category: 'Beleuchtung/Allgemeinstrom', description: 'Hausstrom 2025', amountCents: 100000, key: 'units', participantUnitIds: ['u1', 'u2'] }
+  const alt: CostItemOf = { ...strom, id: 'alt', period: periodKey('2024-01'), description: 'Hausstrom 2024' }
+  const abzug: CostItemOf = { ...strom, id: 'ab', amountCents: -100, operatingPower: 'deduction', operatingPowerGeneralId: 'strom' }
+  expect(generalChoices([strom, alt, abzug], periodKey('2025-01'))).toEqual([
+    { value: '', label: 'Bitte wählen …' },
+    { value: 'strom', label: 'Hausstrom 2025 · 1.000,00\u00a0€' },
+  ])
+  const hand = withDeductionChoice({ ...EMPTY_ITEM_FORM, category: 'Beleuchtung/Allgemeinstrom', amount: '-300,00', key: 'area' }, 'service')
+  const mit = withGeneralChoice(hand, 'strom', [strom])
+  expect([mit.operatingPowerGeneralId, mit.key, mit.participants]).toEqual(['strom', 'units', ['u1', 'u2']])
+  expect(withOperatingPower({}, mit)).toMatchObject({ operatingPower: 'deduction', operatingPowerGeneralId: 'strom' })
+  expect(withGeneralChoice(mit, '', [strom]).operatingPowerGeneralId).toBe('')
+})
+
+// Durchsicht von #252, R-W2: Bei Wärmepumpe und Stromheizung fragt das Formular auch an der Strom-Position
+// (Teil „Brennstoff“), ob sie über den Zähler des Hauses läuft; bei Gas nicht.
+test('Betriebsstrom: Strom zur Wärmeerzeugung bei Wärmepumpe und Stromheizung lässt sich kennzeichnen', () => {
+  const wp = { ...EMPTY_ITEM_FORM, category: 'Heizung und Warmwasser', heatingPart: 'fuel' as const, operatingPower: 'included' as const }
+  expect(showsOperatingPower(wp, 'heatPump')).toBe(true)
+  expect(showsOperatingPower(wp, 'electric')).toBe(true)
+  expect(showsOperatingPower(wp, 'gas')).toBe(false)
+  expect(showsOperatingPower(wp)).toBe(false)
+  expect(withOperatingPower({}, wp, 'heatPump')).toMatchObject({ operatingPower: 'included' })
+  expect(withOperatingPower({}, wp, 'gas')).toMatchObject({ operatingPower: null })
+  const built = buildBody({ ...wp, amount: '600,00', description: 'Strom der Wärmepumpe' }, [], 2025, undefined, 'heatPump')
+  if ('error' in built) throw new Error(built.error)
+  expect(built.body.operatingPower).toBe('included')
 })

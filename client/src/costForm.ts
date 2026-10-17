@@ -1,15 +1,20 @@
 // Entscheidungslogik des Kostenposition-Formulars, bewusst getrennt von der Darstellung:
 // Auswahllisten, Validierung und der Rumpf, der an die API geht. Diese Stelle bestimmt, was
 // tatsächlich gespeichert wird — sie ist in client/src/costForm.test.ts geprüft.
-import type { CostItem, CostKey, ExternalMeasure, Meter, MeterType, Tenancy, Unit } from './types'
+import type { BillingPeriod, CostItem, CostKey, ExternalMeasure, HeatingEnergy, HeatingPart, HeatingTarget, HotWater, Meter, MeterType, PeriodKey, SplitPreviewPart, Tenancy, Unit } from './types'
 import { CATEGORIES, KEY_LABELS, defaultKeyFor, isNotAllocable } from './types'
 import { PARTICIPANT_KEYS as SHARED_PARTICIPANT_KEYS, allocationOf, comparablePrevious, previousAllocation, sameAllocation, type Allocation } from '../../shared/allocation.ts'
-import { parseEuro } from './api'
+import { fmtEuro, parseEuro } from './api'
+import { changeLabel } from './periodForm'
+import { GENERAL_POWER_CATEGORY, OPERATING_POWER_INCLUDED_YES, OPERATING_POWER_KEPT, POWER_GENERATED } from '../../shared/operatingPower.ts'
 import { sameCostCandidates, type DuplicateItem } from '../../shared/duplicates.ts'
 import { parseNumberDe } from './numbers'
+import { targetOptions } from './heatingSelfForm'
 import { usageOf } from './types'
-import { CREDIT_WITH_AMOUNTS, costItemBody, inBasis, pct, showsTaxUnitField, taxUnitOf, type BuildResult, type CostItemDraft } from '../../shared/costItem.ts'
+import { CREDIT_WITH_AMOUNTS, costItemBody, euro, type CostItemBody, inBasis, pct, showsTaxUnitField, taxUnitOf, type BuildResult, type CostItemDraft } from '../../shared/costItem.ts'
 import { etwByStatement, lastExternalBasis, type KeyContext } from '../../shared/assessment.ts'
+import { calendarContext, calendarPeriod, calendarYearPeriod, spansTwoYears } from '../../shared/period.ts'
+import { HEATING_CATEGORY } from '../../shared/heating.ts'
 // Seit der Belegbuchung (#170) in shared/, weil der Server dieselben Prüfungen und Vorschläge braucht.
 export { amountProblem, showsTaxUnitField, type BuildResult } from '../../shared/costItem.ts'
 export { aiPositionDefaults, aiPositionPreselect, lastExternalBasis, type AiPositionKey, type KeyContext } from '../../shared/assessment.ts'
@@ -37,7 +42,25 @@ export type ItemForm = {
   tenancyAmounts: Record<string, string>
   // Beträge selbstgenutzter Wohnungen (#104): Wohnungs-ID → Betrags-Eingabe
   selfAmounts: Record<string, string>
+  // Leistungszeitraum als 'JJJJ-MM-TT' aus <input type="date">, leer heißt keine Angabe (#208)
+  serviceFrom: string
+  serviceTo: string
+  // Jahr der Zahlung als Text der Auswahl, leer heißt keine Angabe (#208)
+  taxYear: string
+  // Teil der Heizkosten, nur bei Heizkosten (#208, A1; Nachprüfung von #237: alle Werte des Modells),
+  // leer heißt keine Angabe
+  heatingPart: HeatingPart | ''
+  // Ziel bei Heizkosten (Heizung PR 10): leer heißt „Heizung und Warmwasser“ bei freien Schlüsseln bzw.
+  // noch nicht gewählt bei der eigenen Heizkostenabrechnung.
+  heatingTarget: HeatingTarget | ''
   invoiceFile?: string
+  // Betriebsstrom der Heizung (Heizung PR 15): Kennzeichnung, Verweis des Abzugs und Grundlage der
+  // Schätzung, leer heißt keine Angabe. Das Formular liest sie ein und schickt sie zurück (Review Focus 3).
+  operatingPower: '' | 'included' | 'deduction'
+  operatingPowerItemId: string
+  operatingPowerBasis: string
+  // Die Stromrechnung eines Abzugs (Durchsicht von #252, G-K3), leer heißt noch nicht gewählt.
+  operatingPowerGeneralId: string
 }
 
 export const EMPTY_ITEM_FORM: ItemForm = {
@@ -56,6 +79,15 @@ export const EMPTY_ITEM_FORM: ItemForm = {
   externalTotalAmount: '',
   tenancyAmounts: {},
   selfAmounts: {},
+  serviceFrom: '',
+  serviceTo: '',
+  taxYear: '',
+  heatingPart: '',
+  heatingTarget: '',
+  operatingPower: '',
+  operatingPowerItemId: '',
+  operatingPowerBasis: '',
+  operatingPowerGeneralId: '',
 }
 
 // Formular aus einer gespeicherten Position füllen
@@ -79,7 +111,16 @@ export function itemToForm(i: CostItem): ItemForm {
     externalTotalAmount: i.externalBasis ? fmtCentsInput(i.externalBasis.totalCents) : '',
     tenancyAmounts: Object.fromEntries(Object.entries(i.tenancyAmounts ?? {}).map(([id, c]) => [id, fmtCentsInput(c)])),
     selfAmounts: Object.fromEntries(Object.entries(i.selfAmounts ?? {}).map(([id, c]) => [id, fmtCentsInput(c)])),
+    serviceFrom: i.serviceFrom ?? '',
+    serviceTo: i.serviceTo ?? '',
+    taxYear: i.taxYear !== undefined ? String(i.taxYear) : '',
+    heatingPart: i.heatingPart ?? '',
+    heatingTarget: i.heatingTarget ?? '',
     invoiceFile: i.invoiceFile ?? undefined,
+    operatingPower: i.operatingPower ?? '',
+    operatingPowerItemId: i.operatingPowerItemId ?? '',
+    operatingPowerBasis: i.operatingPowerBasis ?? '',
+    operatingPowerGeneralId: i.operatingPowerGeneralId ?? '',
   }
 }
 
@@ -120,9 +161,12 @@ const parseAmountNumber = parseQuantity
 // Die Mietverhältnisse, die einen Einzelbetrag bekommen können: im Jahr und in einer Wohnung, die
 // zur Abrechnung gehört.
 // Mit Teilnehmern (#105) nur deren Mietverhältnisse, wie in der Abrechnung.
-export function tenanciesForAmounts(tenancies: Tenancy[], units: Unit[], year: number, participants: string[] | null = null): Tenancy[] {
+// `period`: eine Jahreszahl ist das Kalenderjahr (Tests, Kalenderobjekt), sonst der gewählte
+// Abrechnungszeitraum (#208).
+export function tenanciesForAmounts(tenancies: Tenancy[], units: Unit[], period: number | Pick<BillingPeriod, 'from' | 'to'>, participants: string[] | null = null): Tenancy[] {
+  const span = typeof period === 'number' ? calendarYearPeriod(period) : period
   const vermietet = new Set(units.filter((u) => u.participates && (participants === null || participants.includes(u.id))).map((u) => u.id))
-  return tenancies.filter((t) => vermietet.has(t.unitId) && t.start <= `${year}-12-31` && (t.end === null || t.end >= `${year}-01-01`))
+  return tenancies.filter((t) => vermietet.has(t.unitId) && t.start <= span.to && (t.end === null || t.end >= span.from))
 }
 
 // Der rechnerische Anteil laut Gemeinschaftsabrechnung, zum Vergleich mit dem eingetragenen
@@ -173,20 +217,23 @@ const visibleSelfAmounts = (form: ItemForm, units: Unit[]): Record<string, strin
 // Einzelbeträge nur der Mietverhältnisse, deren Feld das Formular zeigt (Durchsicht zu #105):
 // Wer eine Wohnung als Teilnehmerin abwählt, sähe den Betrag ihres Mieters sonst nicht mehr, er
 // zählte aber in die Summe und ließe sich nicht löschen. Ohne Mietverhältnisse keine Einschränkung.
-const visibleTenancyAmounts = (form: ItemForm, units: Unit[], tenancies: Tenancy[] | undefined, year: number | undefined): Record<string, string> => {
-  if (!tenancies || year === undefined) return form.tenancyAmounts
-  const ids = new Set(tenanciesForAmounts(tenancies, units, year, form.participants).map((t) => t.id))
+const visibleTenancyAmounts = (form: ItemForm, units: Unit[], tenancies: Tenancy[] | undefined, period: number | BillingPeriod | undefined): Record<string, string> => {
+  if (!tenancies || period === undefined) return form.tenancyAmounts
+  const ids = new Set(tenanciesForAmounts(tenancies, units, period, form.participants).map((t) => t.id))
   return Object.fromEntries(Object.entries(form.tenancyAmounts).filter(([id]) => ids.has(id)))
 }
 
-export function amountsSumText(form: ItemForm, units: Unit[], tenancies?: Tenancy[], year?: number): string {
+export function amountsSumText(form: ItemForm, units: Unit[], tenancies?: Tenancy[], period?: number | BillingPeriod): string {
   const amount = parseEuro(form.amount) ?? 0
   // Eine Gutschrift (#105): Einzelbeträge sind nie negativ, die Summenprüfung ergäbe Unsinn.
   if (amount < 0) return CREDIT_WITH_AMOUNTS
   const sumOf = (m: Record<string, string>) => Object.values(m).reduce((a, raw) => a + Math.max(0, parseEuro(raw.trim() || '0') ?? 0), 0)
-  const tenants = sumOf(visibleTenancyAmounts(form, units, tenancies, year))
+  const tenants = sumOf(visibleTenancyAmounts(form, units, tenancies, period))
   const own = sumOf(visibleSelfAmounts(form, units))
   const sum = tenants + own
+  // Laienprobe B24: Ohne Betrag oder ohne eingetragene Beträge ist nichts „vollständig verteilt“.
+  if (form.amount.trim() === '' || parseEuro(form.amount) === null) return sum > 0 ? `Summe ${fmtCentsInput(sum)} € — bitte oben den Rechnungsbetrag eintragen` : 'Noch keine Beträge eingetragen.'
+  if (sum === 0) return 'Noch keine Beträge eingetragen.'
   if (sum > amount) return `${fmtCentsInput(sum)} € — mehr als der Rechnungsbetrag ist nicht möglich`
   const ownText = own > 0 ? `, davon ${fmtCentsInput(own)} € Ihre eigene Wohnung` : ''
   // Gerundet wird bei Einzelbeträgen nichts (#142); ein Rest entsteht, wenn für einen Zeitraum
@@ -201,8 +248,25 @@ export const basisUnitsOf = (units: Unit[]) => units.filter(inBasis)
 // Auswahllisten. Beide halten dieselbe Regel ein: der gespeicherte Wert steht immer in der
 // Liste. Fehlt er, zeigt ein Select im Browser den ersten Eintrag an, während der State
 // unverändert bleibt — gespeichert würde dann etwas anderes als das, was zu sehen ist.
+// Die Auswahl „Teil der Heizkosten“ (Nachprüfung von #237): alle Werte des Modells und „ohne Angabe“.
+// Wie bei den übrigen Auswahlfeldern steht der gespeicherte Wert immer in der Liste, damit der Browser
+// zeigt, was gespeichert ist.
+export const HEATING_PART_OPTIONS: readonly { value: HeatingPart | ''; label: string }[] = [
+  { value: '', label: 'ohne Angabe' },
+  { value: 'fuel', label: 'Brennstoff/Energie (Gas, Öl, Fernwärme, Strom der Wärmepumpe)' },
+  { value: 'operating', label: 'Betrieb, Wartung, Strom der Heizung' },
+  { value: 'metering', label: 'Messdienst, Ablesung, Geräte' },
+]
+
 export function meterTypeOptions(unitMeterTypes: MeterType[], stored: MeterType | ''): MeterType[] {
   return [...new Set([...unitMeterTypes, ...(stored ? [stored] : [])])]
+}
+
+// Die Zählertypen, nach denen eine Position verteilt werden kann: die der Wohnungszähler, ohne
+// Heizkostenverteiler (Heizung PR 4). Deren Einheiten verteilt Mietfuchs erst mit den
+// Bewertungsfaktoren (PR 12); bis dahin lehnt auch der Server den Schlüssel ab.
+export function costMeterTypes(meters: readonly Pick<Meter, 'type' | 'unitId'>[]): MeterType[] {
+  return [...new Set(meters.filter((m) => m.unitId && m.type !== 'hkv').map((m) => m.type))]
 }
 
 // Schlüssel wechseln (#142). Beim Verbrauchsschlüssel stand der Zählertyp auf „— wählen —“, auch
@@ -247,7 +311,7 @@ export function applyAllocation(form: ItemForm, a: Allocation, units: Unit[]): I
 function proposal(previous: ItemForm, category: string, units: Unit[], meters: Meter[], ctx?: KeyContext): ItemForm {
   const form: ItemForm = { ...previous, directUnitId: '', meterType: '', customShares: {}, participants: null }
   // Bei einer breiten Kostenart nur mit derselben Beschreibung (shared/allocation.ts).
-  const remembered = ctx && !isNotAllocable(category) ? previousAllocation(ctx.items, category, ctx.year, form.description) : null
+  const remembered = ctx && !isNotAllocable(category) ? previousAllocation(ctx.items, category, ctx.at ?? calendarContext(ctx.year), form.description) : null
   if (remembered) return applyAllocation(form, remembered, units)
   if (etwByStatement(category, ctx)) {
     const last = ctx ? lastExternalBasis(ctx.items) : null
@@ -272,7 +336,6 @@ function formAllocation(form: ItemForm, units: Unit[]): Allocation {
   }))
   const total = parseAmountNumber(form.externalTotal)
   return allocationOf({
-    year: 0,
     category: form.category,
     description: form.description,
     key: form.key,
@@ -290,14 +353,15 @@ function formAllocation(form: ItemForm, units: Unit[]): Allocation {
 export function keyChangeNotice(form: ItemForm, units: Unit[], ctx: KeyContext): string {
   if (isNotAllocable(form.category)) return ''
   const basis = basisUnitsOf(units).map((u) => u.id)
-  const before = comparablePrevious(ctx.items, form.category, ctx.year, form.description).map((i) => allocationOf(i, basis))
+  const at = ctx.at ?? calendarContext(ctx.year)
+  const before = comparablePrevious(ctx.items, form.category, at, form.description).map((i) => allocationOf(i, basis))
   const first = before[0]
   const now = formAllocation(form, units)
   if (!first || before.some((a) => sameAllocation(a, now))) return ''
   const how = first.key === now.key ? `ebenfalls ${KEY_LABELS[first.key]}, aber mit anderen Angaben` : KEY_LABELS[first.key]
   // Ohne Rechtsauskunft im Einzelnen (die steht im Lexikon und in der Abrechnung): Eine Änderung
   // ist möglich, aber nicht beliebig (Durchsicht).
-  return `${ctx.year - 1} wurde „${form.category}“ ${how} verteilt. Ein vereinbarter Umlageschlüssel gilt weiter, bis er mit Zustimmung der Mieter oder durch eine zulässige Erklärung geändert ist; ist das geschehen, ist nichts zu tun.`
+  return `${at.previousLabel} wurde „${form.category}“ ${how} verteilt. Ein vereinbarter Umlageschlüssel gilt weiter, bis er mit Zustimmung der Mieter oder durch eine zulässige Erklärung geändert ist; ist das geschehen, ist nichts zu tun.`
 }
 
 // Die Auswahl der Zeile: die drei einfachen Schlüssel und der gespeicherte, damit angezeigt wird,
@@ -340,11 +404,25 @@ export function toggleTaxUnit(form: ItemForm, unitId: string, checked: boolean):
   return { ...form, key: 'area', directUnitId: '', participants: next }
 }
 
-export function costKeyOptions(unitMeterTypes: MeterType[], stored: CostKey): CostKey[] {
+// `selfPlant` (Heizung PR 10): eine Heizposition einer Anlage mit eigener Heizkostenabrechnung; dort gibt es nur
+// den Schlüssel nach Heizkostenverordnung (Abweichung 18).
+export function costKeyOptions(unitMeterTypes: MeterType[], stored: CostKey, selfPlant = false): CostKey[] {
+  if (selfPlant) return ['heatingSystem']
   return (Object.keys(KEY_LABELS) as CostKey[]).filter(
     (k) => (k !== 'meter' || unitMeterTypes.length > 0 || stored === 'meter') &&
-      true,
+      // Nach Heizkostenverordnung verteilt nur eine Anlage mit eigener Abrechnung; angeboten wird der
+      // Schlüssel dort. Sonst nur bei einer Position, die ihn schon hat.
+      (k !== 'heatingSystem' || stored === 'heatingSystem'),
   )
+}
+
+// Ziel einer Heizposition (Heizung PR 10). Bei eigener Abrechnung nach der Warmwasserbereitung
+// (`targetOptions`, dieselbe Regel wie `targetProblem` im Server); bei freien Schlüsseln „Heizung und
+// Warmwasser“ (leer, wie bisher) oder „nur Heizung“, dann gelten beim Mieterwechsel die Gradtage
+// (Abweichung 16).
+export function heatingTargetOptions(selfPlant: boolean, hotWater: HotWater, part: HeatingPart | ''): { value: HeatingTarget | ''; label: string }[] {
+  if (selfPlant) return targetOptions(hotWater, part)
+  return [{ value: '', label: 'Heizung und Warmwasser' }, { value: 'heating', label: 'nur Heizung' }]
 }
 
 // Der Schlüssel, den das Formular einer Kostenposition für eine Kostenart vorschlägt (#142).
@@ -401,7 +479,7 @@ export function customSharesSumText(form: ItemForm, units: Unit[]): string {
 
 // Liest die Eingaben des Formulars in Cent und Prozent; was sich nicht lesen lässt, wird `null`,
 // und die Prüfung in shared/costItem.ts sagt es in Worten.
-function draftOf(form: ItemForm, units: Unit[], tenancies: Tenancy[] | undefined, year: number): CostItemDraft {
+function draftOf(form: ItemForm, units: Unit[], tenancies: Tenancy[] | undefined, period: BillingPeriod): CostItemDraft {
   const parsed = (m: Record<string, string>): Record<string, number | null> =>
     Object.fromEntries(Object.entries(m).filter(([, raw]) => raw.trim()).map(([id, raw]) => [id, parseEuro(raw)]))
   const shares: Record<string, number | null> = {}
@@ -425,15 +503,108 @@ function draftOf(form: ItemForm, units: Unit[], tenancies: Tenancy[] | undefined
     customShares: shares,
     participants: form.participants,
     external: { measure: form.externalMeasure, total: parseAmountNumber(form.externalTotal), totalCents: parseEuro(form.externalTotalAmount) },
-    tenancyAmounts: parsed(visibleTenancyAmounts(form, units, tenancies, year)),
+    tenancyAmounts: parsed(visibleTenancyAmounts(form, units, tenancies, period)),
     selfAmounts: parsed(visibleSelfAmounts(form, units)),
+    serviceFrom: form.serviceFrom || null,
+    serviceTo: form.serviceTo || null,
+    taxYear: form.taxYear === '' ? null : Number(form.taxYear),
+    heatingPart: form.heatingPart === '' ? null : form.heatingPart,
+    heatingTarget: form.heatingTarget === '' ? null : form.heatingTarget,
   }
 }
 
 // Validiert das Formular und baut den API-Rumpf, mit derselben Prüfung wie der Server
 // (shared/costItem.ts).
-export function buildCostItemBody(form: ItemForm, units: Unit[], year: number, tenancies?: Tenancy[]): BuildResult {
-  return costItemBody(draftOf(form, units, tenancies, year), units, year)
+// `plantEnergy`: die Energie der Anlage der Heizposition, für die Kennzeichnung des Stroms zur Wärmeerzeugung (R-W2).
+export function buildCostItemBody(form: ItemForm, units: Unit[], period: number | BillingPeriod, tenancies?: Tenancy[], plantEnergy?: HeatingEnergy): BuildResult {
+  // Eine Jahreszahl ist das Kalenderjahr (Tests, Kalenderobjekt); sonst der gewählte Zeitraum (#208).
+  const p = typeof period === 'number' ? calendarYearPeriod(period) : period
+  const result = costItemBody(draftOf(form, units, tenancies, p), units, p.key)
+  return 'body' in result ? { body: withOperatingPower(result.body, form, plantEnergy) } : result
+}
+
+// ---------- Betriebsstrom der Heizung (Heizung PR 15, #212) ----------
+
+// Die Frage, ob dieser Strom auch im Allgemeinstrom steckt. Nur bei Heizkosten mit Teil „Betrieb“ oder
+// ohne Teil, wie die Bedingung der Datenbank.
+export const OPERATING_POWER_OPTIONS: { value: '' | 'included'; label: string }[] = [
+  { value: '', label: 'Nein (eigener Stromvertrag oder kein Betriebsstrom)' },
+  // Wortgleich im Hinweis „Abzug des Betriebsstroms fehlt“ (#266).
+  { value: 'included', label: OPERATING_POWER_INCLUDED_YES },
+]
+// R-W2 (Durchsicht von #252): bei einer Wärmepumpe oder Stromheizung auch an der Strom-Position (Teil
+// „Brennstoff/Energie“), denn auch dieser Strom läuft oft über den Zähler des Hauses.
+export const showsOperatingPower = (form: Pick<ItemForm, 'category' | 'heatingPart'>, plantEnergy?: HeatingEnergy): boolean =>
+  form.category === HEATING_CATEGORY && (form.heatingPart === '' || form.heatingPart === 'operating' ||
+    (form.heatingPart === 'fuel' && plantEnergy !== undefined && POWER_GENERATED.includes(plantEnergy)))
+
+// Ein Abzug am Allgemeinstrom (P-W2): negativer Betrag bei „Beleuchtung/Allgemeinstrom“. Dann fragt das
+// Formular, zu welchem Betriebsstrom er gehört, damit auch ein von Hand erfasster Abzug zählt.
+export const showsDeductionLink = (form: Pick<ItemForm, 'category' | 'amount'>): boolean =>
+  form.category === GENERAL_POWER_CATEGORY && (parseEuro(form.amount) ?? 0) < 0
+
+// Der Zeitraum einer Betriebsstrom-Position in der Auswahl. Ohne die Regeln des Objekts und der Anlage
+// gibt es keine Beschriftung wie auf der Seite; ein Kalenderjahr heißt deshalb nach seinem Jahr, jeder
+// andere Zeitraum nach seinem Beginn („ab Mai 2025“).
+const periodText = (key: string): string => (key.slice(5, 7) === '01' ? key.slice(0, 4) : `ab ${changeLabel(key)}`)
+// #268: Der Abzug ohne Verweis heißt nach dem, was er ist. Heizt im Zeitraum eine Anlage mit Messdienst
+// (`serviceReceivesOperatingPower`), ist der Betrag dem Messdienst gemeldet; sonst trägt der Vermieter den
+// Betriebsstrom selbst. Gespeichert wird beides gleich (kein Verweis); die Steuerübersicht stellt dieselbe Frage.
+export function deductionChoices(items: readonly CostItem[], { service }: { service: boolean }): { value: string; label: string }[] {
+  return [
+    { value: '', label: 'Nein, kein Abzug des Betriebsstroms' },
+    { value: 'service', label: service ? 'Ja, der Betrag ist dem Messdienst als Betriebsstrom gemeldet' : OPERATING_POWER_KEPT },
+    ...items.filter((c) => c.operatingPower === 'included')
+      .map((c) => ({ value: c.id, label: `Ja, zu „${c.description}“ (${periodText(c.period)}, ${fmtEuro(c.amountCents)})` })),
+  ]
+}
+export const deductionChoiceOf = (form: Pick<ItemForm, 'operatingPower' | 'operatingPowerItemId'>): string =>
+  form.operatingPower !== 'deduction' ? '' : form.operatingPowerItemId || 'service'
+export function withDeductionChoice(form: ItemForm, value: string): ItemForm {
+  if (value === '') return { ...form, operatingPower: '', operatingPowerItemId: '', operatingPowerGeneralId: '', operatingPowerBasis: '' }
+  return { ...form, operatingPower: 'deduction', operatingPowerItemId: value === 'service' ? '' : value }
+}
+
+// Die Stromrechnungen, aus denen ein Abzug gerechnet sein kann (G-K3): Allgemeinstrom mit positivem
+// Betrag und ohne Kennzeichnung im Zeitraum des Abzugs, wie der Server es verlangt.
+export function generalChoices(items: readonly CostItem[], period: string): { value: string; label: string }[] {
+  return [
+    { value: '', label: 'Bitte wählen …' },
+    ...items.filter((c) => c.category === GENERAL_POWER_CATEGORY && c.amountCents > 0 && c.operatingPower === undefined && c.period === period)
+      .map((c) => ({ value: c.id, label: `${c.description} · ${fmtEuro(c.amountCents)}` })),
+  ]
+}
+// Mit der Stromrechnung übernimmt der Abzug ihre Verteilung (G-K3): Schlüssel, Zähler, Wohnung, Anteile,
+// Teilnehmer. So mindert er jeden Anteil im Verhältnis; die Abrechnung meldet eine Abweichung.
+export function withGeneralChoice(form: ItemForm, id: string, items: readonly CostItem[]): ItemForm {
+  const g = items.find((c) => c.id === id)
+  if (!g) return { ...form, operatingPowerGeneralId: '' }
+  const f = itemToForm(g)
+  return { ...form, operatingPowerGeneralId: g.id, key: f.key, meterType: f.meterType, directUnitId: f.directUnitId, customShares: f.customShares, participants: f.participants }
+}
+
+// Der Rumpf trägt die drei Felder bei Heizkosten und beim Allgemeinstrom (Review Focus 3): Das Formular
+// hat sie eingelesen und schickt sie zurück, wie sie sind. Ohne Kennzeichnung keine Grundlage (Bedingung
+// `…_basis_valid`). Bei jeder anderen Kostenart kein Feld; der Server lässt dann stehen, was da ist.
+export type OperatingPowerBody = { operatingPower: 'included' | 'deduction' | null; operatingPowerItemId: string | null; operatingPowerGeneralId: string | null; operatingPowerBasis: string | null }
+export function withOperatingPower<B extends object>(
+  body: B,
+  form: Pick<ItemForm, 'category' | 'heatingPart' | 'amount' | 'operatingPower' | 'operatingPowerItemId' | 'operatingPowerGeneralId' | 'operatingPowerBasis'>,
+  plantEnergy?: HeatingEnergy,
+): B & Partial<OperatingPowerBody> {
+  const basis = (marked: boolean) => (marked && form.operatingPowerBasis.trim() !== '' ? form.operatingPowerBasis.trim() : null)
+  if (form.category === HEATING_CATEGORY) {
+    const included = showsOperatingPower(form, plantEnergy) && form.operatingPower === 'included'
+    return { ...body, operatingPower: included ? 'included' : null, operatingPowerItemId: null, operatingPowerGeneralId: null, operatingPowerBasis: basis(included) }
+  }
+  if (form.category === GENERAL_POWER_CATEGORY) {
+    const deduction = showsDeductionLink(form) && form.operatingPower === 'deduction'
+    return {
+      ...body, operatingPower: deduction ? 'deduction' : null, operatingPowerItemId: deduction && form.operatingPowerItemId ? form.operatingPowerItemId : null,
+      operatingPowerGeneralId: deduction && form.operatingPowerGeneralId ? form.operatingPowerGeneralId : null, operatingPowerBasis: basis(deduction),
+    }
+  }
+  return body
 }
 
 // Hinweise, die an der Kostenart und am Abrechnungsjahr hängen (#107). Dieselbe Regel meldet die
@@ -457,7 +628,38 @@ export function categoryNotice(category: string, year: number, cableBuiltBeforeD
 // vorhandene Rechnung zu bearbeiten.
 export function sameCostOf<T extends DuplicateItem>(
   items: readonly T[], body: { category: string, description: string, vendor?: string, amountCents: number | null },
-  propertyId: string | null | undefined, year: number,
+  propertyId: string | null | undefined, period: number | PeriodKey,
 ): T[] {
-  return sameCostCandidates(items, { propertyId, year, category: body.category, description: body.description, vendor: body.vendor, amountCents: body.amountCents })
+  return sameCostCandidates(items, { propertyId, period: typeof period === 'number' ? calendarPeriod(period) : period, category: body.category, description: body.description, vendor: body.vendor, amountCents: body.amountCents })
 }
+
+// ---------- Leistungszeitraum und Aufteilen (#208, Entwurf 3.4, 3.10) ----------
+
+// Nur eine kalte Rechnung mit Leistungszeitraum kann zwei Zeiträume berühren; Heizkosten werden nie
+// nach Tagen geteilt (G-C1).
+// Ein schon aufgeteilter Teil trägt den ganzen Leistungszeitraum der Rechnung: Bleiben
+// Leistungszeitraum und Zeitraum gegenüber der gespeicherten Position (`before`) gleich, wird nur
+// berichtigt und nicht erneut aufgeteilt; der Server nimmt das ebenso an (repository.ts).
+// Eine Heizposition, die zur kalten wird, zählt nicht als unverändert (Nachprüfung von #226).
+export function needsSplitCheck(body: CostItemBody, before?: Pick<CostItem, 'serviceFrom' | 'serviceTo' | 'period' | 'category'> | null): boolean {
+  if (body.serviceFrom === null || body.serviceTo === null || body.category === HEATING_CATEGORY) return false
+  return !(before && before.category !== HEATING_CATEGORY && before.serviceFrom === body.serviceFrom && before.serviceTo === body.serviceTo && before.period === body.period)
+}
+
+// Die Rückfrage vor dem Aufteilen, oder warum nicht aufgeteilt werden kann.
+export function splitDecision(parts: readonly SplitPreviewPart[], taxYear: string): { message: string } | { error: string; needsTaxYear: boolean } {
+  const closed = parts.find((p) => p.closed)
+  if (closed) return { error: `Die Abrechnung ${closed.label} ist abgeschlossen. Öffnen Sie sie wieder, wenn die Rechnung anteilig hinein soll.`, needsTaxYear: false }
+  const twoYears = parts.find((p) => p.needsTaxYear)
+  if (twoYears && taxYear === '') {
+    return { error: `Bitte wählen Sie das Jahr der Zahlung (für die Steuer): Ein Teil der Rechnung gehört in den Zeitraum ${twoYears.label}, der über zwei Kalenderjahre reicht.`, needsTaxYear: true }
+  }
+  return { message: `Die Rechnung betrifft ${parts.length} Abrechnungszeiträume. Mietfuchs legt je Zeitraum eine Position an: ${parts.map((p) => `${p.label}: ${euro(p.amountCents)}`).join(', ')}.` }
+}
+
+// Das Jahr der Zahlung zeigt das Formular nur, wenn der Zeitraum über zwei Kalenderjahre reicht oder
+// ein Teil einer aufgeteilten Rechnung dorthin gehört (Entwurf 3.10, 11.4).
+export const showsTaxYear = (period: Pick<BillingPeriod, 'from' | 'to'>, needsTaxYear: boolean): boolean => needsTaxYear || spansTwoYears(period)
+
+// Vom Jahr des Beginns bis ein Jahr nach dem Ende (dieselbe Spanne prüft der Server).
+export const taxYearOptions = (startYear: number): number[] => [startYear, startYear + 1, startYear + 2]

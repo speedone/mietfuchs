@@ -6,13 +6,14 @@ import { useLayoutEffect } from 'react'
 import { afterEach, assert, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { AssessmentView, CostItem, Extraction, LineFields, LineSuggestion, Unit } from '../types'
-import { YearProvider } from '../year'
+import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
 import { UIProvider } from '../components/feedback'
 import Schnellerfassung from './Schnellerfassung'
 import Kosten from './Kosten'
 import AssessmentReview from '../components/AssessmentReview'
 import { fakeBooking, type FakeBooking } from '../testing/fakeBooking'
+import { calendarPeriod } from '../../../shared/period.ts'
 
 vi.setConfig({ testTimeout: 20000 })
 const SLOW = { timeout: 5000 }
@@ -29,7 +30,7 @@ let hold: Promise<void> | null
 let openViews: AssessmentView[] | null
 
 const estimate = (id: string, category: string, amountCents: number, extra: Partial<CostItem> = {}): CostItem =>
-  ({ id, propertyId: 'objekt-1', year: YEAR, category, description: `${category} ${YEAR}`, amountCents, key: 'area', ...extra })
+  ({ id, propertyId: 'objekt-1', period: calendarPeriod(YEAR), category, description: `${category} ${YEAR}`, amountCents, key: 'area', ...extra })
 const invoice = (positions: Extraction['positions'], vendor = 'Stadtwerke'): Extraction => ({ vendor, invoiceDate: `${YEAR}-12-31`, positions })
 
 beforeEach(() => {
@@ -56,8 +57,8 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-const intake = () => render(<YearProvider><PropertyProvider><UIProvider><Schnellerfassung units={UNITS} settings={null} onNavigate={() => {}} /></UIProvider></PropertyProvider></YearProvider>)
-const costs = () => render(<YearProvider><PropertyProvider><UIProvider><Kosten units={UNITS} settings={null} /></UIProvider></PropertyProvider></YearProvider>)
+const intake = () => render(<PeriodProvider><PropertyProvider><UIProvider><Schnellerfassung units={UNITS} settings={null} onNavigate={() => {}} /></UIProvider></PropertyProvider></PeriodProvider>)
+const costs = () => render(<PeriodProvider><PropertyProvider><UIProvider><Kosten units={UNITS} settings={null} /></UIProvider></PropertyProvider></PeriodProvider>)
 
 async function upload(container: HTMLElement, count = 1) {
   const input = await waitFor(() => {
@@ -331,7 +332,7 @@ test('„grüne Vorschläge bereit“ zählt nur, was „Alle grünen übernehme
 // Eine Auswertung, wie der Server sie liefern könnte, für Fälle, die der echte Planer heute nicht
 // erzeugt (eine Kostenart aus dem Altbestand, ein grüner Vorschlag ohne Vorauswahl).
 const crafted = (fields: Partial<LineFields>, extra: Partial<LineSuggestion> = {}): AssessmentView => ({
-  id: 'a1', file: 'alt.pdf', propertyId: 'objekt-1', year: YEAR, detectedYear: YEAR, requestedYear: YEAR, vendor: 'Hausmeisterdienst', invoiceDate: null,
+  id: 'a1', file: 'alt.pdf', propertyId: 'objekt-1', year: YEAR, detectedYear: YEAR, requestedYear: YEAR, requestedPeriod: calendarPeriod(YEAR), vendor: 'Hausmeisterdienst', invoiceDate: null,
   totalGrossCents: null, amountsAdjusted: null, laborFromTotal: false, nextIdx: 1, createdAt: '2026-10-02T00:00:00.000Z',
   originalName: 'alt.pdf', open: true, sumWarning: null,
   lines: [{
@@ -395,7 +396,7 @@ test('I1: die Kostenseite nennt das Jahr des Belegs, und die Vorschau das Jahr d
   const { shown } = await previewAndBook()
   expect(shown[0]).toMatch(new RegExp(`^Neu für ${YEAR + 1}: „Hausmeister“`))
   await screen.findByLabelText('Gebucht', {}, SLOW)
-  expect(fake.items.map((i) => i.year)).toEqual([YEAR + 1])
+  expect(fake.items.map((i) => i.period)).toEqual([calendarPeriod(YEAR + 1)])
 })
 
 test('I2: nur Verwerfen zeigt in Vorschau und Erfolgsmeldung, was geschieht', async () => {

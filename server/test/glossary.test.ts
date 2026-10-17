@@ -4,6 +4,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { GLOSSARY } from '../../shared/glossary.ts'
+import { OPERATING_POWER_HANDLING_LABELS, OPERATING_POWER_HANDLING_QUESTION } from '../../shared/operatingPower.ts'
 import { NOTICE_KINDS } from '../src/calc.ts'
 
 test('Lexikon: jeder Eintrag ist vollständig, und jedes Beispiel rechnet mit Zahlen', () => {
@@ -99,4 +100,393 @@ test('Teilweise selbstgenutztes Gebäude: Rechtsgrundlage, gesonderte Aufstellun
   assert.equal(120 + 60, 180)
   assert.equal(1800 * 60 / 180, 600)
   assert.equal(1800 - 600, 1200)
+})
+
+test('Zeiträume (#208): Abrechnungszeitraum, Rumpf, Leistungsprinzip und Gradtage mit nachgerechneten Beispielen', () => {
+  assert.match(GLOSSARY.billingPeriod.example, /01\.05\.2025 bis 30\.04\.2026.*30\.04\.2027/s)
+  assert.match(GLOSSARY.shortPeriod.example, /120 Tagen.*30\.04\.2026/s)
+  // 480 € · 120/365 = 157,81 €, 480 € · 245/365 = 322,19 €
+  assert.equal((48000 * 120 / 365 / 100).toFixed(2), '157.81')
+  assert.equal((48000 * 245 / 365 / 100).toFixed(2), '322.19')
+  assert.match(GLOSSARY.accrualPrinciple.example, /157,81 €.*322,19 €/s)
+  // Januar bis April 530 Promille; 700 € / 0,53 = 1.320,75 € im Jahr, 110,06 € im Monat
+  assert.match(GLOSSARY.degreeDays.example, /530 Promille.*1\.320,75 €.*110,06 €/s)
+  assert.equal((70000 / 0.53 / 100).toFixed(2), '1320.75')
+  assert.equal((70000 / 0.53 / 12 / 100).toFixed(2), '110.06')
+  assert.match(GLOSSARY.degreeDays.norm, /§ 9b Abs\. 2 HeizkostenV/)
+})
+
+test('CO₂ und Warmwasser (Heizung PR 6): Beispiele nachgerechnet, Rechtszahlen aus dem Register', () => {
+  // 24.105,6 kg bei 600 m²: 40,176 kg, auf eine Nachkommastelle 40,2 (§ 5 Abs. 1 Satz 3) → 37 bis
+  // unter 42 kg, Vermieter 60 % (Anlage). 600 € CO₂-Kosten: 360 € Vermieter, 240 € Mieter.
+  assert.equal(Math.round((24105.6 / 600) * 10) / 10, 40.2)
+  const split = GLOSSARY.co2Split
+  assert.match(split.example, /24\.105,6 kg CO₂ bei 600 m² Wohnfläche: 40,2 kg je m², Stufe 37 bis unter 42 kg/)
+  assert.match(split.example, /trägt 60 % der CO₂-Kosten, also 360 €, die Mieter tragen 240 €/)
+  assert.match(split.example, /um 3 % kürzen/)
+  assert.match(split.needed, /am oder nach dem 01\.01\.2023 beginnt/)
+  assert.equal(split.norm, '§§ 5, 7 CO2KostAufG')
+  assert.match(GLOSSARY.co2Stage.short, /einer von 10 Stufen/)
+  assert.match(GLOSSARY.co2Stage.short, /0 % unter 12 kg bis 95 % ab 52 kg/)
+  assert.match(GLOSSARY.co2Stage.example, /40,176 kg je m², gerundet 40,2: Stufe 37 bis unter 42 kg, der Vermieter trägt 60 %/)
+  // 5.421 kg bei 200,6 m²: 27,0239 kg, gerundet 27,0.
+  assert.equal(Math.round((5421 / 200.6) * 100) / 100, 27.02)
+  assert.match(GLOSSARY.co2Area.example, /5\.421 kg CO₂ bei 200,6 m² laut Messdienst ergeben 27,02 kg je m², gerundet 27,0/)
+  // Techem-Muster (Entwurf 7.2, 7.4): 3.540,00 − 87,50 = 3.452,50; 3.845,51 + 87,50 = 3.933,01.
+  assert.equal(354000 - 8750, 345250)
+  assert.equal(384551 + 8750, 393301)
+  assert.match(GLOSSARY.co2Deducted.example, /3\.540,00 €.*87,50 €.*3\.452,50 €.*3\.845,51 €.*3\.933,01 €/s)
+  // 15 % von 1.000 € (BGH VIII ZR 151/20, Entwurf R-A6).
+  assert.match(GLOSSARY.hotWaterShare.example, /1\.000 €.*um 15 % kürzen, also um 150 €/s)
+  assert.equal(GLOSSARY.hotWaterShare.norm, '§ 9 Abs. 2 und 3, § 9b Abs. 2, § 12 Abs. 1 Satz 1 HeizkostenV; BGH, Urteil vom 12.01.2022, VIII ZR 151/20')
+})
+
+test('Nutzeinheit (Heizung PR 6, Durchsicht M3): Beispiel mit dem Spielraum der Probe', () => {
+  const t = GLOSSARY.serviceUnits
+  assert.equal(4 * 2, 8)
+  assert.match(t.example, /vier Nutzeinheiten.*8 ct/s)
+})
+
+test('Durchsicht M1, M4: Flächenformel mit ihrer Voraussetzung; S umfasst neben dem Brennstoff die übrigen Heizkosten', () => {
+  assert.match(GLOSSARY.hotWaterShare.short, /weder die Wärmemenge noch das Volumen des verbrauchten Warmwassers gemessen werden kann/)
+  assert.match(GLOSSARY.co2Deducted.example, /Zusammen mit Strom, Wartung und Messdienstkosten/i)
+})
+
+test('Gradtagszahlen (Heizung PR 7): auch für die Abgrenzung einer Versorgerrechnung', () => {
+  assert.match(GLOSSARY.degreeDays.needed, /Gas-, Fernwärme- oder Stromrechnung über das Ende der Heizperiode/)
+  assert.match(GLOSSARY.degreeDays.needed, /Zählerstand zum Stichtag/)
+  assert.match(GLOSSARY.degreeDays.needed, /DIN 94680/)
+})
+
+test('Brennstoffvorrat (Heizung PR 8): Beispiel nachgerechnet', () => {
+  // Anfangsbestand 2.000 l / 1.900 €, Lieferungen 3.000 l / 3.150 € und 2.500 l / 2.500 €,
+  // Endbestand 1.800 l aus der jüngsten Lieferung: 1.800 / 2.500 × 2.500 € = 1.800 €.
+  assert.equal(2000 + 3000 + 2500 - 1800, 5700)
+  assert.equal((1800 / 2500) * 250000, 180000)
+  assert.equal(190000 + 315000 + 250000 - 180000, 575000)
+  assert.equal(315000 + 250000, 565000)
+  const t = GLOSSARY.fuelStock
+  assert.match(t.example, /Endbestand 1\.800 l.*1\.800 €.*5\.700 l.*5\.750 €.*5\.650 €.*100 €/s)
+  assert.equal(t.norm, '§ 7 Abs. 2 HeizkostenV; BGH VIII ZR 156/11')
+  assert.match(t.short, /jüngsten Lieferungen/)
+  assert.match(t.needed, /Heizöl, Flüssiggas, Pellets, Holz oder Kohle/)
+})
+
+test('Fläche der CO₂-Einstufung bei Etagenheizungen (Heizung PR 9, § 5 Abs. 1 Satz 2 CO2KostAufG)', () => {
+  assert.match(GLOSSARY.co2Area.short, /Etagenheizung.*Gesamtwohnfläche der vermieteten Wohnungen mit eigener Heizung \(§ 5 Abs\. 1 Satz 2 CO2KostAufG\)/s)
+})
+
+test('Eigene Heizkostenabrechnung: vier Begriffe mit nachgerechneten Beispielen (Heizung PR 10, Entwurf 10.3)', () => {
+  // Beispiel A aus 8.6: Topf Heizung 5.628 €, davon 30 % Grundkosten, Wohnung mit 60 von 200 m².
+  assert.match(GLOSSARY.baseCosts.example, /5\.628,00 €.*1\.688,40 €.*506,52 €/s)
+  assert.equal(Math.round(562800 * 0.3), 168840)
+  assert.equal(Math.round((168840 * 60) / 200), 50652)
+  // 70 % = 3.939,60 €, davon 12.000 von 40.000 kWh = 1.181,88 €.
+  assert.match(GLOSSARY.consumptionCosts.example, /3\.939,60 €.*12\.000 von 40\.000 kWh.*1\.181,88 €/s)
+  assert.equal(Math.round(562800 * 0.7), 393960)
+  assert.equal(Math.round((393960 * 12000) / 40000), 118188)
+  // Wechsel zum 30.09.: 640 ‰ und 360 ‰ Gradtage, zeitanteilig 273 und 92 Tage.
+  assert.match(GLOSSARY.interimReading.example, /324,17 €.*182,35 €.*378,85 €.*127,67 €/s)
+  assert.equal(Math.round(50652 * 0.64), 32417)
+  assert.equal(Math.round(50652 * 0.36), 18235)
+  assert.equal(Math.round((50652 * 273) / 365), 37885)
+  assert.equal(Math.round((50652 * 92) / 365), 12767)
+  assert.match(GLOSSARY.interimReading.norm, /§ 9b HeizkostenV/)
+  assert.match(GLOSSARY.interimReading.needed, /VIII ZR 19\/07/)
+  assert.match(GLOSSARY.heatMeter.example, /13\.000 kWh.*12\.000 kWh/s)
+  // Beide Lesarten beim gemessenen Warmwasseranteil (15.1 Nr. 9), mit beiden Werten.
+  assert.match(GLOSSARY.hotWaterShare.example, /15,00 %.*16,65 %/s)
+  assert.match(GLOSSARY.hotWaterShare.example, /Norm offen: VDI 2077/)
+})
+
+test('Warmwasseranteil (Heizung PR 11): Beispiel aus dem Entwurf 8.3 nachgerechnet, beide Lesarten zu Q gleichwertig', () => {
+  const e = GLOSSARY.hotWaterShare.example
+  assert.match(e, /Q = 2,5 · 120 · \(60 − 10\) = 15\.000 kWh/)
+  assert.match(e, /mal 1,11 = 16\.650 kWh, Anteil 27,75 %/)
+  assert.match(e, /32 · 200 = 6\.400 kWh, mal 1,11 = 7\.104 kWh, Anteil 11,84 %/)
+  assert.match(e, /9\.000 \/ 60\.000 = 15,00 %/)
+  assert.match(e, /9\.000 · 1,11 \/ 60\.000 = 16,65 %/)
+  assert.match(e, /um 15 % kürzen, also um 150 €/)
+  assert.match(GLOSSARY.hotWaterShare.short, /Heizwert laut Rechnung/)
+  assert.match(GLOSSARY.hotWaterShare.needed, /§ 9b Abs\. 2 HeizkostenV/)
+})
+
+test('Durchsicht #240, Recht-I3: Brennwert und Heizwert mit Faktor aus dem Register und Rat zur Rechnung', () => {
+  const t = GLOSSARY.gasCalorificBasis
+  assert.match(t.example, /15\.000 · 1,11 = 16\.650 kWh/)
+  assert.equal(t.norm, '§ 9 Abs. 2 Satz 6 Nr. 1 HeizkostenV')
+  assert.match(t.needed, /steht dort „Brennwert“, wählen Sie „nach Brennwert“/)
+})
+
+test('Heizkostenverteiler (Heizung PR 12): Skalen, Faktoren 1,25 und 0,8 nachgerechnet, Stichtag, Verdunster', () => {
+  const g = GLOSSARY.heatCostAllocator
+  // Dass die Abrechnung den Faktor nennt, ist Praxis der Messdienste, keine Norm (Durchsicht von #241, Recht-I3).
+  assert.match(g.short, /Einheitsskala.*mit dem Bewertungsfaktor des Heizkörpers malgenommen.*nennt den Faktor.*Messdienste/s)
+  assert.doesNotMatch(g.short, /muss in der Abrechnung stehen|erst mal/)
+  assert.match(g.short, /Produktskala.*schon eingerechnet/s)
+  assert.match(g.short, /Stichtag/)
+  assert.match(g.example, /Einheitsskala 500, sein Bewertungsfaktor ist 1,25: das sind 625 Einheiten/)
+  assert.match(g.example, /200 bei Faktor 0,8: 160 Einheiten/)
+  assert.match(g.example, /785 von 7\.850 Einheiten/)
+  assert.match(g.example, /ein Zehntel der Kosten nach Verbrauch, bei 2\.100 € also 210 €/)
+  assert.match(g.needed, /in der Regel nur, wenn seit der Hauptablesung 400 bis 800 ‰ der Gradtagszahlen/)
+  assert.match(g.needed, /§ 5 Abs\. 1 Satz 2/)
+  assert.match(g.needed, /bis zum 31\.12\.2026/)
+  assert.match(GLOSSARY.evaporator.example, /bis zum 31\.12\.2026.*um 3 % kürzen/)
+  assert.match(GLOSSARY.serviceReading.short, /bewertete Einheiten/)
+  assert.match(g.needed, /Skala und Bewertungsfaktor/)
+  assert.doesNotMatch(g.needed, /noch nicht selbst aus/)
+})
+
+test('Schätzung nach § 9a (Heizung PR 13): Beispiel mit Durchschnitt je m² und der Grenze, nachgerechnet', () => {
+  const g = GLOSSARY.heatingEstimate
+  // Übrige Wohnungen 28.000 kWh auf 140 m² = 200 kWh je m²; 60 m² × 200 = 12.000 kWh.
+  assert.equal(28000 / 140, 200)
+  assert.equal(60 * 200, 12000)
+  assert.match(g.example, /28\.000 kWh auf 140 m².*200 kWh je m².*12\.000 kWh/s)
+  // 60 von 200 m² = 30 %, mehr als die Grenze: nur nach Fläche.
+  assert.match(g.example, /60 von 200 m², also 30 %.*mehr als 25 %.*nur nach der Fläche/s)
+  assert.match(g.needed, /vier gleich großen Wohnungen.*genau 25 %.*keine Überschreitung/s)
+  assert.match(g.needed, /verschieden groß.*Fläche/s)
+  assert.match(g.norm, /§ 9a HeizkostenV/)
+})
+
+test('Angaben zur Abrechnung und Klimafaktor (Heizung PR 14): Beispiele nachgerechnet, kein Hausdurchschnitt', () => {
+  // 3 % von 1.200 € = 36 €.
+  assert.equal((1200 * 3) / 100, 36)
+  assert.match(GLOSSARY.billingInfo.example, /1\.200 €.*um 36 €/s)
+  assert.match(GLOSSARY.billingInfo.norm, /§ 6a HeizkostenV/)
+  assert.match(GLOSSARY.billingInfo.needed, /Durchschnitt Ihres eigenen Hauses ist kein solcher Vergleich/)
+  // 12.000 kWh × 1,08 = 12.960 kWh; 11.500 kWh × 1,15 = 13.225 kWh.
+  assert.equal(Math.round(12000 * 1.08), 12960)
+  assert.equal(Math.round(11500 * 1.15), 13225)
+  assert.match(GLOSSARY.climateFactor.example, /12\.000 kWh.*1,08.*12\.960 kWh.*11\.500 kWh.*1,15.*13\.225 kWh/s)
+  // Durchsicht von #243, R-K3: VDI 3807 wie in der Begründung, keine offene Norm mehr.
+  assert.match(GLOSSARY.climateFactor.needed, /„insbesondere die technische Regel VDI 3807“.*BR-Drs\. 643\/21, S\. 21/s)
+  assert.doesNotMatch(GLOSSARY.climateFactor.needed, /DIN 94680/)
+  assert.match(GLOSSARY.climateFactor.needed, /mit ihrer Quelle/)
+})
+
+test('Lexikon: Rechtsstand erklärt eingetragene Werte (Heizung PR 17)', () => {
+  assert.match(GLOSSARY.legalBasis.needed, /selbst eintragen/)
+  assert.match(GLOSSARY.legalBasis.needed, /amtlichen Wert/)
+})
+
+test('N2 (Runde 2): Lexikon „EBeV 2030“ mit den Werten aus dem Register; der Hinweis zur Prüfung verweist darauf', () => {
+  assert.match(GLOSSARY.ebev.title, /Emissionsberichterstattungsverordnung/)
+  assert.match(GLOSSARY.ebev.example, /0,0558/)
+  assert.ok(NOTICE_KINDS['co2.cost-implausible']?.terms.includes('ebev'))
+})
+
+// Heizung PR 15 (#212): Betriebsstrom, mit der Schätzung des BGH als Beispiel und den Spannen der
+// Literatur nur als Literaturwerte ohne Festlegung des BGH (Entwurf 4.3 letzter Absatz).
+test('Lexikon: Betriebsstrom nennt § 7 Abs. 2 HeizkostenV, das Urteil und rechnet das Beispiel richtig', () => {
+  const t = GLOSSARY.operatingPower
+  assert.match(t.norm ?? '', /§ 7 Abs\. 2, § 8 Abs\. 2 HeizkostenV/)
+  // P-K3: Der Warmwasseranteil steht in § 8 Abs. 2 HeizkostenV und § 2 Nr. 5 Buchst. a BetrKV.
+  assert.match(t.norm ?? '', /§ 2 Nr\. 4 Buchst\. a, Nr\. 5 Buchst\. a und Nr\. 11 BetrKV/)
+  assert.match(t.norm ?? '', /V ZR 166\/15/)
+  // P-K4: die Entscheidung des VIII. Senats für das Mietrecht, nur mit Leitsatz c (amtlich a, b, c; Rechtsprüfung zu #266, K-1), ohne Randnummer.
+  assert.match(t.norm ?? '', /BGH, Versäumnisurteil vom 20\.02\.2008, VIII ZR 27\/07 \(Leitsatz c\)/)
+  assert.doesNotMatch(`${t.norm} ${t.needed} ${t.example} ${t.short}`, /VIII ZR 27\/07, Rn\./)
+  // 120 W × 6 h + 45 W × 24 h + 5 W × 24 h an 220 Tagen = 422,4 kWh; 422,4 / 3.000 von 1.050,00 €.
+  assert.equal(((120 * 6 + 45 * 24 + 5 * 24) * 220) / 1000, 422.4)
+  assert.equal(Math.round((105000 * 422.4) / 3000), 14784)
+  assert.match(t.example, /422,4 kWh/)
+  assert.match(t.example, /147,84 €/)
+  // V ZR 166/15 Rn. 14: Der Bruchteil der Brennstoffkosten ist eine zulässige Schätzgrundlage; die
+  // Prozentwerte gibt der BGH nur aus der Literatur wieder, ohne selbst einen festzulegen.
+  // R-K2 (Durchsicht von #252): Das ist für Wohnungseigentümer entschieden, nicht für Vermieter.
+  assert.match(t.example, /Für Wohnungseigentümer lässt der Bundesgerichtshof auch einen Bruchteil der Brennstoffkosten als Schätzgrundlage zu/)
+  assert.match(t.example, /legt aber selbst keinen Wert fest/)
+  assert.doesNotMatch(t.example, /nicht gebilligt/)
+  assert.match(t.example, /einschließlich Grundpreis/)
+  // P-K7: die vier Spannen mit ihren Autoren. „oder höchstens 5 %“ trifft kein Muster des Wächters
+  // (law-literals.test.ts); wer daraus „… und höchstens 5 %“ macht, bekommt dort einen Treffer ohne
+  // erlaubte Stelle. Der Wortlaut ist deshalb hier festgehalten.
+  assert.match(t.example, /3–6 % Jennißen, 4–10 % Schmidt-Futterer\/Lammel, 8–10 % Wall oder höchstens 5 % Gies/)
+  assert.match(t.needed, /offenkundig ungeeignet/)
+  // R-K2: Ermessen und Verfahren stammen aus dem WEG-Urteil; für Vermieter ist die Übertragung Auslegung.
+  assert.match(t.needed, /Für Wohnungseigentümer hat der Bundesgerichtshof entschieden, dass die Wahl des Verfahrens in ihrem Ermessen liegt, solange es nicht offenkundig ungeeignet ist\. Er nennt eine Berechnung aus dem Stromverbrauchswert der angeschlossenen Geräte und den Heiztagen sowie einen Bruchteil der Brennstoffkosten \(BGH, Urteil vom 03\.06\.2016, V ZR 166\/15, Rn\. 14\)\./)
+  assert.match(t.needed, /Dass Sie als Vermieter dieselbe Wahl haben, ist eine Auslegung von Mietfuchs; entschieden ist für Mietverhältnisse, dass Sie schätzen dürfen und die Grundlagen offenlegen müssen/)
+  assert.doesNotMatch(t.needed, /Welches Verfahren Sie wählen, liegt in Ihrem Ermessen/)
+  // R-K5: Fernwärme über Abs. 4.
+  assert.match(t.needed, /Bei Fernwärme gilt dasselbe für Pumpen und Regelung der Hausanlage \(§ 7 Abs\. 4, § 8 Abs\. 4 HeizkostenV\)/)
+  // P-K5: Der Vermieter darf ihn auch selbst tragen; unzulässig ist nur der Allgemeinstrom.
+  assert.doesNotMatch(t.needed, /bei jeder Zentralheizung/)
+  assert.match(t.needed, /oder Sie tragen ihn selbst; im Allgemeinstrom darf er nicht stehen/)
+  // P-W1: aufbewahren, denn bei Bestreiten sind die Grundlagen darzulegen.
+  assert.match(t.needed, /müssen Sie die Grundlagen Ihrer Schätzung darlegen \(BGH, Versäumnisurteil vom 20\.02\.2008, VIII ZR 27\/07, Leitsatz c\)/)
+  // P-W5, R2-W1, R-W2: Der Strom zur Wärmeerzeugung gehört zu den Heizkosten, aber nicht als Betriebsstrom
+  // und nicht als Brennstoff (§ 7 Abs. 2 HeizkostenV nennt ihn neben den Brennstoffen); das Herausrechnen aus
+  // dem Allgemeinstrom ist als Auslegung gekennzeichnet. Umwälzpumpen und Regelung bleiben Betriebsstrom.
+  assert.match(t.needed, /Bei einer Wärmepumpe oder Stromheizung gehört der Strom, den Wärmepumpe oder Elektrokessel zur Wärmeerzeugung verbrauchen, zu den Heizkosten, aber nicht als Betriebsstrom \(§ 7 Abs\. 2 HeizkostenV: „Kosten des zur Wärmeerzeugung verbrauchten Stroms“\)/)
+  assert.match(t.needed, /Auslegung von Mietfuchs/)
+  assert.doesNotMatch(`${t.needed} ${t.short} ${t.example}`, /Brennstoff und kein Betriebsstrom|ist der Strom Brennstoff|Kosten der verbrauchten Brennstoffe/)
+  assert.match(t.needed, /Umwälzpumpen oder Regelung/)
+  assert.match(t.needed, /beim Allgemeinstrom abzuziehen \(§ 7 Abs\. 2, § 8 Abs\. 2 HeizkostenV\)/)
+})
+
+// #266: Die Angabe an der Anlage, mit den Beschriftungen wortgleich zur Oberfläche, und der Zwischenzähler (M-1).
+test('Lexikon: Betriebsstrom nennt die Angabe an der Heizanlage und was der Hinweis damit tut (#266)', () => {
+  const t = GLOSSARY.operatingPower
+  const L = OPERATING_POWER_HANDLING_LABELS
+  assert.ok(t.needed.includes(`Wie der Betriebsstrom erfasst ist, geben Sie auf der Seite Heizkosten an („${OPERATING_POWER_HANDLING_QUESTION}“).`), t.needed)
+  assert.ok(t.needed.includes('Ohne diese Angabe schweigt der Hinweis, sobald für die Anlage irgendeine Heizposition mit dem Teil „Betrieb“ erfasst ist, auch wenn es nur die Wartung ist.'))
+  assert.ok(t.needed.includes(`Mit „${L.deducted}“ kommt er, wenn der Abzug fehlt, auch wenn die Wartung erfasst ist; mit „${L.ownMeter}“ kommt er, wenn keine Heizposition „Betrieb“ erfasst ist; mit „${L.landlordPays}“ schweigt er.`))
+  assert.ok(t.needed.includes('Ein Zwischenzähler hinter dem Stromzähler des Hauses ist kein eigener Stromvertrag: Sein Strom steckt in der Stromrechnung des Hauses und ist beim Allgemeinstrom abzuziehen; der Zwischenzähler erspart nur das Schätzen.'))
+  assert.doesNotMatch(t.needed, /Der Hinweis schweigt, sobald/)
+})
+
+// #268, Durchsicht S4: Bei Eigennutzung ist der private Teil keine Werbungskosten (§ 12 Nr. 1 EStG); der Satz sagt deshalb „soweit“.
+test('Lexikon Betriebsstrom: die Stromrechnung zählt zu den Werbungskosten, soweit Sie das Haus vermieten', () => {
+  const text = GLOSSARY.operatingPower.needed
+  assert.ok(text.includes('und sie gehört zu Ihren Werbungskosten, soweit Sie das Haus vermieten (§ 9 Abs. 1 Satz 1 EStG).'), text)
+  assert.doesNotMatch(text, /ganz zu Ihren Werbungskosten/)
+})
+
+// Heizung PR 16 (#213): Wärmelieferung. Die Ankündigung ist eine eigene Pflicht und keine Voraussetzung der
+// Kostentragung (§ 556c Abs. 1 und 2 BGB, § 11 Abs. 3 WärmeLV; Prüfung R-M1).
+test('Lexikon: Wärmelieferung nennt § 556c, WärmeLV, § 7 Abs. 3 und die Zahlen aus dem Register (Heizung PR 16)', () => {
+  const t = GLOSSARY.heatDelivery
+  for (const n of [/§ 556c BGB/, /WärmeLV/, /§ 7 Abs\. 3 und 4/, /§ 9 Abs\. 2 Satz 6 Nr\. 2/, /§ 3 Abs\. 4 CO2KostAufG/, /§ 2 Nr\. 4 Buchst\. c BetrKV/]) assert.match(t.norm, n)
+  assert.match(t.short, /nicht der Pflichtanteil von 70 % für ältere, nicht nach der Wärmeschutzverordnung 1994 gedämmte Gebäude mit Öl- oder Gasheizung und überwiegend gedämmten Leitungen/)
+  assert.match(t.short, /§ 7 Abs\. 3 HeizkostenV verweist nicht auf Abs\. 1 Satz 2/)
+  assert.match(t.example, /÷ 1,15/)
+  assert.match(t.example, /heizt er mit Gas, Öl oder Kohle, muss der Lieferant die CO₂-Angaben ausweisen/)
+  assert.match(t.needed, /bessere Effizienz und keine höheren Kosten als vorher\. Außerdem ist die Umstellung spätestens 3 Monate vorher in Textform anzukündigen; fehlt die Ankündigung, beginnt die Frist für Einwendungen gegen die Abrechnung erst später \(§ 11 Abs\. 3 WärmeLV\)/)
+  assert.doesNotMatch(t.needed, /und eine Ankündigung/)
+  assert.match(t.needed, /im entschiedenen Fall jedenfalls/)
+})
+
+// Prüfung C-M3: Bei Contracting schweigt der Hinweis zum Betriebsstrom wie bei Fernwärme; Pumpen und Regelung
+// der Hausanlage über den Stromzähler des Hauses gehören zu den Kosten der Hausanlage.
+test('Lexikon Betriebsstrom: schweigt bei Fernwärme und bei Wärmelieferung durch einen Contractor (Heizung PR 16)', () => {
+  const t = GLOSSARY.operatingPower
+  assert.match(t.needed, /bei Fernwärme und bei Wärmelieferung durch einen Contractor/)
+  assert.match(t.needed, /Laufen Pumpen oder Regelung der Hausanlage über den Stromzähler des Hauses, gehört ihr Strom zu den Kosten der Hausanlage \(§ 7 Abs\. 4, § 8 Abs\. 4 HeizkostenV\) und ist beim Allgemeinstrom abzuziehen\./)
+})
+
+// Durchsicht von #272, S1 (Entscheidung nach der Gegenprüfung): Pauschale einbezogen über den Wortlaut von § 556 Abs. 2 BGB,
+// als Auslegung gekennzeichnet; kein BGH-Beleg dafür.
+test('Lexikon Wärmelieferung: Betriebskostenpauschale unter § 556c als Auslegung, Inklusivmiete nicht', () => {
+  const t = GLOSSARY.heatDelivery.needed
+  assert.match(t, /Auch wer eine Betriebskostenpauschale zahlt, trägt die Heizkosten als Betriebskosten, denn § 556 Abs\. 2 BGB lässt sie „als Pauschale oder als Vorauszahlung“ ausweisen \(Auslegung von Mietfuchs\); bei einer Inklusivmiete fehlt die Umlagevereinbarung, und § 556c gilt nicht\./)
+})
+
+test('Lexikon monthlyConsumptionInfo (Heizung PR 22): Mitteilen jeden Monat, kWh, Vergleichswert nicht aus dem Haus, Auslegungen benannt', () => {
+  const t = GLOSSARY.monthlyConsumptionInfo
+  assert.match(t.short, /fernablesbar/)
+  assert.match(t.norm ?? '', /§ 6a Abs\. 1 und 2.*§ 12 Abs\. 1 Satz 3 HeizkostenV/)
+  // Beispiel nachgerechnet: 2,5 m³ bei 55 °C, Q = 2,5 · V · (t − 10) = 281,25 kWh; getrennt von der gemessenen Wärme.
+  assert.match(t.example, /700 kWh für die Heizung \(gemessen\) und 2,5 m³ Warmwasser/)
+  assert.match(t.example, /umgerechnet etwa 281 kWh, angelehnt an § 9 Abs\. 2 Satz 2 HeizkostenV einschließlich der Verluste der Erzeugung/)
+  assert.match(t.example, /10 kWh je m² × 60 m² = 600 kWh/)
+  assert.match(t.needed, /Ja, wenn Zähler oder Heizkostenverteiler fernablesbar sind/)
+  assert.match(t.needed, /im Einzelfall zu prüfen, ob die monatliche Information möglich und zumutbar ist \(BR-Drs\. 643\/21, S\. 18\)/)
+  assert.match(t.needed, /jeden Monat eine Nachricht/)
+  assert.match(t.needed, /nicht von den Nutzern desselben Hauses/)
+  assert.match(t.needed, /um 3 % kürzen/)
+  // Kann-Befund K5: unter einer Ausnahme nur der Wärme nur am Warmwasser.
+  assert.match(t.needed, /an den Heizkosten \(ist nach § 11 HeizkostenV nur die Wärme ausgenommen, am Warmwasser\) um 3 % kürzen/)
+  assert.match(t.needed, /nicht höchstrichterlich geklärt; Mietfuchs rechnet vorsorglich mit den vollen 3 % \(Auslegung\)/)
+  assert.match(t.needed, /jeden Monat, auch außerhalb der Heizperiode.*Auslegung/s)
+  assert.match(t.needed, /ab dem ersten Tag des Folgemonats als fällig.*Festlegung von Mietfuchs/s)
+})
+
+test('Lexikon meterCalibration: Frist und Beispiel aus dem Register, Beginn und Ende, HKV ohne Eichung, Beweislast mit dem Leitsatz', () => {
+  const t = GLOSSARY.meterCalibration
+  assert.match(t.short, /beträgt 6 Jahre/)
+  assert.match(t.short, /Jahr der Kennzeichnung/)
+  assert.match(t.short, /mit dem Ende des Jahres/)
+  assert.match(t.short, /Heizkostenverteiler sind nicht eichpflichtig/)
+  assert.match(t.example, /„M22“.*bis Ende 2028.*31\.12\.2028.*01\.01\.2029/s)
+  assert.match(t.norm ?? '', /§ 33, § 37 Abs\. 1 MessEG; § 34, § 35 und Anlage 7 MessEV/)
+  assert.match(t.needed, /im Prozess die Richtigkeit der abgelesenen Werte zur Überzeugung des Tatrichters nachweisen/)
+  assert.match(t.needed, /§ 35 MessEV/)
+})
+
+test('Lexikon: hälftige Teilung nach § 5a nennt §§ 5a, 5b, 5d, § 7 Abs. 5 und rechnet das Beispiel nach (Heizung PR 18)', () => {
+  const t = GLOSSARY.co2HalfSplit
+  for (const n of [/§§ 5a, 5b, 5d/, /§ 7 Abs\. 5/, /§ 43 Abs\. 1/]) assert.match(t.norm ?? '', n)
+  assert.match(t.example, /271,80 €/)
+  assert.equal(Math.round(0.47 * 60000 * 0.4 + 0.53 * 60000 * 0.5), 27180)
+  assert.match(t.example, /150,00 €/)
+  assert.equal(30000 * 0.5, 15000)
+  assert.match(t.needed, /§ 556d BGB/)
+  assert.match(t.needed, /§ 558 Abs\. 3 BGB/)
+  assert.match(t.needed, /§ 577a Abs\. 2 BGB/)
+  // Prüfung M9 (Wortlaut der Gegenprüfung): die gemeinsame Wärmeversorgung; S9: das Gebiet, nicht die Gemeinde;
+  // S12: die Mitteilung als Voraussetzung ist Auslegung; K4: Kündigungssperrfrist; K8: die Höhe der Kürzung.
+  assert.match(t.needed, /die beide über eine gemeinsame Heizung versorgt werden \(§ 5d Abs\. 3 CO2KostAufG\)/)
+  assert.match(t.needed, /in keinem Gebiet liegt/)
+  assert.match(t.needed, /Teile einer Gemeinde/)
+  // Durchsicht K3: die Mitteilung mit der Abrechnung als Regelfall der Begründung.
+  assert.match(t.needed, /genügt nach der Begründung in der Regel die Mitteilung mit der Abrechnung/)
+  assert.match(t.needed, /Auslegung/)
+  assert.match(t.needed, /Kündigungssperrfrist/)
+  assert.match(t.short, /um 3 % kürzen \(§ 7 Abs\. 5 Satz 3, Abs\. 4 CO2KostAufG\)/)
+  assert.match(t.short, /höchstens für 30 % des Brennstoffs/)
+  // Grenze dieses Stands mit Verweis (Entscheidung des Koordinators): Vorrat und 30 % ab 2040 in #227.
+  assert.match(t.needed, /Vorrat .* Grenze von 30 % ab 2040 rechnet Mietfuchs noch nicht \(#227\)/)
+})
+
+test('Lexikon: CO₂-Erstattung an Mieter, die selbst heizen, Beispiel nachgerechnet (Heizung PR 19)', () => {
+  const t = GLOSSARY.co2Refund
+  for (const n of [/§ 6 Abs\. 2/, /§ 6 Abs\. 3/, /§ 8 Abs\. 2/, /§ 5 Abs\. 3/]) assert.match(t.norm ?? '', n)
+  // 2.400 kg auf 80 m² = 30,0 kg/m² → Stufe 27 bis < 32, Vermieter 40 %; 600 € × 40 % = 240,00 €; mit eigenem Gasherd − 5 % = 228,00 €.
+  assert.equal(2400 / 80, 30)
+  assert.equal(Math.round(60000 * 0.4), 24000)
+  assert.equal(Math.round(24000 * 0.95), 22800)
+  assert.match(t.example, /240,00 €.*228,00 €/s)
+  // Gekürzt wird nur bei einem Gerät im Eigentum des Mieters (BT-Drs. 20/3172, S. 35).
+  assert.match(t.example, /eigenen Gasherd, den er selbst angeschafft hat/)
+  assert.match(t.example, /mitvermieteter Herd kürzt nichts/)
+  // Prüfung S2: „vereinbart“ statt „zahlt“; Gegenprüfung M1: auch die zentrale Heizung.
+  assert.match(t.needed, /Ist mit ihm eine Vorauszahlung auf Betriebskosten vereinbart, können Sie den Betrag in der nächsten Abrechnung nach der Anzeige verrechnen; sonst zahlen Sie spätestens 12 Monate nach der Anzeige aus/)
+  assert.match(t.short, /zentrale Heizung, deren Brennstoff er selbst bezieht/)
+  // Prüfung K3: § 2 Abs. 7 CO2KostAufG.
+  assert.match(t.needed, /§ 2 Abs\. 7/)
+})
+
+test('Rohrwärme (#219, Gesamtentwurf 14.1): eigener Begriff mit Wortlaut der Voraussetzungen, dem BGH zu „freiliegend“ und ohne erfundenes Verfahren', () => {
+  const t = GLOSSARY.pipeHeat
+  assert.equal(t.title, 'Rohrwärme')
+  assert.match(t.norm, /§ 7 Abs\. 1 Satz 3 und 4 HeizkostenV/)
+  assert.match(t.norm, /VIII ZR 5\/16/)
+  assert.match(t.short, /freiliegenden Leitungen der Wärmeverteilung überwiegend ungedämmt/)
+  assert.match(t.short, /nach anerkannten Regeln der Technik bestimmt werden/)
+  assert.match(t.needed, /VDI 2077 Blatt 3\.5/)
+  assert.match(t.needed, /unter Putz oder im Estrich/)
+  assert.match(t.needed, /rechnet Mietfuchs nicht/)
+  // Beispiel nachgerechnet: 10.000 kWh abgegeben, 3.000 kWh über die Rohre, erfasst 7.000 kWh.
+  assert.match(t.example, /10\.000 kWh.*3\.000 kWh.*7\.000 kWh/s)
+  assert.equal(10000 - 3000, 7000)
+})
+
+test('Vorerfassung (#218): Pflicht nach Satz 1, Möglichkeit nach Satz 2, nachgerechnetes Beispiel', () => {
+  const t = GLOSSARY.preCapture
+  assert.equal(t.norm, '§ 5 Abs. 7 HeizkostenV')
+  assert.match(t.short, /nicht mit gleichen Ausstattungen erfasst/)
+  assert.match(t.short, /unterschiedlichen Nutzungs- oder Gebäudearten oder aus anderen sachgerechten Gründen/)
+  assert.match(t.needed, /rechnet Mietfuchs nicht/)
+  assert.match(t.example, /6\.000 kWh von 20\.000 kWh.*30 %.*70 %/s)
+  assert.equal(6000 / 20000, 0.3)
+})
+
+test('Nutzerwechselgebühr (#223): BGH VIII ZR 19/07 mit Datum, Verwaltungskosten, Beispiel nachgerechnet', () => {
+  const t = GLOSSARY.changeFee
+  assert.equal(t.norm, 'BGH, Urteil vom 14.11.2007, VIII ZR 19/07')
+  assert.match(t.short, /keine Betriebskosten, sondern Verwaltungskosten/)
+  assert.match(t.needed, /„Nicht umlagefähig“/)
+  assert.match(t.example, /30,00 €.*drei Wohnungen.*10,00 €/s)
+  assert.equal(3000 / 3, 1000)
+})
+
+test('Wärmelieferung (#225): unmittelbare Abrechnung des Lieferanten mit § 1 Abs. 3 und § 11 Abs. 1 Nr. 4 und der Antwort der Einrichtung', () => {
+  const t = GLOSSARY.heatDelivery
+  assert.match(t.norm, /§ 1 Abs\. 1 Nr\. 2 und Abs\. 3/)
+  assert.match(t.norm, /§ 11 Abs\. 1 Nr\. 4/)
+  assert.match(t.needed, /Rechnet der Lieferant unmittelbar mit den Mietern ab und legt dabei die Anteile der Mieter am Gesamtverbrauch zugrunde, gelten die Pflichten des Gebäudeeigentümers aus der Heizkostenverordnung für ihn \(§ 1 Abs\. 3 HeizkostenV\); misst er den Verbrauch jeder Wohnung selbst, gilt die Verordnung für diese Verteilung nicht\./)
+  assert.match(t.needed, /„Der Wärmelieferant rechnet unmittelbar mit den Mietern ab“/)
 })

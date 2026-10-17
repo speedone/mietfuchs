@@ -1,0 +1,326 @@
+// Das Regelverzeichnis (#112), seit Heizung PR 1 Teil des Rechtsregisters (vorher
+// server/src/rules.ts): Rechtsregeln, die die Berechnung anwendet, jeweils mit dem Zeitraum, in dem
+// sie gelten. Eine Abrechnung rechnet nach dem Recht ihres Jahres und nicht nach dem von heute; wo
+// eine Regel nur für einen Teil des Jahres gilt, sagt das `ruleCoverage`.
+//
+// Aufgenommen wird nur, was die Berechnung wirklich anwendet. Das Verzeichnis ist keine
+// Rechtsbibliothek, sondern die Liste, gegen die eine Abrechnung geprüft wurde; deshalb steht
+// sie als Rechtsstand in jeder Abrechnung und wird beim Abschließen mit eingefroren.
+//
+// Zahlen und Daten in Kurzfassung und Gültigkeit kommen aus den Parametern des Registers und
+// stehen hier nicht noch einmal: So kann die Erklärung keine andere Zahl nennen als die Rechnung.
+// Der Wortlaut ist derselbe wie vorher (server/test/law-wording.test.ts).
+//
+// ISO-Daten werden Zeichen für Zeichen verglichen, wie `compareText` in calc.ts.
+//
+// Ein eigenes Stichtagsdatum hat das Verzeichnis nicht mehr (Durchsicht von #221, M4): Es gilt
+// `LAW_AS_OF` aus register.ts. Wer eine Regel ändert oder ergänzt, prüft die Parameter, aus denen sie
+// liest, setzt deren `retrieved` und `LAW_AS_OF` auf den Tag der Durchsicht (#110).
+import { betrkvTvSignal } from './bgb-betrkv.ts'
+import { co2CutMissing, co2FirstPeriodStart, co2HalfSplit, co2HalfSplitTwoFamily, co2SelfSupply, halfSplitBioFirstDay, halfSplitFirstDay } from './co2kostaufg.ts'
+import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvEstimateThreshold, hkvExemptions, hkvRemoteReadingRetrofit } from './heizkostenv.ts'
+import { messevCalibrationYears } from './messev.ts'
+import { dayBefore, germanDate, LAW_AS_OF, onlyVersion, valueAt } from './register.ts'
+
+// Die Fassungen, aus denen die Regeln ihre Grenzen nehmen. Bekommt einer der beiden Parameter eine
+// zweite Fassung, muss die Regel entscheiden, welche sie erklärt; bis dahin bricht `onlyVersion`
+// beim Laden ab.
+const tv = onlyVersion(betrkvTvSignal)
+const retrofit = onlyVersion(hkvRemoteReadingRetrofit)
+if (!tv.validTo || !retrofit.validFrom) throw new Error('Rechtsregister: Kabelregel oder Fernablesbarkeit ohne Grenze')
+const TV_UNTIL = tv.validTo
+const TV_NEW_FROM = germanDate(tv.value.newSystemsFrom)
+const RETROFIT_FROM = retrofit.validFrom
+const share = valueAt(hkvConsumptionShare, LAW_AS_OF)
+const cut = valueAt(hkvCutNotByConsumption, LAW_AS_OF)
+const remoteCut = valueAt(hkvCutRemoteReading, LAW_AS_OF)
+const forcedShare = valueAt(hkvConsumptionShareForced, LAW_AS_OF)
+const estimateThreshold = valueAt(hkvEstimateThreshold, LAW_AS_OF)
+const infoCut = valueAt(hkvCutInformation, LAW_AS_OF)
+const exemptions = valueAt(hkvExemptions, LAW_AS_OF)
+const CO2_FROM = co2FirstPeriodStart()
+const co2Cut = valueAt(co2CutMissing, LAW_AS_OF)
+// Eichfrist (Heizung PR 21): die Fassung von heute, wie im Lexikon.
+const calibration = valueAt(messevCalibrationYears, LAW_AS_OF)
+const calibrationYears = calibration.kaltwasser === calibration.warmwasser && calibration.warmwasser === calibration.waerme
+  ? `je ${calibration.kaltwasser} Jahre`
+  : messevCalibrationYears.describe(calibration)
+// Hälftige Teilung nach § 5a (Heizung PR 18): die Stichtage und die Grenze beim Biobrennstoff aus dem Register.
+const HALF_FROM = halfSplitFirstDay()
+const HALF_BIO_FROM = halfSplitBioFirstDay()
+const halfLater = valueAt(co2HalfSplit, HALF_BIO_FROM)
+const twoFamily = valueAt(co2HalfSplitTwoFamily, LAW_AS_OF)
+// Erstattung an Mieter, die selbst heizen (Heizung PR 19).
+const selfSupply = valueAt(co2SelfSupply, LAW_AS_OF)
+
+export type Rule = {
+  code: string
+  title: string
+  // Rechtsgrundlage, wie sie ein Mensch nachschlägt
+  norm: string
+  // in einfachen Worten, ein bis zwei Sätze
+  summary: string
+  // ISO-Daten, inklusive; fehlt eine Grenze, gilt die Regel in diese Richtung unbegrenzt
+  validFrom?: string
+  validTo?: string
+  // `meters`: eine Regel, die Mietfuchs auf der Zähler-Seite anwendet und nicht in der Abrechnung (Heizung
+  // PR 21). Ein Hinweis braucht seine Regel, aber in den Rechtsstand einer Abrechnung gehört sie nicht, denn
+  // die Abrechnung prüft nicht nach ihr (Prüfung des Plans, S13); `rulesFor` lässt sie aus.
+  scope?: 'meters'
+}
+
+export const RULES: readonly Rule[] = [
+  {
+    code: 'tv-signal',
+    title: 'Kabelfernsehen über die Nebenkosten',
+    norm: '§ 2 Satz 1 Nr. 15 und Satz 2 BetrKV',
+    summary:
+      `Die Gebühren für das TV-Signal eines Kabelanschlusses und die Grundgebühren eines Breitbandanschlusses durften bis zum ${germanDate(TV_UNTIL)} ` +
+      `als Betriebskosten umgelegt werden, und zwar nur bei Anlagen, die vor dem ${TV_NEW_FROM} errichtet wurden. Seitdem nicht mehr. ` +
+      `Bei Anlagen, die vor dem ${TV_NEW_FROM} errichtet wurden, bleiben umlagefähig: bei einer Gemeinschaftsantenne des Hauses der ` +
+      'Betriebsstrom sowie Prüfung und Einstellung durch eine Fachkraft, bei einer Breitband-Verteilanlage nur der Betriebsstrom. ' +
+      'Bei später errichteten Anlagen ist davon nichts umlagefähig, ausgenommen eine reine Glasfaser-Verteilanlage (Betriebsstrom und Bereitstellungsentgelt).',
+    validTo: TV_UNTIL,
+  },
+  {
+    code: 'heating-flat-rate',
+    title: 'Pauschale oder Warmmiete bei Heizung und Warmwasser',
+    norm: '§§ 2, 12 Abs. 1 HeizkostenV; BGH, Urteil vom 19.07.2006, VIII ZR 212/05',
+    summary:
+      'Heizung und Warmwasser müssen nach Verbrauch abgerechnet werden; die Heizkostenverordnung geht einer Pauschale oder Warmmiete vor. ' +
+      'Die Vereinbarung wird dann nicht angewendet: Der Heizanteil gilt als Vorauszahlung, über die nach Verbrauch abzurechnen ist. ' +
+      'Nur im Gebäude mit höchstens zwei Wohnungen, von denen der Vermieter eine selbst bewohnt, und in den Fällen des § 11 darf etwas anderes vereinbart werden. ' +
+      `Wird nicht nach Verbrauch abgerechnet, darf der Mieter seinen Anteil um ${cut} % kürzen.`,
+  },
+  {
+    code: 'heating-consumption',
+    title: 'Heizung und Warmwasser nach Verbrauch',
+    norm: '§§ 2, 7 Abs. 1, 8 Abs. 1, 12 Abs. 1 HeizkostenV',
+    summary:
+      `Von den Kosten der zentralen Heizungs- und Warmwasseranlage sind mindestens ${share.min} und höchstens ${share.max} % nach dem erfassten Verbrauch zu verteilen, der Rest nach Wohn- oder Nutzfläche (bei der Heizung auch nach umbautem Raum). ` +
+      `Wird nicht verbrauchsabhängig abgerechnet, darf der Mieter seinen Anteil um ${cut} % kürzen. ` +
+      'Im Gebäude mit höchstens zwei Wohnungen, von denen der Vermieter eine selbst bewohnt, darf anderes vereinbart werden; ohne eine solche Vereinbarung gilt die Verordnung auch dort.',
+  },
+  {
+    // Durchsicht vom 02.10.2026 (#110): Die Nachrüstfrist des § 5 Abs. 3 endet am 31.12.2026. Für
+    // Geräte, die nach dem 01.12.2021 eingebaut wurden, gilt die Pflicht in der Regel schon seit dem
+    // Einbau (§ 5 Abs. 2), und die monatliche Information nach § 6a schulden Vermieter seit 2022;
+    // beides trägt schon die Kürzung um 3 %. Die Regel beginnt trotzdem erst 2027, weil sie an der
+    // Nachrüstfrist hängt, die alle Geräte erfasst. Die früheren Pflichten betreffen nur neu
+    // eingebaute Geräte und den Versand der Information, und beides erfasst Mietfuchs nicht: Ein
+    // Hinweis ab 2022 wäre in jedem Haus erschienen, ohne dass sich sagen ließe, ob er zutrifft.
+    // Wortlaut geprüft auf
+    // https://www.gesetze-im-internet.de/heizkostenv/ (Stand Art. 3 G v. 16.10.2023 I Nr. 280).
+    code: 'heating-remote-reading',
+    title: 'Fernablesbare Zähler und monatliche Verbrauchsinformation',
+    norm: '§ 5 Abs. 2 und 3, § 6a, § 12 Abs. 1 Satz 2 und 3 HeizkostenV',
+    summary:
+      `Zähler und Heizkostenverteiler für Heizung und Warmwasser müssen fernablesbar sein: die nach dem ${germanDate(retrofit.value.installedUpTo)} eingebauten sofort, alle übrigen ab dem ${germanDate(RETROFIT_FROM)} (Nachrüstfrist bis ${germanDate(dayBefore(RETROFIT_FROM))}). ` +
+      'Sind fernablesbare Geräte eingebaut, stehen den Mietern monatliche Verbrauchsinformationen zu. ' +
+      `Fehlt das eine oder das andere, darf der Mieter seinen Anteil an den Heizkosten um ${remoteCut} % kürzen. ` +
+      'Ausgenommen sind Fälle, in denen die Nachrüstung technisch nicht möglich ist, einen unangemessenen Aufwand bedeutet oder in sonstiger Weise eine unbillige Härte wäre.',
+    // Der Zeitpunkt kommt aus `hkv.remote-reading.retrofit` (N6 der dritten Fassung).
+    validFrom: RETROFIT_FROM,
+  },
+  {
+    // Heizung PR 6 (#97): Wortlaut §§ 5, 7, 11 und Anlage CO2KostAufG geprüft am 05.10.2026. Bei
+    // Nichtwohngebäuden (§ 8) und Einschränkungen (§ 9) gelten eigene Regeln; sie kommen mit PR 7.
+    code: 'co2-split',
+    title: 'Aufteilung der CO₂-Kosten',
+    norm: '§§ 5, 7, 11 CO2KostAufG',
+    summary:
+      `Für Abrechnungszeiträume, die am oder nach dem ${germanDate(CO2_FROM)} beginnen, werden bei Wohngebäuden die CO₂-Kosten der Heizung zwischen Vermieter und Mieter aufgeteilt, ` +
+      'und zwar nach dem CO₂-Ausstoß des Gebäudes je Quadratmeter Wohnfläche und Jahr: Je höher der Ausstoß, desto größer der Anteil des Vermieters (Stufentabelle in der Anlage des Gesetzes). ' +
+      `Die Heizkostenabrechnung muss den Anteil des Mieters, die Einstufung und die Berechnungsgrundlagen ausweisen; fehlt das, darf der Mieter seinen Anteil an den Heizkosten um ${co2Cut} % kürzen.`,
+    validFrom: CO2_FROM,
+  },
+  {
+    // Heizung PR 6 (#211): § 9 Abs. 2 HeizkostenV im Wortlaut geprüft am 05.10.2026; das Urteil
+    // kürzt den gesamten Anteil an Heiz- und Warmwasserkosten (Entwurf R-A6, G-B9).
+    code: 'heating-dhw-split',
+    title: 'Warmwasser mit Wärmezähler',
+    norm: '§ 9 Abs. 2 Satz 1, § 12 Abs. 1 Satz 1 HeizkostenV; BGH, Urteil vom 12.01.2022, VIII ZR 151/20',
+    summary:
+      'Versorgt die Heizung auch das Warmwasser, ist die Wärme für das Warmwasser mit einem Wärmezähler zu messen. ' +
+      'Die Formel nach dem Warmwasserverbrauch darf nur verwenden, wer die Wärmemenge nur mit unzumutbar hohem Aufwand messen könnte; die Formel nach der Wohnfläche nur, wenn weder die Wärmemenge noch das Volumen des verbrauchten Warmwassers gemessen werden kann. ' +
+      `Wird ohne diesen Grund nach einer Formel abgerechnet, darf der Mieter seinen gesamten Anteil an den Heiz- und Warmwasserkosten um ${cut} % kürzen.`,
+  },
+  {
+    // Heizung PR 7 (#97): § 8 CO2KostAufG im Wortlaut geprüft am 05.10.2026.
+    code: 'co2-non-residential',
+    title: 'CO₂-Kosten im Nichtwohngebäude',
+    norm: '§ 8 CO2KostAufG',
+    summary:
+      'Dient ein Gebäude nach seiner Zweckbestimmung nicht überwiegend dem Wohnen, gilt keine Stufentabelle: ' +
+      'Vereinbarungen, nach denen der Mieter mehr als die Hälfte der CO₂-Kosten trägt, sind unwirksam; der Vermieter trägt also mindestens die Hälfte.',
+    validFrom: CO2_FROM,
+  },
+  {
+    // Heizung PR 7 (#97): § 9 CO2KostAufG im Wortlaut geprüft am 05.10.2026.
+    code: 'co2-restriction',
+    title: 'CO₂-Kosten bei Beschränkungen',
+    norm: '§ 9 CO2KostAufG',
+    summary:
+      'Stehen öffentlich-rechtliche Vorgaben (etwa Denkmalschutz, Anschluss- und Benutzungszwang, Erhaltungssatzung) einer wesentlichen energetischen Verbesserung des Gebäudes oder seiner Wärmeversorgung entgegen, ' +
+      'wird der Anteil des Vermieters um die Hälfte gekürzt; stehen sie beidem entgegen, werden die CO₂-Kosten nicht aufgeteilt. ' +
+      'Darauf berufen kann sich der Vermieter nur, wenn er dem Mieter die Umstände nachweist.',
+    validFrom: CO2_FROM,
+  },
+  {
+    // Heizung PR 18 (#215): §§ 5a, 5b, 5d CO2KostAufG im Wortlaut am 11.10.2026 gelesen (Fassung Art. 5 G v.
+    // 23.07.2026, BGBl. 2026 I Nr. 226). Die gemeinsame Wärmeversorgung nach § 5d Abs. 3 Satz 1 steht dabei
+    // (Prüfung M9), ebenso die Grenze beim Biobrennstoff (K2).
+    code: 'co2-half-split',
+    title: 'Hälftige Teilung bei einer Heizung nach § 43 GModG',
+    norm: '§§ 5a, 5b, 5d CO2KostAufG',
+    summary:
+      `Bei einer Gas-, Öl- oder Flüssiggasheizung, die nach § 43 Abs. 1 GModG eingebaut wurde, tragen Vermieter und Mieter ab dem ${germanDate(HALF_FROM)} ` +
+      `die Gasnetzentgelte und die CO₂-Kosten je zur Hälfte, ab dem ${germanDate(HALF_BIO_FROM)} auch die Kosten des Pflichtanteils an Biobrennstoff, ` +
+      `höchstens für ${(halfLater.bioCapPermille ?? 0) / 10} % des verbrauchten Brennstoffs; in Neubauten entsprechend (§ 5b). ` +
+      `Im selbst bewohnten Gebäude mit höchstens ${twoFamily.maxDwellings === 2 ? 'zwei' : twoFamily.maxDwellings} Wohnungen, die beide an derselben Heizung hängen, gilt außerhalb angespannter Wohnungsmärkte weiter das Stufenmodell (§ 5d Abs. 3).`,
+    validFrom: HALF_FROM,
+  },
+  {
+    // Heizung PR 19 (#97): § 5 Abs. 3, § 6 Abs. 2, 3, § 8 Abs. 2 CO2KostAufG im Wortlaut am 12.10.2026 gelesen
+    // (Fassung Art. 5 G v. 23.07.2026). Wortlaut nach Prüfung S3: § 5a erst ab 2028, Verrechnen nur bei
+    // vereinbarter Vorauszahlung.
+    code: 'co2-self-supply',
+    title: 'CO₂-Erstattung an Mieter, die selbst heizen',
+    norm: '§ 5 Abs. 3, § 6 Abs. 2, 3, § 8 Abs. 2 CO2KostAufG',
+    summary:
+      'Heizt ein Mieter selbst mit eigenem Liefervertrag, etwa mit einer Gastherme in der Wohnung oder über eine zentrale Heizung, deren Brennstoff er selbst bezieht, ' +
+      'erstattet ihm der Vermieter den Anteil der CO₂-Kosten, den er nach dem Stufenmodell zu tragen hätte; ' +
+      `bei einer Heizung nach § 43 GModG ab dem ${germanDate(HALF_FROM)} die Hälfte der CO₂-Kosten und der Gasnetzentgelte, ab dem ${germanDate(HALF_BIO_FROM)} auch die Hälfte der Kosten für den Pflichtanteil an Biobrennstoff, außer in den Fällen von § 5a Abs. 4 und § 5d. ` +
+      `Der Mieter muss den Anspruch binnen ${selfSupply.claimMonths} Monaten nach der Abrechnung seines Lieferanten in Textform geltend machen. ` +
+      `Ist eine Vorauszahlung vereinbart, kann der Vermieter ihn in der nächsten Betriebskostenabrechnung verrechnen; sonst zahlt er spätestens ${selfSupply.refundMonths} Monate nach der Anzeige. ` +
+      `Betreibt der Mieter mit dem Brennstoff auch eigene Geräte zu anderen Zwecken, etwa einen Gasherd, den er selbst angeschafft hat und der ihm gehört, sinkt der Anspruch um ${selfSupply.ownAppliancesCutPercent} %.`,
+    validFrom: CO2_FROM,
+  },
+  {
+    // Heizung PR 7 (#97): § 7 Abs. 2 HeizkostenV im Wortlaut, BGH VIII ZR 156/11 Rn. 14 geprüft am
+    // 05.10.2026 (Entwurf 2, 3.2, 8.2).
+    code: 'heating-consumed-fuel',
+    title: 'Kosten des verbrauchten Brennstoffs',
+    norm: '§ 7 Abs. 2 HeizkostenV; BGH, Urteil vom 01.02.2012, VIII ZR 156/11',
+    summary:
+      'Umgelegt werden die Kosten der im Abrechnungszeitraum verbrauchten Brennstoffe, nicht der bezahlten Rechnungen. ' +
+      'Reicht eine Rechnung des Versorgers über das Ende des Zeitraums hinaus, ist sie abzugrenzen; eine sachgerechte Schätzung ist dabei zulässig. ' +
+      // Heizung PR 8 (#97, #99): Vorrat. Die Bewertung des Endbestands ist Praxis der Messdienste ([M] Minol).
+      'Bei Heizöl, Flüssiggas, Pellets, Holz und Kohle ergibt sich der Verbrauch aus Anfangsbestand + Lieferungen − Endbestand. ' +
+      'Die Bewertung des Endbestands regelt die HeizkostenV nicht; Mietfuchs rechnet, dass das Älteste zuerst verbraucht wird (Kinne/Schach/Bieber-Kinne, BGB § 556 Rn. 121), ' +
+      'und bewertet den Endbestand zu den Preisen der jüngsten Lieferungen. Eine Abrechnung nach Lieferungen ist nicht zulässig und lässt sich nicht durch die Kürzung nach § 12 Abs. 1 HeizkostenV ausgleichen.',
+  },
+  // Heizung PR 10 (#99, Entwurf 10.2): die eigene Heizkostenabrechnung. Wortlaut gelesen am
+  // 05.10.2026 auf gesetze-im-internet.de (HeizkostenV §§ 6 bis 9b in der Fassung Art. 3 G v.
+  // 16.10.2023).
+  {
+    code: 'heating-own-settlement',
+    title: 'Eigene Heizkostenabrechnung nach der Heizkostenverordnung',
+    norm: '§§ 6 bis 9 HeizkostenV',
+    summary:
+      `Von den Kosten der Heizung und des Warmwassers sind mindestens ${share.min} und höchstens ${share.max} % nach dem erfassten Verbrauch zu verteilen; höhere Sätze gehen nur mit einer Vereinbarung (§ 10). Der Rest geht bei der Heizung nach Wohn- oder Nutzfläche oder der beheizten Fläche, beim Warmwasser nach Wohn- oder Nutzfläche. Die Verordnung lässt auch den umbauten Raum zu (§ 7 Abs. 1 Satz 5, § 8 Abs. 1); Mietfuchs rechnet mit der Fläche. ` +
+      'Bereitet die Heizung auch das Warmwasser, wird der Anteil des Warmwassers mit einem Wärmezähler gemessen. ' +
+      `In Gebäuden mit Öl- oder Gasheizung, die das Anforderungsniveau der Wärmeschutzverordnung vom 16. August 1994 nicht erfüllen und deren freiliegende Leitungen überwiegend gedämmt sind, sind es bei der Heizung ${forcedShare} % (§ 7 Abs. 1 Satz 2); mehr nur mit einer Vereinbarung (§ 10). ` +
+      'Umgelegt werden die Kosten des verbrauchten Brennstoffs, nicht der gelieferte.',
+  },
+  {
+    code: 'heating-tenant-change',
+    title: 'Mieterwechsel bei Heizung und Warmwasser',
+    norm: '§ 9b HeizkostenV; BGH, Urteil vom 14.11.2007, VIII ZR 19/07',
+    summary:
+      'Zieht ein Mieter während des Abrechnungszeitraums aus, ist eine Zwischenablesung vorzunehmen. Die Verbrauchskosten werden nach ihr aufgeteilt, die übrigen Heizkosten nach Gradtagszahlen oder zeitanteilig, die übrigen Warmwasserkosten zeitanteilig. ' +
+      'Ist die Zwischenablesung nicht möglich, werden die gesamten Kosten so aufgeteilt. Abweichende Vereinbarungen bleiben unberührt. ' +
+      'Die Kosten der Zwischenablesung trägt der Vermieter, soweit nichts anderes vereinbart ist.',
+  },
+  {
+    code: 'heating-reading-date',
+    title: 'Ablesung neben dem Stichtag',
+    norm: 'OLG Schleswig, Rechtsentscheid vom 04.10.1990, 4 RE-Miet 1/88; § 9a Abs. 1 HeizkostenV; BGH, Urteil vom 16.11.2005, VIII ZR 373/04',
+    summary:
+      'Abgelesen wird zum Ende des Abrechnungszeitraums oder zum Wechsel. Eine Ablesung einige Tage daneben ist unschädlich, wenn in der Zwischenzeit wenig verbraucht wird; zurückgerechnet wird nicht. ' +
+      // Durchsicht von #243, R-K8 (wie R-I6 aus #242): was der BGH entschieden hat, nicht als allgemeiner Leitsatz.
+      'Geschätzt werden darf nur, wenn der Verbrauch wegen Geräteausfalls oder aus einem anderen zwingenden Grund nicht ordnungsgemäß erfasst werden kann. Auch ein Ablesefehler ist ein solcher Grund, wenn sich der Wert nicht mehr ermitteln lässt; im vom BGH entschiedenen Fall war die Ablesung nicht nachholbar.',
+  },
+  {
+    code: 'heating-key-change',
+    title: 'Wechsel des Anteils nach Verbrauch',
+    norm: '§ 6 Abs. 4 HeizkostenV',
+    summary:
+      'Den Anteil nach Verbrauch und die übrigen Maßstäbe wählt der Gebäudeeigentümer. Für künftige Abrechnungszeiträume ändern darf er sie durch Erklärung gegenüber den Nutzern bei Einführung einer Vorerfassung nach Nutzergruppen, nach baulichen Maßnahmen, die nachhaltig Heizenergie einsparen, oder aus anderen sachgerechten Gründen nach ihrer erstmaligen Bestimmung. ' +
+      'Festlegung und Änderung sind nur mit Wirkung zum Beginn eines Abrechnungszeitraums zulässig. Den vorgeschriebenen Anteil nach § 7 Abs. 1 Satz 2 wählt er nicht, er gilt.',
+  },
+  // Heizung PR 13 (#99, Entwurf 10.2): Schätzung bei Geräteausfall. Wortlaut gelesen am 05.10.2026 auf
+  // gesetze-im-internet.de.
+  {
+    code: 'heating-estimate',
+    title: 'Schätzung bei Geräteausfall',
+    norm: '§ 9a HeizkostenV; BGH, Urteil vom 16.11.2005, VIII ZR 373/04',
+    summary:
+      'Kann der Verbrauch eines Nutzers wegen Geräteausfalls oder aus einem anderen zwingenden Grund nicht ordnungsgemäß erfasst werden, ermittelt ihn der Gebäudeeigentümer: aus dem Verbrauch der betroffenen Räume in vergleichbaren Zeiträumen, aus dem Verbrauch vergleichbarer anderer Räume im selben Abrechnungszeitraum oder aus dem Durchschnittsverbrauch des Gebäudes oder der Nutzergruppe. ' +
+      'Der so ermittelte Verbrauch tritt an die Stelle des erfassten. Auch ein Ablesefehler ist ein zwingender Grund, wenn sich der Wert nicht mehr ermitteln lässt; im vom BGH entschiedenen Fall war die Ablesung nicht nachholbar. Eine so erstellte Abrechnung kann nicht nach § 12 gekürzt werden; der BGH hat die Kürzung dort verneint. ' +
+      `Betrifft die Schätzung mehr als ${estimateThreshold} % der für die Verteilung maßgeblichen Fläche, werden die Kosten ausschließlich nach der Fläche verteilt. ` +
+      // Durchsicht von #242, R-I5/G-M8: zwei Festlegungen, die die Verordnung nicht ausdrücklich regelt.
+      'Mietfuchs zählt dafür die ganze Fläche einer Wohnung, auch wenn nur ein Teil der Heizperiode geschätzt ist, und prüft Heizung und Warmwasser getrennt (Auslegung von Mietfuchs).',
+  },
+  // Heizung PR 14 (#99, Entwurf 10.2): Informationen nach § 6a und Ausnahmen nach § 11. Wortlaut gelesen
+  // am 07.10.2026 auf gesetze-im-internet.de.
+  {
+    code: 'heating-info',
+    title: 'Informationen zur Heizkostenabrechnung',
+    norm: '§ 6a Abs. 1, 3, 5 HeizkostenV; § 12 Abs. 1 Satz 3 HeizkostenV',
+    summary:
+      'Beruht die Abrechnung auf dem erfassten Verbrauch, macht der Vermieter mit ihr Angaben über den Anteil der eingesetzten Energieträger (bei Fernwärme auch die jährlichen Treibhausgasemissionen und den Primärenergiefaktor des Netzes), die erhobenen Steuern, Abgaben und Zölle, die Entgelte für Erfassung, Ablesung und Abrechnung, Kontaktinformationen, beim Verbrauchervertrag die Information zur Streitbeilegung, einen Vergleich mit einem normierten oder durch Vergleichstests ermittelten Durchschnittsnutzer und einen grafischen Vergleich des witterungsbereinigten Verbrauchs mit dem vorhergehenden Zeitraum zugänglich. ' +
+      'Beruht sie nicht auf dem Verbrauch, enthält sie mindestens die Kontaktinformationen und die Information zur Streitbeilegung. Sind fernablesbare Geräte eingebaut, stehen den Mietern außerdem monatliche Verbrauchsinformationen zu. ' +
+      `Teilt der Vermieter diese Informationen nicht oder nicht vollständig mit, darf der Mieter, dem sie fehlen, seinen Anteil um ${infoCut} % kürzen. Das ist ein Kürzungsrecht, auch wenn mehrere Informationen fehlen; es summieren sich nur Kürzungsrechte aus verschiedenen Sätzen des § 12 Abs. 1, etwa dieses und das wegen nicht fernablesbarer Geräte (BR-Drs. 643/21, S. 24 f.). ` +
+      'Für Abrechnungen mit geschätztem Verbrauch (§ 9a) und in den Fällen des § 11 nennt die Begründung nur die Mindestangaben (BR-Drs. 643/21, S. 19 und 22).',
+  },
+  {
+    code: 'heating-exemption',
+    title: 'Ausnahmen von der Heizkostenverordnung',
+    norm: '§ 11 HeizkostenV; § 2 Abs. 7 CO2KostAufG; BT-Drs. 20/3172, S. 28; § 556a Abs. 1 BGB',
+    summary:
+      `Die Vorschriften zur Verbrauchserfassung und Kostenverteilung gelten, soweit sie die Wärme betreffen, unter anderem nicht für Räume in Gebäuden mit einem Heizwärmebedarf von weniger als ${exemptions.lowDemandKwhPerM2Year} kWh je m² und Jahr; für Räume, bei denen das Anbringen der Ausstattung zur Verbrauchserfassung, die Erfassung des Wärmeverbrauchs oder die Verteilung der Kosten des Wärmeverbrauchs nicht oder nur mit unverhältnismäßig hohen Kosten möglich ist, also mit Kosten, die sich nicht durch die Einsparungen erwirtschaften lassen, die in der Regel innerhalb von ${exemptions.paybackYears} Jahren erzielt werden können; ` +
+      `für Räume, die vor dem ${germanDate(exemptions.readyBefore)} bezugsfertig wurden und in denen der Nutzer den Verbrauch nicht beeinflussen kann; für Räume in Gebäuden, die überwiegend mit Wärme aus Wärmerückgewinnung oder Solaranlagen versorgt werden; für Räume in Gebäuden, die überwiegend mit Wärme aus Kraft-Wärme-Kopplung oder Abwärme versorgt werden, sofern der Wärmeverbrauch des Gebäudes nicht erfasst wird; und bei einer Befreiung durch die zuständige Stelle. Für das Warmwasser gilt das entsprechend. ` +
+      'Dann gilt der Mietvertrag; ist nichts anderes vereinbart, wird nach der Wohnfläche umgelegt, und Kosten, die von einem erfassten Verbrauch abhängen, nach einem Maßstab, der dem Verbrauch Rechnung trägt. ' +
+      'In den Fällen des § 11 ist das CO2KostAufG nicht anzuwenden, außer die Vertragsparteien haben eine Abrechnung der Heiz- und Warmwasserkosten vereinbart; nach der Begründung betrifft das Mietverhältnisse oder Räume, „in denen keine Heizkostenabrechnung durchgeführt wird“. ' +
+      'Ist nur die Wärme ausgenommen und wird das Warmwasser weiter nach der Verordnung abgerechnet, teilt Mietfuchs die CO₂-Kosten deshalb weiter auf (Auslegung von Mietfuchs).',
+  },
+  {
+    // Heizung PR 21 (#98). Wortlaut § 34, § 35, Anlage 7 MessEV und §§ 31, 33, 37 MessEG gelesen am
+    // 12.10.2026; das Urteil mit dem Wortlaut seines Leitsatzes c. Entschieden zu einem Wasserzähler nach
+    // dem Eichgesetz; die Leitsätze sprechen allgemein vom Messgerät, und die Begründung (§ 286 ZPO) hängt
+    // nicht am Eichgesetz (Auslegung, dass sie unter dem MessEG fortgilt).
+    code: 'meter-calibration',
+    title: 'Eichfrist der Zähler',
+    norm: '§ 31 Abs. 2 Nr. 3, § 33 Abs. 1, § 37 Abs. 1 MessEG; § 34, § 35, Anlage 7 MessEV; BGH, Urteil vom 17.11.2010, VIII ZR 112/10',
+    summary:
+      `Kalt- und Warmwasserzähler und Wärmezähler, nach denen abgerechnet wird, müssen geeicht sein. Die Eichfrist beträgt ${calibrationYears} und endet erst mit dem Ende des Jahres, in dem sie rechnerisch abläuft. ` +
+      'Danach darf der Zähler nicht ungeeicht verwendet werden, und seine Werte dürfen nicht in die Abrechnung. Für ein Los gleichartiger Zähler verlängert die Eichbehörde die Frist auf Antrag, wenn eine Stichprobe besteht. ' +
+      '„Den von einem nicht (mehr) geeichten Messgerät abgelesenen Verbrauchswerten kommt die Vermutung ihrer Richtigkeit nicht zu. In diesem Fall muss der Vermieter im Prozess die Richtigkeit der abgelesenen Werte zur Überzeugung des Tatrichters nachweisen.“ (BGH, Leitsatz c) ' +
+      'Heizkostenverteiler sind nicht eichpflichtig.',
+    scope: 'meters',
+  },
+]
+
+function ruleByCode(code: string): Rule {
+  const rule = RULES.find((r) => r.code === code)
+  // Ein unbekannter Code ist ein Tippfehler im Programm; eine stille Antwort ließe die Regel
+  // unbemerkt nie greifen.
+  if (!rule) throw new Error(`Unbekannte Regel „${code}“`)
+  return rule
+}
+
+// Regeln, deren Gültigkeit den Zeitraum [from, to] berührt, in der Reihenfolge des Verzeichnisses; ohne
+// die Regeln der Zähler-Seite (`scope`), denn die Liste ist der Rechtsstand einer Abrechnung.
+export function rulesFor(from: string, to: string): Rule[] {
+  return RULES.filter((r) => r.scope === undefined && (!r.validFrom || r.validFrom <= to) && (!r.validTo || r.validTo >= from))
+}
+
+// Gilt die Regel im ganzen Zeitraum, in einem Teil davon oder gar nicht?
+export function ruleCoverage(code: string, from: string, to: string): 'full' | 'partial' | 'none' {
+  const rule = ruleByCode(code)
+  if (!rulesFor(from, to).includes(rule)) return 'none'
+  const startsInside = rule.validFrom !== undefined && rule.validFrom > from
+  const endsInside = rule.validTo !== undefined && rule.validTo < to
+  return startsInside || endsInside ? 'partial' : 'full'
+}

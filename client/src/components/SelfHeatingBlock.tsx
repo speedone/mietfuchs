@@ -1,0 +1,39 @@
+import type { SelfHeatingStatement } from '../types'
+import { estimateLines, potLines, userLine } from '../heatingSelfView'
+import { showsDhwBlock } from '../dhwView'
+import DhwBlock from './DhwBlock'
+import { shareBounds } from '../heatingSelfForm'
+import HcaBlock from './HcaBlock'
+
+// Druckblock „Heizkostenabrechnung“ je Anlage und Heizperiode (Heizung PR 10, Entwurf 8.8): Töpfe mit Preisen je
+// Einheit, der Warmwasseranteil mit Methode und die Zeilen des Mieters. Der CO₂-Block (PR 6) steht darunter wie
+// bisher, die Informationen nach § 6a (Heizung PR 14) in HeatingInfoBlock.
+export default function SelfHeatingBlock({ self, tenancyId, plantName }: { self: SelfHeatingStatement; tenancyId: string; plantName: string }) {
+  const mine = self.units.flatMap((u) => u.users).filter((u) => u.tenancyId === tenancyId)
+  if (!self.ok || mine.length === 0) return null
+  return (
+    <div className="co2-block">
+      <h3>Heizkostenabrechnung{plantName ? ` · ${plantName}` : ''}</h3>
+      {showsDhwBlock(self.dhw) && <DhwBlock dhw={self.dhw} />}
+      {self.alpha && !showsDhwBlock(self.dhw) && (
+        <p>
+          Warmwasseranteil {self.alpha.percent.toLocaleString('de-DE', { maximumFractionDigits: 2 })} %: gemessen {self.alpha.dhwHeatKwh.toLocaleString('de-DE')} kWh
+          von {self.alpha.referenceKwh.toLocaleString('de-DE')} kWh{self.alpha.reference === 'fuel' ? ' laut Brennstoffrechnung' : ' laut Gesamtwärmezähler'} (§ 9 Abs. 2 HeizkostenV)
+          {self.alpha.estimated ? '; die Energie beruht teils auf einer Schätzung' : ''}.
+        </p>
+      )}
+      {self.pots.flatMap(potLines).map((l) => <p key={l}>{l}</p>)}
+      {/* Durchsicht von #243, G-W3: nach der Vereinbarung nach § 2 nach Fläche verteilt. */}
+      {self.agreedArea && <p>Verteilt nach der Wohnfläche, wie mit den Mietern vereinbart (§ 2 HeizkostenV); einen Anteil nach Verbrauch gibt es dann nicht.</p>}
+      {self.shares?.above70Agreed && <p>Der Anteil nach Verbrauch liegt nach Vereinbarung mit den Mietern über {shareBounds().max} % (§ 10 HeizkostenV).</p>}
+      {mine.map((u) => <p key={u.key}><strong>{userLine(u, self)}</strong></p>)}
+      {/* Heizung PR 13: die Schätzung nach § 9a mit Weg und Begründung, nur für die Wohnung des Mieters. */}
+      {mine.flatMap((u) => estimateLines(self, self.units.find((x) => x.users.includes(u))?.unitId, u)).map((l) => <p key={l}>{l}</p>)}
+      {/* Heizung PR 12: die Geräte bzw. Werte des Ablesedienstes des Mieters in seinem Zeitraum, mit Skala und Faktor
+          (Durchsicht von #241, Recht-I1: ein Nachmieter sieht nicht den Verbrauch seines Vormieters). */}
+      {mine.map((u) => (
+        <HcaBlock key={`hca:${u.key}`} self={self} viewer={{ userKey: u.key, from: u.from, to: u.to }} unitId={self.units.find((x) => x.users.includes(u))?.unitId} unitName={(id) => self.units.find((x) => x.unitId === id)?.unitName ?? id} />
+      ))}
+    </div>
+  )
+}

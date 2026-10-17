@@ -4,6 +4,7 @@ import { afterEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import Hilfe from './Hilfe'
 import { GUIDES } from '../../../shared/guides.ts'
+import { GLOSSARY } from '../../../shared/glossary.ts'
 
 afterEach(cleanup)
 
@@ -20,7 +21,8 @@ test('Anleitungen stehen über den Begriffen, jede aufklappbar mit den fünf Abs
   expect(screen.getByRole('heading', { name: 'Begriffe', level: 2 })).toBeTruthy()
   expect(screen.getByRole('heading', { name: 'Einliegerwohnung', level: 3 })).toBeTruthy()
   expect(within(guide).getByText('§ 2 HeizkostenV')).toBeTruthy()
-  expect(within(guide).getByRole('link', { name: '#99' }).getAttribute('href')).toBe('https://github.com/speedone/mietfuchs/issues/99')
+  // Heizung PR 12: Die offene Lücke dort ist die Vorerfassung bei gemischten Geräten (#218).
+  expect(within(guide).getByRole('link', { name: '#218' }).getAttribute('href')).toBe('https://github.com/speedone/mietfuchs/issues/218')
   // Begriffe zum Aufklappen
   fireEvent.click(within(guide).getByRole('button', { name: 'Einliegerwohnung' }))
   expect(within(guide).getByText(/Ihre Wohnung hat 120 m², die Einliegerwohnung 45 m²/)).toBeTruthy()
@@ -45,10 +47,12 @@ test('die Suche durchsucht Anleitungen und Begriffe gemeinsam', () => {
   expect(screen.queryByText(GUIDES.granny.title)).toBeNull()
   // Bei einer Suche sind die Treffer aufgeklappt, sonst sähe man nicht, wo das Wort steht.
   expect(screen.getByText(GUIDES.meteringService.title).closest('details')?.open).toBe(true)
-  // Kein Begriff nennt § 9b: Die Begriffe sagen das, die Anleitungen stehen trotzdem da.
-  expect(screen.getByText(/Kein Begriff passt/)).toBeTruthy()
+  // Seit #208 nennt der Begriff „Gradtagszahlen“ § 9b HeizkostenV; er steht neben den Anleitungen.
+  expect(screen.getAllByText(GLOSSARY.degreeDays.title).length).toBeGreaterThan(0)
   fireEvent.change(screen.getByLabelText(/Suchen/), { target: { value: '' } })
   expect(screen.getByText(GUIDES.meteringService.title).closest('details')?.open).toBe(false)
   fireEvent.change(screen.getByLabelText(/Suchen/), { target: { value: 'gibt es nicht' } })
   expect(screen.getByText(/Keine Anleitung passt/)).toBeTruthy()
+  // Passt kein Begriff, sagt die Seite das, die Anleitungen stehen trotzdem da.
+  expect(screen.getByText(/Kein Begriff passt/)).toBeTruthy()
 })

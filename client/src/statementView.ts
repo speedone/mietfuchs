@@ -54,6 +54,7 @@ export function personsText(st: Statement, tenancy: Tenancy | undefined): string
 // Abrechnungsjahr gezahlte Rechnungen)“, und das traf nicht zu: Eine Kostenposition trägt das
 // Abrechnungsjahr, kein Zahlungsdatum, und die Kosten aus einer Hausgeldabrechnung folgen meist
 // dem Leistungsjahr. Der Satz entsteht in der Oberfläche und steckt nicht im eingefrorenen Stand.
-export function costBasisText(year: number): string {
-  return `Abgerechnet werden die Kosten des Abrechnungsjahres ${year}.`
+// Welche Kosten die Abrechnung enthält (#208): die des Abrechnungsjahres oder -zeitraums.
+export function costBasisText(label: string, calendar = true): string {
+  return `Abgerechnet werden die Kosten des ${calendar ? 'Abrechnungsjahres' : 'Abrechnungszeitraums'} ${label}.`
 }

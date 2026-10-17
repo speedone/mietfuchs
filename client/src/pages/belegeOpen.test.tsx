@@ -3,6 +3,7 @@
 // Belegordner zeigt alle Objekte, die Seite Kosten nur das gewählte. Ohne Umschalten öffnete sich
 // dort nichts. Jetzt schaltet die App erst auf das Objekt der Position um, wie beim Auswerten aus
 // dem Posteingang, und öffnet dann die Position im Formular.
+import { calendarPeriod } from '../../../shared/period.ts'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { CostItem, Property, UploadInfo } from '../types'
@@ -14,7 +15,7 @@ const YEAR = new Date().getFullYear() - 1
 
 const objekt = (id: string, name: string): Property => ({ id, name, kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null })
 const PROPERTIES = [objekt('objekt-1', 'Haus A'), objekt('objekt-2', 'Haus B')]
-const HG: CostItem = { id: 'hg', propertyId: 'objekt-2', year: YEAR, category: 'Hauswart', description: 'Hauswart laut Hausgeld', amountCents: 48000, key: 'external', externalBasis: { measure: 'mea', total: 1000, totalCents: 4800000 } }
+const HG: CostItem = { id: 'hg', propertyId: 'objekt-2', period: calendarPeriod(YEAR), category: 'Hauswart', description: 'Hauswart laut Hausgeld', amountCents: 48000, key: 'external', externalBasis: { measure: 'mea', total: 1000, totalCents: 4800000 } }
 const INBOX: UploadInfo = {
   file: '5_hausgeld.pdf', size: 2048, mtime: '2026-01-02T10:00:00.000Z', originalName: 'hausgeld.pdf', mimeType: 'application/pdf',
   uploadedAt: '2026-01-02T10:00:00.000Z', sha256: 'x', propertyId: 'objekt-2', year: YEAR, invoiceDate: null, kind: 'receipt',

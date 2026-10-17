@@ -17,15 +17,18 @@
 // zwar in aller Regel die rowid-Reihenfolge, zugesichert ist das aber nicht; sobald ein Index
 // die Abfrage bedient, kann es anders kommen.
 
-import { sql } from 'drizzle-orm'
-import type { AiConsent, AiSettings, AiSlot, CostItem, Meter, Payment, Property, Reading, Settings, Tenancy, Unit } from '../../../shared/types.ts'
+import { eq, sql } from 'drizzle-orm'
+import type { AiConsent, AiSettings, AiSlot, Co2Refund, Co2Statement, CostItem, DegreeDayValue, FrozenFuelCarry, FuelDelivery, HeatingEstimate, HeatingPeriodData, HeatingPlant, HeatingServiceValue, InterimGap, LawOverride, Meter, MonthlyInfoRow, Payment, PeriodKey, Property, Reading, Settings, Tenancy, Unit } from '../../../shared/types.ts'
+import { readLawOverrides } from './lawOverrides.ts'
+import { periodKey } from '../../../shared/period.ts'
 import { migrateAi, type MigratedSettings } from '../ai/settings.ts'
 import { DEFAULT_SETTINGS } from '../defaults.ts'
 import { frozenSettlementOf, type FrozenItemSelfUse, type SnapshotSource } from '../snapshot.ts'
-import type { Database } from './client.ts'
+import type { Executor } from './client.ts'
 import {
-  aiSlots, baseRents, closedSettlements, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, unitNoConnection, meters, payments,
-  flatRates, personHistory, prepaymentOverrides, prepayments, properties, readings, settings, tenancies, units,
+  aiSlots, baseRents, closedHeatingSettlements, co2Refunds, co2Statements, co2TenantReliefs, degreeDayValues, fuelCarryFrozen, fuelDeliveries, fuelDeliveryParts, heatingPeriods, closedSettlements, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, unitNoConnection, meters, payments,
+  flatRates, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingPrepaymentOverrides, heatingPrepayments, heatingSelfSpans, heatingSeparateSpans, heatingServiceValues, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, readings, settings, tenancies, units,
+  interimReadingGaps, heatingEstimates, heatingMonthlyInfo,
 } from './schema.ts'
 
 // Eine abgeschlossene Abrechnung, wie sie in der Datenbank steht. `settlement` bleibt
@@ -36,7 +39,8 @@ import {
 export type StoredClosedSettlement = {
   id: string
   propertyId: string
-  year: number
+  // Der Zeitraum der Abrechnung (#208).
+  period: PeriodKey
   closedAt: string
   sentAt: string | null
   selfUsedShareCents: number
@@ -56,9 +60,30 @@ export type Stock = SnapshotSource & {
   tenancies: Tenancy[]
   costItems: CostItem[]
   meters: Meter[]
+  heatingPlants: HeatingPlant[]
+  // CO₂-Angaben und Zeilen der Heizperioden (Heizung PR 6)
+  co2Statements: Co2Statement[]
+  // CO₂-Erstattungen an Mieter, die selbst heizen (Heizung PR 19)
+  co2Refunds: Co2Refund[]
+  heatingPeriodRows: HeatingPeriodData[]
+  // Antworten zu fehlenden Zwischenablesungen (Heizung PR 10)
+  interimGaps: InterimGap[]
+  // Werte der Ablesedienste (Heizung PR 12)
+  heatingServiceValues: HeatingServiceValue[]
+  // Schätzungen nach § 9a (Heizung PR 13)
+  heatingEstimates: HeatingEstimate[]
+  // Rechtswerte, die der Vermieter eingetragen hat (Heizung PR 17); installationsweit.
+  lawOverrides: LawOverride[]
+  // Monatliche Verbrauchsinformation je Anlage und Monat (Heizung PR 22)
+  monthlyInfoRows: MonthlyInfoRow[]
+  // Lieferungen, eingefrorene Überträge, Ortswerte (Heizung PR 7)
+  fuelDeliveries: FuelDelivery[]
+  fuelCarryFrozen: FrozenFuelCarry[]
+  degreeDayValues: (DegreeDayValue & { propertyId: string })[]
   readings: Reading[]
   payments: Payment[]
   closedSettlements: StoredClosedSettlement[]
+  closedHeatingSettlements: StoredClosedHeatingSettlement[]
   settings: MigratedSettings
 }
 
@@ -92,8 +117,11 @@ const INSERTION_ORDER = sql`rowid`
 // die Naht zwischen Zeile und Domänentyp je Sammlung an genau einer Stelle, und sie ist eine
 // benannte Funktion und keine Zusicherung (dasselbe Muster wie bei der KI-Auswertung, #63).
 
-export async function readProperties(db: Database): Promise<Property[]> {
+export async function readProperties(db: Executor): Promise<Property[]> {
   const rows = await db.select().from(properties).orderBy(INSERTION_ORDER)
+  // Die Wechsel aufsteigend nach Monat, nicht nach Anlage: shared/period.ts verlangt sie so.
+  const changeRows = await db.select().from(periodChanges).orderBy(periodChanges.fromMonth)
+  const changes = groupBy(changeRows, (r) => r.propertyId, (r) => r.fromMonth)
   return rows.map((p) => ({
     id: p.id,
     name: p.name,
@@ -105,10 +133,16 @@ export async function readProperties(db: Database): Promise<Property[]> {
     iban: p.iban,
     paymentDeadlineDays: p.paymentDeadlineDays,
     cableBuiltBeforeDec2021: p.cableBuiltBeforeDec2021,
+    // Angespannter Wohnungsmarkt (§ 5d CO2KostAufG, Heizung PR 18); `null` heißt unbekannt.
+    tightMarket: p.tightMarket,
+    tightMarketFrom: p.tightMarketFrom,
+    tightMarketTo: p.tightMarketTo,
+    // Der Rhythmus (#208). Immer mitgeliefert, damit niemand ihn erraten muss.
+    periodRules: { startMonth: p.periodStartMonth, changes: changes.get(p.id) ?? [] },
   }))
 }
 
-export async function readUnits(db: Database): Promise<Unit[]> {
+export async function readUnits(db: Executor): Promise<Unit[]> {
   const rows = await db.select().from(units).orderBy(INSERTION_ORDER)
   const noConnectionRows = await db.select().from(unitNoConnection).orderBy(INSERTION_ORDER)
   const noConnection = groupBy(noConnectionRows, (r) => r.unitId, (r) => r.meterType)
@@ -134,7 +168,7 @@ export async function readUnits(db: Database): Promise<Unit[]> {
 // Ein Mietverhältnis liegt über fünf Tabellen: sich selbst und die drei Staffeln, dazu die
 // Jahreskorrektur. Deshalb liest dieser Leser mehr als einen Tisch, und deshalb ist er der
 // einzige, bei dem das so ist.
-export async function readTenancies(db: Database): Promise<Tenancy[]> {
+export async function readTenancies(db: Executor): Promise<Tenancy[]> {
   const rows = await db.select().from(tenancies).orderBy(INSERTION_ORDER)
   const personRows = await db.select().from(personHistory).orderBy(INSERTION_ORDER)
   const prepaymentRows = await db.select().from(prepayments).orderBy(INSERTION_ORDER)
@@ -146,10 +180,19 @@ export async function readTenancies(db: Database): Promise<Tenancy[]> {
   const prepaid = groupBy(prepaymentRows, (r) => r.tenancyId, (r) => ({ from: r.from, monthlyCents: r.monthlyCents }))
   const flat = groupBy(flatRateRows, (r) => r.tenancyId, (r) => ({ from: r.from, monthlyCents: r.monthlyCents }))
   const rents = groupBy(baseRentRows, (r) => r.tenancyId, (r) => ({ from: r.from, monthlyCents: r.monthlyCents }))
-  // Die Jahreskorrektur wird gleich zu einem Objekt (`Object.fromEntries`), deshalb Paare. Der
+  // Die Jahreskorrektur wird gleich zu einem Objekt (`Object.fromEntries`), deshalb Paare,
+  // geschlüsselt nach Zeitraum (#208). Der
   // angeschriebene Rückgabetyp macht daraus ein Paar statt einer Liste, ohne etwas zu behaupten:
   // Er beschreibt, was danebensteht, und der Übersetzer rechnet es nach.
-  const overrides = groupBy(overrideRows, (r) => r.tenancyId, (r): [string, number] => [String(r.year), r.amountCents])
+  const overrides = groupBy(overrideRows, (r) => r.tenancyId, (r): [string, number] => [r.period, r.amountCents])
+  // Heizstaffel und Heizkorrekturen (Heizung PR 5). Wie die Pauschale nur, wenn es Zeilen gibt: So
+  // bleibt ein Mietverhältnis ohne getrennte Heizvorauszahlung genau so, wie es vorher gelesen wurde.
+  const heizstaffel = groupBy(await db.select().from(heatingPrepayments).orderBy(INSERTION_ORDER), (r) => r.tenancyId, (r) => ({ from: r.from, monthlyCents: r.monthlyCents }))
+  const heizkorrekturen = groupBy(
+    await db.select().from(heatingPrepaymentOverrides).orderBy(INSERTION_ORDER),
+    (r) => r.tenancyId,
+    (r) => ({ plantId: r.plantId, period: r.period, cents: r.cents, provisional: r.provisional, fromMonth: r.fromMonth, toMonth: r.toMonth }),
+  )
 
   return rows.map((t) => ({
     id: t.id,
@@ -162,6 +205,8 @@ export async function readTenancies(db: Database): Promise<Tenancy[]> {
     prepayments: prepaid.get(t.id) ?? [],
     // Nur mit Einträgen, wie die übrigen Angaben aus #93: Die db.json kennt das Feld nicht.
     ...(flat.has(t.id) ? { flatRates: flat.get(t.id) } : {}),
+    ...(heizstaffel.has(t.id) ? { heatingPrepayments: heizstaffel.get(t.id) ?? [] } : {}),
+    ...(heizkorrekturen.has(t.id) ? { heatingPrepaymentOverrides: heizkorrekturen.get(t.id) ?? [] } : {}),
     prepaymentOverrides: Object.fromEntries(overrides.get(t.id) ?? []),
     baseRents: rents.get(t.id) ?? [],
     email: orUndefined(t.email),
@@ -169,16 +214,19 @@ export async function readTenancies(db: Database): Promise<Tenancy[]> {
     correspondenceAddress: orUndefined(t.correspondenceAddress),
     iban: orUndefined(t.iban),
     contractDate: orUndefined(t.contractDate),
+    // Mitteilung nach § 5d Abs. 4 CO2KostAufG (Heizung PR 18); nur mit Wert, die db.json kennt das Feld nicht.
+    ...(t.halfSplitNoticeOn === null ? {} : { halfSplitNoticeOn: t.halfSplitNoticeOn }),
     depositCents: orUndefined(t.depositCents),
     depositStatus: orUndefined(t.depositStatus),
     // Nur mit Wert, wie die Angaben aus #94: Ein Mietverhältnis aus einer db.json hat sie nicht.
     ...(t.costModel === null ? {} : { costModel: t.costModel }),
     ...(t.heatingModel === null ? {} : { heatingModel: t.heatingModel }),
+    ...(t.selfSupplyKind === null ? {} : { selfSupplyKind: t.selfSupplyKind }),
     notes: orUndefined(t.notes),
   }))
 }
 
-export async function readCostItems(db: Database): Promise<CostItem[]> {
+export async function readCostItems(db: Executor): Promise<CostItem[]> {
   const rows = await db.select().from(costItems).orderBy(INSERTION_ORDER)
   const shareRows = await db.select().from(costItemShares).orderBy(INSERTION_ORDER)
   const shares = groupBy(shareRows, (r) => r.costItemId, (r): [string, number] => [r.unitId, r.percent])
@@ -196,7 +244,7 @@ export async function readCostItems(db: Database): Promise<CostItem[]> {
     return {
       id: c.id,
       propertyId: c.propertyId,
-      year: c.year,
+      period: c.period,
       category: c.category,
       description: c.description,
       vendor: orUndefined(c.vendor),
@@ -216,11 +264,29 @@ export async function readCostItems(db: Database): Promise<CostItem[]> {
         : {}),
       labor35aCents: orUndefined(c.labor35aCents),
       invoiceFile: orUndefined(c.invoiceFile),
+      // Leistungszeitraum, Jahr der Zahlung, Brennstoffmerkmal (#208): der Schlüssel nur, wenn es
+      // den Wert gibt, wie bei den Angaben aus #94. Ein Bestand ohne sie liest sich Schlüssel für
+      // Schlüssel wie vorher (die Rundreise in db-stock.test.ts vergleicht streng).
+      ...(c.serviceFrom !== null ? { serviceFrom: c.serviceFrom } : {}),
+      ...(c.serviceTo !== null ? { serviceTo: c.serviceTo } : {}),
+      ...(c.taxYear !== null ? { taxYear: c.taxYear } : {}),
+      ...(c.heatingPart !== null ? { heatingPart: c.heatingPart } : {}),
+      // Das Ziel bei Heizkosten (Heizung PR 10), ebenso nur, wenn es gesetzt ist.
+      ...(c.heatingTarget !== null ? { heatingTarget: c.heatingTarget } : {}),
+      // Die Heizanlage (Heizung PR 4), ebenso nur, wenn es sie gibt.
+      ...(c.heatingPlantId !== null ? { heatingPlantId: c.heatingPlantId } : {}),
+      // Die Lieferung (Heizung PR 7), ebenso nur, wenn es sie gibt.
+      ...(c.fuelDeliveryId !== null ? { fuelDeliveryId: c.fuelDeliveryId } : {}),
+      // Betriebsstrom (Heizung PR 15): ebenso nur, wenn es die Angabe gibt.
+      ...(c.operatingPower !== null ? { operatingPower: c.operatingPower } : {}),
+      ...(c.operatingPowerItemId !== null ? { operatingPowerItemId: c.operatingPowerItemId } : {}),
+      ...(c.operatingPowerBasis !== null ? { operatingPowerBasis: c.operatingPowerBasis } : {}),
+      ...(c.operatingPowerGeneralId !== null ? { operatingPowerGeneralId: c.operatingPowerGeneralId } : {}),
     }
   })
 }
 
-export async function readMeters(db: Database): Promise<Meter[]> {
+export async function readMeters(db: Executor): Promise<Meter[]> {
   const rows = await db.select().from(meters).orderBy(INSERTION_ORDER)
   return rows.map((m) => ({
     id: m.id,
@@ -230,10 +296,178 @@ export async function readMeters(db: Database): Promise<Meter[]> {
     type: m.type,
     meterNumber: orUndefined(m.meterNumber),
     unit: m.unit,
+    // Heizanlage, Fernablesbarkeit und Einbau (Heizung PR 4): der Schlüssel nur, wenn es den Wert
+    // gibt, wie bei den Kostenpositionen.
+    ...(m.heatingPlantId !== null ? { heatingPlantId: m.heatingPlantId } : {}),
+    ...(m.heatingRole !== null ? { heatingRole: m.heatingRole } : {}),
+    ...(m.remoteReadable !== null ? { remoteReadable: m.remoteReadable } : {}),
+    ...(m.installedOn !== null ? { installedOn: m.installedOn } : {}),
+    // Skala und Bewertungsfaktor eines Heizkostenverteilers (Heizung PR 12).
+    ...(m.hcaScale !== null ? { hcaScale: m.hcaScale } : {}),
+    ...(m.ratingFactor !== null ? { ratingFactor: m.ratingFactor } : {}),
+    // Eichjahr (Heizung PR 21).
+    ...(m.calibratedUntil !== null ? { calibratedUntil: m.calibratedUntil } : {}),
   }))
 }
 
-export async function readReadings(db: Database): Promise<Reading[]> {
+// Die Heizanlagen (Heizung PR 4). Die Liste der Wohnungen gibt es nur, wenn die Anlage eine hat
+// (`units_limited`); sonst versorgt sie alle Wohnungen ihres Objekts.
+export async function readHeatingPlants(db: Executor): Promise<HeatingPlant[]> {
+  const rows = await db.select().from(heatingPlants).orderBy(INSERTION_ORDER)
+  const zeilen = await db.select().from(heatingPlantUnits).orderBy(INSERTION_ORDER)
+  const byPlant = groupBy(zeilen, (z) => z.plantId, (z) => ({ unitId: z.unitId, heatedAreaM2: z.heatedAreaM2 }))
+  // Wechsel und Spannen nach Weg d (Heizung PR 5), aufsteigend.
+  const wechsel = groupBy(await db.select().from(heatingPeriodChanges).orderBy(heatingPeriodChanges.fromMonth), (w) => w.plantId, (w) => w.fromMonth)
+  const spannen = groupBy(await db.select().from(heatingSeparateSpans).orderBy(heatingSeparateSpans.from), (s) => s.plantId, (s) => ({ from: s.from, until: s.until }))
+  // Zeiträume der eigenen Heizkostenabrechnung (Durchsicht von #239), aufsteigend.
+  const eigene = groupBy(await db.select().from(heatingSelfSpans).orderBy(heatingSelfSpans.from), (s) => s.plantId, (s) => ({ from: s.from, until: s.until, ...(s.capture !== null ? { capture: s.capture } : {}), ...(s.hotWater !== null ? { hotWater: s.hotWater } : {}) }))
+  return rows.map((p) => ({
+    id: p.id,
+    propertyId: p.propertyId,
+    name: p.name,
+    energy: p.energy,
+    supply: p.supply,
+    method: p.method,
+    separateSettlement: p.separateSettlement,
+    devicesRemote: p.devicesRemote,
+    devicesInstalledAfter2021: p.devicesInstalledAfter2021,
+    newDevicesInstall: p.newDevicesInstall,
+    source: p.source,
+    captureInstalledOn: p.captureInstalledOn,
+    capturedOnOct2024: p.capturedOnOct2024,
+    warmRentAverageCents: p.warmRentAverageCents,
+    changeSplit: p.changeSplit,
+    nonResidential: p.nonResidential,
+    restriction: p.restriction,
+    districtEtsNew: p.districtEtsNew,
+    periodStartMonth: p.periodStartMonth,
+    periodChanges: wechsel.get(p.id) ?? [],
+    separateSpans: spannen.get(p.id) ?? [],
+    units: p.unitsLimited ? (byPlant.get(p.id) ?? []) : null,
+    endsOn: p.endsOn,
+    replacesPlantId: p.replacesPlantId,
+    buildingWith: p.buildingWith,
+    takesOverStock: p.takesOverStock,
+    // Eigene Heizkostenabrechnung (Heizung PR 10).
+    hotWater: p.hotWater,
+    capture: p.capture,
+    areaBasisHeat: p.areaBasisHeat,
+    heatPumpInstalledOn: p.heatPumpInstalledOn,
+    heatGeneration: p.heatGeneration,
+    heatPumpMajority: p.heatPumpMajority,
+    hcaModel: p.hcaModel,
+    operatingPowerHandling: p.operatingPowerHandling,
+    // Wärmelieferung (Heizung PR 16).
+    contracting: p.contracting,
+    heatDeliverySince: p.heatDeliverySince,
+    previousSupply: p.previousSupply,
+    switchAnnouncedOn: p.switchAnnouncedOn,
+    // §§ 5a, 5b, 5d CO2KostAufG (Heizung PR 18).
+    gmodg43InstalledOn: p.gmodg43InstalledOn,
+    emergencyInstall: p.emergencyInstall,
+    emergencyPriorDuty: p.emergencyPriorDuty,
+    newBuildingFirstUse: p.newBuildingFirstUse,
+    buildingApplicationBefore20260513: p.buildingApplicationBefore20260513,
+    selfSpans: eigene.get(p.id) ?? [],
+  }))
+}
+
+// Die Werte der Ablesedienste (Heizung PR 12), mit Anlage und Heizperiode aus `heating_periods`, in der
+// Reihenfolge, in der sie angelegt wurden.
+export async function readHeatingServiceValues(db: Executor): Promise<HeatingServiceValue[]> {
+  const rows = await db
+    .select({ v: heatingServiceValues, plantId: heatingPeriods.plantId, period: heatingPeriods.period })
+    .from(heatingServiceValues)
+    .innerJoin(heatingPeriods, eq(heatingServiceValues.heatingPeriodId, heatingPeriods.id))
+    .orderBy(sql`"heating_service_values".rowid`)
+  return rows.map(({ v, plantId, period }) => ({
+    plantId, period: periodKey(String(period)), unitId: v.unitId, from: v.from, to: v.to, heatValue: v.heatValue, waterValue: v.waterValue, heatUnit: v.heatUnit,
+  }))
+}
+
+// Schätzungen nach § 9a (Heizung PR 13), mit Anlage und Heizperiode aus der Zeile der Heizperiode.
+export async function readHeatingEstimates(db: Executor): Promise<HeatingEstimate[]> {
+  const rows = await db
+    .select({ e: heatingEstimates, plantId: heatingPeriods.plantId, period: heatingPeriods.period })
+    .from(heatingEstimates)
+    .innerJoin(heatingPeriods, eq(heatingEstimates.heatingPeriodId, heatingPeriods.id))
+    .orderBy(heatingPeriods.plantId, heatingPeriods.period, heatingEstimates.unitId, heatingEstimates.part)
+  return rows.map(({ e, plantId, period }) => ({
+    plantId, period: periodKey(String(period)), unitId: e.unitId, part: e.part, value: e.value, method: e.method, reason: e.reason, confirmed: e.confirmed,
+    cause: e.cause, capture: e.capture, valueUnit: e.valueUnit,
+  }))
+}
+
+// Die CO₂-Angaben je Heizperiode (Heizung PR 6), mit Anlage und Heizperiode aus `heating_periods`
+// und den Beträgen „vom Vermieter übernommen“ je Mietverhältnis.
+export async function readCo2Statements(db: Executor): Promise<Co2Statement[]> {
+  const rows = await db
+    .select({ statement: co2Statements, plantId: heatingPeriods.plantId, period: heatingPeriods.period })
+    .from(co2Statements)
+    .innerJoin(heatingPeriods, eq(co2Statements.heatingPeriodId, heatingPeriods.id))
+    .orderBy(sql`"co2_statements".rowid`)
+  const reliefs = await db.select().from(co2TenantReliefs).orderBy(INSERTION_ORDER)
+  const byStatement = groupBy(reliefs, (r) => r.statementId, (r) => ({ tenancyId: r.tenancyId, cents: r.cents }))
+  return rows.map(({ statement, plantId, period }) => ({
+    ...statement,
+    plantId,
+    period: periodKey(String(period)),
+    reliefs: byStatement.get(statement.heatingPeriodId) ?? [],
+  }))
+}
+
+// Die CO₂-Erstattungen an Mieter, die selbst heizen (Heizung PR 19), in der Reihenfolge der Anlage.
+export async function readCo2Refunds(db: Executor): Promise<Co2Refund[]> {
+  const rows = await db.select().from(co2Refunds).orderBy(INSERTION_ORDER)
+  return rows.map((r) => ({
+    id: r.id, tenancyId: r.tenancyId, supplierBilledAt: r.supplierBilledAt, claimedAt: r.claimedAt, amountCents: r.amountCents,
+    settlePeriod: r.settlePeriod === null ? null : periodKey(String(r.settlePeriod)), paidOutOn: r.paidOutOn, billedFrom: r.billedFrom, billedTo: r.billedTo,
+    emissionsKg: r.emissionsKg, co2CostCents: r.co2CostCents, areaM2: r.areaM2,
+    ownAppliances: r.ownAppliances, commercialUse: r.commercialUse, commercialMetered: r.commercialMetered, nonResidential: r.nonResidential,
+    restriction: r.restriction, halfSplitFrom: r.halfSplitFrom, gridFeeCents: r.gridFeeCents, bioCostCents: r.bioCostCents,
+  }))
+}
+
+// Die Zeilen der Heizperioden (PR 4), für die Angaben zum Warmwasser im Schnappschuss.
+export async function readHeatingPeriodRows(db: Executor): Promise<HeatingPeriodData[]> {
+  return await db.select().from(heatingPeriods).orderBy(INSERTION_ORDER)
+}
+
+// Die Antworten zu fehlenden Zwischenablesungen (Heizung PR 10, Abweichung 8), nach Wohnung und Datum.
+export async function readInterimGaps(db: Executor): Promise<InterimGap[]> {
+  const rows = await db.select().from(interimReadingGaps).orderBy(interimReadingGaps.unitId, interimReadingGaps.date)
+  return rows.map((r) => ({ unitId: r.unitId, date: r.date, status: r.status, reason: r.reason }))
+}
+
+// Die Brennstofflieferungen samt Teilmengen (Heizung PR 7), die Teilmengen nach Beginn.
+export async function readFuelDeliveries(db: Executor): Promise<FuelDelivery[]> {
+  const rows = await db.select().from(fuelDeliveries).orderBy(INSERTION_ORDER)
+  const parts = await db.select().from(fuelDeliveryParts).orderBy(fuelDeliveryParts.deliveryId, fuelDeliveryParts.from)
+  const byDelivery = groupBy(parts, (p) => p.deliveryId, (p) => ({
+    from: p.from, to: p.to, energyKwh: p.energyKwh, amountCents: p.amountCents, fixedCents: p.fixedCents, emissionsKg: p.emissionsKg, co2CostCents: p.co2CostCents,
+  }))
+  return rows.map((d) => ({ ...d, parts: byDelivery.get(d.id) ?? [] }))
+}
+
+// Was abgeschlossene Heizperioden je Lieferung eingefroren haben (Heizung PR 7, G-A4), mit Anlage und
+// Heizperiode aus `heating_periods`.
+export async function readFuelCarryFrozen(db: Executor): Promise<FrozenFuelCarry[]> {
+  const rows = await db
+    .select({ f: fuelCarryFrozen, plantId: heatingPeriods.plantId, period: heatingPeriods.period })
+    .from(fuelCarryFrozen)
+    .innerJoin(heatingPeriods, eq(fuelCarryFrozen.heatingPeriodId, heatingPeriods.id))
+    .orderBy(sql`"fuel_carry_frozen".rowid`)
+  return rows.map(({ f, plantId, period }) => ({
+    deliveryId: f.deliveryId, plantId, period: periodKey(String(period)), cents: f.cents, emissionsKg: f.emissionsKg, co2Cents: f.co2Cents,
+  }))
+}
+
+// Die Gradtagzahlen der Orte (Heizung PR 7), je Objekt nach Monat.
+export async function readDegreeDayValues(db: Executor): Promise<(DegreeDayValue & { propertyId: string })[]> {
+  return await db.select().from(degreeDayValues).orderBy(degreeDayValues.propertyId, degreeDayValues.month)
+}
+
+export async function readReadings(db: Executor): Promise<Reading[]> {
   const rows = await db.select().from(readings).orderBy(INSERTION_ORDER)
   return rows.map((r) => ({
     id: r.id,
@@ -243,10 +477,12 @@ export async function readReadings(db: Database): Promise<Reading[]> {
     replacement: orUndefined(r.replacement),
     oldEndValue: orUndefined(r.oldEndValue),
     note: orUndefined(r.note),
+    // Grenze einer Ablesung aus dem Mieterwechsel (Heizung PR 10), nur wenn gesetzt.
+    ...(r.interimFor !== null ? { interimFor: r.interimFor } : {}),
   }))
 }
 
-export async function readPayments(db: Database): Promise<Payment[]> {
+export async function readPayments(db: Executor): Promise<Payment[]> {
   const rows = await db.select().from(payments).orderBy(INSERTION_ORDER)
   return rows.map((p) => ({
     id: p.id,
@@ -257,12 +493,12 @@ export async function readPayments(db: Database): Promise<Payment[]> {
   }))
 }
 
-export async function readClosedSettlements(db: Database): Promise<StoredClosedSettlement[]> {
+export async function readClosedSettlements(db: Executor): Promise<StoredClosedSettlement[]> {
   const rows = await db.select().from(closedSettlements).orderBy(INSERTION_ORDER)
   return rows.map((c) => ({
     id: c.id,
     propertyId: c.propertyId,
-    year: c.year,
+    period: c.period,
     closedAt: c.closedAt,
     sentAt: c.sentAt,
     // Derselbe Auszug wie auf dem Weg über die Datei (snapshot.ts). Zwei Leser desselben
@@ -273,18 +509,55 @@ export async function readClosedSettlements(db: Database): Promise<StoredClosedS
   }))
 }
 
+// Die abgeschlossenen Heizkostenabrechnungen nach Weg d (Heizung PR 5), mit demselben Auszug aus dem
+// Archivstück wie bei den Abrechnungen des Objekts.
+export type StoredClosedHeatingSettlement = Omit<StoredClosedSettlement, 'propertyId'> & { plantId: string }
+
+export async function readClosedHeatingSettlements(db: Executor): Promise<StoredClosedHeatingSettlement[]> {
+  const rows = await db.select().from(closedHeatingSettlements).orderBy(INSERTION_ORDER)
+  return rows.map((c) => ({
+    id: c.id,
+    plantId: c.plantId,
+    period: c.period,
+    closedAt: c.closedAt,
+    sentAt: c.sentAt,
+    ...frozenSettlementOf(c.settlement),
+    settlement: c.settlement,
+  }))
+}
+
+// Monatliche Verbrauchsinformation (Heizung PR 22): Vergleichswert und Tag der Mitteilung je Anlage und
+// Monat, in der Reihenfolge des Anlegens.
+export async function readMonthlyInfoRows(db: Executor): Promise<MonthlyInfoRow[]> {
+  const rows = await db.select().from(heatingMonthlyInfo).orderBy(INSERTION_ORDER)
+  return rows.map((x) => ({ plantId: x.plantId, month: x.month, referenceKwhPerM2: x.referenceKwhPerM2, referenceSource: x.referenceSource, sentOn: x.sentOn }))
+}
+
 // Der ganze Bestand. Braucht ihn, wer rechnet (der Schnappschuss) oder wer ihn als Ganzes
 // vergleicht (der Umstieg und sein Gleichstand).
-export async function readStock(db: Database): Promise<Stock> {
+export async function readStock(db: Executor): Promise<Stock> {
   return {
     properties: await readProperties(db),
     units: await readUnits(db),
     tenancies: await readTenancies(db),
     costItems: await readCostItems(db),
     meters: await readMeters(db),
+    heatingPlants: await readHeatingPlants(db),
+    co2Statements: await readCo2Statements(db),
+    co2Refunds: await readCo2Refunds(db),
+    heatingPeriodRows: await readHeatingPeriodRows(db),
+    interimGaps: await readInterimGaps(db),
+    heatingServiceValues: await readHeatingServiceValues(db),
+    heatingEstimates: await readHeatingEstimates(db),
+    lawOverrides: await readLawOverrides(db),
+    monthlyInfoRows: await readMonthlyInfoRows(db),
+    fuelDeliveries: await readFuelDeliveries(db),
+    fuelCarryFrozen: await readFuelCarryFrozen(db),
+    degreeDayValues: await readDegreeDayValues(db),
     readings: await readReadings(db),
     payments: await readPayments(db),
     closedSettlements: await readClosedSettlements(db),
+    closedHeatingSettlements: await readClosedHeatingSettlements(db),
     settings: await readSettings(db),
   }
 }
@@ -300,7 +573,7 @@ export async function readStock(db: Database): Promise<Stock> {
 // hat, bleibt leer; eine Adresse still durch die Voreinstellung zu ersetzen, wäre eine Änderung
 // hinter seinem Rücken. Deshalb steht der Rückfall ganz oben und nicht als `?? ''` an jedem
 // einzelnen Feld.
-export async function readSettings(db: Database): Promise<MigratedSettings> {
+export async function readSettings(db: Executor): Promise<MigratedSettings> {
   const rows = await db.select().from(settings).orderBy(INSERTION_ORDER)
   const row = rows[0]
   if (!row) return migrateAi({ ...DEFAULT_SETTINGS })

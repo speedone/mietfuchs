@@ -2,8 +2,9 @@
 // Kennzeichen `participates` und `selfUsed` werden immer gemeinsam geschrieben, damit keine
 // widersprüchliche Kombination entstehen kann (siehe UnitUsage in types.ts).
 import { parseNumberDe } from './numbers'
-import type { CostItem, Meter, MeterType, Tenancy, Unit, UnitDependents, UnitUsage } from './types'
+import type { BillingPeriod, CostItem, Meter, MeterType, Tenancy, Unit, UnitDependents, UnitUsage } from './types'
 import { isNotAllocable, usageOf } from './types'
+import { calendarYearPeriod } from '../../shared/period.ts'
 
 export type UnitForm = {
   id?: string
@@ -103,9 +104,11 @@ export function zeroAreaUnits(units: Unit[], garageLikeUnitIds: string[] | undef
 // ausdrücklich 0 eigenen Personen, und dann steht sie nicht in `missing`.
 // Gibt es eine Position nach Fläche, an der die leere Einheit teilnimmt, warnt die Abrechnung
 // trotzdem (`basis.unit-no-area`, #135); das sagt der Text dann vorab, statt sich zu widersprechen.
-export function missingAreaCheck(missing: Unit[], tenancies: Tenancy[], year: number, yearItems: CostItem[] = []): { cta: string, detail: string } {
-  const from = `${year}-01-01`
-  const to = `${year}-12-31`
+// `period`: der gewählte Abrechnungszeitraum (#208); eine Jahreszahl ist das Kalenderjahr.
+export function missingAreaCheck(missing: Unit[], tenancies: Tenancy[], period: number | BillingPeriod, yearItems: CostItem[] = []): { cta: string, detail: string } {
+  const span = typeof period === 'number' ? calendarYearPeriod(period) : period
+  const from = span.from
+  const to = span.to
   const inhabited = (u: Unit) => (u.selfUsed && !u.participates)
     || tenancies.some((t) => t.unitId === u.id && t.start <= to && (!t.end || t.end >= from))
   const known = missing.filter(inhabited)
@@ -115,7 +118,7 @@ export function missingAreaCheck(missing: Unit[], tenancies: Tenancy[], year: nu
   if (empty.length > 0) {
     const names = empty.map((u) => u.name)
     const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} und ${names[names.length - 1]}` : names[0]
-    const byArea = yearItems.some((c) => c.year === year && c.key === 'area' && !isNotAllocable(c.category) &&
+    const byArea = yearItems.some((c) => c.period === span.key && c.key === 'area' && !isNotAllocable(c.category) &&
       empty.some((u) => u.participates && (!c.participantUnitIds || c.participantUnitIds.includes(u.id))))
     parts.push((empty.length === 1
       ? `${list} hat 0 m² und im Jahr keine Bewohner. Ist ${list} eine Wohnung, tragen Sie die Wohnfläche ein; eine Garage oder ein Stellplatz bleibt bei 0 m².`
@@ -151,6 +154,18 @@ export function unitDeleteMessage(deps: UnitDependents | null): string {
   return `${head}${direct} ${IRREVERSIBLE}`
 }
 
+// Rechnungen einer Etagenheizung sperren das Löschen der Wohnung (Integrationsdurchsicht S1, Regel in
+// server/src/db/repository.ts). Die Oberfläche sagt es, bevor sie fragt, statt erst „Löschen“ anzubieten.
+export function unitDeleteBlocked(deps: UnitDependents | null): string | null {
+  const n = deps?.fuelDeliveries ?? 0
+  if (n === 0) return null
+  return n === 1
+    ? 'An der Wohnung hängt 1 Rechnung der Etagenheizung. Sie belegt Brennstoffkosten und CO₂-Aufteilung und bleibt deshalb; ' +
+      'die Wohnung lässt sich erst löschen, wenn Sie die Rechnung auf der Seite Heizkosten unter „Lieferungen“ gelöscht haben.'
+    : `An der Wohnung hängen ${n} Rechnungen der Etagenheizung. Sie belegen Brennstoffkosten und CO₂-Aufteilung und bleiben deshalb; ` +
+      'die Wohnung lässt sich erst löschen, wenn Sie die Rechnungen auf der Seite Heizkosten unter „Lieferungen“ gelöscht haben.'
+}
+
 // Anschlüsse einer Einheit (#142). Gefragt wird positiv: angehakt heißt angeschlossen, und das ist
 // der Normalfall. Gespeichert wird unverändert nur die Ausnahme (`noConnection`, #117), damit
 // bestehende Daten ohne Umbau gelten.
@@ -161,7 +176,9 @@ export function unitDeleteMessage(deps: UnitDependents | null): string {
 // Formular. Strom bietet das Formular nur an, wenn das Objekt einen Stromzähler an einer Einheit
 // hat oder er schon als Ausnahme gesetzt ist: Ein Stromzähler ohne Einheit ist der Allgemeinstrom
 // des Hauses und sagt nichts über den Anschluss einer Einheit.
-const CONNECTION_ORDER: MeterType[] = ['kaltwasser', 'waerme', 'sonstig', 'strom']
+// Heizkostenverteiler sind kein Anschluss: Sie hängen an Heizkörpern, und eine Einheit ohne Heizung
+// hat „kein Anschluss: Wärme“.
+const CONNECTION_ORDER: MeterType[] = ['kaltwasser', 'warmwasser', 'waerme', 'sonstig', 'strom']
 export function connectionTypes(objectMeters: Pick<Meter, 'type' | 'unitId'>[], noConnection: MeterType[]): MeterType[] {
   const present = new Set<MeterType>(objectMeters.filter((m) => m.type !== 'strom' || m.unitId).map((m) => m.type))
   return CONNECTION_ORDER.filter((t) => present.has(t) || noConnection.includes(t))
@@ -173,7 +190,7 @@ export function setConnected(form: UnitForm, type: MeterType, connected: boolean
 }
 
 // Die Ausnahme in Worten, für die Zusammenfassung im Formular und das Kennzeichen in der Liste.
-const CONNECTION_WORDS: Record<MeterType, string> = { kaltwasser: 'Wasser', waerme: 'Wärme', strom: 'Strom', sonstig: '' }
+const CONNECTION_WORDS: Record<MeterType, string> = { kaltwasser: 'Wasser', warmwasser: 'Warmwasser', waerme: 'Wärme', hkv: '', strom: 'Strom', sonstig: '' }
 export function connectionSummary(noConnection: MeterType[]): string {
   const sorted = CONNECTION_ORDER.filter((t) => noConnection.includes(t))
   if (sorted.length === 0) return ''

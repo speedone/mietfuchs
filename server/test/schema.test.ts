@@ -16,10 +16,11 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { AiSettings, AiSlot, CostItem, Meter, Payment, PersonEntry, PrepaymentEntry, Reading, RentEntry, Settings, Tenancy, Unit, ExternalBasis, UploadInfo, StoredAssessment, StoredAssessmentLine } from '../../shared/types.ts'
+import type { AiSettings, AiSlot, Co2Refund, Co2Statement, DegreeDayValue, FrozenFuelCarry, FuelDelivery, FuelDeliveryPart, Co2TenantRelief, CostItem, HeatingEstimate, HeatingPeriodData, HeatingPlant, HeatingPlantUnit, HeatingPrepaymentOverride, InterimGap, MonthlyInfoRow, SelfSpanRange, SeparateSpan, PeriodKey, PeriodRules, Meter, Payment, PersonEntry, PrepaymentEntry, Reading, RentEntry, Settings, Tenancy, Unit, ExternalBasis, UploadInfo, StoredAssessment, StoredAssessmentLine } from '../../shared/types.ts'
 import type { ClosedSettlement } from '../src/store.ts'
 import { applyMigrations, connect, loadMigrations } from '../src/db/client.ts'
 import * as schema from '../src/db/schema.ts'
+import type { SnapshotFuelDelivery, SnapshotHeatingPeriodRow, SnapshotHeatingPlant } from '../src/snapshot.ts'
 
 // ---------- Ebene 1: Schema und Datenmodell ----------
 
@@ -77,20 +78,19 @@ type _Units = Assert<Matches<typeof schema.units.$inferSelect, Omit<Unit, 'noCon
 // Dass sie hier aufgezählt sind, ist Absicht: Wer eine davon wieder in die Zeile holt oder eine
 // weitere hinzufügt, muss diese Zeile anfassen und stolpert über die Entscheidung. Die fünfte ist
 // die Pauschale (#93).
-type TenancyColumns = Omit<Tenancy, 'personHistory' | 'prepayments' | 'baseRents' | 'prepaymentOverrides' | 'flatRates'>
+// Heizstaffel und Heizkorrektur (Heizung PR 5) stehen ebenfalls in eigenen Tabellen.
+type TenancyColumns = Omit<Tenancy, 'personHistory' | 'prepayments' | 'baseRents' | 'prepaymentOverrides' | 'flatRates' | 'heatingPrepayments' | 'heatingPrepaymentOverrides'>
 type _Tenancies = Assert<Matches<typeof schema.tenancies.$inferSelect, TenancyColumns>>
 
 type _PersonHistory = Assert<Matches<Omit<typeof schema.personHistory.$inferSelect, 'tenancyId'>, PersonEntry>>
 type _Prepayments = Assert<Matches<Omit<typeof schema.prepayments.$inferSelect, 'tenancyId'>, PrepaymentEntry>>
 type _BaseRents = Assert<Matches<Omit<typeof schema.baseRents.$inferSelect, 'tenancyId'>, RentEntry>>
 
-// `prepaymentOverrides` ist im Modell `Record<string, number>`, also Jahr auf Betrag. In der
-// Tabelle sind daraus zwei Spalten geworden. Ein Namensvergleich ginge hier ins Leere; geprüft
-// wird deshalb, dass Schlüssel und Wert die Typen behalten, die der Record vorgibt. Das Jahr
-// wird dabei zur Zahl, was es inhaltlich immer war. Als Schlüssel eines JSON-Objekts konnte es
-// nur nicht anders als eine Zeichenkette dastehen.
+// `prepaymentOverrides` ist im Modell `Record<string, number>`, Zeitraum auf Betrag (#208). In der
+// Tabelle sind daraus zwei Spalten geworden; geprüft wird, dass der Schlüssel ein Zeitraumschlüssel
+// ist und der Wert den Typ behält, den der Record vorgibt.
 type OverrideRow = typeof schema.prepaymentOverrides.$inferSelect
-type _Overrides = Assert<Equals<OverrideRow['year'], number>>
+type _Overrides = Assert<Equals<OverrideRow['period'], PeriodKey>>
 type _OverrideAmount = Assert<Equals<OverrideRow['amountCents'], Tenancy['prepaymentOverrides'][string]>>
 
 // --- Kostenpositionen ---
@@ -124,6 +124,40 @@ type _SharePercent = Assert<Equals<ShareRow['percent'], number>>
 type _Meters = Assert<Matches<typeof schema.meters.$inferSelect, Meter>>
 type _Readings = Assert<Matches<typeof schema.readings.$inferSelect, Reading>>
 type _Payments = Assert<Matches<typeof schema.payments.$inferSelect, Payment>>
+// --- Heizanlage (Heizung PR 4) ---
+// Die angeschlossenen Wohnungen stehen in heating_plant_units. Ob es eine Liste gibt, sagt
+// `units_limited`, wie `participants_limited` bei den Kostenpositionen (#94): Ohne die Spalte
+// sähe eine Anlage, deren letzte Wohnung gelöscht wurde, aus wie eine ohne Liste.
+// Die Wechsel der eigenen Heizperiode und die Spannen nach Weg d stehen in eigenen Tabellen
+// (Heizung PR 5), wie die Wohnungen in heating_plant_units.
+type HeatingPlantColumns = Omit<HeatingPlant, 'units' | 'periodChanges' | 'separateSpans' | 'selfSpans'> & { unitsLimited: boolean }
+type _HeatingPlants = Assert<Matches<typeof schema.heatingPlants.$inferSelect, HeatingPlantColumns>>
+type _HeatingPlantUnits = Assert<Matches<Omit<typeof schema.heatingPlantUnits.$inferSelect, 'plantId'>, HeatingPlantUnit>>
+type _HeatingPeriods = Assert<Matches<typeof schema.heatingPeriods.$inferSelect, HeatingPeriodData>>
+
+// --- Eigene Heizperiode und getrennte Heizkostenabrechnung (Heizung PR 5) ---
+type _HeatingPrepayments = Assert<Matches<Omit<typeof schema.heatingPrepayments.$inferSelect, 'tenancyId'>, PrepaymentEntry>>
+type _HeatingPrepaymentOverrides = Assert<Matches<Omit<typeof schema.heatingPrepaymentOverrides.$inferSelect, 'tenancyId'>, HeatingPrepaymentOverride>>
+type _HeatingSeparateSpans = Assert<Matches<Omit<typeof schema.heatingSeparateSpans.$inferSelect, 'plantId'>, SeparateSpan>>
+// Die Zeiträume der eigenen Heizkostenabrechnung (Durchsicht von #239).
+type _HeatingSelfSpans = Assert<Matches<Omit<typeof schema.heatingSelfSpans.$inferSelect, 'plantId'>, SelfSpanRange>>
+// --- Eigene Heizkostenabrechnung (Heizung PR 10) ---
+type _InterimGaps = Assert<Matches<typeof schema.interimReadingGaps.$inferSelect, InterimGap>>
+
+// --- CO₂ (Heizung PR 6) ---
+// Anlage und Heizperiode liest die Datenbank über `heating_period_id`; die Beträge je
+// Mietverhältnis stehen in einer eigenen Tabelle.
+type Co2StatementColumns = Omit<Co2Statement, 'plantId' | 'period' | 'reliefs'>
+type _Co2Statements = Assert<Matches<typeof schema.co2Statements.$inferSelect, Co2StatementColumns>>
+type _Co2Reliefs = Assert<Matches<Omit<typeof schema.co2TenantReliefs.$inferSelect, 'statementId'>, Co2TenantRelief>>
+// --- CO₂-Erstattung an Mieter, die selbst heizen (Heizung PR 19) ---
+type _Co2Refunds = Assert<Matches<typeof schema.co2Refunds.$inferSelect, Co2Refund>>
+// --- Lieferungen (Heizung PR 7) ---
+// Die Teilmengen stehen in einer eigenen Tabelle; eingefroren wird je Zeile in `heating_periods`.
+type _FuelDeliveries = Assert<Matches<typeof schema.fuelDeliveries.$inferSelect, Omit<FuelDelivery, 'parts'>>>
+type _FuelParts = Assert<Matches<Omit<typeof schema.fuelDeliveryParts.$inferSelect, 'deliveryId'>, FuelDeliveryPart>>
+type _FuelFrozen = Assert<Matches<typeof schema.fuelCarryFrozen.$inferSelect, Omit<FrozenFuelCarry, 'plantId' | 'period'> & { heatingPeriodId: string }>>
+type _DegreeDays = Assert<Matches<Omit<typeof schema.degreeDayValues.$inferSelect, 'propertyId'>, DegreeDayValue>>
 
 // --- Abgeschlossene Abrechnungen ---
 // `ClosedSettlement` steht in store.ts und nicht in shared/types.ts, weil nur der Server sie
@@ -136,10 +170,10 @@ type _Payments = Assert<Matches<typeof schema.payments.$inferSelect, Payment>>
 // selbst, dass sie überhaupt da ist und wirklich `unknown` liefert. Wer ihr später einen
 // engeren Typ anschreibt, muss diese Zeile anfassen und sich die Frage dabei stellen.
 //
-// `ClosedSettlement` beschreibt die db.json und kennt kein Objekt; die Tabelle trägt es seit #92.
-// Geprüft wird deshalb gegen die Gestalt mit Objekt.
+// `ClosedSettlement` beschreibt die db.json mit Jahr; die Tabelle trägt seit #92 ein Objekt und
+// seit #208 den Zeitraum statt des Jahres. Geprüft wird deshalb gegen diese Gestalt.
 type ClosedRow = typeof schema.closedSettlements.$inferSelect
-type ClosedWithProperty = ClosedSettlement & { propertyId: string }
+type ClosedWithProperty = Omit<ClosedSettlement, 'year'> & { propertyId: string, period: PeriodKey }
 type _ClosedNames = Assert<Equals<keyof ClosedRow, keyof ClosedWithProperty>>
 type _ClosedRahmen = Assert<Matches<Omit<ClosedRow, 'settlement'>, Omit<ClosedWithProperty, 'settlement'>>>
 type _ClosedJson = Assert<Equals<ClosedRow['settlement'], unknown>>
@@ -181,6 +215,15 @@ type _Uploads = Assert<Matches<typeof schema.uploads.$inferSelect, Omit<UploadIn
 // --- Belegbuchung (#170) ---
 type _Assessments = Assert<Matches<typeof schema.assessments.$inferSelect, StoredAssessment>>
 type _AssessmentLines = Assert<Matches<typeof schema.assessmentLines.$inferSelect, StoredAssessmentLine>>
+
+// --- Wechsel des Rhythmus (#208) ---
+type PeriodChangeRow = typeof schema.periodChanges.$inferSelect
+type _PeriodChangeMonth = Assert<Equals<PeriodChangeRow['fromMonth'], PeriodRules['changes'][number]>>
+
+// --- Schätzung nach § 9a (Heizung PR 13) ---
+type _Estimates = Assert<Matches<typeof schema.heatingEstimates.$inferSelect, Omit<HeatingEstimate, 'plantId' | 'period'> & { heatingPeriodId: string }>>
+// Monatliche Verbrauchsinformation (Heizung PR 22): Zeile und Datenmodell sind dieselben.
+type _MonthlyInfo = Assert<Matches<typeof schema.heatingMonthlyInfo.$inferSelect, MonthlyInfoRow>>
 
 // ---------- Ebene 2: die Zusicherungen an einer echten Datenbank ----------
 
@@ -224,16 +267,39 @@ test('Migration lässt sich anwenden und legt alle Tabellen an', async () => {
       'assessment_lines',
       'assessments',
       'base_rents',
+      'closed_heating_settlement_history',
+      'closed_heating_settlements',
       'closed_settlement_history',
       'closed_settlements',
+      'co2_refunds',
+      'co2_statements',
+      'co2_tenant_reliefs',
       'cost_item_amounts',
       'cost_item_participants',
       'cost_item_self_amounts',
       'cost_item_shares',
       'cost_items',
+      'degree_day_values',
       'flat_rates',
+      'fuel_carry_frozen',
+      'fuel_deliveries',
+      'fuel_delivery_parts',
+      'heating_estimates',
+      'heating_monthly_info',
+      'heating_period_changes',
+      'heating_periods',
+      'heating_plant_units',
+      'heating_plants',
+      'heating_prepayment_overrides',
+      'heating_prepayments',
+      'heating_self_spans',
+      'heating_separate_spans',
+      'heating_service_values',
+      'interim_reading_gaps',
+      'law_overrides',
       'meters',
       'payments',
+      'period_changes',
       'person_history',
       'prepayment_overrides',
       'prepayments',
@@ -308,7 +374,7 @@ test('Löschen einer Wohnung räumt ab, was ohne sie sinnlos wäre', async () =>
     connection.exec("INSERT INTO prepayments (tenancy_id, `from`, monthly_cents) VALUES ('t1', '2025-01', 20000)")
     connection.exec("INSERT INTO meters (id, property_id, name, unit_id, type, unit) VALUES ('m1', 'objekt-1', 'Kaltwasser', 'u1', 'kaltwasser', 'm³')")
     connection.exec("INSERT INTO readings (id, meter_id, date, value) VALUES ('r1', 'm1', '2025-01-01', 100)")
-    connection.exec("INSERT INTO cost_items (id, property_id, year, category, description, amount_cents, key) VALUES ('c1', 'objekt-1', 2025, 'Gartenpflege', 'Garten', 60000, 'custom')")
+    connection.exec("INSERT INTO cost_items (id, property_id, period, category, description, amount_cents, key) VALUES ('c1', 'objekt-1', '2025-01', 'Gartenpflege', 'Garten', 60000, 'custom')")
     connection.exec("INSERT INTO cost_item_shares (cost_item_id, unit_id, percent) VALUES ('c1', 'u1', 50)")
 
     connection.exec("DELETE FROM units WHERE id = 'u1'")
@@ -334,7 +400,7 @@ test('Direktzuordnung überlebt das Löschen ihrer Wohnung, nur der Verweis fäl
   try {
     connection.exec(einWohnung)
     connection.exec(
-      "INSERT INTO cost_items (id, property_id, year, category, description, amount_cents, key, direct_unit_id) VALUES ('c1', 'objekt-1', 2025, 'Sonstige Betriebskosten', 'Reparatur', 40000, 'direct', 'u1')",
+      "INSERT INTO cost_items (id, property_id, period, category, description, amount_cents, key, direct_unit_id) VALUES ('c1', 'objekt-1', '2025-01', 'Sonstige Betriebskosten', 'Reparatur', 40000, 'direct', 'u1')",
     )
     connection.exec("DELETE FROM units WHERE id = 'u1'")
     const row = connection.rows("SELECT amount_cents, direct_unit_id FROM cost_items WHERE id = 'c1'")[0]
@@ -370,7 +436,7 @@ test('Prüfbedingungen: was nicht negativ sein darf, ist es auch nicht', async (
       'negative Personenzahl',
     )
     assert.ok(
-      rejects(connection, "INSERT INTO prepayment_overrides (tenancy_id, year, amount_cents) VALUES ('t1', 2025, -1)"),
+      rejects(connection, "INSERT INTO prepayment_overrides (tenancy_id, period, amount_cents) VALUES ('t1', '2025-01', -1)"),
       'negative Jahreszahlung',
     )
   } finally {
@@ -384,13 +450,13 @@ test('eine Gutschrift darf negativ sein, und ein gemeldeter §35a-Lohnanteil auc
   const { connection, cleanup } = await freshDb()
   try {
     connection.exec(
-      "INSERT INTO cost_items (id, property_id, year, category, description, amount_cents, key) VALUES ('c1', 'objekt-1', 2025, 'Sonstige Betriebskosten', 'Gutschrift', -5000, 'units')",
+      "INSERT INTO cost_items (id, property_id, period, category, description, amount_cents, key) VALUES ('c1', 'objekt-1', '2025-01', 'Sonstige Betriebskosten', 'Gutschrift', -5000, 'units')",
     )
     // calc.ts meldet einen Lohnanteil außerhalb von 0 bis zum Rechnungsbetrag als Warnung und
     // rechnet weiter. Verböte die Datenbank ihn, bekäme der Nutzer die erklärende Warnung nie
     // zu sehen, weil er den Beleg gar nicht erst speichern könnte.
     connection.exec(
-      "INSERT INTO cost_items (id, property_id, year, category, description, amount_cents, key, labor_35a_cents) VALUES ('c2', 'objekt-1', 2025, 'Gartenpflege', 'Garten', 60000, 'units', -3000)",
+      "INSERT INTO cost_items (id, property_id, period, category, description, amount_cents, key, labor_35a_cents) VALUES ('c2', 'objekt-1', '2025-01', 'Gartenpflege', 'Garten', 60000, 'units', -3000)",
     )
     // Eine Rücklastschrift ist ein echter Vorgang.
     connection.exec(einWohnung)
@@ -408,7 +474,7 @@ test('Aufzählungen: ein unbekannter Umlageschlüssel kommt nicht hinein', async
     assert.ok(
       rejects(
         connection,
-        "INSERT INTO cost_items (id, property_id, year, category, description, amount_cents, key) VALUES ('c1', 'objekt-1', 2025, 'X', 'X', 100, 'ausgedacht')",
+        "INSERT INTO cost_items (id, property_id, period, category, description, amount_cents, key) VALUES ('c1', 'objekt-1', '2025-01', 'X', 'X', 100, 'ausgedacht')",
       ),
       'unbekannter Umlageschlüssel',
     )
@@ -431,9 +497,9 @@ test('je Stichtag nur ein Staffeleintrag', async () => {
       rejects(connection, "INSERT INTO prepayments (tenancy_id, `from`, monthly_cents) VALUES ('t1', '2025-01', 25000)"),
       'zwei Vorauszahlungen ab demselben Monat',
     )
-    connection.exec("INSERT INTO prepayment_overrides (tenancy_id, year, amount_cents) VALUES ('t1', 2025, 240000)")
+    connection.exec("INSERT INTO prepayment_overrides (tenancy_id, period, amount_cents) VALUES ('t1', '2025-01', 240000)")
     assert.ok(
-      rejects(connection, "INSERT INTO prepayment_overrides (tenancy_id, year, amount_cents) VALUES ('t1', 2025, 250000)"),
+      rejects(connection, "INSERT INTO prepayment_overrides (tenancy_id, period, amount_cents) VALUES ('t1', '2025-01', 250000)"),
       'zwei Jahreskorrekturen für dasselbe Jahr',
     )
   } finally {
@@ -444,9 +510,9 @@ test('je Stichtag nur ein Staffeleintrag', async () => {
 test('je Jahr höchstens eine abgeschlossene Abrechnung', async () => {
   const { connection, cleanup } = await freshDb()
   try {
-    connection.exec("INSERT INTO closed_settlements (id, property_id, year, closed_at, settlement) VALUES ('s1', 'objekt-1', 2025, '2026-03-01', '{}')")
+    connection.exec("INSERT INTO closed_settlements (id, property_id, period, closed_at, settlement) VALUES ('s1', 'objekt-1', '2025-01', '2026-03-01', '{}')")
     assert.ok(
-      rejects(connection, "INSERT INTO closed_settlements (id, property_id, year, closed_at, settlement) VALUES ('s2', 'objekt-1', 2025, '2026-04-01', '{}')"),
+      rejects(connection, "INSERT INTO closed_settlements (id, property_id, period, closed_at, settlement) VALUES ('s2', 'objekt-1', '2025-01', '2026-04-01', '{}')"),
       'zwei abgeschlossene Abrechnungen für 2025',
     )
   } finally {
@@ -461,17 +527,17 @@ test('der eingefrorene Berechnungsstand muss gültiges JSON sein', async () => {
   const { connection, cleanup } = await freshDb()
   try {
     connection.exec(
-      `INSERT INTO closed_settlements (id, property_id, year, closed_at, settlement) VALUES ('s1', 'objekt-1', 2025, '2026-03-01', '{"year":2025,"statements":[]}')`,
+      `INSERT INTO closed_settlements (id, property_id, period, closed_at, settlement) VALUES ('s1', 'objekt-1', '2025-01', '2026-03-01', '{"year":2025,"statements":[]}')`,
     )
     assert.ok(
       rejects(
         connection,
-        `INSERT INTO closed_settlements (id, property_id, year, closed_at, settlement) VALUES ('s2', 'objekt-1', 2024, '2026-03-01', '{"year":2024,"statem')`,
+        `INSERT INTO closed_settlements (id, property_id, period, closed_at, settlement) VALUES ('s2', 'objekt-1', '2024-01', '2026-03-01', '{"year":2024,"statem')`,
       ),
       'eine abgeschnittene Abrechnung',
     )
     assert.ok(
-      rejects(connection, "INSERT INTO closed_settlements (id, property_id, year, closed_at, settlement) VALUES ('s3', 'objekt-1', 2023, '2026-03-01', 'kein JSON')"),
+      rejects(connection, "INSERT INTO closed_settlements (id, property_id, period, closed_at, settlement) VALUES ('s3', 'objekt-1', '2023-01', '2026-03-01', 'kein JSON')"),
       'gar kein JSON',
     )
   } finally {
@@ -617,6 +683,482 @@ test('Drizzle liest und schreibt über den Proxy', async () => {
     // Wahrheitswerte kommen als 0 und 1 in die Datenbank und als boolean zurück.
     const eine = await connection.db.select().from(schema.units).get()
     assert.equal(eine?.participates, true)
+  } finally {
+    cleanup()
+  }
+})
+
+// ---------- Heizanlage (Heizung PR 4) ----------
+
+const eineAnlage = "INSERT INTO heating_plants (id, property_id, energy) VALUES ('hp1', 'objekt-1', 'gas')"
+
+test('Heizanlage: Vorgaben, und die Gemeinschaft rechnet nur wie ein Messdienst ab', async () => {
+  const { connection, cleanup } = await freshDb()
+  try {
+    connection.exec(eineAnlage)
+    assert.deepEqual(
+      connection.rows('SELECT name, supply, method, devices_remote, devices_installed_after_2021_12, source, change_split, units_limited FROM heating_plants')[0],
+      ['', 'central', 'manual', 'unknown', 'unknown', 'building', 'degreeDays', 0],
+    )
+    assert.ok(
+      rejects(connection, "INSERT INTO heating_plants (id, property_id, energy, source, method) VALUES ('hp2', 'objekt-1', 'gas', 'homeowners', 'manual')"),
+      'Gemeinschaft mit freien Schlüsseln',
+    )
+    assert.equal(rejects(connection, "INSERT INTO heating_plants (id, property_id, energy, source, method) VALUES ('hp3', 'objekt-1', 'gas', 'homeowners', 'service')"), null)
+    assert.ok(rejects(connection, "INSERT INTO heating_plants (id, property_id, energy) VALUES ('hp4', 'objekt-1', 'kernkraft')"), 'unbekannter Energieträger')
+    assert.ok(rejects(connection, "INSERT INTO heating_plants (id, property_id, energy, period_start_month) VALUES ('hp5', 'objekt-1', 'gas', 13)"), 'Monat 13')
+    assert.ok(rejects(connection, "INSERT INTO heating_plants (id, property_id, energy, warm_rent_average_2022_2024) VALUES ('hp6', 'objekt-1', 'gas', -1)"), 'negativer Betrag')
+  } finally {
+    cleanup()
+  }
+})
+
+test('Heizanlage: Zähler der Anlage haben eine Rolle und keine Wohnung; Warmwasser und HKV sind Zählertypen', async () => {
+  const { connection, cleanup } = await freshDb()
+  try {
+    connection.exec(einWohnung)
+    connection.exec(eineAnlage)
+    assert.equal(rejects(connection, "INSERT INTO meters (id, property_id, name, type, unit, heating_plant_id, heating_role) VALUES ('m1', 'objekt-1', 'Speicher', 'waerme', 'kWh', 'hp1', 'dhwHeat')"), null)
+    assert.ok(rejects(connection, "INSERT INTO meters (id, property_id, name, type, unit, heating_plant_id) VALUES ('m2', 'objekt-1', 'Ohne Rolle', 'waerme', 'kWh', 'hp1')"), 'Anlage ohne Rolle')
+    assert.ok(rejects(connection, "INSERT INTO meters (id, property_id, name, type, unit, heating_role) VALUES ('m3', 'objekt-1', 'Rolle ohne Anlage', 'waerme', 'kWh', 'supply')"), 'Rolle ohne Anlage')
+    assert.ok(
+      rejects(connection, "INSERT INTO meters (id, property_id, name, unit_id, type, unit, heating_plant_id, heating_role) VALUES ('m4', 'objekt-1', 'An Wohnung', 'u1', 'waerme', 'kWh', 'hp1', 'totalHeat')"),
+      'Anlagenzähler an einer Wohnung',
+    )
+    assert.ok(rejects(connection, "INSERT INTO meters (id, property_id, name, type, unit, heating_plant_id, heating_role) VALUES ('m5', 'objekt-1', 'X', 'waerme', 'kWh', 'hp1', 'kessel')"), 'unbekannte Rolle')
+    assert.equal(
+      rejects(connection, "INSERT INTO meters (id, property_id, name, unit_id, type, unit, remote_readable, installed_on) VALUES ('m6', 'objekt-1', 'HKV Bad', 'u1', 'hkv', 'Einheiten', 0, '2021-12-15')"),
+      null,
+    )
+    assert.equal(rejects(connection, "INSERT INTO meters (id, property_id, name, unit_id, type, unit) VALUES ('m7', 'objekt-1', 'Warmwasser Küche', 'u1', 'warmwasser', 'm³')"), null)
+    assert.equal(rejects(connection, "INSERT INTO unit_no_connection (unit_id, meter_type) VALUES ('u1', 'warmwasser')"), null)
+    assert.equal(rejects(connection, "UPDATE properties SET kind = 'zfh' WHERE id = 'objekt-1'"), null)
+    assert.ok(rejects(connection, "DELETE FROM heating_plants WHERE id = 'hp1'"), 'eine Anlage mit Zähler bleibt stehen')
+  } finally {
+    cleanup()
+  }
+})
+
+test('Heizanlage: Wohnungen und Heizperioden fallen mit, eine Kostenposition hält die Anlage', async () => {
+  const { connection, cleanup } = await freshDb()
+  try {
+    connection.exec(einWohnung)
+    connection.exec(eineAnlage)
+    connection.exec("INSERT INTO heating_plant_units (plant_id, unit_id) VALUES ('hp1', 'u1')")
+    assert.ok(rejects(connection, "INSERT INTO heating_plant_units (plant_id, unit_id) VALUES ('hp1', 'u1')"), 'dieselbe Wohnung zweimal')
+    assert.ok(rejects(connection, "UPDATE heating_plant_units SET heated_area_m2 = 0"), 'beheizte Fläche 0')
+    connection.exec("INSERT INTO heating_periods (id, plant_id, period) VALUES ('h1', 'hp1', '2025-01')")
+    assert.ok(rejects(connection, "INSERT INTO heating_periods (id, plant_id, period) VALUES ('h2', 'hp1', '2025-01')"), 'Heizperiode doppelt')
+    assert.ok(rejects(connection, "INSERT INTO heating_periods (id, plant_id, period) VALUES ('h3', 'hp1', '2025-13')"), 'Monat 13')
+    assert.ok(rejects(connection, "INSERT INTO heating_periods (id, plant_id, period, heat_consumption_pct) VALUES ('h4', 'hp1', '2026-01', 101)"), 'über 100 %')
+    assert.ok(rejects(connection, "INSERT INTO heating_periods (id, plant_id, period, dhw_method) VALUES ('h5', 'hp1', '2027-01', 'schaetzung')"), 'unbekanntes Verfahren')
+    const zahl = (table: string) => Number(connection.rows(`SELECT count(*) FROM ${table}`)[0]?.[0])
+    connection.exec("DELETE FROM units WHERE id = 'u1'")
+    assert.equal(zahl('heating_plant_units'), 0, 'die Zeile der Wohnung fällt mit')
+    connection.exec(
+      "INSERT INTO cost_items (id, property_id, period, category, description, amount_cents, key, heating_plant_id) VALUES ('c1', 'objekt-1', '2025-01', 'Heizung und Warmwasser', 'Gas', 100000, 'area', 'hp1')",
+    )
+    assert.ok(rejects(connection, "DELETE FROM heating_plants WHERE id = 'hp1'"), 'die Kostenposition hält die Anlage')
+    connection.exec("DELETE FROM cost_items WHERE id = 'c1'")
+    connection.exec("DELETE FROM heating_plants WHERE id = 'hp1'")
+    assert.equal(zahl('heating_periods'), 0, 'die Heizperioden fallen mit der Anlage')
+  } finally {
+    cleanup()
+  }
+})
+
+// ---------- Eigene Heizperiode und getrennte Heizkostenabrechnung (Heizung PR 5) ----------
+
+const einMieter = "INSERT INTO tenancies (id, unit_id, tenant_name, persons, start) VALUES ('t1', 'u1', 'A', 1, '2024-01-01')"
+
+test('Heizperiode: Wechsel und Spannen nach Weg d gehören zur Anlage und fallen mit ihr', async () => {
+  const { connection, cleanup } = await freshDb()
+  try {
+    connection.exec(eineAnlage)
+    assert.equal(rejects(connection, "INSERT INTO heating_period_changes (plant_id, from_month) VALUES ('hp1', '2026-01')"), null)
+    assert.ok(rejects(connection, "INSERT INTO heating_period_changes (plant_id, from_month) VALUES ('hp1', '2026-13')"), 'Monat 13')
+    assert.equal(rejects(connection, "INSERT INTO heating_separate_spans (plant_id, from_month, until_period) VALUES ('hp1', '2026-01', NULL)"), null)
+    assert.ok(rejects(connection, "INSERT INTO heating_separate_spans (plant_id, from_month, until_period) VALUES ('hp1', '2027-05', '2026-05')"), 'Ende vor Beginn')
+    assert.ok(rejects(connection, "INSERT INTO heating_separate_spans (plant_id, from_month, until_period) VALUES ('hp1', '2025-5', NULL)"), 'kein Monat')
+    connection.exec("DELETE FROM heating_plants WHERE id = 'hp1'")
+    const zahl = (table: string) => Number(connection.rows(`SELECT count(*) FROM ${table}`)[0]?.[0])
+    assert.equal(zahl('heating_period_changes'), 0)
+    assert.equal(zahl('heating_separate_spans'), 0)
+  } finally {
+    cleanup()
+  }
+})
+
+test('Heizstaffel und Heizkorrektur: nie negativ, vorläufig nur mit Monaten, endgültig ohne', async () => {
+  const { connection, cleanup } = await freshDb()
+  try {
+    connection.exec(einWohnung)
+    connection.exec(einMieter)
+    connection.exec(eineAnlage)
+    assert.equal(rejects(connection, "INSERT INTO heating_prepayments (tenancy_id, \"from\", monthly_cents) VALUES ('t1', '2025-05', 12300)"), null)
+    assert.ok(rejects(connection, "INSERT INTO heating_prepayments (tenancy_id, \"from\", monthly_cents) VALUES ('t1', '2026-01', -1)"), 'negativ')
+    // Durchsicht von #231 (Minor 9): ein Monat in der Form JJJJ-MM.
+    assert.ok(rejects(connection, "INSERT INTO heating_prepayments (tenancy_id, \"from\", monthly_cents) VALUES ('t1', '2026-13', 100)"), 'Monat 13')
+    assert.ok(rejects(connection, "INSERT INTO heating_prepayments (tenancy_id, \"from\", monthly_cents) VALUES ('t1', 'ab Mai', 100)"), 'kein Monat')
+    const korrektur = (werte: string) => `INSERT INTO heating_prepayment_overrides (tenancy_id, plant_id, period, amount_cents, provisional, from_month, to_month) VALUES ${werte}`
+    assert.equal(rejects(connection, korrektur("('t1', 'hp1', '2025-05', 30000, 0, NULL, NULL)")), null)
+    assert.equal(rejects(connection, korrektur("('t1', 'hp1', '2026-05', 87600, 1, '2026-05', '2026-12')")), null)
+    assert.ok(rejects(connection, korrektur("('t1', 'hp1', '2027-05', 100, 1, NULL, NULL)")), 'vorläufig ohne Monate')
+    assert.ok(rejects(connection, korrektur("('t1', 'hp1', '2028-05', 100, 0, '2028-05', '2028-12')")), 'endgültig mit Monaten')
+    assert.ok(rejects(connection, korrektur("('t1', 'hp1', '2029-05', 100, 1, '2029-12', '2029-05')")), 'Ende vor Beginn')
+    assert.ok(rejects(connection, korrektur("('t1', 'hp1', '2030-05', -1, 0, NULL, NULL)")), 'negativ')
+    assert.ok(rejects(connection, korrektur("('t1', 'hp1', '2025-05', 1, 0, NULL, NULL)")), 'je Heizperiode eine')
+    assert.ok(rejects(connection, "DELETE FROM heating_plants WHERE id = 'hp1'"), 'eine Heizkorrektur hält die Anlage')
+    connection.exec("DELETE FROM tenancies WHERE id = 't1'")
+    const zahl = (table: string) => Number(connection.rows(`SELECT count(*) FROM ${table}`)[0]?.[0])
+    assert.equal(zahl('heating_prepayments'), 0, 'die Staffel fällt mit dem Mietverhältnis')
+    assert.equal(zahl('heating_prepayment_overrides'), 0, 'die Korrektur fällt mit dem Mietverhältnis')
+  } finally {
+    cleanup()
+  }
+})
+
+test('Abgeschlossene Heizkostenabrechnung: eindeutig je Anlage und Heizperiode, JSON, hält die Anlage', async () => {
+  const { connection, cleanup } = await freshDb()
+  try {
+    connection.exec(eineAnlage)
+    const abschluss = (id: string, period: string, inhalt = "'{}'") =>
+      `INSERT INTO closed_heating_settlements (id, plant_id, period, closed_at, settlement) VALUES ('${id}', 'hp1', '${period}', '2027-01-10', ${inhalt})`
+    assert.equal(rejects(connection, abschluss('a1', '2025-05')), null)
+    assert.ok(rejects(connection, abschluss('a2', '2025-05')), 'zweimal dieselbe Heizperiode')
+    assert.ok(rejects(connection, abschluss('a3', '2026-05', "'kein json'")), 'kein JSON')
+    assert.ok(rejects(connection, abschluss('a4', '2026-13')), 'Monat 13')
+    assert.equal(rejects(connection, "INSERT INTO closed_heating_settlement_history (id, plant_id, period, closed_at, reopened_at, settlement) VALUES ('v1', 'hp1', '2025-05', '2027-01-10', '2027-02-01', '{}')"), null)
+    assert.ok(rejects(connection, "DELETE FROM heating_plants WHERE id = 'hp1'"), 'ein Abschluss hält die Anlage')
+  } finally {
+    cleanup()
+  }
+})
+
+// ---------- CO₂ (Heizung PR 6) ----------
+
+const eineHeizperiode = [
+  "INSERT INTO heating_plants (id, property_id, energy, method) VALUES ('hp1', 'objekt-1', 'gas', 'service')",
+  "INSERT INTO heating_periods (id, plant_id, period) VALUES ('h1', 'hp1', '2025-01')",
+]
+
+test('CO₂: eine Zeile je Heizperiode, Summen beim Messdienst Pflicht, Grenzen der Werte', async () => {
+  const { connection, cleanup } = await freshDb()
+  try {
+    for (const sql of eineHeizperiode) connection.exec(sql)
+    assert.ok(rejects(connection, "INSERT INTO co2_statements (heating_period_id, method) VALUES ('h1', 'serviceDeducted')"), 'Vorwegabzug ohne S, L und NE')
+    assert.equal(rejects(connection, "INSERT INTO co2_statements (heating_period_id, method, service_users_total_cents, service_landlord_cents, service_units_count) VALUES ('h1', 'serviceDeducted', 384551, 8750, 4)"), null)
+    assert.ok(rejects(connection, "INSERT INTO co2_statements (heating_period_id, method) VALUES ('h1', 'selfAfterService')"), 'eine zweite Zeile für dieselbe Heizperiode')
+    assert.deepEqual(connection.rows("SELECT service_users_total_approx FROM co2_statements")[0], [0])
+    assert.ok(rejects(connection, "UPDATE co2_statements SET method = 'geschaetzt'"), 'unbekannte Methode')
+    assert.ok(rejects(connection, 'UPDATE co2_statements SET service_landlord_permille = 1001'), 'über 1000 ‰')
+    assert.ok(rejects(connection, 'UPDATE co2_statements SET service_units_count = 0'), 'keine Nutzeinheit')
+    assert.ok(rejects(connection, 'UPDATE co2_statements SET service_landlord_cents = -1'), 'negativer CO₂-Anteil')
+    assert.ok(rejects(connection, 'UPDATE co2_statements SET area_m2 = 0'), 'Fläche 0')
+    assert.equal(rejects(connection, "UPDATE co2_statements SET method = 'selfAfterService', service_users_total_cents = NULL, service_landlord_cents = NULL, service_units_count = NULL"), null)
+  } finally {
+    cleanup()
+  }
+})
+
+test('CO₂: Beträge je Mietverhältnis fallen mit Mietverhältnis und Datensatz, die Position wird nur gelöst', async () => {
+  const { connection, cleanup } = await freshDb()
+  try {
+    connection.exec(einWohnung)
+    connection.exec("INSERT INTO tenancies (id, unit_id, tenant_name, persons, start) VALUES ('t1', 'u1', 'Meier', 2, '2025-01-01')")
+    for (const sql of eineHeizperiode) connection.exec(sql)
+    connection.exec(
+      "INSERT INTO cost_items (id, property_id, period, category, description, amount_cents, key, heating_plant_id) VALUES ('c1', 'objekt-1', '2025-01', 'Heizung und Warmwasser', 'Messdienst', 100000, 'amounts', 'hp1')",
+    )
+    connection.exec("INSERT INTO co2_statements (heating_period_id, method, service_users_total_cents, service_landlord_cents, service_units_count, service_cost_item_id) VALUES ('h1', 'serviceShown', 100000, 5000, 1, 'c1')")
+    connection.exec("INSERT INTO co2_tenant_reliefs (statement_id, tenancy_id, cents) VALUES ('h1', 't1', 2500)")
+    assert.ok(rejects(connection, "INSERT INTO co2_tenant_reliefs (statement_id, tenancy_id, cents) VALUES ('h1', 't1', 100)"), 'derselbe Mieter zweimal')
+    assert.ok(rejects(connection, "UPDATE co2_tenant_reliefs SET cents = -1"), 'negativer Betrag')
+    const zahl = (table: string) => Number(connection.rows(`SELECT count(*) FROM ${table}`)[0]?.[0])
+    connection.exec("DELETE FROM cost_items WHERE id = 'c1'")
+    assert.deepEqual(connection.rows('SELECT service_cost_item_id FROM co2_statements')[0], [null])
+    connection.exec("DELETE FROM tenancies WHERE id = 't1'")
+    assert.equal(zahl('co2_tenant_reliefs'), 0, 'der Betrag fällt mit dem Mietverhältnis')
+    connection.exec("DELETE FROM heating_periods WHERE id = 'h1'")
+    assert.equal(zahl('co2_statements'), 0, 'der Datensatz fällt mit der Heizperiode')
+  } finally {
+    cleanup()
+  }
+})
+
+// ---------- Lieferungen (Heizung PR 7) ----------
+
+const eineGasanlage = [
+  "INSERT INTO heating_plants (id, property_id, energy, method) VALUES ('hp1', 'objekt-1', 'gas', 'manual')",
+  "INSERT INTO heating_periods (id, plant_id, period) VALUES ('h1', 'hp1', '2025-01')",
+]
+
+test('Lieferungen: Rechnungszeitraum paarweise und geordnet, Anteil bis 1000 ‰, Zahlen nicht negativ', async () => {
+  const { connection, cleanup } = await freshDb()
+  try {
+    for (const sql of eineGasanlage) connection.exec(sql)
+    assert.equal(rejects(connection, "INSERT INTO fuel_deliveries (id, plant_id, invoice_from, invoice_to) VALUES ('d1', 'hp1', '2025-03-15', '2026-03-14')"), null)
+    assert.deepEqual(connection.rows("SELECT label, estimated, used_by_service FROM fuel_deliveries")[0], ['', 0, 1])
+    assert.ok(rejects(connection, "INSERT INTO fuel_deliveries (id, plant_id, invoice_from) VALUES ('d2', 'hp1', '2025-03-15')"), 'Beginn ohne Ende')
+    assert.ok(rejects(connection, "INSERT INTO fuel_deliveries (id, plant_id, invoice_from, invoice_to) VALUES ('d3', 'hp1', '2026-03-14', '2025-03-15')"), 'Ende vor Beginn')
+    assert.ok(rejects(connection, "INSERT INTO fuel_deliveries (id, plant_id, invoice_from, invoice_to) VALUES ('d4', 'hp1', '15.03.2025', '14.03.2026')"), 'kein ISO-Datum')
+    assert.ok(rejects(connection, "UPDATE fuel_deliveries SET share_permille = 1001"), 'über 1000 ‰')
+    assert.ok(rejects(connection, "UPDATE fuel_deliveries SET fixed_cents = -1"), 'negativer fester Teil')
+    assert.ok(rejects(connection, "UPDATE fuel_deliveries SET emissions_kg = -1"), 'negativer Ausstoß')
+    assert.ok(rejects(connection, "UPDATE fuel_deliveries SET quantity_unit = 'fass'"), 'unbekannte Einheit')
+    assert.ok(rejects(connection, "UPDATE fuel_deliveries SET heating_value = 0"), 'Heizwert 0')
+    assert.equal(rejects(connection, "INSERT INTO fuel_delivery_parts (delivery_id, \"from\", \"to\", amount_cents) VALUES ('d1', '2025-03-15', '2025-12-31', 500000)"), null)
+    assert.ok(rejects(connection, "INSERT INTO fuel_delivery_parts (delivery_id, \"from\", \"to\", amount_cents) VALUES ('d1', '2025-03-15', '2025-12-31', 1)"), 'dieselbe Teilmenge zweimal')
+    assert.ok(rejects(connection, "INSERT INTO fuel_delivery_parts (delivery_id, \"from\", \"to\", amount_cents) VALUES ('d1', '2026-01-02', '2026-01-01', 1)"), 'Teilmenge endet vor Beginn')
+  } finally {
+    cleanup()
+  }
+})
+
+test('Lieferungen: die Anlage bleibt stehen, Teilmengen fallen mit, Positionen und Eingefrorenes halten die Lieferung', async () => {
+  const { connection, cleanup } = await freshDb()
+  try {
+    for (const sql of eineGasanlage) connection.exec(sql)
+    connection.exec("INSERT INTO fuel_deliveries (id, plant_id, invoice_from, invoice_to) VALUES ('d1', 'hp1', '2025-01-01', '2025-12-31')")
+    connection.exec("INSERT INTO fuel_delivery_parts (delivery_id, \"from\", \"to\", amount_cents) VALUES ('d1', '2025-01-01', '2025-06-30', 100)")
+    connection.exec("INSERT INTO cost_items (id, property_id, period, category, description, amount_cents, key, heating_plant_id, fuel_delivery_id) VALUES ('c1', 'objekt-1', '2025-01', 'Heizung und Warmwasser', 'Gas', 100000, 'area', 'hp1', 'd1')")
+    assert.ok(rejects(connection, "INSERT INTO cost_items (id, property_id, period, category, description, amount_cents, key, fuel_delivery_id) VALUES ('c2', 'objekt-1', '2025-01', 'Grundsteuer', 'G', 1, 'area', 'd1')"), 'Lieferung an einer kalten Position')
+    assert.ok(rejects(connection, "DELETE FROM heating_plants WHERE id = 'hp1'"), 'die Lieferung hält die Anlage')
+    assert.ok(rejects(connection, "DELETE FROM fuel_deliveries WHERE id = 'd1'"), 'die Position hält die Lieferung')
+    connection.exec("DELETE FROM cost_items WHERE id = 'c1'")
+    connection.exec("INSERT INTO fuel_carry_frozen (delivery_id, heating_period_id, cents) VALUES ('d1', 'h1', -98339)")
+    assert.deepEqual(connection.rows('SELECT emissions_kg, co2_cents FROM fuel_carry_frozen')[0], [0, 0])
+    assert.ok(rejects(connection, "DELETE FROM fuel_deliveries WHERE id = 'd1'"), 'das Eingefrorene hält die Lieferung')
+    connection.exec('DELETE FROM fuel_carry_frozen')
+    connection.exec("DELETE FROM fuel_deliveries WHERE id = 'd1'")
+    assert.equal(Number(connection.rows('SELECT count(*) FROM fuel_delivery_parts')[0]?.[0]), 0, 'die Teilmengen fallen mit')
+  } finally {
+    cleanup()
+  }
+})
+
+test('CO₂-Merkmale der Anlage und Ortswerte der Gradtage', async () => {
+  const { connection, cleanup } = await freshDb()
+  try {
+    for (const sql of eineGasanlage) connection.exec(sql)
+    assert.deepEqual(connection.rows('SELECT non_residential, restriction, district_ets_new FROM heating_plants')[0], [0, 'none', 0])
+    assert.ok(rejects(connection, "UPDATE heating_plants SET restriction = 'denkmal'"), 'unbekannte Beschränkung')
+    assert.ok(rejects(connection, 'UPDATE heating_plants SET district_ets_new = 1'), 'Emissionshandel nur bei Fernwärme')
+    assert.equal(rejects(connection, "UPDATE heating_plants SET energy = 'districtHeating', district_ets_new = 1"), null)
+    assert.equal(rejects(connection, "INSERT INTO degree_day_values (property_id, month, value) VALUES ('objekt-1', '2025-01', 412.5)"), null)
+    assert.ok(rejects(connection, "INSERT INTO degree_day_values (property_id, month, value) VALUES ('objekt-1', '2025-13', 1)"), 'Monat 13')
+    assert.ok(rejects(connection, "INSERT INTO degree_day_values (property_id, month, value) VALUES ('objekt-1', '2025-02', 0)"), 'Wert 0')
+  } finally {
+    cleanup()
+  }
+})
+
+// ---------- Vorrat (Heizung PR 8) ----------
+
+test('Vorrat: Einheit aus der Liste, Mengen, Beträge und kg ab 0, Peildatum als Datum', async () => {
+  const { connection, cleanup } = await freshDb()
+  try {
+    connection.exec("INSERT INTO heating_plants (id, property_id, energy, method) VALUES ('hp1', 'objekt-1', 'oil', 'manual')")
+    connection.exec("INSERT INTO heating_periods (id, plant_id, period) VALUES ('h1', 'hp1', '2025-01')")
+    assert.deepEqual(
+      connection.rows('SELECT stock_unit, opening_quantity, opening_cost_cents, opening_emissions_kg, opening_co2_cents, opening_invoiced_before_2023, closing_quantity, closing_measured_on FROM heating_periods')[0],
+      [null, null, null, null, null, null, null, null],
+    )
+    assert.equal(
+      rejects(connection, "UPDATE heating_periods SET stock_unit = 'l', opening_quantity = 2000, opening_cost_cents = 190000, opening_emissions_kg = 5352.6, opening_co2_cents = 0, opening_invoiced_before_2023 = 1, closing_quantity = 1800, closing_measured_on = '2025-12-31'"),
+      null,
+    )
+    assert.ok(rejects(connection, "UPDATE heating_periods SET stock_unit = 'm3'"), 'Einheit m³ gibt es beim Vorrat nicht')
+    assert.ok(rejects(connection, 'UPDATE heating_periods SET opening_quantity = -1'), 'negative Menge')
+    assert.ok(rejects(connection, 'UPDATE heating_periods SET opening_cost_cents = -1'), 'negativer Betrag')
+    assert.ok(rejects(connection, 'UPDATE heating_periods SET opening_emissions_kg = -0.1'), 'negative kg')
+    assert.ok(rejects(connection, 'UPDATE heating_periods SET opening_co2_cents = -1'), 'negative CO₂-Kosten')
+    assert.ok(rejects(connection, 'UPDATE heating_periods SET closing_quantity = -5'), 'negativer Endbestand')
+    assert.ok(rejects(connection, "UPDATE heating_periods SET closing_measured_on = '31.12.2025'"), 'Peildatum kein ISO-Datum')
+  } finally {
+    cleanup()
+  }
+})
+
+// ---------- Eigene Heizkostenabrechnung (Heizung PR 10) ----------
+
+test('Heizkostenabrechnung: Vorgaben an der Anlage, Erfassung Pflicht bei eigener Abrechnung', async () => {
+  const { connection, cleanup } = await freshDb()
+  try {
+    connection.exec("INSERT INTO heating_plants (id, property_id, energy) VALUES ('hp1', 'objekt-1', 'gas')")
+    assert.deepEqual(connection.rows('SELECT hot_water, capture, area_basis_heat, heat_pump_installed_on FROM heating_plants')[0], ['combined', null, 'area', null])
+    assert.ok(rejects(connection, "INSERT INTO heating_plants (id, property_id, energy, method) VALUES ('hp2', 'objekt-1', 'gas', 'self')"), 'eigene Abrechnung ohne Erfassung')
+    assert.equal(rejects(connection, "INSERT INTO heating_plants (id, property_id, energy, method, capture) VALUES ('hp3', 'objekt-1', 'gas', 'self', 'heatMeter')"), null)
+    // Durchsicht von #239: Zeiträume der eigenen Abrechnung sind Schlüssel von Heizperioden, das Ende nach dem Beginn.
+    assert.equal(rejects(connection, "INSERT INTO heating_self_spans (plant_id, from_period, until_period) VALUES ('hp3', '2025-01', '2026-01')"), null)
+    assert.ok(rejects(connection, "INSERT INTO heating_self_spans (plant_id, from_period, until_period) VALUES ('hp3', '2027-13', NULL)"), 'Beginn kein Schlüssel')
+    assert.ok(rejects(connection, "INSERT INTO heating_self_spans (plant_id, from_period, until_period) VALUES ('hp3', '2028-01', '2027-01')"), 'Ende vor dem Beginn')
+    assert.ok(rejects(connection, "UPDATE heating_plants SET hot_water = 'zentral' WHERE id = 'hp1'"), 'unbekannte Warmwasserbereitung')
+    assert.ok(rejects(connection, "UPDATE heating_plants SET capture = 'verdunster' WHERE id = 'hp1'"), 'unbekannte Erfassung')
+    assert.ok(rejects(connection, "UPDATE heating_plants SET area_basis_heat = 'raum' WHERE id = 'hp1'"), 'unbekannte Flächenbasis')
+  } finally {
+    cleanup()
+  }
+})
+
+test('Heizkostenabrechnung: Schlüssel heatingSystem nur mit Ziel, Teil und Anlage; Ziel nur bei Heizkosten', async () => {
+  const { connection, cleanup } = await freshDb()
+  try {
+    connection.exec("INSERT INTO heating_plants (id, property_id, energy, method, capture) VALUES ('hp1', 'objekt-1', 'gas', 'self', 'heatMeter')")
+    const insert = (id: string, cols: string, vals: string) =>
+      rejects(connection, `INSERT INTO cost_items (id, property_id, period, category, description, amount_cents, key${cols}) VALUES ('${id}', 'objekt-1', '2025-01', 'Heizung und Warmwasser', 'Gas', 600000, ${vals})`)
+    assert.equal(insert('c1', ', heating_plant_id, heating_part, heating_target', "'heatingSystem', 'hp1', 'fuel', 'both'"), null)
+    assert.ok(insert('c2', ', heating_plant_id, heating_part', "'heatingSystem', 'hp1', 'fuel'"), 'ohne Ziel')
+    assert.ok(insert('c3', ', heating_plant_id, heating_target', "'heatingSystem', 'hp1', 'both'"), 'ohne Teil')
+    assert.ok(insert('c4', ', heating_part, heating_target', "'heatingSystem', 'fuel', 'both'"), 'ohne Anlage')
+    assert.ok(insert('c5', ', heating_plant_id, heating_part, heating_target', "'heatingSystem', 'hp1', 'fuel', 'kalt'"), 'unbekanntes Ziel')
+    // „Nur Heizung“ bei freien Schlüsseln (A2, B7): ein Ziel ohne den neuen Schlüssel ist erlaubt.
+    assert.equal(insert('c6', ', heating_target', "'area', 'heating'"), null)
+    assert.ok(
+      rejects(connection, "INSERT INTO cost_items (id, property_id, period, category, description, amount_cents, key, heating_target) VALUES ('c7', 'objekt-1', '2025-01', 'Grundsteuer', 'Grundsteuer', 48000, 'area', 'heating')"),
+      'Ziel bei einer anderen Kostenart',
+    )
+  } finally {
+    cleanup()
+  }
+})
+
+test('Heizkostenabrechnung: Antworten zu fehlenden Zwischenablesungen fallen mit der Wohnung', async () => {
+  const { connection, cleanup } = await freshDb()
+  try {
+    connection.exec(einWohnung)
+    assert.equal(rejects(connection, "INSERT INTO interim_reading_gaps (unit_id, date, status, reason) VALUES ('u1', '2025-09-30', 'impossible', 'Mieter verreist')"), null)
+    assert.ok(rejects(connection, "INSERT INTO interim_reading_gaps (unit_id, date, status) VALUES ('u1', '2025-09-30', 'missed')"), 'dieselbe Grenze zweimal')
+    assert.ok(rejects(connection, "INSERT INTO interim_reading_gaps (unit_id, date, status) VALUES ('u1', '2025-10-31', 'vergessen')"), 'unbekannte Antwort')
+    assert.ok(rejects(connection, "INSERT INTO interim_reading_gaps (unit_id, date, status) VALUES ('u1', '30.09.2025', 'missed')"), 'kein ISO-Datum')
+    connection.exec("DELETE FROM units WHERE id = 'u1'")
+    assert.equal(Number(connection.rows('SELECT count(*) FROM interim_reading_gaps')[0]?.[0]), 0)
+  } finally {
+    cleanup()
+  }
+})
+
+// ---------- Warmwasser ohne Wärmezähler (Heizung PR 11) ----------
+
+test('Heizung PR 11: Tabellenzeile an der Lieferung, Erzeuger an der Anlage, beide nur mit bekannten Werten', async () => {
+  const { connection, cleanup } = await freshDb()
+  try {
+    connection.exec("INSERT INTO heating_plants (id, property_id, energy) VALUES ('hp1', 'objekt-1', 'oil')")
+    assert.equal(rejects(connection, "UPDATE heating_plants SET heat_generation = 'single'"), null)
+    assert.equal(rejects(connection, 'UPDATE heating_plants SET heat_generation = NULL'), null)
+    assert.ok(rejects(connection, "UPDATE heating_plants SET heat_generation = 'bivalent'"), 'unbekannter Erzeuger')
+    connection.exec("INSERT INTO fuel_deliveries (id, plant_id, label) VALUES ('d1', 'hp1', 'Öl')")
+    assert.equal(rejects(connection, "UPDATE fuel_deliveries SET fuel_grade = 'heatingOilEL'"), null)
+    assert.ok(rejects(connection, "UPDATE fuel_deliveries SET fuel_grade = 'diesel'"), 'unbekannte Zeile')
+  } finally {
+    cleanup()
+  }
+})
+
+test('Heizung PR 11: Der Schnappschuss führt, was der Warmwasseranteil liest (Prüfbericht B.1, B6)', () => {
+  const lieferung = {
+    invoiceDate: null, energyKwh: null, quantity: 3000, quantityUnit: 'l', gasBasis: null, heatingValue: 9.8, fuelGrade: 'heatingOilEL',
+  } satisfies Pick<SnapshotFuelDelivery, 'invoiceDate' | 'energyKwh' | 'quantity' | 'quantityUnit' | 'gasBasis' | 'heatingValue' | 'fuelGrade'>
+  const zeile = { dhwMethod: 'volumeFormula', dhwVolumeM3: 120, dhwTempC: 60 } satisfies Pick<SnapshotHeatingPeriodRow, 'dhwMethod' | 'dhwVolumeM3' | 'dhwTempC'>
+  const anlage = { heatGeneration: 'single' } satisfies Pick<SnapshotHeatingPlant, 'heatGeneration'>
+  assert.deepEqual([lieferung.fuelGrade, zeile.dhwTempC, anlage.heatGeneration], ['heatingOilEL', 60, 'single'])
+})
+
+// ---------- Heizkostenverteiler und Ablesedienst (Heizung PR 12) ----------
+
+test('Heizung PR 12: Skala und Faktor nur am Heizkostenverteiler, Faktor über 0; Werte des Ablesedienstes ab 0 und mit Datum', async () => {
+  const { connection, cleanup } = await freshDb()
+  try {
+    connection.exec("INSERT INTO units (id, property_id, name, area_m2, participates) VALUES ('a', 'objekt-1', 'A', 50, 1)")
+    connection.exec("INSERT INTO meters (id, property_id, name, unit_id, type, unit) VALUES ('h1', 'objekt-1', 'Wohnzimmer', 'a', 'hkv', 'Einheiten')")
+    connection.exec("INSERT INTO meters (id, property_id, name, unit_id, type, unit) VALUES ('k1', 'objekt-1', 'Kaltwasser', 'a', 'kaltwasser', 'm³')")
+    assert.equal(rejects(connection, "UPDATE meters SET hca_scale = 'unit', rating_factor = 1.25 WHERE id = 'h1'"), null)
+    assert.ok(rejects(connection, "UPDATE meters SET rating_factor = 0 WHERE id = 'h1'"), 'Faktor 0')
+    assert.ok(rejects(connection, "UPDATE meters SET hca_scale = 'linear' WHERE id = 'h1'"), 'unbekannte Skala')
+    assert.ok(rejects(connection, "UPDATE meters SET rating_factor = 1.0 WHERE id = 'k1'"), 'Faktor am Wasserzähler')
+    assert.ok(rejects(connection, "UPDATE meters SET hca_scale = 'product' WHERE id = 'k1'"), 'Skala am Wasserzähler')
+    assert.ok(rejects(connection, "UPDATE meters SET type = 'waerme' WHERE id = 'h1'"), 'Sparte wechselt, Faktor bleibt')
+    connection.exec("INSERT INTO heating_plants (id, property_id, energy) VALUES ('hp', 'objekt-1', 'gas')")
+    assert.deepEqual(connection.rows('SELECT hca_model FROM heating_plants')[0], [null])
+    connection.exec("INSERT INTO heating_periods (id, plant_id, period) VALUES ('h2025', 'hp', '2025-01')")
+    const insert = (from: string, to: string, heat: number, water: string) =>
+      rejects(connection, `INSERT INTO heating_service_values (heating_period_id, unit_id, "from", "to", heat_value, water_value) VALUES ('h2025', 'a', '${from}', '${to}', ${heat}, ${water})`)
+    assert.equal(insert('2025-01-01', '2025-09-30', 340, '12'), null)
+    assert.ok(insert('2025-10-01', '2025-09-30', 10, 'NULL'), 'Ende vor Beginn')
+    assert.ok(insert('2025-10-01', '2025-12-31', -1, 'NULL'), 'negativ')
+    assert.ok(insert('2025-10-01', '2025-12-31', 1, '-1'), 'Warmwasser negativ')
+    assert.ok(insert('01.10.2025', '2025-12-31', 1, 'NULL'), 'kein ISO-Datum')
+    assert.ok(insert('2025-01-01', '2025-12-31', 1, 'NULL'), 'gleicher Schlüssel')
+    // Eine gelöschte Wohnung nimmt ihre Werte mit.
+    connection.exec("DELETE FROM meters WHERE unit_id = 'a'")
+    connection.exec("DELETE FROM units WHERE id = 'a'")
+    assert.deepEqual(connection.rows('SELECT COUNT(*) FROM heating_service_values'), [[0]])
+  } finally {
+    cleanup()
+  }
+})
+
+// ---------- Schätzung nach § 9a (Heizung PR 13) ----------
+
+test('Schätzung: Wert ab 0, Begründung Pflicht, bekannter Weg und Teil, eine Zeile je Wohnung und Topf, fällt mit der Wohnung', async () => {
+  const { connection, cleanup } = await freshDb()
+  try {
+    connection.exec(einWohnung)
+    connection.exec("INSERT INTO heating_plants (id, property_id, energy) VALUES ('hp1', 'objekt-1', 'gas')")
+    connection.exec("INSERT INTO heating_periods (id, plant_id, period) VALUES ('h1', 'hp1', '2025-01')")
+    // Grund, Erfassung und Einheit (Durchsicht von #242, R-I1 und G-I1) hängen hinten an.
+    const insert = (values: string, rest = "'deviceFailure', 'heatMeter', 'kWh'") => rejects(connection, `INSERT INTO heating_estimates (heating_period_id, unit_id, part, value, method, reason, confirmed, cause, capture, value_unit) VALUES (${values}, ${rest})`)
+    assert.equal(insert("'h1', 'u1', 'heat', 12000, 'buildingAverage', 'Zähler defekt', 1"), null)
+    assert.ok(insert("'h1', 'u1', 'heat', 11000, 'buildingAverage', 'Zähler defekt', 1"), 'dieselbe Wohnung und derselbe Topf zweimal')
+    assert.ok(insert("'h1', 'u1', 'water', -1, 'buildingAverage', 'Zähler defekt', 0"), 'negativer Wert')
+    assert.ok(insert("'h1', 'u1', 'water', 30, 'buildingAverage', '  ', 0"), 'ohne Begründung')
+    assert.ok(insert("'h1', 'u1', 'water', 30, 'schaetzen', 'Zähler defekt', 0"), 'unbekannter Weg')
+    assert.ok(insert("'h1', 'u1', 'heating', 30, 'buildingAverage', 'Zähler defekt', 0"), 'unbekannter Teil')
+    assert.ok(insert("'h1', 'zz', 'water', 30, 'buildingAverage', 'Zähler defekt', 0"), 'unbekannte Wohnung')
+    assert.ok(insert("'h1', 'u1', 'water', 30, 'buildingAverage', 'Zähler defekt', 0", "'raten', 'heatMeter', 'm³'"), 'unbekannter Grund')
+    assert.ok(insert("'h1', 'u1', 'water', 30, 'buildingAverage', 'Zähler defekt', 0", "'deviceFailure', 'verdunster', 'm³'"), 'unbekannte Erfassung')
+    assert.ok(insert("'h1', 'u1', 'water', 30, 'buildingAverage', 'Zähler defekt', 0", "'deviceFailure', 'heatMeter', 'Liter'"), 'unbekannte Einheit')
+    assert.ok(insert("'h1', 'u1', 'water', 30, 'buildingAverage', 'Zähler defekt', 0", "NULL, 'heatMeter', 'm³'"), 'ohne Grund')
+    assert.deepEqual(connection.rows('SELECT confirmed FROM heating_estimates'), [[1]])
+    connection.exec("DELETE FROM units WHERE id = 'u1'")
+    assert.equal(Number(connection.rows('SELECT count(*) FROM heating_estimates')[0]?.[0]), 0)
+  } finally {
+    cleanup()
+  }
+})
+
+// ---------- Pflichtangaben und Ausnahmen (Heizung PR 14) ----------
+
+test('Heizperiode: Ausnahme nach § 11 mit Umfang und vereinbarter Abrechnung, Vereinbarung nach § 2, monatliche Information (je Heizperiode)', async () => {
+  const { connection, cleanup } = await freshDb()
+  try {
+    connection.exec(eineAnlage)
+    connection.exec("INSERT INTO heating_periods (id, plant_id, period) VALUES ('h1', 'hp1', '2025-01')")
+    assert.deepEqual(connection.rows("SELECT exemption, exemption_scope, exemption_billing_agreed, agreed_otherwise, monthly_info_elsewhere FROM heating_periods")[0], [null, null, null, null, null])
+    assert.ok(rejects(connection, "UPDATE heating_periods SET exemption = 'heim' WHERE id = 'h1'"), 'unbekannte Ausnahme')
+    assert.ok(rejects(connection, "UPDATE heating_periods SET agreed_otherwise = 'pauschal' WHERE id = 'h1'"), 'unbekannte Vereinbarung')
+    assert.ok(rejects(connection, "UPDATE heating_periods SET exemption_billing_agreed = 1 WHERE id = 'h1'"), 'Abrechnung vereinbart ohne Ausnahme')
+    assert.ok(rejects(connection, "UPDATE heating_periods SET exemption = 'none', exemption_scope = 'heat' WHERE id = 'h1'"), 'Umfang ohne Ausnahme')
+    assert.ok(rejects(connection, "UPDATE heating_periods SET exemption = 'lowDemand', exemption_scope = 'water' WHERE id = 'h1'"), 'unbekannter Umfang')
+    assert.equal(rejects(connection, "UPDATE heating_periods SET exemption = 'lowDemand', exemption_scope = 'heat', exemption_billing_agreed = 1, agreed_otherwise = 'none', monthly_info_elsewhere = 1 WHERE id = 'h1'"), null)
+  } finally {
+    cleanup()
+  }
+})
+
+test('Heizperiode: Vergleichswert (§ 6a Abs. 3 Nr. 4) und Klimafaktoren (Nr. 5) nur über 0 und nur mit Quelle', async () => {
+  const { connection, cleanup } = await freshDb()
+  try {
+    connection.exec(eineAnlage)
+    connection.exec("INSERT INTO heating_periods (id, plant_id, period) VALUES ('h1', 'hp1', '2025-01')")
+    assert.match(rejects(connection, "UPDATE heating_periods SET info_reference_kwh_per_m2 = 0, info_reference_source = 'x' WHERE id = 'h1'") ?? '', /heating_periods_info_reference_positive/)
+    assert.match(rejects(connection, "UPDATE heating_periods SET info_reference_kwh_per_m2 = 120 WHERE id = 'h1'") ?? '', /heating_periods_info_reference_source_complete/)
+    assert.match(rejects(connection, "UPDATE heating_periods SET info_reference_kwh_per_m2 = 120, info_reference_source = '  ' WHERE id = 'h1'") ?? '', /heating_periods_info_reference_source_complete/)
+    assert.equal(rejects(connection, "UPDATE heating_periods SET info_reference_kwh_per_m2 = 120, info_reference_source = 'Vergleichswerte des Ablesedienstes 2025' WHERE id = 'h1'"), null)
+    assert.match(rejects(connection, "UPDATE heating_periods SET climate_factor = 1.08 WHERE id = 'h1'") ?? '', /heating_periods_climate_factor_source_complete/)
+    assert.match(rejects(connection, "UPDATE heating_periods SET climate_factor_prev = 0, climate_factor_source = 'DWD' WHERE id = 'h1'") ?? '', /heating_periods_climate_factor_positive/)
+    assert.equal(rejects(connection, "UPDATE heating_periods SET climate_factor = 1.08, climate_factor_prev = 1.15, climate_factor_source = 'DWD, Klimafaktoren 79100' WHERE id = 'h1'"), null)
+    assert.ok(rejects(connection, "UPDATE heating_periods SET info_district_ghg = -1 WHERE id = 'h1'"), 'negative Emissionen')
   } finally {
     cleanup()
   }

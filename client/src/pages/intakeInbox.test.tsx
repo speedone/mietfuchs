@@ -5,7 +5,7 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import type { CostItem, Extraction, Unit, UploadInfo } from '../types'
-import { YearProvider } from '../year'
+import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
 import Schnellerfassung from './Schnellerfassung'
 import { fakeBooking } from '../testing/fakeBooking'
@@ -58,11 +58,11 @@ afterEach(() => {
 test('ein Beleg aus dem Posteingang geht als Name an die Auswertung, nicht als neue Datei', async () => {
   const taken = vi.fn()
   render(
-    <YearProvider>
+    <PeriodProvider>
       <PropertyProvider>
         <Schnellerfassung units={UNITS} settings={null} onNavigate={() => {}} handoff={[IMAGE]} onHandoffTaken={taken} />
       </PropertyProvider>
-    </YearProvider>,
+    </PeriodProvider>,
   )
   await waitFor(() => expect(intake).toHaveLength(1), { timeout: 5000 })
   const fd = intake[0]

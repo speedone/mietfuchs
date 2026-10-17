@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Rechnung Heizöl Beispiel</title>
+<link rel="stylesheet" href="../invoice.css">
+</head>
+<body>
+<!-- Erfundener Beispielbeleg für den KI-Prüflauf (Heizung PR 20). Stolpersteine: Liefertag statt Zeitraum,
+     Rechnungsdatum zwei Tage später, Heizwert ausdrücklich genannt, Preis je 100 Liter brutto. Nachgerechnet:
+     3.000 l × 105,00 €/100 l = 3.150,00 € brutto, darin 2.647,06 € netto und 502,94 € Umsatzsteuer;
+     3.000 l × 10,05 kWh/l = 30.150 kWh; 30.150 × 0,2664 = 8.032,0 kg; 8.031,96 kg × 55 €/t × 1,19 = 525,69 €.
+     Namen, Anschriften, Nummern und IBAN sind Muster. -->
+<section class="page">
+  <div class="head">
+    <div>
+      <div class="sender">Heizöl Beispiel GmbH · Tankweg 9 · 12345 Musterstadt</div>
+      <div class="address">Frau<br>Erika Vermieterin<br>Musterweg 1<br>12345 Musterstadt</div>
+    </div>
+    <div>
+      <div class="logo">Heizöl Beispiel GmbH<small>Brennstoffhandel</small></div>
+      <table class="info" style="margin-top:8mm">
+        <tr><td>Rechnungsnummer</td><td>HB-2025-1012</td></tr>
+        <tr><td>Rechnungsdatum</td><td>14.10.2025</td></tr>
+        <tr><td>Liefertag</td><td>12.10.2025</td></tr>
+        <tr><td>Lieferanschrift</td><td>Musterweg 1</td></tr>
+      </table>
+    </div>
+  </div>
+  <h1>Rechnung</h1>
+  <table class="items">
+    <tr><th>Artikel</th><th class="r">Menge</th><th class="r">Preis je 100 l inkl. USt</th><th class="r">Betrag</th></tr>
+    <tr><td>Heizöl EL schwefelarm</td><td class="r">3.000 l</td><td class="r">105,00 €</td><td class="r">3.150,00 €</td></tr>
+    <tr><td colspan="3">darin enthalten 19 % Umsatzsteuer</td><td class="r">502,94 €</td></tr>
+    <tr class="sum"><td colspan="3">Rechnungsbetrag</td><td class="r">3.150,00 €</td></tr>
+  </table>
+  <h2>Angaben nach § 3 Abs. 1 CO2KostAufG</h2>
+  <table class="items">
+    <tr><td>Brennstoffemissionen</td><td class="r">8.032,0 kg CO₂</td></tr>
+    <tr><td>Preisbestandteil der CO₂-Kosten (55 €/t, inkl. Umsatzsteuer)</td><td class="r">525,69 €</td></tr>
+    <tr><td>Heizwertbezogener Emissionsfaktor</td><td class="r">0,2664 kg CO₂/kWh</td></tr>
+    <tr><td>Energiegehalt (Heizwert 10,05 kWh/l)</td><td class="r">30.150 kWh</td></tr>
+    <tr><td>Hinweis</td><td class="r">Erstattungsansprüche nach § 6 Abs. 2 und § 8 Abs. 2 CO2KostAufG</td></tr>
+  </table>
+  <div class="foot">
+    <div>Heizöl Beispiel GmbH</div>
+    <div>Beispielbank<br>IBAN DE00 5555 4444 3333 2222 11</div>
+    <div>Steuernummer 123/456/78901</div>
+  </div>
+</section>
+<script src="../invoice.js"></script>
+</body>
+</html>

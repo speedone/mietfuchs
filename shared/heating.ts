@@ -2,7 +2,7 @@
 // ihre Hinweise ab, und das Cockpit liest diese Hinweise (client/src/meterCheck.ts); so sagen
 // beide dasselbe, und das Cockpit kann nicht „Ablesungen nicht erforderlich“ melden, während die
 // Abrechnung einen Kürzungsbetrag nennt.
-import type { CostKey } from './types.ts'
+import type { CostKey, EstimatePart, SelfPot } from './types.ts'
 
 // Die Kostenart, an der Mietfuchs Heizung und Warmwasser erkennt. Dieselbe Zeichenkette steht in
 // CATEGORIES (client/src/types.ts) und im Kategorie-Schema der KI-Auswertung.
@@ -29,7 +29,9 @@ export function mayAgreeOtherwise<U extends HeatingUnit>(units: readonly U[], is
 // der fertigen Abrechnung eines Messdienstes (`amounts`) oder laut Gemeinschaftsabrechnung
 // (`external`), die bei einer Eigentumswohnung die Heizkostenabrechnung der Gemeinschaft enthält.
 export function heatingByConsumption(key: CostKey): boolean {
-  return key === 'meter' || key === 'amounts' || key === 'external'
+  // Heizung PR 10: auch nach der eigenen Heizkostenabrechnung (`heatingSystem`), deren Grund- und
+  // Verbrauchsanteil die Verordnung selbst festlegt.
+  return key === 'meter' || key === 'amounts' || key === 'external' || key === 'heatingSystem'
 }
 
 // Die Befunde eines Jahres. Eine Direktzuordnung (`direct`, etwa die Wartung der Gastherme einer
@@ -53,7 +55,15 @@ export type HeatingFindings = {
   shareOutside: { unitIds: string[]; itemIds: string[]; consumptionCents: number; totalCents: number }[]
 }
 
-export function heatingFindings(items: readonly HeatingItem[], units: readonly HeatingUnit[], covered: ReadonlySet<string>): HeatingFindings {
+// `consumptionShare` liefert die Grenzen aus dem Rechtsregister (`hkv.consumption-share`) und wird
+// nur aufgerufen, wenn es eine Gruppe zu prüfen gibt; so trägt die Abrechnung den Wert nur ein,
+// wenn sie ihn benutzt hat.
+export function heatingFindings(
+  items: readonly HeatingItem[],
+  units: readonly HeatingUnit[],
+  covered: ReadonlySet<string>,
+  consumptionShare: () => { readonly min: number; readonly max: number },
+): HeatingFindings {
   const heating = items.filter((c) => c.category === HEATING_CATEGORY && c.key !== 'direct')
   const takesPart = (c: HeatingItem, unitId: string) => !c.participantUnitIds || c.participantUnitIds.includes(unitId)
   const withoutConsumption = new Map<string, Set<string>>()
@@ -67,7 +77,7 @@ export function heatingFindings(items: readonly HeatingItem[], units: readonly H
     const own = heating.filter((c) => takesPart(c, u.id))
     const metered = own.filter((c) => c.key === 'meter')
     const other = own.filter((c) => !heatingByConsumption(c.key))
-    if (metered.length === 0 || other.length === 0 || own.some((c) => c.key === 'amounts' || c.key === 'external')) continue
+    if (metered.length === 0 || other.length === 0 || own.some((c) => c.key === 'amounts' || c.key === 'external' || c.key === 'heatingSystem')) continue
     const key = own.map((c) => c.id).join('\u0000')
     const g = groups.get(key) ?? {
       unitIds: [],
@@ -78,7 +88,14 @@ export function heatingFindings(items: readonly HeatingItem[], units: readonly H
     g.unitIds.push(u.id)
     groups.set(key, g)
   }
-  const shareOutside = [...groups.values()].filter((g) =>
-    g.totalCents > 0 && g.consumptionCents > 0 && (g.consumptionCents * 100 < g.totalCents * 50 || g.consumptionCents * 100 > g.totalCents * 70))
+  const candidates = [...groups.values()].filter((g) => g.totalCents > 0 && g.consumptionCents > 0)
+  if (candidates.length === 0) return { withoutConsumption, shareOutside: [] }
+  const { min, max } = consumptionShare()
+  const shareOutside = candidates.filter((g) => g.consumptionCents * 100 < g.totalCents * min || g.consumptionCents * 100 > g.totalCents * max)
   return { withoutConsumption, shareOutside }
 }
+
+// Die Töpfe der Schätzung (Heizung PR 13): `heat`/`water` in der Tabelle (Entwurf 5.6),
+// `heating`/`water` in der Rechnung (server/src/heating.ts).
+export const POT_OF_PART: Record<EstimatePart, SelfPot> = { heat: 'heating', water: 'water' }
+export const PART_OF_POT: Record<SelfPot, EstimatePart> = { heating: 'heat', water: 'water' }

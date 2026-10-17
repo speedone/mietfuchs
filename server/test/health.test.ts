@@ -6,7 +6,7 @@
 // Docker legt dann ein anonymes an, und das ist beschreibbar.
 //
 // Geprüft wird die Funktion, nicht die Route: index.ts startet den Server beim Import. Dass
-// die Route als JSON antwortet und nicht vom Frontend verdeckt wird, prüft api.test.ts.
+// die Route als JSON antwortet und nicht vom Frontend verdeckt wird, prüft api-start.test.ts.
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { buildTenantChange, defaultStart, EMPTY_NEW_TENANT, endProblem, meterProblem, parseMeterValue, type NewTenantForm } from './tenantChange'
+import { buildTenantChange, defaultStart, EMPTY_NEW_TENANT, endProblem, gapProblem, INTERIM_FEE_HINT, meterProblem, parseMeterValue, successorHeatingNote, type NewTenantForm } from './tenantChange'
 
 const meters = [{ id: 'm1', name: 'KW EG' }, { id: 'm2', name: 'Haupt' }]
 const input = (patch: Partial<Parameters<typeof buildTenantChange>[0]> = {}, tenant: Partial<NewTenantForm> = {}) => ({
@@ -66,5 +66,75 @@ describe('Mieterwechsel (#150)', () => {
     expect(defaultStart('2025-12-31')).toBe('2026-01-01')
     expect(endProblem('2025-06-30', { start: '2024-01-01' })).toBeNull()
     expect(endProblem('', { start: '2024-01-01' })).not.toBeNull()
+  })
+})
+
+describe('Nachmieter unter getrennter Heizkostenabrechnung (Durchsicht von #231, Important 2)', () => {
+  test('Die Heizvorauszahlung wird mit abgefragt und als eigene Staffel geschickt', () => {
+    const r = buildTenantChange({ ...input({}, { prepayment: '177,00', heatingPrepayment: '123,00' }), askHeating: true })
+    if ('error' in r) throw new Error(r.error)
+    expect([r.body.newTenancy?.prepayments, r.body.newTenancy?.heatingPrepayments]).toEqual([[{ from: '2025-07', monthlyCents: 17700 }], [{ from: '2025-07', monthlyCents: 12300 }]])
+    expect(buildTenantChange({ ...input({}, { prepayment: '177,00', heatingPrepayment: '' }), askHeating: true })).toEqual({ error: 'Bitte die Heizvorauszahlung des neuen Mieters angeben (0,00, wenn er keine zahlt).' })
+  })
+  test('Ohne getrennte Abrechnung bleibt der Rumpf wie bisher', () => {
+    const r = buildTenantChange(input({}, { prepayment: '300,00' }))
+    if ('error' in r) throw new Error(r.error)
+    expect(Object.hasOwn(r.body.newTenancy ?? {}, 'heatingPrepayments')).toBe(false)
+  })
+})
+
+describe('Mieterwechsel bei eigener Heizkostenabrechnung (Heizung PR 10)', () => {
+  const heat = { heatMeterIds: ['m1'], meterDates: {}, interimGap: null }
+  test('Ablesedatum je Zähler geht mit, leer heißt Auszugstag', () => {
+    const r = buildTenantChange({ ...input(), ...heat, meterDates: { m1: '2025-07-03' } })
+    expect('body' in r && r.body.readings).toEqual([{ meterId: 'm1', value: 123.5, date: '2025-07-03' }])
+  })
+  test('fehlt ein Stand eines Wärme- oder Warmwasserzählers, braucht es den Grund', () => {
+    const ohne = { ...input({ meterValues: { m1: '', m2: '' } }), ...heat }
+    expect(buildTenantChange(ohne)).toEqual({ error: expect.stringMatching(/nicht möglich.*nicht durchgeführt/) })
+    const mit = buildTenantChange({ ...ohne, interimGap: { status: 'impossible', reason: 'Mieter nicht erreichbar' } })
+    expect('body' in mit && mit.body.interimGap).toEqual({ status: 'impossible', reason: 'Mieter nicht erreichbar' })
+  })
+  test('ohne eigene Heizkostenabrechnung bleibt alles wie bisher', () => {
+    const r = buildTenantChange(input({ meterValues: { m1: '', m2: '' } }))
+    expect('body' in r && r.body).not.toHaveProperty('interimGap')
+  })
+  test('der Hinweis zu den Kosten der Zwischenablesung nennt das Urteil', () => {
+    expect(INTERIM_FEE_HINT).toMatch(/VIII ZR 19\/07/)
+  })
+})
+
+describe('Durchsicht von #239, I3', () => {
+  test('„nicht möglich“ nur mit Grund, geprüft vor „Weiter“', () => {
+    expect(gapProblem(['w'], {}, { status: 'impossible', reason: ' ' })).toBe('Bitte nennen Sie den Grund für die Teilung nach § 9b Abs. 3 HeizkostenV, also warum die Zwischenablesung nicht möglich war; er steht in der Abrechnung.')
+    expect(gapProblem(['w'], {}, { status: 'impossible', reason: 'nicht zugänglich' })).toBeNull()
+    expect(gapProblem(['w'], { w: '12' }, null)).toBeNull()
+    expect(gapProblem(['w'], {}, { status: '', reason: '' })).toMatch(/fehlt ein Zählerstand/)
+  })
+})
+
+// Heizung PR 19 (Durchsicht S-3): „Mieter heizt selbst“ ist meist eine Eigenschaft der Wohnung; der Nachmieter übernimmt
+// es samt der Art, sonst bekäme er wieder den Hinweis auf eine CO₂-Kürzung, die ihm nicht zusteht.
+test('Mieterwechsel: der Nachmieter heizt ebenfalls selbst, mit derselben Art; sonst bleibt es bei der Abrechnung', () => {
+  const selbst = buildTenantChange(input({ tenancy: { start: '2024-01-01', heatingModel: 'selfSupply', selfSupplyKind: 'central' } }))
+  if (!('body' in selbst)) throw new Error(JSON.stringify(selbst))
+  expect(selbst.body.newTenancy).toMatchObject({ heatingModel: 'selfSupply', selfSupplyKind: 'central' })
+  const ohneArt = buildTenantChange(input({ tenancy: { start: '2024-01-01', heatingModel: 'selfSupply' } }))
+  if (!('body' in ohneArt)) throw new Error(JSON.stringify(ohneArt))
+  expect(ohneArt.body.newTenancy).toMatchObject({ heatingModel: 'selfSupply' })
+  expect(ohneArt.body.newTenancy).not.toHaveProperty('selfSupplyKind')
+  const normal = buildTenantChange(input({ tenancy: { start: '2024-01-01', heatingModel: 'flatRate' } }))
+  if (!('body' in normal)) throw new Error(JSON.stringify(normal))
+  expect(normal.body.newTenancy).not.toHaveProperty('heatingModel')
+})
+
+// Nachprüfung N-3 zu PR 19: Die Wechselmaske sagt, dass der Nachmieter „Mieter heizt selbst“ übernimmt, statt es still
+// zu tun (buildTenantChange gibt es mit, Durchsicht S-3).
+describe('Nachmieter heizt ebenfalls selbst', () => {
+  test('nennt die Übernahme samt Art; ohne selfSupply nichts', () => {
+    expect(successorHeatingNote({ heatingModel: 'selfSupply', selfSupplyKind: 'central' })).toBe('Der neue Mieter heizt ebenfalls selbst („Mieter heizt selbst“: Eine zentrale Heizung im Haus, deren Brennstoff der Mieter bezieht). Ändern lässt sich das danach in den Stammdaten.')
+    expect(successorHeatingNote({ heatingModel: 'selfSupply' })).toBe('Der neue Mieter heizt ebenfalls selbst („Mieter heizt selbst“). Ändern lässt sich das danach in den Stammdaten.')
+    expect(successorHeatingNote({ heatingModel: 'settlement' })).toBeNull()
+    expect(successorHeatingNote({})).toBeNull()
   })
 })

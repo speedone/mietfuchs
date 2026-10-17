@@ -1,14 +1,15 @@
 // Umlageschlüssel gegenüber dem Vorjahr (#141): Weicht eine Position vom Schlüssel derselben
 // Kostenart im Vorjahr ab, sagt die Abrechnung es als Hinweis. Keine Zahl ändert sich.
 
+import { calendarPeriod, calendarYearPeriod, startYearOf } from '../../shared/period.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement } from '../src/calc.ts'
 import { snapshotFor, snapshotOf, type SnapshotCostItem, type SnapshotSource } from '../src/snapshot.ts'
 import { GLOSSARY } from '../../shared/glossary.ts'
 
-const item = (over: Partial<SnapshotCostItem> & Pick<SnapshotCostItem, 'id' | 'year' | 'key'>): SnapshotCostItem => ({
-  category: 'Müllabfuhr', description: `Müllabfuhr ${over.year}`, amountCents: 60000, ...over,
+const item = (over: Partial<SnapshotCostItem> & Pick<SnapshotCostItem, 'id' | 'period' | 'key'>): SnapshotCostItem => ({
+  category: 'Müllabfuhr', description: `Müllabfuhr ${startYearOf(over.period)}`, amountCents: 60000, ...over,
 })
 const source = (costItems: SnapshotCostItem[]): SnapshotSource => ({
   units: [
@@ -25,7 +26,7 @@ const changed = (costItems: SnapshotCostItem[], year = 2026) =>
   computeSettlement(snapshotOf(source(costItems), year)).notices.filter((n) => n.code === 'key.changed-from-previous-year')
 
 test('Schlüssel gewechselt: Hinweis mit Vorjahr, Lexikonbegriff und „Hier beheben“', () => {
-  const found = changed([item({ id: 'alt', year: 2025, key: 'persons' }), item({ id: 'neu', year: 2026, key: 'area' })])
+  const found = changed([item({ id: 'alt', period: calendarPeriod(2025), key: 'persons' }), item({ id: 'neu', period: calendarPeriod(2026), key: 'area' })])
   assert.equal(found.length, 1)
   const n = found[0]
   assert.equal(n?.level, 'hint')
@@ -39,39 +40,39 @@ test('Schlüssel gewechselt: Hinweis mit Vorjahr, Lexikonbegriff und „Hier beh
 
 test('Schlüssel gleich, mit anderen Teilnehmern: Hinweis nennt die Teilnehmer', () => {
   const found = changed([
-    item({ id: 'alt', year: 2025, key: 'area' }),
-    item({ id: 'neu', year: 2026, key: 'area', participantUnitIds: ['u1'] }),
+    item({ id: 'alt', period: calendarPeriod(2025), key: 'area' }),
+    item({ id: 'neu', period: calendarPeriod(2026), key: 'area', participantUnitIds: ['u1'] }),
   ])
   assert.equal(found.length, 1)
   assert.match(found[0]?.text ?? '', /anderen beteiligten Wohnungen/)
 })
 
 test('Kein Hinweis: gleicher Schlüssel, kein Vorjahr, nicht umlagefähig, oder Vorjahr uneinheitlich', () => {
-  assert.equal(changed([item({ id: 'alt', year: 2025, key: 'persons' }), item({ id: 'neu', year: 2026, key: 'persons' })]).length, 0)
-  assert.equal(changed([item({ id: 'neu', year: 2026, key: 'area' })]).length, 0)
+  assert.equal(changed([item({ id: 'alt', period: calendarPeriod(2025), key: 'persons' }), item({ id: 'neu', period: calendarPeriod(2026), key: 'persons' })]).length, 0)
+  assert.equal(changed([item({ id: 'neu', period: calendarPeriod(2026), key: 'area' })]).length, 0)
   // Zwei Jahre zurück zählt nicht.
-  assert.equal(changed([item({ id: 'alt', year: 2024, key: 'persons' }), item({ id: 'neu', year: 2026, key: 'area' })]).length, 0)
+  assert.equal(changed([item({ id: 'alt', period: calendarPeriod(2024), key: 'persons' }), item({ id: 'neu', period: calendarPeriod(2026), key: 'area' })]).length, 0)
   assert.equal(changed([
-    item({ id: 'alt', year: 2025, key: 'persons', category: 'Nicht umlagefähig' }),
-    item({ id: 'neu', year: 2026, key: 'area', category: 'Nicht umlagefähig' }),
+    item({ id: 'alt', period: calendarPeriod(2025), key: 'persons', category: 'Nicht umlagefähig' }),
+    item({ id: 'neu', period: calendarPeriod(2026), key: 'area', category: 'Nicht umlagefähig' }),
   ]).length, 0)
   // Entspricht die Position einer der Vorjahrespositionen, ist sie keine Änderung.
   assert.equal(changed([
-    item({ id: 'a', year: 2025, key: 'persons' }),
-    item({ id: 'b', year: 2025, key: 'area' }),
-    item({ id: 'neu', year: 2026, key: 'area' }),
+    item({ id: 'a', period: calendarPeriod(2025), key: 'persons' }),
+    item({ id: 'b', period: calendarPeriod(2025), key: 'area' }),
+    item({ id: 'neu', period: calendarPeriod(2026), key: 'area' }),
   ]).length, 0)
 })
 
 test('Keine Zahl ändert sich: dieselbe Abrechnung mit und ohne Vorjahr', () => {
-  const neu = item({ id: 'neu', year: 2026, key: 'area' })
-  const mit = computeSettlement(snapshotOf(source([item({ id: 'alt', year: 2025, key: 'persons' }), neu]), 2026))
+  const neu = item({ id: 'neu', period: calendarPeriod(2026), key: 'area' })
+  const mit = computeSettlement(snapshotOf(source([item({ id: 'alt', period: calendarPeriod(2025), key: 'persons' }), neu]), 2026))
   const ohne = computeSettlement(snapshotOf(source([neu]), 2026))
   assert.deepEqual(mit.statements, ohne.statements)
   assert.deepEqual(mit.landlord, ohne.landlord)
   assert.equal(mit.totalCostsCents, ohne.totalCostsCents)
   // Und ein handgebauter Schnappschuss ohne Vorjahr rechnet wie bisher, nur ohne Hinweis.
-  const { previousCostItems: _weg, ...ohneFeld } = snapshotOf(source([item({ id: 'alt', year: 2025, key: 'persons' }), neu]), 2026)
+  const { previousCostItems: _weg, ...ohneFeld } = snapshotOf(source([item({ id: 'alt', period: calendarPeriod(2025), key: 'persons' }), neu]), 2026)
   assert.deepEqual(computeSettlement(ohneFeld).statements, ohne.statements)
 })
 
@@ -91,23 +92,23 @@ test('Objekte: das Vorjahr eines anderen Objekts zählt nicht (#92)', () => {
     units: base.units.map((u) => ({ ...u, propertyId: 'a' })),
     tenancies: base.tenancies,
     costItems: [
-      { ...item({ id: 'b-alt', year: 2025, key: 'persons' }), propertyId: 'b' },
-      { ...item({ id: 'a-neu', year: 2026, key: 'area' }), propertyId: 'a' },
+      { ...item({ id: 'b-alt', period: calendarPeriod(2025), key: 'persons' }), propertyId: 'b' },
+      { ...item({ id: 'a-neu', period: calendarPeriod(2026), key: 'area' }), propertyId: 'a' },
     ],
     meters: [], readings: [], payments: [], closedSettlements: [],
   }
-  const notices = computeSettlement(snapshotFor(scoped, 'a', 2026)).notices
+  const notices = computeSettlement(snapshotFor(scoped, 'a', calendarYearPeriod(2026))).notices
   assert.equal(notices.filter((n) => n.code === 'key.changed-from-previous-year').length, 0)
   const sameHouse = { ...scoped, costItems: scoped.costItems.map((c) => ({ ...c, propertyId: 'a' })) }
-  assert.equal(computeSettlement(snapshotFor(sameHouse, 'a', 2026)).notices.filter((n) => n.code === 'key.changed-from-previous-year').length, 1)
+  assert.equal(computeSettlement(snapshotFor(sameHouse, 'a', calendarYearPeriod(2026))).notices.filter((n) => n.code === 'key.changed-from-previous-year').length, 1)
 })
 
 test('Durchsicht: Teilnehmer, die heute alle Wohnungen sind, gelten als alle (Wohnung inzwischen weg)', () => {
   // Im Vorjahr nur u1 und u2 von drei Wohnungen; die dritte gibt es nicht mehr. Der Vorschlag
   // speichert dann „alle“, und das ist derselbe Schlüssel.
   const found = changed([
-    item({ id: 'alt', year: 2025, key: 'area', participantUnitIds: ['u1', 'u2'] }),
-    item({ id: 'neu', year: 2026, key: 'area', participantUnitIds: null }),
+    item({ id: 'alt', period: calendarPeriod(2025), key: 'area', participantUnitIds: ['u1', 'u2'] }),
+    item({ id: 'neu', period: calendarPeriod(2026), key: 'area', participantUnitIds: null }),
   ])
   assert.equal(found.length, 0)
 })
@@ -115,33 +116,33 @@ test('Durchsicht: Teilnehmer, die heute alle Wohnungen sind, gelten als alle (Wo
 // ---------- Durchsicht (2) ----------
 
 test('Durchsicht: bei „Sonstige Betriebskosten“ zählt nur dieselbe Beschreibung (Hebeanlage → Dachrinne)', () => {
-  const hebe = item({ id: 'hebe', year: 2025, key: 'direct', directUnitId: 'u1', category: 'Sonstige Betriebskosten', description: 'Wartung Hebeanlage 2025' })
+  const hebe = item({ id: 'hebe', period: calendarPeriod(2025), key: 'direct', directUnitId: 'u1', category: 'Sonstige Betriebskosten', description: 'Wartung Hebeanlage 2025' })
   // Eine neue, andere Position derselben breiten Kostenart ist kein Wechsel des Schlüssels.
-  assert.equal(changed([hebe, item({ id: 'rinne', year: 2026, key: 'area', category: 'Sonstige Betriebskosten', description: 'Reinigung Dachrinne' })]).length, 0)
+  assert.equal(changed([hebe, item({ id: 'rinne', period: calendarPeriod(2026), key: 'area', category: 'Sonstige Betriebskosten', description: 'Reinigung Dachrinne' })]).length, 0)
   // Dieselbe Position mit neuer Jahreszahl schon.
-  const found = changed([hebe, item({ id: 'hebe-neu', year: 2026, key: 'area', category: 'Sonstige Betriebskosten', description: 'Wartung  hebeanlage 2026' })])
+  const found = changed([hebe, item({ id: 'hebe-neu', period: calendarPeriod(2026), key: 'area', category: 'Sonstige Betriebskosten', description: 'Wartung  hebeanlage 2026' })])
   assert.equal(found.length, 1)
   assert.deepEqual(found[0]?.subject, { kind: 'costItem', id: 'hebe-neu' })
 })
 
 test('Durchsicht: mehrere Positionen einer Kostenart im Vorjahr, verglichen wird mit der gleichnamigen', () => {
   const items = [
-    item({ id: 'w', year: 2025, key: 'persons', category: 'Wasser/Abwasser', description: 'Frischwasser' }),
-    item({ id: 'n', year: 2025, key: 'area', category: 'Wasser/Abwasser', description: 'Niederschlag' }),
+    item({ id: 'w', period: calendarPeriod(2025), key: 'persons', category: 'Wasser/Abwasser', description: 'Frischwasser' }),
+    item({ id: 'n', period: calendarPeriod(2025), key: 'area', category: 'Wasser/Abwasser', description: 'Niederschlag' }),
   ]
   // „Frischwasser“ jetzt nach Fläche: Wechsel, obwohl „Niederschlag“ im Vorjahr nach Fläche lief.
-  assert.equal(changed([...items, item({ id: 'w26', year: 2026, key: 'area', category: 'Wasser/Abwasser', description: 'Frischwasser' })]).length, 1)
+  assert.equal(changed([...items, item({ id: 'w26', period: calendarPeriod(2026), key: 'area', category: 'Wasser/Abwasser', description: 'Frischwasser' })]).length, 1)
 })
 
 test('Durchsicht (Recht): § 556a Abs. 3 nur ohne andere Vereinbarung und mit Rückfall bei unbilligem Maßstab', () => {
-  const text = changed([item({ id: 'alt', year: 2025, key: 'persons' }), item({ id: 'neu', year: 2026, key: 'area' })])[0]?.text ?? ''
+  const text = changed([item({ id: 'alt', period: calendarPeriod(2025), key: 'persons' }), item({ id: 'neu', period: calendarPeriod(2026), key: 'area' })])[0]?.text ?? ''
   assert.match(text, /nichts anderes vereinbart/)
   assert.match(text, /billigem Ermessen/)
 })
 
 test('Durchsicht (Recht): bei Heizung und Warmwasser gilt § 6 Abs. 4 HeizkostenV', () => {
   const heiz = (id: string, year: number, key: 'area' | 'meter') =>
-    item({ id, year, key, category: 'Heizung und Warmwasser', description: 'Heizung', ...(key === 'meter' ? { meterType: 'waerme' as const } : {}) })
+    item({ id, period: calendarPeriod(year), key, category: 'Heizung und Warmwasser', description: 'Heizung', ...(key === 'meter' ? { meterType: 'waerme' as const } : {}) })
   const text = changed([heiz('alt', 2025, 'area'), heiz('neu', 2026, 'meter')])[0]?.text ?? ''
   assert.match(text, /§ 6 Abs\. 4 HeizkostenV/)
   assert.match(text, /Beginn eines Abrechnungszeitraums/)

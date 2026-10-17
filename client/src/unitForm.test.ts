@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'vitest'
+import { calendarPeriod } from '../../shared/period.ts'
 import type { CostItem, MeterType, Tenancy, Unit } from './types'
 import { usageOf } from './types'
-import { EMPTY_UNIT_FORM, buildUnitBody, connectionSummary, connectionTypes, setConnected, unitDeleteMessage, unitToForm, zeroAreaUnits, missingAreaCheck, type UnitForm } from './unitForm'
+import { EMPTY_UNIT_FORM, buildUnitBody, connectionSummary, connectionTypes, setConnected, unitDeleteBlocked, unitDeleteMessage, unitToForm, zeroAreaUnits, missingAreaCheck, type UnitForm } from './unitForm'
 
 const form = (patch: Partial<UnitForm> = {}): UnitForm => ({
   ...EMPTY_UNIT_FORM, name: 'EG', areaM2: '80', ...patch,
@@ -148,10 +149,10 @@ describe('Cockpit: Wohnungen mit 0 m² (#135)', () => {
 // #142: Die Löschfrage nannte nur die Mietverhältnisse; mit der Wohnung gehen auch Zähler,
 // Ablesungen, Zahlungen und ihre Anteile an Kostenpositionen.
 describe('Löschfrage einer Wohnung', () => {
-  const none = { tenancies: 0, meters: 0, readings: 0, payments: 0, costItemLinks: 0, directCostItems: 0 }
+  const none = { tenancies: 0, meters: 0, readings: 0, payments: 0, costItemLinks: 0, directCostItems: 0, fuelDeliveries: 0 }
 
   test('nennt alles, was mitgelöscht wird, mit Anzahl', () => {
-    expect(unitDeleteMessage({ tenancies: 2, meters: 1, readings: 5, payments: 24, costItemLinks: 3, directCostItems: 0 })).toBe(
+    expect(unitDeleteMessage({ tenancies: 2, meters: 1, readings: 5, payments: 24, costItemLinks: 3, directCostItems: 0, fuelDeliveries: 0 })).toBe(
       'Mit der Wohnung werden gelöscht: 2 Mietverhältnisse, 1 Zähler, 5 Ablesungen, 24 Zahlungen und 3 Angaben an Kostenpositionen ' +
         '(vereinbarte Anteile, Teilnahmen, Einzelbeträge). Das lässt sich nicht rückgängig machen.',
     )
@@ -169,6 +170,16 @@ describe('Löschfrage einer Wohnung', () => {
       'An der Wohnung hängt nichts weiter. 2 direkt zugeordnete Kostenpositionen bleiben erhalten; ihren Betrag trägt danach der Vermieter. ' +
         'Das lässt sich nicht rückgängig machen.',
     )
+  })
+
+  test('Rechnungen einer Etagenheizung sperren das Löschen, und die Oberfläche sagt es vorher (Integrationsdurchsicht S1)', () => {
+    expect(unitDeleteBlocked({ ...none, fuelDeliveries: 2 })).toBe(
+      'An der Wohnung hängen 2 Rechnungen der Etagenheizung. Sie belegen Brennstoffkosten und CO₂-Aufteilung und bleiben deshalb; ' +
+        'die Wohnung lässt sich erst löschen, wenn Sie die Rechnungen auf der Seite Heizkosten unter „Lieferungen“ gelöscht haben.',
+    )
+    expect(unitDeleteBlocked({ ...none, fuelDeliveries: 1 })).toMatch(/^An der Wohnung hängt 1 Rechnung der Etagenheizung\. Sie belegt /)
+    expect(unitDeleteBlocked(none)).toBeNull()
+    expect(unitDeleteBlocked(null)).toBeNull()
   })
 
   test('ohne Zählung (Server nicht erreichbar) die vollständige Liste ohne Zahlen', () => {
@@ -208,6 +219,12 @@ describe('Anschlüsse einer Einheit', () => {
     expect(connectionSummary(['kaltwasser', 'waerme'])).toBe('ohne Wasser- und Wärmeanschluss')
     expect(connectionSummary(['sonstig'])).toBe('ohne Anschluss für Sonstiges')
   })
+
+  test('Warmwasser ist ein eigener Anschluss, Heizkostenverteiler sind keiner (Heizung PR 4)', () => {
+    const m = (type: MeterType, unitId: string | null = 'u1') => ({ type, unitId })
+    expect(connectionTypes([m('warmwasser'), m('kaltwasser'), m('hkv')], [])).toEqual(['kaltwasser', 'warmwasser'])
+    expect(connectionSummary(['warmwasser'])).toBe('ohne Warmwasseranschluss')
+  })
 })
 
 describe('Cockpit: fehlende Fläche oder leere Einheit mit 0 m² (Endprüfung rc.4)', () => {
@@ -239,7 +256,7 @@ describe('Cockpit: fehlende Fläche oder leere Einheit mit 0 m² (Endprüfung rc
     expect(missingAreaCheck([u('EG', { participates: false, selfUsed: true, selfPersons: undefined })], [], 2025).cta).toBe('Wohnfläche ergänzen')
   })
   test('mit einer Position nach Fläche: der Hinweis der Abrechnung wird angekündigt', () => {
-    const flaeche = (over: Partial<CostItem> = {}): CostItem => ({ id: 'c', propertyId: 'p', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 1000, key: 'area', ...over })
+    const flaeche = (over: Partial<CostItem> = {}): CostItem => ({ id: 'c', propertyId: 'p', period: calendarPeriod(2025), category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 1000, key: 'area', ...over })
     const satz = 'G hat 0 m² und im Jahr keine Bewohner. Ist G eine Wohnung, tragen Sie die Wohnfläche ein; eine Garage oder ein Stellplatz bleibt bei 0 m².'
     expect(missingAreaCheck([u('G')], [], 2025, [flaeche()]).detail).toBe(`${satz} Bei Positionen nach Wohnfläche weist die Abrechnung trotzdem darauf hin.`)
     // Nicht bei anderem Schlüssel, nicht umlagefähig oder ohne G als Teilnehmer

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { attentionDetail, attentionLevel, legalBasisLines, noticeClass, noticesNeedAttention, noticesOf, noticeTarget, NOTICE_LEVEL_LABELS } from './notices'
+import { attentionDetail, attentionLevel, attentionLines, legalBasisLines, noticeClass, noticesNeedAttention, noticesOf, noticeTarget, NOTICE_LEVEL_LABELS } from './notices'
 import type { Notice, NoticeSubject } from './types'
 
 const n = (over: Partial<Notice>): Notice => ({ code: 'x', level: 'warning', title: 'Titel', text: 'Text', ...over })
@@ -51,9 +51,33 @@ describe('Hinweise (#112)', () => {
     ] })).toEqual({
       head: 'Rechtsstand 30.09.2026',
       rules: ['Kabelfernsehen (§ 2 BetrKV), gilt bis 30.06.2024', 'Heizung (§ 2 HeizkostenV)'],
+      values: [],
+      valuesNote: 'Rechtswerte nicht gespeichert (vor 0.11.0)',
     })
     expect(legalBasisLines(undefined).head).toMatch(/nicht erfasst/)
     expect(legalBasisLines(undefined).rules).toEqual([])
+  })
+
+  test('Rechtsstand: die Rechtswerte, mit denen gerechnet wurde, je eine Zeile mit Fundstelle (Heizung PR 1)', () => {
+    const lines = legalBasisLines({ asOf: '2026-10-05', rules: [], values: [
+      { id: 'hkv.cut.not-by-consumption', title: 'Kürzung bei nicht verbrauchsabhängiger Abrechnung', norm: '§ 12 Abs. 1 Satz 1 HeizkostenV', cite: '§ 12 Abs. 1 Satz 1 HeizkostenV', value: 15, text: '15 %' },
+    ] })
+    expect(lines.values).toEqual(['Kürzung bei nicht verbrauchsabhängiger Abrechnung: 15 % (§ 12 Abs. 1 Satz 1 HeizkostenV)'])
+    expect(lines.valuesNote).toBeNull()
+    expect(legalBasisLines({ asOf: '2026-10-05', rules: [], values: [] }).valuesNote).toBeNull()
+  })
+
+  // Durchsicht von #221, I1: Ein Wert, der nur zum Teil oder gar nicht mehr gilt (die Kabelregel in
+  // 2025), nennt seine Gültigkeit, sonst läse er sich wie geltendes Recht des Jahres.
+  test('Rechtsstand: ein Rechtswert mit Gültigkeit nennt sie', () => {
+    const lines = legalBasisLines({ asOf: '2026-10-05', rules: [], values: [
+      { id: 'betrkv.tv-signal', title: 'Kabelfernsehen über die Nebenkosten', norm: '§ 2 BetrKV', cite: '§ 2 BetrKV', value: { newSystemsFrom: '2021-12-01' }, text: 'umlagefähig nur bei Anlagen, die vor dem 01.12.2021 errichtet wurden', validTo: '2024-06-30' },
+      { id: 'hkv.remote-reading.retrofit', title: 'Fernablesbarkeit älterer Geräte', norm: '§ 5 Abs. 3 HeizkostenV', cite: '§ 5 Abs. 3 HeizkostenV', value: { installedUpTo: '2021-12-01' }, text: 'Geräte mit Einbau bis 01.12.2021 fernablesbar', validFrom: '2027-01-01' },
+    ] })
+    expect(lines.values).toEqual([
+      'Kabelfernsehen über die Nebenkosten: umlagefähig nur bei Anlagen, die vor dem 01.12.2021 errichtet wurden (§ 2 BetrKV), gilt bis 30.06.2024',
+      'Fernablesbarkeit älterer Geräte: Geräte mit Einbau bis 01.12.2021 fernablesbar (§ 5 Abs. 3 HeizkostenV), gilt ab 01.01.2027',
+    ])
   })
 })
 
@@ -73,6 +97,41 @@ describe('Cockpit: verlangen die Hinweise etwas?', () => {
       n({ code: 'basis.vacancy-persons', level: 'hint' }), n({ code: 'basis.vacancy-no-area', level: 'hint' }),
     ] })).toBe(false)
     expect(noticesNeedAttention({ warnings: ['a', 'b'], notices: [n({ code: 'basis.vacancy-persons', level: 'hint' }), n({ code: 'meter.main-gap', level: 'hint' })] })).toBe(true)
+  })
+  test('Schätzung nach § 9a (Heizung PR 13): bestätigt nein; unbestätigt, über der Grenze und neben vollständiger Ablesung ja', () => {
+    expect(noticesNeedAttention({ warnings: ['a'], notices: [n({ code: 'heating.estimated', level: 'hint' })] })).toBe(false)
+    expect(noticesNeedAttention({ warnings: ['a'], notices: [n({ code: 'heating.estimate-unconfirmed', level: 'warning' })] })).toBe(true)
+    expect(noticesNeedAttention({ warnings: ['a'], notices: [n({ code: 'heating.estimate-over-25', level: 'hint' })] })).toBe(true)
+    // Durchsicht von #242, R-I7: bestätigt neben vollständiger Ablesung eine Auskunft; die übrigen Befunde verlangen etwas.
+    expect(noticesNeedAttention({ warnings: ['a'], notices: [n({ code: 'heating.estimate-complete', level: 'hint' })] })).toBe(false)
+    for (const code of ['heating.estimate-stale', 'heating.estimate-stale-unused', 'heating.estimate-no-device', 'heating.estimate-below-measured', 'heating.estimate-same-day']) {
+      expect(noticesNeedAttention({ warnings: ['a'], notices: [n({ code, level: 'warning' })] })).toBe(true)
+    }
+  })
+  // Folge-PR zu #252, F6: „Betriebsstrom fehlt“ trifft auch den rechtmäßigen Fall „eigener Zähler, Vermieter trägt“ und
+  // färbt nicht; „Strom zur Wärmeerzeugung im Allgemeinstrom“ lässt sich immer beheben und färbt gelb.
+  test('Betriebsstrom fehlt: nein; Strom der Wärmepumpe im Allgemeinstrom: ja (gelb)', () => {
+    expect(noticesNeedAttention({ warnings: ['a'], notices: [n({ code: 'heating.operating-power-missing', level: 'hint' })] })).toBe(false)
+    expect(attentionLevel({ warnings: ['a'], notices: [n({ code: 'heating.operating-power-missing', level: 'hint' })] })).toBe('gruen')
+    expect(attentionLevel({ warnings: ['a'], notices: [n({ code: 'heating.generation-power-missing', level: 'hint' })] })).toBe('gelb')
+  })
+  // Heizung PR 16 (Prüfung C-S8): Der Hinweis zur Umstellung auf Wärmelieferung erscheint jedes Jahr, solange ein Mieter
+  // von vor der Umstellung bleibt, und lässt sich nicht beheben; er färbt nicht.
+  test('Umstellung auf Wärmelieferung: färbt das Cockpit nicht', () => {
+    const c = { warnings: ['a'], notices: [n({ code: 'heating.contracting', level: 'hint' })] }
+    expect(noticesNeedAttention(c)).toBe(false)
+    expect(attentionLevel(c)).toBe('gruen')
+  })
+  // #266: Mit Angabe an der Anlage. Fehlt der Abzug, obwohl der Vermieter angibt, dass der Strom über die Rechnung des
+  // Hauses läuft, ist das der Fall aus BGH V ZR 166/15 und VIII ZR 27/07 (gelb). Fehlt nur die Rechnung des eigenen
+  // Stromvertrags, trägt der Vermieter eigenes Geld (färbt nicht).
+  test('Betriebsstrom mit Angabe: „Abzug fehlt“ gelb, „Rechnung fehlt“ färbt nicht', () => {
+    const ad = { warnings: ['a'], notices: [n({ code: 'heating.operating-power-deduction-missing', level: 'hint' })] }
+    expect(noticesNeedAttention(ad)).toBe(true)
+    expect(attentionLevel(ad)).toBe('gelb')
+    const ab = { warnings: ['a'], notices: [n({ code: 'heating.operating-power-bill-missing', level: 'hint' })] }
+    expect(noticesNeedAttention(ab)).toBe(false)
+    expect(attentionLevel(ab)).toBe('gruen')
   })
   test('Fernablesbarkeit ab 2027 (#110): nein, der Nutzer kann im Programm nichts beheben', () => {
     expect(noticesNeedAttention({ warnings: ['a'], notices: [n({ code: 'heating.remote-reading', level: 'hint' })] })).toBe(false)
@@ -127,4 +186,64 @@ describe('Cockpit: Text der Zeile „Hinweise der Berechnung“', () => {
   test('vor #112 abgeschlossen: alle Texte wie bisher', () => {
     expect(attentionDetail({ warnings: ['a', 'b'] })).toBe('a · b')
   })
+})
+
+test('Ein Rumpfzeitraum färbt die Ampel nicht (#208)', () => {
+  const s = { warnings: ['Rumpfzeitraum …'], notices: [n({ code: 'period.short', level: 'hint', title: 'Rumpfzeitraum', text: 'Rumpfzeitraum …' })] }
+  expect(noticesNeedAttention(s)).toBe(false)
+  expect(attentionLevel(s)).toBe('gruen')
+})
+
+test('Hinweis an der Heizanlage führt in die Stammdaten (Heizung PR 5)', () => {
+  expect(noticeTarget({ kind: 'heatingPlant', id: 'hp1' })).toEqual({ tab: 'stammdaten', label: 'Hier beheben → Stammdaten', focus: { kind: 'heatingPlant', id: 'hp1' } })
+})
+
+test('Heizanlage als Ziel: ohne Anlage zur Einrichtung, CO₂-Angaben auf der Seite Heizkosten (Heizung PR 6)', () => {
+  expect(noticeTarget({ kind: 'heatingPlant', id: '' })).toEqual({ tab: 'stammdaten', label: 'Heizung einrichten →', focus: { kind: 'heatingPlant', id: '' } })
+  // Mit Anlage bleibt das Ziel aus PR 5 (Zeitraum der Heizung in den Stammdaten).
+  expect(noticeTarget({ kind: 'heatingPlant', id: 'hp1' })?.tab).toBe('stammdaten')
+  expect(noticeTarget({ kind: 'heatingCosts', id: 'hp1' })).toEqual({ tab: 'heizkosten', label: 'Hier beheben → Heizkosten', focus: { kind: 'heatingCosts', id: 'hp1' } })
+})
+
+// Sichtprüfung S12/E54: Das Cockpit verkettete alle Hinweise zu einem Absatz von rund 25 Zeilen.
+describe('Cockpit: eine Zeile je Hinweis', () => {
+  test('Titel statt Text, gleiche Titel zusammengefasst, reine Auskünfte nicht', () => {
+    expect(attentionLines({ warnings: ['a', 'b', 'c', 'd'], notices: [
+      n({ code: 'meter.main-gap', title: 'Hauptzähler mit Lücke', text: 'langer Text a' }),
+      n({ code: 'meter.main-gap', title: 'Hauptzähler mit Lücke', text: 'langer Text b' }),
+      n({ code: 'tenancy.overlap', level: 'error', title: 'Mietverhältnisse überschneiden sich', text: 'c' }),
+      n({ code: 'heating.remote-reading', level: 'hint', title: 'Fernablesung', text: 'd' }),
+    ] })).toEqual(['Mietverhältnisse überschneiden sich', 'Hauptzähler mit Lücke (2×)'])
+  })
+  test('vor #112 abgeschlossen: der Text, eine Zeile je Hinweis', () => {
+    expect(attentionLines({ warnings: ['a', 'b'] })).toEqual(['a', 'b'])
+  })
+})
+
+test('Rechtsstand: ein eingetragener Wert nennt die Quelle des Vermieters (Heizung PR 17)', () => {
+  const lines = legalBasisLines({ asOf: '2026-10-05', rules: [], values: [{ id: 'co2.price', title: 'CO₂-Preis je Tonne (Plausibilität)', norm: '§ 4', cite: 'UBA', value: 64.2, text: '64,20 €/t', validFrom: '2027-01-01', validTo: '2027-12-31', overridden: { source: 'UBA', enteredAt: '2026-12-20' } }] })
+  expect(lines.values).toEqual(['CO₂-Preis je Tonne (Plausibilität): 64,20 €/t, von Ihnen eingetragen (Quelle: UBA), gilt ab 01.01.2027 bis 31.12.2027'])
+  const amtlich = legalBasisLines({ asOf: '2026-10-05', rules: [], values: [{ id: 'co2.price', title: 'CO₂-Preis je Tonne (Plausibilität)', norm: '§ 4', cite: '§ 4 Abs. 1 Nr. 1 CO2KostAufG', value: 55, text: '55,00 €/t', validFrom: '2025-01-01', validTo: '2025-12-31' }] })
+  expect(amtlich.values).toEqual(['CO₂-Preis je Tonne (Plausibilität): 55,00 €/t (§ 4 Abs. 1 Nr. 1 CO2KostAufG), gilt ab 01.01.2025 bis 31.12.2025'])
+})
+
+test('Heizung PR 19 (Durchsicht S-5): „Heizkosten bei einem Mieter, der selbst heizt“ färbt nicht, die Hinweise zur Erstattung schon', () => {
+  const info = { warnings: ['…'], notices: [n({ code: 'co2.self-supply-items', level: 'hint', title: 'Heizkosten bei einem Mieter, der selbst heizt', text: '…' })] }
+  expect(noticesNeedAttention(info)).toBe(false)
+  expect(attentionLevel(info)).toBe('gruen')
+  const due = { warnings: ['…'], notices: [n({ code: 'co2.refund-due', level: 'warning', title: 'CO₂-Erstattung fällig', text: '…' })] }
+  expect(attentionLevel(due)).toBe('gelb')
+})
+
+test('Heizung PR 19 (Durchsicht S-2): der Hinweis zum Betriebsstrom der Heizung des Mieters ist Auskunft wie Hinweis A und färbt nicht', () => {
+  const s = { warnings: ['…'], notices: [n({ code: 'heating.self-supply-operating-power', level: 'hint', title: 'Betriebsstrom der Heizung des Mieters im Allgemeinstrom?', text: '…' })] }
+  expect(noticesNeedAttention(s)).toBe(false)
+  expect(attentionLevel(s)).toBe('gruen')
+})
+
+// Vor 0.11.0: Hinweise, die nur Auskunft sind und sich nicht beheben lassen, färben die Ampel nicht.
+test.each(['heating.pipe-heat', 'heating.pre-capture'])('%s ist Auskunft und färbt nicht', (code) => {
+  const s = { warnings: ['…'], notices: [n({ code, level: 'hint', title: '…', text: '…' })] }
+  expect(noticesNeedAttention(s)).toBe(false)
+  expect(attentionLevel(s)).toBe('gruen')
 })

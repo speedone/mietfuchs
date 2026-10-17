@@ -1,11 +1,12 @@
 // Cockpit-Prüfungen (#142): Nicht umlagefähige Positionen werden nie verteilt; ihr gespeicherter
 // Schlüssel darf deshalb weder Ablesungen verlangen noch die Verteilbasis prüfen lassen.
+import { calendarPeriod } from '../../shared/period.ts'
 import { expect, test } from 'vitest'
 import type { CostItem } from './types'
 import { cockpitSubtitle, itemsDetail, meterTypesInUse, tenanciesDetail, usesUnitBasis } from './cockpitChecks'
 
 const item = (category: string, patch: Partial<CostItem>): CostItem => ({
-  id: category, propertyId: 'p', year: 2025, category, description: category, amountCents: 100, key: 'area', ...patch,
+  id: category, propertyId: 'p', period: calendarPeriod(2025), category, description: category, amountCents: 100, key: 'area', ...patch,
 })
 
 test('verbrauchsabhängige Umlage: nur umlagefähige Positionen mit Verbrauchsschlüssel zählen', () => {

@@ -10,6 +10,7 @@ import assert from 'node:assert/strict'
 import { CATEGORIES, NOT_ALLOCABLE as CLIENT_NOT_ALLOCABLE, matchCategory } from '../../client/src/types.ts'
 import { ANLAGE_V_GROUP, HEATING_CATEGORY, NOT_ALLOCABLE_CATEGORIES, RESERVE_CATEGORY, isNotAllocable, looksLikeReserveContribution } from '../src/calc.ts'
 import { EXTRACT_CATEGORIES } from '../src/extract.ts'
+import { GENERAL_POWER_CATEGORY } from '../../shared/operatingPower.ts'
 
 const sorted = (list: Iterable<string>) => [...list].sort()
 
@@ -48,4 +49,8 @@ test('die Erhaltungsrücklage ist eine eigene Kostenart und nicht umlagefähig, 
   for (const text of ['Entnahme aus der Instandhaltungsrücklage', 'Dachreparatur aus der Rücklage', 'Zuführung zur Rücklage', 'Instandhaltungsrücklage', 'Zuführung zur Rücklage aus dem Hausgeld']) {
     assert.equal(matchCategory(text) === RESERVE_CATEGORY, looksLikeReserveContribution(text), text)
   }
+})
+
+test('Betriebsstrom: die Kostenart des Abzugs steht in der Liste der Kostenarten (Heizung PR 15)', () => {
+  assert.ok(CATEGORIES.some((c) => c === GENERAL_POWER_CATEGORY))
 })

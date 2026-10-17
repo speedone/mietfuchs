@@ -52,7 +52,19 @@ const FIELD_NAMES: Record<string, string> = {
   date: 'Datum',
   start: 'Beginn',
   year: 'Jahr',
+  // Abrechnungszeitraum (#208)
+  period: 'Abrechnungszeitraum',
+  requested_period: 'gewählten Abrechnungszeitraum',
+  period_start_month: 'Beginnmonat der Abrechnungszeiträume',
+  from_month: 'Monat des Wechsels',
   category: 'Kostenart',
+  // Lieferungen (Heizung PR 7)
+  fixed: 'festen Preisbestandteil',
+  emissions: 'CO₂-Ausstoß',
+  co2: 'CO₂-Kosten',
+  energy: 'Energie',
+  quantity: 'Menge',
+  heating_value: 'Heizwert',
   key: 'Umlageschlüssel',
   type: 'Zählertyp',
   deposit_status: 'Stand der Kaution',
@@ -92,7 +104,9 @@ function uniqueMessage(details: string): string {
       'vorhandenen Eintrag oder wählen Sie einen anderen Stichtag.'
     )
   }
-  if (spalten.includes('year')) {
+  // Seit #208 sind abgeschlossene Abrechnungen und Jahreskorrekturen nach Zeitraum geschlüsselt;
+  // solange die Oberfläche nur Kalenderjahre kennt, ist der Zeitraum dort ein Jahr.
+  if (spalten.includes('year') || spalten.includes('period')) {
     return (
       'Für dieses Jahr ist bereits eine Abrechnung abgeschlossen. Es kann je Jahr nur eine ' +
       'geben. Heben Sie den Abschluss auf, wenn Sie ihn erneuern wollen.'
@@ -101,7 +115,115 @@ function uniqueMessage(details: string): string {
   return 'Diesen Datensatz gibt es schon. Bitte laden Sie die Seite neu.'
 }
 
+// Bedingungen, deren Endung allein den falschen Satz ergäbe (#208): `_complete` spräche von der
+// Gemeinschaftsabrechnung, `_valid` von einem Monat in der Form JJJJ-MM.
+const OWN_CHECK_MESSAGES: Readonly<Record<string, string>> = {
+  cost_items_service_complete: 'Zum Leistungszeitraum gehören Beginn und Ende. Bitte tragen Sie beide ein oder lassen Sie beide leer.',
+  cost_items_service_from_valid: 'Der Beginn des Leistungszeitraums ist kein Datum in der Form JJJJ-MM-TT. Bitte laden Sie die Seite neu und versuchen Sie es noch einmal.',
+  cost_items_service_to_valid: 'Das Ende des Leistungszeitraums ist kein Datum in der Form JJJJ-MM-TT. Bitte laden Sie die Seite neu und versuchen Sie es noch einmal.',
+  cost_items_service_order_valid: 'Der Leistungszeitraum endet vor seinem Beginn. Bitte prüfen Sie die beiden Daten.',
+  cost_items_tax_year_valid: 'Das Jahr der Zahlung liegt außerhalb dessen, was es geben kann. Bitte tragen Sie ein Jahr wie 2025 ein.',
+  cost_items_heating_part_category_valid: '„Brennstoff/Energie“ gibt es nur bei der Kostenart „Heizung und Warmwasser“.',
+  // Heizanlage (Heizung PR 4)
+  heating_plants_source_method_valid:
+    'Liefert die Gemeinschaft der Eigentümer die Heizkostenabrechnung, wird sie wie die eines Messdienstes übernommen. Bitte wählen Sie in der Einrichtung „Heizung“ dafür „Die Gemeinschaft (Hausverwaltung) rechnet ab“.',
+  meters_heating_role_plant_valid:
+    'Ein Zähler der Heizanlage braucht seine Rolle (Versorgung, Warmwasserspeicher oder Gesamtwärme), und nur ein Zähler der Anlage hat eine. Bitte wählen Sie beides oder keines.',
+  meters_heating_plant_unit_valid: 'Ein Zähler der Heizanlage hängt an keiner Wohnung. Bitte wählen Sie entweder die Anlage oder eine Wohnung.',
+  // Eichfrist (Heizung PR 21); repository.ts prüft vorher, die Bedingungen sind das Netz darunter.
+  meters_calibrated_until_valid: 'Das Eichjahr ist keine Jahreszahl. Bitte tragen Sie das Jahr vierstellig ein oder lassen Sie das Feld leer.',
+  meters_calibrated_until_hca_valid: 'Heizkostenverteiler sind keine eichpflichtigen Messgeräte; ein Eichjahr gibt es für sie nicht.',
+  // Eigene Heizperiode und getrennte Heizkostenabrechnung (Heizung PR 5)
+  heating_separate_spans_order_valid:
+    'Die getrennte Heizkostenabrechnung endet vor ihrem Beginn. Bitte laden Sie die Seite neu; gespeichert wurde nichts.',
+  heating_prepayment_overrides_provisional_complete:
+    'Eine vorläufige Korrektur der Heizvorauszahlung nennt den ersten und den letzten Monat, eine endgültige keinen. Bitte laden Sie die Seite neu; gespeichert wurde nichts.',
+  heating_prepayment_overrides_months_order_valid:
+    'Die Monate der Korrektur der Heizvorauszahlung enden vor ihrem Beginn. Bitte laden Sie die Seite neu; gespeichert wurde nichts.',
+  heating_periods_heat_pct_valid: 'Der Verbrauchsanteil der Heizkosten ist ein Anteil am Ganzen, also nicht negativ und nicht größer als das Ganze.',
+  heating_periods_closing_measured_on_valid: 'Der Tag der Peilung ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie ihn im Kalender.',
+  heating_periods_water_pct_valid: 'Der Verbrauchsanteil der Warmwasserkosten ist ein Anteil am Ganzen, also nicht negativ und nicht größer als das Ganze.',
+  // CO₂ beim Messdienst (Heizung PR 6)
+  co2_statements_service_complete:
+    'Zu den CO₂-Angaben des Messdienstes gehören die Summe der Kosten aller Nutzer, der CO₂-Anteil des Vermieters und die Zahl der Nutzeinheiten. Bitte tragen Sie alle drei ein.',
+  co2_statements_permille_valid: 'Der Anteil des Vermieters an den CO₂-Kosten ist ein Anteil am Ganzen, also nicht negativ und nicht größer als das Ganze.',
+  // Lieferungen (Heizung PR 7)
+  heating_plants_ets_district_valid: 'Die Angabe zur Wärme aus dem Emissionshandel gibt es nur bei Fernwärme.',
+  cost_items_fuel_delivery_category_valid: 'Eine Lieferung gehört nur zu einer Position der Kostenart „Heizung und Warmwasser“.',
+  // Betriebsstrom (Heizung PR 15).
+  cost_items_operating_power_included_valid: 'Betriebsstrom oder Strom zur Wärmeerzeugung, der auch im Allgemeinstrom steckt, gibt es nur bei der Kostenart „Heizung und Warmwasser“: Betriebsstrom beim Teil „Betrieb“ oder ohne Teil, Strom einer Wärmepumpe oder Stromheizung beim Teil „Brennstoff/Energie“.',
+  cost_items_operating_power_deduction_valid: 'Ein Abzug des Betriebsstroms gehört zur Kostenart „Beleuchtung/Allgemeinstrom“ und hat einen negativen Betrag.',
+  cost_items_operating_power_link_valid: 'Nur ein Abzug beim Allgemeinstrom zeigt auf eine Betriebsstrom-Position. Bitte laden Sie die Seite neu.',
+  cost_items_operating_power_basis_valid: 'Eine Grundlage der Schätzung gibt es nur bei Betriebsstrom oder seinem Abzug.',
+  // Durchsicht von #252, G-K3.
+  cost_items_operating_power_general_valid: 'Nur ein Abzug des Betriebsstroms zeigt auf eine Stromrechnung. Bitte laden Sie die Seite neu.',
+  cost_items_operating_power_included_positive: 'Betriebsstrom, der auch im Allgemeinstrom steckt, hat einen positiven Betrag; eine Gutschrift ist kein Betriebsstrom.',
+  cost_items_operating_power_source_complete: 'Ein Abzug des Betriebsstroms braucht die Stromrechnung, aus der er gerechnet wurde.',
+  // Eigene Heizkostenabrechnung (Heizung PR 10)
+  heating_plants_self_capture_complete: 'Für die eigene Heizkostenabrechnung braucht die Heizanlage die Angabe, womit der Verbrauch erfasst wird.',
+  heating_self_spans_from_valid: 'Der Beginn eines Zeitraums der eigenen Heizkostenabrechnung ist keine Heizperiode.',
+  heating_self_spans_until_valid: 'Das Ende eines Zeitraums der eigenen Heizkostenabrechnung ist keine Heizperiode.',
+  heating_self_spans_order_valid: 'Ein Zeitraum der eigenen Heizkostenabrechnung muss nach seinem Beginn enden.',
+  cost_items_heating_target_category_valid: 'Ein Ziel (Heizung, Warmwasser) gibt es nur bei der Kostenart „Heizung und Warmwasser“.',
+  cost_items_heating_system_complete: 'Nach der Heizkostenverordnung verteilt nur eine Position mit Heizanlage, Teil und Ziel. Bitte wählen Sie alle drei.',
+  interim_reading_gaps_date_valid: 'Das Datum der Grenze ist kein Datum in der Form JJJJ-MM-TT. Bitte laden Sie die Seite neu.',
+  // Pflichtangaben und Ausnahmen (Heizung PR 14)
+  heating_periods_info_reference_positive: 'Der Vergleichswert ist eine Zahl größer als 0 (kWh je m² Wohnfläche in der Heizperiode).',
+  heating_periods_info_reference_source_complete: 'Bitte nennen Sie die Quelle des Vergleichswerts, etwa die Vergleichsdaten Ihres Ablesedienstes. Ein Durchschnitt aus Ihrem eigenen Haus ist kein zulässiger Vergleich.',
+  heating_periods_climate_factor_positive: 'Der Klimafaktor ist eine Zahl größer als 0.',
+  heating_periods_climate_factor_source_complete: 'Bitte nennen Sie die Quelle der Klimafaktoren, etwa „Deutscher Wetterdienst, Klimafaktoren“ mit Postleitzahl und Zeitraum.',
+  heating_periods_exemption_scope_valid: 'Ob die Ausnahme auch das Warmwasser betrifft, fragt Mietfuchs nur bei einer Ausnahme nach § 11 HeizkostenV. Bitte laden Sie die Seite neu.',
+  heating_periods_exemption_billing_agreed_valid: 'Die vereinbarte Abrechnung nach § 2 Abs. 7 CO2KostAufG gibt es nur bei einer Ausnahme nach § 11 HeizkostenV. Bitte laden Sie die Seite neu.',
+  // Schätzung nach § 9a (Heizung PR 13)
+  heating_estimates_reason_complete: 'Zu einer Schätzung nach § 9a HeizkostenV gehört eine Begründung. Bitte nennen Sie, warum der Verbrauch nicht erfasst werden konnte.',
+  fuel_deliveries_invoice_complete: 'Zum Rechnungszeitraum einer Lieferung gehören Beginn und Ende. Bitte tragen Sie beide ein.',
+  fuel_deliveries_invoice_from_valid: 'Der Beginn des Rechnungszeitraums ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie es im Kalender.',
+  fuel_deliveries_invoice_to_valid: 'Das Ende des Rechnungszeitraums ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie es im Kalender.',
+  fuel_deliveries_invoice_date_valid: 'Das Rechnungsdatum ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie es im Kalender.',
+  fuel_deliveries_delivered_at_valid: 'Das Lieferdatum ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie es im Kalender.',
+  fuel_deliveries_invoice_order_valid: 'Der Rechnungszeitraum der Lieferung endet vor seinem Beginn. Bitte prüfen Sie die beiden Daten.',
+  fuel_deliveries_share_valid: 'Der eingetragene Anteil einer Lieferung liegt zwischen 0 und 1000 ‰.',
+  fuel_delivery_parts_from_valid: 'Der Beginn einer Teilmenge ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie es im Kalender.',
+  fuel_delivery_parts_to_valid: 'Das Ende einer Teilmenge ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie es im Kalender.',
+  fuel_delivery_parts_order_valid: 'Eine Teilmenge endet vor ihrem Beginn. Bitte prüfen Sie die beiden Daten.',
+  // §§ 5a, 5b, 5d CO2KostAufG (Heizung PR 18); die Prüfungen in db/heating.ts und repository.ts fangen das vorher ab.
+  heating_plants_gmodg_energy_valid: '§ 43 Abs. 1 GModG betrifft nur eine Gas-, Öl- oder Flüssiggasheizung. Bei anderen Heizungen lassen Sie den Tag des Einbaus leer.',
+  heating_plants_gmodg_date_valid: 'Der Tag des Einbaus ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie ihn im Kalender.',
+  heating_plants_first_use_date_valid: 'Der Tag, an dem das neue Gebäude erstmals genutzt wurde, ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie ihn im Kalender.',
+  heating_plants_gmodg_facts_valid: 'Notfalleinbau und Neubau gibt es nur bei einer Heizung nach § 43 Abs. 1 GModG mit Tag des Einbaus. Bitte tragen Sie zuerst den Tag des Einbaus ein.',
+  heating_plants_prior_duty_valid: 'Die Frage nach der ausgefallenen Heizung gibt es nur bei einem Einbau nach irreparablem Ausfall. Bitte laden Sie die Seite neu.',
+  heating_plants_application_valid: 'Die Frage nach dem Bauantrag gibt es nur bei einem Neubau. Bitte laden Sie die Seite neu.',
+  properties_tight_market_dates_valid: 'Die Geltung der Verordnung zum angespannten Wohnungsmarkt gibt es nur bei „ja“. Bitte laden Sie die Seite neu.',
+  properties_tight_market_from_valid: 'Der Beginn der Verordnung ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie ihn im Kalender.',
+  properties_tight_market_to_valid: 'Das Ende der Verordnung ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie es im Kalender.',
+  properties_tight_market_order_valid: 'Der Beginn der Verordnung liegt nach dem Ende. Bitte prüfen Sie beide Tage.',
+  tenancies_half_split_notice_valid: 'Der Tag der Mitteilung nach § 5d Abs. 4 CO2KostAufG ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie ihn im Kalender.',
+  // Rechtswerte des Vermieters (Heizung PR 17); die Route prüft vorher, die Bedingungen sind das Netz darunter.
+  law_overrides_valid_from_valid: 'Ein eingetragener Rechtswert gilt immer ab dem 1. Januar eines Jahres. Bitte laden Sie die Seite neu.',
+  law_overrides_source_complete: 'Zu einem eingetragenen Rechtswert gehört die Quelle, etwa „UBA, Bekanntmachung vom …“.',
+  law_overrides_value_is_json: 'Der eingetragene Rechtswert ließ sich nicht speichern. Das ist ein Fehler in Mietfuchs und keiner in Ihren Daten. Bitte melden Sie ihn.',
+  // Monatliche Verbrauchsinformation (Heizung PR 22); db/monthlyInfo.ts prüft vorher.
+  heating_monthly_info_month_valid: 'Der Monat der Verbrauchsinformation ist kein Monat in der Form JJJJ-MM. Bitte laden Sie die Seite neu.',
+  heating_monthly_info_reference_positive: 'Der Vergleichswert ist eine Zahl größer als 0 (kWh je m² Wohnfläche im Monat).',
+  heating_monthly_info_reference_source_complete: 'Bitte nennen Sie die Quelle des Vergleichswerts, etwa die Vergleichsdaten Ihres Ablesedienstes. Ein Durchschnitt aus Ihrem eigenen Haus ist kein zulässiger Vergleich.',
+  heating_monthly_info_sent_on_valid: 'Der Tag der Mitteilung ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie ihn im Kalender.',
+  // CO₂-Erstattung an Mieter, die selbst heizen (Heizung PR 19); db/co2Refunds.ts prüft vorher.
+  tenancies_self_supply_kind_valid: 'Welche Heizung der Mieter selbst betreibt, gibt es nur bei „Mieter heizt selbst“. Bitte laden Sie die Seite neu.',
+  co2_refunds_settled_or_paid_valid: 'Eine CO₂-Erstattung wird entweder in einer Abrechnung verrechnet oder ausgezahlt, nicht beides.',
+  co2_refunds_billed_complete: 'Zum Zeitraum des Lieferanten gehören Beginn und Ende. Bitte tragen Sie beide ein oder lassen Sie beide leer.',
+  co2_refunds_billed_order_valid: 'Der Zeitraum des Lieferanten endet vor seinem Beginn. Bitte prüfen Sie die beiden Daten.',
+  co2_refunds_metered_valid: 'Eine getrennte Messung des Wärmeverbrauchs gibt es nur bei gewerblicher Nutzung des Brennstoffs.',
+  co2_refunds_billed_at_valid: 'Der Tag der Abrechnung des Lieferanten ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie ihn im Kalender.',
+  co2_refunds_claimed_at_valid: 'Der Tag der Anzeige des Mieters ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie ihn im Kalender.',
+  co2_refunds_paid_out_valid: 'Der Tag der Auszahlung ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie ihn im Kalender.',
+  co2_refunds_billed_from_valid: 'Der Beginn des Zeitraums des Lieferanten ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie ihn im Kalender.',
+  co2_refunds_billed_to_valid: 'Das Ende des Zeitraums des Lieferanten ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie es im Kalender.',
+  co2_refunds_half_split_valid: 'Der Tag, ab dem § 5a CO2KostAufG gilt, ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie ihn im Kalender.',
+}
+
 function checkMessage(name: string): string {
+  const own = OWN_CHECK_MESSAGES[name]
+  if (own !== undefined) return own
   if (name.endsWith('_not_negative')) {
     return `Für ${fieldOfConstraint(name, '_not_negative')} ist ein negativer Wert angekommen. Das ergibt hier keinen Sinn; bitte tragen Sie null oder mehr ein.`
   }
@@ -129,6 +251,18 @@ function checkMessage(name: string): string {
       'unvollständig ist. Das ist ein Fehler in Mietfuchs und keiner in Ihren Daten; an der ' +
       'gespeicherten Abrechnung hat sich nichts geändert. Bitte melden Sie ihn.'
     )
+  }
+  // Zwei Endungen aus #208. `_valid`: ein Wert mit fester Form, hier der Zeitraumschlüssel
+  // 'JJJJ-MM' oder ein Monat von 1 bis 12. `_with_property`: ein Wert, der nur an einem Objekt
+  // bestimmt ist.
+  if (name.endsWith('_valid')) {
+    const feld = fieldOfConstraint(name, '_valid')
+    return name.endsWith('_period_start_month_valid')
+      ? `Für den ${feld} ist nur ein Monat von 1 bis 12 zulässig.`
+      : `Für ${feld} ist ein Wert angekommen, der kein Monat in der Form JJJJ-MM ist (etwa 2025-05). Bitte laden Sie die Seite neu und versuchen Sie es noch einmal.`
+  }
+  if (name.endsWith('_with_property')) {
+    return `Einen ${fieldOfConstraint(name, '_with_property')} gibt es nur zusammen mit einem Objekt, denn jedes Objekt hat seine eigenen Zeiträume. Bitte ordnen Sie den Beleg zuerst einem Objekt zu.`
   }
   if (name === 'settings_single_row') {
     // Die einzige Bedingung ohne Endung, und sie ist eine echte Ausnahme: Sie beschreibt kein

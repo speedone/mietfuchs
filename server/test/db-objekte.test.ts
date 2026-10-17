@@ -18,6 +18,7 @@ import { readStock as readStockAtBaseline } from '../src/legacy/read.ts'
 import { writeStock } from '../src/legacy/write.ts'
 import { snapshotFor, snapshotOf } from '../src/snapshot.ts'
 import { loadFixtures } from '../testing/fixtures.ts'
+import { calendarYearPeriod } from '../../shared/period.ts'
 
 const tempDir = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-objekte-'))
 
@@ -127,10 +128,10 @@ test('Objekt: dieselbe Jahreszahl darf je Objekt einmal abgeschlossen sein', asy
     const connection = await databaseAtBaseline(path.join(dir, 'db.sqlite'))
     applyMigrations(connection, await loadMigrations())
     connection.exec(`INSERT INTO properties (id, name, kind, address) VALUES ('objekt-2', 'Gartenweg 3', 'mfh', '')`)
-    connection.exec(`INSERT INTO closed_settlements (id, property_id, year, closed_at, settlement)
-      VALUES ('a-2', 'objekt-2', 2024, '2025-03-01T00:00:00Z', '{}')`)
-    assert.throws(() => connection.exec(`INSERT INTO closed_settlements (id, property_id, year, closed_at, settlement)
-      VALUES ('a-3', 'objekt-2', 2024, '2025-03-01T00:00:00Z', '{}')`), /UNIQUE/)
+    connection.exec(`INSERT INTO closed_settlements (id, property_id, period, closed_at, settlement)
+      VALUES ('a-2', 'objekt-2', '2024-01', '2025-03-01T00:00:00Z', '{}')`)
+    assert.throws(() => connection.exec(`INSERT INTO closed_settlements (id, property_id, period, closed_at, settlement)
+      VALUES ('a-3', 'objekt-2', '2024-01', '2025-03-01T00:00:00Z', '{}')`), /UNIQUE/)
     connection.close()
   } finally {
     fs.rmSync(dir, { recursive: true, force: true })
@@ -257,7 +258,7 @@ for (const fx of loadFixtures()) {
       applyMigrations(connection, migrations)
       const nachher = await readStock(connection.db)
       for (const year of [fx.year - 1, fx.year, fx.year + 1]) {
-        assert.deepEqual(results(snapshotFor(nachher, 'objekt-1', year)), results(snapshotOf(vorher, year)), `Jahr ${year}`)
+        assert.deepEqual(results(snapshotFor(nachher, 'objekt-1', calendarYearPeriod(year))), results(snapshotOf(vorher, year)), `Jahr ${year}`)
       }
       connection.close()
     } finally {

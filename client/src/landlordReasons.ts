@@ -16,6 +16,14 @@ const LABELS: Record<LandlordReason, string> = {
   amountsRest: 'Rest nach Einzelbeträgen',
   customRest: 'nicht vereinbarter Anteil',
   mainMeterRest: 'Rest des Hauptzählers',
+  co2Share: 'CO₂-Anteil des Vermieters',
+  fuelCarry: 'Brennstoff einer anderen Heizperiode (Abgrenzung)',
+  fuelClosedPeriod: 'Brennstoff einer abgeschlossenen Heizperiode',
+  fuelEstimateDiff: 'Abweichung von der Schätzung',
+  stockRemaining: 'Restbestand im Vorrat nach einem Kesseltausch (gehört Ihnen)',
+  gmodgShare: 'Netzentgelte und Biobrennstoff (§ 5a CO2KostAufG)',
+  // Heizung PR 19: die Gegenzeile zur Gutschrift beim Mieter, der selbst heizt.
+  co2Refund: 'CO₂-Erstattung an den Mieter (§ 6 Abs. 2 CO2KostAufG)',
   rounding: 'Rundungsrest',
 }
 

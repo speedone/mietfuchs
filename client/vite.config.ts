@@ -26,6 +26,8 @@ export default defineConfig({
     // gebraucht, die es per `@vitest-environment jsdom` selbst anfordern.
     environment: 'node',
     include: ['src/**/*.test.{ts,tsx}'],
+    // Wartezeit von findBy und waitFor heraufsetzen, siehe dort.
+    setupFiles: ['src/vitestSetup.ts'],
     // Ganzseiten-Tests mit jsdom brauchen unter Last (paralleler Testlauf, voller Rechner) mehr
     // als die voreingestellten 5 Sekunden; gemessen scheiterten so intakeReading, propertyCreate
     // und propertySwitch, ohne dass etwas falsch war. Ein Test, der wirklich hängt, fällt auch nach

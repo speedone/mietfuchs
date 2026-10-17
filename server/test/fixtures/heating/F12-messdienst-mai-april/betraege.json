@@ -1,0 +1,6 @@
+{
+  "quelle": "Messdienst-Komplettabrechnung 01.05.2025–30.04.2026, anonymisiert, Einzelbeträge Heizung + Warmwasser je Nutzer. Echt ist nur Nutzer 1 (W1); Nutzer 2 bis 4 sind synthetisch und stimmig ergänzt (siehe README).",
+  "einzelbetraege": [31059, 118930, 139745, 137917],
+  "synthetisch": [false, true, true, true],
+  "kuerzungen": [932, 3568, 4192, 4138]
+}

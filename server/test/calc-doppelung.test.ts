@@ -3,14 +3,15 @@
 // als Übernahme aus dem Vorjahr mit Schätzbetrag und einmal aus dem Beleg. Die Abrechnung sagt es
 // als Hinweis; verteilt wird wie erfasst, keine Zahl ändert sich.
 
+import { calendarPeriod, startYearOf } from '../../shared/period.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement, NOTICE_KINDS } from '../src/calc.ts'
 import { snapshotOf, type SnapshotCostItem, type SnapshotSource } from '../src/snapshot.ts'
 import { GLOSSARY } from '../../shared/glossary.ts'
 
-const item = (over: Partial<SnapshotCostItem> & Pick<SnapshotCostItem, 'id' | 'year'>): SnapshotCostItem => ({
-  category: 'Grundsteuer', description: `Grundsteuer ${over.year}`, amountCents: 60000, key: 'area', ...over,
+const item = (over: Partial<SnapshotCostItem> & Pick<SnapshotCostItem, 'id' | 'period'>): SnapshotCostItem => ({
+  category: 'Grundsteuer', description: `Grundsteuer ${startYearOf(over.period)}`, amountCents: 60000, key: 'area', ...over,
 })
 const source = (costItems: SnapshotCostItem[]): SnapshotSource => ({
   units: [
@@ -28,9 +29,9 @@ const dupes = (costItems: SnapshotCostItem[]) => settle(costItems).notices.filte
 
 test('Übernommen und dann aus dem Beleg erfasst: Hinweis mit beiden Positionen und Beträgen, „Hier beheben“ an der ohne Beleg', () => {
   const found = dupes([
-    item({ id: 'vj', year: 2025 }),
-    item({ id: 'schaetzung', year: 2026, amountCents: 61000 }),
-    item({ id: 'echt', year: 2026, description: 'Abgabenbescheid Stadt', amountCents: 61240, vendor: 'Stadt', invoiceFile: 'gs.pdf' }),
+    item({ id: 'vj', period: calendarPeriod(2025) }),
+    item({ id: 'schaetzung', period: calendarPeriod(2026), amountCents: 61000 }),
+    item({ id: 'echt', period: calendarPeriod(2026), description: 'Abgabenbescheid Stadt', amountCents: 61240, vendor: 'Stadt', invoiceFile: 'gs.pdf' }),
   ])
   assert.equal(found.length, 1)
   const n = found[0]
@@ -45,23 +46,23 @@ test('Übernommen und dann aus dem Beleg erfasst: Hinweis mit beiden Positionen 
 
 test('Kein Hinweis: beide mit Beleg, Gliederung wie im Vorjahr, breite Kostenart mit verschiedenen Rechnungen', () => {
   assert.equal(dupes([
-    item({ id: 'a', year: 2026, invoiceFile: 'a.pdf' }),
-    item({ id: 'b', year: 2026, description: 'Nachzahlung', invoiceFile: 'b.pdf' }),
+    item({ id: 'a', period: calendarPeriod(2026), invoiceFile: 'a.pdf' }),
+    item({ id: 'b', period: calendarPeriod(2026), description: 'Nachzahlung', invoiceFile: 'b.pdf' }),
   ]).length, 0)
   assert.equal(dupes([
-    item({ id: 'r1', year: 2025, category: 'Müllabfuhr', description: 'Restmüll 2025' }),
-    item({ id: 'b1', year: 2025, category: 'Müllabfuhr', description: 'Biomüll 2025' }),
-    item({ id: 'r2', year: 2026, category: 'Müllabfuhr', description: 'Restmüll 2026' }),
-    item({ id: 'b2', year: 2026, category: 'Müllabfuhr', description: 'Biomüll 2026' }),
+    item({ id: 'r1', period: calendarPeriod(2025), category: 'Müllabfuhr', description: 'Restmüll 2025' }),
+    item({ id: 'b1', period: calendarPeriod(2025), category: 'Müllabfuhr', description: 'Biomüll 2025' }),
+    item({ id: 'r2', period: calendarPeriod(2026), category: 'Müllabfuhr', description: 'Restmüll 2026' }),
+    item({ id: 'b2', period: calendarPeriod(2026), category: 'Müllabfuhr', description: 'Biomüll 2026' }),
   ]).length, 0)
   assert.equal(dupes([
-    item({ id: 's1', year: 2026, category: 'Sonstige Betriebskosten', description: 'Wartung Hebeanlage' }),
-    item({ id: 's2', year: 2026, category: 'Sonstige Betriebskosten', description: 'Reinigung Dachrinne' }),
+    item({ id: 's1', period: calendarPeriod(2026), category: 'Sonstige Betriebskosten', description: 'Wartung Hebeanlage' }),
+    item({ id: 's2', period: calendarPeriod(2026), category: 'Sonstige Betriebskosten', description: 'Reinigung Dachrinne' }),
   ]).length, 0)
 })
 
 test('Keine Zahl ändert sich: dieselbe Verteilung mit und ohne den Hinweis', () => {
-  const items = [item({ id: 'schaetzung', year: 2026, amountCents: 61000 }), item({ id: 'echt', year: 2026, description: 'Bescheid', amountCents: 61240, invoiceFile: 'gs.pdf' })]
+  const items = [item({ id: 'schaetzung', period: calendarPeriod(2026), amountCents: 61000 }), item({ id: 'echt', period: calendarPeriod(2026), description: 'Bescheid', amountCents: 61240, invoiceFile: 'gs.pdf' })]
   const withHint = settle(items)
   const without = settle(items.map((i) => ({ ...i, invoiceFile: 'x.pdf' })))
   assert.equal(withHint.notices.some((n) => n.code === 'cost.possible-duplicate'), true)
@@ -72,9 +73,9 @@ test('Keine Zahl ändert sich: dieselbe Verteilung mit und ohne den Hinweis', ()
 
 test('L2: bei drei Positionen heißt es nicht „beide“', () => {
   const found = dupes([
-    item({ id: 'a', year: 2026, amountCents: 61000 }),
-    item({ id: 'b', year: 2026, description: 'Bescheid', amountCents: 61240, invoiceFile: 'gs.pdf' }),
-    item({ id: 'c', year: 2026, description: 'Nachtrag', amountCents: 1000 }),
+    item({ id: 'a', period: calendarPeriod(2026), amountCents: 61000 }),
+    item({ id: 'b', period: calendarPeriod(2026), description: 'Bescheid', amountCents: 61240, invoiceFile: 'gs.pdf' }),
+    item({ id: 'c', period: calendarPeriod(2026), description: 'Nachtrag', amountCents: 1000 }),
   ])
   assert.equal(found.length, 1)
   const text = found[0]?.text ?? ''
@@ -86,8 +87,8 @@ test('M1 Integrationsdurchsicht: der Rat führt nicht zum bloßen Zuordnen, das 
   // Wer der Schätzung nur den Beleg zuordnet, lässt den Hinweis verschwinden (er verlangt eine
   // Position ohne Beleg), die Summe bleibt aber doppelt. Der Rat muss deshalb zum Löschen führen.
   const items = [
-    item({ id: 'schaetzung', year: 2026, amountCents: 150000 }),
-    item({ id: 'echt', year: 2026, description: 'Bescheid', amountCents: 150000, invoiceFile: 'gs.pdf' }),
+    item({ id: 'schaetzung', period: calendarPeriod(2026), amountCents: 150000 }),
+    item({ id: 'echt', period: calendarPeriod(2026), description: 'Bescheid', amountCents: 150000, invoiceFile: 'gs.pdf' }),
   ]
   const text = dupes(items)[0]?.text ?? ''
   assert.doesNotMatch(text, /Beleg zuordnen/)

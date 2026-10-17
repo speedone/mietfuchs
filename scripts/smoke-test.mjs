@@ -392,6 +392,107 @@ async function uploadsAndSettlement() {
   return unit
 }
 
+// Heizanlage (Heizung PR 4): anlegen; eine neue Heizposition gehört ihr von selbst, und die
+// Abrechnung bleibt dieselbe.
+async function heatingPlant() {
+  const vorher = (await request('/api/settlement/2025')).body
+  const angelegt = await request('/api/heating-plants', json('POST', { energy: 'gas', method: 'service', assignItemIds: [] }))
+  assert(angelegt.status === 201 && angelegt.body.plant?.energy === 'gas', 'Heizanlage anlegen', angelegt.body)
+  const posten = await request('/api/costItems', json('POST', {
+    period: '2025-01', category: 'Heizung und Warmwasser', description: 'Messdienst', amountCents: 0, key: 'area',
+  }))
+  assert(posten.body.heatingPlantId === angelegt.body.plant.id, 'eine neue Heizposition gehört zur Anlage', posten.body)
+  await request(`/api/costItems/${posten.body.id}`, { method: 'DELETE' })
+  const nachher = (await request('/api/settlement/2025')).body
+  assert(JSON.stringify(nachher.statements) === JSON.stringify(vorher.statements) && nachher.totalCostsCents === vorher.totalCostsCents,
+    'die Abrechnung bleibt mit Heizanlage dieselbe', { vorher: vorher.totalCostsCents, nachher: nachher.totalCostsCents })
+}
+
+// CO₂ beim Messdienst (Heizung PR 6): ohne Angaben nennt die Abrechnung die Kürzung, mit Vorwegabzug
+// bucht sie den CO₂-Anteil des Vermieters. Das Objekt der Prüfung rechnet im Kalenderjahr. Danach
+// werden Angaben und Position wieder entfernt, damit die Prüfung der eigenen Heizperiode (PR 5)
+// denselben Bestand vorfindet wie vorher.
+async function co2Statement() {
+  const [anlage] = (await request('/api/heating-plants')).body
+  const [mieter] = (await request('/api/tenancies')).body
+  const posten = await request('/api/costItems', json('POST', {
+    period: '2025-01', category: 'Heizung und Warmwasser', description: 'Messdienst', amountCents: 100500, key: 'amounts', tenancyAmounts: { [mieter.id]: 100000 },
+  }))
+  assert(posten.body.heatingPlantId === anlage?.id, 'die Messdienstposition gehört zur Heizanlage', posten.body)
+  const ohne = (await request('/api/settlement/2025')).body
+  assert(ohne.notices?.some((n) => n.code === 'co2.missing'), 'ohne CO₂-Angaben nennt die Abrechnung die Kürzung', ohne.notices)
+  const gespeichert = await request(`/api/heating-plants/${anlage.id}/periods/2025-01/co2`, json('PUT', {
+    method: 'serviceDeducted', serviceUsersTotalCents: 100000, serviceLandlordCents: 500, serviceUnitsCount: 1,
+  }))
+  assert(gespeichert.status === 200 && gespeichert.body.method === 'serviceDeducted', 'CO₂-Angaben speichern', gespeichert.body)
+  const mit = (await request('/api/settlement/2025')).body
+  const anteil = mit.landlord?.rows?.find((r) => r.costItemId === posten.body.id)?.landlordParts?.find((p) => p.reason === 'co2Share')?.cents
+  assert(anteil === 500 && mit.heating?.[0]?.co2?.booked === true, 'die Abrechnung bucht den CO₂-Anteil des Vermieters', { anteil, heating: mit.heating })
+  const weg = await request(`/api/heating-plants/${anlage.id}/periods/2025-01/co2`, { method: 'DELETE' })
+  assert(weg.status === 200 && weg.body.removed === true, 'CO₂-Angaben entfernen', weg.body)
+  await request(`/api/costItems/${posten.body.id}`, { method: 'DELETE' })
+}
+
+// Vorrat (Heizung PR 8): Die Route gibt es, und bei einer Gasheizung lehnt sie mit einem Satz ab.
+// Rechnen prüfen calc-vorrat.test.ts und api-heizung.test.ts; die Anlage der Prüfung heizt mit Gas.
+async function stockRoute() {
+  const [anlage] = (await request('/api/heating-plants')).body
+  const antwort = await request(`/api/heating-plants/${anlage.id}/periods/2025-01/stock`, json('PUT', { stockUnit: 'l', closingQuantity: 100 }))
+  assert(antwort.status === 400 && /Heizöl, Flüssiggas, Pellets, Holz und Kohle/.test(antwort.body?.error ?? ''), 'Vorrat nur bei Vorratsenergien', antwort.body)
+}
+
+// Lieferungen (Heizung PR 7): Die Gasrechnung des Jahres als Lieferung an der Heizanlage des
+// Messdienstes; die Abrechnung bewertet sie (Abdeckung der Heizperiode). Das Objekt der Prüfung
+// rechnet im Kalenderjahr.
+async function fuelDelivery() {
+  const [anlage] = (await request('/api/heating-plants')).body
+  const angelegt = await request(`/api/heating-plants/${anlage.id}/deliveries`, json('POST', {
+    label: 'Gas 2025', invoiceFrom: '2025-01-01', invoiceTo: '2025-12-31', amountCents: 311747, emissionsKg: 5406.17, co2CostCents: 60000,
+  }))
+  assert(angelegt.status === 201 && angelegt.body.usedByService === true, 'Lieferung anlegen', angelegt.body)
+  const s = (await request('/api/settlement/2025')).body
+  const fuel = s.heating?.[0]?.fuel
+  assert(Math.abs((fuel?.coveragePermille ?? 0) - 1000) < 1e-6 && fuel.deliveries?.length === 1, 'die Abrechnung bewertet die Lieferung', s.heating)
+  const orte = await request(`/api/properties/${anlage.propertyId}/degree-days`, json('PUT', { values: [{ month: '2025-01', value: 420 }] }))
+  assert(orte.status === 200 && orte.body.length === 1, 'Gradtagzahlen des Orts speichern', orte.body)
+}
+
+// Nach der eigenen Heizperiode (Mai bis April): eine Angabe für die Heizperiode, die in 2025 endet,
+// damit die Wiederherstellung sie mitprüfen kann.
+async function co2ForBackup() {
+  const [anlage] = (await request('/api/heating-plants')).body
+  const [periode] = (await request(`/api/heating-plants/${anlage.id}/periods?period=2025`)).body
+  const gespeichert = await request(`/api/heating-plants/${anlage.id}/periods/${periode?.period}/co2`, json('PUT', { method: 'selfAfterService' }))
+  assert(gespeichert.status === 200 && gespeichert.body.method === 'selfAfterService', 'CO₂-Angaben der Heizperiode 2024/2025', gespeichert.body)
+}
+
+// Eigene Heizperiode und getrennte Heizkostenabrechnung (Heizung PR 5): Zeitraum der Heizung über die
+// Vorschau, Weg d ab 05/2025 einschalten, Heizkostenabrechnung 2025/2026 mit eigener Frist lesen.
+async function heatingPeriod() {
+  const [anlage] = (await request('/api/heating-plants')).body
+  // Jede Vorschau trägt eine Marke; der Wechsel schreibt nur mit ihr (wie beim Abrechnungszeitraum).
+  const regeln = { rules: { startMonth: 5, changes: [] } }
+  const zeitraum = await request(`/api/heating-plants/${anlage.id}/period/preview`, json('POST', regeln))
+  assert(zeitraum.status === 200 && typeof zeitraum.body.token === 'string', 'Vorschau des Zeitraums der Heizung', zeitraum.body)
+  const wechsel = await request(`/api/heating-plants/${anlage.id}/period`, json('PUT', { ...regeln, answers: { understood: true, token: zeitraum.body.token } }))
+  assert(wechsel.status === 200 && wechsel.body.periodStartMonth === 5, 'Zeitraum der Heizung Mai bis April', wechsel.body)
+  const vorschau = await request(`/api/heating-plants/${anlage.id}/separate/preview`, json('POST', { separate: true, month: '2025-05' }))
+  assert(vorschau.status === 200 && vorschau.body.way === 'separate', 'Vorschau der getrennten Heizkostenabrechnung', vorschau.body)
+  // Die Antworten aus der Vorschau: Heizanteil wie vorgeschlagen; jede Jahreskorrektur bleibt ganz bei
+  // den übrigen Vorauszahlungen, die Heizkorrekturen 0 €.
+  const steps = Object.fromEntries(vorschau.body.steps.map((s) => [s.tenancyId, Object.fromEntries(s.rows.map((r) => [r.from, r.heatingCents]))]))
+  const totals = {}
+  const overrides = {}
+  for (const o of vorschau.body.overrides) {
+    totals[o.tenancyId] = { ...(totals[o.tenancyId] ?? {}), [o.period]: o.cents ?? 0 }
+    for (const a of o.asks) if (a.kind !== 'total') overrides[o.tenancyId] = { ...(overrides[o.tenancyId] ?? {}), [a.period]: 0 }
+  }
+  const ein = await request(`/api/heating-plants/${anlage.id}/separate`, json('PUT', { separate: true, month: '2025-05', answers: { understood: true, steps, totals, overrides, token: vorschau.body.token } }))
+  assert(ein.status === 200 && ein.body.separateSpans?.length === 1, 'getrennte Heizkostenabrechnung eingeschaltet', ein.body)
+  const heiz = await request(`/api/heating-settlement/${anlage.id}/2025-05`)
+  assert(heiz.status === 200 && heiz.body.deadline === '2027-04-30' && heiz.body.scope?.kind === 'heating', 'Heizkostenabrechnung 2025/2026 mit eigener Frist', heiz.body)
+}
+
 async function backupAndRestore(unit) {
   const backup = await request('/api/backup')
   assert(backup.status === 200 && backup.body.subarray(0, 2).toString() === 'PK', 'Backup als ZIP herunterladen')
@@ -407,12 +508,87 @@ async function backupAndRestore(unit) {
   const r = await request('/api/restore', { method: 'POST', body: fd })
   const units = (await request('/api/units')).body
   assert(r.status === 200 && units.length === 1 && units[0].id === unit.id, 'Backup wiederherstellen bringt die Daten zurück', r.body)
+  const anlagen = (await request('/api/heating-plants')).body
+  assert(Array.isArray(anlagen) && anlagen.length === 1, 'die Heizanlage ist nach der Wiederherstellung da', anlagen)
+  assert(anlagen[0]?.periodStartMonth === 5 && anlagen[0]?.separateSpans?.length === 1, 'Heizperiode und getrennte Abrechnung sind nach der Wiederherstellung da', anlagen)
+  const perioden = (await request(`/api/heating-plants/${anlagen[0].id}/periods?period=2025`)).body
+  assert(perioden?.[0]?.co2?.method === 'selfAfterService', 'die CO₂-Angaben sind nach der Wiederherstellung da', perioden)
+  const lieferungen = (await request(`/api/heating-plants/${anlagen[0].id}/deliveries`)).body
+  assert(lieferungen?.[0]?.label === 'Gas 2025', 'die Lieferung ist nach der Wiederherstellung da', lieferungen)
   const uploads = (await request('/api/uploads')).body.map((u) => u.file)
   assert(uploads.some((f) => /Gebührenbescheid_Müll\.pdf$/.test(f)), 'Belege sind nach der Wiederherstellung da', uploads)
   // Das Wiederherstellen schließt die Datenbank, tauscht die Datei und öffnet sie neu. Ob das
   // gelingt, hängt am Betriebssystem: Unter Windows lässt sich eine offene Datei nicht ersetzen.
   const health = (await request('/healthz')).body
   assert(health?.database?.open === true, 'Die Datenbank ist nach dem Wiederherstellen wieder offen', health?.database)
+}
+
+// Mehrere Heizanlagen, Etagenheizung und Kesseltausch (Heizung PR 9). In einem eigenen Objekt und nach
+// dem Wiederherstellen, denn `backupAndRestore` zählt die Wohnungen und fragt ohne Objekt; mit einem
+// zweiten Objekt antworteten die Routen ohne `?property=` mit 400.
+async function plantsOfProperty() {
+  const objekt = (await request('/api/properties', json('POST', { name: 'Prüfhaus Etagenheizung', kind: 'mfh', address: '' }))).body
+  const q = `?property=${encodeURIComponent(objekt.id)}`
+  const eg = (await request(`/api/units${q}`, json('POST', { name: 'EG', areaM2: 60, participates: true }))).body
+  const og = (await request(`/api/units${q}`, json('POST', { name: 'OG', areaM2: 40, participates: true }))).body
+  for (const u of [eg, og]) {
+    await request(`/api/tenancies${q}`, json('POST', {
+      unitId: u.id, tenantName: `Mieter ${u.name}`, personHistory: [{ from: '2025-01-01', persons: 1 }],
+      start: '2025-01-01', end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [],
+    }))
+  }
+  const erste = (await request(`/api/heating-plants${q}`, json('POST', { energy: 'gas', method: 'manual', assignItemIds: [] }))).body.plant
+  const zweite = await request(`/api/heating-plants${q}`, json('POST', {
+    name: 'Gastherme OG', buildingWith: 'own', energy: 'gas', supply: 'perUnit', method: 'manual', units: [{ unitId: og.id, heatedAreaM2: null }], assignItemIds: [],
+    adjust: [{ id: erste.id, name: 'Zentralheizung', units: [{ unitId: eg.id, heatedAreaM2: null }] }],
+  }))
+  assert(zweite.status === 201, 'zweite Heizanlage anlegen, die erste im selben Schritt benennen', zweite.body)
+  const namen = (await request(`/api/heating-plants${q}`)).body.map((p) => p.name).sort()
+  assert(JSON.stringify(namen) === JSON.stringify(['Gastherme OG', 'Zentralheizung']), 'beide Anlagen mit Namen', namen)
+  const gas = (await request(`/api/costItems${q}`, json('POST', {
+    period: '2025-01', category: 'Heizung und Warmwasser', description: 'Gas OG', amountCents: 100000, key: 'direct', directUnitId: og.id,
+  }))).body
+  assert(gas.heatingPlantId === zweite.body.plant.id, 'die Gasrechnung der Wohnung kommt zur Etagenheizung', gas)
+  const ueber = await request(`/api/costItems${q}`, json('POST', {
+    period: '2025-01', category: 'Heizung und Warmwasser', description: 'Wartung', amountCents: 20000, key: 'area',
+    participantUnitIds: [eg.id, og.id], heatingPlantId: erste.id,
+  }))
+  assert(ueber.status === 201 || ueber.status === 200, 'eine Position über beide Anlagen lässt sich speichern', ueber.body)
+  const abrechnung = (await request(`/api/settlement/2025${q}`)).body
+  assert(abrechnung.notices?.some((n) => n.code === 'co2.item-spans-plants'), 'die Abrechnung meldet die Position über zwei Anlagen', abrechnung.notices?.map((n) => n.code))
+  const tausch = await request(`/api/heating-plants/${erste.id}/replace`, json('POST', { date: '2026-01-01', energy: 'heatPump', name: 'Wärmepumpe' }))
+  assert(tausch.status === 201 && tausch.body.previous?.endsOn === '2025-12-31' && tausch.body.plant?.replacesPlantId === erste.id, 'Kessel getauscht: die alte Anlage endet, die neue beginnt', tausch.body)
+}
+
+// Eigene Heizkostenabrechnung (Heizung PR 10), in einem eigenen Objekt wie die Prüfung aus PR 9.
+async function selfHeating() {
+  const objekt = (await request('/api/properties', json('POST', { name: 'Prüfhaus Heizkosten', kind: 'mfh', address: '' }))).body
+  const q = `?property=${encodeURIComponent(objekt.id)}`
+  const ids = []
+  for (const name of ['A', 'B']) {
+    const u = (await request(`/api/units${q}`, json('POST', { name, areaM2: 50, participates: true }))).body
+    ids.push(u.id)
+    await request(`/api/tenancies${q}`, json('POST', {
+      unitId: u.id, tenantName: `Mieter ${name}`, personHistory: [{ from: '2020-01-01', persons: 1 }],
+      start: '2020-01-01', end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [],
+    }))
+  }
+  const plant = (await request(`/api/heating-plants${q}`, json('POST', { energy: 'districtHeating', method: 'manual', assignItemIds: [] }))).body.plant
+  const setup = await request(`/api/heating-plants/${plant.id}/self`, json('PUT', { period: '2025-01', heatConsumptionPct: 70, insulationRule: 'unknown', hotWater: 'none', capture: 'heatMeter' }))
+  assert(setup.status === 200 && setup.body.plant.method === 'self', 'eigene Heizkostenabrechnung einrichten', setup.body)
+  for (const [i, m] of setup.body.created.entries()) {
+    await request(`/api/readings${q}`, json('POST', { meterId: m.id, date: '2024-12-31', value: 0 }))
+    await request(`/api/readings${q}`, json('POST', { meterId: m.id, date: '2025-12-31', value: m.unitId === ids[0] ? 4000 : 6000 }))
+    assert(m.type === 'waerme', `Zähler ${i + 1} ist ein Wärmezähler`, m)
+  }
+  await request(`/api/costItems${q}`, json('POST', {
+    period: '2025-01', category: 'Heizung und Warmwasser', description: 'Fernwärme', amountCents: 300000,
+    key: 'heatingSystem', heatingPlantId: plant.id, heatingPart: 'fuel', heatingTarget: 'heating',
+  }))
+  const abrechnung = (await request(`/api/settlement/2025${q}`)).body
+  const summen = abrechnung.statements.map((s) => s.totalShareCents).sort((a, b) => a - b)
+  assert(JSON.stringify(summen) === JSON.stringify([129000, 171000]), 'nach Heizkostenverordnung verteilt: 1.290,00 € und 1.710,00 €', summen)
+  assert(abrechnung.heating?.some((h) => h.self?.ok), 'die Abrechnung trägt den Ausweis der Heizkostenabrechnung', abrechnung.heating)
 }
 
 async function main() {
@@ -450,7 +626,15 @@ async function main() {
   await aiExtraction()
   await openAiExtraction()
   const unit = await uploadsAndSettlement()
+  await heatingPlant()
+  await co2Statement()
+  await stockRoute()
+  await fuelDelivery()
+  await heatingPeriod()
+  await co2ForBackup()
   await backupAndRestore(unit)
+  await plantsOfProperty()
+  await selfHeating()
   console.log(`\nAlle ${passed} Prüfungen bestanden.`)
 }
 

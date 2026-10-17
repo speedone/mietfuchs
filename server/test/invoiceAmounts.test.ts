@@ -270,3 +270,35 @@ test('Die Hilfsfelder verlassen die Auswertung nicht', () => {
     assert.equal(key in result, false, key)
   }
 })
+
+// Der Regelsatz kommt aus dem Rechtsregister (`ustg.standard-rate`, Heizung PR 1) und richtet sich
+// nach dem Rechnungsdatum: vom 01.07. bis 31.12.2020 waren es 16 %. Ein Abstand von 19 % ist dann
+// nicht durch Umsatzsteuer erklärbar, es fehlt eher eine Position, und hochgerechnet wird nicht.
+const net = (invoiceDate?: unknown) => ({
+  totalGrossEur: 119,
+  positionsAreNet: true,
+  ...(invoiceDate !== undefined ? { invoiceDate } : {}),
+  positions: [{ description: 'Wartung', category: 'Heizung und Warmwasser', amountEur: 100 }],
+})
+
+test('Umsatzsteuer nach Rechnungsdatum: 2025 erklären 19 % den Abstand, im zweiten Halbjahr 2020 nicht', () => {
+  assert.equal(normalizeAmounts(net('2025-03-01'), '2026-10-05').amountsAdjusted, 'netto')
+  assert.equal(normalizeAmounts(net('2020-08-15'), '2026-10-05').amountsAdjusted, undefined)
+  assert.deepEqual(positionsOf(normalizeAmounts(net('2020-08-15'), '2026-10-05')).map((p) => p.amountEur), [100])
+  // 16 % auf 100 € ergeben 116 €: erklärbar, auch 2020.
+  assert.equal(normalizeAmounts({ ...net('2020-08-15'), totalGrossEur: 116 }, '2026-10-05').amountsAdjusted, 'netto')
+})
+
+test('Umsatzsteuer ohne lesbares Rechnungsdatum: es gilt der Satz von heute', () => {
+  assert.equal(normalizeAmounts(net(), '2020-08-15').amountsAdjusted, undefined)
+  assert.equal(normalizeAmounts(net(), '2026-10-05').amountsAdjusted, 'netto')
+  assert.equal(normalizeAmounts(net('15.08.2020'), '2026-10-05').amountsAdjusted, 'netto')
+  assert.equal(normalizeAmounts(net(20200815), '2026-10-05').amountsAdjusted, 'netto')
+})
+
+// Für ein Rechnungsdatum vor der ersten Fassung (01.01.2007) führt das Register keinen Satz. Die
+// Auswertung darf daran nicht abbrechen und nimmt den Satz von heute, wie ohne lesbares Datum.
+test('Umsatzsteuer mit Rechnungsdatum vor dem Register: es gilt der Satz von heute', () => {
+  assert.equal(normalizeAmounts(net('2005-03-01'), '2026-10-05').amountsAdjusted, 'netto')
+  assert.equal(normalizeAmounts(net('2005-03-01'), '2020-08-15').amountsAdjusted, undefined)
+})
