@@ -9,7 +9,7 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 ### Behoben
 
 - Kontoauszüge lesen: Ein ZIP-Archiv wird geprüft, bevor etwas entpackt wird (höchstens 3.000
-  Einträge und 20 MB entpackt, eine Datei höchstens 10 MB), und überlange Textfelder werden
+  Einträge samt Ordnern, 8 Ordnerebenen und 20 MB entpackt, eine Datei höchstens 10 MB), und überlange Textfelder werden
   gekürzt; eine IBAN wird nie gekürzt, eine überlange gilt als fehlend. Ein Archiv mit Kommentar
   oder einem zweiten Verzeichnisende wird abgelehnt, denn darüber ließ sich der Prüfung ein
   anderer Inhalt zeigen als beim Entpacken. Wird eine Grenze überschritten, sagt die Meldung, wie

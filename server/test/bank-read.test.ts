@@ -88,6 +88,7 @@ function handmadeZip(count: number, name: (i: number) => string, size: (i: numbe
 // Jede Meldung zu einer Grenze sagt, was zu tun ist.
 const ENTRIES_EXCEEDED = new RegExp(`mehr als ${MAX_ZIP_ENTRIES.toLocaleString('de-DE').replace('.', '\\.')} Einträge.*teilen Sie`)
 const TOO_BIG = /zu groß.*(teilen Sie|kürzere Zeiträume)/
+const CANNOT_OPEN = /lässt sich nicht öffnen.*Bitte/
 
 // Vorher entpackte adm-zip alle 65.535 Einträge in Objekte (gemessen 4,7 s und 865 MB
 // Arbeitsspeicher), bevor gezählt wurde, und gezählt wurden nur die mit passender Endung. Jetzt
@@ -133,8 +134,52 @@ test('Kontoauszug: ein ZIP-Eintrag mit überlangem Namen wird abgelehnt, bevor a
   const r = readBankFile(zip, 'tief.zip')
   const ms = performance.now() - start
   assert.equal(r.statements.length, 0)
-  assert.match(r.problems[0].message, /Namen/)
+  assert.match(r.problems[0].message, /Name.*255 Bytes.*Bitte/)
   assert.ok(ms < 250, `Ablehnung dauerte ${ms.toFixed(0)} ms`)
+})
+
+// adm-zip legt beim Laden zu jedem Ordner, den ein Name nennt, einen eigenen Eintrag an
+// (`makeTemporaryFolders` in zipFile.js), und die zählte die Vorprüfung nicht. Ein Name von 255
+// Bytes trägt rund 125 Ebenen; mit eigener erster Ebene je Eintrag (`0/a/a/…`, `1/a/a/…`) wurden aus
+// 3.000 Einträgen gemessen 375.000 Objekte, 15,5 s Blockade und 3,7 GB Arbeitsspeicher.
+test('Kontoauszug: ein ZIP mit tief verschachtelten Ordnern wird abgelehnt, bevor adm-zip sie anlegt', () => {
+  const zip = handmadeZip(300, (i) => `${i}/${'a/'.repeat(120)}x.bin`)
+  const start = performance.now()
+  const r = readBankFile(zip, 'tief.zip')
+  const ms = performance.now() - start
+  assert.equal(r.statements.length, 0)
+  assert.match(r.problems[0].message, /Ebenen.*Bitte/)
+  assert.ok(ms < 250, `Ablehnung dauerte ${ms.toFixed(0)} ms`)
+})
+
+test('Kontoauszug: die Ordner, die adm-zip aus den Namen ableitet, zählen zu den Einträgen', () => {
+  // Jeder Eintrag in zwei eigenen Ordnern: 1.200 Einträge, dazu 2.400 abgeleitete Ordner.
+  const zip = handmadeZip(1200, (i) => `${i}/${i}/x.bin`)
+  const r = readBankFile(zip, 'ordner.zip')
+  assert.equal(r.statements.length, 0)
+  assert.match(r.problems[0].message, ENTRIES_EXCEEDED)
+})
+
+test('Kontoauszug: vier Jahre Tagesauszüge in Jahres- und Monatsordnern, vom Mac gepackt, passen', () => {
+  // So legt macOS ein Archiv an: jede Datei und jeden Ordner noch einmal unter `__MACOSX/`, dort
+  // mit `._` davor. Die Einträge sind leer und tragen die Endung .bin, damit nichts gelesen wird;
+  // es geht nur darum, dass die Vorprüfung sie nicht ablehnt.
+  const names: string[] = ['__MACOSX/']
+  for (let year = 2022; year <= 2025; year++) {
+    names.push(`${year}/`, `__MACOSX/${year}/`)
+    for (let month = 1; month <= 12; month++) {
+      const m = String(month).padStart(2, '0')
+      names.push(`${year}/${m}/`, `__MACOSX/${year}/${m}/`)
+      for (let day = 1; day <= 22; day++) {
+        const file = `${year}-${m}-${String(day).padStart(2, '0')}-Kontoauszug-DE00123456789012345678.bin`
+        names.push(`${year}/${m}/${file}`, `__MACOSX/${year}/${m}/._${file}`)
+      }
+    }
+  }
+  const zip = handmadeZip(names.length, (i) => names[i])
+  const r = readBankFile(zip, 'vier-jahre.zip')
+  assert.equal(r.problems.length, 1)
+  assert.match(r.problems[0].message, /enthält keinen Kontoauszug/)
 })
 
 test('Kontoauszug: ein ZIP, dessen Verzeichnis über das Archiv hinausreicht, ergibt einen Befund', () => {
@@ -143,7 +188,7 @@ test('Kontoauszug: ein ZIP, dessen Verzeichnis über das Archiv hinausreicht, er
   const cut = Buffer.concat([zip.subarray(0, zip.length - 22 - 52), zip.subarray(zip.length - 22)])
   const r = readBankFile(cut, 'kurz.zip')
   assert.equal(r.statements.length, 0)
-  assert.match(r.problems[0].message, /lässt sich nicht öffnen/)
+  assert.match(r.problems[0].message, CANNOT_OPEN)
 })
 
 // Ein gespeicherter Eintrag (ohne Kompression) ist beim Entpacken so groß wie seine Daten im
@@ -264,8 +309,40 @@ test('Kontoauszug: ein ZIP64-Verweis vor dem gewöhnlichen Ende wird abgelehnt',
     const withMarker = Buffer.concat([zip.subarray(0, cut), marker, zip.subarray(cut)])
     const r = readBankFile(withMarker, 'zip64.zip')
     assert.equal(r.statements.length, 0)
-    assert.match(r.problems[0].message, /lässt sich nicht öffnen/, signature.toString(16))
+    assert.match(r.problems[0].message, CANNOT_OPEN, signature.toString(16))
   }
+})
+
+test('Kontoauszug: eine beschädigte Datei im ZIP ergibt einen Befund mit Ausweg', () => {
+  // Ein Eintrag „komprimiert“ mit Bytes, die kein Deflate sind (Blocktyp 3 gibt es nicht).
+  const packed = Buffer.from([0xff, 0xff, 0xff, 0xff])
+  const name = Buffer.from('a.xml')
+  const local = Buffer.alloc(30)
+  local.writeUInt32LE(0x04034b50, 0)
+  local.writeUInt16LE(20, 4)
+  local.writeUInt16LE(8, 8)
+  local.writeUInt32LE(packed.length, 18)
+  local.writeUInt32LE(1000, 22)
+  local.writeUInt16LE(name.length, 26)
+  const head = Buffer.concat([local, name, packed])
+  const central = Buffer.alloc(46)
+  central.writeUInt32LE(0x02014b50, 0)
+  central.writeUInt16LE(20, 4)
+  central.writeUInt16LE(20, 6)
+  central.writeUInt16LE(8, 10)
+  central.writeUInt32LE(packed.length, 20)
+  central.writeUInt32LE(1000, 24)
+  central.writeUInt16LE(name.length, 28)
+  const directory = Buffer.concat([central, name])
+  const end = Buffer.alloc(22)
+  end.writeUInt32LE(0x06054b50, 0)
+  end.writeUInt16LE(1, 8)
+  end.writeUInt16LE(1, 10)
+  end.writeUInt32LE(directory.length, 12)
+  end.writeUInt32LE(head.length, 16)
+  const r = readBankFile(Buffer.concat([head, directory, end]), 'kaputt.zip')
+  assert.equal(r.statements.length, 0)
+  assert.match(r.problems[0].message, /beschädigt.*Bitte/)
 })
 
 test('Kontoauszug: ein gewöhnliches ZIP mit Ordnern und Auszügen bleibt lesbar', () => {

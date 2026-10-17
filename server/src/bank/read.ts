@@ -20,16 +20,22 @@ import { clip, problemOnly, type BankReadResult } from './statement.ts'
 // - 20 MB entpackt im ZIP: vier Jahre Tagesauszüge mit Platz nach oben.
 // - 3.000 Einträge: vier Jahre Tagesauszüge sind gut 1.040 Dateien, mit Ordnern je Jahr und Monat
 //   rund 1.100 Einträge, und ein Archiv vom Mac legt zu jeder Datei und jedem Ordner noch einen
-//   unter `__MACOSX/` dazu, zusammen rund 2.200. Gezählt wird jeder Eintrag, auch Ordner und
-//   Beiwerk, denn adm-zip legt für jeden ein Objekt an; 65.535 kosteten gemessen 4,7 s und 865 MB,
-//   3.000 sind damit gut ein Zwanzigstel davon.
+//   unter `__MACOSX/` dazu, zusammen rund 2.200. Gezählt wird jedes Objekt, das adm-zip anlegt:
+//   jeder Eintrag, auch Ordner und Beiwerk, und dazu jeder Ordner, den ein Name nur nennt, denn
+//   auch für den legt adm-zip beim Laden einen Eintrag an (`makeTemporaryFolders` in zipFile.js).
 // - 255 Bytes je Name: so lang darf ein Dateiname auf den gängigen Dateisystemen sein. adm-zip
 //   legt zu jedem Ordner im Namen einen Eintrag an, mit Aufwand im Quadrat der Tiefe; ein Name aus
 //   Tausenden Ebenen blockierte den Server für Sekunden bis Minuten.
+// - 8 Ordnerebenen je Name: Ein Export legt Jahr und Monat an, macOS stellt `__MACOSX/` davor.
+//   Ohne Grenze trug ein Name von 255 Bytes rund 125 Ebenen, und 3.000 solche Einträge mit eigener
+//   erster Ebene ergaben gemessen 375.000 Objekte, 15,5 s Blockade und 3,7 GB Arbeitsspeicher.
+// Gemessen am schlechtesten Archiv, das alle Grenzen einhält (3.000 Objekte, Namen von 255 Bytes,
+// je 8 Ebenen bzw. ganz flach): höchstens 120 ms und 50 MB Arbeitsspeicher.
 export const MAX_ZIP_ENTRIES = 3000
 export const MAX_FILE_BYTES = 10 * 1024 * 1024
 export const MAX_ZIP_TOTAL_BYTES = 20 * 1024 * 1024
 const MAX_ZIP_NAME_BYTES = 255
+const MAX_ZIP_DEPTH = 8
 
 // MT940 kommt ohne Angabe der Kodierung. Ist die Datei gültiges UTF-8, gilt das; sonst ist sie
 // fast immer ISO-8859-1 bzw. Windows-1252, wie es deutsche Banken lange geschrieben haben.
@@ -65,7 +71,8 @@ function readSingle(data: Buffer, where: string): BankReadResult | null {
 // Auszug und ist keiner.
 const isMacJunk = (name: string) => /(^|\/)__MACOSX\//.test(name) || /(^|\/)\._[^/]*$/.test(name)
 
-type ZipDirectory = { entries: number, totalBytes: number, longName: boolean }
+// `entries`: Einträge im Verzeichnis; `objects`: dazu die Ordner, die adm-zip aus den Namen ableitet.
+type ZipDirectory = { entries: number, objects: number, totalBytes: number, longName: boolean, tooDeep: boolean }
 
 // Liest das Verzeichnis am Ende des ZIP, ohne einen Eintrag anzufassen: Anzahl der Einträge,
 // Summe der unkomprimierten Größen und ob ein Name zu lang ist. Das muss vor adm-zip geschehen,
@@ -105,10 +112,13 @@ function zipDirectory(data: Buffer): ZipDirectory | 'comment' | null {
     if (signature === 0x06054b50 || signature === 0x06064b50 || signature === 0x07064b50) return null
   }
   const entries = Math.max(data.readUInt16LE(end + 8), data.readUInt16LE(end + 10))
-  if (entries > MAX_ZIP_ENTRIES) return { entries, totalBytes: 0, longName: false }
+  if (entries > MAX_ZIP_ENTRIES) return { entries, objects: entries, totalBytes: 0, longName: false, tooDeep: false }
   let at = data.readUInt32LE(end + 16)
   let totalBytes = 0
   let longName = false
+  let tooDeep = false
+  const names = new Set<string>()
+  const folders = new Set<string>()
   for (let n = 0; n < entries; n++) {
     if (at + 46 > data.length || data.readUInt32LE(at) !== 0x02014b50) return null
     // Entpackt wird höchstens die angegebene Größe, ein gespeicherter Eintrag (ohne Kompression)
@@ -116,14 +126,30 @@ function zipDirectory(data: Buffer): ZipDirectory | 'comment' | null {
     totalBytes += Math.max(data.readUInt32LE(at + 20), data.readUInt32LE(at + 24))
     const nameLength = data.readUInt16LE(at + 28)
     if (nameLength > MAX_ZIP_NAME_BYTES) longName = true
+    else if (at + 46 + nameLength <= data.length) {
+      // Die Ordner, die adm-zip anlegt: jedes Stück des Namens bis zu einem „/“. Gelesen als
+      // latin1, also Byte für Byte; ein „/“ ist in jeder Kodierung dasselbe Byte, und zwei
+      // verschiedene Namen bleiben hier verschieden, gezählt wird also eher mehr als bei adm-zip.
+      const name = data.toString('latin1', at + 46, at + 46 + nameLength)
+      names.add(name)
+      let depth = 0
+      for (let slash = name.indexOf('/'); slash >= 0 && !tooDeep; slash = name.indexOf('/', slash + 1)) {
+        if (++depth > MAX_ZIP_DEPTH) tooDeep = true
+        else folders.add(name.slice(0, slash + 1))
+      }
+    }
     at += 46 + nameLength + data.readUInt16LE(at + 30) + data.readUInt16LE(at + 32)
   }
-  return { entries, totalBytes, longName }
+  let objects = entries
+  for (const folder of folders) if (!names.has(folder)) objects++
+  return { entries, objects, totalBytes, longName, tooDeep }
 }
 
+const REPACK = 'Bitte entpacken Sie das Archiv und packen Sie die Auszüge neu, oder laden Sie die Dateien einzeln hoch.'
+const CANNOT_OPEN = `Das ZIP-Archiv lässt sich nicht öffnen. ${REPACK}`
+
 const ZIP_WITH_COMMENT = 'Das ZIP-Archiv trägt einen Kommentar, wie ihn kein Export von Kontoauszügen schreibt, '
-  + 'und wird deshalb nicht gelesen. Bitte entpacken Sie es und packen Sie die Auszüge neu, '
-  + 'oder laden Sie die Dateien einzeln hoch.'
+  + `und wird deshalb nicht gelesen. ${REPACK}`
 
 export function readBankFile(data: Buffer, uploadedName: string): BankReadResult {
   // Der Name steht in jedem Befund; ein überlanger stünde dort tausendfach.
@@ -132,21 +158,22 @@ export function readBankFile(data: Buffer, uploadedName: string): BankReadResult
   if (!isZip) return readSingle(data, fileName) ?? problemOnly(fileName, NOT_A_STATEMENT)
   const directory = zipDirectory(data)
   if (directory === 'comment') return problemOnly(fileName, ZIP_WITH_COMMENT)
-  if (!directory) return problemOnly(fileName, 'Das ZIP-Archiv lässt sich nicht öffnen.')
-  if (directory.entries > MAX_ZIP_ENTRIES) return problemOnly(fileName, `Das ZIP-Archiv enthält mehr als ${de(MAX_ZIP_ENTRIES)} Einträge. ${SPLIT_ARCHIVE}`)
+  if (!directory) return problemOnly(fileName, CANNOT_OPEN)
+  if (directory.longName) return problemOnly(fileName, `Das ZIP-Archiv enthält einen Eintrag, dessen Name länger ist, als ein Dateiname sein darf (mehr als ${MAX_ZIP_NAME_BYTES} Bytes); so heißt kein Kontoauszug. ${REPACK}`)
+  if (directory.tooDeep) return problemOnly(fileName, `Das ZIP-Archiv enthält Ordner in mehr als ${MAX_ZIP_DEPTH} Ebenen; so legt kein Export Kontoauszüge ab. ${REPACK}`)
+  if (directory.objects > MAX_ZIP_ENTRIES) return problemOnly(fileName, `Das ZIP-Archiv enthält mehr als ${de(MAX_ZIP_ENTRIES)} Einträge (Dateien und Ordner zusammen). ${SPLIT_ARCHIVE}`)
   // Die Größen aus dem Verzeichnis des Archivs, bevor entpackt wird. Gelogen werden kann dort
   // auch; dann scheitert das Entpacken unten, und das ist ein Befund und kein Absturz.
   if (directory.totalBytes > MAX_ZIP_TOTAL_BYTES) return problemOnly(fileName, `Das ZIP-Archiv ist zu groß für Kontoauszüge; entpackt sind höchstens ${MB(MAX_ZIP_TOTAL_BYTES)} möglich. ${SPLIT_ARCHIVE}`)
-  if (directory.longName) return problemOnly(fileName, `Das ZIP-Archiv enthält einen Eintrag mit mehr als ${MAX_ZIP_NAME_BYTES} Zeichen im Namen; so heißt kein Kontoauszug.`)
   let entries: AdmZip.IZipEntry[]
   try {
     const zip = new AdmZip(data)
     // adm-zip liest das Verzeichnis selbst noch einmal; findet es dort eine andere Zahl (etwa über
     // einen ZIP64-Eintrag), gilt die Prüfung oben nicht für das, was es entpacken würde.
-    if (zip.getEntryCount() !== directory.entries) return problemOnly(fileName, 'Das ZIP-Archiv lässt sich nicht öffnen.')
+    if (zip.getEntryCount() !== directory.entries) return problemOnly(fileName, CANNOT_OPEN)
     entries = zip.getEntries()
   } catch {
-    return problemOnly(fileName, 'Das ZIP-Archiv lässt sich nicht öffnen.')
+    return problemOnly(fileName, CANNOT_OPEN)
   }
   const files = entries
     .filter((e) => !e.isDirectory && !isMacJunk(e.entryName) && /\.(xml|sta|txt|940|mt940)$/i.test(e.entryName))
@@ -160,7 +187,7 @@ export function readBankFile(data: Buffer, uploadedName: string): BankReadResult
     try {
       content = e.getData()
     } catch {
-      return problemOnly(where, 'Die Datei im ZIP-Archiv ist beschädigt.')
+      return problemOnly(where, 'Die Datei im ZIP-Archiv ist beschädigt. Bitte laden Sie diesen Auszug erneut bei Ihrer Bank herunter und einzeln hoch.')
     }
     // Eine Textdatei, die kein MT940 ist (etwa eine Liesmich), gehört nicht zu den Auszügen;
     // eine XML-Datei, die kein camt ist, meldet readCamt selbst.
