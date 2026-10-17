@@ -73,6 +73,8 @@ import { findingsText, validateDb } from './legacy/validate.ts'
 import { createUpdateChecker, UPDATE_URL } from './update.ts'
 import { APP_VERSION, RUNTIME, STANDALONE } from './version.ts'
 import { describeFile, describeFolder, hashFile, mimeTypeOf, uploadedAtOf } from './uploads.ts'
+import { acceptIban, IbanRefusal } from './iban.ts'
+import { IBAN_LABELS } from '../../shared/iban.ts'
 import { derivedTaxLines, planTaxArchive } from './taxReceipts.ts'
 import { forgetUpload, placeUpload, recordIfMissing, recordUpload, rowOf, uploadRows, type Placement, type UploadRow } from './db/uploads.ts'
 
@@ -258,6 +260,8 @@ app.put('/api/settings', async (req, res) => {
   // Erst die KI-Einstellungen prüfen: Ist dort etwas ungültig, bleibt alles beim Alten
   try {
     applyAiChanges(next, body, AI_ENV)
+    // Die IBAN des Vermieters nur, wenn sie neu gesetzt oder geändert wird (#279, siehe iban.ts).
+    if (Object.hasOwn(changes, 'iban')) changes.iban = acceptIban(changes.iban, storedSettings.iban, IBAN_LABELS.settings) ?? ''
   } catch (err) {
     return res.status(statusOf(err)).json({ error: messageOf(err) })
   }
@@ -2389,7 +2393,7 @@ app.use('/api', (err: unknown, req: Request, res: Response, next: NextFunction) 
   // Eigene Heizkostenabrechnung (Heizung PR 10): die Liste der Positionen, die umzustellen sind.
   if (err instanceof SelfItemsError) return res.status(409).json({ error: err.message, items: err.items })
   // Ablehnungen, deren Meldung schon für den Nutzer geschrieben ist (#92).
-  if (err instanceof RouteProblem || err instanceof CrossPropertyError || err instanceof PeriodError || err instanceof PeriodConflict || err instanceof TenantChangeError || err instanceof BookingRefusal || err instanceof HeatingError || err instanceof StaleTenancyError || err instanceof LawOverrideError) {
+  if (err instanceof RouteProblem || err instanceof CrossPropertyError || err instanceof PeriodError || err instanceof PeriodConflict || err instanceof TenantChangeError || err instanceof BookingRefusal || err instanceof HeatingError || err instanceof StaleTenancyError || err instanceof LawOverrideError || err instanceof IbanRefusal) {
     return res.status(err.status).json({ error: err.message })
   }
   // **Fehler der Datenbank bekommen ihre eigene Meldung** (db/errors.ts). Ohne diese Zeile käme
