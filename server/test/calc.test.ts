@@ -17,6 +17,8 @@ import {
   personDaysInPeriod,
   isNotAllocable,
   largestRemainder,
+  ledgerRows,
+  monthShare,
   rentLedger,
   RESERVE_CATEGORY,
   taxReport,
@@ -348,9 +350,11 @@ test('Vorauszahlungs-Staffel: Erhöhung zum Juli', () => {
   assert.deepEqual(computePrepaymentCents(t, calendarYearPeriod(2024)), { cents: 180000, overridden: false })
 })
 
-test('Vorauszahlungen: Einzug Mitte März zählt ab April', () => {
+// Bis #311 zählte ein Monat nur, wenn das Mietverhältnis am Monatsersten bestand (900,00 €). Seitdem
+// gilt der März anteilig nach Kalendertagen: 9 × 100 € + 17/31 × 100 € = 900 € + 54,84 €.
+test('Vorauszahlungen: Einzug Mitte März zählt anteilig ab 15.03.', () => {
   const t = tenancy({ id: 't1', unitId: 'u1', start: '2025-03-15', prepayments: [{ from: '2025-03', monthlyCents: 10000 }] })
-  assert.equal(computePrepaymentCents(t, calendarYearPeriod(2025)).cents, 90000) // Apr–Dez = 9 Monate
+  assert.equal(computePrepaymentCents(t, calendarYearPeriod(2025)).cents, 95484)
 })
 
 test('Vorauszahlungen: manuelle Jahres-Korrektur hat Vorrang', () => {
@@ -1626,10 +1630,12 @@ test('Steuer (Anlage V): auf die eigene Wohnung entfallender Anteil wird ausgewi
 })
 
 test('Steuer (Anlage V): die Jahreskorrektur der Vorauszahlungen wird ausgewiesen (#70)', () => {
-  // **Der Befund aus #70, an seinem Ursprung gemessen.** Die Abrechnung setzt die tatsächlich
-  // geleisteten Vorauszahlungen an, denn nach ständiger Rechtsprechung des BGH muss sie das;
-  // eine Abrechnung auf Soll-Basis ist materiell falsch, und nach Ablauf der Frist des § 556
-  // Abs. 3 BGB gibt es dann keinen Nachforderungsanspruch mehr. Die Steuerübersicht dagegen
+  // **Der Befund aus #70, an seinem Ursprung gemessen.** Die Abrechnung setzt die Staffel an
+  // und die Jahreskorrektur, wenn sie erfasst ist; maßgeblich ist, was der Mieter für den
+  // Abrechnungszeitraum tatsächlich geleistet hat (BGH VIII ZR 240/10 vom 18.05.2011, Rn. 16;
+  // VIII ZA 2/08), Soll statt Ist ist ein inhaltlicher Fehler, und eine erteilte Abrechnung lässt
+  // sich nach Ablauf der Frist des § 556 Abs. 3 BGB grundsätzlich nicht mehr zulasten des Mieters
+  // korrigieren (VIII ZR 133/10, Rn. 12 f.). Die Steuerübersicht dagegen
   // hat bisher nur das vereinbarte Soll geführt. Beide Zahlen standen unkommentiert
   // nebeneinander, und wer sie verglich, hielt eine davon für falsch.
   //
@@ -2922,4 +2928,53 @@ test('Eine Rundungsregel (Durchsicht #203): ein rückwärts laufender Zähler au
   const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.equal(statementOf(s, 't1').totalShareCents, 20000)
   assert.deepEqual(s.landlord.rows[0]?.landlordParts, [{ reason: 'outsideUnit', cents: -10000 }])
+})
+
+// #311: Abrechnung und Mietkonto sagen dieselbe Vorauszahlung, je Mietverhältnis. Beide rechnen über
+// `rateInMonth`; ohne Jahreskorrektur und ohne Heizstaffel ist die angerechnete Vorauszahlung genau
+// die Summe des Mietkontos. Dazu je Monat: anteilig zwischen 0 und der Rate, die Rate im vollen Monat,
+// 0 ohne Tag im Mietverhältnis. randomDb setzt Einzüge auf den Monatsersten; Ein- und Auszugstage
+// werden hier mit einem eigenen Zufallsstrom verschoben, damit die übrigen Invarianten dieselben
+// Bestände behalten.
+test('Invariante (#311): Abrechnung = Mietkonto je Mietverhältnis, Monatsanteil zwischen 0 und der Rate', () => {
+  const rnd = makeRng(20261017)
+  const days = makeRng(311)
+  const day = (): string => String(1 + Math.floor(days() * 28)).padStart(2, '0')
+  let partialSeen = 0
+  for (let i = 0; i < 500; i++) {
+    const db = randomDb(rnd)
+    for (const t of db.tenancies) {
+      if (days() < 0.6) t.start = `${t.start.slice(0, 8)}${day()}`
+      if (t.end && days() < 0.6) t.end = `${t.end.slice(0, 8)}${day()}`
+      if (t.end && t.end < t.start) t.end = t.start
+      if (days() < 0.3) t.prepayments.push({ from: `2025-${String(1 + Math.floor(days() * 12)).padStart(2, '0')}`, monthlyCents: Math.floor(days() * 30000) })
+    }
+    const snapshot = snapshotFromDb(db, 2025)
+    const s = computeSettlement(snapshot)
+    const rows = new Map(ledgerRows(snapshot, calendarYearPeriod(2025)).map((r) => [r.tenancyId, r]))
+    for (const st of s.statements) {
+      if (st.prepaymentOverridden) continue
+      const row = rows.get(st.tenancyId) ?? assert.fail(`Fall ${i}: keine Zeile im Mietkonto für ${st.tenancyId}`)
+      assert.equal(st.prepaymentCents, row.prepaymentYearCents + (row.heatingPrepaymentYearCents ?? 0), `Fall ${i}, ${st.tenancyId}\n${JSON.stringify(db)}`)
+    }
+    for (const t of db.tenancies) {
+      const row = rows.get(t.id)
+      if (!row) continue
+      for (const mo of row.months) {
+        const month = `2025-${String(mo.month).padStart(2, '0')}`
+        const share = monthShare(t, month)
+        let rate = 0
+        for (const e of [...t.prepayments].sort((a, b) => compareText(a.from, b.from))) if (e.from <= month) rate = e.monthlyCents
+        const context = `Fall ${i}, ${t.id}, ${month}: ${mo.prepaymentCents} bei Rate ${rate}, ${share.days}/${share.of}`
+        if (share.days === 0) assert.equal(mo.prepaymentCents, 0, context)
+        else if (share.days === share.of) assert.equal(mo.prepaymentCents, rate, context)
+        else {
+          partialSeen++
+          assert.ok(mo.prepaymentCents >= 0 && mo.prepaymentCents <= rate, context)
+          assert.deepEqual(mo.share, share, context)
+        }
+      }
+    }
+  }
+  assert.ok(partialSeen > 100, `nur ${partialSeen} angebrochene Monate erzeugt`)
 })

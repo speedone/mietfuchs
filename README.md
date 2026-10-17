@@ -234,7 +234,11 @@ legt die Dateien für alle Plattformen in `dist-bin/` ab.
    Zahlungseingänge füllen die Monate der Reihe nach, ein Monatsraster zeigt *bezahlt /
    teilweise / offen*, im laufenden Jahr *noch nicht fällig* für den laufenden und die kommenden Monate, dazu
    Brutto/Netto-Aufschlüsselung und fällige Rückstände je Mieter. Zeigt das Mietkonto einen
-   Rückstand, weist die Abrechnung darauf hin, denn angerechnet wird, was tatsächlich gezahlt wurde.
+   Rückstand, weist die Abrechnung darauf hin, denn maßgeblich ist, was tatsächlich gezahlt wurde.
+   Beginnt oder endet ein Mietverhältnis im Lauf eines Monats, setzen Mietkonto und Abrechnung
+   Miete und Vorauszahlung dieses Monats nach Kalendertagen an (Einzug am 15.03. bei 150 €
+   Vorauszahlung: 17 von 31 Tagen, 82,26 €); das ist eine Auslegung, ein Hinweis nennt den Betrag,
+   und weicht das Gezahlte ab, trägst du es in der Abrechnung mit „✎ anpassen“ ein.
 8. **Steuer (Anlage V)**: Jahresübersicht der Einkünfte aus Vermietung je Objekt: Einnahmen
    nach dem Zuflussprinzip (das vereinbarte Soll lässt sich zum Abgleich einblenden),
    Werbungskosten nach Anlage-V-Gruppen sowie der Überschuss. Wohnst du selbst im Haus, ist die

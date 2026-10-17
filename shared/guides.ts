@@ -376,24 +376,26 @@ const GUIDE_DATA = {
       { page: 'stammdaten', text: 'Die neue Anschrift des ausgezogenen Mieters tragen Sie an seinem Mietverhältnis ein: ✎ klicken, „Weitere Angaben — Nebenkosten-Modell, Kontakt, Kaution, Vertrag (optional)“ aufklappen und „Abweichende Anschrift (Schriftverkehr)“ ausfüllen. So haben Sie sie beim Versand der Abrechnung zur Hand; auf den Ausdruck kommt sie nicht.' },
       { page: 'zaehler', text: 'Eine Zwischenablesung können Sie auch später nachtragen: Ablesungen des Zählers aufklappen, Datum und Stand eintragen und „Ablesung speichern“.' },
       { page: 'mietkonto', text: 'Prüfen Sie im Mietkonto, ob die Vorauszahlungen bis zum Auszug eingegangen sind.' },
-      { page: 'abrechnung', text: 'Jedes Mietverhältnis bekommt seine eigene Abrechnung. Hat ein Mieter weniger gezahlt als vereinbart, tragen Sie den gezahlten Betrag mit „✎ anpassen“ ein.' },
+      { page: 'abrechnung', text: 'Jedes Mietverhältnis bekommt seine eigene Abrechnung. Hat ein Mieter anders gezahlt als angesetzt, auch im Auszugs- oder Einzugsmonat, tragen Sie den gezahlten Betrag mit „✎ anpassen“ ein.' },
     ],
     result: [
       'Jeder Mieter trägt seinen Anteil für die Tage, an denen er gemietet hat. Den Anteil für die leeren Tage trägt der Vermieter, mit dem Grund „Leerstand“.',
       'Beim Personenschlüssel zählt eine leerstehende Wohnung je Leerstandstag mit einer Person, und auch diesen Anteil trägt der Vermieter. Wie eine leere Wohnung dort anzusetzen ist, ist nicht abschließend geklärt; die eine Person ist eine Auslegung von Mietfuchs.',
       'Beim Verbrauch teilt eine Zwischenablesung genau auf; ohne sie verteilt Mietfuchs den Verbrauch zwischen zwei Ablesungen tagesanteilig.',
       'Für ein Mietverhältnis, das im Jahr endet, schlägt die Abrechnung keine neue Vorauszahlung vor.',
+      'Im Auszugs- und Einzugsmonat setzt Mietfuchs Miete und Vorauszahlung anteilig nach Kalendertagen an, im Mietkonto wie in der Abrechnung; das ist eine Auslegung von Mietfuchs, und ein Hinweis nennt den angesetzten Betrag.',
     ],
     example: 'Eine Wohnung mit 60 von 180 m², Grundsteuer 1.800 € nach Wohnfläche, auf die Wohnung entfallen 600 €. Der alte Mieter wohnt bis 31.03.2025, 90 Tage: 147,95 €. April und Mai steht die Wohnung leer, 61 Tage: 100,27 € trägt der Vermieter. Der neue Mieter zieht am 01.06.2025 ein, 214 Tage: 351,78 €.',
     caveats: [
       { text: 'Zu Teilabrechnungen sind Sie nicht verpflichtet: Auch der ausgezogene Mieter bekommt seine Abrechnung mit der Jahresabrechnung, innerhalb derselben Frist von zwölf Monaten nach Ende des Abrechnungszeitraums.', norm: '§ 556 Abs. 3 Satz 2 und 4 BGB' },
       { text: 'Bei Heizung und Warmwasser ist beim Nutzerwechsel eine Zwischenablesung vorgeschrieben.', norm: '§ 9b HeizkostenV' },
       { text: 'Nach der Abrechnung können Sie und der neue Mieter die Vorauszahlung durch Erklärung in Textform auf eine angemessene Höhe anpassen.', norm: '§ 560 Abs. 4 BGB' },
+      { text: 'Abgerechnet wird gegen die Vorauszahlungen, die der Mieter für den Abrechnungszeitraum tatsächlich geleistet hat.', norm: 'BGH, Urteil vom 18.05.2011, VIII ZR 240/10' },
     ],
     gaps: [
       { text: 'Eine geschätzte Ablesung kennzeichnen, wenn die Zwischenablesung versäumt wurde.', issue: 98 },
     ],
-    terms: ['vacancy', 'personDays', 'meterReading', 'prepayment', 'settlementDeadline'],
+    terms: ['vacancy', 'personDays', 'meterReading', 'prepayment', 'partialMonth', 'settlementDeadline'],
   },
   // #208: Abrechnungszeitraum, der vom Kalenderjahr abweicht (Entwurf 11.4).
   periodMayApril: {

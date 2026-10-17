@@ -66,3 +66,9 @@ export function newPaymentDate(year: number, today: Date): string {
   if (year > y) return `${year}-01-01`
   return `${y}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
 }
+
+// Der Zusatz im angebrochenen Ein- oder Auszugsmonat (#311): Das Soll ist dort nach Kalendertagen
+// angesetzt, dieselbe Regel wie in der Abrechnung. Ein voller Monat hat keinen Zusatz.
+export function shareText(mo: Pick<RentMonth, 'share'>): string | null {
+  return mo.share ? `anteilig ${mo.share.days}/${mo.share.of} Tage` : null
+}

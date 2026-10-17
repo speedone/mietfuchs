@@ -159,6 +159,9 @@ export type RentMonthStatus = 'paid' | 'partial' | 'open' | 'notDue'
 
 export type RentMonth = {
   month: number // 1..12
+  // Nur im angebrochenen Ein- oder Auszugsmonat (#311): Tage des Mietverhältnisses im Monat und Tage
+  // des Monats. Kaltmiete, Vorauszahlung und Pauschale sind dann nach Kalendertagen angesetzt.
+  share?: { days: number, of: number }
   baseRentCents: number
   prepaymentCents: number
   flatRateCents: number // Pauschale (#93)
@@ -1007,8 +1010,8 @@ export type TaxReport = {
     flatRateSollCents: number // Betriebskostenpauschalen, vereinbart (#93)
     // Was die Abrechnung desselben Jahres bei den Vorauszahlungen ansetzt, bei abgeschlossener
     // Abrechnung ihr eingefrorener Stand. Das ist nicht dasselbe wie `prepaymentSollCents`, und
-    // der Unterschied ist gewollt: Die Abrechnung muss die tatsächlich geleisteten
-    // Vorauszahlungen einstellen (§ 556 BGB, ständige Rechtsprechung des BGH), und sie verteilt
+    // der Unterschied ist gewollt: Die Abrechnung nimmt die Jahreskorrektur, wenn sie erfasst ist,
+    // denn maßgeblich ist das tatsächlich Geleistete (BGH VIII ZR 240/10, Rn. 16), und sie verteilt
     // nur über Wohnungen, die zur Abrechnungseinheit gehören. Die Übersicht führt beide, damit
     // der Unterschied dasteht, statt dass jeder Nutzer ihn selbst herleitet (#70). `null`, wenn
     // kein Abrechnungszeitraum dem Kalenderjahr gleicht (#208, Entwurf 3.10): Eine Zahl aus zwei
