@@ -6,6 +6,21 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+### Behoben
+
+- Steuerübersicht bei einem Zeitraum über zwei Kalenderjahre (Abrechnungszeitraum wie Mai bis April,
+  ebenso eine eigene Heizperiode in der Abrechnung oder als eigene Heizkostenabrechnung): Drei
+  Hinweise standen im falschen Jahr. Der Hinweis zum Brennstoff aus dem Vorrat zählte den Übertrag
+  in zwei Steuerjahren, bei einer eigenen Heizkostenabrechnung ohne Lieferung gar nicht, und nannte
+  so einen falschen Abstand zum Eigenanteil der Abrechnung, auch in Jahren ohne Heizrechnung. Jetzt
+  steht der Übertrag im Jahr, in dem der Brennstoff seiner Abrechnung bezahlt ist, bei Zahlungen in
+  zwei Jahren anteilig; ohne Brennstoffrechnung im Jahr, in dem der Zeitraum beginnt. Bei einem
+  Kalenderobjekt mit eigener Heizperiode steht er damit im Jahr der Zahlung statt im Jahr der
+  Abrechnung. „Eigennutzung im Jahr geändert“ erschien auch für ein Jahr, in dem die selbstgenutzte
+  Einheit gar nicht vermietet war, und der Hinweis auf eine abweichende abgeschlossene Abrechnung
+  auch im Jahr ohne ihre Positionen. Die Werbungskosten, ihr privater und ihr abziehbarer Teil
+  waren nicht betroffen.
+
 ## [0.11.1] – 2026-10-17
 
 ### Behoben

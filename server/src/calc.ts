@@ -92,7 +92,7 @@ import { co2Plausibility, etsExempt as etsExemptPlant, plausibilityText } from '
 import { billMissingText, deductionMissingText, generationPowerText, selfSupplyPowerText, missingOperatingPowerText, missingPowerFindings, operatingPowerBalance, operatingPowerFindings, operatingPowerText, unmarkedPowerCredits, type OperatingPowerBalance } from './operatingPower.ts'
 import { GENERAL_POWER_CATEGORY } from '../../shared/operatingPower.ts'
 import { LAW_PARAMS } from '../../shared/law/params.ts'
-import { fuelFromDeliveries, fuelFromStock, looseCentsOf, measuredOffset, problemText, settledByDefault, stockKeysOf, stockOf, stockTemplateOfLine, stockTouched, valueOf as stockValueOf, type FuelFigures, type StockPeriodInput, type StockResult } from './fuelStock.ts'
+import { fuelFromDeliveries, fuelFromStock, isFuelMarked, looseCentsOf, measuredOffset, problemText, settledByDefault, stockKeysOf, stockOf, stockTemplateOfLine, stockTouched, valueOf as stockValueOf, type FuelFigures, type StockPeriodInput, type StockResult } from './fuelStock.ts'
 import { isStockEnergy, STOCK_FUEL_NAMES, STOCK_UNIT_TEXT } from '../../shared/fuelStock.ts'
 import { degreeDayPermille, type DayRange } from '../../shared/degreeDays.ts'
 import { claimDeadline, nextSettlement, prepaymentAgreed, refundDueDate, refundLawAt, refundProposal, refundSteps, type LawAsk } from './co2Refund.ts'
@@ -1042,7 +1042,9 @@ export const taxYearOf = (item: Pick<SnapshotCostItem, 'taxYear'>, period: Pick<
 
 // Ein Teil der Steuerübersicht: der Schnappschuss eines Abrechnungszeitraums und seine Positionen,
 // die im Kalenderjahr gezahlt wurden. Der Eigenanteil kommt aus der Abrechnung dieses Zeitraums.
-export type TaxPart = { snapshot: Snapshot; items: SnapshotCostItem[] }
+// `carryOnly`: eine Heizkostenabrechnung nach Weg d ohne Positionen in diesem Jahr, die nur für den Hinweis zum
+// Übertrag aus dem Vorrat mitgerechnet wird (`carryShareCents`); sie ist kein Teil der Übersicht.
+export type TaxPart = { snapshot: Snapshot; items: SnapshotCostItem[]; carryOnly?: true }
 
 // Eigenanteil an den Überträgen aus dem Brennstoffvorrat einer Abrechnung (Heizung PR 8, N8). Die
 // Überträge sind keine Positionen; die Steuerübersicht nimmt das Bezahlte (6.4 Nr. 1, G-C5), die
@@ -1051,6 +1053,36 @@ export function stockCarrySelfCents(settlement: Pick<ComputedSettlement, 'landlo
   return settlement.landlord.rows
     .filter((r) => r.costItemId.startsWith('stock:'))
     .reduce((a, r) => a + (r.landlordParts ?? []).filter((x) => x.reason === 'selfUse').reduce((b, x) => b + x.cents, 0), 0)
+}
+
+// Der Teil des Übertrags einer Abrechnung, der in ein Steuerjahr gehört. Ein Zeitraum über zwei Kalenderjahre (Mai bis
+// April, Heizperiode nach Weg b oder d) ist in beiden ein Teil der Steuerübersicht; sein Übertrag gehört aber dorthin,
+// wo der Brennstoff bezahlt ist, denn mit dessen privatem Teil vergleicht ihn der Hinweis. Deshalb: nach dem Jahr der
+// Zahlung der Brennstoffpositionen der Abrechnung, bei mehreren Jahren anteilig nach ihren Beträgen (Restverfahren,
+// über alle Jahre also genau einmal). Brennstoff heißt wie in der Bestandsrechnung gekennzeichnet oder mit einer
+// Lieferung verknüpft (`isFuelMarked`). Eine Gutschrift mindert das Gewicht ihres Jahres, aber nicht unter 0: Sonst zöge
+// sie einen Übertrag mit umgekehrtem Vorzeichen in ihr Jahr und verdoppelte ihn im Jahr der Rechnung. Ohne Gewicht
+// (Verbrauch nur aus dem Vorrat) ist nichts bezahlt, an dem er sich ausrichten könnte; dann gilt das Jahr, in dem der
+// Zeitraum der Abrechnung beginnt, in dem sie stets ein Teil ist (bei Weg d über `carryOnly`).
+export function carryShareCents(snapshot: Snapshot, carryCents: number, year: number): number {
+  if (carryCents === 0) return 0
+  const weights = new Map<number, number>()
+  const seen = new Set<string>()
+  const add = (c: SnapshotCostItem, period: Pick<BillingPeriod, 'from'>): void => {
+    if (seen.has(c.id) || !isFuelMarked(c)) return
+    seen.add(c.id)
+    const y = taxYearOf(c, period)
+    weights.set(y, (weights.get(y) ?? 0) + c.amountCents)
+  }
+  for (const x of snapshot.heatingParts ?? []) if (!x.separate) for (const c of x.items) add(c, x.period)
+  for (const c of snapshot.costItems) if (c.period === snapshot.period.key) add(c, snapshot.period)
+  const years = [...weights.keys()].sort((a, b) => a - b)
+  const weightOf = (y: number): number => Math.max(0, weights.get(y) ?? 0)
+  const total = years.reduce((a, y) => a + weightOf(y), 0)
+  if (total === 0) return Number(snapshot.period.from.slice(0, 4)) === year ? carryCents : 0
+  const shares = largestRemainder(carryCents, years.map((y) => (carryCents * weightOf(y)) / total), years.map(String))
+  const i = years.indexOf(year)
+  return i < 0 ? 0 : shares[i] ?? 0
 }
 
 // `linkable`: Positionen, auf die ein Abzug zeigen kann, auch aus anderen Jahren (#268, Durchsicht M1); nur für die
@@ -1064,7 +1096,8 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
   if (snapshot.period.from !== calendar.from || snapshot.period.to !== calendar.to) {
     throw new Error('Die Steuerübersicht rechnet im Kalenderjahr; dieser Schnappschuss trägt einen anderen Zeitraum.')
   }
-  const used: readonly TaxPart[] = parts ?? [{ snapshot, items: snapshot.costItems.filter((c) => c.period === snapshot.period.key) }]
+  const given: readonly TaxPart[] = parts ?? [{ snapshot, items: snapshot.costItems.filter((c) => c.period === snapshot.period.key) }]
+  const used = given.filter((p) => !p.carryOnly)
   const ledger = rentLedger(snapshot)
   const baseRentSollCents = ledger.rows.reduce((a, r) => a + r.baseRentYearCents, 0)
   // Das Soll der Vorauszahlungen, beide Staffeln (Heizung PR 5): Die Heizvorauszahlung ist ein Teil davon.
@@ -1141,7 +1174,12 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
   const settled = used.map((p) => ({ part: p, settlement: computeSettlement(p.snapshot) }))
   // Heizung PR 8 (N8): der Eigenanteil am Übertrag aus dem Vorrat, um den Abrechnung und Steuer beim
   // Eigenanteil auseinanderliegen.
-  const stockCarrySelf = settled.reduce((a, { settlement }) => a + stockCarrySelfCents(settlement), 0)
+  // Mit Teilen (#208) je Abrechnung nur der Anteil dieses Steuerjahres (`carryShareCents`); ohne Teile ist die eine
+  // Abrechnung die des Kalenderjahres.
+  const stockCarrySelf = parts === undefined
+    ? settled.reduce((a, { settlement }) => a + stockCarrySelfCents(settlement), 0)
+    : [...settled, ...given.filter((p) => p.carryOnly).map((p) => ({ part: p, settlement: computeSettlement(p.snapshot) }))]
+      .reduce((a, { part, settlement }) => a + carryShareCents(part.snapshot, stockCarrySelfCents(settlement), year), 0)
   // Eine Heizkostenabrechnung nach Weg d ist kein Abrechnungszeitraum des Objekts. Gibt es eine,
   // gibt es für die Vorauszahlungen der Abrechnung keine einzelne Zahl mehr (Entwurf 3.10): `null`.
   const separateHeating = used.some((p) => p.snapshot.scope?.kind === 'heating')
@@ -1177,7 +1215,7 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
   const items = used.flatMap((p) => p.items)
   // Die Aufteilung bei teilweiser Eigennutzung (#163), je Position aus der Abrechnung ihres
   // Zeitraums. Die Rücklage fehlt darin.
-  const splits = settled.map(({ part, settlement }) => splitForTax(part.snapshot, part.items.filter((c) => groupOf(c.category) !== null), settlement))
+  const splits = settled.map(({ part, settlement }) => splitForTax(part.snapshot, part.items.filter((c) => groupOf(c.category) !== null), settlement, calendar))
   const split: TaxSplit = {
     items: new Map(splits.flatMap((s) => [...s.items.entries()])),
     selfUseChangedInYear: splits.some((s) => s.selfUseChangedInYear),
@@ -1430,7 +1468,9 @@ export function taxPartsFor(source: Parameters<typeof snapshotFor>[0], propertyI
       const snap = heatingSnapshotFor(source, propertyId, plant.id, h)
       if (!snap) return []
       const items = snap.costItems.filter((c) => taxYearOf(c, h) === year)
-      return items.length > 0 ? [{ snapshot: snap, items }] : []
+      if (items.length > 0) return [{ snapshot: snap, items }]
+      // Ohne Positionen in diesem Jahr nur im Jahr ihres Beginns, für den Übertrag aus dem Vorrat (`carryShareCents`).
+      return Number(h.from.slice(0, 4)) === year ? [{ snapshot: snap, items: [], carryOnly: true as const }] : []
     })
   })
   return [...parts, ...separate]
@@ -1476,7 +1516,8 @@ const KEYS_NOT_AREA: readonly CostKey[] = ['persons', 'units', 'custom', 'extern
 
 type TaxSplit = { items: Map<string, TaxExpenseItem>, selfUseChangedInYear: boolean, closedSelfUseDiffers: boolean, closedItemsChanged: number }
 
-function splitForTax(snapshot: Snapshot, items: SnapshotCostItem[], settlement: ComputedSettlement): TaxSplit {
+// `calendar`: das Steuerjahr. Ein Zeitraum wie Mai bis April reicht über zwei; seine Hinweise gelten nur für den Teil darin.
+function splitForTax(snapshot: Snapshot, items: SnapshotCostItem[], settlement: ComputedSettlement, calendar: Pick<BillingPeriod, 'from' | 'to'>): TaxSplit {
   const units = snapshot.units
   const unitById = new Map(units.map((u) => [u.id, u]))
   const isSelf = (u: SnapshotUnit) => !!u.selfUsed && !u.participates
@@ -1528,7 +1569,9 @@ function splitForTax(snapshot: Snapshot, items: SnapshotCostItem[], settlement: 
       : allocable.map(() => 0)
     const distributed = new Map(allocable.map((c, k) => [c.id, parts[k] ?? 0]))
     fromSettlement = (c) => (asClosed(c) ? { selfCents: distributed.get(c.id) ?? 0, noBasis: liveOf(c.id).noBasis } : liveOf(c.id))
-    closedSelfUseDiffers = todaySum !== frozen.selfUsedShareCents
+    // Ein Zeitraum ohne Positionen in diesem Steuerjahr (Mai bis April: der Vorzeitraum) verteilt hier nichts; seine
+    // Abweichung gehört in das Jahr, in dem seine Positionen stehen.
+    closedSelfUseDiffers = items.length > 0 && todaySum !== frozen.selfUsedShareCents
   }
 
   // **Gibt es Einheiten außerhalb der Abrechnungseinheit, zählt das ganze Gebäude** (Durchsicht).
@@ -1662,7 +1705,11 @@ function splitForTax(snapshot: Snapshot, items: SnapshotCostItem[], settlement: 
   // Ein Mietverhältnis auf einer selbstgenutzten Einheit im Jahr: Die Nutzung hat keine Zeitachse,
   // die Fläche zählt also das ganze Jahr als privat (F5).
   const selfIds = new Set(units.filter(isSelf).map((u) => u.id))
-  const selfUseChangedInYear = snapshot.tenancies.some((t) => selfIds.has(t.unitId) && rangeOverlapDays(t.start, t.end, snapshot.period.from, snapshot.period.to) > 0)
+  // Gefragt wird nur der Teil des Zeitraums im Steuerjahr; sonst meldete Mai bis April eine Vermietung im Juni 2024
+  // auch für 2025.
+  const from = snapshot.period.from > calendar.from ? snapshot.period.from : calendar.from
+  const to = snapshot.period.to < calendar.to ? snapshot.period.to : calendar.to
+  const selfUseChangedInYear = from <= to && snapshot.tenancies.some((t) => selfIds.has(t.unitId) && rangeOverlapDays(t.start, t.end, from, to) > 0)
   return { items: result, selfUseChangedInYear, closedSelfUseDiffers, closedItemsChanged }
 }
 

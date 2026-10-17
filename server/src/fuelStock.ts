@@ -410,8 +410,12 @@ const KEYED: readonly string[] = ['area', 'persons', 'units', 'meter', 'direct',
 // Heizkostenverordnung: Die Überträge gehen mit den Gewichten ihres Ziels durch die Verordnung.
 export const SELF_KEYED: readonly string[] = ['heatingSystem']
 export const stockKeysOf = (method: string): readonly string[] => (method === 'self' ? SELF_KEYED : KEYED)
+// Brennstoff ist eine Position, die so gekennzeichnet oder mit einer Lieferung verknüpft ist. Das Formular speichert den
+// Teil der Heizkosten leer, wenn nur die Lieferung gewählt ist (FuelCard.tsx); deshalb gilt beides.
+export const isFuelMarked = (c: Pick<StockKeyItem, 'heatingPart' | 'fuelDeliveryId'>): boolean =>
+  c.heatingPart === 'fuel' || (c.fuelDeliveryId ?? null) !== null
 export const isStockFuelItem = (c: StockKeyItem, plantId: string, heatingCategory: string): boolean =>
-  c.category === heatingCategory && c.heatingPlantId === plantId && (c.heatingPart === 'fuel' || (c.fuelDeliveryId ?? null) !== null)
+  c.category === heatingCategory && c.heatingPlantId === plantId && isFuelMarked(c)
 
 // Die Position, deren Schlüssel die Überträge folgen: die Brennstoffposition dieser Heizperiode mit dem
 // größten Betrag, sonst die jüngste der Vorperiode. Schnappschuss und Abrechnung fragen dieselbe Regel.
