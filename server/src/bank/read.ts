@@ -9,21 +9,24 @@ import { clip, problemOnly, type BankReadResult } from './statement.ts'
 
 // Die Grenzen richten sich nach dem größten Fall, der wirklich vorkommt: mehrere Jahre camt.053
 // eines Kontos in einem ZIP. Ein Tagesauszug mit einer Handvoll Umsätzen hat wenige Kilobyte,
-// ein Umsatz in camt rund 1 bis 2 KB. Ein Jahr Tagesauszüge (gut 250 Bankarbeitstage) sind damit
-// einige hundert Dateien und wenige MB; selbst ein einziger Jahresauszug eines lebhaften Kontos
-// mit 2.000 Umsätzen bleibt unter 5 MB.
+// ein Umsatz in camt gemessen rund 250 Bytes. Ein Jahr Tagesauszüge (gut 250 Bankarbeitstage)
+// sind damit einige hundert Dateien und wenige MB; selbst ein einziger Jahresauszug eines
+// lebhaften Kontos mit 20.000 Umsätzen bleibt bei rund 5 MB.
 // - 10 MB je Datei: das Doppelte davon. Zugleich bestimmt die Größe, wie lange das Lesen den
 //   Server blockiert, denn XML wird am Stück gelesen: Gemessen braucht eine Datei an der Grenze
 //   mit rund 40.000 gewöhnlichen Umsätzen etwa sechs Sekunden, ein einziges riesiges Attribut oder
 //   Element nur ein bis zwei. Ein Angriff mit einer großen Datei blockiert also nicht länger als
 //   ein echter Auszug dieser Größe; kleiner muss die Grenze dafür nicht werden.
 // - 20 MB entpackt im ZIP: vier Jahre Tagesauszüge mit Platz nach oben.
-// - 1000 Einträge: vier Jahre Tagesauszüge; gezählt wird jeder Eintrag, auch Ordner und Beiwerk,
-//   denn adm-zip legt für jeden ein Objekt an.
+// - 3.000 Einträge: vier Jahre Tagesauszüge sind gut 1.040 Dateien, mit Ordnern je Jahr und Monat
+//   rund 1.100 Einträge, und ein Archiv vom Mac legt zu jeder Datei und jedem Ordner noch einen
+//   unter `__MACOSX/` dazu, zusammen rund 2.200. Gezählt wird jeder Eintrag, auch Ordner und
+//   Beiwerk, denn adm-zip legt für jeden ein Objekt an; 65.535 kosteten gemessen 4,7 s und 865 MB,
+//   3.000 sind damit gut ein Zwanzigstel davon.
 // - 255 Bytes je Name: so lang darf ein Dateiname auf den gängigen Dateisystemen sein. adm-zip
 //   legt zu jedem Ordner im Namen einen Eintrag an, mit Aufwand im Quadrat der Tiefe; ein Name aus
 //   Tausenden Ebenen blockierte den Server für Sekunden bis Minuten.
-export const MAX_ZIP_ENTRIES = 1000
+export const MAX_ZIP_ENTRIES = 3000
 export const MAX_FILE_BYTES = 10 * 1024 * 1024
 export const MAX_ZIP_TOTAL_BYTES = 20 * 1024 * 1024
 const MAX_ZIP_NAME_BYTES = 255
@@ -38,11 +41,17 @@ function decodeText(data: Buffer): string {
   }
 }
 
+const de = (n: number) => n.toLocaleString('de-DE')
+const MB = (bytes: number) => `${de(bytes / 1024 / 1024)} MB`
+const SPLIT_ARCHIVE = 'Bitte teilen Sie die Auszüge auf mehrere Archive auf, zum Beispiel eines je Jahr.'
+const FILE_TOO_BIG = `Die Datei ist zu groß für einen Kontoauszug; höchstens ${MB(MAX_FILE_BYTES)} sind möglich. `
+  + 'Bitte rufen Sie bei Ihrer Bank kürzere Zeiträume ab, zum Beispiel je Quartal oder je Monat.'
+
 const NOT_A_STATEMENT = 'Die Datei ist kein Kontoauszug im Format camt oder MT940.'
 
 // `null`: weder XML noch MT940, also nicht als Kontoauszug erkannt.
 function readSingle(data: Buffer, where: string): BankReadResult | null {
-  if (data.length > MAX_FILE_BYTES) return problemOnly(where, 'Die Datei ist zu groß für einen Kontoauszug.')
+  if (data.length > MAX_FILE_BYTES) return problemOnly(where, FILE_TOO_BIG)
   // Das erste sichtbare Zeichen entscheidet: „<“ ist XML, sonst Text. Byte-Order-Mark und
   // Leerraum davor zählen nicht.
   const head = data.subarray(0, 64).toString('latin1').replace(/^\xEF\xBB\xBF/, '').trimStart()
@@ -65,23 +74,35 @@ type ZipDirectory = { entries: number, totalBytes: number, longName: boolean }
 // `null`: Das Verzeichnis ist nicht lesbar oder reicht über die Datei hinaus. ZIP64 (für Archive
 // über 4 GB oder mit mehr als 65.534 Einträgen) braucht kein Kontoauszug; seine Platzhalter
 // (0xFFFF, 0xFFFFFFFF) liegen ohnehin über jeder Grenze und führen zur Ablehnung.
-function zipDirectory(data: Buffer): ZipDirectory | null {
-  // Das Ende des Verzeichnisses steht in den letzten 22 Bytes, gefolgt von einem Kommentar von
-  // höchstens 65.535 Bytes. Gesucht wird von hinten, wie adm-zip es tut.
-  let end = -1
-  for (let i = data.length - 22; i >= Math.max(0, data.length - 22 - 0xffff); i--) {
-    if (data[i] === 0x50 && data.readUInt32LE(i) === 0x06054b50) {
-      end = i
-      break
-    }
-  }
+// `'comment'`: Das Archiv trägt einen Kommentar.
+//
+// Die Prüfung taugt nur, wenn sie dasselbe Verzeichnis liest wie adm-zip, und adm-zip (0.6.1,
+// `readMainHeader` in zipFile.js) sucht anders als die Regel: Es geht von hinten durch die letzten
+// 64 KB und nimmt ein ZIP64-Ende (`PK\x06\x06`), sobald es auf eines stößt, auch im Kommentar
+// hinter dem gewöhnlichen Ende, und hinter einem ZIP64-Verweis (`PK\x06\x07`) in den 20 Bytes vor
+// dem gewöhnlichen Ende sucht es noch einmal 64 KB weiter. Ein Archiv konnte so hier ein harmloses
+// Verzeichnis zeigen und beim Entpacken ein anderes, dessen Einträge alle auf denselben
+// komprimierten Auszug zeigen (gemessen: 52 KB Archiv, 42 MB entpackt, ohne Befund). Statt die
+// Suche von adm-zip nachzubauen, wird das Archiv so eng gefasst, dass beide Suchen nur eine Antwort
+// haben: Ein Kontoauszugsarchiv hat keinen Kommentar, also steht das gewöhnliche Ende genau in den
+// letzten 22 Bytes, dort beginnt auch adm-zip, und in den 20 Bytes davor, die es danach noch
+// ansieht, darf keine Kennung eines weiteren Endes stehen.
+function zipDirectory(data: Buffer): ZipDirectory | 'comment' | null {
+  const end = data.length - 22
   if (end < 0) return null
-  // adm-zip sucht in den 20 Bytes davor noch nach einem zweiten Ende oder einem ZIP64-Verweis und
-  // nähme dann jenes. Ein Kontoauszug hat beides nicht; zwei Verzeichnisse wären ein Archiv, das
-  // hier anders gelesen würde als beim Entpacken.
+  if (data.readUInt32LE(end) !== 0x06054b50) {
+    // Steht das Ende weiter vorn, folgt ihm ein Kommentar. Das lässt sich benennen; alles andere
+    // ist schlicht kein lesbares Archiv.
+    for (let i = end - 1; i >= Math.max(0, end - 0xffff); i--) {
+      if (data[i] === 0x50 && data.readUInt32LE(i) === 0x06054b50) return 'comment'
+    }
+    return null
+  }
+  // Die Länge des Kommentars steht im Ende selbst; mit 22 Bytes bis zum Dateiende muss sie 0 sein.
+  if (data.readUInt16LE(end + 20) !== 0) return null
   for (let i = Math.max(0, end - 20); i < end; i++) {
     const signature = data.readUInt32LE(i)
-    if (signature === 0x06054b50 || signature === 0x07064b50) return null
+    if (signature === 0x06054b50 || signature === 0x06064b50 || signature === 0x07064b50) return null
   }
   const entries = Math.max(data.readUInt16LE(end + 8), data.readUInt16LE(end + 10))
   if (entries > MAX_ZIP_ENTRIES) return { entries, totalBytes: 0, longName: false }
@@ -100,17 +121,22 @@ function zipDirectory(data: Buffer): ZipDirectory | null {
   return { entries, totalBytes, longName }
 }
 
+const ZIP_WITH_COMMENT = 'Das ZIP-Archiv trägt einen Kommentar, wie ihn kein Export von Kontoauszügen schreibt, '
+  + 'und wird deshalb nicht gelesen. Bitte entpacken Sie es und packen Sie die Auszüge neu, '
+  + 'oder laden Sie die Dateien einzeln hoch.'
+
 export function readBankFile(data: Buffer, uploadedName: string): BankReadResult {
   // Der Name steht in jedem Befund; ein überlanger stünde dort tausendfach.
   const fileName = clip(uploadedName, MAX_ZIP_NAME_BYTES)
   const isZip = data.length >= 4 && data.readUInt32LE(0) === 0x04034b50
   if (!isZip) return readSingle(data, fileName) ?? problemOnly(fileName, NOT_A_STATEMENT)
   const directory = zipDirectory(data)
+  if (directory === 'comment') return problemOnly(fileName, ZIP_WITH_COMMENT)
   if (!directory) return problemOnly(fileName, 'Das ZIP-Archiv lässt sich nicht öffnen.')
-  if (directory.entries > MAX_ZIP_ENTRIES) return problemOnly(fileName, `Das ZIP-Archiv enthält mehr als ${MAX_ZIP_ENTRIES} Einträge.`)
+  if (directory.entries > MAX_ZIP_ENTRIES) return problemOnly(fileName, `Das ZIP-Archiv enthält mehr als ${de(MAX_ZIP_ENTRIES)} Einträge. ${SPLIT_ARCHIVE}`)
   // Die Größen aus dem Verzeichnis des Archivs, bevor entpackt wird. Gelogen werden kann dort
   // auch; dann scheitert das Entpacken unten, und das ist ein Befund und kein Absturz.
-  if (directory.totalBytes > MAX_ZIP_TOTAL_BYTES) return problemOnly(fileName, 'Das ZIP-Archiv ist zu groß für Kontoauszüge.')
+  if (directory.totalBytes > MAX_ZIP_TOTAL_BYTES) return problemOnly(fileName, `Das ZIP-Archiv ist zu groß für Kontoauszüge; entpackt sind höchstens ${MB(MAX_ZIP_TOTAL_BYTES)} möglich. ${SPLIT_ARCHIVE}`)
   if (directory.longName) return problemOnly(fileName, `Das ZIP-Archiv enthält einen Eintrag mit mehr als ${MAX_ZIP_NAME_BYTES} Zeichen im Namen; so heißt kein Kontoauszug.`)
   let entries: AdmZip.IZipEntry[]
   try {
@@ -129,7 +155,7 @@ export function readBankFile(data: Buffer, uploadedName: string): BankReadResult
   if (files.length === 0) return problemOnly(fileName, 'Das ZIP-Archiv enthält keinen Kontoauszug.')
   const results = files.map((e) => {
     const where = `${fileName}: ${e.entryName}`
-    if (e.header.size > MAX_FILE_BYTES) return problemOnly(where, 'Die Datei ist zu groß für einen Kontoauszug.')
+    if (e.header.size > MAX_FILE_BYTES) return problemOnly(where, FILE_TOO_BIG)
     let content: Buffer
     try {
       content = e.getData()

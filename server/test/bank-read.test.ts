@@ -85,6 +85,10 @@ function handmadeZip(count: number, name: (i: number) => string, size: (i: numbe
 
 // ---------- ZIP ----------
 
+// Jede Meldung zu einer Grenze sagt, was zu tun ist.
+const ENTRIES_EXCEEDED = new RegExp(`mehr als ${MAX_ZIP_ENTRIES.toLocaleString('de-DE').replace('.', '\\.')} Einträge.*teilen Sie`)
+const TOO_BIG = /zu groß.*(teilen Sie|kürzere Zeiträume)/
+
 // Vorher entpackte adm-zip alle 65.535 Einträge in Objekte (gemessen 4,7 s und 865 MB
 // Arbeitsspeicher), bevor gezählt wurde, und gezählt wurden nur die mit passender Endung. Jetzt
 // zählt das Verzeichnis am Ende des Archivs, bevor ein Eintrag gelesen wird (gemessen unter 1 ms).
@@ -97,7 +101,7 @@ test('Kontoauszug: ein ZIP mit 65.535 leeren Einträgen wird abgelehnt, ohne sie
   const ms = performance.now() - start
   assert.equal(r.statements.length, 0)
   assert.equal(r.problems.length, 1)
-  assert.match(r.problems[0].message, /mehr als 1000 Einträge/)
+  assert.match(r.problems[0].message, ENTRIES_EXCEEDED)
   assert.ok(ms < 250, `Ablehnung dauerte ${ms.toFixed(0)} ms`)
 })
 
@@ -107,7 +111,7 @@ test('Kontoauszug: im ZIP zählen alle Einträge, nicht nur die mit passender En
   for (let i = 0; i < MAX_ZIP_ENTRIES; i++) zip.addFile(`beiwerk/${i}.bin`, Buffer.alloc(0))
   const r = readBankFile(zip.toBuffer(), 'gemischt.zip')
   assert.equal(r.statements.length, 0)
-  assert.match(r.problems[0].message, /mehr als 1000 Einträge/)
+  assert.match(r.problems[0].message, ENTRIES_EXCEEDED)
 })
 
 test('Kontoauszug: die Größe aller Einträge zählt, auch die ohne passende Endung', () => {
@@ -117,7 +121,7 @@ test('Kontoauszug: die Größe aller Einträge zählt, auch die ohne passende En
   const zip = handmadeZip(2, (i) => (i === 0 ? 'a.xml' : 'b.bin'), (i) => (i === 0 ? 1000 : MAX_ZIP_TOTAL_BYTES))
   const r = readBankFile(zip, 'gross.zip')
   assert.equal(r.statements.length, 0)
-  assert.match(r.problems[0].message, /zu groß/)
+  assert.match(r.problems[0].message, TOO_BIG)
 })
 
 // adm-zip legt zu jedem Ordner im Namen einen Eintrag an, und zwar mit Aufwand im Quadrat der
@@ -179,7 +183,89 @@ test('Kontoauszug: gespeicherte ZIP-Einträge zählen mit ihrer wirklichen Grö�
   end.writeUInt32LE(head.length, 16)
   const r = readBankFile(Buffer.concat([head, directory, end]), 'gespeichert.zip')
   assert.equal(r.statements.length, 0)
-  assert.match(r.problems[0].message, /zu groß/)
+  assert.match(r.problems[0].message, TOO_BIG)
+})
+
+// Zwei Verzeichnisse in einem Archiv: Das gewöhnliche Ende zeigt auf ein harmloses Verzeichnis A,
+// ein ZIP64-Ende im Archivkommentar dahinter auf ein Verzeichnis B. adm-zip sucht von hinten und
+// nimmt das ZIP64-Ende, sobald es eines findet, die Vorprüfung las A. In B zeigen vier Einträge
+// auf denselben komprimierten Auszug und geben je dessen volle Größe an, zusammen über der Grenze
+// von 20 MB; in A geben sie wenige Kilobyte an. Gemessen ergab so ein Aufbau vorher aus 52 KB
+// Archiv 42 MB entpacktes XML ohne einen Befund.
+function twoDirectoryZip(): Buffer {
+  const content = Buffer.from(camt053([ntry()]).replace('</Document>', `${' '.repeat(6 * 1024 * 1024)}</Document>`))
+  const packed = zlib.deflateRawSync(content)
+  const crc = zlib.crc32(content)
+  const local = Buffer.alloc(30)
+  local.writeUInt32LE(0x04034b50, 0)
+  local.writeUInt16LE(20, 4)
+  local.writeUInt16LE(8, 8) // Deflate
+  local.writeUInt32LE(crc, 14)
+  local.writeUInt32LE(packed.length, 18)
+  local.writeUInt32LE(content.length, 22)
+  local.writeUInt16LE(5, 26)
+  const head = Buffer.concat([local, Buffer.from('a.xml'), packed])
+  const names = ['a.xml', 'b.xml', 'c.xml', 'd.xml']
+  const directory = (size: number) => Buffer.concat(names.map((name) => {
+    const central = Buffer.alloc(46)
+    central.writeUInt32LE(0x02014b50, 0)
+    central.writeUInt16LE(20, 4)
+    central.writeUInt16LE(20, 6)
+    central.writeUInt16LE(8, 10)
+    central.writeUInt32LE(crc, 16)
+    central.writeUInt32LE(packed.length, 20)
+    central.writeUInt32LE(size, 24)
+    central.writeUInt16LE(name.length, 28)
+    central.writeUInt32LE(0, 42) // alle vier zeigen auf dieselben Daten
+    return Buffer.concat([central, Buffer.from(name)])
+  }))
+  const dirA = directory(packed.length)
+  const dirB = directory(content.length)
+  const offsetA = head.length
+  const offsetB = offsetA + dirA.length
+  const zip64End = Buffer.alloc(56)
+  zip64End.writeUInt32LE(0x06064b50, 0)
+  zip64End.writeBigUInt64LE(44n, 4)
+  zip64End.writeBigUInt64LE(BigInt(names.length), 24)
+  zip64End.writeBigUInt64LE(BigInt(names.length), 32)
+  zip64End.writeBigUInt64LE(BigInt(dirB.length), 40)
+  zip64End.writeBigUInt64LE(BigInt(offsetB), 48)
+  const end = Buffer.alloc(22)
+  end.writeUInt32LE(0x06054b50, 0)
+  end.writeUInt16LE(names.length, 8)
+  end.writeUInt16LE(names.length, 10)
+  end.writeUInt32LE(dirA.length, 12)
+  end.writeUInt32LE(offsetA, 16)
+  end.writeUInt16LE(zip64End.length, 20) // der Kommentar ist das ZIP64-Ende
+  return Buffer.concat([head, dirA, dirB, end, zip64End])
+}
+
+test('Kontoauszug: ein ZIP mit einem zweiten Verzeichnis im Kommentar wird abgelehnt, ohne zu entpacken', () => {
+  const zip = twoDirectoryZip()
+  // Vorbedingung: adm-zip liest wirklich Verzeichnis B, sonst prüfte der Test nichts.
+  const seen = new AdmZip(zip).getEntries()
+  assert.equal(seen.reduce((a, e) => a + e.header.size, 0) > MAX_ZIP_TOTAL_BYTES, true)
+  const r = readBankFile(zip, 'zwei-verzeichnisse.zip')
+  assert.equal(r.statements.length, 0)
+  assert.equal(r.problems.length, 1)
+  assert.match(r.problems[0].message, /Kommentar/)
+})
+
+test('Kontoauszug: ein ZIP64-Verweis vor dem gewöhnlichen Ende wird abgelehnt', () => {
+  // In den 20 Bytes vor dem gewöhnlichen Ende sieht adm-zip noch nach einem zweiten Ende, einem
+  // ZIP64-Verweis (danach sucht es 64 KB weiter) und einem ZIP64-Ende. Ein ZIP64-Ende dort scheitert
+  // ohne Kommentar auch in adm-zip, weil es über das Dateiende reichte; abgelehnt wird es trotzdem
+  // schon in der Vorprüfung, damit die Sicherheit nicht an diesem Zufall hängt.
+  for (const signature of [0x06064b50, 0x07064b50, 0x06054b50]) {
+    const zip = handmadeZip(1, () => 'a.xml')
+    const marker = Buffer.alloc(4)
+    marker.writeUInt32LE(signature, 0)
+    const cut = zip.length - 22
+    const withMarker = Buffer.concat([zip.subarray(0, cut), marker, zip.subarray(cut)])
+    const r = readBankFile(withMarker, 'zip64.zip')
+    assert.equal(r.statements.length, 0)
+    assert.match(r.problems[0].message, /lässt sich nicht öffnen/, signature.toString(16))
+  }
 })
 
 test('Kontoauszug: ein gewöhnliches ZIP mit Ordnern und Auszügen bleibt lesbar', () => {
@@ -193,10 +279,13 @@ test('Kontoauszug: ein gewöhnliches ZIP mit Ordnern und Auszügen bleibt lesbar
 })
 
 test('Kontoauszug: die Grenzen passen zueinander', () => {
-  // Eine Datei an der Grenze muss auch im ZIP Platz haben, und mehrere Jahre Tagesauszüge eines
-  // Kontos (gut 250 Bankarbeitstage im Jahr) müssen in die Zahl der Einträge passen.
+  // Eine Datei an der Grenze muss auch im ZIP Platz haben, und vier Jahre Tagesauszüge eines
+  // Kontos (gut 250 Bankarbeitstage im Jahr) müssen in die Zahl der Einträge passen, auch mit
+  // Ordnern je Jahr und Monat und mit dem Beiwerk, das macOS je Datei dazulegt (`._name`, dazu
+  // die Ordner unter `__MACOSX/`).
   assert.ok(MAX_ZIP_TOTAL_BYTES >= MAX_FILE_BYTES)
-  assert.ok(MAX_ZIP_ENTRIES >= 3 * 260)
+  const folders = 4 * (1 + 12)
+  assert.ok(MAX_ZIP_ENTRIES >= 2 * (4 * 260 + folders) + 1)
   assert.equal(MAX_FILE_BYTES, 10 * 1024 * 1024)
 })
 
@@ -205,7 +294,7 @@ test('Kontoauszug: eine einzelne Datei über der Grenze wird nicht gelesen', () 
   big.write('<?xml version="1.0"?>', 0)
   const r = readBankFile(big, 'gross.xml')
   assert.equal(r.statements.length, 0)
-  assert.match(r.problems[0].message, /zu groß/)
+  assert.match(r.problems[0].message, TOO_BIG)
 })
 
 // ---------- Länge der Textfelder ----------
