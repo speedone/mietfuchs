@@ -406,8 +406,10 @@ test('Drucken: eine Auskunft aus INFORMATIONAL und Warnungen fragen nicht nach',
 })
 
 // Durchsicht S6 (#341): Eine abgeschlossene Abrechnung fragt weder beim Versanddatum noch beim Drucken nach,
-// denn beim Abschluss wurde trotz der Fehler bestätigt (#319). Der Vermerk im Druck bleibt.
-test('abgeschlossen mit Fehlern: Versanddatum und Druck fragen nicht nach, der Druckvermerk bleibt', async () => {
+// denn beim Abschluss wurde trotz der Fehler bestätigt (#319). Auch der Vermerk „Entwurf, nicht versenden“ fehlt:
+// Er gehört nur in den Entwurf, sonst ließe sich eine bewusst trotz Fehlern abgeschlossene Abrechnung nie ohne
+// ihn drucken (Nachprüfung N1).
+test('abgeschlossen mit Fehlern: Versanddatum und Druck fragen nicht nach, ohne Druckvermerk', async () => {
   const puts: unknown[] = []
   stubSentAt(puts)
   settlement.notices = [HEAT_ERROR]
@@ -417,8 +419,7 @@ test('abgeschlossen mit Fehlern: Versanddatum und Druck fragen nicht nach, der D
   fireEvent.click(screen.getByRole('button', { name: 'Versanddatum speichern' }))
   await waitFor(() => expect(puts).toEqual([{ sentAt: `${YEAR + 1}-01-15` }]), SLOW)
   expect(screen.queryByRole('dialog')).toBeNull()
-  const mark = await screen.findByText(/Entwurf, nicht versenden/, {}, SLOW)
-  expect(mark.closest('.print-only')).not.toBeNull()
+  expect(screen.queryByText(/Entwurf, nicht versenden/)).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: /Drucken \/ PDF/ }))
   await waitFor(() => expect(printing()).toBe(true), SLOW)
   expect(screen.queryByRole('dialog')).toBeNull()
