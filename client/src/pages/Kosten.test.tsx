@@ -4,7 +4,7 @@
 // übereinstimmen. Genau diese Lücke war Issue #6 — das Feld zeigte „Sonstig", gespeichert
 // wurde „Kaltwasser".
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { Meter, Unit } from '../types'
 import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
@@ -411,4 +411,36 @@ test('CO₂-Erstattung: Karte nur bei einem Mieter, der selbst heizt', async () 
   render(<PeriodProvider><PropertyProvider><Kosten units={UNITS} settings={null} tenancies={mieter('selfSupply')} /></PropertyProvider></PeriodProvider>)
   expect(await screen.findByText(/an Mieter, die selbst heizen/)).toBeTruthy()
   expect(screen.getByRole('button', { name: 'Erstattung erfassen' })).toBeTruthy()
+})
+
+// #255 PR 3 (R-2): Ein Zahlungsdatum, das das Steuerjahr ändert, zeigt das Formular an und speichert es erst nach der
+// Rückfrage, mit `confirmPaidOn` im Rumpf; ohne Bestätigung geht nichts hinaus.
+test('Bezahlt am: Rückfrage bei anderem Steuerjahr, gespeichert mit Bestätigung', async () => {
+  const { UIProvider } = await import('../components/feedback')
+  const year = new Date().getFullYear() - 1
+  render(
+    <UIProvider>
+      <PeriodProvider>
+        <PropertyProvider>
+          <Kosten units={UNITS} settings={null} />
+        </PropertyProvider>
+      </PeriodProvider>
+    </UIProvider>,
+  )
+  await waitFor(() => expect(screen.getByRole('button', { name: /Kostenposition manuell erfassen/i })).toBeTruthy())
+  fireEvent.click(screen.getByRole('button', { name: /Kostenposition manuell erfassen/i }))
+  fireEvent.change(screen.getByLabelText(/Beschreibung/i), { target: { value: 'Versicherung' } })
+  fireEvent.change(screen.getByLabelText(/Betrag/i), { target: { value: '600,00' } })
+  const paid = screen.getByLabelText('Bezahlt am (für die Steuer)') as HTMLInputElement
+  fireEvent.change(paid, { target: { value: `${year + 1}-02-10` } })
+  expect(paid.value).toBe(`${year + 1}-02-10`)
+  expect(screen.getByRole('status').textContent).toContain(`zu ${year + 1} statt zu ${year}`)
+  fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/i }))
+  fireEvent.click(within(await screen.findByRole('dialog', { name: 'Steuerjahr ändert sich' })).getByRole('button', { name: 'Abbrechen' }))
+  await new Promise((r) => setTimeout(r, 20))
+  expect(sent).toHaveLength(0)
+  fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/i }))
+  fireEvent.click(within(await screen.findByRole('dialog', { name: 'Steuerjahr ändert sich' })).getByRole('button', { name: 'So speichern' }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0].body).toMatchObject({ paidOn: `${year + 1}-02-10`, confirmPaidOn: true })
 })

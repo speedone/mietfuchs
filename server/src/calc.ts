@@ -83,7 +83,8 @@ import type { TermId } from '../../shared/glossary.ts'
 import { allocationOf, comparablePrevious, sameAllocation, sameUnits } from '../../shared/allocation.ts'
 import { possibleDuplicates } from '../../shared/duplicates.ts'
 import { commonPeriod, tenancyOverlaps } from '../../shared/tenancyOverlap.ts'
-import { CALENDAR_RULES, calendarYearPeriod, contextOf, formatDayRange, periodContaining, periodDays, periodLabel, periodMonths, periodOfKey, periodsBetween, previousPeriod, rulesOf, settlementDeadline, settlementPeriod, type PeriodContext } from '../../shared/period.ts'
+import { CALENDAR_RULES, calendarYearPeriod, contextOf, formatDayRange, periodContaining, periodDays, periodLabel, periodMonths, periodOfKey, periodsBetween, previousPeriod, rulesOf, settlementDeadline, settlementPeriod, startYearOf, type PeriodContext } from '../../shared/period.ts'
+import { paidOnYear } from '../../shared/paidOn.ts'
 import { generatorEnergy, noCo2Supplier } from '../../shared/heatDelivery.ts'
 import { lineRoot, monthSpanText, plantRules, plantSpan, recommendedDeadline, requestMonth, sameBuilding, sameFuelLine, sameLine, sameSpan, separateOwner, servesUnit, settledSeparately } from '../../shared/heatingPeriod.ts'
 import { heatingSnapshotFor, selfAt, snapshotFor, wayOf } from './snapshot.ts'
@@ -1491,7 +1492,13 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
   // GET /api/settlement/:year), sonst widersprächen Übersicht und versendete Abrechnung.
   // Ohne Zeitraum gleich dem Kalenderjahr (#208): die Summe der Eigenanteile laut Abrechnung je
   // Position.
-  const selfUsedShareCents = same !== undefined
+  // #255 PR 3 (T3): Die Summe der ganzen Abrechnung nur, solange keine ihrer Positionen in einem anderen Jahr bezahlt
+  // ist; sonst zählte deren Eigenanteil hier mit, obwohl die Position in der Übersicht eines anderen Jahres steht.
+  // Ebenso, wenn ein anderer Teil eine Position mit Zahlungsdatum beiträgt: deren Eigenanteil steht nicht in dieser
+  // Abrechnung. Ohne Datum bleibt es bei der Regel von vorher.
+  const sameWhole = same !== undefined && same.part.snapshot.costItems.every((c) => same.part.items.includes(c)) &&
+    !used.some((p) => p !== same.part && p.items.some((c) => c.paidOn != null))
+  const selfUsedShareCents = same !== undefined && sameWhole
     ? same.part.snapshot.closedSettlement?.selfUsedShareCents ?? same.settlement.selfUsedShareCents
     : [...split.items.values()].filter((i) => i.allocation === 'settlement' && !i.operatingPowerBalance).reduce((a, i) => a + i.privateCents, 0)
 
@@ -1549,17 +1556,22 @@ export function taxPartsFor(source: Parameters<typeof snapshotFor>[0], propertyI
   const rules = rulesOf(source.properties?.find((p) => p.id === propertyId))
   const ownPlants = (source.heatingPlants ?? []).filter((p) => p.propertyId === propertyId && (p.periodStartMonth ?? null) !== null)
   const jahr = calendarYearPeriod(year)
-  const vorjahr = calendarYearPeriod(year - 1)
   // Eine Heizperiode, die in diesem Jahr beginnt, kann in der Abrechnung des Folgejahres stehen (Weg b)
   // und doch in diesem Jahr bezahlt sein (Durchsicht von #231): Mit eigener Heizperiode reicht die Suche
   // deshalb bis ins Folgejahr, dort aber nur nach deren Heizpositionen.
-  const bis = ownPlants.length > 0 ? calendarYearPeriod(year + 1).to : jahr.to
-  const parts: TaxPart[] = periodsBetween(rules, vorjahr.from, bis).flatMap((p) => {
+  // #255 PR 3: Eine Position mit Zahlungsdatum kann weit vor oder nach ihrem Zeitraum bezahlt sein (vor dem Beginn oder
+  // Jahre später, R-4 fragt dann nur nach). Die Suche reicht deshalb zusätzlich über die Zeiträume jeder Position, die in
+  // diesem Jahr bezahlt ist, mit einem Jahr Rand für Zeiträume und Heizperioden über zwei Kalenderjahre. Ohne Datum
+  // bleibt das Fenster, wie es war.
+  const dated = source.costItems.filter((c) => c.propertyId === propertyId && c.paidOn != null && paidOnYear(c.paidOn) === year).map((c) => startYearOf(c.period))
+  const von = calendarYearPeriod(Math.min(year - 1, ...dated.map((y) => y - 1))).from
+  const bis = calendarYearPeriod(Math.max(ownPlants.length > 0 ? year + 1 : year, ...dated.map((y) => y + 2))).to
+  const parts: TaxPart[] = periodsBetween(rules, von, bis).flatMap((p) => {
     const snap = snapshotFor(source, propertyId, p)
     const items = [
       // `snap.costItems`: Ein Abzug beim Betriebsstrom steht im Jahr seiner Stromrechnung (#267), und die steht im selben
-      // Zeitraum (outflow.ts).
-      ...(p.from > jahr.to ? [] : snap.costItems.filter((c) => paidWhollyIn(c, p, year, snap.costItems))),
+      // Zeitraum (outflow.ts). Auch aus Zeiträumen nach dem Jahr: eine vorab bezahlte Position (#255 PR 3, R-9).
+      ...snap.costItems.filter((c) => paidWhollyIn(c, p, year, snap.costItems)),
       ...(snap.heatingParts ?? []).filter((x) => !x.separate).flatMap((x) => x.items.filter((c) => paidWhollyIn(c, x.period, year, x.items))),
     ]
     const touches = p.from <= jahr.to && p.to >= jahr.from
@@ -1567,7 +1579,7 @@ export function taxPartsFor(source: Parameters<typeof snapshotFor>[0], propertyI
   })
   const separate: TaxPart[] = ownPlants.flatMap((plant) => {
     const way = wayOf(plant)
-    return periodsBetween(plantRules(way, rules), vorjahr.from, jahr.to).flatMap((h) => {
+    return periodsBetween(plantRules(way, rules), von, dated.length > 0 ? bis : jahr.to).flatMap((h) => {
       if (!settledSeparately(way, rules, h)) return []
       const snap = heatingSnapshotFor(source, propertyId, plant.id, h)
       if (!snap) return []

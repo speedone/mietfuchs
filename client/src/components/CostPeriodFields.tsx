@@ -1,4 +1,4 @@
-import { HEATING_PART_OPTIONS, type ItemForm } from '../costForm'
+import { HEATING_PART_OPTIONS, paidOnTenDayHint, showsPaidOn, type ItemForm } from '../costForm'
 import Term from './Term'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 
@@ -7,12 +7,15 @@ import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 // Kalenderjahr hat, braucht nichts davon (Entwurf 11.1).
 // `billTaxYear`: beim Abzug für Betriebsstrom das Steuerjahr seiner Stromrechnung (`deductionTaxYear` in costForm.ts);
 // dann gibt es kein Feld, der Abzug hat kein eigenes Jahr (#267).
-export default function CostPeriodFields({ form, onChange, showTaxYear, years, billTaxYear = null }: {
+// `paidOnChanges`: was das eingetragene Zahlungsdatum für die Steuer ändert (`paidOnChange` in costForm.ts); das
+// Formular zeigt es hier und fragt vor dem Speichern nach (#255 PR 3, R-2).
+export default function CostPeriodFields({ form, onChange, showTaxYear, years, billTaxYear = null, paidOnChanges = [] }: {
   form: ItemForm
   onChange: (next: ItemForm) => void
   showTaxYear: boolean
   years: number[]
   billTaxYear?: number | null
+  paidOnChanges?: string[]
 }) {
   const deduction = form.operatingPower === 'deduction'
   return (
@@ -77,6 +80,42 @@ export default function CostPeriodFields({ form, onChange, showTaxYear, years, b
             aus diesem Jahr heraus und in das andere Jahr ein.
           </small>
         </label>
+      )}
+      {/* #255 PR 3: das Zahlungsdatum für die ganze Position (R-2, R-3, R-7, R-8). */}
+      {showsPaidOn(form) && (
+        <label className="field">
+          <span><Term id="paymentDate">Bezahlt am (für die Steuer)</Term></span>
+          <input type="date" aria-label="Bezahlt am (für die Steuer)" value={form.paidOn} onChange={(e) => onChange({ ...form, paidOn: e.target.value })} />
+          <small className="muted">
+            Der Tag, an dem das Geld abgeflossen ist (bei einer Gutschrift: zugeflossen), nicht das Rechnungsdatum. Überweisung: der Tag, an dem
+            Ihr Auftrag bei Ihrer Bank einging (Konto gedeckt). Lastschrift: der Tag des Einzugs. Bar: der Tag der Übergabe. Kreditkarte: der Tag der
+            Zahlung, nicht der Kartenabrechnung. Für die Steuer zählt die Position dann im Jahr dieses Tages (§ 11 Abs. 2 EStG); ohne Datum gilt
+            {showTaxYear && !deduction ? ' die Auswahl darüber' : ' das Jahr der Abrechnung'}.
+          </small>
+          <small className="muted">
+            Das Datum steht für die ganze Position. Haben Sie in Abschlägen gezahlt, etwa monatlich für Gas, Wasser oder Müll, lassen Sie es leer:
+            Abschläge zählen in dem Jahr, in dem Sie sie gezahlt haben, eine Nachzahlung oder ein Guthaben der Jahresrechnung in dem Jahr, in dem Sie zahlen bzw. die Gutschrift erhalten. Tragen
+            Sie die Aufteilung in Ihrer Steuererklärung um, bis Mietfuchs die Abbuchungen vom Kontoauszug zuordnen kann.
+          </small>
+          {paidOnTenDayHint(form) && (
+            <small className="muted">
+              Zahlung um den Jahreswechsel: Eine regelmäßig wiederkehrende Zahlung, etwa ein Versicherungsbeitrag oder ein Abschlag, die bis zehn Tage
+              vor oder nach dem Jahreswechsel fällig ist und in dieser Zeit gezahlt wurde, zählt zu dem Jahr, zu dem sie gehört (§ 11 Abs. 2 Satz 2 in
+              Verbindung mit Abs. 1 Satz 2 EStG). Mietfuchs rechnet das nicht, denn es kennt die Fälligkeit nicht. Trifft es zu, tragen Sie die Zahlung in
+              Ihrer Steuererklärung in diesem Jahr ein.
+            </small>
+          )}
+          {paidOnChanges.length > 0 && <small className="notice" role="status">{paidOnChanges.join(' ')} Vor dem Speichern fragt Mietfuchs nach.</small>}
+        </label>
+      )}
+      {form.key === 'external' && form.operatingPower !== 'deduction' && (
+        <p className="muted">
+          Bezahlt am (für die Steuer): Bei Hausgeld laut Gemeinschaftsabrechnung gibt es kein Datum, denn die Position ist Ihr Anteil laut
+          Hausgeldabrechnung und keine einzelne Zahlung. Für die Steuer zählen die Vorschüsse im Jahr ihrer Zahlung, eine Nachzahlung oder ein
+          Guthaben aus der Abrechnung in dem Jahr, in dem Sie zahlen bzw. die Gutschrift erhalten; das folgt aus § 11 EStG, ein Urteil eigens dazu gibt es nicht. Die Zuführung zur Erhaltungsrücklage zählt erst, wenn die Gemeinschaft sie
+          für Erhaltung ausgibt (BFH, Urteil vom 14.01.2025, IX R 19/24). Mietfuchs setzt den Anteil laut Hausgeldabrechnung an; weicht das ab, berichtigen
+          Sie es in der Steuererklärung.
+        </p>
       )}
     </>
   )

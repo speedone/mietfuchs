@@ -279,6 +279,11 @@ export type CostItem = {
   // Position in einem Kalenderjahr, und es ist dieses. Eine Vereinfachung, siehe CLAUDE.md
   // („Nicht dem Abflussprinzip folgen die Werbungskosten“).
   taxYear?: number
+  // Das Zahlungsdatum für die Steuer (#255, PR 3), 'JJJJ-MM-TT': der Tag, an dem die ganze Position bezahlt (bei
+  // einer Gutschrift: erstattet) wurde, § 11 Abs. 2 EStG. Geht dem Jahr der Zahlung und dem Abrechnungsjahr vor
+  // (server/src/outflow.ts); fehlt es, gilt die Regel ohne Datum. Nicht an einem Abzug beim Betriebsstrom und nicht
+  // bei „laut Gemeinschaftsabrechnung“ (shared/paidOn.ts). Die Abrechnung liest es nie.
+  paidOn?: string
   // Nur bei der Kostenart „Heizung und Warmwasser“ (#208, A1).
   heatingPart?: HeatingPart
   // Wohin die Position bei der eigenen Heizkostenabrechnung gehört (Heizung PR 10, Entwurf 5.3):

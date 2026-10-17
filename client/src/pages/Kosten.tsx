@@ -41,6 +41,8 @@ import {
   splitDecision,
   showsTaxYear,
   deductionTaxYear,
+  paidOnChange,
+  showsPaidOn,
   taxYearOptions,
   type ItemForm,
   type KeyContext,
@@ -168,6 +170,20 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   useEffect(() => {
     if (form && heatTax?.show && !heatTax.valid && form.taxYear !== heatTax.fallback) setForm({ ...form, taxYear: heatTax.fallback })
   }, [form, heatTax?.show, heatTax?.valid, heatTax?.fallback])
+
+  // Die Jahre des Zeitraums der Position für die übliche Spanne des Zahlungsdatums (#255 PR 3, R-4): bei einer
+  // Heizposition unter eigener Heizperiode deren Jahre, sonst die des Abrechnungszeitraums.
+  const paidOnSpanOfForm = heatingOption
+    ? { startYear: heatingOption.startYear, endYear: heatingOption.endYear }
+    : { startYear: Number(period.from.slice(0, 4)), endYear: Number(period.to.slice(0, 4)) }
+  // Was das eingetragene Datum ändert, schon beim Eintragen unter dem Feld (R-2).
+  const livePaidOnChanges = form && showsPaidOn(form)
+    ? paidOnChange(form.id ? items.find((i) => i.id === form.id) ?? null : null, {
+      paidOn: form.paidOn === '' ? null : form.paidOn,
+      taxYear: heatTax ? (heatTax.show && form.taxYear !== '' ? Number(form.taxYear) : null) : form.taxYear !== '' && form.operatingPower !== 'deduction' ? Number(form.taxYear) : null,
+      period: heatingOption?.value ?? key,
+    }, paidOnSpanOfForm).filter((q) => !q.startsWith('Haben Sie die Steuererklärung'))
+    : []
 
   // „Aus dem Vorjahr übernehmen“ (#141): die Vorlagen, solange die Liste offen ist. Eingetragene
   // Beträge gehen beim Verlassen verloren, deshalb zählt die Liste als offenes Formular.
@@ -366,8 +382,18 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
       : form.category === HEATING_CATEGORY && plantChoices.length > 0 && heatingPlantId !== ''
         ? { heatingPlantId }
         : {}
-    const body = JSON.stringify({ ...built.body, ...heating })
     const editing = !!form.id
+    // Das Zahlungsdatum (#255 PR 3, R-2, R-4): Ändert es das Steuerjahr, widerspricht es dem Jahr der Zahlung oder liegt
+    // es außerhalb der üblichen Spanne, fragt das Formular nach; der Server verlangt dieselbe Bestätigung.
+    const paidOnQuestions = paidOnChange(editing ? items.find((i) => i.id === form.id) ?? null : null,
+      { ...built.body, ...('period' in heating ? { period: heating.period } : {}), taxYear: 'taxYear' in heating ? heating.taxYear ?? null : built.body.taxYear }, paidOnSpanOfForm)
+    let confirmPaidOn = false
+    if (paidOnQuestions.length > 0) {
+      const ok = await confirm({ title: 'Steuerjahr ändert sich', message: paidOnQuestions.join(' '), confirmLabel: 'So speichern', cancelLabel: 'Abbrechen' })
+      if (!ok) return
+      confirmPaidOn = true
+    }
+    const body = JSON.stringify({ ...built.body, ...heating, ...(confirmPaidOn ? { confirmPaidOn: true } : {}) })
     // Eine kalte Rechnung über zwei Abrechnungszeiträume (#208, Entwurf 3.4): erst die Vorschau,
     // dann nach Rückfrage alle Teile auf einmal.
     if (needsSplitCheck(built.body, editing ? items.find((i) => i.id === form.id) : null)) {
@@ -382,7 +408,8 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
         return
       }
       if (parts.length > 1) {
-        const decision = splitDecision(parts, form.taxYear, form.operatingPower === 'deduction')
+        // Ein Zahlungsdatum beantwortet die Frage nach dem Jahr der Zahlung ebenso (#255 PR 3).
+        const decision = splitDecision(parts, form.taxYear !== '' ? form.taxYear : form.paidOn.slice(0, 4), form.operatingPower === 'deduction')
         if ('error' in decision) {
           setNeedsTaxYear(decision.needsTaxYear)
           setError(decision.error)
@@ -722,6 +749,8 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                   <td className="num">
                     {fmtEuro(i.amountCents)}
                     {!!i.labor35aCents && <div className="muted">§35a: {fmtEuro(i.labor35aCents)}</div>}
+                    {/* #255 PR 3: das Zahlungsdatum für die Steuer, wenn eines eingetragen ist. */}
+                    {i.paidOn && <div className="muted">bezahlt am {fmtDate(i.paidOn)}</div>}
                   </td>
                   <td className="actions no-print">
                     <button
@@ -846,9 +875,9 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             </label>
             {/* Betriebsstrom (Heizung PR 15): sichtbar ohne Aufklappen, wer ihn braucht. */}
             <OperatingPowerFields form={form} items={items} periodKey={key} plantEnergy={plantOfForm ? billingEnergy(plantOfForm) : undefined} service={serviceReceivesOperatingPower(plants, period)} onChange={setForm} />
-            <details className="extra-details" open={!!(selfPlant || form.serviceFrom || form.serviceTo || form.taxYear || form.heatingPart !== '' || (heatTax ? heatTax.show : showsTaxYear(period, needsTaxYear)))}>
-              <summary>Weitere Angaben — Leistungszeitraum{(heatTax ? heatTax.show : showsTaxYear(period, needsTaxYear)) ? ', Jahr der Zahlung' : ''}{form.category === HEATING_CATEGORY ? ', Brennstoff/Energie' : ''} (optional)</summary>
-              <CostPeriodFields form={form} onChange={setForm} showTaxYear={heatTax ? heatTax.show : showsTaxYear(period, needsTaxYear)} years={heatTax?.show ? heatTax.years : taxYearOptions(year)} billTaxYear={deductionTaxYear(form, items)} />
+            <details className="extra-details" open={!!(selfPlant || form.serviceFrom || form.serviceTo || form.taxYear || form.paidOn || form.heatingPart !== '' || (heatTax ? heatTax.show : showsTaxYear(period, needsTaxYear)))}>
+              <summary>Weitere Angaben — Leistungszeitraum{(heatTax ? heatTax.show : showsTaxYear(period, needsTaxYear)) ? ', Jahr der Zahlung' : ''}{showsPaidOn(form) ? ', Bezahlt am' : ''}{form.category === HEATING_CATEGORY ? ', Brennstoff/Energie' : ''} (optional)</summary>
+              <CostPeriodFields form={form} onChange={setForm} showTaxYear={heatTax ? heatTax.show : showsTaxYear(period, needsTaxYear)} years={heatTax?.show ? heatTax.years : taxYearOptions(year)} billTaxYear={deductionTaxYear(form, items)} paidOnChanges={livePaidOnChanges} />
             </details>
             {/* Nicht umlagefähig (#142): nichts zu verteilen, also keine Auswahl, die etwas anderes verspräche. */}
             {!showsKeyFields(form.category) && (

@@ -270,6 +270,7 @@ export async function readCostItems(db: Executor): Promise<CostItem[]> {
       ...(c.serviceFrom !== null ? { serviceFrom: c.serviceFrom } : {}),
       ...(c.serviceTo !== null ? { serviceTo: c.serviceTo } : {}),
       ...(c.taxYear !== null ? { taxYear: c.taxYear } : {}),
+      ...(c.paidOn !== null ? { paidOn: c.paidOn } : {}),
       ...(c.heatingPart !== null ? { heatingPart: c.heatingPart } : {}),
       // Das Ziel bei Heizkosten (Heizung PR 10), ebenso nur, wenn es gesetzt ist.
       ...(c.heatingTarget !== null ? { heatingTarget: c.heatingTarget } : {}),

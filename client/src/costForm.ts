@@ -17,6 +17,7 @@ import { calendarContext, calendarPeriod, calendarYearPeriod, spansTwoYears } fr
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 // Seit der Belegbuchung (#170) in shared/, weil der Server dieselben Prüfungen und Vorschläge braucht.
 export { amountProblem, showsTaxUnitField, type BuildResult } from '../../shared/costItem.ts'
+import { allowsPaidOn, paidOnQuestions, statedOutflowYear, tenDayWindow, type YearSpan } from '../../shared/paidOn.ts'
 export { aiPositionDefaults, aiPositionPreselect, lastExternalBasis, type AiPositionKey, type KeyContext } from '../../shared/assessment.ts'
 
 export type ItemForm = {
@@ -47,6 +48,8 @@ export type ItemForm = {
   serviceTo: string
   // Jahr der Zahlung als Text der Auswahl, leer heißt keine Angabe (#208)
   taxYear: string
+  // Bezahlt am (für die Steuer, #255 PR 3) als 'JJJJ-MM-TT' aus <input type="date">, leer heißt keine Angabe
+  paidOn: string
   // Teil der Heizkosten, nur bei Heizkosten (#208, A1; Nachprüfung von #237: alle Werte des Modells),
   // leer heißt keine Angabe
   heatingPart: HeatingPart | ''
@@ -82,6 +85,7 @@ export const EMPTY_ITEM_FORM: ItemForm = {
   serviceFrom: '',
   serviceTo: '',
   taxYear: '',
+  paidOn: '',
   heatingPart: '',
   heatingTarget: '',
   operatingPower: '',
@@ -114,6 +118,7 @@ export function itemToForm(i: CostItem): ItemForm {
     serviceFrom: i.serviceFrom ?? '',
     serviceTo: i.serviceTo ?? '',
     taxYear: i.taxYear !== undefined ? String(i.taxYear) : '',
+    paidOn: i.paidOn ?? '',
     heatingPart: i.heatingPart ?? '',
     heatingTarget: i.heatingTarget ?? '',
     invoiceFile: i.invoiceFile ?? undefined,
@@ -509,6 +514,8 @@ function draftOf(form: ItemForm, units: Unit[], tenancies: Tenancy[] | undefined
     serviceTo: form.serviceTo || null,
     // Ein Abzug beim Betriebsstrom hat kein eigenes Jahr der Zahlung (#267), er steht im Jahr seiner Stromrechnung.
     taxYear: form.taxYear === '' || form.operatingPower === 'deduction' ? null : Number(form.taxYear),
+    // Das Zahlungsdatum nur, wo das Formular das Feld zeigt (`showsPaidOn`); sonst leert `null` ein altes.
+    paidOn: form.paidOn !== '' && showsPaidOn(form) ? form.paidOn : null,
     heatingPart: form.heatingPart === '' ? null : form.heatingPart,
     heatingTarget: form.heatingTarget === '' ? null : form.heatingTarget,
   }
@@ -581,7 +588,7 @@ export function generalChoices(items: readonly CostItem[], period: string): { va
 export function deductionTaxYear(form: Pick<ItemForm, 'operatingPower' | 'operatingPowerGeneralId'>, items: readonly CostItem[]): number | null {
   if (form.operatingPower !== 'deduction') return null
   const bill = items.find((c) => c.id === form.operatingPowerGeneralId)
-  return bill === undefined ? null : bill.taxYear ?? Number(bill.period.slice(0, 4))
+  return bill === undefined ? null : statedOutflowYear(bill) ?? Number(bill.period.slice(0, 4))
 }
 
 // Mit der Stromrechnung übernimmt der Abzug ihre Verteilung (G-K3): Schlüssel, Zähler, Wohnung, Anteile,
@@ -679,3 +686,20 @@ export const showsTaxYear = (period: Pick<BillingPeriod, 'from' | 'to'>, needsTa
 
 // Vom Jahr des Beginns bis ein Jahr nach dem Ende (dieselbe Spanne prüft der Server).
 export const taxYearOptions = (startYear: number): number[] => [startYear, startYear + 1, startYear + 2]
+
+// ---------- Bezahlt am (für die Steuer, #255 PR 3) ----------
+
+// Das Feld zeigt das Formular überall außer beim Abzug für Betriebsstrom (er fließt mit seiner Stromrechnung ab, #267),
+// bei „laut Gemeinschaftsabrechnung“ (R-6, dort steht ein Hinweis) und bei der Zuführung zur Erhaltungsrücklage, die
+// erst bei Verwendung durch die Gemeinschaft zählt (BFH IX R 19/24). Dieselbe Regel wie der Server (`allowsPaidOn`).
+export const showsPaidOn = (form: Pick<ItemForm, 'key' | 'operatingPower' | 'category'>): boolean =>
+  allowsPaidOn({ key: form.key, operatingPower: form.operatingPower === '' ? undefined : form.operatingPower }) && form.category !== 'Zuführung Erhaltungsrücklage'
+
+// Was ein Datum für die Steuer ändert, als Sätze für die Rückfrage vor dem Speichern (R-2, R-4); leer heißt nichts
+// zu bestätigen. Dieselben Sätze, mit denen der Server ohne Bestätigung ablehnt (shared/paidOn.ts).
+export function paidOnChange(before: Pick<CostItem, 'paidOn' | 'taxYear' | 'period'> | null, body: { paidOn: string | null; taxYear: number | null; period: string }, span: YearSpan): string[] {
+  return paidOnQuestions(before, body, span)
+}
+
+// Der Hinweis zur Zehn-Tage-Regel (R-8), wenn das Datum zwischen dem 22.12. und dem 10.01. liegt; nie bei Grundsteuer.
+export const paidOnTenDayHint = (form: Pick<ItemForm, 'paidOn' | 'category'>): boolean => form.paidOn !== '' && tenDayWindow(form.paidOn, form.category)
