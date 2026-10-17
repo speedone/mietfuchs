@@ -474,7 +474,9 @@ async function main() {
   let browser = null
   try {
     server = await startServer(dataDir, ollama.url)
-    browser = await chromium.launch()
+    // Eingebaute Felder wie das Monatsfeld nehmen die Sprache des Browsers, nicht `locale` des
+    // Kontexts; ohne die Angabe stand dort auf einem englischen System „October 2026“.
+    browser = await chromium.launch({ args: ['--lang=de-DE'], env: { ...process.env, LANG: 'de_DE.UTF-8' } })
     const printer = await browser.newPage()
     const pdf = async (html) => {
       await printer.setContent(html)
