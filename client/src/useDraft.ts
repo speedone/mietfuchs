@@ -29,7 +29,9 @@ export type Draft<T> = {
 export type DraftOptions = {
   // Wozu der Wert gehört (etwa die Adresse der Abrechnung). Ändert er sich, ist ein offener
   // Entwurf erledigt, denn er gehörte zu etwas anderem.
-  scope?: unknown
+  // Eine Zeichenkette, denn verglichen wird mit `Object.is`: Ein Objekt oder eine Liste wäre bei
+  // jedem Zeichnen neu und verwürfe den Entwurf.
+  scope?: string
 }
 
 export function useDraft<T>(saved: T, options: DraftOptions = {}): Draft<T> {
@@ -39,7 +41,11 @@ export function useDraft<T>(saved: T, options: DraftOptions = {}): Draft<T> {
   const state = withSaved(stored, saved, options.scope)
   if (state !== stored) setStored(state)
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
+  // Der Grund gehört zum scope, in dem das Speichern scheiterte: Nach einem Wechsel stünde er
+  // sonst neben dem Wert einer anderen Abrechnung.
+  const [failure, setFailure] = useState<{ scope: unknown, text: string } | null>(null)
+  const error = failure && Object.is(failure.scope, state.scope) ? failure.text : ''
+  const setError = (text: string, scope?: unknown) => setFailure(text ? { scope, text } : null)
   // Die Sperre gegen Doppelklick als Referenz: Zwei Klicks im selben Augenblick sähen beide noch
   // `saving === false`.
   const busy = useRef(false)
@@ -70,7 +76,7 @@ export function useDraft<T>(saved: T, options: DraftOptions = {}): Draft<T> {
       setStored((s) => (Object.is(s.scope, start.scope) ? afterSave(s, value, start.prop) : s))
       return true
     } catch (e) {
-      setError(errorText(e))
+      setError(errorText(e), start.scope)
       return false
     } finally {
       busy.current = false

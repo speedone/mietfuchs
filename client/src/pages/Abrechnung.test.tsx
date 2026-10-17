@@ -45,6 +45,10 @@ beforeEach(() => {
     if (path === '/api/properties') return json([{ id: 'objekt-1', name: 'A', kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null }])
     if (path === `/api/settlement/${YEAR}`) return json(settlement)
     if (path === `/api/settlement/${YEAR}/history`) return json(history)
+    // Ein anderes Jahr (Test mit Jahreswechsel) bekommt eine leere offene Abrechnung, keine Liste.
+    const other = /^\/api\/settlement\/(\d{4})$/.exec(path)
+    if (other) return json({ ...settlement, year: Number(other[1]), statements: [], closed: null })
+    if (/^\/api\/settlement\/\d{4}\/history$/.test(path)) return json([])
     return json([])
   })
 })
