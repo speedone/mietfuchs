@@ -100,7 +100,7 @@ describe('Fälligkeit des laufenden Monats als Auskunft', () => {
   it('nennt kurz den dritten Werktag nach den Feiertagen am Ort, die Einzelheiten aufklappbar', () => {
     expect(rentDueNote(2027, new Date(2027, 0, 2), 'BW')).toEqual({
       text: 'Miete Januar fällig am Do., 07.01.2027',
-      details: '3. Werktag, Samstag nicht mitgezählt; nach den Feiertagen in Baden-Württemberg. Das gilt, wenn der Mietvertrag nichts anderes bestimmt. ' +
+      details: '3. Werktag, Samstag nicht mitgezählt; nach den Feiertagen in Baden-Württemberg. Das gilt, wenn der Mietvertrag nichts anderes bestimmt; bei einem sehr alten Mietverhältnis ohne vereinbarte Vorauszahlung kann die Miete erst nach Ablauf des Monats fällig sein (Art. 229 § 3 Abs. 1 Nr. 7 EGBGB). ' +
         'Rechtzeitig ist eine Überweisung, die bis zu diesem Tag in Auftrag gegeben ist; die Gutschrift kann später kommen.',
     })
     expect(rentDueNote(2026, new Date(2026, 7, 1), 'BE')?.text).toBe('Miete August fällig am Mi., 05.08.2026')

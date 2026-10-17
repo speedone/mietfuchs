@@ -922,7 +922,7 @@ Maßgeblich ist das Land des Objekts (`properties.state`, eine der 16 Kennungen 
   gelesen ist; Werte für mehrere Länder, deren Gesetze nicht alle gelesen sind, `adopted` mit Angabe, was
   gelesen ist, und dem Abgleich mit beiden Vergleichslisten. holidays.ts rechnet daraus mit Osterformel,
   ohne Laufzeitbibliothek: feiertagejs wich von der Vergleichsliste ab, und date-holidays stimmt zwar,
-  seine Feiertagsdaten stehen aber unter CC BY-SA 3.0 (Mietfuchs: MIT) und kämen mit rund 40 MB
+  seine Feiertagsdaten stehen aber unter CC BY-SA 3.0 (Mietfuchs: AGPL-3.0, damit nicht verträglich) und kämen mit rund 40 MB
   Abhängigkeiten in Programmdatei und Image. Geprüft wird gegen **zwei unabhängige Quellen**: eine feste
   Liste der Python-Bibliothek holidays
   ([server/test/fixtures/holidays/](server/test/fixtures/holidays/README.md), 1995 bis 2100) und
