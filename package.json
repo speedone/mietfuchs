@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Mietfuchs — lokales Web-Tool für Nebenkostenabrechnungen privater Vermieter",
   "author": "speedone",
-  "license": "MIT",
+  "license": "AGPL-3.0-only",
   "homepage": "https://github.com/speedone/mietfuchs#readme",
   "repository": {
     "type": "git",

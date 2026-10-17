@@ -24,7 +24,7 @@ priority: optional
 maintainer: speedone <speedone@users.noreply.github.com>
 vendor: Mietfuchs
 homepage: https://github.com/speedone/mietfuchs
-license: MIT
+license: AGPL-3.0-only
 description: |
   Nebenkostenabrechnung für private Vermieter
   Mietfuchs rechnet die Betriebskosten eines kleinen Mehrfamilienhauses ab: Umlage nach

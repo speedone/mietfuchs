@@ -67,4 +67,5 @@ Beispielwerte ersetzen — ein Issue ist öffentlich und dauerhaft sichtbar.
 
 ## Lizenz
 
-Beiträge stehen wie das Projekt unter der [MIT-Lizenz](LICENSE).
+Beiträge stehen wie das Projekt unter der [AGPL-3.0](LICENSE). Was bis Version 0.11.3 unter
+der MIT-Lizenz beigetragen wurde, steht zusätzlich weiter unter ihr ([LICENSE-MIT](LICENSE-MIT)).

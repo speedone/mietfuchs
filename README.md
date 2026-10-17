@@ -3,7 +3,7 @@
 **Die Nebenkostenabrechnung für private Vermieter, komplett auf dem eigenen Rechner.
 Keine Cloud, kein Konto, keine Abogebühren.**
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 [![Download](https://img.shields.io/github/v/release/speedone/mietfuchs?label=Download&logo=github)](https://github.com/speedone/mietfuchs/releases/latest)
 ![Node ≥ 24.15](https://img.shields.io/badge/Node-%E2%89%A5%2024.15-339933?logo=node.js&logoColor=white)
 ![100% lokal & offline](https://img.shields.io/badge/100%25-lokal%20%26%20offline-2563eb)
@@ -578,6 +578,17 @@ dort auch das Compose-Profil `ki`, das Ollama als eigenen Container mitstartet.
 
 ## Lizenz & Haftung
 
-[MIT-Lizenz](LICENSE). Das Tool unterstützt bei der Erstellung der Abrechnung, ist aber
+Copyright © 2026 speedone. Mietfuchs steht unter der
+[GNU Affero General Public License, Version 3](LICENSE) (AGPL-3.0). Du darfst es kostenlos
+nutzen, ändern und weitergeben. Wer eine veränderte Fassung weitergibt oder sie anderen als
+Online-Dienst anbietet, muss ihren vollständigen Quellcode unter derselben Lizenz offenlegen.
+Für dich als Vermieter, der Mietfuchs auf dem eigenen Rechner benutzt, ergibt sich daraus keine
+Pflicht.
+
+Bis Version 0.11.3 stand Mietfuchs unter der MIT-Lizenz, und für diese Versionen gilt sie
+weiter. Code, der bis dahin unter der MIT-Lizenz beigetragen wurde, steht zusätzlich weiter
+unter ihr; ihr Text liegt in [LICENSE-MIT](LICENSE-MIT).
+
+Das Tool unterstützt bei der Erstellung der Abrechnung, ist aber
 **keine Rechts- oder Steuerberatung**; die fachliche und rechtliche Prüfung der Ergebnisse
 bleibt beim Vermieter. Nutzung auf eigene Verantwortung.
