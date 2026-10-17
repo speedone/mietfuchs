@@ -21,6 +21,7 @@ import { computeSettlement, consumptionOverview, rentLedger, taxPartsFor, taxRep
 import { heatingSnapshotFor, narrowToProperty, snapshotFor } from './snapshot.ts'
 import { calendarYearPeriod, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodOfKey, resolvePeriodParam, rulesOf, settlementDeadline, settlementPeriod, startYearOf } from '../../shared/period.ts'
 import type { BillingPeriod, FuelGapQuestion, HeatingPlant, Unit } from '../../shared/types.ts'
+import { closeWithQuestions, type CloseQuestion, type FuelAnswer } from './closeQuestion.ts'
 import { plantRules, settledSeparately } from '../../shared/heatingPeriod.ts'
 import { extractFromFile, classifyDocType, extractMeterReading, type AskProgressEvent, type AskStats } from './extract.ts'
 import { extractFuelInvoice, extractServiceStatement } from './extractHeating.ts'
@@ -881,23 +882,26 @@ app.post('/api/heating-settlement/:plant/:period/close', async (req, res) => {
   if (sentAt === false) return res.status(400).json({ error: SENT_AT_INVALID })
   const answer = fuelAnswerOf(req)
   if (answer === false) return res.status(400).json({ error: FUEL_ANSWER_INVALID })
+  const despiteErrors = despiteErrorsOf(req)
+  if (despiteErrors === false) return res.status(400).json({ error: DESPITE_ERRORS_INVALID })
   // Rechnen und Einfrieren im selben Vorgang, wie bei der Abrechnung des Objekts.
   const ergebnis = await writeData(async (db) => {
     const target = await heatingTargetOf(db, req)
     const label = periodLabel(target.period)
-    if (await findClosedHeatingSettlement(db, target.plant.id, target.period.key)) return { schonDa: true, label, gaps: null }
-    const gaps = await closeWithFuel(
+    if (await findClosedHeatingSettlement(db, target.plant.id, target.period.key)) return { schonDa: true, label, question: null }
+    const question = await closeWithFuel(
       db,
       answer,
+      despiteErrors,
       async (tx) => computeHeating(await readStock(tx), target.plant, target.period),
       (tx, settlement) => closeHeatingSettlement(tx, {
         id: newId(), plantId: target.plant.id, period: target.period.key, closedAt: new Date().toISOString(), sentAt, settlement,
       }),
     )
-    return { schonDa: false, label, gaps }
+    return { schonDa: false, label, question }
   })
   if (ergebnis.schonDa) return res.status(409).json({ error: `Die Heizkostenabrechnung ${ergebnis.label} ist bereits abgeschlossen.` })
-  if (ergebnis.gaps) return res.status(409).json({ error: FUEL_GAPS_TEXT, fuelGaps: ergebnis.gaps })
+  if (ergebnis.question) return res.status(409).json(closeQuestionBody(ergebnis.question))
   res.status(201).json({ ok: true })
 })
 
@@ -999,40 +1003,58 @@ const sentAtOf = (req: Request): string | null | false => {
 // Die Antwort auf die Rückfrage zur Schätzung (Heizung PR 7, Entwurf 8.2, N1, A5): `estimate` legt je
 // Lücke eine geschätzte Lieferung mit Vorbehalt an, `none` schließt ohne ab. `null`: keine Antwort,
 // `false`: ein anderer Wert (400).
-type FuelAnswer = 'estimate' | 'none'
 const FUEL_ANSWER_INVALID = 'Die Antwort auf die Rückfrage zur Schätzung ist „estimate“ oder „none“.'
 const FUEL_GAPS_TEXT =
   'Für einen Teil der Heizperiode fehlt eine Rechnung. Sie können abwarten, bis sie da ist, die Kosten mit Vorbehalt schätzen lassen oder ohne Schätzung abschließen; ohne Schätzung steht dieser Teil zunächst bei Ihnen.'
+// Die Bestätigung, trotz Fehlern abzuschließen (#319): die Prüfmarke aus der Rückfrage (closeQuestion.ts).
+// Fehlt sie, wie bei einem Tab von vor dem Update, fragt der Server nach; eine Marke, die nicht zum Stand
+// passt, ebenso. Etwas anderes als eine Zeichenkette ist 400, auch `true`: Eine Bestätigung ohne Stand gibt es nicht.
+const DESPITE_ERRORS_INVALID = 'Die Bestätigung „Trotzdem abschließen“ ist die Prüfmarke aus der Rückfrage oder fehlt.'
+const despiteErrorsOf = (req: Request): string | null | false => {
+  const value: unknown = bodyObject(req).despiteErrors
+  if (value === undefined || value === null) return null
+  return typeof value === 'string' ? value : false
+}
 const fuelAnswerOf = (req: Request): FuelAnswer | null | false => {
   const value: unknown = bodyObject(req).fuelEstimates
   if (value === undefined || value === null) return null
   return value === 'estimate' || value === 'none' ? value : false
 }
 
-// Abschließen samt Lieferungen (Heizung PR 7): rechnen, bei Lücken ohne Antwort nachfragen, auf Wunsch
-// Schätzungen anlegen und neu rechnen, dann abschließen und einfrieren, alles in **einer**
-// Transaktion (Entwurf 8.2, N1): Die Berechnung liest den Bestand auf der Transaktion (`readStock`
-// nimmt ein `Executor`), die neu angelegten Schätzungen sind darin also schon sichtbar; scheitert ein
-// Schritt, fällt alles zurück, und keine Schätzung bleibt ohne Abschluss stehen. Ohne Antwort und mit
-// Lücken wird nichts geschrieben.
-async function closeWithFuel(
+// Abschließen samt Lieferungen (Heizung PR 7) und mit Rückfrage bei Fehlern (#319); der Ablauf und
+// die Prüfmarke stehen in closeQuestion.ts. Die Berechnung liest den Bestand auf der Transaktion
+// (`readStock` nimmt ein `Executor`), neu angelegte Schätzungen sind darin also schon sichtbar.
+function closeWithFuel(
   db: Database,
   answer: FuelAnswer | null,
+  despiteErrors: string | null,
   compute: (tx: Executor) => Promise<ComputedSettlement>,
   close: (tx: Executor, settlement: ComputedSettlement) => Promise<void>,
-): Promise<FuelGapQuestion[] | null> {
-  return db.transaction(async (tx) => {
-    let settlement = await compute(tx)
-    const gaps = fuelGapQuestions(settlement)
-    if (gaps.length > 0 && answer === null) return gaps
-    if (gaps.length > 0 && answer === 'estimate') {
-      await createEstimates(tx, settlement, newId)
-      settlement = await compute(tx)
-    }
-    await close(tx, settlement)
-    await freezeFuelCarries(tx, settlement)
-    return null
+): Promise<CloseQuestion | null> {
+  return closeWithQuestions((fn) => db.transaction(fn), answer, despiteErrors, {
+    compute,
+    gapsOf: fuelGapQuestions,
+    noticesOf: (s) => s.notices,
+    estimate: async (tx, s) => { await createEstimates(tx, s, newId) },
+    close: async (tx, s) => {
+      await close(tx, s)
+      await freezeFuelCarries(tx, s)
+    },
   })
+}
+
+// Die Rückfrage beim Abschließen als Antwort (409): `fuelGaps` nur bei einer Lücke ohne Antwort, sonst
+// fragte ein Tab von vor #319 nach einer Schätzung, die es nicht gibt; `errorNotices` nur bei Fehlern.
+// Ein solcher Tab kennt `errorNotices` nicht und zeigt den Text; der muss für sich verständlich sein.
+function closeQuestionBody(q: CloseQuestion): { error: string } & CloseQuestion {
+  const errors = q.errorNotices ?? []
+  const titles = [...new Set(errors.map((n) => n.title || n.text))].join('; ')
+  const errorText = errors.length === 0 ? '' :
+    `Die Abrechnung enthält ${errors.length === 1 ? 'einen Fehler' : `${errors.length} Fehler`}: ${titles}. ` +
+    'Beheben Sie die Angaben über „Hier beheben →“ auf der Seite Abrechnung, oder schließen Sie mit „Trotzdem abschließen“ ab. ' +
+    'Erscheint diese Wahl nicht, laden Sie die Seite neu.'
+  const text = [q.fuelGaps ? FUEL_GAPS_TEXT : '', errorText].filter((t) => t !== '').join(' ')
+  return { error: text, ...q }
 }
 
 // Abrechnung abschließen: aktuellen Berechnungsstand einfrieren. Spätere Änderungen an
@@ -1043,23 +1065,26 @@ app.post('/api/settlement/:period/close', async (req, res) => {
   if (sentAt === false) return res.status(400).json({ error: SENT_AT_INVALID })
   const answer = fuelAnswerOf(req)
   if (answer === false) return res.status(400).json({ error: FUEL_ANSWER_INVALID })
+  const despiteErrors = despiteErrorsOf(req)
+  if (despiteErrors === false) return res.status(400).json({ error: DESPITE_ERRORS_INVALID })
   // Rechnen und Einfrieren im selben Vorgang: Käme dazwischen eine Änderung an einer
   // Kostenposition durch, fröre Mietfuchs einen Stand ein, den es so nie gegeben hat.
   const ergebnis = await writeData(async (db) => {
     const property = await propertyOf(db, req)
     const period = await periodOf(db, req, property)
     const label = periodLabel(period)
-    if (await findClosedSettlement(db, property, period.key)) return { schonDa: true, label, gaps: null }
-    const gaps = await closeWithFuel(
+    if (await findClosedSettlement(db, property, period.key)) return { schonDa: true, label, question: null }
+    const question = await closeWithFuel(
       db,
       answer,
+      despiteErrors,
       async (tx) => computeSettlement(snapshotFor(await readStock(tx), property, period), { asOf: today() }),
       (tx, settlement) => closeSettlement(tx, { id: newId(), propertyId: property, period: period.key, closedAt: new Date().toISOString(), sentAt, settlement }),
     )
-    return { schonDa: false, label, gaps }
+    return { schonDa: false, label, question }
   })
   if (ergebnis.schonDa) return res.status(409).json({ error: `Abrechnung ${ergebnis.label} ist bereits abgeschlossen.` })
-  if (ergebnis.gaps) return res.status(409).json({ error: FUEL_GAPS_TEXT, fuelGaps: ergebnis.gaps })
+  if (ergebnis.question) return res.status(409).json(closeQuestionBody(ergebnis.question))
   res.status(201).json({ ok: true })
 })
 

@@ -11,7 +11,9 @@ export const useToast = () => useContext(ToastCtx)
 
 type ConfirmOpts = {
   title: string
-  message?: ReactNode
+  // Als Funktion bekommt die Nachricht `dismiss`, das die Rückfrage wie Abbrechen schließt; so kann ein
+  // Knopf darin (etwa „Hier beheben →“, #319) wegführen, ohne dass die Rückfrage darüber stehen bleibt.
+  message?: ReactNode | ((dismiss: () => void) => ReactNode)
   confirmLabel?: string
   cancelLabel?: string
   danger?: boolean
@@ -92,7 +94,7 @@ export function UIProvider({ children }: { children: ReactNode }) {
           <div className="dialog-backdrop no-print" onMouseDown={() => close(false)}>
             <div className="dialog" role="dialog" aria-modal="true" aria-labelledby={titleId} onMouseDown={(e) => e.stopPropagation()}>
               <h2 id={titleId}>{dialog.title}</h2>
-              {dialog.message && <div className="dialog-msg">{dialog.message}</div>}
+              {dialog.message && <div className="dialog-msg">{typeof dialog.message === 'function' ? dialog.message(() => close(false)) : dialog.message}</div>}
               <div className="dialog-actions">
                 <button className="btn ghost" onClick={() => close(false)} autoFocus={dialog.defaultChoice === 'cancel'}>{dialog.cancelLabel ?? 'Abbrechen'}</button>
                 {dialog.alternativeLabel && (

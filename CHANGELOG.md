@@ -6,6 +6,17 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+### Geändert
+
+- **Abschließen einer Abrechnung mit Fehlern nur nach Rückfrage**
+  ([#319](https://github.com/speedone/mietfuchs/issues/319)). Meldet die Abrechnung oder die
+  Heizkostenabrechnung einen Fehler (etwa sich überschneidende Mietverhältnisse oder vereinbarte
+  Anteile über 100 %), nennt der Dialog beim Abschließen jeden Fehler mit „Hier beheben →“ und
+  schließt erst mit „Trotzdem abschließen“ ab. Fehlt zugleich eine Rechnung des Versorgers, steht
+  beides in einem Dialog. Ändert sich zwischen Rückfrage und Bestätigung etwas an den Fehlern, oder
+  entsteht einer erst mit der Schätzung, fragt Mietfuchs erneut. Warnungen und Hinweise fragen nicht nach. Die Prüfung macht der Server,
+  ein Fenster von vor dem Update schließt deshalb nicht mehr still ab, sondern meldet die Fehler.
+
 ## [0.11.2] – 2026-10-17
 
 ### Geändert
