@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url'
 import { coversDate, createLawLog, dayAfter, dayBefore, daysIn, eventPeriodEnd, germanDate, law, LAW_AS_OF, lawOverridable, onlyVersion, recordVersionAt, shiftMonths, valueAt, versionAt, versionsIn, yearStart, type LawParam } from '../../shared/law/register.ts'
 import { LAW_PARAMS } from '../../shared/law/params.ts'
 import * as rulesModule from '../../shared/law/rules.ts'
-import { betrkvGenerationPower, betrkvTvSignal, bgbDeadlineMonths, bgbHeatDeliverySwitch, bgbMaxPeriodMonths } from '../../shared/law/bgb-betrkv.ts'
+import { betrkvGenerationPower, betrkvTvSignal, bgbDeadlineMonths, bgbDeadlineOnWorkday, bgbHeatDeliverySwitch, bgbMaxPeriodMonths, bgbRentDueSaturday, bgbRentDueWorkday } from '../../shared/law/bgb-betrkv.ts'
 import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvEstimateThreshold, hkvExemptions, hkvGenerationPower, hkvHeatingValues, hkvHeatPumpCapture, hkvInfoDistrict, hkvMonthlyInfo, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvRenewableExemption, hkvSettlementInfo } from '../../shared/law/heizkostenv.ts'
 import { practiceEvaporatorWindow, practiceReadingOffWarning, practiceVacancyPersons } from '../../shared/law/practice.ts'
 import { ustgGasHeatNetworkRate, ustgStandardRate } from '../../shared/law/ustg.ts'
@@ -19,6 +19,7 @@ import { CALIBRATED_METER_TYPES, messevCalibrationYears } from '../../shared/law
 import { co2HalfSplit, co2HalfSplitEmergency, co2HalfSplitNewBuildings, co2HalfSplitTwoFamily, co2SelfSupply, halfSplitBioFirstDay, halfSplitEnactedOn, halfSplitFirstDay } from '../../shared/law/co2kostaufg.ts'
 import { bioCapFrom, gmodgHeating43 } from '../../shared/law/gmodg.ts'
 import { degreeDayPermille } from '../../shared/degreeDays.ts'
+import { holidayNewYear, holidayGoodFriday, holidayEasterMonday, holidayLabourDay, holidayAscension, holidayWhitMonday, holidayChristmas, holidayBoxingDay, holidayEpiphany, holidayWomensDay, holidayEasterSunday, holidayWhitSunday, holidayLiberationDay, holidayCorpusChristi, holidayUprising1953, holidayAugsburgPeace, holidayAssumption, holidayChildrensDay, holidayUnityDay, holidayReformation, holidayAllSaints, holidayRepentance, HOLIDAY_PARAMS } from '../../shared/law/feiertagsgesetze.ts'
 
 const year = (y: number) => ({ period: { from: `${y}-01-01`, to: `${y}-12-31` } })
 
@@ -180,7 +181,7 @@ test('Register: jede Konstante vom Typ LawParam in shared/law/ steht in LAW_PARA
     .flatMap((f) => [...fs.readFileSync(path.join(dir, f), 'utf8').matchAll(/^export const (\w+): LawParam</gm)].map((m) => m[1]))
   assert.ok(declared.length >= 7, `nur ${declared.length} Parameter gefunden`)
   const listed = new Set<unknown>(LAW_PARAMS)
-  const modules = { betrkvGenerationPower, betrkvTvSignal, bgbDeadlineMonths, bgbHeatDeliverySwitch, bgbMaxPeriodMonths, co2ApplicableFrom, co2CostsBefore, co2CutMissing, co2DistrictEtsNew, co2EbevFactors, co2HalfSplit, co2HalfSplitEmergency, co2HalfSplitNewBuildings, co2HalfSplitTwoFamily, co2NonResidential, co2Price, co2SelfSupply, co2PriceEts, co2Restriction, co2RoundingDecimals, co2StageTable, gmodgHeating43, hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvEstimateThreshold, hkvExemptions, hkvGenerationPower, hkvHeatingValues, hkvHeatPumpCapture, hkvInfoDistrict, hkvMonthlyInfo, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvRenewableExemption, hkvSettlementInfo, practiceEvaporatorWindow, practiceReadingOffWarning, practiceVacancyPersons, ustgGasHeatNetworkRate, ustgStandardRate, messevCalibrationYears }
+  const modules = { betrkvGenerationPower, betrkvTvSignal, bgbDeadlineMonths, bgbHeatDeliverySwitch, bgbMaxPeriodMonths, co2ApplicableFrom, co2CostsBefore, co2CutMissing, co2DistrictEtsNew, co2EbevFactors, co2HalfSplit, co2HalfSplitEmergency, co2HalfSplitNewBuildings, co2HalfSplitTwoFamily, co2NonResidential, co2Price, co2SelfSupply, co2PriceEts, co2Restriction, co2RoundingDecimals, co2StageTable, gmodgHeating43, hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvDhwAreaFormula, hkvDhwFactors, hkvDhwVolumeFormula, hkvEstimateThreshold, hkvExemptions, hkvGenerationPower, hkvHeatingValues, hkvHeatPumpCapture, hkvInfoDistrict, hkvMonthlyInfo, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, hkvRenewableExemption, hkvSettlementInfo, practiceEvaporatorWindow, practiceReadingOffWarning, practiceVacancyPersons, ustgGasHeatNetworkRate, ustgStandardRate, messevCalibrationYears, holidayNewYear, holidayGoodFriday, holidayEasterMonday, holidayLabourDay, holidayAscension, holidayWhitMonday, holidayChristmas, holidayBoxingDay, holidayEpiphany, holidayWomensDay, holidayEasterSunday, holidayWhitSunday, holidayLiberationDay, holidayCorpusChristi, holidayUprising1953, holidayAugsburgPeace, holidayAssumption, holidayChildrensDay, holidayUnityDay, holidayReformation, holidayAllSaints, holidayRepentance, bgbRentDueWorkday, bgbRentDueSaturday, bgbDeadlineOnWorkday }
   for (const name of declared) {
     assert.ok(name && Object.hasOwn(modules, name), `${name} fehlt in diesem Test`)
     assert.ok(listed.has(Reflect.get(modules, name)), `${name} fehlt in LAW_PARAMS`)
@@ -708,4 +709,35 @@ test('Stichtag co2.self-supply: ab 2023 zwölf Monate für Anzeige und Erstattun
   assert.match(v.enacted, /BGBl\. 2026 I Nr\. 226/)
   assert.equal(log.values.length, 1)
   assert.equal(halfSplitEnactedOn(), '2026-07-29')
+})
+
+// Fristen nach Werktagen und Feiertage der Länder: je Feiertag ein Parameter mit Tag im Jahr, und dieser Tag
+// ist in allen Fassungen derselbe; einmalige Feiertage sind Fassungen von genau einem Tag.
+test('Feiertage im Register: ein Tag je Parameter, einmalige Feiertage als Fassung eines Tages', () => {
+  for (const p of HOLIDAY_PARAMS) {
+    const days = new Set(p.versions.map((v) => v.value.day))
+    assert.equal(days.size, 1, `${p.id}: mehrere Tage`)
+    assert.equal(p.timing, 'eventDate', p.id)
+  }
+  assert.deepEqual(valueAt(holidayLiberationDay, '2020-05-08').states, ['BE'])
+  assert.deepEqual(valueAt(holidayLiberationDay, '2021-05-08').states, [])
+  assert.deepEqual(valueAt(holidayLiberationDay, '2025-05-08').states, ['BE'])
+  assert.deepEqual(valueAt(holidayUprising1953, '2028-06-17').states, ['BE'])
+  assert.deepEqual(valueAt(holidayWomensDay, '2019-03-08').states, ['BE'])
+  assert.deepEqual(valueAt(holidayWomensDay, '2023-03-08').states, ['BE', 'MV'])
+  assert.equal(valueAt(holidayReformation, '2017-10-31').states.length, 16)
+  assert.equal(valueAt(holidayReformation, '2018-10-31').states.includes('NI'), true)
+  assert.equal(valueAt(holidayReformation, '2016-10-31').states.includes('NI'), false)
+  assert.equal(holidayAssumption.describe(valueAt(holidayAssumption, LAW_AS_OF)), '15.08., gesetzlicher Feiertag in Saarland; Bayern nur in Gemeinden mit mehr katholischen als evangelischen Einwohnern, wie sie das Landesamt für Statistik feststellt')
+  assert.equal(holidayRepentance.describe(valueAt(holidayRepentance, LAW_AS_OF)), 'Mittwoch vor dem 23. November, gesetzlicher Feiertag in Sachsen')
+  assert.equal(holidayNewYear.describe(valueAt(holidayNewYear, LAW_AS_OF)), '01.01., gesetzlicher Feiertag in allen Ländern')
+})
+
+test('Fristen im Register: dritter Werktag, Samstag kein Werktag (BGH VIII ZR 129/09), § 193 BGB', () => {
+  assert.equal(valueAt(bgbRentDueWorkday, LAW_AS_OF), 3)
+  assert.equal(bgbRentDueWorkday.describe(3), 'spätestens bis zum 3. Werktag des Monats')
+  assert.equal(valueAt(bgbRentDueSaturday, LAW_AS_OF), false)
+  assert.match(bgbRentDueSaturday.versions[0]?.source.cite ?? '', /VIII ZR 129\/09/)
+  assert.equal(bgbDeadlineOnWorkday.describe(valueAt(bgbDeadlineOnWorkday, LAW_AS_OF)), 'fällt das Fristende auf Sonnabend, Sonntag, Feiertag am Erklärungs- oder Leistungsort, tritt der nächste Werktag an seine Stelle')
+  for (const p of [bgbRentDueWorkday, bgbRentDueSaturday, bgbDeadlineOnWorkday]) assert.equal(p.versions.every((v) => v.source.checked === 'checked'), true, p.id)
 })

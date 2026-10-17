@@ -574,6 +574,8 @@ test('Objekt: anlegen, auflisten, ändern', async () => {
       landlordName: null, iban: null, paymentDeadlineDays: null, cableBuiltBeforeDec2021: null,
       // Angespannter Wohnungsmarkt (Heizung PR 18): unbekannt, ohne Geltung.
       tightMarket: null, tightMarketFrom: null, tightMarketTo: null,
+      // Bundesland für Fristen und Feiertage: unbekannt.
+      state: null,
       // Der Rhythmus kommt immer mit (#208); ein neues Objekt rechnet im Kalenderjahr ab.
       periodRules: { startMonth: 1, changes: [] },
     })

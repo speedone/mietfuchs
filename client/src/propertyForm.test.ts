@@ -1,9 +1,9 @@
 // Die Karte „Objekt“ (#92): Was aus dem Formular in den Rumpf von PUT /api/properties wird.
 import { expect, test } from 'vitest'
-import { propertyBody, propertyToForm, type PropertyForm } from './propertyForm'
+import { propertyBody, propertyToForm, STATE_OPTIONS, STATE_UNKNOWN_LABEL, stateFromSelect, stateNote, type PropertyForm } from './propertyForm'
 
 const form = (over: Partial<PropertyForm>): PropertyForm => ({
-  name: 'Haus', address: 'Weg 1', kind: 'mfh', own: false, landlordName: '', iban: '', paymentDeadlineDays: '', cable: 'unbekannt', tightMarket: 'unbekannt', tightMarketFrom: '', tightMarketTo: '', ...over,
+  name: 'Haus', address: 'Weg 1', kind: 'mfh', own: false, landlordName: '', iban: '', paymentDeadlineDays: '', cable: 'unbekannt', tightMarket: 'unbekannt', tightMarketFrom: '', tightMarketTo: '', state: '', ...over,
 })
 
 test('ohne Haken gilt für alle drei die Vorgabe', () => {
@@ -15,7 +15,7 @@ test('mit Haken gilt nur, was eingetragen ist; ein leeres Feld heißt Vorgabe', 
   // Wer den Haken setzt, um nur eine andere IBAN einzutragen, soll den Vermieternamen auf der
   // Abrechnung nicht verlieren.
   expect(propertyBody(form({ own: true, iban: ' DE89 3704 0044 0532 0130 00 ' })))
-    .toEqual({ name: 'Haus', address: 'Weg 1', kind: 'mfh', landlordName: null, iban: 'DE89370400440532013000', paymentDeadlineDays: null, cableBuiltBeforeDec2021: null, tightMarket: null, tightMarketFrom: null, tightMarketTo: null })
+    .toEqual({ name: 'Haus', address: 'Weg 1', kind: 'mfh', landlordName: null, iban: 'DE89370400440532013000', paymentDeadlineDays: null, cableBuiltBeforeDec2021: null, tightMarket: null, tightMarketFrom: null, tightMarketTo: null, state: null })
 })
 
 test('eine Frist, die keine ganze Zahl ab 0 ist, wird abgelehnt', () => {
@@ -57,4 +57,31 @@ test('IBAN (#279): eine neue ungültige wird abgelehnt, eine gültige normiert, 
   const p = { id: 'o', name: 'Haus', kind: 'mfh' as const, address: '', landlordName: null, paymentDeadlineDays: null }
   expect(propertyToForm({ ...p, iban: 'DE89370400440532013000' }).iban).toBe('DE89 3704 0044 0532 0130 00')
   expect(propertyToForm({ ...p, iban: 'de003333' }).iban).toBe('de003333')
+})
+
+test('Bundesland: leer heißt unbekannt (null), ein Kürzel geht unverändert hin und zurück', () => {
+  expect(propertyBody(form({ state: '' }))).toMatchObject({ state: null })
+  expect(propertyBody(form({ state: 'BY' }))).toMatchObject({ state: 'BY' })
+  const p = { id: 'o', name: 'Haus', kind: 'mfh' as const, address: '', landlordName: null, iban: null, paymentDeadlineDays: null }
+  expect(propertyToForm(p).state).toBe('')
+  expect(propertyToForm({ ...p, state: null }).state).toBe('')
+  expect(propertyToForm({ ...p, state: 'SN' }).state).toBe('SN')
+})
+
+test('Bundesland: die Auswahl hat leer und die 16 Länder, und jeder gespeicherte Wert steht darin', () => {
+  expect(STATE_OPTIONS).toHaveLength(17)
+  expect(STATE_OPTIONS[0]).toEqual({ value: '', label: 'unbekannt – es gelten nur bundesweite Feiertage' })
+  expect(STATE_UNKNOWN_LABEL).toBe(STATE_OPTIONS[0]?.label)
+  expect(STATE_OPTIONS.find((o) => o.value === 'TH')?.label).toBe('Thüringen')
+  expect(stateFromSelect('HB')).toBe('HB')
+  expect(stateFromSelect('')).toBe('')
+  expect(stateFromSelect('XX')).toBe('')
+})
+
+test('Bundesland: Feiertage einzelner Gemeinden werden genannt und nicht mitgezählt', () => {
+  expect(stateNote('', 2026)).toBeNull()
+  expect(stateNote('NW', 2026)).toBeNull()
+  expect(stateNote('BY', 2026)).toMatch(/^In Bayern gelten einige Feiertage nur in einzelnen Gemeinden: Augsburger Friedensfest \(nur im Stadtgebiet Augsburg\); Mariä Himmelfahrt .*Mietfuchs zählt sie bei Fristen nicht mit\.$/)
+  expect(stateNote('SN', 2026)).toMatch(/Fronleichnam/)
+  expect(stateNote('TH', 2026)).toMatch(/Fronleichnam \(nur in Gemeinden, in denen er 1994 gesetzlicher Feiertag war/)
 })

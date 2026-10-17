@@ -5,6 +5,7 @@ import { propertyBody, propertyToForm, type PropertyForm, CABLE_LABELS, type Cab
 import { PROPERTY_KIND_LABELS } from '../types'
 import Term from './Term'
 import TightMarketField from './TightMarketField'
+import FederalStateField from './FederalStateField'
 import { api, errorText } from '../api'
 import { useOpenForm, useProperty, useSwitchProperty } from '../property'
 import { useConfirm, useToast } from './feedback'
@@ -161,6 +162,10 @@ export default function PropertyCard() {
             {(Object.keys(CABLE_LABELS) as CableAnswer[]).map((k) => <option key={k} value={k}>{CABLE_LABELS[k]}</option>)}
           </select>
         </label>
+      </div>
+      {/* Fristen nach Werktagen hängen an den Feiertagen am Ort (shared/deadlines.ts). */}
+      <div className="row">
+        <FederalStateField value={form.state} year={new Date().getFullYear()} onChange={(state) => setForm({ ...form, state })} />
       </div>
       {/* Heizung PR 18: § 5d CO2KostAufG, mit der Geltung der Verordnung. */}
       <TightMarketField value={form.tightMarket} from={form.tightMarketFrom} to={form.tightMarketTo} onChange={(c) => setForm({ ...form, ...c })} />

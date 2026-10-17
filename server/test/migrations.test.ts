@@ -160,6 +160,11 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // erzeugt). Wird vor dem Merge ein anderer PR davor eingereiht, werden beide Schritte neu erzeugt und die Marken ersetzt.
   '0058_zahlungsart': '8a8d8cb03e0b6097acf8ef304d1187492d5e8ee57b20877a53a3d4f68ed40581',
   '0059_zahlungsart_bedingungen': '401935f55d38ffafdcd67f0e3b86a682c33ac9f965a9151031f790ec8dc0a0c9',
+  // #290: Bundesland am Objekt (Fristen und Feiertage), Spalte und Bedingung in zwei Schritten (nach #328 als
+  // 0060/0061 neu erzeugt). Wird vor dem Merge ein anderer PR davor eingereiht, werden beide Schritte neu erzeugt
+  // und die Marken ersetzt.
+  '0060_bundesland': '4553e45643c584947b7dc193ae4a216af5b3ac01049795243d818a3f6a4d76e8',
+  '0061_bundesland_bedingung': '95f0407dab0f6a9421d80935f336b81f8f1c477a446873548833207e6a83c9d4',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {
