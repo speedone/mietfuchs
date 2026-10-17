@@ -97,23 +97,30 @@ describe('Mietkonto: der angebrochene Monat (#311)', () => {
 })
 
 describe('Fälligkeit des laufenden Monats als Auskunft', () => {
-  it('nennt den dritten Werktag nach den Feiertagen am Ort, ohne Samstag', () => {
-    expect(rentDueNote(2027, new Date(2027, 0, 2), 'BW')).toBe(
-      'Die Miete für Januar ist fällig bis Do., 07.01.2027 (3. Werktag, Samstag nicht mitgezählt; nach den Feiertagen in Baden-Württemberg). ' +
-      'Das gilt, wenn der Mietvertrag nichts anderes bestimmt; rechtzeitig ist eine Überweisung, die bis dahin in Auftrag gegeben ist. ' +
-      'Als Rückstand zählt das Mietkonto den laufenden Monat erst ab dem nächsten.',
-    )
-    expect(rentDueNote(2026, new Date(2026, 7, 1), 'BE')).toMatch(/^Die Miete für August ist fällig bis Mi\., 05\.08\.2026 /)
+  it('nennt kurz den dritten Werktag nach den Feiertagen am Ort, die Einzelheiten aufklappbar', () => {
+    expect(rentDueNote(2027, new Date(2027, 0, 2), 'BW')).toEqual({
+      text: 'Miete Januar fällig am Do., 07.01.2027',
+      details: '3. Werktag, Samstag nicht mitgezählt; nach den Feiertagen in Baden-Württemberg. Das gilt, wenn der Mietvertrag nichts anderes bestimmt. ' +
+        'Rechtzeitig ist eine Überweisung, die bis zu diesem Tag in Auftrag gegeben ist; die Gutschrift kann später kommen.',
+    })
+    expect(rentDueNote(2026, new Date(2026, 7, 1), 'BE')?.text).toBe('Miete August fällig am Mi., 05.08.2026')
+  })
+
+  it('sagt nichts über den Rückstand (das Mietkonto zählt ihn noch nach #133)', () => {
+    const note = rentDueNote(2026, new Date(2026, 9, 6), 'BW')
+    expect(`${note?.text} ${note?.details}`).not.toMatch(/Rückstand/)
   })
 
   it('ohne Bundesland zählen nur die bundesweiten Feiertage, und das steht dabei', () => {
-    expect(rentDueNote(2027, new Date(2027, 0, 2), null)).toMatch(/fällig bis Mi\., 06\.01\.2027 \(3\. Werktag, Samstag nicht mitgezählt; nur nach den bundesweiten Feiertagen, weil beim Objekt kein Bundesland eingetragen ist\)/)
-    expect(rentDueNote(2027, new Date(2027, 0, 2), undefined)).toBe(rentDueNote(2027, new Date(2027, 0, 2), null))
+    const note = rentDueNote(2027, new Date(2027, 0, 2), null)
+    expect(note?.text).toBe('Miete Januar fällig am Mi., 06.01.2027 (ohne Bundesland: nur bundesweite Feiertage)')
+    expect(note?.details).toMatch(/nur nach den bundesweiten Feiertagen, weil beim Objekt kein Bundesland eingetragen ist/)
+    expect(rentDueNote(2027, new Date(2027, 0, 2), undefined)).toEqual(note)
   })
 
-  it('nach dem Tag „war fällig“, am Tag selbst noch „ist“', () => {
-    expect(rentDueNote(2026, new Date(2026, 9, 5), 'BY')).toMatch(/^Die Miete für Oktober ist fällig bis Mo\., 05\.10\.2026/)
-    expect(rentDueNote(2026, new Date(2026, 9, 6), 'BY')).toMatch(/^Die Miete für Oktober war fällig bis Mo\., 05\.10\.2026/)
+  it('vor und nach dem Tag dieselbe Zeile', () => {
+    expect(rentDueNote(2026, new Date(2026, 9, 5), 'BY')?.text).toBe('Miete Oktober fällig am Mo., 05.10.2026')
+    expect(rentDueNote(2026, new Date(2026, 9, 6), 'BY')?.text).toBe('Miete Oktober fällig am Mo., 05.10.2026')
   })
 
   it('nur im laufenden Jahr', () => {
@@ -128,13 +135,13 @@ describe('Fälligkeit: Feiertage einzelner Gemeinden', () => {
   // zu früh, und ein Vermieter hielte eine pünktliche Zahlung für verspätet.
   it('nennt einen gemeindeweisen Feiertag, der die Frist dort verschiebt', () => {
     const note = rentDueNote(2021, new Date(2021, 5, 1), 'SN')
-    expect(note).toMatch(/fällig bis Do\., 03\.06\.2021 /)
-    expect(note).toMatch(/In Gemeinden, in denen am 03\.06\. Fronleichnam gilt, ist es ein Werktag später\./)
+    expect(note?.text).toBe('Miete Juni fällig am Do., 03.06.2021')
+    expect(note?.details).toMatch(/In Gemeinden, in denen am 03\.06\. Fronleichnam gilt, ist es ein Werktag später\./)
   })
 
   it('schweigt, wenn kein gemeindeweiser Feiertag in die Frist fällt', () => {
-    expect(rentDueNote(2026, new Date(2026, 9, 6), 'BY')).not.toMatch(/Gemeinden/)
-    expect(rentDueNote(2021, new Date(2021, 5, 1), 'BE')).not.toMatch(/Gemeinden/)
+    expect(rentDueNote(2026, new Date(2026, 9, 6), 'BY')?.details).not.toMatch(/Gemeinden/)
+    expect(rentDueNote(2021, new Date(2021, 5, 1), 'BE')?.details).not.toMatch(/Gemeinden/)
   })
 })
 

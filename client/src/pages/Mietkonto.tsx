@@ -247,7 +247,12 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
         <p className="muted">Klick auf einen roten oder gelben Monat bucht den offenen Restbetrag vor; gestrichelte Monate zählen noch nicht als Rückstand.</p>
       )}
       {/* Nur eine Auskunft: Die Rechnung des Mietkontos ändert sie nicht (#133). */}
-      {dueNote && ledger && rentDueApplies(ledger.rows, year, new Date()) && <p className="muted no-print">{dueNote}</p>}
+      {dueNote && ledger && rentDueApplies(ledger.rows, year, new Date()) && (
+        <details className="muted no-print rent-due">
+          <summary>{dueNote.text}</summary>
+          <p>{dueNote.details}</p>
+        </details>
+      )}
       {ledger?.rows.map((r) => {
         const noRent = r.sollYearCents === 0
         const standing = rowStanding(r)
