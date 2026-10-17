@@ -1,5 +1,5 @@
 import type { CostModel, HeatingModel, NotSettled, SelfSupplyKind, Tenancy, Unit } from './types'
-import { fmtDate, fmtEuro } from './api'
+import { fmtDate, fmtEuro, parseEuro } from './api'
 import { overlapsOf } from '../../shared/tenancyOverlap.ts'
 import { andList } from '../../shared/wording.ts'
 import { co2SelfSupply, halfSplitEnactedOn } from '../../shared/law/co2kostaufg.ts'
@@ -131,12 +131,69 @@ export function parseScheduleMonth(text: string): string | null {
   return null
 }
 
-// Was an einem nicht lesbaren „gültig ab“ fehlt, als Satz für die Meldung beim Speichern
-export function scheduleMonthProblem(text: string): string {
+// Was an einem nicht lesbaren „gültig ab“ fehlt, als Satz für die Meldung beim Speichern. `first`:
+// die erste Zeile einer Staffel, nur dort heißt „beides leer“ ab Einzug.
+export function scheduleMonthProblem(text: string, first = true): string {
+  // Ein gespeicherter Teil, den die Auswahl nicht anbietet (ein Jahr vor 1900, ein Monat 13), steht
+  // dort leer. „Bitte noch das Jahr wählen“ klänge dann, als sei keines gespeichert (Durchsicht von #287).
+  const raw = /^(\d{2})?\.(\d{4})?$/.exec(text.trim())
+  if (raw?.[2] !== undefined && (Number(raw[2]) < YEAR_MIN || Number(raw[2]) > YEAR_MAX)) {
+    return `Das gespeicherte Jahr ${raw[2]} liegt außerhalb von ${YEAR_MIN} bis ${YEAR_MAX}. Bitte wählen Sie das Jahr neu.`
+  }
+  if (raw?.[1] !== undefined && (Number(raw[1]) < 1 || Number(raw[1]) > 12)) {
+    return `Den gespeicherten Monat ${raw[1]} gibt es nicht. Bitte wählen Sie den Monat neu.`
+  }
+  const both = first ? ' (beides leer heißt ab Einzug).' : '.'
   const { month, year } = monthPickerParts(text)
-  if (month && !year) return 'Bitte noch das Jahr wählen (beides leer heißt ab Einzug).'
-  if (year && !month) return 'Bitte noch den Monat wählen (beides leer heißt ab Einzug).'
+  if (month && !year) return `Bitte noch das Jahr wählen${both}`
+  if (year && !month) return `Bitte noch den Monat wählen${both}`
   return `Der gespeicherte Monat „${text.trim()}“ ist ungültig. Bitte Monat und Jahr neu wählen.`
+}
+
+// Die Staffeln am Mietverhältnis, die nach Monat gelten. Name für Meldungen, die Änderung für den
+// fehlenden Monat und die Beschriftung des Felds, je Staffel eindeutig (Screenreader, Tests).
+export type ScheduleKind = 'baseRent' | 'prepayment' | 'flatRate' | 'heatingPrepayment'
+const SCHEDULES: Record<ScheduleKind, { name: string; change: string; label: string }> = {
+  baseRent: { name: 'Kaltmiete-Staffel', change: 'die Mieterhöhung', label: 'Kaltmiete gültig ab' },
+  prepayment: { name: 'Vorauszahlungs-Staffel', change: 'die Änderung der Vorauszahlung', label: 'Vorauszahlung gültig ab' },
+  flatRate: { name: 'Staffel der Pauschale', change: 'die Änderung der Pauschale', label: 'Pauschale gültig ab' },
+  heatingPrepayment: { name: 'Staffel der Heizvorauszahlung', change: 'die Änderung der Heizvorauszahlung', label: 'Heizvorauszahlung gültig ab' },
+}
+export const scheduleLabel = (kind: ScheduleKind): string => SCHEDULES[kind].label
+
+// Eine Staffel aus den Zeilen des Formulars ('MM.JJJJ' aus dem MonthPicker), als 'JJJJ-MM'. Ganz
+// leere Zeilen fallen weg. Ohne Monat gilt nur die erste Zeile ab Einzug; in jeder weiteren ist ein
+// fehlender Monat ein Fehler. Vorher galt `row.from || start` für jede Zeile: Eine Mieterhöhung,
+// deren Monat stehen blieb, ergab einen zweiten Eintrag zum Einzugsmonat, und nach „es gilt der
+// letzte“ (schedule.ts) galt der neue Betrag rückwirkend ab Einzug (Durchsicht von #287). Aus
+// demselben Grund werden zwei Zeilen zum selben Monat abgelehnt statt still zusammengelegt.
+export function buildSchedule(
+  rows: readonly { from: string; amount: string }[],
+  start: string,
+  kind: ScheduleKind,
+): { schedule: { from: string; monthlyCents: number }[] } | { error: string } {
+  const { name, change } = SCHEDULES[kind]
+  const schedule: { from: string; monthlyCents: number }[] = []
+  for (const [i, row] of rows.entries()) {
+    if (!row.from.trim() && !row.amount.trim()) continue
+    const first = i === 0
+    let from: string | null
+    if (row.from.trim()) {
+      from = parseScheduleMonth(row.from)
+      if (from === null) return { error: `${name}: ${scheduleMonthProblem(row.from, first)}` }
+    } else if (first) {
+      from = start.slice(0, 7)
+    } else {
+      return { error: `${name}: Bitte wählen Sie für ${change} den Monat, ab dem sie gilt.` }
+    }
+    const cents = parseEuro(row.amount)
+    if (cents === null || cents < 0) return { error: `Bitte den Betrag der ${name} prüfen.` }
+    if (schedule.some((e) => e.from === from)) {
+      return { error: `${name}: Zwei Zeilen gelten ab ${scheduleMonthText(from)}. Bitte wählen Sie für jede Zeile einen eigenen Monat.` }
+    }
+    schedule.push({ from, monthlyCents: cents })
+  }
+  return { schedule }
 }
 
 // Monatsauswahl der Staffeln (MonthPicker): zwei Auswahllisten statt Freitext, damit jeder Browser
@@ -158,6 +215,13 @@ export function monthPickerParts(text: string): { month: string; year: string } 
 
 export function monthPickerText(month: string, year: string): string {
   return month === '' && year === '' ? '' : `${month}.${year}`
+}
+
+// Dieselbe Auswahl für Felder, deren Wert 'JJJJ-MM' bleibt (Zeitraumwechsel, Heizperiode): vollständig
+// als 'JJJJ-MM', unvollständig wie oben, sodass deren Prüfung (etwa parsePeriodKey) es ablehnt und die
+// Auswahl die gewählte Hälfte weiter zeigt.
+export function monthPickerIso(month: string, year: string): string {
+  return month !== '' && year !== '' ? `${year}-${month}` : monthPickerText(month, year)
 }
 
 // Jahre zur Auswahl: ab dem Einzugsjahr (ohne Einzug zehn Jahre zurück) bis zehn Jahre nach dem

@@ -1,6 +1,6 @@
 // Nebenkostenmodell am Mietverhältnis (#93), die Seite der Oberfläche.
 import { expect, test } from 'vitest'
-import { COST_MODEL_LABELS, HEATING_MODEL_LABELS, SELF_SUPPLY_TENANCY_HINT, buildPersonHistory, costModelBadge, costModelBody, defaultTenancyUnitId, monthPickerParts, monthPickerText, monthPickerYears, notSettledText, overlapQuestion, parsePersons, parseScheduleMonth, prepaymentColumn, scheduleMonthProblem, scheduleMonthText, showsFlatRates } from './tenancyModel'
+import { COST_MODEL_LABELS, HEATING_MODEL_LABELS, SELF_SUPPLY_TENANCY_HINT, buildPersonHistory, buildSchedule, costModelBadge, costModelBody, defaultTenancyUnitId, monthPickerIso, monthPickerParts, monthPickerText, monthPickerYears, notSettledText, overlapQuestion, parsePersons, parseScheduleMonth, prepaymentColumn, scheduleMonthProblem, scheduleMonthText, showsFlatRates } from './tenancyModel'
 import type { Tenancy, Unit } from './types'
 
 test('die Staffel der Pauschale erscheint nur bei einer Pauschale', () => {
@@ -211,4 +211,62 @@ test('Meldung beim Speichern nennt, was am Monat fehlt', () => {
   expect(scheduleMonthProblem('.2025')).toMatch(/den Monat/)
   expect(scheduleMonthProblem('13.2024')).toMatch(/den Monat/)
   expect(scheduleMonthProblem('irgendwann')).toMatch(/„irgendwann“ ist ungültig/)
+})
+
+// Durchsicht von #287: „+ Mieterhöhung ab Monat …“, 900 € eingetragen, den Monat stehen lassen.
+// Die neue Zeile galt dann „ab Einzug“, gesendet wurden zwei Einträge zum Einzugsmonat, und nach
+// „es gilt der letzte Eintrag“ galten 900 € rückwirkend ab Einzug. „Ab Einzug“ gibt es deshalb nur
+// in der ersten Zeile einer Staffel; in jeder weiteren ist ein fehlender Monat ein Fehler.
+test('Staffel aus dem Formular: nur die erste Zeile darf ohne Monat ab Einzug gelten', () => {
+  expect(buildSchedule([{ from: '', amount: '800,00' }], '2025-02-01', 'baseRent')).toEqual({ schedule: [{ from: '2025-02', monthlyCents: 80000 }] })
+  expect(buildSchedule([{ from: '02.2025', amount: '800,00' }, { from: '', amount: '900,00' }], '2025-02-01', 'baseRent'))
+    .toEqual({ error: 'Kaltmiete-Staffel: Bitte wählen Sie für die Mieterhöhung den Monat, ab dem sie gilt.' })
+  expect(buildSchedule([{ from: '', amount: '150,00' }, { from: '', amount: '170,00' }], '2025-02-01', 'prepayment'))
+    .toEqual({ error: 'Vorauszahlungs-Staffel: Bitte wählen Sie für die Änderung der Vorauszahlung den Monat, ab dem sie gilt.' })
+  expect(buildSchedule([{ from: '01.2025', amount: '90,00' }, { from: '', amount: '95,00' }], '2025-01-01', 'flatRate'))
+    .toEqual({ error: 'Staffel der Pauschale: Bitte wählen Sie für die Änderung der Pauschale den Monat, ab dem sie gilt.' })
+  expect(buildSchedule([{ from: '05.2025', amount: '120,00' }, { from: '', amount: '130,00' }], '2025-01-01', 'heatingPrepayment'))
+    .toEqual({ error: 'Staffel der Heizvorauszahlung: Bitte wählen Sie für die Änderung der Heizvorauszahlung den Monat, ab dem sie gilt.' })
+  // mit Monat: gilt ab diesem Monat
+  expect(buildSchedule([{ from: '02.2025', amount: '800,00' }, { from: '01.2026', amount: '900,00' }], '2025-02-01', 'baseRent'))
+    .toEqual({ schedule: [{ from: '2025-02', monthlyCents: 80000 }, { from: '2026-01', monthlyCents: 90000 }] })
+  // ganz leere Zeilen fallen weg, wo sie auch stehen
+  expect(buildSchedule([{ from: '', amount: '' }, { from: '', amount: ' ' }], '2025-02-01', 'baseRent')).toEqual({ schedule: [] })
+})
+
+test('Staffel aus dem Formular: zwei Zeilen zum selben Monat werden nicht still zusammengelegt', () => {
+  // Die erste ohne Monat gilt ab Einzug; eine zweite mit dem Einzugsmonat überschriebe sie rückwirkend.
+  expect(buildSchedule([{ from: '', amount: '800,00' }, { from: '02.2025', amount: '900,00' }], '2025-02-01', 'baseRent'))
+    .toEqual({ error: 'Kaltmiete-Staffel: Zwei Zeilen gelten ab 02.2025. Bitte wählen Sie für jede Zeile einen eigenen Monat.' })
+})
+
+test('Staffel aus dem Formular: Monat und Betrag werden geprüft', () => {
+  expect(buildSchedule([{ from: '03.', amount: '800,00' }], '2025-02-01', 'baseRent'))
+    .toEqual({ error: 'Kaltmiete-Staffel: Bitte noch das Jahr wählen (beides leer heißt ab Einzug).' })
+  // in einer weiteren Zeile gibt es kein „ab Einzug“, also auch keinen Hinweis darauf
+  expect(buildSchedule([{ from: '02.2025', amount: '800,00' }, { from: '.2026', amount: '900,00' }], '2025-02-01', 'baseRent'))
+    .toEqual({ error: 'Kaltmiete-Staffel: Bitte noch den Monat wählen.' })
+  expect(buildSchedule([{ from: '02.2025', amount: 'viel' }], '2025-02-01', 'baseRent')).toEqual({ error: 'Bitte den Betrag der Kaltmiete-Staffel prüfen.' })
+  expect(buildSchedule([{ from: '02.2025', amount: '-5,00' }], '2025-02-01', 'heatingPrepayment')).toEqual({ error: 'Bitte den Betrag der Staffel der Heizvorauszahlung prüfen.' })
+})
+
+// Durchsicht von #287: Ein gespeicherter Altwert vor 1900 (oder nach 2100) zeigte in der Auswahl kein
+// Jahr, und das Speichern meldete „Bitte noch das Jahr wählen“, als sei keines gespeichert.
+test('Meldung beim Speichern: ein gespeichertes Jahr außerhalb der Auswahl heißt so', () => {
+  expect(scheduleMonthProblem(scheduleMonthText('1899-05'))).toBe('Das gespeicherte Jahr 1899 liegt außerhalb von 1900 bis 2100. Bitte wählen Sie das Jahr neu.')
+  expect(scheduleMonthProblem(scheduleMonthText('2206-01'))).toBe('Das gespeicherte Jahr 2206 liegt außerhalb von 1900 bis 2100. Bitte wählen Sie das Jahr neu.')
+  // aus der Auswahl selbst entsteht nur ein fehlendes Jahr
+  expect(scheduleMonthProblem('03.')).toBe('Bitte noch das Jahr wählen (beides leer heißt ab Einzug).')
+})
+
+test('Personen-Staffel: auch dort gilt nur die erste Zeile ohne Datum ab Einzug', () => {
+  expect(buildPersonHistory([{ from: '', persons: '2' }, { from: '', persons: '3' }], '2025-02-01')).toEqual({ error: 'Bitte Personen-Staffel prüfen: Jede weitere Zeile braucht ein Datum.' })
+})
+
+test('Monatsauswahl für Felder mit JJJJ-MM: vollständig als JJJJ-MM, sonst unvollständig', () => {
+  expect(monthPickerIso('05', '2026')).toBe('2026-05')
+  expect(monthPickerIso('', '')).toBe('')
+  expect(monthPickerIso('05', '')).toBe('05.')
+  expect(monthPickerParts(monthPickerIso('05', ''))).toEqual({ month: '05', year: '' })
+  expect(monthPickerParts('2026-05')).toEqual({ month: '05', year: '2026' })
 })
