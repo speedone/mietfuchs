@@ -209,6 +209,45 @@ test('Belege für die Steuer (#170): ein ZIP je Objekt und Jahr nach Gruppen der
   })
 })
 
+// Vor dem Wechsel von adm-zip zu yazl auf demselben Bestand abgelesen: die Übersicht wortgleich,
+// samt Byte-Order-Mark. Ein Steuerberater öffnet sie in Excel, und ohne BOM stünden dort statt
+// der Umlaute Zeichensalat.
+const TAX_OVERVIEW_BEFORE_YAZL = '\uFEFFGruppe;Kostenart;Beschreibung;Rechnungssteller;Betrag (EUR);privat (EUR);abziehbar (EUR);Lohnanteil § 35a (EUR);Beleg\r\n'
+  + 'Grundsteuer & öffentliche Abgaben;Grundsteuer;Grundsteuer B;;612,40;0,00;612,40;;1 Grundsteuer & öffentliche Abgaben/Grundsteuer - Grundsteuerbescheid_Müll.pdf\r\n'
+  + 'Verwaltung & Instandhaltung;Nicht umlagefähig;Dachrinne;;450,00;0,00;450,00;200,00;4 Verwaltung & Instandhaltung/Nicht umlagefähig - Dachrinne_Übertrag.pdf\r\n'
+  + 'Sonstige Werbungskosten;Versicherung;Ohne Beleg;;300,00;0,00;300,00;;kein Beleg\r\n'
+
+test('Belege für die Steuer: Inhalt, Namen und Übersicht sind mit yazl dieselben wie vorher mit adm-zip', async () => {
+  await withProperties(async (s) => {
+    const dir = path.join(s.dataDir, 'uploads')
+    const files = { gs: '1700000000000_Grundsteuerbescheid_Müll.pdf', dach: '1700000000001_Dachrinne_Übertrag.pdf' }
+    fs.writeFileSync(path.join(dir, files.gs), '%PDF-Grundsteuer äöü')
+    fs.writeFileSync(path.join(dir, files.dach), Buffer.from(Array.from({ length: 70000 }, (_, i) => (i * 31) % 251)))
+    const post = (body: Record<string, unknown>) =>
+      s.api<CostItem>('/api/costItems?property=objekt-1', { method: 'POST', body: JSON.stringify({ year: 2025, key: 'area', amountCents: 10000, ...body }) })
+    await post({ category: 'Grundsteuer', description: 'Grundsteuer B', amountCents: 61240, invoiceFile: files.gs })
+    await post({ category: 'Nicht umlagefähig', description: 'Dachrinne', amountCents: 45000, invoiceFile: files.dach, labor35aCents: 20000 })
+    await post({ category: 'Versicherung', description: 'Ohne Beleg', amountCents: 30000 })
+    const zip = new AdmZip(Buffer.from(await (await fetch(`${s.base}/api/receipts/tax/2025?property=objekt-1`)).arrayBuffer()))
+    const entries = zip.getEntries()
+    for (const e of entries) assert.ok(e.header.flags & 0x800, `${e.entryName}: Name nicht als UTF-8 gekennzeichnet`)
+    // Ein Steuerberater öffnet das Archiv mit beliebigen Werkzeugen, auch solchen, die es als Strom
+    // lesen. Manche (busybox unzip) kennen gar keinen Datendeskriptor (Bit 3), andere (funzip, Java
+    // ZipInputStream) finden das Ende eines gespeicherten Eintrags damit nicht. Deshalb keiner.
+    for (const e of entries) assert.equal(e.header.flags & 0x8, 0, `${e.entryName}: mit Datendeskriptor`)
+    assert.deepEqual(entries.map((e) => e.entryName), [
+      '1 Grundsteuer & öffentliche Abgaben/Grundsteuer - Grundsteuerbescheid_Müll.pdf',
+      '4 Verwaltung & Instandhaltung/Nicht umlagefähig - Dachrinne_Übertrag.pdf',
+      'Übersicht.csv',
+    ])
+    assert.ok(entries[0].getData().equals(fs.readFileSync(path.join(dir, files.gs))))
+    assert.ok(entries[1].getData().equals(fs.readFileSync(path.join(dir, files.dach))))
+    const csv = entries[2].getData()
+    assert.deepEqual([...csv.subarray(0, 3)], [0xef, 0xbb, 0xbf], 'Byte-Order-Mark')
+    assert.equal(csv.toString('utf8'), TAX_OVERVIEW_BEFORE_YAZL)
+  })
+})
+
 test('Belege für die Steuer: die Übersicht teilt jede Position in privat und abziehbar wie die Steuerübersicht (#163)', async () => {
   // Integrationsdurchsicht: Die CSV im ZIP nannte nur den Bruttobetrag. Bei teilweiser
   // Eigennutzung weist die Steuerübersicht privat und abziehbar getrennt aus, und gerade diese

@@ -758,6 +758,33 @@ Start hinein (siehe Umstieg unten), und **die Routen lesen und schreiben sie**
   Oberfläche bis zum nächsten Start den Stand von vorher. Die gedruckte Abrechnung nimmt von dort
   Vermietername und IBAN, und weil `PUT /api/settings` vom Zwischenspeicher ausgeht, schriebe die
   nächste beliebige Änderung den veralteten Stand vollständig zurück.
+- **ZIP lesen und schreiben**: Backup und „Belege für die Steuer“ schreibt yazl als Strom an den
+  Browser, statt das Archiv im Speicher zusammenzusetzen; jeder Name steht als UTF-8 mit dem
+  Kennzeichen dafür da, wie vorher bei adm-zip, und ein Test liest ein neues Backup mit adm-zip
+  Byte für Byte zurück, weil der Rückweg in eine ältere Version es so lesen muss. Gelesen wird
+  das hochgeladene Archiv mit yauzl über [server/src/zipRead.ts](server/src/zipRead.ts): Es
+  prüft zuerst nur das Verzeichnis (Zahl der Einträge aus dem Ende des Archivs, Größe je Eintrag
+  und zusammen, Packdichte, Namen) und packt dann als Strom aus, zählt dabei nach und rechnet die
+  Prüfsumme nach, die yauzl nicht prüft. Die Grenzen fürs Wiederherstellen stehen mit Begründung
+  an `RESTORE_LIMITS` in index.ts (50.000 Einträge, 2 GB je Eintrag, 20 GB zusammen und nicht mehr
+  als frei ist, höchstens hundertfach gepackt ab 64 MB). Das hochgeladene Archiv liegt dabei auf
+  der Platte, ausgepackt wird in eine Zwischenablage `restore-…` im Datenordner, und erst wenn
+  alles gelesen und geprüft ist, wandern die Belege per `rename` in den Belegordner, vor der
+  db.json. Reste eines abgebrochenen Vorgangs (`restore-upload-<id>.zip`, `restore-<id>/`) räumt der
+  Start weg, `mietfuchs.sqlite.restore-*` bleibt. Die Dateiarbeit samt Platzbedarf (Belege plus
+  doppelte Datenbank, doppelte db.json und 64 MB Reserve) steht in
+  [server/src/restoreFiles.ts](server/src/restoreFiles.ts); `NKA_TEST_FREE_BYTES` gibt den freien
+  Platz für Tests vor. **Namen liest zipRead.ts wie adm-zip**: ohne UTF-8-Kennzeichen als UTF-8,
+  wenn die Bytes gültig sind, sonst CP437, danach NFC; yauzl allein läse nach der Norm CP437, und
+  ein neu gepacktes Backup bekäme „M├╝ll.pdf“ statt „Müll.pdf“. Beim Schreiben hängt der
+  `error`-Horcher von yazl ab `createZip` (sonst beendet eine verschwundene Datei den Server).
+  **Datendeskriptor**: yazl schreibt Dateien von der Platte immer mit Bit 3, und einen
+  gespeicherten Eintrag damit können Stromleser (funzip, Java ZipInputStream) nicht abgrenzen.
+  Das Backup packt deshalb alles (schon Gepacktes mit Stufe 1), das Steuer-ZIP entsteht aus dem
+  Speicher (`addBuffer`, ohne Bit 3, PDF und Fotos nur gespeichert), weil ein Steuerberater es mit
+  beliebigen Werkzeugen öffnet. Das Aufräumen beim Start nimmt nur die Namen, die die Route
+  vergibt (`restore-<16 Hexziffern>`), nie einen Ordner des Nutzers. Der Kontoauszugsleser
+  (server/src/bank/read.ts) liest noch mit adm-zip und eigenen Grenzen.
 
 **Objekte** (#92): Eine Installation verwaltet mehrere Objekte (`properties`), und **ein Objekt
 ist zugleich die Abrechnungseinheit**. Eine dritte Ebene gibt es bewusst nicht: Alle Programme
@@ -919,7 +946,7 @@ Belegabdeckung, Posteingang und zwei Mappen. Entscheidungen und Quellen in
   übernehmen noch rendern lässt, bricht die Mappe nicht ab: Das Deckblatt sagt „nicht
   übernehmbar, bitte gesondert beilegen“. Die Standardschrift kann nur WinAnsi, `winAnsiSafe` ersetzt den Rest.
 - **Belege für die Steuer** ([server/src/taxReceipts.ts](server/src/taxReceipts.ts)) baut der
-  Server mit adm-zip: Ordner je Gruppe aus `ANLAGE_V_GROUP` in derselben Reihenfolge wie die
+  Server mit yazl (siehe ZIP lesen und schreiben): Ordner je Gruppe aus `ANLAGE_V_GROUP` in derselben Reihenfolge wie die
   Steuerübersicht, Erhaltungsrücklage gesondert, dazu `Übersicht.csv` (mit BOM, Semikolon) mit
   jeder Position, auch ohne Beleg. Textfelder, die mit = + - @ beginnen, bekommen einen Apostroph
   davor (CSV-Formel-Einschleusung).
@@ -1728,7 +1755,7 @@ unten), die KI-Einstellungen `/api/ai/presets`, `/api/ai/status`, `/api/ai/key` 
 KI-Belegauswertung), `/api/update` und `POST /api/update/check`
 (Update-Hinweis, siehe unten), `/api/uploads` (Belegordner: Liste mit Angaben, `PUT` für Objekt,
 Jahr und Rechnungsdatum im Posteingang, Löschen unverknüpfter Dateien, siehe Belegordner), `/api/assessments` (Belegbuchung, siehe dort),
-`/api/receipts/tax/:year` (Belege für die Steuer als ZIP), `/api/backup`/`/api/restore` (ZIP via adm-zip; das
+`/api/receipts/tax/:year` (Belege für die Steuer als ZIP), `/api/backup`/`/api/restore` (ZIP via yazl und yauzl; das
 Wiederherstellen prüft die `db.json` im Archiv erst mit dem Validator und lehnt sie ab, bevor
 irgendetwas überschrieben wird, siehe Die Datenbank. Es setzt dabei **keinen vorhandenen Stand
 voraus**: Auf einem frischen Rechner gibt es noch keine `db.json`, denn die entsteht erst beim

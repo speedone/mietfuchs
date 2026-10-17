@@ -6,6 +6,7 @@
 import { test, before } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
+import crypto from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -15,6 +16,7 @@ import type { CostItem, Meter, Unit, UploadInfo } from '../../shared/types.ts'
 import {
   type ClientSettings, type HealthReport, type Server, type UploadBody, archive, errorFrom, errorOf, fileOf, jsonOf, listening, portOf, readStartUrl, removeDataDir, restore, serverRoot, startServer, startServerIn, startServerRaw, storedSettings, unitRowsInDatabase, waitForExit,
 } from '../testing/api.ts'
+import { craftZip, storedEntry, zeroEntry } from '../testing/zipCraft.ts'
 
 // ---------- Backup und Wiederherstellung (#23) ----------
 
@@ -179,7 +181,7 @@ test('Backup: ein Eintrag, der aus dem Belegordner ausbrechen will, wird abgeleh
 
 test('Backup: ein Archiv, das ausgepackt zu groß wird, wird abgelehnt, bevor etwas ersetzt wird', async () => {
   // Gegen „ZIP-Bomben“: wenige Kilobyte, die ausgepackt riesig werden. Die Grenze ist hier für
-  // den Test auf 100 kB gesetzt, im Betrieb liegt sie bei 1 GB.
+  // den Test auf 100 kB gesetzt, im Betrieb liegt sie bei 20 GB (RESTORE_LIMITS in index.ts).
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-restore-'))
   const s = await startServerIn(dataDir, { NKA_RESTORE_MAX_BYTES: String(100 * 1024) })
   try {
@@ -194,6 +196,234 @@ test('Backup: ein Archiv, das ausgepackt zu groß wird, wird abgelehnt, bevor et
   } finally {
     s.stop()
   }
+})
+
+// ---------- Lesen mit yauzl, Schreiben mit yazl ----------
+//
+// Vorher las adm-zip das hochgeladene Archiv ganz in den Speicher und packte jeden Beleg dort aus.
+// Gemessen: 896 kB Nullbytes, ehrlich als 900 MB angegeben, liefen unter der Grenze von 1 GB durch,
+// brauchten 5 s und 2 GB Arbeitsspeicher und lagen danach als Beleg im Ordner; 65.535 leere
+// Einträge brauchten 4,9 s und 880 MB und landeten ebenso. Jetzt prüft server/src/zipRead.ts das
+// Verzeichnis, bevor ein Eintrag ausgepackt wird.
+
+const emptyStock = JSON.stringify({ units: [], tenancies: [], costItems: [], meters: [], readings: [], payments: [], settings: {} })
+
+test('Wiederherstellen: eine Entpackbombe wird abgelehnt, bevor etwas ausgepackt ist', async () => {
+  await withData(async (s, { unit, file }) => {
+    const bomb = craftZip([storedEntry('db.json', emptyStock), await zeroEntry('uploads/bombe.pdf', 128 * 1024 * 1024)])
+    assert.ok(bomb.length < 512 * 1024, `das Archiv selbst ist klein (${bomb.length} Bytes)`)
+    const start = performance.now()
+    const r = await restore(s, bomb)
+    assert.equal(r.status, 400, JSON.stringify(r.body))
+    assert.match(errorOf(r.body), /Vielfache/)
+    assert.match(errorOf(r.body), /unverändert/)
+    assert.ok(performance.now() - start < 2000, 'die Ablehnung kommt vor dem Auspacken')
+    assert.deepEqual((await s.api<Unit[]>('/api/units')).map((u) => u.id), [unit.id])
+    assert.deepEqual((await s.api<UploadInfo[]>('/api/uploads')).map((u) => u.file), [file])
+  })
+})
+
+test('Wiederherstellen: ein Archiv mit Zehntausenden Einträgen wird gezählt und abgelehnt, ohne sie auszupacken', async () => {
+  await withData(async (s, { unit }) => {
+    const entries = [storedEntry('db.json', emptyStock)]
+    for (let i = 0; i < 65534; i++) entries.push(storedEntry(`uploads/b${i}.pdf`, ''))
+    const start = performance.now()
+    const r = await restore(s, craftZip(entries))
+    assert.equal(r.status, 400, JSON.stringify(r.body))
+    assert.match(errorOf(r.body), /Einträge/)
+    assert.ok(performance.now() - start < 2000, `Ablehnung dauerte ${Math.round(performance.now() - start)} ms`)
+    assert.deepEqual((await s.api<Unit[]>('/api/units')).map((u) => u.id), [unit.id])
+    assert.equal(fs.readdirSync(path.join(s.dataDir, 'uploads')).length, 1)
+  })
+})
+
+test('Wiederherstellen: ein Eintrag, der mehr enthält als angegeben, wird abgelehnt, ohne etwas zu ersetzen', async () => {
+  await withData(async (s, { unit, file }) => {
+    const liar = craftZip([storedEntry('db.json', emptyStock), await zeroEntry('uploads/luege.pdf', 64 * 1024 * 1024, 1000)])
+    const r = await restore(s, liar)
+    assert.equal(r.status, 400, JSON.stringify(r.body))
+    assert.match(errorOf(r.body), /beschädigt/)
+    assert.deepEqual((await s.api<Unit[]>('/api/units')).map((u) => u.id), [unit.id])
+    assert.deepEqual(fs.readdirSync(path.join(s.dataDir, 'uploads')), [file])
+    // Auch die Zwischenablage ist wieder weg.
+    assert.deepEqual(fs.readdirSync(s.dataDir).filter((n) => n.startsWith('restore-')), [])
+  })
+})
+
+test('Wiederherstellen: ein Name, der aus dem Datenordner ausbricht, wird abgelehnt, auch außerhalb von uploads/', async () => {
+  // Früher blieb ein Eintrag außerhalb von uploads/ unbeachtet, auch einer mit „../“. Ausgepackt
+  // wurde er nie, aber ein Archiv mit so einem Namen ist kein Backup, und es ist besser, das zu sagen.
+  await withData(async (s, { unit }) => {
+    for (const name of ['../boese.txt', '/etc/boese.txt', 'C:/boese.txt', 'uploads/../../boese.txt']) {
+      const r = await restore(s, craftZip([storedEntry('db.json', emptyStock), storedEntry(name, 'boese')]))
+      assert.equal(r.status, 400, `${name}: ${JSON.stringify(r.body)}`)
+      assert.match(errorOf(r.body), /ungültigen Eintrag/, name)
+    }
+    assert.deepEqual((await s.api<Unit[]>('/api/units')).map((u) => u.id), [unit.id])
+    assert.equal(fs.existsSync(path.join(s.dataDir, '..', 'boese.txt')), false)
+  })
+})
+
+test('Wiederherstellen: ein neu gepacktes Backup ohne UTF-8-Kennzeichen bringt die Belege unter ihrem Namen zurück', async () => {
+  // Wer sein Backup ausgepackt und mit einem anderen Programm neu gepackt hat, hat oft Namen in
+  // UTF-8 ohne Kennzeichen. adm-zip las sie als UTF-8; als CP437 gelesen stünde der Beleg unter
+  // „M├╝ll.pdf“ im Ordner, und die Kostenposition zeigte ins Leere.
+  const s = await startServer()
+  try {
+    const name = '1700000000000_Gebührenbescheid_Müll.pdf'
+    const r = await restore(s, craftZip([{ ...storedEntry('db.json', emptyStock), utf8: false }, { ...storedEntry(`uploads/${name}`, '%PDF'), utf8: false }]))
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    assert.deepEqual(fs.readdirSync(path.join(s.dataDir, 'uploads')), [name])
+  } finally {
+    s.stop()
+  }
+})
+
+test('Backup: ein Beleg, der sich nicht lesen lässt, beendet den Server nicht', async () => {
+  // yazl fragt jede Datei schon beim Hinzufügen ab und meldet einen Fehler als Ereignis, während
+  // der Schnappschuss der Datenbank noch läuft. Ohne Horcher von Anfang an beendete das den
+  // ganzen Server. Herbeigeführt mit einem Belegordner ohne Ausführungsrecht: Die Namen lassen
+  // sich lesen, die Dateien nicht abfragen. (Wo das Dateisystem das nicht kennt, etwa unter
+  // Windows, gelingt das Backup einfach; die Zusicherung unten gilt dann ebenso.)
+  await withData(async (s) => {
+    const uploads = path.join(s.dataDir, 'uploads')
+    fs.chmodSync(uploads, 0o444)
+    try {
+      const res = await fetch(`${s.base}/api/backup`)
+      if (res.status === 200) {
+        // Gelungen (das Recht greift hier nicht) oder abgebrochen: beides ohne Absturz.
+        await res.arrayBuffer().catch(() => undefined)
+      } else {
+        assert.equal(res.status, 500)
+        assert.match(errorOf(await jsonOf<{ error?: string }>(res)), /Beleg/)
+      }
+    } finally {
+      fs.chmodSync(uploads, 0o755)
+    }
+    const health = await fetch(`${s.base}/healthz`)
+    assert.equal(health.status, 200, 'der Server läuft weiter')
+  })
+})
+
+test('Start: Reste eines abgebrochenen Wiederherstellens werden weggeräumt', async () => {
+  // Stirbt der Server mitten im Auspacken, bleiben das hochgeladene Archiv und die Zwischenablage
+  // liegen, zusammen bis zur doppelten Größe des Backups. Beim Start läuft keine Wiederherstellung.
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-reste-'))
+  fs.writeFileSync(path.join(dataDir, 'restore-upload-00112233aabbccdd.zip'), 'x')
+  fs.mkdirSync(path.join(dataDir, 'restore-00112233aabbccdd'))
+  fs.writeFileSync(path.join(dataDir, 'mietfuchs.sqlite.restore-abc'), 'kann die einzige Kopie sein')
+  const s = await startServerIn(dataDir)
+  try {
+    const names = fs.readdirSync(dataDir)
+    assert.equal(names.includes('restore-upload-00112233aabbccdd.zip'), false)
+    assert.equal(names.includes('restore-00112233aabbccdd'), false)
+    assert.ok(names.includes('mietfuchs.sqlite.restore-abc'))
+  } finally {
+    s.stop()
+  }
+})
+
+test('Wiederherstellen: reicht der Platz nur knapp für die Belege, wird abgelehnt, bevor etwas ersetzt ist', async () => {
+  // Nach den Belegen entstehen noch db.json, Sicherheitskopien und die Sicherung vor einer
+  // Migration; ging die Rechnung nur für die Belege auf, kam „ok“, und danach fehlte die Datenbank.
+  const beleg = crypto.randomBytes(1024 * 1024)
+  const zip = craftZip([storedEntry('db.json', emptyStock), storedEntry('uploads/a.pdf', beleg)])
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-platz-'))
+  // Platz für den Beleg und die db.json, aber ohne Reserve.
+  const s = await startServerIn(dataDir, { NKA_TEST_FREE_BYTES: String(beleg.length + 4096) })
+  try {
+    const r = await restore(s, zip)
+    assert.equal(r.status, 400, JSON.stringify(r.body))
+    assert.match(errorOf(r.body), /nicht genug Platz/)
+    assert.equal(fs.existsSync(path.join(dataDir, 'uploads', 'a.pdf')), false)
+  } finally {
+    s.stop()
+  }
+})
+
+test('Wiederherstellen: ein Archiv, das größer ist als der freie Platz, wird vor dem Hochladen abgelehnt', async () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-platz-'))
+  const s = await startServerIn(dataDir, { NKA_TEST_FREE_BYTES: String(64 * 1024) })
+  try {
+    const r = await restore(s, craftZip([storedEntry('db.json', emptyStock), storedEntry('uploads/a.pdf', crypto.randomBytes(256 * 1024))]))
+    assert.equal(r.status, 400, JSON.stringify(r.body))
+    assert.match(errorOf(r.body), /nicht genug Platz/)
+    assert.deepEqual(fs.readdirSync(dataDir).filter((n) => n.startsWith('restore-')), [], 'nichts hochgeladen')
+  } finally {
+    s.stop()
+  }
+})
+
+// Was in einem Archiv steht, Eintrag für Eintrag, mit adm-zip gelesen: so, wie es eine ältere
+// Mietfuchs-Version beim Wiederherstellen sähe.
+function entriesOf(zip: Buffer): Map<string, Buffer> {
+  return new Map(new AdmZip(zip).getEntries().filter((e) => !e.isDirectory).map((e) => [e.entryName, e.getData()]))
+}
+
+test('Backup: ein Archiv von yazl liest auch adm-zip, Byte für Byte und mit UTF-8-Namen', async () => {
+  // Wer nach dem Update ein Backup zieht und es in einer älteren Version einspielt (Rückweg aus
+  // MIGRATION.md), braucht ein Archiv, das adm-zip liest.
+  await withData(async (s, { file }) => {
+    const gross = crypto.randomBytes(3 * 1024 * 1024)
+    fs.writeFileSync(path.join(s.dataDir, 'uploads', '1700000000000_Hausgeld_Übersicht_ß.pdf'), gross)
+    const zip = Buffer.from(await (await fetch(`${s.base}/api/backup`)).arrayBuffer())
+    const old = new AdmZip(zip)
+    for (const e of old.getEntries()) assert.ok(e.header.flags & 0x800, `${e.entryName}: Name nicht als UTF-8 gekennzeichnet`)
+    const entries = entriesOf(zip)
+    assert.deepEqual([...entries.keys()].sort(), ['mietfuchs-backup.json', 'mietfuchs.sqlite', `uploads/${file}`, 'uploads/1700000000000_Hausgeld_Übersicht_ß.pdf'].sort())
+    for (const name of fs.readdirSync(path.join(s.dataDir, 'uploads'))) {
+      assert.ok(entries.get(`uploads/${name}`)?.equals(fs.readFileSync(path.join(s.dataDir, 'uploads', name))), name)
+    }
+    assert.equal(entries.get('mietfuchs.sqlite')?.subarray(0, 16).toString('latin1'), 'SQLite format 3\0')
+    // Kein gespeicherter Eintrag mit Datendeskriptor (Bit 3): Ein Leser, der das Archiv als Strom
+    // liest (Java ZipInputStream, bsdtar aus einer Pipe), findet dessen Ende sonst nicht.
+    for (const e of old.getEntries()) assert.ok(!(e.header.method === 0 && e.header.flags & 0x8), `${e.entryName}: gespeichert mit Datendeskriptor`)
+    assert.match(entries.get('mietfuchs-backup.json')?.toString('utf8') ?? '', /"version"/)
+  })
+})
+
+test('Backup: Rundreise in einen frischen Datenordner bringt jeden Beleg Byte für Byte zurück', async () => {
+  await withData(async (s, { unit, file }) => {
+    const gross = crypto.randomBytes(3 * 1024 * 1024)
+    const name = '1700000000000_Grundsteuerbescheid_Änderung.pdf'
+    fs.writeFileSync(path.join(s.dataDir, 'uploads', name), gross)
+    const zip = Buffer.from(await (await fetch(`${s.base}/api/backup`)).arrayBuffer())
+    const fresh = await startServer()
+    try {
+      const r = await restore(fresh, zip)
+      assert.equal(r.status, 200, JSON.stringify(r.body))
+      assert.deepEqual((await fresh.api<Unit[]>('/api/units')).map((u) => u.id), [unit.id])
+      assert.deepEqual(fs.readdirSync(path.join(fresh.dataDir, 'uploads')).sort(), [file, name].sort())
+      for (const n of [file, name]) {
+        assert.ok(fs.readFileSync(path.join(fresh.dataDir, 'uploads', n)).equals(fs.readFileSync(path.join(s.dataDir, 'uploads', n))), n)
+      }
+      // Weder das hochgeladene Archiv noch die Zwischenablage bleibt liegen.
+      assert.deepEqual(fs.readdirSync(fresh.dataDir).filter((n) => n.startsWith('restore-')), [])
+    } finally {
+      fresh.stop()
+    }
+  })
+})
+
+test('Wiederherstellen: ein Backup, wie adm-zip es in älteren Versionen geschrieben hat, wird übernommen', async () => {
+  await withData(async (s, { unit, file }) => {
+    const when = new Date('2022-11-05T09:30:00Z')
+    fs.utimesSync(path.join(s.dataDir, 'uploads', file), when, when)
+    const current = new AdmZip(Buffer.from(await (await fetch(`${s.base}/api/backup`)).arrayBuffer()))
+    // Neu gepackt mit adm-zip, wie die Backup-Route bis 0.11 es tat: addLocalFile für die Belege,
+    // addFile für Datenbank und Herkunft.
+    const old = new AdmZip()
+    old.addLocalFile(path.join(s.dataDir, 'uploads', file), 'uploads')
+    for (const name of ['mietfuchs.sqlite', 'mietfuchs-backup.json']) old.addFile(name, entryData(current, name))
+    await fetch(`${s.base}/api/units/${unit.id}`, { method: 'DELETE' })
+    fs.rmSync(path.join(s.dataDir, 'uploads', file))
+    const r = await restore(s, old.toBuffer())
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    assert.deepEqual((await s.api<Unit[]>('/api/units')).map((u) => u.id), [unit.id])
+    assert.deepEqual(fs.readFileSync(path.join(s.dataDir, 'uploads', file)).toString(), '%PDF-Beleg')
+    const listed = (await s.api<UploadInfo[]>('/api/uploads')).find((u) => u.file === file)
+    assert.ok(listed && Math.abs(new Date(listed.mtime).getTime() - when.getTime()) <= 2000, `Datum ${listed?.mtime}`)
+  })
 })
 
 // Mit NKA_PORT=0 vergibt das System einen freien Port. Die Tests starten den Server so und

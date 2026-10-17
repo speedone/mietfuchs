@@ -6,6 +6,16 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+### Geändert
+
+- **Große Backups brauchen deutlich weniger Arbeitsspeicher.** Backup und „Belege für die
+  Steuer“ werden jetzt beim Herunterladen Stück für Stück erzeugt, statt erst ganz im Speicher zu
+  entstehen, und beim Wiederherstellen werden die Belege direkt auf die Platte ausgepackt. Ein
+  Backup mit 400 MB Belegen brauchte vorher rund 1,4 GB Arbeitsspeicher, jetzt rund 0,3 GB. Wiederherstellen lässt
+  sich jetzt ein Backup bis 20 GB (vorher 500 MB), sofern so viel Platz frei ist. Backups aus
+  älteren Versionen lassen sich unverändert einspielen, und ein neues Backup lässt sich auch in
+  einer älteren Version einspielen.
+
 ### Behoben
 
 - Steuerübersicht bei einem Zeitraum über zwei Kalenderjahre (Abrechnungszeitraum wie Mai bis April,
@@ -20,6 +30,13 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Einheit gar nicht vermietet war, und der Hinweis auf eine abweichende abgeschlossene Abrechnung
   auch im Jahr ohne ihre Positionen. Die Werbungskosten, ihr privater und ihr abziehbarer Teil
   waren nicht betroffen.
+- **Ein manipuliertes Backup wird abgelehnt, bevor es ausgepackt wird.** Ein Archiv, das winzig
+  ist und ausgepackt riesig würde, eines mit Zehntausenden Einträgen, eines mit einem Namen, der
+  aus dem Datenordner hinausführt, und eines, dessen Inhalt nicht zu seinen Angaben passt, wird
+  jetzt abgelehnt, ohne dass etwas ersetzt ist. Vorher kam etwa ein Archiv von unter 1 MB durch,
+  das sich auf 900 MB auspackte, und belegte dabei 2 GB Arbeitsspeicher. Reicht der Platz auf
+  dem Datenträger nicht, sagt Mietfuchs das vorher, und Reste eines abgebrochenen
+  Wiederherstellens räumt der nächste Start weg.
 
 ## [0.11.1] – 2026-10-17
 
