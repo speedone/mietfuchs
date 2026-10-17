@@ -393,6 +393,9 @@ export type BalanceSource = {
   cents: number
   plant: string | null | undefined
   linkedDescription: string | null
+  // Beim verknüpften Abzug: die Heizposition, zu der er gehört (Durchsicht von #255 PR 2, M1). Ihr Zeitraum gibt den
+  // Heizanteil, nicht der Teil, in dem der Abzug steht.
+  linkedId?: string
   // Durchsicht S1: Woher der Beitrag kommt, für Zeilenname und Texte. `kept`: Abzug ohne Verweis (selbst getragen).
   // `otherYear`: das Gegenstück (Heizposition bzw. Abzug) steht in einem anderen Steuerjahr. `sameYear`: Paar im selben
   // Steuerjahr oder Heizposition ganz ohne Abzug. `brokenLink` (Nachprüfung N3): der Abzug zeigt auf eine Position, die
@@ -459,6 +462,7 @@ export function operatingPowerBalance(parts: readonly BalancePart[], linkable: r
       sources.push({
         part, kind: 'deduction', costItemId: c.id, description: c.description, cents: -c.amountCents,
         plant: linked ? linked.heatingPlantId ?? null : undefined, linkedDescription: linked?.description ?? null, situation,
+        ...(linked && situation !== 'brokenLink' ? { linkedId: linked.id } : {}),
       })
     }
   })

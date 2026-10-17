@@ -43,17 +43,21 @@ describe('Leistungszeitraum und Jahr der Zahlung (#208)', () => {
     fireEvent.change(screen.getByLabelText('Teil der Heizkosten'), { target: { value: 'operating' } })
     expect(next.heatingPart).toBe('operating')
   })
-  // Recht-H-1 und K-4 (Folge-PR zu #252): Beim Strom der Heizung über den Zähler des Hauses und seinem Abzug gilt das
-  // Jahr der Heizposition; die Feldhilfe sagt, warum das der Regel „wann Sie gezahlt haben“ nicht widerspricht.
-  test('Feldhilfe zum Jahr bei Betriebsstrom und Abzug, sonst nicht', () => {
-    const satz = /gilt für die Heizposition und ihren Abzug beim Allgemeinstrom dasselbe Jahr, nämlich das der Heizposition: Beide teilen die Stromrechnung nur auf und ändern zusammen die Summe Ihrer Kosten nicht; die Stromrechnung selbst bleibt im Jahr ihrer Zahlung\./
-    for (const operatingPower of ['included', 'deduction'] as const) {
-      render(<CostPeriodFields form={{ ...EMPTY_ITEM_FORM, operatingPower }} onChange={() => {}} showTaxYear years={[2025, 2026]} />)
-      expect(screen.getByText(satz)).toBeTruthy()
-      expect(screen.queryByText(/heben sich/)).toBeNull()
-      cleanup()
-    }
+  // Recht-H-1 und K-4 (Folge-PR zu #252), seit #267 umgedreht: Der Abzug folgt der Stromrechnung, die Heizposition hat
+  // ihr eigenes Jahr; die Feldhilfe an der Heizposition sagt, warum das der Regel „wann Sie gezahlt haben“ nicht widerspricht.
+  test('Feldhilfe zum Jahr beim Betriebsstrom in den Heizkosten, sonst nicht', () => {
+    const satz = /steht sein Abzug beim Allgemeinstrom immer im Jahr der Stromrechnung, denn beide teilen die Stromrechnung nur auf\./
+    render(<CostPeriodFields form={{ ...EMPTY_ITEM_FORM, operatingPower: 'included' }} onChange={() => {}} showTaxYear years={[2025, 2026]} />)
+    expect(screen.getByText(satz)).toBeTruthy()
+    expect(screen.queryByText(/das der Heizposition/)).toBeNull()
+    cleanup()
     render(<CostPeriodFields form={{ ...EMPTY_ITEM_FORM }} onChange={() => {}} showTaxYear years={[2025, 2026]} />)
     expect(screen.queryByText(satz)).toBeNull()
+  })
+  // #267: Ein Abzug beim Betriebsstrom hat kein eigenes Jahr; statt des Feldes steht das Jahr seiner Stromrechnung da.
+  test('Abzug beim Betriebsstrom: kein Feld, sondern „wie die Stromrechnung (2026)“', () => {
+    render(<CostPeriodFields form={{ ...EMPTY_ITEM_FORM, operatingPower: 'deduction', taxYear: '2025' }} onChange={() => {}} showTaxYear years={[2025, 2026]} billTaxYear={2026} />)
+    expect(screen.queryByRole('combobox', { name: /Jahr der Zahlung/ })).toBeNull()
+    expect(screen.getByText(/Jahr der Zahlung \(Steuer\): wie die Stromrechnung \(2026\)\./)).toBeTruthy()
   })
 })

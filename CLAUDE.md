@@ -878,9 +878,16 @@ Abrechnungen, die das Jahr berühren (`taxPartsFor` in calc.ts, seit #255 auch b
 und das Steuer-ZIP nimmt dieselben Positionen (`taxArchiveItems` in taxReceipts.ts). **Welches Jahr
 eine Position für die Steuer hat, sagt beim Rechnen `outflowShares`** ([server/src/outflow.ts](server/src/outflow.ts)),
 eine Liste `{ year, cents, source }` als Naht zu #292; bis dahin genau ein Anteil über den ganzen
-Betrag (angegebenes Jahr, sonst Beginn des Zeitraums). Die Schreibwege (periodChange.ts,
-heatingPeriodChange.ts, db/operatingPower.ts, `defaultHeatingPlant` in repository.ts) lesen
-`taxYear ?? Beginn` noch selbst; das zieht PR 3 von #255 nach. **Der Vorschlag nach § 560 im
+Betrag (angegebenes Jahr, sonst Beginn des Zeitraums). **Ein Abzug beim Betriebsstrom hat kein eigenes Jahr**
+(#267): Er nimmt das seiner Stromrechnung (`operatingPowerGeneralId`, Quelle `bill`), abgeleitet und nicht
+gespeichert; `mergeCostItem` leert `tax_year` am Abzug beim Speichern, und ein älterer Wert wird nicht gelesen.
+Der Zeitraumwechsel (periodChange.ts) und die Schätzhilfe (db/operatingPower.ts) lesen das bisherige Jahr über
+`storedOutflowYear`; heatingPeriodChange.ts und `defaultHeatingPlant` in repository.ts lesen `taxYear ?? Beginn`
+noch selbst, das zieht PR 3 von #255 nach. Gegen eine vom Code unabhängige Referenz prüft
+[outflow.test.ts](server/test/outflow.test.ts): Prüfsummen der Steuerübersicht je Startwert in
+`server/test/fixtures/tax-golden.json` (server/testing/taxGolden.ts), erzeugt mit dem Code von `main` auf dem Bestand
+mit dem Abzug im Jahr seiner Rechnung; für ein Jahr mit einem Abzug außerhalb des Teils seiner Heizposition nur die
+Beträge, den privaten Teil prüft dort die Invariante S1. **Der Vorschlag nach § 560 im
 Rumpf** rechnet je Position einen Jahresfaktor ([server/src/prepaymentSuggestion.ts](server/src/prepaymentSuggestion.ts)):
 kalt nach den Tagen ihres Leistungszeitraums im Rumpf, gleichartige über die Vereinigung, ohne
 Leistungszeitraum als Jahresbetrag mit Hinweis `prepayment.annual-assumed`; Brennstoff (`heating_part = 'fuel'`) nach Gradtagen aus `hkv.degree-days` über die
@@ -2301,8 +2308,8 @@ die ganze fachliche Komplexität:
   Zeitraum zwei Kalenderjahre berührt, lehnt eine Summe der Abzüge über der Rechnung ab (400) und fragt
   bei schon gebuchtem Betriebsstrom zurück (409 mit `question: 'despiteExisting'`; nur dann bietet die
   Karte „Trotzdem anlegen“). Dieselbe Summenregel gilt im Kostenformular (Abzug anlegen oder ändern,
-  Rechnung verkleinern). Führend beim Steuerjahr ist der Betriebsstrom, dessen Jahr an der Heizperiode
-  hängt; der Abzug bekommt dasselbe. Beim Wechsel des Abrechnungszeitraums wandern Rechnung und Abzüge
+  Rechnung verkleinern). Beim Steuerjahr folgt der Abzug seit #267 der Stromrechnung (outflow.ts), nicht mehr dem
+  Betriebsstrom; der Betriebsstrom hat das Jahr seiner Heizperiode bzw. das angegebene. Beim Wechsel des Abrechnungszeitraums wandern Rechnung und Abzüge
   als Einheit: Die Prüfungen gelten für den Endstand (Option `periodChange`, `settleOperatingPowerLinks`),
   der Abzug folgt immer dem Endzustand seiner Rechnung (auch wenn deren Leistungszeitraum ganz in einem
   neuen Zeitraum liegt und die Gruppe des Abzugs woandershin geht; dann steht er in der Vorschau unter
@@ -2311,10 +2318,11 @@ die ganze fachliche Komplexität:
   (`splitDeductionsAlike` in serviceSplit.ts), und zwar nach den **Beträgen** der Teile, nicht nach Tagen:
   Nur so ist aus keinem Teil mehr abgezogen, als er beträgt, auch bei drei und mehr Teilen und wenn die
   Abzüge die ganze Rechnung ergeben (Restverfahren nach Tagen ist nicht monoton). Das Jahr der Zahlung
-  eines Abzugsteils fragt die Vorschau nicht, es ist das der Betriebsstrom-Position nach dem Wechsel
-  (`derivedYears`); angeboten werden nur Jahre im Schnitt der Spannen dieser Teile. Einen Satz zur Verschiebung in der
-  Anlage V bei einem Teil mit festem Jahr gibt es seit #268 nicht mehr, denn die Steuerübersicht gleicht je Steuerjahr
-  aus und es verschiebt sich nichts. Geprüft wird das
+  eines Abzugsteils fragt die Vorschau nicht und schreibt keines (#267): Jeder Teil steht im Zeitraum seines Teils der
+  Rechnung und damit in dessen Jahr. Die frühere Einschränkung auf den Schnitt der Spannen und die Sperre eines Ziels
+  ohne passendes Jahr (`noYearText`) sind damit entfallen, ebenso zählt ein Abzug nicht in den Sätzen zur Verschiebung
+  (`followsBill`). Einen Satz zur Verschiebung in der Anlage V bei einem Teil mit festem Jahr gibt es seit #268 nicht
+  mehr, denn die Steuerübersicht gleicht je Steuerjahr aus und es verschiebt sich nichts. Geprüft wird das
   **je Mieter** gegen von Hand hergeleitete Beträge, nicht je Zeitraum: „Abzug gleich Betriebsstrom je
   Zeitraum“ hielt auch ein falsches Ergebnis aus. Ein
   Scheitern ist eine 409 mit Vorschau. Kein Objektwechsel, solange ein
@@ -2613,10 +2621,19 @@ die ganze fachliche Komplexität:
   abgeleitete Zeile `operating-power-balance:<Jahr>` beim Allgemeinstrom dazu
   (`TaxExpenseItem.operatingPowerBalance`). Damit ist der Strom in jedem Jahr die bezahlte Rechnung,
   auch wenn Abzug und Betriebsstrom in verschiedenen Steuerjahren stehen (deshalb entfielen der Hinweis
-  `heating.operating-power-tax-year` und der Satz zur Verschiebung in der Vorschau des Zeitraumwechsels). Mit
-  Eigennutzung ergibt ein verknüpftes Paar über zwei Steuerjahre je Jahr dieselben Zahlen wie das Paar im selben Jahr,
-  sofern die Anlage im Jahr des Abzugs Heizkosten hat (sonst gilt dort die Fläche); dafür löst `taxReportFor` den
-  Verweis über alle Positionen des Objekts auf (`linkable`), denn der Schnappschuss kennt nur sein Jahr (Durchsicht M1).
+  `heating.operating-power-tax-year` und der Satz zur Verschiebung in der Vorschau des Zeitraumwechsels). **Seit #267
+  steht der Abzug im Steuerjahr seiner Stromrechnung**: Stand er in einem anderen, blieb dort ein privater Rest, weil
+  sein privater Teil dem Schlüssel der Rechnung folgt und der von C dem Heizanteil (Beispiel B2 im Plan zu #255, Test in
+  calc-steuer-betriebsstrom.test.ts). Auseinander liegen können nur noch Abzug und Heizposition; die Heizposition und
+  ihr Beitrag zu C heben sich in ihrem Jahr auf, im Betrag wie im privaten Teil. **Ein verknüpfter Abzug nimmt den
+  Heizanteil aus dem Teil, in dem seine Heizposition steht**, nicht aus dem Teil, in dem er selbst steht (Durchsicht
+  von #255 PR 2, M1): Steht sie in einem anderen Steuerjahr, rechnet `foreignHeatQuota` in calc.ts deren Teil und
+  Aufteilung wie die Steuerübersicht jenes Jahres. Vorher galt im Jahr des Abzugs der Heizanteil dort und ohne
+  Heizkosten dort die Fläche; über beide Jahre fehlte dann privat der Unterschied (gemessen 26,67 €). So ist der
+  private Teil über alle Steuerjahre zusammen derselbe, gleich wo Rechnung, Abzug und Heizposition stehen (Invariante
+  S1 in invariant-betriebsstrom-steuer.test.ts); stehen Abzug und Heizposition im selben Teil, ändert sich nichts.
+  Dafür löst `taxReportFor` den Verweis über alle Positionen des Objekts auf (`linkable`), denn der Schnappschuss
+  kennt nur sein Jahr (Durchsicht M1 zu #268).
   Zeilenname und Texte folgen der Lage (`operatingPowerBalanceKind`): „selbst getragen“ nur beim Abzug ohne Verweis,
   „prüfen“ nur, wenn Abzug und Betriebsstrom im selben Steuerjahr verschieden hoch sind;
   eine Sonderregel für

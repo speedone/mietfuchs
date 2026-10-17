@@ -954,8 +954,9 @@ export function deductionsOf(
       return {
         id: c.id, itemId: c.operatingPowerItemId ?? null, period: c.period, description: c.description, amountCents: c.amountCents,
         closed: frozen ? creditOf(p ? periodLabel(p) : String(c.period), frozen.itemTotals, c) : null,
-        // N1: das Jahr der Zahlung wie in der Steuerübersicht, aus derselben Stelle (outflow.ts, #255).
-        taxYear: soleOutflowYear(c, p ?? { from: `${startYearOf(c.period)}-01-01` }),
+        // N1: das Jahr der Zahlung wie in der Steuerübersicht, aus derselben Stelle (outflow.ts, #255): seit #267 das
+        // der Stromrechnung, die im selben Zeitraum steht.
+        taxYear: soleOutflowYear(c, p ?? { from: `${startYearOf(c.period)}-01-01` }, items.filter((x) => x.propertyId === propertyId && x.period === c.period)),
       }
     })
 }

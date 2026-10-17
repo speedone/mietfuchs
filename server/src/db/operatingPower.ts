@@ -11,7 +11,8 @@
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 import { basisOf, euro, GENERAL_POWER_CATEGORY, operatingPowerRefusal, operatingPowerShare, ownEstimateShare, touchesHeatingPeriod } from '../../../shared/operatingPower.ts'
 import type { CostItem, OperatingPowerDevice } from '../../../shared/types.ts'
-import { periodLabel, periodOfKey, spansTwoYears, startYearOf } from '../../../shared/period.ts'
+import { periodLabel, periodOfKey, spansTwoYears } from '../../../shared/period.ts'
+import { storedOutflowYear } from '../outflow.ts'
 import type { Database } from './client.ts'
 import { billingEnergy } from '../../../shared/heatDelivery.ts'
 import { heatingPeriodClosed, heatingPeriodOf, plantContext } from './heatingPeriodContext.ts'
@@ -97,13 +98,12 @@ export async function bookOperatingPower(db: Database, plantId: string, body: un
   if (!generalPeriod || !touchesHeatingPeriod(generalPeriod, h)) {
     throw new HeatingError(400, `Die Stromrechnung „${general.description}“${generalPeriod ? ` (${periodLabel(generalPeriod)})` : ''} liegt nicht in der Heizperiode ${periodLabel(h)}; den Betriebsstrom dieser Heizperiode enthält sie nicht. Wählen Sie die Stromrechnung, deren Zeitraum sich mit der Heizperiode überschneidet.`)
   }
-  // G-K1, G-K2: Betriebsstrom und Abzug sind eine Umbuchung aus der Stromrechnung und zählen in der
-  // Steuer zu einem Jahr. Berührt die Heizperiode zwei Kalenderjahre, ist es das der Stromrechnung; sonst
-  // ist es das Jahr der Heizperiode, und führend ist dann der Betriebsstrom (G2-N-W2): Sein Jahr lässt sich
-  // nicht anders stellen, der Abzug bekommt dasselbe. Angegeben wird es nur, wo ein Zeitraum zwei
-  // Kalenderjahre berührt; sonst ist es das Jahr des Zeitraums (repository.ts).
-  const taxYear = general.taxYear ?? startYearOf(general.period)
-  const heatingTaxYear = spansTwoYears(h) ? taxYear : Number(h.from.slice(0, 4))
+  // G-K1, G-K2, #267: Betriebsstrom und Abzug sind eine Umbuchung aus der Stromrechnung. Der Abzug steht in der
+  // Steuer immer im Jahr der Stromrechnung, abgeleitet und ohne eigenes Jahr (outflow.ts). Der Betriebsstrom bekommt es
+  // ebenfalls, wo seine Heizperiode zwei Kalenderjahre berührt und ein Jahr deshalb anzugeben ist; sonst hat er das
+  // Jahr seiner Heizperiode (repository.ts). Steht er dann in einem anderen Jahr als die Rechnung, heben er und sein
+  // Beitrag zum Ausgleich (#268) sich dort auf.
+  const taxYear = storedOutflowYear(general, items)
   if (general.key === 'amounts') {
     throw new HeatingError(400, 'Der Allgemeinstrom ist nach Einzelbeträgen verteilt; einen Abzug in derselben Verteilung gibt es nicht. Ziehen Sie den Betriebsstrom bitte in den Beträgen selbst ab.')
   }
@@ -176,7 +176,6 @@ export async function bookOperatingPower(db: Database, plantId: string, body: un
     // Betrag gehört. Meldet der Vermieter ihn nicht, trägt er ihn selbst (zulässig, V ZR 166/15 Rn. 15).
     description: `Abzug Betriebsstrom Heizung (${how})${plant.method === 'service' ? ', an Messdienst gemeldet' : ''}`,
     amountCents: -share.cents, ...distributionOf(general),
-    ...(spansTwoYears(generalPeriod) ? { taxYear: heatingBody ? heatingTaxYear : taxYear } : {}),
     operatingPower: 'deduction', operatingPowerBasis, operatingPowerGeneralId: general.id, ...(heatingId ? { operatingPowerItemId: heatingId } : {}),
   }
   await db.transaction(async (tx) => {

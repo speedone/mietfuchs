@@ -507,7 +507,8 @@ function draftOf(form: ItemForm, units: Unit[], tenancies: Tenancy[] | undefined
     selfAmounts: parsed(visibleSelfAmounts(form, units)),
     serviceFrom: form.serviceFrom || null,
     serviceTo: form.serviceTo || null,
-    taxYear: form.taxYear === '' ? null : Number(form.taxYear),
+    // Ein Abzug beim Betriebsstrom hat kein eigenes Jahr der Zahlung (#267), er steht im Jahr seiner Stromrechnung.
+    taxYear: form.taxYear === '' || form.operatingPower === 'deduction' ? null : Number(form.taxYear),
     heatingPart: form.heatingPart === '' ? null : form.heatingPart,
     heatingTarget: form.heatingTarget === '' ? null : form.heatingTarget,
   }
@@ -574,6 +575,15 @@ export function generalChoices(items: readonly CostItem[], period: string): { va
       .map((c) => ({ value: c.id, label: `${c.description} · ${fmtEuro(c.amountCents)}` })),
   ]
 }
+// Das Steuerjahr eines Abzugs beim Betriebsstrom (#267): das seiner Stromrechnung, wie es der Server ableitet
+// (server/src/outflow.ts), also ihr angegebenes Jahr der Zahlung, sonst das Jahr, in dem ihr Zeitraum beginnt. `null`,
+// wenn das Formular kein Abzug ist oder die Rechnung noch nicht gewählt.
+export function deductionTaxYear(form: Pick<ItemForm, 'operatingPower' | 'operatingPowerGeneralId'>, items: readonly CostItem[]): number | null {
+  if (form.operatingPower !== 'deduction') return null
+  const bill = items.find((c) => c.id === form.operatingPowerGeneralId)
+  return bill === undefined ? null : bill.taxYear ?? Number(bill.period.slice(0, 4))
+}
+
 // Mit der Stromrechnung übernimmt der Abzug ihre Verteilung (G-K3): Schlüssel, Zähler, Wohnung, Anteile,
 // Teilnehmer. So mindert er jeden Anteil im Verhältnis; die Abrechnung meldet eine Abweichung.
 export function withGeneralChoice(form: ItemForm, id: string, items: readonly CostItem[]): ItemForm {
@@ -647,9 +657,15 @@ export function needsSplitCheck(body: CostItemBody, before?: Pick<CostItem, 'ser
 }
 
 // Die Rückfrage vor dem Aufteilen, oder warum nicht aufgeteilt werden kann.
-export function splitDecision(parts: readonly SplitPreviewPart[], taxYear: string): { message: string } | { error: string; needsTaxYear: boolean } {
+// `deduction`: das Formular ist ein Abzug beim Betriebsstrom. Er hat kein Jahr der Zahlung (#267) und steht immer im
+// Zeitraum seiner Stromrechnung (der Server lehnt das Aufteilen ab); gefragt wird deshalb nicht nach einem Feld, das es
+// beim Abzug nicht gibt, sondern gesagt, warum es nicht geht (Durchsicht von #255 PR 2, K2).
+export function splitDecision(parts: readonly SplitPreviewPart[], taxYear: string, deduction = false): { message: string } | { error: string; needsTaxYear: boolean } {
   const closed = parts.find((p) => p.closed)
   if (closed) return { error: `Die Abrechnung ${closed.label} ist abgeschlossen. Öffnen Sie sie wieder, wenn die Rechnung anteilig hinein soll.`, needsTaxYear: false }
+  if (deduction) {
+    return { error: 'Ein Abzug beim Betriebsstrom lässt sich nicht auf mehrere Abrechnungszeiträume aufteilen: Er steht immer im Zeitraum seiner Stromrechnung. Wählen Sie den Leistungszeitraum innerhalb dieses Zeitraums oder lassen Sie ihn leer.', needsTaxYear: false }
+  }
   const twoYears = parts.find((p) => p.needsTaxYear)
   if (twoYears && taxYear === '') {
     return { error: `Bitte wählen Sie das Jahr der Zahlung (für die Steuer): Ein Teil der Rechnung gehört in den Zeitraum ${twoYears.label}, der über zwei Kalenderjahre reicht.`, needsTaxYear: true }
