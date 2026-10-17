@@ -209,3 +209,26 @@ test('Invariante: Zahlungen aus der Abrechnung verschieben im Mietkonto nichts u
   // Der Pfad über `settlementOnly` muss wirklich vorkommen, sonst prüfte die Invariante ihn nicht.
   assert.ok(formerSeen > 20, `nur ${formerSeen} Läufe mit früheren Mietverhältnissen`)
 })
+
+// Durchsicht zu #328: Ohne Erstattungen ergab das Negieren einer leeren Summe −0. `assert.equal` im
+// strengen Modus vergleicht mit Object.is und unterscheidet −0 von 0.
+test('Steuer: ohne Zahlungen aus der Abrechnung sind Nachzahlungen und Erstattungen 0, nicht −0', () => {
+  const r = taxReport(snapshotOf(source({ payments: rentAllYear() }), 2025))
+  assert.equal(r.income.settlementBackPaymentsCents, 0)
+  assert.equal(r.income.settlementRefundsCents, 0)
+  const nurNachzahlung = taxReport(snapshotOf(source({ payments: [...rentAllYear(), { tenancyId: 't', date: '2025-04-01', amountCents: 15000, kind: 'settlement' }] }), 2025))
+  assert.equal(nurNachzahlung.income.settlementRefundsCents, 0)
+})
+
+// Durchsicht zu #328: Die Abrechnung setzt die Vorauszahlungen aus Staffel und Jahreskorrektur an, nie
+// aus den Zahlungen. Eine Nachzahlung oder ein Guthaben der Vorjahresabrechnung darf an ihr nichts ändern.
+test('Abrechnung: Zahlungen der Art „Abrechnung“ ändern keinen Betrag von computeSettlement', () => {
+  const ohne = computeSettlement(snapshotOf(source({ payments: rentAllYear() }), 2025))
+  for (const extra of [
+    [{ tenancyId: 't', date: '2025-06-15', amountCents: -20000, kind: 'settlement' }],
+    [{ tenancyId: 't', date: '2025-03-20', amountCents: 15000, kind: 'settlement' }, { tenancyId: 't', date: '2025-11-02', amountCents: -4711, kind: 'settlement' }],
+  ] satisfies SnapshotPayment[][]) {
+    const mit = computeSettlement(snapshotOf(source({ payments: [...rentAllYear(), ...extra] }), 2025))
+    assert.deepEqual(mit, ohne)
+  }
+})

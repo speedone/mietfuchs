@@ -1247,7 +1247,8 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[], option
   // des einen und ein Guthaben des anderen Mieters nicht zu einer Zahl verrechnen sollen.
   const settlementInYear = paidInYear.filter((p) => !isRentPayment(p))
   const settlementBackPaymentsCents = settlementInYear.filter((p) => p.amountCents > 0).reduce((a, p) => a + p.amountCents, 0)
-  const settlementRefundsCents = -settlementInYear.filter((p) => p.amountCents < 0).reduce((a, p) => a + p.amountCents, 0)
+  // Als Betrag ohne Vorzeichen; summiert über −p, damit ohne Erstattungen 0 und nicht −0 dasteht.
+  const settlementRefundsCents = settlementInYear.filter((p) => p.amountCents < 0).reduce((a, p) => a - p.amountCents, 0)
 
   // Mietverhältnisse des Jahres mit Soll, und wie viele davon ohne jede Zahlung dastehen. Nicht
   // für eine Rechnung, sondern für den Hinweis: Sind für einen Mieter Zahlungen erfasst und für
