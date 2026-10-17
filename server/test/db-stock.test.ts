@@ -31,7 +31,7 @@ import type { Payment, Reading, Settings, Tenancy } from '../../shared/types.ts'
 import type { LegacyCostItem as CostItem, LegacyMeter as Meter, LegacyUnit as Unit } from '../src/store.ts'
 import { computeSettlement, consumptionOverview, rentLedger, taxReport } from '../src/calc.ts'
 import { straightenForDatabase } from '../src/legacy/migrate.ts'
-import { snapshotFromDb, snapshotOf } from '../src/snapshot.ts'
+import { overridesByPeriod, snapshotFromDb, snapshotOf } from '../src/snapshot.ts'
 import type { Db } from '../src/store.ts'
 import { applyMigrations, connect, loadMigrations, type Database } from '../src/db/client.ts'
 import { readStock, type Stock } from '../src/db/read.ts'
@@ -41,6 +41,7 @@ import {
   costItems as costItemsTable, meters as metersTable, payments as paymentsTable,
   readings as readingsTable, tenancies as tenanciesTable, units as unitsTable,
 } from '../src/db/schema.ts'
+import { calendarPeriod } from '../../shared/period.ts'
 
 // ---------- Ein Bestand, in dem alle vier Rechnungen etwas zu tun haben ----------
 
@@ -343,7 +344,19 @@ const collectionsWithTable = (stock: ReturnType<typeof straightenForDatabase>): 
   { what: 'Zahlungen', table: paymentsTable, rows: stock.payments },
 ]
 
-const NOT_IN_DB_JSON = new Set(['propertyId', 'mea', 'externalMeasure', 'externalTotal', 'externalTotalCents', 'participantsLimited', 'costModel', 'heatingModel'])
+const NOT_IN_DB_JSON = new Set(['period', 'propertyId', 'mea', 'externalMeasure', 'externalTotal', 'externalTotalCents', 'participantsLimited', 'costModel', 'heatingModel', 'selfSupplyKind', 'serviceFrom', 'serviceTo', 'taxYear', 'heatingPart', 'heatingTarget', 'interimFor',
+  // Die Heizanlage (Heizung PR 4) kennt die db.json nicht; ihre Rundreise prüft db-repository.test.ts.
+  'heatingPlantId', 'heatingRole', 'remoteReadable', 'installedOn',
+  // Skala und Faktor des Heizkostenverteilers (Heizung PR 12) ebenso.
+  'hcaScale', 'ratingFactor',
+  // Das Eichjahr (Heizung PR 21) ebenso; seine Rundreise prüfen db-repository.test.ts und db-eichfrist.test.ts.
+  'calibratedUntil',
+  // Die Mitteilung nach § 5d Abs. 4 (Heizung PR 18) ebenso; ihre Rundreise prüft db-repository.test.ts.
+  'halfSplitNoticeOn',
+  // Ebenso die Lieferung einer Position (Heizung PR 7); ihre Rundreise prüft db-fuel.test.ts.
+  'fuelDeliveryId',
+  // Betriebsstrom (Heizung PR 15) kennt die db.json nicht; seine Rundreise prüft db-repository.test.ts.
+  'operatingPower', 'operatingPowerItemId', 'operatingPowerBasis', 'operatingPowerGeneralId'])
 
 test('Rundreise: die Probe belegt jede Spalte des Schemas', () => {
   // Der Wächter über dem Wächter. Der Test darunter kann nur finden, was in der Probe steht;
@@ -372,8 +385,8 @@ test('Rundreise: jedes Feld des Datenmodells kommt zurück', async () => {
     // Mit Objekt 1, das die Migration hinzugefügt hat; sonst genau das, was hineinging.
     const inObjekt1 = <T>(rows: T[]) => rows.map((row) => ({ ...row, propertyId: 'objekt-1' }))
     assert.deepStrictEqual(stock.units, inObjekt1(gerade.units), 'Wohnungen')
-    assert.deepStrictEqual(stock.tenancies, gerade.tenancies, 'Mietverhältnisse')
-    assert.deepStrictEqual(stock.costItems, inObjekt1(gerade.costItems), 'Kostenpositionen')
+    assert.deepStrictEqual(stock.tenancies, gerade.tenancies.map((t) => ({ ...t, prepaymentOverrides: overridesByPeriod(t.prepaymentOverrides) })), 'Mietverhältnisse')
+    assert.deepStrictEqual(stock.costItems, inObjekt1(gerade.costItems).map(({ year, ...c }) => ({ ...c, period: calendarPeriod(year) })), 'Kostenpositionen')
     assert.deepStrictEqual(stock.meters, inObjekt1(gerade.meters), 'Zähler')
     assert.deepStrictEqual(stock.readings, gerade.readings, 'Ablesungen')
     assert.deepStrictEqual(stock.payments, gerade.payments, 'Zahlungen')

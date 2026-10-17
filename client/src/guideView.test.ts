@@ -23,7 +23,7 @@ describe('Anleitungen (#164)', () => {
   test('die Suche findet in Titel, Schritten, Rechtsgrundlagen und Issue-Nummern, ohne Groß- und Kleinschreibung', () => {
     const ids = (q: string) => filterGuides(allGuides(), q).map((g) => g.id)
     expect(ids('EINLIEGER')).toContain('granny')
-    expect(ids('§ 9b')).toEqual(['meteringService', 'tenantChange'])
+    expect(ids('§ 9b')).toEqual(['meteringService', 'heatingSelf', 'tenantChange'])
     expect(ids('+ Zähler hinzufügen')).toContain('granny')
     expect(ids('#96')).toEqual(['properties'])
     expect(ids('  ')).toHaveLength(allGuides().length)

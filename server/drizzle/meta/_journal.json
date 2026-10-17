@@ -99,6 +99,300 @@
       "when": 1791098130951,
       "tag": "0013_belegbuchung",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1791161098685,
+      "tag": "0014_zeitraum",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "6",
+      "when": 1791174671187,
+      "tag": "0015_zeitraum_pflicht",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1791176451960,
+      "tag": "0016_leistungszeitraum",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1791176459597,
+      "tag": "0017_leistungszeitraum_pruefung",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1791194859302,
+      "tag": "0018_heizanlage",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1791194860170,
+      "tag": "0019_heizanlage_bedingungen",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1791206123600,
+      "tag": "0020_heizperiode",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1791211395260,
+      "tag": "0021_co2_messdienst",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "6",
+      "when": 1791215492597,
+      "tag": "0022_lieferungen",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "6",
+      "when": 1791215510473,
+      "tag": "0023_lieferungen_bedingungen",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1791248438463,
+      "tag": "0024_vorrat",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1791248444405,
+      "tag": "0025_vorrat_bedingungen",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "6",
+      "when": 1791288318828,
+      "tag": "0026_kesseltausch",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "6",
+      "when": 1791320852959,
+      "tag": "0027_heizkostenabrechnung",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "6",
+      "when": 1791320853714,
+      "tag": "0028_heizkostenabrechnung_bedingungen",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "6",
+      "when": 1791332885568,
+      "tag": "0029_warmwasser",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "6",
+      "when": 1791332893331,
+      "tag": "0030_warmwasser_bedingungen",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "6",
+      "when": 1791344771614,
+      "tag": "0031_hkv",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "6",
+      "when": 1791344772290,
+      "tag": "0032_hkv_bedingungen",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "6",
+      "when": 1791362347960,
+      "tag": "0033_schaetzung",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "6",
+      "when": 1791376569948,
+      "tag": "0034_pflichtangaben",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "6",
+      "when": 1791376570679,
+      "tag": "0035_pflichtangaben_bedingungen",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "6",
+      "when": 1791610297865,
+      "tag": "0036_rechtswerte",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "6",
+      "when": 1791636351753,
+      "tag": "0037_betriebsstrom",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "6",
+      "when": 1791636460403,
+      "tag": "0038_betriebsstrom_bedingungen",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "6",
+      "when": 1791643656243,
+      "tag": "0039_betriebsstrom_rechnung",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "6",
+      "when": 1791647206328,
+      "tag": "0040_betriebsstrom_rechnung_bedingungen",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "6",
+      "when": 1791745996711,
+      "tag": "0041_betriebsstrom_angabe",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "6",
+      "when": 1791746001457,
+      "tag": "0042_betriebsstrom_angabe_bedingungen",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "6",
+      "when": 1791756522415,
+      "tag": "0043_waermelieferung",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "6",
+      "when": 1791758783838,
+      "tag": "0044_waermelieferung_bedingungen",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "6",
+      "when": 1791763279225,
+      "tag": "0045_verbrauchsinfo",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "6",
+      "when": 1791766068552,
+      "tag": "0046_eichfrist",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "6",
+      "when": 1791766080332,
+      "tag": "0047_eichfrist_bedingungen",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "6",
+      "when": 1791769365939,
+      "tag": "0048_gmodg",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "6",
+      "when": 1791769374403,
+      "tag": "0049_gmodg_bedingungen",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "6",
+      "when": 1791771029751,
+      "tag": "0050_heizmodell_bedingungen",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "6",
+      "when": 1791771766716,
+      "tag": "0051_co2_erstattung",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "6",
+      "when": 1791774344705,
+      "tag": "0052_selbstversorgung_art",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "6",
+      "when": 1791774352608,
+      "tag": "0053_selbstversorgung_art_bedingungen",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "6",
+      "when": 1791776331505,
+      "tag": "0054_gutschrift_ohne_rechnung",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "6",
+      "when": 1791776336571,
+      "tag": "0055_gutschrift_ohne_rechnung_bedingungen",
+      "breakpoints": true
     }
   ]
 }

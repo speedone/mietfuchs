@@ -1,9 +1,15 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
-import type { CostItem, NoticeSubject, Settings, Settlement, SettlementRow, Tenancy, Unit } from '../types'
+import type { CostItem, HeatingSettlementInfo, NoticeSubject, PeriodKey, Settings, Settlement, SettlementRow, Tenancy, Unit } from '../types'
+import {
+  adjustedPrepaymentLabel, heatingChoices, suggestionWithoutHeating, heatingOnlyNote, heatingOverridesWith, prepaymentLabel, prepaymentSplit, recommendedDeadlineText, settlementPaths, settlementTitle, totalLabel,
+} from '../heatingSettlementView'
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { invoiceLabel, renderInvoicePages } from '../pdfPreview'
-import { useYear } from '../year'
-import { useOpenForm, useProperty, withProperty, useSwitchYear } from '../property'
+import { usePeriod } from '../period'
+import { useFocusTarget } from '../focus'
+import { settledInvoiceFiles, type PlantPeriods } from '../costPeriods'
+import { PeriodSelect } from '../components/PeriodSelect'
+import { useOpenForm, useProperty, withProperty } from '../property'
 import { effectiveLandlord, letterhead } from '../landlord'
 import { landlordReasonText } from '../landlordReasons'
 import { notSettledText } from '../tenancyModel'
@@ -18,7 +24,17 @@ import CalcSteps from '../components/CalcSteps'
 import { suggestionBasis, totalColumnLabel, totalNote } from '../calcSteps'
 import { useToast, useConfirm } from '../components/feedback'
 import Table from '../components/Table'
+import Co2Block from '../components/Co2Block'
+import SelfHeatingBlock from '../components/SelfHeatingBlock'
+import HeatingInfoBlock from '../components/HeatingInfoBlock'
+import StockBlock from '../components/StockBlock'
+import { showsStock, stockBlock } from '../stockView'
+import FuelBlock from '../components/FuelBlock'
+import { fuelBlock } from '../fuelView'
+import { closeWithFuelQuestion } from '../fuelClose'
+import { co2Block } from '../co2View'
 import { countOf } from '../../../shared/wording.ts'
+import { calendarPeriod } from '../../../shared/period.ts'
 
 type Props = {
   settings: Settings | null
@@ -27,12 +43,13 @@ type Props = {
   reload: () => Promise<void>
   // Für „Hier beheben →“ an einem Hinweis (#112), mit dem betroffenen Eintrag (#142)
   onNavigate?: (tab: NoticeTab, focus?: NoticeSubject) => void
+  // Sichtprüfung E45: aus dem Cockpit eine Heizkostenabrechnung („Anlage|Heizperiode“) vorwählen.
+  focus?: NoticeSubject | null
+  onFocusDone?: () => void
 }
 
-export default function Abrechnung({ settings, tenancies, reload, onNavigate }: Props) {
-  const { year } = useYear()
-  // Fragt bei offenem Formular nach, wie der Objektwechsel (Durchsicht zu #141).
-  const switchYear = useSwitchYear()
+export default function Abrechnung({ settings, tenancies, reload, onNavigate, focus, onFocusDone }: Props) {
+  const { key, label, param, calendar, period, rules } = usePeriod()
   const { properties, property } = useProperty()
   const propertyId = property?.id
   // Vermieter, IBAN und Frist: am Objekt abweichend, sonst aus den Einstellungen (#92).
@@ -46,27 +63,47 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
   // Die Korrektur der gezahlten Vorauszahlung hängt an einem Mietverhältnis dieses Objekts (#145).
   useOpenForm(ppEdit !== null)
   const [costItems, setCostItems] = useState<CostItem[]>([])
+  // Für die Belegkopien einer Position über 0 €: zu welcher Abrechnung sie gehört (Durchsicht N3).
+  const [plants, setPlants] = useState<PlantPeriods[]>([])
+  useEffect(() => {
+    api<PlantPeriods[]>(withProperty('/api/heating-plants', property?.id)).then(setPlants).catch(() => setPlants([]))
+  }, [property?.id])
   const [history, setHistory] = useState<HistoryEntry[]>([])
   const [attachmentPages, setAttachmentPages] = useState<Record<string, string[]>>({})
   const [attachmentsLoading, setAttachmentsLoading] = useState(false)
+  // Heizung PR 5: die Heizkostenabrechnungen nach Weg d, deren Heizperiode in diesem Zeitraum endet.
+  // Gewählt ist entweder die Betriebskostenabrechnung (`null`) oder eine von ihnen.
+  const [heatingList, setHeatingList] = useState<HeatingSettlementInfo[]>([])
+  const [target, setTarget] = useState<{ plantId: string; period: PeriodKey } | null>(null)
+  const paths = settlementPaths(param, target)
+  const choices = heatingChoices(heatingList, period)
+  // Laienprobe B17, B18: Die Betriebskostenabrechnung eines Zeitraums, dessen Heizkosten eigene
+  // Heizkostenabrechnungen haben, rechnet die Heizvorauszahlung nicht an und schlägt nur die übrige vor.
+  // Durchsicht #297 S-C: an diese Abrechnung gebunden, nicht an alle Heizkostenabrechnungen des Objekts.
+  const separateHeating = data ? suggestionWithoutHeating(data, target, choices.length) : false
+  // Ein anderer Zeitraum oder ein anderes Objekt: wieder die Betriebskostenabrechnung.
+  useEffect(() => { setTarget(null) }, [param, propertyId])
+  // Das Ziel aus dem Cockpit, sobald die Liste da ist und es darin steht (E45).
+  useFocusTarget(focus, 'heatingSettlement', heatingList, (h) => `${h.plantId}|${h.period.key}`, (h) => setTarget({ plantId: h.plantId, period: h.period.key }), onFocusDone)
 
   const printAdjust = settings?.printAdjustSuggestion !== false // Standard: an
   const printAttachments = settings?.printAttachments === true // Standard: aus
 
   const load = useCallback(() => {
     return Promise.all([
-      api<Settlement>(withProperty(`/api/settlement/${year}`, propertyId)),
+      api<Settlement>(withProperty(paths.load, propertyId)),
       api<CostItem[]>(withProperty('/api/costItems', propertyId)),
       // Frühere Abschlüsse (#56). Fehlt die Route (älterer Server), bleibt die Liste leer.
       // Nur ein älterer Server ohne die Route (404) heißt „keine“; jeder andere Fehler wird gezeigt.
-      api<HistoryEntry[]>(withProperty(`/api/settlement/${year}/history`, propertyId)).catch((e: unknown) => {
+      api<HistoryEntry[]>(withProperty(paths.history, propertyId)).catch((e: unknown) => {
         if (/\b404\b/.test(String((e as Error).message))) return []
         throw e
       }),
     ])
       .then(([d, c, h]) => { setData(d); setCostItems(c); setHistory(h); setError('') })
       .catch((e) => setError(String((e as Error).message)))
-  }, [year, propertyId])
+      .then(() => api<HeatingSettlementInfo[]>(withProperty('/api/heating-settlements', propertyId)).then(setHeatingList).catch(() => setHeatingList([])))
+  }, [paths.load, paths.history, propertyId])
 
   useEffect(() => { void load() }, [load])
 
@@ -89,16 +126,14 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
     await reload()
   }
 
-  // Beleg-Dateien des Jahres (in Erfassungsreihenfolge, ohne Duplikate)
-  const invoiceFiles = useMemo(
-    () => [...new Set(costItems.filter((c) => c.year === year && c.invoiceFile).map((c) => c.invoiceFile!))],
-    [costItems, year],
-  )
+  // Beleg-Dateien der gezeigten Abrechnung (in Erfassungsreihenfolge, ohne Duplikate), auch die der
+  // Heizperiode, die darin abgerechnet wird
+  const invoiceFiles = useMemo(() => (data ? settledInvoiceFiles(data, costItems, rules, plants) : []), [data, costItems, rules, plants])
 
   // Sprechende Anlagen-Beschriftung aus den verknüpften Kostenpositionen
   // (Rechnungssteller + Kostenarten) statt des technischen Dateinamens.
   function fileLabel(f: string): string {
-    const linked = costItems.filter((c) => c.year === year && c.invoiceFile === f)
+    const linked = costItems.filter((c) => c.invoiceFile === f && invoiceFiles.includes(f))
     const vendor = linked.find((c) => c.vendor)?.vendor
     const cats = [...new Set(linked.map((c) => c.category))].join(', ')
     if (vendor && cats) return `${vendor} — ${cats}`
@@ -123,32 +158,50 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
     return () => { alive = false }
   }, [printAttachments, invoiceFiles, attachmentPages])
 
+  // Was abgeschlossen oder wieder geöffnet wird: bei gewählter Heizkostenabrechnung sie selbst, nicht
+  // „Abrechnung <Jahr>“ (Sichtprüfung E45).
+  const docLabel = target !== null && data?.scope?.kind === 'heating' ? `Heizkostenabrechnung ${data.period.label}` : `Abrechnung ${label}`
+
   // Abrechnung abschließen / wieder öffnen / Versanddatum festhalten
   async function closeSettlement() {
     const ok = await confirm({
       // Bei mehreren Objekten mit Objekt (#157): Eingefroren wird nur die Abrechnung dieses Objekts.
-      title: closeSettlementTitle(year, properties, property),
+      title: closeSettlementTitle(label, properties, property, docLabel),
       message: 'Der aktuelle Berechnungsstand wird eingefroren — spätere Änderungen an Kosten oder Stammdaten ändern diese Abrechnung nicht mehr. Sie lässt sich jederzeit wieder öffnen.',
       confirmLabel: 'Abschließen',
     })
     if (!ok) return
-    if (!(await attempt(() => api(withProperty(`/api/settlement/${year}/close`, propertyId), { method: 'POST', body: JSON.stringify({}) })))) return
+    // Bei einer Lücke ohne Rechnung fragt der Server nach (Heizung PR 7, Entwurf 8.2); Vorgabe ist die
+    // Schätzung mit Vorbehalt.
+    let closed = false
+    if (!(await attempt(async () => {
+      closed = await closeWithFuelQuestion(
+        (body) => api(withProperty(paths.close, propertyId), { method: 'POST', body: JSON.stringify(body) }),
+        // Drei Wege; Abwarten ist die Vorgabe (Enter, Fokus), „Ohne Schätzung“ die dritte Wahl.
+        (q) => new Promise((resolve) => {
+          let without = false
+          void confirm({ ...q, defaultChoice: 'cancel', onAlternative: () => { without = true } })
+            .then((ok) => resolve(ok ? 'estimate' : without ? 'none' : 'wait'))
+        }),
+      )
+    }))) return
+    if (!closed) return
     await load()
-    toast(`Abrechnung ${year} abgeschlossen.`)
+    toast(`${docLabel} abgeschlossen.`)
   }
   async function reopenSettlement() {
     const ok = await confirm({
-      title: `Abrechnung ${year} wieder öffnen?`,
+      title: `${docLabel} wieder öffnen?`,
       message: 'Es gilt wieder die laufende Berechnung. Der bisherige Stand bleibt unter „Frühere Abschlüsse“ erhalten. Eine bereits verschickte Abrechnung sollte nur bei Fehlern neu erstellt werden.',
       confirmLabel: 'Wieder öffnen',
     })
     if (!ok) return
-    if (!(await attempt(() => api(withProperty(`/api/settlement/${year}/close`, propertyId), { method: 'DELETE' })))) return
+    if (!(await attempt(() => api(withProperty(paths.close, propertyId), { method: 'DELETE' })))) return
     await load()
-    toast(`Abrechnung ${year} wieder geöffnet.`)
+    toast(`${docLabel} wieder geöffnet.`)
   }
   async function saveSentAt(sentAt: string) {
-    if (!(await attempt(() => api(withProperty(`/api/settlement/${year}/close`, propertyId), { method: 'PUT', body: JSON.stringify({ sentAt: sentAt || null }) })))) return
+    if (!(await attempt(() => api(withProperty(paths.close, propertyId), { method: 'PUT', body: JSON.stringify({ sentAt: sentAt || null }) })))) return
     await load()
   }
   const isClosed = !!data?.closed
@@ -156,10 +209,18 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
   // Tatsächlich gezahlte Vorauszahlungen für ein Jahr festhalten (Korrektur) bzw. zurücksetzen
   async function savePpOverride(tenancyId: string, cents: number | null) {
     const ten = tenancies.find((t) => t.id === tenancyId)
-    const overrides = { ...(ten?.prepaymentOverrides ?? {}) }
-    if (cents === null) delete overrides[String(year)]
-    else overrides[String(year)] = cents
-    if (!(await attempt(() => api(`/api/tenancies/${tenancyId}`, { method: 'PUT', body: JSON.stringify({ prepaymentOverrides: overrides }) })))) return
+    // Die Korrektur steht unter dem Zeitraum (#208). Bei einem Kalenderobjekt nennt der Server sie
+    // nach Jahreszahl, für Tabs von vor dem Update; geschickt werden hier nur Zeiträume, sonst gälten
+    // die Jahreszahlen als vollständiger Stand und die neue Korrektur fiele weg.
+    const overrides: Record<string, number> = Object.fromEntries(Object.entries(ten?.prepaymentOverrides ?? {})
+      .map(([schluessel, betrag]) => [/^\d{4}$/.test(schluessel) ? calendarPeriod(Number(schluessel)) : schluessel, betrag]))
+    if (cents === null) delete overrides[key]
+    else overrides[key] = cents
+    // In der Heizkostenabrechnung ist „✎ anpassen“ die endgültige Heizkorrektur der Heizperiode (D2, Heizung PR 5).
+    const body = target
+      ? { heatingPrepaymentOverrides: heatingOverridesWith(ten ?? {}, target.plantId, target.period, cents) }
+      : { prepaymentOverrides: overrides }
+    if (!(await attempt(() => api(`/api/tenancies/${tenancyId}`, { method: 'PUT', body: JSON.stringify(body) })))) return
     setPpEdit(null)
     await Promise.all([load(), reload()])
     toast(cents === null ? 'Vorauszahlung zurückgesetzt.' : 'Gezahlte Vorauszahlung übernommen.')
@@ -171,7 +232,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
     // Browser verwenden document.title als Dateinamen beim „Als PDF speichern“
     const prevTitle = document.title
     const st = data?.statements.find((s) => s.tenancyId === printId)
-    if (st) document.title = `Nebenkostenabrechnung ${year} ${st.unitName} ${st.tenantName}`.replace(/[\\/:*?"<>|]/g, '-')
+    if (st) document.title = `${data ? settlementTitle(data) : `Nebenkostenabrechnung ${label}`} ${st.unitName} ${st.tenantName}`.replace(/[\\/:*?"<>|]/g, '-')
     const done = () => {
       document.body.classList.remove('print-one')
       document.title = prevTitle
@@ -185,14 +246,15 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
       document.body.classList.remove('print-one')
       document.title = prevTitle
     }
-  }, [printId, data, year])
+  }, [printId, data, label])
 
   const distributed = data ? data.totalCostsCents - data.landlord.totalCents : 0
 
   // §556 Abs. 3 BGB: Die Abrechnung muss dem Mieter binnen 12 Monaten nach Ende des
   // Abrechnungszeitraums zugehen, sonst sind Nachforderungen ausgeschlossen. Nach dem
-  // Wiederöffnen zählt der frühere Versand weiter (#142, siehe deadlineView).
-  const deadlineInfo = deadlineView(year, data?.closed?.sentAt ?? null, history, new Date())
+  // Wiederöffnen zählt der frühere Versand weiter (#142, siehe deadlineView). Bezeichnung und Frist
+  // vom Server (#208).
+  const deadlineInfo = data ? deadlineView(data.period.label, data.deadline, data.closed?.sentAt ?? null, history, new Date()) : null
 
   return (
     <>
@@ -203,14 +265,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
 
       <div className="card no-print">
         <div className="row">
-          <label className="field">
-            Abrechnungsjahr
-            <select value={year} onChange={(e) => void switchYear(Number(e.target.value))}>
-              {Array.from({ length: 8 }, (_, k) => new Date().getFullYear() - k).map((y) => (
-                <option key={y} value={y}>{y}</option>
-              ))}
-            </select>
-          </label>
+          <PeriodSelect />
           <label className="field checkline" title="Absatz mit dem Vorschlag zur Anpassung der monatlichen Vorauszahlung (§560 Abs. 4 BGB) andrucken">
             <span>
               <input
@@ -218,7 +273,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
                 checked={printAdjust}
                 onChange={(e) => void saveSetting({ printAdjustSuggestion: e.target.checked })}
               />{' '}
-              Neue Vorauszahlung vorschlagen (§560 BGB)
+              Neue <Term id="prepayment">Vorauszahlung</Term> vorschlagen (§ 560 BGB)
             </span>
           </label>
           <label className="field checkline" title="Kopien der hochgeladenen Beleg-PDFs als Anlage hinter jeder Abrechnung mit ausdrucken">
@@ -228,16 +283,30 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
                 checked={printAttachments}
                 onChange={(e) => void saveSetting({ printAttachments: e.target.checked })}
               />{' '}
-              Belegkopien als Anlage andrucken
+              Belegkopien als Anlage mitdrucken
               {printAttachments && attachmentsLoading && <span className="muted"> (werden vorbereitet …)</span>}
             </span>
           </label>
         </div>
+        {choices.length > 0 && (
+          // Sichtprüfung S7/E44: ein Umschalter, dessen gewählter Teil hervorgehoben ist
+          <div className="segmented no-print" role="group" aria-label="Welche Abrechnung?">
+            <button type="button" aria-pressed={target === null} onClick={() => setTarget(null)}>{`Betriebskosten ${label}`}</button>
+            {choices.map((h) => (
+              <button type="button" key={`${h.plantId}|${h.period.key}`} aria-pressed={target?.period === h.period.key} onClick={() => setTarget({ plantId: h.plantId, period: h.period.key })}>
+                {`Heizkosten ${h.period.label} (eigene Abrechnung, Frist ${fmtDate(h.deadline)})`}
+              </button>
+            ))}
+          </div>
+        )}
+        {data?.separateHeating && data.separateHeating.length > 0 && target === null && (
+          <div className="info no-print">{`Die Heizkosten ${data.separateHeating.map((h) => h.period.label).join(', ')} rechnen Sie getrennt ab; sie stehen nicht in dieser Abrechnung.`}</div>
+        )}
       </div>
 
       {data && (
         <div className="card no-print">
-          <div className="row" style={{ alignItems: 'center' }}>
+          <div className="row center">
             {isClosed ? (
               <>
                 <div className="grow">
@@ -263,15 +332,16 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
                   <span className="muted">Die Abrechnung wird laufend neu berechnet. Nach dem Versand abschließen, damit sich der Stand nicht mehr ändert.</span>
                 </div>
                 <button className="btn" disabled={!data || data.totalCostsCents === 0} onClick={() => void closeSettlement()}>
-                  🔒 Abrechnung {year} abschließen
+                  🔒 {docLabel} abschließen
                 </button>
+                {data.totalCostsCents === 0 && <span className="muted">Noch keine Kosten erfasst, nichts abzuschließen.</span>}
               </>
             )}
           </div>
         </div>
       )}
 
-      {data && data.totalCostsCents > 0 && (
+      {data && deadlineInfo && data.totalCostsCents > 0 && (
         <div className={`${deadlineInfo.level} no-print`}>{deadlineInfo.text}</div>
       )}
       {history.length > 0 && (
@@ -298,25 +368,37 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
           </div>
         )
       })()}
-      {data && noticesOf(data).map((n, i) => {
-        const target = noticeTarget(n.subject)
-        return (
-          <div key={i} className={`${noticeClass(n.level)} no-print notice-item`}>
-            {n.title && (
-              <div className="notice-head">
-                <span className="notice-level">{NOTICE_LEVEL_LABELS[n.level]}</span> <strong>{n.title}</strong>
+      {/* Sichtprüfung S12/E40: Stufe und Titel je Hinweis als eine Zeile, der Text zum Aufklappen und
+          „Hier beheben →“ immer sichtbar. Ein Widerspruch (Stufe Fehler) steht offen da. Der Wortlaut
+          bleibt unverändert; ein Hinweis ohne Titel (abgeschlossen vor #112) steht wie bisher als Text. */}
+      {data && noticesOf(data).length > 0 && (
+        <div className="notice-list no-print">
+          {noticesOf(data).map((n, i) => {
+            const target = noticeTarget(n.subject)
+            const body = (
+              <>
+                <div>{n.text}</div>
+                {n.terms && n.terms.length > 0 && (
+                  <div className="notice-terms">Begriffe: {n.terms.map((t, k) => <Fragment key={t}>{k > 0 && ', '}<Term id={t} /></Fragment>)}</div>
+                )}
+              </>
+            )
+            return (
+              <div key={i} className={`${noticeClass(n.level)} notice-item`}>
+                {n.title ? (
+                  <details open={n.level !== 'hint'}>
+                    <summary><span className="notice-level">{NOTICE_LEVEL_LABELS[n.level]}</span> <strong>{n.title}</strong></summary>
+                    {body}
+                  </details>
+                ) : body}
+                {target && onNavigate && (
+                  <div><button type="button" className="btn secondary notice-action" onClick={() => onNavigate(target.tab, target.focus)}>{target.label}</button></div>
+                )}
               </div>
-            )}
-            <div>{n.text}</div>
-            {n.terms && n.terms.length > 0 && (
-              <div className="notice-terms">Begriffe: {n.terms.map((t, k) => <Fragment key={t}>{k > 0 && ', '}<Term id={t} /></Fragment>)}</div>
-            )}
-            {target && onNavigate && (
-              <button type="button" className="btn secondary notice-action" onClick={() => onNavigate(target.tab, target.focus)}>{target.label}</button>
-            )}
-          </div>
-        )
-      })}
+            )
+          })}
+        </div>
+      )}
       {data && (() => {
         const basis = legalBasisLines(data.legalBasis)
         return (
@@ -327,6 +409,13 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
             ) : (
               data.legalBasis && <p>Für dieses Jahr wendet Mietfuchs keine besondere Rechtsregel an.</p>
             )}
+            {basis.values.length > 0 && (
+              <>
+                <p>Angewandte Rechtswerte:</p>
+                <ul>{basis.values.map((v) => <li key={v}>{v}</li>)}</ul>
+              </>
+            )}
+            {basis.valuesNote && <p>{basis.valuesNote}</p>}
           </details>
         )
       })()}
@@ -336,7 +425,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
           <div className="kpis no-print">
             <div className="kpi">
               <div className="v">{fmtEuro(data.totalCostsCents)}</div>
-              <div className="l">Gesamtkosten {year}</div>
+              <div className="l">Gesamtkosten {data.period.label}</div>
             </div>
             <div className="kpi">
               <div className="v">{fmtEuro(distributed)}</div>
@@ -349,7 +438,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
           </div>
 
           {data.statements.length === 0 && (data.notSettled ?? []).length === 0 && (
-            <div className="card"><div className="empty">Keine Mietverhältnisse im Jahr {year} — bitte Stammdaten prüfen.</div></div>
+            <div className="card"><div className="empty">Keine Mietverhältnisse im {calendar ? 'Jahr' : 'Zeitraum'} {label} — bitte Stammdaten prüfen.</div></div>
           )}
 
           {/* Mietverhältnisse mit Pauschale oder Inklusivmiete bekommen keine Abrechnung (#93);
@@ -385,16 +474,19 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
             }
             return (
             <div key={st.tenancyId} className={`card statement ${printId === st.tenancyId ? 'print-target' : ''}`}>
-              <div className="muted" style={{ marginBottom: 8 }}>
+              <div className="muted">
                 {letterhead(landlord?.landlordName, property)}
               </div>
               <div className="statement-head">
-                <div>
-                  <h2 style={{ marginBottom: 2 }}>Nebenkostenabrechnung {year}</h2>
+                <div className="stack tight">
+                  <h2>{data ? settlementTitle(data) : `Nebenkostenabrechnung ${label}`}</h2>
                   <div className="muted">
                     {st.tenantName} · {st.unitName} · {personsText(st, tenancies.find((t) => t.id === st.tenancyId))} ·
                     Zeitraum {fmtDate(st.periodStart)} – {fmtDate(st.periodEnd)} ({countOf(st.days, 'Tag', 'Tage')})
                   </div>
+                  {heatingOnlyNote(st) && <p>{heatingOnlyNote(st)}</p>}
+                  {recommendedDeadlineText(st) && <p className="muted no-print">{recommendedDeadlineText(st)}</p>}
+                  {st.prepaymentNote && <p className="muted">{st.prepaymentNote}</p>}
                 </div>
                 <button
                   className="btn secondary no-print"
@@ -407,9 +499,9 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
               </div>
 
               {st.rows.length === 0 ? (
-                <div className="empty">Keine Kostenpositionen für {year} erfasst.</div>
+                <div className="empty">Keine Kostenpositionen für {label} erfasst.</div>
               ) : (
-                <Table style={{ marginTop: 14 }}>
+                <Table>
                   <thead>
                     <tr>
                       <th>Kostenart</th>
@@ -456,12 +548,12 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
                   </tbody>
                   <tfoot>
                     <tr>
-                      <td colSpan={3}>Summe Ihrer Betriebskosten</td>
+                      <td colSpan={3}>{totalLabel(st)}</td>
                       <td className="num">{fmtEuro(st.totalShareCents)}</td>
                     </tr>
                     <tr>
                       <td colSpan={3} style={{ fontWeight: 400 }}>
-                        abzüglich geleisteter Vorauszahlungen
+                        {prepaymentLabel(st)}
                         {/* Ein Vermerk für den Vermieter, nicht für den Mieter (#142): nur am Bildschirm. */}
                         {st.prepaymentOverridden && <span className="muted no-print"> (manuell angepasst)</span>}
                         {!isClosed && <span className="no-print">
@@ -501,6 +593,12 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
                       </td>
                       <td className="num" style={{ fontWeight: 400 }}>− {fmtEuro(st.prepaymentCents)}</td>
                     </tr>
+                    {prepaymentSplit(st).map((line) => (
+                      <tr key={line.label}>
+                        <td colSpan={3} className="muted">{line.label}</td>
+                        <td className="num muted">{fmtEuro(line.cents)}</td>
+                      </tr>
+                    ))}
                     <tr>
                       <td colSpan={3}>
                         {st.balanceCents >= 0 ? 'Guthaben zu Ihren Gunsten' : 'Nachzahlung zu Ihren Lasten'}
@@ -514,9 +612,17 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
                   </tfoot>
                 </Table>
               )}
+              {/* Der Ausweis nach § 7 Abs. 3 CO2KostAufG (Heizung PR 6) wird mitgedruckt. */}
+              {/* Heizung PR 10: der Ausweis der eigenen Heizkostenabrechnung, vor dem CO₂-Block. */}
+              {(data?.heating ?? []).map((h) => (h.self ? <SelfHeatingBlock key={`self:${h.plantId}:${h.period}`} self={h.self} tenancyId={st.tenancyId} plantName={h.plantName} /> : null))}
+              {/* Heizung PR 14: die Informationen nach § 6a, nur mit dem Vergleich dieses Mieters. */}
+              {(data?.heating ?? []).map((h) => (h.info && (h.info.tenancyIds ?? []).includes(st.tenancyId) ? <HeatingInfoBlock key={`info:${h.plantId}:${h.period}`} info={h.info} tenancyId={st.tenancyId} plantName={h.plantName} /> : null))}
+              {(data?.heating ?? []).map((h) => <Co2Block key={`${h.plantId}:${h.period}`} view={co2Block(h, st.tenancyId)} />)}
+              {(data?.heating ?? []).filter((h) => showsStock(h, st)).map((h) => <StockBlock key={`stock:${h.plantId}:${h.period}`} view={stockBlock(h)} />)}
+              {(data?.heating ?? []).map((h) => <FuelBlock key={`fuel:${h.plantId}:${h.period}`} view={fuelBlock(h)} />)}
               {st.rows.length > 0 && (
                 <>
-                  <p style={{ marginTop: 16 }}>
+                  <p>
                     {st.balanceCents < 0 ? (
                       <>
                         Es ergibt sich eine <strong>Nachzahlung von {fmtEuro(-st.balanceCents)}</strong>.
@@ -533,15 +639,15 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
                   </p>
                   {printAdjust && st.suggestedMonthlyCents > 0 && (
                     <p>
-                      Auf Basis dieser Abrechnung wird die monatliche Nebenkostenvorauszahlung gemäß
+                      Auf Basis dieser Abrechnung wird die {adjustedPrepaymentLabel(st, separateHeating)} gemäß
                       §560 Abs. 4 BGB ab dem übernächsten Monat auf <strong>{fmtEuro(st.suggestedMonthlyCents)}</strong> angepasst
                       ({suggestionBasis(st, data.daysInYear)}).
                     </p>
                   )}
                   {st.total35aCents > 0 && (
-                    <div style={{ marginTop: 14 }}>
+                    <div className="stack tight">
                       <strong>Bescheinigung nach §35a EStG</strong>
-                      <p className="muted" style={{ margin: '4px 0 8px' }}>
+                      <p className="muted">
                         In Ihrem Kostenanteil sind folgende Arbeitskosten für haushaltsnahe
                         Dienstleistungen/Handwerkerleistungen enthalten, die Sie ggf. steuerlich
                         geltend machen können:
@@ -564,8 +670,8 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
                   )}
                 </>
               )}
-              <p className="muted" style={{ marginTop: 14 }}>
-                {costBasisText(year)}
+              <p className="muted">
+                {costBasisText(label, calendar)}
                 {printAttachments && stFiles.length > 0
                   ? ` Kopien der zugrunde liegenden Belege sind als Anlage beigefügt (${stFiles.length} Beleg${stFiles.length > 1 ? 'e' : ''}).`
                   : ' Die zugrunde liegenden Belege können nach Terminvereinbarung eingesehen werden.'}
@@ -579,7 +685,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
                     {stFiles.map((f, idx) => (
                       <div key={f} className="attachment">
                         <div className="attachment-caption">
-                          Anlage {idx + 1} zur Nebenkostenabrechnung {year}: {fileLabel(f)}
+                          Anlage {idx + 1} zur Nebenkostenabrechnung {data?.period.label ?? label}: {fileLabel(f)}
                         </div>
                         {(attachmentPages[f] ?? []).map((src, i) => (
                           <img key={i} src={src} alt={`${fileLabel(f)} — Seite ${i + 1}`} />

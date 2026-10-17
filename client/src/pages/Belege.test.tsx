@@ -2,10 +2,11 @@
 // Der Belegordner (#170): Filter nach Objekt und Jahr, Register je Kostenart, Suche. Die
 // Entscheidungslogik prüft receipts.test.ts; hier geht es um das, was nur die Seite zeigt,
 // vor allem darum, dass die Auswahlfelder den Wert anzeigen, nach dem tatsächlich gefiltert wird.
+import { calendarPeriod } from '../../../shared/period.ts'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { CostItem, Property, UploadInfo } from '../types'
-import { YearProvider } from '../year'
+import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
 import type { ReceiptUpload } from '../receipts'
 import Belege from './Belege'
@@ -24,12 +25,12 @@ const up = (file: string, sha = file): UploadInfo => ({
 
 const ITEMS: Record<string, CostItem[]> = {
   p1: [
-    { id: 'gs', propertyId: 'p1', year: YEAR, category: 'Grundsteuer', description: 'Grundsteuer B', amountCents: 60000, key: 'area', invoiceFile: '1_gs.pdf', vendor: 'Stadt' },
-    { id: 'w1', propertyId: 'p1', year: YEAR, category: 'Wasser/Abwasser', description: 'Wasser', amountCents: 98000, key: 'area', invoiceFile: '2_wasser.pdf', vendor: 'Stadtwerke' },
-    { id: 'w2', propertyId: 'p1', year: YEAR, category: 'Wasser/Abwasser', description: 'Abwasser', amountCents: 26000, key: 'area' },
+    { id: 'gs', propertyId: 'p1', period: calendarPeriod(YEAR), category: 'Grundsteuer', description: 'Grundsteuer B', amountCents: 60000, key: 'area', invoiceFile: '1_gs.pdf', vendor: 'Stadt' },
+    { id: 'w1', propertyId: 'p1', period: calendarPeriod(YEAR), category: 'Wasser/Abwasser', description: 'Wasser', amountCents: 98000, key: 'area', invoiceFile: '2_wasser.pdf', vendor: 'Stadtwerke' },
+    { id: 'w2', propertyId: 'p1', period: calendarPeriod(YEAR), category: 'Wasser/Abwasser', description: 'Abwasser', amountCents: 26000, key: 'area' },
   ],
   p2: [
-    { id: 'x', propertyId: 'p2', year: YEAR, category: 'Grundsteuer', description: 'Grundsteuer Ahornweg', amountCents: 40000, key: 'area', invoiceFile: '3_ahorn.pdf' },
+    { id: 'x', propertyId: 'p2', period: calendarPeriod(YEAR), category: 'Grundsteuer', description: 'Grundsteuer Ahornweg', amountCents: 40000, key: 'area', invoiceFile: '3_ahorn.pdf' },
   ],
 }
 
@@ -40,6 +41,8 @@ let extraItems: CostItem[]
 let failAssessmentPut = false
 // Die abgeschlossene Abrechnung des Jahres, falls es eine gibt (Integrationsdurchsicht vor 0.10)
 let closed: { closedAt: string } | null = null
+// Die Heizanlagen des ersten Objekts (Sichtprüfung E32)
+let plantsP1: unknown[] = []
 
 // Die Abrechnung des Jahres, nur mit dem, was die Belegmappe liest: die Zeilen der Mieter
 const SETTLEMENT = {
@@ -54,6 +57,7 @@ beforeEach(() => {
   extraItems = []
   failAssessmentPut = false
   closed = null
+  plantsP1 = []
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
     const u = new URL(url, 'http://x')
     const method = init?.method ?? 'GET'
@@ -68,6 +72,7 @@ beforeEach(() => {
     if (u.pathname === '/api/properties') body = PROPS
     else if (u.pathname === '/api/uploads') body = [up('1_gs.pdf'), up('2_wasser.pdf'), up('3_ahorn.pdf'), up('4_lose.pdf', '1_gs.pdf'), ...extraUploads]
     else if (u.pathname === '/api/costItems') body = [...(ITEMS[u.searchParams.get('property') ?? 'p1'] ?? []), ...(u.searchParams.get('property') === 'p2' ? [] : extraItems)]
+    else if (u.pathname === '/api/heating-plants') body = u.searchParams.get('property') === 'p2' ? [] : plantsP1
     else if (u.pathname.startsWith('/api/settlement/')) body = closed ? { ...SETTLEMENT, closed } : SETTLEMENT
     return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
   })
@@ -80,11 +85,11 @@ afterEach(() => {
 
 const renderPage = () =>
   render(
-    <YearProvider>
+    <PeriodProvider>
       <PropertyProvider>
         <Belege renderThumb={() => Promise.resolve('data:image/gif;base64,R0lGODlhAQABAAAAACw=')} />
       </PropertyProvider>
-    </YearProvider>,
+    </PeriodProvider>,
   )
 
 const select = (label: string) => screen.getByLabelText(label) as HTMLSelectElement
@@ -101,6 +106,20 @@ test('zeigt das gewählte Objekt und Jahr, je Kostenart ein Register mit Summe',
   expect(within(wasser).getByText(/1 von 2 Positionen ohne Beleg/)).toBeTruthy()
   expect(within(wasser).getByText(/Abwasser · 260,00 €/)).toBeTruthy()
   expect(screen.queryByText('Grundsteuer Ahornweg', { exact: false })).toBeNull()
+})
+
+// Sichtprüfung E32: Nach dem Wechsel auf eine eigene Heizperiode trägt die Heizposition den Schlüssel
+// ihrer Heizperiode (Mai bis April). Sie gehört in die Abrechnung des Jahres, in dem diese endet, und
+// dort sucht man auch den Beleg; vorher stand er im Ordner des Vorjahres.
+test('eine Heizposition mit eigener Heizperiode steht im Jahr ihrer Abrechnung', async () => {
+  plantsP1 = [{ id: 'hp1', periodStartMonth: 5, periodChanges: [], separateSpans: [] }]
+  extraItems = [{ id: 'hz', propertyId: 'p1', period: `${YEAR - 1}-05` as CostItem['period'], category: 'Heizung und Warmwasser', description: 'Erdgas', amountCents: 480000, key: 'area', invoiceFile: '5_erdgas.pdf', heatingPlantId: 'hp1' }]
+  extraUploads = [up('5_erdgas.pdf')]
+  renderPage()
+  await screen.findByText('Heizung und Warmwasser')
+  expect(select('Jahr').value).toBe(String(YEAR))
+  // 600 + 980 + 4.800 von 600 + 980 + 260 + 4.800 Euro sind belegt
+  expect(screen.getByText(/Belegabdeckung/).closest('.receipt-coverage')?.textContent).toMatch(/96 %.*1 Position ohne Beleg/)
 })
 
 test('„alle Objekte“ zeigt auch die Belege des anderen Objekts, mit dessen Namen', async () => {
@@ -185,11 +204,11 @@ test('Posteingang: Objekt und Jahr eines Belegs zeigen den gespeicherten Wert un
 test('Posteingang: einer Position zuordnen und per KI auswerten', async () => {
   const onEvaluate = vi.fn()
   render(
-    <YearProvider>
+    <PeriodProvider>
       <PropertyProvider>
         <Belege renderThumb={() => Promise.resolve('')} onEvaluate={onEvaluate} />
       </PropertyProvider>
-    </YearProvider>,
+    </PeriodProvider>,
   )
   await screen.findByText('Wasser/Abwasser')
   const zuordnen = screen.getByLabelText('lose.pdf einer Position zuordnen') as HTMLSelectElement
@@ -212,11 +231,11 @@ test('Mappen: „Belege für die Steuer“ lädt das ZIP des gewählten Objekts 
 test('Mappen: die Belegmappe für Mieter folgt der Abrechnung und nennt, was fehlt', async () => {
   const make = vi.fn(async () => undefined)
   render(
-    <YearProvider>
+    <PeriodProvider>
       <PropertyProvider>
         <Belege renderThumb={() => Promise.resolve('')} makeTenantFolder={make} />
       </PropertyProvider>
-    </YearProvider>,
+    </PeriodProvider>,
   )
   await screen.findByText('Wasser/Abwasser')
   fireEvent.click(screen.getByText(/Belegmappe für Mieter/))
@@ -233,7 +252,7 @@ test('Mappen: die Belegmappe für Mieter folgt der Abrechnung und nennt, was feh
 // Seite nach dem Betrag, statt den geschätzten still stehen zu lassen.
 test('Posteingang: passende Kostenart oben, nach dem Zuordnen „Betrag prüfen“', async () => {
   extraUploads = [up('5_Grundsteuerbescheid.pdf')]
-  extraItems = [{ id: 'gs2', propertyId: 'p1', year: YEAR, category: 'Grundsteuer', description: `Grundsteuer ${YEAR} (Nachtrag)`, amountCents: 61000, key: 'area' }]
+  extraItems = [{ id: 'gs2', propertyId: 'p1', period: calendarPeriod(YEAR), category: 'Grundsteuer', description: `Grundsteuer ${YEAR} (Nachtrag)`, amountCents: 61000, key: 'area' }]
   renderPage()
   await screen.findByText('Wasser/Abwasser')
   const zuordnen = await screen.findByLabelText('Grundsteuerbescheid.pdf einer Position zuordnen') as HTMLSelectElement
@@ -267,15 +286,15 @@ test('„nachreichen“: auch nach dem Hochladen an der Position „Betrag prüf
 // dem neuen Betrag läge.
 const renderWithOpen = (onOpenItem: (c: CostItem) => void) =>
   render(
-    <YearProvider>
+    <PeriodProvider>
       <PropertyProvider>
         <Belege renderThumb={() => Promise.resolve('')} onOpenItem={onOpenItem} />
       </PropertyProvider>
-    </YearProvider>,
+    </PeriodProvider>,
   )
 
 test('„Betrag prüfen“ bei einer Position laut Gemeinschaftsabrechnung: kein Feld, „Position öffnen“', async () => {
-  extraItems = [{ id: 'hg', propertyId: 'p1', year: YEAR, category: 'Hauswart', description: 'Hauswart laut Hausgeld', amountCents: 48000, key: 'external', externalBasis: { measure: 'mea', total: 1000, totalCents: 4800000 } }]
+  extraItems = [{ id: 'hg', propertyId: 'p1', period: calendarPeriod(YEAR), category: 'Hauswart', description: 'Hauswart laut Hausgeld', amountCents: 48000, key: 'external', externalBasis: { measure: 'mea', total: 1000, totalCents: 4800000 } }]
   const onOpenItem = vi.fn()
   renderWithOpen(onOpenItem)
   await screen.findByText('Wasser/Abwasser')
@@ -288,7 +307,7 @@ test('„Betrag prüfen“ bei einer Position laut Gemeinschaftsabrechnung: kein
 })
 
 test('„Betrag prüfen“: liegt der Lohnanteil über dem neuen Betrag, ins Formular', async () => {
-  extraItems = [{ id: 'gp', propertyId: 'p1', year: YEAR, category: 'Gartenpflege', description: 'Garten', amountCents: 100000, labor35aCents: 80000, key: 'area' }]
+  extraItems = [{ id: 'gp', propertyId: 'p1', period: calendarPeriod(YEAR), category: 'Gartenpflege', description: 'Garten', amountCents: 100000, labor35aCents: 80000, key: 'area' }]
   const onOpenItem = vi.fn()
   renderWithOpen(onOpenItem)
   await screen.findByText('Wasser/Abwasser')
@@ -305,7 +324,7 @@ test('„Betrag prüfen“: liegt der Lohnanteil über dem neuen Betrag, ins For
 // Dritte Durchsicht (M1): Eine übernommene Position kann einen geschätzten §35a-Lohnanteil tragen.
 // „Betrag prüfen“ nennt ihn, damit er nicht still in die Anlage V gelangt.
 test('„Betrag prüfen“ nennt den Lohnanteil der Position und führt ins Formular', async () => {
-  extraItems = [{ id: 'gp', propertyId: 'p1', year: YEAR, category: 'Gartenpflege', description: 'Garten', amountCents: 300000, labor35aCents: 100000, key: 'area' }]
+  extraItems = [{ id: 'gp', propertyId: 'p1', period: calendarPeriod(YEAR), category: 'Gartenpflege', description: 'Garten', amountCents: 300000, labor35aCents: 100000, key: 'area' }]
   const onOpenItem = vi.fn()
   renderWithOpen(onOpenItem)
   await screen.findByText('Wasser/Abwasser')
@@ -320,11 +339,11 @@ test('Posteingang (#170): ein Beleg mit offener Auswertung heißt „Weiter prü
   extraUploads = [{ ...up('5_offen.pdf'), bookedItemIds: [], assessment: { id: 'a5', propertyId: 'p1', open: true } }]
   const onContinue = vi.fn()
   render(
-    <YearProvider>
+    <PeriodProvider>
       <PropertyProvider>
         <Belege renderThumb={() => Promise.resolve('data:image/gif;base64,R0lGODlhAQABAAAAACw=')} onEvaluate={() => {}} onContinue={onContinue} />
       </PropertyProvider>
-    </YearProvider>,
+    </PeriodProvider>,
   )
   fireEvent.click(await screen.findByRole('button', { name: 'offen.pdf weiter prüfen' }))
   expect(onContinue).toHaveBeenCalledWith(expect.objectContaining({ file: '5_offen.pdf' }))
@@ -332,11 +351,11 @@ test('Posteingang (#170): ein Beleg mit offener Auswertung heißt „Weiter prü
 })
 
 const renderContinue = (onContinue: (u: ReceiptUpload) => void) => render(
-  <YearProvider>
+  <PeriodProvider>
     <PropertyProvider>
       <Belege renderThumb={() => Promise.resolve('data:image/gif;base64,R0lGODlhAQABAAAAACw=')} onEvaluate={() => {}} onContinue={onContinue} />
     </PropertyProvider>
-  </YearProvider>,
+  </PeriodProvider>,
 )
 
 test('Weiter prüfen (#170): eine Auswertung ohne Objekt bekommt zuerst das gewählte Objekt', async () => {
@@ -362,7 +381,7 @@ test('Weiter prüfen (#170): scheitert das Zuordnen, steht eine Meldung da und d
 // Integrationsdurchsicht vor 0.10 (N1): „Betrag prüfen“ ändert eine Position. Liegt sie in einem
 // Jahr mit abgeschlossener Abrechnung, sagt der Kasten es, bevor gespeichert wird.
 test('„Betrag prüfen“ in einem Jahr mit abgeschlossener Abrechnung nennt die Abweichung', async () => {
-  extraItems = [{ id: 'gs2', propertyId: 'p1', year: YEAR, category: 'Grundsteuer', description: `Grundsteuer ${YEAR} (Nachtrag)`, amountCents: 61000, key: 'area' }]
+  extraItems = [{ id: 'gs2', propertyId: 'p1', period: calendarPeriod(YEAR), category: 'Grundsteuer', description: `Grundsteuer ${YEAR} (Nachtrag)`, amountCents: 61000, key: 'area' }]
   closed = { closedAt: `${YEAR + 1}-03-01T00:00:00.000Z` }
   renderPage()
   await screen.findByText('Wasser/Abwasser')
@@ -372,7 +391,7 @@ test('„Betrag prüfen“ in einem Jahr mit abgeschlossener Abrechnung nennt di
 })
 
 test('„Betrag prüfen“ in einem offenen Jahr: kein Satz zur abgeschlossenen Abrechnung', async () => {
-  extraItems = [{ id: 'gs2', propertyId: 'p1', year: YEAR, category: 'Grundsteuer', description: `Grundsteuer ${YEAR} (Nachtrag)`, amountCents: 61000, key: 'area' }]
+  extraItems = [{ id: 'gs2', propertyId: 'p1', period: calendarPeriod(YEAR), category: 'Grundsteuer', description: `Grundsteuer ${YEAR} (Nachtrag)`, amountCents: 61000, key: 'area' }]
   renderPage()
   await screen.findByText('Wasser/Abwasser')
   fireEvent.change(screen.getByLabelText('lose.pdf einer Position zuordnen'), { target: { value: 'gs2' } })

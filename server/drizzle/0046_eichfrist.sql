@@ -1,0 +1,1 @@
+ALTER TABLE `meters` ADD `calibrated_until` integer;

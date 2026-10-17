@@ -1,17 +1,23 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { CostItem, Meter, Settings, Settlement, Tenancy, Unit, UploadEntry } from '../types'
+import type { CostItem, HeatingPlant, HeatingSettlementInfo, Meter, Notice, NoticeSubject, PeriodKey, Settings, Settlement, Tenancy, Unit, UploadEntry } from '../types'
+import { cockpitHeatingRows } from '../heatingSettlementView'
+import { heatingRowTarget, itemsOfSettlement } from '../costPeriods'
+import { localToday } from '../periodForm'
 import { isNotAllocable, usageOf } from '../types'
 import { cockpitSubtitle, itemsDetail, meterTypesInUse, tenanciesDetail, usesUnitBasis } from '../cockpitChecks'
 import { coverageCheck, filesByItem } from '../receipts'
 import { api, fmtEuro, fmtDate } from '../api'
 import { andList } from '../../../shared/wording.ts'
-import { useYear } from '../year'
+import { hkvCutNotByConsumption } from '../../../shared/law/heizkostenv.ts'
+import { LAW_AS_OF, valueAt } from '../../../shared/law/register.ts'
+import { usePeriod, useSwitchPeriod } from '../period'
 import { useProperty, withProperty } from '../property'
 import { consentPending } from '../update'
-import { heatingWithoutConsumption, meterReadiness } from '../meterCheck'
-import { attentionDetail, attentionLevel } from '../notices'
+import { calibrationDetail, heatingWithoutConsumption, meterReadiness, overdueMeters } from '../meterCheck'
+import { attentionDetail, attentionLevel, attentionLines } from '../notices'
 import { missingAreaCheck, zeroAreaUnits } from '../unitForm'
 import { UpdateConsent } from '../components/Update'
+import PageHeader from '../components/PageHeader'
 
 type Props = {
   units: Unit[]
@@ -19,11 +25,11 @@ type Props = {
   tenancies: Tenancy[]
   settings: Settings | null
   reload: () => Promise<void>
-  onNavigate: (tab: string) => void
+  onNavigate: (tab: string, focus?: NoticeSubject) => void
 }
 
 // Verbrauchsangaben des Servers (gleiche Form wie auf der Zähler-Seite)
-type Consumption = { meterId: string; consumption: number; readingCount: number; warnings: string[] }
+type Consumption = { meterId: string; consumption: number; readingCount: number; warnings: string[]; notices?: Notice[] }
 
 type Level = 'gruen' | 'gelb' | 'rot' | 'leer'
 
@@ -32,16 +38,21 @@ type Level = 'gruen' | 'gelb' | 'rot' | 'leer'
 type Check = {
   title: string
   detail: string
+  // Sichtprüfung S12/E54: mehrere Einträge als Liste statt als ein Absatz
+  lines?: string[]
   level: Level
   tab?: string
   cta?: string
+  // Statt nur zur Seite zu wechseln (E45: erst in den Zeitraum der Heizkostenabrechnung)
+  go?: () => void
 }
 
 // Ab dieser Abweichung zum Vorjahr gilt eine Kostenart als auffällig (wie in der Übersicht).
 const NOTABLE_CHANGE_PCT = 25
 
 export default function Cockpit({ units, tenancies, settings, reload, onNavigate }: Props) {
-  const { year } = useYear()
+  const { key, label, param, at, period, calendar, rules } = usePeriod()
+  const switchPeriod = useSwitchPeriod()
   const { property } = useProperty()
   const propertyId = property?.id
   const [settlement, setSettlement] = useState<Settlement | null>(null)
@@ -53,38 +64,47 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
   // (#170). Scheitert der Abruf, zählt der Verweis an der Position.
   const [uploadFiles, setUploadFiles] = useState<Set<string> | null>(null)
   const [bookedFiles, setBookedFiles] = useState<Map<string, string[]>>(new Map())
+  // Heizung PR 5: die Heizkostenabrechnungen nach Weg d, jede mit ihrer eigenen Frist.
+  const [heatingList, setHeatingList] = useState<HeatingSettlementInfo[]>([])
+  // Die Anlagen sagen, in welchem Zeitraum eine Heizposition abgerechnet wird (E48, E32).
+  const [plants, setPlants] = useState<HeatingPlant[]>([])
 
   const load = useCallback(() => {
     return Promise.all([
-      api<Settlement>(withProperty(`/api/settlement/${year}`, propertyId)),
+      api<Settlement>(withProperty(`/api/settlement/${param}`, propertyId)),
       api<CostItem[]>(withProperty('/api/costItems', propertyId)),
       api<Meter[]>(withProperty('/api/meters', propertyId)),
-      api<Consumption[]>(withProperty(`/api/consumption/${year}`, propertyId)),
+      api<Consumption[]>(withProperty(`/api/consumption/${param}`, propertyId)),
     ])
       .then(([s, c, m, k]) => { setSettlement(s); setCostItems(c); setMeters(m); setConsumption(k); setError('') })
       .catch((e) => setError(String((e as Error).message)))
-  }, [year, propertyId])
+  }, [param, propertyId])
 
   useEffect(() => { void load() }, [load])
   useEffect(() => {
+    api<HeatingSettlementInfo[]>(withProperty('/api/heating-settlements', propertyId)).then(setHeatingList).catch(() => setHeatingList([]))
+    api<HeatingPlant[]>(withProperty('/api/heating-plants', propertyId)).then(setPlants).catch(() => setPlants([]))
+  }, [propertyId])
+  useEffect(() => {
     api<UploadEntry[]>('/api/uploads').then((list) => { setUploadFiles(new Set(list.map((u) => u.file))); setBookedFiles(filesByItem(list)) }, () => setUploadFiles(null))
-  }, [year, propertyId])
+  }, [param, propertyId])
 
   // ---------- Kennzahlen des Jahres ----------
-  const yearItems = useMemo(() => costItems.filter((c) => c.year === year), [costItems, year])
+  // Mit den Heizpositionen, deren Heizperiode in diesem Zeitraum endet, wie Kosten und Abrechnung.
+  const yearItems = useMemo(() => itemsOfSettlement(costItems, key, rules, plants), [costItems, key, rules, plants])
   const itemsSum = useMemo(() => yearItems.reduce((a, c) => a + c.amountCents, 0), [yearItems])
   const invoiceFileCount = useMemo(() => new Set(yearItems.filter((c) => c.invoiceFile).map((c) => c.invoiceFile)).size, [yearItems])
   const participating = useMemo(() => units.filter((u) => u.participates), [units])
 
   // Vorjahresvergleich je Kostenart (wie in der Übersicht)
   const notable = useMemo(() => {
-    const sumByCat = (y: number) => {
+    const sumByCat = (key: PeriodKey) => {
       const m = new Map<string, number>()
-      for (const c of costItems) if (c.year === y) m.set(c.category, (m.get(c.category) ?? 0) + c.amountCents)
+      for (const c of itemsOfSettlement(costItems, key, rules, plants)) m.set(c.category, (m.get(c.category) ?? 0) + c.amountCents)
       return m
     }
-    const cur = sumByCat(year)
-    const prev = sumByCat(year - 1)
+    const cur = sumByCat(key)
+    const prev = sumByCat(at.previous)
     if (prev.size === 0) return { hasPrev: false, list: [] as { cat: string; pct: number }[] }
     const list: { cat: string; pct: number }[] = []
     for (const [cat, k] of cur) {
@@ -94,11 +114,12 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
       if (Math.abs(pct) >= NOTABLE_CHANGE_PCT) list.push({ cat, pct })
     }
     return { hasPrev: true, list }
-  }, [costItems, year])
+  }, [costItems, key, at.previous, rules, plants])
 
-  // §556 Abs. 3 BGB: Zugang beim Mieter binnen 12 Monaten nach Ende des Abrechnungszeitraums.
-  const deadline = useMemo(() => new Date(Date.UTC(year + 1, 11, 31)), [year])
-  const daysLeft = Math.ceil((deadline.getTime() - Date.now()) / 86400000)
+  // §556 Abs. 3 BGB: Zugang beim Mieter binnen 12 Monaten nach Ende des Abrechnungszeitraums. Die
+  // Frist kommt vom Server (#208); vor dem Laden gibt es keine.
+  const deadline = settlement?.deadline ?? null
+  const daysLeft = deadline === null ? 0 : Math.ceil((Date.parse(`${deadline}T00:00:00Z`) - Date.now()) / 86400000)
 
   // ---------- Bereitschafts-Checkliste ----------
   const checks = useMemo<Check[]>(() => {
@@ -117,10 +138,10 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
     const mietverhaeltnisse = settlement.statements.length + ohneAbrechnung.length
     if (mietverhaeltnisse === 0) {
       list.push({ title: 'Mietverhältnisse & Flächen', level: 'rot', tab: 'stammdaten', cta: 'Stammdaten prüfen',
-        detail: `Keine Mietverhältnisse im Jahr ${year} — ohne sie lässt sich nichts verteilen.` })
+        detail: `Keine Mietverhältnisse im ${calendar ? 'Jahr' : 'Zeitraum'} ${label} — ohne sie lässt sich nichts verteilen.` })
     } else if (noArea.length > 0) {
       // Bei einer leeren Einheit eine Frage statt eines Befehls (Endprüfung rc.4, missingAreaCheck).
-      list.push({ title: 'Mietverhältnisse & Flächen', level: 'gelb', tab: 'stammdaten', ...missingAreaCheck(noArea, tenancies, year, yearItems) })
+      list.push({ title: 'Mietverhältnisse & Flächen', level: 'gelb', tab: 'stammdaten', ...missingAreaCheck(noArea, tenancies, period, yearItems) })
     } else {
       list.push({ title: 'Mietverhältnisse & Flächen', level: 'gruen',
         detail: tenanciesDetail(mietverhaeltnisse, ohneAbrechnung.length, participating.length, zeroArea.map((u) => u.name)) })
@@ -129,7 +150,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
     // 2. Belege & Kosten erfasst
     if (yearItems.length === 0) {
       list.push({ title: 'Belege erfasst', level: 'rot', tab: 'schnellerfassung', cta: 'Belege erfassen',
-        detail: `Für ${year} sind noch keine Kosten erfasst.` })
+        detail: `Für ${label} sind noch keine Kosten erfasst.` })
     } else {
       list.push({ title: 'Belege erfasst', level: 'gruen',
         detail: itemsDetail(yearItems.length, itemsSum, invoiceFileCount) })
@@ -148,7 +169,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
     if (meterTypes.size === 0 && heatingWithout.length > 0) {
       // #140: Heizung ohne Verbrauchsschlüssel. Ablesungen wären nötig, nicht entbehrlich.
       list.push({ title: 'Zählerstände', level: 'gelb', tab: 'kosten', cta: 'Heizkosten prüfen',
-        detail: `${andList(heatingWithout.map((c) => `„${c.description}“`))} ${heatingWithout.length === 1 ? 'wird' : 'werden'} nicht nach Verbrauch verteilt. Die Heizkostenverordnung verlangt das (§ 7 Abs. 1, § 8 Abs. 1 HeizkostenV); sonst darf der Mieter seinen Anteil um 15 % kürzen. Nötig sind Ablesungen der Wärmezähler oder die Abrechnung des Messdienstes.` })
+        detail: `${andList(heatingWithout.map((c) => `„${c.description}“`))} ${heatingWithout.length === 1 ? 'wird' : 'werden'} nicht nach Verbrauch verteilt. Die Heizkostenverordnung verlangt das (§ 7 Abs. 1, § 8 Abs. 1 HeizkostenV); sonst darf der Mieter seinen Anteil um ${valueAt(hkvCutNotByConsumption, LAW_AS_OF)} % kürzen. Nötig sind Ablesungen der Wärmezähler oder die Abrechnung des Messdienstes.` })
     } else if (meterTypes.size === 0) {
       list.push({ title: 'Zählerstände', level: 'leer',
         detail: 'Keine verbrauchsabhängige Umlage — Ablesungen nicht erforderlich.' })
@@ -161,6 +182,12 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
         list.push({ title: 'Zählerstände', level: 'gruen',
           detail: `${relevant.length} Zähler mit Anfangs- und Endstand erfasst.` })
       }
+    }
+    // 3b. Eichfrist (Heizung PR 21): eine eigene gelbe Zeile, denn Mietfuchs rechnet mit den Werten; die Ampel
+    // „Zählerstände“ bleibt unberührt (Prüfung des Plans, M1).
+    const overdue = overdueMeters(meters, consumption)
+    if (overdue.length > 0) {
+      list.push({ title: 'Eichfrist', level: 'gelb', tab: 'zaehler', cta: 'Zähler prüfen', detail: calibrationDetail(overdue) })
     }
 
     // 4. Verteilbasis: ausgenommene Wohnungen mit Wohnfläche sind fast immer ein Versehen.
@@ -197,7 +224,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
     if (yearItems.length === 0) {
       list.push({ title: 'Plausibilität zum Vorjahr', level: 'leer', detail: 'Noch keine Kosten zum Vergleichen.' })
     } else if (!notable.hasPrev) {
-      list.push({ title: 'Plausibilität zum Vorjahr', level: 'leer', detail: `Kein Vorjahr (${year - 1}) zum Vergleichen erfasst.` })
+      list.push({ title: 'Plausibilität zum Vorjahr', level: 'leer', detail: `Kein Vorjahr (${at.previousLabel}) zum Vergleichen erfasst.` })
     } else if (notable.list.length > 0) {
       const txt = notable.list
         .map((a) => `${a.cat} (${a.pct > 0 ? '+' : ''}${Math.round(a.pct)} %)`)
@@ -205,13 +232,14 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
       list.push({ title: 'Plausibilität zum Vorjahr', level: 'gelb', tab: 'uebersicht', cta: 'Vergleich ansehen',
         detail: `Auffällige Abweichung: ${txt} — Beleg prüfen, Mieter ggf. erklären.` })
     } else {
-      list.push({ title: 'Plausibilität zum Vorjahr', level: 'gruen', detail: `Keine auffälligen Sprünge gegenüber ${year - 1}.` })
+      list.push({ title: 'Plausibilität zum Vorjahr', level: 'gruen', detail: `Keine auffälligen Sprünge gegenüber ${at.previousLabel}.` })
     }
 
     // 6. Hinweise der Berechnung (z. B. negativer Verbrauch)
     if (settlement.warnings.length > 0) {
+      const lines = attentionLines(settlement)
       list.push({ title: 'Hinweise der Berechnung', level: attentionLevel(settlement), tab: 'abrechnung', cta: 'Abrechnung ansehen',
-        detail: attentionDetail(settlement) })
+        detail: lines.length > 0 ? '' : attentionDetail(settlement), lines })
     }
 
     // 7. Abschluss & Versand
@@ -221,7 +249,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
       list.push({ title: 'Abgeschlossen & versendet', level: 'gruen',
         detail: 'Keine Abrechnung nötig: Alle Mietverhältnisse haben eine Pauschale oder Inklusivmiete.' })
     } else if (closed?.sentAt) {
-      const ok = closed.sentAt <= `${year + 1}-12-31`
+      const ok = closed.sentAt <= settlement.deadline
       list.push({ title: 'Abgeschlossen & versendet', level: ok ? 'gruen' : 'rot',
         detail: `Versendet am ${fmtDate(closed.sentAt)} — Frist nach §556 BGB ${ok ? 'gewahrt' : 'überschritten'}.` })
     } else if (closed) {
@@ -229,14 +257,25 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
         detail: 'Abgeschlossen, aber Versanddatum fehlt — für die §556-Frist nachtragen.' })
     } else {
       const deadlineText = daysLeft >= 0
-        ? `Noch ${daysLeft} Tage bis zur Frist (31.12.${year + 1}).`
-        : `Frist am 31.12.${year + 1} abgelaufen.`
+        ? `Noch ${daysLeft} Tage bis zur Frist (${fmtDate(settlement.deadline)}).`
+        : `Frist am ${fmtDate(settlement.deadline)} abgelaufen.`
       list.push({ title: 'Abgeschlossen & versendet', level: daysLeft < 0 ? 'rot' : 'gelb', tab: 'abrechnung', cta: 'Zur Abrechnung',
         detail: `Noch im Entwurf. ${deadlineText}` })
     }
+    // Jede beendete Heizperiode nach Weg d mit ihrer eigenen Frist (Heizung PR 5, Entwurf 3.1, B3).
+    // „Zur Abrechnung“ wechselt dabei in den Zeitraum, in dem die Heizperiode endet, und wählt dort
+    // die Heizkostenabrechnung (E45); im gewählten Zeitraum ist sie oft gar nicht wählbar.
+    for (const row of cockpitHeatingRows(heatingList, localToday())) {
+      const h = heatingList.find((x) => `${x.plantId}|${x.period.key}` === row.key)
+      const go = h ? () => {
+        const t = heatingRowTarget(h, rules)
+        void switchPeriod(t.period).then((ok) => { if (ok) onNavigate('abrechnung', t.focus) })
+      } : undefined
+      list.push({ title: row.label, level: row.level, detail: row.text, ...(row.level === 'gruen' ? {} : { tab: 'abrechnung', cta: 'Zur Abrechnung', go }) })
+    }
 
     return list
-  }, [settlement, participating, units, yearItems, itemsSum, invoiceFileCount, meters, consumption, tenancies, notable, daysLeft, year, uploadFiles, bookedFiles])
+  }, [heatingList, rules, switchPeriod, onNavigate, settlement, participating, units, yearItems, itemsSum, invoiceFileCount, meters, consumption, tenancies, notable, daysLeft, label, calendar, period, at.previousLabel, uploadFiles, bookedFiles])
 
   const relevant = checks.filter((c) => c.level !== 'leer')
   const greenCount = relevant.filter((c) => c.level === 'gruen').length
@@ -256,22 +295,21 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
 
   return (
     <>
-      <div className="statement-head">
-        <div>
-          <h1 style={{ marginBottom: 2 }}>Abrechnung {year}</h1>
-          <p className="sub" style={{ margin: 0 }}>
-            {cockpitSubtitle({ loaded: !!settlement, fresh: !!fresh, openCount })}
-          </p>
-        </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          {statusBadge}
-          {settlement && !settlement.closed && (
-            <span className={`badge ${daysLeft < 0 ? 'red' : daysLeft < 90 ? 'gray' : 'gray'}`}>
-              {daysLeft >= 0 ? `Frist in ${daysLeft} Tagen` : 'Frist abgelaufen'}
-            </span>
-          )}
-        </div>
-      </div>
+      {/* Sichtprüfung S11/E56: Titel wie in der Navigation, mit dem Objekt darüber wie auf jeder Seite */}
+      <PageHeader
+        title={`Cockpit · Abrechnung ${label}`}
+        subtitle={cockpitSubtitle({ loaded: !!settlement, fresh: !!fresh, openCount })}
+        actions={
+          <>
+            {statusBadge}
+            {settlement && !settlement.closed && (
+              <span className={`badge ${daysLeft < 0 ? 'red' : 'gray'}`}>
+                {daysLeft >= 0 ? `Frist in ${daysLeft} Tagen` : 'Frist abgelaufen'}
+              </span>
+            )}
+          </>
+        }
+      />
 
       {error && <div className="error">{error}</div>}
 
@@ -280,8 +318,8 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
       {fresh ? (
         <div className="card">
           <div className="empty">
-            <p>Noch nichts für {year} erfasst. So fangen Sie an:</p>
-            <div className="row" style={{ justifyContent: 'center', marginTop: 12 }}>
+            <p>Noch nichts für {label} erfasst. So fangen Sie an:</p>
+            <div className="row centered">
               <button className="btn secondary" onClick={() => onNavigate('stammdaten')}>🏠 Stammdaten anlegen</button>
               <button className="btn" onClick={() => onNavigate('schnellerfassung')}>📥 Belege zur Schnellerfassung</button>
             </div>
@@ -291,8 +329,8 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
         <>
           {/* Fortschritt */}
           <div className="card">
-            <div className="row" style={{ alignItems: 'center', marginBottom: 6 }}>
-              <strong style={{ flex: 1 }}>Fertigstellung</strong>
+            <div className="row center">
+              <strong className="grow">Fertigstellung</strong>
               <span className="muted">{greenCount} von {relevant.length} erledigt</span>
             </div>
             <div className="progress"><div className="progress-fill" style={{ width: `${pct}%` }} /></div>
@@ -304,15 +342,16 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
                   <div
                     key={i}
                     className={`check-row ${c.level}${clickable ? ' clickable' : ''}`}
-                    onClick={clickable ? () => onNavigate(c.tab!) : undefined}
+                    onClick={clickable ? () => (c.go ? c.go() : onNavigate(c.tab!)) : undefined}
                     role={clickable ? 'button' : undefined}
                     tabIndex={clickable ? 0 : undefined}
-                    onKeyDown={clickable ? (e) => { if (e.key === 'Enter') onNavigate(c.tab!) } : undefined}
+                    onKeyDown={clickable ? (e) => { if (e.key === 'Enter') (c.go ? c.go() : onNavigate(c.tab!)) } : undefined}
                   >
                     <span className={`ampel ${c.level === 'leer' ? '' : c.level}`} style={c.level === 'leer' ? { background: 'var(--line)' } : undefined} />
                     <div className="grow">
                       <div className="check-title">{c.title}</div>
-                      <div className="muted">{c.detail}</div>
+                      {c.detail && <div className="muted">{c.detail}</div>}
+                      {c.lines && c.lines.length > 0 && <ul className="muted check-lines">{c.lines.map((l) => <li key={l}>{l}</li>)}</ul>}
                     </div>
                     {clickable && <span className="check-cta">{c.cta} →</span>}
                   </div>
@@ -320,9 +359,9 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
               })}
             </div>
 
-            <div className="row" style={{ marginTop: 16 }}>
+            <div className="row">
               {next ? (
-                <button className="btn" onClick={() => onNavigate(next.tab!)}>→ Nächster Schritt: {next.cta}</button>
+                <button className="btn" onClick={() => (next.go ? next.go() : onNavigate(next.tab!))}>→ Nächster Schritt: {next.cta}</button>
               ) : (
                 <button className="btn" onClick={() => onNavigate('abrechnung')}>✓ Zur Abrechnung — abschließen & versenden</button>
               )}
@@ -334,7 +373,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
           <div className="kpis">
             <div className="kpi">
               <div className="v">{fmtEuro(settlement.totalCostsCents)}</div>
-              <div className="l">Gesamtkosten {year}</div>
+              <div className="l">Gesamtkosten {label}</div>
             </div>
             <div className="kpi">
               <div className="v">{fmtEuro(distributed)}</div>
@@ -353,7 +392,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
               {/* Ohne Kosten im Jahr erstattete die Berechnung jedem die volle Vorauszahlung (#142);
                   das ist kein voraussichtliches Guthaben, sondern ein noch leeres Jahr. */}
               {yearItems.length === 0 ? (
-                <div className="empty">Noch keine Kosten für {year} erfasst — ein voraussichtliches Ergebnis gibt es, sobald Kosten da sind.</div>
+                <div className="empty">Noch keine Kosten für {label} erfasst — ein voraussichtliches Ergebnis gibt es, sobald Kosten da sind.</div>
               ) : (
               <div className="tenant-cards">
                 {settlement.statements.map((st) => {

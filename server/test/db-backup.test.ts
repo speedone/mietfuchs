@@ -21,9 +21,16 @@ import type { Db } from '../src/store.ts'
 import { straightenForDatabase } from '../src/legacy/migrate.ts'
 import { connect, loadMigrations } from '../src/db/client.ts'
 import { databaseFile, openDatabase } from '../src/db/open.ts'
+import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { readStock } from '../src/db/read.ts'
 import { openDatabaseWithStock } from '../testing/database.ts'
 import { archiveDatabaseProblem, archiveInfoText, originText, writeDatabaseSnapshot } from '../src/db/backup.ts'
+import type { Database } from '../src/db/client.ts'
+import { createEntity, createProperty } from '../src/db/repository.ts'
+import { createHeatingPlant } from '../src/db/heating.ts'
+import { costItems, heatingPeriods, heatingPlants } from '../src/db/schema.ts'
+import { HEATING_CATEGORY } from '../../shared/heating.ts'
+import { periodKey } from '../../shared/period.ts'
 
 const tempDir = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-backup-'))
 
@@ -181,4 +188,73 @@ test('Eine fehlende oder unsinnige Herkunftsangabe wirft nichts um', () => {
     assert.ok(text.length > 0, `leere Auskunft für ${JSON.stringify(unsinn)}`)
   }
   assert.match(originText(null), /unbekannt/)
+})
+
+test('Ein Archiv mit einem Zeitraum, den es für sein Objekt nicht gibt, wird beanstandet (#208)', async () => {
+  // Review Focus 4: von Hand den Beginnmonat auf Mai gestellt, ohne die Position umzuschlüsseln.
+  // Die Position stünde dann in keiner Abrechnung, und niemand bemerkte es.
+  await withFilledDatabase(async (opened, dataDir) => {
+    const ziel = path.join(dataDir, 'schnappschuss.sqlite')
+    await writeDatabaseSnapshot(opened, ziel)
+    const bearbeitet = await connect(ziel)
+    bearbeitet.exec("UPDATE properties SET period_start_month = 5 WHERE id = 'objekt-1'")
+    bearbeitet.close()
+    const befund = await archiveDatabaseProblem(ziel)
+    assert.ok(befund, 'es gibt eine Beanstandung')
+    assert.match(befund, /Abrechnungszeiträumen, die es für ihr Objekt nicht gibt/)
+    assert.match(befund, /„Gebühren“ steht unter dem Zeitraum 2024-01/)
+  })
+})
+
+// ---------- Heizanlage (Heizung PR 4) ----------
+
+async function withHeatingDatabase(fill: (db: Database) => Promise<void>): Promise<string | null> {
+  const dataDir = tempDir()
+  const opened = await openFreshDatabase(dataDir)
+  try {
+    await opened.write(fill)
+    const ziel = path.join(dataDir, 'schnappschuss.sqlite')
+    await writeDatabaseSnapshot(opened, ziel)
+    return await archiveDatabaseProblem(ziel)
+  } finally {
+    opened.close()
+    fs.rmSync(dataDir, { recursive: true, force: true })
+  }
+}
+
+test('Eine Datenbank mit einer Heizanlage samt zugeordneter Position wird nicht beanstandet', async () => {
+  const befund = await withHeatingDatabase(async (db) => {
+    await createEntity(db, 'units', 'u1', { propertyId: 'objekt-1', name: 'EG', areaM2: 50, participates: true })
+    await createEntity(db, 'costItems', 'c1', { propertyId: 'objekt-1', period: '2025-01', category: HEATING_CATEGORY, description: 'Gas', amountCents: 100000, key: 'area' })
+    await createHeatingPlant(db, 'hp1', 'objekt-1', { energy: 'gas', units: [{ unitId: 'u1', heatedAreaM2: null }], assignItemIds: ['c1'] })
+    await db.insert(heatingPeriods).values({ id: 'h1', plantId: 'hp1', period: periodKey('2025-01') })
+  })
+  assert.equal(befund, null)
+})
+
+test('Heizanlagen über die Objektgrenze, überlappend oder mit fremder Heizperiode werden beanstandet', async () => {
+  const befund = await withHeatingDatabase(async (db) => {
+    await createProperty(db, 'objekt-2', { name: 'Zweites Haus', kind: 'mfh', address: '' })
+    await createHeatingPlant(db, 'hp1', 'objekt-1', { energy: 'gas' })
+    await createHeatingPlant(db, 'hp2', 'objekt-2', { energy: 'oil' })
+    // Am Server vorbei, wie in einem von Hand bearbeiteten Archiv.
+    await db.insert(costItems).values({
+      id: 'c1', propertyId: 'objekt-1', period: periodKey('2025-01'), category: HEATING_CATEGORY, description: 'Gas', amountCents: 100000, key: 'area', heatingPlantId: 'hp2',
+    })
+    await db.insert(heatingPlants).values({ id: 'hp3', propertyId: 'objekt-1', energy: 'gas' })
+  })
+  assert.ok(befund, 'es gibt eine Beanstandung')
+  assert.match(befund, /Angaben zur Heizanlage/)
+  assert.match(befund, /Kostenposition „Gas“ gehört zur Heizanlage eines anderen Objekts/)
+  assert.match(befund, /mehrere Heizanlagen/)
+})
+
+test('Eine Heizperiode, die es für das Objekt nicht gibt, wird beanstandet', async () => {
+  const befund = await withHeatingDatabase(async (db) => {
+    await createHeatingPlant(db, 'hp1', 'objekt-1', { name: 'Keller', energy: 'gas' })
+    // Beim Kalenderobjekt gibt es keinen Zeitraum, der im Mai beginnt.
+    await db.insert(heatingPeriods).values({ id: 'h1', plantId: 'hp1', period: periodKey('2025-05') })
+  })
+  assert.ok(befund)
+  assert.match(befund, /Heizanlage „Keller“ hat Angaben zur Heizperiode 2025-05/)
 })

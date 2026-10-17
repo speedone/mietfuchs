@@ -141,8 +141,8 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
 
   const years = [a.year - 2, a.year - 1, a.year, a.year + 1]
   return (
-    <div className="assessment-review">
-      <div className="row" style={{ alignItems: 'center', marginTop: 8 }}>
+    <div className="stack assessment-review">
+      <div className="row center">
         <label className="field">
           Jahr der Buchung
           <select aria-label="Jahr der Buchung" value={a.year} disabled={busy} onChange={(e) => void changeYear(Number(e.target.value))}>
@@ -153,19 +153,19 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
       {a.propertyId === null && (
         <div className="warn">Zu welchem Objekt gehört dieser Beleg? Wählen Sie es bitte im Posteingang; gebucht wird nur innerhalb eines Objekts.</div>
       )}
-      {a.sumWarning && <div className="warn" style={{ marginTop: 8 }}>⚠ {a.sumWarning}</div>}
+      {a.sumWarning && <div className="warn">⚠ {a.sumWarning}</div>}
       {/* Gerechnetes benennen, damit es geprüft werden kann (#34) */}
       {a.amountsAdjusted === 'netto' && (
-        <div className="notice" style={{ marginTop: 8 }}>
+        <div className="notice">
           Die Positionen standen ohne Umsatzsteuer auf der Rechnung. Mietfuchs hat sie auf den Rechnungsbetrag hochgerechnet. Bitte die Beträge kurz prüfen.
         </div>
       )}
       {a.laborFromTotal && (
-        <div className="notice" style={{ marginTop: 8 }}>
+        <div className="notice">
           Der Arbeitskostenanteil nach §35a stand nur als ein Betrag auf der Rechnung. Mietfuchs hat ihn nach Beträgen auf die Positionen verteilt; Fahrtkosten und Material gehören streng genommen nicht dazu.
         </div>
       )}
-      <Table style={{ marginTop: 8 }}>
+      <Table className="assessment-table">
         <thead>
           <tr>
             <th><span className="sr-only">Ampel</span></th>
@@ -188,7 +188,7 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
                   <td>
                     {line.state === 'created' ? `✓ angelegt als „${line.itemDescription ?? '?'}“` : `✓ verknüpft mit „${line.itemDescription ?? '?'}“`}
                     {line.state === 'linked' && (
-                      <label style={{ marginLeft: 8 }}>
+                      <label className="checkline badge-next">
                         <input type="checkbox" aria-label={`„${line.description}“ lösen`} checked={row.action === 'release'}
                           onChange={(e) => patch(line.idx, { action: e.target.checked ? 'release' : '' })} /> lösen
                       </label>
@@ -222,7 +222,7 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
                       {line.state !== 'dismissed' && <option value="dismiss">Verwerfen</option>}
                     </select>
                   </td>
-                  <td><input aria-label="Beschreibung" value={row.description} onChange={(e) => patch(line.idx, { description: e.target.value })} style={{ width: '100%' }} /></td>
+                  <td><input aria-label="Beschreibung" value={row.description} onChange={(e) => patch(line.idx, { description: e.target.value })} className="input-wide" /></td>
                   <td>
                     <select aria-label="Kostenart" value={row.category}
                       onChange={(e) => patch(line.idx, { category: e.target.value, externalTotalAmount: '', ...aiPositionDefaults(e.target.value, units, [], keyContext, row.description) })}>
@@ -230,8 +230,8 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
                     </select>
                   </td>
                   <td><AiKeyCell position={row} units={units} onChange={(p) => patch(line.idx, p)} /></td>
-                  <td className="num"><input aria-label="Betrag €" value={row.amount} onChange={(e) => patch(line.idx, { amount: e.target.value })} style={{ width: 100, textAlign: 'right' }} /></td>
-                  <td className="num"><input aria-label="§35a €" value={row.labor35a} onChange={(e) => patch(line.idx, { labor35a: e.target.value })} style={{ width: 90, textAlign: 'right' }} placeholder="—" /></td>
+                  <td className="num"><input aria-label="Betrag €" value={row.amount} onChange={(e) => patch(line.idx, { amount: e.target.value })} className="input-num" /></td>
+                  <td className="num"><input aria-label="§35a €" value={row.labor35a} onChange={(e) => patch(line.idx, { labor35a: e.target.value })} className="input-num" placeholder="—" /></td>
                 </tr>
               </Fragment>
             )
@@ -240,19 +240,19 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
       </Table>
       {/* Begründungen und Positionen, die im Formular gepflegt werden, stehen unter der Tabelle:
           in einer Zeile scrollten sie auf dem Handy mit (Durchsicht zu #170). */}
-      <div style={{ marginTop: 6 }}>
+      <div>
         {a.lines.flatMap((l) => (l.state === 'open' && l.suggestion && l.suggestion.level !== 'gruen'
           ? l.suggestion.reasons.map((r) => <span key={`${l.idx}-${r}`} className={`chip ${l.suggestion?.level ?? 'gelb'}`}>{r}</span>)
           : []))}
       </div>
       {a.lines.flatMap((l) => (l.state === 'open' ? (l.suggestion?.candidates ?? []).filter((c) => c.formOnly).map((c) => (
-        <div key={`${l.idx}-${c.id}`} className="warn" style={{ marginTop: 6 }}>
+        <div key={`${l.idx}-${c.id}`} className="warn">
           „{l.description}“: „{c.description}“ wird {c.key === 'amounts' ? 'mit Einzelbeträgen je Mieter' : 'laut Gemeinschaftsabrechnung'} verteilt; ihren Betrag pflegen Sie im Formular. Haben Sie die Position dort aktualisiert, verwerfen Sie diese Zeile hier danach, damit der Beleg nicht offen bleibt.{' '}
           {onOpenItem && <button className="btn small" onClick={() => onOpenItem(c.id)}>Position öffnen</button>}
         </div>
       )) : []))}
       {preview && (
-        <div className="card" aria-label="Vorschau" style={{ marginTop: 10 }}>
+        <div className="card inset" aria-label="Vorschau">
           <strong>Vorschau</strong>
           <ul>{previewLines(preview).map((t) => <li key={t}>{t}</li>)}</ul>
           {preview.notices.map((n) => <div key={n} className="notice">{n}</div>)}
@@ -267,11 +267,14 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
           })}
         </div>
       )}
-      {error && <div className="error" style={{ marginTop: 8 }}>{error}</div>}
-      {booked && <div className="notice" aria-label="Gebucht" style={{ marginTop: 8 }}>✓ Gebucht: {booked.lines.join(' · ')}</div>}
-      <div className="row" style={{ marginTop: 10 }}>
+      {error && <div className="error">{error}</div>}
+      {booked && <div className="notice" aria-label="Gebucht">✓ Gebucht: {booked.lines.join(' · ')}</div>}
+      <div className="row center">
         <a href={`/uploads/${encodeURIComponent(a.file)}`} target="_blank" rel="noreferrer">📎 Beleg ansehen</a>
         <div className="grow" />
+        {/* Sichtprüfung E30: Was fehlt, steht neben den gesperrten Knöpfen */}
+        {!busy && decisions.length === 0 && <span className="muted">Wählen Sie zuerst je Zeile, was geschieht.</span>}
+        {!busy && decisions.length > 0 && !preview && <span className="muted">Erst die Vorschau, dann buchen.</span>}
         <button className="btn secondary" disabled={busy || decisions.length === 0} onClick={() => void showPreview()}>Vorschau</button>
         <button className="btn" disabled={busy || !preview || preview.errors.length > 0} onClick={() => void book()}>Buchen</button>
       </div>

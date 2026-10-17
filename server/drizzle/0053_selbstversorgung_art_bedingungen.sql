@@ -1,0 +1,35 @@
+PRAGMA foreign_keys=OFF;--> statement-breakpoint
+CREATE TABLE `__new_tenancies` (
+	`id` text PRIMARY KEY NOT NULL,
+	`unit_id` text NOT NULL,
+	`tenant_name` text NOT NULL,
+	`persons` integer NOT NULL,
+	`start` text NOT NULL,
+	`end` text,
+	`email` text,
+	`phone` text,
+	`correspondence_address` text,
+	`iban` text,
+	`contract_date` text,
+	`deposit_cents` integer,
+	`deposit_status` text,
+	`notes` text,
+	`cost_model` text,
+	`heating_model` text,
+	`self_supply_kind` text,
+	`half_split_notice_on` text,
+	FOREIGN KEY (`unit_id`) REFERENCES `units`(`id`) ON UPDATE no action ON DELETE cascade,
+	CONSTRAINT "tenancies_persons_not_negative" CHECK("persons" >= 0),
+	CONSTRAINT "tenancies_deposit_not_negative" CHECK("deposit_cents" >= 0),
+	CONSTRAINT "tenancies_deposit_status_known" CHECK("deposit_status" IN ('offen', 'erhalten', 'teilweise', 'zurückgezahlt')),
+	CONSTRAINT "tenancies_cost_model_known" CHECK("cost_model" IN ('settlement', 'flatRate', 'inclusive')),
+	CONSTRAINT "tenancies_heating_model_known" CHECK("heating_model" IN ('settlement', 'flatRate', 'inclusive', 'selfSupply')),
+	CONSTRAINT "tenancies_self_supply_kind_known" CHECK("self_supply_kind" IN ('perUnit', 'central')),
+	CONSTRAINT "tenancies_self_supply_kind_valid" CHECK("self_supply_kind" IS NULL OR "heating_model" IS 'selfSupply'),
+	CONSTRAINT "tenancies_half_split_notice_valid" CHECK("half_split_notice_on" IS NULL OR "half_split_notice_on" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]')
+);
+--> statement-breakpoint
+INSERT INTO `__new_tenancies`("id", "unit_id", "tenant_name", "persons", "start", "end", "email", "phone", "correspondence_address", "iban", "contract_date", "deposit_cents", "deposit_status", "notes", "cost_model", "heating_model", "self_supply_kind", "half_split_notice_on") SELECT "id", "unit_id", "tenant_name", "persons", "start", "end", "email", "phone", "correspondence_address", "iban", "contract_date", "deposit_cents", "deposit_status", "notes", "cost_model", "heating_model", "self_supply_kind", "half_split_notice_on" FROM `tenancies`;--> statement-breakpoint
+DROP TABLE `tenancies`;--> statement-breakpoint
+ALTER TABLE `__new_tenancies` RENAME TO `tenancies`;--> statement-breakpoint
+PRAGMA foreign_keys=ON;

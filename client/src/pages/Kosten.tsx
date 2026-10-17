@@ -1,11 +1,18 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import type { AssessmentView, CostItem, CostKey, ExternalMeasure, ExtractResult, Meter, MeterType, Settlement, Settings, Tenancy, Unit } from '../types'
+import type { AssessmentView, CostItem, CostKey, ExternalMeasure, ExtractResult, HeatingPlant, Meter, MeterType, Settlement, Settings, SplitPreviewPart, Tenancy, Unit, UploadEntry } from '../types'
+import HeatingPeriodSelect from '../components/HeatingPeriodSelect'
+import { heatingItemPeriods, heatingTaxYear, itemsOfPeriod } from '../heatingSettlementView'
+import { plantOptions } from '../heatingForm'
+import { filedUnderSettlement } from '../costPeriods'
+import { calendarPeriod, periodContext, periodOfKey, spansTwoYears } from '../../../shared/period.ts'
 import { CATEGORIES, KEY_LABELS, METER_TYPE_LABELS, isNotAllocable, usageOf } from '../types'
+import { billingEnergy } from '../../../shared/heatDelivery.ts'
 import {
   EMPTY_ITEM_FORM,
   basisUnitsOf,
   buildCostItemBody,
   costKeyOptions,
+  heatingTargetOptions,
   customSharesSumText,
   itemToForm,
   meterTypeOptions,
@@ -30,16 +37,29 @@ import {
   withKey,
   withCategory,
   sameCostOf,
+  needsSplitCheck,
+  splitDecision,
+  showsTaxYear,
+  taxYearOptions,
   type ItemForm,
   type KeyContext,
+  costMeterTypes,
 } from '../costForm'
+import CostPeriodFields from '../components/CostPeriodFields'
+import OperatingPowerFields from '../components/OperatingPowerFields'
+import TaxYearSelect from '../components/TaxYearSelect'
+import { HEATING_CATEGORY } from '../../../shared/heating.ts'
+import { hotWaterOf } from '../../../shared/heatingPeriod.ts'
+import { serviceReceivesOperatingPower } from '../../../shared/operatingPower.ts'
 import { alreadyCarried, carryKeyDetails, carryOverBody, carryOverForm, carryOverRows, withCarryAmount, type CarryRow } from '../carryOver'
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { aiSummary } from '../aiForm'
 import { useEvaluationQueue } from '../evaluationQueue'
 import AssessmentReview from '../components/AssessmentReview'
-import { useYear } from '../year'
-import { useOpenForm, useProperty, useSwitchYear, withProperty } from '../property'
+import Co2RefundsCard from '../components/Co2RefundsCard'
+import { usePeriod } from '../period'
+import { PeriodSelect } from '../components/PeriodSelect'
+import { useOpenForm, useProperty, withProperty } from '../property'
 import Drawer from '../components/Drawer'
 import PageHeader from '../components/PageHeader'
 import Term from '../components/Term'
@@ -62,12 +82,16 @@ type Evaluated = { serverFile: string; assessment: AssessmentView }
 
 const NOT_SAVED = 'Die Auswertung ließ sich nicht speichern. Bitte versuchen Sie es noch einmal; gebucht wurde nichts.'
 
+// Durchsicht von #241, Runde 2, H1: Das gespeicherte Ziel passt nicht zur Warmwasserbereitung der Heizperiode.
+const TARGET_INVALID = 'Das gespeicherte Ziel passt nicht dazu, wie die Anlage in dieser Heizperiode das Warmwasser bereitet. Wählen Sie das Ziel neu.'
+
 export default function Kosten({ units, settings, tenancies = [], focus, onFocusDone }: Props) {
   // Wohin die Belege zur Auswertung gehen (siehe aiForm.ts)
   const ai = aiSummary(settings)
-  const { year } = useYear()
-  // Fragt bei offenem Formular nach, wie der Objektwechsel (Durchsicht).
-  const switchYear = useSwitchYear()
+  // Der gewählte Abrechnungszeitraum (#208). `year` ist das Kalenderjahr, in dem er beginnt: Belege
+  // tragen Kalenderjahre, und der Hinweis zur Kostenart hängt am Jahr.
+  const view = usePeriod()
+  const { key, label, at, param, period, year } = view
   const { property } = useProperty()
   const propertyId = property?.id
   const toast = useToast()
@@ -75,7 +99,74 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   const [items, setItems] = useState<CostItem[]>([])
   const [meters, setMeters] = useState<Meter[]>([])
   const [form, setForm] = useState<ItemForm | null>(null)
+  // Verlangt die Vorschau des Aufteilens das Jahr der Zahlung (#208), zeigt das Formular das Feld
+  // auch bei einem Zeitraum in einem Kalenderjahr.
+  const [needsTaxYear, setNeedsTaxYear] = useState(false)
+  useEffect(() => { if (!form) setNeedsTaxYear(false) }, [form])
   const [error, setError] = useState('')
+  // Heizung PR 5: Heizpositionen einer Anlage mit eigener Heizperiode tragen deren Schlüssel.
+  const [plants, setPlants] = useState<HeatingPlant[]>([])
+  const [heatingPeriod, setHeatingPeriod] = useState('')
+  useEffect(() => {
+    api<HeatingPlant[]>(withProperty('/api/heating-plants', propertyId)).then(setPlants).catch(() => setPlants([]))
+  }, [propertyId])
+  const heatingOptions = heatingItemPeriods(plants, view.rules, period)
+  // Die Positionen mit dem Zeitraum ihrer Abrechnung, für Vorjahr und „schon erfasst“ (costPeriods.ts).
+  const filedItems = useMemo(() => filedUnderSettlement(items, () => view.rules, () => plants), [items, view.rules, plants])
+  const heatingKeys = heatingOptions.flatMap((h) => h.options.map((o) => ({ plantId: h.plantId, key: o.value })))
+  // Heizung PR 9: Ab zwei Anlagen wählt der Vermieter die Anlage einer Heizposition. Leer heißt: Der
+  // Server ordnet nach den Wohnungen der Position zu (`plantForNewItem`).
+  const [heatingPlantId, setHeatingPlantId] = useState('')
+  const plantChoices = plantOptions(plants)
+  const ownPlant = plantChoices.length > 0 ? heatingOptions.find((h) => h.plantId === heatingPlantId) : heatingOptions[0]
+  // Heizung PR 10: die Anlage der Heizposition (gewählt, mit eigener Heizperiode, oder die einzige). Rechnet
+  // sie selbst nach der Heizkostenverordnung ab, gibt es nur diesen Schlüssel, und Teil und Ziel sind Pflicht.
+  const plantOfForm = form?.category === HEATING_CATEGORY
+    ? (plants.find((p) => p.id === (heatingPlantId || ownPlant?.plantId)) ?? (plants.length === 1 ? plants[0] : undefined))
+    : undefined
+  const selfPlant = plantOfForm?.method === 'self'
+  const heatingOption = form?.category === HEATING_CATEGORY && ownPlant
+    ? ownPlant.options.find((o) => o.value === (heatingPeriod || ownPlant.options[0]?.value)) : undefined
+  // Die Warmwasserbereitung der Heizperiode des Formulars, nicht die heutige der Anlage (Durchsicht von #241,
+  // Runde 2, H1): Eine Position 2025 behält ihr Ziel, auch wenn die Anlage seit 2026 kein Warmwasser bereitet.
+  const formHotWater = plantOfForm ? hotWaterOf(plantOfForm, heatingOption?.value ?? key) : 'combined'
+  const targetChoices = plantOfForm ? heatingTargetOptions(selfPlant, formHotWater, form?.heatingPart ?? '') : []
+  // Ein Ziel, das zur Warmwasserbereitung nicht passt, wird nie still ersetzt, sondern als Fehler am Feld
+  // genannt; gespeichert wird erst nach einer Wahl.
+  const targetInvalid = !!form && selfPlant && form.heatingTarget !== '' && !targetChoices.some((o) => o.value === form.heatingTarget)
+  useEffect(() => {
+    if (!form) return
+    // Gespeichert wird, was zu sehen ist: Bei eigener Abrechnung steht der Schlüssel fest, und eine einzige
+    // passende Wahl füllt ein leeres Ziel.
+    const only = selfPlant && targetChoices.length === 1 ? (targetChoices[0]?.value ?? '') : null
+    const target = selfPlant && form.heatingTarget === '' && only !== null ? only : form.heatingTarget
+    if ((selfPlant && form.key !== 'heatingSystem') || target !== form.heatingTarget) {
+      setForm({ ...form, ...(selfPlant ? { key: 'heatingSystem' as const, participants: null } : {}), heatingTarget: target })
+    }
+  }, [form, selfPlant, targetChoices])
+  // Beim Öffnen einer bestehenden Position ihre Heizperiode und Anlage, sonst die Vorgabe der Auswahl.
+  const formId = form?.id
+  useEffect(() => {
+    const item = formId ? items.find((i) => i.id === formId) : undefined
+    setHeatingPeriod(item?.period ?? '')
+    setHeatingPlantId(item?.heatingPlantId ?? '')
+  }, [formId, items])
+  // Das Jahr der Zahlung einer Heizposition richtet sich nach ihrer Heizperiode (Durchsicht von #231):
+  // Pflicht und vorbelegt, wenn sie über zwei Jahre reicht, sonst kein Feld. Vorbelegt mit dem Jahr
+  // des Rechnungsdatums des angehängten Belegs, wenn der Belegordner eines kennt, sonst mit dem Jahr
+  // des Endes der Heizperiode; dieselbe Regel wie Belegbuchung und Server (`paymentYear`).
+  const [invoiceDates, setInvoiceDates] = useState<Map<string, string>>(new Map())
+  useEffect(() => {
+    api<UploadEntry[]>('/api/uploads')
+      .then((list) => setInvoiceDates(new Map((Array.isArray(list) ? list : []).flatMap((u) => (u.invoiceDate ? [[u.file, u.invoiceDate] as const] : [])))))
+      .catch(() => setInvoiceDates(new Map()))
+  }, [propertyId])
+  const heatTax = heatingOption && form ? heatingTaxYear(heatingOption, form.taxYear, form.invoiceFile ? invoiceDates.get(form.invoiceFile) : undefined) : null
+  // Vorbelegt wird nur, solange kein gültiges Jahr dasteht: Ein vom Vermieter gewähltes Jahr bleibt,
+  // auch wenn das Rechnungsdatum später ein anderes nahelegt.
+  useEffect(() => {
+    if (form && heatTax?.show && !heatTax.valid && form.taxYear !== heatTax.fallback) setForm({ ...form, taxYear: heatTax.fallback })
+  }, [form, heatTax?.show, heatTax?.valid, heatTax?.fallback])
 
   // „Aus dem Vorjahr übernehmen“ (#141): die Vorlagen, solange die Liste offen ist. Eingetragene
   // Beträge gehen beim Verlassen verloren, deshalb zählt die Liste als offenes Formular.
@@ -95,16 +186,16 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   useEffect(() => {
     let alive = true
     setClosedAt(null)
-    api<Pick<Settlement, 'closed'>>(withProperty(`/api/settlement/${year}`, propertyId))
+    api<Pick<Settlement, 'closed'>>(withProperty(`/api/settlement/${param}`, propertyId))
       .then((s) => { if (alive) setClosedAt(s.closed?.closedAt ?? null) })
       .catch(() => {})
     return () => { alive = false }
-  }, [year, propertyId])
+  }, [param, propertyId])
   // „Hier beheben →“ aus der Abrechnung (#142): die betroffene Position zum Bearbeiten öffnen.
   useFocusTarget(focus, 'costItem', items, (i) => i.id, (i) => { setError(''); setForm(itemToForm(i)) }, onFocusDone)
 
   // Verbrauchsschlüssel ist nur sinnvoll, wenn Wohnungszähler existieren
-  const unitMeterTypes = useMemo(() => [...new Set(meters.filter((m) => m.unitId).map((m) => m.type))], [meters])
+  const unitMeterTypes = useMemo(() => costMeterTypes(meters), [meters])
   // Wohnungen der Abrechnungseinheit — nur sie können einen vereinbarten Anteil tragen
   const basisUnits = useMemo(() => basisUnitsOf(units), [units])
   // Live-Summe der Anteile, damit der Vermieter-Rest schon bei der Eingabe sichtbar ist
@@ -132,10 +223,19 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     }
   }
 
-  const yearItems = useMemo(() => items.filter((i) => i.year === year), [items, year])
+  // Die Positionen des Zeitraums und die Heizpositionen der Heizperioden, die darin enden (Heizung PR 5).
+  const heatingKeysText = JSON.stringify(heatingKeys)
+  const yearItems = useMemo(() => itemsOfPeriod(items, key, JSON.parse(heatingKeysText) as { plantId: string; key: string }[]), [items, key, heatingKeysText])
   // Woraus eine neue Position ihren Schlüssel vorgeschlagen bekommt (#141): die Positionen des
   // Objekts, das Jahr und die Art des Objekts.
-  const keyCtx: KeyContext = useMemo(() => ({ items, year, propertyKind: property?.kind ?? null }), [items, year, property?.kind])
+  // Mit dem Zeitraum der Abrechnung je Position: Eine Heizposition mit eigener Heizperiode zählt dort,
+  // wo ihre Heizperiode endet, wie in der Übernahme aus dem Vorjahr.
+  const keyCtx: KeyContext = useMemo(() => ({ items: filedItems, year, at, propertyKind: property?.kind ?? null }), [filedItems, year, at, property?.kind])
+  // Der Vorschlag zu einer Belegauswertung sieht in den Zeitraum, in den sie bucht (#208).
+  const keyCtxOf = (v: AssessmentView): KeyContext => {
+    const target = periodOfKey(view.rules, v.targetPeriod ?? calendarPeriod(v.year))
+    return target ? { items: filedItems, year: v.year, at: periodContext(view.rules, target), propertyKind: property?.kind ?? null } : { items: filedItems, year: v.year, propertyKind: property?.kind ?? null }
+  }
   const totalCents = yearItems.reduce((a, i) => a + i.amountCents, 0)
 
   // Nach Beleg (Rechnung) gruppiert — alle Positionen eines Belegs stehen zusammen, mit
@@ -161,8 +261,8 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   }, [yearItems])
 
   // Die Vorlagen gehören zum gewählten Jahr und Objekt; wechselt eines davon, schließt die Liste.
-  useEffect(() => { setCarry(null) }, [year, propertyId])
-  const previousCount = useMemo(() => items.filter((i) => i.year === year - 1).length, [items, year])
+  useEffect(() => { setCarry(null) }, [key, propertyId])
+  const previousCount = useMemo(() => filedItems.filter((i) => i.period === at.previous).length, [filedItems, at.previous])
 
   function updateCarry(index: number, patch: Partial<CarryRow>) {
     setCarry((rows) => rows && rows.map((r, i) => (i === index ? { ...r, ...patch } : r)))
@@ -190,7 +290,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   async function adoptCarryRows(rows: CarryRow[]) {
     const chosen = rows.filter((row) => row.checked)
     const blocked = chosen.flatMap((row) => {
-      const built = carryOverBody(row, units, year, tenancies)
+      const built = carryOverBody(row, units, period, tenancies)
       return 'error' in built ? [`„${row.description}“: ${built.error}`] : []
     })
     if (blocked.length > 0) {
@@ -199,11 +299,11 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     }
     // Schon im Jahr erfasst und trotzdem angehakt: ausdrücklich nachfragen (Durchsicht), sonst
     // stünde dieselbe Rechnung zweimal in der Abrechnung.
-    const twice = chosen.filter((row) => alreadyCarried(items, row, year))
+    const twice = chosen.filter((row) => alreadyCarried(filedItems, row, at))
     if (twice.length > 0) {
       const ok = await confirm({
         title: 'Schon erfasst',
-        message: `${twice.map((r) => `„${r.description}“`).join(', ')} ${twice.length === 1 ? 'ist' : 'sind'} für ${year} schon erfasst. Legen Sie ${twice.length === 1 ? 'die Position' : 'die Positionen'} trotzdem noch einmal an, wird dieselbe Rechnung zweimal verteilt.`,
+        message: `${twice.map((r) => `„${r.description}“`).join(', ')} ${twice.length === 1 ? 'ist' : 'sind'} für ${label} schon erfasst. Legen Sie ${twice.length === 1 ? 'die Position' : 'die Positionen'} trotzdem noch einmal an, wird dieselbe Rechnung zweimal verteilt.`,
         confirmLabel: 'Trotzdem anlegen',
         cancelLabel: 'Abbrechen',
       })
@@ -212,7 +312,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     setError('')
     const done = new Set<string>()
     for (const row of chosen) {
-      const built = carryOverBody(row, units, year, tenancies)
+      const built = carryOverBody(row, units, period, tenancies)
       if ('error' in built) continue
       try {
         await api(withProperty('/api/costItems', propertyId), { method: 'POST', body: JSON.stringify(built.body) })
@@ -224,7 +324,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     }
     removeCarried(done)
     await load()
-    if (done.size > 0) toast(`${done.size} ${done.size === 1 ? 'Position' : 'Positionen'} aus ${year - 1} für ${year} angelegt.`)
+    if (done.size > 0) toast(`${done.size} ${done.size === 1 ? 'Position' : 'Positionen'} aus ${at.previousLabel} für ${label} angelegt.`)
   }
   // Angelegte Zeilen verschwinden aus der Liste, gleich auf welchem Weg (Knopf oder Formular).
   function removeCarried(ids: Set<string>) {
@@ -242,24 +342,76 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
 
   async function saveItem() {
     if (!form) return
-    const built = buildCostItemBody(form, units, year, tenancies)
+    // Heizung PR 16: nach der Energie der Abrechnung (bei Contracting bezahlt in der Regel der Lieferant den Strom des Kessels).
+    const built = buildCostItemBody(form, units, period, tenancies, plantOfForm ? billingEnergy(plantOfForm) : undefined)
     if ('error' in built) {
       setError(built.error)
       return
     }
+    if (targetInvalid) {
+      setError(TARGET_INVALID)
+      return
+    }
     setError('')
-    const body = JSON.stringify(built.body)
+    // Eine Heizposition der Anlage mit eigener Heizperiode steht unter deren Heizperiode (G-A2). Reicht
+    // die Heizperiode über zwei Kalenderjahre, ist das Jahr der Zahlung Pflicht (vorbelegt, siehe
+    // `heatTax`); liegt sie in einem Kalenderjahr, gibt es keines.
+    if (heatTax?.show && !heatTax.valid) {
+      setError('Bitte geben Sie das Jahr der Zahlung an (für die Steuer, § 11 Abs. 2 EStG); die Heizperiode reicht über zwei Kalenderjahre.')
+      return
+    }
+    const heating = heatingOption && ownPlant
+      ? { period: heatingOption.value, heatingPlantId: ownPlant.plantId, taxYear: heatTax?.show ? Number(form.taxYear) : null }
+      : form.category === HEATING_CATEGORY && plantChoices.length > 0 && heatingPlantId !== ''
+        ? { heatingPlantId }
+        : {}
+    const body = JSON.stringify({ ...built.body, ...heating })
     const editing = !!form.id
+    // Eine kalte Rechnung über zwei Abrechnungszeiträume (#208, Entwurf 3.4): erst die Vorschau,
+    // dann nach Rückfrage alle Teile auf einmal.
+    if (needsSplitCheck(built.body, editing ? items.find((i) => i.id === form.id) : null)) {
+      let parts: SplitPreviewPart[]
+      try {
+        parts = (await api<{ parts: SplitPreviewPart[] }>(
+          editing ? `/api/costItems/${form.id}/split/preview` : withProperty('/api/costItems/split/preview', propertyId),
+          { method: 'POST', body },
+        )).parts
+      } catch (e) {
+        setError(errorText(e))
+        return
+      }
+      if (parts.length > 1) {
+        const decision = splitDecision(parts, form.taxYear)
+        if ('error' in decision) {
+          setNeedsTaxYear(decision.needsTaxYear)
+          setError(decision.error)
+          return
+        }
+        const ok = await confirm({ title: 'Rechnung aufteilen?', message: decision.message, confirmLabel: 'Aufteilen und speichern', cancelLabel: 'Abbrechen' })
+        if (!ok) return
+        try {
+          await api(editing ? `/api/costItems/${form.id}/split` : withProperty('/api/costItems/split', propertyId), { method: editing ? 'PUT' : 'POST', body })
+        } catch (e) {
+          setError(errorText(e))
+          return
+        }
+        const desc = form.description.trim()
+        setForm(null)
+        await load()
+        toast(`„${desc}“ auf ${parts.length} Abrechnungszeiträume aufgeteilt.`)
+        return
+      }
+    }
     // Eine neue Position, für die dieselbe Rechnung schon erfasst sein könnte (shared/duplicates.ts):
     // nachfragen, wie in der Schnellerfassung. Nur beim Neuanlegen; wer bearbeitet, meint diese.
     if (!editing) {
-      const same = sameCostOf(items, { category: form.category, description: form.description, vendor: form.vendor, amountCents: built.body.amountCents }, propertyId, year)
+      const same = sameCostOf(items, { category: form.category, description: form.description, vendor: form.vendor, amountCents: built.body.amountCents }, propertyId, key)
       const first = same[0]
       if (first) {
         let instead = false
         const ok = await confirm({
           title: 'Dieselbe Rechnung?',
-          message: `Für ${year} ist ${same.map(candidateText).join(', ')} schon erfasst. Ist das dieselbe Rechnung? Dann bearbeiten Sie besser die vorhandene Position, sonst wird sie zweimal verteilt.`,
+          message: `Für ${label} ist ${same.map(candidateText).join(', ')} schon erfasst. Ist das dieselbe Rechnung? Dann bearbeiten Sie besser die vorhandene Position, sonst wird sie zweimal verteilt.`,
           confirmLabel: 'Trotzdem anlegen',
           alternativeLabel: `Stattdessen „${first.description}“ bearbeiten`,
           onAlternative: () => { instead = true },
@@ -313,6 +465,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     // gilt das gewählte (#170).
     propertyId,
     year,
+    period: key,
     finish: (res) => (res.assessment
       ? { status: res.assessment.open ? 'fertig' : 'übernommen', data: { serverFile: res.file, assessment: res.assessment } }
       : { status: 'fehler', error: NOT_SAVED }),
@@ -323,14 +476,14 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   return (
     <>
       <PageHeader
-        title="Kosten & Belege"
+        title="Kosten"
         subtitle="Alle Rechnungen des Abrechnungsjahres erfassen — manuell oder per KI-Belegauswertung."
         actions={<button className="btn" onClick={() => { setError(''); setForm(newItemForm(units, meters, keyCtx)) }}>+ Kostenposition</button>}
       />
       {error && !form && <div className="error">{error}</div>}
       {closedAt && (
         <div className="notice">
-          Die Abrechnung {year} ist abgeschlossen (am {fmtDate(closedAt.slice(0, 10))}). Änderungen an den Kosten
+          Die Abrechnung {label} ist abgeschlossen (am {fmtDate(closedAt.slice(0, 10))}). Änderungen an den Kosten
           ändern die eingefrorene Abrechnung nicht; die Abrechnungsseite zeigt sie als Abweichung zur heutigen
           Berechnung. Bearbeiten bleibt möglich.
         </div>
@@ -338,23 +491,16 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
 
       <div className="card no-print">
         <div className="row">
-          <label className="field">
-            Abrechnungsjahr
-            <select value={year} onChange={(e) => void switchYear(Number(e.target.value))}>
-              {Array.from({ length: 8 }, (_, k) => new Date().getFullYear() - k).map((y) => (
-                <option key={y} value={y}>{y}</option>
-              ))}
-            </select>
-          </label>
+          <PeriodSelect />
           {previousCount > 0 && !carry && (
-            <button className="btn secondary" onClick={() => { setError(''); setCarry(carryOverRows(items, year)) }}>
-              Aus {year - 1} übernehmen …
+            <button className="btn secondary" onClick={() => { setError(''); setCarry(carryOverRows(items, at, period, { rules: view.rules, plants })) }}>
+              Aus {at.previousLabel} übernehmen …
             </button>
           )}
           <div className="grow" />
           <div>
-            <div className="muted">Erfasste Kosten {year}</div>
-            <div style={{ fontSize: 22, fontWeight: 700 }}>{fmtEuro(totalCents)}</div>
+            <div className="muted">Erfasste Kosten {label}</div>
+            <div className="big-number">{fmtEuro(totalCents)}</div>
           </div>
         </div>
       </div>
@@ -362,10 +508,10 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
 
       {carry && (
         <div className="card no-print">
-          <h2>Positionen aus {year - 1} für {year} übernehmen</h2>
+          <h2>Positionen aus {at.previousLabel} für {label} übernehmen</h2>
           <p className="muted">
             Übernommen werden Kostenart, Beschreibung, Rechnungssteller und der Umlageschlüssel samt
-            Angaben. Tragen Sie je Zeile den Betrag {year} ein; eine Zeile mit Betrag ist angehakt.
+            Angaben. Tragen Sie je Zeile den Betrag {label} ein; eine Zeile mit Betrag ist angehakt.
             Angelegt wird erst mit dem Knopf unten, ohne Beleg.
           </p>
           <Table>
@@ -375,8 +521,9 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                 <th>Kostenart</th>
                 {/* Betrag gleich hinter der Kostenart: Auf dem Handy scrollt die Tabelle waagerecht
                     (Table.tsx), und das Feld, das man ausfüllen muss, soll ohne Wischen dastehen. */}
-                <th className="num">Betrag {year} €</th>
+                <th className="num">Betrag {label} €</th>
                 <th className="num">§35a Lohn €</th>
+                {spansTwoYears(period) && <th>Jahr der Zahlung (Steuer)</th>}
                 <th>Beschreibung</th>
                 <th>Umlageschlüssel</th>
                 <th><span className="sr-only">Formular</span></th>
@@ -391,20 +538,27 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                   </td>
                   <td>
                     {r.source.category}
-                    {alreadyCarried(items, r, year) && <div><span className="badge gray">schon für {year} erfasst</span></div>}
+                    {alreadyCarried(filedItems, r, at) && <div><span className="badge gray">schon für {label} erfasst</span></div>}
                   </td>
                   <td className="num">
                     {r.inline && (
-                      <input aria-label={`Betrag ${year} für ${r.description}`} value={r.amount} onChange={(e) => updateCarry(i, withCarryAmount(r, e.target.value, alreadyCarried(items, r, year)))}
-                        placeholder="—" inputMode="decimal" style={{ width: 100, textAlign: 'right' }} />
+                      <input aria-label={`Betrag ${label} für ${r.description}`} value={r.amount} onChange={(e) => updateCarry(i, withCarryAmount(r, e.target.value, alreadyCarried(filedItems, r, at)))}
+                        placeholder="—" inputMode="decimal" className="input-num" />
                     )}
                     {r.checked && !r.amount.trim() && <div><span className="badge red">Betrag fehlt</span></div>}
-                    <div className="muted">{year - 1}: {fmtEuro(r.source.amountCents)}</div>
+                    <div className="muted">{at.previousLabel}: {fmtEuro(r.source.amountCents)}</div>
                   </td>
                   <td className="num">
-                    {r.inline && <input aria-label={`§35a-Lohn ${year} für ${r.description}`} value={r.labor35a} onChange={(e) => updateCarry(i, { labor35a: e.target.value })} placeholder="—" inputMode="decimal" style={{ width: 90, textAlign: 'right' }} />}
+                    {r.inline && <input aria-label={`§35a-Lohn ${label} für ${r.description}`} value={r.labor35a} onChange={(e) => updateCarry(i, { labor35a: e.target.value })} placeholder="—" inputMode="decimal" className="input-num" />}
                   </td>
-                  <td><input aria-label="Beschreibung" value={r.description} onChange={(e) => updateCarry(i, { description: e.target.value })} style={{ width: '100%', minWidth: 200 }} /></td>
+                  {/* Reicht der Zeitraum über zwei Kalenderjahre, ist das Jahr der Zahlung Pflicht (#208, Durchsicht von #226, I2). */}
+                  {spansTwoYears(period) && (
+                    <td>
+                      {r.inline && r.heating && r.taxYear && <span className="muted">{r.taxYear}</span>}
+                      {r.inline && !r.heating && <TaxYearSelect label={`Jahr der Zahlung für ${r.description}`} value={r.taxYear ?? ''} years={taxYearOptions(year)} onChange={(v) => updateCarry(i, { taxYear: v })} />}
+                    </td>
+                  )}
+                  <td><input aria-label="Beschreibung" value={r.description} onChange={(e) => updateCarry(i, { description: e.target.value })} className="input-wide" /></td>
                   <td>
                     {keyListText(r.source, units)}
                     {showsKeyFields(r.source.category) && r.source.participantUnitIds && (
@@ -418,20 +572,21 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                     })()}
                     {showsKeyFields(r.source.category) && r.source.key === 'external' && r.source.externalBasis && (
                       <div className="muted">
-                        {r.source.externalBasis.total.toLocaleString('de-DE', { maximumFractionDigits: 6 })} {EXTERNAL_UNIT_LABELS[r.source.externalBasis.measure]} in der Anlage; Kosten der Gemeinschaft {year} €:
+                        {r.source.externalBasis.total.toLocaleString('de-DE', { maximumFractionDigits: 6 })} {EXTERNAL_UNIT_LABELS[r.source.externalBasis.measure]} in der Anlage; Kosten der Gemeinschaft {label} €:
                       </div>
                     )}
                     {showsKeyFields(r.source.category) && r.source.key === 'external' && r.source.externalBasis && (
                       <input
-                        aria-label={`Kosten der Gemeinschaft ${year} für ${r.description}`}
+                        aria-label={`Kosten der Gemeinschaft ${label} für ${r.description}`}
                         value={r.externalTotalAmount}
                         onChange={(e) => updateCarry(i, { externalTotalAmount: e.target.value })}
                         placeholder="Kosten der Gemeinschaft €"
                         inputMode="decimal"
-                        style={{ width: 170, marginTop: 4 }}
+                        className="input-cell"
                       />
                     )}
-                    {!r.inline && <div className="muted">Einzelbeträge je Mieter bitte im Formular eintragen.</div>}
+                    {!r.inline && <div className="muted">{r.formReason ?? 'Einzelbeträge je Mieter bitte im Formular eintragen.'}</div>}
+                    {r.heatingNote && <div className="muted">{r.heatingNote}</div>}
                   </td>
                   <td>
                     <button className="btn small ghost" onClick={() => { setError(''); setForm(carryOverForm(r)); setFormCarryId(r.source.id) }}>Im Formular öffnen</button>
@@ -440,9 +595,9 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
               ))}
             </tbody>
           </Table>
-          <div className="row" style={{ marginTop: 10 }}>
+          <div className="row">
             <button className="btn" onClick={() => void adoptCarry()} disabled={carrySaving || carry.every((r) => !r.checked)}>
-              {carry.filter((r) => r.checked).length} {carry.filter((r) => r.checked).length === 1 ? 'Position' : 'Positionen'} für {year} anlegen
+              {carry.filter((r) => r.checked).length} {carry.filter((r) => r.checked).length === 1 ? 'Position' : 'Positionen'} für {label} anlegen
             </button>
             <button className="btn ghost" onClick={() => setCarry(null)}>Schließen</button>
           </div>
@@ -469,14 +624,14 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             type="file"
             accept="application/pdf,image/*"
             multiple
-            style={{ display: 'none' }}
+            className="sr-only"
             onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = '' }}
           />
         </div>
 
         {queue.map((entry) => (
-          <div key={entry.id} style={{ marginTop: 14 }}>
-            <div className="row" style={{ alignItems: 'center' }}>
+          <div key={entry.id} className="stack">
+            <div className="row center">
               <strong>{entry.fileName}</strong>
               {entry.status === 'wartend' && <span className="badge gray">wartet …</span>}
               {entry.status === 'läuft' && (
@@ -486,12 +641,12 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                   onCancel={() => cancel(entry.id)}
                 />
               )}
-              {entry.status === 'fertig' && <span className="badge green">{countOf(entry.data.assessment?.lines.length ?? 0, 'Position', 'Positionen')} erkannt — bitte prüfen</span>}
+              {entry.status === 'fertig' && <span className="badge amber">{countOf(entry.data.assessment?.lines.length ?? 0, 'Position', 'Positionen')} erkannt — bitte prüfen</span>}
               {entry.status === 'übernommen' && <span className="badge green">✓ übernommen</span>}
               {entry.status === 'fehler' && <span className="badge red">Fehler</span>}
               {entry.status === 'abgebrochen' && <span className="badge gray">abgebrochen</span>}
               {/* Gebucht wird im Jahr des Belegs; weicht es vom gewählten ab, steht es hier, wie in der Schnellerfassung (I1). */}
-              {entry.data.assessment && entry.data.assessment.year !== year && <span className="badge gray">Jahr {entry.data.assessment.year}</span>}
+              {entry.data.assessment && (entry.data.assessment.targetPeriod ?? calendarPeriod(entry.data.assessment.year)) !== key && <span className="badge gray">{view.calendar ? `Jahr ${entry.data.assessment.year}` : entry.data.assessment.targetLabel ?? `Jahr ${entry.data.assessment.year}`}</span>}
               <div className="grow" />
               {(entry.status === 'wartend' || entry.status === 'fertig' || entry.status === 'fehler' || entry.status === 'abgebrochen' || entry.status === 'übernommen') && (
                 <button className="btn small ghost" onClick={() => remove(entry.id)}>
@@ -501,7 +656,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             </div>
             {entry.status === 'fehler' && <div className="error">{entry.error}</div>}
             {entry.data.assessment && (entry.status === 'fertig' || entry.status === 'übernommen') && (
-              <AssessmentReview assessment={entry.data.assessment} units={units} keyContext={{ ...keyCtx, year: entry.data.assessment.year }}
+              <AssessmentReview assessment={entry.data.assessment} units={units} keyContext={keyCtxOf(entry.data.assessment)}
                 onChange={(next) => { patchEntry(entry.id, { status: next.open ? 'fertig' : 'übernommen', data: { assessment: next } }); void load() }}
                 onOpenItem={(id) => { const it = items.find((i) => i.id === id); if (it) { setError(''); setForm(itemToForm(it)) } }} />
             )}
@@ -510,8 +665,8 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
       </div>
 
       <div className="card">
-        <h2>Kostenpositionen {year}</h2>
-        {yearItems.length === 0 && <div className="empty">Noch keine Kosten für {year} erfasst.</div>}
+        <h2>Kostenpositionen {label}</h2>
+        {yearItems.length === 0 && <div className="empty">Noch keine Kosten für {label} erfasst.</div>}
         {yearItems.length > 0 && (
           <Table>
             <thead>
@@ -538,7 +693,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                 <tr key={i.id}>
                   <td>
                     {i.category}
-                    {isNotAllocable(i.category) && <span className="badge gray" style={{ marginLeft: 6 }}>Vermieter</span>}
+                    {isNotAllocable(i.category) && <span className="badge gray badge-next">Vermieter</span>}
                   </td>
                   <td>
                     {i.description}
@@ -603,10 +758,17 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
           </Table>
         )}
 
-        <button className="btn secondary no-print" style={{ marginTop: 14 }} onClick={() => { setError(''); setForm(newItemForm(units, meters, keyCtx)) }}>
-          + Kostenposition manuell erfassen
-        </button>
+        <div className="row no-print">
+          <button className="btn secondary" onClick={() => { setError(''); setForm(newItemForm(units, meters, keyCtx)) }}>
+            + Kostenposition manuell erfassen
+          </button>
+        </div>
       </div>
+
+      {/* Heizung PR 19 (#97): CO₂-Erstattung an Mieter, die selbst heizen; nur, wenn es einen gibt. */}
+      {tenancies.some((t) => t.heatingModel === 'selfSupply') && (
+        <Co2RefundsCard propertyId={property?.id ?? null} period={{ key: view.key, label: view.label }} tenancies={tenancies} units={units} />
+      )}
 
       {form && (
         <Drawer
@@ -633,6 +795,28 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                 {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
               </select>
             </label>
+            {form.category === HEATING_CATEGORY && plantChoices.length > 0 && (
+              <label className="field grow">
+                Heizanlage
+                <select value={heatingPlantId} onChange={(e) => {
+                  setHeatingPlantId(e.target.value)
+                  setHeatingPeriod('')
+                  // Recht I2 der Durchsicht von #238: Die Wahl der Anlage beteiligt deren Wohnungen, damit die
+                  // Position nicht über zwei Anlagen verteilt wird.
+                  const chosen = plants.find((p) => p.id === e.target.value)
+                  if (chosen?.units && PARTICIPANT_KEYS.includes(form.key) && basisUnits.length > 1) {
+                    setForm({ ...form, participants: chosen.units.map((u) => u.unitId).filter((id) => basisUnits.some((b) => b.id === id)) })
+                  }
+                }}>
+                  <option value="">automatisch (nach den beteiligten Wohnungen)</option>
+                  {plantChoices.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+                <small className="muted">Automatisch: Mietfuchs nimmt die Anlage, an der alle beteiligten Wohnungen hängen und die zu Beginn des Leistungszeitraums heizt; passt keine eindeutig, bleibt die Position ohne Anlage, und die Abrechnung sagt es.</small>
+              </label>
+            )}
+            {form.category === HEATING_CATEGORY && ownPlant && ownPlant.options.length > 0 && (
+              <HeatingPeriodSelect options={ownPlant.options} value={heatingPeriod || (ownPlant.options[0]?.value ?? '')} onChange={setHeatingPeriod} />
+            )}
             <label className="field grow">
               Beschreibung
               <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="z. B. Grundsteuer 2025" />
@@ -646,11 +830,25 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
               <input value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} placeholder="z. B. 480,00" />
               {/* #139: Eine Gutschrift senkt die Kosten des Jahres und wird verteilt wie eine Rechnung. */}
               <small className="muted">Eine Gutschrift mit Minus eintragen, z. B. -54,00.</small>
+              {/* Laienprobe B19: Welcher Betrag der Messdienstabrechnung gemeint ist, steht dort, wo er eingetragen wird. */}
+              {form.category === HEATING_CATEGORY && form.key === 'amounts' && plants.some((p) => p.method === 'service') && (
+                <small className="notice">
+                  Abrechnung des Messdienstes: Tragen Sie die Kosten vor „Abzüglich CO₂-Kosten Vermieter“ ein, also die Summe der Kosten aller Nutzer plus
+                  den CO₂-Anteil des Vermieters, nicht die Summe nach dem Abzug. Danach füllen Sie auf der Seite Heizkosten die Karte „CO₂-Kosten“ aus;
+                  ihre Probe prüft diesen Betrag.
+                </small>
+              )}
             </label>
             <label className="field grow" title="Lohn-/Arbeitskostenanteil nach §35a EStG — kann der Mieter steuerlich absetzen">
               <span>davon <Term id="labor35a">§35a-Lohn</Term> €</span>
               <input value={form.labor35a} onChange={(e) => setForm({ ...form, labor35a: e.target.value })} placeholder="optional" />
             </label>
+            {/* Betriebsstrom (Heizung PR 15): sichtbar ohne Aufklappen, wer ihn braucht. */}
+            <OperatingPowerFields form={form} items={items} periodKey={key} plantEnergy={plantOfForm ? billingEnergy(plantOfForm) : undefined} service={serviceReceivesOperatingPower(plants, period)} onChange={setForm} />
+            <details className="extra-details" open={!!(selfPlant || form.serviceFrom || form.serviceTo || form.taxYear || form.heatingPart !== '' || (heatTax ? heatTax.show : showsTaxYear(period, needsTaxYear)))}>
+              <summary>Weitere Angaben — Leistungszeitraum{(heatTax ? heatTax.show : showsTaxYear(period, needsTaxYear)) ? ', Jahr der Zahlung' : ''}{form.category === HEATING_CATEGORY ? ', Brennstoff/Energie' : ''} (optional)</summary>
+              <CostPeriodFields form={form} onChange={setForm} showTaxYear={heatTax ? heatTax.show : showsTaxYear(period, needsTaxYear)} years={heatTax?.show ? heatTax.years : taxYearOptions(year)} />
+            </details>
             {/* Nicht umlagefähig (#142): nichts zu verteilen, also keine Auswahl, die etwas anderes verspräche. */}
             {!showsKeyFields(form.category) && (
               <div className="field grow muted">
@@ -673,7 +871,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             {showsTaxUnitField(form.category) && taxScopeOf(form) === TAX_SCOPE_SOME && (
               <div className="field-group">
                 <div className="field-group-label">Betroffene Einheiten (für die Steuer)</div>
-                <div className="row">
+                <div className="checks">
                   {units.map((u) => (
                     <label key={u.id} className="field checkline">
                       <span>
@@ -694,11 +892,26 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             <label className="field grow">
               <Term id="allocationKey">Umlageschlüssel</Term>
               <select value={form.key} onChange={(e) => setForm(withKey(form, e.target.value as CostKey, unitMeterTypes, keyCtx))}>
-                {costKeyOptions(unitMeterTypes, form.key).map((k) => (
+                {costKeyOptions(unitMeterTypes, form.key, selfPlant).map((k) => (
                   <option key={k} value={k}>{KEY_LABELS[k]}</option>
                 ))}
               </select>
             </label>
+            {/* Heizung PR 10: Ziel der Heizposition. Bei eigener Abrechnung Pflicht (Teil steht unter „Weitere
+                Angaben“); bei freien Schlüsseln teilt „nur Heizung“ beim Mieterwechsel nach Gradtagen. */}
+            {form.category === HEATING_CATEGORY && plantOfForm && (
+              <label className="field grow">
+                <span>Ziel{selfPlant ? '' : ' (beim Mieterwechsel)'}</span>
+                <select aria-label="Ziel" value={targetChoices.some((o) => o.value === form.heatingTarget) ? form.heatingTarget : ''} onChange={(e) => setForm({ ...form, heatingTarget: targetChoices.find((o) => o.value === e.target.value)?.value ?? '' })}>
+                  {selfPlant && (targetChoices.length !== 1 || targetInvalid) && <option value="">— bitte wählen —</option>}
+                  {targetChoices.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+                <small className="muted">{selfPlant
+                  ? 'Bereitet die Anlage auch das Warmwasser, gehört der Brennstoff zu Heizung und Warmwasser; Mietfuchs teilt ihn nach dem gemessenen Warmwasseranteil. Den Teil der Heizkosten wählen Sie unter „Weitere Angaben“.'
+                  : '„nur Heizung“: Beim Mieterwechsel teilen sich diese Kosten nach Gradtagen statt nach Tagen (§ 9b Abs. 2 HeizkostenV), wenn die Heizanlage so eingestellt ist.'}</small>
+                {targetInvalid && <div className="error" role="alert">{TARGET_INVALID}</div>}
+              </label>
+            )}
             {/* #141: anders als dieselbe Kostenart im Vorjahr? Dasselbe sagt die Abrechnung. */}
             {keyChangeNotice(form, units, keyCtx) && (
               <div className="notice">
@@ -719,7 +932,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             {form.key === 'custom' && (
               <div className="field-group">
                 <div className="field-group-label"><Term id="agreedShares">Vereinbarte Anteile</Term></div>
-                <div className="muted" style={{ marginBottom: 8 }}>
+                <div className="muted">
                   Anteil je Wohnung in Prozent, wie im Mietvertrag vereinbart (§556a Abs. 1 BGB).
                   Was unter 100 % fehlt, trägt der Vermieter.
                 </div>
@@ -728,7 +941,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                     <label key={u.id} className="field grow">
                       {/* Name und Kennzeichen in einer Zeile — .field ist eine Flex-Spalte,
                           ein direktes Kind würde sich sonst über die ganze Breite ziehen. */}
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span className="label-line">
                         {u.name}
                         {usageOf(u) === 'eigen' && <span className="badge gray">Eigennutzung</span>}
                       </span>
@@ -741,13 +954,13 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                     </label>
                   ))}
                 </div>
-                <div className="muted" style={{ marginTop: 6 }}>Summe: {sumText}</div>
+                <div className="muted">Summe: {sumText}</div>
               </div>
             )}
             {form.key === 'external' && (
               <div className="field-group">
                 <div className="field-group-label">Laut Gemeinschaftsabrechnung</div>
-                <div className="muted" style={{ marginBottom: 8 }}>
+                <div className="muted">
                   Betrag oben ist Ihr Anteil laut <Term id="homeownersStatement">Hausgeldabrechnung</Term>. Hier die Angaben der Gemeinschaft
                   zu dieser Kostenart, meist nach <Term id="mea">Miteigentumsanteilen</Term>; sie erscheinen im Rechenweg der Abrechnung (§556a Abs. 3 BGB).
                 </div>
@@ -770,23 +983,23 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                 {/* #144: weicht der rechnerische Anteil vom Betrag ab, steht er markiert da */}
                 {externalHint(form, units) && (
                   externalMismatch(form, units)
-                    ? <div className="notice" style={{ marginTop: 6 }}><strong>{externalHint(form, units)}</strong></div>
-                    : <div className="muted" style={{ marginTop: 6 }}>{externalHint(form, units)}</div>
+                    ? <div className="notice"><strong>{externalHint(form, units)}</strong></div>
+                    : <div className="muted">{externalHint(form, units)}</div>
                 )}
               </div>
             )}
             {form.key === 'amounts' && (
               <div className="field-group">
                 <div className="field-group-label"><Term id="individualAmounts">Einzelbeträge</Term> je Mieter</div>
-                <div className="muted" style={{ marginBottom: 8 }}>
+                <div className="muted">
                   Die Beträge aus der Einzelabrechnung, etwa vom Messdienst. Bei einem Mieterwechsel teilt
                   der Messdienst selbst auf; den Rest trägt der Vermieter.
                 </div>
-                {tenanciesForAmounts(tenancies, units, year, form.participants).length === 0 ? (
+                {tenanciesForAmounts(tenancies, units, period, form.participants).length === 0 ? (
                   <div className="muted">In diesem Jahr gibt es kein Mietverhältnis in diesem Objekt.</div>
                 ) : (
                   <div className="row">
-                    {tenanciesForAmounts(tenancies, units, year, form.participants).map((t) => (
+                    {tenanciesForAmounts(tenancies, units, period, form.participants).map((t) => (
                       <label key={t.id} className="field grow">
                         {t.tenantName} ({units.find((u) => u.id === t.unitId)?.name ?? '—'})
                         <input
@@ -800,7 +1013,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                   </div>
                 )}
                 {selfAmountUnits(units, form.participants).length > 0 && (
-                  <div className="row" style={{ marginTop: 8 }}>
+                  <div className="row">
                     {selfAmountUnits(units, form.participants).map((u) => (
                       <label key={u.id} className="field grow">
                         <span>{u.name} (selbstgenutzt, Ihr <Term id="ownShare">Eigenanteil</Term>)</span>
@@ -814,17 +1027,17 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                     ))}
                   </div>
                 )}
-                <div className="muted" style={{ marginTop: 6 }}>{amountsSumText(form, units, tenancies, year)}</div>
+                <div className="muted">{amountsSumText(form, units, tenancies, period)}</div>
               </div>
             )}
             {PARTICIPANT_KEYS.includes(form.key) && basisUnits.length > 1 && (
-              <details open={form.participants !== null}>
+              <details className="extra-details" open={form.participants !== null}>
                 <summary>Weitere Optionen: nur bestimmte Wohnungen beteiligen</summary>
-                <div className="muted" style={{ marginBottom: 8 }}>
+                <div className="muted">
                   Etwa der Aufzug nur für ein Haus oder die Waschküche nur für ihre Nutzer. Nur die
                   angehakten Wohnungen bilden die <Term id="distributionBasis">Verteilbasis</Term>.
                 </div>
-                <div className="row">
+                <div className="checks">
                   {basisUnits.map((u) => {
                     const checked = form.participants === null || form.participants.includes(u.id)
                     return (
@@ -860,7 +1073,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             <div className="field-group">
               <div className="field-group-label">Beleg (Rechnungskopie)</div>
               {form.invoiceFile ? (
-                <div className="row" style={{ alignItems: 'center' }}>
+                <div className="row center">
                   <a href={`/uploads/${form.invoiceFile}`} target="_blank" rel="noreferrer">
                     📎 {form.invoiceFile.replace(/^\d+_/, '')}
                   </a>
@@ -870,12 +1083,16 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                 </div>
               ) : (
                 <>
-                  <label className="field grow">
-                    neu hochladen
-                    <input type="file" accept="application/pdf,image/*" onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadInvoice(f) }} />
-                  </label>
+                  {/* Sichtprüfung E26: ein eigener Knopf statt des Dateifelds des Browsers („Choose File“) */}
+                  <div className="row center">
+                    <label className="btn secondary small">
+                      Beleg hochladen …
+                      <input type="file" className="sr-only" accept="application/pdf,image/*" onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadInvoice(f) }} />
+                    </label>
+                    <span className="muted">PDF oder Foto</span>
+                  </div>
                   {knownFiles.length > 0 && (
-                    <label className="field grow" style={{ marginTop: 8 }}>
+                    <label className="field grow">
                       oder vorhandenen Beleg zuordnen
                       <select value="" onChange={(e) => { if (e.target.value) setForm({ ...form, invoiceFile: e.target.value }) }}>
                         <option value="">— wählen —</option>

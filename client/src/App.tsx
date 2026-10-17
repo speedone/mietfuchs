@@ -1,9 +1,10 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import type { ReceiptUpload } from './receipts'
-import type { CostItem, NoticeSubject, Settings, Tenancy, Unit, UploadInfo } from './types'
+import type { CostItem, HeatingPlant, NoticeSubject, Settings, Tenancy, Unit, UploadInfo } from './types'
 import { api } from './api'
-import { YearProvider, useYear, YEAR_OPTIONS } from './year'
-import { PropertyProvider, PropertySwitcher, useProperty, useSwitchProperty, withProperty, useSwitchYear } from './property'
+import { PeriodProvider, usePeriod } from './period'
+import { PeriodSelect } from './components/PeriodSelect'
+import { PropertyProvider, PropertySwitcher, useProperty, useSwitchProperty, withProperty } from './property'
 import { UIProvider, useConfirm, useToast } from './components/feedback'
 import FoxLogo from './components/Logo'
 import { UpdateHint, useUpdateStatus } from './components/Update'
@@ -23,7 +24,8 @@ import Abrechnung from './pages/Abrechnung'
 import Hilfe from './pages/Hilfe'
 import Steuer from './pages/Steuer'
 import Einstellungen from './pages/Einstellungen'
-import { NAV, type Tab } from './nav'
+import { navFor, type Tab } from './nav'
+import Heizkosten from './pages/Heizkosten'
 
 // ---------- Dark Mode ----------
 type ThemeChoice = 'system' | 'light' | 'dark'
@@ -137,9 +139,8 @@ function Shell() {
   const [tenancies, setTenancies] = useState<Tenancy[]>([])
   const [settings, setSettings] = useState<Settings | null>(null)
   const { choice, cycle } = useTheme()
-  const { year } = useYear()
-  // Fragt bei offenem Formular nach, wie der Objektwechsel (Durchsicht zu #141).
-  const switchYear = useSwitchYear()
+  // Der gewählte Abrechnungszeitraum (#208); die Seiten werden bei seinem Wechsel neu aufgestellt.
+  const { key: periodKeyNow } = usePeriod()
   const { properties, property, previousId, focusNoticeFor, setFocusNoticeFor, reload: reloadProperties } = useProperty()
   const switchProperty = useSwitchProperty()
   // Ausgewertet wird im Objekt, dem der Beleg zugedacht ist; ohne Zuordnung im gewählten.
@@ -191,6 +192,22 @@ function Shell() {
     reload().catch((e) => console.error(e))
   }, [reload])
 
+  // Die Seite Heizkosten erscheint erst mit einer Heizanlage (Heizung PR 6, Entwurf 11.4). Neu
+  // gefragt wird bei jedem Seitenwechsel, so erscheint sie, sobald die Anlage in den Stammdaten
+  // angelegt ist.
+  const [hasHeatingPlant, setHasHeatingPlant] = useState(false)
+  useEffect(() => {
+    if (!propertyId) {
+      setHasHeatingPlant(false)
+      return
+    }
+    let current = true
+    api<HeatingPlant[]>(withProperty('/api/heating-plants', propertyId))
+      .then((list) => { if (current) setHasHeatingPlant(list.length > 0) })
+      .catch(() => { if (current) setHasHeatingPlant(false) })
+    return () => { current = false }
+  }, [propertyId, tab])
+
   const clearNoticeFocus = useCallback(() => setFocusNoticeFor(null), [setFocusNoticeFor])
 
   if (stopped) return <Stopped />
@@ -224,14 +241,9 @@ function Shell() {
 
         <PropertySwitcher properties={properties} value={propertyId} onChange={(id) => void switchProperty(id)} />
 
-        <label className="year-switcher no-print">
-          <span>Abrechnungsjahr</span>
-          <select value={year} onChange={(e) => void switchYear(Number(e.target.value))}>
-            {YEAR_OPTIONS.map((y) => <option key={y} value={y}>{y}</option>)}
-          </select>
-        </label>
+        <PeriodSelect className="year-switcher no-print" />
 
-        {NAV.map((group, gi) => (
+        {navFor(hasHeatingPlant).map((group, gi) => (
           <div key={gi} className="nav-group">
             {group.section && <div className="nav-section">{group.section}</div>}
             {group.items.map((it) => (
@@ -272,9 +284,9 @@ function Shell() {
         )}
         {/* Je Objekt und Jahr neu aufgestellt (#145, Durchsicht zu #141): Formulare und
             Zwischenstände einer Seite gehören zu dem Objekt und Jahr, in dem sie entstanden sind. */}
-        <Fragment key={`${propertyId ?? ''}:${year}`}>
+        <Fragment key={`${propertyId ?? ''}:${periodKeyNow}`}>
         {tab === 'cockpit' && (
-          <Cockpit units={units} tenancies={tenancies} settings={settings} reload={reload} onNavigate={(t) => setTab(t as Tab)} />
+          <Cockpit units={units} tenancies={tenancies} settings={settings} reload={reload} onNavigate={(t, f) => setTab(t as Tab, f ?? null)} />
         )}
         {tab === 'schnellerfassung' && (
           <Schnellerfassung units={units} settings={settings} onNavigate={(t, f) => setTab(t as Tab, f ?? null)}
@@ -289,8 +301,9 @@ function Shell() {
         {tab === 'zaehler' && <Zaehler units={units} focus={focus} onFocusDone={clearFocus} />}
         {tab === 'belege' && <Belege onEvaluate={(list) => void evaluateFromInbox(list)} onContinue={(u) => void continueAssessment(u)} onOpenItem={(item) => void openCostItem(item)} />}
         {tab === 'abrechnung' && (
-          <Abrechnung settings={settings} units={units} tenancies={tenancies} reload={reload} onNavigate={(t, f) => setTab(t, f ?? null)} />
+          <Abrechnung settings={settings} units={units} tenancies={tenancies} reload={reload} onNavigate={(t, f) => setTab(t, f ?? null)} focus={focus} onFocusDone={clearFocus} />
         )}
+        {tab === 'heizkosten' && <Heizkosten units={units} tenancies={tenancies} />}
         {tab === 'steuer' && <Steuer settings={settings} />}
         {tab === 'hilfe' && <Hilfe onNavigate={(t) => setTab(t)} />}
         {tab === 'einstellungen' && settings && (
@@ -304,12 +317,12 @@ function Shell() {
 
 export default function App() {
   return (
-    <YearProvider>
+    <PeriodProvider>
       <PropertyProvider>
         <UIProvider>
           <Shell />
         </UIProvider>
       </PropertyProvider>
-    </YearProvider>
+    </PeriodProvider>
   )
 }

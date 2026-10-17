@@ -8,6 +8,7 @@
 //   2. **Nichts bleibt halb.** Ein Vorgang über mehrere Tabellen läuft in einer Transaktion.
 //   3. **Für ein unbekanntes Feld gibt es keinen Ort mehr** (#60).
 
+import { createDelivery } from '../src/db/fuel.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
@@ -15,7 +16,8 @@ import os from 'node:os'
 import path from 'node:path'
 import { getTableColumns } from 'drizzle-orm'
 import type { SQLiteTable } from 'drizzle-orm/sqlite-core'
-import { openDatabase, type OpenedDatabase } from '../src/db/open.ts'
+import type { OpenedDatabase } from '../src/db/open.ts'
+import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import {
   closeSettlement, createEntity, createProperty, crossPropertyViolations, findClosedSettlement, findEntity,
   invoiceFilesInUse, listCollection, listProperties, removeEntity, removeProperty, reopenSettlement, setSentAt,
@@ -25,12 +27,14 @@ import {
   baseRents, costItemAmounts, flatRates, costItemParticipants, costItemShares, costItems, meters, payments, personHistory, prepaymentOverrides,
   prepayments, readings, tenancies, units,
 } from '../src/db/schema.ts'
+import { calendarPeriod } from '../../shared/period.ts'
+import { createHeatingPlant } from '../src/db/heating.ts'
 
 const tempDir = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-repo-'))
 
 async function withDatabase(work: (opened: OpenedDatabase) => Promise<void>): Promise<void> {
   const dataDir = tempDir()
-  const opened = await openDatabase({ dataDir })
+  const opened = await openFreshDatabase(dataDir)
   try {
     await work(opened)
   } finally {
@@ -83,7 +87,7 @@ test('Ändern verschmilzt: ein Teilstück lässt alles andere stehen', async () 
     assert.equal(fieldOf(nachher, 'depositCents'), 180000, 'die Kaution steht noch da')
     assert.deepEqual(fieldOf(nachher, 'prepayments'), [{ from: '2024-01', monthlyCents: 15000 }], 'die Staffel steht noch da')
     assert.deepEqual(fieldOf(nachher, 'baseRents'), [{ from: '2024-01', monthlyCents: 60000 }], 'die Kaltmiete steht noch da')
-    assert.deepEqual(fieldOf(nachher, 'prepaymentOverrides'), { 2024: 170000 }, 'die Jahreskorrektur steht noch da')
+    assert.deepEqual(fieldOf(nachher, 'prepaymentOverrides'), { '2024-01': 170000 }, 'die Jahreskorrektur steht noch da')
   })
 })
 
@@ -188,7 +192,7 @@ test('Die Jahreskorrektur nimmt nur vierstellige Jahreszahlen an', async () => {
       unitId: 'u1', tenantName: 'A', persons: 1, start: '2024-01-01',
       prepaymentOverrides: { '2024': 180000, '': 1, ' ': 2, '2024.0': 3, '1e3': 4, 'zweitausend': 5, '-5': 6 },
     }))
-    assert.deepEqual(fieldOf(t, 'prepaymentOverrides'), { '2024': 180000 })
+    assert.deepEqual(fieldOf(t, 'prepaymentOverrides'), { '2024-01': 180000 })
   })
 })
 
@@ -321,16 +325,16 @@ test('Ein Beleg, der noch an einer Kostenposition hängt, wird als benutzt gemel
 test('Abschließen: die Abrechnung lässt sich danach wiederfinden', async () => {
   await withDatabase(async (opened) => {
     await opened.write((db) => closeSettlement(db, {
-      id: 's1', propertyId: 'objekt-1', year: 2024, closedAt: '2025-01-15T10:00:00.000Z', sentAt: null,
+      id: 's1', propertyId: 'objekt-1', period: calendarPeriod(2024), closedAt: '2025-01-15T10:00:00.000Z', sentAt: null,
       settlement: { year: 2024, totalCostsCents: 12000 },
     }))
-    const gefunden = await opened.read((db) => findClosedSettlement(db, 'objekt-1', 2024))
+    const gefunden = await opened.read((db) => findClosedSettlement(db, 'objekt-1', calendarPeriod(2024)))
     if (!gefunden) return assert.fail('die abgeschlossene Abrechnung ist nicht auffindbar')
-    assert.equal(gefunden.year, 2024)
+    assert.equal(gefunden.period, '2024-01')
     assert.equal(gefunden.sentAt, null)
     // Wortgleich: Der eingefrorene Stand ist ein Archivstück und soll bleiben, wie er ist.
     assert.deepEqual(gefunden.settlement, { year: 2024, totalCostsCents: 12000 })
-    assert.equal(await opened.read((db) => findClosedSettlement(db, 'objekt-1', 2023)), undefined)
+    assert.equal(await opened.read((db) => findClosedSettlement(db, 'objekt-1', calendarPeriod(2023))), undefined)
   })
 })
 
@@ -338,7 +342,7 @@ test('Abschließen: ein zweites Mal für dasselbe Jahr lehnt die Datenbank ab', 
   // Der eindeutige Index auf `year` ist zugleich die Zusicherung, dass es je Jahr höchstens eine
   // abgeschlossene Abrechnung gibt. Ohne ihn entschiede die Reihenfolge beim Lesen, welche gilt.
   await withDatabase(async (opened) => {
-    const eintrag = { propertyId: 'objekt-1', year: 2024, closedAt: '2025-01-15T10:00:00.000Z', sentAt: null, settlement: {} }
+    const eintrag = { propertyId: 'objekt-1', period: calendarPeriod(2024), closedAt: '2025-01-15T10:00:00.000Z', sentAt: null, settlement: {} }
     await opened.write((db) => closeSettlement(db, { ...eintrag, id: 's1' }))
     await assert.rejects(() => opened.write((db) => closeSettlement(db, { ...eintrag, id: 's2' })))
   })
@@ -348,24 +352,24 @@ test('Das Versanddatum lässt sich nachtragen und wieder entfernen', async () =>
   // An ihm hängt die Frist aus §556 BGB.
   await withDatabase(async (opened) => {
     await opened.write((db) => closeSettlement(db, {
-      id: 's1', propertyId: 'objekt-1', year: 2024, closedAt: '2025-01-15T10:00:00.000Z', sentAt: null, settlement: {},
+      id: 's1', propertyId: 'objekt-1', period: calendarPeriod(2024), closedAt: '2025-01-15T10:00:00.000Z', sentAt: null, settlement: {},
     }))
-    assert.equal(await opened.write((db) => setSentAt(db, 'objekt-1', 2024, '2025-02-01')), true)
-    assert.equal((await opened.read((db) => findClosedSettlement(db, 'objekt-1', 2024)))?.sentAt, '2025-02-01')
-    assert.equal(await opened.write((db) => setSentAt(db, 'objekt-1', 2024, null)), true)
-    assert.equal((await opened.read((db) => findClosedSettlement(db, 'objekt-1', 2024)))?.sentAt, null)
-    assert.equal(await opened.write((db) => setSentAt(db, 'objekt-1', 2023, '2025-02-01')), false, 'ein Jahr ohne Abschluss meldet sich')
+    assert.equal(await opened.write((db) => setSentAt(db, 'objekt-1', calendarPeriod(2024), '2025-02-01')), true)
+    assert.equal((await opened.read((db) => findClosedSettlement(db, 'objekt-1', calendarPeriod(2024))))?.sentAt, '2025-02-01')
+    assert.equal(await opened.write((db) => setSentAt(db, 'objekt-1', calendarPeriod(2024), null)), true)
+    assert.equal((await opened.read((db) => findClosedSettlement(db, 'objekt-1', calendarPeriod(2024))))?.sentAt, null)
+    assert.equal(await opened.write((db) => setSentAt(db, 'objekt-1', calendarPeriod(2023), '2025-02-01')), false, 'ein Jahr ohne Abschluss meldet sich')
   })
 })
 
 test('Wieder öffnen verwirft den eingefrorenen Stand', async () => {
   await withDatabase(async (opened) => {
     await opened.write((db) => closeSettlement(db, {
-      id: 's1', propertyId: 'objekt-1', year: 2024, closedAt: '2025-01-15T10:00:00.000Z', sentAt: null, settlement: {},
+      id: 's1', propertyId: 'objekt-1', period: calendarPeriod(2024), closedAt: '2025-01-15T10:00:00.000Z', sentAt: null, settlement: {},
     }))
-    assert.equal(await opened.write((db) => reopenSettlement(db, 'objekt-1', 2024, 'h1')), true)
-    assert.equal(await opened.read((db) => findClosedSettlement(db, 'objekt-1', 2024)), undefined)
-    assert.equal(await opened.write((db) => reopenSettlement(db, 'objekt-1', 2024, 'h2')), false, 'ein zweites Mal meldet sich')
+    assert.equal(await opened.write((db) => reopenSettlement(db, 'objekt-1', calendarPeriod(2024), 'h1')), true)
+    assert.equal(await opened.read((db) => findClosedSettlement(db, 'objekt-1', calendarPeriod(2024))), undefined)
+    assert.equal(await opened.write((db) => reopenSettlement(db, 'objekt-1', calendarPeriod(2024), 'h2')), false, 'ein zweites Mal meldet sich')
   })
 })
 
@@ -380,7 +384,7 @@ test('Die Verschmelzung erreicht jede Spalte des Schemas', async () => {
   //
   // `id` bleibt außen vor, die vergibt die Route; Fremdschlüssel bekommen eine Kennung, die es
   // wirklich gibt, sonst lehnte die Datenbank schon das Einfügen ab.
-  const proben: { coll: CollectionName, table: SQLiteTable, body: Record<string, unknown> }[] = [
+  const proben: { coll: CollectionName, table: SQLiteTable, body: Record<string, unknown>, id?: string }[] = [
     {
       coll: 'units', table: units,
       body: { propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true, selfUsed: true, selfPersons: 2, mea: 124, rooms: 3, floor: 'EG', notes: 'Notiz' },
@@ -391,25 +395,57 @@ test('Die Verschmelzung erreicht jede Spalte des Schemas', async () => {
         unitId: 'u1', tenantName: 'Müller', persons: 2, start: '2024-01-01', end: '2024-12-31',
         email: 'a@b.de', phone: '0123', correspondenceAddress: 'Weg 1', iban: 'DE01',
         contractDate: '2023-12-01', depositCents: 1000, depositStatus: 'erhalten', notes: 'Notiz',
-        costModel: 'flatRate', heatingModel: 'inclusive',
+        costModel: 'flatRate', heatingModel: 'selfSupply', selfSupplyKind: 'central', halfSplitNoticeOn: '2023-12-01',
       },
     },
     {
       coll: 'costItems', table: costItems,
       body: {
-        propertyId: 'objekt-1', year: 2024, category: 'Müll', description: 'Gebühren', vendor: 'Firma', amountCents: 12000,
+        propertyId: 'objekt-1', period: '2024-01', category: 'Heizung und Warmwasser', description: 'Gebühren', vendor: 'Firma', amountCents: 12000,
         // Drei Spalten, ein Wert im Modell (#94); verglichen wird er unten eigens.
         externalBasis: { measure: 'mea', total: 10000, totalCents: 1000000 },
         key: 'direct', directUnitId: 'u1', meterType: 'kaltwasser', labor35aCents: 400, invoiceFile: 'b.pdf',
+        // #208: Leistungszeitraum im Jahr der Position, das Jahr der Zahlung ist dann dieses.
+        serviceFrom: '2024-01-01', serviceTo: '2024-12-31', taxYear: 2024, heatingPart: 'fuel', heatingTarget: 'heating',
+        heatingPlantId: 'hp1', fuelDeliveryId: 'd1',
+      },
+    },
+    // Heizung PR 15: Betriebsstrom gibt es nur beim Teil „Betrieb“, die Probe oben ist Brennstoff; der
+    // Abzug zeigt auf diese zweite Probe und belegt den Verweis.
+    {
+      coll: 'costItems', table: costItems, id: 'probe-betriebsstrom',
+      body: {
+        propertyId: 'objekt-1', period: '2024-01', category: 'Heizung und Warmwasser', description: 'Betriebsstrom', amountCents: 14784, key: 'area',
+        heatingPart: 'operating', operatingPower: 'included', operatingPowerBasis: 'Grundlage',
+      },
+    },
+    {
+      coll: 'costItems', table: costItems, id: 'probe-strom',
+      body: { propertyId: 'objekt-1', period: '2024-01', category: 'Beleuchtung/Allgemeinstrom', description: 'Hausstrom', amountCents: 105000, key: 'area' },
+    },
+    {
+      coll: 'costItems', table: costItems, id: 'probe-abzug',
+      body: {
+        propertyId: 'objekt-1', period: '2024-01', category: 'Beleuchtung/Allgemeinstrom', description: 'Abzug', amountCents: -14784, key: 'area',
+        operatingPower: 'deduction', operatingPowerItemId: 'probe-betriebsstrom', operatingPowerGeneralId: 'probe-strom', operatingPowerBasis: 'Grundlage',
       },
     },
     {
       coll: 'meters', table: meters,
-      body: { propertyId: 'objekt-1', name: 'Küche', unitId: 'u1', type: 'kaltwasser', meterNumber: 'ABC', unit: 'm³' },
+      body: {
+        propertyId: 'objekt-1', name: 'Speicher', unitId: null, type: 'waerme', meterNumber: 'ABC', unit: 'kWh',
+        heatingPlantId: 'hp1', heatingRole: 'dhwHeat', remoteReadable: false, installedOn: '2022-03-01', calibratedUntil: 2028,
+      },
+    },
+    // Heizung PR 12: Skala und Faktor gibt es nur am Heizkostenverteiler einer Wohnung, nie an einem Zähler
+    // der Anlage; eine zweite Probe belegt sie. Jede Spalte muss in einer Probe ihrer Sammlung stehen.
+    {
+      coll: 'meters', table: meters, id: 'probe-hkv',
+      body: { propertyId: 'objekt-1', name: 'Wohnzimmer', unitId: 'u1', type: 'hkv', unit: 'Einheiten', hcaScale: 'unit', ratingFactor: 1.25 },
     },
     {
       coll: 'readings', table: readings,
-      body: { meterId: 'm1', date: '2024-12-31', value: 160, replacement: true, oldEndValue: 155, note: 'Wechsel' },
+      body: { meterId: 'm1', date: '2024-12-31', value: 160, replacement: true, oldEndValue: 155, note: 'Wechsel', interimFor: '2024-12-30' },
     },
     {
       coll: 'payments', table: payments,
@@ -423,10 +459,12 @@ test('Die Verschmelzung erreicht jede Spalte des Schemas', async () => {
       await createEntity(db, 'units', 'u1', { propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true })
       await createEntity(db, 'tenancies', 't1', { unitId: 'u1', tenantName: 'A', persons: 1, start: '2024-01-01' })
       await createEntity(db, 'meters', 'm1', { propertyId: 'objekt-1', name: 'K', unitId: 'u1', type: 'kaltwasser', unit: 'm³' })
+      await createHeatingPlant(db, 'hp1', 'objekt-1', { energy: 'gas' })
+      await createDelivery(db, 'd1', 'hp1', { invoiceFrom: '2024-01-01', invoiceTo: '2024-12-31' })
     })
 
-    for (const { coll, table, body } of proben) {
-      const id = `probe-${coll}`
+    for (const { coll, table, body, id: own } of proben) {
+      const id = own ?? `probe-${coll}`
       const gespeichert = await opened.write((db) => createEntity(db, coll, id, body))
       if (coll === 'costItems') {
         assert.deepEqual(fieldOf(gespeichert, 'externalBasis'), body.externalBasis, 'costItems: die Angaben der Gemeinschaft sind verlorengegangen')
@@ -437,9 +475,10 @@ test('Die Verschmelzung erreicht jede Spalte des Schemas', async () => {
         // `externalBasis`; dass jede davon ankommt, prüft der Vergleich darunter.
         if (coll === 'costItems' && EXTERNAL_COLUMNS.has(spalte)) continue
         assert.ok(
-          Object.hasOwn(body, spalte),
+          proben.some((p) => p.coll === coll && Object.hasOwn(p.body, spalte)),
           `${coll}: Die Probe belegt die Spalte „${spalte}" nicht, der Test bewacht sie deshalb nicht`,
         )
+        if (!Object.hasOwn(body, spalte)) continue
         assert.deepEqual(
           fieldOf(gespeichert, spalte), body[spalte],
           `${coll}: Die Spalte „${spalte}" ist beim Verschmelzen verlorengegangen`,
@@ -490,7 +529,7 @@ test('Die Verschmelzung erreicht auch jede Spalte der Untertabellen', async () =
     // Spalten stehen deshalb hier benannt, und der Vergleich gegen `getTableColumns` sichert ab,
     // dass es bei diesen dreien bleibt.
     for (const [table, erwartet] of [
-      [prepaymentOverrides, ['tenancyId', 'year', 'amountCents']],
+      [prepaymentOverrides, ['tenancyId', 'period', 'amountCents']],
       [costItemShares, ['costItemId', 'unitId', 'percent']],
       [costItemParticipants, ['costItemId', 'unitId']],
       [costItemAmounts, ['costItemId', 'tenancyId', 'amountCents']],
@@ -500,7 +539,7 @@ test('Die Verschmelzung erreicht auch jede Spalte der Untertabellen', async () =
     const mitKorrektur = await opened.write((db) => createEntity(db, 'tenancies', 't-korrektur', {
       unitId: 'u1', tenantName: 'A', persons: 1, start: '2024-01-01', prepaymentOverrides: { '2024': 180000 },
     }))
-    assert.deepEqual(fieldOf(mitKorrektur, 'prepaymentOverrides'), { '2024': 180000 })
+    assert.deepEqual(fieldOf(mitKorrektur, 'prepaymentOverrides'), { '2024-01': 180000 })
     const mitAnteilen = await opened.write((db) => createEntity(db, 'costItems', 'c-anteile', { propertyId: 'objekt-1',
       year: 2024, category: 'Müll', description: 'G', amountCents: 100, key: 'custom', customShares: { u1: 55 },
     }))
@@ -533,6 +572,10 @@ test('Objekt: anlegen, auflisten, ändern', async () => {
     assert.deepEqual(neu, {
       id: 'objekt-2', name: 'Gartenweg 3', kind: 'etw', address: '12345 Stadt',
       landlordName: null, iban: null, paymentDeadlineDays: null, cableBuiltBeforeDec2021: null,
+      // Angespannter Wohnungsmarkt (Heizung PR 18): unbekannt, ohne Geltung.
+      tightMarket: null, tightMarketFrom: null, tightMarketTo: null,
+      // Der Rhythmus kommt immer mit (#208); ein neues Objekt rechnet im Kalenderjahr ab.
+      periodRules: { startMonth: 1, changes: [] },
     })
     assert.deepEqual((await opened.read(listProperties)).map((p) => p.id), ['objekt-1', 'objekt-2'])
 
@@ -586,19 +629,19 @@ test('Objekt: ein Abschluss desselben Jahres im anderen Objekt bleibt unberührt
   await withDatabase(async (opened) => {
     await opened.write((db) => createProperty(db, 'objekt-2', { name: 'Gartenweg 3' }))
     await opened.write((db) => closeSettlement(db, {
-      id: 's1', propertyId: 'objekt-1', year: 2024, closedAt: '2025-01-15T10:00:00.000Z', sentAt: null, settlement: {},
+      id: 's1', propertyId: 'objekt-1', period: calendarPeriod(2024), closedAt: '2025-01-15T10:00:00.000Z', sentAt: null, settlement: {},
     }))
-    assert.equal(await opened.read((db) => findClosedSettlement(db, 'objekt-2', 2024)), undefined)
-    assert.equal(await opened.write((db) => setSentAt(db, 'objekt-2', 2024, '2025-02-01')), false)
-    assert.equal(await opened.write((db) => reopenSettlement(db, 'objekt-2', 2024, 'h3')), false)
-    const a = await opened.read((db) => findClosedSettlement(db, 'objekt-1', 2024))
+    assert.equal(await opened.read((db) => findClosedSettlement(db, 'objekt-2', calendarPeriod(2024))), undefined)
+    assert.equal(await opened.write((db) => setSentAt(db, 'objekt-2', calendarPeriod(2024), '2025-02-01')), false)
+    assert.equal(await opened.write((db) => reopenSettlement(db, 'objekt-2', calendarPeriod(2024), 'h3')), false)
+    const a = await opened.read((db) => findClosedSettlement(db, 'objekt-1', calendarPeriod(2024)))
     assert.equal(a?.sentAt, null, 'das Versanddatum von Objekt 1 ist nicht gesetzt worden')
 
     // Und dasselbe Jahr lässt sich im zweiten Objekt eigens abschließen.
     await opened.write((db) => closeSettlement(db, {
-      id: 's2', propertyId: 'objekt-2', year: 2024, closedAt: '2025-01-16T10:00:00.000Z', sentAt: null, settlement: {},
+      id: 's2', propertyId: 'objekt-2', period: calendarPeriod(2024), closedAt: '2025-01-16T10:00:00.000Z', sentAt: null, settlement: {},
     }))
-    assert.equal((await opened.read((db) => findClosedSettlement(db, 'objekt-2', 2024)))?.id, 's2')
+    assert.equal((await opened.read((db) => findClosedSettlement(db, 'objekt-2', calendarPeriod(2024))))?.id, 's2')
   })
 })
 
@@ -660,7 +703,7 @@ test('Objekt: die Prüfung über den ganzen Bestand findet Verweise über Objekt
     // Am Repository vorbei, wie es ein von Hand bearbeitetes Backup täte.
     await opened.write(async (db) => {
       await db.insert(meters).values({ id: 'm1', propertyId: 'objekt-2', name: 'X', unitId: 'a', type: 'kaltwasser', unit: 'm³' })
-      await db.insert(costItems).values({ id: 'c1', propertyId: 'objekt-2', year: 2025, category: 'X', description: 'X', amountCents: 1, key: 'custom' })
+      await db.insert(costItems).values({ id: 'c1', propertyId: 'objekt-2', period: calendarPeriod(2025), category: 'X', description: 'X', amountCents: 1, key: 'custom' })
       await db.insert(costItemShares).values({ costItemId: 'c1', unitId: 'a', percent: 50 })
     })
     const befunde = await opened.read(crossPropertyViolations)

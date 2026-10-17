@@ -49,9 +49,9 @@ Rechner.
 | --- | --- |
 | [![Belegordner](docs/screenshots/belegordner.png)](docs/screenshots/belegordner.png) | [![Auswertung prüfen](docs/screenshots/auswertung-pruefen.png)](docs/screenshots/auswertung-pruefen.png) |
 
-| Kosten & Belege | Kostenvergleich |
+| Kosten | Kostenvergleich |
 | --- | --- |
-| [![Kosten & Belege](docs/screenshots/kosten.png)](docs/screenshots/kosten.png) | [![Kostenvergleich](docs/screenshots/kostenvergleich.png)](docs/screenshots/kostenvergleich.png) |
+| [![Kosten](docs/screenshots/kosten.png)](docs/screenshots/kosten.png) | [![Kostenvergleich](docs/screenshots/kostenvergleich.png)](docs/screenshots/kostenvergleich.png) |
 
 | Steuer-Übersicht (Anlage V) mit Eigennutzung | Zähler & Stände |
 | --- | --- |
@@ -183,7 +183,7 @@ legt die Dateien für alle Plattformen in `dist-bin/` ab.
    **Nebenkostenmodell** wählen: Abrechnung, Pauschale oder Inklusivmiete, getrennt für kalte
    Betriebskosten und Heizung. Am Objekt steht auch das Baujahr der Kabel- oder Antennenanlage,
    denn davon hängt ab, ob ihre Kosten nach 2024 noch umlagefähig sind.
-2. **Kosten & Belege**: Rechnungen pro Abrechnungsjahr erfassen — manuell oder per
+2. **Kosten**: Rechnungen pro Abrechnungsjahr erfassen — manuell oder per
    KI-Belegauswertung. Eine Rechnung kann in mehrere Positionen mit unterschiedlichen
    Umlageschlüsseln zerlegt werden (z. B. Wasserrechnung: Grundgebühr + Verbrauch).
    Optional pro Position: **Lohnanteil nach §35a EStG** (wird dem Mieter bescheinigt). Eine

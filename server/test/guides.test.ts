@@ -15,6 +15,8 @@
 // <Term> mitten im Satz, ein `{year}` im Knopf); solche Stellen zitiert die Anleitung nicht. HTML-
 // Entitäten im JSX-Text werden vor dem Vergleich aufgelöst (`&amp;` ist `&`).
 
+import { calendarPeriod, periodKey, periodOfKey } from '../../shared/period.ts'
+import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
@@ -23,16 +25,25 @@ import { fileURLToPath } from 'node:url'
 import { GLOSSARY } from '../../shared/glossary.ts'
 import { GUIDES, GUIDE_PAGES, type GuideId } from '../../shared/guides.ts'
 import { computeSettlement, taxReport } from '../src/calc.ts'
-import { snapshotOf, type SnapshotCostItem, type SnapshotSource, type SnapshotTenancy, type SnapshotUnit } from '../src/snapshot.ts'
+import { snapshotFor, snapshotOf, type SnapshotCostItem, type SnapshotHeatingPlant, type SnapshotSource, type SnapshotTenancy, type SnapshotUnit } from '../src/snapshot.ts'
 import type { ComputedSettlement } from '../src/calc.ts'
+import type { Co2Statement } from '../../shared/types.ts'
+import { splitByService } from '../src/serviceSplit.ts'
+import os from 'node:os'
+import { openFreshDatabase } from '../testing/freshDatabase.ts'
+import { readStock } from '../src/db/read.ts'
+import { createEntity } from '../src/db/repository.ts'
+import { createHeatingPlant } from '../src/db/heating.ts'
+import { setUpSelf } from '../src/db/heatingSelf.ts'
+import { CALENDAR_RULES } from '../../shared/period.ts'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const ids = Object.keys(GUIDES) as GuideId[]
 
 // ---------- Aufbau ----------
 
-test('Anleitungen: die acht Vermietungsarten aus #164, jede mit allen fünf Abschnitten', () => {
-  assert.deepEqual(ids, ['granny', 'multiFamily', 'condo', 'properties', 'garage', 'flatRate', 'meteringService', 'tenantChange'])
+test('Anleitungen: die Vermietungsarten aus #164 und der Abrechnungszeitraum (#208), jede mit allen fünf Abschnitten', () => {
+  assert.deepEqual(ids, ['granny', 'multiFamily', 'condo', 'properties', 'garage', 'flatRate', 'meteringService', 'co2Costs', 'heatingSelf', 'tenantChange', 'periodMayApril', 'supplierInvoice', 'stockFuel', 'heatingRenewed'])
   const titles = ids.map((id) => GUIDES[id].title)
   assert.equal(new Set(titles).size, titles.length, 'doppelter Titel')
   for (const id of ids) {
@@ -71,7 +82,7 @@ test('Anleitungen: Rechtliches nur mit Norm, und jede Norm nennt Paragraf oder A
     for (const c of GUIDES[id].caveats) {
       if (c.norm === undefined) continue
       withNorm++
-      assert.match(c.norm, /§|IX R \d+\/\d+/, `${id}: Norm ohne Paragraf: ${c.norm}`)
+      assert.match(c.norm, /§|IX R \d+\/\d+|VIII ZR \d+\/\d+/, `${id}: Norm ohne Paragraf: ${c.norm}`)
     }
     // Kein Paragraf im Fließtext ohne Normangabe daneben: Wer ein Gesetz zitiert, nennt es.
     for (const c of GUIDES[id].caveats) {
@@ -139,7 +150,7 @@ const tenancy = (id: string, unitId: string, start = '2020-01-01', end: string |
 const rented = (id: string, areaM2: number, over: Partial<SnapshotUnit> = {}): SnapshotUnit => ({ id, name: id, areaM2, participates: true, ...over })
 const own = (id: string, areaM2: number, selfPersons = 2): SnapshotUnit => ({ id, name: id, areaM2, participates: false, selfUsed: true, selfPersons })
 const item = (id: string, over: Partial<SnapshotCostItem>): SnapshotCostItem => ({
-  id, year: 2025, category: 'Grundsteuer', description: id, amountCents: 100000, key: 'area', ...over,
+  id, period: calendarPeriod(2025), category: 'Grundsteuer', description: id, amountCents: 100000, key: 'area', ...over,
 })
 const source = (over: Partial<SnapshotSource>): SnapshotSource => ({
   units: [], tenancies: [], costItems: [], meters: [], readings: [], payments: [], closedSettlements: [], ...over,
@@ -162,7 +173,16 @@ const inOrder = (text: string, amounts: string[], id: string) => {
   }
 }
 
-const checks: Record<GuideId, () => void> = {
+// Eine Gasheizung beim Messdienst und ihre CO₂-Angaben (Heizung PR 6).
+const HP: SnapshotHeatingPlant = { id: 'hp', name: '', energy: 'gas', method: 'service', source: 'building', devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', newDevicesInstall: null, units: null }
+const co2Statement = (over: Partial<Co2Statement>): Co2Statement => ({
+  heatingPeriodId: 'h', plantId: 'hp', period: calendarPeriod(2025), method: 'serviceDeducted', areaM2: null, serviceEmissionsKg: null, serviceAreaM2: null,
+  serviceKgPerM2: null, serviceLandlordPermille: null, serviceTotalCents: null, serviceLandlordCents: null, serviceUsersTotalCents: null,
+  serviceUsersTotalApprox: false, serviceUnitsCount: null, serviceCostItemId: null, serviceSelfLandlordCents: null, serviceFuelGrossCents: null,
+  serviceFuelNetCents: null, reliefs: [], ...over,
+})
+
+const checks: Record<GuideId, () => void | Promise<void>> = {
   granny: () => {
     const src = source({
       units: [own('eigen', 120), rented('elw', 60)],
@@ -255,20 +275,113 @@ const checks: Record<GuideId, () => void> = {
     inOrder(GUIDES.flatRate.example, [eur(120000), eur(share(r, 'ta', 'gs')), eur(5000), eur(5000 * 12), eur(parts[0]?.cents ?? -1)], 'flatRate')
   },
   meteringService: () => {
-    const base = {
+    // Vorwegabzug (#209) mit der Karte „CO₂-Kosten“ (Heizung PR 6): Der Betrag ist, was bezahlt
+    // wurde; Einzel- und Eigenbeträge stehen wie in der Abrechnung; den CO₂-Anteil des Vermieters
+    // zerlegt Mietfuchs aus den CO₂-Angaben.
+    const net = { ta: 120000, tb: 110000, c: 60000 }
+    const co2 = 10000
+    const sumNet = net.ta + net.tb + net.c
+    const gross = sumNet + co2
+    const src = source({
       units: [rented('a', 70), rented('b', 60), own('c', 90)],
       tenancies: [tenancy('ta', 'a'), tenancy('tb', 'b')],
-    }
-    const heat = (selfAmounts: Record<string, number> | null) => item('heiz', {
-      category: 'Heizung und Warmwasser', amountCents: 300000, key: 'amounts', tenancyAmounts: { ta: 124000, tb: 116000 }, selfAmounts,
+      costItems: [item('heiz', {
+        category: 'Heizung und Warmwasser', amountCents: gross, key: 'amounts', tenancyAmounts: { ta: net.ta, tb: net.tb }, selfAmounts: { c: net.c }, heatingPlantId: 'hp',
+      })],
     })
-    const r = settle(source({ ...base, costItems: [heat({ c: 60000 })] }))
-    const without = settle(source({ ...base, costItems: [heat(null)] }))
-    assert.equal(r.selfUsedShareCents, 60000)
-    // Ohne den Betrag der eigenen Wohnung steht er als Rest beim Vermieter und nicht als Eigenanteil.
-    assert.equal(without.selfUsedShareCents, 0)
-    assert.deepEqual(landlordParts(without, 'heiz').map((p) => p.reason), ['amountsRest'])
-    inOrder(GUIDES.meteringService.example, [eur(300000), eur(share(r, 'ta', 'heiz')), eur(share(r, 'tb', 'heiz')), eur(r.selfUsedShareCents)], 'meteringService')
+    const snap = { ...snapshotOf(src, 2025), heatingPlants: [HP], co2Statements: [co2Statement({ serviceUsersTotalCents: sumNet, serviceLandlordCents: co2, serviceUnitsCount: 3 })] }
+    const r = computeSettlement(snap)
+    const tax = taxReport(snap).expenses.items.find((x) => x.costItemId === 'heiz')
+    if (!tax) return assert.fail('Heizposition fehlt in der Steuerübersicht')
+    assert.equal(share(r, 'ta', 'heiz'), net.ta)
+    assert.equal(share(r, 'tb', 'heiz'), net.tb)
+    assert.ok(!r.notices.some((n) => n.code === 'co2.sum-check'), 'die Probe geht auf')
+    const ownCo2 = Math.round((co2 * net.c) / sumNet)
+    assert.equal(r.selfUsedShareCents, net.c + ownCo2)
+    assert.equal(tax.privateCents, net.c + ownCo2)
+    const parts = landlordParts(r, 'heiz')
+    assert.deepEqual(parts.map((p) => p.reason), ['selfUse', 'co2Share'])
+    const co2Share = parts.find((p) => p.reason === 'co2Share')?.cents ?? -1
+    assert.equal(co2Share, co2 - ownCo2)
+    // Wer den Anteil seiner Wohnung zusätzlich in den Eigenbetrag schreibt (die frühere Anleitung)
+    // oder nur die Summe der Nutzerbeträge als Betrag (#209), dem meldet es die Probe.
+    const mit = (over: Partial<SnapshotCostItem>) => computeSettlement({ ...snap, costItems: snap.costItems.map((c) => ({ ...c, ...over })) })
+    assert.ok(mit({ selfAmounts: { c: net.c + ownCo2 } }).notices.some((n) => n.code === 'co2.sum-check'), 'doppelt privat')
+    assert.ok(mit({ amountCents: sumNet }).notices.some((n) => n.code === 'co2.sum-check'), 'netto statt bezahlt')
+    inOrder(GUIDES.meteringService.example, [
+      eur(net.ta), eur(net.tb), eur(net.c), eur(sumNet), eur(co2), eur(gross),
+      eur(share(r, 'ta', 'heiz')), eur(share(r, 'tb', 'heiz')), eur(net.c), eur(sumNet), eur(co2), eur(gross),
+      eur(ownCo2), eur(r.selfUsedShareCents), eur(co2Share),
+    ], 'meteringService')
+  },
+  heatingSelf: async () => {
+    // Zwei Wohnungen à 50 m², Fernwärme ohne zentrales Warmwasser, 70 % nach Verbrauch (Heizung PR 10).
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-guide-heating-'))
+    const opened = await openFreshDatabase(dataDir)
+    try {
+      let n = 0
+      await opened.write(async (db) => {
+        for (const u of ['a', 'b']) {
+          await createEntity(db, 'units', u, { propertyId: 'objekt-1', name: u.toUpperCase(), areaM2: 50, participates: true })
+          await createEntity(db, 'tenancies', `t${u}`, { unitId: u, tenantName: `Mieter ${u.toUpperCase()}`, persons: 1, start: '2020-01-01' })
+        }
+        await createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'districtHeating', method: 'manual' })
+        await setUpSelf(db, 'hp', { period: '2025-01', heatConsumptionPct: 70, insulationRule: 'unknown', hotWater: 'none', capture: 'heatMeter' }, '2026-02-01', () => `gm-${++n}`)
+      })
+      const meters = (await opened.read(readStock)).meters
+      await opened.write(async (db) => {
+        for (const [u, kwh] of [['a', 4000], ['b', 6000]] as const) {
+          const m = meters.find((x) => x.unitId === u && x.type === 'waerme') ?? assert.fail(`kein Wärmezähler ${u}`)
+          await createEntity(db, 'readings', `${u}0`, { meterId: m.id, date: '2024-12-31', value: 0 })
+          await createEntity(db, 'readings', `${u}1`, { meterId: m.id, date: '2025-12-31', value: kwh })
+        }
+        await createEntity(db, 'costItems', 'fw', {
+          propertyId: 'objekt-1', period: '2025-01', category: 'Heizung und Warmwasser', description: 'Fernwärme', amountCents: 300000,
+          key: 'heatingSystem', heatingPlantId: 'hp', heatingPart: 'fuel', heatingTarget: 'heating',
+        })
+      })
+      const p = periodOfKey(CALENDAR_RULES, periodKey('2025-01')) ?? assert.fail('kein Zeitraum')
+      const r = computeSettlement(snapshotFor(await opened.read(readStock), 'objekt-1', p))
+      assert.ok(!r.notices.some((x) => x.level === 'error'), r.notices.map((x) => x.code).join(', '))
+      assert.deepEqual([share(r, 'ta', 'fw'), share(r, 'tb', 'fw')], [129000, 171000])
+      inOrder(GUIDES.heatingSelf.example, [eur(300000), eur(90000), eur(45000), eur(210000), '4.000 kWh', eur(84000), eur(129000), '6.000 kWh', eur(171000)], 'heatingSelf')
+    } finally {
+      opened.close()
+      fs.rmSync(dataDir, { recursive: true, force: true })
+    }
+  },
+  co2Costs: () => {
+    // Beispiel A (Techem-Muster, Entwurf 7.4).
+    const betraege = { ta: 110327, tb: 95864, tc: 101485, td: 76875 }
+    const S = 384551
+    const L = 8750
+    const src = source({
+      units: ['a', 'b', 'c', 'd'].map((u) => rented(u, 50)),
+      tenancies: ['a', 'b', 'c', 'd'].map((u) => tenancy(`t${u}`, u)),
+      costItems: [item('heiz', { category: 'Heizung und Warmwasser', amountCents: S + L, key: 'amounts', tenancyAmounts: betraege, heatingPlantId: 'hp' })],
+    })
+    const snap = { ...snapshotOf(src, 2025), heatingPlants: [HP], co2Statements: [co2Statement({ serviceUsersTotalCents: S, serviceLandlordCents: L, serviceUnitsCount: 4 })] }
+    const r = computeSettlement(snap)
+    for (const [t, c] of Object.entries(betraege)) assert.equal(share(r, t, 'heiz'), c)
+    assert.deepEqual(landlordParts(r, 'heiz'), [{ reason: 'co2Share', cents: L }])
+    const tax = taxReport(snap).expenses.items.find((x) => x.costItemId === 'heiz')
+    if (!tax) return assert.fail('Heizposition fehlt in der Steuerübersicht')
+    assert.equal(tax.deductibleCents, S + L)
+    inOrder(GUIDES.co2Costs.example, ['3.540,00 €', eur(L), eur(S), eur(S), eur(L), eur(S), eur(L), eur(S + L), eur(L), eur(S + L)], 'co2Costs')
+    // Der zweite Weg der Anleitung (Durchsicht C1): ohne Abzugszeile ist der Betrag S, die Beträge
+    // der Mieter stehen wie in der Abrechnung, und Mietfuchs zieht den Anteil mit eigener Zeile ab.
+    const brutto = { ta: 112837, tb: 98045, tc: 103794, td: 78625 }
+    const S2 = 393301
+    const shown = { ...snapshotOf(source({ ...src, costItems: [item('heiz', { category: 'Heizung und Warmwasser', amountCents: S2, key: 'amounts', tenancyAmounts: brutto, heatingPlantId: 'hp' })] }), 2025),
+      heatingPlants: [HP], co2Statements: [co2Statement({ method: 'serviceShown', serviceUsersTotalCents: S2, serviceLandlordCents: L, serviceUnitsCount: 4 })] }
+    const r2 = computeSettlement(shown)
+    assert.ok(!r2.notices.some((n) => n.code === 'co2.sum-check'), 'ohne Abzugszeile geht die Probe mit Betrag S auf')
+    const abzug = r2.statements.flatMap((st) => st.rows.filter((row) => row.kind === 'co2Relief')).reduce((a, row) => a - row.shareCents, 0)
+    assert.equal(abzug, L)
+    const schritte = GUIDES.co2Costs.steps.map((x) => x.text)
+    const frage = schritte.findIndex((t) => /Abzüglich CO₂-Kosten Vermieter/.test(t))
+    const betrag = schritte.findIndex((t) => /Ohne diese Zeile ist der Betrag die Summe der Kosten aller Nutzer/.test(t))
+    assert.ok(frage >= 0 && betrag > frage, 'erst die Frage nach der Abzugszeile, dann der Betrag je nach Antwort')
   },
   tenantChange: () => {
     const r = settle(source({
@@ -286,10 +399,110 @@ const checks: Record<GuideId, () => void> = {
       '214 Tage', eur(share(r, 'neu', 'gs')),
     ], 'tenantChange')
   },
+  // Heizung PR 7 (Durchsicht von #233): die Gasrechnung über die Heizperiode hinaus als Lieferung.
+  supplierInvoice: () => {
+    const mai = { startMonth: 5, changes: [] }
+    const quelle = {
+      properties: [{ id: 'o', kind: 'mfh' as const, cableBuiltBeforeDec2021: null, periodRules: mai }],
+      units: [{ ...rented('a', 60), propertyId: 'o' }, { ...rented('b', 40), propertyId: 'o' }],
+      tenancies: [tenancy('ta', 'a'), tenancy('tb', 'b')],
+      costItems: [{ ...item('gas', { category: HEATING_CATEGORY, amountCents: 650000, heatingPlantId: 'hp', fuelDeliveryId: 'd', period: periodKey('2025-05') }), propertyId: 'o' }],
+      meters: [], readings: [], payments: [], closedSettlements: [],
+      heatingPlants: [{ ...HP, method: 'manual' as const, propertyId: 'o' }],
+      fuelDeliveries: [{
+        id: 'd', plantId: 'hp', label: 'Gas', invoiceDate: null, deliveredAt: null, invoiceFrom: '2025-03-15', invoiceTo: '2026-03-14', unitId: null, amountCents: null,
+        quantity: null, quantityUnit: null, energyKwh: null, gasBasis: null, heatingValue: null, emissionsKg: null, co2CostCents: null, emissionFactor: null,
+        gridFeeCents: null, bioCostCents: null, sharePermille: null, fixedCents: null, estimated: false, usedByService: true, parts: [], creditNoteKind: null,
+      }],
+    }
+    const at = (key: string) => computeSettlement(snapshotFor(quelle, 'o', periodOfKey(mai, periodKey(key)) ?? assert.fail(`kein Zeitraum ${key}`)))
+    const h = at('2025-05')
+    const h1 = at('2024-05')
+    const mieter = (r: ComputedSettlement, id: string) => r.statements.find((st) => st.tenancyId === id)?.totalShareCents ?? 0
+    assert.equal(mieter(h, 'ta') + mieter(h, 'tb') + mieter(h1, 'ta') + mieter(h1, 'tb'), 650000)
+    inOrder(GUIDES.supplierInvoice.example, [
+      '15.03.2025', '14.03.2026', eur(650000), '60', '40 m²', '848,71 ‰', eur(mieter(h, 'ta') + mieter(h, 'tb')), eur(mieter(h, 'ta')), eur(mieter(h, 'tb')),
+      eur(mieter(h1, 'ta') + mieter(h1, 'tb')), eur(mieter(h1, 'ta')), eur(mieter(h1, 'tb')),
+    ], 'supplierInvoice')
+  },
+  // Heizung PR 8 (Durchsicht von #237, I2): Heizöl mit Vorrat, zwei Lieferungen, nach Wohnfläche.
+  stockFuel: () => {
+    const lieferung = (id: string, deliveredAt: string, quantity: number, emissionsKg: number, co2CostCents: number) => ({
+      id, plantId: 'hp', label: '', invoiceDate: deliveredAt, deliveredAt, invoiceFrom: null, invoiceTo: null, unitId: null, amountCents: null,
+      quantity, quantityUnit: 'l' as const, energyKwh: null, gasBasis: null, heatingValue: null, emissionsKg, co2CostCents, emissionFactor: null,
+      gridFeeCents: null, bioCostCents: null, sharePermille: null, fixedCents: null, estimated: false, usedByService: true, parts: [], creditNoteKind: null,
+    })
+    const quelle = {
+      properties: [{ id: 'o', kind: 'mfh' as const, cableBuiltBeforeDec2021: null }],
+      units: [{ ...rented('a', 60), propertyId: 'o' }, { ...rented('b', 40), propertyId: 'o' }],
+      tenancies: [tenancy('ta', 'a'), tenancy('tb', 'b')],
+      costItems: [
+        { ...item('r1', { category: HEATING_CATEGORY, amountCents: 315000, heatingPlantId: 'hp', heatingPart: 'fuel', fuelDeliveryId: 'd1' }), propertyId: 'o' },
+        { ...item('r2', { category: HEATING_CATEGORY, amountCents: 250000, heatingPlantId: 'hp', heatingPart: 'fuel', fuelDeliveryId: 'd2' }), propertyId: 'o' },
+      ],
+      meters: [], readings: [], payments: [], closedSettlements: [],
+      heatingPlants: [{ ...HP, energy: 'oil' as const, method: 'manual' as const, propertyId: 'o' }],
+      heatingPeriodRows: [{
+        plantId: 'hp', period: calendarPeriod(2025), dhwMethod: null, dhwUnmeasurable: null, stockUnit: 'l' as const, openingQuantity: 2000, openingCostCents: 190000,
+        openingEmissionsKg: 5352.6, openingCo2Cents: 0, openingInvoicedBefore2023: true, openingAlreadySettled: false, closingQuantity: 1800, closingMeasuredOn: '2025-12-31',
+      }],
+      fuelDeliveries: [lieferung('d1', '2025-03-15', 3000, 8028.9, 52549), lieferung('d2', '2025-10-10', 2500, 6690.75, 43791)],
+    }
+    const r = computeSettlement(snapshotFor(quelle, 'o', periodOfKey({ startMonth: 1, changes: [] }, calendarPeriod(2025)) ?? assert.fail('kein Zeitraum')))
+    const s = r.heating?.[0]?.stock ?? assert.fail('keine Bestandsrechnung')
+    const heat = (id: string) => r.statements.find((st) => st.tenancyId === id)?.rows.filter((x) => x.category === HEATING_CATEGORY && x.kind !== 'co2Relief').reduce((a, x) => a + x.shareCents, 0) ?? -1
+    inOrder(GUIDES.stockFuel.example, [
+      '2.000 l', eur(s.opening.costCents ?? -1), '3.000 l', eur(315000), '2.500 l', eur(250000), '1.800 l', eur(s.closing.costCents ?? -1),
+      eur(s.consumed.costCents ?? -1), eur(s.paidCents ?? -1), '60', '40 m²', eur(heat('ta')), eur(heat('tb')),
+    ], 'stockFuel')
+  },
+  // Heizung PR 9 (Durchsicht von #238, Recht I6): Öl → Gas mit Restöl, dieselben Zahlen wie calc-kesseltausch.test.ts.
+  heatingRenewed: () => {
+    const units = ['a', 'b', 'c']
+    const anlage = (over: Record<string, unknown>) => ({ ...HP, method: 'manual' as const, units: units.map((unitId) => ({ unitId, heatedAreaM2: null })), propertyId: 'o', ...over })
+    const lieferung = (over: Record<string, unknown> & { id: string; plantId: string }) => ({
+      label: '', invoiceDate: null, deliveredAt: null, invoiceFrom: null, invoiceTo: null, unitId: null, amountCents: null, quantity: null, quantityUnit: null,
+      energyKwh: null, gasBasis: null, heatingValue: null, emissionsKg: null, co2CostCents: null, emissionFactor: null, gridFeeCents: null, bioCostCents: null,
+      sharePermille: null, fixedCents: null, estimated: false, usedByService: true, parts: [], creditNoteKind: null, ...over,
+    })
+    const quelle = {
+      properties: [{ id: 'o', kind: 'mfh' as const, cableBuiltBeforeDec2021: null }],
+      units: units.map((u) => ({ ...rented(u, 100), propertyId: 'o' })),
+      tenancies: units.map((u) => tenancy(`t${u}`, u)),
+      costItems: [
+        { ...item('oel', { category: HEATING_CATEGORY, amountCents: 315000, heatingPlantId: 'alt', heatingPart: 'fuel', fuelDeliveryId: 'd1' }), propertyId: 'o' },
+        { ...item('gas', { category: HEATING_CATEGORY, amountCents: 150000, heatingPlantId: 'neu', heatingPart: 'fuel', fuelDeliveryId: 'd2' }), propertyId: 'o' },
+      ],
+      meters: [], readings: [], payments: [], closedSettlements: [],
+      heatingPlants: [anlage({ id: 'alt', energy: 'oil', endsOn: '2025-06-30' }), anlage({ id: 'neu', energy: 'gas', replacesPlantId: 'alt' })],
+      heatingPeriodRows: [{
+        plantId: 'alt', period: calendarPeriod(2025), dhwMethod: null, dhwUnmeasurable: null, stockUnit: 'l' as const, openingQuantity: 2000, openingCostCents: 190000,
+        openingEmissionsKg: 5352.6, openingCo2Cents: 0, openingInvoicedBefore2023: true, openingAlreadySettled: false, closingQuantity: 500, closingMeasuredOn: '2025-06-30',
+      }],
+      fuelDeliveries: [
+        lieferung({ id: 'd1', plantId: 'alt', deliveredAt: '2025-03-15', invoiceDate: '2025-03-15', quantity: 3000, quantityUnit: 'l', emissionsKg: 8028.9, co2CostCents: 52549 }),
+        lieferung({ id: 'd2', plantId: 'neu', invoiceFrom: '2025-07-01', invoiceTo: '2025-12-31', emissionsKg: 3000, co2CostCents: 16500 }),
+      ],
+    }
+    const r = computeSettlement(snapshotFor(quelle, 'o', periodOfKey({ startMonth: 1, changes: [] }, calendarPeriod(2025)) ?? assert.fail('kein Zeitraum')))
+    const alt = r.heating?.find((h) => h.plantId === 'alt') ?? assert.fail('keine alte Anlage')
+    const oel = r.statements.reduce((a, st) => a + st.rows.filter((x) => x.costItemId === 'oel' || x.costItemId.startsWith('stock:alt')).reduce((b, x) => b + x.shareCents, 0), 0)
+    const kg = (alt.co2?.emissionsKg ?? -1).toLocaleString('de-DE', { maximumFractionDigits: 2 })
+    inOrder(GUIDES.heatingRenewed.example, [
+      '30.06.2025', '01.07.2025', '100 m²', '2.000 l', eur(alt.stock?.opening.costCents ?? -1), '3.000 l', eur(315000), '500 l', eur(alt.stock?.closing.costCents ?? -1),
+      eur(oel), eur(150000), `${kg} kg`, `${(alt.co2?.kgPerM2 ?? -1).toLocaleString('de-DE')} kg je m²`, `${alt.co2?.stage?.landlordPercent ?? -1} %`,
+    ], 'heatingRenewed')
+  },
+  // #208: die Aufteilung der Grundsteuer nach Tagen, mit derselben Funktion wie beim Speichern.
+  periodMayApril: () => {
+    const parts = splitByService({ startMonth: 1, changes: ['2025-05'] }, { id: 'g', description: 'Grundsteuer 2025', amountCents: 48000, serviceFrom: '2025-01-01', serviceTo: '2025-12-31' })
+    assert.deepEqual(parts.map((p) => p.amountCents), [15781, 32219])
+    inOrder(GUIDES.periodMayApril.example, ['01.01.', '30.04.2025', '30.04.2026', eur(48000), eur(15781), eur(32219)], 'periodMayApril')
+  },
 }
 
 for (const id of ids) {
-  test(`Anleitung „${GUIDES[id].title}“: das Zahlenbeispiel ist mit der Berechnung nachgerechnet`, () => checks[id]())
+  test(`Anleitung „${GUIDES[id].title}“: das Zahlenbeispiel ist mit der Berechnung nachgerechnet`, async () => checks[id]())
 }
 
 test('Leerstand beim Personenschlüssel: Die leere Wohnung zählt je Leerstandstag mit einer Person, den Anteil trägt der Vermieter (so steht es in der Anleitung, seit #177)', () => {
@@ -332,8 +545,69 @@ test('Durchsicht: CO₂-Kosten mit belegter Norm beim Mehrfamilienhaus und beim 
     if (!c) return assert.fail(`${id}: kein Satz zur CO₂-Aufteilung`)
     assert.match(c.norm ?? '', /§ 7 Abs\. 3 und 4 CO2KostAufG/)
     assert.match(c.text, /3 Prozent/)
-    assert.match(c.text, /#97/)
   }
+  // Beim Mehrfamilienhaus ohne Messdienst rechnet Mietfuchs die Aufteilung noch nicht selbst (#97);
+  // beim Messdienst übernimmt die Karte „CO₂-Kosten“ dessen Angaben. Die eigene Aufteilung bleibt eine
+  // Lücke mit Issue.
+  // Seit Heizung PR 7 teilt Mietfuchs mit den Lieferungen selbst auf (Durchsicht von #233, Recht I3);
+  // Lücke bleibt nur die Bestandsrechnung für Vorräte.
+  assert.match(GUIDES.multiFamily.caveats.find((x) => /CO₂/.test(x.text))?.text ?? '', /als Lieferungen ein/)
+  for (const id of ids) assert.doesNotMatch(JSON.stringify(GUIDES[id]), /rechnet Mietfuchs die Aufteilung noch nicht|selbst aus der Brennstoffrechnung aufteilen/, id)
+  // Seit Heizung PR 8 (Durchsicht von #237, I2) ist die Bestandsrechnung keine Lücke mehr.
+  assert.ok(!ids.some((id) => GUIDES[id].gaps.some((g) => /Bestandsrechnung|mit Vorrat \(|bei Heizöl, Flüssiggas und Pellets/.test(g.text))), 'veraltete Lücke zum Vorrat')
+})
+
+test('Messdienst mit Vorwegabzug (#209): Der Betrag ist, was bezahlt wurde, der CO₂-Anteil des Vermieters wird dazugerechnet', () => {
+  const g = GUIDES.meteringService
+  const [amount, perTenancy, own] = g.steps.map((s) => s.text)
+  // Schritt 1: brutto, also vor dem Abzug, mit der Formel aus dem Entwurf (Abschnitt 5.4).
+  assert.match(amount ?? '', /bezahlt/)
+  assert.match(amount ?? '', /vor dem Abzug/)
+  assert.match(amount ?? '', /Summe aller Nutzerbeträge für Heizung und Warmwasser \(einschließlich Leerstand\) \+ CO₂-Anteil des Vermieters/)
+  assert.doesNotMatch(amount ?? '', /Gesamtbetrag der Abrechnung/, 'der Gesamtbetrag ist beim Vorwegabzug netto')
+  // Schritt 2: der Betrag, den die Abrechnung für den Mieter nennt, ohne selbst abzuziehen; sonst
+  // entlastete Mietfuchs ihn bei „nur ausgewiesen“ ein zweites Mal (Durchsicht C1).
+  assert.match(perTenancy ?? '', /Tragen Sie den Betrag ein, den die Abrechnung für den Mieter nennt; ziehen Sie selbst nichts ab\./)
+  assert.doesNotMatch(perTenancy ?? '', /nach Abzug des CO₂-Anteils/)
+  assert.match(perTenancy ?? '', /Kaltwasser/)
+  assert.match(perTenancy ?? '', /eigene Positionen/)
+  // Schritt 3: Eigenbetrag wie in der Abrechnung; der CO₂-Teil der eigenen Wohnung in die Karte.
+  assert.match(own ?? '', /ohne etwas dazuzurechnen/)
+  assert.match(own ?? '', /„davon für Ihre selbst bewohnte Wohnung“/)
+  assert.match(own ?? '', /Steht auf der Einzelabrechnung Ihrer Wohnung ein vom Vermieter übernommener CO₂-Betrag, nehmen Sie diesen\./)
+  assert.match(own ?? '', /tragen Sie 0 ein; dann gehört nichts davon ins Private\./)
+  assert.match(own ?? '', /Nur wenn sie gar keine Beträge je Wohnung nennt, lassen Sie das Feld leer, und Mietfuchs rechnet näherungsweise: CO₂-Anteil × Betrag Ihrer Wohnung ÷ Summe aller Nutzerbeträge für Heizung und Warmwasser\./)
+  assert.doesNotMatch(own ?? '', /Nur wenn er fehlt/, 'die Näherung gilt nicht schon, wenn nur bei der eigenen Wohnung ein Betrag fehlt')
+  const order = ['Einzelabrechnung', 'ins Private', 'näherungsweise'].map((w) => own?.indexOf(w) ?? -1)
+  assert.deepEqual([...order].sort((a, b) => a - b), order, 'erst die Angabe des Messdienstes, dann „nichts privat“, zuletzt die Näherung')
+  assert.ok(!order.includes(-1))
+  // Was Mietfuchs daraus macht: der Rest ist Werbungskosten.
+  assert.match(g.result.join(' '), /CO₂-Anteil des Vermieters[^.]*Werbungskosten/)
+})
+
+test('Messdienst (#209): selbstgenutzte Wohnung ohne CO₂-Anteil, Abrechnung ohne Aufteilung, keine Pauschalaussage über Messdienste', () => {
+  const g = GUIDES.meteringService
+  const all = JSON.stringify(g)
+  // Nicht jeder Messdienst setzt für die eigene Wohnung einen Anteil an; dann bleibt nichts privat.
+  // Die Regel selbst steht in Schritt 3; der Hinweis wiederholt sie nicht.
+  const self = g.caveats.find((c) => /selbstgenutzte Wohnung/.test(c.text) && /CO₂/.test(c.text))
+  if (!self) return assert.fail('Hinweis zur selbstgenutzten Wohnung ohne CO₂-Anteil fehlt')
+  assert.match(self.text, /Nicht jeder Messdienst/)
+  assert.doesNotMatch(self.text, /ins Private|näherungsweise|Näherung/, 'steht schon in Schritt 3')
+  assert.doesNotMatch(self.text, /§/, 'keine Rechtsaussage')
+  // Weist die Abrechnung keinen Anteil aus: nachfragen, Mietfuchs rechnet es noch nicht, 3 % Kürzung.
+  const missing = g.caveats.find((c) => /keinen CO₂-Anteil des Vermieters aus/.test(c.text))
+  if (!missing) return assert.fail('Hinweis für eine Abrechnung ohne CO₂-Aufteilung fehlt')
+  assert.equal(missing.text, 'Weist die Abrechnung keinen CO₂-Anteil des Vermieters aus, fragen Sie beim Messdienst nach, bevor Sie abrechnen. Oder beantworten Sie die Frage nach der Abzugszeile mit „gar nicht aufgeteilt“ und tragen die Rechnung des Versorgers auf der Seite Heizkosten als Lieferung ein, „vom Messdienst angesetzt“; dann teilt Mietfuchs selbst auf.')
+  // Das Kürzungsrecht von 3 Prozent steht genau einmal, im Hinweis zur CO₂-Aufteilung mit seiner Norm.
+  const threePercent = [...g.steps.map((x) => x.text), ...g.caveats.map((c) => c.text)].filter((t) => /3 (%|Prozent)/.test(t))
+  assert.equal(threePercent.length, 1, `3 % steht ${threePercent.length}-mal`)
+  // Über Messdienste nur, was für die großen belegt ist.
+  assert.match(all, /Die großen Messdienste teilen auf, wenn/)
+  assert.doesNotMatch(all, /Der Messdienst teilt auf/)
+  // Zitate aus der Messdienst-Abrechnung in deutschen Anführungszeichen, wie im übrigen Text.
+  assert.doesNotMatch(all, /‚|‘/)
+  assert.match(g.example, /„abzüglich CO₂-Kosten Vermieter“/)
 })
 
 test('Durchsicht: Garagenhof nach Wohneinheiten, denn nach Fläche gibt es bei 0 m² keine Verteilbasis', () => {
@@ -370,4 +644,80 @@ test('Durchsicht: Wortlaute „Vermieter & Zahlung“, Inklusivmiete und die neu
   assert.match(address, /„Weitere Angaben — Nebenkosten-Modell, Kontakt, Kaution, Vertrag \(optional\)“/)
   assert.match(address, /zur Hand/)
   assert.match(address, /auf den Ausdruck kommt sie nicht/)
+})
+
+test('CO₂-Kosten aufteilen (Heizung PR 6): Ort von S je Messdienst, Muster nur bei Techem, keine Annahme je Messdienst (Entwurf 7.2, 7.3)', () => {
+  const g = GUIDES.co2Costs
+  const hinweise = g.caveats.map((c) => c.text).join(' ')
+  assert.match(hinweise, /Bei Techem heißt die Zeile „Summe der Nutzerkosten Heizungsanlage“/)
+  assert.match(hinweise, /Für ista, Brunata, Minol und KALO liegt Mietfuchs keine Musterabrechnung vor/)
+  assert.ok(g.steps.some((s) => s.page === 'heizkosten' && s.text.includes('„Ich finde diese Zeile nicht“')))
+  assert.ok(g.caveats.some((c) => /3 Prozent/.test(c.text) && c.norm === '§ 7 Abs. 3 und 4 CO2KostAufG'))
+  assert.match(g.applies, /01\.01\.2023/)
+  assert.ok(g.gaps.some((x) => x.issue === 210), '#210 fehlt')
+})
+
+test('meteringService nennt das Auslesen mit der KI als Vorschlag, den der Vermieter prüft; #103 ist keine Lücke mehr (Heizung PR 20)', () => {
+  const text = JSON.stringify(GUIDES.meteringService)
+  assert.match(text, /Messdienstabrechnung auslesen/)
+  assert.match(text, /prüfen jede Zahl am Beleg/)
+  for (const g of Object.values(GUIDES)) assert.ok(!g.gaps.some((x) => x.issue === 103), g.title)
+  assert.match(JSON.stringify(GUIDES.supplierInvoice), /Rechnung mit KI auslesen/)
+})
+
+test('Heizkosten selbst abrechnen (Heizung PR 10): Pflichten mit Norm, Lücken mit Issue, und die übrigen Anleitungen sagen nicht mehr „noch nicht“', () => {
+  const g = GUIDES.heatingSelf
+  const hinweise = g.caveats.map((c) => `${c.text} ${c.norm ?? ''}`).join(' ')
+  for (const norm of [/§ 6 Abs\. 4/, /§ 7 Abs\. 1/, /§ 9b/, /§ 12 Abs\. 1/, /§ 6 Abs\. 1/]) assert.match(hinweise, norm)
+  assert.match(hinweise, /VIII ZR 19\/07/)
+  assert.ok(g.steps.some((s) => s.page === 'heizkosten' && s.text.includes('„Ableseergebnis drucken“') && /jede Wohnung/.test(s.text)))
+  // Heizung PR 12: Heizkostenverteiler rechnet Mietfuchs; offen ist die Vorerfassung bei gemischten Geräten (#218).
+  assert.ok(g.gaps.some((x) => x.issue === 218 && /Heizkostenverteiler/.test(x.text)))
+  for (const id of ids.filter((x) => x !== 'heatingSelf')) {
+    assert.doesNotMatch(JSON.stringify(GUIDES[id].gaps), /eigene Heizkostenabrechnung (nach Grund- und Verbrauchskosten rechnet Mietfuchs noch nicht|mit Wärmemengenzählern)/, id)
+  }
+})
+
+test('Durchsicht #240, M7: „Heizkosten selbst abrechnen“ nennt die Karte Warmwasser, Brennwert/Heizwert, die Formel nur bei unzumutbarem Aufwand und die Wärmepumpe vor dem Stichtag', () => {
+  const g = GUIDES.heatingSelf
+  assert.ok(g.steps.some((s) => /Karte „Warmwasser“.*„Kilowattstunden der Rechnung berechnet nach“/.test(s.text)))
+  assert.ok(g.caveats.some((c) => /unzumutbar aufwendig/.test(c.text) && c.norm === '§ 9 Abs. 2, § 12 Abs. 1 Satz 1 HeizkostenV; BGH, Urteil vom 12.01.2022, VIII ZR 151/20'))
+  assert.ok(g.caveats.some((c) => /vor dem 01\.10\.2024 beginnen.*mehr als die Hälfte/.test(c.text)))
+  assert.ok(GUIDES.stockFuel.gaps.every((x) => x.issue !== undefined))
+})
+
+test('Heizung PR 12: „Heizkosten selbst abrechnen“ nennt Heizkostenverteiler mit Skala und Faktor, den Stichtagswert und die Werte des Ablesedienstes; keine Anleitung sagt mehr, Heizkostenverteiler rechne Mietfuchs nicht', () => {
+  const g = GUIDES.heatingSelf
+  assert.ok(g.steps.some((s) => s.page === 'zaehler' && /„Heizkostenverteiler“.*Skala.*Bewertungsfaktor.*„Stichtagswert speichern“/s.test(s.text)))
+  assert.ok(g.steps.some((s) => s.page === 'heizkosten' && /„Werte des Ablesedienstes“.*„Werte speichern“/.test(s.text)))
+  assert.ok(g.gaps.every((x) => !/Heizkostenverteiler an den Heizkörpern und die Werte eines Ablesedienstes/.test(x.text)))
+  for (const id of ids) assert.doesNotMatch(JSON.stringify(GUIDES[id].gaps), /mit Heizkostenverteilern (an den Heizkörpern rechnet Mietfuchs noch nicht|selbst abrechnen)|Eine eigene Heizkostenabrechnung mit Heizkostenverteilern;/, id)
+})
+
+test('Anleitungen: Betriebsstrom steht bei Mehrfamilienhaus und Messdienst, mit Norm (Heizung PR 15)', () => {
+  for (const id of ['multiFamily', 'meteringService'] as const) {
+    const c = GUIDES[id].caveats.find((x) => x.text.includes('Betriebsstrom'))
+    if (!c) return assert.fail(`${id}: kein Satz zum Betriebsstrom`)
+    // P-K3: Der Betriebsstrom geht auch in das Warmwasser (§ 8 Abs. 2 HeizkostenV).
+    assert.match(c.norm ?? '', /§ 7 Abs\. 2, § 8 Abs\. 2 HeizkostenV; BGH, Urteil vom 03\.06\.2016, V ZR 166\/15/)
+    // P-K5: selbst tragen ist zulässig; nur im Allgemeinstrom darf er nicht stehen. R2-K5: mit „Sie“,
+    // wo der Satz es braucht.
+    assert.match(c.text, id === 'multiFamily' ? /verteilen Sie .* oder tragen ihn selbst/ : /oder tragen Sie ihn selbst/)
+    // P-W2, R2-K5: der Weg „Betrag selbst geschätzt“ steht in beiden.
+    assert.match(c.text, /selbst geschätzten Betrag/)
+    assert.ok(GUIDES[id].terms.includes('operatingPower'), `${id}: Begriff fehlt`)
+  }
+})
+
+// #266: Beim Mehrfamilienhaus die Angabe an der Anlage, und ein Zwischenzähler wird abgelesen statt geschätzt (K-5).
+test('Anleitungen: Mehrfamilienhaus nennt die Angabe zum Betriebsstrom und den Zwischenzähler (#266)', () => {
+  const c = GUIDES.multiFamily.caveats.find((x) => x.text.includes('Betriebsstrom')) ?? assert.fail('kein Satz zum Betriebsstrom')
+  assert.match(c.text, /Läuft er über den Stromzähler des Hauses, schätzen Sie ihn oder lesen Sie den Zwischenzähler ab und ziehen ihn beim Allgemeinstrom ab;/)
+  assert.ok(c.text.endsWith('Geben Sie auf der Seite Heizkosten an, wie der Betriebsstrom erfasst ist; dann weist Mietfuchs gezielt darauf hin, wenn der Abzug fehlt.'), c.text)
+})
+
+test('Integrationsdurchsicht S3: „Heizkosten selbst abrechnen“ nennt die monatliche Verbrauchsinformation nicht mehr als Lücke, sondern die Karte, die sie erstellt', () => {
+  const g = GUIDES.heatingSelf
+  assert.ok(g.gaps.every((x) => !/Verbrauchsinformation/.test(x.text) || /Heizkostenverteiler/.test(x.text)), 'überholte Lücke zur Verbrauchsinformation')
+  assert.ok(g.steps.some((s) => s.page === 'heizkosten' && s.text.includes('„Monatliche Verbrauchsinformation“')))
 })

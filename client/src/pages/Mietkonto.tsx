@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { Payment, RentLedger, RentMonth, Tenancy } from '../types'
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
-import { useYear } from '../year'
-import { useProperty, withProperty, useSwitchYear } from '../property'
+import { usePeriod } from '../period'
+import { periodSpanText } from '../periodForm'
+import { CalendarYearSelect } from '../components/PeriodSelect'
+import { useProperty, withProperty } from '../property'
 import { bookingDate, newPaymentDate, rowStanding, showDecemberNote } from '../ledgerView'
 import Drawer from '../components/Drawer'
 import PageHeader from '../components/PageHeader'
@@ -15,9 +17,8 @@ const MONTHS = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 
 type PaymentForm = { tenancyId: string; date: string; amount: string; note: string }
 
 export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
-  const { year } = useYear()
-  // Fragt bei offenem Formular nach, wie der Objektwechsel (Durchsicht zu #141).
-  const switchYear = useSwitchYear()
+  // Das Mietkonto rechnet im Kalenderjahr (#208, Entwurf 3.11).
+  const { calendarYear: year, calendar, label, period } = usePeriod()
   const { property } = useProperty()
   const propertyId = property?.id
   const toast = useToast()
@@ -128,16 +129,10 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
 
       <div className="card">
         <div className="row">
-          <label className="field">
-            Jahr
-            <select value={year} onChange={(e) => void switchYear(Number(e.target.value))}>
-              {Array.from({ length: 8 }, (_, k) => new Date().getFullYear() - k).map((y) => (
-                <option key={y} value={y}>{y}</option>
-              ))}
-            </select>
-          </label>
+          <CalendarYearSelect />
         </div>
       </div>
+      {!calendar && <div className="info no-print">Die Abrechnung {label} umfasst {periodSpanText(period)}. Das Mietkonto zeigt das Kalenderjahr.</div>}
 
       {ledger && (
         <div className="kpis">
@@ -204,13 +199,19 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
         <div className="card"><div className="empty">Für {year} gibt es keine Mietverhältnisse. Legen Sie sie unter Stammdaten an und hinterlegen Sie die Kaltmiete.</div></div>
       )}
 
+      {/* Sichtprüfung E34: einmal über den Karten statt in jeder */}
+      {ledger && ledger.rows.some((r) => r.sollYearCents > 0) && (
+        <p className="muted">Klick auf einen roten oder gelben Monat bucht den offenen Restbetrag vor; gestrichelte Monate sind noch nicht fällig.</p>
+      )}
       {ledger?.rows.map((r) => {
         const noRent = r.sollYearCents === 0
         const standing = rowStanding(r)
+        // Sichtprüfung E35: Bei Inklusivmiete gibt es keine Vorauszahlung; „0,00 €“ sähe aus wie ein fehlender Betrag.
+        const inclusive = tenancies.find((t) => t.id === r.tenancyId)?.costModel === 'inclusive' && r.prepaymentYearCents === 0
         return (
           <div className={focusedId === r.tenancyId ? 'card focus-target' : 'card'} key={r.tenancyId}>
-            <div className="row" style={{ alignItems: 'baseline' }}>
-              <h2 style={{ marginRight: 'auto' }}>{r.tenantName} <span className="muted" style={{ fontWeight: 400 }}>· {r.unitName}</span></h2>
+            <div className="row baseline">
+              <h2 className="grow">{r.tenantName} <span className="muted normal">· {r.unitName}</span></h2>
               {standing.kind === 'arrears' ? (
                 <span className="badge red">{fmtEuro(standing.cents)} offen</span>
               ) : standing.kind === 'credit' ? (
@@ -223,7 +224,7 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
             </div>
 
             {noRent ? (
-              <div className="notice" style={{ marginTop: 8 }}>
+              <div className="notice">
                 Keine Kaltmiete hinterlegt — unter <em>Stammdaten → Mietverhältnis bearbeiten</em> die Kaltmiete-Staffel
                 eintragen, dann erscheint hier das Soll. (Reine NK-Vorauszahlungen zählen ebenfalls ins Soll.)
               </div>
@@ -245,14 +246,11 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
                     )
                   })}
                 </div>
-                <p className="muted" style={{ margin: '2px 0 10px' }}>
-                  Klick auf einen roten/gelben Monat bucht den offenen Restbetrag vor; gestrichelte Monate sind noch nicht fällig.
-                </p>
                 {/* **Der überraschende Dezember** (#70). Die Bedingung steht in ledgerView.ts,
                     damit sie einen Test hat: Der erste Entwurf stand hier und war zweimal falsch,
                     einmal im laufenden Jahr und einmal in der Aussage, wo das Geld auftaucht. */}
                 {showDecemberNote(r, year, new Date()) && (
-                  <p className="muted" style={{ margin: '2px 0 10px' }}>
+                  <p className="muted">
                     Der Dezember steht offen. Das kann daran liegen, dass die Dezembermiete erst im
                     Januar eingegangen ist: Zahlungen zählen zu dem Jahr, in dem sie eingegangen sind,
                     und erscheinen dann unter den Zahlungseingängen {year + 1}.
@@ -266,8 +264,14 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
                     </tr>
                     <tr>
                       <td>NK-Vorauszahlung</td>
-                      <td className="num">{fmtEuro(r.prepaymentYearCents)}</td>
+                      <td className="num">{inclusive ? <span className="muted">in der Miete enthalten</span> : fmtEuro(r.prepaymentYearCents)}</td>
                     </tr>
+                    {r.heatingPrepaymentYearCents !== undefined && (
+                      <tr>
+                        <td>Heizvorauszahlung</td>
+                        <td className="num">{fmtEuro(r.heatingPrepaymentYearCents)}</td>
+                      </tr>
+                    )}
                     {r.flatRateYearCents > 0 && (
                       <tr>
                         <td>NK-Pauschale (ohne Abrechnung)</td>

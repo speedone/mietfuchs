@@ -1,0 +1,196 @@
+// Die Karte „CO₂-Kosten“ der Seite Heizkosten (Heizung PR 6, Entwurf 11.3): was der Vermieter aus
+// der Abrechnung des Messdienstes oder der Gemeinschaft überträgt, ohne DOM, damit es ohne Browser
+// prüfbar ist. Die Probe rechnet shared/co2Probe.ts, dieselbe Funktion wie die Abrechnung.
+//
+// Die Frage nach der Abzugszeile hat keine Vorgabe (Entwurf 7.2): Ob abgezogen wurde, steht nur auf
+// dem Papier, und eine Vorgabe wäre bei einem Teil der Messdienste falsch.
+import { fmtEuro, parseEuro } from './api'
+import { parseNumberDe } from './numbers'
+import { enteredCentsOf, serviceProbe } from '../../shared/co2Probe.ts'
+import type { Co2Method, Co2Statement, HeatingPeriodView } from './types'
+
+export type Co2Answer = '' | 'deducted' | 'shown' | 'unsplit'
+const METHOD_OF: Record<Exclude<Co2Answer, ''>, Co2Method> = { deducted: 'serviceDeducted', shown: 'serviceShown', unsplit: 'selfAfterService' }
+const answerOf = (m: Co2Method): Co2Answer =>
+  m === 'serviceDeducted' ? 'deducted' : m === 'serviceShown' ? 'shown' : m === 'selfAfterService' ? 'unsplit' : ''
+
+// Gefragt wird nur nach der Zeile in der Kostenaufstellung, die den Anteil vor der Verteilung abzieht
+// (Durchsicht I1). „Vom Vermieter übernommen“ bei den einzelnen Nutzern weisen Messdienste auch ohne
+// Abzug aus; wer daran „Ja“ festmacht, antwortet falsch.
+export const CO2_QUESTION = 'Steht in der Kostenaufstellung der Heizkosten eine Zeile, die den CO₂-Anteil des Vermieters vor der Verteilung abzieht, etwa „Abzüglich CO₂-Kosten Vermieter“?'
+export const CO2_NOT_A_SIGN = 'Ein Betrag „vom Vermieter übernommen“ bei den einzelnen Mietern ist dafür kein Zeichen: Den weisen Messdienste auch aus, wenn sie nichts vorab abziehen.'
+// Die Beispielzeile aus dem Techem-Muster (Entwurf 7.2).
+export const CO2_EXAMPLE = 'Beispiel aus einer Musterabrechnung: Anlieferung Brennstoff 3.540,00 · Abzüglich CO₂-Kosten Vermieter −87,50 · Verbrauch 3.452,50'
+export const CO2_ANSWER_OPTIONS: readonly { value: Co2Answer; label: string }[] = [
+  { value: '', label: 'Bitte wählen …' },
+  { value: 'deducted', label: 'Ja, es gibt eine Abzugszeile' },
+  { value: 'shown', label: 'Nein, die CO₂-Kosten sind nur ausgewiesen' },
+  { value: 'unsplit', label: 'Der Messdienst hat die CO₂-Kosten gar nicht aufgeteilt' },
+]
+
+export type Co2Form = {
+  answer: Co2Answer
+  usersTotal: string // S, wie gedruckt
+  usersTotalApprox: boolean // „Ich finde diese Zeile nicht“
+  vacancyTotal: string // Beträge leerer oder nicht eingetragener Einheiten (nur ohne S)
+  kgPerM2: string
+  emissionsKg: string // CO₂-Ausstoß insgesamt laut Abrechnung
+  serviceArea: string // Wohnfläche laut Abrechnung
+  landlordPercent: string
+  totalCo2: string // C
+  landlordCo2: string // L
+  selfLandlord: string // L_self, wenn die Einzelabrechnung der eigenen Wohnung ihn nennt
+  unitsCount: string // NE
+  fuelGross: string // G
+  fuelNet: string // V
+  costItemId: string
+  reliefs: Record<string, string> // „vom Vermieter übernommen“ je Mietverhältnis
+}
+// `homeowners` (Abdeckung V14): Bei einer Eigentumswohnung rechnet die Gemeinschaft ab. Die Einzelabrechnung der
+// eigenen Wohnung in der Hausgeldabrechnung nennt deren Heizkosten und den CO₂-Anteil des Vermieters für diese
+// Wohnung; gemeint ist dann der eigene Anteil, nicht die Summe des ganzen Hauses, und die Abrechnung betrifft eine
+// Nutzeinheit. Die Position trägt ja auch nur den eigenen Anteil.
+export type Co2Context = { items: HeatingPeriodView['items']; unitsCount: number; homeowners?: boolean }
+
+// Die Beschriftungen der Karte, je nachdem, wer abrechnet.
+export function co2Labels(homeowners: boolean): { usersTotal: string; usersTotalHelp: string; landlordCo2: string; unitsCount: string; unitsHelp: string } {
+  return homeowners
+    ? {
+        usersTotal: 'Heizkosten Ihrer Wohnung laut Einzelabrechnung (€)',
+        usersTotalHelp: 'Aus der Einzelabrechnung Ihrer Wohnung in der Hausgeldabrechnung: die Kosten für Heizung und Warmwasser Ihrer Wohnung, bei einer Abzugszeile nach dem Abzug. Nicht gemeint ist die Summe des ganzen Hauses.',
+        landlordCo2: 'davon Vermieter für Ihre Wohnung (€)',
+        unitsCount: 'Nutzeinheiten (Ihre Wohnung)',
+        unitsHelp: 'Die Einzelabrechnung der Gemeinschaft betrifft nur Ihre Wohnung, also eine Nutzeinheit. ',
+      }
+    : {
+        usersTotal: 'Summe der Kosten aller Nutzer (€)',
+        usersTotalHelp: 'Die gedruckte Summe für Heizung und Warmwasser aller Nutzer, bei einer Abzugszeile nach dem Abzug. Bei Techem heißt die Zeile „Summe der Nutzerkosten Heizungsanlage“; bei anderen Messdiensten steht sie in der Kostenaufstellung unter der Verteilung.',
+        landlordCo2: 'davon Vermieter (€)',
+        unitsCount: 'Nutzeinheiten laut Abrechnung',
+        unitsHelp: 'Vorbelegt mit der Zahl der Wohnungen an dieser Heizung; maßgeblich ist die Zahl auf der Abrechnung des Messdienstes. ',
+      }
+}
+
+const centsText = (c: number | null): string => (c === null ? '' : (c / 100).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
+// Ohne Tausenderpunkt, damit das Feld so dasteht, wie man es tippt.
+const numberText = (n: number | null): string => (n === null ? '' : n.toLocaleString('de-DE', { maximumFractionDigits: 4, useGrouping: false }))
+const serviceItemsOf = (ctx: Co2Context) => ctx.items.filter((i) => i.key === 'amounts')
+
+// Eine Zahl in deutscher („46,4“, „1.046,4“, „3.000“) oder technischer Schreibweise („46.4“); dieselbe Regel
+// wie bei Beträgen (`parseNumberDe`, Durchsicht von #240, M3): „3.000“ sind dreitausend, nicht drei.
+export function parseDecimal(text: string): number | null {
+  return parseNumberDe(text)
+}
+
+export function co2ToForm(st: Co2Statement | null, ctx: Co2Context): Co2Form {
+  const permille = st?.serviceLandlordPermille ?? null
+  const S = st?.serviceUsersTotalCents ?? null
+  return {
+    answer: st ? answerOf(st.method) : '',
+    usersTotal: st?.serviceUsersTotalApprox ? '' : centsText(S),
+    usersTotalApprox: st?.serviceUsersTotalApprox ?? false,
+    vacancyTotal: st?.serviceUsersTotalApprox && S !== null ? centsText(Math.max(0, S - enteredCentsOf(serviceItemsOf(ctx)))) : '',
+    kgPerM2: numberText(st?.serviceKgPerM2 ?? null),
+    emissionsKg: numberText(st?.serviceEmissionsKg ?? null),
+    serviceArea: numberText(st?.serviceAreaM2 ?? null),
+    landlordPercent: permille === null ? '' : numberText(permille / 10),
+    totalCo2: centsText(st?.serviceTotalCents ?? null),
+    landlordCo2: centsText(st?.serviceLandlordCents ?? null),
+    selfLandlord: centsText(st?.serviceSelfLandlordCents ?? null),
+    unitsCount: String(st?.serviceUnitsCount ?? (ctx.homeowners ? 1 : ctx.unitsCount)),
+    fuelGross: centsText(st?.serviceFuelGrossCents ?? null),
+    fuelNet: centsText(st?.serviceFuelNetCents ?? null),
+    costItemId: st?.serviceCostItemId ?? '',
+    reliefs: Object.fromEntries((st?.reliefs ?? []).map((r) => [r.tenancyId, centsText(r.cents)])),
+  }
+}
+
+// S: die gedruckte Summe, oder ohne sie die Einzelbeträge aller Nutzeinheiten laut Messdienst, also
+// die eingetragenen und die der leeren oder nicht eingetragenen Einheiten (Entwurf 7.3, R6).
+export function usersTotalOf(form: Co2Form, ctx: Co2Context): number | null {
+  if (!form.usersTotalApprox) return form.usersTotal.trim() === '' ? null : parseEuro(form.usersTotal)
+  const vacancy = form.vacancyTotal.trim() === '' ? 0 : parseEuro(form.vacancyTotal)
+  return vacancy === null || vacancy < 0 ? null : enteredCentsOf(serviceItemsOf(ctx)) + vacancy
+}
+
+export function co2Body(form: Co2Form, ctx: Co2Context): { body: Record<string, unknown> } | { error: string } {
+  if (form.answer === '') return { error: 'Bitte beantworten Sie zuerst die Frage nach der Abzugszeile.' }
+  const method = METHOD_OF[form.answer]
+  const errors: string[] = []
+  const cents = (text: string, label: string): number | null => {
+    if (text.trim() === '') return null
+    const c = parseEuro(text)
+    if (c === null || c < 0) {
+      errors.push(`Bitte prüfen Sie „${label}“: kein Betrag ab 0 €.`)
+      return null
+    }
+    return c
+  }
+  const decimal = (text: string, label: string): number | null => {
+    if (text.trim() === '') return null
+    const n = parseDecimal(text)
+    if (n === null || n < 0) {
+      errors.push(`Bitte prüfen Sie „${label}“: keine Zahl ab 0.`)
+      return null
+    }
+    return n
+  }
+  const S = usersTotalOf(form, ctx)
+  const L = cents(form.landlordCo2, 'davon Vermieter')
+  const area = decimal(form.serviceArea, 'Wohnfläche laut Abrechnung (m²)')
+  if (area !== null && area <= 0) errors.push('Bitte prüfen Sie „Wohnfläche laut Abrechnung (m²)“: eine Zahl größer als 0.')
+  const percent = decimal(form.landlordPercent, 'Anteil des Vermieters (%)')
+  const units = Number(form.unitsCount)
+  const unitsCount = Number.isInteger(units) && units > 0 ? units : null
+  const body = {
+    method,
+    serviceUsersTotalCents: S,
+    serviceUsersTotalApprox: form.usersTotalApprox,
+    serviceLandlordCents: L,
+    serviceUnitsCount: unitsCount,
+    serviceKgPerM2: decimal(form.kgPerM2, 'CO₂-Ausstoß je m² und Jahr (kg)'),
+    serviceEmissionsKg: decimal(form.emissionsKg, 'CO₂-Ausstoß insgesamt laut Abrechnung (kg)'),
+    serviceAreaM2: area !== null && area > 0 ? area : null,
+    serviceLandlordPermille: percent === null ? null : Math.round(percent * 10),
+    serviceTotalCents: cents(form.totalCo2, 'CO₂-Kosten insgesamt'),
+    serviceSelfLandlordCents: cents(form.selfLandlord, 'davon für Ihre selbst bewohnte Wohnung'),
+    serviceFuelGrossCents: cents(form.fuelGross, 'Brennstoffkosten laut Abrechnung (vor Abzug)'),
+    serviceFuelNetCents: cents(form.fuelNet, 'davon verteilt'),
+    serviceCostItemId: form.costItemId === '' ? null : form.costItemId,
+    reliefs: Object.entries(form.reliefs).flatMap(([tenancyId, text]) => {
+      const c = cents(text, 'vom Vermieter übernommen')
+      return c === null ? [] : [{ tenancyId, cents: c }]
+    }),
+  }
+  const first = errors[0]
+  if (first) return { error: first }
+  if (method !== 'selfAfterService') {
+    if (S === null) {
+      return { error: form.usersTotalApprox
+        ? 'Bitte tragen Sie die Beträge der leeren oder nicht eingetragenen Einheiten ein, 0, wenn es keine gibt.'
+        : ctx.homeowners
+          ? 'Bitte tragen Sie die Heizkosten Ihrer Wohnung laut Einzelabrechnung der Gemeinschaft ein, oder kreuzen Sie „Ich finde diese Zeile nicht“ an.'
+          : 'Bitte tragen Sie die Summe der Kosten aller Nutzer ein, oder kreuzen Sie „Ich finde diese Zeile nicht“ an.' }
+    }
+    if (L === null) return { error: 'Bitte tragen Sie den CO₂-Anteil des Vermieters in Euro ein.' }
+    if (unitsCount === null) return { error: 'Bitte tragen Sie die Zahl der Nutzeinheiten ein, mindestens 1.' }
+  }
+  return { body }
+}
+
+// Die Probe unter der Karte (Entwurf 11.3): „Ihre Positionen: 3.933,01 € · erwartet: 3.933,01 € ✓“.
+export function probeLine(form: Co2Form, ctx: Co2Context): { text: string; ok: boolean } | null {
+  if (form.answer !== 'deducted' && form.answer !== 'shown') return null
+  const S = usersTotalOf(form, ctx)
+  const L = form.landlordCo2.trim() === '' ? null : parseEuro(form.landlordCo2)
+  const units = Number(form.unitsCount)
+  if (S === null || L === null || !Number.isInteger(units) || units < 1) return null
+  const p = serviceProbe({ deducted: form.answer === 'deducted', items: serviceItemsOf(ctx), usersTotalCents: S, landlordCents: L, unitsCount: units, approx: form.usersTotalApprox })
+  const entered = p.enteredOk ? '' : ` · Einzel- und Eigenbeträge zusammen ${fmtEuro(p.enteredCents)}, mehr als ${ctx.homeowners ? 'die Heizkosten Ihrer Wohnung' : 'die Summe der Kosten aller Nutzer'}`
+  // Geht sie nicht auf, nennt die Zeile beide Lesarten (Durchsicht M3): Oft ist nur die Antwort auf
+  // die Frage nach der Abzugszeile falsch. Laienprobe B20: in Worten, ohne S und L.
+  const users = ctx.homeowners ? 'Heizkosten Ihrer Wohnung' : 'Summe der Nutzer'
+  const whole = ctx.homeowners ? ' Nicht gemeint ist die Summe des ganzen Hauses.' : ''
+  const both = p.itemsOk ? '' : ` · mit Abzugszeile erwartet: ${users} ${fmtEuro(S)} + Anteil Vermieter ${fmtEuro(L)} = ${fmtEuro(S + L)}; ohne Abzugszeile: ${fmtEuro(S)}. Den Betrag ändern Sie an der Position auf der Seite Kosten.${whole}`
+  return { text: `Ihre Positionen: ${fmtEuro(p.itemsCents)} · erwartet: ${fmtEuro(p.expectedCents)} ${p.ok ? '✓' : '✗'}${both}${entered}`, ok: p.ok }
+}

@@ -33,6 +33,8 @@ export type QueueOptions<R, X extends object> = {
   // nennt er kein Jahr, gilt das gewählte.
   propertyId?: string
   year: number
+  // Der gewählte Abrechnungszeitraum (#208); der Server nimmt ihn nur, wenn es ihn für das Objekt gibt.
+  period?: string
   // Was aus der Antwort wird. Gilt jeweils in der Fassung des letzten Renderns.
   finish: (result: R, file: File, entry: QueueEntry<X>) => QueuePatch<X> | Promise<QueuePatch<X>>
 }
@@ -102,6 +104,7 @@ export function useEvaluationQueue<R, X extends object>(options: QueueOptions<R,
         }
         if (o.propertyId) fd.append('propertyId', o.propertyId)
         fd.append('year', String(o.year))
+        if (o.period) fd.append('period', o.period)
         const res = await aiRequest<R>(o.endpoint, fd, {
           signal: controller.signal,
           onProgress: (progress) => patchEntry(next.id, { progress }),

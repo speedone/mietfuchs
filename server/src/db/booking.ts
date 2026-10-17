@@ -13,10 +13,12 @@ import type { AssessmentView, BookingPreview, CostItem, LineDecision } from '../
 import { describeAssessment, openTargets, type BookedLine, type OpenTarget } from '../assessment.ts'
 import { planBooking, previewWith, settle, tokenSource, type BookingOutcome, type Planned } from '../bookingPlan.ts'
 import { narrowToProperty } from '../snapshot.ts'
+import { rulesOf } from '../../../shared/period.ts'
 import type { Database } from './client.ts'
 import { bookedLines, listAssessments, readAssessment, writeLine, type AssessmentRecord } from './assessments.ts'
 import { readStock, type Stock } from './read.ts'
 import { insertCostItemIn, patchCostItemIn } from './repository.ts'
+import { plantRules } from '../../../shared/heatingPeriod.ts'
 import { uploadRows, type UploadRow } from './uploads.ts'
 
 // Eine Ablehnung mit einer Meldung für den Nutzer; die Fehlerbehandlung in index.ts gibt sie
@@ -63,11 +65,20 @@ const twinNamesOf = (ctx: Context, file: string): Map<string, string> => new Map
 // quadratisch, und das in der Leseschlange.
 type Peer = { id: string, file: string, targets: OpenTarget[] }
 
+// Die Regeln der Zeiträume des Objekts einer Auswertung (#208); ohne Objekt das Kalenderjahr.
+const rulesFor = (ctx: Context, propertyId: string | null) => rulesOf(ctx.stock.properties.find((p) => p.id === propertyId))
+// Die eigene Heizperiode der einzigen Anlage (Heizung PR 5), sonst `null`; wie `defaultHeatingPlant`.
+const heatingRulesFor = (ctx: Context, propertyId: string | null) => {
+  const plants = ctx.stock.heatingPlants.filter((p) => p.propertyId === propertyId)
+  const only = plants.length === 1 ? plants[0] : undefined
+  return only && only.periodStartMonth !== null ? plantRules(only, rulesFor(ctx, propertyId)) : null
+}
+
 function peersFrom(records: readonly AssessmentRecord[], ctx: Context): Peer[] {
   return records.flatMap((r) => {
     const scoped = scopeOf(ctx, r.assessment.propertyId)
     if (!scoped) return []
-    return [{ id: r.assessment.id, file: r.assessment.file, targets: openTargets(r, { items: scoped.costItems, booked: ctx.booked, twinNames: twinNamesOf(ctx, r.assessment.file) }) }]
+    return [{ id: r.assessment.id, file: r.assessment.file, targets: openTargets(r, { items: scoped.costItems, booked: ctx.booked, twinNames: twinNamesOf(ctx, r.assessment.file), rules: rulesFor(ctx, r.assessment.propertyId) }) }]
   })
 }
 
@@ -112,6 +123,7 @@ function viewOf(record: AssessmentRecord, ctx: Context, peers: readonly Peer[]):
     twinNames: new Map(twins.map((f) => [f, nameOf(ctx, f)])),
     booked: ctx.booked,
     peerTargets: peerTargetsFor(record, peers, ctx),
+    rules: rulesFor(ctx, a.propertyId),
   })
 }
 
@@ -150,6 +162,8 @@ async function plannedFor(db: Database, id: string, decisions: readonly LineDeci
     units: scoped?.units ?? [], twinFiles,
     fileNames: new Map([...ctx.booked.map((l) => l.file), ...twinFiles].map((f) => [f, nameOf(ctx, f)])),
     closed: ctx.stock.closedSettlements,
+    rules: rulesFor(ctx, record.assessment.propertyId),
+    heatingRules: heatingRulesFor(ctx, record.assessment.propertyId),
   }, decisions, newId)
   return { record, ctx, planned }
 }
@@ -177,7 +191,7 @@ export async function bookAssessment(
   await db.transaction(async (tx) => {
     for (const w of planned.writes) {
       if (w.kind === 'createItem') {
-        await insertCostItemIn(tx, w.id, w.body)
+        await insertCostItemIn(tx, w.id, w.body, { invoiceDate: record.assessment.invoiceDate })
       } else if (w.kind === 'updateItem') {
         const current = items.get(w.id)
         if (!current) throw new BookingRefusal(409, 'Eine Position ist während der Buchung verschwunden. Bitte laden Sie die Seite neu.')

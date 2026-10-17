@@ -35,7 +35,7 @@ const photoOf = (filePath: string, mimetype: string): ProviderImage => ({ mimeTy
 // Frage, was auf einem Foto zu sehen ist, ist in der Schnellerfassung der erste Schritt: Er
 // enthält das Laden des Modells und ein Bild. Nur der zweite Durchgang (Kategorien) ist reiner
 // Text und kurz. Das Zeitlimit unter „Erweitert“ (oder NKA_AI_TIMEOUT) gilt für alle Schritte.
-const TIMEOUT_SECONDS: Record<string, number> = { extraction: 1200, classification: 180, docType: 600, meterReading: 600 }
+const TIMEOUT_SECONDS: Record<string, number> = { extraction: 1200, classification: 180, docType: 600, meterReading: 600, serviceStatement: 1200, fuelInvoice: 1200 }
 const timeoutMs = (step: string, ai: AiSettings): number => (ai.timeoutSeconds ?? TIMEOUT_SECONDS[step]) * 1000
 
 // „Zusätzliche Hinweise an das Modell“ aus den Einstellungen, etwa zu Eigenheiten der eigenen
@@ -65,8 +65,8 @@ const isObject = (v: unknown): v is Record<string, unknown> => v !== null && typ
 // `unknown`. Ein Modell hält sich nicht zwingend an sein Schema, und nichts prüft das zur
 // Laufzeit gegen das Schema — deshalb engt jeder Aufrufer unten selbst ein, was er braucht,
 // statt sich hier einen fertigen Typ zusichern zu lassen. Falsches fällt so beim Lesen auf und
-// nicht erst in der Oberfläche.
-async function ask(
+// nicht erst in der Oberfläche. Auch extractHeating.ts fragt darüber (Heizung PR 20).
+export async function ask(
   settings: AiCapableSettings,
   step: string,
   { prompt, images = [], schema }: { prompt: string; images?: ProviderImage[]; schema: JsonSchema },
@@ -293,6 +293,26 @@ Gib die Kategorien in derselben Reihenfolge wie die Positionen zurück.`
   })
 }
 
+// Text und Bilder eines Belegs für den Prompt, für jede Belegart gleich: Ein PDF mit brauchbarer Textebene
+// geht als Text, ein Scan mit höchstens vier Seitenbildern, ein Foto als Bild. `label` nennt die Belegart im
+// Prompt („RECHNUNGSTEXT“, „Die Rechnung“). Auch extractHeating.ts nimmt es (Heizung PR 20).
+export function documentMaterial(
+  filePath: string,
+  mimetype: string,
+  { pdfText = '', pages = [] }: { pdfText?: string; pages?: ProviderImage[] },
+  label: { text: string; noun: string },
+): { suffix: string; images: ProviderImage[] } {
+  if (mimetype === 'application/pdf') {
+    const text = String(pdfText ?? '').trim()
+    if (text.length >= TEXT_MIN) return { suffix: `\n\n--- ${label.text} ---\n${text.slice(0, TEXT_MAX)}`, images: [] }
+    // Scan ohne (brauchbare) Textebene: die Seitenbilder gehen an das Vision-Modell
+    if (pages.length > 0) return { suffix: `\n\n${label.noun} ist als Bild(er) angehängt (gescanntes PDF, ggf. mehrseitig).`, images: pages.slice(0, PAGES_MAX) }
+    throw new Error(NO_CONTENT)
+  }
+  if (mimetype.startsWith('image/')) return { suffix: `\n\n${label.noun} ist als Bild angehängt.`, images: [photoOf(filePath, mimetype)] }
+  throw new Error(`Dateityp ${mimetype} wird nicht unterstützt (PDF oder Bild).`)
+}
+
 // `pdfText` und `pages` ([{ mimeType, data }]) liefert der Browser für PDFs, siehe Kopf der Datei.
 // `signal`, `stats` und `onProgress` gehen an ask().
 export async function extractFromFile(
@@ -301,26 +321,9 @@ export async function extractFromFile(
   settings: AiCapableSettings,
   { pdfText = '', pages = [], signal, stats, onProgress }: { pdfText?: string; pages?: ProviderImage[] } & AskOptions = {},
 ): Promise<Extraction> {
-  let prompt = PROMPT
-  let images: ProviderImage[] = []
-
-  if (mimetype === 'application/pdf') {
-    const text = String(pdfText ?? '').trim()
-    if (text.length >= TEXT_MIN) {
-      prompt += `\n\n--- RECHNUNGSTEXT ---\n${text.slice(0, TEXT_MAX)}`
-    } else if (pages.length > 0) {
-      // Scan ohne (brauchbare) Textebene: die Seitenbilder gehen an das Vision-Modell
-      images = pages.slice(0, PAGES_MAX)
-      prompt += '\n\nDie Rechnung ist als Bild(er) angehängt (gescanntes PDF, ggf. mehrseitig).'
-    } else {
-      throw new Error(NO_CONTENT)
-    }
-  } else if (mimetype.startsWith('image/')) {
-    images = [photoOf(filePath, mimetype)]
-    prompt += '\n\nDie Rechnung ist als Bild angehängt.'
-  } else {
-    throw new Error(`Dateityp ${mimetype} wird nicht unterstützt (PDF oder Bild).`)
-  }
+  const material = documentMaterial(filePath, mimetype, { pdfText, pages }, { text: 'RECHNUNGSTEXT', noun: 'Die Rechnung' })
+  const prompt = PROMPT + material.suffix
+  const images = material.images
 
   // Netto-Positionen hochrechnen und einen Lohnanteil aus dem Gesamtbetrag verteilen (#34).
   const answer = await ask(settings, 'extraction', { prompt, images, schema: SCHEMA }, { signal, stats, onProgress })

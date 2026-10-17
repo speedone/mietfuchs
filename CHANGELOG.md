@@ -6,8 +6,626 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
-### Hinzugefügt
+### Neu
 
+- Abrechnungszeitraum wählbar: In den Stammdaten stellen Sie unter „Abrechnungszeitraum“ ein, ob ein
+  Objekt im Kalenderjahr oder etwa von Mai bis April abrechnet. Ein Wechsel zeigt vorher, was
+  geschieht: den Rumpfzeitraum davor, welche Rechnungen nach Tagen aufgeteilt werden, und er fragt
+  die tatsächlich gezahlten Vorauszahlungen neu ab, wo eine Jahreskorrektur nicht mehr passt.
+  Abgeschlossene Abrechnungen bleiben unangetastet. Vorgabe ist der Wechsel ab dem laufenden Monat;
+  „von Anfang an“ sagt, dass es auch frühere Abrechnungen ändert. Rechnungen ohne Leistungszeitraum
+  teilt der Wechsel nach Tagen auf die neuen Zeiträume auf, statt eine Jahresrechnung ganz in den
+  Rumpf zu legen; vorbelegt ist das nur, wenn keine Belegzeile darauf gebucht ist und sich das Jahr
+  der Zahlung nicht verschiebt, sonst nennt die Vorschau die Verschiebung in Euro und fragt. Heizkosten
+  teilt er nicht, dort warnen Vorschau und Abrechnung mit Betrag. Die Vorschau nennt für jede schon
+  begonnene Abrechnung Frist und Ergebnis je Mieter vorher und nachher; ist die Frist eines Rumpfs
+  schon abgelaufen, steht das rot da, mit der Nachzahlung, die nicht mehr verlangt werden darf, und
+  gespeichert wird erst nach Bestätigung, die auch der Server verlangt. Ein Teil einer nach Tagen
+  geteilten Rechnung lässt sich in der Belegbuchung nicht mit weiteren Zeilen verknüpfen. Eine Seite,
+  die vor dem Update geöffnet wurde, bekommt beim Wechsel mit Heizkosten eine Meldung über fehlende
+  Angaben; neu laden genügt. Rechnungen tragen auf Wunsch ihren
+  Leistungszeitraum; kalte Betriebskosten über zwei Abrechnungszeiträume teilt Mietfuchs beim
+  Speichern nach Tagen auf, Heizkosten nicht. Reicht ein Zeitraum über zwei Kalenderjahre, fragt das
+  Formular nach dem Jahr der Zahlung (vorbelegt nur mit dem Rechnungsdatum eines Belegs; bei
+  Heizkosten mit dem Hinweis, was für Abschläge über zwei Jahre gilt), und die Steuerübersicht bleibt
+  beim Kalenderjahr. Im
+  Rumpfzeitraum gibt es einen Vorschlag für die neue Vorauszahlung, Brennstoff nach
+  Gradtagen. Wer im Kalenderjahr abrechnet, merkt davon nichts
+  ([#208](https://github.com/speedone/mietfuchs/issues/208)).
+- **Heizanlage in den Stammdaten.** Unter „Heizung“ geben Sie an, womit geheizt wird, wer die
+  Heizkostenabrechnung erstellt (ein Messdienst, bei einer Eigentumswohnung die Gemeinschaft, oder
+  niemand), welche Wohnungen angeschlossen sind und ob die Zähler und Heizkostenverteiler aus der
+  Ferne ablesbar sind. Vorhandene Heizpositionen offener Zeiträume kommen beim Einrichten zur
+  Anlage, neue von selbst. An keinem Betrag ändert sich dadurch etwas; stehen an Zählern schon
+  Angaben zur Fernablesbarkeit, können Hinweise dazukommen
+  ([#99](https://github.com/speedone/mietfuchs/issues/99)).
+- **Fernablesbarkeit nach Einbaudatum, beziffert.** Zähler kennen jetzt die Sparten Warmwasser und
+  Heizkostenverteiler, dazu „aus der Ferne ablesbar“ und das Einbaudatum; beim Messdienst genügt die
+  Angabe an der Heizanlage. Ist ein Gerät nicht fernablesbar, obwohl es das sein muss (nach dem
+  01.12.2021 eingebaut: ab dem Einbau, ältere ab 2027), nennt die Abrechnung die Kürzung von 3 %
+  der Heizkosten je Mieter; ist das nur möglich, etwa weil ein einzelnes Gerät in einem sonst nicht
+  fernablesbaren System ersetzt wurde (§ 5 Abs. 2 Satz 4 HeizkostenV), sagt sie „bis zu“. Ob die
+  Geräte einzeln ersetzt oder als Ganzes neu eingebaut wurden, fragt die Heizanlage, wenn es darauf
+  ankommt. Ohne Angaben bleibt es beim
+  bisherigen Hinweis ([#214](https://github.com/speedone/mietfuchs/issues/214)).
+- **Zweifamilienhaus als Art des Objekts**, mit einem Hinweis, wenn die angelegten Wohnungen nicht
+  dazu passen; ob die Ausnahme des § 2 HeizkostenV gilt, richtet sich weiter nach den Wohnungen
+  ([#180](https://github.com/speedone/mietfuchs/issues/180)).
+- **Eigene Heizperiode.** Rechnet Ihr Messdienst die Heizkosten etwa von Mai bis April ab, stellen
+  Sie unter Stammdaten → Heizung den Zeitraum der Heizung ein, mit Vorschau. Die Heizkosten einer
+  Heizperiode stehen dann in der Betriebskostenabrechnung des Jahres, in dem sie endet; vorhandene
+  Heizpositionen kommen dorthin. Die Einrichtung erklärt dazu die drei Wege (Heizperiode des
+  Messdienstes in der Abrechnung des Kalenderjahres, das ganze Objekt auf den Zeitraum des
+  Messdienstes umstellen, den Messdienst auf den 31.12. umstellen lassen) mit Vor- und Nachteilen
+  und schlägt bei einer gemeinsamen Vorauszahlung den ersten vor. Wer in diesem Jahr nicht mehr im Haus wohnte, bekommt eine
+  Abrechnung nur mit seinen Heizkosten; Mietfuchs empfiehlt dafür die frühere Frist und sagt, bis
+  wann die Abrechnung des Messdienstes anzufordern ist
+  ([#217](https://github.com/speedone/mietfuchs/issues/217)).
+- **Getrennte Heizkostenabrechnung.** Werden die Heizkosten mit eigener Vorauszahlung getrennt
+  abgerechnet, bekommt jede Heizperiode ihre eigene Heizkostenabrechnung mit eigener Frist und
+  eigenem Abschluss. Beim Einschalten teilt eine Vorschau die bisherige Vorauszahlung in
+  Heizvorauszahlung und übrige Vorauszahlung, erfasst Jahreskorrekturen neu und nennt die Fristen;
+  ausgeschaltet wird erst ab der ersten Heizperiode, die nicht abgeschlossen ist. Wer bei der Frage
+  nach dem Zeitraum der Heizung „getrennt“ antwortet, kommt gleich zur Aufteilung; ändert das
+  Aufteilen oder ein Wechsel der Heizperiode schon begonnene Abrechnungen, nennt die Vorschau Frist und
+  Ergebnis vorher und nachher, und bei abgelaufener Frist wird erst nach Bestätigung gespeichert.
+  Ein Mietverhältnis, das in einem älteren Stand geöffnet war, überschreibt die aufgeteilten
+  Vorauszahlungen nicht mehr: Mietfuchs lädt nach jeder Änderung an der Heizung neu und lehnt das
+  Speichern eines veralteten Formulars ab, statt die Heizvorauszahlung still zu löschen. Die
+  Heizkostenabrechnung spricht von Heizkosten und Heizkostenvorauszahlung, die
+  Betriebskostenabrechnung daneben von der Vorauszahlung für die übrigen Nebenkosten. Jeder Monat der
+  Vorauszahlung wird genau einmal angerechnet. Am Mietverhältnis steht die Heizvorauszahlung in einer
+  eigenen Gruppe, die nennt, welche Heizung sie verlangt; das Lexikon erklärt den Begriff. Mietkonto und Mietverhältnis zeigen beide
+  Vorauszahlungen, das Cockpit jede Heizkostenabrechnung mit ihrer Frist
+  ([#217](https://github.com/speedone/mietfuchs/issues/217)).
+
+- **CO₂-Kosten beim Messdienst und bei der Eigentümergemeinschaft.** Auf der neuen Seite
+  „Heizkosten“ (sichtbar ab einer Heizanlage) tragen Sie die CO₂-Angaben der Heizkostenabrechnung
+  ein: ob es eine Zeile „Abzüglich CO₂-Kosten Vermieter“ gibt, die Summe der Kosten aller Nutzer und
+  die Zahlen der CO₂-Seite. Eine Probe zeigt, ob der Betrag Ihrer Position dazu passt. Beim
+  Vorwegabzug steht der CO₂-Anteil des Vermieters als eigener Grund beim Vermieter und in der
+  Steuerübersicht als Werbungskosten, der Teil Ihrer eigenen Wohnung im Eigenanteil; weist der
+  Messdienst die CO₂-Kosten nur aus, bekommt jeder Mieter eine eigene Abzugszeile. Die Abrechnung
+  druckt die Einstufung und die Grundlagen mit (§ 7 Abs. 3 CO2KostAufG); fehlen der CO₂-Ausstoß
+  insgesamt oder die Wohnfläche, sagt die Abrechnung, dass Mieter kürzen dürfen. Das Kostenformular
+  nennt, welcher Betrag der Messdienstabrechnung gemeint ist, und die Probe rechnet in Worten vor
+  ([#97](https://github.com/speedone/mietfuchs/issues/97), [#209](https://github.com/speedone/mietfuchs/issues/209)).
+- **Warmwasser laut Messdienst.** Hat der Messdienst die Wärme für das Warmwasser mit einer Formel
+  bestimmt, ohne dass deren Voraussetzung vorliegt (§ 9 Abs. 2 Satz 2 bzw. 4 HeizkostenV), nennt die
+  Abrechnung die Kürzung von 15 % je Mieter auf seine Heiz- und Warmwasserkosten (§ 9 Abs. 2 Satz 1,
+  § 12 Abs. 1 Satz 1 HeizkostenV; BGH, Urteil vom 12.01.2022, VIII ZR 151/20)
+  ([#211](https://github.com/speedone/mietfuchs/issues/211)).
+- Anleitung „CO₂-Kosten der Heizung aufteilen“ und Lexikon-Einträge zur CO₂-Aufteilung, Einstufung,
+  Fläche, Abzugszeile und zum Warmwasseranteil.
+- **Rechnungen des Versorgers als Lieferungen.** Auf der Seite „Heizkosten“ tragen Sie Gas-,
+  Fernwärme- und Stromrechnungen mit ihrem Rechnungszeitraum ein. Reicht eine Rechnung über die
+  Heizperiode hinaus, teilt Mietfuchs sie auf: nach einem eingetragenen Anteil, einem Zählerstand
+  zum Stichtag, einer Zwischenrechnung, Teilmengen der Rechnung, den Gradtagzahlen Ihres Orts oder
+  der Gradtagszahlentabelle; feste Preisbestandteile nach Tagen. Bei freien Schlüsseln verknüpfen
+  Sie die Positionen mit ihrer Rechnung; der Teil einer anderen Heizperiode steht dann als eigene
+  Zeile bei den Mietern und als Gegenbuchung bei Ihnen, und jede Rechnung ist über die Jahre genau
+  einmal verteilt. Heizkosten gehören in die Heizperiode, in der der Brennstoff verbraucht wurde
+  (BGH VIII ZR 156/11) ([#97](https://github.com/speedone/mietfuchs/issues/97)).
+- **Rückfrage beim Abschließen, wenn eine Rechnung fehlt.** Fehlt für einen Teil der Heizperiode
+  noch eine Rechnung, fragt Mietfuchs nach: abwarten (die Vorgabe, mit dem Ende der Frist), mit
+  Vorbehalt schätzen oder ohne Schätzung abschließen. Eine Schätzung nennt ihre Grundlage; ob eine
+  noch fehlende Versorgerrechnung geschätzt werden darf, ist höchstrichterlich nicht entschieden.
+  Kommt die Rechnung später, nennt die Abrechnung die Differenz, vor und nach Ablauf der Frist mit
+  dem, was Sie tun können (§ 556 Abs. 3 Satz 3 BGB); bei zu hoher Schätzung die Gutschrift je Mieter
+  ([#97](https://github.com/speedone/mietfuchs/issues/97)).
+- Anleitung „Gasrechnung über die Heizperiode hinaus“ und Lexikon-Einträge zu Lieferung, festem
+  Preisbestandteil, Schätzung mit Vorbehalt, Nichtwohngebäude, Beschränkungen und Fernwärme aus dem
+  Emissionshandel.
+- **CO₂-Kosten selbst aufteilen.** Mit den Lieferungen teilt Mietfuchs die CO₂-Kosten bei freien
+  Schlüsseln selbst auf, und auch dann, wenn der Messdienst nicht aufgeteilt hat: Einstufung nach
+  dem auf die Heizperiode umgerechneten Ausstoß, § 8 (Nichtwohngebäude) und § 9 (Beschränkungen)
+  CO2KostAufG, der Abzug je Mieter nach seinem Anteil am Brennstoff; Wärme aus dem Emissionshandel
+  bei einem ersten Anschluss nach dem 01.01.2023 ohne Aufteilung (§ 2 Abs. 4 Satz 2 CO2KostAufG). Die
+  Abrechnung druckt die Grundlagen und den Block „Brennstoff“ mit
+  ([#97](https://github.com/speedone/mietfuchs/issues/97)).
+- **Brennstoffvorrat bei Heizöl, Flüssiggas, Pellets, Holz und Kohle.** Auf der Seite „Heizkosten“
+  tragen Sie Lieferungen mit Lieferdatum und Menge ein und je Heizperiode in der Karte „Vorrat“ den
+  Endbestand, den Anfangsbestand nur in der ersten Heizperiode; danach ist er der Endbestand der
+  Vorperiode. Mietfuchs rechnet daraus den verbrauchten Brennstoff (Anfangsbestand + Lieferungen −
+  Endbestand) und bewertet den Endbestand wie die Messdienste zu den Preisen der jüngsten Lieferungen.
+  Verteilen Sie die Heizkosten selbst nach Schlüsseln, tragen die Mieter den Verbrauch, mit den Zeilen
+  „aus dem Vorrat“ und „im Vorrat“ (§ 7 Abs. 2 HeizkostenV, BGH VIII ZR 156/11); hat der Messdienst die
+  CO₂-Kosten nicht aufgeteilt, teilt Mietfuchs sie nach dem verbrauchten Brennstoff auf. Brennstoff
+  mit Rechnung vor dem 01.01.2023 zählt für die Einstufung, trägt aber keine CO₂-Kosten (§ 11 Abs. 2
+  Satz 2 CO2KostAufG). Die Abrechnung druckt die Bestandsrechnung mit
+  ([#97](https://github.com/speedone/mietfuchs/issues/97),
+  [#99](https://github.com/speedone/mietfuchs/issues/99)).
+- Lexikon-Eintrag „Brennstoffvorrat“.
+- **Mehrere Heizanlagen in einem Objekt.** In den Stammdaten legen Sie mit „+ weitere Heizanlage“ eine
+  zweite Anlage an, etwa für ein zweites Haus, das mit dem ersten abrechnet. Jede Anlage hat einen Namen
+  und ihre Wohnungen; die bisherige bekommt beides im selben Schritt. Jede Anlage wird für die
+  CO₂-Aufteilung für sich eingestuft, außer sie steht nach Ihrer Angabe im selben Gebäude wie eine
+  andere: Dann werden beide gemeinsam eingestuft, über den Ausstoß aller Anlagen und die Fläche aller
+  versorgten Wohnungen, eine eingetragene Fläche je Anlage eingerechnet (§ 5 Abs. 1 Satz 1 und 2
+  CO2KostAufG; eine Auslegung, höchstrichterlich nicht geklärt). Die erste Anlage wird nicht nach dem
+  Gebäude gefragt; entfernen Sie eine Anlage, auf die andere verweisen, bleiben diese im selben Gebäude. Verteilt eine Heizposition über Wohnungen beider Anlagen, sagt die
+  Abrechnung das als Fehler an der Position, mit der Kürzung um 3 % und dem Handgriff; verteilt wird sie
+  weiter wie bisher. Auf den Seiten Kosten und Zähler wählen Sie ab zwei Heizanlagen die Anlage; die Wahl
+  beteiligt an der Position die Wohnungen der Anlage
+  ([#97](https://github.com/speedone/mietfuchs/issues/97)).
+- **Etagenheizungen, deren Vertrag Sie haben.** Unter „Jede Wohnung hat eine eigene Heizung“ mit „Ich
+  habe den Vertrag“ legt Mietfuchs eine Etagenheizung an. Die Rechnung jeder Wohnung ordnen Sie dieser
+  Wohnung direkt zu und tragen sie auf der Seite Heizkosten mit ihrer Wohnung ein. Die CO₂-Einstufung
+  rechnet über die vermieteten Wohnungen mit eigener Heizung und deren Gesamtwohnfläche (§ 5 Abs. 1
+  Satz 2 CO2KostAufG); jeder Mieter bekommt den Anteil des Vermieters an den CO₂-Kosten seiner Wohnung
+  nach seinem Anteil an deren Heizkosten, ein Leerstand bleibt beim Vermieter. Jede Wohnung braucht
+  dafür einen eigenen Gaszähler. Für Etagenheizungen gilt die Heizkostenverordnung nicht, und ob Sie die
+  Gaskosten umlegen dürfen, ist nicht geklärt; die Abrechnung sagt das
+  ([#97](https://github.com/speedone/mietfuchs/issues/97)).
+- **Heizung erneuert (Kessel getauscht).** Wird die Heizung erneuert, etwa Öl gegen Gas, wählen Sie bei der
+  Heizanlage „Heizung erneuert (Kessel getauscht)“: Die bisherige Anlage endet am Tag vor dem Tausch, eine
+  neue beginnt mit denselben Wohnungen; auch ein zweiter Tausch geht, und das Entfernen der neuen Anlage
+  macht den Tausch rückgängig; entfernen Sie eine Anlage aus der Mitte, übernimmt die nächste ihren
+  Zeitraum. Bleibt der Brennstoff im Tank derselbe, fragt Mietfuchs „Verheizt der neue Kessel den
+  Brennstoff im Tank weiter?“: Mit Ja wird der Restbestand ihr Anfangsbestand, auch wenn die neue Anlage im
+  Jahr des Tauschs noch keine eigene Rechnung hat; mit Nein und bei anderem Brennstoff tragen ihn die Mieter
+  nicht, denn sie tragen nur den verbrauchten Brennstoff, und er steht mit seinem Wert bei Ihrem Anteil.
+  Eine Rechnung der alten Anlage, die Sie erst im Folgejahr buchen, rechnet Mietfuchs dem Zeitraum der
+  Lieferung zu. Bleibt Gas über denselben Zähler, braucht es
+  keinen Tausch. Eingestuft wird
+  das Gebäude im Jahr des Tauschs über den Ausstoß beider Anlagen (§ 5 Abs. 1 Satz 1 CO2KostAufG). Die
+  Steuerübersicht nimmt die Rechnungen wie bisher voll. Neue Anleitung „Heizung erneuert, zweite
+  Heizanlage oder Etagenheizung“ und Lexikon-Einträge „Etagenheizung“ und „Heizung erneuert
+  (Kesseltausch) und Restbestand“ ([#97](https://github.com/speedone/mietfuchs/issues/97)).
+
+- **Heizkosten selbst abrechnen.** Wer Wärme- und Warmwasserzähler jeder Wohnung selbst abliest, wählt in
+  den Stammdaten bei der Heizung „Ich selbst, mit Zählern oder Heizkostenverteilern“. Mietfuchs verteilt
+  dann nach der Heizkostenverordnung: Grund- und Verbrauchskosten je Topf, den Warmwasseranteil aus der
+  gemessenen Wärme am Speicher, beim Mieterwechsel den abgelesenen Verbrauch und die Grundkosten nach
+  Gradtagen; Leerstand, Eigennutzung und Pauschale als eigene Nutzer. Die Abrechnung druckt die Preise je
+  m², kWh und m³. Fehlt eine Zwischenablesung, sagt die Abrechnung, um wie viel die Mieter kürzen dürfen.
+  Die Seite Heizkosten zeigt die Ablesungen als Ampel und druckt das Ableseergebnis je Wohnung
+  ([#99](https://github.com/speedone/mietfuchs/issues/99)). Die eigene Abrechnung gilt ab der Heizperiode,
+  für die Sie sie einrichten; frühere bleiben bei ihrem Schlüssel. Nach einem Kesseltausch gilt der Anteil
+  nach Verbrauch weiter, und der Tausch fragt den Stand des Wärmezählers am Warmwasserspeicher ab. Den
+  vorgeschriebenen Anteil bei Öl- und Gasheizung können Sie auch in einer begonnenen Heizperiode
+  nachtragen. Die Angaben nach § 6a HeizkostenV druckt die Abrechnung mit (siehe unten).
+- Bei einer Wärmepumpe fragt die Einrichtung auch, ob sie erst nach dem Stichtag der Verordnung
+  eingebaut wurde.
+- **Warmwasser ohne Wärmezähler.** Bei der eigenen Heizkostenabrechnung bestimmt Mietfuchs den
+  Warmwasseranteil auch nach den beiden Formeln des § 9 Abs. 2 HeizkostenV, aus dem gemessenen
+  Warmwasser (mit Vorschlag aus den Warmwasserzählern) oder aus der Wohnfläche. Die Faktoren 1,11
+  (Erdgas nach Brennwert), 1,15 (Wärmelieferung) und 0,30 (monovalente Wärmepumpe, für Zeiträume ab
+  01.10.2024) gelten nur für diese Formelwerte. Brennstoff in Litern, Kubikmetern oder Kilogramm wird
+  mit dem Heizwert laut Rechnung umgerechnet, hilfsweise und nur bei Heizkesseln mit der Tabelle der
+  Verordnung. Wird ohne zulässigen Grund nach einer Formel abgerechnet, nennt die Abrechnung die
+  Kürzung um 15 % je Mieter. Der Ausdruck nennt Anteil, Verfahren, Rechenweg und die Herkunft jedes
+  Heizwerts ([#211](https://github.com/speedone/mietfuchs/issues/211),
+  [#99](https://github.com/speedone/mietfuchs/issues/99)).
+- Hinweise, wenn der Heizwert aus der Tabelle stammt und wenn der Warmwasseranteil ungewöhnlich ist
+  (unter 5 oder über 50 %, nur zur Prüfung).
+- Wärmepumpe in Abrechnungszeiträumen, die vor dem 01.10.2024 beginnen: Die Heizanlage fragt, ob die
+  Wärmepumpe mehr als die Hälfte der Wärme des Gebäudes liefert. Dann galt die Heizkostenverordnung damals
+  nicht (§ 11 Abs. 1 Nr. 3 Buchst. a in der alten Fassung): ein Hinweis, keine Kürzungsbeträge, und Heizung
+  und Warmwasser werden gemeinsam nach dem Heizschlüssel verteilt, ohne Warmwasseranteil. Ohne Antwort
+  rechnet Mietfuchs ebenso, warnt aber und beziffert je Mieter die mögliche Kürzung um 15 %.
+- Die Heizanlage fragt bei einer Wärmepumpe und bei eigener Abrechnung, ob sie die Wärme allein erzeugt.
+- An einer Gasrechnung lässt sich angeben, ob die Kilowattstunden nach Brennwert oder nach Heizwert
+  berechnet sind, an einer Lieferung mit Menge der Heizwert laut Rechnung oder die Zeile der Tabelle.
+  Beide lassen sich auch nach dem Abschluss einer Heizperiode nachtragen.
+- Mengen mit Tausenderpunkt („3.000“) liest die Seite Heizkosten jetzt wie Beträge als dreitausend. Beim
+  Heizwert und beim Volumen des Warmwassers fragt sie bei „11.325“ nach, ob 11,325 oder 11325 gemeint ist;
+  einen Heizwert außerhalb des üblichen Bands der Einheit lehnt Mietfuchs mit einem Satz ab.
+- **Eigene Heizkostenabrechnung nach Heizkostenverteilern.** Je Gerät Skala (Einheits- oder
+  Produktskala) und Bewertungsfaktor, der Stichtagswert laut Anzeige als eigene Eingabe; die Abrechnung
+  nennt jedem Mieter seine Geräte mit Einheiten, Skala und Faktor und zählt den Verbrauch in Einheiten.
+  Dazu die Werte eines Ablesedienstes je Wohnung und Nutzungszeitraum auf der Seite Heizkosten, womit auch
+  Verdunster und Funk-Heizkostenverteiler abgedeckt sind; liefert der Dienst Warmwasserwerte, zählen sie
+  statt der Warmwasserzähler. Mieterwechsel, Leerstand und Zwischenablesung gelten wie bei Wärmezählern
+  ([#99](https://github.com/speedone/mietfuchs/issues/99)).
+- Hinweise: Bewertungsfaktor oder Skala fehlt (die Anlage wird dann nicht verteilt), Stichtag eines Geräts
+  mitten in der Heizperiode, und verschiedene Geräte in einer Anlage. Die dafür nötige Vorerfassung nach
+  § 5 Abs. 7 HeizkostenV kommt später ([#218](https://github.com/speedone/mietfuchs/issues/218)); bis
+  dahin bleibt der Weg über den Messdienst.
+- Womit der Verbrauch erfasst wird, gehört zu jedem Zeitraum der eigenen Heizkostenabrechnung: Wer die
+  Geräte zum Beginn einer Heizperiode wechselt und die Einrichtung ab dieser Heizperiode neu durchläuft,
+  rechnet frühere Heizperioden weiter mit den früheren Geräten. Skala und Faktor eines Geräts, dessen
+  Ablesungen in einer abgeschlossenen Heizperiode zählen, sind gesperrt; ein Gerät mit anderem Faktor ist
+  ein neuer Zähler. Ebenso gehört die Warmwasserbereitung zum Zeitraum; eine Änderung gilt ab der Heizperiode,
+  ab der Sie die Einrichtung neu durchlaufen.
+- Gezählt wird ein Gerät nur in den Heizperioden, die seine Ablesungen überdecken: Ein ausgebauter
+  Wärmezähler und ein neuer Heizkostenverteiler mit dem Wechsel am 31.12. sperren keine der beiden
+  Heizperioden, und ein Heizkostenverteiler neben dem Wärmezähler derselben Wohnung stört nicht, solange eines
+  der beiden die ganze Heizperiode abdeckt. Wechselt das Gerät einer Wohnung mitten in der Heizperiode, etwa am
+  30.06., verteilt Mietfuchs die Anlage nicht und nennt den Weg, statt den Verbrauch des alten Geräts still
+  wegzulassen.
+- Positionen, Verteilung und Ansicht einer Heizperiode richten sich nach deren Warmwasserbereitung, auch wenn
+  die Anlage sie später geändert hat: Eine Wartung 2025 „für Heizung und Warmwasser“ behält ihr Ziel, und ein
+  Ziel, das nicht passt, ersetzt die Seite Kosten nicht mehr still, sondern meldet es am Feld.
+- Beim Mieterwechsel nennt die Abrechnung jedem Mieter nur seine Geräte und Werte in seinem Zeitraum; das
+  Ableseergebnis nennt am Stichtag den Stichtagswert. Der Ablesedienst kann die Heizung in Einheiten oder kWh
+  nennen, das Warmwasser in m³. Nach einem Kesseltausch rechnet die neue Anlage mit denselben Werten des
+  Ablesedienstes. Verdunster lassen sich nicht aus der Ferne ablesen; Lexikon und Karte nennen die Frist bis
+  zum 31.12.2026 (§ 5 Abs. 3 HeizkostenV) und die Kürzung um 3 % danach.
+- Eigene Heizkostenabrechnung: Fällt ein Zähler oder Heizkostenverteiler aus oder kann der Verbrauch aus einem
+  anderen zwingenden Grund nicht ordnungsgemäß erfasst werden, schätzen Sie den Verbrauch der Wohnung auf der
+  Seite Heizkosten in der Karte „Schätzung (§ 9a)“ nach einem der drei Wege des § 9a HeizkostenV (vorbelegt:
+  Durchschnitt des Gebäudes je m²), mit Grund, Begründung (sie steht auf der Abrechnung des Mieters) und
+  Bestätigung. Wer bis zu einem Mieterwechsel gültig abgelesen ist, behält seinen Wert. Betrifft die Schätzung
+  mehr als 25 % der Fläche, verteilt Mietfuchs die Kosten dieses Topfs nur nach Fläche; der Dialog nennt den
+  Flächenanteil vorher, und dass Mietfuchs dabei die ganze Fläche einer Wohnung zählt, ist als Auslegung
+  benannt. Eine Schätzung neben vollständigen Ablesungen wird gemeldet. Wechselt danach die Erfassung der
+  Heizperiode, rechnet die Schätzung nicht mehr, bis Sie sie neu eintragen. Auch ein Gerätewechsel mitten in der Heizperiode lässt sich so
+  abrechnen. ([#99](https://github.com/speedone/mietfuchs/issues/99))
+- Heizkostenabrechnung mit den Informationen nach § 6a HeizkostenV: Die Abrechnung druckt je Mieter die
+  eingesetzten Energieträger, die Steuern und Abgaben laut Rechnung, die Entgelte der Erfassung, Kontaktadressen
+  zum Energiesparen, beim Verbrauchervertrag die Information zur Streitbeilegung und, bei eigener Abrechnung,
+  den Vergleich mit einem Durchschnittsnutzer und den witterungsbereinigten Vergleich mit dem vorhergehenden
+  Abrechnungszeitraum als Balken, beides nur mit den eigenen Zahlen des Mieters; bei Fernwärme die jährlichen Treibhausgasemissionen.
+  Den Vergleichswert des Durchschnittsnutzers und die Klimafaktoren tragen Sie auf der Seite Heizkosten in der
+  Karte „Angaben zur Abrechnung (§ 6a)“ mit ihrer Quelle ein; einen Durchschnitt des eigenen Hauses rechnet
+  Mietfuchs nicht, denn die Begründung der Verordnung schließt ihn aus. Bei Heizkostenverteilern und freien
+  Schlüsseln bestätigen Sie dort, dass der Vergleich Ihres Ablesedienstes beiliegt. Fehlt einem Mieter eine
+  Angabe, nennt die Abrechnung seine Kürzung um 3 %, einmal, auch wenn zugleich die monatliche
+  Verbrauchsinformation fehlt; ist nur die Wärme nach § 11 ausgenommen, nur auf den Anteil Warmwasser. Ist sein
+  Verbrauch nach § 9a geschätzt, verlangt Mietfuchs für ihn nur die Mindestangaben (Kontaktinformationen,
+  Streitbeilegung) und nennt keine Kürzung; das je Mieter anzuwenden ist eine Auslegung. Ob die Abrechnung auf dem Verbrauch beruht und damit die
+  volle Pflicht gilt, entscheidet, wie Mietfuchs tatsächlich verteilt, auch bei freien Schlüsseln.
+  ([#99](https://github.com/speedone/mietfuchs/issues/99))
+- Karte „Ausnahmen und Vereinbarungen“ auf der Seite Heizkosten, je Heizperiode: Ausnahme nach § 11
+  HeizkostenV, für die Wärme oder für Wärme und Warmwasser, die abweichende Vereinbarung im Zweifamilienhaus mit
+  eigener Wohnung (§ 2) und die Bestätigung, dass die Mieter die monatliche Verbrauchsinformation anders
+  bekommen. Jede Antwort gilt ab dieser Heizperiode und ändert keine frühere. Unter der Ausnahme nennt Mietfuchs
+  für den ausgenommenen Teil keine Kürzung nach § 12, und sind Wärme und Warmwasser ausgenommen, werden die
+  CO₂-Kosten nur bei vereinbarter Abrechnung aufgeteilt (§ 2 Abs. 7 CO2KostAufG); die Vereinbarung nach § 2
+  hebt nur die Kürzung um 15 % auf, die Informationspflichten bleiben. Ist „nach Wohnfläche“ vereinbart, verteilt
+  die eigene Heizkostenabrechnung nach der Fläche, auch wenn Ablesungen fehlen. Wirkt eine Angabe an einer abgeschlossenen Heizperiode vorbei
+  auf eine offene, fragt die Karte vorher nach.
+  ([#99](https://github.com/speedone/mietfuchs/issues/99))
+- Monatliche Verbrauchsinformation: Rechnen Sie die Heizkosten selbst ab und sind Zähler als fernablesbar
+  eingetragen, erstellt Mietfuchs auf der Seite Heizkosten in der Karte „Monatliche Verbrauchsinformation“ je
+  Mieter und Monat die Information nach § 6a HeizkostenV aus den Zählerständen genau am Monatsende, nie
+  geschätzt: Verbrauch der Heizung in kWh, Warmwasser in m³ und getrennt davon umgerechnet in kWh (angelehnt
+  an § 9 Abs. 2 Satz 2, ohne Summe), Vergleich mit Vormonat und Vorjahresmonat desselben Mieters und mit einem
+  Durchschnittsnutzer, dessen Vergleichswert Sie mit Quelle eintragen. Das Blatt je Mieter lässt sich drucken
+  und nennt keinen anderen Nutzer; den Tag der Mitteilung vermerken Sie je Monat. Fehlt ein Monat oder ist er
+  unvollständig, nennt die Abrechnung die Monate und je Mieter einmal die Kürzung um 3 %, für Mieter mit nicht
+  ganz fernablesbarer Wohnung mit dem Vorbehalt der Einzelfallprüfung; beides ist als Auslegung gekennzeichnet,
+  abgezogen wird nichts. Heizkostenverteiler ergeben keine kWh, dann erstellt der Ablesedienst die Information.
+  Bei getrennt bereitetem Warmwasser tragen Sie die mittlere Warmwassertemperatur für die Umrechnung in derselben
+  Karte ein. Mietfuchs verlangt die Information für jeden Monat, auch außerhalb der Heizperiode (Auslegung).
+  Gilt die Verordnung für eine Wärmepumpe noch nicht (§ 12 Abs. 3 HeizkostenV) oder galt die frühere Ausnahme für
+  Gebäude mit überwiegend Wärme aus der Wärmepumpe, fordert die Karte wie die Abrechnung keine Monate ein.
+  ([#99](https://github.com/speedone/mietfuchs/issues/99))
+- Mehr als 70 % nach Verbrauch, wenn es mit den Mietern vereinbart ist (§ 10 HeizkostenV), in der
+  Einrichtung und auf der Seite Heizkosten; nie mehr als 100 %.
+  ([#99](https://github.com/speedone/mietfuchs/issues/99))
+- **CO₂-Angaben geprüft** ([#97](https://github.com/speedone/mietfuchs/issues/97)): Die Abrechnung prüft
+  kg und CO₂-Kosten jeder erfassten Rechnung gegen die Standardwerte der EBeV 2030, den CO₂-Preis des
+  Lieferjahres (2021 bis 2026), bei Fernwärme den Durchschnittspreis des Emissionshandels, und die
+  Umsatzsteuer, einschließlich des ermäßigten Satzes für Gas und Wärme vom 01.10.2022 bis 31.03.2024 und
+  eines Mischsatzes bei Rechnungen über die Stichtage. Abweichungen nennt sie als Hinweis; keine Zahl
+  ändert sich. Den CO₂-Preis 2027 und spätere Werte, die das Umweltbundesamt noch nicht veröffentlicht
+  hat, können Sie in den Einstellungen mit Quelle eintragen; bringt ein Update den amtlichen Wert, gilt
+  dieser.
+- **Ausdruck „CO₂-Angaben für den Messdienst“** ([#210](https://github.com/speedone/mietfuchs/issues/210)):
+  Auf der Seite Heizkosten stellt Mietfuchs je Heizperiode die Angaben der Rechnungen (kg CO₂, CO₂-Kosten,
+  Emissionsfaktor, Energiegehalt, Menge, Betrag), den Anfangsbestand eines Vorrats, die Fläche und die
+  Angaben zu §§ 8, 9 CO2KostAufG zum Drucken und Weitergeben zusammen. Die Summe enthält nur, was auch die
+  Abrechnung zählt; stornierte Rechnungen, abgedeckte Schätzungen und Rechnungen vor 2023 stehen mit
+  einem Vermerk darin. Hinweise der Prüfung stehen auch an der Lieferung. Unter der Summe der Rechnungen
+  (nicht abgegrenzt) steht, was die Abrechnung daraus macht: beim Vorrat Endbestand und Verbrauch in der
+  Heizperiode, sonst der Teil der Rechnungen in der Heizperiode, dazu die Einstufung laut Abrechnung.
+- **Betriebsstrom der Heizung** ([#212](https://github.com/speedone/mietfuchs/issues/212)): Eine
+  Heizposition lässt sich als Betriebsstrom kennzeichnen, der über den Stromzähler des Hauses läuft.
+  Steht beim Allgemeinstrom kein Abzug in gleicher Höhe, nennt die Abrechnung den Betrag, der doppelt
+  verteilt wird (§ 7 Abs. 2, § 8 Abs. 2 HeizkostenV; BGH, Urteil vom 03.06.2016, V ZR 166/15). Die
+  Karte „Betriebsstrom“ auf der Seite Heizkosten schätzt ihn nach Leistung der Geräte und Heiztagen,
+  auf Wunsch mit eigenen Tagen je Gerät, nimmt den Zwischenzähler oder einen selbst geschätzten Betrag
+  mit Grundlage und legt Betriebsstrom und Abzug gemeinsam an; der Euro-Betrag ist der Anteil am
+  Rechnungsbetrag einschließlich Grundpreis. Die Grundlage der Schätzung bleibt an beiden Positionen
+  gespeichert und steht im Rechenweg, denn bestreitet ein Mieter den Betrag, müssen Sie sie darlegen
+  (BGH, Versäumnisurteil vom 20.02.2008, VIII ZR 27/07, Leitsatz c). Einen von Hand erfassten Abzug
+  verknüpfen Sie im Kostenformular mit dem Betriebsstrom und mit der Stromrechnung, aus der er stammt;
+  er übernimmt deren Verteilung, und die Rechnung lässt sich nicht löschen, solange er besteht. Die
+  Abrechnung meldet einen Abzug, der anders verteilt ist als seine Rechnung, und mehr Abzug als Rechnung. Die Karte bietet nur Stromrechnungen an, die
+  die Heizperiode berühren, übernimmt deren Jahr der Zahlung (auch bei Abrechnung von Mai bis April),
+  zeigt, was schon gebucht ist, und fragt bei einer zweiten Buchung zurück; mehr Abzug als Rechnung
+  lehnt auch das Kostenformular ab, und ein Wechsel des Abrechnungszeitraums nimmt Rechnung und Abzüge
+  gemeinsam mit. Steht der Allgemeinstrom in
+  einer abgeschlossenen Abrechnung, legt die Karte nichts an; ein Abzug, der dort nach dem Abschluss
+  angelegt oder geändert wurde, zählt nur mit dem, was die zugestellte Abrechnung gutgeschrieben hat, und
+  der Hinweis sagt je Fall, was zu tun ist und wo nach Ablauf der Frist die Grenze liegt (§ 556 Abs. 3
+  Satz 3 BGB). Bei Wärmepumpe und Stromheizung gehört der Strom zur Wärmeerzeugung zu den Heizkosten,
+  aber nicht als Betriebsstrom (§ 7 Abs. 2 HeizkostenV nennt ihn neben den Brennstoffen); läuft er über
+  den Hauszähler, kennzeichnen Sie seine Heizposition und verknüpfen den Abzug, als Auslegung von
+  Mietfuchs gekennzeichnet. Umwälzpumpen und Regelung kennzeichnen Sie dort als Betriebsstrom, bei
+  Fernwärme die der Hausanlage (§ 7 Abs. 4, § 8 Abs. 4 HeizkostenV). Einen Bruchteil der
+  Brennstoffkosten lässt der BGH für Wohnungseigentümer als Schätzgrundlage zu; Mietfuchs rechnet keinen
+  Prozentsatz vor, das Lexikon nennt die Literaturwerte. In der Steuerübersicht zählt die Stromrechnung des
+  Allgemeinstroms in jedem Steuerjahr genau einmal zu den Werbungskosten
+  ([#268](https://github.com/speedone/mietfuchs/issues/268)): Ein Abzug, den Sie nicht umlegen und selbst
+  tragen, mindert nur die Abrechnung an die Mieter, und Betriebsstrom, der zugleich in den Heizkosten steht,
+  zählt nicht doppelt. Die Übersicht zeigt dafür die Zeile „Betriebsstrom der Heizung“ beim Allgemeinstrom,
+  bei Eigennutzung mit dem privaten Teil nach Ihrem Eigenanteil an den Heizkosten der verknüpften Anlage, bei einem
+  Abzug ohne Verweis nach der Fläche des ganzen Gebäudes (beides eine Auslegung), und
+  auch das ZIP „Belege für die Steuer“ führt sie. Im Kostenformular heißt der Abzug ohne Verweis ohne
+  Messdienst „Ja, ich lege ihn nicht um und trage ihn selbst“. Stehen Abzug und Betriebsstrom in verschiedenen
+  Steuerjahren, verschiebt sich in der Anlage V nichts mehr; jedes Jahr zeigt die in ihm bezahlten Rechnungen. Der
+  Hinweis dazu und der Satz in der Vorschau beim Wechsel des Abrechnungszeitraums entfallen deshalb. Zeigt ein Abzug
+  auf eine Position, die nicht als Betriebsstrom in den Heizkosten gekennzeichnet ist, nennt der Rechenweg den Verweis
+  zum Prüfen; steht neben einem abweichenden verknüpften Abzug einer ohne Verweis, sagt der Hinweis, dass dieser Teil
+  richtig erfasst ist. Die Abrechnung an die Mieter ändert sich nicht.
+- **Hinweis, wenn der Betriebsstrom der Heizung fehlt** ([#224](https://github.com/speedone/mietfuchs/issues/224)):
+  Hat eine Zentralheizung mit Brenner im Abrechnungszeitraum weder einen Betriebsstrom noch einen Abzug beim
+  Allgemeinstrom, sagt die Abrechnung das, mit dem Weg über die Karte „Betriebsstrom“ (§ 7 Abs. 2, § 8 Abs. 2
+  HeizkostenV; § 2 Nr. 4 Buchst. a BetrKV; BGH, Urteil vom 03.06.2016, V ZR 166/15). Der Hinweis ist eine
+  Auskunft und färbt das Cockpit nicht. Ohne Angabe an der Heizanlage schweigt er bewusst, sobald für die Anlage
+  irgendeine Heizposition „Betrieb“ erfasst ist, auch wenn es nur die Wartung ist, und ebenso bei Fernwärme, bei
+  einer Heizung mit Messdienst und ohne Allgemeinstrom: Dort lässt sich ohne weitere Angabe nicht erkennen, ob
+  der Betriebsstrom fehlt.
+- **Angabe an der Heizanlage, wie der Betriebsstrom erfasst ist** ([#266](https://github.com/speedone/mietfuchs/issues/266)):
+  Auf der Seite Heizkosten fragt die Karte „Betriebsstrom der Heizung“ bei einer Zentralheizung mit Brenner ohne
+  Messdienst, ob die Heizung einen eigenen Stromvertrag mit eigener Rechnung hat oder über die Stromrechnung des
+  Hauses läuft, auch mit Zwischenzähler. Mit „über die Stromrechnung des Hauses, beim Allgemeinstrom abgezogen“
+  meldet die Abrechnung „Abzug des Betriebsstroms fehlt“, wenn beim Allgemeinstrom kein Abzug steht, auch wenn
+  die Wartung als Heizposition „Betrieb“ erfasst ist; das ist die Lage aus BGH, Urteil vom 03.06.2016,
+  V ZR 166/15 (Wohnungseigentum), und BGH, Versäumnisurteil vom 20.02.2008, VIII ZR 27/07 (Mietrecht):
+  Betriebsstrom im Allgemeinstrom ohne Abzug, und eine erfasste Wartung ändert daran nichts. Dieser Hinweis
+  färbt das Cockpit gelb. Ist die Heizposition „Betrieb“ schon der Betriebsstrom selbst, sagt er, wie man ihn
+  nicht doppelt anlegt, und er nennt den netto eingetragenen Allgemeinstrom (BGH, Urteil vom 20.01.2016,
+  VIII ZR 93/15). Mit „eigener Stromvertrag, Rechnung als Heizposition erfasst“ weist die Abrechnung darauf hin,
+  wenn keine Heizposition „Betrieb“ erfasst ist; das ist eine Auskunft. Mit „eigener Stromvertrag, die Kosten
+  trägt der Vermieter selbst“ schweigt der Hinweis. Ohne Angabe bleibt alles wie bisher; die Angabe ändert keine
+  Zahl der Abrechnung und übersteht den Kesseltausch.
+- **Hinweis, wenn der Strom einer Wärmepumpe im Allgemeinstrom mitlaufen kann** ([#253](https://github.com/speedone/mietfuchs/issues/253)):
+  Hat eine Wärmepumpe oder ein Elektrokessel keine eigene Stromrechnung und steht beim Allgemeinstrom kein
+  Abzug, weist die Abrechnung darauf hin. Seit dem 01.01.2024 zählt § 2 Nr. 4 Buchst. a BetrKV diesen Strom zu
+  den Heizkosten, seit dem 01.10.2024 auch § 7 Abs. 2 HeizkostenV, soweit sie für die Anlage gilt; dass er aus dem Allgemeinstrom
+  herauszurechnen ist, ist eine Auslegung von Mietfuchs und steht so da. Für Zeiträume vor 2024 kommt der
+  Hinweis nicht.
+- Beim Wechsel des Abrechnungszeitraums folgt der Abzug des Betriebsstroms immer seiner Stromrechnung, auch
+  wenn deren Leistungszeitraum ganz in einem neuen Zeitraum liegt; bisher lehnte der Wechsel das ab. Mehrere
+  Abzüge einer Rechnung werden gemeinsam geteilt, sodass aus keinem Teil mehr abgezogen wird, als er beträgt,
+  und das Jahr der Zahlung eines Abzugs folgt seinem Betriebsstrom. Die Hilfe am Feld „Jahr der Zahlung (Steuer)“
+  erklärt, warum dort das Jahr des Betriebsstroms gilt.
+
+- **Wärmelieferung und Contracting** ([#213](https://github.com/speedone/mietfuchs/issues/213)): Betreibt ein
+  Dritter die Heizung im Haus und liefert die Wärme, setzen Sie bei der Heizanlage das Häkchen „Contracting“ und
+  wählen den Brennstoff seines Kessels, auch bei einer Wärmepumpe. Die Anlage rechnet dann wie Fernwärme: kein
+  Pflichtanteil von 70 % nach Verbrauch (§ 7 Abs. 3 HeizkostenV), Formelwerte für das Warmwasser ÷ 1,15, kein
+  Vorrat bei Ihnen, und die Rechnungen des Lieferanten sind Wärmerechnungen. CO₂-Angaben verlangt Mietfuchs nach
+  dem Brennstoff des Lieferanten: bei Gas, Öl, Flüssiggas, Kohle und „Etwas anderes“ wie bei Fernwärme, bei
+  Pellets, Holz, Strom und Wärmepumpe nicht (§ 2 Abs. 1 Satz 2 CO2KostAufG). Die Informationen nach § 6a
+  HeizkostenV nennen den Brennstoff des Kessels und verlangen keine Werte eines Wärmenetzes; nach dem
+  Betriebsstrom fragt Mietfuchs wie bei Fernwärme nicht. Bei Contracting mit einer Wärmepumpe rechnet Mietfuchs
+  den Warmwasseranteil nur gemessen, denn ob der Formelwert durch 1,15 zu teilen oder mit 0,30 zu malnehmen ist,
+  regelt die Verordnung nicht. Die Ausnahme für Gebäude, die überwiegend mit Wärme aus Wärmepumpen versorgt wurden
+  (§ 11 Abs. 1 Nr. 3 Buchst. a HeizkostenV in der Fassung bis 30.09.2024), und der Übergang nach § 12 Abs. 3 gelten
+  auch bei Contracting mit einer Wärmepumpe, denn beide knüpfen an den Wärmeerzeuger an (§ 1 Abs. 1 Nr. 2: Wärmelieferung
+  „auch aus Anlagen nach Nummer 1“; Auslegung am Wortlaut). Wer während laufender Mietverhältnisse umgestellt hat, trägt den Tag der
+  Umstellung ein; die Abrechnung nennt dann für die Mieter, deren Vertrag vorher lief, die Voraussetzungen des
+  § 556c BGB und die Ankündigung nach der Wärmelieferverordnung (auch bei einer Betriebskostenpauschale, denn
+  § 556 Abs. 2 BGB lässt Betriebskosten „als Pauschale oder als Vorauszahlung“ ausweisen; das ist eine Auslegung;
+  nicht bei einer Inklusivmiete), bei fehlender oder verspäteter Ankündigung die
+  Folge nach § 11 Abs. 3 WärmeLV, und bei vorheriger Eigenversorgung der Mieter die Rechtslage nach BGH,
+  Urteile vom 20.05.2026, VIII ZR 46/25 und 47/25 (im entschiedenen Fall jedenfalls die Kosten nach § 7 Abs. 2,
+  § 8 Abs. 2 HeizkostenV; ob mehr, hängt von der Vereinbarung ab). Eine Umstellung in einem laufenden Zeitraum
+  erfassen Sie mit „Heizung erneuert (Kessel getauscht)“; an einer Anlage mit Lieferungen, Vorrat oder
+  CO₂-Angaben oder mit Heizpositionen oder Angaben eines offenen Zeitraums lässt sich das Häkchen nicht umschalten,
+  sonst rechnete Mietfuchs auch die Zeit davor um. Der
+  Hilfetext zur Energie riet bisher, Contracting als Fernwärme einzutragen; so eingetragene Anlagen bleiben
+  Fernwärme und rechnen weiter richtig, nur ohne bekannten Brennstoff. Ohne Häkchen und ohne Tag der
+  Umstellung ändert sich keine Zahl und kein Hinweis.
+- Eichfrist der Zähler: An jedem Zähler außer Heizkostenverteilern lässt sich eintragen, bis zu welchem Jahr
+  er geeicht ist. Aus der Jahreszahl auf dem Zähler („M22“ oder die Jahresangabe der Eichmarke) schlägt
+  Mietfuchs das Jahr vor: bei Kalt- und Warmwasserzählern und Wärmezählern sechs Jahre; bei Warmwasser- und
+  Wärmezählern bis zur Jahreszahl 2015 fünf Jahre, denn deren Frist lief vor der Verlängerung am 03.11.2021
+  ab. Die Änderungsverordnung vom 26.10.2021 enthält keine Übergangsregel. Mietfuchs wendet die Frist von
+  6 Jahren auch auf Fristen an, die am 03.11.2021 noch liefen; eine schon abgelaufene Frist lebt nicht wieder
+  auf. Das ist eine Auslegung. Der Vorschlag nennt sie. Stammt eine
+  Ablesung des Zeitraums aus der Zeit nach Ablauf, warnt die Zähler-Seite und nennt die Beweislast nach dem
+  Bundesgerichtshof und die Verlängerung im Stichprobenverfahren; das Cockpit zeigt dazu eine eigene gelbe
+  Zeile „Eichfrist“, die Ampel „Zählerstände“ bleibt unberührt. Die Werte werden weiter verwendet, keine Zahl
+  einer Abrechnung ändert sich, und wer nichts einträgt, sieht nichts.
+  ([#98](https://github.com/speedone/mietfuchs/issues/98))
+- **Hälftige Teilung ab 2028 nach §§ 5a, 5b, 5d CO2KostAufG** ([#215](https://github.com/speedone/mietfuchs/issues/215)):
+  Bei einer Gas-, Öl- oder Flüssiggasheizung, die nach dem 29.07.2026 in ein bestehendes Gebäude eingebaut
+  wurde (§ 43 Abs. 1 GModG), oder einer solchen Heizung in einem Neubau tragen Vermieter und Mieter ab dem
+  01.01.2028 die Gasnetzentgelte und die CO₂-Kosten je zur Hälfte, ab dem 01.01.2029 auch die Kosten des
+  Pflichtanteils an Biobrennstoff, höchstens für 30 % des verbrauchten Brennstoffs. Mietfuchs teilt anteilig
+  nach Anfall, je Rechnung nach Zählerstand, Zwischenrechnung oder Gradtagen; dass auch die CO₂-Kosten nach
+  Anfall geteilt werden, ist eine Auslegung und steht so da. Den Anteil des Vermieters an Netzentgelten und
+  Biobrennstoff zieht die Abrechnung als eigene Zeile ab (§ 7 Abs. 5); fehlt eine Angabe an der Gasrechnung,
+  nennt sie die Kürzung von 3 % je Mieter. Notfalleinbau (§ 5a Abs. 4; nach einem Ausfall 2028 zwölf Monate ab
+  dem Einbau, so die Gesetzesbegründung), Neubau mit Bauantrag vor dem 13.05.2026 (§ 5b) und das selbst bewohnte
+  Gebäude mit höchstens zwei Wohnungen an einer gemeinsamen Heizung außerhalb angespannter Wohnungsmärkte
+  (§ 5d Abs. 3) sind berücksichtigt, ebenso Anlagen, die ein Contractor betreibt. § 9 kürzt nur den Anteil nach
+  Stufen, nicht die Hälfte nach § 5a; das ist eine Auslegung zu Ihren Lasten. Neu dafür an der Heizanlage die
+  Karte „Heizung nach § 43 GModG“, am Objekt die Frage, ob das Gebäude in einem Gebiet mit angespanntem
+  Wohnungsmarkt liegt (mit Geltung der Verordnung), am Mietverhältnis der Tag der Mitteilung nach § 5d Abs. 4
+  und an der Lieferung Netzentgelte und Biobrennstoff. Biobrennstoff aus einem Vorrat und die Grenze von 30 % ab
+  2040 rechnet Mietfuchs noch nicht ([#227](https://github.com/speedone/mietfuchs/issues/227)); die Abrechnung
+  sagt das, außer an jeder Lieferung ab dem 01.01.2029 ist 0 eingetragen (früher gelieferter Brennstoff enthält keinen Pflichtanteil). Das Blatt „CO₂-Angaben für den Messdienst“ nennt die
+  Teilung nach § 5a und die Netzentgelte und Biobrennstoffkosten der Rechnungen. Ohne Tag des Einbaus ändert sich
+  keine Zahl und kein Hinweis.
+- **Mieter heizt selbst, und die CO₂-Erstattung dafür** ([#97](https://github.com/speedone/mietfuchs/issues/97)):
+  Am Mietverhältnis lässt sich unter Heizung „Mieter heizt selbst“ wählen, wenn der Mieter Brennstoff oder Wärme
+  über einen eigenen Vertrag bezieht, etwa für eine Gastherme oder für eine zentrale Heizung, deren Brennstoff er
+  selbst kauft. Wartung und Betriebsstrom, die Sie tragen, rechnet Mietfuchs weiter ab. Die Einrichtung der Heizung
+  fragt bei Gas, Öl, Flüssiggas und Kohle, wer den Liefervertrag hat; hat ihn der Mieter, legt sie keine Heizanlage an
+  und bietet an, die Mietverhältnisse umzustellen. Versorgt ein Mieter über seinen Vertrag auch Wohnungen anderer,
+  rechnet Mietfuchs das nicht. Bei einer zentralen Heizung erinnert die Abrechnung daran, ihren Betriebsstrom beim
+  Allgemeinstrom abzuziehen, wenn andere Mieter diesen mittragen; der Abzug für eine andere Heizanlage zählt dabei
+  nicht. Steht ein Mietverhältnis schon ohne Angabe der Art auf „Mieter heizt selbst“, trägt die Einrichtung die Art
+  nach, und beim Mieterwechsel sagt die Maske, dass der Nachmieter „Mieter heizt selbst“ übernimmt. Auf der Seite Kosten erfassen Sie die Anzeige des Mieters nach § 6 Abs. 2
+  CO2KostAufG. Mietfuchs rechnet nach (Stufe, gekürzte Tabelle bei kürzerem Zeitraum des Lieferanten,
+  Nichtwohngebäude, Beschränkungen nach § 9, 5 % weniger bei Geräten im Eigentum des Mieters wie einem eigenen
+  Gasherd, kein Anspruch bei gewerblicher Nutzung ohne getrennte Messung, ab 2028 die hälftige Teilung nach § 5a),
+  verrechnet den Betrag als Gutschrift in der Betriebskostenabrechnung, weist auf eine Abweichung von der
+  Nachrechnung hin und nennt die Fristen für Anzeige, Verrechnung und Auszahlung; verrechnet wird nur bei
+  vereinbarter Vorauszahlung, und eine Erstattung gibt es nur bei „Mieter heizt selbst“. Der Vorschlag für die
+  neue Vorauszahlung rechnet ohne die Erstattung. In der Steuerübersicht wirkt eine verrechnete Erstattung über die
+  Zahlungen, eine ausgezahlte steht im Jahr der Auszahlung bei den Werbungskosten, als eigene Zeile der Aufstellung
+  je Position und in der Übersicht des ZIP „Belege für die Steuer“, deren Summe damit den Werbungskosten gleicht.
+- **Die KI liest Messdienstabrechnung und Lieferantenrechnung**
+  ([#103](https://github.com/speedone/mietfuchs/issues/103)): Auf der Seite Heizkosten liest die Karte
+  „Messdienstabrechnung auslesen“ die Heiz- und Warmwasserkostenabrechnung eines Messdienstes: Nutzerbeträge je
+  Kostenblock, Zeitraum, Nutzeinheiten, die Summe der Nutzerkosten, die Zeile „Abzüglich CO₂-Kosten Vermieter“,
+  Brennstoffkosten, den CO₂-Block und die Ermittlung des Warmwassers. Jede Nutzerzeile wird nur bei genau einem
+  Treffer einem Mieter, der eigenen Wohnung oder dem Leerstand zugeordnet, sonst ordnen Sie sie zu; der Betrag der
+  Heizposition ist die Summe vor dem Abzug. Kalte Blöcke übernimmt die Karte nur, wenn die Heizperiode dem
+  Abrechnungszeitraum gleicht, und reicht ein Zeitraum über zwei Kalenderjahre, fragt sie je Block nach dem Jahr der
+  Zahlung. Die Frage nach der Abzugszeile bleibt ohne Vorgabe; widerspricht Ihre Antwort der gelesenen Zeile, sagt die
+  Karte es. In der Karte „Lieferungen“ füllt „Rechnung mit KI auslesen“ das Formular aus der Rechnung eines Brennstoff-
+  oder Wärmelieferanten vor: Rechnungsbetrag vor Abschlägen, Menge, Teilmengen bei einer Preisänderung, Heizwert und die
+  Angaben nach § 3 Abs. 1 CO2KostAufG samt Emissionsfaktor. Den Preisbestandteil für den nach § 43 Abs. 1 GModG anteilig
+  zu nutzenden Brennstoff übernimmt sie nur, wo Mietfuchs ihn rechnet, und sagt sonst, warum nicht. Gespeichert wird in
+  beiden Karten erst, wenn Sie übernehmen. Lieferungen von Gas, Fernwärme und Strom tragen jetzt auch Menge, Teilmengen
+  und Emissionsfaktor, Lieferungen aus dem Vorrat den Emissionsfaktor.
+- Rohrwärme: Rechnen Sie die Heizkosten selbst mit Heizkostenverteilern ab, nennt die Abrechnung als Hinweis, dass
+  bei überwiegend ungedämmten, frei auf der Wand verlaufenden Leitungen der Verbrauch nach anerkannten Regeln der
+  Technik bestimmt werden kann (§ 7 Abs. 1 Satz 3 HeizkostenV, Verfahren in VDI 2077 Blatt 3.5), für Leitungen unter
+  Putz oder im Estrich aber nicht (BGH, Urteil vom 15.03.2017, VIII ZR 5/16). Das Lexikon erklärt den Begriff.
+  Die Bestimmung selbst rechnet Mietfuchs nicht; der Hinweis färbt die Ampel nicht, und keine Zahl ändert sich
+  ([#219](https://github.com/speedone/mietfuchs/issues/219)).
+
+- Vorerfassung nach Nutzergruppen: Rechnen Sie die Heizkosten eines Gebäudes selbst ab, das überwiegend nicht dem
+  Wohnen dient, nennt die Abrechnung als Hinweis, dass bei unterschiedlichen Nutzungsarten eine Vorerfassung nach
+  Nutzergruppen möglich ist (§ 5 Abs. 7 Satz 2 HeizkostenV) und wann sie vorgeschrieben ist; das Lexikon erklärt den
+  Begriff. Die Vorerfassung selbst rechnet Mietfuchs nicht; verschiedene Geräte an einer Anlage bleiben ein Fehler
+  mit Verweis auf den Messdienst. Der Hinweis färbt die Ampel nicht, und keine Zahl ändert sich
+  ([#218](https://github.com/speedone/mietfuchs/issues/218)).
+
+- Nutzerwechselgebühr auch bei Wasser: Heißt eine Position „Wasser/Abwasser“ oder eine Position nach Zählern etwa
+  „Zwischenablesung“ oder „Nutzerwechselgebühr“, weist die Abrechnung wie bei der Heizung darauf hin, dass diese
+  Kosten keine umlagefähigen Betriebskosten sind (BGH, Urteil vom 14.11.2007, VIII ZR 19/07), und nennt den Weg über
+  „Nicht umlagefähig“. Neu im Lexikon: „Nutzerwechselgebühr“. Keine Zahl ändert sich
+  ([#223](https://github.com/speedone/mietfuchs/issues/223)).
+
+- Wärmelieferung mit unmittelbarer Abrechnung durch den Lieferanten: Bei Fernwärme oder Contracting bietet die
+  Einrichtung der Heizung die Antwort „Der Wärmelieferant rechnet unmittelbar mit den Mietern ab“. Mietfuchs legt
+  dann keine Heizanlage an, fragt nicht nach Geräten und Umstellung und stellt die Mietverhältnisse auf „Mieter heizt
+  selbst“. Legt der Lieferant die Anteile am Gesamtverbrauch zugrunde, gelten die Pflichten der Heizkostenverordnung
+  für ihn (§ 1 Abs. 3 HeizkostenV), und die Kosten der Hausanlagen, die Sie gesondert abrechnen, sind von der
+  Verteilung nach Verbrauch ausgenommen (§ 11 Abs. 1 Nr. 4 HeizkostenV); misst er jede Wohnung selbst, gilt die
+  Verordnung für diese Verteilung nicht. Die Erklärung steht vor dem Speichern unter der Frage. Vorher blieb nur
+  eine Antwort, nach der die Abrechnung eine Kürzung um 15 % und einen Hinweis zu den CO₂-Kosten nannte, die in diesem Fall
+  nicht zutreffen. Die Hinweise zu einer Heizung, deren Brennstoff der Mieter selbst bezieht, sagen jetzt
+  „Brennstoff oder Wärme“. Keine Zahl ändert sich ([#225](https://github.com/speedone/mietfuchs/issues/225)).
+
+### Geändert
+
+- Neue Warnung „Monatliche Verbrauchsinformation“ bei einer Heizanlage, deren Zähler oder
+  Heizkostenverteiler als fernablesbar eingetragen sind: Seit 2022 stehen den Mietern dann monatliche
+  Informationen zu, sonst bis zu 3 % Kürzung. Bekommen Ihre Mieter sie über den Messdienst (in einem Portal
+  nur mit einer Nachricht jeden Monat), bestätigen Sie das in der Karte „Ausnahmen und Vereinbarungen“.
+  Die Warnung zu den Angaben nach § 6a bei der eigenen Heizkostenabrechnung heißt jetzt „Angaben zur
+  Heizkostenabrechnung unvollständig“ und erscheint auch bei freien Schlüsseln, deren Heizkosten nach
+  Zählern verteilt werden; keine Zahl ändert sich. ([#99](https://github.com/speedone/mietfuchs/issues/99))
+- Die Warnung „Monatliche Verbrauchsinformation“ nennt bei eigener Heizkostenabrechnung mit als fernablesbar
+  eingetragenen Zählern die Monate, die nicht mitgeteilt oder unvollständig sind, statt „bis zu 3 %“ pauschal;
+  ist nur die Anlage als fernablesbar angegeben oder liefert der Ablesedienst die Werte, bleibt sie wie bisher.
+  Die Fundstelle der Begründung zur Summierung der Kürzungsrechte heißt jetzt richtig BR-Drs. 643/21, S. 24 f.
+  ([#99](https://github.com/speedone/mietfuchs/issues/99))
+- Der Fehler „Heizkostenabrechnung unvollständig“ bei einem fehlenden Stand, einem Zählerwechsel ohne
+  Endstand, negativem Verbrauch oder fehlenden Werten des Ablesedienstes verweist jetzt auf die Schätzung
+  statt auf eine spätere Version. ([#99](https://github.com/speedone/mietfuchs/issues/99))
+- Die Ablehnung einer Verteilung „nach Verbrauch“ mit Heizkostenverteilern bei freien Schlüsseln verweist
+  jetzt auf die eigene Heizkostenabrechnung mit der Erfassung „Heizkostenverteiler“.
+
+- Eigene Heizkostenabrechnung: Die Heizung darf jetzt auch bei Heizöl, Flüssiggas, Pellets, Holz und
+  Kohle das Warmwasser bereiten; die Einrichtung sperrt das nicht mehr.
+- Holzhackschnitzel: Seit 01.12.2021 nennt die Heizkostenverordnung 4 kWh je Kilogramm; die frühere
+  Angabe 650 kWh je Schüttraummeter gilt nur für Zeiträume davor, und den Brennstoffverbrauch bestimmt
+  die Verordnung seither in Litern, Kubikmetern oder Kilogramm.
+
+- Bei freien Schlüsseln kann eine Heizposition „nur Heizung“ sein; beim Mieterwechsel teilt sie sich
+  dann nach Gradtagen statt nach Tagen. Positionen „Heizung und Warmwasser“ bleiben, wie sie sind.
+- Eine Heizposition, deren Beschreibung „Zwischenablesung“ oder „Nutzerwechsel“ enthält, bekommt einen
+  Hinweis: Diese Kosten trägt der Vermieter, soweit im Mietvertrag nichts anderes vereinbart ist.
+- **Oberfläche aufgeräumt.** Felder, Hilfetexte und Knöpfe stehen in Karten, Seitenfenstern und
+  aufklappbaren Bereichen mit einheitlichem Abstand, statt aneinanderzukleben; eingegebene Werte,
+  Platzhalter und Hilfetexte sind nicht mehr fett, Kontrollkästchen stehen überall links neben
+  ihrem Text. Aufklappbare Bereiche und Links sehen überall gleich aus, Schrift in Akzentfarbe ist
+  im dunklen Design gut lesbar, und „Abbrechen“ wird beim Überfahren nicht mehr rot. Die Hinweise
+  der Abrechnung stehen als Liste mit Titel und aufklappbarem Text, das Cockpit nennt sie Zeile für
+  Zeile. Breite Tabellen zeigen auf dem Handy, dass sich seitlich scrollen lässt, und die
+  Seitentitel heißen wie in der Navigation.
+- **Jahr der Zahlung bei der Belegbuchung.** Reicht der Abrechnungszeitraum über zwei
+  Kalenderjahre, liegt das Jahr der Zahlung immer zwischen dem ersten Jahr und dem Jahr nach dem
+  Ende des Zeitraums: Ein Rechnungsdatum außerhalb wird auf die nächste Grenze gesetzt, auch bei
+  Positionen ohne Heizbezug, und die Vorschau sagt das. Bei einer Heizposition mit eigener
+  Heizperiode gilt ohne Rechnungsdatum das Jahr, in dem die Heizperiode endet
+  ([#217](https://github.com/speedone/mietfuchs/issues/217)).
+- Abrechnungszeiträume werden intern als Zeitraum geführt und nicht mehr als Kalenderjahr:
+  Kostenpositionen, abgeschlossene Abrechnungen und gezahlte Vorauszahlungen hängen an einem
+  Zeitraum, der im Kalenderjahr wie bisher heißt. Wer im Kalenderjahr abrechnet, merkt davon
+  nichts; jede Zahl bleibt gleich. Die Abrechnung nennt ihre Frist jetzt selbst, und Frist und
+  Höchstdauer des Zeitraums (§ 556 Abs. 3 BGB) frieren mit der abgeschlossenen Abrechnung ein.
+  Vorbereitung für Abrechnungszeiträume wie Mai bis April
+  ([#208](https://github.com/speedone/mietfuchs/issues/208)).
+- **Rechtsregister.** Jede Rechtszahl, mit der Mietfuchs rechnet oder die es nennt (Kabel-TV bis
+  30.06.2024, 50 bis 70 % nach Verbrauch, die Kürzungen um 15 % und 3 %, die Fernablesbarkeit ab
+  2027, ein Leerstandstag mit einer Person, der Regelsatz der Umsatzsteuer), steht jetzt an einer
+  Stelle, mit Gültigkeit und Fundstelle. Eine abgeschlossene Abrechnung friert die Werte ein, mit
+  denen sie gerechnet wurde; die Abrechnung zeigt sie unter „Rechtsstand“, und weicht ein Wert
+  später ab, sagt es der Vergleich mit der heutigen Berechnung. Abgeschlossene Abrechnungen
+  bleiben unverändert; bei einer Abrechnung von vor dieser Version steht „Rechtswerte nicht
+  gespeichert“. Keine Zahl und kein Hinweistext einer Abrechnung ändert sich; neu gesetzt ist nur
+  der angezeigte Rechtsstand, jetzt das Datum des Rechtsregisters (12.10.2026 statt 02.10.2026).
+  ([#97](https://github.com/speedone/mietfuchs/issues/97), [#110](https://github.com/speedone/mietfuchs/issues/110))
+- **KI-Belegauswertung:** Ob der Abstand zwischen Positionen und Rechnungsbetrag Umsatzsteuer
+  ist, misst Mietfuchs jetzt am Satz des Rechnungsdatums, für das zweite Halbjahr 2020 also an
+  16 %. Passt der Abstand nicht, bleiben die Positionen wie auf dem Beleg stehen.
+- **Wasser nach Zählern: Warmwasserzähler zählen mit.** Beim Kaltwasser nach Verbrauch gehen die
+  Warmwasserzähler der Wohnungen in die Verteilung ein, denn die Wasserkosten des Warmwassers
+  gehören dazu. Ob eine Wohnung einen Zähler hat, sagt aber nur ein Kaltwasserzähler; mit nur einem
+  Warmwasserzähler gilt für ihr Kaltwasser der Rest des Hauptzählers. Zähler, die zur Heizanlage
+  selbst gehören (etwa ein Wärmezähler am Speicher), gelten nicht als Hauptzähler des Hauses. Beides
+  betrifft nur Bestände mit diesen neuen Zählern, keine bisherige Abrechnung
+  ([#99](https://github.com/speedone/mietfuchs/issues/99)).
+
+- **Angekündigt: Hinweis zu den CO₂-Kosten bei Heizpositionen ab 2023.** Für Abrechnungszeiträume, die
+  am oder nach dem 01.01.2023 beginnen, sagt die Abrechnung bei Positionen „Heizung und Warmwasser“,
+  ob die CO₂-Kosten aufzuteilen sind, und nennt die Kürzung von 3 % je Mieter, wenn die Aufteilung
+  fehlt. Ohne Heizanlage ist das ein Hinweis mit dem Knopf „Heizung einrichten →“, mit einer Gas-,
+  Öl-, Flüssiggas- oder Kohleheizung ohne CO₂-Angaben eine Warnung; beide färben die Ampel im Cockpit.
+  Keine Zahl ändert sich ([#97](https://github.com/speedone/mietfuchs/issues/97)).
+- **Anleitung „Fertige Abrechnung eines Messdienstes übernehmen“:** Der Betrag Ihrer selbstgenutzten
+  Wohnung steht wie in der Abrechnung; den CO₂-Teil Ihrer Wohnung tragen Sie in der Karte „CO₂-Kosten“
+  ein. Wer ihn nach der bisherigen Anleitung in den Eigenbetrag geschrieben hat, dem meldet die Probe
+  das ([#209](https://github.com/speedone/mietfuchs/issues/209)).
+- Eine Heizanlage mit erfassten CO₂-Angaben lässt sich erst entfernen, wenn die Angaben entfernt sind.
+- Ohne Heizanlage bleibt der Hinweis zu einer Heizrechnung über die Heizperiode hinaus wie bisher;
+  mit einer Anlage und freien Schlüsseln rät er, die Rechnung als Lieferung einzutragen.
+- Ablesungen des Versorgungszählers in einer abgeschlossenen Heizperiode und Lieferungen, von denen
+  eine abgeschlossene Heizperiode einen Teil eingefroren hat, lassen sich erst nach dem Wiederöffnen
+  ändern; eine Heizanlage mit Lieferungen lässt sich erst entfernen, wenn die Lieferungen entfernt
+  sind. Ebenso bleibt die letzte Position einer solchen Lieferung mit ihr verknüpft, und die
+  Gradtagzahlen des Orts für Monate einer abgeschlossenen Heizperiode bleiben, wie sie sind.
+- Wird eine Rechnung nach dem Abschluss einer Heizperiode storniert oder auf 0 € gesetzt, sperrt
+  Mietfuchs nichts: Der Teil, den die Mieter der abgeschlossenen Abrechnung zu viel getragen haben,
+  steht beim Vermieter, und eine Warnung nennt den Betrag und rät, jene Abrechnung wieder zu öffnen und
+  neu abzuschließen; das gilt auch, wenn jene Abrechnung mit einer Schätzung abgeschlossen wurde. Die
+  stornierte Rechnung deckt danach keine Tage mehr ab, die Lücke wird wieder gemeldet; ein Hinweis nennt
+  die Rechnung und rät, eine echte Rechnung über 0 € nicht zu schätzen.
+  Wurde die Position einer Rechnung erst nach dem Abschluss ihrer Heizperiode mit der Lieferung
+  verknüpft, sagt es ein Hinweis in der anderen Heizperiode.
+- **Angekündigt: Hinweis bei Heizöl, Flüssiggas, Pellets, Holz und Kohle mit freien Schlüsseln.** Ohne
+  Anfangs- und Endbestand sagt die Abrechnung, dass die Heizkosten nach Lieferung statt nach Verbrauch
+  verteilt sind und das angreifbar ist; an den Zahlen ändert sich nichts, bis Sie den Vorrat eintragen
+  ([#99](https://github.com/speedone/mietfuchs/issues/99)).
+- Die Steuerübersicht nennt den Unterschied zum Eigenanteil der Abrechnung, der aus dem Vorrat kommt:
+  Die Abrechnung rechnet nach Verbrauch, die Steuerübersicht nach Bezahltem.
+- Der Vorrat und die Lieferungen einer abgeschlossenen Heizperiode lassen sich erst nach dem
+  Wiederöffnen ändern; ebenso Einheit und Endbestand einer Heizperiode, deren Folgeperiode
+  abgeschlossen ist, und, wenn diese den Endbestand übernommen hat, Menge, Lieferdatum und Verknüpfung
+  der Lieferungen. Beträge bleiben änderbar.
+- Beim ersten Vorrat nach einer Abrechnung nach Lieferungen fragt die Karte „Vorrat“, ob der
+  Anfangsbestand schon umgelegt wurde; dann zählt er mit 0 €, damit die Mieter ihn nicht zweimal
+  tragen. Ohne Antwort nimmt Mietfuchs das an, wenn im Vorjahr Brennstoff abgerechnet ist; stehen dort
+  nur Heizkosten ohne Angabe, warnt die Abrechnung und nennt sie. Verteilt eine Heizperiode ohne
+  Übertrag, geht ihr Endbestand mit 0 € weiter. Bleibt ein Bestand bei Ihnen hängen, nennt die
+  Abrechnung den Betrag. Stehen im Vorjahr nur kleinere Heizkosten ohne Angabe, zählt der
+  Anfangsbestand mit seinem Wert, und ein Hinweis bittet Sie, das zu prüfen.
+- Im Kostenformular wählen Sie bei Heizkosten „Teil der Heizkosten“: Brennstoff/Energie, Betrieb,
+  Ablesung oder ohne Angabe.
 - **Grundlage für das Einlesen von Kontoauszügen.** Mietfuchs kann Kontoauszüge im Format camt
   lesen (camt.053, dazu camt.052 und camt.054, die Fassungen 001.02 bis 001.08) und im älteren
   Format MT940, wie es Sparkassen und Programme wie StarMoney als `.sta` ausgeben, auch mehrere
@@ -18,8 +636,72 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Bruchteile eines Cents, ein abgeschnittener Download, eine beschädigte Datei im ZIP), wird
   gemeldet statt geraten ([#188](https://github.com/speedone/mietfuchs/issues/188)).
 
+- Der Fehler „Mieter heizt selbst und hängt an Ihrer Heizanlage“ sagt bei einer zentralen Heizung, dass für einen
+  Brennstoffvertrag beim Mieter keine Heizanlage angelegt wird, und nennt den Weg dorthin: Anlage entfernen, die
+  Heizung neu einrichten und beim Liefervertrag den Mieter wählen. Dasselbe steht beim Ändern einer Gas-, Öl-,
+  Flüssiggas- oder Kohleheizung in der Karte „Heizung“. Keine Zahl ändert sich
+  ([#97](https://github.com/speedone/mietfuchs/issues/97)).
+
 ### Behoben
 
+- **Wohnung mit Etagenheizung löschen.** Hingen an einer Wohnung Rechnungen ihrer Etagenheizung, scheiterte das
+  Löschen mit einer Meldung über einen fehlenden Eintrag, oder die Rechnung verschwand samt kg CO₂ und CO₂-Kosten
+  ohne Nachfrage mit der Wohnung. Jetzt sagt Mietfuchs vorher, welche Rechnungen an der Wohnung hängen, und
+  löscht die Wohnung erst, wenn Sie die Rechnungen auf der Seite Heizkosten selbst gelöscht haben. Keine Zahl
+  ändert sich.
+- **Kein Hinweis auf eine CO₂-Kürzung, wenn der Mieter selbst heizt** ([#97](https://github.com/speedone/mietfuchs/issues/97)):
+  Erfassten Sie Wartung oder Betriebsstrom einer Gastherme, deren Gasvertrag der Mieter hat, als „Heizung und
+  Warmwasser“, nannte die Abrechnung eine Kürzung um 3 % nach § 7 Abs. 4 CO2KostAufG und eine nach § 12
+  HeizkostenV. Darin stecken aber keine CO₂-Kosten des Vermieters, und für eine Gastherme in der Wohnung gilt die
+  Heizkostenverordnung nicht. Steht das Mietverhältnis auf „Mieter heizt selbst“, entfallen beide Hinweise; der
+  Hinweis ohne Heizanlage nennt diesen Weg. Keine Zahl ändert sich.
+- **Vorschlag für die Vorauszahlung im Rumpfzeitraum ohne CO₂-Abzug** ([#215](https://github.com/speedone/mietfuchs/issues/215)):
+  Teilte Mietfuchs die CO₂-Kosten bei freien Schlüsseln selbst auf, ging die Abzugszeile „CO₂-Anteil des
+  Vermieters“ in einem Zeitraum unter einem Jahr nicht in den Vorschlag nach § 560 BGB ein; der Vorschlag war um
+  den hochgerechneten Abzug zu hoch. Jetzt wird sie mit dem Faktor ihrer Heizpositionen hochgerechnet, wie beim
+  Messdienst. Keine Zahl einer Abrechnung ändert sich, nur der Vorschlag.
+- **Heizkosten: Schätzvorschlag aus einer zu kurzen Rechnung.** Den Vorschlag für eine fehlende
+  Rechnung rechnet Mietfuchs aus der letzten Rechnung hoch. War das eine Rechnung über wenige
+  Sommertage, ergab das beliebig hohe Beträge (gemessen: 50,00 € über zwei Julitage ergaben 54.400,00 €
+  für den Rest der Heizperiode), und ein Klick beim Abschließen verteilte sie. Vorlage ist jetzt nur
+  eine Rechnung, die mindestens 100 ‰ der Gradtage der Lücke abdeckt, sonst die nächstältere; gibt es
+  keine, schlägt Mietfuchs nichts vor und sagt im Hinweis zur Lücke, warum
+  ([#251](https://github.com/speedone/mietfuchs/issues/251)).
+- **Heizkosten: Lieferung mit negativer Summe (Gutschrift ohne Rechnung).** Ergaben die Positionen
+  einer Lieferung zusammen weniger als 0 €, rechnete Mietfuchs sie wie eine Rechnung: Sie deckte Tage
+  ab, verdrängte dort eine Schätzung, diente als Vorlage für einen negativen Schätzvorschlag und
+  zählte CO₂-Ausstoß. Jetzt belegt sie keinen Verbrauch und zählt dafür wie ein Storno; ihr Betrag
+  mindert weiter die Heizkosten der Heizperioden ihres Zeitraums. Ein Hinweis nennt sie, und die
+  Seite Heizkosten fragt „Was ist diese Gutschrift?“: einer anderen Lieferung zuordnen, Anleitung für
+  den Zahlbetrag nach Abzug der Abschläge, oder bestätigen, dass die Rechnung nicht in Mietfuchs
+  steht. Im Vorrat macht eine solche Lieferung die Bestandsrechnung ungültig, statt den Endbestand
+  mit einem negativen Wert zu bewerten. Hatte eine abgeschlossene Heizperiode einen anderen Teil einer
+  Rechnung eingefroren, als heute auf sie entfiele (Rechnung danach gemindert, auch bis unter 0 €,
+  oder gestiegen), trugen die Mieter der offenen Heizperiode den Unterschied; mit Mieterwechsel waren
+  das im gemessenen Fall 2.332,08 € zu viel für den Vormieter und ebenso viel zu viel Gutschrift für
+  den Nachmieter. Jetzt tragen sie nur ihren heutigen Teil, der Unterschied steht beim Vermieter mit
+  dem Hinweis, dass die Mieter der abgeschlossenen Abrechnung zu viel getragen haben, bzw. was sich
+  dort nachfordern ließe. Dabei behoben: Eine teilweise abgedeckte, eingefrorene Schätzung wurde beim
+  Abgleich ein zweites Mal gekürzt, sodass der Hinweis eine Nachforderung statt einer Gutschrift
+  nennen konnte. Offene Abrechnungen mit solchen Lieferungen können sich dadurch ändern;
+  abgeschlossene bleiben unverändert, die Abweichung zeigt die heutige Berechnung
+  ([#251](https://github.com/speedone/mietfuchs/issues/251)).
+- **Messdienst-Abrechnung mit Vorwegabzug: der CO₂-Anteil des Vermieters fehlte in der
+  Steuerübersicht.** Die Anleitung „Fertige Abrechnung eines Messdienstes übernehmen“ ließ als
+  Betrag den Gesamtbetrag der Abrechnung eintragen. Techem und ista ziehen den CO₂-Anteil, den der
+  Vermieter trägt, aber meist schon vorher ab; dann ist dieser Gesamtbetrag um ihn zu niedrig, und
+  der Anteil fehlte bei den Werbungskosten. Den Mietern wurde dabei nichts falsch berechnet. Die
+  Anleitung sagt jetzt: Als Betrag gilt, was Sie bezahlt haben, also die Summe aller Nutzerbeträge
+  für Heizung und Warmwasser (einschließlich Leerstand) plus den abgezogenen CO₂-Anteil. Der Teil,
+  der auf eine selbstgenutzte Wohnung entfällt, gehört zu deren Betrag, und zwar wie ihn die
+  Einzelabrechnung nennt; näherungsweise nur, wenn die Abrechnung gar keine Beträge je Wohnung
+  nennt. Kaltwasser und weitere Nebenkosten
+  derselben Abrechnung kommen als eigene Positionen. Weist die Abrechnung keinen CO₂-Anteil aus,
+  rät die Anleitung zur Nachfrage beim Messdienst. Haben Sie eine Messdienst-Abrechnung mit
+  Vorwegabzug schon erfasst, erhöhen Sie den Betrag der Position um den abgezogenen CO₂-Anteil und,
+  wenn Sie selbst im Haus wohnen, den Betrag Ihrer Wohnung um deren Teil davon; die Beträge der
+  Mieter bleiben
+  ([#209](https://github.com/speedone/mietfuchs/issues/209)).
 - **Ein zweiter Start fasst die Daten nicht mehr an, solange Mietfuchs schon läuft.** Startete
   man Mietfuchs ein zweites Mal, etwa über das Startmenü, während es unsichtbar im Hintergrund
   lief, öffnete der zweite Start erst die Datenbank und bemerkte den belegten Port danach. Nach
@@ -31,6 +713,50 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   beim Start noch die Datenbank vorbereitet, antwortet `/healthz` mit 503 und
   `"status": "starting"`; alle anderen Anfragen warten, bis der Start fertig ist
   ([#244](https://github.com/speedone/mietfuchs/issues/244)).
+- **Steuer: privater Teil beim Ausgleich des Betriebsstroms über dem Betrag** ([#268](https://github.com/speedone/mietfuchs/issues/268)):
+  Stand bei einer Heizanlage neben der Rechnung eine Gutschrift mit anderem Schlüssel oder anderen Beteiligten,
+  konnte der Eigenanteil an deren Heizkosten weit über 100 % liegen. Die Zeile „Betriebsstrom der Heizung,
+  Ausgleich“ bekam dann einen privaten Teil über ihrem Betrag, auch mit falschem Vorzeichen (gemessen: Ausgleich
+  −30,00 €, privat −262,50 €, abziehbar +232,50 €). Liegt der Eigenanteil außerhalb von 0 bis 100 %, gilt jetzt die
+  Wohn- und Nutzfläche des Gebäudes (im Beispiel privat −15,00 €), und der Rechenweg sagt das. Die Abrechnung an die
+  Mieter ändert sich nicht.
+- **CO₂-Erstattung zum Verrechnen bei einem Mieter ohne Abrechnung verschwand still** ([#97](https://github.com/speedone/mietfuchs/issues/97)):
+  Bekam ein Mieter, der selbst heizt, für den gewählten Zeitraum keine Abrechnung (Inklusivmiete oder Pauschale
+  ohne Vorauszahlung, Wohnung außerhalb der Abrechnungseinheit), wurde eine dort zum Verrechnen eingetragene
+  Erstattung weder verrechnet noch gemeldet (gemessen: 120,00 €, in keinem Jahr ein Hinweis). Jetzt lehnt das
+  Speichern das mit einem Satz ab und verweist auf die Auszahlung (§ 6 Abs. 2 Satz 5 CO2KostAufG); ein schon
+  vorhandener Eintrag bekommt in diesem Zeitraum einen Hinweis.
+- **Kürzung nach § 12 HeizkostenV bei Rechnungen über das Kalenderjahr und Zeitraum Mai bis April** ([#208](https://github.com/speedone/mietfuchs/issues/208)):
+  Den Anteil einer Gasrechnung, der über einen Übertrag in den vorigen Zeitraum gehört, sah der Hinweis nicht. Dort
+  fehlte er ganz (auch der zur Fernablesung), im Zeitraum der Rechnung nannte er 15 % des ganzen Anteils (gemessen:
+  270,00 € statt 126,90 €). Jetzt nennt jede Abrechnung 15 % dessen, was der Mieter in ihr trägt (im Beispiel
+  143,10 € und 126,90 €). Keine Zahl der Abrechnung ändert sich, Mietfuchs zieht die Kürzung nicht selbst ab.
+- **Vorschlag für die Vorauszahlung im Übergangsjahr zur getrennten Heizkostenabrechnung enthielt die Heizkosten** ([#217](https://github.com/speedone/mietfuchs/issues/217)):
+  Die Betriebskostenabrechnung des Jahres, in dem die getrennte Heizkostenabrechnung beginnt, enthält noch die
+  letzte Heizperiode davor. Der Vorschlag nach § 560 Abs. 4 BGB „Vorauszahlung für die übrigen Nebenkosten (ohne
+  Heizung)“ rechnete sie mit (gemessen: 105,00 € statt 18,00 €), obwohl die Heizkosten künftig über die
+  Heizvorauszahlung laufen. Jetzt bleiben die Heizkosten einer Anlage, die danach getrennt abgerechnet wird,
+  außen vor. Keine Zahl der Abrechnung ändert sich, nur der Vorschlag.
+- **Eigentumswohnung: CO₂-Karte fragte nach der Summe des ganzen Hauses** ([#97](https://github.com/speedone/mietfuchs/issues/97)):
+  Rechnet die Gemeinschaft ab, steht in der Position der eigene Anteil laut Hausgeldabrechnung. Die Karte „CO₂-Kosten“
+  fragte aber nach der „Summe der Kosten aller Nutzer“; wer die Summe des Hauses eintrug, bekam eine Probe, die
+  nicht aufging, und der CO₂-Anteil wurde nicht gebucht. Jetzt fragt sie nach den Heizkosten Ihrer Wohnung laut
+  Einzelabrechnung und dem CO₂-Anteil des Vermieters für Ihre Wohnung, setzt eine Nutzeinheit voraus, und Probe
+  und Hinweise sprechen von der Abrechnung der Gemeinschaft statt vom Messdienst.
+- **Wechsel in einen Rumpfzeitraum: Vorschlag für die Gasrechnung, den das Übernehmen ablehnte** ([#208](https://github.com/speedone/mietfuchs/issues/208)):
+  Wechselte der Abrechnungszeitraum mitten im Jahr, schlug die Vorschau für eine mit einer Brennstoffrechnung
+  verknüpfte Heizposition den Rumpf vor, obwohl sie in die Heizperiode gehört, in der die Rechnung endet; das
+  Übernehmen lehnte genau diesen Vorschlag ab. Jetzt bietet die Vorschau nur diese Heizperiode an.
+- **Kesseltausch bei getrennter Heizkostenabrechnung: Sperre mit Weg statt „kommt mit einer späteren Version“** ([#217](https://github.com/speedone/mietfuchs/issues/217)):
+  Wurden die Heizkosten getrennt abgerechnet, lehnte Mietfuchs jeden Kesseltausch ab, auch wenn die getrennte
+  Abrechnung schon vorher geendet hatte. Jetzt sperrt nur noch ein Tausch in einer getrennt abgerechneten
+  Heizperiode oder davor, und die Meldung nennt den Weg: die getrennte Heizkostenabrechnung ab dieser Heizperiode
+  ausschalten, dann den Tausch erfassen; die Heizkosten rechnet danach die Betriebskostenabrechnung ab. Eine
+  getrennte Heizkostenabrechnung nach einem Kesseltausch kann Mietfuchs noch nicht.
+- **„Vorauszahlung für die übrigen Nebenkosten (ohne Heizung)“ auch nach dem Ausschalten der getrennten Heizkostenabrechnung** ([#217](https://github.com/speedone/mietfuchs/issues/217)):
+  Hatte ein Objekt je eine getrennte Heizkostenabrechnung, nannte jede spätere Betriebskostenabrechnung den Vorschlag
+  nach § 560 Abs. 4 BGB „ohne Heizung“, auch wenn er die Heizkosten wieder enthielt (gemessen: 100,00 € aus 1.200,00 €
+  Heizkosten). Jetzt hängt die Beschriftung daran, ob der Vorschlag dieser Abrechnung die Heizkosten auslässt.
 
 ## [0.10.1] – 2026-10-04
 

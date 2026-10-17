@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 
 // Zentrale Rückmeldungs-Schicht: kurze Toasts (Speichern/Löschen bestätigt) und ein gestylter
 // Bestätigungsdialog als Ersatz für das native confirm(). Beides wird über die Hooks useToast()
@@ -19,6 +19,9 @@ type ConfirmOpts = {
   // die Rückfrage wie Abbrechen (das Versprechen liefert false) und ruft vorher `onAlternative`.
   alternativeLabel?: string
   onAlternative?: () => void
+  // Was Enter und der Fokus wählen: vorgegeben die Bestätigung. `cancel` macht Abbrechen zur Vorgabe,
+  // etwa wenn keine der Möglichkeiten zu bestätigen sicher ist (Rückfrage zur Schätzung, Heizung PR 7).
+  defaultChoice?: 'confirm' | 'cancel'
 }
 const ConfirmCtx = createContext<(opts: ConfirmOpts) => Promise<boolean>>(async () => false)
 export const useConfirm = () => useContext(ConfirmCtx)
@@ -26,6 +29,9 @@ export const useConfirm = () => useContext(ConfirmCtx)
 export function UIProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([])
   const idRef = useRef(1)
+  // Der Name der Rückfrage für Bildschirmleser (Laienprobe, Kleinigkeit): Ohne ihn stand sie
+  // namenlos im Barrierebaum, etwa „Rechnung aufteilen?“ über dem Kostenformular.
+  const titleId = useId()
   // Laufende Zeitgeber der Toasts, damit sie beim Abbauen nicht mehr feuern: Ein Zeitgeber, der
   // nach dem Ende eines Komponententests läuft, trifft auf eine abgebaute Testumgebung
   // („window is not defined“) und lässt den ganzen Lauf scheitern, obwohl jeder Test grün war.
@@ -63,7 +69,7 @@ export function UIProvider({ children }: { children: ReactNode }) {
     // schützen soll; Strg+S speicherte ihn hinter der Rückfrage.
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') { e.stopPropagation(); close(false) }
-      else if (e.key === 'Enter') { e.stopPropagation(); close(true) }
+      else if (e.key === 'Enter') { e.stopPropagation(); close(dialog.defaultChoice !== 'cancel') }
       else if (e.key === 's' && (e.ctrlKey || e.metaKey)) { e.stopPropagation(); e.preventDefault() }
     }
     window.addEventListener('keydown', onKey, true)
@@ -84,15 +90,15 @@ export function UIProvider({ children }: { children: ReactNode }) {
         </div>
         {dialog && (
           <div className="dialog-backdrop no-print" onMouseDown={() => close(false)}>
-            <div className="dialog" role="dialog" aria-modal="true" onMouseDown={(e) => e.stopPropagation()}>
-              <h2>{dialog.title}</h2>
+            <div className="dialog" role="dialog" aria-modal="true" aria-labelledby={titleId} onMouseDown={(e) => e.stopPropagation()}>
+              <h2 id={titleId}>{dialog.title}</h2>
               {dialog.message && <div className="dialog-msg">{dialog.message}</div>}
               <div className="dialog-actions">
-                <button className="btn ghost" onClick={() => close(false)}>{dialog.cancelLabel ?? 'Abbrechen'}</button>
+                <button className="btn ghost" onClick={() => close(false)} autoFocus={dialog.defaultChoice === 'cancel'}>{dialog.cancelLabel ?? 'Abbrechen'}</button>
                 {dialog.alternativeLabel && (
                   <button className="btn secondary" onClick={() => { dialog.onAlternative?.(); close(false) }}>{dialog.alternativeLabel}</button>
                 )}
-                <button className={`btn ${dialog.danger ? 'danger' : ''}`} onClick={() => close(true)} autoFocus>
+                <button className={`btn ${dialog.danger ? 'danger' : ''}`} onClick={() => close(true)} autoFocus={dialog.defaultChoice !== 'cancel'}>
                   {dialog.confirmLabel ?? 'OK'}
                 </button>
               </div>

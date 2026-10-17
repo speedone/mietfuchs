@@ -13,7 +13,7 @@
 // (`taxReport(...).expenses.items`) und nicht hier ein zweites Mal gerechnet: Die Summen der
 // beiden Spalten sind deshalb genau die der Übersicht. Die Zuführung zur Rücklage steht dort nicht
 // in den Werbungskosten und hat hier leere Felder.
-import type { CostItem, TaxExpenseItem } from '../../shared/types.ts'
+import type { CostItem, TaxExpenseItem, TaxReport } from '../../shared/types.ts'
 import { ANLAGE_V_GROUP, ANLAGE_V_GROUP_ORDER, validLabor35aCents } from './calc.ts'
 
 const RESERVE_GROUP = 'Erhaltungsrücklage (gesondert)'
@@ -53,22 +53,46 @@ export type TaxArchivePlan = {
 //
 // `split`: je Position privat und abziehbar aus der Steuerübersicht (#163).
 export type TaxSplitOfItem = Pick<TaxExpenseItem, 'privateCents' | 'deductibleCents'>
+// `derived`: Zeilen der Steuerübersicht, die keine Position sind: der Ausgleich beim Betriebsstrom (#268), dessen Beleg
+// die Stromrechnung ist, und die an einen Selbstversorger ausgezahlte CO₂-Erstattung (Heizung PR 19, Nachprüfung N-4),
+// belegt durch die Auszahlung. Sie stehen in der Übersicht mit ihrem Betrag und ihrer Aufteilung, aber ohne Beleg.
+// Damit ergibt die Übersicht in jeder Spalte die Summe der Steuerübersicht.
+export const derivedTaxLines = (report: Pick<TaxReport, 'expenses'>): TaxExpenseItem[] =>
+  report.expenses.items.filter((i) => i.operatingPowerBalance || i.co2RefundPaidOut)
+const derivedNote = (d: TaxExpenseItem | undefined): string =>
+  d?.co2RefundPaidOut ? 'kein eigener Beleg (Auszahlung an den Mieter, Nachweis über den Kontoauszug)' : 'kein eigener Beleg (Teil der Stromrechnung)'
+
 export function planTaxArchive(
   items: CostItem[], names: Map<string, string>, booked: ReadonlyMap<string, readonly string[]> = new Map(),
-  split: ReadonlyMap<string, TaxSplitOfItem> = new Map(),
+  split: ReadonlyMap<string, TaxSplitOfItem> = new Map(), derived: readonly TaxExpenseItem[] = [],
 ): TaxArchivePlan {
   const rank = (group: string) => GROUPS.indexOf(group)
-  const sorted = [...items].sort((a, b) =>
-    rank(taxGroupOf(a.category)) - rank(taxGroupOf(b.category)) ||
-    a.category.localeCompare(b.category, 'de') ||
-    a.description.localeCompare(b.description, 'de'))
+  type Row = { c: Pick<CostItem, 'id' | 'category' | 'description' | 'vendor' | 'amountCents' | 'invoiceFile' | 'labor35aCents'>; derived: boolean }
+  const all: Row[] = [
+    ...items.map((c) => ({ c, derived: false })),
+    ...derived.map((d) => ({ c: { id: d.costItemId, category: d.category, description: d.description, amountCents: d.amountCents }, derived: true })),
+  ]
+  const sorted = all.sort((a, b) =>
+    rank(taxGroupOf(a.c.category)) - rank(taxGroupOf(b.c.category)) ||
+    a.c.category.localeCompare(b.c.category, 'de') ||
+    Number(a.derived) - Number(b.derived) ||
+    a.c.description.localeCompare(b.c.description, 'de'))
 
   const files: TaxArchivePlan['files'] = []
   const placed = new Map<string, string>() // Gruppe|Datei → Pfad im Archiv
   const taken = new Set<string>()
   const rows: string[] = []
-  for (const c of sorted) {
+  for (const { c, derived: isDerived } of sorted) {
     const group = taxGroupOf(c.category)
+    if (isDerived) {
+      const part = derived.find((d) => d.costItemId === c.id)
+      rows.push([
+        textField(group), textField(c.category), textField(c.description), '', csvField(euro(c.amountCents)),
+        part ? csvField(euro(part.privateCents)) : '', part ? csvField(euro(part.deductibleCents)) : '', '',
+        textField(derivedNote(part)),
+      ].join(';'))
+      continue
+    }
     const parts: string[] = []
     for (const file of new Set([c.invoiceFile, ...(booked.get(c.id) ?? [])].filter((f): f is string => !!f))) {
       const original = names.get(file)

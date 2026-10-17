@@ -1,5 +1,5 @@
 // Was die KI-Auswertung aus der Antwort eines Modells übernimmt. Geprüft wird hier nur das
-// Einengen der Werte, nicht der Weg zum Anbieter — den decken api.test.ts und der Smoke-Test ab.
+// Einengen der Werte, nicht der Weg zum Anbieter — den decken die Tests api-*.test.ts und der Smoke-Test ab.
 //
 // Grundsatz des Werkzeugs: Die KI füllt vor, ein Mensch prüft. Verworfen wird deshalb nur, was
 // niemand gebrauchen kann. Die Schemas verlangen für Beträge und Zählerstände eine Zahl,
@@ -8,7 +8,7 @@
 // antwortet dann, wie es mag.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { numberFromModel, rawFromAnswer, toExtraction } from '../src/extract.ts'
+import { documentMaterial, numberFromModel, rawFromAnswer, toExtraction } from '../src/extract.ts'
 
 test('Zahlen aus der Antwort: Zahlen kommen unverändert an', () => {
   assert.equal(numberFromModel(12345), 12345)
@@ -166,4 +166,19 @@ test('Ausgang: nur zugesagte Felder erreichen den Browser', () => {
   const extraction = toExtraction({ vendor: 'Stadtwerke', invoiceNumber: 'R-4711', positions: [] })
   assert.deepEqual(Object.keys(extraction).filter((k) => k === 'invoiceNumber'), [])
   assert.equal(extraction.vendor, 'Stadtwerke')
+})
+
+// ---------- Text und Seitenbilder (Heizung PR 20) ----------
+
+test('Material eines Belegs: Textebene vor Bildern, Scan mit höchstens vier Seiten, Bezeichnung je Belegart', () => {
+  const text = 'x'.repeat(100)
+  const pdf = documentMaterial('/gibt/es/nicht.pdf', 'application/pdf', { pdfText: text, pages: [{ mimeType: 'image/jpeg', data: 'a' }] }, { text: 'ABRECHNUNGSTEXT', noun: 'Die Abrechnung' })
+  assert.equal(pdf.images.length, 0)
+  assert.match(pdf.suffix, /--- ABRECHNUNGSTEXT ---\nx{100}/)
+  const pages = [1, 2, 3, 4, 5].map((n) => ({ mimeType: 'image/jpeg', data: String(n) }))
+  const scan = documentMaterial('/gibt/es/nicht.pdf', 'application/pdf', { pdfText: 'kurz', pages }, { text: 'RECHNUNGSTEXT', noun: 'Die Rechnung' })
+  assert.deepEqual(scan.images.map((p) => p.data), ['1', '2', '3', '4'])
+  assert.match(scan.suffix, /Die Rechnung ist als Bild\(er\) angehängt/)
+  assert.throws(() => documentMaterial('/gibt/es/nicht.pdf', 'application/pdf', {}, { text: 'X', noun: 'Die Rechnung' }), /keine lesbare Textebene/)
+  assert.throws(() => documentMaterial('/gibt/es/nicht.txt', 'text/plain', {}, { text: 'X', noun: 'Die Rechnung' }), /Dateityp text\/plain wird nicht unterstützt/)
 })

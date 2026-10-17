@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
-import type { CostItem, CostKey, Meter, Payment, Reading, Settings, Tenancy, Unit } from '../../shared/types.ts'
+import type { CostItem, CostKey, LegalBasis, Meter, MeterType, Payment, Reading, Settings, Tenancy, Unit } from '../../shared/types.ts'
 import type { ComputedSettlement } from './calc.ts'
 import { migrateLegacy } from './legacy/migrate.ts'
 import { systemLocation, writable } from './paths.ts'
@@ -93,14 +93,18 @@ const DB_FILE = path.join(DATA_DIR, 'db.json')
 // `?? 0`, bevor die Steuerübersicht den Wert bekommt. `closed` gehört ohnehin nicht dazu, das
 // ergänzt erst das Lesen in index.ts.
 // `notSettled` (#93), `notices` und `legalBasis` (#112) ebenso optional: Eine vorher
-// abgeschlossene Abrechnung kennt sie nicht.
-export type StoredSettlement = Omit<ComputedSettlement, 'selfUsedShareCents' | 'notSettled' | 'notices' | 'legalBasis' | 'garageLikeUnitIds'> & {
+// abgeschlossene Abrechnung kennt sie nicht. Aus demselben Grund ist `legalBasis` hier die Form aus
+// shared/types.ts mit optionalen `values` und nicht die frisch gerechnete (Heizung PR 1).
+export type StoredSettlement = Omit<ComputedSettlement, 'selfUsedShareCents' | 'notSettled' | 'notices' | 'legalBasis' | 'garageLikeUnitIds' | 'period' | 'deadline'> & {
   selfUsedShareCents?: number
+  // vor #208 abgeschlossene Abrechnungen kennen Zeitraum und Frist nicht
+  period?: ComputedSettlement['period']
+  deadline?: ComputedSettlement['deadline']
   // vor #135 abgeschlossene Abrechnungen kennen die Einstufung nicht
   garageLikeUnitIds?: ComputedSettlement['garageLikeUnitIds']
   notSettled?: ComputedSettlement['notSettled']
   notices?: ComputedSettlement['notices']
-  legalBasis?: ComputedSettlement['legalBasis']
+  legalBasis?: LegalBasis
 }
 
 // Die Gestalt der db.json: Fachdaten je Collection plus abgeschlossene Abrechnungen.
@@ -119,11 +123,19 @@ export type ClosedSettlement = {
 // Ebenso kennt sie nichts aus #94: keine Miteigentumsanteile, keine Teilnehmer, keine Angaben
 // einer Gemeinschaft, keine Einzelbeträge und die beiden neuen Umlageschlüssel nicht. Der
 // Validator weist sie mit der eingefrorenen Liste aus legacy/schema.ts ab.
-export type LegacyCostKey = Exclude<CostKey, 'external' | 'amounts'>
+export type LegacyCostKey = Exclude<CostKey, 'external' | 'amounts' | 'heatingSystem'>
 export type LegacyUnit = Omit<Unit, 'propertyId' | 'mea'>
-export type LegacyMeter = Omit<Meter, 'propertyId'>
-export type LegacyCostItem = Omit<CostItem, 'propertyId' | 'key' | 'participantUnitIds' | 'externalBasis' | 'tenancyAmounts' | 'selfAmounts'> & {
+// Ebenso kennt sie keine Heizanlage (Heizung PR 4): keine Zähler für Warmwasser und
+// Heizkostenverteiler, keine Anlagenzähler, keine Angaben zu Einbau und Fernablesbarkeit. Der
+// eingefrorene Eingang schreibt die Zählertypen von Migration 0000.
+export type LegacyMeterType = Exclude<MeterType, 'warmwasser' | 'hkv'>
+export type LegacyMeter = Omit<Meter, 'propertyId' | 'type' | 'heatingPlantId' | 'heatingRole' | 'remoteReadable' | 'installedOn'> & { type: LegacyMeterType }
+// Die db.json kennt Jahre, keine Zeiträume (#208): Ihre Kostenpositionen tragen `year`, und erst der
+// Eingang macht daraus den Kalenderzeitraum.
+export type LegacyCostItem = Omit<CostItem, 'period' | 'propertyId' | 'key' | 'meterType' | 'participantUnitIds' | 'externalBasis' | 'tenancyAmounts' | 'selfAmounts' | 'heatingPlantId'> & {
   key: LegacyCostKey
+  meterType?: LegacyMeterType | null
+  year: number
 }
 
 export type Db = {

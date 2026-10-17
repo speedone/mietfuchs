@@ -11,10 +11,27 @@
 // Oberfläche und muss dort wörtlich so stehen; der Test prüft das.
 
 import type { TermId } from './glossary.ts'
+// Rechtszahlen aus dem Rechtsregister (Heizung PR 1), in der Fassung von `LAW_AS_OF` wie im Lexikon.
+import { hkvConsumptionShare, hkvConsumptionShareForced, hkvCutInformation, hkvCutNotByConsumption, hkvEstimateThreshold, hkvRenewableExemption } from './law/heizkostenv.ts'
+import { germanDate, LAW_AS_OF, valueAt } from './law/register.ts'
+import { co2CutMissing, co2FirstPeriodStart } from './law/co2kostaufg.ts'
+
+const SHARE = valueAt(hkvConsumptionShare, LAW_AS_OF)
+const CUT = valueAt(hkvCutNotByConsumption, LAW_AS_OF)
+// Heizung PR 10: der Pflichtanteil nach § 7 Abs. 1 Satz 2 HeizkostenV, aus dem Register.
+const FORCED = valueAt(hkvConsumptionShareForced, LAW_AS_OF)
+const ESTIMATE_THRESHOLD = valueAt(hkvEstimateThreshold, LAW_AS_OF)
+const INFO_CUT = valueAt(hkvCutInformation, LAW_AS_OF)
+// Heizung PR 6: die Kürzung bei fehlender CO₂-Aufteilung (§ 7 Abs. 4 CO2KostAufG) und der Beginn der
+// Aufteilung (§ 11 Abs. 2 Satz 1) aus dem Register.
+const CO2_CUT = valueAt(co2CutMissing, LAW_AS_OF)
+const CO2_FROM = germanDate(co2FirstPeriodStart())
+// Heizung PR 11: seit wann Wärmepumpen nicht mehr von der Heizkostenverordnung ausgenommen sind.
+const HEAT_PUMP_FROM = germanDate(hkvRenewableExemption.versions.find((v) => v.validFrom !== undefined)?.validFrom ?? '')
 
 // Die Seiten, auf die eine Anleitung springen kann. Dieselben Kennungen wie die Navigation;
 // client/src/nav.ts prüft beim Übersetzen, dass jede davon dort vorkommt.
-export const GUIDE_PAGES = ['stammdaten', 'zaehler', 'kosten', 'mietkonto', 'abrechnung', 'steuer', 'einstellungen', 'belege'] as const
+export const GUIDE_PAGES = ['stammdaten', 'zaehler', 'kosten', 'mietkonto', 'heizkosten', 'abrechnung', 'steuer', 'einstellungen', 'belege'] as const
 export type GuidePage = (typeof GUIDE_PAGES)[number]
 
 export type GuideStep = {
@@ -79,7 +96,7 @@ const GUIDE_DATA = {
       { text: 'Lesen Sie Haupt- und Zwischenzähler am selben Tag ab, am besten zum 31.12. Deckt der Hauptzähler nicht das ganze Jahr ab, nimmt Mietfuchs ihn nicht als Grundlage und warnt.' },
     ],
     gaps: [
-      { text: 'Eine eigene Heizkostenabrechnung nach Grund- und Verbrauchskosten rechnet Mietfuchs noch nicht. Liegt eine Abrechnung eines Messdienstes vor, übernehmen Sie sie als Einzelbeträge (siehe die Anleitung zum Messdienst).', issue: 99 },
+      { text: 'Haben Wohnungen verschiedene Geräte (Wärmezähler in der einen, Heizkostenverteiler in der anderen), verlangt die Heizkostenverordnung eine Vorerfassung nach Gruppen; die rechnet Mietfuchs noch nicht. Übernehmen Sie dann die Abrechnung eines Messdienstes als Einzelbeträge (siehe die Anleitung zum Messdienst).', issue: 218 },
       { text: 'Abschreibung (AfA) und Schuldzinsen gehören nicht zu den Kostenpositionen; die Steuerübersicht rechnet und teilt sie nicht.' },
     ],
     terms: ['granny', 'ownShare', 'mixedUse', 'mainMeter', 'heatingCostOrdinance'],
@@ -109,16 +126,16 @@ const GUIDE_DATA = {
     caveats: [
       { text: 'Ist im Mietvertrag kein Umlageschlüssel vereinbart, wird nach Wohnfläche umgelegt. Kosten, die von einem erfassten Verbrauch der Mieter abhängen, sind nach einem Maßstab umzulegen, der dem unterschiedlichen Verbrauch Rechnung trägt, also nach den Zählern.', norm: '§ 556a Abs. 1 Satz 1 und 2 BGB' },
       { text: 'Die Abrechnung muss dem Mieter spätestens bis zum Ablauf des zwölften Monats nach Ende des Abrechnungszeitraums zugehen; danach können Sie eine Nachzahlung in der Regel nicht mehr verlangen.', norm: '§ 556 Abs. 3 Satz 2 und 3 BGB' },
-      { text: 'Bei einer Zentralheizung sind mindestens 50 und höchstens 70 Prozent der Heiz- und Warmwasserkosten nach Verbrauch zu verteilen. Wird nicht nach Verbrauch abgerechnet, darf der Mieter seinen Anteil um 15 Prozent kürzen.', norm: '§ 7 Abs. 1, § 8 Abs. 1, § 12 Abs. 1 HeizkostenV' },
+      { text: `Bei einer Zentralheizung sind mindestens ${SHARE.min} und höchstens ${SHARE.max} Prozent der Heiz- und Warmwasserkosten nach Verbrauch zu verteilen. Wird nicht nach Verbrauch abgerechnet, darf der Mieter seinen Anteil um ${CUT} Prozent kürzen.`, norm: '§ 7 Abs. 1, § 8 Abs. 1, § 12 Abs. 1 HeizkostenV' },
       { text: 'Verwaltungskosten sowie Instandhaltung und Instandsetzung sind keine Betriebskosten; erfassen Sie sie als „Nicht umlagefähig“.', norm: '§ 1 Abs. 2 BetrKV' },
-      { text: 'Fallen für die Heizung CO₂-Kosten an, sind sie zwischen Ihnen und dem Mieter nach dem CO₂-Ausstoß des Gebäudes aufzuteilen. Die Heizkostenabrechnung muss den Anteil des Mieters, die Einstufung des Gebäudes und die Berechnungsgrundlagen ausweisen; fehlt das, darf der Mieter seinen Anteil an den Heizkosten um 3 Prozent kürzen. Mietfuchs rechnet das noch nicht (#97); nehmen Sie den Vermieteranteil aus der Abrechnung des Messdienstes.', norm: '§ 5 Abs. 2, § 7 Abs. 3 und 4 CO2KostAufG' },
+      { text: `Fallen für die Heizung CO₂-Kosten an, sind sie zwischen Ihnen und dem Mieter nach dem CO₂-Ausstoß des Gebäudes aufzuteilen. Die Heizkostenabrechnung muss den Anteil des Mieters, die Einstufung des Gebäudes und die Berechnungsgrundlagen ausweisen; fehlt das, darf der Mieter seinen Anteil an den Heizkosten um ${CO2_CUT} Prozent kürzen. Verteilen Sie die Heizkosten selbst nach einem Schlüssel, teilt Mietfuchs die CO₂-Kosten auf, wenn Sie die Rechnungen Ihres Versorgers auf der Seite Heizkosten als Lieferungen eintragen, bei Heizöl, Flüssiggas und Kohle dazu Anfangs- und Endbestand des Vorrats; rechnet ein Messdienst ab, übernehmen Sie seine Angaben dort.`, norm: '§ 5 Abs. 2, § 7 Abs. 3 und 4 CO2KostAufG' },
+      { text: 'Den Strom für Brenner, Umwälzpumpe und Regelung der Zentralheizung (Betriebsstrom) verteilen Sie mit den Heiz- und Warmwasserkosten oder tragen ihn selbst; als Allgemeinstrom dürfen Sie ihn nicht verteilen. Läuft er über den Stromzähler des Hauses, schätzen Sie ihn oder lesen Sie den Zwischenzähler ab und ziehen ihn beim Allgemeinstrom ab; die Karte „Betriebsstrom“ auf der Seite Heizkosten rechnet das nach Leistung und Heiztagen vor oder nimmt Ihren selbst geschätzten Betrag und legt beide Positionen an. Geben Sie auf der Seite Heizkosten an, wie der Betriebsstrom erfasst ist; dann weist Mietfuchs gezielt darauf hin, wenn der Abzug fehlt.', norm: '§ 7 Abs. 2, § 8 Abs. 2 HeizkostenV; BGH, Urteil vom 03.06.2016, V ZR 166/15' },
     ],
     gaps: [
-      { text: 'Eine eigene Heizkostenabrechnung mit Wärmemengenzählern nach Grund- und Verbrauchskosten.', issue: 99 },
-      { text: 'Die Aufteilung der CO₂-Kosten zwischen Mieter und Vermieter.', issue: 97 },
+      { text: 'Verschiedene Geräte in einer Heizanlage (Wärmezähler neben Heizkostenverteilern) brauchen eine Vorerfassung nach Gruppen; die rechnet Mietfuchs noch nicht.', issue: 218 },
       { text: 'Die Differenz zwischen Hauptzähler und Wohnungszählern als eigener Posten, Eichfristen und geschätzte Ablesungen.', issue: 98 },
     ],
-    terms: ['allocationKey', 'distributionBasis', 'billingUnit', 'participants', 'ownShare', 'heatingCostOrdinance'],
+    terms: ['allocationKey', 'distributionBasis', 'billingUnit', 'participants', 'ownShare', 'heatingCostOrdinance', 'operatingPower'],
   },
   condo: {
     title: 'Vermietete Eigentumswohnung mit Hausgeldabrechnung',
@@ -229,11 +246,10 @@ const GUIDE_DATA = {
     caveats: [
       { text: 'Betriebskosten dürfen als Pauschale oder als Vorauszahlung vereinbart werden.', norm: '§ 556 Abs. 2 BGB' },
       { text: 'Eine Pauschale dürfen Sie nur erhöhen, wenn der Mietvertrag das vorsieht, durch Erklärung in Textform; sinken die Betriebskosten, ist sie ab dann herabzusetzen.', norm: '§ 560 Abs. 1 und 3 BGB' },
-      { text: 'Für Heizung und Warmwasser geht die Heizkostenverordnung einer Pauschale oder Warmmiete vor, außer im Gebäude mit nicht mehr als zwei Wohnungen, von denen Sie eine selbst bewohnen. Wird entgegen der Verordnung nicht nach Verbrauch abgerechnet, darf der Mieter seinen Anteil um 15 Prozent kürzen.', norm: '§ 2, § 12 Abs. 1 HeizkostenV' },
+      { text: `Für Heizung und Warmwasser geht die Heizkostenverordnung einer Pauschale oder Warmmiete vor, außer im Gebäude mit nicht mehr als zwei Wohnungen, von denen Sie eine selbst bewohnen. Wird entgegen der Verordnung nicht nach Verbrauch abgerechnet, darf der Mieter seinen Anteil um ${CUT} Prozent kürzen.`, norm: '§ 2, § 12 Abs. 1 HeizkostenV' },
     ],
     gaps: [
       { text: 'Mietfuchs vergleicht eine Pauschale nicht mit den tatsächlichen Kosten und rechnet keine Erhöhung oder Senkung vor; das tun Sie anhand des Vermieteranteils selbst.' },
-      { text: 'Eine eigene Heizkostenabrechnung, falls die Heizung nach Verbrauch abzurechnen ist.', issue: 99 },
     ],
     terms: ['flatRate', 'inclusiveRent', 'prepayment', 'heatingCostOrdinance'],
   },
@@ -241,30 +257,115 @@ const GUIDE_DATA = {
     title: 'Fertige Abrechnung eines Messdienstes übernehmen',
     applies: 'Ein Messdienst wie Techem, ista, Brunata oder Minol rechnet Heizung und Warmwasser ab und nennt für jede Wohnung oder jeden Nutzer einen Betrag.',
     steps: [
-      { page: 'kosten', text: 'Legen Sie mit „+ Kostenposition manuell erfassen“ eine Position mit der Kostenart „Heizung und Warmwasser“ an. Unter „Betrag €“ steht der Gesamtbetrag der Abrechnung.' },
-      { page: 'kosten', text: 'Wählen Sie den Umlageschlüssel „Einzelbeträge je Mieter (z. B. Messdienst)“ und tragen Sie bei jedem Mietverhältnis seinen Betrag ein. Ist ein Mieter im Jahr ausgezogen, bekommen alter und neuer Mieter je ihren Betrag.' },
-      { page: 'kosten', text: 'Bewohnen Sie selbst eine Wohnung, tragen Sie deren Betrag in das Feld Ihrer selbstgenutzten Wohnung ein. Die Zeile darunter zeigt die Summe und was beim Vermieter bleibt.' },
+      { page: 'kosten', text: 'Legen Sie mit „+ Kostenposition manuell erfassen“ eine Position mit der Kostenart „Heizung und Warmwasser“ an. Unter „Betrag €“ tragen Sie ein, was Sie für Heizung und Warmwasser bezahlt haben, also die Kosten vor dem Abzug des CO₂-Anteils, den Sie als Vermieter tragen. Viele Messdienste ziehen diesen Anteil schon in der Kostenaufstellung ab; dann ist ihre Summe um ihn zu niedrig, und Sie rechnen: Summe aller Nutzerbeträge für Heizung und Warmwasser (einschließlich Leerstand) + CO₂-Anteil des Vermieters.' },
+      { page: 'kosten', text: 'Wählen Sie den Umlageschlüssel „Einzelbeträge je Mieter (z. B. Messdienst)“ und füllen Sie bei jedem Mietverhältnis das Feld für Heizung und Warmwasser aus. Tragen Sie den Betrag ein, den die Abrechnung für den Mieter nennt; ziehen Sie selbst nichts ab. Weist die Abrechnung den CO₂-Anteil des Vermieters nur aus, ohne ihn vorab abzuziehen, zieht Mietfuchs ihn mit einer eigenen Zeile ab. Ist ein Mieter im Jahr ausgezogen, bekommen alter und neuer Mieter je ihren Betrag. Rechnet der Messdienst auch Kaltwasser oder weitere Nebenkosten ab, erfassen Sie diese als eigene Positionen mit ihrer Kostenart und ihren Einzelbeträgen.' },
+      { page: 'kosten', text: 'Bewohnen Sie selbst eine Wohnung, tragen Sie in deren Feld den Betrag ein, den die Abrechnung für Ihre Wohnung nennt, ohne etwas dazuzurechnen. Den Teil des CO₂-Anteils, der auf Ihre Wohnung entfällt, tragen Sie auf der Seite Heizkosten in der Karte „CO₂-Kosten“ unter „davon für Ihre selbst bewohnte Wohnung“ ein: Steht auf der Einzelabrechnung Ihrer Wohnung ein vom Vermieter übernommener CO₂-Betrag, nehmen Sie diesen. Nennt die Abrechnung solche Beträge bei den Mietern, aber nicht bei Ihrer Wohnung, tragen Sie 0 ein; dann gehört nichts davon ins Private. Nur wenn sie gar keine Beträge je Wohnung nennt, lassen Sie das Feld leer, und Mietfuchs rechnet näherungsweise: CO₂-Anteil × Betrag Ihrer Wohnung ÷ Summe aller Nutzerbeträge für Heizung und Warmwasser.' },
       { page: 'kosten', text: 'Nennt die Abrechnung Arbeitskosten, tragen Sie sie unter „§35a-Lohn“ ein. Die Abrechnung selbst hängen Sie unter „Beleg (Rechnungskopie)“ an.' },
+      { page: 'heizkosten', text: `Für Abrechnungszeiträume, die am oder nach dem ${CO2_FROM} beginnen, öffnen Sie die Seite Heizkosten und füllen die Karte „CO₂-Kosten“ aus: die Antwort auf die Frage nach der Abzugszeile, die Summe der Kosten aller Nutzer und die Zahlen der CO₂-Seite der Abrechnung. Die Zeile „Probe“ zeigt, ob der Betrag Ihrer Position dazu passt. Die Seite erscheint, sobald unter Stammdaten eine Heizanlage eingerichtet ist.` },
+      { page: 'heizkosten', text: 'Statt abzutippen, können Sie die Abrechnung auf der Seite Heizkosten in der Karte „Messdienstabrechnung auslesen“ hochladen: Die KI liest Nutzerbeträge, Summen, CO₂-Angaben und die Ermittlung des Warmwassers und schlägt sie vor. Sie ordnen jede Nutzerzeile einem Mieter, Ihrer eigenen Wohnung oder dem Leerstand zu und prüfen jede Zahl am Beleg, bevor Sie mit „Positionen anlegen“, „CO₂-Angaben übernehmen“ und „Ermittlung übernehmen“ speichern. Den Betrag der Heizposition setzt Mietfuchs dabei schon vor dem Abzug des CO₂-Anteils an.' },
       { page: 'abrechnung', text: 'Prüfen Sie in der Abrechnung, ob für jeden Mieter ein Betrag eingetragen ist.' },
     ],
     result: [
       'Jeder Mieter trägt genau seinen Betrag, ohne Tagesanteil; bei einem Wechsel teilt der Messdienst selbst auf.',
-      'Was nicht auf Mieter entfällt, bleibt beim Vermieter, mit dem Grund „Rest nach Einzelbeträgen“; der Betrag Ihrer selbstgenutzten Wohnung ist Ihr Eigenanteil und in der Steuerübersicht privat.',
+      'Mit den CO₂-Angaben prüft Mietfuchs, ob der Betrag der Position zur Abrechnung passt. Beim Vorwegabzug steht der CO₂-Anteil des Vermieters für die vermieteten Wohnungen mit dem Grund „CO₂-Anteil des Vermieters“ beim Vermieter und in der Steuerübersicht als Werbungskosten; der Teil, der auf Ihre selbstgenutzte Wohnung entfällt, gehört zu Ihrem Eigenanteil und ist privat.',
+      'Weist der Messdienst die CO₂-Kosten nur aus, ohne sie abzuziehen, bekommt jeder Mieter eine eigene Zeile „CO₂-Kosten: Anteil des Vermieters“.',
       'Fehlt für einen Mieter ein Betrag, sagt die Abrechnung es. Mehr als der Rechnungsbetrag lässt sich nicht verteilen, und eine Gutschrift nicht nach Einzelbeträgen.',
       'Für die Prüfung nach der Heizkostenverordnung zählen Einzelbeträge als Verteilung nach Verbrauch.',
     ],
-    example: 'Die Heizkostenabrechnung über 3.000 € nennt 1.240 € für Wohnung A, 1.160 € für Wohnung B und 600 € für Ihre eigene Wohnung. Die Mieter tragen 1.240 € und 1.160 €, die 600 € sind Ihr Eigenanteil. Bleibt das Feld Ihrer Wohnung leer, stehen die 600 € als Rest beim Vermieter und zählen in der Steuerübersicht nicht als privat.',
+    example: 'Die Heizkostenabrechnung nennt 1.200 € für Wohnung A, 1.100 € für Wohnung B und 600 € für Ihre eigene Wohnung, zusammen 2.900 €. Vorher abgezogen hat der Messdienst unter „abzüglich CO₂-Kosten Vermieter“ 100 €, die Sie als Vermieter tragen. Bezahlt haben Sie also 3.000 €, und das ist der Betrag der Position. Die Mieter tragen 1.200 € und 1.100 €; in das Feld Ihrer Wohnung kommen 600 €. In der Karte „CO₂-Kosten“ tragen Sie 2.900 € als Summe der Kosten aller Nutzer und 100 € als CO₂-Anteil des Vermieters ein; die Probe erwartet 3.000 € und findet sie. Die Einzelabrechnung Ihrer Wohnung nennt 20,69 € als vom Vermieter übernommen (die Näherung 100 × 600 ÷ 2.900 ergäbe dasselbe); Ihr Eigenanteil ist damit 620,69 €. Die übrigen 79,31 € stehen als CO₂-Anteil des Vermieters in der Steuerübersicht als Werbungskosten. Mit 2.900 € als Betrag fehlten sie dort.',
     caveats: [
-      { text: 'Bei einer Zentralheizung sind mindestens 50 und höchstens 70 Prozent der Kosten nach Verbrauch zu verteilen; das erledigt der Messdienst. Wird nicht nach Verbrauch abgerechnet, darf der Mieter um 15 Prozent kürzen.', norm: '§ 7 Abs. 1, § 8 Abs. 1, § 12 Abs. 1 HeizkostenV' },
+      { text: `Bei einer Zentralheizung sind mindestens ${SHARE.min} und höchstens ${SHARE.max} Prozent der Kosten nach Verbrauch zu verteilen; das erledigt der Messdienst. Wird nicht nach Verbrauch abgerechnet, darf der Mieter um ${CUT} Prozent kürzen.`, norm: '§ 7 Abs. 1, § 8 Abs. 1, § 12 Abs. 1 HeizkostenV' },
       { text: 'Beim Mieterwechsel muss eine Zwischenablesung stattfinden; melden Sie dem Messdienst den Auszug rechtzeitig.', norm: '§ 9b HeizkostenV' },
-      { text: 'Fallen für die Heizung CO₂-Kosten an, sind sie zwischen Ihnen und dem Mieter nach dem CO₂-Ausstoß des Gebäudes aufzuteilen. Die Heizkostenabrechnung muss den Anteil des Mieters, die Einstufung des Gebäudes und die Berechnungsgrundlagen ausweisen; fehlt das, darf der Mieter seinen Anteil an den Heizkosten um 3 Prozent kürzen. Mietfuchs rechnet das noch nicht (#97); nehmen Sie den Vermieteranteil aus der Abrechnung des Messdienstes.', norm: '§ 5 Abs. 2, § 7 Abs. 3 und 4 CO2KostAufG' },
+      { text: `Fallen für die Heizung CO₂-Kosten an, sind sie zwischen Ihnen und dem Mieter nach dem CO₂-Ausstoß des Gebäudes aufzuteilen. Die Heizkostenabrechnung muss den Anteil des Mieters, die Einstufung des Gebäudes und die Berechnungsgrundlagen ausweisen; fehlt das, darf der Mieter seinen Anteil an den Heizkosten um ${CO2_CUT} Prozent kürzen. Die großen Messdienste teilen auf, wenn Sie ihnen die CO₂-Angaben Ihrer Brennstoffrechnung melden, und weisen die Angaben in ihrer Abrechnung aus; legen Sie sie dem Mieter mit Ihrer Abrechnung bei.`, norm: '§ 5 Abs. 2, § 7 Abs. 3 und 4 CO2KostAufG' },
+      { text: 'Weist die Abrechnung keinen CO₂-Anteil des Vermieters aus, fragen Sie beim Messdienst nach, bevor Sie abrechnen. Oder beantworten Sie die Frage nach der Abzugszeile mit „gar nicht aufgeteilt“ und tragen die Rechnung des Versorgers auf der Seite Heizkosten als Lieferung ein, „vom Messdienst angesetzt“; dann teilt Mietfuchs selbst auf.' },
+      { text: 'Nicht jeder Messdienst setzt für eine selbstgenutzte Wohnung einen vom Vermieter übernommenen CO₂-Anteil an. Sehen Sie deshalb in die Einzelabrechnung Ihrer Wohnung, bevor Sie in der Karte „CO₂-Kosten“ etwas eintragen (Schritt 3).' },
+      { text: 'Wo in der Abrechnung die Summe der Kosten aller Nutzer steht, beschreibt die Anleitung zum Aufteilen der CO₂-Kosten.' },
+      { text: 'Melden Sie dem Messdienst auch den Betriebsstrom der Heizung (Brenner, Umwälzpumpe, Regelung), damit er ihn mit den Heiz- und Warmwasserkosten verteilt, oder tragen Sie ihn selbst; als Allgemeinstrom dürfen Sie ihn nicht verteilen. Läuft er über den Stromzähler des Hauses, ziehen Sie denselben Betrag beim Allgemeinstrom ab; die Karte „Betriebsstrom“ auf der Seite Heizkosten schätzt ihn nach Leistung und Heiztagen oder nimmt Ihren selbst geschätzten Betrag und legt den Abzug an.', norm: '§ 7 Abs. 2, § 8 Abs. 2 HeizkostenV; BGH, Urteil vom 03.06.2016, V ZR 166/15' },
     ],
     gaps: [
-      { text: 'Die Abrechnung des Messdienstes per KI auslesen und den Mietverhältnissen zuordnen; heute tragen Sie die Beträge von Hand ein.', issue: 103 },
-      { text: 'Den CO₂-Anteil des Vermieters als eigene Zeile übernehmen.', issue: 97 },
-      { text: 'Die Heizkosten ohne Messdienst selbst nach der Heizkostenverordnung abrechnen.', issue: 99 },
+      { text: 'Verschiedene Geräte in einer Heizanlage (Wärmezähler neben Heizkostenverteilern) brauchen eine Vorerfassung nach Gruppen; die rechnet Mietfuchs noch nicht.', issue: 218 },
     ],
-    terms: ['individualAmounts', 'heatingCostOrdinance', 'ownShare', 'labor35a'],
+    terms: ['individualAmounts', 'heatingCostOrdinance', 'ownShare', 'labor35a', 'co2Deducted', 'operatingPower'],
+  },
+  co2Costs: {
+    title: 'CO₂-Kosten der Heizung aufteilen',
+    applies: `Sie heizen mit Gas, Heizöl, Flüssiggas oder Kohle, oder Ihr Wärmelieferant weist CO₂-Kosten aus, und ein Messdienst oder die Hausverwaltung erstellt die Heizkostenabrechnung. Für Abrechnungszeiträume, die am oder nach dem ${CO2_FROM} beginnen, sind die CO₂-Kosten zwischen Ihnen und den Mietern aufzuteilen.`,
+    steps: [
+      { page: 'stammdaten', text: 'Richten Sie in der Karte „Heizung“ die Heizanlage ein, falls noch nicht geschehen: den Energieträger und bei der Frage, wer abrechnet, „Ein Messdienst oder die Hausverwaltung“.' },
+      { page: 'kosten', text: 'Sehen Sie zuerst in der Kostenaufstellung des Messdienstes nach, ob eine Zeile den CO₂-Anteil des Vermieters vor der Verteilung abzieht, etwa „Abzüglich CO₂-Kosten Vermieter“. Ein Betrag „vom Vermieter übernommen“ bei den einzelnen Mietern ist dafür kein Zeichen.' },
+      { page: 'kosten', text: 'Erfassen Sie die Abrechnung des Messdienstes wie in der Anleitung zur fertigen Abrechnung eines Messdienstes. Mit dieser Zeile ist der Betrag die Summe der Kosten aller Nutzer plus den CO₂-Anteil des Vermieters. Ohne diese Zeile ist der Betrag die Summe der Kosten aller Nutzer. Als Einzelbeträge tragen Sie die Beträge der Mieter wie in der Abrechnung ein, ohne selbst etwas abzuziehen.' },
+      { page: 'heizkosten', text: 'Öffnen Sie die Seite Heizkosten und beantworten Sie in der Karte „CO₂-Kosten“ die Frage nach der Abzugszeile. Darunter steht eine Beispielzeile, an der Sie die Zeile erkennen.' },
+      { page: 'heizkosten', text: 'Tragen Sie die Summe der Kosten aller Nutzer für Heizung und Warmwasser ein, so wie sie gedruckt ist. Finden Sie diese Zeile nicht, setzen Sie den Haken „Ich finde diese Zeile nicht“ und tragen die Beträge der leeren oder nicht eingetragenen Einheiten ein; dann rechnet Mietfuchs die Summe aus den Einzelbeträgen.' },
+      { page: 'heizkosten', text: 'Übertragen Sie von der CO₂-Seite der Abrechnung den Ausstoß je Quadratmeter, den Anteil des Vermieters in Prozent, die CO₂-Kosten insgesamt und den Anteil des Vermieters in Euro, dazu „CO₂-Ausstoß insgesamt laut Abrechnung (kg)“ und „Wohnfläche laut Abrechnung (m²)“: Aus diesen beiden ist der Wert je Quadratmeter berechnet, und die Abrechnung muss sie als Berechnungsgrundlagen nennen. Unter „Nutzeinheiten laut Abrechnung“ steht die Zahl der Wohnungen und anderen Einheiten, auf die der Messdienst verteilt hat, auch leere. Die Zeile „Probe“ zeigt, ob der Betrag Ihrer Position dazu passt.' },
+      { page: 'heizkosten', text: 'Nennt die Abrechnung je Mieter einen Betrag „vom Vermieter übernommen“, tragen Sie ihn beim Mieter ein; sonst rechnet Mietfuchs ihn nach dem Anteil an den Heizkosten.' },
+    ],
+    result: [
+      'Bei einer Abzugszeile bleibt jeder Mieter bei seinem Betrag; der CO₂-Anteil des Vermieters steht beim Vermieter mit dem Grund „CO₂-Anteil des Vermieters“ und in der Steuerübersicht als Werbungskosten, der Teil Ihrer eigenen Wohnung im Eigenanteil.',
+      'Ohne Abzugszeile bekommt jeder Mieter eine eigene Zeile „CO₂-Kosten: Anteil des Vermieters“ mit seinem Abzug.',
+      `Geht die Probe nicht auf, bucht Mietfuchs nichts und nennt die Kürzung von ${CO2_CUT} % je Mieter; ebenso, wenn der Messdienst gar nicht aufgeteilt hat.`,
+      'Die Abrechnung jedes Mieters enthält den Block „CO₂-Kostenaufteilung“ mit Einstufung und Grundlagen.',
+    ],
+    example: 'Die Kostenaufstellung eines Messdienstes nennt „Anlieferung Brennstoff“ 3.540,00 €, darunter „Abzüglich CO₂-Kosten Vermieter“ 87,50 €; die Kosten aller Nutzer ergeben 3.845,51 €. Sie beantworten die Frage nach der Abzugszeile mit „Ja“ und tragen 3.845,51 € und 87,50 € ein. Der Betrag Ihrer Position ist 3.845,51 € + 87,50 € = 3.933,01 €, und die Probe geht auf. Die Mieter tragen ihre Beträge unverändert; die 87,50 € stehen beim Vermieter als CO₂-Anteil, und in der Steuerübersicht stehen 3.933,01 € als Werbungskosten.',
+    caveats: [
+      { text: `Fehlt die Aufteilung oder der Ausweis der CO₂-Kosten in der Heizkostenabrechnung, darf jeder Mieter seinen Anteil an den Heizkosten um ${CO2_CUT} Prozent kürzen.`, norm: '§ 7 Abs. 3 und 4 CO2KostAufG' },
+      { text: 'Wo die Summe der Kosten aller Nutzer steht, ist je Messdienst verschieden. Bei Techem heißt die Zeile „Summe der Nutzerkosten Heizungsanlage“. Für ista, Brunata, Minol und KALO liegt Mietfuchs keine Musterabrechnung vor; suchen Sie die gedruckte Summe der Kosten aller Nutzer für Heizung und Warmwasser, bei einer Abzugszeile die Summe nach dem Abzug.' },
+      { text: 'Ob ein Messdienst den Anteil des Vermieters vorab abzieht, ist nicht bei allen Messdiensten gleich; deshalb fragt Mietfuchs danach, statt es je Messdienst anzunehmen.' },
+      { text: 'Ist ein Abrechnungszeitraum von unter einem Jahr vereinbart, werden die Grenzen der Stufentabelle anteilig gekürzt.', norm: '§ 5 Abs. 1 Satz 4 CO2KostAufG' },
+    ],
+    gaps: [
+      { text: 'Die CO₂-Angaben für den Messdienst ausdrucken.', issue: 210 },
+    ],
+    terms: ['co2Split', 'co2Stage', 'co2Deducted', 'co2Area'],
+  },
+  // Heizung PR 10 (#99, Entwurf 11.4): die eigene Heizkostenabrechnung. Beispiel nachgerechnet in guides.test.ts.
+  heatingSelf: {
+    title: 'Heizkosten selbst abrechnen',
+    applies: 'Ihr Haus hat eine Zentralheizung, und Sie lesen die Wärmezähler oder die elektronischen Heizkostenverteiler (und, wenn die Heizung auch das Warmwasser bereitet, die Warmwasserzähler) jeder Wohnung selbst ab, oder ein Ablesedienst nennt Ihnen die Werte je Wohnung, und Sie rechnen selbst ab. Mietfuchs verteilt dann nach der Heizkostenverordnung in Grund- und Verbrauchskosten.',
+    steps: [
+      { page: 'stammdaten', text: 'Klicken Sie in der Karte „Heizung“ auf „Heizung einrichten“, wählen Sie die Energie und bei der Frage, wer abrechnet, „Ich selbst, mit Zählern oder Heizkostenverteilern“.' },
+      { page: 'stammdaten', text: 'Beantworten Sie danach die Fragen zu Warmwasser, Erfassung, Wärmeschutz und dem Anteil nach Verbrauch und klicken Sie auf „Umstellen“. Nennt Mietfuchs Heizpositionen, wählen Sie für jede Teil und Ziel. Den Anteil und die Antwort zum Wärmeschutz ändern Sie später auf der Seite Heizkosten.' },
+      { page: 'zaehler', text: 'Tragen Sie die Stände der angelegten Zähler zu Beginn und Ende der Heizperiode ein, beim Mieterwechsel zum Auszugstag.' },
+      { page: 'zaehler', text: 'Mit Heizkostenverteilern legen Sie je Heizkörper einen Zähler mit der Sparte „Heizkostenverteiler“ an und wählen die Skala. Bei der Einheitsskala tragen Sie den Bewertungsfaktor des Heizkörpers ein. Setzt das Gerät am Stichtag auf null, tragen Sie in seinen Ablesungen den „Stichtagswert laut Anzeige“ ein und klicken auf „Stichtagswert speichern“.' },
+      { page: 'heizkosten', text: 'Liefert ein Ablesedienst die Werte, etwa bei Verdunstern, tragen Sie sie auf der Seite Heizkosten in der Karte „Werte des Ablesedienstes“ je Wohnung und Nutzungszeitraum ein und klicken auf „Werte speichern“.' },
+      { page: 'kosten', text: 'Erfassen Sie Brennstoff, Betriebsstrom, Wartung und Zählermiete als Position „Heizung und Warmwasser“; der Schlüssel ist „nach Heizkostenverordnung“, dazu der Teil der Heizkosten unter „Weitere Angaben“ und das Ziel.' },
+      { page: 'heizkosten', text: 'Bereitet die Heizung auch das Warmwasser, wählen Sie auf der Seite Heizkosten in der Karte „Warmwasser“, wie die Wärme dafür bestimmt wird. Ohne Wärmezähler am Speicher tragen Sie das Warmwasser in m³ und seine Temperatur ein; bei Gas wählen Sie an der Rechnung unter „Kilowattstunden der Rechnung berechnet nach“ Brennwert oder Heizwert.' },
+      { page: 'heizkosten', text: 'Prüfen Sie auf der Seite Heizkosten die Ablesungen. Fehlt beim Mieterwechsel eine Zwischenablesung, antworten Sie mit „Nicht möglich“ (mit Grund) oder „Nicht durchgeführt“. Wählen Sie in der Karte Ableseergebnis jede Wohnung und klicken Sie auf „Ableseergebnis drucken“; das Blatt geht an den Mieter dieser Wohnung.' },
+      { page: 'heizkosten', text: 'Kann der Verbrauch einer Wohnung nicht ordnungsgemäß erfasst werden, etwa weil ein Gerät ausgefallen ist, klicken Sie auf der Seite Heizkosten in der Karte „Schätzung (§ 9a)“ bei der Wohnung auf „Schätzen“. Mietfuchs schlägt den Durchschnitt des Gebäudes je m² vor und nennt vorher den Anteil an der Fläche; wählen Sie den Grund, tragen Sie die Begründung ein (sie steht auf der Abrechnung des Mieters), bestätigen Sie, dass der Verbrauch nicht ordnungsgemäß erfasst werden konnte, und klicken Sie auf „Schätzung speichern“.' },
+      { page: 'heizkosten', text: 'Tragen Sie auf der Seite Heizkosten in der Karte „Angaben zur Abrechnung (§ 6a)“ die Steuern und Abgaben laut Rechnung ein, den Vergleichswert eines Durchschnittsnutzers mit seiner Quelle (etwa von Ihrem Ablesedienst), die Klimafaktoren dieser und der vorigen Heizperiode mit ihrer Quelle und ob Ihr Mietvertrag ein Verbrauchervertrag ist (Sie vermieten als Unternehmer an einen Verbraucher), und klicken Sie auf „Angaben speichern“.' },
+      { page: 'heizkosten', text: 'Sind Zähler als fernablesbar eingetragen, erstellt Mietfuchs auf der Seite Heizkosten in der Karte „Monatliche Verbrauchsinformation“ je Mieter und Monat die Information aus den Zählerständen am Monatsende. Tragen Sie dort den Vergleichswert eines Durchschnittsnutzers mit seiner Quelle ein, drucken Sie das Blatt je Mieter und vermerken Sie den Tag der Mitteilung.' },
+      { page: 'heizkosten', text: 'Gilt für Ihr Haus eine Ausnahme der Heizkostenverordnung, haben Sie im Zweifamilienhaus mit eigener Wohnung etwas anderes vereinbart oder bekommen die Mieter die monatliche Verbrauchsinformation vom Messdienst, geben Sie das in der Karte „Ausnahmen und Vereinbarungen“ an; die Antwort gilt ab dieser Heizperiode.' },
+    ],
+    result: [
+      'Die Kosten jedes Topfs (Heizung, Warmwasser) gehen zum gewählten Anteil nach Verbrauch, der Rest nach Wohnfläche; bei verbundener Warmwasserbereitung teilt Mietfuchs die gemeinsamen Kosten nach der Wärme für das Warmwasser: gemessen am Warmwasserspeicher oder, wo das Messen unzumutbar wäre, nach den Formeln der Heizkostenverordnung; Brennstoff in Litern, Kilogramm oder Kubikmetern mit dem Heizwert laut Rechnung.',
+      'Beim Mieterwechsel trägt jeder seinen abgelesenen Verbrauch; die Grundkosten der Heizung teilen sich nach Gradtagen, die des Warmwassers nach Tagen.',
+      'Leerstand und Eigennutzung sind Nutzer wie Mieter; ihren Anteil tragen Sie. Die Abrechnung druckt den Block „Heizkostenabrechnung“ mit den Preisen je m², kWh und m³, bei Heizkostenverteilern und Ablesedienst je Einheit.',
+      'Bei Heizkostenverteilern zählt jedes Gerät mit seinem Bewertungsfaktor; jeder Mieter bekommt seine Geräte mit Einheiten, Skala und Faktor ausgewiesen. Die Werte eines Ablesedienstes zählen wie abgelesen.',
+      'Mit der Abrechnung druckt Mietfuchs für jeden Mieter die Informationen nach § 6a: Energieträger, Steuern und Abgaben, Entgelte der Erfassung, Kontaktadressen, den Vergleich mit dem Durchschnittsnutzer und den witterungsbereinigten Vergleich mit dem vorhergehenden Abrechnungszeitraum als Balken, beides nur mit seinen eigenen Zahlen. Fehlt einem Mieter eine Angabe, nennt die Abrechnung seine Kürzung.',
+      `Ein geschätzter Verbrauch gilt für die ganze Heizperiode der Wohnung; wer bis zu einem Mieterwechsel gültig abgelesen ist, behält seinen Wert. Betrifft die Schätzung mehr als ${ESTIMATE_THRESHOLD} % der Fläche, gehen die Kosten dieses Topfs nur nach der Fläche.`,
+    ],
+    example: 'Zwei Wohnungen à 50 m², Fernwärme 3.000 €, kein zentrales Warmwasser, 70 % nach Verbrauch. Grundkosten 30 %: 900 €, je Wohnung 450 €. Verbrauchskosten 70 %: 2.100 € für 10.000 kWh. Wohnung A: 4.000 kWh, 840 €, zusammen 1.290 €. Wohnung B: 6.000 kWh, zusammen 1.710 €.',
+    caveats: [
+      { text: `Zwischen ${SHARE.min} und ${SHARE.max} Prozent der Kosten sind nach Verbrauch zu verteilen; bei Öl- oder Gasheizung in einem Haus mit Wärmeschutz unter dem Niveau von 1994 und überwiegend gedämmten Leitungen ${FORCED} Prozent der Heizkosten. Mehr geht nur mit einer Vereinbarung. Wissen Sie es nicht, liegen Sie mit ${FORCED} Prozent in jedem Fall richtig.`, norm: '§ 7 Abs. 1, § 8 Abs. 1, § 10 HeizkostenV' },
+      { text: 'Den Anteil ändern Sie nach der ersten Festlegung nur aus den dort genannten Gründen, durch Erklärung gegenüber den Mietern und nur für künftige Abrechnungszeiträume.', norm: '§ 6 Abs. 4 HeizkostenV' },
+      { text: 'Beim Mieterwechsel ist eine Zwischenablesung Pflicht. Wird sie nicht durchgeführt, rechnet Mietfuchs ersatzweise nach Gradtagen und Tagen, und der Mieter kann seinen Anteil kürzen; die Abrechnung nennt die Beträge.', norm: '§ 9b HeizkostenV' },
+      { text: 'Die Kosten der Zwischenablesung sind keine Betriebskosten; sie trägt der Vermieter, soweit im Mietvertrag nichts anderes vereinbart ist.', norm: 'BGH VIII ZR 19/07' },
+      { text: `Wird entgegen der Verordnung nicht nach Verbrauch verteilt, etwa weil keine Zähler eingebaut sind, darf jeder Mieter seinen Anteil um ${CUT} Prozent kürzen.`, norm: '§ 12 Abs. 1 Satz 1 HeizkostenV' },
+      { text: 'Bei Zählern, die nicht aus der Ferne ablesbar sind, teilen Sie jedem Mieter das Ergebnis der Ablesung in der Regel innerhalb eines Monats mit.', norm: '§ 6 Abs. 1 HeizkostenV' },
+      { text: 'Verwenden dürfen Sie nur Zähler und Heizkostenverteiler, deren Eignung eine sachverständige Stelle bestätigt hat; sie müssen für das Heizsystem geeignet und fachgerecht angebracht sein. Der Bewertungsfaktor eines Heizkostenverteilers hängt am Heizkörper; lassen Sie ihn fachgerecht ermitteln, etwa vom Messdienst oder vom Betrieb, der die Geräte anbringt.', norm: '§ 5 Abs. 1 Satz 2 und 4 HeizkostenV' },
+      { text: `Die Wärme für das Warmwasser ist mit einem Wärmezähler zu messen. Eine Formel ist nur erlaubt, wenn das Messen unzumutbar aufwendig wäre; sonst darf jeder Mieter seinen Anteil an den Heiz- und Warmwasserkosten um ${CUT} Prozent kürzen.`, norm: '§ 9 Abs. 2, § 12 Abs. 1 Satz 1 HeizkostenV; BGH, Urteil vom 12.01.2022, VIII ZR 151/20' },
+      { text: 'Geschätzt werden darf nur, wenn der Verbrauch wegen Geräteausfalls oder aus einem anderen zwingenden Grund nicht ordnungsgemäß erfasst werden kann. Auch ein Ablesefehler ist ein solcher Grund, wenn sich der Wert nicht mehr ermitteln lässt; im entschiedenen Fall war die Ablesung nicht nachholbar. Lässt sich ein Wert noch ablesen, ist er abzulesen; eine Ablesung einige Tage neben dem Stichtag ist kein Grund zu schätzen.', norm: '§ 9a Abs. 1 HeizkostenV; BGH, Urteil vom 16.11.2005, VIII ZR 373/04' },
+      { text: 'Für die Grenze des § 9a Abs. 2 zählt Mietfuchs die ganze Fläche einer Wohnung, auch wenn nur ein Teil der Heizperiode geschätzt ist, und prüft Heizung und Warmwasser getrennt. Die Verordnung sagt dazu nichts Ausdrückliches; das ist eine Auslegung von Mietfuchs.', norm: '§ 9a Abs. 2 HeizkostenV' },
+      { text: `Für Abrechnungszeiträume, die vor dem ${HEAT_PUMP_FROM} beginnen, galten die Vorschriften zur Verteilung nicht für Gebäude, die überwiegend mit Wärme aus Wärmepumpen versorgt werden. Mietfuchs fragt deshalb bei einer Wärmepumpe, ob sie mehr als die Hälfte der Wärme liefert.`, norm: '§ 11 Abs. 1 Nr. 3 Buchst. a HeizkostenV in der alten Fassung' },
+      { text: `Zur Abrechnung nach Verbrauch gehören die Informationen nach § 6a; fehlen sie ganz oder teilweise, darf der Mieter, dem sie fehlen, seinen Anteil um ${INFO_CUT} Prozent kürzen. Der Vergleich mit einem Durchschnittsnutzer stammt aus Vergleichsdaten, etwa der Ablesedienste; ein Durchschnitt Ihres eigenen Hauses ist kein solcher Vergleich.`, norm: '§ 6a Abs. 3, § 12 Abs. 1 Satz 3 HeizkostenV; BR-Drs. 643/21, S. 19 und 21' },
+      { text: `Hat ein Mieter im vorhergehenden Abrechnungszeitraum noch nicht in der Wohnung gewohnt, ist der Vergleich nach Nr. 5 für ihn nicht möglich. Eine Ausnahme dafür nennt die Verordnung nicht; Mietfuchs nennt deshalb bis zu ${INFO_CUT} Prozent Kürzung, das ist eine Auslegung von Mietfuchs.`, norm: '§ 6a Abs. 3 Satz 1 Nr. 5 HeizkostenV' },
+    ],
+    gaps: [
+      { text: 'Bei Heizkostenverteilern erstellt Mietfuchs die monatliche Verbrauchsinformation nicht, denn sie ergeben keine Kilowattstunden; dort erstellt sie der Ablesedienst.' },
+      { text: 'Verschiedene Geräte in einer Heizanlage (Wärmezähler neben Heizkostenverteilern) brauchen eine Vorerfassung nach Gruppen mit einem eigenen Wärmezähler je Gruppe; die rechnet Mietfuchs noch nicht. Offen ist dabei, ob eine Differenzrechnung genügt (für eine Gemeinschaft der Wohnungseigentümer BGH, V ZR 214/21; für das Mietrecht nicht entschieden) und wie § 6 Abs. 2 zu lesen ist, der auf „§ 5 Absatz 2“ verweist, gemeint ist nach Zusammenhang die Vorerfassung des § 5 Abs. 7.', issue: 218 },
+      { text: 'Verdunster wertet Mietfuchs nicht selbst aus und hat das auch nicht vor; übernehmen Sie die Werte des Ablesedienstes.' },
+      { text: 'Den Durchschnittsverbrauch einer Nutzergruppe als Grundlage der Schätzung rechnet Mietfuchs nicht, denn er setzt die Vorerfassung nach Gruppen voraus.', issue: 218 },
+    ],
+    terms: ['heatingCostOrdinance', 'baseCosts', 'consumptionCosts', 'interimReading', 'heatMeter', 'heatCostAllocator', 'hotWaterShare', 'degreeDays', 'heatingEstimate'],
   },
   tenantChange: {
     title: 'Mieterwechsel und Leerstand im Jahr',
@@ -293,6 +394,113 @@ const GUIDE_DATA = {
       { text: 'Eine geschätzte Ablesung kennzeichnen, wenn die Zwischenablesung versäumt wurde.', issue: 98 },
     ],
     terms: ['vacancy', 'personDays', 'meterReading', 'prepayment', 'settlementDeadline'],
+  },
+  // #208: Abrechnungszeitraum, der vom Kalenderjahr abweicht (Entwurf 11.4).
+  periodMayApril: {
+    title: 'Abrechnungszeitraum Mai bis April',
+    applies: 'Ihr Messdienst rechnet die Heizkosten von Mai bis April ab, oder Ihr Mietvertrag nennt einen anderen Abrechnungszeitraum als das Kalenderjahr.',
+    steps: [
+      { page: 'stammdaten', text: 'Weicht nur der Zeitraum der Heizung ab, weil Ihr Messdienst von Mai bis April abrechnet, die übrigen Kosten aber im Kalenderjahr laufen, stellen Sie nicht das ganze Objekt um: Öffnen Sie in den Stammdaten die Karte „Heizung“ und klicken Sie auf „Zeitraum der Heizung ändern“. Dann entsteht kein Rumpfzeitraum für die übrigen Kosten.' },
+      { page: 'stammdaten', text: 'Soll das ganze Objekt umgestellt werden, öffnen Sie die Karte „Abrechnungszeitraum“. Wählen Sie unter „Was möchten Sie ändern?“ den „Wechsel ab einem Monat“, tragen Sie den Monat ein, ab dem neu abgerechnet wird, und klicken Sie auf „Vorschau“. Wählen Sie keinen Monat, mit dem ein Rumpfzeitraum entstünde, dessen Abrechnungsfrist schon abgelaufen ist; die Vorschau sagt es rot.' },
+      { page: 'stammdaten', text: 'Die Vorschau zeigt den Rumpfzeitraum davor mit seiner Frist und das Ergebnis der betroffenen Abrechnungen je Mieter vorher und nachher. Rechnungen ohne Leistungszeitraum, etwa die Grundsteuer des Jahres, teilt sie nach Tagen auf die neuen Zeiträume auf; Heizkosten teilt sie nicht, dort wählen Sie den Zeitraum, in dem die Wärme verbraucht wurde. Tragen Sie für jede Jahreskorrektur ein, was tatsächlich gezahlt wurde, oder setzen Sie den Haken „keine Korrektur (die Staffel gilt)“. Mit „Zeitraum wechseln“ wird alles gespeichert.' },
+      { page: 'kosten', text: 'Eine Rechnung für ein Kalenderjahr, etwa die Grundsteuer, erfassen Sie mit ihrem Leistungszeitraum unter „Weitere Angaben“. Mietfuchs teilt sie beim Speichern nach Tagen auf die beiden Abrechnungszeiträume auf („Aufteilen und speichern“).' },
+      { page: 'kosten', text: 'Reicht der Abrechnungszeitraum über zwei Kalenderjahre, fragt das Formular nach dem „Jahr der Zahlung (Steuer)“.' },
+    ],
+    result: [
+      'Vor dem Wechsel entsteht ein Rumpfzeitraum. Seine Abrechnung muss zwölf Monate nach seinem Ende zugehen.',
+      'Im Rumpfzeitraum rechnet der Vorschlag für die neue Vorauszahlung kalte Kosten nach Tagen hoch und Brennstoff nach Gradtagen, wenn die Brennstoffrechnung als „Brennstoff/Energie“ gekennzeichnet ist und einen Leistungszeitraum hat.',
+      'Mietkonto und Steuer bleiben beim Kalenderjahr; die Steuerübersicht nimmt die Eigenanteile aus den Abrechnungen, die das Jahr berühren.',
+    ],
+    example: 'Umstellung ab Mai 2025: Der Rumpfzeitraum läuft vom 01.01. bis 30.04.2025 und muss bis 30.04.2026 abgerechnet sein. Die Grundsteuer 2025 über 480 € teilt Mietfuchs in 157,81 € für den Rumpf und 322,19 € für 2025/2026.',
+    caveats: [
+      { text: 'Eine Verkürzung des Abrechnungszeitraums braucht einen sachlichen Grund, etwa die Angleichung an den Messdienst. Legt Ihr Mietvertrag den Zeitraum fest, braucht die Umstellung die Zustimmung der Mieter. Länger als zwölf Monate darf kein Zeitraum sein.', norm: '§ 556 Abs. 3 Satz 1 BGB' },
+      { text: 'Heizkosten müssen den Verbrauch im Abrechnungszeitraum abbilden; eine Gasrechnung über einen anderen Zeitraum teilt Mietfuchs nicht nach Tagen auf. Tragen Sie sie auf der Seite Heizkosten als Lieferung ein, grenzt Mietfuchs sie nach Zählerstand oder Gradtagen ab; sonst weist es darauf hin.', norm: 'BGH, Urteil vom 01.02.2012, VIII ZR 156/11' },
+    ],
+    gaps: [
+      { text: 'Eine Gas- oder Fernwärmerechnung über einen anderen Zeitraum nach Gradtagen auf die Heizperiode abgrenzen; bis dahin weist Mietfuchs nur darauf hin.', issue: 97 },
+    ],
+    terms: ['billingPeriod', 'shortPeriod', 'accrualPrinciple'],
+  },
+  // Heizung PR 7 (#97, Durchsicht von #233): eine Versorgerrechnung über die Heizperiode hinaus.
+  supplierInvoice: {
+    title: 'Gasrechnung über die Heizperiode hinaus',
+    applies: 'Ihr Versorger rechnet Gas, Fernwärme oder den Strom der Wärmepumpe über einen anderen Zeitraum ab als Ihre Heizperiode, etwa von März bis März, und Sie verteilen die Heizkosten selbst nach einem Schlüssel.',
+    steps: [
+      { page: 'stammdaten', text: 'Richten Sie in der Karte „Heizung“ die Heizanlage ein, falls noch nicht geschehen; bei der Frage, wer abrechnet, wählen Sie „Niemand“.' },
+      { page: 'kosten', text: 'Erfassen Sie die Rechnung wie gewohnt mit „+ Kostenposition manuell erfassen“ und der Kostenart „Heizung und Warmwasser“, und zwar im Zeitraum, in dem die Rechnung endet.' },
+      { page: 'heizkosten', text: 'Klicken Sie auf der Seite Heizkosten in der Karte „Lieferungen“ auf „Lieferung eintragen“, tragen Sie den Rechnungszeitraum laut Rechnung ein und, wenn die Rechnung sie ausweist, die festen Preisbestandteile und die CO₂-Angaben, dann „Lieferung speichern“. Mit „Rechnung mit KI auslesen“ füllt die KI das Formular aus der Rechnung vor, samt Teilmengen bei einer Preisänderung; prüfen Sie jede Zahl, bevor Sie speichern.' },
+      { page: 'heizkosten', text: 'Wählen Sie darunter bei „Welche Position gehört zu welcher Rechnung?“ an Ihrer Position die Lieferung. Ohne diese Verknüpfung grenzt Mietfuchs nichts ab und verteilt die Position ganz in ihrem Zeitraum.' },
+      { page: 'zaehler', text: 'Genauer als nach Gradtagen wird es mit einem Zählerstand des Versorgungszählers zum Ende der Heizperiode; erfassen Sie ihn mit „Ablesung speichern“.' },
+    ],
+    result: [
+      'Die Position bleibt in voller Höhe in ihrem Zeitraum. Der Teil der Heizperiode davor steht dort als eigene Zeile bei den Mietern, mit dem Schlüssel der Position, und hier als Gegenbuchung; über beide Zeiträume ist die Rechnung genau einmal verteilt.',
+      'Fehlt beim Abschließen die Rechnung für einen Teil der Heizperiode, fragt Mietfuchs nach: abwarten, mit Vorbehalt schätzen oder ohne Schätzung abschließen.',
+      'Die Abrechnung druckt den Block „Brennstoff“ mit dem Anteil jeder Rechnung und dem Verfahren.',
+    ],
+    example: 'Gasrechnung 15.03.2025–14.03.2026 über 6.500 €, Heizperiode Mai bis April, zwei Wohnungen mit 60 und 40 m² nach Wohnfläche: Nach Gradtagen gehören 848,71 ‰ in 2025/2026, das sind 5.516,61 € (Mieter A 3.309,97 €, Mieter B 2.206,64 €); 983,39 € gehören in 2024/2025 (Mieter A 590,03 €, Mieter B 393,36 €).',
+    caveats: [
+      { text: 'Umgelegt werden die Kosten des im Abrechnungszeitraum verbrauchten Brennstoffs, nicht der bezahlten Rechnungen; eine Abrechnung nach diesem Leistungsprinzip darf auf einer sachgerechten Schätzung beruhen.', norm: '§ 7 Abs. 2 HeizkostenV; BGH, Urteil vom 01.02.2012, VIII ZR 156/11, Rn. 14' },
+      { text: 'Die Abrechnung muss dem Mieter bis zum Ablauf des zwölften Monats nach Ende des Abrechnungszeitraums zugehen; eine Nachforderung danach gibt es nur, wenn Sie die Verspätung nicht zu vertreten haben. Kommt die Rechnung des Versorgers spät, warten Sie mit dem Abschluss, solange die Frist läuft.', norm: '§ 556 Abs. 3 Satz 2 und 3 BGB' },
+    ],
+    gaps: [
+      { text: 'Bei Etagenheizungen auf Ihren Vertrag ein gemeinsamer Gaszähler für mehrere Wohnungen; Mietfuchs braucht je Wohnung eine eigene Rechnung.', issue: 97 },
+    ],
+    terms: ['fuelDelivery', 'degreeDays', 'fixedPriceComponent', 'fuelEstimate'],
+  },
+  // Heizung PR 8 (#97, #99, Durchsicht von #237): Brennstoff mit Vorrat.
+  stockFuel: {
+    title: 'Heizöl, Flüssiggas, Pellets oder Holz mit Tank oder Lager',
+    applies: 'Sie heizen mit Heizöl, Flüssiggas, Pellets, Holz oder Kohle, kaufen den Brennstoff in Lieferungen und verteilen die Heizkosten selbst nach einem Schlüssel. Nicht jede Lieferung wird im selben Jahr verbraucht.',
+    steps: [
+      { page: 'stammdaten', text: 'Richten Sie in der Karte „Heizung“ die Heizanlage mit ihrem Brennstoff ein; bei der Frage, wer abrechnet, wählen Sie „Niemand“.' },
+      { page: 'kosten', text: 'Erfassen Sie jede Rechnung über eine Lieferung mit „+ Kostenposition manuell erfassen“ und der Kostenart „Heizung und Warmwasser“, im Zeitraum, in dem geliefert wurde.' },
+      { page: 'heizkosten', text: 'Klicken Sie auf der Seite Heizkosten in der Karte „Lieferungen“ auf „Lieferung eintragen“, tragen Sie Lieferdatum, Menge und Einheit ein und, bei Heizöl, Flüssiggas und Kohle, die CO₂-Angaben laut Rechnung, dann „Lieferung speichern“.' },
+      { page: 'heizkosten', text: 'Wählen Sie darunter bei „Welche Position gehört zu welcher Rechnung?“ an der Position die Lieferung. Aus der verknüpften Position nimmt Mietfuchs den Betrag der Lieferung.' },
+      { page: 'heizkosten', text: 'Tragen Sie in der Karte „Vorrat“ den Endbestand ein, wie Sie ihn am Ende der Heizperiode abgelesen haben, und nur in der ersten Heizperiode auch den Anfangsbestand mit seinem Wert; danach übernimmt Mietfuchs den Endbestand der Vorperiode. Speichern Sie mit „Vorrat speichern“.' },
+    ],
+    result: [
+      'Die Rechnungen bleiben Positionen in voller Höhe. Den Unterschied zwischen Bezahltem und Verbrauchtem tragen zwei Zeilen „aus dem Vorrat“ und „im Vorrat“ mit dem Schlüssel der Brennstoffposition; über die Jahre ist jede Lieferung genau einmal verteilt.',
+      'Die Abrechnung druckt die „Bestandsrechnung Brennstoff“ mit Anfangsbestand, Lieferungen, Endbestand und Verbrauch.',
+      'Bei Heizöl, Flüssiggas und Kohle teilt Mietfuchs die CO₂-Kosten nach dem verbrauchten Brennstoff auf.',
+    ],
+    example: 'Anfangsbestand 2.000 l für 1.900 €, Lieferungen 3.000 l für 3.150 € und 2.500 l für 2.500 €, Endbestand 1.800 l. Er stammt aus der jüngsten Lieferung und ist 1.800 € wert. Verbraucht wurden 5.750 €, bezahlt 5.650 €. Bei zwei Wohnungen mit 60 und 40 m² nach Wohnfläche tragen die Mieter 3.450 € und 2.300 € an Heizkosten.',
+    caveats: [
+      { text: `Umgelegt werden die Kosten der verbrauchten Brennstoffe und ihrer Lieferung, nicht der bezahlten Rechnungen. Eine Abrechnung nach Lieferungen ist nicht zulässig, und der Fehler lässt sich nicht durch die Kürzung um ${CUT} Prozent ausgleichen.`, norm: '§ 7 Abs. 2 HeizkostenV; BGH, Urteil vom 01.02.2012, VIII ZR 156/11' },
+      { text: 'Wie der Endbestand zu bewerten ist, regelt die Heizkostenverordnung nicht. Mietfuchs rechnet, als sei das älteste Öl zuerst verbraucht worden, wie es die Kommentarliteratur und die Messdienste tun; der Endbestand hat dann die Preise der jüngsten Lieferungen.', norm: 'Kinne/Schach/Bieber-Kinne, BGB § 556 Rn. 121' },
+      { text: 'Brennstoff, der vor dem 01.01.2023 in Rechnung gestellt wurde, trägt keine CO₂-Kosten; seine kg zählen aber für die Einstufung. Holz und Pellets sind keine Brennstoffe im Sinne des Brennstoffemissionshandels; für sie gibt es keine CO₂-Kosten aufzuteilen.', norm: '§ 11 Abs. 2 Satz 2, § 2 Abs. 1 CO2KostAufG; Anlage 1 BEHG' },
+    ],
+    gaps: [
+      { text: 'Den Heizwert laut Rechnung liest die Belegauswertung nicht aus; für den Warmwasseranteil der eigenen Heizkostenabrechnung tragen Sie ihn an der Lieferung ein, sonst gilt hilfsweise der Wert der Heizkostenverordnung.', issue: 99 },
+    ],
+    terms: ['fuelStock', 'fuelDelivery', 'co2Split'],
+  },
+  // Heizung PR 9 (Durchsicht von #238, Recht I6): zweite Heizanlage, Etagenheizung, Heizung erneuert.
+  heatingRenewed: {
+    title: 'Heizung erneuert, zweite Heizanlage oder Etagenheizung',
+    applies: 'Die Heizung wurde im Lauf eines Abrechnungszeitraums erneuert, etwa Öl gegen Gas; oder im Objekt heizen zwei Anlagen, etwa die Zentralheizung und eine Gastherme im Dachgeschoss; oder Thermen in den Wohnungen laufen über Ihren Gasvertrag.',
+    steps: [
+      { page: 'stammdaten', text: 'Wurde die Heizung erneuert, klicken Sie in der Karte „Heizung“ bei der bisherigen Anlage auf „Heizung erneuert (Kessel getauscht)“, wählen den Tag, an dem die neue in Betrieb ging, und ihren Brennstoff, dann „Tausch speichern“.' },
+      { page: 'heizkosten', text: 'Ist noch Heizöl, Flüssiggas oder Pellets im Tank, tragen Sie bei der bisherigen Anlage in der Karte „Vorrat“ den Endbestand zum letzten Betriebstag ein und speichern mit „Vorrat speichern“.' },
+      { page: 'stammdaten', text: 'Heizt eine zweite Anlage gleichzeitig, legen Sie sie mit „+ weitere Heizanlage“ an, geben beiden Anlagen einen Namen und ihre Wohnungen und sagen, ob sie im selben Gebäude steht.' },
+      { page: 'kosten', text: 'Wählen Sie an jeder Heizposition unter „Heizanlage“ die Anlage, zu der die Rechnung gehört; Rechnungen einer Etagenheizung ordnen Sie mit dem Schlüssel „Direktzuordnung“ der Wohnung zu.' },
+    ],
+    result: [
+      'Nach einem Tausch rechnet jede Anlage nur über ihre Betriebstage. Einen Restbestand übernimmt die neue Anlage, wenn sie mit demselben Brennstoff weiterheizt und Sie beim Tausch „Verheizt der neue Kessel den Brennstoff im Tank weiter?“ mit Ja beantworten; sonst tragen ihn die Mieter nicht, und er steht mit seinem Wert bei Ihnen.',
+      'Eingestuft wird das Gebäude über den Ausstoß aller Anlagen, die im Jahr darin geheizt haben.',
+      'Eine Heizposition, die über Wohnungen zweier Anlagen verteilt wird, meldet die Abrechnung als Fehler.',
+    ],
+    example: 'Ölheizung bis 30.06.2025, ab 01.07.2025 Gas, drei Wohnungen mit je 100 m² nach Wohnfläche. Anfangsbestand 2.000 l für 1.900 €, Lieferung 3.000 l für 3.150 €, Restbestand 500 l im Wert von 525 €. Die Mieter tragen 4.525 € Öl und die Gasrechnung über 1.500 €. Öl und Gas zusammen stießen 15.043,35 kg CO₂ aus, 50,1 kg je m²; Sie tragen 80 % der CO₂-Kosten.',
+    caveats: [
+      { text: 'Umgelegt werden die Kosten der verbrauchten Brennstoffe, nicht der Restbestand im Tank.', norm: '§ 7 Abs. 2 HeizkostenV' },
+      { text: 'Eingestuft wird nach dem Ausstoß des Gebäudes pro Quadratmeter Wohnfläche und Jahr; mehrere Wohnungen mit gesonderter oder zentraler Versorgung in einem Gebäude zählen mit ihrer Gesamtwohnfläche. Wie mehrere Anlagen in einem Gebäude einzustufen sind, ist höchstrichterlich nicht geklärt; Mietfuchs stuft sie gemeinsam ein.', norm: '§ 5 Abs. 1 Satz 1 und 2 CO2KostAufG' },
+      { text: 'Für Etagenheizungen gilt die Heizkostenverordnung nicht, und die Betriebskostenverordnung nennt bei ihnen nur Reinigung und Wartung. Ob Sie die Gaskosten umlegen dürfen, wenn der Gasvertrag auf Sie läuft, ist nicht geklärt; umgelegt werden dürfen Betriebskosten nur mit Vereinbarung im Mietvertrag.', norm: '§ 1 Abs. 1 HeizkostenV; § 2 Nr. 4 Buchstabe d BetrKV; § 556 Abs. 1 Satz 1 BGB' },
+    ],
+    gaps: [
+      { text: 'Getrennte Heizkostenabrechnung (eigene Heizperiode mit eigener Vorauszahlung) zusammen mit einem Kesseltausch.', issue: 97 },
+      { text: 'Lücken in den Gasrechnungen einer Etagenheizung je Wohnung erkennen und schätzen; heute zählt jede Rechnung der Anlage.', issue: 97 },
+      { text: 'Ein gemeinsamer Gaszähler für mehrere Wohnungen mit Etagenheizung.', issue: 97 },
+    ],
+    terms: ['boilerSwap', 'perUnitHeating', 'heatingSystem', 'co2Stage'],
   },
 } satisfies Record<string, Guide>
 

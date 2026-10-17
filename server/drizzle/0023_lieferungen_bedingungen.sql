@@ -1,0 +1,89 @@
+PRAGMA foreign_keys=OFF;--> statement-breakpoint
+CREATE TABLE `__new_cost_items` (
+	`id` text PRIMARY KEY NOT NULL,
+	`property_id` text NOT NULL,
+	`period` text NOT NULL,
+	`category` text NOT NULL,
+	`description` text NOT NULL,
+	`vendor` text,
+	`amount_cents` integer NOT NULL,
+	`key` text NOT NULL,
+	`direct_unit_id` text,
+	`meter_type` text,
+	`labor_35a_cents` integer,
+	`invoice_file` text,
+	`external_measure` text,
+	`external_total` real,
+	`external_total_cents` integer,
+	`participants_limited` integer,
+	`service_from` text,
+	`service_to` text,
+	`tax_year` integer,
+	`heating_part` text,
+	`heating_plant_id` text,
+	`fuel_delivery_id` text,
+	FOREIGN KEY (`property_id`) REFERENCES `properties`(`id`) ON UPDATE no action ON DELETE restrict,
+	FOREIGN KEY (`direct_unit_id`) REFERENCES `units`(`id`) ON UPDATE no action ON DELETE set null,
+	FOREIGN KEY (`heating_plant_id`) REFERENCES `heating_plants`(`id`) ON UPDATE no action ON DELETE restrict,
+	FOREIGN KEY (`fuel_delivery_id`) REFERENCES `fuel_deliveries`(`id`) ON UPDATE no action ON DELETE restrict,
+	CONSTRAINT "cost_items_period_valid" CHECK("period" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]' AND CAST(substr("period", 6, 2) AS INTEGER) BETWEEN 1 AND 12),
+	CONSTRAINT "cost_items_key_known" CHECK("key" IN ('area', 'persons', 'units', 'direct', 'meter', 'custom', 'external', 'amounts')),
+	CONSTRAINT "cost_items_meter_type_known" CHECK("meter_type" IN ('kaltwasser', 'warmwasser', 'strom', 'waerme', 'hkv', 'sonstig')),
+	CONSTRAINT "cost_items_external_measure_known" CHECK("external_measure" IN ('mea', 'area', 'units')),
+	CONSTRAINT "cost_items_service_complete" CHECK(("service_from" IS NULL) = ("service_to" IS NULL)),
+	CONSTRAINT "cost_items_service_from_valid" CHECK("service_from" IS NULL OR "service_from" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+	CONSTRAINT "cost_items_service_to_valid" CHECK("service_to" IS NULL OR "service_to" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+	CONSTRAINT "cost_items_service_order_valid" CHECK("service_from" IS NULL OR "service_from" <= "service_to"),
+	CONSTRAINT "cost_items_tax_year_valid" CHECK("tax_year" IS NULL OR "tax_year" BETWEEN 1900 AND 2200),
+	CONSTRAINT "cost_items_heating_part_known" CHECK("heating_part" IN ('fuel', 'operating', 'metering')),
+	CONSTRAINT "cost_items_heating_part_category_valid" CHECK("heating_part" IS NULL OR "category" = 'Heizung und Warmwasser'),
+	CONSTRAINT "cost_items_fuel_delivery_category_valid" CHECK("fuel_delivery_id" IS NULL OR "category" = 'Heizung und Warmwasser'),
+	CONSTRAINT "cost_items_external_total_positive" CHECK("external_total" > 0),
+	CONSTRAINT "cost_items_external_complete" CHECK(("external_measure" IS NULL) = ("external_total" IS NULL) AND ("external_measure" IS NULL) = ("external_total_cents" IS NULL))
+);
+--> statement-breakpoint
+INSERT INTO `__new_cost_items`("id", "property_id", "period", "category", "description", "vendor", "amount_cents", "key", "direct_unit_id", "meter_type", "labor_35a_cents", "invoice_file", "external_measure", "external_total", "external_total_cents", "participants_limited", "service_from", "service_to", "tax_year", "heating_part", "heating_plant_id", "fuel_delivery_id") SELECT "id", "property_id", "period", "category", "description", "vendor", "amount_cents", "key", "direct_unit_id", "meter_type", "labor_35a_cents", "invoice_file", "external_measure", "external_total", "external_total_cents", "participants_limited", "service_from", "service_to", "tax_year", "heating_part", "heating_plant_id", "fuel_delivery_id" FROM `cost_items`;--> statement-breakpoint
+DROP TABLE `cost_items`;--> statement-breakpoint
+ALTER TABLE `__new_cost_items` RENAME TO `cost_items`;--> statement-breakpoint
+PRAGMA foreign_keys=ON;--> statement-breakpoint
+CREATE INDEX `cost_items_property_period_idx` ON `cost_items` (`property_id`,`period`);--> statement-breakpoint
+CREATE TABLE `__new_heating_plants` (
+	`id` text PRIMARY KEY NOT NULL,
+	`property_id` text NOT NULL,
+	`name` text DEFAULT '' NOT NULL,
+	`energy` text NOT NULL,
+	`supply` text DEFAULT 'central' NOT NULL,
+	`method` text DEFAULT 'manual' NOT NULL,
+	`separate_settlement` integer,
+	`devices_remote` text DEFAULT 'unknown' NOT NULL,
+	`devices_installed_after_2021_12` text DEFAULT 'unknown' NOT NULL,
+	`new_devices_install` text,
+	`source` text DEFAULT 'building' NOT NULL,
+	`capture_installed_on` text,
+	`captured_on_2024_10_01` integer,
+	`warm_rent_average_2022_2024` integer,
+	`change_split` text DEFAULT 'degreeDays' NOT NULL,
+	`period_start_month` integer,
+	`units_limited` integer DEFAULT false NOT NULL,
+	`non_residential` integer DEFAULT false NOT NULL,
+	`restriction` text DEFAULT 'none' NOT NULL,
+	`district_ets_new` integer DEFAULT false NOT NULL,
+	FOREIGN KEY (`property_id`) REFERENCES `properties`(`id`) ON UPDATE no action ON DELETE restrict,
+	CONSTRAINT "heating_plants_energy_known" CHECK("energy" IN ('gas', 'oil', 'lpg', 'pellets', 'wood', 'districtHeating', 'heatPump', 'electric', 'coal', 'other')),
+	CONSTRAINT "heating_plants_supply_known" CHECK("supply" IN ('central', 'perUnit')),
+	CONSTRAINT "heating_plants_method_known" CHECK("method" IN ('service', 'self', 'manual')),
+	CONSTRAINT "heating_plants_devices_remote_known" CHECK("devices_remote" IN ('all', 'none', 'partial', 'unknown')),
+	CONSTRAINT "heating_plants_devices_installed_known" CHECK("devices_installed_after_2021_12" IN ('all', 'some', 'none', 'unknown')),
+	CONSTRAINT "heating_plants_new_devices_install_known" CHECK("new_devices_install" IN ('single', 'whole')),
+	CONSTRAINT "heating_plants_source_known" CHECK("source" IN ('building', 'homeowners')),
+	CONSTRAINT "heating_plants_change_split_known" CHECK("change_split" IN ('degreeDays', 'time')),
+	CONSTRAINT "heating_plants_period_start_month_valid" CHECK("period_start_month" BETWEEN 1 AND 12),
+	CONSTRAINT "heating_plants_source_method_valid" CHECK("source" <> 'homeowners' OR "method" = 'service'),
+	CONSTRAINT "heating_plants_warm_rent_not_negative" CHECK("warm_rent_average_2022_2024" >= 0),
+	CONSTRAINT "heating_plants_restriction_known" CHECK("restriction" IN ('none', 'building', 'supply', 'both')),
+	CONSTRAINT "heating_plants_ets_district_valid" CHECK("district_ets_new" = 0 OR "energy" = 'districtHeating')
+);
+--> statement-breakpoint
+INSERT INTO `__new_heating_plants`("id", "property_id", "name", "energy", "supply", "method", "separate_settlement", "devices_remote", "devices_installed_after_2021_12", "new_devices_install", "source", "capture_installed_on", "captured_on_2024_10_01", "warm_rent_average_2022_2024", "change_split", "period_start_month", "units_limited", "non_residential", "restriction", "district_ets_new") SELECT "id", "property_id", "name", "energy", "supply", "method", "separate_settlement", "devices_remote", "devices_installed_after_2021_12", "new_devices_install", "source", "capture_installed_on", "captured_on_2024_10_01", "warm_rent_average_2022_2024", "change_split", "period_start_month", "units_limited", "non_residential", "restriction", "district_ets_new" FROM `heating_plants`;--> statement-breakpoint
+DROP TABLE `heating_plants`;--> statement-breakpoint
+ALTER TABLE `__new_heating_plants` RENAME TO `heating_plants`;

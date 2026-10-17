@@ -1,6 +1,6 @@
 // Nebenkostenmodell am Mietverhältnis (#93), die Seite der Oberfläche.
 import { expect, test } from 'vitest'
-import { COST_MODEL_LABELS, buildPersonHistory, costModelBadge, costModelBody, defaultTenancyUnitId, notSettledText, overlapQuestion, parsePersons, showsFlatRates } from './tenancyModel'
+import { COST_MODEL_LABELS, HEATING_MODEL_LABELS, SELF_SUPPLY_TENANCY_HINT, buildPersonHistory, costModelBadge, costModelBody, defaultTenancyUnitId, notSettledText, overlapQuestion, parsePersons, prepaymentColumn, showsFlatRates } from './tenancyModel'
 import type { Tenancy, Unit } from './types'
 
 test('die Staffel der Pauschale erscheint nur bei einer Pauschale', () => {
@@ -103,4 +103,34 @@ test('Rückfrage bei Überschneidung: nennt Mieter und Zeitraum deutsch, gesiezt
   expect(overlapQuestion({ id: 'x', unitId: 'A', start: '2023-01-01', end: '2025-12-31' }, bestand)).toBeNull()
   // ohne Einzug (Formular unvollständig) keine Rückfrage, das meldet die Prüfung davor
   expect(overlapQuestion({ unitId: 'A', start: '', end: null }, bestand)).toBeNull()
+})
+
+// Sichtprüfung E12: Nach dem Aufteilen für die getrennte Heizkostenabrechnung zeigte die Spalte
+// „Vorauszahlung je Monat“ nur die übrige Vorauszahlung, und es sah aus, als sei sie gesunken.
+test('die Spalte Vorauszahlung nennt die Heizvorauszahlung daneben', () => {
+  const t = { prepayments: [{ from: '2024-01', monthlyCents: 28000 }, { from: '2025-05', monthlyCents: 16500 }], heatingPrepayments: [{ from: '2025-05', monthlyCents: 11500 }] }
+  expect(prepaymentColumn(t)).toEqual([
+    { label: 'ab 01/2024:', amount: '280,00\u00a0€' },
+    { label: 'ab 05/2025:', amount: '165,00\u00a0€' },
+    { label: '+ Heizung ab 05/2025:', amount: '115,00\u00a0€' },
+  ])
+  expect(prepaymentColumn({ prepayments: [{ from: '2024-01', monthlyCents: 28000 }] })).toEqual([{ label: null, amount: '280,00\u00a0€' }])
+  expect(prepaymentColumn({ prepayments: [{ from: '2024-01', monthlyCents: 28000 }], heatingPrepayments: [{ from: '2024-01', monthlyCents: 9000 }] })).toEqual([
+    { label: null, amount: '280,00\u00a0€' },
+    { label: '+ Heizung:', amount: '90,00\u00a0€' },
+  ])
+})
+
+test('Mieter heizt selbst (Heizung PR 19): nur bei der Heizung wählbar, gespeichert wie gewählt, ohne Pauschale', () => {
+  expect(Object.keys(HEATING_MODEL_LABELS)).toEqual(['settlement', 'flatRate', 'inclusive', 'selfSupply'])
+  expect(Object.keys(COST_MODEL_LABELS)).not.toContain('selfSupply')
+  expect(HEATING_MODEL_LABELS.selfSupply).toBe('Mieter heizt selbst (eigener Vertrag für Brennstoff oder Wärme)')
+  expect(costModelBody('settlement', 'selfSupply')).toEqual({ costModel: null, heatingModel: 'selfSupply' })
+  expect(showsFlatRates('settlement', 'selfSupply')).toBe(false)
+  expect(costModelBadge(null, 'selfSupply')).toBe('Heizung selbst')
+  expect(costModelBadge('flatRate', 'selfSupply')).toBe('kalt pauschal · Heizung selbst')
+  // § 6 Abs. 2 Satz 6 CO2KostAufG: die Hinweispflicht steht unter der Auswahl (Prüfung M1).
+  expect(SELF_SUPPLY_TENANCY_HINT).toMatch(/Wartung und Betriebsstrom, die Sie tragen, rechnet Mietfuchs weiter ab/)
+  expect(SELF_SUPPLY_TENANCY_HINT).toMatch(/in Textform auf den Erstattungsanspruch und auf die Pflicht nach § 43 Abs\. 1 GModG hinweisen \(§ 6 Abs\. 2 Satz 6 CO2KostAufG\)/)
+  expect(SELF_SUPPLY_TENANCY_HINT).toMatch(/12 Monaten/)
 })

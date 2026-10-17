@@ -3,6 +3,7 @@
 // Verbrauchsschlüssel nur über die Wohnungszähler, und bei einer Einliegerwohnung mit
 // Zwischenzähler zahlte der Mieter das Wasser des Vermieters mit.
 
+import { calendarPeriod } from '../../shared/period.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement, type ComputedSettlement } from '../src/calc.ts'
@@ -18,7 +19,7 @@ const meter = (id: string, unitId: string | null): SnapshotMeter => ({ id, unitI
 const used = (meterId: string, amount: number): SnapshotReading[] => [
   { meterId, date: '2024-12-31', value: 0 }, { meterId, date: '2025-12-31', value: amount },
 ]
-const water: SnapshotCostItem = { id: 'w', year: 2025, category: 'Wasser/Abwasser', description: 'Wasser', amountCents: 100000, key: 'meter', meterType: 'kaltwasser' }
+const water: SnapshotCostItem = { id: 'w', period: calendarPeriod(2025), category: 'Wasser/Abwasser', description: 'Wasser', amountCents: 100000, key: 'meter', meterType: 'kaltwasser' }
 const settle = (s: Partial<SnapshotSource>): ComputedSettlement => computeSettlement(snapshotOf({
   units: [], tenancies: [], costItems: [water], meters: [], readings: [], payments: [], closedSettlements: [], ...s,
 }, 2025))
@@ -141,7 +142,7 @@ test('Invariante (#116): mit zufälligen Haupt- und Zwischenzählern gehen die S
 })
 
 test('§ 2 HeizkostenV: ist die eigene Wohnung nicht angelegt, sagt die Warnung, wie Mietfuchs die Ausnahme erkennt', () => {
-  const heating: SnapshotCostItem = { id: 'h', year: 2025, category: 'Heizung und Warmwasser', description: 'Heizöl', amountCents: 50000, key: 'area' }
+  const heating: SnapshotCostItem = { id: 'h', period: calendarPeriod(2025), category: 'Heizung und Warmwasser', description: 'Heizöl', amountCents: 50000, key: 'area' }
   const nurEinlieger = settle({
     units: [unit('el')],
     tenancies: [{ ...tenancy('t', 'el'), heatingModel: 'inclusive' }],
@@ -323,7 +324,7 @@ test('Durchsicht: Küche ganzjährig, Bad im Jahr getauscht, dazu ein Zähler au
 })
 
 test('§ 2 HeizkostenV: bei einer Eigentumswohnung kein Rat, die eigene Wohnung anzulegen (#121, Snapshot.property)', () => {
-  const heating: SnapshotCostItem = { id: 'h', year: 2025, category: 'Heizung und Warmwasser', description: 'Heizöl', amountCents: 50000, key: 'area' }
+  const heating: SnapshotCostItem = { id: 'h', period: calendarPeriod(2025), category: 'Heizung und Warmwasser', description: 'Heizöl', amountCents: 50000, key: 'area' }
   const base = snapshotOf({ units: [unit('el')], tenancies: [{ ...tenancy('t', 'el'), heatingModel: 'inclusive' }], costItems: [heating], meters: [], readings: [], payments: [], closedSettlements: [] }, 2025)
   const etw = computeSettlement({ ...base, property: { kind: 'etw', cableBuiltBeforeDec2021: null } })
   assert.doesNotMatch(etw.warnings.join(' '), /Wohnen Sie selbst im Haus/)

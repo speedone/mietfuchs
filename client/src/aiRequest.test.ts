@@ -154,3 +154,10 @@ test('verstrichene Zeit', () => {
   expect(fmtElapsed(65_400)).toBe('1:05')
   expect(fmtElapsed(12 * 60_000 + 3_000)).toBe('12:03')
 })
+
+test('Fortschritt der neuen Belegarten (Heizung PR 20)', () => {
+  expect(progressText({ step: 'serviceStatement', phase: 'waiting' })).toBe('Modell liest die Abrechnung …')
+  expect(progressText({ step: 'fuelInvoice', phase: 'waiting' })).toBe('Modell liest die Rechnung …')
+  expect(progressText({ step: 'fuelInvoice', phase: 'writing', chars: 1200 })).toBe('Modell schreibt die Auswertung (1.200 Zeichen) …')
+  expect(progressText({ step: 'serviceStatement', phase: 'thinking', chars: 50 })).toBe('Modell denkt nach (50 Zeichen) …')
+})

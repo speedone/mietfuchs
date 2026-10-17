@@ -7,6 +7,7 @@ export type * from '../../shared/types.ts'
 // Die Arten eines Objekts (#92), wie sie die Oberfläche nennt.
 export const PROPERTY_KIND_LABELS: Record<PropertyKind, string> = {
   mfh: 'Mehrfamilienhaus',
+  zfh: 'Zweifamilienhaus',
   etw: 'Eigentumswohnung',
   efh: 'Einfamilienhaus',
   sonstiges: 'Sonstiges (z. B. Garagen)',
@@ -46,4 +47,5 @@ export const KEY_LABELS: Record<CostKey, string> = {
   custom: 'nach vereinbarten Anteilen (%)',
   external: 'laut Gemeinschaftsabrechnung (Eigentumswohnung)',
   amounts: 'Einzelbeträge je Mieter (z. B. Messdienst)',
+  heatingSystem: 'nach Heizkostenverordnung (eigene Heizkostenabrechnung)',
 }

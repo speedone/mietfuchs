@@ -279,10 +279,17 @@ ohne weiteres Zutun dabei.
    (fester Startwert, also reproduzierbar): Mieteranteile + Vermieteranteil = Gesamtkosten,
    keine negativen Anteile, Eigenanteil ≤ Vermieteranteil. Einzelfall-Tests übersehen genau
    die schiefen Konstellationen — ein Geldverlust bei der Direktzuordnung fiel erst hier auf.
-2. [server/test/api.test.ts](server/test/api.test.ts) — Integration: startet den Server als
+2. `server/test/api-*.test.ts` — Integration: startet den Server als
    eigenen Prozess mit `NKA_DATA_DIR` auf einem Wegwerf-Ordner (deshalb gibt es diese
    Variable) und prüft die Routen. Berührt nie eine vorhandene `db.json`. `NKA_UPDATE_URL`
    zeigt dort standardmäßig auf einen geschlossenen Port, damit kein Test GitHub erreicht.
+   **Zehn Dateien nach Themen statt einer** (#263): `node --test` verteilt nur Dateien auf
+   Prozesse, nicht die Tests einer Datei, und die eine api.test.ts mit rund 270 Serverstarts
+   bestimmte allein das Ende des ganzen Laufs (418 von 420 Sekunden). Die gemeinsamen Helfer
+   (Antworttypen, `startServerIn`, `startServerRaw`, die nachgebauten Dienste) stehen in
+   [server/testing/api.ts](server/testing/api.ts); was nur ein Teil braucht, steht bei ihm.
+   Ein neuer Test gehört in die Datei seines Themas; wird eine Datei deutlich länger als die
+   anderen, lohnt das Teilen wieder.
 
 **Wer für eine Prüfung einen Server startet, setzt drei Dinge**, und zwar immer zusammen. Das
 gilt für Tests, für Skripte und für jede Probe von Hand:
@@ -298,7 +305,7 @@ gilt für Tests, für Skripte und für jede Probe von Hand:
   `NKA_RUNTIME=binary` gesetzt ist, um den gepackten Betrieb nachzustellen.
 - **`NKA_UPDATE_URL`** auf einen geschlossenen Port, damit keine Anfrage zu GitHub hinausgeht.
 
-Dieselben drei stehen in [api.test.ts](server/test/api.test.ts) (`startServerIn` und
+Dieselben drei stehen in [server/testing/api.ts](server/testing/api.ts) (`startServerIn` und
 `startServerRaw`) und in [scripts/umstieg-praxislauf.mjs](scripts/umstieg-praxislauf.mjs); wer
 einen neuen Prüfpfad baut, nimmt sie von dort.
 
@@ -306,9 +313,29 @@ einen neuen Prüfpfad baut, nimmt sie von dort.
 versehentlich überschrieben werden. Das ist kein Übereifer: `startServerIn` setzte es gar nicht,
 ein Aufrufer stellt mit `NKA_RUNTIME: 'binary'` die Programmdatei nach, und damit riss **jeder
 volle Testlauf** ein Browserfenster auf, auf einem Zufallsport, weil `NKA_PORT` dort `'0'` ist.
-Ein Wächter in api.test.ts liest deshalb den `env`-Block jedes Serverstarts und verlangt das
-`CI`. Geprüft wird der Quelltext, denn am Verhalten ließe es sich nur messen, indem der Test
-genau das tut, was er verhindern soll.
+Ein Wächter in api-start.test.ts liest deshalb den `env`-Block jedes Serverstarts in jeder
+Datei unter `server/test/` und `server/testing/` und verlangt das `CI`. Geprüft wird der
+Quelltext, denn am Verhalten ließe es sich nur messen, indem der Test genau das tut, was er
+verhindern soll.
+
+**Frische Datenbank für einen Test: die Vorlage** (#263,
+[server/testing/freshDatabase.ts](server/testing/freshDatabase.ts)). Wer eine leere, voll
+migrierte Datenbank braucht, nimmt `openFreshDatabase(dataDir)` statt `openDatabase({ dataDir })`
+auf einem leeren Ordner. Die ganze Kette je Test kostete gut eine Viertelsekunde (ein fsync je
+Schritt), in der Invariante mit über 1.700 Läufen je Abschnitt war das im Profil rund 40 Prozent
+der Rechenzeit. So geht es: Je Testprozess entsteht beim ersten Aufruf **einmal** eine Vorlage,
+mit `openDatabase` auf einem Wegwerf-Ordner, also mit der Kette, wie sie gerade auf der Platte
+steht; nichts davon wird eingecheckt, und die Vorlage endet mit ihrem Prozess. Jeder Test bekommt
+eine Dateikopie in seinen eigenen Ordner (zulässig, weil die Vorlage geschlossen ist und ohne
+WAL läuft), **geöffnet wieder mit `openDatabase`**: Fremdschlüssel, `integrity_check`,
+Schreibprobe und Abgleich mit der Kette laufen also wie bei jedem Start, kein Pragma muss
+nachgestellt werden. Musste beim Öffnen der Kopie noch ein Schritt nachgeholt werden, ist die
+Vorlage veraltet, und der Helfer wirft, statt es still nachzuholen.
+[fresh-database.test.ts](server/test/fresh-database.test.ts) vergleicht die Kopie mit einer frisch
+migrierten Datenbank (Aufbau, Inhalt, Pragmas). **Bei der echten Kette bleiben** alle Tests, die
+die Kette selbst prüfen: db-open, db-changeover, db-objekte, migrations, migration-notice,
+legacy-guard, ueberschneidung-bestand, die Serverstarts der Integrationstests und alles über
+`openDatabaseWithStock` (der eingefrorene Eingang: 0000, Bestand, dann die Kette).
 3. `client/src/**/*.test.ts(x)` — vitest. Die Entscheidungslogik der Formulare liegt in
    [client/src/costForm.ts](client/src/costForm.ts) und
    [client/src/unitForm.ts](client/src/unitForm.ts), damit sie ohne DOM prüfbar ist; die
@@ -319,6 +346,9 @@ genau das tut, was er verhindern soll.
    der State-Wert nicht in der Optionsliste, zeigt der Browser den ersten Eintrag, ohne ein
    `change`-Ereignis zu senden — gespeichert wird dann etwas anderes als das Sichtbare. Neue
    Selects deshalb über `meterTypeOptions`/`costKeyOptions` speisen.
+   [client/src/vitestSetup.ts](client/src/vitestSetup.ts) setzt die Wartezeit von `findBy…` und
+   `waitFor` auf fünf Sekunden; mit der Voreinstellung von einer Sekunde scheiterten Seitentests
+   unter Last gelegentlich, ohne dass etwas falsch war.
 
 Die Tests sind selbst TypeScript und werden von `npm run typecheck` mitgeprüft. Das ist der
 eigentliche Wert: Sie bauen Datenbestände von Hand auf, und der Übersetzer vergleicht sie mit
@@ -583,6 +613,11 @@ Start hinein (siehe Umstieg unten), und **die Routen lesen und schreiben sie**
   (`flat_rates`), Teilnehmer, Einzel- und Eigenbeträge (`cost_item_participants`,
   `cost_item_amounts`, `cost_item_self_amounts`) und `unit_no_connection`; auf das Objekt verweisen
   Wohnungen, Zähler, Kosten, Abschlüsse und frühere Abschlüsse mit `RESTRICT`.
+  Ausnahme an der Route: Die Rechnungen einer Etagenheizung (`fuel_deliveries.unit_id`) stehen zwar auf
+  `CASCADE`, eine Wohnung mit Rechnungen löscht `DELETE /api/units/:id` aber nicht (409, `dependents` zählt sie
+  als `fuelDeliveries`): Die Rechnung ist Beleg der CO₂-Aufteilung, und hing eine Position daran, scheiterte das
+  Löschen vorher an deren `RESTRICT` mit einer irreführenden Meldung. Gesperrt statt `SET NULL`, weil eine
+  Rechnung einer Etagenheizung ohne Wohnung keiner Wohnung mehr zuzuordnen wäre.
 - **Prüfbedingungen je Feld entschieden.** Ohne Bedingung bleiben bewusst
   `cost_items.amount_cents` (eine Gutschrift ist negativ), `labor_35a_cents` (calc.ts meldet
   einen ungültigen Lohnanteil als Warnung und rechnet weiter; eine Bedingung nähme dem Nutzer
@@ -769,6 +804,67 @@ Kostenposition (#94), nicht in weitere Ebenen.
   (#157, Logik in client/src/propertyView.ts, das vorige Objekt merkt der Provider): Ein leeres
   neues Objekt sah sonst aus wie ein verlorener Bestand.
 
+**Abrechnungszeitraum** (#208, Kern): Ein Objekt rechnet im Kalenderjahr oder in einem eigenen
+Rhythmus ab. **Der Zeitraum ist ein eigener Schlüssel** `PeriodKey` (`'JJJJ-MM'`, Monat des Beginns,
+Markentyp in shared/types.ts), und kein Jahr: `cost_items.period`, `closed_settlements.period`,
+`closed_settlement_history.period`, `prepayment_overrides.period` und `assessments.requested_period`
+(nur mit Objekt). `uploads.year`, `assessments.year` und `detected_year` bleiben Kalenderjahre, denn
+sie sind Tatsachen über den Beleg; ebenso `assessments.requested_year`, das gewählte Jahr, das auch
+ohne Objekt stehen bleibt und beim Zuordnen den Zeitraum ergibt (sonst wäre eine später zugeordnete
+Auswertung grün und „Alle grünen übernehmen“ buchte ungesehen in ein anderes Jahr). **Die Zeiträume werden berechnet und nie gespeichert**
+([shared/period.ts](shared/period.ts)): aus `properties.period_start_month` und `period_changes`
+entstehen lückenlose Zeiträume von höchstens zwölf Monaten (`bgb.max-period-months`), vor jedem
+Wechsel ein Rumpf. Aus Text wird ein Schlüssel nur dort (Wächter in period.test.ts). Der
+Schnappschuss trägt P und den Vorzeitraum, `computeSettlement` rechnet über dessen Grenzen und
+Monate, eine Wache in calc-zeitraum.test.ts verbietet Kalenderdaten in seinem Rumpf. **Mietkonto und
+Steuer bleiben Kalenderjahr**; die Abrechnung teilt sich mit dem Mietkonto die Monatsrechnung
+`ledgerRows`. Die Routen der Abrechnung und des Verbrauchs nehmen `JJJJ-MM`; **die nackte Jahreszahl
+gilt nur bei einem reinen Kalenderobjekt**, sonst 404 mit einem Satz, der den gemeinten Zeitraum
+nennt, damit ein alter Tab nie still einen Rumpf bekommt. Dasselbe beim Schreiben: `year` statt
+`period` oder eine vierstellige Jahreskorrektur nimmt repository.ts nur beim Kalenderobjekt an
+(`PeriodError`), und die Listen nennen einem alten Tab dort weiter `year` an den Kostenpositionen
+und die Jahreskorrektur nach Jahreszahl. Schickt ein Tab Jahreszahlen, gilt sein Stand vollständig
+für die Kalenderzeiträume, sonst bliebe eine zurückgesetzte Korrektur stehen. Ein ungültiger
+`period` ist eine 400 und wird nicht still ersetzt. Ein
+Schlüssel, den es für sein Objekt nicht gibt, wird beim Schreiben abgelehnt und beim Wiederherstellen
+eines Archivs ebenso (`orphanPeriodKeys`). Die Frist kommt vom Server (`Settlement.deadline`,
+`settlementDeadline` mit `bgb.deadline-months`) und friert mit ein.
+**Bedienung** (PR 3): Den Rhythmus ändert nur der Wechsel mit Vorschau
+([server/src/db/periodChange.ts](server/src/db/periodChange.ts), `POST /api/properties/:id/period/preview`
+und `PUT …/period`); er bekommt die ganzen neuen Regeln und vergleicht sie mit den alten. Ein
+abgeschlossener Zeitraum, der sich änderte, sperrt (409); Jahreskorrekturen werden neu erfasst, wenn
+ein Mietverhältnis danach Monate in mehr als einem oder einem anders geschnittenen Zeitraum hat
+(eine gezahlte Summe lässt sich nicht verteilen), ohne Antwort wird nicht gespeichert. Das Jahr der
+Zahlung jeder Position, die in einen Zeitraum über zwei Kalenderjahre gelangt oder deren Zeitraum
+dorthin wächst, fragt die Vorschau, vorbelegt und in die Spanne geklemmt; verschoben wird durch
+dieselbe Schreibprüfung wie beim Speichern, eine gescheiterte ist eine 409 mit Vorschau. Die
+Vorschau trägt eine Marke (`token`); stimmt sie beim Wechsel nicht mehr, gibt es 409 mit der neuen. **Kalte
+Rechnungen mit Leistungszeitraum über zwei Zeiträume werden beim Speichern nach Tagen aufgeteilt**
+(ein Teil wird danach nur berichtigt: Leistungszeitraum und Zeitraum eines Teils ändert weder das
+Speichern noch das Aufteilen, `isSplitPart` in repository.ts)
+([server/src/serviceSplit.ts](server/src/serviceSplit.ts), Leistungsprinzip); jeder Teil trägt den
+ganzen Leistungszeitraum, daran erkennt die Abrechnung ihn. Heizkosten nie (VIII ZR 156/11), dort
+warnt `period.heating-mismatch`. `tax_year` ist das Jahr der Zahlung, Pflicht nur bei einem
+Zeitraum über zwei Kalenderjahre; die Steuerübersicht eines solchen Objekts schöpft aus allen
+Abrechnungen, die das Jahr berühren (`taxPartsFor` in calc.ts). **Der Vorschlag nach § 560 im
+Rumpf** rechnet je Position einen Jahresfaktor ([server/src/prepaymentSuggestion.ts](server/src/prepaymentSuggestion.ts)):
+kalt nach den Tagen ihres Leistungszeitraums im Rumpf, gleichartige über die Vereinigung, ohne
+Leistungszeitraum als Jahresbetrag mit Hinweis `prepayment.annual-assumed`; Brennstoff (`heating_part = 'fuel'`) nach Gradtagen aus `hkv.degree-days` über die
+Vereinigung der Leistungszeiträume, feste Heizpositionen nach den Tagen ihres Leistungszeitraums;
+fehlt für den Brennstoff ein Faktor, gibt es keinen Vorschlag. Die Oberfläche hält einen **Tag** und
+keinen Schlüssel ([client/src/period.tsx](client/src/period.tsx), Logik in
+[client/src/periodForm.ts](client/src/periodForm.ts)): Der Zeitraum ist der, der ihn enthält, so
+passt ein Objektwechsel ihn von selbst an. Beim Kalenderobjekt heißt der Umschalter weiter
+„Abrechnungsjahr“, seine Werte sind Jahreszahlen und die Routen bekommen die Jahreszahl; Mietkonto
+und Steuer haben bei abweichendem Zeitraum einen eigenen Kalenderjahr-Umschalter. Die Belegbuchung
+bucht in `bookingPeriod` (shared/assessment.ts): den gewählten Zeitraum, wenn er das Jahr des Belegs
+berührt, sonst den mit der größten Überschneidung. Der gewählte Zeitraum einer Auswertung entsteht
+aus dem gewählten Jahr nach den Regeln des Objekts (`periodForYear`) und nie als festes `JJJJ-01`:
+Das wäre bei Mai bis April ein verwaister Schlüssel, und jedes spätere Backup lehnte das
+Wiederherstellen ab. Ein schon aufgeteilter Teil wird bei einem weiteren Wechsel nur über den Teil
+seines Leistungszeitraums neu geteilt, der in seinem bisherigen Zeitraum liegt, und beim Berichtigen
+seines Betrags nicht noch einmal (`needsSplitCheck` mit der gespeicherten Position).
+
 **Belegordner** (#170, [client/src/pages/Belege.tsx](client/src/pages/Belege.tsx), Logik in
 [client/src/receipts.ts](client/src/receipts.ts)): Objekt → Jahr → Kostenart als Register, Suche,
 Belegabdeckung, Posteingang und zwei Mappen. Entscheidungen und Quellen in
@@ -826,6 +922,715 @@ Belegabdeckung, Posteingang und zwei Mappen. Entscheidungen und Quellen in
   Steuerübersicht, Erhaltungsrücklage gesondert, dazu `Übersicht.csv` (mit BOM, Semikolon) mit
   jeder Position, auch ohne Beleg. Textfelder, die mit = + - @ beginnen, bekommen einen Apostroph
   davor (CSV-Formel-Einschleusung).
+
+**Heizanlage** (Heizung PR 4, #99, #214, #180): Ein Objekt hat höchstens eine Heizanlage
+(`heating_plants`, eine zweite kommt mit PR 9), dazu die angeschlossenen Wohnungen
+(`heating_plant_units`) und eine Zeile je Heizperiode (`heating_periods`, ohne Vorrat; geschrieben
+ab PR 6). Anlegen, Ändern und Entfernen stehen in
+[server/src/db/heating.ts](server/src/db/heating.ts), die Prüfungen an Zählern und Kostenpositionen
+in repository.ts, das dafür seine Rumpf-Helfer exportiert (heating.ts importiert von dort, nie
+umgekehrt).
+
+- **Eine Anlage ändert keine Zahl.** `manual` und `service` verteilen wie bisher; `change_split` wird
+  gespeichert und wirkt erst mit `heating_target` (PR 10). Was spätere PRs rechnen (eigene
+  Abrechnung, Etagenheizung, zweite Anlage, eigene Heizperiode, getrennte Abrechnung, beheizte
+  Fläche), lehnt der Server mit `HeatingError` (400) und einem Satz ab.
+- **Ohne Liste alle Wohnungen, mit Liste genau diese.** Ob es eine Liste gibt, sagt
+  `units_limited`, wie `participants_limited` (#94): Sonst versorgte eine Anlage, deren letzte
+  Wohnung gelöscht wurde, plötzlich das ganze Haus. Eine Wohnung in der Liste wechselt nicht das
+  Objekt (`guardUnit`).
+- **Heizpositionen gehören zur Anlage ihres Objekts.** Beim Einrichten mit Vorschau
+  (`/api/heating-plants/assignable`), danach bekommt jede neue Position der Kostenart Heizung und
+  Warmwasser ohne Feld `heatingPlantId` die einzige Anlage (`defaultHeatingPlant`, auch für alte
+  Tabs und die Belegbuchung). Abgeschlossene Zeiträume bekommen keine Anlage. Entfernen gibt die
+  Positionen frei; hängen noch Zähler an der Anlage, wird abgelehnt.
+- **Zähler der Anlage** (`heating_plant_id` mit Rolle, ohne Wohnung) sind **keine Hauptzähler** des
+  Hauses (`houseMeters` in calc.ts). **Warmwasserzähler zählen beim Kaltwasser mit**, aber nur ein
+  Kaltwasserzähler sagt, ob eine Wohnung gemessen ist (G-B8, `measures`). Nach
+  Heizkostenverteilern verteilt Mietfuchs erst mit Bewertungsfaktoren (PR 12); bis dahin lehnt der
+  Server den Schlüssel ab, und die Oberfläche bietet ihn nicht an.
+- **Fernablesbarkeit** entscheidet [server/src/remoteReading.ts](server/src/remoteReading.ts) nach
+  `hkv.remote-reading.new-devices` (Einbau nach dem Stichtag: ab Einbau) und
+  `hkv.remote-reading.retrofit` (ältere ab 2027), aus den Zählern oder, beim Messdienst, aus der
+  Angabe an der Anlage. Ein neues Gerät in einem System, dessen übrige Geräte nicht fernablesbar
+  sind (laut Anlage keines oder alle anderen bekannten nicht), kann ein Ersatz nach § 5 Abs. 2 Satz 4
+  sein; dann gilt die Frist des Abs. 3, vorher heißt es nur „bis zu“. Ob einzeln ersetzt oder als
+  Ganzes neu installiert, fragt die Anlage (`new_devices_install`: `single` | `whole`, NULL offen);
+  unbeantwortet nennt der Hinweis die Frage. Ein allein bekanntes Gerät ist nur sicher, wenn die
+  Anlage keine weiteren Wohnungen ohne erfasstes Gerät versorgt. Sicher heißt
+  `heating.remote-reading-missing` (warning, 3 % je Mieter in Wohnungen an der Anlage, auf die
+  gedruckten Heizzeilen), möglich `heating.remote-reading` mit „bis zu“; ohne Anlage oder ohne
+  Angaben bleibt `heating.remote-reading` wortgleich wie vor PR 4. Zwei Codes, weil die Stufe am
+  Code hängt (#112).
+- **Zweifamilienhaus** ist eine Art des Objekts (`zfh`) und nur Beschreibung; § 2 hängt an den
+  Wohnungen (`mayAgreeOtherwise`), ein Widerspruch ergibt `property.kind-mismatch` (hint).
+- Das Wiederherstellen prüft Verweise auf Anlagen anderer Objekte, überlappende Anlagen und
+  Heizperioden ohne Zeitraum (`heatingPlantViolations`).
+
+**Eigene Heizperiode und getrennte Heizkostenabrechnung** (Heizung PR 5, #217): Eine Anlage rechnet
+im Zeitraum ihres Objekts ab (`period_start_month` null) oder in eigenen Heizperioden
+(`period_start_month`, `heating_period_changes`, berechnet wie die Zeiträume des Objekts). Die Regeln
+stehen in [shared/heatingPeriod.ts](shared/heatingPeriod.ts).
+
+- **Positionen tragen den Schlüssel ihrer Heizperiode** (G-A2): Eine Heizposition einer Anlage mit
+  eigener Heizperiode steht unter einer Heizperiode der Anlage, sonst 400. Eine neue ohne Angabe (alter
+  Tab, Belegbuchung) kommt in die Heizperiode, die in ihrem Objektzeitraum endet
+  (`defaultHeatingPlant`). Den Rhythmus setzt nur der Wechsel mit Vorschau
+  ([server/src/db/heatingPeriodChange.ts](server/src/db/heatingPeriodChange.ts)), nie `PUT`; er
+  schlüsselt die Positionen um, erfasst Korrekturen neu und lässt Abgeschlossenes unangetastet.
+- **Weg b** (VIII ZR 240/07): Eine Heizperiode gehört in die Abrechnung P, in der sie endet. Der
+  Schnappschuss trägt sie als `heatingParts`; `computeSettlement` rechnet jede mit derselben Funktion
+  über ihre eigenen Tage (`scope: 'heatingPart'`, ohne Vorauszahlungen) und führt sie in P zusammen.
+  Wer nur in der Heizperiode wohnte, bekommt `heatingOnly` mit `recommendedDeadline` und der Warnung
+  `period.heating-only-statement` (15.1 Nr. 2).
+- **Weg d** (Auslegung, 15.1 Nr. 21): Nur bei getrennter Abrechnung und H ≠ P. Ob eine Heizperiode
+  getrennt abgerechnet wird, sagen die gespeicherten Spannen (`heating_separate_spans`: ab Monat X bis
+  vor W), nicht die Antwort von heute, damit Ein- und Ausschalten nie rückwirkend wirken (C3, D1).
+  Ein- und Ausschalten laufen über die Vorschau in
+  [server/src/db/separateSettlement.ts](server/src/db/separateSettlement.ts); P lässt die Heizperiode
+  weg, sie hat ihre eigene Abrechnung (`scope: 'heating'`, `heatingSnapshotFor`), Frist und
+  Abschluss (`closed_heating_settlements` samt Verlauf; der Abschluss von P friert sie nicht ein).
+  Bei H = P gibt es eine Gesamtabrechnung mit getrennt ausgewiesenen Vorauszahlungen.
+- **Jeder Monat der Heizstaffel wird genau einmal angerechnet** (6.1 Nr. 5): Er gehört der getrennt
+  abgerechneten Heizperiode, die ihn enthält, wenn er ab X liegt, sonst der Abrechnung P
+  (`separateOwner`, die einzige Stelle). **Die Jahreskorrektur von P gilt für alles, was P anrechnet**
+  (bei Weg d also nur die übrigen Vorauszahlungen); eine Heizkorrektur (`heating_prepayment_overrides`,
+  endgültig oder vorläufig mit Monaten, D2) gibt es nur für eine getrennt abgerechnete Heizperiode.
+  Invariante 11 prüft das über zufällige Abläufe mit Abschlüssen (invariant-heizperiode.test.ts).
+- Das Mietkonto führt beide Staffeln im Soll; die Steuerübersicht nimmt Heizpositionen einer eigenen
+  Heizperiode im Jahr ihrer Zahlung, bei Weg d aus der Heizkostenabrechnung, und nennt dann keine
+  Vorauszahlung der Abrechnung (`prepaymentSettlementCents` null).
+- Ein Wechsel des Objektzeitraums lässt Heizpositionen einer eigenen Heizperiode, wo sie sind, und
+  lehnt ab, wenn er Weg d für eine Heizperiode umschalten würde.
+- **Jede Vorschau trägt eine Marke** (`token`, wie beim Wechsel des Abrechnungszeitraums): Der
+  Wechsel des Zeitraums der Heizung und das Ein- und Ausschalten schreiben nur mit der Marke der
+  Vorschau, die der Vermieter gesehen hat; sonst 409 mit der neuen Vorschau.
+- **Einrichtung Schritt 3** erklärt die drei Wege (Heizperiode des Messdienstes in der
+  Gesamtabrechnung, Objekt auf den Zeitraum des Messdienstes umstellen, Messdienst auf den 31.12.
+  umstellen lassen) mit Vor- und Nachteilen; Vorgabe ist der erste, solange die Heizkosten nicht
+  getrennt abgerechnet werden (VIII ZR 240/07, Leitsatz a). Logik in
+  [client/src/heatingPeriodForm.ts](client/src/heatingPeriodForm.ts) (`heatingWays`).
+
+**CO₂ beim Messdienst** (Heizung PR 6, #97, #209, #211): Die CO₂-Angaben einer Heizperiode stehen in
+`co2_statements` (eine Zeile je Zeile in `heating_periods`), die Beträge „vom Vermieter übernommen“ je
+Mietverhältnis in `co2_tenant_reliefs`. Lesen und Schreiben in
+[server/src/db/co2.ts](server/src/db/co2.ts), gerechnet in [server/src/co2.ts](server/src/co2.ts) und im
+CO₂-Block von `computeSettlement`; die Probe in [shared/co2Probe.ts](shared/co2Probe.ts), weil die
+Oberfläche sie live zeigt. Die Rechtswerte (Anwendbarkeit ab 01.01.2023, Stufentabelle, Rundung, 3 %)
+stehen in [shared/law/co2kostaufg.ts](shared/law/co2kostaufg.ts), am Wortlaut auf
+gesetze-im-internet.de gegengelesen.
+
+- **Die Methode ist eine Antwort, keine Vorgabe** (Entwurf 7.2): `serviceDeducted` (Abzugszeile),
+  `serviceShown` (nur ausgewiesen), `selfAfterService` (nicht aufgeteilt). Bei freien Schlüsseln gibt
+  es nur `self`, und der Datensatz hält nur die Fläche der Einstufung (Heizung PR 7); der Topf führt
+  ihn nicht (`co2PotsOf` kennt nur Angaben laut Messdienst), die eigene Aufteilung liest ihn eigens.
+- **S ist die gedruckte Kostensumme** (G-B3), nicht die Summe der gerundeten Nutzerzeilen. Die Probe
+  läuft nur über die Messdienstpositionen (Schlüssel `amounts`, W9): Vorwegabzug Σ = S + L ± 1 ct, nur
+  ausgewiesen Σ = S, beide Einzel- und Eigenbeträge ≤ S + NE · 2 ct. Scheitert sie, wird **nichts**
+  gebucht (`co2.sum-check`, error); mit „Ich finde diese Zeile nicht“ ist S geschätzt, und der
+  Spielraum NE · 2 ct gilt auch für den Betrag. Geht die Probe dann auf, bleibt ein Hinweis
+  (`co2.sum-check-approx`); geht sie nicht auf, wird ebenso **nichts** gebucht (Durchsicht I-2).
+  Alle Hinweise eines Topfs hängen daran, dass jemand eine Zeile aus ihm hat (`settledOn`):
+  Pauschal- und Warmmieter kürzen nichts. Kappt `take()` den co2Share über den Spielraum, sagt
+  `co2.share-capped`, dass L in einer anderen Position steckt.
+- **Vorwegabzug:** In der Position, in der L steckt (`carrierId`: die gewählte, sonst die größte),
+  steht L_self exakt in `selfUse` (#203: nie über `take()`), der Rest von L als eigener Grund
+  `co2Share` direkt dahinter, durch den Rest begrenzt. Die Mieter zahlen ihre Einzelbeträge
+  unverändert. Damit ist #209 behoben: Werbungskosten sind das Bezahlte, L_self privat.
+- **Nur ausgewiesen:** Zeilen `kind: 'co2Relief'` ohne Kostenposition (`costItemId` =
+  `co2:<Anlage>:<Heizperiode>`), je Mieter der Wert laut Messdienst oder L · x / S, als eine Verteilung
+  von R = round(Σ r) mit `distributeCents`; der Vermieter trägt R in einer Zeile gleicher Kennung als
+  `co2Share`. Σ aller Zeilen bleibt Σ der Positionen.
+- **Kürzungen** (6.5) je Mieter auf seine gedruckten Zeilen im Topf nach der Abzugszeile, nie summiert:
+  3 % nach § 7 Abs. 4 CO2KostAufG (`co2.missing`, `co2.service-unsplit`, `co2.incomplete`,
+  `co2.sum-check`, ohne Anlage `co2.fuel-unknown` und `co2.missing-first-year`), 15 % bei Warmwasser
+  nach Formel (`heating.dhw-not-metered`). Alle Rechtswerte aus `shared/law/co2kostaufg.ts`.
+- **Nachstufung** (9.2): Mietfuchs ordnet den Wert laut Messdienst in die Stufentabelle ein (gerundet
+  auf eine Nachkommastelle, bei kurzer Heizperiode mit gekürzten Grenzen, ein ganzzahlig gedruckter
+  Wert als Spanne) und meldet eine Abweichung als Hinweis (`co2.stage-mismatch`). § 8 und § 9
+  rechnet die Berechnung nur bei der eigenen Aufteilung (PR 7, Merkmale an der Anlage).
+- **Töpfe und eigene Heizperiode:** Ein Topf ist je Anlage die Menge ihrer Heizpositionen mit dem
+  Schlüssel des Zeitraums der Berechnung. Bei eigener Heizperiode rechnet die Teilabrechnung (Weg b)
+  bzw. die Heizkostenabrechnung (Weg d) den Topf; `mergeHeatingPart` übernimmt `heating`.
+- **Ausweis:** `Settlement.heating` je Anlage und Heizperiode mit `Co2Assessment`; der Druckblock
+  „CO₂-Kostenaufteilung“ ([client/src/co2View.ts](client/src/co2View.ts)) ist nicht `no-print`.
+- **Oberfläche:** Seite „Heizkosten“, erst ab einer Heizanlage in der Navigation (`navFor`), mit den
+  Karten „CO₂-Kosten“ (Logik in [client/src/co2Form.ts](client/src/co2Form.ts)) und „Warmwasser“.
+- Eine Anlage mit CO₂-Angaben wird nicht still mitgelöscht (409); Beträge je Mietverhältnis gehören zum
+  Objekt der Anlage (`guardTenancyMove`, `crossPropertyViolations`). Eine Zeile in `heating_periods`,
+  die nach dem Entfernen keine Angabe mehr trägt, wird mit entfernt (`dropIfEmpty`): Der Wechsel des
+  Zeitraums der Heizung (PR 5) sieht jede Zeile als erfasste Angabe. Beim Wiederherstellen prüft
+  `heatingPlantViolations` die Schlüssel nach dem Rhythmus der Anlage (`plantRules`).
+- **Kostenart „Heizung“ ist keine Heizposition.** CO₂-Hinweise erscheinen wie alle Heizregeln nur bei
+  der Kostenart „Heizung und Warmwasser“ (`HEATING_CATEGORY`); deshalb bleibt Golden F06 (Kostenart
+  „Heizung“) wortgleich, anders als im Entwurf (12.1) angenommen.
+
+**Lieferungen** (Heizung PR 7, #97): Rechnungen des Versorgers an der Heizanlage in `fuel_deliveries`
+(Teilmengen in `fuel_delivery_parts`), Positionen zeigen über `cost_items.fuel_delivery_id` darauf,
+mehrere je Lieferung (Abschlag, Schlussrechnung, Gutschrift). Abgegrenzt wird in
+[server/src/fuel.ts](server/src/fuel.ts) (`plantFuel`), gelesen und geschrieben in
+[server/src/db/fuel.ts](server/src/db/fuel.ts); die Gradtagzahlen des Orts je Objekt und Monat in
+`degree_day_values`. Die CO₂-Merkmale (§ 8, § 9, § 2 Abs. 4 Satz 2 CO2KostAufG) stehen an der Anlage
+(`non_residential`, `restriction`, `district_ets_new`), ihre Rechtswerte im Register.
+
+- **Stufen, tagesgenau gibt es nicht** (Entwurf 3.2): eingetragener Anteil, Zählerstand (genau ein
+  Versorgungszähler, Stände genau an den Grenzen), Zwischenrechnung, Teilmengen, Ortswerte, Tabelle
+  `hkv.degree-days`; feste Preisbestandteile (`fixed_cents`) immer nach Tagen. Die Tabelle wird nur
+  gefragt, wenn eine Anlage Lieferungen hat; sonst stünde sie im Rechtsstand jeder Abrechnung.
+- **Die Positionen stehen in der Heizperiode, die das Ende der Rechnung enthält** (die Verknüpfung
+  wird sonst abgelehnt, `guardFuelLink`). Der Teil einer anderen Heizperiode ist eine Zeile ohne
+  Position (`kind: 'fuelCarry'`, Kennung `fuel:<Lieferung>:<Heizperiode>:<andere>:<Position>`), mit dem
+  Schlüssel der Position verteilt, und eine Gegenzeile beim Vermieter (`fuelCarry`, Kennung
+  `fuel:<Lieferung>:<Heizperiode>:<andere>`). Über die Zeiträume hinweg ist jede Rechnung genau einmal
+  verteilt; eine Invariante in calc-fuel.test.ts prüft das an Zufallsbeständen, auch über einen
+  Abschluss. Eine Heizperiode ohne eigene Positionen rechnet trotzdem, wenn die Anlage Lieferungen
+  hat (Topf und Teilabrechnung nach Weg b), sonst fehlte ihr der Übertrag.
+- **Abgeschlossenes bleibt** (G-A4): Der Abschluss friert je Lieferung und Heizperiode in
+  `fuel_carry_frozen` ein, was sie herein- oder hinausgebucht hat; gelesen wird das nur für eine
+  abgeschlossene Heizperiode, das Wiederöffnen gibt es frei (`unfreezeFuelCarries`, im selben
+  Vorgang wie das Wiederöffnen, danach `dropIfEmpty`). Kommt der Teil einer Rechnung in eine
+  abgeschlossene Heizperiode, trägt ihn der Vermieter (`fuelClosedPeriod`), oder er ersetzt eine
+  Schätzung (`fuelEstimateDiff` mit Vorzeichen). Eine Schätzung zählt, solange keine echte Rechnung
+  ihre Tage abdeckt; gespeichert wird „ersetzt“ nicht. Gesperrt (409) sind eine Lieferung mit
+  eingefrorenem Teil (außer der Bezeichnung) und Ablesungen des Versorgungszählers mit Datum in
+  einer abgeschlossenen Heizperiode (`guardSupplyReading`, `heatingPeriodAt`).
+- **Rückfrage beim Abschluss:** Bei einer Lücke mit Schätzvorschlag antwortet der Abschluss mit 409
+  und `fuelGaps` (samt Frist); `fuelEstimates: 'estimate' | 'none'` entscheidet. In der Oberfläche
+  ist **Abwarten** die Vorgabe (`defaultChoice: 'cancel'` im Bestätigungsdialog), weil die Schätzung
+  einer noch fehlenden Versorgerrechnung höchstrichterlich nicht entschieden ist; die Schätzung
+  trägt ihre Grundlage in der Bezeichnung. Eine Heizposition der Anlage ohne Lieferung deckt mit
+  ihrem Leistungszeitraum ab; ohne Leistungszeitraum gibt es keinen Schätzvorschlag, sondern
+  `fuel.loose-item`. Eine Schätzung, deren Tage eine echte Rechnung teilweise abdeckt, zählt nur für
+  die übrigen Tage. Rechnen, Schätzungen anlegen,
+  neu rechnen, Abschließen und Einfrieren laufen in **einer** Transaktion (`closeWithFuel` in
+  index.ts); deshalb nehmen die Leser in read.ts ein `Executor`, und `readStock(tx)` sieht die eben
+  angelegten Schätzungen.
+- **Eigene CO₂-Aufteilung:** C bei freien Schlüsseln abgegrenzt, beim Messdienst ohne Aufteilung die
+  angesetzten Rechnungen ganz (G-A3); E immer umgerechnet. Der Abzug folgt dem Schlüssel des
+  Brennstoffs (G-B5, `bookReliefs`), § 8 und § 9 aus dem Register (`co2.non-residential`,
+  `co2.restriction`), Wärme aus dem Emissionshandel bei Anschluss nach dem Stichtag
+  (`co2.district-ets-new`) ohne Aufteilung.
+- **Was die Durchsicht von #233 festhält:** Eine mit 0 eingefrorene Lieferung (beim Abschluss noch
+  ohne Position) lässt sich verknüpfen; ihr Teil der abgeschlossenen Heizperiode geht an den
+  Vermieter (`fuelClosedPeriod`). Hat eine abgeschlossene Heizperiode einen Teil ungleich 0
+  eingefroren, sind Lösen, Umhängen, Verschieben und Löschen nur der **letzten** Position der
+  Lieferung gesperrt (409); weitere Positionen (Abschlag, Gutschrift) sind erlaubt. Der eingefrorene
+  Stand führt die Überträge je Lieferung (`frozenFuelCarriesOf`): Eine offene Heizperiode nimmt
+  genau, was die abgeschlossene Heizperiode der Positionen ihr hinausgebucht hat. Eine Position zeigt nur auf eine Lieferung ihres Objekts. Die Kennung einer
+  Übertragszeile nennt beide Heizperioden (`fuel:<Lieferung>:<Heizperiode>:<andere>:<Position>`),
+  Hinweise an ihr führen zur Position. Die CO₂-Aufteilung gilt nur für Brennstoffe mit Standardwerten
+  (§ 2 Abs. 1 CO2KostAufG): nicht für Strom einer Wärmepumpe, bei Fernwärme nur mit ausgewiesenen
+  CO₂-Kosten. Die Nachstufung beim Messdienst erwartet § 8 und § 9 nach den Angaben zum Gebäude.
+  **Storno nach Abschluss** (W1): Ergeben die Positionen einer Lieferung 0, wird nichts gesperrt und
+  nichts verteilt; hat eine abgeschlossene Heizperiode einen Teil hereingebucht oder die
+  abgeschlossene Heizperiode der Positionen einen hinausgebucht, steht beim Vermieter die
+  Gegenbuchung und ihr Gegenteil als `fuelClosedPeriod` (Summe 0, ausgewiesen), dazu die Warnung
+  `fuel.cancelled-after-close`; das Gegenstück nennt, was die Mieter der abgeschlossenen Heizperiode zu
+  viel getragen haben (dafür führt der eingefrorene Übertrag `totalCents`). War die andere Heizperiode
+  mit Schätzung abgeschlossen, steht die Schätzung als `fuelEstimateDiff` gegen. Eine stornierte
+  Rechnung (Positionen mit Summe 0) verdrängt keine Schätzung, deckt keine Tage ab und zählt nicht in
+  der Bewertung; die Lücke steht wieder da. Weil das auch eine echte Rechnung über 0 € treffen kann,
+  sagt es der Hinweis `fuel.zero-invoice`, `fuel.uncovered` und die Rückfrage beim Abschluss nennen die
+  Rechnung (`zeroInvoices` an der Lücke). Eine Schätzung ohne Rechnung mit Positionen als Vorlage für
+  ihren Schlüssel wird nicht verteilt und meldet `fuel.estimate-undistributed` statt `fuel.estimated`. Ihr Satz zur Frist hält sich an den Wortlaut von § 556 Abs. 3 Satz 3
+  BGB (ausgeschlossen ist nur die Nachforderung durch den Vermieter). Wurde eine Position erst nach
+  dem Abschluss ihrer Heizperiode verknüpft, nimmt die andere nichts und sagt es
+  (`fuel.owner-closed-unlinked`, Stufe `hint`).
+  Eine Invariante über Zufallsbestände mit Abschluss (auch mit Schätzung), Wiederöffnen, Verknüpfen,
+  Gutschriften bis zum Storno, geänderten Beträgen und später eintreffenden Rechnungen
+  (fuel-invariant.test.ts, über die echten Schreibwege der Datenbank, ohne nachgebildete Sperren)
+  prüft, dass jede Rechnung genau einmal verteilt ist: Die Mieter tragen die Positionen bis auf die
+  ausgewiesenen Teile, nach oben wie nach unten, und je Lieferung und Paar von Heizperioden heben sich
+  die Gegenbuchungen auf oder ein ausgewiesener Teil desselben Paars deckt sie genau (eine Summe über
+  alle Lieferungen ließe eine falsche Gegenbuchung hinter einem berechtigten Teil verschwinden). Feste Startwerte, mehr mit `INV_FROM`/`INV_TO`; jede
+  Rücknahme der Befunde der Durchsicht macht sie rot (Mutationsprobe).
+- **Gutschrift ohne Rechnung** (#251): Ob eine Lieferung Rechnung, Storno oder Gutschrift ohne
+  Rechnung ist, entscheidet **eine** Stelle, `invoiceStatusOf` in fuel.ts (Summe der Positionen > 0,
+  = 0, < 0; Bewertung, Blatt für den Messdienst und Plausibilität fragen `notInvoiceDeliveries`). Eine
+  Lieferung mit negativer Summe belegt keinen Verbrauch (§ 7 Abs. 2 HeizkostenV): keine Tage, keine
+  Verdrängung einer Schätzung, keine Vorlage für einen Vorschlag (`templateFor` nur mit Summe > 0),
+  kein CO₂, im Vorrat ungültig mit Satz. Ihr Geld wird nach Anteil verteilt wie das einer Rechnung;
+  das ist Auslegung am Verbrauchsprinzip (BGH VIII ZR 156/11) und steht so im Hinweis
+  `fuel.credit-only` (bestätigt `fuel.credit-only-confirmed`, Stufe `hint`, über
+  `fuel_deliveries.credit_note_kind = 'standalone'`, Migration 0046/0047; die Angabe steuert nur die
+  Stufe, keine Zahl). `POST /api/fuel-deliveries/:id/reassign-credit` (`reassignCredit`) hängt die
+  Positionen an die Lieferung, die sie berichtigt, in deren Heizperiode; 409, solange eine der
+  beiden abgeschlossen ist. Oberfläche: `client/src/fuelCredit.ts`.
+  **Eingefrorener Teil ≠ heutiger Teil** (R-2): Hat eine abgeschlossene Heizperiode einen anderen Teil
+  einer Rechnung eingefroren als heute auf sie entfiele, bucht die Heizperiode der Positionen nur den
+  heutigen hinaus (`frozenPart` am Übertrag); der Unterschied steht beim Vermieter als
+  `fuelClosedPeriod` (darüber: `fuel.reduced-after-close`, die Mieter jener Abrechnung haben zu viel
+  getragen; darunter: `fuel.closed-period-part`, nachfordern nur dort). Der eingefrorene Übertrag führt
+  dafür `bookedCents`, damit ein späteres Storno das Hereingebuchte gegenbucht. **`estimatesIn`** (R-3)
+  nimmt als ersetzt den Betrag der Schätzung für die Tage, die die Rechnung abdeckt; Tage, die
+  mehrere Rechnungen anderer Heizperioden abdecken, zählen für jede zu ihrem Teil, und zusammen
+  ersetzen sie höchstens den eingefrorenen Betrag (der ist schon um die beim Abschluss abgedeckten
+  Tage gekürzt). Hat die abgeschlossene Heizperiode neben dem Teil einer Lieferung eine Schätzung
+  eingefroren (die Lieferung war damals eine Gutschrift ohne Rechnung), gilt beides zusammen gegen den
+  heutigen Teil (`fuelEstimateDiff`). Einen Schätzvorschlag gibt es nur über 0 €. Die Invariante prüft dazu (c1) Abdeckung ohne Gutschriften, (c2) keinen negativen
+  Vorschlag, (c3) je Mieter gegen die offene andere Heizperiode, und die Gutschrift je Mieter auch neben
+  einer zweiten Rechnung (doppeltes Kontrafaktum); Variante „Gutschrift ohne Rechnung“.
+- **Gesperrt bis zu ihren PRs:** Vorratsenergien (PR 8), Lieferungen je Wohnung (PR 9), Netzentgelte
+  und Biobrennstoff (PR 18), Methode `self` (PR 10); jeder Satz sagt, was bis dahin geht.
+- **Golden F15 und F12** ([server/test/fixtures/heating/](server/test/fixtures/heating/)): F15 ist das
+  Techem-Muster mit Vorwegabzug, F12 eine anonymisierte reale Abrechnung Mai bis April. In F12 sind
+  nur die Gesamtwerte und der eine Nutzer des Belegs echt; die übrigen drei Nutzer sind synthetisch und
+  die kg CO₂ geschätzt, beides steht so in README und `betraege.json`.
+
+**Mehrere Heizanlagen, Etagenheizung und Kesseltausch** (Heizung PR 9, #97): Ein Objekt kann mehrere
+Anlagen haben. Ab zwei braucht jede einen Namen (im Objekt verschieden) und ihre Liste der Wohnungen,
+und keine Wohnung hängt an zweien, außer die Anlagen gehören zu einer Linie von Täuschen (`replaces_plant_id`,
+transitiv: `lineRoot`/`sameLine` in [shared/heatingPeriod.ts](shared/heatingPeriod.ts)); geprüft wird das nach jedem
+Schreiben über alle Anlagen des Objekts (`guardPlantsOfProperty` in
+[server/src/db/heating.ts](server/src/db/heating.ts)), in derselben Transaktion, und beim
+Wiederherstellen mit `heatingPlantViolations`. Das Anlegen nimmt Namen und Wohnungen bisheriger Anlagen
+im Rumpf `adjust` mit, damit nie ein halber Stand entsteht.
+
+- **Gebäude** (`building_with`, Recht I3 der Durchsicht von #238): Eine weitere Anlage neben einer laufenden
+  sagt beim Anlegen, ob sie im selben Gebäude steht (Kennung einer anderen Anlage) oder in einem eigenen
+  (`'own'`); Pflicht, ohne Vorbelegung. Im selben Gebäude stuft die Abrechnung über den Ausstoß aller Anlagen
+  und die Wohnfläche aller versorgten Wohnungen ein (`partnersOf`/`contributionOf` in calc.ts, § 5 Abs. 1
+  Satz 1 und 2 CO2KostAufG, Hinweis `co2.building-joint` als Auslegung); dieselbe Mechanik gilt für die Linie
+  eines Kesseltauschs. Fehlt der Ausstoß einer mitheizenden Anlage, `co2.classification-incomplete`.
+  **Die Fläche** ist bei Anlagen im selben Gebäude die aller Anlagen des Gebäudes: je Linie die eingetragene
+  (9.2) oder die der versorgten Wohnungen, jede Wohnung einmal (`jointAreaOf`); eine eingetragene Fläche einer
+  Anlage allein teilte den Ausstoß des ganzen Gebäudes durch einen Teil seiner Fläche (Nachprüfung, I-A).
+  **Die erste Anlage wird nicht gefragt** (`building_with` NULL), auch nicht beim Ändern; eine beantwortete
+  Frage lässt sich neben einer laufenden Anlage nicht wieder leeren. Ein Kreis der Angaben (`buildingCycle`)
+  wird mit 400 abgelehnt; steht er in einem Archiv, ist die Wurzel die kleinste Kennung im Kreis
+  (`buildingRoot`). Wird die Anlage entfernt, auf die andere zeigen, gehen die Verweise an ihre
+  Nachfolgerin, sonst an das Gebäude, in dem sie stand, sonst wird die erste verweisende der Bezugspunkt;
+  ein Verweis ins Leere im Archiv wird beim Wiederherstellen NULL. Die Auswahl in der Oberfläche zeigt bei
+  einem Verweis auf eine stillgelegte Anlage die laufende ihrer Linie, mit dem gespeicherten Wert.
+- **Eine neue Heizposition ohne Anlage** bekommt mit verknüpfter Lieferung deren Anlage, sonst bei mehreren
+  Anlagen die, an der alle von ihr genannten Wohnungen hängen (Direktzuordnung, Teilnehmer, Einzelbeträge;
+  `plantForNewItem` in repository.ts) und die zu Beginn ihres Leistungszeitraums heizt, sonst keine. Gehört
+  eine Heizposition zu keiner Anlage, obwohl das Objekt welche hat, sagt `co2.fuel-unknown` das an der
+  Position statt „Richten Sie die Heizung ein“.
+- **Position über zwei Anlagen** (`co2.item-spans-plants`, error): Reicht die Verteilbasis einer
+  Heizposition (`itemBasisUnits` in [server/src/co2.ts](server/src/co2.ts)) in eine zweite Anlage,
+  gehört sie zu keinem Topf und mindert keinen Abzug; verteilt wird sie weiter nach ihrem Schlüssel.
+  Alte und neue Anlage eines Kesseltauschs zählen dafür nicht als zwei.
+- **Etagenheizung auf Vertrag des Vermieters** (`supply = 'perUnit'`, § 5 Abs. 1 Satz 2
+  CO2KostAufG): nur mit freien Schlüsseln und ohne Vorratsenergie; jede Heizposition direkt bei einer
+  Wohnung der Anlage, jede Rechnung (`fuel_deliveries.unit_id`) mit dieser Wohnung, eine verknüpfte
+  Rechnung mit derselben. Eine zentrale Anlage nimmt keine Rechnung mit Wohnung, und ob zentral oder
+  je Wohnung, lässt sich nicht mehr umstellen, sobald Positionen oder Rechnungen daran hängen.
+  Eingestuft wird über Σ kg / Σ Fläche der vermieteten Wohnungen mit Rechnung in der Heizperiode (eine
+  eingetragene Fläche geht vor). Der Abzug ist je Mietverhältnis r = ‰ · C_u · x_t / A_u, **ohne**
+  Normierung auf die Mieter der Wohnung: Was in A_u auf Leerstand, Eigennutzung oder Pauschale fällt,
+  bleibt beim Vermieter. C_u über A_u → `co2.exceeds-heating` für diese Wohnung, sie bekommt keinen
+  Abzug, die übrigen schon. Die Rechnung steht in `perUnitClassification`, `perUnitReliefs`,
+  `perUnitExceeding`; calc.ts setzt sie über `perUnitFuelOf` aus den Zeilen der Abgrenzung (PR 7) ein.
+- **Kesseltausch** (`POST /api/heating-plants/:id/replace`, `replaceHeatingPlant`, Migration 0026):
+  Die alte Anlage bekommt `ends_on` (letzter Betriebstag), die neue `replaces_plant_id`, Namen und
+  dieselben Wohnungen; Rhythmus und Gebäudemerkmale übernimmt sie. Ohne Fremdschlüssel, weil drizzle-kit
+  beim Hinzufügen einer Spalte kein `ON DELETE` schreibt. Lieferungen müssen in die Betriebszeit ihrer
+  Anlage fallen (`plantSpanOf`, db/fuel.ts); die Abgrenzung (PR 7) rechnet eine Anlage nur über ihre
+  Betriebstage, die Bestandsrechnung (PR 8) endet am letzten Betriebstag, und der Endbestand dort ist
+  der **Restbestand**: den Mietern gutgeschrieben, beim Vermieter als eigene Zeile `stockRemaining`,
+  Hinweis `fuel.stock-remaining` mit § 7 Abs. 2 HeizkostenV (im selbstbewohnten Zweifamilienhaus § 2
+  Nr. 4a BetrKV). Die Steuerübersicht ändert sich nicht, die Rechnungen bleiben voll. Teilen alte und
+  neue Anlage eine Heizperiode, wird das Gebäude über den Ausstoß beider eingestuft (§ 5 Abs. 1 Satz 1
+  CO2KostAufG: „des Gebäudes … und Jahr“, `successionOf` in calc.ts, Hinweis `co2.plant-replaced`).
+  Gleicher Vorratsbrennstoff: Der Tausch fragt „Verheizt der neue Kessel den Brennstoff im Tank weiter?“
+  (`takes_over_stock`, Vorbelegung ja, änderbar, solange weder die letzte Heizperiode der alten noch die
+  erste der neuen abgeschlossen ist). Mit Ja beginnt die Kette der neuen Anlage mit der der alten
+  (`stockChainsOf` mit `plants`), der Restbestand ist ihr Anfangsbestand, ein eigener wird mit einem Satz
+  über die alte Anlage abgelehnt. Mit Nein bleibt der Restbestand wie bei anderem Brennstoff beim
+  Vermieter. Zurück von Nein auf Ja fragt die Oberfläche vorher, denn der eigene Anfangsbestand der neuen Anlage entfällt dann. Übernimmt sie den Restbestand im selben Zeitraum nicht, nennt `fuel.stock-not-taken-over` den Restbestand der alten Anlage zum letzten Betriebstag. In beiden Fällen kommt der Schlüssel der Überträge auch von den Positionen der Vorgängerin
+  (`sameFuelLine`, `stockTemplateOfLine`; sonst ging der Anfangsbestand ohne eigene Position der neuen
+  Anlage im Tauschjahr mit 0 € weiter, Nachprüfung K1). Eine stillgelegte Anlage rechnet in einem späteren Zeitraum mit, wenn
+  eine Position dort mit ihrer Lieferung verknüpft ist (die Gasrechnung bis zum Tausch, im Folgejahr
+  gebucht): Sie wird in den Zeitraum der Lieferung abgegrenzt, sonst trügen die Mieter sie zweimal. Gleicher Brennstoff über einen Zähler (Gas, Fernwärme,
+  Strom): 409, kein Tausch nötig. Das Entfernen der neuen Anlage macht den Tausch rückgängig, das der alten
+  nimmt der Nachfolgerin den Verweis, das aus der Mitte einer Linie lässt die nächste den Zeitraum
+  übernehmen (Hinweis in Rückfrage und Antwort, `notice`); ein verwaister Verweis im Archiv wird beim Wiederherstellen
+  geradegerückt (`straightenHeatingPlants`). Vorrat und Lieferungen nur in der Betriebszeit. Gesperrt
+  bleiben der Tausch einer Etagenheizung, bei getrennter Heizkostenabrechnung (Weg d), mitten in einer
+  abgeschlossenen Heizperiode (zum Ersten nach dem Abschluss geht er), vor einer abgeschlossenen späteren
+  und mit Angaben der alten Anlage für die Zeit danach.
+- **Etagenheizung, Grundlage der Umlage:** Die HeizkostenV gilt nicht (§ 1 Abs. 1), § 2 Nr. 4 Buchstabe d
+  BetrKV nennt nur Reinigung und Wartung. Eine belegte Grundlage für die Umlage der Gaskosten bei Vertrag des
+  Vermieters hat die Durchsicht nicht gefunden; Hinweis `heating.per-unit-basis` und Lexikon „Etagenheizung“
+  sagen „nicht geklärt“ und verweisen auf § 556 Abs. 1 Satz 1 BGB. Fernwärme ist keine Etagenheizung. `fuel-invariant.test.ts` und `fuel-stock-invariant.test.ts`
+  rechnen je eine Variante mit zwei Anlagen und prüfen, dass jede Lieferung nur bei ihrer Anlage steht.
+
+**Eigene Heizkostenabrechnung** (Heizung PR 10, #99): Bei `method = 'self'` verteilt Mietfuchs nach
+der Heizkostenverordnung. Die reine Rechnung steht in [server/src/heating.ts](server/src/heating.ts):
+Nutzer je Wohnung (Mietverhältnisse, Leerstand, Eigennutzung, außerhalb), die Ablesung je Grenze (die
+beim Mieterwechsel erfasste fest, `readings.interim_for`; sonst die nächste in der Zelle über H−1, H und
+H+1; zwei Werte am selben Tag sind ein Befund; der eingefrorene Endstand der Vorperiode ist der
+Anfangsstand; ohne Rückrechnung, Entwurf 3.5),
+§ 9b Abs. 3 als Gruppe über die Grenzen ohne Ablesung, Bruchteile je Topf und daraus **ein Gewicht je
+Nutzer und Ziel** (`weightsOf`). calc.ts verteilt jede Position mit `key = 'heatingSystem'` mit diesen
+Gewichten durch `distributeCents` (#202), wie jede andere Position; Leerstand und Eigennutzung gehen
+über `landlordRecipients`.
+
+- **Teil und Ziel** stehen an der Position (`heatingPart`, `heatingTarget`); bei verbundener
+  Warmwasserbereitung teilt der Warmwasseranteil α (`hotWaterShareOf`, seit PR 11 über dhw.ts, siehe
+  unten) die Ziele „beides“. Der Anteil nach Verbrauch gilt aus der Heizperiode oder der vorigen
+  (`consumptionSharesOf`, § 6 Abs. 4); § 7 Abs. 1 Satz 2 ist `hkv.consumption-share-forced`.
+- **Umgestellt wird nur über die Einrichtung** (`PUT /api/heating-plants/:id/self`,
+  [server/src/db/heatingSelf.ts](server/src/db/heatingSelf.ts)): Anlage, Anteil, Zähler und die
+  Positionen offener Zeiträume in einer Transaktion; fehlen Teil und Ziel, antwortet sie 409 mit der
+  Liste. Zurück auf „Niemand“ verlangt `convertItems: 'area'`.
+- **Nicht verteilbar** (fehlender Stand, fehlender Zähler, kein Anteil, α unbestimmbar) heißt Fehler an
+  der Anlage und alle Positionen beim Vermieter; geraten wird nie. Die Hinweise zu Ablesung und
+  Zwischenablesung rechnen nach dem CO₂-Block, weil ihre Kürzungsbeträge auf den gedruckten Zeilen
+  stehen; fehlende Zwischenablesungen beantwortet der Vermieter in `interim_reading_gaps`.
+- **Wärmepumpe**: Ob die Verordnung gilt, entscheidet `heatPumpVerdict` aus dem Datum der Erfassung
+  oder des Einbaus (§ 12 Abs. 3, `hkv.heat-pump.capture`).
+- **„Nur Heizung“ bei freien Schlüsseln** nimmt beim Mieterwechsel die Gradtage statt der Tage
+  (Fläche, Einheiten, vereinbarte Anteile, Direktzuordnung); eine kombinierte Position bleibt nach
+  Tagen, deshalb ändert sich für Bestandsnutzer keine Zahl.
+- **Golden F16, F17** in `server/test/fixtures/heating/` rechnen Beispiel A und das Heizöl mit Vorrat von
+  Hand nach; Heizkostenverteiler und Werte eines Ablesedienstes kamen mit PR 12, die Angaben nach § 6a mit PR 14.
+- **Invarianten**: fuel-invariant.test.ts und fuel-stock-invariant.test.ts haben Läufe mit eigener
+  Abrechnung, fuel-invariant auch mit verbundenem und getrenntem Warmwasser; dazu prüfen sie, dass die
+  Gewichte jeden Topf ganz verteilen, jede Lieferung über alle Heizperioden genau einmal in den Zeilen
+  steht und der Topf Warmwasser den Warmwasseranteil α trägt (s3). Der Vorratsübertrag nimmt bei `self` nur eine
+  Brennstoffposition nach Heizkostenverordnung als Vorlage (`stockKeysOf` in fuelStock.ts).
+- **Zeiträume und Linie** (Durchsicht von #239 und ihre Nachprüfung): Wann die eigene Abrechnung gilt,
+  steht in der Tabelle `heating_self_spans` (von, bis ausschließlich; `until` NULL beim laufenden), wie die
+  Spannen nach Weg d. Die Einrichtung öffnet einen Zeitraum (nie vor einem laufenden und nie vor oder in einer
+  abgeschlossenen Heizperiode; unmittelbar am Ende eines früheren geht dieser weiter). Das Zurückschalten
+  schließt ihn mit der ersten offenen Heizperiode, wenn abgeschlossene nach ihm gerechnet wurden, sonst
+  entfällt er, und es leert die Anteile offener Heizperioden; abgeschlossene rechnen weiter nach der
+  Verordnung, wie sie zugestellt wurden. Liegt eine abgeschlossene Heizperiode hinter einer offenen, lehnt
+  es mit 409 ab. Der Kesseltausch erbt den laufenden Zeitraum. Abgeleitet aus den Anteilszeilen wird nichts.
+  Gerechnet wird je Heizperiode (`selfActive` in heating.ts, `selfAt` und `withSelfBegin` in snapshot.ts,
+  auch in der Teilabrechnung von calc.ts, der Wächter in repository.ts, `selfItemsOf` mit `from`), denn § 6 Abs. 4
+lässt die Wahl nur für künftige Zeiträume zu. Der Anteil gehört zur **Linie** der Anlage
+  (`lineShareRows`, [server/src/db/selfLine.ts](server/src/db/selfLine.ts)): Nach einem Kesseltausch gilt er
+  weiter, und in derselben Heizperiode lehnt `saveDistribution` einen anderen ab. Den Pflichtanteil nach
+  § 7 Abs. 1 Satz 2 nachzutragen ist keine Wahl und geht auch in einer begonnenen Heizperiode. Läuft eine
+  Anlage nur einen Teil der Heizperiode, wird die Wärme am Speicher an ihrer Laufzeit abgegrenzt; dafür
+  braucht es den Stand am Tauschtag (der Tausch nimmt `meterReadings` an), sonst `heating.self-incomplete`.
+  Der eingefrorene Endstand kommt auch aus der Heizkostenabrechnung nach Weg d. Die Angaben nach § 6a
+  stehen seit PR 14 unter „Pflichtangaben und Ausnahmen“ (`heating.info-incomplete` statt
+  `heating.self-6a-missing`).
+- **Migrationen 0027/0028**: Spalten an `heating_plants` (`hot_water`, `capture`, `area_basis_heat`,
+  `heat_pump_installed_on`), `cost_items.heating_target`, `readings.interim_for` und die Tabellen
+  `interim_reading_gaps` und `heating_self_spans`; die Bedingungen im zweiten Schritt.
+- **Warmwasseranteil α** (Heizung PR 11, #211, [server/src/dhw.ts](server/src/dhw.ts)): eine Stelle
+  für alle drei Verfahren des § 9 Abs. 2 HeizkostenV, als reine Funktionen; `hotWaterShareOf` bleibt der
+  eine Aufruf in calc.ts. Die Faktoren 1,11, 1,15 und 0,30 gelten **nur für Formelwerte**, nie für
+  gemessene Wärme (Entwurf G-B1 abgelehnt, 15.1 Nr. 9; das Lexikon nennt beide Lesarten, ⟨Norm offen:
+  VDI 2077⟩). Wogegen Q gestellt wird, hängt am Erzeuger: Brennstoff in kWh laut Rechnung (die kWh der
+  Heizperiode aus der Bewertung der Lieferungen, wie in PR 10), sonst als Menge mit B = Q / Hᵢ (§ 9
+  Abs. 3), Fernwärme die gelieferte Wärme, die Wärmepumpe mit Formel den Strom, gemessen bei Wärmepumpe
+  und Mischanlage die gemessene Gesamtwärme. Der **Heizwert laut Rechnung** geht vor; die Tabelle nur
+  hilfsweise, nur bei Heizkesseln und nur mit der Zeile, die der Vermieter an der Lieferung wählt
+  (`fuel_grade`, Zeilen in [shared/fuelGrades.ts](shared/fuelGrades.ts)); mehrere Heizwerte
+  mengengewichtet, beim Vorrat ohne Lieferung in der Heizperiode der der jüngsten früheren.
+  **Holzhackschnitzel**: Die Verordnung vom 24.11.2021 hat § 9 Abs. 3 Satz 1 und Satz 2 Nr. 2 neu
+  gefasst (BGBl. 2021 I S. 4966), und mit der alten Nummer ist die Angabe 650 kWh/SRm entfallen; seit
+  01.12.2021 gelten 4 kWh/kg und B nur in Litern, Kubikmetern oder Kilogramm. gesetze-im-internet.de
+  druckt die alte Tabelle hinter Satz 5 noch ab; das ist ein Versehen der Konsolidierung. Eine Formel
+  verlangt die Antwort, ob die Anlage die Wärme **allein** erzeugt (`heat_generation`); ohne sie und bei
+  mehreren Erzeugern rechnet sie nicht (Satz 6 Nr. 3 „monovalent“, Satz 5). Die Flächenformel liefert kWh
+  „pro Jahr“ und wird im Rumpf und bei einem Kesseltausch nach Tagen gekürzt (Festlegung F7, § 9b
+  Abs. 2); das Volumen nimmt Mietfuchs beim Tausch nur aus der Zeile der Anlage selbst. Was fehlt, ergibt
+  `heating.dhw-share-invalid` mit dem Satz, was fehlt. Der Ausweis führt α als `self.alpha`, den
+  Rechenweg als `self.dhw`. Die **Stromheizung** rechnet gemessen gegen den Strom laut Rechnung wie in
+  PR 10, nur die Formeln sind dort gesperrt: Eine Anlage, die vorher abrechenbar war, sperrt eine spätere
+  PR nicht. Die **Wärmepumpe vor dem 01.10.2024** fiel nach § 11 Abs. 1 Nr. 3 Buchst. a a. F. nicht unter
+  die Verordnung (`hkv.exemption.renewable`, zwei Fassungen), wenn sie überwiegend versorgte: Die Anlage
+  fragt das (`heat_pump_majority`, unabhängig vom Erzeuger nach § 9); „ja“ und ohne Antwort Hinweis statt
+  Fehler, keine Kürzungsbeträge, ohne α gehen Heizung und Warmwasser gemeinsam in den Topf Heizung; „nein“
+  rechnet nach der Verordnung. Erzeuger- und Überwiegend-Frage stehen an der Anlage (Karte „Heizung“),
+  nicht in der Warmwasser-Karte. Nach einem Kesseltausch mit übernommenem Vorrat zählen für den Heizwert die
+  Lieferungen der Vorgängerin gleicher Energie mit. Brennwert/Heizwert, Heizwert und Tabellenzeile bleiben
+  an eingefrorenen Lieferungen änderbar (`unfrozenAside` in db/fuel.ts); α abgeschlossener Abrechnungen ist
+  eingefroren. Die Kürzung um
+  15 % bei einer Formel ohne bestätigten Aufwand (`heating.dhw-not-metered`) gilt auch bei `self`. Tests
+  der eigenen Abrechnung bauen Beispiel A mit `selfSnapshot()`
+  ([server/testing/selfHeating.ts](server/testing/selfHeating.ts)); ein Test hält den Helfer gleich mit
+  dem Weg über die Datenbank. Die Invarianten prüfen Q, Faktor und α gegen die Eingaben (fuel-invariant
+  (s4), fuel-stock-invariant (w) mit Heizöl und Heizwert). Migrationen 0029/0030 (`fuel_grade`,
+  `heat_generation`, `heat_pump_majority`).
+- **Heizkostenverteiler und Ablesedienst** (Heizung PR 12, #99, [server/src/hca.ts](server/src/hca.ts)):
+  § 5 Abs. 1 Satz 1 HeizkostenV lässt Wärmezähler und Heizkostenverteiler gleichrangig zu, und Mietfuchs
+  bringt alle drei Erfassungen in **das Grenzmodell von PR 10**: Ein Heizkostenverteiler ist ein Zähler
+  vom Typ `hkv` mit einem Faktor am Zähler (`SelfMeter.factor`, `meterFactor`), `planSelf` wählt den
+  Gerätetyp nach der Erfassung, und die Werte eines Ablesedienstes sind je Wohnung ein gedachter Zähler
+  mit kumulierten Ständen (`serviceMeters`; 0 am Tag vor der ersten Zeile, ohne Stand am Beginn einer
+  Zeile nach einer Lücke, sonst zählte die Lücke still als 0; ein eingefrorener Endstand der Vorperiode
+  gilt für diese Zähler nicht, denn ihre Zeilen gehören zu genau einer Heizperiode). Zwischenablesung,
+  Gradtage, Leerstand und „keine Interpolation“ bleiben damit an einer Stelle, und ein Test hält fest,
+  dass dieselben bewerteten Einheiten dieselben Beträge ergeben, gleich woher sie kommen. Die Einheit des
+  Topfs Heizung heißt dann „Einheiten“. Bei der **Einheitsskala** zählt der Ablesewert mal dem
+  Bewertungsfaktor, bei der **Produktskala** wie abgelesen (ein eingetragener Faktor wirkt dann nicht);
+  ohne Skala oder Faktor `heating.hca-factor-missing` und keine Verteilung. Der **Stichtagswert** ist
+  kein eigenes Feld, sondern eine Ablesung mit `replacement` und Wert 0; eine Rücksetzung mitten in der
+  Heizperiode ergibt `heating.device-cutoff`. Ein Gerät mit anderem Faktor ist ein neuer Zähler; Skala und
+  Faktor eines Geräts, dessen Ablesungen in einer abgeschlossenen Heizperiode mit Heizkostenverteilern
+  zählen, sind gesperrt (409), ebenso das Löschen; geprüft wird nach Überdeckung, nicht nach Ablesedatum.
+  **Gezählt wird ein Gerät nur in Heizperioden, die seine Ablesungen überdecken** (`coversPeriod`: erste vor
+  dem Ende, letzte nach dem Tag vor dem Beginn); ein ausgebautes Gerät mit letzter Ablesung am Stichtag
+  muss deshalb nicht gelöscht werden. **Gemischt** ist eine Wohnung, an der in der Heizperiode ein Gerät der
+  anderen Art zählt und kein Gerät der eingestellten Art sie **ganz** abdeckt (`spansPeriod`: erste Ablesung am
+  Tag vor dem Beginn oder früher, letzte am Ende oder später); ein Heizkostenverteiler neben dem Wärmezähler
+  derselben Wohnung ändert also nichts, ein Wechsel mitten in der Heizperiode dagegen schon (`switched`, der
+  Satz nennt Zwischenstand bzw. Schätzung nach § 9a, mit der die Wohnung seit PR 13 nicht mehr gemischt ist, und die Meldung zum fehlenden Stand
+  nennt das andere Gerät). Sonst fiele der Verbrauch des alten Geräts still weg, nachgemessen 1.349,39 € statt
+  1.794,28 €. Das verlangt nach § 5 Abs. 7 eine Vorerfassung, die Mietfuchs nicht rechnet (#218):
+  `heating.mixed-capture`, keine Verteilung; Warmwasserzähler und Zähler der Anlage zählen nicht. Beim
+  Ablesedienst nennt jede Zeile, ob die Heizung in Einheiten oder kWh steht (`heat_unit`); gemischt ist
+  dort, wo beides vorkommt.
+  **Verdunster** wertet Mietfuchs nicht aus; ihre Werte kommen wie alle eines Ablesedienstes über
+  `heating_service_values` (je Wohnung und Nutzungszeitraum, Warmwasser für alle Zeilen oder keine,
+  Lücken bleiben Lücken, die Zeilen einer Heizperiode werden als Ganzes ersetzt; `dropIfEmpty` lässt eine
+  Heizperiode mit solchen Werten stehen). Gelesen werden sie **über die Linie** (`lineServiceRows`, eigene
+  Zeilen vor denen der Vorgängerin): Nach einem Kesseltausch liest die neue Anlage dieselben Werte, und eine
+  Heizperiode der alten Anlage, an der nur solche Werte hängen, sperrt den Tausch nicht. Skala und Faktor gibt es nur am Zähler vom Typ `hkv`
+  (Prüfbedingung). Der Ausweis je Gerät (`self.devices`) entsteht aus den Differenzen des Plans
+  (`SelfUnitPlan.measured`, je Nutzer bzw. Gruppe nach § 9b Abs. 3), nicht aus einer zweiten Lesart der
+  Ablesungen; gedruckt bekommt jeder Mieter nur seine Geräte in seinem Zeitraum und nur die Zeilen des
+  Ablesedienstes, die in seinen Zeitraum fallen. Das Ableseergebnis nennt am Stichtag den Stichtagswert
+  (`SelfReadingView.oldEndValue`), nicht die 0. Dass die Abrechnung den Faktor nennt, ist Praxis der
+  Messdienste (Berliner Mieterverein), keine Norm; so steht es in Lexikon und Sätzen. **Erfassung und Warmwasserbereitung gehören zum Zeitraum der eigenen Abrechnung**
+  (`heating_self_spans.capture`, `.hot_water`, `captureOf` und `hotWaterOf` in shared/heatingPeriod.ts, weil die
+  Seiten Kosten und Heizkosten dieselbe Frage stellen; beide ändern sich
+  über `PUT` bei eigener Abrechnung nicht, sondern nur mit der Einrichtung ab einer Heizperiode): Eine andere Erfassung beginnt mit der Einrichtung ab einer Heizperiode einen neuen
+  Zeitraum, frühere Heizperioden rechnen weiter nach ihren Geräten. Ab einer schon begonnenen Heizperiode gilt
+  die neue Einstellung ab deren Beginn: Geräte und Warmwasserbereitung sind Tatsachen der Anlage, keine Maßstäbe
+  nach § 6 Abs. 4; geschützt bleibt der Anteil nach Verbrauch (`checkShares`, beim Warmwasser nur, wo es vorher
+  und nachher einen gibt). Eine offene Heizperiode eines früheren Zeitraums rechnet weiter selbst ab; Verteilung
+  und Ansicht fragen dafür `selfActive`, nicht den Beginn des laufenden Zeitraums. Ein Zeitraum von vor PR 12 bekommt beim
+  nächsten Schreiben die bisherige Erfassung der Anlage (`pinSelfSpans`); über `PUT /api/heating-plants/:id`
+  ändert sie sich bei eigener Abrechnung nicht. Die Einrichtung legt bei Heizkostenverteilern und
+  Ablesedienst keine Wärmezähler an. Die Invariante fuel-invariant hat drei Varianten mit
+  Heizkostenverteilern bzw. Ablesedienst samt Mieterwechsel und Leerstand ((s5): Verbrauch je Wohnung =
+  Σ Differenz × Faktor bzw. Σ der Werte). Weitere Varianten: Heizkostenverteiler und
+  Ablesedienst mit Kesseltausch, Heizkostenverteiler mit Ablesungen bis zehn Tage neben dem Stichtag; (s5) wird je
+  Variante gezählt. Migrationen 0031/0032 (`hca_scale`, `rating_factor`, `hca_model`, `heating_self_spans.capture`
+  und `.hot_water`, `heating_service_values` mit `heat_unit`).
+- **Schätzung nach § 9a** (Heizung PR 13, #99, [server/src/db/heatingEstimates.ts](server/src/db/heatingEstimates.ts)):
+  Tabelle `heating_estimates` (Heizperiode, Wohnung, Topf `heat`/`water`, Wert, Weg, Grund aus der Auswahl,
+  Begründung Pflicht, Bestätigung, **Erfassung und Einheit beim Speichern**; Migration 0033). Passen Erfassung
+  oder Einheit nicht mehr zur Heizperiode (`estimateFits` in hca.ts; beim Warmwasser zählt nur eigene Zähler oder
+  Ablesedienst), rechnet die Schätzung nicht: Ohne verwertbare Ablesung gilt die Wohnung als nicht erfasst
+  (`heating.estimate-stale`, Stufe `error`), neben vollständiger Ablesung gilt die Ablesung
+  (`heating.estimate-stale-unused`, Warnung, Runde 2 N-I1); die Karte zeigt eine veraltete Schätzung immer
+  sichtbar mit „Entfernen“ und „Schätzung neu eintragen“. `setUpSelf` nennt solche Schätzungen in
+  `estimatesNotice` (Durchsicht von #242, G-I1). Beim Ablesedienst ohne Werte wählt der Vermieter die Einheit
+  der Schätzung (Einheiten oder kWh), mit Werten gilt deren Einheit (N-M3). Eine Schätzung gilt für die ganze Heizperiode der Wohnung in der Einheit der
+  Erfassung (beim Heizkostenverteiler bewertete Einheiten, ohne Faktor) und tritt in `planSelf` **nur an die
+  Stelle des nicht erfassten Verbrauchs**: Ein Nutzer mit gültigen Ablesungen, etwa der
+  Vormieter bis zur Zwischenablesung, behält seinen Messwert, denn § 9a Abs. 1 Satz 1 erfasst nur den Verbrauch
+  von Nutzern, der nicht ordnungsgemäß erfasst werden kann (Durchsicht von #242, R-I4); die übrigen tragen
+  zusammen ihren Anteil nach Gradtagen bzw. Tagen und teilen ihn wie nach § 9b Abs. 3 (Festlegung). Ohne
+  behaltenen Wert ersetzt die Schätzung auch abgelesene Zeiten desselben Nutzers; Hinweis, Karte und Druck sagen
+  das nur, wenn wirklich ein gemessenes Teilstück ersetzt wird (zwei Stände desselben Geräts im Zeitraum des
+  Nutzers, `replacesMeasured`; G-M6, Runde 2 N-I2). Sind alle Ablesungen vollständig, ersetzt die Schätzung alles (Markierung „unbrauchbar“):
+  `heating.estimate-complete` ist dann ein Hinweis, der nicht färbt, unbestätigt eine Warnung
+  (`heating.estimate-unconfirmed`, R-I7); deckt die Schätzung zwei Stände am selben Tag, warnt
+  `heating.estimate-same-day` (G-M7). Weitere Hinweise: `heating.estimate-no-device` (Gerät danach gelöscht,
+  die Schätzung zählt weiter), `heating.estimate-below-measured` (Schätzung unter dem abgelesenen Teil des
+  Vormieters). Nach einem Kesseltausch steht jeder Hinweis einmal je Linie und Schätzung (zwei Schätzungen derselben
+  Wohnung an beiden Anlagen haben je ihre Hinweise, N-M2); abgeschlossen wird weiter je Anlage. Mit Schätzung sind ein fehlender Stand, ein Zählerwechsel ohne Endstand, negativer
+  Verbrauch und zwei Stände am selben Tag gedeckt; die Geräte einer geschätzten Wohnung lösen keine Hinweise zu
+  fehlenden Zwischenablesungen aus (`liveMetersOf`), stehen aber weiter im Ausweis. Begrenzt eine Ablesung ihres
+  Geräts einen behaltenen Messwert, fragt Mietfuchs bei einer fernen Zwischenablesung wie ohne Schätzung
+  („Ablesung verwenden“ / „Nach § 9b Abs. 3“, `usableAt` in heating.ts, G-I2). Überschreitet die geschätzte Fläche
+  eines Topfs die Grenze `hkv.estimate-threshold` (streng größer, über Produkte verglichen, je Topf, Heizung mit
+  der Fläche nach § 7 Abs. 1 Satz 5; die Fläche einer Wohnung zählt ganz, auch wenn nur ein Teil ihrer
+  Heizperiode geschätzt ist; beides ist eine **Auslegung von Mietfuchs** und steht so in Hinweis, Dialog, Lexikon
+  und Regel), geht der Topf nur nach Fläche, ohne Kürzungsbetrag und ohne `heating.no-consumption` (Auslegung,
+  Entwurf 15.1 Nr. 7; für eine Abrechnung nach § 9a Abs. 1 hat der BGH die Kürzung verneint, VIII ZR 373/04
+  Leitsatz c). Gelesen werden Schätzungen **über die Linie** wie die Werte eines Ablesedienstes (die eigene geht vor);
+  eine Wohnung mit Gerätewechsel mitten in der Heizperiode ist mit Schätzung nicht mehr gemischt
+  (`withoutEstimatedSwitches`). Eine Wohnung mit Schätzung oder Werten eines Ablesedienstes wechselt nicht das
+  Objekt (`guardUnit`, G-I3). Keine Schätzung für eine Wohnung ohne Gerät (Ausstattungspflicht, 400; beim
+  Ablesedienst prüft Mietfuchs keine Geräte) und nie wegen verschiedener Ablesetage; abgeschlossene
+  Heizperioden sind gesperrt (409), `dropIfEmpty` lässt eine Heizperiode mit Schätzung stehen. Die Vorschläge
+  (`estimateProposals`: Durchschnitt der übrigen erfassten Wohnungen je m², vergleichbare Wohnung je m²,
+  Vorperiode) rechnen die Vorperiode neu, nur bei gleich vielen Monaten und gleicher Erfassung, mit eigenem
+  Protokoll der Rechtswerte. Die Grenze steht nur mit einer Schätzung im Rechtsstand. Seite Heizkosten: Karte
+  „Schätzung (§ 9a)“ ([EstimateCard.tsx](client/src/components/EstimateCard.tsx), Logik in
+  [client/src/estimateForm.ts](client/src/estimateForm.ts)) mit dem tatsächlichen Flächenanteil vor dem
+  Speichern. Die Invariante fuel-invariant hat zwei Varianten „Gerät ausgefallen“ mit vier Wohnungen (30, 20, 25
+  und 25 % der Fläche) und Mieterwechsel ((s6): Grenze, Verteilung nur nach Fläche, Wert der Schätzung, der
+  Vormieter behält seinen Wert); die Mutationsproben stehen im PR.
+- **Pflichtangaben und Ausnahmen** (Heizung PR 14, #99, [server/src/heatingInfo.ts](server/src/heatingInfo.ts),
+  [server/src/db/heatingInfo.ts](server/src/db/heatingInfo.ts)): **Ausnahme nach § 11, Vereinbarung nach § 2, die
+  Bestätigung zur monatlichen Information und die Antwort zum Verbrauchervertrag stehen je Heizperiode** in
+  `heating_periods` und gelten ab ihr für die folgenden der Linie, bis eine spätere etwas anderes sagt
+  (`heatingRulesOf`; in derselben Heizperiode geht die eigene Anlage vor, `null` heißt geerbt). An der Anlage
+  stünden sie zeitlos und wirkten rückwirkend auf offene und abgeschlossene Heizperioden; das war die
+  Fehlerklasse der Durchsichten von #239, #241 und #242. In computeSettlement gilt eine Ausnahme je Topf
+  (`exemptionScopeOf`, `exemptPot`; ohne Antwort zum Umfang nur die Wärme, ohne zentrales Warmwasser die ganze Anlage): für den ausgenommenen Topf keine
+  Kürzung nach § 12 (`noCutFor`, an jeder Stelle mit § 12 Abs. 1 Satz 1, bei der Fernablesbarkeit zählen ganz
+  ausgenommene Anlagen nicht mit); sind Wärme und Warmwasser ausgenommen, keine Angaben nach § 6a und keine
+  CO₂-Aufteilung ohne vereinbarte Abrechnung (`co2OffByExemption`, § 2 Abs. 7 CO2KostAufG). Ist nur die Wärme
+  ausgenommen, teilt Mietfuchs die CO₂-Kosten weiter auf (nach BT-Drs. 20/3172, S. 28 betrifft § 2 Abs. 7 Räume, „in
+  denen keine Heizkostenabrechnung durchgeführt wird“; das Warmwasser wird abgerechnet), und **jede Kürzung
+  beziffert es dann nur auf den Anteil Warmwasser** (`waterBaseOf`: Kosten des Topfs mal Gewicht, abzüglich des
+  CO₂-Abzugs im Topf; bei freien Schlüsseln die Positionen mit Ziel Warmwasser, eine Position für beides ohne
+  Betrag), ebenso bei der Fernablesbarkeit und der monatlichen Information nur die Warmwassergeräte (Durchsicht
+  von #243). Beim Warmwasser ohne Wärmezähler ist das als Auslegung gekennzeichnet, und der Betrag auf Wärme und
+  Warmwasser insgesamt (wie BGH VIII ZR 151/20) steht als Obergrenze dabei. Hat der Messdienst unter voller Ausnahme trotzdem CO₂ abgezogen, bleibt der Abzug zerlegt (der Teil
+  der eigenen Wohnung ist privat) und `co2.exempt-deducted` sagt es. Eine Vereinbarung nach
+  § 2 (`agreedFor`) wirkt nur, solange das Haus im Zeitraum die Voraussetzung erfüllt (`heatingAgreeable`), und
+  hebt nur die Kürzung nach § 12 Abs. 1 Satz 1 auf. „Nach Wohnfläche“ verteilt die eigene Abrechnung ganz nach
+  der Fläche (`agreedArea`, Anteil 0, ohne die Grenzen der §§ 7, 8, 10; fehlende Ablesungen und Warmwasseranteil
+  sperren dann nicht); „feste Anteile“ kann sie nicht (400 beim
+  Speichern, sonst `heating.self-incomplete`). Der Umfang der Angaben folgt dem, was Mietfuchs tatsächlich
+  rechnet, nicht der Vereinbarung. Eine Änderung von Umfang oder vereinbarter Abrechnung unter geerbter Ausnahme
+  schreibt die Ausnahme in die eigene Zeile; ohne geltende Ausnahme 400. `dryRun` beim Speichern nennt die
+  späteren abgeschlossenen Heizperioden, an denen eine Angabe vorbei auf eine offene wirkt; die Karte fragt nach.
+  Etagenheizungen haben keine dieser Angaben (§ 1 Abs. 1). Mehr als 70 % nur mit `above_70_agreed` (§ 10), mit
+  dem Anteil geerbt, auch über dem Pflichtanteil des § 7 Abs. 1 Satz 2 (Auslegung), nie über 100 %.
+  **Die Angaben nach § 6a** rechnet `heatingInfoOf` je Linie und Heizperiode (`Settlement.heating[].info` an der
+  Anlage, die am Ende der Heizperiode heizt, mit `tenancyIds`, damit nur deren Mieter den Block gedruckt
+  bekommen): Abs. 3 oder Abs. 5 entscheiden die Schlüssel der Positionen, auch bei freien Schlüsseln. **Nr. 4 ist
+  nie ein Hausdurchschnitt**: Die Begründung schließt den Vergleich mit den Nutzern desselben Gebäudes aus
+  (BR-Drs. 643/21, S. 19, 21); der Vermieter trägt einen Vergleichswert in kWh je m² mit Pflichtquelle ein,
+  umgerechnet auf Wohnfläche und Tage des Mieters (Festlegung). Nr. 5: Wärme mal Klimafaktor, Warmwasser
+  unbereinigt, der Vorjahreswert aus der neu gerechneten Vorperiode (`prev`); die Klimafaktoren trägt der
+  Vermieter mit Quelle ein, denn die des DWD (je Postleitzahl, gleitende zwölf Monate, monatlich neu) bettet
+  Mietfuchs nicht ein. Wohnte ein Mieter im Vorjahr noch nicht dort, „bis zu 3 %“ (Auslegung, `heating.info-open`);
+  wohnte er dort, aber Mietfuchs kennt seinen Vorjahresverbrauch nicht, fehlt Nr. 5 sicher. **Was fehlt, steht je
+  Mieter** (`users[].missing`, die Angaben zur Anlage in `missingCommon`): Kürzen darf der Nutzer, dem die
+  Information fehlt. Wo Mietfuchs Nr. 4 nicht rechnen kann (Heizkostenverteiler, Werte des Ablesedienstes,
+  Warmwasser allein) oder bei freien Schlüsseln Nr. 4 und 5, bestätigt der Vermieter den beigelegten Vergleich
+  des Ablesedienstes mit Quelle (`info_comparison_source`); ohne Bestätigung ist es offen, nicht fehlend. Ist
+  der Verbrauch eines Mieters nach § 9a geschätzt, gelten für ihn nur die Mindestangaben nach Abs. 5 (Nr. 2 und 3;
+  BR-Drs. 643/21, S. 19 und 22; je Mieter ist Auslegung). Bei Werten des Ablesedienstes deckt die Bestätigung
+  auch Nr. 5 (`attachedCoversPrev`). Ohne Position mit dem Teil Erfassung druckt Nr. 1 c keine Zahl (`meteringCents`
+  `null`, offen). Jede sicher fehlende Angabe ergibt `heating.info-incomplete` mit 3 % für die betroffenen Mieter
+  (ein Kürzungsrecht nach Satz 3, auch mit der monatlichen Information: deren Hinweis nennt die Beträge nicht
+  ein zweites Mal; BR-Drs. 643/21, S. 24 f.), nur für Zeiträume ab dem 01.12.2021 (`hkv.settlement-info`). `heating.monthly-info` nur, wenn ein Gerät, das in der
+  Heizperiode in Betrieb ist (Ablesungen überdecken sie, `coversPeriod`, oder es hat noch keine), als fernablesbar eingetragen ist oder die Anlage es angibt; ohne Angabe schweigt
+  es, denn das Anlegen einer Anlage ändert keinen Hinweis (Entwurf 11.2). Kontaktadressen in
+  `shared/heatingInfo.ts`, jährlich prüfen. Seite Heizkosten: Karten „Ausnahmen und Vereinbarungen“
+  ([HeatingRulesCard.tsx](client/src/components/HeatingRulesCard.tsx)) und „Angaben zur Abrechnung (§ 6a)“
+  ([HeatingInfoCard.tsx](client/src/components/HeatingInfoCard.tsx)); Druckblock
+  [HeatingInfoBlock.tsx](client/src/components/HeatingInfoBlock.tsx) mit Balken. Migrationen 0034/0035 (`exemption` mit `chp` für § 11 Abs. 1 Nr. 3 Buchst. b); die
+  Invarianten haben je eine Variante „Ausnahme je Heizperiode“ ((x): keine Kürzung und keine Angaben im
+  ausgenommenen Topf, keine Zeile außer den CO₂-Abzügen hängt an den Angaben).
+
+**Monatliche Verbrauchsinformation** (Heizung PR 22, #99, [server/src/monthlyInfo.ts](server/src/monthlyInfo.ts),
+Monatsnamen und Lückentexte in [shared/monthlyInfo.ts](shared/monthlyInfo.ts)): Mietfuchs erstellt sie nur bei
+eigener Abrechnung einer zentralen Anlage mit eigenen Zählern (nicht mit Werten des Ablesedienstes) und nur, wenn
+ein Gerät einer Wohnung selbst als fernablesbar eingetragen ist; die Angabe an der Anlage allein sagt nicht,
+welche Wohnungen. Sonst bleibt der Hinweis von PR 14 („bis zu 3 %“, mit dem Satz, was Mietfuchs braucht).
+Verbrauch nur aus Ablesungen **genau** an den Monatsgrenzen (bei Ein- und Auszug am Tag vor dem Einzug bzw. am
+Auszugstag), nie interpoliert (§ 6a Abs. 2 Nr. 2 „soweit erhoben“); fehlt einem Gerät einer Größe der Wert, fehlt
+die ganze Größe. Vergleiche nur desselben Mietverhältnisses (Begründung: keine Daten anderer Nutzer). Die Geräte
+sind die der Linie (Kesseltausch), nur in Betrieb: Ein Gerät gilt als ausgebaut, wenn in derselben Wohnung ein
+Nachfolger derselben Größe übernimmt, sonst ist eine fehlende Ablesung eine Lücke. Der Durchschnittsnutzer kommt
+als Vergleichswert je Monat mit Quelle (Tabelle `heating_monthly_info`, Migration 0045, an der Anlage, die am
+Monatsende heizt, gelesen über die Linie), nie aus dem eigenen Haus (BR-Drs. 643/21, S. 19); der Wert der
+Heizperiode (Nr. 4) wird nicht aufgeteilt. Warmwasser in kWh über § 9 Abs. 2 Satz 2 ist eine Auslegung (die
+Gleichung gilt der Anlage und enthält die Verluste der Erzeugung) und steht getrennt von der gemessenen Wärme,
+ohne Summe und ohne die Faktoren des Satzes 6; die Temperatur ist `heating_periods.dhw_temp_c`. Heizkostenverteiler
+ergeben keine kWh. Ist nach § 11 nur die Wärme ausgenommen, zählt nur das Warmwasser. „Mitgeteilt“ je Anlage und
+Monat, frühestens am Tag nach dem Monatsende; fällig ist ein Monat ab dem Folgemonat (`asOf`, ohne ihn alle).
+`heating.monthly-info` nennt die offenen Monate und je betroffenem Mieter **einmal** 3 % (ein Kürzungsrecht nach
+Satz 3, Beträge nicht doppelt neben `heating.info-incomplete`; BR-Drs. 643/21, S. 24 f.), „um 3 %“ für den, dessen
+Wohnung ganz fernablesbar ist, sonst „möglich“, und bei gemischter Ausstattung die Einzelfallprüfung
+(BR-Drs. 643/21, S. 18); beides und der einzelne fehlende Monat sind als Auslegung benannt. Abgezogen wird
+nichts. Karte [MonthlyInfoCard.tsx](client/src/components/MonthlyInfoCard.tsx) auf der Seite Heizkosten, Blatt
+[MonthlyInfoSheet.tsx](client/src/components/MonthlyInfoSheet.tsx) als Portal an `body`, gedruckt mit
+`body.print-monthly-info` ohne `#root`. Die Warmwassertemperatur steht bei verbundenem Warmwasser in der Karte
+„Warmwasser“, bei getrenntem in dieser Karte (`saveDhwTemperature` in db/co2.ts, dieselbe Prüfung und Spalte;
+ohne sie könnte der Vermieter die genannte Kürzung nicht abwenden). Alle Monate statt nur der Heizperiode
+(Vorblatt der BR-Drs. 643/21) und „fällig ab dem 1. des Folgemonats“ stehen als Auslegung bzw. Festlegung im Text.
+
+**Brennstoffvorrat** (Heizung PR 8, #97, #99): Bei Heizöl, Flüssiggas, Pellets, Holz und Kohle
+(`STOCK_ENERGIES` in [shared/fuelStock.ts](shared/fuelStock.ts)) rechnet
+[server/src/fuelStock.ts](server/src/fuelStock.ts) den verbrauchten Brennstoff: Anfangsbestand +
+Lieferungen − Endbestand, für Menge, Betrag, kg und CO₂-Kosten. Die acht Spalten des Vorrats stehen an
+`heating_periods` (Migrationen 0024, 0025); gelesen und geschrieben in
+[server/src/db/fuelStock.ts](server/src/db/fuelStock.ts). Lieferungen dieser Brennstoffe haben
+Lieferdatum und Menge statt Rechnungszeitraum und laufen nicht durch die Abgrenzung von PR 7
+(`plantFuel` überspringt sie); ihr Betrag ist Σ der verknüpften Positionen, sonst der an der Lieferung.
+
+- **Bewertung, eine Bewertungsregel:** Die HeizkostenV regelt die Bewertung des Restbestands nicht.
+  Verbraucht wird rechnerisch das Älteste zuerst (Kinne/Schach/Bieber-Kinne, BGB § 556 Rn. 121; ebenso
+  Minol); der Endbestand besteht aus den jüngsten Teilen und wird zu deren Preisen, kg und CO₂-Kosten
+  bewertet, je Teil gerundet (Cent, kg auf das Hundertstel, nicht 0,1 kg wie im Entwurf, weil dessen
+  Zahlen zwei Stellen haben). BGH VIII ZR 298/80, auf das Minol sich beruft, betrifft die
+  Mindestangaben einer Abrechnung und sagt zur Bewertung nichts.
+- **Was weitergegeben wird** (`handover`, Durchsicht von #237): Bucht eine Heizperiode keinen
+  Übertrag (freie Schlüssel ohne Brennstoffposition mit Umlageschlüssel, `stockTemplateOf` in
+  fuelStock.ts, dieselbe Regel in Schnappschuss und Abrechnung), haben ihre Mieter den Endbestand mit
+  den Rechnungen bezahlt; er geht mit 0 € und ohne CO₂-Kosten weiter, die kg bleiben. Ebenso zählt der
+  Anfangsbestand der ersten Heizperiode mit Vorrat mit 0 €, wenn er schon umgelegt wurde
+  (`heating_periods.opening_already_settled`; ohne Antwort „ja“, wenn die Vorperiode an dieser Anlage
+  oder ohne Anlage eine Heizposition **ausdrücklich als Brennstoff** hat (`heatingPart: 'fuel'` oder mit
+  Lieferung verknüpft), oder wenn die **positiven** Beträge ihrer Heizpositionen **ohne Kennzeichen**
+  zusammen mindestens den Wert des Anfangsbestands erreichen (eine Gutschrift zieht nicht ab): Eine
+  Wartung von 250 € erklärt keinen Bestand von 2.000 €, und vorher trug der Vermieter ihn dann still.
+  Die Regel steht einmal als `settledByDefault` in fuelStock.ts; Schnappschuss, Abrechnung und Karte
+  fragen dort. Die Karte „Vorrat“ belegt „Ja“ nur bei `defaultAlreadySettled: 'default'` vor, sonst
+  steht „Bitte wählen …“ und es wird nichts gesendet: Eine Vorbelegung ohne Grund würde beim ersten
+  Speichern zur Angabe. Unter der Schwelle und ohne Antwort nennt der Hinweis
+  `fuel.opening-check-loose` (Stufe `hint`) die Positionen. „Betrieb“ und „Ablesung“ zählen nie; „abgeschlossen ohne Vorrat“
+  allein reicht nicht), Hinweis `fuel.opening-settled` mit „nach Ihrer Angabe“ oder „nach der
+  Vorbelegung“. Beruht die Vorbelegung nur auf Positionen ohne Kennzeichen (`defaultLoose`), steht
+  statt des Hinweises die Warnung `fuel.opening-settled-assumed`, die die Positionen mit Betrag nennt.
+  Ein ausdrückliches „nein“ trotz Brennstoff in der Vorperiode (dieselbe Schwelle) ergibt
+  `fuel.opening-not-settled` mit Betrag. Die Auswahl „Teil der Heizkosten“ im Kostenformular führt
+  alle Werte des Modells und „ohne Angabe“ (`HEATING_PART_OPTIONS` in costForm.ts). Trägt der
+  Vermieter in der Vorperiode einen Endbestand ein, leert das in derselben Transaktion den eigenen
+  Anfangsbestand der offenen Folgeperiode, und das Entfernen des Vorrats setzt deren Antwort auf
+  „schon umgelegt?“ zurück; sonst lebte ein veralteter Anfangsbestand wieder auf (`saveStock`,
+  `removeStock` in db/fuelStock.ts). Eine abgeschlossene Heizperiode, deren Stand
+  keinen Vorrat eingefroren hat, gibt ihren Endbestand ebenfalls mit 0 € weiter (`closedWithoutStock`).
+  Übernimmt eine Heizperiode einen Bestand mit Wert nicht (Bestandsrechnung fehlt, geht nicht auf oder
+  kein Schlüssel), oder ist die Folgeperiode ohne Vorrat abgeschlossen, nennt `fuel.stock-not-taken-over`
+  den Betrag, den der Vermieter trägt.
+- **Die Kette:** Den Anfangsbestand trägt der Vermieter nur in der ersten Heizperiode mit Vorrat ein;
+  jede weitere übernimmt den Endbestand der Vorperiode mit seinen Teilen (der Server lehnt einen
+  eigenen ab). `stockChainsOf` in snapshot.ts baut die Kette bis zur ersten abgeschlossenen
+  Vorperiode; deren Endbestand ist eingefroren und steht im abgeschlossenen Stand unter
+  `heating[].stock.closing`, gelesen über `frozenSettlementOf` (`stockClosings`). Ein Wiederöffnen
+  hebt ihn auf.
+- **Und rückwärts:** Ist die Folgeperiode abgeschlossen und hat sie den Endbestand übernommen
+  (`stockOpenings`), ist ihr eingefrorener Anfangsbestand der Endbestand der Vorperiode
+  (`nextFrozenOpening`), und er wird dort als „im Vorrat“ gutgeschrieben, auch wenn die
+  Bestandsrechnung nicht mehr aufgeht. Einheit und Endbestand sind gesperrt, sobald die Folgeperiode
+  abgeschlossen ist, mit oder ohne Vorrat; hat sie den Bestand übernommen, auch Menge, Einheit und
+  Lieferdatum der Lieferungen, ihr Entfernen und das Lösen ihrer Positionen (`stockTakenOverBy` in
+  repository.ts); Beträge bleiben änderbar. Ohne diese Regeln änderte die wieder geöffnete Vorperiode,
+  was sie weitergibt; die Invariante
+  [fuel-stock-invariant.test.ts](server/test/fuel-stock-invariant.test.ts) prüft die Übergabe je Paar
+  von Heizperioden, die Befunde der Durchsicht hält [vorrat-durchsicht.test.ts](server/test/vorrat-durchsicht.test.ts).
+- **Gesperrt** sind Vorrat und Lieferungen einer abgeschlossenen Heizperiode (Lieferdatum dort, auch
+  beim Verschieben hinein oder hinaus; die Bezeichnung bleibt änderbar), und der Wechsel des
+  Energieträgers, sobald irgendwo ein Vorrat eingetragen ist (409).
+- **§ 11 Abs. 2 Satz 2 CO2KostAufG** (`co2.costs-before`, Rechnungsdatum): Brennstoff mit Rechnung vor
+  dem 01.01.2023 zählt mit seinen kg, nicht mit seinen CO₂-Kosten; `fuel.before-2023` sagt, dass er die
+  Stufe hebt. CO₂-Kosten gibt es nur bei Heizöl, Flüssiggas und Kohle (`CO2_FUELS`): Holz und Pellets
+  stehen nicht in Anlage 1 BEHG, für sie gibt es keine Standardwerte nach § 7 Abs. 4 BEHG, und das
+  CO2KostAufG gilt nach § 2 Abs. 1 nicht.
+- **Messdienst ohne Aufteilung** (`selfAfterService`): E und C aus dem Bestand (Naht N1 zur eigenen
+  Aufteilung von PR 7, `OwnFuel` in calc.ts); ohne Bestand keine Aufteilung und `fuel.stock-missing`
+  mit 3 % je Mieter statt `co2.service-unsplit`. Wer zum Vorrat nichts erfasst hat, sieht den Hinweis
+  von PR 6.
+- **Freie Schlüssel** (`manual`): Die Rechnungen bleiben Positionen; zwei Übertragsposten
+  `stock:<Anlage>:<Heizperiode>:in|out` („aus dem Vorrat“, „im Vorrat“) laufen mit dem Schlüssel der
+  größten Brennstoffposition (sonst der jüngsten der Vorperiode) durch die Verteilung, als Zeilen
+  `kind: 'fuelCarry'` über denselben Weg wie die Überträge von PR 7 (`fuelSynthetic`), Gegenzeile beim
+  Vermieter `fuelCarry` unter `stock:<Anlage>:<Heizperiode>`. Sie zählen nicht in die Gesamtkosten und
+  nicht in die Steuer. Ohne Bestand oder ohne Schlüssel `fuel.manual-by-delivery` und Verteilung nach
+  Lieferung wie bisher, die CO₂-Einstufung dann nach den gelieferten kg. Der Hinweis sagt, dass eine
+  Abrechnung nach Lieferungen nicht zulässig ist und sich nicht durch die Kürzung ausgleichen lässt (BGH
+  VIII ZR 156/11, Leitsätze 1 und 2); im selbstbewohnten Zweifamilienhaus nennt er § 2 Nr. 4a BetrKV.
+  Eine Brennstoffposition ohne Lieferung neben dem Vorrat meldet `fuel.stock-unlinked`, und die
+  CO₂-Aufteilung gilt dann als unvollständig. Die Kürzung nach § 12 Abs. 1 HeizkostenV rechnet auf den
+  Anteil samt Übertrag.
+- **Steuer nach Bezahltem:** Der Eigenanteil der Abrechnung enthält den Anteil am Übertrag, die
+  Steuerübersicht nicht; `TaxReport.expenses.stockCarrySelfCents` nennt den Abstand, die Steuerseite
+  erklärt ihn (N8).
+- **Peildatum:** gerechnet wird mit dem Wert wie gepeilt; `fuel.stock-date-differs` nennt Tage,
+  Gradtagsanteil und Lieferungen dazwischen.
+- `fuel.stock-missing` ist eine Warnung; den Fehler bei der eigenen Heizkostenabrechnung bringt PR 10
+  mit eigenem Code, denn eine Stufe hängt am Code.
 
 **Der Umstieg** ([server/src/db/changeover.ts](server/src/db/changeover.ts)): Beim ersten Start
 der neuen Version wandern die Daten der `db.json` in die Datenbank, ohne dass jemand einen Befehl
@@ -914,7 +1719,7 @@ Löschen erledigen die Fremdschlüssel und nicht mehr index.ts. Alle Datenrouten
 `?property=` auf ein Objekt ein (siehe Objekte). `POST /api/tenancies/:id/change` führt den
 Mieterwechsel (Ende, Zwischenablesungen, Nachmieter) in einer Transaktion aus, ganz oder gar
 nicht (#150, `changeTenant` in repository.ts). Daneben Spezialrouten: `/api/properties`
-(Objekte anlegen, ändern, nur leere löschen), `/api/settings`, `/api/settlement/:year`, `/api/consumption/:year`, `/api/rentledger/:year`
+(Objekte anlegen, ändern, nur leere löschen), `/api/heating-plants` (Heizanlage, siehe dort; der Rumpf beim Anlegen nimmt `adjust` für Name und Wohnungen bisheriger Anlagen, `/:id/replace` ist der Kesseltausch; `PUT /:id/self` richtet die eigene Heizkostenabrechnung ein, 409 mit Positionen; `PUT …/periods/:period/distribution` setzt den Anteil nach Verbrauch; `PUT …/periods/:period/info` die Angaben nach § 6a und `PUT …/periods/:period/rules` Ausnahme, Vereinbarung, monatliche Information und Verbrauchervertrag ab dieser Heizperiode (siehe Pflichtangaben); `PUT`/`DELETE …/periods/:period/estimates/:unitId/:part` die Schätzung nach § 9a (siehe dort); `PUT`/`DELETE /api/units/:id/interim-gaps/:date` die Antwort zu einer fehlenden Zwischenablesung, siehe Eigene Heizkostenabrechnung), `/api/heating-plants/:id/periods` (Heizperioden einer Anlage mit CO₂-Angaben und Warmwasser, siehe CO₂ beim Messdienst), `…/periods/:period/stock` (PUT/DELETE, Vorrat, siehe Brennstoffvorrat), `/api/heating-plants/:id/period` und `/separate` (je mit `/preview`), `/api/heating-settlement/:plant/:period` (samt `/close` und `/history`) und `/api/heating-settlements` (eigene Heizperiode, siehe dort), `/api/heating-plants/:id/deliveries`, `/api/fuel-deliveries/:id` und `/api/properties/:id/degree-days` (siehe Lieferungen), `/api/settings`, `/api/settlement/:year`, `/api/consumption/:year`, `/api/rentledger/:year`
 (Mietkonto: Soll/Ist je Monat), `/api/taxreport/:year` (Steuer-Übersicht Anlage V),
 `/api/upload`, `/api/extract` und `/api/intake` (KI-Auswertung, auf Wunsch als Strom, siehe
 unten), die KI-Einstellungen `/api/ai/presets`, `/api/ai/status`, `/api/ai/key` und
@@ -977,12 +1782,75 @@ als vermutlich gewollt oder eine Rechtsregel ist verletzt, `hint`, prüfen ohne 
 eingefrorene Abrechnungen lesen sie, und eine vor #112 abgeschlossene Abrechnung kennt nur sie
 (die Oberfläche zeigt sie dann als Warnungen ohne Titel, `noticesOf` in
 [client/src/notices.ts](client/src/notices.ts)).
-Rechtsregeln mit Gültigkeit stehen in [server/src/rules.ts](server/src/rules.ts), und zwar nur
-solche, die die Berechnung wirklich anwendet. calc.ts fragt `ruleCoverage` statt ein Jahr fest
-hinzuschreiben (die Kabel-Regel: `partial` ist das Übergangsjahr 2024, `none` die Zeit danach).
-Jede Abrechnung trägt ihren **Rechtsstand** (`legalBasis`: `RULES_AS_OF` und die Regeln des
-Jahres); weil die abgeschlossene Abrechnung wortgleich eingefroren wird, friert er mit ein. Wer
-eine Regel ändert, setzt `RULES_AS_OF` auf den Tag der Durchsicht (#110).
+
+**Rechtsregister** (Heizung PR 1, Entwurf `2026-10-05-heizung-gesamt-design.md` Abschnitt 4):
+Jede Rechtszahl steht nur in [shared/law/](shared/law/), mit Gültigkeit, Fundstelle, Prüfstand und
+**genau einer Zeitregel** (`periodStart`, `overlap`, `eventDate`; braucht ein Fall zwei, sind es
+zwei Parameter). Abgefragt wird mit `law(param, ctx, log)` aus
+[shared/law/register.ts](shared/law/register.ts); die Berechnung legt je Abrechnung ein Protokoll
+an (`createLawLog`, kein globaler Zustand), fragt erst dort, wo ein Wert gebraucht wird, und legt
+die benutzten Werte in `legalBasis.values`. **Ein Wert, der im Zeitraum nicht gilt, ist kein
+angewandter Wert**: `overlap` protokolliert bei `none` nichts; braucht ein Hinweis die Fassung
+trotzdem (die Kabelregel ab 2025), trägt calc.ts sie mit `recordVersionAt` ein, und die Anzeige
+nennt die Gültigkeit („gilt bis 30.06.2024“). Die Werte frieren mit dem Abschluss ein, `deviation`
+meldet einen später geänderten Wert in `valueChanges`, je Fassung (Kennung und Beginn). Texte außerhalb einer Abrechnung (Lexikon,
+Anleitungen, Cockpit) lesen `valueAt(param, LAW_AS_OF)`. Das Regelverzeichnis liegt in
+[shared/law/rules.ts](shared/law/rules.ts) und nimmt seine Daten und Zahlen aus den Parametern.
+**Eine Fassung wird nie geändert, nur eine neue angelegt**; `law-history.test.ts` hält jede
+ausgelieferte Fassung als Zahl fest. Einzige erlaubte Änderung: das offene Ende einer Fassung zu
+schließen, wenn eine neue anschließt. `law-literals.test.ts` verbietet Prozentangaben einer
+Rechtsfolge außerhalb des Registers, Datumsliterale in den Dateien der Berechnung und die Zahlen
+des Registers im Code (ohne Zeichenketten und Kommentare) von calc.ts, snapshot.ts,
+shared/heating.ts und invoiceAmounts.ts; erlaubte Stellen stehen dort mit Grund, eine
+Mutationsprobe hält fest, dass der Wächter die früheren Stellen fängt. Beim Tag bricht release.yml
+ab, solange ein Wert `checked: 'unchecked'` hat (`law-release.test.ts`); der Schritt prüft an der
+TAP-Ausgabe, dass der Sperrtest nicht übersprungen wurde, sonst fiele die Sperre bei fehlender
+Variable still aus. **Es gibt nur ein Stichtagsdatum**,
+`LAW_AS_OF`; das frühere `RULES_AS_OF` des Regelverzeichnisses ist entfallen. Wer eine Regel oder
+einen Wert prüft, setzt `retrieved` der betroffenen Parameter und `LAW_AS_OF` auf den Tag der
+Durchsicht (#110); `LAW_AS_OF` ist das jüngste `retrieved` und steht als Rechtsstand in jeder
+Abrechnung. Die
+jährliche Durchsicht (Entwurf 4.8) geht jeden Parameter an seiner Fundstelle durch, legt bei
+einer Änderung eine neue Fassung an statt die alte zu ändern, trägt veröffentlichte Werte ein,
+sieht Bundesgesetzblatt (HeizkostenV, CO2KostAufG, GModG, BetrKV, MessEV) und neue Urteile des
+VIII. Senats zu Heiz- und Betriebskosten durch und setzt zuletzt `LAW_AS_OF`.
+
+**Werte, die erst später veröffentlicht werden** (Heizung PR 17, Entwurf 4.5): `co2.price` (ab 2027) und
+`co2.price-ets` (ab Rechnungsjahr 2027) haben `null` und sind `overridable`. Sie fragt nur
+`lawOverridable`, das einen Eintrag des Vermieters aus `law_overrides` (je Kalenderjahr, mit Quelle;
+[server/src/db/lawOverrides.ts](server/src/db/lawOverrides.ts), Routen `/api/law-overrides`) liest und als
+`overridden` protokolliert; `law()` lehnt überschreibbare Parameter ab. Die Abrechnung nennt einen benutzten
+Eintrag (`law.value-overridden`, hint). Ein Release mit dem amtlichen Wert setzt ihn an die Stelle von `null`
+(die zweite Ausnahme in `law-history.test.ts`), und der Eintrag heißt „überholt“. Gebraucht werden diese
+Werte, die EBeV-Werte und `ustg.gas-heat-network-rate` nur für `co2.cost-implausible`
+([server/src/co2Plausibility.ts](server/src/co2Plausibility.ts), je Rechnung, die die Heizperiode berührt,
+auch bei Vorratsenergien): Spannen über Preisjahre, Emissionshandel und Steuersätze (Mischsatz über die
+Stichtage nach BMF-Schreiben vom 25.10.2022, Rz. 12; Flüssiggas beide Sätze nach Rz. 5), Grenzen 1 €/3 %
+und bei den kg 1 % nach oben, 10 % nach unten wegen anerkannter Biomasseanteile (Festlegung ohne
+Rechtsquelle nach 15.2 F6, `KG_TOLERANCE`, `COST_TOLERANCE`). Mietfuchs rechnet nie kg oder € aus kWh vor,
+es vergleicht nur. Ins Register kommt, was im BGBl. steht oder das UBA nach § 4 Abs. 2, 3 CO2KostAufG
+bekanntmacht; keine Drucksachen. Das Blatt „CO₂-Angaben für den Messdienst“ baut
+[server/src/co2Sheet.ts](server/src/co2Sheet.ts) (#210, nicht abgegrenzt; Betrag ohne Eintrag aus den
+verknüpften Positionen), die Seite Heizkosten zeigt es über `Co2SheetView`. **Seine Summe zählt nur, was die
+Abrechnung zählt** (Durchsicht von #246): Storno und abgedeckte Schätzung über `cancelledDeliveries` und
+`estimateFactors` aus fuel.ts (dieselbe Auswahl wie die Bewertung; auch die Prüfung in calc.ts überspringt
+Stornos), eine Rechnung vor 2023 nur mit kg, der Anfangsbestand mit seinen CO₂-Kosten nach der Regel der
+Bestandsrechnung; jede nicht zählende Zeile trägt einen Vermerk. Bei Wärme aus dem Emissionshandel mit
+Anschluss nach dem Stichtag prüfen Abrechnung und Blatt nicht (`etsExempt` in co2Plausibility.ts, eine
+Stelle). Das Blatt spricht in der dritten Person, der Kasten „Bitte prüfen“ ist `no-print`; dieselben
+Befunde stehen an der Lieferung auf der Seite Heizkosten. **Das Blatt rechnet nichts, was die Abrechnung
+entscheidet** (Runde 3 von #246): Endbestand, Verbrauch, der Teil je Rechnung in der Heizperiode sowie kg/m²
+und Stufe kommen aus dem Ergebnis der Abrechnung (`heating[].stock`, `fuel`, `co2`, als `billing`);
+`co2SheetFor` rechnet dafür die Abrechnung, in der die Heizperiode steht. Eine Zufallsprüfung in
+co2-sheet-runde3.test.ts hält die abgegrenzte Zeile gleich der CO₂-Grundlage der Abrechnung, auch bei einer Lücke.
+Auch die Fläche der Einstufung kommt von dort (bei mehreren Anlagen eines Gebäudes die gemeinsame, `areaSource:
+'building'`). Vermerke stehen nummeriert unter der Tabelle (`sheetNotes`), nicht als Zeile darin: Die Tabelle
+scrollt auf dem Handy seitlich. Ob das CO2KostAufG gilt und welche Befunde die Prüfung je Rechnung hat, steht in
+`heating[].co2Check` (`applies`, `exemption`, `findings`); Blatt und Karte „Lieferungen“ lesen es von dort, auch
+die Ausnahme nach § 11 für Wärme und Warmwasser ohne vereinbarte Abrechnung (§ 2 Abs. 7). Die Regel dazu steht einmal in
+[server/src/co2Exemption.ts](server/src/co2Exemption.ts) (`co2OffByExemptionOf`, `exemptionText`); steht eine Heizperiode in
+keiner Abrechnung, fragt das Blatt sie mit den Periodendaten (`heatingRulesOf`) selbst. Werte, die nur geprüft werden, tragen
+`checkOnly` (shared/law); die Abweichung einer abgeschlossenen Abrechnung sagt dann „Prüfwert geändert“.
 
 **Begriffslexikon** (#113): [shared/glossary.ts](shared/glossary.ts) hält jeden Fachbegriff mit
 Erklärung, Beispiel mit Zahlen, Rechtsgrundlage und „Brauche ich das?“. Es war der **erste
@@ -998,7 +1866,8 @@ Verbrauchsanteil dasteht. Das Cockpit wendet die Regel nicht selbst an, sondern 
 [Term.tsx](client/src/components/Term.tsx) die Erklärung zum Aufklappen, und zwar als `span`
 mit `role="button"`: In einem `<label>` wäre ein `<button>` das erste bedienbare Element und
 nähme dem Eingabefeld die Beschriftung. Die Seite „Hilfe & Begriffe“ listet alle. Rechtsaussagen
-nur, wo sie im Gesetz stehen; Beispiele werden nachgerechnet.
+nur, wo sie im Gesetz stehen; Beispiele werden nachgerechnet. Lexikon und Anleitungen nehmen ihre
+Rechtszahlen aus dem Rechtsregister.
 
 **Anleitungen je Vermietungsart** (#164): [shared/guides.ts](shared/guides.ts) hält acht
 Anleitungen (Einliegerwohnung, Mehrfamilienhaus, Eigentumswohnung, mehrere Objekte, Garage,
@@ -1183,8 +2052,14 @@ beiden Seiten), die dreimal einen Geldfehler hatte.
   Praxislauf (Fall 14) und Browserprobe gibt es ein nachgebautes Ollama mit den Abnahmefällen
   ([scripts/fake-ollama.mjs](scripts/fake-ollama.mjs)).
 - **Testgriff `NKA_TEST_ASSESSMENT_DELAY_MS`**: verzögert das Speichern einer Auswertung um so
-  viele Millisekunden, nur für Tests (api.test.ts legt damit einen Abbruch in das Fenster zwischen
+  viele Millisekunden, nur für Tests (api-belegbuchung.test.ts legt damit einen Abbruch in das Fenster zwischen
   Antwort der KI und Speichern). Ohne die Variable gibt es keine Pause; ein Nutzer setzt sie nie.
+- **Testgriff `NKA_TEST_TODAY`** (Laienprobe Heizung, Durchsicht): ein fester Tag als JJJJ-MM-TT für
+  die Uhr des Servers (`today()` in index.ts, server/src/testToday.ts), nur für Tests. Prüfbestände mit
+  festen Jahren kippen sonst an einem bestimmten Datum, weil eine Frist abläuft und Zeitraumwechsel,
+  Aufteilen und Heizperiodenwechsel dann eine Bestätigung verlangen. Er wirkt nur auf den Server,
+  nicht auf die Uhr des Browsers. Ist er gesetzt, nennt die Konsole ihn beim Start; ein Wert, der kein
+  echtes Kalenderdatum ist, bricht den Start mit Meldung ab. Ein Nutzer setzt ihn nie.
 
 **Berechnungs-Engine** ([server/src/calc.ts](server/src/calc.ts)) — das Herzstück, hier liegt
 die ganze fachliche Komplexität:
@@ -1220,7 +2095,8 @@ die ganze fachliche Komplexität:
   verteilt. Tests in calc-verteilbasis.test.ts samt eigener Invariante.
 - **Nebenkostenmodell am Mietverhältnis** (#93): `costModel` (kalte Kosten) und
   `heatingModel` (Kostenart „Heizung und Warmwasser“, `HEATING_CATEGORY` in calc.ts), jeweils
-  `settlement | flatRate | inclusive`, fehlend `settlement`. Ein Mietverhältnis mit Pauschale
+  `settlement | flatRate | inclusive`, fehlend `settlement`; beim Heizmodell dazu `selfSupply` (siehe
+  „Mieter heizt selbst“ unten), das jede Stelle über `allocationModel` als `settlement` liest. Ein Mietverhältnis mit Pauschale
   oder Inklusivmiete **bleibt in der Verteilbasis**, sein Anteil wird ihm nicht zugebucht und
   fällt dem Vermieter zu, und zwar **nicht als Eigenanteil** (abziehbar). Bleibt seine Abrechnung
   leer und gibt es keine Vorauszahlung, fehlt sie in `statements` und steht in `notSettled`.
@@ -1268,6 +2144,34 @@ die ganze fachliche Komplexität:
   erscheinen sie nicht, denn `computeSettlement` ruft `consumptionInPeriod` auf und wirft sie
   weg. Das war vorher schon so, und es soll so bleiben: Die Abrechnung ist das Dokument, das der
   Mieter bekommt, und ein Hinweis auf einen Datenfehler des Vermieters gehört nicht darauf.
+  **Die Eichfrist** (#98, Heizung PR 21) ist eine Warnung und keine Sperre: `meters.calibrated_until`
+  (Jahr, mit dessen Ende die Frist endet, § 34 Abs. 2 MessEV; Migrationen 0046/0047, Bedingungen
+  `meters_calibrated_until_valid` mit `typeof`, weil die INTEGER-Affinität eine Kommazahl als REAL behält,
+  und `meters_calibrated_until_hca_valid`) ergibt `meter.calibration-overdue` in `consumptionOverview`
+  (Zähler-Seite, dort als `warn` und nicht als Fehler), nie auf der Abrechnung. Geprüft wird die jüngste
+  Ablesung, die der Zeitraum benutzt (`readingsUsedFor` in server/src/calibration.ts: die im Zeitraum ab dem
+  Vortag des Beginns, die davor und die erste danach nur, wenn interpoliert wird; ohne Gegenstück zählen sie
+  nicht); eine Ablesung vom 31.12. des Eichjahres zählt noch. Liegt der letzte Zählerwechsel am letzten Tag
+  des Zeitraums oder danach, misst das heutige Gerät im Zeitraum nichts, und es gibt keinen Hinweis. Die
+  Regel `meter-calibration` hat `scope: 'meters'`: `rulesFor` lässt sie aus dem Rechtsstand jeder Abrechnung,
+  denn die Abrechnung prüft nicht nach ihr. Das Cockpit zeigt eine eigene gelbe Zeile „Eichfrist“
+  (`overdueMeters`, `calibrationDetail` in client/src/meterCheck.ts); die Ampel „Zählerstände“ zählt diesen
+  Hinweis nicht (`readingProblems`). Heizkostenverteiler haben kein Eichjahr: Beim Umstellen der Sparte auf
+  HKV fällt es weg, ausdrücklich gesendet gibt es 400. Die Fristen stehen im Register
+  (`messev.calibration-years`, Zeitregel `eventDate`): ab 01.01.2015 Kaltwasser 6, Warmwasser und Wärme 5
+  Jahre (amtlich aus BR-Drs. 599/21, Begründung zu Art. 1 Nr. 11 a), ab 03.11.2021 je 6 (Dritte
+  Änderungsverordnung, BGBl. 2021 I S. 4742). **Die Verordnung hat keine Übergangsregel** (Art. 2 nur
+  Inkrafttreten, § 58 Abs. 7 MessEV betrifft § 25, am Wortlaut gelesen am 12.10.2026). Die Änderungsverordnung
+  vom 26.10.2021 enthält keine Übergangsregel. Mietfuchs wendet die Frist von 6 Jahren auch auf Fristen an, die
+  am 03.11.2021 noch liefen; eine schon abgelaufene Frist lebt nicht wieder auf. Das ist eine Auslegung.
+  Gerechnet wird sie in `calibrationEnd` (shared/calibration.ts; Jahreszahl 2016 bis 2021 ergibt J + 6, bis 2015 J + 5). Eine Praxis
+  von Behörden oder Messdiensten wird nirgends als Beleg genannt, denn dafür gibt es keine Quelle (Durchsicht
+  S1); Hinweis, Regel und Lexikon zitieren Leitsatz c wörtlich („abgelesenen Verbrauchswerten“, Durchsicht M1),
+  ein Test hält beide Wortlaute fest. Der Vorschlag im Zählerformular sagt es mit demselben Satz; gefragt wird
+  nach der Jahreszahl auf dem Zähler (Eichmarke: Jahr des Fristbeginns, Anlage 8; „M22“: Jahr der
+  Kennzeichnung, vermutet als Inverkehrbringen). Hinweis, Regel und Lexikon zitieren BGH VIII ZR 112/10 nur
+  mit dem Wortlaut von Leitsatz c. Gas- und Stromzähler haben das Feld, aber keinen Vorschlag (Frist nach
+  Bauart, Anlage 7 Nr. 5.6, 6). Die Vierte Änderungsverordnung (2024) berührt diese Nummern nicht.
 - **Leerstand beim Personenschlüssel** (#177): Jede Wohnung der Verteilbasis, die vermietet
   wird (`participates`, nicht selbstgenutzt, unter den Teilnehmern der Position), zählt für jeden Tag ohne Mietverhältnis mit `VACANCY_PERSONS` Personen (heute 1),
   auch zwischen zwei Mietern. Diese Personentage bekommt niemand zugebucht, ihr Anteil bleibt als
@@ -1288,6 +2192,196 @@ die ganze fachliche Komplexität:
   Leerstand“), der gedruckte `basisText` die Summe („(davon N Leerstand)“). Beide Hinweise färben
   die Cockpit-Ampel nicht (`INFORMATIONAL` in client/src/notices.ts). Abgeschlossene Abrechnungen bleiben, `deviation` zeigt
   den Unterschied.
+- **Betriebsstrom der Heizung** (#212, Heizung PR 15): `cost_items.operating_power` sagt an einer
+  Heizposition `included` (der Strom läuft über den Zähler des Hauses und steckt im Allgemeinstrom), an
+  einer Position „Beleuchtung/Allgemeinstrom“ `deduction` (der Abzug); der Abzug zeigt mit
+  `operating_power_item_id` auf seinen Betriebsstrom (`RESTRICT`, Löschen mit einem Satz gesperrt).
+  Die Verweisbedingung vergleicht mit `IS` statt `=`: `NULL = 'deduction'` ist in SQLite kein Verstoß.
+  Die Abrechnung prüft jede Position, die sie verteilt, gegen die Abzüge **aus allen Zeiträumen**
+  (`operatingPowerDeductions` im Schnappschuss, `deductionsOf`), denn eine eigene Heizperiode und der
+  Allgemeinstrom liegen oft in verschiedenen; `heating.operating-power-double` nennt die Differenz. Ein
+  Abzug in einer abgeschlossenen Abrechnung hat vier Zustände am eingefrorenen Stand (`itemTotals`):
+  gutgeschrieben, geändert (es zählt der eingefrorene Betrag), nicht darin (zählt nicht) und unlesbar
+  (zählt nicht, aber der Text behauptet nichts und bittet nicht um neue Zustellung); je ein eigener
+  Satz. Die Schätzhilfe (`shared/operatingPower.ts`, Route `POST /api/heating-plants/:id/operating-power`,
+  `server/src/db/operatingPower.ts`) rechnet kWh aus Leistung, Laufzeit und Tagen je Gerät, nimmt den
+  Zwischenzähler oder einen selbst geschätzten Betrag mit Pflichtgrundlage, Euro als Anteil an der
+  Stromrechnung samt Grundpreis (Festlegung im Schätzermessen, im Rechenweg benannt), und legt beide
+  Positionen in einer Transaktion an; 409, wenn Heizperiode oder Allgemeinstrom abgeschlossen sind. Die
+  Grundlage der Schätzung steht als Text in `cost_items.operating_power_basis` an beiden Positionen und
+  im Rechenweg (`no-print`), denn bestreitet ein Mieter den Betrag, muss der Vermieter sie darlegen
+  (BGH, Versäumnisurteil vom 20.02.2008, VIII ZR 27/07, Leitsatz c). Bei Wärmepumpe und Stromheizung
+  gibt es keine Hilfe: Der Strom zur Wärmeerzeugung gehört zu den Heizkosten, ist aber weder Brennstoff
+  noch Betriebsstrom (§ 7 Abs. 2 HeizkostenV nennt seit 01.10.2024 die „Kosten des zur Wärmeerzeugung
+  verbrauchten Stroms“ neben den Brennstoffen). Seine Heizposition (Teil `fuel`) darf trotzdem `included`
+  tragen, wenn die Anlage mit Strom heizt (`POWER_GENERATED`, geprüft in `guardOperatingPower`), damit
+  ein Abzug auf sie zeigen kann; das Herausrechnen ist als Auslegung gekennzeichnet. Umwälzpumpen und
+  Regelung bleiben Betriebsstrom. **Durchsicht von #252:** Der Abzug zeigt außerdem auf seine
+  Stromrechnung (`operating_power_general_id`, Schritt 0039 mit Datenanweisung, Bedingungen in 0040):
+  dasselbe Objekt und derselbe Zeitraum, Löschen und Umstellen der Rechnung gesperrt, solange er besteht;
+  Hinweise `heating.operating-power-key` (anders verteilt als die Rechnung), `-exceeds` (mehr Abzug als
+  Rechnung); `-tax-year` (Betriebsstrom und Abzug in verschiedenen Steuerjahren) entfällt seit #268, siehe Steuer. Die Schätzhilfe
+  nimmt nur eine Stromrechnung, die die Heizperiode berührt, übernimmt deren Jahr der Zahlung, wo der
+  Zeitraum zwei Kalenderjahre berührt, lehnt eine Summe der Abzüge über der Rechnung ab (400) und fragt
+  bei schon gebuchtem Betriebsstrom zurück (409 mit `question: 'despiteExisting'`; nur dann bietet die
+  Karte „Trotzdem anlegen“). Dieselbe Summenregel gilt im Kostenformular (Abzug anlegen oder ändern,
+  Rechnung verkleinern). Führend beim Steuerjahr ist der Betriebsstrom, dessen Jahr an der Heizperiode
+  hängt; der Abzug bekommt dasselbe. Beim Wechsel des Abrechnungszeitraums wandern Rechnung und Abzüge
+  als Einheit: Die Prüfungen gelten für den Endstand (Option `periodChange`, `settleOperatingPowerLinks`),
+  der Abzug folgt immer dem Endzustand seiner Rechnung (auch wenn deren Leistungszeitraum ganz in einem
+  neuen Zeitraum liegt und die Gruppe des Abzugs woandershin geht; dann steht er in der Vorschau unter
+  `moves` und in keiner Gruppe), denn der Betriebsstrom steckt in jedem Teil der Rechnung; jeder Teil zeigt
+  auf den Teil der Rechnung im selben Zeitraum. Mehrere Abzüge einer Rechnung werden **gemeinsam** geteilt
+  (`splitDeductionsAlike` in serviceSplit.ts), und zwar nach den **Beträgen** der Teile, nicht nach Tagen:
+  Nur so ist aus keinem Teil mehr abgezogen, als er beträgt, auch bei drei und mehr Teilen und wenn die
+  Abzüge die ganze Rechnung ergeben (Restverfahren nach Tagen ist nicht monoton). Das Jahr der Zahlung
+  eines Abzugsteils fragt die Vorschau nicht, es ist das der Betriebsstrom-Position nach dem Wechsel
+  (`derivedYears`); angeboten werden nur Jahre im Schnitt der Spannen dieser Teile. Einen Satz zur Verschiebung in der
+  Anlage V bei einem Teil mit festem Jahr gibt es seit #268 nicht mehr, denn die Steuerübersicht gleicht je Steuerjahr
+  aus und es verschiebt sich nichts. Geprüft wird das
+  **je Mieter** gegen von Hand hergeleitete Beträge, nicht je Zeitraum: „Abzug gleich Betriebsstrom je
+  Zeitraum“ hielt auch ein falsches Ergebnis aus. Ein
+  Scheitern ist eine 409 mit Vorschau. Kein Objektwechsel, solange ein
+  Verweis besteht; `crossPropertyViolations` kennt beide. `included` nur mit positivem Betrag. Liegt ein
+  Abzug in einer abgeschlossenen Abrechnung, hat jeder Zustand seinen eigenen Text, und keiner rät zu
+  einem neuen Abzug in einem anderen Jahr. „Aus dem Vorjahr übernehmen“
+  behält nur die Kennzeichnung `included`, nicht Grundlage und Abzug. Die Prozentspannen der Literatur
+  stehen nur im Lexikon: BGH V ZR 166/15 Rn. 14 lässt den Bruchteil der Brennstoffkosten als
+  Schätzgrundlage zu, gibt die Werte aber nur wieder und legt keinen fest; Mietfuchs rechnet ihn bewusst
+  nicht vor. Kein Eintrag im Regelverzeichnis, denn der änderte den Rechtsstand jeder Abrechnung.
+- **Betriebsstrom fehlt und Strom der Wärmepumpe im Allgemeinstrom** (#224, #253, Folge-PR zu #252,
+  `missingPowerFindings` in server/src/operatingPower.ts): zwei Hinweise der Stufe `hint`, nur in der
+  Gesamtberechnung, beide reine Auskunft. `heating.operating-power-missing` kommt bei einer zentralen
+  Anlage mit Brenner (nicht Fernwärme, nicht „sonstige“), ohne Messdienst, ohne Eigentümergemeinschaft, mit
+  Heizkosten im Zeitraum und Allgemeinstrom (nicht `external`/`amounts`), wenn keine Heizposition
+  gekennzeichnet ist, keine den Teil „Betrieb“ hat, keine ohne Teil ist und kein Abzug als Antwort gilt
+  (ohne Verweis oder auf eine Position dieser Anlage). **Die Grenze ist gewollt:** Ohne Angabe an der Anlage
+  schweigt er, sobald irgendeine Position „Betrieb“ besteht, auch nur die Wartung, denn dann ist sie von
+  einer Rechnung über einen eigenen Stromvertrag nicht zu unterscheiden, und wegklicken lässt sich ein
+  Hinweis nicht. Er färbt die Cockpit-Ampel nicht (`INFORMATIONAL`), weil er auch den rechtmäßigen Fall
+  „eigener Stromvertrag, Vermieter trägt selbst“ trifft. **Die Angabe an der Anlage** (#266,
+  `heating_plants.operating_power_handling`, Schritte 0041/0042, Karte „Betriebsstrom der Heizung“ auf der
+  Seite Heizkosten) unterscheidet die Fälle: `deducted` (über die Stromrechnung des Hauses, auch mit
+  Zwischenzähler, beim Allgemeinstrom abgezogen) meldet `heating.operating-power-deduction-missing`, wenn
+  Allgemeinstrom da ist, aber weder Abzug noch gekennzeichneter Betriebsstrom, **auch wenn eine Position
+  „Betrieb“ besteht**; das ist die Lage aus V ZR 166/15 und VIII ZR 27/07, deshalb färbt er gelb.
+  `ownMeter` (eigener Stromvertrag, Rechnung als Heizposition „Betrieb“) meldet
+  `heating.operating-power-bill-missing`, wenn weder Position „Betrieb“ noch ohne Teil noch Kennzeichnung
+  noch Abzug besteht, **auch ohne Allgemeinstrom** (er betrifft die eigene Rechnung); er färbt nicht, denn
+  der Vermieter verliert nur eigenes Geld. `landlordPays` schweigt immer, `null` verhält sich wie vor #266.
+  Die Werte richten sich nach **Stromvertrag und Rechnung, nicht nach dem Zähler** (E1 mit Rechtsprüfung
+  M-1): Läuft der Strom über die Rechnung des Hauses, muss er dort heraus, gleich wer ihn trägt, und ein
+  Zwischenzähler ersetzt nur das Schätzen (VIII ZR 27/07, Rn. 32). Eigene Codes statt Varianten (E6), weil
+  Stufe und Ampel am Code hängen. Die Angabe steht an der Anlage, nicht je Heizperiode (E2), der Kesseltausch
+  übernimmt sie (E3), der Server nimmt sie an jeder Anlage an (E4), und ob gefragt und ausgewertet wird,
+  entscheidet einmal `asksOperatingPowerHandling` in shared/operatingPower.ts (E5). Frage, Beschriftungen
+  und die zitierte Frage des Kostenformulars stehen dort als Konstanten, damit Hinweis, Lexikon und
+  Oberfläche wortgleich sind (OperatingPowerFields.test.tsx hält die gerenderte Frage fest). Ist die
+  Position „Betrieb“ womöglich schon der Betriebsstrom selbst, sagt `deduction-missing`, ihn zu kennzeichnen
+  statt mit der Karte ein zweites Mal anzulegen; die Karte sieht eine Position ohne Kennzeichnung nicht.
+  Keine Zahl ändert sich; ein Satz zur Steuer beim Weg „abziehen und selbst tragen“ steht bewusst nicht
+  darin (eigener Befund). `heating.generation-power-missing` kommt bei Wärmepumpe und
+  Elektrokessel ohne eigene Stromrechnung (Teil `fuel`, ohne Teil, Lieferung) und ohne Abzug, auch ganz
+  ohne Heizposition, solange die Anlage im Zeitraum besteht; er färbt gelb. Die Daten der Fassungen kommen
+  aus dem Register (`betrkv.generation-power` ab 01.01.2024, `hkv.generation-power` ab 01.10.2024, beide
+  `overlap`, BGBl. 2023 I Nr. 280): ganz vor 2024 schweigt er, die HeizkostenV nennt er nur, wo der Zeitraum
+  ihre Fassung berührt und `heating.heat-pump-capture` für die Anlage nicht meldet, dass sie noch nicht
+  gilt (§ 12 Abs. 3 Satz 2). Abgefragt wird das Register erst, wenn der Hinweis sonst käme, damit es nicht
+  im Rechtsstand jeder Abrechnung mit Wärmepumpe steht. Das Herausrechnen und die Schätzung sind beim
+  Strom zur Wärmeerzeugung als Auslegung gekennzeichnet; entschieden ist beides für den Betriebsstrom.
+- **Wärmelieferung, Contracting** (#213, Heizung PR 16, [shared/heatDelivery.ts](shared/heatDelivery.ts),
+  [server/src/heatDelivery.ts](server/src/heatDelivery.ts)): `heating_plants.contracting` (Schritte 0043/0044)
+  an jeder zentralen Anlage außer Fernwärme, **auch an der Wärmepumpe** (Prüfung R-M4); `energy` ist dann der
+  Brennstoff des Kessels. Dazu `heat_delivery_since`, `previous_supply` (`landlord` | `tenant`) und
+  `switch_announced_on`, nur bei Fernwärme oder Contracting. **Eine Naht:** `asBilledPlant` in `snapshotFor` und
+  `heatingSnapshotFor` gibt der Berechnung bei Contracting `energy = 'districtHeating'` und daneben
+  `fuelEnergy`; damit gelten die Regeln der Fernwärme ohne weitere Zeile (kein Pflichtanteil nach § 7 Abs. 1
+  Satz 2 wegen § 7 Abs. 3, ÷ 1,15 nach § 9 Abs. 2 Satz 6 Nr. 2, kein Vorrat, Lieferungen als Wärmerechnungen).
+  `asBilledPlant` ist idempotent (calc.ts baut Schnappschüsse auch aus Schnappschüssen). Schreibwege, Oberfläche,
+  Betriebsstrom und das Blatt für den Messdienst fragen `billingEnergy`; der Wächter
+  [heat-delivery-guard.test.ts](server/test/heat-delivery-guard.test.ts) verbietet dort `plant.energy` in
+  Entscheidungen (Vorrat, Heizwerttabelle, Pflichtanteil, CO₂-Felder, Betriebsstrom), mit benannten Ausnahmen.
+  **Ausnahmen der Naht:** § 2 Abs. 4 Satz 2 CO2KostAufG hängt an der gespeicherten Energie; ob CO₂ aufzuteilen
+  ist, sagt `co2Required` nach dem Brennstoff des Lieferanten (`NO_CO2_FUELS`: Pellets, Holz, Strom, Wärmepumpe;
+  „Sonstiges“ bleibt pflichtig, Auslegung); die Informationen nach § 6a nennen den Brennstoff (`generatorEnergy`)
+  und verlangen Werte eines Wärmenetzes nur bei Fernwärme ohne Merkmal (§ 6a Abs. 3 Satz 1 Nr. 1 Buchst. a,
+  Prüfung C-M2); bei Contracting mit Wärmepumpe sperrt dhw.ts die Formeln (`heating.dhw-share-invalid`), denn
+  offen ist, ob Satz 6 Nr. 2 oder Nr. 3 gilt; gemessen rechnet sie gegen die gelieferte Wärme. § 11 Abs. 1 Nr. 3
+  Buchst. a a. F. und § 12 Abs. 3 hängen am Wärmeerzeuger (`generatorEnergy` in calc.ts, Durchsicht von #272, M1;
+  Auslegung am Wortlaut von § 1 Abs. 1 Nr. 2); bei Contracting mit Pellets, Holz, Strom oder Wärmepumpe teilt die
+  Berechnung kein CO₂ auf und prüft keine CO₂-Werte, auch wenn eine Rechnung welche trägt.
+  Nach dem Betriebsstrom fragt Mietfuchs bei Contracting wie bei Fernwärme nicht (Prüfung C-M3). **Umschalten**
+  des Merkmals an einer Anlage mit Lieferungen, Vorrat, CO₂-Angaben oder Heizpositionen und Angaben (Verteilung,
+  Warmwasser) eines offenen Zeitraums ist gesperrt (409, Weg über den
+  Kesseltausch), denn die Abrechnung hängt am Merkmal und nicht an einem Datum; der Kesseltausch nimmt Merkmal
+  und Angaben an (`SWAP_FIELDS`) und vergleicht nach der Energie der Abrechnung, Gas → Gas mit Contracting ist
+  also ein Tausch (Prüfung C-M1); die Oberfläche schlägt den Tag des Tauschs als Tag der Umstellung vor.
+  `heating.contracting` (hint, färbt das Cockpit nicht, führt zur Anlage) nennt für Mieter, deren Mietvertrag
+  vor der Umstellung geschlossen wurde (`contractDate`, sonst Mietbeginn) und am Tag noch lief, ohne Inklusivmiete
+  bei der Heizung (eine Betriebskostenpauschale zählt mit, § 556 Abs. 2 BGB, Auslegung; Durchsicht von #272, S1): die beiden Voraussetzungen des § 556c Abs. 1 BGB, die Ankündigung als
+  eigene Pflicht (Abs. 2) mit § 11 Abs. 3 WärmeLV bei Zugang ab dem Tag `noticeMonths` Monate vorher
+  (Auslegung entsprechend §§ 187, 188 BGB, im Text als vorsichtige Auslegung mit dem letzten Tag genannt; eine
+  Ankündigung nach der Umstellung hat einen eigenen Satz), den Weg über § 5 WärmeLV; bei vorheriger Eigenversorgung der Mieter
+  BGH VIII ZR 46/25 und 47/25 (Volltext geprüft am 11.10.2026: § 556c gilt nicht; im entschiedenen Fall
+  jedenfalls § 7 Abs. 2, § 8 Abs. 2 HeizkostenV, der volle Umfang offen); vor dem 01.07.2013 einen eigenen
+  Text (VIII ZR 54/04). Der Wortlaut folgt der rechtlichen Gegenprüfung. Die Zahlen kommen aus
+  `bgb.heat-delivery-switch` (ab 01.07.2013, `eventDate`); kein Eintrag im Regelverzeichnis, damit § 556c
+  nicht im Rechtsstand jeder Abrechnung steht. Nicht abgebildet: die Lieferung mit unmittelbarer Abrechnung
+  des Lieferanten (§ 1 Abs. 3, § 11 Abs. 1 Nr. 4 HeizkostenV) und Contracting bei Etagenheizungen.
+- **Hälftige Teilung nach § 5a CO2KostAufG** (#215, Heizung PR 18, [server/src/halfSplit.ts](server/src/halfSplit.ts),
+  [shared/law/gmodg.ts](shared/law/gmodg.ts)): Ab 2028 trägt der Vermieter bei einer Heizung nach § 43 Abs. 1 GModG
+  die Hälfte der Gasnetzentgelte und CO₂-Kosten, ab 2029 des Pflichtanteils an Biobrennstoff (bis 30 % des
+  Brennstoffs). Merkmale: `heating_plants.gmodg43_installed_on` (gesetzt heißt „Heizung nach § 43“, nur Gas, Öl,
+  Flüssiggas, nach dem 29.07.2026 außer im Neubau), `emergency_install`, `emergency_prior_duty` (gefragt als „war die
+  ausgefallene eine solche Heizung, nach dem 29.07.2026 eingebaut?“, Prüfung M8), `new_building_first_use`,
+  `building_application_before_2026_05_13`; `tenancies.half_split_notice_on` (§ 5d Abs. 4 je Mieter);
+  `properties.tight_market` mit `tight_market_from`/`_to` (Geltung der Verordnung); Schritte 0048/0049, die
+  Bedingungen an NULL-fähigen Merkmalen vergleichen mit `IS 1`, weil `= 1` bei NULL die Bedingung bestehen ließe.
+  **Die Zeitregel ist `incurred`**: `law()` teilt den Zeitraum an den Fassungen von `co2.half-split` und gewichtet
+  nach Anfall; je Lieferung nach den Stufen 1–5 (`deliveryShare` mit dem `ctx` aus `fuelResults`), ohne Lieferungen
+  (Messdienst, Vorrat) nach Gradtagen; dass auch die CO₂-Kosten nach Anfall geteilt werden, ist Auslegung (15.1
+  Nr. 13). Vor 2028 und ohne Merkmal fragt `halfSplitOf` das Register nicht. § 5a Abs. 4 Satz 2 heißt zwölf Monate
+  ab dem Einbau (BT-Drs. 21/7009, S. 154), „zwölf Monate ab“ rechnet `eventPeriodEnd` (§§ 187, 188 BGB); ein Einbau
+  genau zwölf Monate vor dem 01.01.2028 wird nach dem Wortlaut geteilt und als Auslegung genannt. `selfSplit` mischt
+  den Anteil nach Stufen (mit § 8 und § 9) und die Hälfte; § 9 kürzt nur den Teil nach Stufen (Auslegung zulasten
+  des Vermieters; bei § 9 Abs. 2 ist der Teil nach Stufen 0 ‰, nie „unbekannt“). Die Nachstufung des Messdienstes
+  mischt über den vorhandenen Parameter `adjust` von `restage` mit Toleranz 1 ‰. Die Etagenheizung mischt je Wohnung
+  nach ihren Rechnungen. Im selbst bewohnten Gebäude mit höchstens zwei Wohnungen an einer zentralen Anlage gilt
+  die Ausnahme des § 5d Abs. 3 nur bei festgestellten Voraussetzungen: Gebiet in der Heizperiode „nein“ und für
+  jeden Mieter eine zählende Mitteilung, vor Beginn der Heizperiode oder, wenn der Vertrag schon vor den
+  Voraussetzungen bestand, bis zum Ende der Abrechnungsfrist (§ 5d Abs. 4 Satz 2). Contracting ist eingeschlossen
+  (BT-Drs. 21/6278, S. 124); ob Gas, entscheidet `generatorEnergy` (Ausnahme der Naht, im Wächter benannt).
+  Netzentgelte und Biobrennstoff stehen als Zeilen `gmodgRelief` unter `gmodg:<Anlage>:<Heizperiode>` mit Grund
+  `gmodgShare` (§ 7 Abs. 5), verteilt nach dem Anteil am Brennstoff; **jede Stelle, die die CO₂-Abzugszeile an
+  `reliefKey` erkennt, fragt `reliefKeysOf`** (Kürzungsbeträge, Ausweis der eigenen Abrechnung, Vorschlag nach
+  § 560 im Rumpf; Prüfung M5). Fehlen Netzentgelte oder Biobrennstoff an einer Lieferung mit Tagen in der Teilung,
+  warnt `co2.half-split-missing` mit 3 % je Mieter; Biobrennstoff aus dem Vorrat rechnet Mietfuchs nicht (Warnung,
+  außer an jeder Lieferung ab dem 01.01.2029 (oder ohne Datum) steht 0, Durchsicht S3; ein Betrag über 0 wird abgelehnt, ebenso ab 2040).
+- **Mieter heizt selbst und die CO₂-Erstattung** (#97, Heizung PR 19, [server/src/co2Refund.ts](server/src/co2Refund.ts),
+  [server/src/db/co2Refunds.ts](server/src/db/co2Refunds.ts)): `heatingModel: 'selfSupply'` heißt, der Mieter
+  bezieht Brennstoff oder Wärme über einen eigenen Vertrag, als Etagenheizung oder als zentrale Heizung mit
+  Brennstoffvertrag beim Mieter (§ 2 Abs. 1, § 6 Abs. 2 CO2KostAufG). **Nie wie Pauschale oder Inklusivmiete lesen**:
+  `allocationModel` macht daraus `settlement` für `modelFor`, `notSettled`, `heatingFlat` und `costModels`, denn
+  Wartung und Betriebsstrom, die der Vermieter trägt, bleiben umlegbar. Für eine solche Anlage entsteht **keine
+  Heizanlage** (die Einrichtung fragt bei Gas, Öl, Flüssiggas und Kohle nach dem Liefervertrag und bietet die
+  Umstellung der Mietverhältnisse an; ein Mieter, über dessen Vertrag auch Dritte versorgt werden, ist nicht
+  abgedeckt). Die Art steht in `selfSupplyKind` (`perUnit` Heizung in der Wohnung, `central` zentrale Heizung, Schritte
+  0052/0053): Bei `central` meldet `heating.self-supply-operating-power` (Auskunft, färbt nicht, wie Hinweis A aus #265), wenn andere Mieter den Allgemeinstrom
+  tragen und kein Abzug des Betriebsstroms erfasst ist (V ZR 166/15, Rn. 13); die Art geht beim Mieterwechsel mit.
+  Heizpositionen, die nur Selbstversorger tragen, melden keine Kürzung nach § 7 Abs. 4 CO2KostAufG und
+  keine nach § 12 HeizkostenV (bei der Etagenheizung gilt die Verordnung nicht, beim einzigen Nutzer wird nichts
+  verteilt; Auslegung), sondern `co2.self-supply-items`; wer selbst heizt und zugleich Positionen einer Heizanlage
+  trägt, bekommt `co2.self-supply-mixed` (error). Die Erstattung (`co2_refunds`, Schritte 0050/0051) gibt es nur bei
+  `selfSupply` (Route 400, Abrechnung `co2.refund-not-self` und keine Zeile); verrechnet wird sie als Zeile
+  `co2Refund` (Kostenart `CO₂-Erstattung`, ohne Position) mit Gegenzeile `co2Refund` beim Vermieter, Σ unverändert;
+  nur in einem Zeitraum, in dem der Mieter wohnte, nie in einem abgeschlossenen, und eine dort verrechnete bleibt
+  unveränderlich. Gebucht wird der angezeigte Betrag; die Nachrechnung (`selfSplit` wie bei der eigenen Aufteilung:
+  Stufe, § 8 Abs. 2, § 9 nur auf den Teil nach Stufen, § 5a nach Gradtagen) steht im Rechenweg, eine Abweichung
+  meldet `co2.refund-differs`; über mehr als ein Jahr rechnet sie nicht nach (umzurechnen ist nach § 5 Abs. 1 Satz 5,
+  offen ist nur das Verfahren). **Steuer:** Eine verrechnete Erstattung wirkt über Saldo und Zahlungen; eine
+  ausgezahlte (`paidOutOn`) steht in `taxReport` im Jahr der Auszahlung als Werbungskosten (§ 11 Abs. 2 EStG) und
+  **nie als negative Zahlung im Mietkonto** (die läse `rentLedger` als Rücklastschrift). Der Vorschlag nach § 560 Abs. 4 BGB rechnet mit `recurringShareCents` ohne Erstattungen.
+  Offen ist, ob § 8 Abs. 2 seit der Neufassung von § 6 Abs. 2 noch auf die Auszahlungsfrist verweist; Mietfuchs warnt.
 - **Überschneidende Mietverhältnisse einer Wohnung** (#204): Wann sich zwei überschneiden (ein
   gemeinsamer Tag, inklusive Grenzen), steht einmal in [shared/tenancyOverlap.ts](shared/tenancyOverlap.ts);
   Server und Oberfläche fragen dieselbe Funktion. Gerechnet wird wie erfasst, jedes mit vollem
@@ -1419,6 +2513,45 @@ die ganze fachliche Komplexität:
   Grundsteuer 2025, im Februar 2026 gezahlt, steht damit in der Anlage V 2025, obwohl sie nach
   § 11 Abs. 2 EStG in 2026 abfließt. Solange die Einnahmenseite ebenfalls auf Soll stand, war das
   symmetrisch schief. Das Datenmodell dafür zu erweitern ist eine eigene Entscheidung.
+  **Betriebsstrom: die Stromrechnung zählt genau einmal** (#268). Eine Heizposition `included`
+  („steckt auch in der Stromrechnung“) und ein Abzug beim Allgemeinstrom (`operatingPower:
+  'deduction'`) sind beide nur Ausschnitte derselben bezahlten Stromrechnung, keine eigene Zahlung.
+  Summiert mit Vorzeichen stand der Strom als G − Σ Abzug + Σ Heizposition da: Ein selbst
+  getragener Abzug ohne Gegenstück senkte die Werbungskosten wie eine Gutschrift, eine Heizposition
+  über dem Abzug zählte doppelt. `operatingPowerBalance` (server/src/operatingPower.ts) rechnet je
+  Steuerjahr **C = Σ Betrag der Abzüge − Σ Betrag der Heizpositionen `included`**, über alle
+  Positionen des Steuerjahres, **mit Vorzeichen und ohne Klemme**, und `taxReport` stellt C als
+  abgeleitete Zeile `operating-power-balance:<Jahr>` beim Allgemeinstrom dazu
+  (`TaxExpenseItem.operatingPowerBalance`). Damit ist der Strom in jedem Jahr die bezahlte Rechnung,
+  auch wenn Abzug und Betriebsstrom in verschiedenen Steuerjahren stehen (deshalb entfielen der Hinweis
+  `heating.operating-power-tax-year` und der Satz zur Verschiebung in der Vorschau des Zeitraumwechsels). Mit
+  Eigennutzung ergibt ein verknüpftes Paar über zwei Steuerjahre je Jahr dieselben Zahlen wie das Paar im selben Jahr,
+  sofern die Anlage im Jahr des Abzugs Heizkosten hat (sonst gilt dort die Fläche); dafür löst `taxReportFor` den
+  Verweis über alle Positionen des Objekts auf (`linkable`), denn der Schnappschuss kennt nur sein Jahr (Durchsicht M1).
+  Zeilenname und Texte folgen der Lage (`operatingPowerBalanceKind`): „selbst getragen“ nur beim Abzug ohne Verweis,
+  „prüfen“ nur, wenn Abzug und Betriebsstrom im selben Steuerjahr verschieden hoch sind;
+  eine Sonderregel für
+  Verweise über Jahre gibt es bewusst nicht (eine Klemme bei 0 und „anderes Jahr neutral“ waren
+  beide nachgemessen falsch). Ausgenommen sind Abzüge **ohne Verweis**, wenn eine Anlage mit
+  Messdienst den Zeitraum berührt (`serviceReceivesOperatingPower` in shared/operatingPower.ts,
+  dieselbe Frage wie im Kostenformular): Dann ist der Betrag nach Angabe des Nutzers dem Messdienst
+  gemeldet und steckt in dessen Betrag. Mietfuchs folgt dieser Angabe; ist in Wahrheit nichts
+  gemeldet, fehlt der Betrag, und das ist eine bekannte Grenze. Heizt im Zeitraum zugleich eine
+  Anlage ohne Messdienst (Kesseltausch), nennt die Seite den Abzug als nicht eindeutig
+  (`operatingPowerAmbiguous`). Ohne Messdienst heißt dieselbe Wahl im Formular „Ja, ich lege ihn
+  nicht um und trage ihn selbst“ (`OPERATING_POWER_KEPT`). **Der private Teil folgt dem
+  Heizanteil**: jeder Beitrag zu C mal Eigenanteil an den Heizkosten seiner Anlage in der Abrechnung
+  seines Teils, so wie die Übersicht diese Heizpositionen aufteilt (bei abgeschlossener Abrechnung
+  also eingefroren); dann ergibt ein verknüpfter Abzug über dem Betriebsstrom dasselbe wie das richtige Paar. Ohne
+  zuordenbare Anlage (Abzug ohne Verweis) gilt die Fläche des ganzen Gebäudes (BFH IX R 26/06); das kann vom Paar
+  abweichen, etwa wenn die Anlage die eigene Wohnung gar nicht heizt. Beides ist
+  Auslegung und steht so im Rechenweg und auf der Seite. Die Zeile geht nicht durch den eingefrorenen
+  Stand (`closedItemsChanged` bleibt), nicht in `selfUsedShareCents` und steht im Steuer-ZIP ohne
+  eigenen Beleg. Negativer Allgemeinstrom **ohne** Kennzeichnung bleibt, wie er ist (Gutschrift und
+  Abzug sind nicht zu unterscheiden), die Seite weist nur darauf hin (`unmarkedPowerCredits`). Die
+  Abrechnung an die Mieter bleibt unberührt. Zusicherungen in
+  [calc-steuer-betriebsstrom.test.ts](server/test/calc-steuer-betriebsstrom.test.ts) und als
+  Invariante in [invariant-betriebsstrom-steuer.test.ts](server/test/invariant-betriebsstrom-steuer.test.ts).
 
 **Das Datenmodell steht in [shared/types.ts](shared/types.ts)** (Unit, Tenancy, Meter, Reading,
 CostItem, Settings, Settlement …) und gilt für Server und Client gleichermaßen. Die Datei
@@ -1435,7 +2568,7 @@ Die Grenze zu [client/src/types.ts](client/src/types.ts) hängt an einer einzige
 Aufzählungstyps nach `shared/`, denn nur dann kauft man sich damit etwas ein, nämlich dass eine
 Änderung nicht auf einer Seite ankommt und auf der anderen nicht. Was nur eine Seite kennt,
 bleibt bei ihr, und zwar auch dann, wenn es über die Leitung geht: `Db` und `ComputedSettlement`
-im Server, die Formularzustände im Client, und ebenso `ClientSettings` in api.test.ts, das genau
+im Server, die Formularzustände im Client, und ebenso `ClientSettings` in server/testing/api.ts, das genau
 die Antwort von `GET /api/settings` beschreibt und trotzdem nur den Server etwas angeht, weil
 der Client sie nie so liest.
 
@@ -1488,6 +2621,39 @@ fertigen Abrechnung steht, client/src/types.ts eine eigene für die Eingabe-Ober
   `fetch` (Node und Bun brechen ab, wenn so lange keine Antwort-Header kommen, Ollama schickt
   sie erst mit dem ersten Token). Unter Node über `node:http(s)`, unter Bun über `fetch` mit
   `timeout: false`. Für KI-Anfragen deshalb nicht `fetch` direkt nehmen.
+- [server/src/extractHeating.ts](server/src/extractHeating.ts) (Heizung PR 20, #103): Messdienstabrechnung
+  und Lieferantenrechnung, über `POST /api/heating-plants/:id/service-statement` (nur bei `method:
+  'service'`) und `…/fuel-invoice`, als derselbe Strom wie `/api/extract`; Text und Seitenbilder stellt
+  `documentMaterial` aus extract.ts zusammen, für jede Belegart gleich. Je Belegart **ein** Ausgang
+  (`toServiceExtraction`, `toFuelExtraction`) und kein eigener Eingang, denn dazwischen rechnet Mietfuchs
+  nur Netto-Teilmengen hoch, mit derselben Prüfung `vatExplainsGap` wie #34; die beiden Felder, die Mietfuchs
+  selbst setzt (`amountsAdjusted`, `amountsNetUnadjusted`), liest der Ausgang nie aus der Antwort. Die
+  Abzugszeile steht oft mit typografischem Minus da und wird als Betrag gelesen. **Gespeichert wird nichts außer
+  dem Beleg** (mit Objekt und Jahr aus dem Formular im Posteingang, bis er an eine Position kommt; eine
+  Lieferung hat keinen Beleg), und es entsteht keine Auswertung der Belegbuchung, denn Nutzerzeilen und
+  Lieferungen sind keine Rechnungspositionen. Die Seite Heizkosten zeigt den Vorschlag und schreibt über die
+  bestehenden Routen, wenn der Vermieter übernimmt: die Karte „Messdienstabrechnung auslesen“
+  (`client/src/serviceImport.ts`, `ServiceImportReview.tsx`) und „Rechnung mit KI auslesen“ in der Karte
+  „Lieferungen“ (`client/src/fuelImport.ts`). Eine Nutzerzeile wird nur bei genau einem Treffer zugeordnet
+  (Name unter den Mietverhältnissen, die den Zeitraum berühren, bei mehreren die Lage; „Leerstand“ und
+  „Eigentümer“ an ihren Wörtern). Der Betrag der Heizposition ist S plus Abzugszeile (Entwurf 7.1). Die gefundene
+  Abzugszeile steht als Satz neben der Frage, gewählt wird nichts vor (Entwurf 7.2); widerspricht die Antwort
+  („nur ausgewiesen“, „gar nicht aufgeteilt“), warnt die Karte. Die CO₂-Angaben werden vorbelegt, nie mit leeren
+  Werten überschrieben, und mit der eben angelegten Heizposition verknüpft. Kalte Blöcke einer Komplettabrechnung
+  nur, wenn die Heizperiode dem Objektzeitraum gleicht (Festlegung, Leistungsprinzip; Einzelbeträge lassen sich
+  nicht nach Tagen teilen). Reicht der Zeitraum über zwei Kalenderjahre, fragt die Karte je Block nach dem Jahr
+  der Zahlung, wie `requireTaxYear` es verlangt. Bei der Lieferantenrechnung übernimmt das Formular den
+  Preisbestandteil nach § 3 Abs. 1 Nr. 6 CO2KostAufG nur, wo der Server ihn annimmt (`bioAccepted`: Heizung
+  nach § 43 Abs. 1 GModG, nicht aus dem Vorrat, nicht ab der Grenze von § 5a Abs. 3 Nr. 3), und nennt sonst den
+  Grund; beim Vorrat bleiben Rechnungszeitraum und Teilmengen leer. Bei freien Schlüsseln nimmt eine Lieferung
+  keinen Betrag an, dann nennt die Karte ihn als Satz. Vorbelegt wird nur, was die Karte zeigt (CO₂-Angaben
+  nach `asksCo2Facts`, Bezug der kWh nur bei Gas, Heizwert nur beim Vorrat); was gelesen, aber nicht
+  übernommen wird, nennt `fuelChecks` als Satz, sonst ginge ein ungesehener CO₂-Betrag in den Rumpf und
+  löste eine Aufteilung aus. Den Energiegehalt einer Lieferung aus dem Vorrat übernimmt das Formular nicht,
+  denn dort rechnet Mietfuchs mit verbrauchter Menge × Heizwert (§ 9 Abs. 3 HeizkostenV); der Satz dazu
+  prüft Menge × Heizwert gegen den Energiegehalt (mehr als 1 % Abstand). Erneut ausgelesene Abrechnungen:
+  Heizblock und kalte Blöcke mit vorhandenen Einzelbeträgen sind nicht vorgehakt, und Anlegen fragt nach.
+  `PUT …/hot-water` ohne `dhwUnmeasurable` lässt die Bestätigung derselben Formel stehen.
 
 **Rohe Antwort und Zusage: zwei Beschreibungen, eine Grenze** (#63). Die Auswertung eines Belegs
 durchläuft zwei Stadien, und jedes hat seinen eigenen Typ. `RawExtraction` und `RawPosition` in
@@ -1624,7 +2790,13 @@ Oberfläche zeigt dazu den dpi-Wert bei A4.
 [scripts/ai-eval.mjs](scripts/ai-eval.mjs)): vergleicht echte Ollama-Modelle auf GitHub-Runnern
 ohne Grafikkarte an erfundenen Belegen in [scripts/ai-eval/](scripts/ai-eval/), je als PDF mit
 Textebene, Scan und Foto. Start von Hand oder per Label `ai-eval` an einem PR. Neue
-Beispielbelege nur erfunden, nie echte Rechnungen.
+Beispielbelege nur erfunden, nie echte Rechnungen. Die Belege `metering-service`, `gas-supplier`
+und `heating-oil` (`kind` in cases.json) laufen über die Routen einer Heizanlage, die der Lauf
+anlegt; bewertet wird in [scripts/ai-eval/score.mjs](scripts/ai-eval/score.mjs) mit gepflegter
+`score.d.mts` daneben (getestet ohne Modell in `server/test/ai-eval-score.test.ts`), denn
+ai-eval.mjs startet beim Laden den Lauf. Das nachgebaute Ollama
+([scripts/fake-ollama.mjs](scripts/fake-ollama.mjs)) beantwortet die drei Belege richtig, erkannt am
+Schema; so lässt sich die Verdrahtung ohne Modell prüfen.
 
 **Update-Hinweis** ([server/src/update.ts](server/src/update.ts)): Nur mit Zustimmung
 (`settings.updateCheck === 'on'`, beim ersten Start im Cockpit gefragt) fragt der Server

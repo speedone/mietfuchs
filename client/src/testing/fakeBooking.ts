@@ -6,6 +6,7 @@
 // Bewusst kein `*.test.ts`: vitest führt diese Datei nicht als Test aus.
 import type { AssessmentView, CostItem, Extraction, Meter, StoredAssessment, StoredAssessmentLine, Unit } from '../types'
 import { describeAssessment, detectedYear, linesFromExtraction, withoutBooked, type BookedLine } from '../../../server/src/assessment.ts'
+import { CALENDAR_RULES, calendarPeriod } from '../../../shared/period.ts'
 import { bookingResponse, parseDecisions, planBooking, previewWith, settle, tokenSource, type BookingWrite } from '../../../server/src/bookingPlan.ts'
 
 type Stored = { assessment: StoredAssessment; lines: StoredAssessmentLine[] }
@@ -22,7 +23,7 @@ export function fakeBooking(start: { items: CostItem[]; units: Unit[]; meters?: 
   const booked = (): BookedLine[] =>
     records.flatMap((r) => r.lines.filter((l) => l.costItemId !== null).map((l) => ({ ...l, file: r.assessment.file })))
   const view = (r: Stored): AssessmentView => describeAssessment(r, {
-    items: items.filter((i) => i.propertyId === propertyId), units: start.units, meters: start.meters ?? [], propertyKind: 'mfh',
+    items: items.filter((i) => i.propertyId === propertyId), units: start.units, meters: start.meters ?? [], propertyKind: 'mfh', rules: CALENDAR_RULES,
     originalName: r.assessment.file, twinOf: null, twinNames: new Map(), booked: booked(),
   })
   const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } })
@@ -30,8 +31,14 @@ export function fakeBooking(start: { items: CostItem[]; units: Unit[]; meters?: 
   function apply(r: Stored, writes: readonly BookingWrite[]): void {
     for (const w of writes) {
       if (w.kind === 'createItem') {
-        const { invoiceFile, ...rest } = w.body
-        items = [...items, { ...rest, id: w.id, ...(invoiceFile ? { invoiceFile } : {}) }]
+        // Die Felder aus #208 stehen im Rumpf als `null`, an der Position fehlen sie dann.
+        // Betriebsstrom (Heizung PR 15) setzt nur das Kostenformular; die Belegbuchung schickt ihn nicht.
+        const { invoiceFile, serviceFrom, serviceTo, taxYear, heatingPart, heatingTarget, operatingPower: _op, operatingPowerItemId: _opItem, operatingPowerBasis: _opBasis, operatingPowerGeneralId: _opGeneral, ...rest } = w.body
+        items = [...items, {
+          ...rest, id: w.id, ...(invoiceFile ? { invoiceFile } : {}),
+          ...(serviceFrom !== null && serviceTo !== null ? { serviceFrom, serviceTo } : {}),
+          ...(taxYear !== null ? { taxYear } : {}), ...(heatingPart !== null ? { heatingPart } : {}), ...(heatingTarget !== null ? { heatingTarget } : {}),
+        }]
       } else if (w.kind === 'updateItem') {
         items = items.map((i) => (i.id === w.id
           ? { ...i, amountCents: w.patch.amountCents, labor35aCents: w.patch.labor35aCents ?? undefined, invoiceFile: w.patch.invoiceFile ?? i.invoiceFile }
@@ -55,7 +62,8 @@ export function fakeBooking(start: { items: CostItem[]; units: Unit[]; meters?: 
       const fresh = linesFromExtraction(ex)
       const r: Stored = {
         assessment: {
-          id, file, propertyId, year: detected ?? opts.year, detectedYear: detected, requestedYear: opts.year, vendor: ex.vendor ?? null,
+          id, file, propertyId, year: detected ?? opts.year, detectedYear: detected,
+          requestedYear: opts.year, requestedPeriod: propertyId === null ? null : calendarPeriod(opts.year), vendor: ex.vendor ?? null,
           invoiceDate: ex.invoiceDate ?? null, totalGrossCents: typeof ex.totalGrossEur === 'number' ? Math.round(ex.totalGrossEur * 100) : null,
           amountsAdjusted: ex.amountsAdjusted ?? null, laborFromTotal: ex.laborFromTotal === true, nextIdx: fresh.length,
           createdAt: new Date(Date.UTC(2026, 9, 2, 0, 0, next)).toISOString(),
@@ -99,14 +107,16 @@ export function fakeBooking(start: { items: CostItem[]; units: Unit[]; meters?: 
       if (!m[2]) {
         const year = fieldOf(body, 'year')
         // Wie placeAssessment: ein von Hand gesetztes Jahr ist zugleich das gewählte.
-        if (method === 'PUT' && typeof year === 'number') r.assessment = { ...r.assessment, year, requestedYear: year }
+        if (method === 'PUT' && typeof year === 'number') {
+          r.assessment = { ...r.assessment, year, requestedYear: year, requestedPeriod: r.assessment.propertyId === null ? null : calendarPeriod(year) }
+        }
         return json(view(r))
       }
       requests.push({ path, body })
       const parsed = parseDecisions(fieldOf(body, 'decisions'))
       if ('error' in parsed) return json({ error: parsed.error }, 400)
       const planned = planBooking({
-        assessment: r.assessment, lines: r.lines, items, booked: booked(), units: start.units, twinFiles: [], fileNames: new Map(), closed: [],
+        assessment: r.assessment, lines: r.lines, items, booked: booked(), units: start.units, twinFiles: [], fileNames: new Map(), closed: [], rules: CALENDAR_RULES,
       }, parsed.decisions, () => `neu-${++next}`)
       // Der echte Server bildet die Marke als SHA-256 der Quelle; für den Vergleich genügt die Quelle.
       const preview = previewWith(planned, tokenSource(planned))

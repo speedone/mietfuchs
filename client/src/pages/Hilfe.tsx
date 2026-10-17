@@ -28,7 +28,7 @@ export default function Hilfe({ onNavigate }: { onNavigate: (page: GuidePage) =>
   return (
     <>
       <PageHeader
-        title="Hilfe"
+        title="Hilfe & Begriffe"
         subtitle="Anleitungen je Vermietungsart und die Fachbegriffe der Nebenkostenabrechnung in einfachen Worten, mit Beispiel und Rechtsgrundlage. Dieselben Erklärungen erscheinen in den Formularen, wenn Sie einen gestrichelt unterstrichenen Begriff antippen."
       />
       <div className="card">

@@ -2,10 +2,11 @@
 // wo es passt, den betroffenen Eintrag und die Regel. Der Wortlaut bleibt: `warnings` sind genau
 // die Texte der Hinweise, damit Cockpit, ältere Tabs und eingefrorene Abrechnungen weiter stimmen.
 
+import { calendarPeriod } from '../../shared/period.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement, consumptionOverview, NOTICE_KINDS, type ComputedSettlement } from '../src/calc.ts'
-import { RULES_AS_OF } from '../src/rules.ts'
+import { LAW_AS_OF } from '../../shared/law/register.ts'
 import { snapshotOf, type SnapshotCostItem, type SnapshotSource, type SnapshotTenancy, type SnapshotUnit } from '../src/snapshot.ts'
 
 const tenancy = (id: string, unitId: string, over: Partial<SnapshotTenancy> = {}): SnapshotTenancy => ({
@@ -14,7 +15,7 @@ const tenancy = (id: string, unitId: string, over: Partial<SnapshotTenancy> = {}
 })
 const unit = (id: string, over: Partial<SnapshotUnit> = {}): SnapshotUnit => ({ id, name: id, areaM2: 50, participates: true, ...over })
 const item = (id: string, over: Partial<SnapshotCostItem>): SnapshotCostItem => ({
-  id, year: 2025, category: 'Grundsteuer', description: id, amountCents: 100000, key: 'area', ...over,
+  id, period: calendarPeriod(2025), category: 'Grundsteuer', description: id, amountCents: 100000, key: 'area', ...over,
 })
 const settle = (s: Partial<SnapshotSource>, year = 2025): ComputedSettlement => computeSettlement(snapshotOf({
   units: [], tenancies: [], costItems: [], meters: [], readings: [], payments: [], closedSettlements: [], ...s,
@@ -65,16 +66,17 @@ test('Hinweise: die Position, die Wohnung und das Mietverhältnis stehen als Geg
 test('Kabel: der Hinweis nennt die Regel und die Position, 2024 und danach mit eigenem Code', () => {
   const k = (year: number) => settle({
     units: [unit('a')], tenancies: [tenancy('t-a', 'a')],
-    costItems: [item('kabel', { year, category: 'Kabel/Antenne', key: 'units' })],
+    costItems: [item('kabel', { period: calendarPeriod(year), category: 'Kabel/Antenne', key: 'units' })],
   }, year).notices
   assert.deepEqual(k(2023), [])
   assert.deepEqual(k(2024).map((n) => [n.code, n.rule, n.subject?.id]), [['tv-signal.partial-year', 'tv-signal', 'kabel']])
   assert.deepEqual(k(2025).map((n) => [n.code, n.rule, n.subject?.id]), [['tv-signal.ended', 'tv-signal', 'kabel']])
 })
 
-test('Rechtsstand: Datum des Verzeichnisses und die Regeln, die im Jahr gelten', () => {
+test('Rechtsstand: Datum des Registers und die Regeln, die im Jahr gelten', () => {
   const lb = (year: number) => settle({ units: [unit('a')] }, year).legalBasis
-  assert.equal(lb(2025).asOf, RULES_AS_OF)
+  // Seit Heizung PR 1 das Datum des Rechtsregisters, das die Regeln einschließt
+  assert.equal(lb(2025).asOf, LAW_AS_OF)
   assert.ok(lb(2023).rules.some((r) => r.code === 'tv-signal'))
   assert.ok(!lb(2025).rules.some((r) => r.code === 'tv-signal'))
   const tv = lb(2024).rules.find((r) => r.code === 'tv-signal')
@@ -129,4 +131,27 @@ test('Einzelbetrag fehlt bei einem Mieter mit Pauschale: kein Hinweis, denn er t
     costItems: [item('h', { key: 'amounts', tenancyAmounts: { 't-a': 30000 } })],
   })
   assert.ok(!s.notices.some((n) => n.code === 'amounts.missing'), s.warnings.join(' | '))
+})
+
+test('#223 Nutzerwechselgebühr auch bei Wasser und anderen Zählerpositionen: Hinweis (hint) mit BGH VIII ZR 19/07; nicht bei „Nicht umlagefähig“ und nicht doppelt bei der Heizung', () => {
+  const s = settle({
+    units: [unit('a')],
+    tenancies: [tenancy('t-a', 'a')],
+    costItems: [
+      item('wasser', { category: 'Wasser/Abwasser', description: 'Nutzerwechselgebühr Wasserzähler', key: 'persons' }),
+      item('strom', { category: 'Sonstige Betriebskosten', description: 'Zwischenablesung Stromzähler', key: 'meter', meterType: 'strom' }),
+      item('frei', { category: 'Nicht umlagefähig', description: 'Nutzerwechselgebühr Wasser' }),
+      item('heiz', { category: 'Heizung und Warmwasser', description: 'Nutzerwechselgebühr Heizung' }),
+      item('normal', { category: 'Wasser/Abwasser', description: 'Wasserrechnung 2025', key: 'persons' }),
+    ],
+  })
+  const hits = s.notices.filter((n) => n.code === 'meter.change-fee')
+  assert.deepEqual(hits.map((n) => n.subject?.id).sort(), ['strom', 'wasser'])
+  for (const n of hits) {
+    assert.equal(n.level, 'hint')
+    assert.match(n.text, /keine umlagefähigen Betriebskosten/)
+    assert.match(n.text, /BGH VIII ZR 19\/07/)
+    assert.match(n.text, /unter „Nicht umlagefähig“/)
+  }
+  assert.equal(s.notices.filter((n) => n.code === 'heating.change-fee').length, 1)
 })

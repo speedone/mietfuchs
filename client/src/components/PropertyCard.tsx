@@ -4,6 +4,7 @@ import type { Property, PropertyKind } from '../types'
 import { propertyBody, propertyToForm, type PropertyForm, CABLE_LABELS, type CableAnswer } from '../propertyForm'
 import { PROPERTY_KIND_LABELS } from '../types'
 import Term from './Term'
+import TightMarketField from './TightMarketField'
 import { api, errorText } from '../api'
 import { useOpenForm, useProperty, useSwitchProperty } from '../property'
 import { useConfirm, useToast } from './feedback'
@@ -142,7 +143,7 @@ export default function PropertyCard() {
           Bezeichnung
           <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="z. B. Mehrfamilienhaus Musterstraße" />
         </label>
-        <label className="field grow">
+        <label className="field grow-2">
           Adresse
           <input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="Straße Nr., PLZ Ort" />
         </label>
@@ -160,17 +161,17 @@ export default function PropertyCard() {
           </select>
         </label>
       </div>
-      <details open={form.own}>
+      {/* Heizung PR 18: § 5d CO2KostAufG, mit der Geltung der Verordnung. */}
+      <TightMarketField value={form.tightMarket} from={form.tightMarketFrom} to={form.tightMarketTo} onChange={(c) => setForm({ ...form, ...c })} />
+      <details className="extra-details" open={form.own}>
         <summary>Abweichender Vermieter oder Bankverbindung</summary>
         <p className="muted">
           Etwa beim Haus der Eltern oder einer Erbengemeinschaft. Ohne Haken, und für jedes leere Feld,
           gelten Vermieter, IBAN und Zahlungsfrist aus den Einstellungen.
         </p>
-        <label className="field checkline">
-          <span>
-            <input type="checkbox" checked={form.own} onChange={(e) => setForm({ ...form, own: e.target.checked })} />{' '}
-            Für dieses Objekt abweichend
-          </span>
+        <label className="checkline">
+          <input type="checkbox" checked={form.own} onChange={(e) => setForm({ ...form, own: e.target.checked })} />
+          Für dieses Objekt abweichend
         </label>
         {form.own && (
           <div className="row">
@@ -193,7 +194,7 @@ export default function PropertyCard() {
       <div className="row">
         <button className="btn" onClick={save}>Speichern</button>
         <button className="btn ghost" onClick={openDraft}>Weiteres Objekt anlegen</button>
-        {properties.length > 1 && <button className="btn ghost" onClick={remove}>Objekt löschen</button>}
+        {properties.length > 1 && <button className="btn ghost danger-ghost" onClick={remove}>Objekt löschen</button>}
       </div>
       <Drawer
         open={draft !== null}
@@ -202,6 +203,8 @@ export default function PropertyCard() {
         onSubmit={() => void create()}
         footer={draft && (
           <>
+            <span className="drawer-hint">Strg+S legt an · Esc schließt</span>
+            <span className="spacer" />
             <button className="btn ghost" onClick={() => setDraft(null)} disabled={creating}>Abbrechen</button>
             <button className="btn" onClick={() => void create()} disabled={creating || stuck}>{createButtonLabel(draft.name)}</button>
           </>

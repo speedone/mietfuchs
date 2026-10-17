@@ -10,21 +10,62 @@
 //   Zeitangaben sind ISO-Zeichenketten mit inklusiven Grenzen, gerechnet in UTC.
 
 import { sql } from 'drizzle-orm'
-import { check, index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
+import { check, index, integer, primaryKey, real, sqliteTable, text, uniqueIndex, type AnySQLiteColumn } from 'drizzle-orm/sqlite-core'
 import type {
+  AgreedOtherwise,
   AiJsonMode,
   AiProviderKind,
   AiSlotName,
+  AreaBasisHeat,
   AssessmentBooking,
+  ChangeSplit,
+  Co2Method,
+  Co2Restriction,
+  CaptureMethod,
   CostKey,
   CostModel,
+  HeatingModel,
+  SelfSupplyKind,
   DepositStatus,
+  DevicesInstalledAfter,
+  DevicesRemote,
+  DhwMethod,
+  EstimateCause,
+  ExemptionScope,
+  EstimateMethod,
+  EstimatePart,
+  EstimateValueUnit,
   ExternalMeasure,
+  FuelGrade,
+  FuelQuantityUnit,
+  CreditNoteKind,
+  GasBasis,
+  HcaScale,
+  ServiceHeatUnit,
+  HeatGeneration,
+  HeatingExemption,
+  HeatPumpMajority,
+  HeatingEnergy,
+  HeatingMethod,
+  HeatingPart,
+  OperatingPower,
+  OperatingPowerHandling,
+  PreviousSupply,
+  HeatingRole,
+  HeatingSource,
+  HeatingSupply,
+  HeatingTarget,
+  HotWater,
+  InsulationRule,
+  InterimGapStatus,
+  NewDevicesInstall,
   MeterType,
+  PeriodKey,
   PropertyKind,
   Settings,
   StoredAssessment,
   UploadKind,
+  StockUnit,
 } from '../../../shared/types.ts'
 
 // Die Werte der Aufzählungstypen stehen hier noch einmal, weil `shared/types.ts` bewusst keinen
@@ -44,10 +85,20 @@ const exactly =
   <L extends readonly T[]>(values: L & ([T] extends [L[number]] ? unknown : never)): L =>
     values
 
-export const COST_KEYS = exactly<CostKey>()(['area', 'persons', 'units', 'direct', 'meter', 'custom', 'external', 'amounts'] as const)
+export const COST_KEYS = exactly<CostKey>()(['area', 'persons', 'units', 'direct', 'meter', 'custom', 'external', 'amounts', 'heatingSystem'] as const)
 export const EXTERNAL_MEASURES = exactly<ExternalMeasure>()(['mea', 'area', 'units'] as const)
 export const COST_MODELS = exactly<CostModel>()(['settlement', 'flatRate', 'inclusive'] as const)
-export const METER_TYPES = exactly<MeterType>()(['kaltwasser', 'strom', 'waerme', 'sonstig'] as const)
+// Für die Heizung zusätzlich „Mieter heizt selbst“ (Heizung PR 19, #97).
+export const HEATING_MODELS = exactly<HeatingModel>()([...COST_MODELS, 'selfSupply'] as const)
+export const SELF_SUPPLY_KINDS = exactly<SelfSupplyKind>()(['perUnit', 'central'] as const)
+export const METER_TYPES = exactly<MeterType>()(['kaltwasser', 'warmwasser', 'strom', 'waerme', 'hkv', 'sonstig'] as const)
+export const HEATING_PARTS = exactly<HeatingPart>()(['fuel', 'operating', 'metering'] as const)
+// Betriebsstrom der Heizung (Heizung PR 15, #212): an Heizkosten `included`, am Allgemeinstrom `deduction`.
+export const OPERATING_POWER = exactly<OperatingPower>()(['included', 'deduction'] as const)
+// Wie der Betriebsstrom einer Heizanlage erfasst ist (#266); Beschriftungen in shared/operatingPower.ts.
+export const OPERATING_POWER_HANDLINGS = exactly<OperatingPowerHandling>()(['ownMeter', 'deducted', 'landlordPays'] as const)
+// Wer vor der Umstellung auf Wärmelieferung versorgte (Heizung PR 16, #213).
+export const PREVIOUS_SUPPLIES = exactly<PreviousSupply>()(['landlord', 'tenant'] as const)
 export const DEPOSIT_STATUS = exactly<DepositStatus>()(['offen', 'erhalten', 'teilweise', 'zurückgezahlt'] as const)
 const AI_PROVIDERS = exactly<AiProviderKind>()(['ollama', 'openai'] as const)
 const AI_JSON_MODES = exactly<AiJsonMode>()(['auto', 'schema', 'object', 'prompt'] as const)
@@ -72,11 +123,18 @@ const notNegative = (name: string, column: string) => check(name, sql.raw(`"${co
 const oneOf = (name: string, column: string, values: readonly string[]) =>
   check(name, sql.raw(`"${column}" IN (${values.map((v) => `'${v.replace(/'/g, "''")}'`).join(', ')})`))
 
+// Prüfbedingung „ein Zeitraumschlüssel 'JJJJ-MM' mit Monat 01 bis 12“ (#208, G-C3). Ob es diesen
+// Zeitraum für das Objekt gibt, weiß die Datenbank nicht; das prüft repository.ts beim Schreiben,
+// und `orphanPeriodKeys` fragt es beim Wiederherstellen über den ganzen Bestand ab. NULL lässt sie
+// durch wie `oneOf`.
+const periodKeyCheck = (name: string, column: string) =>
+  check(name, sql.raw(`"${column}" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]' AND CAST(substr("${column}", 6, 2) AS INTEGER) BETWEEN 1 AND 12`))
+
 // ---------- Objekte ----------
 
 // Die Arten eines Objekts (#92). Sie steuern später Voreinstellungen und Oberfläche (#94); in
 // Teil 1 werden sie nur gespeichert und angezeigt.
-export const PROPERTY_KINDS = exactly<PropertyKind>()(['mfh', 'etw', 'efh', 'sonstiges'] as const)
+export const PROPERTY_KINDS = exactly<PropertyKind>()(['mfh', 'etw', 'efh', 'zfh', 'sonstiges'] as const)
 
 // Ein Objekt ist zugleich die Abrechnungseinheit: ein Mehrfamilienhaus, eine vermietete
 // Eigentumswohnung, ein Einfamilienhaus. Mehrere Gebäude, die gemeinsam abrechnen, sind *ein*
@@ -97,13 +155,40 @@ export const properties = sqliteTable(
     paymentDeadlineDays: integer('payment_deadline_days'),
     // Kabelanlage vor dem 01.12.2021 errichtet (#121); null heißt unbekannt.
     cableBuiltBeforeDec2021: integer('cable_built_before_dec_2021', { mode: 'boolean' }),
+    // Beginnmonat der Abrechnungszeiträume von Anfang an (#208): 1 heißt Kalenderjahr. Die Zeiträume
+    // werden berechnet (shared/period.ts), zusammen mit den Wechseln in `period_changes`.
+    periodStartMonth: integer('period_start_month').notNull().default(1),
+    // Angespannter Wohnungsmarkt (§ 5d CO2KostAufG, Heizung PR 18); null heißt unbekannt. Bei „ja“ die
+    // Geltung der Verordnung (Abweichung 4 des Plans). Bedingungen im zweiten Schritt.
+    tightMarket: integer('tight_market', { mode: 'boolean' }),
+    tightMarketFrom: text('tight_market_from'),
+    tightMarketTo: text('tight_market_to'),
   },
   () => [
     oneOf('properties_kind_known', 'kind', PROPERTY_KINDS),
     // Wie `settings_deadline_not_negative`: Eine negative Frist datierte die Fälligkeit vor die
     // Abrechnung.
     notNegative('properties_deadline_not_negative', 'payment_deadline_days'),
+    check('properties_period_start_month_valid', sql.raw('"period_start_month" BETWEEN 1 AND 12')),
+    // Angespannter Wohnungsmarkt (Heizung PR 18, Abweichung 4 des Plans): Geltung nur bei „ja“, als Datum, geordnet.
+    // `IS 1` statt `= 1`: Bei „unbekannt“ (NULL) ergäbe `=` NULL, und eine Bedingung mit NULL gilt als erfüllt.
+    check('properties_tight_market_dates_valid', sql.raw(`("tight_market_from" IS NULL AND "tight_market_to" IS NULL) OR "tight_market" IS 1`)),
+    check('properties_tight_market_from_valid', sql.raw(`"tight_market_from" IS NULL OR "tight_market_from" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`)),
+    check('properties_tight_market_to_valid', sql.raw(`"tight_market_to" IS NULL OR "tight_market_to" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`)),
+    check('properties_tight_market_order_valid', sql.raw(`"tight_market_from" IS NULL OR "tight_market_to" IS NULL OR "tight_market_from" <= "tight_market_to"`)),
   ],
+)
+
+// Wechsel des Rhythmus (#208): Ab `from_month` ('JJJJ-MM') beginnt jeder Zeitraum in diesem Monat;
+// der letzte Zeitraum davor endet am Tag vor dem Wechsel (Rumpfzeitraum). Gehört zum Objekt und
+// fällt mit ihm.
+export const periodChanges = sqliteTable(
+  'period_changes',
+  {
+    propertyId: text('property_id').notNull().references(() => properties.id, { onDelete: 'cascade' }),
+    fromMonth: text('from_month').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.propertyId, t.fromMonth] }), periodKeyCheck('period_changes_from_month_valid', 'from_month')],
 )
 
 // Wurzeln eines Objekts sind Wohnungen, Zähler (auch Hauptzähler ohne Wohnung), Kostenpositionen
@@ -172,7 +257,12 @@ export const tenancies = sqliteTable(
     notes: text('notes'),
     // Nebenkostenmodell (#93), getrennt für kalte Kosten und Heizung. NULL heißt Abrechnung.
     costModel: text('cost_model', { enum: COST_MODELS }),
-    heatingModel: text('heating_model', { enum: COST_MODELS }),
+    // Heizung PR 19: dazu `selfSupply`, der Mieter bezieht Brennstoff oder Wärme selbst.
+    heatingModel: text('heating_model', { enum: HEATING_MODELS }),
+    // Durchsicht S-2: welche Heizung der Mieter selbst betreibt; nur bei `selfSupply`.
+    selfSupplyKind: text('self_supply_kind', { enum: SELF_SUPPLY_KINDS }),
+    // Mitteilung nach § 5d Abs. 4 CO2KostAufG in Textform (Heizung PR 18, Abweichung 3 des Plans).
+    halfSplitNoticeOn: text('half_split_notice_on'),
   },
   (t) => [
     notNegative('tenancies_persons_not_negative', 'persons'),
@@ -181,7 +271,12 @@ export const tenancies = sqliteTable(
     notNegative('tenancies_deposit_not_negative', 'deposit_cents'),
     oneOf('tenancies_deposit_status_known', 'deposit_status', DEPOSIT_STATUS),
     oneOf('tenancies_cost_model_known', 'cost_model', COST_MODELS),
-    oneOf('tenancies_heating_model_known', 'heating_model', COST_MODELS),
+    oneOf('tenancies_heating_model_known', 'heating_model', HEATING_MODELS),
+    // Durchsicht S-2: die Art der Selbstversorgung, nur bei „Mieter heizt selbst“.
+    oneOf('tenancies_self_supply_kind_known', 'self_supply_kind', SELF_SUPPLY_KINDS),
+    check('tenancies_self_supply_kind_valid', sql.raw(`"self_supply_kind" IS NULL OR "heating_model" IS 'selfSupply'`)),
+    // Mitteilung nach § 5d Abs. 4 (Heizung PR 18): ein Datum.
+    check('tenancies_half_split_notice_valid', sql.raw(`"half_split_notice_on" IS NULL OR "half_split_notice_on" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`)),
   ],
 )
 
@@ -263,29 +358,687 @@ export const baseRents = sqliteTable(
   ],
 )
 
-// Tatsächlich gezahlte Vorauszahlung eines Jahres. Sie hat Vorrang vor der Staffel, weil
-// rechtlich zählt, was geflossen ist. Anders als die Staffeln ist sie nach **Jahr** geschlüsselt
-// und nicht nach Datum; der zusammengesetzte Primärschlüssel sagt genau das.
+// Tatsächlich gezahlte Vorauszahlung eines Abrechnungszeitraums (#208). Sie hat Vorrang vor der
+// Staffel, weil rechtlich zählt, was geflossen ist. Anders als die Staffeln ist sie nach **Zeitraum**
+// geschlüsselt und nicht nach Datum; der zusammengesetzte Primärschlüssel sagt genau das.
 export const prepaymentOverrides = sqliteTable(
   'prepayment_overrides',
   {
     tenancyId: text('tenancy_id')
       .notNull()
       .references(() => tenancies.id, { onDelete: 'cascade' }),
-    year: integer('year').notNull(),
+    period: text('period').$type<PeriodKey>().notNull(),
     amountCents: integer('amount_cents').notNull(),
   },
   (t) => [
-    primaryKey({ columns: [t.tenancyId, t.year] }),
+    primaryKey({ columns: [t.tenancyId, t.period] }),
+    periodKeyCheck('prepayment_overrides_period_valid', 'period'),
     // Was ein Mieter in einem Jahr insgesamt an Vorauszahlungen geleistet hat, ist kein
     // negativer Betrag.
     //
     // Das steht bewusst anders als bei `payments.amount_cents`, das ohne Bedingung bleibt, und
     // der Unterschied ist echt: Dort steht eine **einzelne** Buchung, und eine davon kann eine
-    // Rücklastschrift sein, also ein negativer Eingang. Hier steht die **Jahressumme**, und die
+    // Rücklastschrift sein, also ein negativer Eingang. Hier steht die **Summe des Zeitraums**, und die
     // fällt auch mit Rücklastschriften nicht unter null: Mehr zurückgeholt werden kann nicht,
     // als vorher geflossen ist.
     notNegative('prepayment_overrides_amount_not_negative', 'amount_cents'),
+  ],
+)
+
+// ---------- Heizanlage (Heizung PR 4, Entwurf 5.3) ----------
+
+export const HEATING_ENERGIES = exactly<HeatingEnergy>()(['gas', 'oil', 'lpg', 'pellets', 'wood', 'districtHeating', 'heatPump', 'electric', 'coal', 'other'] as const)
+export const HEATING_SUPPLIES = exactly<HeatingSupply>()(['central', 'perUnit'] as const)
+export const HEATING_METHODS = exactly<HeatingMethod>()(['service', 'self', 'manual'] as const)
+export const DEVICES_REMOTE = exactly<DevicesRemote>()(['all', 'none', 'partial', 'unknown'] as const)
+export const DEVICES_INSTALLED_AFTER = exactly<DevicesInstalledAfter>()(['all', 'some', 'none', 'unknown'] as const)
+export const NEW_DEVICES_INSTALLS = exactly<NewDevicesInstall>()(['single', 'whole'] as const)
+export const HEATING_SOURCES = exactly<HeatingSource>()(['building', 'homeowners'] as const)
+export const CHANGE_SPLITS = exactly<ChangeSplit>()(['degreeDays', 'time'] as const)
+export const HEATING_ROLES = exactly<HeatingRole>()(['supply', 'dhwHeat', 'totalHeat'] as const)
+// Skala eines Heizkostenverteilers (Heizung PR 12).
+export const HCA_SCALES = exactly<HcaScale>()(['unit', 'product'] as const)
+// Worin ein Ablesedienst die Heizung nennt (Durchsicht von #241, Recht-I4).
+export const SERVICE_HEAT_UNITS = exactly<ServiceHeatUnit>()(['units', 'kWh'] as const)
+export const INSULATION_RULES = exactly<InsulationRule>()(['applies', 'notApplies', 'unknown'] as const)
+export const DHW_METHODS = exactly<DhwMethod>()(['heatMeter', 'volumeFormula', 'areaFormula'] as const)
+// Heizung PR 14: Ausnahme nach § 11 und Vereinbarung nach § 2 HeizkostenV je Heizperiode.
+export const HEATING_EXEMPTIONS = exactly<HeatingExemption>()(['none', 'lowDemand', 'disproportionate', 'pre1981', 'renewable', 'chp', 'authority'] as const)
+export const EXEMPTION_SCOPES = exactly<ExemptionScope>()(['heat', 'both'] as const)
+export const AGREED_OTHERWISE = exactly<AgreedOtherwise>()(['none', 'area', 'fixedPercent', 'consumption'] as const)
+// Warmwasser ohne Wärmezähler (Heizung PR 11): Zeile der Heizwerttabelle und Erzeuger der Anlage.
+export const FUEL_GRADE_VALUES = exactly<FuelGrade>()(['heatingOilEL', 'heavyFuelOil', 'naturalGasH', 'naturalGasL', 'lpg', 'coke', 'lignite', 'hardCoal', 'firewood', 'woodPellets', 'woodChips'] as const)
+export const HEAT_GENERATIONS = exactly<HeatGeneration>()(['single', 'mixed'] as const)
+export const HEAT_PUMP_MAJORITIES = exactly<HeatPumpMajority>()(['yes', 'no', 'unknown'] as const)
+// CO₂-Merkmale der Anlage und Mengen einer Lieferung (Heizung PR 7).
+export const CO2_RESTRICTIONS = exactly<Co2Restriction>()(['none', 'building', 'supply', 'both'] as const)
+export const FUEL_QUANTITY_UNITS = exactly<FuelQuantityUnit>()(['l', 'kg', 'm3', 'kWh', 'srm'] as const)
+export const GAS_BASES = exactly<GasBasis>()(['hs', 'hi'] as const)
+// #251: Antwort auf „Was ist diese Gutschrift?“, gespeichert nur „Gutschrift, deren Rechnung nicht in Mietfuchs steht“.
+export const CREDIT_NOTE_KINDS = exactly<CreditNoteKind>()(['standalone'] as const)
+// Eigene Heizkostenabrechnung (Heizung PR 10).
+export const HEATING_TARGETS = exactly<HeatingTarget>()(['both', 'heating', 'water'] as const)
+export const HOT_WATER = exactly<HotWater>()(['combined', 'separate', 'none'] as const)
+export const CAPTURE_METHODS = exactly<CaptureMethod>()(['heatMeter', 'hca', 'serviceValues'] as const)
+export const AREA_BASES_HEAT = exactly<AreaBasisHeat>()(['area', 'heatedArea'] as const)
+export const INTERIM_GAP_STATUS = exactly<InterimGapStatus>()(['impossible', 'missed', 'imprecise', 'useReading'] as const)
+
+// Die Heizanlage eines Objekts. Spalten späterer PRs kommen mit ihnen (CO₂-Merkmale mit PR 7, §§ 5a
+// bis 5d mit PR 18, Erfassung und Ausnahmen mit PR 10 und 14); was PR 4 schon anlegt, aber erst
+// später rechnet (`separate_settlement`, `period_start_month`), lehnt der Server bis dahin ab.
+export const heatingPlants = sqliteTable(
+  'heating_plants',
+  {
+    id: text('id').primaryKey().notNull(),
+    propertyId: propertyRef(),
+    // Ab der zweiten Anlage Pflicht (PR 9); bis dahin darf er leer sein.
+    name: text('name').notNull().default(''),
+    energy: text('energy', { enum: HEATING_ENERGIES }).notNull(),
+    supply: text('supply', { enum: HEATING_SUPPLIES }).notNull().default('central'),
+    method: text('method', { enum: HEATING_METHODS }).notNull().default('manual'),
+    separateSettlement: integer('separate_settlement', { mode: 'boolean' }),
+    devicesRemote: text('devices_remote', { enum: DEVICES_REMOTE }).notNull().default('unknown'),
+    devicesInstalledAfter2021: text('devices_installed_after_2021_12', { enum: DEVICES_INSTALLED_AFTER }).notNull().default('unknown'),
+    // Einzeln ersetzt oder als Ganzes neu (§ 5 Abs. 2 Satz 1 und 4 HeizkostenV); NULL heißt unbeantwortet.
+    newDevicesInstall: text('new_devices_install', { enum: NEW_DEVICES_INSTALLS }),
+    source: text('source', { enum: HEATING_SOURCES }).notNull().default('building'),
+    captureInstalledOn: text('capture_installed_on'),
+    capturedOnOct2024: integer('captured_on_2024_10_01', { mode: 'boolean' }),
+    warmRentAverageCents: integer('warm_rent_average_2022_2024'),
+    changeSplit: text('change_split', { enum: CHANGE_SPLITS }).notNull().default('degreeDays'),
+    periodStartMonth: integer('period_start_month'),
+    // Ob die Anlage eine Liste der angeschlossenen Wohnungen hat; ohne Liste alle (siehe
+    // heating_plant_units). Eigens gespeichert wie `participants_limited` (#94).
+    unitsLimited: integer('units_limited', { mode: 'boolean' }).notNull().default(false),
+    // CO₂-Merkmale (Heizung PR 7): § 8, § 9 und § 2 Abs. 4 Satz 2 CO2KostAufG.
+    nonResidential: integer('non_residential', { mode: 'boolean' }).notNull().default(false),
+    restriction: text('restriction', { enum: CO2_RESTRICTIONS }).notNull().default('none'),
+    districtEtsNew: integer('district_ets_new', { mode: 'boolean' }).notNull().default(false),
+    // Kesseltausch (Heizung PR 9): letzter Betriebstag der alten Anlage und an der neuen die Anlage,
+    // die sie ersetzt. Ohne Bedingung im SQL (README der Migrationen: neue Spalten und Bedingungen nie
+    // in einem Schritt); das Datum prüft heating.ts.
+    endsOn: text('ends_on'),
+    // Ohne Fremdschlüssel: drizzle-kit schreibt beim Hinzufügen einer Spalte kein ON DELETE, und eine
+    // ersetzte Anlage wird ohnehin nicht entfernt (sie hält ihre Lieferungen). heating.ts prüft den Verweis.
+    replacesPlantId: text('replaces_plant_id'),
+    // Im selben Gebäude wie eine andere Anlage (deren Kennung) oder `'own'`; NULL nicht gefragt.
+    buildingWith: text('building_with'),
+    // Kesseltausch mit demselben Vorratsbrennstoff (Nachprüfung von #238): Verheizt die neue Anlage den
+    // Brennstoff im Tank weiter? NULL nicht gefragt (kein solcher Tausch), sonst die Antwort.
+    takesOverStock: integer('takes_over_stock', { mode: 'boolean' }),
+    // Eigene Heizkostenabrechnung (Heizung PR 10, Entwurf 5.3). Bedingungen im zweiten Schritt.
+    hotWater: text('hot_water', { enum: HOT_WATER }).notNull().default('combined'),
+    capture: text('capture', { enum: CAPTURE_METHODS }),
+    areaBasisHeat: text('area_basis_heat', { enum: AREA_BASES_HEAT }).notNull().default('area'),
+    heatPumpInstalledOn: text('heat_pump_installed_on'),
+    // Ein Erzeuger oder mehrere (Heizung PR 11); NULL heißt: nicht beantwortet.
+    heatGeneration: text('heat_generation', { enum: HEAT_GENERATIONS }),
+    // Wärmepumpe: Liefert sie mehr als die Hälfte der Wärme des Gebäudes? (§ 11 Abs. 1 Nr. 3 Buchst. a
+    // HeizkostenV in der Fassung bis 30.09.2024, Heizung PR 11); NULL heißt: nicht beantwortet.
+    heatPumpMajority: text('heat_pump_majority', { enum: HEAT_PUMP_MAJORITIES }),
+    // Bauart der Heizkostenverteiler (Heizung PR 12, Entwurf 5.3), nur zur Beschreibung im Ausweis.
+    hcaModel: text('hca_model'),
+    // Wie der Betriebsstrom erfasst ist (#266); NULL heißt keine Angabe, der Hinweis verhält sich dann wie zuvor.
+    // Die Bedingung kommt im zweiten Schritt (README der Migrationen).
+    operatingPowerHandling: text('operating_power_handling', { enum: OPERATING_POWER_HANDLINGS }),
+    // Wärmelieferung (Heizung PR 16, #213): Contracting, Tag der Umstellung, wer vorher versorgte, Zugang der
+    // Umstellungsankündigung. Die Bedingungen kommen im zweiten Schritt (README der Migrationen).
+    contracting: integer('contracting', { mode: 'boolean' }).notNull().default(false),
+    heatDeliverySince: text('heat_delivery_since'),
+    previousSupply: text('previous_supply', { enum: PREVIOUS_SUPPLIES }),
+    switchAnnouncedOn: text('switch_announced_on'),
+    // §§ 5a, 5b, 5d CO2KostAufG (Heizung PR 18, #215). Die Bedingungen kommen im zweiten Schritt.
+    gmodg43InstalledOn: text('gmodg43_installed_on'),
+    emergencyInstall: integer('emergency_install', { mode: 'boolean' }),
+    emergencyPriorDuty: integer('emergency_prior_duty', { mode: 'boolean' }),
+    newBuildingFirstUse: text('new_building_first_use'),
+    buildingApplicationBefore20260513: integer('building_application_before_2026_05_13', { mode: 'boolean' }),
+  },
+  () => [
+    oneOf('heating_plants_energy_known', 'energy', HEATING_ENERGIES),
+    oneOf('heating_plants_supply_known', 'supply', HEATING_SUPPLIES),
+    oneOf('heating_plants_method_known', 'method', HEATING_METHODS),
+    oneOf('heating_plants_devices_remote_known', 'devices_remote', DEVICES_REMOTE),
+    oneOf('heating_plants_devices_installed_known', 'devices_installed_after_2021_12', DEVICES_INSTALLED_AFTER),
+    oneOf('heating_plants_new_devices_install_known', 'new_devices_install', NEW_DEVICES_INSTALLS),
+    oneOf('heating_plants_source_known', 'source', HEATING_SOURCES),
+    oneOf('heating_plants_change_split_known', 'change_split', CHANGE_SPLITS),
+    check('heating_plants_period_start_month_valid', sql.raw('"period_start_month" BETWEEN 1 AND 12')),
+    // Die Gemeinschaft liefert eine fertige Abrechnung; übernommen wird sie wie die eines
+    // Messdienstes (Entwurf 8.9, D-F2).
+    check('heating_plants_source_method_valid', sql.raw(`"source" <> 'homeowners' OR "method" = 'service'`)),
+    notNegative('heating_plants_warm_rent_not_negative', 'warm_rent_average_2022_2024'),
+    oneOf('heating_plants_restriction_known', 'restriction', CO2_RESTRICTIONS),
+    // § 2 Abs. 4 Satz 2 CO2KostAufG betrifft nur Wärmelieferungen (Heizung PR 7).
+    check('heating_plants_ets_district_valid', sql.raw(`"district_ets_new" = 0 OR "energy" = 'districtHeating'`)),
+    // Eigene Heizkostenabrechnung (Heizung PR 10).
+    oneOf('heating_plants_hot_water_known', 'hot_water', HOT_WATER),
+    oneOf('heating_plants_capture_known', 'capture', CAPTURE_METHODS),
+    oneOf('heating_plants_area_basis_heat_known', 'area_basis_heat', AREA_BASES_HEAT),
+    // Die eigene Heizkostenabrechnung braucht die Art der Erfassung (Entwurf 5.3).
+    check('heating_plants_self_capture_complete', sql.raw(`"method" <> 'self' OR "capture" IS NOT NULL`)),
+    // Warmwasser ohne Wärmezähler (Heizung PR 11).
+    oneOf('heating_plants_heat_generation_known', 'heat_generation', HEAT_GENERATIONS),
+    oneOf('heating_plants_heat_pump_majority_known', 'heat_pump_majority', HEAT_PUMP_MAJORITIES),
+    // Angabe zum Betriebsstrom (#266).
+    oneOf('heating_plants_operating_power_handling_known', 'operating_power_handling', OPERATING_POWER_HANDLINGS),
+    // Wärmelieferung (Heizung PR 16, #213): Contracting nicht bei Fernwärme (sie ist ohne Merkmal
+    // Wärmelieferung), nur zentral; Angaben zur Umstellung nur bei Fernwärme oder Contracting; eine Ankündigung
+    // nur mit Tag der Umstellung.
+    check('heating_plants_contracting_energy_valid', sql.raw(`"contracting" = 0 OR "energy" <> 'districtHeating'`)),
+    check('heating_plants_contracting_central_valid', sql.raw(`"contracting" = 0 OR "supply" = 'central'`)),
+    check('heating_plants_delivery_only_valid', sql.raw(`("heat_delivery_since" IS NULL AND "previous_supply" IS NULL AND "switch_announced_on" IS NULL) OR "contracting" = 1 OR "energy" = 'districtHeating'`)),
+    check('heating_plants_delivery_since_valid', sql.raw(`"heat_delivery_since" IS NULL OR "heat_delivery_since" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`)),
+    check('heating_plants_announced_valid', sql.raw(`"switch_announced_on" IS NULL OR "switch_announced_on" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`)),
+    oneOf('heating_plants_previous_supply_known', 'previous_supply', PREVIOUS_SUPPLIES),
+    check('heating_plants_announced_since_valid', sql.raw('"switch_announced_on" IS NULL OR "heat_delivery_since" IS NOT NULL')),
+    // §§ 5a, 5b, 5d CO2KostAufG (Heizung PR 18, #215): nur Gas, Öl, Flüssiggas; die übrigen Merkmale nur mit Tag
+    // des Einbaus; die vorherige Pflicht nur beim Notfalleinbau, der Bauantrag nur beim Neubau. Contracting ist
+    // erlaubt (Abweichung 11 des Plans; `energy` ist dann der Brennstoff des Lieferanten). `IS 1` statt `= 1`, weil
+    // ein Vergleich mit NULL die Bedingung bestehen ließe.
+    check('heating_plants_gmodg_energy_valid', sql.raw(`"gmodg43_installed_on" IS NULL OR "energy" IN ('gas', 'oil', 'lpg')`)),
+    check('heating_plants_gmodg_date_valid', sql.raw(`"gmodg43_installed_on" IS NULL OR "gmodg43_installed_on" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`)),
+    check('heating_plants_first_use_date_valid', sql.raw(`"new_building_first_use" IS NULL OR "new_building_first_use" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`)),
+    check('heating_plants_gmodg_facts_valid', sql.raw(`"gmodg43_installed_on" IS NOT NULL OR ("emergency_install" IS NULL AND "emergency_prior_duty" IS NULL AND "new_building_first_use" IS NULL AND "building_application_before_2026_05_13" IS NULL)`)),
+    check('heating_plants_prior_duty_valid', sql.raw(`"emergency_prior_duty" IS NULL OR "emergency_install" IS 1`)),
+    check('heating_plants_application_valid', sql.raw(`"building_application_before_2026_05_13" IS NULL OR "new_building_first_use" IS NOT NULL`)),
+  ],
+)
+
+// Die angeschlossenen Wohnungen einer Anlage. Eine gelöschte Wohnung fällt heraus; die Anlage
+// behält über `units_limited` ihre Liste, auch wenn sie leer wird.
+export const heatingPlantUnits = sqliteTable(
+  'heating_plant_units',
+  {
+    plantId: text('plant_id')
+      .notNull()
+      .references(() => heatingPlants.id, { onDelete: 'cascade' }),
+    unitId: text('unit_id')
+      .notNull()
+      .references(() => units.id, { onDelete: 'cascade' }),
+    heatedAreaM2: real('heated_area_m2'),
+  },
+  (t) => [
+    primaryKey({ columns: [t.plantId, t.unitId] }),
+    check('heating_plant_units_heated_area_positive', sql.raw('"heated_area_m2" > 0')),
+  ],
+)
+
+// Eine Zeile je Anlage und Heizperiode (Entwurf 5.3), ohne die Spalten des Vorrats (PR 7, 8). In
+// PR 4 ist die Heizperiode der Abrechnungszeitraum des Objekts; eine eigene kommt mit PR 5.
+// Einheiten eines Vorrats (Heizung PR 8, Entwurf 5.3).
+export const STOCK_UNITS = exactly<StockUnit>()(['l', 'kg', 'srm'] as const)
+
+export const heatingPeriods = sqliteTable(
+  'heating_periods',
+  {
+    id: text('id').primaryKey().notNull(),
+    plantId: text('plant_id')
+      .notNull()
+      .references(() => heatingPlants.id, { onDelete: 'cascade' }),
+    period: text('period').$type<PeriodKey>().notNull(),
+    // Verteilung (§§ 6 Abs. 4, 7, 8, 10 HeizkostenV)
+    heatConsumptionPct: real('heat_consumption_pct'),
+    waterConsumptionPct: real('water_consumption_pct'),
+    above70Agreed: integer('above_70_agreed', { mode: 'boolean' }),
+    insulationRule: text('insulation_rule', { enum: INSULATION_RULES }),
+    // Warmwasser (§ 9 HeizkostenV)
+    dhwMethod: text('dhw_method', { enum: DHW_METHODS }),
+    dhwHeatKwh: real('dhw_heat_kwh'),
+    totalHeatKwh: real('total_heat_kwh'),
+    dhwVolumeM3: real('dhw_volume_m3'),
+    dhwTempC: real('dhw_temp_c'),
+    dhwUnmeasurable: integer('dhw_unmeasurable', { mode: 'boolean' }),
+    // Abrechnungsinformationen (§ 6a Abs. 3 HeizkostenV)
+    infoTaxesText: text('info_taxes_text'),
+    infoDistrictGhg: real('info_district_ghg'),
+    infoDistrictPef: real('info_district_pef'),
+    climateFactor: real('climate_factor'),
+    climateFactorPrev: real('climate_factor_prev'),
+    consumerContract: text('consumer_contract'),
+    infoContactsConfirmed: integer('info_contacts_confirmed', { mode: 'boolean' }),
+    // Vorrat (Heizung PR 8, Entwurf 5.3, 8.2). Eingetragen wird der Anfangsbestand nur in der ersten
+    // Heizperiode mit Vorrat; danach ist er der Endbestand der Vorperiode (db/fuelStock.ts).
+    stockUnit: text('stock_unit', { enum: STOCK_UNITS }),
+    openingQuantity: real('opening_quantity'),
+    openingCostCents: integer('opening_cost_cents'),
+    openingEmissionsKg: real('opening_emissions_kg'),
+    openingCo2Cents: integer('opening_co2_cents'),
+    openingInvoicedBefore2023: integer('opening_invoiced_before_2023', { mode: 'boolean' }),
+    // Wurde der Anfangsbestand schon mit einer früheren Abrechnung umgelegt (nach Lieferung, vor dem
+    // ersten Vorrat)? Dann zählt er mit 0 € (Befund C1 der Durchsicht von #237).
+    openingAlreadySettled: integer('opening_already_settled', { mode: 'boolean' }),
+    closingQuantity: real('closing_quantity'),
+    closingMeasuredOn: text('closing_measured_on'),
+    // Pflichtangaben und Ausnahmen (Heizung PR 14). Nr. 4 und 5 des § 6a Abs. 3 mit Quelle; Ausnahme nach § 11,
+    // Vereinbarung nach § 2 und die monatliche Information je Heizperiode, geerbt von der vorigen der Linie.
+    // Bedingungen im zweiten Schritt (0035).
+    infoReferenceKwhPerM2: real('info_reference_kwh_per_m2'),
+    infoReferenceSource: text('info_reference_source'),
+    climateFactorSource: text('climate_factor_source'),
+    exemption: text('exemption', { enum: HEATING_EXEMPTIONS }),
+    exemptionScope: text('exemption_scope', { enum: EXEMPTION_SCOPES }),
+    exemptionBillingAgreed: integer('exemption_billing_agreed', { mode: 'boolean' }),
+    agreedOtherwise: text('agreed_otherwise', { enum: AGREED_OTHERWISE }),
+    monthlyInfoElsewhere: integer('monthly_info_elsewhere', { mode: 'boolean' }),
+    // Durchsicht von #243, R-W1: Der Vergleich des Ablesedienstes (Nr. 4, bei freien Schlüsseln Nr. 4 und 5) liegt
+    // der Abrechnung bei, mit seiner Quelle; je Heizperiode wie die übrigen Angaben nach § 6a.
+    infoComparisonSource: text('info_comparison_source'),
+  },
+  (t) => [
+    uniqueIndex('heating_periods_plant_period_idx').on(t.plantId, t.period),
+    // Derselbe Wortlaut wie bei `period` der Kostenpositionen (PR 2, G-C3).
+    periodKeyCheck('heating_periods_period_valid', 'period'),
+    check('heating_periods_heat_pct_valid', sql.raw('"heat_consumption_pct" BETWEEN 0 AND 100')),
+    check('heating_periods_water_pct_valid', sql.raw('"water_consumption_pct" BETWEEN 0 AND 100')),
+    oneOf('heating_periods_insulation_rule_known', 'insulation_rule', INSULATION_RULES),
+    oneOf('heating_periods_dhw_method_known', 'dhw_method', DHW_METHODS),
+    notNegative('heating_periods_dhw_heat_not_negative', 'dhw_heat_kwh'),
+    notNegative('heating_periods_total_heat_not_negative', 'total_heat_kwh'),
+    notNegative('heating_periods_dhw_volume_not_negative', 'dhw_volume_m3'),
+    // Vorrat (Heizung PR 8)
+    oneOf('heating_periods_stock_unit_known', 'stock_unit', STOCK_UNITS),
+    notNegative('heating_periods_opening_quantity_not_negative', 'opening_quantity'),
+    notNegative('heating_periods_opening_cost_not_negative', 'opening_cost_cents'),
+    notNegative('heating_periods_opening_emissions_not_negative', 'opening_emissions_kg'),
+    notNegative('heating_periods_opening_co2_not_negative', 'opening_co2_cents'),
+    notNegative('heating_periods_closing_quantity_not_negative', 'closing_quantity'),
+    check('heating_periods_closing_measured_on_valid', sql.raw(`"closing_measured_on" IS NULL OR "closing_measured_on" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`)),
+    // Pflichtangaben und Ausnahmen (Heizung PR 14). Nr. 4: ein Vergleichswert über 0 und nur mit Quelle; Nr. 5:
+    // Klimafaktoren über 0 und nur mit Quelle; Fernwärme ab 0.
+    check('heating_periods_info_reference_positive', sql.raw('"info_reference_kwh_per_m2" IS NULL OR "info_reference_kwh_per_m2" > 0')),
+    check('heating_periods_info_reference_source_complete', sql.raw(`"info_reference_kwh_per_m2" IS NULL OR length(trim(coalesce("info_reference_source", ''))) > 0`)),
+    check('heating_periods_climate_factor_positive', sql.raw('("climate_factor" IS NULL OR "climate_factor" > 0) AND ("climate_factor_prev" IS NULL OR "climate_factor_prev" > 0)')),
+    check('heating_periods_climate_factor_source_complete', sql.raw(`("climate_factor" IS NULL AND "climate_factor_prev" IS NULL) OR length(trim(coalesce("climate_factor_source", ''))) > 0`)),
+    notNegative('heating_periods_district_ghg_not_negative', 'info_district_ghg'),
+    notNegative('heating_periods_district_pef_not_negative', 'info_district_pef'),
+    oneOf('heating_periods_exemption_known', 'exemption', HEATING_EXEMPTIONS),
+    oneOf('heating_periods_exemption_scope_known', 'exemption_scope', EXEMPTION_SCOPES),
+    // Umfang und vereinbarte Abrechnung gehören zu einer Ausnahme (§ 11 Abs. 2 HeizkostenV; § 2 Abs. 7 CO2KostAufG).
+    check('heating_periods_exemption_scope_valid', sql.raw(`"exemption_scope" IS NULL OR ("exemption" IS NOT NULL AND "exemption" <> 'none')`)),
+    check('heating_periods_exemption_billing_agreed_valid', sql.raw(`"exemption_billing_agreed" IS NULL OR ("exemption" IS NOT NULL AND "exemption" <> 'none')`)),
+    oneOf('heating_periods_agreed_otherwise_known', 'agreed_otherwise', AGREED_OTHERWISE),
+  ],
+)
+
+// Keine Zwischenablesung an einer Grenze einer Wohnung (Heizung PR 10, Entwurf 3.5, Abweichung 8):
+// „nicht möglich“ oder „nicht durchgeführt“, mit Grund. Die Grenze ist der letzte Tag des
+// bisherigen Nutzers. Fällt mit der Wohnung.
+export const interimReadingGaps = sqliteTable(
+  'interim_reading_gaps',
+  {
+    unitId: text('unit_id')
+      .notNull()
+      .references(() => units.id, { onDelete: 'cascade' }),
+    date: text('date').notNull(),
+    status: text('status', { enum: INTERIM_GAP_STATUS }).notNull(),
+    reason: text('reason').notNull().default(''),
+  },
+  (t) => [
+    primaryKey({ columns: [t.unitId, t.date] }),
+    oneOf('interim_reading_gaps_status_known', 'status', INTERIM_GAP_STATUS),
+    check('interim_reading_gaps_date_valid', sql.raw(`"date" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`)),
+  ],
+)
+
+// ---------- Eigene Heizperiode und getrennte Heizkostenabrechnung (Heizung PR 5, Entwurf 3.1, 5.3) ----------
+
+// Die Wechsel der eigenen Heizperiode einer Anlage, wie `period_changes` beim Objekt (#208). Der
+// Beginnmonat steht in `heating_plants.period_start_month`; `null` dort heißt „wie das Objekt“, und
+// dann gibt es hier keine Zeile.
+export const heatingPeriodChanges = sqliteTable(
+  'heating_period_changes',
+  {
+    plantId: text('plant_id')
+      .notNull()
+      .references(() => heatingPlants.id, { onDelete: 'cascade' }),
+    fromMonth: text('from_month').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.plantId, t.fromMonth] }), periodKeyCheck('heating_period_changes_from_month_valid', 'from_month')],
+)
+
+// Die Zeitspannen nach Weg d (siehe `SeparateSpan`): Eine Spanne entsteht beim Einschalten ab dem
+// Monat X und wird beim Ausschalten bei der Heizperiode W geschlossen (C3, D1). Ohne sie ließe sich
+// nicht sagen, welche Heizperiode vor einem Ausschalten getrennt war und ab welchem Monat ihre
+// Heizstaffel ihr gehört.
+export const heatingSeparateSpans = sqliteTable(
+  'heating_separate_spans',
+  {
+    plantId: text('plant_id')
+      .notNull()
+      .references(() => heatingPlants.id, { onDelete: 'cascade' }),
+    from: text('from_month').notNull(),
+    until: text('until_period').$type<PeriodKey>(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.plantId, t.from] }),
+    periodKeyCheck('heating_separate_spans_from_valid', 'from_month'),
+    periodKeyCheck('heating_separate_spans_until_valid', 'until_period'),
+    check('heating_separate_spans_order_valid', sql.raw('"until_period" IS NULL OR "until_period" > "from_month"')),
+  ],
+)
+
+// Die Zeiträume der eigenen Heizkostenabrechnung (Durchsicht von #239, W1/W2 und Runde 3), wie die
+// Spannen nach Weg d: Die Einrichtung öffnet einen ab ihrer Heizperiode (`until` NULL), das Zurückschalten
+// schließt ihn mit der ersten offenen Heizperiode, wenn abgeschlossene Heizperioden nach ihr gerechnet
+// wurden, sonst entfällt er. Abgeleitet aus den Anteilszeilen wird nichts.
+export const heatingSelfSpans = sqliteTable(
+  'heating_self_spans',
+  {
+    plantId: text('plant_id')
+      .notNull()
+      .references(() => heatingPlants.id, { onDelete: 'cascade' }),
+    from: text('from_period').notNull(),
+    until: text('until_period'),
+    // Womit der Verbrauch in diesem Zeitraum erfasst wird (Heizung PR 12). Ein Wechsel der Ausstattung
+    // beginnt einen neuen Zeitraum, damit frühere Heizperioden nicht rückwirkend anders rechnen. NULL:
+    // Zeitraum von vor PR 12, damals gab es nur Wärmezähler, und es gilt die Erfassung der Anlage.
+    capture: text('capture', { enum: CAPTURE_METHODS }),
+    // Die Warmwasserbereitung des Zeitraums (Durchsicht von #241, I2); NULL wie bei `capture`.
+    hotWater: text('hot_water', { enum: HOT_WATER }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.plantId, t.from] }),
+    periodKeyCheck('heating_self_spans_from_valid', 'from_period'),
+    periodKeyCheck('heating_self_spans_until_valid', 'until_period'),
+    check('heating_self_spans_order_valid', sql.raw('"until_period" IS NULL OR "until_period" > "from_period"')),
+    oneOf('heating_self_spans_capture_known', 'capture', CAPTURE_METHODS),
+    oneOf('heating_self_spans_hot_water_known', 'hot_water', HOT_WATER),
+  ],
+)
+
+// Die Werte eines Ablesedienstes je Wohnung und Nutzungszeitraum (Heizung PR 12, Entwurf 5.6). Eine
+// gelöschte Wohnung oder Heizperiode nimmt ihre Werte mit.
+export const heatingServiceValues = sqliteTable(
+  'heating_service_values',
+  {
+    heatingPeriodId: text('heating_period_id')
+      .notNull()
+      .references(() => heatingPeriods.id, { onDelete: 'cascade' }),
+    unitId: text('unit_id')
+      .notNull()
+      .references(() => units.id, { onDelete: 'cascade' }),
+    from: text('from').notNull(),
+    to: text('to').notNull(),
+    heatValue: real('heat_value').notNull(),
+    waterValue: real('water_value'),
+    // Worin der Dienst die Heizung nennt (Durchsicht von #241, Recht-I4): bewertete Einheiten oder kWh.
+    heatUnit: text('heat_unit', { enum: SERVICE_HEAT_UNITS }).notNull().default('units'),
+  },
+  (t) => [
+    primaryKey({ columns: [t.heatingPeriodId, t.unitId, t.from] }),
+    check('heating_service_values_dates_valid', sql.raw(`"from" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]' AND "to" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]' AND "from" <= "to"`)),
+    notNegative('heating_service_values_heat_not_negative', 'heat_value'),
+    notNegative('heating_service_values_water_not_negative', 'water_value'),
+    oneOf('heating_service_values_heat_unit_known', 'heat_unit', SERVICE_HEAT_UNITS),
+  ],
+)
+
+// ---------- Schätzung nach § 9a HeizkostenV (Heizung PR 13, Entwurf 5.6) ----------
+
+export const ESTIMATE_PARTS = exactly<EstimatePart>()(['heat', 'water'] as const)
+export const ESTIMATE_METHODS = exactly<EstimateMethod>()(['previousPeriod', 'comparableUnit', 'buildingAverage'] as const)
+export const ESTIMATE_CAUSES = exactly<EstimateCause>()(['deviceFailure', 'wrongReading', 'readingImpossible', 'otherReason'] as const)
+export const ESTIMATE_VALUE_UNITS = exactly<EstimateValueUnit>()(['kWh', 'm³', 'Einheiten'] as const)
+
+// Eine Zeile je Heizperiode, Wohnung und Topf: der geschätzte Verbrauch, der Weg des § 9a Abs. 1 und
+// die Begründung (Pflicht). Fällt mit der Heizperiode und mit der Wohnung.
+export const heatingEstimates = sqliteTable(
+  'heating_estimates',
+  {
+    heatingPeriodId: text('heating_period_id')
+      .notNull()
+      .references(() => heatingPeriods.id, { onDelete: 'cascade' }),
+    unitId: text('unit_id')
+      .notNull()
+      .references(() => units.id, { onDelete: 'cascade' }),
+    part: text('part', { enum: ESTIMATE_PARTS }).notNull(),
+    value: real('value').notNull(),
+    method: text('method', { enum: ESTIMATE_METHODS }).notNull(),
+    reason: text('reason').notNull(),
+    confirmed: integer('confirmed', { mode: 'boolean' }).notNull().default(false),
+    // Der Grund nach § 9a Abs. 1 Satz 1 und die Erfassung samt Einheit beim Speichern (Durchsicht von #242,
+    // R-I1, G-I1): Wechselt die Erfassung der Heizperiode danach, rechnet die Schätzung nicht mehr.
+    cause: text('cause', { enum: ESTIMATE_CAUSES }).notNull(),
+    capture: text('capture', { enum: CAPTURE_METHODS }).notNull(),
+    valueUnit: text('value_unit', { enum: ESTIMATE_VALUE_UNITS }).notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.heatingPeriodId, t.unitId, t.part] }),
+    oneOf('heating_estimates_cause_known', 'cause', ESTIMATE_CAUSES),
+    oneOf('heating_estimates_capture_known', 'capture', CAPTURE_METHODS),
+    oneOf('heating_estimates_value_unit_known', 'value_unit', ESTIMATE_VALUE_UNITS),
+    oneOf('heating_estimates_part_known', 'part', ESTIMATE_PARTS),
+    oneOf('heating_estimates_method_known', 'method', ESTIMATE_METHODS),
+    notNegative('heating_estimates_value_not_negative', 'value'),
+    check('heating_estimates_reason_complete', sql.raw(`length(trim("reason")) > 0`)),
+  ],
+)
+
+// Die Heizvorauszahlung je Mietverhältnis (Weg d und H = P mit getrennter Vorauszahlung), eine
+// Staffel wie `prepayments`.
+export const heatingPrepayments = sqliteTable(
+  'heating_prepayments',
+  {
+    tenancyId: text('tenancy_id')
+      .notNull()
+      .references(() => tenancies.id, { onDelete: 'cascade' }),
+    from: text('from').notNull(),
+    monthlyCents: integer('monthly_cents').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.tenancyId, t.from] }),
+    notNegative('heating_prepayments_monthly_not_negative', 'monthly_cents'),
+    // Ein Monat in der Form JJJJ-MM (Durchsicht von #231); dieselbe Prüfung wie bei Zeitraumschlüsseln.
+    periodKeyCheck('heating_prepayments_from_valid', 'from'),
+  ],
+)
+
+// Die Korrektur der Heizvorauszahlung je Heizperiode (D2). `RESTRICT` auf die Anlage: Eine Anlage
+// mit Korrekturen wird nicht still entfernt (removeHeatingPlant lehnt vorher mit einem Satz ab).
+export const heatingPrepaymentOverrides = sqliteTable(
+  'heating_prepayment_overrides',
+  {
+    tenancyId: text('tenancy_id')
+      .notNull()
+      .references(() => tenancies.id, { onDelete: 'cascade' }),
+    plantId: text('plant_id')
+      .notNull()
+      .references(() => heatingPlants.id, { onDelete: 'restrict' }),
+    period: text('period').$type<PeriodKey>().notNull(),
+    cents: integer('amount_cents').notNull(),
+    provisional: integer('provisional', { mode: 'boolean' }).notNull().default(false),
+    fromMonth: text('from_month'),
+    toMonth: text('to_month'),
+  },
+  (t) => [
+    primaryKey({ columns: [t.tenancyId, t.plantId, t.period] }),
+    periodKeyCheck('heating_prepayment_overrides_period_valid', 'period'),
+    periodKeyCheck('heating_prepayment_overrides_from_valid', 'from_month'),
+    periodKeyCheck('heating_prepayment_overrides_to_valid', 'to_month'),
+    notNegative('heating_prepayment_overrides_amount_not_negative', 'amount_cents'),
+    // Vorläufig genau dann, wenn Monate genannt sind, und dann beide (D2).
+    check('heating_prepayment_overrides_provisional_complete', sql.raw('("provisional" = 1) = ("from_month" IS NOT NULL) AND ("from_month" IS NULL) = ("to_month" IS NULL)')),
+    check('heating_prepayment_overrides_months_order_valid', sql.raw('"to_month" IS NULL OR "to_month" >= "from_month"')),
+  ],
+)
+
+// Die abgeschlossene Heizkostenabrechnung einer Heizperiode (Weg d, B3), ein Archivstück wie
+// `closed_settlements` und aus demselben Grund JSON. `closed_settlements` bleibt unverändert: So
+// braucht diese PR keinen Neubau dieser Tabelle, und der Abschluss von P friert die
+// Heizkostenabrechnung nicht ein.
+export const closedHeatingSettlements = sqliteTable(
+  'closed_heating_settlements',
+  {
+    id: text('id').primaryKey().notNull(),
+    plantId: text('plant_id')
+      .notNull()
+      .references(() => heatingPlants.id, { onDelete: 'restrict' }),
+    period: text('period').$type<PeriodKey>().notNull(),
+    closedAt: text('closed_at').notNull(),
+    sentAt: text('sent_at'),
+    settlement: text('settlement', { mode: 'json' }).notNull(),
+  },
+  (t) => [
+    uniqueIndex('closed_heating_settlements_plant_period_idx').on(t.plantId, t.period),
+    periodKeyCheck('closed_heating_settlements_period_valid', 'period'),
+    // Unqualifiziert, wie bei closed_settlements (macOS-SQLite nach dem Umbenennen).
+    check('closed_heating_settlements_settlement_is_json', sql.raw('json_valid("settlement")')),
+  ],
+)
+
+// Frühere Abschlüsse einer Heizkostenabrechnung (#56), wie `closed_settlement_history`.
+export const closedHeatingSettlementHistory = sqliteTable(
+  'closed_heating_settlement_history',
+  {
+    id: text('id').primaryKey().notNull(),
+    plantId: text('plant_id')
+      .notNull()
+      .references(() => heatingPlants.id, { onDelete: 'restrict' }),
+    period: text('period').$type<PeriodKey>().notNull(),
+    closedAt: text('closed_at').notNull(),
+    sentAt: text('sent_at'),
+    reopenedAt: text('reopened_at').notNull(),
+    settlement: text('settlement', { mode: 'json' }).notNull(),
+  },
+  (t) => [
+    index('closed_heating_settlement_history_plant_period_idx').on(t.plantId, t.period),
+    periodKeyCheck('closed_heating_settlement_history_period_valid', 'period'),
+    check('closed_heating_settlement_history_settlement_is_json', sql.raw('json_valid("settlement")')),
+  ],
+)
+
+// ---------- Brennstofflieferungen (Heizung PR 7, Entwurf 5.4) ----------
+
+// Ein Tagesdatum 'JJJJ-MM-TT' oder NULL. Die Endung `_valid` hat in errors.ts je Bedingung einen
+// eigenen Satz, denn die Endung allein spräche von einem Monat.
+const isoDate = (name: string, column: string) =>
+  check(name, sql.raw(`"${column}" IS NULL OR "${column}" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`))
+
+// Eine Rechnung des Versorgers an der Anlage. `RESTRICT` auf die Anlage: Eine Anlage mit Lieferungen
+// wird nicht still mitgelöscht (removeHeatingPlant lehnt mit einem Satz ab). `unit_id` ist für
+// Etagenheizungen (PR 9), Netzentgelte und Biobrennstoff für § 5a (PR 18); bis dahin lehnt der Server
+// eine Angabe ab, die Spalten stehen schon hier, damit die Tabelle nicht neu gebaut wird.
+export const fuelDeliveries = sqliteTable(
+  'fuel_deliveries',
+  {
+    id: text('id').primaryKey().notNull(),
+    plantId: text('plant_id')
+      .notNull()
+      .references(() => heatingPlants.id, { onDelete: 'restrict' }),
+    label: text('label').notNull().default(''),
+    invoiceDate: text('invoice_date'),
+    deliveredAt: text('delivered_at'),
+    invoiceFrom: text('invoice_from'),
+    invoiceTo: text('invoice_to'),
+    unitId: text('unit_id').references(() => units.id, { onDelete: 'cascade' }),
+    amountCents: integer('amount_cents'),
+    quantity: real('quantity'),
+    quantityUnit: text('quantity_unit', { enum: FUEL_QUANTITY_UNITS }),
+    energyKwh: real('energy_kwh'),
+    gasBasis: text('gas_basis', { enum: GAS_BASES }),
+    heatingValue: real('heating_value'),
+    // Zeile der Heizwerttabelle, falls die Rechnung keinen Heizwert nennt (Heizung PR 11).
+    fuelGrade: text('fuel_grade', { enum: FUEL_GRADE_VALUES }),
+    emissionsKg: real('emissions_kg'),
+    co2CostCents: integer('co2_cost_cents'),
+    emissionFactor: real('emission_factor'),
+    gridFeeCents: integer('grid_fee_cents'),
+    bioCostCents: integer('bio_cost_cents'),
+    sharePermille: real('share_permille'),
+    fixedCents: integer('fixed_cents'),
+    estimated: integer('estimated', { mode: 'boolean' }).notNull().default(false),
+    usedByService: integer('used_by_service', { mode: 'boolean' }).notNull().default(true),
+    // #251: `null` heißt „nicht beantwortet“; steuert nur die Stufe des Hinweises, keine Zahl.
+    creditNoteKind: text('credit_note_kind', { enum: CREDIT_NOTE_KINDS }),
+  },
+  () => [
+    oneOf('fuel_deliveries_quantity_unit_known', 'quantity_unit', FUEL_QUANTITY_UNITS),
+    oneOf('fuel_deliveries_gas_basis_known', 'gas_basis', GAS_BASES),
+    // Heizung PR 11.
+    oneOf('fuel_deliveries_fuel_grade_known', 'fuel_grade', FUEL_GRADE_VALUES),
+    // #251, eigener Schritt nach der Spalte (Neubau der Tabelle, drizzle/README.md).
+    oneOf('fuel_deliveries_credit_note_kind_known', 'credit_note_kind', CREDIT_NOTE_KINDS),
+    check('fuel_deliveries_invoice_complete', sql.raw('("invoice_from" IS NULL) = ("invoice_to" IS NULL)')),
+    isoDate('fuel_deliveries_invoice_from_valid', 'invoice_from'),
+    isoDate('fuel_deliveries_invoice_to_valid', 'invoice_to'),
+    isoDate('fuel_deliveries_invoice_date_valid', 'invoice_date'),
+    isoDate('fuel_deliveries_delivered_at_valid', 'delivered_at'),
+    check('fuel_deliveries_invoice_order_valid', sql.raw('"invoice_from" IS NULL OR "invoice_from" <= "invoice_to"')),
+    check('fuel_deliveries_share_valid', sql.raw('"share_permille" BETWEEN 0 AND 1000')),
+    check('fuel_deliveries_heating_value_positive', sql.raw('"heating_value" > 0')),
+    notNegative('fuel_deliveries_quantity_not_negative', 'quantity'),
+    notNegative('fuel_deliveries_energy_not_negative', 'energy_kwh'),
+    notNegative('fuel_deliveries_emissions_not_negative', 'emissions_kg'),
+    notNegative('fuel_deliveries_co2_not_negative', 'co2_cost_cents'),
+    notNegative('fuel_deliveries_factor_not_negative', 'emission_factor'),
+    notNegative('fuel_deliveries_fixed_not_negative', 'fixed_cents'),
+    notNegative('fuel_deliveries_grid_fee_not_negative', 'grid_fee_cents'),
+    notNegative('fuel_deliveries_bio_not_negative', 'bio_cost_cents'),
+  ],
+)
+
+// Die Teilmengen laut Rechnung (Stufe 3 in 3.2, Z-B4), eine Zeile je Teilzeitraum.
+export const fuelDeliveryParts = sqliteTable(
+  'fuel_delivery_parts',
+  {
+    deliveryId: text('delivery_id')
+      .notNull()
+      .references(() => fuelDeliveries.id, { onDelete: 'cascade' }),
+    from: text('from').notNull(),
+    to: text('to').notNull(),
+    energyKwh: real('energy_kwh'),
+    amountCents: integer('amount_cents').notNull(),
+    fixedCents: integer('fixed_cents'),
+    emissionsKg: real('emissions_kg'),
+    co2CostCents: integer('co2_cost_cents'),
+  },
+  (t) => [
+    primaryKey({ columns: [t.deliveryId, t.from] }),
+    isoDate('fuel_delivery_parts_from_valid', 'from'),
+    isoDate('fuel_delivery_parts_to_valid', 'to'),
+    check('fuel_delivery_parts_order_valid', sql.raw('"from" <= "to"')),
+    notNegative('fuel_delivery_parts_energy_not_negative', 'energy_kwh'),
+    notNegative('fuel_delivery_parts_fixed_not_negative', 'fixed_cents'),
+    notNegative('fuel_delivery_parts_emissions_not_negative', 'emissions_kg'),
+    notNegative('fuel_delivery_parts_co2_not_negative', 'co2_cost_cents'),
+  ],
+)
+
+// Was eine abgeschlossene Heizperiode je Lieferung herein- oder hinausgebucht hat (G-A4). `RESTRICT` auf
+// die Lieferung: Mit eingefrorenem Teil ist sie gesperrt; mit der Heizperiode (also der Anlage) fällt
+// die Zeile.
+export const fuelCarryFrozen = sqliteTable(
+  'fuel_carry_frozen',
+  {
+    deliveryId: text('delivery_id')
+      .notNull()
+      .references(() => fuelDeliveries.id, { onDelete: 'restrict' }),
+    heatingPeriodId: text('heating_period_id')
+      .notNull()
+      .references(() => heatingPeriods.id, { onDelete: 'cascade' }),
+    cents: integer('cents').notNull(),
+    emissionsKg: real('emissions_kg').notNull().default(0),
+    co2Cents: integer('co2_cents').notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.deliveryId, t.heatingPeriodId] })],
+)
+
+// Die Gradtagzahlen des Deutschen Wetterdienstes für den Ort des Objekts (Stufe 4 in 3.2), je Monat.
+// Mit dem Objekt fallen sie.
+export const degreeDayValues = sqliteTable(
+  'degree_day_values',
+  {
+    propertyId: text('property_id')
+      .notNull()
+      .references(() => properties.id, { onDelete: 'cascade' }),
+    month: text('month').notNull(),
+    value: real('value').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.propertyId, t.month] }),
+    periodKeyCheck('degree_day_values_month_valid', 'month'),
+    check('degree_day_values_value_positive', sql.raw('"value" > 0')),
   ],
 )
 
@@ -296,7 +1049,7 @@ export const costItems = sqliteTable(
   {
     id: text('id').primaryKey().notNull(),
     propertyId: propertyRef(),
-    year: integer('year').notNull(),
+    period: text('period').$type<PeriodKey>().notNull(),
     category: text('category').notNull(),
     description: text('description').notNull(),
     vendor: text('vendor'),
@@ -327,16 +1080,83 @@ export const costItems = sqliteTable(
     // ihre Kosten verteilten sich still auf alle Wohnungen. So bleibt es eine leere Liste, und die
     // Berechnung meldet sie.
     participantsLimited: integer('participants_limited', { mode: 'boolean' }),
+    // Der Leistungszeitraum der Rechnung (#208, Entwurf 3.4), beide oder keines. Bei einer
+    // aufgeteilten kalten Rechnung steht an jedem Teil der ganze Leistungszeitraum.
+    serviceFrom: text('service_from'),
+    serviceTo: text('service_to'),
+    // Das Jahr der Zahlung für die Steuer (#208, Entwurf 3.10); NULL heißt das Kalenderjahr des
+    // Zeitraums, wenn er in einem liegt. Pflicht bei einem Zeitraum über zwei Jahre prüft
+    // repository.ts, denn die Datenbank kennt die Zeiträume nicht.
+    taxYear: integer('tax_year'),
+    // Teil der Heizkosten (#208, Entwurf 5.3, A1), nur bei „Heizung und Warmwasser“.
+    heatingPart: text('heating_part', { enum: HEATING_PARTS }),
+    // Die Heizanlage der Position (Heizung PR 4). `RESTRICT`: Eine Anlage mit Positionen wird nicht
+    // still gelöscht; `removeHeatingPlant` gibt sie vorher frei.
+    heatingPlantId: text('heating_plant_id').references(() => heatingPlants.id, { onDelete: 'restrict' }),
+    // Die Lieferung der Position (Heizung PR 7). `RESTRICT`: Eine Lieferung mit Positionen wird nicht
+    // still gelöscht; removeDelivery verlangt vorher, die Verknüpfung zu lösen.
+    fuelDeliveryId: text('fuel_delivery_id').references(() => fuelDeliveries.id, { onDelete: 'restrict' }),
+    // Ziel bei Heizung und Warmwasser (Heizung PR 10): beides, nur Heizung, nur Warmwasser.
+    heatingTarget: text('heating_target', { enum: HEATING_TARGETS }),
+    // Betriebsstrom der Heizung (Heizung PR 15, #212). `RESTRICT` auf die eigene Tabelle: Ein
+    // Betriebsstrom mit Abzug wird nicht still gelöscht, denn der Abzug mindert den Allgemeinstrom
+    // eines womöglich anderen Zeitraums (repository.ts lehnt mit einem Satz ab).
+    operatingPower: text('operating_power', { enum: OPERATING_POWER }),
+    operatingPowerItemId: text('operating_power_item_id').references((): AnySQLiteColumn => costItems.id, { onDelete: 'restrict' }),
+    // Die Grundlage der Schätzung (P-W1), Zeile für Zeile. Text und kein JSON: Gerechnet wird damit
+    // nicht, sie belegt, wie geschätzt wurde.
+    operatingPowerBasis: text('operating_power_basis'),
+    // Die Stromrechnung, aus der ein Abzug gerechnet wurde (Durchsicht von #252, G-K3). `RESTRICT`: Eine
+    // Rechnung mit Abzügen wird nicht still gelöscht, sonst bliebe der Allgemeinstrom netto negativ.
+    operatingPowerGeneralId: text('operating_power_general_id').references((): AnySQLiteColumn => costItems.id, { onDelete: 'restrict' }),
   },
   (t) => [
     // Der einzige Filter, den der Schnappschuss wirklich setzt: die Kostenpositionen eines
-    // Abrechnungsjahres (siehe snapshot.ts), seit #92 innerhalb eines Objekts.
-    index('cost_items_property_year_idx').on(t.propertyId, t.year),
+    // Abrechnungszeitraums (siehe snapshot.ts), innerhalb eines Objekts.
+    index('cost_items_property_period_idx').on(t.propertyId, t.period),
+    periodKeyCheck('cost_items_period_valid', 'period'),
     // Ein unbekannter Umlageschlüssel verteilte gar nichts, und die Position fiele still dem
     // Vermieter zu. Deshalb hier eine echte Bedingung und nicht nur der Typ.
     oneOf('cost_items_key_known', 'key', COST_KEYS),
     oneOf('cost_items_meter_type_known', 'meter_type', METER_TYPES),
     oneOf('cost_items_external_measure_known', 'external_measure', EXTERNAL_MEASURES),
+    // Leistungszeitraum (#208): beide oder keines, als Datum, Beginn nicht nach dem Ende.
+    // Die Namen folgen der Konvention aus errors.ts (db-errors.test.ts); die Sätze dazu stehen
+    // dort je Bedingung, weil `_complete` und `_valid` sonst von etwas anderem sprächen.
+    check('cost_items_service_complete', sql.raw('("service_from" IS NULL) = ("service_to" IS NULL)')),
+    check('cost_items_service_from_valid', sql.raw(`"service_from" IS NULL OR "service_from" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`)),
+    check('cost_items_service_to_valid', sql.raw(`"service_to" IS NULL OR "service_to" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`)),
+    check('cost_items_service_order_valid', sql.raw('"service_from" IS NULL OR "service_from" <= "service_to"')),
+    // Ein Jahr der Zahlung, das es geben kann; die genaue Spanne je Zeitraum prüft repository.ts.
+    check('cost_items_tax_year_valid', sql.raw('"tax_year" IS NULL OR "tax_year" BETWEEN 1900 AND 2200')),
+    oneOf('cost_items_heating_part_known', 'heating_part', HEATING_PARTS),
+    // Ein Brennstoffmerkmal an Müllabfuhr hätte keine Bedeutung und verwirrte den Vorschlag nach § 560.
+    check('cost_items_heating_part_category_valid', sql.raw(`"heating_part" IS NULL OR "category" = 'Heizung und Warmwasser'`)),
+    oneOf('cost_items_heating_target_known', 'heating_target', HEATING_TARGETS),
+    // Ein Ziel gibt es nur bei Heizung und Warmwasser, wie den Teil (PR 3).
+    check('cost_items_heating_target_category_valid', sql.raw(`"heating_target" IS NULL OR "category" = 'Heizung und Warmwasser'`)),
+    // Nach Heizkostenverordnung verteilt nur eine Position mit Anlage, Teil und Ziel (Entwurf 5.3).
+    check(
+      'cost_items_heating_system_complete',
+      sql.raw(`"key" <> 'heatingSystem' OR ("heating_target" IS NOT NULL AND "heating_part" IS NOT NULL AND "heating_plant_id" IS NOT NULL)`),
+    ),
+    // Eine Lieferung gehört nur zu einer Heizposition (Heizung PR 7).
+    check('cost_items_fuel_delivery_category_valid', sql.raw(`"fuel_delivery_id" IS NULL OR "category" = 'Heizung und Warmwasser'`)),
+    // Betriebsstrom (Heizung PR 15): nur an Heizkosten mit Teil „Betrieb“ oder ohne Teil; der Abzug nur
+    // am Allgemeinstrom und als Gutschrift; ein Verweis nur am Abzug; eine Grundlage nur an einer
+    // gekennzeichneten Position (P-W1).
+    oneOf('cost_items_operating_power_known', 'operating_power', OPERATING_POWER),
+    // R-W2 (Durchsicht von #252): auch beim Teil „Brennstoff/Energie“, für den Strom einer Wärmepumpe oder
+    // Stromheizung; welche Anlage mit Strom heizt, prüft repository.ts.
+    check('cost_items_operating_power_included_valid', sql.raw(`"operating_power" IS NOT 'included' OR ("category" = 'Heizung und Warmwasser' AND ("heating_part" IS NULL OR "heating_part" IN ('operating', 'fuel')))`)),
+    check('cost_items_operating_power_deduction_valid', sql.raw(`"operating_power" IS NOT 'deduction' OR ("category" = 'Beleuchtung/Allgemeinstrom' AND "amount_cents" < 0)`)),
+    check('cost_items_operating_power_link_valid', sql.raw(`"operating_power_item_id" IS NULL OR "operating_power" IS 'deduction'`)),
+    check('cost_items_operating_power_basis_valid', sql.raw(`"operating_power_basis" IS NULL OR "operating_power" IS NOT NULL`)),
+    // Durchsicht von #252, G-K3: Ein Abzug zeigt auf seine Stromrechnung, und nur ein Abzug tut das.
+    check('cost_items_operating_power_general_valid', sql.raw(`"operating_power_general_id" IS NULL OR "operating_power" IS 'deduction'`)),
+    // G-K4: Betriebsstrom ist keine Gutschrift.
+    check('cost_items_operating_power_included_positive', sql.raw(`"operating_power" IS NOT 'included' OR "amount_cents" > 0`)),
+    check('cost_items_operating_power_source_complete', sql.raw(`"operating_power" IS NOT 'deduction' OR "operating_power_general_id" IS NOT NULL`)),
     // Eine Summe der Anlage von null ergäbe eine Division durch null im Rechenweg.
     check('cost_items_external_total_positive', sql.raw('"external_total" > 0')),
     check(
@@ -473,11 +1293,38 @@ export const meters = sqliteTable(
     type: text('type', { enum: METER_TYPES }).notNull(),
     meterNumber: text('meter_number'),
     unit: text('unit').notNull(),
+    // Zähler der Heizanlage selbst (Heizung PR 4): ohne Wohnung, mit Rolle. `RESTRICT`: Ohne Anlage
+    // wäre er ein Hauptzähler des Hauses und verteilte Verbrauch um (#116).
+    heatingPlantId: text('heating_plant_id').references(() => heatingPlants.id, { onDelete: 'restrict' }),
+    heatingRole: text('heating_role', { enum: HEATING_ROLES }),
+    // Fernablesbar und eingebaut am (§ 5 Abs. 2, 3 HeizkostenV); null heißt unbekannt.
+    remoteReadable: integer('remote_readable', { mode: 'boolean' }),
+    installedOn: text('installed_on'),
+    // Skala und Bewertungsfaktor eines Heizkostenverteilers (Heizung PR 12); nur bei `hkv`.
+    hcaScale: text('hca_scale', { enum: HCA_SCALES }),
+    ratingFactor: real('rating_factor'),
+    // Geeicht bis Ende dieses Jahres (Heizung PR 21, #98, Entwurf 3.12); null heißt nicht eingetragen.
+    calibratedUntil: integer('calibrated_until'),
   },
   () => [
     // Der Zählertyp verbindet Zähler und Kostenposition (`cost_items.meter_type`). Ein
     // unbekannter Wert fände keine Zähler und ergäbe eine Position ohne Verteilbasis.
     oneOf('meters_type_known', 'type', METER_TYPES),
+    oneOf('meters_heating_role_known', 'heating_role', HEATING_ROLES),
+    // Ein Zähler der Anlage hat eine Rolle, und nur er (Heizung PR 4).
+    check('meters_heating_role_plant_valid', sql.raw('("heating_plant_id" IS NULL) = ("heating_role" IS NULL)')),
+    // Ein Zähler der Anlage hängt an keiner Wohnung; die Zähler der Wohnungen gehören zu ihr über
+    // die angeschlossenen Wohnungen.
+    check('meters_heating_plant_unit_valid', sql.raw('"heating_plant_id" IS NULL OR "unit_id" IS NULL')),
+    // Skala und Faktor gibt es nur am Heizkostenverteiler, der Faktor ist über 0 (Heizung PR 12).
+    oneOf('meters_hca_scale_known', 'hca_scale', HCA_SCALES),
+    check('meters_rating_factor_positive', sql.raw('"rating_factor" > 0')),
+    check('meters_hca_fields_valid', sql.raw(`"type" = 'hkv' OR ("rating_factor" IS NULL AND "hca_scale" IS NULL)`)),
+    // Eichjahr (Heizung PR 21): eine ganze, vierstellige Jahreszahl, wie der Schlüssel der Jahreskorrektur, und
+    // nie an einem Heizkostenverteiler (nicht eichpflichtig, Entwurf 3.12). `typeof`, weil eine Spalte mit
+    // INTEGER-Affinität eine Kommazahl als REAL behält und `BETWEEN` sie durchließe.
+    check('meters_calibrated_until_valid', sql.raw(`"calibrated_until" IS NULL OR (typeof("calibrated_until") = 'integer' AND "calibrated_until" BETWEEN 1000 AND 9999)`)),
+    check('meters_calibrated_until_hca_valid', sql.raw(`"calibrated_until" IS NULL OR "type" <> 'hkv'`)),
   ],
 )
 
@@ -494,6 +1341,8 @@ export const readings = sqliteTable(
     replacement: integer('replacement', { mode: 'boolean' }),
     oldEndValue: real('old_end_value'),
     note: text('note'),
+    // Grenze einer Ablesung aus dem Mieterwechsel (Heizung PR 10): letzter Tag des bisherigen Nutzers.
+    interimFor: text('interim_for'),
   },
   (t) => [
     // Ein Zählerstand ist eine ablesbare Menge und läuft nicht unter null. Der negative
@@ -528,7 +1377,7 @@ export const closedSettlements = sqliteTable(
   {
     id: text('id').primaryKey().notNull(),
     propertyId: propertyRef(),
-    year: integer('year').notNull(),
+    period: text('period').$type<PeriodKey>().notNull(),
     closedAt: text('closed_at').notNull(),
     // Datum des Versands, für die Frist nach §556 Abs. 3 BGB. null = noch nicht versandt.
     sentAt: text('sent_at'),
@@ -541,10 +1390,11 @@ export const closedSettlements = sqliteTable(
     settlement: text('settlement', { mode: 'json' }).notNull(),
   },
   (t) => [
-    // Zugleich Zusicherung und die zweite Abfrage des Schnappschusses: Je Objekt und Jahr gibt
+    // Zugleich Zusicherung und die zweite Abfrage des Schnappschusses: Je Objekt und Zeitraum gibt
     // es höchstens eine abgeschlossene Abrechnung. Vor #92 galt das je Jahr; mit zwei Objekten
     // sperrte das eine sonst das andere.
-    uniqueIndex('closed_settlements_property_year_idx').on(t.propertyId, t.year),
+    uniqueIndex('closed_settlements_property_period_idx').on(t.propertyId, t.period),
+    periodKeyCheck('closed_settlements_period_valid', 'period'),
     // Dass der Inhalt überhaupt JSON ist, kann die Datenbank prüfen, und nur das prüft sie hier.
     // Ob die Abrechnung darin fachlich stimmt, weiß sie nicht und soll sie nicht wissen; das ist
     // gerade der Sinn eines Archivstücks. Eine abgeschnittene oder verstümmelte Zeichenkette
@@ -564,14 +1414,14 @@ export const closedSettlements = sqliteTable(
 // ihr Stand hierher, statt gelöscht zu werden: Er ist das Dokument, das der Mieter bekommen hat,
 // und wird gebraucht, sobald eine Korrektur zu begründen ist, dem Mieter wie dem Finanzamt
 // gegenüber. Eine eigene Tabelle und keine Spalte an `closed_settlements`, damit dort alles bleibt,
-// wie es ist: je Objekt und Jahr höchstens ein gültiger Stand, und jeder, der ihn liest, bekommt
+// wie es ist: je Objekt und Zeitraum höchstens ein gültiger Stand, und jeder, der ihn liest, bekommt
 // nur diesen.
 export const closedSettlementHistory = sqliteTable(
   'closed_settlement_history',
   {
     id: text('id').primaryKey().notNull(),
     propertyId: propertyRef(),
-    year: integer('year').notNull(),
+    period: text('period').$type<PeriodKey>().notNull(),
     closedAt: text('closed_at').notNull(),
     sentAt: text('sent_at'),
     // Wann wiedergeöffnet wurde, als Zeitstempel wie `closed_at`.
@@ -579,7 +1429,8 @@ export const closedSettlementHistory = sqliteTable(
     settlement: text('settlement', { mode: 'json' }).notNull(),
   },
   (t) => [
-    index('closed_settlement_history_property_year_idx').on(t.propertyId, t.year),
+    index('closed_settlement_history_property_period_idx').on(t.propertyId, t.period),
+    periodKeyCheck('closed_settlement_history_period_valid', 'period'),
     // Unqualifiziert, aus demselben Grund wie oben.
     check('closed_settlement_history_settlement_is_json', sql.raw('json_valid("settlement")')),
   ],
@@ -738,9 +1589,14 @@ export const assessments = sqliteTable(
     propertyId: text('property_id').references(() => properties.id, { onDelete: 'set null' }),
     year: integer('year').notNull(),
     detectedYear: integer('detected_year'),
-    // Das gewählte Jahr: beim Auswerten mitgeschickt, danach das von Hand gesetzte. Weicht das Jahr
-    // der Auswertung davon ab, ist ihre Ampel gelb (Schlussdurchsicht, I1).
+    // Das gewählte Kalenderjahr: beim Auswerten mitgeschickt, danach das von Hand gesetzte. Es bleibt
+    // auch ohne Objekt stehen (Durchsicht von #222, I1): Sonst wäre eine später zugeordnete Auswertung
+    // grün, obwohl ihr Beleg aus einem anderen Jahr stammt. Weicht das Jahr der Auswertung davon ab,
+    // ist ihre Ampel gelb (Schlussdurchsicht, I1).
     requestedYear: integer('requested_year'),
+    // Der gewählte Abrechnungszeitraum (#208), aus dem gewählten Jahr gebildet, sobald es ein Objekt
+    // gibt. Nur mit Objekt (G-B7): Ein Zeitraum ist nur am Objekt bestimmt.
+    requestedPeriod: text('requested_period').$type<PeriodKey>(),
     vendor: text('vendor'),
     invoiceDate: text('invoice_date'),
     totalGrossCents: integer('total_gross_cents'),
@@ -756,6 +1612,8 @@ export const assessments = sqliteTable(
     index('assessments_property_idx').on(t.propertyId),
     check('assessments_year_positive', sql.raw('"year" > 0')),
     check('assessments_requested_year_positive', sql.raw('"requested_year" IS NULL OR "requested_year" > 0')),
+    check('assessments_requested_period_with_property', sql.raw('"requested_period" IS NULL OR "property_id" IS NOT NULL')),
+    periodKeyCheck('assessments_requested_period_valid', 'requested_period'),
     notNegative('assessments_next_idx_not_negative', 'next_idx'),
     oneOf('assessments_amounts_adjusted_known', 'amounts_adjusted', AMOUNTS_ADJUSTED),
   ],
@@ -790,5 +1648,177 @@ export const assessmentLines = sqliteTable(
     oneOf('assessment_lines_booking_known', 'booking', ASSESSMENT_BOOKINGS),
     // Eine gebuchte Zeile sagt, wie sie gebucht ist.
     check('assessment_lines_booking_complete', sql.raw('"cost_item_id" IS NULL OR "booking" IS NOT NULL')),
+  ],
+)
+
+// ---------- CO₂ (Heizung PR 6, Entwurf 5.5) ----------
+
+export const CO2_METHODS = exactly<Co2Method>()(['serviceDeducted', 'serviceShown', 'selfAfterService', 'self'] as const)
+
+// Die CO₂-Angaben einer Heizperiode, eine Zeile je Heizperiode (Primärschlüssel ist die
+// Heizperiode). Die Methode hat keine Vorgabe: Der Vermieter beantwortet die Frage nach der
+// Abzugszeile selbst (Entwurf 7.2). Beim Messdienst sind S, L und die Zahl der Nutzeinheiten
+// Pflicht, denn ohne sie gibt es keine Probe (7.3).
+export const co2Statements = sqliteTable(
+  'co2_statements',
+  {
+    heatingPeriodId: text('heating_period_id')
+      .primaryKey()
+      .notNull()
+      .references(() => heatingPeriods.id, { onDelete: 'cascade' }),
+    method: text('method', { enum: CO2_METHODS }).notNull(),
+    areaM2: real('area_m2'),
+    serviceEmissionsKg: real('service_emissions_kg'),
+    serviceAreaM2: real('service_area_m2'),
+    serviceKgPerM2: real('service_kg_per_m2'),
+    serviceLandlordPermille: integer('service_landlord_permille'),
+    serviceTotalCents: integer('service_total_cents'),
+    serviceLandlordCents: integer('service_landlord_cents'),
+    serviceUsersTotalCents: integer('service_users_total_cents'),
+    serviceUsersTotalApprox: integer('service_users_total_approx', { mode: 'boolean' }).notNull().default(false),
+    serviceUnitsCount: integer('service_units_count'),
+    // Die Position, in der L steckt. `SET NULL`: Wird sie gelöscht, bleibt der Datensatz, und die
+    // Berechnung nimmt die größte Messdienstposition des Topfs.
+    serviceCostItemId: text('service_cost_item_id').references(() => costItems.id, { onDelete: 'set null' }),
+    serviceSelfLandlordCents: integer('service_self_landlord_cents'),
+    serviceFuelGrossCents: integer('service_fuel_gross_cents'),
+    serviceFuelNetCents: integer('service_fuel_net_cents'),
+  },
+  () => [
+    oneOf('co2_statements_method_known', 'method', CO2_METHODS),
+    check(
+      'co2_statements_service_complete',
+      sql.raw(`"method" NOT IN ('serviceDeducted', 'serviceShown') OR ("service_users_total_cents" IS NOT NULL AND "service_landlord_cents" IS NOT NULL AND "service_units_count" IS NOT NULL)`),
+    ),
+    notNegative('co2_statements_users_total_not_negative', 'service_users_total_cents'),
+    notNegative('co2_statements_landlord_not_negative', 'service_landlord_cents'),
+    notNegative('co2_statements_total_not_negative', 'service_total_cents'),
+    notNegative('co2_statements_self_landlord_not_negative', 'service_self_landlord_cents'),
+    notNegative('co2_statements_fuel_gross_not_negative', 'service_fuel_gross_cents'),
+    notNegative('co2_statements_fuel_net_not_negative', 'service_fuel_net_cents'),
+    notNegative('co2_statements_emissions_not_negative', 'service_emissions_kg'),
+    notNegative('co2_statements_kg_per_m2_not_negative', 'service_kg_per_m2'),
+    check('co2_statements_permille_valid', sql.raw('"service_landlord_permille" BETWEEN 0 AND 1000')),
+    check('co2_statements_units_positive', sql.raw('"service_units_count" > 0')),
+    check('co2_statements_area_positive', sql.raw('"area_m2" > 0')),
+    check('co2_statements_service_area_positive', sql.raw('"service_area_m2" > 0')),
+  ],
+)
+
+// „Vom Vermieter übernommen“ je Mietverhältnis, laut Messdienst. Fällt mit dem Datensatz und mit
+// dem Mietverhältnis; die Objektgrenze prüft repository.ts (`guardTenancy`,
+// `crossPropertyViolations`).
+export const co2TenantReliefs = sqliteTable(
+  'co2_tenant_reliefs',
+  {
+    statementId: text('statement_id')
+      .notNull()
+      .references(() => co2Statements.heatingPeriodId, { onDelete: 'cascade' }),
+    tenancyId: text('tenancy_id')
+      .notNull()
+      .references(() => tenancies.id, { onDelete: 'cascade' }),
+    cents: integer('cents').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.statementId, t.tenancyId] }), notNegative('co2_tenant_reliefs_cents_not_negative', 'cents')],
+)
+
+// ---------- CO₂-Erstattung an Mieter, die selbst heizen (Heizung PR 19, #97) ----------
+
+// Ein Erstattungsanspruch nach § 6 Abs. 2 CO2KostAufG. Hängt am Mietverhältnis und fällt mit ihm. Verrechnet
+// (`settle_period`) und ausgezahlt (`paid_out_on`) schließen sich aus. Ob das Mietverhältnis selbst heizt und ob
+// der Zeitraum zum Objekt gehört, prüft db/co2Refunds.ts vor dem Schreiben; die Bedingungen sind das Netz darunter.
+const isoDateOrNull = (name: string, column: string) =>
+  check(name, sql.raw(`"${column}" IS NULL OR "${column}" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`))
+export const co2Refunds = sqliteTable(
+  'co2_refunds',
+  {
+    id: text('id').primaryKey().notNull(),
+    tenancyId: text('tenancy_id').notNull().references(() => tenancies.id, { onDelete: 'cascade' }),
+    supplierBilledAt: text('supplier_billed_at').notNull(),
+    claimedAt: text('claimed_at').notNull(),
+    amountCents: integer('amount_cents').notNull(),
+    settlePeriod: text('settle_period').$type<PeriodKey>(),
+    paidOutOn: text('paid_out_on'),
+    billedFrom: text('billed_from'),
+    billedTo: text('billed_to'),
+    emissionsKg: real('emissions_kg'),
+    co2CostCents: integer('co2_cost_cents'),
+    areaM2: real('area_m2'),
+    ownAppliances: integer('own_appliances', { mode: 'boolean' }).notNull().default(false),
+    commercialUse: integer('commercial_use', { mode: 'boolean' }).notNull().default(false),
+    commercialMetered: integer('commercial_metered', { mode: 'boolean' }).notNull().default(false),
+    nonResidential: integer('non_residential', { mode: 'boolean' }).notNull().default(false),
+    restriction: text('restriction', { enum: CO2_RESTRICTIONS }).notNull().default('none'),
+    halfSplitFrom: text('half_split_from'),
+    gridFeeCents: integer('grid_fee_cents'),
+    bioCostCents: integer('bio_cost_cents'),
+  },
+  (t) => [
+    index('co2_refunds_tenancy_idx').on(t.tenancyId),
+    notNegative('co2_refunds_amount_not_negative', 'amount_cents'),
+    notNegative('co2_refunds_co2_cost_not_negative', 'co2_cost_cents'),
+    notNegative('co2_refunds_emissions_not_negative', 'emissions_kg'),
+    notNegative('co2_refunds_grid_fee_not_negative', 'grid_fee_cents'),
+    notNegative('co2_refunds_bio_cost_not_negative', 'bio_cost_cents'),
+    check('co2_refunds_area_positive', sql.raw('"area_m2" IS NULL OR "area_m2" > 0')),
+    periodKeyCheck('co2_refunds_settle_period_valid', 'settle_period'),
+    check('co2_refunds_settled_or_paid_valid', sql.raw('"settle_period" IS NULL OR "paid_out_on" IS NULL')),
+    check('co2_refunds_billed_complete', sql.raw('("billed_from" IS NULL) = ("billed_to" IS NULL)')),
+    check('co2_refunds_billed_order_valid', sql.raw('"billed_from" IS NULL OR "billed_to" IS NULL OR "billed_from" <= "billed_to"')),
+    check('co2_refunds_metered_valid', sql.raw('"commercial_metered" = 0 OR "commercial_use" = 1')),
+    oneOf('co2_refunds_restriction_known', 'restriction', CO2_RESTRICTIONS),
+    check('co2_refunds_billed_at_valid', sql.raw(`"supplier_billed_at" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`)),
+    check('co2_refunds_claimed_at_valid', sql.raw(`"claimed_at" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`)),
+    isoDateOrNull('co2_refunds_paid_out_valid', 'paid_out_on'),
+    isoDateOrNull('co2_refunds_billed_from_valid', 'billed_from'),
+    isoDateOrNull('co2_refunds_billed_to_valid', 'billed_to'),
+    isoDateOrNull('co2_refunds_half_split_valid', 'half_split_from'),
+  ],
+)
+
+// ---------- Rechtswerte des Vermieters (Heizung PR 17, Entwurf 4.5, 5.9) ----------
+
+// Ein vom Vermieter eingetragener Wert für einen überschreibbaren Parameter des Rechtsregisters, je
+// Kalenderjahr (Abweichung 2 des Plans). Installationsweit, nicht je Objekt: Ein Preis gilt für alle
+// Häuser. Kein Verweis auf das Register, denn das steht im Programm und nicht in der Datenbank; ein
+// Eintrag zu einem Parameter, den das Programm nicht (mehr) kennt, wird gelesen und nicht benutzt.
+export const lawOverrides = sqliteTable(
+  'law_overrides',
+  {
+    paramId: text('param_id').notNull(),
+    validFrom: text('valid_from').notNull(),
+    valueJson: text('value_json').notNull(),
+    source: text('source').notNull(),
+    enteredAt: text('entered_at').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.paramId, t.validFrom] }),
+    check('law_overrides_valid_from_valid', sql.raw(`"valid_from" GLOB '[0-9][0-9][0-9][0-9]-01-01'`)),
+    check('law_overrides_source_complete', sql.raw('length(trim("source")) > 0')),
+    check('law_overrides_value_is_json', sql.raw('json_valid("value_json")')),
+  ],
+)
+
+// ---------- Monatliche Verbrauchsinformation (Heizung PR 22, § 6a Abs. 1 Nr. 2, Abs. 2 HeizkostenV) ----------
+
+// Je Anlage und Monat: der Vergleichswert eines Durchschnittsnutzers (kWh je m² Wohnfläche im Monat) mit
+// seiner Quelle und der Tag, an dem die Information den Mietern mitgeteilt wurde. Gespeichert an der Anlage,
+// die am Monatsende heizt; fällt mit ihr. Der Vergleichswert ohne Quelle ist keiner: Ein Durchschnitt des
+// eigenen Hauses ist nach der Begründung kein zulässiger Vergleich (BR-Drs. 643/21, S. 19).
+export const heatingMonthlyInfo = sqliteTable(
+  'heating_monthly_info',
+  {
+    plantId: text('plant_id').notNull().references(() => heatingPlants.id, { onDelete: 'cascade' }),
+    month: text('month').notNull(),
+    referenceKwhPerM2: real('reference_kwh_per_m2'),
+    referenceSource: text('reference_source'),
+    sentOn: text('sent_on'),
+  },
+  (t) => [
+    primaryKey({ columns: [t.plantId, t.month] }),
+    check('heating_monthly_info_month_valid', sql.raw(`"month" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]' AND CAST(substr("month", 6, 2) AS INTEGER) BETWEEN 1 AND 12`)),
+    check('heating_monthly_info_reference_positive', sql.raw('"reference_kwh_per_m2" IS NULL OR "reference_kwh_per_m2" > 0')),
+    check('heating_monthly_info_reference_source_complete', sql.raw(`"reference_kwh_per_m2" IS NULL OR length(trim(coalesce("reference_source", ''))) > 0`)),
+    check('heating_monthly_info_sent_on_valid', sql.raw(`"sent_on" IS NULL OR "sent_on" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`)),
   ],
 )

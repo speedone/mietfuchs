@@ -5,6 +5,7 @@ import PageHeader from '../components/PageHeader'
 import { useToast, useConfirm } from '../components/feedback'
 import { UpdateSettings, type UpdateState } from '../components/Update'
 import { AiSettings } from '../components/AiSettings'
+import LawOverridesCard from '../components/LawOverridesCard'
 import { useOpenForm, useProperty } from '../property'
 
 type Props = { settings: Settings; reload: () => Promise<void>; update: UpdateState }
@@ -100,8 +101,11 @@ export default function Einstellungen({ settings, reload, update }: Props) {
           </label>
           <label className="field">
             Zahlungsfrist (Tage)
-            <input value={form.paymentDeadlineDays} onChange={(e) => setForm({ ...form, paymentDeadlineDays: e.target.value })} style={{ width: 90 }} />
+            <input value={form.paymentDeadlineDays} onChange={(e) => setForm({ ...form, paymentDeadlineDays: e.target.value })} className="input-xs" />
           </label>
+        </div>
+        {/* Sichtprüfung E52: Speichern steht unter den Feldern wie in den anderen Karten */}
+        <div className="row">
           <button className="btn" onClick={save}>Speichern</button>
         </div>
         {saveError && <div className="error">{saveError}</div>}
@@ -111,6 +115,8 @@ export default function Einstellungen({ settings, reload, update }: Props) {
 
       <UpdateSettings settings={settings} update={update} reload={reload} />
 
+      <LawOverridesCard />
+
       <div className="card">
         <h2>Daten &amp; Sicherung</h2>
         <p className="muted">
@@ -119,18 +125,18 @@ export default function Einstellungen({ settings, reload, update }: Props) {
         </p>
         <div className="row">
           <a className="btn secondary" href="/api/backup" download>⬇ Backup herunterladen (ZIP)</a>
-          <label className="btn secondary" style={{ cursor: 'pointer' }}>
+          <label className="btn secondary">
             {restoring && <span className="spinner" />}⬆ Backup wiederherstellen …
             <input
               type="file"
               accept=".zip,application/zip"
-              style={{ display: 'none' }}
+              className="sr-only"
               onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void restore(f) }}
             />
           </label>
         </div>
         {restoreMsg && <div className={restoreMsg.startsWith('Fehler') ? 'error' : 'ok'}>{restoreMsg}</div>}
-        <p className="muted" style={{ marginTop: 10 }}>
+        <p className="muted">
           Beim Wiederherstellen werden die aktuellen Daten <strong>überschrieben</strong> (eine
           Sicherheitskopie des vorherigen Stands bleibt als{' '}
           <code>mietfuchs.sqlite.vor-restore</code> im Datenordner erhalten).

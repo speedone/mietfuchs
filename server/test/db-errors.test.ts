@@ -17,16 +17,18 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { connect } from '../src/db/client.ts'
-import { databaseFile, openDatabase, type OpenedDatabase } from '../src/db/open.ts'
+import { databaseFile, type OpenedDatabase } from '../src/db/open.ts'
+import { openFreshDatabase } from '../testing/freshDatabase.ts'
 import { databaseProblem } from '../src/db/errors.ts'
-import { closedSettlements, costItems, prepayments, readings, tenancies, units } from '../src/db/schema.ts'
+import { assessments, closedSettlements, costItems, prepayments, readings, tenancies, units } from '../src/db/schema.ts'
+import { calendarPeriod, periodKey } from '../../shared/period.ts'
 
 const tempDir = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-fehler-'))
 
 // Ein Bestand, an dem sich jeder Verstoß auslösen lässt.
 async function withDatabase(work: (opened: OpenedDatabase) => Promise<void>): Promise<void> {
   const dataDir = tempDir()
-  const opened = await openDatabase({ dataDir })
+  const opened = await openFreshDatabase(dataDir)
   try {
     await opened.write(async (db) => {
       await db.insert(units).values({ propertyId: 'objekt-1', id: 'u1', name: 'EG', areaM2: 50, participates: true })
@@ -81,8 +83,8 @@ test('Eine zweite abgeschlossene Abrechnung für dasselbe Jahr wird erklärt', a
   await withDatabase(async (opened) => {
     const text = await messageOfFailure(opened, () =>
       opened.write(async (db) => {
-        await db.insert(closedSettlements).values({ propertyId: 'objekt-1', id: 's1', year: 2024, closedAt: '2025-01-01', settlement: {} })
-        await db.insert(closedSettlements).values({ propertyId: 'objekt-1', id: 's2', year: 2024, closedAt: '2025-01-02', settlement: {} })
+        await db.insert(closedSettlements).values({ propertyId: 'objekt-1', id: 's1', period: calendarPeriod(2024), closedAt: '2025-01-01', settlement: {} })
+        await db.insert(closedSettlements).values({ propertyId: 'objekt-1', id: 's2', period: calendarPeriod(2024), closedAt: '2025-01-02', settlement: {} })
       }))
     assert.match(text, /Jahr/, text)
     assert.match(text, /abgeschlossen/, text)
@@ -101,7 +103,7 @@ test('Eine Summe der Anlage von null wird erklärt, und zwar mit dem Feld (#94)'
   await withDatabase(async (opened) => {
     const text = await messageOfFailure(opened, () =>
       opened.write((db) => db.insert(costItems).values({
-        id: 'c-null', propertyId: 'objekt-1', year: 2025, category: 'X', description: 'X', amountCents: 100, key: 'external',
+        id: 'c-null', propertyId: 'objekt-1', period: calendarPeriod(2025), category: 'X', description: 'X', amountCents: 100, key: 'external',
         externalMeasure: 'mea', externalTotal: 0, externalTotalCents: 100,
       })))
     assert.match(text, /größer als null/, text)
@@ -113,7 +115,7 @@ test('Unvollständige Angaben einer Gemeinschaft werden erklärt (#94)', async (
   await withDatabase(async (opened) => {
     const text = await messageOfFailure(opened, () =>
       opened.write((db) => db.insert(costItems).values({
-        id: 'c-halb', propertyId: 'objekt-1', year: 2025, category: 'X', description: 'X', amountCents: 100, key: 'external',
+        id: 'c-halb', propertyId: 'objekt-1', period: calendarPeriod(2025), category: 'X', description: 'X', amountCents: 100, key: 'external',
         externalMeasure: 'mea', externalTotal: 10000,
       })))
     assert.match(text, /unvollständig|vollständig/, text)
@@ -199,6 +201,30 @@ test('Ein fremder Fehler wird nicht für einen der Datenbank ausgegeben', async 
   }
 })
 
+test('Ein ungültiger Zeitraumschlüssel wird erklärt, und zwar mit dem Feld (#208)', async () => {
+  await withDatabase(async (opened) => {
+    const text = await messageOfFailure(opened, () =>
+      opened.write((db) => db.run(sql.raw(
+        "INSERT INTO cost_items (id, property_id, period, category, description, amount_cents, key) VALUES ('c', 'objekt-1', '2025-13', 'X', 'X', 1, 'area')",
+      ))))
+    assert.match(text, /Abrechnungszeitraum/, text)
+    assert.match(text, /JJJJ-MM/, text)
+    const beginn = await messageOfFailure(opened, () => opened.write((db) => db.run(sql.raw('UPDATE properties SET period_start_month = 13'))))
+    assert.match(beginn, /Beginnmonat/, beginn)
+  })
+})
+
+test('Ein gewählter Zeitraum ohne Objekt wird erklärt (#208)', async () => {
+  await withDatabase(async (opened) => {
+    const text = await messageOfFailure(opened, () =>
+      opened.write((db) => db.insert(assessments).values({
+        id: 'a', file: 'a.pdf', propertyId: null, year: 2025, requestedPeriod: periodKey('2025-01'), createdAt: '2026-01-01T00:00:00Z',
+      })))
+    assert.match(text, /Objekt/, text)
+    assert.doesNotMatch(text, /Ein Wert ist nicht zulässig/, text)
+  })
+})
+
 test('Jede Prüfbedingung im Schema folgt der Namenskonvention', async () => {
   // Die Meldung wird aus dem **Namen** der Prüfbedingung abgeleitet und nicht aus einem
   // Katalog, den jemand pflegen müsste. Das trägt nur, solange die Namen der Konvention folgen.
@@ -207,7 +233,7 @@ test('Jede Prüfbedingung im Schema folgt der Namenskonvention', async () => {
   // Kommt eine Bedingung mit anderem Namen hinzu, bekäme der Nutzer die Rückfallmeldung, ohne
   // dass es jemandem auffiele. Hier fällt es auf.
   const dataDir = tempDir()
-  const opened = await openDatabase({ dataDir })
+  const opened = await openFreshDatabase(dataDir)
   opened.close()
   // Über die rohe Verbindung und nicht über Drizzle: Der Proxy-Treiber liefert Zeilen als
   // Listen, und `all` bildete sie erst auf Feldnamen ab. Hier steht ohnehin nur eine Spalte.
@@ -222,10 +248,138 @@ test('Jede Prüfbedingung im Schema folgt der Namenskonvention', async () => {
       // Tabelle selbst. Sie steht in errors.ts mit eigener Meldung da. Jede **weitere** Ausnahme
       // muss hier bewusst eingetragen werden, und genau das ist der Zweck dieses Tests.
       if (name === 'settings_single_row') continue
-      assert.match(name, /_(not_negative|known|is_json|positive|complete)$/, `„${name}" folgt keiner der bekannten Endungen`)
+      assert.match(name, /_(not_negative|known|is_json|positive|complete|valid|with_property)$/, `„${name}" folgt keiner der bekannten Endungen`)
     }
   } finally {
     connection.close()
     fs.rmSync(dataDir, { recursive: true, force: true })
   }
+})
+
+test('Leistungszeitraum, Jahr der Zahlung und Brennstoff: jede Bedingung hat ihren eigenen Satz (#208)', async () => {
+  // Die Schreibprüfung in repository.ts fängt das vorher ab; die Bedingungen sind das Netz
+  // darunter, und auch dort soll niemand einen Satz über die Gemeinschaftsabrechnung oder über
+  // „JJJJ-MM“ lesen, wenn ein Tagesdatum gemeint ist.
+  await withDatabase(async (opened) => {
+    const insert = (id: string, columns: string, values: string) => messageOfFailure(opened, () =>
+      opened.write((db) => db.run(sql.raw(
+        `INSERT INTO cost_items (id, property_id, period, category, description, amount_cents, key${columns}) VALUES ('${id}', 'objekt-1', '2025-01', 'Grundsteuer', 'G', 1, 'area'${values})`,
+      ))))
+    const paar = await insert('a', ', service_from', ", '2025-01-01'")
+    assert.match(paar, /Leistungszeitraum/, paar)
+    assert.doesNotMatch(paar, /Gemeinschaft/, paar)
+    const datum = await insert('b', ', service_from, service_to', ", '01.01.2025', '31.12.2025'")
+    assert.match(datum, /Leistungszeitraum/, datum)
+    assert.match(datum, /JJJJ-MM-TT/, datum)
+    const folge = await insert('c', ', service_from, service_to', ", '2025-12-31', '2025-01-01'")
+    assert.match(folge, /endet vor seinem Beginn/, folge)
+    const jahr = await insert('d', ', tax_year', ', 1899')
+    assert.match(jahr, /Jahr der Zahlung/, jahr)
+    const art = await insert('e', ', heating_part', ", 'fuel'")
+    assert.match(art, /Heizung und Warmwasser/, art)
+  })
+})
+
+test('Heizanlage: jede Bedingung, deren Endung allein den falschen Satz ergäbe, hat ihren eigenen (Heizung PR 4)', async () => {
+  // Die Schreibprüfung in heating.ts und repository.ts fängt das vorher ab; die Bedingungen sind
+  // das Netz darunter. „Ein Wert, der kein Monat in der Form JJJJ-MM ist“ wäre hier falsch.
+  await withDatabase(async (opened) => {
+    const run = (statement: string) => messageOfFailure(opened, () => opened.write((db) => db.run(sql.raw(statement))))
+    await opened.write((db) => db.run(sql.raw("INSERT INTO heating_plants (id, property_id, energy) VALUES ('hp1', 'objekt-1', 'gas')")))
+    const quelle = await run("INSERT INTO heating_plants (id, property_id, energy, source, method) VALUES ('hp2', 'objekt-1', 'gas', 'homeowners', 'manual')")
+    assert.match(quelle, /Gemeinschaft/, quelle)
+    // Derselbe Wortlaut wie die Wahl in der Einrichtung „Heizung“ (Durchsicht von #230, M4).
+    assert.match(quelle, /„Die Gemeinschaft \(Hausverwaltung\) rechnet ab“/, quelle)
+    assert.doesNotMatch(quelle, /JJJJ-MM/, quelle)
+    const rolle = await run("INSERT INTO meters (id, property_id, name, type, unit, heating_plant_id) VALUES ('m1', 'objekt-1', 'Gas', 'sonstig', 'm³', 'hp1')")
+    assert.match(rolle, /Rolle/, rolle)
+    assert.doesNotMatch(rolle, /JJJJ-MM/, rolle)
+    const wohnung = await run("INSERT INTO meters (id, property_id, name, unit_id, type, unit, heating_plant_id, heating_role) VALUES ('m2', 'objekt-1', 'Gas', 'u1', 'sonstig', 'm³', 'hp1', 'supply')")
+    assert.match(wohnung, /keiner Wohnung/, wohnung)
+    const waerme = await run("INSERT INTO heating_periods (id, plant_id, period, heat_consumption_pct) VALUES ('h1', 'hp1', '2025-01', 101)")
+    assert.match(waerme, /Heizkosten ist ein Anteil/, waerme)
+    const wasser = await run("INSERT INTO heating_periods (id, plant_id, period, water_consumption_pct) VALUES ('h2', 'hp1', '2025-01', -1)")
+    assert.match(wasser, /Warmwasser/, wasser)
+    assert.doesNotMatch(wasser, /JJJJ-MM/, wasser)
+  })
+})
+
+test('Eichfrist: beide Bedingungen haben ihren eigenen Satz, keinen über „JJJJ-MM“ (Heizung PR 21)', async () => {
+  // repository.ts prüft vorher; die Bedingungen sind das Netz darunter.
+  await withDatabase(async (opened) => {
+    const run = (statement: string) => messageOfFailure(opened, () => opened.write((db) => db.run(sql.raw(statement))))
+    const jahr = await run("INSERT INTO meters (id, property_id, name, type, unit, calibrated_until) VALUES ('m1', 'objekt-1', 'K', 'kaltwasser', 'm³', 27)")
+    assert.match(jahr, /Eichjahr ist keine Jahreszahl/, jahr)
+    assert.doesNotMatch(jahr, /JJJJ-MM/, jahr)
+    const hkv = await run("INSERT INTO meters (id, property_id, name, unit_id, type, unit, calibrated_until) VALUES ('m2', 'objekt-1', 'H', 'u1', 'hkv', 'Einheiten', 2027)")
+    assert.match(hkv, /Heizkostenverteiler sind keine eichpflichtigen Messgeräte/, hkv)
+  })
+})
+
+test('CO₂-Angaben: jede Bedingung, deren Endung allein den falschen Satz ergäbe, hat ihren eigenen (Heizung PR 6)', async () => {
+  // Die Schreibprüfung in db/co2.ts fängt das vorher ab; die Bedingungen sind das Netz darunter.
+  // „Gemeinschaftsabrechnung“ oder „JJJJ-MM“ wären hier falsch.
+  await withDatabase(async (opened) => {
+    const run = (statement: string) => messageOfFailure(opened, () => opened.write((db) => db.run(sql.raw(statement))))
+    await opened.write((db) => db.run(sql.raw("INSERT INTO heating_plants (id, property_id, energy, method) VALUES ('hp1', 'objekt-1', 'gas', 'service')")))
+    await opened.write((db) => db.run(sql.raw("INSERT INTO heating_periods (id, plant_id, period) VALUES ('h1', 'hp1', '2025-01')")))
+    const summen = await run("INSERT INTO co2_statements (heating_period_id, method) VALUES ('h1', 'serviceDeducted')")
+    assert.match(summen, /Summe der Kosten aller Nutzer/, summen)
+    assert.doesNotMatch(summen, /Gemeinschaft/, summen)
+    const anteil = await run("INSERT INTO co2_statements (heating_period_id, method, service_landlord_permille) VALUES ('h1', 'selfAfterService', 1001)")
+    assert.match(anteil, /Anteil des Vermieters/, anteil)
+    assert.doesNotMatch(anteil, /JJJJ-MM/, anteil)
+  })
+})
+
+test('Lieferungen: jede Bedingung, deren Endung allein den falschen Satz ergäbe, hat ihren eigenen (Heizung PR 7)', async () => {
+  // Die Schreibprüfung in db/fuel.ts und repository.ts fängt das vorher ab; die Bedingungen sind das
+  // Netz darunter. „Ein Monat in der Form JJJJ-MM“ wäre bei einem Tagesdatum falsch.
+  await withDatabase(async (opened) => {
+    const run = (statement: string) => messageOfFailure(opened, () => opened.write((db) => db.run(sql.raw(statement))))
+    await opened.write((db) => db.run(sql.raw("INSERT INTO heating_plants (id, property_id, energy, method) VALUES ('hp1', 'objekt-1', 'gas', 'manual')")))
+    const ets = await run("UPDATE heating_plants SET district_ets_new = 1 WHERE id = 'hp1'")
+    assert.match(ets, /nur bei Fernwärme/, ets)
+    const paar = await run("INSERT INTO fuel_deliveries (id, plant_id, invoice_from) VALUES ('d1', 'hp1', '2025-01-01')")
+    assert.match(paar, /Rechnungszeitraum/, paar)
+    assert.doesNotMatch(paar, /Gemeinschaft/, paar)
+    const datum = await run("INSERT INTO fuel_deliveries (id, plant_id, invoice_from, invoice_to) VALUES ('d2', 'hp1', '01.01.2025', '2025-12-31')")
+    assert.match(datum, /JJJJ-MM-TT/, datum)
+    const folge = await run("INSERT INTO fuel_deliveries (id, plant_id, invoice_from, invoice_to) VALUES ('d3', 'hp1', '2025-12-31', '2025-01-01')")
+    assert.match(folge, /endet vor seinem Beginn/, folge)
+    const anteil = await run("INSERT INTO fuel_deliveries (id, plant_id, invoice_from, invoice_to, share_permille) VALUES ('d4', 'hp1', '2025-01-01', '2025-12-31', 1001)")
+    assert.match(anteil, /1000 ‰/, anteil)
+    await opened.write((db) => db.run(sql.raw("INSERT INTO fuel_deliveries (id, plant_id, invoice_from, invoice_to) VALUES ('d5', 'hp1', '2025-01-01', '2025-12-31')")))
+    const kalt = await run("INSERT INTO cost_items (id, property_id, period, category, description, amount_cents, key, fuel_delivery_id) VALUES ('c1', 'objekt-1', '2025-01', 'Grundsteuer', 'G', 1, 'area', 'd5')")
+    assert.match(kalt, /Heizung und Warmwasser/, kalt)
+    const teil = await run("INSERT INTO fuel_delivery_parts (delivery_id, \"from\", \"to\", amount_cents) VALUES ('d5', '2025-06-30', '2025-01-01', 1)")
+    assert.match(teil, /Teilmenge endet vor ihrem Beginn/, teil)
+  })
+})
+
+test('Betriebsstrom: jede Bedingung, deren Endung allein den falschen Satz ergäbe, hat ihren eigenen (Heizung PR 15)', async () => {
+  // Die Schreibprüfung in repository.ts fängt das vorher ab; die Bedingungen sind das Netz darunter.
+  await withDatabase(async (opened) => {
+    const run = (statement: string) => messageOfFailure(opened, () => opened.write((db) => db.run(sql.raw(statement))))
+    const insert = (id: string, category: string, amount: number, extra: string, values: string) =>
+      `INSERT INTO cost_items (id, property_id, period, category, description, amount_cents, key${extra}) VALUES ('${id}', 'objekt-1', '2025-01', '${category}', 'x', ${amount}, 'area'${values})`
+    const included = await run(insert('a', 'Grundsteuer', 1, ', operating_power', ", 'included'"))
+    // R2-K-C: Der Satz nennt den Strom der Wärmepumpe nicht „Betriebsstrom“.
+    assert.match(included, /Betriebsstrom oder Strom zur Wärmeerzeugung, der auch im Allgemeinstrom steckt, gibt es nur bei der Kostenart „Heizung und Warmwasser“/, included)
+    assert.match(included, /Strom einer Wärmepumpe oder Stromheizung beim Teil „Brennstoff\/Energie“/, included)
+    const deduction = await run(insert('b', 'Beleuchtung/Allgemeinstrom', 100, ', operating_power', ", 'deduction'"))
+    assert.match(deduction, /Abzug des Betriebsstroms/, deduction)
+    // Ein Verweis auf eine vorhandene Position, damit nicht der Fremdschlüssel antwortet.
+    await opened.write((db) => db.run(sql.raw(insert('bs', 'Heizung und Warmwasser', 1, ', heating_part, operating_power', ", 'operating', 'included'"))))
+    const link = await run(insert('c', 'Beleuchtung/Allgemeinstrom', -100, ', operating_power_item_id', ", 'bs'"))
+    assert.match(link, /Nur ein Abzug/, link)
+    const basis = await run(insert('d', 'Grundsteuer', 1, ', operating_power_basis', ", 'x'"))
+    assert.match(basis, /Grundlage der Schätzung/, basis)
+    // Durchsicht von #252, G-K3: der Verweis auf die Stromrechnung.
+    const ohneRechnung = await run(insert('e', 'Beleuchtung/Allgemeinstrom', -100, ', operating_power', ", 'deduction'"))
+    assert.match(ohneRechnung, /braucht die Stromrechnung/, ohneRechnung)
+    const rechnungOhneAbzug = await run(insert('f', 'Beleuchtung/Allgemeinstrom', 100, ', operating_power_general_id', ", 'bs'"))
+    assert.match(rechnungOhneAbzug, /Nur ein Abzug des Betriebsstroms zeigt auf eine Stromrechnung/, rechnungOhneAbzug)
+    for (const text of [included, deduction, link, basis, ohneRechnung, rechnungOhneAbzug]) assert.doesNotMatch(text, /JJJJ-MM/, text)
+  })
 })

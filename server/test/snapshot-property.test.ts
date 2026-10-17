@@ -5,6 +5,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { narrowToProperty, snapshotFor, snapshotOf, type PropertyScopedSource } from '../src/snapshot.ts'
+import { calendarPeriod, calendarYearPeriod } from '../../shared/period.ts'
 
 const tenancy = (id: string, unitId: string) => ({
   id, unitId, tenantName: id, persons: 1, personHistory: [], start: '2024-01-01', end: null,
@@ -20,8 +21,8 @@ const source: PropertyScopedSource = {
   ],
   tenancies: [tenancy('a-t', 'a-w'), tenancy('b-t', 'b-w')],
   costItems: [
-    { id: 'a-k', propertyId: 'A', year: 2025, category: 'Grundsteuer', description: 'A', amountCents: 100, key: 'area' },
-    { id: 'b-k', propertyId: 'B', year: 2025, category: 'Grundsteuer', description: 'B', amountCents: 200, key: 'area' },
+    { id: 'a-k', propertyId: 'A', period: calendarPeriod(2025), category: 'Grundsteuer', description: 'A', amountCents: 100, key: 'area' },
+    { id: 'b-k', propertyId: 'B', period: calendarPeriod(2025), category: 'Grundsteuer', description: 'B', amountCents: 200, key: 'area' },
   ],
   meters: [
     { id: 'a-m', propertyId: 'A', unitId: 'a-w', type: 'kaltwasser' },
@@ -38,8 +39,8 @@ const source: PropertyScopedSource = {
     { tenancyId: 'b-t', date: '2025-01-05', amountCents: 2000 },
   ],
   closedSettlements: [
-    { propertyId: 'A', year: 2024, selfUsedShareCents: 1, prepaymentCents: 10, prepaymentOverridden: false },
-    { propertyId: 'B', year: 2024, selfUsedShareCents: 2, prepaymentCents: 20, prepaymentOverridden: true },
+    { propertyId: 'A', period: calendarPeriod(2024), selfUsedShareCents: 1, prepaymentCents: 10, prepaymentOverridden: false },
+    { propertyId: 'B', period: calendarPeriod(2024), selfUsedShareCents: 2, prepaymentCents: 20, prepaymentOverridden: true },
   ],
 }
 
@@ -61,7 +62,7 @@ test('Objekt: was erbt, folgt seiner Wurzel', () => {
 })
 
 test('Objekt: der Abschluss desselben Jahres im anderen Objekt gilt nicht', () => {
-  const snapshot = snapshotFor(source, 'A', 2024)
+  const snapshot = snapshotFor(source, 'A', calendarYearPeriod(2024))
   assert.deepEqual(snapshot.closedSettlement, { selfUsedShareCents: 1, prepaymentCents: 10, prepaymentOverridden: false, selfUseByItem: null, itemTotals: null })
   assert.equal(snapshot.propertyId, 'A')
 })
