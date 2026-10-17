@@ -74,13 +74,29 @@ test('gemeindeweise Feiertage: die Regionen von date-holidays sind genau Land pl
   assert.deepEqual(found, [], found.join('\n'))
 })
 
+// Ein Verweis auf das Paket in jeder Schreibweise eines Modulnamens: auch ein Unterpfad
+// ('date-holidays/data'), ein Template-Literal und das Schwesterpaket date-holidays-parser, das die Daten
+// auswertet (Durchsicht: vorher fing der Wächter nur den nackten Namen in ' oder ").
+const DATE_HOLIDAYS_REF = /['"`]date-holidays(?:-parser)?(?:\/[^'"`]*)?['"`]/
+
+test('der Wächter erkennt jede Schreibweise eines Imports von date-holidays', () => {
+  for (const line of [
+    "import Holidays from 'date-holidays'",
+    'const h = require("date-holidays")',
+    'await import(`date-holidays`)',
+    "import data from 'date-holidays/data/holidays.json'",
+    "import { Parser } from 'date-holidays-parser'",
+  ]) assert.match(line, DATE_HOLIDAYS_REF, line)
+  assert.doesNotMatch("// date-holidays stimmte mit der Vergleichsliste überein", DATE_HOLIDAYS_REF)
+})
+
 test('date-holidays wird nur in Tests benutzt, nie in ausgeliefertem Code', () => {
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
   const offenders: string[] = []
-  for (const dir of ['server/src', 'shared', 'client/src', 'scripts']) {
+  for (const dir of ['server/src', 'server/scripts', 'shared', 'client/src', 'scripts']) {
     for (const f of fs.readdirSync(path.join(root, dir), { recursive: true }).map(String)) {
       if (!/\.(ts|tsx|mjs|js)$/.test(f) || /\.test\.tsx?$/.test(f)) continue
-      if (/['"]date-holidays['"]/.test(fs.readFileSync(path.join(root, dir, f), 'utf8'))) offenders.push(`${dir}/${f}`)
+      if (DATE_HOLIDAYS_REF.test(fs.readFileSync(path.join(root, dir, f), 'utf8'))) offenders.push(`${dir}/${f}`)
     }
   }
   assert.deepEqual(offenders, [])

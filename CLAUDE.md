@@ -945,7 +945,10 @@ Maßgeblich ist das Land des Objekts (`properties.state`, eine der 16 Kennungen 
 - **Nichts wird still ersetzt.** `ledgerRows` und die Regel aus #133 (der laufende Monat ist nie
   fällig) bleiben; calc.ts nutzt die Bausteine nicht. Einziger Einsatz ist eine Auskunft im Mietkonto
   (`rentDueNote` in client/src/ledgerView.ts), die ausdrücklich sagt, dass der Rückstand weiter erst
-  ab dem nächsten Monat zählt. Jeder weitere Einsatz ist eine eigene Entscheidung mit eigenem Test.
+  ab dem nächsten Monat zählt, dass der Mietvertrag Abweichendes bestimmen kann und dass der
+  Überweisungsauftrag bis zu dem Tag genügt; gezeigt nur, wenn im laufenden Monat eine volle Monatsmiete
+  geschuldet ist (`rentDueApplies`, nicht im angebrochenen Monat nach #311). Die gestrichelten Monate
+  heißen dort „zählen noch nicht als Rückstand“ und nicht „noch nicht fällig“. Jeder weitere Einsatz ist eine eigene Entscheidung mit eigenem Test.
 - Bewusst nicht: ein Vorschlag des Landes aus der Postleitzahl (Postleitzahlgebiete folgen nicht
   überall den Landesgrenzen, und eine Tabelle dafür wäre eine weitere Datenquelle), die Sonntage als Feiertage in Hessen (für Werktage ohne Folge) und die Frage, ob
   § 193 BGB auf eine bestimmte Frist überhaupt anzuwenden ist; das entscheidet der Aufrufer.
