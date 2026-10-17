@@ -60,10 +60,12 @@ export function knownUnit(type: MeterType, text: string | null | undefined): Met
   return UNITS[family].find((u) => u.label === label) ?? null
 }
 
-// Zum Vergleichen zweier Einheiten: die bekannte in ihrer Schreibweise, sonst der Text ohne
-// Groß-/Kleinschreibung und Leerzeichen am Rand.
-export function unitKey(type: MeterType, text: string | null | undefined): string {
-  return knownUnit(type, text)?.label ?? (typeof text === 'string' ? text.normalize('NFC').trim().toLowerCase() : '')
+// Zum Vergleichen zweier Einheiten: die bekannte Schreibweise, sonst der Text ohne Groß-/Kleinschreibung und
+// Leerzeichen am Rand. Die Schreibweisen gelten bei jeder Sparte als gleich (Durchsicht von #342, S1): Auch bei
+// „Sonstiges“ sind „m³“, „m3“, „cbm“ und „Kubikmeter“ dieselbe Einheit. Umgerechnet wird dabei nichts.
+export function unitKey(_type: MeterType, text: string | null | undefined): string {
+  if (typeof text !== 'string') return ''
+  return ALIASES[squash(text)] ?? text.normalize('NFC').trim().toLowerCase()
 }
 
 // Die Einheit, wie sie dasteht oder in der bekannten Schreibweise (für Anzeige und Formular).
@@ -91,47 +93,78 @@ export function unitProblem(type: MeterType, text: string): string | null {
   return `Die Einheit „${text.trim()}“ kennt Mietfuchs für diese Sparte nicht. Wählen Sie ${UNITS[family].map((u) => u.label).join(', ').replace(/, ([^,]*)$/, ' oder $1')}; Mietfuchs rechnet sie beim Verteilen ineinander um.`
 }
 
-export type UnitScaleMeter = { id: string; type: MeterType; unit?: string | null }
-// `factorOf`: womit der Verbrauch eines Zählers malzunehmen ist, damit alle in `unit` stehen.
-export type UnitScale =
-  | { ok: true; unit: string; converted: boolean; factorOf: (meterId: string) => number }
-  | { ok: false; units: string[] }
+export type UnitScaleMeter = { id: string; type: MeterType; unit?: string | null; name?: string | null }
+// `factorOf`: womit der Verbrauch eines Zählers malzunehmen ist, damit alle in `unit` stehen. `problem`:
+// - `unknown`: Neben anderen Einheiten steht eine, die Mietfuchs für die Sparte nicht kennt (etwa „m³“ an einem
+//   Wärmezähler, die Vorgabe vor #142), oder ein Zähler ohne Einheit neben verschiedenen. Gerechnet wird wie vor
+//   #342 mit Faktor 1, und die Abrechnung warnt (`meter.unit-unknown`); welche Einheit der Zähler wirklich zeigt,
+//   weiß nur der Vermieter, und ein Bestand, der so richtig rechnete, bleibt unverändert.
+// - `mixed`: verschiedene bekannte Einheiten ohne Umrechnung (Gas über „Sonstiges“: m³ neben kWh). Das rechnete
+//   schon vorher falsch, denn zusammengezählt wurden verschiedene Größen; es wird nicht verteilt (`meter.units-mixed`).
+// `meters` nennt alle beteiligten Zähler, für den Satz.
+export type UnitScale = {
+  unit: string
+  converted: boolean
+  factorOf: (meterId: string) => number
+  problem: null | { kind: 'unknown' | 'mixed'; meters: readonly UnitScaleMeter[] }
+}
 
-// Eine gemeinsame Einheit für Zähler, deren Verbräuche zusammengezählt werden.
+const stated = (m: UnitScaleMeter): boolean => typeof m.unit === 'string' && m.unit.trim() !== ''
+
+// Eine gemeinsame Einheit für Zähler, deren Verbräuche zusammengezählt werden. **Gefragt werden nur Zähler, die
+// im Zeitraum Verbrauch beitragen** (die Auswahl trifft der Aufrufer): Ein stillgelegter Zähler mit alter Einheit
+// änderte sonst eine Abrechnung, in der er nichts misst.
 //
-// `relative`: Haben alle dieselbe Einheit, bleibt es bei ihr (Faktor 1, auch wenn sie unbekannt ist).
-// Sonst rechnet Mietfuchs in die Grundeinheit der Sparte um, wenn jede Einheit bekannt ist und alle zu
-// derselben Sparte gehören; sonst gibt es keine gemeinsame Einheit (`ok: false`).
-// `base`: wie `relative`, aber bekannte Einheiten immer in die Grundeinheit, denn dort steht der Verbrauch
-// in kWh bzw. m³ in Sätzen, neben Schätzungen und gegen die kWh der Brennstoffrechnung (eigene
-// Heizkostenabrechnung). Sind alle Einheiten gleich und unbekannt, bleibt es wie bisher bei Faktor 1.
+// `relative` (Verbrauchsschlüssel, Verteilung der eigenen Heizkostenabrechnung): Haben alle dieselbe Einheit, bleibt
+// es bei ihr, Faktor 1, auch bei MWh, Litern oder einer unbekannten. Nur verschiedene, alle für die Sparte bekannte
+// Einheiten werden in die Grundeinheit umgerechnet (kWh bzw. m³).
+// `base` (wo gegen eine absolute Größe verglichen wird: Wärme am Speicher gegen die kWh der Brennstoffrechnung,
+// Warmwasservolumen in m³, monatliche Information in kWh und m³): bekannte Einheiten immer in die Grundeinheit.
+// Eine unbekannte einheitliche Einheit bleibt bei Faktor 1, wie bisher.
 //
-// **Ein Zähler ohne Einheit** (leerer Text aus einer alten db.json oder vom Validator geradegerückt; `unit`
-// fehlt nur in von Hand gebauten Schnappschüssen der Tests) gilt als „wie die übrigen“: Haben die übrigen
-// dieselbe Einheit, bleibt es überall bei Faktor 1, wie vor #342. Sonst müsste Mietfuchs raten, welche Einheit er
-// zeigt, und es gibt keine gemeinsame. Ohne diese Regel änderte der Umstieg einer db.json mit einem Zähler ohne
-// Einheit die Abrechnung, und die Regression ließe ihn nicht zu.
+// **Ein Zähler ohne Einheit** (leerer Text aus einer alten db.json oder vom Validator geradegerückt; `unit` fehlt
+// nur in von Hand gebauten Schnappschüssen der Tests) gilt als „wie die übrigen“: Haben die übrigen eine Einheit,
+// gilt sie auch für ihn (Faktor wie sie). Stehen daneben verschiedene, ist er eine unbekannte Einheit. Ohne diese
+// Regel änderte der Umstieg einer db.json mit einem Zähler ohne Einheit die Abrechnung.
 export function unitScale(meters: readonly UnitScaleMeter[], mode: 'relative' | 'base'): UnitScale {
-  const one = (unit: string): UnitScale => ({ ok: true, unit, converted: false, factorOf: () => 1 })
-  const stated = meters.filter((m) => typeof m.unit === 'string' && m.unit.trim() !== '')
-  const unstated = stated.length < meters.length
-  const keys = [...new Set(stated.map((m) => unitKey(m.type, m.unit)))]
-  const known = stated.map((m) => ({ m, u: knownUnit(m.type, m.unit), family: FAMILY_OF[m.type] }))
-  const families = new Set([...known.map((k) => k.family), ...meters.map((m) => FAMILY_OF[m.type])])
-  const allKnown = known.every((k) => k.u !== null) && families.size === 1
-  const family = [...families][0] ?? null
-  if (keys.length <= 1) {
-    const first = stated[0]
+  const one = (unit: string, problem: UnitScale['problem'] = null): UnitScale => ({ unit, converted: false, factorOf: () => 1, problem })
+  const withUnit = meters.filter(stated)
+  const keys = new Set(withUnit.map((m) => unitKey(m.type, m.unit)))
+  const families = new Set(meters.map((m) => FAMILY_OF[m.type]))
+  const family = families.size === 1 ? ([...families][0] ?? null) : null
+  const allKnown = family !== null && withUnit.every((m) => knownUnit(m.type, m.unit) !== null)
+  const first = withUnit[0]
+  if (keys.size <= 1) {
     const label = first ? unitLabel(first.type, first.unit) : ''
-    // In der Grundeinheit gebraucht und alle in derselben bekannten, aber nicht in ihr (alle in MWh): umrechnen,
-    // wenn keiner ohne Einheit ist.
-    const toBase = mode === 'base' && allKnown && family !== null && first !== undefined && label !== baseUnitOf(family)
-    if (!toBase) return one(label)
-    if (unstated) return { ok: false, units: [label, '(ohne Einheit)'] }
+    const u = first ? knownUnit(first.type, first.unit) : null
+    if (mode === 'relative' || family === null || !allKnown || u === null || label === baseUnitOf(family)) return one(label)
+    // Alle in derselben bekannten Einheit, gebraucht in der Grundeinheit: alle umrechnen, auch die ohne Angabe.
+    const f = u.num / u.den
+    return { unit: baseUnitOf(family), converted: true, factorOf: () => f, problem: null }
   }
-  if (!allKnown || family === null || unstated) {
-    return { ok: false, units: [...new Set(meters.map((m) => unitLabel(m.type, m.unit) || '(ohne Einheit)'))] }
+  const unstated = withUnit.length < meters.length
+  if (allKnown && !unstated && family !== null) {
+    const factors = new Map(withUnit.map((m) => {
+      const u = knownUnit(m.type, m.unit)
+      return [m.id, u ? u.num / u.den : 1] as const
+    }))
+    return { unit: baseUnitOf(family), converted: true, factorOf: (id) => factors.get(id) ?? 1, problem: null }
   }
-  const factors = new Map(known.map((k) => [k.m.id, k.u ? k.u.num / k.u.den : 1]))
-  return { ok: true, unit: baseUnitOf(family), converted: true, factorOf: (id) => factors.get(id) ?? 1 }
+  // Ohne Familie (Sonstiges): Sind alle Angaben bekannte Schreibweisen verschiedener Einheiten, wurden verschiedene
+  // Größen zusammengezählt. Sonst (eine unbekannte Einheit, eine fehlende) bleibt es bei Faktor 1 mit Warnung.
+  const allAliases = withUnit.every((m) => typeof m.unit === 'string' && ALIASES[squash(m.unit)] !== undefined)
+  if (family === null && families.size === 1 && allAliases && !unstated) return one('', { kind: 'mixed', meters })
+  return one(first ? unitLabel(first.type, first.unit) : '', { kind: 'unknown', meters })
+}
+
+// Die Zähler nach Einheit, für einen Hinweis (Durchsicht von #342, S3): „Wärme A“ und „Wärme B“ in m³, „Wärme C“
+// in kWh, „Wärme D“ ohne Einheit.
+export function metersByUnitText(meters: readonly UnitScaleMeter[]): string {
+  const groups = new Map<string, string[]>()
+  for (const m of meters) {
+    const label = stated(m) ? `in ${unitLabel(m.type, m.unit)}` : 'ohne Einheit'
+    groups.set(label, [...(groups.get(label) ?? []), `„${m.name || m.id}“`])
+  }
+  const list = (xs: string[]) => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} und ${xs[xs.length - 1]}`)
+  return [...groups].map(([label, names]) => `${list(names)} ${label}`).join(', ')
 }

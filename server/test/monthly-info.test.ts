@@ -85,7 +85,7 @@ test('November: Wärme 700 kWh, Warmwasser 2,5 m³ = 281,25 kWh umgerechnet, get
   assert.ok(monthlyInfoMonths(basis({ asOf: undefined }), createLawLog()).every((m) => m.due))
 })
 
-test('#342: Zähler in MWh und Litern ergeben dieselben kWh und m³; ohne gemeinsame Einheit fehlt die Größe', () => {
+test('#342: Zähler in MWh und Litern ergeben dieselben kWh und m³; eine unbekannte Einheit rechnet wie bisher (Durchsicht E3)', () => {
   const novOfBasis = (i: MonthlyInfoInput) => monthlyInfoMonths(i, createLawLog()).find((m) => m.month === '2025-11')?.users[0] ?? assert.fail('November fehlt')
   const b = basis()
   const umgestellt = basis({
@@ -100,8 +100,9 @@ test('#342: Zähler in MWh und Litern ergeben dieselben kWh und m³; ohne gemein
     readings: [...b.readings, r('wb', '2025-10-31', 10), r('wb', '2025-11-30', 20)],
   })
   const g = novOfBasis(gemischt)
-  assert.equal(g.heatKwh, null)
-  assert.ok(g.gaps.includes('unit'))
+  // Faktor 1 wie vor #342: 700 kWh und 10 „Grad“; die Abrechnung warnt dazu.
+  assert.equal(g.heatKwh, 710)
+  assert.deepEqual(g.gaps, [])
   assert.equal(g.dhwM3, 2.5)
 })
 

@@ -557,7 +557,7 @@ export const GLOSSARY = {
   // #342: Einheit des Zählers; die Faktoren stehen in shared/meterUnits.ts.
   meterUnit: {
     title: 'Einheit des Zählers',
-    short: 'Die Einheit, in der ein Zähler seinen Stand zeigt: bei Wärme kWh, MWh oder GJ, bei Wasser m³ oder Liter, bei Strom kWh oder MWh. Stehen Zähler, die gemeinsam verteilt werden, in verschiedenen dieser Einheiten, rechnet Mietfuchs sie ineinander um. Eine Einheit, die Mietfuchs nicht kennt, rechnet es nicht um; steht sie neben einer anderen, verteilt Mietfuchs nach diesen Zählern nicht.',
+    short: 'Die Einheit, in der ein Zähler seinen Stand zeigt: bei Wärme kWh, MWh oder GJ, bei Wasser m³ oder Liter, bei Strom kWh oder MWh. Stehen Zähler, die gemeinsam verteilt werden, in verschiedenen dieser Einheiten, rechnet Mietfuchs sie ineinander um. Eine Einheit, die Mietfuchs für die Sparte nicht kennt (etwa m³ an einem Wärmezähler), rechnet es nicht um: Es rechnet, als zeigten alle Zähler dieselbe Einheit, und warnt.',
     example: 'Drei Wärmezähler zeigen kWh, einer MWh: 12.000 kWh, 15.000 kWh, 9.000 kWh und 16 MWh. Mietfuchs rechnet mit 16.000 kWh und verteilt nach 52.000 kWh. Ohne Umrechnung trüge der vierte Mieter fast nichts.',
     needed: 'Wenn Sie nach Verbrauch abrechnen. Wählen Sie auf der Seite Zähler die Einheit, die auf dem Zähler steht. Gaszähler zeigen m³, die Gasrechnung nennt kWh; das sind verschiedene Größen, die Mietfuchs nicht ineinander umrechnet.',
   },

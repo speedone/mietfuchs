@@ -9,6 +9,7 @@ import assert from 'node:assert/strict'
 import { computeSettlement } from '../src/calc.ts'
 import { selfMeter, selfReading, selfSnapshot, selfTenancy, selfUnit } from '../testing/selfHeating.ts'
 import { periodKey } from '../../shared/period.ts'
+import { knownUnit } from '../../shared/meterUnits.ts'
 import type { CostItem, HeatingPlant, Meter, MeterType, Reading, Tenancy, Unit } from '../../shared/types.ts'
 
 type Rng = () => number
@@ -152,8 +153,15 @@ test(`Invariante #342, eigene Heizkostenabrechnung: Wert und Einheit eines Zähl
     changedTotal += other.changed
     const after = computeSettlement(selfSnapshot({ ...stock, meters: other.meters, readings: other.readings }))
     assert.deepEqual(money(after), money(before), `Bestand ${i}`)
-    // Der Verbrauch je Nutzer steht in kWh bzw. m³, gleich in welcher Einheit die Zähler zeigen.
-    const users = (s: typeof before) => (s.heating ?? []).flatMap((h) => h.self?.units.flatMap((u) => u.users.map((v) => [v.heatingConsumption, v.waterConsumption].map((x) => (x === null ? null : Math.round(x * 1000) / 1000)))) ?? [])
+    // Der Verbrauch je Nutzer, in die Grundeinheit gebracht: Bei einheitlich MWh oder Litern steht er in dieser Einheit
+    // (Durchsicht von #342, E2), der Ausweis sagt es; umgerechnet ist er derselbe.
+    const users = (s: typeof before) => (s.heating ?? []).flatMap((h) => {
+      const f = (pot: 'heating' | 'water') => {
+        const u = knownUnit(pot === 'heating' ? 'waerme' : 'warmwasser', h.self?.pots.find((p) => p.pot === pot)?.consumptionUnit ?? '')
+        return u ? u.num / u.den : 1
+      }
+      return h.self?.units.flatMap((u) => u.users.map((v) => [v.heatingConsumption === null ? null : v.heatingConsumption * f('heating'), v.waterConsumption === null ? null : v.waterConsumption * f('water')].map((x) => (x === null ? null : Math.round(x * 1000) / 1000)))) ?? []
+    })
     assert.deepEqual(users(after), users(before), `Bestand ${i}: Verbrauch je Nutzer`)
     if (before.statements.some((st) => st.rows.some((r) => r.costItemId === 'gas' && r.shareCents !== 0))) distributedRuns++
   }

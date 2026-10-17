@@ -1,7 +1,7 @@
 // Die Einheit eines Zählers folgt seiner Sparte (#142): Ein Wärmezähler, bei dem niemand die
 // Einheit geändert hat, zeigte „m³“.
 import { describe, expect, test } from 'vitest'
-import { asksCalibration, asksRemote, calibrationSuggestion, defaultMeterUnit, emptyMeterForm, heatingRoleLabel, heatingRoleOptions, meterBody, meterPlantId, meterToForm, meterUnitOptions, oldEndText, withMeterType } from './meterForm'
+import { asksCalibration, asksRemote, calibrationSuggestion, defaultMeterUnit, emptyMeterForm, heatingRoleLabel, heatingRoleOptions, meterBody, meterPlantId, meterToForm, meterUnitHint, meterUnitOptions, oldEndText, withMeterType } from './meterForm'
 
 test('Vorgabe der Einheit je Sparte: Wasser m³, Wärme und Strom kWh, Sonstiges leer', () => {
   expect(defaultMeterUnit('kaltwasser')).toBe('m³')
@@ -18,11 +18,40 @@ test('Sparte wechseln: die Vorgabe wandert mit, eine eigene Einheit bleibt', () 
   expect(withMeterType({ ...form, type: 'waerme', unit: 'kWh' }, 'sonstig')).toMatchObject({ unit: '' })
 })
 
-test('#342: Sparte wechseln bei einem neuen Zähler: eine Einheit, die die neue Sparte nicht kennt, wird ihre Vorgabe', () => {
+test('#342: Sparte wechseln bei einem neuen Zähler: die Vorgabe wandert mit; eine Einheit, die die neue Sparte nicht kennt, wird „Bitte wählen“ (S6)', () => {
   const form = { ...emptyMeterForm(), name: 'Zähler', type: 'waerme' as const, unit: 'MWh' }
   expect(withMeterType(form, 'strom')).toMatchObject({ type: 'strom', unit: 'MWh' })
-  expect(withMeterType(form, 'warmwasser')).toMatchObject({ type: 'warmwasser', unit: 'm³' })
+  const ww = withMeterType(form, 'warmwasser')
+  expect(ww).toMatchObject({ type: 'warmwasser', unit: '', unitDropped: 'MWh' })
+  expect(meterUnitHint(ww)).toBe('„MWh“ ist für Warmwasser keine Einheit. Bitte wählen Sie die Einheit, die der Zähler zeigt.')
+  expect(meterBody({ ...ww, unitId: 'eg' }, null)).toEqual({ error: 'Bitte wählen Sie die Einheit, die der Zähler zeigt.' })
   expect(withMeterType({ ...form, type: 'kaltwasser', unit: 'l' }, 'warmwasser')).toMatchObject({ unit: 'l' })
+  // Die Vorgabe der bisherigen Sparte wandert mit (#142).
+  expect(withMeterType(emptyMeterForm(), 'waerme')).toMatchObject({ unit: 'kWh', unitDropped: '' })
+})
+
+test('#342 S6: Sparte wechseln bei einem bestehenden Zähler: eine unmögliche Einheit bleibt nicht still stehen', () => {
+  const bad = meterToForm({ id: 'm1', propertyId: 'p', name: 'Bad', unitId: 'eg', type: 'warmwasser', unit: 'l' })
+  const w = withMeterType(bad, 'waerme')
+  expect(w).toMatchObject({ type: 'waerme', unit: '', unitDropped: 'l' })
+  expect(meterUnitHint(w)).toBe('„l“ ist für Wärme keine Einheit. Bitte wählen Sie die Einheit, die der Zähler zeigt.')
+  expect(meterBody(w, null)).toEqual({ error: 'Bitte wählen Sie die Einheit, die der Zähler zeigt.' })
+  expect(meterBody({ ...w, unit: 'kWh' }, null)).toMatchObject({ body: { type: 'waerme', unit: 'kWh' } })
+  // Eine Einheit, die die neue Sparte kennt, bleibt.
+  expect(withMeterType(meterToForm({ id: 'm2', propertyId: 'p', name: 'Strom', unitId: 'eg', type: 'strom', unit: 'MWh' }), 'waerme')).toMatchObject({ unit: 'MWh', unitDropped: '' })
+})
+
+test('#342 S2: ein gespeicherter Zähler ohne Einheit bekommt keine Vorgabe; gespeichert wird nur, was gewählt ist', () => {
+  const leer = meterToForm({ id: 'm1', propertyId: 'p', name: 'Wärme alt', unitId: 'eg', type: 'waerme', unit: '' })
+  expect(leer.unit).toBe('')
+  expect(meterUnitHint(leer)).toBe('Für diesen Zähler ist keine Einheit gespeichert. Bitte wählen Sie die Einheit, die er zeigt.')
+  // Umbenennen ohne Wahl: die Einheit bleibt leer, sie wird nicht still „kWh“.
+  expect(meterBody({ ...leer, name: 'Wärme Keller' }, null)).toMatchObject({ body: { name: 'Wärme Keller', unit: '' } })
+  expect(meterBody({ ...leer, unit: 'MWh' }, null)).toMatchObject({ body: { unit: 'MWh' } })
+  // Ein neuer Zähler bekommt weiter die Vorgabe der Sparte, und ohne Einheit lässt er sich nicht speichern.
+  expect(emptyMeterForm().unit).toBe('m³')
+  expect(meterBody({ ...emptyMeterForm(), name: 'Neu', unitId: 'eg', type: 'waerme', unit: '' }, null)).toEqual({ error: 'Bitte wählen Sie die Einheit, die der Zähler zeigt.' })
+  expect(meterUnitHint({ ...emptyMeterForm(), type: 'waerme', unit: 'kWh' })).toBeNull()
 })
 
 test('#342: die Einheit ist bei bekannten Sparten eine Auswahl; die Auswahl zeigt, was gespeichert ist', () => {
@@ -56,9 +85,11 @@ test('Zählerwechsel: ein fehlender Endstand heißt „fehlt“, eine 0 bleibt e
   expect(oldEndText(1234.5)).toBe('1.234,5')
 })
 
-test('ein bestehender Zähler behält beim Wechsel der Sparte seine Einheit (Durchsicht zu #142)', () => {
+test('ein bestehender Zähler behält beim Wechsel der Sparte seine Einheit, wenn die neue Sparte sie kennt (Durchsicht zu #142, zu #342 S6)', () => {
   const vorhanden = { ...emptyMeterForm(), id: 'm1', name: 'Zähler' }
-  expect(withMeterType(vorhanden, 'waerme')).toMatchObject({ type: 'waerme', unit: 'm³' })
+  expect(withMeterType(vorhanden, 'warmwasser')).toMatchObject({ type: 'warmwasser', unit: 'm³' })
+  // m³ ist bei Wärme keine Einheit: Seit #342 steht die Auswahl dann auf „Bitte wählen“ statt still auf m³.
+  expect(withMeterType(vorhanden, 'waerme')).toMatchObject({ type: 'waerme', unit: '', unitDropped: 'm³' })
 })
 
 test('Warmwasser in m³, Heizkostenverteiler in Einheiten (Heizung PR 4)', () => {
@@ -96,7 +127,7 @@ test('Bearbeiten: was gespeichert ist, steht wieder im Formular', () => {
   expect(meterToForm({
     id: 'm1', propertyId: 'objekt-1', name: 'Speicher', unitId: null, type: 'waerme', unit: 'kWh',
     heatingPlantId: 'hp1', heatingRole: 'dhwHeat', remoteReadable: false, installedOn: '2022-03-01',
-  })).toEqual({ id: 'm1', name: 'Speicher', unitId: '', type: 'waerme', meterNumber: '', unit: 'kWh', keptUnit: 'kWh', heatingRole: 'dhwHeat', keptRole: 'dhwHeat', remote: 'no', installedOn: '2022-03-01', heatingPlantId: 'hp1', hca: { scale: '', factor: '' }, calibratedUntil: '' })
+  })).toEqual({ id: 'm1', name: 'Speicher', unitId: '', type: 'waerme', meterNumber: '', unit: 'kWh', keptUnit: 'kWh', unitDropped: '', heatingRole: 'dhwHeat', keptRole: 'dhwHeat', remote: 'no', installedOn: '2022-03-01', heatingPlantId: 'hp1', hca: { scale: '', factor: '' }, calibratedUntil: '' })
 })
 
 // Sichtprüfung E19: „Gehört zur Heizanlage?“ stand auch bei Kaltwasser. Ein Wasserzähler ist weder
