@@ -876,9 +876,11 @@ warnt `period.heating-mismatch`. `tax_year` ist das Jahr der Zahlung, Pflicht nu
 Zeitraum über zwei Kalenderjahre; die Steuerübersicht jedes Objekts schöpft aus allen
 Abrechnungen, die das Jahr berühren (`taxPartsFor` in calc.ts, seit #255 auch beim Kalenderobjekt),
 und das Steuer-ZIP nimmt dieselben Positionen (`taxArchiveItems` in taxReceipts.ts). **Welches Jahr
-eine Position hat, sagt allein `outflowShares`** ([server/src/outflow.ts](server/src/outflow.ts)),
+eine Position für die Steuer hat, sagt beim Rechnen `outflowShares`** ([server/src/outflow.ts](server/src/outflow.ts)),
 eine Liste `{ year, cents, source }` als Naht zu #292; bis dahin genau ein Anteil über den ganzen
-Betrag (angegebenes Jahr, sonst Beginn des Zeitraums). **Der Vorschlag nach § 560 im
+Betrag (angegebenes Jahr, sonst Beginn des Zeitraums). Die Schreibwege (periodChange.ts,
+heatingPeriodChange.ts, db/operatingPower.ts, `defaultHeatingPlant` in repository.ts) lesen
+`taxYear ?? Beginn` noch selbst; das zieht PR 3 von #255 nach. **Der Vorschlag nach § 560 im
 Rumpf** rechnet je Position einen Jahresfaktor ([server/src/prepaymentSuggestion.ts](server/src/prepaymentSuggestion.ts)):
 kalt nach den Tagen ihres Leistungszeitraums im Rumpf, gleichartige über die Vereinigung, ohne
 Leistungszeitraum als Jahresbetrag mit Hinweis `prepayment.annual-assumed`; Brennstoff (`heating_part = 'fuel'`) nach Gradtagen aus `hkv.degree-days` über die

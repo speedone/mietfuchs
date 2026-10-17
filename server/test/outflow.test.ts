@@ -14,7 +14,7 @@ import { outflowShares, paidWhollyIn, soleOutflowYear } from '../src/outflow.ts'
 import { frozenSettlementOf, heatingSnapshotFor, narrowToProperty, snapshotFor, wayOf } from '../src/snapshot.ts'
 import { computeSettlement } from '../src/calc.ts'
 import { derivedTaxLines, planTaxArchive, taxArchiveItems } from '../src/taxReceipts.ts'
-import { makeRng, randomTaxStock, TAX_STOCK_PROPERTY, TAX_STOCK_YEARS, type TaxSource } from '../testing/taxStock.ts'
+import { makeRng, randomTaxStock, TAX_STOCK_PROPERTY, TAX_STOCK_SECOND, TAX_STOCK_YEARS, withSecondProperty, type TaxSource } from '../testing/taxStock.ts'
 import { CALENDAR_RULES, calendarPeriod, calendarYearPeriod, isCalendarRules, periodKey, periodsBetween, rulesOf } from '../../shared/period.ts'
 import { plantRules, settledSeparately } from '../../shared/heatingPeriod.ts'
 import type { BillingPeriod, CostItem, PeriodRules } from '../../shared/types.ts'
@@ -94,49 +94,76 @@ test('outflowShares: ein Anteil über den ganzen Betrag, angegebenes Jahr vor de
   assert.equal(soleOutflowYear({ id: 'a', taxYear: 2026, amountCents: 500 }, { from: '2025-05-01' }), 2026)
 })
 
+test('outflowShares: ein leeres Jahr (null aus einer Ablage) gilt als nicht angegeben und nimmt die Position nicht aus der Übersicht (Durchsicht K1)', () => {
+  // Der Typ kennt nur `undefined`; ein `null`, das an der Grenze durchrutscht, darf die Position nicht still in ein
+  // Jahr „null“ stellen, sondern muss wie vorher (`taxYear ?? Beginn`) im Jahr des Beginns stehen.
+  const item = JSON.parse('{"id":"a","amountCents":500,"taxYear":null}') as { id: string; amountCents: number }
+  assert.deepEqual(outflowShares(item, { from: '2025-01-01' }), [{ year: 2025, cents: 500, source: 'period' }])
+  assert.equal(paidWhollyIn(item, { from: '2025-01-01' }, 2025), true)
+  const src = haus(CALENDAR_RULES, [{ id: 'vers', period: periodKey('2025-01'), description: 'Versicherung', amountCents: 60000 }])
+  Reflect.set(src.costItems[0] ?? assert.fail('keine Position'), 'taxYear', null)
+  assert.deepEqual(inYear(src, 2025), ['vers'])
+  assert.deepEqual(inZip(src, 2025), ['vers'])
+})
+
 test('Invariante: ohne Zahlungsdatum je Steuerjahr dieselbe Steuerübersicht und dieselbe Auswahl im Steuer-ZIP wie vorher', () => {
   const fails: string[] = []
   const modes = new Map<string, number>()
   const rulesSeen = new Set<string>()
   let compared = 0
+  let twoProperties = 0
   for (const seed of SEEDS) {
-    const g = randomTaxStock(makeRng(seed))
+    // Jeder zweite Bestand mit einem zweiten Objekt daneben (Durchsicht K4); geprüft werden dann beide.
+    const single = randomTaxStock(makeRng(seed))
+    const two = seed % 2 === 0
+    const withB = two ? withSecondProperty(single, makeRng(seed * 31 + 3)) : null
+    const g = withB ?? single
+    if (two) twoProperties++
     modes.set(g.plantMode, (modes.get(g.plantMode) ?? 0) + 1)
     rulesSeen.add(JSON.stringify(g.rules))
+    const objects: [string, BillingPeriod[]][] = [[TAX_STOCK_PROPERTY, g.periods], ...(withB ? [[TAX_STOCK_SECOND, withB.second.periods] as [string, BillingPeriod[]]] : [])]
     // Zufällige Zeiträume abgeschlossen, damit der eingefrorene Stand mitläuft.
     const closeRnd = makeRng(seed * 13 + 7)
-    const frozenPeriods = g.periods.filter(() => closeRnd() < 0.3)
+    const closed = objects.flatMap(([pid, periods]) => periods.filter(() => closeRnd() < 0.3).flatMap((P) => {
+      const s = outcome(() => computeSettlement(snapshotFor(g.source, pid, P)))
+      if (!s.ok) return []
+      const st: unknown = JSON.parse(JSON.stringify(s.value))
+      return [{ period: P.key, propertyId: pid, sentAt: null, ...frozenSettlementOf(st), settlement: st }]
+    }))
     const variants: [string, TaxSource][] = [['offen', g.source]]
-    if (frozenPeriods.length > 0) {
-      const closed = frozenPeriods.flatMap((P) => {
-        const s = outcome(() => computeSettlement(snapshotFor(g.source, TAX_STOCK_PROPERTY, P)))
-        if (!s.ok) return []
-        const st: unknown = JSON.parse(JSON.stringify(s.value))
-        return [{ period: P.key, propertyId: TAX_STOCK_PROPERTY, sentAt: null, ...frozenSettlementOf(st), settlement: st }]
-      })
-      variants.push([`abgeschlossen ${frozenPeriods.map((p) => p.key).join('+')}`, { ...g.source, closedSettlements: closed } as TaxSource])
-    }
+    if (closed.length > 0) variants.push([`abgeschlossen ${closed.map((c) => `${c.propertyId}:${c.period}`).join('+')}`, { ...g.source, closedSettlements: closed } as TaxSource])
     for (const [label, source] of variants) {
-      for (const year of TAX_STOCK_YEARS) {
-        const at = `Startwert ${seed} (${g.plantMode}, ${JSON.stringify(g.rules)}, ${label}) ${year}`
-        const before = outcome(() => oldTaxReportFor(source, TAX_STOCK_PROPERTY, year))
-        const after = outcome(() => taxReportFor(source, TAX_STOCK_PROPERTY, year))
-        compared++
-        try {
-          assert.deepEqual(after, before)
-        } catch {
-          fails.push(`${at}: Steuerübersicht weicht ab`)
-          continue
+      for (const [pid] of objects) {
+        for (const year of TAX_STOCK_YEARS) {
+          const at = `Startwert ${seed} (${pid}, ${g.plantMode}, ${JSON.stringify(g.rules)}, ${label}) ${year}`
+          const before = outcome(() => oldTaxReportFor(source, pid, year))
+          const after = outcome(() => taxReportFor(source, pid, year))
+          compared++
+          try {
+            assert.deepEqual(after, before)
+          } catch {
+            fails.push(`${at}: Steuerübersicht weicht ab`)
+            continue
+          }
+          if (!after.ok) continue
+          // Das zweite Objekt ändert am ersten nichts: dieselbe Übersicht wie im Bestand ohne es.
+          if (two && label === 'offen' && pid === TAX_STOCK_PROPERTY) {
+            try {
+              assert.deepEqual(after, outcome(() => taxReportFor(single.source, pid, year)))
+            } catch {
+              fails.push(`${at}: zweites Objekt verändert das erste`)
+            }
+          }
+          const stock = narrowToProperty(source, pid)
+          if (after.value.expenses.items.some((i) => !i.operatingPowerBalance && !i.co2RefundPaidOut && !stock.costItems.some((c) => c.id === i.costItemId))) fails.push(`${at}: Position eines anderen Objekts`)
+          const oldIds = oldArchiveIds(source, pid, year)
+          const newItems = taxArchiveItems(stock.costItems, taxPartsFor(source, pid, year))
+          if (JSON.stringify(newItems.map((c) => c.id)) !== JSON.stringify(oldIds)) fails.push(`${at}: ZIP ${JSON.stringify(oldIds)} → ${JSON.stringify(newItems.map((c) => c.id))}`)
+          // Die Übersicht.csv entsteht aus Auswahl und Steuerübersicht; mit beiden gleich ist sie es auch.
+          const split = new Map(after.value.expenses.items.map((i) => [i.costItemId, i]))
+          const csv = (ids: readonly string[]) => planTaxArchive(stock.costItems.filter((c) => ids.includes(c.id)) as CostItem[], new Map(), new Map(), split, derivedTaxLines(after.value)).overviewCsv
+          if (csv(newItems.map((c) => c.id)) !== csv(oldIds)) fails.push(`${at}: Übersicht.csv weicht ab`)
         }
-        if (!after.ok) continue
-        const oldIds = oldArchiveIds(source, TAX_STOCK_PROPERTY, year)
-        const stock = narrowToProperty(source, TAX_STOCK_PROPERTY)
-        const newItems = taxArchiveItems(stock.costItems, taxPartsFor(source, TAX_STOCK_PROPERTY, year))
-        if (JSON.stringify(newItems.map((c) => c.id)) !== JSON.stringify(oldIds)) fails.push(`${at}: ZIP ${JSON.stringify(oldIds)} → ${JSON.stringify(newItems.map((c) => c.id))}`)
-        // Die Übersicht.csv entsteht aus Auswahl und Steuerübersicht; mit beiden gleich ist sie es auch.
-        const split = new Map(after.value.expenses.items.map((i) => [i.costItemId, i]))
-        const csv = (ids: readonly string[]) => planTaxArchive(stock.costItems.filter((c) => ids.includes(c.id)) as CostItem[], new Map(), new Map(), split, derivedTaxLines(after.value)).overviewCsv
-        if (csv(newItems.map((c) => c.id)) !== csv(oldIds)) fails.push(`${at}: Übersicht.csv weicht ab`)
       }
     }
   }
@@ -145,6 +172,7 @@ test('Invariante: ohne Zahlungsdatum je Steuerjahr dieselbe Steuerübersicht und
   if (SEEDS.length >= 30) {
     for (const m of ['none', 'object', 'own', 'separate']) assert.ok((modes.get(m) ?? 0) > 0, `keine Bestände mit Anlage ${m}`)
     assert.ok(rulesSeen.size >= 5, `nur ${rulesSeen.size} Rhythmen`)
+    assert.ok(twoProperties > 0, 'kein Bestand mit zwei Objekten')
   }
   assert.ok(compared > 0)
 })

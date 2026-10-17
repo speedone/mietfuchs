@@ -122,3 +122,33 @@ export function randomTaxStock(rnd: () => number): TaxStock {
   } as TaxSource
   return { source, rules, periods, plantMode }
 }
+
+// Ein zweites Objekt in derselben Ablage (Durchsicht K4): Die Steuerübersicht und das Steuer-ZIP grenzen über
+// `snapshotFor`/`narrowToProperty` ein, und ein Fehler dort ergäbe Werbungskosten zweier Häuser. Das zweite Objekt
+// entsteht mit einem eigenen Startwert aus demselben Generator, Kennungen mit Vorsatz `b-`, damit das erste Objekt
+// genau der Bestand ohne es bleibt. Ein Objekt teilt sich mit dem anderen keine Wohnung, keinen Zähler und keine Anlage.
+export const TAX_STOCK_SECOND = 'objekt-2'
+export function withSecondProperty(stock: TaxStock, rnd: () => number): TaxStock & { second: TaxStock } {
+  const b = randomTaxStock(rnd)
+  const id = (x: string) => `b-${x}`
+  const P = TAX_STOCK_SECOND
+  const s = b.source
+  const items = s.costItems.map((c) => ({
+    ...c, id: id(c.id), propertyId: P,
+    ...(c.heatingPlantId ? { heatingPlantId: id(c.heatingPlantId) } : {}),
+    ...(c.operatingPowerGeneralId ? { operatingPowerGeneralId: id(c.operatingPowerGeneralId) } : {}),
+    ...(c.operatingPowerItemId ? { operatingPowerItemId: id(c.operatingPowerItemId) } : {}),
+    ...(c.participantUnitIds ? { participantUnitIds: c.participantUnitIds.map(id) } : {}),
+  }))
+  const source = {
+    ...stock.source,
+    properties: [...(stock.source.properties ?? []), ...(s.properties ?? []).map((p) => ({ ...p, id: P }))],
+    units: [...stock.source.units, ...s.units.map((u) => ({ ...u, id: id(u.id), propertyId: P }))],
+    tenancies: [...stock.source.tenancies, ...s.tenancies.map((t) => ({ ...t, id: id(t.id), unitId: id(t.unitId) }))],
+    costItems: [...stock.source.costItems, ...items],
+    payments: [...stock.source.payments, ...s.payments.map((p) => ({ ...p, tenancyId: id(p.tenancyId) }))],
+    heatingPlants: [...(stock.source.heatingPlants ?? []), ...(s.heatingPlants ?? []).map((p) => ({ ...p, id: id(p.id), propertyId: P }))],
+    heatingPeriodRows: [...(stock.source.heatingPeriodRows ?? []), ...(s.heatingPeriodRows ?? []).map((r) => ({ ...r, plantId: id(r.plantId) }))],
+  } as TaxSource
+  return { ...stock, source, second: { ...b, source } }
+}

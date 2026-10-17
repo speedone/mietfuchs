@@ -1033,9 +1033,11 @@ export const ANLAGE_V_GROUP_ORDER = [
 // tatsächlich Zugeflossene unmittelbar aus den Zahlungen,
 // Werbungskosten aus den Kostenpositionen nach Anlage-V-Gruppen, §35a-Lohnanteile sowie
 // der Flächenanteil der vermieteten Einheiten (für gemischt genutzte Gebäude). Die
-// Werbungskosten folgen dem Abflussprinzip (im Jahr gebuchte Kosten), die Einnahmen
-// werden sowohl als Soll (vereinbart) als auch als Ist (tatsächlich gezahlt) geliefert.
-// Das Jahr der Zahlung einer Position (#208, #255) bestimmt allein `outflowShares` in outflow.ts.
+// Einnahmen werden sowohl als Soll (vereinbart) als auch als Ist (tatsächlich gezahlt) geliefert.
+// **Die Werbungskosten folgen dem Abflussprinzip noch nicht** (Durchsicht K6): Eine Position steht
+// im angegebenen Jahr der Zahlung, sonst im Jahr, in dem ihr Zeitraum beginnt, also im Jahr ihrer
+// Abrechnung und nicht zwingend in dem, in dem sie bezahlt wurde. Ein Zahlungsdatum je Position
+// bringt #255 mit PR 3. Für die Steuer bestimmt das Jahr `outflowShares` in outflow.ts.
 
 // Ein Teil der Steuerübersicht: der Schnappschuss eines Abrechnungszeitraums und seine Positionen,
 // die im Kalenderjahr gezahlt wurden. Der Eigenanteil kommt aus der Abrechnung dieses Zeitraums.

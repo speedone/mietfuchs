@@ -1,10 +1,13 @@
 // Das Steuerjahr einer Kostenposition (#255, PR 1): In welchem Kalenderjahr ist sie für die Anlage V abgeflossen
-// (§ 11 Abs. 2 Satz 1 EStG), und mit welchem Betrag? Das steht **nur hier**. Die Steuerübersicht (`taxPartsFor`,
-// `taxReport` in calc.ts), der Hinweis zum Übertrag aus dem Vorrat (`carryShareCents`), die Abzüge beim Betriebsstrom
-// (`deductionsOf` in snapshot.ts) und die Belege für die Steuer (`taxArchiveItems` in taxReceipts.ts) fragen diese
-// Stelle und legen das Jahr nicht selbst aus. Vorher stand dieselbe Regel als `taxYearOf` in calc.ts und noch einmal
-// ausgeschrieben in snapshot.ts; eine zweite Auswahl läuft irgendwann auseinander, und gemerkt hätte man es erst an
-// einer Steuerübersicht, die anderes sagt als die Belege.
+// (§ 11 Abs. 2 Satz 1 EStG), und mit welchem Betrag? **Für die Rechnung der Steuer** steht das hier: Die
+// Steuerübersicht (`taxPartsFor`, `taxReport` in calc.ts), der Hinweis zum Übertrag aus dem Vorrat (`carryShareCents`),
+// die Abzüge beim Betriebsstrom (`deductionsOf` in snapshot.ts) und die Belege für die Steuer (`taxArchiveItems` in
+// taxReceipts.ts) fragen diese Stelle. Vorher stand dieselbe Regel als `taxYearOf` in calc.ts und noch einmal
+// ausgeschrieben in snapshot.ts.
+// **Noch nicht hier, sondern selbst lesen `taxYear ?? Beginn`** die Wege, die beim Schreiben vorbelegen oder klemmen:
+// `effectiveTaxYear`/`taxEntry` in db/periodChange.ts, `taxYearIn` in db/heatingPeriodChange.ts, db/operatingPower.ts
+// und `defaultHeatingPlant` in db/repository.ts. Sie zieht PR 3 von #255 nach (`taxYearSpan`); bis dahin sagen sie
+// dasselbe, weil die Regel dieselbe ist, aber es ist eine zweite Fassung.
 //
 // **Die Form ist eine Liste von Anteilen** `{ year, cents, source }`, weil sie die Naht zu den Abbuchungen aus dem
 // Kontoauszug ist (#292): Eine Zahlung in zwei Raten über den Jahreswechsel ergäbe zwei Anteile. Bis dahin gibt es
@@ -26,7 +29,9 @@ type OutflowItem = Pick<CostItem, 'taxYear' | 'amountCents'>
 // `period`: der Zeitraum, in dem die Position steht (bei einer Heizposition unter eigener Heizperiode deren
 // Heizperiode). Gelesen wird nur sein Beginn.
 export function outflowShares(item: OutflowItem, period: Pick<BillingPeriod, 'from'>): OutflowShare[] {
-  if (item.taxYear !== undefined) return [{ year: item.taxYear, cents: item.amountCents, source: 'stated' }]
+  // `!= null` und nicht `!== undefined` (Durchsicht K1): Ein `null`, das an einer Grenze durchrutscht, hieße sonst ein
+  // Jahr „null“, und die Position fiele still aus jeder Steuerübersicht. Vorher stand hier `taxYear ?? Beginn`.
+  if (item.taxYear != null) return [{ year: item.taxYear, cents: item.amountCents, source: 'stated' }]
   return [{ year: Number(period.from.slice(0, 4)), cents: item.amountCents, source: 'period' }]
 }
 
