@@ -21,6 +21,8 @@ Rechner.
 - 🔒 **100 % lokal** — keine Cloud, kein Tracking, kein externer Dienst (außer der Update-Prüfung, wenn du sie erlaubst); Backup = Ordner kopieren
 - 🏘️ **Mehrere Objekte** in einer Installation — Häuser und Eigentumswohnungen, jedes rechnet für sich
 - 🧮 **Centgenaue Verteilung** nach Wohnfläche, Personenzahl, Wohneinheiten, Verbrauch, direkt, vereinbarten Anteilen, laut Hausgeldabrechnung oder mit Einzelbeträgen
+- 🔥 **Heizung und Warmwasser** — eigene Heizkostenabrechnung nach der Heizkostenverordnung mit Wärme- und Warmwasserzählern oder Heizkostenverteilern, die fertige Abrechnung eines Messdienstes übernehmen, CO₂-Kosten nach dem CO2KostAufG zwischen Mieter und Vermieter aufteilen; dazu Brennstoffvorrat, mehrere Heizanlagen, Etagenheizungen, Kesseltausch und eine eigene Heizperiode
+- 📅 **Abrechnungszeitraum wählbar** — Kalenderjahr oder etwa Mai bis April, mit Vorschau beim Wechsel
 - 📄 **Fertige Abrechnung** je Mieter mit Saldo, §35a-Bescheinigung und Fristen-Hinweis (§556/§560 BGB) — der Rechenweg jeder Zeile lässt sich aufklappen
 - 💡 **Hinweise statt Rätselraten** — Mietfuchs erklärt, was auffällt (z. B. Rückstand, fehlender Endstand beim Zählerwechsel, Heizkostenverordnung), wo es eine gibt mit Rechtsgrundlage, und mit einem Lexikon der Fachbegriffe
 - 💶 **Mietkonto** — Soll/Ist je Monat, fällige Rückstände auf einen Blick
@@ -182,7 +184,11 @@ legt die Dateien für alle Plattformen in `dist-bin/` ab.
    Vorauszahlungs-Erhöhungen brauchen kein neues Mietverhältnis. Je Mietverhältnis lässt sich das
    **Nebenkostenmodell** wählen: Abrechnung, Pauschale oder Inklusivmiete, getrennt für kalte
    Betriebskosten und Heizung. Am Objekt steht auch das Baujahr der Kabel- oder Antennenanlage,
-   denn davon hängt ab, ob ihre Kosten nach 2024 noch umlagefähig sind.
+   denn davon hängt ab, ob ihre Kosten nach 2024 noch umlagefähig sind, und der
+   **Abrechnungszeitraum** (Kalenderjahr oder etwa Mai bis April). Unter **Heizung** gibst du an,
+   womit geheizt wird, wer den Vertrag hat und wer abrechnet: ein Messdienst, du selbst oder
+   niemand, weil jede Wohnung ihre eigene Heizung hat. Daraus richtet Mietfuchs die Seite
+   **Heizkosten** ein.
 2. **Kosten**: Rechnungen pro Abrechnungsjahr erfassen — manuell oder per
    KI-Belegauswertung. Eine Rechnung kann in mehrere Positionen mit unterschiedlichen
    Umlageschlüsseln zerlegt werden (z. B. Wasserrechnung: Grundgebühr + Verbrauch).
@@ -203,23 +209,33 @@ legt die Dateien für alle Plattformen in `dist-bin/` ab.
    Mieter** (eine PDF mit Deckblatt „Position → Beleg, Seite“ für die Belegeinsicht nach § 556
    Abs. 4 BGB; Belege mit Daten anderer Mieter nur auf ausdrückliche Wahl) und die **Belege für die
    Steuer** (ein ZIP nach den Gruppen der Anlage V, mit einer Übersicht als CSV).
-4. **Zähler**: Zähler (Haupt- und Wohnungszähler) mit Ablesungen — Jahresablesung,
-   Zwischenablesung beim Mieterwechsel (exakte Aufteilung), Zählerwechsel (Endstand alt +
-   Startstand neu) mit Plausibilitätswarnung bei negativem Verbrauch.
-5. **Abrechnung**: Pro Mieter die fertige Abrechnung mit Kostenaufstellung, Umlageschlüssel,
+4. **Zähler**: Zähler (Haupt- und Wohnungszähler, auch Wärme- und Warmwasserzähler und
+   Heizkostenverteiler) mit Ablesungen — Jahresablesung, Zwischenablesung beim Mieterwechsel
+   (exakte Aufteilung), Zählerwechsel (Endstand alt + Startstand neu) mit Plausibilitätswarnung
+   bei negativem Verbrauch. Mietfuchs warnt vor abgelaufener Eichfrist und nennt bei Geräten, die
+   aus der Ferne ablesbar sein müssen, die Kürzung nach der Heizkostenverordnung.
+5. **Heizkosten** (sobald eine Heizanlage angelegt ist): Rechnungen des Versorgers als Lieferungen,
+   bei Öl, Flüssiggas, Pellets, Holz und Kohle mit Vorrat; die eigene Heizkostenabrechnung nach
+   §§ 7 bis 9 HeizkostenV (Grund- und Verbrauchskosten, Warmwasseranteil gemessen oder nach
+   Formel, Mieterwechsel nach Gradtagen, Schätzung nach § 9a) oder die Übernahme der fertigen
+   Abrechnung eines Messdienstes, auf Wunsch per KI ausgelesen; die **CO₂-Kosten** nach dem
+   Stufenmodell des CO2KostAufG, entweder laut Messdienst oder selbst aus den Lieferungen
+   berechnet, samt Ausdruck der Angaben für den Messdienst und Erstattung an Mieter, die selbst
+   heizen. Der Betriebsstrom der Heizung lässt sich aus dem Allgemeinstrom herausrechnen.
+6. **Abrechnung**: Pro Mieter die fertige Abrechnung mit Kostenaufstellung, Umlageschlüssel,
    Vorauszahlungen, Saldo, Zahlungsaufforderung (Vermieter, IBAN und Frist aus den Einstellungen
    oder abweichend am Objekt),
    §35a-Bescheinigung und Vorschlag zur Vorauszahlungsanpassung (§560 BGB). Dazu eine
    Erinnerung an die 12-Monats-Abrechnungsfrist (§556 BGB). Über „Drucken / PDF" speichern.
    Eine versendete Abrechnung wird **abgeschlossen** und damit eingefroren; ändert sich danach
    etwas, zeigt Mietfuchs die Abweichung je Mieter, und frühere Abschlüsse bleiben im Verlauf.
-6. **Mietkonto**: Welche Monate sind bezahlt? Die Kaltmiete wird (wie die Vorauszahlung) als
+7. **Mietkonto**: Welche Monate sind bezahlt? Die Kaltmiete wird (wie die Vorauszahlung) als
    Staffel geführt; **Soll = Bruttomiete = Kaltmiete + NK-Vorauszahlung**. Erfasste
    Zahlungseingänge füllen die Monate der Reihe nach — ein Monatsraster zeigt *bezahlt /
    teilweise / offen*, im laufenden Jahr *noch nicht fällig* für den laufenden und die kommenden Monate, dazu
    Brutto/Netto-Aufschlüsselung und fällige Rückstände je Mieter. Zeigt das Mietkonto einen
    Rückstand, weist die Abrechnung darauf hin, denn angerechnet wird, was tatsächlich gezahlt wurde.
-7. **Steuer (Anlage V)**: Jahresübersicht der Einkünfte aus Vermietung je Objekt — Einnahmen
+8. **Steuer (Anlage V)**: Jahresübersicht der Einkünfte aus Vermietung je Objekt — Einnahmen
    nach dem Zuflussprinzip (das vereinbarte Soll lässt sich zum Abgleich einblenden),
    Werbungskosten nach Anlage-V-Gruppen sowie der Überschuss. Wohnst du selbst im Haus, ist die
    Hauptzahl die abziehbaren Werbungskosten, und jede Position steht mit Gesamtbetrag, privatem
@@ -234,7 +250,9 @@ legt die Dateien für alle Plattformen in `dist-bin/` ab.
 Wie du deine Lage anlegst, steht in Mietfuchs unter **Hilfe & Begriffe**: Anleitungen für das Haus
 mit Einliegerwohnung, das Mehrfamilienhaus, die vermietete Eigentumswohnung mit
 Hausgeldabrechnung, mehrere Objekte, Garage oder Stellplatz, Pauschale oder Inklusivmiete, die
-fertige Abrechnung eines Messdienstes und den Mieterwechsel mit Leerstand. Jede nennt, ob sie auf
+fertige Abrechnung eines Messdienstes, CO₂-Kosten aufteilen, Heizkosten selbst abrechnen,
+Brennstoff mit Tank oder Lager, Kesseltausch und mehrere Heizungen, den Abrechnungszeitraum Mai
+bis April und den Mieterwechsel mit Leerstand. Jede nennt, ob sie auf
 dich zutrifft, die Schritte mit einem Knopf zur passenden Seite, ein nachgerechnetes Beispiel, die
 Rechtslage und was Mietfuchs noch nicht kann. Dazu kommt ein Lexikon der Fachbegriffe.
 
@@ -262,10 +280,15 @@ Zeiträume ohne Mieter (Leerstand), der Anteil selbstgenutzter Wohnungen und von
 mit Pauschale oder Inklusivmiete sowie Positionen „Nicht umlagefähig" trägt der Vermieter. Alle
 Beträge werden intern in Cent gerechnet und centgenau verteilt (Hare-Verfahren).
 
-Eine Kostenposition gehört zu dem Abrechnungsjahr, dem sie beim Erfassen zugeordnet wird. Eine
-eigene Heizkostenabrechnung nach der Heizkostenverordnung erstellt Mietfuchs noch nicht; die
-fertige Abrechnung eines Messdienstes lässt sich über Einzelbeträge übernehmen, und verteilst du
-Heizkosten ohne Verbrauchsanteil, nennt ein Hinweis das Kürzungsrecht des Mieters.
+Eine Kostenposition gehört zu dem Abrechnungszeitraum, dem sie beim Erfassen zugeordnet wird;
+eine Rechnung über zwei Zeiträume teilt Mietfuchs nach Tagen auf (Heizkosten ausgenommen). Für
+Heizung und Warmwasser gibt es eigene Wege (siehe **Heizkosten** oben): die eigene
+Heizkostenabrechnung nach der Heizkostenverordnung, die Übernahme einer fertigen
+Messdienstabrechnung als Einzelbeträge und die Aufteilung der CO₂-Kosten. Werden Heizkosten ohne
+Verbrauchsanteil verteilt, nennt ein Hinweis das Kürzungsrecht des Mieters nach § 12
+HeizkostenV. Was Mietfuchs bei der Heizung nicht rechnet, sagt es an Ort und Stelle, etwa die
+Vorerfassung nach Nutzergruppen oder eine getrennte Heizkostenabrechnung nach einem
+Kesseltausch.
 
 ## KI-Belegauswertung
 
