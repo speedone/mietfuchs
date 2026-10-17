@@ -37,10 +37,11 @@ import { selfActive, selfFromOf } from '../heating.ts'
 import { captureOf, coversPeriod, hotWaterOf } from '../hca.ts'
 import { and, count, desc, eq, inArray, isNotNull, ne, or, sql } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/sqlite-core'
-import type { BillingPeriod, CostItem, ExternalBasis, HeatingPlant, HeatingPrepaymentOverride, InterimGapStatus, Meter, MeterType, Payment, PeriodKey, PeriodRules, PersonEntry, PrepaymentEntry, Property, Reading, RentEntry, SplitPreviewPart, Tenancy, Unit, UnitDependents } from '../../../shared/types.ts'
+import type { BillingPeriod, CostItem, ExternalBasis, FederalState, HeatingPlant, HeatingPrepaymentOverride, InterimGapStatus, Meter, MeterType, Payment, PeriodKey, PeriodRules, PersonEntry, PrepaymentEntry, Property, Reading, RentEntry, SplitPreviewPart, Tenancy, Unit, UnitDependents } from '../../../shared/types.ts'
 import { CALENDAR_RULES, calendarPeriod, paymentYear, formatDayRange, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, spansTwoYears, startYearOf } from '../../../shared/period.ts'
 import { heatingPeriodsEndingIn, isObjectPeriod, plantRules, plantSpan, servesUnit, spanOf } from '../../../shared/heatingPeriod.ts'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
+import { isFederalState } from '../../../shared/states.ts'
 import { euro as operatingPowerEuro, GENERAL_POWER_CATEGORY, POWER_GENERATED } from '../../../shared/operatingPower.ts'
 import { billingEnergy } from '../../../shared/heatDelivery.ts'
 import { targetProblem } from '../heating.ts'
@@ -106,6 +107,14 @@ export const asNullableFilled = (value: unknown): string | null => {
 }
 
 export const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
+
+// Eines der 16 Kürzel oder leer (shared/holidays.ts); sonst ein Satz statt eines Datenbankfehlers.
+// HeatingError, weil die Fehlerbehandlung ihren Status weitergibt, wie bei isoDateOrNull.
+function federalStateOrNull(v: unknown): FederalState | null {
+  if (v === null || v === '') return null
+  if (isFederalState(v)) return v
+  throw new HeatingError(400, 'Das Bundesland ist unbekannt. Bitte wählen Sie es aus der Liste oder lassen Sie es leer.')
+}
 
 // Ein ISO-Datum oder leer; sonst ein Satz statt eines Datenbankfehlers (Heizung PR 18).
 function isoDateOrNull(v: unknown, what: string): string | null {
@@ -1781,6 +1790,10 @@ function mergeProperty(current: Property, body: unknown): Property {
     tightMarket: merged(body, 'tightMarket', current.tightMarket ?? null, (v) => (typeof v === 'boolean' ? v : null)),
     tightMarketFrom: merged(body, 'tightMarketFrom', current.tightMarketFrom ?? null, (v) => isoDateOrNull(v, 'Der Beginn der Verordnung')),
     tightMarketTo: merged(body, 'tightMarketTo', current.tightMarketTo ?? null, (v) => isoDateOrNull(v, 'Das Ende der Verordnung')),
+    // Fristen und Feiertage (shared/holidays.ts). Leer heißt unbekannt; ein unbekanntes Kürzel wird
+    // abgelehnt und nicht still zu „unbekannt“, sonst verlöre eine vertippte Angabe die Feiertage des
+    // Landes, ohne dass es jemand merkt.
+    state: merged(body, 'state', current.state ?? null, federalStateOrNull),
   }
   // Die Geltung gehört nur zu „ja“; „nein“ und „unbekannt“ nehmen sie mit (Bedingung
   // properties_tight_market_dates_valid).

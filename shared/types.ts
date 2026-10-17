@@ -17,6 +17,9 @@ export type UnitUsage = 'vermietet' | 'eigen' | 'ausgenommen'
 // den Wohnungen), Sonstiges (etwa ein Garagenhof).
 export type PropertyKind = 'mfh' | 'etw' | 'efh' | 'zfh' | 'sonstiges'
 
+// Die 16 Länder mit ihren üblichen Kürzeln (Namen und Feiertage in shared/holidays.ts).
+export type FederalState = 'BW' | 'BY' | 'BE' | 'BB' | 'HB' | 'HH' | 'HE' | 'MV' | 'NI' | 'NW' | 'RP' | 'SL' | 'SN' | 'ST' | 'SH' | 'TH'
+
 // Ein Objekt ist zugleich die Abrechnungseinheit. Wohnungen, Zähler, Kostenpositionen und
 // abgeschlossene Abrechnungen gehören zu genau einem; Mietverhältnisse, Zahlungen und
 // Ablesungen erben es.
@@ -40,6 +43,10 @@ export type Property = {
   tightMarket?: boolean | null
   tightMarketFrom?: string | null
   tightMarketTo?: string | null
+  // Das Bundesland, in dem das Objekt liegt, für Fristen nach Werktagen und die gesetzlichen Feiertage am Ort
+  // (shared/holidays.ts, shared/deadlines.ts). `null` oder fehlend heißt unbekannt; dann gelten nur die
+  // Feiertage, die in allen Ländern gelten.
+  state?: FederalState | null
   // Der Rhythmus der Abrechnungszeiträume (#208). Der Server liefert ihn immer mit; fehlt er, gilt
   // das Kalenderjahr (`rulesOf` in shared/period.ts). Ändern lässt er sich in dieser Version nicht.
   periodRules?: PeriodRules

@@ -30,7 +30,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 
 const PERCENT_PATTERNS = [/um \d+ ?%/g, /\d+ ?% kürzen/g, /\d+ bis \d+ ?%/g, /\d+ und höchstens \d+ ?%/g, /\d+ Prozent/g, /\d+ vom Hundert/g, /\d+–\d+ ?%/g]
 const DATE_PATTERNS = [/\d{4}-\d{2}-\d{2}/g, /\d{2}\.\d{2}\.\d{4}/g]
-const ENGINE_FILES = ['server/src/calc.ts', 'server/src/snapshot.ts', 'shared/heating.ts', 'shared/period.ts', 'shared/heatingPeriod.ts', 'shared/degreeDays.ts', 'server/src/remoteReading.ts', 'server/src/co2.ts', 'server/src/fuel.ts', 'server/src/fuelStock.ts', 'shared/fuelStock.ts', 'server/src/heating.ts', 'server/src/dhw.ts', 'server/src/hca.ts', 'server/src/heatingInfo.ts', 'server/src/co2Plausibility.ts', 'shared/operatingPower.ts', 'server/src/operatingPower.ts', 'server/src/heatDelivery.ts', 'shared/heatDelivery.ts', 'server/src/monthlyInfo.ts', 'server/src/calibration.ts', 'shared/calibration.ts', 'server/src/halfSplit.ts', 'server/src/co2Refund.ts']
+const ENGINE_FILES = ['server/src/calc.ts', 'server/src/snapshot.ts', 'shared/heating.ts', 'shared/period.ts', 'shared/heatingPeriod.ts', 'shared/degreeDays.ts', 'server/src/remoteReading.ts', 'server/src/co2.ts', 'server/src/fuel.ts', 'server/src/fuelStock.ts', 'shared/fuelStock.ts', 'server/src/heating.ts', 'server/src/dhw.ts', 'server/src/hca.ts', 'server/src/heatingInfo.ts', 'server/src/co2Plausibility.ts', 'shared/operatingPower.ts', 'server/src/operatingPower.ts', 'server/src/heatDelivery.ts', 'shared/heatDelivery.ts', 'server/src/monthlyInfo.ts', 'server/src/calibration.ts', 'shared/calibration.ts', 'server/src/halfSplit.ts', 'server/src/co2Refund.ts', 'shared/holidays.ts', 'shared/deadlines.ts']
 // Rechtszahlen als Zahl im Code (Durchsicht von #221, I2): Die Muster oben sehen nur Texte, eine
 // Zeile wie `Math.round((share * 15) / 100)` oder `year >= 2021` fiele durch. Geprüft wird der Code
 // ohne Zeichenketten und Kommentare, in den Dateien der Berechnung und in invoiceAmounts.ts, auf die
@@ -38,7 +38,7 @@ const ENGINE_FILES = ['server/src/calc.ts', 'server/src/snapshot.ts', 'shared/he
 // nicht.
 // Die Oberfläche der Heizung nennt Stichtage und Jahre aus dem Register (Durchsicht von #230, M5):
 // Datumsangaben und Jahreszahlen der Rechtslage stehen dort nicht als Text.
-const CLIENT_LAW_FILES = ['client/src/components/HeatingCard.tsx', 'client/src/pages/Zaehler.tsx', 'client/src/heatingForm.ts', 'client/src/meterForm.ts', 'client/src/halfSplitForm.ts', 'client/src/components/HalfSplitCard.tsx', 'client/src/components/TightMarketField.tsx', 'client/src/co2View.ts']
+const CLIENT_LAW_FILES = ['client/src/components/HeatingCard.tsx', 'client/src/pages/Zaehler.tsx', 'client/src/heatingForm.ts', 'client/src/meterForm.ts', 'client/src/halfSplitForm.ts', 'client/src/components/HalfSplitCard.tsx', 'client/src/components/TightMarketField.tsx', 'client/src/co2View.ts', 'client/src/ledgerView.ts', 'client/src/components/FederalStateField.tsx']
 const CLIENT_LAW_PATTERNS = [...DATE_PATTERNS, /(?<![\w.])20[12]\d(?!\w|\.\d)/g]
 const CODE_FILES = [...ENGINE_FILES, 'server/src/invoiceAmounts.ts']
 // 25: `hkv.estimate-threshold` (§ 9a Abs. 2 HeizkostenV, Heizung PR 13).
@@ -66,6 +66,9 @@ const ALLOWED: readonly Allowed[] = [
   { file: 'server/src/operatingPower.ts', match: '20.02.2008', reason: 'Datum einer Entscheidung im Zitat (BGH VIII ZR 27/07, Schätzung des Betriebsstroms; Folge-PR zu #252, #224 und #253), kein Rechtswert' },
   { file: 'server/src/operatingPower.ts', match: '13.09.2011', reason: 'Datum einer Entscheidung im Zitat (BGH VIII ZR 45/11, Rn. 3: Betriebsstrom nicht abgerechnet, den Mietern unschädlich; #266), kein Rechtswert' },
   { file: 'server/src/operatingPower.ts', match: '20.01.2016', reason: 'Datum einer Entscheidung im Zitat (BGH VIII ZR 93/15, netto eingetragene Kostenart formell wirksam; #266), kein Rechtswert' },
+  { file: 'shared/holidays.ts', match: 'const a = year % 19', reason: 'Osterformel (Meeus/Jones/Butcher): 19 ist der Mondzyklus, keine Rechtszahl' },
+  { file: 'shared/holidays.ts', match: 'const f = Math.floor((b + 8) / 25)', reason: 'Osterformel (Meeus/Jones/Butcher), keine Rechtszahl' },
+  { file: 'shared/holidays.ts', match: 'const h = (19 * a + b - d - g + 15) % 30', reason: 'Osterformel (Meeus/Jones/Butcher), keine Rechtszahl' },
   { file: 'server/src/invoiceAmounts.ts', match: 'Math.max(50,', reason: 'Rundungstoleranz der Schnellerfassung (mindestens 0,50 €), keine Rechtszahl' },
 ]
 

@@ -137,6 +137,8 @@ export async function readProperties(db: Executor): Promise<Property[]> {
     tightMarket: p.tightMarket,
     tightMarketFrom: p.tightMarketFrom,
     tightMarketTo: p.tightMarketTo,
+    // Das Bundesland für Fristen und Feiertage; `null` heißt unbekannt.
+    state: p.state,
     // Der Rhythmus (#208). Immer mitgeliefert, damit niemand ihn erraten muss.
     periodRules: { startMonth: p.periodStartMonth, changes: changes.get(p.id) ?? [] },
   }))

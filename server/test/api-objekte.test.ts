@@ -236,6 +236,39 @@ test('Kabelanlage ab dem 01.12.2021 (#121): am Objekt gespeichert, und die Abrec
   }
 })
 
+test('Bundesland am Objekt: gespeichert, als Teilrumpf ergänzt, leer heißt unbekannt, ein fremdes Kürzel 400', async () => {
+  const s = await startServer()
+  try {
+    const [objekt] = await s.api<Property[]>('/api/properties')
+    assert.equal(objekt?.state, null, 'ein frisches Objekt hat kein Bundesland')
+    const route = `${s.base}/api/properties/${objekt?.id}`
+    const put = (body: unknown) => fetch(route, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    const by = await put({ state: 'BY' })
+    assert.equal(by.status, 200)
+    assert.equal((await jsonOf<Property>(by)).state, 'BY')
+    // Ein Teilrumpf ohne `state` lässt es stehen.
+    assert.equal((await jsonOf<Property>(await put({ name: 'Haus' }))).state, 'BY')
+    // Ein unbekanntes Kürzel wird abgelehnt, nicht still zu „unbekannt“; gespeichert bleibt das alte.
+    for (const falsch of ['XX', 'by', 'Bayern', 7]) {
+      const r = await put({ state: falsch })
+      assert.equal(r.status, 400, String(falsch))
+      assert.match(await errorFrom(r), /Bundesland ist unbekannt/)
+    }
+    assert.equal((await s.api<Property[]>('/api/properties'))[0]?.state, 'BY')
+    assert.equal((await jsonOf<Property>(await put({ state: '' }))).state, null)
+    assert.equal((await jsonOf<Property>(await put({ state: 'SN' }))).state, 'SN')
+    assert.equal((await jsonOf<Property>(await put({ state: null }))).state, null)
+    // Beim Anlegen ebenso
+    const neu = await fetch(`${s.base}/api/properties`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'Zweites', state: 'HB' }) })
+    assert.equal((await jsonOf<Property>(neu)).state, 'HB')
+    const falschNeu = await fetch(`${s.base}/api/properties`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'Drittes', state: 'DE' }) })
+    assert.equal(falschNeu.status, 400)
+    assert.equal((await s.api<Property[]>('/api/properties')).length, 2, 'nichts halb angelegt')
+  } finally {
+    s.stop()
+  }
+})
+
 test('Objekt: die Einstellungen führen Hausname und Adresse nicht mehr, auch wenn ein alter Tab sie schickt', async () => {
   const s = await startServer()
   try {

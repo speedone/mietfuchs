@@ -37,6 +37,7 @@ import type {
   EstimatePart,
   EstimateValueUnit,
   ExternalMeasure,
+  FederalState,
   FuelGrade,
   FuelQuantityUnit,
   CreditNoteKind,
@@ -139,6 +140,10 @@ const periodKeyCheck = (name: string, column: string) =>
 // Teil 1 werden sie nur gespeichert und angezeigt.
 export const PROPERTY_KINDS = exactly<PropertyKind>()(['mfh', 'etw', 'efh', 'zfh', 'sonstiges'] as const)
 
+// Die 16 Länder (Fristen und Feiertage, shared/holidays.ts). Dieselbe Liste steht dort mit den Namen;
+// `exactly` hält beide am Typ fest.
+export const FEDERAL_STATES = exactly<FederalState>()(['BW', 'BY', 'BE', 'BB', 'HB', 'HH', 'HE', 'MV', 'NI', 'NW', 'RP', 'SL', 'SN', 'ST', 'SH', 'TH'] as const)
+
 // Ein Objekt ist zugleich die Abrechnungseinheit: ein Mehrfamilienhaus, eine vermietete
 // Eigentumswohnung, ein Einfamilienhaus. Mehrere Gebäude, die gemeinsam abrechnen, sind *ein*
 // Objekt (BGH VIII ZR 73/10); eine Rechnung für mehrere Objekte wird vorverteilt (#95).
@@ -166,6 +171,9 @@ export const properties = sqliteTable(
     tightMarket: integer('tight_market', { mode: 'boolean' }),
     tightMarketFrom: text('tight_market_from'),
     tightMarketTo: text('tight_market_to'),
+    // Das Bundesland für Fristen nach Werktagen und die Feiertage am Ort (shared/deadlines.ts); null heißt
+    // unbekannt, dann gelten nur die Feiertage aller Länder. Bedingung im zweiten Schritt.
+    state: text('state', { enum: FEDERAL_STATES }),
   },
   () => [
     oneOf('properties_kind_known', 'kind', PROPERTY_KINDS),
@@ -179,6 +187,7 @@ export const properties = sqliteTable(
     check('properties_tight_market_from_valid', sql.raw(`"tight_market_from" IS NULL OR "tight_market_from" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`)),
     check('properties_tight_market_to_valid', sql.raw(`"tight_market_to" IS NULL OR "tight_market_to" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`)),
     check('properties_tight_market_order_valid', sql.raw(`"tight_market_from" IS NULL OR "tight_market_to" IS NULL OR "tight_market_from" <= "tight_market_to"`)),
+    oneOf('properties_state_known', 'state', FEDERAL_STATES),
   ],
 )
 
