@@ -26,6 +26,7 @@ import { dayAfter, germanDate } from '../../shared/law/register.ts'
 import { isFuelMarked, isStockFuelItem, readFrozenStock, settledByDefault, stockKeysOf, stockTemplateOfLine, type PreviousFuel, type StockPeriodInput } from './fuelStock.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import { selfActive } from './heating.ts'
+import { soleOutflowYear } from './outflow.ts'
 import type { Db } from './store.ts'
 
 // Gelesen werden Kennung, Name (für Abrechnung und Warnungen), Wohnfläche und die beiden
@@ -953,8 +954,8 @@ export function deductionsOf(
       return {
         id: c.id, itemId: c.operatingPowerItemId ?? null, period: c.period, description: c.description, amountCents: c.amountCents,
         closed: frozen ? creditOf(p ? periodLabel(p) : String(c.period), frozen.itemTotals, c) : null,
-        // N1: das Jahr der Zahlung wie in der Steuerübersicht (`taxYearOf`).
-        taxYear: c.taxYear ?? (p ? Number(p.from.slice(0, 4)) : startYearOf(c.period)),
+        // N1: das Jahr der Zahlung wie in der Steuerübersicht, aus derselben Stelle (outflow.ts, #255).
+        taxYear: soleOutflowYear(c, p ?? { from: `${startYearOf(c.period)}-01-01` }),
       }
     })
 }

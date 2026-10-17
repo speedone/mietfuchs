@@ -19,7 +19,7 @@ import { DEFAULT_SETTINGS } from './defaults.ts'
 import { compareWithFrozen } from './settlementDiff.ts'
 import { computeSettlement, consumptionOverview, rentLedger, taxPartsFor, taxReportFor, type ComputedSettlement } from './calc.ts'
 import { heatingSnapshotFor, narrowToProperty, snapshotFor } from './snapshot.ts'
-import { calendarPeriod, calendarYearPeriod, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodOfKey, resolvePeriodParam, rulesOf, settlementDeadline, settlementPeriod, startYearOf } from '../../shared/period.ts'
+import { calendarYearPeriod, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodOfKey, resolvePeriodParam, rulesOf, settlementDeadline, settlementPeriod, startYearOf } from '../../shared/period.ts'
 import type { BillingPeriod, FuelGapQuestion, HeatingPlant, Unit } from '../../shared/types.ts'
 import { plantRules, settledSeparately } from '../../shared/heatingPeriod.ts'
 import { extractFromFile, classifyDocType, extractMeterReading, type AskProgressEvent, type AskStats } from './extract.ts'
@@ -78,7 +78,7 @@ import { APP_VERSION, RUNTIME, STANDALONE } from './version.ts'
 import { describeFile, describeFolder, hashFile, mimeTypeOf, uploadedAtOf } from './uploads.ts'
 import { acceptIban, IbanRefusal } from './iban.ts'
 import { IBAN_LABELS } from '../../shared/iban.ts'
-import { derivedTaxLines, planTaxArchive } from './taxReceipts.ts'
+import { derivedTaxLines, planTaxArchive, taxArchiveItems } from './taxReceipts.ts'
 import { forgetUpload, placeUpload, recordIfMissing, recordUpload, rowOf, uploadRows, type Placement, type UploadRow } from './db/uploads.ts'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -1112,7 +1112,7 @@ app.get('/api/rentledger/:year', async (req, res) => {
 })
 
 // Steuer-Übersicht (Hilfe für die Anlage V) im Kalenderjahr: Einnahmen, Werbungskosten, Überschuss.
-// Bei einem Objekt mit eigenem Rhythmus aus den Abrechnungen, die das Jahr berühren (#208);
+// Aus den Abrechnungen, die das Jahr berühren, nach dem Jahr der Zahlung (#208, #255);
 // Begründung in calc.ts (`taxPartsFor`).
 app.get('/api/taxreport/:year', async (req, res) => {
   const year = Number(req.params.year)
@@ -1753,17 +1753,14 @@ app.get('/api/receipts/tax/:year', async (req, res) => {
     const stock = narrowToProperty(whole, propertyId)
     const property = (await listProperties(db)).find((p) => p.id === propertyId)
     // Privat und abziehbar je Position aus derselben Rechnung wie die Steuerübersicht (#163), und
-    // dieselbe Auswahl der Positionen: das Jahr der Zahlung (#208).
+    // dieselbe Auswahl der Positionen: das Jahr der Zahlung (#208, seit #255 für jedes Objekt über die Teile).
     const report = taxReportFor(whole, propertyId, year)
     const split = new Map(report.expenses.items.map((i) => [i.costItemId, i]))
-    const parts = taxPartsFor(whole, propertyId, year)
-    const ids = new Set(parts === null
-      ? stock.costItems.filter((c) => c.period === calendarPeriod(year)).map((c) => c.id)
-      : parts.flatMap((p) => p.items.map((c) => c.id)))
+    const items = taxArchiveItems(stock.costItems, taxPartsFor(whole, propertyId, year))
     // #268 und Heizung PR 19 (N-4): Zeilen der Übersicht ohne Position (Ausgleich beim Betriebsstrom, ausgezahlte
     // CO₂-Erstattung).
     const derived = derivedTaxLines(report)
-    return { items: stock.costItems.filter((c) => ids.has(c.id)), property, rows: await uploadRows(db), links: await uploadLinks(db), split, derived }
+    return { items, property, rows: await uploadRows(db), links: await uploadLinks(db), split, derived }
   })
   const booked = new Map<string, string[]>()
   for (const [file, l] of links) for (const id of l.bookedItemIds) booked.set(id, [...(booked.get(id) ?? []), file])
