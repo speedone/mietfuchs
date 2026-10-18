@@ -3,6 +3,8 @@ import type { Settings, UpdateStatus } from '../types'
 import { api } from '../api'
 import { statusText, updateGuide, type UpdateGuide } from '../update'
 import { useToast } from './feedback'
+import DraftActions from './DraftActions'
+import { useDraft } from '../useDraft'
 import FoxLogo from './Logo'
 
 // Update-Hinweis in drei Teilen: die einmalige Frage im Cockpit, der Hinweis oben in der
@@ -141,24 +143,14 @@ type SettingsProps = {
 export function UpdateSettings({ settings, update, reload }: SettingsProps) {
   const toast = useToast()
   const { status, checking, checkNow } = update
-  // Das Häkchen springt sofort um und nicht erst nach der Antwort des Servers
-  const [enabled, setEnabled] = useState(settings.updateCheck === 'on')
-  const [saving, setSaving] = useState(false)
-  useEffect(() => setEnabled(settings.updateCheck === 'on'), [settings.updateCheck])
-
-  const toggle = async (checked: boolean) => {
-    setEnabled(checked)
-    setSaving(true)
-    try {
-      await saveSettings({ updateCheck: checked ? 'on' : 'off' })
-      await reload()
-      toast(checked ? 'Mietfuchs schaut ab jetzt nach neuen Versionen.' : 'Mietfuchs fragt nicht mehr nach neuen Versionen.')
-    } catch {
-      setEnabled(!checked)
-      toast('Die Einstellung ließ sich nicht speichern.', 'error')
-    } finally {
-      setSaving(false)
-    }
+  // Das Häkchen ist ein Entwurf (#309): Erst „Speichern“ schickt es. Die Frage im Cockpit hat
+  // eigene Knöpfe und speichert ihre Antwort sofort.
+  const saved = settings.updateCheck === 'on'
+  const draft = useDraft(saved)
+  const save = async (checked: boolean) => {
+    await saveSettings({ updateCheck: checked ? 'on' : 'off' })
+    await reload()
+    toast(checked ? 'Mietfuchs schaut ab jetzt nach neuen Versionen.' : 'Mietfuchs fragt nicht mehr nach neuen Versionen.')
   }
 
   const check = async () => {
@@ -174,10 +166,13 @@ export function UpdateSettings({ settings, update, reload }: SettingsProps) {
   return (
     <div className="card">
       <h2>Updates</h2>
-      <label className="update-toggle">
-        <input type="checkbox" checked={enabled} onChange={(e) => void toggle(e.target.checked)} />
-        Beim Öffnen nach neuen Versionen schauen
-      </label>
+      <div className="row center">
+        <label className="update-toggle">
+          <input type="checkbox" checked={draft.value} disabled={draft.saving} onChange={(e) => draft.set(e.target.checked)} />
+          Beim Öffnen nach neuen Versionen schauen
+        </label>
+        <DraftActions draft={draft} onSave={save} what="Update-Prüfung" />
+      </div>
       <p className="muted">
         Dafür fragt Mietfuchs bei GitHub nach. GitHub sieht dabei nur Ihre IP-Adresse und die
         installierte Versionsnummer.
@@ -186,12 +181,13 @@ export function UpdateSettings({ settings, update, reload }: SettingsProps) {
       {status && <p className="update-state">{statusText(status)}</p>}
 
       <div className="row">
-        {/* Gesperrt, solange das Häkchen gespeichert wird: Sonst fragte der Server noch ohne Zustimmung. */}
-        <button className="btn secondary" disabled={!enabled || checking || saving} onClick={() => void check()}>
+        {/* Gesperrt ohne gespeicherte Zustimmung und solange sie gespeichert wird: Sonst fragte der
+            Server noch ohne Zustimmung. Ein angehaktes, aber ungespeichertes Häkchen zählt nicht. */}
+        <button className="btn secondary" disabled={!saved || draft.dirty || checking || draft.saving} onClick={() => void check()}>
           {checking && <span className="spinner" />}Jetzt prüfen
         </button>
         {/* Sichtprüfung E53: sagen, warum der Knopf gesperrt ist */}
-        {!enabled && !saving && <span className="muted">Erst das Häkchen oben setzen.</span>}
+        {!saved && !draft.saving && <span className="muted">{draft.value ? 'Erst das Häkchen oben setzen und speichern.' : 'Erst das Häkchen oben setzen.'}</span>}
       </div>
 
       {guide && status && (

@@ -297,13 +297,13 @@ test('Versanddatum: Ändern sendet nichts, „Speichern“ sendet genau einmal (
   show()
   const feld = await sentAtField()
   expect(feld.value).toBe(`${YEAR + 1}-01-10`)
-  expect(screen.queryByRole('button', { name: 'Versanddatum speichern' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Speichern (Versanddatum)' })).toBeNull()
   fireEvent.change(feld, { target: { value: `${YEAR + 1}-01-15` } })
   expect(puts).toEqual([])
-  const speichern = screen.getByRole('button', { name: 'Versanddatum speichern' })
+  const speichern = screen.getByRole('button', { name: 'Speichern (Versanddatum)' })
   fireEvent.click(speichern)
   fireEvent.click(speichern)
-  await waitFor(() => expect(screen.queryByRole('button', { name: 'Versanddatum speichern' })).toBeNull(), SLOW)
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Speichern (Versanddatum)' })).toBeNull(), SLOW)
   expect(puts).toEqual([{ sentAt: `${YEAR + 1}-01-15` }])
   expect((await sentAtField()).value).toBe(`${YEAR + 1}-01-15`)
 })
@@ -314,9 +314,9 @@ test('Versanddatum: „Verwerfen“ stellt das gespeicherte Datum her, ohne zu s
   show()
   const feld = await sentAtField()
   fireEvent.change(feld, { target: { value: '' } })
-  fireEvent.click(screen.getByRole('button', { name: 'Versanddatum verwerfen' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Verwerfen (Versanddatum)' }))
   expect(feld.value).toBe(`${YEAR + 1}-01-10`)
-  expect(screen.queryByRole('button', { name: 'Versanddatum speichern' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Speichern (Versanddatum)' })).toBeNull()
   expect(puts).toEqual([])
 })
 
@@ -416,7 +416,7 @@ test('abgeschlossen mit Fehlern: Versanddatum und Druck fragen nicht nach, ohne 
   show()
   const feld = await sentAtField()
   fireEvent.change(feld, { target: { value: `${YEAR + 1}-01-15` } })
-  fireEvent.click(screen.getByRole('button', { name: 'Versanddatum speichern' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern (Versanddatum)' }))
   await waitFor(() => expect(puts).toEqual([{ sentAt: `${YEAR + 1}-01-15` }]), SLOW)
   expect(screen.queryByRole('dialog')).toBeNull()
   expect(screen.queryByText(/Entwurf, nicht versenden/)).toBeNull()
@@ -464,4 +464,120 @@ test('Abschließen mit Fehlern auf der Seite: „Nicht abschließen“ sendet ni
   fireEvent.click(await screen.findByRole('button', { name: 'Nicht abschließen' }, SLOW))
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull(), SLOW)
   expect(bodies).toEqual([])
+})
+
+// #309: Die beiden Häkchen zum Druck sind Einstellungen und speicherten beim Anklicken. Jetzt sind sie
+// ein Entwurf mit einem „Speichern“ für beide.
+function stubSettings(puts: unknown[], fail = false) {
+  const before = globalThis.fetch
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if (url === '/api/settings' && init?.method === 'PUT') {
+      puts.push(JSON.parse(String(init.body)))
+      if (fail) return new Response(JSON.stringify({ error: 'Platte voll' }), { status: 503, headers: { 'content-type': 'application/json' } })
+      return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } })
+    }
+    return before(url, init)
+  })
+}
+const SETTINGS: Settings = { houseName: '', address: '', landlordName: '', iban: '', paymentDeadlineDays: 30, ollamaUrl: '', ollamaModel: '' }
+const showWithSettings = (s: Settings, reload: () => Promise<void>) => render(
+  <PeriodProvider>
+    <PropertyProvider>
+      <UIProvider><Abrechnung settings={s} units={[]} tenancies={TENANCIES} reload={reload} /></UIProvider>
+    </PropertyProvider>
+  </PeriodProvider>,
+)
+const adjustBox = async () => (await screen.findByLabelText(/Vorauszahlung.*vorschlagen/, {}, SLOW)) as HTMLInputElement
+const attachBox = () => screen.getByLabelText(/Belegkopien als Anlage/) as HTMLInputElement
+
+test('Druckeinstellungen: Anklicken sendet nichts, „Speichern“ sendet beide genau einmal (#309)', async () => {
+  const puts: unknown[] = []
+  stubSettings(puts)
+  const reload = vi.fn(async () => {})
+  showWithSettings(SETTINGS, reload)
+  fireEvent.click(await adjustBox())
+  fireEvent.click(attachBox())
+  expect((await adjustBox()).checked).toBe(false)
+  expect(attachBox().checked).toBe(true)
+  expect(puts).toEqual([])
+  const speichern = screen.getByRole('button', { name: 'Speichern (Druckeinstellungen)' })
+  fireEvent.click(speichern)
+  fireEvent.click(speichern)
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Speichern (Druckeinstellungen)' })).toBeNull(), SLOW)
+  expect(puts).toEqual([{ printAdjustSuggestion: false, printAttachments: true }])
+  expect(reload).toHaveBeenCalledTimes(1)
+})
+
+test('Druckeinstellungen: „Verwerfen“ stellt beide her, ohne zu senden (#309)', async () => {
+  const puts: unknown[] = []
+  stubSettings(puts)
+  showWithSettings({ ...SETTINGS, printAttachments: true }, async () => {})
+  fireEvent.click(await adjustBox())
+  fireEvent.click(attachBox())
+  fireEvent.click(screen.getByRole('button', { name: 'Verwerfen (Druckeinstellungen)' }))
+  expect((await adjustBox()).checked).toBe(true)
+  expect(attachBox().checked).toBe(true)
+  expect(screen.queryByRole('button', { name: 'Speichern (Druckeinstellungen)' })).toBeNull()
+  expect(puts).toEqual([])
+})
+
+test('Druckeinstellungen: scheitert das Speichern, steht der Grund am Knopf und der Entwurf bleibt (#309)', async () => {
+  const puts: unknown[] = []
+  stubSettings(puts, true)
+  const reload = vi.fn(async () => {})
+  showWithSettings(SETTINGS, reload)
+  fireEvent.click(await adjustBox())
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern (Druckeinstellungen)' }))
+  const alert = await screen.findByRole('alert', {}, SLOW)
+  expect(alert.textContent).toMatch(/^Nicht gespeichert: .*Platte voll/)
+  expect(alert.closest('.draft-actions')).not.toBeNull()
+  expect((await adjustBox()).checked).toBe(false)
+  expect(screen.getByRole('button', { name: 'Speichern (Druckeinstellungen)' })).toBeTruthy()
+  expect(reload).not.toHaveBeenCalled()
+})
+
+test('Druckeinstellungen: ungespeichert fragt der Wechsel des Jahres nach (#309)', async () => {
+  const puts: unknown[] = []
+  stubSettings(puts)
+  showWithSettings(SETTINGS, async () => {})
+  fireEvent.click(await adjustBox())
+  fireEvent.change(screen.getByLabelText('Abrechnungsjahr'), { target: { value: String(YEAR - 1) } })
+  expect(await screen.findByText('Offene Eingaben verwerfen?', {}, SLOW)).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }))
+  await waitFor(() => expect(screen.queryByText('Offene Eingaben verwerfen?')).toBeNull(), SLOW)
+  expect((await adjustBox()).checked).toBe(false)
+  expect(puts).toEqual([])
+})
+
+// Durchsicht zu #333: Der Reiter zwischen Betriebs- und Heizkostenabrechnung wechselt den scope des
+// Versanddatums. Vorher war ein ungespeichertes Datum dann ohne Rückfrage weg.
+test('Versanddatum: der Wechsel zur Heizkostenabrechnung fragt bei einem ungespeicherten Datum nach (#309)', async () => {
+  const puts: unknown[] = []
+  stubSentAt(puts)
+  const h = { plantId: 'hp1', plantName: '', deadline: `${YEAR + 1}-04-30`, closed: null,
+    period: { key: `${YEAR - 1}-05`, from: `${YEAR - 1}-05-01`, to: `${YEAR}-04-30`, short: false, label: `${YEAR - 1}/${YEAR}` } }
+  const base = globalThis.fetch
+  const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    const path = url.split('?')[0] ?? url
+    if (path === '/api/heating-settlements') return json([h])
+    if (path === `/api/heating-settlement/hp1/${YEAR - 1}-05`) return json({ ...settlement, closed: null, period: h.period, scope: { kind: 'heating', plantId: 'hp1', plantName: '' } })
+    if (path === `/api/heating-settlement/hp1/${YEAR - 1}-05/history`) return json([])
+    return base(url, init)
+  })
+  show()
+  fireEvent.change(await sentAtField(), { target: { value: `${YEAR + 1}-01-15` } })
+  const heizung = await screen.findByRole('button', { name: /^Heizkosten / }, SLOW)
+  fireEvent.click(heizung)
+  const dialog = await screen.findByRole('dialog', {}, SLOW)
+  expect(dialog.textContent).toMatch(/Ungespeicherte Änderung verwerfen\?/)
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Abbrechen' }))
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull(), SLOW)
+  expect(heizung.getAttribute('aria-pressed')).toBe('false')
+  expect((await sentAtField()).value).toBe(`${YEAR + 1}-01-15`)
+  // Mit „Verwerfen“ wechselt der Reiter.
+  fireEvent.click(heizung)
+  fireEvent.click(within(await screen.findByRole('dialog', {}, SLOW)).getByRole('button', { name: 'Verwerfen' }))
+  await waitFor(() => expect(heizung.getAttribute('aria-pressed')).toBe('true'), SLOW)
+  expect(puts).toEqual([])
 })

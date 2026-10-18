@@ -150,12 +150,46 @@ test('Einstellungen: ohne Zustimmung nur die installierte Version, Prüfen ist g
   expect((screen.getByRole('button', { name: 'Jetzt prüfen' }) as HTMLButtonElement).disabled).toBe(true)
 })
 
-test('Einstellungen: Häkchen schaltet die Prüfung ein und aus', async () => {
+// #309: Das Häkchen ist ein Entwurf. Erst „Speichern“ schickt es, „Verwerfen“ stellt es her.
+const writes = () => requests.filter((r) => r.method !== 'GET')
+
+test('Einstellungen: Häkchen schaltet die Prüfung erst mit „Speichern“ aus, genau einmal', async () => {
   const reload = vi.fn(async () => {})
   render(<Card s={settings({ updateCheck: 'on' })} reload={reload} />)
   fireEvent.click(screen.getByLabelText(/nach neuen Versionen schauen/i))
-  await waitFor(() => expect(reload).toHaveBeenCalled())
-  expect(requests).toContainEqual({ url: '/api/settings', method: 'PUT', body: { updateCheck: 'off' } })
+  expect((screen.getByLabelText(/nach neuen Versionen schauen/i) as HTMLInputElement).checked).toBe(false)
+  expect(writes()).toEqual([])
+  const speichern = screen.getByRole('button', { name: 'Speichern (Update-Prüfung)' })
+  fireEvent.click(speichern)
+  fireEvent.click(speichern)
+  await waitFor(() => expect(reload).toHaveBeenCalledTimes(1))
+  expect(writes()).toEqual([{ url: '/api/settings', method: 'PUT', body: { updateCheck: 'off' } }])
+  expect(await screen.findByText('Mietfuchs fragt nicht mehr nach neuen Versionen.')).toBeTruthy()
+})
+
+test('Einstellungen: „Verwerfen“ stellt das Häkchen her, ohne zu senden; Prüfen bleibt am gespeicherten Stand', async () => {
+  render(<Card s={settings({ updateCheck: 'off' })} />)
+  const box = screen.getByLabelText(/nach neuen Versionen schauen/i) as HTMLInputElement
+  fireEvent.click(box)
+  expect(box.checked).toBe(true)
+  // Ohne gespeicherte Zustimmung fragt der Server nicht bei GitHub, also bleibt „Jetzt prüfen“ gesperrt.
+  expect((screen.getByRole('button', { name: 'Jetzt prüfen' }) as HTMLButtonElement).disabled).toBe(true)
+  expect(screen.getByText(/Erst das Häkchen oben setzen und speichern/)).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Verwerfen (Update-Prüfung)' }))
+  expect(box.checked).toBe(false)
+  expect(writes()).toEqual([])
+})
+
+test('Einstellungen: scheitert das Speichern, steht der Grund am Knopf und das Häkchen bleibt', async () => {
+  failing = ['/api/settings']
+  const reload = vi.fn(async () => {})
+  render(<Card s={settings({ updateCheck: 'off' })} reload={reload} />)
+  fireEvent.click(screen.getByLabelText(/nach neuen Versionen schauen/i))
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern (Update-Prüfung)' }))
+  const alert = await screen.findByRole('alert')
+  expect(alert.textContent).toMatch(/^Nicht gespeichert: .*Server nicht erreichbar/)
+  expect((screen.getByLabelText(/nach neuen Versionen schauen/i) as HTMLInputElement).checked).toBe(true)
+  expect(reload).not.toHaveBeenCalled()
 })
 
 test('Einstellungen: Windows-Programmdatei wird im bisherigen Ordner ersetzt', async () => {
