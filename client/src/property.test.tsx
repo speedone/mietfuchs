@@ -48,14 +48,14 @@ test('der Umschalter zeigt den ganzen Namen des gewählten Objekts als Text, mit
   const lang = objekt('objekt-3', 'Mehrfamilienhaus Am Alten Bahnhof 12–14, Hinterhaus')
   const onChange = vi.fn()
   const { container, rerender } = render(<PropertySwitcher properties={[A, lang]} value="objekt-3" onChange={onChange} />)
-  const shown = container.querySelector('.switcher > div > span')
+  const shown = container.querySelector('.switcher > span:last-child > span')
   expect(shown?.textContent).toBe(lang.name)
   const select = screen.getByLabelText('Objekt wählen')
   expect(select.getAttribute('title')).toBe(lang.name)
   fireEvent.change(select, { target: { value: 'objekt-1' } })
   expect(onChange).toHaveBeenCalledWith('objekt-1')
   rerender(<PropertySwitcher properties={[A, objekt('objekt-3', '')]} value="objekt-3" onChange={onChange} />)
-  expect(container.querySelector('.switcher > div > span')?.textContent).toBe('Ohne Namen')
+  expect(container.querySelector('.switcher > span:last-child > span')?.textContent).toBe('Ohne Namen')
 })
 
 function Zeige() {

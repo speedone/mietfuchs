@@ -22,12 +22,12 @@ export default function Switcher({ label, ariaLabel, value, options, onChange, c
   return (
     <label className={`switcher no-print${className ? ` ${className}` : ''}`}>
       <span>{label}</span>
-      <div>
+      <span>
         <span aria-hidden="true">{current?.label ?? ''}</span>
         <select aria-label={ariaLabel ?? label} title={current?.label} value={value} onChange={(e) => onChange(e.target.value)}>
           {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
-      </div>
+      </span>
     </label>
   )
 }

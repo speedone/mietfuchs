@@ -3335,8 +3335,9 @@ Tippfläche von `--target` über `::after`, und printCss.test.ts verlangt den du
   gewählte Eintrag als umbrechender Text mit ▾, das echte Auswahlfeld unsichtbar darüber, gleiche Höhe und Schrift.
   Jede Seite zeigt beides im Seitenkopf als **Kontextzeile** an („Lindenweg 12 · Abrechnungsjahr 2025“,
   `pageContextLine` in client/src/propertyView.ts; `PageHeader` mit `context`: `period` als Vorgabe, `calendar` für
-  Mietkonto und Steuer, `property` für Stammdaten, `none` für Einstellungen und Hilfe). Am Handy entfällt die Zeile,
-  dort steht dieselbe Angabe im angehefteten Kopf. Auf einer Seite bleiben nur andere Größen: das Kalenderjahr von
+  Mietkonto und Steuer, `property` für Stammdaten, `none` für Einstellungen und Hilfe). Am Bildschirm des Handys entfällt die
+  Zeile, dort steht dieselbe Angabe im angehefteten Kopf; gedruckt wird sie immer. Der Fuß der Seitenleiste ist
+  Teil der Scrollfläche und nicht angeheftet (#341 M15). Auf einer Seite bleiben nur andere Größen: das Kalenderjahr von
   Mietkonto und Steuer bei abweichendem Zeitraum (`CalendarYearSelect`), die Heizperiode, das „Jahr der Buchung“
   einer Auswertung, Objekt und Jahr eines Belegs im Posteingang und das Jahr der Zahlung einer Position. Der Wächter
   S18 (uiRules.test.ts) lässt die Bausteine der Seitenleiste nur in App.tsx zu und kein `<select>` in `pages/` oder

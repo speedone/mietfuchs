@@ -79,14 +79,16 @@ export default function Uebersicht({ onNavigate }: Props) {
 
   return (
     <>
-      {/* Der Zeitraum steht in der Kontextzeile und wird in der Seitenleiste gewählt (#346 Schritt 8); hier
-          bleibt nur der Stand der Abrechnung. */}
+      {/* Der Zeitraum steht in der Kontextzeile und wird in der Seitenleiste gewählt (#346 Schritt 8); der Stand der
+          Abrechnung steht im Untertitel, damit er mitgedruckt wird. */}
       <PageHeader
         title="Kostenvergleich"
-        subtitle="Kosten im Blick: Jahresvergleich, Auffälligkeiten und der Stand der Abrechnung."
-        actions={settlement?.closed
-          ? <span className="badge green">Abrechnung abgeschlossen</span>
-          : <span className="badge gray">Abrechnung im Entwurf</span>}
+        subtitle={<>
+          Kosten im Blick: Jahresvergleich, Auffälligkeiten und der Stand der Abrechnung.{' '}
+          {settlement?.closed
+            ? <span className="badge green">Abrechnung abgeschlossen</span>
+            : <span className="badge gray">Abrechnung im Entwurf</span>}
+        </>}
       />
       {error && <div className="error">{error}</div>}
 

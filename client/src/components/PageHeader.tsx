@@ -8,7 +8,8 @@ import { pageContextLine, type PageContextKind } from '../propertyView'
 //
 // Die Kontextzeile (#346 Schritt 8, M13) nennt Objekt und Abrechnungszeitraum, in denen die Seite steht,
 // „Lindenweg 12 · Abrechnungsjahr 2025“. Sie ist nur Anzeige: Gewählt wird beides in der Seitenleiste bzw. im
-// Menüblatt (Wächter S18). Am Handy steht dieselbe Angabe schon im angehefteten Kopf, dort entfällt sie (index.css).
+// Menüblatt (Wächter S18). Am Handy nennt der angeheftete Kopf Objekt und Zeitraum, dort entfällt sie auf dem
+// Bildschirm (index.css). Gedruckt wird sie, damit das Papier sagt, für welches Objekt und Jahr es gilt.
 // Seit #157 nennt der Seitenkopf das Objekt; vorher sah ein leeres neues Objekt aus wie ein verlorener Bestand.
 export default function PageHeader({
   title,
@@ -28,7 +29,7 @@ export default function PageHeader({
   return (
     <div className="page-head">
       <div className="page-head-text">
-        {line && <p className="page-context no-print" data-testid="page-context">{line}</p>}
+        {line && <p className="page-context" data-testid="page-context">{line}</p>}
         <h1>{title}</h1>
         {subtitle && <p className="sub">{subtitle}</p>}
       </div>
