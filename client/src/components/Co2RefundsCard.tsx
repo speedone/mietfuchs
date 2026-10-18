@@ -94,7 +94,7 @@ export default function Co2RefundsCard({ propertyId, period, tenancies, units }:
               {(r.settlePeriod === null || r.settlePeriod === period.key) && (
                 <>
                   {' '}<button className="btn small secondary" onClick={() => { setError(''); setEditing({ id: r.id, form: refundToForm(r, period.key) }) }}>Bearbeiten</button>
-                  {' '}<button className="btn small secondary" onClick={() => void remove(r.id)}>Löschen</button>
+                  {' '}<button className="btn small ghost danger-ghost" onClick={() => void remove(r.id)}>Löschen …</button>
                 </>
               )}
             </li>

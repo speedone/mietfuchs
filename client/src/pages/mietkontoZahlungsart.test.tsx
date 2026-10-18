@@ -72,7 +72,7 @@ const shownText = (el: HTMLSelectElement): string => el.options[el.selectedIndex
 
 test('Mietkonto: die Art steht auf Miete, „Abrechnung“ bietet den ausgezogenen Mieter an und wird gesendet', async () => {
   shell()
-  const add = await screen.findByRole('button', { name: /Zahlung erfassen/i })
+  const add = await screen.findByRole('button', { name: /Zahlung anlegen/i })
   await waitFor(() => expect((add as HTMLButtonElement).disabled).toBe(false))
   fireEvent.click(add)
   const art = select(/^Art$/)
@@ -147,7 +147,7 @@ test('Mietkonto: +150 € und −150 € aus der Abrechnung heben sich auf und s
 test('Mietkonto: ohne Mietverhältnis im Jahr beginnt das Formular mit „Abrechnung“ und sagt warum (Durchsicht M2b)', async () => {
   ledger = { ...LEDGER, rows: [], totals: { sollYearCents: 0, paidYearCents: 0, settlementYearCents: 12345, openCents: 0 } }
   shell()
-  const add = await screen.findByRole('button', { name: /Zahlung erfassen/i })
+  const add = await screen.findByRole('button', { name: /Zahlung anlegen/i })
   await waitFor(() => expect((add as HTMLButtonElement).disabled).toBe(false))
   fireEvent.click(add)
   expect(select(/^Art$/).value).toBe('settlement')
@@ -156,7 +156,7 @@ test('Mietkonto: ohne Mietverhältnis im Jahr beginnt das Formular mit „Abrech
 
 test('Mietkonto: ausgezogener Mieter unter „Abrechnung“ gewählt, zurück auf „Miete“: erst die Rückfrage, Abbrechen speichert nichts (Durchsicht M2b)', async () => {
   shell()
-  const add = await screen.findByRole('button', { name: /Zahlung erfassen/i })
+  const add = await screen.findByRole('button', { name: /Zahlung anlegen/i })
   await waitFor(() => expect((add as HTMLButtonElement).disabled).toBe(false))
   fireEvent.click(add)
   fireEvent.change(select(/^Art$/), { target: { value: 'settlement' } })

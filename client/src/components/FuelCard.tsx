@@ -277,7 +277,7 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
             {!view.closed && (
               <span className="row">
                 <button className="btn secondary" onClick={() => open(d)}>Ändern</button>
-                <button className="btn ghost danger-ghost" onClick={() => void remove(d)}>Entfernen</button>
+                <button className="btn ghost danger-ghost" onClick={() => void remove(d)}>Entfernen …</button>
               </span>
             )}
           </li>
@@ -391,7 +391,7 @@ export default function FuelCard({ plant, view, deliveries, allDeliveries, allIt
                   <button className="btn ghost" type="button" onClick={() => set('parts', form.parts.filter((_, j) => j !== i))}>Teilmenge entfernen</button>
                 </div>
               ))}
-              <div className="row"><button className="btn secondary" type="button" onClick={() => set('parts', [...form.parts, EMPTY_PART])}>Teilmenge hinzufügen</button></div>
+              <div className="row"><button className="btn secondary" type="button" onClick={() => set('parts', [...form.parts, EMPTY_PART])}>+ weitere Teilmenge</button></div>
             </div>
           )}
           {halfSplit && (

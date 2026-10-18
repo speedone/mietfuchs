@@ -187,7 +187,7 @@ export default function Co2Card({ view, tenancies, unitsCount, hasSelfUsed = fal
       {!view.closed && (
         <div className="row">
           <button className="btn" disabled={busy} onClick={() => void save()}>CO₂-Angaben speichern</button>
-          {view.co2 && <button className="btn secondary" onClick={() => void remove()}>CO₂-Angaben entfernen</button>}
+          {view.co2 && <button className="btn ghost danger-ghost ml-auto" onClick={() => void remove()}>CO₂-Angaben entfernen …</button>}
         </div>
       )}
     </div>

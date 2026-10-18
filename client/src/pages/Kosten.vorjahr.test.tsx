@@ -72,7 +72,7 @@ const select = (label: RegExp) => screen.getByLabelText(label) as HTMLSelectElem
 
 test('neue Position: der Schlüssel des Vorjahres ist gewählt, angezeigt und gespeichert', async () => {
   await renderPage()
-  fireEvent.click(screen.getByRole('button', { name: /Kostenposition manuell erfassen/i }))
+  fireEvent.click(screen.getByRole('button', { name: /Kostenposition anlegen/i }))
   fireEvent.change(select(/Kostenart/i), { target: { value: 'Müllabfuhr' } })
   expect(select(/Umlageschlüssel/i).value).toBe('units')
   // Nur EG ist angehakt, wie im Vorjahr.
@@ -80,14 +80,14 @@ test('neue Position: der Schlüssel des Vorjahres ist gewählt, angezeigt und ge
   expect((screen.getByLabelText(/^OG$/) as HTMLInputElement).checked).toBe(false)
   fireEvent.change(screen.getByLabelText(/Beschreibung/i), { target: { value: `Müllabfuhr ${YEAR}` } })
   fireEvent.change(screen.getByLabelText(/^Betrag/i), { target: { value: '380,00' } })
-  fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/i }))
+  fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/i }))
   await waitFor(() => expect(sent).toHaveLength(1))
   expect(sent[0]?.body).toMatchObject({ key: 'units', participantUnitIds: ['u1'], amountCents: 38000 })
 })
 
 test('anderer Schlüssel als im Vorjahr: Hinweis im Formular', async () => {
   await renderPage()
-  fireEvent.click(screen.getByRole('button', { name: /Kostenposition manuell erfassen/i }))
+  fireEvent.click(screen.getByRole('button', { name: /Kostenposition anlegen/i }))
   fireEvent.change(select(/Kostenart/i), { target: { value: 'Müllabfuhr' } })
   expect(screen.queryByText(/nicht einseitig/)).toBeNull()
   fireEvent.change(select(/Umlageschlüssel/i), { target: { value: 'area' } })
@@ -141,7 +141,7 @@ test('Durchsicht (1): über das Formular angelegt, dann der Knopf: nur einmal', 
   await openCarry()
   fireEvent.change(screen.getByLabelText(`Betrag ${YEAR} für Müllabfuhr ${YEAR}`), { target: { value: '380,00' } })
   fireEvent.click(screen.getAllByRole('button', { name: 'Im Formular öffnen' })[0] as HTMLElement)
-  fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/i }))
+  fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/i }))
   await waitFor(() => expect(sent).toHaveLength(1))
   // Die Zeile ist aus der Liste verschwunden; der Knopf legt nichts mehr an.
   await waitFor(() => expect(screen.queryByLabelText(`Betrag ${YEAR} für Müllabfuhr ${YEAR}`)).toBeNull())

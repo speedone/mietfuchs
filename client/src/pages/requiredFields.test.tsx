@@ -78,14 +78,14 @@ const dialog = () => screen.getByRole('dialog')
 
 test('Mietverhältnis: Mieter, Wohnung, Einzug', async () => {
   shell(<Stammdaten units={UNITS} tenancies={TENANCIES} settings={null} reload={async () => {}} />)
-  fireEvent.click(await screen.findByRole('button', { name: /Mietverhältnis hinzufügen/i }))
+  fireEvent.click(await screen.findByRole('button', { name: /Mietverhältnis anlegen/i }))
   expect(within(dialog()).getByText(/Pflichtangabe/)).toBeTruthy()
   await requiredMatchesMissing(dialog(), () => fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/ })), ['Mieter', 'Wohnung', 'Einzug'])
 })
 
 test('Wohnung: Name und Wohnfläche', async () => {
   shell(<Stammdaten units={UNITS} tenancies={TENANCIES} settings={null} reload={async () => {}} />)
-  fireEvent.click(await screen.findByRole('button', { name: /Wohnung hinzufügen/i }))
+  fireEvent.click(await screen.findByRole('button', { name: /Wohnung anlegen/i }))
   await requiredMatchesMissing(dialog(), () => fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/ })), ['Name', 'Wohnfläche (m²)'])
 })
 
@@ -98,7 +98,7 @@ test('Objekt (Karte): Bezeichnung, mit Legende in der Karte', async () => {
 
 test('Zahlung: Mietverhältnis, Datum, Betrag', async () => {
   shell(<Mietkonto />)
-  const add = await screen.findByRole('button', { name: /Zahlung erfassen/i })
+  const add = await screen.findByRole('button', { name: /Zahlung anlegen/i })
   await waitFor(() => expect((add as HTMLButtonElement).disabled).toBe(false))
   fireEvent.click(add)
   await requiredMatchesMissing(dialog(), () => fireEvent.click(screen.getByRole('button', { name: /^Speichern$/ })), ['Mietverhältnis', 'Datum', 'Betrag €'])
@@ -106,13 +106,13 @@ test('Zahlung: Mietverhältnis, Datum, Betrag', async () => {
 
 test('Kostenposition: Beschreibung und Betrag', async () => {
   shell(<Kosten units={UNITS} settings={null} />)
-  fireEvent.click(await screen.findByRole('button', { name: /Kostenposition manuell erfassen/i }))
-  await requiredMatchesMissing(dialog(), () => fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/ })), ['Beschreibung', 'Betrag €'])
+  fireEvent.click(await screen.findByRole('button', { name: /Kostenposition anlegen/i }))
+  await requiredMatchesMissing(dialog(), () => fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/ })), ['Beschreibung', 'Betrag €'])
 })
 
 test('Zähler: Name und Einheit (Kaltwasser)', async () => {
   shell(<Zaehler units={UNITS} />)
-  fireEvent.click(await screen.findByRole('button', { name: /Zähler hinzufügen/i }))
+  fireEvent.click(await screen.findByRole('button', { name: /Zähler anlegen/i }))
   await requiredMatchesMissing(dialog(), () => fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/ })), ['Name', 'Einheit'])
 })
 
@@ -127,6 +127,6 @@ test('Ablesung: Datum und Zählerstand, mit Legende', async () => {
 test('eigene Heizkostenabrechnung: Warmwasser, Wärmeschutz, beide Anteile', async () => {
   const plant = { id: 'hp', energy: 'gas', hotWater: 'combined', capture: null, areaBasisHeat: 'area' } as HeatingPlant
   render(<UIProvider><HeatingSelfSetup plant={plant} period="2025-01" onDone={() => {}} onCancel={() => {}} /></UIProvider>)
-  await requiredMatchesMissing(dialog(), () => fireEvent.click(screen.getByRole('button', { name: 'Umstellen' })),
+  await requiredMatchesMissing(dialog(), () => fireEvent.click(screen.getByRole('button', { name: 'Speichern' })),
     ['Bereitet diese Heizung auch das Warmwasser?', `${INSULATION_QUESTION} (Pflichtanteil)`, 'Heizung in %', 'Warmwasser in %'])
 })

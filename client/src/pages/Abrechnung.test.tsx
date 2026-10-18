@@ -85,11 +85,14 @@ test('Kopfzeile: wechselnde Personenzahl als Bereich mit Personentagen', async (
   await screen.findByText(new RegExp(`1 bis 2 Personen \\(${bisSept + 184} Personentage\\)`), {}, SLOW)
 })
 
-test('„✎ anpassen“ schließt mit Abbrechen und mit Esc', async () => {
+test('„✎ anpassen“ schließt mit Verwerfen und mit Esc', async () => {
   show()
   fireEvent.click(await screen.findByRole('button', { name: /anpassen/ }, SLOW))
-  fireEvent.click(screen.getByRole('button', { name: /^Abbrechen$/ }))
-  await waitFor(() => expect(screen.queryByRole('button', { name: /^Abbrechen$/ })).toBeNull(), SLOW)
+  // Feste Verben (#346 Schritt 7, N3): Entwurf am Feld mit „Speichern“ und „Verwerfen“, kein „OK“.
+  expect(screen.queryByRole('button', { name: /^OK$/ })).toBeNull()
+  expect(screen.getByRole('button', { name: /^Speichern$/ })).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: /^Verwerfen$/ }))
+  await waitFor(() => expect(screen.queryByRole('button', { name: /^Verwerfen$/ })).toBeNull(), SLOW)
 
   fireEvent.click(screen.getByRole('button', { name: /anpassen/ }))
   const feld = screen.getByLabelText(/Gezahlte Vorauszahlung/)
@@ -109,7 +112,7 @@ test('„✎ anpassen“ mit ungültigem Betrag: Meldung am Feld, nichts gespeic
   fireEvent.click(await screen.findByRole('button', { name: /anpassen/ }, SLOW))
   const feld = screen.getByLabelText(/Gezahlte Vorauszahlung/)
   fireEvent.change(feld, { target: { value: 'abc' } })
-  fireEvent.click(screen.getByRole('button', { name: /^OK$/ }))
+  fireEvent.click(screen.getByRole('button', { name: /^Speichern$/ }))
   const alert = await screen.findByRole('alert', {}, SLOW)
   expect(alert.textContent).toMatch(/Betrag/)
   expect(feld.getAttribute('aria-invalid')).toBe('true')
@@ -356,7 +359,7 @@ test('Versanddatum: nach „Wieder öffnen“ bleibt kein unsichtbarer Entwurf z
   })
   show()
   fireEvent.change(await sentAtField(), { target: { value: `${YEAR + 1}-01-15` } })
-  fireEvent.click(screen.getByRole('button', { name: 'Wieder öffnen' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Wieder öffnen …' }))
   const dialog = await screen.findByRole('alertdialog', {}, SLOW)
   fireEvent.click(within(dialog).getByRole('button', { name: 'Wieder öffnen' }))
   await waitFor(() => expect(screen.queryByLabelText(/versendet am/)).toBeNull(), SLOW)

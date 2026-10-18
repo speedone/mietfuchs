@@ -125,7 +125,7 @@ test('Zählerwechsel ohne Endstand: die Tabelle sagt „fehlt“ statt eines lee
 
 test('Neuer Wärmezähler: die Einheit folgt der Sparte und wird so gespeichert (#142)', async () => {
   renderPage()
-  fireEvent.click(await screen.findByRole('button', { name: /Zähler hinzufügen/ }, { timeout: 5000 }))
+  fireEvent.click(await screen.findByRole('button', { name: /Zähler anlegen/ }, { timeout: 5000 }))
   fireEvent.change(screen.getByLabelText(/^Name/), { target: { value: 'Wärme EG' } })
   fireEvent.change(screen.getByLabelText(/^Sparte/), { target: { value: 'waerme' } })
   expect((screen.getByLabelText(/^Einheit/) as HTMLInputElement).value).toBe('kWh')
@@ -136,7 +136,7 @@ test('Neuer Wärmezähler: die Einheit folgt der Sparte und wird so gespeichert 
 
 test('Zählerformular: der Hinweis zum Hauptzähler verweist auf die Einliegerwohnung (#142)', async () => {
   renderPage()
-  fireEvent.click(await screen.findByRole('button', { name: /Zähler hinzufügen/ }, { timeout: 5000 }))
+  fireEvent.click(await screen.findByRole('button', { name: /Zähler anlegen/ }, { timeout: 5000 }))
   expect(screen.getByRole('button', { name: 'Einliegerwohnung' })).toBeTruthy()
 })
 
@@ -160,7 +160,7 @@ test('ein Zähler der Anlage zeigt seine gespeicherte Rolle', async () => {
 // Heizung PR 21 (#98): Eichjahr mit Vorschlag aus der Jahreszahl auf dem Zähler; beim Heizkostenverteiler kein Feld.
 test('Eichfrist: Vorschlag übernehmen und speichern; beim Heizkostenverteiler kein Feld', async () => {
   renderPage()
-  fireEvent.click(await screen.findByRole('button', { name: /Zähler hinzufügen/ }, { timeout: 5000 }))
+  fireEvent.click(await screen.findByRole('button', { name: /Zähler anlegen/ }, { timeout: 5000 }))
   fireEvent.change(screen.getByLabelText(/^Name/), { target: { value: 'Kaltwasser Haus' } })
   fireEvent.change(screen.getByLabelText(/^Jahreszahl auf dem Zähler/), { target: { value: '2022' } })
   expect(screen.getByText(/Vorschlag: geeicht bis Ende 2028/)).toBeTruthy()
@@ -172,7 +172,7 @@ test('Eichfrist: Vorschlag übernehmen und speichern; beim Heizkostenverteiler k
   expect(sent[0]).toMatchObject({ type: 'kaltwasser', calibratedUntil: 2028 })
   cleanup()
   renderPage()
-  fireEvent.click(await screen.findByRole('button', { name: /Zähler hinzufügen/ }, { timeout: 5000 }))
+  fireEvent.click(await screen.findByRole('button', { name: /Zähler anlegen/ }, { timeout: 5000 }))
   fireEvent.change(screen.getByLabelText(/^Sparte/), { target: { value: 'hkv' } })
   expect(screen.queryByLabelText(/^Geeicht bis Ende/)).toBeNull()
   expect(screen.queryByLabelText(/^Jahreszahl auf dem Zähler/)).toBeNull()

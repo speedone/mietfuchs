@@ -75,7 +75,7 @@ const switchTo = (id: string) => fireEvent.change(screen.getByLabelText('Objekt 
 async function openPaymentInA() {
   render(<App />)
   fireEvent.click(await screen.findByRole('button', { name: /Mietkonto/ }))
-  const add = await screen.findByRole('button', { name: /Zahlung erfassen/ })
+  const add = await screen.findByRole('button', { name: /Zahlung anlegen/ })
   await waitFor(() => expect((add as HTMLButtonElement).disabled).toBe(false))
   fireEvent.click(add)
   fireEvent.change(screen.getByLabelText(/^Betrag/), { target: { value: '11,11' } })
@@ -111,7 +111,7 @@ test('Wohnung: in B angefangen, nach dem Wechsel zu A wird sie nicht in A angele
   localStorage.setItem('mietfuchs.property', 'objekt-2')
   render(<App />)
   fireEvent.click(await screen.findByRole('button', { name: /Stammdaten/ }))
-  fireEvent.click(await screen.findByRole('button', { name: /Wohnung hinzufügen/ }))
+  fireEvent.click(await screen.findByRole('button', { name: /Wohnung anlegen/ }))
   fireEvent.change(screen.getByLabelText(/^Name/), { target: { value: 'Neu' } })
   fireEvent.change(screen.getByLabelText(/^Wohnfläche/), { target: { value: '50' } })
   switchTo('objekt-1')
@@ -123,7 +123,7 @@ test('Wohnung: in B angefangen, nach dem Wechsel zu A wird sie nicht in A angele
 test('ohne offenen Dialog wechselt das Objekt ohne Rückfrage', async () => {
   render(<App />)
   fireEvent.click(await screen.findByRole('button', { name: /Mietkonto/ }))
-  await screen.findByRole('button', { name: /Zahlung erfassen/ })
+  await screen.findByRole('button', { name: /Zahlung anlegen/ })
   switchTo('objekt-2')
   await waitFor(() => expect((screen.getByLabelText('Objekt wählen') as HTMLSelectElement).value).toBe('objekt-2'))
   expect(screen.queryByRole('button', { name: /Objekt wechseln/ })).toBeNull()

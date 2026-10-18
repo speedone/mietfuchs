@@ -50,7 +50,7 @@ export function suggestedWay(input: { differs: boolean; separate: SeparateChoice
   if (!input.differs) return null
   const contract = ' Legt Ihr Mietvertrag den Abrechnungszeitraum fest, braucht die Änderung die Zustimmung der Mieter.'
   if (input.separate === 'yes') {
-    return { way: 'd', text: 'Vorgeschlagen: eine eigene Heizkostenabrechnung je Heizperiode, mit eigener Frist. Dafür teilt Mietfuchs die bisherige Vorauszahlung auf: Nach „Übernehmen“ folgt gleich ein zweiter Schritt mit jedem Betrag, und erst wenn Sie ihn übernehmen, ist die getrennte Abrechnung eingeschaltet. Das ist eine Auslegung des Gesetzes.' + contract }
+    return { way: 'd', text: 'Vorgeschlagen: eine eigene Heizkostenabrechnung je Heizperiode, mit eigener Frist. Dafür teilt Mietfuchs die bisherige Vorauszahlung auf: Nach „Speichern“ folgt gleich ein zweiter Schritt mit jedem Betrag, und erst wenn Sie auch ihn speichern, ist die getrennte Abrechnung eingeschaltet. Das ist eine Auslegung des Gesetzes.' + contract }
   }
   if (input.hasCalendarData) {
     return { way: 'b', text: 'Vorgeschlagen: Die Heizkosten einer Heizperiode stehen in der Betriebskostenabrechnung des Zeitraums, in dem sie endet. Das ist bei einer gemeinsamen Vorauszahlung zulässig (BGH, Urteil vom 30.04.2008, VIII ZR 240/07).' + contract }
@@ -213,7 +213,7 @@ export function separateAnswersOf(p: SeparatePreview, form: SeparateAnswerForm):
 }
 
 // Überschrift, Satz und Frage des Bereichs „getrennte Heizkostenabrechnung“ (Sichtprüfung E7). Nach
-// „Übernehmen“ im Zeitraum der Heizung mit „getrennt: Ja“ öffnet er sich als zweiter Schritt; vorher
+// „Speichern“ im Zeitraum der Heizung mit „getrennt: Ja“ öffnet er sich als zweiter Schritt; vorher
 // stand dort nur „Ab welchem Monat?“, und niemand erfuhr, wozu.
 export function separatePanelIntro(input: { separateOn: boolean; own: boolean; afterPeriodChange: boolean }): { title: string; text: string; monthLabel: string } {
   if (input.separateOn) {
