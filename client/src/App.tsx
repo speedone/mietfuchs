@@ -25,6 +25,7 @@ import Hilfe from './pages/Hilfe'
 import Steuer from './pages/Steuer'
 import Einstellungen from './pages/Einstellungen'
 import { navFor, type Tab } from './nav'
+import MobileNav, { MOBILE_QUERY, useMediaQuery } from './components/MobileNav'
 import Heizkosten from './pages/Heizkosten'
 
 // ---------- Dark Mode ----------
@@ -53,12 +54,13 @@ function useTheme() {
 
 // Beenden aus der Oberfläche (#45). Nur sichtbar, wenn Mietfuchs als Programmdatei läuft: Aus
 // einem Linux-Paket gibt es kein Konsolenfenster, dessen Schließen sonst der Weg dorthin ist.
-function QuitButton({ onQuit }: { onQuit: () => void }) {
+function QuitButton({ onQuit, onAsk }: { onQuit: () => void; onAsk?: () => void }) {
   const confirm = useConfirm()
   const toast = useToast()
   const [stopping, setStopping] = useState(false)
 
   async function stop() {
+    onAsk?.()
     const ok = await confirm({
       title: 'Mietfuchs beenden?',
       message: 'Die Oberfläche lässt sich danach nicht mehr bedienen, bis Sie Mietfuchs neu starten. Ihre Daten bleiben gespeichert.',
@@ -77,7 +79,7 @@ function QuitButton({ onQuit }: { onQuit: () => void }) {
   }
 
   return (
-    <button className="theme-toggle quit" onClick={stop} disabled={stopping} title="Mietfuchs beenden">
+    <button className="theme-toggle" onClick={stop} disabled={stopping} title="Mietfuchs beenden">
       ⏻ {stopping ? 'Wird beendet …' : 'Mietfuchs beenden'}
     </button>
   )
@@ -140,7 +142,9 @@ function Shell() {
   const [settings, setSettings] = useState<Settings | null>(null)
   const { choice, cycle } = useTheme()
   // Der gewählte Abrechnungszeitraum (#208); die Seiten werden bei seinem Wechsel neu aufgestellt.
-  const { key: periodKeyNow } = usePeriod()
+  const { key: periodKeyNow, label: periodLabelNow } = usePeriod()
+  // Unter 900 px Kopf, Menüblatt und untere Leiste statt der Seitenleiste (#346, Schritt 9)
+  const mobile = useMediaQuery(MOBILE_QUERY)
   const { properties, property, previousId, focusNoticeFor, setFocusNoticeFor, reload: reloadProperties } = useProperty()
   const switchProperty = useSwitchProperty()
   // Ausgewertet wird im Objekt, dem der Beleg zugedacht ist; ohne Zuordnung im gewählten.
@@ -208,6 +212,8 @@ function Shell() {
     return () => { current = false }
   }, [propertyId, tab])
 
+  const contextLine = [property ? property.name || 'Ohne Namen' : null, periodLabelNow].filter(Boolean).join(' · ')
+
   const clearNoticeFocus = useCallback(() => setFocusNoticeFor(null), [setFocusNoticeFor])
 
   if (stopped) return <Stopped />
@@ -222,48 +228,62 @@ function Shell() {
     return next
   })
 
+  // Der Inhalt der Seitenleiste, am Rechner als Leiste, am Handy im Menüblatt (#346, Schritt 9):
+  // dieselbe Navigation aus nav.ts, dieselbe Auswahl von Objekt und Zeitraum. Im Blatt (`close`
+  // gesetzt) schließt jede Auswahl es zuerst, denn eine Rückfrage bei offenem Formular stünde sonst
+  // hinter dem modalen Blatt; der Hinweis auf ein Update fehlt dort, aktualisiert wird am Rechner.
+  const sidebar = (close: (() => void) | null) => (
+    <>
+      <div className="logo">
+        <FoxLogo size={30} />
+        <div className="logo-text">
+          Mietfuchs
+          <small>{property?.name || 'Nebenkosten im Griff'}</small>
+        </div>
+        {close && <button type="button" className="sheet-close" aria-label="Menü schließen" onClick={close}>✕</button>}
+      </div>
+
+      {/* Oben statt im Fuß: Der Fuß liegt auf kleinen Bildschirmen und langen Seiten
+          außer Sicht. */}
+      {!close && update.status && hintVisible(update.status, settings) && (
+        <UpdateHint status={update.status} onDismissed={reload} onShowGuide={() => setTab('einstellungen')} />
+      )}
+
+      <PropertySwitcher properties={properties} value={propertyId} onChange={(id) => { close?.(); void switchProperty(id) }} />
+
+      <PeriodSelect className="year-switcher no-print" onBeforeChange={close ?? undefined} />
+
+      {navFor(hasHeatingPlant).map((group, gi) => (
+        <div key={gi} className="nav-group">
+          {group.section && <div className="nav-section">{group.section}</div>}
+          {group.items.map((it) => (
+            <button key={it.id} className={tab === it.id ? 'active' : ''} aria-current={tab === it.id ? 'page' : undefined}
+              onClick={() => { close?.(); setTab(it.id) }}>
+              <span>{it.icon}</span> {it.label}
+            </button>
+          ))}
+        </div>
+      ))}
+
+      <div className="foot">
+        {/* Der Name steht am Knopf selbst (#142). Er beginnt mit dem sichtbaren Text, damit
+            Sprachsteuerung den Knopf am Rechner findet. */}
+        <button className="theme-toggle" onClick={cycle} title="Design wechseln (System / Hell / Dunkel)" aria-label={`Design: ${THEME_LABELS[choice]} – wechseln (System / Hell / Dunkel)`}>
+          🌗 <span>Design: {THEME_LABELS[choice]}</span>
+        </button>
+        {canQuit(update.status) && <QuitButton onAsk={close ?? undefined} onQuit={() => setStopped(true)} />}
+        <div>Alle Daten bleiben lokal auf diesem Rechner.</div>
+      </div>
+    </>
+  )
+
   return (
     <>
-      <nav className="sidebar">
-        <div className="logo">
-          <FoxLogo size={30} />
-          <div className="logo-text">
-            Mietfuchs
-            <small>{property?.name || 'Nebenkosten im Griff'}</small>
-          </div>
-        </div>
-
-        {/* Oben statt im Fuß: Der Fuß liegt auf kleinen Bildschirmen und langen Seiten
-            außer Sicht. */}
-        {update.status && hintVisible(update.status, settings) && (
-          <UpdateHint status={update.status} onDismissed={reload} onShowGuide={() => setTab('einstellungen')} />
-        )}
-
-        <PropertySwitcher properties={properties} value={propertyId} onChange={(id) => void switchProperty(id)} />
-
-        <PeriodSelect className="year-switcher no-print" />
-
-        {navFor(hasHeatingPlant).map((group, gi) => (
-          <div key={gi} className="nav-group">
-            {group.section && <div className="nav-section">{group.section}</div>}
-            {group.items.map((it) => (
-              <button key={it.id} className={tab === it.id ? 'active' : ''} onClick={() => setTab(it.id)}>
-                <span>{it.icon}</span> {it.label}
-              </button>
-            ))}
-          </div>
-        ))}
-
-        <div className="foot">
-          {/* Der Name steht am Knopf selbst: Am Handy bleibt nur „🌗“ sichtbar (#142). Er beginnt
-              mit dem sichtbaren Text, damit Sprachsteuerung den Knopf am Rechner findet. */}
-          <button className="theme-toggle" onClick={cycle} title="Design wechseln (System / Hell / Dunkel)" aria-label={`Design: ${THEME_LABELS[choice]} – wechseln (System / Hell / Dunkel)`}>
-            🌗 <span className="theme-label">Design: {THEME_LABELS[choice]}</span>
-          </button>
-          {canQuit(update.status) && <QuitButton onQuit={() => setStopped(true)} />}
-          <div className="foot-note">Alle Daten bleiben lokal auf diesem Rechner.</div>
-        </div>
-      </nav>
+      {mobile ? (
+        <MobileNav tab={tab} context={contextLine} onNavigate={(t) => setTab(t)} sheet={(close) => <nav className="sidebar">{sidebar(close)}</nav>} />
+      ) : (
+        <nav className="sidebar">{sidebar(null)}</nav>
+      )}
       <main>
         {/* Was beim Start mit den Daten geschehen ist (#55). Auf jeder Seite, damit die Meldung
             nicht davon abhängt, wo der Nutzer gerade ist. */}

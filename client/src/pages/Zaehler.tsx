@@ -175,7 +175,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
           </div>
         )}
         {meters.length > 0 && (
-          <Table>
+          <Table className="stacked">
             <thead>
               <tr>
                 <th>Zähler</th>
@@ -383,7 +383,7 @@ function FragmentRow(props: {
   return (
     <>
       <tr className={focused ? 'focus-target' : undefined}>
-        <td>
+        <td data-label="Zähler">
           {m.name}
           {m.meterNumber && <div className="muted">Nr. {m.meterNumber}</div>}
           {hcaSummary(m) && <div className="muted">{hcaSummary(m)}</div>}
@@ -391,9 +391,9 @@ function FragmentRow(props: {
           {/* Die abgelaufene Eichfrist ist eine Warnung und kein Fehler der Stände (Heizung PR 21). */}
           {cons?.warnings.map((w, i) => <div key={i} className={cons.notices?.[i]?.code === 'meter.calibration-overdue' ? 'warn' : 'error'}>{w}</div>)}
         </td>
-        <td>{unitName}</td>
-        <td>{METER_TYPE_LABELS[m.type] ?? m.type}</td>
-        <td className="num">
+        <td data-label="Zuordnung">{unitName}</td>
+        <td data-label="Sparte">{METER_TYPE_LABELS[m.type] ?? m.type}</td>
+        <td className="num" data-label="Verbrauch">
           {cons && cons.readingCount >= 2
             ? `${cons.consumption.toLocaleString('de-DE')}${m.unit ? ` ${m.unit}` : ''}`
             : <span className="muted">zu wenig Ablesungen</span>}

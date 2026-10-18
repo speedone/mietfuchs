@@ -380,7 +380,7 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
         {yearPayments.length === 0 ? (
           <div className="empty">Noch keine Zahlungen für {year} erfasst.</div>
         ) : (
-          <Table>
+          <Table className="stacked">
             <thead>
               <tr>
                 <th>Datum</th>
@@ -394,9 +394,9 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
             <tbody>
               {yearPayments.map((p) => (
                 <tr key={p.id}>
-                  <td>{fmtDate(p.date)}</td>
-                  <td>{tenancyName(p.tenancyId)}</td>
-                  <td>
+                  <td data-label="Datum">{fmtDate(p.date)}</td>
+                  <td data-label="Mietverhältnis">{tenancyName(p.tenancyId)}</td>
+                  <td data-label="Art">
                     {/* Der Wert ist der gespeicherte; ein unbekannter stünde sonst als erster Eintrag da. */}
                     <span className="print-only">{PAYMENT_KIND_LABELS[p.kind]}</span>
                     <select
@@ -411,8 +411,8 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
                       {PAYMENT_KIND_OPTIONS.map((o) => <option key={o.value} value={o.value}>{PAYMENT_KIND_LABELS[o.value]}</option>)}
                     </select>
                   </td>
-                  <td className="muted">{p.note ?? ''}</td>
-                  <td className="num">{fmtEuro(p.amountCents)}</td>
+                  <td className="muted" data-label="Notiz">{p.note ?? ''}</td>
+                  <td className="num" data-label="Betrag">{fmtEuro(p.amountCents)}</td>
                   <td className="actions no-print">
                     <button className="icon-btn danger" title="Löschen" aria-label="Zahlung löschen" onClick={() => deletePayment(p)}>🗑</button>
                   </td>

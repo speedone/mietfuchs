@@ -152,7 +152,7 @@ export default function Uebersicht({ onNavigate }: Props) {
             <a href="#" onClick={(e) => { e.preventDefault(); onNavigate('kosten') }}>jetzt Belege erfassen</a>.
           </div>
         ) : (
-          <Table className="chart-table">
+          <Table className="chart-table sticky-first">
             <thead>
               <tr>
                 <th>Kostenart</th>
@@ -199,7 +199,7 @@ export default function Uebersicht({ onNavigate }: Props) {
       {periods.length > 1 && (
         <div className="card">
           <h2>Gesamtkosten im Verlauf</h2>
-          <Table className="chart-table">
+          <Table className="chart-table sticky-first">
             <tbody>
               {periods.map((p) => (
                 <tr key={p.key}>

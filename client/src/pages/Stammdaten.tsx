@@ -340,7 +340,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
         <h2>Wohnungen</h2>
         {units.length === 0 && <div className="empty">{emptyUnitsText(property?.kind ?? 'mfh')}</div>}
         {units.length > 0 && (
-          <Table>
+          <Table className="stacked">
             <thead>
               <tr>
                 <th>Name</th>
@@ -353,7 +353,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
             <tbody>
               {units.map((u) => (
                 <tr key={u.id}>
-                  <td>
+                  <td data-label="Name">
                     {u.name}
                     {(u.rooms != null || u.floor || u.notes) && (
                       <div className="muted cell-sub">
@@ -361,9 +361,9 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                       </div>
                     )}
                   </td>
-                  <td className="num">{u.areaM2.toLocaleString('de-DE')} m²</td>
-                  {showsMea && <td className="num">{u.mea != null ? u.mea.toLocaleString('de-DE') : '—'}</td>}
-                  <td>
+                  <td className="num" data-label="Wohnfläche">{u.areaM2.toLocaleString('de-DE')} m²</td>
+                  {showsMea && <td className="num" data-label="MEA">{u.mea != null ? u.mea.toLocaleString('de-DE') : '—'}</td>}
+                  <td data-label="Kostenverteilung">
                     {usageOf(u) === 'vermietet' && <span className="badge accent">beteiligt</span>}
                     {usageOf(u) === 'eigen' && (
                       <span className="badge gray" title="In der Verteilbasis, Anteil trägt der Vermieter">
@@ -412,7 +412,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
           // Karte von 953 px, und Mieterwechsel, ✎ und 🗑 lagen nur durch Scrollen im Bild. Deshalb
           // dürfen Kopfzeilen, Staffeln und die Aktionen umbrechen, jeweils nur an einer sinnvollen
           // Stelle (zwischen „ab …:“ und dem Wert, zwischen Knopf und Symbolen).
-          <Table className="tenancy-table">
+          <Table className="tenancy-table stacked">
             <thead>
               <tr>
                 <th>Mieter</th>
@@ -427,7 +427,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
             <tbody>
               {tenancies.map((t) => (
                 <tr key={t.id}>
-                  <td>
+                  <td data-label="Mieter">
                     {t.tenantName}
                     {/* Pauschale oder Inklusivmiete auf einen Blick (#142); die Abrechnung ist der Normalfall. */}
                     {costModelBadge(t.costModel, t.heatingModel) && (
@@ -451,8 +451,8 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                       </div>
                     )}
                   </td>
-                  <td>{units.find((u) => u.id === t.unitId)?.name ?? '—'}</td>
-                  <td className="num">
+                  <td data-label="Wohnung">{units.find((u) => u.id === t.unitId)?.name ?? '—'}</td>
+                  <td className="num" data-label="Personen">
                     {(t.personHistory ?? []).map((p, i) => (
                       <div key={i}>
                         {(t.personHistory?.length ?? 0) > 1 && <><span className="muted nowrap">ab {fmtDate(p.from)}:</span>{' '}</>}
@@ -460,10 +460,10 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                       </div>
                     ))}
                   </td>
-                  <td>
+                  <td data-label="Zeitraum">
                     {fmtDate(t.start)} – {t.end ? fmtDate(t.end) : 'laufend'}
                   </td>
-                  <td className="num">
+                  <td className="num" data-label="Kaltmiete je Monat">
                     {(t.baseRents?.length ?? 0) === 0 && '—'}
                     {(t.baseRents ?? []).map((p, i) => (
                       <div key={i}>
@@ -472,7 +472,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                       </div>
                     ))}
                   </td>
-                  <td className="num">
+                  <td className="num" data-label="Vorauszahlung je Monat">
                     {prepaymentColumn(t).length === 0 && '—'}
                     {prepaymentColumn(t).map((line, i) => (
                       <div key={i}>

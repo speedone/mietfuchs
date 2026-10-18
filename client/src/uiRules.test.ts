@@ -377,3 +377,80 @@ test('dark: gilt nicht im Druck', () => {
   expect(rule).toContain('[data-theme=dark]')
   expect(rule).toMatch(/@media not print\s*\{\s*\.dark\\:bg-card/)
 })
+
+// S12 (Spezifikation Abschnitt 9, #346 Schritt 9): `<dialog>` und `showModal()` nur in den Bausteinen,
+// die dafür vorgesehen sind. Ein eigenes Overlay je Seite brächte je eigene Regeln für Esc, Fokus und
+// Klick daneben. Die Liste beginnt mit dem Menüblatt am Handy; Seitenfenster und Rückfrage kommen mit
+// den Schritten 1 und 2 dazu.
+const DIALOG_FILES = new Set(['./components/MobileNav.tsx'])
+const dialogUses = (src: string) => [...src.matchAll(/<dialog\b|\bshowModal\s*\(/g)].map((m) => m[0])
+test('S12: <dialog> und showModal nur in den erlaubten Bausteinen', () => {
+  // Mutationsprobe: Der Prüfer findet beide Schreibweisen.
+  expect(dialogUses('<dialog open>…</dialog>; ref.current.showModal()')).toEqual(['<dialog', 'showModal('])
+  for (const file of DIALOG_FILES) expect(dialogUses(sources[file] ?? ''), `${file} nutzt keinen <dialog> mehr; aus der Liste streichen`).not.toEqual([])
+  expect(files.filter((file) => !DIALOG_FILES.has(file) && dialogUses(sources[file] ?? '').length > 0)).toEqual([])
+})
+
+// S22 (#346 Schritt 9): Die Navigation steht einmal, in nav.ts. Seitenleiste, Menüblatt und untere
+// Leiste lesen sie von dort (navFor, bottomNav); eine zweite Liste mit Kennung und Beschriftung liefe
+// auseinander, sobald eine Seite dazukommt oder umbenannt wird.
+const TAB_IDS = NAV.flatMap((g) => g.items.map((i) => i.id))
+const navEntry = new RegExp(`\\bid:\\s*['"](?:${TAB_IDS.join('|')})['"]\\s*,\\s*(?:label|short|icon):`)
+test('S22: Navigationseinträge stehen nur in nav.ts', () => {
+  expect(TAB_IDS).toContain('stammdaten')
+  // Der Prüfer erkennt die Einträge in nav.ts selbst; sonst wäre er grün, ohne etwas zu finden.
+  expect(twSources['./nav.ts']).toMatch(navEntry)
+  expect(Object.keys(twSources).filter((file) => file !== './nav.ts' && navEntry.test(twSources[file] ?? ''))).toEqual([])
+  // Die Bausteine der Navigation holen ihre Einträge aus nav.ts
+  expect(sources['./App.tsx']).toMatch(/navFor\(/)
+  expect(sources['./components/MobileNav.tsx']).toMatch(/bottomNav\(\)/)
+})
+
+// S23 (#346 Schritt 9, Spezifikation Abschnitt 5): Tabellen mit Datensätzen werden am Handy zu Karten
+// (`<Table className="stacked">`), und dort steht jede Spalte als Beschriftung an ihrer Zelle
+// (`data-label`). Ohne sie stünde ein Wert ohne seine Spalte da. Ausgenommen sind die Aktionen und Zeilen
+// mit einer Zelle über mehrere Spalten (Summen, Belegkopf, Ablesungen), die ihre Bedeutung selbst tragen.
+const STACKED_PAGES = ['./pages/Stammdaten.tsx', './pages/Zaehler.tsx', './pages/Kosten.tsx', './pages/Mietkonto.tsx']
+/** Der Quelltext ohne die Tabellen, die keine Karten werden (verschachtelte Ablesungen, Zahlenraster). */
+const withoutPlainTables = (src: string): string => {
+  let out = ''
+  let at = 0
+  for (;;) {
+    const start = src.indexOf('<Table', at)
+    if (start < 0) return out + src.slice(at)
+    const tag = src.slice(start, src.indexOf('>', start) + 1)
+    if (/\bstacked\b/.test(tag)) {
+      out += src.slice(at, start + tag.length)
+      at = start + tag.length
+      continue
+    }
+    let depth = 0
+    let i = start
+    for (;;) {
+      const open = src.indexOf('<Table', i + 1)
+      const close = src.indexOf('</Table>', i + 1)
+      if (close < 0) return out + src.slice(at, start)
+      if (open >= 0 && open < close) { depth++; i = open; continue }
+      if (depth === 0) { i = close + '</Table>'.length; break }
+      depth--
+      i = close
+    }
+    out += src.slice(at, start)
+    at = i
+  }
+}
+const unlabeledCells = (src: string) => [...withoutPlainTables(src).matchAll(/<tr\b[\s\S]*?<\/tr>/g)].flatMap((row) => {
+  const cells = [...row[0].matchAll(/<td\b[^>]*>/g)].map((m) => m[0])
+  if (cells.some((c) => /colSpan/.test(c))) return []
+  return cells.filter((c) => !/data-label=/.test(c) && !/className="[^"]*\bactions\b/.test(c)).map((c) => c.slice(0, 80))
+})
+test('S23: Tabellen mit Datensätzen werden am Handy zu Karten, jede Zelle mit ihrer Spalte', () => {
+  // Mutationsprobe: eine Zelle ohne Beschriftung fällt auf, eine verschachtelte Tabelle ohne Karten nicht
+  expect(unlabeledCells('<Table className="stacked"><tr><td data-label="A">x</td><td>y</td><td className="actions no-print" /></tr></Table>')).toEqual(['<td>'])
+  expect(unlabeledCells('<Table className="stacked"><tr><td colSpan={2}><Table><tr><td>z</td></tr></Table></td></tr></Table>')).toEqual([])
+  for (const file of STACKED_PAGES) {
+    const src = sources[file] ?? ''
+    expect(src, `${file} hat keine Tabelle mit Karten`).toMatch(/<Table className="[^"]*\bstacked\b/)
+    expect(unlabeledCells(src), file).toEqual([])
+  }
+})
