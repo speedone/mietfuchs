@@ -161,7 +161,7 @@ Nach GOV.UK ([Error summary](https://design-system.service.gov.uk/components/err
 ### Entwurf, Speichern, Verwerfen (#309, #333)
 
 - **Seitenfenster:** Mit Änderungen fragen Esc, ✕, Klick daneben und „Abbrechen“ nach „Änderungen verwerfen?“. Startfokus liegt auf **„Abbrechen“**, weil Verwerfen gefährlich ist. Ohne Änderungen schließt das Fenster sofort.
-- **Karte:** Der Hinweis „Ungespeicherte Änderungen“ steht neben „Speichern“. Beim Verlassen der Seite wird gefragt (`useOpenForm` wie heute beim Objektwechsel, `beforeunload` wie bei Primer).
+- **Karte:** Der Hinweis „Ungespeicherte Änderungen“ steht neben „Speichern“. Beim Verlassen der Seite wird gefragt (`useOpenForm` wie beim Objektwechsel, `beforeunload` wie bei Primer). *Umgesetzt mit Schritt 7a: Seitenleiste, Menüblatt und untere Leiste fragen „Ungespeicherte Änderungen verwerfen?“, Startfokus „Abbrechen“; Karten mit eigenem Formular melden sich über `useOpenWhenChanged` an.*
 - **Entwurf am Feld:** `DraftActions` bleibt der Baustein.
 
 ### Datum, Monat, Geld
@@ -303,6 +303,7 @@ Jeder Schritt ist ein PR mit `Refs #346` (und, wo er einen Befund der Checkliste
 | 5 | **`MonthField`** statt `MonthPicker`, Personenstaffel einheitlich | #287, M11 | 1–2 Tage | S14 |
 | 6 | **`Term` als Popover**, eigener Begriff `tightMarket` | M1, M2, MOB3 | 1 Tag | – |
 | 7 | **Formularmuster zurückführen**: Ablesung, Lieferung, Mieterwechsel und Zeitraumwechsel ins Seitenfenster; Heizkosten auf ein Speichern je Karte; Sofortspeichern → Entwurf am Feld; feste Verben | M18, N3, N8, N16, M19 | 3–4 Tage | S16, S19 |
+| 7a | **Seitenwechsel mit ungespeicherter Eingabe fragt nach** (Seitenleiste, Menüblatt, untere Leiste, `beforeunload`; Eingaben in Karten melden sich bei `useOpenForm` an). *Erledigt.* | M18 | ½ Tag | – |
 | 8 | **Jahr/Objekt nur in der Seitenleiste**, Seiten zeigen an | M13, N1 | 1 Tag | S18 |
 | 9 | **Mobil**: angehefteter Kopf, Menüblatt, untere Leiste, Tabellen → Karten, `guide-norm` umbrechen. *Umgesetzt bis auf `guide-norm`; Breitentest als Skript außerhalb des Repos in drei Engines gelaufen, ins Repo kommt er mit Schritt 11* | MOB1, MOB2, M10, M15 | 2–3 Tage | Breitentest, S12, S22, S23 |
 | 10 | **Hinweise/Leerzustände/Druck**: „Was tun“ + „Mehr dazu“, Cockpit nach Versand, Druck-Rückfrage bei Fehlern, Druckkopf | M8, M9, M14, H6, N5, N12 | 2 Tage | – |

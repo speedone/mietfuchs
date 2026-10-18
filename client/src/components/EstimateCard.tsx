@@ -3,6 +3,7 @@ import type { EstimateCause, EstimateMethod, HeatingPeriodView, HeatingPlant, Se
 import { api, errorText, fmtDate } from '../api'
 import { useToast } from './feedback'
 import Term from './Term'
+import { useOpenForm } from '../property'
 import { CAUSE_OPTIONS, chooseMethod, emptyEstimate, estimateBody, METHOD_OPTIONS, NO_PROPOSAL_TEXT, thresholdLines, WHY_TEXT, type EstimateForm } from '../estimateForm'
 import { hkvEstimateThreshold } from '../../../shared/law/heizkostenv.ts'
 import { valueAt } from '../../../shared/law/register.ts'
@@ -21,6 +22,8 @@ export default function EstimateCard({ plant, view, self, onChanged }: {
   const [open, setOpen] = useState<SelfEstimateOption | null>(null)
   const [form, setForm] = useState<EstimateForm | null>(null)
   const [error, setError] = useState('')
+  // Eine ungespeicherte Eingabe zählt als offenes Formular: Seiten-, Objekt- und Zeitraumwechsel fragen (#346, 7a).
+  useOpenForm(form !== null)
   const options = self.estimateOptions ?? []
   const estimates = self.estimates ?? []
   if (options.length === 0 && estimates.length === 0) return null

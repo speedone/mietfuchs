@@ -3,7 +3,7 @@
 // Heizanlage, und wer selbst heizt, hat keine; deshalb steht die Karte hier.
 import { useCallback, useEffect, useState } from 'react'
 import { api, errorText, fmtDate, fmtEuro } from '../api'
-import { withProperty } from '../property'
+import { useOpenForm, withProperty } from '../property'
 import { useConfirm, useToast } from './feedback'
 import Term from './Term'
 import { RESTRICTION_OPTIONS } from '../fuelForm'
@@ -24,6 +24,8 @@ export default function Co2RefundsCard({ propertyId, period, tenancies, units }:
   const [rows, setRows] = useState<View[]>([])
   const [editing, setEditing] = useState<{ id: string | null; form: Co2RefundForm } | null>(null)
   const [error, setError] = useState('')
+  // Eine ungespeicherte Eingabe zählt als offenes Formular: Seiten-, Objekt- und Zeitraumwechsel fragen (#346, 7a).
+  useOpenForm(editing !== null)
   const toast = useToast()
   const confirm = useConfirm()
   const choices = refundTenancies(tenancies)

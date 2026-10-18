@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { api, errorText } from '../api'
 import { useToast } from './feedback'
 import Term from './Term'
+import { useOpenWhenChanged } from '../useDraft'
 import { APPLICATION_FROM, FIRST_USE_UNTIL, HALF_SPLIT_WHAT, HALF_SPLIT_YEAR, halfSplitBody, halfSplitToForm, INSTALLED_AFTER, noticeBody, noticeTenancies, PRIOR_DUTY_EXPLAINED, PRIOR_DUTY_QUESTION, TRI_OPTIONS, type HalfSplitBody, type NoticeTenancy, type TriState } from '../halfSplitForm'
 import { halfSplitFirstDay } from '../../../shared/law/co2kostaufg.ts'
 import type { HeatingEnergy, HeatingPlant } from '../types'
@@ -16,6 +17,8 @@ export default function HalfSplitCard({ plant, tenancies, onSaved }: {
   const [form, setForm] = useState(halfSplitToForm(plant))
   const [notices, setNotices] = useState<Record<string, string>>(() => Object.fromEntries(tenancies.map((t) => [t.id, t.halfSplitNoticeOn ?? ''])))
   const [error, setError] = useState('')
+  // Eine ungespeicherte Eingabe zählt als offenes Formular: Seiten-, Objekt- und Zeitraumwechsel fragen (#346, 7a).
+  useOpenWhenChanged({ form, notices })
   const toast = useToast()
   const asked = noticeTenancies(tenancies, plant, halfSplitFirstDay())
   const pick = (value: string): TriState => TRI_OPTIONS.find((o) => o.value === value)?.value ?? 'unknown'

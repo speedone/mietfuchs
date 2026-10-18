@@ -24,7 +24,7 @@ import Abrechnung from './pages/Abrechnung'
 import Hilfe from './pages/Hilfe'
 import Steuer from './pages/Steuer'
 import Einstellungen from './pages/Einstellungen'
-import { navFor, type Tab } from './nav'
+import { navFor, tabLabel, type Tab } from './nav'
 import MobileNav, { MOBILE_QUERY, useMediaQuery } from './components/MobileNav'
 import Heizkosten from './pages/Heizkosten'
 
@@ -158,6 +158,33 @@ function Shell() {
     document.querySelector<HTMLElement>(mobile ? 'button.menu-toggle' : 'nav.sidebar [aria-current="page"]')?.focus()
   }, [mobile])
   const switchProperty = useSwitchProperty()
+  const confirmLeave = useConfirm()
+  // Ein Seitenwechsel über die Navigation (Seitenleiste, Menüblatt, untere Leiste) fragt wie der Wechsel
+  // von Objekt und Zeitraum, wenn ein Formular offen oder eine Änderung ungespeichert ist (#346, Schritt 7a):
+  // App.tsx stellt die Seite neu auf, und die Eingabe wäre still weg. Startfokus auf „Abbrechen“.
+  const navigate = useCallback(async (t: Tab) => {
+    if (t !== tab && hasOpenForm()) {
+      const ok = await confirmLeave({
+        title: 'Ungespeicherte Änderungen verwerfen?',
+        message: `Auf dieser Seite ist ein Formular offen oder eine Änderung noch nicht gespeichert. Beim Wechsel zu „${tabLabel(t)}“ geht sie verloren.`,
+        confirmLabel: 'Verwerfen',
+        cancelLabel: 'Abbrechen',
+        danger: true,
+      })
+      if (!ok) return
+    }
+    setTab(t)
+  }, [tab, hasOpenForm, confirmLeave, setTab])
+  // Schließen oder Neuladen des Tabs mit offenem Formular: Der Browser fragt mit seinem eigenen Satz nach.
+  useEffect(() => {
+    const onLeave = (e: BeforeUnloadEvent) => {
+      if (!hasOpenForm()) return
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', onLeave)
+    return () => window.removeEventListener('beforeunload', onLeave)
+  }, [hasOpenForm])
   // Ausgewertet wird im Objekt, dem der Beleg zugedacht ist; ohne Zuordnung im gewählten.
   const evaluateFromInbox = async (list: UploadInfo[]) => {
     const target = list.find((u) => u.propertyId)?.propertyId
@@ -275,7 +302,7 @@ function Shell() {
           {group.section && <div className="nav-section">{group.section}</div>}
           {group.items.map((it) => (
             <button key={it.id} className={tab === it.id ? 'active' : ''} aria-current={tab === it.id ? 'page' : undefined}
-              onClick={() => { close?.(); setTab(it.id) }}>
+              onClick={() => { close?.(); void navigate(it.id) }}>
               <span>{it.icon}</span> {it.label}
             </button>
           ))}
@@ -298,7 +325,7 @@ function Shell() {
   return (
     <>
       {mobile ? (
-        <MobileNav tab={tab} context={contextLine} onNavigate={(t) => setTab(t)} sheet={(close) => <nav className="sidebar" aria-label="Hauptnavigation">{sidebar(close)}</nav>} />
+        <MobileNav tab={tab} context={contextLine} onNavigate={(t) => void navigate(t)} sheet={(close) => <nav className="sidebar" aria-label="Hauptnavigation">{sidebar(close)}</nav>} />
       ) : (
         <nav className="sidebar" aria-label="Hauptnavigation">{sidebar(null)}</nav>
       )}
