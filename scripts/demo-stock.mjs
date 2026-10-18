@@ -76,7 +76,11 @@ export async function startServer(dataDir, ollamaUrl) {
     child.once('exit', () => resolve(undefined))
     child.kill()
   })
-  return { base, stop }
+  // Ob der Server noch läuft; sonst Exit-Code, Signal und das Ende seiner Ausgabe
+  const problem = () => (child.exitCode === null && child.signalCode === null
+    ? null
+    : `Der Server ist beendet worden (Code ${child.exitCode}, Signal ${child.signalCode}):\n${log.slice(-2000)}`)
+  return { base, stop, problem }
 }
 
 // ---------- API ----------
@@ -369,7 +373,7 @@ export function textPdf(html) {
 export async function startDemo({ pdf, prefix = 'mietfuchs-demo-' }) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), prefix))
   const ollama = await startFakeOllama({ sequence: ['GARTEN'] })
-  /** @type {{ base: string, stop: () => Promise<unknown> } | null} */
+  /** @type {{ base: string, stop: () => Promise<unknown>, problem: () => string | null } | null} */
   let server = null
   const stop = async () => {
     await server?.stop()
@@ -380,7 +384,7 @@ export async function startDemo({ pdf, prefix = 'mietfuchs-demo-' }) {
     server = await startServer(dataDir, ollama.url)
     const api = client(server.base)
     const ids = await seed(api, async (html) => pdf(html))
-    return { base: server.base, api, ids, stop }
+    return { base: server.base, api, ids, stop, problem: server.problem }
   } catch (err) {
     await stop()
     throw err
