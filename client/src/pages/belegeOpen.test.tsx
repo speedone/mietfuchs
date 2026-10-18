@@ -50,10 +50,8 @@ test('„Position öffnen“ bei einer Position eines anderen Objekts schaltet e
   render(<App />)
   fireEvent.click(await screen.findByRole('button', { name: /Belegordner/ }, SLOW))
   await waitFor(() => expect((screen.getByLabelText('Objekt wählen') as HTMLSelectElement).value).toBe('objekt-1'), SLOW)
-  // Im Belegordner „alle Objekte“, gewählt bleibt Haus A
-  const filter = (await screen.findAllByRole('combobox')).find((s) => [...(s as HTMLSelectElement).options].some((o) => o.value === 'all' && o.text === 'alle Objekte'))
-  if (!filter) throw new Error('kein Objektfilter im Belegordner')
-  fireEvent.change(filter, { target: { value: 'all' } })
+  // Im Belegordner Belege aller Objekte, gewählt bleibt Haus A
+  fireEvent.click(await screen.findByRole('checkbox', { name: 'Belege aller Objekte zeigen' }, SLOW))
   fireEvent.change(await screen.findByLabelText('hausgeld.pdf einer Position zuordnen', {}, SLOW), { target: { value: 'hg' } })
   fireEvent.click(screen.getByRole('button', { name: 'Speichern (Position für hausgeld.pdf)' }))
   const check = await screen.findByRole('status', { name: 'Betrag prüfen' }, SLOW)

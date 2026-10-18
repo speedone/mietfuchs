@@ -1,11 +1,13 @@
 import type { Property, PropertyKind } from './types'
+import type { PeriodView } from './periodForm'
 
 // Was die Oberfläche über das gewählte Objekt sagt (#157), ohne DOM prüfbar. Gemeldet hat es ein
 // Vermieter, der nach „Weiteres Objekt anlegen“ alle Seiten leer sah und dachte, seine Daten seien
 // überschrieben: Der Wechsel geschah wortlos, und keine Seite sagte, in welchem Objekt er jetzt
 // arbeitet und dass das bisherige unverändert dasteht.
 //
-// Wer ein Haus vermietet, sieht von alledem nichts: Alles hier gilt erst ab dem zweiten Objekt.
+// Wer ein Haus vermietet, sieht von alledem nichts: Alles hier gilt erst ab dem zweiten Objekt, außer der
+// Kontextzeile im Seitenkopf (#346 Schritt 8).
 
 export const propertyName = (p: Pick<Property, 'name'>): string => p.name.trim() || 'Ohne Namen'
 
@@ -13,6 +15,27 @@ export const propertyName = (p: Pick<Property, 'name'>): string => p.name.trim()
 export function propertyHeading(properties: Property[], property: Property | null): string | null {
   if (!property || properties.length < 2) return null
   return propertyName(property)
+}
+
+// ---------- Die Kontextzeile im Seitenkopf (#346 Schritt 8, M13) ----------
+
+// Objekt und Zeitraum wählt nur die Seitenleiste (am Handy das Menüblatt); jede Seite zeigt im Seitenkopf an,
+// worin sie gerade steht: „Lindenweg 12 · Abrechnungsjahr 2025“. Die Zeile ist nur Anzeige. Das Objekt steht
+// hier auch bei einem einzigen da: Die Seite hat keine eigene Auswahl mehr, die es nennen würde.
+//   period:   Objekt und Abrechnungszeitraum (die meisten Seiten)
+//   calendar: Mietkonto und Steuer, die im Kalenderjahr rechnen; beim Kalenderobjekt ist das der Zeitraum
+//             selbst, sonst das Kalenderjahr, das die Seite wählt
+//   property: nur das Objekt (Stammdaten)
+//   none:     weder noch (Einstellungen, Hilfe gelten für die ganze Installation)
+export type PageContextKind = 'period' | 'calendar' | 'property' | 'none'
+export function pageContextLine(kind: PageContextKind, property: Pick<Property, 'name'> | null, period: Pick<PeriodView, 'calendar' | 'switcherLabel' | 'label' | 'calendarYear'> | null): string | null {
+  if (kind === 'none') return null
+  const parts = [property ? propertyName(property) : null]
+  if (period && kind !== 'property') {
+    parts.push(kind === 'calendar' && !period.calendar ? `Kalenderjahr ${period.calendarYear}` : `${period.switcherLabel} ${period.label}`)
+  }
+  const line = parts.filter((p): p is string => p !== null).join(' · ')
+  return line === '' ? null : line
 }
 
 // ---------- Der Dialog „Weiteres Objekt anlegen“ ----------

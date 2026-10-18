@@ -11,6 +11,8 @@ import { PropertyProvider, useHasOpenForm } from '../property'
 import { UIProvider } from '../components/feedback'
 import Schnellerfassung from './Schnellerfassung'
 import Kosten from './Kosten'
+// Die Auswahl der Seitenleiste (App.tsx): Die Seite selbst wählt das Jahr nicht mehr (#346 Schritt 8).
+import { PeriodSelect } from '../components/PeriodSelect'
 import AssessmentReview from '../components/AssessmentReview'
 import { fakeBooking, type FakeBooking } from '../testing/fakeBooking'
 import { calendarPeriod } from '../../../shared/period.ts'
@@ -58,7 +60,7 @@ afterEach(() => {
 })
 
 const intake = () => render(<PeriodProvider><PropertyProvider><UIProvider><Schnellerfassung units={UNITS} settings={null} onNavigate={() => {}} /></UIProvider></PropertyProvider></PeriodProvider>)
-const costs = () => render(<PeriodProvider><PropertyProvider><UIProvider><Kosten units={UNITS} settings={null} /></UIProvider></PropertyProvider></PeriodProvider>)
+const costs = () => render(<PeriodProvider><PropertyProvider><UIProvider><PeriodSelect /><Kosten units={UNITS} settings={null} /></UIProvider></PropertyProvider></PeriodProvider>)
 
 async function upload(container: HTMLElement, count = 1) {
   const input = await waitFor(() => {

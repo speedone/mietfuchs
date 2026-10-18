@@ -142,6 +142,7 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
   return (
     <>
       <PageHeader
+        context="calendar"
         title="Mietkonto"
         subtitle="Welche Monate sind bezahlt? Soll (Bruttomiete) gegen tatsächliche Eingänge — pro Mietverhältnis."
         actions={
@@ -156,12 +157,16 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
       />
       {error && <div className="error">{error}</div>}
 
-      <div className="card">
-        <div className="row">
-          <CalendarYearSelect />
+      {/* Das Abrechnungsjahr wählt die Seitenleiste (#346 Schritt 8). Weicht der Zeitraum vom Kalenderjahr ab, ist
+          das Kalenderjahr des Mietkontos eine andere Größe und wird hier gewählt (#208). */}
+      {!calendar && (
+        <div className="card no-print">
+          <div className="row">
+            <CalendarYearSelect className="width-s" />
+          </div>
+          <div className="info">Die Abrechnung {label} umfasst {periodSpanText(period)}. Das Mietkonto zeigt das Kalenderjahr.</div>
         </div>
-      </div>
-      {!calendar && <div className="info no-print">Die Abrechnung {label} umfasst {periodSpanText(period)}. Das Mietkonto zeigt das Kalenderjahr.</div>}
+      )}
 
       {ledger && (
         <div className="kpis">

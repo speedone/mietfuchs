@@ -93,15 +93,15 @@ const renderPage = () =>
     </PeriodProvider>,
   )
 
-const select = (label: string) => screen.getByLabelText(label) as HTMLSelectElement
+const context = () => screen.getByTestId('page-context').textContent
 
 test('zeigt das gewählte Objekt und Jahr, je Kostenart ein Register mit Summe', async () => {
   renderPage()
   await screen.findByText('Wasser/Abwasser')
-  expect(select('Objekt').value).toBe('p1')
-  expect(select('Jahr').value).toBe(String(YEAR))
-  // Das Auswahlfeld zeigt, was gilt: Die angezeigte Option ist die gespeicherte.
-  expect(select('Objekt').selectedOptions[0].textContent).toBe('Lindenstraße')
+  // Objekt und Jahr der Seitenleiste stehen im Seitenkopf; eine eigene Auswahl hat der Ordner nicht mehr (#346 Schritt 8, M13).
+  expect(context()).toBe(`Lindenstraße · Abrechnungsjahr ${YEAR}`)
+  expect(screen.queryByRole('combobox', { name: 'Objekt' })).toBeNull()
+  expect(screen.queryByRole('combobox', { name: 'Jahr' })).toBeNull()
   const wasser = screen.getByText('Wasser/Abwasser').closest('details') as HTMLElement
   expect(within(wasser).getByText('1.240,00 €')).toBeTruthy()
   expect(within(wasser).getByText(/1 von 2 Positionen ohne Beleg/)).toBeTruthy()
@@ -118,7 +118,7 @@ test('eine Heizposition mit eigener Heizperiode steht im Jahr ihrer Abrechnung',
   extraUploads = [up('5_erdgas.pdf')]
   renderPage()
   await screen.findByText('Heizung und Warmwasser')
-  expect(select('Jahr').value).toBe(String(YEAR))
+  expect(context()).toBe(`Lindenstraße · Abrechnungsjahr ${YEAR}`)
   // 600 + 980 + 4.800 von 600 + 980 + 260 + 4.800 Euro sind belegt
   expect(screen.getByText(/Belegabdeckung/).closest('.receipt-coverage')?.textContent).toMatch(/96 %.*1 Position ohne Beleg/)
 })
@@ -126,10 +126,19 @@ test('eine Heizposition mit eigener Heizperiode steht im Jahr ihrer Abrechnung',
 test('„alle Objekte“ zeigt auch die Belege des anderen Objekts, mit dessen Namen', async () => {
   renderPage()
   await screen.findByText('Wasser/Abwasser')
-  fireEvent.change(select('Objekt'), { target: { value: 'all' } })
-  expect(select('Objekt').value).toBe('all')
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Belege aller Objekte zeigen' }))
   await screen.findByText(/Grundsteuer Ahornweg/)
   expect(screen.getAllByText(/Ahornweg/).length).toBeGreaterThan(0)
+})
+
+// #346 Schritt 8 (M13): Das Jahr wählt die Seitenleiste; der Ordner kann darüber hinaus nur alle Jahre zeigen.
+test('„aller Jahre“ zeigt auch die Positionen eines früheren Jahres', async () => {
+  extraItems = [{ id: 'alt', propertyId: 'p1', period: calendarPeriod(YEAR - 3), category: 'Gartenpflege', description: 'Gartenpflege alt', amountCents: 10000, key: 'area' }]
+  renderPage()
+  await screen.findByText('Wasser/Abwasser')
+  expect(screen.queryAllByText(/Gartenpflege/)).toEqual([])
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Belege aller Jahre zeigen' }))
+  expect((await screen.findAllByText(/Gartenpflege/)).length).toBeGreaterThan(0)
 })
 
 test('die Suche nach einem Betrag findet die Position ohne Beleg', async () => {

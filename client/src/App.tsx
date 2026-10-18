@@ -307,9 +307,9 @@ function Shell() {
         <UpdateHint status={update.status} onDismissed={reload} onShowGuide={() => void navigate('einstellungen')} />
       )}
 
-      <PropertySwitcher properties={properties} value={propertyId} onChange={(id) => void switchProperty(id)} />
+      <PropertySwitcher properties={properties} value={propertyId} onChange={(id) => void switchProperty(id)} className="px-2.5 pb-3" />
 
-      <PeriodSelect className="year-switcher no-print" />
+      <PeriodSelect className="px-2.5 pb-3" />
 
       {navFor(hasHeatingPlant).map((group, gi) => (
         <div key={gi} className="nav-group">

@@ -175,7 +175,7 @@ const GUIDE_DATA = {
     applies: 'Sie vermieten an mehr als einer Adresse, etwa zwei Häuser, ein Haus und eine Eigentumswohnung oder einen Garagenhof, und rechnen sie getrennt ab.',
     steps: [
       { page: 'stammdaten', text: 'Klicken Sie in der Karte „Objekt“ auf „Weiteres Objekt anlegen“, geben Sie Name, Art und Adresse ein und legen Sie es an. Mietfuchs wechselt danach in das neue, noch leere Objekt; Ihre bisherigen Daten bleiben unverändert.' },
-      { text: 'Zwischen den Objekten wechseln Sie in der Seitenleiste unter „Objekt“. Der Umschalter erscheint ab dem zweiten Objekt, und der Seitenkopf nennt dann auf jeder Seite das gewählte Objekt.' },
+      { text: 'Zwischen den Objekten wechseln Sie in der Seitenleiste unter „Objekt“. Der Umschalter erscheint ab dem zweiten Objekt; am Handy steht er im Menü. Der Seitenkopf nennt auf jeder Seite das gewählte Objekt und das Abrechnungsjahr.' },
       { page: 'stammdaten', text: 'Legen Sie in jedem Objekt seine Wohnungen und Mietverhältnisse an; Zähler und Kosten erfassen Sie ebenfalls im jeweiligen Objekt.' },
       { page: 'einstellungen', text: 'Vermieter, IBAN und Zahlungsfrist unter „Vermieter & Zahlung“ gelten für alle Objekte als Vorgabe.' },
       { page: 'stammdaten', text: 'Gehört ein Objekt jemand anderem oder hat es ein eigenes Konto, etwa das Haus der Eltern, setzen Sie in der Karte „Objekt“ unter „Abweichender Vermieter oder Bankverbindung“ den Haken „Für dieses Objekt abweichend“.' },

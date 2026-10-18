@@ -9,7 +9,6 @@ import { invoiceLabel, renderInvoicePages } from '../pdfPreview'
 import { usePeriod } from '../period'
 import { useFocusTarget } from '../focus'
 import { settledInvoiceFiles, type PlantPeriods } from '../costPeriods'
-import { PeriodSelect } from '../components/PeriodSelect'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import { useConfirmDiscard, useDraft } from '../useDraft'
 import DraftActions from '../components/DraftActions'
@@ -379,7 +378,6 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
 
       <div className="card no-print">
         <div className="row">
-          <PeriodSelect />
           <label className="field checkline" title="Absatz mit dem Vorschlag zur Anpassung der monatlichen Vorauszahlung (§560 Abs. 4 BGB) andrucken">
             <span>
               <input
