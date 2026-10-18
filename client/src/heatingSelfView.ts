@@ -67,7 +67,16 @@ export function boundaryText(b: SelfBoundaryView, unitName: string): string {
     return `${head}: abgelesen ${b.offDays} ${b.offDays === 1 ? 'Tag' : 'Tage'} daneben${b.far ? ', über einen Wintermonat' : ''}${choice}`
   }
   const answer = b.gap === 'impossible' ? ` (nicht möglich${b.gapReason ? `: ${b.gapReason}` : ''})` : b.gap === 'missed' ? ' (nicht durchgeführt)' : ''
-  return `${head}: keine Ablesung${answer}`
+  return `${head}: keine Ablesung${missingMetersText(b.missingMeters ?? [])}${answer}`
+}
+
+// Befund M7 aus #341: welchem Zähler der Stand fehlt, mit Zählernummer. Ältere Abrechnungen führen die
+// Angabe nicht; dann bleibt der Satz, wie er war.
+function missingMetersText(meters: readonly { name: string; number?: string }[]): string {
+  if (meters.length === 0) return ''
+  const names = meters.map((m) => `„${m.name}“${m.number ? ` (Nr. ${m.number})` : ''}`)
+  const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} und ${names[names.length - 1]}`
+  return meters.length === 1 ? ` am Zähler ${list}` : ` an den Zählern ${list}`
 }
 
 // § 6 Abs. 4: nach Beginn der Heizperiode gilt der Anteil; vorher und beim ersten Mal ist er frei.
